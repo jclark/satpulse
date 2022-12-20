@@ -10,13 +10,17 @@ import (
 func Open(path string) (*os.File, error) {
 	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
-		return nil, err
+		return nil, &os.PathError{
+			Op:   "open",
+			Path: path,
+			Err:  err,
+		}
 	}
 	return os.NewFile(uintptr(fd), path), nil
 }
 
 func Flush(f *os.File) error {
-	return termios.Tcflush(f.Fd(), unix.TCIFLUSH)
+	return wrapErr(termios.Tcflush(f.Fd(), unix.TCIFLUSH), "tcflush", f)
 }
 
 type State struct {
@@ -27,13 +31,13 @@ func GetState(f *os.File) (*State, error) {
 	s := State{}
 	err := termios.Tcgetattr(f.Fd(), &s.attr)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "tcgetattr", f)
 	}
 	return &s, nil
 }
 
 func SetState(f *os.File, s *State) error {
-	return termios.Tcsetattr(f.Fd(), termios.TCSANOW, &s.attr)
+	return wrapErr(termios.Tcsetattr(f.Fd(), termios.TCSANOW, &s.attr), "tcsetattr", f)
 }
 
 func (s *State) SetRaw() {
@@ -47,4 +51,15 @@ func (s *State) SetRaw() {
 func (s *State) Copy() *State {
 	c := *s
 	return &c
+}
+
+func wrapErr(err error, op string, f *os.File) error {
+	if err == nil {
+		return err
+	}
+	return &os.PathError{
+		Op:   op,
+		Path: f.Name(),
+		Err:  err,
+	}
 }
