@@ -3,14 +3,16 @@ package main
 import (
 	"example/gps2phc/sys/ptp"
 	"fmt"
+	"os"
 
 	"golang.org/x/sys/unix"
 )
 
-func StartExtts(phcIndex int, pin, channel uint32) error {
-	fd, err := unix.Open(ptp.ClockPath(phcIndex), unix.O_RDONLY, 0)
+func StartExtts(phcIndex int, pin, channel uint32) (err error) {
+	path := ptp.ClockPath(phcIndex)
+	fd, err := unix.Open(path, unix.O_RDONLY, 0)
 	if err != nil {
-		return err
+		return wrapErr(err, "open", path)
 	}
 	pinDesc := ptp.PinDesc{
 		Chan:  channel,
@@ -19,8 +21,7 @@ func StartExtts(phcIndex int, pin, channel uint32) error {
 	}
 	err = ptp.IoctlPinSetFunc(fd, &pinDesc)
 	if err != nil {
-		fmt.Println("error from IoctlPinSetFunc")
-		return err
+		return wrapErr(err, "ioctl(PTP_PIN_SET_FUNC)", path)
 	}
 	exttsReq := ptp.ExttsRequest{
 		Index: channel,
@@ -28,12 +29,12 @@ func StartExtts(phcIndex int, pin, channel uint32) error {
 	}
 	err = ptp.IoctlExttsRequest(fd, &exttsReq)
 	if err != nil {
-		return err
+		return wrapErr(err, "ioctl(PTP_EXTTS_REQUEST)", path)
 	}
 	for {
 		event, err := ptp.ExttsEventRead(fd)
 		if err != nil {
-			return err
+			return wrapErr(err, "read", path)
 		}
 		if event == nil {
 			break
@@ -41,4 +42,15 @@ func StartExtts(phcIndex int, pin, channel uint32) error {
 		fmt.Printf("%d.%d\n", event.T.Sec, event.T.Nsec)
 	}
 	return nil
+}
+
+func wrapErr(err error, op string, path string) error {
+	if err == nil {
+		return nil
+	}
+	return &os.PathError{
+		Path: path,
+		Op:   op,
+		Err:  err,
+	}
 }

@@ -18,7 +18,7 @@ func main() {
 	//	err = trySerial(DEV)
 	//}
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("%+v\n", err)
 	}
 }
 

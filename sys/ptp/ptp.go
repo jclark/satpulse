@@ -27,8 +27,6 @@ type ClockTime struct {
 	Reserved uint32
 }
 
-//const exttsEventSize = ((64 + 32 + 32) + 32 + 32 + 32*2)/8
-
 type ExttsEvent struct {
 	T     ClockTime // Time event occured.
 	Index uint32    // Which channel produced the event.
@@ -90,8 +88,7 @@ func ExttsEventRead(fd int) (*ExttsEvent, error) {
 		return nil, err
 	}
 	if uintptr(n) != exttsEventSize {
-		fmt.Printf("unexpected read size")
-		return nil, nil
+		return nil, fmt.Errorf("extts event read returned unexpected number of bytes %d (expected %d)", n, exttsEventSize)
 	}
 	return &event, nil
 }
