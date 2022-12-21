@@ -89,11 +89,8 @@ func ExttsEventRead(fd int, timeout int, path string) (*ExttsEvent, error) {
 	if nReady == 0 {
 		return nil, nil
 	}
-	event := ExttsEvent{}
-	// This use of unsafe.Pointer is following a pattern that is documented as supported
-	// (1) Conversion of a *T1 to Pointer to *T2.
-	bytePtr := (*[exttsEventSize]byte)(unsafe.Pointer(&event))
-	b := bytePtr[:]
+	var buf [exttsEventSize]byte
+	b := buf[:]
 	n, err := unix.Read(fd, b)
 	if err != nil {
 		return nil, wrapErr(err, "read", path)
@@ -101,6 +98,10 @@ func ExttsEventRead(fd int, timeout int, path string) (*ExttsEvent, error) {
 	if uintptr(n) != exttsEventSize {
 		return nil, wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, exttsEventSize), "read", path)
 	}
+	event := ExttsEvent{}
+	// This use of unsafe.Pointer is following a pattern that is documented as supported
+	// (1) Conversion of a *T1 to Pointer to *T2.
+	*(*[exttsEventSize]byte)(unsafe.Pointer(&event)) = buf
 	return &event, nil
 }
 
