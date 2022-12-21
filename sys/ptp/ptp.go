@@ -3,7 +3,9 @@ package ptp
 
 import (
 	"fmt"
+	"os"
 	"strconv"
+	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -55,12 +57,12 @@ type ExttsRequest struct {
 	Rsv   [2]uint32 // Reserved for future use.
 }
 
-func IoctlExttsRequest(fd int, value *ExttsRequest) error {
-	return ioctlPtrErr(fd, reqExttsRequest, unsafe.Pointer(value))
+func IoctlExttsRequest(fd int, value *ExttsRequest, path string) error {
+	return wrapErr(ioctlPtrErr(fd, reqExttsRequest, unsafe.Pointer(value)), "ioctl(PTP_EXTTS_REQUEST", path)
 }
 
-func IoctlPinSetFunc(fd int, value *PinDesc) error {
-	return ioctlPtrErr(fd, reqPinSetFunc, unsafe.Pointer(value))
+func IoctlPinSetFunc(fd int, value *PinDesc, path string) error {
+	return wrapErr(ioctlPtrErr(fd, reqPinSetFunc, unsafe.Pointer(value)), "ioctl(PTP_PINSETFUNC", path)
 }
 
 // Wrapper around ioctl syscall for case when argument is a pointer
@@ -77,7 +79,16 @@ func ioctlPtrErr(fd int, req uint, arg unsafe.Pointer) (err error) {
 
 const exttsEventSize = unsafe.Sizeof(ExttsEvent{})
 
-func ExttsEventRead(fd int) (*ExttsEvent, error) {
+// timeout is in microseconds
+func ExttsEventRead(fd int, timeout int, path string) (*ExttsEvent, error) {
+	pollFd := [1]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN | unix.POLLPRI, Revents: 0}}
+	nReady, err := pollRestart(pollFd[0:1], timeout)
+	if err != nil {
+		return nil, wrapErr(err, "poll", path)
+	}
+	if nReady == 0 {
+		return nil, nil
+	}
 	event := ExttsEvent{}
 	// This use of unsafe.Pointer is following a pattern that is documented as supported
 	// (1) Conversion of a *T1 to Pointer to *T2.
@@ -85,16 +96,41 @@ func ExttsEventRead(fd int) (*ExttsEvent, error) {
 	b := bytePtr[:]
 	n, err := unix.Read(fd, b)
 	if err != nil {
-		return nil, err
+		return nil, wrapErr(err, "read", path)
 	}
 	if uintptr(n) != exttsEventSize {
-		return nil, fmt.Errorf("extts event read returned unexpected number of bytes %d (expected %d)", n, exttsEventSize)
+		return nil, wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, exttsEventSize), "read", path)
 	}
 	return &event, nil
+}
+
+func pollRestart(fds []unix.PollFd, timeout int) (int, error) {
+	for {
+		n, err := unix.Poll(fds, timeout)
+		switch err {
+		case syscall.EINTR:
+			// this seems to happen because of an internal SIGURG signal
+			// we need to restart in this case
+		default:
+			return n, err
+		}
+
+	}
 }
 
 const pathPrefix = "/dev/ptp"
 
 func ClockPath(phcIndex int) string {
 	return pathPrefix + strconv.Itoa(phcIndex)
+}
+
+func wrapErr(err error, op string, path string) error {
+	if err == nil {
+		return nil
+	}
+	return &os.PathError{
+		Path: path,
+		Op:   op,
+		Err:  err,
+	}
 }
