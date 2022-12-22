@@ -91,12 +91,11 @@ const exttsEventSize = unsafe.Sizeof(ExttsEvent{})
 // The path argument is used for constructing the error return value,
 // which will be os.PathError.
 func ExttsEventRead(fd int, timeout int, path string) (*ExttsEvent, error) {
-	pollFd := [1]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN | unix.POLLPRI, Revents: 0}}
-	nReady, err := pollRestart(pollFd[0:1], timeout)
+	ready, err := poll(fd, timeout, path)
 	if err != nil {
-		return nil, wrapErr(err, "poll", path)
+		return nil, err
 	}
-	if nReady == 0 {
+	if !ready {
 		return nil, nil
 	}
 	var buf [exttsEventSize]byte
@@ -113,6 +112,18 @@ func ExttsEventRead(fd int, timeout int, path string) (*ExttsEvent, error) {
 	// (1) Conversion of a *T1 to Pointer to *T2.
 	*(*[exttsEventSize]byte)(unsafe.Pointer(&event)) = buf
 	return &event, nil
+}
+
+func poll(fd int, timeout int, path string) (bool, error) {
+	pollFd := [1]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN | unix.POLLPRI, Revents: 0}}
+	nReady, err := pollRestart(pollFd[0:1], timeout)
+	if err != nil {
+		return false, wrapErr(err, "poll", path)
+	}
+	if nReady == 0 {
+		return false, nil
+	}
+	return true, nil
 }
 
 func pollRestart(fds []unix.PollFd, timeout int) (int, error) {

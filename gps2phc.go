@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jclark/gps2phc/extts"
 	"github.com/jclark/gps2phc/serial"
 	"github.com/jclark/gps2phc/ubx"
 )
@@ -13,7 +14,7 @@ import (
 const DEV = "/dev/ttyUSB0"
 
 func main() {
-	err := StartExtts(0, 0, 0)
+	err := extts.Start(0, 0, 0)
 	//if err != nil {
 	//	err = trySerial(DEV)
 	//}
