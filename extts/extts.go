@@ -4,6 +4,7 @@ package extts
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/jclark/gps2phc/sys/ptp"
 
@@ -16,32 +17,47 @@ type Extts struct {
 	pin     uint32
 	channel uint32
 }
+type Event struct {
+	Sec  int64
+	NSec uint32
+	T    time.Time
+}
 
-func Start(phcIndex int, pin, channel uint32) error {
+func Start(phcIndex int, pin, channel uint32) (chan Event, error) {
 	e, err := Open(ptp.ClockPath(phcIndex), pin, channel)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = SkipStale(e)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = e.SetEnabled(true)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for {
-		event, err := e.Read(1500)
-		if err != nil {
-			return err
+	c := make(chan Event)
+	go func() {
+		for {
+			event, err := e.Read(1500)
+			if err != nil {
+				fmt.Print("+v\n", err)
+				break
+			}
+			if event == nil {
+				fmt.Println("missing PPS event")
+			} else {
+				c <- Event{
+					Sec:  event.T.Sec,
+					NSec: event.T.Nsec,
+					T:    time.Now(),
+				}
+			}
 		}
-		if event == nil {
-			fmt.Println("missing PPS event")
-			break
-		}
-		fmt.Printf("%d.%09d\n", event.T.Sec, event.T.Nsec)
-	}
-	return nil
+		e.Close()
+		close(c)
+	}()
+	return c, nil
 }
 
 func SkipStale(e *Extts) error {
@@ -90,6 +106,10 @@ func Open(path string, pin, channel uint32) (*Extts, error) {
 		pin:     pin,
 		channel: channel,
 	}, nil
+}
+
+func (e *Extts) Close() error {
+	return unix.Close(e.fd)
 }
 
 func (e *Extts) SetEnabled(enabled bool) error {

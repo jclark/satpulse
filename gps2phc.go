@@ -14,50 +14,74 @@ import (
 const DEV = "/dev/ttyUSB0"
 
 func main() {
-	err := extts.Start(0, 0, 0)
-	//if err != nil {
-	//	err = trySerial(DEV)
-	//}
+	cExtts, cUbx, err := startSync()
 	if err != nil {
 		log.Printf("%+v\n", err)
+
+	} else {
+		doSync(cExtts, cUbx)
 	}
 }
 
-func trySerial(path string) error {
+func startSync() (chan extts.Event, chan ubx.Msg, error) {
+	cExtts, err := extts.Start(0, 0, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	cUbx, err := trySerial(DEV)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cExtts, cUbx, nil
+}
+
+func doSync(cExtts chan extts.Event, cUbx chan ubx.Msg) {
+	for {
+		select {
+		case e := <-cExtts:
+			fmt.Printf("extts event: %d.%09d\n", e.Sec, e.NSec)
+		case u := <-cUbx:
+			fmt.Printf("ubx event: %s %+v\n", u.ClsId(), u.Payload())
+		}
+	}
+}
+
+func trySerial(path string) (chan ubx.Msg, error) {
 	f, err := serial.Open(DEV)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer f.Close()
+	// defer f.Close()
 	s, err := serial.GetState(f)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	r := s.Copy()
 	r.SetRaw()
 	err = serial.SetState(f, r)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer serial.SetState(f, s)
+	// defer serial.SetState(f, s)
 	err = serial.Flush(f)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return tryRead(f)
+	c := make(chan ubx.Msg, 1)
+	go doRead(f, c)
+	return c, nil
 }
 
-const NREADS = 500
-
-func tryRead(f *os.File) error {
+func doRead(f *os.File, c chan ubx.Msg) {
 	buf := make([]byte, 255)
 	msg := make([]byte, 0, 90)
 	var state scanState
 	var msgTime time.Time
-	for i := 0; i < NREADS; i++ {
+	for {
 		n, err := f.Read(buf)
 		if err != nil {
-			return err
+			log.Printf("Read error %+v", err)
+			break
 		}
 		// fmt.Printf("read %d bytes\n", n)
 		readTime := time.Now()
@@ -78,7 +102,12 @@ func tryRead(f *os.File) error {
 				// do nothing
 			case ubxExpectN:
 				msg = append(msg, b)
-				finishUbxMsg(msg, msgTime)
+				ubxMsg, err := ubx.ParseMsg(msg)
+				if err != nil {
+					log.Printf("UBX parse error %v", err)
+				} else if ubxMsg != nil {
+					c <- ubxMsg
+				}
 				state = msgScan
 				msg = msg[:0]
 			default:
@@ -89,27 +118,14 @@ func tryRead(f *os.File) error {
 			}
 		}
 	}
-	fmt.Println("Finished")
-	return nil
+	close(c)
 }
 
 func finishNmeaMsg(msg []byte, t time.Time) {
 	s := string(msg)
 	if s[3:7] == "RMC," {
-		fmt.Printf("%s: %s\n", t.Format(time.RFC3339Nano), string(msg))
+		fmt.Printf("NMEA %s: %s\n", t.Format(time.RFC3339Nano), string(msg))
 	}
-}
-
-func finishUbxMsg(msg []byte, t time.Time) error {
-	ubxMsg, err := ubx.ParseMsg(msg)
-	if err != nil {
-		return err
-	}
-	if ubxMsg == nil {
-		return nil
-	}
-	fmt.Printf("%s@%s: %+v\n", ubxMsg.ClsId(), t.Format(time.RFC3339Nano), ubxMsg.Payload())
-	return nil
 }
 
 type scanState int
