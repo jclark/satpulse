@@ -1,4 +1,5 @@
-// Linux PTP Clock interface
+// Low-level Linux PTP Clock interface
+// This is a thin wrapper around linux/ptp_clock.h
 package ptp
 
 import (
@@ -57,12 +58,18 @@ type ExttsRequest struct {
 	Rsv   [2]uint32 // Reserved for future use.
 }
 
+// IoCtlExttsRequest perform a PTP_EXTTS_REQUEST ioctl.
+// The path argument is used for constructing the error return value,
+// which will be os.PathError.
 func IoctlExttsRequest(fd int, value *ExttsRequest, path string) error {
 	return wrapErr(ioctlPtrErr(fd, reqExttsRequest, unsafe.Pointer(value)), "ioctl(PTP_EXTTS_REQUEST", path)
 }
 
+// IoCtlExttsRequest perform a PTP_PIN_SETFUNC ioctl.
+// The path argument is used for constructing the error return value,
+// which will be os.PathError.
 func IoctlPinSetFunc(fd int, value *PinDesc, path string) error {
-	return wrapErr(ioctlPtrErr(fd, reqPinSetFunc, unsafe.Pointer(value)), "ioctl(PTP_PINSETFUNC", path)
+	return wrapErr(ioctlPtrErr(fd, reqPinSetFunc, unsafe.Pointer(value)), "ioctl(PTP_PIN_SETFUNC", path)
 }
 
 // Wrapper around ioctl syscall for case when argument is a pointer
@@ -79,7 +86,10 @@ func ioctlPtrErr(fd int, req uint, arg unsafe.Pointer) (err error) {
 
 const exttsEventSize = unsafe.Sizeof(ExttsEvent{})
 
-// timeout is in microseconds
+// ExttsEventRead reads an extts event, waiting for timeout microseconds.
+// Returns (nil, nil) if no event is available within that time.
+// The path argument is used for constructing the error return value,
+// which will be os.PathError.
 func ExttsEventRead(fd int, timeout int, path string) (*ExttsEvent, error) {
 	pollFd := [1]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN | unix.POLLPRI, Revents: 0}}
 	nReady, err := pollRestart(pollFd[0:1], timeout)
@@ -110,19 +120,14 @@ func pollRestart(fds []unix.PollFd, timeout int) (int, error) {
 		n, err := unix.Poll(fds, timeout)
 		switch err {
 		case syscall.EINTR:
-			// this seems to happen because of an internal SIGURG signal
-			// we need to restart in this case
+			// This seems to happen because of an SIGURG signal
+			// (used internally for non-cooperative preemption).
+			// We need to restart in this case.
 		default:
 			return n, err
 		}
 
 	}
-}
-
-const pathPrefix = "/dev/ptp"
-
-func ClockPath(phcIndex int) string {
-	return pathPrefix + strconv.Itoa(phcIndex)
 }
 
 func wrapErr(err error, op string, path string) error {
@@ -134,4 +139,10 @@ func wrapErr(err error, op string, path string) error {
 		Op:   op,
 		Err:  err,
 	}
+}
+
+const pathPrefix = "/dev/ptp"
+
+func ClockPath(phcIndex int) string {
+	return pathPrefix + strconv.Itoa(phcIndex)
 }
