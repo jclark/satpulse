@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"example/gps2phc/serial"
-	"example/gps2phc/ubx"
+	"github.com/jclark/gps2phc/serial"
+	"github.com/jclark/gps2phc/ubx"
 )
 
 const DEV = "/dev/ttyUSB0"

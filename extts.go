@@ -1,9 +1,10 @@
 package main
 
 import (
-	"example/gps2phc/sys/ptp"
 	"fmt"
 	"os"
+
+	"github.com/jclark/gps2phc/sys/ptp"
 
 	"golang.org/x/sys/unix"
 )

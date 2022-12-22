@@ -1,4 +1,4 @@
-module example/gps2phc
+module github.com/jclark/gps2phc
 
 go 1.19
 
