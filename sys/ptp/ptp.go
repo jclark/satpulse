@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -130,7 +129,7 @@ func pollRestart(fds []unix.PollFd, timeout int) (int, error) {
 	for {
 		n, err := unix.Poll(fds, timeout)
 		switch err {
-		case syscall.EINTR:
+		case unix.EINTR:
 			// This seems to happen because of an SIGURG signal
 			// (used internally for non-cooperative preemption).
 			// We need to restart in this case.
