@@ -41,7 +41,7 @@ func Start(phcIndex int, pin, channel uint32) (chan Event, error) {
 		for {
 			event, err := e.Read(1500)
 			if err != nil {
-				fmt.Print("+v\n", err)
+				fmt.Printf("%+v\n", err)
 				break
 			}
 			if event == nil {
