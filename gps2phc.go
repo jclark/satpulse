@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jclark/gps2phc/extts"
+	"github.com/jclark/gps2phc/phc"
 	"github.com/jclark/gps2phc/serial"
 	"github.com/jclark/gps2phc/tai"
 	"github.com/jclark/gps2phc/ubx"
@@ -14,34 +14,47 @@ import (
 
 const DEV = "/dev/ttyUSB0"
 
+type Sync struct {
+	clk   *phc.Clock
+	tsCh  <-chan phc.TsEvent
+	ubxCh chan ubx.Msg
+}
+
 func main() {
-	cExtts, cUbx, err := startSync()
+	s, err := newSync()
 	if err != nil {
 		log.Printf("%+v\n", err)
-
 	} else {
-		doSync(cExtts, cUbx)
+		doSync(s.tsCh, s.ubxCh)
 	}
 }
 
-func startSync() (chan extts.Event, chan ubx.Msg, error) {
-	cExtts, err := extts.Start(0, 0, 0)
+func newSync() (r *Sync, err error) {
+	err = nil
+	r = nil
+	s := Sync{}
+	s.clk, err = phc.New(phc.ClockPath(0))
 	if err != nil {
-		return nil, nil, err
+		return
 	}
-	cUbx, err := trySerial(DEV)
+	s.tsCh, err = StartPPS(s.clk)
 	if err != nil {
-		return nil, nil, err
+		return
 	}
-	return cExtts, cUbx, nil
+	s.ubxCh, err = trySerial(DEV)
+	if err != nil {
+		return
+	}
+	r = &s
+	return
 }
 
-func doSync(cExtts chan extts.Event, cUbx chan ubx.Msg) {
+func doSync(tsCh <-chan phc.TsEvent, ubxCh chan ubx.Msg) {
 	for {
 		select {
-		case e := <-cExtts:
-			fmt.Printf("extts event: %d.%09d\n", e.Sec, e.NSec)
-		case u := <-cUbx:
+		case e := <-tsCh:
+			fmt.Printf("extts event: %d.%09d\n", e.T.Sec, e.T.Nsec)
+		case u := <-ubxCh:
 			fmt.Printf("ubx event: %s %+v\n", u.ClsId(), u.Payload())
 			if u.ClsId() == ubx.NavTimeGPSId {
 				data := u.Payload().(*ubx.NavTimeGPSPayload)

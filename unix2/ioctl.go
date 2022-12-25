@@ -27,3 +27,11 @@ func ioctlPtr(fd int, req uint, arg unsafe.Pointer) (err error) {
 	}
 	return
 }
+
+func PTPExttsEventFromBytes(buf *[SizeofPTPExttsEvent]byte) *PTPExttsEvent {
+	event := PTPExttsEvent{}
+	// This use of unsafe.Pointer is following a pattern that is documented as supported
+	// (1) Conversion of a *T1 to Pointer to *T2.
+	*(*[SizeofPTPExttsEvent]byte)(unsafe.Pointer(&event)) = *buf
+	return &event
+}

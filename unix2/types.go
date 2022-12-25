@@ -7,7 +7,7 @@ Input to cgo -godefs.
 package unix2
 
 /*
-#include <linux/timex.h>
+#include <sys/timex.h>
 #include <linux/ptp_clock.h>
 */
 import "C"
