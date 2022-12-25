@@ -20,8 +20,9 @@ func StartPPS(clk *phc.Clock) (<-chan phc.TsEvent, error) {
 	if err != nil {
 		return nil, err
 	}
+	clk.ReadTsEvents(true)
 	c := clk.TsChan()
-	limit := time.After(time.Microsecond * 500)
+	limit := time.After(time.Millisecond * 50)
 	timedOut := false
 	nStale := 0
 	for !timedOut {

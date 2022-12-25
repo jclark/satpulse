@@ -41,8 +41,9 @@ func New(path string) (*Clock, error) {
 }
 
 func (clk *Clock) ReadTsEvents(enabled bool) {
-	if clk.control != nil {
+	if clk.control == nil {
 		clk.control = make(chan bool, 1)
+		clk.tsEvents = make(chan TsEvent, 1)
 		go clk.readTsEvents()
 	}
 	clk.control <- enabled
