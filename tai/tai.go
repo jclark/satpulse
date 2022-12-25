@@ -3,6 +3,8 @@ package tai
 import (
 	"fmt"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // Time in TAI timescale represented as nanoseconds since 1970-01-01T00:00:00 TAI
@@ -20,6 +22,10 @@ func GPS(week int16, iTOW uint32) Time {
 	weekMillis := int64(week) * 7 * 24 * 60 * 60 * 1000
 	weekMillis += epochGPS.UnixMilli() + epochGPSOffset*1000
 	return Time((weekMillis + int64(iTOW)) * 1e6)
+}
+
+func Timespec(t unix.Timespec) Time {
+	return Time(t.Nano())
 }
 
 func (t Time) String() string {
