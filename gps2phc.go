@@ -8,6 +8,7 @@ import (
 
 	"github.com/jclark/gps2phc/extts"
 	"github.com/jclark/gps2phc/serial"
+	"github.com/jclark/gps2phc/tai"
 	"github.com/jclark/gps2phc/ubx"
 )
 
@@ -42,6 +43,10 @@ func doSync(cExtts chan extts.Event, cUbx chan ubx.Msg) {
 			fmt.Printf("extts event: %d.%09d\n", e.Sec, e.NSec)
 		case u := <-cUbx:
 			fmt.Printf("ubx event: %s %+v\n", u.ClsId(), u.Payload())
+			if u.ClsId() == ubx.NavTimeGPSId {
+				data := u.Payload().(*ubx.NavTimeGPSPayload)
+				fmt.Printf("TAI time: %v\n", tai.GPS(data.Week, data.ITOW))
+			}
 		}
 	}
 }
