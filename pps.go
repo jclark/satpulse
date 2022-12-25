@@ -23,12 +23,12 @@ func StartPPS(clk *phc.Clock) (<-chan phc.TsEvent, error) {
 	clk.ReadTsEvents(true)
 	c := clk.TsChan()
 	limit := time.After(time.Millisecond * 50)
-	timedOut := false
 	nStale := 0
-	for !timedOut {
+Loop:
+	for {
 		select {
 		case <-limit:
-			timedOut = true
+			break Loop
 		case <-c:
 			nStale++
 		}
