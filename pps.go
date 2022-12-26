@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 const chanIndex = 0
 const pinIndex = 0
 
-func StartPPS(clk *phc.Clock) (<-chan phc.TsEvent, error) {
+func StartPPS(cx context.Context, clk *phc.Clock) (<-chan phc.TsEvent, error) {
 	err := clk.PinSetfunc(pinIndex, chanIndex, unix2.PTP_PF_EXTTS)
 	if err != nil {
 		return nil, err
@@ -20,8 +21,14 @@ func StartPPS(clk *phc.Clock) (<-chan phc.TsEvent, error) {
 	if err != nil {
 		return nil, err
 	}
-	clk.ReadTsEvents(true)
-	c := clk.TsChan()
+	c := make(chan phc.TsEvent, 1)
+	go func() {
+		clk.ReadWorker(cx.Done(), c)
+	}()
+	return c, nil
+}
+
+func SkipStale(clk *phc.Clock, c <-chan phc.TsEvent) error {
 	limit := time.After(time.Millisecond * 50)
 	nStale := 0
 Loop:
@@ -34,9 +41,5 @@ Loop:
 		}
 	}
 	fmt.Printf("Skipped %d stale events\n", nStale)
-	err = clk.ExttsEnable(chanIndex, true)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
+	return clk.ExttsEnable(chanIndex, true)
 }

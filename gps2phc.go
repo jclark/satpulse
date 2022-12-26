@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/jclark/gps2phc/phc"
@@ -14,34 +16,59 @@ import (
 
 const DEV = "/dev/ttyUSB0"
 
-type Sync struct {
+type Syncer struct {
 	clk   *phc.Clock
+	port  *serial.Port
 	tsCh  <-chan phc.TsEvent
 	ubxCh chan ubx.Msg
 }
 
 func main() {
-	s, err := newSync()
+	cx := cancelOnInterrupt()
+	s, err := newSyncer(cx)
 	if err != nil {
 		log.Printf("%+v\n", err)
 	} else {
-		doSync(s.tsCh, s.ubxCh)
+		doSync(s)
+		fmt.Println("sync ended")
+		s.port.Close()
+		fmt.Println("serial port closed")
+		s.clk.Close()
+		fmt.Println("clock closed")
+
 	}
 }
 
-func newSync() (r *Sync, err error) {
+func cancelOnInterrupt() context.Context {
+	cx, cancel := context.WithCancel(context.Background())
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+	go func() {
+		<-sig
+		fmt.Println("cancelling")
+		cancel()
+	}()
+	return cx
+}
+
+func newSyncer(cx context.Context) (r *Syncer, err error) {
 	err = nil
 	r = nil
-	s := Sync{}
+	s := Syncer{}
 	s.clk, err = phc.New(phc.ClockPath(0))
 	if err != nil {
 		return
 	}
-	s.tsCh, err = StartPPS(s.clk)
+	s.tsCh, err = StartPPS(cx, s.clk)
 	if err != nil {
 		return
 	}
-	s.ubxCh, err = trySerial(DEV)
+	// XXX errors after this need to deal with running PPS goroutine
+	err = SkipStale(s.clk, s.tsCh)
+	if err != nil {
+		return nil, err
+	}
+	s.port, s.ubxCh, err = serStart(cx, DEV)
 	if err != nil {
 		return
 	}
@@ -49,54 +76,59 @@ func newSync() (r *Sync, err error) {
 	return
 }
 
-func doSync(tsCh <-chan phc.TsEvent, ubxCh chan ubx.Msg) {
-	for {
+func doSync(s *Syncer) {
+	// loop until both channels are closed
+	tsCh := s.tsCh
+	ubxCh := s.ubxCh
+	for tsCh != nil || ubxCh != nil {
 		select {
-		case e := <-tsCh:
-			fmt.Printf("extts event: %d.%09d\n", e.T.Sec, e.T.Nsec)
-		case u := <-ubxCh:
-			fmt.Printf("ubx event: %s %+v\n", u.ClsId(), u.Payload())
-			if u.ClsId() == ubx.NavTimeGPSId {
-				data := u.Payload().(*ubx.NavTimeGPSPayload)
-				fmt.Printf("TAI time: %v\n", tai.GPS(data.Week, data.ITOW))
+		case e, ok := <-tsCh:
+			if ok {
+				fmt.Printf("extts event: %d.%09d\n", e.T.Sec, e.T.Nsec)
+			} else {
+				tsCh = nil
+			}
+		case u, ok := <-ubxCh:
+			if ok {
+				fmt.Printf("ubx event: %s %+v\n", u.ClsId(), u.Payload())
+				if u.ClsId() == ubx.NavTimeGPSId {
+					data := u.Payload().(*ubx.NavTimeGPSPayload)
+					fmt.Printf("TAI time: %v\n", tai.GPS(data.Week, data.ITOW))
+				}
+			} else {
+				ubxCh = nil
 			}
 		}
 	}
 }
 
-func trySerial(path string) (chan ubx.Msg, error) {
-	f, err := serial.Open(DEV)
+func serStart(cx context.Context, path string) (*serial.Port, chan ubx.Msg, error) {
+	p, err := serial.Raw(DEV)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	// defer f.Close()
-	s, err := serial.GetState(f)
+	err = p.Flush()
 	if err != nil {
-		return nil, err
-	}
-	r := s.Copy()
-	r.SetRaw()
-	err = serial.SetState(f, r)
-	if err != nil {
-		return nil, err
-	}
-	// defer serial.SetState(f, s)
-	err = serial.Flush(f)
-	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	c := make(chan ubx.Msg, 1)
-	go doRead(f, c)
-	return c, nil
+	go serReadWorker(cx, p, c)
+	return p, c, nil
 }
 
-func doRead(f *os.File, c chan ubx.Msg) {
+func serReadWorker(cx context.Context, p *serial.Port, c chan ubx.Msg) {
 	buf := make([]byte, 255)
 	msg := make([]byte, 0, 90)
 	var state scanState
 	var msgTime time.Time
+Loop:
 	for {
-		n, err := f.Read(buf)
+		select {
+		case <-cx.Done():
+			break Loop
+		default:
+		}
+		n, err := p.Read(buf)
 		if err != nil {
 			log.Printf("Read error %+v", err)
 			break
@@ -136,6 +168,7 @@ func doRead(f *os.File, c chan ubx.Msg) {
 			}
 		}
 	}
+	p.Close()
 	close(c)
 }
 

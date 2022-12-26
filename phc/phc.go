@@ -11,11 +11,9 @@ import (
 )
 
 type Clock struct {
-	fd       int
-	path     string
-	tsEvents chan TsEvent
-	control  chan bool
-	caps     *unix2.PTPClockCaps
+	fd   int
+	path string
+	caps *unix2.PTPClockCaps
 }
 
 type TsEvent struct {
@@ -44,75 +42,38 @@ func New(path string) (*Clock, error) {
 		unix.Close(fd)
 		return nil, err
 	}
-	fmt.Printf("max freq adj %d\n", clk.caps.Max_adj)
 	return clk, nil
 }
 
-func (clk *Clock) ReadTsEvents(enabled bool) {
-	if clk.control == nil {
-		clk.control = make(chan bool, 1)
-		clk.tsEvents = make(chan TsEvent, 1)
-		go clk.readTsEvents()
-	}
-	clk.control <- enabled
-}
-
-// this is responsible for reading extts events from the fd
-// it runs until clk.control is closed
-// a boolean sent to clk.control tells it to do reading
-// It starts off not reading
-func (clk *Clock) readTsEvents() {
-	var reading bool
+func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- TsEvent) {
 	var bytes [unix2.SizeofPTPExttsEvent]byte
 	buf := bytes[:]
+Loop:
 	for {
-		if reading {
-			select {
-			case r, ok := <-clk.control:
-				if !ok {
-					break
-				}
-				reading = r
-			default:
-				// no control message
-				// so read as normal
-			}
+		select {
+		case <-done:
+			break Loop
+		default:
+		}
+		event := TsEvent{}
+		// XXX think we need to do a poll here, so we don't end up blocking forever
+		// if timestamps stop happening
+		n, err := unix.Read(clk.fd, buf)
+		if err != nil {
+			event.Err = clk.wrapErr(err, "read")
+		} else if n != unix2.SizeofPTPExttsEvent {
+			event.Err = clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
 		} else {
-			// if we are not currently reading
-			// then wait for a control message
-			r, ok := <-clk.control
-			if !ok {
-				break
-			}
-			reading = r
+			event.TRead = time.Now()
+			ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
+			event.T = unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)}
 		}
-		if reading {
-			event := TsEvent{}
-			n, err := unix.Read(clk.fd, buf)
-			if err != nil {
-				event.Err = clk.wrapErr(err, "read")
-			} else if n != unix2.SizeofPTPExttsEvent {
-				event.Err = clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
-			} else {
-				event.TRead = time.Now()
-				ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
-				event.T = unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)}
-			}
-			clk.tsEvents <- event
-		}
+		tsEvents <- event
 	}
-	close(clk.tsEvents)
-}
-
-func (clk *Clock) TsChan() <-chan TsEvent {
-	return clk.tsEvents
+	close(tsEvents)
 }
 
 func (clk *Clock) Close() error {
-	// XX close the control channel
-	// cannot wait for tsEvents to be closed becuase the Read might be blocked
-	// if we close fd here we have a race
-	// XXX So leave it to the goroutine to close
 	return clk.wrapErr(unix.Close(clk.fd), "close")
 }
 

@@ -7,7 +7,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func Open(path string) (*os.File, error) {
+type Port struct {
+	fd   int
+	path string
+	attr unix.Termios
+}
+
+func Raw(path string) (*Port, error) {
 	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
 		return nil, &os.PathError{
@@ -16,50 +22,67 @@ func Open(path string) (*os.File, error) {
 			Err:  err,
 		}
 	}
-	return os.NewFile(uintptr(fd), path), nil
-}
-
-func Flush(f *os.File) error {
-	return wrapErr(termios.Tcflush(f.Fd(), unix.TCIFLUSH), "tcflush", f)
-}
-
-type State struct {
-	attr unix.Termios
-}
-
-func GetState(f *os.File) (*State, error) {
-	s := State{}
-	err := termios.Tcgetattr(f.Fd(), &s.attr)
+	p := &Port{path: path, fd: fd}
+	err = termios.Tcgetattr(p.ufd(), &p.attr)
 	if err != nil {
-		return nil, wrapErr(err, "tcgetattr", f)
+		unix.Close(fd)
+		return nil, p.wrapErr(err, "tcgetattr")
 	}
-	return &s, nil
+	rawAttr := p.attr
+	termios.Cfmakeraw(&rawAttr)
+	// This means read with timeout of 11 tenths of a second
+	rawAttr.Cc[unix.VTIME] = 11
+	rawAttr.Cc[unix.VMIN] = 0
+	err = p.setAttr(&rawAttr)
+	if err != nil {
+		unix.Close(fd)
+		return nil, err
+	}
+	return p, nil
 }
 
-func SetState(f *os.File, s *State) error {
-	return wrapErr(termios.Tcsetattr(f.Fd(), termios.TCSANOW, &s.attr), "tcsetattr", f)
+func (p *Port) ufd() uintptr {
+	return uintptr(p.fd)
 }
 
-func (s *State) SetRaw() {
-	termios.Cfmakeraw(&s.attr)
-	// interbyte time read - doesn't work
-	// blocking read
-	// s.attr.Cc[unix.VMIN] = 20
-	// s.attr.Cc[unix.VTIME] = 1
+func (p *Port) Read(buf []byte) (n int, err error) {
+	for {
+		n, err = unix.Read(p.fd, buf)
+		if err != unix.EINTR {
+			break
+		}
+	}
+	if err != nil {
+		err = p.wrapErr(err, "read")
+	}
+	return
 }
 
-func (s *State) Copy() *State {
-	c := *s
-	return &c
+// Close resets the port's attributes and then closes it
+func (p *Port) Close() (err error) {
+	err = p.setAttr(&p.attr)
+	e2 := unix.Close(int(p.fd))
+	if e2 != nil && err == nil {
+		err = p.wrapErr(e2, "close")
+	}
+	return
 }
 
-func wrapErr(err error, op string, f *os.File) error {
+func (p *Port) Flush() error {
+	return p.wrapErr(termios.Tcflush(p.ufd(), unix.TCIFLUSH), "tcflush")
+}
+
+func (p *Port) setAttr(attr *unix.Termios) error {
+	return p.wrapErr(termios.Tcsetattr(p.ufd(), termios.TCSANOW, attr), "tcsetattr")
+}
+
+func (p *Port) wrapErr(err error, op string) error {
 	if err == nil {
 		return err
 	}
 	return &os.PathError{
 		Op:   op,
-		Path: f.Name(),
+		Path: p.path,
 		Err:  err,
 	}
 }
