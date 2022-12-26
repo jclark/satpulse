@@ -28,8 +28,13 @@ func Timespec(t unix.Timespec) Time {
 	return Time(t.Nano())
 }
 
+func (t Time) Timespec() unix.Timespec {
+	return unix.NsecToTimespec(int64(t))
+}
+
 func (t Time) String() string {
 	n := int64(t)
 	// FIXME deal with negative here
 	return fmt.Sprintf("%d.%09d", n/1e9, n%1e9)
 }
+ 
