@@ -15,6 +15,7 @@ type Clock struct {
 	path     string
 	tsEvents chan TsEvent
 	control  chan bool
+	caps     *unix2.PTPClockCaps
 }
 
 type TsEvent struct {
@@ -34,10 +35,17 @@ func New(path string) (*Clock, error) {
 			Err:  err,
 		}
 	}
-	return &Clock{
+	clk := &Clock{
 		fd:   fd,
 		path: path,
-	}, nil
+	}
+	err = clk.getCaps()
+	if err != nil {
+		unix.Close(fd)
+		return nil, err
+	}
+	fmt.Printf("max freq adj %d\n", clk.caps.Max_adj)
+	return clk, nil
 }
 
 func (clk *Clock) ReadTsEvents(enabled bool) {
@@ -104,13 +112,13 @@ func (clk *Clock) Close() error {
 	// XX close the control channel
 	// cannot wait for tsEvents to be closed becuase the Read might be blocked
 	// if we close fd here we have a race
-	// leave it to the goroutine to close
+	// XXX So leave it to the goroutine to close
 	return clk.wrapErr(unix.Close(clk.fd), "close")
 }
 
 func (clk *Clock) PinSetfunc(pinIndex uint32, chanIndex uint32, pinFunc uint32) error {
 	pd := unix2.PTPPinDesc{Index: pinIndex, Chan: chanIndex, Func: pinFunc}
-	return clk.wrapErr(unix2.IoctlPTPPinSetfunc(clk.fd, &pd), "ioctl(PTP_PIN_SETFUNC)")
+	return clk.wrapErr(unix2.IoctlPTPPinSetFunc(clk.fd, &pd), "ioctl(PTP_PIN_SETFUNC)")
 }
 
 func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) error {
@@ -121,9 +129,34 @@ func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) error {
 	return clk.wrapErr(unix2.IoctlPTPExttsRequest(clk.fd, &er), "ioctl(PTP_EXTTS_REQUEST)")
 }
 
-func (clk *Clock) adjtime(timex *unix.Timex) (int, error) {
+func (clk *Clock) AdjTime(d time.Duration) error {
+	secs := int64(d) / 1e9
+	nsecs := int64(d) % 1e9
+	if nsecs < 0 {
+		nsecs += 1e9
+		secs -= 1
+	}
+	tx := unix.Timex{}
+	tx.Modes = unix2.ADJ_SETOFFSET | unix2.ADJ_NANO
+	tx.Time.Sec = secs
+	tx.Time.Usec = nsecs
+	_, err := clk.adjtimex(&tx, "SETOFFSET")
+	return err
+}
+
+// Maximum supported frequency adjustment in parts per billion
+func (clk *Clock) MaxFreqAdj() int32 {
+	return clk.caps.Max_adj
+}
+
+func (clk *Clock) getCaps() error {
+	clk.caps = new(unix2.PTPClockCaps)
+	return clk.wrapErr(unix2.IoctlPTPClockGetCaps(clk.fd, clk.caps), "ioctl(PTP_CLOCK_GETCAPS)")
+}
+
+func (clk *Clock) adjtimex(timex *unix.Timex, mode string) (int, error) {
 	state, err := unix2.ClockAdjtime(clk.clockId(), timex)
-	return state, clk.wrapErr(err, "adjtime")
+	return state, clk.wrapErr(err, "clock_adjtime ADJ_"+mode)
 }
 
 const clockfd = 3
