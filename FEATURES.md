@@ -20,7 +20,9 @@ to know the current UTC offset (which is sent only every 12 minutes or so).
 
 We can see what NIC we have and know about its limitations.
 
-- for rPI CM4 deal with loss of carrier
+- for rPI CM4 deal with
+   - loss of carrier (listen to netlink events)
+   - losing pulses when reading from PHC
 - for i210 deal with timestamping both edges (we can use UBX to get the length of the time pulse)
 
 ### Deal with GPS flakiness
