@@ -11,9 +11,14 @@ func IoctlPTPExttsRequest(fd int, value *PTPExttsRequest) error {
 	return ioctlPtr(fd, PTP_EXTTS_REQUEST, unsafe.Pointer(value))
 }
 
-// IoctlPTPPinSetfunc perform a PTP_PIN_SETFUNC ioctl.
-func IoctlPTPPinSetfunc(fd int, value *PTPPinDesc) error {
+// IoctlPTPPinSetFunc perform a PTP_PIN_SETFUNC ioctl.
+// XXX should it be Setfunc instead of SetFunc since it is PTP_PIN_SETFUNC?
+func IoctlPTPPinSetFunc(fd int, value *PTPPinDesc) error {
 	return ioctlPtr(fd, PTP_PIN_SETFUNC, unsafe.Pointer(value))
+}
+
+func IoctlPTPClockGetCaps(fd int, value *PTPClockCaps) error {
+	return ioctlPtr(fd, PTP_CLOCK_GETCAPS, unsafe.Pointer(value))
 }
 
 // Wrapper around ioctl syscall for case when argument is a pointer
