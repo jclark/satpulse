@@ -37,4 +37,11 @@ func (t Time) String() string {
 	// FIXME deal with negative here
 	return fmt.Sprintf("%d.%09d", n/1e9, n%1e9)
 }
- 
+
+func (t Time) Add(d time.Duration) Time {
+	return Time(int64(t) + int64(d))
+}
+
+func (t Time) Sub(t2 Time) time.Duration {
+	return time.Duration(int64(t) - int64(t2))
+}
