@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -14,7 +15,7 @@ import (
 	"github.com/jclark/gps2phc/ubx"
 )
 
-const DEV = "/dev/ttyUSB0"
+var serialDev string
 
 type Syncer struct {
 	clk   *phc.Clock
@@ -24,6 +25,8 @@ type Syncer struct {
 }
 
 func main() {
+	flag.StringVar(&serialDev, "s", "/dev/ttyUSB0", "device for serial connection to GPS")
+	flag.Parse()
 	cx := cancelOnInterrupt()
 	s, err := newSyncer(cx)
 	if err != nil {
@@ -68,7 +71,7 @@ func newSyncer(cx context.Context) (r *Syncer, err error) {
 	if err != nil {
 		return nil, err
 	}
-	s.port, s.ubxCh, err = serStart(cx, DEV)
+	s.port, s.ubxCh, err = serStart(cx, serialDev)
 	if err != nil {
 		return
 	}
@@ -90,7 +93,7 @@ func doSync(s *Syncer) {
 			}
 		case u, ok := <-ubxCh:
 			if ok {
-				fmt.Printf("ubx event: %s %+v\n", u.ClsId(), u.Payload())
+				fmt.Printf("ubx-%s %+v\n", u.ClsId(), u.Payload())
 				if u.ClsId() == ubx.NavTimeGPSId {
 					data := u.Payload().(*ubx.NavTimeGPSPayload)
 					fmt.Printf("TAI time: %v\n", tai.GPS(data.Week, data.ITOW))
@@ -103,7 +106,7 @@ func doSync(s *Syncer) {
 }
 
 func serStart(cx context.Context, path string) (*serial.Port, chan ubx.Msg, error) {
-	p, err := serial.Raw(DEV)
+	p, err := serial.Raw(path)
 	if err != nil {
 		return nil, nil, err
 	}
