@@ -77,6 +77,21 @@ type NavTimeUTCPayload struct {
 	Valid byte
 }
 
+type NavTimeLSPayload struct {
+	ITOW          uint32
+	Version       byte
+	_             [3]byte
+	SrcOfCurrLS   byte
+	CurrLS        byte
+	SrcOfLSChange byte
+	LSChange      int8
+	TimeToLSEvent int32
+	DateOfLSGPSWN uint16
+	DateOfLSGPSDN uint16
+	_             [3]byte
+	Valid         byte
+}
+
 type TimTPPayload struct {
 	TowMS    uint32
 	TowSubMS uint32
@@ -90,6 +105,7 @@ const (
 	NavTimeGPSId ClsId = clsNav | 0x20
 	NavTimeUTCId ClsId = clsNav | 0x21
 	NavTimeBDSId ClsId = clsNav | 0x24
+	NavTimeLSId  ClsId = clsNav | 0x26
 	TimTPId      ClsId = clsTim | 0x01
 )
 
@@ -97,6 +113,7 @@ func init() {
 	regMsg[NavTimeGPSPayload](NavTimeGPSId, "timegps")
 	regMsg[NavTimeBDSPayload](NavTimeBDSId, "timebds")
 	regMsg[NavTimeUTCPayload](NavTimeUTCId, "timeutc")
+	regMsg[NavTimeLSPayload](NavTimeLSId, "timels")
 	regMsg[TimTPPayload](TimTPId, "tp")
 }
 
