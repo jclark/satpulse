@@ -45,6 +45,12 @@ func (cid ClsId) String() string {
 	return fmt.Sprintf("%04x", uint16(cid))
 }
 
+// Used for both AckAck and AckNak
+type AckPayload struct {
+	ClsId byte
+	MsgId byte
+}
+
 type NavTimeGPSPayload struct {
 	ITOW  uint32
 	FTOW  int32
@@ -101,20 +107,38 @@ type TimTPPayload struct {
 	RefInfo  byte
 }
 
+type TimSvInPayload struct {
+	Dur    uint32
+	MeanX  int32
+	MeanY  int32
+	MeanZ  int32
+	MeanV  uint32
+	Obs    uint32
+	Valid  byte
+	Active byte
+	_      [2]byte
+}
+
 const (
+	AckNakId     ClsId = clsAck
+	AckAckId     ClsId = clsAck | 0x01
 	NavTimeGPSId ClsId = clsNav | 0x20
 	NavTimeUTCId ClsId = clsNav | 0x21
 	NavTimeBDSId ClsId = clsNav | 0x24
 	NavTimeLSId  ClsId = clsNav | 0x26
 	TimTPId      ClsId = clsTim | 0x01
+	TimSvInId    ClsId = clsTim | 0x04
 )
 
 func init() {
+	regMsg[AckPayload](AckAckId, "ack")
+	regMsg[AckPayload](AckNakId, "nak")
 	regMsg[NavTimeGPSPayload](NavTimeGPSId, "timegps")
 	regMsg[NavTimeBDSPayload](NavTimeBDSId, "timebds")
 	regMsg[NavTimeUTCPayload](NavTimeUTCId, "timeutc")
 	regMsg[NavTimeLSPayload](NavTimeLSId, "timels")
 	regMsg[TimTPPayload](TimTPId, "tp")
+	regMsg[TimSvInPayload](TimSvInId, "svin")
 }
 
 type MsgData[P any] struct {
