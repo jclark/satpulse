@@ -170,7 +170,7 @@ func ParseMsg(frame []byte) (Msg, error) {
 	clsId := (ClsId(frame[2]) << 8) | ClsId(frame[3])
 	ctor := msgMap[clsId]
 	if ctor == nil {
-		fmt.Printf("unknown UBX message %s\n", clsId)
+		// fmt.Printf("unknown UBX message %s\n", clsId)
 		return nil, nil
 	}
 	msg := ctor()
