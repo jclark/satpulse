@@ -38,6 +38,10 @@ func (t Time) String() string {
 	return fmt.Sprintf("%d.%09d", n/1e9, n%1e9)
 }
 
+func (t Time) IsZero() bool {
+	return int64(t) == 0
+}
+
 func (t Time) Add(d time.Duration) Time {
 	return Time(int64(t) + int64(d))
 }
