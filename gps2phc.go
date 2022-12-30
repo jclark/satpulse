@@ -128,12 +128,3 @@ func serStart(cx context.Context, path string) (*serial.Port, chan GpsMsg, error
 	go serReadWorker(cx, p, c)
 	return p, c, nil
 }
-
-type Servo struct {
-	clk *phc.Clock
-}
-
-func (s *Servo) Sample(master tai.Time, slave tai.Time) {
-	off := master.Sub(slave)
-	fmt.Printf("Servo: GPS  %v, PHC %v, master offset: %v\n", master, slave, off)
-}
