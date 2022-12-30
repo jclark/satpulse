@@ -75,8 +75,10 @@ func newSyncer(cx context.Context) (r *Syncer, err error) {
 	if err != nil {
 		return
 	}
-	servo := new(Servo)
-	servo.clk = s.clk
+	servo, err := NewServo(s.clk)
+	if err != nil {
+		return nil, err
+	}
 	corr := new(Correlator)
 	corr.servo = servo
 
