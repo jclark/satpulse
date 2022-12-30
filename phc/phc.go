@@ -101,13 +101,34 @@ func (clk *Clock) AdjTime(d time.Duration) error {
 	tx.Modes = unix2.ADJ_SETOFFSET | unix2.ADJ_NANO
 	tx.Time.Sec = secs
 	tx.Time.Usec = nsecs
-	_, err := clk.adjtimex(&tx, "SETOFFSET")
+	_, err := clk.adjtimex(&tx, "(ADJ_SETOFFSET)")
+	return err
+}
+
+func (clk *Clock) FreqAdj() (float64, error) {
+	tx, err := clk.timexRead()
+	if err != nil {
+		return 0, err
+	}
+	// A tx.Freq of 1 means 2^-16 ppm
+	return float64(tx.Freq) / 65.536, nil
+}
+
+func (clk *Clock) SetFreqAdj(fa float64) error {
+	tx := unix.Timex{}
+	tx.Modes = unix2.ADJ_FREQUENCY
+	newFreq := int64(fa * 65.536)
+	tx.Freq = newFreq
+	_, err := clk.adjtimex(&tx, "(ADJ_FREQUENCY)")
+	if tx.Freq != newFreq {
+		return fmt.Errorf("error freq setting freq to %vppb (got %v)", fa, float64(tx.Freq)/65.536)
+	}
 	return err
 }
 
 // Maximum supported frequency adjustment in parts per billion
-func (clk *Clock) MaxFreqAdj() int32 {
-	return clk.caps.Max_adj
+func (clk *Clock) MaxFreqAdj() float64 {
+	return float64(clk.caps.Max_adj)
 }
 
 func (clk *Clock) getCaps() error {
@@ -115,9 +136,18 @@ func (clk *Clock) getCaps() error {
 	return clk.wrapErr(unix2.IoctlPTPClockGetCaps(clk.fd, clk.caps), "ioctl(PTP_CLOCK_GETCAPS)")
 }
 
-func (clk *Clock) adjtimex(timex *unix.Timex, mode string) (int, error) {
+func (clk *Clock) timexRead() (*unix.Timex, error) {
+	tx := unix.Timex{}
+	_, err := clk.adjtimex(&tx, "")
+	if err != nil {
+		return nil, err
+	}
+	return &tx, nil
+}
+
+func (clk *Clock) adjtimex(timex *unix.Timex, opSuffix string) (int, error) {
 	state, err := unix2.ClockAdjtime(clk.clockId(), timex)
-	return state, clk.wrapErr(err, "clock_adjtime ADJ_"+mode)
+	return state, clk.wrapErr(err, "clock_adjtime"+opSuffix)
 }
 
 const clockfd = 3
