@@ -67,7 +67,7 @@ type trainState struct {
 	local1 tai.Time
 }
 
-const trainPeriod = time.Second * 8
+const trainPeriod = time.Second * 15
 
 func (s *trainState) sample(ref, local tai.Time) {
 	if s.ref1.IsZero() {
@@ -80,10 +80,21 @@ func (s *trainState) sample(ref, local tai.Time) {
 	if localPeriod < trainPeriod {
 		return
 	}
-	ratio := float64(refPeriod) / float64(localPeriod)
 	freqAdj := s.servo.freqAdj
+	fmt.Printf("cur freqAdj %v\n", freqAdj)
+	/*
+		Semantics of freqAdj in ppb is that a period that the local clock measured with freqAdj 0 as N seconds
+		will be measured with freqAdj A as N*F seconds where F is (1e9 + A)/1e9.
 
-	freqAdj = ((1e9 + freqAdj) * ratio) - 1e9
+		We know that N*F1 = (L2 - L1) where N is the time that the unadjusted clock would measure and L1, L2 are the
+		local clocks at the beginning and end of the period and F1 is (1e9 + A1)/1e9, where A1 is current freqAdj.
+		We want to find F2 such that N*F2 = (R2 - R1).
+		So we have (L2 - L1)/F1 = (R2 - R1)/F2. So F2 = F1*(R2 - R1)/(L2 - L1)
+		So A2 = (A1 + 1e9)*(R2 - R1)/(L2 - L1) - 1e9
+	*/
+
+	ratio := float64(refPeriod) / float64(localPeriod)
+	freqAdj = (1e9+freqAdj)*ratio - 1e9
 
 	fmt.Printf("new freqAdj %v\n", freqAdj)
 	s.servo.setFreqAdj(freqAdj)
