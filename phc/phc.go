@@ -90,7 +90,10 @@ func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) error {
 	return clk.wrapErr(unix2.IoctlPTPExttsRequest(clk.fd, &er), "ioctl(PTP_EXTTS_REQUEST)")
 }
 
+const i210SetOffsetFudge = time.Nanosecond * 4600
+
 func (clk *Clock) AdjTime(d time.Duration) error {
+	d += i210SetOffsetFudge
 	secs := int64(d) / 1e9
 	nsecs := int64(d) % 1e9
 	if nsecs < 0 {
