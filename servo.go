@@ -10,27 +10,27 @@ import (
 
 type Servo struct {
 	clk        *phc.Clock
-	cur        state
-	train      state
-	normal     state
+	cur        sampler
+	reset      sampler
+	piControl  sampler
 	freqAdj    float64
 	maxFreqAdj float64
 }
 
-type state interface {
+type sampler interface {
 	sample(ref, local tai.Time)
 }
 
 func NewServo(clk *phc.Clock) (*Servo, error) {
 	s := Servo{}
 	s.clk = clk
-	trainState := new(trainState)
-	normalState := new(normalState)
-	trainState.servo = &s
-	normalState.servo = &s
-	s.normal = normalState
-	s.train = trainState
-	s.cur = s.train
+	rst := new(resetter)
+	pi := new(piController)
+	rst.servo = &s
+	pi.servo = &s
+	s.piControl = pi
+	s.reset = rst
+	s.cur = s.reset
 	freqAdj, err := clk.FreqAdj()
 	if err != nil {
 		return nil, err
@@ -53,23 +53,23 @@ func (s *Servo) setFreqAdj(fa float64) {
 	s.freqAdj = fa
 }
 
-type normalState struct {
+type piController struct {
 	servo *Servo
 }
 
-func (s *normalState) sample(ref, local tai.Time) {
+func (s *piController) sample(ref, local tai.Time) {
 
 }
 
-type trainState struct {
+const observePeriod = time.Second * 15
+
+type resetter struct {
 	servo  *Servo
 	ref1   tai.Time
 	local1 tai.Time
 }
 
-const trainPeriod = time.Second * 15
-
-func (s *trainState) sample(ref, local tai.Time) {
+func (s *resetter) sample(ref, local tai.Time) {
 	if s.ref1.IsZero() {
 		s.ref1 = ref
 		s.local1 = local
@@ -77,7 +77,7 @@ func (s *trainState) sample(ref, local tai.Time) {
 	}
 	refPeriod := ref.Sub(s.ref1)
 	localPeriod := local.Sub(s.local1)
-	if localPeriod < trainPeriod {
+	if localPeriod < observePeriod {
 		return
 	}
 	freqAdj := s.servo.freqAdj
@@ -98,5 +98,5 @@ func (s *trainState) sample(ref, local tai.Time) {
 
 	fmt.Printf("new freqAdj %v\n", freqAdj)
 	s.servo.setFreqAdj(freqAdj)
-	s.servo.cur = s.servo.normal
+	s.servo.cur = s.servo.piControl
 }
