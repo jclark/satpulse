@@ -162,7 +162,6 @@ func NewMsg[P any](clsId ClsId) Msg {
 
 func regMsg[P any](clsId ClsId, idName string) {
 	msgMap[clsId] = func() Msg { return NewMsg[P](clsId) }
-	fmt.Printf("initialized %04x\n", uint16(clsId))
 	idNameMap[clsId] = idName
 }
 
