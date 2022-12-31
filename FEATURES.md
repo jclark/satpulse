@@ -7,7 +7,7 @@
 UBX-TIM-TP gives the quantization error of time pulse: i.e. how many nanoseconds the PPS is off
 from the top of the second.
 
-(I think the fTOW field of UBX-NAV-TIMEGPS has similar information.)
+(ATGM332D looks like it uses fTOW field of UBX-NAV-TIMEGPS to convey quantization error.)
 
 ### Get time from GPS in TAI
 
@@ -24,6 +24,9 @@ We can see what NIC we have and know about its limitations.
    - loss of carrier (listen to netlink events)
    - losing pulses when reading from PHC
 - for i210 deal with timestamping both edges (we can use UBX to get the length of the time pulse)
+
+ADJ_SETOFFSET does not work precisely (just does a read and a write). We can measure the delay and
+then use this to get things adjusted quicker.
 
 ### Deal with GPS flakiness
 
@@ -76,7 +79,7 @@ for the worse in the antenna status (loss of power, jamming, short).
 
 ### GPS signal quality
 
-Keep track of how many satellites in view from various constellations and what the signal quality is.
+Keep track of how many satellites are in view from various constellations and what the signal quality is.
 
 ## Configuration
 
@@ -93,4 +96,9 @@ Maybe leave some of this to a separate tool such as https://github.com/phkehl/ub
 U-blox's u-center tool allows a network connection to a GPS on a remote machine. Typically this would be used in conjunction with ser2net, which would be used on the remote machine to expose the serial port over TCP.
 
 We could include this functionality so that we can configure and monitor the GPS using UBX tool at the same time as we are using it for time sync. In this mode, we would do some initial configuration of the GPS, but thereafter we would not send any messages to the GPS; instead we would monitor the messages being sent to the remote tool and interpret those we know about.
+
+## System clock synchronization
+
+Although logically this is separate, I think it will be convenient for this to be handled by the same program.
+We should work with chrony, probably via SOCK protocol.
 

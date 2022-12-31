@@ -20,20 +20,19 @@ Things to make minimal working program
 Improvements in existing functionality
 
 * Run race checker
-* Make correlate deal with one edge per pulse
+* Make goodEdge in correlate deal with one edge per pulse
 * After stepping clock, wait for next epoch
 * Generate multiple samples when initial correlation phase completes (but mark as delayed)
 * Use system clock for sanity checking
 * ADJ_SETOFFSET does a read and then a write: measure the delay, and then apply that to subsequent sets
-* Ensure we can shutdown even if read of pulses is blocked 
-* Try to use Go's polling (i.e. os layer instead of unix layer)
 * Compute checksums for
    * UBX
    * NMEA
 * Proper logging strategy (get rid of printf's)
 * Proper cleanup when wiring up all the objects
 * Testing
-* Use NMEA is that's all we get
+* Use NMEA if that's all we get
+* Link bounds for pulse sanity check to amount of frequency adjustment
 
 New functionality
 1. Quantify error

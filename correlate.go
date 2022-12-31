@@ -96,6 +96,7 @@ func (c *Correlator) nextEdge(gps TimeReading) int {
 }
 
 func (c *Correlator) goodEdge(gps TimeReading) int {
+	// XXX single edge case
 	if len(c.edges) < 7 {
 		return -1
 	}
@@ -154,7 +155,6 @@ func alternate(edges []EpochTimeReading) (edges1, edges2 []EpochTimeReading) {
 
 func IsSane(master1, master2 TimeReading, slave1, slave2 EpochTimeReading) bool {
 	masterDiff := master2.T.Sub(master1.T)
-	// This won't work if we are adjusting the slave clock
 	if slave1.Epoch == slave2.Epoch && !slave1.Epoch.Ambig() {
 		return slave1.T.Add(masterDiff).Sub(slave2.T).Abs() <= time.Second/100
 	} else {
