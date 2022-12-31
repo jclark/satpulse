@@ -2,8 +2,10 @@ package phc
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/jclark/gps2phc/unix2"
@@ -14,6 +16,16 @@ type Clock struct {
 	fd   int
 	path string
 	caps *unix2.PTPClockCaps
+	// Must be accessed only through epoch and incEpoch functions
+	epoch_ uint64
+}
+
+type Epoch uint64
+
+const InitialEpoch = Epoch(math.MaxUint64)
+
+func (e Epoch) Ambig() bool {
+	return (e & 1) != 0
 }
 
 type TsEvent struct {
@@ -21,11 +33,12 @@ type TsEvent struct {
 	ChanIndex uint32
 	TRead     time.Time
 	Err       error
+	Epoch     Epoch
 }
 
 func New(path string) (*Clock, error) {
 	// clock_adjtime needs RDWR
-	fd, err := unix.Open(path, unix.O_RDWR, 0)
+	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, &os.PathError{
 			Path: path,
@@ -46,6 +59,7 @@ func New(path string) (*Clock, error) {
 }
 
 func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- TsEvent) {
+	epoch := InitialEpoch
 	var bytes [unix2.SizeofPTPExttsEvent]byte
 	buf := bytes[:]
 Loop:
@@ -55,15 +69,30 @@ Loop:
 			break Loop
 		default:
 		}
+		pollFds := make([]unix.PollFd, 1)
+		pollFds[0].Fd = int32(clk.fd)
+		pollFds[0].Events = unix.POLLIN | unix.POLLPRI
+		nFds, _ := unix.Poll(pollFds, 100)
+		if nFds == 0 {
+			epoch = clk.epoch()
+			continue
+		}
 		event := TsEvent{}
-		// XXX think we need to do a poll here, so we don't end up blocking forever
-		// if timestamps stop happening
 		n, err := unix.Read(clk.fd, buf)
 		if err != nil {
 			event.Err = clk.wrapErr(err, "read")
 		} else if n != unix2.SizeofPTPExttsEvent {
 			event.Err = clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
 		} else {
+			event.Epoch = clk.epoch()
+			if event.Epoch != epoch && !event.Epoch.Ambig() {
+				if epoch.Ambig() {
+					event.Epoch = epoch
+				} else {
+					// make it ambiguous between the two
+					event.Epoch = epoch + 1
+				}
+			}
 			event.TRead = time.Now()
 			ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
 			event.T = unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)}
@@ -73,6 +102,7 @@ Loop:
 	close(tsEvents)
 }
 
+// This is only safe when any ReadWorker has closed its tsEvents channel
 func (clk *Clock) Close() error {
 	return clk.wrapErr(unix.Close(clk.fd), "close")
 }
@@ -90,10 +120,7 @@ func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) error {
 	return clk.wrapErr(unix2.IoctlPTPExttsRequest(clk.fd, &er), "ioctl(PTP_EXTTS_REQUEST)")
 }
 
-const i210SetOffsetFudge = time.Nanosecond * 4600
-
-func (clk *Clock) AdjTime(d time.Duration) error {
-	d += i210SetOffsetFudge
+func (clk *Clock) AdjTime(d time.Duration) (Epoch, error) {
 	secs := int64(d) / 1e9
 	nsecs := int64(d) % 1e9
 	if nsecs < 0 {
@@ -104,8 +131,21 @@ func (clk *Clock) AdjTime(d time.Duration) error {
 	tx.Modes = unix2.ADJ_SETOFFSET | unix2.ADJ_NANO
 	tx.Time.Sec = secs
 	tx.Time.Usec = nsecs
+	clk.incEpoch()
 	_, err := clk.adjtimex(&tx, "(ADJ_SETOFFSET)")
-	return err
+	epoch := clk.incEpoch()
+	if err != nil {
+		epoch = 0
+	}
+	return epoch, err
+}
+
+func (clk *Clock) incEpoch() Epoch {
+	return Epoch(atomic.AddUint64(&clk.epoch_, 1))
+}
+
+func (clk *Clock) epoch() Epoch {
+	return Epoch(atomic.LoadUint64(&clk.epoch_))
 }
 
 func (clk *Clock) FreqAdj() (float64, error) {

@@ -9,6 +9,8 @@ import (
 	"github.com/jclark/gps2phc/tai"
 )
 
+const i210SetOffsetFudge = time.Nanosecond * 4600
+
 type Servo struct {
 	clk        *phc.Clock
 	cur        sampler
@@ -19,7 +21,7 @@ type Servo struct {
 }
 
 type sampler interface {
-	sample(ref, local tai.Time)
+	sample(ref, local tai.Time, epoch phc.Epoch)
 }
 
 func NewServo(clk *phc.Clock) (*Servo, error) {
@@ -41,10 +43,10 @@ func NewServo(clk *phc.Clock) (*Servo, error) {
 	return &s, nil
 }
 
-func (s *Servo) Sample(ref, local tai.Time) {
+func (s *Servo) Sample(ref, local tai.Time, epoch phc.Epoch) {
 	off := local.Sub(ref)
 	fmt.Printf("Servo: GPS  %v, PHC %v, master offset: %v\n", ref, local, off)
-	s.cur.sample(ref, local)
+	s.cur.sample(ref, local, epoch)
 }
 
 func (s *Servo) setFreqAdj(fa float64) {
@@ -56,19 +58,21 @@ func (s *Servo) setFreqAdj(fa float64) {
 	s.freqAdj = fa
 }
 
-func (s *Servo) adjTime(off time.Duration) {
-	err := s.clk.AdjTime(off)
+func (s *Servo) adjTime(off time.Duration) phc.Epoch {
+	off += i210SetOffsetFudge
+	epoch, err := s.clk.AdjTime(off)
 	fmt.Printf("stepped clock by %v\n", off)
 	if err != nil {
 		fmt.Printf("error adjusting time: %+v\n", err)
 	}
+	return epoch
 }
 
 type piController struct {
 	servo *Servo
 }
 
-func (s *piController) sample(ref, local tai.Time) {
+func (s *piController) sample(ref, local tai.Time, epoch phc.Epoch) {
 
 }
 
@@ -80,7 +84,7 @@ type resetter struct {
 	local1 tai.Time
 }
 
-func (r *resetter) sample(ref, local tai.Time) {
+func (r *resetter) sample(ref, local tai.Time, epoch phc.Epoch) {
 	if r.ref1.IsZero() {
 		r.ref1 = ref
 		r.local1 = local
@@ -111,7 +115,8 @@ func (r *resetter) sample(ref, local tai.Time) {
 	fmt.Printf("new freqAdj %v\n", freqAdj)
 	r.servo.setFreqAdj(freqAdj)
 
-	r.servo.adjTime(ref.Sub(local))
+	nextEpoch := r.servo.adjTime(ref.Sub(local))
+	fmt.Printf("Adjusted time new epoch %v\n", nextEpoch)
 
 	r.servo.cur = r.servo.piControl
 }

@@ -17,7 +17,7 @@ func StartPPS(cx context.Context, clk *phc.Clock) (<-chan phc.TsEvent, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = clk.ExttsEnable(chanIndex, false)
+	err = clk.ExttsEnable(chanIndex, true)
 	if err != nil {
 		return nil, err
 	}

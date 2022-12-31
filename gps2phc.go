@@ -66,11 +66,13 @@ func newSyncer(cx context.Context) (r *Syncer, err error) {
 	if err != nil {
 		return
 	}
-	// XXX errors after this need to deal with running PPS goroutine
-	err = SkipStale(s.clk, s.tsCh)
-	if err != nil {
-		return nil, err
-	}
+	/*
+		// XXX errors after this need to deal with running PPS goroutine
+		err = SkipStale(s.clk, s.tsCh)
+		if err != nil {
+			return nil, err
+		}
+	*/
 	s.port, s.gpsCh, err = serStart(cx, serialDev)
 	if err != nil {
 		return
@@ -92,11 +94,20 @@ func doSync(s *Syncer) {
 	tsCh := s.tsCh
 	gpsCh := s.gpsCh
 	corr := s.corr
+	nSkipped := 0
 	for tsCh != nil || gpsCh != nil {
 		select {
 		case e, ok := <-tsCh:
 			if ok {
-				corr.ppsEdge(TimeReading{T: tai.Timespec(e.T), TRead: e.TRead})
+				if e.Epoch == phc.InitialEpoch {
+					nSkipped++
+				} else {
+					if nSkipped > 0 {
+						fmt.Printf("skipped %d stale stamps\n", nSkipped)
+						nSkipped = 0
+					}
+					corr.ppsEdge(tai.Timespec(e.T), e.TRead, e.Epoch)
+				}
 			} else {
 				tsCh = nil
 			}
@@ -106,7 +117,7 @@ func doSync(s *Syncer) {
 				switch u.ClsId() {
 				case ubx.NavTimeGPSId:
 					data := u.Payload().(*ubx.NavTimeGPSPayload)
-					corr.gpsTime(TimeReading{T: tai.GPS(data.Week, data.ITOW), TRead: g.TRead})
+					corr.gpsTime(tai.GPS(data.Week, data.ITOW), g.TRead)
 				default:
 					//fmt.Printf("ubx-%s %+v\n", u.ClsId(), u.Payload())
 				}

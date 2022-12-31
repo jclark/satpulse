@@ -19,8 +19,9 @@ Things to make minimal working program
 
 Improvements in existing functionality
 
+* Run race checker
 * Make correlate deal with one edge per pulse
-* Make the correlate code deal with the PHC time being stepped (how to sync)
+* After stepping clock, wait for next epoch
 * Generate multiple samples when initial correlation phase completes (but mark as delayed)
 * Use system clock for sanity checking
 * ADJ_SETOFFSET does a read and then a write: measure the delay, and then apply that to subsequent sets

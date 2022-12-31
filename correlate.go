@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/jclark/gps2phc/phc"
 	"github.com/jclark/gps2phc/tai"
 )
 
@@ -11,13 +13,18 @@ type TimeReading struct {
 	TRead time.Time
 }
 
+type EpochTimeReading struct {
+	TimeReading
+	Epoch phc.Epoch
+}
+
 func (tr *TimeReading) IsZero() bool {
 	return tr.TRead.IsZero()
 }
 
 type Correlator struct {
 	servo *Servo
-	edges []TimeReading
+	edges []EpochTimeReading
 	// if non-zero, a GPS reading that we haven't yet found an edge for
 	gpsPending TimeReading
 	// if non-Zero corresponds to edges[0]
@@ -29,11 +36,12 @@ type Correlator struct {
 
 func (c *Correlator) emitEdge(i int, gps TimeReading) {
 	c.edges = c.edges[i:]
-	c.servo.Sample(gps.T, c.edges[0].T)
+	c.servo.Sample(gps.T, c.edges[0].T, c.edges[0].Epoch)
 	c.gpsSampled = gps
 }
 
-func (c *Correlator) gpsTime(tr TimeReading) {
+func (c *Correlator) gpsTime(t tai.Time, tRead time.Time) {
+	tr := TimeReading{T: t, TRead: tRead}
 	i := c.nextEdge(tr)
 	if i >= 0 {
 		c.emitEdge(i, tr)
@@ -46,12 +54,14 @@ func (c *Correlator) gpsTime(tr TimeReading) {
 		}
 		return
 	}
+	fmt.Println("no edge found")
 	c.gpsPending = tr
 }
 
 const maxEdges = 8
 
-func (c *Correlator) ppsEdge(tr TimeReading) {
+func (c *Correlator) ppsEdge(t tai.Time, tRead time.Time, epoch phc.Epoch) {
+	tr := EpochTimeReading{TimeReading{T: t, TRead: tRead}, epoch}
 	c.edges = append(c.edges, tr)
 	// The PPS edge arrives just after GPS (weird but maybe just possible)
 	if !c.gpsPending.IsZero() {
@@ -72,13 +82,13 @@ func (c *Correlator) nextEdge(gps TimeReading) int {
 		return -1
 	}
 	// This is the expected case
-	if IsSane(c.gpsSampled, c.edges[0], gps, c.edges[c.edgesPerPulse]) {
+	if IsSane(c.gpsSampled, gps, c.edges[0], c.edges[c.edgesPerPulse]) {
 		return c.edgesPerPulse
 	}
 	for i := 1; i < len(c.edges); i++ {
 		// Should do some more sanity testing here
 		// XXX how to deal with both edges here
-		if IsSane(c.gpsSampled, c.edges[0], gps, c.edges[i]) {
+		if IsSane(c.gpsSampled, gps, c.edges[0], c.edges[i]) {
 			return i
 		}
 	}
@@ -116,7 +126,7 @@ func (c *Correlator) goodEdge(gps TimeReading) int {
 	return last
 }
 
-func variation(edges []TimeReading) time.Duration {
+func variation(edges []EpochTimeReading) time.Duration {
 	min := edges[1].T.Sub(edges[0].T)
 	max := min
 	for i := 2; i < len(edges); i++ {
@@ -131,7 +141,7 @@ func variation(edges []TimeReading) time.Duration {
 	return max - min
 }
 
-func alternate(edges []TimeReading) (edges1, edges2 []TimeReading) {
+func alternate(edges []EpochTimeReading) (edges1, edges2 []EpochTimeReading) {
 	for i := 0; i < len(edges); i++ {
 		if i%2 == 0 {
 			edges1 = append(edges1, edges[i])
@@ -142,11 +152,12 @@ func alternate(edges []TimeReading) (edges1, edges2 []TimeReading) {
 	return
 }
 
-func IsSane(master1, slave1, master2, slave2 TimeReading) bool {
+func IsSane(master1, master2 TimeReading, slave1, slave2 EpochTimeReading) bool {
 	masterDiff := master2.T.Sub(master1.T)
 	// This won't work if we are adjusting the slave clock
-	if slave1.T.Add(masterDiff).Sub(slave2.T).Abs() <= time.Second/100 {
-		return true
+	if slave1.Epoch == slave2.Epoch && !slave1.Epoch.Ambig() {
+		return slave1.T.Add(masterDiff).Sub(slave2.T).Abs() <= time.Second/100
+	} else {
+		return slave1.TRead.Add(masterDiff).Sub(slave2.TRead).Abs() <= time.Second/20
 	}
-	return false
 }
