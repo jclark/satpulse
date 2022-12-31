@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jclark/gps2phc/phc"
@@ -46,6 +47,7 @@ func (s *Servo) Sample(ref, local tai.Time) {
 }
 
 func (s *Servo) setFreqAdj(fa float64) {
+	fa = clamp(fa, s.maxFreqAdj)
 	err := s.clk.SetFreqAdj(fa)
 	if err != nil {
 		fmt.Printf("error adjusting frequency: %+v\n", err)
@@ -99,4 +101,14 @@ func (s *resetter) sample(ref, local tai.Time) {
 	fmt.Printf("new freqAdj %v\n", freqAdj)
 	s.servo.setFreqAdj(freqAdj)
 	s.servo.cur = s.servo.piControl
+}
+
+func clamp(v, max float64) float64 {
+	if math.Abs(v) <= max {
+		return v
+	}
+	if v < 0 {
+		return -max
+	}
+	return max
 }
