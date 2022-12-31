@@ -12,8 +12,6 @@ Things to make minimal working program
 3. Catch signals and cleanup
 4. Command-line args (at least for serial)
 5. Correlate pulse edges with GPS readings
-   * work with one edge per pulse
-   * work with two edges per pulse
 6. Adjust PHC
    1. initial adjust phase
    2. initial adjust freq
@@ -21,13 +19,20 @@ Things to make minimal working program
 
 Improvements in existing functionality
 
-1. Compute checksums for
-   1. UBX
-   2. NMEA
-2. Proper logging strategy (get rid of printf's)
-3. Proper cleanup when wiring up all the objects
-4. Testing
-5. Use NMEA is that's all we get
+* Make correlate deal with one edge per pulse
+* Make the correlate code deal with the PHC time being stepped (how to sync)
+* Generate multiple samples when initial correlation phase completes (but mark as delayed)
+* Use system clock for sanity checking
+* ADJ_SETOFFSET does a read and then a write: measure the delay, and then apply that to subsequent sets
+* Ensure we can shutdown even if read of pulses is blocked 
+* Try to use Go's polling (i.e. os layer instead of unix layer)
+* Compute checksums for
+   * UBX
+   * NMEA
+* Proper logging strategy (get rid of printf's)
+* Proper cleanup when wiring up all the objects
+* Testing
+* Use NMEA is that's all we get
 
 New functionality
 1. Quantify error
