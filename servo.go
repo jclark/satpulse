@@ -37,6 +37,7 @@ func NewServo(clk *phc.Clock) (*Servo, error) {
 		return nil, err
 	}
 	s.freqAdj = freqAdj
+	s.maxFreqAdj = clk.MaxFreqAdj()
 	return &s, nil
 }
 
@@ -55,6 +56,14 @@ func (s *Servo) setFreqAdj(fa float64) {
 	s.freqAdj = fa
 }
 
+func (s *Servo) adjTime(off time.Duration) {
+	err := s.clk.AdjTime(off)
+	fmt.Printf("stepped clock by %v\n", off)
+	if err != nil {
+		fmt.Printf("error adjusting time: %+v\n", err)
+	}
+}
+
 type piController struct {
 	servo *Servo
 }
@@ -63,7 +72,7 @@ func (s *piController) sample(ref, local tai.Time) {
 
 }
 
-const observePeriod = time.Second * 15
+const observePeriod = time.Second * 8
 
 type resetter struct {
 	servo  *Servo
@@ -71,18 +80,19 @@ type resetter struct {
 	local1 tai.Time
 }
 
-func (s *resetter) sample(ref, local tai.Time) {
-	if s.ref1.IsZero() {
-		s.ref1 = ref
-		s.local1 = local
+func (r *resetter) sample(ref, local tai.Time) {
+	if r.ref1.IsZero() {
+		r.ref1 = ref
+		r.local1 = local
 		return
 	}
-	refPeriod := ref.Sub(s.ref1)
-	localPeriod := local.Sub(s.local1)
+	refPeriod := ref.Sub(r.ref1)
+	localPeriod := local.Sub(r.local1)
 	if localPeriod < observePeriod {
 		return
 	}
-	freqAdj := s.servo.freqAdj
+
+	freqAdj := r.servo.freqAdj
 	fmt.Printf("cur freqAdj %v\n", freqAdj)
 	/*
 		Semantics of freqAdj in ppb is that a period that the local clock measured with freqAdj 0 as N seconds
@@ -99,8 +109,11 @@ func (s *resetter) sample(ref, local tai.Time) {
 	freqAdj = (1e9+freqAdj)*ratio - 1e9
 
 	fmt.Printf("new freqAdj %v\n", freqAdj)
-	s.servo.setFreqAdj(freqAdj)
-	s.servo.cur = s.servo.piControl
+	r.servo.setFreqAdj(freqAdj)
+
+	r.servo.adjTime(ref.Sub(local))
+
+	r.servo.cur = r.servo.piControl
 }
 
 func clamp(v, max float64) float64 {
