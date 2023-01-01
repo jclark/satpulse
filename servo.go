@@ -9,8 +9,6 @@ import (
 	"github.com/jclark/gps2phc/tai"
 )
 
-const i210SetOffsetFudge = time.Nanosecond * 4600
-
 type Servo struct {
 	clk               *phc.Clock
 	sampler           sampler
@@ -74,12 +72,23 @@ func (s *Servo) adjTime(off time.Duration) phc.Epoch {
 }
 
 type piController struct {
-	servo *Servo
-	epoch phc.Epoch
+	servo  *Servo
+	epoch  phc.Epoch
+	offSum float64
 }
 
-func (s *piController) sample(ref, local tai.Time, epoch phc.Epoch) {
+const kp = 0.7
+const ki = 0.3
 
+func (p *piController) sample(ref, local tai.Time, epoch phc.Epoch) {
+	if epoch != p.epoch {
+		return
+	}
+	off := float64(local.Sub(ref))
+	p.offSum += off
+	out := kp*off + ki*p.offSum
+	fmt.Printf("off %v, offSum %v, out %v\n", off, p.offSum, out)
+	p.servo.setFreqAdj(-out)
 }
 
 const observePeriod = time.Second * 8
@@ -123,6 +132,7 @@ func (r *resetter) sample(ref, local tai.Time, epoch phc.Epoch) {
 
 	r.servo.comp.epoch = r.servo.adjTime(ref.Sub(local))
 	r.servo.sampler = r.servo.comp
+	r.servo.piControl.offSum = -freqAdj / ki
 }
 
 // A compensator compensates for the inaccuracy of ADJ_SETOFFSET.
