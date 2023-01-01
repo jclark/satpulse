@@ -77,6 +77,7 @@ type piController struct {
 	offSum float64
 }
 
+// the values here come from linuxptp
 const kp = 0.7
 const ki = 0.3
 
@@ -89,6 +90,10 @@ func (p *piController) sample(ref, local tai.Time, epoch phc.Epoch) {
 	out := kp*off + ki*p.offSum
 	fmt.Printf("off %v, offSum %v, out %v\n", off, p.offSum, out)
 	p.servo.setFreqAdj(-out)
+}
+
+func (p *piController) init(freqAdj float64) {
+	p.offSum = -freqAdj / ki
 }
 
 const observePeriod = time.Second * 8
@@ -132,7 +137,7 @@ func (r *resetter) sample(ref, local tai.Time, epoch phc.Epoch) {
 
 	r.servo.comp.epoch = r.servo.adjTime(ref.Sub(local))
 	r.servo.sampler = r.servo.comp
-	r.servo.piControl.offSum = -freqAdj / ki
+	r.servo.piControl.init(freqAdj)
 }
 
 // A compensator compensates for the inaccuracy of ADJ_SETOFFSET.
