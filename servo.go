@@ -12,12 +12,14 @@ import (
 const i210SetOffsetFudge = time.Nanosecond * 4600
 
 type Servo struct {
-	clk        *phc.Clock
-	cur        sampler
-	reset      sampler
-	piControl  sampler
-	freqAdj    float64
-	maxFreqAdj float64
+	clk               *phc.Clock
+	sampler           sampler
+	reset             *resetter
+	comp              *compensator
+	piControl         *piController
+	freqAdj           float64
+	maxFreqAdj        float64
+	adjSetOffsetDelay time.Duration
 }
 
 type sampler interface {
@@ -29,11 +31,14 @@ func NewServo(clk *phc.Clock) (*Servo, error) {
 	s.clk = clk
 	rst := new(resetter)
 	pi := new(piController)
+	comp := new(compensator)
 	rst.servo = &s
 	pi.servo = &s
+	comp.servo = &s
 	s.piControl = pi
 	s.reset = rst
-	s.cur = s.reset
+	s.comp = comp
+	s.sampler = rst
 	freqAdj, err := clk.FreqAdj()
 	if err != nil {
 		return nil, err
@@ -46,7 +51,7 @@ func NewServo(clk *phc.Clock) (*Servo, error) {
 func (s *Servo) Sample(ref, local tai.Time, epoch phc.Epoch) {
 	off := local.Sub(ref)
 	fmt.Printf("Servo: GPS  %v, PHC %v, master offset: %v\n", ref, local, off)
-	s.cur.sample(ref, local, epoch)
+	s.sampler.sample(ref, local, epoch)
 }
 
 func (s *Servo) setFreqAdj(fa float64) {
@@ -59,7 +64,7 @@ func (s *Servo) setFreqAdj(fa float64) {
 }
 
 func (s *Servo) adjTime(off time.Duration) phc.Epoch {
-	// off += i210SetOffsetFudge
+	off += s.adjSetOffsetDelay
 	epoch, err := s.clk.AdjTime(off)
 	fmt.Printf("stepped clock by %v\n", off)
 	if err != nil {
@@ -70,6 +75,7 @@ func (s *Servo) adjTime(off time.Duration) phc.Epoch {
 
 type piController struct {
 	servo *Servo
+	epoch phc.Epoch
 }
 
 func (s *piController) sample(ref, local tai.Time, epoch phc.Epoch) {
@@ -82,27 +88,12 @@ type resetter struct {
 	servo  *Servo
 	ref1   tai.Time
 	local1 tai.Time
-	epoch2 phc.Epoch
 }
 
 func (r *resetter) sample(ref, local tai.Time, epoch phc.Epoch) {
 	if r.ref1.IsZero() {
 		r.ref1 = ref
 		r.local1 = local
-		r.epoch2 = 0
-		return
-	}
-	if r.epoch2 != 0 {
-		if epoch != r.epoch2 {
-			return
-		}
-		off := ref.Sub(local)
-		fmt.Printf("adj_offset delay is %v\n", off)
-		// once to overcome previous delay, once for this delay
-		off += off
-		nextEpoch := r.servo.adjTime(off)
-		r.servo.cur = r.servo.piControl
-		fmt.Printf("Adjusted time again new epoch %v\n", nextEpoch)
 		return
 	}
 	refPeriod := ref.Sub(r.ref1)
@@ -130,8 +121,38 @@ func (r *resetter) sample(ref, local tai.Time, epoch phc.Epoch) {
 	fmt.Printf("new freqAdj %v\n", freqAdj)
 	r.servo.setFreqAdj(freqAdj)
 
-	r.epoch2 = r.servo.adjTime(ref.Sub(local))
+	r.servo.comp.epoch = r.servo.adjTime(ref.Sub(local))
+	r.servo.sampler = r.servo.comp
+}
 
+// A compensator compensates for the inaccuracy of ADJ_SETOFFSET.
+// In the ethernet drivers we are interested in, ADJ_SETOFFSET works by
+// reading a time value, applying a delta to the read value,
+// and then writing the value back. This takes time, which the drivers
+// don't attempt to compensate for. It's about 4.5 microseconds with an i210.
+// To compensate for this, after the resetter sets the time correctly, we look at the offset
+// between the next pulse of the PHC clock and the GPS time, and assume
+// that this is the delay. We then set the clock again compensating for
+// this delay.
+type compensator struct {
+	servo *Servo
+	epoch phc.Epoch
+}
+
+func (c *compensator) sample(ref, local tai.Time, epoch phc.Epoch) {
+	if epoch != c.epoch {
+		return
+	}
+	off := ref.Sub(local)
+	// this causes future calls to adjTime to be adjusted by this
+	c.servo.adjSetOffsetDelay = off
+	fmt.Printf("adj_setoffset delay is %v\n", off)
+	// this call will have the offset applied twice, once here
+	// and once in Servo.adjTime
+	nextEpoch := c.servo.adjTime(off)
+	fmt.Printf("adjusted time again new epoch %v\n", nextEpoch)
+	c.servo.piControl.epoch = nextEpoch
+	c.servo.sampler = c.servo.piControl
 }
 
 func clamp(v, max float64) float64 {
