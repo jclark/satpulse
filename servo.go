@@ -59,7 +59,7 @@ func (s *Servo) setFreqAdj(fa float64) {
 }
 
 func (s *Servo) adjTime(off time.Duration) phc.Epoch {
-	off += i210SetOffsetFudge
+	// off += i210SetOffsetFudge
 	epoch, err := s.clk.AdjTime(off)
 	fmt.Printf("stepped clock by %v\n", off)
 	if err != nil {
@@ -82,12 +82,27 @@ type resetter struct {
 	servo  *Servo
 	ref1   tai.Time
 	local1 tai.Time
+	epoch2 phc.Epoch
 }
 
 func (r *resetter) sample(ref, local tai.Time, epoch phc.Epoch) {
 	if r.ref1.IsZero() {
 		r.ref1 = ref
 		r.local1 = local
+		r.epoch2 = 0
+		return
+	}
+	if r.epoch2 != 0 {
+		if epoch != r.epoch2 {
+			return
+		}
+		off := ref.Sub(local)
+		fmt.Printf("adj_offset delay is %v\n", off)
+		// once to overcome previous delay, once for this delay
+		off += off
+		nextEpoch := r.servo.adjTime(off)
+		r.servo.cur = r.servo.piControl
+		fmt.Printf("Adjusted time again new epoch %v\n", nextEpoch)
 		return
 	}
 	refPeriod := ref.Sub(r.ref1)
@@ -115,10 +130,8 @@ func (r *resetter) sample(ref, local tai.Time, epoch phc.Epoch) {
 	fmt.Printf("new freqAdj %v\n", freqAdj)
 	r.servo.setFreqAdj(freqAdj)
 
-	nextEpoch := r.servo.adjTime(ref.Sub(local))
-	fmt.Printf("Adjusted time new epoch %v\n", nextEpoch)
+	r.epoch2 = r.servo.adjTime(ref.Sub(local))
 
-	r.servo.cur = r.servo.piControl
 }
 
 func clamp(v, max float64) float64 {
