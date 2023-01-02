@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/jclark/gps2phc/phc"
 	"github.com/jclark/gps2phc/serial"
@@ -118,6 +119,9 @@ func doSync(s *Syncer) {
 				case ubx.NavTimeGPSId:
 					data := u.Payload().(*ubx.NavTimeGPSPayload)
 					corr.gpsTime(tai.GPS(data.Week, data.ITOW), g.TRead)
+				case ubx.TimTPId:
+					data := u.Payload().(*ubx.TimTPPayload)
+					corr.ppsCorr(tai.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
 				default:
 					//fmt.Printf("ubx-%s %+v\n", u.ClsId(), u.Payload())
 				}
@@ -126,6 +130,13 @@ func doSync(s *Syncer) {
 			}
 		}
 	}
+}
+
+func Picoseconds(ps int32) time.Duration {
+	if ps < 0 {
+		return -Picoseconds(-ps)
+	}
+	return time.Duration(((ps + 500) / 1000))
 }
 
 func serStart(cx context.Context, path string) (*serial.Port, chan GpsMsg, error) {

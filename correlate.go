@@ -18,30 +18,42 @@ type EpochTimeReading struct {
 	Epoch phc.Epoch
 }
 
+type GpsTimeReading struct {
+	TimeReading
+	corr time.Duration
+}
+
+type PPSCorr struct {
+	T    tai.Time
+	Corr time.Duration
+}
+
 func (tr *TimeReading) IsZero() bool {
 	return tr.TRead.IsZero()
 }
 
 type Correlator struct {
-	servo *Servo
-	edges []EpochTimeReading
+	servo    *Servo
+	edges    []EpochTimeReading
+	ppsCorrs []PPSCorr
 	// if non-zero, a GPS reading that we haven't yet found an edge for
-	gpsPending TimeReading
+	gpsPending GpsTimeReading
 	// if non-Zero corresponds to edges[0]
 	// and edges per pulse must be 1 or 2
-	gpsSampled TimeReading
+	gpsSampled GpsTimeReading
 	// 0, 1 or 2 (0 means unknown)
 	edgesPerPulse int
 }
 
-func (c *Correlator) emitEdge(i int, gps TimeReading) {
+func (c *Correlator) emitEdge(i int, gps GpsTimeReading) {
 	c.edges = c.edges[i:]
-	c.servo.Sample(gps.T, c.edges[0].T, c.edges[0].Epoch)
+	c.servo.Sample(gps.T, c.edges[0].T.Add(gps.corr), c.edges[0].Epoch)
 	c.gpsSampled = gps
 }
 
 func (c *Correlator) gpsTime(t tai.Time, tRead time.Time) {
-	tr := TimeReading{T: t, TRead: tRead}
+
+	tr := GpsTimeReading{TimeReading{T: t, TRead: tRead}, c.getCorr(t)}
 	i := c.nextEdge(tr)
 	if i >= 0 {
 		c.emitEdge(i, tr)
@@ -68,15 +80,32 @@ func (c *Correlator) ppsEdge(t tai.Time, tRead time.Time, epoch phc.Epoch) {
 		if c.nextEdge(c.gpsPending) == len(c.edges)-1 {
 			c.emitEdge(len(c.edges)-1, c.gpsPending)
 		}
-		c.gpsPending = TimeReading{}
+		c.gpsPending = GpsTimeReading{}
 	}
 	if len(c.edges) > maxEdges {
 		c.edges = c.edges[1:]
-		c.gpsSampled = TimeReading{}
+		c.gpsSampled = GpsTimeReading{}
 	}
 }
 
-func (c *Correlator) nextEdge(gps TimeReading) int {
+func (c *Correlator) ppsCorr(t tai.Time, corr time.Duration) {
+	//fmt.Printf("PPS correction for %v: %v\n", t, corr)
+	if len(c.ppsCorrs) > 1 {
+		c.ppsCorrs = c.ppsCorrs[len(c.ppsCorrs)-1:]
+	}
+	c.ppsCorrs = append(c.ppsCorrs, PPSCorr{T: t, Corr: corr})
+}
+
+func (c *Correlator) getCorr(t tai.Time) time.Duration {
+	for _, pc := range c.ppsCorrs {
+		if pc.T == t {
+			return pc.Corr
+		}
+	}
+	return 0
+}
+
+func (c *Correlator) nextEdge(gps GpsTimeReading) int {
 	// No previous sample
 	if c.gpsSampled.IsZero() {
 		return -1
@@ -95,7 +124,7 @@ func (c *Correlator) nextEdge(gps TimeReading) int {
 	return -1
 }
 
-func (c *Correlator) goodEdge(gps TimeReading) int {
+func (c *Correlator) goodEdge(gps GpsTimeReading) int {
 	// XXX single edge case
 	if len(c.edges) < 7 {
 		return -1
@@ -153,7 +182,7 @@ func alternate(edges []EpochTimeReading) (edges1, edges2 []EpochTimeReading) {
 	return
 }
 
-func IsSane(master1, master2 TimeReading, slave1, slave2 EpochTimeReading) bool {
+func IsSane(master1, master2 GpsTimeReading, slave1, slave2 EpochTimeReading) bool {
 	masterDiff := master2.T.Sub(master1.T)
 	if slave1.Epoch == slave2.Epoch && !slave1.Epoch.Ambig() {
 		return slave1.T.Add(masterDiff).Sub(slave2.T).Abs() <= time.Second/100
