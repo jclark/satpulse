@@ -88,7 +88,7 @@ func (p *piController) sample(ref, local tai.Time, epoch phc.Epoch) {
 	off := float64(local.Sub(ref))
 	p.offSum += off
 	out := kp*off + ki*p.offSum
-	fmt.Printf("off %v, offSum %v, out %v\n", off, p.offSum, out)
+	// fmt.Printf("off %v, offSum %v, out %v\n", off, p.offSum, out)
 	p.servo.setFreqAdj(-out)
 }
 

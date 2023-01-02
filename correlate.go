@@ -47,7 +47,7 @@ type Correlator struct {
 
 func (c *Correlator) emitEdge(i int, gps GpsTimeReading) {
 	c.edges = c.edges[i:]
-	c.servo.Sample(gps.T, c.edges[0].T.Add(gps.corr), c.edges[0].Epoch)
+	c.servo.Sample(gps.T.Add(-gps.corr), c.edges[0].T, c.edges[0].Epoch)
 	c.gpsSampled = gps
 }
 
@@ -125,14 +125,45 @@ func (c *Correlator) nextEdge(gps GpsTimeReading) int {
 }
 
 func (c *Correlator) goodEdge(gps GpsTimeReading) int {
-	// XXX single edge case
+	edgesPerPulse := 1
+	last := c.goodEdge1(gps)
+	if last < 0 {
+		last = c.goodEdge2(gps)
+		if last < 0 {
+			return last
+		}
+		edgesPerPulse = 2
+	}
+	delay := gps.TRead.Sub(c.edges[last].TRead)
+	if delay > time.Second/2 {
+		return -1
+	}
+	c.edgesPerPulse = edgesPerPulse
+	fmt.Printf("Good edges assuming %d edges per pulse\n", edgesPerPulse)
+	// we should really generate multiple samples from this
+	return last
+}
+
+func (c *Correlator) goodEdge1(gps GpsTimeReading) int {
+	if len(c.edges) < 4 {
+		return -1
+	}
+	v := variation(c.edges)
+	if v > time.Second/100 {
+		return -1
+	}
+	fmt.Printf("Edge variations %v\n", v)
+	return len(c.edges) - 1
+}
+
+func (c *Correlator) goodEdge2(gps GpsTimeReading) int {
 	if len(c.edges) < 7 {
 		return -1
 	}
 	edges1, edges2 := alternate(c.edges)
-	var1 := variation(edges1)
-	var2 := variation(edges2)
-	if var1 > time.Second/100 || var2 > time.Second/100 {
+	v1 := variation(edges1)
+	v2 := variation(edges2)
+	if v1 > time.Second/100 || v2 > time.Second/100 {
 		return -1
 	}
 	d := edges2[0].T.Sub(edges1[0].T)
@@ -148,11 +179,6 @@ func (c *Correlator) goodEdge(gps GpsTimeReading) int {
 	if last%2 != good {
 		last--
 	}
-	delay := gps.TRead.Sub(c.edges[last].TRead)
-	if delay > time.Second/2 {
-		return -1
-	}
-	// we should really generate multiple samples from this
 	return last
 }
 
@@ -162,10 +188,10 @@ func variation(edges []EpochTimeReading) time.Duration {
 	for i := 2; i < len(edges); i++ {
 		d := edges[i].T.Sub(edges[i-1].T)
 		if d < min {
-			d = min
+			min = d
 		}
 		if d > max {
-			d = max
+			max = d
 		}
 	}
 	return max - min
