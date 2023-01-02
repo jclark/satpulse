@@ -52,7 +52,6 @@ func (c *Correlator) emitEdge(i int, gps GpsTimeReading) {
 }
 
 func (c *Correlator) gpsTime(t tai.Time, tRead time.Time) {
-
 	tr := GpsTimeReading{TimeReading{T: t, TRead: tRead}, c.getCorr(t)}
 	i := c.nextEdge(tr)
 	if i >= 0 {
@@ -66,7 +65,6 @@ func (c *Correlator) gpsTime(t tai.Time, tRead time.Time) {
 		}
 		return
 	}
-	fmt.Println("no edge found")
 	c.gpsPending = tr
 }
 
@@ -75,10 +73,13 @@ const maxEdges = 8
 func (c *Correlator) ppsEdge(t tai.Time, tRead time.Time, epoch phc.Epoch) {
 	tr := EpochTimeReading{TimeReading{T: t, TRead: tRead}, epoch}
 	c.edges = append(c.edges, tr)
-	// The PPS edge arrives just after GPS (weird but maybe just possible)
+	// The PPS edge arrives just after GPS (can happen on rPI CM4)
 	if !c.gpsPending.IsZero() {
-		if c.nextEdge(c.gpsPending) == len(c.edges)-1 {
-			c.emitEdge(len(c.edges)-1, c.gpsPending)
+		last := len(c.edges) - 1
+		if c.nextEdge(c.gpsPending) == last || c.goodEdge(c.gpsPending) == last {
+			c.emitEdge(last, c.gpsPending)
+		} else {
+			fmt.Println("no edge found")
 		}
 		c.gpsPending = GpsTimeReading{}
 	}
@@ -111,7 +112,7 @@ func (c *Correlator) nextEdge(gps GpsTimeReading) int {
 		return -1
 	}
 	// This is the expected case
-	if IsSane(c.gpsSampled, gps, c.edges[0], c.edges[c.edgesPerPulse]) {
+	if c.edgesPerPulse < len(c.edges) && IsSane(c.gpsSampled, gps, c.edges[0], c.edges[c.edgesPerPulse]) {
 		return c.edgesPerPulse
 	}
 	for i := 1; i < len(c.edges); i++ {
