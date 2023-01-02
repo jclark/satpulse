@@ -107,6 +107,34 @@ type TimTPPayload struct {
 	RefInfo  byte
 }
 
+const (
+	TimTPFlagTimeBase = 1 << iota
+	TimTPFlagUTC
+	TimTPFlagRAIM
+	TimTPFlagQErr
+)
+
+const (
+	TimTPRefGPS = iota
+	TimTPRefGLONASS
+	TimTPRefBeiDou
+	TimTPRefGalileo
+	TimTPRefNavIC
+	TimTPRefUnknown = 15
+)
+
+const (
+	TimTPUTCRL = iota + 1
+	TimTPUTCNIST
+	TimTPUTCUSNO
+	TimTPUTCBIPM
+	TimTPUTCEU
+	TimTPUTCSU
+	TimTPUTCNTSC
+	TimTPUTCNPLI
+	TimTPUTCUnknown = 15
+)
+
 type TimSvInPayload struct {
 	Dur    uint32
 	MeanX  int32
