@@ -12,6 +12,8 @@ import (
 const chanIndex = 0
 const pinIndex = 0
 
+const timeout = 100 * time.Microsecond
+
 func StartPPS(cx context.Context, clk *phc.Clock) (<-chan phc.TsEvent, error) {
 	err := clk.PinSetfunc(pinIndex, chanIndex, unix2.PTP_PF_EXTTS)
 	if err != nil {
@@ -23,7 +25,7 @@ func StartPPS(cx context.Context, clk *phc.Clock) (<-chan phc.TsEvent, error) {
 	}
 	c := make(chan phc.TsEvent, 1)
 	go func() {
-		clk.ReadWorker(cx.Done(), c)
+		clk.ReadWorker(cx.Done(), c, timeout)
 	}()
 	return c, nil
 }

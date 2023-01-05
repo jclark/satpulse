@@ -58,7 +58,7 @@ func New(path string) (*Clock, error) {
 	return clk, nil
 }
 
-func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- TsEvent) {
+func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- TsEvent, timeout time.Duration) {
 	epoch := InitialEpoch
 	var bytes [unix2.SizeofPTPExttsEvent]byte
 	buf := bytes[:]
@@ -72,7 +72,7 @@ Loop:
 		pollFds := make([]unix.PollFd, 1)
 		pollFds[0].Fd = int32(clk.fd)
 		pollFds[0].Events = unix.POLLIN | unix.POLLPRI
-		nFds, _ := unix.Poll(pollFds, 100)
+		nFds, _ := unix.Poll(pollFds, int(timeout.Milliseconds()))
 		if nFds == 0 {
 			epoch = clk.epoch()
 			continue
