@@ -21,6 +21,25 @@ func IoctlPTPClockGetCaps(fd int, value *PTPClockCaps) error {
 	return ioctlPtr(fd, PTP_CLOCK_GETCAPS, unsafe.Pointer(value))
 }
 
+// Copied from unix pkg
+type ifreqData struct {
+	name [unix.IFNAMSIZ]byte
+	data unsafe.Pointer
+	_    [sizeofIFreq - unix.IFNAMSIZ - unix.SizeofPtr]byte
+}
+
+func IoctlGetEthtoolTsInfo(fd int, ifname string) (*EthtoolTsInfo, error) {
+	if len(ifname) >= unix.IFNAMSIZ {
+		return nil, unix.EINVAL
+	}
+	value := EthtoolTsInfo{Cmd: unix.ETHTOOL_GET_TS_INFO}
+	ifrd := ifreqData{}
+	copy(ifrd.name[:], ifname)
+	ifrd.data = unsafe.Pointer(&value)
+	err := ioctlPtr(fd, unix.SIOCETHTOOL, unsafe.Pointer(&ifrd))
+	return &value, err
+}
+
 // Wrapper around ioctl syscall for case when argument is a pointer
 // and return value just says whether there's an error
 func ioctlPtr(fd int, req uint, arg unsafe.Pointer) (err error) {

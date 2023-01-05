@@ -9,6 +9,8 @@ package unix2
 /*
 #include <sys/timex.h>
 #include <linux/ptp_clock.h>
+#include <linux/ethtool.h>
+#include <net/if.h>
 */
 import "C"
 
@@ -77,3 +79,7 @@ const (
 	PTP_SYS_OFFSET_PRECISE  = C.PTP_SYS_OFFSET_PRECISE
 	PTP_SYS_OFFSET_EXTENDED = C.PTP_SYS_OFFSET_EXTENDED
 )
+
+type EthtoolTsInfo C.struct_ethtool_ts_info
+
+const sizeofIFreq = C.sizeof_struct_ifreq

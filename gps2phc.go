@@ -16,6 +16,7 @@ import (
 )
 
 var serialDev string
+var ifName string
 
 type Syncer struct {
 	clk   *phc.Clock
@@ -27,6 +28,7 @@ type Syncer struct {
 
 func main() {
 	flag.StringVar(&serialDev, "s", "/dev/ttyUSB0", "device for serial connection to GPS")
+	flag.StringVar(&ifName, "e", "eth0", "ethernet interface of PTP hardware clock")
 	flag.Parse()
 	cx := cancelOnInterrupt()
 	s, err := newSyncer(cx)
@@ -58,8 +60,18 @@ func cancelOnInterrupt() context.Context {
 func newSyncer(cx context.Context) (r *Syncer, err error) {
 	err = nil
 	r = nil
+	phcIndex, err := phc.IfPhcIndex(ifName)
+	if err != nil {
+		return
+	}
+	if phcIndex < 0 {
+		err = fmt.Errorf("interface %s cannot be used because it does not have a PTP hardware clock", ifName)
+		return
+	}
 	s := Syncer{}
-	s.clk, err = phc.New(phc.ClockPath(0))
+	fmt.Printf("PHC index %d\n", phcIndex)
+
+	s.clk, err = phc.New(phc.ClockPath(phcIndex))
 	if err != nil {
 		return
 	}

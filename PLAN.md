@@ -20,7 +20,6 @@ Things to make minimal working program
 
 Improvements in existing functionality
 
-* Command-line arg/option for ethernet interface
 * Occasionally ITOW is not an integral number of seconds
 * Generate multiple samples when initial correlation phase completes (but mark as delayed)
 * Use system clock for sanity checking

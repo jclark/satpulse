@@ -215,3 +215,23 @@ const pathPrefix = "/dev/ptp"
 func ClockPath(phcIndex int) string {
 	return pathPrefix + strconv.Itoa(phcIndex)
 }
+
+func IfPhcIndex(ifname string) (phcIndex int, err error) {
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM, 0)
+	if err != nil {
+		return 0, fmt.Errorf("could not create a socket: %w", err)
+	}
+	defer func() {
+		err2 := unix.Close(fd)
+		if err == nil {
+			err = err2
+		}
+	}()
+	tsInfo, err := unix2.IoctlGetEthtoolTsInfo(fd, ifname)
+	if err != nil {
+		err = fmt.Errorf("ETHTOOL_GET_TS_INFO %s: %w", ifname, err)
+		return
+	}
+	phcIndex = int(tsInfo.Phc_index)
+	return
+}

@@ -110,3 +110,15 @@ const (
 	PTP_SYS_OFFSET_PRECISE	= 0xc0403d08
 	PTP_SYS_OFFSET_EXTENDED	= 0xc4c03d09
 )
+
+type EthtoolTsInfo struct {
+	Cmd		uint32
+	So_timestamping	uint32
+	Phc_index	int32
+	Tx_types	uint32
+	Tx_reserved	[3]uint32
+	Rx_filters	uint32
+	Rx_reserved	[3]uint32
+}
+
+const sizeofIFreq = 0x28
