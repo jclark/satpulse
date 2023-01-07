@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/jclark/gps2phc/phc"
@@ -28,20 +27,4 @@ func StartPPS(cx context.Context, clk *phc.Clock) (<-chan phc.TsEvent, error) {
 		clk.ReadWorker(cx.Done(), c, timeout)
 	}()
 	return c, nil
-}
-
-func SkipStale(clk *phc.Clock, c <-chan phc.TsEvent) error {
-	limit := time.After(time.Millisecond * 50)
-	nStale := 0
-Loop:
-	for {
-		select {
-		case <-limit:
-			break Loop
-		case <-c:
-			nStale++
-		}
-	}
-	fmt.Printf("Skipped %d stale events\n", nStale)
-	return clk.ExttsEnable(chanIndex, true)
 }
