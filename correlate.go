@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/jclark/gps2phc/phc"
@@ -79,7 +78,7 @@ func (c *Correlator) ppsEdge(t tai.Time, tRead time.Time, epoch phc.Epoch) {
 		if c.nextEdge(c.gpsPending) == last || c.goodEdge(c.gpsPending) == last {
 			c.emitEdge(last, c.gpsPending)
 		} else {
-			fmt.Println("no edge found")
+			c.servo.Logger().Warn("noPulseForGps", "t", c.gpsPending.T)
 		}
 		c.gpsPending = GpsTimeReading{}
 	}
@@ -140,7 +139,7 @@ func (c *Correlator) goodEdge(gps GpsTimeReading) int {
 		return -1
 	}
 	c.edgesPerPulse = edgesPerPulse
-	fmt.Printf("Good edges assuming %d edges per pulse\n", edgesPerPulse)
+	c.servo.Logger().Info("consistentEdges", "edgesPerPulse", edgesPerPulse)
 	// we should really generate multiple samples from this
 	return last
 }
@@ -153,7 +152,6 @@ func (c *Correlator) goodEdge1(gps GpsTimeReading) int {
 	if v > time.Second/100 {
 		return -1
 	}
-	fmt.Printf("Edge variations %v\n", v)
 	return len(c.edges) - 1
 }
 

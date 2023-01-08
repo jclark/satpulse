@@ -196,16 +196,16 @@ func regMsg[P any](clsId ClsId, idName string) {
 func ParseMsg(frame []byte) (Msg, error) {
 	clsId := (ClsId(frame[2]) << 8) | ClsId(frame[3])
 	ctor := msgMap[clsId]
+	payload := frame[6 : len(frame)-2]
 	if ctor == nil {
 		// fmt.Printf("unknown UBX message %s\n", clsId)
+		// XXX return a message with bytes as payload
 		return nil, nil
 	}
 	msg := ctor()
-	payload := frame[6 : len(frame)-2]
 	err := binary.Read(bytes.NewReader(payload), binary.LittleEndian, msg.Payload())
 	if err != nil {
-		fmt.Println("parse failed")
-		return nil, err
+		return nil, fmt.Errorf("parsing ubx-%s: %v", clsId.String(), err)
 	}
 	return msg, nil
 }

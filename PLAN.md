@@ -26,14 +26,14 @@ Improvements in existing functionality
 * Compute checksums for
    * UBX
    * NMEA
-* Proper logging strategy (get rid of printf's)
 * Proper cleanup when wiring up all the objects
 * Testing
 * Use NMEA if that's all we have
 * Link bounds for pulse sanity check to amount of frequency adjustment
 * On F9T, using ubx-tim-tp, tow seems to be wrong unless time base is set using tp5 to GPS
 * Experiment with different ki/kp coefficients for PI controller
-* Serial stuff should use higher level `term` module
+* See if we can use higher level `term` module for serial stuff
+* Check UBX message parsing read all the data
 
 New functionality
 

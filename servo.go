@@ -1,16 +1,17 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"time"
 
 	"github.com/jclark/gps2phc/phc"
 	"github.com/jclark/gps2phc/tai"
+	"golang.org/x/exp/slog"
 )
 
 type Servo struct {
 	clk               *phc.Clock
+	lg                *slog.Logger
 	sampler           sampler
 	reset             *resetter
 	comp              *compensator
@@ -24,9 +25,10 @@ type sampler interface {
 	sample(ref, local tai.Time, epoch phc.Epoch)
 }
 
-func NewServo(clk *phc.Clock) (*Servo, error) {
+func NewServo(clk *phc.Clock, lg *slog.Logger) (*Servo, error) {
 	s := Servo{}
 	s.clk = clk
+	s.lg = lg
 	rst := new(resetter)
 	pi := new(piController)
 	comp := new(compensator)
@@ -46,27 +48,37 @@ func NewServo(clk *phc.Clock) (*Servo, error) {
 	return &s, nil
 }
 
+func (s *Servo) Logger() *slog.Logger {
+	return s.lg
+}
+
 func (s *Servo) Sample(ref, local tai.Time, epoch phc.Epoch) {
 	off := local.Sub(ref)
-	fmt.Printf("Servo: GPS  %v, PHC %v, master offset: %v\n", ref, local, off)
+	s.lg.Info("sample", "off", off, "gps", ref, "phc", local, "epoch", epoch)
 	s.sampler.sample(ref, local, epoch)
 }
 
 func (s *Servo) setFreqAdj(fa float64) {
 	fa = clamp(fa, s.maxFreqAdj)
+	if fa == s.freqAdj {
+		return
+	}
 	err := s.clk.SetFreqAdj(fa)
 	if err != nil {
-		fmt.Printf("error adjusting frequency: %+v\n", err)
+		s.lg.Error("freqAdjErr", err)
+		return
 	}
+	s.lg.Info("freqAdj", "old", s.freqAdj, "new", fa, "diff", fa-s.freqAdj)
 	s.freqAdj = fa
 }
 
 func (s *Servo) adjTime(off time.Duration) phc.Epoch {
-	off += s.adjSetOffsetDelay
-	epoch, err := s.clk.AdjTime(off)
-	fmt.Printf("stepped clock by %v\n", off)
+	totalOff := off + s.adjSetOffsetDelay
+	epoch, err := s.clk.AdjTime(totalOff)
 	if err != nil {
-		fmt.Printf("error adjusting time: %+v\n", err)
+		s.lg.Error("adjTimeSetOffsetError", err)
+	} else {
+		s.lg.Info("adjTimeSetOffset", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
 	}
 	return epoch
 }
@@ -117,7 +129,6 @@ func (r *resetter) sample(ref, local tai.Time, epoch phc.Epoch) {
 	}
 
 	freqAdj := r.servo.freqAdj
-	fmt.Printf("cur freqAdj %v\n", freqAdj)
 	/*
 		Semantics of freqAdj in ppb is that a period that the local clock measured with freqAdj 0 as N seconds
 		will be measured with freqAdj A as N*F seconds where F is (1e9 + A)/1e9.
@@ -132,7 +143,6 @@ func (r *resetter) sample(ref, local tai.Time, epoch phc.Epoch) {
 	ratio := float64(refPeriod) / float64(localPeriod)
 	freqAdj = (1e9+freqAdj)*ratio - 1e9
 
-	fmt.Printf("new freqAdj %v\n", freqAdj)
 	r.servo.setFreqAdj(freqAdj)
 
 	r.servo.comp.epoch = r.servo.adjTime(ref.Sub(local))
@@ -161,11 +171,9 @@ func (c *compensator) sample(ref, local tai.Time, epoch phc.Epoch) {
 	off := ref.Sub(local)
 	// this causes future calls to adjTime to be adjusted by this
 	c.servo.adjSetOffsetDelay = off
-	fmt.Printf("adj_setoffset delay is %v\n", off)
 	// this call will have the offset applied twice, once here
 	// and once in Servo.adjTime
 	nextEpoch := c.servo.adjTime(off)
-	fmt.Printf("adjusted time again new epoch %v\n", nextEpoch)
 	c.servo.piControl.epoch = nextEpoch
 	c.servo.sampler = c.servo.piControl
 }
