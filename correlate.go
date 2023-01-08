@@ -52,6 +52,7 @@ func (c *Correlator) emitEdge(i int, gps GpsTimeReading) {
 
 func (c *Correlator) gpsTime(t tai.Time, tRead time.Time) {
 	tr := GpsTimeReading{TimeReading{T: t, TRead: tRead}, c.getCorr(t)}
+	c.servo.Logger().Info("gpsTime", "t", t, "q", tr.corr)
 	i := c.nextEdge(tr)
 	if i >= 0 {
 		c.emitEdge(i, tr)
@@ -61,8 +62,8 @@ func (c *Correlator) gpsTime(t tai.Time, tRead time.Time) {
 		i = c.goodEdge(tr)
 		if i >= 0 {
 			c.emitEdge(i, tr)
+			return
 		}
-		return
 	}
 	c.gpsPending = tr
 }
@@ -70,6 +71,7 @@ func (c *Correlator) gpsTime(t tai.Time, tRead time.Time) {
 const maxEdges = 8
 
 func (c *Correlator) ppsEdge(t tai.Time, tRead time.Time, epoch phc.Epoch) {
+	c.servo.Logger().Info("pulse", "t", t, "epoch", epoch)
 	tr := EpochTimeReading{TimeReading{T: t, TRead: tRead}, epoch}
 	c.edges = append(c.edges, tr)
 	// The PPS edge arrives just after GPS (can happen on rPI CM4)
@@ -136,6 +138,7 @@ func (c *Correlator) goodEdge(gps GpsTimeReading) int {
 	}
 	delay := gps.TRead.Sub(c.edges[last].TRead)
 	if delay > time.Second/2 {
+		c.servo.Logger().Debug("excessDelay", "delay", delay)
 		return -1
 	}
 	c.edgesPerPulse = edgesPerPulse
@@ -150,6 +153,7 @@ func (c *Correlator) goodEdge1(gps GpsTimeReading) int {
 	}
 	v := variation(c.edges)
 	if v > time.Second/100 {
+		c.servo.Logger().Debug("singleEdgeInconsistent", "variation", v)
 		return -1
 	}
 	return len(c.edges) - 1
