@@ -2,38 +2,28 @@ package phc
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"strconv"
-	"sync/atomic"
 	"time"
 
+	"github.com/jclark/gps2phc/ptime"
 	"github.com/jclark/gps2phc/unix2"
 	"golang.org/x/sys/unix"
 )
 
 type Clock struct {
-	fd   int
-	path string
-	caps *unix2.PTPClockCaps
-	// Must be accessed only through epoch and incEpoch functions
-	epoch_ uint64
-}
-
-type Epoch uint64
-
-const InitialEpoch = Epoch(math.MaxUint64)
-
-func (e Epoch) Ambig() bool {
-	return (e & 1) != 0
+	fd    int
+	path  string
+	caps  *unix2.PTPClockCaps
+	epoch ptime.AtomicEpoch
 }
 
 type TsEvent struct {
-	T         unix.Timespec
+	T         ptime.Time
 	ChanIndex uint32
 	TRead     time.Time
 	Err       error
-	Epoch     Epoch
+	Epoch     ptime.Epoch
 }
 
 func New(path string) (*Clock, error) {
@@ -59,7 +49,7 @@ func New(path string) (*Clock, error) {
 }
 
 func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- TsEvent, timeout time.Duration) {
-	epoch := InitialEpoch
+	epoch := ptime.InitialEpoch
 	var bytes [unix2.SizeofPTPExttsEvent]byte
 	buf := bytes[:]
 Loop:
@@ -74,7 +64,7 @@ Loop:
 		pollFds[0].Events = unix.POLLIN | unix.POLLPRI
 		nFds, _ := unix.Poll(pollFds, int(timeout.Milliseconds()))
 		if nFds == 0 {
-			epoch = clk.epoch()
+			epoch = clk.epoch.Load()
 			continue
 		}
 		event := TsEvent{}
@@ -84,7 +74,7 @@ Loop:
 		} else if n != unix2.SizeofPTPExttsEvent {
 			event.Err = clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
 		} else {
-			event.Epoch = clk.epoch()
+			event.Epoch = clk.epoch.Load()
 			if event.Epoch != epoch && !event.Epoch.Ambig() {
 				if epoch.Ambig() {
 					event.Epoch = epoch
@@ -95,7 +85,7 @@ Loop:
 			}
 			event.TRead = time.Now()
 			ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
-			event.T = unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)}
+			event.T = ptime.TimespecToTime(unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)})
 		}
 		tsEvents <- event
 	}
@@ -120,7 +110,7 @@ func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) error {
 	return clk.wrapErr(unix2.IoctlPTPExttsRequest(clk.fd, &er), "ioctl(PTP_EXTTS_REQUEST)")
 }
 
-func (clk *Clock) AdjTime(d time.Duration) (Epoch, error) {
+func (clk *Clock) AdjTime(d time.Duration) (ptime.Epoch, error) {
 	secs := int64(d) / 1e9
 	nsecs := int64(d) % 1e9
 	if nsecs < 0 {
@@ -131,21 +121,13 @@ func (clk *Clock) AdjTime(d time.Duration) (Epoch, error) {
 	tx.Modes = unix2.ADJ_SETOFFSET | unix2.ADJ_NANO
 	tx.Time.Sec = secs
 	tx.Time.Usec = nsecs
-	clk.incEpoch()
+	clk.epoch.Inc()
 	_, err := clk.adjtimex(&tx, "(ADJ_SETOFFSET)")
-	epoch := clk.incEpoch()
+	epoch := clk.epoch.Inc()
 	if err != nil {
 		epoch = 0
 	}
 	return epoch, err
-}
-
-func (clk *Clock) incEpoch() Epoch {
-	return Epoch(atomic.AddUint64(&clk.epoch_, 1))
-}
-
-func (clk *Clock) epoch() Epoch {
-	return Epoch(atomic.LoadUint64(&clk.epoch_))
 }
 
 func (clk *Clock) FreqAdj() (float64, error) {

@@ -4,7 +4,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/gps2phc/phc"
 	"github.com/jclark/gps2phc/ptime"
 	"golang.org/x/exp/slog"
 )
@@ -13,7 +12,7 @@ type Clock interface {
 	SetFreqAdj(fa float64) error
 	FreqAdj() (float64, error)
 	MaxFreqAdj() float64
-	AdjTime(d time.Duration) (phc.Epoch, error)
+	AdjTime(d time.Duration) (ptime.Epoch, error)
 }
 
 type Servo struct {
@@ -29,10 +28,10 @@ type Servo struct {
 }
 
 type sampler interface {
-	sample(ref, local ptime.Time, epoch phc.Epoch)
+	sample(ref, local ptime.Time, epoch ptime.Epoch)
 }
 
-func NewServo(clk *phc.Clock, lg *slog.Logger) (*Servo, error) {
+func NewServo(clk Clock, lg *slog.Logger) (*Servo, error) {
 	s := Servo{}
 	s.clk = clk
 	s.lg = lg
@@ -59,7 +58,7 @@ func (s *Servo) Logger() *slog.Logger {
 	return s.lg
 }
 
-func (s *Servo) Sample(ref, local ptime.Time, epoch phc.Epoch) {
+func (s *Servo) Sample(ref, local ptime.Time, epoch ptime.Epoch) {
 	off := local.Sub(ref)
 	s.lg.Info("sample", "off", off, "gps", ref, "phc", local, "epoch", epoch)
 	s.sampler.sample(ref, local, epoch)
@@ -79,7 +78,7 @@ func (s *Servo) setFreqAdj(fa float64) {
 	s.freqAdj = fa
 }
 
-func (s *Servo) adjTime(off time.Duration) phc.Epoch {
+func (s *Servo) adjTime(off time.Duration) ptime.Epoch {
 	totalOff := off + s.adjSetOffsetDelay
 	epoch, err := s.clk.AdjTime(totalOff)
 	if err != nil {
@@ -92,7 +91,7 @@ func (s *Servo) adjTime(off time.Duration) phc.Epoch {
 
 type piController struct {
 	servo  *Servo
-	epoch  phc.Epoch
+	epoch  ptime.Epoch
 	offSum float64
 }
 
@@ -100,7 +99,7 @@ type piController struct {
 const kp = 0.7
 const ki = 0.3
 
-func (p *piController) sample(ref, local ptime.Time, epoch phc.Epoch) {
+func (p *piController) sample(ref, local ptime.Time, epoch ptime.Epoch) {
 	if epoch != p.epoch {
 		return
 	}
@@ -123,7 +122,7 @@ type resetter struct {
 	local1 ptime.Time
 }
 
-func (r *resetter) sample(ref, local ptime.Time, epoch phc.Epoch) {
+func (r *resetter) sample(ref, local ptime.Time, epoch ptime.Epoch) {
 	if r.ref1.IsZero() {
 		r.ref1 = ref
 		r.local1 = local
@@ -168,10 +167,10 @@ func (r *resetter) sample(ref, local ptime.Time, epoch phc.Epoch) {
 // this delay.
 type compensator struct {
 	servo *Servo
-	epoch phc.Epoch
+	epoch ptime.Epoch
 }
 
-func (c *compensator) sample(ref, local ptime.Time, epoch phc.Epoch) {
+func (c *compensator) sample(ref, local ptime.Time, epoch ptime.Epoch) {
 	if epoch != c.epoch {
 		return
 	}

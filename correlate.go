@@ -3,7 +3,6 @@ package main
 import (
 	"time"
 
-	"github.com/jclark/gps2phc/phc"
 	"github.com/jclark/gps2phc/ptime"
 )
 
@@ -14,7 +13,7 @@ type TimeReading struct {
 
 type EpochTimeReading struct {
 	TimeReading
-	Epoch phc.Epoch
+	Epoch ptime.Epoch
 }
 
 type GpsTimeReading struct {
@@ -70,7 +69,7 @@ func (c *Correlator) gpsTime(t ptime.Time, tRead time.Time) {
 
 const maxEdges = 8
 
-func (c *Correlator) ppsEdge(t ptime.Time, tRead time.Time, epoch phc.Epoch) {
+func (c *Correlator) ppsEdge(t ptime.Time, tRead time.Time, epoch ptime.Epoch) {
 	c.servo.Logger().Info("pulse", "t", t, "epoch", epoch)
 	tr := EpochTimeReading{TimeReading{T: t, TRead: tRead}, epoch}
 	c.edges = append(c.edges, tr)

@@ -117,10 +117,9 @@ func doSync(cx context.Context, s *Syncer) {
 		select {
 		case e, ok := <-tsCh:
 			if ok {
-				t := ptime.TimespecToTime(e.T)
-				if e.Epoch == phc.InitialEpoch {
+				if e.Epoch == ptime.InitialEpoch {
 					if nSkipped == 0 {
-						lg.Info("stalePHCTimestamps", "t", t)
+						lg.Info("stalePHCTimestamps", "t", e.T)
 					}
 					nSkipped++
 				} else {
@@ -128,7 +127,7 @@ func doSync(cx context.Context, s *Syncer) {
 						lg.Info("skippedStalePHCTimestamps", "n", nSkipped)
 						nSkipped = 0
 					}
-					corr.ppsEdge(t, e.TRead, e.Epoch)
+					corr.ppsEdge(e.T, e.TRead, e.Epoch)
 				}
 			} else {
 				tsCh = nil

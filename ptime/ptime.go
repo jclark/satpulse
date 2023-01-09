@@ -2,6 +2,8 @@ package ptime
 
 import (
 	"fmt"
+	"math"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -48,4 +50,26 @@ func (t Time) Add(d time.Duration) Time {
 
 func (t Time) Sub(t2 Time) time.Duration {
 	return time.Duration(int64(t) - int64(t2))
+}
+
+type Epoch uint64
+
+const InitialEpoch = Epoch(math.MaxUint64)
+
+func (e Epoch) Ambig() bool {
+	return (e & 1) != 0
+}
+
+type AtomicEpoch atomic.Uint64
+
+func (c *AtomicEpoch) Init() {
+	(*atomic.Uint64)(c).Store(uint64(InitialEpoch))
+}
+
+func (c *AtomicEpoch) Inc() Epoch {
+	return Epoch((*atomic.Uint64)(c).Add(1))
+}
+
+func (c *AtomicEpoch) Load() Epoch {
+	return Epoch((*atomic.Uint64)(c).Load())
 }
