@@ -1,4 +1,4 @@
-package main
+package tsync
 
 import (
 	"time"
@@ -43,13 +43,19 @@ type Correlator struct {
 	edgesPerPulse int
 }
 
+func NewCorrelator(s *Servo) *Correlator {
+	c := new(Correlator)
+	c.servo = s
+	return c
+}
+
 func (c *Correlator) emitEdge(i int, gps GpsTimeReading) {
 	c.edges = c.edges[i:]
 	c.servo.Sample(gps.T.Add(-gps.corr), c.edges[0].T, c.edges[0].Epoch)
 	c.gpsSampled = gps
 }
 
-func (c *Correlator) gpsTime(t ptime.Time, tRead time.Time) {
+func (c *Correlator) GPSTime(t ptime.Time, tRead time.Time) {
 	tr := GpsTimeReading{TimeReading{T: t, TRead: tRead}, c.getCorr(t)}
 	c.servo.Logger().Info("gpsTime", "t", t, "q", tr.corr)
 	i := c.nextEdge(tr)
@@ -69,7 +75,7 @@ func (c *Correlator) gpsTime(t ptime.Time, tRead time.Time) {
 
 const maxEdges = 8
 
-func (c *Correlator) ppsEdge(t ptime.Time, tRead time.Time, epoch ptime.Epoch) {
+func (c *Correlator) PulseEdge(t ptime.Time, tRead time.Time, epoch ptime.Epoch) {
 	c.servo.Logger().Info("pulse", "t", t, "epoch", epoch)
 	tr := EpochTimeReading{TimeReading{T: t, TRead: tRead}, epoch}
 	c.edges = append(c.edges, tr)
@@ -89,7 +95,7 @@ func (c *Correlator) ppsEdge(t ptime.Time, tRead time.Time, epoch ptime.Epoch) {
 	}
 }
 
-func (c *Correlator) ppsCorr(t ptime.Time, corr time.Duration) {
+func (c *Correlator) PulseCorr(t ptime.Time, corr time.Duration) {
 	//fmt.Printf("PPS correction for %v: %v\n", t, corr)
 	if len(c.ppsCorrs) > 1 {
 		c.ppsCorrs = c.ppsCorrs[len(c.ppsCorrs)-1:]

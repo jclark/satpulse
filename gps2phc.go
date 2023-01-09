@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/jclark/gps2phc/tsync"
+
 	"github.com/jclark/gps2phc/phc"
 	"github.com/jclark/gps2phc/ptime"
 	"github.com/jclark/gps2phc/serial"
@@ -23,7 +25,7 @@ type Syncer struct {
 	port  *serial.Port
 	tsCh  <-chan phc.TsEvent
 	gpsCh chan GpsMsg
-	corr  *Correlator
+	corr  *tsync.Correlator
 }
 
 func main() {
@@ -94,14 +96,11 @@ func newSyncer(cx context.Context) (r *Syncer, err error) {
 	if err != nil {
 		return
 	}
-	servo, err := NewServo(s.clk, lg)
+	servo, err := tsync.NewServo(s.clk, lg)
 	if err != nil {
 		return nil, err
 	}
-	corr := new(Correlator)
-	corr.servo = servo
-
-	s.corr = corr
+	s.corr = tsync.NewCorrelator(servo)
 	r = &s
 	return
 }
@@ -127,7 +126,7 @@ func doSync(cx context.Context, s *Syncer) {
 						lg.Info("skippedStalePHCTimestamps", "n", nSkipped)
 						nSkipped = 0
 					}
-					corr.ppsEdge(e.T, e.TRead, e.Epoch)
+					corr.PulseEdge(e.T, e.TRead, e.Epoch)
 				}
 			} else {
 				tsCh = nil
@@ -138,10 +137,10 @@ func doSync(cx context.Context, s *Syncer) {
 				switch u.ClsId() {
 				case ubx.NavTimeGPSId:
 					data := u.Payload().(*ubx.NavTimeGPSPayload)
-					corr.gpsTime(ptime.GPS(data.Week, data.ITOW), g.TRead)
+					corr.GPSTime(ptime.GPS(data.Week, data.ITOW), g.TRead)
 				case ubx.TimTPId:
 					data := u.Payload().(*ubx.TimTPPayload)
-					corr.ppsCorr(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
+					corr.PulseCorr(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
 				default:
 					lg.Debug("ubx", "type", u.ClsId().String(), "payload", u.Payload())
 				}
