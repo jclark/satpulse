@@ -28,6 +28,8 @@ We can see what NIC we have and know about its limitations.
 ADJ_SETOFFSET does not work precisely (just does a read and a write). We can measure the delay and
 then use this to get things adjusted quicker.
 
+`ETHTOOL_GDRVINFO` gives us the driver name.
+
 ### Deal with GPS flakiness
 
 Be robust in the presence of bad/missing pulses from GPS.
@@ -86,6 +88,8 @@ Keep track of how many satellites are in view from various constellations and wh
 We should be able to do some configuration of the GPS, in particular to enable the periodic messages that we understand.
 
 Advanced users who have manually configured their GPS should be able to turn this off.
+
+Some really cheap GPS systems do not have flash memory, and so cannot save their configuration. These need to be configured on start-up.
 
 I am not sure how far to go here.
 
