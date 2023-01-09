@@ -52,7 +52,10 @@ func ioctlPtr(fd int, req uint, arg unsafe.Pointer) (err error) {
 	return
 }
 
-func PTPExttsEventFromBytes(buf *[SizeofPTPExttsEvent]byte) *PTPExttsEvent {
+// This works around bug in gopls
+const eventSize = SizeofPTPExttsEvent
+
+func PTPExttsEventFromBytes(buf *[eventSize]byte) *PTPExttsEvent {
 	event := PTPExttsEvent{}
 	// This use of unsafe.Pointer is following a pattern that is documented as supported
 	// (1) Conversion of a *T1 to Pointer to *T2.
