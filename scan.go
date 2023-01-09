@@ -14,7 +14,7 @@ type GpsMsg struct {
 	TRead time.Time
 }
 
-func serReadWorker(cx context.Context, p *serial.Port, c chan GpsMsg) {
+func serReadWorker(ctx context.Context, p *serial.Port, c chan GpsMsg) {
 	buf := make([]byte, 255)
 	msg := make([]byte, 0, 90)
 	var state scanState
@@ -22,13 +22,13 @@ func serReadWorker(cx context.Context, p *serial.Port, c chan GpsMsg) {
 Loop:
 	for {
 		select {
-		case <-cx.Done():
+		case <-ctx.Done():
 			break Loop
 		default:
 		}
 		n, err := p.Read(buf)
 		if err != nil {
-			slog.FromContext(cx).Error("readError", err)
+			slog.FromContext(ctx).Error("readError", err)
 			break
 		}
 		// fmt.Printf("read %d bytes\n", n)
@@ -52,7 +52,7 @@ Loop:
 				msg = append(msg, b)
 				ubxMsg, err := ubx.ParseMsg(msg)
 				if err != nil {
-					slog.FromContext(cx).Error("ubxParseError", err)
+					slog.FromContext(ctx).Error("ubxParseError", err)
 				} else if ubxMsg != nil {
 					c <- GpsMsg{U: ubxMsg, TRead: msgReadTime}
 				}

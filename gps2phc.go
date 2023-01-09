@@ -40,13 +40,13 @@ func main() {
 	}
 	lg := slog.New(slog.HandlerOptions{Level: level}.NewTextHandler(os.Stdout))
 	slog.SetDefault(lg)
-	cx := context.Background()
-	cx = cancelOnInterrupt(cx)
-	s, err := newSyncer(cx)
+	ctx := context.Background()
+	ctx = cancelOnInterrupt(ctx)
+	s, err := newSyncer(ctx)
 	if err != nil {
 		slog.Error("exiting", err)
 	} else {
-		doSync(cx, s)
+		doSync(ctx, s)
 		slog.Debug("exiting")
 		s.port.Close()
 		slog.Debug("closed", "serial", serialDev)
@@ -55,19 +55,19 @@ func main() {
 	}
 }
 
-func cancelOnInterrupt(cx context.Context) context.Context {
-	cx, cancel := context.WithCancel(cx)
+func cancelOnInterrupt(ctx context.Context) context.Context {
+	ctx, cancel := context.WithCancel(ctx)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 	go func() {
 		<-sig
-		slog.FromContext(cx).Debug("cancelling")
+		slog.FromContext(ctx).Debug("cancelling")
 		cancel()
 	}()
-	return cx
+	return ctx
 }
 
-func newSyncer(cx context.Context) (r *Syncer, err error) {
+func newSyncer(ctx context.Context) (r *Syncer, err error) {
 	err = nil
 	r = nil
 	phcIndex, err := phc.IfPhcIndex(ifName)
@@ -79,14 +79,14 @@ func newSyncer(cx context.Context) (r *Syncer, err error) {
 		return
 	}
 	s := Syncer{}
-	lg := slog.FromContext(cx)
+	lg := slog.FromContext(ctx)
 	lg.Info("usingPHC", "index", phcIndex)
 
 	s.clk, err = phc.New(phc.ClockPath(phcIndex))
 	if err != nil {
 		return
 	}
-	s.tsCh, err = StartPPS(cx, s.clk)
+	s.tsCh, err = StartPPS(ctx, s.clk)
 	if err != nil {
 		return
 	}
@@ -97,7 +97,7 @@ func newSyncer(cx context.Context) (r *Syncer, err error) {
 			return nil, err
 		}
 	*/
-	s.port, s.gpsCh, err = serStart(cx, serialDev)
+	s.port, s.gpsCh, err = serStart(ctx, serialDev)
 	if err != nil {
 		return
 	}
@@ -110,12 +110,12 @@ func newSyncer(cx context.Context) (r *Syncer, err error) {
 	return
 }
 
-func doSync(cx context.Context, s *Syncer) {
+func doSync(ctx context.Context, s *Syncer) {
 	// loop until both channels are closed
 	tsCh := s.tsCh
 	gpsCh := s.gpsCh
 	corr := s.corr
-	lg := slog.FromContext(cx)
+	lg := slog.FromContext(ctx)
 	nSkipped := 0
 	for tsCh != nil || gpsCh != nil {
 		select {
@@ -163,7 +163,7 @@ func Picoseconds(ps int32) time.Duration {
 	return time.Duration(((ps + 500) / 1000))
 }
 
-func serStart(cx context.Context, path string) (*serial.Port, chan GpsMsg, error) {
+func serStart(ctx context.Context, path string) (*serial.Port, chan GpsMsg, error) {
 	p, err := serial.Raw(path)
 	if err != nil {
 		return nil, nil, err
@@ -173,6 +173,6 @@ func serStart(cx context.Context, path string) (*serial.Port, chan GpsMsg, error
 		return nil, nil, err
 	}
 	c := make(chan GpsMsg, 1)
-	go serReadWorker(cx, p, c)
+	go serReadWorker(ctx, p, c)
 	return p, c, nil
 }
