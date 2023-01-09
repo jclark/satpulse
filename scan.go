@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/jclark/gps2phc/serial"
 	"github.com/jclark/gps2phc/ubx"
+	"golang.org/x/exp/slog"
 )
 
 type GpsMsg struct {
@@ -28,7 +28,7 @@ Loop:
 		}
 		n, err := p.Read(buf)
 		if err != nil {
-			log.Printf("Read error %+v", err)
+			slog.FromContext(cx).Error("readError", err)
 			break
 		}
 		// fmt.Printf("read %d bytes\n", n)
@@ -52,7 +52,7 @@ Loop:
 				msg = append(msg, b)
 				ubxMsg, err := ubx.ParseMsg(msg)
 				if err != nil {
-					log.Printf("UBX parse error %v", err)
+					slog.FromContext(cx).Error("ubxParseError", err)
 				} else if ubxMsg != nil {
 					c <- GpsMsg{U: ubxMsg, TRead: msgReadTime}
 				}
