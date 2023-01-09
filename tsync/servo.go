@@ -60,7 +60,7 @@ func (s *Servo) Logger() *slog.Logger {
 
 func (s *Servo) Sample(ref, local ptime.Time, epoch ptime.Epoch) {
 	off := local.Sub(ref)
-	s.lg.Info("sample", "off", off, "gps", ref, "phc", local, "epoch", epoch)
+	s.lg.Debug("sample", "off", off, "gps", ref, "phc", local, "epoch", epoch)
 	s.sampler.sample(ref, local, epoch)
 }
 
@@ -74,7 +74,7 @@ func (s *Servo) setFreqAdj(fa float64) {
 		s.lg.Error("freqAdjErr", err)
 		return
 	}
-	s.lg.Info("freqAdj", "old", s.freqAdj, "new", fa, "diff", fa-s.freqAdj)
+	s.lg.Debug("freqAdj", "old", s.freqAdj, "new", fa, "diff", fa-s.freqAdj)
 	s.freqAdj = fa
 }
 
@@ -84,7 +84,7 @@ func (s *Servo) adjTime(off time.Duration) ptime.Epoch {
 	if err != nil {
 		s.lg.Error("adjTimeSetOffsetError", err)
 	} else {
-		s.lg.Info("adjTimeSetOffset", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
+		s.lg.Debug("adjTimeSetOffset", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
 	}
 	return epoch
 }
@@ -103,10 +103,12 @@ func (p *piController) sample(ref, local ptime.Time, epoch ptime.Epoch) {
 	if epoch != p.epoch {
 		return
 	}
-	off := float64(local.Sub(ref))
-	p.offSum += off
-	out := kp*off + ki*p.offSum
+	off := local.Sub(ref)
+	fOff := float64(off)
+	p.offSum += fOff
+	out := kp*fOff + ki*p.offSum
 	// fmt.Printf("off %v, offSum %v, out %v\n", off, p.offSum, out)
+	p.servo.lg.Info("pi", "off", off, "freq", p.servo.freqAdj+out)
 	p.servo.setFreqAdj(-out)
 }
 

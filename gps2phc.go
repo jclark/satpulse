@@ -19,6 +19,7 @@ import (
 
 var serialDev string
 var ifName string
+var debugEnable bool
 
 type Syncer struct {
 	clk   *phc.Clock
@@ -29,12 +30,16 @@ type Syncer struct {
 }
 
 func main() {
-	lg := slog.New(slog.HandlerOptions{Level: slog.LevelDebug}.NewTextHandler(os.Stdout))
-	slog.SetDefault(lg)
-
 	flag.StringVar(&serialDev, "s", "/dev/ttyUSB0", "device for serial connection to GPS")
 	flag.StringVar(&ifName, "e", "eth0", "ethernet interface of PTP hardware clock")
+	flag.BoolVar(&debugEnable, "d", false, "log debuggging information")
 	flag.Parse()
+	level := slog.LevelInfo
+	if debugEnable {
+		level = slog.LevelDebug
+	}
+	lg := slog.New(slog.HandlerOptions{Level: level}.NewTextHandler(os.Stdout))
+	slog.SetDefault(lg)
 	cx := context.Background()
 	cx = cancelOnInterrupt(cx)
 	s, err := newSyncer(cx)
