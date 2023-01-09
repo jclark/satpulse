@@ -9,8 +9,15 @@ import (
 	"golang.org/x/exp/slog"
 )
 
+type Clock interface {
+	SetFreqAdj(fa float64) error
+	FreqAdj() (float64, error)
+	MaxFreqAdj() float64
+	AdjTime(d time.Duration) (phc.Epoch, error)
+}
+
 type Servo struct {
-	clk               *phc.Clock
+	clk               Clock
 	lg                *slog.Logger
 	sampler           sampler
 	reset             *resetter
