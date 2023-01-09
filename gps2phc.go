@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/jclark/gps2phc/phc"
+	"github.com/jclark/gps2phc/ptime"
 	"github.com/jclark/gps2phc/serial"
-	"github.com/jclark/gps2phc/tai"
 	"github.com/jclark/gps2phc/ubx"
 	"golang.org/x/exp/slog"
 )
@@ -117,7 +117,7 @@ func doSync(cx context.Context, s *Syncer) {
 		select {
 		case e, ok := <-tsCh:
 			if ok {
-				t := tai.Timespec(e.T)
+				t := ptime.TimespecToTime(e.T)
 				if e.Epoch == phc.InitialEpoch {
 					if nSkipped == 0 {
 						lg.Info("stalePHCTimestamps", "t", t)
@@ -139,10 +139,10 @@ func doSync(cx context.Context, s *Syncer) {
 				switch u.ClsId() {
 				case ubx.NavTimeGPSId:
 					data := u.Payload().(*ubx.NavTimeGPSPayload)
-					corr.gpsTime(tai.GPS(data.Week, data.ITOW), g.TRead)
+					corr.gpsTime(ptime.GPS(data.Week, data.ITOW), g.TRead)
 				case ubx.TimTPId:
 					data := u.Payload().(*ubx.TimTPPayload)
-					corr.ppsCorr(tai.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
+					corr.ppsCorr(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
 				default:
 					lg.Debug("ubx", "type", u.ClsId().String(), "payload", u.Payload())
 				}

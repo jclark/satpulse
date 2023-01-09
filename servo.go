@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/gps2phc/phc"
-	"github.com/jclark/gps2phc/tai"
+	"github.com/jclark/gps2phc/ptime"
 	"golang.org/x/exp/slog"
 )
 
@@ -29,7 +29,7 @@ type Servo struct {
 }
 
 type sampler interface {
-	sample(ref, local tai.Time, epoch phc.Epoch)
+	sample(ref, local ptime.Time, epoch phc.Epoch)
 }
 
 func NewServo(clk *phc.Clock, lg *slog.Logger) (*Servo, error) {
@@ -59,7 +59,7 @@ func (s *Servo) Logger() *slog.Logger {
 	return s.lg
 }
 
-func (s *Servo) Sample(ref, local tai.Time, epoch phc.Epoch) {
+func (s *Servo) Sample(ref, local ptime.Time, epoch phc.Epoch) {
 	off := local.Sub(ref)
 	s.lg.Info("sample", "off", off, "gps", ref, "phc", local, "epoch", epoch)
 	s.sampler.sample(ref, local, epoch)
@@ -100,7 +100,7 @@ type piController struct {
 const kp = 0.7
 const ki = 0.3
 
-func (p *piController) sample(ref, local tai.Time, epoch phc.Epoch) {
+func (p *piController) sample(ref, local ptime.Time, epoch phc.Epoch) {
 	if epoch != p.epoch {
 		return
 	}
@@ -119,11 +119,11 @@ const observePeriod = time.Second * 8
 
 type resetter struct {
 	servo  *Servo
-	ref1   tai.Time
-	local1 tai.Time
+	ref1   ptime.Time
+	local1 ptime.Time
 }
 
-func (r *resetter) sample(ref, local tai.Time, epoch phc.Epoch) {
+func (r *resetter) sample(ref, local ptime.Time, epoch phc.Epoch) {
 	if r.ref1.IsZero() {
 		r.ref1 = ref
 		r.local1 = local
@@ -171,7 +171,7 @@ type compensator struct {
 	epoch phc.Epoch
 }
 
-func (c *compensator) sample(ref, local tai.Time, epoch phc.Epoch) {
+func (c *compensator) sample(ref, local ptime.Time, epoch phc.Epoch) {
 	if epoch != c.epoch {
 		return
 	}

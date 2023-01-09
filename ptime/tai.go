@@ -1,4 +1,4 @@
-package tai
+package ptime
 
 import (
 	"fmt"
@@ -11,20 +11,20 @@ import (
 type Time int64
 
 // GPS epoch
-var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
+var taiEpochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 
 // Offset in seconds between TAI and UTC at GPS epoch
-const epochGPSOffset = 19
+const taiEpochGPSOffset = 19
 
 // week is number of complete weeks since start of first Sunday in 1980
 // iTOW is milliseconds since start of week (Sunday)
 func GPS(week int16, iTOW uint32) Time {
 	weekMillis := int64(week) * 7 * 24 * 60 * 60 * 1000
-	weekMillis += epochGPS.UnixMilli() + epochGPSOffset*1000
+	weekMillis += taiEpochGPS.UnixMilli() + taiEpochGPSOffset*1000
 	return Time((weekMillis + int64(iTOW)) * 1e6)
 }
 
-func Timespec(t unix.Timespec) Time {
+func TimespecToTime(t unix.Timespec) Time {
 	return Time(t.Nano())
 }
 

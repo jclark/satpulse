@@ -4,11 +4,11 @@ import (
 	"time"
 
 	"github.com/jclark/gps2phc/phc"
-	"github.com/jclark/gps2phc/tai"
+	"github.com/jclark/gps2phc/ptime"
 )
 
 type TimeReading struct {
-	T     tai.Time
+	T     ptime.Time
 	TRead time.Time
 }
 
@@ -23,7 +23,7 @@ type GpsTimeReading struct {
 }
 
 type PPSCorr struct {
-	T    tai.Time
+	T    ptime.Time
 	Corr time.Duration
 }
 
@@ -50,7 +50,7 @@ func (c *Correlator) emitEdge(i int, gps GpsTimeReading) {
 	c.gpsSampled = gps
 }
 
-func (c *Correlator) gpsTime(t tai.Time, tRead time.Time) {
+func (c *Correlator) gpsTime(t ptime.Time, tRead time.Time) {
 	tr := GpsTimeReading{TimeReading{T: t, TRead: tRead}, c.getCorr(t)}
 	c.servo.Logger().Info("gpsTime", "t", t, "q", tr.corr)
 	i := c.nextEdge(tr)
@@ -70,7 +70,7 @@ func (c *Correlator) gpsTime(t tai.Time, tRead time.Time) {
 
 const maxEdges = 8
 
-func (c *Correlator) ppsEdge(t tai.Time, tRead time.Time, epoch phc.Epoch) {
+func (c *Correlator) ppsEdge(t ptime.Time, tRead time.Time, epoch phc.Epoch) {
 	c.servo.Logger().Info("pulse", "t", t, "epoch", epoch)
 	tr := EpochTimeReading{TimeReading{T: t, TRead: tRead}, epoch}
 	c.edges = append(c.edges, tr)
@@ -90,7 +90,7 @@ func (c *Correlator) ppsEdge(t tai.Time, tRead time.Time, epoch phc.Epoch) {
 	}
 }
 
-func (c *Correlator) ppsCorr(t tai.Time, corr time.Duration) {
+func (c *Correlator) ppsCorr(t ptime.Time, corr time.Duration) {
 	//fmt.Printf("PPS correction for %v: %v\n", t, corr)
 	if len(c.ppsCorrs) > 1 {
 		c.ppsCorrs = c.ppsCorrs[len(c.ppsCorrs)-1:]
@@ -98,7 +98,7 @@ func (c *Correlator) ppsCorr(t tai.Time, corr time.Duration) {
 	c.ppsCorrs = append(c.ppsCorrs, PPSCorr{T: t, Corr: corr})
 }
 
-func (c *Correlator) getCorr(t tai.Time) time.Duration {
+func (c *Correlator) getCorr(t ptime.Time) time.Duration {
 	for _, pc := range c.ppsCorrs {
 		if pc.T == t {
 			return pc.Corr
