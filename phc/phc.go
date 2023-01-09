@@ -12,10 +12,10 @@ import (
 )
 
 type Clock struct {
-	fd    int
-	path  string
-	caps  *unix2.PTPClockCaps
-	epoch ptime.AtomicEpoch
+	fd           int
+	path         string
+	caps         *unix2.PTPClockCaps
+	epochCounter ptime.AtomicEpoch
 }
 
 type TsEvent struct {
@@ -64,7 +64,7 @@ Loop:
 		pollFds[0].Events = unix.POLLIN | unix.POLLPRI
 		nFds, _ := unix.Poll(pollFds, int(timeout.Milliseconds()))
 		if nFds == 0 {
-			epoch = clk.epoch.Load()
+			epoch = clk.epochCounter.Load()
 			continue
 		}
 		event := TsEvent{}
@@ -74,7 +74,7 @@ Loop:
 		} else if n != unix2.SizeofPTPExttsEvent {
 			event.Err = clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
 		} else {
-			event.Epoch = clk.epoch.Load()
+			event.Epoch = clk.epochCounter.Load()
 			if event.Epoch != epoch && !event.Epoch.Ambig() {
 				if epoch.Ambig() {
 					event.Epoch = epoch
@@ -121,9 +121,9 @@ func (clk *Clock) AdjTime(d time.Duration) (ptime.Epoch, error) {
 	tx.Modes = unix2.ADJ_SETOFFSET | unix2.ADJ_NANO
 	tx.Time.Sec = secs
 	tx.Time.Usec = nsecs
-	clk.epoch.Inc()
+	clk.epochCounter.Inc()
 	_, err := clk.adjtimex(&tx, "(ADJ_SETOFFSET)")
-	epoch := clk.epoch.Inc()
+	epoch := clk.epochCounter.Inc()
 	if err != nil {
 		epoch = 0
 	}
