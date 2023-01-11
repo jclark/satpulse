@@ -28,7 +28,7 @@ type Servo struct {
 }
 
 type sampler interface {
-	sample(ref, local ptime.Time, epoch ptime.Epoch)
+	sample(ref ptime.Time, local ptime.ClockTime)
 }
 
 func NewServo(clk Clock, lg *slog.Logger) (*Servo, error) {
@@ -58,10 +58,10 @@ func (s *Servo) Logger() *slog.Logger {
 	return s.lg
 }
 
-func (s *Servo) Sample(ref, local ptime.Time, epoch ptime.Epoch) {
-	off := local.Sub(ref)
-	s.lg.Debug("sample", "off", off, "gps", ref, "phc", local, "epoch", epoch)
-	s.sampler.sample(ref, local, epoch)
+func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime) {
+	off := local.T.Sub(ref)
+	s.lg.Debug("sample", "off", off, "gps", ref, "phc", local.T, "epoch", local.Epoch)
+	s.sampler.sample(ref, local)
 }
 
 func (s *Servo) setFreqAdj(fa float64) {
@@ -99,11 +99,11 @@ type piController struct {
 const kp = 0.7
 const ki = 0.3
 
-func (p *piController) sample(ref, local ptime.Time, epoch ptime.Epoch) {
-	if epoch != p.epoch {
+func (p *piController) sample(ref ptime.Time, local ptime.ClockTime) {
+	if local.Epoch != p.epoch {
 		return
 	}
-	off := local.Sub(ref)
+	off := local.T.Sub(ref)
 	fOff := float64(off)
 	p.offSum += fOff
 	out := kp*fOff + ki*p.offSum
@@ -124,14 +124,14 @@ type resetter struct {
 	local1 ptime.Time
 }
 
-func (r *resetter) sample(ref, local ptime.Time, epoch ptime.Epoch) {
+func (r *resetter) sample(ref ptime.Time, local ptime.ClockTime) {
 	if r.ref1.IsZero() {
 		r.ref1 = ref
-		r.local1 = local
+		r.local1 = local.T
 		return
 	}
 	refPeriod := ref.Sub(r.ref1)
-	localPeriod := local.Sub(r.local1)
+	localPeriod := local.T.Sub(r.local1)
 	if localPeriod < observePeriod {
 		return
 	}
@@ -153,7 +153,7 @@ func (r *resetter) sample(ref, local ptime.Time, epoch ptime.Epoch) {
 
 	r.servo.setFreqAdj(freqAdj)
 
-	r.servo.comp.epoch = r.servo.adjTime(ref.Sub(local))
+	r.servo.comp.epoch = r.servo.adjTime(ref.Sub(local.T))
 	r.servo.sampler = r.servo.comp
 	r.servo.piControl.init(freqAdj)
 }
@@ -172,11 +172,11 @@ type compensator struct {
 	epoch ptime.Epoch
 }
 
-func (c *compensator) sample(ref, local ptime.Time, epoch ptime.Epoch) {
-	if epoch != c.epoch {
+func (c *compensator) sample(ref ptime.Time, local ptime.ClockTime) {
+	if local.Epoch != c.epoch {
 		return
 	}
-	off := ref.Sub(local)
+	off := ref.Sub(local.T)
 	// this causes future calls to adjTime to be adjusted by this
 	c.servo.adjSetOffsetDelay = off
 	// this call will have the offset applied twice, once here

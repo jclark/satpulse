@@ -19,11 +19,10 @@ type Clock struct {
 }
 
 type TsEvent struct {
-	T         ptime.Time
-	ChanIndex uint32
+	TClock    ptime.ClockTime
 	TRead     time.Time
+	ChanIndex uint32
 	Err       error
-	Epoch     ptime.Epoch
 }
 
 func New(path string) (*Clock, error) {
@@ -74,18 +73,20 @@ Loop:
 		} else if n != unix2.SizeofPTPExttsEvent {
 			event.Err = clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
 		} else {
-			event.Epoch = clk.epochCounter.Load()
-			if event.Epoch != epoch && !event.Epoch.Ambig() {
+			tClock := ptime.ClockTime{}
+			tClock.Epoch = clk.epochCounter.Load()
+			if tClock.Epoch != epoch && !tClock.Epoch.Ambig() {
 				if epoch.Ambig() {
-					event.Epoch = epoch
+					tClock.Epoch = epoch
 				} else {
 					// make it ambiguous between the two
-					event.Epoch = epoch + 1
+					tClock.Epoch = epoch + 1
 				}
 			}
-			event.TRead = time.Now()
 			ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
-			event.T = ptime.TimespecToTime(unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)})
+			tClock.T = ptime.TimespecToTime(unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)})
+			event.TRead = time.Now()
+			event.TClock = tClock
 		}
 		tsEvents <- event
 	}

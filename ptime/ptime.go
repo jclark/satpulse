@@ -9,6 +9,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type ClockTime struct {
+	T     Time
+	Epoch Epoch
+}
+
 // Time in TAI timescale represented as nanoseconds since 1970-01-01T00:00:00 TAI
 type Time int64
 

@@ -121,9 +121,9 @@ func doSync(ctx context.Context, s *Syncer) {
 		select {
 		case e, ok := <-tsCh:
 			if ok {
-				if e.Epoch == ptime.InitialEpoch {
+				if e.TClock.Epoch == ptime.InitialEpoch {
 					if nSkipped == 0 {
-						lg.Info("stalePHCTimestamps", "t", e.T)
+						lg.Info("stalePHCTimestamps", "t", e.TClock.T)
 					}
 					nSkipped++
 				} else {
@@ -131,7 +131,7 @@ func doSync(ctx context.Context, s *Syncer) {
 						lg.Info("skippedStalePHCTimestamps", "n", nSkipped)
 						nSkipped = 0
 					}
-					corr.PulseEdge(e.T, e.TRead, e.Epoch)
+					corr.PulseEdge(e.TClock, e.TRead)
 				}
 			} else {
 				tsCh = nil
@@ -145,7 +145,7 @@ func doSync(ctx context.Context, s *Syncer) {
 					corr.GPSTime(ptime.GPS(data.Week, data.ITOW), g.TRead)
 				case ubx.TimTPId:
 					data := u.Payload().(*ubx.TimTPPayload)
-					corr.PulseCorr(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
+					corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
 				default:
 					lg.Debug("ubx", "type", u.ClsId().String(), "payload", u.Payload())
 				}
