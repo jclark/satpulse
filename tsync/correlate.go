@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/jclark/gps2phc/ptime"
+	"golang.org/x/exp/slog"
 )
 
 type clockTimeReading struct {
@@ -12,9 +13,9 @@ type clockTimeReading struct {
 }
 
 type gpsTimeReading struct {
-	t     ptime.Time
-	tRead time.Time
-	corr  time.Duration
+	t          ptime.Time
+	tRead      time.Time
+	correction time.Duration
 }
 
 type pulseCorrection struct {
@@ -47,13 +48,13 @@ func NewCorrelator(s *Servo) *Correlator {
 
 func (c *Correlator) emitEdge(i int, gps gpsTimeReading) {
 	c.edges = c.edges[i:]
-	c.servo.Sample(gps.t.Add(-gps.corr), c.edges[0].ClockTime)
+	c.servo.Sample(gps.t.Add(-gps.correction), c.edges[0].ClockTime)
 	c.gpsSampled = gps
 }
 
 func (c *Correlator) GPSTime(t ptime.Time, tRead time.Time) {
 	tr := gpsTimeReading{t, tRead, c.findCorrection(t)}
-	c.servo.Logger().Debug("gpsTime", "t", t, "q", tr.corr)
+	c.logger().Debug("gpsTime", "t", t, "cx", tr.correction)
 	i := c.nextEdge(tr)
 	if i >= 0 {
 		c.emitEdge(i, tr)
@@ -72,16 +73,16 @@ func (c *Correlator) GPSTime(t ptime.Time, tRead time.Time) {
 const maxEdges = 8
 
 func (c *Correlator) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
-	c.servo.Logger().Debug("pulse", "t", tClock.T, "epoch", tClock.Epoch)
-	tr := clockTimeReading{ClockTime: tClock, tRead: tRead}
-	c.edges = append(c.edges, tr)
+	c.logger().Debug("pulseEdge", "t", tClock.T, "epoch", tClock.Epoch)
+	edge := clockTimeReading{ClockTime: tClock, tRead: tRead}
+	c.edges = append(c.edges, edge)
 	// The PPS edge arrives just after GPS (can happen on rPI CM4)
 	if !c.gpsPending.isZero() {
 		last := len(c.edges) - 1
 		if c.nextEdge(c.gpsPending) == last || c.goodEdge(c.gpsPending) == last {
 			c.emitEdge(last, c.gpsPending)
 		} else {
-			c.servo.Logger().Warn("noPulseForGps", "t", c.gpsPending.t)
+			c.logger().Warn("noPulseForGps", "t", c.gpsPending.t)
 		}
 		c.gpsPending = gpsTimeReading{}
 	}
@@ -92,7 +93,7 @@ func (c *Correlator) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 }
 
 func (c *Correlator) PulseCorrection(tGPS ptime.Time, delta time.Duration) {
-	//fmt.Printf("PPS correction for %v: %v\n", t, corr)
+	c.logger().Debug("pulseCorrection", "tGPS", tGPS, "delta", delta)
 	if len(c.pcs) > 1 {
 		c.pcs = c.pcs[len(c.pcs)-1:]
 	}
@@ -139,11 +140,11 @@ func (c *Correlator) goodEdge(gps gpsTimeReading) int {
 	}
 	delay := gps.tRead.Sub(c.edges[last].tRead)
 	if delay > time.Second/2 {
-		c.servo.Logger().Debug("excessDelay", "delay", delay)
+		c.logger().Debug("excessDelay", "delay", delay)
 		return -1
 	}
 	c.edgesPerPulse = edgesPerPulse
-	c.servo.Logger().Info("consistentEdges", "edgesPerPulse", edgesPerPulse)
+	c.logger().Info("consistentEdges", "edgesPerPulse", edgesPerPulse)
 	// we should really generate multiple samples from this
 	return last
 }
@@ -154,10 +155,14 @@ func (c *Correlator) goodEdge1(gps gpsTimeReading) int {
 	}
 	v := variation(c.edges)
 	if v > time.Second/100 {
-		c.servo.Logger().Debug("singleEdgeInconsistent", "variation", v)
+		c.logger().Debug("singleEdgeInconsistent", "variation", v)
 		return -1
 	}
 	return len(c.edges) - 1
+}
+
+func (c *Correlator) logger() *slog.Logger {
+	return c.servo.Logger()
 }
 
 func (c *Correlator) goodEdge2(gps gpsTimeReading) int {

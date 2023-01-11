@@ -19,7 +19,7 @@ type Clock struct {
 }
 
 type TsEvent struct {
-	TClock    ptime.ClockTime
+	ptime.ClockTime
 	TRead     time.Time
 	ChanIndex uint32
 	Err       error
@@ -86,7 +86,7 @@ Loop:
 			ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
 			tClock.T = ptime.TimespecToTime(unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)})
 			event.TRead = time.Now()
-			event.TClock = tClock
+			event.ClockTime = tClock
 		}
 		tsEvents <- event
 	}

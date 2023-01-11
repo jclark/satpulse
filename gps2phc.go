@@ -121,9 +121,9 @@ func doSync(ctx context.Context, s *Syncer) {
 		select {
 		case e, ok := <-tsCh:
 			if ok {
-				if e.TClock.Epoch == ptime.InitialEpoch {
+				if e.Epoch == ptime.InitialEpoch {
 					if nSkipped == 0 {
-						lg.Info("stalePHCTimestamps", "t", e.TClock.T)
+						lg.Info("stalePHCTimestamps", "t", e.T)
 					}
 					nSkipped++
 				} else {
@@ -131,7 +131,7 @@ func doSync(ctx context.Context, s *Syncer) {
 						lg.Info("skippedStalePHCTimestamps", "n", nSkipped)
 						nSkipped = 0
 					}
-					corr.PulseEdge(e.TClock, e.TRead)
+					corr.PulseEdge(e.ClockTime, e.TRead)
 				}
 			} else {
 				tsCh = nil
