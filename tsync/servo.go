@@ -28,7 +28,7 @@ type Servo struct {
 }
 
 type sampler interface {
-	sample(ref ptime.Time, local ptime.ClockTime)
+	sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
 }
 
 func NewServo(clk Clock, lg *slog.Logger) (*Servo, error) {
@@ -58,10 +58,10 @@ func (s *Servo) Logger() *slog.Logger {
 	return s.lg
 }
 
-func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime) {
+func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	off := local.T.Sub(ref)
-	s.lg.Debug("sample", "off", off, "gps", ref, "phc", local.T, "epoch", local.Epoch)
-	s.sampler.sample(ref, local)
+	s.lg.Debug("sample", "off", off, "gps", ref, "phc", local.T, "epoch", local.Epoch, "delayed", delayed)
+	s.sampler.sample(ref, local, delayed)
 }
 
 func (s *Servo) setFreqAdj(fa float64) {
@@ -84,7 +84,7 @@ func (s *Servo) adjTime(off time.Duration) ptime.Epoch {
 	if err != nil {
 		s.lg.Error("adjTimeSetOffsetError", err)
 	} else {
-		s.lg.Debug("adjTimeSetOffset", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
+		s.lg.Info("adjTimeSetOffset", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
 	}
 	return epoch
 }
@@ -99,8 +99,8 @@ type piController struct {
 const kp = 0.7
 const ki = 0.3
 
-func (p *piController) sample(ref ptime.Time, local ptime.ClockTime) {
-	if local.Epoch != p.epoch {
+func (p *piController) sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
+	if local.Epoch != p.epoch || delayed {
 		return
 	}
 	off := local.T.Sub(ref)
@@ -116,7 +116,7 @@ func (p *piController) init(freqAdj float64) {
 	p.offSum = -freqAdj / ki
 }
 
-const observePeriod = time.Second * 8
+const observePeriod = time.Second * 4
 
 type resetter struct {
 	servo  *Servo
@@ -124,7 +124,7 @@ type resetter struct {
 	local1 ptime.Time
 }
 
-func (r *resetter) sample(ref ptime.Time, local ptime.ClockTime) {
+func (r *resetter) sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	if r.ref1.IsZero() {
 		r.ref1 = ref
 		r.local1 = local.T
@@ -132,7 +132,7 @@ func (r *resetter) sample(ref ptime.Time, local ptime.ClockTime) {
 	}
 	refPeriod := ref.Sub(r.ref1)
 	localPeriod := local.T.Sub(r.local1)
-	if localPeriod < observePeriod {
+	if localPeriod < observePeriod || delayed {
 		return
 	}
 
@@ -172,8 +172,8 @@ type compensator struct {
 	epoch ptime.Epoch
 }
 
-func (c *compensator) sample(ref ptime.Time, local ptime.ClockTime) {
-	if local.Epoch != c.epoch {
+func (c *compensator) sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
+	if local.Epoch != c.epoch || delayed {
 		return
 	}
 	off := ref.Sub(local.T)

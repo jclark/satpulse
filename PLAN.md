@@ -21,7 +21,6 @@ Things to make minimal working program
 Improvements in existing functionality
 
 * Occasionally ITOW is not an integral number of seconds
-* Generate multiple samples when initial correlation phase completes (but mark as delayed)
 * Use system clock for sanity checking
 * Compute checksums for
    * UBX
