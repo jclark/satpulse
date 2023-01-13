@@ -21,16 +21,20 @@ Things to make minimal working program
 Improvements in existing functionality
 
 * Occasionally ITOW is not an integral number of seconds
-* Use system clock for sanity checking
-* Compute checksums for
-   * UBX
-   * NMEA
 * Proper cleanup when wiring up all the objects
 * Testing
-* Use NMEA if that's all we have
+* Make use NMEA (if we don't have UBX)
+   * compute checksum
+   * parse message
+   * handle some PUBX messages
+   * deal with leap seconds
+* Use system clock
+   * sanity check
+   * for time of day (like `ts2phc -s generic`)
 * Link bounds for pulse sanity check to amount of frequency adjustment
 * On F9T, using ubx-tim-tp, tow seems to be wrong unless time base is set using tp5 to GPS
 * Experiment with different ki/kp coefficients for PI controller
+* PI controller starts off with a large integral term, which I suspect is not optimal
 * See if we can use higher level `term` module for serial stuff
 * Check UBX message parsing read all the data
 

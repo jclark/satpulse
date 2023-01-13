@@ -193,10 +193,23 @@ func regMsg[P any](clsId ClsId, idName string) {
 	idNameMap[clsId] = idName
 }
 
+// 2 bytes sync, 2 bytes clsid, 2 bytes length, 2 bytes checksum
+const frameMinLength = 8
+
 func ParseMsg(frame []byte) (Msg, error) {
-	clsId := (ClsId(frame[2]) << 8) | ClsId(frame[3])
+	n := len(frame)
+	if n < frameMinLength {
+		return nil, fmt.Errorf("UBX message too short (length %d bytes)", n)
+	}
+	checksumIndex := n - 2
+	trimmed := frame[2:checksumIndex]
+	ckA, ckB := checksum(trimmed)
+	if ckA != frame[checksumIndex] || ckB != frame[checksumIndex+1] {
+		return nil, fmt.Errorf("ubx message: invalid checksum")
+	}
+	clsId := (ClsId(trimmed[0]) << 8) | ClsId(trimmed[1])
 	ctor := msgMap[clsId]
-	payload := frame[6 : len(frame)-2]
+	payload := trimmed[4:]
 	if ctor == nil {
 		// fmt.Printf("unknown UBX message %s\n", clsId)
 		// XXX return a message with bytes as payload
@@ -208,4 +221,12 @@ func ParseMsg(frame []byte) (Msg, error) {
 		return nil, fmt.Errorf("parsing ubx-%s: %v", clsId.String(), err)
 	}
 	return msg, nil
+}
+
+func checksum(bytes []byte) (ckA, ckB byte) {
+	for _, b := range bytes {
+		ckA += b
+		ckB += ckA
+	}
+	return
 }
