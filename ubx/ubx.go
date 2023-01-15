@@ -45,6 +45,10 @@ func (cid ClsId) String() string {
 	return fmt.Sprintf("%04x", uint16(cid))
 }
 
+func (clsId ClsId) unpack() (byte, byte) {
+	return byte((clsId >> 8) & 0xFF), byte(clsId & 0xFF)
+}
+
 // Used for both AckAck and AckNak
 type AckPayload struct {
 	ClsId byte
@@ -182,7 +186,7 @@ func (msg *MsgData[P]) Payload() any {
 	return &msg.payload
 }
 
-func NewMsg[P any](clsId ClsId) Msg {
+func NewMsg[P any](clsId ClsId) *MsgData[P] {
 	m := new(MsgData[P])
 	m.clsId = clsId
 	return m
@@ -221,6 +225,34 @@ func ParseMsg(frame []byte) (Msg, error) {
 		return nil, fmt.Errorf("parsing ubx-%s: %v", clsId.String(), err)
 	}
 	return msg, nil
+}
+
+func (msg *MsgData[P]) Serialize() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.LittleEndian, msg.payload)
+	if err != nil {
+		return nil, err
+	}
+	return packMsg(msg.clsId, buf.Bytes())
+}
+
+func packMsg(clsId ClsId, payload []byte) ([]byte, error) {
+	if len(payload) > 0xFFFF {
+		return nil, fmt.Errorf("ubx-%s payload too long (%d bytes", clsId.String(), len(payload))
+	}
+	cls, id := clsId.unpack()
+	frame := []byte{
+		Sync1,
+		Sync2,
+		cls,
+		id,
+		byte(len(payload) & 0xFF),
+		byte((len(payload) >> 8) & 0xFF),
+	}
+	frame = append(frame, payload...)
+	ckA, ckB := checksum(frame[2:])
+	frame = append(frame, ckA, ckB)
+	return frame, nil
 }
 
 func checksum(bytes []byte) (ckA, ckB byte) {
