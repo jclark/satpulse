@@ -139,15 +139,13 @@ func doSync(ctx context.Context, s *Syncer) {
 		case g, ok := <-gpsCh:
 			if ok {
 				u := g.U
-				switch u.ClsId() {
-				case ubx.NavTimeGPSId:
-					data := u.Payload().(*ubx.NavTimeGPSPayload)
+				switch data := u.(type) {
+				case *ubx.NavTimeGPS:
 					corr.GPSTime(ptime.GPS(data.Week, data.ITOW), g.TRead)
-				case ubx.TimTPId:
-					data := u.Payload().(*ubx.TimTPPayload)
+				case *ubx.TimTP:
 					corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
 				default:
-					lg.Debug("ubx", "type", u.ClsId().String(), "payload", u.Payload())
+					lg.Debug("ubx", "type", u.ID().String(), "payload", u)
 				}
 			} else {
 				gpsCh = nil

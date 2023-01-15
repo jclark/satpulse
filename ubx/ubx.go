@@ -11,15 +11,17 @@ const (
 	Sync2 = 0x62
 )
 
+type MsgID uint16
+
 const (
-	clsNav ClsId = 0x0100
-	clsAck ClsId = 0x0500
-	clsCfg ClsId = 0x0600
-	clsMon ClsId = 0x0A00
-	clsTim ClsId = 0x0D00
+	clsNav = 0x01
+	clsAck = 0x05
+	clsCfg = 0x06
+	clsMon = 0x0A
+	clsTim = 0x0D
 )
 
-var clsMap = map[ClsId]string{
+var clsMap = map[byte]string{
 	clsNav: "nav",
 	clsAck: "ack",
 	clsCfg: "cfg",
@@ -27,35 +29,49 @@ var clsMap = map[ClsId]string{
 	clsTim: "tim",
 }
 
-type ClsId uint16
+func Nav(id byte) MsgID { return makeMsgID(clsNav, id) }
+func Ack(id byte) MsgID { return makeMsgID(clsAck, id) }
+func Cfg(id byte) MsgID { return makeMsgID(clsCfg, id) }
+func Mon(id byte) MsgID { return makeMsgID(clsMon, id) }
+func Tim(id byte) MsgID { return makeMsgID(clsTim, id) }
+
+func makeMsgID(cls byte, id byte) MsgID {
+	return MsgID(uint16(cls) | (uint16(id) << 8))
+}
+
+func (mid MsgID) unpack() (byte, byte) {
+	return byte(mid & 0xFF), byte((mid >> 8) & 0xFF)
+}
 
 type Msg interface {
-	ClsId() ClsId
-	Payload() any
+	ID() MsgID
 }
 
-var msgMap = make(map[ClsId]func() Msg)
-var idNameMap = make(map[ClsId]string)
+var msgMap = make(map[MsgID]func() Msg)
+var idNameMap = make(map[MsgID]string)
 
-func (cid ClsId) String() string {
-	idName := idNameMap[cid]
+func (mid MsgID) String() string {
+	idName := idNameMap[mid]
 	if idName != "" {
-		return clsMap[cid&0xFF00] + "-" + idName
+		cls, _ := mid.unpack()
+		return clsMap[cls] + "-" + idName
 	}
-	return fmt.Sprintf("%04x", uint16(cid))
+	return fmt.Sprintf("%04x", uint16(mid))
 }
 
-func (clsId ClsId) unpack() (byte, byte) {
-	return byte((clsId >> 8) & 0xFF), byte(clsId & 0xFF)
+type AckNak struct {
+	MsgID MsgID
 }
 
-// Used for both AckAck and AckNak
-type AckPayload struct {
-	ClsId byte
-	MsgId byte
+func (m *AckNak) ID() MsgID { return Ack(0x00) }
+
+type AckAck struct {
+	MsgID MsgID
 }
 
-type NavTimeGPSPayload struct {
+func (m *AckAck) ID() MsgID { return Ack(0x01) }
+
+type NavTimeGPS struct {
 	ITOW  uint32
 	FTOW  int32
 	Week  int16
@@ -64,17 +80,9 @@ type NavTimeGPSPayload struct {
 	TAcc  uint32
 }
 
-type NavTimeBDSPayload struct {
-	ITOW  uint32
-	SOW   uint32
-	FSOW  int32
-	Week  int16
-	LeapS byte
-	Valid byte
-	TAcc  uint32
-}
+func (m *NavTimeGPS) ID() MsgID { return Nav(0x20) }
 
-type NavTimeUTCPayload struct {
+type NavTimeUTC struct {
 	ITOW  uint32
 	TAcc  uint32
 	Nano  int32
@@ -87,7 +95,21 @@ type NavTimeUTCPayload struct {
 	Valid byte
 }
 
-type NavTimeLSPayload struct {
+func (m *NavTimeUTC) ID() MsgID { return Nav(0x21) }
+
+type NavTimeBDS struct {
+	ITOW  uint32
+	SOW   uint32
+	FSOW  int32
+	Week  int16
+	LeapS byte
+	Valid byte
+	TAcc  uint32
+}
+
+func (m *NavTimeBDS) ID() MsgID { return Nav(0x24) }
+
+type NavTimeLS struct {
 	ITOW          uint32
 	Version       byte
 	_             [3]byte
@@ -102,7 +124,9 @@ type NavTimeLSPayload struct {
 	Valid         byte
 }
 
-type TimTPPayload struct {
+func (m *NavTimeLS) ID() MsgID { return Nav(0x26) }
+
+type TimTP struct {
 	TowMS    uint32
 	TowSubMS uint32
 	QErr     int32
@@ -110,6 +134,8 @@ type TimTPPayload struct {
 	Flags    byte
 	RefInfo  byte
 }
+
+func (m *TimTP) ID() MsgID { return Tim(0x01) }
 
 const (
 	TimTPFlagTimeBase = 1 << iota
@@ -139,7 +165,7 @@ const (
 	TimTPUTCUnknown = 15
 )
 
-type TimSvInPayload struct {
+type TimSvIn struct {
 	Dur    uint32
 	MeanX  int32
 	MeanY  int32
@@ -151,50 +177,27 @@ type TimSvInPayload struct {
 	_      [2]byte
 }
 
-const (
-	AckNakId     ClsId = clsAck
-	AckAckId     ClsId = clsAck | 0x01
-	NavTimeGPSId ClsId = clsNav | 0x20
-	NavTimeUTCId ClsId = clsNav | 0x21
-	NavTimeBDSId ClsId = clsNav | 0x24
-	NavTimeLSId  ClsId = clsNav | 0x26
-	TimTPId      ClsId = clsTim | 0x01
-	TimSvInId    ClsId = clsTim | 0x04
-)
+func (m *TimSvIn) ID() MsgID { return Tim(0x04) }
 
 func init() {
-	regMsg[AckPayload](AckAckId, "ack")
-	regMsg[AckPayload](AckNakId, "nak")
-	regMsg[NavTimeGPSPayload](NavTimeGPSId, "timegps")
-	regMsg[NavTimeBDSPayload](NavTimeBDSId, "timebds")
-	regMsg[NavTimeUTCPayload](NavTimeUTCId, "timeutc")
-	regMsg[NavTimeLSPayload](NavTimeLSId, "timels")
-	regMsg[TimTPPayload](TimTPId, "tp")
-	regMsg[TimSvInPayload](TimSvInId, "svin")
+	regMsg[AckNak]("nak")
+	regMsg[AckAck]("ack")
+	regMsg[NavTimeGPS]("timegps")
+	regMsg[NavTimeBDS]("timebds")
+	regMsg[NavTimeUTC]("timeutc")
+	regMsg[NavTimeLS]("timels")
+	regMsg[TimTP]("tp")
+	regMsg[TimSvIn]("svin")
 }
 
-type MsgData[P any] struct {
-	clsId   ClsId
-	payload P
-}
-
-func (msg *MsgData[P]) ClsId() ClsId {
-	return msg.clsId
-}
-
-func (msg *MsgData[P]) Payload() any {
-	return &msg.payload
-}
-
-func NewMsg[P any](clsId ClsId) *MsgData[P] {
-	m := new(MsgData[P])
-	m.clsId = clsId
-	return m
-}
-
-func regMsg[P any](clsId ClsId, idName string) {
-	msgMap[clsId] = func() Msg { return NewMsg[P](clsId) }
-	idNameMap[clsId] = idName
+func regMsg[T any, PT interface {
+	ID() MsgID
+	*T
+}](idName string) {
+	m := PT(new(T))
+	mid := m.ID()
+	msgMap[mid] = func() Msg { return PT(new(T)) }
+	idNameMap[mid] = idName
 }
 
 // 2 bytes sync, 2 bytes clsid, 2 bytes length, 2 bytes checksum
@@ -211,8 +214,8 @@ func ParseMsg(frame []byte) (Msg, error) {
 	if ckA != frame[checksumIndex] || ckB != frame[checksumIndex+1] {
 		return nil, fmt.Errorf("ubx message: invalid checksum")
 	}
-	clsId := (ClsId(trimmed[0]) << 8) | ClsId(trimmed[1])
-	ctor := msgMap[clsId]
+	mid := makeMsgID(trimmed[0], trimmed[1])
+	ctor := msgMap[mid]
 	payload := trimmed[4:]
 	if ctor == nil {
 		// fmt.Printf("unknown UBX message %s\n", clsId)
@@ -220,27 +223,27 @@ func ParseMsg(frame []byte) (Msg, error) {
 		return nil, nil
 	}
 	msg := ctor()
-	err := binary.Read(bytes.NewReader(payload), binary.LittleEndian, msg.Payload())
+	err := binary.Read(bytes.NewReader(payload), binary.LittleEndian, msg)
 	if err != nil {
-		return nil, fmt.Errorf("parsing ubx-%s: %v", clsId.String(), err)
+		return nil, fmt.Errorf("parsing ubx-%s: %v", mid.String(), err)
 	}
 	return msg, nil
 }
 
-func (msg *MsgData[P]) Serialize() ([]byte, error) {
+func Serialize(msg Msg) ([]byte, error) {
 	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.LittleEndian, msg.payload)
+	err := binary.Write(buf, binary.LittleEndian, msg)
 	if err != nil {
 		return nil, err
 	}
-	return packMsg(msg.clsId, buf.Bytes())
+	return packMsg(msg.ID(), buf.Bytes())
 }
 
-func packMsg(clsId ClsId, payload []byte) ([]byte, error) {
+func packMsg(mid MsgID, payload []byte) ([]byte, error) {
 	if len(payload) > 0xFFFF {
-		return nil, fmt.Errorf("ubx-%s payload too long (%d bytes", clsId.String(), len(payload))
+		return nil, fmt.Errorf("ubx-%s payload too long (%d bytes", mid.String(), len(payload))
 	}
-	cls, id := clsId.unpack()
+	cls, id := mid.unpack()
 	frame := []byte{
 		Sync1,
 		Sync2,

@@ -3,7 +3,7 @@ package ubx
 import "testing"
 
 func TestNavTimeGPS(t *testing.T) {
-	p := NavTimeGPSPayload{
+	p := NavTimeGPS{
 		ITOW:  0x12345678,
 		FTOW:  0,
 		Week:  6523,
@@ -11,9 +11,8 @@ func TestNavTimeGPS(t *testing.T) {
 		Valid: 0,
 		TAcc:  173,
 	}
-	m := NewMsg[NavTimeGPSPayload](NavTimeGPSId)
-	m.payload = p
-	b, err := m.Serialize()
+	var m Msg = &p
+	b, err := Serialize(m)
 	if err != nil {
 		t.Fatalf("serialize err for nav-time-gps %v", err)
 	}
@@ -21,10 +20,10 @@ func TestNavTimeGPS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error for nav-time-gps %v", err)
 	}
-	if m2.ClsId() != NavTimeGPSId {
-		t.Fatalf("clsid not roundtripped %v => %v", NavTimeGPSId, m2.ClsId())
+	if m2.ID() != p.ID() {
+		t.Fatalf("clsid not roundtripped %v => %v", p.ID(), m2.ID())
 	}
-	p2 := m2.Payload().(*NavTimeGPSPayload)
+	p2 := m2.(*NavTimeGPS)
 	if *p2 != p {
 		t.Fatalf("nav-time-gps not roundtripped %v => %v", &p, &p2)
 	}
