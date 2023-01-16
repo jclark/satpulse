@@ -3,28 +3,35 @@ package ubx
 import "testing"
 
 func TestNavTimeGPS(t *testing.T) {
-	p := NavTimeGPS{
+	testMsgType(t, NavTimeGPS{
 		ITOW:  0x12345678,
 		FTOW:  0,
 		Week:  6523,
 		LeapS: 37,
 		Valid: 0,
 		TAcc:  173,
-	}
-	var m Msg = &p
-	b, err := Serialize(m)
+	})
+}
+
+func testMsgType[M comparable, PM interface {
+	ID() MsgID
+	*M
+}](t *testing.T, m M) {
+	p := PM(&m)
+	mid := p.ID()
+	b, err := Serialize(p)
 	if err != nil {
-		t.Fatalf("serialize err for nav-time-gps %v", err)
+		t.Fatalf("serialize err for %v: %v", mid, err)
 	}
-	m2, err := ParseMsg(b)
+	p2, err := ParseMsg(b)
 	if err != nil {
-		t.Fatalf("parse error for nav-time-gps %v", err)
+		t.Fatalf("parse error for %v: %v", mid, err)
 	}
-	if m2.ID() != p.ID() {
-		t.Fatalf("clsid not roundtripped %v => %v", p.ID(), m2.ID())
+	if p2.ID() != p.ID() {
+		t.Fatalf("msgid not roundtripped %v => %v", mid, p2.ID())
 	}
-	p2 := m2.(*NavTimeGPS)
-	if *p2 != p {
-		t.Fatalf("nav-time-gps not roundtripped %v => %v", &p, &p2)
+	m2 := *p2.(PM)
+	if m2 != m {
+		t.Fatalf("msg %v not roundtripped %v => %v", mid, &p, &p2)
 	}
 }

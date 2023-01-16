@@ -29,11 +29,11 @@ var clsMap = map[byte]string{
 	clsTim: "tim",
 }
 
-func Nav(id byte) MsgID { return makeMsgID(clsNav, id) }
-func Ack(id byte) MsgID { return makeMsgID(clsAck, id) }
-func Cfg(id byte) MsgID { return makeMsgID(clsCfg, id) }
-func Mon(id byte) MsgID { return makeMsgID(clsMon, id) }
-func Tim(id byte) MsgID { return makeMsgID(clsTim, id) }
+func NavMsgID(id byte) MsgID { return makeMsgID(clsNav, id) }
+func AckMsgID(id byte) MsgID { return makeMsgID(clsAck, id) }
+func CfgMsgID(id byte) MsgID { return makeMsgID(clsCfg, id) }
+func MonMsgID(id byte) MsgID { return makeMsgID(clsMon, id) }
+func TimMsgID(id byte) MsgID { return makeMsgID(clsTim, id) }
 
 func makeMsgID(cls byte, id byte) MsgID {
 	return MsgID(uint16(cls) | (uint16(id) << 8))
@@ -52,24 +52,31 @@ var idNameMap = make(map[MsgID]string)
 
 func (mid MsgID) String() string {
 	idName := idNameMap[mid]
-	if idName != "" {
-		cls, _ := mid.unpack()
-		return clsMap[cls] + "-" + idName
+	cls, id := mid.unpack()
+	s := clsMap[cls]
+	if s == "" {
+		s = fmt.Sprintf("0x%02x", cls)
 	}
-	return fmt.Sprintf("%04x", uint16(mid))
+	s += "-"
+	if idName != "" {
+		s += idName
+	} else {
+		s += fmt.Sprintf("0x%02x", id)
+	}
+	return s
 }
 
 type AckNak struct {
 	MsgID MsgID
 }
 
-func (m *AckNak) ID() MsgID { return Ack(0x00) }
+func (m *AckNak) ID() MsgID { return AckMsgID(0x00) }
 
 type AckAck struct {
 	MsgID MsgID
 }
 
-func (m *AckAck) ID() MsgID { return Ack(0x01) }
+func (m *AckAck) ID() MsgID { return AckMsgID(0x01) }
 
 type NavTimeGPS struct {
 	ITOW  uint32
@@ -80,7 +87,7 @@ type NavTimeGPS struct {
 	TAcc  uint32
 }
 
-func (m *NavTimeGPS) ID() MsgID { return Nav(0x20) }
+func (m *NavTimeGPS) ID() MsgID { return NavMsgID(0x20) }
 
 type NavTimeUTC struct {
 	ITOW  uint32
@@ -95,7 +102,7 @@ type NavTimeUTC struct {
 	Valid byte
 }
 
-func (m *NavTimeUTC) ID() MsgID { return Nav(0x21) }
+func (m *NavTimeUTC) ID() MsgID { return NavMsgID(0x21) }
 
 type NavTimeBDS struct {
 	ITOW  uint32
@@ -107,7 +114,7 @@ type NavTimeBDS struct {
 	TAcc  uint32
 }
 
-func (m *NavTimeBDS) ID() MsgID { return Nav(0x24) }
+func (m *NavTimeBDS) ID() MsgID { return NavMsgID(0x24) }
 
 type NavTimeLS struct {
 	ITOW          uint32
@@ -124,7 +131,7 @@ type NavTimeLS struct {
 	Valid         byte
 }
 
-func (m *NavTimeLS) ID() MsgID { return Nav(0x26) }
+func (m *NavTimeLS) ID() MsgID { return NavMsgID(0x26) }
 
 type TimTP struct {
 	TowMS    uint32
@@ -135,7 +142,7 @@ type TimTP struct {
 	RefInfo  byte
 }
 
-func (m *TimTP) ID() MsgID { return Tim(0x01) }
+func (m *TimTP) ID() MsgID { return TimMsgID(0x01) }
 
 const (
 	TimTPFlagTimeBase = 1 << iota
@@ -177,7 +184,37 @@ type TimSvIn struct {
 	_      [2]byte
 }
 
-func (m *TimSvIn) ID() MsgID { return Tim(0x04) }
+func (m *TimSvIn) ID() MsgID { return TimMsgID(0x04) }
+
+type MonVer struct {
+	SwVersion [30]byte
+	HwVersion [10]byte
+	Extension [][30]byte
+}
+
+func (m *MonVer) ID() MsgID { return MonMsgID(0x04) }
+
+func (m *MonVer) InitForLen(payloadLen int) (err error) {
+	len, err := sliceLen(m, payloadLen, 30+10, 30)
+	if err != nil {
+		m.Extension = make([][30]byte, len)
+	}
+	return
+}
+
+type VarLengthMsg interface {
+	Msg
+	InitForLen(payloadLen int) error
+}
+
+// Use VarLengthMsg here to help ensure that InitForLen is correctly declared for each type
+func sliceLen(m VarLengthMsg, payloadLen, minLen, elemLen int) (int, error) {
+	extraLen := payloadLen - minLen
+	if extraLen < 0 || extraLen%elemLen != 0 {
+		return 0, fmt.Errorf("bad %v payload length (%d bytes)", m.ID(), payloadLen)
+	}
+	return extraLen / elemLen, nil
+}
 
 func init() {
 	regMsg[AckNak]("nak")
@@ -188,6 +225,7 @@ func init() {
 	regMsg[NavTimeLS]("timels")
 	regMsg[TimTP]("tp")
 	regMsg[TimSvIn]("svin")
+	regMsg[MonVer]("ver")
 }
 
 func regMsg[T any, PT interface {
@@ -223,6 +261,13 @@ func ParseMsg(frame []byte) (Msg, error) {
 		return nil, nil
 	}
 	msg := ctor()
+
+	if vMsg, ok := msg.(VarLengthMsg); ok {
+		err := vMsg.InitForLen(len(payload))
+		if err != nil {
+			return nil, err
+		}
+	}
 	err := binary.Read(bytes.NewReader(payload), binary.LittleEndian, msg)
 	if err != nil {
 		return nil, fmt.Errorf("parsing ubx-%s: %v", mid.String(), err)
