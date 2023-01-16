@@ -22,7 +22,7 @@ Improvements in existing functionality
 
 * Occasionally ITOW is not an integral number of seconds
 * Proper cleanup when wiring up all the objects
-* Testing
+* Testing (include fuzzing)
 * Make use NMEA (if we don't have UBX)
    * compute checksum
    * parse message
@@ -37,6 +37,8 @@ Improvements in existing functionality
 * PI controller starts off with a large integral term, which I suspect is not optimal
 * See if we can use higher level `term` module for serial stuff
 * Check UBX message parsing read all the data
+* Catch SIGTERM
+* Factor out scan.go into a module
 
 New functionality
 
@@ -44,7 +46,7 @@ New functionality
 2. Send messages to GPS
    * Enable messages we need
    * Get configuration; verify/adapt
-   * Poll for some things
-3. Extend ubx reading to deal with variable length messages (have fixed part and repeated part)
-4. Config file
+   * Poll for some things (e.g. UBX-MON-VER)
+3. Config file
+4. HTTP server
 
