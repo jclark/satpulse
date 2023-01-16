@@ -186,9 +186,13 @@ type TimSvIn struct {
 
 func (m *TimSvIn) ID() MsgID { return TimMsgID(0x04) }
 
-type MonVer struct {
+type MonVerFixed struct {
 	SwVersion [30]byte
 	HwVersion [10]byte
+}
+
+type MonVer struct {
+	MonVerFixed
 	Extension [][30]byte
 }
 
@@ -196,15 +200,22 @@ func (m *MonVer) ID() MsgID { return MonMsgID(0x04) }
 
 func (m *MonVer) InitForLen(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 30+10, 30)
-	if err != nil {
+	if err == nil {
 		m.Extension = make([][30]byte, len)
 	}
+	return
+}
+
+func (m *MonVer) Parts() (fixed any, slice any) {
+	fixed = &m.MonVerFixed
+	slice = &m.Extension
 	return
 }
 
 type VarLengthMsg interface {
 	Msg
 	InitForLen(payloadLen int) error
+	Parts() (fixed any, slice any)
 }
 
 // Use VarLengthMsg here to help ensure that InitForLen is correctly declared for each type
@@ -261,14 +272,22 @@ func ParseMsg(frame []byte) (Msg, error) {
 		return nil, nil
 	}
 	msg := ctor()
-
+	var fixed, slice any
 	if vMsg, ok := msg.(VarLengthMsg); ok {
 		err := vMsg.InitForLen(len(payload))
 		if err != nil {
 			return nil, err
 		}
+		fixed, slice = vMsg.Parts()
+	} else {
+		fixed = msg
+		slice = nil
 	}
-	err := binary.Read(bytes.NewReader(payload), binary.LittleEndian, msg)
+	r := bytes.NewReader(payload)
+	err := binary.Read(r, binary.LittleEndian, fixed)
+	if err == nil && slice != nil {
+		err = binary.Read(r, binary.LittleEndian, slice)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("parsing ubx-%s: %v", mid.String(), err)
 	}
@@ -277,7 +296,18 @@ func ParseMsg(frame []byte) (Msg, error) {
 
 func Serialize(msg Msg) ([]byte, error) {
 	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.LittleEndian, msg)
+	var v any
+	if vMsg, ok := msg.(VarLengthMsg); ok {
+		fixed, slice := vMsg.Parts()
+		err := binary.Write(buf, binary.LittleEndian, fixed)
+		if err != nil {
+			return nil, err
+		}
+		v = slice
+	} else {
+		v = msg
+	}
+	err := binary.Write(buf, binary.LittleEndian, v)
 	if err != nil {
 		return nil, err
 	}

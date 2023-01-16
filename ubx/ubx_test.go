@@ -1,6 +1,10 @@
 package ubx
 
-import "testing"
+import (
+	"testing"
+
+	"golang.org/x/exp/slices"
+)
 
 func TestNavTimeGPS(t *testing.T) {
 	testMsgType(t, NavTimeGPS{
@@ -13,10 +17,38 @@ func TestNavTimeGPS(t *testing.T) {
 	})
 }
 
+func TestMonVer(t *testing.T) {
+	m := MonVer{
+		MonVerFixed{[30]byte{1, 2, 3}, [10]byte{4, 5}},
+		[][30]byte{{7, 8}, {9}},
+	}
+	p2 := testMsgType1(t, m)
+	if !EqualMonVer(&m, p2.(*MonVer)) {
+		t.Fatalf("msg mon-ver not roundtripped %v => %v", &m, p2)
+	}
+}
+
+func EqualMonVer(p1, p2 *MonVer) bool {
+	return p1.MonVerFixed == p2.MonVerFixed && slices.Equal(p1.Extension, p2.Extension)
+}
+
 func testMsgType[M comparable, PM interface {
 	ID() MsgID
 	*M
 }](t *testing.T, m M) {
+	p2 := testMsgType1[M, PM](t, m)
+	m2 := *p2.(PM)
+	if m2 != m {
+		p := PM(&m)
+		mid := p.ID()
+		t.Fatalf("msg %v not roundtripped %v => %v", mid, &p, &p2)
+	}
+}
+
+func testMsgType1[M any, PM interface {
+	ID() MsgID
+	*M
+}](t *testing.T, m M) Msg {
 	p := PM(&m)
 	mid := p.ID()
 	b, err := Serialize(p)
@@ -30,8 +62,5 @@ func testMsgType[M comparable, PM interface {
 	if p2.ID() != p.ID() {
 		t.Fatalf("msgid not roundtripped %v => %v", mid, p2.ID())
 	}
-	m2 := *p2.(PM)
-	if m2 != m {
-		t.Fatalf("msg %v not roundtripped %v => %v", mid, &p, &p2)
-	}
+	return p2
 }
