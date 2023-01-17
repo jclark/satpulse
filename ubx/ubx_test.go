@@ -64,3 +64,13 @@ func testMsgType1[M any, PM interface {
 	}
 	return p2
 }
+
+func TestPoll(t *testing.T) {
+	buf := Poll[MonVer]()
+	if len(buf) != frameMinLength {
+		t.Fatalf("unexpected output length %d (expected %d)", len(buf), frameMinLength)
+	}
+	if buf[2] != clsMon {
+		t.Fatalf("invalid cls byte")
+	}
+}

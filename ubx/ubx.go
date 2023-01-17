@@ -314,6 +314,16 @@ func Serialize(msg Msg) ([]byte, error) {
 	return packMsg(msg.ID(), buf.Bytes())
 }
 
+func Poll[T any, PT interface {
+	ID() MsgID
+	*T
+}]() []byte {
+	m := PT(new(T))
+	mid := m.ID()
+	frame, _ := packMsg(mid, []byte{})
+	return frame
+}
+
 func packMsg(mid MsgID, payload []byte) ([]byte, error) {
 	if len(payload) > 0xFFFF {
 		return nil, fmt.Errorf("ubx-%s payload too long (%d bytes", mid.String(), len(payload))
