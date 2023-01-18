@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"regexp"
+	"strconv"
 )
 
 const (
@@ -373,4 +375,32 @@ func Latin1ZToString(chars []byte) string {
 		r = append(r, rune(ch))
 	}
 	return string(r)
+}
+
+var protverRegexp = regexp.MustCompile(`^PROTVER[= ]([0-9][0-9]?)\.([0-9][0-9])$`)
+
+func (m *MonVer) ProtVer() (int, int) {
+	submatches := m.findExtension(protverRegexp)
+	if submatches == nil {
+		return -1, 0
+	}
+	return mustAtoi(submatches[1]), mustAtoi(submatches[2])
+}
+
+func mustAtoi(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		panic(`could not convert UBX "` + s + `" to integer: ` + err.Error())
+	}
+	return n
+}
+
+func (m *MonVer) findExtension(re *regexp.Regexp) []string {
+	for _, buf := range m.Extension {
+		submatches := re.FindStringSubmatch(Latin1ZToString(buf[:]))
+		if submatches != nil {
+			return submatches
+		}
+	}
+	return nil
 }
