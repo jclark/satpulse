@@ -35,10 +35,13 @@ Improvements in existing functionality
 * On F9T, using ubx-tim-tp, tow seems to be wrong unless time base is set using tp5 to GPS
 * Experiment with different ki/kp coefficients for PI controller
 * PI controller starts off with a large integral term, which I suspect is not optimal
-* See if we can use higher level `term` module for serial stuff
+* Serial package
+    * Try to use higher level `term` module (or maybe `os` layer)
+    * Deal with raciness between Close and Read/Write
 * Check UBX message parsing read all the data
 * Catch SIGTERM
 * Factor out scan.go into a module
+* Introduce configuration phase, before synncing
 
 New functionality
 
