@@ -188,6 +188,28 @@ type TimSvIn struct {
 
 func (m *TimSvIn) ID() MsgID { return TimMsgID(0x04) }
 
+type MonHw struct {
+	PinSel        uint32
+	PinBank       uint32
+	PinDir        uint32
+	PinVal        uint32
+	NoisePerMS    uint16
+	AgcCnt        uint16
+	AStatus       byte
+	APower        byte
+	Flags         byte
+	_             byte
+	UsedMask      uint32
+	VP            [17]byte
+	CwSuppression byte
+	_             [2]byte
+	PinIrq        uint32
+	PullH         uint32
+	PullL         uint32
+}
+
+func (m *MonHw) ID() MsgID { return MonMsgID(0x09) }
+
 type MonVerFixed struct {
 	SwVersion [30]byte
 	HwVersion [10]byte
@@ -238,6 +260,7 @@ func init() {
 	regMsg[NavTimeLS]("timels")
 	regMsg[TimTP]("tp")
 	regMsg[TimSvIn]("svin")
+	regMsg[MonHw]("hw")
 	regMsg[MonVer]("ver")
 }
 
