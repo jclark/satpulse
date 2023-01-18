@@ -324,6 +324,17 @@ func Poll[T any, PT interface {
 	return frame
 }
 
+func SetRate[T any, PT interface {
+	ID() MsgID
+	*T
+}](rate byte) []byte {
+	m := PT(new(T))
+	cfgMsgID := makeMsgID(clsCfg, 0x01)
+	cls, id := m.ID().unpack()
+	frame, _ := packMsg(cfgMsgID, []byte{cls, id, rate})
+	return frame
+}
+
 func packMsg(mid MsgID, payload []byte) ([]byte, error) {
 	if len(payload) > 0xFFFF {
 		return nil, fmt.Errorf("ubx-%s payload too long (%d bytes", mid.String(), len(payload))
