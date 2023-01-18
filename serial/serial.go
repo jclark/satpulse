@@ -58,6 +58,22 @@ func (p *Port) Read(buf []byte) (n int, err error) {
 	return
 }
 
+func (p *Port) Write(buf []byte) (int, error) {
+	total := 0
+	for len(buf) > 0 {
+		// Semantics of Unix write and Go Write are not the same:
+		// Unix can write less than requested amount without its being an error.
+		n, err := unix.Write(p.fd, buf)
+		if err == nil {
+			total += n
+			buf = buf[n:]
+		} else if err != unix.EINTR {
+			return total, p.wrapErr(err, "write")
+		}
+	}
+	return total, nil
+}
+
 // Close resets the port's attributes and then closes it
 func (p *Port) Close() (err error) {
 	err = p.setAttr(&p.attr)
@@ -69,7 +85,7 @@ func (p *Port) Close() (err error) {
 }
 
 func (p *Port) Flush() error {
-	return p.wrapErr(termios.Tcflush(p.ufd(), unix.TCIFLUSH), "tcflush")
+	return p.wrapErr(termios.Tcflush(p.ufd(), unix.TCIOFLUSH), "tcflush")
 }
 
 func (p *Port) setAttr(attr *unix.Termios) error {
