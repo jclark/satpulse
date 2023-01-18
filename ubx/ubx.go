@@ -80,6 +80,36 @@ type AckAck struct {
 
 func (m *AckAck) ID() MsgID { return AckMsgID(0x01) }
 
+type CfgTp5 struct {
+	TpIdx             byte
+	Version           byte
+	_                 [2]byte
+	AntCableDelay     int16
+	RfGroupDelay      int16
+	FreqPeriod        uint32
+	FreqPeriodLock    uint32
+	PulseLenRatio     uint32
+	PulseLenRatioLock uint32
+	UserConfigDelay   int32
+	Flags             uint32
+}
+
+func (m *CfgTp5) ID() MsgID { return CfgMsgID(0x31) }
+
+type CfgTmode2 struct {
+	TimeMode     byte
+	_            byte
+	Flags        uint16
+	EcefXOrLat   int32
+	EcefYOrLon   int32
+	EcefZOrAlt   int32
+	FixedPosAcc  uint32
+	SvinMinDur   uint32
+	SvinAccLimit uint32
+}
+
+func (m *CfgTmode2) ID() MsgID { return CfgMsgID(0x3D) }
+
 type NavTimeGPS struct {
 	ITOW  uint32
 	FTOW  int32
@@ -174,7 +204,7 @@ const (
 	TimTPUTCUnknown = 15
 )
 
-type TimSvIn struct {
+type TimSvin struct {
 	Dur    uint32
 	MeanX  int32
 	MeanY  int32
@@ -186,7 +216,7 @@ type TimSvIn struct {
 	_      [2]byte
 }
 
-func (m *TimSvIn) ID() MsgID { return TimMsgID(0x04) }
+func (m *TimSvin) ID() MsgID { return TimMsgID(0x04) }
 
 type MonHw struct {
 	PinSel        uint32
@@ -254,12 +284,14 @@ func sliceLen(m VarLengthMsg, payloadLen, minLen, elemLen int) (int, error) {
 func init() {
 	regMsg[AckNak]("nak")
 	regMsg[AckAck]("ack")
+	regMsg[CfgTmode2]("tmode2")
+	regMsg[CfgTp5]("tp5")
 	regMsg[NavTimeGPS]("timegps")
 	regMsg[NavTimeBDS]("timebds")
 	regMsg[NavTimeUTC]("timeutc")
 	regMsg[NavTimeLS]("timels")
 	regMsg[TimTP]("tp")
-	regMsg[TimSvIn]("svin")
+	regMsg[TimSvin]("svin")
 	regMsg[MonHw]("hw")
 	regMsg[MonVer]("ver")
 }
