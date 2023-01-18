@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -43,6 +44,14 @@ func main() {
 	ctx := context.Background()
 	ctx = cancelOnInterrupt(ctx)
 	s, err := newSyncer(ctx)
+	cfgMsgs := bytes.Join([][]byte{
+		ubx.Poll[ubx.MonVer](),
+		ubx.SetRate[ubx.NavTimeGPS](1),
+		ubx.SetRate[ubx.TimTP](1),
+	}, []byte{})
+	if err == nil {
+		_, err = s.port.Write(cfgMsgs)
+	}
 	if err != nil {
 		slog.Error("exiting", err)
 	} else {
@@ -144,6 +153,13 @@ func doSync(ctx context.Context, s *Syncer) {
 					corr.GPSTime(ptime.GPS(data.Week, data.ITOW), g.TRead)
 				case *ubx.TimTP:
 					corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
+				case *ubx.MonVer:
+					major, minor := data.ProtVer()
+					protVer := "?"
+					if major >= 0 {
+						protVer = fmt.Sprintf("%d.%02d", major, minor)
+					}
+					lg.Info("gpsVersion", "sw", ubx.Latin1ZToString(data.SwVersion[:]), "hw", ubx.Latin1ZToString(data.HwVersion[:]), "protver", protVer)
 				default:
 					lg.Debug("ubx", "type", u.ID().String(), "payload", u)
 				}
