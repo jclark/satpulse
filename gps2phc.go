@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -44,13 +43,13 @@ func main() {
 	ctx := context.Background()
 	ctx = cancelOnInterrupt(ctx)
 	s, err := newSyncer(ctx)
-	cfgMsgs := bytes.Join([][]byte{
-		ubx.Poll[ubx.MonVer](),
-		ubx.SetRate[ubx.NavTimeGPS](1),
-		ubx.SetRate[ubx.TimTP](1),
-	}, []byte{})
 	if err == nil {
-		_, err = s.port.Write(cfgMsgs)
+		for _, frame := range createConfig() {
+			_, err = s.port.Write(frame)
+			if err != nil {
+				break
+			}
+		}
 	}
 	if err != nil {
 		slog.Error("exiting", err)
@@ -61,6 +60,17 @@ func main() {
 		slog.Debug("closed", "serial", serialDev)
 		s.clk.Close()
 		slog.Debug("closed", "if", ifName)
+	}
+}
+
+func createConfig() [][]byte {
+	return [][]byte{
+		ubx.Poll[ubx.MonVer](),
+		ubx.Poll[ubx.CfgTmode2](),
+		ubx.Poll[ubx.CfgTp5](),
+		ubx.Poll[ubx.TimSvin](),
+		ubx.SetRate[ubx.NavTimeGPS](1),
+		ubx.SetRate[ubx.TimTP](1),
 	}
 }
 
