@@ -25,7 +25,7 @@ type TsEvent struct {
 	Err       error
 }
 
-func New(path string) (*Clock, error) {
+func Open(path string) (*Clock, error) {
 	// clock_adjtime needs RDWR
 	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NONBLOCK, 0)
 	if err != nil {
@@ -45,6 +45,10 @@ func New(path string) (*Clock, error) {
 		return nil, err
 	}
 	return clk, nil
+}
+
+func (clk *Clock) Path() string {
+	return clk.path
 }
 
 func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- TsEvent, timeout time.Duration) {
@@ -109,6 +113,10 @@ func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) error {
 		er.Flags = unix2.PTP_ENABLE_FEATURE
 	}
 	return clk.wrapErr(unix2.IoctlPTPExttsRequest(clk.fd, &er), "ioctl(PTP_EXTTS_REQUEST)")
+}
+
+func (clk *Clock) ExttsChanCount() int {
+	return int(clk.caps.N_ext_ts)
 }
 
 func (clk *Clock) AdjTime(d time.Duration) (ptime.Epoch, error) {

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"time"
@@ -12,9 +14,10 @@ import (
 
 	"github.com/jclark/gps2phc/phc"
 	"github.com/jclark/gps2phc/ptime"
-	"github.com/jclark/gps2phc/serial"
 	"github.com/jclark/gps2phc/ubx"
+	"github.com/pkg/term"
 	"golang.org/x/exp/slog"
+	"golang.org/x/sys/unix"
 )
 
 var serialDev string
@@ -23,7 +26,7 @@ var debugEnable bool
 
 type Syncer struct {
 	clk   *phc.Clock
-	port  *serial.Port
+	term  *term.Term
 	tsCh  <-chan phc.TsEvent
 	gpsCh chan GpsMsg
 	corr  *tsync.Correlator
@@ -42,10 +45,14 @@ func main() {
 	slog.SetDefault(lg)
 	ctx := context.Background()
 	ctx = cancelOnInterrupt(ctx)
-	s, err := newSyncer(ctx)
+	clk, err := openExttsClock()
+	var s *Syncer
+	if err == nil {
+		s, err = newSyncer(ctx, clk)
+	}
 	if err == nil {
 		for _, frame := range createConfig() {
-			_, err = s.port.Write(frame)
+			_, err = serWrite(ctx, s.term, frame)
 			if err != nil {
 				break
 			}
@@ -56,7 +63,11 @@ func main() {
 	} else {
 		doSync(ctx, s)
 		slog.Debug("exiting")
-		s.port.Close()
+		err = s.term.Restore()
+		if err != nil {
+			slog.Error("could not restore terminal settings", err)
+		}
+		s.term.Close()
 		slog.Debug("closed", "serial", serialDev)
 		s.clk.Close()
 		slog.Debug("closed", "if", ifName)
@@ -86,25 +97,31 @@ func cancelOnInterrupt(ctx context.Context) context.Context {
 	return ctx
 }
 
-func newSyncer(ctx context.Context) (r *Syncer, err error) {
-	err = nil
-	r = nil
+func openExttsClock() (*phc.Clock, error) {
 	phcIndex, err := phc.IfPhcIndex(ifName)
 	if err != nil {
-		return
+		return nil, err
 	}
 	if phcIndex < 0 {
-		err = fmt.Errorf("interface %s cannot be used because it does not have a PTP hardware clock", ifName)
-		return
+		return nil, fmt.Errorf("interface %s cannot be used because it does not have a PTP hardware clock", ifName)
 	}
-	s := Syncer{}
-	lg := slog.FromContext(ctx)
-	lg.Info("usingPHC", "index", phcIndex)
-
-	s.clk, err = phc.New(phc.ClockPath(phcIndex))
+	clk, err := phc.Open(phc.ClockPath(phcIndex))
 	if err != nil {
-		return
+		return nil, err
 	}
+	if clk.ExttsChanCount() == 0 {
+		clk.Close()
+		return nil, fmt.Errorf("interface %s does not support external timestamping", ifName)
+	}
+	return clk, nil
+}
+
+func newSyncer(ctx context.Context, clk *phc.Clock) (r *Syncer, err error) {
+	err = nil
+	r = nil
+	s := Syncer{clk: clk}
+	lg := slog.FromContext(ctx)
+	lg.Info("usingPHC", "path", clk.Path())
 	s.tsCh, err = StartPPS(ctx, s.clk)
 	if err != nil {
 		return
@@ -116,7 +133,7 @@ func newSyncer(ctx context.Context) (r *Syncer, err error) {
 			return nil, err
 		}
 	*/
-	s.port, s.gpsCh, err = serStart(ctx, serialDev)
+	s.term, s.gpsCh, err = serStart(ctx, serialDev)
 	if err != nil {
 		return
 	}
@@ -187,16 +204,47 @@ func Picoseconds(ps int32) time.Duration {
 	return time.Duration(((ps + 500) / 1000))
 }
 
-func serStart(ctx context.Context, path string) (*serial.Port, chan GpsMsg, error) {
-	p, err := serial.Raw(path)
+const serReadTimeout = (time.Second * 11) / 10
+const serMaxWriteLen = 4096
+
+func serStart(ctx context.Context, path string) (*term.Term, chan GpsMsg, error) {
+	t, err := term.Open(path, term.RawMode, term.FlowControl(term.NONE), term.ReadTimeout(serReadTimeout))
 	if err != nil {
 		return nil, nil, err
 	}
-	err = p.Flush()
+	err = t.Flush()
 	if err != nil {
 		return nil, nil, err
 	}
 	c := make(chan GpsMsg, 1)
-	go serReadWorker(ctx, p, c)
-	return p, c, nil
+	go serReadWorker(ctx, t, c)
+	return t, c, nil
+}
+
+func serWrite(ctx context.Context, w *term.Term, buf []byte) (int, error) {
+	total := 0
+	for len(buf) > 0 {
+		// Semantics of Unix write and Go Write are not the same:
+		// Unix can write less than requested amount without its being an error.
+		wBuf := buf
+		if len(buf) > serMaxWriteLen {
+			wBuf = wBuf[0:serMaxWriteLen]
+		}
+		n, err := w.Write(wBuf)
+		if err == io.ErrShortWrite && n > 0 {
+			err = nil
+		}
+		if err == nil {
+			total += n
+			buf = buf[n:]
+		} else if !errors.Is(err, unix.EINTR) {
+			return total, err
+		}
+		select {
+		case <-ctx.Done():
+			return total, ctx.Err()
+		default:
+		}
+	}
+	return total, nil
 }

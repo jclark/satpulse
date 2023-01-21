@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
+	"io"
 	"time"
 
-	"github.com/jclark/gps2phc/serial"
 	"github.com/jclark/gps2phc/ubx"
 	"golang.org/x/exp/slog"
 )
@@ -14,7 +14,7 @@ type GpsMsg struct {
 	TRead time.Time
 }
 
-func serReadWorker(ctx context.Context, p *serial.Port, c chan GpsMsg) {
+func serReadWorker(ctx context.Context, r io.Reader, c chan GpsMsg) {
 	buf := make([]byte, 255)
 	msg := make([]byte, 0, 90)
 	var state scanState
@@ -26,7 +26,8 @@ Loop:
 			break Loop
 		default:
 		}
-		n, err := p.Read(buf)
+		n, err := r.Read(buf)
+		// XXX I think term will give us an EOF
 		if err != nil {
 			slog.FromContext(ctx).Error("readError", err)
 			break
@@ -66,7 +67,6 @@ Loop:
 			}
 		}
 	}
-	p.Close()
 	close(c)
 }
 

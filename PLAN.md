@@ -35,9 +35,6 @@ Improvements in existing functionality
 * On F9T, using ubx-tim-tp, tow seems to be wrong unless time base is set using tp5 to GPS
 * Experiment with different ki/kp coefficients for PI controller
 * PI controller starts off with a large integral term, which I suspect is not optimal
-* Serial package
-    * Try to use higher level `term` module (or maybe `os` layer)
-    * Deal with raciness between Close and Read/Write
 * Check UBX message parsing read all the data
 * Catch SIGTERM
 * Factor out scan.go into a module
@@ -45,6 +42,11 @@ Improvements in existing functionality
 * More info from MonVer
   * Flash vs ROM
   * Category: timing vs high-precision etc
+* Deal with read of 0 from term (caused by timeout)
+* Improved handling of writes
+   * Use separate goroutine
+   * Wait until each message has drained before sending next
+   * Avoid any race between term.Close and writing
 
 New functionality
 
