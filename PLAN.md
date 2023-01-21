@@ -41,7 +41,10 @@ Improvements in existing functionality
 * Check UBX message parsing read all the data
 * Catch SIGTERM
 * Factor out scan.go into a module
-* Introduce configuration phase, before synncing
+* Introduce configuration phase, before syncing
+* More info from MonVer
+  * Flash vs ROM
+  * Category: timing vs high-precision etc
 
 New functionality
 
@@ -52,4 +55,3 @@ New functionality
    * Poll for some things (e.g. UBX-MON-VER)
 3. Config file
 4. HTTP server
-
