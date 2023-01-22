@@ -37,7 +37,6 @@ Improvements in existing functionality
 * PI controller starts off with a large integral term, which I suspect is not optimal
 * Check UBX message parsing read all the data
 * Catch SIGTERM
-* Factor out scan.go into a module
 * Introduce configuration phase, before syncing
 * More info from MonVer
   * Flash vs ROM

@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/jclark/gps2phc/scan"
 	"github.com/jclark/gps2phc/tsync"
 
 	"github.com/jclark/gps2phc/phc"
@@ -228,7 +229,7 @@ type GpsMsg struct {
 
 func serReadWorker(ctx context.Context, r io.Reader, c chan GpsMsg) {
 	defer close(c)
-	p := NewScanner(r, 16)
+	p := scan.NewScanner(r, 16)
 	lg := slog.FromContext(ctx)
 	for {
 		f, err := p.Read(ctx)
@@ -239,9 +240,9 @@ func serReadWorker(ctx context.Context, r io.Reader, c chan GpsMsg) {
 			break
 		}
 		switch f.Kind {
-		case FrameNMEA:
+		case scan.FrameNMEA:
 			lg.Debug("nmea", "type", string(f.Data[1:6]))
-		case FrameUBX:
+		case scan.FrameUBX:
 			ubxMsg, err := ubx.ParseMsg(f.Data)
 			if err != nil {
 				lg.Error("ubxParseError", err)
