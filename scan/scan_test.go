@@ -52,7 +52,7 @@ func nmeaBad(t *testing.T, data string) {
 	s := New(r, 64)
 	f, _ := s.Read(ctx)
 	if f.Kind != Invalid {
-		t.Fatalf(`NMEA messae "%s" not recognized as invalid`, nmeaTrim(data))
+		t.Fatalf(`NMEA message "%s" not recognized as invalid`, nmeaTrim(data))
 	}
 }
 
