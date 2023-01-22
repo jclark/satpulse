@@ -229,7 +229,7 @@ type GpsMsg struct {
 
 func serReadWorker(ctx context.Context, r io.Reader, c chan GpsMsg) {
 	defer close(c)
-	p := scan.NewScanner(r, 16)
+	p := scan.New(r, 16)
 	lg := slog.FromContext(ctx)
 	for {
 		f, err := p.Read(ctx)
@@ -240,9 +240,9 @@ func serReadWorker(ctx context.Context, r io.Reader, c chan GpsMsg) {
 			break
 		}
 		switch f.Kind {
-		case scan.FrameNMEA:
+		case scan.NMEA:
 			lg.Debug("nmea", "type", string(f.Data[1:6]))
-		case scan.FrameUBX:
+		case scan.UBX:
 			ubxMsg, err := ubx.ParseMsg(f.Data)
 			if err != nil {
 				lg.Error("ubxParseError", err)

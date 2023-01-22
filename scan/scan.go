@@ -9,17 +9,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const (
-	ubxSync1 = 0xB5
-	ubxSync2 = 0x62
-)
-
 type FrameKind int
 
 const (
-	FrameInvalid = iota
-	FrameUBX
-	FrameNMEA
+	Invalid FrameKind = iota
+	UBX
+	NMEA
 )
 
 type Frame struct {
@@ -38,7 +33,7 @@ type Scanner struct {
 	tRead time.Time
 }
 
-func NewScanner(r io.Reader, bufSize int) *Scanner {
+func New(r io.Reader, bufSize int) *Scanner {
 	s := new(Scanner)
 	s.r = r
 	s.buf = make([]byte, 0, bufSize)
@@ -55,7 +50,7 @@ Loop:
 	for {
 		if s.nextScanIndex >= len(s.buf) {
 			if state == frameScan && fStartIndex < s.nextScanIndex {
-				f.Kind = FrameInvalid
+				f.Kind = Invalid
 				break Loop
 			}
 			err = s.fill(ctx, fStartIndex)
@@ -64,7 +59,7 @@ Loop:
 				f.TRead = s.tRead
 			}
 			if err != nil {
-				f.Kind = FrameInvalid
+				f.Kind = Invalid
 				break Loop
 			}
 		}
@@ -72,10 +67,10 @@ Loop:
 		s.nextScanIndex++
 		switch state {
 		case nmeaComplete:
-			f.Kind = FrameNMEA
+			f.Kind = NMEA
 			break Loop
 		case ubxExpectN:
-			f.Kind = FrameUBX
+			f.Kind = UBX
 			break Loop
 		}
 	}
@@ -132,6 +127,11 @@ const (
 	nmeaComplete
 	ubxStarted
 	ubxExpectN
+)
+
+const (
+	ubxSync1 = 0xB5
+	ubxSync2 = 0x62
 )
 
 func (p *Scanner) nextState(state scanState, frameLen int, b byte) scanState {
