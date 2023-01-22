@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -230,4 +231,49 @@ func isAsciiUpperAlnum(b byte) bool {
 		return true
 	}
 	return false
+}
+
+// For a proprietary sentence Pxxx, SentenceFmt is Pxxx and TalkerId is the empty string.
+type NMEAFields struct {
+	SentenceFmt string
+	TalkerID    string
+	DataFields  []string
+	ChecksumOK  bool
+}
+
+// Precondition is that data is valid according to Scanner.Read.
+func NMEASplit(data string) NMEAFields {
+	before, after, _ := strings.Cut(data[1:], "*")
+	fields := strings.Split(before, ",")
+	msg := NMEAFields{
+		DataFields: fields[1:],
+		ChecksumOK: nmeaChecksum(before) == hexToByte(after),
+	}
+	addr := fields[0]
+	if len(addr) == 5 {
+		msg.TalkerID = addr[:2]
+		msg.SentenceFmt = addr[2:]
+	} else {
+		msg.SentenceFmt = addr
+	}
+	return msg
+}
+
+func nmeaChecksum(data string) byte {
+	var c byte
+	for i := 0; i < len(data); i++ {
+		c ^= data[i]
+	}
+	return c
+}
+
+func hexToByte(digits string) byte {
+	return (hexWeight(digits[0]) << 4) | hexWeight(digits[1])
+}
+
+func hexWeight(b byte) byte {
+	if '0' <= b && b <= '9' {
+		return b - '0'
+	}
+	return (b - 'A') + 10
 }
