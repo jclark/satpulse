@@ -145,10 +145,10 @@ func (p *Scanner) nextState(state scanState, frameLen int, b byte) scanState {
 		}
 	case nmeaStarted:
 		if b == ',' {
-			if frameLen >= 4 { // $XYZ
+			if frameLen >= 5 { // $PUBX
 				return nmeaHadComma
 			}
-		} else if isAsciiAlnum(b) && frameLen < 6 { // $GPRMC
+		} else if isAsciiUpperAlnum(b) && frameLen < 6 { // $GPRMC
 			return nmeaStarted
 		}
 	case nmeaHadComma:
@@ -159,7 +159,7 @@ func (p *Scanner) nextState(state scanState, frameLen int, b byte) scanState {
 			return nmeaHadComma
 		}
 	case nmeaHadStar, nmeaHadChecksum1:
-		if isHexDigit(b) {
+		if isUpperHexDigit(b) {
 			return state + 1
 		}
 	case nmeaHadChecksum2:
@@ -194,38 +194,33 @@ func (p *Scanner) nextState(state scanState, frameLen int, b byte) scanState {
 }
 
 func isNmeaDataByte(b byte) bool {
-	if b <= ' ' || b >= 0x7f {
+	if b < ' ' || b >= 0x7f {
 		return false
 	}
 	switch b {
-	case '*':
+	case '*', '$':
 		return false
 	default:
 		return true
 	}
 }
 
-func isHexDigit(b byte) bool {
+func isUpperHexDigit(b byte) bool {
 	if '0' <= b && b <= '9' {
 		return true
 	}
-	if 'a' <= b && b <= 'f' {
-		return true
-	}
+	// NMEA requires checksum to use upper-case hex digits
 	if 'A' <= b && b <= 'F' {
 		return true
 	}
 	return false
 }
 
-func isAsciiAlnum(b byte) bool {
-	if 'a' <= b && b <= 'z' {
-		return true
-	}
+func isAsciiUpperAlnum(b byte) bool {
 	if 'A' <= b && b <= 'Z' {
 		return true
 	}
-	if 'A' <= b && b <= '9' {
+	if '0' <= b && b <= '9' {
 		return true
 	}
 	return false
