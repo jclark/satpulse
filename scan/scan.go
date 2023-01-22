@@ -144,9 +144,15 @@ func (p *Scanner) nextState(state scanState, frameLen int, b byte) scanState {
 			return ubxStarted
 		}
 	case nmeaStarted:
-		if b == ',' {
+		if b == ',' || b == '*' {
 			if frameLen >= 5 { // $PUBX
-				return nmeaHadComma
+				if frameLen == 6 || p.buf[p.nextScanIndex-4] == 'P' {
+					// allowed to have just address field
+					if b == '*' {
+						return nmeaHadStar
+					}
+					return nmeaHadComma
+				}
 			}
 		} else if isAsciiUpperAlnum(b) && frameLen < 6 { // $GPRMC
 			return nmeaStarted

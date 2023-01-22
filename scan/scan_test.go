@@ -9,8 +9,10 @@ import (
 
 func TestGoodNMEA(t *testing.T) {
 	nmeaOK(t, "$GPRMC,1,2,3*0F\r\n")
-	nmeaOK(t, "$PUBX,1,2,3*0F\r\n")
+	nmeaOK(t, "$GPRM1,1,2,3*AE\r\n")
+	nmeaOK(t, "$PUBX,1,2,3*2B\r\n")
 	nmeaOK(t, "$GPTXT,1,2,how are you?*7F\r\n")
+	nmeaOK(t, "$ABCDE*0F\r\n")
 }
 
 func nmeaOK(t *testing.T, data string) {
@@ -41,6 +43,7 @@ func TestBadNMEA(t *testing.T) {
 	nmeaBad(t, "$ABCdE,1*FF\r\n")     // lower case address
 	nmeaBad(t, "$GPRMC,1,2,3*0f\r\n") // lower case hex
 	nmeaBad(t, "$GPRMC,1,2,3*0\r\n")  // missing hex
+	nmeaBad(t, "$ABCD,1*FF\r\n")      // should start with P
 }
 
 func nmeaBad(t *testing.T, data string) {
