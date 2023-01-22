@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -309,7 +310,7 @@ func regMsg[T any, PT interface {
 // 2 bytes sync, 2 bytes clsid, 2 bytes length, 2 bytes checksum
 const frameMinLength = 8
 
-func ParseMsg(frame []byte) (Msg, error) {
+func ParseMsg(frame string) (Msg, error) {
 	n := len(frame)
 	if n < frameMinLength {
 		return nil, fmt.Errorf("UBX message too short (length %d bytes)", n)
@@ -340,7 +341,7 @@ func ParseMsg(frame []byte) (Msg, error) {
 		fixed = msg
 		slice = nil
 	}
-	r := bytes.NewReader(payload)
+	r := strings.NewReader(payload)
 	err := binary.Read(r, binary.LittleEndian, fixed)
 	if err == nil && slice != nil {
 		err = binary.Read(r, binary.LittleEndian, slice)
@@ -411,9 +412,13 @@ func packMsg(mid MsgID, payload []byte) ([]byte, error) {
 	return frame, nil
 }
 
-func checksum(bytes []byte) (ckA, ckB byte) {
-	for _, b := range bytes {
-		ckA += b
+type Bytes interface {
+	string | []byte
+}
+
+func checksum[B Bytes](bytes B) (ckA, ckB byte) {
+	for i := 0; i < len(bytes); i++ {
+		ckA += bytes[i]
 		ckB += ckA
 	}
 	return

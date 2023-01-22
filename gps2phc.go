@@ -221,6 +221,37 @@ func serStart(ctx context.Context, path string) (*term.Term, chan GpsMsg, error)
 	return t, c, nil
 }
 
+type GpsMsg struct {
+	U     ubx.Msg
+	TRead time.Time
+}
+
+func serReadWorker(ctx context.Context, r io.Reader, c chan GpsMsg) {
+	defer close(c)
+	p := NewScanner(r, 16)
+	lg := slog.FromContext(ctx)
+	for {
+		f, err := p.Read(ctx)
+		if err != nil {
+			if ctx.Err() == nil {
+				lg.Error("readError", err)
+			}
+			break
+		}
+		switch f.Kind {
+		case FrameNMEA:
+			lg.Debug("nmea", "type", string(f.Data[1:6]))
+		case FrameUBX:
+			ubxMsg, err := ubx.ParseMsg(f.Data)
+			if err != nil {
+				lg.Error("ubxParseError", err)
+			} else if ubxMsg != nil {
+				c <- GpsMsg{U: ubxMsg, TRead: f.TRead}
+			}
+		}
+	}
+}
+
 func serWrite(ctx context.Context, w *term.Term, buf []byte) (int, error) {
 	total := 0
 	for len(buf) > 0 {

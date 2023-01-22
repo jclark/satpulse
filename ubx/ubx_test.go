@@ -55,7 +55,7 @@ func testMsgType1[M any, PM interface {
 	if err != nil {
 		t.Fatalf("serialize err for %v: %v", mid, err)
 	}
-	p2, err := ParseMsg(b)
+	p2, err := ParseMsg(string(b))
 	if err != nil {
 		t.Fatalf("parse error for %v: %v", mid, err)
 	}
