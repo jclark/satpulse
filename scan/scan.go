@@ -42,7 +42,7 @@ func New(r io.Reader, bufSize int) *Scanner {
 }
 
 // When the error is non-nil, the packet may be of kind Invalid
-func (s *Scanner) Read(ctx context.Context) (f Frame, err error) {
+func (s *Scanner) Scan(ctx context.Context) (f Frame, err error) {
 	var state scanState
 
 	fStartIndex := s.nextScanIndex

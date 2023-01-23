@@ -232,7 +232,7 @@ func serReadWorker(ctx context.Context, r io.Reader, c chan GpsMsg) {
 	p := scan.New(r, 16)
 	lg := slog.FromContext(ctx)
 	for {
-		f, err := p.Read(ctx)
+		f, err := p.Scan(ctx)
 		if err != nil {
 			if ctx.Err() == nil {
 				lg.Error("readError", err)

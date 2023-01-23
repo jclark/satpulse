@@ -20,7 +20,7 @@ func nmeaOK(t *testing.T, data string) {
 	ctx := context.Background()
 	r := strings.NewReader(data)
 	s := New(r, 64)
-	f, err := s.Read(ctx)
+	f, err := s.Scan(ctx)
 	trimmed := nmeaTrim(data)
 	if err != nil {
 		t.Fatalf(`error reading frame "%s"`, trimmed)
@@ -31,7 +31,7 @@ func nmeaOK(t *testing.T, data string) {
 	if f.Data != data {
 		t.Fatalf(`wrong data for "%s"`, trimmed)
 	}
-	f, err = s.Read(ctx)
+	f, err = s.Scan(ctx)
 	if err != io.EOF || f.Kind != Invalid || f.Data != "" {
 		t.Fatalf(`did not get EOF with no data after NMEA "%s"`, trimmed)
 	}
@@ -53,7 +53,7 @@ func nmeaBad(t *testing.T, data string) {
 	ctx := context.Background()
 	r := strings.NewReader(data)
 	s := New(r, 64)
-	f, _ := s.Read(ctx)
+	f, _ := s.Scan(ctx)
 	if f.Kind != Invalid {
 		t.Fatalf(`NMEA message "%s" not recognized as invalid`, nmeaTrim(data))
 	}
