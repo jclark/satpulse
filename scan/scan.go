@@ -120,6 +120,8 @@ type scanState int
 const (
 	frameScan scanState = iota
 	nmeaStarted
+	nmeaHadCaret
+	nmeaHadCaretDigit1 // we depend on nmeaHadComma being after nmeaHadCaretDigit1
 	nmeaHadComma
 	nmeaHadStar
 	nmeaHadChecksum1
@@ -162,8 +164,16 @@ func (p *Scanner) nextState(state scanState, frameLen int, b byte) scanState {
 		if b == '*' {
 			return nmeaHadStar
 		}
-		if isNmeaDataByte(b) && frameLen < 82-5 { // 82 is total excluding 3-byte checksum and CRLF
+		if b == '^' {
+			if frameLen+2 < 82-5 {
+				return nmeaHadCaret
+			}
+		} else if isNmeaDataByte(b) && frameLen < 82-5 { // 82 is total excluding 3-byte checksum and CRLF
 			return nmeaHadComma
+		}
+	case nmeaHadCaret, nmeaHadCaretDigit1:
+		if isUpperHexDigit(b) {
+			return state + 1
 		}
 	case nmeaHadStar, nmeaHadChecksum1:
 		if isUpperHexDigit(b) {
@@ -205,7 +215,7 @@ func isNmeaDataByte(b byte) bool {
 		return false
 	}
 	switch b {
-	case '*', '$':
+	case '*', '$', '^', '!':
 		return false
 	default:
 		return true
@@ -250,6 +260,11 @@ func NMEASplit(data string) NMEAFields {
 		ChecksumOK: nmeaChecksum(before) == hexToByte(after),
 	}
 	addr := fields[0]
+	if strings.IndexByte(before, '^') >= 0 {
+		for i := 1; i < len(fields); i++ {
+			fields[i] = nmeaUnescape(fields[i])
+		}
+	}
 	if len(addr) == 5 {
 		msg.TalkerID = addr[:2]
 		msg.SentenceFmt = addr[2:]
@@ -265,6 +280,21 @@ func nmeaChecksum(data string) byte {
 		c ^= data[i]
 	}
 	return c
+}
+
+// Assumes that use of ^ has been validated by Scanner.Read.
+func nmeaUnescape(s string) string {
+	unescaped := ""
+	for s != "" {
+		before, after, ok := strings.Cut(s, "^")
+		unescaped += before
+		if !ok {
+			break
+		}
+		unescaped += string(rune(hexToByte(after)))
+		s = after[2:]
+	}
+	return unescaped
 }
 
 func hexToByte(digits string) byte {

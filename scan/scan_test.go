@@ -13,6 +13,7 @@ func TestGoodNMEA(t *testing.T) {
 	nmeaOK(t, "$PUBX,1,2,3*2B\r\n")
 	nmeaOK(t, "$GPTXT,1,2,how are you?*7F\r\n")
 	nmeaOK(t, "$ABCDE*0F\r\n")
+	nmeaOK(t, "$GPTXT,1,2,3,Hello^21*FF\r\n")
 }
 
 func nmeaOK(t *testing.T, data string) {
@@ -37,7 +38,9 @@ func nmeaOK(t *testing.T, data string) {
 }
 
 func TestBadNMEA(t *testing.T) {
-	nmeaBad(t, "$GPMRC,$1*FF\r\n")    // invalid char
+	nmeaBad(t, "$GPMRC,$1*FF\r\n")           // invalid char
+	nmeaBad(t, "$GPTXT,1,2,3,Hello!*FF\r\n") // invalid char
+
 	nmeaBad(t, "$ABCDEF,1*FF\r\n")    // address too long
 	nmeaBad(t, "$ABC,1*FF\r\n")       // address too short
 	nmeaBad(t, "$ABCdE,1*FF\r\n")     // lower case address
@@ -74,5 +77,16 @@ func TestNMEASplit(t *testing.T) {
 		df[0] != "5057.970" || df[1] != "N" || df[2] != "00146.110" ||
 		df[3] != "E" || df[4] != "142451" || df[5] != "A" {
 		t.Fatalf("NMEASplit failed")
+	}
+	f = NMEASplit("$GPTXT,1,Hello^21,3*FF\r\n")
+	df = f.DataFields
+	if len(df) != 3 || df[1] != "Hello!" {
+		t.Fatalf("NMEASplit failed on caret")
+	}
+}
+
+func TestNMEAUnescape(t *testing.T) {
+	if nmeaUnescape("abc^0D^0Ade^A0f") != "abc\r\nde\u00A0f" {
+		t.Fatalf("NMEAUnescape failed")
 	}
 }
