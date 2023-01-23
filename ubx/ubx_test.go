@@ -1,6 +1,7 @@
 package ubx
 
 import (
+	"strings"
 	"testing"
 
 	"golang.org/x/exp/slices"
@@ -63,6 +64,18 @@ func testMsgType1[M any, PM interface {
 		t.Fatalf("msgid not roundtripped %v => %v", mid, p2.ID())
 	}
 	return p2
+}
+
+func TestTrailingBytes(t *testing.T) {
+	a := AckAck{}
+	b, _ := packMsg(a.ID(), []byte{clsCfg, 0x01,
+		// extra byte
+		0x42})
+	s := string(b)
+	_, err := ParseMsg(s)
+	if err == nil || !strings.Contains(err.Error(), "trailing") {
+		t.Fatalf("failed to give an error for trailing bytes")
+	}
 }
 
 func TestPoll(t *testing.T) {

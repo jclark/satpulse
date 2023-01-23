@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -348,6 +349,10 @@ func ParseMsg(frame string) (Msg, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("parsing ubx-%s: %v", mid.String(), err)
+	}
+	_, err = r.ReadByte()
+	if err != io.EOF {
+		return nil, fmt.Errorf("parsing ubx-%s: trailing bytes", mid.String())
 	}
 	return msg, nil
 }
