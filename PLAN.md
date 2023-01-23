@@ -35,7 +35,6 @@ Improvements in existing functionality
 * On F9T, using ubx-tim-tp, tow seems to be wrong unless time base is set using tp5 to GPS
 * Experiment with different ki/kp coefficients for PI controller
 * PI controller starts off with a large integral term, which I suspect is not optimal
-* Catch SIGTERM
 * Introduce configuration phase, before syncing
 * More info from MonVer
   * Flash vs ROM

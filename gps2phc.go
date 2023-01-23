@@ -45,7 +45,7 @@ func main() {
 	lg := slog.New(slog.HandlerOptions{Level: level}.NewTextHandler(os.Stdout))
 	slog.SetDefault(lg)
 	ctx := context.Background()
-	ctx = cancelOnInterrupt(ctx)
+	ctx = cancelOnSignal(ctx)
 	clk, err := openExttsClock()
 	var s *Syncer
 	if err == nil {
@@ -86,10 +86,10 @@ func createConfig() [][]byte {
 	}
 }
 
-func cancelOnInterrupt(ctx context.Context) context.Context {
+func cancelOnSignal(ctx context.Context) context.Context {
 	ctx, cancel := context.WithCancel(ctx)
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
+	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
 	go func() {
 		<-sig
 		slog.FromContext(ctx).Debug("cancelling")
