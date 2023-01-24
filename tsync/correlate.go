@@ -149,6 +149,10 @@ const readWindow = time.Millisecond * 900
 const minDelay = maxDelay - readWindow
 
 func (c *Correlator) initialEdge() int {
+	// no GPS message yet
+	if c.gpsPending.isZero() {
+		return -1
+	}
 	// still have a previous sample,
 	// let's try to be consistent with that
 	if !c.gpsSampled.isZero() {
