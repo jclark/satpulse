@@ -44,6 +44,8 @@ Improvements in existing functionality
    * Use separate goroutine
    * Wait until each message has drained before sending next
    * Avoid any race between term.Close and writing
+* Option for baud rate
+* Serial port locking (flock seems the best way)
 
 New functionality
 
