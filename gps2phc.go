@@ -47,18 +47,24 @@ func main() {
 	ctx := context.Background()
 	ctx = cancelOnSignal(ctx)
 	clk, err := openExttsClock()
-	var s *Syncer
+	var t *term.Term
 	if err == nil {
-		s, err = newSyncer(ctx, clk)
+		lg.Debug("serial", "type", serType(serialDev))
+		t, err = serOpen(ctx, serialDev)
 	}
 	if err == nil {
 		for _, frame := range createConfig() {
-			_, err = serWrite(ctx, s.term, frame)
+			_, err = serWrite(ctx, t, frame)
 			if err != nil {
 				break
 			}
 		}
 	}
+	var s *Syncer
+	if err == nil {
+		s, err = newSyncer(ctx, clk, t)
+	}
+
 	if err != nil {
 		slog.Error("exiting", err)
 	} else {
@@ -117,32 +123,22 @@ func openExttsClock() (*phc.Clock, error) {
 	return clk, nil
 }
 
-func newSyncer(ctx context.Context, clk *phc.Clock) (r *Syncer, err error) {
+func newSyncer(ctx context.Context, clk *phc.Clock, t *term.Term) (r *Syncer, err error) {
 	err = nil
 	r = nil
-	s := Syncer{clk: clk}
 	lg := slog.FromContext(ctx)
+
+	servo, err := tsync.NewServo(clk, lg)
+	if err != nil {
+		return nil, err
+	}
+	s := Syncer{clk: clk, term: t, corr: tsync.NewCorrelator(servo)}
 	lg.Info("usingPHC", "path", clk.Path())
 	s.tsCh, err = StartPPS(ctx, s.clk)
 	if err != nil {
 		return
 	}
-	/*
-		// XXX errors after this need to deal with running PPS goroutine
-		err = SkipStale(s.clk, s.tsCh)
-		if err != nil {
-			return nil, err
-		}
-	*/
-	s.term, s.gpsCh, err = serStart(ctx, serialDev)
-	if err != nil {
-		return
-	}
-	servo, err := tsync.NewServo(s.clk, lg)
-	if err != nil {
-		return nil, err
-	}
-	s.corr = tsync.NewCorrelator(servo)
+	s.gpsCh = serStart(ctx, t)
 	r = &s
 	return
 }
@@ -208,18 +204,24 @@ func Picoseconds(ps int32) time.Duration {
 const serReadTimeout = (time.Second * 11) / 10
 const serMaxWriteLen = 4096
 
-func serStart(ctx context.Context, path string) (*term.Term, chan GpsMsg, error) {
+func serOpen(ctx context.Context, path string) (*term.Term, error) {
 	t, err := term.Open(path, term.RawMode, term.FlowControl(term.NONE), term.ReadTimeout(serReadTimeout))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	err = t.Flush()
 	if err != nil {
-		return nil, nil, err
+		t.Restore()
+		t.Close()
+		return nil, err
 	}
+	return t, nil
+}
+
+func serStart(ctx context.Context, t *term.Term) chan GpsMsg {
 	c := make(chan GpsMsg, 1)
 	go serReadWorker(ctx, t, c)
-	return t, c, nil
+	return c
 }
 
 type GpsMsg struct {
@@ -241,7 +243,10 @@ func serReadWorker(ctx context.Context, r io.Reader, c chan GpsMsg) {
 		}
 		switch f.Kind {
 		case scan.NMEA:
-			lg.Debug("nmea", "type", string(f.Data[1:6]))
+			fields := scan.NMEASplit(f.Data)
+			if fields.SentenceFmt == "TXT" && len(fields.DataFields) >= 4 {
+				lg.Info("nmeaTxt", "s", fields.DataFields[3])
+			}
 		case scan.UBX:
 			ubxMsg, err := ubx.ParseMsg(f.Data)
 			if err != nil {
@@ -255,7 +260,13 @@ func serReadWorker(ctx context.Context, r io.Reader, c chan GpsMsg) {
 
 func serWrite(ctx context.Context, w *term.Term, buf []byte) (int, error) {
 	total := 0
+	lg := slog.FromContext(ctx)
 	for len(buf) > 0 {
+		select {
+		case <-ctx.Done():
+			return total, ctx.Err()
+		default:
+		}
 		// Semantics of Unix write and Go Write are not the same:
 		// Unix can write less than requested amount without its being an error.
 		wBuf := buf
@@ -267,16 +278,52 @@ func serWrite(ctx context.Context, w *term.Term, buf []byte) (int, error) {
 			err = nil
 		}
 		if err == nil {
+			lg.Debug("serialWrite", "n", n)
 			total += n
 			buf = buf[n:]
 		} else if !errors.Is(err, unix.EINTR) {
 			return total, err
 		}
-		select {
-		case <-ctx.Done():
-			return total, ctx.Err()
-		default:
+		n, err = w.Buffered()
+		if err != nil || n == 0 {
+			continue
 		}
+		lg.Debug("serialBufferedBytes", "n", n)
+		time.Sleep(time.Microsecond * 10)
+		n, _ = w.Buffered()
+		lg.Debug("drainBufferedBytes", "n", n)
 	}
 	return total, nil
+}
+
+const (
+	serUnknown = iota
+	serUART
+	serUSB
+	serUSBtoUART
+	serBT
+)
+
+func serType(path string) int {
+	s := unix.Stat_t{}
+	err := unix.Stat(path, &s)
+	if err != nil {
+		return serUnknown
+	}
+	// See https://www.kernel.org/doc/html/latest/admin-guide/devices.html
+	switch unix.Major(s.Dev) {
+	case 4, 5:
+		if unix.Minor(s.Dev) >= 64 { // ttyS0, /dev/ttycua0
+			return serUART
+		}
+	case 166, 167: // USB ACM "modem" /dev/ttyACM0
+		return serUSB
+	case 188, 189: // USB serial converter /dev/ttyUSB0
+		return serUSBtoUART
+	case 204, 205: // low-density serial port (Raspberry Pi uses /dev/ttyAMA0)
+		return serUART
+	case 216, 217: // Bluetooth RFCOMM /dev/rfcomm0
+		return serBT
+	}
+	return serUnknown
 }
