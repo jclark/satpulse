@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"time"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/jclark/gps2phc/phc"
 	"github.com/jclark/gps2phc/ptime"
+	"github.com/jclark/gps2phc/serio"
 	"github.com/jclark/gps2phc/ubx"
 	"github.com/pkg/term"
 	"golang.org/x/exp/slog"
@@ -47,8 +47,8 @@ func main() {
 	clk, err := openExttsClock()
 	var t *term.Term
 	if err == nil {
-		lg.Debug("serial", "devType", serDevType(serialDev))
-		t, err = serOpen(ctx, serialDev)
+		lg.Debug("serial", "devType", serio.DevType(serialDev))
+		t, err = serio.Open(serialDev)
 	}
 	var fCh chan scan.Frame
 	if err == nil {
@@ -109,7 +109,7 @@ func openExttsClock() (*phc.Clock, error) {
 }
 
 func gpsInit(ctx context.Context, t *term.Term) (frameCh chan scan.Frame, err error) {
-	frameCh = serReadStart(ctx, scan.New(t, 16))
+	frameCh = serio.ReadStart(ctx, scan.New(t, 16))
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
@@ -120,7 +120,7 @@ func gpsInit(ctx context.Context, t *term.Term) (frameCh chan scan.Frame, err er
 		ubx.SetRate[ubx.NavTimeGPS](1),
 		ubx.SetRate[ubx.TimTP](1),
 	}
-	writeRespCh := serWriteAsync(ctx, t, configMsgs)
+	writeRespCh := serio.WriteAsync(ctx, t, configMsgs)
 	timerCh := time.After(time.Second * 2)
 	cancelCh := ctx.Done()
 	nmeaMsgs := []string{}
@@ -287,142 +287,4 @@ func Picoseconds(ps int32) time.Duration {
 		return -Picoseconds(-ps)
 	}
 	return time.Duration(((ps + 500) / 1000))
-}
-
-const serReadTimeout = (time.Second * 11) / 10
-const serMaxWriteLen = 4096
-
-func serOpen(ctx context.Context, path string) (*term.Term, error) {
-	t, err := term.Open(path, term.RawMode, term.FlowControl(term.NONE), term.ReadTimeout(serReadTimeout))
-	if err != nil {
-		return nil, err
-	}
-	err = t.Flush()
-	if err != nil {
-		t.Restore()
-		t.Close()
-		return nil, err
-	}
-	return t, nil
-}
-
-func serReadStart(ctx context.Context, scanner *scan.Scanner) chan scan.Frame {
-	c := make(chan scan.Frame, 1) // XXX think about the buffering
-	go serReadWorker(ctx, scanner, c)
-	return c
-}
-
-func serReadWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
-	slog.FromContext(ctx).Debug("readWorkerStarted")
-	defer close(c)
-	for {
-		f, err := p.Scan(ctx)
-		c <- f
-		if err != nil && err != io.EOF {
-			if ctx.Err() == nil {
-				slog.FromContext(ctx).Error("readError", err)
-			}
-			break
-		}
-	}
-}
-
-func serWriteAsync(ctx context.Context, w *term.Term, frames [][]byte) <-chan error {
-	c := make(chan error, 1)
-	go func() {
-		for _, frame := range frames {
-			select {
-			case <-ctx.Done():
-				c <- ctx.Err()
-				return
-			default:
-			}
-			_, err := serWrite(ctx, w, frame)
-			if err != nil {
-				c <- err
-				return
-			}
-		}
-		c <- serDrain(ctx, w)
-		slog.FromContext(ctx).Debug("writeAsyncDone")
-	}()
-	return c
-}
-
-func serWrite(ctx context.Context, w *term.Term, buf []byte) (int, error) {
-	total := 0
-	lg := slog.FromContext(ctx)
-	for len(buf) > 0 {
-
-		// Semantics of Unix write and Go Write are not the same:
-		// Unix can write less than requested amount without its being an error.
-		wBuf := buf
-		if len(buf) > serMaxWriteLen {
-			wBuf = wBuf[0:serMaxWriteLen]
-		}
-		n, err := w.Write(wBuf)
-		if err == io.ErrShortWrite && n > 0 {
-			err = nil
-		}
-		if err == nil {
-			lg.Debug("serialWrite", "n", n)
-			total += n
-			buf = buf[n:]
-		} else if !errors.Is(err, unix.EINTR) {
-			return total, err
-		}
-	}
-	return total, nil
-}
-
-func serDrain(tx context.Context, w *term.Term) error {
-	lg := slog.FromContext(tx)
-	for {
-		select {
-		case <-tx.Done():
-			return tx.Err()
-		default:
-		}
-		n, err := w.Buffered()
-		if err != nil || n == 0 {
-			break
-		}
-		lg.Debug("serialBufferedBytes", "n", n)
-		time.Sleep(time.Microsecond * 10)
-		n, _ = w.Buffered()
-		lg.Debug("drainBufferedBytes", "n", n)
-	}
-	return nil
-}
-
-const (
-	serDevUnknown = iota
-	serDevUART
-	serDevUSB
-	serDevUSBtoUART
-	serDevBT
-)
-
-func serDevType(path string) int {
-	s := unix.Stat_t{}
-	err := unix.Stat(path, &s)
-	if err != nil {
-		return serDevUnknown
-	}
-	// See https://www.kernel.org/doc/html/latest/admin-guide/devices.html
-	switch unix.Major(s.Dev) {
-	case 4, 5:
-		if unix.Minor(s.Dev) >= 64 { // ttyS0, /dev/ttycua0
-			return serDevUART
-		}
-	case 166, 167: // USB ACM "modem" /dev/ttyACM0
-		return serDevUSB
-	case 188, 189: // USB serial converter /dev/ttyUSB0
-		return serDevUSBtoUART
-	case 204, 205: // low-density serial port (Raspberry Pi uses /dev/ttyAMA0)
-		return serDevUART
-	case 216, 217: // Bluetooth RFCOMM /dev/rfcomm0
-		return serDevBT
-	}
-	return serDevUnknown
 }
