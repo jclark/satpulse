@@ -47,7 +47,7 @@ func main() {
 	clk, err := openExttsClock()
 	var t *term.Term
 	if err == nil {
-		lg.Debug("serial", "type", serType(serialDev))
+		lg.Debug("serial", "devType", serDevType(serialDev))
 		t, err = serOpen(ctx, serialDev)
 	}
 	var fCh chan scan.Frame
@@ -109,7 +109,7 @@ func openExttsClock() (*phc.Clock, error) {
 }
 
 func gpsInit(ctx context.Context, t *term.Term) (frameCh chan scan.Frame, err error) {
-	frameCh = serStart(ctx, scan.New(t, 16))
+	frameCh = serReadStart(ctx, scan.New(t, 16))
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
@@ -306,7 +306,7 @@ func serOpen(ctx context.Context, path string) (*term.Term, error) {
 	return t, nil
 }
 
-func serStart(ctx context.Context, scanner *scan.Scanner) chan scan.Frame {
+func serReadStart(ctx context.Context, scanner *scan.Scanner) chan scan.Frame {
 	c := make(chan scan.Frame, 1) // XXX think about the buffering
 	go serReadWorker(ctx, scanner, c)
 	return c
@@ -396,33 +396,33 @@ func serDrain(tx context.Context, w *term.Term) error {
 }
 
 const (
-	serUnknown = iota
-	serUART
-	serUSB
-	serUSBtoUART
-	serBT
+	serDevUnknown = iota
+	serDevUART
+	serDevUSB
+	serDevUSBtoUART
+	serDevBT
 )
 
-func serType(path string) int {
+func serDevType(path string) int {
 	s := unix.Stat_t{}
 	err := unix.Stat(path, &s)
 	if err != nil {
-		return serUnknown
+		return serDevUnknown
 	}
 	// See https://www.kernel.org/doc/html/latest/admin-guide/devices.html
 	switch unix.Major(s.Dev) {
 	case 4, 5:
 		if unix.Minor(s.Dev) >= 64 { // ttyS0, /dev/ttycua0
-			return serUART
+			return serDevUART
 		}
 	case 166, 167: // USB ACM "modem" /dev/ttyACM0
-		return serUSB
+		return serDevUSB
 	case 188, 189: // USB serial converter /dev/ttyUSB0
-		return serUSBtoUART
+		return serDevUSBtoUART
 	case 204, 205: // low-density serial port (Raspberry Pi uses /dev/ttyAMA0)
-		return serUART
+		return serDevUART
 	case 216, 217: // Bluetooth RFCOMM /dev/rfcomm0
-		return serBT
+		return serDevBT
 	}
-	return serUnknown
+	return serDevUnknown
 }
