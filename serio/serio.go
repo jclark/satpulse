@@ -14,8 +14,14 @@ import (
 
 const readTimeout = (time.Second * 11) / 10
 const maxWriteLen = 4096
+const scanBufSize = 16
 
-func Open(path string) (*term.Term, error) {
+type Port struct {
+	t    *term.Term
+	path string
+}
+
+func Open(path string) (*Port, error) {
 	t, err := term.Open(path, term.RawMode, term.FlowControl(term.NONE), term.ReadTimeout(readTimeout))
 	if err != nil {
 		return nil, err
@@ -26,10 +32,19 @@ func Open(path string) (*term.Term, error) {
 		t.Close()
 		return nil, err
 	}
-	return t, nil
+	return &Port{t: t, path: path}, nil
 }
 
-func ReadStart(ctx context.Context, scanner *scan.Scanner) chan scan.Frame {
+func (p *Port) Restore() error {
+	return p.t.Restore()
+}
+
+func (p *Port) Close() error {
+	return p.t.Close()
+}
+
+func (p *Port) ReadStart(ctx context.Context) chan scan.Frame {
+	scanner := scan.New(p.t, scanBufSize)
 	c := make(chan scan.Frame, 1) // XXX think about the buffering
 	go readWorker(ctx, scanner, c)
 	return c
@@ -50,7 +65,7 @@ func readWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
 	}
 }
 
-func WriteAsync(ctx context.Context, w *term.Term, frames [][]byte) <-chan error {
+func (p *Port) WriteAsync(ctx context.Context, frames [][]byte) <-chan error {
 	c := make(chan error, 1)
 	go func() {
 		for _, frame := range frames {
@@ -60,21 +75,22 @@ func WriteAsync(ctx context.Context, w *term.Term, frames [][]byte) <-chan error
 				return
 			default:
 			}
-			_, err := Write(ctx, w, frame)
+			_, err := p.Write(ctx, frame)
 			if err != nil {
 				c <- err
 				return
 			}
 		}
-		c <- Drain(ctx, w)
+		c <- p.Drain(ctx)
 		slog.FromContext(ctx).Debug("writeAsyncDone")
 	}()
 	return c
 }
 
-func Write(ctx context.Context, w *term.Term, buf []byte) (int, error) {
+func (p *Port) Write(ctx context.Context, buf []byte) (int, error) {
 	total := 0
 	lg := slog.FromContext(ctx)
+	t := p.t
 	for len(buf) > 0 {
 
 		// Semantics of Unix write and Go Write are not the same:
@@ -83,12 +99,12 @@ func Write(ctx context.Context, w *term.Term, buf []byte) (int, error) {
 		if len(buf) > maxWriteLen {
 			wBuf = wBuf[0:maxWriteLen]
 		}
-		n, err := w.Write(wBuf)
+		n, err := t.Write(wBuf)
 		if err == io.ErrShortWrite && n > 0 {
 			err = nil
 		}
 		if err == nil {
-			lg.Debug("ialWrite", "n", n)
+			lg.Debug("serialWrite", "n", n)
 			total += n
 			buf = buf[n:]
 		} else if !errors.Is(err, unix.EINTR) {
@@ -98,37 +114,40 @@ func Write(ctx context.Context, w *term.Term, buf []byte) (int, error) {
 	return total, nil
 }
 
-func Drain(tx context.Context, w *term.Term) error {
+func (p *Port) Drain(tx context.Context) error {
 	lg := slog.FromContext(tx)
+	t := p.t
 	for {
 		select {
 		case <-tx.Done():
 			return tx.Err()
 		default:
 		}
-		n, err := w.Buffered()
+		n, err := t.Buffered()
 		if err != nil || n == 0 {
 			break
 		}
-		lg.Debug("ialBufferedBytes", "n", n)
+		lg.Debug("serialBufferedBytes", "n", n)
 		time.Sleep(time.Microsecond * 10)
-		n, _ = w.Buffered()
+		n, _ = t.Buffered()
 		lg.Debug("drainBufferedBytes", "n", n)
 	}
 	return nil
 }
 
+type DevKind int
+
 const (
-	DevUnknown = iota
+	DevUnknown DevKind = iota
 	DevUART
 	DevUSB
 	DevUSBtoUART
 	DevBT
 )
 
-func DevType(path string) int {
+func (p *Port) DevKind() DevKind {
 	s := unix.Stat_t{}
-	err := unix.Stat(path, &s)
+	err := unix.Stat(p.path, &s)
 	if err != nil {
 		return DevUnknown
 	}
@@ -140,9 +159,9 @@ func DevType(path string) int {
 		}
 	case 166, 167: // USB ACM "modem" /dev/ttyACM0
 		return DevUSB
-	case 188, 189: // USB ial converter /dev/ttyUSB0
+	case 188, 189: // USB serial converter /dev/ttyUSB0
 		return DevUSBtoUART
-	case 204, 205: // low-density ial port (Raspberry Pi uses /dev/ttyAMA0)
+	case 204, 205: // low-density serial port (Raspberry Pi uses /dev/ttyAMA0)
 		return DevUART
 	case 216, 217: // Bluetooth RFCOMM /dev/rfcomm0
 		return DevBT

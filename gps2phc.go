@@ -16,7 +16,6 @@ import (
 	"github.com/jclark/gps2phc/ptime"
 	"github.com/jclark/gps2phc/serio"
 	"github.com/jclark/gps2phc/ubx"
-	"github.com/pkg/term"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sys/unix"
 )
@@ -45,14 +44,14 @@ func main() {
 	ctx := context.Background()
 	ctx = cancelOnSignal(ctx)
 	clk, err := openExttsClock()
-	var t *term.Term
+	var port *serio.Port
 	if err == nil {
-		lg.Debug("serial", "devType", serio.DevType(serialDev))
-		t, err = serio.Open(serialDev)
+		port, err = serio.Open(serialDev)
 	}
 	var fCh chan scan.Frame
 	if err == nil {
-		fCh, err = gpsInit(ctx, t)
+		lg.Debug("serial", "devKind", port.DevKind())
+		fCh, err = gpsInit(ctx, port)
 	}
 	var s *Syncer
 	if err == nil {
@@ -66,11 +65,11 @@ func main() {
 	} else {
 		doSync(ctx, s)
 		slog.Debug("exiting")
-		err = t.Restore()
+		err = port.Restore()
 		if err != nil {
 			slog.Error("could not restore terminal settings", err)
 		}
-		t.Close()
+		port.Close()
 		slog.Debug("closed", "serial", serialDev)
 		clk.Close()
 		slog.Debug("closed", "if", ifName)
@@ -108,8 +107,8 @@ func openExttsClock() (*phc.Clock, error) {
 	return clk, nil
 }
 
-func gpsInit(ctx context.Context, t *term.Term) (frameCh chan scan.Frame, err error) {
-	frameCh = serio.ReadStart(ctx, scan.New(t, 16))
+func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, err error) {
+	frameCh = port.ReadStart(ctx)
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
@@ -120,7 +119,7 @@ func gpsInit(ctx context.Context, t *term.Term) (frameCh chan scan.Frame, err er
 		ubx.SetRate[ubx.NavTimeGPS](1),
 		ubx.SetRate[ubx.TimTP](1),
 	}
-	writeRespCh := serio.WriteAsync(ctx, t, configMsgs)
+	writeRespCh := port.WriteAsync(ctx, configMsgs)
 	timerCh := time.After(time.Second * 2)
 	cancelCh := ctx.Done()
 	nmeaMsgs := []string{}
