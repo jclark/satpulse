@@ -26,11 +26,9 @@ var ifName string
 var debugEnable bool
 
 type Syncer struct {
-	clk   *phc.Clock
-	term  *term.Term
-	tsCh  <-chan phc.TsEvent
-	gpsCh chan GpsMsg
-	corr  *tsync.Correlator
+	tsCh <-chan phc.TsEvent
+	fCh  chan scan.Frame
+	corr *tsync.Correlator
 }
 
 func main() {
@@ -52,43 +50,30 @@ func main() {
 		lg.Debug("serial", "type", serType(serialDev))
 		t, err = serOpen(ctx, serialDev)
 	}
+	var fCh chan scan.Frame
 	if err == nil {
-		for _, frame := range createConfig() {
-			_, err = serWrite(ctx, t, frame)
-			if err != nil {
-				break
-			}
-		}
+		fCh, err = gpsInit(ctx, t)
 	}
 	var s *Syncer
 	if err == nil {
-		s, err = newSyncer(ctx, clk, t)
+		s, err = newSyncer(ctx, clk, fCh)
 	}
-
+	// XXX if fCh is nil and err is non-nil,
+	// we should receive from fCh until it is closed
+	// At that point, we can cleanup and exit
 	if err != nil {
 		slog.Error("exiting", err)
 	} else {
 		doSync(ctx, s)
 		slog.Debug("exiting")
-		err = s.term.Restore()
+		err = t.Restore()
 		if err != nil {
 			slog.Error("could not restore terminal settings", err)
 		}
-		s.term.Close()
+		t.Close()
 		slog.Debug("closed", "serial", serialDev)
-		s.clk.Close()
+		clk.Close()
 		slog.Debug("closed", "if", ifName)
-	}
-}
-
-func createConfig() [][]byte {
-	return [][]byte{
-		ubx.Poll[ubx.MonVer](),
-		ubx.Poll[ubx.CfgTmode2](),
-		ubx.Poll[ubx.CfgTp5](),
-		ubx.Poll[ubx.TimSvin](),
-		ubx.SetRate[ubx.NavTimeGPS](1),
-		ubx.SetRate[ubx.TimTP](1),
 	}
 }
 
@@ -123,7 +108,104 @@ func openExttsClock() (*phc.Clock, error) {
 	return clk, nil
 }
 
-func newSyncer(ctx context.Context, clk *phc.Clock, t *term.Term) (r *Syncer, err error) {
+func gpsInit(ctx context.Context, t *term.Term) (frameCh chan scan.Frame, err error) {
+	frameCh = serStart(ctx, scan.New(t, 16))
+	// must wait for writeRespCh before returning
+	// so the called can close the Term without a data race
+	configMsgs := [][]byte{
+		ubx.Poll[ubx.MonVer](),
+		ubx.Poll[ubx.CfgTmode2](),
+		ubx.Poll[ubx.CfgTp5](),
+		ubx.Poll[ubx.TimSvin](),
+		ubx.SetRate[ubx.NavTimeGPS](1),
+		ubx.SetRate[ubx.TimTP](1),
+	}
+	writeRespCh := serWriteAsync(ctx, t, configMsgs)
+	timerCh := time.After(time.Second * 2)
+	cancelCh := ctx.Done()
+	nmeaMsgs := []string{}
+	ubxMsgs := []string{}
+	invalidByteCount := 0
+	for {
+		select {
+		case frame, ok := <-frameCh:
+			if ok {
+				switch frame.Kind {
+				case scan.NMEA:
+					nmeaMsgs = append(nmeaMsgs, string(frame.Data))
+				case scan.UBX:
+					ubxMsgs = append(ubxMsgs, string(frame.Data))
+				case scan.Invalid:
+					invalidByteCount += len(frame.Data)
+				}
+			} else {
+				frameCh = nil
+			}
+		case <-cancelCh:
+			cancelCh = nil
+			if err != nil {
+				err = ctx.Err()
+			}
+		case e := <-writeRespCh:
+			writeRespCh = nil
+			if e != nil && err == nil {
+				err = e
+			}
+		case <-timerCh:
+			timerCh = nil
+		}
+		if writeRespCh == nil {
+			if err != nil {
+				return
+			}
+			if timerCh == nil || frameCh == nil {
+				break
+			}
+		}
+	}
+	lg := slog.FromContext(ctx)
+	if len(ubxMsgs) == 0 && len(nmeaMsgs) == 0 {
+		if invalidByteCount == 0 {
+			err = errors.New("new output detected from GPS")
+		} else {
+			err = errors.New("could not understand GPS output")
+		}
+		return
+	}
+	for _, msg := range ubxMsgs {
+		u, err := ubx.ParseMsg(msg)
+		if err != nil {
+			lg.Error("ubxParseError", err)
+		} else if u != nil {
+			switch data := u.(type) {
+			case *ubx.MonVer:
+				major, minor := data.ProtVer()
+				protVer := "?"
+				if major >= 0 {
+					protVer = fmt.Sprintf("%d.%02d", major, minor)
+				}
+				lg.Info("gpsVersion", "sw", ubx.Latin1ZToString(data.SwVersion[:]), "hw", ubx.Latin1ZToString(data.HwVersion[:]), "protver", protVer)
+			default:
+				lg.Debug("ubx", "type", u.ID().String(), "payload", u)
+			}
+		}
+	}
+	for _, msg := range nmeaMsgs {
+		nmeaLog(lg, msg)
+	}
+	lg.Debug("gpsInitDone")
+	return
+}
+
+func nmeaLog(lg *slog.Logger, data string) {
+	fields := scan.NMEASplit(data)
+	if fields.SentenceFmt == "TXT" && len(fields.DataFields) >= 4 {
+		// When we open an ACM device, the GPS receiver sends TXT messages with each line of the boot screen
+		lg.Info("nmeaTxt", "s", fields.DataFields[3])
+	}
+}
+
+func newSyncer(ctx context.Context, clk *phc.Clock, fCh chan scan.Frame) (r *Syncer, err error) {
 	err = nil
 	r = nil
 	lg := slog.FromContext(ctx)
@@ -132,13 +214,12 @@ func newSyncer(ctx context.Context, clk *phc.Clock, t *term.Term) (r *Syncer, er
 	if err != nil {
 		return nil, err
 	}
-	s := Syncer{clk: clk, term: t, corr: tsync.NewCorrelator(servo)}
+	s := Syncer{corr: tsync.NewCorrelator(servo), fCh: fCh}
 	lg.Info("usingPHC", "path", clk.Path())
-	s.tsCh, err = StartPPS(ctx, s.clk)
+	s.tsCh, err = StartPPS(ctx, clk)
 	if err != nil {
 		return
 	}
-	s.gpsCh = serStart(ctx, t)
 	r = &s
 	return
 }
@@ -146,11 +227,11 @@ func newSyncer(ctx context.Context, clk *phc.Clock, t *term.Term) (r *Syncer, er
 func doSync(ctx context.Context, s *Syncer) {
 	// loop until both channels are closed
 	tsCh := s.tsCh
-	gpsCh := s.gpsCh
+	fCh := s.fCh
 	corr := s.corr
 	lg := slog.FromContext(ctx)
 	nSkipped := 0
-	for tsCh != nil || gpsCh != nil {
+	for tsCh != nil || fCh != nil {
 		select {
 		case e, ok := <-tsCh:
 			if ok {
@@ -169,26 +250,33 @@ func doSync(ctx context.Context, s *Syncer) {
 			} else {
 				tsCh = nil
 			}
-		case g, ok := <-gpsCh:
+		case f, ok := <-fCh:
 			if ok {
-				u := g.U
-				switch data := u.(type) {
-				case *ubx.NavTimeGPS:
-					corr.GPSTime(ptime.GPS(data.Week, data.ITOW), g.TRead)
-				case *ubx.TimTP:
-					corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
-				case *ubx.MonVer:
-					major, minor := data.ProtVer()
-					protVer := "?"
-					if major >= 0 {
-						protVer = fmt.Sprintf("%d.%02d", major, minor)
-					}
-					lg.Info("gpsVersion", "sw", ubx.Latin1ZToString(data.SwVersion[:]), "hw", ubx.Latin1ZToString(data.HwVersion[:]), "protver", protVer)
-				default:
-					lg.Debug("ubx", "type", u.ID().String(), "payload", u)
-				}
+				syncFrame(ctx, corr, f)
 			} else {
-				gpsCh = nil
+				fCh = nil
+			}
+		}
+	}
+}
+
+func syncFrame(ctx context.Context, corr *tsync.Correlator, f scan.Frame) {
+	lg := slog.FromContext(ctx)
+	switch f.Kind {
+	case scan.NMEA:
+		nmeaLog(lg, f.Data)
+	case scan.UBX:
+		u, err := ubx.ParseMsg(f.Data)
+		if err != nil {
+			lg.Error("ubxParseError", err)
+		} else if u != nil {
+			switch data := u.(type) {
+			case *ubx.NavTimeGPS:
+				corr.GPSTime(ptime.GPS(data.Week, data.ITOW), f.TRead)
+			case *ubx.TimTP:
+				corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
+			default:
+				lg.Debug("ubx", "type", u.ID().String(), "payload", u)
 			}
 		}
 	}
@@ -218,55 +306,54 @@ func serOpen(ctx context.Context, path string) (*term.Term, error) {
 	return t, nil
 }
 
-func serStart(ctx context.Context, t *term.Term) chan GpsMsg {
-	c := make(chan GpsMsg, 1)
-	go serReadWorker(ctx, t, c)
+func serStart(ctx context.Context, scanner *scan.Scanner) chan scan.Frame {
+	c := make(chan scan.Frame, 1) // XXX think about the buffering
+	go serReadWorker(ctx, scanner, c)
 	return c
 }
 
-type GpsMsg struct {
-	U     ubx.Msg
-	TRead time.Time
-}
-
-func serReadWorker(ctx context.Context, r io.Reader, c chan GpsMsg) {
+func serReadWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
+	slog.FromContext(ctx).Debug("readWorkerStarted")
 	defer close(c)
-	p := scan.New(r, 16)
-	lg := slog.FromContext(ctx)
 	for {
 		f, err := p.Scan(ctx)
-		if err != nil {
+		c <- f
+		if err != nil && err != io.EOF {
 			if ctx.Err() == nil {
-				lg.Error("readError", err)
+				slog.FromContext(ctx).Error("readError", err)
 			}
 			break
 		}
-		switch f.Kind {
-		case scan.NMEA:
-			fields := scan.NMEASplit(f.Data)
-			if fields.SentenceFmt == "TXT" && len(fields.DataFields) >= 4 {
-				lg.Info("nmeaTxt", "s", fields.DataFields[3])
+	}
+}
+
+func serWriteAsync(ctx context.Context, w *term.Term, frames [][]byte) <-chan error {
+	c := make(chan error, 1)
+	go func() {
+		for _, frame := range frames {
+			select {
+			case <-ctx.Done():
+				c <- ctx.Err()
+				return
+			default:
 			}
-		case scan.UBX:
-			ubxMsg, err := ubx.ParseMsg(f.Data)
+			_, err := serWrite(ctx, w, frame)
 			if err != nil {
-				lg.Error("ubxParseError", err)
-			} else if ubxMsg != nil {
-				c <- GpsMsg{U: ubxMsg, TRead: f.TRead}
+				c <- err
+				return
 			}
 		}
-	}
+		c <- serDrain(ctx, w)
+		slog.FromContext(ctx).Debug("writeAsyncDone")
+	}()
+	return c
 }
 
 func serWrite(ctx context.Context, w *term.Term, buf []byte) (int, error) {
 	total := 0
 	lg := slog.FromContext(ctx)
 	for len(buf) > 0 {
-		select {
-		case <-ctx.Done():
-			return total, ctx.Err()
-		default:
-		}
+
 		// Semantics of Unix write and Go Write are not the same:
 		// Unix can write less than requested amount without its being an error.
 		wBuf := buf
@@ -284,16 +371,28 @@ func serWrite(ctx context.Context, w *term.Term, buf []byte) (int, error) {
 		} else if !errors.Is(err, unix.EINTR) {
 			return total, err
 		}
-		n, err = w.Buffered()
+	}
+	return total, nil
+}
+
+func serDrain(tx context.Context, w *term.Term) error {
+	lg := slog.FromContext(tx)
+	for {
+		select {
+		case <-tx.Done():
+			return tx.Err()
+		default:
+		}
+		n, err := w.Buffered()
 		if err != nil || n == 0 {
-			continue
+			break
 		}
 		lg.Debug("serialBufferedBytes", "n", n)
 		time.Sleep(time.Microsecond * 10)
 		n, _ = w.Buffered()
 		lg.Debug("drainBufferedBytes", "n", n)
 	}
-	return total, nil
+	return nil
 }
 
 const (
