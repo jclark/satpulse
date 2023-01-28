@@ -16,6 +16,7 @@ import (
 	"github.com/jclark/gps2phc/ptime"
 	"github.com/jclark/gps2phc/serio"
 	"github.com/jclark/gps2phc/ubx"
+	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sys/unix"
 )
@@ -162,7 +163,6 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 			}
 		}
 	}
-	lg := slog.FromContext(ctx)
 	if len(ubxMsgs) == 0 && len(nmeaMsgs) == 0 {
 		if invalidByteCount == 0 {
 			err = errors.New("new output detected from GPS")
@@ -171,6 +171,7 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 		}
 		return
 	}
+	lg := slog.FromContext(ctx)
 	for _, msg := range ubxMsgs {
 		u, err := ubx.ParseMsg(msg)
 		if err != nil {
@@ -189,10 +190,19 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 			}
 		}
 	}
+	sentenceMap := map[string]map[string]bool{}
 	for _, msg := range nmeaMsgs {
+		fields := scan.NMEASplit(msg)
+		talkerMap := sentenceMap[fields.SentenceFmt]
+		if talkerMap == nil {
+			talkerMap = map[string]bool{}
+			sentenceMap[fields.SentenceFmt] = talkerMap
+		}
+		talkerMap[fields.TalkerID] = true
 		nmeaLog(lg, msg)
 	}
-	lg.Debug("gpsInitDone")
+	sentences := maps.Keys(sentenceMap)
+	lg.Debug("gpsInitDone", "nmeaSentences", sentences)
 	return
 }
 
@@ -200,7 +210,7 @@ func nmeaLog(lg *slog.Logger, data string) {
 	fields := scan.NMEASplit(data)
 	if fields.SentenceFmt == "TXT" && len(fields.DataFields) >= 4 {
 		// When we open an ACM device, the GPS receiver sends TXT messages with each line of the boot screen
-		lg.Info("nmeaTxt", "s", fields.DataFields[3])
+		lg.Debug("nmeaTxt", "s", fields.DataFields[3])
 	}
 }
 
