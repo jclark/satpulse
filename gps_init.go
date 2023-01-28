@@ -29,12 +29,12 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
-		ubx.Poll[ubx.MonVer](),
-		ubx.Poll[ubx.CfgTmode2](),
-		ubx.Poll[ubx.CfgTp5](),
-		ubx.Poll[ubx.TimSvin](),
-		ubx.SetRate[ubx.NavTimeGPS](1),
-		ubx.SetRate[ubx.TimTP](1),
+		ubx.Poll(ubx.MonVerID),
+		ubx.Poll(ubx.CfgTmode2ID),
+		ubx.Poll(ubx.CfgTp5ID),
+		ubx.Poll(ubx.TimSvinID),
+		ubx.SetRate(ubx.NavTimeGPSID, 1),
+		ubx.SetRate(ubx.TimTPID, 1),
 	}
 	writeRespCh := port.WriteAsync(ctx, configMsgs)
 	timerCh := time.After(time.Second * 2)
@@ -82,7 +82,10 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 		}
 		return
 	}
-	lg.Debug("gpsInitDone", "nmeaSentences", maps.Keys(gr.nmeaSentences), "protVer", gr.protVer, "ack", gr.ack)
+	lg.Debug("gpsInitDone",
+		"nmeaSentences", maps.Keys(gr.nmeaSentences),
+		"protVer", gr.protVer,
+		"ack", gr.ack)
 	return
 }
 
@@ -126,8 +129,10 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 		gr.ack[data.MsgID] = true
 	case *ubx.AckNak:
 		gr.ack[data.MsgID] = false
+	case *ubx.CfgMsg:
+		lg.Debug("ubxRate", "id", data.MsgID, "rate", data.Rate)
 	default:
-		lg.Debug("ubx", "type", u.ID().String(), "payload", u)
+		lg.Debug("ubx", "id", u.ID().String(), "payload", u)
 	}
 }
 

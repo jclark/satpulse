@@ -33,12 +33,6 @@ var clsMap = map[byte]string{
 	clsTim: "tim",
 }
 
-func NavMsgID(id byte) MsgID { return makeMsgID(clsNav, id) }
-func AckMsgID(id byte) MsgID { return makeMsgID(clsAck, id) }
-func CfgMsgID(id byte) MsgID { return makeMsgID(clsCfg, id) }
-func MonMsgID(id byte) MsgID { return makeMsgID(clsMon, id) }
-func TimMsgID(id byte) MsgID { return makeMsgID(clsTim, id) }
-
 func makeMsgID(cls byte, id byte) MsgID {
 	return MsgID(uint16(cls) | (uint16(id) << 8))
 }
@@ -70,17 +64,56 @@ func (mid MsgID) String() string {
 	return s
 }
 
+const (
+	AckNakID     MsgID = clsAck | (0x00 << 8)
+	AckAckID     MsgID = clsAck | (0x01 << 8)
+	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
+	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
+	CfgTp5ID     MsgID = clsCfg | (0x31 << 8)
+	MonHwID      MsgID = clsMon | (0x09 << 8)
+	MonVerID     MsgID = clsMon | (0x04 << 8)
+	NavTimeGPSID MsgID = clsNav | (0x20 << 8)
+	NavTimeUTCID MsgID = clsNav | (0x21 << 8)
+	NavTimeBDSID MsgID = clsNav | (0x24 << 8)
+	NavTimeLSID  MsgID = clsNav | (0x26 << 8)
+	TimSvinID    MsgID = clsTim | (0x04 << 8)
+	TimTPID      MsgID = clsTim | (0x01 << 8)
+)
+
+func init() {
+	regMsg[AckNak]("nak")
+	regMsg[AckAck]("ack")
+	regMsg[CfgMsg]("msg")
+	regMsg[CfgTmode2]("tmode2")
+	regMsg[CfgTp5]("tp5")
+	regMsg[MonHw]("hw")
+	regMsg[MonVer]("ver")
+	regMsg[NavTimeGPS]("timegps")
+	regMsg[NavTimeBDS]("timebds")
+	regMsg[NavTimeUTC]("timeutc")
+	regMsg[NavTimeLS]("timels")
+	regMsg[TimSvin]("svin")
+	regMsg[TimTP]("tp")
+}
+
 type AckNak struct {
 	MsgID MsgID
 }
 
-func (m *AckNak) ID() MsgID { return AckMsgID(0x00) }
+func (m *AckNak) ID() MsgID { return AckNakID }
 
 type AckAck struct {
 	MsgID MsgID
 }
 
-func (m *AckAck) ID() MsgID { return AckMsgID(0x01) }
+func (m *AckAck) ID() MsgID { return AckAckID }
+
+type CfgMsg struct {
+	MsgID MsgID
+	Rate  [6]byte
+}
+
+func (m *CfgMsg) ID() MsgID { return CfgMsgID }
 
 type CfgTp5 struct {
 	TpIdx             byte
@@ -96,7 +129,7 @@ type CfgTp5 struct {
 	Flags             uint32
 }
 
-func (m *CfgTp5) ID() MsgID { return CfgMsgID(0x31) }
+func (m *CfgTp5) ID() MsgID { return CfgTp5ID }
 
 type CfgTmode2 struct {
 	TimeMode     byte
@@ -110,7 +143,7 @@ type CfgTmode2 struct {
 	SvinAccLimit uint32
 }
 
-func (m *CfgTmode2) ID() MsgID { return CfgMsgID(0x3D) }
+func (m *CfgTmode2) ID() MsgID { return CfgTmode2ID }
 
 type NavTimeGPS struct {
 	ITOW  uint32
@@ -121,7 +154,7 @@ type NavTimeGPS struct {
 	TAcc  uint32
 }
 
-func (m *NavTimeGPS) ID() MsgID { return NavMsgID(0x20) }
+func (m *NavTimeGPS) ID() MsgID { return NavTimeGPSID }
 
 type NavTimeUTC struct {
 	ITOW  uint32
@@ -136,7 +169,7 @@ type NavTimeUTC struct {
 	Valid byte
 }
 
-func (m *NavTimeUTC) ID() MsgID { return NavMsgID(0x21) }
+func (m *NavTimeUTC) ID() MsgID { return NavTimeUTCID }
 
 type NavTimeBDS struct {
 	ITOW  uint32
@@ -148,7 +181,7 @@ type NavTimeBDS struct {
 	TAcc  uint32
 }
 
-func (m *NavTimeBDS) ID() MsgID { return NavMsgID(0x24) }
+func (m *NavTimeBDS) ID() MsgID { return NavTimeBDSID }
 
 type NavTimeLS struct {
 	ITOW          uint32
@@ -165,7 +198,7 @@ type NavTimeLS struct {
 	Valid         byte
 }
 
-func (m *NavTimeLS) ID() MsgID { return NavMsgID(0x26) }
+func (m *NavTimeLS) ID() MsgID { return NavTimeLSID }
 
 type TimTP struct {
 	TowMS    uint32
@@ -176,7 +209,7 @@ type TimTP struct {
 	RefInfo  byte
 }
 
-func (m *TimTP) ID() MsgID { return TimMsgID(0x01) }
+func (m *TimTP) ID() MsgID { return TimTPID }
 
 const (
 	TimTPFlagTimeBase = 1 << iota
@@ -218,7 +251,7 @@ type TimSvin struct {
 	_      [2]byte
 }
 
-func (m *TimSvin) ID() MsgID { return TimMsgID(0x04) }
+func (m *TimSvin) ID() MsgID { return TimSvinID }
 
 type MonHw struct {
 	PinSel        uint32
@@ -240,7 +273,7 @@ type MonHw struct {
 	PullL         uint32
 }
 
-func (m *MonHw) ID() MsgID { return MonMsgID(0x09) }
+func (m *MonHw) ID() MsgID { return MonHwID }
 
 type MonVerFixed struct {
 	SwVersion [30]byte
@@ -252,7 +285,7 @@ type MonVer struct {
 	Extension [][30]byte
 }
 
-func (m *MonVer) ID() MsgID { return MonMsgID(0x04) }
+func (m *MonVer) ID() MsgID { return MonVerID }
 
 func (m *MonVer) InitForLen(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 30+10, 30)
@@ -281,21 +314,6 @@ func sliceLen(m VarLengthMsg, payloadLen, minLen, elemLen int) (int, error) {
 		return 0, fmt.Errorf("bad %v payload length (%d bytes)", m.ID(), payloadLen)
 	}
 	return extraLen / elemLen, nil
-}
-
-func init() {
-	regMsg[AckNak]("nak")
-	regMsg[AckAck]("ack")
-	regMsg[CfgTmode2]("tmode2")
-	regMsg[CfgTp5]("tp5")
-	regMsg[NavTimeGPS]("timegps")
-	regMsg[NavTimeBDS]("timebds")
-	regMsg[NavTimeUTC]("timeutc")
-	regMsg[NavTimeLS]("timels")
-	regMsg[TimTP]("tp")
-	regMsg[TimSvin]("svin")
-	regMsg[MonHw]("hw")
-	regMsg[MonVer]("ver")
 }
 
 func regMsg[T any, PT interface {
@@ -377,24 +395,20 @@ func Serialize(msg Msg) ([]byte, error) {
 	return packMsg(msg.ID(), buf.Bytes())
 }
 
-func Poll[T any, PT interface {
-	ID() MsgID
-	*T
-}]() []byte {
-	m := PT(new(T))
-	mid := m.ID()
+func Poll(mid MsgID) []byte {
 	frame, _ := packMsg(mid, []byte{})
 	return frame
 }
 
-func SetRate[T any, PT interface {
-	ID() MsgID
-	*T
-}](rate byte) []byte {
-	m := PT(new(T))
-	cfgMsgID := makeMsgID(clsCfg, 0x01)
-	cls, id := m.ID().unpack()
-	frame, _ := packMsg(cfgMsgID, []byte{cls, id, rate})
+func SetRate(mid MsgID, rate byte) []byte {
+	cls, id := mid.unpack()
+	frame, _ := packMsg(CfgMsgID, []byte{cls, id, rate})
+	return frame
+}
+
+func PollRate(mid MsgID) []byte {
+	cls, id := mid.unpack()
+	frame, _ := packMsg(CfgMsgID, []byte{cls, id})
 	return frame
 }
 
