@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/jclark/gps2phc/scan"
@@ -12,6 +11,18 @@ import (
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slog"
 )
+
+type gpsReceived struct {
+	ubxMsgCount      int
+	nmeaMsgCount     int
+	invalidMsgCount  int
+	invalidByteCount int
+	nmeaSentences    map[string]map[string]bool
+	protVer          ubx.ProtVer
+	tmode2           *ubx.CfgTmode2
+	tp5              *ubx.CfgTp5
+	ack              map[ubx.MsgID]bool
+}
 
 func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, err error) {
 	frameCh = port.ReadStart(ctx)
@@ -28,21 +39,14 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 	writeRespCh := port.WriteAsync(ctx, configMsgs)
 	timerCh := time.After(time.Second * 2)
 	cancelCh := ctx.Done()
-	nmeaMsgs := []string{}
-	ubxMsgs := []string{}
-	invalidByteCount := 0
+	lg := slog.FromContext(ctx)
+	gr := gpsReceived{}
+	gr.init()
 	for {
 		select {
 		case frame, ok := <-frameCh:
 			if ok {
-				switch frame.Kind {
-				case scan.NMEA:
-					nmeaMsgs = append(nmeaMsgs, string(frame.Data))
-				case scan.UBX:
-					ubxMsgs = append(ubxMsgs, string(frame.Data))
-				case scan.Invalid:
-					invalidByteCount += len(frame.Data)
-				}
+				gr.frame(frame.Kind, string(frame.Data), lg)
 			} else {
 				frameCh = nil
 			}
@@ -68,45 +72,81 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 			}
 		}
 	}
-	if len(ubxMsgs) == 0 && len(nmeaMsgs) == 0 {
-		if invalidByteCount == 0 {
-			err = errors.New("new output detected from GPS")
+	if gr.ubxMsgCount+gr.nmeaMsgCount == 0 {
+		if gr.invalidByteCount+gr.invalidMsgCount == 0 {
+			err = errors.New("no output detected from GPS")
+		} else if gr.invalidMsgCount > 0 {
+			err = errors.New("invalid GPS output (multiple processes reading from serial port?)")
 		} else {
-			err = errors.New("could not understand GPS output")
+			err = errors.New("unrecognized GPS protocol")
 		}
 		return
 	}
-	lg := slog.FromContext(ctx)
-	for _, msg := range ubxMsgs {
-		u, err := ubx.ParseMsg(msg)
-		if err != nil {
-			lg.Error("ubxParseError", err)
-		} else if u != nil {
-			switch data := u.(type) {
-			case *ubx.MonVer:
-				major, minor := data.ProtVer()
-				protVer := "?"
-				if major >= 0 {
-					protVer = fmt.Sprintf("%d.%02d", major, minor)
-				}
-				lg.Info("gpsVersion", "sw", ubx.Latin1ZToString(data.SwVersion[:]), "hw", ubx.Latin1ZToString(data.HwVersion[:]), "protver", protVer)
-			default:
-				lg.Debug("ubx", "type", u.ID().String(), "payload", u)
-			}
-		}
-	}
-	sentenceMap := map[string]map[string]bool{}
-	for _, msg := range nmeaMsgs {
-		fields := scan.NMEASplit(msg)
-		talkerMap := sentenceMap[fields.SentenceFmt]
-		if talkerMap == nil {
-			talkerMap = map[string]bool{}
-			sentenceMap[fields.SentenceFmt] = talkerMap
-		}
-		talkerMap[fields.TalkerID] = true
-		nmeaLog(lg, msg)
-	}
-	sentences := maps.Keys(sentenceMap)
-	lg.Debug("gpsInitDone", "nmeaSentences", sentences)
+	lg.Debug("gpsInitDone", "nmeaSentences", maps.Keys(gr.nmeaSentences), "protVer", gr.protVer, "ack", gr.ack)
 	return
+}
+
+func (gr *gpsReceived) init() {
+	gr.nmeaSentences = map[string]map[string]bool{}
+	gr.ack = map[ubx.MsgID]bool{}
+}
+
+func (gr *gpsReceived) frame(kind scan.FrameKind, data string, lg *slog.Logger) {
+	switch kind {
+	case scan.NMEA:
+		gr.nmea(data, lg)
+	case scan.UBX:
+		gr.ubx(data, lg)
+	default:
+		gr.invalid(data, lg)
+	}
+}
+
+func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
+	u, err := ubx.ParseMsg(data)
+	if err != nil {
+		lg.Error("ubxParseError", err)
+		gr.invalidMsgCount++
+		return
+	}
+	gr.ubxMsgCount++
+	if u == nil {
+		// XXX need a way to get the msg id in this case
+		return
+	}
+	switch data := u.(type) {
+	case *ubx.MonVer:
+		gr.protVer = data.ProtVer()
+		lg.Info("gpsVersion", "sw", ubx.Latin1ZToString(data.SwVersion[:]), "hw", ubx.Latin1ZToString(data.HwVersion[:]), "protVer", gr.protVer)
+	case *ubx.CfgTmode2:
+		gr.tmode2 = data
+	case *ubx.CfgTp5:
+		gr.tp5 = data
+	case *ubx.AckAck:
+		gr.ack[data.MsgID] = true
+	case *ubx.AckNak:
+		gr.ack[data.MsgID] = false
+	default:
+		lg.Debug("ubx", "type", u.ID().String(), "payload", u)
+	}
+}
+
+func (gr *gpsReceived) nmea(data string, lg *slog.Logger) {
+	fields := scan.NMEASplit(data)
+	if !fields.ChecksumOK {
+		gr.invalidMsgCount++
+		return
+	}
+	gr.nmeaMsgCount++
+	talkerMap := gr.nmeaSentences[fields.SentenceFmt]
+	if talkerMap == nil {
+		talkerMap = map[string]bool{}
+		gr.nmeaSentences[fields.SentenceFmt] = talkerMap
+	}
+	talkerMap[fields.TalkerID] = true
+	nmeaLog(lg, data)
+}
+
+func (gr *gpsReceived) invalid(data string, lg *slog.Logger) {
+	gr.invalidByteCount += len(data)
 }

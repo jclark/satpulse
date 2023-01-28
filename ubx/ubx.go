@@ -442,22 +442,30 @@ func Latin1ZToString(chars []byte) string {
 	return string(r)
 }
 
-var protverRegexp = regexp.MustCompile(`^PROTVER[= ]([0-9][0-9]?)\.([0-9][0-9])$`)
-
-func (m *MonVer) ProtVer() (int, int) {
-	submatches := m.findExtension(protverRegexp)
-	if submatches == nil {
-		return -1, 0
-	}
-	return mustAtoi(submatches[1]), mustAtoi(submatches[2])
+type ProtVer struct {
+	major, minor byte
 }
 
-func mustAtoi(s string) int {
+func (v ProtVer) String() string {
+	return fmt.Sprintf("%d.%0d", v.major, v.minor)
+}
+
+var protverRegexp = regexp.MustCompile(`^PROTVER[= ]([1-9][0-9]?)\.([0-9][0-9])$`)
+
+func (m *MonVer) ProtVer() ProtVer {
+	submatches := m.findExtension(protverRegexp)
+	if submatches == nil {
+		return ProtVer{}
+	}
+	return ProtVer{mustAtob(submatches[1]), mustAtob(submatches[2])}
+}
+
+func mustAtob(s string) byte {
 	n, err := strconv.Atoi(s)
 	if err != nil {
 		panic(`could not convert UBX "` + s + `" to integer: ` + err.Error())
 	}
-	return n
+	return byte(n)
 }
 
 func (m *MonVer) findExtension(re *regexp.Regexp) []string {
