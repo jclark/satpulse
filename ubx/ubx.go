@@ -18,6 +18,17 @@ const (
 type MsgID uint16
 
 const (
+	GPS = iota
+	SBAS
+	Galileo
+	BeiDou
+	IMES
+	QZSS
+	GLONASS
+	NavIC
+)
+
+const (
 	clsNav = 0x01
 	clsAck = 0x05
 	clsCfg = 0x06
@@ -67,6 +78,7 @@ func (mid MsgID) String() string {
 const (
 	AckNakID     MsgID = clsAck | (0x00 << 8)
 	AckAckID     MsgID = clsAck | (0x01 << 8)
+	CfgGNSSID    MsgID = clsCfg | (0x3E << 8)
 	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
 	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
 	CfgTp5ID     MsgID = clsCfg | (0x31 << 8)
@@ -83,6 +95,7 @@ const (
 func init() {
 	regMsg[AckNak]("nak")
 	regMsg[AckAck]("ack")
+	regMsg[CfgGNSS]("gnss")
 	regMsg[CfgMsg]("msg")
 	regMsg[CfgTmode2]("tmode2")
 	regMsg[CfgTp5]("tp5")
@@ -298,6 +311,45 @@ func (m *MonVer) InitForLen(payloadLen int) (err error) {
 func (m *MonVer) Parts() (fixed any, slice any) {
 	fixed = &m.MonVerFixed
 	slice = &m.Extension
+	return
+}
+
+type CfgGNSS struct {
+	CfgGNSSFixed
+	Blocks []CfgGNNSSBlock
+}
+
+type CfgGNSSFixed struct {
+	MsgVer          byte
+	NumTrkChHw      byte
+	NumTrkChUse     byte
+	NumConfigBlocks byte
+}
+
+type CfgGNNSSBlock struct {
+	GNSSID     byte
+	ResTrkCh   byte
+	MaxTrkCh   byte
+	_          byte
+	Enable     byte
+	_          byte
+	SigCfgMask byte
+	_          byte
+}
+
+func (m *CfgGNSS) ID() MsgID { return CfgGNSSID }
+
+func (m *CfgGNSS) InitForLen(payloadLen int) (err error) {
+	len, err := sliceLen(m, payloadLen, 4, 8)
+	if err == nil {
+		m.Blocks = make([]CfgGNNSSBlock, len)
+	}
+	return
+}
+
+func (m *CfgGNSS) Parts() (fixed any, slice any) {
+	fixed = &m.CfgGNSSFixed
+	slice = &m.Blocks
 	return
 }
 

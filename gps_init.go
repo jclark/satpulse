@@ -21,6 +21,7 @@ type gpsReceived struct {
 	protVer          ubx.ProtVer
 	tmode2           *ubx.CfgTmode2
 	tp5              *ubx.CfgTp5
+	gnss             *ubx.CfgGNSS
 	ack              map[ubx.MsgID]bool
 }
 
@@ -30,6 +31,7 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
 		ubx.Poll(ubx.MonVerID),
+		ubx.Poll(ubx.CfgGNSSID),
 		ubx.Poll(ubx.CfgTmode2ID),
 		ubx.Poll(ubx.CfgTp5ID),
 		ubx.Poll(ubx.TimSvinID),
@@ -78,14 +80,23 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 		} else if gr.invalidMsgCount > 0 {
 			err = errors.New("invalid GPS output (multiple processes reading from serial port?)")
 		} else {
-			err = errors.New("unrecognized GPS protocol")
+			err = errors.New("unrecognized GPS receiver protocol")
 		}
 		return
+	}
+	gnssEnabled := []byte{}
+	if gr.gnss != nil {
+		for _, b := range gr.gnss.Blocks {
+			if b.Enable != 0 {
+				gnssEnabled = append(gnssEnabled, b.GNSSID)
+			}
+		}
 	}
 	lg.Debug("gpsInitDone",
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
 		"protVer", gr.protVer,
-		"ack", gr.ack)
+		"ack", gr.ack,
+		"gnssEnabled", gnssEnabled)
 	return
 }
 
@@ -125,6 +136,8 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 		gr.tmode2 = data
 	case *ubx.CfgTp5:
 		gr.tp5 = data
+	case *ubx.CfgGNSS:
+		gr.gnss = data
 	case *ubx.AckAck:
 		gr.ack[data.MsgID] = true
 	case *ubx.AckNak:
