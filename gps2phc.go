@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/jclark/gps2phc/scan"
 	"github.com/jclark/gps2phc/tsync"
@@ -184,16 +183,9 @@ func syncFrame(ctx context.Context, corr *tsync.Correlator, f scan.Frame) {
 		case *ubx.NavTimeGPS:
 			corr.GPSTime(ptime.GPS(data.Week, data.ITOW), f.TRead)
 		case *ubx.TimTP:
-			corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
+			corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TowMS), ptime.Picoseconds(data.QErr))
 		default:
 			lg.Debug("ubx", "type", u.ID().String(), "payload", u)
 		}
 	}
-}
-
-func Picoseconds(ps int32) time.Duration {
-	if ps < 0 {
-		return -Picoseconds(-ps)
-	}
-	return time.Duration(((ps + 500) / 1000))
 }

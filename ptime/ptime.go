@@ -78,3 +78,10 @@ func (c *AtomicEpoch) Inc() Epoch {
 func (c *AtomicEpoch) Load() Epoch {
 	return Epoch((*atomic.Uint64)(c).Load())
 }
+
+func Picoseconds(ps int32) time.Duration {
+	if ps < 0 {
+		return -Picoseconds(-ps)
+	}
+	return time.Duration(((ps + 500) / 1000))
+}
