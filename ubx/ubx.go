@@ -368,6 +368,13 @@ func sliceLen(m VarLengthMsg, payloadLen, minLen, elemLen int) (int, error) {
 	return extraLen / elemLen, nil
 }
 
+type UnknownMsg struct {
+	MsgID MsgID
+	Payload string
+}
+
+func (m *UnknownMsg) ID() MsgID { return m.MsgID }
+
 func regMsg[T any, PT interface {
 	ID() MsgID
 	*T
@@ -396,9 +403,7 @@ func ParseMsg(frame string) (Msg, error) {
 	ctor := msgMap[mid]
 	payload := trimmed[4:]
 	if ctor == nil {
-		// fmt.Printf("unknown UBX message %s\n", clsId)
-		// XXX return a message with bytes as payload
-		return nil, nil
+		return &UnknownMsg{MsgID: mid, Payload: payload}, nil
 	}
 	msg := ctor()
 	var fixed, slice any
@@ -428,6 +433,9 @@ func ParseMsg(frame string) (Msg, error) {
 }
 
 func Serialize(msg Msg) ([]byte, error) {
+	if uMsg, ok := msg.(*UnknownMsg); ok {
+		return packMsg(uMsg.MsgID, []byte(uMsg.Payload))
+	}
 	buf := new(bytes.Buffer)
 	var v any
 	if vMsg, ok := msg.(VarLengthMsg); ok {

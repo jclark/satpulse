@@ -124,10 +124,6 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 		return
 	}
 	gr.ubxMsgCount++
-	if u == nil {
-		// XXX need a way to get the msg id in this case
-		return
-	}
 	switch data := u.(type) {
 	case *ubx.MonVer:
 		gr.protVer = data.ProtVer()

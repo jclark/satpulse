@@ -178,15 +178,15 @@ func syncFrame(ctx context.Context, corr *tsync.Correlator, f scan.Frame) {
 		u, err := ubx.ParseMsg(f.Data)
 		if err != nil {
 			lg.Error("ubxParseError", err)
-		} else if u != nil {
-			switch data := u.(type) {
-			case *ubx.NavTimeGPS:
-				corr.GPSTime(ptime.GPS(data.Week, data.ITOW), f.TRead)
-			case *ubx.TimTP:
-				corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
-			default:
-				lg.Debug("ubx", "type", u.ID().String(), "payload", u)
-			}
+			break
+		}
+		switch data := u.(type) {
+		case *ubx.NavTimeGPS:
+			corr.GPSTime(ptime.GPS(data.Week, data.ITOW), f.TRead)
+		case *ubx.TimTP:
+			corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TowMS), Picoseconds(data.QErr))
+		default:
+			lg.Debug("ubx", "type", u.ID().String(), "payload", u)
 		}
 	}
 }
