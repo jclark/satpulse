@@ -26,7 +26,7 @@ type gpsReceived struct {
 }
 
 func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, err error) {
-	frameCh = port.ReadStart(ctx)
+	frameCh = port.StartRead(ctx)
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{

@@ -43,7 +43,7 @@ func (p *Port) Close() error {
 	return p.t.Close()
 }
 
-func (p *Port) ReadStart(ctx context.Context) chan scan.Frame {
+func (p *Port) StartRead(ctx context.Context) chan scan.Frame {
 	scanner := scan.New(p.t, scanBufSize)
 	c := make(chan scan.Frame, 1) // XXX think about the buffering
 	go readWorker(ctx, scanner, c)
