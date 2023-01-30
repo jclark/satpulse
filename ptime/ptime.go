@@ -18,17 +18,20 @@ type ClockTime struct {
 type Time int64
 
 // GPS epoch
-var taiEpochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
+var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 
 // Offset in seconds between TAI and UTC at GPS epoch
-const taiEpochGPSOffset = 19
+const epochGPSOffsetTAI = 19
 
 // week is number of complete weeks since start of first Sunday in 1980
 // iTOW is milliseconds since start of week (Sunday)
 func GPS(week int16, iTOW uint32) Time {
-	weekMillis := int64(week) * 7 * 24 * 60 * 60 * 1000
-	weekMillis += taiEpochGPS.UnixMilli() + taiEpochGPSOffset*1000
-	return Time((weekMillis + int64(iTOW)) * 1e6)
+	ms := epochGPS.AddDate(0, 0, int(week)*7).UnixMilli() + epochGPSOffsetTAI*1000 + int64(iTOW)
+	return Time(ms * 1e6)
+}
+
+func GPSDate(week uint16, day time.Weekday) time.Time {
+	return epochGPS.AddDate(0, 0, int(week)*7+int(day))
 }
 
 func TimespecToTime(t unix.Timespec) Time {

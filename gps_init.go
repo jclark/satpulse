@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jclark/gps2phc/ptime"
 	"github.com/jclark/gps2phc/scan"
 	"github.com/jclark/gps2phc/serio"
 	"github.com/jclark/gps2phc/ubx"
@@ -22,6 +23,7 @@ type gpsReceived struct {
 	tmode2           *ubx.CfgTmode2
 	tp5              *ubx.CfgTp5
 	gnss             *ubx.CfgGNSS
+	timeLS           *ubx.NavTimeLS
 	ack              map[ubx.MsgID]bool
 }
 
@@ -35,6 +37,7 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 		ubx.Poll(ubx.CfgTmode2ID),
 		ubx.Poll(ubx.CfgTp5ID),
 		ubx.Poll(ubx.TimSvinID),
+		ubx.Poll(ubx.NavTimeLSID),
 		ubx.SetRate(ubx.NavTimeGPSID, 1),
 		ubx.SetRate(ubx.TimTPID, 1),
 	}
@@ -84,7 +87,7 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 		}
 		return
 	}
-	gnssEnabled := []byte{}
+	gnssEnabled := []ubx.GNSSID{}
 	if gr.gnss != nil {
 		for _, b := range gr.gnss.Blocks {
 			if b.Enable != 0 {
@@ -92,12 +95,58 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 			}
 		}
 	}
+	var lsdStr string
+	if gr.timeLS != nil {
+		lsd := leapSecondDate(gr.timeLS)
+		if !lsd.IsZero() {
+			lsdStr = lsd.Format("2006-01-02")
+		}
+	}
 	lg.Debug("gpsInitDone",
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
 		"protVer", gr.protVer,
 		"ack", gr.ack,
-		"gnssEnabled", gnssEnabled)
+		"gnssEnabled", gnssEnabled,
+		"leapSecDate", lsdStr)
 	return
+}
+
+func leapSecondDate(tls *ubx.NavTimeLS) time.Time {
+	z := time.Time{}
+	if (tls.Valid & ubx.NavTimeLSValidTimeToLSEvent) == 0 {
+		return z
+	}
+	wd := tls.DateOfLSGPSDN
+	switch tls.SrcOfLSChange {
+	case ubx.NavTimeLSSrcOfLSChangeBeiDou:
+		// BeiDou DN is 0-based
+	case ubx.NavTimeLSSrcOfLSChangeGPS, ubx.NavTimeLSSrcOfLSChangeGalileo:
+		// GPS and Galileo DN is 1-based
+		wd--
+	default:
+		// No info about meaning of DN for other cases cases
+		return z
+	}
+	t := ptime.GPSDate(tls.DateOfLSGPSWN, time.Weekday(wd))
+	if isLastDayOfQuarter(t) {
+		return t
+	}
+	if tls.LSChange == 0 {
+		// This is a past change.
+		// GPS transmits only the bottom 8-bits of the week number of the leap second
+		// So a past leap second can be off by a multiple of 256 weeks.
+		for i := 1; i <= 2; i++ {
+			t = t.AddDate(0, 0, -7*0x100)
+			if isLastDayOfQuarter(t) {
+				return t
+			}
+		}
+	}
+	return z
+}
+
+func isLastDayOfQuarter(t time.Time) bool {
+	return t.AddDate(0, 0, 1).Day() == 1 && t.Month()%3 == 0
 }
 
 func (gr *gpsReceived) init() {
@@ -134,6 +183,8 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 		gr.tp5 = data
 	case *ubx.CfgGNSS:
 		gr.gnss = data
+	case *ubx.NavTimeLS:
+		gr.timeLS = data
 	case *ubx.AckAck:
 		gr.ack[data.MsgID] = true
 	case *ubx.AckNak:

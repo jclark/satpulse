@@ -183,7 +183,9 @@ func syncFrame(ctx context.Context, corr *tsync.Correlator, f scan.Frame) {
 		case *ubx.NavTimeGPS:
 			corr.GPSTime(ptime.GPS(data.Week, data.ITOW), f.TRead)
 		case *ubx.TimTP:
-			corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TowMS), ptime.Picoseconds(data.QErr))
+			if (data.Flags & ubx.TimTPQErrInvalid) == 0 {
+				corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TOWMS), ptime.Picoseconds(data.QErr))
+			}
 		default:
 			lg.Debug("ubx", "type", u.ID().String(), "payload", u)
 		}

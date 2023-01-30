@@ -17,8 +17,10 @@ const (
 
 type MsgID uint16
 
+type GNSSID byte
+
 const (
-	GPS = iota
+	GPS GNSSID = iota
 	SBAS
 	Galileo
 	BeiDou
@@ -163,9 +165,17 @@ type NavTimeGPS struct {
 	FTOW  int32
 	Week  int16
 	LeapS byte
-	Valid byte
+	Valid NavTimeGPSValid
 	TAcc  uint32
 }
+
+type NavTimeGPSValid byte
+
+const (
+	NavTimeGPSTOWValid NavTimeGPSValid = 1 << iota
+	NavTimeGPSWeekValid
+	NavTimeGPSLeapSValid
+)
 
 func (m *NavTimeGPS) ID() MsgID { return NavTimeGPSID }
 
@@ -200,56 +210,121 @@ type NavTimeLS struct {
 	ITOW          uint32
 	Version       byte
 	_             [3]byte
-	SrcOfCurrLS   byte
-	CurrLS        byte
-	SrcOfLSChange byte
-	LSChange      int8
+	SrcOfCurrLS   NavTimeSrcOfCurrLS
+	CurrLS        int8
+	SrcOfLSChange NavTimeLSSrcOfLSChange
+	LSChange      NavTimeLSChange
 	TimeToLSEvent int32
 	DateOfLSGPSWN uint16
 	DateOfLSGPSDN uint16
 	_             [3]byte
-	Valid         byte
+	Valid         NavTimeLSValid
 }
+
+type NavTimeSrcOfCurrLS byte
+
+const (
+	NavTimeSrcOfCurrLSFirmware NavTimeSrcOfCurrLS = iota
+	NavTimeSrcOfCurrLSGPSDiffGLONASS
+	NavTimeSrcOfCurrLSGPS
+	NavTimeSrcOfCurrLSSBAS
+	NavTimeSrcOfCurrLSBeiDou
+	NavTimeSrcOfCurrLSGalileo
+	NavTimeSrcOfCurrLSAided
+	NavTimeSrcOfCurrLSConfigured
+	NavTimeSrcOfCurrLSNavIC
+	NavTimeSrcOfCurrLSUnknown NavTimeSrcOfCurrLS = 255
+)
+
+type NavTimeLSSrcOfLSChange byte
+
+const (
+	NavTimeLSSrcOfLSChangeNone NavTimeLSSrcOfLSChange = iota
+	_
+	NavTimeLSSrcOfLSChangeGPS
+	NavTimeLSSrcOfLSChangeSBAS
+	NavTimeLSSrcOfLSChangeBeiDou
+	NavTimeLSSrcOfLSChangeGalileo
+	NavTimeLSSrcOfLSChangeGLONASS
+	NavTimeLSSrcOfLSChangeNavIC
+)
+
+type NavTimeLSChange int8
+
+const NavTimeLSChangePositive NavTimeLSChange = +1
+const NavTimeLSChangeNone NavTimeLSChange = 0
+const NavTimeLSChangeNegative NavTimeLSChange = -1
+
+type NavTimeLSValid byte
+
+const (
+	NavTimeLSValidCurrLS NavTimeLSValid = 1 << iota
+	NavTimeLSValidTimeToLSEvent
+)
 
 func (m *NavTimeLS) ID() MsgID { return NavTimeLSID }
 
 type TimTP struct {
-	TowMS    uint32
-	TowSubMS uint32
+	TOWMS    uint32
+	TOWSubMS uint32
 	QErr     int32
 	Week     uint16
-	Flags    byte
-	RefInfo  byte
+	Flags    TimTPFlags
+	RefInfo  TimTPRefInfo
 }
 
 func (m *TimTP) ID() MsgID { return TimTPID }
 
-const (
-	TimTPFlagTimeBase = 1 << iota
-	TimTPFlagUTC
-	TimTPFlagRAIM
-	TimTPFlagQErr
-)
+type TimTPFlags byte
 
 const (
-	TimTPRefGPS = iota
-	TimTPRefGLONASS
-	TimTPRefBeiDou
-	TimTPRefGalileo
-	TimTPRefNavIC
-	TimTPRefUnknown = 15
+	TimTPTimeBase TimTPFlags = 1 << iota
+	TimTPUTC
+	timTPRAIM1
+	timTPRAIM2
+	TimTPQErrInvalid
+	TimTPRAIM TimTPFlags = timTPRAIM1 | timTPRAIM2
 )
 
+const TimTPTimeBaseUTC TimTPFlags = TimTPTimeBase
+const TimTPUTCAvailable TimTPFlags = TimTPUTC
+
+// Values for TimTPFlags & TimTPRAIM
 const (
-	TimTPUTCRL = iota + 1
-	TimTPUTCNIST
-	TimTPUTCUSNO
-	TimTPUTCBIPM
-	TimTPUTCEU
-	TimTPUTCSU
-	TimTPUTCNTSC
-	TimTPUTCNPLI
-	TimTPUTCUnknown = 15
+	TimTPRAIMNotActive TimTPFlags = timTPRAIM1
+	TimTPRAIMActive    TimTPFlags = timTPRAIM2
+)
+
+type TimTPRefInfo byte
+
+// These are bitwise-ANDed with TimTPRefInfo
+const (
+	TimTPTimeRefGNSS TimTPRefInfo = 0x0F
+	TimTPUTCStandard TimTPRefInfo = 0xF0
+)
+
+// Values for TimTPRefInfo & TimTPTimeRefGNSS
+const (
+	TimTPTimeRefGNSSGPS TimTPRefInfo = iota
+	TimTPTimeRefGNSSGLONASS
+	TimTPTimeRefGNSSBeiDou
+	TimTPTimeRefGNSSGalileo
+	TimTPTimeRefGNSSNavIC
+	TimTPTimeRefGNSSUnknown TimTPRefInfo = 15
+)
+
+// Values for TimTPRefInfo & TimTPUTCStandard
+const (
+	TimTPUTCStandardNotAvailable TimTPRefInfo = 0
+	TimTPUTCStandardCRL          TimTPRefInfo = iota << 4
+	TimTPUTCStandardNIST
+	TimTPUTCStandardUSNO
+	TimTPUTCStandardBIPM
+	TimTPUTCStandardEU
+	TimTPUTCStandardSU
+	TimTPUTCStandardNTSC
+	TimTPUTCStandardNPLI
+	TimTPUTCStandardUnknown = TimTPUTCStandard
 )
 
 type TimSvin struct {
@@ -327,7 +402,7 @@ type CfgGNSSFixed struct {
 }
 
 type CfgGNNSSBlock struct {
-	GNSSID     byte
+	GNSSID     GNSSID
 	ResTrkCh   byte
 	MaxTrkCh   byte
 	_          byte
@@ -369,7 +444,7 @@ func sliceLen(m VarLengthMsg, payloadLen, minLen, elemLen int) (int, error) {
 }
 
 type UnknownMsg struct {
-	MsgID MsgID
+	MsgID   MsgID
 	Payload string
 }
 
