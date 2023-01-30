@@ -20,11 +20,13 @@ Things to make minimal working program
 
 Improvements in existing functionality
 
+* Rearrange source to properly for Go conventions
+* Need layer the turns UBX messages into something more convenient to work with, and UBX-independent
 * Occasionally ITOW is not an integral number of seconds
 * Proper cleanup when wiring up all the objects
-* Testing (include fuzzing)
+* More testing (include fuzzing)
 * Make use NMEA (if we don't have UBX)
-   * compute checksum
+   * RMC or ZDA
    * parse message
    * handle some PUBX messages
    * deal with leap seconds
@@ -35,17 +37,20 @@ Improvements in existing functionality
 * On F9T, using ubx-tim-tp, tow seems to be wrong unless time base is set using tp5 to GPS
 * Experiment with different ki/kp coefficients for PI controller
 * PI controller starts off with a large integral term, which I suspect is not optimal
-* Introduce configuration phase, before syncing
+* Improve configuration phase
+   * Wait for some input before sending messages
+   * UBX parsing error probably means multiple readers
+   * Configure time mode
+   * Configure time pulse
 * More info from MonVer
-  * Flash vs ROM
-  * Category: timing vs high-precision etc
+   * Flash vs ROM
+   * Category: timing vs high-precision etc
 * Deal with read of 0 from term (caused by timeout)
-* Improved handling of writes
-   * Use separate goroutine
-   * Wait until each message has drained before sending next
-   * Avoid any race between term.Close and writing
 * Option for baud rate
 * Serial port locking (flock seems the best way)
+* Option for pin index
+* Cancelled write should complete UBX message but not drain
+* Report RMS of offset
 
 New functionality
 
