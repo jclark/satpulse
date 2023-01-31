@@ -7,13 +7,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type Port struct {
+type Term struct {
 	fd   int
 	path string
 	attr unix.Termios
 }
 
-func Raw(path string) (*Port, error) {
+func Raw(path string) (*Term, error) {
 	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
 		return nil, &os.PathError{
@@ -22,7 +22,7 @@ func Raw(path string) (*Port, error) {
 			Err:  err,
 		}
 	}
-	p := &Port{path: path, fd: fd}
+	p := &Term{path: path, fd: fd}
 	err = termios.Tcgetattr(p.ufd(), &p.attr)
 	if err != nil {
 		unix.Close(fd)
@@ -41,11 +41,11 @@ func Raw(path string) (*Port, error) {
 	return p, nil
 }
 
-func (p *Port) ufd() uintptr {
+func (p *Term) ufd() uintptr {
 	return uintptr(p.fd)
 }
 
-func (p *Port) Read(buf []byte) (n int, err error) {
+func (p *Term) Read(buf []byte) (n int, err error) {
 	for {
 		n, err = unix.Read(p.fd, buf)
 		if err != unix.EINTR {
@@ -58,7 +58,7 @@ func (p *Port) Read(buf []byte) (n int, err error) {
 	return
 }
 
-func (p *Port) Write(buf []byte) (int, error) {
+func (p *Term) Write(buf []byte) (int, error) {
 	total := 0
 	for len(buf) > 0 {
 		// Semantics of Unix write and Go Write are not the same:
@@ -75,7 +75,7 @@ func (p *Port) Write(buf []byte) (int, error) {
 }
 
 // Close resets the port's attributes and then closes it
-func (p *Port) Close() (err error) {
+func (p *Term) Close() (err error) {
 	err = p.setAttr(&p.attr)
 	e2 := unix.Close(int(p.fd))
 	if e2 != nil && err == nil {
@@ -84,15 +84,15 @@ func (p *Port) Close() (err error) {
 	return
 }
 
-func (p *Port) Flush() error {
+func (p *Term) Flush() error {
 	return p.wrapErr(termios.Tcflush(p.ufd(), unix.TCIOFLUSH), "tcflush")
 }
 
-func (p *Port) setAttr(attr *unix.Termios) error {
+func (p *Term) setAttr(attr *unix.Termios) error {
 	return p.wrapErr(termios.Tcsetattr(p.ufd(), termios.TCSANOW, attr), "tcsetattr")
 }
 
-func (p *Port) wrapErr(err error, op string) error {
+func (p *Term) wrapErr(err error, op string) error {
 	if err == nil {
 		return err
 	}
