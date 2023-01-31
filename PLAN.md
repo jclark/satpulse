@@ -20,6 +20,8 @@ Things to make minimal working program
 
 Improvements in existing functionality
 
+* With non-existent serial device hangs in term.Restore (waiting for output to drain, I think)
+  * Maybe better to roll our own term package
 * Rearrange source to properly for Go conventions
 * Need layer the turns UBX messages into something more convenient to work with, and UBX-independent
 * Leap second abstraction:
@@ -29,7 +31,6 @@ Improvements in existing functionality
    * store that in a file somewhere (in /var/run)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
 * Occasionally ITOW is not an integral number of seconds
-* Proper cleanup when wiring up all the objects
 * More testing (include fuzzing)
 * Make use NMEA (if we don't have UBX)
    * RMC or ZDA

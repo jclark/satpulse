@@ -24,14 +24,14 @@ var debugEnable bool
 
 type Syncer struct {
 	tsCh <-chan phc.TsEvent
-	fCh  chan scan.Frame
+	fCh  <-chan scan.Frame
 	corr *tsync.Correlator
 }
 
 func main() {
 	flag.StringVar(&serialDev, "s", "/dev/ttyUSB0", "device for serial connection to GPS")
 	flag.StringVar(&ifName, "e", "eth0", "ethernet interface of PTP hardware clock")
-	flag.BoolVar(&debugEnable, "d", false, "log debuggging information")
+	flag.BoolVar(&debugEnable, "d", false, "log debugging information")
 	flag.Parse()
 	level := slog.LevelInfo
 	if debugEnable {
@@ -40,41 +40,75 @@ func main() {
 	lg := slog.New(slog.HandlerOptions{Level: level}.NewTextHandler(os.Stdout))
 	slog.SetDefault(lg)
 	ctx := context.Background()
-	ctx = cancelOnSignal(ctx)
-	clk, err := openExttsClock()
-	var port *serio.Port
-	if err == nil {
-		port, err = serio.Open(serialDev)
-	}
-	var fCh chan scan.Frame
-	if err == nil {
-		lg.Debug("serial", "devKind", port.DevKind())
-		fCh, err = gpsInit(ctx, port)
-	}
-	var s *Syncer
-	if err == nil {
-		s, err = newSyncer(ctx, clk, fCh)
-	}
-	// XXX if fCh is nil and err is non-nil,
-	// we should receive from fCh until it is closed
-	// At that point, we can cleanup and exit
+	ctx, cancel := cancelOnSignal(ctx)
+	err := run(ctx, cancel)
 	if err != nil {
-		slog.Error("exiting", err)
-	} else {
-		doSync(ctx, s)
-		slog.Debug("exiting")
-		err = port.Restore()
-		if err != nil {
-			slog.Error("could not restore terminal settings", err)
-		}
-		port.Close()
-		slog.Debug("closed", "serial", serialDev)
-		clk.Close()
-		slog.Debug("closed", "if", ifName)
+		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
+		os.Exit(1)
 	}
 }
 
-func cancelOnSignal(ctx context.Context) context.Context {
+func run(ctx context.Context, cancel context.CancelFunc) error {
+	clk, err := openExttsClock()
+	if err != nil {
+		return err
+	}
+	lg := slog.FromContext(ctx)
+
+	defer func() {
+		clk.Close()
+		lg.Debug("closedPHC", "if", ifName)
+	}()
+	port, err := serio.Open(serialDev)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		lg.Debug("restoringSerial", "path", serialDev)
+		e := port.Restore()
+		if e != nil {
+			lg.Error("restoredSerial", e, "path", serialDev)
+		}
+		port.Close()
+		lg.Debug("closedSerial", "path", serialDev)
+	}()
+
+	lg.Debug("serial", "devKind", port.DevKind())
+
+	fCh, err := gpsInit(ctx, port)
+	defer func() {
+		// gpsInit calls port.StartRead, which starts a goroutine sending to fCh.
+		// We need to wait for the goroutine to close fCh, before calling port.Restore/port.Close.
+		// Otherwise, there is a possibility of reading from a file descriptor that
+		// is no longer valid (and so might refer to something else).
+		// If fCh is nil, then the goroutine has already closed fCh.
+		// If not, then we need to cancel it, to ensure the goroutine will stop reading.
+		if fCh != nil {
+			cancel()
+			lg.Debug("waitingForFrameChannel")
+			for range fCh {
+			}
+		}
+	}()
+	if err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
+	s, err := newSyncer(ctx, clk, fCh)
+	if err != nil {
+		return err
+	}
+	doSync(ctx, s)
+	// doSync reads fCh completely, so the deferred func does not need to read it again
+	fCh = nil
+	lg.Debug("exiting")
+	return nil
+}
+
+func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(ctx)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
@@ -83,7 +117,7 @@ func cancelOnSignal(ctx context.Context) context.Context {
 		slog.FromContext(ctx).Debug("cancelling")
 		cancel()
 	}()
-	return ctx
+	return ctx, cancel
 }
 
 func openExttsClock() (*phc.Clock, error) {
@@ -113,7 +147,7 @@ func nmeaLog(lg *slog.Logger, data string) {
 	}
 }
 
-func newSyncer(ctx context.Context, clk *phc.Clock, fCh chan scan.Frame) (r *Syncer, err error) {
+func newSyncer(ctx context.Context, clk *phc.Clock, fCh <-chan scan.Frame) (r *Syncer, err error) {
 	err = nil
 	r = nil
 	lg := slog.FromContext(ctx)

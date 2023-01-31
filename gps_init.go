@@ -27,7 +27,8 @@ type gpsReceived struct {
 	ack              map[ubx.MsgID]bool
 }
 
-func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, err error) {
+// If returned frameCh is not nil, then reading goroutine is still running.
+func gpsInit(ctx context.Context, port *serio.Port) (frameCh <-chan scan.Frame, err error) {
 	frameCh = port.StartRead(ctx)
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
@@ -55,11 +56,10 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 			} else {
 				frameCh = nil
 			}
+		// XXX This is not so useful right now, since cancelling will close the frameCh
+		// But later we can use it to stop writing
 		case <-cancelCh:
 			cancelCh = nil
-			if err != nil {
-				err = ctx.Err()
-			}
 		case e := <-writeRespCh:
 			writeRespCh = nil
 			if e != nil && err == nil {
@@ -69,7 +69,7 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh chan scan.Frame, er
 			timerCh = nil
 		}
 		if writeRespCh == nil {
-			if err != nil {
+			if err != nil || ctx.Err() != nil {
 				return
 			}
 			if timerCh == nil || frameCh == nil {
