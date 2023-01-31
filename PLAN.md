@@ -22,6 +22,12 @@ Improvements in existing functionality
 
 * Rearrange source to properly for Go conventions
 * Need layer the turns UBX messages into something more convenient to work with, and UBX-independent
+* Leap second abstraction:
+   * date of last scheduled leap second (either in the past or up to 6 months in the future)
+   * UTC offset before that
+   * UTC offset after that
+   * store that in a file somewhere (in /var/run)
+* Figure out how to run with reduced privileges (Linux capabilities I think)
 * Occasionally ITOW is not an integral number of seconds
 * Proper cleanup when wiring up all the objects
 * More testing (include fuzzing)
