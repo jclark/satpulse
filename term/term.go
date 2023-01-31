@@ -13,7 +13,7 @@ type Term struct {
 	attr unix.Termios
 }
 
-func Raw(path string) (*Term, error) {
+func OpenRaw(path string) (*Term, error) {
 	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
 		return nil, &os.PathError{
