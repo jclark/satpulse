@@ -1,4 +1,4 @@
-package serial
+package term
 
 import (
 	"os"
