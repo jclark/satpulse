@@ -1,6 +1,7 @@
 package term
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -68,9 +69,79 @@ func RawMode(a *Attr) error {
 	a.ts.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
 	a.ts.Cflag &^= unix.CSIZE | unix.PARENB
 	a.ts.Cflag |= unix.CS8
-	// added
+	// XXX where should this go?
 	a.ts.Cflag |= unix.CLOCAL
 	return nil
+}
+
+func Speed(speed int) AttrSetter {
+	var b uint32
+	switch speed {
+	// Not supporting 0: that has special semantics
+	case 50:
+		b = unix.B50
+	case 75:
+		b = unix.B75
+	case 110:
+		b = unix.B110
+	case 134:
+		b = unix.B134
+	case 150:
+		b = unix.B150
+	case 200:
+		b = unix.B200
+	case 300:
+		b = unix.B300
+	case 600:
+		b = unix.B600
+	case 1200:
+		b = unix.B1200
+	case 1800:
+		b = unix.B1800
+	case 2400:
+		b = unix.B2400
+	case 4800:
+		b = unix.B4800
+	case 9600:
+		b = unix.B9600
+	case 19200:
+		b = unix.B19200
+	case 38400:
+		b = unix.B38400
+	case 57600:
+		b = unix.B57600
+	case 115200:
+		b = unix.B115200
+	case 230400:
+		b = unix.B230400
+	case 460800:
+		b = unix.B460800
+	case 500000:
+		b = unix.B500000
+	case 576000:
+		b = unix.B576000
+	case 921600:
+		b = unix.B921600
+	case 1000000:
+		b = unix.B1000000
+	case 1152000:
+		b = unix.B1152000
+	case 1500000:
+		b = unix.B1500000
+	case 2000000:
+		b = unix.B2000000
+	default:
+		return func(*Attr) error {
+			return fmt.Errorf("invalid terminal speed: %d", speed)
+		}
+	}
+	return func(a *Attr) error {
+		a.ts.Cflag &^= unix.CBAUD | unix.CBAUDEX
+		a.ts.Cflag |= b
+		a.ts.Ospeed = b
+		a.ts.Ispeed = b
+		return nil
+	}
 }
 
 func NoFlowControl(a *Attr) error {
