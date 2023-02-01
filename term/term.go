@@ -9,27 +9,30 @@ import (
 )
 
 type Term struct {
-	fd   int
-	path string
-	attr unix.Termios
+	fd      int
+	path    string
+	tsSaved unix.Termios
 }
 
-func OpenRaw(path string, timeout time.Duration) (*Term, error) {
+type Attr struct {
+	ts unix.Termios
+}
+
+type AttrSetter func(*Attr) error
+
+func Open(path string, opts ...AttrSetter) (*Term, error) {
 	t := new(Term)
-	err := t.InitRaw(path, timeout)
+	err := t.Init(path, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
-// A tenth of a second
-const decisecond = time.Second / 10
-
-func (t *Term) InitRaw(path string, timeout time.Duration) (err error) {
+func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	t.path = path
 	// XXX should open non-blocking and then change to blocking with fcntl
-	// in case CLOCAL is not set
+	// (in case CLOCAL is not set)
 	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
 		err = t.wrapErr(err, "open")
@@ -41,19 +44,45 @@ func (t *Term) InitRaw(path string, timeout time.Duration) (err error) {
 			unix.Close(fd)
 		}
 	}()
-	err = termios.Tcgetattr(t.ufd(), &t.attr)
+	attr := Attr{}
+	err = termios.Tcgetattr(t.ufd(), &attr.ts)
 	if err != nil {
 		err = t.wrapErr(err, "tcgetattr")
 		return
 	}
-	rawAttr := t.attr
-	termios.Cfmakeraw(&rawAttr)
-	// VTIME is a uint8 in units of 1/10th of a second
-	rawAttr.Cc[unix.VTIME] = uint8Clamp(int64(timeout.Round(decisecond) / decisecond))
-	rawAttr.Cc[unix.VMIN] = 0
+	t.tsSaved = attr.ts
+	for _, opt := range opts {
+		err = opt(&attr)
+		if err != nil {
+			return
+		}
+	}
 	// XXX turn of IXOFF
-	err = t.setAttr(&rawAttr)
+	err = t.setAttr(&attr.ts)
 	return
+}
+
+func RawMode(a *Attr) error {
+	termios.Cfmakeraw(&a.ts)
+	return nil
+}
+
+func NoFlowControl(a *Attr) error {
+	a.ts.Iflag &^= unix.IXON | unix.IXOFF | unix.IXANY
+	a.ts.Cflag &^= unix.CRTSCTS
+	return nil
+}
+
+// A tenth of a second
+const decisecond = time.Second / 10
+
+func ReadTimeout(timeout time.Duration) AttrSetter {
+	return func(a *Attr) error {
+		// VTIME is a uint8 in units of 1/10th of a second
+		a.ts.Cc[unix.VTIME] = uint8Clamp(int64(timeout.Round(decisecond) / decisecond))
+		a.ts.Cc[unix.VMIN] = 0
+		return nil
+	}
 }
 
 func uint8Clamp(v int64) uint8 {
@@ -104,10 +133,9 @@ func (t *Term) Buffered() (int, error) {
 }
 
 func (t *Term) Restore() error {
-	return t.setAttr(&t.attr)
+	return t.setAttr(&t.tsSaved)
 }
 
-// Close resets the port's attributes and then closes it
 func (t *Term) Close() error {
 	fd := int(t.fd)
 	t.fd = -1
