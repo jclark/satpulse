@@ -41,9 +41,10 @@
 
 ## Serial IO
 
-* Write to non-existent serial device waits indefinitely for output to drain (don't understand why)
-* With non-existent serial device hangs in term.Restore (waiting for output to drain, I think)
-* Maybe better to roll our own term package
+* Problem with writing to serial device that is not connected to anything
+   * Draining waits for ever
+   * Attempting to Close (after doing write) hangs for 30s (I guess waiting to drain)
+* Deal with absence of CLOCAL potentially causing open to block
 * Cancelled write should complete UBX message but not drain
 * Deal with read of 0 from term (caused by timeout)
 * Option for baud rate

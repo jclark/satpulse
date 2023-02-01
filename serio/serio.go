@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/gps2phc/scan"
-	"github.com/pkg/term"
+	"github.com/jclark/gps2phc/term"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sys/unix"
 )
@@ -22,7 +22,7 @@ type Port struct {
 }
 
 func Open(path string) (*Port, error) {
-	t, err := term.Open(path, term.RawMode, term.FlowControl(term.NONE), term.ReadTimeout(readTimeout))
+	t, err := term.Open(path, term.RawMode, term.NoFlowControl, term.ReadTimeout(readTimeout))
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,9 @@ func (p *Port) WriteAsync(ctx context.Context, frames [][]byte) <-chan error {
 				return
 			}
 		}
-		c <- p.Drain(ctx)
+		//slog.FromContext(ctx).Debug("draining")
+		//c <- p.Drain(ctx)
+		c <- nil
 		slog.FromContext(ctx).Debug("writeAsyncDone")
 	}()
 	return c

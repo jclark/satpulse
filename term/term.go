@@ -4,7 +4,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/pkg/term/termios"
 	"golang.org/x/sys/unix"
 )
 
@@ -44,13 +43,12 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 			unix.Close(fd)
 		}
 	}()
-	attr := Attr{}
-	err = termios.Tcgetattr(t.ufd(), &attr.ts)
+	tsp, err := t.getAttr()
 	if err != nil {
-		err = t.wrapErr(err, "tcgetattr")
 		return
 	}
-	t.tsSaved = attr.ts
+	attr := Attr{*tsp}
+	t.tsSaved = *tsp
 	for _, opt := range opts {
 		err = opt(&attr)
 		if err != nil {
@@ -63,7 +61,15 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 }
 
 func RawMode(a *Attr) error {
-	termios.Cfmakeraw(&a.ts)
+	// this comes from termios(3)
+	a.ts.Iflag &^= unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.ISTRIP |
+		unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON
+	a.ts.Oflag &^= unix.OPOST
+	a.ts.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
+	a.ts.Cflag &^= unix.CSIZE | unix.PARENB
+	a.ts.Cflag |= unix.CS8
+	// added
+	a.ts.Cflag |= unix.CLOCAL
 	return nil
 }
 
@@ -95,10 +101,6 @@ func uint8Clamp(v int64) uint8 {
 	return uint8(v)
 }
 
-func (t *Term) ufd() uintptr {
-	return uintptr(t.fd)
-}
-
 func (t *Term) Read(buf []byte) (n int, err error) {
 	for {
 		n, err = unix.Read(t.fd, buf)
@@ -128,8 +130,10 @@ func (t *Term) Write(buf []byte) (int, error) {
 	return total, nil
 }
 
-func (t *Term) Buffered() (int, error) {
-	return termios.Tiocoutq(t.ufd())
+func (t *Term) Buffered() (n int, err error) {
+	n, err = unix.IoctlGetInt(t.fd, unix.TIOCOUTQ)
+	err = t.wrapErr(err, "ioctl(TIOCOUTQ)")
+	return
 }
 
 func (t *Term) Restore() error {
@@ -137,17 +141,23 @@ func (t *Term) Restore() error {
 }
 
 func (t *Term) Close() error {
-	fd := int(t.fd)
+	fd := t.fd
 	t.fd = -1
 	return t.wrapErr(unix.Close(fd), "close")
 }
 
 func (t *Term) Flush() error {
-	return t.wrapErr(termios.Tcflush(t.ufd(), unix.TCIOFLUSH), "tcflush")
+	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TCFLSH, unix.TCIOFLUSH), "ioctl(TCFLSH)")
 }
 
 func (t *Term) setAttr(attr *unix.Termios) error {
-	return t.wrapErr(termios.Tcsetattr(t.ufd(), termios.TCSANOW, attr), "tcsetattr")
+	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TCSETS, attr), "ioctl(TCSETS)")
+}
+
+func (t *Term) getAttr() (tp *unix.Termios, err error) {
+	tp, err = unix.IoctlGetTermios(t.fd, unix.TCGETS)
+	err = t.wrapErr(err, "ioctl(TCGETS)")
+	return
 }
 
 func (t *Term) wrapErr(err error, op string) error {

@@ -2,12 +2,9 @@ package scan
 
 import (
 	"context"
-	"errors"
 	"io"
 	"strings"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 type FrameKind int
@@ -104,13 +101,13 @@ func (s *Scanner) fill(ctx context.Context, fStartIndex int) error {
 			s.buf = s.buf[0 : len(s.buf)+n]
 			s.tRead = time.Now()
 		}
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, unix.EINTR) {
+		if err != nil {
 			return err
 		}
-		// only loop on EINTR
+		if n > 0 {
+			break
+		}
+		// loop on zero bytes and no error
 	}
 	return nil
 }

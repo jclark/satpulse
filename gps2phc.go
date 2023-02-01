@@ -68,8 +68,11 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 		lg.Debug("restoringSerial", "path", serialDev)
 		e := port.Restore()
 		if e != nil {
-			lg.Error("restoredSerial", e, "path", serialDev)
+			lg.Error("restoredSerialErr", e, "path", serialDev)
+		} else {
+			lg.Debug("restoredSerial", "path", serialDev)
 		}
+		lg.Debug("closingSerial", "path", serialDev)
 		port.Close()
 		lg.Debug("closedSerial", "path", serialDev)
 	}()
