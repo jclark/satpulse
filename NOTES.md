@@ -7,4 +7,4 @@
 
 ## Linux Serial
 
-close system call on a serial output will wait for buffered output to drain. If there's no device, this is will wait for timeout, which is defaults to 30s. Timeout can be changed by setserial command. Uses TIOCGSERIAL/TIOCSSERIAL ioctl defined in linux/serial.h, which uses a serial_struct; close_delay member controls delay on closing.
+close system call on a serial output will wait for buffered output to drain. If there's no device, this is will wait for timeout, which is defaults to 30s. Timeout can be changed by setserial command. Uses TIOCGSERIAL/TIOCSSERIAL ioctl defined in linux/serial.h, which uses a serial_struct; closing_wait member controls how long to wait on closing.
