@@ -22,7 +22,7 @@ type Port struct {
 
 func Open(path string) (*Port, error) {
 	p := &Port{}
-	err := p.Term.Init(path, term.RawMode, term.NoFlowControl, term.ReadTimeout(readTimeout))
+	err := p.Term.Init(path, term.RawMode, term.Local, term.NoFlowControl, term.ReadTimeout(readTimeout))
 	if err != nil {
 		return nil, err
 	}

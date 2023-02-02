@@ -69,7 +69,10 @@ func RawMode(a *Attr) error {
 	a.ts.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
 	a.ts.Cflag &^= unix.CSIZE | unix.PARENB
 	a.ts.Cflag |= unix.CS8
-	// XXX where should this go?
+	return nil
+}
+
+func Local(a *Attr) error {
 	a.ts.Cflag |= unix.CLOCAL
 	return nil
 }
