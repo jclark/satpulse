@@ -42,12 +42,15 @@
 ## Serial IO
 
 * Problem with writing to serial device that is not connected to anything
-   * Draining waits for ever
    * Attempting to Close (after doing write) hangs for 30s (I guess waiting to drain)
+   * Possible fixes (not mutually exclusive)
+      * run close in a goroutine with a timeout
+      * change closing_wait
+      * do not write until some input is received
 * Deal with absence of CLOCAL potentially causing open to block
 * Cancelled write should complete UBX message but not drain
 * Deal with read of 0 from term (caused by timeout)
-* Option for baud rate
+* Command-line flag for baud rate
 * Can we be detect when baud rate is too low for information passed?
 * Serial port locking (flock seems the best way)
 

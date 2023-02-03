@@ -60,6 +60,7 @@ func readWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
 func (p *Port) WriteAsync(ctx context.Context, frames [][]byte) <-chan error {
 	c := make(chan error, 1)
 	go func() {
+		nBytes := 0
 		for _, frame := range frames {
 			select {
 			case <-ctx.Done():
@@ -72,10 +73,10 @@ func (p *Port) WriteAsync(ctx context.Context, frames [][]byte) <-chan error {
 				c <- err
 				return
 			}
+			nBytes += len(frame)
 		}
-		//slog.FromContext(ctx).Debug("draining")
-		//c <- p.Drain(ctx)
-		c <- nil
+		slog.FromContext(ctx).Debug("draining")
+		c <- p.Drain(ctx, nBytes)
 		slog.FromContext(ctx).Debug("writeAsyncDone")
 	}()
 	return c
@@ -107,22 +108,40 @@ func (p *Port) Write(ctx context.Context, buf []byte) (int, error) {
 	return total, nil
 }
 
-func (p *Port) Drain(tx context.Context) error {
+func (p *Port) Drain(tx context.Context, nBytesWritten int) error {
 	lg := slog.FromContext(tx)
-	for {
+	n, err := p.Term.Buffered()
+	if err != nil {
+		return err
+	}
+	sleepTime := (time.Duration(nBytesWritten) * time.Second) / 10000
+	totalSlept := time.Duration(0)
+	for n > 0 {
 		select {
 		case <-tx.Done():
 			return tx.Err()
 		default:
 		}
-		n, err := p.Term.Buffered()
-		if err != nil || n == 0 {
+
+		time.Sleep(sleepTime)
+		totalSlept += sleepTime
+		nPrev := n
+		n, err = p.Term.Buffered()
+		if err != nil {
+			return err
+		}
+		// give up if we are not making progress or if we have slept long enough
+		if n >= nPrev {
 			break
 		}
-		lg.Debug("serialBufferedBytes", "n", n)
-		time.Sleep(time.Microsecond * 10)
-		n, _ = p.Term.Buffered()
-		lg.Debug("drainBufferedBytes", "n", n)
+		sleepTime *= 2
+		if sleepTime > time.Second/5 {
+			break
+		}
 	}
+	if n > 0 {
+		lg.Debug("drainFailed", "bytesInBuffer", n, "sleepTime", totalSlept)
+	}
+
 	return nil
 }
