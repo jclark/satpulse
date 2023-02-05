@@ -21,6 +21,7 @@ type gpsReceived struct {
 	nmeaSentences    map[string]map[string]bool
 	protVer          ubx.ProtVer
 	tmode2           *ubx.CfgTmode2
+	tmode3           *ubx.CfgTmode3
 	tp5              *ubx.CfgTp5
 	gnss             *ubx.CfgGNSS
 	timeLS           *ubx.NavTimeLS
@@ -36,8 +37,10 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh <-chan scan.Frame, 
 		ubx.Poll(ubx.MonVerID),
 		ubx.Poll(ubx.CfgGNSSID),
 		ubx.Poll(ubx.CfgTmode2ID),
+		ubx.Poll(ubx.CfgTmode3ID),
 		ubx.Poll(ubx.CfgTp5ID),
 		ubx.Poll(ubx.TimSvinID),
+		ubx.Poll(ubx.NavSvinID),
 		ubx.Poll(ubx.NavTimeLSID),
 		ubx.SetRate(ubx.NavTimeGPSID, 1),
 		ubx.SetRate(ubx.TimTPID, 1),
@@ -102,11 +105,18 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh <-chan scan.Frame, 
 			lsdStr = lsd.Format("2006-01-02")
 		}
 	}
+	var tmode any = nil
+	if gr.tmode2 != nil {
+		tmode = gr.tmode2
+	} else if gr.tmode3 != nil {
+		tmode = gr.tmode3
+	}
 	lg.Debug("gpsInitDone",
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
 		"protVer", gr.protVer,
 		"ack", gr.ack,
 		"gnssEnabled", gnssEnabled,
+		"tmode", tmode,
 		"leapSecDate", lsdStr)
 	return
 }
@@ -179,6 +189,8 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 		lg.Info("gpsVersion", "sw", ubx.Latin1ZToString(data.SwVersion[:]), "hw", ubx.Latin1ZToString(data.HwVersion[:]), "protVer", gr.protVer)
 	case *ubx.CfgTmode2:
 		gr.tmode2 = data
+	case *ubx.CfgTmode3:
+		gr.tmode3 = data
 	case *ubx.CfgTp5:
 		gr.tp5 = data
 	case *ubx.CfgGNSS:

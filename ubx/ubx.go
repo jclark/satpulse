@@ -83,6 +83,7 @@ const (
 	CfgGNSSID    MsgID = clsCfg | (0x3E << 8)
 	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
 	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
+	CfgTmode3ID  MsgID = clsCfg | (0x71 << 8)
 	CfgTp5ID     MsgID = clsCfg | (0x31 << 8)
 	MonHwID      MsgID = clsMon | (0x09 << 8)
 	MonVerID     MsgID = clsMon | (0x04 << 8)
@@ -90,6 +91,7 @@ const (
 	NavTimeUTCID MsgID = clsNav | (0x21 << 8)
 	NavTimeBDSID MsgID = clsNav | (0x24 << 8)
 	NavTimeLSID  MsgID = clsNav | (0x26 << 8)
+	NavSvinID    MsgID = clsNav | (0x3B << 8)
 	TimSvinID    MsgID = clsTim | (0x04 << 8)
 	TimTPID      MsgID = clsTim | (0x01 << 8)
 )
@@ -100,9 +102,11 @@ func init() {
 	regMsg[CfgGNSS]("gnss")
 	regMsg[CfgMsg]("msg")
 	regMsg[CfgTmode2]("tmode2")
+	regMsg[CfgTmode3]("tmode3")
 	regMsg[CfgTp5]("tp5")
 	regMsg[MonHw]("hw")
 	regMsg[MonVer]("ver")
+	regMsg[NavSvin]("svin")
 	regMsg[NavTimeGPS]("timegps")
 	regMsg[NavTimeBDS]("timebds")
 	regMsg[NavTimeUTC]("timeutc")
@@ -147,9 +151,9 @@ type CfgTp5 struct {
 func (m *CfgTp5) ID() MsgID { return CfgTp5ID }
 
 type CfgTmode2 struct {
-	TimeMode     byte
+	TimeMode     CfgTmode2TimeMode
 	_            byte
-	Flags        uint16
+	Flags        CfgTmode2Flags
 	EcefXOrLat   int32
 	EcefYOrLon   int32
 	EcefZOrAlt   int32
@@ -159,6 +163,50 @@ type CfgTmode2 struct {
 }
 
 func (m *CfgTmode2) ID() MsgID { return CfgTmode2ID }
+
+type CfgTmode2TimeMode byte
+
+const (
+	CfgTmode2Disabled CfgTmode2TimeMode = iota
+	CfgTmode2SurveyIn
+	CfgTmode2FixedMode
+)
+
+type CfgTmode2Flags uint16
+
+const (
+	CfgTmode2LLA CfgTmode2Flags = 1 << iota
+	CfgTMode2AltInv
+)
+
+type CfgTmode3 struct {
+	Version      byte
+	_            byte
+	Flags        CfgTmode3Flags
+	EcefXOrLat   int32
+	EcefYOrLon   int32
+	EcefZOrAlt   int32
+	EcefXOrLatHP byte
+	EcefYOrLonHP byte
+	EcefZOrAltHP byte
+	_            byte
+	FixedPosAcc  uint32
+	SvinMinDur   uint32
+	SvinAccLimit uint32
+	_            [8]byte
+}
+
+func (m *CfgTmode3) ID() MsgID { return CfgTmode3ID }
+
+type CfgTmode3Flags uint16
+
+const (
+	CfgTmode3Disabled CfgTmode3Flags = iota
+	CfgTmode3SurveyIn
+	CfgTmode3FixedMode
+	CfgTmode3Mode CfgTmode3Flags = 0xFF
+	CfgTmode3LLA  CfgTmode3Flags = 0x100
+)
 
 type NavTimeGPS struct {
 	ITOW  uint32
@@ -263,6 +311,27 @@ const (
 )
 
 func (m *NavTimeLS) ID() MsgID { return NavTimeLSID }
+
+type NavSvin struct {
+	Version byte
+	_       [3]byte
+	ITOW    uint32
+	Dur     uint32
+	MeanX   int32
+	MeanY   int32
+	MeanZ   int32
+	MeanXHP byte
+	MeanYHP byte
+	MeanZHP byte
+	_       byte
+	MeanAcc uint32
+	Obs     uint32
+	Valid   byte
+	Active  byte
+	_       [2]byte
+}
+
+func (m *NavSvin) ID() MsgID { return NavSvinID }
 
 type TimTP struct {
 	TOWMS    uint32
