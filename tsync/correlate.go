@@ -13,18 +13,18 @@ type clockTimeReading struct {
 }
 
 type gpsTimeReading struct {
-	t          ptime.Time
-	tRead      time.Time
-	correction time.Duration
+	t           ptime.Time
+	tRead       time.Time
+	pulseOffset time.Duration
 }
 
-func (gps *gpsTimeReading) corrected() ptime.Time {
-	return gps.t.Add(-gps.correction)
+func (gps *gpsTimeReading) pulseTime() ptime.Time {
+	return gps.t.Add(-gps.pulseOffset)
 }
 
-type pulseCorrection struct {
-	tGPS  ptime.Time
-	delta time.Duration
+type pulseOffset struct {
+	tGPS ptime.Time
+	off  time.Duration
 }
 
 func (gtr *gpsTimeReading) isZero() bool {
@@ -34,7 +34,7 @@ func (gtr *gpsTimeReading) isZero() bool {
 type Correlator struct {
 	servo *Servo
 	edges []clockTimeReading
-	pcs   []pulseCorrection
+	pOffs []pulseOffset
 	// if non-zero, a GPS reading that we haven't yet found an edge for
 	gpsPending gpsTimeReading
 	// if non-Zero corresponds to edges[0]
@@ -51,9 +51,9 @@ func NewCorrelator(s *Servo) *Correlator {
 }
 
 func (c *Correlator) GPSTime(t ptime.Time, tRead time.Time) {
-	cx := c.findCorrection(t)
-	c.logger().Debug("gpsTime", "t", t, "cx", cx)
-	c.gpsPending = gpsTimeReading{t, tRead, cx}
+	po := c.findPulseOffset(t)
+	c.logger().Debug("gpsTime", "t", t, "pulseOffset", po)
+	c.gpsPending = gpsTimeReading{t, tRead, po}
 	c.correlate()
 }
 
@@ -102,24 +102,26 @@ func (c *Correlator) emitUpTo(edgeIndex int) {
 }
 
 func (c *Correlator) gpsEmit(edgeIndex int) {
-	c.servo.Sample(c.gpsPending.corrected(), c.edges[edgeIndex].ClockTime, false)
+	c.servo.Sample(c.gpsPending.pulseTime(), c.edges[edgeIndex].ClockTime, false)
 	c.edges = c.edges[edgeIndex:]
 	c.gpsSampled = c.gpsPending
 	c.gpsPending = gpsTimeReading{}
 }
 
-func (c *Correlator) PulseCorrection(tGPS ptime.Time, delta time.Duration) {
-	c.logger().Debug("pulseCorrection", "tGPS", tGPS, "delta", delta)
-	if len(c.pcs) > 1 {
-		c.pcs = c.pcs[len(c.pcs)-1:]
+// PulseOffset corresponds to U-blox quantization error.
+// This is also sometimes called sawtooth error.
+func (c *Correlator) PulseOffset(tGPS ptime.Time, off time.Duration) {
+	c.logger().Debug("pulseOffset", "tGPS", tGPS, "offset", off)
+	if len(c.pOffs) > 1 {
+		c.pOffs = c.pOffs[len(c.pOffs)-1:]
 	}
-	c.pcs = append(c.pcs, pulseCorrection{tGPS: tGPS, delta: delta})
+	c.pOffs = append(c.pOffs, pulseOffset{tGPS: tGPS, off: off})
 }
 
-func (c *Correlator) findCorrection(t ptime.Time) time.Duration {
-	for _, pc := range c.pcs {
-		if pc.tGPS == t {
-			return pc.delta
+func (c *Correlator) findPulseOffset(t ptime.Time) time.Duration {
+	for _, po := range c.pOffs {
+		if po.tGPS == t {
+			return po.off
 		}
 	}
 	return 0

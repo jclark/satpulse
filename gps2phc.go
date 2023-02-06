@@ -221,7 +221,7 @@ func syncFrame(ctx context.Context, corr *tsync.Correlator, f scan.Frame) {
 			corr.GPSTime(ptime.GPS(data.Week, data.ITOW), f.TRead)
 		case *ubx.TimTP:
 			if (data.Flags & ubx.TimTPQErrInvalid) == 0 {
-				corr.PulseCorrection(ptime.GPS(int16(data.Week), data.TOWMS), ptime.Picoseconds(data.QErr))
+				corr.PulseOffset(ptime.GPS(int16(data.Week), data.TOWMS), ptime.Picoseconds(data.QErr))
 			}
 		default:
 			lg.Debug("ubx", "type", u.ID().String(), "payload", u)
