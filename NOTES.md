@@ -2,8 +2,11 @@
 ## U-blox
 
 * On F9T, using UBX-TIM-TP, tow seems to be wrong unless time base is set using TP5 to GPS
-* Need TMODE3 on high-precision UBX receivers (e.g. F9P); TMODE2 on timing receivers.
 * GNSS week number of past leap second event on nav-timels is wrong, because GPS transmits only bottom 8 bits
+* With ZED-F9P need to use firmware HPG 1.12 to get quantization error in UBX-TIM-TP message; neither HPG 1.13 nor HPG1 1.32 provide it.
+* With HPG products (e.g. ZED-F9P), need to use
+   * UBX-CFG-TMODE3 rather than UBX-CFG-TMODE2
+   * UBX-NAV-SVIN rather than UBX-TIM_SVIN
 
 ## Linux Serial
 
