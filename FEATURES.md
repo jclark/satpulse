@@ -25,9 +25,6 @@ We can see what NIC we have and know about its limitations.
    - losing pulses when reading from PHC
 - for i210 deal with timestamping both edges (we can use UBX to get the length of the time pulse)
 
-ADJ_SETOFFSET does not work precisely (just does a read and a write). We can measure the delay and
-then use this to get things adjusted quicker.
-
 `ETHTOOL_GDRVINFO` gives us the driver name.
 
 ### Deal with GPS flakiness
@@ -76,7 +73,7 @@ We can collect additional information using UBX and make it available via
 
 ### Antenna supervision
 
-UBX-MOD-RF allows monitoring of antenna status. We can collect stats and also warn if something changes
+UBX-MON-RF allows monitoring of antenna status. We can collect stats and also warn if something changes
 for the worse in the antenna status (loss of power, jamming, short).
 
 ### GPS signal quality

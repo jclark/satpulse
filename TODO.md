@@ -2,11 +2,12 @@
 
 ## General
 
+* Think about right repo name
 * Rearrange source to properly for Go conventions
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
 * Option for extts pin index
-* Need layer the turns UBX messages into something more convenient to work with, and UBX-independent
+* Need layer that turns UBX messages into something more convenient to work with, and UBX-independent
 
 ## Time sync
 
@@ -52,7 +53,9 @@
 * Deal with read of 0 from term (caused by timeout)
 * Command-line flag for baud rate
 * Can we be detect when baud rate is too low for information passed?
-* Serial port locking (flock seems the best way)
+* Serial port locking
+   * flock seems the best way
+   * should we also support UUCP-style locking?
 
 ## GPS configuration
 
@@ -75,5 +78,9 @@ Does Facebook have something we can reuse?
 
 ## HTTP server
 
-* Provide JSON API for current state
+* Provide JSON API for current status
 * Human-readable page that repeatedly fetches current state
+
+## ts2phc support
+
+* Provide TCP socket with RMC sentences

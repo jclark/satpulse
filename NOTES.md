@@ -11,3 +11,13 @@
 ## Linux Serial
 
 close system call on a serial output will wait for buffered output to drain. If there's no device, this is will wait for timeout, which is defaults to 30s. Timeout can be changed by setserial command. Uses TIOCGSERIAL/TIOCSSERIAL ioctl defined in linux/serial.h, which uses a serial_struct; closing_wait member controls how long to wait on closing.
+
+## PTP Hardware Clock
+
+ADJ_SETOFFSET does not work precisely (just does a read and a write). We can measure the delay and
+then use this to get things adjusted quicker.
+
+## Raspberry Pi CM4
+
+There can be a delay between when the pulse on the SYNC pin occurs and when the driver delivers the PHC time for the pulse (up to a 0.25 seconds). This means that even though the GPS receiver emits the time pulse before the message with the GPS solution (including the time), the app may see the time pulse after the message.
+
