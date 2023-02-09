@@ -3,6 +3,8 @@
 ## General
 
 * Think about right repo name
+   * gpstime
+   * gpspulse
 * Rearrange source to properly for Go conventions
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
@@ -80,6 +82,8 @@ Does Facebook have something we can reuse?
 
 * Provide JSON API for current status
 * Human-readable page that repeatedly fetches current state
+* Should we use this for configuration?
+   * Need to think about how we deal with concurrent requests.
 
 ## ts2phc support
 
