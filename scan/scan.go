@@ -13,6 +13,7 @@ const (
 	Invalid FrameKind = iota
 	UBX
 	NMEA
+	RTCM
 )
 
 type Frame struct {
@@ -70,6 +71,9 @@ Loop:
 		case ubxExpectN:
 			f.Kind = UBX
 			break Loop
+		case rtcmExpectN:
+			f.Kind = RTCM
+			break Loop
 		}
 	}
 	f.Data = string(s.buf[fStartIndex:s.nextScanIndex])
@@ -126,22 +130,27 @@ const (
 	nmeaHadCR
 	nmeaComplete
 	ubxStarted
+	rtcmStarted
 	ubxExpectN
+	rtcmExpectN = ubxExpectN + 0x10000 + 2
 )
 
 const (
-	ubxSync1 = 0xB5
-	ubxSync2 = 0x62
+	ubxSync1     = 0xB5
+	ubxSync2     = 0x62
+	rtcmPreamble = 0xD3
 )
 
 func (p *Scanner) nextState(state scanState, frameLen int, b byte) scanState {
 	switch state {
 	case frameScan:
-		if b == '$' {
+		switch b {
+		case '$':
 			return nmeaStarted
-		}
-		if b == ubxSync1 {
+		case ubxSync1:
 			return ubxStarted
+		case rtcmPreamble:
+			return rtcmStarted
 		}
 	case nmeaStarted:
 		if b == ',' || b == '*' {
@@ -198,6 +207,14 @@ func (p *Scanner) nextState(state scanState, frameLen int, b byte) scanState {
 			return scanState(int(ubxExpectN) + payloadLen + 2)
 		default:
 			return ubxStarted
+		}
+	case rtcmStarted:
+		switch frameLen {
+		case 2:
+			payloadLen := int(b) + int(p.buf[p.nextScanIndex-1]&0x3)*0x100
+			return scanState(int(rtcmExpectN) + payloadLen + 3)
+		case 1:
+			return rtcmStarted
 		}
 	default:
 		if state > ubxExpectN {
