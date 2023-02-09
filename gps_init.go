@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jclark/gps2phc/logctx"
 	"github.com/jclark/gps2phc/ptime"
 	"github.com/jclark/gps2phc/scan"
 	"github.com/jclark/gps2phc/serio"
@@ -48,7 +49,7 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh <-chan scan.Frame, 
 	writeRespCh := port.WriteAsync(ctx, configMsgs)
 	timerCh := time.After(time.Second * 2)
 	cancelCh := ctx.Done()
-	lg := slog.FromContext(ctx)
+	lg := logctx.FromContext(ctx)
 	gr := gpsReceived{}
 	gr.init()
 	for {

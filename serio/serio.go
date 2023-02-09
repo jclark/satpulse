@@ -6,9 +6,9 @@ import (
 	"io"
 	"time"
 
+	"github.com/jclark/gps2phc/logctx"
 	"github.com/jclark/gps2phc/scan"
 	"github.com/jclark/gps2phc/term"
-	"golang.org/x/exp/slog"
 	"golang.org/x/sys/unix"
 )
 
@@ -43,14 +43,14 @@ func (p *Port) StartRead(ctx context.Context) chan scan.Frame {
 }
 
 func readWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
-	slog.FromContext(ctx).Debug("readWorkerStarted")
+	logctx.FromContext(ctx).Debug("readWorkerStarted")
 	defer close(c)
 	for {
 		f, err := p.Scan(ctx)
 		c <- f
 		if err != nil && err != io.EOF {
 			if ctx.Err() == nil {
-				slog.FromContext(ctx).Error("readError", err)
+				logctx.FromContext(ctx).Error("readError", err)
 			}
 			break
 		}
@@ -75,16 +75,16 @@ func (p *Port) WriteAsync(ctx context.Context, frames [][]byte) <-chan error {
 			}
 			nBytes += len(frame)
 		}
-		slog.FromContext(ctx).Debug("draining")
+		logctx.FromContext(ctx).Debug("draining")
 		c <- p.Drain(ctx, nBytes)
-		slog.FromContext(ctx).Debug("writeAsyncDone")
+		logctx.FromContext(ctx).Debug("writeAsyncDone")
 	}()
 	return c
 }
 
 func (p *Port) Write(ctx context.Context, buf []byte) (int, error) {
 	total := 0
-	lg := slog.FromContext(ctx)
+	lg := logctx.FromContext(ctx)
 	for len(buf) > 0 {
 
 		// Semantics of Unix write and Go Write are not the same:
@@ -109,7 +109,7 @@ func (p *Port) Write(ctx context.Context, buf []byte) (int, error) {
 }
 
 func (p *Port) Drain(tx context.Context, nBytesWritten int) error {
-	lg := slog.FromContext(tx)
+	lg := logctx.FromContext(tx)
 	n, err := p.Term.Buffered()
 	if err != nil {
 		return err

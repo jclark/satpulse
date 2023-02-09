@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/jclark/gps2phc/logctx"
 	"github.com/jclark/gps2phc/scan"
 	"github.com/jclark/gps2phc/tsync"
 
@@ -39,7 +40,7 @@ func main() {
 	}
 	lg := slog.New(slog.HandlerOptions{Level: level}.NewTextHandler(os.Stdout))
 	slog.SetDefault(lg)
-	ctx := context.Background()
+	ctx := logctx.NewContext(context.Background(), lg)
 	ctx, cancel := cancelOnSignal(ctx)
 	err := run(ctx, cancel)
 	if err != nil {
@@ -53,7 +54,7 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 	if err != nil {
 		return err
 	}
-	lg := slog.FromContext(ctx)
+	lg := logctx.FromContext(ctx)
 
 	defer func() {
 		clk.Close()
@@ -117,7 +118,7 @@ func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
 	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
 	go func() {
 		<-sig
-		slog.FromContext(ctx).Debug("cancelling")
+		logctx.FromContext(ctx).Debug("cancelling")
 		cancel()
 	}()
 	return ctx, cancel
@@ -153,7 +154,7 @@ func nmeaLog(lg *slog.Logger, data string) {
 func newSyncer(ctx context.Context, clk *phc.Clock, fCh <-chan scan.Frame) (r *Syncer, err error) {
 	err = nil
 	r = nil
-	lg := slog.FromContext(ctx)
+	lg := logctx.FromContext(ctx)
 
 	servo, err := tsync.NewServo(clk, lg)
 	if err != nil {
@@ -174,7 +175,7 @@ func doSync(ctx context.Context, s *Syncer) {
 	tsCh := s.tsCh
 	fCh := s.fCh
 	corr := s.corr
-	lg := slog.FromContext(ctx)
+	lg := logctx.FromContext(ctx)
 	nSkipped := 0
 	for tsCh != nil || fCh != nil {
 		select {
@@ -206,7 +207,7 @@ func doSync(ctx context.Context, s *Syncer) {
 }
 
 func syncFrame(ctx context.Context, corr *tsync.Correlator, f scan.Frame) {
-	lg := slog.FromContext(ctx)
+	lg := logctx.FromContext(ctx)
 	switch f.Kind {
 	case scan.NMEA:
 		nmeaLog(lg, f.Data)
