@@ -1,3 +1,5 @@
+github.com/jclark/crc24q v0.0.0-20230209081314-8dbd6482edea h1:2UjMojPLXchmcI+ch713m0JgI2TM1D3HHhLiI0CavIM=
+github.com/jclark/crc24q v0.0.0-20230209081314-8dbd6482edea/go.mod h1:LV4fpTphUbX5vY6cnCwA1S/IieyDEtvZsXd1163xbcQ=
 golang.org/x/exp v0.0.0-20230206171751-46f607a40771 h1:xP7rWLUr1e1n2xkK5YB4LI0hPEy3LJC6Wk+D4pGlOJg=
 golang.org/x/exp v0.0.0-20230206171751-46f607a40771/go.mod h1:CxIveKay+FTh1D0yPZemJVgC/95VzuuOLq5Qi4xnoYc=
 golang.org/x/sys v0.5.0 h1:MUK/U/4lj1t1oPg0HfuXDN/Z1wv31ZJ/YcPiGccS4DU=

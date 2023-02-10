@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/jclark/crc24q/crc24q"
 )
 
 type FrameKind int
@@ -320,4 +322,15 @@ func hexWeight(b byte) byte {
 		return b - '0'
 	}
 	return (b - 'A') + 10
+}
+
+func RTCMMsg(frame string) (msg string, checksumOK bool, msgType uint16) {
+	n := len(frame) - 3
+	checksumOK = crc24q.Checksum(frame[0:n]) == crc24q.Extract(frame, n)
+	msg = frame[3:n]
+	// treat 0-length message as type 0
+	if n != 3 {
+		msgType = (uint16(msg[0]) << 4) | uint16(msg[1]>>4)
+	}
+	return
 }
