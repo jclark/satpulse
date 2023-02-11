@@ -17,9 +17,11 @@ import (
 type gpsReceived struct {
 	ubxMsgCount      int
 	nmeaMsgCount     int
+	rtcmMsgCount     int
 	invalidMsgCount  int
 	invalidByteCount int
 	nmeaSentences    map[string]map[string]bool
+	rtcmMsgs         map[uint16]bool
 	protVer          ubx.ProtVer
 	tmode2           *ubx.CfgTmode2
 	tmode3           *ubx.CfgTmode3
@@ -81,7 +83,7 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh <-chan scan.Frame, 
 			}
 		}
 	}
-	if gr.ubxMsgCount+gr.nmeaMsgCount == 0 {
+	if gr.ubxMsgCount+gr.nmeaMsgCount+gr.rtcmMsgCount == 0 {
 		if gr.invalidByteCount+gr.invalidMsgCount == 0 {
 			err = errors.New("no output detected from GPS")
 		} else if gr.invalidMsgCount > 0 {
@@ -171,6 +173,8 @@ func (gr *gpsReceived) frame(kind scan.FrameKind, data string, lg *slog.Logger) 
 		gr.nmea(data, lg)
 	case scan.UBX:
 		gr.ubx(data, lg)
+	case scan.RTCM:
+		gr.rtcm(data, lg)
 	default:
 		gr.invalid(data, lg)
 	}
@@ -223,6 +227,16 @@ func (gr *gpsReceived) nmea(data string, lg *slog.Logger) {
 	}
 	talkerMap[fields.TalkerID] = true
 	nmeaLog(lg, data)
+}
+
+func (gr *gpsReceived) rtcm(data string, lg *slog.Logger) {
+	_, ok, msgType := scan.RTCMMsg(data)
+	if !ok {
+		gr.invalidMsgCount++
+		return
+	}
+	gr.rtcmMsgCount++
+	gr.rtcmMsgs[msgType] = true
 }
 
 func (gr *gpsReceived) invalid(data string, lg *slog.Logger) {
