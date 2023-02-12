@@ -14,6 +14,7 @@ type subscriber struct {
 
 type bcast struct {
 	subscribe   chan chan<- []byte
+	unsubscribe chan chan<- []byte
 	msg         chan []byte
 	q           [][]byte
 	nextQIndex  int
@@ -22,8 +23,9 @@ type bcast struct {
 
 func newBcast() *bcast {
 	return &bcast{
-		subscribe: make(chan chan<- []byte),
-		msg:       make(chan []byte, 1),
+		subscribe:   make(chan chan<- []byte),
+		unsubscribe: make(chan chan<- []byte),
+		msg:         make(chan []byte, 1),
 	}
 }
 
@@ -38,6 +40,14 @@ func (b *bcast) run(ctx context.Context) {
 		select {
 		case s := <-b.subscribe:
 			b.subscribers = append(b.subscribers, &subscriber{s, b.nextQIndex})
+			lg.Debug("subscribe", "chan", s)
+		case s := <-b.unsubscribe:
+			i := b.subscriberIndex(s)
+			if i < 0 {
+				break
+			}
+			b.subscribers = append(b.subscribers[:i], b.subscribers[i+1:]...)
+			lg.Debug("unsubscribe", "chan", s)
 		case m := <-b.msg:
 			if len(b.subscribers) != 0 {
 				b.q = append(b.q, m)
@@ -78,6 +88,15 @@ func (b *bcast) run(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (b *bcast) subscriberIndex(c chan<- []byte) int {
+	for i, s := range b.subscribers {
+		if s.c == c {
+			return i
+		}
+	}
+	return -1
 }
 
 func min[T constraints.Ordered](a, b T) T {

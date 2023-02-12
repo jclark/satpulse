@@ -81,6 +81,9 @@ func handleConn(ctx context.Context, b *bcast, conn net.Conn) {
 	defer conn.Close()
 	ch := make(chan []byte)
 	b.subscribe <- ch
+	defer func() {
+		b.unsubscribe <- ch
+	}()
 	for {
 		select {
 		case <-ctx.Done():
