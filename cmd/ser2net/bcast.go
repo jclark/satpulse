@@ -48,7 +48,10 @@ func (b *bcast) run(ctx context.Context) {
 			}
 			b.subscribers = append(b.subscribers[:i], b.subscribers[i+1:]...)
 			lg.Debug("unsubscribe", "chan", s)
-		case m := <-b.msg:
+		case m, ok := <-b.msg:
+			if !ok {
+				return
+			}
 			if len(b.subscribers) != 0 {
 				b.q = append(b.q, m)
 				b.nextQIndex++
