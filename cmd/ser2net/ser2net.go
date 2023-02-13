@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -71,6 +72,9 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return nil
+			}
 			return err
 		}
 		go handleConn(ctx, b, conn)
