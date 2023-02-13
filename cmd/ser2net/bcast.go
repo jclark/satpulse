@@ -19,7 +19,7 @@ type bcast struct {
 	msg         chan []byte
 	q           [][]byte
 	nextQIndex  int
-	subscribers []*subscriber
+	subscribers []subscriber
 }
 
 func newBcast() *bcast {
@@ -46,7 +46,8 @@ func (b *bcast) run(ctx context.Context) {
 		}
 		subscribersToDo := []*subscriber{}
 		qStartIndex := b.nextQIndex - len(b.q)
-		for _, s := range b.subscribers {
+		for i := 0; i < len(b.subscribers); i++ {
+			s := &b.subscribers[i]
 			if s.nextSendIndex < b.nextQIndex {
 				subscribersToDo = append(subscribersToDo, s)
 				sc := reflect.SelectCase{
@@ -62,7 +63,7 @@ func (b *bcast) run(ctx context.Context) {
 		switch chosen {
 		case 0: // subscribe
 			s := recv.Interface().(chan<- []byte)
-			b.subscribers = append(b.subscribers, &subscriber{s, b.nextQIndex})
+			b.subscribers = append(b.subscribers, subscriber{s, b.nextQIndex})
 			lg.Debug("subscribe", "chan", s)
 		case 1: // unsubscribe
 			s := recv.Interface().(chan<- []byte)
@@ -83,7 +84,7 @@ func (b *bcast) run(ctx context.Context) {
 			}
 		case 3: // Done
 			return
-		default: // send to subscribe
+		default: // send to a subscriber
 			subscribersToDo[chosen-4].nextSendIndex++
 			b.trimQ()
 		}
