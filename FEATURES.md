@@ -96,7 +96,9 @@ Maybe leave some of this to a separate tool such as https://github.com/phkehl/ub
 
 U-blox's u-center tool allows a network connection to a GPS on a remote machine. Typically this would be used in conjunction with ser2net, which would be used on the remote machine to expose the serial port over TCP.
 
-We could include this functionality so that we can configure and monitor the GPS using UBX tool at the same time as we are using it for time sync. In this mode, we would do some initial configuration of the GPS, but thereafter we would not send any messages to the GPS; instead we would monitor the messages being sent to the remote tool and interpret those we know about.
+We could include this functionality so that we can configure and monitor the GPS using u-center at the same time as we are using it for time sync. In this mode, we would do some initial configuration of the GPS, but thereafter we would not send any messages to the GPS; instead we would monitor the messages being sent to the remote tool and interpret those we know about.
+
+Lady Heather also supports a TCP mode.
 
 ## System clock synchronization
 
