@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"reflect"
+	"sync"
 
 	"github.com/jclark/gps2phc/logctx"
 	"golang.org/x/exp/constraints"
@@ -30,13 +31,14 @@ func newBcast() *bcast {
 	}
 }
 
-func (b *bcast) run(ctx context.Context) {
+func (b *bcast) run(ctx context.Context, wg *sync.WaitGroup) {
 	defer func() {
-		for _, s := range b.subscribers {
-			close(s.c)
-		}
+		defer logctx.FromContext(ctx).Debug("bcastDone")
+		wg.Done()
 	}()
 	lg := logctx.FromContext(ctx)
+	msg := b.msg
+Loop:
 	for {
 		cases := []reflect.SelectCase{
 			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(b.subscribe)},
@@ -75,7 +77,8 @@ func (b *bcast) run(ctx context.Context) {
 			lg.Debug("unsubscribe", "chan", s)
 		case 2: // msg
 			if !ok {
-				return
+				msg = nil
+				break Loop
 			}
 			m := recv.Interface().([]byte)
 			if len(b.subscribers) != 0 {
@@ -83,10 +86,27 @@ func (b *bcast) run(ctx context.Context) {
 				b.nextQIndex++
 			}
 		case 3: // Done
-			return
+			break Loop
 		default: // send to a subscriber
 			subscribersToDo[chosen-4].nextSendIndex++
 			b.trimQ()
+		}
+	}
+	for _, s := range b.subscribers {
+		close(s.c)
+	}
+	nSubscribers := len(b.subscribers)
+	for nSubscribers > 0 || msg != nil {
+		select {
+		case c := <-b.subscribe:
+			close(c)
+			nSubscribers++
+		case <-b.unsubscribe:
+			nSubscribers--
+		case _, ok := <-msg:
+			if !ok {
+				msg = nil
+			}
 		}
 	}
 }
