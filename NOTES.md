@@ -14,8 +14,8 @@ close system call on a serial output will wait for buffered output to drain. If 
 
 ## PTP Hardware Clock
 
-ADJ_SETOFFSET does not work precisely (just does a read and a write). We can measure the delay and
-then use this to get things adjusted quicker.
+ADJ_SETOFFSET does not work atomically (just does a read and a write) with most (all?) PHC drivers. We can measure the delay and
+then use this to get things adjusted quicker. It was about 4.5us on a i210.
 
 ## Raspberry Pi CM4
 
