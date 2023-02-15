@@ -44,6 +44,8 @@ Achievable accuracy seems to depend on lot on how good the sky view is.
 
 Might want to do a series of surveys with progressively longer observation times and tighter deviations.
 
+2000 points seems a good default survey time (used by Lady Heather and Skytraq)
+
 ## Enable messages
 
 Need to enable the messages we use.
