@@ -5,11 +5,19 @@
 * Think about right repo name
    * gpstime
    * gpspulse
+   * gps4ptp
 * Rearrange source to properly for Go conventions
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
 * Option for extts pin index
-* Need layer that turns UBX messages into something more convenient to work with, and UBX-independent
+* Need layer that turns UBX messages into something more convenient to work with, and UBX-independent 
+
+## TCP server
+
+* Combine with main program
+* Should initialize Listener with right Context
+* Test with Lady Heather
+* Make sure we can never to `close` on a channel twice
 
 ## Time sync
 
@@ -88,3 +96,9 @@ Does Facebook have something we can reuse?
 ## ts2phc support
 
 * Provide TCP socket with RMC sentences
+
+## Netlink events
+
+Integrate experimental carrier program.
+
+
