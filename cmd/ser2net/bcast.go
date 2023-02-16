@@ -33,7 +33,7 @@ func newBcast() *bcast {
 
 func (b *bcast) run(ctx context.Context, wg *sync.WaitGroup) {
 	defer func() {
-		defer logctx.FromContext(ctx).Debug("bcastDone")
+		logctx.FromContext(ctx).Debug("bcastDone")
 		wg.Done()
 	}()
 	lg := logctx.FromContext(ctx)
