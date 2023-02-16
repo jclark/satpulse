@@ -6,6 +6,11 @@
    * gpstime
    * gpspulse
    * gps4ptp
+   * go-gps-time
+   * gps-time
+   * go-time
+   * go-time-sync
+   * gpsclock
 * Rearrange source to properly for Go conventions
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
@@ -96,6 +101,7 @@ Does Facebook have something we can reuse?
 ## ts2phc support
 
 * Provide TCP socket with RMC sentences
+* Could potentially generate RMC from other UBX messages.
 
 ## Netlink events
 
