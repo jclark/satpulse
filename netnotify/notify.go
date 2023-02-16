@@ -1,4 +1,4 @@
-package main
+package netnotify
 
 import (
 	"errors"
@@ -21,7 +21,7 @@ type InterfaceEvent struct {
 	Err   error
 }
 
-func NewNotifier() (*Notifier, error) {
+func OpenNotifier() (*Notifier, error) {
 	const (
 		// Speak to route netlink using netlink
 		familyRoute = 0

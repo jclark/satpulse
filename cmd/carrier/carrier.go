@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"time"
+
+	"github.com/jclark/gps2phc/netnotify"
 )
 
 var ifName string
@@ -27,7 +29,7 @@ func run() error {
 		return err
 	}
 	fmt.Printf("initial flags: %s\n", iface.Flags.String())
-	n, err := NewNotifier()
+	n, err := netnotify.OpenNotifier()
 	if err != nil {
 		return err
 	}
