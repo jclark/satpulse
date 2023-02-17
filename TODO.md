@@ -20,7 +20,6 @@
 ## TCP server
 
 * Combine with main program
-* Should initialize Listener with right Context
 * Test with Lady Heather
 * Make sure we can never to `close` on a channel twice
 

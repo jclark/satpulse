@@ -51,7 +51,8 @@ func cancelOnSignal(lg *slog.Logger, cancel context.CancelFunc) {
 }
 
 func run(ctx context.Context, cancel context.CancelFunc) error {
-	listen, err := net.Listen("tcp", ":2006")
+	cfg := net.ListenConfig{}
+	listen, err := cfg.Listen(ctx, "tcp", ":2006")
 	if err != nil {
 		return err
 	}
