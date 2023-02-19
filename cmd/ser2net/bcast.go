@@ -31,6 +31,14 @@ func newBcast() *bcast {
 	}
 }
 
+// This should be called in a goroutine.
+// It will keep running so long as any of the following apply
+// - there are existing subscribers
+// - the subscriber channel is still open
+// - the msg channel is still open
+//
+// It will close each subscriber channel when the msg channel is closed or the context is done.
+// It will call wg.Done() just before it returns.
 func (b *bcast) run(ctx context.Context, wg *sync.WaitGroup) {
 	defer func() {
 		logctx.FromContext(ctx).Debug("bcastDone")
@@ -38,19 +46,22 @@ func (b *bcast) run(ctx context.Context, wg *sync.WaitGroup) {
 	}()
 	lg := logctx.FromContext(ctx)
 	msg := b.msg
-Loop:
-	for {
+	subscribe := b.subscribe
+	done := ctx.Done()
+	// closed is true after we close subscriber channels
+	closed := false
+	for subscribe != nil || msg != nil || len(b.subscribers) > 0 {
 		cases := []reflect.SelectCase{
-			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(b.subscribe)},
+			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(subscribe)},
 			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(b.unsubscribe)},
-			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(b.msg)},
-			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ctx.Done())},
+			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(msg)},
+			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(done)},
 		}
 		subscribersToDo := []*subscriber{}
 		qStartIndex := b.nextQIndex - len(b.q)
-		for i := 0; i < len(b.subscribers); i++ {
+		for i := range b.subscribers {
 			s := &b.subscribers[i]
-			if s.nextSendIndex < b.nextQIndex {
+			if !closed && s.nextSendIndex < b.nextQIndex {
 				subscribersToDo = append(subscribersToDo, s)
 				sc := reflect.SelectCase{
 					Dir:  reflect.SelectSend,
@@ -64,7 +75,15 @@ Loop:
 		lg.Debug("bcastSelect", "chosen", chosen)
 		switch chosen {
 		case 0: // subscribe
+			if !ok {
+				subscribe = nil
+				break
+			}
 			s := recv.Interface().(chan<- []byte)
+			if closed {
+				close(s)
+				break
+			}
 			b.subscribers = append(b.subscribers, subscriber{s, b.nextQIndex})
 			lg.Debug("subscribe", "chan", s)
 		case 1: // unsubscribe
@@ -78,7 +97,7 @@ Loop:
 		case 2: // msg
 			if !ok {
 				msg = nil
-				break Loop
+				break
 			}
 			m := recv.Interface().([]byte)
 			if len(b.subscribers) != 0 {
@@ -86,26 +105,15 @@ Loop:
 				b.nextQIndex++
 			}
 		case 3: // Done
-			break Loop
+			done = nil
 		default: // send to a subscriber
 			subscribersToDo[chosen-4].nextSendIndex++
 			b.trimQ()
 		}
-	}
-	for _, s := range b.subscribers {
-		close(s.c)
-	}
-	nSubscribers := len(b.subscribers)
-	for nSubscribers > 0 || msg != nil {
-		select {
-		case c := <-b.subscribe:
-			close(c)
-			nSubscribers++
-		case <-b.unsubscribe:
-			nSubscribers--
-		case _, ok := <-msg:
-			if !ok {
-				msg = nil
+		if !closed && (msg == nil || done == nil) {
+			closed = true
+			for _, s := range b.subscribers {
+				close(s.c)
 			}
 		}
 	}

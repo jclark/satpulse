@@ -21,7 +21,6 @@
 
 * Combine with main program
 * Test with Lady Heather
-* Make sure we can never to `close` on a channel twice
 
 ## Time sync
 

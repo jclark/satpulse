@@ -90,21 +90,28 @@ func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, 
 		conn, err := listen.Accept()
 		if err != nil {
 			logConnErr(ctx, "acceptErr", err)
+			close(b.subscribe)
 			return
 		}
-		wg.Add(1)
-		go handleConnWrite(ctx, wg, conn, b)
+		startConnWrite(ctx, wg, conn, b)
 		wg.Add(1)
 		go handleConnRead(ctx, wg, conn, chLock)
 	}
 }
 
-func handleConnWrite(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast) {
+func startConnWrite(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast) {
+	wg.Add(1)
+	// subscribe in the goroutine that closes the subscribe channel to avoid a race
+	ch := make(chan []byte)
+	b.subscribe <- ch
+	go handleConnWrite(ctx, wg, conn, b, ch)
+}
+
+func handleConnWrite(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, ch chan []byte) {
 	defer conn.Close()
 	defer logctx.FromContext(ctx).Debug("connWriteDone")
 	defer wg.Done()
-	ch := make(chan []byte)
-	b.subscribe <- ch
+
 	defer func() {
 		b.unsubscribe <- ch
 	}()
