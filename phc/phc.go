@@ -102,9 +102,21 @@ func (clk *Clock) Close() error {
 	return clk.wrapErr(unix.Close(clk.fd), "close")
 }
 
-func (clk *Clock) PinSetfunc(pinIndex uint32, chanIndex uint32, pinFunc uint32) error {
-	pd := unix2.PTPPinDesc{Index: pinIndex, Chan: chanIndex, Func: pinFunc}
+type PinFunc uint32
+
+const (
+	PinFuncNone   PinFunc = unix2.PTP_PF_NONE
+	PinFuncExtts  PinFunc = unix2.PTP_PF_EXTTS
+	PinFuncPerout PinFunc = unix2.PTP_PF_PEROUT
+)
+
+func (clk *Clock) PinSetFunc(pinIndex uint32, pinFunc PinFunc, chanIndex uint32) error {
+	pd := unix2.PTPPinDesc{Index: pinIndex, Func: uint32(pinFunc), Chan: chanIndex}
 	return clk.wrapErr(unix2.IoctlPTPPinSetFunc(clk.fd, &pd), "ioctl(PTP_PIN_SETFUNC)")
+}
+
+func (clk *Clock) PinCount() int {
+	return int(clk.caps.N_pins)
 }
 
 func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) error {

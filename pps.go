@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/jclark/gps2phc/phc"
-	"github.com/jclark/gps2phc/unix2"
 )
 
 const chanIndex = 0
@@ -14,7 +13,7 @@ const pinIndex = 0
 const timeout = 100 * time.Microsecond
 
 func StartPPS(ctx context.Context, clk *phc.Clock) (<-chan phc.TsEvent, error) {
-	err := clk.PinSetfunc(pinIndex, chanIndex, unix2.PTP_PF_EXTTS)
+	err := clk.PinSetFunc(pinIndex, phc.PinFuncExtts, chanIndex)
 	if err != nil {
 		return nil, err
 	}
