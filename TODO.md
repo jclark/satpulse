@@ -55,6 +55,7 @@
 
 ## Serial IO
 
+* Not sure there is any point to serio.Write: can just use term.Write.
 * Problem with writing to serial device that is not connected to anything
    * Attempting to Close (after doing write) hangs for 30s (I guess waiting to drain)
    * Possible fixes (not mutually exclusive)

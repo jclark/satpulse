@@ -73,16 +73,15 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 	go b.run(ctx, &wg)
 	wg.Add(1)
 	go readWorker(ctx, &wg, port, b.msg)
-	chLock, ch := makeChanLock()
+	portLock := make(chan *serio.Port, 1)
+	portLock <- port
 	wg.Add(1)
-	go writeWorker(ctx, &wg, port, ch)
-	wg.Add(1)
-	go handleListen(ctx, &wg, listen, b, chLock)
+	go handleListen(ctx, &wg, listen, b, portLock)
 	wg.Wait()
 	return nil
 }
 
-func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, b *bcast, chLock chan chan<- []byte) {
+func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, b *bcast, portLock chan *serio.Port) {
 	defer listen.Close()
 	defer logctx.FromContext(ctx).Debug("listenDone")
 	defer wg.Done()
@@ -93,21 +92,21 @@ func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, 
 			close(b.subscribe)
 			return
 		}
-		startConnWrite(ctx, wg, conn, b)
-		wg.Add(1)
-		go handleConnRead(ctx, wg, conn, chLock)
+		handleConn(ctx, wg, conn, b, portLock)
 	}
 }
 
-func startConnWrite(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast) {
+func handleConn(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, portLock chan *serio.Port) {
 	wg.Add(1)
 	// subscribe in the goroutine that closes the subscribe channel to avoid a race
 	ch := make(chan []byte)
 	b.subscribe <- ch
-	go handleConnWrite(ctx, wg, conn, b, ch)
+	go connWriteWorker(ctx, wg, conn, b, ch)
+	go connReadWorker(ctx, wg, conn, portLock)
 }
 
-func handleConnWrite(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, ch chan []byte) {
+// connWriteWorker reads from a channel and write to the connection.
+func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, ch chan []byte) {
 	defer conn.Close()
 	defer logctx.FromContext(ctx).Debug("connWriteDone")
 	defer wg.Done()
@@ -132,67 +131,74 @@ func handleConnWrite(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *
 	}
 }
 
-// The concept here is that if a connection starts writing it gets exclusive access
+// The concept here is that when a connection starts writing it gets exclusive access
 // until it doesn't write for this duration. This is to help reduce conflicts between writers.
 const writeLockTimeout = 2 * time.Second
 
-func handleConnRead(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, chLock chan chan<- []byte) {
+// connReadWorker reads from the connection and writes to the serial port.
+func connReadWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, portLock chan *serio.Port) {
+	lg := logctx.FromContext(ctx)
 	defer conn.Close()
-	defer logctx.FromContext(ctx).Debug("connReadDone")
+	defer lg.Debug("connReadDone")
 	defer wg.Done()
-	var ch chan<- []byte
+	var port *serio.Port
 	defer func() {
-		if ch != nil {
-			chLock <- ch
+		if port != nil {
+			portLock <- port
 		}
 	}()
 	for {
 		buf := make([]byte, 1024)
 		var deadline time.Time
-		if ch != nil {
+		if port != nil {
 			deadline = time.Now().Add(writeLockTimeout)
 		}
 		conn.SetReadDeadline(deadline)
-		n, err := conn.Read(buf)
+		nRead, err := conn.Read(buf)
 		if err != nil {
 			if errors.Is(err, os.ErrDeadlineExceeded) {
-				chLock <- ch
-				logctx.FromContext(ctx).Debug("lockRelease", "conn", conn)
-				ch = nil
+				portLock <- port
+				lg.Debug("lockRelease", "conn", conn)
+				port = nil
 				continue
 			}
 			logConnErr(ctx, "connReadErr", err)
 			return
 		}
-		if n == 0 {
+		if nRead == 0 {
 			continue
 		}
-		// acquire channel lock
-		if ch == nil {
+		// acquire port lock
+		if port == nil {
 			var ok bool
 			select {
 			case <-ctx.Done():
 				return
-			case ch, ok = <-chLock:
+			case port, ok = <-portLock:
 				if !ok {
 					return
 				}
-				logctx.FromContext(ctx).Debug("lockAcquire", "conn", conn)
+				lg.Debug("lockAcquire", "conn", conn)
 			}
 		}
-		select {
-		case <-ctx.Done():
+		nWritten, err := port.Term.Write(buf[:nRead])
+		if nWritten > 0 {
+			lg.Debug("serialWrite", "nBytes", nWritten)
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				lg.Error("serialWriteErr", err)
+			}
 			return
-		case ch <- buf[:n]:
+		}
+		err = port.Drain(ctx, nWritten)
+		if err != nil {
+			if ctx.Err() == nil {
+				lg.Error("serialDrainErr", err)
+			}
+			return
 		}
 	}
-}
-
-func makeChanLock() (chan chan<- []byte, <-chan []byte) {
-	chLock := make(chan chan<- []byte, 1)
-	ch := make(chan []byte)
-	chLock <- ch
-	return chLock, ch
 }
 
 func logConnErr(ctx context.Context, msg string, err error) {
@@ -200,6 +206,8 @@ func logConnErr(ctx context.Context, msg string, err error) {
 		logctx.FromContext(ctx).Error(msg, err)
 	}
 }
+
+const serReadBufSize = 1024
 
 func readWorker(ctx context.Context, wg *sync.WaitGroup, port *serio.Port, ch chan<- []byte) {
 	defer close(ch)
@@ -212,7 +220,7 @@ func readWorker(ctx context.Context, wg *sync.WaitGroup, port *serio.Port, ch ch
 			return
 		default:
 		}
-		buf := make([]byte, 1024)
+		buf := make([]byte, serReadBufSize)
 		nRead, err := port.Read(buf)
 		msg := buf[:nRead]
 		if err != nil {
@@ -221,28 +229,6 @@ func readWorker(ctx context.Context, wg *sync.WaitGroup, port *serio.Port, ch ch
 		}
 		if len(msg) > 0 {
 			ch <- msg
-		}
-	}
-}
-
-func writeWorker(ctx context.Context, wg *sync.WaitGroup, port *serio.Port, ch <-chan []byte) {
-	defer logctx.FromContext(ctx).Debug("writeWorkerDone")
-	defer wg.Done()
-	lg := logctx.FromContext(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case msg, ok := <-ch:
-			if !ok {
-				return
-			}
-			_, err := port.Write(ctx, msg)
-			if err != nil {
-				lg.Error("serialWriteErr", err)
-				return
-			}
-			lg.Debug("serialWrite", "nBytes", len(msg))
 		}
 	}
 }
