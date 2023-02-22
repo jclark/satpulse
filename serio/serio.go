@@ -30,11 +30,11 @@ func OpenTerm(path string) (*term.Term, error) {
 func StartScan(ctx context.Context, r io.Reader) <-chan scan.Frame {
 	scanner := scan.New(r, scanBufSize)
 	c := make(chan scan.Frame, 1) // XXX think about the buffering
-	go scanWorker(ctx, scanner, c)
+	go ScanWorker(ctx, scanner, c)
 	return c
 }
 
-func scanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
+func ScanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
 	logctx.FromContext(ctx).Debug("readWorkerStarted")
 	defer close(c)
 	for {

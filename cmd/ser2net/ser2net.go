@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jclark/gps2phc/logctx"
+	"github.com/jclark/gps2phc/scan"
 	"github.com/jclark/gps2phc/serio"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sys/unix"
@@ -72,8 +72,12 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 	b := newBcast()
 	wg.Add(1)
 	go b.run(ctx, &wg)
+	scanner := scan.New(t, 16)
 	wg.Add(1)
-	go readWorker(ctx, &wg, t, b.msg)
+	go func() {
+		serio.ScanWorker(ctx, scanner, b.msg)
+		wg.Done()
+	}()
 	portLock := make(chan serio.OutPort, 1)
 	portLock <- t
 	wg.Add(1)
@@ -100,14 +104,14 @@ func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, 
 func handleConn(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, portLock chan serio.OutPort) {
 	wg.Add(1)
 	// subscribe in the goroutine that closes the subscribe channel to avoid a race
-	ch := make(chan []byte)
+	ch := make(chan scan.Frame)
 	b.subscribe <- ch
 	go connWriteWorker(ctx, wg, conn, b, ch)
 	go connReadWorker(ctx, wg, conn, portLock)
 }
 
 // connWriteWorker reads from a channel and write to the connection.
-func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, ch chan []byte) {
+func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, ch chan scan.Frame) {
 	defer conn.Close()
 	defer logctx.FromContext(ctx).Debug("connWriteDone")
 	defer wg.Done()
@@ -123,7 +127,7 @@ func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *
 			if !ok {
 				return
 			}
-			_, err := conn.Write(msg)
+			_, err := conn.Write(([]byte)(msg.Data))
 			if err != nil {
 				logConnErr(ctx, "connWriteErr", err)
 				return
@@ -205,31 +209,5 @@ func connReadWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, port
 func logConnErr(ctx context.Context, msg string, err error) {
 	if !errors.Is(err, net.ErrClosed) {
 		logctx.FromContext(ctx).Error(msg, err)
-	}
-}
-
-const serReadBufSize = 1024
-
-func readWorker(ctx context.Context, wg *sync.WaitGroup, r io.Reader, ch chan<- []byte) {
-	defer close(ch)
-	defer logctx.FromContext(ctx).Debug("readWorkerDone")
-	defer wg.Done()
-	lg := logctx.FromContext(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		buf := make([]byte, serReadBufSize)
-		nRead, err := r.Read(buf)
-		msg := buf[:nRead]
-		if err != nil {
-			lg.Error("serialReadErr", err)
-			return
-		}
-		if len(msg) > 0 {
-			ch <- msg
-		}
 	}
 }

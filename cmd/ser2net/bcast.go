@@ -6,28 +6,29 @@ import (
 	"sync"
 
 	"github.com/jclark/gps2phc/logctx"
+	"github.com/jclark/gps2phc/scan"
 	"golang.org/x/exp/constraints"
 )
 
 type subscriber struct {
-	c             chan<- []byte
+	c             chan<- scan.Frame
 	nextSendIndex int
 }
 
 type bcast struct {
-	subscribe   chan chan<- []byte
-	unsubscribe chan chan<- []byte
-	msg         chan []byte
-	q           [][]byte
+	subscribe   chan chan<- scan.Frame
+	unsubscribe chan chan<- scan.Frame
+	msg         chan scan.Frame
+	q           []scan.Frame
 	nextQIndex  int
 	subscribers []subscriber
 }
 
 func newBcast() *bcast {
 	return &bcast{
-		subscribe:   make(chan chan<- []byte),
-		unsubscribe: make(chan chan<- []byte),
-		msg:         make(chan []byte, 1),
+		subscribe:   make(chan chan<- scan.Frame),
+		unsubscribe: make(chan chan<- scan.Frame),
+		msg:         make(chan scan.Frame, 1),
 	}
 }
 
@@ -79,7 +80,7 @@ func (b *bcast) run(ctx context.Context, wg *sync.WaitGroup) {
 				subscribe = nil
 				break
 			}
-			s := recv.Interface().(chan<- []byte)
+			s := recv.Interface().(chan<- scan.Frame)
 			if closed {
 				close(s)
 				break
@@ -87,7 +88,7 @@ func (b *bcast) run(ctx context.Context, wg *sync.WaitGroup) {
 			b.subscribers = append(b.subscribers, subscriber{s, b.nextQIndex})
 			lg.Debug("subscribe", "chan", s)
 		case 1: // unsubscribe
-			s := recv.Interface().(chan<- []byte)
+			s := recv.Interface().(chan<- scan.Frame)
 			i := b.subscriberIndex(s)
 			if i < 0 {
 				break
@@ -99,7 +100,7 @@ func (b *bcast) run(ctx context.Context, wg *sync.WaitGroup) {
 				msg = nil
 				break
 			}
-			m := recv.Interface().([]byte)
+			m := recv.Interface().(scan.Frame)
 			if len(b.subscribers) != 0 {
 				b.q = append(b.q, m)
 				b.nextQIndex++
@@ -134,7 +135,7 @@ func (b *bcast) trimQ() {
 	}
 }
 
-func (b *bcast) subscriberIndex(c chan<- []byte) int {
+func (b *bcast) subscriberIndex(c chan<- scan.Frame) int {
 	for i, s := range b.subscribers {
 		if s.c == c {
 			return i
