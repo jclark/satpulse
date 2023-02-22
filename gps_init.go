@@ -32,8 +32,8 @@ type gpsReceived struct {
 }
 
 // If returned frameCh is not nil, then reading goroutine is still running.
-func gpsInit(ctx context.Context, port *serio.Port) (frameCh <-chan scan.Frame, err error) {
-	frameCh = port.StartRead(ctx)
+func gpsInit(ctx context.Context, fCh <-chan scan.Frame, port serio.OutPort) (frameCh <-chan scan.Frame, err error) {
+	frameCh = fCh
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
@@ -48,7 +48,7 @@ func gpsInit(ctx context.Context, port *serio.Port) (frameCh <-chan scan.Frame, 
 		ubx.SetRate(ubx.NavTimeGPSID, 1),
 		ubx.SetRate(ubx.TimTPID, 1),
 	}
-	writeRespCh := port.WriteAsync(ctx, configMsgs)
+	writeRespCh := serio.WriteAsync(ctx, port, configMsgs)
 	timerCh := time.After(time.Second * 2)
 	cancelCh := ctx.Done()
 	lg := logctx.FromContext(ctx)

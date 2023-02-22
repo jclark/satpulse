@@ -2,47 +2,39 @@ package serio
 
 import (
 	"context"
-	"errors"
 	"io"
 	"time"
 
 	"github.com/jclark/gps2phc/logctx"
 	"github.com/jclark/gps2phc/scan"
 	"github.com/jclark/gps2phc/term"
-	"golang.org/x/sys/unix"
 )
 
 const readTimeout = (time.Second * 11) / 10
-const maxWriteLen = 4096
 const scanBufSize = 16
 
-type Port struct {
-	term.Term
-}
-
-func Open(path string) (*Port, error) {
-	p := &Port{}
-	err := p.Term.Init(path, term.RawMode, term.Local, term.NoFlowControl, term.ReadTimeout(readTimeout))
+func OpenTerm(path string) (*term.Term, error) {
+	t, err := term.Open(path, term.RawMode, term.Local, term.NoFlowControl, term.ReadTimeout(readTimeout))
 	if err != nil {
 		return nil, err
 	}
-	err = p.Flush()
+	err = t.Flush()
 	if err != nil {
-		p.Restore()
-		p.Close()
+		t.Restore()
+		t.Close()
 		return nil, err
 	}
-	return p, nil
+	return t, nil
 }
 
-func (p *Port) StartRead(ctx context.Context) chan scan.Frame {
-	scanner := scan.New(&p.Term, scanBufSize)
+func StartScan(ctx context.Context, r io.Reader) <-chan scan.Frame {
+	scanner := scan.New(r, scanBufSize)
 	c := make(chan scan.Frame, 1) // XXX think about the buffering
-	go readWorker(ctx, scanner, c)
+	go scanWorker(ctx, scanner, c)
 	return c
 }
 
-func readWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
+func scanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
 	logctx.FromContext(ctx).Debug("readWorkerStarted")
 	defer close(c)
 	for {
@@ -57,7 +49,12 @@ func readWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
 	}
 }
 
-func (p *Port) WriteAsync(ctx context.Context, frames [][]byte) <-chan error {
+type OutPort interface {
+	io.Writer
+	Buffered() (int, error)
+}
+
+func WriteAsync(ctx context.Context, p OutPort, frames [][]byte) <-chan error {
 	c := make(chan error, 1)
 	go func() {
 		nBytes := 0
@@ -68,7 +65,7 @@ func (p *Port) WriteAsync(ctx context.Context, frames [][]byte) <-chan error {
 				return
 			default:
 			}
-			_, err := p.Write(ctx, frame)
+			_, err := p.Write(frame)
 			if err != nil {
 				c <- err
 				return
@@ -76,41 +73,15 @@ func (p *Port) WriteAsync(ctx context.Context, frames [][]byte) <-chan error {
 			nBytes += len(frame)
 		}
 		logctx.FromContext(ctx).Debug("draining")
-		c <- p.Drain(ctx, nBytes)
+		c <- Drain(ctx, p, nBytes)
 		logctx.FromContext(ctx).Debug("writeAsyncDone")
 	}()
 	return c
 }
 
-func (p *Port) Write(ctx context.Context, buf []byte) (int, error) {
-	total := 0
+func Drain(ctx context.Context, p OutPort, nBytesWritten int) error {
 	lg := logctx.FromContext(ctx)
-	for len(buf) > 0 {
-
-		// Semantics of Unix write and Go Write are not the same:
-		// Unix can write less than requested amount without its being an error.
-		wBuf := buf
-		if len(buf) > maxWriteLen {
-			wBuf = wBuf[0:maxWriteLen]
-		}
-		n, err := p.Term.Write(wBuf)
-		if err == io.ErrShortWrite && n > 0 {
-			err = nil
-		}
-		if err == nil {
-			lg.Debug("serialWrite", "n", n)
-			total += n
-			buf = buf[n:]
-		} else if !errors.Is(err, unix.EINTR) {
-			return total, err
-		}
-	}
-	return total, nil
-}
-
-func (p *Port) Drain(tx context.Context, nBytesWritten int) error {
-	lg := logctx.FromContext(tx)
-	n, err := p.Term.Buffered()
+	n, err := p.Buffered()
 	if err != nil {
 		return err
 	}
@@ -118,15 +89,15 @@ func (p *Port) Drain(tx context.Context, nBytesWritten int) error {
 	totalSlept := time.Duration(0)
 	for n > 0 {
 		select {
-		case <-tx.Done():
-			return tx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		default:
 		}
 
 		time.Sleep(sleepTime)
 		totalSlept += sleepTime
 		nPrev := n
-		n, err = p.Term.Buffered()
+		n, err = p.Buffered()
 		if err != nil {
 			return err
 		}

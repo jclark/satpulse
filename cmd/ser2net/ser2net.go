@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -63,7 +64,7 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 	})
 	defer listen.Close()
 
-	port, err := serio.Open(serialDev)
+	t, err := serio.OpenTerm(serialDev)
 	if err != nil {
 		return err
 	}
@@ -72,16 +73,16 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 	wg.Add(1)
 	go b.run(ctx, &wg)
 	wg.Add(1)
-	go readWorker(ctx, &wg, port, b.msg)
-	portLock := make(chan *serio.Port, 1)
-	portLock <- port
+	go readWorker(ctx, &wg, t, b.msg)
+	portLock := make(chan serio.OutPort, 1)
+	portLock <- t
 	wg.Add(1)
 	go handleListen(ctx, &wg, listen, b, portLock)
 	wg.Wait()
 	return nil
 }
 
-func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, b *bcast, portLock chan *serio.Port) {
+func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, b *bcast, portLock chan serio.OutPort) {
 	defer listen.Close()
 	defer logctx.FromContext(ctx).Debug("listenDone")
 	defer wg.Done()
@@ -96,7 +97,7 @@ func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, 
 	}
 }
 
-func handleConn(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, portLock chan *serio.Port) {
+func handleConn(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, portLock chan serio.OutPort) {
 	wg.Add(1)
 	// subscribe in the goroutine that closes the subscribe channel to avoid a race
 	ch := make(chan []byte)
@@ -136,12 +137,12 @@ func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *
 const writeLockTimeout = 2 * time.Second
 
 // connReadWorker reads from the connection and writes to the serial port.
-func connReadWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, portLock chan *serio.Port) {
+func connReadWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, portLock chan serio.OutPort) {
 	lg := logctx.FromContext(ctx)
 	defer conn.Close()
 	defer lg.Debug("connReadDone")
 	defer wg.Done()
-	var port *serio.Port
+	var port serio.OutPort
 	defer func() {
 		if port != nil {
 			portLock <- port
@@ -181,7 +182,7 @@ func connReadWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, port
 				lg.Debug("lockAcquire", "conn", conn)
 			}
 		}
-		nWritten, err := port.Term.Write(buf[:nRead])
+		nWritten, err := port.Write(buf[:nRead])
 		if nWritten > 0 {
 			lg.Debug("serialWrite", "nBytes", nWritten)
 		}
@@ -191,7 +192,7 @@ func connReadWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, port
 			}
 			return
 		}
-		err = port.Drain(ctx, nWritten)
+		err = serio.Drain(ctx, port, nWritten)
 		if err != nil {
 			if ctx.Err() == nil {
 				lg.Error("serialDrainErr", err)
@@ -209,7 +210,7 @@ func logConnErr(ctx context.Context, msg string, err error) {
 
 const serReadBufSize = 1024
 
-func readWorker(ctx context.Context, wg *sync.WaitGroup, port *serio.Port, ch chan<- []byte) {
+func readWorker(ctx context.Context, wg *sync.WaitGroup, r io.Reader, ch chan<- []byte) {
 	defer close(ch)
 	defer logctx.FromContext(ctx).Debug("readWorkerDone")
 	defer wg.Done()
@@ -221,7 +222,7 @@ func readWorker(ctx context.Context, wg *sync.WaitGroup, port *serio.Port, ch ch
 		default:
 		}
 		buf := make([]byte, serReadBufSize)
-		nRead, err := port.Read(buf)
+		nRead, err := r.Read(buf)
 		msg := buf[:nRead]
 		if err != nil {
 			lg.Error("serialReadErr", err)

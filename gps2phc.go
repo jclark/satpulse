@@ -60,27 +60,29 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 		clk.Close()
 		lg.Debug("closedPHC", "if", ifName)
 	}()
-	port, err := serio.Open(serialDev)
+	t, err := serio.OpenTerm(serialDev)
 	if err != nil {
 		return err
 	}
 
 	defer func() {
 		lg.Debug("restoringSerial", "path", serialDev)
-		e := port.Restore()
+		e := t.Restore()
 		if e != nil {
 			lg.Error("restoredSerialErr", e, "path", serialDev)
 		} else {
 			lg.Debug("restoredSerial", "path", serialDev)
 		}
 		lg.Debug("closingSerial", "path", serialDev)
-		port.Close()
+		t.Close()
 		lg.Debug("closedSerial", "path", serialDev)
 	}()
 
-	lg.Debug("serial", "devKind", port.DevKind())
+	lg.Debug("serial", "devKind", t.DevKind())
 
-	fCh, err := gpsInit(ctx, port)
+	fCh := serio.StartScan(ctx, t)
+
+	fCh, err = gpsInit(ctx, fCh, t)
 	defer func() {
 		// gpsInit calls port.StartRead, which starts a goroutine sending to fCh.
 		// We need to wait for the goroutine to close fCh, before calling port.Restore/port.Close.
