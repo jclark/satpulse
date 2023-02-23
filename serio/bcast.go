@@ -1,4 +1,4 @@
-package main
+package serio
 
 import (
 	"context"
@@ -15,21 +15,33 @@ type subscriber struct {
 	nextSendIndex int
 }
 
-type bcast struct {
+type Bcast struct {
 	subscribe   chan chan<- scan.Frame
 	unsubscribe chan chan<- scan.Frame
-	msg         chan scan.Frame
+	msg         <-chan scan.Frame
 	q           []scan.Frame
 	nextQIndex  int
 	subscribers []subscriber
 }
 
-func newBcast() *bcast {
-	return &bcast{
+func NewBcast(msg <-chan scan.Frame) *Bcast {
+	return &Bcast{
 		subscribe:   make(chan chan<- scan.Frame),
 		unsubscribe: make(chan chan<- scan.Frame),
-		msg:         make(chan scan.Frame, 1),
+		msg:         msg,
 	}
+}
+
+func (b *Bcast) Close() {
+	close(b.subscribe)
+}
+
+func (b *Bcast) Subscribe(ch chan<- scan.Frame) {
+	b.subscribe <- ch
+}
+
+func (b *Bcast) Unsubscribe(ch chan<- scan.Frame) {
+	b.unsubscribe <- ch
 }
 
 // This should be called in a goroutine.
@@ -40,7 +52,7 @@ func newBcast() *bcast {
 //
 // It will close each subscriber channel when the msg channel is closed or the context is done.
 // It will call wg.Done() just before it returns.
-func (b *bcast) run(ctx context.Context, wg *sync.WaitGroup) {
+func (b *Bcast) Run(ctx context.Context, wg *sync.WaitGroup) {
 	defer func() {
 		logctx.FromContext(ctx).Debug("bcastDone")
 		wg.Done()
@@ -120,7 +132,7 @@ func (b *bcast) run(ctx context.Context, wg *sync.WaitGroup) {
 	}
 }
 
-func (b *bcast) trimQ() {
+func (b *Bcast) trimQ() {
 	needIndex := b.nextQIndex
 	for _, s := range b.subscribers {
 		needIndex = min(needIndex, s.nextSendIndex)
@@ -135,7 +147,7 @@ func (b *bcast) trimQ() {
 	}
 }
 
-func (b *bcast) subscriberIndex(c chan<- scan.Frame) int {
+func (b *Bcast) subscriberIndex(c chan<- scan.Frame) int {
 	for i, s := range b.subscribers {
 		if s.c == c {
 			return i

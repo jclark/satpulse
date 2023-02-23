@@ -69,13 +69,14 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 		return err
 	}
 	var wg sync.WaitGroup
-	b := newBcast()
+	msg := make(chan scan.Frame, 1)
+	b := serio.NewBcast(msg)
 	wg.Add(1)
-	go b.run(ctx, &wg)
+	go b.Run(ctx, &wg)
 	scanner := scan.New(t, 16)
 	wg.Add(1)
 	go func() {
-		serio.ScanWorker(ctx, scanner, b.msg)
+		serio.ScanWorker(ctx, scanner, msg)
 		wg.Done()
 	}()
 	portLock := make(chan serio.OutPort, 1)
@@ -86,7 +87,7 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 	return nil
 }
 
-func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, b *bcast, portLock chan serio.OutPort) {
+func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, b *serio.Bcast, portLock chan serio.OutPort) {
 	defer listen.Close()
 	defer logctx.FromContext(ctx).Debug("listenDone")
 	defer wg.Done()
@@ -94,30 +95,30 @@ func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, 
 		conn, err := listen.Accept()
 		if err != nil {
 			logConnErr(ctx, "acceptErr", err)
-			close(b.subscribe)
+			b.Close()
 			return
 		}
 		handleConn(ctx, wg, conn, b, portLock)
 	}
 }
 
-func handleConn(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, portLock chan serio.OutPort) {
+func handleConn(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *serio.Bcast, portLock chan serio.OutPort) {
 	wg.Add(1)
 	// subscribe in the goroutine that closes the subscribe channel to avoid a race
 	ch := make(chan scan.Frame)
-	b.subscribe <- ch
+	b.Subscribe(ch)
 	go connWriteWorker(ctx, wg, conn, b, ch)
 	go connReadWorker(ctx, wg, conn, portLock)
 }
 
 // connWriteWorker reads from a channel and write to the connection.
-func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *bcast, ch chan scan.Frame) {
+func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *serio.Bcast, ch chan scan.Frame) {
 	defer conn.Close()
 	defer logctx.FromContext(ctx).Debug("connWriteDone")
 	defer wg.Done()
 
 	defer func() {
-		b.unsubscribe <- ch
+		b.Unsubscribe(ch)
 	}()
 	for {
 		select {
