@@ -11,13 +11,13 @@ import (
 )
 
 type subscriber struct {
-	c             chan<- scan.Frame
+	c             chan scan.Frame
 	nextSendIndex int
 }
 
 type Bcast struct {
-	subscribe   chan chan<- scan.Frame
-	unsubscribe chan chan<- scan.Frame
+	subscribe   chan chan scan.Frame
+	unsubscribe chan (<-chan scan.Frame)
 	msg         <-chan scan.Frame
 	q           []scan.Frame
 	nextQIndex  int
@@ -26,8 +26,8 @@ type Bcast struct {
 
 func NewBcast(msg <-chan scan.Frame) *Bcast {
 	return &Bcast{
-		subscribe:   make(chan chan<- scan.Frame),
-		unsubscribe: make(chan chan<- scan.Frame),
+		subscribe:   make(chan chan scan.Frame),
+		unsubscribe: make(chan (<-chan scan.Frame)),
 		msg:         msg,
 	}
 }
@@ -36,11 +36,13 @@ func (b *Bcast) Close() {
 	close(b.subscribe)
 }
 
-func (b *Bcast) Subscribe(ch chan<- scan.Frame) {
+func (b *Bcast) Subscribe() <-chan scan.Frame {
+	ch := make(chan scan.Frame)
 	b.subscribe <- ch
+	return ch
 }
 
-func (b *Bcast) Unsubscribe(ch chan<- scan.Frame) {
+func (b *Bcast) Unsubscribe(ch <-chan scan.Frame) {
 	b.unsubscribe <- ch
 }
 
@@ -92,7 +94,7 @@ func (b *Bcast) Run(ctx context.Context, wg *sync.WaitGroup) {
 				subscribe = nil
 				break
 			}
-			s := recv.Interface().(chan<- scan.Frame)
+			s := recv.Interface().(chan scan.Frame)
 			if closed {
 				close(s)
 				break
@@ -100,7 +102,7 @@ func (b *Bcast) Run(ctx context.Context, wg *sync.WaitGroup) {
 			b.subscribers = append(b.subscribers, subscriber{s, b.nextQIndex})
 			lg.Debug("subscribe", "chan", s)
 		case 1: // unsubscribe
-			s := recv.Interface().(chan<- scan.Frame)
+			s := recv.Interface().(<-chan scan.Frame)
 			i := b.subscriberIndex(s)
 			if i < 0 {
 				break
@@ -147,7 +149,7 @@ func (b *Bcast) trimQ() {
 	}
 }
 
-func (b *Bcast) subscriberIndex(c chan<- scan.Frame) int {
+func (b *Bcast) subscriberIndex(c <-chan scan.Frame) int {
 	for i, s := range b.subscribers {
 		if s.c == c {
 			return i

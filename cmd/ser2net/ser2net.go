@@ -105,14 +105,12 @@ func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, 
 func handleConn(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *serio.Bcast, portLock chan serio.OutPort) {
 	wg.Add(1)
 	// subscribe in the goroutine that closes the subscribe channel to avoid a race
-	ch := make(chan scan.Frame)
-	b.Subscribe(ch)
-	go connWriteWorker(ctx, wg, conn, b, ch)
+	go connWriteWorker(ctx, wg, conn, b, b.Subscribe())
 	go connReadWorker(ctx, wg, conn, portLock)
 }
 
 // connWriteWorker reads from a channel and write to the connection.
-func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *serio.Bcast, ch chan scan.Frame) {
+func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *serio.Bcast, ch <-chan scan.Frame) {
 	defer conn.Close()
 	defer logctx.FromContext(ctx).Debug("connWriteDone")
 	defer wg.Done()
