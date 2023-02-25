@@ -32,70 +32,77 @@ func main() {
 	lg := slog.New(slog.HandlerOptions{Level: level}.NewTextHandler(os.Stdout))
 	slog.SetDefault(lg)
 	ctx := logctx.NewContext(context.Background(), lg)
-	ctx, cancel := context.WithCancel(ctx)
-
-	err := run(ctx, cancel)
+	ctx, _ = cancelOnSignal(ctx)
+	err := run(ctx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
 		os.Exit(1)
 	}
 }
 
-func cancelOnSignal(lg *slog.Logger, cancel context.CancelFunc) {
+func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
 	go func() {
 		<-sig
-		lg.Debug("cancelling")
+		logctx.FromContext(ctx).Info("gracefulShutdown")
 		cancel()
 	}()
+	return ctx, cancel
 }
 
-func run(ctx context.Context, cancel context.CancelFunc) error {
-	cfg := net.ListenConfig{}
-	listen, err := cfg.Listen(ctx, "tcp", ":2006")
-	if err != nil {
-		return err
-	}
-	lg := logctx.FromContext(ctx)
-	cancelOnSignal(lg, func() {
-		listen.Close()
-		cancel()
-	})
-	defer listen.Close()
-
+func run(ctx context.Context) error {
 	t, err := serio.OpenTerm(serialDev)
 	if err != nil {
 		return err
 	}
+	defer t.Close()
+	defer t.Restore()
 	var wg sync.WaitGroup
+	err = tcpServe(ctx, &wg, ":2006", scan.New(t, 16), t)
+	if err != nil {
+		return err
+	}
+	wg.Wait()
+	return nil
+}
+
+func tcpServe(ctx context.Context, wg *sync.WaitGroup, address string, scanner *scan.Scanner, port serio.OutPort) error {
+	cfg := net.ListenConfig{}
+	listen, err := cfg.Listen(ctx, "tcp", address)
+	if err != nil {
+		return err
+	}
 	msg := make(chan scan.Frame, 1)
 	b := serio.NewBcast(msg)
 	wg.Add(1)
-	go b.Run(ctx, &wg)
-	scanner := scan.New(t, 16)
+	go b.Run(ctx, wg)
 	wg.Add(1)
 	go func() {
 		serio.ScanWorker(ctx, scanner, msg)
 		wg.Done()
 	}()
 	portLock := make(chan serio.OutPort, 1)
-	portLock <- t
+	portLock <- port
 	wg.Add(1)
-	go handleListen(ctx, &wg, listen, b, portLock)
-	wg.Wait()
+	go handleListen(ctx, wg, listen, b, portLock)
 	return nil
 }
 
 func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, b *serio.Bcast, portLock chan serio.OutPort) {
-	defer listen.Close()
-	defer logctx.FromContext(ctx).Debug("listenDone")
+	go func() {
+		<-ctx.Done()
+		listen.Close()
+	}()
 	defer wg.Done()
+	defer logctx.FromContext(ctx).Debug("listenDone")
+	defer b.Close()
+	defer listen.Close()
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
 			logConnErr(ctx, "acceptErr", err)
-			b.Close()
 			return
 		}
 		handleConn(ctx, wg, conn, b, portLock)
@@ -103,18 +110,20 @@ func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, 
 }
 
 func handleConn(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *serio.Bcast, portLock chan serio.OutPort) {
+	// XXX both the read and write workers are closing the connection.
+	// Not sure if it would better for just one of them to do so.
 	wg.Add(1)
 	// subscribe in the goroutine that closes the subscribe channel to avoid a race
 	go connWriteWorker(ctx, wg, conn, b, b.Subscribe())
+	wg.Add(1)
 	go connReadWorker(ctx, wg, conn, portLock)
 }
 
 // connWriteWorker reads from a channel and write to the connection.
 func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *serio.Bcast, ch <-chan scan.Frame) {
-	defer conn.Close()
-	defer logctx.FromContext(ctx).Debug("connWriteDone")
 	defer wg.Done()
-
+	defer logctx.FromContext(ctx).Debug("connWriteDone")
+	defer conn.Close()
 	defer func() {
 		b.Unsubscribe(ch)
 	}()
@@ -142,9 +151,9 @@ const writeLockTimeout = 2 * time.Second
 // connReadWorker reads from the connection and writes to the serial port.
 func connReadWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, portLock chan serio.OutPort) {
 	lg := logctx.FromContext(ctx)
-	defer conn.Close()
-	defer lg.Debug("connReadDone")
 	defer wg.Done()
+	defer lg.Debug("connReadDone")
+	defer conn.Close()
 	var port serio.OutPort
 	defer func() {
 		if port != nil {
