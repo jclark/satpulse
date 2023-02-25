@@ -87,7 +87,9 @@ func (b *Bcast) Run(ctx context.Context, wg *sync.WaitGroup) {
 			}
 		}
 		chosen, recv, ok := reflect.Select(cases)
-		lg.Debug("bcastSelect", "chosen", chosen)
+		if chosen != 2 {
+			lg.Debug("bcastSelect", "chosen", chosen)
+		}
 		switch chosen {
 		case 0: // subscribe
 			if !ok {
