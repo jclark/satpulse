@@ -146,6 +146,26 @@ func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
 	return ctx, cancel
 }
 
+func startScan(ctx context.Context, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Frame {
+	msg := make(chan scan.Frame, 1)
+	wg.Add(1)
+	go func() {
+		serio.ScanWorker(ctx, scanner, msg)
+		wg.Done()
+	}()
+	return msg
+}
+
+func startBcast(ctx context.Context, wg *sync.WaitGroup, msg <-chan scan.Frame) *serio.Bcast {
+	b := serio.NewBcast(msg)
+	wg.Add(1)
+	go func() {
+		b.Run(ctx)
+		wg.Done()
+	}()
+	return b
+}
+
 func openExttsClock() (*phc.Clock, error) {
 	phcIndex, err := phc.IfPhcIndex(ifName)
 	if err != nil {

@@ -9,29 +9,8 @@ import (
 	"time"
 
 	"github.com/jclark/gps2phc/logctx"
-	"github.com/jclark/gps2phc/scan"
 	"github.com/jclark/gps2phc/serio"
 )
-
-func startScan(ctx context.Context, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Frame {
-	msg := make(chan scan.Frame, 1)
-	wg.Add(1)
-	go func() {
-		serio.ScanWorker(ctx, scanner, msg)
-		wg.Done()
-	}()
-	return msg
-}
-
-func startBcast(ctx context.Context, wg *sync.WaitGroup, msg <-chan scan.Frame) *serio.Bcast {
-	b := serio.NewBcast(msg)
-	wg.Add(1)
-	go func() {
-		b.Run(ctx)
-		wg.Done()
-	}()
-	return b
-}
 
 func startTCP(ctx context.Context, wg *sync.WaitGroup, address string, b *serio.Bcast, port serio.OutPort) error {
 	cfg := net.ListenConfig{}
@@ -124,7 +103,7 @@ func connReadWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, port
 		if err != nil {
 			if errors.Is(err, os.ErrDeadlineExceeded) {
 				portLock <- port
-				lg.Debug("lockRelease", "conn", conn)
+				lg.Info("serLockRelease", "conn", conn)
 				port = nil
 				continue
 			}
@@ -144,7 +123,7 @@ func connReadWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, port
 				if !ok {
 					return
 				}
-				lg.Debug("lockAcquire", "conn", conn)
+				lg.Info("serLockAcquire", "conn", conn)
 			}
 		}
 		nWritten, err := port.Write(buf[:nRead])
