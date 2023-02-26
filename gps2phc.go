@@ -25,6 +25,8 @@ var ifName string
 var tcpPort int
 var debugEnable bool
 
+const scanBufSize = 16
+
 type Syncer struct {
 	tsCh <-chan phc.TsEvent
 	fCh  <-chan scan.Frame
@@ -83,7 +85,7 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 
 	lg.Debug("serial", "devKind", t.DevKind())
 
-	scanner := scan.New(t, 16)
+	scanner := scan.New(t, scanBufSize)
 	var wg sync.WaitGroup
 
 	fCh := startScan(ctx, &wg, scanner)

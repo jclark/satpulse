@@ -11,7 +11,6 @@ import (
 )
 
 const readTimeout = (time.Second * 11) / 10
-const scanBufSize = 16
 
 func OpenTerm(path string) (*term.Term, error) {
 	t, err := term.Open(path, term.RawMode, term.Local, term.NoFlowControl, term.ReadTimeout(readTimeout))
@@ -25,13 +24,6 @@ func OpenTerm(path string) (*term.Term, error) {
 		return nil, err
 	}
 	return t, nil
-}
-
-func StartScan(ctx context.Context, r io.Reader) <-chan scan.Frame {
-	scanner := scan.New(r, scanBufSize)
-	c := make(chan scan.Frame, 1) // XXX think about the buffering
-	go ScanWorker(ctx, scanner, c)
-	return c
 }
 
 func ScanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
