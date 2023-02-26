@@ -15,12 +15,13 @@
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
 * Option for extts pin index
-* Need layer that turns UBX messages into something more convenient to work with, and UBX-independent 
+* Need layer that turns UBX messages into something more convenient to work with, and UBX-independent
+* Don't log to stdout
 
 ## TCP server
 
-* Combine with main program
 * Test with Lady Heather
+* Option for read-only NMEA socket (can be used with ts2phc)
 
 ## Time sync
 
@@ -88,7 +89,7 @@ Semi-functional currently.
 
 ## PTP management client
 
-Does Facebook have something we can reuse?
+Does Facebook have something we can reuse? (No: they don't implement a full client.)
 
 ## HTTP server
 
@@ -100,10 +101,10 @@ Does Facebook have something we can reuse?
 ## ts2phc support
 
 * Provide TCP socket with RMC sentences
-* Could potentially generate RMC from other UBX messages.
+* Could potentially generate RMC from other UBX messages (but is there any point?)
 
 ## Netlink events
 
-Integrate experimental carrier program.
+* Integrate experimental carrier program. Need to be able to stop and restart timesync goroutine.
 
 

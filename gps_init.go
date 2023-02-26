@@ -31,9 +31,7 @@ type gpsReceived struct {
 	ack              map[ubx.MsgID]bool
 }
 
-// If returned frameCh is not nil, then reading goroutine is still running.
-func gpsInit(ctx context.Context, fCh <-chan scan.Frame, port serio.OutPort) (frameCh <-chan scan.Frame, err error) {
-	frameCh = fCh
+func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort) (err error) {
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{

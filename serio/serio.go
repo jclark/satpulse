@@ -35,8 +35,12 @@ func StartScan(ctx context.Context, r io.Reader) <-chan scan.Frame {
 }
 
 func ScanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
-	logctx.FromContext(ctx).Debug("readWorkerStarted")
-	defer close(c)
+	lg := logctx.FromContext(ctx)
+	lg.Debug("scanWorkerStarted")
+	defer func() {
+		close(c)
+		lg.Debug("scanWorkerDone")
+	}()
 	for {
 		f, err := p.Scan(ctx)
 		c <- f

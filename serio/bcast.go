@@ -16,6 +16,8 @@ type subscriber struct {
 }
 
 type Bcast struct {
+	mu          sync.Mutex
+	closed      bool
 	subscribe   chan chan scan.Frame
 	unsubscribe chan (<-chan scan.Frame)
 	msg         <-chan scan.Frame
@@ -26,46 +28,60 @@ type Bcast struct {
 
 func NewBcast(msg <-chan scan.Frame) *Bcast {
 	return &Bcast{
-		subscribe:   make(chan chan scan.Frame),
-		unsubscribe: make(chan (<-chan scan.Frame)),
+		// use buffer size of 1 here, because we hold the mutex while sending on the channel
+		subscribe:   make(chan chan scan.Frame, 1),
+		unsubscribe: make(chan (<-chan scan.Frame), 1),
 		msg:         msg,
 	}
 }
 
+// Close stops further broadcasting.
+// Existing subscribers will be closed.
+// Multiple Close calls are safe.
 func (b *Bcast) Close() {
-	close(b.subscribe)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.closed {
+		b.closed = true
+		close(b.subscribe)
+	}
 }
 
 func (b *Bcast) Subscribe() <-chan scan.Frame {
 	ch := make(chan scan.Frame)
-	b.subscribe <- ch
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		// return a closed channel
+		close(ch)
+	} else {
+		b.subscribe <- ch
+	}
 	return ch
 }
 
 func (b *Bcast) Unsubscribe(ch <-chan scan.Frame) {
-	b.unsubscribe <- ch
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.closed {
+		b.unsubscribe <- ch
+	}
 }
 
 // This should be called in a goroutine.
-// It will keep running so long as any of the following apply
-// - there are existing subscribers
-// - the subscriber channel is still open
-// - the msg channel is still open
-//
-// It will close each subscriber channel when the msg channel is closed or the context is done.
-// It will call wg.Done() just before it returns.
-func (b *Bcast) Run(ctx context.Context, wg *sync.WaitGroup) {
-	defer func() {
-		logctx.FromContext(ctx).Debug("bcastDone")
-		wg.Done()
-	}()
+// It will exit when both
+// - Close has being called on Bcast
+// - the msg channel is closed
+// This should be run in a separate goroutine
+func (b *Bcast) Run(ctx context.Context) {
 	lg := logctx.FromContext(ctx)
+	defer lg.Debug("bcastRunDone")
 	msg := b.msg
 	subscribe := b.subscribe
 	done := ctx.Done()
-	// closed is true after we close subscriber channels
-	closed := false
-	for subscribe != nil || msg != nil || len(b.subscribers) > 0 {
+	// closing is true after we close subscriber channels
+	closing := false
+	for subscribe != nil || msg != nil {
 		cases := []reflect.SelectCase{
 			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(subscribe)},
 			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(b.unsubscribe)},
@@ -76,7 +92,7 @@ func (b *Bcast) Run(ctx context.Context, wg *sync.WaitGroup) {
 		qStartIndex := b.nextQIndex - len(b.q)
 		for i := range b.subscribers {
 			s := &b.subscribers[i]
-			if !closed && s.nextSendIndex < b.nextQIndex {
+			if !closing && s.nextSendIndex < b.nextQIndex {
 				subscribersToDo = append(subscribersToDo, s)
 				sc := reflect.SelectCase{
 					Dir:  reflect.SelectSend,
@@ -87,9 +103,6 @@ func (b *Bcast) Run(ctx context.Context, wg *sync.WaitGroup) {
 			}
 		}
 		chosen, recv, ok := reflect.Select(cases)
-		if chosen != 2 {
-			lg.Debug("bcastSelect", "chosen", chosen)
-		}
 		switch chosen {
 		case 0: // subscribe
 			if !ok {
@@ -97,7 +110,7 @@ func (b *Bcast) Run(ctx context.Context, wg *sync.WaitGroup) {
 				break
 			}
 			s := recv.Interface().(chan scan.Frame)
-			if closed {
+			if closing {
 				close(s)
 				break
 			}
@@ -114,6 +127,7 @@ func (b *Bcast) Run(ctx context.Context, wg *sync.WaitGroup) {
 		case 2: // msg
 			if !ok {
 				msg = nil
+				lg.Debug("bcastMsgClosed")
 				break
 			}
 			m := recv.Interface().(scan.Frame)
@@ -123,12 +137,14 @@ func (b *Bcast) Run(ctx context.Context, wg *sync.WaitGroup) {
 			}
 		case 3: // Done
 			done = nil
+			lg.Debug("bcastCancelled")
 		default: // send to a subscriber
 			subscribersToDo[chosen-4].nextSendIndex++
 			b.trimQ()
 		}
-		if !closed && (msg == nil || done == nil) {
-			closed = true
+		if !closing && (msg == nil || subscribe == nil || done == nil) {
+			closing = true
+			lg.Debug("bcastClosing")
 			for _, s := range b.subscribers {
 				close(s.c)
 			}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 
 	"github.com/jclark/gps2phc/logctx"
 	"github.com/jclark/gps2phc/scan"
@@ -21,6 +22,7 @@ import (
 
 var serialDev string
 var ifName string
+var tcpPort int
 var debugEnable bool
 
 type Syncer struct {
@@ -32,6 +34,7 @@ type Syncer struct {
 func main() {
 	flag.StringVar(&serialDev, "s", "/dev/ttyUSB0", "device for serial connection to GPS")
 	flag.StringVar(&ifName, "e", "eth0", "ethernet interface of PTP hardware clock")
+	flag.IntVar(&tcpPort, "t", 0, "relay serial port to this TCP port (0 for not to relay)")
 	flag.BoolVar(&debugEnable, "d", false, "log debugging information")
 	flag.Parse()
 	level := slog.LevelInfo
@@ -80,37 +83,54 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 
 	lg.Debug("serial", "devKind", t.DevKind())
 
-	fCh := serio.StartScan(ctx, t)
+	scanner := scan.New(t, 16)
+	var wg sync.WaitGroup
 
-	fCh, err = gpsInit(ctx, fCh, t)
+	fCh := startScan(ctx, &wg, scanner)
+	b := startBcast(ctx, &wg, fCh)
+	// Shut down the broadcast goroutine when the context is cancelled.
+	wg.Add(1)
+	go func() {
+		<-ctx.Done()
+		b.Close()
+		wg.Done()
+	}()
+	fCh = b.Subscribe()
 	defer func() {
-		// gpsInit calls port.StartRead, which starts a goroutine sending to fCh.
+		// startScan starts a goroutine sending to fCh.
 		// We need to wait for the goroutine to close fCh, before calling port.Restore/port.Close.
 		// Otherwise, there is a possibility of reading from a file descriptor that
 		// is no longer valid (and so might refer to something else).
-		// If fCh is nil, then the goroutine has already closed fCh.
-		// If not, then we need to cancel it, to ensure the goroutine will stop reading.
-		if fCh != nil {
+		if err != nil {
 			cancel()
-			lg.Debug("waitingForFrameChannel")
-			for range fCh {
-			}
 		}
+		wg.Wait()
+		lg.Debug("waitDone")
 	}()
+
+	err = gpsInit(ctx, fCh, t)
 	if err != nil {
 		return err
 	}
 	if ctx.Err() != nil {
 		return nil
 	}
+	if tcpPort != 0 {
+		err = startTCP(ctx, &wg, fmt.Sprintf(":%d", tcpPort), b, t)
+		if err != nil {
+			return err
+		}
+	}
 	s, err := newSyncer(ctx, clk, fCh)
 	if err != nil {
 		return err
 	}
-	doSync(ctx, s)
-	// doSync reads fCh completely, so the deferred func does not need to read it again
-	fCh = nil
-	lg.Debug("exiting")
+	wg.Add(1)
+	go func() {
+		syncWorker(ctx, s)
+		wg.Done()
+	}()
+
 	return nil
 }
 
@@ -172,12 +192,14 @@ func newSyncer(ctx context.Context, clk *phc.Clock, fCh <-chan scan.Frame) (r *S
 	return
 }
 
-func doSync(ctx context.Context, s *Syncer) {
+func syncWorker(ctx context.Context, s *Syncer) {
 	// loop until both channels are closed
 	tsCh := s.tsCh
 	fCh := s.fCh
 	corr := s.corr
 	lg := logctx.FromContext(ctx)
+	lg.Debug("syncWorker", "event", "started")
+
 	nSkipped := 0
 	for tsCh != nil || fCh != nil {
 		select {
@@ -196,12 +218,14 @@ func doSync(ctx context.Context, s *Syncer) {
 					corr.PulseEdge(e.ClockTime, e.TRead)
 				}
 			} else {
+				lg.Debug("syncWorker", "event", "tsChClosed")
 				tsCh = nil
 			}
 		case f, ok := <-fCh:
 			if ok {
 				syncFrame(ctx, corr, f)
 			} else {
+				lg.Debug("syncWorker", "event", "fChClosed")
 				fCh = nil
 			}
 		}
