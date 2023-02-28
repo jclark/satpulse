@@ -56,7 +56,6 @@
 
 ## Serial IO
 
-* Not sure there is any point to serio.Write: can just use term.Write.
 * Problem with writing to serial device that is not connected to anything
    * Attempting to Close (after doing write) hangs for 30s (I guess waiting to drain)
    * Possible fixes (not mutually exclusive)
@@ -71,6 +70,14 @@
 * Serial port locking
    * flock seems the best way
    * should we also support UUCP-style locking?
+
+## Scanning
+
+* If we get the start of a frame with a specified length, then we should have a timeout reading the rest of the frame.
+* Support other framing protocols
+   * Allystar (same as UBX but uses 0xF1 0xD9)
+   * Trimble TSIP
+   * SkyTraq binary
 
 ## GPS configuration
 
