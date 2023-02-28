@@ -14,9 +14,8 @@
 * Rearrange source to properly for Go conventions
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
-* Option for extts pin index
 * Need layer that turns UBX messages into something more convenient to work with, and UBX-independent
-* Don't log to stdout
+* Control over logging
 
 ## TCP server
 
@@ -30,7 +29,8 @@
   * also tim-tp?
 * Experiment with different ki/kp coefficients for PI controller
 * PI controller starts off with a large integral term, which I suspect is not optimal
-* Sanity check with sytem clock
+* Sanity check with system clock
+* Step clock if we get out of sync
 * Link bounds for pulse sanity check to amount of frequency adjustment
 * Log RMS of offset
 * Mode where we use system clock rather than GPS messages for time of day (like `ts2phc -s generic`)

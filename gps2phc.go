@@ -155,7 +155,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 			return err
 		}
 	}
-	s, err := newSyncer(ctx, clk, fCh)
+	s, err := newSyncer(ctx, clk, cfg, fCh)
 	if err != nil {
 		return err
 	}
@@ -226,11 +226,26 @@ func openExttsClock(cfg TimePulseConfig) (*phc.Clock, error) {
 	if err != nil {
 		return nil, err
 	}
-	if clk.ExttsChanCount() == 0 {
+	err = validateTimePulseConfig(clk, cfg)
+	if err != nil {
 		clk.Close()
-		return nil, fmt.Errorf("interface %s does not support external timestamping", ifName)
+		return nil, err
 	}
 	return clk, nil
+}
+
+func validateTimePulseConfig(clk *phc.Clock, cfg TimePulseConfig) error {
+	var msg string
+	if clk.ExttsChanCount() == 0 || clk.PinCount() == 0 {
+		msg = fmt.Sprintf("PTP clock %s does not support external timestamping", clk.Path())
+	} else if int(cfg.Pin) >= clk.PinCount() {
+		msg = fmt.Sprintf("pin index %d is out of range for PTP clock %s: maximum index is %d", cfg.Pin, clk.Path(), clk.PinCount()-1)
+	} else if int(cfg.Channel) >= clk.ExttsChanCount() {
+		msg = fmt.Sprintf("channel index %d is out of range for PTP clock %s: maximum index is %d", cfg.Channel, clk.Path(), clk.ExttsChanCount()-1)
+	} else {
+		return nil
+	}
+	return errors.New(msg)
 }
 
 func nmeaLog(lg *slog.Logger, data string) {
@@ -241,7 +256,7 @@ func nmeaLog(lg *slog.Logger, data string) {
 	}
 }
 
-func newSyncer(ctx context.Context, clk *phc.Clock, fCh <-chan scan.Frame) (r *Syncer, err error) {
+func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan.Frame) (r *Syncer, err error) {
 	err = nil
 	r = nil
 	lg := logctx.FromContext(ctx)
@@ -252,7 +267,7 @@ func newSyncer(ctx context.Context, clk *phc.Clock, fCh <-chan scan.Frame) (r *S
 	}
 	s := Syncer{corr: tsync.NewCorrelator(servo), fCh: fCh}
 	lg.Info("usingPHC", "path", clk.Path())
-	s.tsCh, err = StartPPS(ctx, clk)
+	s.tsCh, err = StartPPS(ctx, clk, cfg.Pulse)
 	if err != nil {
 		return
 	}

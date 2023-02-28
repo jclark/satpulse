@@ -1,12 +1,13 @@
 
-
+# Config file for gps2phc
 [serial]
 device = "/dev/ttyACM0"
 speed = 9600
 
 [pulse]
 interface = "enp1s0"
-pin = 1
+channel = 0
+pin = 0
 
 [tcp]
 port = 2006
