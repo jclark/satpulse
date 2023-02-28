@@ -2,6 +2,7 @@ package serio
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -12,8 +13,20 @@ import (
 
 const readTimeout = (time.Second * 11) / 10
 
-func OpenTerm(path string) (*term.Term, error) {
-	t, err := term.Open(path, term.RawMode, term.Local, term.NoFlowControl, term.ReadTimeout(readTimeout))
+func OpenTerm(path string, speed *int) (*term.Term, error) {
+	opts := []term.AttrSetter{
+		term.RawMode,
+		term.Local,
+		term.NoFlowControl,
+		term.ReadTimeout(readTimeout),
+	}
+	if speed != nil {
+		if !term.IsValidSpeed(*speed) {
+			return nil, fmt.Errorf("non-standard serial speed %d is not supported", *speed)
+		}
+		opts = append(opts, term.Speed(*speed))
+	}
+	t, err := term.Open(path, opts...)
 	if err != nil {
 		return nil, err
 	}

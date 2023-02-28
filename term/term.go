@@ -77,8 +77,8 @@ func Local(a *Attr) error {
 	return nil
 }
 
-func Speed(speed int) AttrSetter {
-	var b uint32
+func speedToB(speed int) (b uint32, ok bool) {
+	ok = true
 	switch speed {
 	// Not supporting 0: that has special semantics
 	case 50:
@@ -134,6 +134,19 @@ func Speed(speed int) AttrSetter {
 	case 2000000:
 		b = unix.B2000000
 	default:
+		ok = false
+	}
+	return
+}
+
+func IsValidSpeed(speed int) bool {
+	_, ok := speedToB(speed)
+	return ok
+}
+
+func Speed(speed int) AttrSetter {
+	b, ok := speedToB(speed)
+	if !ok {
 		return func(*Attr) error {
 			return fmt.Errorf("invalid terminal speed: %d", speed)
 		}

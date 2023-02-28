@@ -1,4 +1,3 @@
-
 # Config file for gps2phc
 [serial]
 device = "/dev/ttyACM0"
@@ -11,6 +10,4 @@ pin = 0
 
 [tcp]
 port = 2006
-
-
 

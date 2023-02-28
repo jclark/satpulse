@@ -65,7 +65,6 @@
 * Deal with absence of CLOCAL potentially causing open to block
 * Cancelled write should complete UBX message but not drain
 * Deal with read of 0 from term (caused by timeout)
-* Command-line flag for baud rate
 * Can we be detect when baud rate is too low for information passed?
 * Serial port locking
    * flock seems the best way

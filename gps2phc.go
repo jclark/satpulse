@@ -31,7 +31,7 @@ type Config struct {
 
 type SerialConfig struct {
 	Device string
-	Speed  int
+	Speed  *int
 }
 
 type TCPConfig struct {
@@ -89,13 +89,13 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 		clk.Close()
 		lg.Debug("closedPHC", "if", cfg.Pulse.Interface)
 	}()
-	serialDev := cfg.Serial.Device
-	t, err := serio.OpenTerm(serialDev)
+	t, err := serio.OpenTerm(cfg.Serial.Device, cfg.Serial.Speed)
 	if err != nil {
 		return err
 	}
 
 	defer func() {
+		serialDev := cfg.Serial.Device
 		lg.Debug("restoringSerial", "path", serialDev)
 		e := t.Restore()
 		if e != nil {
@@ -206,7 +206,6 @@ func startBcast(ctx context.Context, wg *sync.WaitGroup, msg <-chan scan.Frame) 
 	}()
 	return b
 }
-
 
 func nmeaLog(lg *slog.Logger, data string) {
 	fields := scan.NMEASplit(data)
