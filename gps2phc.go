@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -16,14 +17,32 @@ import (
 	"github.com/jclark/gps2phc/ptime"
 	"github.com/jclark/gps2phc/serio"
 	"github.com/jclark/gps2phc/ubx"
+
+	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sys/unix"
 )
 
-var serialDev string
-var ifName string
-var tcpPort int
-var debugEnable bool
+type Config struct {
+	Serial SerialConfig
+	Pulse  TimePulseConfig
+	TCP    TCPConfig
+}
+
+type SerialConfig struct {
+	Device string
+	Speed  int
+}
+
+type TimePulseConfig struct {
+	Interface string
+	Pin       uint8
+	Channel   uint8
+}
+
+type TCPConfig struct {
+	Port uint16
+}
 
 const scanBufSize = 16
 
@@ -34,28 +53,39 @@ type Syncer struct {
 }
 
 func main() {
-	flag.StringVar(&serialDev, "s", "/dev/ttyUSB0", "device for serial connection to GPS")
-	flag.StringVar(&ifName, "e", "eth0", "ethernet interface of PTP hardware clock")
-	flag.IntVar(&tcpPort, "t", 0, "relay serial port to this TCP port (0 for not to relay)")
+	var configFile string
+	var debugEnable bool
+
+	flag.StringVar(&configFile, "f", "gps2phc.toml", "configuration file")
 	flag.BoolVar(&debugEnable, "d", false, "log debugging information")
 	flag.Parse()
 	level := slog.LevelInfo
 	if debugEnable {
 		level = slog.LevelDebug
 	}
+
 	lg := slog.New(slog.HandlerOptions{Level: level}.NewTextHandler(os.Stdout))
 	slog.SetDefault(lg)
 	ctx := logctx.NewContext(context.Background(), lg)
 	ctx, cancel := cancelOnSignal(ctx)
-	err := run(ctx, cancel)
+	err := run(ctx, cancel, configFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
+		var derr *toml.DecodeError
+		if errors.As(err, &derr) {
+			fmt.Fprintln(os.Stderr, derr.String())
+		}
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, cancel context.CancelFunc) error {
-	clk, err := openExttsClock()
+func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		return err
+	}
+
+	clk, err := openExttsClock(cfg.Pulse)
 	if err != nil {
 		return err
 	}
@@ -63,8 +93,9 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 
 	defer func() {
 		clk.Close()
-		lg.Debug("closedPHC", "if", ifName)
+		lg.Debug("closedPHC", "if", cfg.Pulse.Interface)
 	}()
+	serialDev := cfg.Serial.Device
 	t, err := serio.OpenTerm(serialDev)
 	if err != nil {
 		return err
@@ -117,6 +148,7 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 	if ctx.Err() != nil {
 		return nil
 	}
+	tcpPort := cfg.TCP.Port
 	if tcpPort != 0 {
 		err = startTCP(ctx, &wg, fmt.Sprintf(":%d", tcpPort), b, t)
 		if err != nil {
@@ -134,6 +166,19 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 	}()
 
 	return nil
+}
+
+func loadConfig(configFile string) (*Config, error) {
+	var config Config
+	f, err := os.Open(configFile)
+	if err != nil {
+		return nil, err
+	}
+	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(&config)
+	if err != nil {
+		return nil, err
+	}
+	return &config, nil
 }
 
 func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -168,7 +213,8 @@ func startBcast(ctx context.Context, wg *sync.WaitGroup, msg <-chan scan.Frame) 
 	return b
 }
 
-func openExttsClock() (*phc.Clock, error) {
+func openExttsClock(cfg TimePulseConfig) (*phc.Clock, error) {
+	ifName := cfg.Interface
 	phcIndex, err := phc.IfPhcIndex(ifName)
 	if err != nil {
 		return nil, err
