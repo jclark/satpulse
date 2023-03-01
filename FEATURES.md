@@ -80,6 +80,8 @@ for the worse in the antenna status (loss of power, jamming, short).
 
 Keep track of how many satellites are in view from various constellations and what the signal quality is.
 
+Also Time DOP from UBX-NAV-DOP.
+
 ## Configuration
 
 We should be able to do some configuration of the GPS, in particular to enable the periodic messages that we understand.

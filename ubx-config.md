@@ -18,6 +18,15 @@ Key info
 
 Should enable a single constellation (GPS by default)
 
+
+## Navigation engine
+
+UBX-CFG-NAV5 can set
+* minimum elevation
+* dynamic platform model
+
+Need to investigate whether these are useful
+
 ## Time pulse
 
 Use UBX-CFG-TP5. Need
