@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/gps2phc/ptime"
+	"github.com/jclark/gps2phc/internal/ptime"
 	"golang.org/x/exp/slog"
 )
 

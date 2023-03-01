@@ -5,11 +5,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jclark/gps2phc/logctx"
-	"github.com/jclark/gps2phc/ptime"
-	"github.com/jclark/gps2phc/scan"
-	"github.com/jclark/gps2phc/serio"
-	"github.com/jclark/gps2phc/ubx"
+	"github.com/jclark/gps2phc/internal/logctx"
+	"github.com/jclark/gps2phc/internal/ptime"
+	"github.com/jclark/gps2phc/internal/scan"
+	"github.com/jclark/gps2phc/internal/serio"
+	"github.com/jclark/gps2phc/internal/ubx"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slog"
 )

@@ -9,14 +9,14 @@ import (
 	"os/signal"
 	"sync"
 
-	"github.com/jclark/gps2phc/logctx"
-	"github.com/jclark/gps2phc/scan"
-	"github.com/jclark/gps2phc/tsync"
+	"github.com/jclark/gps2phc/internal/logctx"
+	"github.com/jclark/gps2phc/internal/scan"
+	"github.com/jclark/gps2phc/internal/tsync"
 
-	"github.com/jclark/gps2phc/phc"
-	"github.com/jclark/gps2phc/ptime"
-	"github.com/jclark/gps2phc/serio"
-	"github.com/jclark/gps2phc/ubx"
+	"github.com/jclark/gps2phc/internal/phc"
+	"github.com/jclark/gps2phc/internal/ptime"
+	"github.com/jclark/gps2phc/internal/serio"
+	"github.com/jclark/gps2phc/internal/ubx"
 
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/exp/slog"

@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/jclark/gps2phc/logctx"
-	"github.com/jclark/gps2phc/scan"
+	"github.com/jclark/gps2phc/internal/logctx"
+	"github.com/jclark/gps2phc/internal/scan"
 	"golang.org/x/exp/constraints"
 )
 

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jclark/gps2phc/phc"
+	"github.com/jclark/gps2phc/internal/phc"
 )
 
 type TimePulseConfig struct {

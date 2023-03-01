@@ -6,8 +6,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/jclark/gps2phc/logctx"
-	"github.com/jclark/gps2phc/scan"
+	"github.com/jclark/gps2phc/internal/logctx"
+	"github.com/jclark/gps2phc/internal/scan"
 	"github.com/jclark/gps2phc/term"
 )
 
