@@ -44,6 +44,11 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 			unix.Close(fd)
 		}
 	}()
+	// We could make this optional, but non-exclusive use of the serial port seems like a bad idea.
+	err = t.lock()
+	if err != nil {
+		return
+	}
 	tsp, err := t.getAttr()
 	if err != nil {
 		return
@@ -59,6 +64,14 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	// XXX turn of IXOFF
 	err = t.setAttr(&attr.ts)
 	return
+}
+
+func (t *Term) lock() error {
+	err := unix.Flock(t.fd, unix.LOCK_EX|unix.LOCK_NB)
+	if err != nil {
+		return fmt.Errorf("%s: could not lock device (%w); probably being used by another process", t.path, err)
+	}
+	return nil
 }
 
 func RawMode(a *Attr) error {
