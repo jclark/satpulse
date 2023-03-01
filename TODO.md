@@ -68,9 +68,7 @@
 * Cancelled write should complete UBX message but not drain
 * Deal with read of 0 from term (caused by timeout)
 * Can we be detect when baud rate is too low for information passed?
-* Serial port locking
-   * flock seems the best way
-   * should we also support UUCP-style locking?
+* Should we support UUCP-style serial-port locking, in addition to flock? Probably not.
 
 ## Scanning
 
