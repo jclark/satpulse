@@ -11,16 +11,18 @@
    * go-time
    * go-time-sync
    * gpsclock
-* Rearrange source to properly for Go conventions
+* Rearrange source to properly follow Go conventions
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
 * Need layer that turns UBX messages into something more convenient to work with, and UBX-independent
 * Control over logging
+* Systemd service file
 
 ## TCP server
 
 * Test with Lady Heather
-* Option for read-only NMEA socket (can be used with ts2phc)
+* Config for read-only NMEA socket (can be used with ts2phc)
+* Config file should specify multiple ports, each with its own properties
 
 ## Time sync
 
@@ -38,7 +40,7 @@
 ## NMEA
 
 * Fall back to NMEA (if we don't have UBX)
-* RMC or ZDA
+* Support RMC or ZDA sentences
 * What do we do about talker id? Can we get multiple copies for different talker?
 * Requires leap-second support: could use PUBX, but not much point
 
@@ -46,7 +48,7 @@
 
 * Use
   * for grandmaster settings utc-offset, leap59, leap61
-  * use with NMEA messages
+  * with messages that report time in GMT
 * Leap second data model:
    * date of last scheduled leap second (either in the past or up to 6 months in the future)
    * UTC offset before that
@@ -77,6 +79,7 @@
    * Allystar (same as UBX but uses 0xF1 0xD9)
    * Trimble TSIP
    * SkyTraq binary
+   * CASIC (China Aerospace Science & Industry Corporation) Standard Interface Protocol (CSIP) - used by Zhongke Microelectronics
 
 ## GPS configuration
 
@@ -103,11 +106,6 @@ Does Facebook have something we can reuse? (No: they don't implement a full clie
 * Human-readable page that repeatedly fetches current state
 * Should we use this for configuration?
    * Need to think about how we deal with concurrent requests.
-
-## ts2phc support
-
-* Provide TCP socket with RMC sentences
-* Could potentially generate RMC from other UBX messages (but is there any point?)
 
 ## Netlink events
 
