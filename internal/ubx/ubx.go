@@ -87,6 +87,7 @@ const (
 	CfgTp5ID     MsgID = clsCfg | (0x31 << 8)
 	MonHwID      MsgID = clsMon | (0x09 << 8)
 	MonVerID     MsgID = clsMon | (0x04 << 8)
+	NavPvtID     MsgID = clsNav | (0x07 << 8)
 	NavTimeGPSID MsgID = clsNav | (0x20 << 8)
 	NavTimeUTCID MsgID = clsNav | (0x21 << 8)
 	NavTimeBDSID MsgID = clsNav | (0x24 << 8)
@@ -106,6 +107,7 @@ func init() {
 	regMsg[CfgTp5]("tp5")
 	regMsg[MonHw]("hw")
 	regMsg[MonVer]("ver")
+	regMsg[NavPvt]("pvt")
 	regMsg[NavSvin]("svin")
 	regMsg[NavTimeGPS]("timegps")
 	regMsg[NavTimeBDS]("timebds")
@@ -207,6 +209,100 @@ const (
 	CfgTmode3Mode CfgTmode3Flags = 0xFF
 	CfgTmode3LLA  CfgTmode3Flags = 0x100
 )
+
+type NavPvt struct {
+	ITOW    uint32
+	Year    uint16
+	Month   byte
+	Day     byte
+	Hour    byte
+	Min     byte
+	Sec     byte
+	Valid   NavPvtValid
+	TAcc    uint32
+	Nano    int32
+	FixType NavPvtFixType
+	Flags   NavPvtFlags
+	Flags2  NavPvtFlags2
+	NumSV   byte
+	Lon     int32
+	Lat     int32
+	Height  int32
+	HMSL    int32
+	HAcc    uint32
+	VAcc    uint32
+	VelN    int32
+	VelE    int32
+	VelD    int32
+	GSpeed  int32
+	HeadMot int32
+	SAcc    uint32
+	HeadAcc uint32
+	PDOP    uint16
+	_       [6]byte
+	HeadVeh int32
+	MagDec  int16
+	MagAcc  uint16
+}
+
+type NavPvtValid byte
+
+const (
+	NavPVTValidDate NavPvtValid = 1 << iota
+	NavPVTValidTime
+	NavPVTValidFullyResolved
+	NavPVTValidMag
+)
+
+type NavPvtFixType byte
+
+const (
+	NavPVTNoFix NavPvtFixType = iota
+	NavPVTDeadReckoningOnly
+	NavPVT2DFix
+	NavPVT3DFix
+	NavPVTGNSSDeadReckoning
+	NavPVTTimeOnlyFix
+)
+
+type NavPvtFlags byte
+
+const (
+	NavPVTGNSSFixOK NavPvtFlags = 1 << iota
+	NavPVTDiffSoln
+	navPVTPSMState0
+	navPVTPSMState1
+	navPVTPSMState2
+	NavPvtHeadVehValid
+	navPvtCarrSoln0
+	navPvtCarrSoln1
+	NavPctPSMState NavPvtFlags = navPVTPSMState0 | navPVTPSMState1 | navPVTPSMState2
+	NavPctCarrSoln NavPvtFlags = navPvtCarrSoln0 | navPvtCarrSoln1
+)
+
+const (
+	NavPvtPSMStateNotActive NavPvtFlags = iota << 2
+	NavPvtPSMStateAcquisition
+	NavPvtPSMStateTracking
+	NavPvtPSMStatePowerOptimizedTracking
+	NavPvtPSMStateInactive
+)
+
+const (
+	NavPvtCarrSolnNone NavPvtFlags = iota << 6
+	NavPvtCarrSolnFloat
+	NavPvtCarrSolnFixed
+)
+
+type NavPvtFlags2 byte
+
+const (
+	NavPVTConfirmedAvai NavPvtFlags2 = 1 << (iota + 5)
+	NavPVTConfirmedDate
+	NavPVTConfirmedTime
+)
+
+func (m *NavPvt) ID() MsgID { return NavPvtID }
 
 type NavTimeGPS struct {
 	ITOW  uint32
