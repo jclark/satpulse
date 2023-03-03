@@ -17,6 +17,18 @@ type ClockTime struct {
 // Time in TAI timescale represented as nanoseconds since 1970-01-01T00:00:00 TAI
 type Time int64
 
+// timeOfDay can be negative, but not longer than -24 hours
+type UTCTime struct {
+	date      time.Time     // time of the start of the day (at midnight)
+	timeOfDay time.Duration // duration since start of day at midnight
+}
+
+type LeapSeconds struct {
+	LastDate  time.Time // last scheduled leap second (must be last day of a month)
+	OffBefore uint8     // TAI-UTC offset before leap second
+	OffAfter  uint8     // TAI-UTC offset after leap second
+}
+
 // GPS epoch
 var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 
@@ -32,6 +44,23 @@ func GPS(week int16, iTOW uint32) Time {
 
 func GPSDate(week uint16, day time.Weekday) time.Time {
 	return epochGPS.AddDate(0, 0, int(week)*7+int(day))
+}
+
+func UTC(year uint16, month, day, hour, min, sec uint8, nanos int32) UTCTime {
+	date := time.Date(int(year), time.Month(month), int(day), 0, 0, 0, 0, time.UTC)
+	t := time.Date(int(year), time.Month(month), int(day), int(hour), int(min), int(sec), int(nanos), time.UTC)
+	return UTCTime{date, t.Sub(date)}
+}
+
+func (leaps *LeapSeconds) UTCtoTime(ut *UTCTime) Time {
+	t := ut.date.Add(ut.timeOfDay).UnixNano()
+	var s uint8
+	if ut.date.After(leaps.LastDate) {
+		s = leaps.OffAfter
+	} else {
+		s = leaps.OffBefore
+	}
+	return Time(t + int64(s)*1e9)
 }
 
 func TimespecToTime(t unix.Timespec) Time {
