@@ -14,7 +14,6 @@
 * Rearrange source to properly follow Go conventions
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
-* Need layer that turns UBX messages into something more convenient to work with, and UBX-independent
 * Control over logging
 * Systemd service file
 
@@ -26,9 +25,10 @@
 
 ## Time sync
 
-* Occasionally ITOW is not an integral number of seconds
-  * need to round (or is it truncate?)
-  * also tim-tp?
+* Handling of UBX-TIM-TP is over-complex: if we have the time pulse, we can get the atomic time from that message; no need to use separate message with time
+    * Does it use GPS week numbers when synced to Beidou?
+    * Select only one time message for correlation
+    * Use UBX-NAV-EOE to wait for right message
 * Experiment with different ki/kp coefficients for PI controller
 * PI controller starts off with a large integral term, which I suspect is not optimal
 * Sanity check with system clock
@@ -49,6 +49,7 @@
 * Use
   * for grandmaster settings utc-offset, leap59, leap61
   * with messages that report time in GMT
+* Move into gpsmsg layer
 * Leap second data model:
    * date of last scheduled leap second (either in the past or up to 6 months in the future)
    * UTC offset before that

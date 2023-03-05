@@ -32,14 +32,15 @@ type LeapSeconds struct {
 // GPS epoch
 var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 
-// Offset in seconds between TAI and UTC at GPS epoch
-const epochGPSOffsetTAI = 19
+// Number of seconds by which TAI time is ahead of GPS time
+const TAIMinusGPS = 19
 
 // week is number of complete weeks since start of first Sunday in 1980
 // iTOW is milliseconds since start of week (Sunday)
-func GPS(week int16, iTOW uint32) Time {
-	ms := epochGPS.AddDate(0, 0, int(week)*7).UnixMilli() + epochGPSOffsetTAI*1000 + int64(iTOW)
-	return Time(ms * 1e6)
+// fTOW is nanoseconds
+func GPS(week int16, iTOW uint32, fTOW int32) Time {
+	ms := epochGPS.AddDate(0, 0, int(week)*7).UnixMilli() + TAIMinusGPS*1000 + int64(iTOW)
+	return Time(ms*1e6 + int64(fTOW))
 }
 
 func GPSDate(week uint16, day time.Weekday) time.Time {
@@ -77,6 +78,10 @@ func (t Time) String() string {
 	return fmt.Sprintf("%d.%09d", n/1e9, n%1e9)
 }
 
+func (t Time) MarshalText() ([]byte, error) {
+	return []byte(t.String()), nil
+}
+
 func (t Time) IsZero() bool {
 	return int64(t) == 0
 }
@@ -87,6 +92,11 @@ func (t Time) Add(d time.Duration) Time {
 
 func (t Time) Sub(t2 Time) time.Duration {
 	return time.Duration(int64(t) - int64(t2))
+}
+
+func (t Time) Round(d time.Duration) Time {
+	// Let the time package do the tricky bit
+	return Time(int64(time.Duration(int64(t)).Round(d)))
 }
 
 type Epoch uint64

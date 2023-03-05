@@ -2,21 +2,22 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"sync"
+	"time"
 
 	"github.com/jclark/gps2phc/internal/logctx"
-	"github.com/jclark/gps2phc/internal/scan"
-	"github.com/jclark/gps2phc/internal/tsync"
-
 	"github.com/jclark/gps2phc/internal/phc"
 	"github.com/jclark/gps2phc/internal/ptime"
+	"github.com/jclark/gps2phc/internal/scan"
 	"github.com/jclark/gps2phc/internal/serio"
-	"github.com/jclark/gps2phc/internal/ubx"
+	"github.com/jclark/gps2phc/internal/tsync"
+	"github.com/jclark/gps2phc/internal/ubxmsg"
 
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/exp/slog"
@@ -280,20 +281,26 @@ func syncFrame(ctx context.Context, corr *tsync.Correlator, f scan.Frame) {
 	case scan.NMEA:
 		nmeaLog(lg, f.Data)
 	case scan.UBX:
-		u, err := ubx.ParseMsg(f.Data)
+		m, err := ubxmsg.Parse(f.Data)
 		if err != nil {
 			lg.Error("ubxParseError", err)
 			break
 		}
-		switch data := u.(type) {
-		case *ubx.NavTimeGPS:
-			corr.GPSTime(ptime.GPS(data.Week, data.ITOW), f.TRead)
-		case *ubx.TimTP:
-			if (data.Flags & ubx.TimTPQErrInvalid) == 0 {
-				corr.PulseOffset(ptime.GPS(int16(data.Week), data.TOWMS), ptime.Picoseconds(data.QErr))
+		mt := m.Time()
+		if mt == nil || mt.TAITime.IsZero() {
+			break
+		}
+		sec := mt.TAITime.Round(time.Second)
+		if mt.PrecedesPulse {
+			corr.PulseOffset(sec, mt.PulseOffset)
+		} else {
+			corr.GPSTime(sec, f.TRead)
+		}
+		if false {
+			bytes, err := json.Marshal(mt)
+			if err == nil {
+				fmt.Println(string(bytes))
 			}
-		default:
-			lg.Debug("ubx", "type", u.ID().String(), "payload", u)
 		}
 	}
 }

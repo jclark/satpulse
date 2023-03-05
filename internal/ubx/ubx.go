@@ -210,6 +210,21 @@ const (
 	CfgTmode3LLA  CfgTmode3Flags = 0x100
 )
 
+type UTCStandard byte
+
+const (
+	UTCStandardNotAvailable UTCStandard = iota
+	UTCStandardCRL
+	UTCStandardNIST
+	UTCStandardUSNO
+	UTCStandardBIPM
+	UTCStandardEU
+	UTCStandardSU
+	UTCStandardNTSC
+	UTCStandardNPLI
+	UTCStandardUnknown UTCStandard = 15
+)
+
 type NavPvt struct {
 	ITOW    uint32
 	Year    uint16
@@ -333,10 +348,22 @@ type NavTimeUTC struct {
 	Hour  byte
 	Min   byte
 	Sec   byte
-	Valid byte
+	Valid NavTimeUTCValid
 }
 
 func (m *NavTimeUTC) ID() MsgID { return NavTimeUTCID }
+
+type NavTimeUTCValid byte
+
+const (
+	NavTimeUTCValidTOW NavTimeUTCValid = 1 << iota
+	NavTimeUTCValidWkn
+	NavTimeUTCValidUTC
+)
+
+func (v NavTimeUTCValid) UTCStandard() UTCStandard {
+	return UTCStandard(v >> 4)
+}
 
 type NavTimeBDS struct {
 	ITOW  uint32
@@ -444,15 +471,17 @@ type TimTPFlags byte
 
 const (
 	TimTPTimeBase TimTPFlags = 1 << iota
-	TimTPUTC
+	TimTPUTCAvailable
 	timTPRAIM1
 	timTPRAIM2
 	TimTPQErrInvalid
 	TimTPRAIM TimTPFlags = timTPRAIM1 | timTPRAIM2
 )
 
-const TimTPTimeBaseUTC TimTPFlags = TimTPTimeBase
-const TimTPUTCAvailable TimTPFlags = TimTPUTC
+const (
+	TimTPTimeBaseGNSS TimTPFlags = 0
+	TimTPTimeBaseUTC  TimTPFlags = TimTPTimeBase
+)
 
 // Values for TimTPFlags & TimTPRAIM
 const (
@@ -462,34 +491,22 @@ const (
 
 type TimTPRefInfo byte
 
-// These are bitwise-ANDed with TimTPRefInfo
 const (
 	TimTPTimeRefGNSS TimTPRefInfo = 0x0F
-	TimTPUTCStandard TimTPRefInfo = 0xF0
 )
+
+func (ri TimTPRefInfo) UTCStandard() UTCStandard {
+	return UTCStandard(ri >> 4)
+}
 
 // Values for TimTPRefInfo & TimTPTimeRefGNSS
 const (
-	TimTPTimeRefGNSSGPS TimTPRefInfo = iota
-	TimTPTimeRefGNSSGLONASS
-	TimTPTimeRefGNSSBeiDou
-	TimTPTimeRefGNSSGalileo
-	TimTPTimeRefGNSSNavIC
+	TimTPTimeRefGPS TimTPRefInfo = iota
+	TimTPTimeRefGLONASS
+	TimTPTimeRefBeiDou
+	TimTPTimeRefGalileo
+	TimTPTimeRefNavIC
 	TimTPTimeRefGNSSUnknown TimTPRefInfo = 15
-)
-
-// Values for TimTPRefInfo & TimTPUTCStandard
-const (
-	TimTPUTCStandardNotAvailable TimTPRefInfo = 0
-	TimTPUTCStandardCRL          TimTPRefInfo = iota << 4
-	TimTPUTCStandardNIST
-	TimTPUTCStandardUSNO
-	TimTPUTCStandardBIPM
-	TimTPUTCStandardEU
-	TimTPUTCStandardSU
-	TimTPUTCStandardNTSC
-	TimTPUTCStandardNPLI
-	TimTPUTCStandardUnknown = TimTPUTCStandard
 )
 
 type TimSvin struct {
@@ -556,7 +573,7 @@ func (m *MonVer) Parts() (fixed any, slice any) {
 
 type CfgGNSS struct {
 	CfgGNSSFixed
-	Blocks []CfgGNNSSBlock
+	Blocks []CfgGNSSBlock
 }
 
 type CfgGNSSFixed struct {
@@ -566,7 +583,7 @@ type CfgGNSSFixed struct {
 	NumConfigBlocks byte
 }
 
-type CfgGNNSSBlock struct {
+type CfgGNSSBlock struct {
 	GNSSID     GNSSID
 	ResTrkCh   byte
 	MaxTrkCh   byte
@@ -582,7 +599,7 @@ func (m *CfgGNSS) ID() MsgID { return CfgGNSSID }
 func (m *CfgGNSS) InitForLen(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 4, 8)
 	if err == nil {
-		m.Blocks = make([]CfgGNNSSBlock, len)
+		m.Blocks = make([]CfgGNSSBlock, len)
 	}
 	return
 }
