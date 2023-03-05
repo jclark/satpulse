@@ -46,7 +46,7 @@ func timeNavTimeGPS(m *ubx.NavTimeGPS) *gpsmsg.Time {
 	t.Accuracy = time.Duration(m.TAcc)
 	g := gpsmsg.GPS
 	t.GNSS = &g
-	t.NavEpoch = m.ITOW
+	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
 
@@ -59,8 +59,12 @@ func timeNavTimeUTC(m *ubx.NavTimeUTC) *gpsmsg.Time {
 	t.UTCTime = &u
 	t.Accuracy = time.Duration(m.TAcc)
 	t.GNSS = utcStandardToGNSS(m.Valid.UTCStandard())
-	t.NavEpoch = m.ITOW
+	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
+}
+
+func iTOWEpoch(iTOW uint32) uint32 {
+	return iTOW + 1
 }
 
 func utcStandardToGNSS(u ubx.UTCStandard) *gpsmsg.MajorGNSS {
