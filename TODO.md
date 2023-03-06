@@ -27,8 +27,8 @@
 
 * Handling of UBX-TIM-TP is over-complex: if we have the time pulse, we can get the atomic time from that message; no need to use separate message with time
     * Does it use GPS week numbers when synced to Beidou?
-    * Select only one time message for correlation
     * Use UBX-NAV-EOE to wait for right message
+* Should prefer a message in UBX that provides TAI directly to NMEA.
 * Experiment with different ki/kp coefficients for PI controller
 * PI controller starts off with a large integral term, which I suspect is not optimal
 * Sanity check with system clock
@@ -36,13 +36,6 @@
 * Link bounds for pulse sanity check to amount of frequency adjustment
 * Log RMS of offset
 * Mode where we use system clock rather than GPS messages for time of day (like `ts2phc -s generic`)
-
-## NMEA
-
-* Fall back to NMEA (if we don't have UBX)
-* Support RMC or ZDA sentences
-* What do we do about talker id? Can we get multiple copies for different talker?
-* Requires leap-second support: could use PUBX, but not much point
 
 ## Leap seconds
 
@@ -56,6 +49,7 @@
    * UTC offset after that
 * Store that in a file somewhere (in /var/run)
 * How does that hook up with NTP-centric kernel support for leap seconds?
+* Get current leap second from system.
 
 ## Serial IO
 
@@ -98,13 +92,21 @@ Semi-functional currently.
 ## PTP management client
 
 Does Facebook have something we can reuse? (No: they don't implement a full client.)
+Key info
+* Do we have a fix? Is the fix valid? (We will lose the time pulse if we don't have a valid fix.)
+* Leap seconds: current TAI offset, date of next announced leap second
+* Accuracy
+   * as reported by GPS
+   * offsets between PHC and time pulse
 
 ## HTTP server
 
 * Provide JSON API for current status
 * Human-readable page that repeatedly fetches current state
+* Can draw a sky view using JS canvas
 * Should we use this for configuration?
    * Need to think about how we deal with concurrent requests.
+* Can use UBX-NAV-EOE to collect everything from a single navigation epoch into a single message
 
 ## Netlink events
 

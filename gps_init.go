@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jclark/gps2phc/internal/logctx"
+	"github.com/jclark/gps2phc/internal/nmea"
 	"github.com/jclark/gps2phc/internal/ptime"
 	"github.com/jclark/gps2phc/internal/scan"
 	"github.com/jclark/gps2phc/internal/serio"
@@ -212,19 +213,20 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 }
 
 func (gr *gpsReceived) nmea(data string, lg *slog.Logger) {
-	fields := scan.NMEASplit(data)
-	if !fields.ChecksumOK {
+	m, err := nmea.Parse(data)
+	if err != nil {
 		gr.invalidMsgCount++
 		return
 	}
 	gr.nmeaMsgCount++
+	fields := m.Fields()
 	talkerMap := gr.nmeaSentences[fields.SentenceFmt]
 	if talkerMap == nil {
 		talkerMap = map[string]bool{}
 		gr.nmeaSentences[fields.SentenceFmt] = talkerMap
 	}
 	talkerMap[fields.TalkerID] = true
-	nmeaLog(lg, data)
+	nmeaLog(lg, m)
 }
 
 func (gr *gpsReceived) rtcm(data string, lg *slog.Logger) {

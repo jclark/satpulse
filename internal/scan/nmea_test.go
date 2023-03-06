@@ -69,24 +69,3 @@ func nmeaTrim(data string) string {
 	}
 	return trimmed
 }
-
-func TestNMEASplit(t *testing.T) {
-	f := NMEASplit("$GPGLL,5057.970,N,00146.110,E,142451,A*27\r\n")
-	df := f.DataFields
-	if f.TalkerID != "GP" || f.SentenceFmt != "GLL" || !f.ChecksumOK || len(df) != 6 ||
-		df[0] != "5057.970" || df[1] != "N" || df[2] != "00146.110" ||
-		df[3] != "E" || df[4] != "142451" || df[5] != "A" {
-		t.Fatalf("NMEASplit failed")
-	}
-	f = NMEASplit("$GPTXT,1,Hello^21,3*FF\r\n")
-	df = f.DataFields
-	if len(df) != 3 || df[1] != "Hello!" {
-		t.Fatalf("NMEASplit failed on caret")
-	}
-}
-
-func TestNMEAUnescape(t *testing.T) {
-	if nmeaUnescape("abc^0D^0Ade^A0f") != "abc\r\nde\u00A0f" {
-		t.Fatalf("NMEAUnescape failed")
-	}
-}

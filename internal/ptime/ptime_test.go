@@ -6,7 +6,7 @@ import (
 )
 
 func TestLeapSecs(t *testing.T) {
-	leaps := LeapSeconds{
+	leaps := LeapSecond{
 		LastDate:  time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC),
 		OffBefore: 37,
 		OffAfter:  38,
@@ -21,7 +21,7 @@ func TestLeapSecs(t *testing.T) {
 	testLeapNanos(t, &leaps, -1e9/2)
 }
 
-func testLeapNanos(t *testing.T, leaps *LeapSeconds, nanos int32) {
+func testLeapNanos(t *testing.T, leaps *LeapSecond, nanos int32) {
 	secs := []UTCTime{
 		UTC(2025, 6, 30, 23, 59, 59, nanos),
 		UTC(2025, 6, 30, 23, 59, 60, nanos),

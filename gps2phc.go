@@ -11,7 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jclark/gps2phc/internal/gpsmsg"
 	"github.com/jclark/gps2phc/internal/logctx"
+	"github.com/jclark/gps2phc/internal/nmea"
 	"github.com/jclark/gps2phc/internal/phc"
 	"github.com/jclark/gps2phc/internal/ptime"
 	"github.com/jclark/gps2phc/internal/scan"
@@ -25,9 +27,10 @@ import (
 )
 
 type Config struct {
-	Serial SerialConfig
-	Pulse  TimePulseConfig
-	TCP    TCPConfig
+	Serial     SerialConfig
+	Pulse      TimePulseConfig
+	TCP        TCPConfig
+	LeapSecond LeapSecondConfig
 }
 
 type SerialConfig struct {
@@ -39,12 +42,24 @@ type TCPConfig struct {
 	Port uint16
 }
 
+type LeapSecondConfig struct {
+	Date          toml.LocalDate
+	Before, After uint8
+}
+
+var leapSecondDefault = LeapSecondConfig{
+	Date:   toml.LocalDate{Year: 2016, Month: int(time.December), Day: 31},
+	Before: 36,
+	After:  37,
+}
+
 const scanBufSize = 16
 
 type Syncer struct {
 	tsCh <-chan phc.TsEvent
 	fCh  <-chan scan.Frame
 	corr *tsync.Correlator
+	ls   ptime.LeapSecond
 }
 
 func main() {
@@ -164,16 +179,17 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 }
 
 func loadConfig(configFile string) (*Config, error) {
-	var config Config
 	f, err := os.Open(configFile)
 	if err != nil {
 		return nil, err
 	}
-	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(&config)
+	cfg := new(Config)
+	cfg.LeapSecond = leapSecondDefault
+	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &config, nil
+	return cfg, nil
 }
 
 func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -208,8 +224,8 @@ func startBcast(ctx context.Context, wg *sync.WaitGroup, msg <-chan scan.Frame) 
 	return b
 }
 
-func nmeaLog(lg *slog.Logger, data string) {
-	fields := scan.NMEASplit(data)
+func nmeaLog(lg *slog.Logger, msg *nmea.Message) {
+	fields := msg.Fields()
 	if fields.SentenceFmt == "TXT" && len(fields.DataFields) >= 4 {
 		// When we open an ACM device, the GPS receiver sends TXT messages with each line of the boot screen
 		lg.Debug("nmeaTxt", "s", fields.DataFields[3])
@@ -225,7 +241,11 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 	if err != nil {
 		return nil, err
 	}
-	s := Syncer{corr: tsync.NewCorrelator(servo), fCh: fCh}
+	s := Syncer{
+		corr: tsync.NewCorrelator(servo),
+		fCh:  fCh,
+		ls:   leapSecondFromConfig(cfg.LeapSecond),
+	}
 	lg.Info("usingPHC", "path", clk.Path())
 	s.tsCh, err = StartPPS(ctx, clk, cfg.Pulse)
 	if err != nil {
@@ -233,6 +253,19 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 	}
 	r = &s
 	return
+}
+
+func leapSecondFromConfig(cfg LeapSecondConfig) ptime.LeapSecond {
+	return ptime.LeapSecond{
+		LastDate:  cfg.Date.AsTime((time.UTC)),
+		OffBefore: cfg.Before,
+		OffAfter:  cfg.After,
+	}
+}
+
+type SyncState struct {
+	lastTime   ptime.Time
+	leapSecond ptime.LeapSecond
 }
 
 func syncWorker(ctx context.Context, s *Syncer) {
@@ -244,6 +277,8 @@ func syncWorker(ctx context.Context, s *Syncer) {
 	lg.Debug("syncWorker", "event", "started")
 
 	nSkipped := 0
+	var state SyncState
+	state.leapSecond = s.ls
 	for tsCh != nil || fCh != nil {
 		select {
 		case e, ok := <-tsCh:
@@ -266,7 +301,7 @@ func syncWorker(ctx context.Context, s *Syncer) {
 			}
 		case f, ok := <-fCh:
 			if ok {
-				syncFrame(ctx, corr, f)
+				syncFrame(ctx, &state, corr, f)
 			} else {
 				lg.Debug("syncWorker", "event", "fChClosed")
 				fCh = nil
@@ -275,32 +310,51 @@ func syncWorker(ctx context.Context, s *Syncer) {
 	}
 }
 
-func syncFrame(ctx context.Context, corr *tsync.Correlator, f scan.Frame) {
+func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, f scan.Frame) {
 	lg := logctx.FromContext(ctx)
+	var mt *gpsmsg.Time
 	switch f.Kind {
 	case scan.NMEA:
-		nmeaLog(lg, f.Data)
+		m, err := nmea.Parse(f.Data)
+		if err != nil {
+			lg.Error("nmeaParseError", err)
+			break
+		}
+		nmeaLog(lg, m)
+		mt = m.Time()
 	case scan.UBX:
 		m, err := ubxmsg.Parse(f.Data)
 		if err != nil {
 			lg.Error("ubxParseError", err)
 			break
 		}
-		mt := m.Time()
-		if mt == nil || mt.TAITime.IsZero() {
-			break
+		mt = m.Time()
+	}
+	if mt == nil {
+		return
+	}
+	if false {
+		bytes, err := json.Marshal(mt)
+		if err == nil {
+			fmt.Println(string(bytes))
 		}
-		sec := mt.TAITime.Round(time.Second)
-		if mt.PrecedesPulse {
-			corr.PulseOffset(sec, mt.PulseOffset)
-		} else {
-			corr.GPSTime(sec, f.TRead)
+	}
+	var sec ptime.Time
+	if !mt.TAITime.IsZero() {
+		sec = mt.TAITime
+	} else {
+		u := mt.UTCTime
+		if u == nil {
+			return
 		}
-		if false {
-			bytes, err := json.Marshal(mt)
-			if err == nil {
-				fmt.Println(string(bytes))
-			}
-		}
+		sec = state.leapSecond.UTCtoTime(u)
+		lg.Debug("timeFromUTC", "t", sec)
+	}
+	sec = sec.Round(time.Second)
+	if mt.PrecedesPulse {
+		corr.PulseOffset(sec, mt.PulseOffset)
+	} else if sec > state.lastTime {
+		corr.GPSTime(sec, f.TRead)
+		state.lastTime = sec
 	}
 }

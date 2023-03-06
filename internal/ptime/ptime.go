@@ -19,11 +19,11 @@ type Time int64
 
 // timeOfDay can be negative, but not longer than -24 hours
 type UTCTime struct {
-	date      time.Time     // time of the start of the day (at midnight)
-	timeOfDay time.Duration // duration since start of day at midnight
+	Date      time.Time     // time of the start of the day (at midnight)
+	TimeOfDay time.Duration // duration since start of day at midnight
 }
 
-type LeapSeconds struct {
+type LeapSecond struct {
 	LastDate  time.Time // last scheduled leap second (must be last day of a month)
 	OffBefore uint8     // TAI-UTC offset before leap second
 	OffAfter  uint8     // TAI-UTC offset after leap second
@@ -53,10 +53,10 @@ func UTC(year uint16, month, day, hour, min, sec uint8, nanos int32) UTCTime {
 	return UTCTime{date, t.Sub(date)}
 }
 
-func (leaps *LeapSeconds) UTCtoTime(ut *UTCTime) Time {
-	t := ut.date.Add(ut.timeOfDay).UnixNano()
+func (leaps *LeapSecond) UTCtoTime(ut *UTCTime) Time {
+	t := ut.Date.Add(ut.TimeOfDay).UnixNano()
 	var s uint8
-	if ut.date.After(leaps.LastDate) {
+	if ut.Date.After(leaps.LastDate) {
 		s = leaps.OffAfter
 	} else {
 		s = leaps.OffBefore
