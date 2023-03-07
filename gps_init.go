@@ -23,12 +23,12 @@ type gpsReceived struct {
 	invalidByteCount int
 	nmeaSentences    map[string]map[string]bool
 	rtcmMsgs         map[uint16]bool
-	protVer          ubx.ProtVer
 	tmode2           *ubx.CfgTmode2
 	tmode3           *ubx.CfgTmode3
 	tp5              *ubx.CfgTp5
 	gnss             *ubx.CfgGNSS
 	leapSecond       *ubxmsg.LeapSecond
+	version          *ubxmsg.Version
 	ack              map[ubx.MsgID]bool
 }
 
@@ -110,9 +110,11 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	} else if gr.tmode3 != nil {
 		tmode = gr.tmode3
 	}
+	if gr.version != nil {
+		lg.Info("gpsVersion", "sw", gr.version.SW, "hw", gr.version.HW, "prot", gr.version.Prot)
+	}
 	lg.Info("gpsInitDone",
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
-		"protVer", gr.protVer,
 		"ack", gr.ack,
 		"gnssEnabled", gnssEnabled,
 		"tmode", tmode,
@@ -151,10 +153,11 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 	if ls != nil {
 		gr.leapSecond = ls
 	}
+	ver := um.Version()
+	if ver != nil {
+		gr.version = ver
+	}
 	switch parsed := u.(type) {
-	case *ubx.MonVer:
-		gr.protVer = parsed.ProtVer()
-		lg.Info("gpsVersion", "sw", ubx.Latin1ZToString(parsed.SwVersion[:]), "hw", ubx.Latin1ZToString(parsed.HwVersion[:]), "protVer", gr.protVer)
 	case *ubx.CfgTmode2:
 		gr.tmode2 = parsed
 	case *ubx.CfgTmode3:
