@@ -111,7 +111,8 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		tmode = gr.tmode3
 	}
 	if gr.version != nil {
-		lg.Info("gpsVersion", "sw", gr.version.SW, "hw", gr.version.HW, "prot", gr.version.Prot)
+		lg.Info("gpsVersion", "model", gr.version.Mod, "category", gr.version.FW.ProductCategory, "flash", gr.version.Flash,
+			"sw", gr.version.SW, "hw", gr.version.HW, "prot", gr.version.Prot, "gnss", gr.version.GNSS, "ext", gr.version.Extensions)
 	}
 	lg.Info("gpsInitDone",
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
