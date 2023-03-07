@@ -53,13 +53,13 @@ func UTC(year uint16, month, day, hour, min, sec uint8, nanos int32) UTCTime {
 	return UTCTime{date, t.Sub(date)}
 }
 
-func (leaps *LeapSecond) UTCtoTime(ut *UTCTime) Time {
+func (ls *LeapSecond) UTCtoTime(ut *UTCTime) Time {
 	t := ut.Date.Add(ut.TimeOfDay).UnixNano()
 	var s uint8
-	if ut.Date.After(leaps.LastDate) {
-		s = leaps.OffAfter
+	if ut.Date.After(ls.LastDate) {
+		s = ls.OffAfter
 	} else {
-		s = leaps.OffBefore
+		s = ls.OffBefore
 	}
 	return Time(t + int64(s)*1e9)
 }
