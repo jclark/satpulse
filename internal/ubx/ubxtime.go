@@ -1,4 +1,4 @@
-package ubxmsg
+package ubx
 
 import (
 	"math"
@@ -6,25 +6,25 @@ import (
 
 	"github.com/jclark/gps2phc/internal/gpsmsg"
 	"github.com/jclark/gps2phc/internal/ptime"
-	"github.com/jclark/gps2phc/internal/ubx"
+	"github.com/jclark/gps2phc/internal/ubx/bin"
 )
 
 func (m *Message) Time() *gpsmsg.Time {
 	switch u := m.um.(type) {
-	case *ubx.NavTimeGPS:
+	case *bin.NavTimeGPS:
 		return timeNavTimeGPS(u)
-	case *ubx.NavTimeUTC:
+	case *bin.NavTimeUTC:
 		return timeNavTimeUTC(u)
-	case *ubx.TimTP:
+	case *bin.TimTP:
 		return timeTimTP(u)
 	}
 	return nil
 }
 
-func timeNavTimeGPS(m *ubx.NavTimeGPS) *gpsmsg.Time {
+func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {
 	t := gpsmsg.Time{}
 	t.TAITime = ptime.GPS(m.Week, m.ITOW, m.FTOW)
-	if (m.Valid & ubx.NavTimeGPSLeapSValid) != 0 {
+	if (m.Valid & bin.NavTimeGPSLeapSValid) != 0 {
 		t.TAIMinusUTC = m.LeapS + ptime.TAIMinusGPS
 	}
 	t.Accuracy = time.Duration(m.TAcc)
@@ -34,8 +34,8 @@ func timeNavTimeGPS(m *ubx.NavTimeGPS) *gpsmsg.Time {
 	return &t
 }
 
-func timeNavTimeUTC(m *ubx.NavTimeUTC) *gpsmsg.Time {
-	if m.Valid&ubx.NavTimeUTCValidUTC == 0 {
+func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsmsg.Time {
+	if m.Valid&bin.NavTimeUTCValidUTC == 0 {
 		return nil
 	}
 	t := gpsmsg.Time{}
@@ -51,16 +51,16 @@ func iTOWEpoch(iTOW uint32) uint32 {
 	return iTOW + 1
 }
 
-func utcStandardToGNSS(u ubx.UTCStandard) *gpsmsg.MajorGNSS {
+func utcStandardToGNSS(u bin.UTCStandard) *gpsmsg.MajorGNSS {
 	g := gpsmsg.GPS
 	switch u {
-	case ubx.UTCStandardUSNO:
+	case bin.UTCStandardUSNO:
 		g = gpsmsg.GPS
-	case ubx.UTCStandardSU:
+	case bin.UTCStandardSU:
 		g = gpsmsg.GLONASS
-	case ubx.UTCStandardNTSC:
+	case bin.UTCStandardNTSC:
 		g = gpsmsg.BeiDou
-	case ubx.UTCStandardEU:
+	case bin.UTCStandardEU:
 		g = gpsmsg.Galileo
 	default:
 		return nil
@@ -68,23 +68,23 @@ func utcStandardToGNSS(u ubx.UTCStandard) *gpsmsg.MajorGNSS {
 	return &g
 }
 
-func timeTimTP(m *ubx.TimTP) *gpsmsg.Time {
+func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
 	t := gpsmsg.Time{PrecedesPulse: true}
 	t.TAITime = ptime.GPS(int16(m.Week), m.TOWMS, scaledMSToNS(m.TOWSubMS))
 	t.PulseOffset = ptime.Picoseconds(m.QErr)
-	if m.Flags&ubx.TimTPTimeBase == ubx.TimTPTimeBaseUTC {
+	if m.Flags&bin.TimTPTimeBase == bin.TimTPTimeBaseUTC {
 		t.GNSS = utcStandardToGNSS(m.RefInfo.UTCStandard())
 	} else {
 		var g gpsmsg.MajorGNSS
 		t.GNSS = &g
-		switch m.RefInfo & ubx.TimTPTimeRefGNSS {
-		case ubx.TimTPTimeRefGPS:
+		switch m.RefInfo & bin.TimTPTimeRefGNSS {
+		case bin.TimTPTimeRefGPS:
 			g = gpsmsg.GPS
-		case ubx.TimTPTimeRefGLONASS:
+		case bin.TimTPTimeRefGLONASS:
 			g = gpsmsg.GLONASS
-		case ubx.TimTPTimeRefBeiDou:
+		case bin.TimTPTimeRefBeiDou:
 			g = gpsmsg.BeiDou
-		case ubx.TimTPTimeRefGalileo:
+		case bin.TimTPTimeRefGalileo:
 			g = gpsmsg.Galileo
 		default:
 			t.GNSS = nil

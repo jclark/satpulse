@@ -1,21 +1,21 @@
-package ubxmsg
+package ubx
 
 import (
-	"github.com/jclark/gps2phc/internal/ubx"
+	"github.com/jclark/gps2phc/internal/ubx/bin"
 )
 
 type Message struct {
-	um ubx.Msg
+	um bin.Msg
 }
 
 func Parse(frame string) (*Message, error) {
-	um, err := ubx.ParseMsg(frame)
+	um, err := bin.ParseMsg(frame)
 	if err != nil {
 		return nil, err
 	}
 	return &Message{um}, nil
 }
 
-func (m *Message) UBX() ubx.Msg {
+func (m *Message) UBX() bin.Msg {
 	return m.um
 }

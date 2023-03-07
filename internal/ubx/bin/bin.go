@@ -1,4 +1,4 @@
-package ubx
+package bin
 
 import (
 	"bytes"

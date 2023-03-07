@@ -1,10 +1,10 @@
-package ubxmsg
+package ubx
 
 import (
 	"time"
 
 	"github.com/jclark/gps2phc/internal/ptime"
-	"github.com/jclark/gps2phc/internal/ubx"
+	"github.com/jclark/gps2phc/internal/ubx/bin"
 )
 
 type LeapSecond struct {
@@ -12,7 +12,7 @@ type LeapSecond struct {
 }
 
 func (m *Message) LeapSecond() *LeapSecond {
-	u, ok := m.um.(*ubx.NavTimeLS)
+	u, ok := m.um.(*bin.NavTimeLS)
 	if !ok {
 		return nil
 	}
@@ -24,16 +24,16 @@ func (m *Message) LeapSecond() *LeapSecond {
 	return &ls
 }
 
-func leapSecondDate(tls *ubx.NavTimeLS) time.Time {
+func leapSecondDate(tls *bin.NavTimeLS) time.Time {
 	z := time.Time{}
-	if (tls.Valid & ubx.NavTimeLSValidTimeToLSEvent) == 0 {
+	if (tls.Valid & bin.NavTimeLSValidTimeToLSEvent) == 0 {
 		return z
 	}
 	wd := tls.DateOfLSGPSDN
 	switch tls.SrcOfLSChange {
-	case ubx.NavTimeLSSrcOfLSChangeBeiDou:
+	case bin.NavTimeLSSrcOfLSChangeBeiDou:
 		// BeiDou DN is 0-based
-	case ubx.NavTimeLSSrcOfLSChangeGPS, ubx.NavTimeLSSrcOfLSChangeGalileo:
+	case bin.NavTimeLSSrcOfLSChangeGPS, bin.NavTimeLSSrcOfLSChangeGalileo:
 		// GPS and Galileo DN is 1-based
 		wd--
 	default:

@@ -10,7 +10,7 @@ import (
 	"github.com/jclark/gps2phc/internal/scan"
 	"github.com/jclark/gps2phc/internal/serio"
 	"github.com/jclark/gps2phc/internal/ubx"
-	"github.com/jclark/gps2phc/internal/ubxmsg"
+	ubxbin "github.com/jclark/gps2phc/internal/ubx/bin"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slog"
 )
@@ -23,29 +23,29 @@ type gpsReceived struct {
 	invalidByteCount int
 	nmeaSentences    map[string]map[string]bool
 	rtcmMsgs         map[uint16]bool
-	tmode2           *ubx.CfgTmode2
-	tmode3           *ubx.CfgTmode3
-	tp5              *ubx.CfgTp5
-	gnss             *ubx.CfgGNSS
-	leapSecond       *ubxmsg.LeapSecond
-	version          *ubxmsg.Version
-	ack              map[ubx.MsgID]bool
+	tmode2           *ubxbin.CfgTmode2
+	tmode3           *ubxbin.CfgTmode3
+	tp5              *ubxbin.CfgTp5
+	gnss             *ubxbin.CfgGNSS
+	leapSecond       *ubx.LeapSecond
+	version          *ubx.Version
+	ack              map[ubxbin.MsgID]bool
 }
 
 func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort) (err error) {
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
-		ubx.Poll(ubx.MonVerID),
-		ubx.Poll(ubx.CfgGNSSID),
-		ubx.Poll(ubx.CfgTmode2ID),
-		ubx.Poll(ubx.CfgTmode3ID),
-		ubx.Poll(ubx.CfgTp5ID),
-		ubx.Poll(ubx.TimSvinID),
-		ubx.Poll(ubx.NavSvinID),
-		ubx.Poll(ubx.NavTimeLSID),
-		ubx.SetRate(ubx.NavTimeGPSID, 1),
-		ubx.SetRate(ubx.TimTPID, 1),
+		ubxbin.Poll(ubxbin.MonVerID),
+		ubxbin.Poll(ubxbin.CfgGNSSID),
+		ubxbin.Poll(ubxbin.CfgTmode2ID),
+		ubxbin.Poll(ubxbin.CfgTmode3ID),
+		ubxbin.Poll(ubxbin.CfgTp5ID),
+		ubxbin.Poll(ubxbin.TimSvinID),
+		ubxbin.Poll(ubxbin.NavSvinID),
+		ubxbin.Poll(ubxbin.NavTimeLSID),
+		ubxbin.SetRate(ubxbin.NavTimeGPSID, 1),
+		ubxbin.SetRate(ubxbin.TimTPID, 1),
 	}
 	writeRespCh := serio.WriteAsync(ctx, port, configMsgs)
 	timerCh := time.After(time.Second * 2)
@@ -92,7 +92,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		}
 		return
 	}
-	gnssEnabled := []ubx.GNSSID{}
+	gnssEnabled := []ubxbin.GNSSID{}
 	if gr.gnss != nil {
 		for _, b := range gr.gnss.Blocks {
 			if b.Enable != 0 {
@@ -124,7 +124,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 
 func (gr *gpsReceived) init() {
 	gr.nmeaSentences = map[string]map[string]bool{}
-	gr.ack = map[ubx.MsgID]bool{}
+	gr.ack = map[ubxbin.MsgID]bool{}
 }
 
 func (gr *gpsReceived) frame(kind scan.FrameKind, data string, lg *slog.Logger) {
@@ -141,7 +141,7 @@ func (gr *gpsReceived) frame(kind scan.FrameKind, data string, lg *slog.Logger) 
 }
 
 func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
-	um, err := ubxmsg.Parse(data)
+	um, err := ubx.Parse(data)
 	if err != nil {
 		lg.Error("ubxParseError", err)
 		gr.invalidMsgCount++
@@ -158,19 +158,19 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 		gr.version = ver
 	}
 	switch parsed := u.(type) {
-	case *ubx.CfgTmode2:
+	case *ubxbin.CfgTmode2:
 		gr.tmode2 = parsed
-	case *ubx.CfgTmode3:
+	case *ubxbin.CfgTmode3:
 		gr.tmode3 = parsed
-	case *ubx.CfgTp5:
+	case *ubxbin.CfgTp5:
 		gr.tp5 = parsed
-	case *ubx.CfgGNSS:
+	case *ubxbin.CfgGNSS:
 		gr.gnss = parsed
-	case *ubx.AckAck:
+	case *ubxbin.AckAck:
 		gr.ack[parsed.MsgID] = true
-	case *ubx.AckNak:
+	case *ubxbin.AckNak:
 		gr.ack[parsed.MsgID] = false
-	case *ubx.CfgMsg:
+	case *ubxbin.CfgMsg:
 		lg.Debug("ubxRate", "id", parsed.MsgID, "rate", parsed.Rate)
 	default:
 		lg.Debug("ubx", "id", u.ID().String(), "payload", u)

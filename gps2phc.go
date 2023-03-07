@@ -19,7 +19,7 @@ import (
 	"github.com/jclark/gps2phc/internal/scan"
 	"github.com/jclark/gps2phc/internal/serio"
 	"github.com/jclark/gps2phc/internal/tsync"
-	"github.com/jclark/gps2phc/internal/ubxmsg"
+	"github.com/jclark/gps2phc/internal/ubx"
 
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/exp/slog"
@@ -323,7 +323,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, f 
 		nmeaLog(lg, m)
 		mt = m.Time()
 	case scan.UBX:
-		m, err := ubxmsg.Parse(f.Data)
+		m, err := ubx.Parse(f.Data)
 		if err != nil {
 			lg.Error("ubxParseError", err)
 			break

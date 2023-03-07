@@ -1,11 +1,11 @@
-package ubxmsg
+package ubx
 
 import (
 	"fmt"
 	"regexp"
 	"strconv"
 
-	"github.com/jclark/gps2phc/internal/ubx"
+	"github.com/jclark/gps2phc/internal/ubx/bin"
 )
 
 type Version struct {
@@ -19,7 +19,7 @@ type ProtVer struct {
 }
 
 func (m *Message) Version() *Version {
-	parsed, ok := m.um.(*ubx.MonVer)
+	parsed, ok := m.um.(*bin.MonVer)
 	if !ok {
 		return nil
 	}
@@ -49,7 +49,7 @@ func (v ProtVer) String() string {
 
 var protVerRegexp = regexp.MustCompile(`^PROTVER[= ]([1-9][0-9]?)\.([0-9][0-9])$`)
 
-func protVer(m *ubx.MonVer) ProtVer {
+func protVer(m *bin.MonVer) ProtVer {
 	submatches := findExtension(m, protVerRegexp)
 	if submatches == nil {
 		return ProtVer{}
@@ -65,7 +65,7 @@ func mustAtob(s string) byte {
 	return byte(n)
 }
 
-func findExtension(m *ubx.MonVer, re *regexp.Regexp) []string {
+func findExtension(m *bin.MonVer, re *regexp.Regexp) []string {
 	for _, buf := range m.Extension {
 		submatches := re.FindStringSubmatch(Latin1ZToString(buf[:]))
 		if submatches != nil {
