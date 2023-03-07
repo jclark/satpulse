@@ -19,7 +19,7 @@ const _MajorGNSS_name = "GPSGLONASSBeiDouGalileo"
 var _MajorGNSS_index = [...]uint8{0, 3, 10, 16, 23}
 
 func (i MajorGNSS) String() string {
-	if i >= MajorGNSS(len(_MajorGNSS_index)-1) {
+	if i < 0 || i >= MajorGNSS(len(_MajorGNSS_index)-1) {
 		return "MajorGNSS(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
 	return _MajorGNSS_name[_MajorGNSS_index[i]:_MajorGNSS_index[i+1]]

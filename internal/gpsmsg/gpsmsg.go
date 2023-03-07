@@ -11,7 +11,7 @@ type Message interface {
 }
 
 //go:generate stringer -type=MajorGNSS
-type MajorGNSS uint8
+type MajorGNSS int
 
 const (
 	GPS MajorGNSS = iota
