@@ -37,11 +37,11 @@ func (m *Message) Version() *Version {
 	}
 	x := make([]string, len(parsed.Extension))
 	for i := range parsed.Extension {
-		x[i] = Latin1ZToString(parsed.Extension[i][:])
+		x[i] = bin.Latin1ZToString(parsed.Extension[i][:])
 	}
 	v := &Version{
-		HW:         Latin1ZToString(parsed.HwVersion[:]),
-		SW:         Latin1ZToString(parsed.SwVersion[:]),
+		HW:         bin.Latin1ZToString(parsed.HwVersion[:]),
+		SW:         bin.Latin1ZToString(parsed.SwVersion[:]),
 		Extensions: x,
 		FW:         findFWVer(x),
 		Prot:       findProtVer(x),
@@ -50,19 +50,6 @@ func (m *Message) Version() *Version {
 	}
 	v.Flash = findFlash(v.SW, x)
 	return v
-}
-
-// Latin1ZString create a string from a ISO Latin-1, nul-terminated byte slice.
-// This can be used for the fields of MonVer
-func Latin1ZToString(chars []byte) string {
-	r := make([]rune, 0)
-	for _, ch := range chars {
-		if ch == 0 {
-			break
-		}
-		r = append(r, rune(ch))
-	}
-	return string(r)
 }
 
 func (pv ProtVer) String() string {

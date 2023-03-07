@@ -757,3 +757,16 @@ func checksum[B Bytes](bytes B) (ckA, ckB byte) {
 	}
 	return
 }
+
+// Latin1ZString create a string from a ISO Latin-1, nul-terminated byte slice.
+// This can be used for the fields of MonVer
+func Latin1ZToString(chars []byte) string {
+	r := make([]rune, 0)
+	for _, ch := range chars {
+		if ch == 0 {
+			break
+		}
+		r = append(r, rune(ch))
+	}
+	return string(r)
+}
