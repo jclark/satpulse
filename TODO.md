@@ -42,7 +42,6 @@
 * Use
   * for grandmaster settings utc-offset, leap59, leap61
   * with messages that report time in GMT
-* Move into gpsmsg layer
 * Leap second data model:
    * date of last scheduled leap second (either in the past or up to 6 months in the future)
    * UTC offset before that

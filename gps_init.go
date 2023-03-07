@@ -7,10 +7,10 @@ import (
 
 	"github.com/jclark/gps2phc/internal/logctx"
 	"github.com/jclark/gps2phc/internal/nmea"
-	"github.com/jclark/gps2phc/internal/ptime"
 	"github.com/jclark/gps2phc/internal/scan"
 	"github.com/jclark/gps2phc/internal/serio"
 	"github.com/jclark/gps2phc/internal/ubx"
+	"github.com/jclark/gps2phc/internal/ubxmsg"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slog"
 )
@@ -28,7 +28,7 @@ type gpsReceived struct {
 	tmode3           *ubx.CfgTmode3
 	tp5              *ubx.CfgTp5
 	gnss             *ubx.CfgGNSS
-	timeLS           *ubx.NavTimeLS
+	leapSecond       *ubxmsg.LeapSecond
 	ack              map[ubx.MsgID]bool
 }
 
@@ -101,11 +101,8 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		}
 	}
 	var lsdStr string
-	if gr.timeLS != nil {
-		lsd := leapSecondDate(gr.timeLS)
-		if !lsd.IsZero() {
-			lsdStr = lsd.Format("2006-01-02")
-		}
+	if gr.leapSecond != nil {
+		lsdStr = gr.leapSecond.Date.Format("2006-01-02")
 	}
 	var tmode any = nil
 	if gr.tmode2 != nil {
@@ -113,7 +110,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	} else if gr.tmode3 != nil {
 		tmode = gr.tmode3
 	}
-	lg.Debug("gpsInitDone",
+	lg.Info("gpsInitDone",
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
 		"protVer", gr.protVer,
 		"ack", gr.ack,
@@ -121,44 +118,6 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		"tmode", tmode,
 		"leapSecDate", lsdStr)
 	return
-}
-
-func leapSecondDate(tls *ubx.NavTimeLS) time.Time {
-	z := time.Time{}
-	if (tls.Valid & ubx.NavTimeLSValidTimeToLSEvent) == 0 {
-		return z
-	}
-	wd := tls.DateOfLSGPSDN
-	switch tls.SrcOfLSChange {
-	case ubx.NavTimeLSSrcOfLSChangeBeiDou:
-		// BeiDou DN is 0-based
-	case ubx.NavTimeLSSrcOfLSChangeGPS, ubx.NavTimeLSSrcOfLSChangeGalileo:
-		// GPS and Galileo DN is 1-based
-		wd--
-	default:
-		// No info about meaning of DN for other cases cases
-		return z
-	}
-	t := ptime.GPSDate(tls.DateOfLSGPSWN, time.Weekday(wd))
-	if isLastDayOfQuarter(t) {
-		return t
-	}
-	if tls.LSChange == 0 {
-		// This is a past change.
-		// GPS transmits only the bottom 8-bits of the week number of the leap second
-		// So a past leap second can be off by a multiple of 256 weeks.
-		for i := 1; i <= 2; i++ {
-			t = t.AddDate(0, 0, -7*0x100)
-			if isLastDayOfQuarter(t) {
-				return t
-			}
-		}
-	}
-	return z
-}
-
-func isLastDayOfQuarter(t time.Time) bool {
-	return t.AddDate(0, 0, 1).Day() == 1 && t.Month()%3 == 0
 }
 
 func (gr *gpsReceived) init() {
@@ -180,33 +139,36 @@ func (gr *gpsReceived) frame(kind scan.FrameKind, data string, lg *slog.Logger) 
 }
 
 func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
-	u, err := ubx.ParseMsg(data)
+	um, err := ubxmsg.Parse(data)
 	if err != nil {
 		lg.Error("ubxParseError", err)
 		gr.invalidMsgCount++
 		return
 	}
 	gr.ubxMsgCount++
-	switch data := u.(type) {
+	u := um.UBX()
+	ls := um.LeapSecond()
+	if ls != nil {
+		gr.leapSecond = ls
+	}
+	switch parsed := u.(type) {
 	case *ubx.MonVer:
-		gr.protVer = data.ProtVer()
-		lg.Info("gpsVersion", "sw", ubx.Latin1ZToString(data.SwVersion[:]), "hw", ubx.Latin1ZToString(data.HwVersion[:]), "protVer", gr.protVer)
+		gr.protVer = parsed.ProtVer()
+		lg.Info("gpsVersion", "sw", ubx.Latin1ZToString(parsed.SwVersion[:]), "hw", ubx.Latin1ZToString(parsed.HwVersion[:]), "protVer", gr.protVer)
 	case *ubx.CfgTmode2:
-		gr.tmode2 = data
+		gr.tmode2 = parsed
 	case *ubx.CfgTmode3:
-		gr.tmode3 = data
+		gr.tmode3 = parsed
 	case *ubx.CfgTp5:
-		gr.tp5 = data
+		gr.tp5 = parsed
 	case *ubx.CfgGNSS:
-		gr.gnss = data
-	case *ubx.NavTimeLS:
-		gr.timeLS = data
+		gr.gnss = parsed
 	case *ubx.AckAck:
-		gr.ack[data.MsgID] = true
+		gr.ack[parsed.MsgID] = true
 	case *ubx.AckNak:
-		gr.ack[data.MsgID] = false
+		gr.ack[parsed.MsgID] = false
 	case *ubx.CfgMsg:
-		lg.Debug("ubxRate", "id", data.MsgID, "rate", data.Rate)
+		lg.Debug("ubxRate", "id", parsed.MsgID, "rate", parsed.Rate)
 	default:
 		lg.Debug("ubx", "id", u.ID().String(), "payload", u)
 	}
