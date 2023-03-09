@@ -13,15 +13,6 @@ type marshalTestCase struct {
 	bytes  []byte
 }
 
-var schema = Schema{map[string]map[string]Desc{
-	"TMODE": {
-		"MODE":   E(0x20030001, "DISABLED", "SURVEY_IN", "FIXED"),
-		"ECEF_X": I(0x40030003),
-		"ECEF_Y": I(0x40030004),
-		"ECEF_Z": I(0x40030005),
-	},
-}}
-
 var marshalTestCases = []marshalTestCase{
 	{schema, map[string]map[string]any{"TMODE": {"MODE": "FIXED"}}, []byte{0x01, 0x00, 0x03, 0x20, 0x02}},
 }

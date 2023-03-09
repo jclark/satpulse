@@ -12,6 +12,8 @@ require (
 	github.com/mdlayher/netlink v1.7.1
 )
 
+require gopkg.in/yaml.v3 v3.0.1 // indirect
+
 require (
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/josharian/native v1.0.0 // indirect

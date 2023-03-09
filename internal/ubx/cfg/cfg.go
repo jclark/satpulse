@@ -1,5 +1,7 @@
 package cfg
 
+//go:generate go run mkschema.go
+
 import (
 	"encoding/binary"
 	"fmt"
