@@ -25,7 +25,7 @@
                 },
                 "unit": {
                     "type": "string",
-                    "enum": ["s", "%", "mm", "cm", "deg", "Hz"]
+                    "enum": ["s", "%", "mm", "cm", "deg", "Hz", "mV"]
                 },
                 "scale": {
                     "type": "number"

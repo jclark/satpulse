@@ -565,3 +565,108 @@ RATE:
       GAL:
         value: 4
         description: Align measurements to Galileo time
+HW:
+  ANT_CFG_VOLTCTRL:
+    key: 0x10a3002e
+    type: L
+    description: Active antenna voltage control ﬂag
+    note: Enable active antenna voltage control ﬂag. Used by EXT and MADC engines.
+  ANT_CFG_SHORTDET:
+    key: 0x10a3002f
+    type: L
+    description: Short antenna detection ﬂag
+    note: Enable short antenna detection ﬂag. Used by EXT and MADC engines.
+  ANT_CFG_SHORTDET_POL:
+    key: 0x10a30030
+    type: L
+    description: Short antenna detection polarity
+    note: Set to true if polarity of the antenna short detection is active low. Used by EXT engine.
+  ANT_CFG_OPENDET:
+    key: 0x10a30031
+    type: L
+    description: Open antenna detection ﬂag
+    note: Enable open antenna detection ﬂag. Used by EXT and MADC engines.
+  ANT_CFG_OPENDET_POL:
+    key: 0x10a30032
+    type: L
+    description: Open antenna detection polarity
+    note: Set to true if polarity of the antenna open detection is active low. Used by EXT engine.
+  ANT_CFG_PWRDOWN:
+    key: 0x10a30033
+    type: L
+    description: Power down antenna ﬂag
+    note: >
+      Enable power down antenna logic in the event of antenna short circuit. CFG-HW-ANT_CFG_SHORTDET must be enabled
+      to use this feature. Used by EXT and MADC engines.
+  ANT_CFG_PWRDOWN_POL:
+    key: 0x10a30034
+    type: L
+    description: Power down antenna logic polarity
+    note: Set to true if polarity of the antenna power down logic is active high. Used by EXT and MADC engines.
+  ANT_CFG_RECOVER:
+    key: 0x10a30035
+    type: L
+    description: Automatic recovery from short state ﬂag
+    note: Enable automatic recovery from short state. Used by EXT and MADC engines.
+  ANT_SUP_SWITCH_PIN:
+    key: 0x20a30036
+    type: U1
+    description: ANT1 PIO number
+    note: Antenna Switch (ANT1) PIO number. Used by EXT and MADC engines.
+  ANT_SUP_SHORT_PIN:
+    key: 0x20a30037
+    type: U1
+    description: ANT0 PIO number
+    note: Antenna Short (ANT0) PIO number. Used by EXT engine.
+  ANT_SUP_OPEN_PIN:
+    key: 0x20a30038
+    type: U1
+    description: ANT2 PIO number
+    note: Antenna Switch (ANT2) PIO number. Used by EXT engine.
+  ANT_SUP_ENGINE:
+    key: 0x20a30054
+    type: E1
+    description: Antenna supervisor engine selection
+    note: >
+      Select the engine used to evaluate antenna state.
+      The EXT engine uses an external comparator for current measurement. The MADC engine uses built-in measurement
+      ADC and requires only a shunt resistor for current measurement. The MADC engine is available in u-blox generation 9
+      receivers.
+    constants:
+      EXT: 
+        value: 0
+        description: Use the EXT engine.
+      MADC: 
+        value: 1
+        description: Use the MADC engine.
+  ANT_SUP_SHORT_THR:
+    key: 0x20a30055
+    type: U1
+    unit: mV
+    description: Antenna supervisor MADC engine short detection threshold
+    note: >
+      Threshold above which antenna short is detected. Used by MADC engine.
+  ANT_SUP_OPEN_THR:
+    key: 0x20a30056
+    type: U1
+    unit: mV
+    description: Antenna supervisor MADC engine open detection threshold
+    note: Threshold below which antenna open/disconnected is detected. Used by MADC engine.
+  RF_LNA_MODE:
+    key: 0x20a30057
+    type: E1
+    description: Mode for internal LNA
+    note: >
+      Sets the operating mode for the RF LNA (all RFs). Lowgain or bypass options can be used if there is already a external
+      LNA in front of the chip with suﬃcient gain.
+    constants:
+      NORMAL:
+        value: 0
+        description: Normal operation, internal LNA enabled at full gain
+      LOWGAIN:
+        value: 1
+        description: LNA enabled in low gain mode
+      BYPASS:
+        value: 2
+        description: Bypass LNA
+

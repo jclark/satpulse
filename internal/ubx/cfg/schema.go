@@ -1,6 +1,23 @@
 package cfg
 
 var schema = Schema{map[string]map[string]Desc{
+	"HW": {
+		"ANT_CFG_OPENDET":      L(0x10a30031),
+		"ANT_CFG_OPENDET_POL":  L(0x10a30032),
+		"ANT_CFG_PWRDOWN":      L(0x10a30033),
+		"ANT_CFG_PWRDOWN_POL":  L(0x10a30034),
+		"ANT_CFG_RECOVER":      L(0x10a30035),
+		"ANT_CFG_SHORTDET":     L(0x10a3002f),
+		"ANT_CFG_SHORTDET_POL": L(0x10a30030),
+		"ANT_CFG_VOLTCTRL":     L(0x10a3002e),
+		"ANT_SUP_ENGINE":       E(0x20a30054, "EXT", "MADC"),
+		"ANT_SUP_OPEN_PIN":     U(0x20a30038),
+		"ANT_SUP_OPEN_THR":     U(0x20a30056),
+		"ANT_SUP_SHORT_PIN":    U(0x20a30037),
+		"ANT_SUP_SHORT_THR":    U(0x20a30055),
+		"ANT_SUP_SWITCH_PIN":   U(0x20a30036),
+		"RF_LNA_MODE":          E(0x20a30057, "NORMAL", "LOWGAIN", "BYPASS"),
+	},
 	"RATE": {
 		"MEAS":    U(0x30210001),
 		"NAV":     U(0x30210002),
