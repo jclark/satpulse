@@ -404,59 +404,164 @@ TP:
         value: 4
         description: Galileo time reference
 SIGNAL:
-    GPS_ENA:
-      key: 0x1031001f
-      type:  L
-      description: GPS enable
-    GPS_L1CA_ENA:
-      key: 0x10310001
-      type:  L
-      description: GPS L1C/A
-    SBAS_ENA:
-      key: 0x10310020
-      type:  L
-      description: SBAS enable
-    SBAS_L1CA_ENA:
-      key: 0x10310005
-      type:  L
-      description: SBAS L1C/A
-    GAL_ENA:
-      key: 0x10310021
-      type:  L
-      description: Galileo enable
-    GAL_E1_ENA:
-      key: 0x10310007
-      type:  L
-      description: Galileo E1
-    BDS_ENA:
-      key: 0x10310022
-      type:  L
-      description: BeiDou Enable
-    BDS_B1_ENA:
-      key: 0x1031000d
-      type:  L
-      description: BeiDou B1I
-    BDS_B1C_ENA:
-      key: 0x1031000f
-      type:  L
-      description: BeiDou B1C
-    QZSS_ENA:
-      key: 0x10310024
-      type:  L
-      description: QZSS enable
-    QZSS_L1CA_ENA:
-      key: 0x10310012
-      type:  L
-      description: QZSS L1C/A
-    QZSS_L1S_ENA:
-      key: 0x10310014
-      type:  L
-      description: QZSS L1S
-    GLO_ENA:
-      key: 0x10310025
-      type:  L
-      description: GLONASS enable
-    GLO_L1_ENA:
-      key: 0x10310018
-      type:  L
-      description: GLONASS L1
+  GPS_ENA:
+    key: 0x1031001f
+    type:  L
+    description: GPS enable
+  GPS_L1CA_ENA:
+    key: 0x10310001
+    type:  L
+    description: GPS L1C/A
+  SBAS_ENA:
+    key: 0x10310020
+    type:  L
+    description: SBAS enable
+  SBAS_L1CA_ENA:
+    key: 0x10310005
+    type:  L
+    description: SBAS L1C/A
+  GAL_ENA:
+    key: 0x10310021
+    type:  L
+    description: Galileo enable
+  GAL_E1_ENA:
+    key: 0x10310007
+    type:  L
+    description: Galileo E1
+  BDS_ENA:
+    key: 0x10310022
+    type:  L
+    description: BeiDou Enable
+  BDS_B1_ENA:
+    key: 0x1031000d
+    type:  L
+    description: BeiDou B1I
+  BDS_B1C_ENA:
+    key: 0x1031000f
+    type:  L
+    description: BeiDou B1C
+  QZSS_ENA:
+    key: 0x10310024
+    type:  L
+    description: QZSS enable
+  QZSS_L1CA_ENA:
+    key: 0x10310012
+    type:  L
+    description: QZSS L1C/A
+  QZSS_L1S_ENA:
+    key: 0x10310014
+    type:  L
+    description: QZSS L1S
+  GLO_ENA:
+    key: 0x10310025
+    type:  L
+    description: GLONASS enable
+  GLO_L1_ENA:
+    key: 0x10310018
+    type:  L
+    description: GLONASS L1
+UART1:
+  BAUDRATE:
+    key: 0x40520001
+    type: U4
+    description: The baud rate that should be conﬁgured on the UART1
+  STOPBITS:
+    key: 0x20520002
+    type: E1
+    description: Number of stopbits that should be used on UART1
+    values:
+      HALF:
+        value: 0
+        description: 0.5 stopbits
+      ONE:
+        value: 1
+        description: 1.0 stopbits
+      ONEHALF:
+        value: 2
+        description: 1.5 stopbits
+      TWO:
+        value: 3
+        description: 2.0 stopbits
+  DATABITS:
+    key: 0x20520003
+    type: E1
+    description: Number of databits that should be used on UART1
+    values:
+      EIGHT:
+        value: 0
+        description: 8 databits
+      SEVEN:
+        value: 1
+        description: 7 databits
+  PARITY:
+    key: 0x20520004
+    type: E1
+    description: Parity mode that should be used on UART1
+    values:
+      NONE:
+        value: 0
+        description: No parity bit
+      ODD:
+        value: 1
+        description: Add an odd parity bit
+      EVEN:
+        value: 2
+        description: Add an even parity bit
+  ENABLED:
+    key: 0x10520005
+    type: L
+    description: Flag to indicate if the UART1 should be enabled
+UART1INPROT:
+  UBX:
+    key: 0x10730001
+    type: L
+    description: Flag to indicate if UBX should be an input protocol on UART1
+  NMEA:
+    key: 0x10730002
+    type: L
+    description: Flag to indicate if NMEA should be an input protocol on UART1
+UART1OUTPROT:
+  UBX:
+    key: 0x10740001
+    type: L
+    description: Flag to indicate if UBX should be an output protocol on UART1
+  NMEA:
+    key: 0x10740002
+    type: L
+    description: Flag to indicate if NMEA should be an output protocol on UART1
+RATE:
+  MEAS:
+    key: 0x30210001
+    type: U2
+    scale: 0.001
+    unit: s
+    description: Nominal time between GNSS measurements
+    note: E.g. 100 ms results in 10 Hz measurement rate, 1000 ms = 1 Hz measurement rate.
+    min: 25
+  NAV:
+    key: 0x30210002
+    type: U2
+    description: Ratio of number of measurements to number of navigation solutions
+    note: E.g. 5 means ﬁve measurements for every navigation solution.
+    min: 1
+    max: 127
+  TIMEREF:
+    key: 0x20210003
+    type: E1
+    description: Time system to which measurements are aligned
+    values:
+      UTC:
+        value: 0
+        description: Align measurements to UTC time
+      GPS:
+        value: 1
+        description: Align measurements to GPS time
+      GLO:
+        value: 2
+        description: Align measurements to GLONASS time
+      BDS:
+        value: 3
+        description: Align measurements to BeiDou time
+      GAL:
+        value: 4
+        description: Align measurements to Galileo time
