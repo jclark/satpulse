@@ -5,7 +5,7 @@ TMODE:
     key: 0x20030001
     type: E1
     description: Receiver mode
-    values:
+    constants:
       DISABLED:
         value: 0
         description: Disabled
@@ -19,7 +19,7 @@ TMODE:
     key: 0x20030002
     type: E1
     description: Determines whether the ARP position is given in ECEF or LAT/LON/HEIGHT.
-    values:
+    constants:
       ECEF:
         value: 0
         description: Position is ECEF
@@ -143,7 +143,7 @@ TP:
     key: 0x20050023
     type: E1
     description: Determines whether the time pulse is interpreted as frequenc or period
-    values:
+    constants:
       PERIOD:
         value: 0
         description: Time pulse period [us]
@@ -154,7 +154,7 @@ TP:
     key: 0x20050030
     type: E1
     description: Determines whether the time pulse length is interpreted as length[us] or pulse ratio[%]?
-    values:
+    constants:
       RATIO: 
         value: 0 
         description: Time pulse ratio
@@ -270,7 +270,7 @@ TP:
       receiver has a valid GNSS fix it will attempt to steer the TP to the specified time grid even if the
       specified time is not based on information from the constellation's satellites. To ensure timing
       based purely on a given GNSS, restrict the supported constellations in CFG-SIGNAL-*.
-    values:
+    constants:
       UTC:
         value: 0
         description: UTC time reference
@@ -387,7 +387,7 @@ TP:
       receiver has a valid GNSS fix it will attempt to steer the TP to the specified time grid even if the
       specified time is not based on information from the constellation's satellites. To ensure timing
       based purely on a given GNSS, restrict the supported constellations in UBX-CFG-GNSS. 
-    values:
+    constants:
       UTC:
         value: 0
         description: UTC time reference
@@ -469,7 +469,7 @@ UART1:
     key: 0x20520002
     type: E1
     description: Number of stopbits that should be used on UART1
-    values:
+    constants:
       HALF:
         value: 0
         description: 0.5 stopbits
@@ -486,7 +486,7 @@ UART1:
     key: 0x20520003
     type: E1
     description: Number of databits that should be used on UART1
-    values:
+    constants:
       EIGHT:
         value: 0
         description: 8 databits
@@ -497,7 +497,7 @@ UART1:
     key: 0x20520004
     type: E1
     description: Parity mode that should be used on UART1
-    values:
+    constants:
       NONE:
         value: 0
         description: No parity bit
@@ -549,7 +549,7 @@ RATE:
     key: 0x20210003
     type: E1
     description: Time system to which measurements are aligned
-    values:
+    constants:
       UTC:
         value: 0
         description: Align measurements to UTC time

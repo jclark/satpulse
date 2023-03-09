@@ -39,7 +39,7 @@
                 "max": {
                     "type": "number"
                 },
-                "values": {
+                "constants": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "object",
