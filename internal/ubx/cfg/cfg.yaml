@@ -669,4 +669,464 @@ HW:
       BYPASS:
         value: 2
         description: Bypass LNA
-
+NAVSPG:
+  FIXMODE:
+    key: 0x20110011
+    type: E1
+    description: Position ﬁx mode
+    constants:
+      2DONLY:
+        value: 1
+        description: 2D only
+      3DONLY:
+        value: 2
+        description: 3D only
+      AUTO:
+        value: 3
+        description: Auto 2D/3D
+  INIFIX3D:
+    key: 0x10110013
+    type: L
+    description: Initial ﬁx must be a 3D ﬁx
+  WKNROLLOVER:
+    key: 0x30110017
+    type: U2
+    description: GPS week rollover number
+    note: GPS week numbers will be set correctly from this week up to 1024 weeks after this week.
+    min: 1
+    max: 4096
+  UTCSTANDARD:
+    key: 0x2011001c
+    type: E1
+    description: UTC standard to be used
+    notes: See section GNSS time base in the integration manual.
+    constants:
+      AUTO:
+        value: 0
+        description: Automatic; receiver selects based on GNSS conﬁguration
+      USNO:
+        value: 3
+        description: UTC as operated by the U.S. Naval Observatory (USNO); derived from GPS time
+      EU:
+        value: 5
+        description: UTC as combined from multiple European laboratories; derived from Galileo time
+      SU:
+        value: 6
+        description: UTC as operated by the former Soviet Union (SU); derived from GLONASS time
+      NTSC:
+        value: 7
+        description: UTC as operated by the National Time Service Center (NTSC), China; derived from BeiDou time
+      NPLI:
+        value: 8
+        description: UTC as operated by the National Physics Laboratory, India (NPLI); derived from NavIC time
+      NICT:
+        value: 9
+        description: UTC as operated by the National Institute of Information and Communications Technology, Japan (NICT); derived from QZSS time
+  DYNMODEL:
+    key: 0x20110021
+    type: E1
+    description: Dynamic platform model
+    constants:
+      PORT:
+        value: 0
+        description: Portable
+      STAT:
+        value: 2
+        description: Stationary
+      PED:
+        value: 3
+        description: Pedestrian
+      AUTOMOT:
+        value: 4
+        description: Automotive
+      SEA:
+        value: 5
+        description: Sea
+      AIR1:
+        value: 6
+        description: Airborne with <1g acceleration
+      AIR2:
+        value: 7
+        description: Airborne with <2g acceleration
+      AIR4:
+        value: 8
+        description: Airborne with <4g acceleration
+      WRIST:
+        value: 9
+        description: Wrist-worn watch (not available in all products)
+      BIKE:
+        value: 10
+        description: Motorbike (not available in all products)
+      MOWER:
+        value: 11
+        description: Robotic lawn mower (not available in all products)
+      ESCOOTER:
+        value: 12
+        description: E-scooter (not available in all products)
+  ACKAIDING:
+    key: 0x10110025
+    type: L
+    description: Acknowledge assistance input messages
+  USE_USRDAT:
+    key: 0x10110061
+    type: L
+    description: Use user geodetic datum parameters
+    note: This must be set together with all CFG-NAVSPG-USERDAT_* parameters.
+  USRDAT_MAJA:
+    key: 0x50110062
+    type: R8
+    unit: m
+    description: Geodetic datum semi-major axis
+    min: 6300000.0
+    max: 6500000.0
+    note: >
+      This will only be used if CFG-NAVSPG-USE_USERDAT is set. It must be set together with all other CFG-NAVSPG-
+      USERDAT_... parameters.
+  USRDAT_FLAT:
+    key: 0x50110063
+    type: R8
+    description: Geodetic datum 1.0 / ﬂattening
+    min: 0.0
+    max: 500.0
+    note: >
+      This will only be used if CFG-NAVSPG-USE_USERDAT is set. It must be set together with all other CFG-NAVSPG-
+      USERDAT_... parameters.
+  USRDAT_DX:
+    key: 0x40110064
+    type: R4
+    unit: m
+    description: Geodetic datum X axis shift at the origin
+    min: -5000.0
+    max: 5000.0
+    note: >
+      This will only be used if CFG-NAVSPG-USE_USERDAT is set. It must be set together with all other CFG-NAVSPG-
+      USERDAT_... parameters.
+  USRDAT_DY:
+    key: 0x40110065
+    type: R4
+    unit: m
+    description: Geodetic datum Y axis shift at the origin
+    min: -5000.0
+    max: 5000.0
+    note: >
+      This will only be used if CFG-NAVSPG-USE_USERDAT is set. It must be set together with all other CFG-NAVSPG-
+      USERDAT_... parameters.
+  USRDAT_DZ:
+    key: 0x40110066
+    type: R4
+    unit: m
+    description: Geodetic datum Z axis shift at the origin
+    min: -5000.0
+    max: 5000.0
+    note: >
+      This will only be used if CFG-NAVSPG-USE_USERDAT is set. It must be set together with all other CFG-NAVSPG-
+      USERDAT_... parameters.
+  USRDAT_ROTX:
+    key: 0x40110067
+    type: R4
+    unit: arcsec
+    description: Geodetic datum rotation about the X axis
+    min: -0.02
+    max: 0.02
+    note: >
+      This will only be used if CFG-NAVSPG-USE_USERDAT is set. It must be set together with all other CFG-NAVSPG-
+      USERDAT_... parameters.
+  USRDAT_ROTY:
+    key: 0x40110068
+    type: R4
+    unit: arcsec
+    description: Geodetic datum rotation about the Y axis
+    min: -0.02
+    max: 0.02
+    note: >
+      This will only be used if CFG-NAVSPG-USE_USERDAT is set. It must be set together with all other CFG-NAVSPG-
+      USERDAT_* parameters.
+  USRDAT_ROTZ:
+    key: 0x40110069
+    type: R4
+    unit: arcsec
+    description: Geodetic datum rotation about the Z axis
+    min: -0.02
+    max: 0.02
+    note: >
+      This will only be used if CFG-NAVSPG-USE_USERDAT is set. It must be set together with all other CFG-NAVSPG-
+      USERDAT_... parameters.
+  USRDAT_SCALE:
+    key: 0x4011006a
+    type: R4
+    unit: ppm
+    description: Geodetic datum scale factor
+    min: 0.0
+    max: 50.0
+    note: >
+      This will only be used if CFG-NAVSPG-USE_USERDAT is set. It must be set together with all other CFG-NAVSPG-
+      USERDAT_... parameters.
+  INFIL_MINSVS:
+    key: 0x201100a1
+    type: U1
+    description: Minimum number of satellites for navigation
+  INFIL_MAXSVS:
+    key: 0x201100a2
+    type: U1
+    description: Maximum number of satellites for navigation
+  INFIL_MINCNO:
+    key: 0x201100a3
+    type: U1
+    unit: dBHz
+    description: Minimum satellite signal level for navigation
+  INFIL_MINELEV:
+    key: 0x201100a4
+    type: I1
+    unit: deg
+    description: Minimum elevation for a GNSS satellite to be used in navigation
+  INFIL_NCNOTHRS:
+    key: 0x201100aa
+    type: U1
+    description: Number of satellites required to have C/N0 above CFG-NAVSPG-INFIL_CNOTHRS for a ﬁx to be attempted
+  INFIL_CNOTHRS:
+    key: 0x201100ab
+    type: U1
+    description: C/N0 threshold for deciding whether to attempt a ﬁx
+  OUTFIL_PDOP:
+    key: 0x301100b1
+    type: U2
+    scale: 0.1
+    description: Output ﬁlter position DOP mask (threshold)
+  OUTFIL_TDOP:
+    key: 0x301100b2
+    type: U2
+    scale: 0.1
+    description: Output ﬁlter time DOP mask (threshold)
+  OUTFIL_PACC:
+    key: 0x301100b3
+    type: U2
+    unit: m
+    description: Output ﬁlter position accuracy mask (threshold)
+  OUTFIL_TACC:
+    key: 0x301100b4
+    type: U2
+    unit: m
+    description: Output ﬁlter time accuracy mask (threshold)
+  OUTFIL_FACC:
+    key: 0x301100b5
+    type: U2
+    scale: 0.01
+    unit: m/s
+    description: Output ﬁlter frequency accuracy mask (threshold)
+  CONSTR_ALT:
+    key: 0x401100c1
+    type: I4
+    scale: 0.01
+    unit: m
+    description: Fixed altitude (mean sea level) for 2D ﬁx mode
+  CONSTR_ALTVAR:
+    key: 0x401100c2
+    type: U4
+    scale: 0.0001
+    unit: m^2
+    description: Fixed altitude variance for 2D mode
+  CONSTR_DGNSSTO:
+    key: 0x201100c4
+    type: U1
+    unit: s
+    description: DGNSS timeout
+  SIGATTCOMP:
+    key: 0x201100d6
+    type: E1
+    description: Permanently attenuated signal compensation mode
+    constants:
+      DIS:
+        value: 0
+        description: Disable signal attenuation compensation
+      AUTO:
+        value: 255
+        description: Automatic signal attenuation compensation
+      01DBHZ:
+        value: 1
+        description: Maximum expected C/NO level is 1 dBHz
+      02DBHZ:
+        value: 2
+        description: Maximum expected C/NO level is 2 dBHz
+      03DBHZ:
+        value: 3
+        description: Maximum expected C/NO level is 3 dBHz
+      04DBHZ:
+        value: 4
+        description: Maximum expected C/NO level is 4 dBHz
+      05DBHZ:
+        value: 5
+        description: Maximum expected C/NO level is 5 dBHz
+      06DBHZ:
+        value: 6
+        description: Maximum expected C/NO level is 6 dBHz
+      07DBHZ:
+        value: 7
+        description: Maximum expected C/NO level is 7 dBHz
+      08DBHZ:
+        value: 8
+        description: Maximum expected C/NO level is 8 dBHz
+      09DBHZ:
+        value: 9
+        description: Maximum expected C/NO level is 9 dBHz
+      10DBHZ:
+        value: 10
+        description: Maximum expected C/NO level is 10 dBHz
+      11DBHZ:
+        value: 11
+        description: Maximum expected C/NO level is 11 dBHz
+      12DBHZ:
+        value: 12
+        description: Maximum expected C/NO level is 12 dBHz
+      13DBHZ:
+        value: 13
+        description: Maximum expected C/NO level is 13 dBHz
+      14DBHZ:
+        value: 14
+        description: Maximum expected C/NO level is 14 dBHz
+      15DBHZ:
+        value: 15
+        description: Maximum expected C/NO level is 15 dBHz
+      16DBHZ:
+        value: 16
+        description: Maximum expected C/NO level is 16 dBHz
+      17DBHZ:
+        value: 17
+        description: Maximum expected C/NO level is 17 dBHz
+      18DBHZ:
+        value: 18
+        description: Maximum expected C/NO level is 18 dBHz
+      19DBHZ:
+        value: 19
+        description: Maximum expected C/NO level is 19 dBHz
+      20DBHZ:
+        value: 20
+        description: Maximum expected C/NO level is 20 dBHz
+      21DBHZ:
+        value: 21
+        description: Maximum expected C/NO level is 21 dBHz
+      22DBHZ:
+        value: 22
+        description: Maximum expected C/NO level is 22 dBHz
+      23DBHZ:
+        value: 23
+        description: Maximum expected C/NO level is 23 dBHz
+      24DBHZ:
+        value: 24
+        description: Maximum expected C/NO level is 24 dBHz
+      25DBHZ:
+        value: 25
+        description: Maximum expected C/NO level is 25 dBHz
+      26DBHZ:
+        value: 26
+        description: Maximum expected C/NO level is 26 dBHz
+      27DBHZ:
+        value: 27
+        description: Maximum expected C/NO level is 27 dBHz
+      28DBHZ:
+        value: 28
+        description: Maximum expected C/NO level is 28 dBHz
+      29DBHZ:
+        value: 29
+        description: Maximum expected C/NO level is 29 dBHz
+      30DBHZ:
+        value: 30
+        description: Maximum expected C/NO level is 30 dBHz
+      31DBHZ:
+        value: 31
+        description: Maximum expected C/NO level is 31 dBHz
+      32DBHZ:
+        value: 32
+        description: Maximum expected C/NO level is 32 dBHz
+      33DBHZ:
+        value: 33
+        description: Maximum expected C/NO level is 33 dBHz
+      34DBHZ:
+        value: 34
+        description: Maximum expected C/NO level is 34 dBHz
+      35DBHZ:
+        value: 35
+        description: Maximum expected C/NO level is 35 dBHz
+      36DBHZ:
+        value: 36
+        description: Maximum expected C/NO level is 36 dBHz
+      37DBHZ:
+        value: 37
+        description: Maximum expected C/NO level is 37 dBHz
+      38DBHZ:
+        value: 38
+        description: Maximum expected C/NO level is 38 dBHz
+      39DBHZ:
+        value: 39
+        description: Maximum expected C/NO level is 39 dBHz
+      40DBHZ:
+        value: 40
+        description: Maximum expected C/NO level is 40 dBHz
+      41DBHZ:
+        value: 41
+        description: Maximum expected C/NO level is 41 dBHz
+      42DBHZ:
+        value: 42
+        description: Maximum expected C/NO level is 42 dBHz
+      43DBHZ:
+        value: 43
+        description: Maximum expected C/NO level is 43 dBHz
+      44DBHZ:
+        value: 44
+        description: Maximum expected C/NO level is 44 dBHz
+      45DBHZ:
+        value: 45
+        description: Maximum expected C/NO level is 45 dBHz
+      46DBHZ:
+        value: 46
+        description: Maximum expected C/NO level is 46 dBHz
+      47DBHZ:
+        value: 47
+        description: Maximum expected C/NO level is 47 dBHz
+      48DBHZ:
+        value: 48
+        description: Maximum expected C/NO level is 48 dBHz
+      49DBHZ:
+        value: 49
+        description: Maximum expected C/NO level is 49 dBHz
+      50DBHZ:
+        value: 50
+        description: Maximum expected C/NO level is 50 dBHz
+      51DBHZ:
+        value: 51
+        description: Maximum expected C/NO level is 51 dBHz
+      52DBHZ:
+        value: 52
+        description: Maximum expected C/NO level is 52 dBHz
+      53DBHZ:
+        value: 53
+        description: Maximum expected C/NO level is 53 dBHz
+      54DBHZ:
+        value: 54
+        description: Maximum expected C/NO level is 54 dBHz
+      55DBHZ:
+        value: 55
+        description: Maximum expected C/NO level is 55 dBHz
+      56DBHZ:
+        value: 56
+        description: Maximum expected C/NO level is 56 dBHz
+      57DBHZ:
+        value: 57
+        description: Maximum expected C/NO level is 57 dBHz
+      58DBHZ:
+        value: 58
+        description: Maximum expected C/NO level is 58 dBHz
+      59DBHZ:
+        value: 59
+        description: Maximum expected C/NO level is 59 dBHz
+      60DBHZ:
+        value: 60
+        description: Maximum expected C/NO level is 60 dBHz
+      61DBHZ:
+        value: 61
+        description: Maximum expected C/NO level is 61 dBHz
+      62DBHZ:
+        value: 62
+        description: Maximum expected C/NO level is 62 dBHz
+      63DBHZ:
+        value: 63
+        description: Maximum expected C/NO level is 63 dBHz
