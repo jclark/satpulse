@@ -1,0 +1,462 @@
+# yaml-language-server: $schema=cfgschema.json
+---
+TMODE:
+  MODE:
+    key: 0x20030001
+    type: E1
+    description: Receiver mode
+    values:
+      DISABLED:
+        value: 0
+        description: Disabled
+      SURVEY_IN:
+        value: 1
+        description: Survey In
+      FIXED:
+        value: 2
+        description: Fixed Mode (true ARP position information required)
+  POS_TYPE:
+    key: 0x20030002
+    type: E1
+    description: Determines whether the ARP position is given in ECEF or LAT/LON/HEIGHT.
+    values:
+      ECEF:
+        value: 0
+        description: Position is ECEF
+      LLH:
+        value: 1
+        description: Position is Lat/Lon/Height
+  ECEF_X:
+    key: 0x40030003
+    type: I4
+    unit: cm
+    description: ECEF X coordinate of the ARP position.
+    note: This will only be used if MODE=FIXED and POS_TYPE=ECEF.
+  ECEF_Y:
+    key: 0x40030004
+    type: I4
+    unit: cm
+    description: ECEF Y coordinate of the ARP position.
+    note: This will only be used if MODE=FIXED and POS_TYPE=ECEF.
+  ECEF_Z:
+    key: 0x40030005
+    type: I4
+    unit: cm
+    description: ECEF Z coordinate of the ARP position.
+    note: This will only be used if MODE=FIXED and POS_TYPE=ECEF.
+  ECEF_X_HP:
+    key: 0x20030006
+    type: I1
+    scale: 0.1
+    unit: mm
+    description: High-precision ECEF X coordinate of the ARP position.
+    min: -99
+    max: +99
+    note: This will only be used if MODE=FIXED and POS_TYPE=ECEF.
+  ECEF_Y_HP:
+    key: 0x20030007
+    type: I1
+    scale: 0.1
+    unit: mm
+    description: High-precision ECEF Y coordinate of the ARP position.
+    min: -99
+    max: +99
+    note: This will only be used if MODE=FIXED and POS_TYPE=ECEF.
+  ECEF_Z_HP:
+    key: 0x20030008
+    type: I1
+    scale: 0.1
+    unit: mm
+    description: High-precision ECEF Z coordinate of the ARP position.
+    min: -99
+    max: +99
+    note: This will only be used if MODE=FIXED and POS_TYPE=ECEF.
+  LAT:
+    key: 0x40030009
+    type: I4
+    scale: 1e-7
+    unit: deg
+    description: Latitude of the ARP position.
+    note: This will only be used if MODE=FIXED and POS_TYPE=LLH.
+  LON:
+    key: 0x4003000a
+    type: I4
+    scale: 1e-7
+    unit: deg
+    description: Longitude of the ARP position.
+    note: This will only be used if MODE=FIXED and POS_TYPE=LLH.
+  HEIGHT:
+    key: 0x4003000b
+    type: I4
+    unit: cm
+    description: Height of the ARP position.
+    note: This will only be used if MODE=FIXED and POS_TYPE=LLH.
+  LAT_HP:
+    key: 0x2003000c
+    type: I1
+    scale: 1e-9
+    unit: deg
+    description: High-precision latitude of the ARP position
+    min: -99
+    max: +99 
+    note: This will only be used if MODE=FIXED and POS_TYPE=LLH.
+  LON_HP:
+    key: 0x2003000d
+    type: I1
+    scale: 1e-9
+    unit: deg
+    description: High-precision longitude of the ARP position.
+    min: -99
+    max: +99 
+    note: This will only be used if MODE=FIXED and POS_TYPE=LLH.
+  HEIGHT_HP:
+    key: 0x2003000e
+    type: I1
+    scale: 0.1
+    unit: mm
+    description: High-precision height of the ARP position.
+    min: -99
+    max: +99
+    note:  This will only be used if MODE=FIXED and POS_TYPE=LLH.
+  FIXED_POS_ACC:
+    key: 0x4003000f
+    type: U4
+    scale: 0.1
+    unit: mm
+    description: Fixed position 3D accuracy
+  SVIN_MIN_DUR:
+    key: 0x40030010
+    type: U4
+    unit: s
+    description: Survey-in minimum duration
+    note: This will only be used if MODE=SURVEY_IN.
+  SVIN_ACC_LIMIT:
+    key: 0x40030011
+    type: U4
+    scale: 0.1
+    unit: mm
+    description: Survey-in position accuracy limit
+    note: This will only be used if MODE=SURVEY_IN.
+
+TP:
+  PULSE_DEF:
+    key: 0x20050023
+    type: E1
+    description: Determines whether the time pulse is interpreted as frequenc or period
+    values:
+      PERIOD:
+        value: 0
+        description: Time pulse period [us]
+      FREQ:
+        value: 1
+        description: Time pulse frequency [Hz]
+  PULSE_LENGTH_DEF:
+    key: 0x20050030
+    type: E1
+    description: Determines whether the time pulse length is interpreted as length[us] or pulse ratio[%]?
+    values:
+      RATIO: 
+        value: 0 
+        description: Time pulse ratio
+      LENGTH:
+        value: 1
+        description: Time pulse length
+  ANT_CABLEDELAY:
+    key: 0x30050001
+    type: I2
+    scale: 0.000000001
+    unit: s
+    description: Antenna cable delay
+  PERIOD_TP1:
+    key: 0x40050002
+    type: U4
+    scale: 0.000001
+    unit: s
+    description: Time pulse period (TP1)
+  PERIOD_LOCK_TP1:
+    key: 0x40050003
+    type: U4
+    scale: 0.000001
+    unit: s
+    description: Time pulse period when locked to GNSS time (TP1)
+    note: Only used if CFG-TP-USE_LOCKED_TP1 is set.
+  FREQ_TP1:
+    key: 0x40050024
+    type: U4
+    unit: Hz
+    description: Time pulse frequency (TP1)
+    note: This will only be used if CFG-TP-PULSE_DEF=FREQ.
+  FREQ_LOCK_TP1:
+    key: 0x40050025
+    type: U4
+    unit: Hz
+    description: Time pulse frequency when locked to GNSS time (TP1)
+    note: Only used if CFG-TP-USE_LOCKED_TP1 is set.
+  LEN_TP1:
+    key: 0x40050004
+    type: U4
+    scale: 0.000001
+    unit: s
+    description: Time pulse length (TP1)
+  LEN_LOCK_TP1:
+    key: 0x40050005
+    type: U4
+    scale: 0.000001
+    unit: s
+    description: Time pulse length when locked to GNSS time (TP1)
+    note: Only used if CFG-TP-USE_LOCKED_TP1 is set.
+  DUTY_TP1:
+    key: 0x5005002a
+    type: R8
+    unit: "%"
+    description: Time pulse duty cycle (TP1)
+    note: Only used if CFG-TP-PULSE_LENGTH_DEF=RATIO is set.
+  DUTY_LOCK_TP1:
+    key: 0x5005002b
+    type: R8
+    unit: "%"
+    description: Time pulse duty cycle when locked to GNSS time (TP1)
+    note: Only used if CFG-TP-PULSE_LENGTH_DEF=RATIO and CFG-TP-USE_LOCKED_TP1 are set.
+  USER_DELAY_TP1:
+    key: 0x40050006
+    type: I4
+    scale: 0.000000001
+    unit: s
+    description: User configurable time pulse delay (TP1)
+  TP1_ENA:
+    key: 0x10050007
+    type: L
+    description: Enable the first timepulse
+    note: >
+      if pin associated with time pulse is assigned for another function, the other function takes precedence.
+      Must be set for frequency-time products.
+  SYNC_GNSS_TP1:
+    key: 0x10050008
+    type: L
+    description: Sync time pulse to GNSS time or local clock (TP1)
+    note: >
+      If set, sync to GNSS if GNSS time is valid otherwise, if not set or not available, use local clock. 
+      Ignored by time-frequency product varients, which will attempt to use the best available
+      time/frequency reference (not necessarily GNSS).
+  USE_LOCKED_TP1:
+    key: 0x10050009
+    type: L
+    description: Use locked parameters when possible (TP1)
+    note: >
+      If set, use CFG-TP-PERIOD_LOCK_TP1 and CFG-TP-LEN_LOCK_TP1 as soon as GNSS time is valid,
+      otherwise if not valid or not set, use CFG-TP-PERIOD_TP1 and CFG-TP-LEN_TP1.
+  ALIGN_TO_TOW_TP1:
+    key: 0x1005000a
+    type: L
+    description: Align time pulse to top of second (TP1)
+    note: >
+      To use this feature, CFG-TP-USE_LOCKED_TP1 must be set. 
+      Time pulse period must be an integer fraction of 1 second. 
+      Ignored in time-frequency product varients,where it is assumed always enabled.
+  POL_TP1:
+    key: 0x1005000b
+    type: L
+    description: Set time pulse polarity (TP1)
+    note: >
+      false (0) : falling edge at top of second. 
+      true (1) : rising edge at top of second.
+  TIMEGRID_TP1:
+    key: 0x2005000c
+    type: E1
+    description: Time grid to use (TP1)
+    note: >
+      Only relevent if CFG-TP-USE_LOCKED_TP1 and ALIGN_TO_TOW_TP1 are set. 
+      Note that configured GNSS time is estimated by the receiver if locked to any GNSS system. If the
+      receiver has a valid GNSS fix it will attempt to steer the TP to the specified time grid even if the
+      specified time is not based on information from the constellation's satellites. To ensure timing
+      based purely on a given GNSS, restrict the supported constellations in CFG-SIGNAL-*.
+    values:
+      UTC:
+        value: 0
+        description: UTC time reference
+      GPS:
+        value: 1
+        description: GPS time reference
+      GLO:
+        value: 2
+        description: GLONASS time reference
+      BDS:
+        value: 3
+        description: BeiDou time reference
+      GAL:
+        value: 4
+        description: Galileo time reference
+  PERIOD_TP2:
+    key: 0x4005000d
+    type: U4
+    scale: 0.000001
+    unit: s
+    description: Time pulse period (TP2)
+  PERIOD_LOCK_TP2:
+    key: 0x4005000e
+    type: U4
+    scale: 0.000001
+    unit: s
+    description: Time pulse period when locked to GNSS time (TP2)
+    note: Only used if CFG-TP-USE_LOCKED_TP2 is set.
+  FREQ_TP2:
+    key: 0x40050026
+    type: U4
+    unit: Hz
+    description: Time pulse frequency (TP2)
+    note: Only used if CFG-TP-PULSE_DEF=FREQ.
+  FREQ_LOCK_TP2:
+    key: 0x40050027
+    type: U4
+    unit: Hz
+    description: Time pulse frequency when locked to GNSS time (TP2)
+    note: Only used if CFG-TP-USE_LOCKED_TP2 is set.
+  LEN_TP2:
+    key: 0x4005000f
+    type: U4
+    scale: 0.000001
+    unit: s
+    description: Time pulse length (TP2)
+  LEN_LOCK_TP2:
+    key: 0x40050010
+    type: U4
+    scale: 0.000001
+    unit: s
+    description: Time pulse length when locked to GNSS time (TP2)
+    note: Only used if CFG-TP-USE_LOCKED_TP2 is set.
+  DUTY_TP2:
+    key: 0x5005002c
+    type: R8
+    unit: "%"
+    description: Time pulse duty cycle (TP2)
+    note: Only used if CFG-TP-PULSE_LENGTH_DEF=RATIO is set.
+  DUTY_LOCK_TP2:
+    key: 0x5005002d
+    type: R8
+    unit: "%"
+    description: Time pulse duty cycle when locked to GNSS time (TP2)
+    note: Only used if CFG-TP-PULSE_LENGTH_DEF=RATIO and CFG-TP-USE_LOCKED_TP2 are set.
+  USER_DELAY_TP2:
+    key: 0x40050011
+    type: I4
+    scale: 0.000000001
+    unit: s
+    description: User configurable time pulse delay (TP2)
+  TP2_ENA:
+    key: 0x10050012
+    type: L
+    description: Enable the second timepulse
+  SYNC_GNSS_TP2:
+    key: 0x10050013
+    type: L
+    description: Sync time pulse to GNSS time or local clock (TP2)
+    note: >
+      If set, sync to GNSS if GNSS time is valid otherwise, if not set or not available, use local clock. 
+      Ignored by time-frequency product varients, which will attempt to use the best available
+      time/frequency reference (not necessarily GNSS).
+  USE_LOCKED_TP2:
+    key: 0x10050014
+    type: L
+    description: Use locked parameters when possible (TP2)
+    note: >
+      If set, use CFG-TP-PERIOD_LOCK_TP2 and CFG-TP-LEN_LOCK_TP2 as soon as GNSS time is valid,
+      otherwise if not valid or not set, use CFG-TP-PERIOD_TP2 and CFG-TP-LEN_TP2.
+  ALIGN_TO_TOW_TP2:
+    key: 0x10050015
+    type: L
+    description: Align time pulse to top of second (TP2)
+    note: >
+      To use this feature, CFG-TP-USE_LOCKED_TP2 must be set. 
+      Time pulse period must be an integer fraction of 1 second. 
+      Ignored in time-frequency product varients,where it is assumed always enabled. Set maxSlewRate
+      and maxPhaseCorrRate fields of UBX-CFG-SMGR to 0 to disable alignment.
+  POL_TP2:
+    key: 0x10050016
+    type: L
+    description: Set time pulse polarity (TP2)
+    note: >
+      false (0) : falling edge at top of second. 
+      true (1) : rising edge at top of second.
+  TIMEGRID_TP2:
+    key: 0x20050017
+    type: E1
+    description: Time grid to use (TP2)
+    note: >
+      Only relevent if CFG-TP-USE_LOCKED_TP1 and ALIGN_TO_TOW_TP1 are set. 
+      Note that configured GNSS time is estimated by the receiver if locked to any GNSS system. If the
+      receiver has a valid GNSS fix it will attempt to steer the TP to the specified time grid even if the
+      specified time is not based on information from the constellation's satellites. To ensure timing
+      based purely on a given GNSS, restrict the supported constellations in UBX-CFG-GNSS. 
+    values:
+      UTC:
+        value: 0
+        description: UTC time reference
+      GPS:
+        value: 1
+        description: GPS time reference
+      GLO:
+        value: 2
+        description: GLONASS time reference
+      BDS:
+        value: 3
+        description: BeiDou time reference
+      GAL:
+        value: 4
+        description: Galileo time reference
+SIGNAL:
+    GPS_ENA:
+      key: 0x1031001f
+      type:  L
+      description: GPS enable
+    GPS_L1CA_ENA:
+      key: 0x10310001
+      type:  L
+      description: GPS L1C/A
+    SBAS_ENA:
+      key: 0x10310020
+      type:  L
+      description: SBAS enable
+    SBAS_L1CA_ENA:
+      key: 0x10310005
+      type:  L
+      description: SBAS L1C/A
+    GAL_ENA:
+      key: 0x10310021
+      type:  L
+      description: Galileo enable
+    GAL_E1_ENA:
+      key: 0x10310007
+      type:  L
+      description: Galileo E1
+    BDS_ENA:
+      key: 0x10310022
+      type:  L
+      description: BeiDou Enable
+    BDS_B1_ENA:
+      key: 0x1031000d
+      type:  L
+      description: BeiDou B1I
+    BDS_B1C_ENA:
+      key: 0x1031000f
+      type:  L
+      description: BeiDou B1C
+    QZSS_ENA:
+      key: 0x10310024
+      type:  L
+      description: QZSS enable
+    QZSS_L1CA_ENA:
+      key: 0x10310012
+      type:  L
+      description: QZSS L1C/A
+    QZSS_L1S_ENA:
+      key: 0x10310014
+      type:  L
+      description: QZSS L1S
+    GLO_ENA:
+      key: 0x10310025
+      type:  L
+      description: GLONASS enable
+    GLO_L1_ENA:
+      key: 0x10310018
+      type:  L
+      description: GLONASS L1

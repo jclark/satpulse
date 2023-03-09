@@ -1,0 +1,61 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "description": "Schema for UBX configuration schema",
+    "type":"object",
+    "additionalProperties":{
+        "type": "object",
+        "additionalProperties": {
+            "properties": {
+                "key": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                                "U1", "U2", "U3", "U4",
+                                "I1", "I2", "I3", "I4",
+                                "R4", "R8",
+                                "E1", "E2", "E4",
+                                "X1", "X2", "X4", "X8",
+                                "L"
+                            ]
+                },
+                "description": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["s", "%", "mm", "cm", "deg", "Hz"]
+                },
+                "scale": {
+                    "type": "number"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "min": {
+                    "type": "number"
+                },
+                "max": {
+                    "type": "number"
+                },
+                "values": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                            "value": {
+                                "type": "integer"
+                            },
+                            "description": {
+                                "type": "string"
+                            }
+                        },
+                        "required": ["value", "description"]
+                    }  
+                }
+            },
+            "required": ["key", "type", "description"]
+        }
+    }
+}
