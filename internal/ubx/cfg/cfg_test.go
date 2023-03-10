@@ -111,10 +111,10 @@ func TestRoundtrip(t *testing.T) {
 		if err != nil {
 			t.Errorf("could not marshal config %d: %v", i, err)
 		} else {
-			cfg2, err := schema.Unmarshal(bytes)
+			cfg2, unknown, err := schema.Unmarshal(bytes)
 			if err != nil {
 				t.Errorf("could not unmarshal config %d: %v", i, err)
-			} else if !sameConfig(cfg, cfg2) {
+			} else if !sameConfig(cfg, cfg2) || len(unknown) != 0 {
 				t.Errorf("config %d roundtrip failed", i)
 			}
 		}

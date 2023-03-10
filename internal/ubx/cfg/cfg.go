@@ -81,36 +81,42 @@ func makeKeys(m map[string]map[string]Desc) (map[uint32]NameDesc, error) {
 	return keys, nil
 }
 
-func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, error) {
+func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, map[uint32][]byte, error) {
 	cfg := make(map[string]map[string]any)
+	unknown := make(map[uint32][]byte)
 	for len(data) > 4 {
 		k := binary.LittleEndian.Uint32(data)
 		data = data[4:]
-		nd, ok := s.keys[k]
-		if !ok {
-			return nil, fmt.Errorf("unknown key 0x%x", k)
-		}
 		nBytes := valueBytes(k)
 		if len(data) < nBytes {
-			return nil, fmt.Errorf("invalid data length for key 0x%x", k)
+			return nil, nil, fmt.Errorf("invalid data length for key 0x%x", k)
 		}
 		itemData := data[0:nBytes]
 		data = data[nBytes:]
-		v, err := nd.d.UnmarshalValue(itemData)
-		if err != nil {
-			return nil, err
+		nd, ok := s.keys[k]
+		var v any
+		if ok {
+			var err error
+			v, err = nd.d.UnmarshalValue(itemData)
+			if err != nil {
+				ok = false
+			}
 		}
-		g := cfg[nd.groupName]
-		if g == nil {
-			g = map[string]any{}
-			cfg[nd.groupName] = g
+		if ok {
+			g := cfg[nd.groupName]
+			if g == nil {
+				g = map[string]any{}
+				cfg[nd.groupName] = g
+			}
+			g[nd.itemName] = v
+		} else {
+			unknown[k] = append([]byte{}, itemData...)
 		}
-		g[nd.itemName] = v
 	}
 	if len(data) > 0 {
-		return nil, fmt.Errorf("leftover data")
+		return nil, nil, fmt.Errorf("leftover data")
 	}
-	return cfg, nil
+	return cfg, unknown, nil
 }
 
 func (s *Schema) Marshal(cfg map[string]map[string]any) ([]byte, error) {
