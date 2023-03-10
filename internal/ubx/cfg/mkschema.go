@@ -51,7 +51,7 @@ func fmtSchema(schema map[string]map[string]Item) string {
 		groups = append(groups, fmtGroup(name, m))
 	}
 	sort.Strings(groups)
-	return fmt.Sprintf("package cfg\n\nvar schema = Schema{map[string]map[string]Desc{\n%s}}\n", strings.Join(groups, ""))
+	return fmt.Sprintf("package cfg\n\nvar schema = MustNewSchema(map[string]map[string]Desc{\n%s})\n", strings.Join(groups, ""))
 }
 
 func fmtGroup(name string, m map[string]Item) string {

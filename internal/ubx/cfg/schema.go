@@ -1,6 +1,6 @@
 package cfg
 
-var schema = Schema{map[string]map[string]Desc{
+var schema = MustNewSchema(map[string]map[string]Desc{
 	"HW": {
 		"ANT_CFG_OPENDET":      L(0x10a30031),
 		"ANT_CFG_OPENDET_POL":  L(0x10a30032),
@@ -141,4 +141,4 @@ var schema = Schema{map[string]map[string]Desc{
 		"NMEA": L(0x10740002),
 		"UBX":  L(0x10740001),
 	},
-}}
+})
