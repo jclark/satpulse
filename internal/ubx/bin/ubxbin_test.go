@@ -33,6 +33,15 @@ func EqualMonVer(p1, p2 *MonVer) bool {
 	return p1.MonVerFixed == p2.MonVerFixed && slices.Equal(p1.Extension, p2.Extension)
 }
 
+func TestInf(t *testing.T) {
+	bytes := ([]byte)("hello")
+	m := InfDebug(bytes)
+	p2 := testMsgType1(t, m)
+	if !slices.Equal(bytes, ([]byte)(*p2.(*InfDebug))) {
+		t.Fatalf("msg inf not roundtripped %v => %v", &m, p2)
+	}
+}
+
 func testMsgType[M comparable, PM interface {
 	ID() MsgID
 	*M

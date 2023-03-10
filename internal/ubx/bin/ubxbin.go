@@ -31,6 +31,7 @@ const (
 const (
 	clsNav = 0x01
 	clsAck = 0x05
+	clsInf = 0x04
 	clsCfg = 0x06
 	clsMon = 0x0A
 	clsTim = 0x0D
@@ -39,6 +40,7 @@ const (
 var clsMap = map[byte]string{
 	clsNav: "nav",
 	clsAck: "ack",
+	clsInf: "inf",
 	clsCfg: "cfg",
 	clsMon: "mon",
 	clsTim: "tim",
@@ -83,6 +85,11 @@ const (
 	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
 	CfgTmode3ID  MsgID = clsCfg | (0x71 << 8)
 	CfgTp5ID     MsgID = clsCfg | (0x31 << 8)
+	InfDebugID   MsgID = clsInf | (0x04 << 8)
+	InfErrorID   MsgID = clsInf | (0x00 << 8)
+	InfNoticeID  MsgID = clsInf | (0x02 << 8)
+	InfTestID    MsgID = clsInf | (0x03 << 8)
+	InfWarningID MsgID = clsInf | (0x01 << 8)
 	MonHwID      MsgID = clsMon | (0x09 << 8)
 	MonVerID     MsgID = clsMon | (0x04 << 8)
 	NavPvtID     MsgID = clsNav | (0x07 << 8)
@@ -103,6 +110,11 @@ func init() {
 	regMsg[CfgTmode2]("tmode2")
 	regMsg[CfgTmode3]("tmode3")
 	regMsg[CfgTp5]("tp5")
+	regMsg[InfDebug]("debug")
+	regMsg[InfError]("error")
+	regMsg[InfNotice]("notice")
+	regMsg[InfTest]("test")
+	regMsg[InfWarning]("warning")
 	regMsg[MonHw]("hw")
 	regMsg[MonVer]("ver")
 	regMsg[NavPvt]("pvt")
@@ -608,6 +620,61 @@ func (m *CfgGNSS) Parts() (fixed any, slice any) {
 	return
 }
 
+type InfDebug []byte
+
+func (m *InfDebug) ID() MsgID { return InfDebugID }
+func (m *InfDebug) InitForLen(payloadLen int) error {
+	*m = make([]byte, payloadLen)
+	return nil
+}
+func (m *InfDebug) Parts() (fixed any, slice any) {
+	return nil, (*[]byte)(m)
+}
+
+type InfError []byte
+
+func (m *InfError) ID() MsgID { return InfErrorID }
+func (m *InfError) InitForLen(payloadLen int) error {
+	*m = make([]byte, payloadLen)
+	return nil
+}
+func (m *InfError) Parts() (fixed any, slice any) {
+	return nil, (*[]byte)(m)
+}
+
+type InfNotice []byte
+
+func (m *InfNotice) ID() MsgID { return InfNoticeID }
+func (m *InfNotice) InitForLen(payloadLen int) error {
+	*m = make([]byte, payloadLen)
+	return nil
+}
+func (m *InfNotice) Parts() (fixed any, slice any) {
+	return nil, (*[]byte)(m)
+}
+
+type InfTest []byte
+
+func (m *InfTest) ID() MsgID { return InfTestID }
+func (m *InfTest) InitForLen(payloadLen int) error {
+	*m = make([]byte, payloadLen)
+	return nil
+}
+func (m *InfTest) Parts() (fixed any, slice any) {
+	return nil, (*[]byte)(m)
+}
+
+type InfWarning []byte
+
+func (m *InfWarning) ID() MsgID { return InfWarningID }
+func (m *InfWarning) InitForLen(payloadLen int) error {
+	*m = make([]byte, payloadLen)
+	return nil
+}
+func (m *InfWarning) Parts() (fixed any, slice any) {
+	return nil, (*[]byte)(m)
+}
+
 type VarLengthMsg interface {
 	Msg
 	InitForLen(payloadLen int) error
@@ -673,7 +740,11 @@ func ParseMsg(frame string) (Msg, error) {
 		slice = nil
 	}
 	r := strings.NewReader(payload)
-	err := binary.Read(r, binary.LittleEndian, fixed)
+	var err error
+	// For UBX-INF-* messages, the payload does not have a fixed part.
+	if fixed != nil {
+		err = binary.Read(r, binary.LittleEndian, fixed)
+	}
 	if err == nil && slice != nil {
 		err = binary.Read(r, binary.LittleEndian, slice)
 	}
@@ -695,9 +766,11 @@ func Serialize(msg Msg) ([]byte, error) {
 	var v any
 	if vMsg, ok := msg.(VarLengthMsg); ok {
 		fixed, slice := vMsg.Parts()
-		err := binary.Write(buf, binary.LittleEndian, fixed)
-		if err != nil {
-			return nil, err
+		if fixed != nil {
+			err := binary.Write(buf, binary.LittleEndian, fixed)
+			if err != nil {
+				return nil, err
+			}
 		}
 		v = slice
 	} else {
