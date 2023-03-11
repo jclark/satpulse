@@ -22,6 +22,7 @@ type Item struct {
 	Note        string
 	Min         float64
 	Max         float64
+	Condition   string
 	Constants   map[string]Constant
 }
 

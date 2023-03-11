@@ -286,6 +286,30 @@ TP:
       GAL:
         value: 4
         description: Galileo time reference
+      NAVIC:
+        value: 5
+        description: NavIC time reference
+        condition: NAVIC
+  DRSTR_TP1:
+    key: 0x20050035
+    type: E1
+    description: Set drive strength of TP1
+    note: >
+      Time Pulse pin 1 (TP1) can support 4 possible drive strength cases: 2, 4, 8 and 12 mA
+    constants:
+      DRIVE_STRENGTH_2MA:
+        value: 0
+        description: 2 mA drive strength
+      DRIVE_STRENGTH_4MA:
+        value: 1
+        description: 4 mA drive strength
+      DRIVE_STRENGTH_8MA:
+        value: 2
+        description: 8 mA drive strength
+      DRIVE_STRENGTH_12MA:
+        value: 3
+        description: 12 mA drive strength   
+    condition: F9
   PERIOD_TP2:
     key: 0x4005000d
     type: U4
@@ -403,6 +427,30 @@ TP:
       GAL:
         value: 4
         description: Galileo time reference
+      NAVIC:
+        value: 5
+        description: NavIC time reference
+        condition: NAVIC
+  DRSTR_TP2:
+    key: 0x20050036
+    type: E1
+    description: Set drive strength of TP2
+    note: >
+      Time Pulse pin 2 (TP2) can support 4 possible drive strength cases: 2, 4, 8 and 12 mA
+    constants:
+      DRIVE_STRENGTH_2MA:
+        value: 0
+        description: 2 mA drive strength
+      DRIVE_STRENGTH_4MA:
+        value: 1
+        description: 4 mA drive strength
+      DRIVE_STRENGTH_8MA:
+        value: 2
+        description: 8 mA drive strength
+      DRIVE_STRENGTH_12MA:
+        value: 3
+        description: 12 mA drive strength
+    condition: F9&TP2
 SIGNAL:
   GPS_ENA:
     key: 0x1031001f
@@ -460,6 +508,61 @@ SIGNAL:
     key: 0x10310018
     type:  L
     description: GLONASS L1
+  GPS_L2C_ENA:
+    key: 0x10310003
+    type: L
+    description: GPS L2C
+    condition: L2
+  GAL_E5B_ENA:
+    key: 0x1031000a
+    type: L
+    description: Galileo E5b
+    condition: L2
+  BDS_B2_ENA:
+    key: 0x1031000e
+    type: L
+    description: BeiDou B2I
+    condition: L2
+  QZSS_L2C_ENA:
+    key: 0x10310015
+    type: L
+    description: QZSS L2C
+    condition: L2
+  GLO_L2_ENA:
+    key: 0x1031001a
+    type: L
+    description: GLONASS L2
+    condition: L2
+  GPS_L5_ENA:
+    key: 0x10310004
+    type: L
+    description: GPS L5
+    condition: L5
+  BDS_B2A_ENA:
+    key: 0x10310028
+    type: L
+    description: BeiDou B2a
+    condition: L5
+  GAL_E5A_ENA:
+    key: 0x10310009
+    type: L
+    description: Galileo E5a
+    condition: L5
+  NAVIC_ENA:
+    key: 0x10310026
+    type: L
+    description: NavIC enable
+    condition: NAVIC
+  NAVIC_L5_ENA:
+    key: 0x1031001d
+    type: L
+    description: NavIC L5
+    condition: NAVIC&L5
+  QZSS_L5_ENA:
+    key: 0x10310017
+    type: L
+    description: QZSS L5
+    condition: L5
 UART1:
   BAUDRATE:
     key: 0x40520001
