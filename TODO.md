@@ -36,6 +36,11 @@
 * Link bounds for pulse sanity check to amount of frequency adjustment
 * Log RMS of offset
 * Mode where we use system clock rather than GPS messages for time of day (like `ts2phc -s generic`)
+* See what we can learn from the Meta time library servo package.
+* Make correlator and servo more configurable.
+* Be more intelligent about pulse sanity check
+   * keep track of standard deviation of pulse interval
+   * bounds should make use of max amount of freq adjustment
 
 ## Leap seconds
 
