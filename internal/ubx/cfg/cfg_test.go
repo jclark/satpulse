@@ -1,7 +1,11 @@
 package cfg
 
 import (
+	_ "embed"
+	"fmt"
 	"math"
+	"sort"
+	"strings"
 	"testing"
 
 	"golang.org/x/exp/slices"
@@ -223,4 +227,99 @@ func intValue(v any) (pos uint64, neg int64, ok bool) {
 	}
 	ok = true
 	return
+}
+
+func TestValueBytes(t *testing.T) {
+	if valueBytes(0x20240011) != 1 || valueBytes(0x10240012) != 1 || valueBytes(0x40240021) != 4 || valueBytes(0x50110062) != 8 || valueBytes(0x301100b5) != 2 {
+		t.Error("valueBytes failed")
+	}
+}
+
+const (
+	keyGroupMask    = 0xFF0000
+	keyReservedMask = 0x8F00F000
+)
+
+// This text file is how u-center saved the configuration of a F9P receiver
+//
+//go:embed f9p_cfg.txt
+var f9pCfgTxt string
+
+func TestUnmarshal(t *testing.T) {
+	valgets, err := parseUCenterConfig(f9pCfgTxt)
+	if err != nil || len(valgets) == 0 {
+		t.Fatalf("could not parse config text")
+	}
+	unknownKeys := make(map[uint32]struct{})
+	recognizedCount := 0
+	for i, msg := range valgets {
+		// U-center format doesn't include the two sync bytes not the two-byte checksum.
+		// So to get the config data, we just have to skip cls+id, 2-byte length, and 4 byte fixed part.
+		cfgData := msg[8:]
+		cfg, unknown, err := schema.Unmarshal(cfgData)
+		if err != nil {
+			t.Errorf("test %d: could not unmarshal: %v", i, err)
+		} else {
+			for _, m := range cfg {
+				recognizedCount += len(m)
+			}
+			for k := range unknown {
+				if (k & keyReservedMask) != 0 {
+					t.Errorf("unknown key 0x%x has non-zero reserved bits", k)
+				}
+				unknownKeys[k] = struct{}{}
+			}
+		}
+	}
+	if recognizedCount < 100 {
+		t.Errorf("recognized %d config items, expected at least 100", recognizedCount)
+	} else {
+		t.Logf("recognized %d keys", recognizedCount)
+	}
+	uk := make([]uint32, 0, len(unknownKeys))
+	for k := range unknownKeys {
+		uk = append(uk, k)
+	}
+	sort.Slice(uk, func(i1, i2 int) bool {
+		k1 := uk[i1] & keyGroupMask
+		k2 := uk[i2] & keyGroupMask
+		if k1 < k2 {
+			return true
+		}
+		if k1 == k2 && uk[i1] < uk[i2] {
+			return true
+		}
+		return false
+	})
+
+	uks := ""
+	for k := range uk {
+		uks = fmt.Sprintf("%s 0x%x", uks, uk[k])
+	}
+	if uks != "" {
+		t.Logf("unknown keys:%s", uks)
+	}
+}
+
+func parseUCenterConfig(txt string) ([][]byte, error) {
+	lines := strings.Split(txt, "\n")
+	var valgets [][]byte
+	for _, line := range lines {
+		const cfgValgetTxtPrefix = "CFG-VALGET - "
+		if strings.HasPrefix(line, cfgValgetTxtPrefix) {
+			byteStrs := strings.Split(line[len(cfgValgetTxtPrefix):], " ")
+			bytes := make([]byte, 0)
+			for _, bs := range byteStrs {
+				var b byte
+				n, err := fmt.Sscanf(bs, "%02x", &b)
+				if n == 1 {
+					bytes = append(bytes, b)
+				} else if bs != "" {
+					return nil, err
+				}
+			}
+			valgets = append(valgets, bytes)
+		}
+	}
+	return valgets, nil
 }
