@@ -85,6 +85,9 @@ const (
 	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
 	CfgTmode3ID  MsgID = clsCfg | (0x71 << 8)
 	CfgTp5ID     MsgID = clsCfg | (0x31 << 8)
+	CfgValdelID  MsgID = clsCfg | (0x8C << 8)
+	CfgValgetID  MsgID = clsCfg | (0x8B << 8)
+	CfgValsetID  MsgID = clsCfg | (0x8A << 8)
 	InfDebugID   MsgID = clsInf | (0x04 << 8)
 	InfErrorID   MsgID = clsInf | (0x00 << 8)
 	InfNoticeID  MsgID = clsInf | (0x02 << 8)
@@ -110,6 +113,9 @@ func init() {
 	regMsg[CfgTmode2]("tmode2")
 	regMsg[CfgTmode3]("tmode3")
 	regMsg[CfgTp5]("tp5")
+	regMsg[CfgValget]("valget")
+	regMsg[CfgValset]("valset")
+	regMsg[CfgValdel]("valdel")
 	regMsg[InfDebug]("debug")
 	regMsg[InfError]("error")
 	regMsg[InfNotice]("notice")
@@ -617,6 +623,144 @@ func (m *CfgGNSS) InitForLen(payloadLen int) (err error) {
 func (m *CfgGNSS) Parts() (fixed any, slice any) {
 	fixed = &m.CfgGNSSFixed
 	slice = &m.Blocks
+	return
+}
+
+type CfgValget struct {
+	CfgValgetFixed
+	CfgData []byte
+}
+
+func (m *CfgValget) ID() MsgID { return CfgValgetID }
+
+type CfgValgetFixed struct {
+	Version  CfgValgetVersion
+	Layer    CfgValgetLayer
+	Position uint16
+}
+
+type CfgValgetVersion byte
+
+const (
+	CfgValgetVersionRequest  CfgValgetVersion = 0 // CfgData is just keys
+	CfgValgetVersionResponse CfgValgetVersion = 1 // CfgData is keys and values
+)
+
+type CfgValgetLayer byte
+
+const (
+	CfgValgetLayerRAM CfgValgetLayer = iota
+	CfgValgetLayerBBR
+	CfgValgetLayerFlash
+	CfgValgetLayerDefault CfgValgetLayer = 7
+)
+
+func (m *CfgValget) InitForLen(payloadLen int) (err error) {
+	len, err := sliceLen(m, payloadLen, 4, 1)
+	if err == nil {
+		m.CfgData = make([]byte, len)
+	}
+	return
+}
+
+func (m *CfgValget) Parts() (fixed any, slice any) {
+	fixed = &m.CfgValgetFixed
+	slice = &m.CfgData
+	return
+}
+
+// This is shared between valdel and valset
+type CfgValTransaction byte
+
+const (
+	CfgValTransactionNone CfgValTransaction = iota
+	CfgValTransactionStart
+	CfgValTransactionOngoing
+	CfgValTransactionEnd
+)
+
+type CfgValset struct {
+	CfgValsetFixed
+	CfgData []byte
+}
+
+func (m *CfgValset) ID() MsgID { return CfgValsetID }
+
+type CfgValsetFixed struct {
+	Version     CfgValsetVersion
+	Layers      CfgValsetLayer
+	Transaction CfgValTransaction
+	_           byte
+}
+
+type CfgValsetVersion byte
+
+const (
+	CfgValsetVersionNoTransaction CfgValsetVersion = iota
+	CfgValsetVersionTransaction
+)
+
+type CfgValsetLayer byte
+
+const (
+	CfgValsetLayerRAM CfgValsetLayer = 1 << iota
+	CfgValsetLayerBBR
+	CfgValsetLayerFlash
+)
+
+func (m *CfgValset) InitForLen(payloadLen int) (err error) {
+	len, err := sliceLen(m, payloadLen, 4, 1)
+	if err == nil {
+		m.CfgData = make([]byte, len)
+	}
+	return
+}
+
+func (m *CfgValset) Parts() (fixed any, slice any) {
+	fixed = &m.CfgValsetFixed
+	slice = &m.CfgData
+	return
+}
+
+type CfgValdel struct {
+	CfgValdelFixed
+	CfgData []byte
+}
+
+func (m *CfgValdel) ID() MsgID { return CfgValdelID }
+
+type CfgValdelFixed struct {
+	Version     CfgValdelVersion
+	Layers      CfgValdelLayer
+	Transaction CfgValTransaction
+	_           byte
+}
+
+type CfgValdelVersion byte
+
+const (
+	CfgValdelVersionNoTransaction CfgValdelVersion = iota
+	CfgValdelVersionTransaction
+)
+
+type CfgValdelLayer byte
+
+const (
+	CfgValdelLayerBBR   CfgValdelLayer = 1
+	CfgValdelLayerFlash CfgValdelLayer = 2
+)
+
+func (m *CfgValdel) InitForLen(payloadLen int) (err error) {
+	len, err := sliceLen(m, payloadLen, 4, 1)
+	if err == nil {
+		m.CfgData = make([]byte, len)
+	}
+	return
+}
+
+func (m *CfgValdel) Parts() (fixed any, slice any) {
+	fixed = &m.CfgValdelFixed
+	slice = &m.CfgData
 	return
 }
 

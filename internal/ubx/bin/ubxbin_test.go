@@ -33,6 +33,25 @@ func EqualMonVer(p1, p2 *MonVer) bool {
 	return p1.MonVerFixed == p2.MonVerFixed && slices.Equal(p1.Extension, p2.Extension)
 }
 
+func TestCfgValget(t *testing.T) {
+	m := CfgValget{
+		CfgValgetFixed{
+			Version:  CfgValgetVersionResponse,
+			Layer:    CfgValgetLayerRAM,
+			Position: 0,
+		},
+		[]byte{1, 2, 3, 4, 5},
+	}
+	p2 := testMsgType1(t, m)
+	if !EqualCfgValget(&m, p2.(*CfgValget)) {
+		t.Fatalf("msg cfg-valget not roundtripped %v => %v", &m, p2)
+	}
+}
+
+func EqualCfgValget(p1, p2 *CfgValget) bool {
+	return p1.CfgValgetFixed == p2.CfgValgetFixed && slices.Equal(p1.CfgData, p2.CfgData)
+}
+
 func TestInf(t *testing.T) {
 	bytes := ([]byte)("hello")
 	m := InfDebug(bytes)
