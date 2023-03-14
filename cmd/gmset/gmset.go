@@ -14,16 +14,34 @@ var grandmaster_settings_np string = "\x06\x23\xff\xff\x00\x25\x1c\xa0"
 
 var msg = header + body + tlv + grandmaster_settings_np
 
-const IDGrandmasterSettingsNP = 0xC001
 const SizeofManagementHeaderBody = 48
-const SizeofGrandmasterSettingsNP = 8
 const ManagementMessageType = 0xD
 
-type GrandmasterSettingsNPMsg struct {
-	Header
-	ManagementBody
-	ManagementTLV
-	GrandmasterSettingsNP
+type ManagementID uint16
+
+const (
+	IDGrandmasterSettingsNP ManagementID = 0xC001
+)
+
+type ManagementData interface {
+	ManagementID() ManagementID
+}
+
+type ManagementMsg[D ManagementData] struct {
+	Header               Header
+	TargetPortIdentity   PortIdentity
+	StartingBoundaryHops uint8
+	BoundaryHops         uint8
+	ActionField          uint8
+	_                    uint8
+	ManagementTLV        ManagementTLV[D]
+}
+
+type ManagementTLV[D ManagementData] struct {
+	TLVType      uint16
+	LengthField  uint16
+	ManagementID ManagementID
+	Data         D
 }
 
 type Header struct {
@@ -43,25 +61,11 @@ type Header struct {
 
 const SetAction = 0x01
 
-type ManagementBody struct {
-	TargetPortIdentity   PortIdentity
-	StartingBoundaryHops uint8
-	BoundaryHops         uint8
-	ActionField          uint8
-	_                    uint8
-}
-
 var AnyPortIdentity = PortIdentity{[8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 0xffff}
 
 type PortIdentity struct {
 	ClockIdentity [8]byte
 	PortNumber    uint16
-}
-
-type ManagementTLV struct {
-	TLVType      uint16
-	LengthField  uint16
-	ManagementID uint16
 }
 
 type ClockQuality struct {
@@ -80,7 +84,7 @@ const (
 	PTPTimescale
 	TimeTraceable
 	FrequencyTraceable
-	SyncchronizationUncertain
+	SynchronizationUncertain
 )
 
 type GrandmasterSettingsNP struct {
@@ -88,6 +92,10 @@ type GrandmasterSettingsNP struct {
 	UTCOffset    int16
 	TimeFlags    TimeFlags
 	TimeSource   uint8
+}
+
+func (gsn GrandmasterSettingsNP) ManagementID() ManagementID {
+	return IDGrandmasterSettingsNP
 }
 
 const TLVTypeManagement = 0x0001
@@ -98,33 +106,40 @@ func GetPID() int {
 	return testPID
 }
 
-func NewGrandmasterSettingsNPMsg() *GrandmasterSettingsNPMsg {
-	msg := new(GrandmasterSettingsNPMsg)
+func NewManagementMsg[D ManagementData](data D) *ManagementMsg[D] {
+	msg := new(ManagementMsg[D])
 	// Header
-	msg.MessageType = ManagementMessageType // XXX this also has transport specific
-	msg.Version = 2
-	msg.MessageLength = SizeofManagementHeaderBody + 6 + SizeofGrandmasterSettingsNP
-	msg.ControlField = ControlManagement
-	msg.SourcePortIdentity.PortNumber = uint16(GetPID()) // They will reply on /var/run/pmc.$pid
-	msg.LogMessageInterval = 0x7f                        // required by Table 42 of the standard
+	h := &msg.Header
+	h.MessageType = ManagementMessageType // XXX this also has transport specific
+	h.Version = 2
+	sz := uint16(binary.Size(&data))
+	h.MessageLength = SizeofManagementHeaderBody + 6 + sz
+	h.ControlField = ControlManagement
+	h.SourcePortIdentity.PortNumber = uint16(GetPID()) // What about 32-bit PIDs?
+	h.LogMessageInterval = 0x7f                        // required by Table 42 of the standard
 	// ManagementBody
 	msg.ActionField = SetAction
 	msg.TargetPortIdentity = AnyPortIdentity
 	// ManagementTLV
-	msg.TLVType = TLVTypeManagement
-	msg.ManagementID = IDGrandmasterSettingsNP
-	msg.LengthField = SizeofGrandmasterSettingsNP + 2
-
-	// GrandmasterSettingsNP
-	msg.ClockQuality = ClockQuality{
-		ClockClass:              0x6,
-		ClockAccuracy:           0x23,
-		OffsetScaledLogVariance: 0xFFFF,
-	}
-	msg.UTCOffset = 37
-	msg.TimeFlags = CurrentUTCOffsetValid | PTPTimescale | TimeTraceable
-	msg.TimeSource = 0xA0 // what is this?
+	tlv := &msg.ManagementTLV
+	tlv.TLVType = TLVTypeManagement
+	tlv.ManagementID = data.ManagementID()
+	tlv.LengthField = sz + 2
+	tlv.Data = data
 	return msg
+}
+
+func NewGrandmasterSettingsNPMsg() *ManagementMsg[GrandmasterSettingsNP] {
+	return NewManagementMsg(GrandmasterSettingsNP{
+		ClockQuality: ClockQuality{
+			ClockClass:              0x6,
+			ClockAccuracy:           0x23,
+			OffsetScaledLogVariance: 0xFFFF,
+		},
+		UTCOffset:  37,
+		TimeFlags:  CurrentUTCOffsetValid | PTPTimescale | TimeTraceable,
+		TimeSource: 0xA0, // what is this?
+	})
 }
 
 func run() error {
