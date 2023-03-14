@@ -27,6 +27,8 @@ type ManagementData interface {
 	ManagementID() ManagementID
 }
 
+const SetAction = 0x01
+
 type ManagementMsg[D ManagementData] struct {
 	Header               Header
 	TargetPortIdentity   PortIdentity
@@ -54,12 +56,10 @@ type Header struct {
 	CorrectionField     uint64
 	MessageTypeSpecific uint32
 	SourcePortIdentity  PortIdentity
-	SequenceId          uint16
+	SequenceID          uint16
 	ControlField        uint8
 	LogMessageInterval  uint8
 }
-
-const SetAction = 0x01
 
 var AnyPortIdentity = PortIdentity{[8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 0xffff}
 
@@ -100,23 +100,32 @@ func (gsn GrandmasterSettingsNP) ManagementID() ManagementID {
 
 const TLVTypeManagement = 0x0001
 const ControlManagement = 0x4
-const testPID = 12621
 
-func GetPID() int {
-	return testPID
+type ManagementClient struct {
+	sequenceID uint16
+	portNumber uint16
+	domain     uint8
 }
 
-func NewManagementMsg[D ManagementData](data D) *ManagementMsg[D] {
+func (c *ManagementClient) getSequenceID() uint16 {
+	id := c.sequenceID
+	c.sequenceID++
+	return id
+}
+
+func NewManagementMsg[D ManagementData](c *ManagementClient, data D) *ManagementMsg[D] {
 	msg := new(ManagementMsg[D])
 	// Header
 	h := &msg.Header
 	h.MessageType = ManagementMessageType // XXX this also has transport specific
 	h.Version = 2
+	h.DomainNumber = c.domain
+	h.SequenceID = c.getSequenceID()
 	sz := uint16(binary.Size(&data))
 	h.MessageLength = SizeofManagementHeaderBody + 6 + sz
 	h.ControlField = ControlManagement
-	h.SourcePortIdentity.PortNumber = uint16(GetPID()) // What about 32-bit PIDs?
-	h.LogMessageInterval = 0x7f                        // required by Table 42 of the standard
+	h.SourcePortIdentity.PortNumber = c.portNumber
+	h.LogMessageInterval = 0x7f // required by Table 42 of the standard
 	// ManagementBody
 	msg.ActionField = SetAction
 	msg.TargetPortIdentity = AnyPortIdentity
@@ -129,8 +138,8 @@ func NewManagementMsg[D ManagementData](data D) *ManagementMsg[D] {
 	return msg
 }
 
-func NewGrandmasterSettingsNPMsg() *ManagementMsg[GrandmasterSettingsNP] {
-	return NewManagementMsg(GrandmasterSettingsNP{
+func NewGrandmasterSettingsNPMsg(c *ManagementClient) *ManagementMsg[GrandmasterSettingsNP] {
+	return NewManagementMsg(c, GrandmasterSettingsNP{
 		ClockQuality: ClockQuality{
 			ClockClass:              0x6,
 			ClockAccuracy:           0x23,
@@ -142,8 +151,18 @@ func NewGrandmasterSettingsNPMsg() *ManagementMsg[GrandmasterSettingsNP] {
 	})
 }
 
+func NewManagementClient() *ManagementClient {
+	return &ManagementClient{
+		portNumber: uint16(os.Getpid()),
+	}
+}
+
+const testPID = 12621
+
 func run() error {
-	gsn := NewGrandmasterSettingsNPMsg()
+	client := NewManagementClient()
+	client.portNumber = testPID
+	gsn := NewGrandmasterSettingsNPMsg(client)
 	buf := new(bytes.Buffer)
 
 	err := binary.Write(buf, binary.BigEndian, gsn)
