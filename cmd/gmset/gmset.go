@@ -244,47 +244,57 @@ type ManagementClient struct {
 	domain     uint8
 }
 
+func NewManagementClient() *ManagementClient {
+	return &ManagementClient{
+		portNumber: uint16(os.Getpid()),
+	}
+}
+
 func (c *ManagementClient) getSequenceID() uint16 {
 	id := c.sequenceID
 	c.sequenceID++
 	return id
 }
 
-func ManagementBinaryMsg[D ManagementData](c *ManagementClient, data D) ([]byte, error) {
-	msg := NewManagementMsg(c, data)
-	return msg.MarshalBinary()
-}
-
-func NewManagementMsg[D ManagementData](c *ManagementClient, data D) *ManagementMsg[ManagementV[D]] {
-	msg := new(ManagementMsg[ManagementV[D]])
-	// Header
-	h := &msg.Header
+func (c *ManagementClient) SetHeader(h *Header) {
 	h.MessageType = ManagementMessageType // XXX this also has transport specific
+	// MessageLength is filled in by MarshalBinary
 	h.Version = 2
 	h.DomainNumber = c.domain
 	h.SequenceID = c.getSequenceID()
-	//sz := uint16(binary.Size(&data))
-	//h.MessageLength = SizeofManagementHeaderBody + 6 + sz
-	// MessageLength is filled in by MarshalBinary
 	h.ControlField = ControlManagement
 	h.SourcePortIdentity.PortNumber = c.portNumber
 	h.LogMessageInterval = 0x7f // required by Table 42 of the standard
+}
+
+func ManagementBinaryMsg[D ManagementData](c *ManagementClient, data D) ([]byte, error) {
+	msg := NewManagementSetMsg(c, data)
+	return msg.MarshalBinary()
+}
+
+func NewManagementSetMsg[D ManagementData](c *ManagementClient, data D) *ManagementMsg[ManagementV[D]] {
+	msg := new(ManagementMsg[ManagementV[D]])
+	// Header
+	c.SetHeader(&msg.Header)
 	// ManagementBody
 	msg.ActionField = SetAction
 	msg.TargetPortIdentity = AnyPortIdentity
 	// ManagementTLV
-	tlv := &msg.TLV
+	SetManagementDataTLV(&msg.TLV, data)
+	return msg
+}
+
+func SetManagementDataTLV[D ManagementData](tlv *TLV[ManagementV[D]], data D) {
 	tlv.TLVType = TLVTypeManagement
 	// tlv.LengthField is filled in by MarshalBinary
 	tlv.ValueField.ManagementID = data.ManagementID()
 	tlv.ValueField.Data = data
-	return msg
 }
 
 type GrandmasterSettingsNPMsg = ManagementMsg[ManagementV[GrandmasterSettingsNP]]
 
 func NewGrandmasterSettingsNPMsg(c *ManagementClient) *GrandmasterSettingsNPMsg {
-	return NewManagementMsg(c, GrandmasterSettingsNP{
+	return NewManagementSetMsg(c, GrandmasterSettingsNP{
 		ClockQuality: ClockQuality{
 			ClockClass:              0x6,
 			ClockAccuracy:           0x23,
@@ -294,12 +304,6 @@ func NewGrandmasterSettingsNPMsg(c *ManagementClient) *GrandmasterSettingsNPMsg 
 		TimeFlags:  CurrentUTCOffsetValid | PTPTimescale | TimeTraceable,
 		TimeSource: 0xA0, // what is this?
 	})
-}
-
-func NewManagementClient() *ManagementClient {
-	return &ManagementClient{
-		portNumber: uint16(os.Getpid()),
-	}
 }
 
 const testPID = 12621
