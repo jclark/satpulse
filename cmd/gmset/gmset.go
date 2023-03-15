@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
+
+	"golang.org/x/exp/slices"
 )
 
 var header string = "\x0d\x02\x00\x3e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x31\x4d\x00\x00\x04\x7f"
@@ -17,41 +20,10 @@ var msg = header + body + tlv + grandmaster_settings_np
 const SizeofManagementHeaderBody = 48
 const ManagementMessageType = 0xD
 
-type ManagementID uint16
-
-const (
-	IDGrandmasterSettingsNP ManagementID = 0xC001
-)
-
-type ManagementData interface {
-	ManagementID() ManagementID
-}
-
-type Action uint8
-
-const (
-	GetAction Action = iota
-	SetAction
-	ResponseAction
-	CommandAction
-	AcknowledgeAction
-)
-
-type ManagementMsg[D ManagementData] struct {
-	Header               Header
-	TargetPortIdentity   PortIdentity
-	StartingBoundaryHops uint8
-	BoundaryHops         uint8
-	ActionField          Action
-	_                    uint8
-	ManagementTLV        ManagementTLV[D]
-}
-
-type ManagementTLV[D ManagementData] struct {
-	TLVType      uint16
-	LengthField  uint16
-	ManagementID ManagementID
-	Data         D
+type ManagementMsg[V any] struct {
+	Header Header
+	ManagementBody
+	TLV TLV[V]
 }
 
 type Header struct {
@@ -67,6 +39,163 @@ type Header struct {
 	SequenceID          uint16
 	ControlField        uint8
 	LogMessageInterval  uint8
+}
+
+type ManagementBody struct {
+	TargetPortIdentity   PortIdentity
+	StartingBoundaryHops uint8
+	BoundaryHops         uint8
+	ActionField          Action
+	_                    uint8
+}
+
+type Action uint8
+
+const (
+	GetAction Action = iota
+	SetAction
+	ResponseAction
+	CommandAction
+	AcknowledgeAction
+)
+
+// Offset of length field of TLV within ManagementMsg.
+const OffsetofTLVLength = 50
+
+type TLV[V any] struct {
+	TLVType     uint16
+	LengthField uint16
+	ValueField  V
+}
+
+type ManagementID uint16
+
+const (
+	IDGrandmasterSettingsNP ManagementID = 0xC001
+)
+
+type ManagementV[D ManagementData] struct {
+	ManagementID ManagementID
+	Data         D
+}
+
+type ManagementData interface {
+	ManagementID() ManagementID
+}
+
+type BinaryReaderFrom interface {
+	ReadBinaryFrom(io.Reader) error
+}
+
+type BinaryWriterTo interface {
+	WriteBinaryTo(io.Writer) error
+}
+
+func (m *ManagementMsg[V]) UnmarshalBinary(data []byte) error {
+	r := bytes.NewReader(data)
+	if err := binary.Read(r, binary.BigEndian, &m.Header); err != nil {
+		return err
+	}
+	err := binary.Read(r, binary.BigEndian, &m.ManagementBody)
+	if err != nil {
+		return err
+	}
+	br, ok := any(&m.TLV).(BinaryReaderFrom)
+	if ok {
+		err = br.ReadBinaryFrom(r)
+	} else {
+		err = binary.Read(r, binary.BigEndian, &m.TLV)
+	}
+	if err != nil {
+		return err
+	}
+	_, err = r.ReadByte()
+	if err == nil {
+		return fmt.Errorf("trailing bytes")
+	}
+	if err != io.EOF {
+		return err
+	}
+	return nil
+}
+
+func (m *ManagementMsg[V]) MarshalBinary() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	if err := binary.Write(buf, binary.BigEndian, &m.Header); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.BigEndian, &m.ManagementBody); err != nil {
+		return nil, err
+	}
+	if err := m.TLV.WriteBinaryTo(buf); err != nil {
+		return nil, err
+	}
+	data := buf.Bytes()
+	if err := m.fixupBinaryLength(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (m *ManagementMsg[V]) fixupBinaryLength(data []byte) error {
+	l := len(data)
+	if l > 0xffff {
+		return fmt.Errorf("message too long")
+	}
+	// Write length field in Header
+	lenBytes := data[2:4]
+	binary.BigEndian.PutUint16(lenBytes, uint16(l))
+	// Write length field in TLV
+	lenBytes = data[OffsetofTLVLength : OffsetofTLVLength+2]
+	binary.BigEndian.PutUint16(lenBytes, uint16(l-(OffsetofTLVLength+2)))
+	return nil
+}
+
+func (m *ManagementMsg[T]) SetLength(l uint16) {
+	m.Header.MessageLength = uint16(l)
+	m.TLV.LengthField = l - (OffsetofTLVLength + 2)
+}
+
+func (t *TLV[V]) WriteBinaryTo(w io.Writer) error {
+	err := binary.Write(w, binary.BigEndian, &t.TLVType)
+	if err != nil {
+		return err
+	}
+	err = binary.Write(w, binary.BigEndian, &t.LengthField)
+	if err != nil {
+		return err
+	}
+	bw, ok := any(&t.ValueField).(BinaryWriterTo)
+	if ok {
+		err = bw.WriteBinaryTo(w)
+	} else {
+		err = binary.Write(w, binary.BigEndian, &t.ValueField)
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *TLV[V]) ReadBinaryFrom(r io.Reader) error {
+	err := binary.Read(r, binary.BigEndian, &t.TLVType)
+	if err != nil {
+		return err
+	}
+	err = binary.Read(r, binary.BigEndian, &t.LengthField)
+	if err != nil {
+		return err
+	}
+	br, ok := any(&t.ValueField).(BinaryReaderFrom)
+	if ok {
+		err = br.ReadBinaryFrom(r)
+	} else {
+		err = binary.Read(r, binary.BigEndian, &t.ValueField)
+	}
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 var AnyPortIdentity = PortIdentity{[8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 0xffff}
@@ -121,16 +250,22 @@ func (c *ManagementClient) getSequenceID() uint16 {
 	return id
 }
 
-func NewManagementMsg[D ManagementData](c *ManagementClient, data D) *ManagementMsg[D] {
-	msg := new(ManagementMsg[D])
+func ManagementBinaryMsg[D ManagementData](c *ManagementClient, data D) ([]byte, error) {
+	msg := NewManagementMsg(c, data)
+	return msg.MarshalBinary()
+}
+
+func NewManagementMsg[D ManagementData](c *ManagementClient, data D) *ManagementMsg[ManagementV[D]] {
+	msg := new(ManagementMsg[ManagementV[D]])
 	// Header
 	h := &msg.Header
 	h.MessageType = ManagementMessageType // XXX this also has transport specific
 	h.Version = 2
 	h.DomainNumber = c.domain
 	h.SequenceID = c.getSequenceID()
-	sz := uint16(binary.Size(&data))
-	h.MessageLength = SizeofManagementHeaderBody + 6 + sz
+	//sz := uint16(binary.Size(&data))
+	//h.MessageLength = SizeofManagementHeaderBody + 6 + sz
+	// MessageLength is filled in by MarshalBinary
 	h.ControlField = ControlManagement
 	h.SourcePortIdentity.PortNumber = c.portNumber
 	h.LogMessageInterval = 0x7f // required by Table 42 of the standard
@@ -138,15 +273,17 @@ func NewManagementMsg[D ManagementData](c *ManagementClient, data D) *Management
 	msg.ActionField = SetAction
 	msg.TargetPortIdentity = AnyPortIdentity
 	// ManagementTLV
-	tlv := &msg.ManagementTLV
+	tlv := &msg.TLV
 	tlv.TLVType = TLVTypeManagement
-	tlv.ManagementID = data.ManagementID()
-	tlv.LengthField = sz + 2
-	tlv.Data = data
+	// tlv.LengthField is filled in by MarshalBinary
+	tlv.ValueField.ManagementID = data.ManagementID()
+	tlv.ValueField.Data = data
 	return msg
 }
 
-func NewGrandmasterSettingsNPMsg(c *ManagementClient) *ManagementMsg[GrandmasterSettingsNP] {
+type GrandmasterSettingsNPMsg = ManagementMsg[ManagementV[GrandmasterSettingsNP]]
+
+func NewGrandmasterSettingsNPMsg(c *ManagementClient) *GrandmasterSettingsNPMsg {
 	return NewManagementMsg(c, GrandmasterSettingsNP{
 		ClockQuality: ClockQuality{
 			ClockClass:              0x6,
@@ -171,13 +308,10 @@ func run() error {
 	client := NewManagementClient()
 	client.portNumber = testPID
 	gsn := NewGrandmasterSettingsNPMsg(client)
-	buf := new(bytes.Buffer)
-
-	err := binary.Write(buf, binary.BigEndian, gsn)
+	bytes, err := gsn.MarshalBinary()
 	if err != nil {
-		return err
+		return fmt.Errorf("first MarshalBinaryFailed: %v", err)
 	}
-	bytes := buf.Bytes()
 	if len(msg) != len(bytes) {
 		return fmt.Errorf("wrong length: got %d, want %d", len(bytes), len(msg))
 	}
@@ -185,6 +319,22 @@ func run() error {
 		if msg[i] != bytes[i] {
 			fmt.Printf("wrong byte at %d: got %02x, want %02x\n", i, bytes[i], msg[i])
 		}
+	}
+	gsn.SetLength(uint16(len(bytes)))
+	gsn2 := new(GrandmasterSettingsNPMsg)
+	err = gsn2.UnmarshalBinary(bytes)
+	if err != nil {
+		return fmt.Errorf("UnmarshalBinary failed: %v", err)
+	}
+	if gsn.TLV.ValueField.Data != gsn2.TLV.ValueField.Data {
+		return fmt.Errorf("data not round tripped: got %v, want %v", gsn2.TLV.ValueField.Data, gsn.TLV.ValueField.Data)
+	}
+	bytes2, err := gsn2.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(bytes, bytes2) {
+		return fmt.Errorf("got different bytes: got %v, want %v", bytes2, bytes)
 	}
 	return nil
 }
