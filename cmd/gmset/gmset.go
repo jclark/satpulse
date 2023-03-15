@@ -18,7 +18,6 @@ var grandmaster_settings_np string = "\x06\x23\xff\xff\x00\x25\x1c\xa0"
 var msg = header + body + tlv + grandmaster_settings_np
 
 const SizeofManagementHeaderBody = 48
-const ManagementMessageType = 0xD
 
 type ManagementMsg[V any] struct {
 	Header Header
@@ -27,7 +26,7 @@ type ManagementMsg[V any] struct {
 }
 
 type Header struct {
-	MessageType         uint8
+	MessageType         MessageType
 	Version             uint8
 	MessageLength       uint16
 	DomainNumber        uint8
@@ -37,9 +36,21 @@ type Header struct {
 	MessageTypeSpecific uint32
 	SourcePortIdentity  PortIdentity
 	SequenceID          uint16
-	ControlField        uint8
+	ControlField        Control
 	LogMessageInterval  uint8
 }
+
+type MessageType uint8
+
+const (
+	ManagementMessageType MessageType = 0xD
+)
+
+type Control uint8
+
+const (
+	ControlManagement Control = 0x4
+)
 
 type ManagementBody struct {
 	TargetPortIdentity   PortIdentity
@@ -62,8 +73,14 @@ const (
 // Offset of length field of TLV within ManagementMsg.
 const OffsetofTLVLength = 50
 
+type TLVType uint16
+
+const (
+	TLVTypeManagement TLVType = 0x0001
+)
+
 type TLV[V any] struct {
-	TLVType     uint16
+	TLVType     TLVType
 	LengthField uint16
 	ValueField  V
 }
@@ -235,9 +252,6 @@ func (gsn GrandmasterSettingsNP) ManagementID() ManagementID {
 	return IDGrandmasterSettingsNP
 }
 
-const TLVTypeManagement = 0x0001
-const ControlManagement = 0x4
-
 type ManagementClient struct {
 	sequenceID uint16
 	portNumber uint16
@@ -267,7 +281,7 @@ func (c *ManagementClient) SetHeader(h *Header) {
 	h.LogMessageInterval = 0x7f // required by Table 42 of the standard
 }
 
-func ManagementBinaryMsg[D ManagementData](c *ManagementClient, data D) ([]byte, error) {
+func ManagementSetBinaryMsg[D ManagementData](c *ManagementClient, data D) ([]byte, error) {
 	msg := NewManagementSetMsg(c, data)
 	return msg.MarshalBinary()
 }
