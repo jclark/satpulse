@@ -27,14 +27,22 @@ type ManagementData interface {
 	ManagementID() ManagementID
 }
 
-const SetAction = 0x01
+type Action uint8
+
+const (
+	GetAction Action = iota
+	SetAction
+	ResponseAction
+	CommandAction
+	AcknowledgeAction
+)
 
 type ManagementMsg[D ManagementData] struct {
 	Header               Header
 	TargetPortIdentity   PortIdentity
 	StartingBoundaryHops uint8
 	BoundaryHops         uint8
-	ActionField          uint8
+	ActionField          Action
 	_                    uint8
 	ManagementTLV        ManagementTLV[D]
 }
