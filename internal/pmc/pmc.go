@@ -1,4 +1,4 @@
-package main
+package pmc
 
 import (
 	"bytes"
@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 )
-
 
 const SizeofManagementHeaderBody = 48
 
