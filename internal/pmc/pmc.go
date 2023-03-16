@@ -130,7 +130,7 @@ type BinaryWriterTo interface {
 	WriteBinaryTo(io.Writer) error
 }
 
-func UnmarshalMgmtMsg(data []byte) (any, error) {
+func UnmarshalMgmtMsg(data []byte) (MgmtMsgStarter, error) {
 	var f MgmtMsgFixed
 	r := bytes.NewReader(data)
 	if err := binary.Read(r, binary.BigEndian, &f); err != nil {
