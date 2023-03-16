@@ -11,6 +11,7 @@ import (
 	"github.com/jclark/gps2phc/internal/serio"
 	"github.com/jclark/gps2phc/internal/ubx"
 	ubxbin "github.com/jclark/gps2phc/internal/ubx/bin"
+	ubxcfg "github.com/jclark/gps2phc/internal/ubx/cfg"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slog"
 )
@@ -46,6 +47,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		ubxbin.Poll(ubxbin.NavTimeLSID),
 		ubxbin.SetRate(ubxbin.NavTimeGPSID, 1),
 		ubxbin.SetRate(ubxbin.TimTPID, 1),
+		tpTimegridGPS(),
 	}
 	writeRespCh := serio.WriteAsync(ctx, port, configMsgs)
 	timerCh := time.After(time.Second * 2)
@@ -121,6 +123,25 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		"tmode", tmode,
 		"leapSecDate", lsdStr)
 	return
+}
+
+func tpTimegridGPS() []byte {
+	cfg := map[string]map[string]any{
+		"TP": {
+			"TIMEGRID_TP1": "GPS",
+		},
+	}
+	u := ubxbin.CfgValset{
+		CfgValsetFixed: ubxbin.CfgValsetFixed{
+			Layers: ubxbin.CfgValsetLayerRAM,
+		},
+		CfgData: ubxcfg.GetSchema().MustMarshal(cfg),
+	}
+	bytes, err := ubxbin.Serialize(&u)
+	if err != nil {
+		panic(err)
+	}
+	return bytes
 }
 
 func (gr *gpsReceived) init() {

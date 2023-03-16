@@ -352,7 +352,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, f 
 	}
 	sec = sec.Round(time.Second)
 	if mt.PrecedesPulse {
-		corr.PulseOffset(sec, mt.PulseOffset)
+		corr.PulseOffset(sec, f.TRead, mt.PulseOffset)
 	} else if sec > state.lastTime {
 		corr.GPSTime(sec, f.TRead)
 		state.lastTime = sec
