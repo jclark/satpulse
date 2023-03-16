@@ -13,12 +13,23 @@ var grandmaster_settings_np string = "\x06\x23\xff\xff\x00\x25\x1c\xa0"
 
 var msg = header + body + tlv + grandmaster_settings_np
 
+var gsnData = GrandmasterSettingsNP{
+	ClockQuality: ClockQuality{
+		ClockClass:              0x6,
+		ClockAccuracy:           0x23,
+		OffsetScaledLogVariance: 0xFFFF,
+	},
+	UTCOffset:  37,
+	TimeFlags:  CurrentUTCOffsetValid | PTPTimescale | TimeTraceable,
+	TimeSource: 0xA0, // what is this?
+}
+
 const testPID = 12621
 
 func TestGSN(t *testing.T) {
 	client := NewManagementClient()
 	client.portNumber = testPID
-	gsn := NewGrandmasterSettingsNPMsg(client)
+	gsn := NewGrandmasterSettingsNPMsg(client, gsnData)
 	bytes, err := gsn.MarshalBinary()
 	if err != nil {
 		t.Fatalf("first MarshalBinaryFailed: %v", err)
@@ -32,13 +43,21 @@ func TestGSN(t *testing.T) {
 		}
 	}
 	gsn.SetLength(uint16(len(bytes)))
-	gsn2 := new(GrandmasterSettingsNPMsg)
-	err = gsn2.UnmarshalBinary(bytes)
+
+	m, err := UnmarshalManagementMsg(bytes)
 	if err != nil {
-		t.Fatalf("UnmarshalBinary failed: %v", err)
+		t.Fatalf("UnmarshalManagementMsg failed: %v", err)
 	}
-	if gsn.TLV.ValueField.Data != gsn2.TLV.ValueField.Data {
-		t.Fatalf("data not round tripped: got %v, want %v", gsn2.TLV.ValueField.Data, gsn.TLV.ValueField.Data)
+
+	gsn2, ok := m.(*GrandmasterSettingsNPMsg)
+	if !ok {
+		t.Fatalf("wrong type: got %T, want *GrandmasterSettingsNPMsg", m)
+	}
+	if gsn.V.Data != gsn2.V.Data {
+		t.Fatalf("data not round tripped: got %v, want %v", gsn2.V.Data, gsn.V.Data)
+	}
+	if gsn.ManagementMsgFixed != gsn2.ManagementMsgFixed {
+		t.Fatalf("fixed part not round tripped: got %v, want %v", gsn2.ManagementMsgFixed, gsn.ManagementMsgFixed)
 	}
 	bytes2, err := gsn2.MarshalBinary()
 	if err != nil {

@@ -8,12 +8,20 @@ import (
 	"os"
 )
 
-const SizeofManagementHeaderBody = 48
-
 type ManagementMsg[V any] struct {
-	Header Header
-	ManagementBody
-	TLV TLV[V]
+	ManagementMsgFixed
+	V V
+}
+
+type ManagementMsgFixed struct {
+	Header
+	TargetPortIdentity   PortIdentity
+	StartingBoundaryHops uint8
+	BoundaryHops         uint8
+	ActionField          Action
+	_                    uint8
+	TLVType              TLVType
+	TLVLength            uint16
 }
 
 type Header struct {
@@ -31,6 +39,14 @@ type Header struct {
 	LogMessageInterval  uint8
 }
 
+type ManagementMsgStarter interface {
+	ManagementMsgStart() *ManagementMsgFixed
+}
+
+func (m *ManagementMsg[V]) ManagementMsgStart() *ManagementMsgFixed {
+	return &m.ManagementMsgFixed
+}
+
 type MessageType uint8
 
 const (
@@ -43,12 +59,9 @@ const (
 	ControlManagement Control = 0x4
 )
 
-type ManagementBody struct {
-	TargetPortIdentity   PortIdentity
-	StartingBoundaryHops uint8
-	BoundaryHops         uint8
-	ActionField          Action
-	_                    uint8
+type PortIdentity struct {
+	ClockIdentity [8]byte
+	PortNumber    uint16
 }
 
 type Action uint8
@@ -61,20 +74,15 @@ const (
 	AcknowledgeAction
 )
 
-// Offset of length field of TLV within ManagementMsg.
-const OffsetofTLVLength = 50
-
 type TLVType uint16
 
 const (
-	TLVTypeManagement TLVType = 0x0001
+	TLVTypeManagement            TLVType = 0x0001
+	TLVTypeManagementErrorStatus TLVType = 0x0002
 )
 
-type TLV[V any] struct {
-	TLVType     TLVType
-	LengthField uint16
-	ValueField  V
-}
+// Offset of length field of TLV within ManagementMsg.
+const OffsetofTLVLength = 50
 
 type ManagementID uint16
 
@@ -112,6 +120,8 @@ type ManagementErrorStatusV struct {
 	DisplayData       string
 }
 
+type ManagementErrorStatusMsg = ManagementMsg[ManagementErrorStatusV]
+
 type BinaryReaderFrom interface {
 	ReadBinaryFrom(io.Reader) error
 }
@@ -120,43 +130,73 @@ type BinaryWriterTo interface {
 	WriteBinaryTo(io.Writer) error
 }
 
-func (m *ManagementMsg[V]) UnmarshalBinary(data []byte) error {
+func UnmarshalManagementMsg(data []byte) (any, error) {
+	var f ManagementMsgFixed
 	r := bytes.NewReader(data)
-	if err := binary.Read(r, binary.BigEndian, &m.Header); err != nil {
-		return err
+	if err := binary.Read(r, binary.BigEndian, &f); err != nil {
+		return nil, err
 	}
-	err := binary.Read(r, binary.BigEndian, &m.ManagementBody)
-	if err != nil {
-		return err
+	var msg ManagementMsgStarter
+	switch f.TLVType {
+	case TLVTypeManagement:
+		var mid ManagementID
+		var err error
+		if err = binary.Read(r, binary.BigEndian, &mid); err != nil {
+			return nil, err
+		}
+		switch mid {
+		case IDGrandmasterSettingsNP:
+			msg, err = unmarshalManagementV[GrandmasterSettingsNP](r)
+		default:
+			return nil, fmt.Errorf("unsupported management ID: 0x%04x", mid)
+		}
+		if err != nil {
+			return nil, err
+		}
+	case TLVTypeManagementErrorStatus:
+		var v ManagementErrorStatusV
+		if err := v.ReadBinaryFrom(r); err != nil {
+			return nil, err
+		}
+		m := new(ManagementErrorStatusMsg)
+		m.V = v
+		msg = m
+	default:
+		return nil, fmt.Errorf("unsupported TLV type: 0x%04x", f.TLVType)
 	}
-	br, ok := any(&m.TLV).(BinaryReaderFrom)
-	if ok {
-		err = br.ReadBinaryFrom(r)
-	} else {
-		err = binary.Read(r, binary.BigEndian, &m.TLV)
-	}
-	if err != nil {
-		return err
-	}
-	_, err = r.ReadByte()
+	*msg.ManagementMsgStart() = f
+	_, err := r.ReadByte()
 	if err == nil {
-		return fmt.Errorf("trailing bytes")
+		return nil, fmt.Errorf("trailing bytes")
 	}
 	if err != io.EOF {
-		return err
+		return nil, err
 	}
-	return nil
+	return msg, nil
+}
+
+func unmarshalManagementV[D ManagementData](r io.Reader) (ManagementMsgStarter, error) {
+	m := ManagementMsg[ManagementV[D]]{}
+	if err := binary.Read(r, binary.BigEndian, &m.V.Data); err != nil {
+		return nil, err
+	}
+	m.V.ManagementID = m.V.Data.ManagementID()
+	return &m, nil
 }
 
 func (m *ManagementMsg[V]) MarshalBinary() ([]byte, error) {
 	buf := new(bytes.Buffer)
-	if err := binary.Write(buf, binary.BigEndian, &m.Header); err != nil {
+	var err error
+	if err = binary.Write(buf, binary.BigEndian, &m.ManagementMsgFixed); err != nil {
 		return nil, err
 	}
-	if err := binary.Write(buf, binary.BigEndian, &m.ManagementBody); err != nil {
-		return nil, err
+	bw, ok := any(&m.V).(BinaryWriterTo)
+	if ok {
+		err = bw.WriteBinaryTo(buf)
+	} else {
+		err = binary.Write(buf, binary.BigEndian, &m.V)
 	}
-	if err := m.TLV.WriteBinaryTo(buf); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	data := buf.Bytes()
@@ -182,49 +222,7 @@ func (m *ManagementMsg[V]) fixupBinaryLength(data []byte) error {
 
 func (m *ManagementMsg[T]) SetLength(l uint16) {
 	m.Header.MessageLength = uint16(l)
-	m.TLV.LengthField = l - (OffsetofTLVLength + 2)
-}
-
-func (t *TLV[V]) WriteBinaryTo(w io.Writer) error {
-	err := binary.Write(w, binary.BigEndian, &t.TLVType)
-	if err != nil {
-		return err
-	}
-	err = binary.Write(w, binary.BigEndian, &t.LengthField)
-	if err != nil {
-		return err
-	}
-	bw, ok := any(&t.ValueField).(BinaryWriterTo)
-	if ok {
-		err = bw.WriteBinaryTo(w)
-	} else {
-		err = binary.Write(w, binary.BigEndian, &t.ValueField)
-	}
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *TLV[V]) ReadBinaryFrom(r io.Reader) error {
-	err := binary.Read(r, binary.BigEndian, &t.TLVType)
-	if err != nil {
-		return err
-	}
-	err = binary.Read(r, binary.BigEndian, &t.LengthField)
-	if err != nil {
-		return err
-	}
-	br, ok := any(&t.ValueField).(BinaryReaderFrom)
-	if ok {
-		err = br.ReadBinaryFrom(r)
-	} else {
-		err = binary.Read(r, binary.BigEndian, &t.ValueField)
-	}
-	if err != nil {
-		return err
-	}
-	return nil
+	m.TLVLength = l - (OffsetofTLVLength + 2)
 }
 
 func (m *ManagementErrorStatusV) WriteBinaryTo(w io.Writer) error {
@@ -261,11 +259,10 @@ func (m *ManagementErrorStatusV) ReadBinaryFrom(r io.Reader) error {
 	if err := binary.Read(r, binary.BigEndian, &reserved); err != nil {
 		return err
 	}
-
 	if err := readPTPText(r, &m.DisplayData); err != nil {
 		return err
 	}
-	// The padding needs makes the length of the TLV even.
+	// The padding needs to make the length of the TLV even.
 	// Since there is a single byte of length, even lengths require a padding byte.
 	if len(m.DisplayData)%2 == 0 {
 		var padding uint8
@@ -304,11 +301,6 @@ func readPTPText(r io.Reader, p *string) error {
 
 var AnyPortIdentity = PortIdentity{[8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 0xffff}
 
-type PortIdentity struct {
-	ClockIdentity [8]byte
-	PortNumber    uint16
-}
-
 type ClockQuality struct {
 	ClockClass              uint8
 	ClockAccuracy           uint8
@@ -327,6 +319,8 @@ const (
 	FrequencyTraceable
 	SynchronizationUncertain
 )
+
+type GrandmasterSettingsNPMsg = ManagementMsg[ManagementV[GrandmasterSettingsNP]]
 
 type GrandmasterSettingsNP struct {
 	ClockQuality ClockQuality
@@ -380,48 +374,35 @@ func NewManagementSetMsg[D ManagementData](c *ManagementClient, data D) *Managem
 	// ManagementBody
 	msg.ActionField = SetAction
 	msg.TargetPortIdentity = AnyPortIdentity
+	msg.TLVType = TLVTypeManagement
+	// length will be fixed by MarshalBinary
 	// ManagementTLV
-	SetManagementDataTLV(&msg.TLV, data)
+	SetManagementV(&msg.V, data)
 	return msg
 }
 
-func SetManagementDataTLV[D ManagementData](tlv *TLV[ManagementV[D]], data D) {
-	tlv.TLVType = TLVTypeManagement
+func SetManagementV[D ManagementData](mv *ManagementV[D], data D) {
 	// tlv.LengthField is filled in by MarshalBinary
-	tlv.ValueField.ManagementID = data.ManagementID()
-	tlv.ValueField.Data = data
+	mv.ManagementID = data.ManagementID()
+	mv.Data = data
 }
 
-type GrandmasterSettingsNPMsg = ManagementMsg[ManagementV[GrandmasterSettingsNP]]
-
-func NewGrandmasterSettingsNPMsg(c *ManagementClient) *GrandmasterSettingsNPMsg {
-	return NewManagementSetMsg(c, GrandmasterSettingsNP{
-		ClockQuality: ClockQuality{
-			ClockClass:              0x6,
-			ClockAccuracy:           0x23,
-			OffsetScaledLogVariance: 0xFFFF,
-		},
-		UTCOffset:  37,
-		TimeFlags:  CurrentUTCOffsetValid | PTPTimescale | TimeTraceable,
-		TimeSource: 0xA0, // what is this?
-	})
+func NewGrandmasterSettingsNPMsg(c *ManagementClient, gsn GrandmasterSettingsNP) *GrandmasterSettingsNPMsg {
+	return NewManagementSetMsg(c, gsn)
 }
-
-type ManagementErrorStatusMsg = ManagementMsg[ManagementErrorStatusV]
 
 func NewManagementErrorStatusMsg(c *ManagementClient, eid ManagementErrorID, mid ManagementID, display string) *ManagementErrorStatusMsg {
 	msg := new(ManagementErrorStatusMsg)
 	// Header
 	c.SetHeader(&msg.Header)
 	// ManagementBody
-	msg.ActionField = SetAction
+	msg.ActionField = ResponseAction // or AcknowledgeAction?
 	msg.TargetPortIdentity = AnyPortIdentity
-	// ManagementTLV
-	tlv := &msg.TLV
-	tlv.TLVType = TLVTypeManagement
-	// tlv.LengthField is filled in by MarshalBinary
-	tlv.ValueField.ManagementErrorID = eid
-	tlv.ValueField.ManagementID = mid
-	tlv.ValueField.DisplayData = display
+
+	msg.TLVType = TLVTypeManagementErrorStatus
+	// LengthField is filled in by MarshalBinary
+	msg.V.ManagementErrorID = eid
+	msg.V.ManagementID = mid
+	msg.V.DisplayData = display
 	return msg
 }
