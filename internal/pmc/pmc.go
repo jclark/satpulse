@@ -91,6 +91,27 @@ type ManagementData interface {
 	ManagementID() ManagementID
 }
 
+type ManagementErrorID uint16
+
+const (
+	_ ManagementErrorID = iota
+	ManagementErrorResponseTooBig
+	ManagementErrorNoSuchID
+	ManagementErrorWrongLength
+	ManagementErrorWrongValue
+	ManagementErrorNotSetable
+	ManagementErrorNotSupported
+	ManagementErrorUnpopulated
+	ManagementErrorGeneralError ManagementErrorID = 0xFFFE
+)
+
+type ManagementErrorStatusV struct {
+	ManagementErrorID ManagementErrorID
+	ManagementID      ManagementID
+	_                 [4]byte
+	DisplayData       string
+}
+
 type BinaryReaderFrom interface {
 	ReadBinaryFrom(io.Reader) error
 }
@@ -206,6 +227,81 @@ func (t *TLV[V]) ReadBinaryFrom(r io.Reader) error {
 	return nil
 }
 
+func (m *ManagementErrorStatusV) WriteBinaryTo(w io.Writer) error {
+	if err := binary.Write(w, binary.BigEndian, &m.ManagementErrorID); err != nil {
+		return err
+	}
+	if err := binary.Write(w, binary.BigEndian, &m.ManagementID); err != nil {
+		return err
+	}
+	var reserved [4]byte
+	if err := binary.Write(w, binary.BigEndian, &reserved); err != nil {
+		return err
+	}
+	if err := writePTPText(w, m.DisplayData); err != nil {
+		return err
+	}
+	if len(m.DisplayData)%2 == 0 {
+		var padding uint8
+		if err := binary.Write(w, binary.BigEndian, &padding); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *ManagementErrorStatusV) ReadBinaryFrom(r io.Reader) error {
+	if err := binary.Read(r, binary.BigEndian, &m.ManagementErrorID); err != nil {
+		return err
+	}
+	if err := binary.Read(r, binary.BigEndian, &m.ManagementID); err != nil {
+		return err
+	}
+	var reserved [4]byte
+	if err := binary.Read(r, binary.BigEndian, &reserved); err != nil {
+		return err
+	}
+
+	if err := readPTPText(r, &m.DisplayData); err != nil {
+		return err
+	}
+	// The padding needs makes the length of the TLV even.
+	// Since there is a single byte of length, even lengths require a padding byte.
+	if len(m.DisplayData)%2 == 0 {
+		var padding uint8
+		if err := binary.Read(r, binary.BigEndian, &padding); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writePTPText(w io.Writer, s string) error {
+	l := len(s)
+	if l > 255 {
+		return fmt.Errorf("PTPText too long: %d", len(s))
+	}
+	lengthField := uint8(l)
+	if err := binary.Write(w, binary.BigEndian, &lengthField); err != nil {
+		return err
+	}
+	textField := ([]byte)(s)
+	return binary.Write(w, binary.BigEndian, &textField)
+}
+
+func readPTPText(r io.Reader, p *string) error {
+	lengthField := uint8(0)
+	if err := binary.Read(r, binary.BigEndian, &lengthField); err != nil {
+		return err
+	}
+	textField := make([]byte, lengthField)
+	if err := binary.Read(r, binary.BigEndian, &textField); err != nil {
+		return err
+	}
+	*p = string(textField)
+	return nil
+}
+
 var AnyPortIdentity = PortIdentity{[8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 0xffff}
 
 type PortIdentity struct {
@@ -309,4 +405,23 @@ func NewGrandmasterSettingsNPMsg(c *ManagementClient) *GrandmasterSettingsNPMsg 
 		TimeFlags:  CurrentUTCOffsetValid | PTPTimescale | TimeTraceable,
 		TimeSource: 0xA0, // what is this?
 	})
+}
+
+type ManagementErrorStatusMsg = ManagementMsg[ManagementErrorStatusV]
+
+func NewManagementErrorStatusMsg(c *ManagementClient, eid ManagementErrorID, mid ManagementID, display string) *ManagementErrorStatusMsg {
+	msg := new(ManagementErrorStatusMsg)
+	// Header
+	c.SetHeader(&msg.Header)
+	// ManagementBody
+	msg.ActionField = SetAction
+	msg.TargetPortIdentity = AnyPortIdentity
+	// ManagementTLV
+	tlv := &msg.TLV
+	tlv.TLVType = TLVTypeManagement
+	// tlv.LengthField is filled in by MarshalBinary
+	tlv.ValueField.ManagementErrorID = eid
+	tlv.ValueField.ManagementID = mid
+	tlv.ValueField.DisplayData = display
+	return msg
 }
