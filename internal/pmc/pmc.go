@@ -302,7 +302,9 @@ func readPTPText(r io.Reader, p *string) error {
 	return nil
 }
 
-var AnyPortIdentity = PortIdentity{[8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 0xffff}
+func AnyPortIdentity() PortIdentity {
+	return PortIdentity{[8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 0xffff}
+}
 
 type ClockQuality struct {
 	ClockClass              uint8
@@ -376,7 +378,7 @@ func NewMgmtSetMsg[D MgmtData](c *MgmtClient, data D) *MgmtMsg[MgmtV[D]] {
 	c.SetHeader(&msg.Header)
 	// MgmtBody
 	msg.ActionField = ActionSet
-	msg.TargetPortIdentity = AnyPortIdentity
+	msg.TargetPortIdentity = AnyPortIdentity()
 	msg.TLVType = TLVTypeMgmt
 	// length will be fixed by MarshalBinary
 	// MgmtTLV
@@ -400,7 +402,7 @@ func NewMgmtErrorStatusMsg(c *MgmtClient, eid MgmtErrorID, mid MgmtID, display s
 	c.SetHeader(&msg.Header)
 	// MgmtBody
 	msg.ActionField = ActionResponse // or AcknowledgeAction?
-	msg.TargetPortIdentity = AnyPortIdentity
+	msg.TargetPortIdentity = AnyPortIdentity()
 
 	msg.TLVType = TLVTypeMgmtErrorStatus
 	// LengthField is filled in by MarshalBinary
