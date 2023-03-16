@@ -24,6 +24,8 @@ type MgmtMsgFixed struct {
 	TLVLength            uint16
 }
 
+const SizeofMgmtMsgFixed = 52
+
 type Header struct {
 	MessageType         MessageType
 	Version             uint8
@@ -80,9 +82,6 @@ const (
 	TLVTypeMgmt            TLVType = 0x0001
 	TLVTypeMgmtErrorStatus TLVType = 0x0002
 )
-
-// Offset of length field of TLV within MgmtMsg.
-const OffsetofTLVLength = 50
 
 type MgmtID uint16
 
@@ -219,14 +218,14 @@ func (m *MgmtMsg[V]) fixupBinaryLength(data []byte) error {
 	lenBytes := data[2:4]
 	binary.BigEndian.PutUint16(lenBytes, uint16(l))
 	// Write length field in TLV
-	lenBytes = data[OffsetofTLVLength : OffsetofTLVLength+2]
-	binary.BigEndian.PutUint16(lenBytes, uint16(l-(OffsetofTLVLength+2)))
+	lenBytes = data[SizeofMgmtMsgFixed-2 : SizeofMgmtMsgFixed]
+	binary.BigEndian.PutUint16(lenBytes, uint16(l-SizeofMgmtMsgFixed))
 	return nil
 }
 
 func (m *MgmtMsg[T]) SetLength(l uint16) {
 	m.Header.MessageLength = uint16(l)
-	m.TLVLength = l - (OffsetofTLVLength + 2)
+	m.TLVLength = l - SizeofMgmtMsgFixed
 }
 
 func (m *MgmtErrorStatusV) WriteBinaryTo(w io.Writer) error {
