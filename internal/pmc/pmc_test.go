@@ -27,7 +27,7 @@ var gsnData = GrandmasterSettingsNP{
 const testPID = 12621
 
 func TestGSN(t *testing.T) {
-	client := NewManagementClient()
+	client := NewMgmtClient()
 	client.portNumber = testPID
 	gsn := NewGrandmasterSettingsNPMsg(client, gsnData)
 	bytes, err := gsn.MarshalBinary()
@@ -44,9 +44,9 @@ func TestGSN(t *testing.T) {
 	}
 	gsn.SetLength(uint16(len(bytes)))
 
-	m, err := UnmarshalManagementMsg(bytes)
+	m, err := UnmarshalMgmtMsg(bytes)
 	if err != nil {
-		t.Fatalf("UnmarshalManagementMsg failed: %v", err)
+		t.Fatalf("UnmarshalMgmtMsg failed: %v", err)
 	}
 
 	gsn2, ok := m.(*GrandmasterSettingsNPMsg)
@@ -56,8 +56,8 @@ func TestGSN(t *testing.T) {
 	if gsn.V.Data != gsn2.V.Data {
 		t.Fatalf("data not round tripped: got %v, want %v", gsn2.V.Data, gsn.V.Data)
 	}
-	if gsn.ManagementMsgFixed != gsn2.ManagementMsgFixed {
-		t.Fatalf("fixed part not round tripped: got %v, want %v", gsn2.ManagementMsgFixed, gsn.ManagementMsgFixed)
+	if gsn.MgmtMsgFixed != gsn2.MgmtMsgFixed {
+		t.Fatalf("fixed part not round tripped: got %v, want %v", gsn2.MgmtMsgFixed, gsn.MgmtMsgFixed)
 	}
 	bytes2, err := gsn2.MarshalBinary()
 	if err != nil {

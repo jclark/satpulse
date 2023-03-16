@@ -8,12 +8,12 @@ import (
 	"os"
 )
 
-type ManagementMsg[V any] struct {
-	ManagementMsgFixed
+type MgmtMsg[V any] struct {
+	MgmtMsgFixed
 	V V
 }
 
-type ManagementMsgFixed struct {
+type MgmtMsgFixed struct {
 	Header
 	TargetPortIdentity   PortIdentity
 	StartingBoundaryHops uint8
@@ -39,24 +39,24 @@ type Header struct {
 	LogMessageInterval  uint8
 }
 
-type ManagementMsgStarter interface {
-	ManagementMsgStart() *ManagementMsgFixed
+type MgmtMsgStarter interface {
+	MgmtMsgStart() *MgmtMsgFixed
 }
 
-func (m *ManagementMsg[V]) ManagementMsgStart() *ManagementMsgFixed {
-	return &m.ManagementMsgFixed
+func (m *MgmtMsg[V]) MgmtMsgStart() *MgmtMsgFixed {
+	return &m.MgmtMsgFixed
 }
 
 type MessageType uint8
 
 const (
-	ManagementMessageType MessageType = 0xD
+	MgmtMessageType MessageType = 0xD
 )
 
 type Control uint8
 
 const (
-	ControlManagement Control = 0x4
+	ControlMgmt Control = 0x4
 )
 
 type PortIdentity struct {
@@ -77,50 +77,50 @@ const (
 type TLVType uint16
 
 const (
-	TLVTypeManagement            TLVType = 0x0001
-	TLVTypeManagementErrorStatus TLVType = 0x0002
+	TLVTypeMgmt            TLVType = 0x0001
+	TLVTypeMgmtErrorStatus TLVType = 0x0002
 )
 
-// Offset of length field of TLV within ManagementMsg.
+// Offset of length field of TLV within MgmtMsg.
 const OffsetofTLVLength = 50
 
-type ManagementID uint16
+type MgmtID uint16
 
 const (
-	IDGrandmasterSettingsNP ManagementID = 0xC001
+	IDGrandmasterSettingsNP MgmtID = 0xC001
 )
 
-type ManagementV[D ManagementData] struct {
-	ManagementID ManagementID
+type MgmtV[D MgmtData] struct {
+	MgmtID MgmtID
 	Data         D
 }
 
-type ManagementData interface {
-	ManagementID() ManagementID
+type MgmtData interface {
+	MgmtID() MgmtID
 }
 
-type ManagementErrorID uint16
+type MgmtErrorID uint16
 
 const (
-	_ ManagementErrorID = iota
-	ManagementErrorResponseTooBig
-	ManagementErrorNoSuchID
-	ManagementErrorWrongLength
-	ManagementErrorWrongValue
-	ManagementErrorNotSetable
-	ManagementErrorNotSupported
-	ManagementErrorUnpopulated
-	ManagementErrorGeneralError ManagementErrorID = 0xFFFE
+	_ MgmtErrorID = iota
+	MgmtErrorResponseTooBig
+	MgmtErrorNoSuchID
+	MgmtErrorWrongLength
+	MgmtErrorWrongValue
+	MgmtErrorNotSetable
+	MgmtErrorNotSupported
+	MgmtErrorUnpopulated
+	MgmtErrorGeneralError MgmtErrorID = 0xFFFE
 )
 
-type ManagementErrorStatusV struct {
-	ManagementErrorID ManagementErrorID
-	ManagementID      ManagementID
+type MgmtErrorStatusV struct {
+	MgmtErrorID MgmtErrorID
+	MgmtID      MgmtID
 	_                 [4]byte
 	DisplayData       string
 }
 
-type ManagementErrorStatusMsg = ManagementMsg[ManagementErrorStatusV]
+type MgmtErrorStatusMsg = MgmtMsg[MgmtErrorStatusV]
 
 type BinaryReaderFrom interface {
 	ReadBinaryFrom(io.Reader) error
@@ -130,41 +130,41 @@ type BinaryWriterTo interface {
 	WriteBinaryTo(io.Writer) error
 }
 
-func UnmarshalManagementMsg(data []byte) (any, error) {
-	var f ManagementMsgFixed
+func UnmarshalMgmtMsg(data []byte) (any, error) {
+	var f MgmtMsgFixed
 	r := bytes.NewReader(data)
 	if err := binary.Read(r, binary.BigEndian, &f); err != nil {
 		return nil, err
 	}
-	var msg ManagementMsgStarter
+	var msg MgmtMsgStarter
 	switch f.TLVType {
-	case TLVTypeManagement:
-		var mid ManagementID
+	case TLVTypeMgmt:
+		var mid MgmtID
 		var err error
 		if err = binary.Read(r, binary.BigEndian, &mid); err != nil {
 			return nil, err
 		}
 		switch mid {
 		case IDGrandmasterSettingsNP:
-			msg, err = unmarshalManagementV[GrandmasterSettingsNP](r)
+			msg, err = unmarshalMgmtV[GrandmasterSettingsNP](r)
 		default:
 			return nil, fmt.Errorf("unsupported management ID: 0x%04x", mid)
 		}
 		if err != nil {
 			return nil, err
 		}
-	case TLVTypeManagementErrorStatus:
-		var v ManagementErrorStatusV
+	case TLVTypeMgmtErrorStatus:
+		var v MgmtErrorStatusV
 		if err := v.ReadBinaryFrom(r); err != nil {
 			return nil, err
 		}
-		m := new(ManagementErrorStatusMsg)
+		m := new(MgmtErrorStatusMsg)
 		m.V = v
 		msg = m
 	default:
 		return nil, fmt.Errorf("unsupported TLV type: 0x%04x", f.TLVType)
 	}
-	*msg.ManagementMsgStart() = f
+	*msg.MgmtMsgStart() = f
 	_, err := r.ReadByte()
 	if err == nil {
 		return nil, fmt.Errorf("trailing bytes")
@@ -175,19 +175,19 @@ func UnmarshalManagementMsg(data []byte) (any, error) {
 	return msg, nil
 }
 
-func unmarshalManagementV[D ManagementData](r io.Reader) (ManagementMsgStarter, error) {
-	m := ManagementMsg[ManagementV[D]]{}
+func unmarshalMgmtV[D MgmtData](r io.Reader) (MgmtMsgStarter, error) {
+	m := MgmtMsg[MgmtV[D]]{}
 	if err := binary.Read(r, binary.BigEndian, &m.V.Data); err != nil {
 		return nil, err
 	}
-	m.V.ManagementID = m.V.Data.ManagementID()
+	m.V.MgmtID = m.V.Data.MgmtID()
 	return &m, nil
 }
 
-func (m *ManagementMsg[V]) MarshalBinary() ([]byte, error) {
+func (m *MgmtMsg[V]) MarshalBinary() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	var err error
-	if err = binary.Write(buf, binary.BigEndian, &m.ManagementMsgFixed); err != nil {
+	if err = binary.Write(buf, binary.BigEndian, &m.MgmtMsgFixed); err != nil {
 		return nil, err
 	}
 	bw, ok := any(&m.V).(BinaryWriterTo)
@@ -206,7 +206,7 @@ func (m *ManagementMsg[V]) MarshalBinary() ([]byte, error) {
 	return data, nil
 }
 
-func (m *ManagementMsg[V]) fixupBinaryLength(data []byte) error {
+func (m *MgmtMsg[V]) fixupBinaryLength(data []byte) error {
 	l := len(data)
 	if l > 0xffff {
 		return fmt.Errorf("message too long")
@@ -220,16 +220,16 @@ func (m *ManagementMsg[V]) fixupBinaryLength(data []byte) error {
 	return nil
 }
 
-func (m *ManagementMsg[T]) SetLength(l uint16) {
+func (m *MgmtMsg[T]) SetLength(l uint16) {
 	m.Header.MessageLength = uint16(l)
 	m.TLVLength = l - (OffsetofTLVLength + 2)
 }
 
-func (m *ManagementErrorStatusV) WriteBinaryTo(w io.Writer) error {
-	if err := binary.Write(w, binary.BigEndian, &m.ManagementErrorID); err != nil {
+func (m *MgmtErrorStatusV) WriteBinaryTo(w io.Writer) error {
+	if err := binary.Write(w, binary.BigEndian, &m.MgmtErrorID); err != nil {
 		return err
 	}
-	if err := binary.Write(w, binary.BigEndian, &m.ManagementID); err != nil {
+	if err := binary.Write(w, binary.BigEndian, &m.MgmtID); err != nil {
 		return err
 	}
 	var reserved [4]byte
@@ -248,11 +248,11 @@ func (m *ManagementErrorStatusV) WriteBinaryTo(w io.Writer) error {
 	return nil
 }
 
-func (m *ManagementErrorStatusV) ReadBinaryFrom(r io.Reader) error {
-	if err := binary.Read(r, binary.BigEndian, &m.ManagementErrorID); err != nil {
+func (m *MgmtErrorStatusV) ReadBinaryFrom(r io.Reader) error {
+	if err := binary.Read(r, binary.BigEndian, &m.MgmtErrorID); err != nil {
 		return err
 	}
-	if err := binary.Read(r, binary.BigEndian, &m.ManagementID); err != nil {
+	if err := binary.Read(r, binary.BigEndian, &m.MgmtID); err != nil {
 		return err
 	}
 	var reserved [4]byte
@@ -320,7 +320,7 @@ const (
 	SynchronizationUncertain
 )
 
-type GrandmasterSettingsNPMsg = ManagementMsg[ManagementV[GrandmasterSettingsNP]]
+type GrandmasterSettingsNPMsg = MgmtMsg[MgmtV[GrandmasterSettingsNP]]
 
 type GrandmasterSettingsNP struct {
 	ClockQuality ClockQuality
@@ -329,80 +329,80 @@ type GrandmasterSettingsNP struct {
 	TimeSource   uint8
 }
 
-func (gsn GrandmasterSettingsNP) ManagementID() ManagementID {
+func (gsn GrandmasterSettingsNP) MgmtID() MgmtID {
 	return IDGrandmasterSettingsNP
 }
 
-type ManagementClient struct {
+type MgmtClient struct {
 	sequenceID uint16
 	portNumber uint16
 	domain     uint8
 }
 
-func NewManagementClient() *ManagementClient {
-	return &ManagementClient{
+func NewMgmtClient() *MgmtClient {
+	return &MgmtClient{
 		portNumber: uint16(os.Getpid()),
 	}
 }
 
-func (c *ManagementClient) getSequenceID() uint16 {
+func (c *MgmtClient) getSequenceID() uint16 {
 	id := c.sequenceID
 	c.sequenceID++
 	return id
 }
 
-func (c *ManagementClient) SetHeader(h *Header) {
-	h.MessageType = ManagementMessageType // XXX this also has transport specific
+func (c *MgmtClient) SetHeader(h *Header) {
+	h.MessageType = MgmtMessageType // XXX this also has transport specific
 	// MessageLength is filled in by MarshalBinary
 	h.Version = 2
 	h.DomainNumber = c.domain
 	h.SequenceID = c.getSequenceID()
-	h.ControlField = ControlManagement
+	h.ControlField = ControlMgmt
 	h.SourcePortIdentity.PortNumber = c.portNumber
 	h.LogMessageInterval = 0x7f // required by Table 42 of the standard
 }
 
-func ManagementSetBinaryMsg[D ManagementData](c *ManagementClient, data D) ([]byte, error) {
-	msg := NewManagementSetMsg(c, data)
+func MgmtSetBinaryMsg[D MgmtData](c *MgmtClient, data D) ([]byte, error) {
+	msg := NewMgmtSetMsg(c, data)
 	return msg.MarshalBinary()
 }
 
-func NewManagementSetMsg[D ManagementData](c *ManagementClient, data D) *ManagementMsg[ManagementV[D]] {
-	msg := new(ManagementMsg[ManagementV[D]])
+func NewMgmtSetMsg[D MgmtData](c *MgmtClient, data D) *MgmtMsg[MgmtV[D]] {
+	msg := new(MgmtMsg[MgmtV[D]])
 	// Header
 	c.SetHeader(&msg.Header)
-	// ManagementBody
+	// MgmtBody
 	msg.ActionField = ActionSet
 	msg.TargetPortIdentity = AnyPortIdentity
-	msg.TLVType = TLVTypeManagement
+	msg.TLVType = TLVTypeMgmt
 	// length will be fixed by MarshalBinary
-	// ManagementTLV
-	SetManagementV(&msg.V, data)
+	// MgmtTLV
+	SetMgmtV(&msg.V, data)
 	return msg
 }
 
-func SetManagementV[D ManagementData](mv *ManagementV[D], data D) {
+func SetMgmtV[D MgmtData](mv *MgmtV[D], data D) {
 	// tlv.LengthField is filled in by MarshalBinary
-	mv.ManagementID = data.ManagementID()
+	mv.MgmtID = data.MgmtID()
 	mv.Data = data
 }
 
-func NewGrandmasterSettingsNPMsg(c *ManagementClient, gsn GrandmasterSettingsNP) *GrandmasterSettingsNPMsg {
-	return NewManagementSetMsg(c, gsn)
+func NewGrandmasterSettingsNPMsg(c *MgmtClient, gsn GrandmasterSettingsNP) *GrandmasterSettingsNPMsg {
+	return NewMgmtSetMsg(c, gsn)
 }
 
-func NewManagementErrorStatusMsg(c *ManagementClient, eid ManagementErrorID, mid ManagementID, display string) *ManagementErrorStatusMsg {
-	msg := new(ManagementErrorStatusMsg)
+func NewMgmtErrorStatusMsg(c *MgmtClient, eid MgmtErrorID, mid MgmtID, display string) *MgmtErrorStatusMsg {
+	msg := new(MgmtErrorStatusMsg)
 	// Header
 	c.SetHeader(&msg.Header)
-	// ManagementBody
+	// MgmtBody
 	msg.ActionField = ActionResponse // or AcknowledgeAction?
 	msg.TargetPortIdentity = AnyPortIdentity
 
-	msg.TLVType = TLVTypeManagementErrorStatus
+	msg.TLVType = TLVTypeMgmtErrorStatus
 	// LengthField is filled in by MarshalBinary
-	msg.V.ManagementErrorID = eid
-	msg.V.ManagementID = mid
+	msg.V.MgmtErrorID = eid
+	msg.V.MgmtID = mid
 	msg.V.DisplayData = display
 	return msg
 }
