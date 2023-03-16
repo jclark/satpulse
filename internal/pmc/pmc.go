@@ -67,11 +67,11 @@ type PortIdentity struct {
 type Action uint8
 
 const (
-	GetAction Action = iota
-	SetAction
-	ResponseAction
-	CommandAction
-	AcknowledgeAction
+	ActionGet Action = iota
+	ActionSet
+	ActionResponse
+	ActionCommand
+	ActionAcknowledge
 )
 
 type TLVType uint16
@@ -372,7 +372,7 @@ func NewManagementSetMsg[D ManagementData](c *ManagementClient, data D) *Managem
 	// Header
 	c.SetHeader(&msg.Header)
 	// ManagementBody
-	msg.ActionField = SetAction
+	msg.ActionField = ActionSet
 	msg.TargetPortIdentity = AnyPortIdentity
 	msg.TLVType = TLVTypeManagement
 	// length will be fixed by MarshalBinary
@@ -396,7 +396,7 @@ func NewManagementErrorStatusMsg(c *ManagementClient, eid ManagementErrorID, mid
 	// Header
 	c.SetHeader(&msg.Header)
 	// ManagementBody
-	msg.ActionField = ResponseAction // or AcknowledgeAction?
+	msg.ActionField = ActionResponse // or AcknowledgeAction?
 	msg.TargetPortIdentity = AnyPortIdentity
 
 	msg.TLVType = TLVTypeManagementErrorStatus
