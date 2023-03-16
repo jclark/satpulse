@@ -333,7 +333,7 @@ type GrandmasterSettings struct {
 	TimeSource   uint8
 }
 
-func (gsn GrandmasterSettings) MgmtID() MgmtID {
+func (GrandmasterSettings) MgmtID() MgmtID {
 	return IDGrandmasterSettings
 }
 
@@ -391,8 +391,8 @@ func SetMgmtV[D MgmtData](mv *MgmtV[D], data D) {
 	mv.Data = data
 }
 
-func NewGrandmasterSettingsMsg(c *MgmtClient, gsn GrandmasterSettings) *GrandmasterSettingsMsg {
-	return NewMgmtSetMsg(c, gsn)
+func NewGrandmasterSettingsMsg(c *MgmtClient, gs GrandmasterSettings) *GrandmasterSettingsMsg {
+	return NewMgmtSetMsg(c, gs)
 }
 
 func NewMgmtErrorStatusMsg(c *MgmtClient, eid MgmtErrorID, mid MgmtID, display string) *MgmtErrorStatusMsg {
