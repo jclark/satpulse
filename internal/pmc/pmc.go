@@ -367,6 +367,10 @@ func (c *MgmtClient) SetHeader(h *Header) {
 	h.LogMessageInterval = 0x7f // required by Table 42 of the standard
 }
 
+func GrandmasterSettingsBinaryMsg(c *MgmtClient, data GrandmasterSettings) ([]byte, error) {
+	return MgmtSetBinaryMsg(c, data)
+}
+
 func MgmtSetBinaryMsg[D MgmtData](c *MgmtClient, data D) ([]byte, error) {
 	msg := NewMgmtSetMsg(c, data)
 	return msg.MarshalBinary()
