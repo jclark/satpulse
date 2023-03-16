@@ -26,7 +26,7 @@ var gsmData = GrandmasterSettings{
 
 const testPID = 12621
 
-func TestGSN(t *testing.T) {
+func TestGrandmasterSettings(t *testing.T) {
 	client := NewMgmtClient()
 	client.portNumber = testPID
 	gsm := NewGrandmasterSettingsMsg(client, gsmData)
