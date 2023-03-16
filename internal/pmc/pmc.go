@@ -87,12 +87,12 @@ const OffsetofTLVLength = 50
 type MgmtID uint16
 
 const (
-	IDGrandmasterSettingsNP MgmtID = 0xC001
+	IDGrandmasterSettings MgmtID = 0xC001
 )
 
 type MgmtV[D MgmtData] struct {
 	MgmtID MgmtID
-	Data         D
+	Data   D
 }
 
 type MgmtData interface {
@@ -116,8 +116,8 @@ const (
 type MgmtErrorStatusV struct {
 	MgmtErrorID MgmtErrorID
 	MgmtID      MgmtID
-	_                 [4]byte
-	DisplayData       string
+	_           [4]byte
+	DisplayData string
 }
 
 type MgmtErrorStatusMsg = MgmtMsg[MgmtErrorStatusV]
@@ -144,12 +144,7 @@ func UnmarshalMgmtMsg(data []byte) (any, error) {
 		if err = binary.Read(r, binary.BigEndian, &mid); err != nil {
 			return nil, err
 		}
-		switch mid {
-		case IDGrandmasterSettingsNP:
-			msg, err = unmarshalMgmtV[GrandmasterSettingsNP](r)
-		default:
-			return nil, fmt.Errorf("unsupported management ID: 0x%04x", mid)
-		}
+		msg, err = unmarshalMID(r, mid)
 		if err != nil {
 			return nil, err
 		}
@@ -173,6 +168,15 @@ func UnmarshalMgmtMsg(data []byte) (any, error) {
 		return nil, err
 	}
 	return msg, nil
+}
+
+func unmarshalMID(r io.Reader, mid MgmtID) (MgmtMsgStarter, error) {
+	switch mid {
+	case IDGrandmasterSettings:
+		return unmarshalMgmtV[GrandmasterSettings](r)
+	default:
+		return nil, fmt.Errorf("unsupported management ID: 0x%04x", mid)
+	}
 }
 
 func unmarshalMgmtV[D MgmtData](r io.Reader) (MgmtMsgStarter, error) {
@@ -320,17 +324,17 @@ const (
 	SynchronizationUncertain
 )
 
-type GrandmasterSettingsNPMsg = MgmtMsg[MgmtV[GrandmasterSettingsNP]]
+type GrandmasterSettingsMsg = MgmtMsg[MgmtV[GrandmasterSettings]]
 
-type GrandmasterSettingsNP struct {
+type GrandmasterSettings struct {
 	ClockQuality ClockQuality
 	UTCOffset    int16
 	TimeFlags    TimeFlags
 	TimeSource   uint8
 }
 
-func (gsn GrandmasterSettingsNP) MgmtID() MgmtID {
-	return IDGrandmasterSettingsNP
+func (gsn GrandmasterSettings) MgmtID() MgmtID {
+	return IDGrandmasterSettings
 }
 
 type MgmtClient struct {
@@ -387,7 +391,7 @@ func SetMgmtV[D MgmtData](mv *MgmtV[D], data D) {
 	mv.Data = data
 }
 
-func NewGrandmasterSettingsNPMsg(c *MgmtClient, gsn GrandmasterSettingsNP) *GrandmasterSettingsNPMsg {
+func NewGrandmasterSettingsMsg(c *MgmtClient, gsn GrandmasterSettings) *GrandmasterSettingsMsg {
 	return NewMgmtSetMsg(c, gsn)
 }
 

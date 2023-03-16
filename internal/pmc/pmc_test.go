@@ -13,7 +13,7 @@ var grandmaster_settings_np string = "\x06\x23\xff\xff\x00\x25\x1c\xa0"
 
 var msg = header + body + tlv + grandmaster_settings_np
 
-var gsnData = GrandmasterSettingsNP{
+var gsnData = GrandmasterSettings{
 	ClockQuality: ClockQuality{
 		ClockClass:              0x6,
 		ClockAccuracy:           0x23,
@@ -29,7 +29,7 @@ const testPID = 12621
 func TestGSN(t *testing.T) {
 	client := NewMgmtClient()
 	client.portNumber = testPID
-	gsn := NewGrandmasterSettingsNPMsg(client, gsnData)
+	gsn := NewGrandmasterSettingsMsg(client, gsnData)
 	bytes, err := gsn.MarshalBinary()
 	if err != nil {
 		t.Fatalf("first MarshalBinaryFailed: %v", err)
@@ -49,9 +49,9 @@ func TestGSN(t *testing.T) {
 		t.Fatalf("UnmarshalMgmtMsg failed: %v", err)
 	}
 
-	gsn2, ok := m.(*GrandmasterSettingsNPMsg)
+	gsn2, ok := m.(*GrandmasterSettingsMsg)
 	if !ok {
-		t.Fatalf("wrong type: got %T, want *GrandmasterSettingsNPMsg", m)
+		t.Fatalf("wrong type: got %T, want *GrandmasterSettingsMsg", m)
 	}
 	if gsn.V.Data != gsn2.V.Data {
 		t.Fatalf("data not round tripped: got %v, want %v", gsn2.V.Data, gsn.V.Data)
