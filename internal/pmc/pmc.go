@@ -378,22 +378,27 @@ func MgmtSetBinaryMsg[D MgmtData](c *MgmtClient, data D) ([]byte, error) {
 
 func NewMgmtSetMsg[D MgmtData](c *MgmtClient, data D) *MgmtMsg[MgmtV[D]] {
 	msg := new(MgmtMsg[MgmtV[D]])
-	// Header
-	c.SetHeader(&msg.Header)
-	// MgmtBody
-	msg.ActionField = ActionSet
-	msg.TargetPortIdentity = AnyPortIdentity()
-	msg.TLVType = TLVTypeMgmt
-	// length will be fixed by MarshalBinary
-	// MgmtTLV
-	SetMgmtV(&msg.V, data)
+	InitMgmtMsg(c, &msg.MgmtMsgFixed, ActionSet)
+	msg.V.MgmtID = data.MgmtID()
+	msg.V.Data = data
 	return msg
 }
 
-func SetMgmtV[D MgmtData](mv *MgmtV[D], data D) {
-	// tlv.LengthField is filled in by MarshalBinary
-	mv.MgmtID = data.MgmtID()
-	mv.Data = data
+func NewMgmtGetMsg(c *MgmtClient, mid MgmtID) *MgmtMsg[MgmtID] {
+	msg := new(MgmtMsg[MgmtID])
+	InitMgmtMsg(c, &msg.MgmtMsgFixed, ActionGet)
+	msg.V = mid
+	return msg
+}
+
+func InitMgmtMsg(c *MgmtClient, msg *MgmtMsgFixed, action Action) {
+	// Header
+	c.SetHeader(&msg.Header)
+	// MgmtBody
+	msg.ActionField = ActionGet
+	msg.TargetPortIdentity = AnyPortIdentity()
+	msg.TLVType = TLVTypeMgmt
+	// length will be fixed by MarshalBinary
 }
 
 func NewGrandmasterSettingsMsg(c *MgmtClient, gs GrandmasterSettings) *GrandmasterSettingsMsg {
@@ -407,7 +412,6 @@ func NewMgmtErrorStatusMsg(c *MgmtClient, eid MgmtErrorID, mid MgmtID, display s
 	// MgmtBody
 	msg.ActionField = ActionResponse // or AcknowledgeAction?
 	msg.TargetPortIdentity = AnyPortIdentity()
-
 	msg.TLVType = TLVTypeMgmtErrorStatus
 	// LengthField is filled in by MarshalBinary
 	msg.V.MgmtErrorID = eid
