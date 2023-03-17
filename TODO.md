@@ -6,6 +6,8 @@
    * gpstime
    * gpspulse
    * gps4ptp
+   * gpstoptp
+   * gps2ptp
    * go-gps-time
    * gps-time
    * go-time
@@ -16,6 +18,7 @@
 * Figure out how to run with reduced privileges (Linux capabilities I think)
 * Control over logging
 * Systemd service file
+* Try to get rid of the logctx package.
 
 ## TCP server
 
