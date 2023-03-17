@@ -13,18 +13,13 @@ type clockTimeReading struct {
 }
 
 type gpsTimeReading struct {
-	t           ptime.Time
-	tRead       time.Time
-	pulseOffset time.Duration
+	tGPS     ptime.Time
+	tRead    time.Time
+	pulseOff time.Duration
 }
 
 func (gps *gpsTimeReading) pulseTime() ptime.Time {
-	return gps.t.Add(-gps.pulseOffset)
-}
-
-type pulseOffset struct {
-	tGPS ptime.Time
-	off  time.Duration
+	return gps.tGPS.Add(-gps.pulseOff)
 }
 
 func (gtr *gpsTimeReading) isZero() bool {
@@ -34,7 +29,8 @@ func (gtr *gpsTimeReading) isZero() bool {
 type Correlator struct {
 	servo *Servo
 	edges []clockTimeReading
-	pOffs []pulseOffset
+	// These are readings before the navigation epoch, which give the pulse offset
+	pulseOffs []gpsTimeReading
 	// if non-zero, a GPS reading that we haven't yet found an edge for
 	gpsPending gpsTimeReading
 	// if non-Zero corresponds to edges[0]
@@ -50,10 +46,16 @@ func NewCorrelator(s *Servo) *Correlator {
 	return c
 }
 
-func (c *Correlator) GPSTime(t ptime.Time, tRead time.Time) {
-	po := c.findPulseOffset(t)
-	c.logger().Debug("gpsTime", "t", t, "pulseOffset", po)
-	c.gpsPending = gpsTimeReading{t, tRead, po}
+func (c *Correlator) GPSTime(tGPS ptime.Time, tRead time.Time) {
+	c.gpsPending = gpsTimeReading{tGPS: tGPS, tRead: tRead}
+	po := c.findPulseOffset(tGPS, tRead)
+	if po != nil {
+		c.gpsPending.pulseOff = po.pulseOff
+		c.logger().Debug("gpsTime", "t", tGPS, "pulseOffset", po.pulseOff)
+	} else {
+		c.logger().Debug("gpsTime", "t", tGPS)
+	}
+
 	c.correlate()
 }
 
@@ -93,7 +95,7 @@ func (c *Correlator) emitUpTo(edgeIndex int) {
 	if (edgeIndex-i)%c.edgesPerPulse != 0 {
 		i++
 	}
-	tGPS := c.gpsPending.t
+	tGPS := c.gpsPending.tGPS
 	for ; i < edgeIndex; i += c.edgesPerPulse {
 		secs := (edgeIndex - i) / c.edgesPerPulse
 		c.servo.Sample(tGPS.Add(time.Second*time.Duration(-secs)), c.edges[i].ClockTime, true)
@@ -110,21 +112,21 @@ func (c *Correlator) gpsEmit(edgeIndex int) {
 
 // PulseOffset corresponds to U-blox quantization error.
 // This is also sometimes called sawtooth error.
-func (c *Correlator) PulseOffset(tGPS ptime.Time, off time.Duration) {
+func (c *Correlator) PulseOffset(tGPS ptime.Time, tRead time.Time, off time.Duration) {
 	c.logger().Debug("pulseOffset", "tGPS", tGPS, "offset", off)
-	if len(c.pOffs) > 1 {
-		c.pOffs = c.pOffs[len(c.pOffs)-1:]
+	if len(c.pulseOffs) > 1 {
+		c.pulseOffs = c.pulseOffs[len(c.pulseOffs)-1:]
 	}
-	c.pOffs = append(c.pOffs, pulseOffset{tGPS: tGPS, off: off})
+	c.pulseOffs = append(c.pulseOffs, gpsTimeReading{tGPS: tGPS, tRead: tRead, pulseOff: off})
 }
 
-func (c *Correlator) findPulseOffset(t ptime.Time) time.Duration {
-	for _, po := range c.pOffs {
-		if po.tGPS == t {
-			return po.off
+func (c *Correlator) findPulseOffset(tGPS ptime.Time, tRead time.Time) *gpsTimeReading {
+	for _, po := range c.pulseOffs {
+		if po.tGPS == tGPS {
+			return &po
 		}
 	}
-	return 0
+	return nil
 }
 
 func (c *Correlator) followEdge() int {
@@ -255,7 +257,7 @@ func alternate(edges []clockTimeReading) (edges1, edges2 []clockTimeReading) {
 }
 
 func consistent(master1, master2 gpsTimeReading, slave1, slave2 clockTimeReading) bool {
-	masterDiff := master2.t.Sub(master1.t)
+	masterDiff := master2.tGPS.Sub(master1.tGPS)
 	if slave1.Epoch == slave2.Epoch && !slave1.Epoch.Ambig() {
 		return slave1.T.Add(masterDiff).Sub(slave2.T).Abs() <= time.Second/100
 	} else {
