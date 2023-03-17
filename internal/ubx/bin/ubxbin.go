@@ -163,10 +163,23 @@ type CfgTp5 struct {
 	PulseLenRatio     uint32
 	PulseLenRatioLock uint32
 	UserConfigDelay   int32
-	Flags             uint32
+	Flags             CfgTp5Flags
 }
 
 func (m *CfgTp5) ID() MsgID { return CfgTp5ID }
+
+type CfgTp5Flags uint32
+
+const (
+	CfgTp5Active CfgTp5Flags = 1 << iota
+	CfgTp5LockGpsFreq
+	CfgTp5LockedOtherSet
+	CfgTp5IsFreq
+	CfgTp5IsLength
+	CfgTp5AlignToTow
+	CfgTp5Polarity
+	CfgTp5GridUtcGnss
+)
 
 type CfgTmode2 struct {
 	TimeMode     CfgTmode2TimeMode
