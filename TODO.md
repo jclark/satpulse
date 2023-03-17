@@ -25,22 +25,29 @@
 
 ## Time sync
 
-* Handling of UBX-TIM-TP is over-complex: if we have the time pulse, we can get the atomic time from that message; no need to use separate message with time
-    * Does it use GPS week numbers when synced to Beidou?
-    * Use UBX-NAV-EOE to wait for right message
+* Can we improve how UBX-TIM-TP is handled and the corresponding PulseOffset message? Problem is that on CM4 there can be one then 1 sec between receiving the PulseOffset message and the PHC time stamp event being delivered to user space. This is because the CM4 PHY kernel driver can delay delivering the PHC timestamp by up to 0.25s
+* Investigate UBX-TIM-TP further
+    * Does it use GPS week numbers when synced to BeiDou?
+    * Does it work on non-timing receivers>
+    * Does it work on clones?
 * Should prefer a message in UBX that provides TAI directly to NMEA.
+    * Use UBX-NAV-EOE to wait for right message
+    * Need configuration to tell us whether we have UBX-NAV-EOE
 * Experiment with different ki/kp coefficients for PI controller
 * PI controller starts off with a large integral term, which I suspect is not optimal
 * Sanity check with system clock
-* Step clock if we get out of sync
-* Link bounds for pulse sanity check to amount of frequency adjustment
 * Log RMS of offset
 * Mode where we use system clock rather than GPS messages for time of day (like `ts2phc -s generic`)
 * See what we can learn from the Meta time library servo package.
-* Make correlator and servo more configurable.
+* Step clock if we get out of sync
+* Make correlator and servo configurable from TOML
+   * kp, ki constants
+   * initial observe time
+   * when to step clock
+   * various correlator constants
 * Be more intelligent about pulse sanity check
    * keep track of standard deviation of pulse interval
-   * bounds should make use of max amount of freq adjustment
+   * bounds should make use of max amount of frequency adjustment
 
 ## Leap seconds
 
@@ -95,13 +102,17 @@ Semi-functional currently.
 
 ## PTP management client
 
-Does Facebook have something we can reuse? (No: they don't implement a full client.)
-Key info
-* Do we have a fix? Is the fix valid? (We will lose the time pulse if we don't have a valid fix.)
-* Leap seconds: current TAI offset, date of next announced leap second
-* Accuracy
-   * as reported by GPS
-   * offsets between PHC and time pulse
+Integrate our client implementation.
+
+Initially focus on delivering the following information:
+* UTC information
+   * UTC offset
+   * Leap61
+   * Leap59
+   * Current UTC offset valid
+* Are we synchronized? If not, clockClass is no longer 6.
+
+Later figure out scaledOffsetLogVariance and accuracy.
 
 ## HTTP server
 
