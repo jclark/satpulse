@@ -29,7 +29,8 @@ const testPID = 12621
 func TestGrandmasterSettings(t *testing.T) {
 	client := NewMgmtClient()
 	client.portNumber = testPID
-	gsm := NewGrandmasterSettingsMsg(client, gsmData)
+	gsm := NewMgmtSetMsg(gsmData)
+	client.PrepareMsg(gsm)
 	bytes, err := gsm.MarshalBinary()
 	if err != nil {
 		t.Fatalf("first MarshalBinaryFailed: %v", err)
@@ -56,8 +57,8 @@ func TestGrandmasterSettings(t *testing.T) {
 	if gsm.V.Data != gsm2.V.Data {
 		t.Fatalf("data not round tripped: got %v, want %v", gsm2.V.Data, gsm.V.Data)
 	}
-	if gsm.MgmtMsgFixed != gsm2.MgmtMsgFixed {
-		t.Fatalf("fixed part not round tripped: got %v, want %v", gsm2.MgmtMsgFixed, gsm.MgmtMsgFixed)
+	if gsm.MgmtMsgPrefix != gsm2.MgmtMsgPrefix {
+		t.Fatalf("fixed part not round tripped: got %v, want %v", gsm2.MgmtMsgPrefix, gsm.MgmtMsgPrefix)
 	}
 	bytes2, err := gsm2.MarshalBinary()
 	if err != nil {
