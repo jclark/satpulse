@@ -123,7 +123,7 @@ type MgmtErrorStatus struct {
 	MgmtErrorID MgmtErrorID
 	MgmtID      MgmtID
 	_           [4]byte
-	DisplayData string
+	DisplayData *string
 }
 
 type MgmtErrorStatusMsg = MgmtMsgWithValue[MgmtErrorStatus]
@@ -158,8 +158,8 @@ func UnmarshalMgmtMsg(data []byte) (MgmtMsg, error) {
 		}
 	case TLVTypeMgmtErrorStatus:
 		var v MgmtErrorStatus
-		if err := v.ReadBinaryFrom(r); err != nil {
-			return nil, err
+		if err := unmarshalMgmtErrorStatus(r, &v); err != nil {
+			return nil, fmt.Errorf("unmarshaling MgmtErrorStatus failed: %w", err)
 		}
 		m := new(MgmtErrorStatusMsg)
 		m.V = v
@@ -248,10 +248,14 @@ func (m *MgmtErrorStatus) WriteBinaryTo(w io.Writer) error {
 	if err := binary.Write(w, binary.BigEndian, &reserved); err != nil {
 		return err
 	}
-	if err := writePTPText(w, m.DisplayData); err != nil {
+	if m.DisplayData == nil {
+		return nil
+	}
+	text := *m.DisplayData
+	if err := writePTPText(w, text); err != nil {
 		return err
 	}
-	if len(m.DisplayData)%2 == 0 {
+	if len(text)%2 == 0 {
 		var padding uint8
 		if err := binary.Write(w, binary.BigEndian, &padding); err != nil {
 			return err
@@ -260,26 +264,32 @@ func (m *MgmtErrorStatus) WriteBinaryTo(w io.Writer) error {
 	return nil
 }
 
-func (m *MgmtErrorStatus) ReadBinaryFrom(r io.Reader) error {
+func unmarshalMgmtErrorStatus(r *bytes.Reader, m *MgmtErrorStatus) error {
 	if err := binary.Read(r, binary.BigEndian, &m.MgmtErrorID); err != nil {
-		return err
+		return fmt.Errorf("unmarshaling MgmtErrorID failed: %w", err)
 	}
 	if err := binary.Read(r, binary.BigEndian, &m.MgmtID); err != nil {
-		return err
+		return fmt.Errorf("unmarshaling MgmtID failed: %w", err)
 	}
 	var reserved [4]byte
 	if err := binary.Read(r, binary.BigEndian, &reserved); err != nil {
+		return fmt.Errorf("unmarshaling MgmtErrorStatus reserved bytes failed: %w", err)
+	}
+	// The DisplayData can be omitted completely.
+	if r.Len() == 0 {
+		return nil
+	}
+	text, err := readPTPText(r)
+	if err != nil {
 		return err
 	}
-	if err := readPTPText(r, &m.DisplayData); err != nil {
-		return err
-	}
+	m.DisplayData = &text
 	// The padding needs to make the length of the TLV even.
 	// Since there is a single byte of length, even lengths require a padding byte.
-	if len(m.DisplayData)%2 == 0 {
+	if len(text)%2 == 0 {
 		var padding uint8
 		if err := binary.Read(r, binary.BigEndian, &padding); err != nil {
-			return err
+			return fmt.Errorf("unmarshaling MgmtErrorStatus padding failed: %w", err)
 		}
 	}
 	return nil
@@ -298,17 +308,16 @@ func writePTPText(w io.Writer, s string) error {
 	return binary.Write(w, binary.BigEndian, &textField)
 }
 
-func readPTPText(r io.Reader, p *string) error {
+func readPTPText(r io.Reader) (string, error) {
 	lengthField := uint8(0)
 	if err := binary.Read(r, binary.BigEndian, &lengthField); err != nil {
-		return err
+		return "", fmt.Errorf("unmarshaling PTPText length failed: %w", err)
 	}
 	textField := make([]byte, lengthField)
 	if err := binary.Read(r, binary.BigEndian, &textField); err != nil {
-		return err
+		return "", fmt.Errorf("unmarshaling PTPText string failed: %w", err)
 	}
-	*p = string(textField)
-	return nil
+	return string(textField), nil
 }
 
 func AnyPortIdentity() PortIdentity {
@@ -426,6 +435,8 @@ func NewMgmtErrorStatusMsg(meid MgmtErrorID, mid MgmtID, display string) *MgmtEr
 	// LengthField is filled in by MarshalBinary
 	msg.V.MgmtErrorID = meid
 	msg.V.MgmtID = mid
-	msg.V.DisplayData = display
+	if len(display) > 0 {
+		msg.V.DisplayData = &display
+	}
 	return msg
 }

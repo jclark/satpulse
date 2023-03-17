@@ -68,3 +68,22 @@ func TestGrandmasterSettings(t *testing.T) {
 		t.Fatalf("got different bytes: got %v, want %v", bytes2, bytes)
 	}
 }
+
+func TestGet(t *testing.T) {
+	msg := NewMgmtGetMsg(MgmtID(0x2011))
+	_, err := msg.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary failed: %v", err)
+	}
+}
+
+// Get this by using strace when getting an unsupported MID 0x2011
+// strace -xx -e recvfrom -v -s 10000
+const errMsg = "\x0d\x02\x00\x3c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x5f\x01\xff\xfe\xdf\x44\x7d\x00\x00\x00\x00\x04\x7f\x00\x00\x00\x00\x00\x00\x00\x00\x48\x92\x00\x00\x02\x00\x00\x02\x00\x08\x00\x06\x20\x11\x00\x00\x00\x00"
+
+func TestError(t *testing.T) {
+	_, err := UnmarshalMgmtMsg([]byte(errMsg))
+	if err != nil {
+		t.Fatalf("UnmarshalMgmtMsg failed: %v", err)
+	}
+}
