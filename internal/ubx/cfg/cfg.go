@@ -55,6 +55,10 @@ type Schema struct {
 	keys   map[uint32]NameDesc
 }
 
+func GetSchema() *Schema {
+	return schema
+}
+
 func MustNewSchema(groups map[string]map[string]Desc) *Schema {
 	s, err := NewSchema(groups)
 	if err != nil {
@@ -79,6 +83,14 @@ func makeKeys(m map[string]map[string]Desc) (map[uint32]NameDesc, error) {
 		}
 	}
 	return keys, nil
+}
+
+func (s *Schema) MustMarshal(cfg map[string]map[string]any) []byte {
+	b, err := s.Marshal(cfg)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, map[uint32][]byte, error) {
