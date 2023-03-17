@@ -69,26 +69,28 @@ func utcStandardToGNSS(u bin.UTCStandard) *gpsmsg.MajorGNSS {
 }
 
 func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
+	if m.Flags&bin.TimTPTimeBase == bin.TimTPTimeBaseUTC {
+		// In this case the m.TOWMS will not be the GPS time (but will have UTC offset added)
+		// This will be problematic around a leap second, so ignore.
+		// Can we do better?
+		return nil
+	}
 	t := gpsmsg.Time{PrecedesPulse: true}
 	t.TAITime = ptime.GPS(int16(m.Week), m.TOWMS, scaledMSToNS(m.TOWSubMS))
 	t.PulseOffset = ptime.Picoseconds(m.QErr)
-	if m.Flags&bin.TimTPTimeBase == bin.TimTPTimeBaseUTC {
-		t.GNSS = utcStandardToGNSS(m.RefInfo.UTCStandard())
-	} else {
-		var g gpsmsg.MajorGNSS
-		t.GNSS = &g
-		switch m.RefInfo & bin.TimTPTimeRefGNSS {
-		case bin.TimTPTimeRefGPS:
-			g = gpsmsg.GPS
-		case bin.TimTPTimeRefGLONASS:
-			g = gpsmsg.GLONASS
-		case bin.TimTPTimeRefBeiDou:
-			g = gpsmsg.BeiDou
-		case bin.TimTPTimeRefGalileo:
-			g = gpsmsg.Galileo
-		default:
-			t.GNSS = nil
-		}
+	var g gpsmsg.MajorGNSS
+	t.GNSS = &g
+	switch m.RefInfo & bin.TimTPTimeRefGNSS {
+	case bin.TimTPTimeRefGPS:
+		g = gpsmsg.GPS
+	case bin.TimTPTimeRefGLONASS:
+		g = gpsmsg.GLONASS
+	case bin.TimTPTimeRefBeiDou:
+		g = gpsmsg.BeiDou
+	case bin.TimTPTimeRefGalileo:
+		g = gpsmsg.Galileo
+	default:
+		t.GNSS = nil
 	}
 	return &t
 }
