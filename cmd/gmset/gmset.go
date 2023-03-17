@@ -31,18 +31,31 @@ func hexUint8Flag(name string, value hexUint8, usage string) *hexUint8 {
 }
 
 func main() {
-	var utcOffset = flag.Int("utcOffset", 37, "TAI-UTC offset in seconds")
-	var clockClass = hexUint8Flag("clockClass", 0x6, "clock class")
-	var clockAccuracy = hexUint8Flag("clockAccuracy", 0x23, "clock accuracy")
-	var offsetScaledLogVariance = flag.Uint("offsetScaledLogVariance", 0xFFFF, "offset scaled log variance")
-	var timeSource = hexUint8Flag("timeSource", 0x20, "time source")
-	var leap61 = flag.Bool("leap61", false, "positive leap second at end of current UTC day")
-	var leap59 = flag.Bool("leap59", false, "negative leap second at end of current UTC day")
-	var currentUTCOffsetValid = flag.Bool("currentUtcOffsetValid", false, "current UTC offset is traceable")
-	var ptpTimescale = flag.Bool("ptpTimescale", false, "use PTP timescale")
-	var timeTraceable = flag.Bool("timeTraceable", false, "time is traceable")
-	var frequencyTraceable = flag.Bool("frequencyTraceable", false, "frequency is traceable")
+	msg := createMsg()
+	err := send(msg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func createMsg() pmc.MgmtMsg {
+	utcOffset := flag.Int("utcOffset", 37, "TAI-UTC offset in seconds")
+	clockClass := hexUint8Flag("clockClass", 0x6, "clock class")
+	clockAccuracy := hexUint8Flag("clockAccuracy", 0x23, "clock accuracy")
+	offsetScaledLogVariance := flag.Uint("offsetScaledLogVariance", 0xFFFF, "offset scaled log variance")
+	timeSource := hexUint8Flag("timeSource", 0x20, "time source")
+	leap61 := flag.Bool("leap61", false, "positive leap second at end of current UTC day")
+	leap59 := flag.Bool("leap59", false, "negative leap second at end of current UTC day")
+	currentUTCOffsetValid := flag.Bool("currentUtcOffsetValid", false, "current UTC offset is traceable")
+	ptpTimescale := flag.Bool("ptpTimescale", false, "use PTP timescale")
+	timeTraceable := flag.Bool("timeTraceable", false, "time is traceable")
+	frequencyTraceable := flag.Bool("frequencyTraceable", false, "frequency is traceable")
+	getMID := flag.Uint("get", 0, "management message ID to get")
 	flag.Parse()
+	if *getMID != 0 {
+		return pmc.NewMgmtGetMsg(pmc.MgmtID(*getMID))
+	}
 	var gs pmc.GrandmasterSettings
 	gs.UTCOffset = int16(*utcOffset)
 	gs.ClockQuality.ClockClass = uint8(*clockClass)
@@ -67,61 +80,59 @@ func main() {
 	if *frequencyTraceable {
 		gs.TimeFlags |= pmc.FrequencyTraceable
 	}
-	err := send(gs)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error sending message: %v\n", err)
-		os.Exit(1)
-	}
+	return pmc.NewMgmtSetMsg(gs)
 }
 
-const serverSocketFile = "/var/run/ptp4l"
-const clientSocketFile = "/tmp/client.sock"
+const serverSocketPath = "/var/run/ptp4l"
+const clientSocketPath = "/tmp/client.sock"
 
-func send(gs pmc.GrandmasterSettings) error {
+func send(msg pmc.MgmtMsg) error {
 	client := pmc.NewMgmtClient()
 
 	serverAddr := net.UnixAddr{
-		Name: serverSocketFile,
+		Name: serverSocketPath,
 		Net:  "unixgram",
 	}
 
 	clientAddr := net.UnixAddr{
-		Name: clientSocketFile,
+		Name: clientSocketPath,
 		Net:  "unixgram",
 	}
 
 	// Clean up the client socket file if it exists
-	os.Remove(clientSocketFile)
+	os.Remove(clientSocketPath)
 
 	conn, err := net.DialUnix("unixgram", &clientAddr, nil)
 	if err != nil {
-		return fmt.Errorf("error creating client socket: %w", err)
+		return fmt.Errorf("could not create connection: %w", err)
 	}
 	defer func() {
 		conn.Close()
-		os.Remove(clientSocketFile)
+		os.Remove(clientSocketPath)
 	}()
 
-	data, err := pmc.GrandmasterSettingsBinaryMsg(client, gs)
+	client.PrepareMsg(msg)
+
+	data, err := msg.MarshalBinary()
 	if err != nil {
-		return fmt.Errorf("error creating binary message: %w", err)
+		return fmt.Errorf("could not marshal message: %w", err)
 	}
 	_, err = conn.WriteTo(data, &serverAddr)
 	if err != nil {
-		return fmt.Errorf("error sending message: %w", err)
+		return fmt.Errorf("could not write message: %w", err)
 	}
 
 	buf := make([]byte, 2048)
 	n, _, err := conn.ReadFrom(buf)
 	if err != nil {
-		return fmt.Errorf("error receiving reply: %w", err)
+		return fmt.Errorf("could not read message: %w", err)
 	}
 
 	recvData := buf[:n]
 
 	m, err := pmc.UnmarshalMgmtMsg(recvData)
 	if err != nil {
-		return fmt.Errorf("error unmarshaling message: %w", err)
+		return fmt.Errorf("could not unmarshal message: %w", err)
 	}
 
 	fmt.Printf("Received: %+v\n", m)
