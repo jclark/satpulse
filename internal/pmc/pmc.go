@@ -96,7 +96,7 @@ const (
 	MIDGrandmasterSettings MgmtID = 0xC001
 )
 
-type MgmtV[D MgmtData] struct {
+type MgmtValue[D MgmtData] struct {
 	MgmtID MgmtID
 	Data   D
 }
@@ -119,14 +119,14 @@ const (
 	MEIDGeneralError MgmtErrorID = 0xFFFE
 )
 
-type MgmtErrorStatusV struct {
+type MgmtErrorStatus struct {
 	MgmtErrorID MgmtErrorID
 	MgmtID      MgmtID
 	_           [4]byte
 	DisplayData string
 }
 
-type MgmtErrorStatusMsg = MgmtMsgWithValue[MgmtErrorStatusV]
+type MgmtErrorStatusMsg = MgmtMsgWithValue[MgmtErrorStatus]
 
 /* We don't need this currently.
 type BinaryReaderFrom interface {
@@ -157,7 +157,7 @@ func UnmarshalMgmtMsg(data []byte) (MgmtMsg, error) {
 			return nil, err
 		}
 	case TLVTypeMgmtErrorStatus:
-		var v MgmtErrorStatusV
+		var v MgmtErrorStatus
 		if err := v.ReadBinaryFrom(r); err != nil {
 			return nil, err
 		}
@@ -181,14 +181,14 @@ func UnmarshalMgmtMsg(data []byte) (MgmtMsg, error) {
 func unmarshalMID(r io.Reader, mid MgmtID) (MgmtMsg, error) {
 	switch mid {
 	case MIDGrandmasterSettings:
-		return unmarshalMgmtV[GrandmasterSettings](r)
+		return unmarshalMgmtValue[GrandmasterSettings](r)
 	default:
 		return nil, fmt.Errorf("unsupported management ID: 0x%04x", mid)
 	}
 }
 
-func unmarshalMgmtV[D MgmtData](r io.Reader) (MgmtMsg, error) {
-	m := MgmtMsgWithValue[MgmtV[D]]{}
+func unmarshalMgmtValue[D MgmtData](r io.Reader) (MgmtMsg, error) {
+	m := MgmtMsgWithValue[MgmtValue[D]]{}
 	if err := binary.Read(r, binary.BigEndian, &m.V.Data); err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ func (m *MgmtMsgWithValue[T]) SetLength(l uint16) {
 	m.TLVLength = l - SizeofMgmtMsgPrefix
 }
 
-func (m *MgmtErrorStatusV) WriteBinaryTo(w io.Writer) error {
+func (m *MgmtErrorStatus) WriteBinaryTo(w io.Writer) error {
 	if err := binary.Write(w, binary.BigEndian, &m.MgmtErrorID); err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func (m *MgmtErrorStatusV) WriteBinaryTo(w io.Writer) error {
 	return nil
 }
 
-func (m *MgmtErrorStatusV) ReadBinaryFrom(r io.Reader) error {
+func (m *MgmtErrorStatus) ReadBinaryFrom(r io.Reader) error {
 	if err := binary.Read(r, binary.BigEndian, &m.MgmtErrorID); err != nil {
 		return err
 	}
@@ -334,7 +334,7 @@ const (
 	SynchronizationUncertain
 )
 
-type GrandmasterSettingsMsg = MgmtMsgWithValue[MgmtV[GrandmasterSettings]]
+type GrandmasterSettingsMsg = MgmtMsgWithValue[MgmtValue[GrandmasterSettings]]
 
 type GrandmasterSettings struct {
 	ClockQuality ClockQuality
@@ -382,9 +382,9 @@ func MgmtSetBinaryMsg[D MgmtData](c *MgmtClient, data D) ([]byte, error) {
 	return msg.MarshalBinary()
 }
 
-func NewMgmtSetMsg[D MgmtData](data D) *MgmtMsgWithValue[MgmtV[D]] {
-	msg := new(MgmtMsgWithValue[MgmtV[D]])
-	InitMgmtMsg(&msg.MgmtMsgPrefix, ActionSet)
+func NewMgmtSetMsg[D MgmtData](data D) *MgmtMsgWithValue[MgmtValue[D]] {
+	msg := new(MgmtMsgWithValue[MgmtValue[D]])
+	initPrefix(&msg.MgmtMsgPrefix, ActionSet)
 	msg.V.MgmtID = data.MgmtID()
 	msg.V.Data = data
 	return msg
@@ -392,22 +392,22 @@ func NewMgmtSetMsg[D MgmtData](data D) *MgmtMsgWithValue[MgmtV[D]] {
 
 func NewMgmtGetMsg(mid MgmtID) *MgmtMsgWithValue[MgmtID] {
 	msg := new(MgmtMsgWithValue[MgmtID])
-	InitMgmtMsg(&msg.MgmtMsgPrefix, ActionGet)
+	initPrefix(&msg.MgmtMsgPrefix, ActionGet)
 	msg.V = mid
 	return msg
 }
 
-func InitMgmtMsg(msg *MgmtMsgPrefix, action Action) {
+func initPrefix(p *MgmtMsgPrefix, action Action) {
 	// Header
-	InitHeader(&msg.Header)
+	initHeader(&p.Header)
 	// MgmtBody
-	msg.ActionField = action
-	msg.TargetPortIdentity = AnyPortIdentity()
-	msg.TLVType = TLVTypeMgmt
+	p.ActionField = action
+	p.TargetPortIdentity = AnyPortIdentity()
+	p.TLVType = TLVTypeMgmt
 	// length will be fixed by MarshalBinary
 }
 
-func InitHeader(h *Header) {
+func initHeader(h *Header) {
 	h.MessageType = MessageTypeMgmt // We can add transport specific stuff in MgmtClient.PrepareMsg
 	// MessageLength is filled in by MarshalBinary
 	h.Version = 2
@@ -415,16 +415,16 @@ func InitHeader(h *Header) {
 	h.LogMessageInterval = 0x7f // required by Table 42 of the standard
 }
 
-func NewMgmtErrorStatusMsg(eid MgmtErrorID, mid MgmtID, display string) *MgmtErrorStatusMsg {
+func NewMgmtErrorStatusMsg(meid MgmtErrorID, mid MgmtID, display string) *MgmtErrorStatusMsg {
 	msg := new(MgmtErrorStatusMsg)
 	// Header
-	InitHeader(&msg.Header)
+	initHeader(&msg.Header)
 	// MgmtBody
 	msg.ActionField = ActionResponse // or AcknowledgeAction?
 	msg.TargetPortIdentity = AnyPortIdentity()
 	msg.TLVType = TLVTypeMgmtErrorStatus
 	// LengthField is filled in by MarshalBinary
-	msg.V.MgmtErrorID = eid
+	msg.V.MgmtErrorID = meid
 	msg.V.MgmtID = mid
 	msg.V.DisplayData = display
 	return msg
