@@ -119,6 +119,29 @@ const (
 	MEIDGeneralError MgmtErrorID = 0xFFFE
 )
 
+func (meid MgmtErrorID) String() string {
+	// return the same strings as in the standard
+	switch meid {
+	case MEIDResponseTooBig:
+		return "RESPONSE_TOO_BIG"
+	case MEIDNoSuchID:
+		return "NO_SUCH_ID"
+	case MEIDWrongLength:
+		return "WRONG_LENGTH"
+	case MEIDWrongValue:
+		return "WRONG_VALUE"
+	case MEIDNotSetable:
+		return "NOT_SETABLE"
+	case MEIDNotSupported:
+		return "NOT_SUPPORTED"
+	case MEIDUnpopulated:
+		return "UNPOPULATED"
+	case MEIDGeneralError:
+		return "GENERAL_ERROR"
+	}
+	return fmt.Sprintf("0x%0x", uint16(meid))
+}
+
 type MgmtErrorStatus struct {
 	MgmtErrorID MgmtErrorID
 	MgmtID      MgmtID
