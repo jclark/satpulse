@@ -45,12 +45,21 @@ func createMsg() pmc.MgmtMsg {
 	clockAccuracy := hexUint8Flag("clockAccuracy", 0x23, "clock accuracy")
 	offsetScaledLogVariance := flag.Uint("offsetScaledLogVariance", 0xFFFF, "offset scaled log variance")
 	timeSource := hexUint8Flag("timeSource", 0x20, "time source")
-	leap61 := flag.Bool("leap61", false, "positive leap second at end of current UTC day")
-	leap59 := flag.Bool("leap59", false, "negative leap second at end of current UTC day")
-	currentUTCOffsetValid := flag.Bool("currentUtcOffsetValid", false, "current UTC offset is traceable")
-	ptpTimescale := flag.Bool("ptpTimescale", false, "use PTP timescale")
-	timeTraceable := flag.Bool("timeTraceable", false, "time is traceable")
-	frequencyTraceable := flag.Bool("frequencyTraceable", false, "frequency is traceable")
+	timeBoolFlags := map[string]*struct {
+		flag  pmc.TimeFlags
+		usage string
+		set   bool
+	}{
+		"leap61":                {usage: "positive leap second at end of current UTC day", flag: pmc.Leap61},
+		"leap59":                {usage: "negative leap second at end of current UTC day", flag: pmc.Leap59},
+		"currentUtcOffsetValid": {usage: "current UTC offset is traceable", flag: pmc.CurrentUTCOffsetValid},
+		"ptpTimescale":          {usage: "use PTP timescale", flag: pmc.PTPTimescale},
+		"timeTraceable":         {usage: "time is traceable", flag: pmc.TimeTraceable},
+		"frequencyTraceable":    {usage: "frequency is traceable", flag: pmc.FrequencyTraceable},
+	}
+	for name, f := range timeBoolFlags {
+		flag.BoolVar(&f.set, name, false, f.usage)
+	}
 	getMID := flag.Uint("get", 0, "management message ID to get")
 	flag.Parse()
 	if *getMID != 0 {
@@ -62,23 +71,10 @@ func createMsg() pmc.MgmtMsg {
 	gs.ClockQuality.ClockAccuracy = uint8(*clockAccuracy)
 	gs.ClockQuality.OffsetScaledLogVariance = uint16(*offsetScaledLogVariance)
 	gs.TimeSource = uint8(*timeSource)
-	if *leap61 {
-		gs.TimeFlags |= pmc.Leap61
-	}
-	if *leap59 {
-		gs.TimeFlags |= pmc.Leap59
-	}
-	if *currentUTCOffsetValid {
-		gs.TimeFlags |= pmc.CurrentUTCOffsetValid
-	}
-	if *ptpTimescale {
-		gs.TimeFlags |= pmc.PTPTimescale
-	}
-	if *timeTraceable {
-		gs.TimeFlags |= pmc.TimeTraceable
-	}
-	if *frequencyTraceable {
-		gs.TimeFlags |= pmc.FrequencyTraceable
+	for _, f := range timeBoolFlags {
+		if f.set {
+			gs.TimeFlags |= f.flag
+		}
 	}
 	return pmc.NewMgmtSetMsg(gs)
 }
