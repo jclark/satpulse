@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 )
 
 type MgmtMsg interface {
@@ -68,8 +69,10 @@ const (
 	ControlMgmt Control = 0x4
 )
 
+type ClockIdentity [8]byte
+
 type PortIdentity struct {
-	ClockIdentity [8]byte
+	ClockIdentity ClockIdentity
 	PortNumber    uint16
 }
 
@@ -93,8 +96,29 @@ const (
 type MgmtID uint16
 
 const (
-	MIDGrandmasterSettings MgmtID = 0xC001
+	MIDDefaultDataSet        MgmtID = 0x2000
+	MIDCurrentDataSet        MgmtID = 0x2001
+	MIDParentDataSet         MgmtID = 0x2002
+	MIDTimePropertiesDataSet MgmtID = 0x2003
+	MIDGrandmasterSettings   MgmtID = 0xC001
 )
+
+func (mid MgmtID) String() string {
+	// return the same strings as in the standard
+	switch mid {
+	case MIDDefaultDataSet:
+		return "DEFAULT_DATA_SET"
+	case MIDCurrentDataSet:
+		return "CURRENT_DATA_SET"
+	case MIDParentDataSet:
+		return "PARENT_DATA_SET"
+	case MIDTimePropertiesDataSet:
+		return "TIME_PROPERTIES_DATA_SET"
+	case MIDGrandmasterSettings:
+		return "GRANDMASTER_SETTINGS_NP"
+	}
+	return fmt.Sprintf("0x%0x", uint16(mid))
+}
 
 type MgmtValue[D MgmtData] struct {
 	MgmtID MgmtID
@@ -205,6 +229,14 @@ func unmarshalMID(r io.Reader, mid MgmtID) (MgmtMsg, error) {
 	switch mid {
 	case MIDGrandmasterSettings:
 		return unmarshalMgmtValue[GrandmasterSettings](r)
+	case MIDDefaultDataSet:
+		return unmarshalMgmtValue[DefaultDS](r)
+	case MIDCurrentDataSet:
+		return unmarshalMgmtValue[CurrentDS](r)
+	case MIDParentDataSet:
+		return unmarshalMgmtValue[ParentDS](r)
+	case MIDTimePropertiesDataSet:
+		return unmarshalMgmtValue[TimePropertiesDS](r)
 	default:
 		return nil, fmt.Errorf("unsupported management ID: 0x%04x", mid)
 	}
@@ -343,8 +375,12 @@ func readPTPText(r io.Reader) (string, error) {
 	return string(textField), nil
 }
 
+func AnyClockIdentity() ClockIdentity {
+	return ClockIdentity([8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+}
+
 func AnyPortIdentity() PortIdentity {
-	return PortIdentity{[8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 0xffff}
+	return PortIdentity{AnyClockIdentity(), 0xffff}
 }
 
 type ClockQuality struct {
@@ -377,6 +413,103 @@ type GrandmasterSettings struct {
 
 func (GrandmasterSettings) MgmtID() MgmtID {
 	return MIDGrandmasterSettings
+}
+
+type DefaultDS struct {
+	Flags         DefaultDSFlags
+	_             uint8
+	NumberPorts   uint16
+	Priority1     uint8
+	ClockQuality  ClockQuality
+	Priority2     uint8
+	ClockIdentity ClockIdentity
+	DomainNumber  uint8
+	_             uint8
+}
+
+type DefaultDSFlags uint8
+
+const (
+	DefaultDSFlagTSC DefaultDSFlags = 1 << iota
+	DefaultDSFlagSO
+)
+
+func (DefaultDS) MgmtID() MgmtID {
+	return MIDDefaultDataSet
+}
+
+func (ds DefaultDS) TwoStepFlag() bool {
+	return ds.Flags&DefaultDSFlagTSC != 0
+}
+
+func (ds DefaultDS) SlaveOnly() bool {
+	return ds.Flags&DefaultDSFlagSO != 0
+}
+
+type TimeInterval int64
+
+func (ti TimeInterval) Duration() time.Duration {
+	scaledNanos := int64(ti)
+	nanos := scaledNanos >> 16
+	frac := scaledNanos & 0xffff
+	if frac > 0x8000 {
+		nanos++
+	}
+	return time.Duration(nanos)
+}
+
+func (ti TimeInterval) Nanos() float64 {
+	return float64(int64(ti)) / 65536.0
+}
+func (ti TimeInterval) String() string {
+	return fmt.Sprintf("%0.1f", ti.Nanos())
+}
+
+type CurrentDS struct {
+	StepsRemoved     uint16
+	OffsetFromMaster TimeInterval
+	MeanPathDelay    TimeInterval
+}
+
+func (CurrentDS) MgmtID() MgmtID {
+	return MIDCurrentDataSet
+}
+
+type ParentDS struct {
+	ParentPortIdentity                    PortIdentity
+	ParentStats                           bool
+	_                                     uint8
+	ObservedParentOffsetScaledLogVariance uint16
+	ObservedParentClockPhaseChangeRate    int32
+	GrandmasterPriority1                  uint8
+	GrandmasterClockQuality               ClockQuality
+	GrandmasterPriority2                  uint8
+	GrandmasterIdentity                   ClockIdentity
+}
+
+func (ParentDS) MgmtID() MgmtID {
+	return MIDParentDataSet
+}
+
+type TimePropertiesDS struct {
+	CurrentUTCOffset int16
+	Flags            TimePropertiesDSFlags
+	TimeSource       uint8
+}
+
+type TimePropertiesDSFlags uint8
+
+const (
+	TimePropertiesDSFlagLI61 TimePropertiesDSFlags = iota
+	TimePropertiesDSFlagLI59
+	TimePropertiesDSFlagUTCV
+	TimePropertiesDSFlagPTP
+	TimePropertiesDSFlagTTRA
+	TimePropertiesDSFlagFTRA
+)
+
+func (TimePropertiesDS) MgmtID() MgmtID {
+	return MIDTimePropertiesDataSet
 }
 
 type MgmtClient struct {
