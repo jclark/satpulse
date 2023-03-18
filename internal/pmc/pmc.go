@@ -6,8 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
-	"time"
 )
 
 type MgmtMsg interface {
@@ -69,13 +67,6 @@ const (
 	ControlMgmt Control = 0x4
 )
 
-type ClockIdentity [8]byte
-
-type PortIdentity struct {
-	ClockIdentity ClockIdentity
-	PortNumber    uint16
-}
-
 type Action uint8
 
 const (
@@ -95,31 +86,6 @@ const (
 
 type MgmtID uint16
 
-const (
-	MIDDefaultDataSet        MgmtID = 0x2000
-	MIDCurrentDataSet        MgmtID = 0x2001
-	MIDParentDataSet         MgmtID = 0x2002
-	MIDTimePropertiesDataSet MgmtID = 0x2003
-	MIDGrandmasterSettings   MgmtID = 0xC001
-)
-
-func (mid MgmtID) String() string {
-	// return the same strings as in the standard
-	switch mid {
-	case MIDDefaultDataSet:
-		return "DEFAULT_DATA_SET"
-	case MIDCurrentDataSet:
-		return "CURRENT_DATA_SET"
-	case MIDParentDataSet:
-		return "PARENT_DATA_SET"
-	case MIDTimePropertiesDataSet:
-		return "TIME_PROPERTIES_DATA_SET"
-	case MIDGrandmasterSettings:
-		return "GRANDMASTER_SETTINGS_NP"
-	}
-	return fmt.Sprintf("0x%0x", uint16(mid))
-}
-
 type MgmtValue[D MgmtData] struct {
 	MgmtID MgmtID
 	Data   D
@@ -128,52 +94,6 @@ type MgmtValue[D MgmtData] struct {
 type MgmtData interface {
 	MgmtID() MgmtID
 }
-
-type MgmtErrorID uint16
-
-const (
-	_ MgmtErrorID = iota
-	MEIDResponseTooBig
-	MEIDNoSuchID
-	MEIDWrongLength
-	MEIDWrongValue
-	MEIDNotSetable
-	MEIDNotSupported
-	MEIDUnpopulated
-	MEIDGeneralError MgmtErrorID = 0xFFFE
-)
-
-func (meid MgmtErrorID) String() string {
-	// return the same strings as in the standard
-	switch meid {
-	case MEIDResponseTooBig:
-		return "RESPONSE_TOO_BIG"
-	case MEIDNoSuchID:
-		return "NO_SUCH_ID"
-	case MEIDWrongLength:
-		return "WRONG_LENGTH"
-	case MEIDWrongValue:
-		return "WRONG_VALUE"
-	case MEIDNotSetable:
-		return "NOT_SETABLE"
-	case MEIDNotSupported:
-		return "NOT_SUPPORTED"
-	case MEIDUnpopulated:
-		return "UNPOPULATED"
-	case MEIDGeneralError:
-		return "GENERAL_ERROR"
-	}
-	return fmt.Sprintf("0x%0x", uint16(meid))
-}
-
-type MgmtErrorStatus struct {
-	MgmtErrorID MgmtErrorID
-	MgmtID      MgmtID
-	_           [4]byte
-	DisplayData *string
-}
-
-type MgmtErrorStatusMsg = MgmtMsgWithValue[MgmtErrorStatus]
 
 /* We don't need this currently.
 type BinaryReaderFrom interface {
@@ -223,23 +143,6 @@ func UnmarshalMgmtMsg(data []byte) (MgmtMsg, error) {
 		return nil, err
 	}
 	return msg, nil
-}
-
-func unmarshalMID(r io.Reader, mid MgmtID) (MgmtMsg, error) {
-	switch mid {
-	case MIDGrandmasterSettings:
-		return unmarshalMgmtValue[GrandmasterSettings](r)
-	case MIDDefaultDataSet:
-		return unmarshalMgmtValue[DefaultDS](r)
-	case MIDCurrentDataSet:
-		return unmarshalMgmtValue[CurrentDS](r)
-	case MIDParentDataSet:
-		return unmarshalMgmtValue[ParentDS](r)
-	case MIDTimePropertiesDataSet:
-		return unmarshalMgmtValue[TimePropertiesDS](r)
-	default:
-		return nil, fmt.Errorf("unsupported management ID: 0x%04x", mid)
-	}
 }
 
 func unmarshalMgmtValue[D MgmtData](r io.Reader) (MgmtMsg, error) {
@@ -292,261 +195,6 @@ func (m *MgmtMsgWithValue[T]) SetLength(l uint16) {
 	m.TLVLength = l - SizeofMgmtMsgPrefix
 }
 
-func (m *MgmtErrorStatus) WriteBinaryTo(w io.Writer) error {
-	if err := binary.Write(w, binary.BigEndian, &m.MgmtErrorID); err != nil {
-		return err
-	}
-	if err := binary.Write(w, binary.BigEndian, &m.MgmtID); err != nil {
-		return err
-	}
-	var reserved [4]byte
-	if err := binary.Write(w, binary.BigEndian, &reserved); err != nil {
-		return err
-	}
-	if m.DisplayData == nil {
-		return nil
-	}
-	text := *m.DisplayData
-	if err := writePTPText(w, text); err != nil {
-		return err
-	}
-	if len(text)%2 == 0 {
-		var padding uint8
-		if err := binary.Write(w, binary.BigEndian, &padding); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func unmarshalMgmtErrorStatus(r *bytes.Reader, m *MgmtErrorStatus) error {
-	if err := binary.Read(r, binary.BigEndian, &m.MgmtErrorID); err != nil {
-		return fmt.Errorf("unmarshaling MgmtErrorID failed: %w", err)
-	}
-	if err := binary.Read(r, binary.BigEndian, &m.MgmtID); err != nil {
-		return fmt.Errorf("unmarshaling MgmtID failed: %w", err)
-	}
-	var reserved [4]byte
-	if err := binary.Read(r, binary.BigEndian, &reserved); err != nil {
-		return fmt.Errorf("unmarshaling MgmtErrorStatus reserved bytes failed: %w", err)
-	}
-	// The DisplayData can be omitted completely.
-	if r.Len() == 0 {
-		return nil
-	}
-	text, err := readPTPText(r)
-	if err != nil {
-		return err
-	}
-	m.DisplayData = &text
-	// The padding needs to make the length of the TLV even.
-	// Since there is a single byte of length, even lengths require a padding byte.
-	if len(text)%2 == 0 {
-		var padding uint8
-		if err := binary.Read(r, binary.BigEndian, &padding); err != nil {
-			return fmt.Errorf("unmarshaling MgmtErrorStatus padding failed: %w", err)
-		}
-	}
-	return nil
-}
-
-func writePTPText(w io.Writer, s string) error {
-	l := len(s)
-	if l > 255 {
-		return fmt.Errorf("PTPText too long: %d", len(s))
-	}
-	lengthField := uint8(l)
-	if err := binary.Write(w, binary.BigEndian, &lengthField); err != nil {
-		return err
-	}
-	textField := ([]byte)(s)
-	return binary.Write(w, binary.BigEndian, &textField)
-}
-
-func readPTPText(r io.Reader) (string, error) {
-	lengthField := uint8(0)
-	if err := binary.Read(r, binary.BigEndian, &lengthField); err != nil {
-		return "", fmt.Errorf("unmarshaling PTPText length failed: %w", err)
-	}
-	textField := make([]byte, lengthField)
-	if err := binary.Read(r, binary.BigEndian, &textField); err != nil {
-		return "", fmt.Errorf("unmarshaling PTPText string failed: %w", err)
-	}
-	return string(textField), nil
-}
-
-func AnyClockIdentity() ClockIdentity {
-	return ClockIdentity([8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
-}
-
-func AnyPortIdentity() PortIdentity {
-	return PortIdentity{AnyClockIdentity(), 0xffff}
-}
-
-type ClockQuality struct {
-	ClockClass              uint8
-	ClockAccuracy           uint8
-	OffsetScaledLogVariance uint16
-}
-
-// Same as high bits of FlagField in the header
-type TimeFlags uint8
-
-const (
-	Leap61 TimeFlags = 1 << iota
-	Leap59
-	CurrentUTCOffsetValid
-	PTPTimescale
-	TimeTraceable
-	FrequencyTraceable
-	SynchronizationUncertain
-)
-
-type GrandmasterSettingsMsg = MgmtMsgWithValue[MgmtValue[GrandmasterSettings]]
-
-type GrandmasterSettings struct {
-	ClockQuality ClockQuality
-	UTCOffset    int16
-	TimeFlags    TimeFlags
-	TimeSource   uint8
-}
-
-func (GrandmasterSettings) MgmtID() MgmtID {
-	return MIDGrandmasterSettings
-}
-
-type DefaultDS struct {
-	Flags         DefaultDSFlags
-	_             uint8
-	NumberPorts   uint16
-	Priority1     uint8
-	ClockQuality  ClockQuality
-	Priority2     uint8
-	ClockIdentity ClockIdentity
-	DomainNumber  uint8
-	_             uint8
-}
-
-type DefaultDSFlags uint8
-
-const (
-	DefaultDSFlagTSC DefaultDSFlags = 1 << iota
-	DefaultDSFlagSO
-)
-
-func (DefaultDS) MgmtID() MgmtID {
-	return MIDDefaultDataSet
-}
-
-func (ds DefaultDS) TwoStepFlag() bool {
-	return ds.Flags&DefaultDSFlagTSC != 0
-}
-
-func (ds DefaultDS) SlaveOnly() bool {
-	return ds.Flags&DefaultDSFlagSO != 0
-}
-
-type TimeInterval int64
-
-func (ti TimeInterval) Duration() time.Duration {
-	scaledNanos := int64(ti)
-	nanos := scaledNanos >> 16
-	frac := scaledNanos & 0xffff
-	if frac > 0x8000 {
-		nanos++
-	}
-	return time.Duration(nanos)
-}
-
-func (ti TimeInterval) Nanos() float64 {
-	return float64(int64(ti)) / 65536.0
-}
-func (ti TimeInterval) String() string {
-	return fmt.Sprintf("%0.1f", ti.Nanos())
-}
-
-type CurrentDS struct {
-	StepsRemoved     uint16
-	OffsetFromMaster TimeInterval
-	MeanPathDelay    TimeInterval
-}
-
-func (CurrentDS) MgmtID() MgmtID {
-	return MIDCurrentDataSet
-}
-
-type ParentDS struct {
-	ParentPortIdentity                    PortIdentity
-	ParentStats                           bool
-	_                                     uint8
-	ObservedParentOffsetScaledLogVariance uint16
-	ObservedParentClockPhaseChangeRate    int32
-	GrandmasterPriority1                  uint8
-	GrandmasterClockQuality               ClockQuality
-	GrandmasterPriority2                  uint8
-	GrandmasterIdentity                   ClockIdentity
-}
-
-func (ParentDS) MgmtID() MgmtID {
-	return MIDParentDataSet
-}
-
-type TimePropertiesDS struct {
-	CurrentUTCOffset int16
-	Flags            TimePropertiesDSFlags
-	TimeSource       uint8
-}
-
-type TimePropertiesDSFlags uint8
-
-const (
-	TimePropertiesDSFlagLI61 TimePropertiesDSFlags = iota
-	TimePropertiesDSFlagLI59
-	TimePropertiesDSFlagUTCV
-	TimePropertiesDSFlagPTP
-	TimePropertiesDSFlagTTRA
-	TimePropertiesDSFlagFTRA
-)
-
-func (TimePropertiesDS) MgmtID() MgmtID {
-	return MIDTimePropertiesDataSet
-}
-
-type MgmtClient struct {
-	sequenceID uint16
-	portNumber uint16
-	domain     uint8
-}
-
-func NewMgmtClient() *MgmtClient {
-	return &MgmtClient{
-		portNumber: uint16(os.Getpid()),
-	}
-}
-
-func (c *MgmtClient) PrepareMsg(m MgmtMsg) {
-	h := &m.Prefix().Header
-	h.DomainNumber = c.domain
-	h.SourcePortIdentity.PortNumber = c.portNumber
-	h.SequenceID = c.getSequenceID()
-}
-
-func (c *MgmtClient) getSequenceID() uint16 {
-	id := c.sequenceID
-	c.sequenceID++
-	return id
-}
-
-func GrandmasterSettingsBinaryMsg(c *MgmtClient, data GrandmasterSettings) ([]byte, error) {
-	return MgmtSetBinaryMsg(c, data)
-}
-
-func MgmtSetBinaryMsg[D MgmtData](c *MgmtClient, data D) ([]byte, error) {
-	msg := NewMgmtSetMsg(data)
-	c.PrepareMsg(msg)
-	return msg.MarshalBinary()
-}
-
 func NewMgmtSetMsg[D MgmtData](data D) *MgmtMsgWithValue[MgmtValue[D]] {
 	msg := new(MgmtMsgWithValue[MgmtValue[D]])
 	initPrefix(&msg.MgmtMsgPrefix, ActionSet)
@@ -580,7 +228,7 @@ func initHeader(h *Header) {
 	h.LogMessageInterval = 0x7f // required by Table 42 of the standard
 }
 
-func NewMgmtErrorStatusMsg(meid MgmtErrorID, mid MgmtID, display string) *MgmtErrorStatusMsg {
+func NewMgmtErrorStatusMsg(mes MgmtErrorStatus) *MgmtErrorStatusMsg {
 	msg := new(MgmtErrorStatusMsg)
 	// Header
 	initHeader(&msg.Header)
@@ -589,10 +237,6 @@ func NewMgmtErrorStatusMsg(meid MgmtErrorID, mid MgmtID, display string) *MgmtEr
 	msg.TargetPortIdentity = AnyPortIdentity()
 	msg.TLVType = TLVTypeMgmtErrorStatus
 	// LengthField is filled in by MarshalBinary
-	msg.V.MgmtErrorID = meid
-	msg.V.MgmtID = mid
-	if len(display) > 0 {
-		msg.V.DisplayData = &display
-	}
+	msg.V = mes
 	return msg
 }
