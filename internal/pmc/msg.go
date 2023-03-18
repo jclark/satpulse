@@ -1,5 +1,7 @@
 package pmc
 
+// This file knows about the structure of a managment message.
+
 import (
 	"bytes"
 	"encoding"
