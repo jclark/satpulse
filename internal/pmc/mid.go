@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	MIDNullPTPManagement     MgmtID = 0x0000
 	MIDDefaultDataSet        MgmtID = 0x2000
 	MIDCurrentDataSet        MgmtID = 0x2001
 	MIDParentDataSet         MgmtID = 0x2002
@@ -18,6 +19,8 @@ const (
 func (mid MgmtID) String() string {
 	// return the same strings as in the standard
 	switch mid {
+	case MIDNullPTPManagement:
+		return "NULL_PTP_MANAGEMENT"
 	case MIDDefaultDataSet:
 		return "DEFAULT_DATA_SET"
 	case MIDCurrentDataSet:
@@ -34,6 +37,8 @@ func (mid MgmtID) String() string {
 
 func unmarshalMID(r io.Reader, mid MgmtID) (MgmtMsg, error) {
 	switch mid {
+	case MIDNullPTPManagement:
+		return unmarshalMgmtValue[NullPTPMgmt](r)
 	case MIDGrandmasterSettings:
 		return unmarshalMgmtValue[GrandmasterSettings](r)
 	case MIDDefaultDataSet:
@@ -47,6 +52,14 @@ func unmarshalMID(r io.Reader, mid MgmtID) (MgmtMsg, error) {
 	default:
 		return nil, fmt.Errorf("unsupported management ID: 0x%04x", mid)
 	}
+}
+
+type NullPTPMgmtMsg = MgmtMsgWithValue[MgmtValue[NullPTPMgmt]]
+
+type NullPTPMgmt struct{}
+
+func (NullPTPMgmt) MgmtID() MgmtID {
+	return MIDNullPTPManagement
 }
 
 type DefaultDS struct {

@@ -77,6 +77,30 @@ func TestGet(t *testing.T) {
 	}
 }
 
+func TestNullPTPMgmt(t *testing.T) {
+	msg := NewMgmtSetMsg(NullPTPMgmt{})
+	bytes, err := msg.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary failed: %v", err)
+	}
+	// + 2 is for the managementID
+	if len(bytes) != SizeofMgmtMsgPrefix+2 {
+		t.Fatalf("wrong length: got %d, want %d", len(bytes), SizeofMgmtMsgPrefix+2)
+	}
+	msg2, err := UnmarshalMgmtMsg(bytes)
+	if err != nil {
+		t.Fatalf("UnmarshalMgmtMsg failed: %v", err)
+	}
+	msg.SetLength(uint16(len(bytes)))
+	if *msg2.Prefix() != msg.MgmtMsgPrefix {
+		t.Fatalf("fixed part not round tripped: got %v, want %v", *msg2.Prefix(), msg.MgmtMsgPrefix)
+	}
+	ok, _ := msg2.(*NullPTPMgmtMsg)
+	if ok == nil {
+		t.Fatalf("wrong type: got %T, want *NullPTPMgmtMsg", msg2)
+	}
+}
+
 // Get this by using strace when getting an unsupported MID 0x2011
 // strace -xx -e recvfrom -v -s 10000
 const errMsg = "\x0d\x02\x00\x3c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe4\x5f\x01\xff\xfe\xdf\x44\x7d\x00\x00\x00\x00\x04\x7f\x00\x00\x00\x00\x00\x00\x00\x00\x48\x92\x00\x00\x02\x00\x00\x02\x00\x08\x00\x06\x20\x11\x00\x00\x00\x00"
