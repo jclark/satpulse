@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sync/atomic"
 )
 
 type MgmtMsg interface {
@@ -241,4 +242,28 @@ func NewMgmtErrorStatusMsg(mes MgmtErrorStatus) *MgmtErrorStatusMsg {
 	// LengthField is filled in by MarshalBinary
 	msg.V = mes
 	return msg
+}
+
+type MsgPreparer struct {
+	sequenceID   atomic.Uint32
+	PortNumber   uint16
+	DomainNumber uint8
+}
+
+func (c *MsgPreparer) PrepareMsg(m MgmtMsg) {
+	h := &m.Prefix().Header
+	h.DomainNumber = c.DomainNumber
+	h.SourcePortIdentity.PortNumber = c.PortNumber
+	h.SequenceID = c.AllocSequenceID()
+}
+
+func (c *MsgPreparer) AllocSequenceID() uint16 {
+	n := c.sequenceID.Add(1)
+	return uint16(n - 1)
+}
+
+func MgmtSetBinaryMsg[D MgmtData](c *MsgPreparer, data D) ([]byte, error) {
+	msg := NewMgmtSetMsg(data)
+	c.PrepareMsg(msg)
+	return msg.MarshalBinary()
 }

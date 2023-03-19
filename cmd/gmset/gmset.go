@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 
@@ -30,13 +29,26 @@ func hexUint8Flag(name string, value hexUint8, usage string) *hexUint8 {
 	return &value
 }
 
+const localSocketPathFormat = "/tmp/gps2phc%d.sock"
+
 func main() {
 	msg := createMsg()
-	err := send(msg)
+	cfg := pmc.NewClientConfig()
+	cfg.LocalSocketPathFormat = localSocketPathFormat
+	err, response := send(cfg, msg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("Response: %+v\n", response)
+}
+
+func send(cfg *pmc.ClientConfig, msg pmc.MgmtMsg) (pmc.MgmtMsg, error) {
+	client, err := pmc.NewClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return client.Send(msg)
 }
 
 func createMsg() pmc.MgmtMsg {
@@ -77,60 +89,4 @@ func createMsg() pmc.MgmtMsg {
 		}
 	}
 	return pmc.NewMgmtSetMsg(gs)
-}
-
-const serverSocketPath = "/var/run/ptp4l"
-const clientSocketPath = "/tmp/client.sock"
-
-func send(msg pmc.MgmtMsg) error {
-	client := pmc.NewMgmtClient()
-
-	serverAddr := net.UnixAddr{
-		Name: serverSocketPath,
-		Net:  "unixgram",
-	}
-
-	clientAddr := net.UnixAddr{
-		Name: clientSocketPath,
-		Net:  "unixgram",
-	}
-
-	// Clean up the client socket file if it exists
-	os.Remove(clientSocketPath)
-
-	conn, err := net.DialUnix("unixgram", &clientAddr, nil)
-	if err != nil {
-		return fmt.Errorf("could not create connection: %w", err)
-	}
-	defer func() {
-		conn.Close()
-		os.Remove(clientSocketPath)
-	}()
-
-	client.PrepareMsg(msg)
-
-	data, err := msg.MarshalBinary()
-	if err != nil {
-		return fmt.Errorf("could not marshal message: %w", err)
-	}
-	_, err = conn.WriteTo(data, &serverAddr)
-	if err != nil {
-		return fmt.Errorf("could not write message: %w", err)
-	}
-
-	buf := make([]byte, 2048)
-	n, _, err := conn.ReadFrom(buf)
-	if err != nil {
-		return fmt.Errorf("could not read message: %w", err)
-	}
-
-	recvData := buf[:n]
-
-	m, err := pmc.UnmarshalMgmtMsg(recvData)
-	if err != nil {
-		return fmt.Errorf("could not unmarshal message: %w", err)
-	}
-
-	fmt.Printf("Received: %+v\n", m)
-	return nil
 }

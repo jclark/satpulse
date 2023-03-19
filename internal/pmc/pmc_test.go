@@ -27,10 +27,10 @@ var gsmData = GrandmasterSettings{
 const testPID = 12621
 
 func TestGrandmasterSettings(t *testing.T) {
-	client := NewMgmtClient()
-	client.portNumber = testPID
+	prep := MsgPreparer{}
+	prep.PortNumber = testPID
 	gsm := NewMgmtSetMsg(gsmData)
-	client.PrepareMsg(gsm)
+	prep.PrepareMsg(gsm)
 	bytes, err := gsm.MarshalBinary()
 	if err != nil {
 		t.Fatalf("first MarshalBinaryFailed: %v", err)

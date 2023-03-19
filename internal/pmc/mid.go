@@ -166,6 +166,6 @@ func (GrandmasterSettings) MgmtID() MgmtID {
 	return MIDGrandmasterSettings
 }
 
-func GrandmasterSettingsBinaryMsg(c *MgmtClient, data GrandmasterSettings) ([]byte, error) {
+func GrandmasterSettingsBinaryMsg(c *MsgPreparer, data GrandmasterSettings) ([]byte, error) {
 	return MgmtSetBinaryMsg(c, data)
 }

@@ -1,34 +1,73 @@
 package pmc
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
-type MgmtClient struct {
-	sequenceID uint16
-	portNumber uint16
-	domain     uint8
+const PTP4LSocketPath = "/var/run/ptp4l"
+
+const localSocketPathFormat = "/tmp/gps2phc%d.sock"
+
+type Client struct {
+	MsgPreparer
+	T *Transport
 }
 
-func NewMgmtClient() *MgmtClient {
-	return &MgmtClient{
-		portNumber: uint16(os.Getpid()),
+type ClientConfig struct {
+	RemoteSocketPath      string
+	LocalSocketPathFormat string
+}
+
+func NewClientConfig() *ClientConfig {
+	c := &ClientConfig{}
+	c.SetDefaults()
+	return c
+}
+
+func (cfg *ClientConfig) SetDefaults() {
+	cfg.RemoteSocketPath = PTP4LSocketPath
+	cfg.LocalSocketPathFormat = localSocketPathFormat
+}
+
+func NewClient(cfg *ClientConfig) (*Client, error) {
+	if cfg == nil {
+		cfg = &ClientConfig{}
+		cfg.SetDefaults()
 	}
+	pid := os.Getpid()
+	t, err := NewUnixTransport(fmt.Sprintf(cfg.LocalSocketPathFormat, pid), cfg.RemoteSocketPath)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{
+		MsgPreparer: MsgPreparer{PortNumber: uint16(pid)},
+		T:           t,
+	}, nil
 }
 
-func (c *MgmtClient) PrepareMsg(m MgmtMsg) {
-	h := &m.Prefix().Header
-	h.DomainNumber = c.domain
-	h.SourcePortIdentity.PortNumber = c.portNumber
-	h.SequenceID = c.getSequenceID()
-}
+func (client *Client) Send(msg MgmtMsg) (MgmtMsg, error) {
+	client.PrepareMsg(msg)
+	data, err := msg.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal message: %w", err)
+	}
+	_, err = client.T.Write(data)
+	if err != nil {
+		return nil, fmt.Errorf("could not write message: %w", err)
+	}
 
-func (c *MgmtClient) getSequenceID() uint16 {
-	id := c.sequenceID
-	c.sequenceID++
-	return id
-}
+	buf := make([]byte, 2048)
+	n, _, err := client.T.Conn.ReadFrom(buf)
+	if err != nil {
+		return nil, fmt.Errorf("could not read message: %w", err)
+	}
 
-func MgmtSetBinaryMsg[D MgmtData](c *MgmtClient, data D) ([]byte, error) {
-	msg := NewMgmtSetMsg(data)
-	c.PrepareMsg(msg)
-	return msg.MarshalBinary()
+	recvData := buf[:n]
+
+	m, err := UnmarshalMgmtMsg(recvData)
+	if err != nil {
+		return nil, fmt.Errorf("could not unmarshal message: %w", err)
+	}
+	return m, nil
 }
