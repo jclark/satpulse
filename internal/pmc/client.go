@@ -48,6 +48,7 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 
 func (client *Client) Send(msg MgmtMsg) (MgmtMsg, error) {
 	client.PrepareMsg(msg)
+	seqid := msg.Prefix().SequenceID
 	data, err := msg.MarshalBinary()
 	if err != nil {
 		return nil, fmt.Errorf("could not marshal message: %w", err)
@@ -65,9 +66,19 @@ func (client *Client) Send(msg MgmtMsg) (MgmtMsg, error) {
 
 	recvData := buf[:n]
 
-	m, err := UnmarshalMgmtMsg(recvData)
+	resp, err := UnmarshalMgmtMsg(recvData)
 	if err != nil {
 		return nil, fmt.Errorf("could not unmarshal message: %w", err)
 	}
-	return m, nil
+	respPrefix := resp.Prefix()
+	if respPrefix.SequenceID != seqid {
+		return nil, fmt.Errorf("sequence ID mismatch: expected %d, got %d", seqid, respPrefix.SequenceID)
+	}
+	if respPrefix.ActionField != ActionResponse {
+		return nil, fmt.Errorf("unexpected action field in response, got %d", respPrefix.ActionField)
+	}
+	if respPrefix.TargetPortIdentity.PortNumber != client.PortNumber {
+		return nil, fmt.Errorf("unexpected port number in response, got %d", respPrefix.TargetPortIdentity.PortNumber)
+	}
+	return resp, nil
 }
