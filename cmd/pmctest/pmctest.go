@@ -35,9 +35,9 @@ func main() {
 	msg := createMsg()
 	cfg := pmc.NewClientConfig()
 	cfg.LocalSocketPathFormat = localSocketPathFormat
-	err, response := send(cfg, msg)
+	response, err := send(cfg, msg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("Response: %+v\n", response)

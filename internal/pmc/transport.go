@@ -33,10 +33,10 @@ func (t *Transport) Write(data []byte) (int, error) {
 
 func NewUnixTransport(lPath, rPath string) (*Transport, error) {
 	_ = os.Remove(lPath)
-	conn, err := net.DialUnix("unixgram", nil, &net.UnixAddr{
+	conn, err := net.DialUnix("unixgram", &net.UnixAddr{
 		Name: lPath,
 		Net:  "unixgram",
-	})
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create connection: %w", err)
 	}
