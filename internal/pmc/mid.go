@@ -32,7 +32,7 @@ func (mid MgmtID) String() string {
 	case MIDGrandmasterSettings:
 		return "GRANDMASTER_SETTINGS_NP"
 	}
-	return fmt.Sprintf("0x%0x", uint16(mid))
+	return fmt.Sprintf("0x%04x", uint16(mid))
 }
 
 func unmarshalMID(r io.Reader, mid MgmtID) (MgmtMsg, error) {
@@ -50,7 +50,7 @@ func unmarshalMID(r io.Reader, mid MgmtID) (MgmtMsg, error) {
 	case MIDTimePropertiesDataSet:
 		return unmarshalMgmtValue[TimePropertiesDS](r)
 	default:
-		return nil, fmt.Errorf("unsupported management ID: 0x%04x", mid)
+		return nil, fmt.Errorf("unsupported management ID: %v", mid)
 	}
 }
 
