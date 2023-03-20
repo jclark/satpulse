@@ -33,7 +33,10 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	t.path = path
 	// XXX should open non-blocking and then change to blocking with fcntl
 	// (in case CLOCAL is not set)
-	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY, 0)
+	// O_CLOEXEC is here, because we are using flock to lock.
+	// Without O_CLOEXEC, the lock would be inherited by child processes, which is probably not what is wanted.
+	// See e.g. https://github.com/Pulse-Eight/libcec/issues/477
+	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		err = t.wrapErr(err, "open")
 		return
