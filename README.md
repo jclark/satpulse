@@ -32,14 +32,14 @@ Gps4ptp provides the following features:
 
 - It filters the pulses received from the GPS receiver to eliminate those that appear to be spurious. This prevents spurious pulses causing spikes in the PTP hardware clock.
 
-- It can take advantage of the sawtooth correction information provided by some U-blox receivers. This enables more precise synchronization of the PTP hardware clock.
+- It can take advantage of the sawtooth correction information (quantization error) provided by some U-blox receivers. This enables more precise synchronization of the PTP hardware clock.
 
 - The most common Intel NICs generate timestamps for both edges of a pulse: gps4ptp deals with this automatically.
 
 - It can talk to U-blox receivers (or clones) using UBX, the native U-blox binary protocol. This gives gps4ptp access to the full capabilities of the receiver. UBX is a bidirectonal protocol, which allows gps4ptp to make changes to the receiver's configuration.
 
-- XXX ser2net
-
+- It allows TCP connections with the GPS receiver attached to the serial port (similar to ser2net). This means you can run gps4ptp on a Linux box (such as a Raspberry Pi) and then connect back to GPS over TCP from a Windows PC using a program like u-center (from U-blox) on a PC to monitor or configure the GPS receiver (at the same time as it is being used for PTP).
+ 
 - Using the UBX protocol it can get the current atomic time from the GPS receiver, and use that directly to set the PTP hardware clock. Both GPS and PTP work natively using atomic time rather than UTC. With UBX, time has to be converted to UTC and then back to atomic time.
 
 The following features are in progress:
@@ -50,11 +50,13 @@ The following features are in progress:
 
     - It provides information about how UTC time can be derived from atomic time. While GPS and PTP both work natively in atomic time, which does not have leap seconds, they also provide information about leap seconds to enable the current UTC time to be derived from the atomic time.
 
+- It can examine the configuration of the U-blox receiver and reconfigure as necessary so it works well for timing purposes.
+
 - The PTP hardware clock on the CM4 does not work properly when the network cable is unplugged; gps4ptp detects this and handles it automatically.
 
 The following features are planned:
  
-- XXX http
+- Allow monitoring of the GPS receiver using HTTP.
 
 ## What hardware to get
 
@@ -73,13 +75,22 @@ For best results the network switches should also have PTP support. For a low-co
 
 ## Relationship to other software
 
+There are some existing, well-established open source projects that provide similar functionality, but they are don't do quite what gps4ptp does.
+
+It would probably be possible to evolve these, but they are both written in C, and I think it's time to move on to more modern, safer languages.
+
 ### LinuxPTP
 
-The LinuxPTP project provides a number of programs. The main one is ptp4l, which implements the PTP protocol. gps4ptp is intended to work in conjunction with ptp4l. LinuxPTP also includes the ts2phc program, which with the `-s nmea` options performs the same basic function as gps4ptp. However, it does not have the extra features that gps4ptp provides. In particular, it uses the NMEA protocol, rather than UBX; this is simple, and universally supported, but the only information provided is the current UTC time.
+The [LinuxPTP](https://linuxptp.sourceforge.net/) project provides a number of programs. The main one is ptp4l, which implements the PTP protocol. gps4ptp is intended to work in conjunction with ptp4l. LinuxPTP also includes the ts2phc program, which with the `-s nmea` options performs the same basic function as gps4ptp. However, it does not have the extra features that gps4ptp provides. In particular, it uses the NMEA protocol, rather than UBX; this is simple, and universally supported, but the only information provided is the current UTC time.
 
 ### gpsd
 
-XXX
+The [gpsd](https://gpsd.gitlab.io/gpsd/) project provides a daemon that talks to GPS receivers and understands the UBX protocol, as well as several others, but it lacks PTP-specific functionality, and its protocol is not a good fit for the needs of PTP:
+
+- it assumes the PPS signal connected to a serial line, rather than to a NIC; the sawtooth correction information is linked to the PPS information, so isn't available when the PPS is connected to the NIC
+- it provides time in UTC not atomic time, and doesn't provide leap second information
+
+
 
 
 
