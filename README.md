@@ -32,15 +32,15 @@ Gps4ptp provides the following features:
 
 - It filters the pulses received from the GPS receiver to eliminate those that appear to be spurious. This prevents spurious pulses causing spikes in the PTP hardware clock.
 
-- It can take advantage of the sawtooth correction information (quantization error) provided by some U-blox receivers. This enables more precise synchronization of the PTP hardware clock.
+- It can talk to U-blox receivers (or clones) using the UBX protocol, which is the native binary protocol of U-blox receivers (and clones). This gives gps4ptp access to the full capabilities of U-blox receivers. UBX is a bidirectonal protocol, which allows gps4ptp to make changes to the receiver's configuration. It can also use the ASCII NMEA protocol, which is universally supported, but provides limited capabilities.
 
-- The most common Intel NICs generate timestamps for both edges of a pulse: gps4ptp deals with this automatically.
+- By using the UBX protocol, it can take advantage of the sawtooth correction (sometimes called quantization error) information that is available from some U-blox receivers. This enables more precise synchronization of the PTP hardware clock.
 
-- It can talk to U-blox receivers (or clones) using UBX, the native U-blox binary protocol. This gives gps4ptp access to the full capabilities of the receiver. UBX is a bidirectonal protocol, which allows gps4ptp to make changes to the receiver's configuration.
+- It automatically handles NICs that generate timestamps for both edges of a pulse (some Intel NICs, including the i210, do this).
 
-- It allows TCP connections with the GPS receiver attached to the serial port (similar to ser2net). This means you can run gps4ptp on a Linux box (such as a Raspberry Pi) and then connect back to GPS over TCP from a Windows PC using a program like u-center (from U-blox) on a PC to monitor or configure the GPS receiver (at the same time as it is being used for PTP).
+- It allows TCP connections with the GPS receiver attached to the serial port (similar to ser2net). This means you can run gps4ptp on a Linux box (such as a Raspberry Pi) and then connect back to the GPS receiver over TCP from a Windows PC, using a program like u-center (from U-blox), to monitor or configure the GPS receiver, *at the same time as* it is being used for PTP.
  
-- Using the UBX protocol it can get the current atomic time from the GPS receiver, and use that directly to set the PTP hardware clock. Both GPS and PTP work natively using atomic time rather than UTC. With UBX, time has to be converted to UTC and then back to atomic time.
+- By using the UBX protocol, it can get the current time from the GPS receiver as atomic time, and use that directly to set the PTP hardware clock. Both GPS and PTP work natively using atomic time (without leap seconds) rather than UTC. With the NMEA protocol, time has to be converted to UTC and then back to atomic time.
 
 The following features are in progress:
 
