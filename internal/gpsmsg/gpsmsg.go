@@ -8,6 +8,7 @@ import (
 
 type Message interface {
 	Time() *Time
+	LeapSecond() *LeapSecond
 }
 
 //go:generate stringer -type=MajorGNSS
@@ -28,9 +29,14 @@ type Time struct {
 	TAITime       ptime.Time     `json:"taiTime,omitempty"`
 	UTCTime       *ptime.UTCTime `json:"utcTime,omitempty"`
 	Accuracy      time.Duration  `json:"accuracy,omitempty"`
-	TAIMinusUTC   uint8          `json:"tai-utc,omitempty"`
+	UTCOffset     uint8          `json:"utcOffset,omitempty"`
 	PulseOffset   time.Duration  `json:"pulseOffset,omitempty"`
 	GNSS          *MajorGNSS     `json:"gnss,omitempty"`
 	PrecedesPulse bool           `json:"precedesPulse,omitempty"`
 	NavEpoch      uint32         `json:"navEpoch,omitempty"`
+}
+
+type LeapSecond struct {
+	ptime.LeapSecond
+	NavEpoch uint32 `json:"navEpoch,omitempty"`
 }

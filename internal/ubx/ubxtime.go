@@ -25,7 +25,7 @@ func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {
 	t := gpsmsg.Time{}
 	t.TAITime = ptime.GPS(m.Week, m.ITOW, m.FTOW)
 	if (m.Valid & bin.NavTimeGPSLeapSValid) != 0 {
-		t.TAIMinusUTC = m.LeapS + ptime.TAIMinusGPS
+		t.UTCOffset = m.LeapS + ptime.TAIMinusGPS
 	}
 	t.Accuracy = time.Duration(m.TAcc)
 	g := gpsmsg.GPS

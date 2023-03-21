@@ -24,9 +24,9 @@ type UTCTime struct {
 }
 
 type LeapSecond struct {
-	LastDate  time.Time // last scheduled leap second (must be last day of a month)
-	OffBefore uint8     // TAI-UTC offset before leap second
-	OffAfter  uint8     // TAI-UTC offset after leap second
+	LastDate     time.Time // last scheduled leap second (must be last day of a month)
+	UTCOffBefore int16     // TAI-UTC offset before leap second
+	UTCOffAfter  int16     // TAI-UTC offset after leap second
 }
 
 // GPS epoch
@@ -55,11 +55,11 @@ func UTC(year uint16, month, day, hour, min, sec uint8, nanos int32) UTCTime {
 
 func (ls *LeapSecond) UTCtoTime(ut *UTCTime) Time {
 	t := ut.Date.Add(ut.TimeOfDay).UnixNano()
-	var s uint8
+	var s int16
 	if ut.Date.After(ls.LastDate) {
-		s = ls.OffAfter
+		s = ls.UTCOffAfter
 	} else {
-		s = ls.OffBefore
+		s = ls.UTCOffBefore
 	}
 	return Time(t + int64(s)*1e9)
 }

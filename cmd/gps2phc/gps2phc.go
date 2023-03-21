@@ -257,9 +257,9 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 
 func leapSecondFromConfig(cfg LeapSecondConfig) ptime.LeapSecond {
 	return ptime.LeapSecond{
-		LastDate:  cfg.Date.AsTime((time.UTC)),
-		OffBefore: cfg.Before,
-		OffAfter:  cfg.After,
+		LastDate:     cfg.Date.AsTime((time.UTC)),
+		UTCOffBefore: int16(cfg.Before),
+		UTCOffAfter:  int16(cfg.After),
 	}
 }
 

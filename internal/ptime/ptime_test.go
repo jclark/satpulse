@@ -7,9 +7,9 @@ import (
 
 func TestLeapSecs(t *testing.T) {
 	leaps := LeapSecond{
-		LastDate:  time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC),
-		OffBefore: 37,
-		OffAfter:  38,
+		LastDate:     time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC),
+		UTCOffBefore: 37,
+		UTCOffAfter:  38,
 	}
 
 	testLeapNanos(t, &leaps, 0)

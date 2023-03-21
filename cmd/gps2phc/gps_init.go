@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jclark/gps2phc/internal/gpsmsg"
 	"github.com/jclark/gps2phc/internal/logctx"
 	"github.com/jclark/gps2phc/internal/nmea"
 	"github.com/jclark/gps2phc/internal/scan"
@@ -28,7 +29,7 @@ type gpsReceived struct {
 	tmode3           *ubxbin.CfgTmode3
 	tp5              *ubxbin.CfgTp5
 	gnss             *ubxbin.CfgGNSS
-	leapSecond       *ubx.LeapSecond
+	leapSecond       *gpsmsg.LeapSecond
 	version          *ubx.Version
 	ack              map[ubxbin.MsgID]bool
 }
@@ -104,7 +105,8 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	}
 	var lsdStr string
 	if gr.leapSecond != nil {
-		lsdStr = gr.leapSecond.Date.Format("2006-01-02")
+		lsdStr = gr.leapSecond.LastDate.Format("2006-01-02")
+		lg.Info("gpsLeapSec", "date", lsdStr, "utcOffBefore", gr.leapSecond.UTCOffBefore, "utcOffAfter", gr.leapSecond.UTCOffAfter)
 	}
 	var tmode any = nil
 	if gr.tmode2 != nil {
@@ -120,8 +122,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
 		"ack", gr.ack,
 		"gnssEnabled", gnssEnabled,
-		"tmode", tmode,
-		"leapSecDate", lsdStr)
+		"tmode", tmode)
 	return
 }
 

@@ -58,6 +58,10 @@ func (m *Message) Time() *gpsmsg.Time {
 	return nil
 }
 
+func (m *Message) LeapSecond() *ptime.LeapSecond {
+	return nil
+}
+
 func parseRMC(f Fields) (*ptime.UTCTime, error) {
 	k := f.TalkerID + "RMC"
 	if len(f.DataFields) < 9 {
