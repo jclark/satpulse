@@ -13,6 +13,7 @@ const (
 	MIDCurrentDataSet        MgmtID = 0x2001
 	MIDParentDataSet         MgmtID = 0x2002
 	MIDTimePropertiesDataSet MgmtID = 0x2003
+	MIDUTCProperties         MgmtID = 0x2011
 	MIDGrandmasterSettings   MgmtID = 0xC001 // GRANDMASTER_SETTINGS_NP of LinuxPTP
 )
 
@@ -49,6 +50,8 @@ func unmarshalMID(r io.Reader, mid MgmtID) (MgmtMsg, error) {
 		return unmarshalMgmtValue[ParentDS](r)
 	case MIDTimePropertiesDataSet:
 		return unmarshalMgmtValue[TimePropertiesDS](r)
+	case MIDUTCProperties:
+		return unmarshalMgmtValue[UTCProperties](r)
 	default:
 		return nil, fmt.Errorf("unsupported management ID: %v", mid)
 	}
@@ -168,4 +171,16 @@ func (GrandmasterSettings) MgmtID() MgmtID {
 
 func GrandmasterSettingsBinaryMsg(c *MsgPreparer, data GrandmasterSettings) ([]byte, error) {
 	return MgmtSetBinaryMsg(c, data)
+}
+
+type UTCPropertiesMsg = MgmtMsgWithValue[MgmtValue[UTCProperties]]
+
+type UTCProperties struct {
+	CurrentUTCOffset int16
+	TimeFlags        TimeFlags // Only Leap59, Leap61 and CurrentUTCOffsetValid are valid here
+	_                uint8
+}
+
+func (UTCProperties) MgmtID() MgmtID {
+	return MIDUTCProperties
 }
