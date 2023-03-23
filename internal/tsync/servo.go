@@ -59,6 +59,7 @@ func (s *Servo) Logger() *slog.Logger {
 }
 
 func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
+	// PTP defines offsetFromMaster as timeOnSlave - timeOnMaster, so I think this is the right way round.
 	off := local.T.Sub(ref)
 	s.lg.Debug("sample", "off", off, "gps", ref, "phc", local.T, "epoch", local.Epoch, "delayed", delayed)
 	s.sampler.sample(ref, local, delayed)
