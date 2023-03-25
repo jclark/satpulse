@@ -35,7 +35,7 @@ func main() {
 	msg := createMsg()
 	cfg := pmc.NewClientConfig()
 	cfg.LocalSocketPathFormat = localSocketPathFormat
-	response, err := send(cfg, msg)
+	response, err := sendRecv(cfg, msg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -43,12 +43,12 @@ func main() {
 	fmt.Printf("Response: %+v\n", response)
 }
 
-func send(cfg *pmc.ClientConfig, msg pmc.MgmtMsg) (pmc.MgmtMsg, error) {
+func sendRecv(cfg *pmc.ClientConfig, msg pmc.MgmtMsg) (pmc.MgmtMsg, error) {
 	client, err := pmc.NewClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return client.Send(msg)
+	return client.SendRecv(msg)
 }
 
 func createMsg() pmc.MgmtMsg {
@@ -82,7 +82,7 @@ func createMsg() pmc.MgmtMsg {
 	gs.ClockQuality.ClockClass = uint8(*clockClass)
 	gs.ClockQuality.ClockAccuracy = uint8(*clockAccuracy)
 	gs.ClockQuality.OffsetScaledLogVariance = uint16(*offsetScaledLogVariance)
-	gs.TimeSource = uint8(*timeSource)
+	gs.TimeSource = pmc.TimeSource(uint8(*timeSource))
 	for _, f := range timeBoolFlags {
 		if f.set {
 			gs.TimeFlags |= f.flag

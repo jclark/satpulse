@@ -26,9 +26,14 @@ func (gtr *gpsTimeReading) isZero() bool {
 	return gtr.tRead.IsZero()
 }
 
+type Sampler interface {
+	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
+}
+
 type Correlator struct {
-	servo *Servo
-	edges []clockTimeReading
+	sampler Sampler
+	lg      *slog.Logger
+	edges   []clockTimeReading
 	// These are readings before the navigation epoch, which give the pulse offset
 	pulseOffs []gpsTimeReading
 	// if non-zero, a GPS reading that we haven't yet found an edge for
@@ -40,9 +45,10 @@ type Correlator struct {
 	edgesPerPulse int
 }
 
-func NewCorrelator(s *Servo) *Correlator {
+func NewCorrelator(s Sampler, lg *slog.Logger) *Correlator {
 	c := new(Correlator)
-	c.servo = s
+	c.sampler = s
+	c.lg = lg
 	return c
 }
 
@@ -51,9 +57,9 @@ func (c *Correlator) GPSTime(tGPS ptime.Time, tRead time.Time) {
 	po := c.findPulseOffset(tGPS, tRead)
 	if po != nil {
 		c.gpsPending.pulseOff = po.pulseOff
-		c.logger().Debug("gpsTime", "t", tGPS, "pulseOffset", po.pulseOff)
+		c.lg.Debug("gpsTime", "t", tGPS, "pulseOffset", po.pulseOff)
 	} else {
-		c.logger().Debug("gpsTime", "t", tGPS)
+		c.lg.Debug("gpsTime", "t", tGPS)
 	}
 
 	c.correlate()
@@ -62,7 +68,7 @@ func (c *Correlator) GPSTime(tGPS ptime.Time, tRead time.Time) {
 const maxEdges = 8
 
 func (c *Correlator) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
-	c.logger().Debug("pulseEdge", "t", tClock.T, "epoch", tClock.Epoch)
+	c.lg.Debug("pulseEdge", "t", tClock.T, "epoch", tClock.Epoch)
 	edge := clockTimeReading{ClockTime: tClock, tRead: tRead}
 	c.edges = append(c.edges, edge)
 	c.correlate()
@@ -98,13 +104,13 @@ func (c *Correlator) emitUpTo(edgeIndex int) {
 	tGPS := c.gpsPending.tGPS
 	for ; i < edgeIndex; i += c.edgesPerPulse {
 		secs := (edgeIndex - i) / c.edgesPerPulse
-		c.servo.Sample(tGPS.Add(time.Second*time.Duration(-secs)), c.edges[i].ClockTime, true)
+		c.sampler.Sample(tGPS.Add(time.Second*time.Duration(-secs)), c.edges[i].ClockTime, true)
 	}
 	c.gpsEmit(edgeIndex)
 }
 
 func (c *Correlator) gpsEmit(edgeIndex int) {
-	c.servo.Sample(c.gpsPending.pulseTime(), c.edges[edgeIndex].ClockTime, false)
+	c.sampler.Sample(c.gpsPending.pulseTime(), c.edges[edgeIndex].ClockTime, false)
 	c.edges = c.edges[edgeIndex:]
 	c.gpsSampled = c.gpsPending
 	c.gpsPending = gpsTimeReading{}
@@ -113,7 +119,7 @@ func (c *Correlator) gpsEmit(edgeIndex int) {
 // PulseOffset corresponds to U-blox quantization error.
 // This is also sometimes called sawtooth error.
 func (c *Correlator) PulseOffset(tGPS ptime.Time, tRead time.Time, off time.Duration) {
-	c.logger().Debug("pulseOffset", "tGPS", tGPS, "offset", off)
+	c.lg.Debug("pulseOffset", "tGPS", tGPS, "offset", off)
 	if len(c.pulseOffs) > 1 {
 		c.pulseOffs = c.pulseOffs[len(c.pulseOffs)-1:]
 	}
@@ -173,21 +179,17 @@ func (c *Correlator) initialEdge() int {
 	}
 	delay := c.gpsPending.tRead.Sub(c.edges[last].tRead)
 	if delay > maxDelay {
-		c.logger().Debug("excessDelay", "delay", delay)
+		c.lg.Debug("excessDelay", "delay", delay)
 		return -1
 	}
 	if delay < minDelay {
-		c.logger().Debug("pulseBeforeGps", "delay", delay)
+		c.lg.Debug("pulseBeforeGps", "delay", delay)
 		return -1
 	}
 	c.edgesPerPulse = epp
-	c.logger().Info("regularPulse", "edgesPerPulse", epp)
+	c.lg.Info("regularPulse", "edgesPerPulse", epp)
 	// we should really generate multiple samples from this
 	return last
-}
-
-func (c *Correlator) logger() *slog.Logger {
-	return c.servo.Logger()
 }
 
 // Find a candidate initial edge assuming 2 edges per pulse
@@ -197,7 +199,7 @@ func (c *Correlator) initialEdge1() int {
 	}
 	v := variation(c.edges)
 	if v > time.Second/100 {
-		c.logger().Debug("singleEdgeInconsistent", "variation", v)
+		c.lg.Debug("singleEdgeInconsistent", "variation", v)
 		return -1
 	}
 	return len(c.edges) - 1

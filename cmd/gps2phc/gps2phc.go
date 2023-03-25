@@ -242,7 +242,7 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 		return nil, err
 	}
 	s := Syncer{
-		corr: tsync.NewCorrelator(servo),
+		corr: tsync.NewCorrelator(servo, lg),
 		fCh:  fCh,
 		ls:   leapSecondFromConfig(cfg.LeapSecond),
 	}
@@ -347,7 +347,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, f 
 		if u == nil {
 			return
 		}
-		sec = state.leapSecond.UTCtoTime(u)
+		sec = state.leapSecond.UTCtoTime(*u)
 		lg.Debug("timeFromUTC", "t", sec)
 	}
 	sec = sec.Round(time.Second)

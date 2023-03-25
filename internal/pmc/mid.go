@@ -162,8 +162,22 @@ type GrandmasterSettings struct {
 	ClockQuality ClockQuality
 	UTCOffset    int16
 	TimeFlags    TimeFlags
-	TimeSource   uint8
+	TimeSource   TimeSource
 }
+
+type TimeSource uint8
+
+const (
+	TimeSourceAtomicClock        TimeSource = 0x10
+	TimeSourceGNSS               TimeSource = 0x20
+	TimeSourceTerrestrialRadio   TimeSource = 0x30
+	TimeSourceSerialTimeCode     TimeSource = 0x39
+	TimeSourcePTP                TimeSource = 0x40
+	TimeSourceNTP                TimeSource = 0x50
+	TimeSourceHandSet            TimeSource = 0x60
+	TimeSourceOther              TimeSource = 0x90
+	TimeSourceInternalOscillator TimeSource = 0xA0
+)
 
 func (GrandmasterSettings) MgmtID() MgmtID {
 	return MIDGrandmasterSettings

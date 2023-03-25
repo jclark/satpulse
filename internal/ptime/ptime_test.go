@@ -41,7 +41,7 @@ func TestLeapSecs(t *testing.T) {
 func checkConsecutive(t *testing.T, leaps *LeapSecond, secs []UTCTime, nanos int32) {
 	ts := make([]Time, len(secs))
 	for i, ut := range secs {
-		ts[i] = leaps.UTCtoTime(&ut)
+		ts[i] = leaps.UTCtoTime(ut)
 		if i > 0 && ts[i] != ts[i-1]+1e9 {
 			t.Fatalf("for nanos %d, %+d leapSec, secs[%d] not consecutive: %d, %d", nanos, leaps.UTCOffAfter-leaps.UTCOffBefore, i, ts[i-1], ts[i])
 		}

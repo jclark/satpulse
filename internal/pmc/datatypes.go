@@ -29,6 +29,15 @@ type ClockQuality struct {
 	OffsetScaledLogVariance uint16
 }
 
+const (
+	ClockClassSyncPrimaryRef = 6
+	ClockClassHoldover       = 7
+	ClockClassDegradedA      = 52
+	ClockClassDegradedB      = 187
+	ClockClassDefault        = 248
+	ClockClassSlaveOnly      = 255
+)
+
 type TimeInterval int64
 
 func (ti TimeInterval) Duration() time.Duration {

@@ -46,18 +46,29 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 	}, nil
 }
 
-func (client *Client) Send(msg MgmtMsg) (MgmtMsg, error) {
+func (client *Client) SendRecv(msg MgmtMsg) (MgmtMsg, error) {
+	seqid, err := client.Send(msg)
+	if err != nil {
+		return nil, err
+	}
+	return client.Recv(seqid)
+}
+
+func (client *Client) Send(msg MgmtMsg) (uint16, error) {
 	client.PrepareMsg(msg)
 	seqid := msg.Prefix().SequenceID
 	data, err := msg.MarshalBinary()
 	if err != nil {
-		return nil, fmt.Errorf("could not marshal message: %w", err)
+		return seqid, fmt.Errorf("could not marshal message: %w", err)
 	}
 	_, err = client.T.Write(data)
 	if err != nil {
-		return nil, fmt.Errorf("could not write message: %w", err)
+		return seqid, fmt.Errorf("could not write message: %w", err)
 	}
+	return seqid, nil
+}
 
+func (client *Client) Recv(seqid uint16) (MgmtMsg, error) {
 	buf := make([]byte, 2048)
 	n, _, err := client.T.Conn.ReadFrom(buf)
 	if err != nil {
@@ -71,14 +82,14 @@ func (client *Client) Send(msg MgmtMsg) (MgmtMsg, error) {
 		return nil, fmt.Errorf("could not unmarshal message: %w", err)
 	}
 	respPrefix := resp.Prefix()
+	if respPrefix.TargetPortIdentity.PortNumber != client.PortNumber {
+		return nil, fmt.Errorf("unexpected port number in response, got %d", respPrefix.TargetPortIdentity.PortNumber)
+	}
 	if respPrefix.SequenceID != seqid {
 		return nil, fmt.Errorf("sequence ID mismatch: expected %d, got %d", seqid, respPrefix.SequenceID)
 	}
 	if respPrefix.ActionField != ActionResponse {
 		return nil, fmt.Errorf("unexpected action field in response, got %d", respPrefix.ActionField)
-	}
-	if respPrefix.TargetPortIdentity.PortNumber != client.PortNumber {
-		return nil, fmt.Errorf("unexpected port number in response, got %d", respPrefix.TargetPortIdentity.PortNumber)
 	}
 	return resp, nil
 }
