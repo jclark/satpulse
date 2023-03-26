@@ -29,6 +29,8 @@ type ClockQuality struct {
 	OffsetScaledLogVariance uint16
 }
 
+const OffsetScaledLogVarianceUnknown = 0xffff
+
 const (
 	ClockClassSyncPrimaryRef = 6
 	ClockClassHoldover       = 7
@@ -36,6 +38,37 @@ const (
 	ClockClassDegradedB      = 187
 	ClockClassDefault        = 248
 	ClockClassSlaveOnly      = 255
+)
+
+const (
+	ClockAccuracyWithin1ps = 0x17 + iota
+	ClockAccuracyWithin2point5ps
+	ClockAccuracyWithin10ps
+	ClockAccuracyWithin25ps
+	ClockAccuracyWithin100ps
+	ClockAccuracyWithin250ps
+	ClockAccuracyWithin1ns
+	ClockAccuracyWithin2point5ns
+	ClockAccuracyWithin10ns
+	ClockAccuracyWithin25ns
+	ClockAccuracyWithin100ns
+	ClockAccuracyWithin250ns
+	ClockAccuracyWithin1us
+	ClockAccuracyWithin2point5us
+	ClockAccuracyWithin10us
+	ClockAccuracyWithin25us
+	ClockAccuracyWithin100us
+	ClockAccuracyWithin250us
+	ClockAccuracyWithin1ms
+	ClockAccuracyWithin2point5ms
+	ClockAccuracyWithin10ms
+	ClockAccuracyWithin25ms
+	ClockAccuracyWithin100ms
+	ClockAccuracyWithin250ms
+	ClockAccuracyWithin1s
+	ClockAccuracyWithin10s
+	ClockAccuracyGreater10s
+	ClockAccuracyUnknown = 0xFE
 )
 
 type TimeInterval int64
