@@ -6,11 +6,7 @@ import (
 )
 
 func TestLeapSecs(t *testing.T) {
-	leaps := LeapSecond{
-		LastDate:     time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC),
-		UTCOffBefore: 37,
-		UTCOffAfter:  38,
-	}
+	leaps := LeapSecondOnDate(time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
 
 	nanoCases := []int32{0, 1, 1e9 / 2, 1e9 - 1, -1, 1 - 1e9, -1e9 / 2}
 	// test positive leap seconds

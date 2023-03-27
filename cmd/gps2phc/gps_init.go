@@ -105,7 +105,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	}
 	var lsdStr string
 	if gr.leapSecond != nil {
-		lsdStr = gr.leapSecond.LastDate.Format("2006-01-02")
+		lsdStr = gr.leapSecond.Date().Format("2006-01-02")
 		lg.Info("gpsLeapSec", "date", lsdStr, "utcOffBefore", gr.leapSecond.UTCOffBefore, "utcOffAfter", gr.leapSecond.UTCOffAfter)
 	}
 	var tmode any = nil

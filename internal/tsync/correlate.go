@@ -27,7 +27,7 @@ func (gtr *gpsTimeReading) isZero() bool {
 }
 
 type Sampler interface {
-	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
+	Sample(ref ptime.Time, local ptime.ClockTime, tRead time.Time, delayed bool)
 }
 
 type Correlator struct {
@@ -104,13 +104,13 @@ func (c *Correlator) emitUpTo(edgeIndex int) {
 	tGPS := c.gpsPending.tGPS
 	for ; i < edgeIndex; i += c.edgesPerPulse {
 		secs := (edgeIndex - i) / c.edgesPerPulse
-		c.sampler.Sample(tGPS.Add(time.Second*time.Duration(-secs)), c.edges[i].ClockTime, true)
+		c.sampler.Sample(tGPS.Add(time.Second*time.Duration(-secs)), c.edges[i].ClockTime, c.edges[i].tRead, true)
 	}
 	c.gpsEmit(edgeIndex)
 }
 
 func (c *Correlator) gpsEmit(edgeIndex int) {
-	c.sampler.Sample(c.gpsPending.pulseTime(), c.edges[edgeIndex].ClockTime, false)
+	c.sampler.Sample(c.gpsPending.pulseTime(), c.edges[edgeIndex].ClockTime, c.edges[edgeIndex].tRead, false)
 	c.edges = c.edges[edgeIndex:]
 	c.gpsSampled = c.gpsPending
 	c.gpsPending = gpsTimeReading{}
@@ -265,4 +265,18 @@ func consistent(master1, master2 gpsTimeReading, slave1, slave2 clockTimeReading
 	} else {
 		return slave1.tRead.Add(masterDiff).Sub(slave2.tRead).Abs() <= time.Second/20
 	}
+}
+
+type multiSampler struct {
+	samplers []Sampler
+}
+
+func (ms *multiSampler) Sample(ref ptime.Time, local ptime.ClockTime, tRead time.Time, delayed bool) {
+	for _, sampler := range ms.samplers {
+		sampler.Sample(ref, local, tRead, delayed)
+	}
+}
+
+func MultiSampler(samplers ...Sampler) Sampler {
+	return &multiSampler{samplers: samplers}
 }

@@ -14,9 +14,11 @@ func (m *Message) LeapSecond() *gpsmsg.LeapSecond {
 		return nil
 	}
 	ls := gpsmsg.LeapSecond{NavEpoch: iTOWEpoch(u.ITOW)}
-	if !leapSecondUTCOffset(u, &ls) || !leapSecondDate(u, &ls) {
+	var date time.Time
+	if !leapSecondUTCOffset(u, &ls) || !leapSecondDate(u, &date) {
 		return nil
 	}
+	ls.LeapSecond = ptime.LeapSecondOnDate(date, ls.UTCOffBefore, ls.UTCOffAfter)
 	return &ls
 }
 
@@ -40,7 +42,7 @@ func leapSecondUTCOffset(u *bin.NavTimeLS, ls *gpsmsg.LeapSecond) bool {
 	return true
 }
 
-func leapSecondDate(tls *bin.NavTimeLS, ls *gpsmsg.LeapSecond) bool {
+func leapSecondDate(tls *bin.NavTimeLS, lsDate *time.Time) bool {
 	if (tls.Valid & bin.NavTimeLSValidTimeToLSEvent) == 0 {
 		return false
 	}
@@ -57,7 +59,7 @@ func leapSecondDate(tls *bin.NavTimeLS, ls *gpsmsg.LeapSecond) bool {
 	}
 	t := ptime.GPSDate(tls.DateOfLSGPSWN, time.Weekday(wd))
 	if isLastDayOfQuarter(t) {
-		ls.LastDate = t
+		*lsDate = t
 		return true
 	}
 	if tls.LSChange == 0 {
@@ -67,7 +69,7 @@ func leapSecondDate(tls *bin.NavTimeLS, ls *gpsmsg.LeapSecond) bool {
 		for i := 1; i <= 2; i++ {
 			t = t.AddDate(0, 0, -7*0x100)
 			if isLastDayOfQuarter(t) {
-				ls.LastDate = t
+				*lsDate = t
 				return true
 			}
 		}

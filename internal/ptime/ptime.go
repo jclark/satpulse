@@ -24,9 +24,9 @@ type UTCTime struct {
 }
 
 type LeapSecond struct {
-	LastDate     time.Time // last scheduled leap second (must be last day of a month)
-	UTCOffBefore int16     // TAI-UTC offset before leap second
-	UTCOffAfter  int16     // TAI-UTC offset after leap second
+	OffChangeTime Time  // Time at which TAI-UTC offset changes (i.e. when leap second is over)
+	UTCOffBefore  int16 // TAI-UTC offset before leap second
+	UTCOffAfter   int16 // TAI-UTC offset after leap second
 }
 
 // GPS epoch
@@ -53,15 +53,31 @@ func UTC(year uint16, month, day, hour, min, sec uint8, nanos int32) UTCTime {
 	return UTCTime{date, t.Sub(date)}
 }
 
-func (ls *LeapSecond) UTCtoTime(ut UTCTime) Time {
-	t := ut.Date.Add(ut.TimeOfDay).UnixNano()
+// LeapSecondOnDate returns a LeapSecond that occurs at the end of the UTC day of the given date.
+// date should be the last day of a month
+func LeapSecondOnDate(date time.Time, utcOffBefore, utcOffAfter int16) LeapSecond {
+	return LeapSecond{
+		OffChangeTime: Time((date.AddDate(0, 0, 1).Unix() + int64(utcOffAfter)) * 1e9),
+		UTCOffBefore:  utcOffBefore,
+		UTCOffAfter:   utcOffAfter,
+	}
+}
+
+func (ls LeapSecond) UTCtoTime(ut UTCTime) Time {
 	var s int16
-	if ut.Date.After(ls.LastDate) {
+	// It is essential to do the comparison using the date of the leap second
+	if ut.Date.After(ls.Date()) {
 		s = ls.UTCOffAfter
 	} else {
 		s = ls.UTCOffBefore
 	}
-	return Time(t + int64(s)*1e9)
+	return Time(ut.Date.Add(ut.TimeOfDay).UnixNano() + int64(s)*1e9)
+}
+
+// Date returns the date of the leap second
+// The leap second occurs at the end of the UTC day of that date.
+func (ls LeapSecond) Date() time.Time {
+	return time.Unix(int64(ls.OffChangeTime)/1e9-int64(ls.UTCOffAfter), 0).AddDate(0, 0, -1)
 }
 
 func TimespecToTime(t unix.Timespec) Time {
