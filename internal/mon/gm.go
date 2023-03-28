@@ -59,7 +59,6 @@ func LeapSecondPropsAt(ls ptime.LeapSecond, t ptime.Time) LeapSecondProps {
 func NewGrandmaster(sa *SyncAnalyzer, ls ptime.LeapSecond, updateCh chan<- GrandmasterUpdateRequest, lg *slog.Logger) *Grandmaster {
 	gm := &Grandmaster{sa: sa, lg: lg, ls: ls, updateCh: updateCh}
 	gm.target.SetClockInSync(false)
-	gm.actual.SetClockInSync(false)
 	return gm
 }
 
@@ -84,9 +83,7 @@ func (gm *Grandmaster) update() {
 		gm.lg.Info("syncAchieved", "utcOffset", props.UTCOffset, "leapTonight", props.LeapTonight)
 	} else if gm.target == *gm.actual {
 		// Don't update if there is no change
-		if gm.target.ClockClass != pmc.ClockClassSyncPrimaryRef {
-			return
-		}
+		return
 	}
 	respCh := make(chan *GrandmasterProps, 1)
 	gm.respCh = respCh

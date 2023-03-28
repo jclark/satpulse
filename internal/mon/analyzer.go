@@ -20,9 +20,22 @@ func NewSyncAnalyzer() *SyncAnalyzer {
 	}
 }
 
+const holdoverDuration = 10 * time.Second
+
+// For sync, require that the maximum absolute offset is less than 50ns.
+// Reasoning is we are claiming 100ns accuracy, and we need to budget for other sources of error,
+// specifically errors in GPS signal
+const syncMaxOffsetSecs = 50e-9
+const syncNOffsets = 5
+
 func (mon *SyncAnalyzer) InSync(now time.Time) bool {
-	// FIXME
-	return false
+	if now.Sub(mon.lastSampleTime) > holdoverDuration {
+		return false
+	}
+	if mon.offsets.Len() < syncNOffsets {
+		return false
+	}
+	return maxAbs(mon.offsets.LastN(syncNOffsets)) <= syncMaxOffsetSecs
 }
 
 func (mon *SyncAnalyzer) Sample(ref ptime.Time, local ptime.ClockTime, tRead time.Time, _ bool) {

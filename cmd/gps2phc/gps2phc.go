@@ -13,8 +13,10 @@ import (
 
 	"github.com/jclark/gps2phc/internal/gpsmsg"
 	"github.com/jclark/gps2phc/internal/logctx"
+	"github.com/jclark/gps2phc/internal/mon"
 	"github.com/jclark/gps2phc/internal/nmea"
 	"github.com/jclark/gps2phc/internal/phc"
+	"github.com/jclark/gps2phc/internal/pmc"
 	"github.com/jclark/gps2phc/internal/ptime"
 	"github.com/jclark/gps2phc/internal/scan"
 	"github.com/jclark/gps2phc/internal/serio"
@@ -59,6 +61,7 @@ type Syncer struct {
 	tsCh <-chan phc.TsEvent
 	fCh  <-chan scan.Frame
 	corr *tsync.Correlator
+	gm   *mon.Grandmaster
 	ls   ptime.LeapSecond
 }
 
@@ -165,13 +168,25 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 			return err
 		}
 	}
-	s, err := newSyncer(ctx, clk, cfg, fCh)
+	pmcClient, err := pmc.NewClient(nil)
+	if err != nil {
+		return err
+	}
+	gmUpdateCh := make(chan mon.GrandmasterUpdateRequest)
+
+	s, err := newSyncer(ctx, clk, cfg, fCh, gmUpdateCh)
 	if err != nil {
 		return err
 	}
 	wg.Add(1)
 	go func() {
+		mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg)
+		wg.Done()
+	}()
+	wg.Add(1)
+	go func() {
 		syncWorker(ctx, s)
+		close(gmUpdateCh)
 		wg.Done()
 	}()
 
@@ -232,19 +247,23 @@ func nmeaLog(lg *slog.Logger, msg *nmea.Message) {
 	}
 }
 
-func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan.Frame) (r *Syncer, err error) {
+func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan.Frame,
+	guCh chan<- mon.GrandmasterUpdateRequest) (r *Syncer, err error) {
 	err = nil
 	r = nil
 	lg := logctx.FromContext(ctx)
 
+	sa := mon.NewSyncAnalyzer()
 	servo, err := tsync.NewServo(clk, lg)
 	if err != nil {
 		return nil, err
 	}
+	ls := leapSecondFromConfig(cfg.LeapSecond)
 	s := Syncer{
-		corr: tsync.NewCorrelator(servo, lg),
+		corr: tsync.NewCorrelator(tsync.MultiSampler(servo, sa), lg),
 		fCh:  fCh,
-		ls:   leapSecondFromConfig(cfg.LeapSecond),
+		gm:   mon.NewGrandmaster(sa, ls, guCh, lg),
+		ls:   ls,
 	}
 	lg.Info("usingPHC", "path", clk.Path())
 	s.tsCh, err = StartPPS(ctx, clk, cfg.Pulse)
@@ -264,6 +283,7 @@ type SyncState struct {
 	leapSecond ptime.LeapSecond
 }
 
+// XXX Need a better name. This handles input from the GPS over the serial and timestammp channel.
 func syncWorker(ctx context.Context, s *Syncer) {
 	// loop until both channels are closed
 	tsCh := s.tsCh
@@ -297,7 +317,7 @@ func syncWorker(ctx context.Context, s *Syncer) {
 			}
 		case f, ok := <-fCh:
 			if ok {
-				syncFrame(ctx, &state, corr, f)
+				syncFrame(ctx, &state, corr, s.gm, f)
 			} else {
 				lg.Debug("syncWorker", "event", "fChClosed")
 				fCh = nil
@@ -306,8 +326,9 @@ func syncWorker(ctx context.Context, s *Syncer) {
 	}
 }
 
-func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, f scan.Frame) {
+func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm *mon.Grandmaster, f scan.Frame) {
 	lg := logctx.FromContext(ctx)
+	// TODO: handle leapsecond messages
 	var mt *gpsmsg.Time
 	switch f.Kind {
 	case scan.NMEA:
@@ -335,6 +356,8 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, f 
 			fmt.Println(string(bytes))
 		}
 	}
+	// TODO: make calls on s.gm when no valid time is received from GPS
+	// Can do this by having allowing Time to represent an invalid Time
 	var sec ptime.Time
 	if !mt.TAITime.IsZero() {
 		sec = mt.TAITime
@@ -346,11 +369,13 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, f 
 		sec = state.leapSecond.UTCtoTime(*u)
 		lg.Debug("timeFromUTC", "t", sec)
 	}
-	sec = sec.Round(time.Second)
+	secRnd := sec.Round(time.Second)
 	if mt.PrecedesPulse {
-		corr.PulseOffset(sec, f.TRead, mt.PulseOffset)
-	} else if sec > state.lastTime {
-		corr.GPSTime(sec, f.TRead)
-		state.lastTime = sec
+		corr.PulseOffset(secRnd, f.TRead, mt.PulseOffset)
+	} else if secRnd > state.lastTime {
+		corr.GPSTime(secRnd, f.TRead)
+		// do corr first so that samples are updated in the SyncAnalyzer
+		gm.GPSTime(sec)
+		state.lastTime = secRnd
 	}
 }

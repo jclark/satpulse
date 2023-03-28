@@ -9,13 +9,15 @@ import (
 
 // The updating goroutine must wait for a response to each request before sending another request.
 func PTP4LWorker(ctx context.Context, client *pmc.Client, reqCh <-chan GrandmasterUpdateRequest, lg *slog.Logger) {
+	lg.Debug("PTP4LWorker", "state", "started")
 	for {
 		req, ok := <-reqCh
 		if !ok {
-			return
+			break
 		}
 		req.resp <- sendRecv(ctx, client, req.props, lg)
 	}
+	lg.Debug("PTP4LWorker", "state", "exiting")
 }
 
 func sendRecv(ctx context.Context, client *pmc.Client, props GrandmasterProps, lg *slog.Logger) *GrandmasterProps {
