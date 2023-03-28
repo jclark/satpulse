@@ -7,6 +7,8 @@ import (
 	"github.com/jclark/gps2phc/internal/ptime"
 )
 
+const samplesToKeep = 3600
+
 type SyncAnalyzer struct {
 	offsets        *FloatQueue
 	lastSampleTime time.Time
@@ -14,7 +16,7 @@ type SyncAnalyzer struct {
 
 func NewSyncAnalyzer() *SyncAnalyzer {
 	return &SyncAnalyzer{
-		offsets: NewFloatQueue(600),
+		offsets: NewFloatQueue(samplesToKeep),
 	}
 }
 
@@ -23,7 +25,7 @@ func (mon *SyncAnalyzer) InSync(now time.Time) bool {
 	return false
 }
 
-func (mon *SyncAnalyzer) Sample(ref ptime.Time, local ptime.ClockTime, tRead time.Time, delayed bool) {
+func (mon *SyncAnalyzer) Sample(ref ptime.Time, local ptime.ClockTime, tRead time.Time, _ bool) {
 	off := local.T.Sub(ref)
 	mon.offsets.Append(float64(int64(off)) / 1e9)
 	mon.lastSampleTime = tRead

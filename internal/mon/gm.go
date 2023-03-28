@@ -8,7 +8,7 @@ import (
 	"golang.org/x/exp/slog"
 )
 
-type UpdateRequest struct {
+type GrandmasterUpdateRequest struct {
 	props GrandmasterProps
 	resp  chan<- *GrandmasterProps
 }
@@ -19,7 +19,7 @@ type Grandmaster struct {
 	ls       ptime.LeapSecond
 	lg       *slog.Logger
 	respCh   chan *GrandmasterProps
-	updateCh chan<- UpdateRequest
+	updateCh chan<- GrandmasterUpdateRequest
 	lastTime ptime.Time
 	sa       *SyncAnalyzer
 }
@@ -56,7 +56,7 @@ func LeapSecondPropsAt(ls ptime.LeapSecond, t ptime.Time) LeapSecondProps {
 	return props
 }
 
-func NewGrandmaster(sa *SyncAnalyzer, ls ptime.LeapSecond, updateCh chan<- UpdateRequest, lg *slog.Logger) *Grandmaster {
+func NewGrandmaster(sa *SyncAnalyzer, ls ptime.LeapSecond, updateCh chan<- GrandmasterUpdateRequest, lg *slog.Logger) *Grandmaster {
 	gm := &Grandmaster{sa: sa, lg: lg, ls: ls, updateCh: updateCh}
 	gm.target.SetClockInSync(false)
 	gm.actual.SetClockInSync(false)
@@ -80,6 +80,8 @@ func (gm *Grandmaster) update() {
 		if !inSync {
 			return
 		}
+		props := gm.target
+		gm.lg.Info("syncAchieved", "utcOffset", props.UTCOffset, "leapTonight", props.LeapTonight)
 	} else if gm.target == *gm.actual {
 		// Don't update if there is no change
 		if gm.target.ClockClass != pmc.ClockClassSyncPrimaryRef {
@@ -88,7 +90,7 @@ func (gm *Grandmaster) update() {
 	}
 	respCh := make(chan *GrandmasterProps, 1)
 	gm.respCh = respCh
-	gm.updateCh <- UpdateRequest{props: gm.target, resp: respCh}
+	gm.updateCh <- GrandmasterUpdateRequest{props: gm.target, resp: respCh}
 }
 
 func (gm *Grandmaster) handleResponse() {
