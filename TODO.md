@@ -25,9 +25,18 @@
 
 * Robustly detect loss of sync
    * Need make periodic calls to the Grandmaster even when there is no valid GPS time message
+* Deal properly with case where ptp4l hasn't started up (yet)
+* Enable configuration of
+   * domain number
+   * whether to update ptp4l
+   * ptp4l socket path
+* Estimate clock accuracy and dynamically update grandmaster settings. In particular, on startup, update with low accuracy and then improve it as we settle down.
+* More sophisticated, configurable detection of whether we are synced
+* Enable configuration of non-synced settings
 * Support ptp4u by creating dynamic config file
-* Estimate clock accuracy and dynamically update grandmaster settings. In particular, on startup, update with bad accuracy and then improve it as we settle down.
 * Enable continual leap second monitoring
+* Should we update the grandmaster settings to a non-synced status when we shutdown?
+* Set a read/write deadline on the conn for the Unix domain socket
 
 ## TCP server
 
@@ -60,6 +69,7 @@
 * Be more intelligent about pulse sanity check
    * keep track of standard deviation of pulse interval
    * bounds should make use of max amount of frequency adjustment
+* Should the servo do something different if there is more than 1 second since last sample? Interpolate?
 
 ## Leap seconds
 
