@@ -2,7 +2,7 @@ The gps4ptp project provides software that allows a GPS receiver to be used as a
 
 It is written in the Go programming language. It works only on Linux, since only Linux provides the necessary APIs.
 
-The project is currently in still at a pre-alpha stage of development. It is not yet ready for use.
+The project is currently at a pre-alpha stage of development. It is not yet ready for use.
 
 ## Basics of how it works
 
@@ -34,21 +34,21 @@ Gps4ptp provides the following features:
 
 - It automatically handles NICs that generate timestamps for both edges of a pulse (some Intel NICs, including the i210, do this).
 
-- It can talk to U-blox receivers (or clones) using the UBX protocol, which is the native binary protocol of U-blox receivers (and clones). This gives gps4ptp access to the full capabilities of U-blox receivers. UBX is a bidirectonal protocol, which allows gps4ptp to make changes to the receiver's configuration. It can also use the ASCII NMEA protocol, which is universally supported, but provides limited capabilities.
+- It can talk to U-blox receivers (or clones) using the UBX protocol, which is the native binary protocol of U-blox receivers. This gives gps4ptp access to the full capabilities of U-blox receivers. UBX is a bidirectonal protocol, which allows gps4ptp to make changes to the receiver's configuration. It can also use the ASCII NMEA protocol, which is universally supported, but provides limited capabilities.
 
 - By using the UBX protocol, it can take advantage of the sawtooth correction (sometimes called quantization error) information that is available from some U-blox receivers. This enables more precise synchronization of the PTP hardware clock.
 
-- It allows TCP connections with the GPS receiver attached to the serial port (similar to ser2net). This means you can run gps4ptp on a Linux box (such as a Raspberry Pi) and then connect back to the GPS receiver over TCP from a Windows PC, using a program like u-center (from U-blox), to monitor or configure the GPS receiver, *at the same time as* it is being used for PTP.
+- It allows TCP connections with the GPS receiver attached to the serial port (similar to ser2net). This means you can run gps4ptp on a Linux box (such as a Raspberry Pi) and then connect back to the GPS receiver over TCP from a Windows PC, using a program like u-center (from U-blox), to monitor or configure the GPS receiver, *at the same time as* it is being used for PTP. (This provides plenty of opportunity to break things, but is quite handy.)
  
 - By using the UBX protocol, it can get the current time from the GPS receiver as atomic time, and use that directly to set the PTP hardware clock. Both GPS and PTP work natively using atomic time (without leap seconds) rather than UTC. With the NMEA protocol, time has to be converted to UTC and then back to atomic time.
 
+- It provides the PTP grandmaster instance with the data it needs about an external source of time. With ptp4l, this is done using the PTP management protocol.
+
+    - It provides information about whether the PTP hardware clock is synchronized with GPS receiver. This information will be provided by ptp4l to its clients, which can then use this in selecting the best grandmaster.
+
+    - It provides information about how UTC time can be derived from atomic time. While GPS and PTP both work natively in atomic time, which does not have leap seconds, they also provide information about leap seconds to enable UTC time to be derived from atomic time.
+
 The following features are in progress:
-
-- It includes a PTP management client that is used to provide information to ptp4l. PTP requires that a time source provide the PTP instance with not only the current time, but also data about the time. Gps2ptp uses the PTP management protocol to provide the following information:
-
-    - It informs ptp4l when it no longer has a time fix from GPS. This information will be provided by ptp4l to its clients, which will then have the opportunity to select an alternative grandmaster.
-
-    - It provides information about how UTC time can be derived from atomic time. While GPS and PTP both work natively in atomic time, which does not have leap seconds, they also provide information about leap seconds to enable the current UTC time to be derived from the atomic time.
 
 - It can examine the configuration of the U-blox receiver and reconfigure as necessary so it works well for timing purposes.
 
@@ -69,7 +69,7 @@ There are plenty of suitable GPS receivers. I recommend getting a U-blox receive
 
 More information specifically for the CM4 option (including suitable GPS receivers) is available in my [rpi-cm4-ptp-guide](https://github.com/jclark/rpi-cm4-ptp-guide) project.
 
-For PTP to work well, clients need to have NICs with PTP hardware timestamping support. This is a common feature of modern NICs. The PTP features also need to be supported by the driver. Intel NICs generally have PTP hardware timestamping with kernel support.
+For PTP to work well, clients need to have NICs with PTP hardware timestamping support. This is a common feature of modern NICs. The PTP features also need to be supported by the driver. Intel NICs generally have PTP hardware timestamping with Linux driver support.
 
 For best results the network switches should also have PTP support. For a low-cost switch, I recommend the FS.com IES3110 series.
 
@@ -77,11 +77,11 @@ For best results the network switches should also have PTP support. For a low-co
 
 There are some existing, well-established open source projects that provide similar functionality, but they are don't do quite what gps4ptp does.
 
-It would probably be possible to evolve these, but they are both written in C, and I think it's time to move on to more modern, safer languages.
+It would probably be possible to evolve these, but they are both written in C, and I personally want to work in more modern, safer languages.
 
 ### LinuxPTP
 
-The [LinuxPTP](https://linuxptp.sourceforge.net/) project provides a number of programs. The main one is ptp4l, which implements the PTP protocol. gps4ptp is intended to work in conjunction with ptp4l. LinuxPTP also includes the ts2phc program, which with the `-s nmea` options performs the same basic function as gps4ptp. However, it does not have the extra features that gps4ptp provides. In particular, it uses the NMEA protocol, rather than UBX; this is simple, and universally supported, but the only information provided is the current UTC time.
+The [LinuxPTP](https://linuxptp.sourceforge.net/) project provides a number of programs. The main one is ptp4l, which implements the PTP protocol. gps4ptp is intended to work in conjunction with ptp4l. LinuxPTP also includes the ts2phc program, which with the `-s nmea` options performs the same basic function as gps4ptp. However, it does not have the extra features that gps4ptp provides. In particular, it understands only the NMEA protocol; this is simple, and universally supported, but the only time-related information it provides is the current UTC time.
 
 ### gpsd
 

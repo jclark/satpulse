@@ -19,6 +19,15 @@
 * Control over logging
 * Systemd service file
 * Try to get rid of the logctx package.
+* More robust handling of panics in goroutines. I think it hangs currently.
+
+## Grandmaster management
+
+* Robustly detect loss of sync
+   * Need make periodic calls to the Grandmaster even when there is no valid GPS time message
+* Support ptp4u by creating dynamic config file
+* Estimate clock accuracy and dynamically update grandmaster settings. In particular, on startup, update with bad accuracy and then improve it as we settle down.
+* Enable continual leap second monitoring
 
 ## TCP server
 
@@ -103,19 +112,6 @@ Semi-functional currently.
 * Better pairing of of ACKs with messages sent
 * Disable unwanted message
 
-## PTP management client
-
-Integrate our client implementation.
-
-Initially focus on delivering the following information:
-* UTC information
-   * UTC offset
-   * Leap61
-   * Leap59
-   * Current UTC offset valid
-* Are we synchronized? If not, clockClass is no longer 6.
-
-Later figure out scaledOffsetLogVariance and accuracy.
 
 ## HTTP server
 
