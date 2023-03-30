@@ -59,11 +59,11 @@ func (client *Client) Send(msg MgmtMsg) (uint16, error) {
 	seqid := msg.Prefix().SequenceID
 	data, err := msg.MarshalBinary()
 	if err != nil {
-		return seqid, fmt.Errorf("could not marshal message: %w", err)
+		return seqid, fmt.Errorf("could not marshal PTP management message: %w", err)
 	}
 	_, err = client.T.Write(data)
 	if err != nil {
-		return seqid, fmt.Errorf("could not write message: %w", err)
+		return seqid, fmt.Errorf("could not send PTP management message: %w", err)
 	}
 	return seqid, nil
 }
@@ -72,7 +72,7 @@ func (client *Client) Recv(seqid uint16) (MgmtMsg, error) {
 	buf := make([]byte, 2048)
 	n, _, err := client.T.Conn.ReadFrom(buf)
 	if err != nil {
-		return nil, fmt.Errorf("could not read message: %w", err)
+		return nil, fmt.Errorf("could not receive PTP management message: %w", err)
 	}
 
 	recvData := buf[:n]

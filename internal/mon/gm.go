@@ -22,6 +22,7 @@ type Grandmaster struct {
 	updateCh chan<- GrandmasterUpdateRequest
 	lastTime ptime.Time
 	sa       *SyncAnalyzer
+	inSync   bool
 }
 
 type GrandmasterProps struct {
@@ -68,6 +69,10 @@ func (gm *Grandmaster) update() {
 	}
 	gm.target.LeapSecondProps = LeapSecondPropsAt(gm.ls, gm.lastTime)
 	inSync := gm.sa.InSync(time.Now())
+	if inSync != gm.inSync {
+		gm.lg.Info("syncStatusChanged", "inSync", inSync)
+		gm.inSync = inSync
+	}
 	gm.target.SetClockInSync(inSync)
 	gm.handleResponse()
 	// Don't update if there already is a pending update
@@ -79,8 +84,6 @@ func (gm *Grandmaster) update() {
 		if !inSync {
 			return
 		}
-		props := gm.target
-		gm.lg.Info("syncAchieved", "utcOffset", props.UTCOffset, "leapTonight", props.LeapTonight)
 	} else if gm.target == *gm.actual {
 		// Don't update if there is no change
 		return

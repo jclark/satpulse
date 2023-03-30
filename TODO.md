@@ -25,7 +25,6 @@
 
 * Robustly detect loss of sync
    * Need make periodic calls to the Grandmaster even when there is no valid GPS time message
-* Deal properly with case where ptp4l hasn't started up (yet)
 * Enable configuration of
    * domain number
    * sdoId (top 4-bits are called `transportSpecific` in ptp4l)
