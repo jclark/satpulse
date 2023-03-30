@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"sync"
@@ -198,13 +199,23 @@ func loadConfig(configFile string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := new(Config)
-	cfg.LeapSecond = leapSecondDefault
-	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(cfg)
+	defer f.Close()
+	return readConfig(f)
+}
+
+func readConfig(r io.Reader) (*Config, error) {
+	cfg := defaultConfig()
+	err := toml.NewDecoder(r).DisallowUnknownFields().Decode(cfg)
 	if err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func defaultConfig() *Config {
+	cfg := new(Config)
+	cfg.LeapSecond = leapSecondDefault
+	return cfg
 }
 
 func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
