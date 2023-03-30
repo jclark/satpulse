@@ -28,8 +28,9 @@
 * Deal properly with case where ptp4l hasn't started up (yet)
 * Enable configuration of
    * domain number
+   * sdoId (top 4-bits are called `transportSpecific` in ptp4l)
    * whether to update ptp4l
-   * ptp4l socket path
+   * ptp4l socket path (`udsAddress` in ptp4l config file)
 * Estimate clock accuracy and dynamically update grandmaster settings. In particular, on startup, update with low accuracy and then improve it as we settle down.
 * More sophisticated, configurable detection of whether we are synced
 * Enable configuration of non-synced settings
