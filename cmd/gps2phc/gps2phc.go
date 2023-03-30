@@ -3,10 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"sync"
@@ -24,37 +22,9 @@ import (
 	"github.com/jclark/gps2phc/internal/tsync"
 	"github.com/jclark/gps2phc/internal/ubx"
 
-	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sys/unix"
 )
-
-type Config struct {
-	Serial     SerialConfig
-	Pulse      TimePulseConfig
-	TCP        TCPConfig
-	LeapSecond LeapSecondConfig
-}
-
-type SerialConfig struct {
-	Device string
-	Speed  *int
-}
-
-type TCPConfig struct {
-	Port uint16
-}
-
-type LeapSecondConfig struct {
-	Date          toml.LocalDate
-	Before, After uint8
-}
-
-var leapSecondDefault = LeapSecondConfig{
-	Date:   toml.LocalDate{Year: 2016, Month: int(time.December), Day: 31},
-	Before: 36,
-	After:  37,
-}
 
 const scanBufSize = 16
 
@@ -85,9 +55,9 @@ func main() {
 	err := run(ctx, cancel, configFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
-		var derr *toml.DecodeError
-		if errors.As(err, &derr) {
-			fmt.Fprintln(os.Stderr, derr.String())
+		s := configErrorDetail(err)
+		if s != "" {
+			fmt.Fprintln(os.Stderr, s)
 		}
 		os.Exit(1)
 	}
@@ -194,30 +164,6 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 	return nil
 }
 
-func loadConfig(configFile string) (*Config, error) {
-	f, err := os.Open(configFile)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return readConfig(f)
-}
-
-func readConfig(r io.Reader) (*Config, error) {
-	cfg := defaultConfig()
-	err := toml.NewDecoder(r).DisallowUnknownFields().Decode(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return cfg, nil
-}
-
-func defaultConfig() *Config {
-	cfg := new(Config)
-	cfg.LeapSecond = leapSecondDefault
-	return cfg
-}
-
 func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(ctx)
 	sig := make(chan os.Signal, 1)
@@ -283,10 +229,6 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 	}
 	r = &s
 	return
-}
-
-func leapSecondFromConfig(cfg LeapSecondConfig) ptime.LeapSecond {
-	return ptime.LeapSecondOnDate(cfg.Date.AsTime((time.UTC)), int16(cfg.Before), int16(cfg.After))
 }
 
 type SyncState struct {
