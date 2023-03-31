@@ -248,12 +248,16 @@ type MsgPreparer struct {
 	sequenceID   atomic.Uint32
 	PortNumber   uint16
 	DomainNumber uint8
+	MajorSdoID   uint8
+	MinorSdoID   uint8
 }
 
 func (c *MsgPreparer) PrepareMsg(m MgmtMsg) {
 	h := &m.Prefix().Header
+	h.Version |= c.MajorSdoID << 4
 	h.DomainNumber = c.DomainNumber
 	h.SourcePortIdentity.PortNumber = c.PortNumber
+	h.MinorSdoID = c.MinorSdoID
 	h.SequenceID = c.AllocSequenceID()
 }
 

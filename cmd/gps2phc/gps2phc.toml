@@ -8,6 +8,17 @@ interface = "enp1s0"
 channel = 0
 pin = 0
 
+[ptp]
+# Change to "none" to prevent doing updates
+impl = "ptp4l"
+# Unix domain socket for PTP management
+# Same as ptp4l udsAddress config option
+udsAddress = "/var/run/ptp4l"
+domainNumber = 0
+# This corresponds to ptp4l transportSpecific option
+# (It's called majorSdoId in latest version of PTP standard.) 
+majorSdoId = 0
+
 [tcp]
 port = 2006
 

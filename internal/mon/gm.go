@@ -74,6 +74,9 @@ func (gm *Grandmaster) update() {
 		gm.inSync = inSync
 	}
 	gm.target.SetClockInSync(inSync)
+	if gm.updateCh == nil {
+		return
+	}
 	gm.handleResponse()
 	// Don't update if there already is a pending update
 	if gm.respCh != nil {

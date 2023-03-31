@@ -40,7 +40,7 @@ func main() {
 	var configFile string
 	var debugEnable bool
 
-	flag.StringVar(&configFile, "f", "gps2phc.toml", "configuration file")
+	flag.StringVar(&configFile, "f", defaultConfigFile, "configuration file")
 	flag.BoolVar(&debugEnable, "d", false, "log debugging information")
 	flag.Parse()
 	level := slog.LevelInfo
@@ -139,21 +139,28 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 			return err
 		}
 	}
-	pmcClient, err := pmc.NewClient(nil)
-	if err != nil {
-		return err
-	}
 	gmUpdateCh := make(chan mon.GrandmasterUpdateRequest)
-
+	var pmcClient *pmc.Client
+	switch cfg.PTP.Impl {
+	case PTPImplNone:
+		gmUpdateCh = nil
+	case PTPImplPTP4L:
+		pmcClient, err = cfg.PTP.NewClient()
+		if err != nil {
+			return err
+		}
+	}
 	s, err := newSyncer(ctx, clk, cfg, fCh, gmUpdateCh)
 	if err != nil {
 		return err
 	}
-	wg.Add(1)
-	go func() {
-		mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg)
-		wg.Done()
-	}()
+	if pmcClient != nil {
+		wg.Add(1)
+		go func() {
+			mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg)
+			wg.Done()
+		}()
+	}
 	wg.Add(1)
 	go func() {
 		syncWorker(ctx, s)
@@ -215,7 +222,7 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 	if err != nil {
 		return nil, err
 	}
-	ls := leapSecondFromConfig(cfg.LeapSecond)
+	ls := cfg.LeapSecond.leapSecond()
 	s := Syncer{
 		corr: tsync.NewCorrelator(tsync.MultiSampler(servo, sa), lg),
 		fCh:  fCh,
