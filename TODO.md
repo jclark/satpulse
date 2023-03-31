@@ -29,7 +29,6 @@
 * More sophisticated, configurable detection of whether we are synced
 * Enable configuration of non-synced settings
 * Support ptp4u by creating dynamic config file
-* Enable continual leap second monitoring
 * Should we update the grandmaster settings to a non-synced status when we shutdown?
 * Set a read/write deadline on the conn for the Unix domain socket
 
@@ -68,16 +67,11 @@
 
 ## Leap seconds
 
-* Use
-  * for grandmaster settings utc-offset, leap59, leap61
-  * with messages that report time in GMT
-* Leap second data model:
-   * date of last scheduled leap second (either in the past or up to 6 months in the future)
-   * UTC offset before that
-   * UTC offset after that
-* Store that in a file somewhere (in /var/run)
-* How does that hook up with NTP-centric kernel support for leap seconds?
-* Get current leap second from system.
+* Enable continuous reporting of leap seconds, so we can update the grandmaster
+* When we get notification of a new leap second, we should store that in a file in /var somewhere, and then read that on startup.
+* How should we hook up with NTP-centric kernel support for leap seconds?
+  * If the TAI-UTC offset is set in the kernel (presumably from NTP), we could get that and use it as our default.
+  * If we get info about the leap second from GPS, we can use that to update the kernel.
 
 ## Serial IO
 
