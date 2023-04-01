@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/jclark/crc24q v0.0.0-20230209081314-8dbd6482edea
+	github.com/jclark/crc24q v0.0.0-20230401041505-55b90c0df52e
 	github.com/mdlayher/netlink v1.7.1
 )
 

@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/jclark/crc24q/crc24q"
+	"github.com/jclark/crc24q"
 )
 
 type FrameKind int
