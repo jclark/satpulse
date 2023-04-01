@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jclark/gps2phc/internal/gpsmsg"
-	"github.com/jclark/gps2phc/internal/ubx/bin"
+	"github.com/jclark/gps4ptp/internal/gpsmsg"
+	"github.com/jclark/gps4ptp/internal/ubx/bin"
 )
 
 type Version struct {

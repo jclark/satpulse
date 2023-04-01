@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jclark/gps2phc/netnotify"
+	"github.com/jclark/gps4ptp/netnotify"
 )
 
 var ifName string

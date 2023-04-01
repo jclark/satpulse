@@ -1,7 +1,7 @@
 package ubx
 
 import (
-	"github.com/jclark/gps2phc/internal/ubx/bin"
+	"github.com/jclark/gps4ptp/internal/ubx/bin"
 )
 
 type Message struct {

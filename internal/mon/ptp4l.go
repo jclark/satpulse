@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jclark/gps2phc/internal/pmc"
+	"github.com/jclark/gps4ptp/internal/pmc"
 	"golang.org/x/exp/slog"
 	"golang.org/x/sys/unix"
 )

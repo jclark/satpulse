@@ -3,7 +3,7 @@ package nmea
 import (
 	"testing"
 
-	"github.com/jclark/gps2phc/internal/ptime"
+	"github.com/jclark/gps4ptp/internal/ptime"
 )
 
 func TestSplit(t *testing.T) {

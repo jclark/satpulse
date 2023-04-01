@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/jclark/gps2phc/internal/pmc"
+	"github.com/jclark/gps4ptp/internal/pmc"
 )
 
 type hexUint8 int
@@ -29,7 +29,7 @@ func hexUint8Flag(name string, value hexUint8, usage string) *hexUint8 {
 	return &value
 }
 
-const localSocketPathFormat = "/tmp/gps2phc%d.sock"
+const localSocketPathFormat = "/tmp/gps4ptp%d.sock"
 
 func main() {
 	msg := createMsg()

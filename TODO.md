@@ -2,17 +2,6 @@
 
 ## General
 
-* Think about right repo name
-   * gpstime
-   * gpspulse
-   * gps4ptp
-   * gpstoptp
-   * gps2ptp
-   * go-gps-time
-   * gps-time
-   * go-time
-   * go-time-sync
-   * gpsclock
 * Rearrange source to properly follow Go conventions
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)

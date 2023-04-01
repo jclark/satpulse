@@ -3,7 +3,7 @@ package tsync
 import (
 	"time"
 
-	"github.com/jclark/gps2phc/internal/ptime"
+	"github.com/jclark/gps4ptp/internal/ptime"
 	"golang.org/x/exp/slog"
 )
 

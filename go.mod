@@ -1,4 +1,4 @@
-module github.com/jclark/gps2phc
+module github.com/jclark/gps4ptp
 
 go 1.20
 

@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/gps2phc/internal/ptime"
+	"github.com/jclark/gps4ptp/internal/ptime"
 )
 
 const samplesToKeep = 3600

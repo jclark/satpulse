@@ -3,8 +3,8 @@ package mon
 import (
 	"time"
 
-	"github.com/jclark/gps2phc/internal/pmc"
-	"github.com/jclark/gps2phc/internal/ptime"
+	"github.com/jclark/gps4ptp/internal/pmc"
+	"github.com/jclark/gps4ptp/internal/ptime"
 	"golang.org/x/exp/slog"
 )
 

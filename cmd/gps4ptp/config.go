@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/gps2phc/internal/ptime"
+	"github.com/jclark/gps4ptp/internal/ptime"
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/jclark/gps2phc/internal/pmc"
+	"github.com/jclark/gps4ptp/internal/pmc"
 )
 
-const defaultConfigFile = "gps2phc.toml"
+const defaultConfigFile = "gps4ptp.toml"
 
 type Config struct {
 	Serial     SerialConfig

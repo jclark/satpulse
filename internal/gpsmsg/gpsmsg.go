@@ -3,7 +3,7 @@ package gpsmsg
 import (
 	"time"
 
-	"github.com/jclark/gps2phc/internal/ptime"
+	"github.com/jclark/gps4ptp/internal/ptime"
 )
 
 type Message interface {

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jclark/gps2phc/internal/logctx"
-	"github.com/jclark/gps2phc/internal/serio"
+	"github.com/jclark/gps4ptp/internal/logctx"
+	"github.com/jclark/gps4ptp/internal/serio"
 )
 
 func startTCP(ctx context.Context, wg *sync.WaitGroup, address string, b *serio.Bcast, port serio.OutPort) error {

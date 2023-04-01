@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jclark/gps2phc/internal/gpsmsg"
-	"github.com/jclark/gps2phc/internal/ptime"
+	"github.com/jclark/gps4ptp/internal/gpsmsg"
+	"github.com/jclark/gps4ptp/internal/ptime"
 )
 
 // For a proprietary sentence Pxxx, SentenceFmt is Pxxx and TalkerId is the empty string.

@@ -3,9 +3,9 @@ package ubx
 import (
 	"time"
 
-	"github.com/jclark/gps2phc/internal/gpsmsg"
-	"github.com/jclark/gps2phc/internal/ptime"
-	"github.com/jclark/gps2phc/internal/ubx/bin"
+	"github.com/jclark/gps4ptp/internal/gpsmsg"
+	"github.com/jclark/gps4ptp/internal/ptime"
+	"github.com/jclark/gps4ptp/internal/ubx/bin"
 )
 
 func (m *Message) LeapSecond() *gpsmsg.LeapSecond {

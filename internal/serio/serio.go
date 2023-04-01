@@ -6,9 +6,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/jclark/gps2phc/internal/logctx"
-	"github.com/jclark/gps2phc/internal/scan"
-	"github.com/jclark/gps2phc/term"
+	"github.com/jclark/gps4ptp/internal/logctx"
+	"github.com/jclark/gps4ptp/internal/scan"
+	"github.com/jclark/gps4ptp/term"
 )
 
 const readTimeout = (time.Second * 11) / 10
