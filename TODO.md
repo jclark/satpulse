@@ -35,12 +35,14 @@ Others
 ## TCP server
 
 High priority
-* Config for read-only NMEA socket (can be used with ts2phc)
-* Config file should specify multiple ports, each with its own properties
 * Config for which address to bind to
+* Config file should specify multiple ports, each with its own properties
+* Config for read-write/read-only 
 
 Other
 * Test with Lady Heather
+* Be able to expose only NMEA frames (useful with `ts2phc -s nmea`)
+* Control over IPv4/IPv6
 
 ## Time sync
 
