@@ -13,27 +13,47 @@ import (
 	"github.com/jclark/gps4ptp/internal/serio"
 )
 
-func startTCP(ctx context.Context, wg *sync.WaitGroup, cfg TCPConfig, b *serio.Bcast, port serio.OutPort) error {
-	if cfg.Port == 0 {
+func startTCP(ctx context.Context, wg *sync.WaitGroup, cfg []TCPConfig, b *serio.Bcast, port serio.OutPort) error {
+	if len(cfg) == 0 {
 		return nil
 	}
-	listenCfg := net.ListenConfig{}
-	listen, err := listenCfg.Listen(ctx, "tcp", fmt.Sprintf("%s:%d", cfg.Address, cfg.Port))
-	if err != nil {
-		return err
+	allReadOnly := true
+	for _, c := range cfg {
+		if c.Port == 0 {
+			return fmt.Errorf("non-zero port must be specified for TCP address %q", c.Address)
+		}
+		if !c.ReadOnly {
+			allReadOnly = false
+		}
 	}
-	portLock := make(chan serio.OutPort, 1)
-	portLock <- port
-	wg.Add(1)
-	go handleListen(ctx, wg, listen, b, portLock)
+	listenCfg := net.ListenConfig{}
+	listeners := make([]net.Listener, len(cfg))
+	for i, c := range cfg {
+		listen, err := listenCfg.Listen(ctx, "tcp", fmt.Sprintf("%s:%d", c.Address, c.Port))
+		if err != nil {
+			return err
+		}
+		listeners[i] = listen
+	}
+	var portLock chan serio.OutPort
+	if !allReadOnly {
+		portLock = make(chan serio.OutPort, 1)
+		portLock <- port
+	}
+	for i, listen := range listeners {
+		wg.Add(1)
+		go handleListen(ctx, wg, cfg[i], listen, b, portLock)
+	}
+	go func() {
+		<-ctx.Done()
+		for _, listen := range listeners {
+			listen.Close()
+		}
+	}()
 	return nil
 }
 
-func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, b *serio.Bcast, portLock chan serio.OutPort) {
-	go func() {
-		<-ctx.Done()
-		listen.Close()
-	}()
+func handleListen(ctx context.Context, wg *sync.WaitGroup, cfg TCPConfig, listen net.Listener, b *serio.Bcast, portLock chan serio.OutPort) {
 	defer wg.Done()
 	defer logctx.FromContext(ctx).Debug("listenDone")
 	defer listen.Close()
@@ -43,21 +63,25 @@ func handleListen(ctx context.Context, wg *sync.WaitGroup, listen net.Listener, 
 			logConnErr(ctx, "acceptErr", err)
 			return
 		}
-		handleConn(ctx, wg, conn, b, portLock)
+		handleConn(ctx, wg, cfg, conn, b, portLock)
 	}
 }
 
-func handleConn(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *serio.Bcast, portLock chan serio.OutPort) {
+func handleConn(ctx context.Context, wg *sync.WaitGroup, cfg TCPConfig, conn net.Conn, b *serio.Bcast, portLock chan serio.OutPort) {
 	// XXX both the read and write workers are closing the connection.
 	// Not sure if it would better for just one of them to do so.
 	wg.Add(1)
-	go connWriteWorker(ctx, wg, conn, b)
-	wg.Add(1)
-	go connReadWorker(ctx, wg, conn, portLock)
+	go connWriteWorker(ctx, wg, cfg, conn, b)
+	// The connReadWorker reads from the connection and writes to the serial port.
+	// The readOnly config option says not to write to the serial port.
+	if !cfg.ReadOnly {
+		wg.Add(1)
+		go connReadWorker(ctx, wg, cfg, conn, portLock)
+	}
 }
 
 // connWriteWorker reads from a channel and write to the connection.
-func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *serio.Bcast) {
+func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, cfg TCPConfig, conn net.Conn, b *serio.Bcast) {
 	defer wg.Done()
 	defer logctx.FromContext(ctx).Debug("connWriteDone")
 	defer conn.Close()
@@ -85,7 +109,7 @@ func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, b *
 const writeLockTimeout = 2 * time.Second
 
 // connReadWorker reads from the connection and writes to the serial port.
-func connReadWorker(ctx context.Context, wg *sync.WaitGroup, conn net.Conn, portLock chan serio.OutPort) {
+func connReadWorker(ctx context.Context, wg *sync.WaitGroup, cfg TCPConfig, conn net.Conn, portLock chan serio.OutPort) {
 	lg := logctx.FromContext(ctx)
 	defer wg.Done()
 	defer lg.Debug("connReadDone")

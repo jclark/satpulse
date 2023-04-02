@@ -34,13 +34,9 @@ Others
 
 ## TCP server
 
-High priority
-* Config file should specify multiple ports, each with its own properties
-* Config for read-write/read-only 
-
-Other
 * Test with Lady Heather
 * Be able to expose only NMEA frames (useful with `ts2phc -s nmea`)
+* Make writeLockTimeout configurable
 * Control over IPv4/IPv6
 
 ## Time sync

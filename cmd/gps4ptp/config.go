@@ -19,7 +19,7 @@ const defaultConfigFile = "gps4ptp.toml"
 type Config struct {
 	Serial     SerialConfig
 	Pulse      TimePulseConfig
-	TCP        TCPConfig
+	TCP        []TCPConfig
 	LeapSecond LeapSecondConfig
 	PTP        PTPConfig
 }
@@ -30,9 +30,9 @@ type SerialConfig struct {
 }
 
 type TCPConfig struct {
-	Address string
-	Port    uint16
-	// RW      bool
+	Address  string `toml:"address"`
+	Port     uint16 `toml:"port"`
+	ReadOnly bool   `toml:"readOnly"`
 }
 
 type LeapSecondConfig struct {

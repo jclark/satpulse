@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"golang.org/x/exp/slices"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -30,15 +32,36 @@ func TestPTPConfig(t *testing.T) {
 }
 
 func TestTCPConfig(t *testing.T) {
-	cfgStr := `[tcp]
-	address = "127.0.0.1"
-	port = 1234`
-	r := strings.NewReader(cfgStr)
-	cfg, err := readConfig(r)
-	if err != nil {
-		t.Fatal(err)
+	var testCases = []struct {
+		str string
+		cfg []TCPConfig
+	}{
+		{
+			`[[tcp]]
+		address = "127.0.0.1"
+		port = 1234
+		readOnly = true`,
+			[]TCPConfig{
+				{
+					Address:  "127.0.0.1",
+					Port:     1234,
+					ReadOnly: true,
+				},
+			},
+		},
+		{
+			"", []TCPConfig{},
+		},
 	}
-	if cfg.TCP.Address != "127.0.0.1" || cfg.TCP.Port != 1234 {
-		t.Fatal("TCP config not parsed correctly")
+	for i, tc := range testCases {
+		r := strings.NewReader(tc.str)
+		cfg, err := readConfig(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !slices.Equal(cfg.TCP, tc.cfg) {
+			t.Fatalf("TCP config %d not parsed correctly", i)
+		}
 	}
 }

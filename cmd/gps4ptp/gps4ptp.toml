@@ -19,6 +19,6 @@ domainNumber = 0
 # (It's called majorSdoId in latest version of PTP standard.) 
 majorSdoId = 0
 
-[tcp]
+[[tcp]]
 port = 2006
 
