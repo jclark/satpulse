@@ -28,3 +28,17 @@ func TestPTPConfig(t *testing.T) {
 		t.Fatal("PTP config not parsed correctly")
 	}
 }
+
+func TestTCPConfig(t *testing.T) {
+	cfgStr := `[tcp]
+	address = "127.0.0.1"
+	port = 1234`
+	r := strings.NewReader(cfgStr)
+	cfg, err := readConfig(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TCP.Address != "127.0.0.1" || cfg.TCP.Port != 1234 {
+		t.Fatal("TCP config not parsed correctly")
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"sync"
@@ -12,9 +13,12 @@ import (
 	"github.com/jclark/gps4ptp/internal/serio"
 )
 
-func startTCP(ctx context.Context, wg *sync.WaitGroup, address string, b *serio.Bcast, port serio.OutPort) error {
-	cfg := net.ListenConfig{}
-	listen, err := cfg.Listen(ctx, "tcp", address)
+func startTCP(ctx context.Context, wg *sync.WaitGroup, cfg TCPConfig, b *serio.Bcast, port serio.OutPort) error {
+	if cfg.Port == 0 {
+		return nil
+	}
+	listenCfg := net.ListenConfig{}
+	listen, err := listenCfg.Listen(ctx, "tcp", fmt.Sprintf("%s:%d", cfg.Address, cfg.Port))
 	if err != nil {
 		return err
 	}

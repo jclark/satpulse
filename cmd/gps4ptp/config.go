@@ -30,7 +30,9 @@ type SerialConfig struct {
 }
 
 type TCPConfig struct {
-	Port uint16
+	Address string
+	Port    uint16
+	// RW      bool
 }
 
 type LeapSecondConfig struct {

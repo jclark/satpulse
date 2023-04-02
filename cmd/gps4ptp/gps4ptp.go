@@ -132,13 +132,12 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 	if ctx.Err() != nil {
 		return nil
 	}
-	tcpPort := cfg.TCP.Port
-	if tcpPort != 0 {
-		err = startTCP(ctx, &wg, fmt.Sprintf(":%d", tcpPort), b, t)
-		if err != nil {
-			return err
-		}
+
+	err = startTCP(ctx, &wg, cfg.TCP, b, t)
+	if err != nil {
+		return err
 	}
+
 	gmUpdateCh := make(chan mon.GrandmasterUpdateRequest)
 	var pmcClient *pmc.Client
 	switch cfg.PTP.Impl {

@@ -35,7 +35,6 @@ Others
 ## TCP server
 
 High priority
-* Config for which address to bind to
 * Config file should specify multiple ports, each with its own properties
 * Config for read-write/read-only 
 
