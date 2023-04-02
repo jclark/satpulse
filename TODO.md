@@ -2,32 +2,58 @@
 
 ## General
 
-* Rearrange source to properly follow Go conventions
+High priority
+* system service file
+* Control over logging, including working with systemd
+* how to use doc section
+* Document GPS configuration
+* Check we can download and using normal go install process
+* Merge FEATURES.md into README.md/TODO.md
+
+Others
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
-* Control over logging
-* Systemd service file
 * Try to get rid of the logctx package.
 * More robust handling of panics in goroutines. I think it hangs currently.
 
 ## Grandmaster management
 
+High priority
+
 * Robustly detect loss of sync
    * Need make periodic calls to the Grandmaster even when there is no valid GPS time message
 * Estimate clock accuracy and dynamically update grandmaster settings. In particular, on startup, update with low accuracy and then improve it as we settle down.
-* More sophisticated, configurable detection of whether we are synced
+* More sophisticated, configurable detection of whether we are synced (mostly covered by previous point)
+* Set a read/write deadline on the conn for the Unix domain socket
+
+Others
 * Enable configuration of non-synced settings
 * Support ptp4u by creating dynamic config file
+* Should we update the grandmaster to non-synced while starting up?
 * Should we update the grandmaster settings to a non-synced status when we shutdown?
-* Set a read/write deadline on the conn for the Unix domain socket
 
 ## TCP server
 
-* Test with Lady Heather
+High priority
 * Config for read-only NMEA socket (can be used with ts2phc)
 * Config file should specify multiple ports, each with its own properties
+* Config for which address to bind to
+
+Other
+* Test with Lady Heather
 
 ## Time sync
+
+High priority
+* Better handle the case where we lose sync: may need to steo clock
+* Log some statistics about the servo (similar to what ptp4l does)
+* Make correlator and servo configurable from TOML
+   * kp, ki constants
+   * initial observe time
+   * when to step clock
+   * various correlator constants
+
+Others
 
 * Can we improve how UBX-TIM-TP is handled and the corresponding PulseOffset message? Problem is that on CM4 there can be one then 1 sec between receiving the PulseOffset message and the PHC time stamp event being delivered to user space. This is because the CM4 PHY kernel driver can delay delivering the PHC timestamp by up to 0.25s
 * Investigate UBX-TIM-TP further
@@ -40,15 +66,8 @@
 * Experiment with different ki/kp coefficients for PI controller
 * PI controller starts off with a large integral term, which I suspect is not optimal
 * Sanity check with system clock
-* Log RMS of offset
 * Mode where we use system clock rather than GPS messages for time of day (like `ts2phc -s generic`)
 * See what we can learn from the Meta time library servo package.
-* Step clock if we get out of sync
-* Make correlator and servo configurable from TOML
-   * kp, ki constants
-   * initial observe time
-   * when to step clock
-   * various correlator constants
 * Be more intelligent about pulse sanity check
    * keep track of standard deviation of pulse interval
    * bounds should make use of max amount of frequency adjustment
@@ -56,7 +75,11 @@
 
 ## Leap seconds
 
+High priority
 * Enable continuous reporting of leap seconds, so we can update the grandmaster
+* Testing of whole leap-second chain
+
+Others
 * When we get notification of a new leap second, we should store that in a file in /var somewhere, and then read that on startup.
 * How should we hook up with NTP-centric kernel support for leap seconds?
   * If the TAI-UTC offset is set in the kernel (presumably from NTP), we could get that and use it as our default.
@@ -74,7 +97,9 @@
 * Cancelled write should complete UBX message but not drain
 * Deal with read of 0 from term (caused by timeout)
 * Can we be detect when baud rate is too low for information passed?
-* Should we support UUCP-style serial-port locking, in addition to flock? Probably not.
+* Should we support other styles of locking in addition to flock
+  * UUCP-style serial-port locking
+  * TIOCEXCL - at least use TIOCGEXCL to check if it is already locked
 
 ## Scanning
 
