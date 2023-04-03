@@ -35,8 +35,6 @@ Others
 ## TCP server
 
 * Test with Lady Heather
-* Be able to expose only NMEA frames (useful with `ts2phc -s nmea`)
-* Make writeLockTimeout configurable
 * Control over IPv4/IPv6
 
 ## Time sync

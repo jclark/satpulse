@@ -20,5 +20,4 @@ domainNumber = 0
 majorSdoId = 0
 
 [[tcp]]
-port = 2006
-
+listen = ":2006"

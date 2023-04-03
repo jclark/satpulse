@@ -3,8 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-
-	"golang.org/x/exp/slices"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -28,40 +26,5 @@ func TestPTPConfig(t *testing.T) {
 	}
 	if cfg.PTP.UDSAddress != "/tmp/ptp4l" || cfg.PTP.DomainNumber != 1 || cfg.PTP.MajorSdoID != 2 || cfg.PTP.MinorSdoID != 12 || cfg.PTP.Impl != PTPImplNone {
 		t.Fatal("PTP config not parsed correctly")
-	}
-}
-
-func TestTCPConfig(t *testing.T) {
-	var testCases = []struct {
-		str string
-		cfg []TCPConfig
-	}{
-		{
-			`[[tcp]]
-		address = "127.0.0.1"
-		port = 1234
-		readOnly = true`,
-			[]TCPConfig{
-				{
-					Address:  "127.0.0.1",
-					Port:     1234,
-					ReadOnly: true,
-				},
-			},
-		},
-		{
-			"", []TCPConfig{},
-		},
-	}
-	for i, tc := range testCases {
-		r := strings.NewReader(tc.str)
-		cfg, err := readConfig(r)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if !slices.Equal(cfg.TCP, tc.cfg) {
-			t.Fatalf("TCP config %d not parsed correctly", i)
-		}
 	}
 }

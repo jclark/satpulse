@@ -29,12 +29,6 @@ type SerialConfig struct {
 	Speed  *int
 }
 
-type TCPConfig struct {
-	Address  string `toml:"address"`
-	Port     uint16 `toml:"port"`
-	ReadOnly bool   `toml:"readOnly"`
-}
-
 type LeapSecondConfig struct {
 	Date          toml.LocalDate
 	Before, After uint8
