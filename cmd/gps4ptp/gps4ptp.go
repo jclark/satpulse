@@ -133,7 +133,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 		return nil
 	}
 
-	err = startTCP(ctx, &wg, cfg.TCP, b, t)
+	err = startTCP(ctx, lg, &wg, cfg.TCP, b, t)
 	if err != nil {
 		return err
 	}

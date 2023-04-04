@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/logctx"
 	"github.com/jclark/gps4ptp/internal/scan"
 	"github.com/jclark/gps4ptp/internal/serio"
+	"golang.org/x/exp/slog"
 )
 
 type TCPConfig struct {
@@ -28,7 +28,7 @@ type tcpConnConfig struct {
 	writeLockTimeout time.Duration
 }
 
-func startTCP(ctx context.Context, wg *sync.WaitGroup, cfg []TCPConfig, b *serio.Bcast, port serio.OutPort) error {
+func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TCPConfig, b *serio.Bcast, port serio.OutPort) error {
 	if len(cfg) == 0 {
 		return nil
 	}
@@ -63,7 +63,7 @@ func startTCP(ctx context.Context, wg *sync.WaitGroup, cfg []TCPConfig, b *serio
 	}
 	for i, listen := range listeners {
 		wg.Add(1)
-		go handleListen(ctx, wg, connConfigs[i], listen, b, portLock)
+		go handleListen(ctx, lg, wg, connConfigs[i], listen, b, portLock)
 	}
 	go func() {
 		<-ctx.Done()
@@ -86,37 +86,37 @@ func convertWriteLockTimeout(secs float64) (time.Duration, error) {
 	return 0, fmt.Errorf("writeLockTimeout %f out of range", secs)
 }
 
-func handleListen(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, listen net.Listener, b *serio.Bcast, portLock chan serio.OutPort) {
+func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, listen net.Listener, b *serio.Bcast, portLock chan serio.OutPort) {
 	defer wg.Done()
-	defer logctx.FromContext(ctx).Debug("about to exit TCP listening goroutine")
+	defer lg.Debug("about to exit TCP listening goroutine")
 	defer listen.Close()
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
-			logConnErr(ctx, "error accepting TCP connection", err)
+			logConnErr(lg, "error accepting TCP connection", err)
 			return
 		}
-		handleConn(ctx, wg, cfg, conn, b, portLock)
+		handleConn(ctx, lg, wg, cfg, conn, b, portLock)
 	}
 }
 
-func handleConn(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *serio.Bcast, portLock chan serio.OutPort) {
+func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *serio.Bcast, portLock chan serio.OutPort) {
 	// XXX both the read and write workers are closing the connection.
 	// Not sure if it would better for just one of them to do so.
 	wg.Add(1)
-	go connWriteWorker(ctx, wg, cfg, conn, b)
+	go connWriteWorker(ctx, lg, wg, cfg, conn, b)
 	// The connReadWorker reads from the connection and writes to the serial port.
 	// The readOnly config option says not to write to the serial port.
 	if !cfg.readOnly {
 		wg.Add(1)
-		go connReadWorker(ctx, wg, cfg, conn, portLock)
+		go connReadWorker(ctx, lg, wg, cfg, conn, portLock)
 	}
 }
 
 // connWriteWorker reads from a channel and write to the connection.
-func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *serio.Bcast) {
+func connWriteWorker(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *serio.Bcast) {
 	defer wg.Done()
-	defer logctx.FromContext(ctx).Debug("about to exit TCP connection writing worker goroutine")
+	defer lg.Debug("about to exit TCP connection writing worker goroutine")
 	defer conn.Close()
 	ch := b.Subscribe()
 	defer b.Unsubscribe(ch)
@@ -133,7 +133,7 @@ func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig,
 			}
 			_, err := conn.Write(([]byte)(msg.Data))
 			if err != nil {
-				logConnErr(ctx, "error writing to TCP connection", err)
+				logConnErr(lg, "error writing to TCP connection", err)
 				return
 			}
 		}
@@ -145,8 +145,7 @@ func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig,
 const writeLockTimeoutDefault = 2 * time.Second
 
 // connReadWorker reads from the connection and writes to the serial port.
-func connReadWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, portLock chan serio.OutPort) {
-	lg := logctx.FromContext(ctx)
+func connReadWorker(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, portLock chan serio.OutPort) {
 	defer wg.Done()
 	defer lg.Debug("about to exit TCP connection reading worker goroutine")
 	defer conn.Close()
@@ -171,7 +170,7 @@ func connReadWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, 
 				port = nil
 				continue
 			}
-			logConnErr(ctx, "error reading from TCP connection", err)
+			logConnErr(lg, "error reading from TCP connection", err)
 			return
 		}
 		if nRead == 0 {
@@ -210,8 +209,8 @@ func connReadWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, 
 	}
 }
 
-func logConnErr(ctx context.Context, msg string, err error) {
+func logConnErr(lg *slog.Logger, msg string, err error) {
 	if !errors.Is(err, net.ErrClosed) {
-		logctx.FromContext(ctx).Error(msg, err)
+		lg.Error(msg, err)
 	}
 }
