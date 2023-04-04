@@ -39,16 +39,23 @@ type Syncer struct {
 func main() {
 	var configFile string
 	var debugEnable bool
+	var sdLog bool
 
 	flag.StringVar(&configFile, "f", defaultConfigFile, "configuration file")
 	flag.BoolVar(&debugEnable, "d", false, "log debugging information")
+	flag.BoolVar(&sdLog, "sdlog", false, "log to stdout with priorities in systemd-compatible format")
 	flag.Parse()
 	level := slog.LevelInfo
 	if debugEnable {
 		level = slog.LevelDebug
 	}
-
-	lg := slog.New(slog.HandlerOptions{Level: level}.NewTextHandler(os.Stdout))
+	var handler slog.Handler
+	if sdLog {
+		handler = NewSdHandler(level, os.Stdout)
+	} else {
+		handler = slog.HandlerOptions{Level: level}.NewTextHandler(os.Stdout)
+	}
+	lg := slog.New(handler)
 	slog.SetDefault(lg)
 	ctx := logctx.NewContext(context.Background(), lg)
 	ctx, cancel := cancelOnSignal(ctx)

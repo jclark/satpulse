@@ -4,7 +4,7 @@
 
 High priority
 * system service file
-* Control over logging, including working with systemd
+* Control over logging in the non-sdlog case
 * how to use doc section
 * Document GPS configuration
 * Check we can download and using normal go install process
