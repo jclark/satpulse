@@ -9,6 +9,7 @@ High priority
 * Document GPS configuration
 * Check we can download and using normal go install process
 * Merge FEATURES.md into README.md/TODO.md
+* Is pulse the best name for the config section? I think PHC or PPS might be better.
 
 Others
 * More testing (include fuzzing)
