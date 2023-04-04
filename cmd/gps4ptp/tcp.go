@@ -88,12 +88,12 @@ func convertWriteLockTimeout(secs float64) (time.Duration, error) {
 
 func handleListen(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, listen net.Listener, b *serio.Bcast, portLock chan serio.OutPort) {
 	defer wg.Done()
-	defer logctx.FromContext(ctx).Debug("listenDone")
+	defer logctx.FromContext(ctx).Debug("about to exit TCP listening goroutine")
 	defer listen.Close()
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
-			logConnErr(ctx, "acceptErr", err)
+			logConnErr(ctx, "error accepting TCP connection", err)
 			return
 		}
 		handleConn(ctx, wg, cfg, conn, b, portLock)
@@ -116,7 +116,7 @@ func handleConn(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, conn
 // connWriteWorker reads from a channel and write to the connection.
 func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *serio.Bcast) {
 	defer wg.Done()
-	defer logctx.FromContext(ctx).Debug("connWriteDone")
+	defer logctx.FromContext(ctx).Debug("about to exit TCP connection writing worker goroutine")
 	defer conn.Close()
 	ch := b.Subscribe()
 	defer b.Unsubscribe(ch)
@@ -133,7 +133,7 @@ func connWriteWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig,
 			}
 			_, err := conn.Write(([]byte)(msg.Data))
 			if err != nil {
-				logConnErr(ctx, "connWriteErr", err)
+				logConnErr(ctx, "error writing to TCP connection", err)
 				return
 			}
 		}
@@ -148,7 +148,7 @@ const writeLockTimeoutDefault = 2 * time.Second
 func connReadWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, portLock chan serio.OutPort) {
 	lg := logctx.FromContext(ctx)
 	defer wg.Done()
-	defer lg.Debug("connReadDone")
+	defer lg.Debug("about to exit TCP connection reading worker goroutine")
 	defer conn.Close()
 	var port serio.OutPort
 	defer func() {
@@ -167,11 +167,11 @@ func connReadWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, 
 		if err != nil {
 			if errors.Is(err, os.ErrDeadlineExceeded) {
 				portLock <- port
-				lg.Info("serLockRelease", "conn", conn)
+				lg.Info("released the write lock on the serial port", "conn", conn)
 				port = nil
 				continue
 			}
-			logConnErr(ctx, "connReadErr", err)
+			logConnErr(ctx, "error reading from TCP connection", err)
 			return
 		}
 		if nRead == 0 {
@@ -187,23 +187,23 @@ func connReadWorker(ctx context.Context, wg *sync.WaitGroup, cfg tcpConnConfig, 
 				if !ok {
 					return
 				}
-				lg.Info("serLockAcquire", "conn", conn)
+				lg.Info("acquired a write lock on the serial port", "conn", conn)
 			}
 		}
 		nWritten, err := port.Write(buf[:nRead])
 		if nWritten > 0 {
-			lg.Debug("serialWrite", "nBytes", nWritten)
+			lg.Debug("wrote to serial port", "nBytes", nWritten)
 		}
 		if err != nil {
 			if ctx.Err() == nil {
-				lg.Error("serialWriteErr", err)
+				lg.Error("error writing to serial port", err)
 			}
 			return
 		}
 		err = serio.Drain(ctx, port, nWritten)
 		if err != nil {
 			if ctx.Err() == nil {
-				lg.Error("serialDrainErr", err)
+				lg.Error("error draining serial port", err)
 			}
 			return
 		}

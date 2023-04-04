@@ -41,10 +41,10 @@ func OpenTerm(path string, speed *int) (*term.Term, error) {
 
 func ScanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
 	lg := logctx.FromContext(ctx)
-	lg.Debug("scanWorkerStarted")
+	lg.Debug("the scan worker goroutine has started")
 	defer func() {
 		close(c)
-		lg.Debug("scanWorkerDone")
+		lg.Debug("the scan worker goroutine is about to exit")
 	}()
 	for {
 		f, err := p.Scan(ctx)
@@ -81,9 +81,9 @@ func WriteAsync(ctx context.Context, p OutPort, frames [][]byte) <-chan error {
 			}
 			nBytes += len(frame)
 		}
-		logctx.FromContext(ctx).Debug("draining")
+		logctx.FromContext(ctx).Debug("about to drain the serial port")
 		c <- Drain(ctx, p, nBytes)
-		logctx.FromContext(ctx).Debug("writeAsyncDone")
+		logctx.FromContext(ctx).Debug("about to exit the asynchronous write goroutine")
 	}()
 	return c
 }
@@ -120,7 +120,7 @@ func Drain(ctx context.Context, p OutPort, nBytesWritten int) error {
 		}
 	}
 	if n > 0 {
-		lg.Debug("drainFailed", "bytesInBuffer", n, "sleepTime", totalSlept)
+		lg.Debug("failed to drain the serial port", "bytesInBuffer", n, "sleepTime", totalSlept)
 	}
 
 	return nil

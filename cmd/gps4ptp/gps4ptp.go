@@ -77,7 +77,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 
 	defer func() {
 		clk.Close()
-		lg.Debug("closedPHC", "if", cfg.Pulse.Interface)
+		lg.Debug("closed the PHC", "interface", cfg.Pulse.Interface)
 	}()
 	t, err := serio.OpenTerm(cfg.Serial.Device, cfg.Serial.Speed)
 	if err != nil {
@@ -86,19 +86,19 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 
 	defer func() {
 		serialDev := cfg.Serial.Device
-		lg.Debug("restoringSerial", "path", serialDev)
+		lg.Debug("restoring the serial port settings", "path", serialDev)
 		e := t.Restore()
 		if e != nil {
-			lg.Error("restoredSerialErr", e, "path", serialDev)
+			lg.Error("error while restoring the serial port settings", e, "path", serialDev)
 		} else {
-			lg.Debug("restoredSerial", "path", serialDev)
+			lg.Debug("successfully restored the serial port settings", "path", serialDev)
 		}
-		lg.Debug("closingSerial", "path", serialDev)
+		lg.Debug("closing the serial port", "path", serialDev)
 		t.Close()
-		lg.Debug("closedSerial", "path", serialDev)
+		lg.Debug("successfully closed the serial port", "path", serialDev)
 	}()
 
-	lg.Debug("serial", "devKind", t.DevKind())
+	lg.Debug("detecting kind of serial port", "devKind", t.DevKind())
 
 	scanner := scan.New(t, scanBufSize)
 	var wg sync.WaitGroup
@@ -122,7 +122,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 			cancel()
 		}
 		wg.Wait()
-		lg.Debug("waitDone")
+		lg.Debug("wait group counter dropped to zero")
 	}()
 
 	err = gpsInit(ctx, fCh, t)
@@ -176,7 +176,7 @@ func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
 	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
 	go func() {
 		<-sig
-		logctx.FromContext(ctx).Debug("cancelling")
+		logctx.FromContext(ctx).Debug("received signal, initiating cancellation")
 		cancel()
 	}()
 	return ctx, cancel
@@ -206,7 +206,7 @@ func nmeaLog(lg *slog.Logger, msg *nmea.Message) {
 	fields := msg.Fields()
 	if fields.SentenceFmt == "TXT" && len(fields.DataFields) >= 4 {
 		// When we open an ACM device, the GPS receiver sends TXT messages with each line of the boot screen
-		lg.Debug("nmeaTxt", "s", fields.DataFields[3])
+		lg.Debug("received NMEA TXT message", "s", fields.DataFields[3])
 	}
 }
 
@@ -228,7 +228,7 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 		gm:   mon.NewGrandmaster(sa, ls, guCh, lg),
 		ls:   ls,
 	}
-	lg.Info("usingPHC", "path", clk.Path())
+	lg.Info("selected PTP hardware clock", "path", clk.Path())
 	s.tsCh, err = StartPPS(ctx, clk, cfg.Pulse)
 	if err != nil {
 		return
@@ -249,7 +249,7 @@ func syncWorker(ctx context.Context, s *Syncer) {
 	fCh := s.fCh
 	corr := s.corr
 	lg := logctx.FromContext(ctx)
-	lg.Debug("syncWorker", "event", "started")
+	lg.Debug("sync worker goroutine started")
 
 	nSkipped := 0
 	var state SyncState
@@ -260,25 +260,25 @@ func syncWorker(ctx context.Context, s *Syncer) {
 			if ok {
 				if e.Epoch == ptime.InitialEpoch {
 					if nSkipped == 0 {
-						lg.Info("stalePHCTimestamps", "t", e.T)
+						lg.Debug("detected a stale PTP hardware clock timestamp", "t", e.T)
 					}
 					nSkipped++
 				} else {
 					if nSkipped > 0 {
-						lg.Info("skippedStalePHCTimestamps", "n", nSkipped)
+						lg.Info("skipped stale PTP hardware clock timestamps", "n", nSkipped)
 						nSkipped = 0
 					}
 					corr.PulseEdge(e.ClockTime, e.TRead)
 				}
 			} else {
-				lg.Debug("syncWorker", "event", "tsChClosed")
+				lg.Debug("timestamp channel of sync worker goroutine was closed")
 				tsCh = nil
 			}
 		case f, ok := <-fCh:
 			if ok {
 				syncFrame(ctx, &state, corr, s.gm, f)
 			} else {
-				lg.Debug("syncWorker", "event", "fChClosed")
+				lg.Debug("frame channel of sync worker goroutine was closed")
 				fCh = nil
 			}
 		}
@@ -326,7 +326,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 			return
 		}
 		sec = state.leapSecond.UTCtoTime(*u)
-		lg.Debug("timeFromUTC", "t", sec)
+		lg.Debug("computed TAI time from UTC time", "tai", sec)
 	}
 	secRnd := sec.Round(time.Second)
 	if mt.PrecedesPulse {

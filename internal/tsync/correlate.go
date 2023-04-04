@@ -57,9 +57,9 @@ func (c *Correlator) GPSTime(tGPS ptime.Time, tRead time.Time) {
 	po := c.findPulseOffset(tGPS, tRead)
 	if po != nil {
 		c.gpsPending.pulseOff = po.pulseOff
-		c.lg.Debug("gpsTime", "t", tGPS, "pulseOffset", po.pulseOff)
+		c.lg.Debug("correlator got GPS time solution, which was matched with pulse offset", "t", tGPS, "pulseOffset", po.pulseOff)
 	} else {
-		c.lg.Debug("gpsTime", "t", tGPS)
+		c.lg.Debug("correlator got GPS time solution", "t", tGPS)
 	}
 
 	c.correlate()
@@ -68,7 +68,7 @@ func (c *Correlator) GPSTime(tGPS ptime.Time, tRead time.Time) {
 const maxEdges = 8
 
 func (c *Correlator) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
-	c.lg.Debug("pulseEdge", "t", tClock.T, "epoch", tClock.Epoch)
+	c.lg.Debug("correlator got pulse edge", "t", tClock.T, "epoch", tClock.Epoch)
 	edge := clockTimeReading{ClockTime: tClock, tRead: tRead}
 	c.edges = append(c.edges, edge)
 	c.correlate()
@@ -119,7 +119,7 @@ func (c *Correlator) gpsEmit(edgeIndex int) {
 // PulseOffset corresponds to U-blox quantization error.
 // This is also sometimes called sawtooth error.
 func (c *Correlator) PulseOffset(tGPS ptime.Time, tRead time.Time, off time.Duration) {
-	c.lg.Debug("pulseOffset", "tGPS", tGPS, "offset", off)
+	c.lg.Debug("correlator got pulse offset", "tGPS", tGPS, "offset", off)
 	if len(c.pulseOffs) > 1 {
 		c.pulseOffs = c.pulseOffs[len(c.pulseOffs)-1:]
 	}
@@ -179,27 +179,27 @@ func (c *Correlator) initialEdge() int {
 	}
 	delay := c.gpsPending.tRead.Sub(c.edges[last].tRead)
 	if delay > maxDelay {
-		c.lg.Debug("excessDelay", "delay", delay)
+		c.lg.Debug("rejected candidate initial pulse timestamp because received too late relate to GPS solution", "delay", delay)
 		return -1
 	}
 	if delay < minDelay {
-		c.lg.Debug("pulseBeforeGps", "delay", delay)
+		c.lg.Debug("rejected candidate initial pulse timestamp because received too early relative to GPS solution", "delay", delay)
 		return -1
 	}
 	c.edgesPerPulse = epp
-	c.lg.Info("regularPulse", "edgesPerPulse", epp)
+	c.lg.Info("detected a regular pulse", "edgesPerPulse", epp)
 	// we should really generate multiple samples from this
 	return last
 }
 
-// Find a candidate initial edge assuming 2 edges per pulse
+// Find a candidate initial edge assuming 1 edges per pulse
 func (c *Correlator) initialEdge1() int {
 	if len(c.edges) < 4 {
 		return -1
 	}
 	v := variation(c.edges)
 	if v > time.Second/100 {
-		c.lg.Debug("singleEdgeInconsistent", "variation", v)
+		c.lg.Debug("too much variation between timestamps for there to be just one timestamp per pulse", "variation", v)
 		return -1
 	}
 	return len(c.edges) - 1

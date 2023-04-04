@@ -24,19 +24,19 @@ func PTP4LWorker(ctx context.Context, client *pmc.Client, reqCh <-chan Grandmast
 		if err != nil {
 			if errors.Is(err, unix.ENOENT) {
 				if socketOK {
-					lg.Info("ptpMgmt", "socketPathDoesNotExistYet", client.T.RemoteAddr)
+					lg.Info("the PTP management Unix domain socket does not yet exist", "path", client.T.RemoteAddr)
 					socketOK = false
 				}
 			} else if ctx.Err() == nil {
-				lg.Info("ptpMgmt", "err", err)
+				lg.Error("error while updating the PTP grandmaster using PTP management protocol", err)
 			}
 			req.resp <- nil
 		} else {
 			if !socketOK {
-				lg.Info("ptpMgmt", "socketPathNowOK", client.T.RemoteAddr)
+				lg.Info("the PTP management Unix domain socket has been created", "path", client.T.RemoteAddr)
 				socketOK = true
 			}
-			lg.Info("gmUpdated", "clockClass", props.ClockClass, "clockAccuracy", props.ClockAccuracy,
+			lg.Info("successfully updated the grandmaster using the PTP managment protocol", "clockClass", props.ClockClass, "clockAccuracy", props.ClockAccuracy,
 				"utcOffset", props.UTCOffset, "leapTonight", props.LeapTonight)
 			req.resp <- &props
 		}

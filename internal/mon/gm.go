@@ -70,7 +70,7 @@ func (gm *Grandmaster) update() {
 	gm.target.LeapSecondProps = LeapSecondPropsAt(gm.ls, gm.lastTime)
 	inSync := gm.sa.InSync(time.Now())
 	if inSync != gm.inSync {
-		gm.lg.Info("syncStatusChanged", "inSync", inSync)
+		gm.lg.Info("synchronization status has changed", "inSync", inSync)
 		gm.inSync = inSync
 	}
 	gm.target.SetClockInSync(inSync)

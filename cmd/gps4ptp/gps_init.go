@@ -106,7 +106,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	var lsdStr string
 	if gr.leapSecond != nil {
 		lsdStr = gr.leapSecond.Date().Format("2006-01-02")
-		lg.Info("gpsLeapSec", "date", lsdStr, "utcOffBefore", gr.leapSecond.UTCOffBefore, "utcOffAfter", gr.leapSecond.UTCOffAfter)
+		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", gr.leapSecond.UTCOffBefore, "utcOffAfter", gr.leapSecond.UTCOffAfter)
 	}
 	var tmode any = nil
 	if gr.tmode2 != nil {
@@ -115,10 +115,10 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		tmode = gr.tmode3
 	}
 	if gr.version != nil {
-		lg.Info("gpsVersion", "model", gr.version.Mod, "category", gr.version.FW.ProductCategory, "flash", gr.version.Flash,
+		lg.Info("GPS version", "model", gr.version.Mod, "category", gr.version.FW.ProductCategory, "flash", gr.version.Flash,
 			"sw", gr.version.SW, "hw", gr.version.HW, "prot", gr.version.Prot, "gnss", gr.version.GNSS, "ext", gr.version.Extensions)
 	}
-	lg.Info("gpsInitDone",
+	lg.Info("finished GPS initialization",
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
 		"ack", gr.ack,
 		"gnssEnabled", gnssEnabled,
@@ -194,9 +194,9 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 	case *ubxbin.AckNak:
 		gr.ack[parsed.MsgID] = false
 	case *ubxbin.CfgMsg:
-		lg.Debug("ubxRate", "id", parsed.MsgID, "rate", parsed.Rate)
+		lg.Debug("got configured rate of UBX message", "id", parsed.MsgID, "rate", parsed.Rate)
 	default:
-		lg.Debug("ubx", "id", u.ID().String(), "payload", u)
+		lg.Debug("received a UBX message", "id", u.ID().String(), "payload", u)
 	}
 }
 

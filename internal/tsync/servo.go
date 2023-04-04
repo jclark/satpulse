@@ -61,7 +61,7 @@ func (s *Servo) Logger() *slog.Logger {
 func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, _ time.Time, delayed bool) {
 	// PTP defines offsetFromMaster as timeOnSlave - timeOnMaster, so I think this is the right way round.
 	off := local.T.Sub(ref)
-	s.lg.Debug("sample", "off", off, "gps", ref, "phc", local.T, "epoch", local.Epoch, "delayed", delayed)
+	s.lg.Debug("sample received by servo", "off", off, "gps", ref, "phc", local.T, "epoch", local.Epoch, "delayed", delayed)
 	s.sampler.sample(ref, local, delayed)
 }
 
@@ -72,10 +72,10 @@ func (s *Servo) setFreqAdj(fa float64) {
 	}
 	err := s.clk.SetFreqAdj(fa)
 	if err != nil {
-		s.lg.Error("freqAdjErr", err)
+		s.lg.Error("error adjusting the PHC frequency", err, "freqAdj", fa)
 		return
 	}
-	s.lg.Debug("freqAdj", "old", s.freqAdj, "new", fa, "diff", fa-s.freqAdj)
+	s.lg.Debug("adjusted the PHC frequency", "oldFreqAdj", s.freqAdj, "newFreqAdj", fa, "diff", fa-s.freqAdj)
 	s.freqAdj = fa
 }
 
@@ -83,9 +83,9 @@ func (s *Servo) adjTime(off time.Duration) ptime.Epoch {
 	totalOff := off + s.adjSetOffsetDelay
 	epoch, err := s.clk.AdjTime(totalOff)
 	if err != nil {
-		s.lg.Error("adjTimeSetOffsetError", err)
+		s.lg.Error("error adjusting the PHC time", err, "totalOff", totalOff)
 	} else {
-		s.lg.Info("adjTimeSetOffset", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
+		s.lg.Info("adjusted the PHC time", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
 	}
 	return epoch
 }
@@ -109,7 +109,7 @@ func (p *piController) sample(ref ptime.Time, local ptime.ClockTime, delayed boo
 	p.offSum += fOff
 	out := kp*fOff + ki*p.offSum
 	// fmt.Printf("off %v, offSum %v, out %v\n", off, p.offSum, out)
-	p.servo.lg.Info("pi", "off", off, "freq", p.servo.freqAdj+out)
+	p.servo.lg.Info("adjusted the frequency using the proportional integral servo", "off", off, "freq", p.servo.freqAdj+out)
 	p.servo.setFreqAdj(-out)
 }
 
