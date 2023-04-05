@@ -1,4 +1,4 @@
-# Config file for gps2phc
+# Config file for gps4ptp
 [serial]
 device = "/dev/ttyACM0"
 speed = 9600
