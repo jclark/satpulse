@@ -59,21 +59,24 @@ func (h *SdHandler) WithGroup(name string) slog.Handler {
 }
 
 func (h *SdHandler) Handle(c context.Context, r slog.Record) error {
-	b := ([]byte)(fmt.Sprintf("<%d>%s", int(syslogPriority(r.Level)), r.Message))
+	line := ([]byte)(fmt.Sprintf("<%d>%s", int(syslogPriority(r.Level)), r.Message))
 	h.shared.mu.Lock()
 	defer h.shared.mu.Unlock()
 	err := h.handler.Handle(c, r)
-	line := h.shared.buf.Bytes()
-	// not just a newline
-	if len(line) > 1 {
-		b = append(b, ';', ' ')
+	fields := h.shared.buf.Bytes()
+	last := len(fields) - 1
+	if last > 0 && fields[last] == '\n' {
+		line = append(line, ' ', '{')
+		line = append(line, fields[:last]...)
+		line = append(line, '}', '\n')
+	} else {
+		line = append(line, fields...)
 	}
-	b = append(b, line...)
 	h.shared.buf.Reset()
 	if err != nil {
 		return err
 	}
-	_, err = h.shared.w.Write(b)
+	_, err = h.shared.w.Write(line)
 	return err
 }
 
