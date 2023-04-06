@@ -40,11 +40,17 @@ func main() {
 	var configFile string
 	var debugEnable bool
 	var sdLog bool
+	var showVersion bool
 
+	flag.BoolVar(&showVersion, "version", false, "show version information")
 	flag.StringVar(&configFile, "f", defaultConfigFile, "configuration file")
 	flag.BoolVar(&debugEnable, "d", false, "log debugging information")
 	flag.BoolVar(&sdLog, "sdlog", false, "log to stdout with priorities in systemd-compatible format")
 	flag.Parse()
+	if showVersion {
+		fmt.Println(versionInfo())
+		os.Exit(0)
+	}
 	level := slog.LevelInfo
 	if debugEnable {
 		level = slog.LevelDebug
