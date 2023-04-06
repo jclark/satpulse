@@ -3,7 +3,6 @@
 ## General
 
 High priority
-* system service file
 * Control over logging in the non-sdlog case
 * how to use doc section
 * Document GPS configuration

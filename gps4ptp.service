@@ -1,0 +1,9 @@
+[Unit]
+Description=Synchronize PTP hardware clock to GPS
+After=time-set.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/gps4ptp -sdlog -f /usr/local/etc/gps4ptp.toml
+[Install]
+WantedBy=multi-user.target
