@@ -1,7 +1,7 @@
 package main
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,7 +10,7 @@ import (
 const configsDir = "../../configs"
 
 func TestLoadConfig(t *testing.T) {
-	cfgFiles, err := ioutil.ReadDir(configsDir)
+	cfgFiles, err := os.ReadDir(configsDir)
 	if err != nil {
 		t.Fatal(err)
 	}
