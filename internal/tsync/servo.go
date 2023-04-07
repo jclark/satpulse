@@ -109,7 +109,7 @@ func (p *piController) sample(ref ptime.Time, local ptime.ClockTime, delayed boo
 	p.offSum += fOff
 	out := kp*fOff + ki*p.offSum
 	// fmt.Printf("off %v, offSum %v, out %v\n", off, p.offSum, out)
-	p.servo.lg.Info("adjusted the frequency using the proportional integral servo", "off", off, "freq", p.servo.freqAdj+out)
+	p.servo.lg.Info("adjusted PHC frequency using the PI servo", "off", off, "freq", p.servo.freqAdj+out)
 	p.servo.setFreqAdj(-out)
 }
 
