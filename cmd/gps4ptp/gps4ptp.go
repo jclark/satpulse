@@ -42,8 +42,8 @@ func main() {
 	var sdLog bool
 	var showVersion bool
 
-	flag.BoolVar(&showVersion, "version", false, "show version information")
 	flag.StringVar(&configFile, "f", defaultConfigFile, "configuration file")
+	flag.BoolVar(&showVersion, "version", false, "show version information")
 	flag.BoolVar(&debugEnable, "debug", false, "log debugging information")
 	flag.BoolVar(&sdLog, "sdlog", false, "log to stdout with priorities in systemd-compatible format")
 	flag.Parse()
