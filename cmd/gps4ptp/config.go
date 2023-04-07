@@ -14,7 +14,12 @@ import (
 	"github.com/jclark/gps4ptp/internal/pmc"
 )
 
-const defaultConfigFile = "gps4ptp.toml"
+const programName = "gps4ptp"
+
+const defaultConfigFileConst = "/usr/local/etc/" + programName + ".toml"
+
+// This is a var so that it can be overridden at build time or test time.
+var defaultConfigFile = defaultConfigFileConst
 
 type Config struct {
 	Serial     SerialConfig
@@ -61,8 +66,8 @@ var ptpConfigDefault = PTPConfig{
 	Impl:       PTPImplPTP4L,
 }
 
-func loadConfig(configFile string) (*Config, error) {
-	f, err := os.Open(configFile)
+func loadConfig(path string) (*Config, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}

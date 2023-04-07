@@ -1,0 +1,15 @@
+# Example TCP configuration for gps4ptp.
+[serial]
+device = "/dev/ttyS0"
+speed = 9600
+
+[pulse]
+interface = "enp1s0"
+
+# This section gives read-only access on all interfaces on port 2005
+[[tcp]]
+listen = ":2005"
+readOnly = true
+# This section gives read-write access only on the loopback interface on port 2006
+[[tcp]]
+listen = "127.0.0.1:2006"

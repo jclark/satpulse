@@ -4,6 +4,6 @@ After=time-set.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/sbin/gps4ptp -sdlog -f /usr/local/etc/gps4ptp.toml
+ExecStart=/usr/local/sbin/gps4ptp -sdlog
 [Install]
 WantedBy=multi-user.target

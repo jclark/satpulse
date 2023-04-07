@@ -1,6 +1,6 @@
 # Config file for gps4ptp
 [serial]
-device = "/dev/ttyACM0"
+device = "/dev/ttyUSB0"
 speed = 9600
 
 [pulse]
@@ -19,5 +19,7 @@ domainNumber = 0
 # (It's called majorSdoId in latest version of PTP standard.) 
 majorSdoId = 0
 
-[[tcp]]
-listen = ":2006"
+# Uncomment this to have it relay the GPS serial port to a TCP connection
+#[[tcp]]
+#listen = ":2006"
+#readOnly = true

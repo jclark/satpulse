@@ -1,0 +1,1 @@
+CONFIG_FILE=/usr/local/etc/gps4ptp.toml

@@ -1,14 +1,35 @@
 package main
 
 import (
+	"io/ioutil"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
+const configsDir = "../../configs"
+
 func TestLoadConfig(t *testing.T) {
-	_, err := loadConfig(defaultConfigFile)
+	cfgFiles, err := ioutil.ReadDir(configsDir)
 	if err != nil {
 		t.Fatal(err)
+	}
+	count := 0
+	for _, f := range cfgFiles {
+		if strings.ToLower(filepath.Ext(f.Name())) != ".toml" {
+			continue
+		}
+		path := filepath.Join(configsDir, f.Name())
+		count++
+		_, err := loadConfig(path)
+		if err != nil {
+			t.Fatalf("error loading %s: %v", path, err)
+		}
+	}
+	if count == 0 {
+		t.Fatalf("no config files found in %s", configsDir)
+	} else {
+		t.Logf("tested %d config files from %s", count, configsDir)
 	}
 }
 
