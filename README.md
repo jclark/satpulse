@@ -26,6 +26,37 @@ The pulse from the GPS receiver is precisely aligned with the start of a second;
 
 The ptp4l daemon (part of the LinuxPTP project) then uses PTP to distribute the time of the PTP hardware clock to other PTP nodes.
 
+## Quick start
+
+This assumes a Linux system that uses systemd, such as Ubuntu or Fedora.
+
+1. Ensure you have suitable hardware. See the [What hardware to get](#what-hardware-to-get) section below.
+2. [Install Go](https://go.dev/doc/install).
+3. Make sure you have git installed: `sudo apt install git`
+4. Clone the gps4ptp repository: `git clone https://github.com/jclark/gps4ptp.git`
+5. Change into the gps4ptp directory: `cd gps4ptp`
+6. Build it: `./build.sh`
+7. Install it: `sudo ./install.sh` (this will install it as `/usr/local/sbin/gps4ptp`)
+8. Edit the configuration file: `sudo nano /usr/local/etc/gps4ptp.toml`. In particular, you may need to change:
+    * the serial port device
+    * the serial port speed
+    * the network interface that the PPS input is connected to
+9. Start it: `sudo systemctl start gps4ptp.service`
+10. Check that it started ok: `sudo systemctl status gps4ptp.service`
+12. Check the logs: `journalctl -u gps4ptp`
+13. Enable it at boot: `sudo systemctl enable gps4ptp.service`
+14. Install and configure ptp4l
+    * `sudo apt install linuxptp`
+    * edit `/etc/linuxptp/ptp4l.conf`
+        * most configuration options can be left with their default values
+        * for particular profiles, look at `/usr/share/doc/linuxptp/configs`
+        * for the rPI CM4, you'll need to increase `tx_timestamp_timeout` e.g. `tx_timestamp_timeout 100`
+        * gps4ptp will set the clock quality properties once the PHC is synchronized to the GPS, so there's no need to change the default values of `clockClass` and `clockAccuracy`
+        * we don't want ptp4l and gps4ptp to both adjust the PHC, so use `masterOnly 1`
+        * since we we are always running as a master, we can also set `BMCA noop`
+    * `sudo systemctl start ptp4l@eth0.service`; replace `eth0` by the appropriate network interface
+    * `sudo systemctl enable ptp4l@eth0.service`
+
 ## Features
 
 Gps4ptp provides the following features:
@@ -48,8 +79,7 @@ Gps4ptp provides the following features:
 
     - It provides information about how UTC time can be derived from atomic time. While GPS and PTP both work natively in atomic time, which does not have leap seconds, they also provide information about leap seconds to enable UTC time to be derived from atomic time.
 
-The following features are in progress:
-
+The following features are in the process of being implemented:
 - It can examine the configuration of the U-blox receiver and reconfigure as necessary so it works well for timing purposes.
 
 - The PTP hardware clock on the CM4 does not work properly when the network cable is unplugged; gps4ptp detects this and handles it automatically.
