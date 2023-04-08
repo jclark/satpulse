@@ -47,13 +47,7 @@ This assumes a Linux system that uses systemd, such as Ubuntu or Fedora.
 13. Enable it at boot: `sudo systemctl enable gps4ptp.service`
 14. Install and configure ptp4l
     * `sudo apt install linuxptp`
-    * edit `/etc/linuxptp/ptp4l.conf`
-        * most configuration options can be left with their default values
-        * for particular profiles, look at `/usr/share/doc/linuxptp/configs`
-        * for the rPI CM4, you'll need to increase `tx_timestamp_timeout` e.g. `tx_timestamp_timeout 100`
-        * gps4ptp will set the clock quality properties once the PHC is synchronized to the GPS, so there's no need to change the default values of `clockClass` and `clockAccuracy`
-        * we don't want ptp4l and gps4ptp to both adjust the PHC, so use `masterOnly 1`
-        * since we we are always running as a master, we can also set `BMCA noop`
+    * Modify `/etc/linuxptp/ptp4l.conf`; use [configs/ptp4l.conf](configs/ptp4l.conf) as a starting point
     * `sudo systemctl start ptp4l@eth0.service`; replace `eth0` by the appropriate network interface
     * `sudo systemctl enable ptp4l@eth0.service`
 
