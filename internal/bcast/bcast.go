@@ -74,7 +74,7 @@ func (b *Bcast[T]) Unsubscribe(ch <-chan T) {
 // This should be run in a separate goroutine
 func (b *Bcast[T]) Run(ctx context.Context) {
 	lg := logctx.FromContext(ctx)
-	defer lg.Debug("about to exit serial broadcast goroutine")
+	defer lg.Debug("about to exit broadcast goroutine")
 	msg := b.msg
 	subscribe := b.subscribe
 	done := ctx.Done()
@@ -114,7 +114,7 @@ func (b *Bcast[T]) Run(ctx context.Context) {
 				break
 			}
 			b.subscribers = append(b.subscribers, subscriber[T]{s, b.nextQIndex})
-			lg.Debug("received request to subscribe to serial data", "chan", s)
+			lg.Debug("received request to subscribe to broadcast data", "chan", s)
 		case 1: // unsubscribe
 			s := recv.Interface().(<-chan T)
 			i := b.subscriberIndex(s)
@@ -122,11 +122,11 @@ func (b *Bcast[T]) Run(ctx context.Context) {
 				break
 			}
 			b.subscribers = append(b.subscribers[:i], b.subscribers[i+1:]...)
-			lg.Debug("received request to unsubscribe to serial data", "chan", s)
+			lg.Debug("received request to unsubscribe to broadcast data", "chan", s)
 		case 2: // msg
 			if !ok {
 				msg = nil
-				lg.Debug("serial broadcast input message channel closed")
+				lg.Debug("broadcast input message channel closed")
 				break
 			}
 			m := recv.Interface().(T)
@@ -136,14 +136,14 @@ func (b *Bcast[T]) Run(ctx context.Context) {
 			}
 		case 3: // Done
 			done = nil
-			lg.Debug("serial broadcast goroutine received cancellation")
+			lg.Debug("broadcast goroutine received cancellation")
 		default: // send to a subscriber
 			subscribersToDo[chosen-4].nextSendIndex++
 			b.trimQ()
 		}
 		if !closing && (msg == nil || subscribe == nil || done == nil) {
 			closing = true
-			lg.Debug("serial broadcast goroutine closing down")
+			lg.Debug("broadcast goroutine closing down")
 			for _, s := range b.subscribers {
 				close(s.c)
 			}
