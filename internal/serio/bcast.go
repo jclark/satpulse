@@ -6,31 +6,30 @@ import (
 	"sync"
 
 	"github.com/jclark/gps4ptp/internal/logctx"
-	"github.com/jclark/gps4ptp/internal/scan"
 	"golang.org/x/exp/constraints"
 )
 
-type subscriber struct {
-	c             chan scan.Frame
+type subscriber[T any] struct {
+	c             chan T
 	nextSendIndex int
 }
 
-type Bcast struct {
+type Bcast[T any] struct {
 	mu          sync.Mutex
 	closed      bool
-	subscribe   chan chan scan.Frame
-	unsubscribe chan (<-chan scan.Frame)
-	msg         <-chan scan.Frame
-	q           []scan.Frame
+	subscribe   chan chan T
+	unsubscribe chan (<-chan T)
+	msg         <-chan T
+	q           []T
 	nextQIndex  int
-	subscribers []subscriber
+	subscribers []subscriber[T]
 }
 
-func NewBcast(msg <-chan scan.Frame) *Bcast {
-	return &Bcast{
+func NewBcast[T any](msg <-chan T) *Bcast[T] {
+	return &Bcast[T]{
 		// use buffer size of 1 here, because we hold the mutex while sending on the channel
-		subscribe:   make(chan chan scan.Frame, 1),
-		unsubscribe: make(chan (<-chan scan.Frame), 1),
+		subscribe:   make(chan chan T, 1),
+		unsubscribe: make(chan (<-chan T), 1),
 		msg:         msg,
 	}
 }
@@ -38,7 +37,7 @@ func NewBcast(msg <-chan scan.Frame) *Bcast {
 // Close stops further broadcasting.
 // Existing subscribers will be closed.
 // Multiple Close calls are safe.
-func (b *Bcast) Close() {
+func (b *Bcast[T]) Close() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if !b.closed {
@@ -47,8 +46,8 @@ func (b *Bcast) Close() {
 	}
 }
 
-func (b *Bcast) Subscribe() <-chan scan.Frame {
-	ch := make(chan scan.Frame)
+func (b *Bcast[T]) Subscribe() <-chan T {
+	ch := make(chan T)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed {
@@ -60,7 +59,7 @@ func (b *Bcast) Subscribe() <-chan scan.Frame {
 	return ch
 }
 
-func (b *Bcast) Unsubscribe(ch <-chan scan.Frame) {
+func (b *Bcast[T]) Unsubscribe(ch <-chan T) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if !b.closed {
@@ -73,7 +72,7 @@ func (b *Bcast) Unsubscribe(ch <-chan scan.Frame) {
 // - Close has being called on Bcast
 // - the msg channel is closed
 // This should be run in a separate goroutine
-func (b *Bcast) Run(ctx context.Context) {
+func (b *Bcast[T]) Run(ctx context.Context) {
 	lg := logctx.FromContext(ctx)
 	defer lg.Debug("about to exit serial broadcast goroutine")
 	msg := b.msg
@@ -88,7 +87,7 @@ func (b *Bcast) Run(ctx context.Context) {
 			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(msg)},
 			{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(done)},
 		}
-		subscribersToDo := []*subscriber{}
+		subscribersToDo := []*subscriber[T]{}
 		qStartIndex := b.nextQIndex - len(b.q)
 		for i := range b.subscribers {
 			s := &b.subscribers[i]
@@ -109,15 +108,15 @@ func (b *Bcast) Run(ctx context.Context) {
 				subscribe = nil
 				break
 			}
-			s := recv.Interface().(chan scan.Frame)
+			s := recv.Interface().(chan T)
 			if closing {
 				close(s)
 				break
 			}
-			b.subscribers = append(b.subscribers, subscriber{s, b.nextQIndex})
+			b.subscribers = append(b.subscribers, subscriber[T]{s, b.nextQIndex})
 			lg.Debug("received request to subscribe to serial data", "chan", s)
 		case 1: // unsubscribe
-			s := recv.Interface().(<-chan scan.Frame)
+			s := recv.Interface().(<-chan T)
 			i := b.subscriberIndex(s)
 			if i < 0 {
 				break
@@ -130,7 +129,7 @@ func (b *Bcast) Run(ctx context.Context) {
 				lg.Debug("serial broadcast input message channel closed")
 				break
 			}
-			m := recv.Interface().(scan.Frame)
+			m := recv.Interface().(T)
 			if len(b.subscribers) != 0 {
 				b.q = append(b.q, m)
 				b.nextQIndex++
@@ -152,7 +151,7 @@ func (b *Bcast) Run(ctx context.Context) {
 	}
 }
 
-func (b *Bcast) trimQ() {
+func (b *Bcast[T]) trimQ() {
 	needIndex := b.nextQIndex
 	for _, s := range b.subscribers {
 		needIndex = min(needIndex, s.nextSendIndex)
@@ -167,7 +166,7 @@ func (b *Bcast) trimQ() {
 	}
 }
 
-func (b *Bcast) subscriberIndex(c <-chan scan.Frame) int {
+func (b *Bcast[T]) subscriberIndex(c <-chan T) int {
 	for i, s := range b.subscribers {
 		if s.c == c {
 			return i

@@ -205,7 +205,7 @@ func startScan(ctx context.Context, wg *sync.WaitGroup, scanner *scan.Scanner) <
 	return msg
 }
 
-func startBcast(ctx context.Context, wg *sync.WaitGroup, msg <-chan scan.Frame) *serio.Bcast {
+func startBcast(ctx context.Context, wg *sync.WaitGroup, msg <-chan scan.Frame) *serio.Bcast[scan.Frame] {
 	b := serio.NewBcast(msg)
 	wg.Add(1)
 	go func() {

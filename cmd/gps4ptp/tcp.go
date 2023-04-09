@@ -28,7 +28,7 @@ type tcpConnConfig struct {
 	writeLockTimeout time.Duration
 }
 
-func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TCPConfig, b *serio.Bcast, port serio.OutPort) error {
+func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TCPConfig, b *serio.Bcast[scan.Frame], port serio.OutPort) error {
 	if len(cfg) == 0 {
 		return nil
 	}
@@ -86,7 +86,7 @@ func convertWriteLockTimeout(secs float64) (time.Duration, error) {
 	return 0, fmt.Errorf("writeLockTimeout %f out of range", secs)
 }
 
-func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, listen net.Listener, b *serio.Bcast, portLock chan serio.OutPort) {
+func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, listen net.Listener, b *serio.Bcast[scan.Frame], portLock chan serio.OutPort) {
 	defer wg.Done()
 	defer lg.Debug("about to exit TCP listening goroutine")
 	defer listen.Close()
@@ -100,7 +100,7 @@ func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg 
 	}
 }
 
-func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *serio.Bcast, portLock chan serio.OutPort) {
+func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *serio.Bcast[scan.Frame], portLock chan serio.OutPort) {
 	// XXX both the read and write workers are closing the connection.
 	// Not sure if it would better for just one of them to do so.
 	wg.Add(1)
@@ -114,7 +114,7 @@ func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tc
 }
 
 // connWriteWorker reads from a channel and write to the connection.
-func connWriteWorker(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *serio.Bcast) {
+func connWriteWorker(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *serio.Bcast[scan.Frame]) {
 	defer wg.Done()
 	defer lg.Debug("about to exit TCP connection writing worker goroutine")
 	defer conn.Close()
