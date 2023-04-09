@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jclark/gps4ptp/internal/bcast"
 	"github.com/jclark/gps4ptp/internal/gpsmsg"
 	"github.com/jclark/gps4ptp/internal/logctx"
 	"github.com/jclark/gps4ptp/internal/mon"
@@ -205,8 +206,8 @@ func startScan(ctx context.Context, wg *sync.WaitGroup, scanner *scan.Scanner) <
 	return msg
 }
 
-func startBcast(ctx context.Context, wg *sync.WaitGroup, msg <-chan scan.Frame) *serio.Bcast[scan.Frame] {
-	b := serio.NewBcast(msg)
+func startBcast(ctx context.Context, wg *sync.WaitGroup, msg <-chan scan.Frame) *bcast.Bcast[scan.Frame] {
+	b := bcast.New(msg)
 	wg.Add(1)
 	go func() {
 		b.Run(ctx)

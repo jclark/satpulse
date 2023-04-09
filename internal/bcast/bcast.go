@@ -1,4 +1,4 @@
-package serio
+package bcast
 
 import (
 	"context"
@@ -25,7 +25,7 @@ type Bcast[T any] struct {
 	subscribers []subscriber[T]
 }
 
-func NewBcast[T any](msg <-chan T) *Bcast[T] {
+func New[T any](msg <-chan T) *Bcast[T] {
 	return &Bcast[T]{
 		// use buffer size of 1 here, because we hold the mutex while sending on the channel
 		subscribe:   make(chan chan T, 1),
