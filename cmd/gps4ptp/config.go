@@ -25,6 +25,7 @@ type Config struct {
 	Serial     SerialConfig
 	Pulse      TimePulseConfig
 	TCP        []TCPConfig
+	HTTP       []HTTPConfig
 	LeapSecond LeapSecondConfig
 	PTP        PTPConfig
 }

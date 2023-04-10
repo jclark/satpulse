@@ -30,11 +30,12 @@ import (
 const scanBufSize = 16
 
 type Syncer struct {
-	tsCh <-chan phc.TsEvent
-	fCh  <-chan scan.Frame
-	corr *tsync.Correlator
-	gm   *mon.Grandmaster
-	ls   ptime.LeapSecond
+	tsCh  <-chan phc.TsEvent
+	fCh   <-chan scan.Frame
+	sseCh chan<- SSEEvent
+	corr  *tsync.Correlator
+	gm    *mon.Grandmaster
+	ls    ptime.LeapSecond
 }
 
 func main() {
@@ -118,15 +119,26 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 	var wg sync.WaitGroup
 
 	fCh := startScan(ctx, &wg, scanner)
-	b := startBcast(ctx, &wg, fCh)
-	// Shut down the broadcast goroutine when the context is cancelled.
+
+	fb := startBcast(ctx, &wg, fCh)
+
+	var sseCh chan SSEEvent
+	var eb *bcast.Bcast[SSEEvent]
+	if len(cfg.HTTP) > 0 {
+		sseCh = make(chan SSEEvent, 1)
+		eb = startBcast(ctx, &wg, sseCh)
+	}
+	// Shut down the broadcast goroutines when the context is cancelled.
 	wg.Add(1)
 	go func() {
 		<-ctx.Done()
-		b.Close()
+		fb.Close()
+		if eb != nil {
+			eb.Close()
+		}
 		wg.Done()
 	}()
-	fCh = b.Subscribe()
+	fCh = fb.Subscribe()
 	defer func() {
 		// startScan starts a goroutine sending to fCh.
 		// We need to wait for the goroutine to close fCh, before calling port.Restore/port.Close.
@@ -147,9 +159,16 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 		return nil
 	}
 
-	err = startTCP(ctx, lg, &wg, cfg.TCP, b, t)
+	err = startTCP(ctx, lg, &wg, cfg.TCP, fb, t)
 	if err != nil {
 		return err
+	}
+
+	if eb != nil {
+		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb)
+		if err != nil {
+			return err
+		}
 	}
 
 	gmUpdateCh := make(chan mon.GrandmasterUpdateRequest)
@@ -163,7 +182,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 			return err
 		}
 	}
-	s, err := newSyncer(ctx, clk, cfg, fCh, gmUpdateCh)
+	s, err := newSyncer(ctx, clk, cfg, fCh, gmUpdateCh, sseCh)
 	if err != nil {
 		return err
 	}
@@ -206,7 +225,7 @@ func startScan(ctx context.Context, wg *sync.WaitGroup, scanner *scan.Scanner) <
 	return msg
 }
 
-func startBcast(ctx context.Context, wg *sync.WaitGroup, msg <-chan scan.Frame) *bcast.Bcast[scan.Frame] {
+func startBcast[T any](ctx context.Context, wg *sync.WaitGroup, msg <-chan T) *bcast.Bcast[T] {
 	b := bcast.New(msg)
 	wg.Add(1)
 	go func() {
@@ -225,7 +244,7 @@ func nmeaLog(lg *slog.Logger, msg *nmea.Message) {
 }
 
 func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan.Frame,
-	guCh chan<- mon.GrandmasterUpdateRequest) (r *Syncer, err error) {
+	guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- SSEEvent) (r *Syncer, err error) {
 	err = nil
 	r = nil
 	lg := logctx.FromContext(ctx)
@@ -237,10 +256,11 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 	}
 	ls := cfg.LeapSecond.leapSecond()
 	s := Syncer{
-		corr: tsync.NewCorrelator(tsync.MultiSampler(servo, sa), lg),
-		fCh:  fCh,
-		gm:   mon.NewGrandmaster(sa, ls, guCh, lg),
-		ls:   ls,
+		corr:  tsync.NewCorrelator(tsync.MultiSampler(servo, sa), lg),
+		fCh:   fCh,
+		gm:    mon.NewGrandmaster(sa, ls, guCh, lg),
+		ls:    ls,
+		sseCh: sseCh,
 	}
 	lg.Info("selected PTP hardware clock", "path", clk.Path())
 	s.tsCh, err = StartPPS(ctx, clk, cfg.Pulse)
@@ -261,6 +281,10 @@ func syncWorker(ctx context.Context, s *Syncer) {
 	// loop until both channels are closed
 	tsCh := s.tsCh
 	fCh := s.fCh
+	sseCh := s.sseCh
+	if sseCh != nil {
+		defer close(sseCh)
+	}
 	corr := s.corr
 	lg := logctx.FromContext(ctx)
 	lg.Debug("sync worker goroutine started")
@@ -290,7 +314,7 @@ func syncWorker(ctx context.Context, s *Syncer) {
 			}
 		case f, ok := <-fCh:
 			if ok {
-				syncFrame(ctx, &state, corr, s.gm, f)
+				syncFrame(ctx, &state, corr, s.gm, s.sseCh, f)
 			} else {
 				lg.Debug("frame channel of sync worker goroutine was closed")
 				fCh = nil
@@ -299,7 +323,7 @@ func syncWorker(ctx context.Context, s *Syncer) {
 	}
 }
 
-func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm *mon.Grandmaster, f scan.Frame) {
+func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm *mon.Grandmaster, sseCh chan<- SSEEvent, f scan.Frame) {
 	lg := logctx.FromContext(ctx)
 	// TODO: handle leapsecond messages
 	var mt *gpsmsg.Time
@@ -349,6 +373,9 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 		corr.GPSTime(secRnd, f.TRead)
 		// do corr first so that samples are updated in the SyncAnalyzer
 		gm.GPSTime(sec)
+		if sseCh != nil {
+			sseCh <- SSEEvent{"time", state.leapSecond.FormatTime(secRnd)}
+		}
 		state.lastTime = secRnd
 	}
 }

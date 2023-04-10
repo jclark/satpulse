@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Current time (using SSE)</title>
+  <style>
+    #time {
+      font-size: 24px;
+      font-weight: bold;
+      color: blue;
+    }
+
+    #date {
+      font-size: 18px;
+      color: gray;
+    }
+
+    #timeZoneAbbr {
+      font-size: 18px;
+      color: green;
+    }
+  </style>
+</head>
+<body>
+  <h1>Current time (using SSE)</h1>
+  <div id="time"></div>
+  <div id="date"></div>
+  <div id="timeZoneAbbr"></div>
+
+  <script>
+    const url = new URL(window.location.href);
+    const endpoint = url.origin + url.pathname + "/sse";
+    const eventSource = new EventSource(endpoint);
+    const timeZoneAbbrElement = document.getElementById('timeZoneAbbr');
+
+    eventSource.addEventListener("time", function(event) {
+      const time = new Date(event.data);
+      const localTime = new Date(time.getTime() - (time.getTimezoneOffset() * 60000));
+      const hours = localTime.getHours();
+      const minutes = localTime.getMinutes();
+      const seconds = localTime.getSeconds();
+      const days = localTime.getDate();
+      const month = localTime.getMonth() + 1;
+      const year = localTime.getFullYear();
+
+      document.getElementById("time").textContent = hours + ":" + minutes + ":" + seconds;
+      document.getElementById("date").textContent = year + "-" + month  + "-" + days;
+
+      //const options = { timeZoneName: 'short' };
+      //const timeZoneAbbr = new Intl.DateTimeFormat('en-US', options).format(localTime);
+      //timeZoneAbbrElement.textContent = timeZoneAbbr;
+    });
+  </script>
+</body>
+</html>

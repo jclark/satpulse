@@ -1,0 +1,12 @@
+# Example TCP configuration for gps4ptp.
+[serial]
+device = "/dev/ttyACM0"
+speed = 9600
+
+[pulse]
+interface = "enp1s0"
+
+# This section allows HTTP monitoring on port 2000
+[[http]]
+listen = ":2000"
+

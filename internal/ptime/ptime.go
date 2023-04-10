@@ -31,6 +31,7 @@ type LeapSecond struct {
 
 // GPS epoch
 var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
+var epochUnix = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 // Number of seconds by which TAI time is ahead of GPS time
 const TAIMinusGPS = 19
@@ -78,6 +79,11 @@ func (ls LeapSecond) UTCtoTime(ut UTCTime) Time {
 // The leap second occurs at the end of the UTC day of that date.
 func (ls LeapSecond) Date() time.Time {
 	return time.Unix(int64(ls.OffChangeTime)/1e9-int64(ls.UTCOffAfter), 0).AddDate(0, 0, -1)
+}
+
+func (ls LeapSecond) FormatTime(t Time) string {
+	// XXX this is wrong
+	return epochUnix.Add(time.Duration(t)).Format(time.RFC3339)
 }
 
 func TimespecToTime(t unix.Timespec) Time {
