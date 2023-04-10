@@ -123,7 +123,11 @@ Semi-functional currently.
 
 ## HTTP server
 
-* Provide JSON API for current status
+* Provide JSON API for current status.
+* Provide way to get events for data that is continually changing:
+  * Could do long-polling for navigation epoch that is after specified on
+  * Could use Server-Sent Events (SSE)
+  * Could use WebSockets
 * Human-readable page that repeatedly fetches current state
 * Can draw a sky view using JS canvas
 * Should we use this for configuration?
