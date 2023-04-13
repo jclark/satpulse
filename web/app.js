@@ -429,8 +429,9 @@
     const sseURL = docURL.origin + docURL.pathname + "/sse";
     return new EventSource(sseURL);
   }
+  var rootElement = document.getElementById("root");
   B(
     /* @__PURE__ */ o2(EventSourceContext.Provider, { value: createEventSource(), children: /* @__PURE__ */ o2(DateTimeComponent, {}) }),
-    document.body
+    rootElement
   );
 })();

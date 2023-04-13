@@ -5,8 +5,7 @@ import (
 	"io/fs"
 )
 
-const RootFile = "index.html"
-
+//go:generate npm run build
 //go:embed *.js *.html
 var content embed.FS
 

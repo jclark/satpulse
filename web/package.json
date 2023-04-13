@@ -9,6 +9,7 @@
     "ts-jest": "^29.1.0"
   },
   "scripts": {
-    "build": "./build.mjs"
+    "build": "./build.mjs",
+    "typecheck": "tsc --noEmit"
   }
 }

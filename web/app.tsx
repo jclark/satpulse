@@ -49,9 +49,9 @@ function createEventSource() : EventSource {
     return new EventSource(sseURL);
 }
 
+const rootElement = document.getElementById('root') as HTMLElement;
 render(
     <EventSourceContext.Provider value={createEventSource()}>
         <DateTimeComponent/>
     </EventSourceContext.Provider>,
-    document.body);
-
+    rootElement);

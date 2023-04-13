@@ -46,11 +46,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	fileServer := http.FileServer(http.FS(web.Content()))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		//if r.URL.Path == "/" {
-		//	http.Redirect(w, r, web.RootFile, http.StatusMovedPermanently)
-		//} else {
 		fileServer.ServeHTTP(w, r)
-		//}
 	})
 
 	listenCfg := net.ListenConfig{}
