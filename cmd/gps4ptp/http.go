@@ -13,11 +13,9 @@ import (
 	"time"
 
 	"github.com/jclark/gps4ptp/internal/bcast"
+	"github.com/jclark/gps4ptp/web"
 	"golang.org/x/exp/slog"
 )
-
-//go:embed "index.html"
-var htmlRoot []byte
 
 type HTTPConfig struct {
 	Listen string `toml:"listen"`
@@ -41,16 +39,20 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	}
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		_, err := w.Write(htmlRoot)
-		if err != nil {
-			lg.Error("error writing HTTP response for /", err)
-		}
-	})
-
 	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
 		sseHandleRequest(ctx, lg, wg, w, r, b)
 	})
+
+	fileServer := http.FileServer(http.FS(web.Content()))
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		//if r.URL.Path == "/" {
+		//	http.Redirect(w, r, web.RootFile, http.StatusMovedPermanently)
+		//} else {
+		fileServer.ServeHTTP(w, r)
+		//}
+	})
+
 	listenCfg := net.ListenConfig{}
 
 	listeners := make([]net.Listener, len(cfg))
