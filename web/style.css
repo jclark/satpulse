@@ -1,0 +1,74 @@
+/* General styles */
+body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+  }
+  
+  .dateTime {
+    background-color: #ffffff;
+    border-radius: 15px;
+    padding: 20px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .timeZoneName {
+    font-size: 1.5rem;
+    margin-bottom: 5px;
+  }
+  
+  .time {
+    font-size: 6rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+  
+  .date {
+    font-size: 2rem;
+  }
+  
+  /* Default styles for light theme */
+  body {
+    background-color: #f5f5f5;
+  }
+  
+  .dateTime {
+    background-color: #ffffff;
+  }
+  
+  .timeZoneName,
+  .date {
+    color: #388e3c; /* Darker shade of green for timezone and date in light theme */
+  }
+  
+  .time {
+    color: #1a237e; /* Dark blue for time in light theme */
+  }
+  
+  /* Styles for dark theme */
+  @media (prefers-color-scheme: dark) {
+    body {
+      background-color: #2c2c2c;
+    }
+  
+    .dateTime {
+      background-color: #000000;
+    }
+  
+    .timeZoneName,
+    .date {
+      color: #ff9800; /* Orange for timezone and date in dark theme */
+    }
+  
+    .time {
+      color: #29b6f6; /* Light blue for time in dark theme */
+    }
+  }
+  

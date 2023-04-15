@@ -6,7 +6,7 @@ import (
 )
 
 //go:generate npm run build
-//go:embed *.js *.html
+//go:embed *.js *.html *.css
 var content embed.FS
 
 func Content() fs.FS {
