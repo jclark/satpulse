@@ -2,7 +2,6 @@ package ptime
 
 import (
 	"fmt"
-	"math"
 	"sync/atomic"
 	"time"
 
@@ -10,8 +9,8 @@ import (
 )
 
 type ClockTime struct {
-	T     Time
-	Epoch Epoch
+	T   Time
+	Era Era
 }
 
 // Time in TAI timescale represented as nanoseconds since 1970-01-01T00:00:00 TAI
@@ -125,26 +124,29 @@ func (t Time) Round(d time.Duration) Time {
 	return Time(int64(time.Duration(int64(t)).Round(d)))
 }
 
-type Epoch uint64
+// An Era represents a period of time within which a clock has not been stepped.
+// When the time of a clock is read, an era is associated with it.
+// When a clock is stepped, it may be uncertain whether a particular read of the
+// clock happened before or after the step. We handle this by incrementing the
+// twice during the step: once before the step is started, and once after we know
+// it has taken effect. Even-numbered eras are used to represent the uncertain period
+// while the clock is being stepped.
+type Era uint64
 
-const InitialEpoch = Epoch(math.MaxUint64)
-
-func (e Epoch) Ambig() bool {
-	return (e & 1) != 0
+// Uncertain returns true if the era is uncertain.
+// Uncertain eras are even numbered.
+func (e Era) Uncertain() bool {
+	return (e & 1) == 0
 }
 
-type AtomicEpoch atomic.Uint64
+type AtomicEra atomic.Uint64
 
-func (c *AtomicEpoch) Init() {
-	(*atomic.Uint64)(c).Store(uint64(InitialEpoch))
+func (c *AtomicEra) Inc() Era {
+	return Era((*atomic.Uint64)(c).Add(1))
 }
 
-func (c *AtomicEpoch) Inc() Epoch {
-	return Epoch((*atomic.Uint64)(c).Add(1))
-}
-
-func (c *AtomicEpoch) Load() Epoch {
-	return Epoch((*atomic.Uint64)(c).Load())
+func (c *AtomicEra) Load() Era {
+	return Era((*atomic.Uint64)(c).Load())
 }
 
 func Picoseconds(ps int32) time.Duration {

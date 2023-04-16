@@ -68,7 +68,7 @@ func (c *Correlator) GPSTime(tGPS ptime.Time, tRead time.Time) {
 const maxEdges = 8
 
 func (c *Correlator) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
-	c.lg.Debug("correlator got pulse edge", "t", tClock.T, "epoch", tClock.Epoch)
+	c.lg.Debug("correlator got pulse edge", "t", tClock.T, "era", tClock.Era)
 	edge := clockTimeReading{ClockTime: tClock, tRead: tRead}
 	c.edges = append(c.edges, edge)
 	c.correlate()
@@ -260,7 +260,7 @@ func alternate(edges []clockTimeReading) (edges1, edges2 []clockTimeReading) {
 
 func consistent(master1, master2 gpsTimeReading, slave1, slave2 clockTimeReading) bool {
 	masterDiff := master2.tGPS.Sub(master1.tGPS)
-	if slave1.Epoch == slave2.Epoch && !slave1.Epoch.Ambig() {
+	if slave1.Era == slave2.Era && !slave1.Era.Uncertain() {
 		return slave1.T.Add(masterDiff).Sub(slave2.T).Abs() <= time.Second/100
 	} else {
 		return slave1.tRead.Add(masterDiff).Sub(slave2.tRead).Abs() <= time.Second/20

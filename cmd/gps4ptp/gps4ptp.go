@@ -296,7 +296,7 @@ func syncWorker(ctx context.Context, s *Syncer) {
 		select {
 		case e, ok := <-tsCh:
 			if ok {
-				if e.Epoch == ptime.InitialEpoch {
+				if e.Era == phc.StaleEra {
 					if nSkipped == 0 {
 						lg.Debug("detected a stale PTP hardware clock timestamp", "t", e.T)
 					}

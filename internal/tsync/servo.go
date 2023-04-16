@@ -12,7 +12,7 @@ type Clock interface {
 	SetFreqAdj(fa float64) error
 	FreqAdj() (float64, error)
 	MaxFreqAdj() float64
-	AdjTime(d time.Duration) (ptime.Epoch, error)
+	AdjTime(d time.Duration) (ptime.Era, error)
 }
 
 type Servo struct {
@@ -61,7 +61,7 @@ func (s *Servo) Logger() *slog.Logger {
 func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, _ time.Time, delayed bool) {
 	// PTP defines offsetFromMaster as timeOnSlave - timeOnMaster, so I think this is the right way round.
 	off := local.T.Sub(ref)
-	s.lg.Debug("sample received by servo", "off", off, "gps", ref, "phc", local.T, "epoch", local.Epoch, "delayed", delayed)
+	s.lg.Debug("sample received by servo", "off", off, "gps", ref, "phc", local.T, "era", local.Era, "delayed", delayed)
 	s.sampler.sample(ref, local, delayed)
 }
 
@@ -79,20 +79,20 @@ func (s *Servo) setFreqAdj(fa float64) {
 	s.freqAdj = fa
 }
 
-func (s *Servo) adjTime(off time.Duration) ptime.Epoch {
+func (s *Servo) adjTime(off time.Duration) ptime.Era {
 	totalOff := off + s.adjSetOffsetDelay
-	epoch, err := s.clk.AdjTime(totalOff)
+	era, err := s.clk.AdjTime(totalOff)
 	if err != nil {
 		s.lg.Error("error adjusting the PHC time", err, "totalOff", totalOff)
 	} else {
 		s.lg.Info("adjusted the PHC time", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
 	}
-	return epoch
+	return era
 }
 
 type piController struct {
 	servo  *Servo
-	epoch  ptime.Epoch
+	era  ptime.Era
 	offSum float64
 }
 
@@ -101,7 +101,7 @@ const kp = 0.7
 const ki = 0.3
 
 func (p *piController) sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
-	if local.Epoch != p.epoch || delayed {
+	if local.Era != p.era || delayed {
 		return
 	}
 	off := local.T.Sub(ref)
@@ -154,7 +154,7 @@ func (r *resetter) sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 
 	r.servo.setFreqAdj(freqAdj)
 
-	r.servo.comp.epoch = r.servo.adjTime(ref.Sub(local.T))
+	r.servo.comp.era = r.servo.adjTime(ref.Sub(local.T))
 	r.servo.sampler = r.servo.comp
 	r.servo.piControl.init(freqAdj)
 }
@@ -170,11 +170,11 @@ func (r *resetter) sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 // this delay.
 type compensator struct {
 	servo *Servo
-	epoch ptime.Epoch
+	era ptime.Era
 }
 
 func (c *compensator) sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
-	if local.Epoch != c.epoch || delayed {
+	if local.Era != c.era || delayed {
 		return
 	}
 	off := ref.Sub(local.T)
@@ -182,8 +182,8 @@ func (c *compensator) sample(ref ptime.Time, local ptime.ClockTime, delayed bool
 	c.servo.adjSetOffsetDelay = off
 	// this call will have the offset applied twice, once here
 	// and once in Servo.adjTime
-	nextEpoch := c.servo.adjTime(off)
-	c.servo.piControl.epoch = nextEpoch
+	nextEra := c.servo.adjTime(off)
+	c.servo.piControl.era = nextEra
 	c.servo.sampler = c.servo.piControl
 }
 
