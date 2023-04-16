@@ -82,8 +82,12 @@ func (ls LeapSecond) Date() time.Time {
 }
 
 func (ls LeapSecond) FormatTime(t Time) string {
-	// XXX this is wrong
-	return epochUnix.Add(time.Duration(t)).Format(time.RFC3339)
+	off := ls.UTCOffAfter
+	if t < ls.OffChangeTime {
+		off = ls.UTCOffBefore
+	}
+	// XXX this won't display leap second correctly
+	return epochUnix.Add(time.Duration(t) - time.Duration(off)*time.Second).Format(time.RFC3339)
 }
 
 func TimespecToTime(t unix.Timespec) Time {
