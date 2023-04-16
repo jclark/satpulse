@@ -5,5 +5,11 @@ After=time-set.target
 [Service]
 Type=simple
 ExecStart=/usr/local/sbin/gps4ptp -sdlog
+# If it doesn't shutdown gracefully in 5 seconds, something's gone wrong.
+TimeoutStopSec=5
+# Sending a SIGQUIT makes the Go runtime dump goroutines,
+# which will be useful in determing why graceful shutdown got stuck.
+FinalKillSignal=SIGQUIT
+
 [Install]
 WantedBy=multi-user.target
