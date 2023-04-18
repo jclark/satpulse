@@ -10,7 +10,7 @@ const DateTimeComponent = () => {
     const context = useContext(EventSourceContext) as EventSource;
     const [state, setState] = useState<DateTimeParts>(formatDate(new Date(INITIAL_YEAR, 0), "00"));
 
-    const handleTime = (event: MessageEvent) => {
+    const handleTime = (event: MessageEvent<string>) => {
         const newState = formatTimestamp(event.data);
         if (newState != null) {
             setState(newState);
