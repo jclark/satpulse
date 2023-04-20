@@ -217,9 +217,9 @@ type CfgTmode3 struct {
 	EcefXOrLat   int32
 	EcefYOrLon   int32
 	EcefZOrAlt   int32
-	EcefXOrLatHP byte
-	EcefYOrLonHP byte
-	EcefZOrAltHP byte
+	EcefXOrLatHP int8
+	EcefYOrLonHP int8
+	EcefZOrAltHP int8
 	_            byte
 	FixedPosAcc  uint32
 	SvinMinDur   uint32

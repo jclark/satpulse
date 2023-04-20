@@ -9,6 +9,7 @@ import (
 type Message interface {
 	Time() *Time
 	LeapSecond() *LeapSecond
+	TimeMode() *TimeMode
 }
 
 //go:generate stringer -type=MajorGNSS
@@ -39,4 +40,32 @@ type Time struct {
 type LeapSecond struct {
 	ptime.LeapSecond
 	NavEpoch uint32 `json:"navEpoch,omitempty"`
+}
+
+type TimeMode struct {
+	FixedPos *FixedPosMode `json:"fixedPos,omitempty"`
+	SurveyIn *SurveyInMode `json:"surveyIn,omitempty"`
+}
+
+type SurveyInMode struct {
+	MinDur   float64 // seconds
+	AccLimit float64 // meters
+}
+
+type FixedPosMode struct {
+	LLA  *LLA    `json:"lla,omitempty"`
+	ECEF *ECEF   `json:"ecef,omitempty"`
+	Acc  float64 `json:"acc,omitempty"`
+}
+
+type ECEF struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	Z float64 `json:"z"`
+}
+
+type LLA struct {
+	Lat float64  `json:"lat"` // degrees
+	Lon float64  `json:"lon"` // degrees
+	Alt *float64 `json:"alt,omitempty"`
 }
