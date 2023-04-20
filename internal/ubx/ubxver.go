@@ -11,14 +11,14 @@ import (
 )
 
 type Version struct {
-	HW         string
-	SW         string
-	Extensions []string
-	FW         FWVer
-	Prot       ProtVer
-	Mod        string
-	Flash      bool
-	GNSS       []gpsmsg.MajorGNSS
+	HW         string             `json:"hw"`
+	SW         string             `json:"sw"`
+	Extensions []string           `json:"extensions,omitempty"`
+	FW         *FWVer             `json:"fw,omitempty"`
+	Prot       *ProtVer           `json:"prot,omitempty"`
+	Mod        string             `json:"mod"`
+	Flash      bool               `json:"flash"`
+	GNSS       []gpsmsg.MajorGNSS `json:"gnss,omitempty"`
 }
 
 type ProtVer struct {
@@ -62,20 +62,20 @@ var modRegexp = regexp.MustCompile(`^MOD[= ]([A-Z][-A-Z0-9]+)$`)
 var fisRegexp = regexp.MustCompile(`^FIS[= ]0[xX]`)
 var gnssRegexp = regexp.MustCompile(`^GPS(;[A-Z]{3,4})*$`)
 
-func findFWVer(extensions []string) FWVer {
+func findFWVer(extensions []string) *FWVer {
 	submatches := findSubmatch(extensions, fwVerRegexp)
 	if submatches == nil {
-		return FWVer{}
+		return nil
 	}
-	return FWVer{submatches[1], mustAtob(submatches[2]), mustAtob(submatches[3])}
+	return &FWVer{submatches[1], mustAtob(submatches[2]), mustAtob(submatches[3])}
 }
 
-func findProtVer(extensions []string) ProtVer {
+func findProtVer(extensions []string) *ProtVer {
 	submatches := findSubmatch(extensions, protVerRegexp)
 	if submatches == nil {
-		return ProtVer{}
+		return nil
 	}
-	return ProtVer{mustAtob(submatches[1]), mustAtob(submatches[2])}
+	return &ProtVer{mustAtob(submatches[1]), mustAtob(submatches[2])}
 }
 
 func findGNSS(extensions []string) []gpsmsg.MajorGNSS {
