@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -17,6 +18,11 @@ import (
 	"golang.org/x/exp/slog"
 )
 
+type GPSInitData struct {
+	Version  *ubx.Version     `json:"version,omitempty"`
+	TimeMode *gpsmsg.TimeMode `json:"timeMode,omitempty"`
+}
+
 type gpsReceived struct {
 	ubxMsgCount      int
 	nmeaMsgCount     int
@@ -25,16 +31,15 @@ type gpsReceived struct {
 	invalidByteCount int
 	nmeaSentences    map[string]map[string]bool
 	rtcmMsgs         map[uint16]bool
-	tmode2           *ubxbin.CfgTmode2
-	tmode3           *ubxbin.CfgTmode3
 	tp5              *ubxbin.CfgTp5
 	gnss             *ubxbin.CfgGNSS
 	leapSecond       *gpsmsg.LeapSecond
+	timeMode         *gpsmsg.TimeMode
 	version          *ubx.Version
 	ack              map[ubxbin.MsgID]bool
 }
 
-func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort) (err error) {
+func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort) (initData string, err error) {
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
@@ -108,12 +113,6 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		lsdStr = gr.leapSecond.Date().Format("2006-01-02")
 		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", gr.leapSecond.UTCOffBefore, "utcOffAfter", gr.leapSecond.UTCOffAfter)
 	}
-	var tmode any = nil
-	if gr.tmode2 != nil {
-		tmode = gr.tmode2
-	} else if gr.tmode3 != nil {
-		tmode = gr.tmode3
-	}
 	if gr.version != nil {
 		lg.Info("GPS version", "model", gr.version.Mod, "category", gr.version.FW.ProductCategory, "flash", gr.version.Flash,
 			"sw", gr.version.SW, "hw", gr.version.HW, "prot", gr.version.Prot, "gnss", gr.version.GNSS, "ext", gr.version.Extensions)
@@ -121,8 +120,16 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	lg.Info("finished GPS initialization",
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
 		"ack", gr.ack,
-		"gnssEnabled", gnssEnabled,
-		"tmode", tmode)
+		"gnssEnabled", gnssEnabled)
+	init := GPSInitData{
+		TimeMode: gr.timeMode,
+		Version:  gr.version,
+	}
+	initBytes, err := json.Marshal(&init)
+	if err != nil {
+		return
+	}
+	initData = string(initBytes)
 	return
 }
 
@@ -180,11 +187,11 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 	if ver != nil {
 		gr.version = ver
 	}
+	tm := um.TimeMode()
+	if tm != nil {
+		gr.timeMode = tm
+	}
 	switch parsed := u.(type) {
-	case *ubxbin.CfgTmode2:
-		gr.tmode2 = parsed
-	case *ubxbin.CfgTmode3:
-		gr.tmode3 = parsed
 	case *ubxbin.CfgTp5:
 		gr.tp5 = parsed
 	case *ubxbin.CfgGNSS:

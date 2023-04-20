@@ -28,7 +28,7 @@ type SSEEvent struct {
 
 const gracefulShutdownTimeout = 1 * time.Second
 
-func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[SSEEvent]) error {
+func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[SSEEvent], initEvent SSEEvent) error {
 	if len(cfg) == 0 {
 		return nil
 	}
@@ -38,9 +38,8 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		}
 	}
 	mux := http.NewServeMux()
-
 	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
-		sseHandleRequest(ctx, lg, wg, w, r, b)
+		sseHandleRequest(ctx, lg, wg, w, r, b, initEvent)
 	})
 
 	fileServer := http.FileServer(http.FS(web.Content()))
@@ -90,17 +89,21 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	return nil
 }
 
-func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[SSEEvent]) {
+func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[SSEEvent], initEvent SSEEvent) {
 	defer lg.Debug("about to exit HTTP SSE request handler")
 	lg.Debug("starting to handle HTTP SSE request")
-	ch := b.Subscribe()
-	defer b.Unsubscribe(ch)
-
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-
 	flusher := w.(http.Flusher)
+	_, err := w.Write(([]byte)(formatSSEEvent(initEvent)))
+	if err != nil {
+		lg.Error("error writing HTTP response", err)
+		return
+	}
+	ch := b.Subscribe()
+	defer b.Unsubscribe(ch)
+
 	for {
 		select {
 		case <-ctx.Done():

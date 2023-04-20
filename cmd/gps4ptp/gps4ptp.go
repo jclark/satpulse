@@ -151,7 +151,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 		lg.Debug("wait group counter dropped to zero")
 	}()
 
-	err = gpsInit(ctx, fCh, t)
+	initData, err := gpsInit(ctx, fCh, t)
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 	}
 
 	if eb != nil {
-		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb)
+		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, SSEEvent{Event: "init", Data: initData})
 		if err != nil {
 			return err
 		}
