@@ -19,15 +19,14 @@ export type TimePart = {
     value: string;
 }
 
-export type DateTimeParts = {
+export type DateTime = {
     date: string;
     time: string;
-    timeZoneName: string
 }
 
 const timestampRegex: RegExp = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:)(\d{2})(?:\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
 
-export function formatTimestamp(t: string, locales?: string|string[]|undefined) : DateTimeParts|null {
+export function formatTimestamp(t: string, locales?: string|string[]|undefined) : DateTime|null {
     const match = timestampRegex.exec(t)
     if (!match) {
         return null
@@ -45,35 +44,22 @@ export function formatTimestamp(t: string, locales?: string|string[]|undefined) 
     return formatDate(d, second, locales)
 }
 
-export function formatDate(d: Date, second: string, locales?: string|string[]|undefined) : DateTimeParts {
+export function formatDate(d: Date, second: string, locales?: string|string[]|undefined) : DateTime {
     const date = d.toLocaleDateString(locales, dateOptions)
    
     const parts = Intl.DateTimeFormat(locales, timeOptions).formatToParts(d)
 
-    var nTimeParts = 0
-    var time = ""
-
-    var timeZoneName = ""
+    let time = ""
 
     for (const { type, value } of parts) {
         switch (type) {
-        case 'hour': case 'minute': 
-            time += value
-            nTimeParts++
+        case 'hour': case 'minute': case 'timeZoneName': case 'literal':
+            time += value;
             break
         case 'second':
             time += second
-            nTimeParts++
-            break
-        case 'timeZoneName':
-            timeZoneName = value
-            break
-        case 'literal':
-            if (nTimeParts > 0 && nTimeParts < 3) {
-                time += value
-            }
             break
         }
     }
-    return { date, time, timeZoneName }
+    return { date, time }
 }

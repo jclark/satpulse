@@ -457,6 +457,52 @@
     return "function" == typeof t3 ? t3(n2) : t3;
   }
 
+  // timefmt.ts
+  var timeOptions = {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZoneName: "short"
+  };
+  var dateOptions = {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  };
+  var timestampRegex = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:)(\d{2})(?:\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
+  function formatTimestamp(t3, locales) {
+    const match = timestampRegex.exec(t3);
+    if (!match) {
+      return null;
+    }
+    const [, initial, second, tzOffset] = match;
+    if (tzOffset != "" && tzOffset != "Z" && tzOffset.substring(1) != "00:00") {
+      return null;
+    }
+    const d2 = /* @__PURE__ */ new Date(initial + "00Z");
+    return formatDate(d2, second, locales);
+  }
+  function formatDate(d2, second, locales) {
+    const date = d2.toLocaleDateString(locales, dateOptions);
+    const parts = Intl.DateTimeFormat(locales, timeOptions).formatToParts(d2);
+    let time = "";
+    for (const { type, value } of parts) {
+      switch (type) {
+        case "hour":
+        case "minute":
+        case "timeZoneName":
+        case "literal":
+          time += value;
+          break;
+        case "second":
+          time += second;
+          break;
+      }
+    }
+    return { date, time };
+  }
+
   // node_modules/preact/jsx-runtime/dist/jsxRuntime.module.js
   var _2 = 0;
   function o3(o4, e3, n2, t3, f3, l3) {
@@ -536,13 +582,19 @@
     return /* @__PURE__ */ o3(CardElement, { title, children: fields.map(([desc, value]) => /* @__PURE__ */ o3(FieldElement, { desc, children: value })) });
   };
   function addFields(fields, state, format) {
-    for (const [key, [desc, formatter]] of Object.entries(format)) {
+    for (const [key, f3] of Object.entries(format)) {
       if (!(key in state)) {
         continue;
       }
-      const val = state[key];
-      const formatted = formatter ? formatter(val) : val;
-      fields.push([desc, formatted]);
+      if (typeof f3 === "function") {
+        const formatted = f3(state[key], state);
+        fields.push(...formatted);
+      } else {
+        const [desc, formatter] = f3;
+        const val = state[key];
+        const formatted = formatter ? formatter(val) : val;
+        fields.push([desc, formatted]);
+      }
     }
   }
   var versionFormat = {
@@ -552,8 +604,20 @@
     fw: ["Firmware", (arg) => `${arg.productCategory} ${arg.major}.${arg.minor}`]
   };
   var timeFormat = {
-    utc: ["UTC"]
+    utc: formatUTC
   };
+  function formatUTC(utc) {
+    const dt = formatTimestamp(utc);
+    if (dt == null) {
+      return [];
+    }
+    const { date, time } = dt;
+    return [
+      ["Local time", time],
+      ["Local date", date],
+      ["UTC", utc]
+    ];
+  }
   function createEventSource() {
     const docURL = new URL(window.location.href);
     const sseURL = docURL.origin + docURL.pathname + "/sse";

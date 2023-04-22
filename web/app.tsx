@@ -1,6 +1,7 @@
 
 import { render, createContext, FunctionComponent } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
+import { formatTimestamp } from './timefmt';
 
 const EventSourceContext = createContext<EventSource | null>(null);
 
@@ -131,13 +132,20 @@ const Card: FunctionComponent<CardProps> = ({title, event, init}) => {
 };
 
 function addFields(fields: FormattedField[], state: Map, format: EventFormat) {
-    for (const [key, [desc, formatter]] of Object.entries(format)) {
+    for (const [key, f] of Object.entries(format)) {
         if (!(key in state)) {
             continue;
         }
-        const val = state[key];
-        const formatted = formatter ? formatter(val) : val;
-        fields.push([desc, formatted]);
+        if (typeof f === 'function') {
+            const formatted = f(state[key], state);
+            fields.push(...formatted)
+        }
+        else {
+            const [desc, formatter] = f;
+            const val = state[key];
+            const formatted = formatter ? formatter(val) : val;
+            fields.push([desc, formatted]);
+        }       
     }
 }
 
@@ -146,10 +154,10 @@ type CardFormat = {
 }
 
 type SimpleFormatter = (arg: any) => string;
-// type ComplexFormatter = (arg: any, obj: Map) => FormattedField[];
+type ComplexFormatter = (arg: any, obj: Map) => FormattedField[];
 
 type EventFormat = {
-    [key: string]: [string, SimpleFormatter?];
+    [key: string]: [string, SimpleFormatter?]|ComplexFormatter;
 };
 
 const versionFormat: EventFormat = {
@@ -160,7 +168,20 @@ const versionFormat: EventFormat = {
 }
 
 const timeFormat: EventFormat = {
-    utc: ["UTC"],
+    utc: formatUTC,
+}
+
+function formatUTC(utc: string): FormattedField[] {
+    const dt = formatTimestamp(utc);
+    if (dt == null) {
+        return []
+    }
+    const {date, time} = dt;
+    return [
+        ["Local time", time],
+        ["Local date", date],
+        ["UTC", utc]
+    ]; 
 }
 
 function createEventSource(): EventSource {
