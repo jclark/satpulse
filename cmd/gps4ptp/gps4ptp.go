@@ -165,7 +165,11 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 	}
 
 	if eb != nil {
-		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, SSEEvent{Event: "init", Data: initData})
+		initEvent, err := MakeSSEEvent("init", initData)
+		if err != nil {
+			return err
+		}
+		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, initEvent)
 		if err != nil {
 			return err
 		}
@@ -374,8 +378,17 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 		// do corr first so that samples are updated in the SyncAnalyzer
 		gm.GPSTime(sec)
 		if sseCh != nil {
-			sseCh <- SSEEvent{"time", state.leapSecond.FormatTime(secRnd)}
+			event, err := MakeSSEEvent("time", TimeEvent{state.leapSecond.FormatTime(secRnd)})
+			if err != nil {
+				lg.Error("failed to create SSE event", err)
+			} else {
+				sseCh <- event
+			}
 		}
 		state.lastTime = secRnd
 	}
+}
+
+type TimeEvent struct {
+	UTC string `json:"utc"`
 }

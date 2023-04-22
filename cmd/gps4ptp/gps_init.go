@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -39,7 +38,7 @@ type gpsReceived struct {
 	ack              map[ubxbin.MsgID]bool
 }
 
-func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort) (initData string, err error) {
+func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort) (initData *GPSInitData, err error) {
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
@@ -121,15 +120,10 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
 		"ack", gr.ack,
 		"gnssEnabled", gnssEnabled)
-	init := GPSInitData{
+	initData = &GPSInitData{
 		TimeMode: gr.timeMode,
 		Version:  gr.version,
 	}
-	initBytes, err := json.Marshal(&init)
-	if err != nil {
-		return
-	}
-	initData = string(initBytes)
 	return
 }
 

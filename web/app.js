@@ -457,62 +457,6 @@
     return "function" == typeof t3 ? t3(n2) : t3;
   }
 
-  // timefmt.ts
-  var timeOptions = {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-    timeZoneName: "short"
-  };
-  var dateOptions = {
-    year: "numeric",
-    month: "long",
-    day: "numeric"
-  };
-  var timestampRegex = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:)(\d{2})(?:\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
-  function formatTimestamp(t3, locales) {
-    const match = timestampRegex.exec(t3);
-    if (!match) {
-      return null;
-    }
-    const [, initial, second, tzOffset] = match;
-    if (tzOffset != "" && tzOffset != "Z" && tzOffset.substring(1) != "00:00") {
-      return null;
-    }
-    const d2 = /* @__PURE__ */ new Date(initial + "00Z");
-    return formatDate(d2, second, locales);
-  }
-  function formatDate(d2, second, locales) {
-    const date = d2.toLocaleDateString(locales, dateOptions);
-    const parts = Intl.DateTimeFormat(locales, timeOptions).formatToParts(d2);
-    var nTimeParts = 0;
-    var time = "";
-    var timeZoneName = "";
-    for (const { type, value } of parts) {
-      switch (type) {
-        case "hour":
-        case "minute":
-          time += value;
-          nTimeParts++;
-          break;
-        case "second":
-          time += second;
-          nTimeParts++;
-          break;
-        case "timeZoneName":
-          timeZoneName = value;
-          break;
-        case "literal":
-          if (nTimeParts > 0 && nTimeParts < 3) {
-            time += value;
-          }
-          break;
-      }
-    }
-    return { date, time, timeZoneName };
-  }
-
   // node_modules/preact/jsx-runtime/dist/jsxRuntime.module.js
   var _2 = 0;
   function o3(o4, e3, n2, t3, f3, l3) {
@@ -528,27 +472,87 @@
 
   // app.tsx
   var EventSourceContext = F(null);
-  var INITIAL_YEAR = 2e3;
-  var DateTimeComponent = () => {
+  var CardsElement = ({ children }) => {
+    return /* @__PURE__ */ o3("div", { class: "cards", children });
+  };
+  var CardElement = ({ children, title }) => {
+    return /* @__PURE__ */ o3("div", { class: "card", children: [
+      /* @__PURE__ */ o3("h3", { class: "card-title", children: title }),
+      /* @__PURE__ */ o3("div", { class: "fields", children })
+    ] });
+  };
+  var FieldElement = ({ children, desc }) => {
+    return /* @__PURE__ */ o3("div", { class: "field", children: [
+      /* @__PURE__ */ o3("span", { class: "field-name", children: [
+        desc,
+        ":"
+      ] }),
+      " ",
+      /* @__PURE__ */ o3("span", { class: "field-value", children })
+    ] });
+  };
+  function useEvent(name, key) {
     const context = q2(EventSourceContext);
-    const [state, setState] = h2(formatDate(new Date(INITIAL_YEAR, 0), "00"));
-    const handleTime = (event) => {
-      const newState = formatTimestamp(event.data);
-      if (newState != null) {
-        setState(newState);
+    const [state, setState] = h2({});
+    const handleEvent = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data != null && typeof data === "object") {
+          if (key) {
+            const map = data;
+            if (key in map) {
+              const newState = map[key];
+              if (newState !== null && typeof newState === "object") {
+                setState(newState);
+              }
+            }
+          } else {
+            setState(data);
+          }
+        }
+      } catch (e3) {
       }
     };
     p2(() => {
-      context.addEventListener("time", handleTime);
+      context.addEventListener(name, handleEvent);
       return () => {
-        context.removeEventListener("time", handleTime);
+        context.removeEventListener(name, handleEvent);
       };
     }, []);
-    return /* @__PURE__ */ o3("div", { class: "dateTime", children: [
-      /* @__PURE__ */ o3("div", { class: "timeZoneName", children: state.timeZoneName }),
-      /* @__PURE__ */ o3("div", { class: "time", children: state.time }),
-      /* @__PURE__ */ o3("div", { class: "date", children: state.date })
-    ] });
+    return state;
+  }
+  var Card = ({ title, event, init }) => {
+    const fields = [];
+    if (init) {
+      const [key, format] = init;
+      const state = useEvent("init", key);
+      addFields(fields, state, format);
+    }
+    if (event) {
+      const [key, format] = event;
+      const state = useEvent(key);
+      addFields(fields, state, format);
+    }
+    return /* @__PURE__ */ o3(CardElement, { title, children: fields.map(([desc, value]) => /* @__PURE__ */ o3(FieldElement, { desc, children: value })) });
+  };
+  function addFields(fields, state, format) {
+    for (const [key, [desc, formatter]] of Object.entries(format)) {
+      if (!(key in state)) {
+        continue;
+      }
+      const val = state[key];
+      const formatted = formatter ? formatter(val) : val;
+      fields.push([desc, formatted]);
+    }
+  }
+  var versionFormat = {
+    hw: ["Hardware"],
+    mod: ["Module"],
+    prot: ["UBX Protocol", (arg) => `${arg.major}.${arg.minor}`],
+    fw: ["Firmware", (arg) => `${arg.productCategory} ${arg.major}.${arg.minor}`]
+  };
+  var timeFormat = {
+    utc: ["UTC"]
   };
   function createEventSource() {
     const docURL = new URL(window.location.href);
@@ -557,7 +561,10 @@
   }
   var rootElement = document.getElementById("root");
   B(
-    /* @__PURE__ */ o3(EventSourceContext.Provider, { value: createEventSource(), children: /* @__PURE__ */ o3(DateTimeComponent, {}) }),
+    /* @__PURE__ */ o3(EventSourceContext.Provider, { value: createEventSource(), children: /* @__PURE__ */ o3(CardsElement, { children: [
+      /* @__PURE__ */ o3(Card, { title: "Current GPS Time", event: ["time", timeFormat] }),
+      /* @__PURE__ */ o3(Card, { title: "GPS Receiver Version", init: ["version", versionFormat] })
+    ] }) }),
     rootElement
   );
 })();

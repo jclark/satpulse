@@ -22,12 +22,14 @@ type Version struct {
 }
 
 type ProtVer struct {
-	Major, Minor byte
+	Major byte `json:"major"`
+	Minor byte `json:"minor"`
 }
 
 type FWVer struct {
-	ProductCategory string // SPG, HPG, TIM etc
-	Major, Minor    byte
+	ProductCategory string `json:"productCategory"` // SPG, HPG, TIM etc
+	Major           byte   `json:"major"`
+	Minor           byte   `json:"minor"`
 }
 
 func (m *Message) Version() *Version {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -24,6 +25,17 @@ type HTTPConfig struct {
 type SSEEvent struct {
 	Event string
 	Data  string
+}
+
+func MakeSSEEvent(event string, v any) (SSEEvent, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return SSEEvent{}, err
+	}
+	return SSEEvent{
+		Event: event,
+		Data:  string(b),
+	}, nil
 }
 
 const gracefulShutdownTimeout = 1 * time.Second

@@ -1,74 +1,102 @@
-/* General styles */
 body {
-    font-family: Arial, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    margin: 0;
-  }
-  
-  .dateTime {
-    background-color: #ffffff;
-    border-radius: 15px;
-    padding: 20px;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  
-  .timeZoneName {
-    font-size: 1.5rem;
-    margin-bottom: 5px;
-  }
-  
-  .time {
-    font-size: 6rem;
-    font-variant-numeric: tabular-nums;
-    font-weight: bold;
-    margin-bottom: 5px;
-  }
-  
-  .date {
-    font-size: 2rem;
-  }
-  
-  /* Default styles for light theme */
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.cards {
+  column-width: 18rem;
+  column-gap: 1rem;
+  padding: 1rem;
+}
+
+.card {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 0.25rem 0.375rem rgba(0, 0, 0, 0.1);
+  break-inside: avoid;
+}
+
+.card-title {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.field {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.field-name {
+  font-weight: bold;
+}
+
+.fields {
+  transition: max-height 0.3s ease-in-out;
+  max-height: 1000px;
+  overflow: hidden;
+}
+
+.collapsed .fields {
+  max-height: 0;
+}
+
+/* Light theme styles */
+body {
+  background-color: #f5f5f5; /* Light gray */
+}
+
+.card {
+  background-color: #ffffff; /* White */
+  border-left: 0.25rem solid #e67e22; /* Orange accent */
+}
+
+.card-title {
+  color: #3c8dbc; /* Light blue */
+}
+
+.field {
+  color: #555555; /* Dark gray */
+}
+
+.field-name {
+  color: #34495e; /* Dark grayish-blue */
+}
+
+.field-value {
+  color: #2c3e50; /* Darker grayish-blue */
+}
+
+/* Dark theme styles */
+@media (prefers-color-scheme: dark) {
   body {
-    background-color: #f5f5f5;
+    background-color: #1c1c1c; /* Dark gray */
   }
-  
-  .dateTime {
-    background-color: #ffffff;
+
+  .card {
+    background-color: #2c2c2c; /* Darker gray */
+    border-left: 0.25rem solid #e67e22; /* Orange accent */
   }
-  
-  .timeZoneName,
-  .date {
-    color: #388e3c; /* Darker shade of green for timezone and date in light theme */
+
+  .card-title {
+    color: #4a89dc; /* Medium blue */
   }
-  
-  .time {
-    color: #1a237e; /* Dark blue for time in light theme */
+
+  .field {
+    color: #bdc3c7; /* Light gray */
   }
-  
-  /* Styles for dark theme */
-  @media (prefers-color-scheme: dark) {
-    body {
-      background-color: #2c2c2c;
-    }
-  
-    .dateTime {
-      background-color: #000000;
-    }
-  
-    .timeZoneName,
-    .date {
-      color: #ff9800; /* Orange for timezone and date in dark theme */
-    }
-  
-    .time {
-      color: #29b6f6; /* Light blue for time in dark theme */
-    }
+
+  .field-name {
+    color: #9fd2ff; /* Lighter blue */
   }
-  
+
+  .field-value {
+    color: #ecf0f1; /* White-ish */
+  }
+}
