@@ -604,7 +604,8 @@
     fw: ["Firmware", (arg) => `${arg.productCategory} ${arg.major}.${arg.minor}`]
   };
   var timeFormat = {
-    utc: formatUTC
+    utc: formatUTC,
+    ptp: ["Seconds since PTP epoch"]
   };
   function formatUTC(utc) {
     const dt = formatTimestamp(utc);

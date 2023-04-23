@@ -169,6 +169,7 @@ const versionFormat: EventFormat = {
 
 const timeFormat: EventFormat = {
     utc: formatUTC,
+    ptp: ["Seconds since PTP epoch"],
 }
 
 function formatUTC(utc: string): FormattedField[] {

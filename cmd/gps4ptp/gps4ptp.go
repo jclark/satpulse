@@ -327,6 +327,11 @@ func syncWorker(ctx context.Context, s *Syncer) {
 	}
 }
 
+type TimeEvent struct {
+	UTC string `json:"utc"`
+	PTP int64  `json:"ptp"`
+}
+
 func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm *mon.Grandmaster, sseCh chan<- SSEEvent, f scan.Frame) {
 	lg := logctx.FromContext(ctx)
 	// TODO: handle leapsecond messages
@@ -378,7 +383,11 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 		// do corr first so that samples are updated in the SyncAnalyzer
 		gm.GPSTime(sec)
 		if sseCh != nil {
-			event, err := MakeSSEEvent("time", TimeEvent{state.leapSecond.FormatTime(secRnd)})
+			te := TimeEvent{
+				UTC: state.leapSecond.FormatTime(secRnd),
+				PTP: int64(secRnd) / 1e9,
+			}
+			event, err := MakeSSEEvent("time", te)
 			if err != nil {
 				lg.Error("failed to create SSE event", err)
 			} else {
@@ -389,6 +398,3 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 	}
 }
 
-type TimeEvent struct {
-	UTC string `json:"utc"`
-}
