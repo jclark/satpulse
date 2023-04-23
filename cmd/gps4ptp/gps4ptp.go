@@ -20,6 +20,7 @@ import (
 	"github.com/jclark/gps4ptp/internal/ptime"
 	"github.com/jclark/gps4ptp/internal/scan"
 	"github.com/jclark/gps4ptp/internal/serio"
+	"github.com/jclark/gps4ptp/internal/sse"
 	"github.com/jclark/gps4ptp/internal/tsync"
 	"github.com/jclark/gps4ptp/internal/ubx"
 
@@ -32,7 +33,7 @@ const scanBufSize = 16
 type Syncer struct {
 	tsCh  <-chan phc.TsEvent
 	fCh   <-chan scan.Frame
-	sseCh chan<- SSEEvent
+	sseCh chan<- sse.Event
 	corr  *tsync.Correlator
 	gm    *mon.Grandmaster
 	ls    ptime.LeapSecond
@@ -122,10 +123,10 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 
 	fb := startBcast(ctx, &wg, fCh)
 
-	var sseCh chan SSEEvent
-	var eb *bcast.Bcast[SSEEvent]
+	var sseCh chan sse.Event
+	var eb *bcast.Bcast[sse.Event]
 	if len(cfg.HTTP) > 0 {
-		sseCh = make(chan SSEEvent, 1)
+		sseCh = make(chan sse.Event, 1)
 		eb = startBcast(ctx, &wg, sseCh)
 	}
 	// Shut down the broadcast goroutines when the context is cancelled.
@@ -165,7 +166,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 	}
 
 	if eb != nil {
-		initEvent, err := MakeSSEEvent("init", initData)
+		initEvent, err := sse.Make("init", initData)
 		if err != nil {
 			return err
 		}
@@ -248,7 +249,7 @@ func nmeaLog(lg *slog.Logger, msg *nmea.Message) {
 }
 
 func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan.Frame,
-	guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- SSEEvent) (r *Syncer, err error) {
+	guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event) (r *Syncer, err error) {
 	err = nil
 	r = nil
 	lg := logctx.FromContext(ctx)
@@ -332,7 +333,7 @@ type TimeEvent struct {
 	PTP int64  `json:"ptp"`
 }
 
-func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm *mon.Grandmaster, sseCh chan<- SSEEvent, f scan.Frame) {
+func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm *mon.Grandmaster, sseCh chan<- sse.Event, f scan.Frame) {
 	lg := logctx.FromContext(ctx)
 	// TODO: handle leapsecond messages
 	var mt *gpsmsg.Time
@@ -387,7 +388,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 				UTC: state.leapSecond.FormatTime(secRnd),
 				PTP: int64(secRnd) / 1e9,
 			}
-			event, err := MakeSSEEvent("time", te)
+			event, err := sse.Make("time", te)
 			if err != nil {
 				lg.Error("failed to create SSE event", err)
 			} else {
@@ -397,4 +398,3 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 		state.lastTime = secRnd
 	}
 }
-

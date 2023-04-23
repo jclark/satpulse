@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jclark/gps4ptp/internal/bcast"
+	"github.com/jclark/gps4ptp/internal/sse"
 	"github.com/jclark/gps4ptp/web"
 	"golang.org/x/exp/slog"
 )
@@ -22,25 +22,9 @@ type HTTPConfig struct {
 	Listen string `toml:"listen"`
 }
 
-type SSEEvent struct {
-	Event string
-	Data  string
-}
-
-func MakeSSEEvent(event string, v any) (SSEEvent, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return SSEEvent{}, err
-	}
-	return SSEEvent{
-		Event: event,
-		Data:  string(b),
-	}, nil
-}
-
 const gracefulShutdownTimeout = 1 * time.Second
 
-func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[SSEEvent], initEvent SSEEvent) error {
+func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], initEvent sse.Event) error {
 	if len(cfg) == 0 {
 		return nil
 	}
@@ -101,7 +85,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	return nil
 }
 
-func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[SSEEvent], initEvent SSEEvent) {
+func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[sse.Event], initEvent sse.Event) {
 	defer lg.Debug("about to exit HTTP SSE request handler")
 	lg.Debug("starting to handle HTTP SSE request")
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -141,7 +125,7 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, 
 
 }
 
-func formatSSEEvent(event SSEEvent) string {
+func formatSSEEvent(event sse.Event) string {
 	data := formatSSEData(event.Data) + "\n"
 	if event.Event != "" {
 		return "event: " + event.Event + "\n" + data
