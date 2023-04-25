@@ -139,6 +139,15 @@ func (e Era) Uncertain() bool {
 	return (e & 1) == 0
 }
 
+func (e Era) StepCount() (count uint64, changing bool) {
+	count = uint64(e) >> 1
+	changing = e.Uncertain()
+	if !changing {
+		count++
+	}
+	return
+}
+
 type AtomicEra atomic.Uint64
 
 func (c *AtomicEra) Inc() Era {

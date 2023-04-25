@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/gps4ptp/internal/ptime"
+	"github.com/jclark/gps4ptp/internal/sse"
 	"golang.org/x/exp/slog"
 )
 
@@ -18,6 +19,7 @@ type Clock interface {
 type Servo struct {
 	clk               Clock
 	lg                *slog.Logger
+	sseCh             chan<- sse.Event
 	sampler           sampler
 	reset             *resetter
 	comp              *compensator
@@ -27,14 +29,22 @@ type Servo struct {
 	adjSetOffsetDelay time.Duration
 }
 
+type SampleEvent struct {
+	Offset            float64 `json:"offset"`  // in nanoseconds
+	FreqAdj           float64 `json:"freqAdj"` // in parts per billion
+	StepCount         uint32  `json:"stepCount"`
+	StepCountChanging bool    `json:"stepCountChanging,omitempty"`
+}
+
 type sampler interface {
 	sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
 }
 
-func NewServo(clk Clock, lg *slog.Logger) (*Servo, error) {
+func NewServo(clk Clock, lg *slog.Logger, sseCh chan<- sse.Event) (*Servo, error) {
 	s := Servo{}
 	s.clk = clk
 	s.lg = lg
+	s.sseCh = sseCh
 	rst := new(resetter)
 	pi := new(piController)
 	comp := new(compensator)
@@ -63,6 +73,20 @@ func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, _ time.Time, delay
 	off := local.T.Sub(ref)
 	s.lg.Debug("sample received by servo", "off", off, "gps", ref, "phc", local.T, "era", local.Era, "delayed", delayed)
 	s.sampler.sample(ref, local, delayed)
+
+	stepCount, changing := local.Era.StepCount()
+
+	event, err := sse.Make("phc", &SampleEvent{
+		Offset:            float64(off),
+		StepCount:         uint32(stepCount),
+		StepCountChanging: changing,
+		FreqAdj:           s.freqAdj,
+	})
+	if err != nil {
+		s.lg.Error("error creating sample event", err)
+		return
+	}
+	s.sseCh <- event
 }
 
 func (s *Servo) setFreqAdj(fa float64) {
@@ -92,7 +116,7 @@ func (s *Servo) adjTime(off time.Duration) ptime.Era {
 
 type piController struct {
 	servo  *Servo
-	era  ptime.Era
+	era    ptime.Era
 	offSum float64
 }
 
@@ -170,7 +194,7 @@ func (r *resetter) sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 // this delay.
 type compensator struct {
 	servo *Servo
-	era ptime.Era
+	era   ptime.Era
 }
 
 func (c *compensator) sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {

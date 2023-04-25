@@ -607,6 +607,13 @@
     utc: formatUTC,
     ptp: ["Seconds since PTP epoch"]
   };
+  var phcFormat = {
+    offset: ["Offset", (arg) => `${arg} ns`],
+    freqAdj: ["Frequency adjustment", (arg) => `${arg.toFixed(2)} ppb`],
+    stepCount: (count, obj) => [
+      ["Stepped", count + (obj.stepCountChanging ? "/" + (count + 1) : "") + " times"]
+    ]
+  };
   function formatUTC(utc) {
     const dt = formatTimestamp(utc);
     if (dt == null) {
@@ -628,6 +635,7 @@
   B(
     /* @__PURE__ */ o3(EventSourceContext.Provider, { value: createEventSource(), children: /* @__PURE__ */ o3(CardsElement, { children: [
       /* @__PURE__ */ o3(Card, { title: "Current GPS Time", event: ["time", timeFormat] }),
+      /* @__PURE__ */ o3(Card, { title: "PTP Hardware Clock", event: ["phc", phcFormat] }),
       /* @__PURE__ */ o3(Card, { title: "GPS Receiver Version", init: ["version", versionFormat] })
     ] }) }),
     rootElement

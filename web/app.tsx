@@ -172,6 +172,14 @@ const timeFormat: EventFormat = {
     ptp: ["Seconds since PTP epoch"],
 }
 
+const phcFormat: EventFormat = {
+    offset: ["Offset", (arg: number) => `${arg} ns`],
+    freqAdj: ["Frequency adjustment", (arg: number) => `${arg.toFixed(2)} ppb`],
+    stepCount: (count: number, obj: Map) => [
+        ["Stepped", count + (obj.stepCountChanging ? "/" + (count + 1) : "") + " times"],
+    ]
+}
+
 function formatUTC(utc: string): FormattedField[] {
     const dt = formatTimestamp(utc);
     if (dt == null) {
@@ -196,6 +204,7 @@ render(
     <EventSourceContext.Provider value={createEventSource()}>
         <CardsElement>
             <Card title="Current GPS Time" event={["time", timeFormat]}/>
+            <Card title="PTP Hardware Clock" event={["phc", phcFormat]}/>
             <Card title="GPS Receiver Version" init={["version", versionFormat]}/>
         </CardsElement>
     </EventSourceContext.Provider>,

@@ -255,7 +255,7 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 	lg := logctx.FromContext(ctx)
 
 	sa := mon.NewSyncAnalyzer()
-	servo, err := tsync.NewServo(clk, lg)
+	servo, err := tsync.NewServo(clk, lg, sseCh)
 	if err != nil {
 		return nil, err
 	}
