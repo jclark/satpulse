@@ -1,10 +1,15 @@
 package sse
 
-import "encoding/json"
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"strings"
+)
 
 type Event struct {
-	Event string
-	Data  string
+	event string
+	data  string
 }
 
 func Make(event string, v any) (Event, error) {
@@ -13,7 +18,33 @@ func Make(event string, v any) (Event, error) {
 		return Event{}, err
 	}
 	return Event{
-		Event: event,
-		Data:  string(b),
+		event: event,
+		data:  string(b),
 	}, nil
+}
+
+func (e Event) Format() string {
+	data := formatData(e.data) + "\n"
+	if e.event != "" {
+		return "event: " + e.event + "\n" + data
+	}
+	return data
+}
+
+func formatData(data string) string {
+	if !strings.ContainsAny(data, "\r\n") {
+		return "data: " + data + "\n"
+	}
+
+	var lines []string
+
+	scanner := bufio.NewScanner(strings.NewReader(data))
+	for scanner.Scan() {
+		lines = append(lines, "data: "+scanner.Text()+"\n")
+	}
+	if err := scanner.Err(); err != nil {
+		panic(fmt.Errorf("failed to scan data: %v", err))
+	}
+
+	return strings.Join(lines, "")
 }

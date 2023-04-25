@@ -1,14 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	_ "embed"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -92,7 +89,7 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	flusher := w.(http.Flusher)
-	_, err := w.Write(([]byte)(formatSSEEvent(initEvent)))
+	_, err := w.Write(([]byte)(initEvent.Format()))
 	if err != nil {
 		lg.Error("error writing HTTP response", err)
 		return
@@ -111,7 +108,7 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, 
 			}
 			lg.Debug("received a broadcast SSE event", "event", event)
 			// XXX: handle error
-			_, err := w.Write(([]byte)(formatSSEEvent(event)))
+			_, err := w.Write(([]byte)(event.Format()))
 			if err != nil {
 				lg.Error("error writing HTTP response", err)
 				return
@@ -123,30 +120,4 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, 
 		}
 	}
 
-}
-
-func formatSSEEvent(event sse.Event) string {
-	data := formatSSEData(event.Data) + "\n"
-	if event.Event != "" {
-		return "event: " + event.Event + "\n" + data
-	}
-	return data
-}
-
-func formatSSEData(data string) string {
-	if !strings.ContainsAny(data, "\r\n") {
-		return "data: " + data + "\n"
-	}
-
-	var lines []string
-
-	scanner := bufio.NewScanner(strings.NewReader(data))
-	for scanner.Scan() {
-		lines = append(lines, "data: "+scanner.Text()+"\n")
-	}
-	if err := scanner.Err(); err != nil {
-		panic(fmt.Errorf("failed to scan data: %v", err))
-	}
-
-	return strings.Join(lines, "")
 }
