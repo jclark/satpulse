@@ -30,8 +30,8 @@ type Servo struct {
 }
 
 type SampleEvent struct {
-	Offset            float64 `json:"offset"`  // in nanoseconds
-	FreqAdj           float64 `json:"freqAdj"` // in parts per billion
+	Offset            float64 `json:"offset"` // in nanoseconds
+	Freq              float64 `json:"freq"`   // in parts per billion
 	StepCount         uint32  `json:"stepCount"`
 	StepCountChanging bool    `json:"stepCountChanging,omitempty"`
 }
@@ -80,7 +80,7 @@ func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, _ time.Time, delay
 		Offset:            float64(off),
 		StepCount:         uint32(stepCount),
 		StepCountChanging: changing,
-		FreqAdj:           s.freqAdj,
+		Freq:              s.freqAdj,
 	})
 	if err != nil {
 		s.lg.Error("error creating sample event", err)

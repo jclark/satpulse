@@ -605,11 +605,11 @@
   };
   var timeFormat = {
     utc: formatUTC,
-    ptp: ["Seconds since PTP epoch"]
+    ptp: ["Time since PTP epoch", (arg) => `${arg} s`]
   };
   var phcFormat = {
     offset: ["Offset", (arg) => `${arg} ns`],
-    freqAdj: ["Frequency adjustment", (arg) => `${arg.toFixed(2)} ppb`],
+    freq: ["Frequency offset", (arg) => `${arg.toFixed(2)} ppb`],
     stepCount: (count, obj) => [
       ["Stepped", count + (obj.stepCountChanging ? "/" + (count + 1) : "") + " times"]
     ]

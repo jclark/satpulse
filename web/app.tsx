@@ -169,12 +169,12 @@ const versionFormat: EventFormat = {
 
 const timeFormat: EventFormat = {
     utc: formatUTC,
-    ptp: ["Seconds since PTP epoch"],
+    ptp: ["Time since PTP epoch", (arg: number) => `${arg} s`],
 }
 
 const phcFormat: EventFormat = {
     offset: ["Offset", (arg: number) => `${arg} ns`],
-    freqAdj: ["Frequency adjustment", (arg: number) => `${arg.toFixed(2)} ppb`],
+    freq: ["Frequency offset", (arg: number) => `${arg.toFixed(2)} ppb`],
     stepCount: (count: number, obj: Map) => [
         ["Stepped", count + (obj.stepCountChanging ? "/" + (count + 1) : "") + " times"],
     ]
