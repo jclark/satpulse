@@ -470,20 +470,17 @@
     month: "long",
     day: "numeric"
   };
-  var timestampRegex = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:)(\d{2})(?:\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
-  function formatTimestamp(t3, locales) {
+  var timestampRegex = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:)(\d{2})(?:\.\d+)?(?:[+-]00:00|Z)$/;
+  function formatUTCLocal(t3, locales) {
     const match = timestampRegex.exec(t3);
     if (!match) {
       return null;
     }
-    const [, initial, second, tzOffset] = match;
-    if (tzOffset != "" && tzOffset != "Z" && tzOffset.substring(1) != "00:00") {
-      return null;
-    }
+    const [, initial, second] = match;
     const d2 = /* @__PURE__ */ new Date(initial + "00Z");
-    return formatDate(d2, second, locales);
+    return formatDateLocal(d2, second, locales);
   }
-  function formatDate(d2, second, locales) {
+  function formatDateLocal(d2, second, locales) {
     const date = d2.toLocaleDateString(locales, dateOptions);
     const parts = Intl.DateTimeFormat(locales, timeOptions).formatToParts(d2);
     let time = "";
@@ -501,6 +498,24 @@
       }
     }
     return { date, time };
+  }
+  function formatNanoseconds(t3) {
+    if (t3 >= 1e9) {
+      return (t3 / 1e9).toFixed(3) + " s";
+    }
+    if (t3 >= 1e6) {
+      return (t3 / 1e6).toFixed(3) + " ms";
+    }
+    if (t3 >= 1e3) {
+      return (t3 / 1e3).toFixed(3) + " \xB5s";
+    }
+    return t3 + " ns";
+  }
+  function formatTAI(secs) {
+    return formatDateTime(new Date(secs * 1e3).toISOString());
+  }
+  function formatDateTime(t3) {
+    return t3.replace("T", " ").substring(0, 19);
   }
 
   // node_modules/preact/jsx-runtime/dist/jsxRuntime.module.js
@@ -605,17 +620,17 @@
   };
   var timeFormat = {
     utc: formatUTC,
-    ptp: ["Time since PTP epoch", (arg) => `${arg} s`]
+    tai: ["TAI", formatTAI]
   };
   var phcFormat = {
-    offset: ["Offset", (arg) => `${arg} ns`],
+    offset: ["Offset from GPS", formatNanoseconds],
     freq: ["Frequency offset", (arg) => `${arg.toFixed(2)} ppb`],
     stepCount: (count, obj) => [
       ["Stepped", count + (obj.stepCountChanging ? "/" + (count + 1) : "") + " times"]
     ]
   };
   function formatUTC(utc) {
-    const dt = formatTimestamp(utc);
+    const dt = formatUTCLocal(utc);
     if (dt == null) {
       return [];
     }
@@ -623,7 +638,7 @@
     return [
       ["Local time", time],
       ["Local date", date],
-      ["UTC", utc]
+      ["UTC", formatDateTime(utc)]
     ];
   }
   function createEventSource() {

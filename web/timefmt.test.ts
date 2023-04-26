@@ -1,7 +1,7 @@
-import { formatTimestamp } from './timefmt';
+import { formatUTCLocal } from './timefmt';
 
 test('formatTimestamp', () => {
-    const parts = formatTimestamp("2020-01-15T11:24:59Z", "en-US")
+    const parts = formatUTCLocal("2020-01-15T11:24:59Z", "en-US")
     expect(parts).not.toBeNull()
     expect(parts!.date).toContain("2020")
     expect(parts!.date).toContain("January")

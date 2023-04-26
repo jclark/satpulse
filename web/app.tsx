@@ -1,7 +1,7 @@
 
 import { render, createContext, FunctionComponent } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
-import { formatTimestamp } from './timefmt';
+import { formatUTCLocal, formatNanoseconds, formatTAI, formatDateTime } from './timefmt';
 
 const EventSourceContext = createContext<EventSource | null>(null);
 
@@ -169,11 +169,11 @@ const versionFormat: EventFormat = {
 
 const timeFormat: EventFormat = {
     utc: formatUTC,
-    ptp: ["Time since PTP epoch", (arg: number) => `${arg} s`],
+    tai: ["TAI", formatTAI],
 }
 
 const phcFormat: EventFormat = {
-    offset: ["Offset", (arg: number) => `${arg} ns`],
+    offset: ["Offset from GPS", formatNanoseconds],
     freq: ["Frequency offset", (arg: number) => `${arg.toFixed(2)} ppb`],
     stepCount: (count: number, obj: Map) => [
         ["Stepped", count + (obj.stepCountChanging ? "/" + (count + 1) : "") + " times"],
@@ -181,7 +181,7 @@ const phcFormat: EventFormat = {
 }
 
 function formatUTC(utc: string): FormattedField[] {
-    const dt = formatTimestamp(utc);
+    const dt = formatUTCLocal(utc);
     if (dt == null) {
         return []
     }
@@ -189,7 +189,7 @@ function formatUTC(utc: string): FormattedField[] {
     return [
         ["Local time", time],
         ["Local date", date],
-        ["UTC", utc]
+        ["UTC", formatDateTime(utc)]
     ]; 
 }
 

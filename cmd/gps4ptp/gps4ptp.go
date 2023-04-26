@@ -330,7 +330,7 @@ func syncWorker(ctx context.Context, s *Syncer) {
 
 type TimeEvent struct {
 	UTC string `json:"utc"`
-	PTP int64  `json:"ptp"`
+	TAI int64  `json:"tai"`
 }
 
 func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm *mon.Grandmaster, sseCh chan<- sse.Event, f scan.Frame) {
@@ -386,7 +386,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 		if sseCh != nil {
 			te := TimeEvent{
 				UTC: state.leapSecond.FormatTime(secRnd),
-				PTP: int64(secRnd) / 1e9,
+				TAI: int64(secRnd) / 1e9,
 			}
 			event, err := sse.Make("time", te)
 			if err != nil {
