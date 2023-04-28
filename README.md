@@ -73,9 +73,9 @@ Gps4ptp provides the following features:
 
     - It provides information about how UTC time can be derived from atomic time. While GPS and PTP both work natively in atomic time, which does not have leap seconds, they also provide information about leap seconds to enable UTC time to be derived from atomic time.
 
-The following features are in the process of being implemented:
-
 - It provides an HTTP interface for monitoring.
+
+The following features are in the process of being implemented:
 
 - It can examine the configuration of the U-blox receiver and reconfigure as necessary so it works well for timing purposes.
 

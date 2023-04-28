@@ -3,18 +3,28 @@
 ## General
 
 High priority
-* Control over logging in the non-sdlog case
-* how to use doc section
-* Document GPS configuration
-* Check we can download and using normal go install process
+
+* More documentation
+   * config file
+   * http monitoring
+   * how GPS should be configured
 * Merge FEATURES.md into README.md/TODO.md
-* Is pulse the best name for the config section? I think PHC or PPS might be better.
+* Is pulse the best name for the config section? PHC is better because this configures the clock that we modify?
+* Control over logging in the non-sdlog case
+* Handle losing sync better
+   * Could just message the grandmaster and exit?
+* Stats about time sync quality
+   * Maximum offset
+   * RMS offset
+   * Something on frequency
+   * Did we miss any pulses?
 
 Others
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
 * Try to get rid of the logctx package.
 * More robust handling of panics in goroutines. I think it hangs currently.
+* Allow SIGHUP to reload config: useful for disabling TCP connections.
 
 ## Grandmaster management
 
@@ -120,19 +130,26 @@ Semi-functional currently.
 * Better pairing of of ACKs with messages sent
 * Disable unwanted message
 
+## HTTP monitoring
 
-## HTTP server
-
-* Provide JSON API for current status.
-* Provide way to get events for data that is continually changing:
-  * Could do long-polling for navigation epoch that is after specified on
-  * Could use Server-Sent Events (SSE)
-  * Could use WebSockets
-* Human-readable page that repeatedly fetches current state
-* Can draw a sky view using JS canvas
+* More cards
+   * Leap seconds
+   * GPS time mode configuration
+   * GPS time pulse configuration
+   * GPS constellation/bands configuration
+   * GPS antenna status
+* Time DoP
+* In current-time card, include GPS self-reported accuracy
+* In PHC card, having something showing how long ago the sync happened
+* Information about visible satellites
+   * Could do sky view diagram using SVG or canvas
+* Prettier display of current time of day
+* Statistics about time-sync quality
+* Provide JSON API (instead of just SSE)
 * Should we use this for configuration?
    * Need to think about how we deal with concurrent requests.
-* Can use UBX-NAV-EOE to collect everything from a single navigation epoch into a single message
+   * Would need to deal with authentication
+* Can use UBX-NAV-EOE to collect everything from a single navigation epoch into a single message?
 
 ## Netlink events
 
