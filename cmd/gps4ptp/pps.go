@@ -57,7 +57,7 @@ func StartPPS(ctx context.Context, clk *phc.Clock, cfg TimePulseConfig) (<-chan 
 	if err != nil {
 		return nil, err
 	}
-	err = clk.ExttsEnable(uint32(cfg.Pin), true)
+	err = clk.ExttsEnable(uint32(cfg.Channel), true)
 	if err != nil {
 		return nil, err
 	}
