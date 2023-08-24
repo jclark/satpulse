@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/jclark/gps4ptp/internal/pmc"
-	"golang.org/x/exp/slog"
 	"golang.org/x/sys/unix"
 )
 

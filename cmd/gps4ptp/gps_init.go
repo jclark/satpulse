@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/jclark/gps4ptp/internal/gpsmsg"
@@ -14,7 +15,6 @@ import (
 	ubxbin "github.com/jclark/gps4ptp/internal/ubx/bin"
 	ubxcfg "github.com/jclark/gps4ptp/internal/ubx/cfg"
 	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slog"
 )
 
 type GPSInitData struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"github.com/jclark/gps4ptp/internal/bcast"
 	"github.com/jclark/gps4ptp/internal/scan"
 	"github.com/jclark/gps4ptp/internal/serio"
-	"golang.org/x/exp/slog"
 )
 
 type TCPConfig struct {

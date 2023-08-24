@@ -1,12 +1,12 @@
 package tsync
 
 import (
+	"log/slog"
 	"math"
 	"time"
 
 	"github.com/jclark/gps4ptp/internal/ptime"
 	"github.com/jclark/gps4ptp/internal/sse"
-	"golang.org/x/exp/slog"
 )
 
 type Clock interface {

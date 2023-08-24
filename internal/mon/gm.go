@@ -3,9 +3,10 @@ package mon
 import (
 	"time"
 
+	"log/slog"
+
 	"github.com/jclark/gps4ptp/internal/pmc"
 	"github.com/jclark/gps4ptp/internal/ptime"
-	"golang.org/x/exp/slog"
 )
 
 type GrandmasterUpdateRequest struct {

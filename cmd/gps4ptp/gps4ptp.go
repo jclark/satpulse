@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"sync"
@@ -24,7 +25,6 @@ import (
 	"github.com/jclark/gps4ptp/internal/tsync"
 	"github.com/jclark/gps4ptp/internal/ubx"
 
-	"golang.org/x/exp/slog"
 	"golang.org/x/sys/unix"
 )
 
@@ -62,7 +62,7 @@ func main() {
 	if sdLog {
 		handler = NewSdHandler(level, os.Stdout)
 	} else {
-		handler = slog.HandlerOptions{Level: level}.NewTextHandler(os.Stdout)
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	}
 	lg := slog.New(handler)
 	slog.SetDefault(lg)

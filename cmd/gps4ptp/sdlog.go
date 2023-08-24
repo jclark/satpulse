@@ -5,10 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"log/syslog"
 	"sync"
-
-	"golang.org/x/exp/slog"
 )
 
 type SdHandler struct {
@@ -35,7 +34,7 @@ func NewSdHandler(minLevel slog.Level, w io.Writer) slog.Handler {
 		},
 	}
 	return &SdHandler{
-		handler: opts.NewTextHandler(&shared.buf),
+		handler: slog.NewTextHandler(&shared.buf, &opts),
 		shared:  shared,
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -12,7 +13,6 @@ import (
 	"github.com/jclark/gps4ptp/internal/bcast"
 	"github.com/jclark/gps4ptp/internal/sse"
 	"github.com/jclark/gps4ptp/web"
-	"golang.org/x/exp/slog"
 )
 
 type HTTPConfig struct {
