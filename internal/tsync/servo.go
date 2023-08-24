@@ -74,6 +74,9 @@ func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, _ time.Time, delay
 	s.lg.Debug("sample received by servo", "off", off, "gps", ref, "phc", local.T, "era", local.Era, "delayed", delayed)
 	s.sampler.sample(ref, local, delayed)
 
+	if s.sseCh == nil {
+		return
+	}
 	stepCount, changing := local.Era.StepCount()
 
 	event, err := sse.Make("phc", &SampleEvent{
