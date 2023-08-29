@@ -11,7 +11,7 @@ High priority
 * Merge FEATURES.md into README.md/TODO.md
 * Is pulse the best name for the config section? PHC is better because this configures the clock that we modify?
 * Control over logging in the non-sdlog case
-* Handle losing sync better
+* Handle losing sync properly
    * Could just message the grandmaster and exit?
 * Stats about time sync quality
    * Maximum offset
@@ -63,7 +63,7 @@ Others
 * Can we improve how UBX-TIM-TP is handled and the corresponding PulseOffset message? Problem is that on CM4 there can be one then 1 sec between receiving the PulseOffset message and the PHC time stamp event being delivered to user space. This is because the CM4 PHY kernel driver can delay delivering the PHC timestamp by up to 0.25s
 * Investigate UBX-TIM-TP further
     * Does it use GPS week numbers when synced to BeiDou?
-    * Does it work on non-timing receivers>
+    * Does it work on non-timing receivers?
     * Does it work on clones?
 * Should prefer a message in UBX that provides TAI directly to NMEA.
     * Use UBX-NAV-EOE to wait for right message
@@ -145,6 +145,7 @@ Semi-functional currently.
    * Could do sky view diagram using SVG or canvas
 * Prettier display of current time of day
 * Statistics about time-sync quality
+    * Maybe query parameter on to give time period over which stats would be summarized
 * Provide JSON API (instead of just SSE)
 * Should we use this for configuration?
    * Need to think about how we deal with concurrent requests.
@@ -154,5 +155,3 @@ Semi-functional currently.
 ## Netlink events
 
 * Integrate experimental carrier program. Need to be able to stop and restart timesync goroutine.
-
-
