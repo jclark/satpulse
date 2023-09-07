@@ -32,6 +32,14 @@ type FWVer struct {
 	Minor           byte   `json:"minor"`
 }
 
+func (v *Version) ProductCategory() string {
+	fw := v.FW
+	if fw == nil {
+		return ""
+	}
+	return fw.ProductCategory
+}
+
 func (m *Message) Version() *Version {
 	parsed, ok := m.um.(*bin.MonVer)
 	if !ok {
@@ -59,6 +67,9 @@ func (pv ProtVer) String() string {
 }
 
 var fwVerRegexp = regexp.MustCompile(`^FWVER[= ]([A-Z]{3}) ([1-9][0-9]?)\.([0-9][0-9])$`)
+
+// LEA-M8F with protocol version 16 has a line `FTS 1.01` without any preceding FWVER
+var fwVerOldRegexp = regexp.MustCompile(`^(FTS|TIM|HPG|SPG) ([1-9][0-9]?)\.([0-9][0-9])$`)
 var protVerRegexp = regexp.MustCompile(`^PROTVER[= ]([1-9][0-9]?)\.([0-9][0-9])$`)
 var modRegexp = regexp.MustCompile(`^MOD[= ]([A-Z][-A-Z0-9]+)$`)
 var fisRegexp = regexp.MustCompile(`^FIS[= ]0[xX]`)
@@ -67,7 +78,10 @@ var gnssRegexp = regexp.MustCompile(`^GPS(;[A-Z]{3,4})*$`)
 func findFWVer(extensions []string) *FWVer {
 	submatches := findSubmatch(extensions, fwVerRegexp)
 	if submatches == nil {
-		return nil
+		submatches = findSubmatch(extensions, fwVerOldRegexp)
+		if submatches == nil {
+			return nil
+		}
 	}
 	return &FWVer{submatches[1], mustAtob(submatches[2]), mustAtob(submatches[3])}
 }

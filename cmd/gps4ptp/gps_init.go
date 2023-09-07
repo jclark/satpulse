@@ -113,7 +113,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", gr.leapSecond.UTCOffBefore, "utcOffAfter", gr.leapSecond.UTCOffAfter)
 	}
 	if gr.version != nil {
-		lg.Info("GPS version", "model", gr.version.Mod, "category", gr.version.FW.ProductCategory, "flash", gr.version.Flash,
+		lg.Info("GPS version", "model", gr.version.Mod, "category", gr.version.ProductCategory(), "flash", gr.version.Flash,
 			"sw", gr.version.SW, "hw", gr.version.HW, "prot", gr.version.Prot, "gnss", gr.version.GNSS, "ext", gr.version.Extensions)
 	}
 	lg.Info("finished GPS initialization",
