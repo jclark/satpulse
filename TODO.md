@@ -105,6 +105,10 @@ Others
 * Should we support other styles of locking in addition to flock
   * UUCP-style serial-port locking
   * TIOCEXCL - at least use TIOCGEXCL to check if it is already locked
+* Workaround kernel/HW [problem](https://github.com/raspberrypi/linux/issues/4453#issuecomment-1709315332) with framing errors on PL011.
+  We can use TIOCGICOUNT ioctl to keep track of count of framing errors, and return a separate kind of packet when we detect
+  a framing error.
+
 
 ## Scanning
 
