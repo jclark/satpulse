@@ -341,7 +341,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 	case scan.NMEA:
 		m, err := nmea.Parse(f.Data)
 		if err != nil {
-			lg.Error("nmeaParseError", err)
+			lg.Error("failed to parse NMEA message", err)
 			break
 		}
 		nmeaLog(lg, m)
@@ -349,7 +349,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 	case scan.UBX:
 		m, err := ubx.Parse(f.Data)
 		if err != nil {
-			lg.Error("ubxParseError", err)
+			lg.Error("failed to parse UBX message", err)
 			break
 		}
 		mt = m.Time()
