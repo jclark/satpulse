@@ -73,7 +73,7 @@ Loop:
 		nFds, _ := unix.Poll(pollFds, int(timeout.Milliseconds()))
 		// The idea is that if we poll and there are no pending events, then any step to the clock
 		// that we have made with adjtimex will be in effect for the next read.
-		if nFds == 0 {
+		if nFds != 1 || (pollFds[0].Revents&unix.POLLIN) == 0 {
 			era = clk.eraCounter.Load()
 			continue
 		}
