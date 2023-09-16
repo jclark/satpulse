@@ -7,6 +7,7 @@
 * With HPG products (e.g. ZED-F9P), need to use
    * UBX-CFG-TMODE3 rather than UBX-CFG-TMODE2
    * UBX-NAV-SVIN rather than UBX-TIM_SVIN
+* M8F outputs a pulse on timepulse 2
 
 ## Linux Serial
 
