@@ -13,6 +13,9 @@ High priority
 * Control over logging in the non-sdlog case
 * Handle losing sync properly
    * Could just message the grandmaster and exit?
+* Better error for no PPS
+* Check that the interface is up
+* Deal with junk when starting to read from GPS
 * Stats about time sync quality
    * Maximum offset
    * RMS offset
@@ -50,7 +53,7 @@ Others
 ## Time sync
 
 High priority
-* Better handle the case where we lose sync: may need to steo clock
+* Better handle the case where we lose sync: may need to step clock
 * Log some statistics about the servo (similar to what ptp4l does)
 * Make correlator and servo configurable from TOML
    * kp, ki constants
@@ -77,6 +80,7 @@ Others
    * keep track of standard deviation of pulse interval
    * bounds should make use of max amount of frequency adjustment
 * Should the servo do something different if there is more than 1 second since last sample? Interpolate?
+* Handle UBX-TIM-TOS on LEA-M8F
 
 ## Leap seconds
 
@@ -159,3 +163,4 @@ Semi-functional currently.
 ## Netlink events
 
 * Integrate experimental carrier program. Need to be able to stop and restart timesync goroutine.
+* This can also help when booting with systemd: be able to start up right away, and wait for interface to appear (but we also need to wait for serial device)
