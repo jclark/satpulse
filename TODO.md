@@ -9,7 +9,6 @@ High priority
    * http monitoring
    * how GPS should be configured
 * Merge FEATURES.md into README.md/TODO.md
-* Is pulse the best name for the config section? PHC is better because this configures the clock that we modify?
 * Control over logging in the non-sdlog case
 * Handle losing sync properly
    * Could just message the grandmaster and exit?

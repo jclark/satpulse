@@ -3,7 +3,7 @@
 device = "/dev/ttyAMA0"
 speed = 9600
 
-[pulse]
+[phc]
 interface = "eth0"
 
 [ptp]

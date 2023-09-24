@@ -9,7 +9,7 @@ import (
 	"github.com/jclark/gps4ptp/internal/phc"
 )
 
-type TimePulseConfig struct {
+type PHCConfig struct {
 	Interface string
 	Pin       uint8
 	Channel   uint8
@@ -17,7 +17,7 @@ type TimePulseConfig struct {
 
 const timeout = 100 * time.Microsecond
 
-func openExttsClock(cfg TimePulseConfig) (*phc.Clock, error) {
+func openExttsClock(cfg PHCConfig) (*phc.Clock, error) {
 	ifName := cfg.Interface
 	phcIndex, err := phc.IfPhcIndex(ifName)
 	if err != nil {
@@ -38,7 +38,7 @@ func openExttsClock(cfg TimePulseConfig) (*phc.Clock, error) {
 	return clk, nil
 }
 
-func validateTimePulseConfig(clk *phc.Clock, cfg TimePulseConfig) error {
+func validateTimePulseConfig(clk *phc.Clock, cfg PHCConfig) error {
 	var msg string
 	if clk.ExttsChanCount() == 0 || clk.PinCount() == 0 {
 		msg = fmt.Sprintf("PTP clock %s does not support external timestamping", clk.Path())
@@ -52,7 +52,7 @@ func validateTimePulseConfig(clk *phc.Clock, cfg TimePulseConfig) error {
 	return errors.New(msg)
 }
 
-func StartPPS(ctx context.Context, clk *phc.Clock, cfg TimePulseConfig) (<-chan phc.TsEvent, error) {
+func StartPPS(ctx context.Context, clk *phc.Clock, cfg PHCConfig) (<-chan phc.TsEvent, error) {
 	err := clk.PinSetFunc(uint32(cfg.Pin), phc.PinFuncExtts, uint32(cfg.Channel))
 	if err != nil {
 		return nil, err

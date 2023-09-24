@@ -85,7 +85,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 		return err
 	}
 
-	clk, err := openExttsClock(cfg.Pulse)
+	clk, err := openExttsClock(cfg.PHC)
 	if err != nil {
 		return err
 	}
@@ -93,7 +93,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 
 	defer func() {
 		clk.Close()
-		lg.Debug("closed the PHC", "interface", cfg.Pulse.Interface)
+		lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
 	}()
 	t, err := serio.OpenTerm(cfg.Serial.Device, cfg.Serial.Speed)
 	if err != nil {
@@ -268,7 +268,7 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 		sseCh: sseCh,
 	}
 	lg.Info("selected PTP hardware clock", "path", clk.Path())
-	s.tsCh, err = StartPPS(ctx, clk, cfg.Pulse)
+	s.tsCh, err = StartPPS(ctx, clk, cfg.PHC)
 	if err != nil {
 		return
 	}

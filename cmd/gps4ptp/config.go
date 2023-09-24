@@ -23,7 +23,7 @@ var defaultConfigFile = defaultConfigFileConst
 
 type Config struct {
 	Serial     SerialConfig
-	Pulse      TimePulseConfig
+	PHC        PHCConfig
 	TCP        []TCPConfig
 	HTTP       []HTTPConfig
 	LeapSecond LeapSecondConfig

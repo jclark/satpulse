@@ -3,7 +3,7 @@
 device = "/dev/ttyS0"
 speed = 9600
 
-[pulse]
+[phc]
 interface = "enp1s0"
 
 # This section gives read-only access on all interfaces on port 2005
