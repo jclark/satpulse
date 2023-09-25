@@ -81,6 +81,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		err = errors.New(msg)
 		return
 	}
+	lg.Info("detected a GPS")
 	lg.Debug("received suitable output message from GPS",
 		"isUBX", gr.ubxMsgCount > 0,
 		"initialInvalidByteCount", gr.invalidByteCount,
