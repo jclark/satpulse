@@ -63,7 +63,15 @@ Loop:
 				break Loop
 			}
 		}
-		state = s.nextState(state, s.nextScanIndex-fStartIndex, s.buf[s.nextScanIndex])
+		prevState := state
+		frameLen := s.nextScanIndex - fStartIndex
+		state = s.nextState(prevState, frameLen)
+		// Looks like we may have a new frame.
+		// If we have invalid date before the start of the frame, need to clear it out now.
+		if state != frameScan && prevState == frameScan && frameLen > 0 {
+			f.Kind = Invalid
+			break Loop
+		}
 		s.nextScanIndex++
 		switch state {
 		case nmeaComplete:
@@ -81,7 +89,10 @@ Loop:
 	return
 }
 
-// This returns the error it got from the Read, except in the case of EINTR
+// This returns the error it got from the Read, except in the case of EINTR.
+// fStartIndex is the index of the start of the current frame in the buffer.
+// The bytes from fStartIndex up to nextScanIndex will be moved
+// to the beginning of the buffer.
 func (s *Scanner) fill(ctx context.Context, fStartIndex int) error {
 	// move the partial packet to the start of the buffer
 	// and grow the buffer if the partial packet uses more than half the buffer
@@ -142,7 +153,10 @@ const (
 	rtcmPreamble = 0xD3
 )
 
-func (p *Scanner) nextState(state scanState, frameLen int, b byte) scanState {
+// Return a new state based on the byte at nextScanIndex.
+// frameLen is number of bytes in the frame not including the one at nextScanIndex
+func (p *Scanner) nextState(state scanState, frameLen int) scanState {
+	b := p.buf[p.nextScanIndex]
 	switch state {
 	case frameScan:
 		switch b {
@@ -203,6 +217,7 @@ func (p *Scanner) nextState(state scanState, frameLen int, b byte) scanState {
 			if b == ubxSync2 {
 				return ubxStarted
 			}
+			// XXX better handle the case where b is ubxSync1
 		case 5:
 			payloadLen := int(p.buf[p.nextScanIndex-1]) + int(b)*0x100
 			return scanState(int(ubxExpectN) + payloadLen + 2)
