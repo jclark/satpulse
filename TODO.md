@@ -14,7 +14,6 @@ High priority
    * Could just message the grandmaster and exit?
 * Better error for no PPS
 * Check that the interface is up
-* Deal with junk when starting to read from GPS
 * Stats about time sync quality
    * Maximum offset
    * RMS offset
