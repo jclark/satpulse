@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -130,17 +131,19 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 		eb = startBcast(ctx, &wg, sseCh)
 	}
 	// Shut down the broadcast goroutines when the context is cancelled.
-	wg.Add(1)
-	go func() {
+	waitGroupGo(&wg, func() {
 		<-ctx.Done()
 		fb.Close()
 		if eb != nil {
 			eb.Close()
 		}
-		wg.Done()
-	}()
+	})
 	fCh = fb.Subscribe()
 	defer func() {
+		// Avoid calling wg.Wait() if we panic
+		if r := recover(); r != nil {
+			panic(r)
+		}
 		// startScan starts a goroutine sending to fCh.
 		// We need to wait for the goroutine to close fCh, before calling port.Restore/port.Close.
 		// Otherwise, there is a possibility of reading from a file descriptor that
@@ -192,20 +195,34 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 		return err
 	}
 	if pmcClient != nil {
-		wg.Add(1)
-		go func() {
-			mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg)
-			wg.Done()
-		}()
+		waitGroupGo(&wg, func() { mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg) })
 	}
-	wg.Add(1)
-	go func() {
+	waitGroupGo(&wg, func() {
 		syncWorker(ctx, s)
 		close(gmUpdateCh)
-		wg.Done()
-	}()
+	})
 
 	return nil
+}
+
+func waitGroupGo(wg *sync.WaitGroup, f func()) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// The exitOnPanic has to be directly deferred
+		defer exitOnPanic()
+		f()
+	}()
+}
+
+func exitOnPanic() {
+	// exitOnPanic must contain the call to recover()
+	// cannot be within another function
+	if r := recover(); r != nil {
+		// Write everything in one call, since other goroutines may be running
+		fmt.Fprintf(os.Stderr, "goroutine panic: %v\n%s", r, debug.Stack())
+		os.Exit(2)
+	}
 }
 
 func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -213,6 +230,7 @@ func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
 	go func() {
+		defer exitOnPanic()
 		<-sig
 		logctx.FromContext(ctx).Debug("received signal, initiating cancellation")
 		cancel()
@@ -222,21 +240,13 @@ func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
 
 func startScan(ctx context.Context, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Frame {
 	msg := make(chan scan.Frame, 1)
-	wg.Add(1)
-	go func() {
-		serio.ScanWorker(ctx, scanner, msg)
-		wg.Done()
-	}()
+	waitGroupGo(wg, func() { serio.ScanWorker(ctx, scanner, msg) })
 	return msg
 }
 
 func startBcast[T any](ctx context.Context, wg *sync.WaitGroup, msg <-chan T) *bcast.Bcast[T] {
 	b := bcast.New(msg)
-	wg.Add(1)
-	go func() {
-		b.Run(ctx)
-		wg.Done()
-	}()
+	waitGroupGo(wg, func() { b.Run(ctx) })
 	return b
 }
 

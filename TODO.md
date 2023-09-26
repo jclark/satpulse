@@ -19,12 +19,13 @@ High priority
    * RMS offset
    * Something on frequency
    * Did we miss any pulses?
+* SIGINT still seems to be unreliable during initialization
+* Improve panic handling to deal with panics in goroutines started by other packages: send message back to main goroutine
 
 Others
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
 * Try to get rid of the logctx package.
-* More robust handling of panics in goroutines. I think it hangs currently.
 * Allow SIGHUP to reload config: useful for disabling TCP connections.
 
 ## Grandmaster management
@@ -115,6 +116,8 @@ Others
 ## Scanning
 
 * If we get the start of a frame with a specified length, then we should have a timeout reading the rest of the frame.
+* Recognizing RTCM is a bit dangerous when we might have invalid data at the beginning, because it's only
+a single byte; we really cannot tell whether we have valid RTCM data until we have validated the checksum; maybe enable RTCM only once we have had a valid message of another type. Maybe have a separate state.
 * Support other framing protocols
    * Allystar (same as UBX but uses 0xF1 0xD9)
    * Trimble TSIP
@@ -125,7 +128,6 @@ Others
 
 Semi-functional currently.
 
-* Wait for some input before sending messages?
 * UBX parsing error probably means multiple readers
 * Configure time mode
 * Configure time pulse

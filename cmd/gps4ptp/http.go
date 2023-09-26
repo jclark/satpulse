@@ -55,20 +55,17 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	server := &http.Server{Handler: mux}
 
 	for _, listener := range listeners {
-		wg.Add(1)
-
-		go func(listener net.Listener) {
-			defer wg.Done()
-			lg.Debug("HTTP server listening", "addr", listener.Addr())
-			if err := server.Serve(listener); err != http.ErrServerClosed {
-				lg.Error("HTTP serve error", err)
+		waitGroupGo(wg, func(listener net.Listener) func() {
+			return func() {
+				lg.Debug("HTTP server listening", "addr", listener.Addr())
+				if err := server.Serve(listener); err != http.ErrServerClosed {
+					lg.Error("HTTP serve error", err)
+				}
+				lg.Debug("HTTP server about to exit", "addr", listener.Addr())
 			}
-			lg.Debug("HTTP server about to exit", "addr", listener.Addr())
-		}(listener)
+		}(listener))
 	}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	waitGroupGo(wg, func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
 		defer cancel()
@@ -77,7 +74,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 			lg.Error("Server shutdown error", err)
 		}
 		lg.Debug("about to exit HTTP server shutdown goroutine")
-	}()
+	})
 
 	return nil
 }

@@ -63,10 +63,14 @@ func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TC
 		portLock <- port
 	}
 	for i, listen := range listeners {
-		wg.Add(1)
-		go tcpHandleListen(ctx, lg, wg, connConfigs[i], listen, b, portLock)
+		waitGroupGo(wg, func(connConfig tcpConnConfig, listen net.Listener) func() {
+			return func() {
+				tcpHandleListen(ctx, lg, wg, connConfig, listen, b, portLock)
+			}
+		}(connConfigs[i], listen))
 	}
 	go func() {
+		defer exitOnPanic()
 		<-ctx.Done()
 		for _, listen := range listeners {
 			listen.Close()
@@ -88,7 +92,6 @@ func convertWriteLockTimeout(secs float64) (time.Duration, error) {
 }
 
 func tcpHandleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, listen net.Listener, b *bcast.Bcast[scan.Frame], portLock chan serio.OutPort) {
-	defer wg.Done()
 	defer lg.Debug("about to exit TCP listening goroutine")
 	defer listen.Close()
 	for {
@@ -104,19 +107,16 @@ func tcpHandleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, c
 func tcpHandleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *bcast.Bcast[scan.Frame], portLock chan serio.OutPort) {
 	// XXX both the read and write workers are closing the connection.
 	// Not sure if it would better for just one of them to do so.
-	wg.Add(1)
-	go tcpConnWriteWorker(ctx, lg, wg, cfg, conn, b)
+	waitGroupGo(wg, func() { tcpConnWriteWorker(ctx, lg, cfg, conn, b) })
 	// The connReadWorker reads from the connection and writes to the serial port.
 	// The readOnly config option says not to write to the serial port.
 	if !cfg.readOnly {
-		wg.Add(1)
-		go tcpConnReadWorker(ctx, lg, wg, cfg, conn, portLock)
+		waitGroupGo(wg, func() { tcpConnReadWorker(ctx, lg, cfg, conn, portLock) })
 	}
 }
 
 // tcpConnWriteWorker reads from a channel and write to the connection.
-func tcpConnWriteWorker(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *bcast.Bcast[scan.Frame]) {
-	defer wg.Done()
+func tcpConnWriteWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig, conn net.Conn, b *bcast.Bcast[scan.Frame]) {
 	defer lg.Debug("about to exit TCP connection writing worker goroutine")
 	defer conn.Close()
 	ch := b.Subscribe()
@@ -146,8 +146,7 @@ func tcpConnWriteWorker(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup
 const writeLockTimeoutDefault = 2 * time.Second
 
 // tcpConnReadWorker reads from the connection and writes to the serial port.
-func tcpConnReadWorker(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, portLock chan serio.OutPort) {
-	defer wg.Done()
+func tcpConnReadWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig, conn net.Conn, portLock chan serio.OutPort) {
 	defer lg.Debug("about to exit TCP connection reading worker goroutine")
 	defer conn.Close()
 	var port serio.OutPort
