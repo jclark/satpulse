@@ -19,8 +19,8 @@ High priority
    * RMS offset
    * Something on frequency
    * Did we miss any pulses?
-* SIGINT still seems to be unreliable during initialization
-* Improve panic handling to deal with panics in goroutines started by other packages: send message back to main goroutine
+* There can be deadlock where the SSE broadcast routine blocks waiting for the SSE msg input to close.
+This can happen we have an interrupt signal before the syncWorker starts, since that is what is responsible for closing the SSE msg channel.
 
 Others
 * More testing (include fuzzing)

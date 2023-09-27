@@ -63,14 +63,13 @@ func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TC
 		portLock <- port
 	}
 	for i, listen := range listeners {
-		waitGroupGo(wg, func(connConfig tcpConnConfig, listen net.Listener) func() {
-			return func() {
-				tcpHandleListen(ctx, lg, wg, connConfig, listen, b, portLock)
-			}
-		}(connConfigs[i], listen))
+		connConfig := connConfigs[i]
+		listen := listen
+		waitGroupGo(wg, func() {
+			tcpHandleListen(ctx, lg, wg, connConfig, listen, b, portLock)
+		})
 	}
 	go func() {
-		defer exitOnPanic()
 		<-ctx.Done()
 		for _, listen := range listeners {
 			listen.Close()

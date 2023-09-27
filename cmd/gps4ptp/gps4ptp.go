@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"sync"
 	"time"
 
@@ -209,20 +208,8 @@ func waitGroupGo(wg *sync.WaitGroup, f func()) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// The exitOnPanic has to be directly deferred
-		defer exitOnPanic()
 		f()
 	}()
-}
-
-func exitOnPanic() {
-	// exitOnPanic must contain the call to recover()
-	// cannot be within another function
-	if r := recover(); r != nil {
-		// Write everything in one call, since other goroutines may be running
-		fmt.Fprintf(os.Stderr, "goroutine panic: %v\n%s", r, debug.Stack())
-		os.Exit(2)
-	}
 }
 
 func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -230,7 +217,6 @@ func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
 	go func() {
-		defer exitOnPanic()
 		<-sig
 		logctx.FromContext(ctx).Debug("received signal, initiating cancellation")
 		cancel()
