@@ -19,8 +19,6 @@ High priority
    * RMS offset
    * Something on frequency
    * Did we miss any pulses?
-* There can be deadlock where the SSE broadcast routine blocks waiting for the SSE msg input to close.
-This can happen we have an interrupt signal before the syncWorker starts, since that is what is responsible for closing the SSE msg channel.
 
 Others
 * More testing (include fuzzing)
