@@ -168,8 +168,10 @@ Monitor messages about antenna and report when something bad happens (loss of po
 * Provide JSON API (instead of just SSE)
 * Should we use this for configuration?
    * Need to think about how we deal with concurrent requests.
-   * Would need to deal with authentication
+   * Would require authentication
 * Can use UBX-NAV-EOE to collect everything from a single navigation epoch into a single message?
+* Support SSL
+* Support basic authentication (needs SSL to be secure)
 
 ## Chrony integration
 
