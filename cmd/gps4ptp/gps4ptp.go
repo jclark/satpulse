@@ -150,6 +150,11 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 		if err != nil {
 			cancel()
 		}
+		// ensure that the sseCh gets closed
+		// even if we don't reach the point where the syncWorker does this
+		if sseCh != nil {
+			close(sseCh)
+		}
 		wg.Wait()
 		lg.Debug("wait group counter dropped to zero")
 	}()
@@ -196,6 +201,8 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 	if pmcClient != nil {
 		waitGroupGo(&wg, func() { mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg) })
 	}
+	// the syncWorker assumes responsibility for closing the sseCh
+	sseCh = nil
 	waitGroupGo(&wg, func() {
 		syncWorker(ctx, s)
 		close(gmUpdateCh)
