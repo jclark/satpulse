@@ -35,12 +35,12 @@ High priority
 * Estimate clock accuracy and dynamically update grandmaster settings. In particular, on startup, update with low accuracy and then improve it as we settle down.
 * More sophisticated, configurable detection of whether we are synced (mostly covered by previous point)
 * Set a read/write deadline on the conn for the Unix domain socket
+* Should update grandmaster settings to a non-synced status when we shutdown.
 
 Others
 * Enable configuration of non-synced settings
 * Support ptp4u by creating dynamic config file
 * Should we update the grandmaster to non-synced while starting up?
-* Should we update the grandmaster settings to a non-synced status when we shutdown?
 
 ## TCP server
 
@@ -138,7 +138,7 @@ Semi-functional currently.
 
 ## HTTP monitoring
 
-* More cards
+* More cards in HTML interface
    * Leap seconds
    * GPS time mode configuration
    * GPS time pulse configuration
