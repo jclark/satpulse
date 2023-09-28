@@ -8,7 +8,6 @@ High priority
    * config file
    * http monitoring
    * how GPS should be configured
-* Merge FEATURES.md into README.md/TODO.md
 * Control over logging in the non-sdlog case
 * Handle losing sync properly
    * Could just message the grandmaster and exit?
@@ -38,9 +37,10 @@ High priority
 * Should update grandmaster settings to a non-synced status when we shutdown.
 
 Others
-* Enable configuration of non-synced settings
+* Enable configuration of non-synced settings or read current settings at startup
 * Support ptp4u by creating dynamic config file
-* Should we update the grandmaster to non-synced while starting up?
+* Take into account GPS reported accuracy in estimating clock accuracy
+* Should have proper concept of holdover period/accuracy (particularly with M8F and GPSDOs)
 
 ## TCP server
 
@@ -77,7 +77,10 @@ Others
    * keep track of standard deviation of pulse interval
    * bounds should make use of max amount of frequency adjustment
 * Should the servo do something different if there is more than 1 second since last sample? Interpolate?
-* Handle UBX-TIM-TOS on LEA-M8F
+* Use sawtooth correction from UBX-TIM-TOS on LEA-M8F
+* Take advantage of GPSDO-like features of LEA-M8F for holdover
+* Be able to disable sawtooth correction
+* Looks like ATGM332D may be using fTOW field of UBX-NAV-TIMEGPS to convey quantization error.
 
 ## Leap seconds
 
@@ -106,10 +109,7 @@ Others
 * Should we support other styles of locking in addition to flock
   * UUCP-style serial-port locking
   * TIOCEXCL - at least use TIOCGEXCL to check if it is already locked
-* Workaround kernel/HW [problem](https://github.com/raspberrypi/linux/issues/4453#issuecomment-1709315332) with framing errors on PL011.
-  We can use TIOCGICOUNT ioctl to keep track of count of framing errors, and return a separate kind of packet when we detect
-  a framing error.
-
+* Investigate kernel/HW [problem](https://github.com/raspberrypi/linux/issues/4453#issuecomment-1709315332) with framing errors on PL011. We can use TIOCGICOUNT ioctl to keep track of count of framing errors, and return a separate kind of packet when we detect a framing error.
 
 ## Scanning
 
@@ -124,7 +124,15 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 
 ## GPS configuration
 
-Semi-functional currently.
+Semi-functional currently. Not sure what the right thing is to do here:
+
+* We should be able to do some configuration of the GPS, in particular to enable the periodic messages that we understand.
+* Advanced users who have manually configured their GPS (e.g. with u-center) should be able to turn this off
+* Should not by default save any config persistently
+* Some really cheap GPS systems do not have flash memory, and so cannot save their configuration. These need to be configured on start-up.
+* Should this be a separate program?
+
+Specific things:
 
 * UBX parsing error probably means multiple readers
 * Configure time mode
@@ -134,7 +142,11 @@ Semi-functional currently.
    * Flash vs ROM
    * Category: timing vs high-precision etc
 * Better pairing of of ACKs with messages sent
-* Disable unwanted message
+* Disable unwanted NMEA messages
+
+## Antenna supervision
+
+Monitor messages about antenna and report when something bad happens (loss of power, jamming, short) via HTTP or logging.
 
 ## HTTP monitoring
 
@@ -143,11 +155,12 @@ Semi-functional currently.
    * GPS time mode configuration
    * GPS time pulse configuration
    * GPS constellation/bands configuration
-   * GPS antenna status
-* Time DoP
+* Time DoP from UBX-NAV-DOP
 * In current-time card, include GPS self-reported accuracy
 * In PHC card, having something showing how long ago the sync happened
 * Information about visible satellites
+   * Number of satellites
+   * Satellite elevations
    * Could do sky view diagram using SVG or canvas
 * Prettier display of current time of day
 * Statistics about time-sync quality
@@ -158,7 +171,29 @@ Semi-functional currently.
    * Would need to deal with authentication
 * Can use UBX-NAV-EOE to collect everything from a single navigation epoch into a single message?
 
+## Chrony integration
+
+Feed samples into chrony using the chrony SOCK refclock.
+
+This is better than using PHC refclock because:
+- we can feed samples only when PHC is synchronized
+- SOCK samples include leap status flag so we can feed in leap second info.
+- with CM4 we can avoid reading the PHC at a time which is likely to interfere with receiving the time pulse
+
+For hardware timestamping, chrony needs a free running PHC. One way to do this is with virtual clocks. But in case where user is not interested in PTP, it should be possible to generate samples without modifying the PHC (by keeping track of phase/frequency difference between PHC and the correct time).
+
 ## Netlink events
 
 * Integrate experimental carrier program. Need to be able to stop and restart timesync goroutine.
 * This can also help when booting with systemd: be able to start up right away, and wait for interface to appear (but we also need to wait for serial device)
+
+## Raspberry Pi CM4
+
+Detect when we are on the CM4 and deal with its limitations.
+
+Could get the driver name using ETHTOOL_GDRVINFO or look in sysfs somewhere.
+
+Specifically deal with
+
+- when carrier is lost, things stop working (ties intto netlink events)
+- we can lose pulses when reading from the PHC (ties into chrony integration)
