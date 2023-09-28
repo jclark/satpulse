@@ -83,14 +83,17 @@ The following features are in the process of being implemented:
 
 ## What hardware to get
 
-There are very few inexpensive NICs that support PPS input. At the time of writing (2023Q2), the best options are:
+There are very few inexpensive NICs that support PPS input. At the time of writing (2023Q3), the best options are:
 
-- the Intel i210, specifically the i210-T1 card; this can be used with any PC
-- Raspberry PI Compute Module 4 (CM4), combined with the official CM4 IO board
+- the Intel i210, specifically the i210-T1 card; this can be used with any PC;
+- Raspberry Pi Compute Module 4 (CM4), combined with the official CM4 IO board
 
-There are plenty of suitable GPS receivers. I recommend getting a U-blox receiver.  
+For more information (including suitable GPS receivers)
 
-More information specifically for the CM4 option (including suitable GPS receivers) is available in my [rpi-cm4-ptp-guide](https://github.com/jclark/rpi-cm4-ptp-guide) project.
+- for the i210 and other PC-based options, see my [pc-ptp-ntp-guide](https://github.com/jclark/pc-ptp-ntp-guide) project
+- for the CM4 option, see my [rpi-cm4-ptp-guide](https://github.com/jclark/rpi-cm4-ptp-guide) project 
+
+When choosing a GPS receiver for use with gps4ptp, I recommend using a u-blox receiver.
 
 For PTP to work well, clients need to have NICs with PTP hardware timestamping support. This is a common feature of modern NICs. The PTP features also need to be supported by the driver. Intel NICs generally have PTP hardware timestamping with Linux driver support.
 
