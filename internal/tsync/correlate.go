@@ -27,6 +27,14 @@ func (gtr *gpsTimeReading) isZero() bool {
 }
 
 type Sampler interface {
+	// Sample records a time sample that can be used to adjust the time.
+	// ref is the reference time; local is our local time.
+	// local is the time of the PHC at which the time pulse from the GPS was received.
+	// ref is the time in the PTP time scale that the time pulse was aligned to by the GPS;
+	// this the start of the second, but maybe adjusted for a few seconds by applying a correction specified
+	// by the GPS (sometimes called sawtooth correction).
+	// tRead is the system time at which the kernel gave us the time pulse
+	// delayed is true if this sample was delayed to the point where subsequent samples are available now
 	Sample(ref ptime.Time, local ptime.ClockTime, tRead time.Time, delayed bool)
 }
 
@@ -52,6 +60,9 @@ func NewCorrelator(s Sampler, lg *slog.Logger) *Correlator {
 	return c
 }
 
+// GPSTime records the time of the beginning of the most recent second.
+// This is in the PTP time scale.
+// tRead is the system time that the first character of the packet was received.
 func (c *Correlator) GPSTime(tGPS ptime.Time, tRead time.Time) {
 	c.gpsPending = gpsTimeReading{tGPS: tGPS, tRead: tRead}
 	po := c.findPulseOffset(tGPS, tRead)
@@ -67,6 +78,8 @@ func (c *Correlator) GPSTime(tGPS ptime.Time, tRead time.Time) {
 
 const maxEdges = 8
 
+// PulseEdge records the PHC time at which a pulse edge was received.
+// tRead is the system time when we received the timestamp event from the kernel.
 func (c *Correlator) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 	c.lg.Debug("correlator got pulse edge", "t", tClock.T, "era", tClock.Era)
 	edge := clockTimeReading{ClockTime: tClock, tRead: tRead}
