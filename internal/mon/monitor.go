@@ -11,7 +11,7 @@ import (
 const samplesToKeep = 3600
 
 type Monitor struct {
-	offsets        *FloatQueue
+	offsets        *Queue[float64]
 	lastSampleTime time.Time
 	leapSecond     ptime.LeapSecond
 	lg             *slog.Logger
@@ -26,7 +26,7 @@ func NewMonitor(leapSecond ptime.LeapSecond, updateCh chan<- GrandmasterUpdateRe
 	mon := &Monitor{
 		leapSecond: leapSecond,
 		lg:         lg,
-		offsets:    NewFloatQueue(samplesToKeep),
+		offsets:    NewQueue[float64](samplesToKeep),
 	}
 	if updateCh != nil {
 		mon.gm = NewGrandmaster(updateCh)
@@ -126,53 +126,4 @@ func rms(values []float64) float64 {
 		sum += v * v
 	}
 	return math.Sqrt(sum / float64(len(values)))
-}
-
-// XXX should use generics here
-type FloatQueue struct {
-	buf        []float64
-	start, end int
-	maxLen     int
-}
-
-func NewFloatQueue(maxLen int) *FloatQueue {
-	buf := make([]float64, maxLen*2)
-	return &FloatQueue{
-		buf:    buf,
-		maxLen: maxLen,
-	}
-}
-
-func (q *FloatQueue) Clear() {
-	q.start = 0
-	q.end = 0
-}
-
-func (q *FloatQueue) Len() int {
-	return q.end - q.start
-}
-
-func (q *FloatQueue) Append(f float64) {
-	if q.end == len(q.buf) {
-		copy(q.buf, q.Slice())
-		q.end -= q.start
-		q.start = 0
-	}
-	q.buf[q.end] = f
-	if q.end-q.start == q.maxLen {
-		q.start++
-	}
-	q.end++
-}
-
-func (q *FloatQueue) Slice() []float64 {
-	return q.buf[q.start:q.end]
-}
-
-func (q *FloatQueue) LastN(n int) []float64 {
-	start := q.end - n
-	if start < q.start {
-		start = q.start
-	}
-	return q.buf[start:q.end]
 }
