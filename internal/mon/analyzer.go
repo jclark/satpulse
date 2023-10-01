@@ -1,6 +1,7 @@
 package mon
 
 import (
+	"log/slog"
 	"math"
 	"time"
 
@@ -9,18 +10,75 @@ import (
 
 const samplesToKeep = 3600
 
-type SyncAnalyzer struct {
+type Monitor struct {
 	offsets        *FloatQueue
 	lastSampleTime time.Time
+	leapSecond     ptime.LeapSecond
+	lg             *slog.Logger
+	gm             *Grandmaster // maybe nil
+	inSync         bool
+	lastRefTime    ptime.Time
+	nConsecSamples int
+	ppsStopped     bool
 }
 
-func NewSyncAnalyzer() *SyncAnalyzer {
-	return &SyncAnalyzer{
-		offsets: NewFloatQueue(samplesToKeep),
+func NewMonitor(leapSecond ptime.LeapSecond, updateCh chan<- GrandmasterUpdateRequest, lg *slog.Logger) *Monitor {
+	mon := &Monitor{
+		leapSecond: leapSecond,
+		lg:         lg,
+		offsets:    NewFloatQueue(samplesToKeep),
 	}
+	if updateCh != nil {
+		mon.gm = NewGrandmaster(updateCh)
+	}
+	return mon
+}
+
+func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
+	off := local.T.Sub(ref)
+	mon.offsets.Append(float64(int64(off)) / 1e9)
+	ref = ref.Round(time.Second)
+	if !mon.lastRefTime.IsZero() && ref.Sub(mon.lastRefTime) != time.Second {
+		mon.lg.Info("non-consecutive samples", "prev", mon.lastRefTime, "cur", ref)
+		mon.nConsecSamples = 0
+	}
+	mon.nConsecSamples++
+	mon.lastRefTime = ref
+	if delayed {
+		return
+	}
+	inSync := mon.samplesInSync()
+	now := time.Now()
+	mon.lastSampleTime = now
+	if mon.ppsStopped {
+		mon.lg.Info("1PPS signal restored")
+		mon.ppsStopped = false
+	}
+	mon.updateInSync(inSync)
 }
 
 const holdoverDuration = 10 * time.Second
+const sampleIntervalMax = time.Second + time.Second/2
+
+func (mon *Monitor) Tick(now time.Time) {
+	if !mon.inSync {
+		return
+	}
+	t := now.Sub(mon.lastSampleTime)
+
+	if t <= sampleIntervalMax {
+		return
+	}
+
+	if !mon.ppsStopped {
+		mon.lg.Info("1PPS signal stopped")
+		mon.ppsStopped = true
+	}
+
+	if t > holdoverDuration {
+		mon.updateInSync(false)
+	}
+}
 
 // For sync, require that the maximum absolute offset is less than 50ns.
 // Reasoning is we are claiming 100ns accuracy, and we need to budget for other sources of error,
@@ -28,20 +86,31 @@ const holdoverDuration = 10 * time.Second
 const syncMaxOffsetSecs = 50e-9
 const syncNOffsets = 5
 
-func (mon *SyncAnalyzer) InSync(now time.Time) bool {
-	if now.Sub(mon.lastSampleTime) > holdoverDuration {
-		return false
-	}
-	if mon.offsets.Len() < syncNOffsets {
+// number of consecutive samples (no missing pulses) required for synchronization
+const syncNConsec = 3
+
+func (mon *Monitor) samplesInSync() bool {
+	if mon.offsets.Len() < syncNOffsets || mon.nConsecSamples < syncNConsec {
 		return false
 	}
 	return maxAbs(mon.offsets.LastN(syncNOffsets)) <= syncMaxOffsetSecs
 }
 
-func (mon *SyncAnalyzer) Sample(ref ptime.Time, local ptime.ClockTime, tRead time.Time, _ bool) {
-	off := local.T.Sub(ref)
-	mon.offsets.Append(float64(int64(off)) / 1e9)
-	mon.lastSampleTime = tRead
+func (mon *Monitor) updateInSync(inSync bool) {
+	if inSync != mon.inSync {
+		mon.lg.Info("synchronization status has changed", "inSync", inSync)
+		mon.inSync = inSync
+	}
+	if mon.gm != nil && !mon.lastRefTime.IsZero() {
+		mon.gm.Update(inSync, LeapSecondPropsAt(mon.leapSecond, mon.lastRefTime))
+	}
+}
+
+func (mon *Monitor) SetLeapSecond(leapSecond ptime.LeapSecond) {
+	if leapSecond == mon.leapSecond {
+		return
+	}
+	mon.leapSecond = leapSecond
 }
 
 func maxAbs(values []float64) (max float64) {
@@ -59,6 +128,7 @@ func rms(values []float64) float64 {
 	return math.Sqrt(sum / float64(len(values)))
 }
 
+// XXX should use generics here
 type FloatQueue struct {
 	buf        []float64
 	start, end int

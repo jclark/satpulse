@@ -3,8 +3,6 @@ package mon
 import (
 	"time"
 
-	"log/slog"
-
 	"github.com/jclark/gps4ptp/internal/pmc"
 	"github.com/jclark/gps4ptp/internal/ptime"
 )
@@ -17,13 +15,8 @@ type GrandmasterUpdateRequest struct {
 type Grandmaster struct {
 	target   GrandmasterProps
 	actual   *GrandmasterProps
-	ls       ptime.LeapSecond
-	lg       *slog.Logger
-	respCh   chan *GrandmasterProps
-	updateCh chan<- GrandmasterUpdateRequest
-	lastTime ptime.Time
-	sa       *SyncAnalyzer
-	inSync   bool
+	respCh   chan *GrandmasterProps          // maybe nil
+	updateCh chan<- GrandmasterUpdateRequest // never nil
 }
 
 type GrandmasterProps struct {
@@ -58,26 +51,16 @@ func LeapSecondPropsAt(ls ptime.LeapSecond, t ptime.Time) LeapSecondProps {
 	return props
 }
 
-func NewGrandmaster(sa *SyncAnalyzer, ls ptime.LeapSecond, updateCh chan<- GrandmasterUpdateRequest, lg *slog.Logger) *Grandmaster {
-	gm := &Grandmaster{sa: sa, lg: lg, ls: ls, updateCh: updateCh}
+func NewGrandmaster(updateCh chan<- GrandmasterUpdateRequest) *Grandmaster {
+	gm := &Grandmaster{updateCh: updateCh}
 	gm.target.SetClockInSync(false)
 	return gm
 }
 
-func (gm *Grandmaster) update() {
-	if gm.lastTime.IsZero() {
-		return
-	}
-	gm.target.LeapSecondProps = LeapSecondPropsAt(gm.ls, gm.lastTime)
-	inSync := gm.sa.InSync(time.Now())
-	if inSync != gm.inSync {
-		gm.lg.Info("synchronization status has changed", "inSync", inSync)
-		gm.inSync = inSync
-	}
+func (gm *Grandmaster) Update(inSync bool, lsp LeapSecondProps) {
 	gm.target.SetClockInSync(inSync)
-	if gm.updateCh == nil {
-		return
-	}
+	gm.target.LeapSecondProps = lsp
+
 	gm.handleResponse()
 	// Don't update if there already is a pending update
 	if gm.respCh != nil {
@@ -111,19 +94,6 @@ func (gm *Grandmaster) handleResponse() {
 	}
 }
 
-func (gm *Grandmaster) GPSTime(t ptime.Time) {
-	gm.lastTime = t
-	gm.update()
-}
-
-func (gm *Grandmaster) SetLeapSecond(ls ptime.LeapSecond) {
-	if ls == gm.ls {
-		return
-	}
-	gm.ls = ls
-	gm.update()
-}
-
 func (props *GrandmasterProps) SetClockInSync(inSync bool) {
 	if inSync {
 		props.ClockClass = pmc.ClockClassSyncPrimaryRef
@@ -147,12 +117,12 @@ func (props *GrandmasterProps) Settings() pmc.GrandmasterSettings {
 			OffsetScaledLogVariance: pmc.OffsetScaledLogVarianceUnknown,
 		},
 		UTCOffset:  props.UTCOffset,
-		TimeFlags:  pmc.CurrentUTCOffsetValid | pmc.PTPTimescale | pmc.TimeTraceable | leapFlags(props.LeapTonight),
+		TimeFlags:  pmc.CurrentUTCOffsetValid | pmc.PTPTimescale | pmc.TimeTraceable | pmcLeapFlags(props.LeapTonight),
 		TimeSource: pmc.TimeSourceGNSS,
 	}
 }
 
-func leapFlags(leapTonight LeapSecondKind) pmc.TimeFlags {
+func pmcLeapFlags(leapTonight LeapSecondKind) pmc.TimeFlags {
 	switch leapTonight {
 	case LeapSecondPositive:
 		return pmc.Leap61

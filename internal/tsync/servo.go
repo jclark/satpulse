@@ -68,7 +68,7 @@ func (s *Servo) Logger() *slog.Logger {
 	return s.lg
 }
 
-func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, _ time.Time, delayed bool) {
+func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	// PTP defines offsetFromMaster as timeOnSlave - timeOnMaster, so I think this is the right way round.
 	off := local.T.Sub(ref)
 	s.lg.Debug("sample received by servo", "off", off, "gps", ref, "phc", local.T, "era", local.Era, "delayed", delayed)

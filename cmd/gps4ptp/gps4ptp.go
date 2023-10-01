@@ -35,7 +35,7 @@ type Syncer struct {
 	fCh   <-chan scan.Frame
 	sseCh chan<- sse.Event
 	corr  *tsync.Correlator
-	gm    *mon.Grandmaster
+	m     *mon.Monitor
 	ls    ptime.LeapSecond
 }
 
@@ -257,16 +257,16 @@ func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan
 	r = nil
 	lg := logctx.FromContext(ctx)
 
-	sa := mon.NewSyncAnalyzer()
 	servo, err := tsync.NewServo(clk, lg, sseCh)
 	if err != nil {
 		return nil, err
 	}
 	ls := cfg.LeapSecond.leapSecond()
+	m := mon.NewMonitor(ls, guCh, lg)
 	s := Syncer{
-		corr:  tsync.NewCorrelator(tsync.MultiSampler(servo, sa), lg),
+		corr:  tsync.NewCorrelator(tsync.MultiSampler(servo, m), lg),
 		fCh:   fCh,
-		gm:    mon.NewGrandmaster(sa, ls, guCh, lg),
+		m:     m,
 		ls:    ls,
 		sseCh: sseCh,
 	}
@@ -284,6 +284,8 @@ type SyncState struct {
 	leapSecond ptime.LeapSecond
 }
 
+const tickPeriod = time.Second / 4
+
 // XXX Need a better name. This handles input from the GPS over the serial and timestammp channel.
 func syncWorker(ctx context.Context, s *Syncer) {
 	// loop until both channels are closed
@@ -293,7 +295,10 @@ func syncWorker(ctx context.Context, s *Syncer) {
 	if sseCh != nil {
 		defer close(sseCh)
 	}
+	ticker := time.NewTicker(tickPeriod)
+	defer ticker.Stop()
 	corr := s.corr
+	m := s.m
 	lg := logctx.FromContext(ctx)
 	lg.Debug("sync worker goroutine started")
 
@@ -322,11 +327,13 @@ func syncWorker(ctx context.Context, s *Syncer) {
 			}
 		case f, ok := <-fCh:
 			if ok {
-				syncFrame(ctx, &state, corr, s.gm, s.sseCh, f)
+				syncFrame(ctx, &state, corr, s.m, s.sseCh, f)
 			} else {
 				lg.Debug("frame channel of sync worker goroutine was closed")
 				fCh = nil
 			}
+		case t := <-ticker.C:
+			m.Tick(t)
 		}
 	}
 }
@@ -336,7 +343,7 @@ type TimeEvent struct {
 	TAI int64  `json:"tai"`
 }
 
-func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm *mon.Grandmaster, sseCh chan<- sse.Event, f scan.Frame) {
+func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, m *mon.Monitor, sseCh chan<- sse.Event, f scan.Frame) {
 	lg := logctx.FromContext(ctx)
 	// TODO: handle leapsecond messages
 	var mt *gpsmsg.Time
@@ -384,8 +391,6 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, gm
 		corr.PulseOffset(secRnd, f.TRead, mt.PulseOffset)
 	} else if secRnd > state.lastTime {
 		corr.GPSTime(secRnd, f.TRead)
-		// do corr first so that samples are updated in the SyncAnalyzer
-		gm.GPSTime(sec)
 		if sseCh != nil {
 			te := TimeEvent{
 				UTC: state.leapSecond.FormatTime(secRnd),

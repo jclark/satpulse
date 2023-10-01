@@ -33,9 +33,7 @@ type Sampler interface {
 	// ref is the time in the PTP time scale that the time pulse was aligned to by the GPS;
 	// this the start of the second, but maybe adjusted for a few seconds by applying a correction specified
 	// by the GPS (sometimes called sawtooth correction).
-	// tRead is the system time at which the kernel gave us the time pulse
-	// delayed is true if this sample was delayed to the point where subsequent samples are available now
-	Sample(ref ptime.Time, local ptime.ClockTime, tRead time.Time, delayed bool)
+	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
 }
 
 type Correlator struct {
@@ -117,13 +115,13 @@ func (c *Correlator) emitUpTo(edgeIndex int) {
 	tGPS := c.gpsPending.tGPS
 	for ; i < edgeIndex; i += c.edgesPerPulse {
 		secs := (edgeIndex - i) / c.edgesPerPulse
-		c.sampler.Sample(tGPS.Add(time.Second*time.Duration(-secs)), c.edges[i].ClockTime, c.edges[i].tRead, true)
+		c.sampler.Sample(tGPS.Add(time.Second*time.Duration(-secs)), c.edges[i].ClockTime, true)
 	}
 	c.gpsEmit(edgeIndex)
 }
 
 func (c *Correlator) gpsEmit(edgeIndex int) {
-	c.sampler.Sample(c.gpsPending.pulseTime(), c.edges[edgeIndex].ClockTime, c.edges[edgeIndex].tRead, false)
+	c.sampler.Sample(c.gpsPending.pulseTime(), c.edges[edgeIndex].ClockTime, false)
 	c.edges = c.edges[edgeIndex:]
 	c.gpsSampled = c.gpsPending
 	c.gpsPending = gpsTimeReading{}
@@ -284,9 +282,9 @@ type multiSampler struct {
 	samplers []Sampler
 }
 
-func (ms *multiSampler) Sample(ref ptime.Time, local ptime.ClockTime, tRead time.Time, delayed bool) {
+func (ms *multiSampler) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	for _, sampler := range ms.samplers {
-		sampler.Sample(ref, local, tRead, delayed)
+		sampler.Sample(ref, local, delayed)
 	}
 }
 

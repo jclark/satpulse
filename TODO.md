@@ -9,8 +9,6 @@ High priority
    * http monitoring
    * how GPS should be configured
 * Control over logging in the non-sdlog case
-* Handle losing sync properly
-   * Could just message the grandmaster and exit?
 * Better error for no PPS
 * Check that the interface is up
 * Stats about time sync quality
@@ -29,8 +27,6 @@ Others
 
 High priority
 
-* Robustly detect loss of sync
-   * Need make periodic calls to the Grandmaster even when there is no valid GPS time message
 * Estimate clock accuracy and dynamically update grandmaster settings. In particular, on startup, update with low accuracy and then improve it as we settle down.
 * More sophisticated, configurable detection of whether we are synced (mostly covered by previous point)
 * Set a read/write deadline on the conn for the Unix domain socket
