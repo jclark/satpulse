@@ -351,7 +351,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, m 
 	case scan.NMEA:
 		m, err := nmea.Parse(f.Data)
 		if err != nil {
-			lg.Error("failed to parse NMEA message", err)
+			lg.Error("failed to parse NMEA message", "err", err)
 			break
 		}
 		nmeaLog(lg, m)
@@ -359,7 +359,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, m 
 	case scan.UBX:
 		m, err := ubx.Parse(f.Data)
 		if err != nil {
-			lg.Error("failed to parse UBX message", err)
+			lg.Error("failed to parse UBX message", "err", err)
 			break
 		}
 		mt = m.Time()
@@ -398,7 +398,7 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, m 
 			}
 			event, err := sse.Make("time", te)
 			if err != nil {
-				lg.Error("failed to create SSE event", err)
+				lg.Error("failed to create SSE event", "err", err)
 			} else {
 				sseCh <- event
 			}

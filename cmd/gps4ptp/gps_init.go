@@ -221,7 +221,7 @@ func (gr *gpsReceived) frame(kind scan.FrameKind, data string, lg *slog.Logger) 
 func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 	um, err := ubx.Parse(data)
 	if err != nil {
-		lg.Error("could not parse UBX message", err)
+		lg.Error("could not parse UBX message", "err", err)
 		// UBX parsing can handle unknown message types, so it's something worse then that.
 		gr.invalidMsgCount++
 		return

@@ -28,7 +28,7 @@ func PTP4LWorker(ctx context.Context, client *pmc.Client, reqCh <-chan Grandmast
 					socketOK = false
 				}
 			} else if ctx.Err() == nil {
-				lg.Error("error while updating the PTP grandmaster using PTP management protocol", err)
+				lg.Error("error while updating the PTP grandmaster using PTP management protocol", "err", err)
 			}
 			req.resp <- nil
 		} else {

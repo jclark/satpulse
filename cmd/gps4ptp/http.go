@@ -59,7 +59,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		waitGroupGo(wg, func() {
 			lg.Debug("HTTP server listening", "addr", listener.Addr())
 			if err := server.Serve(listener); err != http.ErrServerClosed {
-				lg.Error("HTTP serve error", err)
+				lg.Error("HTTP serve error", "err", err)
 			}
 			lg.Debug("HTTP server about to exit", "addr", listener.Addr())
 		})
@@ -70,7 +70,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		defer cancel()
 		lg.Debug("initiating HTTP server shutdown")
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			lg.Error("Server shutdown error", err)
+			lg.Error("Server shutdown error", "err", err)
 		}
 		lg.Debug("about to exit HTTP server shutdown goroutine")
 	})
@@ -87,7 +87,7 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, 
 	flusher := w.(http.Flusher)
 	_, err := w.Write(([]byte)(initEvent.Format()))
 	if err != nil {
-		lg.Error("error writing HTTP response", err)
+		lg.Error("error writing HTTP response", "err", err)
 		return
 	}
 	ch := b.Subscribe()
@@ -106,7 +106,7 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, 
 			// XXX: handle error
 			_, err := w.Write(([]byte)(event.Format()))
 			if err != nil {
-				lg.Error("error writing HTTP response", err)
+				lg.Error("error writing HTTP response", "err", err)
 				return
 			}
 			flusher.Flush()

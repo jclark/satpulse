@@ -194,14 +194,14 @@ func tcpConnReadWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig, 
 		}
 		if err != nil {
 			if ctx.Err() == nil {
-				lg.Error("error writing to serial port", err)
+				lg.Error("error writing to serial port", "err", err)
 			}
 			return
 		}
 		err = serio.Drain(ctx, port, nWritten)
 		if err != nil {
 			if ctx.Err() == nil {
-				lg.Error("error draining serial port", err)
+				lg.Error("error draining serial port", "err", err)
 			}
 			return
 		}
@@ -210,6 +210,6 @@ func tcpConnReadWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig, 
 
 func logConnErr(lg *slog.Logger, msg string, err error) {
 	if !errors.Is(err, net.ErrClosed) {
-		lg.Error(msg, err)
+		lg.Error(msg, "err", err)
 	}
 }

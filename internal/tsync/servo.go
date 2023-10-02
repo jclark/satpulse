@@ -86,7 +86,7 @@ func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 		Freq:              s.freqAdj,
 	})
 	if err != nil {
-		s.lg.Error("error creating sample event", err)
+		s.lg.Error("error creating sample event", "err", err)
 		return
 	}
 	s.sseCh <- event
@@ -99,7 +99,7 @@ func (s *Servo) setFreqAdj(fa float64) {
 	}
 	err := s.clk.SetFreqAdj(fa)
 	if err != nil {
-		s.lg.Error("error adjusting the PHC frequency", err, "freqAdj", fa)
+		s.lg.Error("error adjusting the PHC frequency", "err", err, "freqAdj", fa)
 		return
 	}
 	s.lg.Debug("adjusted the PHC frequency", "oldFreqAdj", s.freqAdj, "newFreqAdj", fa, "diff", fa-s.freqAdj)
@@ -110,7 +110,7 @@ func (s *Servo) adjTime(off time.Duration) ptime.Era {
 	totalOff := off + s.adjSetOffsetDelay
 	era, err := s.clk.AdjTime(totalOff)
 	if err != nil {
-		s.lg.Error("error adjusting the PHC time", err, "totalOff", totalOff)
+		s.lg.Error("error adjusting the PHC time", "err", err, "totalOff", totalOff)
 	} else {
 		s.lg.Info("adjusted the PHC time", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
 	}
