@@ -18,7 +18,6 @@ type Monitor struct {
 	gm             *Grandmaster // maybe nil
 	inSync         bool
 	lastRefTime    ptime.Time
-	nConsecSamples int
 	ppsStopped     bool
 }
 
@@ -38,11 +37,15 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	off := local.T.Sub(ref)
 	mon.offsets.Append(float64(int64(off)) / 1e9)
 	ref = ref.Round(time.Second)
-	if !mon.lastRefTime.IsZero() && ref.Sub(mon.lastRefTime) != time.Second {
-		mon.lg.Info("non-consecutive samples", "prev", mon.lastRefTime, "cur", ref)
-		mon.nConsecSamples = 0
+	if !mon.lastRefTime.IsZero() {
+		diff := int(ref.Sub(mon.lastRefTime) / time.Second)
+		if diff > 1 {
+			mon.lg.Warn("missed 1PPS samples", "n", diff-1)
+			for i := 1; i < diff; i++ {
+				mon.offsets.Append(math.NaN())
+			}
+		}
 	}
-	mon.nConsecSamples++
 	mon.lastRefTime = ref
 	if delayed {
 		return
@@ -51,7 +54,7 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	now := time.Now()
 	mon.lastSampleTime = now
 	if mon.ppsStopped {
-		mon.lg.Info("1PPS signal restored")
+		mon.lg.Warn("1PPS signal restored")
 		mon.ppsStopped = false
 	}
 	mon.updateInSync(inSync)
@@ -71,7 +74,7 @@ func (mon *Monitor) Tick(now time.Time) {
 	}
 
 	if !mon.ppsStopped {
-		mon.lg.Info("1PPS signal stopped")
+		mon.lg.Warn("1PPS signal stopped")
 		mon.ppsStopped = true
 	}
 
@@ -85,20 +88,26 @@ func (mon *Monitor) Tick(now time.Time) {
 // specifically errors in GPS signal
 const syncMaxOffsetSecs = 50e-9
 const syncNOffsets = 5
-
-// number of consecutive samples (no missing pulses) required for synchronization
-const syncNConsec = 3
+const syncMaxMissing = 2
 
 func (mon *Monitor) samplesInSync() bool {
-	if mon.offsets.Len() < syncNOffsets || mon.nConsecSamples < syncNConsec {
+	if mon.offsets.Len() < syncNOffsets {
 		return false
 	}
-	return maxAbs(mon.offsets.LastN(syncNOffsets)) <= syncMaxOffsetSecs
+	a := accumSlice(mon.offsets.LastN(syncNOffsets))
+	if a.nNaN > 0 {
+		// if we've gone out of sync, don't allow any missing values;
+		// otherwise allow up to syncMaxMissing
+		if !mon.inSync || a.nNaN > syncMaxMissing {
+			return false
+		}
+	}
+	return a.maxAbs < syncMaxOffsetSecs
 }
 
 func (mon *Monitor) updateInSync(inSync bool) {
 	if inSync != mon.inSync {
-		mon.lg.Info("synchronization status has changed", "inSync", inSync)
+		mon.lg.Warn("synchronization status has changed", "inSync", inSync)
 		mon.inSync = inSync
 	}
 	if mon.gm != nil && !mon.lastRefTime.IsZero() {
@@ -113,17 +122,31 @@ func (mon *Monitor) SetLeapSecond(leapSecond ptime.LeapSecond) {
 	mon.leapSecond = leapSecond
 }
 
-func maxAbs(values []float64) (max float64) {
-	for _, v := range values {
-		max = math.Max(max, math.Abs(v))
-	}
-	return
+type accum struct {
+	sum        float64
+	sumSquares float64
+	maxAbs     float64
+	nNaN       int
 }
 
-func rms(values []float64) float64 {
-	sum := 0.0
+func accumSlice(values []float64) accum {
+	var a accum
+	a.addSlice(values)
+	return a
+}
+
+func (a *accum) addSlice(values []float64) {
 	for _, v := range values {
-		sum += v * v
+		a.addValue(v)
 	}
-	return math.Sqrt(sum / float64(len(values)))
+}
+
+func (a *accum) addValue(v float64) {
+	if math.IsNaN(v) {
+		a.nNaN++
+	} else {
+		a.sum += v
+		a.sumSquares += v * v
+		a.maxAbs = math.Max(a.maxAbs, math.Abs(v))
+	}
 }
