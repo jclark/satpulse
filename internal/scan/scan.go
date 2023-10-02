@@ -25,7 +25,7 @@ type Frame struct {
 
 type Scanner struct {
 	r io.Reader
-	// len(buf) says how much data was read
+	// there's valid data in buf up to len(buf); the capacity may be more
 	buf []byte
 	// nextScanIndex is first index not yet returned in a packet
 	nextScanIndex int
@@ -42,19 +42,19 @@ func New(r io.Reader, bufSize int) *Scanner {
 
 // When the error is non-nil, the packet may be of kind Invalid
 func (s *Scanner) Scan(ctx context.Context) (f Frame, err error) {
-	var state scanState
-
-	fStartIndex := s.nextScanIndex
+	state := frameScan
+	// length of the frame so far
+	// the frame is in the buffer preceding s.nextScanIndex
+	frameLen := 0
 	f = Frame{TRead: s.tRead}
 Loop:
 	for {
 		if s.nextScanIndex >= len(s.buf) {
-			if state == frameScan && fStartIndex < s.nextScanIndex {
+			if state == frameScan && frameLen > 0 {
 				f.Kind = Invalid
 				break Loop
 			}
-			err = s.fill(ctx, fStartIndex)
-			fStartIndex = 0
+			err = s.fill(ctx, frameLen)
 			if s.nextScanIndex == 0 {
 				f.TRead = s.tRead
 			}
@@ -63,15 +63,16 @@ Loop:
 				break Loop
 			}
 		}
-		prevState := state
-		frameLen := s.nextScanIndex - fStartIndex
-		state = s.nextState(prevState, frameLen)
+		nextState := s.nextState(state, frameLen)
 		// Looks like we may have a new frame.
-		// If we have invalid date before the start of the frame, need to clear it out now.
-		if state != frameScan && prevState == frameScan && frameLen > 0 {
+		// If we have invalid data before the start of the frame, need to clear it out now.
+		if nextState != frameScan && state == frameScan && frameLen > 0 {
 			f.Kind = Invalid
 			break Loop
 		}
+		// accept this character
+		state = nextState
+		frameLen++
 		s.nextScanIndex++
 		switch state {
 		case nmeaComplete:
@@ -85,36 +86,35 @@ Loop:
 			break Loop
 		}
 	}
-	f.Data = string(s.buf[fStartIndex:s.nextScanIndex])
+	f.Data = string(s.buf[s.nextScanIndex-frameLen : s.nextScanIndex])
 	return
 }
 
 // This returns the error it got from the Read, except in the case of EINTR.
-// fStartIndex is the index of the start of the current frame in the buffer.
-// The bytes from fStartIndex up to nextScanIndex will be moved
-// to the beginning of the buffer.
-func (s *Scanner) fill(ctx context.Context, fStartIndex int) error {
+// The frameLen bytes up to nextScanIndex must be kept.
+func (s *Scanner) fill(ctx context.Context, frameLen int) error {
 	// move the partial packet to the start of the buffer
 	// and grow the buffer if the partial packet uses more than half the buffer
-	keep := s.buf[fStartIndex:s.nextScanIndex]
-	nKeep := len(keep)
-	if nKeep <= cap(s.buf)/2 {
-		s.buf = s.buf[0:nKeep]
+	frameData := s.buf[s.nextScanIndex-frameLen : s.nextScanIndex]
+	if frameLen <= cap(s.buf)/2 {
+		s.buf = s.buf[0:frameLen]
 	} else {
-		s.buf = make([]byte, nKeep, cap(s.buf)*2)
+		// reallocate buffer
+		s.buf = make([]byte, frameLen, cap(s.buf)*2)
 	}
-	s.nextScanIndex = nKeep
-	copy(s.buf, keep)
-	rBuf := s.buf[nKeep:cap(s.buf)]
+	// store current frame at the beginning of buffer
+	copy(s.buf, frameData)
+	s.nextScanIndex = frameLen
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
+		rBuf := s.buf[frameLen:cap(s.buf)]
 		n, err := s.r.Read(rBuf)
 		if n > 0 {
-			s.buf = s.buf[0 : len(s.buf)+n]
+			s.buf = s.buf[0 : frameLen+n]
 			s.tRead = time.Now()
 		}
 		if err != nil {
