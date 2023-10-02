@@ -102,7 +102,7 @@ func (mon *Monitor) updateInSync(inSync bool) {
 		mon.inSync = inSync
 	}
 	if mon.gm != nil && !mon.lastRefTime.IsZero() {
-		mon.gm.Update(inSync, LeapSecondPropsAt(mon.leapSecond, mon.lastRefTime))
+		mon.gm.Update(inSync, mon.leapSecond.StateAt(mon.lastRefTime))
 	}
 }
 

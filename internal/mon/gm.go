@@ -1,8 +1,6 @@
 package mon
 
 import (
-	"time"
-
 	"github.com/jclark/gps4ptp/internal/pmc"
 	"github.com/jclark/gps4ptp/internal/ptime"
 )
@@ -20,35 +18,9 @@ type Grandmaster struct {
 }
 
 type GrandmasterProps struct {
-	LeapSecondProps
+	ptime.LeapSecondState
 	ClockClass    uint8
 	ClockAccuracy uint8
-}
-
-type LeapSecondProps struct {
-	UTCOffset   int16
-	LeapTonight LeapSecondKind
-}
-
-type LeapSecondKind int16
-
-const (
-	LeapSecondNone     LeapSecondKind = 0
-	LeapSecondPositive LeapSecondKind = 1
-	LeapSecondNegative LeapSecondKind = -1
-)
-
-func LeapSecondPropsAt(ls ptime.LeapSecond, t ptime.Time) LeapSecondProps {
-	var props LeapSecondProps
-	if t >= ls.OffChangeTime {
-		props.UTCOffset = ls.UTCOffAfter
-	} else {
-		props.UTCOffset = ls.UTCOffBefore
-		if t >= ls.OffChangeTime.Add(-12*time.Hour) {
-			props.LeapTonight = LeapSecondKind(ls.UTCOffAfter - ls.UTCOffBefore)
-		}
-	}
-	return props
 }
 
 func NewGrandmaster(updateCh chan<- GrandmasterUpdateRequest) *Grandmaster {
@@ -57,9 +29,9 @@ func NewGrandmaster(updateCh chan<- GrandmasterUpdateRequest) *Grandmaster {
 	return gm
 }
 
-func (gm *Grandmaster) Update(inSync bool, lsp LeapSecondProps) {
+func (gm *Grandmaster) Update(inSync bool, leap ptime.LeapSecondState) {
 	gm.target.SetClockInSync(inSync)
-	gm.target.LeapSecondProps = lsp
+	gm.target.LeapSecondState = leap
 
 	gm.handleResponse()
 	// Don't update if there already is a pending update
@@ -122,11 +94,11 @@ func (props *GrandmasterProps) Settings() pmc.GrandmasterSettings {
 	}
 }
 
-func pmcLeapFlags(leapTonight LeapSecondKind) pmc.TimeFlags {
+func pmcLeapFlags(leapTonight ptime.LeapSecondKind) pmc.TimeFlags {
 	switch leapTonight {
-	case LeapSecondPositive:
+	case ptime.LeapSecondPositive:
 		return pmc.Leap61
-	case LeapSecondNegative:
+	case ptime.LeapSecondNegative:
 		return pmc.Leap59
 	}
 	return 0

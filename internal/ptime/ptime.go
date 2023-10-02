@@ -28,6 +28,19 @@ type LeapSecond struct {
 	UTCOffAfter   int16 // TAI-UTC offset after leap second
 }
 
+type LeapSecondState struct {
+	UTCOffset   int16
+	LeapTonight LeapSecondKind
+}
+
+type LeapSecondKind int16
+
+const (
+	LeapSecondNone     LeapSecondKind = 0
+	LeapSecondPositive LeapSecondKind = 1
+	LeapSecondNegative LeapSecondKind = -1
+)
+
 // GPS epoch
 var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 var epochUnix = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
@@ -87,6 +100,19 @@ func (ls LeapSecond) FormatTime(t Time) string {
 	}
 	// XXX this won't display leap second correctly
 	return epochUnix.Add(time.Duration(t) - time.Duration(off)*time.Second).Format(time.RFC3339)
+}
+
+func (ls LeapSecond) StateAt(t Time) LeapSecondState {
+	var state LeapSecondState
+	if t >= ls.OffChangeTime {
+		state.UTCOffset = ls.UTCOffAfter
+	} else {
+		state.UTCOffset = ls.UTCOffBefore
+		if t >= ls.OffChangeTime.Add(-12*time.Hour) {
+			state.LeapTonight = LeapSecondKind(ls.UTCOffAfter - ls.UTCOffBefore)
+		}
+	}
+	return state
 }
 
 func TimespecToTime(t unix.Timespec) Time {
