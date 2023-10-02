@@ -876,7 +876,7 @@ func ParseMsg(frame string) (Msg, error) {
 	trimmed := frame[2:checksumIndex]
 	ckA, ckB := checksum(trimmed)
 	if ckA != frame[checksumIndex] || ckB != frame[checksumIndex+1] {
-		return nil, fmt.Errorf("ubx message: invalid checksum")
+		return nil, fmt.Errorf("ubx message: checksum failed: in message 0x%02x%02x; got 0x%02x%02x; data %x", frame[checksumIndex], frame[checksumIndex+1], ckA, ckB, []byte(trimmed))
 	}
 	mid := makeMsgID(trimmed[0], trimmed[1])
 	ctor := msgMap[mid]
