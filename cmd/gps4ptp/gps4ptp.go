@@ -363,6 +363,8 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, m 
 			break
 		}
 		mt = m.Time()
+	case scan.Invalid:
+		lg.Info("received data from GPS in unknown protocol (serial communication problem?)", "len", len(f.Data), "data", f.Data)
 	}
 	if mt == nil {
 		return
