@@ -6,11 +6,17 @@ import (
 	"github.com/jclark/gps4ptp/internal/ptime"
 )
 
-type Message interface {
-	Time() *Time
-	LeapSecond() *LeapSecond
-	TimeMode() *TimeMode
+type Handler interface {
+	Time(msg *Time, tRead time.Time)
+	LeapSecond(msg *LeapSecond, tRead time.Time)
+	TimeMode(msg *TimeMode, tRead time.Time)
 }
+
+type DefaultHandler struct{}
+
+func (h *DefaultHandler) Time(msg *Time, tRead time.Time)             {}
+func (h *DefaultHandler) LeapSecond(msg *LeapSecond, tRead time.Time) {}
+func (h *DefaultHandler) TimeMode(msg *TimeMode, tRead time.Time)     {}
 
 //go:generate stringer -type=MajorGNSS
 type MajorGNSS int

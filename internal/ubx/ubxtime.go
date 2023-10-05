@@ -9,18 +9,6 @@ import (
 	"github.com/jclark/gps4ptp/internal/ubx/bin"
 )
 
-func (m *Message) Time() *gpsmsg.Time {
-	switch u := m.um.(type) {
-	case *bin.NavTimeGPS:
-		return timeNavTimeGPS(u)
-	case *bin.NavTimeUTC:
-		return timeNavTimeUTC(u)
-	case *bin.TimTP:
-		return timeTimTP(u)
-	}
-	return nil
-}
-
 func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {
 	t := gpsmsg.Time{}
 	t.TAITime = ptime.GPS(m.Week, m.ITOW, m.FTOW)

@@ -40,11 +40,7 @@ func (v *Version) ProductCategory() string {
 	return fw.ProductCategory
 }
 
-func (m *Message) Version() *Version {
-	parsed, ok := m.um.(*bin.MonVer)
-	if !ok {
-		return nil
-	}
+func monVer(parsed *bin.MonVer) *Version {
 	x := make([]string, len(parsed.Extension))
 	for i := range parsed.Extension {
 		x[i] = bin.Latin1ZToString(parsed.Extension[i][:])

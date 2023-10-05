@@ -8,11 +8,7 @@ import (
 	"github.com/jclark/gps4ptp/internal/ubx/bin"
 )
 
-func (m *Message) LeapSecond() *gpsmsg.LeapSecond {
-	u, ok := m.um.(*bin.NavTimeLS)
-	if !ok {
-		return nil
-	}
+func leapSecond(u *bin.NavTimeLS) *gpsmsg.LeapSecond {
 	ls := gpsmsg.LeapSecond{NavEpoch: iTOWEpoch(u.ITOW)}
 	var date time.Time
 	if !leapSecondUTCOffset(u, &ls) || !leapSecondDate(u, &date) {

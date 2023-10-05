@@ -30,13 +30,15 @@ import (
 
 const scanBufSize = 16
 
-type Syncer struct {
-	tsCh  <-chan phc.TsEvent
-	fCh   <-chan scan.Frame
-	sseCh chan<- sse.Event
-	corr  *tsync.Correlator
-	m     *mon.Monitor
-	ls    ptime.LeapSecond
+type SyncRunner struct {
+	gpsmsg.DefaultHandler
+
+	sseCh    chan<- sse.Event
+	corr     *tsync.Correlator
+	m        *mon.Monitor
+	ls       ptime.LeapSecond
+	lg       *slog.Logger
+	lastTime ptime.Time
 }
 
 func main() {
@@ -90,6 +92,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 		return err
 	}
 	lg := logctx.FromContext(ctx)
+	lg.Info("selected PTP hardware clock", "path", clk.Path())
 
 	defer func() {
 		clk.Close()
@@ -194,17 +197,22 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 			return err
 		}
 	}
-	s, err := newSyncer(ctx, clk, cfg, fCh, gmUpdateCh, sseCh)
+	s, err := NewSyncRunner(lg, clk, cfg, gmUpdateCh, sseCh)
+	if err != nil {
+		return err
+	}
+
+	tsCh, err := StartPPS(ctx, clk, cfg.PHC)
 	if err != nil {
 		return err
 	}
 	if pmcClient != nil {
 		waitGroupGo(&wg, func() { mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg) })
 	}
-	// the syncWorker assumes responsibility for closing the sseCh
+	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
 	waitGroupGo(&wg, func() {
-		syncWorker(ctx, s)
+		s.run(tsCh, fCh)
 		close(gmUpdateCh)
 	})
 
@@ -244,67 +252,44 @@ func startBcast[T any](ctx context.Context, wg *sync.WaitGroup, msg <-chan T) *b
 }
 
 func nmeaLog(lg *slog.Logger, msg *nmea.Message) {
-	fields := msg.Fields()
-	if fields.SentenceFmt == "TXT" && len(fields.DataFields) >= 4 {
+	if msg.SentenceFmt == "TXT" && len(msg.Fields) >= 4 {
 		// When we open an ACM device, the GPS receiver sends TXT messages with each line of the boot screen
-		lg.Debug("received NMEA TXT message", "s", fields.DataFields[3])
+		lg.Debug("received NMEA TXT message", "s", msg.Fields[3])
 	}
 }
 
-func newSyncer(ctx context.Context, clk *phc.Clock, cfg *Config, fCh <-chan scan.Frame,
-	guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event) (r *Syncer, err error) {
-	err = nil
-	r = nil
-	lg := logctx.FromContext(ctx)
-
+func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, cfg *Config, guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event) (*SyncRunner, error) {
 	servo, err := tsync.NewServo(clk, lg, sseCh)
 	if err != nil {
 		return nil, err
 	}
 	ls := cfg.LeapSecond.leapSecond()
 	m := mon.NewMonitor(ls, guCh, lg)
-	s := Syncer{
+	s := SyncRunner{
 		corr:  tsync.NewCorrelator(tsync.MultiSampler(servo, m), lg),
-		fCh:   fCh,
 		m:     m,
 		ls:    ls,
+		lg:    lg,
 		sseCh: sseCh,
 	}
-	lg.Info("selected PTP hardware clock", "path", clk.Path())
-	s.tsCh, err = StartPPS(ctx, clk, cfg.PHC)
-	if err != nil {
-		return
-	}
-	r = &s
-	return
-}
-
-type SyncState struct {
-	lastTime   ptime.Time
-	leapSecond ptime.LeapSecond
+	return &s, nil
 }
 
 const tickPeriod = time.Second / 4
 
-// XXX Need a better name. This handles input from the GPS over the serial and timestammp channel.
-func syncWorker(ctx context.Context, s *Syncer) {
+func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, fCh <-chan scan.Frame) {
 	// loop until both channels are closed
-	tsCh := s.tsCh
-	fCh := s.fCh
 	sseCh := s.sseCh
 	if sseCh != nil {
 		defer close(sseCh)
 	}
 	ticker := time.NewTicker(tickPeriod)
 	defer ticker.Stop()
-	corr := s.corr
-	m := s.m
-	lg := logctx.FromContext(ctx)
+	lg := s.lg
 	lg.Debug("sync worker goroutine started")
 
 	nSkipped := 0
-	var state SyncState
-	state.leapSecond = s.ls
+
 	for tsCh != nil || fCh != nil {
 		select {
 		case e, ok := <-tsCh:
@@ -319,7 +304,7 @@ func syncWorker(ctx context.Context, s *Syncer) {
 						lg.Info("skipped stale PTP hardware clock timestamps", "n", nSkipped)
 						nSkipped = 0
 					}
-					corr.PulseEdge(e.ClockTime, e.TRead)
+					s.corr.PulseEdge(e.ClockTime, e.TRead)
 				}
 			} else {
 				lg.Debug("timestamp channel of sync worker goroutine was closed")
@@ -327,13 +312,13 @@ func syncWorker(ctx context.Context, s *Syncer) {
 			}
 		case f, ok := <-fCh:
 			if ok {
-				syncFrame(ctx, &state, corr, s.m, s.sseCh, f)
+				s.handleFrame(f)
 			} else {
 				lg.Debug("frame channel of sync worker goroutine was closed")
 				fCh = nil
 			}
 		case t := <-ticker.C:
-			m.Tick(t)
+			s.m.Tick(t)
 		}
 	}
 }
@@ -343,40 +328,32 @@ type TimeEvent struct {
 	TAI int64  `json:"tai"`
 }
 
-func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, m *mon.Monitor, sseCh chan<- sse.Event, f scan.Frame) {
-	lg := logctx.FromContext(ctx)
+func (s *SyncRunner) handleFrame(f scan.Frame) {
 	// TODO: handle leapsecond messages
-	var mt *gpsmsg.Time
+	lg := s.lg
 	switch f.Kind {
 	case scan.NMEA:
-		m, err := nmea.Parse(f.Data)
+		err := nmea.ProcessFrameData(f.Data, f.TRead, s, s)
 		if err != nil {
 			lg.Error("failed to parse NMEA message", "err", err)
-			break
 		}
-		nmeaLog(lg, m)
-		mt = m.Time()
 	case scan.UBX:
-		m, err := ubx.Parse(f.Data)
+		err := ubx.ProcessFrameData(f.Data, f.TRead, s, nil)
 		if err != nil {
 			lg.Error("failed to parse UBX message", "err", err)
-			break
 		}
-		mt = m.Time()
 	case scan.Invalid:
 		lg.Info("received data from GPS in unknown protocol (serial communication problem?)", "len", len(f.Data), "data", f.Data)
 	}
-	if mt == nil {
-		return
-	}
+}
+
+func (s *SyncRunner) Time(mt *gpsmsg.Time, tRead time.Time) {
 	if false {
 		bytes, err := json.Marshal(mt)
 		if err == nil {
 			fmt.Println(string(bytes))
 		}
 	}
-	// TODO: make calls on s.gm when no valid time is received from GPS
-	// Can do this by having allowing Time to represent an invalid Time
 	var sec ptime.Time
 	if !mt.TAITime.IsZero() {
 		sec = mt.TAITime
@@ -385,26 +362,30 @@ func syncFrame(ctx context.Context, state *SyncState, corr *tsync.Correlator, m 
 		if u == nil {
 			return
 		}
-		sec = state.leapSecond.UTCtoTime(*u)
-		lg.Debug("computed TAI time from UTC time", "tai", sec)
+		sec = s.ls.UTCtoTime(*u)
+		s.lg.Debug("computed TAI time from UTC time", "tai", sec)
 	}
 	secRnd := sec.Round(time.Second)
 	if mt.PrecedesPulse {
-		corr.PulseOffset(secRnd, f.TRead, mt.PulseOffset)
-	} else if secRnd > state.lastTime {
-		corr.GPSTime(secRnd, f.TRead)
-		if sseCh != nil {
+		s.corr.PulseOffset(secRnd, tRead, mt.PulseOffset)
+	} else if secRnd > s.lastTime {
+		s.corr.GPSTime(secRnd, tRead)
+		if s.sseCh != nil {
 			te := TimeEvent{
-				UTC: state.leapSecond.FormatTime(secRnd),
+				UTC: s.ls.FormatTime(secRnd),
 				TAI: int64(secRnd) / 1e9,
 			}
 			event, err := sse.Make("time", te)
 			if err != nil {
-				lg.Error("failed to create SSE event", "err", err)
+				s.lg.Error("failed to create SSE event", "err", err)
 			} else {
-				sseCh <- event
+				s.sseCh <- event
 			}
 		}
-		state.lastTime = secRnd
+		s.lastTime = secRnd
 	}
+}
+
+func (s *SyncRunner) NMEA(msg *nmea.Message, tRead time.Time) {
+	nmeaLog(s.lg, msg)
 }

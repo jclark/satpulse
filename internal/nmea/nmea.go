@@ -3,73 +3,75 @@ package nmea
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jclark/gps4ptp/internal/gpsmsg"
 	"github.com/jclark/gps4ptp/internal/ptime"
 )
 
 // For a proprietary sentence Pxxx, SentenceFmt is Pxxx and TalkerId is the empty string.
-type Fields struct {
+type Message struct {
 	SentenceFmt string
 	TalkerID    string
-	DataFields  []string
+	Fields      []string
 	ChecksumOK  bool
 }
 
-type Message struct {
-	fields Fields
-	utc    *ptime.UTCTime
+// Protocol-specific handler
+type ProtHandler interface {
+	NMEA(msg *Message, tRead time.Time)
+}
+
+func ProcessFrameData(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
+	msg, err := Parse(data)
+	if err != nil {
+		return err
+	}
+	return Dispatch(msg, tRead, h, ph)
 }
 
 // Precondition is that data is valid according to Scanner.Read.
 func Parse(data string) (*Message, error) {
-	f := Split(data)
-	if !f.ChecksumOK {
+	msg := Split(data)
+	if !msg.ChecksumOK {
 		return nil, fmt.Errorf("NMEA checksum error")
 	}
-	var utc *ptime.UTCTime
-	var err error
-	switch f.SentenceFmt {
+	return msg, nil
+}
+
+func Dispatch(msg *Message, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
+	switch msg.SentenceFmt {
 	case "RMC":
-		utc, err = parseRMC(f)
+		return dispatchTime(parseRMC, msg, tRead, h)
 	case "ZDA":
-		utc, err = parseZDA(f)
+		return dispatchTime(parseZDA, msg, tRead, h)
 	}
+	if ph != nil {
+		ph.NMEA(msg, tRead)
+	}
+	return nil
+}
+
+func dispatchTime(parser func(*Message) (*ptime.UTCTime, error), msg *Message, tRead time.Time, h gpsmsg.Handler) error {
+	utc, err := parser(msg)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	m := &Message{fields: f, utc: utc}
-	return m, nil
-}
-
-func (m *Message) Fields() Fields {
-	return m.fields
-}
-
-func (m *Message) Time() *gpsmsg.Time {
-	if m.utc == nil {
-		return nil
-	}
-	mt := gpsmsg.Time{UTCTime: m.utc, GNSS: talkerIDToGNSS(m.fields.TalkerID)}
-	switch m.fields.SentenceFmt {
-	case "RMC", "ZDA":
-		return &mt
+	mt := gpsmsg.Time{UTCTime: utc, GNSS: talkerIDToGNSS(msg.TalkerID)}
+	if h != nil {
+		h.Time(&mt, tRead)
 	}
 	return nil
 }
 
-func (m *Message) LeapSecond() *ptime.LeapSecond {
-	return nil
-}
-
-func parseRMC(f Fields) (*ptime.UTCTime, error) {
-	k := f.TalkerID + "RMC"
-	if len(f.DataFields) < 9 {
+func parseRMC(msg *Message) (*ptime.UTCTime, error) {
+	k := msg.TalkerID + "RMC"
+	if len(msg.Fields) < 9 {
 		return nil, fmt.Errorf("%s: too few fields", k)
 	}
-	timeStr := f.DataFields[0]
-	dateStr := f.DataFields[8]
-	if timeStr == "" || dateStr == "" || f.DataFields[1] != "A" {
+	timeStr := msg.Fields[0]
+	dateStr := msg.Fields[8]
+	if timeStr == "" || dateStr == "" || msg.Fields[1] != "A" {
 		return nil, nil
 	}
 	var year uint16
@@ -94,12 +96,12 @@ func parseRMC(f Fields) (*ptime.UTCTime, error) {
 	return &utc, nil
 }
 
-func parseZDA(f Fields) (*ptime.UTCTime, error) {
-	k := f.TalkerID + "ZDA"
-	if len(f.DataFields) < 4 {
+func parseZDA(msg *Message) (*ptime.UTCTime, error) {
+	k := msg.TalkerID + "ZDA"
+	if len(msg.Fields) < 4 {
 		return nil, fmt.Errorf("%s: too few fields", k)
 	}
-	timeStr := f.DataFields[0]
+	timeStr := msg.Fields[0]
 	if timeStr == "" {
 		return nil, nil
 	}
@@ -110,7 +112,7 @@ func parseZDA(f Fields) (*ptime.UTCTime, error) {
 		return nil, fmt.Errorf("%s: %s: invalid time", k, timeStr)
 	}
 	for i := 1; i < 4; i++ {
-		d := f.DataFields[i]
+		d := msg.Fields[i]
 		if d == "" {
 			return nil, nil
 		}
@@ -122,13 +124,13 @@ func parseZDA(f Fields) (*ptime.UTCTime, error) {
 			return nil, fmt.Errorf("%s: %s: invalid date field", k, d)
 		}
 	}
-	_, _ = fmt.Sscanf(f.DataFields[1], "%02d", &day)
-	_, _ = fmt.Sscanf(f.DataFields[2], "%02d", &month)
-	_, _ = fmt.Sscanf(f.DataFields[3], "%04d", &year)
+	_, _ = fmt.Sscanf(msg.Fields[1], "%02d", &day)
+	_, _ = fmt.Sscanf(msg.Fields[2], "%02d", &month)
+	_, _ = fmt.Sscanf(msg.Fields[3], "%04d", &year)
 	// Need a limit on year to ensure ptime.Time isn't out of range
 	// Allow 1980 since first version of NMEA was issued was 1980.
 	if year < 1980 || year > 2099 {
-		return nil, fmt.Errorf("%s: %s: invalid year", k, f.DataFields[3])
+		return nil, fmt.Errorf("%s: %s: invalid year", k, msg.Fields[3])
 	}
 	utc := ptime.UTC(year, month, day, hour, min, sec, nanos)
 	return &utc, nil
@@ -181,11 +183,11 @@ func talkerIDToGNSS(t string) *gpsmsg.MajorGNSS {
 	return &g
 }
 
-func Split(data string) Fields {
+func Split(data string) *Message {
 	before, after, _ := strings.Cut(data[1:], "*")
 	fields := strings.Split(before, ",")
-	msg := Fields{
-		DataFields: fields[1:],
+	msg := Message{
+		Fields:     fields[1:],
 		ChecksumOK: checksum(before) == hexToByte(after),
 	}
 	addr := fields[0]
@@ -200,7 +202,7 @@ func Split(data string) Fields {
 	} else {
 		msg.SentenceFmt = addr
 	}
-	return msg
+	return &msg
 }
 
 func checksum(data string) byte {

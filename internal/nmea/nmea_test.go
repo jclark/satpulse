@@ -2,20 +2,22 @@ package nmea
 
 import (
 	"testing"
+	"time"
 
+	"github.com/jclark/gps4ptp/internal/gpsmsg"
 	"github.com/jclark/gps4ptp/internal/ptime"
 )
 
 func TestSplit(t *testing.T) {
 	f := Split("$GPGLL,5057.970,N,00146.110,E,142451,A*27\r\n")
-	df := f.DataFields
+	df := f.Fields
 	if f.TalkerID != "GP" || f.SentenceFmt != "GLL" || !f.ChecksumOK || len(df) != 6 ||
 		df[0] != "5057.970" || df[1] != "N" || df[2] != "00146.110" ||
 		df[3] != "E" || df[4] != "142451" || df[5] != "A" {
 		t.Fatalf("NMEASplit failed")
 	}
 	f = Split("$GPTXT,1,Hello^21,3*FF\r\n")
-	df = f.DataFields
+	df = f.Fields
 	if len(df) != 3 || df[1] != "Hello!" {
 		t.Fatalf("NMEASplit failed on caret")
 	}
@@ -46,17 +48,28 @@ func testTime(t *testing.T, s string, expectUTC ptime.UTCTime) {
 	if e != nil {
 		t.Fatalf("nmea.Parse failed: %v: %s", e, s)
 	}
-	tm := m.Time()
-	if tm == nil {
-		t.Fatalf("nmea.Time failed: %s", s)
+	var h timeHandler
+	var zt time.Time
+	e = Dispatch(m, zt, &h, nil)
+	if e != nil {
+		t.Fatalf("nmea.Dispatch failed: %v: %s", e, s)
 	}
-	utc := tm.UTCTime
+	utc := h.utc
 	if utc == nil {
 		t.Fatalf("nmea.UTCTime failed: %s", s)
 	}
 	if *utc != expectUTC {
 		t.Fatalf("nmea.UTCTime wrong time: %s: got %v, want %v", s, utc, expectUTC)
 	}
+}
+
+type timeHandler struct {
+	gpsmsg.DefaultHandler
+	utc *ptime.UTCTime
+}
+
+func (h *timeHandler) Time(msg *gpsmsg.Time, _ time.Time) {
+	h.utc = msg.UTCTime
 }
 
 func TestScanTime(t *testing.T) {

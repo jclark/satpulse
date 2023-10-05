@@ -5,16 +5,6 @@ import (
 	"github.com/jclark/gps4ptp/internal/ubx/bin"
 )
 
-func (m *Message) TimeMode() *gpsmsg.TimeMode {
-	switch u := m.um.(type) {
-	case *bin.CfgTmode2:
-		return timeMode2(u)
-	case *bin.CfgTmode3:
-		return timeMode3(u)
-	}
-	return nil
-}
-
 func timeMode2(u *bin.CfgTmode2) *gpsmsg.TimeMode {
 	tm := &gpsmsg.TimeMode{}
 	switch u.TimeMode {

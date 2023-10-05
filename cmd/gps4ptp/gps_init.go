@@ -22,7 +22,10 @@ type GPSInitData struct {
 	TimeMode *gpsmsg.TimeMode `json:"timeMode,omitempty"`
 }
 
+// XXX this needs to be renamed
 type gpsReceived struct {
+	gpsmsg.DefaultHandler
+	lg               *slog.Logger
 	ubxMsgCount      int
 	nmeaMsgCount     int
 	rtcmMsgCount     int
@@ -41,7 +44,7 @@ type gpsReceived struct {
 func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort) (initData *GPSInitData, err error) {
 	lg := logctx.FromContext(ctx)
 	gr := gpsReceived{}
-	gr.init()
+	gr.init(lg)
 	// Stage 1: Validate that we are receiving data correctly from a GPS.
 	// The criteria for this is that we get a NMEA or UBX message with a valid checksum
 	// (not necessarily a message that we understand).
@@ -55,7 +58,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		select {
 		case frame, ok := <-frameCh:
 			if ok {
-				gr.frame(frame.Kind, string(frame.Data), lg)
+				gr.frame(frame)
 			} else {
 				frameCh = nil
 			}
@@ -112,7 +115,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		select {
 		case frame, ok := <-frameCh:
 			if ok {
-				gr.frame(frame.Kind, string(frame.Data), lg)
+				gr.frame(frame)
 			} else {
 				frameCh = nil
 			}
@@ -192,7 +195,8 @@ func tpTimegridGPS() []byte {
 	return bytes
 }
 
-func (gr *gpsReceived) init() {
+func (gr *gpsReceived) init(lg *slog.Logger) {
+	gr.lg = lg
 	gr.nmeaSentences = map[string]map[string]bool{}
 	gr.ack = map[ubxbin.MsgID]bool{}
 }
@@ -205,41 +209,41 @@ func (gr *gpsReceived) validMessageCount() int {
 	return gr.suitableMessageCount() + gr.rtcmMsgCount
 }
 
-func (gr *gpsReceived) frame(kind scan.FrameKind, data string, lg *slog.Logger) {
-	switch kind {
+func (gr *gpsReceived) frame(f scan.Frame) {
+	data := f.Data
+	switch f.Kind {
 	case scan.NMEA:
-		gr.nmea(data, lg)
+		gr.nmea(data)
 	case scan.UBX:
-		gr.ubx(data, lg)
+		err := ubx.ProcessFrameData(data, f.TRead, gr, gr)
+		if err != nil {
+			gr.lg.Error("could not parse UBX message", "err", err)
+			// UBX parsing can handle unknown message types, so it's something worse then that.
+			gr.invalidMsgCount++
+		} else {
+			gr.ubxMsgCount++
+		}
 	case scan.RTCM:
-		gr.rtcm(data, lg)
+		gr.rtcm(data)
 	default:
-		gr.invalid(data, lg)
+		gr.invalid(data)
 	}
 }
 
-func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
-	um, err := ubx.Parse(data)
-	if err != nil {
-		lg.Error("could not parse UBX message", "err", err)
-		// UBX parsing can handle unknown message types, so it's something worse then that.
-		gr.invalidMsgCount++
-		return
-	}
-	gr.ubxMsgCount++
-	u := um.UBX()
-	ls := um.LeapSecond()
-	if ls != nil {
-		gr.leapSecond = ls
-	}
-	ver := um.Version()
-	if ver != nil {
-		gr.version = ver
-	}
-	tm := um.TimeMode()
-	if tm != nil {
-		gr.timeMode = tm
-	}
+func (gr *gpsReceived) LeapSecond(ls *gpsmsg.LeapSecond, _ time.Time) {
+	gr.leapSecond = ls
+}
+
+func (gr *gpsReceived) Version(ver *ubx.Version, _ time.Time) {
+	gr.version = ver
+}
+
+func (gr *gpsReceived) TimeMode(tm *gpsmsg.TimeMode, _ time.Time) {
+	gr.timeMode = tm
+}
+
+func (gr *gpsReceived) UBX(u ubxbin.Msg, _ time.Time) {
+	lg := gr.lg
 	switch parsed := u.(type) {
 	case *ubxbin.CfgTp5:
 		gr.tp5 = parsed
@@ -256,26 +260,27 @@ func (gr *gpsReceived) ubx(data string, lg *slog.Logger) {
 	}
 }
 
-func (gr *gpsReceived) nmea(data string, lg *slog.Logger) {
-	m, err := nmea.Parse(data)
+func (gr *gpsReceived) nmea(data string) {
+	lg := gr.lg
+	msg, err := nmea.Parse(data)
 	if err != nil {
 		lg.Debug("received an NMEA message with invalid checksum during initialization")
 		gr.invalidMsgCount++
 		return
 	}
 	gr.nmeaMsgCount++
-	fields := m.Fields()
-	lg.Debug("received an NMEA message during initialization", "sentence", fields.TalkerID+fields.SentenceFmt)
-	talkerMap := gr.nmeaSentences[fields.SentenceFmt]
+	lg.Debug("received an NMEA message during initialization", "sentence", msg.TalkerID+msg.SentenceFmt)
+	talkerMap := gr.nmeaSentences[msg.SentenceFmt]
 	if talkerMap == nil {
 		talkerMap = map[string]bool{}
-		gr.nmeaSentences[fields.SentenceFmt] = talkerMap
+		gr.nmeaSentences[msg.SentenceFmt] = talkerMap
 	}
-	talkerMap[fields.TalkerID] = true
-	nmeaLog(lg, m)
+	talkerMap[msg.TalkerID] = true
+	nmeaLog(lg, msg)
 }
 
-func (gr *gpsReceived) rtcm(data string, lg *slog.Logger) {
+func (gr *gpsReceived) rtcm(data string) {
+	lg := gr.lg
 	_, ok, msgType := scan.RTCMMsg(data)
 	if !ok {
 		lg.Debug("received an RTCM message with invalid checksum during initialization")
@@ -291,10 +296,10 @@ func (gr *gpsReceived) rtcm(data string, lg *slog.Logger) {
 // Log if we get more than this
 const invalidByteCountMaxExpected = 100
 
-func (gr *gpsReceived) invalid(data string, lg *slog.Logger) {
+func (gr *gpsReceived) invalid(data string) {
 	n := gr.invalidByteCount
 	gr.invalidByteCount += len(data)
 	if gr.invalidByteCount > invalidByteCountMaxExpected && n <= invalidByteCountMaxExpected {
-		lg.Debug("unexpectedly large number of unparseable bytes while starting to read GPS output")
+		gr.lg.Debug("unexpectedly large number of unparseable bytes while starting to read GPS output")
 	}
 }
