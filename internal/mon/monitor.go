@@ -110,8 +110,12 @@ func (mon *Monitor) updateInSync(inSync bool) {
 		mon.lg.Warn("synchronization status has changed", "inSync", inSync)
 		mon.inSync = inSync
 	}
+	mon.gmUpdate()
+}
+
+func (mon *Monitor) gmUpdate() {
 	if mon.gm != nil && !mon.lastRefTime.IsZero() {
-		mon.gm.Update(inSync, mon.leapSecond.StateAt(mon.lastRefTime))
+		mon.gm.Update(mon.inSync, mon.leapSecond.StateAt(mon.lastRefTime))
 	}
 }
 
@@ -120,6 +124,7 @@ func (mon *Monitor) SetLeapSecond(leapSecond ptime.LeapSecond) {
 		return
 	}
 	mon.leapSecond = leapSecond
+	mon.gmUpdate()
 }
 
 type accum struct {

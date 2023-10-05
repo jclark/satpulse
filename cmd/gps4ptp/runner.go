@@ -156,6 +156,11 @@ func (s *SyncRunner) Time(mt *gpsmsg.Time, tRead time.Time) {
 	}
 }
 
-func (s *SyncRunner) NMEA(msg *nmea.Message, tRead time.Time) {
+func (s *SyncRunner) LeapSecond(msg *gpsmsg.LeapSecond, _ time.Time) {
+	s.ls = msg.LeapSecond
+	s.m.SetLeapSecond(s.ls)
+}
+
+func (s *SyncRunner) NMEA(msg *nmea.Message, _ time.Time) {
 	nmeaLog(s.lg, msg)
 }
