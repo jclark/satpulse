@@ -86,6 +86,7 @@ High priority
 
 Others
 * When we get notification of a new leap second, we should store that in a file in /var somewhere, and then read that on startup.
+* We could tell the GPS about stored leap seconds using UBX-MGA-GPS-UTC.
 * How should we hook up with NTP-centric kernel support for leap seconds?
   * If the TAI-UTC offset is set in the kernel (presumably from NTP), we could get that and use it as our default.
   * If we get info about the leap second from GPS, we can use that to update the kernel.
