@@ -102,6 +102,7 @@ const (
 	NavTimeLSID  MsgID = clsNav | (0x26 << 8)
 	NavSvinID    MsgID = clsNav | (0x3B << 8)
 	TimSvinID    MsgID = clsTim | (0x04 << 8)
+	TimTosID     MsgID = clsTim | (0x12 << 8)
 	TimTPID      MsgID = clsTim | (0x01 << 8)
 )
 
@@ -130,6 +131,7 @@ func init() {
 	regMsg[NavTimeUTC]("timeutc")
 	regMsg[NavTimeLS]("timels")
 	regMsg[TimSvin]("svin")
+	regMsg[TimTos]("tos")
 	regMsg[TimTP]("tp")
 }
 
@@ -484,6 +486,62 @@ type NavSvin struct {
 }
 
 func (m *NavSvin) ID() MsgID { return NavSvinID }
+
+type TimTos struct {
+	Version           byte
+	GNSSID            GNSSID
+	_                 [2]byte
+	Flags             TimTosFlags
+	Year              uint16
+	Month             byte
+	Day               byte
+	Hour              byte
+	Minute            byte
+	Second            byte
+	UTCStandard       UTCStandard
+	UTCOffset         int32
+	UTCUncertainty    uint32
+	Week              uint32
+	TOW               uint32
+	GNSSOffset        int32
+	GNSSUncertainty   uint32
+	IntOscOffset      int32
+	IntOscUncertainty uint32
+	ExtOscOffset      int32
+	ExtOscUncertainty uint32
+}
+
+func (m *TimTos) ID() MsgID { return TimTosID }
+
+type TimTosFlags uint32
+
+const (
+	TimTosLeapNow TimTosFlags = 1 << iota
+	TimTosLeapSoon
+	TimTosLeapPositive
+	TimTosTimeInLimit
+	TimTosIntOscInLimit
+	TimTosExtOscInLimit
+	TimTosGNSSTimeValid
+	TimTosUTCTimeValid
+	TimTosDiscSrc0
+	TimTosDiscSrc1
+	TimTosDiscSrc2
+	TimTosRAIM
+	TimTosCohPulse
+	TimTosLockedPulse
+	TimTosDiscSrc TimTosFlags = TimTosDiscSrc0 | TimTosDiscSrc1 | TimTosDiscSrc2
+)
+
+// values for (Flags & TimTosDiscSrc)
+const (
+	TimTosDiscSrcIntOsc TimTosFlags = iota << 8
+	TimTosDiscSrcGNSS
+	TimTosDiscSrcEXTINT0
+	TimTosDiscSrcEXTINT1
+	TimTosDiscSrcIntOscHost
+	TimTosDiscSrcExtOscHost
+)
 
 type TimTP struct {
 	TOWMS    uint32
