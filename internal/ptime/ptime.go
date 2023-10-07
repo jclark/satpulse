@@ -47,6 +47,7 @@ var epochUnix = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
 var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 
 // Galileo epoch
+// Leap seconds are handled by TAIMinusGalileo constant
 var epochGalileo = time.Date(1999, time.August, 22, 0, 0, 0, 0, time.UTC)
 
 // BeiDou epoch
@@ -56,12 +57,14 @@ var epochBeiDou = time.Date(2006, time.January, 1, 0, 0, 0, 0, time.UTC)
 const TAIMinusGPS = 19
 
 // Number of seconds by which TAI time is ahead of Galileo time
-// Apparently Galileo used GPS seconds
+// Time of week in Galileo and GPS are the same
+// (so Galileo epoch is not aligned with TAI or UTC midnight)
 const TAIMinusGalileo = TAIMinusGPS
 
 // Number of seconds by which TAI time is ahead of BeiDou time
 const TAIMinusBeiDou = 33
 
+// GPS creates a Time from a GPS week number and time of week
 // week is number of complete weeks since start of first Sunday in 1980
 // tow is duration since start of week
 func GPS(week int16, tow time.Duration) Time {
@@ -72,18 +75,24 @@ func GPSDate(week uint16, day time.Weekday) time.Time {
 	return epochGPS.AddDate(0, 0, int(week)*7+int(day))
 }
 
+// Galileo creates a Time from a Galileo week number and time of week
 // week is number of complete weeks since Galileo epoch
 // tow is duration since start of week
 func Galileo(week int16, tow time.Duration) Time {
 	return gnss(week, tow, epochGalileo, TAIMinusGalileo)
 }
 
-// TOW is time of week in seconds
+// BeiDou creates a Time from a BeiDou week number and time of week
+// week is number of complete weeks since BeiDou epoch
+// tow is duration since start of week
 func BeiDou(week int16, tow time.Duration) Time {
 	return gnss(week, tow, epochBeiDou, TAIMinusBeiDou)
 }
 
 func gnss(week int16, tow time.Duration, epoch time.Time, epochTAIOffset int64) Time {
+	// The Unix method in Go doesn't consider leap seconds
+	// GNSS time also doesn't consider leap seconds since that GNSS's epoch
+	// We therefore need to correct just for the leap seconds applicable at the epoch
 	s := epoch.AddDate(0, 0, int(week)*7).Unix() + epochTAIOffset
 	return Time(s*1e9 + int64(tow))
 }
