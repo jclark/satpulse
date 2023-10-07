@@ -95,7 +95,7 @@ const (
 	InfWarningID MsgID = clsInf | (0x01 << 8)
 	MonHwID      MsgID = clsMon | (0x09 << 8)
 	MonVerID     MsgID = clsMon | (0x04 << 8)
-	NavPvtID     MsgID = clsNav | (0x07 << 8)
+	NavPVTID     MsgID = clsNav | (0x07 << 8)
 	NavTimeGPSID MsgID = clsNav | (0x20 << 8)
 	NavTimeUTCID MsgID = clsNav | (0x21 << 8)
 	NavTimeBDSID MsgID = clsNav | (0x24 << 8)
@@ -126,7 +126,7 @@ func init() {
 	regMsg[InfWarning]("warning")
 	regMsg[MonHw]("hw")
 	regMsg[MonVer]("ver")
-	regMsg[NavPvt]("pvt")
+	regMsg[NavPVT]("pvt")
 	regMsg[NavSvin]("svin")
 	regMsg[NavTimeGPS]("timegps")
 	regMsg[NavTimeBDS]("timebds")
@@ -260,7 +260,7 @@ const (
 	UTCStandardUnknown UTCStandard = 15
 )
 
-type NavPvt struct {
+type NavPVT struct {
 	ITOW    uint32
 	Year    uint16
 	Month   byte
@@ -268,12 +268,12 @@ type NavPvt struct {
 	Hour    byte
 	Min     byte
 	Sec     byte
-	Valid   NavPvtValid
+	Valid   NavPVTValid
 	TAcc    uint32
 	Nano    int32
-	FixType NavPvtFixType
-	Flags   NavPvtFlags
-	Flags2  NavPvtFlags2
+	FixType NavPVTFixType
+	Flags   NavPVTFlags
+	Flags2  NavPVTFlags2
 	NumSV   byte
 	Lon     int32
 	Lat     int32
@@ -295,19 +295,19 @@ type NavPvt struct {
 	MagAcc  uint16
 }
 
-type NavPvtValid byte
+type NavPVTValid byte
 
 const (
-	NavPVTValidDate NavPvtValid = 1 << iota
+	NavPVTValidDate NavPVTValid = 1 << iota
 	NavPVTValidTime
 	NavPVTValidFullyResolved
 	NavPVTValidMag
 )
 
-type NavPvtFixType byte
+type NavPVTFixType byte
 
 const (
-	NavPVTNoFix NavPvtFixType = iota
+	NavPVTNoFix NavPVTFixType = iota
 	NavPVTDeadReckoningOnly
 	NavPVT2DFix
 	NavPVT3DFix
@@ -315,44 +315,44 @@ const (
 	NavPVTTimeOnlyFix
 )
 
-type NavPvtFlags byte
+type NavPVTFlags byte
 
 const (
-	NavPVTGNSSFixOK NavPvtFlags = 1 << iota
+	NavPVTGNSSFixOK NavPVTFlags = 1 << iota
 	NavPVTDiffSoln
 	navPVTPSMState0
 	navPVTPSMState1
 	navPVTPSMState2
-	NavPvtHeadVehValid
-	navPvtCarrSoln0
-	navPvtCarrSoln1
-	NavPctPSMState NavPvtFlags = navPVTPSMState0 | navPVTPSMState1 | navPVTPSMState2
-	NavPctCarrSoln NavPvtFlags = navPvtCarrSoln0 | navPvtCarrSoln1
+	NavPVTHeadVehValid
+	navPVTCarrSoln0
+	navPVTCarrSoln1
+	NavPctPSMState NavPVTFlags = navPVTPSMState0 | navPVTPSMState1 | navPVTPSMState2
+	NavPctCarrSoln NavPVTFlags = navPVTCarrSoln0 | navPVTCarrSoln1
 )
 
 const (
-	NavPvtPSMStateNotActive NavPvtFlags = iota << 2
-	NavPvtPSMStateAcquisition
-	NavPvtPSMStateTracking
-	NavPvtPSMStatePowerOptimizedTracking
-	NavPvtPSMStateInactive
+	NavPVTPSMStateNotActive NavPVTFlags = iota << 2
+	NavPVTPSMStateAcquisition
+	NavPVTPSMStateTracking
+	NavPVTPSMStatePowerOptimizedTracking
+	NavPVTPSMStateInactive
 )
 
 const (
-	NavPvtCarrSolnNone NavPvtFlags = iota << 6
-	NavPvtCarrSolnFloat
-	NavPvtCarrSolnFixed
+	NavPVTCarrSolnNone NavPVTFlags = iota << 6
+	NavPVTCarrSolnFloat
+	NavPVTCarrSolnFixed
 )
 
-type NavPvtFlags2 byte
+type NavPVTFlags2 byte
 
 const (
-	NavPVTConfirmedAvai NavPvtFlags2 = 1 << (iota + 5)
+	NavPVTConfirmedAvai NavPVTFlags2 = 1 << (iota + 5)
 	NavPVTConfirmedDate
 	NavPVTConfirmedTime
 )
 
-func (m *NavPvt) ID() MsgID { return NavPvtID }
+func (m *NavPVT) ID() MsgID { return NavPVTID }
 
 type NavTimeGPS struct {
 	ITOW  uint32
