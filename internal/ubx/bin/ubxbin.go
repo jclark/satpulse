@@ -99,6 +99,7 @@ const (
 	NavTimeGPSID MsgID = clsNav | (0x20 << 8)
 	NavTimeUTCID MsgID = clsNav | (0x21 << 8)
 	NavTimeBDSID MsgID = clsNav | (0x24 << 8)
+	NavTimeGLOID MsgID = clsNav | (0x23 << 8)
 	NavTimeGalID MsgID = clsNav | (0x25 << 8)
 	NavTimeLSID  MsgID = clsNav | (0x26 << 8)
 	NavSvinID    MsgID = clsNav | (0x3B << 8)
@@ -130,6 +131,7 @@ func init() {
 	regMsg[NavTimeGPS]("timegps")
 	regMsg[NavTimeBDS]("timebds")
 	regMsg[NavTimeGal]("timegal")
+	regMsg[NavTimeGLO]("timeglo")
 	regMsg[NavTimeUTC]("timeutc")
 	regMsg[NavTimeLS]("timels")
 	regMsg[TimSvin]("svin")
@@ -436,6 +438,25 @@ const (
 	NavTimeGalTOWValid NavTimeGalValid = 1 << iota
 	NavTimeGalWnoValid
 	NavTimeGalLeapSValid
+)
+
+type NavTimeGLO struct {
+	ITOW  uint32
+	TOD   uint32
+	FTOD  int32
+	Nt    uint16
+	N4    byte
+	Valid NavTimeGLOValid
+	TAcc  uint32
+}
+
+func (m *NavTimeGLO) ID() MsgID { return NavTimeGLOID }
+
+type NavTimeGLOValid byte
+
+const (
+	NavTimeGLOTODValid NavTimeGLOValid = 1 << iota
+	NavTimeGLODateValid
 )
 
 type NavTimeLS struct {

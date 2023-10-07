@@ -46,6 +46,8 @@ var epochUnix = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
 // GPS epoch for week numbers
 var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 
+var epochGlonass = time.Date(1996, time.January, 1, 0, 0, 0, 0, time.UTC)
+
 // Galileo epoch
 // Leap seconds are handled by TAIMinusGalileo constant
 var epochGalileo = time.Date(1999, time.August, 22, 0, 0, 0, 0, time.UTC)
@@ -95,6 +97,16 @@ func gnss(week int16, tow time.Duration, epoch time.Time, epochTAIOffset int64) 
 	// We therefore need to correct just for the leap seconds applicable at the epoch
 	s := epoch.AddDate(0, 0, int(week)*7).Unix() + epochTAIOffset
 	return Time(s*1e9 + int64(tow))
+}
+
+// GLONASS creates a UTCTime from a GLONASS interval number, day number and time of day
+// The interval number denotes a 4-year cycle, with interval 1 starting on 1996-01-01.
+// The day number is the day number within the interval, with day 1 being January 1st.
+func GLONASS(intervalNumber byte, dayNumber uint16, tod time.Duration) UTCTime {
+	// GLONASS time appears to be Moscow time (UTC+3)
+	// Our UTCTime representations allow negative time-of-days, so we can use that here
+	// I don't understand how GLONASS works around leap seconds: I suspect we are not right in the vicinity of a leap second
+	return UTCTime{epochGlonass.AddDate(int(intervalNumber-1)*4, 0, int(dayNumber)-1), tod - 3*time.Hour}
 }
 
 func UTC(year uint16, month, day, hour, min, sec uint8, nanos int32) UTCTime {

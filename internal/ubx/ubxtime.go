@@ -56,6 +56,19 @@ func timeNavTimeGal(m *bin.NavTimeGal) *gpsmsg.Time {
 	return &t
 }
 
+func timeNavTimeGLO(m *bin.NavTimeGLO) *gpsmsg.Time {
+	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEGLO"}
+	if (m.Valid&bin.NavTimeGLOTODValid) != 0 && (m.Valid&bin.NavTimeGLODateValid) != 0 {
+		u := ptime.GLONASS(m.N4, m.Nt, sTOW(m.TOD)+nsTOW(m.FTOD))
+		t.UTCTime = &u
+	}
+	g := gpsmsg.GLONASS
+	t.GNSS = &g
+	t.NavEpoch = iTOWEpoch(m.ITOW)
+	t.Accuracy = time.Duration(m.TAcc)
+	return &t
+}
+
 func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsmsg.Time {
 	if (m.Valid & bin.NavTimeUTCValidUTC) == 0 {
 		return nil
@@ -127,6 +140,8 @@ func timeTimTos(m *bin.TimTos) *gpsmsg.Time {
 	}
 	t.PulseOffset = time.Duration(m.UTCOffset)
 	// If we have a GNSS time that we understand, then use that for accuracy/GNSS metadata.
+	// GLONASS works in UTC not TAI, so I don't see how it can work with a week number.
+	// XXX need to check what happens if we enable only GLONASS
 	if (m.Flags & bin.TimTosGNSSTimeValid) != 0 {
 		g, toTAI := toTAIFunc(m.GNSSID)
 		if toTAI != nil && uint32(int16(m.Week)) == m.Week {
@@ -138,7 +153,6 @@ func timeTimTos(m *bin.TimTos) *gpsmsg.Time {
 	return &t
 }
 
-// I believe GLONASS works in UTC, so it would be a bit different.
 func toTAIFunc(g bin.GNSSID) (gpsmsg.MajorGNSS, func(int16, time.Duration) ptime.Time) {
 	switch g {
 	case bin.GPS:
