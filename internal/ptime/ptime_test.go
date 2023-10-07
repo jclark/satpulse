@@ -62,3 +62,39 @@ func checkConsecutive(t *testing.T, leaps *LeapSecond, secs []UTCTime, nanos int
 		}
 	}
 }
+
+type gnssTime struct {
+	week    int16
+	towSecs uint32
+}
+
+func (t gnssTime) tow() time.Duration {
+	return time.Duration(t.towSecs) * time.Second
+}
+
+type gnssTimes struct {
+	ptp           Time
+	gps, gal, bds gnssTime
+}
+
+var gnssTimeTest []gnssTimes = []gnssTimes{
+	{ptp: Time(1696635646e9), gps: gnssTime{2282, 517227}, gal: gnssTime{1258, 517227}, bds: gnssTime{926, 517213}},
+}
+
+func TestGNSS(t *testing.T) {
+	for _, tt := range gnssTimeTest {
+		gpsTime := GPS(tt.gps.week, tt.gps.tow())
+		bdsTime := BeiDou(tt.bds.week, tt.bds.tow())
+		galTime := Galileo(tt.gal.week, tt.gal.tow())
+
+		if gpsTime != tt.ptp {
+			t.Errorf("GPS(%d, %d) = %d, want %v", tt.gps.week, tt.gps.towSecs, gpsTime, tt.ptp)
+		}
+		if bdsTime != gpsTime {
+			t.Errorf("BeiDou(%d, %d) = %d, want %v", tt.bds.week, tt.bds.towSecs, bdsTime, tt.ptp)
+		}
+		if galTime != gpsTime {
+			t.Errorf("Galileo(%d, %d) = %d, want %v", tt.gal.week, tt.gal.towSecs, galTime, tt.ptp)
+		}
+	}
+}

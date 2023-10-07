@@ -28,8 +28,10 @@ func main() {
 	var debugEnable bool
 	var sdLog bool
 	var showVersion bool
+	var inputLogFile string
 
 	flag.StringVar(&configFile, "f", defaultConfigFile, "configuration file")
+	flag.StringVar(&inputLogFile, "inputLogFile", "", "input log file")
 	flag.BoolVar(&showVersion, "version", false, "show version information")
 	flag.BoolVar(&debugEnable, "debug", false, "log debugging information")
 	flag.BoolVar(&sdLog, "sdlog", false, "log to stdout with priorities in systemd-compatible format")
@@ -52,7 +54,7 @@ func main() {
 	slog.SetDefault(lg)
 	ctx := logctx.NewContext(context.Background(), lg)
 	ctx, cancel := cancelOnSignal(ctx)
-	err := run(ctx, cancel, configFile)
+	err := run(ctx, cancel, configFile, inputLogFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
 		s := configErrorDetail(err)
@@ -63,10 +65,19 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
+func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLogFile string) error {
 	cfg, err := loadConfig(cfgFile)
 	if err != nil {
 		return err
+	}
+
+	var inLog *os.File
+	if inputLogFile != "" {
+		inLog, err = os.Create(inputLogFile)
+		if err != nil {
+			return err
+		}
+		defer inLog.Close()
 	}
 
 	clk, err := openExttsClock(cfg.PHC)
@@ -179,7 +190,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string) error {
 			return err
 		}
 	}
-	s, err := NewSyncRunner(lg, clk, cfg, gmUpdateCh, sseCh)
+	s, err := NewSyncRunner(lg, clk, cfg, gmUpdateCh, sseCh, inLog)
 	if err != nil {
 		return err
 	}

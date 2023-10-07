@@ -57,7 +57,7 @@ func dispatchTime(parser func(*Message) (*ptime.UTCTime, error), msg *Message, t
 	if err != nil {
 		return err
 	}
-	mt := gpsmsg.Time{UTCTime: utc, GNSS: talkerIDToGNSS(msg.TalkerID)}
+	mt := gpsmsg.Time{SrcType: "NMEA-" + msg.SentenceFmt, UTCTime: utc, GNSS: talkerIDToGNSS(msg.TalkerID)}
 	if h != nil {
 		h.Time(&mt, tRead)
 	}

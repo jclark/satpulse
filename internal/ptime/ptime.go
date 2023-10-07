@@ -41,23 +41,51 @@ const (
 	LeapSecondNegative LeapSecondKind = -1
 )
 
-// GPS epoch
-var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 var epochUnix = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+// GPS epoch for week numbers
+var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
+
+// Galileo epoch
+var epochGalileo = time.Date(1999, time.August, 22, 0, 0, 0, 0, time.UTC)
+
+// BeiDou epoch
+var epochBeiDou = time.Date(2006, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 // Number of seconds by which TAI time is ahead of GPS time
 const TAIMinusGPS = 19
 
+// Number of seconds by which TAI time is ahead of Galileo time
+// Apparently Galileo used GPS seconds
+const TAIMinusGalileo = TAIMinusGPS
+
+// Number of seconds by which TAI time is ahead of BeiDou time
+const TAIMinusBeiDou = 33
+
 // week is number of complete weeks since start of first Sunday in 1980
-// iTOW is milliseconds since start of week (Sunday)
-// fTOW is nanoseconds
-func GPS(week int16, iTOW uint32, fTOW int32) Time {
-	ms := epochGPS.AddDate(0, 0, int(week)*7).UnixMilli() + TAIMinusGPS*1000 + int64(iTOW)
-	return Time(ms*1e6 + int64(fTOW))
+// tow is duration since start of week
+func GPS(week int16, tow time.Duration) Time {
+	return gnss(week, tow, epochGPS, TAIMinusGPS)
 }
 
 func GPSDate(week uint16, day time.Weekday) time.Time {
 	return epochGPS.AddDate(0, 0, int(week)*7+int(day))
+}
+
+// week is number of complete weeks since Galileo epoch
+// tow is duration since start of week
+func Galileo(week int16, tow time.Duration) Time {
+	return gnss(week, tow, epochGalileo, TAIMinusGalileo)
+}
+
+// TOW is time of week in seconds
+func BeiDou(week int16, tow time.Duration) Time {
+	return gnss(week, tow, epochBeiDou, TAIMinusBeiDou)
+}
+
+func gnss(week int16, tow time.Duration, epoch time.Time, epochTAIOffset int64) Time {
+	s := epoch.AddDate(0, 0, int(week)*7).Unix() + epochTAIOffset
+	return Time(s*1e9 + int64(tow))
 }
 
 func UTC(year uint16, month, day, hour, min, sec uint8, nanos int32) UTCTime {

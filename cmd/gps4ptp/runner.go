@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -19,7 +19,7 @@ import (
 
 type SyncRunner struct {
 	gpsmsg.DefaultHandler
-
+	inLog    io.Writer
 	sseCh    chan<- sse.Event
 	corr     *tsync.Correlator
 	m        *mon.Monitor
@@ -28,7 +28,7 @@ type SyncRunner struct {
 	lastTime ptime.Time
 }
 
-func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, cfg *Config, guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event) (*SyncRunner, error) {
+func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, cfg *Config, guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
 	servo, err := tsync.NewServo(clk, lg, sseCh)
 	if err != nil {
 		return nil, err
@@ -41,6 +41,7 @@ func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, cfg *Config, guCh chan<- mon
 		ls:    ls,
 		lg:    lg,
 		sseCh: sseCh,
+		inLog: inLog,
 	}
 	return &s, nil
 }
@@ -118,10 +119,16 @@ func (s *SyncRunner) handleFrame(f scan.Frame) {
 }
 
 func (s *SyncRunner) Time(mt *gpsmsg.Time, tRead time.Time) {
-	if false {
+	if s.inLog != nil {
 		bytes, err := json.Marshal(mt)
-		if err == nil {
-			fmt.Println(string(bytes))
+		if err != nil {
+			s.lg.Info("failed to convert Time message to JSON", "err", err)
+		} else {
+			bytes = append(bytes, '\n')
+			_, err = s.inLog.Write(bytes)
+			if err != nil {
+				s.lg.Info("failed to write to input log", "err", err)
+			}
 		}
 	}
 	var sec ptime.Time

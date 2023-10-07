@@ -34,10 +34,16 @@ func Dispatch(m bin.Msg, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) {
 		}
 	case *bin.NavTimeGPS:
 		time = timeNavTimeGPS(mt)
+	case *bin.NavTimeBDS:
+		time = timeNavTimeBDS(mt)
+	case *bin.NavTimeGal:
+		time = timeNavTimeGal(mt)
 	case *bin.NavTimeUTC:
 		time = timeNavTimeUTC(mt)
 	case *bin.TimTP:
 		time = timeTimTP(mt)
+	case *bin.TimTos:
+		time = timeTimTos(mt)
 	case *bin.CfgTmode2:
 		timeMode = timeMode2(mt)
 	case *bin.CfgTmode3:

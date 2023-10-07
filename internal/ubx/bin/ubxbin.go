@@ -99,6 +99,7 @@ const (
 	NavTimeGPSID MsgID = clsNav | (0x20 << 8)
 	NavTimeUTCID MsgID = clsNav | (0x21 << 8)
 	NavTimeBDSID MsgID = clsNav | (0x24 << 8)
+	NavTimeGalID MsgID = clsNav | (0x25 << 8)
 	NavTimeLSID  MsgID = clsNav | (0x26 << 8)
 	NavSvinID    MsgID = clsNav | (0x3B << 8)
 	TimSvinID    MsgID = clsTim | (0x04 << 8)
@@ -128,6 +129,7 @@ func init() {
 	regMsg[NavSvin]("svin")
 	regMsg[NavTimeGPS]("timegps")
 	regMsg[NavTimeBDS]("timebds")
+	regMsg[NavTimeGal]("timegal")
 	regMsg[NavTimeUTC]("timeutc")
 	regMsg[NavTimeLS]("timels")
 	regMsg[TimSvin]("svin")
@@ -402,11 +404,39 @@ type NavTimeBDS struct {
 	FSOW  int32
 	Week  int16
 	LeapS byte
-	Valid byte
+	Valid NavTimeBDSValid
 	TAcc  uint32
 }
 
 func (m *NavTimeBDS) ID() MsgID { return NavTimeBDSID }
+
+type NavTimeBDSValid byte
+
+const (
+	NavTimeBDSSOWValid NavTimeBDSValid = 1 << iota
+	NavTimeBDSWeekValid
+	NavTimeBDSLeapSValid
+)
+
+type NavTimeGal struct {
+	ITOW    uint32
+	GalTOW  uint32
+	FGalTOW int32
+	GalWno  int16
+	LeapS   byte
+	Valid   NavTimeGalValid
+	TAcc    uint32
+}
+
+func (m *NavTimeGal) ID() MsgID { return NavTimeGalID }
+
+type NavTimeGalValid byte
+
+const (
+	NavTimeGalTOWValid NavTimeGalValid = 1 << iota
+	NavTimeGalWnoValid
+	NavTimeGalLeapSValid
+)
 
 type NavTimeLS struct {
 	ITOW          uint32

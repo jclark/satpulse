@@ -58,7 +58,8 @@ func leapSecondDate(tls *bin.NavTimeLS, lsDate *time.Time) bool {
 		*lsDate = t
 		return true
 	}
-	if tls.LSChange == 0 {
+	// XXX not sure if this problem exists with BeiDou or Galileo
+	if tls.LSChange == 0 && tls.SrcOfLSChange == bin.NavTimeLSSrcOfLSChangeGPS {
 		// This is a past change.
 		// GPS transmits only the bottom 8-bits of the week number of the leap second
 		// So a past leap second can be off by a multiple of 256 weeks.

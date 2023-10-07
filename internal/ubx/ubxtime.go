@@ -10,8 +10,11 @@ import (
 )
 
 func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {
-	t := gpsmsg.Time{}
-	t.TAITime = ptime.GPS(m.Week, m.ITOW, m.FTOW)
+	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEGPS"}
+	if (m.Valid&bin.NavTimeGPSTOWValid) != 0 && (m.Valid&bin.NavTimeGPSWeekValid) != 0 {
+		// iTOW field is in milliseconds
+		t.TAITime = ptime.GPS(m.Week, msTOW(m.ITOW)+fTOW(m.FTOW))
+	}
 	if (m.Valid & bin.NavTimeGPSLeapSValid) != 0 {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusGPS
 	}
@@ -22,11 +25,42 @@ func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {
 	return &t
 }
 
+func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsmsg.Time {
+	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEBDS"}
+	if (m.Valid&bin.NavTimeBDSSOWValid) != 0 && (m.Valid&bin.NavTimeBDSWeekValid) != 0 {
+		t.TAITime = ptime.BeiDou(m.Week, sTOW(m.SOW)+fTOW(m.FSOW))
+	}
+	if (m.Valid & bin.NavTimeBDSLeapSValid) != 0 {
+		t.UTCOffset = m.LeapS + ptime.TAIMinusBeiDou
+	}
+	t.Accuracy = time.Duration(m.TAcc)
+	g := gpsmsg.BeiDou
+	t.GNSS = &g
+	t.NavEpoch = iTOWEpoch(m.ITOW)
+	return &t
+}
+
+func timeNavTimeGal(m *bin.NavTimeGal) *gpsmsg.Time {
+	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEGAL"}
+	if (m.Valid&bin.NavTimeGalTOWValid) != 0 && (m.Valid&bin.NavTimeGalWnoValid) != 0 {
+		// galTOW field is in seconds
+		t.TAITime = ptime.Galileo(m.GalWno, sTOW(m.GalTOW)+fTOW(m.FGalTOW))
+	}
+	if (m.Valid & bin.NavTimeGalLeapSValid) != 0 {
+		t.UTCOffset = m.LeapS + ptime.TAIMinusGalileo
+	}
+	t.Accuracy = time.Duration(m.TAcc)
+	g := gpsmsg.Galileo
+	t.GNSS = &g
+	t.NavEpoch = iTOWEpoch(m.ITOW)
+	return &t
+}
+
 func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsmsg.Time {
-	if m.Valid&bin.NavTimeUTCValidUTC == 0 {
+	if (m.Valid & bin.NavTimeUTCValidUTC) == 0 {
 		return nil
 	}
-	t := gpsmsg.Time{}
+	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEUTC"}
 	u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
 	t.UTCTime = &u
 	t.Accuracy = time.Duration(m.TAcc)
@@ -57,14 +91,14 @@ func utcStandardToGNSS(u bin.UTCStandard) *gpsmsg.MajorGNSS {
 }
 
 func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
-	if m.Flags&bin.TimTPTimeBase == bin.TimTPTimeBaseUTC {
+	if (m.Flags & bin.TimTPTimeBase) == bin.TimTPTimeBaseUTC {
 		// In this case the m.TOWMS will not be the GPS time (but will have UTC offset added)
 		// This will be problematic around a leap second, so ignore.
 		// Can we do better?
 		return nil
 	}
-	t := gpsmsg.Time{PrecedesPulse: true}
-	t.TAITime = ptime.GPS(int16(m.Week), m.TOWMS, scaledMSToNS(m.TOWSubMS))
+	t := gpsmsg.Time{PrecedesPulse: true, SrcType: "UBX-TIM-TP"}
+	t.TAITime = ptime.GPS(int16(m.Week), msTOW(m.TOWMS)+msScaledTOW(m.TOWSubMS))
 	t.PulseOffset = ptime.Picoseconds(m.QErr)
 	var g gpsmsg.MajorGNSS
 	t.GNSS = &g
@@ -83,7 +117,52 @@ func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
 	return &t
 }
 
-// XXX need unit test for this
-func scaledMSToNS(ms uint32) int32 {
-	return int32(math.Round(math.Ldexp(float64(ms), -32) * 1e6))
+func timeTimTos(m *bin.TimTos) *gpsmsg.Time {
+	t := gpsmsg.Time{SrcType: "UBX-TIM-TOS"}
+	if (m.Flags & bin.TimTosUTCTimeValid) != 0 {
+		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Minute, m.Second, 0)
+		t.UTCTime = &u
+		t.GNSS = utcStandardToGNSS(m.UTCStandard)
+		t.Accuracy = time.Duration(m.UTCUncertainty)
+	}
+	t.PulseOffset = time.Duration(m.UTCOffset)
+	// If we have a GNSS time that we understand, then use that for accuracy/GNSS metadata.
+	if (m.Flags & bin.TimTosGNSSTimeValid) != 0 {
+		g, toTAI := toTAIFunc(m.GNSSID)
+		if toTAI != nil && uint32(int16(m.Week)) == m.Week {
+			t.TAITime = toTAI(int16(m.Week), sTOW(m.TOW))
+			t.GNSS = &g
+			t.Accuracy = time.Duration(m.GNSSUncertainty)
+		}
+	}
+	return &t
+}
+
+// I believe GLONASS works in UTC, so it would be a bit different.
+func toTAIFunc(g bin.GNSSID) (gpsmsg.MajorGNSS, func(int16, time.Duration) ptime.Time) {
+	switch g {
+	case bin.GPS:
+		return gpsmsg.GPS, ptime.GPS
+	case bin.BeiDou:
+		return gpsmsg.BeiDou, ptime.BeiDou
+	case bin.Galileo:
+		return gpsmsg.Galileo, ptime.Galileo
+	}
+	return 0, nil
+}
+
+func msScaledTOW(ms uint32) time.Duration {
+	return time.Duration(math.Round(math.Ldexp(float64(ms), -32) * float64(time.Millisecond)))
+}
+
+func sTOW(s uint32) time.Duration {
+	return time.Duration(s) * time.Second
+}
+
+func msTOW(ms uint32) time.Duration {
+	return time.Duration(ms) * time.Millisecond
+}
+
+func fTOW(ns int32) time.Duration {
+	return time.Duration(ns) * time.Nanosecond
 }

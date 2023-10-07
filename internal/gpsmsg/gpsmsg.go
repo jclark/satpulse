@@ -41,6 +41,7 @@ type Time struct {
 	GNSS          *MajorGNSS     `json:"gnss,omitempty"`
 	PrecedesPulse bool           `json:"precedesPulse,omitempty"`
 	NavEpoch      uint32         `json:"navEpoch,omitempty"`
+	SrcType       string         `json:"srcType"`
 }
 
 type LeapSecond struct {
