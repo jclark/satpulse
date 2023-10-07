@@ -13,7 +13,7 @@ func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {
 	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEGPS"}
 	if (m.Valid&bin.NavTimeGPSTOWValid) != 0 && (m.Valid&bin.NavTimeGPSWeekValid) != 0 {
 		// iTOW field is in milliseconds
-		t.TAITime = ptime.GPS(m.Week, msTOW(m.ITOW)+fTOW(m.FTOW))
+		t.TAITime = ptime.GPS(m.Week, msTOW(m.ITOW)+nsTOW(m.FTOW))
 	}
 	if (m.Valid & bin.NavTimeGPSLeapSValid) != 0 {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusGPS
@@ -28,7 +28,7 @@ func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {
 func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsmsg.Time {
 	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEBDS"}
 	if (m.Valid&bin.NavTimeBDSSOWValid) != 0 && (m.Valid&bin.NavTimeBDSWeekValid) != 0 {
-		t.TAITime = ptime.BeiDou(m.Week, sTOW(m.SOW)+fTOW(m.FSOW))
+		t.TAITime = ptime.BeiDou(m.Week, sTOW(m.SOW)+nsTOW(m.FSOW))
 	}
 	if (m.Valid & bin.NavTimeBDSLeapSValid) != 0 {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusBeiDou
@@ -44,7 +44,7 @@ func timeNavTimeGal(m *bin.NavTimeGal) *gpsmsg.Time {
 	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEGAL"}
 	if (m.Valid&bin.NavTimeGalTOWValid) != 0 && (m.Valid&bin.NavTimeGalWnoValid) != 0 {
 		// galTOW field is in seconds
-		t.TAITime = ptime.Galileo(m.GalWno, sTOW(m.GalTOW)+fTOW(m.FGalTOW))
+		t.TAITime = ptime.Galileo(m.GalWno, sTOW(m.GalTOW)+nsTOW(m.FGalTOW))
 	}
 	if (m.Valid & bin.NavTimeGalLeapSValid) != 0 {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusGalileo
@@ -163,6 +163,6 @@ func msTOW(ms uint32) time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
-func fTOW(ns int32) time.Duration {
+func nsTOW(ns int32) time.Duration {
 	return time.Duration(ns) * time.Nanosecond
 }
