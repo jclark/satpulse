@@ -77,6 +77,9 @@ Others
 * Take advantage of GPSDO-like features of LEA-M8F for holdover
 * Be able to disable sawtooth correction
 * Looks like ATGM332D may be using fTOW field of UBX-NAV-TIMEGPS to convey quantization error.
+* We can use EXTTS2 ioctl with STRICT flag to determine whether we are getting one of two edges
+* We can use CFG-TP5 to get time pulse interval
+* Could we use the falling edge to get another time stamp?
 
 ## Leap seconds
 
@@ -86,10 +89,15 @@ High priority
 
 Others
 * When we get notification of a new leap second, we should store that in a file in /var somewhere, and then read that on startup.
-* We could tell the GPS about stored leap seconds using UBX-MGA-GPS-UTC.
+* Work with a leap-seconds.list format file
+  * fetch from specified list
+  * use to initialize current leap second if up to date
+  * update from leap second notifications
+* We could tell the GPS about stored leap seconds using UBX-MGA-GPS-UTC (but this has other stuff that is hard to specify)
 * How should we hook up with NTP-centric kernel support for leap seconds?
   * If the TAI-UTC offset is set in the kernel (presumably from NTP), we could get that and use it as our default.
   * If we get info about the leap second from GPS, we can use that to update the kernel.
+
 
 ## Serial IO
 
