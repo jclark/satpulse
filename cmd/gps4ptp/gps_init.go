@@ -35,6 +35,7 @@ type gpsReceived struct {
 	rtcmMsgs         map[uint16]bool
 	tp5              *ubxbin.CfgTp5
 	gnss             *ubxbin.CfgGNSS
+	rate             *ubxbin.CfgRate
 	leapSecond       *gpsmsg.LeapSecond
 	timeMode         *gpsmsg.TimeMode
 	version          *ubx.Version
@@ -97,6 +98,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	configMsgs := [][]byte{
 		ubxbin.Poll(ubxbin.MonVerID),
 		ubxbin.Poll(ubxbin.CfgGNSSID),
+		ubxbin.Poll(ubxbin.CfgRateID),
 		ubxbin.Poll(ubxbin.CfgTmode2ID),
 		ubxbin.Poll(ubxbin.CfgTmode3ID),
 		ubxbin.Poll(ubxbin.CfgTp5ID),
@@ -164,6 +166,9 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	if gr.version != nil {
 		lg.Info("GPS version", "model", gr.version.Mod, "category", gr.version.ProductCategory(), "flash", gr.version.Flash,
 			"sw", gr.version.SW, "hw", gr.version.HW, "prot", gr.version.Prot, "gnss", gr.version.GNSS, "ext", gr.version.Extensions)
+	}
+	if gr.rate != nil {
+		lg.Debug("navigation/measurement rate", "measRate", gr.rate.MeasRate, "navRate", gr.rate.NavRate, "timeRef", gr.rate.TimeRef)
 	}
 	lg.Info("finished GPS initialization",
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
@@ -249,6 +254,8 @@ func (gr *gpsReceived) UBX(u ubxbin.Msg, _ time.Time) {
 		gr.tp5 = parsed
 	case *ubxbin.CfgGNSS:
 		gr.gnss = parsed
+	case *ubxbin.CfgRate:
+		gr.rate = parsed
 	case *ubxbin.AckAck:
 		gr.ack[parsed.MsgID] = true
 	case *ubxbin.AckNak:

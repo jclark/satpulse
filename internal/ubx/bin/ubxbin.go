@@ -82,6 +82,7 @@ const (
 	AckAckID     MsgID = clsAck | (0x01 << 8)
 	CfgGNSSID    MsgID = clsCfg | (0x3E << 8)
 	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
+	CfgRateID    MsgID = clsCfg | (0x08 << 8)
 	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
 	CfgTmode3ID  MsgID = clsCfg | (0x71 << 8)
 	CfgTp5ID     MsgID = clsCfg | (0x31 << 8)
@@ -113,6 +114,7 @@ func init() {
 	regMsg[AckAck]("ack")
 	regMsg[CfgGNSS]("gnss")
 	regMsg[CfgMsg]("msg")
+	regMsg[CfgRate]("rate")
 	regMsg[CfgTmode2]("tmode2")
 	regMsg[CfgTmode3]("tmode3")
 	regMsg[CfgTp5]("tp5")
@@ -157,6 +159,25 @@ type CfgMsg struct {
 }
 
 func (m *CfgMsg) ID() MsgID { return CfgMsgID }
+
+type CfgRate struct {
+	MeasRate uint16
+	NavRate  uint16
+	TimeRef  CfgRateTimeRef
+}
+
+func (m *CfgRate) ID() MsgID { return CfgRateID }
+
+type CfgRateTimeRef uint16
+
+const (
+	CfgRateUTC CfgRateTimeRef = iota
+	CfgRateGPS
+	CfgRateGLONASS
+	CfgRateBeiDou
+	CfgRateGalileo
+	CfgRateNavIC
+)
 
 type CfgTp5 struct {
 	TpIdx             byte
