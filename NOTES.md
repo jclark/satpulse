@@ -8,6 +8,7 @@
    * UBX-CFG-TMODE3 rather than UBX-CFG-TMODE2
    * UBX-NAV-SVIN rather than UBX-TIM-SVIN
 * M8F outputs a pulse on timepulse 2
+* For UBX-TIM-TP with GNSS time base, week numbers depend on GNSS reference: GPS week numbers for GPS or GLONASS, Galileo week numbers for Galileo etc.
 
 ## Linux Serial
 
