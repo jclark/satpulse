@@ -46,6 +46,7 @@ func leapSecondDate(tls *bin.NavTimeLS, lsDate *time.Time) bool {
 	switch tls.SrcOfLSChange {
 	case bin.NavTimeLSSrcOfLSChangeBeiDou:
 		// BeiDou DN is 0-based
+		// see https://www.gpsworld.com/beidou-numbering-presents-leap-second-issue/
 	case bin.NavTimeLSSrcOfLSChangeGPS, bin.NavTimeLSSrcOfLSChangeGalileo:
 		// GPS and Galileo DN is 1-based
 		wd--
@@ -53,16 +54,17 @@ func leapSecondDate(tls *bin.NavTimeLS, lsDate *time.Time) bool {
 		// No info about meaning of DN for other cases cases
 		return false
 	}
+	// XXX Does this use GPS week numbers even if the source is Galileo or BeiDou?
 	t := ptime.GPSDate(tls.DateOfLSGPSWN, time.Weekday(wd))
 	if isLastDayOfQuarter(t) {
 		*lsDate = t
 		return true
 	}
-	// XXX not sure if this problem exists with BeiDou or Galileo
-	if tls.LSChange == 0 && tls.SrcOfLSChange == bin.NavTimeLSSrcOfLSChangeGPS {
+	if tls.LSChange == 0 {
 		// This is a past change.
-		// GPS transmits only the bottom 8-bits of the week number of the leap second
+		// GPS, Galileo and BeiDou transmi only the bottom 8-bits of the week number of the leap second
 		// So a past leap second can be off by a multiple of 256 weeks.
+		// I've seen this for GPS.
 		for i := 1; i <= 2; i++ {
 			t = t.AddDate(0, 0, -7*0x100)
 			if isLastDayOfQuarter(t) {
