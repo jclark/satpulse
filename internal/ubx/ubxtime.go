@@ -82,6 +82,18 @@ func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsmsg.Time {
 	return &t
 }
 
+func timeNavPVT(m *bin.NavPVT) *gpsmsg.Time {
+	t := gpsmsg.Time{SrcType: "UBX-NAV-PVT"}
+	if (m.Valid & (bin.NavPVTValidTime | bin.NavPVTValidDate)) == (bin.NavPVTValidTime | bin.NavPVTValidDate) {
+		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
+		t.UTCTime = &u
+	}
+	t.Accuracy = time.Duration(m.TAcc)
+	// XXX there are some interesting validity flags that we should try to represent
+	t.NavEpoch = iTOWEpoch(m.ITOW)
+	return &t
+}
+
 func iTOWEpoch(iTOW uint32) uint32 {
 	return iTOW + 1
 }
