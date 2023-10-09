@@ -6,7 +6,7 @@
 * With ZED-F9P need to use firmware HPG 1.12 to get quantization error in UBX-TIM-TP message; neither HPG 1.13 nor HPG1 1.32 provide it.
 * With HPG products (e.g. ZED-F9P), need to use
    * UBX-CFG-TMODE3 rather than UBX-CFG-TMODE2
-   * UBX-NAV-SVIN rather than UBX-TIM_SVIN
+   * UBX-NAV-SVIN rather than UBX-TIM-SVIN
 * M8F outputs a pulse on timepulse 2
 
 ## Linux Serial
