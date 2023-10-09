@@ -123,10 +123,10 @@ func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
 		return nil
 	}
 	t := gpsmsg.Time{PrecedesPulse: true, SrcType: "UBX-TIM-TP"}
-	t.TAITime = ptime.GPS(int16(m.Week), msTOW(m.TOWMS)+msScaledTOW(m.TOWSubMS))
 	t.PulseOffset = ptime.Picoseconds(m.QErr)
 	var g gpsmsg.MajorGNSS
 	t.GNSS = &g
+	conv := ptime.GPS
 	switch m.RefInfo & bin.TimTPTimeRefGNSS {
 	case bin.TimTPTimeRefGPS:
 		g = gpsmsg.GPS
@@ -134,11 +134,14 @@ func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
 		g = gpsmsg.GLONASS
 	case bin.TimTPTimeRefBeiDou:
 		g = gpsmsg.BeiDou
+		conv = ptime.BeiDou
 	case bin.TimTPTimeRefGalileo:
 		g = gpsmsg.Galileo
+		conv = ptime.Galileo
 	default:
-		t.GNSS = nil
+		return nil
 	}
+	t.TAITime = conv(int16(m.Week), msTOW(m.TOWMS)+msScaledTOW(m.TOWSubMS))
 	return &t
 }
 

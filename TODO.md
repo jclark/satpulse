@@ -58,8 +58,7 @@ Others
 
 * Can we improve how UBX-TIM-TP is handled and the corresponding PulseOffset message? Problem is that on CM4 there can be one then 1 sec between receiving the PulseOffset message and the PHC time stamp event being delivered to user space. This is because the CM4 PHY kernel driver can delay delivering the PHC timestamp by up to 0.25s
 * Investigate UBX-TIM-TP further
-    * Does it use GPS week numbers when synced to BeiDou?
-    * Does it work on non-timing receivers?
+    * Does it work (ie provide qErr) on non-timing receivers?
     * Does it work on clones?
 * Should prefer a message in UBX that provides TAI directly to NMEA.
     * Use UBX-NAV-EOE to wait for right message
