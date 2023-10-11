@@ -7,49 +7,11 @@ Input to cgo -godefs.
 package unix2
 
 /*
-#include <sys/timex.h>
 #include <linux/ptp_clock.h>
 #include <linux/ethtool.h>
 #include <net/if.h>
 */
 import "C"
-
-// timex.h
-
-// Flags for timex.Modes
-const (
-	ADJ_OFFSET            = C.ADJ_OFFSET
-	ADJ_FREQUENCY         = C.ADJ_FREQUENCY
-	ADJ_MAXERROR          = C.ADJ_MAXERROR
-	ADJ_ESTERROR          = C.ADJ_ESTERROR
-	ADJ_STATUS            = C.ADJ_STATUS
-	ADJ_TIMECONST         = C.ADJ_TIMECONST
-	ADJ_TAI               = C.ADJ_TAI
-	ADJ_SETOFFSET         = C.ADJ_SETOFFSET
-	ADJ_MICRO             = C.ADJ_MICRO
-	ADJ_NANO              = C.ADJ_NANO
-	ADJ_TICK              = C.ADJ_TICK
-	ADJ_OFFSET_SINGLESHOT = C.ADJ_OFFSET_SINGLESHOT
-	ADJ_OFFSET_SS_READ    = C.ADJ_OFFSET_SS_READ
-)
-const (
-	STA_PLL       = C.STA_PLL
-	STA_PPSFREQ   = C.STA_PPSFREQ
-	STA_PPSTIME   = C.STA_PPSTIME
-	STA_FLL       = C.STA_FLL
-	STA_INS       = C.STA_INS
-	STA_DEL       = C.STA_DEL
-	STA_UNSYNC    = C.STA_UNSYNC
-	STA_FREQHOLD  = C.STA_FREQHOLD
-	STA_PPSSIGNAL = C.STA_PPSSIGNAL
-	STA_PPSJITTER = C.STA_PPSJITTER
-	STA_PPSWANDER = C.STA_PPSWANDER
-	STA_PPSERROR  = C.STA_PPSERROR
-	STA_CLOCKERR  = C.STA_CLOCKERR
-	STA_NANO      = C.STA_NANO
-	STA_MODE      = C.STA_MODE
-	STA_CLK       = C.STA_CLK
-)
 
 // ptp_clock.h
 type PTPClockTime C.struct_ptp_clock_time

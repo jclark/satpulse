@@ -148,7 +148,7 @@ func (clk *Clock) AdjTime(d time.Duration) (ptime.Era, error) {
 		secs -= 1
 	}
 	tx := unix.Timex{}
-	tx.Modes = unix2.ADJ_SETOFFSET | unix2.ADJ_NANO
+	tx.Modes = unix.ADJ_SETOFFSET | unix.ADJ_NANO
 	tx.Time.Sec = secs
 	tx.Time.Usec = nsecs
 	clk.eraCounter.Inc()
@@ -171,7 +171,7 @@ func (clk *Clock) FreqAdj() (float64, error) {
 
 func (clk *Clock) SetFreqAdj(fa float64) error {
 	tx := unix.Timex{}
-	tx.Modes = unix2.ADJ_FREQUENCY
+	tx.Modes = unix.ADJ_FREQUENCY
 	newFreq := int64(fa * 65.536)
 	tx.Freq = newFreq
 	_, err := clk.adjtimex(&tx, "(ADJ_FREQUENCY)")
@@ -201,14 +201,14 @@ func (clk *Clock) timexRead() (*unix.Timex, error) {
 }
 
 func (clk *Clock) adjtimex(timex *unix.Timex, opSuffix string) (int, error) {
-	state, err := unix2.ClockAdjtime(clk.clockId(), timex)
+	state, err := unix.ClockAdjtime(clk.clockId(), timex)
 	return state, clk.wrapErr(err, "clock_adjtime"+opSuffix)
 }
 
 const clockfd = 3
 
-func (clk *Clock) clockId() uint32 {
-	return (uint32(^clk.fd) << 3) | clockfd
+func (clk *Clock) clockId() int32 {
+	return (int32(^clk.fd) << 3) | clockfd
 }
 
 func (clk *Clock) wrapErr(err error, op string) error {
