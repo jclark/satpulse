@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -71,13 +72,14 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLo
 		return err
 	}
 
-	var inLog *os.File
+	var inLog io.Writer
 	if inputLogFile != "" {
-		inLog, err = os.Create(inputLogFile)
+		f, err := os.Create(inputLogFile)
 		if err != nil {
 			return err
 		}
-		defer inLog.Close()
+		inLog = f
+		defer f.Close()
 	}
 
 	clk, err := openExttsClock(cfg.PHC)
