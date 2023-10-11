@@ -52,18 +52,18 @@ func validateTimePulseConfig(clk *phc.Clock, cfg PHCConfig) error {
 	return errors.New(msg)
 }
 
-func StartPPS(ctx context.Context, clk *phc.Clock, cfg PHCConfig) (<-chan phc.TsEvent, error) {
+func StartPPS(ctx context.Context, clk *phc.Clock, cfg PHCConfig) (<-chan phc.TsEvent, int, error) {
 	err := clk.PinSetFunc(uint32(cfg.Pin), phc.PinFuncExtts, uint32(cfg.Channel))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	err = clk.ExttsEnable(uint32(cfg.Channel), true)
+	edges, err := clk.ExttsEnable(uint32(cfg.Channel), true)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	c := make(chan phc.TsEvent, 1)
 	go func() {
 		clk.ReadWorker(ctx.Done(), c, timeout)
 	}()
-	return c, nil
+	return c, edges, nil
 }

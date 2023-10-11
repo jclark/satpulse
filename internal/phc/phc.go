@@ -1,6 +1,7 @@
 package phc
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -128,12 +129,37 @@ func (clk *Clock) PinCount() int {
 	return int(clk.caps.N_pins)
 }
 
-func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) error {
-	er := unix2.PTPExttsRequest{Index: chanIndex}
+func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err error) {
+	rq := unix2.PTPExttsRequest{Index: chanIndex}
 	if enabled {
-		er.Flags = unix2.PTP_ENABLE_FEATURE
+		// We want to know if possible how many edges of the pulse are getting timestamped.
+		// We can do this by using the PTP_EXTTS_REQUEST2 ioctl with the PTP_STRICT_FLAGS set,
+		// which will give an EOPNOTSUPP error if it can't give the edges we request.
+		// This is only supported since kernel 5.4.
+		rq.Flags = unix2.PTP_ENABLE_FEATURE | unix2.PTP_RISING_EDGE | unix2.PTP_STRICT_FLAGS
+		err = unix2.IoctlPTPExttsRequest2(clk.fd, &rq)
+		if err == nil {
+			edges = 1
+			return
+		}
+		if errors.Is(err, unix.EOPNOTSUPP) {
+			rq.Flags |= unix2.PTP_FALLING_EDGE
+			err = unix2.IoctlPTPExttsRequest2(clk.fd, &rq)
+			if err == nil {
+				edges = 2
+				return
+			}
+		}
+		// If we get ENOTTY here, it means the ioctl isn't recognized
+		if !errors.Is(err, unix.ENOTTY) {
+			err = clk.wrapErr(err, "ioctl(PTP_EXTTS_REQUEST2)")
+			return
+		}
+		// We get here if the kernel is older than 5.4 and does understand PTP_EXTTS_REQUEST2
+		rq.Flags = unix2.PTP_ENABLE_FEATURE
 	}
-	return clk.wrapErr(unix2.IoctlPTPExttsRequest(clk.fd, &er), "ioctl(PTP_EXTTS_REQUEST)")
+	err = clk.wrapErr(unix2.IoctlPTPExttsRequest(clk.fd, &rq), "ioctl(PTP_EXTTS_REQUEST)")
+	return
 }
 
 func (clk *Clock) ExttsChanCount() int {

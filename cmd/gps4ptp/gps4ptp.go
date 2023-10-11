@@ -195,10 +195,11 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLo
 		return err
 	}
 
-	tsCh, err := StartPPS(ctx, clk, cfg.PHC)
+	tsCh, edges, err := StartPPS(ctx, clk, cfg.PHC)
 	if err != nil {
 		return err
 	}
+	lg.Info("started external timestamping", "edges", edges)
 	if pmcClient != nil {
 		waitGroupGo(&wg, func() { mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg) })
 	}
