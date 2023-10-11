@@ -97,6 +97,11 @@ Others
   * If the TAI-UTC offset is set in the kernel (presumably from NTP), we could get that and use it as our default.
   * If we get info about the leap second from GPS, we can use that to update the kernel.
 
+## Serial port network access
+
+* Provide access over Unix domain socket as well as over TCP socket: we can make the UDS writeable only by root, and can thus safely allow root access
+* Leverage this for configuration
+* We get a write error when user disconnects
 
 ## Serial IO
 
@@ -138,14 +143,33 @@ Semi-functional currently. Not sure what the right thing is to do here:
 
 Specific things:
 
+* Things user needs to specify
+   * fixed position for time mode
+   * preferred GNSS constellation
+   * antenna delay
 * UBX parsing error probably means multiple readers
 * Configure time mode
-* Configure time pulse
-* Configure GNSS constellations
+* CFG-TP5 to configure time pulse
+   * Flags
+      * lockGpsFreq
+      * align to TOW
+      * polarity rising edge
+      * time grid GNSS
+      * lockedOtherSet flag
+   * when valid
+       * 1000ms period
+       *  100ms pulse
+   * otherwise
+       * 1000ms period
+       * 0ms pulse
+* CFG-GNSS to configure GNSS constellations
+* CFG-RATE to configure rate (should be 1Hz)
+* CFG-NAV5 to configure UTC version
 * More info from MonVer
    * Flash vs ROM
    * Category: timing vs high-precision etc
 * Better pairing of of ACKs with messages sent
+* Stationary navigation model even if not on a timing receiver
 * Disable unwanted NMEA messages
 
 ## Antenna supervision
@@ -203,3 +227,4 @@ Specifically deal with
 
 - when carrier is lost, things stop working (ties intto netlink events)
 - we can lose pulses when reading from the PHC (ties into chrony integration)
+- delay in reporting timestamp events (makes ubx-tim-tp problematic)
