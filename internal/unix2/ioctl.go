@@ -11,6 +11,11 @@ func IoctlPTPExttsRequest(fd int, value *PTPExttsRequest) error {
 	return ioctlPtr(fd, PTP_EXTTS_REQUEST, unsafe.Pointer(value))
 }
 
+// IoctlPTPExttsRequest2 perform a PTP_EXTTS_REQUEST2 ioctl.
+func IoctlPTPExttsRequest2(fd int, value *PTPExttsRequest) error {
+	return ioctlPtr(fd, PTP_EXTTS_REQUEST2, unsafe.Pointer(value))
+}
+
 // IoctlPTPPinSetFunc perform a PTP_PIN_SETFUNC ioctl.
 // XXX should it be Setfunc instead of SetFunc since it is PTP_PIN_SETFUNC?
 func IoctlPTPPinSetFunc(fd int, value *PTPPinDesc) error {
