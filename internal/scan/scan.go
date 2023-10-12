@@ -63,7 +63,7 @@ Loop:
 				break Loop
 			}
 		}
-		nextState := s.nextState(state, frameLen)
+		nextState := state.next(s.buf, s.nextScanIndex, frameLen)
 		// Looks like we may have a new frame.
 		// If we have invalid data before the start of the frame, need to clear it out now.
 		if nextState != frameScan && state == frameScan && frameLen > 0 {
@@ -155,8 +155,8 @@ const (
 
 // Return a new state based on the byte at nextScanIndex.
 // frameLen is number of bytes in the frame not including the one at nextScanIndex
-func (p *Scanner) nextState(state scanState, frameLen int) scanState {
-	b := p.buf[p.nextScanIndex]
+func (state scanState) next(buf []byte, nextScanIndex int, frameLen int) scanState {
+	b := buf[nextScanIndex]
 	switch state {
 	case frameScan:
 		switch b {
@@ -170,7 +170,7 @@ func (p *Scanner) nextState(state scanState, frameLen int) scanState {
 	case nmeaStarted:
 		if b == ',' || b == '*' {
 			if frameLen >= 5 { // $PUBX
-				if frameLen == 6 || p.buf[p.nextScanIndex-4] == 'P' {
+				if frameLen == 6 || buf[nextScanIndex-4] == 'P' {
 					// allowed to have just address field
 					if b == '*' {
 						return nmeaHadStar
@@ -219,7 +219,7 @@ func (p *Scanner) nextState(state scanState, frameLen int) scanState {
 			}
 			// XXX better handle the case where b is ubxSync1
 		case 5:
-			payloadLen := int(p.buf[p.nextScanIndex-1]) + int(b)*0x100
+			payloadLen := int(buf[nextScanIndex-1]) + int(b)*0x100
 			return scanState(int(ubxExpectN) + payloadLen + 2)
 		default:
 			return ubxStarted
@@ -227,7 +227,7 @@ func (p *Scanner) nextState(state scanState, frameLen int) scanState {
 	case rtcmStarted:
 		switch frameLen {
 		case 2:
-			payloadLen := int(b) + int(p.buf[p.nextScanIndex-1]&0x3)*0x100
+			payloadLen := int(b) + int(buf[nextScanIndex-1]&0x3)*0x100
 			return scanState(int(rtcmExpectN) + payloadLen + 3)
 		case 1:
 			return rtcmStarted
