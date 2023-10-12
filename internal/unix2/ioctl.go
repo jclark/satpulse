@@ -26,6 +26,10 @@ func IoctlPTPClockGetCaps(fd int, value *PTPClockCaps) error {
 	return ioctlPtr(fd, PTP_CLOCK_GETCAPS, unsafe.Pointer(value))
 }
 
+func IoctlGetSerialICounter(fd int, value *SerialICounter) error {
+	return ioctlPtr(fd, unix.TIOCGICOUNT, unsafe.Pointer(value))
+}
+
 // Copied from unix pkg
 type ifreqData struct {
 	name [unix.IFNAMSIZ]byte

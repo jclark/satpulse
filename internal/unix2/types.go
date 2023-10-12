@@ -8,6 +8,7 @@ package unix2
 
 /*
 #include <linux/ptp_clock.h>
+#include <linux/serial.h>
 #include <linux/ethtool.h>
 #include <net/if.h>
 */
@@ -71,6 +72,11 @@ const (
 	PTP_SYS_OFFSET_EXTENDED2 = C.PTP_SYS_OFFSET_EXTENDED2
 )
 
+// serial.h
+type SerialICounter C.struct_serial_icounter_struct
+
+// ethtool.h
 type EthtoolTsInfo C.struct_ethtool_ts_info
 
+// if.h
 const sizeofIFreq = C.sizeof_struct_ifreq

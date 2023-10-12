@@ -106,6 +106,21 @@ const (
 	PTP_SYS_OFFSET_EXTENDED2	= 0xc4c03d12
 )
 
+type SerialICounter struct {
+	Cts		int32
+	Dsr		int32
+	Rng		int32
+	Dcd		int32
+	Rx		int32
+	Tx		int32
+	Frame		int32
+	Overrun		int32
+	Parity		int32
+	Brk		int32
+	Buf_overrun	int32
+	Reserved	[9]int32
+}
+
 type EthtoolTsInfo struct {
 	Cmd		uint32
 	So_timestamping	uint32
