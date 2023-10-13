@@ -52,6 +52,10 @@ Reads from serial port, divides up into packets
 
 Sends to serial packet broadcast.
 
+The scan worker shuts down when Scan returns an error.
+
+Scan will return an error when the context is cancelled.
+
 ## PPS reading
 
 Reads events from PTP hardware clock.
