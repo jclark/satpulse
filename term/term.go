@@ -3,8 +3,10 @@ package term
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/jclark/gps4ptp/internal/unix2"
 	"golang.org/x/sys/unix"
 )
 
@@ -12,6 +14,7 @@ type Term struct {
 	fd      int
 	path    string
 	tsSaved unix.Termios
+	iCount  *unix2.SerialICounter
 }
 
 type Attr struct {
@@ -66,6 +69,7 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	}
 	// XXX turn of IXOFF
 	err = t.setAttr(&attr.ts)
+	_ = t.GetErrorFlags()
 	return
 }
 
@@ -185,10 +189,21 @@ func NoFlowControl(a *Attr) error {
 // A tenth of a second
 const decisecond = time.Second / 10
 
+const MinTimeout = decisecond
+const MaxTimeout = decisecond * 255
+
 func ReadTimeout(timeout time.Duration) AttrSetter {
 	return func(a *Attr) error {
 		// VTIME is a uint8 in units of 1/10th of a second
-		a.ts.Cc[unix.VTIME] = uint8Clamp(int64(timeout.Round(decisecond) / decisecond))
+		// The semantics of VMIN = 0 and VTIME > 10 is that the read will return 0 if there is no input
+		// available after waiting for VTIME deciseconds.
+		// If VTIME is 0, the read will return immediately.
+		// Since these semantics are different, don't round non-zero timeouts down to 0.
+		t := uint8Clamp(int64(timeout.Round(decisecond) / decisecond))
+		if t == 0 && timeout > 0 {
+			t = 1
+		}
+		a.ts.Cc[unix.VTIME] = t
 		a.ts.Cc[unix.VMIN] = 0
 		return nil
 	}
@@ -239,6 +254,72 @@ func (t *Term) Buffered() (n int, err error) {
 	return
 }
 
+type ErrorFlags int
+
+const (
+	FrameError ErrorFlags = 1 << iota
+	OverrunError
+	ParityError
+	BreakError
+	BufOverrunError
+)
+
+func (flags ErrorFlags) String() string {
+	var s []string
+	if flags&FrameError != 0 {
+		s = append(s, "frame")
+	}
+	if flags&OverrunError != 0 {
+		s = append(s, "overrun")
+	}
+	if flags&ParityError != 0 {
+		s = append(s, "parity")
+	}
+	if flags&BreakError != 0 {
+		s = append(s, "break")
+	}
+	if flags&BufOverrunError != 0 {
+		s = append(s, "bufOverrun")
+	}
+	if len(s) == 0 {
+		return "none"
+	}
+	return strings.Join(s, ",") + " errors"
+}
+
+// GetErrorFlags returns flags for serial errors that have occurred since the last call to GetErrorFlags.
+// If the serial driver does not provide information about error flags, GetErrorFlags returns 0.
+func (t *Term) GetErrorFlags() (flags ErrorFlags) {
+	ic := unix2.SerialICounter{}
+	err := unix2.IoctlGetSerialICounter(t.fd, &ic)
+	if err != nil {
+		t.iCount = nil
+		return
+	}
+	if t.iCount == nil {
+		t.iCount = &ic
+		return
+	}
+	icPtr := t.iCount
+	if ic.Frame != icPtr.Frame {
+		flags |= FrameError
+	}
+	if ic.Overrun != icPtr.Overrun {
+		flags |= OverrunError
+	}
+	if ic.Parity != icPtr.Parity {
+		flags |= ParityError
+	}
+	if ic.Brk != icPtr.Brk {
+		flags |= BreakError
+	}
+	if ic.Buf_overrun != icPtr.Buf_overrun {
+		flags |= BufOverrunError
+	}
+	*icPtr = ic
+	return
+}
+
 func (t *Term) Restore() error {
 	return t.setAttr(&t.tsSaved)
 }
@@ -247,6 +328,10 @@ func (t *Term) Close() error {
 	fd := t.fd
 	t.fd = -1
 	return t.wrapErr(unix.Close(fd), "close")
+}
+
+func (t *Term) Path() string {
+	return t.path
 }
 
 func (t *Term) Flush() error {
