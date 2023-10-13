@@ -22,8 +22,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const scanBufSize = 16
-
 func main() {
 	var configFile string
 	var debugEnable bool
@@ -114,7 +112,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLo
 
 	lg.Debug("detecting kind of serial port", "devKind", t.DevKind())
 
-	scanner := scan.New(t, scanBufSize)
+	scanner := serio.NewScanner(t)
 	var wg sync.WaitGroup
 
 	fCh := startScan(ctx, &wg, scanner)
@@ -157,6 +155,9 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLo
 		lg.Debug("wait group counter dropped to zero")
 	}()
 
+	// Let the compiler check that TermError implements the SerialError interface
+	// gpsInit relies on this
+	var _ SerialError = serio.TermError{}
 	initData, err := gpsInit(ctx, fCh, t)
 	if err != nil {
 		return err

@@ -2,13 +2,14 @@ package scan
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
 	"github.com/jclark/crc24q"
 )
 
-type FrameKind int
+type FrameKind uint16
 
 const (
 	Invalid FrameKind = iota
@@ -18,9 +19,10 @@ const (
 )
 
 type Frame struct {
-	Kind  FrameKind
-	Data  string
-	TRead time.Time
+	Kind      FrameKind
+	ReadError error
+	Data      string
+	TRead     time.Time
 }
 
 type Scanner struct {
@@ -33,6 +35,20 @@ type Scanner struct {
 	tRead time.Time
 }
 
+// A TimeoutError indicates a read timed out.
+// A Reader should produce this error for a read that timed out.
+// Timeouts are allowed in between frames, but not in the middle of a frame.
+type TimeoutError interface {
+	error
+	Timeout() bool
+}
+
+type TemporaryError interface {
+	error
+	Temporary() bool
+}
+
+// New returns a new Scanner to read from r.
 func New(r io.Reader, bufSize int) *Scanner {
 	s := new(Scanner)
 	s.r = r
@@ -54,11 +70,24 @@ Loop:
 				f.Kind = Invalid
 				break Loop
 			}
-			err = s.fill(ctx, frameLen)
-			if s.nextScanIndex == 0 {
+			e := s.fill(ctx, frameLen)
+			if frameLen == 0 {
 				f.TRead = s.tRead
 			}
-			if err != nil {
+			if e != nil {
+				if timeout, ok := e.(TimeoutError); ok && timeout.Timeout() {
+					if frameLen == 0 && len(s.buf) == 0 {
+						// a timeout in between frames is OK, just keep on going
+						continue Loop
+					}
+					f.ReadError = fmt.Errorf("%w in the middle of a frame", err)
+				} else if temp, ok := e.(TemporaryError); ok && temp.Temporary() {
+					f.ReadError = e
+				}
+				if f.ReadError == nil || ctx.Err() != nil {
+					// make the scan worker shut down
+					err = e
+				}
 				f.Kind = Invalid
 				break Loop
 			}

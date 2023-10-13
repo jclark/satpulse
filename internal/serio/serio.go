@@ -11,7 +11,7 @@ import (
 	"github.com/jclark/gps4ptp/term"
 )
 
-const readTimeout = (time.Second * 11) / 10
+const readTimeout = time.Millisecond * 100
 
 func OpenTerm(path string, speed *int) (*term.Term, error) {
 	opts := []term.AttrSetter{
@@ -39,6 +39,65 @@ func OpenTerm(path string, speed *int) (*term.Term, error) {
 	return t, nil
 }
 
+const scanBufSize = 16
+
+func NewScanner(t *term.Term) *scan.Scanner {
+	return scan.New(&termReader{t: t}, scanBufSize)
+}
+
+// termReader adjusts the error handling of the underlying term.Term to better match scan.Scanner
+type termReader struct {
+	t *term.Term
+}
+
+type timeoutError struct {
+	path string
+}
+
+// timeoutError implements scan.TimeoutError
+var _ scan.TimeoutError = timeoutError{}
+
+func (e timeoutError) Error() string {
+	return e.path + ": timeout error"
+}
+
+func (e timeoutError) Timeout() bool {
+	return true
+}
+
+type TermError struct {
+	path  string
+	Flags term.ErrorFlags
+}
+
+// TermError implements scan.TemporaryError
+
+var _ scan.TemporaryError = TermError{}
+
+func (e TermError) Error() string {
+	return e.path + ": " + e.Flags.String()
+}
+
+func (e TermError) Frame() bool {
+	return e.Flags&term.FrameError != 0
+}
+
+func (e TermError) Temporary() bool {
+	return true
+}
+
+func (r *termReader) Read(p []byte) (n int, err error) {
+	n, err = r.t.Read(p)
+	if err == nil {
+		if flags := r.t.GetErrorFlags(); flags != 0 {
+			err = TermError{path: r.t.Path(), Flags: flags}
+		} else if n == 0 {
+			err = timeoutError{path: r.t.Path()}
+		}
+	}
+	return
+}
+
 func ScanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
 	lg := logctx.FromContext(ctx)
 	lg.Debug("the scan worker goroutine has started")
@@ -49,9 +108,9 @@ func ScanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
 	for {
 		f, err := p.Scan(ctx)
 		c <- f
-		if err != nil && err != io.EOF {
-			if ctx.Err() == nil {
-				logctx.FromContext(ctx).Error("readError", err)
+		if err != nil {
+			if err != io.EOF && ctx.Err() == nil {
+				lg.Error("read error while scanning", "error", err)
 			}
 			break
 		}

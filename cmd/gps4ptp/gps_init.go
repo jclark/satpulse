@@ -31,6 +31,7 @@ type gpsReceived struct {
 	rtcmMsgCount     int
 	invalidMsgCount  int
 	invalidByteCount int
+	framingErrors    bool
 	nmeaSentences    map[string]map[string]bool
 	rtcmMsgs         map[uint16]bool
 	tp5              *ubxbin.CfgTp5
@@ -52,24 +53,36 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	// This stage finishes as soon as we get such a message.
 	// I have found that when starting to read from a GPS, there can be invalid bytes to start with:
 	// one possible cause of this if that we start reading in the middle of the message;
-	// I think there may also be UART timing issues (not sure about this).
-	// We allow 15 seconds for this, which should be plenty.
-	timerCh := time.After(time.Second * 15)
-	for timerCh != nil && gr.suitableMessageCount() == 0 {
+	// I think there may also be UART issues that cause framing errors when starting to read.
+	// We allow 2 seconds if there is no framing error.
+	// We allow 15 seconds if we get a framing error.
+	timer1Ch := time.After(time.Second * 2)
+	timer2Ch := time.After(time.Second * 15)
+	for frameCh != nil {
 		select {
 		case frame, ok := <-frameCh:
-			if ok {
-				gr.frame(frame)
-			} else {
+			if !ok {
+				if ctx.Err() != nil {
+					return
+				}
 				frameCh = nil
+			} else {
+				gr.frame(frame)
 			}
-		case <-timerCh:
-			timerCh = nil
+		case <-timer1Ch:
+			timer1Ch = nil
+		case <-timer2Ch:
+			timer2Ch = nil
+		}
+		if gr.suitableMessageCount() > 0 || timer2Ch == nil || (timer1Ch == nil && !gr.framingErrors) {
+			break
 		}
 	}
 	if gr.suitableMessageCount() == 0 {
 		var msg string
-		if gr.rtcmMsgCount > 0 {
+		if gr.framingErrors {
+			msg = "framing errors reading GPS output (wrong speed?)"
+		} else if gr.rtcmMsgCount > 0 {
 			msg = "only RTCM messages detected from GPS"
 		} else if gr.invalidByteCount+gr.invalidMsgCount == 0 {
 			msg = "no output detected from GPS"
@@ -79,6 +92,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 			msg = "cannot parse GPS output"
 		}
 		lg.Debug("not receiving data from GPS correctly",
+			"framingErrors", gr.framingErrors,
 			"initialInvalidByteCount", gr.invalidByteCount,
 			"initialInvalidMsgCount", gr.invalidMsgCount,
 			"rtcmMsgCount", gr.rtcmMsgCount)
@@ -88,11 +102,13 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	lg.Info("detected a GPS")
 	lg.Debug("received suitable output message from GPS",
 		"isUBX", gr.ubxMsgCount > 0,
+		"framingErrors", gr.framingErrors,
 		"initialInvalidByteCount", gr.invalidByteCount,
 		"initialInvalidMsgCount", gr.invalidMsgCount)
 	// Stage 2: send some configuration messages and see what we get back
 	gr.invalidMsgCount = 0
 	gr.invalidByteCount = 0
+	gr.framingErrors = false
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
@@ -111,7 +127,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	}
 	writeRespCh := serio.WriteAsync(ctx, port, configMsgs)
 	// We wait two seconds here for a response.
-	timerCh = time.After(time.Millisecond * 2000)
+	timerCh := time.After(time.Millisecond * 2000)
 	cancelCh := ctx.Done()
 	for {
 		select {
@@ -143,7 +159,9 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 		}
 	}
 	if gr.suitableMessageCount() < 2 || gr.invalidMsgCount > 0 {
-		if gr.invalidMsgCount > 0 {
+		if gr.framingErrors {
+			err = errors.New("ongoing framing errors reading GPS output (hardware problems?)")
+		} else if gr.invalidMsgCount > 0 {
 			err = errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
 		} else {
 			err = errors.New("no regular output from GPS")
@@ -231,7 +249,7 @@ func (gr *gpsReceived) frame(f scan.Frame) {
 	case scan.RTCM:
 		gr.rtcm(data)
 	default:
-		gr.invalid(data)
+		gr.invalid(data, f.ReadError)
 	}
 }
 
@@ -303,10 +321,26 @@ func (gr *gpsReceived) rtcm(data string) {
 // Log if we get more than this
 const invalidByteCountMaxExpected = 100
 
-func (gr *gpsReceived) invalid(data string) {
+type SerialError interface {
+	error
+	Frame() bool
+}
+
+func (gr *gpsReceived) invalid(data string, readErr error) {
 	n := gr.invalidByteCount
 	gr.invalidByteCount += len(data)
 	if gr.invalidByteCount > invalidByteCountMaxExpected && n <= invalidByteCountMaxExpected {
 		gr.lg.Debug("unexpectedly large number of unparseable bytes while starting to read GPS output")
+	}
+	if readErr != nil {
+		if err, ok := readErr.(SerialError); ok && err.Frame() {
+			if !gr.framingErrors {
+				gr.lg.Info("framing errors reading GPS output during initialization")
+			}
+			gr.framingErrors = true
+		} else {
+			// Don't expect these
+			gr.lg.Info("error reading GPS output during initialization", "err", readErr)
+		}
 	}
 }
