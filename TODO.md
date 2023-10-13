@@ -75,10 +75,9 @@ Others
 * Use sawtooth correction from UBX-TIM-TOS on LEA-M8F
 * Take advantage of GPSDO-like features of LEA-M8F for holdover
 * Be able to disable sawtooth correction
-* Looks like ATGM332D may be using fTOW field of UBX-NAV-TIMEGPS to convey quantization error.
-* We can use EXTTS2 ioctl with STRICT flag to determine whether we are getting one of two edges
+* Looks like ATGM332D may be using fTOW field of UBX-NAV-TIMEGPS to convey quantization error (rather than solution time)
 * We can use CFG-TP5 to get time pulse interval
-* Could we use the falling edge to get another time stamp?
+* Could we use the falling edge to get another sample?
 
 ## Leap seconds
 
@@ -109,22 +108,21 @@ Others
    * Attempting to Close (after doing write) hangs for 30s (I guess waiting to drain)
    * Possible fixes (not mutually exclusive)
       * run close in a goroutine with a timeout
+      * use the obscure Linux API to prevent this
       * change closing_wait
-      * do not write until some input is received
+      * do not write until some input is received (we are not writing now)
 * Deal with absence of CLOCAL potentially causing open to block
 * Cancelled write should complete UBX message but not drain
-* Deal with read of 0 from term (caused by timeout)
 * Can we be detect when baud rate is too low for information passed?
 * Should we support other styles of locking in addition to flock
   * UUCP-style serial-port locking
   * TIOCEXCL - at least use TIOCGEXCL to check if it is already locked
-* Investigate kernel/HW [problem](https://github.com/raspberrypi/linux/issues/4453#issuecomment-1709315332) with framing errors on PL011. We can use TIOCGICOUNT ioctl to keep track of count of framing errors, and return a separate kind of packet when we detect a framing error.
+* Investigate kernel/HW [problem](https://github.com/raspberrypi/linux/issues/4453#issuecomment-1709315332) with framing errors on PL011. Possibly similar problem on M8T connnected to physical serial port.
 
 ## Scanning
 
-* If we get the start of a frame with a specified length, then we should have a timeout reading the rest of the frame.
 * Recognizing RTCM is a bit dangerous when we might have invalid data at the beginning, because it's only
-a single byte; we really cannot tell whether we have valid RTCM data until we have validated the checksum; maybe enable RTCM only once we have had a valid message of another type. Maybe have a separate state.
+a single byte; we really cannot tell whether we have valid RTCM data until we have validated the checksum; maybe enable RTCM only once we have had a valid message of another type. Maybe have a separate state. This is alleviated by our timing out in the middle of a packet.
 * Support other framing protocols
    * Allystar (same as UBX but uses 0xF1 0xD9)
    * Trimble TSIP
@@ -170,7 +168,7 @@ Specific things:
    * Category: timing vs high-precision etc
 * Better pairing of of ACKs with messages sent
 * Stationary navigation model even if not on a timing receiver
-* Disable unwanted NMEA messages
+* Disable unwanted NMEA messages (mixing NMEA and UBX causes problems on my ZED-F9P): disable NMEA protocol on the port.
 
 ## Antenna supervision
 
@@ -225,6 +223,6 @@ Could get the driver name using ETHTOOL_GDRVINFO or look in sysfs somewhere.
 
 Specifically deal with
 
-- when carrier is lost, things stop working (ties intto netlink events)
+- when carrier is lost, things stop working (ties into netlink events)
 - we can lose pulses when reading from the PHC (ties into chrony integration)
 - delay in reporting timestamp events (makes ubx-tim-tp problematic)
