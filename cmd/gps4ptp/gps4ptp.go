@@ -236,8 +236,8 @@ func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
 	return ctx, cancel
 }
 
-func startScan(ctx context.Context, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Frame {
-	msg := make(chan scan.Frame, 1)
+func startScan(ctx context.Context, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Packet {
+	msg := make(chan scan.Packet, 1)
 	waitGroupGo(wg, func() { serio.ScanWorker(ctx, scanner, msg) })
 	return msg
 }

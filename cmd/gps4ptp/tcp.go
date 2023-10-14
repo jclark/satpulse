@@ -29,7 +29,7 @@ type tcpConnConfig struct {
 	writeLockTimeout time.Duration
 }
 
-func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TCPConfig, b *bcast.Bcast[scan.Frame], port serio.OutPort) error {
+func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TCPConfig, b *bcast.Bcast[scan.Packet], port serio.OutPort) error {
 	if len(cfg) == 0 {
 		return nil
 	}
@@ -90,7 +90,7 @@ func convertWriteLockTimeout(secs float64) (time.Duration, error) {
 	return 0, fmt.Errorf("writeLockTimeout %f out of range", secs)
 }
 
-func tcpHandleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, listen net.Listener, b *bcast.Bcast[scan.Frame], portLock chan serio.OutPort) {
+func tcpHandleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, listen net.Listener, b *bcast.Bcast[scan.Packet], portLock chan serio.OutPort) {
 	defer lg.Debug("about to exit TCP listening goroutine")
 	defer listen.Close()
 	for {
@@ -103,7 +103,7 @@ func tcpHandleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, c
 	}
 }
 
-func tcpHandleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *bcast.Bcast[scan.Frame], portLock chan serio.OutPort) {
+func tcpHandleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *bcast.Bcast[scan.Packet], portLock chan serio.OutPort) {
 	// XXX both the read and write workers are closing the connection.
 	// Not sure if it would better for just one of them to do so.
 	waitGroupGo(wg, func() { tcpConnWriteWorker(ctx, lg, cfg, conn, b) })
@@ -115,7 +115,7 @@ func tcpHandleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg
 }
 
 // tcpConnWriteWorker reads from a channel and write to the connection.
-func tcpConnWriteWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig, conn net.Conn, b *bcast.Bcast[scan.Frame]) {
+func tcpConnWriteWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig, conn net.Conn, b *bcast.Bcast[scan.Packet]) {
 	defer lg.Debug("about to exit TCP connection writing worker goroutine")
 	defer conn.Close()
 	ch := b.Subscribe()

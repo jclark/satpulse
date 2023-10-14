@@ -9,17 +9,17 @@ import (
 	"github.com/jclark/crc24q"
 )
 
-type FrameKind uint16
+type PacketKind uint16
 
 const (
-	Invalid FrameKind = iota
+	Invalid PacketKind = iota
 	UBX
 	NMEA
 	RTCM
 )
 
-type Frame struct {
-	Kind      FrameKind
+type Packet struct {
+	Kind      PacketKind
 	ReadError error
 	Data      string
 	TRead     time.Time
@@ -37,7 +37,7 @@ type Scanner struct {
 
 // A TimeoutError indicates a read timed out.
 // A Reader should produce this error for a read that timed out.
-// Timeouts are allowed in between frames, but not in the middle of a frame.
+// Timeouts are allowed in between packets, but not in the middle of a packet.
 type TimeoutError interface {
 	error
 	Timeout() bool
@@ -57,93 +57,93 @@ func New(r io.Reader, bufSize int) *Scanner {
 }
 
 // When the error is non-nil, the packet may be of kind Invalid
-func (s *Scanner) Scan(ctx context.Context) (f Frame, err error) {
-	state := frameScan
-	// length of the frame so far
-	// the frame is in the buffer preceding s.nextScanIndex
-	frameLen := 0
-	f = Frame{TRead: s.tRead}
+func (s *Scanner) Scan(ctx context.Context) (p Packet, err error) {
+	state := syncScan
+	// length of the packet so far
+	// the packet is in the buffer preceding s.nextScanIndex
+	packetLen := 0
+	p = Packet{TRead: s.tRead}
 Loop:
 	for {
 		if s.nextScanIndex >= len(s.buf) {
-			if state == frameScan && frameLen > 0 {
-				f.Kind = Invalid
+			if state == syncScan && packetLen > 0 {
+				p.Kind = Invalid
 				break Loop
 			}
-			e := s.fill(ctx, frameLen)
-			if frameLen == 0 {
-				f.TRead = s.tRead
+			e := s.fill(ctx, packetLen)
+			if packetLen == 0 {
+				p.TRead = s.tRead
 			}
 			if e != nil {
 				if timeout, ok := e.(TimeoutError); ok && timeout.Timeout() {
-					if frameLen == 0 && len(s.buf) == 0 {
-						// a timeout in between frames is OK, just keep on going
+					if packetLen == 0 && len(s.buf) == 0 {
+						// a timeout in between packets is OK, just keep on going
 						continue Loop
 					}
-					f.ReadError = fmt.Errorf("%w in the middle of a frame", err)
+					p.ReadError = fmt.Errorf("%w in the middle of a packet", err)
 				} else if temp, ok := e.(TemporaryError); ok && temp.Temporary() {
-					f.ReadError = e
+					p.ReadError = e
 				}
-				if f.ReadError == nil || ctx.Err() != nil {
+				if p.ReadError == nil || ctx.Err() != nil {
 					// make the scan worker shut down
 					err = e
 				}
-				f.Kind = Invalid
+				p.Kind = Invalid
 				break Loop
 			}
 		}
-		nextState := state.next(s.buf, s.nextScanIndex, frameLen)
-		// Looks like we may have a new frame.
-		// If we have invalid data before the start of the frame, need to clear it out now.
-		if nextState != frameScan && state == frameScan && frameLen > 0 {
-			f.Kind = Invalid
+		nextState := state.next(s.buf, s.nextScanIndex, packetLen)
+		// Looks like we may have a new packet.
+		// If we have invalid data before the start of the packet, need to clear it out now.
+		if nextState != syncScan && state == syncScan && packetLen > 0 {
+			p.Kind = Invalid
 			break Loop
 		}
 		// accept this character
 		state = nextState
-		frameLen++
+		packetLen++
 		s.nextScanIndex++
 		switch state {
 		case nmeaComplete:
-			f.Kind = NMEA
+			p.Kind = NMEA
 			break Loop
 		case ubxExpectN:
-			f.Kind = UBX
+			p.Kind = UBX
 			break Loop
 		case rtcmExpectN:
-			f.Kind = RTCM
+			p.Kind = RTCM
 			break Loop
 		}
 	}
-	f.Data = string(s.buf[s.nextScanIndex-frameLen : s.nextScanIndex])
+	p.Data = string(s.buf[s.nextScanIndex-packetLen : s.nextScanIndex])
 	return
 }
 
 // This returns the error it got from the Read, except in the case of EINTR.
-// The frameLen bytes up to nextScanIndex must be kept.
-func (s *Scanner) fill(ctx context.Context, frameLen int) error {
+// The packetLen bytes up to nextScanIndex must be kept.
+func (s *Scanner) fill(ctx context.Context, packetLen int) error {
 	// move the partial packet to the start of the buffer
 	// and grow the buffer if the partial packet uses more than half the buffer
-	frameData := s.buf[s.nextScanIndex-frameLen : s.nextScanIndex]
-	if frameLen <= cap(s.buf)/2 {
-		s.buf = s.buf[0:frameLen]
+	packetData := s.buf[s.nextScanIndex-packetLen : s.nextScanIndex]
+	if packetLen <= cap(s.buf)/2 {
+		s.buf = s.buf[0:packetLen]
 	} else {
 		// reallocate buffer
-		s.buf = make([]byte, frameLen, cap(s.buf)*2)
+		s.buf = make([]byte, packetLen, cap(s.buf)*2)
 	}
-	// store current frame at the beginning of buffer
-	copy(s.buf, frameData)
-	s.nextScanIndex = frameLen
+	// store current packet at the beginning of buffer
+	copy(s.buf, packetData)
+	s.nextScanIndex = packetLen
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
-		rBuf := s.buf[frameLen:cap(s.buf)]
+		rBuf := s.buf[packetLen:cap(s.buf)]
 		n, err := s.r.Read(rBuf)
 		if n > 0 {
-			s.buf = s.buf[0 : frameLen+n]
+			s.buf = s.buf[0 : packetLen+n]
 			s.tRead = time.Now()
 		}
 		if err != nil {
@@ -160,7 +160,7 @@ func (s *Scanner) fill(ctx context.Context, frameLen int) error {
 type scanState int
 
 const (
-	frameScan scanState = iota
+	syncScan scanState = iota
 	nmeaStarted
 	nmeaHadCaret
 	nmeaHadCaretDigit1 // we depend on nmeaHadComma being after nmeaHadCaretDigit1
@@ -183,11 +183,11 @@ const (
 )
 
 // Return a new state based on the byte at nextScanIndex.
-// frameLen is number of bytes in the frame not including the one at nextScanIndex
-func (state scanState) next(buf []byte, nextScanIndex int, frameLen int) scanState {
+// packetLen is number of bytes in the packet not including the one at nextScanIndex
+func (state scanState) next(buf []byte, nextScanIndex int, packetLen int) scanState {
 	b := buf[nextScanIndex]
 	switch state {
-	case frameScan:
+	case syncScan:
 		switch b {
 		case '$':
 			return nmeaStarted
@@ -198,8 +198,8 @@ func (state scanState) next(buf []byte, nextScanIndex int, frameLen int) scanSta
 		}
 	case nmeaStarted:
 		if b == ',' || b == '*' {
-			if frameLen >= 5 { // $PUBX
-				if frameLen == 6 || buf[nextScanIndex-4] == 'P' {
+			if packetLen >= 5 { // $PUBX
+				if packetLen == 6 || buf[nextScanIndex-4] == 'P' {
 					// allowed to have just address field
 					if b == '*' {
 						return nmeaHadStar
@@ -207,7 +207,7 @@ func (state scanState) next(buf []byte, nextScanIndex int, frameLen int) scanSta
 					return nmeaHadComma
 				}
 			}
-		} else if isAsciiUpperAlnum(b) && frameLen < 6 { // $GPRMC
+		} else if isAsciiUpperAlnum(b) && packetLen < 6 { // $GPRMC
 			return nmeaStarted
 		}
 	case nmeaHadComma:
@@ -215,10 +215,10 @@ func (state scanState) next(buf []byte, nextScanIndex int, frameLen int) scanSta
 			return nmeaHadStar
 		}
 		if b == '^' {
-			if frameLen+2 < 82-5 {
+			if packetLen+2 < 82-5 {
 				return nmeaHadCaret
 			}
-		} else if isNmeaDataByte(b) && frameLen < 82-5 { // 82 is total excluding 3-byte checksum and CRLF
+		} else if isNmeaDataByte(b) && packetLen < 82-5 { // 82 is total excluding 3-byte checksum and CRLF
 			return nmeaHadComma
 		}
 	case nmeaHadCaret, nmeaHadCaretDigit1:
@@ -241,7 +241,7 @@ func (state scanState) next(buf []byte, nextScanIndex int, frameLen int) scanSta
 			return nmeaComplete
 		}
 	case ubxStarted:
-		switch frameLen {
+		switch packetLen {
 		case 1:
 			if b == ubxSync2 {
 				return ubxStarted
@@ -254,7 +254,7 @@ func (state scanState) next(buf []byte, nextScanIndex int, frameLen int) scanSta
 			return ubxStarted
 		}
 	case rtcmStarted:
-		switch frameLen {
+		switch packetLen {
 		case 2:
 			payloadLen := int(b) + int(buf[nextScanIndex-1]&0x3)*0x100
 			return scanState(int(rtcmExpectN) + payloadLen + 3)
@@ -266,7 +266,7 @@ func (state scanState) next(buf []byte, nextScanIndex int, frameLen int) scanSta
 			return state - 1
 		}
 	}
-	return frameScan
+	return syncScan
 }
 
 func isNmeaDataByte(b byte) bool {
@@ -302,10 +302,10 @@ func isAsciiUpperAlnum(b byte) bool {
 	return false
 }
 
-func RTCMMsg(frame string) (msg string, checksumOK bool, msgType uint16) {
-	n := len(frame) - 3
-	checksumOK = crc24q.Checksum(frame[0:n]) == crc24q.Extract(frame, n)
-	msg = frame[3:n]
+func RTCMMsg(packet string) (msg string, checksumOK bool, msgType uint16) {
+	n := len(packet) - 3
+	checksumOK = crc24q.Checksum(packet[0:n]) == crc24q.Extract(packet, n)
+	msg = packet[3:n]
 	// treat 0-length message as type 0
 	if n != 3 {
 		msgType = (uint16(msg[0]) << 4) | uint16(msg[1]>>4)

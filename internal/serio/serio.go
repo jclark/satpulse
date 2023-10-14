@@ -98,7 +98,7 @@ func (r *termReader) Read(p []byte) (n int, err error) {
 	return
 }
 
-func ScanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Frame) {
+func ScanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Packet) {
 	lg := logctx.FromContext(ctx)
 	lg.Debug("the scan worker goroutine has started")
 	defer func() {
@@ -122,23 +122,23 @@ type OutPort interface {
 	Buffered() (int, error)
 }
 
-func WriteAsync(ctx context.Context, p OutPort, frames [][]byte) <-chan error {
+func WriteAsync(ctx context.Context, p OutPort, packets [][]byte) <-chan error {
 	c := make(chan error, 1)
 	go func() {
 		nBytes := 0
-		for _, frame := range frames {
+		for _, pkt := range packets {
 			select {
 			case <-ctx.Done():
 				c <- ctx.Err()
 				return
 			default:
 			}
-			_, err := p.Write(frame)
+			_, err := p.Write(pkt)
 			if err != nil {
 				c <- err
 				return
 			}
-			nBytes += len(frame)
+			nBytes += len(pkt)
 		}
 		logctx.FromContext(ctx).Debug("about to drain the serial port")
 		c <- Drain(ctx, p, nBytes)

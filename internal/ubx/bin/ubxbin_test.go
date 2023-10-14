@@ -108,8 +108,8 @@ func TestTrailingBytes(t *testing.T) {
 
 func TestPoll(t *testing.T) {
 	buf := Poll(MonVerID)
-	if len(buf) != frameMinLength {
-		t.Fatalf("unexpected output length %d (expected %d)", len(buf), frameMinLength)
+	if len(buf) != packetMinLength {
+		t.Fatalf("unexpected output length %d (expected %d)", len(buf), packetMinLength)
 	}
 	if buf[2] != clsMon {
 		t.Fatalf("invalid cls byte")

@@ -48,7 +48,7 @@ func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, cfg *Config, guCh chan<- mon
 
 const tickPeriod = time.Second / 4
 
-func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, fCh <-chan scan.Frame) {
+func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 	// loop until both channels are closed
 	sseCh := s.sseCh
 	if sseCh != nil {
@@ -61,7 +61,7 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, fCh <-chan scan.Frame) {
 
 	nSkipped := 0
 
-	for tsCh != nil || fCh != nil {
+	for tsCh != nil || pktCh != nil {
 		select {
 		case e, ok := <-tsCh:
 			if ok {
@@ -81,12 +81,12 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, fCh <-chan scan.Frame) {
 				lg.Debug("timestamp channel of sync worker goroutine was closed")
 				tsCh = nil
 			}
-		case f, ok := <-fCh:
+		case pkt, ok := <-pktCh:
 			if ok {
-				s.handleFrame(f)
+				s.handlePacket(pkt)
 			} else {
-				lg.Debug("frame channel of sync worker goroutine was closed")
-				fCh = nil
+				lg.Debug("packet channel of sync worker goroutine was closed")
+				pktCh = nil
 			}
 		case t := <-ticker.C:
 			s.m.Tick(t)
@@ -99,22 +99,22 @@ type TimeEvent struct {
 	TAI int64  `json:"tai"`
 }
 
-func (s *SyncRunner) handleFrame(f scan.Frame) {
+func (s *SyncRunner) handlePacket(pkt scan.Packet) {
 	// TODO: handle leapsecond messages
 	lg := s.lg
-	switch f.Kind {
+	switch pkt.Kind {
 	case scan.NMEA:
-		err := nmea.ProcessFrameData(f.Data, f.TRead, s, s)
+		err := nmea.ProcessPacketData(pkt.Data, pkt.TRead, s, s)
 		if err != nil {
 			lg.Error("failed to parse NMEA message", "err", err)
 		}
 	case scan.UBX:
-		err := ubx.ProcessFrameData(f.Data, f.TRead, s, nil)
+		err := ubx.ProcessPacketData(pkt.Data, pkt.TRead, s, nil)
 		if err != nil {
 			lg.Error("failed to parse UBX message", "err", err)
 		}
 	case scan.Invalid:
-		lg.Info("received data from GPS in unknown protocol (serial communication problem?)", "len", len(f.Data), "data", f.Data)
+		lg.Info("received data from GPS in unknown protocol (serial communication problem?)", "len", len(pkt.Data), "data", pkt.Data)
 	}
 }
 

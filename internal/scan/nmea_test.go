@@ -23,7 +23,7 @@ func nmeaOK(t *testing.T, data string) {
 	f, err := s.Scan(ctx)
 	trimmed := nmeaTrim(data)
 	if err != nil {
-		t.Fatalf(`error reading frame "%s"`, trimmed)
+		t.Fatalf(`error reading packet "%s"`, trimmed)
 	}
 	if f.Kind != NMEA {
 		t.Fatalf(`NMEA message "%s" not recognized as valid`, trimmed)

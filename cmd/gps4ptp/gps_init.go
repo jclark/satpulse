@@ -43,7 +43,7 @@ type gpsReceived struct {
 	ack              map[ubxbin.MsgID]bool
 }
 
-func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort) (initData *GPSInitData, err error) {
+func gpsInit(ctx context.Context, packetCh <-chan scan.Packet, port serio.OutPort) (initData *GPSInitData, err error) {
 	lg := logctx.FromContext(ctx)
 	gr := gpsReceived{}
 	gr.init(lg)
@@ -58,16 +58,16 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	// We allow 15 seconds if we get a framing error.
 	timer1Ch := time.After(time.Second * 2)
 	timer2Ch := time.After(time.Second * 15)
-	for frameCh != nil {
+	for packetCh != nil {
 		select {
-		case frame, ok := <-frameCh:
+		case packet, ok := <-packetCh:
 			if !ok {
 				if ctx.Err() != nil {
 					return
 				}
-				frameCh = nil
+				packetCh = nil
 			} else {
-				gr.frame(frame)
+				gr.packet(packet)
 			}
 		case <-timer1Ch:
 			timer1Ch = nil
@@ -131,13 +131,13 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 	cancelCh := ctx.Done()
 	for {
 		select {
-		case frame, ok := <-frameCh:
+		case packet, ok := <-packetCh:
 			if ok {
-				gr.frame(frame)
+				gr.packet(packet)
 			} else {
-				frameCh = nil
+				packetCh = nil
 			}
-		// XXX This is not so useful right now, since cancelling will close the frameCh
+		// XXX This is not so useful right now, since cancelling will close the packetCh
 		// But later we can use it to stop writing
 		case <-cancelCh:
 			cancelCh = nil
@@ -153,7 +153,7 @@ func gpsInit(ctx context.Context, frameCh <-chan scan.Frame, port serio.OutPort)
 			if err != nil || ctx.Err() != nil {
 				return
 			}
-			if timerCh == nil || frameCh == nil {
+			if timerCh == nil || packetCh == nil {
 				break
 			}
 		}
@@ -232,13 +232,13 @@ func (gr *gpsReceived) validMessageCount() int {
 	return gr.suitableMessageCount() + gr.rtcmMsgCount
 }
 
-func (gr *gpsReceived) frame(f scan.Frame) {
+func (gr *gpsReceived) packet(f scan.Packet) {
 	data := f.Data
 	switch f.Kind {
 	case scan.NMEA:
 		gr.nmea(data)
 	case scan.UBX:
-		err := ubx.ProcessFrameData(data, f.TRead, gr, gr)
+		err := ubx.ProcessPacketData(data, f.TRead, gr, gr)
 		if err != nil {
 			gr.lg.Error("could not parse UBX message", "err", err)
 			// UBX parsing can handle unknown message types, so it's something worse then that.

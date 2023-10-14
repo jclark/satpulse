@@ -995,18 +995,18 @@ func regMsg[T any, PT interface {
 }
 
 // 2 bytes sync, 2 bytes clsid, 2 bytes length, 2 bytes checksum
-const frameMinLength = 8
+const packetMinLength = 8
 
-func ParseMsg(frame string) (Msg, error) {
-	n := len(frame)
-	if n < frameMinLength {
+func ParseMsg(packet string) (Msg, error) {
+	n := len(packet)
+	if n < packetMinLength {
 		return nil, fmt.Errorf("UBX message too short (length %d bytes)", n)
 	}
 	checksumIndex := n - 2
-	trimmed := frame[2:checksumIndex]
+	trimmed := packet[2:checksumIndex]
 	ckA, ckB := checksum(trimmed)
-	if ckA != frame[checksumIndex] || ckB != frame[checksumIndex+1] {
-		return nil, fmt.Errorf("ubx message: checksum failed: in message 0x%02x%02x; got 0x%02x%02x; data %x", frame[checksumIndex], frame[checksumIndex+1], ckA, ckB, []byte(trimmed))
+	if ckA != packet[checksumIndex] || ckB != packet[checksumIndex+1] {
+		return nil, fmt.Errorf("ubx message: checksum failed: in message 0x%02x%02x; got 0x%02x%02x; data %x", packet[checksumIndex], packet[checksumIndex+1], ckA, ckB, []byte(trimmed))
 	}
 	mid := makeMsgID(trimmed[0], trimmed[1])
 	ctor := msgMap[mid]
@@ -1071,20 +1071,20 @@ func Serialize(msg Msg) ([]byte, error) {
 }
 
 func Poll(mid MsgID) []byte {
-	frame, _ := packMsg(mid, []byte{})
-	return frame
+	packet, _ := packMsg(mid, []byte{})
+	return packet
 }
 
 func SetRate(mid MsgID, rate byte) []byte {
 	cls, id := mid.unpack()
-	frame, _ := packMsg(CfgMsgID, []byte{cls, id, rate})
-	return frame
+	packet, _ := packMsg(CfgMsgID, []byte{cls, id, rate})
+	return packet
 }
 
 func PollRate(mid MsgID) []byte {
 	cls, id := mid.unpack()
-	frame, _ := packMsg(CfgMsgID, []byte{cls, id})
-	return frame
+	packet, _ := packMsg(CfgMsgID, []byte{cls, id})
+	return packet
 }
 
 func packMsg(mid MsgID, payload []byte) ([]byte, error) {
@@ -1092,7 +1092,7 @@ func packMsg(mid MsgID, payload []byte) ([]byte, error) {
 		return nil, fmt.Errorf("ubx-%s payload too long (%d bytes", mid.String(), len(payload))
 	}
 	cls, id := mid.unpack()
-	frame := []byte{
+	packet := []byte{
 		Sync1,
 		Sync2,
 		cls,
@@ -1100,10 +1100,10 @@ func packMsg(mid MsgID, payload []byte) ([]byte, error) {
 		byte(len(payload) & 0xFF),
 		byte((len(payload) >> 8) & 0xFF),
 	}
-	frame = append(frame, payload...)
-	ckA, ckB := checksum(frame[2:])
-	frame = append(frame, ckA, ckB)
-	return frame, nil
+	packet = append(packet, payload...)
+	ckA, ckB := checksum(packet[2:])
+	packet = append(packet, ckA, ckB)
+	return packet, nil
 }
 
 type Bytes interface {

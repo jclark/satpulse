@@ -22,7 +22,7 @@ type ProtHandler interface {
 	NMEA(msg *Message, tRead time.Time)
 }
 
-func ProcessFrameData(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
+func ProcessPacketData(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
 	msg, err := Parse(data)
 	if err != nil {
 		return err

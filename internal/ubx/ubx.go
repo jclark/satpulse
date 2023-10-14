@@ -13,8 +13,8 @@ type ProtHandler interface {
 	UBX(msg bin.Msg, tRead time.Time)
 }
 
-func ProcessFrameData(frame string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
-	um, err := bin.ParseMsg(frame)
+func ProcessPacketData(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
+	um, err := bin.ParseMsg(data)
 	if err != nil {
 		return err
 	}
