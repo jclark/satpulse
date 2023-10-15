@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"github.com/jclark/gps4ptp/internal/bcast"
+	"github.com/jclark/gps4ptp/internal/gpscfg"
 	"github.com/jclark/gps4ptp/internal/logctx"
 	"github.com/jclark/gps4ptp/internal/mon"
-	"github.com/jclark/gps4ptp/internal/nmea"
 	"github.com/jclark/gps4ptp/internal/pmc"
 	"github.com/jclark/gps4ptp/internal/scan"
 	"github.com/jclark/gps4ptp/internal/serio"
@@ -157,8 +157,8 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLo
 
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
-	var _ SerialError = serio.TermError{}
-	initData, err := gpsInit(ctx, fCh, t)
+	var _ gpscfg.SerialError = serio.TermError{}
+	initData, err := gpscfg.GpsInit(ctx, fCh, t)
 	if err != nil {
 		return err
 	}
@@ -246,11 +246,4 @@ func startBcast[T any](ctx context.Context, wg *sync.WaitGroup, msg <-chan T) *b
 	b := bcast.New(msg)
 	waitGroupGo(wg, func() { b.Run(ctx) })
 	return b
-}
-
-func nmeaLog(lg *slog.Logger, msg *nmea.Message) {
-	if msg.SentenceFmt == "TXT" && len(msg.Fields) >= 4 {
-		// When we open an ACM device, the GPS receiver sends TXT messages with each line of the boot screen
-		lg.Debug("received NMEA TXT message", "s", msg.Fields[3])
-	}
 }

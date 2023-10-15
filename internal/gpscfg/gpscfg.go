@@ -1,4 +1,4 @@
-package main
+package gpscfg
 
 import (
 	"context"
@@ -43,7 +43,7 @@ type gpsReceived struct {
 	ack              map[ubxbin.MsgID]bool
 }
 
-func gpsInit(ctx context.Context, packetCh <-chan scan.Packet, port serio.OutPort) (initData *GPSInitData, err error) {
+func GpsInit(ctx context.Context, packetCh <-chan scan.Packet, port serio.OutPort) (initData *GPSInitData, err error) {
 	lg := logctx.FromContext(ctx)
 	gr := gpsReceived{}
 	gr.init(lg)
@@ -342,5 +342,12 @@ func (gr *gpsReceived) invalid(data string, readErr error) {
 			// Don't expect these
 			gr.lg.Info("error reading GPS output during initialization", "err", readErr)
 		}
+	}
+}
+
+func nmeaLog(lg *slog.Logger, msg *nmea.Message) {
+	if msg.SentenceFmt == "TXT" && len(msg.Fields) >= 4 {
+		// When we open an ACM device, the GPS receiver sends TXT messages with each line of the boot screen
+		lg.Debug("received NMEA TXT message", "s", msg.Fields[3])
 	}
 }

@@ -104,7 +104,7 @@ func (s *SyncRunner) handlePacket(pkt scan.Packet) {
 	lg := s.lg
 	switch pkt.Kind {
 	case scan.NMEA:
-		err := nmea.ProcessPacketData(pkt.Data, pkt.TRead, s, s)
+		err := nmea.ProcessPacketData(pkt.Data, pkt.TRead, s, nil)
 		if err != nil {
 			lg.Error("failed to parse NMEA message", "err", err)
 		}
@@ -166,8 +166,4 @@ func (s *SyncRunner) Time(mt *gpsmsg.Time, tRead time.Time) {
 func (s *SyncRunner) LeapSecond(msg *gpsmsg.LeapSecond, _ time.Time) {
 	s.ls = msg.LeapSecond
 	s.m.SetLeapSecond(s.ls)
-}
-
-func (s *SyncRunner) NMEA(msg *nmea.Message, _ time.Time) {
-	nmeaLog(s.lg, msg)
 }
