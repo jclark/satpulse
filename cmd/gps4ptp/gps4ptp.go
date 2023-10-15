@@ -158,7 +158,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLo
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = serio.TermError{}
-	initData, err := gpscfg.GpsInit(ctx, fCh, t)
+	initData, err := gpscfg.Configure(ctx, lg, fCh, t)
 	if err != nil {
 		return err
 	}

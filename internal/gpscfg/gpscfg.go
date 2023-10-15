@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jclark/gps4ptp/internal/gpsmsg"
-	"github.com/jclark/gps4ptp/internal/logctx"
 	"github.com/jclark/gps4ptp/internal/nmea"
 	"github.com/jclark/gps4ptp/internal/scan"
 	"github.com/jclark/gps4ptp/internal/serio"
@@ -17,7 +16,7 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-type GPSInitData struct {
+type InitData struct {
 	Version  *ubx.Version     `json:"version,omitempty"`
 	TimeMode *gpsmsg.TimeMode `json:"timeMode,omitempty"`
 }
@@ -43,8 +42,7 @@ type gpsReceived struct {
 	ack              map[ubxbin.MsgID]bool
 }
 
-func GpsInit(ctx context.Context, packetCh <-chan scan.Packet, port serio.OutPort) (initData *GPSInitData, err error) {
-	lg := logctx.FromContext(ctx)
+func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) (initData *InitData, err error) {
 	gr := gpsReceived{}
 	gr.init(lg)
 	// Stage 1: Validate that we are receiving data correctly from a GPS.
@@ -192,7 +190,7 @@ func GpsInit(ctx context.Context, packetCh <-chan scan.Packet, port serio.OutPor
 		"nmeaSentences", maps.Keys(gr.nmeaSentences),
 		"ack", gr.ack,
 		"gnssEnabled", gnssEnabled)
-	initData = &GPSInitData{
+	initData = &InitData{
 		TimeMode: gr.timeMode,
 		Version:  gr.version,
 	}
