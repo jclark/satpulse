@@ -29,7 +29,7 @@ type msgHandler struct {
 	rtcmMsgCount     int
 	invalidMsgCount  int
 	invalidByteCount int
-	framingErrors    bool
+	framingErrors    int
 	nmeaSentences    map[string]map[string]bool
 	rtcmMsgs         map[uint16]bool
 	tp5              *ubxbin.CfgTp5
@@ -80,13 +80,13 @@ func (mh *msgHandler) detect(ctx context.Context, lg *slog.Logger, packetCh <-ch
 		case <-timer2Ch:
 			timer2Ch = nil
 		}
-		if mh.suitableMessageCount() > 0 || timer2Ch == nil || (timer1Ch == nil && !mh.framingErrors) {
+		if mh.suitableMessageCount() > 0 || timer2Ch == nil || (timer1Ch == nil && mh.framingErrors == 0) {
 			break
 		}
 	}
 	if mh.suitableMessageCount() == 0 {
 		var msg string
-		if mh.framingErrors {
+		if mh.framingErrors > 0 {
 			msg = "framing errors reading GPS output (wrong speed?)"
 		} else if mh.rtcmMsgCount > 0 {
 			msg = "only RTCM messages detected from GPS"
@@ -118,7 +118,7 @@ func (mh *msgHandler) configure(ctx context.Context, lg *slog.Logger, packetCh <
 	// Stage 2: send some configuration messages and see what we get back
 	mh.invalidMsgCount = 0
 	mh.invalidByteCount = 0
-	mh.framingErrors = false
+	startFramingErrors := mh.framingErrors
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
@@ -169,7 +169,7 @@ func (mh *msgHandler) configure(ctx context.Context, lg *slog.Logger, packetCh <
 		}
 	}
 	if mh.suitableMessageCount() < 2 || mh.invalidMsgCount > 0 {
-		if mh.framingErrors {
+		if mh.framingErrors > startFramingErrors {
 			err = errors.New("ongoing framing errors reading GPS output (hardware problems?)")
 		} else if mh.invalidMsgCount > 0 {
 			err = errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
@@ -333,7 +333,7 @@ const invalidByteCountMaxExpected = 100
 
 type SerialError interface {
 	error
-	Frame() bool
+	FramingErrs() int
 }
 
 func (mh *msgHandler) invalid(data string, readErr error) {
@@ -343,11 +343,11 @@ func (mh *msgHandler) invalid(data string, readErr error) {
 		mh.lg.Debug("unexpectedly large number of unparseable bytes while starting to read GPS output")
 	}
 	if readErr != nil {
-		if err, ok := readErr.(SerialError); ok && err.Frame() {
-			if !mh.framingErrors {
+		if err, ok := readErr.(SerialError); ok && err.FramingErrs() > 0 {
+			if mh.framingErrors == 0 {
 				mh.lg.Info("framing errors reading GPS output during initialization")
 			}
-			mh.framingErrors = true
+			mh.framingErrors += err.FramingErrs()
 		} else {
 			// Don't expect these
 			mh.lg.Info("error reading GPS output during initialization", "err", readErr)

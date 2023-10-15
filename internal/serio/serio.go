@@ -66,20 +66,19 @@ func (e timeoutError) Timeout() bool {
 }
 
 type TermError struct {
-	path  string
-	Flags term.ErrorFlags
+	path   string
+	counts term.ErrorCounts
 }
 
 // TermError implements scan.TemporaryError
-
 var _ scan.TemporaryError = TermError{}
 
 func (e TermError) Error() string {
-	return e.path + ": " + e.Flags.String()
+	return e.path + ": serial errors:" + e.counts.String()
 }
 
-func (e TermError) Frame() bool {
-	return e.Flags&term.FrameError != 0
+func (e TermError) FramingErrs() int {
+	return int(e.counts.FrameErrs)
 }
 
 func (e TermError) Temporary() bool {
@@ -89,8 +88,8 @@ func (e TermError) Temporary() bool {
 func (r *termReader) Read(p []byte) (n int, err error) {
 	n, err = r.t.Read(p)
 	if err == nil {
-		if flags := r.t.GetErrorFlags(); flags != 0 {
-			err = TermError{path: r.t.Path(), Flags: flags}
+		if errCounts := r.t.GetErrorCounts(); !errCounts.IsZero() {
+			err = TermError{path: r.t.Path(), counts: errCounts}
 		} else if n == 0 {
 			err = timeoutError{path: r.t.Path()}
 		}

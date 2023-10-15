@@ -69,7 +69,7 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	}
 	// XXX turn of IXOFF
 	err = t.setAttr(&attr.ts)
-	_ = t.GetErrorFlags()
+	_ = t.GetErrorCounts()
 	return
 }
 
@@ -254,69 +254,57 @@ func (t *Term) Buffered() (n int, err error) {
 	return
 }
 
-type ErrorFlags int
+type ErrorCounts struct {
+	FrameErrs, OverrunErrs, ParityErrs, BreakErrs, BufOverrunErrs int32
+}
 
-const (
-	FrameError ErrorFlags = 1 << iota
-	OverrunError
-	ParityError
-	BreakError
-	BufOverrunError
-)
+func (c ErrorCounts) IsZero() bool {
+	return c.FrameErrs == 0 && c.OverrunErrs == 0 && c.ParityErrs == 0 && c.BreakErrs == 0 && c.BufOverrunErrs == 0
+}
 
-func (flags ErrorFlags) String() string {
-	var s []string
-	if flags&FrameError != 0 {
-		s = append(s, "frame")
+func (c ErrorCounts) String() string {
+	var s []string = make([]string, 0, 5)
+	if c.FrameErrs != 0 {
+		s = append(s, fmt.Sprintf("fe=%d", c.FrameErrs))
 	}
-	if flags&OverrunError != 0 {
-		s = append(s, "overrun")
+	if c.OverrunErrs != 0 {
+		s = append(s, fmt.Sprintf("oe=%d", c.OverrunErrs))
 	}
-	if flags&ParityError != 0 {
-		s = append(s, "parity")
+	if c.ParityErrs != 0 {
+		s = append(s, fmt.Sprintf("pe=%d", c.ParityErrs))
 	}
-	if flags&BreakError != 0 {
-		s = append(s, "break")
+	if c.BreakErrs != 0 {
+		s = append(s, fmt.Sprintf("brk=%d", c.BreakErrs))
 	}
-	if flags&BufOverrunError != 0 {
-		s = append(s, "bufOverrun")
+	if c.BufOverrunErrs != 0 {
+		s = append(s, fmt.Sprintf("bo=%d", c.BufOverrunErrs))
 	}
 	if len(s) == 0 {
 		return "none"
 	}
-	return strings.Join(s, ",") + " errors"
+	return strings.Join(s, " ")
 }
 
-// GetErrorFlags returns flags for serial errors that have occurred since the last call to GetErrorFlags.
-// If the serial driver does not provide information about error flags, GetErrorFlags returns 0.
-func (t *Term) GetErrorFlags() (flags ErrorFlags) {
-	ic := unix2.SerialICounter{}
-	err := unix2.IoctlGetSerialICounter(t.fd, &ic)
+// GetErrorCounts returns counts for serial errors that have occurred since the last call to GetErrorCounts.
+// If the serial driver does not provide information about error flags, GetErrorCounts returns a zero value
+func (t *Term) GetErrorCounts() (ec ErrorCounts) {
+	icNew := unix2.SerialICounter{}
+	err := unix2.IoctlGetSerialICounter(t.fd, &icNew)
 	if err != nil {
 		t.iCount = nil
 		return
 	}
 	if t.iCount == nil {
-		t.iCount = &ic
+		t.iCount = &icNew
 		return
 	}
 	icPtr := t.iCount
-	if ic.Frame != icPtr.Frame {
-		flags |= FrameError
-	}
-	if ic.Overrun != icPtr.Overrun {
-		flags |= OverrunError
-	}
-	if ic.Parity != icPtr.Parity {
-		flags |= ParityError
-	}
-	if ic.Brk != icPtr.Brk {
-		flags |= BreakError
-	}
-	if ic.Buf_overrun != icPtr.Buf_overrun {
-		flags |= BufOverrunError
-	}
-	*icPtr = ic
+	ec.FrameErrs = icNew.Frame - icPtr.Frame
+	ec.OverrunErrs = icNew.Overrun - icPtr.Overrun
+	ec.ParityErrs = icNew.Parity - icPtr.Parity
+	ec.BreakErrs = icNew.Brk - icPtr.Brk
+	ec.BufOverrunErrs = icNew.Buf_overrun - icPtr.Buf_overrun
+	*icPtr = icNew
 	return
 }
 
