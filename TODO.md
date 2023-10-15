@@ -141,6 +141,7 @@ Semi-functional currently. Not sure what the right thing is to do here:
 
 Specific things:
 
+* Need to wait for ACK after each config message
 * Things user needs to specify
    * fixed position for time mode
    * preferred GNSS constellation
