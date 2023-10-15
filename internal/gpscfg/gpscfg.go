@@ -41,9 +41,17 @@ type msgHandler struct {
 	ack              map[ubxbin.MsgID]bool
 }
 
-func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) (initData *InitData, err error) {
+func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) (*InitData, error) {
 	mh := msgHandler{}
 	mh.init(lg)
+	err := mh.detect(ctx, lg, packetCh, port)
+	if err != nil {
+		return nil, err
+	}
+	return mh.configure(ctx, lg, packetCh, port)
+}
+
+func (mh *msgHandler) detect(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) error {
 	// Stage 1: Validate that we are receiving data correctly from a GPS.
 	// The criteria for this is that we get a NMEA or UBX message with a valid checksum
 	// (not necessarily a message that we understand).
@@ -59,8 +67,9 @@ func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet
 		select {
 		case packet, ok := <-packetCh:
 			if !ok {
-				if ctx.Err() != nil {
-					return
+				err := ctx.Err()
+				if err != nil {
+					return err
 				}
 				packetCh = nil
 			} else {
@@ -93,15 +102,19 @@ func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet
 			"initialInvalidByteCount", mh.invalidByteCount,
 			"initialInvalidMsgCount", mh.invalidMsgCount,
 			"rtcmMsgCount", mh.rtcmMsgCount)
-		err = errors.New(msg)
-		return
+		return errors.New(msg)
 	}
 	lg.Info("detected a GPS")
+
 	lg.Debug("received suitable output message from GPS",
 		"isUBX", mh.ubxMsgCount > 0,
 		"framingErrors", mh.framingErrors,
 		"initialInvalidByteCount", mh.invalidByteCount,
 		"initialInvalidMsgCount", mh.invalidMsgCount)
+	return nil
+}
+
+func (mh *msgHandler) configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) (initData *InitData, err error) {
 	// Stage 2: send some configuration messages and see what we get back
 	mh.invalidMsgCount = 0
 	mh.invalidByteCount = 0
