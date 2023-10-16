@@ -44,14 +44,14 @@ var _ ubx.ProtHandler = &msgHandler{}
 func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) (*InitData, error) {
 	mh := msgHandler{}
 	mh.init(lg)
-	err := mh.detect(ctx, lg, packetCh, port)
+	err := mh.detect(ctx, packetCh, port)
 	if err != nil {
 		return nil, err
 	}
-	return mh.configure(ctx, lg, packetCh, port)
+	return mh.configure(ctx, packetCh, port)
 }
 
-func (mh *msgHandler) detect(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) error {
+func (mh *msgHandler) detect(ctx context.Context, packetCh <-chan scan.Packet, port serio.OutPort) error {
 	// Stage 1: Validate that we are receiving data correctly from a GPS.
 	// The criteria for this is that we get a NMEA or UBX message with a valid checksum
 	// (not necessarily a message that we understand).
@@ -84,6 +84,7 @@ func (mh *msgHandler) detect(ctx context.Context, lg *slog.Logger, packetCh <-ch
 			break
 		}
 	}
+	lg := mh.lg
 	if mh.suitableMessageCount() == 0 {
 		var msg string
 		if mh.bad.framingErrs > 0 {
@@ -106,7 +107,7 @@ func (mh *msgHandler) detect(ctx context.Context, lg *slog.Logger, packetCh <-ch
 	return nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) (initData *InitData, err error) {
+func (mh *msgHandler) configure(ctx context.Context, packetCh <-chan scan.Packet, port serio.OutPort) (initData *InitData, err error) {
 	// Stage 2: send some configuration messages and see what we get back
 	badStart := mh.bad
 	// must wait for writeRespCh before returning
@@ -158,6 +159,7 @@ func (mh *msgHandler) configure(ctx context.Context, lg *slog.Logger, packetCh <
 			}
 		}
 	}
+	lg := mh.lg
 	badNew := mh.bad.Sub(badStart)
 	if mh.suitableMessageCount() < 2 || badNew.hasErrs() {
 		var msg string
