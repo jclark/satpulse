@@ -23,23 +23,23 @@ type InitData struct {
 
 type msgHandler struct {
 	gpsmsg.DefaultHandler
-	lg               *slog.Logger
-	ubxMsgCount      int
-	nmeaMsgCount     int
-	rtcmMsgCount     int
-	invalidMsgCount  int
-	invalidByteCount int
-	framingErrors    int
-	nmeaSentences    map[string]map[string]bool
-	rtcmMsgs         map[uint16]bool
-	tp5              *ubxbin.CfgTp5
-	gnss             *ubxbin.CfgGNSS
-	rate             *ubxbin.CfgRate
-	leapSecond       *gpsmsg.LeapSecond
-	timeMode         *gpsmsg.TimeMode
-	version          *ubx.Version
-	ack              map[ubxbin.MsgID]bool
+	lg            *slog.Logger
+	ubxMsgCount   int
+	nmeaMsgCount  int
+	rtcmMsgCount  int
+	bad           badCount
+	nmeaSentences map[string]map[string]bool
+	rtcmMsgs      map[uint16]bool
+	ubxCfg        *ubx.Config
+	leapSecond    *gpsmsg.LeapSecond
+	ack           map[ubxbin.MsgID]bool
 }
+
+type badCount struct {
+	invalidBytes, corruptMsgs, framingErrs int
+}
+
+var _ ubx.ProtHandler = &msgHandler{}
 
 func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) (*InitData, error) {
 	mh := msgHandler{}
@@ -80,45 +80,35 @@ func (mh *msgHandler) detect(ctx context.Context, lg *slog.Logger, packetCh <-ch
 		case <-timer2Ch:
 			timer2Ch = nil
 		}
-		if mh.suitableMessageCount() > 0 || timer2Ch == nil || (timer1Ch == nil && mh.framingErrors == 0) {
+		if mh.suitableMessageCount() > 0 || timer2Ch == nil || (timer1Ch == nil && mh.bad.framingErrs == 0) {
 			break
 		}
 	}
 	if mh.suitableMessageCount() == 0 {
 		var msg string
-		if mh.framingErrors > 0 {
+		if mh.bad.framingErrs > 0 {
 			msg = "framing errors reading GPS output (wrong speed?)"
 		} else if mh.rtcmMsgCount > 0 {
 			msg = "only RTCM messages detected from GPS"
-		} else if mh.invalidByteCount+mh.invalidMsgCount == 0 {
+		} else if mh.bad.invalidBytes+mh.bad.corruptMsgs == 0 {
 			msg = "no output detected from GPS"
-		} else if mh.invalidMsgCount > 0 {
+		} else if mh.bad.corruptMsgs > 0 {
 			msg = "corrupted GPS output (multiple processes reading from serial port?)"
 		} else {
 			msg = "cannot parse GPS output"
 		}
-		lg.Debug("not receiving data from GPS correctly",
-			"framingErrors", mh.framingErrors,
-			"initialInvalidByteCount", mh.invalidByteCount,
-			"initialInvalidMsgCount", mh.invalidMsgCount,
-			"rtcmMsgCount", mh.rtcmMsgCount)
+		lg.Debug("not receiving data from GPS correctly", "bad", mh.bad, "rtcmMsgCount", mh.rtcmMsgCount)
 		return errors.New(msg)
 	}
 	lg.Info("detected a GPS")
 
-	lg.Debug("received suitable output message from GPS",
-		"isUBX", mh.ubxMsgCount > 0,
-		"framingErrors", mh.framingErrors,
-		"initialInvalidByteCount", mh.invalidByteCount,
-		"initialInvalidMsgCount", mh.invalidMsgCount)
+	lg.Debug("received suitable output message from GPS", "isUBX", mh.ubxMsgCount > 0, "bad", mh.bad)
 	return nil
 }
 
 func (mh *msgHandler) configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) (initData *InitData, err error) {
 	// Stage 2: send some configuration messages and see what we get back
-	mh.invalidMsgCount = 0
-	mh.invalidByteCount = 0
-	startFramingErrors := mh.framingErrors
+	badStart := mh.bad
 	// must wait for writeRespCh before returning
 	// so the called can close the Term without a data race
 	configMsgs := [][]byte{
@@ -168,43 +158,39 @@ func (mh *msgHandler) configure(ctx context.Context, lg *slog.Logger, packetCh <
 			}
 		}
 	}
-	if mh.suitableMessageCount() < 2 || mh.invalidMsgCount > 0 {
-		if mh.framingErrors > startFramingErrors {
-			err = errors.New("ongoing framing errors reading GPS output (hardware problems?)")
-		} else if mh.invalidMsgCount > 0 {
-			err = errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
+	badNew := mh.bad.Sub(badStart)
+	if mh.suitableMessageCount() < 2 || badNew.hasErrs() {
+		var msg string
+		if badNew.framingErrs > 0 {
+			msg = "ongoing framing errors reading GPS output (hardware problems?)"
+		} else if badNew.corruptMsgs > 0 {
+			msg = "ongoing corrupted GPS output (multiple processes reading from serial port?)"
 		} else {
-			err = errors.New("no regular output from GPS")
+			msg = "no regular output from GPS"
 		}
+		err = errors.New(msg)
 		return
 	}
-	gnssEnabled := []ubxbin.GNSSID{}
-	if mh.gnss != nil {
-		for _, b := range mh.gnss.Blocks {
-			if b.Enable != 0 {
-				gnssEnabled = append(gnssEnabled, b.GNSSID)
-			}
-		}
-	}
+	gnssEnabled := mh.ubxCfg.EnabledGNSS()
 	var lsdStr string
 	if mh.leapSecond != nil {
 		lsdStr = mh.leapSecond.Date().Format("2006-01-02")
 		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", mh.leapSecond.UTCOffBefore, "utcOffAfter", mh.leapSecond.UTCOffAfter)
 	}
-	if mh.version != nil {
-		lg.Info("GPS version", "model", mh.version.Mod, "category", mh.version.ProductCategory(), "flash", mh.version.Flash,
-			"sw", mh.version.SW, "hw", mh.version.HW, "prot", mh.version.Prot, "gnss", mh.version.GNSS, "ext", mh.version.Extensions)
+	if ver := mh.ubxCfg.Version(); ver != nil {
+		lg.Info("GPS version", "model", ver.Mod, "category", ver.ProductCategory(), "flash", ver.Flash,
+			"sw", ver.SW, "hw", ver.HW, "prot", ver.Prot, "gnss", ver.GNSS, "ext", ver.Extensions)
 	}
-	if mh.rate != nil {
-		lg.Debug("navigation/measurement rate", "measRate", mh.rate.MeasRate, "navRate", mh.rate.NavRate, "timeRef", mh.rate.TimeRef)
+	if period := mh.ubxCfg.SolutionPeriod(); period != 0 {
+		lg.Debug("navigation/measurement rate", "period", period.String())
 	}
 	lg.Info("finished GPS initialization",
 		"nmeaSentences", maps.Keys(mh.nmeaSentences),
 		"ack", mh.ack,
 		"gnssEnabled", gnssEnabled)
 	initData = &InitData{
-		TimeMode: mh.timeMode,
-		Version:  mh.version,
+		TimeMode: mh.ubxCfg.TimeMode(),
+		Version:  mh.ubxCfg.Version(),
 	}
 	return
 }
@@ -252,7 +238,7 @@ func (mh *msgHandler) packet(f scan.Packet) {
 		if err != nil {
 			mh.lg.Error("could not parse UBX message", "err", err)
 			// UBX parsing can handle unknown message types, so it's something worse then that.
-			mh.invalidMsgCount++
+			mh.bad.corruptMsgs++
 		} else {
 			mh.ubxMsgCount++
 		}
@@ -268,26 +254,19 @@ func (mh *msgHandler) LeapSecond(ls *gpsmsg.LeapSecond, _ time.Time) {
 }
 
 func (mh *msgHandler) Version(ver *ubx.Version, _ time.Time) {
-	mh.version = ver
+	mh.ubxCfg = ubx.NewConfig(ver)
 }
 
-func (mh *msgHandler) TimeMode(tm *gpsmsg.TimeMode, _ time.Time) {
-	mh.timeMode = tm
+func (mh *msgHandler) Ack(msgID ubxbin.MsgID, ok bool, _ time.Time) {
+	mh.ack[msgID] = ok
 }
 
 func (mh *msgHandler) UBX(u ubxbin.Msg, _ time.Time) {
+	if mh.ubxCfg.AddMsg(u) {
+		return
+	}
 	lg := mh.lg
 	switch parsed := u.(type) {
-	case *ubxbin.CfgTp5:
-		mh.tp5 = parsed
-	case *ubxbin.CfgGNSS:
-		mh.gnss = parsed
-	case *ubxbin.CfgRate:
-		mh.rate = parsed
-	case *ubxbin.AckAck:
-		mh.ack[parsed.MsgID] = true
-	case *ubxbin.AckNak:
-		mh.ack[parsed.MsgID] = false
 	case *ubxbin.CfgMsg:
 		lg.Debug("got configured rate of UBX message", "id", parsed.MsgID, "rate", parsed.Rate)
 	default:
@@ -300,11 +279,10 @@ func (mh *msgHandler) nmea(data string) {
 	msg, err := nmea.Parse(data)
 	if err != nil {
 		lg.Debug("received an NMEA message with invalid checksum during initialization")
-		mh.invalidMsgCount++
+		mh.bad.corruptMsgs++
 		return
 	}
 	mh.nmeaMsgCount++
-	lg.Debug("received an NMEA message during initialization", "sentence", msg.TalkerID+msg.SentenceFmt)
 	talkerMap := mh.nmeaSentences[msg.SentenceFmt]
 	if talkerMap == nil {
 		talkerMap = map[string]bool{}
@@ -319,7 +297,7 @@ func (mh *msgHandler) rtcm(data string) {
 	_, ok, msgType := scan.RTCMMsg(data)
 	if !ok {
 		lg.Debug("received an RTCM message with invalid checksum during initialization")
-		mh.invalidMsgCount++
+		mh.bad.corruptMsgs++
 		return
 	}
 	lg.Debug("received a RTCM message during initialization", "msgType", msgType)
@@ -329,7 +307,7 @@ func (mh *msgHandler) rtcm(data string) {
 
 // Some number of unparseable bytes is normal.
 // Log if we get more than this
-const invalidByteCountMaxExpected = 100
+const invalidBytesMaxExpected = 100
 
 type SerialError interface {
 	error
@@ -337,21 +315,34 @@ type SerialError interface {
 }
 
 func (mh *msgHandler) invalid(data string, readErr error) {
-	n := mh.invalidByteCount
-	mh.invalidByteCount += len(data)
-	if mh.invalidByteCount > invalidByteCountMaxExpected && n <= invalidByteCountMaxExpected {
+	bad := &mh.bad
+	n := bad.invalidBytes
+	bad.invalidBytes += len(data)
+	if bad.invalidBytes > invalidBytesMaxExpected && n <= invalidBytesMaxExpected {
 		mh.lg.Debug("unexpectedly large number of unparseable bytes while starting to read GPS output")
 	}
 	if readErr != nil {
 		if err, ok := readErr.(SerialError); ok && err.FramingErrs() > 0 {
-			if mh.framingErrors == 0 {
+			if bad.framingErrs == 0 {
 				mh.lg.Info("framing errors reading GPS output during initialization")
 			}
-			mh.framingErrors += err.FramingErrs()
+			bad.framingErrs += err.FramingErrs()
 		} else {
 			// Don't expect these
 			mh.lg.Info("error reading GPS output during initialization", "err", readErr)
 		}
+	}
+}
+
+func (bc badCount) hasErrs() bool {
+	return bc.corruptMsgs != 0 || bc.framingErrs != 0
+}
+
+func (bc1 badCount) Sub(bc2 badCount) badCount {
+	return badCount{
+		invalidBytes: bc1.invalidBytes - bc2.invalidBytes,
+		corruptMsgs:  bc1.corruptMsgs - bc2.corruptMsgs,
+		framingErrs:  bc1.framingErrs - bc2.framingErrs,
 	}
 }
 

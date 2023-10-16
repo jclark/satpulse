@@ -9,14 +9,12 @@ import (
 type Handler interface {
 	Time(msg *Time, tRead time.Time)
 	LeapSecond(msg *LeapSecond, tRead time.Time)
-	TimeMode(msg *TimeMode, tRead time.Time)
 }
 
 type DefaultHandler struct{}
 
 func (h *DefaultHandler) Time(msg *Time, tRead time.Time)             {}
 func (h *DefaultHandler) LeapSecond(msg *LeapSecond, tRead time.Time) {}
-func (h *DefaultHandler) TimeMode(msg *TimeMode, tRead time.Time)     {}
 
 //go:generate stringer -type=MajorGNSS
 type MajorGNSS int
@@ -47,6 +45,12 @@ type Time struct {
 type LeapSecond struct {
 	ptime.LeapSecond
 	NavEpoch uint32 `json:"navEpoch,omitempty"`
+}
+
+type Config interface {
+	TimeMode() *TimeMode
+	SolutionPeriod() time.Duration
+	EnabledGNSS() []MajorGNSS
 }
 
 type TimeMode struct {

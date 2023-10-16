@@ -10,6 +10,7 @@ import (
 // Protocol-specific handler
 type ProtHandler interface {
 	Version(msg *Version, tRead time.Time)
+	Ack(msgID bin.MsgID, ok bool, tRead time.Time)
 	UBX(msg bin.Msg, tRead time.Time)
 }
 
@@ -24,7 +25,6 @@ func ProcessPacketData(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHa
 
 func Dispatch(m bin.Msg, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) {
 	var time *gpsmsg.Time
-	var timeMode *gpsmsg.TimeMode
 	switch mt := m.(type) {
 	case *bin.NavTimeLS:
 		ls := leapSecond(mt)
@@ -48,26 +48,25 @@ func Dispatch(m bin.Msg, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) {
 		time = timeTimTP(mt)
 	case *bin.TimTos:
 		time = timeTimTos(mt)
-	case *bin.CfgTmode2:
-		timeMode = timeMode2(mt)
-	case *bin.CfgTmode3:
-		timeMode = timeMode3(mt)
 	case *bin.MonVer:
 		ver := monVer(mt)
 		if ver != nil && ph != nil {
 			ph.Version(ver, tRead)
+		}
+	case *bin.AckAck:
+		if ph != nil {
+			ph.Ack(mt.MsgID, true, tRead)
+		}
+	case *bin.AckNak:
+		if ph != nil {
+			ph.Ack(mt.MsgID, false, tRead)
 		}
 	default:
 		if ph != nil {
 			ph.UBX(m, tRead)
 		}
 	}
-	if h != nil {
-		if time != nil {
-			h.Time(time, tRead)
-		}
-		if timeMode != nil {
-			h.TimeMode(timeMode, tRead)
-		}
+	if h != nil && time != nil {
+		h.Time(time, tRead)
 	}
 }
