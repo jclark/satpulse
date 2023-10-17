@@ -38,12 +38,12 @@ const (
 )
 
 var clsMap = map[byte]string{
-	clsNav: "nav",
-	clsAck: "ack",
-	clsInf: "inf",
-	clsCfg: "cfg",
-	clsMon: "mon",
-	clsTim: "tim",
+	clsNav: "NAV",
+	clsAck: "ACK",
+	clsInf: "INF",
+	clsCfg: "CFG",
+	clsMon: "MON",
+	clsTim: "TIM",
 }
 
 func makeMsgID(cls byte, id byte) MsgID {
@@ -52,6 +52,11 @@ func makeMsgID(cls byte, id byte) MsgID {
 
 func (mid MsgID) unpack() (byte, byte) {
 	return byte(mid & 0xFF), byte((mid >> 8) & 0xFF)
+}
+
+func (mid MsgID) Ackable() bool {
+	cls, _ := mid.unpack()
+	return cls == clsCfg
 }
 
 type Msg interface {
@@ -66,13 +71,13 @@ func (mid MsgID) String() string {
 	cls, id := mid.unpack()
 	s := clsMap[cls]
 	if s == "" {
-		s = fmt.Sprintf("0x%02x", cls)
+		s = fmt.Sprintf("0x%02X", cls)
 	}
 	s += "-"
 	if idName != "" {
 		s += idName
 	} else {
-		s += fmt.Sprintf("0x%02x", id)
+		s += fmt.Sprintf("0x%02X", id)
 	}
 	return s
 }
@@ -110,35 +115,35 @@ const (
 )
 
 func init() {
-	regMsg[AckNak]("nak")
-	regMsg[AckAck]("ack")
-	regMsg[CfgGNSS]("gnss")
-	regMsg[CfgMsg]("msg")
-	regMsg[CfgRate]("rate")
-	regMsg[CfgTmode2]("tmode2")
-	regMsg[CfgTmode3]("tmode3")
-	regMsg[CfgTp5]("tp5")
-	regMsg[CfgValget]("valget")
-	regMsg[CfgValset]("valset")
-	regMsg[CfgValdel]("valdel")
-	regMsg[InfDebug]("debug")
-	regMsg[InfError]("error")
-	regMsg[InfNotice]("notice")
-	regMsg[InfTest]("test")
-	regMsg[InfWarning]("warning")
-	regMsg[MonHw]("hw")
-	regMsg[MonVer]("ver")
-	regMsg[NavPVT]("pvt")
-	regMsg[NavSvin]("svin")
-	regMsg[NavTimeGPS]("timegps")
-	regMsg[NavTimeBDS]("timebds")
-	regMsg[NavTimeGal]("timegal")
-	regMsg[NavTimeGLO]("timeglo")
-	regMsg[NavTimeUTC]("timeutc")
-	regMsg[NavTimeLS]("timels")
-	regMsg[TimSvin]("svin")
-	regMsg[TimTos]("tos")
-	regMsg[TimTP]("tp")
+	regMsg[AckNak]("NAK")
+	regMsg[AckAck]("ACK")
+	regMsg[CfgGNSS]("GNSS")
+	regMsg[CfgMsg]("MSG")
+	regMsg[CfgRate]("RATE")
+	regMsg[CfgTmode2]("TMODE2")
+	regMsg[CfgTmode3]("TMODE3")
+	regMsg[CfgTp5]("TP5")
+	regMsg[CfgValget]("VALGET")
+	regMsg[CfgValset]("VALSET")
+	regMsg[CfgValdel]("VALDEL")
+	regMsg[InfDebug]("DEBUG")
+	regMsg[InfError]("ERROR")
+	regMsg[InfNotice]("NOTICE")
+	regMsg[InfTest]("TEST")
+	regMsg[InfWarning]("WARNING")
+	regMsg[MonHw]("HW")
+	regMsg[MonVer]("VER")
+	regMsg[NavPVT]("PVT")
+	regMsg[NavSvin]("SVIN")
+	regMsg[NavTimeGPS]("TIMEGPS")
+	regMsg[NavTimeBDS]("TIMEBDS")
+	regMsg[NavTimeGal]("TIMEGAL")
+	regMsg[NavTimeGLO]("TIMEGLO")
+	regMsg[NavTimeUTC]("TIMEUTC")
+	regMsg[NavTimeLS]("TIMELS")
+	regMsg[TimSvin]("SVIN")
+	regMsg[TimTos]("TOS")
+	regMsg[TimTP]("TP")
 }
 
 type AckNak struct {
@@ -992,6 +997,12 @@ func regMsg[T any, PT interface {
 	mid := m.ID()
 	msgMap[mid] = func() Msg { return PT(new(T)) }
 	idNameMap[mid] = idName
+}
+
+// PacketMsgId returns the MsgId of a packet.
+// This assumes a minimally-valid packet
+func PacketMsgId(packet []byte) MsgID {
+	return makeMsgID(packet[2], packet[3])
 }
 
 // 2 bytes sync, 2 bytes clsid, 2 bytes length, 2 bytes checksum
