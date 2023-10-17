@@ -66,10 +66,6 @@ Receives cancellation and shutdowns.
 
 On shutdown closes channel sending to sync goroutine.
 
-## Serial writing
-
-Writes configuration messages to serial device.
-
 ## Serial packet broadcast
 
 Receives packets from scanning goroutine and broadcasts to subscribers.

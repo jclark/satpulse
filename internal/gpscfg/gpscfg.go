@@ -3,6 +3,8 @@ package gpscfg
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -12,7 +14,6 @@ import (
 	"github.com/jclark/gps4ptp/internal/serio"
 	"github.com/jclark/gps4ptp/internal/ubx"
 	ubxbin "github.com/jclark/gps4ptp/internal/ubx/bin"
-	ubxcfg "github.com/jclark/gps4ptp/internal/ubx/cfg"
 	"golang.org/x/exp/maps"
 )
 
@@ -24,15 +25,16 @@ type InitData struct {
 type msgHandler struct {
 	gpsmsg.DefaultHandler
 	lg            *slog.Logger
+	packetCh      <-chan scan.Packet
 	ubxMsgCount   int
 	nmeaMsgCount  int
 	rtcmMsgCount  int
 	bad           badCount
 	nmeaSentences map[string]map[string]bool
 	rtcmMsgs      map[uint16]bool
+	ubxProt       *ubx.Protocol
 	ubxCfg        *ubx.Config
 	leapSecond    *gpsmsg.LeapSecond
-	ack           map[ubxbin.MsgID]bool
 }
 
 type badCount struct {
@@ -43,16 +45,53 @@ var _ ubx.ProtHandler = &msgHandler{}
 
 func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, port serio.OutPort) (*InitData, error) {
 	mh := msgHandler{}
-	mh.init(lg)
-	err := mh.detect(ctx, packetCh, port)
+	mh.init(lg, packetCh)
+	err := mh.detect(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return mh.configure(ctx, packetCh, port)
+	// After we have done detection, bad stuff is a cause for concern.
+	badStart := mh.bad
+	ubxOK, err := mh.ubxProbe(ctx, port)
+	if err != nil {
+		return nil, err
+	}
+	badNew := mh.bad.Sub(badStart)
+	if badNew.framingErrs > 0 {
+		return nil, errors.New("ongoing framing errors reading GPS output (hardware problems?)")
+	}
+	if badNew.corruptMsgs > 0 {
+		return nil, errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
+	}
+	if !ubxOK {
+		// XXX if ubxMsgCount > 0, then probably we cannot send to the GPS
+		lg.Info("GPS does not respond to UBX messages; continuing hopefully")
+	} else {
+		err = mh.ubxConfigure(ctx, port)
+		if err != nil {
+			// XXX try to recover from this
+			// provided we have some messages working, we should be OK
+			return nil, err
+		}
+		mh.logUbxConfig()
+	}
+	initData := &InitData{
+		TimeMode: mh.ubxCfg.TimeMode(),
+		Version:  mh.ubxProt.Version(),
+	}
+	return initData, nil
 }
 
-func (mh *msgHandler) detect(ctx context.Context, packetCh <-chan scan.Packet, port serio.OutPort) error {
-	// Stage 1: Validate that we are receiving data correctly from a GPS.
+func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
+	mh.lg = lg
+	mh.packetCh = packetCh
+	mh.ubxProt = &ubx.Protocol{}
+	mh.ubxCfg = &ubx.Config{}
+	mh.nmeaSentences = map[string]map[string]bool{}
+}
+
+func (mh *msgHandler) detect(ctx context.Context) error {
+	// Validate that we are receiving data correctly from a GPS.
 	// The criteria for this is that we get a NMEA or UBX message with a valid checksum
 	// (not necessarily a message that we understand).
 	// This stage finishes as soon as we get such a message.
@@ -63,18 +102,13 @@ func (mh *msgHandler) detect(ctx context.Context, packetCh <-chan scan.Packet, p
 	// We allow 15 seconds if we get a framing error.
 	timer1Ch := time.After(time.Second * 2)
 	timer2Ch := time.After(time.Second * 15)
-	for packetCh != nil {
+	for mh.packetCh != nil {
 		select {
-		case packet, ok := <-packetCh:
+		case packet, ok := <-mh.packetCh:
 			if !ok {
-				err := ctx.Err()
-				if err != nil {
-					return err
-				}
-				packetCh = nil
-			} else {
-				mh.packet(packet)
+				return mh.packetChClosed(ctx)
 			}
+			mh.packet(packet)
 		case <-timer1Ch:
 			timer1Ch = nil
 		case <-timer2Ch:
@@ -107,79 +141,107 @@ func (mh *msgHandler) detect(ctx context.Context, packetCh <-chan scan.Packet, p
 	return nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, packetCh <-chan scan.Packet, port serio.OutPort) (initData *InitData, err error) {
-	// Stage 2: send some configuration messages and see what we get back
-	badStart := mh.bad
-	// must wait for writeRespCh before returning
-	// so the called can close the Term without a data race
-	configMsgs := [][]byte{
-		ubxbin.Poll(ubxbin.MonVerID),
-		ubxbin.Poll(ubxbin.CfgGNSSID),
-		ubxbin.Poll(ubxbin.CfgRateID),
-		ubxbin.Poll(ubxbin.CfgTmode2ID),
-		ubxbin.Poll(ubxbin.CfgTmode3ID),
-		ubxbin.Poll(ubxbin.CfgTp5ID),
-		ubxbin.Poll(ubxbin.TimSvinID),
-		ubxbin.Poll(ubxbin.NavSvinID),
-		ubxbin.Poll(ubxbin.NavTimeLSID),
-		ubxbin.SetRate(ubxbin.NavTimeGPSID, 1),
-		ubxbin.SetRate(ubxbin.TimTPID, 1),
-		tpTimegridGPS(),
+func (mh *msgHandler) packetChClosed(ctx context.Context) error {
+	mh.packetCh = nil
+	err := ctx.Err()
+	if err != nil {
+		return err
 	}
-	writeRespCh := serio.WriteAsync(ctx, port, configMsgs)
-	// We wait two seconds here for a response.
-	timerCh := time.After(time.Millisecond * 2000)
-	cancelCh := ctx.Done()
-	for {
+	return io.ErrUnexpectedEOF
+}
+
+func (mh *msgHandler) ubxProbe(ctx context.Context, port serio.OutPort) (bool, error) {
+	msg := mh.ubxProt.PollVersion()
+	_, err := port.Write(msg)
+	if err != nil {
+		return false, err
+	}
+	timerCh := time.After(time.Millisecond * 1500)
+
+	for timerCh != nil {
 		select {
-		case packet, ok := <-packetCh:
-			if ok {
-				mh.packet(packet)
-			} else {
-				packetCh = nil
+		case packet, ok := <-mh.packetCh:
+			if !ok {
+				return false, mh.packetChClosed(ctx)
 			}
-		// XXX This is not so useful right now, since cancelling will close the packetCh
-		// But later we can use it to stop writing
-		case <-cancelCh:
-			cancelCh = nil
-		case e := <-writeRespCh:
-			writeRespCh = nil
-			if e != nil && err == nil {
-				err = e
+			mh.packet(packet)
+			if mh.ubxProt.Version() != nil {
+				return true, nil
 			}
 		case <-timerCh:
 			timerCh = nil
 		}
-		if writeRespCh == nil {
-			if err != nil || ctx.Err() != nil {
-				return
-			}
-			if timerCh == nil || packetCh == nil {
-				break
-			}
+	}
+	return false, nil
+}
+
+func (mh *msgHandler) ubxConfigure(ctx context.Context, port serio.OutPort) error {
+	packets := append(mh.ubxProt.GetterMsgs(),
+		mh.ubxProt.PollSurveyIn(),
+		mh.ubxProt.PollLeapSecond(),
+		ubxbin.SetRate(ubxbin.NavTimeGPSID, 1),
+		ubxbin.SetRate(ubxbin.TimTPID, 1))
+	for _, pkt := range packets {
+		t := time.Now()
+		_, err := port.Write(pkt)
+		if err != nil {
+			return err
+		}
+		err = mh.waitAfterSend(ctx, pkt, t, port)
+		if err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+const minWaitAfterSend = 10 * time.Millisecond
+
+func (mh *msgHandler) waitAfterSend(ctx context.Context, pkt []byte, tSend time.Time, port serio.OutPort) error {
+	ackable := ubx.PacketAckable(pkt)
+	w := time.Millisecond * 1500
+	if !ackable {
+		w = max(port.TransmitTime(len(pkt)), minWaitAfterSend)
+	}
+	timerCh := time.After(w)
+	for timerCh != nil {
+		select {
+		case packet, ok := <-mh.packetCh:
+			if !ok {
+				return mh.packetChClosed(ctx)
+			}
+			mh.packet(packet)
+			if ackable {
+				ack := mh.ubxProt.FindAck(pkt, tSend)
+				if ack != nil {
+					msgID := ubx.PacketMsgID(pkt)
+					if !ack.OK {
+						return fmt.Errorf("configuration message %s rejected", msgID)
+					}
+					mh.lg.Debug("configuration accepted", "msgID", msgID, "delay", ack.TRead.Sub(tSend).String())
+					return nil
+				}
+			}
+
+		case <-timerCh:
+			timerCh = nil
+		}
+	}
+	if ackable {
+		return fmt.Errorf("no ack received for configuration message %s", ubx.PacketMsgID(pkt))
+	}
+	return nil
+}
+
+func (mh *msgHandler) logUbxConfig() {
 	lg := mh.lg
-	badNew := mh.bad.Sub(badStart)
-	if mh.suitableMessageCount() < 2 || badNew.hasErrs() {
-		var msg string
-		if badNew.framingErrs > 0 {
-			msg = "ongoing framing errors reading GPS output (hardware problems?)"
-		} else if badNew.corruptMsgs > 0 {
-			msg = "ongoing corrupted GPS output (multiple processes reading from serial port?)"
-		} else {
-			msg = "no regular output from GPS"
-		}
-		err = errors.New(msg)
-		return
-	}
 	gnssEnabled := mh.ubxCfg.EnabledGNSS()
 	var lsdStr string
 	if mh.leapSecond != nil {
 		lsdStr = mh.leapSecond.Date().Format("2006-01-02")
 		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", mh.leapSecond.UTCOffBefore, "utcOffAfter", mh.leapSecond.UTCOffAfter)
 	}
-	if ver := mh.ubxCfg.Version(); ver != nil {
+	if ver := mh.ubxProt.Version(); ver != nil {
 		lg.Info("GPS version", "model", ver.Mod, "category", ver.ProductCategory(), "flash", ver.Flash,
 			"sw", ver.SW, "hw", ver.HW, "prot", ver.Prot, "gnss", ver.GNSS, "ext", ver.Extensions)
 	}
@@ -188,46 +250,11 @@ func (mh *msgHandler) configure(ctx context.Context, packetCh <-chan scan.Packet
 	}
 	lg.Info("finished GPS initialization",
 		"nmeaSentences", maps.Keys(mh.nmeaSentences),
-		"ack", mh.ack,
 		"gnssEnabled", gnssEnabled)
-	initData = &InitData{
-		TimeMode: mh.ubxCfg.TimeMode(),
-		Version:  mh.ubxCfg.Version(),
-	}
-	return
-}
-
-func tpTimegridGPS() []byte {
-	cfg := map[string]map[string]any{
-		"TP": {
-			"TIMEGRID_TP1": "GPS",
-		},
-	}
-	u := ubxbin.CfgValset{
-		CfgValsetFixed: ubxbin.CfgValsetFixed{
-			Layers: ubxbin.CfgValsetLayerRAM,
-		},
-		CfgData: ubxcfg.GetSchema().MustMarshal(cfg),
-	}
-	bytes, err := ubxbin.Serialize(&u)
-	if err != nil {
-		panic(err)
-	}
-	return bytes
-}
-
-func (mh *msgHandler) init(lg *slog.Logger) {
-	mh.lg = lg
-	mh.nmeaSentences = map[string]map[string]bool{}
-	mh.ack = map[ubxbin.MsgID]bool{}
 }
 
 func (mh *msgHandler) suitableMessageCount() int {
 	return mh.nmeaMsgCount + mh.ubxMsgCount
-}
-
-func (mh *msgHandler) validMessageCount() int {
-	return mh.suitableMessageCount() + mh.rtcmMsgCount
 }
 
 func (mh *msgHandler) packet(f scan.Packet) {
@@ -236,7 +263,7 @@ func (mh *msgHandler) packet(f scan.Packet) {
 	case scan.NMEA:
 		mh.nmea(data)
 	case scan.UBX:
-		err := ubx.ProcessPacketData(data, f.TRead, mh, mh)
+		err := mh.ubxProt.ProcessPacket(data, f.TRead, mh.ubxCfg, mh, mh)
 		if err != nil {
 			mh.lg.Error("could not parse UBX message", "err", err)
 			// UBX parsing can handle unknown message types, so it's something worse then that.
@@ -255,25 +282,8 @@ func (mh *msgHandler) LeapSecond(ls *gpsmsg.LeapSecond, _ time.Time) {
 	mh.leapSecond = ls
 }
 
-func (mh *msgHandler) Version(ver *ubx.Version, _ time.Time) {
-	mh.ubxCfg = ubx.NewConfig(ver)
-}
-
-func (mh *msgHandler) Ack(msgID ubxbin.MsgID, ok bool, _ time.Time) {
-	mh.ack[msgID] = ok
-}
-
 func (mh *msgHandler) UBX(u ubxbin.Msg, _ time.Time) {
-	if mh.ubxCfg.AddMsg(u) {
-		return
-	}
-	lg := mh.lg
-	switch parsed := u.(type) {
-	case *ubxbin.CfgMsg:
-		lg.Debug("got configured rate of UBX message", "id", parsed.MsgID, "rate", parsed.Rate)
-	default:
-		lg.Debug("received a UBX message during initialization", "id", u.ID().String(), "payload", u)
-	}
+	mh.lg.Debug("received a UBX message during initialization", "id", u.ID().String(), "payload", u)
 }
 
 func (mh *msgHandler) nmea(data string) {
@@ -334,10 +344,6 @@ func (mh *msgHandler) invalid(data string, readErr error) {
 			mh.lg.Info("error reading GPS output during initialization", "err", readErr)
 		}
 	}
-}
-
-func (bc badCount) hasErrs() bool {
-	return bc.corruptMsgs != 0 || bc.framingErrs != 0
 }
 
 func (bc1 badCount) Sub(bc2 badCount) badCount {

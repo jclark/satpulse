@@ -104,12 +104,12 @@ func (s *SyncRunner) handlePacket(pkt scan.Packet) {
 	lg := s.lg
 	switch pkt.Kind {
 	case scan.NMEA:
-		err := nmea.ProcessPacketData(pkt.Data, pkt.TRead, s, nil)
+		err := nmea.ProcessPacket(pkt.Data, pkt.TRead, s, nil)
 		if err != nil {
 			lg.Error("failed to parse NMEA message", "err", err)
 		}
 	case scan.UBX:
-		err := ubx.ProcessPacketData(pkt.Data, pkt.TRead, s, nil)
+		err := ubx.ProcessPacket(pkt.Data, pkt.TRead, s, nil)
 		if err != nil {
 			lg.Error("failed to parse UBX message", "err", err)
 		}

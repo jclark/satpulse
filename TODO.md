@@ -141,7 +141,6 @@ Semi-functional currently. Not sure what the right thing is to do here:
 
 Specific things:
 
-* Need to wait for ACK after each config message
 * Things user needs to specify
    * fixed position for time mode
    * preferred GNSS constellation
@@ -167,7 +166,6 @@ Specific things:
 * More info from MonVer
    * Flash vs ROM
    * Category: timing vs high-precision etc
-* Better pairing of of ACKs with messages sent
 * Stationary navigation model even if not on a timing receiver
 * Disable unwanted NMEA messages (mixing NMEA and UBX causes problems on my ZED-F9P): disable NMEA protocol on the port.
 

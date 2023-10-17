@@ -8,23 +8,17 @@ import (
 )
 
 type Config struct {
-	ver    *Version
-	tmode2 *bin.CfgTmode2
-	tmode3 *bin.CfgTmode3
-	tp5    *bin.CfgTp5
-	gnss   *bin.CfgGNSS
-	rate   *bin.CfgRate
+	protVer ProtVer
+	tmode2  *bin.CfgTmode2
+	tmode3  *bin.CfgTmode3
+	tp5     *bin.CfgTp5
+	gnss    *bin.CfgGNSS
+	rate    *bin.CfgRate
+	msgRate map[bin.MsgID][6]byte
 }
 
 // Verify that Config implements gpsmsg.Config
 var _ gpsmsg.Config = (*Config)(nil)
-
-func NewConfig(ver *Version) *Config {
-	if ver == nil {
-		panic("nil version")
-	}
-	return &Config{ver: ver}
-}
 
 func (c *Config) EnabledGNSS() []gpsmsg.MajorGNSS {
 	if c == nil || c.gnss == nil {
@@ -41,11 +35,8 @@ func (c *Config) EnabledGNSS() []gpsmsg.MajorGNSS {
 	return enabled
 }
 
-func (c *Config) Version() *Version {
-	if c == nil {
-		return nil
-	}
-	return c.ver
+func (c *Config) SetProtVer(protVer ProtVer) {
+	c.protVer = protVer
 }
 
 func (c *Config) TimeMode() *gpsmsg.TimeMode {
@@ -72,20 +63,6 @@ func (c *Config) SolutionPeriod() time.Duration {
 	return period
 }
 
-func (c *Config) GetterMsgs() [][]byte {
-	packets := [][]byte{
-		bin.Poll(bin.CfgGNSSID),
-		bin.Poll(bin.CfgRateID),
-		bin.Poll(bin.CfgTp5ID),
-	}
-	tmodeID := bin.CfgTmode2ID
-	if c.productCategory() == "HPG" {
-		tmodeID = bin.CfgTmode3ID
-	}
-	packets = append(packets, bin.Poll(tmodeID))
-	return packets
-}
-
 func (cfg *Config) AddMsg(m bin.Msg) bool {
 	if cfg == nil {
 		return false
@@ -101,24 +78,23 @@ func (cfg *Config) AddMsg(m bin.Msg) bool {
 		cfg.gnss = mt
 	case *bin.CfgRate:
 		cfg.rate = mt
+	case *bin.CfgMsg:
+		cfg.addMsgRate(mt.MsgID, mt.Rate)
 	default:
 		return false
 	}
 	return true
 }
 
-func (c *Config) productCategory() string {
-	if fw := c.ver.FW; fw != nil {
-		return fw.ProductCategory
+func (cfg *Config) addMsgRate(msgID bin.MsgID, rate [6]byte) {
+	if cfg.msgRate == nil {
+		cfg.msgRate = make(map[bin.MsgID][6]byte)
 	}
-	return ""
+	cfg.msgRate[msgID] = rate
 }
 
 func (c *Config) protVerAtLeast(major, minor byte) bool {
-	if c.ver.Prot == nil {
-		return false
-	}
-	return c.ver.Prot.Major > major || (c.ver.Prot.Major == major && c.ver.Prot.Minor >= minor)
+	return c.protVer.Major > major || (c.protVer.Major == major && c.protVer.Minor >= minor)
 }
 
 func majorGNSS(g bin.GNSSID) (gpsmsg.MajorGNSS, bool) {

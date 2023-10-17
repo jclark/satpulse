@@ -119,31 +119,7 @@ func ScanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Packet) {
 type OutPort interface {
 	io.Writer
 	Buffered() (int, error)
-}
-
-func WriteAsync(ctx context.Context, p OutPort, packets [][]byte) <-chan error {
-	c := make(chan error, 1)
-	go func() {
-		nBytes := 0
-		for _, pkt := range packets {
-			select {
-			case <-ctx.Done():
-				c <- ctx.Err()
-				return
-			default:
-			}
-			_, err := p.Write(pkt)
-			if err != nil {
-				c <- err
-				return
-			}
-			nBytes += len(pkt)
-		}
-		logctx.FromContext(ctx).Debug("about to drain the serial port")
-		c <- Drain(ctx, p, nBytes)
-		logctx.FromContext(ctx).Debug("about to exit the asynchronous write goroutine")
-	}()
-	return c
+	TransmitTime(nBytes int) time.Duration
 }
 
 func Drain(ctx context.Context, p OutPort, nBytesWritten int) error {
