@@ -3,6 +3,7 @@ package term
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,10 +12,11 @@ import (
 )
 
 type Term struct {
-	fd      int
-	path    string
-	tsSaved unix.Termios
-	iCount  *unix2.SerialICounter
+	fd               int
+	path             string
+	byteTransmitTime time.Duration
+	tsSaved          unix.Termios
+	iCount           *unix2.SerialICounter
 }
 
 type Attr struct {
@@ -69,6 +71,7 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	}
 	// XXX turn of IXOFF
 	err = t.setAttr(&attr.ts)
+	t.byteTransmitTime = byteTransmitTime(attr.ts)
 	_ = t.GetErrorCounts()
 	return
 }
@@ -97,66 +100,97 @@ func Local(a *Attr) error {
 	return nil
 }
 
-func speedToB(speed int) (b uint32, ok bool) {
-	ok = true
-	switch speed {
-	// Not supporting 0: that has special semantics
-	case 50:
-		b = unix.B50
-	case 75:
-		b = unix.B75
-	case 110:
-		b = unix.B110
-	case 134:
-		b = unix.B134
-	case 150:
-		b = unix.B150
-	case 200:
-		b = unix.B200
-	case 300:
-		b = unix.B300
-	case 600:
-		b = unix.B600
-	case 1200:
-		b = unix.B1200
-	case 1800:
-		b = unix.B1800
-	case 2400:
-		b = unix.B2400
-	case 4800:
-		b = unix.B4800
-	case 9600:
-		b = unix.B9600
-	case 19200:
-		b = unix.B19200
-	case 38400:
-		b = unix.B38400
-	case 57600:
-		b = unix.B57600
-	case 115200:
-		b = unix.B115200
-	case 230400:
-		b = unix.B230400
-	case 460800:
-		b = unix.B460800
-	case 500000:
-		b = unix.B500000
-	case 576000:
-		b = unix.B576000
-	case 921600:
-		b = unix.B921600
-	case 1000000:
-		b = unix.B1000000
-	case 1152000:
-		b = unix.B1152000
-	case 1500000:
-		b = unix.B1500000
-	case 2000000:
-		b = unix.B2000000
-	default:
-		ok = false
+// TransmitTime returns the time it takes to send a byte using the settings in Term.
+func (t *Term) TransmitTime(nBytes int) time.Duration {
+	if nBytes <= 0 {
+		return 0
 	}
-	return
+	return t.byteTransmitTime * time.Duration(nBytes)
+}
+
+// byteTransmitTime returns the time it takes to send a byte using the given Termios settings.
+func byteTransmitTime(ts unix.Termios) time.Duration {
+	bits := bitsPerByte(ts)
+	b := ts.Ospeed
+	if b == 0 {
+		b = ts.Cflag & (unix.CBAUD)
+	}
+	speed := bToSpeed(b)
+	if speed <= 0 {
+		return 0
+	}
+	// speed is bits per second
+	timePerBit := time.Second / time.Duration(speed)
+	return time.Duration(bits) * timePerBit
+}
+
+// bitsPerByte returns the number of bits on the wire per byte for the given Termios settings.
+func bitsPerByte(ts unix.Termios) int {
+	bits := 2 // one start bit, one stop bit
+	// Adjust bits for character size
+	switch ts.Cflag & unix.CSIZE {
+	case unix.CS5:
+		bits += 5
+	case unix.CS6:
+		bits += 6
+	case unix.CS7:
+		bits += 7
+	default:
+		bits += 8
+	}
+	// Add bits for parity
+	if ts.Cflag&unix.PARENB != 0 {
+		bits++
+	}
+	// Add bits for two stop bits
+	if ts.Cflag&unix.CSTOPB != 0 {
+		bits++
+	}
+	return bits
+}
+
+var baudRates = []struct {
+	b     uint32
+	speed int
+}{
+	{unix.B50, 50},
+	{unix.B75, 75},
+	{unix.B110, 110},
+	{unix.B134, 134},
+	{unix.B150, 150},
+	{unix.B200, 200},
+	{unix.B300, 300},
+	{unix.B600, 600},
+	{unix.B1200, 1200},
+	{unix.B1800, 1800},
+	{unix.B2400, 2400},
+	{unix.B4800, 4800},
+	{unix.B9600, 9600},
+	{unix.B19200, 19200},
+	{unix.B38400, 38400},
+	{unix.B57600, 57600},
+	{unix.B115200, 115200},
+	{unix.B230400, 230400},
+}
+
+func bToSpeed(b uint32) int {
+	i := sort.Search(len(baudRates), func(i int) bool {
+		return baudRates[i].b >= b
+	})
+	if i < len(baudRates) && baudRates[i].b == b {
+		return baudRates[i].speed
+	}
+	return -1
+}
+
+func speedToB(speed int) (b uint32, ok bool) {
+	i := sort.Search(len(baudRates), func(i int) bool {
+		return baudRates[i].speed >= speed
+	})
+	if i < len(baudRates) && baudRates[i].speed == speed {
+		return baudRates[i].b, true
+	}
+	return 0, false
 }
 
 func IsValidSpeed(speed int) bool {
