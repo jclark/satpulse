@@ -166,21 +166,19 @@ func isDigits(s string) bool {
 	return true
 }
 
-func talkerIDToGNSS(t string) *gpsmsg.MajorGNSS {
-	var g gpsmsg.MajorGNSS
+func talkerIDToGNSS(t string) gpsmsg.MajorGNSS {
 	switch t {
 	case "GP":
-		g = gpsmsg.GPS
+		return gpsmsg.GPS
 	case "GL":
-		g = gpsmsg.GLONASS
+		return gpsmsg.GLONASS
 	case "GA":
-		g = gpsmsg.Galileo
+		return gpsmsg.Galileo
 	case "GB", "BD":
-		g = gpsmsg.BeiDou
+		return gpsmsg.BeiDou
 	default:
-		return nil
+		return 0
 	}
-	return &g
 }
 
 func Split(data string) *Message {

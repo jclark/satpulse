@@ -19,8 +19,7 @@ func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusGPS
 	}
 	t.Accuracy = time.Duration(m.TAcc)
-	g := gpsmsg.GPS
-	t.GNSS = &g
+	t.GNSS = gpsmsg.GPS
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
@@ -34,8 +33,7 @@ func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsmsg.Time {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusBeiDou
 	}
 	t.Accuracy = time.Duration(m.TAcc)
-	g := gpsmsg.BeiDou
-	t.GNSS = &g
+	t.GNSS = gpsmsg.BeiDou
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
@@ -50,8 +48,7 @@ func timeNavTimeGal(m *bin.NavTimeGal) *gpsmsg.Time {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusGalileo
 	}
 	t.Accuracy = time.Duration(m.TAcc)
-	g := gpsmsg.Galileo
-	t.GNSS = &g
+	t.GNSS = gpsmsg.Galileo
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
@@ -62,8 +59,7 @@ func timeNavTimeGLO(m *bin.NavTimeGLO) *gpsmsg.Time {
 		u := ptime.GLONASS(m.N4, m.Nt, sTOW(m.TOD)+nsTOW(m.FTOD))
 		t.UTCTime = &u
 	}
-	g := gpsmsg.GLONASS
-	t.GNSS = &g
+	t.GNSS = gpsmsg.GLONASS
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	t.Accuracy = time.Duration(m.TAcc)
 	return &t
@@ -98,21 +94,19 @@ func iTOWEpoch(iTOW uint32) uint32 {
 	return iTOW + 1
 }
 
-func utcStandardToGNSS(u bin.UTCStandard) *gpsmsg.MajorGNSS {
-	g := gpsmsg.GPS
+func utcStandardToGNSS(u bin.UTCStandard) gpsmsg.MajorGNSS {
 	switch u {
 	case bin.UTCStandardUSNO:
-		g = gpsmsg.GPS
+		return gpsmsg.GPS
 	case bin.UTCStandardSU:
-		g = gpsmsg.GLONASS
+		return gpsmsg.GLONASS
 	case bin.UTCStandardNTSC:
-		g = gpsmsg.BeiDou
+		return gpsmsg.BeiDou
 	case bin.UTCStandardEU:
-		g = gpsmsg.Galileo
+		return gpsmsg.Galileo
 	default:
-		return nil
+		return 0
 	}
-	return &g
 }
 
 func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
@@ -124,19 +118,17 @@ func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
 	}
 	t := gpsmsg.Time{PrecedesPulse: true, SrcType: "UBX-TIM-TP"}
 	t.PulseOffset = ptime.Picoseconds(m.QErr)
-	var g gpsmsg.MajorGNSS
-	t.GNSS = &g
 	conv := ptime.GPS
 	switch m.RefInfo & bin.TimTPTimeRefGNSS {
 	case bin.TimTPTimeRefGPS:
-		g = gpsmsg.GPS
+		t.GNSS = gpsmsg.GPS
 	case bin.TimTPTimeRefGLONASS:
-		g = gpsmsg.GLONASS
+		t.GNSS = gpsmsg.GLONASS
 	case bin.TimTPTimeRefBeiDou:
-		g = gpsmsg.BeiDou
+		t.GNSS = gpsmsg.BeiDou
 		conv = ptime.BeiDou
 	case bin.TimTPTimeRefGalileo:
-		g = gpsmsg.Galileo
+		t.GNSS = gpsmsg.Galileo
 		conv = ptime.Galileo
 	default:
 		return nil
@@ -161,7 +153,7 @@ func timeTimTos(m *bin.TimTos) *gpsmsg.Time {
 		g, toTAI := toTAIFunc(m.GNSSID)
 		if toTAI != nil && uint32(int16(m.Week)) == m.Week {
 			t.TAITime = toTAI(int16(m.Week), sTOW(m.TOW))
-			t.GNSS = &g
+			t.GNSS = g
 			t.Accuracy = time.Duration(m.GNSSUncertainty)
 		}
 	}

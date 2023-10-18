@@ -20,7 +20,7 @@ func (h *DefaultHandler) LeapSecond(msg *LeapSecond, tRead time.Time) {}
 type MajorGNSS int
 
 const (
-	GPS MajorGNSS = iota
+	GPS MajorGNSS = iota + 1
 	GLONASS
 	BeiDou
 	Galileo
@@ -36,7 +36,7 @@ type Time struct {
 	Accuracy      time.Duration  `json:"accuracy,omitempty"`
 	UTCOffset     uint8          `json:"utcOffset,omitempty"`
 	PulseOffset   time.Duration  `json:"pulseOffset,omitempty"`
-	GNSS          *MajorGNSS     `json:"gnss,omitempty"`
+	GNSS          MajorGNSS      `json:"gnss,omitempty"`
 	PrecedesPulse bool           `json:"precedesPulse,omitempty"`
 	NavEpoch      uint32         `json:"navEpoch,omitempty"`
 	SrcType       string         `json:"srcType"`

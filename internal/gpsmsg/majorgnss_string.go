@@ -8,10 +8,10 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
-	_ = x[GPS-0]
-	_ = x[GLONASS-1]
-	_ = x[BeiDou-2]
-	_ = x[Galileo-3]
+	_ = x[GPS-1]
+	_ = x[GLONASS-2]
+	_ = x[BeiDou-3]
+	_ = x[Galileo-4]
 }
 
 const _MajorGNSS_name = "GPSGLONASSBeiDouGalileo"
@@ -19,8 +19,9 @@ const _MajorGNSS_name = "GPSGLONASSBeiDouGalileo"
 var _MajorGNSS_index = [...]uint8{0, 3, 10, 16, 23}
 
 func (i MajorGNSS) String() string {
+	i -= 1
 	if i < 0 || i >= MajorGNSS(len(_MajorGNSS_index)-1) {
-		return "MajorGNSS(" + strconv.FormatInt(int64(i), 10) + ")"
+		return "MajorGNSS(" + strconv.FormatInt(int64(i+1), 10) + ")"
 	}
 	return _MajorGNSS_name[_MajorGNSS_index[i]:_MajorGNSS_index[i+1]]
 }
