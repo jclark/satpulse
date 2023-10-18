@@ -80,14 +80,6 @@ func (prot *Protocol) PollVersion() []byte {
 	return bin.Poll(bin.MonVerID)
 }
 
-func (prot *Protocol) PollSurveyIn() []byte {
-	svinID := bin.TimSvinID
-	if prot.productCategory() == "HPG" {
-		svinID = bin.NavSvinID
-	}
-	return bin.Poll(svinID)
-}
-
 func (prot *Protocol) PollLeapSecond() []byte {
 	return bin.Poll(bin.NavTimeLSID)
 }
@@ -117,12 +109,23 @@ func (prot *Protocol) GetterMsgs() [][]byte {
 		bin.Poll(bin.CfgRateID),
 		bin.Poll(bin.CfgTp5ID),
 	}
-	tmodeID := bin.CfgTmode2ID
-	if prot.productCategory() == "HPG" {
-		tmodeID = bin.CfgTmode3ID
+	switch prot.productCategory() {
+	case "TIM", "FTS":
+		packets = append(packets, bin.Poll(bin.CfgTmode2ID))
+	case "HPG":
+		packets = append(packets, bin.Poll(bin.CfgTmode3ID))
 	}
-	packets = append(packets, bin.Poll(tmodeID))
 	return packets
+}
+
+func (prot *Protocol) PollSurveyIn() []byte {
+	switch prot.productCategory() {
+	case "TIM", "FTS":
+		return bin.Poll(bin.TimSvinID)
+	case "HPG":
+		return bin.Poll(bin.NavSvinID)
+	}
+	return nil
 }
 
 func (prot *Protocol) productCategory() string {

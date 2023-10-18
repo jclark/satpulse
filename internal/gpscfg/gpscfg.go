@@ -177,10 +177,13 @@ func (mh *msgHandler) ubxProbe(ctx context.Context, port serio.OutPort) (bool, e
 
 func (mh *msgHandler) ubxConfigure(ctx context.Context, port serio.OutPort) error {
 	packets := append(mh.ubxProt.GetterMsgs(),
-		mh.ubxProt.PollSurveyIn(),
 		mh.ubxProt.PollLeapSecond(),
 		ubxbin.SetRate(ubxbin.NavTimeGPSID, 1),
 		ubxbin.SetRate(ubxbin.TimTPID, 1))
+	svin := mh.ubxProt.PollSurveyIn()
+	if svin != nil {
+		packets = append(packets, svin)
+	}
 	for _, pkt := range packets {
 		t := time.Now()
 		_, err := port.Write(pkt)
