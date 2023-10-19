@@ -29,6 +29,14 @@ const (
 )
 
 const (
+	PortI2C = iota
+	PortUART1
+	PortUART2
+	PortUSB
+	PortSPI
+)
+
+const (
 	clsNav = 0x01
 	clsAck = 0x05
 	clsInf = 0x04
