@@ -46,7 +46,7 @@ func (raw *RawConfig) convTmode2(cfg *gpsmsg.Config) {
 	case bin.CfgTmode2Disabled:
 		gpsmsg.CfgTimeMode.Set(cfg, gpsmsg.TimeModeDisabled)
 	case bin.CfgTmode2SurveyIn:
-		gpsmsg.CfgTimeMode.Set(cfg, gpsmsg.TimeModeSurveyIn)
+		gpsmsg.CfgTimeMode.Set(cfg, gpsmsg.TimeModeSurvey)
 		gpsmsg.CfgSurveyMinDur.Set(cfg, time.Duration(tm.SvinMinDur)*time.Second)
 		gpsmsg.CfgSurveyAccLimit.Set(cfg, gpsmsg.Length(tm.SvinAccLimit)*gpsmsg.Millimeter)
 	case bin.CfgTmode2FixedMode:
@@ -71,7 +71,7 @@ func (raw *RawConfig) convTmode3(cfg *gpsmsg.Config) {
 	case bin.CfgTmode3Disabled:
 		gpsmsg.CfgTimeMode.Set(cfg, gpsmsg.TimeModeDisabled)
 	case bin.CfgTmode3SurveyIn:
-		gpsmsg.CfgTimeMode.Set(cfg, gpsmsg.TimeModeSurveyIn)
+		gpsmsg.CfgTimeMode.Set(cfg, gpsmsg.TimeModeSurvey)
 		gpsmsg.CfgSurveyMinDur.Set(cfg, time.Duration(tm.SvinMinDur)*time.Second)
 		gpsmsg.CfgSurveyAccLimit.Set(cfg, gpsmsg.Length(tm.SvinAccLimit)*(gpsmsg.Millimeter/10))
 	case bin.CfgTmode3FixedMode:

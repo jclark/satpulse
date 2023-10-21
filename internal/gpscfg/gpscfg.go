@@ -196,7 +196,7 @@ func (mh *msgHandler) ubxConfigure(ctx context.Context, port serio.OutPort) erro
 	packets := [][]byte{
 		mh.ubxProt.PollPort(),
 		mh.ubxProt.PollLeapSecond(),
-		mh.ubxProt.PollSurveyIn(),
+		mh.ubxProt.PollSurvey(),
 	}
 	packets = append(packets, mh.ubxProt.GetterMsgs()...)
 	packets = append(packets,

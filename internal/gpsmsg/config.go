@@ -62,8 +62,8 @@ func (c *Config) serializableMap() map[string]interface{} {
 			switch t {
 			case TimeModeDisabled:
 				j[k] = "disabled"
-			case TimeModeSurveyIn:
-				j[k] = "surveyIn"
+			case TimeModeSurvey:
+				j[k] = "survey"
 			case TimeModeFixed:
 				j[k] = "fixed"
 			default:
@@ -107,6 +107,6 @@ type TimeMode byte
 
 const (
 	TimeModeDisabled TimeMode = iota
-	TimeModeSurveyIn
+	TimeModeSurvey
 	TimeModeFixed
 )

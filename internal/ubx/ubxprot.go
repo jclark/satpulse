@@ -158,7 +158,7 @@ func (prot *Protocol) GetterMsgs() [][]byte {
 	return packets
 }
 
-func (prot *Protocol) PollSurveyIn() []byte {
+func (prot *Protocol) PollSurvey() []byte {
 	switch prot.productCategory() {
 	case "TIM", "FTS":
 		return bin.Poll(bin.TimSvinID)
