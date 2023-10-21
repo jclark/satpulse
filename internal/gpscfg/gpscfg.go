@@ -18,8 +18,8 @@ import (
 )
 
 type InitData struct {
-	Version  *ubx.Version     `json:"version,omitempty"`
-	TimeMode *gpsmsg.TimeMode `json:"timeMode,omitempty"`
+	Version *ubx.Version   `json:"version,omitempty"`
+	Config  *gpsmsg.Config `json:"config,omitempty"`
 }
 
 type msgHandler struct {
@@ -33,7 +33,7 @@ type msgHandler struct {
 	nmeaSentences map[string]map[string]bool
 	rtcmMsgs      map[uint16]bool
 	ubxProt       *ubx.Protocol
-	ubxCfg        *ubx.Config
+	ubxCfg        *ubx.RawConfig
 	leapSecond    *gpsmsg.LeapSecond
 }
 
@@ -73,21 +73,38 @@ func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet
 			// provided we have some messages working, we should be OK
 			return nil, err
 		}
-		mh.logUbxConfig()
 	}
-	initData := &InitData{
-		TimeMode: mh.ubxCfg.TimeMode(),
-		Version:  mh.ubxProt.Version(),
-	}
-	return initData, nil
+	return mh.finish(), nil
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
 	mh.lg = lg
 	mh.packetCh = packetCh
 	mh.ubxProt = &ubx.Protocol{}
-	mh.ubxCfg = &ubx.Config{}
+	mh.ubxCfg = &ubx.RawConfig{}
 	mh.nmeaSentences = map[string]map[string]bool{}
+}
+
+func (mh *msgHandler) finish() *InitData {
+	lg := mh.lg
+	initData := InitData{}
+	config := mh.ubxCfg.Config()
+	if config != nil {
+		lg.Info("GPS configuration", "cfg", config)
+	}
+	initData.Config = config
+	initData.Version = mh.ubxProt.Version()
+	if mh.leapSecond != nil {
+		lsdStr := mh.leapSecond.Date().Format("2006-01-02")
+		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", mh.leapSecond.UTCOffBefore, "utcOffAfter", mh.leapSecond.UTCOffAfter)
+	}
+	if ver := mh.ubxProt.Version(); ver != nil {
+		lg.Info("GPS version", "model", ver.Mod, "category", ver.ProductCategory(), "flash", ver.Flash,
+			"sw", ver.SW, "hw", ver.HW, "prot", ver.Prot, "gnss", ver.GNSS, "ext", ver.Extensions)
+	}
+	lg.Info("finished GPS initialization",
+		"nmeaSentences", maps.Keys(mh.nmeaSentences))
+	return &initData
 }
 
 func (mh *msgHandler) detect(ctx context.Context) error {
@@ -176,14 +193,15 @@ func (mh *msgHandler) ubxProbe(ctx context.Context, port serio.OutPort) (bool, e
 }
 
 func (mh *msgHandler) ubxConfigure(ctx context.Context, port serio.OutPort) error {
-	packets := append(mh.ubxProt.GetterMsgs(),
+	packets := [][]byte{
+		mh.ubxProt.PollPort(),
 		mh.ubxProt.PollLeapSecond(),
+		mh.ubxProt.PollSurveyIn(),
+	}
+	packets = append(packets, mh.ubxProt.GetterMsgs()...)
+	packets = append(packets,
 		ubxbin.SetRate(ubxbin.NavTimeGPSID, 1),
 		ubxbin.SetRate(ubxbin.TimTPID, 1))
-	svin := mh.ubxProt.PollSurveyIn()
-	if svin != nil {
-		packets = append(packets, svin)
-	}
 	for _, pkt := range packets {
 		t := time.Now()
 		_, err := port.Write(pkt)
@@ -236,26 +254,6 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, pkt []byte, tSend time.
 	return nil
 }
 
-func (mh *msgHandler) logUbxConfig() {
-	lg := mh.lg
-	gnssEnabled := mh.ubxCfg.EnabledGNSS()
-	var lsdStr string
-	if mh.leapSecond != nil {
-		lsdStr = mh.leapSecond.Date().Format("2006-01-02")
-		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", mh.leapSecond.UTCOffBefore, "utcOffAfter", mh.leapSecond.UTCOffAfter)
-	}
-	if ver := mh.ubxProt.Version(); ver != nil {
-		lg.Info("GPS version", "model", ver.Mod, "category", ver.ProductCategory(), "flash", ver.Flash,
-			"sw", ver.SW, "hw", ver.HW, "prot", ver.Prot, "gnss", ver.GNSS, "ext", ver.Extensions)
-	}
-	if period := mh.ubxCfg.SolutionPeriod(); period != 0 {
-		lg.Debug("navigation/measurement rate", "period", period.String())
-	}
-	lg.Info("finished GPS initialization",
-		"nmeaSentences", maps.Keys(mh.nmeaSentences),
-		"gnssEnabled", gnssEnabled)
-}
-
 func (mh *msgHandler) suitableMessageCount() int {
 	return mh.nmeaMsgCount + mh.ubxMsgCount
 }
@@ -266,7 +264,7 @@ func (mh *msgHandler) packet(f scan.Packet) {
 	case scan.NMEA:
 		mh.nmea(data)
 	case scan.UBX:
-		err := mh.ubxProt.ProcessPacket(data, f.TRead, mh.ubxCfg, mh, mh)
+		err := mh.ubxProt.ProcessPacket(data, f.TRead, mh.ubxCfg, mh, mh, mh.lg)
 		if err != nil {
 			mh.lg.Error("could not parse UBX message", "err", err)
 			// UBX parsing can handle unknown message types, so it's something worse then that.

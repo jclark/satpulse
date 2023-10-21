@@ -28,13 +28,17 @@ const (
 	NavIC
 )
 
+type PortID byte
+
 const (
-	PortI2C = iota
+	PortI2C PortID = iota
 	PortUART1
 	PortUART2
 	PortUSB
 	PortSPI
 )
+
+const NPort = 6
 
 const (
 	clsNav = 0x01
@@ -95,6 +99,7 @@ const (
 	AckAckID     MsgID = clsAck | (0x01 << 8)
 	CfgGNSSID    MsgID = clsCfg | (0x3E << 8)
 	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
+	CfgPrtID     MsgID = clsCfg | (0x00 << 8)
 	CfgRateID    MsgID = clsCfg | (0x08 << 8)
 	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
 	CfgTmode3ID  MsgID = clsCfg | (0x71 << 8)
@@ -108,6 +113,7 @@ const (
 	InfTestID    MsgID = clsInf | (0x03 << 8)
 	InfWarningID MsgID = clsInf | (0x01 << 8)
 	MonHwID      MsgID = clsMon | (0x09 << 8)
+	MonMsgPPID   MsgID = clsMon | (0x06 << 8)
 	MonVerID     MsgID = clsMon | (0x04 << 8)
 	NavPVTID     MsgID = clsNav | (0x07 << 8)
 	NavTimeGPSID MsgID = clsNav | (0x20 << 8)
@@ -127,6 +133,7 @@ func init() {
 	regMsg[AckAck]("ACK")
 	regMsg[CfgGNSS]("GNSS")
 	regMsg[CfgMsg]("MSG")
+	regMsg[CfgPrt]("PRT")
 	regMsg[CfgRate]("RATE")
 	regMsg[CfgTmode2]("TMODE2")
 	regMsg[CfgTmode3]("TMODE3")
@@ -140,6 +147,7 @@ func init() {
 	regMsg[InfTest]("TEST")
 	regMsg[InfWarning]("WARNING")
 	regMsg[MonHw]("HW")
+	regMsg[MonMsgPP]("MSGPP")
 	regMsg[MonVer]("VER")
 	regMsg[NavPVT]("PVT")
 	regMsg[NavSvin]("SVIN")
@@ -168,10 +176,70 @@ func (m *AckAck) ID() MsgID { return AckAckID }
 
 type CfgMsg struct {
 	MsgID MsgID
-	Rate  [6]byte
+	Rate  [NPort]byte
 }
 
 func (m *CfgMsg) ID() MsgID { return CfgMsgID }
+
+type CfgPrt struct {
+	PortID       PortID
+	_            byte
+	TxReady      CfgPrtTxReady
+	Mode         CfgPrtMode
+	BaudRate     uint32
+	InProtoMask  CfgPrtProtoMask
+	OutProtoMask CfgPrtProtoMask
+	Flags        CfgPrtFlags
+	_            [2]byte
+}
+
+func (m *CfgPrt) ID() MsgID { return CfgPrtID }
+
+type CfgPrtTxReady uint16
+
+const (
+	CfgPrtTxReadyEn     CfgPrtTxReady = 1
+	CfgPrtTxReadyPol    CfgPrtTxReady = 2
+	CfgPrtTxReadyPin    CfgPrtTxReady = 0b11111 << 2
+	CfgPrtTxReadyThresh CfgPrtTxReady = 0x1F << 7
+)
+
+type CfgPrtMode uint32
+
+const (
+	CfgPrtModeCharLen       CfgPrtMode = 0b11 << 6
+	CfgPrtModeCharLen5      CfgPrtMode = 0
+	CfgPrtModeCharLen6      CfgPrtMode = 0b01 << 6
+	CfgPrtModeCharLen7      CfgPrtMode = 0b10 << 6
+	CfgPrtModeCharLen8      CfgPrtMode = 0b11 << 6
+	CfgPrtModeParity        CfgPrtMode = 0b111 << 9
+	CfgPrtModeParityEven    CfgPrtMode = 0
+	CfgPrtModeParityOdd     CfgPrtMode = 0b001 << 9
+	CfgPrtModeParityNone    CfgPrtMode = 0b100 << 9
+	CfgPrtModeParityNoneAlt CfgPrtMode = 0b101 << 9
+	CfgPrtModeParityStop    CfgPrtMode = 0b11 << 12
+	CfgPrtModeParityStop1   CfgPrtMode = 0
+	CfgPrtModeParityStop15  CfgPrtMode = 0b01 << 12
+	CfgPrtModeParityStop2   CfgPrtMode = 0b10 << 12
+	CfgPrtModeParityStop05  CfgPrtMode = 0b11 << 12
+)
+
+type CfgPrtProtoMask uint16
+
+const (
+	CfgPrtProtoUBX CfgPrtProtoMask = 1 << iota
+	CfgPrtProtoNMEA
+	CfgPrtProtoRTCM2
+	_
+	_
+	CfgPrtProtoRTCM3
+)
+
+type CfgPrtFlags uint16
+
+const (
+	CfgPrtFlagsExtendedTxTimeout CfgPrtFlags = 2
+)
 
 type CfgRate struct {
 	MeasRate uint16
@@ -218,7 +286,15 @@ const (
 	CfgTp5IsLength
 	CfgTp5AlignToTow
 	CfgTp5Polarity
-	CfgTp5GridUtcGnss
+)
+
+const (
+	CfgTp5GridUTC CfgTp5Flags = iota << 7
+	CfgTp5GridGPS
+	CfgTp5GridGLONASS
+	CfgTp5GridBeiDou
+	CfgTp5GridGalileo
+	CfgTp5GridUTCGNSS CfgTp5Flags = 0xb1111 << 7
 )
 
 type CfgTmode2 struct {
@@ -717,6 +793,15 @@ type MonHw struct {
 
 func (m *MonHw) ID() MsgID { return MonHwID }
 
+const nProtocol = 8
+
+type MonMsgPP struct {
+	Msg     [NPort][nProtocol]uint16
+	Skipped [NPort]uint32
+}
+
+func (m *MonMsgPP) ID() MsgID { return MonMsgPPID }
+
 type MonVerFixed struct {
 	SwVersion [30]byte
 	HwVersion [10]byte
@@ -1091,6 +1176,11 @@ func Serialize(msg Msg) ([]byte, error) {
 
 func Poll(mid MsgID) []byte {
 	packet, _ := packMsg(mid, []byte{})
+	return packet
+}
+
+func PollCfgPrt(portID PortID) []byte {
+	packet, _ := packMsg(CfgPrtID, []byte{byte(portID), 0})
 	return packet
 }
 
