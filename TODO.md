@@ -149,6 +149,7 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * persistent change
    * cold boot
 * Configure antenna supervision
+* Support new-style ublox configuration (VALGET, VALSET)
 
 ## Antenna supervision
 
