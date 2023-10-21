@@ -148,6 +148,7 @@ func (prot *Protocol) GetterMsgs() [][]byte {
 		bin.Poll(bin.CfgGNSSID),
 		bin.Poll(bin.CfgRateID),
 		bin.Poll(bin.CfgTp5ID),
+		bin.Poll(bin.CfgNav5ID),
 	}
 	switch prot.productCategory() {
 	case "TIM", "FTS":

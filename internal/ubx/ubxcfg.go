@@ -18,6 +18,7 @@ type RawConfig struct {
 	tp5      *bin.CfgTp5
 	gnss     *bin.CfgGNSS
 	rate     *bin.CfgRate
+	nav5     *bin.CfgNav5
 	prt      [nPort]*bin.CfgPrt
 	msgRate  map[bin.MsgID][nPort]byte
 }
@@ -34,6 +35,7 @@ func (raw *RawConfig) Config() *gpsmsg.Config {
 	raw.convTp5(cfg)
 	raw.convGNSS(cfg)
 	raw.convRate(cfg)
+	raw.convNav5(cfg)
 	return cfg
 }
 
@@ -158,16 +160,42 @@ func (raw *RawConfig) convGNSS(cfg *gpsmsg.Config) {
 	gpsmsg.CfgEnabledGNSS.Set(cfg, enabled)
 }
 
-func (c *RawConfig) convRate(cfg *gpsmsg.Config) {
-	rate := c.rate
+func (raw *RawConfig) convRate(cfg *gpsmsg.Config) {
+	rate := raw.rate
 	if rate == nil {
 		return
 	}
-	period := time.Duration(c.rate.MeasRate) * time.Millisecond
-	if c.ver.protVerAtLeast(18, 0) && period != 0 {
-		period /= time.Duration(c.rate.NavRate)
+	period := time.Duration(raw.rate.MeasRate) * time.Millisecond
+	if raw.ver.protVerAtLeast(18, 0) && period != 0 {
+		period /= time.Duration(raw.rate.NavRate)
 	}
 	gpsmsg.CfgSolutionPeriod.Set(cfg, period)
+}
+
+func (raw *RawConfig) convNav5(cfg *gpsmsg.Config) {
+	nav5 := raw.nav5
+	if nav5 == nil {
+		return
+	}
+	stationary := false
+	if nav5.DynModel == bin.CfgNav5DynStationary {
+		stationary = true
+	}
+	gpsmsg.CfgStationary.Set(cfg, stationary)
+	var utc gpsmsg.MajorGNSS
+	switch nav5.UtcStandard {
+	case bin.CfgNav5UtcAuto:
+		utc = 0
+	case bin.CfgNav5UtcUSNO:
+		utc = gpsmsg.GPS
+	case bin.CfgNav5UtcSU:
+		utc = gpsmsg.GLONASS
+	case bin.CfgNav5UtcNTSC:
+		utc = gpsmsg.BeiDou
+	case bin.CfgNav5UtcEU:
+		utc = gpsmsg.Galileo
+	}
+	gpsmsg.CfgUtcStandard.Set(cfg, utc)
 }
 
 func (c *RawConfig) SetVersion(ver *Version) {
@@ -196,6 +224,8 @@ func (cfg *RawConfig) AddMsg(m bin.Msg) bool {
 		cfg.gnss = mt
 	case *bin.CfgRate:
 		cfg.rate = mt
+	case *bin.CfgNav5:
+		cfg.nav5 = mt
 	case *bin.CfgMsg:
 		cfg.addMsgRate(mt.MsgID, mt.Rate)
 	case *bin.CfgPrt:

@@ -99,6 +99,7 @@ const (
 	AckAckID     MsgID = clsAck | (0x01 << 8)
 	CfgGNSSID    MsgID = clsCfg | (0x3E << 8)
 	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
+	CfgNav5ID    MsgID = clsCfg | (0x24 << 8)
 	CfgPrtID     MsgID = clsCfg | (0x00 << 8)
 	CfgRateID    MsgID = clsCfg | (0x08 << 8)
 	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
@@ -133,6 +134,7 @@ func init() {
 	regMsg[AckAck]("ACK")
 	regMsg[CfgGNSS]("GNSS")
 	regMsg[CfgMsg]("MSG")
+	regMsg[CfgNav5]("NAV5")
 	regMsg[CfgPrt]("PRT")
 	regMsg[CfgRate]("RATE")
 	regMsg[CfgTmode2]("TMODE2")
@@ -180,6 +182,74 @@ type CfgMsg struct {
 }
 
 func (m *CfgMsg) ID() MsgID { return CfgMsgID }
+
+// UBX-CFG-NAV5 Navigation engine settings
+
+type CfgNav5 struct {
+	Mask              CfgNav5Mask
+	DynModel          CfgNav5DynModel
+	FixMode           byte
+	FixedAlt          int32
+	FixedAltVar       uint32
+	MinElev           int8
+	DrLimit           byte
+	PDop              uint16
+	TDop              uint16
+	PAcc              uint16
+	TAcc              uint16
+	StaticHoldThresh  byte
+	DgnssTimeout      byte
+	CnoThreshNumSvs   byte
+	CnoThresh         byte
+	_                 [2]byte
+	StaticHoldMaxDist uint16
+	UtcStandard       CfgNav5UtcStandard
+	_                 [5]byte
+}
+
+func (m *CfgNav5) ID() MsgID { return CfgNav5ID }
+
+type CfgNav5Mask uint16
+
+const (
+	CfgNav5MaskDyn CfgNav5Mask = 1 << iota
+	CfgNav5MaskMinElev
+	CfgNav5MaskPosFixMode
+	CfgNav5MaskDrLim
+	CfgNav5MaskPosMask
+	CfgNav5MaskTimeMask
+	CfgNav5MaskStaticHoldMask
+	CfgNav5MaskDgpsMask
+	CfgNav5MaskCnoThresh
+)
+
+type CfgNav5DynModel byte
+
+const (
+	CfgNav5DynPortable CfgNav5DynModel = iota
+	_
+	CfgNav5DynStationary
+	CfgNav5DynPedestrian
+	CfgNav5DynAutomotive
+	CfgNav5DynSea
+	CfgNav5DynAirborne1g
+	CfgNav5DynAirborne2g
+	CfgNav5DynAirborne4g
+	CfgNav5DynWristwatch
+	CfgNav5DynMotorbike
+	CfgNav5DynLawnmower
+)
+
+type CfgNav5UtcStandard byte
+
+const (
+	CfgNav5UtcAuto CfgNav5UtcStandard = 0
+	CfgNav5UtcUSNO CfgNav5UtcStandard = 3
+	CfgNav5UtcEU   CfgNav5UtcStandard = 5
+	CfgNav5UtcSU   CfgNav5UtcStandard = 6
+	CfgNav5UtcNTSC CfgNav5UtcStandard = 7
+	CfgNav5UtcNPLI CfgNav5UtcStandard = 8
+)
 
 type CfgPrt struct {
 	PortID       PortID

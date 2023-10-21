@@ -89,6 +89,8 @@ var CfgSurveyMinDur = CfgKey[time.Duration]{"surveyMinDur"}
 var CfgSurveyAccLimit = CfgKey[Length]{"surveyAccLimit"}
 var CfgFixedPosECEF = CfgKey[Point3D]{"fixedPosECEF"}
 var CfgFixedPosAcc = CfgKey[Length]{"fixedPosAcc"}
+var CfgUtcStandard = CfgKey[MajorGNSS]{"utcStandard"} // nil value to use auto
+var CfgStationary = CfgKey[bool]{"stationary"}
 
 type Length int64
 
