@@ -124,50 +124,31 @@ Others
 * Recognizing RTCM is a bit dangerous when we might have invalid data at the beginning, because it's only
 a single byte; we really cannot tell whether we have valid RTCM data until we have validated the checksum; maybe enable RTCM only once we have had a valid message of another type. Maybe have a separate state. This is alleviated by our timing out in the middle of a packet.
 * Support other framing protocols
-   * Allystar (same as UBX but uses 0xF1 0xD9)
+   * Allystar (similar to UBX but uses 0xF1 0xD9)
    * Trimble TSIP
    * SkyTraq binary
    * CASIC (China Aerospace Science & Industry Corporation) Standard Interface Protocol (CSIP) - used by Zhongke Microelectronics
 
 ## GPS configuration
 
-Semi-functional currently. Not sure what the right thing is to do here:
-
-* We should be able to do some configuration of the GPS, in particular to enable the periodic messages that we understand.
-* Advanced users who have manually configured their GPS (e.g. with u-center) should be able to turn this off
-* Should not by default save any config persistently
-* Some really cheap GPS systems do not have flash memory, and so cannot save their configuration. These need to be configured on start-up.
-* Should this be a separate program?
-
-Specific things:
-
-* Things user needs to specify
-   * fixed position for time mode
+* Be able to set the desired configuration
+   * from RawConfig and Config generate list of CfgMessages that will make the RawConfig have the specified Config
+      * should the config here be the whole config or just the changed items?
+   * CfgMessage can produce a array of bytes to be sent to the receiver
+   * a CfgMessage can be applied to the RawConfig to mutate it; this is done when the GPS receiver acks the message
+   * we can then look at the Config to see what we got
+* Allow TOML configuration of things that user must specify
    * preferred GNSS constellation
    * antenna delay
-* UBX parsing error probably means multiple readers
-* Configure time mode
-* CFG-TP5 to configure time pulse
-   * Flags
-      * lockGpsFreq
-      * align to TOW
-      * polarity rising edge
-      * time grid GNSS
-      * lockedOtherSet flag
-   * when valid
-       * 1000ms period
-       *  100ms pulse
-   * otherwise
-       * 1000ms period
-       * 0ms pulse
-* CFG-GNSS to configure GNSS constellations
-* CFG-RATE to configure rate (should be 1Hz)
-* CFG-NAV5 to configure UTC version
-* More info from MonVer
-   * Flash vs ROM
-   * Category: timing vs high-precision etc
-* Stationary navigation model even if not on a timing receiver
-* Disable unwanted NMEA messages (mixing NMEA and UBX causes problems on my ZED-F9P): disable NMEA protocol on the port.
+   * fixed antenna position
+   * disable any change (does this include messages?)
+* Better recovery from configuration errors
+* Separate program that handles things that can't be set on the fly
+   * which constellations to enable
+   * baud rate
+   * persistent change
+   * cold boot
+* Configure antenna supervision
 
 ## Antenna supervision
 
