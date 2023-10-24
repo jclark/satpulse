@@ -143,7 +143,7 @@ func (s *SyncRunner) Time(mt *gpsmsg.Time, tRead time.Time) {
 		s.lg.Debug("computed TAI time from UTC time", "tai", sec)
 	}
 	secRnd := sec.Round(time.Second)
-	if mt.PrecedesPulse {
+	if mt.Ref == gpsmsg.NextPulse {
 		s.corr.PulseOffset(secRnd, tRead, mt.PulseOffset)
 	} else if secRnd > s.lastTime {
 		s.corr.GPSTime(secRnd, tRead)

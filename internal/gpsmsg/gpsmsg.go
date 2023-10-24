@@ -30,16 +30,24 @@ func (g MajorGNSS) MarshalText() ([]byte, error) {
 	return []byte(g.String()), nil
 }
 
+type TimeRef int
+
+const (
+	NavSolution TimeRef = iota
+	NextPulse
+	LastPulse
+)
+
 type Time struct {
-	TAITime       ptime.Time     `json:"taiTime,omitempty"`
-	UTCTime       *ptime.UTCTime `json:"utcTime,omitempty"`
-	Accuracy      time.Duration  `json:"accuracy,omitempty"`
-	UTCOffset     uint8          `json:"utcOffset,omitempty"`
-	PulseOffset   time.Duration  `json:"pulseOffset,omitempty"`
-	GNSS          MajorGNSS      `json:"gnss,omitempty"`
-	PrecedesPulse bool           `json:"precedesPulse,omitempty"`
-	NavEpoch      uint32         `json:"navEpoch,omitempty"`
-	SrcType       string         `json:"srcType"`
+	TAITime     ptime.Time     `json:"taiTime,omitempty"`
+	UTCTime     *ptime.UTCTime `json:"utcTime,omitempty"`
+	Accuracy    time.Duration  `json:"accuracy,omitempty"`
+	UTCOffset   uint8          `json:"utcOffset,omitempty"`
+	PulseOffset time.Duration  `json:"pulseOffset,omitempty"`
+	GNSS        MajorGNSS      `json:"gnss,omitempty"`
+	Ref         TimeRef        `json:"ref,omitempty"`
+	NavEpoch    uint32         `json:"navEpoch,omitempty"`
+	SrcType     string         `json:"srcType"`
 }
 
 type LeapSecond struct {

@@ -116,7 +116,7 @@ func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
 		// Can we do better?
 		return nil
 	}
-	t := gpsmsg.Time{PrecedesPulse: true, SrcType: "UBX-TIM-TP"}
+	t := gpsmsg.Time{Ref: gpsmsg.NextPulse, SrcType: "UBX-TIM-TP"}
 	t.PulseOffset = ptime.Picoseconds(m.QErr)
 	conv := ptime.GPS
 	switch m.RefInfo & bin.TimTPTimeRefGNSS {
@@ -138,7 +138,7 @@ func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
 }
 
 func timeTimTos(m *bin.TimTos) *gpsmsg.Time {
-	t := gpsmsg.Time{SrcType: "UBX-TIM-TOS"}
+	t := gpsmsg.Time{Ref: gpsmsg.LastPulse, SrcType: "UBX-TIM-TOS"}
 	if (m.Flags & bin.TimTosUTCTimeValid) != 0 {
 		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Minute, m.Second, 0)
 		t.UTCTime = &u
