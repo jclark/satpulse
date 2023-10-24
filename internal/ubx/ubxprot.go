@@ -147,16 +147,31 @@ func (prot *Protocol) GetterMsgs() [][]byte {
 	packets := [][]byte{
 		bin.Poll(bin.CfgGNSSID),
 		bin.Poll(bin.CfgRateID),
-		bin.Poll(bin.CfgTp5ID),
 		bin.Poll(bin.CfgNav5ID),
 	}
+	tpIdx := 0
 	switch prot.productCategory() {
-	case "TIM", "FTS":
+	case "FTS":
+		tpIdx = 1
+		fallthrough
+	case "TIM":
 		packets = append(packets, bin.Poll(bin.CfgTmode2ID))
 	case "HPG":
 		packets = append(packets, bin.Poll(bin.CfgTmode3ID))
 	}
+	packets = append(packets, bin.PollCfgTp5(tpIdx))
 	return packets
+}
+
+func (prot *Protocol) EnableTimeMsgs() [][]byte {
+	if prot.productCategory() == "FTS" {
+		return [][]byte{bin.SetRate(bin.TimTosID, 1)}
+	} else {
+		return [][]byte{
+			bin.SetRate(bin.NavTimeGPSID, 1),
+			bin.SetRate(bin.TimTPID, 1),
+		}
+	}
 }
 
 func (prot *Protocol) PollSurvey() []byte {

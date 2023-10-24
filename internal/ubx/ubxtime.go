@@ -155,6 +155,7 @@ func timeTimTos(m *bin.TimTos) *gpsmsg.Time {
 			t.TAITime = toTAI(int16(m.Week), sTOW(m.TOW))
 			t.GNSS = g
 			t.Accuracy = time.Duration(m.GNSSUncertainty)
+			t.PulseOffset = time.Duration(m.GNSSOffset)
 		}
 	}
 	return &t

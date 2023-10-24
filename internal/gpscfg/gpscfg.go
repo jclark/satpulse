@@ -199,9 +199,7 @@ func (mh *msgHandler) ubxConfigure(ctx context.Context, port serio.OutPort) erro
 		mh.ubxProt.PollSurvey(),
 	}
 	packets = append(packets, mh.ubxProt.GetterMsgs()...)
-	packets = append(packets,
-		ubxbin.SetRate(ubxbin.NavTimeGPSID, 1),
-		ubxbin.SetRate(ubxbin.TimTPID, 1))
+	packets = append(packets, mh.ubxProt.EnableTimeMsgs()...)
 	for _, pkt := range packets {
 		t := time.Now()
 		_, err := port.Write(pkt)
