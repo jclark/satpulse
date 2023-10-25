@@ -105,16 +105,17 @@ Others
 ## Serial IO
 
 * Problem with writing to serial device that is not connected to anything
-   * Attempting to Close (after doing write) hangs for 30s (I guess waiting to drain)
+   * Attempting to Close (after doing write) hangs for 30s
+   * Why does happen? If there's no flow control, the UART should transmit the data even if the serial device is not connected.
    * Possible fixes (not mutually exclusive)
       * run close in a goroutine with a timeout
-      * use the obscure Linux API to prevent this
-      * change closing_wait
-      * do not write until some input is received (we are not writing now)
+      * change closing_wait by using the same Linux API as setserial (TIOCSSERIAL/TIOCGSERIAL and serial_struct); but this probably needs root
+      * (current approach) do not write until some input is received
+      * make sure we aren't restoring serial port settings to something with flow control
 * Deal with absence of CLOCAL potentially causing open to block
 * Cancelled write should complete UBX message but not drain
 * Can we be detect when baud rate is too low for information passed?
-* Should we support other styles of locking in addition to flock
+* Should we support other styles of locking in addition to flock 
   * UUCP-style serial-port locking
   * TIOCEXCL - at least use TIOCGEXCL to check if it is already locked
 * Investigate kernel/HW [problem](https://github.com/raspberrypi/linux/issues/4453#issuecomment-1709315332) with framing errors on PL011. Possibly similar problem on M8T connnected to physical serial port.
@@ -150,6 +151,7 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * cold boot
 * Configure antenna supervision
 * Support new-style ublox configuration (VALGET, VALSET)
+* Does it work to align time pulse to UTC standard rather than GNSS?
 
 ## Antenna supervision
 
