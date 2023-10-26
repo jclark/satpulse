@@ -10,7 +10,6 @@ import (
 )
 
 type Protocol struct {
-	curPort *bin.PortID
 	ver     *Version
 	acks    []*Ack
 	ubxMsg  [nPort]uint16
@@ -43,49 +42,12 @@ func (prot *Protocol) ProcessPacket(data string, tRead time.Time, cfg *RawConfig
 		if cfg != nil {
 			cfg.SetVersion(prot.ver)
 		}
-	case *bin.MonMsgPP:
-		prot.msgPP(mt, lg)
 	default:
 		if ph != nil {
 			ph.UBX(m, tRead)
 		}
 	}
 	return nil
-}
-
-func (prot *Protocol) CurPortID() *bin.PortID {
-	return prot.curPort
-}
-
-func (prot *Protocol) PollPort() []byte {
-	return bin.Poll(bin.MonMsgPPID)
-}
-
-func (prot *Protocol) msgPP(mt *bin.MonMsgPP, lg *slog.Logger) {
-	lg.Debug("got UBX-MON-MSGPP message")
-	if prot.curPort != nil {
-		return
-	}
-	incIndex := -1
-	// The logic here should work for the first MSGPP message if only one port is connected.
-	// It should work for the second MSGPP message if only one port is _in use_.
-	for i, msgCount := range mt.Msg {
-		curCount := msgCount[0]
-		prevCount := prot.ubxMsg[i]
-		prot.ubxMsg[i] = curCount
-		if curCount > prevCount {
-			if incIndex < 0 {
-				incIndex = i
-			} else {
-				incIndex = -1
-			}
-		}
-	}
-	if incIndex >= 0 {
-		port := bin.PortID(incIndex)
-		lg.Debug("discovered current port", "port", port)
-		prot.curPort = &port
-	}
 }
 
 func (prot *Protocol) ack(msgID bin.MsgID, ok bool, t time.Time) {
@@ -145,6 +107,7 @@ func (prot *Protocol) TPTimegridGPS() []byte {
 
 func (prot *Protocol) GetterMsgs() [][]byte {
 	packets := [][]byte{
+		bin.Poll(bin.CfgPrtID),
 		bin.Poll(bin.CfgGNSSID),
 		bin.Poll(bin.CfgRateID),
 		bin.Poll(bin.CfgNav5ID),

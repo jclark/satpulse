@@ -92,6 +92,9 @@ func (mh *msgHandler) finish() *InitData {
 	if config != nil {
 		lg.Info("GPS configuration", "cfg", config)
 	}
+	if prt, ok := mh.ubxCfg.Port(); ok {
+		lg.Debug("discovered port ID", "port", prt)
+	}
 	initData.Config = config
 	initData.Version = mh.ubxProt.Version()
 	if mh.leapSecond != nil {
@@ -193,12 +196,10 @@ func (mh *msgHandler) ubxProbe(ctx context.Context, port serio.OutPort) (bool, e
 }
 
 func (mh *msgHandler) ubxConfigure(ctx context.Context, port serio.OutPort) error {
-	packets := [][]byte{
-		mh.ubxProt.PollPort(),
+	packets := mh.ubxProt.GetterMsgs()
+	packets = append(packets,
 		mh.ubxProt.PollLeapSecond(),
-		mh.ubxProt.PollSurvey(),
-	}
-	packets = append(packets, mh.ubxProt.GetterMsgs()...)
+		mh.ubxProt.PollSurvey())
 	packets = append(packets, mh.ubxProt.EnableTimeMsgs()...)
 	for _, pkt := range packets {
 		t := time.Now()

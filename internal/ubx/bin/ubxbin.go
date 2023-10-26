@@ -1249,11 +1249,6 @@ func Poll(mid MsgID) []byte {
 	return packet
 }
 
-func PollCfgPrt(portID PortID) []byte {
-	packet, _ := packMsg(CfgPrtID, []byte{byte(portID)})
-	return packet
-}
-
 func PollCfgTp5(tpIdx int) []byte {
 	packet, _ := packMsg(CfgTp5ID, []byte{byte(tpIdx)})
 	return packet

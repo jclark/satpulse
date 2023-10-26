@@ -19,7 +19,7 @@ type RawConfig struct {
 	gnss     *bin.CfgGNSS
 	rate     *bin.CfgRate
 	nav5     *bin.CfgNav5
-	prt      [nPort]*bin.CfgPrt
+	prt      *bin.CfgPrt
 	msgRate  map[bin.MsgID][nPort]byte
 }
 
@@ -229,13 +229,18 @@ func (cfg *RawConfig) AddMsg(m bin.Msg) bool {
 	case *bin.CfgMsg:
 		cfg.addMsgRate(mt.MsgID, mt.Rate)
 	case *bin.CfgPrt:
-		if mt.PortID < nPort {
-			cfg.prt[mt.PortID] = mt
-		}
+		cfg.prt = mt
 	default:
 		return false
 	}
 	return true
+}
+
+func (cfg *RawConfig) Port() (bin.PortID, bool) {
+	if cfg == nil || cfg.prt == nil {
+		return 0, false
+	}
+	return cfg.prt.PortID, true
 }
 
 func (cfg *RawConfig) addMsgRate(msgID bin.MsgID, rate [6]byte) {
