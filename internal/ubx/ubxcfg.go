@@ -25,14 +25,14 @@ func (raw *RawConfig) Config(ver *Version) *gpsmsg.Config {
 		return nil
 	}
 	cfg := &gpsmsg.Config{}
-	raw.convTmode2(cfg)
+	raw.cookTmode2(cfg)
 	if raw.tmode2 == nil {
-		raw.convTmode3(cfg)
+		raw.cookTmode3(cfg)
 	}
-	raw.convTp5(cfg)
-	raw.convGNSS(cfg)
-	raw.convRate(cfg, ver)
-	raw.convNav5(cfg)
+	raw.cookTp5(cfg)
+	raw.cookGNSS(cfg)
+	raw.cookRate(cfg, ver)
+	raw.cookNav5(cfg)
 	return cfg
 }
 
@@ -52,7 +52,7 @@ func (raw *RawConfig) SetMsgRate(msgID bin.MsgID, rate byte) {
 	raw.msgRate[msgID] = rates
 }
 
-func (raw *RawConfig) convTmode2(cfg *gpsmsg.Config) {
+func (raw *RawConfig) cookTmode2(cfg *gpsmsg.Config) {
 	tm := raw.tmode2
 	if tm == nil {
 		return
@@ -77,7 +77,7 @@ func (raw *RawConfig) convTmode2(cfg *gpsmsg.Config) {
 	}
 }
 
-func (raw *RawConfig) convTmode3(cfg *gpsmsg.Config) {
+func (raw *RawConfig) cookTmode3(cfg *gpsmsg.Config) {
 	tm := raw.tmode3
 	if tm == nil {
 		return
@@ -106,7 +106,7 @@ func lengthHP(l int32, h int8) gpsmsg.Length {
 	return gpsmsg.Length(l)*gpsmsg.Centimeter + gpsmsg.Length(h)*(gpsmsg.Millimeter/10)
 }
 
-func (raw *RawConfig) convTp5(cfg *gpsmsg.Config) {
+func (raw *RawConfig) cookTp5(cfg *gpsmsg.Config) {
 	tp := raw.tp5
 	if tp == nil {
 		return
@@ -157,7 +157,7 @@ func tpPeriodWidth(freqPeriod, lenRatio uint32, flags bin.CfgTp5Flags) (time.Dur
 	return period, width
 }
 
-func (raw *RawConfig) convGNSS(cfg *gpsmsg.Config) {
+func (raw *RawConfig) cookGNSS(cfg *gpsmsg.Config) {
 	gnss := raw.gnss
 	if gnss == nil {
 		return
@@ -173,7 +173,7 @@ func (raw *RawConfig) convGNSS(cfg *gpsmsg.Config) {
 	gpsmsg.CfgEnabledGNSS.Set(cfg, enabled)
 }
 
-func (raw *RawConfig) convRate(cfg *gpsmsg.Config, ver *Version) {
+func (raw *RawConfig) cookRate(cfg *gpsmsg.Config, ver *Version) {
 	rate := raw.rate
 	if rate == nil {
 		return
@@ -185,7 +185,7 @@ func (raw *RawConfig) convRate(cfg *gpsmsg.Config, ver *Version) {
 	gpsmsg.CfgSolutionPeriod.Set(cfg, period)
 }
 
-func (raw *RawConfig) convNav5(cfg *gpsmsg.Config) {
+func (raw *RawConfig) cookNav5(cfg *gpsmsg.Config) {
 	nav5 := raw.nav5
 	if nav5 == nil {
 		return
