@@ -10,7 +10,6 @@ import (
 const nPort = 6
 
 type RawConfig struct {
-	ver     *Version
 	tmode2  *bin.CfgTmode2
 	tmode3  *bin.CfgTmode3
 	tp5     *bin.CfgTp5
@@ -21,7 +20,7 @@ type RawConfig struct {
 	msgRate map[bin.MsgID][nPort]byte
 }
 
-func (raw *RawConfig) Config() *gpsmsg.Config {
+func (raw *RawConfig) Config(ver *Version) *gpsmsg.Config {
 	if raw == nil {
 		return nil
 	}
@@ -32,7 +31,7 @@ func (raw *RawConfig) Config() *gpsmsg.Config {
 	}
 	raw.convTp5(cfg)
 	raw.convGNSS(cfg)
-	raw.convRate(cfg)
+	raw.convRate(cfg, ver)
 	raw.convNav5(cfg)
 	return cfg
 }
@@ -158,13 +157,13 @@ func (raw *RawConfig) convGNSS(cfg *gpsmsg.Config) {
 	gpsmsg.CfgEnabledGNSS.Set(cfg, enabled)
 }
 
-func (raw *RawConfig) convRate(cfg *gpsmsg.Config) {
+func (raw *RawConfig) convRate(cfg *gpsmsg.Config, ver *Version) {
 	rate := raw.rate
 	if rate == nil {
 		return
 	}
 	period := time.Duration(raw.rate.MeasRate) * time.Millisecond
-	if raw.ver.protVerAtLeast(18, 0) && period != 0 {
+	if ver.protVerAtLeast(18, 0) && period != 0 {
 		period /= time.Duration(raw.rate.NavRate)
 	}
 	gpsmsg.CfgSolutionPeriod.Set(cfg, period)
@@ -194,10 +193,6 @@ func (raw *RawConfig) convNav5(cfg *gpsmsg.Config) {
 		utc = gpsmsg.Galileo
 	}
 	gpsmsg.CfgUtcStandard.Set(cfg, utc)
-}
-
-func (c *RawConfig) SetVersion(ver *Version) {
-	c.ver = ver
 }
 
 func (cfg *RawConfig) AddMsg(m bin.Msg) bool {

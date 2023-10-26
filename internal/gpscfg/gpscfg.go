@@ -33,7 +33,6 @@ type msgHandler struct {
 	nmeaSentences map[string]map[string]bool
 	rtcmMsgs      map[uint16]bool
 	ubxProt       *ubx.Protocol
-	ubxCfg        *ubx.RawConfig
 	leapSecond    *gpsmsg.LeapSecond
 }
 
@@ -81,19 +80,15 @@ func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
 	mh.lg = lg
 	mh.packetCh = packetCh
 	mh.ubxProt = &ubx.Protocol{}
-	mh.ubxCfg = &ubx.RawConfig{}
 	mh.nmeaSentences = map[string]map[string]bool{}
 }
 
 func (mh *msgHandler) finish() *InitData {
 	lg := mh.lg
 	initData := InitData{}
-	config := mh.ubxCfg.Config()
+	config := mh.ubxProt.Config()
 	if config != nil {
 		lg.Info("GPS configuration", "cfg", config)
-	}
-	if prt, ok := mh.ubxCfg.Port(); ok {
-		lg.Debug("discovered port ID", "port", prt)
 	}
 	initData.Config = config
 	initData.Version = mh.ubxProt.Version()
@@ -263,7 +258,7 @@ func (mh *msgHandler) packet(f scan.Packet) {
 	case scan.NMEA:
 		mh.nmea(data)
 	case scan.UBX:
-		err := mh.ubxProt.ProcessPacket(data, f.TRead, mh.ubxCfg, mh, mh, mh.lg)
+		err := mh.ubxProt.ProcessPacket(data, f.TRead, mh, mh, mh.lg)
 		if err != nil {
 			mh.lg.Error("could not parse UBX message", "err", err)
 			// UBX parsing can handle unknown message types, so it's something worse then that.

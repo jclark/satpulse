@@ -12,6 +12,7 @@ import (
 type Protocol struct {
 	ver  *Version
 	acks []*Ack
+	cfg  RawConfig
 }
 
 type Ack struct {
@@ -20,12 +21,12 @@ type Ack struct {
 	TRead time.Time
 }
 
-func (prot *Protocol) ProcessPacket(data string, tRead time.Time, cfg *RawConfig, h gpsmsg.Handler, ph ProtHandler, lg *slog.Logger) error {
+func (prot *Protocol) ProcessPacket(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler, lg *slog.Logger) error {
 	m, err := bin.ParseMsg(data)
 	if err != nil {
 		return err
 	}
-	if cfg.AddMsg(m) {
+	if prot.cfg.AddMsg(m) {
 		return nil
 	}
 	if Dispatch(m, tRead, h) {
@@ -38,15 +39,16 @@ func (prot *Protocol) ProcessPacket(data string, tRead time.Time, cfg *RawConfig
 		prot.ack(mt.MsgID, false, tRead)
 	case *bin.MonVer:
 		prot.ver = monVer(mt)
-		if cfg != nil {
-			cfg.SetVersion(prot.ver)
-		}
 	default:
 		if ph != nil {
 			ph.UBX(m, tRead)
 		}
 	}
 	return nil
+}
+
+func (prot *Protocol) Config() *gpsmsg.Config {
+	return prot.cfg.Config(prot.ver)
 }
 
 func (prot *Protocol) ack(msgID bin.MsgID, ok bool, t time.Time) {
