@@ -10,9 +10,8 @@ import (
 )
 
 type Protocol struct {
-	ver     *Version
-	acks    []*Ack
-	ubxMsg  [nPort]uint16
+	ver  *Version
+	acks []*Ack
 }
 
 type Ack struct {
