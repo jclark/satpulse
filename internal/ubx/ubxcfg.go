@@ -10,17 +10,15 @@ import (
 const nPort = 6
 
 type RawConfig struct {
-	ver *Version
-	// a bit for each port that might be in use
-	usePorts uint8
-	tmode2   *bin.CfgTmode2
-	tmode3   *bin.CfgTmode3
-	tp5      *bin.CfgTp5
-	gnss     *bin.CfgGNSS
-	rate     *bin.CfgRate
-	nav5     *bin.CfgNav5
-	prt      *bin.CfgPrt
-	msgRate  map[bin.MsgID][nPort]byte
+	ver     *Version
+	tmode2  *bin.CfgTmode2
+	tmode3  *bin.CfgTmode3
+	tp5     *bin.CfgTp5
+	gnss    *bin.CfgGNSS
+	rate    *bin.CfgRate
+	nav5    *bin.CfgNav5
+	prt     *bin.CfgPrt
+	msgRate map[bin.MsgID][nPort]byte
 }
 
 func (raw *RawConfig) Config() *gpsmsg.Config {
@@ -200,13 +198,6 @@ func (raw *RawConfig) convNav5(cfg *gpsmsg.Config) {
 
 func (c *RawConfig) SetVersion(ver *Version) {
 	c.ver = ver
-}
-
-func (c *RawConfig) SetPortsInUse(ports []bin.PortID) {
-	c.usePorts = 0
-	for _, port := range ports {
-		c.usePorts |= (1 << port)
-	}
 }
 
 func (cfg *RawConfig) AddMsg(m bin.Msg) bool {
