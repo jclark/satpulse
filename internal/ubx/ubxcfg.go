@@ -245,6 +245,18 @@ func (cfg *RawConfig) Port() (bin.PortID, bool) {
 	return cfg.prt.PortID, true
 }
 
+func (cfg *RawConfig) ReqSetPrtUBXOnly() *bin.CfgPrt {
+	if cfg == nil || cfg.prt == nil {
+		return nil
+	}
+	if cfg.prt.OutProtoMask == bin.CfgPrtProtoUBX {
+		return nil
+	}
+	prt := *cfg.prt
+	prt.OutProtoMask = bin.CfgPrtProtoUBX
+	return &prt
+}
+
 func (cfg *RawConfig) addMsgRate(msgID bin.MsgID, rate [6]byte) {
 	if cfg.msgRate == nil {
 		cfg.msgRate = make(map[bin.MsgID][6]byte)

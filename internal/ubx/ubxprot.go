@@ -57,14 +57,15 @@ func (prot *Protocol) Config() *gpsmsg.Config {
 
 var configSteps = []func(*Protocol) gpsmsg.ConfigRequest{
 	(*Protocol).pollPrt,
-	(*Protocol).pollGNSS,
+	(*Protocol).setPrtUBXOnly,      // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
+	(*Protocol).enableTimePulseMsg, // do this soon, to avoid risk of GPS being completely silent
+	(*Protocol).pollGNSS,           // need this to know which will be primary GNSS
 	(*Protocol).pollTp5,
 	(*Protocol).pollTmode,
 	(*Protocol).pollRate,
 	(*Protocol).pollNav5,
 	(*Protocol).pollSurvey,
 	(*Protocol).pollLeapSecond,
-	(*Protocol).enableTimePulseMsg,
 	(*Protocol).enableTimeGNSSMsg,
 }
 
@@ -136,6 +137,14 @@ func (prot *Protocol) TPTimegridGPS() []byte {
 	return bytes
 }
 
+func (prot *Protocol) setPrtUBXOnly() gpsmsg.ConfigRequest {
+	prtMsg := prot.cfg.ReqSetPrtUBXOnly()
+	if prtMsg == nil {
+		return nil
+	}
+	return msgRequest{&prot.cfg, prtMsg}
+}
+
 func (prot *Protocol) pollPrt() gpsmsg.ConfigRequest {
 	return pollRequest{bin.CfgPrtID}
 }
@@ -204,6 +213,29 @@ func (prot *Protocol) pollSurvey() gpsmsg.ConfigRequest {
 	}
 	return nil
 }
+
+type msgRequest struct {
+	raw *RawConfig
+	msg bin.Msg
+}
+
+func (r msgRequest) Packet() []byte {
+	pkt, err := bin.Serialize(r.msg)
+	if err != nil {
+		panic(err)
+	}
+	return pkt
+}
+
+func (r msgRequest) ID() string { return r.msg.ID().String() }
+
+func (r msgRequest) Ack(ok bool) {
+	if ok {
+		r.raw.AddMsg(r.msg)
+	}
+}
+
+func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
 
 type pollRequest struct {
 	msgID bin.MsgID
