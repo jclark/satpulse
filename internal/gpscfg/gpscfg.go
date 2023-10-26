@@ -216,7 +216,7 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, req gpsmsg.ConfigReques
 	ackable := req.Ackable()
 	w := time.Millisecond * 1500
 	reqID := req.ID()
-	mh.lg.Debug("sent configuration message", "msgID", reqID)
+	mh.lg.Debug("sent configuration message", "msgID", reqID, "len", len(pkt))
 	if !ackable {
 		w = max(port.TransmitTime(len(pkt)), minWaitAfterSend)
 	}
