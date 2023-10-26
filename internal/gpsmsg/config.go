@@ -6,6 +6,18 @@ import (
 	"time"
 )
 
+type Configurator interface {
+	Config() *Config
+	NextRequest() ConfigRequest
+}
+
+type ConfigRequest interface {
+	Packet() []byte
+	Ackable() bool
+	Ack(bool)
+	ID() string
+}
+
 type Config struct {
 	m map[string]interface{}
 }

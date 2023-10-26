@@ -60,11 +60,3 @@ func Dispatch(m bin.Msg, tRead time.Time, h gpsmsg.Handler) bool {
 	return true
 }
 
-// PacketMsgID returns a human-readable identifier of the packet type.
-func PacketMsgID(packet []byte) string {
-	return "UBX-" + bin.PacketMsgId(packet).String()
-}
-
-func PacketAckable(packet []byte) bool {
-	return bin.PacketMsgId(packet).Ackable()
-}

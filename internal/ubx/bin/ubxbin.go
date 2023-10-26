@@ -91,7 +91,7 @@ func (mid MsgID) String() string {
 	} else {
 		s += fmt.Sprintf("0x%02X", id)
 	}
-	return s
+	return "UBX-" + s
 }
 
 const (
@@ -1254,13 +1254,13 @@ func PollCfgTp5(tpIdx int) []byte {
 	return packet
 }
 
-func SetRate(mid MsgID, rate byte) []byte {
+func SetCfgMsg(mid MsgID, rate byte) []byte {
 	cls, id := mid.unpack()
 	packet, _ := packMsg(CfgMsgID, []byte{cls, id, rate})
 	return packet
 }
 
-func PollRate(mid MsgID) []byte {
+func PollCfgMsg(mid MsgID) []byte {
 	cls, id := mid.unpack()
 	packet, _ := packMsg(CfgMsgID, []byte{cls, id})
 	return packet

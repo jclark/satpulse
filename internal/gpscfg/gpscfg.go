@@ -166,7 +166,7 @@ func (mh *msgHandler) packetChClosed(ctx context.Context) error {
 }
 
 func (mh *msgHandler) ubxProbe(ctx context.Context, port serio.OutPort) (bool, error) {
-	msg := mh.ubxProt.PollVersion()
+	msg := mh.ubxProt.ProbePacket()
 	_, err := port.Write(msg)
 	if err != nil {
 		return false, err
@@ -180,7 +180,7 @@ func (mh *msgHandler) ubxProbe(ctx context.Context, port serio.OutPort) (bool, e
 				return false, mh.packetChClosed(ctx)
 			}
 			mh.packet(packet)
-			if mh.ubxProt.Version() != nil {
+			if mh.ubxProt.ProbeOK() {
 				return true, nil
 			}
 		case <-timerCh:
@@ -191,18 +191,18 @@ func (mh *msgHandler) ubxProbe(ctx context.Context, port serio.OutPort) (bool, e
 }
 
 func (mh *msgHandler) ubxConfigure(ctx context.Context, port serio.OutPort) error {
-	packets := mh.ubxProt.GetterMsgs()
-	packets = append(packets,
-		mh.ubxProt.PollLeapSecond(),
-		mh.ubxProt.PollSurvey())
-	packets = append(packets, mh.ubxProt.EnableTimeMsgs()...)
-	for _, pkt := range packets {
+	for {
+		req := mh.ubxProt.NextRequest()
+		if req == nil {
+			break
+		}
 		t := time.Now()
+		pkt := req.Packet()
 		_, err := port.Write(pkt)
 		if err != nil {
 			return err
 		}
-		err = mh.waitAfterSend(ctx, pkt, t, port)
+		err = mh.waitAfterSend(ctx, req, pkt, t, port)
 		if err != nil {
 			return err
 		}
@@ -212,9 +212,11 @@ func (mh *msgHandler) ubxConfigure(ctx context.Context, port serio.OutPort) erro
 
 const minWaitAfterSend = 10 * time.Millisecond
 
-func (mh *msgHandler) waitAfterSend(ctx context.Context, pkt []byte, tSend time.Time, port serio.OutPort) error {
-	ackable := ubx.PacketAckable(pkt)
+func (mh *msgHandler) waitAfterSend(ctx context.Context, req gpsmsg.ConfigRequest, pkt []byte, tSend time.Time, port serio.OutPort) error {
+	ackable := req.Ackable()
 	w := time.Millisecond * 1500
+	reqID := req.ID()
+	mh.lg.Debug("sent configuration message", "msgID", reqID)
 	if !ackable {
 		w = max(port.TransmitTime(len(pkt)), minWaitAfterSend)
 	}
@@ -229,11 +231,11 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, pkt []byte, tSend time.
 			if ackable {
 				ack := mh.ubxProt.FindAck(pkt, tSend)
 				if ack != nil {
-					msgID := ubx.PacketMsgID(pkt)
+					req.Ack(ack.OK)
 					if !ack.OK {
-						return fmt.Errorf("configuration message %s rejected", msgID)
+						return fmt.Errorf("configuration message %s rejected", reqID)
 					}
-					mh.lg.Debug("configuration accepted", "msgID", msgID, "delay", ack.TRead.Sub(tSend).String())
+					mh.lg.Debug("configuration accepted", "msgID", reqID, "delay", ack.TRead.Sub(tSend).String())
 					return nil
 				}
 			}
@@ -243,7 +245,7 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, pkt []byte, tSend time.
 		}
 	}
 	if ackable {
-		return fmt.Errorf("no ack received for configuration message %s", ubx.PacketMsgID(pkt))
+		return fmt.Errorf("no ack received for configuration message %s", reqID)
 	}
 	return nil
 }

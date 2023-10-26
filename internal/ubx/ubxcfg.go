@@ -36,6 +36,22 @@ func (raw *RawConfig) Config(ver *Version) *gpsmsg.Config {
 	return cfg
 }
 
+func (raw *RawConfig) SetMsgRate(msgID bin.MsgID, rate byte) {
+	if raw == nil || raw.prt == nil {
+		return
+	}
+	prt := raw.prt.PortID
+	if prt >= nPort {
+		return
+	}
+	if raw.msgRate == nil {
+		raw.msgRate = make(map[bin.MsgID][nPort]byte)
+	}
+	rates := raw.msgRate[msgID]
+	rates[int(prt)] = rate
+	raw.msgRate[msgID] = rates
+}
+
 func (raw *RawConfig) convTmode2(cfg *gpsmsg.Config) {
 	tm := raw.tmode2
 	if tm == nil {
