@@ -14,7 +14,7 @@ type Configurator interface {
 type ConfigRequest interface {
 	Packet() []byte
 	Ackable() bool
-	Ack(bool)
+	Done()
 	ID() string
 }
 
@@ -107,6 +107,7 @@ func (c *Config) serializableMap() map[string]interface{} {
 func makeCfgKey[T any](s string) TypedCfgKey[T] {
 	return TypedCfgKey[T]{anyCfgKey{s}}
 }
+
 var CfgEnabledGNSS = makeCfgKey[[]MajorGNSS]("enabledGNSS")
 var CfgSolutionPeriod = makeCfgKey[time.Duration]("solutionPeriod")
 var CfgTimePulseWidth = makeCfgKey[time.Duration]("timePulseWidth")

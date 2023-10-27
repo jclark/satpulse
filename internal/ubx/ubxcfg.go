@@ -5,7 +5,14 @@ import (
 
 	"github.com/jclark/gps4ptp/internal/gpsmsg"
 	"github.com/jclark/gps4ptp/internal/ubx/bin"
+	"github.com/jclark/gps4ptp/internal/ubx/cfg"
 )
+
+type Configurator struct {
+	ver  *Version // never nil
+	raw  RawConfig
+	step int
+}
 
 const nPort = 6
 
@@ -18,6 +25,208 @@ type RawConfig struct {
 	nav5    *bin.CfgNav5
 	prt     *bin.CfgPrt
 	msgRate map[bin.MsgID][nPort]byte
+}
+
+var configSteps = []func(*Configurator) gpsmsg.ConfigRequest{
+	(*Configurator).pollPrt,
+	(*Configurator).setPrtUBXOnly,      // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
+	(*Configurator).enableTimePulseMsg, // do this soon, to avoid risk of GPS being completely silent
+	(*Configurator).pollGNSS,           // need this to know which will be primary GNSS
+	(*Configurator).pollTp5,
+	(*Configurator).pollTmode,
+	(*Configurator).pollRate,
+	(*Configurator).pollNav5,
+	(*Configurator).pollSurvey,
+	(*Configurator).pollLeapSecond,
+	(*Configurator).enableTimeGNSSMsg,
+}
+
+var _ gpsmsg.Configurator = &Configurator{}
+
+func (c *Configurator) Config() *gpsmsg.Config {
+	return c.raw.Config(c.ver)
+}
+
+func (c *Configurator) NextRequest() gpsmsg.ConfigRequest {
+	for c.step < len(configSteps) {
+		req := configSteps[c.step](c)
+		c.step++
+		if req != nil {
+			return req
+		}
+	}
+	return nil
+}
+
+// XXX this is old code; needs to be generalized into support for new style UBX config
+func (c *Configurator) TPTimegridGPS() []byte {
+	cfgMap := map[string]map[string]any{
+		"TP": {
+			"TIMEGRID_TP1": "GPS",
+		},
+	}
+	u := bin.CfgValset{
+		CfgValsetFixed: bin.CfgValsetFixed{
+			Layers: bin.CfgValsetLayerRAM,
+		},
+		CfgData: cfg.GetSchema().MustMarshal(cfgMap),
+	}
+	bytes, err := bin.Serialize(&u)
+	if err != nil {
+		panic(err)
+	}
+	return bytes
+}
+
+func (c *Configurator) setPrtUBXOnly() gpsmsg.ConfigRequest {
+	prtMsg := c.raw.ReqSetPrtUBXOnly()
+	if prtMsg == nil {
+		return nil
+	}
+	return msgRequest{&c.raw, prtMsg}
+}
+
+func (c *Configurator) pollPrt() gpsmsg.ConfigRequest {
+	return pollRequest{bin.CfgPrtID}
+}
+
+func (c *Configurator) pollGNSS() gpsmsg.ConfigRequest {
+	return pollRequest{bin.CfgGNSSID}
+}
+
+func (c *Configurator) pollRate() gpsmsg.ConfigRequest {
+	return pollRequest{bin.CfgRateID}
+}
+
+func (c *Configurator) pollNav5() gpsmsg.ConfigRequest {
+	return pollRequest{bin.CfgNav5ID}
+}
+
+func (c *Configurator) pollTmode() gpsmsg.ConfigRequest {
+	switch c.productCategory() {
+	case "FTS", "TIM":
+		return pollRequest{bin.CfgTmode2ID}
+	case "HPG":
+		return pollRequest{bin.CfgTmode3ID}
+	}
+	return nil
+}
+
+func (c *Configurator) pollTp5() gpsmsg.ConfigRequest {
+	tpIdx := 0
+	if c.productCategory() == "FTS" {
+		tpIdx = 1
+	}
+	return pollTp5Request{
+		pollRequest: pollRequest{bin.CfgTp5ID},
+		tpIdx:       tpIdx,
+	}
+}
+
+func (c *Configurator) enableTimePulseMsg() gpsmsg.ConfigRequest {
+	if c.productCategory() == "FTS" {
+		return c.enableMsgRequest(bin.TimTosID)
+	} else {
+		return c.enableMsgRequest(bin.TimTPID)
+	}
+}
+
+func (c *Configurator) enableTimeGNSSMsg() gpsmsg.ConfigRequest {
+	if c.productCategory() == "FTS" {
+		return nil
+	}
+	return c.enableMsgRequest(bin.NavTimeGPSID)
+}
+
+// XXX not clear what to do about waiting for response NAV-TIMELS response
+// we don't have to wait for the response (unlike with CFG messages)
+func (c *Configurator) pollLeapSecond() gpsmsg.ConfigRequest {
+	return pollRequest{bin.NavTimeLSID}
+}
+
+// XXX same problem as with pollLeapSecond
+func (c *Configurator) pollSurvey() gpsmsg.ConfigRequest {
+	switch c.productCategory() {
+	case "TIM", "FTS":
+		return pollRequest{bin.TimSvinID}
+	case "HPG":
+		return pollRequest{bin.NavSvinID}
+	}
+	return nil
+}
+
+type msgRequest struct {
+	raw *RawConfig
+	msg bin.Msg
+}
+
+func (r msgRequest) Packet() []byte {
+	pkt, err := bin.Serialize(r.msg)
+	if err != nil {
+		panic(err)
+	}
+	return pkt
+}
+
+func (r msgRequest) ID() string { return r.msg.ID().String() }
+
+func (r msgRequest) Done() {
+	r.raw.AddMsg(r.msg)
+}
+
+func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
+
+type pollRequest struct {
+	msgID bin.MsgID
+}
+
+func (r pollRequest) Packet() []byte {
+	return bin.Poll(r.msgID)
+}
+
+func (r pollRequest) ID() string { return r.msgID.String() }
+
+func (r pollRequest) Done() {}
+
+func (r pollRequest) Ackable() bool {
+	return r.msgID.Ackable()
+}
+
+type pollTp5Request struct {
+	pollRequest
+	tpIdx int
+}
+
+func (r pollTp5Request) Packet() []byte {
+	return bin.PollCfgTp5(r.tpIdx)
+}
+
+func (c *Configurator) enableMsgRequest(msgID bin.MsgID) gpsmsg.ConfigRequest {
+	return enableMsgRequest{&c.raw, msgID}
+}
+
+type enableMsgRequest struct {
+	raw   *RawConfig
+	msgID bin.MsgID
+}
+
+func (r enableMsgRequest) Packet() []byte {
+	return bin.SetCfgMsg(r.msgID, 1)
+}
+
+func (r enableMsgRequest) Done() {
+	r.raw.SetMsgRate(r.msgID, 1)
+}
+
+func (r enableMsgRequest) Ackable() bool { return true }
+
+func (r enableMsgRequest) ID() string { return bin.CfgMsgID.String() }
+
+func (c *Configurator) productCategory() string {
+	if c.ver.FW != nil {
+		return c.ver.FW.ProductCategory
+	}
+	return ""
 }
 
 func (raw *RawConfig) Config(ver *Version) *gpsmsg.Config {

@@ -1,20 +1,17 @@
 package ubx
 
 import (
-	"log/slog"
 	"time"
 
 	"github.com/jclark/gps4ptp/internal/gpsmsg"
 	"github.com/jclark/gps4ptp/internal/ubx/bin"
-	"github.com/jclark/gps4ptp/internal/ubx/cfg"
 )
 
 // XXX this probably isn't the right name any more
 type Protocol struct {
 	ver  *Version
 	acks []*Ack
-	cfg  RawConfig
-	step int
+	cfg  *Configurator
 }
 
 type Ack struct {
@@ -23,14 +20,12 @@ type Ack struct {
 	TRead time.Time
 }
 
-var _ gpsmsg.Configurator = &Protocol{}
-
-func (prot *Protocol) ProcessPacket(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler, lg *slog.Logger) error {
+func (prot *Protocol) ProcessPacket(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
 	m, err := bin.ParseMsg(data)
 	if err != nil {
 		return err
 	}
-	if prot.cfg.AddMsg(m) {
+	if prot.cfg != nil && prot.cfg.raw.AddMsg(m) {
 		return nil
 	}
 	if Dispatch(m, tRead, h) {
@@ -46,35 +41,6 @@ func (prot *Protocol) ProcessPacket(data string, tRead time.Time, h gpsmsg.Handl
 	default:
 		if ph != nil {
 			ph.UBX(m, tRead)
-		}
-	}
-	return nil
-}
-
-func (prot *Protocol) Config() *gpsmsg.Config {
-	return prot.cfg.Config(prot.ver)
-}
-
-var configSteps = []func(*Protocol) gpsmsg.ConfigRequest{
-	(*Protocol).pollPrt,
-	(*Protocol).setPrtUBXOnly,      // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
-	(*Protocol).enableTimePulseMsg, // do this soon, to avoid risk of GPS being completely silent
-	(*Protocol).pollGNSS,           // need this to know which will be primary GNSS
-	(*Protocol).pollTp5,
-	(*Protocol).pollTmode,
-	(*Protocol).pollRate,
-	(*Protocol).pollNav5,
-	(*Protocol).pollSurvey,
-	(*Protocol).pollLeapSecond,
-	(*Protocol).enableTimeGNSSMsg,
-}
-
-func (prot *Protocol) NextRequest() gpsmsg.ConfigRequest {
-	for prot.step < len(configSteps) {
-		req := configSteps[prot.step](prot)
-		prot.step++
-		if req != nil {
-			return req
 		}
 	}
 	return nil
@@ -117,177 +83,10 @@ func (prot *Protocol) ProbeOK() bool {
 	return prot.ver != nil
 }
 
-// XXX this is old code; needs to be generalized into support for new style UBX config
-func (prot *Protocol) TPTimegridGPS() []byte {
-	cfgMap := map[string]map[string]any{
-		"TP": {
-			"TIMEGRID_TP1": "GPS",
-		},
+func (prot *Protocol) Configure() gpsmsg.Configurator {
+	if prot.ver == nil {
+		panic("Configure called before probe OK")
 	}
-	u := bin.CfgValset{
-		CfgValsetFixed: bin.CfgValsetFixed{
-			Layers: bin.CfgValsetLayerRAM,
-		},
-		CfgData: cfg.GetSchema().MustMarshal(cfgMap),
-	}
-	bytes, err := bin.Serialize(&u)
-	if err != nil {
-		panic(err)
-	}
-	return bytes
-}
-
-func (prot *Protocol) setPrtUBXOnly() gpsmsg.ConfigRequest {
-	prtMsg := prot.cfg.ReqSetPrtUBXOnly()
-	if prtMsg == nil {
-		return nil
-	}
-	return msgRequest{&prot.cfg, prtMsg}
-}
-
-func (prot *Protocol) pollPrt() gpsmsg.ConfigRequest {
-	return pollRequest{bin.CfgPrtID}
-}
-
-func (prot *Protocol) pollGNSS() gpsmsg.ConfigRequest {
-	return pollRequest{bin.CfgGNSSID}
-}
-
-func (prot *Protocol) pollRate() gpsmsg.ConfigRequest {
-	return pollRequest{bin.CfgRateID}
-}
-
-func (prot *Protocol) pollNav5() gpsmsg.ConfigRequest {
-	return pollRequest{bin.CfgNav5ID}
-}
-
-func (prot *Protocol) pollTmode() gpsmsg.ConfigRequest {
-	switch prot.productCategory() {
-	case "FTS", "TIM":
-		return pollRequest{bin.CfgTmode2ID}
-	case "HPG":
-		return pollRequest{bin.CfgTmode3ID}
-	}
-	return nil
-}
-
-func (prot *Protocol) pollTp5() gpsmsg.ConfigRequest {
-	tpIdx := 0
-	if prot.productCategory() == "FTS" {
-		tpIdx = 1
-	}
-	return pollTp5Request{
-		pollRequest: pollRequest{bin.CfgTp5ID},
-		tpIdx:       tpIdx,
-	}
-}
-
-func (prot *Protocol) enableTimePulseMsg() gpsmsg.ConfigRequest {
-	if prot.productCategory() == "FTS" {
-		return prot.enableMsgRequest(bin.TimTosID)
-	} else {
-		return prot.enableMsgRequest(bin.TimTPID)
-	}
-}
-
-func (prot *Protocol) enableTimeGNSSMsg() gpsmsg.ConfigRequest {
-	if prot.productCategory() == "FTS" {
-		return nil
-	}
-	return prot.enableMsgRequest(bin.NavTimeGPSID)
-}
-
-// XXX not clear what to do about waiting for response NAV-TIMELS response
-// we don't have to wait for the response (unlike with CFG messages)
-func (prot *Protocol) pollLeapSecond() gpsmsg.ConfigRequest {
-	return pollRequest{bin.NavTimeLSID}
-}
-
-// XXX same problem as with pollLeapSecond
-func (prot *Protocol) pollSurvey() gpsmsg.ConfigRequest {
-	switch prot.productCategory() {
-	case "TIM", "FTS":
-		return pollRequest{bin.TimSvinID}
-	case "HPG":
-		return pollRequest{bin.NavSvinID}
-	}
-	return nil
-}
-
-type msgRequest struct {
-	raw *RawConfig
-	msg bin.Msg
-}
-
-func (r msgRequest) Packet() []byte {
-	pkt, err := bin.Serialize(r.msg)
-	if err != nil {
-		panic(err)
-	}
-	return pkt
-}
-
-func (r msgRequest) ID() string { return r.msg.ID().String() }
-
-func (r msgRequest) Ack(ok bool) {
-	if ok {
-		r.raw.AddMsg(r.msg)
-	}
-}
-
-func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
-
-type pollRequest struct {
-	msgID bin.MsgID
-}
-
-func (r pollRequest) Packet() []byte {
-	return bin.Poll(r.msgID)
-}
-
-func (r pollRequest) ID() string { return r.msgID.String() }
-
-func (r pollRequest) Ack(_ bool) {}
-
-func (r pollRequest) Ackable() bool {
-	return r.msgID.Ackable()
-}
-
-type pollTp5Request struct {
-	pollRequest
-	tpIdx int
-}
-
-func (r pollTp5Request) Packet() []byte {
-	return bin.PollCfgTp5(r.tpIdx)
-}
-
-func (prot *Protocol) enableMsgRequest(msgID bin.MsgID) gpsmsg.ConfigRequest {
-	return enableMsgRequest{&prot.cfg, msgID}
-}
-
-type enableMsgRequest struct {
-	raw   *RawConfig
-	msgID bin.MsgID
-}
-
-func (r enableMsgRequest) Packet() []byte {
-	return bin.SetCfgMsg(r.msgID, 1)
-}
-
-func (r enableMsgRequest) Ack(ok bool) {
-	if ok {
-		r.raw.SetMsgRate(r.msgID, 1)
-	}
-}
-
-func (r enableMsgRequest) Ackable() bool { return true }
-
-func (r enableMsgRequest) ID() string { return bin.CfgMsgID.String() }
-
-func (prot *Protocol) productCategory() string {
-	if prot.ver != nil && prot.ver.FW != nil {
-		return prot.ver.FW.ProductCategory
-	}
-	return ""
+	prot.cfg = &Configurator{ver: prot.ver}
+	return prot.cfg
 }
