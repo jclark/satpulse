@@ -14,6 +14,9 @@ func TestConfigDB(t *testing.T) {
 	CfgTimePulseWidth.Set(&cfg, 1*time.Millisecond)
 	CfgTimePulseGNSS.Set(&cfg, GPS)
 
+	keys := []CfgKey{CfgSolutionPeriod, CfgTimePulseWidth, CfgTimePulseGNSS}
+	nonKeys := []CfgKey{CfgTimePulsePeriod, CfgStationary}
+
 	// Get the values using CfgKey
 	solutionPeriod, ok := CfgSolutionPeriod.Get(&cfg)
 	if !ok {
@@ -46,4 +49,16 @@ func TestConfigDB(t *testing.T) {
 	if timePulseGNSS != GPS {
 		t.Errorf("expected CfgTimePulseGNSS to be GPS, got %v", timePulseGNSS)
 	}
+
+	for _, k := range keys {
+		if !cfg.Contains(k) {
+			t.Errorf("expected %v to be set", k)
+		}
+	}
+	for _, k := range nonKeys {
+		if cfg.Contains(k) {
+			t.Errorf("expected %v not to be set", k)
+		}
+	}
+
 }

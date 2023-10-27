@@ -22,11 +22,31 @@ type Config struct {
 	m map[string]interface{}
 }
 
-type CfgKey[T any] struct {
+type CfgKey interface {
+	fmt.Stringer
+	cfgKey()
+}
+
+func (c *Config) Contains(k CfgKey) bool {
+	_, exists := c.m[k.String()]
+	return exists
+}
+
+type anyCfgKey struct {
 	s string
 }
 
-func (k CfgKey[T]) Get(cfg *Config) (T, bool) {
+func (k anyCfgKey) cfgKey() {}
+
+func (k anyCfgKey) String() string {
+	return k.s
+}
+
+type TypedCfgKey[T any] struct {
+	anyCfgKey
+}
+
+func (k TypedCfgKey[T]) Get(cfg *Config) (T, bool) {
 	if cfg.m != nil {
 		value, exists := cfg.m[k.s]
 		if exists {
@@ -37,11 +57,7 @@ func (k CfgKey[T]) Get(cfg *Config) (T, bool) {
 	return zero, false
 }
 
-func (k CfgKey[T]) String() string {
-	return k.s
-}
-
-func (k CfgKey[T]) Set(cfg *Config, v T) {
+func (k TypedCfgKey[T]) Set(cfg *Config, v T) {
 	if cfg.m == nil {
 		cfg.m = make(map[string]interface{})
 	}
@@ -88,21 +104,24 @@ func (c *Config) serializableMap() map[string]interface{} {
 	return j
 }
 
-var CfgEnabledGNSS = CfgKey[[]MajorGNSS]{"enabledGNSS"}
-var CfgSolutionPeriod = CfgKey[time.Duration]{"solutionPeriod"}
-var CfgTimePulseWidth = CfgKey[time.Duration]{"timePulseWidth"}
-var CfgTimePulsePeriod = CfgKey[time.Duration]{"timePulsePeriod"}
-var CfgTimePulseGNSS = CfgKey[MajorGNSS]{"timePulseGNSS"}
-var CfgTimePulseOnlyWhenLocked = CfgKey[bool]{"timePulseOnlyWhenLocked"}
-var CfgTimePulsePolarityRising = CfgKey[bool]{"timePulsePolarityRising"}
-var CfgTimeMode = CfgKey[TimeMode]{"timeMode"}
-var CfgAntennaCableDelay = CfgKey[time.Duration]{"antennaCableDelay"}
-var CfgSurveyMinDur = CfgKey[time.Duration]{"surveyMinDur"}
-var CfgSurveyAccLimit = CfgKey[Length]{"surveyAccLimit"}
-var CfgFixedPosECEF = CfgKey[Point3D]{"fixedPosECEF"}
-var CfgFixedPosAcc = CfgKey[Length]{"fixedPosAcc"}
-var CfgUtcStandard = CfgKey[MajorGNSS]{"utcStandard"} // nil value to use auto
-var CfgStationary = CfgKey[bool]{"stationary"}
+func makeCfgKey[T any](s string) TypedCfgKey[T] {
+	return TypedCfgKey[T]{anyCfgKey{s}}
+}
+var CfgEnabledGNSS = makeCfgKey[[]MajorGNSS]("enabledGNSS")
+var CfgSolutionPeriod = makeCfgKey[time.Duration]("solutionPeriod")
+var CfgTimePulseWidth = makeCfgKey[time.Duration]("timePulseWidth")
+var CfgTimePulsePeriod = makeCfgKey[time.Duration]("timePulsePeriod")
+var CfgTimePulseGNSS = makeCfgKey[MajorGNSS]("timePulseGNSS")
+var CfgTimePulseOnlyWhenLocked = makeCfgKey[bool]("timePulseOnlyWhenLocked")
+var CfgTimePulsePolarityRising = makeCfgKey[bool]("timePulsePolarityRising")
+var CfgTimeMode = makeCfgKey[TimeMode]("timeMode")
+var CfgAntennaCableDelay = makeCfgKey[time.Duration]("antennaCableDelay")
+var CfgSurveyMinDur = makeCfgKey[time.Duration]("surveyMinDur")
+var CfgSurveyAccLimit = makeCfgKey[Length]("surveyAccLimit")
+var CfgFixedPosECEF = makeCfgKey[Point3D]("fixedPosECEF")
+var CfgFixedPosAcc = makeCfgKey[Length]("fixedPosAcc")
+var CfgUtcStandard = makeCfgKey[MajorGNSS]("utcStandard") // nil value to use auto
+var CfgStationary = makeCfgKey[bool]("stationary")
 
 type Length int64
 
