@@ -117,13 +117,13 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLo
 
 	fCh := startScan(ctx, &wg, scanner)
 
-	fb := startBcast(ctx, &wg, fCh)
+	fb := startBcast(ctx, lg, &wg, fCh)
 
 	var sseCh chan sse.Event
 	var eb *bcast.Bcast[sse.Event]
 	if len(cfg.HTTP) > 0 {
 		sseCh = make(chan sse.Event, 1)
-		eb = startBcast(ctx, &wg, sseCh)
+		eb = startBcast(ctx, lg, &wg, sseCh)
 	}
 	// Shut down the broadcast goroutines when the context is cancelled.
 	waitGroupGo(&wg, func() {
@@ -242,8 +242,8 @@ func startScan(ctx context.Context, wg *sync.WaitGroup, scanner *scan.Scanner) <
 	return msg
 }
 
-func startBcast[T any](ctx context.Context, wg *sync.WaitGroup, msg <-chan T) *bcast.Bcast[T] {
+func startBcast[T any](ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, msg <-chan T) *bcast.Bcast[T] {
 	b := bcast.New(msg)
-	waitGroupGo(wg, func() { b.Run(ctx) })
+	waitGroupGo(wg, func() { b.Run(ctx, lg) })
 	return b
 }

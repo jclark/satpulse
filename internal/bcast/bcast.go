@@ -2,10 +2,10 @@ package bcast
 
 import (
 	"context"
+	"log/slog"
 	"reflect"
 	"sync"
 
-	"github.com/jclark/gps4ptp/internal/logctx"
 	"golang.org/x/exp/constraints"
 )
 
@@ -72,8 +72,7 @@ func (b *Bcast[T]) Unsubscribe(ch <-chan T) {
 // - Close has being called on Bcast
 // - the msg channel is closed
 // This should be run in a separate goroutine
-func (b *Bcast[T]) Run(ctx context.Context) {
-	lg := logctx.FromContext(ctx)
+func (b *Bcast[T]) Run(ctx context.Context, lg *slog.Logger) {
 	defer lg.Debug("about to exit broadcast goroutine")
 	msg := b.msg
 	subscribe := b.subscribe
