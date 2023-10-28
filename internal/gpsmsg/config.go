@@ -42,7 +42,7 @@ func (k anyCfgKey) String() string {
 	return k.s
 }
 
-type TypedCfgKey[T any] struct {
+type TypedCfgKey[T comparable] struct {
 	anyCfgKey
 }
 
@@ -72,6 +72,20 @@ func (c *Config) MarshalText() ([]byte, error) {
 	return []byte(fmt.Sprint(c.serializableMap())), nil
 }
 
+func (c *Config) Inconsistent(c2 *Config) *Config {
+	m := make(map[string]interface{})
+	for k, v := range c.m {
+		if v2, exists := c2.m[k]; exists && v != v2 {
+			m[k] = v2
+		}
+	}
+	return &Config{m}
+}
+
+func (c *Config) IsEmpty() bool {
+	return len(c.m) == 0
+}
+
 func (c *Config) serializableMap() map[string]interface{} {
 	j := make(map[string]interface{})
 	for k, v := range c.m {
@@ -97,6 +111,8 @@ func (c *Config) serializableMap() map[string]interface{} {
 			default:
 				j[k] = t
 			}
+		case MajorGNSSSet:
+			j[k] = t.Items()
 		default:
 			j[k] = v
 		}
@@ -104,11 +120,11 @@ func (c *Config) serializableMap() map[string]interface{} {
 	return j
 }
 
-func makeCfgKey[T any](s string) TypedCfgKey[T] {
+func makeCfgKey[T comparable](s string) TypedCfgKey[T] {
 	return TypedCfgKey[T]{anyCfgKey{s}}
 }
 
-var CfgEnabledGNSS = makeCfgKey[[]MajorGNSS]("enabledGNSS")
+var CfgEnabledGNSS = makeCfgKey[MajorGNSSSet]("enabledGNSS")
 var CfgSolutionPeriod = makeCfgKey[time.Duration]("solutionPeriod")
 var CfgTimePulseWidth = makeCfgKey[time.Duration]("timePulseWidth")
 var CfgTimePulsePeriod = makeCfgKey[time.Duration]("timePulsePeriod")
@@ -123,6 +139,14 @@ var CfgFixedPosECEF = makeCfgKey[Point3D]("fixedPosECEF")
 var CfgFixedPosAcc = makeCfgKey[Length]("fixedPosAcc")
 var CfgUtcStandard = makeCfgKey[MajorGNSS]("utcStandard") // nil value to use auto
 var CfgStationary = makeCfgKey[bool]("stationary")
+
+func (cfg *Config) SetSane() {
+	CfgSolutionPeriod.Set(cfg, 1*time.Second)
+	CfgTimePulsePeriod.Set(cfg, 1*time.Second)
+	CfgTimePulseWidth.Set(cfg, time.Second/10)
+	CfgTimePulsePolarityRising.Set(cfg, true)
+	CfgTimePulseOnlyWhenLocked.Set(cfg, true)
+}
 
 type Length int64
 

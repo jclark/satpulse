@@ -19,6 +19,7 @@ func (h *DefaultHandler) LeapSecond(msg *LeapSecond, tRead time.Time) {}
 //go:generate stringer -type=MajorGNSS
 type MajorGNSS int
 
+// Zero value means invalid/unknown/unspecified
 const (
 	GPS MajorGNSS = iota + 1
 	GLONASS
@@ -26,8 +27,32 @@ const (
 	Galileo
 )
 
+const NMajorGNSS = 4
+
 func (g MajorGNSS) MarshalText() ([]byte, error) {
 	return []byte(g.String()), nil
+}
+
+// MajorGNSSSet is a set of MajorGNSS values.
+// It is comparable.
+type MajorGNSSSet uint32
+
+func MajorGNSSFlag(g MajorGNSS) MajorGNSSSet {
+	return 1 << g
+}
+
+func (s MajorGNSSSet) Contains(g MajorGNSS) bool {
+	return s&MajorGNSSFlag(g) != 0
+}
+
+func (s MajorGNSSSet) Items() []MajorGNSS {
+	items := make([]MajorGNSS, 0, 4)
+	for g := MajorGNSS(1); g <= NMajorGNSS; g++ {
+		if s.Contains(g) {
+			items = append(items, g)
+		}
+	}
+	return items
 }
 
 type TimeRef int

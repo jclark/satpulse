@@ -67,7 +67,7 @@ func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet
 		// XXX if ubxMsgCount > 0, then probably we cannot send to the GPS
 		lg.Info("GPS does not respond to UBX messages; continuing hopefully")
 	} else {
-		config, err = mh.configure(ctx, mh.ubxProt.Configure(), port)
+		config, err = mh.configure(ctx, mh.ubxProt.Configure(requiredConfig()), port)
 		if err != nil {
 			// XXX try to recover from this
 			// provided we have some messages working, we should be OK
@@ -75,6 +75,12 @@ func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet
 		}
 	}
 	return mh.finish(config), nil
+}
+
+func requiredConfig() *gpsmsg.Config {
+	cfg := &gpsmsg.Config{}
+	cfg.SetSane()
+	return cfg
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {

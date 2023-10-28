@@ -9,9 +9,10 @@ import (
 )
 
 type Configurator struct {
-	ver  *Version // never nil
-	raw  RawConfig
-	step int
+	ver    *Version // never nil
+	raw    RawConfig
+	step   int
+	target *gpsmsg.Config // never nil
 }
 
 const nPort = 6
@@ -29,10 +30,11 @@ type RawConfig struct {
 
 var configSteps = []func(*Configurator) gpsmsg.ConfigRequest{
 	(*Configurator).pollPrt,
-	(*Configurator).setPrtUBXOnly,      // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
-	(*Configurator).enableTimePulseMsg, // do this soon, to avoid risk of GPS being completely silent
-	(*Configurator).pollGNSS,           // need this to know which will be primary GNSS
+	(*Configurator).setPrtUBXOnly, // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
+	(*Configurator).pollGNSS,      // need this to know which will be primary GNSS
+	(*Configurator).enableTpMsg,   // do this soon, to avoid risk of GPS being completely silent
 	(*Configurator).pollTp5,
+	(*Configurator).setTp5,
 	(*Configurator).pollTmode,
 	(*Configurator).pollRate,
 	(*Configurator).pollNav5,
@@ -123,7 +125,7 @@ func (c *Configurator) pollTp5() gpsmsg.ConfigRequest {
 	}
 }
 
-func (c *Configurator) enableTimePulseMsg() gpsmsg.ConfigRequest {
+func (c *Configurator) enableTpMsg() gpsmsg.ConfigRequest {
 	if c.productCategory() == "FTS" {
 		return c.enableMsgRequest(bin.TimTosID)
 	} else {
@@ -153,6 +155,14 @@ func (c *Configurator) pollSurvey() gpsmsg.ConfigRequest {
 		return pollRequest{bin.NavSvinID}
 	}
 	return nil
+}
+
+func (c *Configurator) setTp5() gpsmsg.ConfigRequest {
+	tp5 := c.raw.changeTp5(c.target)
+	if tp5 == nil {
+		return nil
+	}
+	return msgRequest{&c.raw, tp5}
 }
 
 type msgRequest struct {
@@ -338,10 +348,14 @@ func (raw *RawConfig) cookTp5(cfg *gpsmsg.Config) {
 	period, width := tpPeriodWidth(tp.FreqPeriod, tp.PulseLenRatio, flags)
 	onlyWhenLocked := false
 	if flags&bin.CfgTp5LockedOtherSet != 0 {
-		onlyWhenLocked = period == 0 || width == 0
+		onlyWhenLocked = width == 0
 		period, width = tpPeriodWidth(tp.FreqPeriodLock, tp.PulseLenRatioLock, flags)
 	}
 	gpsmsg.CfgTimePulsePeriod.Set(cfg, period)
+	// report inactive pulse as pulse width 0
+	if flags&bin.CfgTp5Active == 0 {
+		width = 0
+	}
 	gpsmsg.CfgTimePulseWidth.Set(cfg, width)
 	gpsmsg.CfgTimePulseOnlyWhenLocked.Set(cfg, onlyWhenLocked)
 }
@@ -366,16 +380,138 @@ func tpPeriodWidth(freqPeriod, lenRatio uint32, flags bin.CfgTp5Flags) (time.Dur
 	return period, width
 }
 
+func (raw *RawConfig) changeTp5(cfg *gpsmsg.Config) *bin.CfgTp5 {
+	if raw.tp5 == nil {
+		return nil
+	}
+
+	// Copy the current tp5
+	tp := *raw.tp5
+
+	// Handle CfgTimePulsePolarityRising
+	rising, exists := gpsmsg.CfgTimePulsePolarityRising.Get(cfg)
+	if exists {
+		if rising {
+			tp.Flags |= bin.CfgTp5Polarity
+		} else {
+			tp.Flags &^= bin.CfgTp5Polarity
+		}
+	}
+
+	// Handle CfgTimePulseGNSS
+	gnss, exists := gpsmsg.CfgTimePulseGNSS.Get(cfg)
+	if exists {
+		gnssFlags := bin.CfgTp5AlignToTow | bin.CfgTp5LockGpsFreq
+		// XXX need to check whether the GNSS is enabled
+		switch gnss {
+		case gpsmsg.GPS:
+			tp.Flags |= bin.CfgTp5GridGPS | gnssFlags
+		case gpsmsg.GLONASS:
+			tp.Flags |= bin.CfgTp5GridGLONASS | gnssFlags
+		case gpsmsg.BeiDou:
+			tp.Flags |= bin.CfgTp5GridBeiDou | gnssFlags
+		case gpsmsg.Galileo:
+			tp.Flags |= bin.CfgTp5GridGalileo | gnssFlags
+		default:
+			tp.Flags &^= gnssFlags
+		}
+	}
+
+	// Handle CfgTimePulseOnlyWhenLocked
+	// Also set up where to write the perioad and width if we change them
+	lenRatioPtr := &tp.PulseLenRatio
+	freqPeriodPtr := &tp.FreqPeriod
+	onlyWhenLocked, exists := gpsmsg.CfgTimePulseOnlyWhenLocked.Get(cfg)
+	if exists {
+		if onlyWhenLocked {
+			lenRatioPtr = &tp.PulseLenRatioLock
+			freqPeriodPtr = &tp.FreqPeriodLock
+			tp.PulseLenRatio = 0
+			if tp.Flags&bin.CfgTp5LockedOtherSet == 0 {
+				tp.Flags |= bin.CfgTp5LockedOtherSet
+				// we are changing from unsplit to split, so copy the unlocked period
+				// just in case we don't change the period and the FreqPeriodLock was something bogus
+				tp.FreqPeriodLock = tp.FreqPeriod
+			}
+		} else {
+			tp.Flags &^= bin.CfgTp5LockedOtherSet
+		}
+	} else if tp.Flags&bin.CfgTp5LockedOtherSet != 0 {
+		lenRatioPtr = &tp.PulseLenRatioLock
+		freqPeriodPtr = &tp.FreqPeriodLock
+	}
+
+	// Handle CfgTimePulsePeriod
+	// If onlyWhenLocked is set, then we change both the locked and unlocked periods
+	period, periodExists := gpsmsg.CfgTimePulsePeriod.Get(cfg)
+	if period <= 0 {
+		periodExists = false
+	}
+	if periodExists {
+		// if CfgTimePulseOnlyWhenLocked wasn't specified, then onlyWhenLocked will be false
+		// so onlyWhenLocked tests that it was specified as true
+		if onlyWhenLocked && period != 0 && time.Second%period != 0 {
+			// if we have a period we cannot express in Hz, then switch over to using a length
+			// but only if we are setting both the locked and unlocked periods
+			tp.Flags &^= bin.CfgTp5IsFreq
+		}
+		if tp.Flags&bin.CfgTp5IsFreq == 0 {
+			*freqPeriodPtr = uint32(period.Round(time.Microsecond) / time.Microsecond)
+		} else {
+			// XXX ought to round
+			*freqPeriodPtr = uint32(time.Second / period)
+		}
+		if onlyWhenLocked {
+			// unlocked pulse width will be zero, so it doesn't really matter what the unlocked period is
+			// but we'll set it be the same as the locked period
+			// just in case above we changed the CfgTp5IsFreq flags above
+			tp.FreqPeriod = tp.FreqPeriodLock
+		}
+	}
+
+	// Handle CfgTimePulseWidth
+	if width, exists := gpsmsg.CfgTimePulseWidth.Get(cfg); exists {
+		// width 0 means inactive
+		if width == 0 {
+			tp.Flags &^= bin.CfgTp5Active
+		} else if width < 0 {
+			// invalid ignore it
+		} else {
+			tp.Flags |= bin.CfgTp5Active
+			// XXX don't want separate active flag, so make width of non-zero imply active
+			if tp.Flags&bin.CfgTp5IsLength != 0 {
+				*lenRatioPtr = uint32(width.Round(time.Microsecond) / time.Microsecond)
+			} else {
+				// need to write the pulse width as a ratio of the period
+				if !periodExists {
+					period, _ = tpPeriodWidth(*freqPeriodPtr, *lenRatioPtr, tp.Flags)
+				}
+				if period == 0 {
+					*lenRatioPtr = 0
+				} else {
+					*lenRatioPtr = uint32(((width << 32) + period/2) / period)
+				}
+			}
+		}
+	}
+
+	// if we didn't change anything, then there's nothing to do
+	if tp == *raw.tp5 {
+		return nil
+	}
+	return &tp
+}
+
 func (raw *RawConfig) cookGNSS(cfg *gpsmsg.Config) {
 	gnss := raw.gnss
 	if gnss == nil {
 		return
 	}
-	enabled := make([]gpsmsg.MajorGNSS, 0)
+	var enabled gpsmsg.MajorGNSSSet
 	for _, blk := range gnss.Blocks {
 		if blk.Enable != 0 {
 			if g, ok := majorGNSS(blk.GNSSID); ok {
-				enabled = append(enabled, g)
+				enabled |= gpsmsg.MajorGNSSFlag(g)
 			}
 		}
 	}

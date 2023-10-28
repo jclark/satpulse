@@ -7,7 +7,6 @@ import (
 	"github.com/jclark/gps4ptp/internal/ubx/bin"
 )
 
-// XXX this probably isn't the right name any more
 type Protocol struct {
 	ver  *Version
 	acks []*Ack
@@ -83,10 +82,10 @@ func (prot *Protocol) ProbeOK() bool {
 	return prot.ver != nil
 }
 
-func (prot *Protocol) Configure() gpsmsg.Configurator {
+func (prot *Protocol) Configure(target *gpsmsg.Config) gpsmsg.Configurator {
 	if prot.ver == nil {
 		panic("Configure called before probe OK")
 	}
-	prot.cfg = &Configurator{ver: prot.ver}
+	prot.cfg = &Configurator{ver: prot.ver, target: target}
 	return prot.cfg
 }
