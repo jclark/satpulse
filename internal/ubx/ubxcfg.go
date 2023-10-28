@@ -366,7 +366,7 @@ func tpPeriodWidth(freqPeriod, lenRatio uint32, flags bin.CfgTp5Flags) (time.Dur
 		if freqPeriod == 0 {
 			period = 0
 		} else {
-			period = time.Second / time.Duration(freqPeriod)
+			period = (time.Second / time.Duration(freqPeriod)).Round(time.Microsecond)
 		}
 	} else {
 		period = time.Duration(freqPeriod) * time.Microsecond
@@ -375,7 +375,7 @@ func tpPeriodWidth(freqPeriod, lenRatio uint32, flags bin.CfgTp5Flags) (time.Dur
 	if flags&bin.CfgTp5IsLength != 0 {
 		width = time.Duration(lenRatio) * time.Microsecond
 	} else {
-		width = (period * time.Duration(lenRatio)) >> 32
+		width = ((period * time.Duration(lenRatio)) >> 32).Round(time.Microsecond)
 	}
 	return period, width
 }
