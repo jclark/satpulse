@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/logctx"
 	"github.com/jclark/gps4ptp/internal/scan"
 	"github.com/jclark/gps4ptp/term"
 )
@@ -97,8 +97,7 @@ func (r *termReader) Read(p []byte) (n int, err error) {
 	return
 }
 
-func ScanWorker(ctx context.Context, p *scan.Scanner, c chan scan.Packet) {
-	lg := logctx.FromContext(ctx)
+func ScanWorker(ctx context.Context, lg *slog.Logger, p *scan.Scanner, c chan scan.Packet) {
 	lg.Debug("the scan worker goroutine has started")
 	defer func() {
 		close(c)
@@ -122,8 +121,7 @@ type OutPort interface {
 	TransmitTime(nBytes int) time.Duration
 }
 
-func Drain(ctx context.Context, p OutPort, nBytesWritten int) error {
-	lg := logctx.FromContext(ctx)
+func Drain(ctx context.Context, lg *slog.Logger, p OutPort, nBytesWritten int) error {
 	n, err := p.Buffered()
 	if err != nil {
 		return err

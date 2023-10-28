@@ -20,7 +20,6 @@ High priority
 Others
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
-* Try to get rid of the logctx package.
 * Allow SIGHUP to reload config: useful for disabling TCP connections.
 
 ## Grandmaster management

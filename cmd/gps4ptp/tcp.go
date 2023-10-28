@@ -198,7 +198,7 @@ func tcpConnReadWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig, 
 			}
 			return
 		}
-		err = serio.Drain(ctx, port, nWritten)
+		err = serio.Drain(ctx, lg, port, nWritten)
 		if err != nil {
 			if ctx.Err() == nil {
 				lg.Error("error draining serial port", "err", err)

@@ -12,7 +12,6 @@ import (
 
 	"github.com/jclark/gps4ptp/internal/bcast"
 	"github.com/jclark/gps4ptp/internal/gpscfg"
-	"github.com/jclark/gps4ptp/internal/logctx"
 	"github.com/jclark/gps4ptp/internal/mon"
 	"github.com/jclark/gps4ptp/internal/pmc"
 	"github.com/jclark/gps4ptp/internal/scan"
@@ -51,9 +50,9 @@ func main() {
 	}
 	lg := slog.New(handler)
 	slog.SetDefault(lg)
-	ctx := logctx.NewContext(context.Background(), lg)
-	ctx, cancel := cancelOnSignal(ctx)
-	err := run(ctx, cancel, configFile, inputLogFile)
+	ctx := context.Background()
+	ctx, cancel := cancelOnSignal(ctx, lg)
+	err := run(ctx, lg, cancel, configFile, inputLogFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
 		s := configErrorDetail(err)
@@ -64,7 +63,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLogFile string) error {
+func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFile string, inputLogFile string) error {
 	cfg, err := loadConfig(cfgFile)
 	if err != nil {
 		return err
@@ -84,7 +83,6 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLo
 	if err != nil {
 		return err
 	}
-	lg := logctx.FromContext(ctx)
 	lg.Info("selected PTP hardware clock", "path", clk.Path())
 
 	defer func() {
@@ -115,7 +113,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfgFile string, inputLo
 	scanner := serio.NewScanner(t)
 	var wg sync.WaitGroup
 
-	fCh := startScan(ctx, &wg, scanner)
+	fCh := startScan(ctx, lg, &wg, scanner)
 
 	fb := startBcast(ctx, lg, &wg, fCh)
 
@@ -224,21 +222,21 @@ func waitGroupGo(wg *sync.WaitGroup, f func()) {
 	}()
 }
 
-func cancelOnSignal(ctx context.Context) (context.Context, context.CancelFunc) {
+func cancelOnSignal(ctx context.Context, lg *slog.Logger) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(ctx)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
 	go func() {
 		<-sig
-		logctx.FromContext(ctx).Debug("received signal, initiating cancellation")
+		lg.Debug("received signal, initiating cancellation")
 		cancel()
 	}()
 	return ctx, cancel
 }
 
-func startScan(ctx context.Context, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	waitGroupGo(wg, func() { serio.ScanWorker(ctx, scanner, msg) })
+	waitGroupGo(wg, func() { serio.ScanWorker(ctx, lg, scanner, msg) })
 	return msg
 }
 
