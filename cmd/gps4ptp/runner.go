@@ -15,6 +15,7 @@ import (
 	"github.com/jclark/gps4ptp/internal/sse"
 	"github.com/jclark/gps4ptp/internal/tsync"
 	"github.com/jclark/gps4ptp/internal/ubx"
+	ubxbin "github.com/jclark/gps4ptp/internal/ubx/bin"
 )
 
 type SyncRunner struct {
@@ -109,7 +110,7 @@ func (s *SyncRunner) handlePacket(pkt scan.Packet) {
 			lg.Error("failed to parse NMEA message", "err", err)
 		}
 	case scan.UBX:
-		err := ubx.ProcessPacket(pkt.Data, pkt.TRead, s, nil)
+		err := ubx.ProcessPacket(pkt.Data, pkt.TRead, s, s)
 		if err != nil {
 			lg.Error("failed to parse UBX message", "err", err)
 		}
@@ -166,4 +167,8 @@ func (s *SyncRunner) Time(mt *gpsmsg.Time, tRead time.Time) {
 func (s *SyncRunner) LeapSecond(msg *gpsmsg.LeapSecond, _ time.Time) {
 	s.ls = msg.LeapSecond
 	s.m.SetLeapSecond(s.ls)
+}
+
+func (s *SyncRunner) UBX(msg ubxbin.Msg, tRead time.Time) {
+	s.lg.Debug("unused UBX message", "msg", msg)
 }
