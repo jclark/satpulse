@@ -54,9 +54,11 @@ func Dispatch(m bin.Msg, tRead time.Time, h gpsmsg.Handler) bool {
 	default:
 		return false
 	}
+	if time == nil {
+		return false
+	}
 	if h != nil {
 		h.Time(time, tRead)
 	}
 	return true
 }
-
