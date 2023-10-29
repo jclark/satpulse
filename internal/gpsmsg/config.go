@@ -124,7 +124,7 @@ func makeCfgKey[T comparable](s string) TypedCfgKey[T] {
 	return TypedCfgKey[T]{anyCfgKey{s}}
 }
 
-var CfgEnabledGNSS = makeCfgKey[MajorGNSSSet]("enabledGNSS")
+var CfgGNSSEnabled = makeCfgKey[MajorGNSSSet]("gnssEnabled")
 var CfgSolutionPeriod = makeCfgKey[time.Duration]("solutionPeriod")
 var CfgTimePulseWidth = makeCfgKey[time.Duration]("timePulseWidth")
 var CfgTimePulsePeriod = makeCfgKey[time.Duration]("timePulsePeriod")
@@ -137,8 +137,9 @@ var CfgSurveyMinDur = makeCfgKey[time.Duration]("surveyMinDur")
 var CfgSurveyAccLimit = makeCfgKey[Length]("surveyAccLimit")
 var CfgFixedPosECEF = makeCfgKey[Point3D]("fixedPosECEF")
 var CfgFixedPosAcc = makeCfgKey[Length]("fixedPosAcc")
-var CfgUtcStandard = makeCfgKey[MajorGNSS]("utcStandard") // nil value to use auto
+var CfgUTCStandard = makeCfgKey[MajorGNSS]("utcStandard") // nil value to use auto
 var CfgStationary = makeCfgKey[bool]("stationary")
+var CfgNMEAEnabled = makeCfgKey[bool]("nmeaEnabled")
 
 func (cfg *Config) SetSane() {
 	CfgSolutionPeriod.Set(cfg, 1*time.Second)

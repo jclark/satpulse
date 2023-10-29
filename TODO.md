@@ -131,12 +131,10 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 
 ## GPS configuration
 
-* Be able to set the desired configuration
-   * from RawConfig and Config generate list of CfgMessages that will make the RawConfig have the specified Config
-      * should the config here be the whole config or just the changed items?
-   * CfgMessage can produce a array of bytes to be sent to the receiver
-   * a CfgMessage can be applied to the RawConfig to mutate it; this is done when the GPS receiver acks the message
-   * we can then look at the Config to see what we got
+* Implement setting of configuration options related to GNSS constellation
+* Implement setting  time mode
+* How to model alignment to GNSS vs UTC?
+  * Does it work to align time pulse to UTC standard rather than GNSS?
 * Allow TOML configuration of things that user must specify
    * preferred GNSS constellation
    * antenna delay
@@ -150,7 +148,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * cold boot
 * Configure antenna supervision
 * Support new-style ublox configuration (VALGET, VALSET)
-* Does it work to align time pulse to UTC standard rather than GNSS?
 
 ## Antenna supervision
 

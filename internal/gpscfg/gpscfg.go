@@ -80,6 +80,8 @@ func Configure(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet
 func requiredConfig() *gpsmsg.Config {
 	cfg := &gpsmsg.Config{}
 	cfg.SetSane()
+	// Config is very slow on 8-th gen if NMEA is enabled
+	gpsmsg.CfgNMEAEnabled.Set(cfg, false)
 	return cfg
 }
 

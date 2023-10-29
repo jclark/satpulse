@@ -30,14 +30,16 @@ type RawConfig struct {
 
 var configSteps = []func(*Configurator) gpsmsg.ConfigRequest{
 	(*Configurator).pollPrt,
-	(*Configurator).setPrtUBXOnly, // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
-	(*Configurator).pollGNSS,      // need this to know which will be primary GNSS
-	(*Configurator).enableTpMsg,   // do this soon, to avoid risk of GPS being completely silent
+	(*Configurator).setPrt,      // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
+	(*Configurator).pollGNSS,    // need this to know which will be primary GNSS
+	(*Configurator).enableTpMsg, // do this soon, to avoid risk of GPS being completely silent
 	(*Configurator).pollTp5,
 	(*Configurator).setTp5,
 	(*Configurator).pollTmode,
 	(*Configurator).pollRate,
+	(*Configurator).setRate,
 	(*Configurator).pollNav5,
+	(*Configurator).setNav5,
 	(*Configurator).pollSurvey,
 	(*Configurator).pollLeapSecond,
 	(*Configurator).enableTimeGNSSMsg,
@@ -78,14 +80,6 @@ func (c *Configurator) TPTimegridGPS() []byte {
 		panic(err)
 	}
 	return bytes
-}
-
-func (c *Configurator) setPrtUBXOnly() gpsmsg.ConfigRequest {
-	prtMsg := c.raw.ReqSetPrtUBXOnly()
-	if prtMsg == nil {
-		return nil
-	}
-	return msgRequest{&c.raw, prtMsg}
 }
 
 func (c *Configurator) pollPrt() gpsmsg.ConfigRequest {
@@ -155,6 +149,30 @@ func (c *Configurator) pollSurvey() gpsmsg.ConfigRequest {
 		return pollRequest{bin.NavSvinID}
 	}
 	return nil
+}
+
+func (c *Configurator) setPrt() gpsmsg.ConfigRequest {
+	prt := c.raw.changePrt(c.target)
+	if prt == nil {
+		return nil
+	}
+	return msgRequest{&c.raw, prt}
+}
+
+func (c *Configurator) setNav5() gpsmsg.ConfigRequest {
+	nav5 := c.raw.changeNav5(c.target)
+	if nav5 == nil {
+		return nil
+	}
+	return msgRequest{&c.raw, nav5}
+}
+
+func (c *Configurator) setRate() gpsmsg.ConfigRequest {
+	rate := c.raw.changeRate(c.target, c.ver)
+	if rate == nil {
+		return nil
+	}
+	return msgRequest{&c.raw, rate}
 }
 
 func (c *Configurator) setTp5() gpsmsg.ConfigRequest {
@@ -244,6 +262,7 @@ func (raw *RawConfig) Config(ver *Version) *gpsmsg.Config {
 		return nil
 	}
 	cfg := &gpsmsg.Config{}
+	raw.cookPrt(cfg)
 	raw.cookTmode2(cfg)
 	if raw.tmode2 == nil {
 		raw.cookTmode3(cfg)
@@ -269,6 +288,34 @@ func (raw *RawConfig) SetMsgRate(msgID bin.MsgID, rate byte) {
 	rates := raw.msgRate[msgID]
 	rates[int(prt)] = rate
 	raw.msgRate[msgID] = rates
+}
+
+func (raw *RawConfig) cookPrt(cfg *gpsmsg.Config) {
+	prt := raw.prt
+	if prt == nil {
+		return
+	}
+	gpsmsg.CfgNMEAEnabled.Set(cfg, prt.OutProtoMask&bin.CfgPrtProtoNMEA != 0)
+}
+
+func (raw *RawConfig) changePrt(cfg *gpsmsg.Config) *bin.CfgPrt {
+	if raw.prt == nil {
+		return nil
+	}
+
+	prt := *raw.prt
+	if nmeaEnabled, exists := gpsmsg.CfgNMEAEnabled.Get(cfg); exists {
+		if nmeaEnabled {
+			prt.OutProtoMask |= bin.CfgPrtProtoNMEA
+		} else {
+			prt.OutProtoMask &^= bin.CfgPrtProtoNMEA
+		}
+	}
+
+	if prt == *raw.prt {
+		return nil
+	}
+	return &prt
 }
 
 func (raw *RawConfig) cookTmode2(cfg *gpsmsg.Config) {
@@ -515,7 +562,7 @@ func (raw *RawConfig) cookGNSS(cfg *gpsmsg.Config) {
 			}
 		}
 	}
-	gpsmsg.CfgEnabledGNSS.Set(cfg, enabled)
+	gpsmsg.CfgGNSSEnabled.Set(cfg, enabled)
 }
 
 func (raw *RawConfig) cookRate(cfg *gpsmsg.Config, ver *Version) {
@@ -523,11 +570,42 @@ func (raw *RawConfig) cookRate(cfg *gpsmsg.Config, ver *Version) {
 	if rate == nil {
 		return
 	}
-	period := time.Duration(raw.rate.MeasRate) * time.Millisecond
-	if ver.protVerAtLeast(18, 0) && period != 0 {
-		period /= time.Duration(raw.rate.NavRate)
+	gpsmsg.CfgSolutionPeriod.Set(cfg, rateSolutionPeriod(rate, ver))
+}
+
+func rateSolutionPeriod(rate *bin.CfgRate, ver *Version) time.Duration {
+	period := time.Duration(rate.MeasRate) * time.Millisecond
+	if ver.protVerAtLeast(18, 0) && rate.NavRate != 0 {
+		period /= time.Duration(rate.NavRate)
 	}
-	gpsmsg.CfgSolutionPeriod.Set(cfg, period)
+	return period
+}
+
+func (raw *RawConfig) changeRate(cfg *gpsmsg.Config, ver *Version) *bin.CfgRate {
+	if raw.rate == nil {
+		return nil
+	}
+	rate := *raw.rate
+	if period, exists := gpsmsg.CfgSolutionPeriod.Get(cfg); exists {
+		setSolutionPeriod(&rate, period, ver)
+	}
+	if rate == *raw.rate {
+		return nil
+	}
+	return &rate
+}
+
+func setSolutionPeriod(rate *bin.CfgRate, period time.Duration, ver *Version) {
+	// don't unnecessatily change navRate
+	if rateSolutionPeriod(rate, ver) == period {
+		return
+	}
+	measRate := period.Round(time.Millisecond) / time.Millisecond
+	if measRate <= 0 || measRate > 0xffff {
+		return
+	}
+	rate.MeasRate = uint16(measRate)
+	rate.NavRate = 1
 }
 
 func (raw *RawConfig) cookNav5(cfg *gpsmsg.Config) {
@@ -553,7 +631,27 @@ func (raw *RawConfig) cookNav5(cfg *gpsmsg.Config) {
 	case bin.CfgNav5UtcEU:
 		utc = gpsmsg.Galileo
 	}
-	gpsmsg.CfgUtcStandard.Set(cfg, utc)
+	gpsmsg.CfgUTCStandard.Set(cfg, utc)
+}
+
+func (raw *RawConfig) changeNav5(cfg *gpsmsg.Config) *bin.CfgNav5 {
+	if raw.nav5 == nil {
+		return nil
+	}
+
+	nav5 := *raw.nav5
+	if stationary, exists := gpsmsg.CfgStationary.Get(cfg); exists {
+		if stationary {
+			nav5.DynModel = bin.CfgNav5DynStationary
+		} else if nav5.DynModel == bin.CfgNav5DynStationary {
+			nav5.DynModel = bin.CfgNav5DynPortable
+		}
+	}
+
+	if nav5 == *raw.nav5 {
+		return nil
+	}
+	return &nav5
 }
 
 func (cfg *RawConfig) AddMsg(m bin.Msg) bool {
@@ -573,33 +671,14 @@ func (cfg *RawConfig) AddMsg(m bin.Msg) bool {
 		cfg.rate = mt
 	case *bin.CfgNav5:
 		cfg.nav5 = mt
-	case *bin.CfgMsg:
-		cfg.addMsgRate(mt.MsgID, mt.Rate)
 	case *bin.CfgPrt:
 		cfg.prt = mt
+	case *bin.CfgMsg:
+		cfg.addMsgRate(mt.MsgID, mt.Rate)
 	default:
 		return false
 	}
 	return true
-}
-
-func (cfg *RawConfig) Port() (bin.PortID, bool) {
-	if cfg == nil || cfg.prt == nil {
-		return 0, false
-	}
-	return cfg.prt.PortID, true
-}
-
-func (cfg *RawConfig) ReqSetPrtUBXOnly() *bin.CfgPrt {
-	if cfg == nil || cfg.prt == nil {
-		return nil
-	}
-	if cfg.prt.OutProtoMask == bin.CfgPrtProtoUBX {
-		return nil
-	}
-	prt := *cfg.prt
-	prt.OutProtoMask = bin.CfgPrtProtoUBX
-	return &prt
 }
 
 func (cfg *RawConfig) addMsgRate(msgID bin.MsgID, rate [6]byte) {
