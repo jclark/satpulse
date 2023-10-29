@@ -30,11 +30,12 @@ type RawConfig struct {
 
 var configSteps = []func(*Configurator) gpsmsg.ConfigRequest{
 	(*Configurator).pollPrt,
-	(*Configurator).setPrt,      // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
-	(*Configurator).pollGNSS,    // need this to know which will be primary GNSS
-	(*Configurator).enableTpMsg, // do this soon, to avoid risk of GPS being completely silent
+	(*Configurator).setPrt,            // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
+	(*Configurator).enableTimeGNSSMsg, // do this soon, to avoid risk of GPS being completely silent
+	(*Configurator).pollGNSS,          // need this to know which will be primary GNSS
 	(*Configurator).pollTp5,
 	(*Configurator).setTp5,
+	(*Configurator).enableTpMsg,
 	(*Configurator).pollTmode,
 	(*Configurator).pollRate,
 	(*Configurator).setRate,
@@ -42,7 +43,6 @@ var configSteps = []func(*Configurator) gpsmsg.ConfigRequest{
 	(*Configurator).setNav5,
 	(*Configurator).pollSurvey,
 	(*Configurator).pollLeapSecond,
-	(*Configurator).enableTimeGNSSMsg,
 }
 
 var _ gpsmsg.Configurator = &Configurator{}
@@ -121,17 +121,24 @@ func (c *Configurator) pollTp5() gpsmsg.ConfigRequest {
 
 func (c *Configurator) enableTpMsg() gpsmsg.ConfigRequest {
 	if c.productCategory() == "FTS" {
-		return c.enableMsgRequest(bin.TimTosID)
-	} else {
-		return c.enableMsgRequest(bin.TimTPID)
+		return nil
 	}
+	if c.raw.tp5 == nil {
+		return nil
+	}
+	flags := c.raw.tp5.Flags
+	if flags & bin.CfgTp5AlignToTow == 0 || flags & bin.CfgTp5LockGpsFreq == 0 || flags&bin.CfgTp5GridUTCGNSS == bin.CfgTp5GridUTC {
+		return nil
+	}
+	return c.enableMsgRequest(bin.TimTPID)
 }
 
 func (c *Configurator) enableTimeGNSSMsg() gpsmsg.ConfigRequest {
 	if c.productCategory() == "FTS" {
-		return nil
+		return c.enableMsgRequest(bin.TimTosID)
+	} else {
+		return c.enableMsgRequest(bin.NavTimeGPSID)
 	}
-	return c.enableMsgRequest(bin.NavTimeGPSID)
 }
 
 // XXX not clear what to do about waiting for response NAV-TIMELS response
