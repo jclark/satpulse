@@ -111,7 +111,7 @@ func utcStandardToGNSS(u bin.UTCStandard) gpsmsg.MajorGNSS {
 
 func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
 	if (m.Flags & bin.TimTPTimeBase) == bin.TimTPTimeBaseUTC {
-		// In this case the m.TOWMS will not be the GPS time (but will have UTC offset added)
+		// In this case the m.TOWMS will not be the GPS time (but will have GPS-UTC offset subtracted)
 		// This will be problematic around a leap second, so ignore.
 		// Can we do better?
 		return nil
