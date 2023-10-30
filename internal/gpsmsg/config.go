@@ -72,11 +72,24 @@ func (c *Config) MarshalText() ([]byte, error) {
 	return []byte(fmt.Sprint(c.serializableMap())), nil
 }
 
+// Inconsistent returns a Config with the entries in c2 that are inconsistent with c.
+// An entry is inconsistent if it exists in both c and c2 but has different values.
 func (c *Config) Inconsistent(c2 *Config) *Config {
 	m := make(map[string]interface{})
 	for k, v := range c.m {
 		if v2, exists := c2.m[k]; exists && v != v2 {
 			m[k] = v2
+		}
+	}
+	return &Config{m}
+}
+
+// Missing returns a Config with the entries from c2 that are missing from c.
+func (c *Config) Missing(c2 *Config) *Config {
+	m := make(map[string]interface{})
+	for k, v := range c2.m {
+		if _, exists := c.m[k]; !exists {
+			m[k] = v
 		}
 	}
 	return &Config{m}
@@ -125,10 +138,11 @@ func makeCfgKey[T comparable](s string) TypedCfgKey[T] {
 }
 
 var CfgGNSSEnabled = makeCfgKey[MajorGNSSSet]("gnssEnabled")
+var CfgPrimaryGNSS = makeCfgKey[MajorGNSS]("primaryGNSS")
 var CfgSolutionPeriod = makeCfgKey[time.Duration]("solutionPeriod")
 var CfgTimePulseWidth = makeCfgKey[time.Duration]("timePulseWidth")
 var CfgTimePulsePeriod = makeCfgKey[time.Duration]("timePulsePeriod")
-var CfgTimePulseGNSS = makeCfgKey[MajorGNSS]("timePulseGNSS")
+var CfgTimePulseAlignToGNSS = makeCfgKey[bool]("timePulseAlignToGNSS")
 var CfgTimePulseOnlyWhenLocked = makeCfgKey[bool]("timePulseOnlyWhenLocked")
 var CfgTimePulsePolarityRising = makeCfgKey[bool]("timePulsePolarityRising")
 var CfgTimeMode = makeCfgKey[TimeMode]("timeMode")
@@ -137,7 +151,6 @@ var CfgSurveyMinDur = makeCfgKey[time.Duration]("surveyMinDur")
 var CfgSurveyAccLimit = makeCfgKey[Length]("surveyAccLimit")
 var CfgFixedPosECEF = makeCfgKey[Point3D]("fixedPosECEF")
 var CfgFixedPosAcc = makeCfgKey[Length]("fixedPosAcc")
-var CfgUTCStandard = makeCfgKey[MajorGNSS]("utcStandard") // nil value to use auto
 var CfgStationary = makeCfgKey[bool]("stationary")
 var CfgNMEAEnabled = makeCfgKey[bool]("nmeaEnabled")
 
@@ -146,6 +159,7 @@ func (cfg *Config) SetSane() {
 	CfgTimePulsePeriod.Set(cfg, 1*time.Second)
 	CfgTimePulseWidth.Set(cfg, time.Second/10)
 	CfgTimePulsePolarityRising.Set(cfg, true)
+	CfgTimePulseAlignToGNSS.Set(cfg, true)
 	CfgTimePulseOnlyWhenLocked.Set(cfg, true)
 }
 

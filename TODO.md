@@ -131,12 +131,12 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 
 ## GPS configuration
 
-* Implement setting of configuration options related to GNSS constellation
-* Implement setting  time mode
-* How to model alignment to GNSS vs UTC?
-  * Does it work to align time pulse to UTC standard rather than GNSS?
+* Implement setting time mode
+* Need to check we got something back from a poll (not just check the ACK)
+* Choose GNSS time message based on primary GNSS constellation
+* Pay attention to version in CFG-UBX-TP5
 * Allow TOML configuration of things that user must specify
-   * preferred GNSS constellation
+   * primary GNSS constellation
    * antenna delay
    * fixed antenna position
    * disable any change (does this include messages?)
