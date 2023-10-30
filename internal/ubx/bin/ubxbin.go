@@ -366,7 +366,7 @@ const (
 	CfgTp5GridGLONASS
 	CfgTp5GridBeiDou
 	CfgTp5GridGalileo
-	CfgTp5GridUTCGNSS CfgTp5Flags = 0xb1111 << 7
+	CfgTp5GridUTCGNSS CfgTp5Flags = 0b1111 << 7
 )
 
 type CfgTmode2 struct {
