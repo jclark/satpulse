@@ -221,6 +221,8 @@ const (
 	CfgNav5MaskStaticHoldMask
 	CfgNav5MaskDgpsMask
 	CfgNav5MaskCnoThresh
+	_
+	CfgNav5MaskUtc
 )
 
 type CfgNav5DynModel byte
