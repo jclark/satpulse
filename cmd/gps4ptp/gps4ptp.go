@@ -137,8 +137,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		if r := recover(); r != nil {
 			panic(r)
 		}
-		// startScan starts a goroutine sending to fCh.
-		// We need to wait for the goroutine to close fCh, before calling port.Restore/port.Close.
+		// startScan starts a goroutine sending to pCh.
+		// We need to wait for the goroutine to close pCh, before calling port.Restore/port.Close.
 		// Otherwise, there is a possibility of reading from a file descriptor that
 		// is no longer valid (and so might refer to something else).
 		if err != nil {
