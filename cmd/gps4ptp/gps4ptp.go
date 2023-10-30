@@ -113,9 +113,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	scanner := serio.NewScanner(t)
 	var wg sync.WaitGroup
 
-	fCh := startScan(ctx, lg, &wg, scanner)
+	pCh := startScan(ctx, lg, &wg, scanner)
 
-	fb := startBcast(ctx, lg, &wg, fCh)
+	pb := startBcast(ctx, lg, &wg, pCh)
 
 	var sseCh chan sse.Event
 	var eb *bcast.Bcast[sse.Event]
@@ -126,12 +126,12 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	// Shut down the broadcast goroutines when the context is cancelled.
 	waitGroupGo(&wg, func() {
 		<-ctx.Done()
-		fb.Close()
+		pb.Close()
 		if eb != nil {
 			eb.Close()
 		}
 	})
-	fCh = fb.Subscribe()
+	pCh = pb.Subscribe()
 	defer func() {
 		// Avoid calling wg.Wait() if we panic
 		if r := recover(); r != nil {
@@ -156,7 +156,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = serio.TermError{}
-	initData, err := gpscfg.Configure(ctx, lg, fCh, t)
+	initData, err := gpscfg.Configure(ctx, lg, pCh, t)
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		return nil
 	}
 
-	err = startTCP(ctx, lg, &wg, cfg.TCP, fb, t)
+	err = startTCP(ctx, lg, &wg, cfg.TCP, pb, t)
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
 	waitGroupGo(&wg, func() {
-		s.run(tsCh, fCh)
+		s.run(tsCh, pCh)
 		close(gmUpdateCh)
 	})
 

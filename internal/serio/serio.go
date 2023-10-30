@@ -97,15 +97,15 @@ func (r *termReader) Read(p []byte) (n int, err error) {
 	return
 }
 
-func ScanWorker(ctx context.Context, lg *slog.Logger, p *scan.Scanner, c chan scan.Packet) {
+func ScanWorker(ctx context.Context, lg *slog.Logger, scanner *scan.Scanner, ch chan scan.Packet) {
 	lg.Debug("the scan worker goroutine has started")
 	defer func() {
-		close(c)
+		close(ch)
 		lg.Debug("the scan worker goroutine is about to exit")
 	}()
 	for {
-		f, err := p.Scan(ctx)
-		c <- f
+		pkt, err := scanner.Scan(ctx)
+		ch <- pkt
 		if err != nil {
 			if err != io.EOF && ctx.Err() == nil {
 				lg.Error("read error while scanning", "error", err)
