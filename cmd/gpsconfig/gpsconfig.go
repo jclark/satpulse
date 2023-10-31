@@ -19,18 +19,37 @@ import (
 )
 
 func main() {
-	var debugEnable bool
-	var device string
+	var verboseLevel int
 	var speed intFlag
+	var help bool
 
-	pflag.BoolVar(&debugEnable, "debug", false, "log debugging information")
-	pflag.StringVar(&device, "device", "/dev/ttyS0", "serial device")
-	pflag.Var(&speed, "speed", "serial port speed")
+	flags := pflag.NewFlagSet("gpsconfig", pflag.ContinueOnError)
+	flags.SetInterspersed(false)
 
-	pflag.Parse()
+	flags.CountVarP(&verboseLevel, "verbose", "v", "increase verbosity")
+	flags.VarP(&speed, "speed", "s", "serial device `baud-rate`")
+	flags.BoolVarP(&help, "help", "h", false, "show help")
+	err := flags.Parse(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
+		os.Exit(2)
+	}
+	if help {
+		usage(flags)
+		os.Exit(0)
+	}
 
-	level := slog.LevelInfo
-	if debugEnable {
+	if flags.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, os.Args[0]+": must specify a serial device")
+		usage(flags)
+		os.Exit(2)
+	}
+	device := flags.Arg(0)
+
+	level := slog.LevelWarn
+	if verboseLevel == 1 {
+		level = slog.LevelInfo
+	} else if verboseLevel > 1 {
 		level = slog.LevelDebug
 	}
 
@@ -40,11 +59,17 @@ func main() {
 	slog.SetDefault(lg)
 	ctx := context.Background()
 	ctx, cancel := cancelOnSignal(ctx, lg)
-	err := run(ctx, lg, cancel, device, speed.value)
+	err = run(ctx, lg, cancel, device, speed.value)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
 		os.Exit(1)
 	}
+}
+
+func usage(flags *pflag.FlagSet) {
+	fmt.Fprintln(os.Stderr, "Usage:", os.Args[0], "[options] serial-device")
+	fmt.Fprintln(os.Stderr, "Options:")
+	flags.PrintDefaults()
 }
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, serialDev string, speed *int) error {
@@ -77,7 +102,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, serial
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = serio.TermError{}
-	_, err = gpscfg.Configure(ctx, lg, pCh, t)
+	info, err := gpscfg.Configure(ctx, lg, pCh, t)
+	if err == nil {
+		fmt.Printf("set config to: %s\n", fmt.Sprint(info.Config))
+	}
 
 	lg.Debug("about to wait")
 
