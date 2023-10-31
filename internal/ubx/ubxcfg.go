@@ -5,7 +5,7 @@ import (
 
 	"github.com/jclark/gps4ptp/internal/gpsmsg"
 	"github.com/jclark/gps4ptp/internal/ubx/bin"
-	"github.com/jclark/gps4ptp/internal/ubx/cfg"
+	"github.com/jclark/gps4ptp/internal/ubxcfgval"
 )
 
 type Configurator struct {
@@ -73,7 +73,7 @@ func (c *Configurator) TPTimegridGPS() []byte {
 		CfgValsetFixed: bin.CfgValsetFixed{
 			Layers: bin.CfgValsetLayerRAM,
 		},
-		CfgData: cfg.GetSchema().MustMarshal(cfgMap),
+		CfgData: ubxcfgval.GetSchema().MustMarshal(cfgMap),
 	}
 	bytes, err := bin.Serialize(&u)
 	if err != nil {

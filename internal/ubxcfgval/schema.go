@@ -1,4 +1,4 @@
-package cfg
+package ubxcfgval
 
 var schema = MustNewSchema(map[string]map[string]Desc{
 	"HW": {

@@ -1,4 +1,4 @@
-package cfg
+package ubxcfgval
 
 //go:generate go run mkschema.go
 

@@ -1,4 +1,4 @@
-package cfg
+package ubxcfgval
 
 import (
 	_ "embed"
