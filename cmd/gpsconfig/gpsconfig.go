@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,6 +13,8 @@ import (
 	"github.com/jclark/gps4ptp/internal/scan"
 	"github.com/jclark/gps4ptp/internal/serio"
 
+	"github.com/spf13/pflag"
+
 	"golang.org/x/sys/unix"
 )
 
@@ -22,18 +23,18 @@ func main() {
 	var device string
 	var speed intFlag
 
-	flag.BoolVar(&debugEnable, "debug", false, "log debugging information")
-	flag.StringVar(&device, "device", "/dev/ttyS0", "serial device")
-	flag.Var(&speed, "speed", "serial port speed")
+	pflag.BoolVar(&debugEnable, "debug", false, "log debugging information")
+	pflag.StringVar(&device, "device", "/dev/ttyS0", "serial device")
+	pflag.Var(&speed, "speed", "serial port speed")
 
-	flag.Parse()
+	pflag.Parse()
 
 	level := slog.LevelInfo
 	if debugEnable {
 		level = slog.LevelDebug
 	}
 
-	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
 
 	lg := slog.New(handler)
 	slog.SetDefault(lg)
@@ -120,7 +121,11 @@ func (i *intFlag) String() string {
 	if i.value == nil {
 		return ""
 	}
-	return fmt.Sprintf("%d", *i.value)
+	return strconv.Itoa(*i.value)
+}
+
+func (i *intFlag) Type() string {
+	return "int"
 }
 
 func (i *intFlag) Set(s string) error {
