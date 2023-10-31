@@ -69,7 +69,11 @@ func (c *Config) MarshalJSON() ([]byte, error) {
 }
 
 func (c *Config) MarshalText() ([]byte, error) {
-	return []byte(fmt.Sprint(c.serializableMap())), nil
+	return []byte(c.String()), nil
+}
+
+func (c *Config) String() string {
+	return fmt.Sprint(c.serializableMap())
 }
 
 // Inconsistent returns a Config with the entries in c2 that are inconsistent with c.
