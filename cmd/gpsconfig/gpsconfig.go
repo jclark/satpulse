@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/jclark/gps4ptp/internal/gpscfg"
+	"github.com/jclark/gps4ptp/internal/gpsmsg"
 	"github.com/jclark/gps4ptp/internal/scan"
 	"github.com/jclark/gps4ptp/internal/serio"
 
@@ -22,6 +23,8 @@ func main() {
 	var verboseLevel int
 	var speed intFlag
 	var help bool
+	var sane bool
+	config := &gpsmsg.Config{}
 
 	flags := pflag.NewFlagSet("gpsconfig", pflag.ContinueOnError)
 	flags.SetInterspersed(false)
@@ -29,6 +32,7 @@ func main() {
 	flags.CountVarP(&verboseLevel, "verbose", "v", "increase verbosity")
 	flags.VarP(&speed, "speed", "s", "serial device `baud-rate`")
 	flags.BoolVarP(&help, "help", "h", false, "show help")
+	flags.BoolVarP(&sane, "sane", "S", false, "configure the receiver defaults that are sane for timing")
 	err := flags.Parse(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
@@ -46,6 +50,10 @@ func main() {
 	}
 	device := flags.Arg(0)
 
+	if sane {
+		config.SetSane()
+		gpsmsg.CfgNMEAEnabled.Set(config, true)
+	}
 	level := slog.LevelWarn
 	if verboseLevel == 1 {
 		level = slog.LevelInfo
@@ -59,7 +67,7 @@ func main() {
 	slog.SetDefault(lg)
 	ctx := context.Background()
 	ctx, cancel := cancelOnSignal(ctx, lg)
-	err = run(ctx, lg, cancel, device, speed.value)
+	err = run(ctx, lg, cancel, config, device, speed.value)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
 		os.Exit(1)
@@ -72,7 +80,7 @@ func usage(flags *pflag.FlagSet) {
 	flags.PrintDefaults()
 }
 
-func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, serialDev string, speed *int) error {
+func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, config *gpsmsg.Config, serialDev string, speed *int) error {
 
 	t, err := serio.OpenTerm(serialDev, speed)
 	if err != nil {
@@ -102,7 +110,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, serial
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = serio.TermError{}
-	info, err := gpscfg.Configure(ctx, lg, pCh, t)
+	info, err := gpscfg.Configure(ctx, lg, config, pCh, t)
 	if err == nil {
 		fmt.Printf("set config to: %s\n", fmt.Sprint(info.Config))
 	}
