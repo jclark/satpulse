@@ -3,15 +3,14 @@ package ubxcfgval
 //go:generate go run mkschema.go
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math"
 )
 
 type Desc interface {
 	key() Key
-	MarshalValue(v any) ([]byte, error)
-	UnmarshalValue(data []byte) (any, error)
+	MarshalValue(v any) (uint64, error)
+	UnmarshalValue(data uint64) (any, error)
 }
 
 type U uint32
@@ -98,23 +97,19 @@ func (s *Schema) MustMarshal(cfg map[string]map[string]any) []byte {
 	return b
 }
 
-func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, map[Key][]byte, error) {
+func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, map[Key]uint64, error) {
 	cfg := make(map[string]map[string]any)
-	unknown := make(map[Key][]byte)
-	for len(data) > 4 {
-		k := Key(binary.LittleEndian.Uint32(data))
-		data = data[4:]
-		nBytes := k.nValueBytes()
-		if len(data) < nBytes {
-			return nil, nil, fmt.Errorf("invalid data length for key 0x%x", k)
-		}
-		itemData := data[0:nBytes]
-		data = data[nBytes:]
-		nd, ok := s.keys[k]
+	unknown := make(map[Key]uint64)
+	items, err := UnmarshalItems(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, it := range items {
+		nd, ok := s.keys[it.Key]
 		var v any
 		if ok {
 			var err error
-			v, err = nd.d.UnmarshalValue(itemData)
+			v, err = nd.d.UnmarshalValue(it.Value)
 			if err != nil {
 				ok = false
 			}
@@ -127,69 +122,55 @@ func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, map[Key][]by
 			}
 			g[nd.itemName] = v
 		} else {
-			unknown[k] = append([]byte{}, itemData...)
+			unknown[it.Key] = it.Value
 		}
-	}
-	if len(data) > 0 {
-		return nil, nil, fmt.Errorf("leftover data")
 	}
 	return cfg, unknown, nil
 }
 
 func (s *Schema) Marshal(cfg map[string]map[string]any) ([]byte, error) {
-	var bytes []byte
+	items := make([]Item, 0)
 	for g, v := range cfg {
 		desc, ok := s.groups[g]
 		if !ok {
 			return nil, fmt.Errorf("unknown group %s", g)
 		}
-		b, err := marshalGroup(desc, v)
+		g, err := marshalGroup(desc, v)
 		if err != nil {
 			return nil, err
 		}
-		bytes = append(bytes, b...)
+		items = append(items, g...)
 	}
-	return bytes, nil
+	return MarshalItems(items)
 }
 
-func marshalGroup(desc map[string]Desc, cfg map[string]any) ([]byte, error) {
-	var bytes []byte
+func marshalGroup(desc map[string]Desc, cfg map[string]any) ([]Item, error) {
+	var items []Item
 	for s, v := range cfg {
 		d, ok := desc[s]
 		if !ok {
 			return nil, fmt.Errorf("unknown key %s", s)
 		}
-		b, err := marshalKey(d)
+		val, err := d.MarshalValue(v)
 		if err != nil {
 			return nil, err
 		}
-		bytes = append(bytes, b...)
-		b, err = d.MarshalValue(v)
-		if err != nil {
-			return nil, err
-		}
-		bytes = append(bytes, b...)
+		items = append(items, Item{d.key(), val})
 	}
-	return bytes, nil
+	return items, nil
 }
 
-func marshalKey(d Desc) ([]byte, error) {
-	bytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(bytes, uint32(d.key()))
-	return bytes, nil
-}
-
-func (d *EDesc) UnmarshalValue(data []byte) (any, error) {
+func (d *EDesc) UnmarshalValue(data uint64) (any, error) {
 	n := uint64(0)
-	switch len(data) {
+	switch d.key().nValueBytes() {
 	case 1:
-		n = uint64(data[0])
+		n = uint64(uint8(data))
 	case 2:
-		n = uint64(binary.LittleEndian.Uint16(data))
+		n = uint64(uint16(data))
 	case 4:
-		n = uint64(binary.LittleEndian.Uint32(data))
+		n = uint64(uint32(data))
 	case 8:
-		n = uint64(binary.LittleEndian.Uint64(data))
+		n = data
 	}
 	if n >= uint64(len(d.values)) {
 		// XXX maybe return uintN here
@@ -198,32 +179,32 @@ func (d *EDesc) UnmarshalValue(data []byte) (any, error) {
 	return d.values[n], nil
 }
 
-func (d *EDesc) MarshalValue(v any) ([]byte, error) {
+func (d *EDesc) MarshalValue(v any) (uint64, error) {
 	s, ok := v.(string)
 	if !ok {
-		return nil, fmt.Errorf("cannot marshal %T to enum", v)
+		return 0, fmt.Errorf("cannot marshal %T to enum", v)
 	}
 	for i, value := range d.values {
 		if s == value {
-			return marshalUnsigned(d.key(), uint64(i))
+			return d.key().marshalUnsigned(uint64(i))
 		}
 	}
-	return nil, fmt.Errorf("invalid value %s for enum", s)
+	return 0, fmt.Errorf("invalid value %s for enum", s)
 }
 
-func (d L) UnmarshalValue(data []byte) (any, error) {
-	if data[0] == 0 {
+func (d L) UnmarshalValue(data uint64) (any, error) {
+	if (data & 1) == 0 {
 		return false, nil
 	}
 	return true, nil
 }
 
-func (d L) MarshalValue(v any) ([]byte, error) {
+func (d L) MarshalValue(v any) (uint64, error) {
 	b, ok := v.(bool)
 	if !ok {
-		return nil, fmt.Errorf("cannot marshal %T to bool", v)
+		return 0, fmt.Errorf("cannot marshal %T to bool", v)
 	}
-	return []byte{boolToByte(b)}, nil
+	return uint64(boolToByte(b)), nil
 }
 
 func boolToByte(b bool) byte {
@@ -233,123 +214,109 @@ func boolToByte(b bool) byte {
 	return 0
 }
 
-func (d R) UnmarshalValue(data []byte) (any, error) {
-	switch len(data) {
+func (d R) UnmarshalValue(data uint64) (any, error) {
+	switch d.key().nValueBytes() {
 	case 4:
-		bits := binary.LittleEndian.Uint32(data)
+		bits := uint32(data)
 		return math.Float32frombits(bits), nil
 	}
-	bits := binary.LittleEndian.Uint64(data)
-	return math.Float64frombits(bits), nil
+	return math.Float64frombits(data), nil
 }
 
-func (d R) MarshalValue(v any) ([]byte, error) {
+func (d R) MarshalValue(v any) (uint64, error) {
 	switch d.key().valueBits() {
 	case 64:
 		f, ok := v.(float64)
 		if !ok {
-			return nil, fmt.Errorf("cannot marshal %T to float64", v)
+			return 0, fmt.Errorf("cannot marshal %T to float64", v)
 		}
-		bytes := make([]byte, 8)
-		u8 := math.Float64bits(f)
-		binary.LittleEndian.PutUint64(bytes, u8)
-		return bytes, nil
+		return math.Float64bits(f), nil
 	case 32:
 		f, ok := v.(float32)
 		if !ok {
-			return nil, fmt.Errorf("cannot marshal %T to float32", v)
+			return 0, fmt.Errorf("cannot marshal %T to float32", v)
 		}
-		bytes := make([]byte, 4)
-		u4 := math.Float32bits(f)
-		binary.LittleEndian.PutUint32(bytes, u4)
-		return bytes, nil
+		
+		return uint64(math.Float32bits(f)), nil
 	default:
 		panic(fmt.Sprintf("invalid key ID 0x%x for float type", d.key()))
 	}
 }
 
-func (d U) UnmarshalValue(data []byte) (any, error) {
-	switch len(data) {
+func (d U) UnmarshalValue(data uint64) (any, error) {
+	switch d.key().nValueBytes() {
 	case 1:
-		return data[0], nil
+		return uint8(data), nil
 	case 2:
-		return binary.LittleEndian.Uint16(data), nil
+		return uint16(data), nil
 	case 4:
-		return binary.LittleEndian.Uint32(data), nil
+		return uint32(data), nil
 	default:
-		return binary.LittleEndian.Uint64(data), nil
+		return uint64(data), nil
 	}
 }
 
-func (d U) MarshalValue(v any) ([]byte, error) {
+func (d U) MarshalValue(v any) (uint64, error) {
 	n, ok := unsignedWiden(v)
 	if !ok {
 		s, ok := signedWiden(v)
 		if !ok {
-			return nil, fmt.Errorf("cannot marshal %T to unsigned integer", v)
+			return 0, fmt.Errorf("cannot marshal %T to unsigned integer", v)
 		}
 		if s < 0 {
-			return nil, fmt.Errorf("cannot marshal negative integer %d to unsigned integer", s)
+			return 0, fmt.Errorf("cannot marshal negative integer %d to unsigned integer", s)
 		}
 		n = uint64(s)
 	}
 	bits := d.key().valueBits()
 	if bits < 64 && n >= 1<<bits {
-		return nil, fmt.Errorf("value %d too large for U%d", n, bits)
+		return 0, fmt.Errorf("value %d too large for U%d", n, bits)
 	}
-	return marshalUnsigned(d.key(), n)
+	return d.key().marshalUnsigned(n)
 }
 
-func (d I) UnmarshalValue(data []byte) (any, error) {
-	switch len(data) {
+func (d I) UnmarshalValue(data uint64) (any, error) {
+	switch d.key().nValueBytes() {
 	case 1:
-		return int8(data[0]), nil
+		return int8(uint8(data)), nil
 	case 2:
-		return int16(binary.LittleEndian.Uint16(data)), nil
+		return int16(uint16(data)), nil
 	case 4:
-		return int32(binary.LittleEndian.Uint32(data)), nil
+		return int32(uint32(data)), nil
 	default:
-		return int64(binary.LittleEndian.Uint64(data)), nil
+		return int64(data), nil
 	}
 }
 
-func (d I) MarshalValue(v any) ([]byte, error) {
+func (d I) MarshalValue(v any) (uint64, error) {
 	n, ok := signedWiden(v)
 	if !ok {
 		s, ok := unsignedWiden(v)
 		if !ok {
-			return nil, fmt.Errorf("cannot marshal %T to signed integer", v)
+			return 0, fmt.Errorf("cannot marshal %T to signed integer", v)
 		}
 		if s > math.MaxInt64 {
-			return nil, fmt.Errorf("cannot marshal unsigned integer %d to signed integer", s)
+			return 0, fmt.Errorf("cannot marshal unsigned integer %d to signed integer", s)
 		}
 		n = int64(s)
 	}
 	bits := d.key().valueBits()
 	if bits < 64 && (n >= 1<<(bits-1) || n < -1<<(bits-1)) {
-		return nil, fmt.Errorf("value %d does not fit in I%d", n, bits)
+		return 0, fmt.Errorf("value %d does not fit in I%d", n, bits)
 	}
-	return marshalUnsigned(d.key(), uint64(n))
+	return d.key().marshalUnsigned(uint64(n))
 }
 
-func marshalUnsigned(k Key, n uint64) ([]byte, error) {
+func (k Key) marshalUnsigned(n uint64) (uint64, error) {
 	switch k.valueBits() {
 	case 8:
-		return []byte{uint8(n)}, nil
+		return uint64(uint8(n)), nil
 	case 16:
-		bytes := make([]byte, 2)
-		u2 := uint16(n)
-		binary.LittleEndian.PutUint16(bytes, u2)
-		return bytes, nil
+		return uint64(uint16(n)), nil
 	case 32:
-		u4 := uint32(n)
-		bytes := make([]byte, 4)
-		binary.LittleEndian.PutUint32(bytes, u4)
-		return bytes, nil
+		return uint64(uint32(n)), nil
 	default:
-		bytes := make([]byte, 8)
-		binary.LittleEndian.PutUint64(bytes, n)
-		return bytes, nil
+		return n, nil
 	}
 }
 
