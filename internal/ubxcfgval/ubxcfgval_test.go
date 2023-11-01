@@ -48,6 +48,14 @@ func TestValueBits(t *testing.T) {
 	}
 }
 
+func valueBytes(k uint32) int {
+	return Key(k).nValueBytes()
+}
+
+func valueBits(k uint32) int {
+	return Key(k).valueBits()
+}
+
 func TestSignedWiden(t *testing.T) {
 	n, ok := signedWiden(-1)
 	if !ok || n != -1 {
@@ -250,7 +258,7 @@ func TestUnmarshal(t *testing.T) {
 	if err != nil || len(valgets) == 0 {
 		t.Fatalf("could not parse config text")
 	}
-	unknownKeys := make(map[uint32]struct{})
+	unknownKeys := make(map[Key]struct{})
 	recognizedCount := 0
 	for i, msg := range valgets {
 		// U-center format doesn't include the two sync bytes not the two-byte checksum.
@@ -276,7 +284,7 @@ func TestUnmarshal(t *testing.T) {
 	} else {
 		t.Logf("recognized %d keys", recognizedCount)
 	}
-	uk := make([]uint32, 0, len(unknownKeys))
+	uk := make([]Key, 0, len(unknownKeys))
 	for k := range unknownKeys {
 		uk = append(uk, k)
 	}

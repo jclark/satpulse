@@ -9,7 +9,7 @@ import (
 )
 
 type Desc interface {
-	key() uint32
+	key() Key
 	MarshalValue(v any) ([]byte, error)
 	UnmarshalValue(data []byte) (any, error)
 }
@@ -24,24 +24,29 @@ type EDesc struct {
 	values []string
 }
 
+
+func (d *EDesc) key() Key {
+	return Key(d.k)
+}
+
 func E(k uint32, values ...string) *EDesc {
 	return &EDesc{k, values}
 }
 
-func (d U) key() uint32 {
-	return uint32(d)
+func (d U) key() Key {
+	return Key(d)
 }
 
-func (d I) key() uint32 {
-	return uint32(d)
+func (d I) key() Key {
+	return Key(d)
 }
 
-func (d R) key() uint32 {
-	return uint32(d)
+func (d R) key() Key {
+	return Key(d)
 }
 
-func (d L) key() uint32 {
-	return uint32(d)
+func (d L) key() Key {
+	return Key(d)
 }
 
 type NameDesc struct {
@@ -52,7 +57,7 @@ type NameDesc struct {
 
 type Schema struct {
 	groups map[string]map[string]Desc
-	keys   map[uint32]NameDesc
+	keys   map[Key]NameDesc
 }
 
 func GetSchema() *Schema {
@@ -75,8 +80,8 @@ func NewSchema(groups map[string]map[string]Desc) (*Schema, error) {
 	return &Schema{groups, keys}, nil
 }
 
-func makeKeys(m map[string]map[string]Desc) (map[uint32]NameDesc, error) {
-	keys := make(map[uint32]NameDesc)
+func makeKeys(m map[string]map[string]Desc) (map[Key]NameDesc, error) {
+	keys := make(map[Key]NameDesc)
 	for groupName, v := range m {
 		for itemName, d := range v {
 			keys[d.key()] = NameDesc{groupName, itemName, d}
@@ -93,13 +98,13 @@ func (s *Schema) MustMarshal(cfg map[string]map[string]any) []byte {
 	return b
 }
 
-func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, map[uint32][]byte, error) {
+func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, map[Key][]byte, error) {
 	cfg := make(map[string]map[string]any)
-	unknown := make(map[uint32][]byte)
+	unknown := make(map[Key][]byte)
 	for len(data) > 4 {
-		k := binary.LittleEndian.Uint32(data)
+		k := Key(binary.LittleEndian.Uint32(data))
 		data = data[4:]
-		nBytes := valueBytes(k)
+		nBytes := k.nValueBytes()
 		if len(data) < nBytes {
 			return nil, nil, fmt.Errorf("invalid data length for key 0x%x", k)
 		}
@@ -170,12 +175,8 @@ func marshalGroup(desc map[string]Desc, cfg map[string]any) ([]byte, error) {
 
 func marshalKey(d Desc) ([]byte, error) {
 	bytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(bytes, d.key())
+	binary.LittleEndian.PutUint32(bytes, uint32(d.key()))
 	return bytes, nil
-}
-
-func (d *EDesc) key() uint32 {
-	return d.k
 }
 
 func (d *EDesc) UnmarshalValue(data []byte) (any, error) {
@@ -204,7 +205,7 @@ func (d *EDesc) MarshalValue(v any) ([]byte, error) {
 	}
 	for i, value := range d.values {
 		if s == value {
-			return marshalUnsigned(d.k, uint64(i))
+			return marshalUnsigned(d.key(), uint64(i))
 		}
 	}
 	return nil, fmt.Errorf("invalid value %s for enum", s)
@@ -243,7 +244,7 @@ func (d R) UnmarshalValue(data []byte) (any, error) {
 }
 
 func (d R) MarshalValue(v any) ([]byte, error) {
-	switch valueBits(d.key()) {
+	switch d.key().valueBits() {
 	case 64:
 		f, ok := v.(float64)
 		if !ok {
@@ -292,7 +293,7 @@ func (d U) MarshalValue(v any) ([]byte, error) {
 		}
 		n = uint64(s)
 	}
-	bits := valueBits(d.key())
+	bits := d.key().valueBits()
 	if bits < 64 && n >= 1<<bits {
 		return nil, fmt.Errorf("value %d too large for U%d", n, bits)
 	}
@@ -324,15 +325,15 @@ func (d I) MarshalValue(v any) ([]byte, error) {
 		}
 		n = int64(s)
 	}
-	bits := valueBits(d.key())
+	bits := d.key().valueBits()
 	if bits < 64 && (n >= 1<<(bits-1) || n < -1<<(bits-1)) {
 		return nil, fmt.Errorf("value %d does not fit in I%d", n, bits)
 	}
 	return marshalUnsigned(d.key(), uint64(n))
 }
 
-func marshalUnsigned(k uint32, n uint64) ([]byte, error) {
-	switch valueBits(k) {
+func marshalUnsigned(k Key, n uint64) ([]byte, error) {
+	switch k.valueBits() {
 	case 8:
 		return []byte{uint8(n)}, nil
 	case 16:
@@ -384,17 +385,3 @@ func signedWiden(v any) (int64, bool) {
 	return 0, false
 }
 
-func valueBytes(k uint32) int {
-	return (valueBits(k) + 7) / 8
-}
-
-func valueBits(k uint32) int {
-	sz := int(k>>28) & 0x0f
-	switch sz {
-	case 1:
-		return 1
-	case 2, 3, 4, 5:
-		return 2 << sz
-	}
-	return 0
-}
