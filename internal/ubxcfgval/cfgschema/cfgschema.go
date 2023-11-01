@@ -1,4 +1,4 @@
-package schema
+package cfgschema
 
 import (
 	"gopkg.in/yaml.v3"
