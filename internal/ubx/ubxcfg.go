@@ -73,7 +73,7 @@ func (c *Configurator) TPTimegridGPS() []byte {
 		CfgValsetFixed: bin.CfgValsetFixed{
 			Layers: bin.CfgValsetLayerRAM,
 		},
-		CfgData: ubxcfgval.GetSchema().MustMarshal(cfgMap),
+		CfgData: ubxcfgval.GetDfltSchema().MustMarshal(cfgMap),
 	}
 	bytes, err := bin.Serialize(&u)
 	if err != nil {

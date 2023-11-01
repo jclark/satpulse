@@ -18,7 +18,7 @@ type marshalTestCase struct {
 }
 
 var marshalTestCases = []marshalTestCase{
-	{schema, map[string]map[string]any{"TMODE": {"MODE": "FIXED"}}, []byte{0x01, 0x00, 0x03, 0x20, 0x02}},
+	{dfltSchema, map[string]map[string]any{"TMODE": {"MODE": "FIXED"}}, []byte{0x01, 0x00, 0x03, 0x20, 0x02}},
 }
 
 func TestMarshal(t *testing.T) {
@@ -99,11 +99,11 @@ var testCfgs = []map[string]map[string]any{
 
 func TestRoundtrip(t *testing.T) {
 	for i, cfg := range testCfgs {
-		bytes, err := schema.Marshal(cfg)
+		bytes, err := dfltSchema.Marshal(cfg)
 		if err != nil {
 			t.Errorf("could not marshal config %d: %v", i, err)
 		} else {
-			cfg2, unknown, err := schema.Unmarshal(bytes)
+			cfg2, unknown, err := dfltSchema.Unmarshal(bytes)
 			if err != nil {
 				t.Errorf("could not unmarshal config %d: %v", i, err)
 			} else if !sameConfig(cfg, cfg2) || len(unknown) != 0 {
@@ -238,7 +238,7 @@ func TestUnmarshal(t *testing.T) {
 		// U-center format doesn't include the two sync bytes not the two-byte checksum.
 		// So to get the config data, we just have to skip cls+id, 2-byte length, and 4 byte fixed part.
 		cfgData := msg[8:]
-		cfg, unknown, err := schema.Unmarshal(cfgData)
+		cfg, unknown, err := dfltSchema.Unmarshal(cfgData)
 		if err != nil {
 			t.Errorf("test %d: could not unmarshal: %v", i, err)
 		} else {

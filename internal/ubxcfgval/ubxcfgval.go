@@ -1,6 +1,6 @@
 package ubxcfgval
 
-//go:generate go run mkschema.go
+//go:generate go run mkdfltschema.go
 
 import (
 	"fmt"
@@ -22,7 +22,6 @@ type EDesc struct {
 	k      uint32
 	values []string
 }
-
 
 func (d *EDesc) key() Key {
 	return Key(d.k)
@@ -59,8 +58,8 @@ type Schema struct {
 	keys   map[Key]NameDesc
 }
 
-func GetSchema() *Schema {
-	return schema
+func GetDfltSchema() *Schema {
+	return dfltSchema
 }
 
 func MustNewSchema(groups map[string]map[string]Desc) *Schema {
@@ -236,7 +235,7 @@ func (d R) MarshalValue(v any) (uint64, error) {
 		if !ok {
 			return 0, fmt.Errorf("cannot marshal %T to float32", v)
 		}
-		
+
 		return uint64(math.Float32bits(f)), nil
 	default:
 		panic(fmt.Sprintf("invalid key ID 0x%x for float type", d.key()))
@@ -351,4 +350,3 @@ func signedWiden(v any) (int64, bool) {
 	}
 	return 0, false
 }
-
