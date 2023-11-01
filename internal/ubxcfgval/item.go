@@ -18,14 +18,6 @@ type Map map[Key]uint64
 var _ encoding.BinaryUnmarshaler = (*Map)(nil)
 var _ encoding.BinaryMarshaler = (*Map)(nil)
 
-func NewMap(items []Item) Map {
-	m := make(Map)
-	for _, it := range items {
-		m[it.Key] = it.Value
-	}
-	return m
-}
-
 func (mp *Map) Items() []Item {
 	m := *mp
 	items := make([]Item, 0, len(m))
@@ -39,6 +31,13 @@ func SortItems(items []Item) {
 	sort.Slice(items, func(i, j int) bool { return items[i].Key < items[j].Key })
 }
 
+func (mp *Map) AddItems(items []Item) {
+	m := *mp
+	for _, it := range items {
+		m[it.Key] = it.Value
+	}
+}
+
 func (mp *Map) MarshalBinary() ([]byte, error) {
 	items := mp.Items()
 	SortItems(items)
@@ -50,7 +49,8 @@ func (mp *Map) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*mp = NewMap(items)
+	*mp = make(Map)
+	mp.AddItems(items)
 	return nil
 }
 
