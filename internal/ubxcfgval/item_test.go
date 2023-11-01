@@ -34,3 +34,29 @@ func TestItems(t *testing.T) {
 		t.Errorf("found %d config items, expected at least 1138", keysCount)
 	}
 }
+
+func TestValueBits(t *testing.T) {
+	if valueBits(0x10260013) != 1 {
+		t.Error("expected valueBits(0x10260013) == 1")
+	}
+	if valueBits(0x30260015) != 16 {
+		t.Error("expected valueBits(0x30260015) == 16")
+	}
+	if valueBits(0x50110063) != 64 {
+		t.Error("expected valueBits(0x50110063) == 64")
+	}
+}
+
+func valueBits(k uint32) int {
+	return Key(k).valueBits()
+}
+
+func TestValueBytes(t *testing.T) {
+	if valueBytes(0x20240011) != 1 || valueBytes(0x10240012) != 1 || valueBytes(0x40240021) != 4 || valueBytes(0x50110062) != 8 || valueBytes(0x301100b5) != 2 {
+		t.Error("valueBytes failed")
+	}
+}
+
+func valueBytes(k uint32) int {
+	return Key(k).nValueBytes()
+}

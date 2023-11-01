@@ -36,26 +36,6 @@ func TestMarshal(t *testing.T) {
 	}
 }
 
-func TestValueBits(t *testing.T) {
-	if valueBits(0x10260013) != 1 {
-		t.Error("expected valueBits(0x10260013) == 1")
-	}
-	if valueBits(0x30260015) != 16 {
-		t.Error("expected valueBits(0x30260015) == 16")
-	}
-	if valueBits(0x50110063) != 64 {
-		t.Error("expected valueBits(0x50110063) == 64")
-	}
-}
-
-func valueBytes(k uint32) int {
-	return Key(k).nValueBytes()
-}
-
-func valueBits(k uint32) int {
-	return Key(k).valueBits()
-}
-
 func TestSignedWiden(t *testing.T) {
 	n, ok := signedWiden(-1)
 	if !ok || n != -1 {
@@ -235,12 +215,6 @@ func intValue(v any) (pos uint64, neg int64, ok bool) {
 	}
 	ok = true
 	return
-}
-
-func TestValueBytes(t *testing.T) {
-	if valueBytes(0x20240011) != 1 || valueBytes(0x10240012) != 1 || valueBytes(0x40240021) != 4 || valueBytes(0x50110062) != 8 || valueBytes(0x301100b5) != 2 {
-		t.Error("valueBytes failed")
-	}
 }
 
 const (
