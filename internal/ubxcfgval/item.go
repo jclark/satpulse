@@ -54,12 +54,12 @@ func (mp *Map) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-func MarshalKeys(keys []Key) ([]byte, error) {
+func MarshalKeys(keys []Key) []byte {
 	bytes := make([]byte, len(keys)*4)
 	for i, k := range keys {
 		binary.LittleEndian.PutUint32(bytes[i*4:], uint32(k))
 	}
-	return bytes, nil
+	return bytes
 }
 
 func MarshalItems(items []Item) ([]byte, error) {

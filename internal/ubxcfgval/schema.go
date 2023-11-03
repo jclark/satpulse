@@ -128,6 +128,14 @@ func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, map[Key]uint
 }
 
 func (s *Schema) Marshal(cfg map[string]map[string]any) ([]byte, error) {
+	items, err := s.Compile(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return MarshalItems(items)
+}
+
+func (s *Schema) Compile(cfg map[string]map[string]any) ([]Item, error) {
 	items := make([]Item, 0)
 	for g, v := range cfg {
 		desc, ok := s.groups[g]
@@ -140,7 +148,7 @@ func (s *Schema) Marshal(cfg map[string]map[string]any) ([]byte, error) {
 		}
 		items = append(items, g...)
 	}
-	return MarshalItems(items)
+	return items, nil
 }
 
 func marshalGroup(desc map[string]Desc, cfg map[string]any) ([]Item, error) {

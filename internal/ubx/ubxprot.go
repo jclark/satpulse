@@ -24,8 +24,14 @@ func (prot *Protocol) ProcessPacket(data string, tRead time.Time, h gpsmsg.Handl
 	if err != nil {
 		return err
 	}
-	if prot.cfg != nil && prot.cfg.raw.AddMsg(m) {
-		return nil
+	if prot.cfg != nil {
+		done, err := prot.cfg.raw.AddMsg(m)
+		if err != nil {
+			return err
+		}
+		if done {
+			return nil
+		}
 	}
 	if Dispatch(m, tRead, h) {
 		return nil
@@ -86,6 +92,10 @@ func (prot *Protocol) Configure(target *gpsmsg.Config) gpsmsg.Configurator {
 	if prot.ver == nil {
 		panic("Configure called before probe OK")
 	}
-	prot.cfg = &Configurator{ver: prot.ver, target: target}
+	prot.cfg = &Configurator{
+		ver:    prot.ver,
+		target: target,
+		steps:  normalConfigSteps,
+	}
 	return prot.cfg
 }

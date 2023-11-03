@@ -1,6 +1,7 @@
 package ubx
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/jclark/gps4ptp/internal/gpsmsg"
@@ -9,10 +10,11 @@ import (
 )
 
 type Configurator struct {
-	ver    *Version // never nil
-	raw    RawConfig
-	step   int
-	target *gpsmsg.Config // never nil
+	ver       *Version // never nil
+	raw       RawConfig
+	steps     []func(*Configurator) gpsmsg.ConfigRequest
+	stepIndex int
+	target    *gpsmsg.Config // never nil
 }
 
 const nPort = 6
@@ -26,9 +28,10 @@ type RawConfig struct {
 	nav5    *bin.CfgNav5
 	prt     *bin.CfgPrt
 	msgRate map[bin.MsgID][nPort]byte
+	val     ubxcfgval.Map
 }
 
-var configSteps = []func(*Configurator) gpsmsg.ConfigRequest{
+var normalConfigSteps = []func(*Configurator) gpsmsg.ConfigRequest{
 	(*Configurator).pollPrt,
 	(*Configurator).setPrt,            // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
 	(*Configurator).enableTimeGNSSMsg, // do this soon, to avoid risk of GPS being completely silent
@@ -52,9 +55,9 @@ func (c *Configurator) Config() *gpsmsg.Config {
 }
 
 func (c *Configurator) NextRequest() gpsmsg.ConfigRequest {
-	for c.step < len(configSteps) {
-		req := configSteps[c.step](c)
-		c.step++
+	for c.stepIndex < len(c.steps) {
+		req := c.steps[c.stepIndex](c)
+		c.stepIndex++
 		if req != nil {
 			return req
 		}
@@ -62,24 +65,54 @@ func (c *Configurator) NextRequest() gpsmsg.ConfigRequest {
 	return nil
 }
 
-// XXX this is old code; needs to be generalized into support for new style UBX config
-func (c *Configurator) TPTimegridGPS() []byte {
-	cfgMap := map[string]map[string]any{
+// XXX this is just an example; needs to be generalized
+func (c *Configurator) TPTimegridGPS() gpsmsg.ConfigRequest {
+	return c.SetCfg(map[string]map[string]any{
 		"TP": {
 			"TIMEGRID_TP1": "GPS",
 		},
-	}
-	u := bin.CfgValset{
-		CfgValsetFixed: bin.CfgValsetFixed{
-			Layers: bin.CfgValsetLayerRAM,
-		},
-		CfgData: ubxcfgval.GetDfltSchema().MustMarshal(cfgMap),
-	}
-	bytes, err := bin.Serialize(&u)
+	})
+}
+
+func (c *Configurator) SetCfg(cfgMap map[string]map[string]any) gpsmsg.ConfigRequest {
+	items, err := ubxcfgval.GetDfltSchema().Compile(cfgMap)
 	if err != nil {
 		panic(err)
 	}
-	return bytes
+	val, err := newCfgValsetRequest(items, bin.CfgValsetLayerRAM)
+	if err != nil {
+		panic(err)
+	}
+	return msgRequest{&c.raw, val}
+}
+
+func (c *Configurator) PollVal(keys []ubxcfgval.Key) gpsmsg.ConfigRequest {
+	val := newCfgValgetRequest(keys, bin.CfgValgetLayerRAM)
+	return msgRequest{&c.raw, val}
+}
+
+func newCfgValgetRequest(keys []ubxcfgval.Key, layer bin.CfgValgetLayer) *bin.CfgValget {
+	return &bin.CfgValget{
+		CfgValgetFixed: bin.CfgValgetFixed{
+			Layer:   layer,
+			Version: bin.CfgValgetVersionRequest,
+		},
+		CfgData: ubxcfgval.MarshalKeys(keys),
+	}
+}
+
+func newCfgValsetRequest(items []ubxcfgval.Item, layers bin.CfgValsetLayer) (*bin.CfgValset, error) {
+	cfgData, err := ubxcfgval.MarshalItems(items)
+	if err != nil {
+		return nil, err
+	}
+	return &bin.CfgValset{
+		CfgValsetFixed: bin.CfgValsetFixed{
+			Layers:  layers,
+			Version: bin.CfgValsetVersionNoTransaction,
+		},
+		CfgData: cfgData,
+	}, nil
 }
 
 func (c *Configurator) pollPrt() gpsmsg.ConfigRequest {
@@ -207,7 +240,10 @@ func (r msgRequest) Packet() []byte {
 func (r msgRequest) ID() string { return r.msg.ID().String() }
 
 func (r msgRequest) Done() {
-	r.raw.AddMsg(r.msg)
+	_, err := r.raw.AddMsg(r.msg)
+	if err != nil {
+		panic(fmt.Sprintf("cannot parse acknowledge message %s: %v", r.msg.ID(), err))
+	}
 }
 
 func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
@@ -759,9 +795,9 @@ func (raw *RawConfig) changeNav5(cfg *gpsmsg.Config) *bin.CfgNav5 {
 	return &nav5
 }
 
-func (cfg *RawConfig) AddMsg(m bin.Msg) bool {
+func (cfg *RawConfig) AddMsg(m bin.Msg) (bool, error) {
 	if cfg == nil {
-		return false
+		return false, nil
 	}
 	switch mt := m.(type) {
 	case *bin.CfgTmode2:
@@ -780,10 +816,35 @@ func (cfg *RawConfig) AddMsg(m bin.Msg) bool {
 		cfg.prt = mt
 	case *bin.CfgMsg:
 		cfg.addMsgRate(mt.MsgID, mt.Rate)
+	case *bin.CfgValget:
+		// this is a response to a poll
+		if mt.Layer == 0 {
+			err := cfg.addVal(mt.CfgData)
+			if err != nil {
+				return false, err
+			}
+		}
+	case *bin.CfgValset:
+		// this is an acknowledgement of a set
+		if mt.Layers&bin.CfgValsetLayerRAM != 0 {
+			err := cfg.addVal(mt.CfgData)
+			if err != nil {
+				return false, err
+			}
+		}
 	default:
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
+}
+
+func (cfg *RawConfig) addVal(cfgData []byte) error {
+	items, err := ubxcfgval.UnmarshalItems(cfgData)
+	if err != nil {
+		return err
+	}
+	cfg.val.AddItems(items)
+	return nil
 }
 
 func (cfg *RawConfig) addMsgRate(msgID bin.MsgID, rate [6]byte) {
