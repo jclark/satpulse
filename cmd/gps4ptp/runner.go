@@ -101,7 +101,6 @@ type TimeEvent struct {
 }
 
 func (s *SyncRunner) handlePacket(pkt scan.Packet) {
-	// TODO: handle leapsecond messages
 	lg := s.lg
 	switch pkt.Kind {
 	case scan.NMEA:
@@ -165,6 +164,9 @@ func (s *SyncRunner) Time(mt *gpsmsg.Time, tRead time.Time) {
 }
 
 func (s *SyncRunner) LeapSecond(msg *gpsmsg.LeapSecond, _ time.Time) {
+	if msg.OffChangeTime <= s.ls.OffChangeTime {
+		return
+	}
 	s.ls = msg.LeapSecond
 	s.m.SetLeapSecond(s.ls)
 }

@@ -81,13 +81,14 @@ Others
 ## Leap seconds
 
 High priority
-* Enable continuous reporting of leap seconds, so we can update the grandmaster
 * Testing of whole leap-second chain
+* Make use of UTC-TAI offset in gpsmsg.Time (from GPS receiver through to ptp4l)
 
 Others
 * When we get notification of a new leap second, we should store that in a file in /var somewhere, and then read that on startup.
+* Include source of leap second information in gpsmsg leap second message
 * Work with a leap-seconds.list format file
-  * fetch from specified list
+  * fetch from specified URL
   * use to initialize current leap second if up to date
   * update from leap second notifications
 * We could tell the GPS about stored leap seconds using UBX-MGA-GPS-UTC (but this has other stuff that is hard to specify)

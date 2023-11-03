@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"time"
 
 	"github.com/jclark/gps4ptp/internal/bcast"
 	"github.com/jclark/gps4ptp/internal/gpscfg"
@@ -17,6 +18,7 @@ import (
 	"github.com/jclark/gps4ptp/internal/scan"
 	"github.com/jclark/gps4ptp/internal/serio"
 	"github.com/jclark/gps4ptp/internal/sse"
+	"github.com/jclark/gps4ptp/internal/ubx"
 
 	"golang.org/x/sys/unix"
 )
@@ -156,7 +158,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = serio.TermError{}
-	initData, err := gpscfg.Configure(ctx, lg, gpscfg.RequiredConfig(), pCh, t)
+	gcfg, err := gpscfg.Configure(ctx, lg, gpscfg.RequiredConfig(), pCh, t)
 	if err != nil {
 		return err
 	}
@@ -170,7 +172,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	}
 
 	if eb != nil {
-		initEvent, err := sse.Make("init", initData)
+		initEvent, err := sse.Make("init", newInitData(gcfg))
 		if err != nil {
 			return err
 		}
@@ -206,12 +208,24 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	}
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
+	ls := gcfg.LeapSecond
 	waitGroupGo(&wg, func() {
+		if ls != nil {
+			s.LeapSecond(ls, time.Time{})
+		}
 		s.run(tsCh, pCh)
 		close(gmUpdateCh)
 	})
 
 	return nil
+}
+
+type InitData struct {
+	Version *ubx.Version `json:"version,omitempty"`
+}
+
+func newInitData(r *gpscfg.Result) *InitData {
+	return &InitData{Version: r.Version}
 }
 
 func waitGroupGo(wg *sync.WaitGroup, f func()) {

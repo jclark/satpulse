@@ -17,9 +17,10 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-type InitData struct {
-	Version *ubx.Version   `json:"version,omitempty"`
-	Config  *gpsmsg.Config `json:"config,omitempty"`
+type Result struct {
+	Version    *ubx.Version
+	Config     *gpsmsg.Config
+	LeapSecond *gpsmsg.LeapSecond
 }
 
 type msgHandler struct {
@@ -42,7 +43,7 @@ type badCount struct {
 
 var _ ubx.ProtHandler = &msgHandler{}
 
-func Configure(ctx context.Context, lg *slog.Logger, targetConfig *gpsmsg.Config, packetCh <-chan scan.Packet, port serio.OutPort) (*InitData, error) {
+func Configure(ctx context.Context, lg *slog.Logger, targetConfig *gpsmsg.Config, packetCh <-chan scan.Packet, port serio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetCh)
 	err := mh.detect(ctx)
@@ -92,14 +93,11 @@ func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
 	mh.nmeaSentences = map[string]map[string]bool{}
 }
 
-func (mh *msgHandler) finish(config *gpsmsg.Config) *InitData {
+func (mh *msgHandler) finish(config *gpsmsg.Config) *Result {
 	lg := mh.lg
-	initData := InitData{}
 	if config != nil {
 		lg.Info("GPS configuration", "cfg", config)
 	}
-	initData.Config = config
-	initData.Version = mh.ubxProt.Version()
 	if mh.leapSecond != nil {
 		lsdStr := mh.leapSecond.Date().Format("2006-01-02")
 		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", mh.leapSecond.UTCOffBefore, "utcOffAfter", mh.leapSecond.UTCOffAfter)
@@ -110,7 +108,11 @@ func (mh *msgHandler) finish(config *gpsmsg.Config) *InitData {
 	}
 	lg.Info("finished GPS initialization",
 		"nmeaSentences", maps.Keys(mh.nmeaSentences))
-	return &initData
+	return &Result{
+		Version:    mh.ubxProt.Version(),
+		Config:     config,
+		LeapSecond: mh.leapSecond,
+	}
 }
 
 func (mh *msgHandler) detect(ctx context.Context) error {

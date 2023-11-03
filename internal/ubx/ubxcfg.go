@@ -33,9 +33,10 @@ type RawConfig struct {
 
 var normalConfigSteps = []func(*Configurator) gpsmsg.ConfigRequest{
 	(*Configurator).pollPrt,
-	(*Configurator).setPrt,            // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
-	(*Configurator).enableTimeGNSSMsg, // do this soon, to avoid risk of GPS being completely silent
-	(*Configurator).pollGNSS,          // need this to know which will be primary GNSS
+	(*Configurator).setPrt,              // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
+	(*Configurator).enableLeapSecondMsg, // do this soon, to avoid risk of GPS being completely silent
+	(*Configurator).pollGNSS,            // need this to know which will be primary GNSS
+	(*Configurator).enableTimeGNSSMsg,
 	(*Configurator).pollTp5,
 	(*Configurator).setTp5,
 	(*Configurator).enableTpMsg,
@@ -45,7 +46,6 @@ var normalConfigSteps = []func(*Configurator) gpsmsg.ConfigRequest{
 	(*Configurator).pollNav5,
 	(*Configurator).setNav5,
 	(*Configurator).pollSurvey,
-	(*Configurator).pollLeapSecond,
 }
 
 var _ gpsmsg.Configurator = &Configurator{}
@@ -174,13 +174,13 @@ func (c *Configurator) enableTimeGNSSMsg() gpsmsg.ConfigRequest {
 	}
 }
 
-// XXX not clear what to do about waiting for response NAV-TIMELS response
-// we don't have to wait for the response (unlike with CFG messages)
-func (c *Configurator) pollLeapSecond() gpsmsg.ConfigRequest {
-	return pollRequest{bin.NavTimeLSID}
+func (c *Configurator) enableLeapSecondMsg() gpsmsg.ConfigRequest {
+	return c.enableMsgRequest(bin.NavTimeLSID)
 }
 
-// XXX same problem as with pollLeapSecond
+// XXX not clear what to do about waiting for response for SVIN messages
+// we don't have to wait for the response (unlike with CFG messages)
+// should handle this like leap second messages
 func (c *Configurator) pollSurvey() gpsmsg.ConfigRequest {
 	switch c.productCategory() {
 	case "TIM", "FTS":
