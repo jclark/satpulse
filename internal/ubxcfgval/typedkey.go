@@ -35,6 +35,14 @@ func MapGet[T comparable](m Map, k TypedKey[T]) (t T, ok bool) {
 	return
 }
 
+func AddItem[T comparable](items *[]Item, k TypedKey[T], v T) {
+	*items = append(*items, Item{k.Key(), k.Raw(v)})
+}
+
+func AddKey[T comparable](keys *[]Key, k TypedKey[T]) {
+	*keys = append(*keys, k.Key())
+}
+
 func (k KeyU) Key() Key { return Key(k) }
 
 func (k KeyU) Typed(raw uint64) uint64 {
