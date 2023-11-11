@@ -5,8 +5,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/ptime"
-	"github.com/jclark/gps4ptp/internal/sse"
+	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/sse"
 )
 
 type Clock interface {

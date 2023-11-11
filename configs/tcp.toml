@@ -1,4 +1,4 @@
-# Example TCP configuration for gps4ptp.
+# Example TCP configuration for satpulse.
 [serial]
 device = "/dev/ttyS0"
 speed = 9600

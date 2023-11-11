@@ -8,12 +8,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/gpsmsg"
-	"github.com/jclark/gps4ptp/internal/nmea"
-	"github.com/jclark/gps4ptp/internal/scan"
-	"github.com/jclark/gps4ptp/internal/serio"
-	"github.com/jclark/gps4ptp/internal/ubx"
-	ubxbin "github.com/jclark/gps4ptp/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/internal/serio"
+	"github.com/jclark/satpulse/internal/ubx"
+	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 	"golang.org/x/exp/maps"
 )
 

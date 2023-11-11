@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/bcast"
-	"github.com/jclark/gps4ptp/internal/scan"
-	"github.com/jclark/gps4ptp/internal/serio"
+	"github.com/jclark/satpulse/internal/bcast"
+	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/internal/serio"
 )
 
 type TCPConfig struct {

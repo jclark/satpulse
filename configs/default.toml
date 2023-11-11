@@ -1,4 +1,4 @@
-# Config file for gps4ptp
+# Config file for satpulse
 [serial]
 device = "/dev/ttyUSB0"
 speed = 9600

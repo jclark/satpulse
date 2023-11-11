@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/jclark/gps4ptp/internal/pmc"
+	"github.com/jclark/satpulse/internal/pmc"
 	"golang.org/x/sys/unix"
 )
 

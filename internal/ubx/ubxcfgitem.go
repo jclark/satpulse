@@ -3,8 +3,8 @@ package ubx
 import (
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/gpsmsg"
-	ucv "github.com/jclark/gps4ptp/internal/ubxcfgval"
+	"github.com/jclark/satpulse/internal/gpsmsg"
+	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
 // configItems turns a Config into a list of UBX configuration items.

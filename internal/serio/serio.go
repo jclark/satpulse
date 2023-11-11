@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/scan"
-	"github.com/jclark/gps4ptp/term"
+	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/term"
 )
 
 const readTimeout = time.Millisecond * 100

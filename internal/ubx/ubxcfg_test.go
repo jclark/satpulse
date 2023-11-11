@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/gpsmsg"
-	ubxbin "github.com/jclark/gps4ptp/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/gpsmsg"
+	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 )
 
 func TestTp5(t *testing.T) {
@@ -110,7 +110,7 @@ func TestConfiguratorSane(t *testing.T) {
 	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.Config, ver *Version) {
 		target.SetSane()
 	})
-	
+
 }
 
 func TestConfiguratorGPS(t *testing.T) {

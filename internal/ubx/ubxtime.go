@@ -4,9 +4,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/gpsmsg"
-	"github.com/jclark/gps4ptp/internal/ptime"
-	"github.com/jclark/gps4ptp/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
 func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {

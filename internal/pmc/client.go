@@ -7,7 +7,7 @@ import (
 
 const PTP4LSocketPath = "/var/run/ptp4l"
 
-const localSocketPathFormat = "/tmp/gps4ptp%d.sock"
+const localSocketPathFormat = "/tmp/satpulse%d.sock"
 
 type Client struct {
 	MsgPreparer

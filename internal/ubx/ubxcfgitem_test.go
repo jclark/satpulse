@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/gpsmsg"
-	ucv "github.com/jclark/gps4ptp/internal/ubxcfgval"
+	"github.com/jclark/satpulse/internal/gpsmsg"
+	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
 func TestConfigItems_Sane(t *testing.T) {

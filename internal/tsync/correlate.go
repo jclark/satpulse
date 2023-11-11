@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/ptime"
+	"github.com/jclark/satpulse/internal/ptime"
 )
 
 type clockTimeReading struct {

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/bcast"
-	"github.com/jclark/gps4ptp/internal/sse"
-	"github.com/jclark/gps4ptp/web"
+	"github.com/jclark/satpulse/internal/bcast"
+	"github.com/jclark/satpulse/internal/sse"
+	"github.com/jclark/satpulse/web"
 )
 
 type HTTPConfig struct {

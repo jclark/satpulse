@@ -17,5 +17,5 @@ func versionInfo() string {
 	if s == "" {
 		return "no version information available"
 	}
-	return "gps4ptp" + " " + s
+	return "satpulse" + " " + s
 }

@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/ptime"
+	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/jclark/gps4ptp/internal/pmc"
+	"github.com/jclark/satpulse/internal/pmc"
 )
 
-const programName = "gps4ptp"
+const programName = "satpulse"
 
 const defaultConfigFileConst = "/usr/local/etc/" + programName + ".toml"
 

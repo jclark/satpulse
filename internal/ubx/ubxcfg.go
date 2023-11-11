@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/gpsmsg"
-	"github.com/jclark/gps4ptp/internal/ubx/bin"
-	"github.com/jclark/gps4ptp/internal/ubxcfgval"
+	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
 type Configurator struct {

@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jclark/gps4ptp/internal/ubxcfgval/cfgschema"
+	"github.com/jclark/satpulse/internal/ubxcfgval/cfgschema"
 )
 
 func main() {

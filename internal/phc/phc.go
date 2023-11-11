@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/ptime"
-	"github.com/jclark/gps4ptp/internal/unix2"
+	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/unix2"
 	"golang.org/x/sys/unix"
 )
 

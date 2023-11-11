@@ -1,8 +1,8 @@
 package mon
 
 import (
-	"github.com/jclark/gps4ptp/internal/pmc"
-	"github.com/jclark/gps4ptp/internal/ptime"
+	"github.com/jclark/satpulse/internal/pmc"
+	"github.com/jclark/satpulse/internal/ptime"
 )
 
 type GrandmasterUpdateRequest struct {

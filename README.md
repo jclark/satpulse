@@ -1,4 +1,4 @@
-The gps4ptp project provides software that allows a GPS receiver to be used as a source of time for the Precision Time Protocol (PTP). The goal is to make it easy and inexpensive to run a PTP grandmaster, which can provide a high-precision source of time for a network. This project does not provide an implementation of PTP. Instead it is designed to work with the ptp4l program from the LinuxPTP project.
+The SatPulse project provides software that allows a GPS receiver to be used as a source of time for the Precision Time Protocol (PTP). The goal is to make it easy and inexpensive to run a PTP grandmaster, which can provide a high-precision source of time for a network. This project does not provide an implementation of PTP. Instead it is designed to work with the ptp4l program from the LinuxPTP project.
 
 It is written in the Go programming language. It works only on Linux, since only Linux provides the necessary APIs.
 
@@ -6,7 +6,7 @@ The project is currently at a pre-alpha stage of development. It is not yet read
 
 ## Basics of how it works
 
-Gps4ptp is designed to make two pieces of hardware work together:
+SatPulse is designed to make two pieces of hardware work together:
 
 - a GPS receiver (or GPS disciplined oscillator) that has a PPS (pulse per second) output pin
 - a NIC (network interface card) that includes a PTP hardware clock and both
@@ -15,7 +15,7 @@ Gps4ptp is designed to make two pieces of hardware work together:
 
 The PPS output from the GPS needs to be connected to the PPS input on the NIC.
 
-gps4ptp is a daemon, written in the Go language, which:
+SatPulse is a daemon, written in the Go language, which:
 
 - talks to a GPS receiver over a serial port
 - uses the Linux kernel's PTP hardware clock infrastructure to
@@ -33,18 +33,18 @@ This assumes a Linux system that uses systemd, such as Ubuntu or Fedora.
 1. Ensure you have suitable hardware. See the [What hardware to get](#what-hardware-to-get) section below.
 2. [Install Go](https://go.dev/doc/install).
 3. Make sure you have git installed: `sudo apt install git`
-4. Clone the gps4ptp repository: `git clone https://github.com/jclark/gps4ptp.git`
-5. Change into the gps4ptp directory: `cd gps4ptp`
+4. Clone the satpulse repository: `git clone https://github.com/jclark/satpulse.git`
+5. Change into the satpulse directory: `cd satpulse`
 6. Build it: `./build.sh`
-7. Install it: `sudo ./install.sh` (this will install it as `/usr/local/sbin/gps4ptp`)
-8. Edit the configuration file: `sudo nano /usr/local/etc/gps4ptp.toml`. In particular, you may need to change:
+7. Install it: `sudo ./install.sh` (this will install it as `/usr/local/sbin/satpulse`)
+8. Edit the configuration file: `sudo nano /usr/local/etc/satpulse.toml`. In particular, you may need to change:
     * the serial port device
     * the serial port speed
     * the network interface that the PPS input is connected to
-9. Start it: `sudo systemctl start gps4ptp.service`
-10. Check that it started ok: `sudo systemctl status gps4ptp.service`
-12. Check the logs: `journalctl -u gps4ptp`
-13. Enable it at boot: `sudo systemctl enable gps4ptp.service`
+9. Start it: `sudo systemctl start satpulse.service`
+10. Check that it started ok: `sudo systemctl status satpulse.service`
+12. Check the logs: `journalctl -u satpulse`
+13. Enable it at boot: `sudo systemctl enable satpulse.service`
 14. Install and configure ptp4l
     * `sudo apt install linuxptp`
     * Modify `/etc/linuxptp/ptp4l.conf`; use [configs/ptp4l.conf](configs/ptp4l.conf) as a starting point
@@ -53,17 +53,17 @@ This assumes a Linux system that uses systemd, such as Ubuntu or Fedora.
 
 ## Features
 
-Gps4ptp provides the following features:
+SatPulse provides the following features:
 
 - It filters the pulses received from the GPS receiver to eliminate those that appear to be spurious. This prevents spurious pulses causing spikes in the PTP hardware clock.
 
 - It automatically handles NICs that generate timestamps for both edges of a pulse (some Intel NICs, including the i210, do this).
 
-- It can talk to U-blox receivers (or clones) using the UBX protocol, which is the native binary protocol of U-blox receivers. This gives gps4ptp access to the full capabilities of U-blox receivers. UBX is a bidirectonal protocol, which allows gps4ptp to make changes to the receiver's configuration. It can also use the ASCII NMEA protocol, which is universally supported, but provides limited capabilities.
+- It can talk to U-blox receivers (or clones) using the UBX protocol, which is the native binary protocol of U-blox receivers. This gives SatPulse access to the full capabilities of U-blox receivers. UBX is a bidirectonal protocol, which allows SatPulse to make changes to the receiver's configuration. It can also use the ASCII NMEA protocol, which is universally supported, but provides limited capabilities.
 
 - By using the UBX protocol, it can take advantage of the sawtooth correction (sometimes called quantization error) information that is available from some U-blox receivers. This enables more precise synchronization of the PTP hardware clock.
 
-- It allows TCP connections with the GPS receiver attached to the serial port (similar to ser2net). This means you can run gps4ptp on a Linux box (such as a Raspberry Pi) and then connect back to the GPS receiver over TCP from a Windows PC, using a program like u-center (from U-blox), to monitor or configure the GPS receiver, *at the same time as* it is being used for PTP. (This provides plenty of opportunity to break things, but is quite handy.)
+- It allows TCP connections with the GPS receiver attached to the serial port (similar to ser2net). This means you can run SatPulse on a Linux box (such as a Raspberry Pi) and then connect back to the GPS receiver over TCP from a Windows PC, using a program like u-center (from U-blox), to monitor or configure the GPS receiver, *at the same time as* it is being used for PTP. (This provides plenty of opportunity to break things, but is quite handy.)
  
 - By using the UBX protocol, it can get the current time from the GPS receiver as atomic time, and use that directly to set the PTP hardware clock. Both GPS and PTP work natively using atomic time (without leap seconds) rather than UTC. With the NMEA protocol, time has to be converted to UTC and then back to atomic time.
 
@@ -79,7 +79,7 @@ The following features are in the process of being implemented:
 
 - It can examine the configuration of the U-blox receiver and reconfigure as necessary so it works well for timing purposes.
 
-- The PTP hardware clock on the CM4 does not work properly when the network cable is unplugged; gps4ptp detects this and handles it automatically.
+- The PTP hardware clock on the CM4 does not work properly when the network cable is unplugged; SatPulse detects this and handles it automatically.
 
 ## What hardware to get
 
@@ -93,7 +93,7 @@ For more information (including suitable GPS receivers)
 - for the i210 and other PC-based options, see my [pc-ptp-ntp-guide](https://github.com/jclark/pc-ptp-ntp-guide) project
 - for the CM4 option, see my [rpi-cm4-ptp-guide](https://github.com/jclark/rpi-cm4-ptp-guide) project 
 
-When choosing a GPS receiver for use with gps4ptp, I recommend using a u-blox receiver.
+When choosing a GPS receiver for use with SatPulse, I recommend using a u-blox receiver.
 
 For PTP to work well, clients need to have NICs with PTP hardware timestamping support. This is a common feature of modern NICs. The PTP features also need to be supported by the driver. Intel NICs generally have PTP hardware timestamping with Linux driver support.
 
@@ -101,13 +101,13 @@ For best results the network switches should also have PTP support. For a low-co
 
 ## Relationship to other software
 
-There are some existing, well-established open source projects that provide similar functionality, but they are don't do quite what gps4ptp does.
+There are some existing, well-established open source projects that provide similar functionality, but they are don't do quite what SatPulse does.
 
 It would probably be possible to evolve these, but they are both written in C, and I personally want to work in more modern, safer languages.
 
 ### LinuxPTP
 
-The [LinuxPTP](https://linuxptp.sourceforge.net/) project provides a number of programs. The main one is ptp4l, which implements the PTP protocol. gps4ptp is intended to work in conjunction with ptp4l. LinuxPTP also includes the ts2phc program, which with the `-s nmea` options performs the same basic function as gps4ptp. However, it does not have the extra features that gps4ptp provides. In particular, it understands only the NMEA protocol; this is simple, and universally supported, but the only time-related information it provides is the current UTC time.
+The [LinuxPTP](https://linuxptp.sourceforge.net/) project provides a number of programs. The main one is ptp4l, which implements the PTP protocol. SatPulse is intended to work in conjunction with ptp4l. LinuxPTP also includes the ts2phc program, which with the `-s nmea` options performs the same basic function as SatPulse. However, it does not have the extra features that SatPulse provides. In particular, it understands only the NMEA protocol; this is simple, and universally supported, but the only time-related information it provides is the current UTC time.
 
 ### gpsd
 

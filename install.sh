@@ -15,8 +15,8 @@ case "$arch" in
         ;;
 esac
 . ./vars.sh
-cp out/$goarch/gps4ptp /usr/local/sbin/gps4ptp
-cp gps4ptp.service /etc/systemd/system/
+cp out/$goarch/satpulse /usr/local/sbin/satpulse
+cp satpulse.service /etc/systemd/system/
 # Don't overrwrite existing config file
 if [ ! -f $CONFIG_FILE ]; then
     use=default

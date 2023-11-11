@@ -1,4 +1,4 @@
-module github.com/jclark/gps4ptp
+module github.com/jclark/satpulse
 
 go 1.21
 

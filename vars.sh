@@ -1,1 +1,1 @@
-CONFIG_FILE=/usr/local/etc/gps4ptp.toml
+CONFIG_FILE=/usr/local/etc/satpulse.toml

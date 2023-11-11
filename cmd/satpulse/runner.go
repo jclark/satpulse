@@ -6,16 +6,16 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/gpsmsg"
-	"github.com/jclark/gps4ptp/internal/mon"
-	"github.com/jclark/gps4ptp/internal/nmea"
-	"github.com/jclark/gps4ptp/internal/phc"
-	"github.com/jclark/gps4ptp/internal/ptime"
-	"github.com/jclark/gps4ptp/internal/scan"
-	"github.com/jclark/gps4ptp/internal/sse"
-	"github.com/jclark/gps4ptp/internal/tsync"
-	"github.com/jclark/gps4ptp/internal/ubx"
-	ubxbin "github.com/jclark/gps4ptp/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/internal/sse"
+	"github.com/jclark/satpulse/internal/tsync"
+	"github.com/jclark/satpulse/internal/ubx"
+	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 )
 
 type SyncRunner struct {

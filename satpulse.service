@@ -4,7 +4,7 @@ After=time-set.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/sbin/gps4ptp -sdlog
+ExecStart=/usr/local/sbin/satpulse -sdlog
 # If it doesn't shutdown gracefully in 5 seconds, something's gone wrong.
 TimeoutStopSec=5
 # Sending a SIGQUIT makes the Go runtime dump goroutines,

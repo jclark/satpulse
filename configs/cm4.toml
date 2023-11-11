@@ -1,4 +1,4 @@
-# Config file for gps4ptp on the Raspberry Pi CM4
+# Config file for satpulse on the Raspberry Pi CM4
 [serial]
 device = "/dev/ttyAMA0"
 speed = 9600

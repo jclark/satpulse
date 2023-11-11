@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/bcast"
-	"github.com/jclark/gps4ptp/internal/gpscfg"
-	"github.com/jclark/gps4ptp/internal/mon"
-	"github.com/jclark/gps4ptp/internal/pmc"
-	"github.com/jclark/gps4ptp/internal/scan"
-	"github.com/jclark/gps4ptp/internal/serio"
-	"github.com/jclark/gps4ptp/internal/sse"
-	"github.com/jclark/gps4ptp/internal/ubx"
+	"github.com/jclark/satpulse/internal/bcast"
+	"github.com/jclark/satpulse/internal/gpscfg"
+	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/pmc"
+	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/internal/serio"
+	"github.com/jclark/satpulse/internal/sse"
+	"github.com/jclark/satpulse/internal/ubx"
 
 	"golang.org/x/sys/unix"
 )

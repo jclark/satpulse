@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/jclark/gps4ptp/internal/gpscfg"
-	"github.com/jclark/gps4ptp/internal/gpsmsg"
-	"github.com/jclark/gps4ptp/internal/scan"
-	"github.com/jclark/gps4ptp/internal/serio"
+	"github.com/jclark/satpulse/internal/gpscfg"
+	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/internal/serio"
 
 	"github.com/spf13/pflag"
 

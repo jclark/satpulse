@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jclark/gps4ptp/internal/phc"
+	"github.com/jclark/satpulse/internal/phc"
 )
 
 type PHCConfig struct {
