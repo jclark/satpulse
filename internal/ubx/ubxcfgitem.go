@@ -7,14 +7,14 @@ import (
 	ucv "github.com/jclark/gps4ptp/internal/ubxcfgval"
 )
 
-// Compile turns a Config into a list of UBX configuration items.
+// configItems turns a Config into a list of UBX configuration items.
 // The known argument gives what is known about the current configuration.
 // If additional keys are needed to compile the configuration correctly,
 // they are returned in the ucv.Key slice.
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func Compile(config *gpsmsg.Config, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key) {
+func configItems(config *gpsmsg.Config, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key) {
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
 	tg := compileTimePulse(known, config, &items, &keys)
@@ -144,13 +144,17 @@ func inferTimegridTp1(known ucv.Map, config *gpsmsg.Config, items *[]ucv.Item, k
 			return tg
 		}
 	}
-	if r, ok := mapGetMiss(known, ucv.KRateTimeref, &missing); ok && len(missing) == 0 {
-		tg := rateTimeRefToTimegridTp1(r)
-		if tg != ucv.ETpTimegridTp1Utc {
-			ucv.AddItem(items, ucv.KTpTimegridTp1, tg)
-			return tg
+	if false {
+		// This isn't a good idea because the default for this is GPS.
+		if r, ok := mapGetMiss(known, ucv.KRateTimeref, &missing); ok && len(missing) == 0 {
+			tg := rateTimeRefToTimegridTp1(r)
+			if tg != ucv.ETpTimegridTp1Utc {
+				ucv.AddItem(items, ucv.KTpTimegridTp1, tg)
+				return tg
+			}
 		}
 	}
+
 	// Fall back to first of GPS, Galileo, BeiDou, GLONASS that is enabled (in that order)
 	sigEna := []ucv.KeyL{ucv.KSignalGpsEna, ucv.KSignalGalEna, ucv.KSignalBdsEna, ucv.KSignalGloEna}
 	sigTg := []ucv.EnumTpTimegridTp1{ucv.ETpTimegridTp1Gps, ucv.ETpTimegridTp1Gal, ucv.ETpTimegridTp1Bds, ucv.ETpTimegridTp1Glo}
