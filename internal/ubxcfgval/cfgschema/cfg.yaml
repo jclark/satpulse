@@ -632,6 +632,93 @@ UART1OUTPROT:
     key: 0x10740002
     type: L
     description: Flag to indicate if NMEA should be an output protocol on UART1
+UART2:
+  BAUDRATE:
+    key: 0x40530001
+    type: U4
+    description: The baud rate that should be conﬁgured on the UART2
+  STOPBITS:
+    key: 0x20530002
+    type: E1
+    description: Number of stopbits that should be used on UART2
+    constants:
+      HALF:
+        value: 0
+        description: 0.5 stopbits
+      ONE:
+        value: 1
+        description: 1.0 stopbits
+      ONEHALF:
+        value: 2
+        description: 1.5 stopbits
+      TWO:
+        value: 3
+        description: 2.0 stopbits
+  DATABITS:
+    key: 0x20530003
+    type: E1
+    description: Number of databits that should be used on UART2
+    constants:
+      EIGHT:
+        value: 0
+        description: 8 databits
+      SEVEN:
+        value: 1
+        description: 7 databits
+  PARITY:
+    key: 0x20530004
+    type: E1
+    description: Parity mode that should be used on UART2
+    constants:
+      NONE:
+        value: 0
+        description: No parity bit
+      ODD:
+        value: 1
+        description: Add an odd parity bit
+      EVEN:
+        value: 2
+        description: Add an even parity bit
+  ENABLED:
+    key: 0x10530005
+    type: L
+    description: Flag to indicate if the UART2 should be enabled
+UART2INPROT:
+  UBX:
+    key: 0x10750001
+    type: L
+    description: Flag to indicate if UBX should be an input protocol on UART2
+  NMEA:
+    key: 0x10750002
+    type: L
+    description: Flag to indicate if NMEA should be an input protocol on UART2
+UART2OUTPROT:
+  UBX:
+    key: 0x10760001
+    type: L
+    description: Flag to indicate if UBX should be an output protocol on UART2
+  NMEA:
+    key: 0x10760002
+    type: L
+    description: Flag to indicate if NMEA should be an output protocol on UART2
+USBINPROT:
+  UBX:
+    key: 0x10770001
+    type: L
+    description: Flag to indicate if UBX should be an input protocol on USB
+  NMEA:
+    key: 0x10770002
+    type: L
+    description: Flag to indicate if NMEA should be an input protocol on USB
+USBOUTPROT:
+  UBX:
+    key: 0x10780001
+    type: L
+    description: Flag to indicate if UBX should be an output protocol on USB
+  NMEA:
+    key: 0x10780002
+    type: L
+    description: Flag to indicate if NMEA should be an output protocol on USB
 RATE:
   MEAS:
     key: 0x30210001

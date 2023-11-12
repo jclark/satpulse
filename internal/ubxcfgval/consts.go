@@ -331,3 +331,34 @@ const KUart1inprotNmea KeyL = 0x10730002
 const KUart1inprotUbx KeyL = 0x10730001
 const KUart1outprotNmea KeyL = 0x10740002
 const KUart1outprotUbx KeyL = 0x10740001
+const KUart2Baudrate KeyU = 0x40530001
+const KUart2Databits KeyE[EnumUart2Databits] = 0x20530003
+type EnumUart2Databits uint8
+const (
+	EUart2DatabitsEight EnumUart2Databits = iota
+	EUart2DatabitsSeven
+)
+const KUart2Enabled KeyL = 0x10530005
+const KUart2Parity KeyE[EnumUart2Parity] = 0x20530004
+type EnumUart2Parity uint8
+const (
+	EUart2ParityNone EnumUart2Parity = iota
+	EUart2ParityOdd
+	EUart2ParityEven
+)
+const KUart2Stopbits KeyE[EnumUart2Stopbits] = 0x20530002
+type EnumUart2Stopbits uint8
+const (
+	EUart2StopbitsHalf EnumUart2Stopbits = iota
+	EUart2StopbitsOne
+	EUart2StopbitsOnehalf
+	EUart2StopbitsTwo
+)
+const KUart2inprotNmea KeyL = 0x10750002
+const KUart2inprotUbx KeyL = 0x10750001
+const KUart2outprotNmea KeyL = 0x10760002
+const KUart2outprotUbx KeyL = 0x10760001
+const KUsbinprotNmea KeyL = 0x10770002
+const KUsbinprotUbx KeyL = 0x10770001
+const KUsboutprotNmea KeyL = 0x10780002
+const KUsboutprotUbx KeyL = 0x10780001

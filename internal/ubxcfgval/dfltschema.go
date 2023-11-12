@@ -156,4 +156,27 @@ var dfltSchema = MustNewSchema(map[string]map[string]Desc{
 		"NMEA": L(0x10740002),
 		"UBX": L(0x10740001),
 	},
+	"UART2":{
+		"BAUDRATE": U(0x40530001),
+		"DATABITS": E(0x20530003, "EIGHT", "SEVEN"),
+		"ENABLED": L(0x10530005),
+		"PARITY": E(0x20530004, "NONE", "ODD", "EVEN"),
+		"STOPBITS": E(0x20530002, "HALF", "ONE", "ONEHALF", "TWO"),
+	},
+	"UART2INPROT":{
+		"NMEA": L(0x10750002),
+		"UBX": L(0x10750001),
+	},
+	"UART2OUTPROT":{
+		"NMEA": L(0x10760002),
+		"UBX": L(0x10760001),
+	},
+	"USBINPROT":{
+		"NMEA": L(0x10770002),
+		"UBX": L(0x10770001),
+	},
+	"USBOUTPROT":{
+		"NMEA": L(0x10780002),
+		"UBX": L(0x10780001),
+	},
 })
