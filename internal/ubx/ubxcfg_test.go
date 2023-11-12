@@ -141,7 +141,11 @@ func testConfigurator(t *testing.T, setup func(*RawConfig, *gpsmsg.Config, *Vers
 	tm := time.Now()
 	for {
 		tm = tm.Add(time.Second / 10)
-		req := c.NextRequest()
+		req, err := c.NextRequest()
+		if err != nil {
+			t.Errorf("unexpected error from NextRequest: %v", err)
+			break
+		}
 		if req == nil {
 			break
 		}

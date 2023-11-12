@@ -202,13 +202,16 @@ func (mh *msgHandler) ubxProbe(ctx context.Context, port serio.OutPort) (bool, e
 
 func (mh *msgHandler) configure(ctx context.Context, cfgtor gpsmsg.Configurator, port serio.OutPort) (*gpsmsg.Config, error) {
 	for {
-		req := cfgtor.NextRequest()
+		req, err := cfgtor.NextRequest()
+		if err != nil {
+			return nil, err
+		}
 		if req == nil {
 			break
 		}
 		t := time.Now()
 		pkt := req.Packet()
-		_, err := port.Write(pkt)
+		_, err = port.Write(pkt)
 		if err != nil {
 			return nil, err
 		}

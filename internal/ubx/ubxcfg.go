@@ -6,13 +6,13 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsmsg"
 	"github.com/jclark/satpulse/internal/ubx/bin"
-	"github.com/jclark/satpulse/internal/ubxcfgval"
+	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
 type Configurator struct {
 	ver       *Version // never nil
 	raw       RawConfig
-	steps     []func(*Configurator) gpsmsg.ConfigRequest
+	steps     []func(*Configurator) (gpsmsg.ConfigRequest, error)
 	stepIndex int
 	target    *gpsmsg.Config // never nil
 }
@@ -28,10 +28,10 @@ type RawConfig struct {
 	nav5    *bin.CfgNav5
 	prt     *bin.CfgPrt
 	msgRate map[bin.MsgID][nPort]byte
-	val     ubxcfgval.Map
+	val     ucv.Map
 }
 
-var normalConfigSteps = []func(*Configurator) gpsmsg.ConfigRequest{
+var normalConfigSteps = []func(*Configurator) (gpsmsg.ConfigRequest, error){
 	(*Configurator).pollPrt,
 	(*Configurator).setPrt,              // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
 	(*Configurator).enableLeapSecondMsg, // do this soon, to avoid risk of GPS being completely silent
@@ -48,61 +48,69 @@ var normalConfigSteps = []func(*Configurator) gpsmsg.ConfigRequest{
 	(*Configurator).pollSurvey,
 }
 
+var newConfigSteps = []func(*Configurator) (gpsmsg.ConfigRequest, error){
+	(*Configurator).pollPrt,
+	(*Configurator).valGet,
+	(*Configurator).valSet,
+}
+
 var _ gpsmsg.Configurator = &Configurator{}
 
 func (c *Configurator) Config() *gpsmsg.Config {
 	return c.raw.Config(c.ver)
 }
 
-func (c *Configurator) NextRequest() gpsmsg.ConfigRequest {
+func (c *Configurator) NextRequest() (gpsmsg.ConfigRequest, error) {
 	for c.stepIndex < len(c.steps) {
-		req := c.steps[c.stepIndex](c)
+		req, err := c.steps[c.stepIndex](c)
 		c.stepIndex++
-		if req != nil {
-			return req
+		if req != nil || err != nil {
+			return req, err
 		}
 	}
-	return nil
+	return nil, nil
 }
 
-// XXX this is just an example; needs to be generalized
-func (c *Configurator) TPTimegridGPS() gpsmsg.ConfigRequest {
-	return c.SetCfg(map[string]map[string]any{
-		"TP": {
-			"TIMEGRID_TP1": "GPS",
-		},
-	})
+func (c *Configurator) valGet() (gpsmsg.ConfigRequest, error) {
+	_, missing := configItems(c.target, *c.raw.valMap(), c.valPort())
+	if len(missing) == 0 {
+		return nil, nil
+	}
+	return msgRequest{newCfgValgetRequest(missing, bin.CfgValgetLayerRAM)}, nil
 }
 
-func (c *Configurator) SetCfg(cfgMap map[string]map[string]any) gpsmsg.ConfigRequest {
-	items, err := ubxcfgval.GetDfltSchema().Compile(cfgMap)
-	if err != nil {
-		panic(err)
+func (c *Configurator) valSet() (gpsmsg.ConfigRequest, error) {
+	items, missing := configItems(c.target, *c.raw.valMap(), c.valPort())
+	if len(missing) != 0 {
+		return nil, fmt.Errorf("missing config items: %v", missing)
 	}
 	val, err := newCfgValsetRequest(items, bin.CfgValsetLayerRAM)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return msgRequest{&c.raw, val}
+	return c.msgSetRequest(val)
 }
 
-func (c *Configurator) PollVal(keys []ubxcfgval.Key) gpsmsg.ConfigRequest {
-	val := newCfgValgetRequest(keys, bin.CfgValgetLayerRAM)
-	return msgRequest{&c.raw, val}
+func (c *Configurator) valPort() ucv.Port {
+	if c.raw.prt != nil {
+		return ucv.Port(c.raw.prt.PortID)
+	}
+	// XXX what to do here
+	return ucv.Port(ucv.UART1)
 }
 
-func newCfgValgetRequest(keys []ubxcfgval.Key, layer bin.CfgValgetLayer) *bin.CfgValget {
+func newCfgValgetRequest(keys []ucv.Key, layer bin.CfgValgetLayer) *bin.CfgValget {
 	return &bin.CfgValget{
 		CfgValgetFixed: bin.CfgValgetFixed{
 			Layer:   layer,
 			Version: bin.CfgValgetVersionRequest,
 		},
-		CfgData: ubxcfgval.MarshalKeys(keys),
+		CfgData: ucv.MarshalKeys(keys),
 	}
 }
 
-func newCfgValsetRequest(items []ubxcfgval.Item, layers bin.CfgValsetLayer) (*bin.CfgValset, error) {
-	cfgData, err := ubxcfgval.MarshalItems(items)
+func newCfgValsetRequest(items []ucv.Item, layers bin.CfgValsetLayer) (*bin.CfgValset, error) {
+	cfgData, err := ucv.MarshalItems(items)
 	if err != nil {
 		return nil, err
 	}
@@ -115,33 +123,33 @@ func newCfgValsetRequest(items []ubxcfgval.Item, layers bin.CfgValsetLayer) (*bi
 	}, nil
 }
 
-func (c *Configurator) pollPrt() gpsmsg.ConfigRequest {
-	return pollRequest{bin.CfgPrtID}
+func (c *Configurator) pollPrt() (gpsmsg.ConfigRequest, error) {
+	return pollRequest{bin.CfgPrtID}, nil
 }
 
-func (c *Configurator) pollGNSS() gpsmsg.ConfigRequest {
-	return pollRequest{bin.CfgGNSSID}
+func (c *Configurator) pollGNSS() (gpsmsg.ConfigRequest, error) {
+	return pollRequest{bin.CfgGNSSID}, nil
 }
 
-func (c *Configurator) pollRate() gpsmsg.ConfigRequest {
-	return pollRequest{bin.CfgRateID}
+func (c *Configurator) pollRate() (gpsmsg.ConfigRequest, error) {
+	return pollRequest{bin.CfgRateID}, nil
 }
 
-func (c *Configurator) pollNav5() gpsmsg.ConfigRequest {
-	return pollRequest{bin.CfgNav5ID}
+func (c *Configurator) pollNav5() (gpsmsg.ConfigRequest, error) {
+	return pollRequest{bin.CfgNav5ID}, nil
 }
 
-func (c *Configurator) pollTmode() gpsmsg.ConfigRequest {
+func (c *Configurator) pollTmode() (gpsmsg.ConfigRequest, error) {
 	switch c.productCategory() {
 	case "FTS", "TIM":
-		return pollRequest{bin.CfgTmode2ID}
+		return pollRequest{bin.CfgTmode2ID}, nil
 	case "HPG":
-		return pollRequest{bin.CfgTmode3ID}
+		return pollRequest{bin.CfgTmode3ID}, nil
 	}
-	return nil
+	return nil, nil
 }
 
-func (c *Configurator) pollTp5() gpsmsg.ConfigRequest {
+func (c *Configurator) pollTp5() (gpsmsg.ConfigRequest, error) {
 	tpIdx := 0
 	if c.productCategory() == "FTS" {
 		tpIdx = 1
@@ -149,24 +157,24 @@ func (c *Configurator) pollTp5() gpsmsg.ConfigRequest {
 	return pollTp5Request{
 		pollRequest: pollRequest{bin.CfgTp5ID},
 		tpIdx:       tpIdx,
-	}
+	}, nil
 }
 
-func (c *Configurator) enableTpMsg() gpsmsg.ConfigRequest {
+func (c *Configurator) enableTpMsg() (gpsmsg.ConfigRequest, error) {
 	if c.productCategory() == "FTS" {
-		return nil
+		return nil, nil
 	}
 	if c.raw.tp5 == nil {
-		return nil
+		return nil, nil
 	}
 	flags := c.raw.tp5.Flags
 	if flags&bin.CfgTp5AlignToTow == 0 || flags&bin.CfgTp5LockGpsFreq == 0 || flags&bin.CfgTp5GridUTCGNSS == bin.CfgTp5GridUTC {
-		return nil
+		return nil, nil
 	}
 	return c.enableMsgRequest(bin.TimTPID)
 }
 
-func (c *Configurator) enableTimeGNSSMsg() gpsmsg.ConfigRequest {
+func (c *Configurator) enableTimeGNSSMsg() (gpsmsg.ConfigRequest, error) {
 	if c.productCategory() == "FTS" {
 		return c.enableMsgRequest(bin.TimTosID)
 	} else {
@@ -174,58 +182,57 @@ func (c *Configurator) enableTimeGNSSMsg() gpsmsg.ConfigRequest {
 	}
 }
 
-func (c *Configurator) enableLeapSecondMsg() gpsmsg.ConfigRequest {
+func (c *Configurator) enableLeapSecondMsg() (gpsmsg.ConfigRequest, error) {
 	return c.enableMsgRequest(bin.NavTimeLSID)
 }
 
 // XXX not clear what to do about waiting for response for SVIN messages
 // we don't have to wait for the response (unlike with CFG messages)
 // should handle this like leap second messages
-func (c *Configurator) pollSurvey() gpsmsg.ConfigRequest {
+func (c *Configurator) pollSurvey() (gpsmsg.ConfigRequest, error) {
 	switch c.productCategory() {
 	case "TIM", "FTS":
-		return pollRequest{bin.TimSvinID}
+		return pollRequest{bin.TimSvinID}, nil
 	case "HPG":
-		return pollRequest{bin.NavSvinID}
+		return pollRequest{bin.NavSvinID}, nil
 	}
-	return nil
+	return nil, nil
 }
 
-func (c *Configurator) setPrt() gpsmsg.ConfigRequest {
+func (c *Configurator) setPrt() (gpsmsg.ConfigRequest, error) {
 	prt := c.raw.changePrt(c.target)
 	if prt == nil {
-		return nil
+		return nil, nil
 	}
-	return msgRequest{&c.raw, prt}
+	return c.msgSetRequest(prt)
 }
 
-func (c *Configurator) setNav5() gpsmsg.ConfigRequest {
+func (c *Configurator) setNav5() (gpsmsg.ConfigRequest, error) {
 	nav5 := c.raw.changeNav5(c.target)
 	if nav5 == nil {
-		return nil
+		return nil, nil
 	}
 	// XXX this isn't quite right, because of the mask
-	return msgRequest{&c.raw, nav5}
+	return c.msgSetRequest(nav5)
 }
 
-func (c *Configurator) setRate() gpsmsg.ConfigRequest {
+func (c *Configurator) setRate() (gpsmsg.ConfigRequest, error) {
 	rate := c.raw.changeRate(c.target, c.ver)
 	if rate == nil {
-		return nil
+		return nil, nil
 	}
-	return msgRequest{&c.raw, rate}
+	return c.msgSetRequest(rate)
 }
 
-func (c *Configurator) setTp5() gpsmsg.ConfigRequest {
+func (c *Configurator) setTp5() (gpsmsg.ConfigRequest, error) {
 	tp5 := c.raw.changeTp5(c.target)
 	if tp5 == nil {
-		return nil
+		return nil, nil
 	}
-	return msgRequest{&c.raw, tp5}
+	return c.msgSetRequest(tp5)
 }
 
 type msgRequest struct {
-	raw *RawConfig
 	msg bin.Msg
 }
 
@@ -239,14 +246,25 @@ func (r msgRequest) Packet() []byte {
 
 func (r msgRequest) ID() string { return r.msg.ID().String() }
 
-func (r msgRequest) Done() {
+func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
+
+func (r msgRequest) Done() {}
+
+func (c *Configurator) msgSetRequest(msg bin.Msg) (gpsmsg.ConfigRequest, error) {
+	return msgSetRequest{msgRequest{msg}, &c.raw}, nil
+}
+
+type msgSetRequest struct {
+	msgRequest
+	raw *RawConfig
+}
+
+func (r msgSetRequest) Done() {
 	_, err := r.raw.AddMsg(r.msg)
 	if err != nil {
 		panic(fmt.Sprintf("cannot parse acknowledge message %s: %v", r.msg.ID(), err))
 	}
 }
-
-func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
 
 type pollRequest struct {
 	msgID bin.MsgID
@@ -273,8 +291,8 @@ func (r pollTp5Request) Packet() []byte {
 	return bin.PollCfgTp5(r.tpIdx)
 }
 
-func (c *Configurator) enableMsgRequest(msgID bin.MsgID) gpsmsg.ConfigRequest {
-	return enableMsgRequest{&c.raw, msgID}
+func (c *Configurator) enableMsgRequest(msgID bin.MsgID) (gpsmsg.ConfigRequest, error) {
+	return enableMsgRequest{&c.raw, msgID}, nil
 }
 
 type enableMsgRequest struct {
@@ -795,31 +813,31 @@ func (raw *RawConfig) changeNav5(cfg *gpsmsg.Config) *bin.CfgNav5 {
 	return &nav5
 }
 
-func (cfg *RawConfig) AddMsg(m bin.Msg) (bool, error) {
-	if cfg == nil {
+func (raw *RawConfig) AddMsg(m bin.Msg) (bool, error) {
+	if raw == nil {
 		return false, nil
 	}
 	switch mt := m.(type) {
 	case *bin.CfgTmode2:
-		cfg.tmode2 = mt
+		raw.tmode2 = mt
 	case *bin.CfgTmode3:
-		cfg.tmode3 = mt
+		raw.tmode3 = mt
 	case *bin.CfgTp5:
-		cfg.tp5 = mt
+		raw.tp5 = mt
 	case *bin.CfgGNSS:
-		cfg.gnss = mt
+		raw.gnss = mt
 	case *bin.CfgRate:
-		cfg.rate = mt
+		raw.rate = mt
 	case *bin.CfgNav5:
-		cfg.nav5 = mt
+		raw.nav5 = mt
 	case *bin.CfgPrt:
-		cfg.prt = mt
+		raw.prt = mt
 	case *bin.CfgMsg:
-		cfg.addMsgRate(mt.MsgID, mt.Rate)
+		raw.addMsgRate(mt.MsgID, mt.Rate)
 	case *bin.CfgValget:
 		// this is a response to a poll
 		if mt.Layer == 0 {
-			err := cfg.addVal(mt.CfgData)
+			err := raw.addVal(mt.CfgData)
 			if err != nil {
 				return false, err
 			}
@@ -827,7 +845,7 @@ func (cfg *RawConfig) AddMsg(m bin.Msg) (bool, error) {
 	case *bin.CfgValset:
 		// this is an acknowledgement of a set
 		if mt.Layers&bin.CfgValsetLayerRAM != 0 {
-			err := cfg.addVal(mt.CfgData)
+			err := raw.addVal(mt.CfgData)
 			if err != nil {
 				return false, err
 			}
@@ -838,20 +856,27 @@ func (cfg *RawConfig) AddMsg(m bin.Msg) (bool, error) {
 	return true, nil
 }
 
-func (cfg *RawConfig) addVal(cfgData []byte) error {
-	items, err := ubxcfgval.UnmarshalItems(cfgData)
+func (raw *RawConfig) addVal(cfgData []byte) error {
+	items, err := ucv.UnmarshalItems(cfgData)
 	if err != nil {
 		return err
 	}
-	cfg.val.AddItems(items)
+	raw.valMap().AddItems(items)
 	return nil
 }
 
-func (cfg *RawConfig) addMsgRate(msgID bin.MsgID, rate [6]byte) {
-	if cfg.msgRate == nil {
-		cfg.msgRate = make(map[bin.MsgID][6]byte)
+func (raw *RawConfig) valMap() *ucv.Map {
+	if raw.val == nil {
+		raw.val = make(ucv.Map)
 	}
-	cfg.msgRate[msgID] = rate
+	return &raw.val
+}
+
+func (raw *RawConfig) addMsgRate(msgID bin.MsgID, rate [6]byte) {
+	if raw.msgRate == nil {
+		raw.msgRate = make(map[bin.MsgID][6]byte)
+	}
+	raw.msgRate[msgID] = rate
 }
 
 func majorGNSS(g bin.GNSSID) (gpsmsg.MajorGNSS, bool) {

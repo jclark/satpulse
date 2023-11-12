@@ -92,10 +92,14 @@ func (prot *Protocol) Configure(target *gpsmsg.Config) gpsmsg.Configurator {
 	if prot.ver == nil {
 		panic("Configure called before probe OK")
 	}
+	steps := normalConfigSteps
+	if prot.ver.protVerGreater(23, 1) {
+		steps = newConfigSteps
+	}
 	prot.cfg = &Configurator{
 		ver:    prot.ver,
 		target: target,
-		steps:  normalConfigSteps,
+		steps:  steps,
 	}
 	return prot.cfg
 }

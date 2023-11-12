@@ -8,7 +8,7 @@ import (
 
 type Configurator interface {
 	Config() *Config
-	NextRequest() ConfigRequest
+	NextRequest() (ConfigRequest, error)
 }
 
 type ConfigRequest interface {

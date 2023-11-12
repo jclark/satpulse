@@ -47,6 +47,13 @@ func (v *Version) protVerAtLeast(major, minor byte) bool {
 	return v.Prot.Major > major || (v.Prot.Major == major && v.Prot.Minor >= minor)
 }
 
+func (v *Version) protVerGreater(major, minor byte) bool {
+	if v == nil || v.Prot == nil {
+		return false
+	}
+	return v.Prot.Major > major || (v.Prot.Major == major && v.Prot.Minor > minor)
+}
+
 func monVer(parsed *bin.MonVer) *Version {
 	x := make([]string, len(parsed.Extension))
 	for i := range parsed.Extension {

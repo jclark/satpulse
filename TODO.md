@@ -134,25 +134,28 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 
 * Implement setting time mode
 * Need to check we got something back from a poll (not just check the ACK)
-* Choose GNSS time message based on primary GNSS constellation
+* For legacy configuration choose GNSS time message based on primary GNSS constellation
 * Pay attention to version in CFG-UBX-TP5
 * Allow TOML configuration of things that user must specify
    * primary GNSS constellation
    * antenna delay
    * fixed antenna position
    * disable any change (does this include messages?)
+   * disable new-style UBX configuration
+   * disable sending messages to receiver
 * Better recovery from configuration errors
-* Separate program that handles things that can't be set on the fly
+* Make gpsconfig program handle things that can't be set on the fly
    * which constellations to enable
    * baud rate
    * persistent change
    * cold boot
-* Configure antenna supervision
-* Support new-style ublox configuration (VALGET, VALSET)
+* For new-style ublox configuration, map from config items to abstract config
 
 ## Antenna supervision
 
 Monitor messages about antenna and report when something bad happens (loss of power, jamming, short) via HTTP or logging.
+
+Requires configuration support.
 
 ## HTTP monitoring
 
