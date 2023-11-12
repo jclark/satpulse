@@ -269,6 +269,10 @@ func portOutprotNmeaKey(port ucv.Port) ucv.KeyL {
 	switch port {
 	case ucv.UART1:
 		return ucv.KUart1outprotNmea
+	case ucv.UART2:
+		return ucv.KUart2outprotNmea
+	case ucv.USB:
+		return ucv.KUsboutprotNmea
 	}
 	return 0
 }
