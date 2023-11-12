@@ -157,6 +157,7 @@ var CfgFixedPosECEF = makeCfgKey[Point3D]("fixedPosECEF")
 var CfgFixedPosAcc = makeCfgKey[Length]("fixedPosAcc")
 var CfgStationary = makeCfgKey[bool]("stationary")
 var CfgNMEAEnabled = makeCfgKey[bool]("nmeaEnabled")
+var CfgBaudRate = makeCfgKey[uint32]("baudRate")
 
 func (cfg *Config) SetSane() {
 	CfgSolutionPeriod.Set(cfg, 1*time.Second)

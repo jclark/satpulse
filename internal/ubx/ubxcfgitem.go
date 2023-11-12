@@ -47,6 +47,12 @@ func configItems(config *gpsmsg.Config, known ucv.Map, port ucv.Port) ([]ucv.Ite
 			ucv.AddItem(&items, k, v)
 		}
 	}
+	if v, ok := gpsmsg.CfgBaudRate.Get(config); ok {
+		k := portBaudRateKey(port)
+		if k != 0 {
+			ucv.AddItem(&items, k, uint64(v))
+		}
+	}
 	ucv.AddItem(&items, timegridTp1ToMsgRateKey(tg).KeyU(port), 1)
 	ucv.AddItem(&items, ucv.KUbxTimTp.KeyU(port), 1)
 	return items, keys
@@ -273,6 +279,16 @@ func portOutprotNmeaKey(port ucv.Port) ucv.KeyL {
 		return ucv.KUart2outprotNmea
 	case ucv.USB:
 		return ucv.KUsboutprotNmea
+	}
+	return 0
+}
+
+func portBaudRateKey(port ucv.Port) ucv.KeyU {
+	switch port {
+	case ucv.UART1:
+		return ucv.KUart1Baudrate
+	case ucv.UART2:
+		return ucv.KUart2Baudrate
 	}
 	return 0
 }

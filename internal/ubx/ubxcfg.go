@@ -359,6 +359,9 @@ func (raw *RawConfig) cookPrt(cfg *gpsmsg.Config) {
 		return
 	}
 	gpsmsg.CfgNMEAEnabled.Set(cfg, prt.OutProtoMask&bin.CfgPrtProtoNMEA != 0)
+	if prt.PortID == bin.PortUART1 || prt.PortID == bin.PortUART2 {
+		gpsmsg.CfgBaudRate.Set(cfg, prt.BaudRate)
+	}
 }
 
 func (raw *RawConfig) changePrt(cfg *gpsmsg.Config) *bin.CfgPrt {
@@ -374,7 +377,11 @@ func (raw *RawConfig) changePrt(cfg *gpsmsg.Config) *bin.CfgPrt {
 			prt.OutProtoMask &^= bin.CfgPrtProtoNMEA
 		}
 	}
-
+	if baudRate, exists := gpsmsg.CfgBaudRate.Get(cfg); exists {
+		if prt.PortID == bin.PortUART1 || prt.PortID == bin.PortUART2 {	
+			prt.BaudRate = baudRate
+		}
+	}
 	if prt == *raw.prt {
 		return nil
 	}
