@@ -52,7 +52,7 @@ func main() {
 
 	if sane {
 		config.SetSane()
-		gpsmsg.CfgNMEAEnabled.Set(config, true)
+		gpsmsg.CfgNMEAEnabled.Set(config, false)
 	}
 	level := slog.LevelWarn
 	if verboseLevel == 1 {
@@ -119,6 +119,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, config
 
 	// stop the scan worker
 	cancel()
+	// need to keep reading here to avoid deadlock
+	for range pCh {
+	}
 	wg.Wait()
 	return err
 }
