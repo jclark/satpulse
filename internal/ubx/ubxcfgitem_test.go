@@ -11,7 +11,10 @@ import (
 func TestConfigItems_Sane(t *testing.T) {
 	config := &gpsmsg.Config{}
 	config.SetSane()
-	_, missing := configItems(config, ucv.Map{}, ucv.UART1)
+	_, missing, err := configItems(config, ucv.Map{}, ucv.UART1)
+	if err != nil {
+		t.Fatalf("configItems: %v", err)
+	}
 	if len(missing) == 0 {
 		t.Error("expected missing to be non-empty")
 	}
@@ -33,7 +36,10 @@ func TestConfigItems_Sane(t *testing.T) {
 }
 
 func testSanity(t *testing.T, config *gpsmsg.Config, known ucv.Map) ucv.Map {
-	items, missing := configItems(config, known, ucv.UART1)
+	items, missing, err := configItems(config, known, ucv.UART1)
+	if err != nil {
+		t.Fatalf("configItems: %v", err)
+	}
 	if len(missing) != 0 {
 		t.Errorf("expected missing to be empty, got %v", missing)
 	}
@@ -73,7 +79,10 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 	const nanos = 10
 	gpsmsg.CfgAntennaCableDelay.Set(config, nanos*time.Nanosecond)
 
-	items, missing := configItems(config, ucv.Map{}, ucv.UART1)
+	items, missing, err := configItems(config, ucv.Map{}, ucv.UART1)
+	if err != nil {
+		t.Fatalf("configItems: %v", err)
+	}
 	if len(missing) != 0 {
 		t.Errorf("expected missing to be empty, got %v", missing)
 	}

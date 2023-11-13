@@ -14,7 +14,7 @@ import (
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func configItems(config *gpsmsg.Config, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key) {
+func configItems(config *gpsmsg.Config, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
 	tg := compileTimePulse(known, config, &items, &keys)
@@ -55,7 +55,7 @@ func configItems(config *gpsmsg.Config, known ucv.Map, port ucv.Port) ([]ucv.Ite
 	}
 	ucv.AddItem(&items, timegridTp1ToMsgRateKey(tg).KeyU(port), 1)
 	ucv.AddItem(&items, ucv.KUbxTimTp.KeyU(port), 1)
-	return items, keys
+	return items, keys, nil
 }
 
 // compileTimePulse compiles the parts of the configuration related to the time pulse.

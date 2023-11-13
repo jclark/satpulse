@@ -72,7 +72,10 @@ func (c *Configurator) NextRequest() (gpsmsg.ConfigRequest, error) {
 }
 
 func (c *Configurator) valGet() (gpsmsg.ConfigRequest, error) {
-	_, missing := configItems(c.target, *c.raw.valMap(), c.valPort())
+	_, missing, err := configItems(c.target, *c.raw.valMap(), c.valPort())
+	if err != nil {
+		return nil, err
+	}
 	if len(missing) == 0 {
 		return nil, nil
 	}
@@ -80,7 +83,10 @@ func (c *Configurator) valGet() (gpsmsg.ConfigRequest, error) {
 }
 
 func (c *Configurator) valSet() (gpsmsg.ConfigRequest, error) {
-	items, missing := configItems(c.target, *c.raw.valMap(), c.valPort())
+	items, missing, err := configItems(c.target, *c.raw.valMap(), c.valPort())
+	if err != nil {
+		return nil, err
+	}
 	if len(missing) != 0 {
 		return nil, fmt.Errorf("missing config items: %v", missing)
 	}
