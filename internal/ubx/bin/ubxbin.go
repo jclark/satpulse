@@ -102,6 +102,7 @@ const (
 	CfgNav5ID    MsgID = clsCfg | (0x24 << 8)
 	CfgPrtID     MsgID = clsCfg | (0x00 << 8)
 	CfgRateID    MsgID = clsCfg | (0x08 << 8)
+	CfgRstID     MsgID = clsCfg | (0x04 << 8)
 	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
 	CfgTmode3ID  MsgID = clsCfg | (0x71 << 8)
 	CfgTp5ID     MsgID = clsCfg | (0x31 << 8)
@@ -137,6 +138,7 @@ func init() {
 	regMsg[CfgNav5]("NAV5")
 	regMsg[CfgPrt]("PRT")
 	regMsg[CfgRate]("RATE")
+	regMsg[CfgRate]("RST")
 	regMsg[CfgTmode2]("TMODE2")
 	regMsg[CfgTmode3]("TMODE3")
 	regMsg[CfgTp5]("TP5")
@@ -330,6 +332,53 @@ const (
 	CfgRateBeiDou
 	CfgRateGalileo
 	CfgRateNavIC
+)
+
+type CfgRst struct {
+	NavBbrMask CfgRstNavBbrMask
+	ResetMode  CfgRstResetMode
+	_          byte
+}
+
+func (m *CfgRst) ID() MsgID { return CfgRstID }
+
+type CfgRstNavBbrMask uint16
+
+const (
+	CfgRstNavBbrEph CfgRstNavBbrMask = 1 << iota
+	CfgRstNavBbrAlm
+	CfgRstNavBbrHealth
+	CfgRstNavBbrKlob
+	CfgRstNavBbrPos
+	CfgRstNavBbrClkd
+	CfgRstNavBbrOsc
+	CfgRstNavBbrUtc
+	CfgRstNavBbrRtc
+	_
+	_
+	CfgRstNavBbrSfdr
+	CfgRstNavBbrVmon
+	CfgRstNavBbrTct
+	_
+	CfgRstNavBbrAop
+	CfgRstNavBbrHotStart  CfgRstNavBbrMask = 0x0000
+	CfgRstNavBbrWarmStart CfgRstNavBbrMask = 0x0001
+	CfgRstNavBbrColdStart CfgRstNavBbrMask = 0xFFFF
+)
+
+type CfgRstResetMode byte
+
+const (
+	CfgRstResetModeHardwareResetImmediately CfgRstResetMode = iota
+	CfgRstResetModeControlledSoftwareReset
+	CfgRstResetModeControlledSoftwareResetGnssOnly
+	_
+	CfgRstResetModeHardwareResetAfterShutdown
+	_
+	_
+	_
+	CfgRstResetModeControlledGnssStop
+	CfgRstResetModeControlledGnssStart
 )
 
 type CfgTp5 struct {
