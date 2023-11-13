@@ -88,7 +88,7 @@ func (prot *Protocol) ProbeOK() bool {
 	return prot.ver != nil
 }
 
-func (prot *Protocol) Configure(target *gpsmsg.Config) gpsmsg.Configurator {
+func (prot *Protocol) Configure(target *gpsmsg.ConfigMap) gpsmsg.Configurator {
 	if prot.ver == nil {
 		panic("Configure called before probe OK")
 	}

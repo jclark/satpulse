@@ -9,9 +9,9 @@ import (
 )
 
 func TestConfigItems_Sane(t *testing.T) {
-	config := &gpsmsg.Config{}
-	config.SetSane()
-	_, missing, err := configItems(config, ucv.Map{}, ucv.UART1)
+	cm := &gpsmsg.ConfigMap{}
+	cm.SetSane()
+	_, missing, err := configItems(cm, ucv.Map{}, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -20,7 +20,7 @@ func TestConfigItems_Sane(t *testing.T) {
 	}
 	known := ucv.Map{}
 	ucv.MapSet(known, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
-	_ = testSanity(t, config, known)
+	_ = testSanity(t, cm, known)
 	known = ucv.Map{}
 	ucv.MapSet(known, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Utc)
 	ucv.MapSet(known, ucv.KNavspgUtcstandard, ucv.ENavspgUtcstandardAuto)
@@ -28,15 +28,15 @@ func TestConfigItems_Sane(t *testing.T) {
 	ucv.MapSet(known, ucv.KSignalGloEna, false)
 	ucv.MapSet(known, ucv.KSignalGalEna, false)
 	ucv.MapSet(known, ucv.KSignalBdsEna, true)
-	m := testSanity(t, config, known)
+	m := testSanity(t, cm, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Bds)
-	gpsmsg.CfgPrimaryGNSS.Set(config, gpsmsg.Galileo)
-	m = testSanity(t, config, known)
+	gpsmsg.CfgPrimaryGNSS.Set(cm, gpsmsg.Galileo)
+	m = testSanity(t, cm, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
 }
 
-func testSanity(t *testing.T, config *gpsmsg.Config, known ucv.Map) ucv.Map {
-	items, missing, err := configItems(config, known, ucv.UART1)
+func testSanity(t *testing.T, cm *gpsmsg.ConfigMap, known ucv.Map) ucv.Map {
+	items, missing, err := configItems(cm, known, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -75,11 +75,11 @@ func expectItem[T comparable](t *testing.T, m ucv.Map, key ucv.TypedKey[T], val 
 }
 
 func TestConfigItems_AntennaCableDelay(t *testing.T) {
-	config := &gpsmsg.Config{}
+	cm := &gpsmsg.ConfigMap{}
 	const nanos = 10
-	gpsmsg.CfgAntennaCableDelay.Set(config, nanos*time.Nanosecond)
+	gpsmsg.CfgAntennaCableDelay.Set(cm, nanos*time.Nanosecond)
 
-	items, missing, err := configItems(config, ucv.Map{}, ucv.UART1)
+	items, missing, err := configItems(cm, ucv.Map{}, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}

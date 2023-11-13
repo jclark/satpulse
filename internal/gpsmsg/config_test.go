@@ -6,19 +6,18 @@ import (
 )
 
 func TestConfigDB(t *testing.T) {
-	// Create a new ConfigDB
-	cfg := Config{}
+	cm := ConfigMap{}
 
 	// Set some values using CfgKey
-	CfgSolutionPeriod.Set(&cfg, 10*time.Second)
-	CfgTimePulseWidth.Set(&cfg, 1*time.Millisecond)
-	CfgTimePulseAlignToGNSS.Set(&cfg, true)
+	CfgSolutionPeriod.Set(&cm, 10*time.Second)
+	CfgTimePulseWidth.Set(&cm, 1*time.Millisecond)
+	CfgTimePulseAlignToGNSS.Set(&cm, true)
 
 	keys := []CfgKey{CfgSolutionPeriod, CfgTimePulseWidth, CfgTimePulseAlignToGNSS}
 	nonKeys := []CfgKey{CfgTimePulsePeriod, CfgStationary}
 
 	// Get the values using CfgKey
-	solutionPeriod, ok := CfgSolutionPeriod.Get(&cfg)
+	solutionPeriod, ok := CfgSolutionPeriod.Get(&cm)
 	if !ok {
 		t.Errorf("expected CfgSolutionPeriod to be set")
 	}
@@ -26,7 +25,7 @@ func TestConfigDB(t *testing.T) {
 		t.Errorf("expected CfgSolutionPeriod to be 10s, got %v", solutionPeriod)
 	}
 
-	timePulseWidth, ok := CfgTimePulseWidth.Get(&cfg)
+	timePulseWidth, ok := CfgTimePulseWidth.Get(&cm)
 	if !ok {
 		t.Errorf("expected CfgTimePulseWidth to be set")
 	}
@@ -34,7 +33,7 @@ func TestConfigDB(t *testing.T) {
 		t.Errorf("expected CfgTimePulseWidth to be 1ms, got %v", timePulseWidth)
 	}
 
-	timePulsePeriod, ok := CfgTimePulsePeriod.Get(&cfg)
+	timePulsePeriod, ok := CfgTimePulsePeriod.Get(&cm)
 	if ok {
 		t.Errorf("expected CfgTimePulsePeriod not to be set")
 	}
@@ -42,7 +41,7 @@ func TestConfigDB(t *testing.T) {
 		t.Errorf("expected CfgTimePulsePeriod to be 0, got %v", timePulsePeriod)
 	}
 
-	timePulseGNSS, ok := CfgTimePulseAlignToGNSS.Get(&cfg)
+	timePulseGNSS, ok := CfgTimePulseAlignToGNSS.Get(&cm)
 	if !ok {
 		t.Errorf("expected CfgTimePulseAlignGNSS to be set")
 	}
@@ -51,12 +50,12 @@ func TestConfigDB(t *testing.T) {
 	}
 
 	for _, k := range keys {
-		if !cfg.Contains(k) {
+		if !cm.Contains(k) {
 			t.Errorf("expected %v to be set", k)
 		}
 	}
 	for _, k := range nonKeys {
-		if cfg.Contains(k) {
+		if cm.Contains(k) {
 			t.Errorf("expected %v not to be set", k)
 		}
 	}

@@ -19,7 +19,7 @@ import (
 
 type Result struct {
 	Version    *ubx.Version
-	Config     *gpsmsg.Config
+	ConfigMap  *gpsmsg.ConfigMap
 	LeapSecond *gpsmsg.LeapSecond
 }
 
@@ -43,7 +43,7 @@ type badCount struct {
 
 var _ ubx.ProtHandler = &msgHandler{}
 
-func Configure(ctx context.Context, lg *slog.Logger, targetConfig *gpsmsg.Config, packetCh <-chan scan.Packet, port serio.OutPort) (*Result, error) {
+func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, packetCh <-chan scan.Packet, port serio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetCh)
 	err := mh.detect(ctx)
@@ -63,27 +63,27 @@ func Configure(ctx context.Context, lg *slog.Logger, targetConfig *gpsmsg.Config
 	if badNew.corruptMsgs > 0 {
 		return nil, errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
 	}
-	var config *gpsmsg.Config
+	var cm *gpsmsg.ConfigMap
 	if !ubxOK {
 		// XXX if ubxMsgCount > 0, then probably we cannot send to the GPS
 		lg.Info("GPS does not respond to UBX messages; continuing hopefully")
 	} else {
-		config, err = mh.configure(ctx, mh.ubxProt.Configure(targetConfig), port)
+		cm, err = mh.configure(ctx, mh.ubxProt.Configure(target), port)
 		if err != nil {
 			// XXX try to recover from this
 			// provided we have some messages working, we should be OK
 			return nil, err
 		}
 	}
-	return mh.finish(config), nil
+	return mh.finish(cm), nil
 }
 
-func RequiredConfig() *gpsmsg.Config {
-	cfg := &gpsmsg.Config{}
-	cfg.SetSane()
+func RequiredConfig() *gpsmsg.ConfigMap {
+	cm := &gpsmsg.ConfigMap{}
+	cm.SetSane()
 	// Config is very slow on 8-th gen if NMEA is enabled
-	gpsmsg.CfgNMEAEnabled.Set(cfg, false)
-	return cfg
+	gpsmsg.CfgNMEAEnabled.Set(cm, false)
+	return cm
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
@@ -93,10 +93,10 @@ func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
 	mh.nmeaSentences = map[string]map[string]bool{}
 }
 
-func (mh *msgHandler) finish(config *gpsmsg.Config) *Result {
+func (mh *msgHandler) finish(cm *gpsmsg.ConfigMap) *Result {
 	lg := mh.lg
-	if config != nil {
-		lg.Info("GPS configuration", "cfg", config)
+	if cm != nil {
+		lg.Info("GPS configuration", "cfg", cm)
 	}
 	if mh.leapSecond != nil {
 		lsdStr := mh.leapSecond.Date().Format("2006-01-02")
@@ -110,7 +110,7 @@ func (mh *msgHandler) finish(config *gpsmsg.Config) *Result {
 		"nmeaSentences", maps.Keys(mh.nmeaSentences))
 	return &Result{
 		Version:    mh.ubxProt.Version(),
-		Config:     config,
+		ConfigMap:  cm,
 		LeapSecond: mh.leapSecond,
 	}
 }
@@ -200,7 +200,7 @@ func (mh *msgHandler) ubxProbe(ctx context.Context, port serio.OutPort) (bool, e
 	return false, nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, cfgtor gpsmsg.Configurator, port serio.OutPort) (*gpsmsg.Config, error) {
+func (mh *msgHandler) configure(ctx context.Context, cfgtor gpsmsg.Configurator, port serio.OutPort) (*gpsmsg.ConfigMap, error) {
 	for {
 		req, err := cfgtor.NextRequest()
 		if err != nil {
@@ -220,7 +220,7 @@ func (mh *msgHandler) configure(ctx context.Context, cfgtor gpsmsg.Configurator,
 			return nil, err
 		}
 	}
-	return cfgtor.Config(), nil
+	return cfgtor.ConfigMap(), nil
 }
 
 const minWaitAfterSend = 10 * time.Millisecond

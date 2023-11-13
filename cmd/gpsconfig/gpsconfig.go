@@ -24,7 +24,7 @@ func main() {
 	var speed intFlag
 	var help bool
 	var sane bool
-	config := &gpsmsg.Config{}
+	cm := &gpsmsg.ConfigMap{}
 
 	flags := pflag.NewFlagSet("gpsconfig", pflag.ContinueOnError)
 	flags.SetInterspersed(false)
@@ -51,8 +51,8 @@ func main() {
 	device := flags.Arg(0)
 
 	if sane {
-		config.SetSane()
-		gpsmsg.CfgNMEAEnabled.Set(config, false)
+		cm.SetSane()
+		gpsmsg.CfgNMEAEnabled.Set(cm, false)
 	}
 	level := slog.LevelWarn
 	if verboseLevel == 1 {
@@ -67,7 +67,7 @@ func main() {
 	slog.SetDefault(lg)
 	ctx := context.Background()
 	ctx, cancel := cancelOnSignal(ctx, lg)
-	err = run(ctx, lg, cancel, config, device, speed.value)
+	err = run(ctx, lg, cancel, cm, device, speed.value)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
 		os.Exit(1)
@@ -80,7 +80,7 @@ func usage(flags *pflag.FlagSet) {
 	flags.PrintDefaults()
 }
 
-func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, config *gpsmsg.Config, serialDev string, speed *int) error {
+func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cm *gpsmsg.ConfigMap, serialDev string, speed *int) error {
 
 	t, err := serio.OpenTerm(serialDev, speed)
 	if err != nil {
@@ -110,9 +110,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, config
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = serio.TermError{}
-	info, err := gpscfg.Configure(ctx, lg, config, pCh, t)
+	info, err := gpscfg.Configure(ctx, lg, cm, pCh, t)
 	if err == nil {
-		fmt.Printf("set config to: %s\n", fmt.Sprint(info.Config))
+		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigMap))
 	}
 
 	lg.Debug("about to wait")

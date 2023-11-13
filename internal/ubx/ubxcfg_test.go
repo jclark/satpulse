@@ -12,25 +12,25 @@ func TestTp5(t *testing.T) {
 	raw := &RawConfig{tp5: new(ubxbin.CfgTp5)}
 	raw.tp5.Flags |= ubxbin.CfgTp5IsLength
 
-	cfg := &gpsmsg.Config{}
-	cfg.SetSane()
+	cm := &gpsmsg.ConfigMap{}
+	cm.SetSane()
 
-	raw.tp5 = raw.changeTp5(cfg)
+	raw.tp5 = raw.changeTp5(cm)
 
-	ncfg := gpsmsg.Config{}
-	raw.cookTp5(&ncfg)
-	bad := cfg.Inconsistent(&ncfg)
+	ncm := gpsmsg.ConfigMap{}
+	raw.cookTp5(&ncm)
+	bad := cm.Inconsistent(&ncm)
 	if !bad.IsEmpty() {
 		t.Errorf("tp5 change failed: %v", bad)
 	}
 
-	rep := raw.changeTp5(cfg)
+	rep := raw.changeTp5(cm)
 
 	if rep != nil {
 		t.Errorf("repeated changeTp5 wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeTp5(new(gpsmsg.Config))
+	rep = raw.changeTp5(new(gpsmsg.ConfigMap))
 	if rep != nil {
 		t.Errorf("changeTp5 with nothing wasn't a no-op: %v", rep)
 	}
@@ -39,10 +39,10 @@ func TestTp5(t *testing.T) {
 func TestChangeTp5GNSS(t *testing.T) {
 	// Create a new RawConfig and Config
 	raw := RawConfig{tp5: new(ubxbin.CfgTp5)}
-	cfg := gpsmsg.Config{}
+	cm := gpsmsg.ConfigMap{}
 
 	// Call changeTp5GNSS with the empty RawConfig and Config
-	gnss := raw.changeTp5GNSS(&cfg)
+	gnss := raw.changeTp5GNSS(&cm)
 
 	// Check that the result is gpsmsg.GPS
 	if gnss != gpsmsg.GPS {
@@ -53,25 +53,25 @@ func TestChangeTp5GNSS(t *testing.T) {
 func TestNav5(t *testing.T) {
 	raw := &RawConfig{nav5: new(ubxbin.CfgNav5)}
 
-	cfg := &gpsmsg.Config{}
-	cfg.SetSane()
+	cm := &gpsmsg.ConfigMap{}
+	cm.SetSane()
 
-	raw.nav5 = raw.changeNav5(cfg)
+	raw.nav5 = raw.changeNav5(cm)
 
-	ncfg := gpsmsg.Config{}
-	raw.cookNav5(&ncfg)
-	bad := cfg.Inconsistent(&ncfg)
+	ncm := gpsmsg.ConfigMap{}
+	raw.cookNav5(&ncm)
+	bad := cm.Inconsistent(&ncm)
 	if !bad.IsEmpty() {
 		t.Errorf("nav5 change failed: %v", bad)
 	}
 
-	rep := raw.changeNav5(cfg)
+	rep := raw.changeNav5(cm)
 
 	if rep != nil {
 		t.Errorf("repeated changeNav5 wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeNav5(new(gpsmsg.Config))
+	rep = raw.changeNav5(new(gpsmsg.ConfigMap))
 	if rep != nil {
 		t.Errorf("changeNav5 with nothing wasn't a no-op: %v", rep)
 	}
@@ -82,55 +82,55 @@ func TestRate(t *testing.T) {
 	raw.rate.NavRate = 1
 	ver := new(Version)
 
-	cfg := &gpsmsg.Config{}
-	cfg.SetSane()
+	cm := &gpsmsg.ConfigMap{}
+	cm.SetSane()
 
-	raw.rate = raw.changeRate(cfg, ver)
+	raw.rate = raw.changeRate(cm, ver)
 
-	ncfg := gpsmsg.Config{}
-	raw.cookRate(&ncfg, ver)
-	bad := cfg.Inconsistent(&ncfg)
+	ncm := gpsmsg.ConfigMap{}
+	raw.cookRate(&ncm, ver)
+	bad := cm.Inconsistent(&ncm)
 	if !bad.IsEmpty() {
 		t.Errorf("rate change failed: %v", bad)
 	}
 
-	rep := raw.changeRate(cfg, ver)
+	rep := raw.changeRate(cm, ver)
 
 	if rep != nil {
 		t.Errorf("repeated changeRate wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeRate(new(gpsmsg.Config), ver)
+	rep = raw.changeRate(new(gpsmsg.ConfigMap), ver)
 	if rep != nil {
 		t.Errorf("changeRate with nothing wasn't a no-op: %v", rep)
 	}
 }
 
 func TestConfiguratorSane(t *testing.T) {
-	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.Config, ver *Version) {
+	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.ConfigMap, ver *Version) {
 		target.SetSane()
 	})
 
 }
 
 func TestConfiguratorGPS(t *testing.T) {
-	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.Config, ver *Version) {
+	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.ConfigMap, ver *Version) {
 		target.SetSane()
 		gpsmsg.CfgPrimaryGNSS.Set(target, gpsmsg.GPS)
 	})
 }
 
 func TestConfiguratorGalileo(t *testing.T) {
-	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.Config, ver *Version) {
+	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.ConfigMap, ver *Version) {
 		target.SetSane()
 		raw.gnss.Blocks[0].GNSSID = ubxbin.Galileo
 		gpsmsg.CfgPrimaryGNSS.Set(target, gpsmsg.Galileo)
 	})
 }
 
-func testConfigurator(t *testing.T, setup func(*RawConfig, *gpsmsg.Config, *Version)) *Configurator {
+func testConfigurator(t *testing.T, setup func(*RawConfig, *gpsmsg.ConfigMap, *Version)) *Configurator {
 	raw := newRawConfig()
-	target := &gpsmsg.Config{}
+	target := &gpsmsg.ConfigMap{}
 	ver := &Version{}
 	setup(raw, target, ver)
 
@@ -183,7 +183,7 @@ func testConfigurator(t *testing.T, setup func(*RawConfig, *gpsmsg.Config, *Vers
 		}
 	}
 
-	result := c.Config()
+	result := c.ConfigMap()
 
 	bad := target.Inconsistent(result)
 	if !bad.IsEmpty() {

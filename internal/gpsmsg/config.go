@@ -7,7 +7,7 @@ import (
 )
 
 type Configurator interface {
-	Config() *Config
+	ConfigMap() *ConfigMap
 	NextRequest() (ConfigRequest, error)
 }
 
@@ -18,7 +18,7 @@ type ConfigRequest interface {
 	ID() string
 }
 
-type Config struct {
+type ConfigMap struct {
 	m map[string]interface{}
 }
 
@@ -27,7 +27,7 @@ type CfgKey interface {
 	cfgKey()
 }
 
-func (c *Config) Contains(k CfgKey) bool {
+func (c *ConfigMap) Contains(k CfgKey) bool {
 	_, exists := c.m[k.String()]
 	return exists
 }
@@ -46,9 +46,9 @@ type TypedCfgKey[T comparable] struct {
 	anyCfgKey
 }
 
-func (k TypedCfgKey[T]) Get(cfg *Config) (T, bool) {
-	if cfg.m != nil {
-		value, exists := cfg.m[k.s]
+func (k TypedCfgKey[T]) Get(cm *ConfigMap) (T, bool) {
+	if cm.m != nil {
+		value, exists := cm.m[k.s]
 		if exists {
 			return value.(T), true
 		}
@@ -57,53 +57,53 @@ func (k TypedCfgKey[T]) Get(cfg *Config) (T, bool) {
 	return zero, false
 }
 
-func (k TypedCfgKey[T]) Set(cfg *Config, v T) {
-	if cfg.m == nil {
-		cfg.m = make(map[string]interface{})
+func (k TypedCfgKey[T]) Set(cm *ConfigMap, v T) {
+	if cm.m == nil {
+		cm.m = make(map[string]interface{})
 	}
-	cfg.m[k.s] = v
+	cm.m[k.s] = v
 }
 
-func (c *Config) MarshalJSON() ([]byte, error) {
+func (c *ConfigMap) MarshalJSON() ([]byte, error) {
 	return json.Marshal(c.serializableMap())
 }
 
-func (c *Config) MarshalText() ([]byte, error) {
+func (c *ConfigMap) MarshalText() ([]byte, error) {
 	return []byte(c.String()), nil
 }
 
-func (c *Config) String() string {
+func (c *ConfigMap) String() string {
 	return fmt.Sprint(c.serializableMap())
 }
 
 // Inconsistent returns a Config with the entries in c2 that are inconsistent with c.
 // An entry is inconsistent if it exists in both c and c2 but has different values.
-func (c *Config) Inconsistent(c2 *Config) *Config {
+func (c *ConfigMap) Inconsistent(c2 *ConfigMap) *ConfigMap {
 	m := make(map[string]interface{})
 	for k, v := range c.m {
 		if v2, exists := c2.m[k]; exists && v != v2 {
 			m[k] = v2
 		}
 	}
-	return &Config{m}
+	return &ConfigMap{m}
 }
 
 // Missing returns a Config with the entries from c2 that are missing from c.
-func (c *Config) Missing(c2 *Config) *Config {
+func (c *ConfigMap) Missing(c2 *ConfigMap) *ConfigMap {
 	m := make(map[string]interface{})
 	for k, v := range c2.m {
 		if _, exists := c.m[k]; !exists {
 			m[k] = v
 		}
 	}
-	return &Config{m}
+	return &ConfigMap{m}
 }
 
-func (c *Config) IsEmpty() bool {
+func (c *ConfigMap) IsEmpty() bool {
 	return len(c.m) == 0
 }
 
-func (c *Config) serializableMap() map[string]interface{} {
+func (c *ConfigMap) serializableMap() map[string]interface{} {
 	j := make(map[string]interface{})
 	for k, v := range c.m {
 		switch t := v.(type) {
@@ -159,13 +159,13 @@ var CfgStationary = makeCfgKey[bool]("stationary")
 var CfgNMEAEnabled = makeCfgKey[bool]("nmeaEnabled")
 var CfgBaudRate = makeCfgKey[uint32]("baudRate")
 
-func (cfg *Config) SetSane() {
-	CfgSolutionPeriod.Set(cfg, 1*time.Second)
-	CfgTimePulsePeriod.Set(cfg, 1*time.Second)
-	CfgTimePulseWidth.Set(cfg, time.Second/10)
-	CfgTimePulsePolarityRising.Set(cfg, true)
-	CfgTimePulseAlignToGNSS.Set(cfg, true)
-	CfgTimePulseOnlyWhenLocked.Set(cfg, true)
+func (cm *ConfigMap) SetSane() {
+	CfgSolutionPeriod.Set(cm, 1*time.Second)
+	CfgTimePulsePeriod.Set(cm, 1*time.Second)
+	CfgTimePulseWidth.Set(cm, time.Second/10)
+	CfgTimePulsePolarityRising.Set(cm, true)
+	CfgTimePulseAlignToGNSS.Set(cm, true)
+	CfgTimePulseOnlyWhenLocked.Set(cm, true)
 }
 
 type Length int64
