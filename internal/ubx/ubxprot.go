@@ -11,15 +11,18 @@ type Protocol struct {
 	ver  *Version
 	acks []*Ack
 	cfg  *Configurator
+	h    gpsmsg.Handler
+	ph   ProtHandler
 }
+
+var _ gpsmsg.Protocol = (*Protocol)(nil)
 
 type Ack struct {
 	msgID bin.MsgID
-	OK    bool
-	TRead time.Time
+	gpsmsg.Ack
 }
 
-func (prot *Protocol) ProcessPacket(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
+func (prot *Protocol) ProcessPacket(data string, tRead time.Time) error {
 	m, err := bin.ParseMsg(data)
 	if err != nil {
 		return err
@@ -33,7 +36,7 @@ func (prot *Protocol) ProcessPacket(data string, tRead time.Time, h gpsmsg.Handl
 			return nil
 		}
 	}
-	if Dispatch(m, tRead, h) {
+	if Dispatch(m, tRead, prot.h) {
 		return nil
 	}
 	switch mt := m.(type) {
@@ -44,24 +47,31 @@ func (prot *Protocol) ProcessPacket(data string, tRead time.Time, h gpsmsg.Handl
 	case *bin.MonVer:
 		prot.ver = monVer(mt)
 	default:
-		if ph != nil {
-			ph.UBX(m, tRead)
+		if prot.ph != nil {
+			prot.ph.UBX(m, tRead)
 		}
 	}
 	return nil
 }
 
+func (prot *Protocol) SetHandler(h gpsmsg.Handler) {
+	prot.h = h
+}
+
+func (prot *Protocol) SetProtHandler(ph ProtHandler) {
+	prot.ph = ph
+}
+
 func (prot *Protocol) ack(msgID bin.MsgID, ok bool, t time.Time) {
-	prot.acks = append(prot.acks, &Ack{msgID, ok, t})
+	prot.acks = append(prot.acks, &Ack{msgID, gpsmsg.Ack{OK: ok, TRead: t}})
 }
 
 func (prot *Protocol) Version() *Version {
 	return prot.ver
 }
 
-// XXX need to move this into something at the gpsmsg level
-func (prot *Protocol) FindAck(packet []byte, tSent time.Time) (ack *Ack) {
-	return prot.FindAckByMsgId(bin.PacketMsgId(packet), tSent)
+func (prot *Protocol) FindAck(packet []byte, tSent time.Time) *gpsmsg.Ack {
+	return &prot.FindAckByMsgId(bin.PacketMsgId(packet), tSent).Ack
 }
 
 func (prot *Protocol) FindAckByMsgId(msgID bin.MsgID, tSent time.Time) (ack *Ack) {

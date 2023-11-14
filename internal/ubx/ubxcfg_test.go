@@ -171,7 +171,7 @@ func testConfigurator(t *testing.T, setup func(*RawConfig, *gpsmsg.ConfigMap, *V
 				if err != nil {
 					t.Errorf("unexpected serialization error: %v", err)
 				} else {
-					err = prot.ProcessPacket(string(resp), tm, nil, nil)
+					err = prot.ProcessPacket(string(resp), tm)
 					if err != nil {
 						t.Errorf("unexpected error processing response packet: %v", err)
 					}

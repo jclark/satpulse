@@ -6,6 +6,20 @@ import (
 	"time"
 )
 
+type Protocol interface {
+	ProbePacket() []byte
+	ProbeOK() bool
+	SetHandler(h Handler)
+	ProcessPacket(data string, tRead time.Time) error
+	Configure(target *ConfigMap) Configurator
+	FindAck(packet []byte, tSent time.Time) *Ack
+}
+
+type Ack struct {
+	OK    bool
+	TRead time.Time
+}
+
 type Configurator interface {
 	ConfigMap() *ConfigMap
 	NextRequest() (ConfigRequest, error)
