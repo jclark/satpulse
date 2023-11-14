@@ -15,7 +15,8 @@ case "$arch" in
         ;;
 esac
 . ./vars.sh
-cp out/$goarch/satpulse /usr/local/sbin/satpulse
+cp out/$goarch/satpulsed /usr/local/sbin/satpulsed
+cp out/$goarch/satpulsetool /usr/local/bin/satpulsetool
 cp satpulse.service /etc/systemd/system/
 # Don't overrwrite existing config file
 if [ ! -f $CONFIG_FILE ]; then
