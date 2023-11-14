@@ -26,7 +26,7 @@ func main() {
 	var sane bool
 	cm := &gpsmsg.ConfigMap{}
 
-	flags := pflag.NewFlagSet("gpsconfig", pflag.ContinueOnError)
+	flags := pflag.NewFlagSet("satpulsetool", pflag.ContinueOnError)
 	flags.SetInterspersed(false)
 
 	flags.CountVarP(&verboseLevel, "verbose", "v", "increase verbosity")
