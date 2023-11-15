@@ -1,9 +1,9 @@
-package main
+package cmd
 
 var gitVersion string
 var buildDate string
 
-func versionInfo() string {
+func VersionInfo() string {
 	s := ""
 	if gitVersion != "" {
 		s = "git version " + gitVersion

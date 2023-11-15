@@ -35,7 +35,7 @@ func main() {
 	flag.BoolVar(&sdLog, "sdlog", false, "log to stdout with priorities in systemd-compatible format")
 	flag.Parse()
 	if showVersion {
-		fmt.Println(versionInfo())
+		fmt.Println(cmd.VersionInfo())
 		os.Exit(0)
 	}
 	level := slog.LevelInfo
