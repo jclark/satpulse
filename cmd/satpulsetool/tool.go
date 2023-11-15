@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 
+	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/internal/cmd/tool/configcmd"
 	"github.com/spf13/pflag"
 )
 
@@ -21,7 +22,7 @@ func main() {
 	err := flags.Parse(os.Args[1:])
 	progName := os.Args[0]
 	if err != nil {
-		errPrintln(progName, err)
+		cmd.ErrPrintln(progName, err)
 		os.Exit(2)
 	}
 	if help {
@@ -47,15 +48,15 @@ func main() {
 
 	switch cmdName {
 	case "config":
-		err = configCmd(lg, progName, cmdName, cmdArgs)
+		err = configcmd.Cmd(lg, progName, cmdName, cmdArgs)
 	default:
-		errPrintln(progName, "unknown command: "+cmdName)
+		cmd.ErrPrintln(progName, "unknown command: "+cmdName)
 		usage(progName, flags)
 		os.Exit(2)
 	}
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
+		cmd.ErrPrintln(progName, err)
 		os.Exit(1)
 	}
 }
@@ -65,34 +66,4 @@ func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "Commands: config")
 	fmt.Fprintln(os.Stderr, "Global options:")
 	flags.PrintDefaults()
-}
-
-func errPrintln(progName string, arg any) {
-	fmt.Fprintln(os.Stderr, progName+":", arg)
-}
-
-type intFlag struct {
-	value *int
-}
-
-var _ pflag.Value = (*intFlag)(nil)
-
-func (i *intFlag) String() string {
-	if i.value == nil {
-		return ""
-	}
-	return strconv.Itoa(*i.value)
-}
-
-func (i *intFlag) Type() string {
-	return "int"
-}
-
-func (i *intFlag) Set(s string) error {
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		return err
-	}
-	i.value = &v
-	return nil
 }

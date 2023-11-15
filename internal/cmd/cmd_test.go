@@ -1,12 +1,13 @@
-package main
+package cmd
 
 import (
 	"flag"
 	"testing"
+	
 )
 
 func TestIntFlag(t *testing.T) {
-	var speed intFlag
+	var speed IntFlag
 	f := flag.NewFlagSet("test", flag.ContinueOnError)
 	f.Var(&speed, "speed", "set the speed")
 	args := []string{}
@@ -14,7 +15,7 @@ func TestIntFlag(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-	if speed.value != nil {
+	if speed.Value != nil {
 		t.Error("missing speed wasn't nil")
 	}
 
@@ -26,12 +27,11 @@ func TestIntFlag(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-	if speed.value == nil {
+	if speed.Value == nil {
 		t.Error("unexpected nil value for speed")
 	}
-	if *speed.value != 123 {
-		t.Errorf("Expected 123, got %d", *speed.value)
+	if *speed.Value != 123 {
+		t.Errorf("Expected 123, got %d", *speed.Value)
 	}
-
 
 }

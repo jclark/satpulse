@@ -1,27 +1,26 @@
-package main
+package configcmd
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
 	"sync"
 
+	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/internal/cmd/tool"
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsmsg"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/serio"
 
 	"github.com/spf13/pflag"
-
-	"golang.org/x/sys/unix"
 )
 
-func configCmd(lg *slog.Logger, progName string, cmdName string, args []string) error {
+func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error {
 	var help bool
 	var sane bool
-	var speed intFlag
+	var speed cmd.IntFlag
 
 	cm := &gpsmsg.ConfigMap{}
 	flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
@@ -31,13 +30,13 @@ func configCmd(lg *slog.Logger, progName string, cmdName string, args []string) 
 	flags.BoolVarP(&sane, "sane", "S", false, "configure the receiver defaults that are sane for timing")
 	err := flags.Parse(args)
 	if err != nil {
-		errPrintln(progName, err)
+		cmd.ErrPrintln(progName, err)
 		os.Exit(2)
 	}
 	const summary = "[options] serial-device"
 	if flags.NArg() != 1 {
-		errPrintln(progName, "config command must have argument giving serial device")
-		cmdUsage(progName, cmdName, summary, flags)
+		cmd.ErrPrintln(progName, "config command must have argument giving serial device")
+		tool.Usage(progName, cmdName, summary, flags)
 		os.Exit(2)
 	}
 	device := flags.Arg(0)
@@ -48,14 +47,8 @@ func configCmd(lg *slog.Logger, progName string, cmdName string, args []string) 
 	}
 
 	ctx := context.Background()
-	ctx, cancel := cancelOnSignal(ctx, lg)
-	return run(ctx, lg, cancel, cm, device, speed.value)
-}
-
-func cmdUsage(progName, cmdName, summary string, flags *pflag.FlagSet) {
-	fmt.Fprintln(os.Stderr, "Usage:", progName, cmdName, summary)
-	fmt.Fprintln(os.Stderr, "Options:")
-	flags.PrintDefaults()
+	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
+	return run(ctx, lg, cancel, cm, device, speed.Value)
 }
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cm *gpsmsg.ConfigMap, serialDev string, speed *int) error {
@@ -106,26 +99,6 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cm *gp
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	waitGroupGo(wg, func() { serio.ScanWorker(ctx, lg, scanner, msg) })
+	cmd.WaitGroupGo(wg, func() { serio.ScanWorker(ctx, lg, scanner, msg) })
 	return msg
-}
-
-func waitGroupGo(wg *sync.WaitGroup, f func()) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		f()
-	}()
-}
-
-func cancelOnSignal(ctx context.Context, lg *slog.Logger) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(ctx)
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
-	go func() {
-		<-sig
-		lg.Debug("received signal, initiating cancellation")
-		cancel()
-	}()
-	return ctx, cancel
 }
