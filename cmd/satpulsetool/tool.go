@@ -59,7 +59,7 @@ func main() {
 	case "config":
 		err = configCmd(lg, progName, cmdName, cmdArgs)
 	default:
-		fmt.Fprintln(os.Stderr, os.Args[0]+": unknown command:", cmdName)
+		errPrintln(progName, "unknown command: "+cmdName)
 		usage(progName, flags)
 		os.Exit(2)
 	}
