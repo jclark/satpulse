@@ -21,31 +21,75 @@ import (
 
 func main() {
 	var verboseLevel int
-	var speed intFlag
 	var help bool
-	var sane bool
-	cm := &gpsmsg.ConfigMap{}
 
 	flags := pflag.NewFlagSet("satpulsetool", pflag.ContinueOnError)
 	flags.SetInterspersed(false)
 
 	flags.CountVarP(&verboseLevel, "verbose", "v", "increase verbosity")
-	flags.VarP(&speed, "speed", "s", "serial device `baud-rate`")
 	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.BoolVarP(&sane, "sane", "S", false, "configure the receiver defaults that are sane for timing")
 	err := flags.Parse(os.Args[1:])
+	progName := os.Args[0]
 	if err != nil {
-		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
+		errPrintln(progName, err)
 		os.Exit(2)
 	}
 	if help {
-		usage(flags)
+		usage(progName, flags)
 		os.Exit(0)
 	}
+	if flags.NArg() == 0 {
+		usage(progName, flags)
+		os.Exit(2)
+	}
+	cmdName := flags.Arg(0)
+	cmdArgs := flags.Args()[1:]
 
+	level := slog.LevelWarn
+	if verboseLevel == 1 {
+		level = slog.LevelInfo
+	} else if verboseLevel > 1 {
+		level = slog.LevelDebug
+	}
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
+	lg := slog.New(handler)
+	slog.SetDefault(lg)
+
+	switch cmdName {
+	case "config":
+		err = configCmd(lg, progName, cmdName, cmdArgs)
+	default:
+		fmt.Fprintln(os.Stderr, os.Args[0]+": unknown command:", cmdName)
+		usage(progName, flags)
+		os.Exit(2)
+	}
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
+		os.Exit(1)
+	}
+}
+
+func configCmd(lg *slog.Logger, progName string, cmdName string, args []string) error {
+	var help bool
+	var sane bool
+	var speed intFlag
+
+	cm := &gpsmsg.ConfigMap{}
+	flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
+	flags.BoolVarP(&help, "help", "h", false, "show help")
+
+	flags.VarP(&speed, "speed", "s", "serial device `baud-rate`")
+	flags.BoolVarP(&sane, "sane", "S", false, "configure the receiver defaults that are sane for timing")
+	err := flags.Parse(args)
+	if err != nil {
+		errPrintln(progName, err)
+		os.Exit(2)
+	}
+	const summary = "[options] serial-device"
 	if flags.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, os.Args[0]+": must specify a serial device")
-		usage(flags)
+		errPrintln(progName, "config command must have argument giving serial device")
+		cmdUsage(progName, cmdName, summary, flags)
 		os.Exit(2)
 	}
 	device := flags.Arg(0)
@@ -54,30 +98,27 @@ func main() {
 		cm.SetSane()
 		gpsmsg.CfgNMEAEnabled.Set(cm, false)
 	}
-	level := slog.LevelWarn
-	if verboseLevel == 1 {
-		level = slog.LevelInfo
-	} else if verboseLevel > 1 {
-		level = slog.LevelDebug
-	}
 
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
-
-	lg := slog.New(handler)
-	slog.SetDefault(lg)
 	ctx := context.Background()
 	ctx, cancel := cancelOnSignal(ctx, lg)
-	err = run(ctx, lg, cancel, cm, device, speed.value)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
-		os.Exit(1)
-	}
+	return run(ctx, lg, cancel, cm, device, speed.value)
 }
 
-func usage(flags *pflag.FlagSet) {
-	fmt.Fprintln(os.Stderr, "Usage:", os.Args[0], "[options] serial-device")
+func usage(progName string, flags *pflag.FlagSet) {
+	fmt.Fprintln(os.Stderr, "Usage:", progName, "[global-options] command [options] arg...")
+	fmt.Fprintln(os.Stderr, "Commands: config")
+	fmt.Fprintln(os.Stderr, "Global options:")
+	flags.PrintDefaults()
+}
+
+func cmdUsage(progName, cmdName, summary string, flags *pflag.FlagSet) {
+	fmt.Fprintln(os.Stderr, "Usage:", progName, cmdName, summary)
 	fmt.Fprintln(os.Stderr, "Options:")
 	flags.PrintDefaults()
+}
+
+func errPrintln(progName string, arg any) {
+	fmt.Fprintln(os.Stderr, progName+":", arg)
 }
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cm *gpsmsg.ConfigMap, serialDev string, speed *int) error {
