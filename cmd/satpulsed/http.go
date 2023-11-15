@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/bcast"
+	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/web"
 )
@@ -56,7 +57,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 
 	for _, listener := range listeners {
 		listener := listener
-		waitGroupGo(wg, func() {
+		cmd.WaitGroupGo(wg, func() {
 			lg.Debug("HTTP server listening", "addr", listener.Addr())
 			if err := server.Serve(listener); err != http.ErrServerClosed {
 				lg.Error("HTTP serve error", "err", err)
@@ -64,7 +65,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 			lg.Debug("HTTP server about to exit", "addr", listener.Addr())
 		})
 	}
-	waitGroupGo(wg, func() {
+	cmd.WaitGroupGo(wg, func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
 		defer cancel()

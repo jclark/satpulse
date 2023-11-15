@@ -7,11 +7,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/signal"
 	"sync"
 	"time"
 
 	"github.com/jclark/satpulse/internal/bcast"
+	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/pmc"
@@ -19,8 +19,6 @@ import (
 	"github.com/jclark/satpulse/internal/serio"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/ubx"
-
-	"golang.org/x/sys/unix"
 )
 
 func main() {
@@ -53,7 +51,7 @@ func main() {
 	lg := slog.New(handler)
 	slog.SetDefault(lg)
 	ctx := context.Background()
-	ctx, cancel := cancelOnSignal(ctx, lg)
+	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
 	err := run(ctx, lg, cancel, configFile, inputLogFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
@@ -126,7 +124,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		eb = startBcast(ctx, lg, &wg, sseCh)
 	}
 	// Shut down the broadcast goroutines when the context is cancelled.
-	waitGroupGo(&wg, func() {
+	cmd.WaitGroupGo(&wg, func() {
 		<-ctx.Done()
 		pb.Close()
 		if eb != nil {
@@ -204,12 +202,12 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	}
 	lg.Info("started external timestamping", "edges", edges)
 	if pmcClient != nil {
-		waitGroupGo(&wg, func() { mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg) })
+		cmd.WaitGroupGo(&wg, func() { mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg) })
 	}
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
 	ls := gcfg.LeapSecond
-	waitGroupGo(&wg, func() {
+	cmd.WaitGroupGo(&wg, func() {
 		if ls != nil {
 			s.LeapSecond(ls, time.Time{})
 		}
@@ -228,34 +226,14 @@ func newInitData(r *gpscfg.Result) *InitData {
 	return &InitData{Version: r.Version}
 }
 
-func waitGroupGo(wg *sync.WaitGroup, f func()) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		f()
-	}()
-}
-
-func cancelOnSignal(ctx context.Context, lg *slog.Logger) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(ctx)
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
-	go func() {
-		<-sig
-		lg.Debug("received signal, initiating cancellation")
-		cancel()
-	}()
-	return ctx, cancel
-}
-
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	waitGroupGo(wg, func() { serio.ScanWorker(ctx, lg, scanner, msg) })
+	cmd.WaitGroupGo(wg, func() { serio.ScanWorker(ctx, lg, scanner, msg) })
 	return msg
 }
 
 func startBcast[T any](ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, msg <-chan T) *bcast.Bcast[T] {
 	b := bcast.New(msg)
-	waitGroupGo(wg, func() { b.Run(ctx, lg) })
+	cmd.WaitGroupGo(wg, func() { b.Run(ctx, lg) })
 	return b
 }

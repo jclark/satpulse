@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/bcast"
+	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/serio"
 )
@@ -65,7 +66,7 @@ func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TC
 	for i, listen := range listeners {
 		connConfig := connConfigs[i]
 		listen := listen
-		waitGroupGo(wg, func() {
+		cmd.WaitGroupGo(wg, func() {
 			tcpHandleListen(ctx, lg, wg, connConfig, listen, b, portLock)
 		})
 	}
@@ -106,11 +107,11 @@ func tcpHandleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, c
 func tcpHandleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *bcast.Bcast[scan.Packet], portLock chan serio.OutPort) {
 	// XXX both the read and write workers are closing the connection.
 	// Not sure if it would better for just one of them to do so.
-	waitGroupGo(wg, func() { tcpConnWriteWorker(ctx, lg, cfg, conn, b) })
+	cmd.WaitGroupGo(wg, func() { tcpConnWriteWorker(ctx, lg, cfg, conn, b) })
 	// The connReadWorker reads from the connection and writes to the serial port.
 	// The readOnly config option says not to write to the serial port.
 	if !cfg.readOnly {
-		waitGroupGo(wg, func() { tcpConnReadWorker(ctx, lg, cfg, conn, portLock) })
+		cmd.WaitGroupGo(wg, func() { tcpConnReadWorker(ctx, lg, cfg, conn, portLock) })
 	}
 }
 
