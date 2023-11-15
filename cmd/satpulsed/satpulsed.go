@@ -44,7 +44,7 @@ func main() {
 	}
 	var handler slog.Handler
 	if sdLog {
-		handler = NewSdHandler(level, os.Stdout)
+		handler = cmd.NewSdHandler(level, os.Stdout)
 	} else {
 		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	}
