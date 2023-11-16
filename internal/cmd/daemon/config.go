@@ -1,4 +1,4 @@
-package main
+package daemon
 
 import (
 	"errors"
@@ -67,7 +67,7 @@ var ptpConfigDefault = PTPConfig{
 	Impl:       PTPImplPTP4L,
 }
 
-func loadConfig(path string) (*Config, error) {
+func LoadConfig(path string) (*Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

@@ -1,4 +1,4 @@
-package main
+package daemon
 
 import (
 	"os"
@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const configsDir = "../../configs"
+const configsDir = "../../../configs"
 
 func TestLoadConfig(t *testing.T) {
 	cfgFiles, err := os.ReadDir(configsDir)
@@ -21,7 +21,7 @@ func TestLoadConfig(t *testing.T) {
 		}
 		path := filepath.Join(configsDir, f.Name())
 		count++
-		_, err := loadConfig(path)
+		_, err := LoadConfig(path)
 		if err != nil {
 			t.Fatalf("error loading %s: %v", path, err)
 		}

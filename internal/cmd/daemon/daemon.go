@@ -1,4 +1,4 @@
-package main
+package daemon
 
 import (
 	"context"
@@ -21,19 +21,21 @@ import (
 	"github.com/jclark/satpulse/internal/ubx"
 )
 
-func main() {
+func Cmd(progName string, args []string) {
 	var configFile string
 	var debugEnable bool
 	var sdLog bool
 	var showVersion bool
 	var inputLogFile string
 
-	flag.StringVar(&configFile, "f", defaultConfigFile, "configuration file")
-	flag.StringVar(&inputLogFile, "inputLogFile", "", "input log file")
-	flag.BoolVar(&showVersion, "version", false, "show version information")
-	flag.BoolVar(&debugEnable, "debug", false, "log debugging information")
-	flag.BoolVar(&sdLog, "sdlog", false, "log to stdout with priorities in systemd-compatible format")
-	flag.Parse()
+	flags := flag.NewFlagSet("config", flag.ExitOnError)
+
+	flags.StringVar(&configFile, "f", defaultConfigFile, "configuration file")
+	flags.StringVar(&inputLogFile, "inputLogFile", "", "input log file")
+	flags.BoolVar(&showVersion, "version", false, "show version information")
+	flags.BoolVar(&debugEnable, "debug", false, "log debugging information")
+	flags.BoolVar(&sdLog, "sdlog", false, "log to stdout with priorities in systemd-compatible format")
+	flags.Parse(args)
 	if showVersion {
 		fmt.Println(cmd.VersionInfo())
 		os.Exit(0)
@@ -44,7 +46,7 @@ func main() {
 	}
 	var handler slog.Handler
 	if sdLog {
-		handler = cmd.NewSdHandler(level, os.Stdout)
+		handler = NewSdHandler(level, os.Stdout)
 	} else {
 		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	}
@@ -54,7 +56,7 @@ func main() {
 	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
 	err := run(ctx, lg, cancel, configFile, inputLogFile)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, os.Args[0]+":", err)
+		cmd.ErrPrintln(progName, err)
 		s := configErrorDetail(err)
 		if s != "" {
 			fmt.Fprintln(os.Stderr, s)
@@ -64,7 +66,7 @@ func main() {
 }
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFile string, inputLogFile string) error {
-	cfg, err := loadConfig(cfgFile)
+	cfg, err := LoadConfig(cfgFile)
 	if err != nil {
 		return err
 	}
