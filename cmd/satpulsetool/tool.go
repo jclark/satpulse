@@ -13,17 +13,24 @@ import (
 func main() {
 	var verboseLevel int
 	var help bool
+	var showVersion bool
 
 	flags := pflag.NewFlagSet("satpulsetool", pflag.ContinueOnError)
 	flags.SetInterspersed(false)
 
 	flags.CountVarP(&verboseLevel, "verbose", "v", "increase verbosity")
 	flags.BoolVarP(&help, "help", "h", false, "show help")
+	flags.BoolVarP(&showVersion, "version", "V", false, "show version information")
+
 	err := flags.Parse(os.Args[1:])
 	progName := os.Args[0]
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
 		os.Exit(2)
+	}
+	if showVersion {
+		fmt.Fprintln(os.Stderr, cmd.VersionInfo())
+		os.Exit(0)
 	}
 	if help {
 		usage(progName, flags)
