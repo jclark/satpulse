@@ -72,7 +72,7 @@ func (c *Configurator) NextRequest() (gpsmsg.ConfigRequest, error) {
 }
 
 func (c *Configurator) valGet() (gpsmsg.ConfigRequest, error) {
-	_, missing, err := configItems(c.target, *c.raw.valMap(), c.valPort())
+	_, missing, err := configItems(c.target, c.ver.GNSS, *c.raw.valMap(), c.valPort())
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (c *Configurator) valGet() (gpsmsg.ConfigRequest, error) {
 }
 
 func (c *Configurator) valSet() (gpsmsg.ConfigRequest, error) {
-	items, missing, err := configItems(c.target, *c.raw.valMap(), c.valPort())
+	items, missing, err := configItems(c.target, c.ver.GNSS, *c.raw.valMap(), c.valPort())
 	if err != nil {
 		return nil, err
 	}
@@ -476,7 +476,7 @@ func (raw *RawConfig) cookTp5(cm *gpsmsg.ConfigMap) {
 	gpsmsg.CfgTimePulseOnlyWhenLocked.Set(cm, onlyWhenLocked)
 }
 
-func tp5FlagsGNSS(flags bin.CfgTp5Flags) gpsmsg.MajorGNSS {
+func tp5FlagsGNSS(flags bin.CfgTp5Flags) gpsmsg.GNSS {
 	if flags&bin.CfgTp5AlignToTow == 0 || flags&bin.CfgTp5LockGpsFreq == 0 {
 		return 0
 	}
@@ -485,11 +485,11 @@ func tp5FlagsGNSS(flags bin.CfgTp5Flags) gpsmsg.MajorGNSS {
 	case bin.CfgTp5GridGPS:
 		return gpsmsg.GPS
 	case bin.CfgTp5GridGLONASS:
-		return gpsmsg.GLONASS
+		return gpsmsg.GLO
 	case bin.CfgTp5GridBeiDou:
-		return gpsmsg.BeiDou
+		return gpsmsg.BDS
 	case bin.CfgTp5GridGalileo:
-		return gpsmsg.Galileo
+		return gpsmsg.GAL
 	}
 	return 0
 }
@@ -542,11 +542,11 @@ func (raw *RawConfig) changeTp5(cm *gpsmsg.ConfigMap) *bin.CfgTp5 {
 			switch gnss {
 			case gpsmsg.GPS:
 				tp.Flags |= bin.CfgTp5GridGPS
-			case gpsmsg.GLONASS:
+			case gpsmsg.GLO:
 				tp.Flags |= bin.CfgTp5GridGLONASS
-			case gpsmsg.BeiDou:
+			case gpsmsg.BDS:
 				tp.Flags |= bin.CfgTp5GridBeiDou
-			case gpsmsg.Galileo:
+			case gpsmsg.GAL:
 				tp.Flags |= bin.CfgTp5GridGalileo
 			}
 		} else {
@@ -639,10 +639,10 @@ func (raw *RawConfig) changeTp5(cm *gpsmsg.ConfigMap) *bin.CfgTp5 {
 	return &tp
 }
 
-func (raw *RawConfig) changeTp5GNSS(cm *gpsmsg.ConfigMap) gpsmsg.MajorGNSS {
+func (raw *RawConfig) changeTp5GNSS(cm *gpsmsg.ConfigMap) gpsmsg.GNSS {
 	g, _ := gpsmsg.CfgPrimaryGNSS.Get(cm)
 	// if the primary GNSS is explicitly specified, then use that (regardless of whether it's enabled)
-	if g > 0 && g <= gpsmsg.NMajorGNSS {
+	if g.IsMajor() {
 		return g
 	}
 	// otherwise, choose a suitable enabled GNSS
@@ -665,7 +665,7 @@ func (raw *RawConfig) changeTp5GNSS(cm *gpsmsg.ConfigMap) gpsmsg.MajorGNSS {
 	// GLONASS is last because it's unusual leap second handling is bad for PTP
 	// GPS is first because it's the most common
 	// Galileo is kept closely aligned with GPS, so it's a good second choice if GPS isn't enabled
-	prefer := []gpsmsg.MajorGNSS{gpsmsg.GPS, gpsmsg.Galileo, gpsmsg.BeiDou, gpsmsg.GLONASS}
+	prefer := []gpsmsg.GNSS{gpsmsg.GPS, gpsmsg.GAL, gpsmsg.BDS, gpsmsg.GLO}
 
 	for _, g := range prefer {
 		if enabled.Contains(g) {
@@ -683,15 +683,15 @@ func (raw *RawConfig) cookGNSS(cm *gpsmsg.ConfigMap) {
 	gpsmsg.CfgGNSSEnabled.Set(cm, gnssEnabledSet(gnss))
 }
 
-func gnssEnabledSet(gnss *bin.CfgGNSS) gpsmsg.MajorGNSSSet {
+func gnssEnabledSet(gnss *bin.CfgGNSS) gpsmsg.GNSSSet {
 	if gnss == nil {
 		return 0
 	}
-	var enabled gpsmsg.MajorGNSSSet
+	var enabled gpsmsg.GNSSSet
 	for _, blk := range gnss.Blocks {
 		if blk.Enable != 0 {
-			if g, ok := majorGNSS(blk.GNSSID); ok {
-				enabled |= gpsmsg.MajorGNSSFlag(g)
+			if g := idToGNSS(blk.GNSSID); g != 0 {
+				enabled |= gpsmsg.GNSSFlag(g)
 			}
 		}
 	}
@@ -726,11 +726,11 @@ func (raw *RawConfig) changeRate(cm *gpsmsg.ConfigMap, ver *Version) *bin.CfgRat
 		switch gnss {
 		case gpsmsg.GPS:
 			rate.TimeRef = bin.CfgRateGPS
-		case gpsmsg.GLONASS:
+		case gpsmsg.GLO:
 			rate.TimeRef = bin.CfgRateGLONASS
-		case gpsmsg.BeiDou:
+		case gpsmsg.BDS:
 			rate.TimeRef = bin.CfgRateBeiDou
-		case gpsmsg.Galileo:
+		case gpsmsg.GAL:
 			rate.TimeRef = bin.CfgRateGalileo
 		}
 	}
@@ -771,7 +771,7 @@ func (raw *RawConfig) cookNav5(cm *gpsmsg.ConfigMap) {
 	gpsmsg.CfgStationary.Set(cm, stationary)
 }
 
-func nav5GNSS(nav5 *bin.CfgNav5) gpsmsg.MajorGNSS {
+func nav5GNSS(nav5 *bin.CfgNav5) gpsmsg.GNSS {
 	if nav5 == nil {
 		return 0
 	}
@@ -779,11 +779,11 @@ func nav5GNSS(nav5 *bin.CfgNav5) gpsmsg.MajorGNSS {
 	case bin.CfgNav5UtcUSNO:
 		return gpsmsg.GPS
 	case bin.CfgNav5UtcSU:
-		return gpsmsg.GLONASS
+		return gpsmsg.GLO
 	case bin.CfgNav5UtcNTSC:
-		return gpsmsg.BeiDou
+		return gpsmsg.BDS
 	case bin.CfgNav5UtcEU:
-		return gpsmsg.Galileo
+		return gpsmsg.GAL
 	}
 	return 0
 }
@@ -809,11 +809,11 @@ func (raw *RawConfig) changeNav5(cm *gpsmsg.ConfigMap) *bin.CfgNav5 {
 		switch gnss {
 		case gpsmsg.GPS:
 			nav5.UtcStandard = bin.CfgNav5UtcUSNO
-		case gpsmsg.GLONASS:
+		case gpsmsg.GLO:
 			nav5.UtcStandard = bin.CfgNav5UtcSU
-		case gpsmsg.BeiDou:
+		case gpsmsg.BDS:
 			nav5.UtcStandard = bin.CfgNav5UtcNTSC
-		case gpsmsg.Galileo:
+		case gpsmsg.GAL:
 			nav5.UtcStandard = bin.CfgNav5UtcEU
 		default:
 			nav5.Mask &^= bin.CfgNav5MaskUtc
@@ -892,16 +892,22 @@ func (raw *RawConfig) addMsgRate(msgID bin.MsgID, rate [6]byte) {
 	raw.msgRate[msgID] = rate
 }
 
-func majorGNSS(g bin.GNSSID) (gpsmsg.MajorGNSS, bool) {
+func idToGNSS(g bin.GNSSID) gpsmsg.GNSS {
 	switch g {
 	case bin.GPS:
-		return gpsmsg.GPS, true
-	case bin.GLONASS:
-		return gpsmsg.GLONASS, true
-	case bin.BeiDou:
-		return gpsmsg.BeiDou, true
-	case bin.Galileo:
-		return gpsmsg.Galileo, true
+		return gpsmsg.GPS
+	case bin.GLO:
+		return gpsmsg.GLO
+	case bin.BDS:
+		return gpsmsg.BDS
+	case bin.GAL:
+		return gpsmsg.GAL
+	case bin.NavIC:
+		return gpsmsg.NAVIC
+	case bin.QZSS:
+		return gpsmsg.QZSS
+	case bin.SBAS:
+		return gpsmsg.SBAS
 	}
-	return 0, false
+	return 0
 }

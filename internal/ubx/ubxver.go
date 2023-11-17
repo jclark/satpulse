@@ -11,14 +11,14 @@ import (
 )
 
 type Version struct {
-	HW         string             `json:"hw"`
-	SW         string             `json:"sw"`
-	Extensions []string           `json:"extensions,omitempty"`
-	FW         *FWVer             `json:"fw,omitempty"`
-	Prot       *ProtVer           `json:"prot,omitempty"`
-	Mod        string             `json:"mod"`
-	Flash      bool               `json:"flash"`
-	GNSS       []gpsmsg.MajorGNSS `json:"gnss,omitempty"`
+	HW         string         `json:"hw"`
+	SW         string         `json:"sw"`
+	Extensions []string       `json:"extensions,omitempty"`
+	FW         *FWVer         `json:"fw,omitempty"`
+	Prot       *ProtVer       `json:"prot,omitempty"`
+	Mod        string         `json:"mod"`
+	Flash      bool           `json:"flash"`
+	GNSS       gpsmsg.GNSSSet `json:"gnss,omitempty"`
 }
 
 type ProtVer struct {
@@ -83,7 +83,12 @@ var fwVerOldRegexp = regexp.MustCompile(`^(FTS|TIM|HPG|SPG) ([1-9][0-9]?)\.([0-9
 var protVerRegexp = regexp.MustCompile(`^PROTVER[= ]([1-9][0-9]?)\.([0-9][0-9])$`)
 var modRegexp = regexp.MustCompile(`^MOD[= ]([A-Z][-A-Z0-9]+)$`)
 var fisRegexp = regexp.MustCompile(`^FIS[= ]0[xX]`)
-var gnssRegexp = regexp.MustCompile(`^GPS(;[A-Z]{3,4})*$`)
+var gnssRegexps = []*regexp.Regexp{
+	// Not sure how NavIC will show up: NAVIC or NavIC
+	// Neither a major GNSS nor just an augmentation system, so not sure which list it will be in
+	regexp.MustCompile(`^GPS(;[A-Z][A-Za-z]{2,4})*$`),
+	regexp.MustCompile(`^(SBAS|QZSS)(;[A-Z][A-Za-z]{2,4})*$`),
+}
 
 func findFWVer(extensions []string) *FWVer {
 	submatches := findSubmatch(extensions, fwVerRegexp)
@@ -104,26 +109,22 @@ func findProtVer(extensions []string) *ProtVer {
 	return &ProtVer{mustAtob(submatches[1]), mustAtob(submatches[2])}
 }
 
-func findGNSS(extensions []string) []gpsmsg.MajorGNSS {
-	var gnss []gpsmsg.MajorGNSS
-	submatches := findSubmatch(extensions, gnssRegexp)
-	if submatches == nil {
-		return nil
-	}
-	names := strings.Split(submatches[0], ";")
-	for _, name := range names {
-		switch name {
-		case "GPS":
-			gnss = append(gnss, gpsmsg.GPS)
-		case "GLO":
-			gnss = append(gnss, gpsmsg.GLONASS)
-		case "GAL":
-			gnss = append(gnss, gpsmsg.Galileo)
-		case "BDS":
-			gnss = append(gnss, gpsmsg.BeiDou)
+func findGNSS(extensions []string) (gnss gpsmsg.GNSSSet) {
+	for _, re := range gnssRegexps {
+		submatches := findSubmatch(extensions, re)
+		if submatches == nil {
+			continue
+		}
+		names := strings.Split(submatches[0], ";")
+		for _, name := range names {
+			g, err := gpsmsg.ParseGNSS(name)
+			if err != nil {
+				continue
+			}
+			gnss |= gpsmsg.GNSSFlag(g)
 		}
 	}
-	return gnss
+	return
 }
 
 func findFlash(sw string, extensions []string) bool {

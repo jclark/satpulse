@@ -142,7 +142,7 @@ func (c *ConfigMap) serializableMap() map[string]interface{} {
 			default:
 				j[k] = t
 			}
-		case MajorGNSSSet:
+		case GNSSSet:
 			j[k] = t.Items()
 		default:
 			j[k] = v
@@ -155,8 +155,8 @@ func makeCfgKey[T comparable](s string) TypedCfgKey[T] {
 	return TypedCfgKey[T]{anyCfgKey{s}}
 }
 
-var CfgGNSSEnabled = makeCfgKey[MajorGNSSSet]("gnssEnabled")
-var CfgPrimaryGNSS = makeCfgKey[MajorGNSS]("primaryGNSS")
+var CfgGNSSEnabled = makeCfgKey[GNSSSet]("gnssEnabled")
+var CfgPrimaryGNSS = makeCfgKey[GNSS]("primaryGNSS")
 var CfgSolutionPeriod = makeCfgKey[time.Duration]("solutionPeriod")
 var CfgTimePulseWidth = makeCfgKey[time.Duration]("timePulseWidth")
 var CfgTimePulsePeriod = makeCfgKey[time.Duration]("timePulsePeriod")

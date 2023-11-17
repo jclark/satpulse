@@ -1,6 +1,7 @@
 package ubx
 
 import (
+	"errors"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsmsg"
@@ -14,7 +15,7 @@ import (
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func configItems(cm *gpsmsg.ConfigMap, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
+func configItems(cm *gpsmsg.ConfigMap, supportedGNSS gpsmsg.GNSSSet, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
 	tg := compileTimePulse(known, cm, &items, &keys)
@@ -25,10 +26,10 @@ func configItems(cm *gpsmsg.ConfigMap, known ucv.Map, port ucv.Port) ([]ucv.Item
 		ucv.AddItem(&items, ucv.KTpPolTp1, v)
 	}
 	if v, ok := gpsmsg.CfgPrimaryGNSS.Get(cm); ok {
-		tg = majorGNSSToTimegridTp1(v)
+		tg = gnssToTimegridTp1(v)
 		ucv.AddItem(&items, ucv.KTpTimegridTp1, tg)
-		ucv.AddItem(&items, ucv.KNavspgUtcstandard, majorGNSSToEnumNavspgUtcstandard(v))
-		ucv.AddItem(&items, ucv.KRateTimeref, majorGNSSToRateTimeref(v))
+		ucv.AddItem(&items, ucv.KNavspgUtcstandard, gnssToEnumNavspgUtcstandard(v))
+		ucv.AddItem(&items, ucv.KRateTimeref, gnssToRateTimeref(v))
 	}
 	if v, ok := gpsmsg.CfgSolutionPeriod.Get(cm); ok {
 		ucv.AddItem(&items, ucv.KRateMeas, uint64(uint16(v.Round(time.Millisecond)/time.Millisecond)))
@@ -51,6 +52,25 @@ func configItems(cm *gpsmsg.ConfigMap, known ucv.Map, port ucv.Port) ([]ucv.Item
 		k := portBaudRateKey(port)
 		if k != 0 {
 			ucv.AddItem(&items, k, uint64(v))
+		}
+	}
+	enaKeys := map[gpsmsg.GNSS]ucv.KeyL{
+		gpsmsg.GPS:   ucv.KSignalGpsEna,
+		gpsmsg.GAL:   ucv.KSignalGalEna,
+		gpsmsg.GLO:   ucv.KSignalGloEna,
+		gpsmsg.BDS:   ucv.KSignalBdsEna,
+		gpsmsg.NAVIC: ucv.KSignalNavicEna,
+		gpsmsg.QZSS:  ucv.KSignalQzssEna,
+		gpsmsg.SBAS:  ucv.KSignalSbasEna,
+	}
+	if v, ok := gpsmsg.CfgGNSSEnabled.Get(cm); ok {
+		if v&supportedGNSS&gpsmsg.MajorGNSSSet == 0 {
+			return nil, nil, errors.New("must enable at least one major GNSS")
+		}
+		for g, k := range enaKeys {
+			if supportedGNSS.Contains(g) {
+				ucv.AddItem(&items, k, v.Contains(g))
+			}
 		}
 	}
 	ucv.AddItem(&items, timegridTp1ToMsgRateKey(tg).KeyU(port), 1)
@@ -192,6 +212,11 @@ func navspgUtcstandardToTimegridTp1(u ucv.EnumNavspgUtcstandard) ucv.EnumTpTimeg
 		return ucv.ETpTimegridTp1Glo
 	case ucv.ENavspgUtcstandardNtsc:
 		return ucv.ETpTimegridTp1Bds
+	case ucv.ENavspgUtcstandardNpli:
+		return ucv.ETpTimegridTp1Navic
+	//	case ucv.ENavspgUtcstandardNict:
+	//		return ucv.ETpTimegridTp1Qzss
+
 	default:
 		return ucv.ETpTimegridTp1Utc
 	}
@@ -212,45 +237,51 @@ func rateTimeRefToTimegridTp1(r ucv.EnumRateTimeref) ucv.EnumTpTimegridTp1 {
 	}
 }
 
-func majorGNSSToRateTimeref(g gpsmsg.MajorGNSS) ucv.EnumRateTimeref {
+func gnssToRateTimeref(g gpsmsg.GNSS) ucv.EnumRateTimeref {
 	switch g {
 	case gpsmsg.GPS:
 		return ucv.ERateTimerefGps
-	case gpsmsg.Galileo:
+	case gpsmsg.GAL:
 		return ucv.ERateTimerefGal
-	case gpsmsg.GLONASS:
+	case gpsmsg.GLO:
 		return ucv.ERateTimerefGlo
-	case gpsmsg.BeiDou:
+	case gpsmsg.BDS:
 		return ucv.ERateTimerefBds
 	default:
 		return ucv.ERateTimerefUtc
 	}
 }
 
-func majorGNSSToEnumNavspgUtcstandard(g gpsmsg.MajorGNSS) ucv.EnumNavspgUtcstandard {
+func gnssToEnumNavspgUtcstandard(g gpsmsg.GNSS) ucv.EnumNavspgUtcstandard {
 	switch g {
 	case gpsmsg.GPS:
 		return ucv.ENavspgUtcstandardUsno
-	case gpsmsg.Galileo:
+	case gpsmsg.GAL:
 		return ucv.ENavspgUtcstandardEu
-	case gpsmsg.GLONASS:
+	case gpsmsg.GLO:
 		return ucv.ENavspgUtcstandardSu
-	case gpsmsg.BeiDou:
+	case gpsmsg.BDS:
 		return ucv.ENavspgUtcstandardNtsc
+	case gpsmsg.QZSS:
+		return ucv.ENavspgUtcstandardNict
+	case gpsmsg.NAVIC:
+		return ucv.ENavspgUtcstandardNpli
 	}
 	return ucv.ENavspgUtcstandardAuto
 }
 
-func majorGNSSToTimegridTp1(g gpsmsg.MajorGNSS) ucv.EnumTpTimegridTp1 {
+func gnssToTimegridTp1(g gpsmsg.GNSS) ucv.EnumTpTimegridTp1 {
 	switch g {
 	case gpsmsg.GPS:
 		return ucv.ETpTimegridTp1Gps
-	case gpsmsg.Galileo:
+	case gpsmsg.GAL:
 		return ucv.ETpTimegridTp1Gal
-	case gpsmsg.GLONASS:
+	case gpsmsg.GLO:
 		return ucv.ETpTimegridTp1Glo
-	case gpsmsg.BeiDou:
+	case gpsmsg.BDS:
 		return ucv.ETpTimegridTp1Bds
+	case gpsmsg.NAVIC:
+		return ucv.ETpTimegridTp1Navic
 	default:
 		return ucv.ETpTimegridTp1Utc
 	}

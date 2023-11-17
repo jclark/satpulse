@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/jclark/satpulse/internal/cmd"
@@ -21,12 +22,14 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error 
 	var help bool
 	var sane bool
 	var speed cmd.IntFlag
+	var gnss gnssList
 
 	cm := &gpsmsg.ConfigMap{}
 	flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 
 	flags.VarP(&speed, "speed", "s", "serial device `baud-rate`")
+	flags.VarP(&gnss, "gnss", "g", "comma-separated list of GNSS systems `GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...` to enable; first is the main one")
 	flags.BoolVarP(&sane, "sane", "S", false, "configure the receiver defaults that are sane for timing")
 	err := flags.Parse(args)
 	if err != nil {
@@ -45,7 +48,10 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error 
 		cm.SetSane()
 		gpsmsg.CfgNMEAEnabled.Set(cm, false)
 	}
-
+	if len(gnss.gnss) != 0 {
+		gpsmsg.CfgPrimaryGNSS.Set(cm, gnss.gnss[0])
+		gpsmsg.CfgGNSSEnabled.Set(cm, gnss.GNSSSet())
+	}
 	ctx := context.Background()
 	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
 	return run(ctx, lg, cancel, cm, device, speed.Value)
@@ -101,4 +107,42 @@ func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, scanner
 	msg := make(chan scan.Packet, 1)
 	cmd.WaitGroupGo(wg, func() { serio.ScanWorker(ctx, lg, scanner, msg) })
 	return msg
+}
+
+type gnssList struct {
+	gnss []gpsmsg.GNSS
+}
+
+var _ pflag.Value = (*gnssList)(nil)
+
+func (gl *gnssList) String() string {
+	var s []string
+	for _, gnss := range gl.gnss {
+		s = append(s, gnss.String())
+	}
+	return strings.Join(s, ",")
+}
+
+func (gl *gnssList) Type() string {
+	return "gnss-list"
+}
+
+func (gl *gnssList) GNSSSet() gpsmsg.GNSSSet {
+	var flags gpsmsg.GNSSSet
+	for _, g := range gl.gnss {
+		flags |= gpsmsg.GNSSFlag(g)
+	}
+	return flags
+}
+
+func (gl *gnssList) Set(s string) error {
+	words := strings.Split(s, ",")
+	for _, w := range words {
+		gnss, err := gpsmsg.ParseGNSS(strings.Trim(w, " \t"))
+		if err != nil {
+			return err
+		}
+		gl.gnss = append(gl.gnss, gnss)
+	}
+	return nil
 }

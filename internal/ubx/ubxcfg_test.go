@@ -123,8 +123,8 @@ func TestConfiguratorGPS(t *testing.T) {
 func TestConfiguratorGalileo(t *testing.T) {
 	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.ConfigMap, ver *Version) {
 		target.SetSane()
-		raw.gnss.Blocks[0].GNSSID = ubxbin.Galileo
-		gpsmsg.CfgPrimaryGNSS.Set(target, gpsmsg.Galileo)
+		raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
+		gpsmsg.CfgPrimaryGNSS.Set(target, gpsmsg.GAL)
 	})
 }
 

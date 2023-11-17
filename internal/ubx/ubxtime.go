@@ -33,7 +33,7 @@ func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsmsg.Time {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusBeiDou
 	}
 	t.Accuracy = time.Duration(m.TAcc)
-	t.GNSS = gpsmsg.BeiDou
+	t.GNSS = gpsmsg.BDS
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
@@ -48,7 +48,7 @@ func timeNavTimeGal(m *bin.NavTimeGal) *gpsmsg.Time {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusGalileo
 	}
 	t.Accuracy = time.Duration(m.TAcc)
-	t.GNSS = gpsmsg.Galileo
+	t.GNSS = gpsmsg.GAL
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
@@ -59,7 +59,7 @@ func timeNavTimeGLO(m *bin.NavTimeGLO) *gpsmsg.Time {
 		u := ptime.GLONASS(m.N4, m.Nt, sTOW(m.TOD)+nsTOW(m.FTOD))
 		t.UTCTime = &u
 	}
-	t.GNSS = gpsmsg.GLONASS
+	t.GNSS = gpsmsg.GLO
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	t.Accuracy = time.Duration(m.TAcc)
 	return &t
@@ -94,16 +94,16 @@ func iTOWEpoch(iTOW uint32) uint32 {
 	return iTOW + 1
 }
 
-func utcStandardToGNSS(u bin.UTCStandard) gpsmsg.MajorGNSS {
+func utcStandardToGNSS(u bin.UTCStandard) gpsmsg.GNSS {
 	switch u {
 	case bin.UTCStandardUSNO:
 		return gpsmsg.GPS
 	case bin.UTCStandardSU:
-		return gpsmsg.GLONASS
+		return gpsmsg.GLO
 	case bin.UTCStandardNTSC:
-		return gpsmsg.BeiDou
+		return gpsmsg.BDS
 	case bin.UTCStandardEU:
-		return gpsmsg.Galileo
+		return gpsmsg.GAL
 	default:
 		return 0
 	}
@@ -123,12 +123,12 @@ func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
 	case bin.TimTPTimeRefGPS:
 		t.GNSS = gpsmsg.GPS
 	case bin.TimTPTimeRefGLONASS:
-		t.GNSS = gpsmsg.GLONASS
+		t.GNSS = gpsmsg.GLO
 	case bin.TimTPTimeRefBeiDou:
-		t.GNSS = gpsmsg.BeiDou
+		t.GNSS = gpsmsg.BDS
 		conv = ptime.BeiDou
 	case bin.TimTPTimeRefGalileo:
-		t.GNSS = gpsmsg.Galileo
+		t.GNSS = gpsmsg.GAL
 		conv = ptime.Galileo
 	default:
 		return nil
@@ -161,14 +161,14 @@ func timeTimTos(m *bin.TimTos) *gpsmsg.Time {
 	return &t
 }
 
-func toTAIFunc(g bin.GNSSID) (gpsmsg.MajorGNSS, func(int16, time.Duration) ptime.Time) {
+func toTAIFunc(g bin.GNSSID) (gpsmsg.GNSS, func(int16, time.Duration) ptime.Time) {
 	switch g {
 	case bin.GPS:
 		return gpsmsg.GPS, ptime.GPS
-	case bin.BeiDou:
-		return gpsmsg.BeiDou, ptime.BeiDou
-	case bin.Galileo:
-		return gpsmsg.Galileo, ptime.Galileo
+	case bin.BDS:
+		return gpsmsg.BDS, ptime.BeiDou
+	case bin.GAL:
+		return gpsmsg.GAL, ptime.Galileo
 	}
 	return 0, nil
 }

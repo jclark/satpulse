@@ -20,11 +20,11 @@ type GNSSID byte
 const (
 	GPS GNSSID = iota
 	SBAS
-	Galileo
-	BeiDou
+	GAL
+	BDS
 	IMES
 	QZSS
-	GLONASS
+	GLO
 	NavIC
 )
 
