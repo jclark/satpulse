@@ -71,7 +71,11 @@ func (prot *Protocol) Version() *Version {
 }
 
 func (prot *Protocol) FindAck(packet []byte, tSent time.Time) *gpsmsg.Ack {
-	return &prot.FindAckByMsgId(bin.PacketMsgId(packet), tSent).Ack
+	a := prot.FindAckByMsgId(bin.PacketMsgId(packet), tSent)
+	if a == nil {
+		return nil
+	}
+	return &a.Ack
 }
 
 func (prot *Protocol) FindAckByMsgId(msgID bin.MsgID, tSent time.Time) (ack *Ack) {
