@@ -1,6 +1,7 @@
 package ubx
 
 import (
+	"errors"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsmsg"
@@ -102,9 +103,12 @@ func (prot *Protocol) ProbeOK() bool {
 	return prot.ver != nil
 }
 
-func (prot *Protocol) Configure(target *gpsmsg.ConfigMap) gpsmsg.Configurator {
+func (prot *Protocol) Configure(target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions) (gpsmsg.Configurator, error) {
 	if prot.ver == nil {
 		panic("Configure called before probe OK")
+	}
+	if opts.Flash && !prot.ver.Flash {
+		return nil, errors.New("cannot save to flash: receiver does not have flash memory")
 	}
 	steps := normalConfigSteps
 	if prot.ver.protVerGreater(23, 1) {
@@ -114,6 +118,7 @@ func (prot *Protocol) Configure(target *gpsmsg.ConfigMap) gpsmsg.Configurator {
 		ver:    prot.ver,
 		target: target,
 		steps:  steps,
+		opts:   opts,
 	}
-	return prot.cfg
+	return prot.cfg, nil
 }

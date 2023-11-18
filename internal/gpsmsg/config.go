@@ -11,7 +11,7 @@ type Protocol interface {
 	ProbeOK() bool
 	SetHandler(h Handler)
 	ProcessPacket(data string, tRead time.Time) error
-	Configure(target *ConfigMap) Configurator
+	Configure(target *ConfigMap, opts ConfigOptions) (Configurator, error)
 	FindAck(packet []byte, tSent time.Time) *Ack
 }
 
@@ -30,6 +30,13 @@ type ConfigRequest interface {
 	Ackable() bool
 	Done()
 	ID() string
+}
+
+type ConfigOptions struct {
+	Flash               bool
+	Reset               bool
+	EnableLeapSecondMsg bool
+	EnableTimeMsg       bool
 }
 
 type ConfigMap struct {
@@ -173,7 +180,7 @@ var CfgStationary = makeCfgKey[bool]("stationary")
 var CfgNMEAEnabled = makeCfgKey[bool]("nmeaEnabled")
 var CfgBaudRate = makeCfgKey[uint32]("baudRate")
 
-func (cm *ConfigMap) SetSane() {
+func (cm *ConfigMap) SetPPS() {
 	CfgSolutionPeriod.Set(cm, 1*time.Second)
 	CfgTimePulsePeriod.Set(cm, 1*time.Second)
 	CfgTimePulseWidth.Set(cm, time.Second/10)

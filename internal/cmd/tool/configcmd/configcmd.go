@@ -20,17 +20,20 @@ import (
 
 func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error {
 	var help bool
-	var sane bool
+	var pps bool
 	var speed cmd.IntFlag
 	var gnss gnssList
+	var opts gpsmsg.ConfigOptions
 
 	cm := &gpsmsg.ConfigMap{}
 	flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
+	flags.BoolVar(&opts.Flash, "flash", false, "save the configuration to flash")
+	flags.BoolVar(&opts.Reset, "reset", false, "reset the receiver")
 
 	flags.VarP(&speed, "speed", "s", "serial device `baud-rate`")
 	flags.VarP(&gnss, "gnss", "g", "comma-separated list of GNSS systems `GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...` to enable; first is the main one")
-	flags.BoolVarP(&sane, "sane", "S", false, "configure the receiver defaults that are sane for timing")
+	flags.BoolVarP(&pps, "pps", "p", false, "configure the receiver to enable a PPS signal")
 	err := flags.Parse(args)
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
@@ -44,9 +47,8 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error 
 	}
 	device := flags.Arg(0)
 
-	if sane {
-		cm.SetSane()
-		gpsmsg.CfgNMEAEnabled.Set(cm, false)
+	if pps {
+		cm.SetPPS()
 	}
 	if len(gnss.gnss) != 0 {
 		gpsmsg.CfgPrimaryGNSS.Set(cm, gnss.gnss[0])
@@ -54,10 +56,10 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error 
 	}
 	ctx := context.Background()
 	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
-	return run(ctx, lg, cancel, cm, device, speed.Value)
+	return run(ctx, lg, cancel, cm, opts, device, speed.Value)
 }
 
-func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cm *gpsmsg.ConfigMap, serialDev string, speed *int) error {
+func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, serialDev string, speed *int) error {
 
 	t, err := serio.OpenTerm(serialDev, speed)
 	if err != nil {
@@ -87,7 +89,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cm *gp
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = serio.TermError{}
-	info, err := gpscfg.Configure(ctx, lg, cm, pCh, t)
+	info, err := gpscfg.Configure(ctx, lg, cm, opts, pCh, t)
 	if err == nil {
 		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigMap))
 	}

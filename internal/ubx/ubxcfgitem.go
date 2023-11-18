@@ -15,7 +15,7 @@ import (
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func configItems(cm *gpsmsg.ConfigMap, supportedGNSS gpsmsg.GNSSSet, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
+func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, supportedGNSS gpsmsg.GNSSSet, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
 	tg := compileTimePulse(known, cm, &items, &keys)
@@ -73,8 +73,13 @@ func configItems(cm *gpsmsg.ConfigMap, supportedGNSS gpsmsg.GNSSSet, known ucv.M
 			}
 		}
 	}
-	ucv.AddItem(&items, timegridTp1ToMsgRateKey(tg).KeyU(port), 1)
-	ucv.AddItem(&items, ucv.KUbxTimTp.KeyU(port), 1)
+	if opts.EnableTimeMsg {
+		ucv.AddItem(&items, timegridTp1ToMsgRateKey(tg).KeyU(port), 1)
+		ucv.AddItem(&items, ucv.KUbxTimTp.KeyU(port), 1)
+	}
+	if opts.EnableLeapSecondMsg {
+		ucv.AddItem(&items, ucv.KUbxNavTimels.KeyU(port), 1)
+	}
 	return items, keys, nil
 }
 

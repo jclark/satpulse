@@ -13,7 +13,7 @@ func TestTp5(t *testing.T) {
 	raw.tp5.Flags |= ubxbin.CfgTp5IsLength
 
 	cm := &gpsmsg.ConfigMap{}
-	cm.SetSane()
+	cm.SetPPS()
 
 	raw.tp5 = raw.changeTp5(cm)
 
@@ -54,7 +54,7 @@ func TestNav5(t *testing.T) {
 	raw := &RawConfig{nav5: new(ubxbin.CfgNav5)}
 
 	cm := &gpsmsg.ConfigMap{}
-	cm.SetSane()
+	cm.SetPPS()
 
 	raw.nav5 = raw.changeNav5(cm)
 
@@ -83,7 +83,7 @@ func TestRate(t *testing.T) {
 	ver := new(Version)
 
 	cm := &gpsmsg.ConfigMap{}
-	cm.SetSane()
+	cm.SetPPS()
 
 	raw.rate = raw.changeRate(cm, ver)
 
@@ -108,21 +108,21 @@ func TestRate(t *testing.T) {
 
 func TestConfiguratorSane(t *testing.T) {
 	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.ConfigMap, ver *Version) {
-		target.SetSane()
+		target.SetPPS()
 	})
 
 }
 
 func TestConfiguratorGPS(t *testing.T) {
 	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.ConfigMap, ver *Version) {
-		target.SetSane()
+		target.SetPPS()
 		gpsmsg.CfgPrimaryGNSS.Set(target, gpsmsg.GPS)
 	})
 }
 
 func TestConfiguratorGalileo(t *testing.T) {
 	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.ConfigMap, ver *Version) {
-		target.SetSane()
+		target.SetPPS()
 		raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
 		gpsmsg.CfgPrimaryGNSS.Set(target, gpsmsg.GAL)
 	})
@@ -137,7 +137,10 @@ func testConfigurator(t *testing.T, setup func(*RawConfig, *gpsmsg.ConfigMap, *V
 	prot := &Protocol{}
 	prot.ver = ver
 
-	c := prot.Configure(target)
+	c, err := prot.Configure(target, gpsmsg.ConfigOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error from Configure: %v", err)
+	}
 	tm := time.Now()
 	for {
 		tm = tm.Add(time.Second / 10)

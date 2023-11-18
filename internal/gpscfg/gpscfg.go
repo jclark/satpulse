@@ -43,7 +43,7 @@ type badCount struct {
 
 var _ ubx.ProtHandler = &msgHandler{}
 
-func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, packetCh <-chan scan.Packet, port serio.OutPort) (*Result, error) {
+func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, packetCh <-chan scan.Packet, port serio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetCh)
 	err := mh.detect(ctx)
@@ -65,7 +65,7 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, p
 	}
 	var cm *gpsmsg.ConfigMap
 	if ubxOK {
-		cm, err = mh.configure(ctx, mh.ubxProt, target, port)
+		cm, err = mh.configure(ctx, mh.ubxProt, target, opts, port)
 		if err != nil {
 			// XXX try to recover from this
 			// provided we have some messages working, we should be OK
@@ -81,10 +81,14 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, p
 
 func RequiredConfig() *gpsmsg.ConfigMap {
 	cm := &gpsmsg.ConfigMap{}
-	cm.SetSane()
+	cm.SetPPS()
 	// Config is very slow on 8-th gen if NMEA is enabled
 	gpsmsg.CfgNMEAEnabled.Set(cm, false)
 	return cm
+}
+
+func RequiredOptions() gpsmsg.ConfigOptions {
+	return gpsmsg.ConfigOptions{EnableLeapSecondMsg: true, EnableTimeMsg: true}
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
@@ -204,8 +208,11 @@ func (mh *msgHandler) probe(ctx context.Context, prot gpsmsg.Protocol, port seri
 	return false, nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsmsg.Protocol, target *gpsmsg.ConfigMap, port serio.OutPort) (*gpsmsg.ConfigMap, error) {
-	cfgtor := prot.Configure(target)
+func (mh *msgHandler) configure(ctx context.Context, prot gpsmsg.Protocol, target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, port serio.OutPort) (*gpsmsg.ConfigMap, error) {
+	cfgtor, err := prot.Configure(target, opts)
+	if err != nil {
+		return nil, err
+	}
 	for {
 		req, err := cfgtor.NextRequest()
 		if err != nil {

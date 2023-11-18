@@ -68,7 +68,7 @@ func (mid MsgID) unpack() (byte, byte) {
 
 func (mid MsgID) Ackable() bool {
 	cls, _ := mid.unpack()
-	return cls == clsCfg
+	return cls == clsCfg && mid != CfgRstID
 }
 
 type Msg interface {
@@ -138,7 +138,7 @@ func init() {
 	regMsg[CfgNav5]("NAV5")
 	regMsg[CfgPrt]("PRT")
 	regMsg[CfgRate]("RATE")
-	regMsg[CfgRate]("RST")
+	regMsg[CfgRst]("RST")
 	regMsg[CfgTmode2]("TMODE2")
 	regMsg[CfgTmode3]("TMODE3")
 	regMsg[CfgTp5]("TP5")

@@ -15,6 +15,7 @@ type Configurator struct {
 	steps     []func(*Configurator) (gpsmsg.ConfigRequest, error)
 	stepIndex int
 	target    *gpsmsg.ConfigMap // never nil
+	opts      gpsmsg.ConfigOptions
 }
 
 const nPort = 6
@@ -46,12 +47,14 @@ var normalConfigSteps = []func(*Configurator) (gpsmsg.ConfigRequest, error){
 	(*Configurator).pollNav5,
 	(*Configurator).setNav5,
 	(*Configurator).pollSurvey,
+	(*Configurator).reset,
 }
 
 var newConfigSteps = []func(*Configurator) (gpsmsg.ConfigRequest, error){
 	(*Configurator).pollPrt,
 	(*Configurator).valGet,
 	(*Configurator).valSet,
+	(*Configurator).reset,
 }
 
 var _ gpsmsg.Configurator = &Configurator{}
@@ -71,26 +74,44 @@ func (c *Configurator) NextRequest() (gpsmsg.ConfigRequest, error) {
 	return nil, nil
 }
 
+func (c *Configurator) reset() (gpsmsg.ConfigRequest, error) {
+	if !c.opts.Reset {
+		return nil, nil
+	}
+	return msgRequest{&bin.CfgRst{
+		NavBbrMask: bin.CfgRstNavBbrColdStart,
+		ResetMode:  bin.CfgRstResetModeHardwareResetImmediately,
+	}}, nil
+}
+
 func (c *Configurator) valGet() (gpsmsg.ConfigRequest, error) {
-	_, missing, err := configItems(c.target, c.ver.GNSS, *c.raw.valMap(), c.valPort())
+	_, missing, err := configItems(c.target, c.opts, c.ver.GNSS, *c.raw.valMap(), c.valPort())
 	if err != nil {
 		return nil, err
 	}
 	if len(missing) == 0 {
 		return nil, nil
 	}
-	return msgRequest{newCfgValgetRequest(missing, bin.CfgValgetLayerRAM)}, nil
+	layer := bin.CfgValgetLayerRAM
+	if c.opts.Flash {
+		layer = bin.CfgValgetLayerFlash
+	}
+	return msgRequest{newCfgValgetRequest(missing, layer)}, nil
 }
 
 func (c *Configurator) valSet() (gpsmsg.ConfigRequest, error) {
-	items, missing, err := configItems(c.target, c.ver.GNSS, *c.raw.valMap(), c.valPort())
+	items, missing, err := configItems(c.target, c.opts, c.ver.GNSS, *c.raw.valMap(), c.valPort())
 	if err != nil {
 		return nil, err
 	}
 	if len(missing) != 0 {
 		return nil, fmt.Errorf("missing config items: %v", missing)
 	}
-	val, err := newCfgValsetRequest(items, bin.CfgValsetLayerRAM)
+	layer := bin.CfgValsetLayerRAM
+	if c.opts.Flash {
+		layer = bin.CfgValsetLayerFlash
+	}
+	val, err := newCfgValsetRequest(items, layer)
 	if err != nil {
 		return nil, err
 	}
@@ -167,6 +188,9 @@ func (c *Configurator) pollTp5() (gpsmsg.ConfigRequest, error) {
 }
 
 func (c *Configurator) enableTpMsg() (gpsmsg.ConfigRequest, error) {
+	if !c.opts.EnableTimeMsg {
+		return nil, nil
+	}
 	if c.productCategory() == "FTS" {
 		return nil, nil
 	}
@@ -181,6 +205,9 @@ func (c *Configurator) enableTpMsg() (gpsmsg.ConfigRequest, error) {
 }
 
 func (c *Configurator) enableTimeGNSSMsg() (gpsmsg.ConfigRequest, error) {
+	if !c.opts.EnableTimeMsg {
+		return nil, nil
+	}
 	if c.productCategory() == "FTS" {
 		return c.enableMsgRequest(bin.TimTosID)
 	} else {
@@ -189,6 +216,9 @@ func (c *Configurator) enableTimeGNSSMsg() (gpsmsg.ConfigRequest, error) {
 }
 
 func (c *Configurator) enableLeapSecondMsg() (gpsmsg.ConfigRequest, error) {
+	if !c.opts.EnableLeapSecondMsg {
+		return nil, nil
+	}
 	return c.enableMsgRequest(bin.NavTimeLSID)
 }
 
