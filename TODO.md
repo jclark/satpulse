@@ -132,29 +132,34 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 
 ## GPS configuration
 
-* Implement setting time mode
+* Support for survey-in
+* Support for setting ECEF fixed position
+   * TOML property
+   * `satpulsetool config --ecef`
 * Need to check we got something back from a poll (not just check the ACK)
-* Probably better for message enablement to be in ConfigMap rather than ConfigOptions
-* Disable GNSS messages that aren't for primary GNSS
-* Legacy configuration (up to gen 8)
+* Message enablement should be in ConfigMap rather than ConfigOptions so we can turn messages off
+   * `satpulsetool config --nmea` should probably turn off time-related UBX messages
+   * Do we model message rate in the property?
+   * How do we deal with different kinds of time message (per GNSS, UTC, TP, TOS)?
+   * In particular, how do we deal with GNSS messages for non-primary GNSS? Do we turn them off?
+   * This ties into to how configuration should tell syncer about what message to use.
+* Legacy (<= UBX gen8) configuration
    * choose GNSS time message based on primary GNSS constellation
    * implement setting GNSS constellation
+   * implement baud rate property
    * saving to flash
 * Pay attention to version in CFG-UBX-TP5
 * Allow TOML configuration of things that user must specify
    * primary GNSS constellation
    * antenna delay
    * fixed ECEF antenna position
-* Control of what we do to the receiver
-    * disable sending any message to it
+* Control of what kind of configuration satpulsed does to the receiver
+    * disable sending any message to receiver
     * disable use of UBX
-    * disable changing any configuraton
-    * disable new-style UBX configuration
-* Better recovery from configuration errors
-* Add `--remote-speed` option to `satpulsetool config` to set receiver baud-rate
-* Add options to `satpulsetool config` to control use of NMEA and UBX. Maybe
-   * `--binary` disables NMEA and enables UBX Time/LeapSecond/Survey messages
-   * `--nmea` undoes the effect of `--binary`
+    * disable modifying receiver configuration
+    * disable use of new-style UBX configuration
+* Make satpulsed recover better from configuration errors
+* Add `satpulsetool config --binary` option to disable NMEA and enable UBX Time/LeapSecond/Survey messages
 * For new-style ublox configuration, map from config items to abstract config
 * Might need to set CFG-NAVSPG-WKNROLLOVER
 * Add `satpulsetool config` option to show the configuration e.g. `--show`
