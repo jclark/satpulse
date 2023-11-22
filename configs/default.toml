@@ -19,7 +19,7 @@ domainNumber = 0
 # (It's called majorSdoId in latest version of PTP standard.) 
 majorSdoId = 0
 
-# Uncomment this to have it relay the GPS serial port to a TCP connection
-#[[tcp]]
+# Uncomment this to allow a TCP connection to proxy the serial port
+#[[proxy.tcp]]
 #listen = ":2006"
 #readOnly = true

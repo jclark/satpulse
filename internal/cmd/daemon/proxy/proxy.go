@@ -1,4 +1,4 @@
-package daemon
+package proxy
 
 import (
 	"context"
@@ -17,42 +17,71 @@ import (
 	"github.com/jclark/satpulse/internal/serio"
 )
 
-type TCPConfig struct {
-	Listen           string  `toml:"listen"`
+type Config struct {
+	TCP    []TCPService    `toml:"tcp"`
+	Socket []SocketService `toml:"socket"`
+}
+
+type Options struct {
 	ReadOnly         bool    `toml:"readOnly"`
 	NMEAOnly         bool    `toml:"nmeaOnly"`
 	WriteLockTimeout float64 `toml:"writeLockTimeout"`
 }
 
-type tcpConnConfig struct {
+type TCPService struct {
+	Options
+	Listen string `toml:"listen"`
+}
+
+type SocketService struct {
+	Options
+	Path string `toml:"path"`
+}
+
+type svcConfig struct {
+	network          string
+	address          string
 	readOnly         bool
 	nmeaOnly         bool
 	writeLockTimeout time.Duration
 }
 
-func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TCPConfig, b *bcast.Bcast[scan.Packet], port serio.OutPort) error {
-	if len(cfg) == 0 {
+func Start(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg Config, b *bcast.Bcast[scan.Packet], port serio.OutPort) error {
+	nSocket := len(cfg.Socket)
+	nSvc := nSocket + len(cfg.TCP)
+	if nSvc == 0 {
 		return nil
 	}
 	allReadOnly := true
-	connConfigs := make([]tcpConnConfig, len(cfg))
-	for i, c := range cfg {
-		if c.Listen == "" {
-			return errors.New("must specify listen option for each TCP element")
+	svcConfigs := make([]svcConfig, nSvc)
+	for i, sc := range svcConfigs {
+		if i < nSocket {
+			svc := cfg.Socket[i]
+			if svc.Path == "" {
+				return errors.New("must specify path for each socket proxy")
+			}
+			sc.address = svc.Path
+			// this is generally good practice, I believe
+			_ = os.Remove(svc.Path)
+			sc.network = "unix"
+			sc.setOptions(svc.Options)
+		} else {
+			svc := cfg.TCP[i-nSocket]
+			if svc.Listen == "" {
+				return errors.New("must specify listen for each tcp proxy")
+			}
+			sc.address = svc.Listen
+			sc.network = "tcp"
+			sc.setOptions(svc.Options)
 		}
-		if !c.ReadOnly {
+		if !sc.readOnly {
 			allReadOnly = false
 		}
-		d, err := convertWriteLockTimeout(c.WriteLockTimeout)
-		if err != nil {
-			return err
-		}
-		connConfigs[i] = tcpConnConfig{readOnly: c.ReadOnly, nmeaOnly: c.NMEAOnly, writeLockTimeout: d}
 	}
 	listenCfg := net.ListenConfig{}
-	listeners := make([]net.Listener, len(cfg))
-	for i, c := range cfg {
-		listen, err := listenCfg.Listen(ctx, "tcp", c.Listen)
+	listeners := make([]net.Listener, nSvc)
+	for i, sc := range svcConfigs {
+		listen, err := listenCfg.Listen(ctx, sc.network, sc.address)
 		if err != nil {
 			return err
 		}
@@ -64,10 +93,10 @@ func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TC
 		portLock <- port
 	}
 	for i, listen := range listeners {
-		connConfig := connConfigs[i]
+		sc := svcConfigs[i]
 		listen := listen
 		cmd.WaitGroupGo(wg, func() {
-			tcpHandleListen(ctx, lg, wg, connConfig, listen, b, portLock)
+			handleListen(ctx, lg, wg, sc, listen, b, portLock)
 		})
 	}
 	go func() {
@@ -76,6 +105,17 @@ func startTCP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []TC
 			listen.Close()
 		}
 	}()
+	return nil
+}
+
+func (s *svcConfig) setOptions(opts Options) error {
+	d, err := convertWriteLockTimeout(opts.WriteLockTimeout)
+	if err != nil {
+		return err
+	}
+	s.writeLockTimeout = d
+	s.readOnly = opts.ReadOnly
+	s.nmeaOnly = opts.NMEAOnly
 	return nil
 }
 
@@ -91,33 +131,33 @@ func convertWriteLockTimeout(secs float64) (time.Duration, error) {
 	return 0, fmt.Errorf("writeLockTimeout %f out of range", secs)
 }
 
-func tcpHandleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, listen net.Listener, b *bcast.Bcast[scan.Packet], portLock chan serio.OutPort) {
-	defer lg.Debug("about to exit TCP listening goroutine")
+func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg svcConfig, listen net.Listener, b *bcast.Bcast[scan.Packet], portLock chan serio.OutPort) {
+	defer lg.Debug("about to exit proxy listening goroutine")
 	defer listen.Close()
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
-			logConnErr(lg, "error accepting TCP connection", err)
+			logConnErr(lg, "error accepting proxy network connection", err)
 			return
 		}
-		tcpHandleConn(ctx, lg, wg, cfg, conn, b, portLock)
+		handleConn(ctx, lg, wg, cfg, conn, b, portLock)
 	}
 }
 
-func tcpHandleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg tcpConnConfig, conn net.Conn, b *bcast.Bcast[scan.Packet], portLock chan serio.OutPort) {
+func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg svcConfig, conn net.Conn, b *bcast.Bcast[scan.Packet], portLock chan serio.OutPort) {
 	// XXX both the read and write workers are closing the connection.
 	// Not sure if it would better for just one of them to do so.
-	cmd.WaitGroupGo(wg, func() { tcpConnWriteWorker(ctx, lg, cfg, conn, b) })
+	cmd.WaitGroupGo(wg, func() { connWriteWorker(ctx, lg, cfg, conn, b) })
 	// The connReadWorker reads from the connection and writes to the serial port.
 	// The readOnly config option says not to write to the serial port.
 	if !cfg.readOnly {
-		cmd.WaitGroupGo(wg, func() { tcpConnReadWorker(ctx, lg, cfg, conn, portLock) })
+		cmd.WaitGroupGo(wg, func() { connReadWorker(ctx, lg, cfg, conn, portLock) })
 	}
 }
 
-// tcpConnWriteWorker reads from a channel and write to the connection.
-func tcpConnWriteWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig, conn net.Conn, b *bcast.Bcast[scan.Packet]) {
-	defer lg.Debug("about to exit TCP connection writing worker goroutine")
+// connWriteWorker reads from a channel and write to the connection.
+func connWriteWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn net.Conn, b *bcast.Bcast[scan.Packet]) {
+	defer lg.Debug("about to exit proxy connection writing worker goroutine")
 	defer conn.Close()
 	ch := b.Subscribe()
 	defer b.Unsubscribe(ch)
@@ -134,7 +174,7 @@ func tcpConnWriteWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig,
 			}
 			_, err := conn.Write(([]byte)(msg.Data))
 			if err != nil {
-				logConnErr(lg, "error writing to TCP connection", err)
+				logConnErr(lg, "error writing to proxy connection", err)
 				return
 			}
 		}
@@ -145,9 +185,9 @@ func tcpConnWriteWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig,
 // until it doesn't write for this duration. This is to help reduce conflicts between writers.
 const writeLockTimeoutDefault = 2 * time.Second
 
-// tcpConnReadWorker reads from the connection and writes to the serial port.
-func tcpConnReadWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig, conn net.Conn, portLock chan serio.OutPort) {
-	defer lg.Debug("about to exit TCP connection reading worker goroutine")
+// connReadWorker reads from the connection and writes to the serial port.
+func connReadWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn net.Conn, portLock chan serio.OutPort) {
+	defer lg.Debug("about to exit proxy connection reading worker goroutine")
 	defer conn.Close()
 	var port serio.OutPort
 	defer func() {
@@ -170,7 +210,7 @@ func tcpConnReadWorker(ctx context.Context, lg *slog.Logger, cfg tcpConnConfig, 
 				port = nil
 				continue
 			}
-			logConnErr(lg, "error reading from TCP connection", err)
+			logConnErr(lg, "error reading from proxy connection", err)
 			return
 		}
 		if nRead == 0 {

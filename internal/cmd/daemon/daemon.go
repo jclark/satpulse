@@ -12,6 +12,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/bcast"
 	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/pmc"
@@ -166,7 +167,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		return nil
 	}
 
-	err = startTCP(ctx, lg, &wg, cfg.TCP, pb, t)
+	err = proxy.Start(ctx, lg, &wg, cfg.Proxy, pb, t)
 	if err != nil {
 		return err
 	}
