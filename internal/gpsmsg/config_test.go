@@ -61,3 +61,30 @@ func TestConfigDB(t *testing.T) {
 	}
 
 }
+
+func TestPoint3DRoundTrip(t *testing.T) {
+	// Typical ECEF coordinates for New York
+	originalPoint := Point3D{1334195 * Meter, -4652309 * Meter, 4138066 * Meter}
+
+	pointStr := originalPoint.String()
+
+	parsedPoint, err := ParsePoint3D(pointStr)
+	if err != nil {
+		t.Fatalf("ParsePoint3D returned error: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		if parsedPoint[i] != originalPoint[i] {
+			t.Errorf("Expected coordinate %d to be %v, got %v", i, originalPoint[i], parsedPoint[i])
+		}
+	}
+	p, err := ParsePoint3D("1,2,3 ")
+
+	if err != nil {
+		t.Errorf("ParsePoint3D returned an error for trailing space")
+	} else {
+		if p.String() != "1,2,3" {
+			t.Errorf("ParsePoint3D returned %v for trailing space", p.String())
+		}
+	}
+}

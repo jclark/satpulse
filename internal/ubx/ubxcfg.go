@@ -2,6 +2,7 @@ package ubx
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsmsg"
@@ -440,9 +441,9 @@ func (raw *RawConfig) cookTmode2(cm *gpsmsg.ConfigMap) {
 		gpsmsg.CfgTimeMode.Set(cm, gpsmsg.TimeModeFixed)
 		if tm.Flags&bin.CfgTmode2LLA == 0 {
 			gpsmsg.CfgFixedPosECEF.Set(cm, gpsmsg.Point3D{
-				X: gpsmsg.Length(tm.EcefXOrLat) * gpsmsg.Centimeter,
-				Y: gpsmsg.Length(tm.EcefYOrLon) * gpsmsg.Centimeter,
-				Z: gpsmsg.Length(tm.EcefZOrAlt) * gpsmsg.Centimeter,
+				gpsmsg.Length(tm.EcefXOrLat) * gpsmsg.Centimeter,
+				gpsmsg.Length(tm.EcefYOrLon) * gpsmsg.Centimeter,
+				gpsmsg.Length(tm.EcefZOrAlt) * gpsmsg.Centimeter,
 			})
 		}
 		gpsmsg.CfgFixedPosAcc.Set(cm, gpsmsg.Length(tm.FixedPosAcc)*gpsmsg.Millimeter)
@@ -465,9 +466,9 @@ func (raw *RawConfig) cookTmode3(cm *gpsmsg.ConfigMap) {
 		gpsmsg.CfgTimeMode.Set(cm, gpsmsg.TimeModeFixed)
 		if tm.Flags&bin.CfgTmode3LLA == 0 {
 			gpsmsg.CfgFixedPosECEF.Set(cm, gpsmsg.Point3D{
-				X: lengthHP(tm.EcefXOrLat, tm.EcefXOrLatHP),
-				Y: lengthHP(tm.EcefYOrLon, tm.EcefYOrLonHP),
-				Z: lengthHP(tm.EcefZOrAlt, tm.EcefZOrAltHP),
+				lengthHP(tm.EcefXOrLat, tm.EcefXOrLatHP),
+				lengthHP(tm.EcefYOrLon, tm.EcefYOrLonHP),
+				lengthHP(tm.EcefZOrAlt, tm.EcefZOrAltHP),
 			})
 		}
 		gpsmsg.CfgFixedPosAcc.Set(cm, gpsmsg.Length(tm.FixedPosAcc)*(gpsmsg.Millimeter/10))
@@ -940,4 +941,33 @@ func idToGNSS(g bin.GNSSID) gpsmsg.GNSS {
 		return gpsmsg.SBAS
 	}
 	return 0
+}
+
+// splitLength splits a Length into a int32 and int8.
+// The int32 is the length in centimeters. The int8 is the remainder in units of 0.1mm.
+func splitLength(n gpsmsg.Length) (int32, int8, error) {
+	q, r := divModRound(int64(n), int64(gpsmsg.Centimeter))
+	if q < math.MinInt32 || q > math.MaxInt32 {
+		return 0, 0, fmt.Errorf("length %v is out of range", n)
+	}
+	cm := int32(q)
+	q, _ = divModRound(r, int64(gpsmsg.Millimeter/10))
+	return cm, int8(q), nil
+}
+
+// divModRound returns the quotient and remainder of division of x by y, with the quotient rounded.
+// If the result is (q, r), then x = q*y + r, and |r| <= y/2.
+// y is assumed to be positive and even.
+func divModRound(x, y int64) (int64, int64) {
+	if y <= 0 || y%2 != 0 {
+		panic("divisor y must be positive and even")
+	}
+	xRound := x
+	if x >= 0 {
+		xRound += y / 2
+	} else {
+		xRound -= y / 2
+	}
+	quotient := xRound / y
+	return quotient, x - quotient*y
 }

@@ -11,6 +11,10 @@ type KeyR uint32
 
 type KeyE[E ~uint8] uint32
 
+type AnyTypedKey interface {
+	Key() Key
+}
+
 type TypedKey[T comparable] interface {
 	Key() Key
 	Typed(raw uint64) T

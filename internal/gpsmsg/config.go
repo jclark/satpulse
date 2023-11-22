@@ -3,6 +3,8 @@ package gpsmsg
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"math"
 	"time"
 )
 
@@ -133,11 +135,7 @@ func (c *ConfigMap) serializableMap() map[string]interface{} {
 		case Length:
 			j[k] = float64(t) / float64(Meter)
 		case Point3D:
-			j[k] = map[string]float64{
-				"x": float64(t.X) / float64(Meter),
-				"y": float64(t.Y) / float64(Meter),
-				"z": float64(t.Z) / float64(Meter),
-			}
+			j[k] = []float64{t[0].Meters(), t[1].Meters(), t[2].Meters()}
 		case TimeMode:
 			switch t {
 			case TimeModeDisabled:
@@ -198,14 +196,54 @@ const (
 	Meter      Length = 100 * Centimeter
 )
 
-type Point3D struct {
-	X, Y, Z Length
+func (l Length) Meters() float64 {
+	return float64(l) / float64(Meter)
+}
+
+func (l Length) String() string {
+	return fmt.Sprintf("%v", l.Meters())
+}
+
+func ParseLength(s string) (Length, error) {
+	var f float64
+	var trailing string
+	if n, err := fmt.Sscanf(s, "%f%s", &f, &trailing); n != 1 || err != io.EOF {
+		return 0, fmt.Errorf("invalid length: %q", s)
+	}
+	n, err := float64ToInt64(math.Round(f * float64(Meter)))
+	if err != nil {
+		return 0, fmt.Errorf("invalid length %f: %w", f, err)
+	}
+	return Length(n), nil
+}
+
+type Point3D [3]Length
+
+func (p Point3D) String() string {
+	return fmt.Sprintf("%v,%v,%v", p[0].Meters(), p[1].Meters(), p[2].Meters())
+}
+
+func ParsePoint3D(s string) (Point3D, error) {
+	var p Point3D
+	var trailing string
+	var f [3]float64
+	if n, err := fmt.Sscanf(s, "%f,%f,%f%s", &f[0], &f[1], &f[2], &trailing); n != 3 || err != io.EOF {
+		return p, fmt.Errorf("invalid 3D coordinates: %q", s)
+	}
+	for i := 0; i < 3; i++ {
+		n, err := float64ToInt64(math.Round(f[i] * float64(Meter)))
+		if err != nil {
+			return Point3D{}, fmt.Errorf("invalid coordinate %f: %w", f[i], err)
+		}
+		p[i] = Length(n)
+	}
+	return p, nil
 }
 
 type TimeMode byte
 
 const (
-	TimeModeDisabled TimeMode = iota
+	TimeModeDisabled TimeMode = iota + 1
 	TimeModeSurvey
 	TimeModeFixed
 )

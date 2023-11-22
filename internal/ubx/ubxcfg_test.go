@@ -232,3 +232,67 @@ func newRawConfig() *RawConfig {
 	}
 	return &raw
 }
+
+func TestDivModRound(t *testing.T) {
+	testCases := []struct {
+		x, y, q int64
+	}{
+		{500, 100, 5},
+		{550, 100, 6},
+		{449, 100, 4},
+		{-500, 100, -5},
+		{-550, 100, -6},
+		{-449, 100, -4},
+		{17, 10, 2},
+		{-17, 10, -2},
+		{17, 1000, 0},
+		{-17, 1000, 0},
+		{1005, 1000, 1},
+		{-1005, 1000, -1},
+		{13, 10, 1},
+		{15, 10, 2},
+		{18, 10, 2},
+		{-13, 10, -1},
+		{-15, 10, -2},
+		{-18, 10, -2},
+	}
+
+	for _, tc := range testCases {
+		q, r := divModRound(tc.x, tc.y)
+		if q != tc.q {
+			t.Errorf("divModRound(%d, %d) = (%d, %d), want quotient %d",
+				tc.x, tc.y, q, r, tc.q)
+		}
+		if tc.x != q*tc.y+r {
+			t.Errorf("divModRound(%d, %d) = (%d, %d), does not satisfy x = quotient*y + remainder",
+				tc.x, tc.y, q, r)
+		}
+	}
+}
+
+func TestSplitLength(t *testing.T) {
+	const mm10 = gpsmsg.Micrometer * 100
+
+	testCases := []struct {
+		length       gpsmsg.Length
+		expectedCm   int32
+		expectedMm10 int8
+	}{
+		{105 * mm10, 1, 5},
+		{250 * mm10, 3, -50},
+		{-105 * mm10, -1, -5},
+		{-250 * mm10, -3, 50},
+		{10475 * gpsmsg.Micrometer, 1, 5},
+	}
+
+	for _, tc := range testCases {
+		cm, mm10, err := splitLength(tc.length)
+		if err != nil {
+			t.Errorf("splitLength returned error: %v", err)
+		} else if mm10 < -99 || mm10 > 99 {
+			t.Errorf("splitLength(%v) = (%v, %v), want mm10 in [-99, 99]", tc.length, cm, mm10)
+		} else if cm != tc.expectedCm || mm10 != tc.expectedMm10 {
+			t.Errorf("splitLength(%v) = (%v, %v), want (%v, %v)", tc.length, cm, mm10, tc.expectedCm, tc.expectedMm10)
+		}
+	}
+}

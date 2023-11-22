@@ -8,6 +8,51 @@ import (
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
+var AllKeys = []ucv.AnyTypedKey{
+	ucv.KNavspgDynmodel,
+	ucv.KNavspgUtcstandard,
+	ucv.KRateMeas,
+	ucv.KRateNav,
+	ucv.KRateTimeref,
+	ucv.KSignalBdsEna,
+	ucv.KSignalGalEna,
+	ucv.KSignalGloEna,
+	ucv.KSignalGpsEna,
+	ucv.KSignalNavicEna,
+	ucv.KSignalQzssEna,
+	ucv.KSignalSbasEna,
+	ucv.KTmodeEcefX,
+	ucv.KTmodeEcefXHp,
+	ucv.KTmodeEcefY,
+	ucv.KTmodeEcefYHp,
+	ucv.KTmodeEcefZ,
+	ucv.KTmodeEcefZHp,
+	ucv.KTpAlignToTowTp1,
+	ucv.KTpAntCabledelay,
+	ucv.KTpDutyTp1,
+	ucv.KTpLenLockTp1,
+	ucv.KTpLenTp1,
+	ucv.KTpPeriodLockTp1,
+	ucv.KTpPeriodTp1,
+	ucv.KTpPolTp1,
+	ucv.KTpPulseDef,
+	ucv.KTpPulseLengthDef,
+	ucv.KTpSyncGnssTp1,
+	ucv.KTpTimegridTp1,
+	ucv.KTpTp1Ena,
+	ucv.KTpUseLockedTp1,
+}
+
+var AllMsgKeys = []ucv.KeyM{
+	ucv.KUbxNavTimegps,
+	ucv.KUbxNavTimegal,
+	ucv.KUbxNavTimeglo,
+	ucv.KUbxNavTimebds,
+	ucv.KUbxNavTimeutc,
+	ucv.KUbxNavTimels,
+	ucv.KUbxTimTp,
+}
+
 // configItems turns a Config into a list of UBX configuration items.
 // The known argument gives what is known about the current configuration.
 // If additional keys are needed to compile the configuration correctly,
@@ -41,6 +86,15 @@ func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, supportedGNSS 
 			dm = ucv.ENavspgDynmodelStat
 		}
 		ucv.AddItem(&items, ucv.KNavspgDynmodel, dm)
+	}
+	if v, ok := gpsmsg.CfgTimeMode.Get(cm); ok {
+		ucv.AddItem(&items, ucv.KTmodeMode, timeModeToTmodeMode(v))
+	}
+	if v, ok := gpsmsg.CfgFixedPosECEF.Get(cm); ok {
+		err := addTmodeECEF(&items, v)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	if v, ok := gpsmsg.CfgNMEAEnabled.Get(cm); ok {
 		k := portOutprotNmeaKey(port)
@@ -81,6 +135,20 @@ func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, supportedGNSS 
 		ucv.AddItem(&items, ucv.KUbxNavTimels.KeyU(port), 1)
 	}
 	return items, keys, nil
+}
+
+func addTmodeECEF(items *[]ucv.Item, p gpsmsg.Point3D) error {
+	kecef := []ucv.KeyI{ucv.KTmodeEcefX, ucv.KTmodeEcefY, ucv.KTmodeEcefZ}
+	kecefhp := []ucv.KeyI{ucv.KTmodeEcefXHp, ucv.KTmodeEcefYHp, ucv.KTmodeEcefZHp}
+	for i := 0; i < 3; i++ {
+		cm, frac, err := splitLength(p[i])
+		if err != nil {
+			return err
+		}
+		ucv.AddItem(items, kecef[i], int64(cm))
+		ucv.AddItem(items, kecefhp[i], int64(frac))
+	}
+	return nil
 }
 
 // compileTimePulse compiles the parts of the configuration related to the time pulse.
@@ -289,6 +357,17 @@ func gnssToTimegridTp1(g gpsmsg.GNSS) ucv.EnumTpTimegridTp1 {
 		return ucv.ETpTimegridTp1Navic
 	default:
 		return ucv.ETpTimegridTp1Utc
+	}
+}
+
+func timeModeToTmodeMode(t gpsmsg.TimeMode) ucv.EnumTmodeMode {
+	switch t {
+	case gpsmsg.TimeModeSurvey:
+		return ucv.ETmodeModeSurveyIn
+	case gpsmsg.TimeModeFixed:
+		return ucv.ETmodeModeFixed
+	default:
+		return ucv.ETmodeModeDisabled
 	}
 }
 
