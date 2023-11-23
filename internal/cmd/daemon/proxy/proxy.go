@@ -8,6 +8,8 @@ import (
 	"math"
 	"net"
 	"os"
+	"os/user"
+	"strconv"
 	"sync"
 	"time"
 
@@ -35,7 +37,8 @@ type TCPService struct {
 
 type SocketService struct {
 	Options
-	Path string `toml:"path"`
+	Path  string `toml:"path"`
+	Group string `toml:"group"`
 }
 
 type svcConfig struct {
@@ -54,7 +57,8 @@ func Start(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg Config,
 	}
 	allReadOnly := true
 	svcConfigs := make([]svcConfig, nSvc)
-	for i, sc := range svcConfigs {
+	for i := range svcConfigs {
+		sc := &svcConfigs[i]
 		if i < nSocket {
 			svc := cfg.Socket[i]
 			if svc.Path == "" {
@@ -84,6 +88,12 @@ func Start(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg Config,
 		listen, err := listenCfg.Listen(ctx, sc.network, sc.address)
 		if err != nil {
 			return err
+		}
+		if i < nSocket {
+			err = setSocketPerms(lg, cfg.Socket[i])
+			if err != nil {
+				return err
+			}
 		}
 		listeners[i] = listen
 	}
@@ -117,6 +127,39 @@ func (s *svcConfig) setOptions(opts Options) error {
 	s.readOnly = opts.ReadOnly
 	s.nmeaOnly = opts.NMEAOnly
 	return nil
+}
+
+const defaultGroupName = "dialout"
+
+func setSocketPerms(lg *slog.Logger, sock SocketService) error {
+	mode := os.FileMode(0660)
+	if sock.ReadOnly {
+		mode = os.FileMode(0666)
+	}
+	err := os.Chmod(sock.Path, mode)
+	if err != nil {
+		return err
+	}
+	if sock.ReadOnly {
+		return nil
+	}
+	groupName := sock.Group
+	if groupName == "" {
+		groupName = defaultGroupName
+	}
+	group, err := user.LookupGroup(groupName)
+	if err != nil {
+		if sock.Group == "" {
+			lg.Info("default group does not exist", "name", defaultGroupName)
+			return nil
+		}
+		return err
+	}
+	gid, err := strconv.Atoi(group.Gid)
+	if err != nil {
+		return err
+	}
+	return os.Chown(sock.Path, -1, gid)
 }
 
 func convertWriteLockTimeout(secs float64) (time.Duration, error) {
