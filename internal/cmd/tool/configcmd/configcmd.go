@@ -80,49 +80,43 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error 
 		gpsmsg.CfgBaudRate.Set(cm, uint32(n))
 	}
 	ctx := context.Background()
-	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
-	return run(ctx, lg, cancel, cm, opts, device, speed.Value)
+	ctx, _ = cmd.CancelOnSignal(ctx, lg)
+	return run(ctx, lg, cm, opts, device, speed.Value)
 }
 
-func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, serialDev string, speed *int) error {
+func run(ctx context.Context, lg *slog.Logger, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, serialDev string, speed *int) error {
 
-	t, err := serio.OpenTerm(serialDev, speed)
+	conn, err := serio.OpenSerial(serialDev, speed)
 	if err != nil {
 		return err
 	}
 
-	defer func() {
-		lg.Debug("restoring the serial port settings", "path", serialDev)
-		e := t.Restore()
-		if e != nil {
-			lg.Error("error while restoring the serial port settings", e, "path", serialDev)
-		} else {
-			lg.Debug("successfully restored the serial port settings", "path", serialDev)
-		}
+	defer func() {	
 		lg.Debug("closing the serial port", "path", serialDev)
-		t.Close()
-		lg.Debug("successfully closed the serial port", "path", serialDev)
+		e := conn.Close()
+		if e != nil {
+			lg.Error("error closing the serial port", "path", serialDev, "error", e)
+		} else {
+			lg.Debug("successfully closed the serial port", "path", serialDev)
+		}
 	}()
 
-	lg.Debug("detecting kind of serial port", "devKind", t.DevKind())
-
-	scanner := serio.NewScanner(t)
 	var wg sync.WaitGroup
 
-	pCh := startScan(ctx, lg, &wg, scanner)
+	pCh := startScan(ctx, lg, &wg, conn)
 
 	// Let the compiler check that TermError implements the SerialError interface
-	// gpsInit relies on this
+	// gpscfg relies on this
 	var _ gpscfg.SerialError = serio.TermError{}
-	info, err := gpscfg.Configure(ctx, lg, cm, opts, pCh, t)
+	info, err := gpscfg.Configure(ctx, lg, cm, opts, pCh, conn)
 	if err == nil {
 		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigMap))
 	}
 
 	lg.Debug("about to wait")
 
-	// stop the scan worker
-	cancel()
+	// stop the scanner
+	conn.Stop()
 	// need to keep reading here to avoid deadlock
 	for range pCh {
 	}
@@ -130,9 +124,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cm *gp
 	return err
 }
 
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn serio.Conn) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	cmd.WaitGroupGo(wg, func() { serio.ScanWorker(ctx, lg, scanner, msg) })
+	cmd.WaitGroupGo(wg, func() { serio.Scan(ctx, lg, conn, msg) })
 	return msg
 }
 

@@ -1,7 +1,6 @@
 package scan
 
 import (
-	"context"
 	"io"
 	"strings"
 	"testing"
@@ -16,10 +15,9 @@ func TestGoodRTCM(t *testing.T) {
 }
 
 func rtcmOK(t *testing.T, msgNum uint16, data string) {
-	ctx := context.Background()
 	r := strings.NewReader(data)
 	s := New(r, 64)
-	f, err := s.Scan(ctx)
+	f, err := s.Scan()
 	if err != nil {
 		t.Fatalf(`error reading RTCM %d`, msgNum)
 	}
@@ -29,7 +27,7 @@ func rtcmOK(t *testing.T, msgNum uint16, data string) {
 	if f.Data != data {
 		t.Fatalf(`wrong data for %q`, msgNum)
 	}
-	f, err = s.Scan(ctx)
+	f, err = s.Scan()
 	if err != io.EOF || f.Kind != Invalid || f.Data != "" {
 		t.Fatalf(`did not get EOF with no data after RTCM %d`, msgNum)
 	}

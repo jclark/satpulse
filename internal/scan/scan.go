@@ -1,7 +1,6 @@
 package scan
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"time"
@@ -56,8 +55,10 @@ func New(r io.Reader, bufSize int) *Scanner {
 	return s
 }
 
-// When the error is non-nil, the packet may be of kind Invalid
-func (s *Scanner) Scan(ctx context.Context) (p Packet, err error) {
+// Scan reads a packet from the underlying Reader.
+// A transient error, such as a timeout, will be returned in the ReadError field of the packet
+// with a Kind of Invalid, and err will be nil.
+func (s *Scanner) Scan() (p Packet, err error) {
 	state := syncScan
 	// length of the packet so far
 	// the packet is in the buffer preceding s.nextScanIndex
@@ -70,7 +71,7 @@ Loop:
 				p.Kind = Invalid
 				break Loop
 			}
-			e := s.fill(ctx, packetLen)
+			e := s.fill(packetLen)
 			if packetLen == 0 {
 				p.TRead = s.tRead
 			}
@@ -84,8 +85,8 @@ Loop:
 				} else if temp, ok := e.(TemporaryError); ok && temp.Temporary() {
 					p.ReadError = e
 				}
-				if p.ReadError == nil || ctx.Err() != nil {
-					// make the scan worker shut down
+				if p.ReadError == nil {
+					// not a transient error
 					err = e
 				}
 				p.Kind = Invalid
@@ -121,7 +122,7 @@ Loop:
 
 // This returns the error it got from the Read, except in the case of EINTR.
 // The packetLen bytes up to nextScanIndex must be kept.
-func (s *Scanner) fill(ctx context.Context, packetLen int) error {
+func (s *Scanner) fill(packetLen int) error {
 	// move the partial packet to the start of the buffer
 	// and grow the buffer if the partial packet uses more than half the buffer
 	packetData := s.buf[s.nextScanIndex-packetLen : s.nextScanIndex]
@@ -135,11 +136,6 @@ func (s *Scanner) fill(ctx context.Context, packetLen int) error {
 	copy(s.buf, packetData)
 	s.nextScanIndex = packetLen
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
 		rBuf := s.buf[packetLen:cap(s.buf)]
 		n, err := s.r.Read(rBuf)
 		if n > 0 {

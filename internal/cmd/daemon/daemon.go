@@ -92,31 +92,25 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		clk.Close()
 		lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
 	}()
-	t, err := serio.OpenTerm(cfg.Serial.Device, cfg.Serial.Speed)
+	conn, err := serio.OpenSerial(cfg.Serial.Device, cfg.Serial.Speed)
 	if err != nil {
 		return err
 	}
 
 	defer func() {
 		serialDev := cfg.Serial.Device
-		lg.Debug("restoring the serial port settings", "path", serialDev)
-		e := t.Restore()
-		if e != nil {
-			lg.Error("error while restoring the serial port settings", e, "path", serialDev)
-		} else {
-			lg.Debug("successfully restored the serial port settings", "path", serialDev)
-		}
 		lg.Debug("closing the serial port", "path", serialDev)
-		t.Close()
-		lg.Debug("successfully closed the serial port", "path", serialDev)
+		e := conn.Close()
+		if e != nil {
+			lg.Error("error closing the serial port", "path", serialDev, "error", e)
+		} else {
+			lg.Debug("successfully closed the serial port", "path", serialDev)
+		}
 	}()
 
-	lg.Debug("detecting kind of serial port", "devKind", t.DevKind())
-
-	scanner := serio.NewScanner(t)
 	var wg sync.WaitGroup
 
-	pCh := startScan(ctx, lg, &wg, scanner)
+	pCh := startScan(ctx, lg, &wg, conn)
 
 	pb := startBcast(ctx, lg, &wg, pCh)
 
@@ -140,10 +134,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		if r := recover(); r != nil {
 			panic(r)
 		}
-		// startScan starts a goroutine sending to pCh.
-		// We need to wait for the goroutine to close pCh, before calling port.Restore/port.Close.
-		// Otherwise, there is a possibility of reading from a file descriptor that
-		// is no longer valid (and so might refer to something else).
+		// startScan starts a goroutine sending to pCh and reading from conn
+		// calling cancel here will cause reads from conn to return with an io.EOF error
+		// which will cause pCh to be closed
 		if err != nil {
 			cancel()
 		}
@@ -159,7 +152,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = serio.TermError{}
-	gcfg, err := gpscfg.Configure(ctx, lg, gpscfg.RequiredConfig(), gpscfg.RequiredOptions(), pCh, t)
+	gcfg, err := gpscfg.Configure(ctx, lg, gpscfg.RequiredConfig(), gpscfg.RequiredOptions(), pCh, conn)
 	if err != nil {
 		return err
 	}
@@ -167,7 +160,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		return nil
 	}
 
-	err = proxy.Start(ctx, lg, &wg, cfg.Proxy, pb, t)
+	err = proxy.Start(ctx, lg, &wg, cfg.Proxy, pb, conn)
 	if err != nil {
 		return err
 	}
@@ -229,9 +222,9 @@ func newInitData(r *gpscfg.Result) *InitData {
 	return &InitData{Version: r.Version}
 }
 
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, scanner *scan.Scanner) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn serio.Conn) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	cmd.WaitGroupGo(wg, func() { serio.ScanWorker(ctx, lg, scanner, msg) })
+	cmd.WaitGroupGo(wg, func() { serio.Scan(ctx, lg, conn, msg) })
 	return msg
 }
 
