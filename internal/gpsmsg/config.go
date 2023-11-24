@@ -37,6 +37,7 @@ type ConfigRequest interface {
 type ConfigOptions struct {
 	Flash               bool
 	Reset               bool
+	Detect              bool
 	EnableLeapSecondMsg bool
 	EnableTimeMsg       bool
 }

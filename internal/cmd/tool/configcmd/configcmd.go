@@ -19,15 +19,17 @@ import (
 	"github.com/spf13/pflag"
 )
 
-const summary = `[-h|--help] [--speed N] [--remote-speed N] [--flash] [--reset]
-          [--nmea] [-p|--pps] [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] serial-device`
+const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed N] [--socket path]
+            [--flash] [--reset] [--speed N] [--nmea] [-p|--pps] [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...]`
 
 func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error {
 	var help bool
 	var pps bool
 	var nmea bool
-	var speed cmd.IntFlag
+	var localSpeed cmd.IntFlag
 	var remoteSpeed cmd.IntFlag
+	var serialDevice string
+	var socketPath string
 
 	var gnss gnssList
 	var opts gpsmsg.ConfigOptions
@@ -38,8 +40,10 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error 
 	flags.BoolVar(&opts.Flash, "flash", false, "save the configuration changes to flash memory on the GNSS receiver")
 	flags.BoolVar(&opts.Reset, "reset", false, "reset the GNSS receiver")
 	flags.BoolVar(&nmea, "nmea", false, "enable NMEA output from the GNSS receiver")
-	flags.VarP(&speed, "speed", "s", "serial device baud-rate in `bps`")
-	flags.Var(&remoteSpeed, "remote-speed", "set GNSS receiver baud-rate in `bps`")
+	flags.StringVarP(&serialDevice, "serial-device", "d", "", "serial device to configure")
+	flags.StringVar(&socketPath, "socket", "", "`path` of socket to connect to GPS")
+	flags.VarP(&localSpeed, "device-speed", "s", "serial device baud-rate in `bps`")
+	flags.Var(&remoteSpeed, "speed", "set GNSS receiver baud-rate in `bps`")
 	flags.VarP(&gnss, "gnss", "g", "set `list` of enabled GNSS constellations: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.BoolVarP(&pps, "pps", "p", false, "configure the receiver to enable a PPS signal")
 	err := flags.Parse(args)
@@ -51,13 +55,26 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error 
 		tool.Usage(progName, cmdName, summary, flags)
 		os.Exit(0)
 	}
-	if flags.NArg() != 1 {
-		cmd.ErrPrintln(progName, "config command must have argument giving serial device")
+	if flags.NArg() != 0 {
+		cmd.ErrPrintln(progName, "config command must not have arguments")
 		tool.Usage(progName, cmdName, summary, flags)
 		os.Exit(2)
 	}
-	device := flags.Arg(0)
-
+	if (socketPath == "") == (serialDevice == "") {
+		cmd.ErrPrintln(progName, "config command must specify either --socket or --serial-device")
+		tool.Usage(progName, cmdName, summary, flags)
+		os.Exit(2)
+	}
+	var conn gpsio.Conn
+	if serialDevice != "" {
+		conn, err = gpsio.OpenSerial(serialDevice, localSpeed.Value)
+		opts.Detect = true
+	} else {
+		conn, err = gpsio.OpenSocket(socketPath)
+	}
+	if err != nil {
+		return err
+	}
 	if pps {
 		cm.SetPPS()
 	}
@@ -81,23 +98,18 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error 
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	return run(ctx, lg, cm, opts, device, speed.Value)
+	return run(ctx, lg, cm, opts, conn)
 }
 
-func run(ctx context.Context, lg *slog.Logger, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, serialDev string, speed *int) error {
-
-	conn, err := gpsio.OpenSerial(serialDev, speed)
-	if err != nil {
-		return err
-	}
-
+func run(ctx context.Context, lg *slog.Logger, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, conn gpsio.Conn) error {
 	defer func() {
-		lg.Debug("closing the serial port", "path", serialDev)
+		addr := conn.LocalAddr()
+		lg.Debug("closing the GPS connection", "addr", addr)
 		e := conn.Close()
 		if e != nil {
-			lg.Error("error closing the serial port", "path", serialDev, "error", e)
+			lg.Error("error closing the GPS connection", "addr", addr, "error", e)
 		} else {
-			lg.Debug("successfully closed the serial port", "path", serialDev)
+			lg.Debug("successfully closed the GPS connection", "addr", addr)
 		}
 	}()
 

@@ -98,9 +98,7 @@ Others
 
 ## Serial port network access
 
-* Provide access over Unix domain socket as well as over TCP socket: we can make the UDS writeable only by root, and can thus safely allow root access
-* Leverage this for configuration
-* We get a write error when user disconnects
+* There's a big: we get a write error when user disconnects
 
 ## Serial IO
 

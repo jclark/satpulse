@@ -46,9 +46,12 @@ var _ ubx.ProtHandler = &msgHandler{}
 func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetCh)
-	err := mh.detect(ctx)
-	if err != nil {
-		return nil, err
+	var err error
+	if opts.Detect {
+		err = mh.detect(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// After we have done detection, bad stuff is a cause for concern.
 	badStart := mh.bad
@@ -88,7 +91,7 @@ func RequiredConfig() *gpsmsg.ConfigMap {
 }
 
 func RequiredOptions() gpsmsg.ConfigOptions {
-	return gpsmsg.ConfigOptions{EnableLeapSecondMsg: true, EnableTimeMsg: true}
+	return gpsmsg.ConfigOptions{EnableLeapSecondMsg: true, EnableTimeMsg: true, Detect: true}
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {

@@ -41,6 +41,10 @@ func OpenSerial(path string, speed *int) (*SerialConn, error) {
 	return &SerialConn{term: t, readLock: readLock, writeLock: writeLock}, nil
 }
 
+func (c *SerialConn) LocalAddr() string {
+	return c.term.Path()
+}
+
 func (c *SerialConn) Read(p []byte) (int, error) {
 	if c.isStopped() {
 		return 0, io.EOF

@@ -20,6 +20,7 @@ type Conn interface {
 	io.Closer
 	OutPort
 	Stop()
+	LocalAddr() string
 }
 
 // timeoutError implements scan.TimeoutError
