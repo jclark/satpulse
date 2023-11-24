@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsmsg"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/internal/serio"
 	"github.com/jclark/satpulse/internal/ubx"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 	"golang.org/x/exp/maps"
@@ -43,7 +43,7 @@ type badCount struct {
 
 var _ ubx.ProtHandler = &msgHandler{}
 
-func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, packetCh <-chan scan.Packet, port serio.OutPort) (*Result, error) {
+func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetCh)
 	err := mh.detect(ctx)
@@ -183,7 +183,7 @@ func (mh *msgHandler) packetChClosed(ctx context.Context) error {
 	return io.ErrUnexpectedEOF
 }
 
-func (mh *msgHandler) probe(ctx context.Context, prot gpsmsg.Protocol, port serio.OutPort) (bool, error) {
+func (mh *msgHandler) probe(ctx context.Context, prot gpsmsg.Protocol, port gpsio.OutPort) (bool, error) {
 	msg := prot.ProbePacket()
 	_, err := port.Write(msg)
 	if err != nil {
@@ -208,7 +208,7 @@ func (mh *msgHandler) probe(ctx context.Context, prot gpsmsg.Protocol, port seri
 	return false, nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsmsg.Protocol, target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, port serio.OutPort) (*gpsmsg.ConfigMap, error) {
+func (mh *msgHandler) configure(ctx context.Context, prot gpsmsg.Protocol, target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, port gpsio.OutPort) (*gpsmsg.ConfigMap, error) {
 	cfgtor, err := prot.Configure(target, opts)
 	if err != nil {
 		return nil, err
@@ -237,7 +237,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsmsg.Protocol, targe
 
 const minWaitAfterSend = 10 * time.Millisecond
 
-func (mh *msgHandler) waitAfterSend(ctx context.Context, prot gpsmsg.Protocol, req gpsmsg.ConfigRequest, pkt []byte, tSend time.Time, port serio.OutPort) error {
+func (mh *msgHandler) waitAfterSend(ctx context.Context, prot gpsmsg.Protocol, req gpsmsg.ConfigRequest, pkt []byte, tSend time.Time, port gpsio.OutPort) error {
 	ackable := req.Ackable()
 	w := time.Millisecond * 1500
 	reqID := req.ID()

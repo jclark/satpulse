@@ -14,10 +14,10 @@ import (
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
 	"github.com/jclark/satpulse/internal/gpscfg"
+	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/internal/serio"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/ubx"
 )
@@ -92,7 +92,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		clk.Close()
 		lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
 	}()
-	conn, err := serio.OpenSerial(cfg.Serial.Device, cfg.Serial.Speed)
+	conn, err := gpsio.OpenSerial(cfg.Serial.Device, cfg.Serial.Speed)
 	if err != nil {
 		return err
 	}
@@ -151,7 +151,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
-	var _ gpscfg.SerialError = serio.TermError{}
+	var _ gpscfg.SerialError = gpsio.TermError{}
 	gcfg, err := gpscfg.Configure(ctx, lg, gpscfg.RequiredConfig(), gpscfg.RequiredOptions(), pCh, conn)
 	if err != nil {
 		return err
@@ -222,9 +222,9 @@ func newInitData(r *gpscfg.Result) *InitData {
 	return &InitData{Version: r.Version}
 }
 
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn serio.Conn) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	cmd.WaitGroupGo(wg, func() { serio.Scan(ctx, lg, conn, msg) })
+	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg) })
 	return msg
 }
 

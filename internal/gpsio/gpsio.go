@@ -1,4 +1,4 @@
-package serio
+package gpsio
 
 import (
 	"context"

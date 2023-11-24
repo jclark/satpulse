@@ -11,9 +11,9 @@ import (
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/cmd/tool"
 	"github.com/jclark/satpulse/internal/gpscfg"
+	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsmsg"
 	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/internal/serio"
 	"github.com/jclark/satpulse/term"
 
 	"github.com/spf13/pflag"
@@ -86,12 +86,12 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error 
 
 func run(ctx context.Context, lg *slog.Logger, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, serialDev string, speed *int) error {
 
-	conn, err := serio.OpenSerial(serialDev, speed)
+	conn, err := gpsio.OpenSerial(serialDev, speed)
 	if err != nil {
 		return err
 	}
 
-	defer func() {	
+	defer func() {
 		lg.Debug("closing the serial port", "path", serialDev)
 		e := conn.Close()
 		if e != nil {
@@ -107,7 +107,7 @@ func run(ctx context.Context, lg *slog.Logger, cm *gpsmsg.ConfigMap, opts gpsmsg
 
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
-	var _ gpscfg.SerialError = serio.TermError{}
+	var _ gpscfg.SerialError = gpsio.TermError{}
 	info, err := gpscfg.Configure(ctx, lg, cm, opts, pCh, conn)
 	if err == nil {
 		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigMap))
@@ -124,9 +124,9 @@ func run(ctx context.Context, lg *slog.Logger, cm *gpsmsg.ConfigMap, opts gpsmsg
 	return err
 }
 
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn serio.Conn) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	cmd.WaitGroupGo(wg, func() { serio.Scan(ctx, lg, conn, msg) })
+	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg) })
 	return msg
 }
 
