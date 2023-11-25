@@ -92,7 +92,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		clk.Close()
 		lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
 	}()
-	conn, err := gpsio.OpenSerial(cfg.Serial.Device, cfg.Serial.Speed)
+	speed := 0
+	if cfg.Serial.Speed != nil {
+		speed = *cfg.Serial.Speed
+	}
+	conn, err := gpsio.OpenSerial(cfg.Serial.Device, speed)
 	if err != nil {
 		return err
 	}

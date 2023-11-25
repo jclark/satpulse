@@ -81,8 +81,12 @@ func (g GNSS) MarshalText() ([]byte, error) {
 // It is comparable.
 type GNSSSet uint32
 
-func GNSSFlag(g GNSS) GNSSSet {
-	return 1 << g
+func GNSSFlag(gs ...GNSS) GNSSSet {
+	var flags GNSSSet
+	for _, g := range gs {
+		flags |= 1 << g
+	}
+	return flags
 }
 
 const MajorGNSSSet GNSSSet = 1<<GPS | 1<<GAL | 1<<BDS | 1<<GLO

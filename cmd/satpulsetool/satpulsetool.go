@@ -26,6 +26,7 @@ func main() {
 	progName := os.Args[0]
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
+		usage(progName, flags)
 		os.Exit(2)
 	}
 	if showVersion {
@@ -53,18 +54,29 @@ func main() {
 	lg := slog.New(handler)
 	slog.SetDefault(lg)
 
+	exitCode := 0
 	switch cmdName {
 	case "config":
-		err = configcmd.Cmd(lg, progName, cmdName, cmdArgs)
+		usage, err := configcmd.Cmd(lg, progName, cmdName, cmdArgs)
+		if err != nil {
+			cmd.ErrPrintln(progName, err)
+		}
+		fmt.Fprint(os.Stderr, usage)
+		if err != nil {
+			if usage != "" {
+				exitCode = 2
+			} else {
+				exitCode = 1
+			}
+		}
 	default:
 		cmd.ErrPrintln(progName, "unknown command: "+cmdName)
 		usage(progName, flags)
-		os.Exit(2)
+		exitCode = 2
 	}
 
-	if err != nil {
-		cmd.ErrPrintln(progName, err)
-		os.Exit(1)
+	if exitCode != 0 {
+		os.Exit(exitCode)
 	}
 }
 

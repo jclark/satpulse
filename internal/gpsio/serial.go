@@ -29,7 +29,7 @@ type SerialConn struct {
 
 var _ Conn = (*SerialConn)(nil)
 
-func OpenSerial(path string, speed *int) (*SerialConn, error) {
+func OpenSerial(path string, speed int) (*SerialConn, error) {
 	t, err := openTerm(path, speed)
 	if err != nil {
 		return nil, err
@@ -127,18 +127,18 @@ func (c *SerialConn) Close() error {
 
 const readTimeout = time.Millisecond * 100
 
-func openTerm(path string, speed *int) (*term.Term, error) {
+func openTerm(path string, speed int) (*term.Term, error) {
 	opts := []term.AttrSetter{
 		term.RawMode,
 		term.Local,
 		term.NoFlowControl,
 		term.ReadTimeout(readTimeout),
 	}
-	if speed != nil {
-		if !term.IsValidSpeed(*speed) {
-			return nil, fmt.Errorf("non-standard serial speed %d is not supported", *speed)
+	if speed != 0 {
+		if !term.IsValidSpeed(speed) {
+			return nil, fmt.Errorf("non-standard serial speed %d is not supported", speed)
 		}
-		opts = append(opts, term.Speed(*speed))
+		opts = append(opts, term.Speed(speed))
 	}
 	t, err := term.Open(path, opts...)
 	if err != nil {

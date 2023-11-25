@@ -6,11 +6,7 @@ import (
 
 func TestGNSSSet(t *testing.T) {
 	// Create a new GNSSSet
-	set := GNSSSet(0)
-
-	// Add some GNSS values to the set
-	set |= GNSSFlag(GPS)
-	set |= GNSSFlag(GLO)
+	set := GNSSFlag(GPS, GLO)
 
 	// Check that Contains works properly for values in the set
 	if !set.Contains(GPS) {

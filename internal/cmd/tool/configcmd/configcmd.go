@@ -4,101 +4,60 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"strings"
 	"sync"
 
 	"github.com/jclark/satpulse/internal/cmd"
-	"github.com/jclark/satpulse/internal/cmd/tool"
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsmsg"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/term"
-
-	"github.com/spf13/pflag"
 )
 
-const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed N] [--socket path]
-            [--flash] [--reset] [--speed N] [--nmea] [-p|--pps] [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...]`
+func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage string, err error) {
+	v, usageFunc, err := parseFlags(cmdName, args)
+	if v == nil {
+		usage = usageFunc(progName)
+		return
+	}
 
-func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) error {
-	var help bool
-	var pps bool
-	var nmea bool
-	var localSpeed cmd.IntFlag
-	var remoteSpeed cmd.IntFlag
-	var serialDevice string
-	var socketPath string
+	opts := gpsmsg.ConfigOptions{Reset: v.reset, Flash: v.flash}
 
-	var gnss gnssList
-	var opts gpsmsg.ConfigOptions
-
-	cm := &gpsmsg.ConfigMap{}
-	flags := pflag.NewFlagSet("config", pflag.ContinueOnError)
-	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.BoolVar(&opts.Flash, "flash", false, "save the configuration changes to flash memory on the GNSS receiver")
-	flags.BoolVar(&opts.Reset, "reset", false, "reset the GNSS receiver")
-	flags.BoolVar(&nmea, "nmea", false, "enable NMEA output from the GNSS receiver")
-	flags.StringVarP(&serialDevice, "serial-device", "d", "", "serial device to configure")
-	flags.StringVar(&socketPath, "socket", "", "`path` of socket to connect to GPS")
-	flags.VarP(&localSpeed, "device-speed", "s", "serial device baud-rate in `bps`")
-	flags.Var(&remoteSpeed, "speed", "set GNSS receiver baud-rate in `bps`")
-	flags.VarP(&gnss, "gnss", "g", "set `list` of enabled GNSS constellations: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
-	flags.BoolVarP(&pps, "pps", "p", false, "configure the receiver to enable a PPS signal")
-	err := flags.Parse(args)
-	if err != nil {
-		cmd.ErrPrintln(progName, err)
-		os.Exit(2)
-	}
-	if help {
-		tool.Usage(progName, cmdName, summary, flags)
-		os.Exit(0)
-	}
-	if flags.NArg() != 0 {
-		cmd.ErrPrintln(progName, "config command must not have arguments")
-		tool.Usage(progName, cmdName, summary, flags)
-		os.Exit(2)
-	}
-	if (socketPath == "") == (serialDevice == "") {
-		cmd.ErrPrintln(progName, "config command must specify either --socket or --serial-device")
-		tool.Usage(progName, cmdName, summary, flags)
-		os.Exit(2)
-	}
 	var conn gpsio.Conn
-	if serialDevice != "" {
-		conn, err = gpsio.OpenSerial(serialDevice, localSpeed.Value)
+	if v.serialDevice != "" {
+		conn, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
 		opts.Detect = true
 	} else {
-		conn, err = gpsio.OpenSocket(socketPath)
+		conn, err = gpsio.OpenSocket(v.socketPath)
 	}
 	if err != nil {
-		return err
+		return
 	}
-	if pps {
+	cm := &gpsmsg.ConfigMap{}
+
+	if v.pps {
 		cm.SetPPS()
 	}
-	if nmea {
+	if v.nmea {
 		gpsmsg.CfgNMEAEnabled.Set(cm, true)
 	}
-	if len(gnss.gnss) != 0 {
-		first := gnss.gnss[0]
-		if !first.IsMajor() {
-			return fmt.Errorf("first GNSS must be a major constellation: %s is not", first)
-		}
-		gpsmsg.CfgPrimaryGNSS.Set(cm, gnss.gnss[0])
-		gpsmsg.CfgGNSSEnabled.Set(cm, gnss.GNSSSet())
+	if v.primaryGNSS != 0 {
+		gpsmsg.CfgPrimaryGNSS.Set(cm, v.primaryGNSS)
 	}
-	if p := remoteSpeed.Value; p != nil {
-		n := *p
-		if !term.IsValidSpeed(n) {
-			return fmt.Errorf("invalid remote serial speed %d", n)
+	if v.enabledGNSS != 0 {
+		gpsmsg.CfgGNSSEnabled.Set(cm, v.enabledGNSS)
+	}
+	if v.remoteSpeed != 0 {
+		if !term.IsValidSpeed(v.remoteSpeed) {
+			err = fmt.Errorf("invalid remote serial speed %d", v.remoteSpeed)
+			return
 		}
-		gpsmsg.CfgBaudRate.Set(cm, uint32(n))
+		gpsmsg.CfgBaudRate.Set(cm, uint32(v.remoteSpeed))
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	return run(ctx, lg, cm, opts, conn)
+	err = run(ctx, lg, cm, opts, conn)
+	return
 }
 
 func run(ctx context.Context, lg *slog.Logger, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, conn gpsio.Conn) error {
@@ -140,42 +99,4 @@ func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gp
 	msg := make(chan scan.Packet, 1)
 	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg) })
 	return msg
-}
-
-type gnssList struct {
-	gnss []gpsmsg.GNSS
-}
-
-var _ pflag.Value = (*gnssList)(nil)
-
-func (gl *gnssList) String() string {
-	var s []string
-	for _, gnss := range gl.gnss {
-		s = append(s, gnss.String())
-	}
-	return strings.Join(s, ",")
-}
-
-func (gl *gnssList) Type() string {
-	return "gnss-list"
-}
-
-func (gl *gnssList) GNSSSet() gpsmsg.GNSSSet {
-	var flags gpsmsg.GNSSSet
-	for _, g := range gl.gnss {
-		flags |= gpsmsg.GNSSFlag(g)
-	}
-	return flags
-}
-
-func (gl *gnssList) Set(s string) error {
-	words := strings.Split(s, ",")
-	for _, w := range words {
-		gnss, err := gpsmsg.ParseGNSS(strings.Trim(w, " \t"))
-		if err != nil {
-			return err
-		}
-		gl.gnss = append(gl.gnss, gnss)
-	}
-	return nil
 }

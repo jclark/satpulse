@@ -16,7 +16,7 @@ func TestFindGNSS(t *testing.T) {
 	gnssSet := findGNSS(extensions)
 
 	expectedGNSSSet := gpsmsg.MajorGNSSSet |
-		gpsmsg.GNSSFlag(gpsmsg.SBAS) | gpsmsg.GNSSFlag(gpsmsg.QZSS)
+		gpsmsg.GNSSFlag(gpsmsg.SBAS, gpsmsg.QZSS)
 
 	if gnssSet != expectedGNSSSet {
 		t.Errorf("Expected GNSSSet to be %v, got %v", expectedGNSSSet, gnssSet)

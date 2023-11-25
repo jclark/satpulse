@@ -2,13 +2,12 @@ package tool
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/pflag"
 )
 
-func Usage(progName, cmdName, summary string, flags *pflag.FlagSet) {
-	fmt.Fprintln(os.Stderr, "Usage:", progName, cmdName, summary)
-	fmt.Fprintln(os.Stderr, "Options:")
-	flags.PrintDefaults()
+func UsageFunc(cmdName, summary string, flags *pflag.FlagSet) func(string) string {
+	return func(progName string) string {
+		return fmt.Sprintf("Usage: %s %s %s\nOptions:\n%s", progName, cmdName, summary, flags.FlagUsages())
+	}
 }
