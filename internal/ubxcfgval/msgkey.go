@@ -13,7 +13,7 @@ const (
 )
 
 func (k KeyM) KeyU(port Port) KeyU {
-	return KeyU(uint32(k) + uint32(port) + 0X20910000)
+	return KeyU(uint32(k) + uint32(port) + 0x20910000)
 }
 
 const KNmeaIdDtm KeyM = 0x0A6
@@ -77,6 +77,7 @@ const KUbxNav2Sat KeyM = 0x495
 const KUbxNav2Sbas KeyM = 0x500
 const KUbxNav2Sig KeyM = 0x505
 const KUbxNav2Status KeyM = 0x515
+const KUbxNav2Svin KeyM = 0x520
 const KUbxNav2Timebds KeyM = 0x525
 const KUbxNav2Timegal KeyM = 0x530
 const KUbxNav2Timeglo KeyM = 0x535
@@ -101,6 +102,7 @@ const KUbxNavSat KeyM = 0x015
 const KUbxNavSbas KeyM = 0x06A
 const KUbxNavSig KeyM = 0x345
 const KUbxNavStatus KeyM = 0x01A
+const KUbxNavSvin KeyM = 0x088
 const KUbxNavTimebds KeyM = 0x051
 const KUbxNavTimegal KeyM = 0x056
 const KUbxNavTimeglo KeyM = 0x04C
