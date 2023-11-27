@@ -13,12 +13,14 @@ import (
 type MsgHandler interface {
 	Time(msg *TimeMsg, tRead time.Time)
 	LeapSecond(msg *LeapSecondMsg, tRead time.Time)
+	Survey(msg *SurveyMsg, tRead time.Time)
 }
 
 type DefaultHandler struct{}
 
 func (h *DefaultHandler) Time(msg *TimeMsg, tRead time.Time)             {}
 func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
+func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
 
 //go:generate stringer -type=GNSS
 type GNSS int
@@ -132,4 +134,14 @@ type TimeMsg struct {
 type LeapSecondMsg struct {
 	ptime.LeapSecond
 	NavEpoch uint32 `json:"navEpoch,omitempty"`
+}
+
+type SurveyMsg struct {
+	Position      Point3D       `json:"position"`
+	Accuracy      Length        `json:"accuracy"`
+	NavEpoch      uint32        `json:"navEpoch,omitempty"`
+	NObservations uint32        `json:"nObservations"`
+	Elapsed       time.Duration `json:"elapsed"`
+	Valid         bool          `json:"valid"`
+	Active        bool          `json:"active"`
 }
