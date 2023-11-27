@@ -10,9 +10,9 @@ import (
 )
 
 type PHCConfig struct {
-	Interface string
-	Pin       uint8
-	Channel   uint8
+	Interface string `toml:"interface"`
+	Pin       uint8  `toml:"pin"`
+	Channel   uint8  `toml:"channel"`
 }
 
 const timeout = 100 * time.Microsecond
