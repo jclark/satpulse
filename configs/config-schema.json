@@ -1,0 +1,105 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"definitions": {
+	  "proxyOptions": {
+		"type": "object",
+		"properties": {
+		  "readOnly": { "type": "boolean" },
+		  "nmeaOnly": { "type": "boolean" },
+		  "writeLockTimeout": { "type": "number" }
+		}
+	  }
+	},
+	"type": "object",
+	"properties": {
+	  "serial": {
+		"type": "object",
+		"properties": {
+		  "device": { "type": "string" },
+		  "speed": { "type": "integer" }
+		},
+		"required": ["device"]
+	  },
+	  "receiver": {
+		"type": "object",
+		"properties": {
+		  "timeMode": { "type": "boolean" },
+		  "resurvey": { "type": "boolean" },
+		  "surveyTime": { "type": "integer" },
+		  "surveyAcc": { "type": "number" }
+		}
+	  },
+	  "phc": {
+		"type": "object",
+		"properties": {
+		  "interface": { "type": "string" },
+		  "pin": { "type": "integer" },
+		  "channel": { "type": "integer" }
+		},
+		"required": ["interface"]
+	  },
+	  "proxy": {
+		"type": "object",
+		"properties": {
+		  "tcp": {
+			"type": "array",
+			"items": {
+			  "type": "object",
+			  "properties": {
+				"listen": { "type": "string" }
+			  },
+			  "required": ["listen"],
+			  "allOf": [
+				{ "$ref": "#/definitions/proxyOptions" }
+			  ]
+			}
+		  },
+		  "socket": {
+			"type": "array",
+			"items": {
+			  "type": "object",
+			  "properties": {
+				"path": { "type": "string" },
+				"group": { "type": "string" }
+			  },
+			  "required": ["path"],
+			  "allOf": [
+				{ "$ref": "#/definitions/proxyOptions" }
+			  ]
+			}
+		  }
+		},
+		"required": ["TCP", "Socket"]
+	  },
+	  "http": {
+		"type": "array",
+		"items": {
+		  "type": "object",
+		  "properties": {
+			"listen": { "type": "string" }
+		  },
+		  "required": ["listen"]
+		}
+	  },
+	  "leapSecond": {
+		"type": "object",
+		"properties": {
+		  "date": { "type": "string", "format": "date" },
+		  "before": { "type": "integer" },
+		  "after": { "type": "integer" }
+		},
+		"required": ["date", "before", "after"]
+	  },
+	  "ptp": {
+		"type": "object",
+		"properties": {
+		  "udsAddress": { "type": "string" },
+		  "domainNumber": { "type": "integer" },
+		  "majorSdoId": { "type": "integer" },
+		  "minorSdoId": { "type": "integer" },
+		  "impl": { "type": "integer" }
+		}
+	  }
+	},
+	"required": ["serial", "phc"]
+}
