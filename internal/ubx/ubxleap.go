@@ -8,8 +8,8 @@ import (
 	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
-func leapSecond(u *bin.NavTimeLS) *gpsmsg.LeapSecond {
-	ls := gpsmsg.LeapSecond{NavEpoch: iTOWEpoch(u.ITOW)}
+func leapSecond(u *bin.NavTimeLS) *gpsmsg.LeapSecondMsg {
+	ls := gpsmsg.LeapSecondMsg{NavEpoch: iTOWEpoch(u.ITOW)}
 	var date time.Time
 	if !leapSecondUTCOffset(u, &ls) || !leapSecondDate(u, &date) {
 		return nil
@@ -18,7 +18,7 @@ func leapSecond(u *bin.NavTimeLS) *gpsmsg.LeapSecond {
 	return &ls
 }
 
-func leapSecondUTCOffset(u *bin.NavTimeLS, ls *gpsmsg.LeapSecond) bool {
+func leapSecondUTCOffset(u *bin.NavTimeLS, ls *gpsmsg.LeapSecondMsg) bool {
 	if (u.Valid & bin.NavTimeLSValidCurrLS) == 0 {
 		return false
 	}

@@ -11,7 +11,7 @@ import (
 type Protocol interface {
 	ProbePacket() []byte
 	ProbeOK() bool
-	SetHandler(h Handler)
+	SetHandler(h MsgHandler)
 	ProcessPacket(data string, tRead time.Time) error
 	Configure(target *ConfigMap, opts ConfigOptions) (Configurator, error)
 	FindAck(packet []byte, tSent time.Time) *Ack

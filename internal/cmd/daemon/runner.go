@@ -118,7 +118,7 @@ func (s *SyncRunner) handlePacket(pkt scan.Packet) {
 	}
 }
 
-func (s *SyncRunner) Time(mt *gpsmsg.Time, tRead time.Time) {
+func (s *SyncRunner) Time(mt *gpsmsg.TimeMsg, tRead time.Time) {
 	if s.inLog != nil {
 		bytes, err := json.Marshal(mt)
 		if err != nil {
@@ -163,7 +163,7 @@ func (s *SyncRunner) Time(mt *gpsmsg.Time, tRead time.Time) {
 	}
 }
 
-func (s *SyncRunner) LeapSecond(msg *gpsmsg.LeapSecond, _ time.Time) {
+func (s *SyncRunner) LeapSecond(msg *gpsmsg.LeapSecondMsg, _ time.Time) {
 	if msg.OffChangeTime <= s.ls.OffChangeTime {
 		return
 	}

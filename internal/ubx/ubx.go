@@ -12,7 +12,7 @@ type ProtHandler interface {
 	UBX(msg bin.Msg, tRead time.Time)
 }
 
-func ProcessPacket(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
+func ProcessPacket(data string, tRead time.Time, h gpsmsg.MsgHandler, ph ProtHandler) error {
 	m, err := bin.ParseMsg(data)
 	if err != nil {
 		return err
@@ -23,8 +23,8 @@ func ProcessPacket(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandle
 	return nil
 }
 
-func Dispatch(m bin.Msg, tRead time.Time, h gpsmsg.Handler) bool {
-	var time *gpsmsg.Time
+func Dispatch(m bin.Msg, tRead time.Time, h gpsmsg.MsgHandler) bool {
+	var time *gpsmsg.TimeMsg
 	switch mt := m.(type) {
 	case *bin.NavTimeLS:
 		ls := leapSecond(mt)

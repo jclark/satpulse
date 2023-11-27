@@ -10,15 +10,15 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-type Handler interface {
-	Time(msg *Time, tRead time.Time)
-	LeapSecond(msg *LeapSecond, tRead time.Time)
+type MsgHandler interface {
+	Time(msg *TimeMsg, tRead time.Time)
+	LeapSecond(msg *LeapSecondMsg, tRead time.Time)
 }
 
 type DefaultHandler struct{}
 
-func (h *DefaultHandler) Time(msg *Time, tRead time.Time)             {}
-func (h *DefaultHandler) LeapSecond(msg *LeapSecond, tRead time.Time) {}
+func (h *DefaultHandler) Time(msg *TimeMsg, tRead time.Time)             {}
+func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 
 //go:generate stringer -type=GNSS
 type GNSS int
@@ -117,7 +117,7 @@ const (
 	LastPulse
 )
 
-type Time struct {
+type TimeMsg struct {
 	TAITime     ptime.Time     `json:"taiTime,omitempty"`
 	UTCTime     *ptime.UTCTime `json:"utcTime,omitempty"`
 	Accuracy    time.Duration  `json:"accuracy,omitempty"`
@@ -129,7 +129,7 @@ type Time struct {
 	SrcType     string         `json:"srcType"`
 }
 
-type LeapSecond struct {
+type LeapSecondMsg struct {
 	ptime.LeapSecond
 	NavEpoch uint32 `json:"navEpoch,omitempty"`
 }

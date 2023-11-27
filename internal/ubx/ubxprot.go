@@ -12,7 +12,7 @@ type Protocol struct {
 	ver  *Version
 	acks []*Ack
 	cfg  *Configurator
-	h    gpsmsg.Handler
+	h    gpsmsg.MsgHandler
 	ph   ProtHandler
 }
 
@@ -55,7 +55,7 @@ func (prot *Protocol) ProcessPacket(data string, tRead time.Time) error {
 	return nil
 }
 
-func (prot *Protocol) SetHandler(h gpsmsg.Handler) {
+func (prot *Protocol) SetHandler(h gpsmsg.MsgHandler) {
 	prot.h = h
 }
 

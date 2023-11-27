@@ -68,7 +68,7 @@ type timeHandler struct {
 	utc *ptime.UTCTime
 }
 
-func (h *timeHandler) Time(msg *gpsmsg.Time, _ time.Time) {
+func (h *timeHandler) Time(msg *gpsmsg.TimeMsg, _ time.Time) {
 	h.utc = msg.UTCTime
 }
 

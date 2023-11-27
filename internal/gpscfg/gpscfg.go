@@ -20,7 +20,7 @@ import (
 type Result struct {
 	Version    *ubx.Version
 	ConfigMap  *gpsmsg.ConfigMap
-	LeapSecond *gpsmsg.LeapSecond
+	LeapSecond *gpsmsg.LeapSecondMsg
 }
 
 type msgHandler struct {
@@ -34,7 +34,7 @@ type msgHandler struct {
 	nmeaSentences map[string]map[string]bool
 	rtcmMsgs      map[uint16]bool
 	ubxProt       *ubx.Protocol
-	leapSecond    *gpsmsg.LeapSecond
+	leapSecond    *gpsmsg.LeapSecondMsg
 }
 
 type badCount struct {
@@ -303,7 +303,7 @@ func (mh *msgHandler) packet(f scan.Packet) {
 	}
 }
 
-func (mh *msgHandler) LeapSecond(ls *gpsmsg.LeapSecond, _ time.Time) {
+func (mh *msgHandler) LeapSecond(ls *gpsmsg.LeapSecondMsg, _ time.Time) {
 	mh.leapSecond = ls
 }
 

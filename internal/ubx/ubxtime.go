@@ -9,8 +9,8 @@ import (
 	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
-func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {
-	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEGPS"}
+func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.TimeMsg {
+	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-TIMEGPS"}
 	if (m.Valid&bin.NavTimeGPSTOWValid) != 0 && (m.Valid&bin.NavTimeGPSWeekValid) != 0 {
 		// iTOW field is in milliseconds
 		t.TAITime = ptime.GPS(m.Week, msTOW(m.ITOW)+nsTOW(m.FTOW))
@@ -24,8 +24,8 @@ func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.Time {
 	return &t
 }
 
-func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsmsg.Time {
-	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEBDS"}
+func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsmsg.TimeMsg {
+	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-TIMEBDS"}
 	if (m.Valid&bin.NavTimeBDSSOWValid) != 0 && (m.Valid&bin.NavTimeBDSWeekValid) != 0 {
 		t.TAITime = ptime.BeiDou(m.Week, sTOW(m.SOW)+nsTOW(m.FSOW))
 	}
@@ -38,8 +38,8 @@ func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsmsg.Time {
 	return &t
 }
 
-func timeNavTimeGal(m *bin.NavTimeGal) *gpsmsg.Time {
-	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEGAL"}
+func timeNavTimeGal(m *bin.NavTimeGal) *gpsmsg.TimeMsg {
+	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-TIMEGAL"}
 	if (m.Valid&bin.NavTimeGalTOWValid) != 0 && (m.Valid&bin.NavTimeGalWnoValid) != 0 {
 		// galTOW field is in seconds
 		t.TAITime = ptime.Galileo(m.GalWno, sTOW(m.GalTOW)+nsTOW(m.FGalTOW))
@@ -53,8 +53,8 @@ func timeNavTimeGal(m *bin.NavTimeGal) *gpsmsg.Time {
 	return &t
 }
 
-func timeNavTimeGLO(m *bin.NavTimeGLO) *gpsmsg.Time {
-	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEGLO"}
+func timeNavTimeGLO(m *bin.NavTimeGLO) *gpsmsg.TimeMsg {
+	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-TIMEGLO"}
 	if (m.Valid&bin.NavTimeGLOTODValid) != 0 && (m.Valid&bin.NavTimeGLODateValid) != 0 {
 		u := ptime.GLONASS(m.N4, m.Nt, sTOW(m.TOD)+nsTOW(m.FTOD))
 		t.UTCTime = &u
@@ -65,11 +65,11 @@ func timeNavTimeGLO(m *bin.NavTimeGLO) *gpsmsg.Time {
 	return &t
 }
 
-func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsmsg.Time {
+func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsmsg.TimeMsg {
 	if (m.Valid & bin.NavTimeUTCValidUTC) == 0 {
 		return nil
 	}
-	t := gpsmsg.Time{SrcType: "UBX-NAV-TIMEUTC"}
+	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-TIMEUTC"}
 	u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
 	t.UTCTime = &u
 	t.Accuracy = time.Duration(m.TAcc)
@@ -78,8 +78,8 @@ func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsmsg.Time {
 	return &t
 }
 
-func timeNavPVT(m *bin.NavPVT) *gpsmsg.Time {
-	t := gpsmsg.Time{SrcType: "UBX-NAV-PVT"}
+func timeNavPVT(m *bin.NavPVT) *gpsmsg.TimeMsg {
+	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-PVT"}
 	if (m.Valid & (bin.NavPVTValidTime | bin.NavPVTValidDate)) == (bin.NavPVTValidTime | bin.NavPVTValidDate) {
 		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
 		t.UTCTime = &u
@@ -109,14 +109,14 @@ func utcStandardToGNSS(u bin.UTCStandard) gpsmsg.GNSS {
 	}
 }
 
-func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
+func timeTimTP(m *bin.TimTP) *gpsmsg.TimeMsg {
 	if (m.Flags & bin.TimTPTimeBase) == bin.TimTPTimeBaseUTC {
 		// In this case the m.TOWMS will not be the GPS time (but will have GPS-UTC offset subtracted)
 		// This will be problematic around a leap second, so ignore.
 		// Can we do better?
 		return nil
 	}
-	t := gpsmsg.Time{Ref: gpsmsg.NextPulse, SrcType: "UBX-TIM-TP"}
+	t := gpsmsg.TimeMsg{Ref: gpsmsg.NextPulse, SrcType: "UBX-TIM-TP"}
 	t.PulseOffset = ptime.Picoseconds(m.QErr)
 	conv := ptime.GPS
 	switch m.RefInfo & bin.TimTPTimeRefGNSS {
@@ -137,8 +137,8 @@ func timeTimTP(m *bin.TimTP) *gpsmsg.Time {
 	return &t
 }
 
-func timeTimTos(m *bin.TimTos) *gpsmsg.Time {
-	t := gpsmsg.Time{Ref: gpsmsg.LastPulse, SrcType: "UBX-TIM-TOS"}
+func timeTimTos(m *bin.TimTos) *gpsmsg.TimeMsg {
+	t := gpsmsg.TimeMsg{Ref: gpsmsg.LastPulse, SrcType: "UBX-TIM-TOS"}
 	if (m.Flags & bin.TimTosUTCTimeValid) != 0 {
 		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Minute, m.Second, 0)
 		t.UTCTime = &u

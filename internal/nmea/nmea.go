@@ -22,7 +22,7 @@ type ProtHandler interface {
 	NMEA(msg *Message, tRead time.Time)
 }
 
-func ProcessPacket(data string, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
+func ProcessPacket(data string, tRead time.Time, h gpsmsg.MsgHandler, ph ProtHandler) error {
 	msg, err := Parse(data)
 	if err != nil {
 		return err
@@ -39,7 +39,7 @@ func Parse(data string) (*Message, error) {
 	return msg, nil
 }
 
-func Dispatch(msg *Message, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) error {
+func Dispatch(msg *Message, tRead time.Time, h gpsmsg.MsgHandler, ph ProtHandler) error {
 	switch msg.SentenceFmt {
 	case "RMC":
 		return dispatchTime(parseRMC, msg, tRead, h)
@@ -52,12 +52,12 @@ func Dispatch(msg *Message, tRead time.Time, h gpsmsg.Handler, ph ProtHandler) e
 	return nil
 }
 
-func dispatchTime(parser func(*Message) (*ptime.UTCTime, error), msg *Message, tRead time.Time, h gpsmsg.Handler) error {
+func dispatchTime(parser func(*Message) (*ptime.UTCTime, error), msg *Message, tRead time.Time, h gpsmsg.MsgHandler) error {
 	utc, err := parser(msg)
 	if err != nil {
 		return err
 	}
-	mt := gpsmsg.Time{SrcType: "NMEA-" + msg.SentenceFmt, UTCTime: utc, GNSS: talkerIDToGNSS(msg.TalkerID)}
+	mt := gpsmsg.TimeMsg{SrcType: "NMEA-" + msg.SentenceFmt, UTCTime: utc, GNSS: talkerIDToGNSS(msg.TalkerID)}
 	if h != nil {
 		h.Time(&mt, tRead)
 	}
