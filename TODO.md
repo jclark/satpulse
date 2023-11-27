@@ -139,9 +139,9 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * `--survey-acc` to set accuracy
    * `--disable-time-mode` to disable time mode (also disables survey messages)
    * option to get survey result
-* Support for setting ECEF fixed position
-   * TOML property
-   * `satpulsetool config --ecef`
+* Support for setting ECEF fixed position and accuracy
+   * satpulsed TOML properties: `posAcc = 10`, `pos=[1,2,3]`
+   * `satpulsetool config --pos X,Y,Z --pos-acc 10`
 * Need to check we got something back from a poll (not just check the ACK)
 * Message enablement should be in ConfigMap rather than ConfigOptions so we can turn messages off
    * `satpulsetool config --nmea` should probably turn off time-related UBX messages
@@ -159,7 +159,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 * Allow TOML configuration of things that user must specify
    * primary GNSS constellation
    * antenna delay
-   * fixed ECEF antenna position and accuracy `posAcc = 10`, `posECEF=[1,2,3]` 
 * Control of what kind of configuration satpulsed does to the receiver
     * disable sending any message to receiver
     * disable use of UBX
