@@ -756,9 +756,9 @@ type NavSvin struct {
 	MeanX   int32
 	MeanY   int32
 	MeanZ   int32
-	MeanXHP byte
-	MeanYHP byte
-	MeanZHP byte
+	MeanXHP int8
+	MeanYHP int8
+	MeanZHP int8
 	_       byte
 	MeanAcc uint32
 	Obs     uint32
