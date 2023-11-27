@@ -131,7 +131,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 ## GPS configuration
 
 * Allow monitoring survey progress
-   * gpsmsg.Survey for survey progress
    * log ongoing and completed survey progress
    * support in HTTP monitoring interface (position should link to Google Maps)
 * Tool options for survey
