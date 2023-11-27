@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
@@ -65,7 +65,7 @@ var AllMsgKeys = []ucv.KeyM{
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Version, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
+func configItems(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
 	tg := compileTimePulse(cm, known, &items, &keys)
@@ -75,53 +75,53 @@ func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Version, 
 		return nil, nil, err
 	}
 
-	if v, ok := gpsmsg.CfgAntennaCableDelay.Get(cm); ok {
+	if v, ok := gpsprot.CfgAntennaCableDelay.Get(cm); ok {
 		ucv.AddItem(&items, ucv.KTpAntCabledelay, int64(v))
 	}
-	if v, ok := gpsmsg.CfgTimePulsePolarityRising.Get(cm); ok {
+	if v, ok := gpsprot.CfgTimePulsePolarityRising.Get(cm); ok {
 		ucv.AddItem(&items, ucv.KTpPolTp1, v)
 	}
-	if v, ok := gpsmsg.CfgPrimaryGNSS.Get(cm); ok {
+	if v, ok := gpsprot.CfgPrimaryGNSS.Get(cm); ok {
 		tg = gnssToTimegridTp1(v)
 		ucv.AddItem(&items, ucv.KTpTimegridTp1, tg)
 		ucv.AddItem(&items, ucv.KNavspgUtcstandard, gnssToEnumNavspgUtcstandard(v))
 		ucv.AddItem(&items, ucv.KRateTimeref, gnssToRateTimeref(v))
 	}
-	if v, ok := gpsmsg.CfgSolutionPeriod.Get(cm); ok {
+	if v, ok := gpsprot.CfgSolutionPeriod.Get(cm); ok {
 		ucv.AddItem(&items, ucv.KRateMeas, uint64(uint16(v.Round(time.Millisecond)/time.Millisecond)))
 		ucv.AddItem(&items, ucv.KRateNav, 1)
 	}
-	if v, ok := gpsmsg.CfgStationary.Get(cm); ok {
+	if v, ok := gpsprot.CfgStationary.Get(cm); ok {
 		dm := ucv.ENavspgDynmodelPort
 		if v {
 			dm = ucv.ENavspgDynmodelStat
 		}
 		ucv.AddItem(&items, ucv.KNavspgDynmodel, dm)
 	}
-	if v, ok := gpsmsg.CfgNMEAEnabled.Get(cm); ok {
+	if v, ok := gpsprot.CfgNMEAEnabled.Get(cm); ok {
 		k := portOutprotNmeaKey(port)
 		if k != 0 {
 			ucv.AddItem(&items, k, v)
 		}
 	}
-	if v, ok := gpsmsg.CfgBaudRate.Get(cm); ok {
+	if v, ok := gpsprot.CfgBaudRate.Get(cm); ok {
 		k := portBaudRateKey(port)
 		if k != 0 {
 			ucv.AddItem(&items, k, uint64(v))
 		}
 	}
-	enaKeys := map[gpsmsg.GNSS]ucv.KeyL{
-		gpsmsg.GPS:   ucv.KSignalGpsEna,
-		gpsmsg.GAL:   ucv.KSignalGalEna,
-		gpsmsg.GLO:   ucv.KSignalGloEna,
-		gpsmsg.BDS:   ucv.KSignalBdsEna,
-		gpsmsg.NAVIC: ucv.KSignalNavicEna,
-		gpsmsg.QZSS:  ucv.KSignalQzssEna,
-		gpsmsg.SBAS:  ucv.KSignalSbasEna,
+	enaKeys := map[gpsprot.GNSS]ucv.KeyL{
+		gpsprot.GPS:   ucv.KSignalGpsEna,
+		gpsprot.GAL:   ucv.KSignalGalEna,
+		gpsprot.GLO:   ucv.KSignalGloEna,
+		gpsprot.BDS:   ucv.KSignalBdsEna,
+		gpsprot.NAVIC: ucv.KSignalNavicEna,
+		gpsprot.QZSS:  ucv.KSignalQzssEna,
+		gpsprot.SBAS:  ucv.KSignalSbasEna,
 	}
-	if v, ok := gpsmsg.CfgGNSSEnabled.Get(cm); ok {
+	if v, ok := gpsprot.CfgGNSSEnabled.Get(cm); ok {
 		supportedGNSS := ver.GNSS
-		if v&supportedGNSS&gpsmsg.MajorGNSSSet == 0 {
+		if v&supportedGNSS&gpsprot.MajorGNSSSet == 0 {
 			return nil, nil, errors.New("must enable at least one major GNSS")
 		}
 		for g, k := range enaKeys {
@@ -140,20 +140,20 @@ func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Version, 
 	return items, keys, nil
 }
 
-func configPreSetItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, known ucv.Map) []ucv.Item {
+func configPreSetItems(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, known ucv.Map) []ucv.Item {
 	if tm, ok := ucv.MapGet(known, ucv.KTmodeMode); !ok || tm != ucv.ETmodeModeSurveyIn {
 		return nil
 	}
 	// we know the receiver is in currenntly in survey mode
 	// Do we want to start a survey when we are in survey mode?
-	if !opts.Survey.When.Contains(gpsmsg.TimeModeSurvey) {
+	if !opts.Survey.When.Contains(gpsprot.TimeModeSurvey) {
 		return nil
 	}
 	// If so, we need to set the mode to Disabled first
 	return []ucv.Item{ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeDisabled)}
 }
 
-func compileTimeMode(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Version, known ucv.Map, port ucv.Port, items *[]ucv.Item, keys *[]ucv.Key) error {
+func compileTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, known ucv.Map, port ucv.Port, items *[]ucv.Item, keys *[]ucv.Key) error {
 	svMsgKey := ucv.KUbxTimSvin
 	switch ver.ProductCategory() {
 	case "FTS": // do nothing
@@ -163,15 +163,15 @@ func compileTimeMode(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Versi
 	default:
 		return nil
 	}
-	if v, ok := gpsmsg.CfgFixedPosECEF.Get(cm); ok {
+	if v, ok := gpsprot.CfgFixedPosECEF.Get(cm); ok {
 		err := addTmodeECEF(items, v)
 		if err != nil {
 			return err
 		}
 	}
-	tmReq := gpsmsg.TimeMode(0)
-	tmReq, _ = gpsmsg.CfgTimeMode.Get(cm)
-	tmKnown := gpsmsg.TimeMode(0)
+	tmReq := gpsprot.TimeMode(0)
+	tmReq, _ = gpsprot.CfgTimeMode.Get(cm)
+	tmKnown := gpsprot.TimeMode(0)
 	if tm, ok := ucv.MapGet(known, ucv.KTmodeMode); ok {
 		tmKnown = tmodeModeToTimeMode(tm)
 	}
@@ -203,13 +203,13 @@ func compileTimeMode(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Versi
 		ucv.AddItem(items, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
 		ucv.AddItem(items, ucv.KTmodeSvinMinDur, uint64(opts.Survey.MinDur.Round(time.Second)/time.Second))
 		var mm10 int64
-		mm10, _ = divModRound(int64(opts.Survey.AccLimit), int64(gpsmsg.Millimeter/10))
+		mm10, _ = divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter/10))
 		ucv.AddItem(items, ucv.KTmodeSvinAccLimit, uint64(mm10))
 		ucv.AddItem(items, svMsgKey.KeyU(port), 1)
 		return nil
 	}
 
-	if tmReq != gpsmsg.TimeModeSurvey {
+	if tmReq != gpsprot.TimeModeSurvey {
 		ucv.AddItem(items, ucv.KTmodeMode, timeModeToTmodeMode(tmReq))
 		ucv.AddItem(items, svMsgKey.KeyU(port), 0)
 		return nil
@@ -221,7 +221,7 @@ func compileTimeMode(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Versi
 	return nil
 }
 
-func addTmodeECEF(items *[]ucv.Item, p gpsmsg.Point3D) error {
+func addTmodeECEF(items *[]ucv.Item, p gpsprot.Point3D) error {
 	kecef := []ucv.KeyI{ucv.KTmodeEcefX, ucv.KTmodeEcefY, ucv.KTmodeEcefZ}
 	kecefhp := []ucv.KeyI{ucv.KTmodeEcefXHp, ucv.KTmodeEcefYHp, ucv.KTmodeEcefZHp}
 	for i := 0; i < 3; i++ {
@@ -237,18 +237,18 @@ func addTmodeECEF(items *[]ucv.Item, p gpsmsg.Point3D) error {
 
 // compileTimePulse compiles the parts of the configuration related to the time pulse.
 // If it infers the GNSS to which the pulse is aligned, it returns that.
-func compileTimePulse(cm *gpsmsg.ConfigMap, known ucv.Map, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
+func compileTimePulse(cm *gpsprot.ConfigMap, known ucv.Map, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
 	tg := ucv.ETpTimegridTp1Utc
-	period, havePeriod := gpsmsg.CfgTimePulsePeriod.Get(cm)
-	width, haveWidth := gpsmsg.CfgTimePulseWidth.Get(cm)
-	align, haveAlign := gpsmsg.CfgTimePulseAlignToGNSS.Get(cm)
-	onlyWhenLocked, haveOnlyWhenLocked := gpsmsg.CfgTimePulseOnlyWhenLocked.Get(cm)
+	period, havePeriod := gpsprot.CfgTimePulsePeriod.Get(cm)
+	width, haveWidth := gpsprot.CfgTimePulseWidth.Get(cm)
+	align, haveAlign := gpsprot.CfgTimePulseAlignToGNSS.Get(cm)
+	onlyWhenLocked, haveOnlyWhenLocked := gpsprot.CfgTimePulseOnlyWhenLocked.Get(cm)
 	useLock := align
 	if haveAlign {
 		ucv.AddItem(items, ucv.KTpUseLockedTp1, align)
 		ucv.AddItem(items, ucv.KTpAlignToTowTp1, align)
 		ucv.AddItem(items, ucv.KTpSyncGnssTp1, align)
-		if _, ok := gpsmsg.CfgPrimaryGNSS.Get(cm); !ok {
+		if _, ok := gpsprot.CfgPrimaryGNSS.Get(cm); !ok {
 			tg = inferTimegridTp1(known, cm, items, keys)
 		}
 	} else {
@@ -294,7 +294,7 @@ func compileTimePulse(cm *gpsmsg.ConfigMap, known ucv.Map, items *[]ucv.Item, ke
 	return tg
 }
 
-func inferTpLenTp1(lenLock uint64, known ucv.Map, cm *gpsmsg.ConfigMap, items *[]ucv.Item, keys *[]ucv.Key) {
+func inferTpLenTp1(lenLock uint64, known ucv.Map, cm *gpsprot.ConfigMap, items *[]ucv.Item, keys *[]ucv.Key) {
 	if def, ok := ucv.MapGet(known, ucv.KTpPulseLengthDef); ok {
 		if def == ucv.ETpPulseLengthDefLength {
 			// we can just leave as is
@@ -315,7 +315,7 @@ func inferTpLenTp1(lenLock uint64, known ucv.Map, cm *gpsmsg.ConfigMap, items *[
 	ucv.AddKey(keys, ucv.KTpDutyTp1)
 }
 
-func inferTimegridTp1(known ucv.Map, cm *gpsmsg.ConfigMap, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
+func inferTimegridTp1(known ucv.Map, cm *gpsprot.ConfigMap, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
 	missing := []ucv.Key(nil)
 	if tg, ok := mapGetMiss(known, ucv.KTpTimegridTp1, &missing); ok && tg != ucv.ETpTimegridTp1Utc {
 		return tg
@@ -394,75 +394,75 @@ func rateTimeRefToTimegridTp1(r ucv.EnumRateTimeref) ucv.EnumTpTimegridTp1 {
 	}
 }
 
-func gnssToRateTimeref(g gpsmsg.GNSS) ucv.EnumRateTimeref {
+func gnssToRateTimeref(g gpsprot.GNSS) ucv.EnumRateTimeref {
 	switch g {
-	case gpsmsg.GPS:
+	case gpsprot.GPS:
 		return ucv.ERateTimerefGps
-	case gpsmsg.GAL:
+	case gpsprot.GAL:
 		return ucv.ERateTimerefGal
-	case gpsmsg.GLO:
+	case gpsprot.GLO:
 		return ucv.ERateTimerefGlo
-	case gpsmsg.BDS:
+	case gpsprot.BDS:
 		return ucv.ERateTimerefBds
 	default:
 		return ucv.ERateTimerefUtc
 	}
 }
 
-func gnssToEnumNavspgUtcstandard(g gpsmsg.GNSS) ucv.EnumNavspgUtcstandard {
+func gnssToEnumNavspgUtcstandard(g gpsprot.GNSS) ucv.EnumNavspgUtcstandard {
 	switch g {
-	case gpsmsg.GPS:
+	case gpsprot.GPS:
 		return ucv.ENavspgUtcstandardUsno
-	case gpsmsg.GAL:
+	case gpsprot.GAL:
 		return ucv.ENavspgUtcstandardEu
-	case gpsmsg.GLO:
+	case gpsprot.GLO:
 		return ucv.ENavspgUtcstandardSu
-	case gpsmsg.BDS:
+	case gpsprot.BDS:
 		return ucv.ENavspgUtcstandardNtsc
-	case gpsmsg.QZSS:
+	case gpsprot.QZSS:
 		return ucv.ENavspgUtcstandardNict
-	case gpsmsg.NAVIC:
+	case gpsprot.NAVIC:
 		return ucv.ENavspgUtcstandardNpli
 	}
 	return ucv.ENavspgUtcstandardAuto
 }
 
-func gnssToTimegridTp1(g gpsmsg.GNSS) ucv.EnumTpTimegridTp1 {
+func gnssToTimegridTp1(g gpsprot.GNSS) ucv.EnumTpTimegridTp1 {
 	switch g {
-	case gpsmsg.GPS:
+	case gpsprot.GPS:
 		return ucv.ETpTimegridTp1Gps
-	case gpsmsg.GAL:
+	case gpsprot.GAL:
 		return ucv.ETpTimegridTp1Gal
-	case gpsmsg.GLO:
+	case gpsprot.GLO:
 		return ucv.ETpTimegridTp1Glo
-	case gpsmsg.BDS:
+	case gpsprot.BDS:
 		return ucv.ETpTimegridTp1Bds
-	case gpsmsg.NAVIC:
+	case gpsprot.NAVIC:
 		return ucv.ETpTimegridTp1Navic
 	default:
 		return ucv.ETpTimegridTp1Utc
 	}
 }
 
-func timeModeToTmodeMode(t gpsmsg.TimeMode) ucv.EnumTmodeMode {
+func timeModeToTmodeMode(t gpsprot.TimeMode) ucv.EnumTmodeMode {
 	switch t {
-	case gpsmsg.TimeModeSurvey:
+	case gpsprot.TimeModeSurvey:
 		return ucv.ETmodeModeSurveyIn
-	case gpsmsg.TimeModeFixed:
+	case gpsprot.TimeModeFixed:
 		return ucv.ETmodeModeFixed
 	default:
 		return ucv.ETmodeModeDisabled
 	}
 }
 
-func tmodeModeToTimeMode(t ucv.EnumTmodeMode) gpsmsg.TimeMode {
+func tmodeModeToTimeMode(t ucv.EnumTmodeMode) gpsprot.TimeMode {
 	switch t {
 	case ucv.ETmodeModeSurveyIn:
-		return gpsmsg.TimeModeSurvey
+		return gpsprot.TimeModeSurvey
 	case ucv.ETmodeModeFixed:
-		return gpsmsg.TimeModeFixed
+		return gpsprot.TimeModeFixed
 	default:
-		return gpsmsg.TimeModeDisabled
+		return gpsprot.TimeModeDisabled
 	}
 }
 

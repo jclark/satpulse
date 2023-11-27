@@ -9,7 +9,7 @@ import (
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsio"
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/term"
 )
@@ -21,7 +21,7 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 		return
 	}
 
-	opts := gpsmsg.ConfigOptions{Reset: v.reset, Flash: v.flash}
+	opts := gpsprot.ConfigOptions{Reset: v.reset, Flash: v.flash}
 
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
@@ -33,26 +33,26 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	if err != nil {
 		return
 	}
-	cm := &gpsmsg.ConfigMap{}
+	cm := &gpsprot.ConfigMap{}
 
 	if v.pps {
 		cm.SetPPS()
 	}
 	if v.nmea {
-		gpsmsg.CfgNMEAEnabled.Set(cm, true)
+		gpsprot.CfgNMEAEnabled.Set(cm, true)
 	}
 	if v.primaryGNSS != 0 {
-		gpsmsg.CfgPrimaryGNSS.Set(cm, v.primaryGNSS)
+		gpsprot.CfgPrimaryGNSS.Set(cm, v.primaryGNSS)
 	}
 	if v.enabledGNSS != 0 {
-		gpsmsg.CfgGNSSEnabled.Set(cm, v.enabledGNSS)
+		gpsprot.CfgGNSSEnabled.Set(cm, v.enabledGNSS)
 	}
 	if v.remoteSpeed != 0 {
 		if !term.IsValidSpeed(v.remoteSpeed) {
 			err = fmt.Errorf("invalid remote serial speed %d", v.remoteSpeed)
 			return
 		}
-		gpsmsg.CfgBaudRate.Set(cm, uint32(v.remoteSpeed))
+		gpsprot.CfgBaudRate.Set(cm, uint32(v.remoteSpeed))
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
@@ -60,7 +60,7 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	return
 }
 
-func run(ctx context.Context, lg *slog.Logger, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, conn gpsio.Conn) error {
+func run(ctx context.Context, lg *slog.Logger, cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, conn gpsio.Conn) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)

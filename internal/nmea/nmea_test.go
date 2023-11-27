@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -64,11 +64,11 @@ func testTime(t *testing.T, s string, expectUTC ptime.UTCTime) {
 }
 
 type timeHandler struct {
-	gpsmsg.DefaultHandler
+	gpsprot.DefaultHandler
 	utc *ptime.UTCTime
 }
 
-func (h *timeHandler) Time(msg *gpsmsg.TimeMsg, _ time.Time) {
+func (h *timeHandler) Time(msg *gpsprot.TimeMsg, _ time.Time) {
 	h.utc = msg.UTCTime
 }
 

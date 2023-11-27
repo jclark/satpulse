@@ -1,4 +1,4 @@
-package gpsmsg
+package gpsprot
 
 import (
 	"math"

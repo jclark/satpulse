@@ -4,13 +4,13 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
-func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.TimeMsg {
-	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-TIMEGPS"}
+func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-TIMEGPS"}
 	if (m.Valid&bin.NavTimeGPSTOWValid) != 0 && (m.Valid&bin.NavTimeGPSWeekValid) != 0 {
 		// iTOW field is in milliseconds
 		t.TAITime = ptime.GPS(m.Week, msTOW(m.ITOW)+nsTOW(m.FTOW))
@@ -19,13 +19,13 @@ func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsmsg.TimeMsg {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusGPS
 	}
 	t.Accuracy = time.Duration(m.TAcc)
-	t.GNSS = gpsmsg.GPS
+	t.GNSS = gpsprot.GPS
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
 
-func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsmsg.TimeMsg {
-	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-TIMEBDS"}
+func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-TIMEBDS"}
 	if (m.Valid&bin.NavTimeBDSSOWValid) != 0 && (m.Valid&bin.NavTimeBDSWeekValid) != 0 {
 		t.TAITime = ptime.BeiDou(m.Week, sTOW(m.SOW)+nsTOW(m.FSOW))
 	}
@@ -33,13 +33,13 @@ func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsmsg.TimeMsg {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusBeiDou
 	}
 	t.Accuracy = time.Duration(m.TAcc)
-	t.GNSS = gpsmsg.BDS
+	t.GNSS = gpsprot.BDS
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
 
-func timeNavTimeGal(m *bin.NavTimeGal) *gpsmsg.TimeMsg {
-	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-TIMEGAL"}
+func timeNavTimeGal(m *bin.NavTimeGal) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-TIMEGAL"}
 	if (m.Valid&bin.NavTimeGalTOWValid) != 0 && (m.Valid&bin.NavTimeGalWnoValid) != 0 {
 		// galTOW field is in seconds
 		t.TAITime = ptime.Galileo(m.GalWno, sTOW(m.GalTOW)+nsTOW(m.FGalTOW))
@@ -48,28 +48,28 @@ func timeNavTimeGal(m *bin.NavTimeGal) *gpsmsg.TimeMsg {
 		t.UTCOffset = m.LeapS + ptime.TAIMinusGalileo
 	}
 	t.Accuracy = time.Duration(m.TAcc)
-	t.GNSS = gpsmsg.GAL
+	t.GNSS = gpsprot.GAL
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
 
-func timeNavTimeGLO(m *bin.NavTimeGLO) *gpsmsg.TimeMsg {
-	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-TIMEGLO"}
+func timeNavTimeGLO(m *bin.NavTimeGLO) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-TIMEGLO"}
 	if (m.Valid&bin.NavTimeGLOTODValid) != 0 && (m.Valid&bin.NavTimeGLODateValid) != 0 {
 		u := ptime.GLONASS(m.N4, m.Nt, sTOW(m.TOD)+nsTOW(m.FTOD))
 		t.UTCTime = &u
 	}
-	t.GNSS = gpsmsg.GLO
+	t.GNSS = gpsprot.GLO
 	t.NavEpoch = iTOWEpoch(m.ITOW)
 	t.Accuracy = time.Duration(m.TAcc)
 	return &t
 }
 
-func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsmsg.TimeMsg {
+func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsprot.TimeMsg {
 	if (m.Valid & bin.NavTimeUTCValidUTC) == 0 {
 		return nil
 	}
-	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-TIMEUTC"}
+	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-TIMEUTC"}
 	u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
 	t.UTCTime = &u
 	t.Accuracy = time.Duration(m.TAcc)
@@ -78,8 +78,8 @@ func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsmsg.TimeMsg {
 	return &t
 }
 
-func timeNavPVT(m *bin.NavPVT) *gpsmsg.TimeMsg {
-	t := gpsmsg.TimeMsg{SrcType: "UBX-NAV-PVT"}
+func timeNavPVT(m *bin.NavPVT) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-PVT"}
 	if (m.Valid & (bin.NavPVTValidTime | bin.NavPVTValidDate)) == (bin.NavPVTValidTime | bin.NavPVTValidDate) {
 		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
 		t.UTCTime = &u
@@ -94,41 +94,41 @@ func iTOWEpoch(iTOW uint32) uint32 {
 	return iTOW + 1
 }
 
-func utcStandardToGNSS(u bin.UTCStandard) gpsmsg.GNSS {
+func utcStandardToGNSS(u bin.UTCStandard) gpsprot.GNSS {
 	switch u {
 	case bin.UTCStandardUSNO:
-		return gpsmsg.GPS
+		return gpsprot.GPS
 	case bin.UTCStandardSU:
-		return gpsmsg.GLO
+		return gpsprot.GLO
 	case bin.UTCStandardNTSC:
-		return gpsmsg.BDS
+		return gpsprot.BDS
 	case bin.UTCStandardEU:
-		return gpsmsg.GAL
+		return gpsprot.GAL
 	default:
 		return 0
 	}
 }
 
-func timeTimTP(m *bin.TimTP) *gpsmsg.TimeMsg {
+func timeTimTP(m *bin.TimTP) *gpsprot.TimeMsg {
 	if (m.Flags & bin.TimTPTimeBase) == bin.TimTPTimeBaseUTC {
 		// In this case the m.TOWMS will not be the GPS time (but will have GPS-UTC offset subtracted)
 		// This will be problematic around a leap second, so ignore.
 		// Can we do better?
 		return nil
 	}
-	t := gpsmsg.TimeMsg{Ref: gpsmsg.NextPulse, SrcType: "UBX-TIM-TP"}
+	t := gpsprot.TimeMsg{Ref: gpsprot.NextPulse, SrcType: "UBX-TIM-TP"}
 	t.PulseOffset = ptime.Picoseconds(m.QErr)
 	conv := ptime.GPS
 	switch m.RefInfo & bin.TimTPTimeRefGNSS {
 	case bin.TimTPTimeRefGPS:
-		t.GNSS = gpsmsg.GPS
+		t.GNSS = gpsprot.GPS
 	case bin.TimTPTimeRefGLONASS:
-		t.GNSS = gpsmsg.GLO
+		t.GNSS = gpsprot.GLO
 	case bin.TimTPTimeRefBeiDou:
-		t.GNSS = gpsmsg.BDS
+		t.GNSS = gpsprot.BDS
 		conv = ptime.BeiDou
 	case bin.TimTPTimeRefGalileo:
-		t.GNSS = gpsmsg.GAL
+		t.GNSS = gpsprot.GAL
 		conv = ptime.Galileo
 	default:
 		return nil
@@ -137,8 +137,8 @@ func timeTimTP(m *bin.TimTP) *gpsmsg.TimeMsg {
 	return &t
 }
 
-func timeTimTos(m *bin.TimTos) *gpsmsg.TimeMsg {
-	t := gpsmsg.TimeMsg{Ref: gpsmsg.LastPulse, SrcType: "UBX-TIM-TOS"}
+func timeTimTos(m *bin.TimTos) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{Ref: gpsprot.LastPulse, SrcType: "UBX-TIM-TOS"}
 	if (m.Flags & bin.TimTosUTCTimeValid) != 0 {
 		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Minute, m.Second, 0)
 		t.UTCTime = &u
@@ -161,14 +161,14 @@ func timeTimTos(m *bin.TimTos) *gpsmsg.TimeMsg {
 	return &t
 }
 
-func toTAIFunc(g bin.GNSSID) (gpsmsg.GNSS, func(int16, time.Duration) ptime.Time) {
+func toTAIFunc(g bin.GNSSID) (gpsprot.GNSS, func(int16, time.Duration) ptime.Time) {
 	switch g {
 	case bin.GPS:
-		return gpsmsg.GPS, ptime.GPS
+		return gpsprot.GPS, ptime.GPS
 	case bin.BDS:
-		return gpsmsg.BDS, ptime.BeiDou
+		return gpsprot.BDS, ptime.BeiDou
 	case bin.GAL:
-		return gpsmsg.GAL, ptime.Galileo
+		return gpsprot.GAL, ptime.Galileo
 	}
 	return 0, nil
 }

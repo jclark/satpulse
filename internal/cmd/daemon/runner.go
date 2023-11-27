@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/phc"
@@ -19,7 +19,7 @@ import (
 )
 
 type SyncRunner struct {
-	gpsmsg.DefaultHandler
+	gpsprot.DefaultHandler
 	inLog    io.Writer
 	sseCh    chan<- sse.Event
 	corr     *tsync.Correlator
@@ -118,7 +118,7 @@ func (s *SyncRunner) handlePacket(pkt scan.Packet) {
 	}
 }
 
-func (s *SyncRunner) Time(mt *gpsmsg.TimeMsg, tRead time.Time) {
+func (s *SyncRunner) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	if s.inLog != nil {
 		bytes, err := json.Marshal(mt)
 		if err != nil {
@@ -143,7 +143,7 @@ func (s *SyncRunner) Time(mt *gpsmsg.TimeMsg, tRead time.Time) {
 		s.lg.Debug("computed TAI time from UTC time", "tai", sec)
 	}
 	secRnd := sec.Round(time.Second)
-	if mt.Ref == gpsmsg.NextPulse {
+	if mt.Ref == gpsprot.NextPulse {
 		s.corr.PulseOffset(secRnd, tRead, mt.PulseOffset)
 	} else if secRnd > s.lastTime {
 		s.corr.GPSTime(secRnd, tRead)
@@ -163,7 +163,7 @@ func (s *SyncRunner) Time(mt *gpsmsg.TimeMsg, tRead time.Time) {
 	}
 }
 
-func (s *SyncRunner) LeapSecond(msg *gpsmsg.LeapSecondMsg, _ time.Time) {
+func (s *SyncRunner) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
 	if msg.OffChangeTime <= s.ls.OffChangeTime {
 		return
 	}

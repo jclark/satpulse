@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpscfg"
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
 type ReceiverConfig struct {
@@ -22,20 +22,20 @@ var receiverDefault = ReceiverConfig{
 	SurveyAcc:  20,   // 20 meters
 }
 
-func gpsConfig(r ReceiverConfig) (*gpsmsg.ConfigMap, gpsmsg.ConfigOptions, error) {
+func gpsConfig(r ReceiverConfig) (*gpsprot.ConfigMap, gpsprot.ConfigOptions, error) {
 	m := gpscfg.RequiredConfig()
 	opts := gpscfg.RequiredOptions()
 	if !r.TimeMode {
-		gpsmsg.CfgTimeMode.Set(m, gpsmsg.TimeModeDisabled)
+		gpsprot.CfgTimeMode.Set(m, gpsprot.TimeModeDisabled)
 		opts.Survey.When = 0
 	} else {
-		opts.Survey.When = gpsmsg.TimeModeFlags(gpsmsg.TimeModeDisabled)
+		opts.Survey.When = gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled)
 		if r.Resurvey {
-			opts.Survey.When |= gpsmsg.TimeModeFlags(gpsmsg.TimeModeSurvey)
+			opts.Survey.When |= gpsprot.TimeModeFlags(gpsprot.TimeModeSurvey)
 		}
 		opts.Survey.MinDur = time.Second * time.Duration(r.SurveyTime)
-		opts.Survey.AccLimit = gpsmsg.Meters(r.SurveyAcc)
-		if opts.Survey.AccLimit < gpsmsg.Millimeter {
+		opts.Survey.AccLimit = gpsprot.Meters(r.SurveyAcc)
+		if opts.Survey.AccLimit < gpsprot.Millimeter {
 			return nil, opts, fmt.Errorf("survey accuracy %v is too small", opts.Survey.AccLimit)
 		}
 	}

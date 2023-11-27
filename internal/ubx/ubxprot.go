@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
@@ -12,15 +12,15 @@ type Protocol struct {
 	ver  *Version
 	acks []*Ack
 	cfg  *Configurator
-	h    gpsmsg.MsgHandler
+	h    gpsprot.MsgHandler
 	ph   ProtHandler
 }
 
-var _ gpsmsg.Protocol = (*Protocol)(nil)
+var _ gpsprot.Protocol = (*Protocol)(nil)
 
 type Ack struct {
 	msgID bin.MsgID
-	gpsmsg.Ack
+	gpsprot.Ack
 }
 
 func (prot *Protocol) ProcessPacket(data string, tRead time.Time) error {
@@ -55,7 +55,7 @@ func (prot *Protocol) ProcessPacket(data string, tRead time.Time) error {
 	return nil
 }
 
-func (prot *Protocol) SetHandler(h gpsmsg.MsgHandler) {
+func (prot *Protocol) SetHandler(h gpsprot.MsgHandler) {
 	prot.h = h
 }
 
@@ -64,14 +64,14 @@ func (prot *Protocol) SetProtHandler(ph ProtHandler) {
 }
 
 func (prot *Protocol) ack(msgID bin.MsgID, ok bool, t time.Time) {
-	prot.acks = append(prot.acks, &Ack{msgID, gpsmsg.Ack{OK: ok, TRead: t}})
+	prot.acks = append(prot.acks, &Ack{msgID, gpsprot.Ack{OK: ok, TRead: t}})
 }
 
 func (prot *Protocol) Version() *Version {
 	return prot.ver
 }
 
-func (prot *Protocol) FindAck(packet []byte, tSent time.Time) *gpsmsg.Ack {
+func (prot *Protocol) FindAck(packet []byte, tSent time.Time) *gpsprot.Ack {
 	a := prot.FindAckByMsgId(bin.PacketMsgId(packet), tSent)
 	if a == nil {
 		return nil
@@ -103,7 +103,7 @@ func (prot *Protocol) ProbeOK() bool {
 	return prot.ver != nil
 }
 
-func (prot *Protocol) Configure(target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions) (gpsmsg.Configurator, error) {
+func (prot *Protocol) Configure(target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions) (gpsprot.Configurator, error) {
 	if prot.ver == nil {
 		panic("Configure called before probe OK")
 	}

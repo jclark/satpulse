@@ -3,7 +3,7 @@ package ubx
 import (
 	"time"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
@@ -12,7 +12,7 @@ type ProtHandler interface {
 	UBX(msg bin.Msg, tRead time.Time)
 }
 
-func ProcessPacket(data string, tRead time.Time, h gpsmsg.MsgHandler, ph ProtHandler) error {
+func ProcessPacket(data string, tRead time.Time, h gpsprot.MsgHandler, ph ProtHandler) error {
 	m, err := bin.ParseMsg(data)
 	if err != nil {
 		return err
@@ -23,8 +23,8 @@ func ProcessPacket(data string, tRead time.Time, h gpsmsg.MsgHandler, ph ProtHan
 	return nil
 }
 
-func Dispatch(m bin.Msg, tRead time.Time, h gpsmsg.MsgHandler) bool {
-	var time *gpsmsg.TimeMsg
+func Dispatch(m bin.Msg, tRead time.Time, h gpsprot.MsgHandler) bool {
+	var time *gpsprot.TimeMsg
 	switch mt := m.(type) {
 	case *bin.NavTimeLS:
 		ls := leapSecond(mt)

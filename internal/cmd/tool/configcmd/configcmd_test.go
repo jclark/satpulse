@@ -3,7 +3,7 @@ package configcmd
 import (
 	"testing"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
 func TestGnssListSet(t *testing.T) {
@@ -17,11 +17,11 @@ func TestGnssListSet(t *testing.T) {
 		t.Errorf("Expected length of 2, got %v", len(gl.gnss))
 	}
 
-	if gl.gnss[0] != gpsmsg.GPS {
+	if gl.gnss[0] != gpsprot.GPS {
 		t.Errorf("Expected first element to be GPS, got %v", gl.gnss[0])
 	}
 
-	if gl.gnss[1] != gpsmsg.GLO {
+	if gl.gnss[1] != gpsprot.GLO {
 		t.Errorf("Expected second element to be GLO, got %v", gl.gnss[1])
 	}
 

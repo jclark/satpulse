@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 )
 
@@ -12,12 +12,12 @@ func TestTp5(t *testing.T) {
 	raw := &RawConfig{tp5: new(ubxbin.CfgTp5)}
 	raw.tp5.Flags |= ubxbin.CfgTp5IsLength
 
-	cm := &gpsmsg.ConfigMap{}
+	cm := &gpsprot.ConfigMap{}
 	cm.SetPPS()
 
 	raw.tp5 = raw.changeTp5(cm)
 
-	ncm := gpsmsg.ConfigMap{}
+	ncm := gpsprot.ConfigMap{}
 	raw.cookTp5(&ncm)
 	bad := cm.Inconsistent(&ncm)
 	if !bad.IsEmpty() {
@@ -30,7 +30,7 @@ func TestTp5(t *testing.T) {
 		t.Errorf("repeated changeTp5 wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeTp5(new(gpsmsg.ConfigMap))
+	rep = raw.changeTp5(new(gpsprot.ConfigMap))
 	if rep != nil {
 		t.Errorf("changeTp5 with nothing wasn't a no-op: %v", rep)
 	}
@@ -39,13 +39,13 @@ func TestTp5(t *testing.T) {
 func TestChangeTp5GNSS(t *testing.T) {
 	// Create a new RawConfig and Config
 	raw := RawConfig{tp5: new(ubxbin.CfgTp5)}
-	cm := gpsmsg.ConfigMap{}
+	cm := gpsprot.ConfigMap{}
 
 	// Call changeTp5GNSS with the empty RawConfig and Config
 	gnss := raw.changeTp5GNSS(&cm)
 
 	// Check that the result is gpsmsg.GPS
-	if gnss != gpsmsg.GPS {
+	if gnss != gpsprot.GPS {
 		t.Errorf("expected gpsmsg.GPS, got %v", gnss)
 	}
 }
@@ -53,12 +53,12 @@ func TestChangeTp5GNSS(t *testing.T) {
 func TestNav5(t *testing.T) {
 	raw := &RawConfig{nav5: new(ubxbin.CfgNav5)}
 
-	cm := &gpsmsg.ConfigMap{}
+	cm := &gpsprot.ConfigMap{}
 	cm.SetPPS()
 
 	raw.nav5 = raw.changeNav5(cm)
 
-	ncm := gpsmsg.ConfigMap{}
+	ncm := gpsprot.ConfigMap{}
 	raw.cookNav5(&ncm)
 	bad := cm.Inconsistent(&ncm)
 	if !bad.IsEmpty() {
@@ -71,7 +71,7 @@ func TestNav5(t *testing.T) {
 		t.Errorf("repeated changeNav5 wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeNav5(new(gpsmsg.ConfigMap))
+	rep = raw.changeNav5(new(gpsprot.ConfigMap))
 	if rep != nil {
 		t.Errorf("changeNav5 with nothing wasn't a no-op: %v", rep)
 	}
@@ -82,12 +82,12 @@ func TestRate(t *testing.T) {
 	raw.rate.NavRate = 1
 	ver := new(Version)
 
-	cm := &gpsmsg.ConfigMap{}
+	cm := &gpsprot.ConfigMap{}
 	cm.SetPPS()
 
 	raw.rate = raw.changeRate(cm, ver)
 
-	ncm := gpsmsg.ConfigMap{}
+	ncm := gpsprot.ConfigMap{}
 	raw.cookRate(&ncm, ver)
 	bad := cm.Inconsistent(&ncm)
 	if !bad.IsEmpty() {
@@ -100,44 +100,44 @@ func TestRate(t *testing.T) {
 		t.Errorf("repeated changeRate wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeRate(new(gpsmsg.ConfigMap), ver)
+	rep = raw.changeRate(new(gpsprot.ConfigMap), ver)
 	if rep != nil {
 		t.Errorf("changeRate with nothing wasn't a no-op: %v", rep)
 	}
 }
 
 func TestConfiguratorSane(t *testing.T) {
-	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.ConfigMap, ver *Version) {
+	testConfigurator(t, func(raw *RawConfig, target *gpsprot.ConfigMap, ver *Version) {
 		target.SetPPS()
 	})
 
 }
 
 func TestConfiguratorGPS(t *testing.T) {
-	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.ConfigMap, ver *Version) {
+	testConfigurator(t, func(raw *RawConfig, target *gpsprot.ConfigMap, ver *Version) {
 		target.SetPPS()
-		gpsmsg.CfgPrimaryGNSS.Set(target, gpsmsg.GPS)
+		gpsprot.CfgPrimaryGNSS.Set(target, gpsprot.GPS)
 	})
 }
 
 func TestConfiguratorGalileo(t *testing.T) {
-	testConfigurator(t, func(raw *RawConfig, target *gpsmsg.ConfigMap, ver *Version) {
+	testConfigurator(t, func(raw *RawConfig, target *gpsprot.ConfigMap, ver *Version) {
 		target.SetPPS()
 		raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
-		gpsmsg.CfgPrimaryGNSS.Set(target, gpsmsg.GAL)
+		gpsprot.CfgPrimaryGNSS.Set(target, gpsprot.GAL)
 	})
 }
 
-func testConfigurator(t *testing.T, setup func(*RawConfig, *gpsmsg.ConfigMap, *Version)) *Configurator {
+func testConfigurator(t *testing.T, setup func(*RawConfig, *gpsprot.ConfigMap, *Version)) *Configurator {
 	raw := newRawConfig()
-	target := &gpsmsg.ConfigMap{}
+	target := &gpsprot.ConfigMap{}
 	ver := &Version{}
 	setup(raw, target, ver)
 
 	prot := &Protocol{}
 	prot.ver = ver
 
-	c, err := prot.Configure(target, gpsmsg.ConfigOptions{})
+	c, err := prot.Configure(target, gpsprot.ConfigOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error from Configure: %v", err)
 	}
@@ -271,10 +271,10 @@ func TestDivModRound(t *testing.T) {
 }
 
 func TestSplitLength(t *testing.T) {
-	const mm10 = gpsmsg.Micrometer * 100
+	const mm10 = gpsprot.Micrometer * 100
 
 	testCases := []struct {
-		length       gpsmsg.Length
+		length       gpsprot.Length
 		expectedCm   int32
 		expectedMm10 int8
 	}{
@@ -282,7 +282,7 @@ func TestSplitLength(t *testing.T) {
 		{250 * mm10, 3, -50},
 		{-105 * mm10, -1, -5},
 		{-250 * mm10, -3, 50},
-		{10475 * gpsmsg.Micrometer, 1, 5},
+		{10475 * gpsprot.Micrometer, 1, 5},
 	}
 
 	for _, tc := range testCases {

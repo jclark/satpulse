@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
 type validFlagsTestCase struct {
@@ -24,11 +24,11 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--device-speed", "9600"}, flagVars{localSpeed: 9600}},
 	{"ttyS0", []string{"--flash", "--reset"}, flagVars{flash: true, reset: true}},
 	{"ttyS0", []string{"--gnss", "GPS,GLO,GAL,BDS"}, flagVars{
-		primaryGNSS: gpsmsg.GPS,
-		enabledGNSS: gpsmsg.MajorGNSSSet}},
+		primaryGNSS: gpsprot.GPS,
+		enabledGNSS: gpsprot.MajorGNSSSet}},
 	{"ttyS0", []string{"--gnss", "beidou,gps,glonass,galileo"}, flagVars{
-		primaryGNSS: gpsmsg.BDS,
-		enabledGNSS: gpsmsg.MajorGNSSSet}},
+		primaryGNSS: gpsprot.BDS,
+		enabledGNSS: gpsprot.MajorGNSSSet}},
 	{"", []string{"--socket", "/tmp/socket"}, flagVars{socketPath: "/tmp/socket"}},
 }
 

@@ -6,19 +6,19 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
 type Version struct {
-	HW         string         `json:"hw"`
-	SW         string         `json:"sw"`
-	Extensions []string       `json:"extensions,omitempty"`
-	FW         *FWVer         `json:"fw,omitempty"`
-	Prot       *ProtVer       `json:"prot,omitempty"`
-	Mod        string         `json:"mod"`
-	Flash      bool           `json:"flash"`
-	GNSS       gpsmsg.GNSSSet `json:"gnss,omitempty"`
+	HW         string          `json:"hw"`
+	SW         string          `json:"sw"`
+	Extensions []string        `json:"extensions,omitempty"`
+	FW         *FWVer          `json:"fw,omitempty"`
+	Prot       *ProtVer        `json:"prot,omitempty"`
+	Mod        string          `json:"mod"`
+	Flash      bool            `json:"flash"`
+	GNSS       gpsprot.GNSSSet `json:"gnss,omitempty"`
 }
 
 type ProtVer struct {
@@ -109,7 +109,7 @@ func findProtVer(extensions []string) *ProtVer {
 	return &ProtVer{mustAtob(submatches[1]), mustAtob(submatches[2])}
 }
 
-func findGNSS(extensions []string) (gnss gpsmsg.GNSSSet) {
+func findGNSS(extensions []string) (gnss gpsprot.GNSSSet) {
 	for _, re := range gnssRegexps {
 		submatches := findSubmatch(extensions, re)
 		if submatches == nil {
@@ -117,11 +117,11 @@ func findGNSS(extensions []string) (gnss gpsmsg.GNSSSet) {
 		}
 		names := strings.Split(submatches[0], ";")
 		for _, name := range names {
-			g, err := gpsmsg.ParseGNSS(name)
+			g, err := gpsprot.ParseGNSS(name)
 			if err != nil {
 				continue
 			}
-			gnss |= gpsmsg.GNSSFlag(g)
+			gnss |= gpsprot.GNSSFlag(g)
 		}
 	}
 	return

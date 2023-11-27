@@ -3,7 +3,7 @@ package ubx
 import (
 	"testing"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
 func TestFindGNSS(t *testing.T) {
@@ -15,8 +15,8 @@ func TestFindGNSS(t *testing.T) {
 
 	gnssSet := findGNSS(extensions)
 
-	expectedGNSSSet := gpsmsg.MajorGNSSSet |
-		gpsmsg.GNSSFlag(gpsmsg.SBAS, gpsmsg.QZSS)
+	expectedGNSSSet := gpsprot.MajorGNSSSet |
+		gpsprot.GNSSFlag(gpsprot.SBAS, gpsprot.QZSS)
 
 	if gnssSet != expectedGNSSSet {
 		t.Errorf("Expected GNSSSet to be %v, got %v", expectedGNSSSet, gnssSet)

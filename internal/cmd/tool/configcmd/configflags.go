@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/jclark/satpulse/internal/cmd/tool"
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/spf13/pflag"
 )
 
@@ -18,9 +18,9 @@ type flagVars struct {
 	remoteSpeed  int
 	serialDevice string
 	socketPath   string
-	primaryGNSS  gpsmsg.GNSS
+	primaryGNSS  gpsprot.GNSS
 	// avoid using a slice here, so flagVars is comparable
-	enabledGNSS gpsmsg.GNSSSet
+	enabledGNSS gpsprot.GNSSSet
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--socket path]
@@ -69,13 +69,13 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("first GNSS must be a major constellation: %s is not", primary)
 		}
 		vars.primaryGNSS = primary
-		vars.enabledGNSS = gpsmsg.GNSSFlag(gl.gnss...)
+		vars.enabledGNSS = gpsprot.GNSSFlag(gl.gnss...)
 	}
 	return &vars, nil, nil
 }
 
 type gnssList struct {
-	gnss []gpsmsg.GNSS
+	gnss []gpsprot.GNSS
 }
 
 var _ pflag.Value = (*gnssList)(nil)
@@ -95,7 +95,7 @@ func (gl *gnssList) Type() string {
 func (gl *gnssList) Set(s string) error {
 	words := strings.Split(s, ",")
 	for _, w := range words {
-		gnss, err := gpsmsg.ParseGNSS(strings.Trim(w, " \t"))
+		gnss, err := gpsprot.ParseGNSS(strings.Trim(w, " \t"))
 		if err != nil {
 			return err
 		}

@@ -4,15 +4,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
 func TestConfigItems_Sane(t *testing.T) {
-	cm := &gpsmsg.ConfigMap{}
+	cm := &gpsprot.ConfigMap{}
 	cm.SetPPS()
-	ver := &Version{GNSS: gpsmsg.MajorGNSSSet}
-	opts := gpsmsg.ConfigOptions{}
+	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
+	opts := gpsprot.ConfigOptions{}
 	_, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
@@ -32,12 +32,12 @@ func TestConfigItems_Sane(t *testing.T) {
 	ucv.MapSet(known, ucv.KSignalBdsEna, true)
 	m := testSanity(t, cm, opts, ver, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Bds)
-	gpsmsg.CfgPrimaryGNSS.Set(cm, gpsmsg.GAL)
+	gpsprot.CfgPrimaryGNSS.Set(cm, gpsprot.GAL)
 	m = testSanity(t, cm, opts, ver, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
 }
 
-func testSanity(t *testing.T, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Version, known ucv.Map) ucv.Map {
+func testSanity(t *testing.T, cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, known ucv.Map) ucv.Map {
 	items, missing, err := configItems(cm, opts, ver, known, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
@@ -84,11 +84,11 @@ func expectMissing[T comparable](t *testing.T, m ucv.Map, key ucv.TypedKey[T]) {
 }
 
 func TestConfigItems_GNSS(t *testing.T) {
-	cm := &gpsmsg.ConfigMap{}
-	ver := &Version{GNSS: gpsmsg.MajorGNSSSet}
-	opts := gpsmsg.ConfigOptions{}
-	gpsmsg.CfgPrimaryGNSS.Set(cm, gpsmsg.GAL)
-	gpsmsg.CfgGNSSEnabled.Set(cm, gpsmsg.GNSSFlag(gpsmsg.GAL))
+	cm := &gpsprot.ConfigMap{}
+	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
+	opts := gpsprot.ConfigOptions{}
+	gpsprot.CfgPrimaryGNSS.Set(cm, gpsprot.GAL)
+	gpsprot.CfgGNSSEnabled.Set(cm, gpsprot.GNSSFlag(gpsprot.GAL))
 	items, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
@@ -109,11 +109,11 @@ func TestConfigItems_GNSS(t *testing.T) {
 }
 
 func TestConfigItems_AntennaCableDelay(t *testing.T) {
-	cm := &gpsmsg.ConfigMap{}
-	opts := gpsmsg.ConfigOptions{}
+	cm := &gpsprot.ConfigMap{}
+	opts := gpsprot.ConfigOptions{}
 	const nanos = 10
-	gpsmsg.CfgAntennaCableDelay.Set(cm, nanos*time.Nanosecond)
-	ver := &Version{GNSS: gpsmsg.MajorGNSSSet}
+	gpsprot.CfgAntennaCableDelay.Set(cm, nanos*time.Nanosecond)
+	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 
 	items, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
 	if err != nil {
@@ -133,15 +133,15 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 }
 
 func TestConfigItems_Survey(t *testing.T) {
-	cm := &gpsmsg.ConfigMap{}
-	opts := gpsmsg.ConfigOptions{}
-	opts.Survey = gpsmsg.Survey{
-		When:     gpsmsg.TimeModeFlags(gpsmsg.TimeModeDisabled),
+	cm := &gpsprot.ConfigMap{}
+	opts := gpsprot.ConfigOptions{}
+	opts.Survey = gpsprot.Survey{
+		When:     gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled),
 		MinDur:   2000 * time.Second,
-		AccLimit: 10 * gpsmsg.Meter,
+		AccLimit: 10 * gpsprot.Meter,
 	}
 	ver := &Version{
-		GNSS: gpsmsg.MajorGNSSSet,
+		GNSS: gpsprot.MajorGNSSSet,
 		FW:   &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
 	}
 	_, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)

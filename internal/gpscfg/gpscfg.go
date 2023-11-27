@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsio"
-	"github.com/jclark/satpulse/internal/gpsmsg"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/ubx"
@@ -19,12 +19,12 @@ import (
 
 type Result struct {
 	Version    *ubx.Version
-	ConfigMap  *gpsmsg.ConfigMap
-	LeapSecond *gpsmsg.LeapSecondMsg
+	ConfigMap  *gpsprot.ConfigMap
+	LeapSecond *gpsprot.LeapSecondMsg
 }
 
 type msgHandler struct {
-	gpsmsg.DefaultHandler
+	gpsprot.DefaultHandler
 	lg            *slog.Logger
 	packetCh      <-chan scan.Packet
 	ubxMsgCount   int
@@ -34,7 +34,7 @@ type msgHandler struct {
 	nmeaSentences map[string]map[string]bool
 	rtcmMsgs      map[uint16]bool
 	ubxProt       *ubx.Protocol
-	leapSecond    *gpsmsg.LeapSecondMsg
+	leapSecond    *gpsprot.LeapSecondMsg
 }
 
 type badCount struct {
@@ -43,7 +43,7 @@ type badCount struct {
 
 var _ ubx.ProtHandler = &msgHandler{}
 
-func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
+func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetCh)
 	var err error
@@ -66,7 +66,7 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, o
 	if badNew.corruptMsgs > 0 {
 		return nil, errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
 	}
-	var cm *gpsmsg.ConfigMap
+	var cm *gpsprot.ConfigMap
 	if ubxOK {
 		cm, err = mh.configure(ctx, mh.ubxProt, target, opts, port)
 		if err != nil {
@@ -82,16 +82,16 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsmsg.ConfigMap, o
 	return mh.finish(cm), nil
 }
 
-func RequiredConfig() *gpsmsg.ConfigMap {
-	cm := &gpsmsg.ConfigMap{}
+func RequiredConfig() *gpsprot.ConfigMap {
+	cm := &gpsprot.ConfigMap{}
 	cm.SetPPS()
 	// Config is very slow on 8-th gen if NMEA is enabled
-	gpsmsg.CfgNMEAEnabled.Set(cm, false)
+	gpsprot.CfgNMEAEnabled.Set(cm, false)
 	return cm
 }
 
-func RequiredOptions() gpsmsg.ConfigOptions {
-	return gpsmsg.ConfigOptions{EnableLeapSecondMsg: true, EnableTimeMsg: true, Detect: true}
+func RequiredOptions() gpsprot.ConfigOptions {
+	return gpsprot.ConfigOptions{EnableLeapSecondMsg: true, EnableTimeMsg: true, Detect: true}
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
@@ -103,7 +103,7 @@ func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
 	mh.nmeaSentences = map[string]map[string]bool{}
 }
 
-func (mh *msgHandler) finish(cm *gpsmsg.ConfigMap) *Result {
+func (mh *msgHandler) finish(cm *gpsprot.ConfigMap) *Result {
 	lg := mh.lg
 	if cm != nil {
 		lg.Info("GPS configuration", "cfg", cm)
@@ -186,7 +186,7 @@ func (mh *msgHandler) packetChClosed(ctx context.Context) error {
 	return io.ErrUnexpectedEOF
 }
 
-func (mh *msgHandler) probe(ctx context.Context, prot gpsmsg.Protocol, port gpsio.OutPort) (bool, error) {
+func (mh *msgHandler) probe(ctx context.Context, prot gpsprot.Protocol, port gpsio.OutPort) (bool, error) {
 	msg := prot.ProbePacket()
 	_, err := port.Write(msg)
 	if err != nil {
@@ -211,7 +211,7 @@ func (mh *msgHandler) probe(ctx context.Context, prot gpsmsg.Protocol, port gpsi
 	return false, nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsmsg.Protocol, target *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, port gpsio.OutPort) (*gpsmsg.ConfigMap, error) {
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.Protocol, target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, port gpsio.OutPort) (*gpsprot.ConfigMap, error) {
 	cfgtor, err := prot.Configure(target, opts)
 	if err != nil {
 		return nil, err
@@ -240,7 +240,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsmsg.Protocol, targe
 
 const minWaitAfterSend = 10 * time.Millisecond
 
-func (mh *msgHandler) waitAfterSend(ctx context.Context, prot gpsmsg.Protocol, req gpsmsg.ConfigRequest, pkt []byte, tSend time.Time, port gpsio.OutPort) error {
+func (mh *msgHandler) waitAfterSend(ctx context.Context, prot gpsprot.Protocol, req gpsprot.ConfigRequest, pkt []byte, tSend time.Time, port gpsio.OutPort) error {
 	ackable := req.Ackable()
 	w := time.Millisecond * 1500
 	reqID := req.ID()
@@ -303,7 +303,7 @@ func (mh *msgHandler) packet(f scan.Packet) {
 	}
 }
 
-func (mh *msgHandler) LeapSecond(ls *gpsmsg.LeapSecondMsg, _ time.Time) {
+func (mh *msgHandler) LeapSecond(ls *gpsprot.LeapSecondMsg, _ time.Time) {
 	mh.leapSecond = ls
 }
 
