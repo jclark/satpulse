@@ -25,6 +25,7 @@ func ProcessPacket(data string, tRead time.Time, h gpsprot.MsgHandler, ph ProtHa
 
 func Dispatch(m bin.Msg, tRead time.Time, h gpsprot.MsgHandler) bool {
 	var time *gpsprot.TimeMsg
+	var sv *gpsprot.SurveyMsg
 	switch mt := m.(type) {
 	case *bin.NavTimeLS:
 		ls := leapSecond(mt)
@@ -51,14 +52,22 @@ func Dispatch(m bin.Msg, tRead time.Time, h gpsprot.MsgHandler) bool {
 		time = timeTimTP(mt)
 	case *bin.TimTos:
 		time = timeTimTos(mt)
+	case *bin.NavSvin:
+		sv = surveyNavSvin(mt)
+	case *bin.TimSvin:
+		sv = surveyTimSvin(mt)
 	default:
 		return false
 	}
-	if time == nil {
+	if time == nil && sv == nil {
 		return false
 	}
 	if h != nil {
-		h.Time(time, tRead)
+		if sv != nil {
+			h.Survey(sv, tRead)
+		} else {
+			h.Time(time, tRead)
+		}
 	}
 	return true
 }
