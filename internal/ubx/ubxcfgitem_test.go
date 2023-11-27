@@ -11,9 +11,9 @@ import (
 func TestConfigItems_Sane(t *testing.T) {
 	cm := &gpsmsg.ConfigMap{}
 	cm.SetPPS()
-	gs := gpsmsg.MajorGNSSSet
+	ver := &Version{GNSS: gpsmsg.MajorGNSSSet}
 	opts := gpsmsg.ConfigOptions{}
-	_, missing, err := configItems(cm, opts, gs, ucv.Map{}, ucv.UART1)
+	_, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestConfigItems_Sane(t *testing.T) {
 	}
 	known := ucv.Map{}
 	ucv.MapSet(known, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
-	_ = testSanity(t, cm, opts, gs, known)
+	_ = testSanity(t, cm, opts, ver, known)
 	known = ucv.Map{}
 	ucv.MapSet(known, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Utc)
 	ucv.MapSet(known, ucv.KNavspgUtcstandard, ucv.ENavspgUtcstandardAuto)
@@ -30,15 +30,15 @@ func TestConfigItems_Sane(t *testing.T) {
 	ucv.MapSet(known, ucv.KSignalGloEna, false)
 	ucv.MapSet(known, ucv.KSignalGalEna, false)
 	ucv.MapSet(known, ucv.KSignalBdsEna, true)
-	m := testSanity(t, cm, opts, gs, known)
+	m := testSanity(t, cm, opts, ver, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Bds)
 	gpsmsg.CfgPrimaryGNSS.Set(cm, gpsmsg.GAL)
-	m = testSanity(t, cm, opts, gs, known)
+	m = testSanity(t, cm, opts, ver, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
 }
 
-func testSanity(t *testing.T, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, gnss gpsmsg.GNSSSet, known ucv.Map) ucv.Map {
-	items, missing, err := configItems(cm, opts, gnss, known, ucv.UART1)
+func testSanity(t *testing.T, cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Version, known ucv.Map) ucv.Map {
+	items, missing, err := configItems(cm, opts, ver, known, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -85,11 +85,11 @@ func expectMissing[T comparable](t *testing.T, m ucv.Map, key ucv.TypedKey[T]) {
 
 func TestConfigItems_GNSS(t *testing.T) {
 	cm := &gpsmsg.ConfigMap{}
-	gs := gpsmsg.MajorGNSSSet
+	ver := &Version{GNSS: gpsmsg.MajorGNSSSet}
 	opts := gpsmsg.ConfigOptions{}
 	gpsmsg.CfgPrimaryGNSS.Set(cm, gpsmsg.GAL)
 	gpsmsg.CfgGNSSEnabled.Set(cm, gpsmsg.GNSSFlag(gpsmsg.GAL))
-	items, missing, err := configItems(cm, opts, gs, ucv.Map{}, ucv.UART1)
+	items, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -113,8 +113,9 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 	opts := gpsmsg.ConfigOptions{}
 	const nanos = 10
 	gpsmsg.CfgAntennaCableDelay.Set(cm, nanos*time.Nanosecond)
+	ver := &Version{GNSS: gpsmsg.MajorGNSSSet}
 
-	items, missing, err := configItems(cm, opts, gpsmsg.MajorGNSSSet, ucv.Map{}, ucv.UART1)
+	items, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -129,4 +130,41 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 	} else if ns != nanos {
 		t.Errorf("expected KTpAntCabledelay to be %v, got %v", nanos, ns)
 	}
+}
+
+func TestConfigItems_Survey(t *testing.T) {
+	cm := &gpsmsg.ConfigMap{}
+	opts := gpsmsg.ConfigOptions{}
+	opts.Survey = gpsmsg.Survey{
+		When:     gpsmsg.TimeModeFlags(gpsmsg.TimeModeDisabled),
+		MinDur:   2000 * time.Second,
+		AccLimit: 10 * gpsmsg.Meter,
+	}
+	ver := &Version{
+		GNSS: gpsmsg.MajorGNSSSet,
+		FW:   &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
+	}
+	_, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
+	if err != nil {
+		t.Fatalf("configItems[1]: %v", err)
+	}
+	if len(missing) != 1 {
+		t.Fatalf("expected missing to be 1, got %v", missing)
+	}
+	if missing[0] != ucv.KTmodeMode.Key() {
+		t.Fatalf("expected missing to be KTmodeMode, got %v", missing)
+	}
+	m := ucv.Map{}
+	ucv.MapSet(m, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
+	items, missing, err := configItems(cm, opts, ver, m, ucv.UART1)
+	if err != nil {
+		t.Fatalf("configItems[2]: %v", err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("expected missing to be empty, got %v", missing)
+	}
+	m = ucv.Map{}
+	m.AddItems(items)
+	expectItem(t, m, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
+	expectItem(t, m, ucv.KTmodeSvinMinDur, 2000)
 }

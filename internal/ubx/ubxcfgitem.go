@@ -27,6 +27,9 @@ var AllKeys = []ucv.AnyTypedKey{
 	ucv.KTmodeEcefYHp,
 	ucv.KTmodeEcefZ,
 	ucv.KTmodeEcefZHp,
+	ucv.KTmodeMode,
+	ucv.KTmodeSvinMinDur,
+	ucv.KTmodeSvinAccLimit,
 	ucv.KTpAlignToTowTp1,
 	ucv.KTpAntCabledelay,
 	ucv.KTpDutyTp1,
@@ -50,6 +53,8 @@ var AllMsgKeys = []ucv.KeyM{
 	ucv.KUbxNavTimebds,
 	ucv.KUbxNavTimeutc,
 	ucv.KUbxNavTimels,
+	ucv.KUbxNavSvin,
+	ucv.KUbxTimSvin,
 	ucv.KUbxTimTp,
 }
 
@@ -60,10 +65,16 @@ var AllMsgKeys = []ucv.KeyM{
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, supportedGNSS gpsmsg.GNSSSet, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
+func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Version, known ucv.Map, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
-	tg := compileTimePulse(known, cm, &items, &keys)
+	tg := compileTimePulse(cm, known, &items, &keys)
+
+	err := compileTimeMode(cm, opts, ver, known, port, &items, &keys)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	if v, ok := gpsmsg.CfgAntennaCableDelay.Get(cm); ok {
 		ucv.AddItem(&items, ucv.KTpAntCabledelay, int64(v))
 	}
@@ -87,15 +98,6 @@ func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, supportedGNSS 
 		}
 		ucv.AddItem(&items, ucv.KNavspgDynmodel, dm)
 	}
-	if v, ok := gpsmsg.CfgTimeMode.Get(cm); ok {
-		ucv.AddItem(&items, ucv.KTmodeMode, timeModeToTmodeMode(v))
-	}
-	if v, ok := gpsmsg.CfgFixedPosECEF.Get(cm); ok {
-		err := addTmodeECEF(&items, v)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
 	if v, ok := gpsmsg.CfgNMEAEnabled.Get(cm); ok {
 		k := portOutprotNmeaKey(port)
 		if k != 0 {
@@ -118,6 +120,7 @@ func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, supportedGNSS 
 		gpsmsg.SBAS:  ucv.KSignalSbasEna,
 	}
 	if v, ok := gpsmsg.CfgGNSSEnabled.Get(cm); ok {
+		supportedGNSS := ver.GNSS
 		if v&supportedGNSS&gpsmsg.MajorGNSSSet == 0 {
 			return nil, nil, errors.New("must enable at least one major GNSS")
 		}
@@ -137,6 +140,87 @@ func configItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, supportedGNSS 
 	return items, keys, nil
 }
 
+func configPreSetItems(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, known ucv.Map) []ucv.Item {
+	if tm, ok := ucv.MapGet(known, ucv.KTmodeMode); !ok || tm != ucv.ETmodeModeSurveyIn {
+		return nil
+	}
+	// we know the receiver is in currenntly in survey mode
+	// Do we want to start a survey when we are in survey mode?
+	if !opts.Survey.When.Contains(gpsmsg.TimeModeSurvey) {
+		return nil
+	}
+	// If so, we need to set the mode to Disabled first
+	return []ucv.Item{ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeDisabled)}
+}
+
+func compileTimeMode(cm *gpsmsg.ConfigMap, opts gpsmsg.ConfigOptions, ver *Version, known ucv.Map, port ucv.Port, items *[]ucv.Item, keys *[]ucv.Key) error {
+	svMsgKey := ucv.KUbxTimSvin
+	switch ver.ProductCategory() {
+	case "FTS": // do nothing
+	case "TIM": // do nothing
+	case "HPG":
+		svMsgKey = ucv.KUbxNavSvin
+	default:
+		return nil
+	}
+	if v, ok := gpsmsg.CfgFixedPosECEF.Get(cm); ok {
+		err := addTmodeECEF(items, v)
+		if err != nil {
+			return err
+		}
+	}
+	tmReq := gpsmsg.TimeMode(0)
+	tmReq, _ = gpsmsg.CfgTimeMode.Get(cm)
+	tmKnown := gpsmsg.TimeMode(0)
+	if tm, ok := ucv.MapGet(known, ucv.KTmodeMode); ok {
+		tmKnown = tmodeModeToTimeMode(tm)
+	}
+	when := opts.Survey.When
+	if tmKnown == 0 {
+		// We need to know the current time mode if we might initiate a survey
+		needToKnow := false
+		if tmReq != 0 {
+			needToKnow = when.Contains(tmReq)
+		} else {
+			// need to know, if we might
+			needToKnow = when != 0
+		}
+		if needToKnow {
+			ucv.AddKey(keys, ucv.KTmodeMode)
+			return nil
+		}
+	}
+	tm := tmKnown
+	if tmReq != 0 {
+		tm = tmReq
+	}
+	if tm == 0 {
+		// no time mode known, no time mode requested and no possibility of starting a survey
+		return nil
+	}
+	if when.Contains(tm) {
+		// need to do a survey
+		ucv.AddItem(items, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
+		ucv.AddItem(items, ucv.KTmodeSvinMinDur, uint64(opts.Survey.MinDur.Round(time.Second)/time.Second))
+		var mm10 int64
+		mm10, _ = divModRound(int64(opts.Survey.AccLimit), int64(gpsmsg.Millimeter/10))
+		ucv.AddItem(items, ucv.KTmodeSvinAccLimit, uint64(mm10))
+		ucv.AddItem(items, svMsgKey.KeyU(port), 1)
+		return nil
+	}
+
+	if tmReq != gpsmsg.TimeModeSurvey {
+		ucv.AddItem(items, ucv.KTmodeMode, timeModeToTmodeMode(tmReq))
+		ucv.AddItem(items, svMsgKey.KeyU(port), 0)
+		return nil
+	}
+	// Remaining possibility:
+	// The user requested TimeMode=Survey in the ConfigMap,
+	// but in ConfigOptions says not to start a Survey when the TimeMode is Survey.
+	// This is actually OK, if the receiver is already in Survey mode.
+	return nil
+}
+
 func addTmodeECEF(items *[]ucv.Item, p gpsmsg.Point3D) error {
 	kecef := []ucv.KeyI{ucv.KTmodeEcefX, ucv.KTmodeEcefY, ucv.KTmodeEcefZ}
 	kecefhp := []ucv.KeyI{ucv.KTmodeEcefXHp, ucv.KTmodeEcefYHp, ucv.KTmodeEcefZHp}
@@ -153,7 +237,7 @@ func addTmodeECEF(items *[]ucv.Item, p gpsmsg.Point3D) error {
 
 // compileTimePulse compiles the parts of the configuration related to the time pulse.
 // If it infers the GNSS to which the pulse is aligned, it returns that.
-func compileTimePulse(known ucv.Map, cm *gpsmsg.ConfigMap, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
+func compileTimePulse(cm *gpsmsg.ConfigMap, known ucv.Map, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
 	tg := ucv.ETpTimegridTp1Utc
 	period, havePeriod := gpsmsg.CfgTimePulsePeriod.Get(cm)
 	width, haveWidth := gpsmsg.CfgTimePulseWidth.Get(cm)
@@ -368,6 +452,17 @@ func timeModeToTmodeMode(t gpsmsg.TimeMode) ucv.EnumTmodeMode {
 		return ucv.ETmodeModeFixed
 	default:
 		return ucv.ETmodeModeDisabled
+	}
+}
+
+func tmodeModeToTimeMode(t ucv.EnumTmodeMode) gpsmsg.TimeMode {
+	switch t {
+	case ucv.ETmodeModeSurveyIn:
+		return gpsmsg.TimeModeSurvey
+	case ucv.ETmodeModeFixed:
+		return gpsmsg.TimeModeFixed
+	default:
+		return gpsmsg.TimeModeDisabled
 	}
 }
 

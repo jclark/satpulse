@@ -54,6 +54,7 @@ var normalConfigSteps = []func(*Configurator) (gpsmsg.ConfigRequest, error){
 var newConfigSteps = []func(*Configurator) (gpsmsg.ConfigRequest, error){
 	(*Configurator).pollPrt,
 	(*Configurator).valGet,
+	(*Configurator).valPreSet,
 	(*Configurator).valSet,
 	(*Configurator).reset,
 }
@@ -86,7 +87,7 @@ func (c *Configurator) reset() (gpsmsg.ConfigRequest, error) {
 }
 
 func (c *Configurator) valGet() (gpsmsg.ConfigRequest, error) {
-	_, missing, err := configItems(c.target, c.opts, c.ver.GNSS, *c.raw.valMap(), c.valPort())
+	_, missing, err := configItems(c.target, c.opts, c.ver, *c.raw.valMap(), c.valPort())
 	if err != nil {
 		return nil, err
 	}
@@ -100,8 +101,21 @@ func (c *Configurator) valGet() (gpsmsg.ConfigRequest, error) {
 	return msgRequest{newCfgValgetRequest(missing, layer)}, nil
 }
 
+func (c *Configurator) valPreSet() (gpsmsg.ConfigRequest, error) {
+	items := configPreSetItems(c.target, c.opts, *c.raw.valMap())
+	// Don't think this makes sense when saving to Flash
+	if len(items) == 0 || c.opts.Flash {
+		return nil, nil
+	}
+	val, err := newCfgValsetRequest(items, bin.CfgValsetLayerRAM)
+	if err != nil {
+		return nil, err
+	}
+	return c.msgSetRequest(val)
+}
+
 func (c *Configurator) valSet() (gpsmsg.ConfigRequest, error) {
-	items, missing, err := configItems(c.target, c.opts, c.ver.GNSS, *c.raw.valMap(), c.valPort())
+	items, missing, err := configItems(c.target, c.opts, c.ver, *c.raw.valMap(), c.valPort())
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +182,7 @@ func (c *Configurator) pollNav5() (gpsmsg.ConfigRequest, error) {
 }
 
 func (c *Configurator) pollTmode() (gpsmsg.ConfigRequest, error) {
-	switch c.productCategory() {
+	switch c.ver.ProductCategory() {
 	case "FTS", "TIM":
 		return pollRequest{bin.CfgTmode2ID}, nil
 	case "HPG":
@@ -179,7 +193,7 @@ func (c *Configurator) pollTmode() (gpsmsg.ConfigRequest, error) {
 
 func (c *Configurator) pollTp5() (gpsmsg.ConfigRequest, error) {
 	tpIdx := 0
-	if c.productCategory() == "FTS" {
+	if c.ver.ProductCategory() == "FTS" {
 		tpIdx = 1
 	}
 	return pollTp5Request{
@@ -192,7 +206,7 @@ func (c *Configurator) enableTpMsg() (gpsmsg.ConfigRequest, error) {
 	if !c.opts.EnableTimeMsg {
 		return nil, nil
 	}
-	if c.productCategory() == "FTS" {
+	if c.ver.ProductCategory() == "FTS" {
 		return nil, nil
 	}
 	if c.raw.tp5 == nil {
@@ -209,7 +223,7 @@ func (c *Configurator) enableTimeGNSSMsg() (gpsmsg.ConfigRequest, error) {
 	if !c.opts.EnableTimeMsg {
 		return nil, nil
 	}
-	if c.productCategory() == "FTS" {
+	if c.ver.ProductCategory() == "FTS" {
 		return c.enableMsgRequest(bin.TimTosID)
 	} else {
 		return c.enableMsgRequest(bin.NavTimeGPSID)
@@ -227,7 +241,7 @@ func (c *Configurator) enableLeapSecondMsg() (gpsmsg.ConfigRequest, error) {
 // we don't have to wait for the response (unlike with CFG messages)
 // should handle this like leap second messages
 func (c *Configurator) pollSurvey() (gpsmsg.ConfigRequest, error) {
-	switch c.productCategory() {
+	switch c.ver.ProductCategory() {
 	case "TIM", "FTS":
 		return pollRequest{bin.TimSvinID}, nil
 	case "HPG":
@@ -349,13 +363,6 @@ func (r enableMsgRequest) Ackable() bool { return true }
 
 func (r enableMsgRequest) ID() string { return bin.CfgMsgID.String() }
 
-func (c *Configurator) productCategory() string {
-	if c.ver.FW != nil {
-		return c.ver.FW.ProductCategory
-	}
-	return ""
-}
-
 func (raw *RawConfig) Config(ver *Version) *gpsmsg.ConfigMap {
 	if raw == nil {
 		return nil
@@ -435,8 +442,6 @@ func (raw *RawConfig) cookTmode2(cm *gpsmsg.ConfigMap) {
 		gpsmsg.CfgTimeMode.Set(cm, gpsmsg.TimeModeDisabled)
 	case bin.CfgTmode2SurveyIn:
 		gpsmsg.CfgTimeMode.Set(cm, gpsmsg.TimeModeSurvey)
-		gpsmsg.CfgSurveyMinDur.Set(cm, time.Duration(tm.SvinMinDur)*time.Second)
-		gpsmsg.CfgSurveyAccLimit.Set(cm, gpsmsg.Length(tm.SvinAccLimit)*gpsmsg.Millimeter)
 	case bin.CfgTmode2FixedMode:
 		gpsmsg.CfgTimeMode.Set(cm, gpsmsg.TimeModeFixed)
 		if tm.Flags&bin.CfgTmode2LLA == 0 {
@@ -460,8 +465,6 @@ func (raw *RawConfig) cookTmode3(cm *gpsmsg.ConfigMap) {
 		gpsmsg.CfgTimeMode.Set(cm, gpsmsg.TimeModeDisabled)
 	case bin.CfgTmode3SurveyIn:
 		gpsmsg.CfgTimeMode.Set(cm, gpsmsg.TimeModeSurvey)
-		gpsmsg.CfgSurveyMinDur.Set(cm, time.Duration(tm.SvinMinDur)*time.Second)
-		gpsmsg.CfgSurveyAccLimit.Set(cm, gpsmsg.Length(tm.SvinAccLimit)*(gpsmsg.Millimeter/10))
 	case bin.CfgTmode3FixedMode:
 		gpsmsg.CfgTimeMode.Set(cm, gpsmsg.TimeModeFixed)
 		if tm.Flags&bin.CfgTmode3LLA == 0 {

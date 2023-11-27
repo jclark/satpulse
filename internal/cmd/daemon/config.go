@@ -24,6 +24,7 @@ var defaultConfigFile = defaultConfigFileConst
 
 type Config struct {
 	Serial     SerialConfig
+	Receiver   ReceiverConfig
 	PHC        PHCConfig
 	Proxy      proxy.Config
 	HTTP       []HTTPConfig
@@ -96,6 +97,7 @@ func readConfig(r io.Reader) (*Config, error) {
 
 func defaultConfig() *Config {
 	cfg := new(Config)
+	cfg.Receiver = receiverDefault
 	cfg.LeapSecond = leapSecondDefault
 	cfg.PTP = ptpConfigDefault
 	return cfg

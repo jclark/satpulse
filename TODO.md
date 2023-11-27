@@ -130,7 +130,16 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 
 ## GPS configuration
 
-* Support for survey-in
+* Allow monitoring survey progress
+   * gpsmsg.Survey for survey progress
+   * log ongoing and completed survey progress
+   * support in HTTP monitoring interface (position should link to Google Maps)
+* Tool options for survey
+   * `--survey` to initiate survey (also enables survey messages)
+   * `--survey-time` to set minimum time
+   * `--survey-acc` to set accuracy
+   * `--disable-time-mode` to disable time mode (also disables survey messages)
+   * option to get survey result
 * Support for setting ECEF fixed position
    * TOML property
    * `satpulsetool config --ecef`
@@ -146,11 +155,12 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * implement setting GNSS constellation
    * implement baud rate property
    * saving to flash
+   * survey-in
 * Pay attention to version in CFG-UBX-TP5
 * Allow TOML configuration of things that user must specify
    * primary GNSS constellation
    * antenna delay
-   * fixed ECEF antenna position
+   * fixed ECEF antenna position and accuracy `posAcc = 10`, `posECEF=[1,2,3]` 
 * Control of what kind of configuration satpulsed does to the receiver
     * disable sending any message to receiver
     * disable use of UBX

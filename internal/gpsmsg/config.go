@@ -40,6 +40,16 @@ type ConfigOptions struct {
 	Detect              bool
 	EnableLeapSecondMsg bool
 	EnableTimeMsg       bool
+	Survey              Survey
+}
+
+// Survey specifies whether a survey should be performed, and if so, its parameters
+// The survey is performed when the time mode is one of the modes in When.
+// If When is non-zero, then AccLimit must also be non-zero.
+type Survey struct {
+	When     TimeModeSet   // perform a survey when the time mode is one of these
+	MinDur   time.Duration // survey should run at least this long
+	AccLimit Length        // survey should run until this accuracy is achieved
 }
 
 type ConfigMap struct {
@@ -171,8 +181,6 @@ var CfgTimePulseOnlyWhenLocked = makeCfgKey[bool]("timePulseOnlyWhenLocked")
 var CfgTimePulsePolarityRising = makeCfgKey[bool]("timePulsePolarityRising")
 var CfgTimeMode = makeCfgKey[TimeMode]("timeMode")
 var CfgAntennaCableDelay = makeCfgKey[time.Duration]("antennaCableDelay")
-var CfgSurveyMinDur = makeCfgKey[time.Duration]("surveyMinDur")
-var CfgSurveyAccLimit = makeCfgKey[Length]("surveyAccLimit")
 var CfgFixedPosECEF = makeCfgKey[Point3D]("fixedPosECEF")
 var CfgFixedPosAcc = makeCfgKey[Length]("fixedPosAcc")
 var CfgStationary = makeCfgKey[bool]("stationary")
@@ -196,6 +204,10 @@ const (
 	Centimeter Length = 10 * Millimeter
 	Meter      Length = 100 * Centimeter
 )
+
+func Meters(f float64) Length {
+	return Length(math.Round(f * float64(Meter)))
+}
 
 func (l Length) Meters() float64 {
 	return float64(l) / float64(Meter)
@@ -248,3 +260,22 @@ const (
 	TimeModeSurvey
 	TimeModeFixed
 )
+
+type TimeModeSet byte
+
+const (
+	TimeModeNone TimeModeSet = 0
+	TimeModeAny  TimeModeSet = 1<<TimeModeDisabled | 1<<TimeModeSurvey | 1<<TimeModeFixed
+)
+
+func (m TimeModeSet) Contains(t TimeMode) bool {
+	return m&(1<<t) != 0
+}
+
+func TimeModeFlags(ms ...TimeMode) TimeModeSet {
+	flags := TimeModeSet(0)
+	for _, m := range ms {
+		flags |= 1 << m
+	}
+	return flags
+}
