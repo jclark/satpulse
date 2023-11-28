@@ -185,7 +185,7 @@ const surveyFormat: EventFormat = {
     y: ["ECEF Y", formatECEF],
     z: ["ECEF Z", formatECEF],
     accuracy: ["Accuracy", formatECEF],
-    latLon: ["Coordinates", formatLL],
+    latLon: formatLL,
     alt: ["Altitude", formatAlt],
     obsCount: ["Observations"],
     obsTime: ["Observation time"],
@@ -197,11 +197,21 @@ function formatECEF(arg: number): string {
     return arg.toFixed(4);
 }
 
-function formatLL(arg: [number, number]): string {
+function formatLL(arg: [number, number], _obj: Map): FormattedField[] {
     if (isNaN(arg[0]) || isNaN(arg[1])) {
-        return "";
+        return [];
     }
-    return `${arg[0].toFixed(5)}, ${arg[1].toFixed(5)}`;
+    return [
+        ["Coordinates", <a href={mapsURL(arg)} target="_blank">{coordsToString(arg, 5)}</a>]
+    ];
+}
+
+function mapsURL(arg: [number, number]): string {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(coordsToString(arg,7))}`;
+}
+
+function coordsToString(arg: [number, number], nDigits: number): string {
+    return `${arg[0].toFixed(nDigits)},${arg[1].toFixed(nDigits)}`;
 }
 
 function formatAlt(arg: number): string {

@@ -4,6 +4,10 @@ body {
   padding: 0;
 }
 
+a {
+  color: inherit; /* don't change color of links */
+}
+
 .cards {
   column-width: 18rem;
   column-gap: 1rem;

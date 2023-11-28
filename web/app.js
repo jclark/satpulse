@@ -634,7 +634,7 @@
     y: ["ECEF Y", formatECEF],
     z: ["ECEF Z", formatECEF],
     accuracy: ["Accuracy", formatECEF],
-    latLon: ["Coordinates", formatLL],
+    latLon: formatLL,
     alt: ["Altitude", formatAlt],
     obsCount: ["Observations"],
     obsTime: ["Observation time"],
@@ -644,11 +644,19 @@
   function formatECEF(arg) {
     return arg.toFixed(4);
   }
-  function formatLL(arg) {
+  function formatLL(arg, _obj) {
     if (isNaN(arg[0]) || isNaN(arg[1])) {
-      return "";
+      return [];
     }
-    return `${arg[0].toFixed(5)}, ${arg[1].toFixed(5)}`;
+    return [
+      ["Coordinates", /* @__PURE__ */ o3("a", { href: mapsURL(arg), target: "_blank", children: coordsToString(arg, 5) })]
+    ];
+  }
+  function mapsURL(arg) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(coordsToString(arg, 7))}`;
+  }
+  function coordsToString(arg, nDigits) {
+    return `${arg[0].toFixed(nDigits)},${arg[1].toFixed(nDigits)}`;
   }
   function formatAlt(arg) {
     if (isNaN(arg)) {
