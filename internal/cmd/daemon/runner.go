@@ -147,19 +147,23 @@ func (s *SyncRunner) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 		s.corr.PulseOffset(secRnd, tRead, mt.PulseOffset)
 	} else if secRnd > s.lastTime {
 		s.corr.GPSTime(secRnd, tRead)
-		if s.sseCh != nil {
-			te := TimeEvent{
-				UTC: s.ls.FormatTime(secRnd),
-				TAI: int64(secRnd) / 1e9,
-			}
-			event, err := sse.Make("time", te)
-			if err != nil {
-				s.lg.Error("failed to create SSE event", "err", err)
-			} else {
-				s.sseCh <- event
-			}
-		}
+		s.sendEvent("time", TimeEvent{
+			UTC: s.ls.FormatTime(secRnd),
+			TAI: int64(secRnd) / 1e9,
+		})
 		s.lastTime = secRnd
+	}
+}
+
+func (s *SyncRunner) sendEvent(name string, data any) {
+	if s.sseCh == nil {
+		return
+	}
+	event, err := sse.Make(name, data)
+	if err != nil {
+		s.lg.Error("failed to create SSE event", "name", name, "err", err)
+	} else {
+		s.sseCh <- event
 	}
 }
 
