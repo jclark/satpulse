@@ -51,7 +51,10 @@ func TestRoundtip(t *testing.T) {
 	const tolerance = 1e-6
 	for _, lla := range landmarks {
 		ecef := WGS84.LLAtoECEF(lla)
-		lla2 := WGS84.ECEFtoLLA(ecef)
+		lla2, err := WGS84.ECEFtoLLA(ecef)
+		if err != nil {
+			t.Errorf("Roundtrip failed: %v, error: %v", lla, err)
+		}
 		d := max(math.Abs(lla.Lat-lla2.Lat), math.Abs(lla.Lon-lla2.Lon), math.Abs(lla.Alt-lla2.Alt))
 		if d > tolerance {
 			t.Errorf("Roundtrip failed: %v, %v (max diff %f)", lla, lla2, d)
@@ -105,5 +108,16 @@ func TestLLAtoECEF(t *testing.T) {
 		if math.Abs(v-expected[i]) > tolerance {
 			t.Errorf("LLAtoECEF(%v)[%d] = %f, want %f", lla, i, v, expected[i])
 		}
+	}
+}
+
+func TestECEF0ToLLA(t *testing.T) {
+	// Test data
+	ecef := ECEF{0.0, 0.0, 0} // center of the earth
+
+	// Perform conversion
+	lla, err := WGS84.ECEFtoLLA(ecef)
+	if err == nil {
+		t.Errorf("ECEFtoLLA(%v) = %v, wanted error", ecef, lla)
 	}
 }

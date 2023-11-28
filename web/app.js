@@ -629,6 +629,33 @@
       ["Stepped", count + (obj.stepCountChanging ? "/" + (count + 1) : "") + " times"]
     ]
   };
+  var surveyFormat = {
+    x: ["ECEF X", formatECEF],
+    y: ["ECEF Y", formatECEF],
+    z: ["ECEF Z", formatECEF],
+    accuracy: ["Accuracy", formatECEF],
+    latLon: ["Coordinates", formatLL],
+    alt: ["Altitude", formatAlt],
+    obsCount: ["Observations"],
+    obsTime: ["Observation time"],
+    valid: ["Valid", formatBoolean],
+    inProgress: ["In Progress", formatBoolean]
+  };
+  function formatECEF(arg) {
+    return arg.toFixed(4);
+  }
+  function formatLL(arg) {
+    if (isNaN(arg[0]) || isNaN(arg[1])) {
+      return "";
+    }
+    return `${arg[0].toFixed(5)}, ${arg[1].toFixed(5)}`;
+  }
+  function formatAlt(arg) {
+    if (isNaN(arg)) {
+      return "";
+    }
+    return `${arg.toFixed(2)} m`;
+  }
   function formatUTC(utc) {
     const dt = formatUTCLocal(utc);
     if (dt == null) {
@@ -641,6 +668,9 @@
       ["UTC", formatDateTime(utc)]
     ];
   }
+  function formatBoolean(arg) {
+    return arg ? "Yes" : "No";
+  }
   function createEventSource() {
     const docURL = new URL(window.location.href);
     const sseURL = docURL.origin + docURL.pathname + "/sse";
@@ -651,6 +681,7 @@
     /* @__PURE__ */ o3(EventSourceContext.Provider, { value: createEventSource(), children: /* @__PURE__ */ o3(CardsElement, { children: [
       /* @__PURE__ */ o3(Card, { title: "Current GPS Time", event: ["time", timeFormat] }),
       /* @__PURE__ */ o3(Card, { title: "PTP Hardware Clock", event: ["phc", phcFormat] }),
+      /* @__PURE__ */ o3(Card, { title: "Survey-in Status", event: ["survey", surveyFormat] }),
       /* @__PURE__ */ o3(Card, { title: "GPS Receiver Version", init: ["version", versionFormat] })
     ] }) }),
     rootElement

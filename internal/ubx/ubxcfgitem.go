@@ -150,7 +150,13 @@ func configPreSetItems(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, known 
 		return nil
 	}
 	// If so, we need to set the mode to Disabled first
-	return []ucv.Item{ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeDisabled)}
+	return []ucv.Item{
+		ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeDisabled),
+		// on F9P HPG 1.12, it's not enough just to set the mode to Disabled
+		// this seems to do the trick
+		ucv.MakeItem(ucv.KTmodeSvinAccLimit, 0),
+		ucv.MakeItem(ucv.KTmodeSvinMinDur, 0),
+	}
 }
 
 func compileTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, known ucv.Map, port ucv.Port, items *[]ucv.Item, keys *[]ucv.Key) error {

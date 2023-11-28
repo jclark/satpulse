@@ -15,12 +15,12 @@ func surveyNavSvin(m *bin.NavSvin) *gpsprot.SurveyMsg {
 			lengthHP(m.MeanY, m.MeanYHP),
 			lengthHP(m.MeanZ, m.MeanZHP),
 		},
-		Accuracy:      gpsprot.Length(m.MeanAcc) * (gpsprot.Millimeter / 10),
-		Valid:         m.Valid != 0,
-		Active:        m.Active != 0,
-		NObservations: m.Obs,
-		Elapsed:       time.Duration(m.Dur) * time.Second,
-		NavEpoch:      iTOWEpoch(m.ITOW),
+		Accuracy:   gpsprot.Length(m.MeanAcc) * (gpsprot.Millimeter / 10),
+		Valid:      m.Valid != 0,
+		InProgress: m.Active != 0,
+		ObsCount:   m.Obs,
+		ObsTime:    time.Duration(m.Dur) * time.Second,
+		NavEpoch:   iTOWEpoch(m.ITOW),
 	}
 }
 
@@ -31,10 +31,10 @@ func surveyTimSvin(m *bin.TimSvin) *gpsprot.SurveyMsg {
 			gpsprot.Length(m.MeanY) * gpsprot.Centimeter,
 			gpsprot.Length(m.MeanZ) * gpsprot.Centimeter,
 		},
-		Accuracy:      gpsprot.Length(math.Round(math.Sqrt(float64(m.MeanV)) * float64(gpsprot.Millimeter))),
-		Valid:         m.Valid != 0,
-		Active:        m.Active != 0,
-		NObservations: m.Obs,
-		Elapsed:       time.Duration(m.Dur) * time.Second,
+		Accuracy:   gpsprot.Length(math.Round(math.Sqrt(float64(m.MeanV)) * float64(gpsprot.Millimeter))),
+		Valid:      m.Valid != 0,
+		InProgress: m.Active != 0,
+		ObsCount:   m.Obs,
+		ObsTime:    time.Duration(m.Dur) * time.Second,
 	}
 }

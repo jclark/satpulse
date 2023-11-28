@@ -14,23 +14,24 @@ func (xyz ECEF) CheckOnEarth() error {
 		radiusMin = 6.35e6 // Radius at poles
 	)
 
-	sumOfSquares := 0.0
-
 	for i, coord := range xyz {
 		if math.Abs(coord) > radiusMax {
 			return fmt.Errorf("coordinate index %d with value %f is out of range", i, coord)
 		}
-		sumOfSquares += coord * coord
 	}
 
-	magnitude := math.Sqrt(sumOfSquares)
-	if magnitude < radiusMin {
+	m := xyz.magnitude()
+	if m < radiusMin {
 		return fmt.Errorf("%v: total ECEF vector magnitude is below the minimum expected for Earth", xyz)
 	}
-	if magnitude > radiusMax {
+	if m > radiusMax {
 		return fmt.Errorf("%v: total ECEF vector magnitude exceeds the maximum expected for Earth", xyz)
 	}
 	return nil
+}
+
+func (xyz ECEF) magnitude() float64 {
+	return math.Sqrt(xyz[0]*xyz[0] + xyz[1]*xyz[1] + xyz[2]*xyz[2])
 }
 
 // LLA represents latitude, longitude, and altitude.
@@ -71,7 +72,11 @@ const degreesPerRadian = 180 / math.Pi
 // ECEFtoLLA converts ECEF coordinates to LLA (Latitude, Longitude, Altitude) using WGS84 datum.
 // ecef is a [3]float64 array representing ECEF coordinates in meters.
 // Returns LLA struct with latitude and longitude in degrees, altitude in meters.
-func (wgs84) ECEFtoLLA(ecef ECEF) LLA {
+func (wgs84) ECEFtoLLA(ecef ECEF) (LLA, error) {
+	err := ecef.CheckOnEarth()
+	if err != nil {
+		return LLA{}, err
+	}
 	x, y, z := ecef[0], ecef[1], ecef[2]
 
 	lon := math.Atan2(y, x) * degreesPerRadian
@@ -87,11 +92,16 @@ func (wgs84) ECEFtoLLA(ecef ECEF) LLA {
 
 	for {
 		latPrev = lat
-		r := wgs84a / math.Sqrt(1-wgs84eSquared*math.Sin(lat)*math.Sin(lat))
+		r := wgs84a / math.Sqrt(1-wgs84eSquared*square(math.Sin(lat)))
 		alt := h/math.Cos(lat) - r
 		lat = math.Atan2(z, h*(1-wgs84eSquared*(r/(r+alt))))
-		if math.Abs(lat-latPrev) <= tolerance {
-			return LLA{Lat: lat * degreesPerRadian, Lon: lon, Alt: alt}
+		// write it like this to bulletproof against lat becoming NaN
+		if !(math.Abs(lat-latPrev) > tolerance) {
+			return LLA{Lat: lat * degreesPerRadian, Lon: lon, Alt: alt}, nil
 		}
 	}
+}
+
+func square(x float64) float64 {
+	return x * x
 }

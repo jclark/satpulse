@@ -180,6 +180,37 @@ const phcFormat: EventFormat = {
     ]
 }
 
+const surveyFormat: EventFormat = {
+    x: ["ECEF X", formatECEF],
+    y: ["ECEF Y", formatECEF],
+    z: ["ECEF Z", formatECEF],
+    accuracy: ["Accuracy", formatECEF],
+    latLon: ["Coordinates", formatLL],
+    alt: ["Altitude", formatAlt],
+    obsCount: ["Observations"],
+    obsTime: ["Observation time"],
+    valid: ["Valid", formatBoolean],
+    inProgress: ["In Progress", formatBoolean],
+}
+    
+function formatECEF(arg: number): string {
+    return arg.toFixed(4);
+}
+
+function formatLL(arg: [number, number]): string {
+    if (isNaN(arg[0]) || isNaN(arg[1])) {
+        return "";
+    }
+    return `${arg[0].toFixed(5)}, ${arg[1].toFixed(5)}`;
+}
+
+function formatAlt(arg: number): string {
+    if (isNaN(arg)) {
+        return "";
+    }
+    return `${arg.toFixed(2)} m`;
+}
+
 function formatUTC(utc: string): FormattedField[] {
     const dt = formatUTCLocal(utc);
     if (dt == null) {
@@ -191,6 +222,10 @@ function formatUTC(utc: string): FormattedField[] {
         ["Local date", date],
         ["UTC", formatDateTime(utc)]
     ]; 
+}
+
+function formatBoolean(arg: boolean): string {
+    return arg ? "Yes" : "No";
 }
 
 function createEventSource(): EventSource {
@@ -205,6 +240,7 @@ render(
         <CardsElement>
             <Card title="Current GPS Time" event={["time", timeFormat]}/>
             <Card title="PTP Hardware Clock" event={["phc", phcFormat]}/>
+            <Card title="Survey-in Status" event={["survey", surveyFormat]} />
             <Card title="GPS Receiver Version" init={["version", versionFormat]}/>
         </CardsElement>
     </EventSourceContext.Provider>,

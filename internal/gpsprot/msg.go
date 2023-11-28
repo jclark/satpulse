@@ -137,11 +137,11 @@ type LeapSecondMsg struct {
 }
 
 type SurveyMsg struct {
-	Position      Point3D       `json:"position"`
-	Accuracy      Length        `json:"accuracy"`
-	NavEpoch      uint32        `json:"navEpoch,omitempty"`
-	NObservations uint32        `json:"nObservations"`
-	Elapsed       time.Duration `json:"elapsed"`
-	Valid         bool          `json:"valid"`
-	Active        bool          `json:"active"`
+	Position   Point3D       `json:"position"`
+	Accuracy   Length        `json:"accuracy"`
+	NavEpoch   uint32        `json:"navEpoch,omitempty"`
+	ObsCount   uint32        `json:"obsCount"`
+	ObsTime    time.Duration `json:"obsTime"`
+	Valid      bool          `json:"valid"`
+	InProgress bool          `json:"inProgress"`
 }

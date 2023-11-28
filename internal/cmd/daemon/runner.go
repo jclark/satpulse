@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math"
 	"time"
 
+	"github.com/jclark/satpulse/internal/geopos"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/nmea"
@@ -153,6 +155,44 @@ func (s *SyncRunner) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 		})
 		s.lastTime = secRnd
 	}
+}
+
+type SurveyEvent struct {
+	X          float64    `json:"x"`
+	Y          float64    `json:"y"`
+	Z          float64    `json:"z"`
+	Accuracy   float64    `json:"accuracy"`
+	Alt        float64    `json:"alt"`
+	LatLon     [2]float64 `json:"latLon,omitempty"`
+	ObsTime    uint32     `json:"obsTime"`
+	ObsCount   uint32     `json:"obsCount"`
+	InProgress bool       `json:"inProgress"`
+	Valid      bool       `json:"valid"`
+}
+
+func (s *SyncRunner) Survey(m *gpsprot.SurveyMsg, _ time.Time) {
+	ecef := geopos.ECEF{}
+	for i := range ecef {
+		ecef[i] = m.Position[i].Meters()
+	}
+	lla, err := geopos.WGS84.ECEFtoLLA(ecef)
+	if err != nil {
+		lla.Lat = math.NaN()
+		lla.Lon = math.NaN()
+		lla.Alt = math.NaN()
+	}
+	s.sendEvent("survey", SurveyEvent{
+		X:          ecef[0],
+		Y:          ecef[1],
+		Z:          ecef[2],
+		Accuracy:   m.Accuracy.Meters(),
+		LatLon:     [2]float64{lla.Lat, lla.Lon},
+		Alt:        lla.Alt,
+		ObsTime:    uint32(m.ObsTime / time.Second),
+		ObsCount:   m.ObsCount,
+		InProgress: m.InProgress,
+		Valid:      m.Valid,
+	})
 }
 
 func (s *SyncRunner) sendEvent(name string, data any) {
