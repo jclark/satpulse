@@ -154,6 +154,7 @@ func configPreSetItems(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, known 
 		ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeDisabled),
 		// on F9P HPG 1.12, it's not enough just to set the mode to Disabled
 		// this seems to do the trick
+		// actually not: seems only changing the survey parameters from the last survey
 		ucv.MakeItem(ucv.KTmodeSvinAccLimit, 0),
 		ucv.MakeItem(ucv.KTmodeSvinMinDur, 0),
 	}
