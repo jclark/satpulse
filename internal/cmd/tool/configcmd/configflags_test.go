@@ -19,6 +19,13 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--reset"}, flagVars{reset: true}},
 	{"ttyS0", []string{"--nmea"}, flagVars{nmea: true}},
 	{"ttyS0", []string{"--pps"}, flagVars{pps: true}},
+	{"ttyS0", []string{"--disable-time-mode"}, flagVars{disableTimeMode: true}},
+	{"ttyS0", []string{"--survey"}, flagVars{survey: true}},
+	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{
+		survey:     true,
+		surveyTime: 300,
+		surveyAcc:  5.5,
+	}},
 	{"ttyS0", []string{"-p"}, flagVars{pps: true}},
 	{"ttyS0", []string{"--speed", "9600"}, flagVars{remoteSpeed: 9600}},
 	{"ttyS0", []string{"--device-speed", "9600"}, flagVars{localSpeed: 9600}},
@@ -35,8 +42,12 @@ var validFlagsTestCases = []validFlagsTestCase{
 func TestParseFlagsValid(t *testing.T) {
 	for _, tc := range validFlagsTestCases {
 		expect := tc.vars
-		expect.surveyAcc = defaultSurveyAcc
-		expect.surveyTime = defaultSurveyTime
+		if expect.surveyAcc == 0 {
+			expect.surveyAcc = defaultSurveyAcc
+		}
+		if expect.surveyTime == 0 {
+			expect.surveyTime = defaultSurveyTime
+		}
 		args := append([]string{}, tc.args...)
 		if tc.dev != "" {
 			expect.serialDevice = tc.dev
@@ -61,6 +72,7 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--speed", "0"},
 	{},
 	{"--reset"},
+	{"--survey", "--disable-time-mode"},
 }
 
 func TestParseFlagsInvalid(t *testing.T) {
