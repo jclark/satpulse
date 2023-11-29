@@ -181,10 +181,10 @@ const phcFormat: EventFormat = {
 }
 
 const surveyFormat: EventFormat = {
+    accuracy: ["Accuracy", (arg: number) => `${arg.toFixed(4)} m`],
     x: ["ECEF X", formatECEF],
     y: ["ECEF Y", formatECEF],
     z: ["ECEF Z", formatECEF],
-    accuracy: ["Accuracy", formatECEF],
     latLon: formatLL,
     alt: ["Altitude", formatAlt],
     obsCount: ["Observations"],
@@ -256,6 +256,3 @@ render(
     </EventSourceContext.Provider>,
     rootElement
 );
-
-
-
