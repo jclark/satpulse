@@ -288,6 +288,7 @@ func (mh *msgHandler) packet(f scan.Packet) {
 	case scan.NMEA:
 		mh.nmea(data)
 	case scan.UBX:
+		mh.lg.Debug("configuration received UBX packet", "msgID", ubxbin.PacketMsgId(data).String(), "len", len(data))
 		err := mh.ubxProt.ProcessPacket(data, f.TRead)
 		if err != nil {
 			mh.lg.Error("could not parse UBX message", "err", err)
