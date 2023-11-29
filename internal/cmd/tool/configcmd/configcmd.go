@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpscfg"
@@ -50,6 +51,11 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	if v.disableTimeMode {
 		opts.Survey.When = 0
 		gpsprot.CfgTimeMode.Set(cm, gpsprot.TimeModeDisabled)
+	}
+	if v.survey {
+		opts.Survey.When = gpsprot.TimeModeAny
+		opts.Survey.MinDur = time.Duration(v.surveyTime) * time.Second
+		opts.Survey.AccLimit = gpsprot.Meters(v.surveyAcc)
 	}
 	if v.remoteSpeed != 0 {
 		if !term.IsValidSpeed(v.remoteSpeed) {

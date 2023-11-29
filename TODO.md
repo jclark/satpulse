@@ -98,7 +98,7 @@ Others
 
 ## Serial port network access
 
-* There's a big: we get a write error when user disconnects
+* There's a bug: we get a write error when user disconnects
 
 ## Serial IO
 
@@ -131,11 +131,8 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 ## GPS configuration
 
 * Log ongoing and completed survey progress
-* Tool options for survey
-   * `--survey` to initiate survey (also enables survey messages)
-   * `--survey-time` to set minimum time
-   * `--survey-acc` to set accuracy
-   * option to get survey result
+* Option for satpulsetool to get survey result
+* satpulsetool should use NDELAY TCP option
 * Support for setting ECEF fixed position and accuracy
    * satpulsed TOML properties: `posAcc = 10`, `pos=[1,2,3]`
    * `satpulsetool config --pos X,Y,Z --pos-acc 10`

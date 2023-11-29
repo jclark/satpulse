@@ -21,6 +21,9 @@ type flagVars struct {
 	primaryGNSS     gpsprot.GNSS
 	enabledGNSS     gpsprot.GNSSSet // avoid using a slice here, so flagVars is comparable
 	disableTimeMode bool
+	survey          bool
+	surveyTime      uint32
+	surveyAcc       float64
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--socket path]
@@ -45,6 +48,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the receiver to enable a PPS signal")
 	flags.BoolVar(&vars.disableTimeMode, "disable-time-mode", false, "disable time mode")
+	flags.BoolVar(&vars.survey, "survey", false, "instruct the receiver to perform a survey")
+	flags.Uint32Var(&vars.surveyTime, "survey-time", 2000, "survey time in seconds")
+	flags.Float64Var(&vars.surveyAcc, "survey-acc", 20.0, "survey accuracy in meters")
 	usage := tool.UsageFunc(cmdName, summary, flags)
 	err := flags.Parse(args)
 	if err != nil {
@@ -58,6 +64,12 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if (vars.socketPath == "") == (vars.serialDevice == "") {
 		return nil, usage, fmt.Errorf("%s command must specify either --socket or --serial-device", cmdName)
+	}
+	if vars.disableTimeMode && vars.survey {
+		return nil, nil, fmt.Errorf("%s command must not specify both --disable-time-mode and --survey", cmdName)
+	}
+	if vars.surveyAcc < 0.001 {
+		return nil, nil, fmt.Errorf("--survey-acc must at least 0.001 (1 mm)")
 	}
 	for _, s := range []string{"device-speed", "speed"} {
 		f := flags.Lookup(s)
