@@ -30,6 +30,9 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [--flash] [--reset] [--speed bps] [--nmea] [-p|--pps]
 			[-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [--disable-time-mode]`
 
+const defaultSurveyTime = 2000
+const defaultSurveyAcc = 20.0
+
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
 	help := false
 	vars := flagVars{}
@@ -49,8 +52,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the receiver to enable a PPS signal")
 	flags.BoolVar(&vars.disableTimeMode, "disable-time-mode", false, "disable time mode")
 	flags.BoolVar(&vars.survey, "survey", false, "instruct the receiver to perform a survey")
-	flags.Uint32Var(&vars.surveyTime, "survey-time", 2000, "survey time in seconds")
-	flags.Float64Var(&vars.surveyAcc, "survey-acc", 20.0, "survey accuracy in meters")
+	flags.Uint32Var(&vars.surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
+	flags.Float64Var(&vars.surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
 	usage := tool.UsageFunc(cmdName, summary, flags)
 	err := flags.Parse(args)
 	if err != nil {

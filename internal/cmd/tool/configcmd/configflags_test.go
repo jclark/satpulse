@@ -35,9 +35,12 @@ var validFlagsTestCases = []validFlagsTestCase{
 func TestParseFlagsValid(t *testing.T) {
 	for _, tc := range validFlagsTestCases {
 		expect := tc.vars
+		expect.surveyAcc = defaultSurveyAcc
+		expect.surveyTime = defaultSurveyTime
 		args := append([]string{}, tc.args...)
 		if tc.dev != "" {
 			expect.serialDevice = tc.dev
+
 			args = append(args, "--serial-device", tc.dev)
 		}
 		t.Run(strings.Join(tc.args, ","), func(t *testing.T) {
