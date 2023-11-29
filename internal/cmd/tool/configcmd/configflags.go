@@ -10,21 +10,22 @@ import (
 )
 
 type flagVars struct {
-	flash        bool
-	reset        bool
-	pps          bool
-	nmea         bool
-	localSpeed   int
-	remoteSpeed  int
-	serialDevice string
-	socketPath   string
-	primaryGNSS  gpsprot.GNSS
-	// avoid using a slice here, so flagVars is comparable
-	enabledGNSS gpsprot.GNSSSet
+	flash           bool
+	reset           bool
+	pps             bool
+	nmea            bool
+	localSpeed      int
+	remoteSpeed     int
+	serialDevice    string
+	socketPath      string
+	primaryGNSS     gpsprot.GNSS
+	enabledGNSS     gpsprot.GNSSSet // avoid using a slice here, so flagVars is comparable
+	disableTimeMode bool
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--socket path]
-            [--flash] [--reset] [--speed bps] [--nmea] [-p|--pps] [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...]`
+            [--flash] [--reset] [--speed bps] [--nmea] [-p|--pps]
+			[-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [--disable-time-mode]`
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
 	help := false
@@ -43,6 +44,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.IntVar(&vars.remoteSpeed, "speed", 0, "set GNSS receiver baud-rate in `bps`")
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the receiver to enable a PPS signal")
+	flags.BoolVar(&vars.disableTimeMode, "disable-time-mode", false, "disable time mode")
 	usage := tool.UsageFunc(cmdName, summary, flags)
 	err := flags.Parse(args)
 	if err != nil {

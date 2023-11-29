@@ -135,7 +135,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * `--survey` to initiate survey (also enables survey messages)
    * `--survey-time` to set minimum time
    * `--survey-acc` to set accuracy
-   * `--disable-time-mode` to disable time mode (also disables survey messages)
    * option to get survey result
 * Support for setting ECEF fixed position and accuracy
    * satpulsed TOML properties: `posAcc = 10`, `pos=[1,2,3]`

@@ -47,6 +47,10 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	if v.enabledGNSS != 0 {
 		gpsprot.CfgGNSSEnabled.Set(cm, v.enabledGNSS)
 	}
+	if v.disableTimeMode {
+		opts.Survey.When = 0
+		gpsprot.CfgTimeMode.Set(cm, gpsprot.TimeModeDisabled)
+	}
 	if v.remoteSpeed != 0 {
 		if !term.IsValidSpeed(v.remoteSpeed) {
 			err = fmt.Errorf("invalid remote serial speed %d", v.remoteSpeed)
