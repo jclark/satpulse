@@ -1213,12 +1213,6 @@ func regMsg[T any, PT interface {
 	idNameMap[mid] = idName
 }
 
-// PacketMsgId returns the MsgId of a packet.
-// This assumes a minimally-valid packet
-func PacketMsgId(packet []byte) MsgID {
-	return makeMsgID(packet[2], packet[3])
-}
-
 // 2 bytes sync, 2 bytes clsid, 2 bytes length, 2 bytes checksum
 const packetMinLength = 8
 
@@ -1340,6 +1334,11 @@ type Bytes interface {
 	string | []byte
 }
 
+// PacketMsgId returns the MsgId of a packet.
+// This assumes a minimally-valid packet
+func PacketMsgId[B Bytes](packet B) MsgID {
+	return makeMsgID(packet[2], packet[3])
+}
 func checksum[B Bytes](bytes B) (ckA, ckB byte) {
 	for i := 0; i < len(bytes); i++ {
 		ckA += bytes[i]
