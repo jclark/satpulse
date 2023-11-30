@@ -13,23 +13,23 @@ func TestConfigItems_Sane(t *testing.T) {
 	cm.SetPPS()
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	opts := gpsprot.ConfigOptions{}
-	_, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
+	_, missing, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
 	if len(missing) == 0 {
 		t.Error("expected missing to be non-empty")
 	}
-	known := ucv.Map{}
-	ucv.MapSet(known, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
+	known := newCfgVals()
+	cfgValSet(known, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
 	_ = testSanity(t, cm, opts, ver, known)
-	known = ucv.Map{}
-	ucv.MapSet(known, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Utc)
-	ucv.MapSet(known, ucv.KNavspgUtcstandard, ucv.ENavspgUtcstandardAuto)
-	ucv.MapSet(known, ucv.KSignalGpsEna, false)
-	ucv.MapSet(known, ucv.KSignalGloEna, false)
-	ucv.MapSet(known, ucv.KSignalGalEna, false)
-	ucv.MapSet(known, ucv.KSignalBdsEna, true)
+	known = newCfgVals()
+	cfgValSet(known, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Utc)
+	cfgValSet(known, ucv.KNavspgUtcstandard, ucv.ENavspgUtcstandardAuto)
+	cfgValSet(known, ucv.KSignalGpsEna, false)
+	cfgValSet(known, ucv.KSignalGloEna, false)
+	cfgValSet(known, ucv.KSignalGalEna, false)
+	cfgValSet(known, ucv.KSignalBdsEna, true)
 	m := testSanity(t, cm, opts, ver, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Bds)
 	gpsprot.CfgPrimaryGNSS.Set(cm, gpsprot.GAL)
@@ -37,15 +37,15 @@ func TestConfigItems_Sane(t *testing.T) {
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
 }
 
-func testSanity(t *testing.T, cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, known ucv.Map) ucv.Map {
-	items, missing, err := configItems(cm, opts, ver, known, ucv.UART1)
+func testSanity(t *testing.T, cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, known *CfgVals) *CfgVals {
+	items, missing, err := known.Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
 	if len(missing) != 0 {
 		t.Errorf("expected missing to be empty, got %v", missing)
 	}
-	m := ucv.Map{}
+	m := newCfgVals()
 	m.AddItems(items)
 
 	expectItem(t, m, ucv.KTpPulseDef, ucv.ETpPulseDefPeriod)
@@ -61,14 +61,14 @@ func testSanity(t *testing.T, cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions,
 	expectItem(t, m, ucv.KRateMeas, 1e3)
 	expectItem(t, m, ucv.KRateNav, 1)
 
-	if tg, ok := ucv.MapGet(m, ucv.KTpTimegridTp1); ok && tg == ucv.ETpTimegridTp1Utc {
+	if tg, ok := cfgValGet(m, ucv.KTpTimegridTp1); ok && tg == ucv.ETpTimegridTp1Utc {
 		t.Errorf("expected KTpTimegridTp1 not to be UTC")
 	}
 	return m
 }
 
-func expectItem[T comparable](t *testing.T, m ucv.Map, key ucv.TypedKey[T], val T) {
-	got, ok := ucv.MapGet(m, key)
+func expectItem[T comparable](t *testing.T, m *CfgVals, key ucv.TypedKey[T], val T) {
+	got, ok := cfgValGet(m, key)
 	if !ok {
 		t.Errorf("expected db to contain %x", key)
 	} else if got != val {
@@ -76,8 +76,8 @@ func expectItem[T comparable](t *testing.T, m ucv.Map, key ucv.TypedKey[T], val 
 	}
 }
 
-func expectMissing[T comparable](t *testing.T, m ucv.Map, key ucv.TypedKey[T]) {
-	_, ok := ucv.MapGet(m, key)
+func expectMissing[T comparable](t *testing.T, m *CfgVals, key ucv.TypedKey[T]) {
+	_, ok := cfgValGet(m, key)
 	if ok {
 		t.Errorf("expected db not to contain %x", key)
 	}
@@ -89,14 +89,14 @@ func TestConfigItems_GNSS(t *testing.T) {
 	opts := gpsprot.ConfigOptions{}
 	gpsprot.CfgPrimaryGNSS.Set(cm, gpsprot.GAL)
 	gpsprot.CfgGNSSEnabled.Set(cm, gpsprot.GNSSFlag(gpsprot.GAL))
-	items, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
+	items, missing, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
 	if len(missing) != 0 {
 		t.Errorf("expected missing to be empty, got %v", missing)
 	}
-	m := ucv.Map{}
+	m := newCfgVals()
 	m.AddItems(items)
 	expectItem(t, m, ucv.KSignalGpsEna, false)
 	expectItem(t, m, ucv.KSignalGloEna, false)
@@ -115,7 +115,7 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 	gpsprot.CfgAntennaCableDelay.Set(cm, nanos*time.Nanosecond)
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 
-	items, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
+	items, missing, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestConfigItems_Survey(t *testing.T) {
 		GNSS: gpsprot.MajorGNSSSet,
 		FW:   &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
 	}
-	_, missing, err := configItems(cm, opts, ver, ucv.Map{}, ucv.UART1)
+	_, missing, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems[1]: %v", err)
 	}
@@ -154,17 +154,22 @@ func TestConfigItems_Survey(t *testing.T) {
 	if missing[0] != ucv.KTmodeMode.Key() {
 		t.Fatalf("expected missing to be KTmodeMode, got %v", missing)
 	}
-	m := ucv.Map{}
-	ucv.MapSet(m, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
-	items, missing, err := configItems(cm, opts, ver, m, ucv.UART1)
+	m := newCfgVals()
+	cfgValSet(m, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
+	items, missing, err := m.Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems[2]: %v", err)
 	}
 	if len(missing) != 0 {
 		t.Fatalf("expected missing to be empty, got %v", missing)
 	}
-	m = ucv.Map{}
+	m = newCfgVals()
 	m.AddItems(items)
 	expectItem(t, m, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
 	expectItem(t, m, ucv.KTmodeSvinMinDur, 2000)
+}
+
+func newCfgVals() *CfgVals {
+	vals := MakeCfgVals()
+	return &vals
 }

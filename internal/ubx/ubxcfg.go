@@ -30,7 +30,7 @@ type RawConfig struct {
 	nav5    *bin.CfgNav5
 	prt     *bin.CfgPrt
 	msgRate map[bin.MsgID][nPort]byte
-	val     ucv.Map
+	vals    CfgVals // access with valsPtr() so it gets lazily initialized
 }
 
 var normalConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
@@ -59,7 +59,7 @@ var newConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).reset,
 }
 
-var _ gpsprot.Configurator = &Configurator{}
+var _ gpsprot.Configurator = (*Configurator)(nil)
 
 func (c *Configurator) ConfigMap() *gpsprot.ConfigMap {
 	return c.raw.Config(c.ver)
@@ -87,7 +87,7 @@ func (c *Configurator) reset() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) valGet() (gpsprot.ConfigRequest, error) {
-	_, missing, err := configItems(c.target, c.opts, c.ver, *c.raw.valMap(), c.valPort())
+	_, missing, err := c.raw.valsPtr().Change(c.target, c.opts, c.ver, c.raw.valPort())
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (c *Configurator) valGet() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) valPreSet() (gpsprot.ConfigRequest, error) {
-	items := configPreSetItems(c.target, c.opts, *c.raw.valMap())
+	items := c.raw.valsPtr().configPreSetItems(c.target, c.opts)
 	// Don't think this makes sense when saving to Flash
 	if len(items) == 0 || c.opts.Flash {
 		return nil, nil
@@ -115,12 +115,15 @@ func (c *Configurator) valPreSet() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
-	items, missing, err := configItems(c.target, c.opts, c.ver, *c.raw.valMap(), c.valPort())
+	items, missing, err := c.raw.valsPtr().Change(c.target, c.opts, c.ver, c.raw.valPort())
 	if err != nil {
 		return nil, err
 	}
 	if len(missing) != 0 {
 		return nil, fmt.Errorf("missing config items: %v", missing)
+	}
+	if len(items) == 0 {
+		return nil, nil
 	}
 	layer := bin.CfgValsetLayerRAM
 	if c.opts.Flash {
@@ -133,9 +136,9 @@ func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
 	return c.msgSetRequest(val)
 }
 
-func (c *Configurator) valPort() ucv.Port {
-	if c.raw.prt != nil {
-		return ucv.Port(c.raw.prt.PortID)
+func (raw *RawConfig) valPort() ucv.Port {
+	if raw.prt != nil {
+		return ucv.Port(raw.prt.PortID)
 	}
 	// XXX what to do here
 	return ucv.Port(ucv.UART1)
@@ -369,15 +372,19 @@ func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigMap {
 	}
 	cm := &gpsprot.ConfigMap{}
 	raw.cookPrt(cm)
-	raw.cookTmode2(cm)
-	if raw.tmode2 == nil {
-		raw.cookTmode3(cm)
+	if !raw.vals.isNil() {
+		raw.vals.Cook(ver, raw.valPort(), cm)
+	} else {
+		raw.cookTmode2(cm)
+		if raw.tmode2 == nil {
+			raw.cookTmode3(cm)
+		}
+		raw.cookTp5(cm)
+		raw.cookGNSS(cm)
+		raw.cookRate(cm, ver)
+		// must call cookNav5 after cookTp5, because we want to prefer primary GNSS from TP5
+		raw.cookNav5(cm)
 	}
-	raw.cookTp5(cm)
-	raw.cookGNSS(cm)
-	raw.cookRate(cm, ver)
-	// must call cookNav5 after cookTp5, because we want to prefer primary GNSS from TP5
-	raw.cookNav5(cm)
 	return cm
 }
 
@@ -908,15 +915,15 @@ func (raw *RawConfig) addVal(cfgData []byte) error {
 	if err != nil {
 		return err
 	}
-	raw.valMap().AddItems(items)
+	raw.valsPtr().AddItems(items)
 	return nil
 }
 
-func (raw *RawConfig) valMap() *ucv.Map {
-	if raw.val == nil {
-		raw.val = make(ucv.Map)
+func (raw *RawConfig) valsPtr() *CfgVals {
+	if raw.vals.isNil() {
+		raw.vals = MakeCfgVals()
 	}
-	return &raw.val
+	return &raw.vals
 }
 
 func (raw *RawConfig) addMsgRate(msgID bin.MsgID, rate [6]byte) {
