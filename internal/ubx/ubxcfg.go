@@ -17,18 +17,9 @@ type Configurator struct {
 	opts      gpsprot.ConfigOptions
 }
 
-const nPort = 6
-
 type RawConfig struct {
-	tmode2  *bin.CfgTmode2
-	tmode3  *bin.CfgTmode3
-	tp5     *bin.CfgTp5
-	gnss    *bin.CfgGNSS
-	rate    *bin.CfgRate
-	nav5    *bin.CfgNav5
-	prt     *bin.CfgPrt
-	msgRate map[bin.MsgID][nPort]byte
-	vals    CfgVals // access with valsPtr() so it gets lazily initialized
+	CfgOld
+	CfgVals // access with valsPtr() so it gets lazily initialized
 }
 
 var normalConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
@@ -282,6 +273,71 @@ func (c *Configurator) setTp5() (gpsprot.ConfigRequest, error) {
 		return nil, nil
 	}
 	return c.msgSetRequest(tp5)
+}
+
+func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigMap {
+	if raw == nil {
+		return nil
+	}
+	cm := &gpsprot.ConfigMap{}
+	raw.cookPrt(cm)
+	if !raw.CfgVals.isNil() {
+		raw.CfgVals.Cook(ver, raw.valPort(), cm)
+	} else {
+		raw.cookTmode2(cm)
+		if raw.tmode2 == nil {
+			raw.cookTmode3(cm)
+		}
+		raw.cookTp5(cm)
+		raw.cookGNSS(cm)
+		raw.cookRate(cm, ver)
+		// must call cookNav5 after cookTp5, because we want to prefer primary GNSS from TP5
+		raw.cookNav5(cm)
+	}
+	return cm
+}
+
+func (raw *RawConfig) AddMsg(m bin.Msg) (bool, error) {
+	if raw == nil {
+		return false, nil
+	}
+	switch mt := m.(type) {
+	case *bin.CfgTmode2:
+		raw.tmode2 = mt
+	case *bin.CfgTmode3:
+		raw.tmode3 = mt
+	case *bin.CfgTp5:
+		raw.tp5 = mt
+	case *bin.CfgGNSS:
+		raw.gnss = mt
+	case *bin.CfgRate:
+		raw.rate = mt
+	case *bin.CfgNav5:
+		raw.nav5 = mt
+	case *bin.CfgPrt:
+		raw.prt = mt
+	case *bin.CfgMsg:
+		raw.addMsgRate(mt.MsgID, mt.Rate)
+	case *bin.CfgValget:
+		// this is a response to a poll
+		if mt.Layer == 0 {
+			err := raw.valsPtr().AddData(mt.CfgData)
+			if err != nil {
+				return false, err
+			}
+		}
+	case *bin.CfgValset:
+		// this is an acknowledgement of a set
+		if mt.Layers&bin.CfgValsetLayerRAM != 0 {
+			err := raw.valsPtr().AddData(mt.CfgData)
+			if err != nil {
+				return false, err
+			}
+		}
+	default:
+		return false, nil
+	}
+	return true, nil
 }
 
 type msgRequest struct {

@@ -9,7 +9,7 @@ import (
 )
 
 func TestTp5(t *testing.T) {
-	raw := &RawConfig{tp5: new(ubxbin.CfgTp5)}
+	raw := &CfgOld{tp5: new(ubxbin.CfgTp5)}
 	raw.tp5.Flags |= ubxbin.CfgTp5IsLength
 
 	cm := &gpsprot.ConfigMap{}
@@ -38,7 +38,7 @@ func TestTp5(t *testing.T) {
 
 func TestChangeTp5GNSS(t *testing.T) {
 	// Create a new RawConfig and Config
-	raw := RawConfig{tp5: new(ubxbin.CfgTp5)}
+	raw := CfgOld{tp5: new(ubxbin.CfgTp5)}
 	cm := gpsprot.ConfigMap{}
 
 	// Call changeTp5GNSS with the empty RawConfig and Config
@@ -51,7 +51,7 @@ func TestChangeTp5GNSS(t *testing.T) {
 }
 
 func TestNav5(t *testing.T) {
-	raw := &RawConfig{nav5: new(ubxbin.CfgNav5)}
+	raw := &CfgOld{nav5: new(ubxbin.CfgNav5)}
 
 	cm := &gpsprot.ConfigMap{}
 	cm.SetPPS()
@@ -78,7 +78,7 @@ func TestNav5(t *testing.T) {
 }
 
 func TestRate(t *testing.T) {
-	raw := &RawConfig{rate: new(ubxbin.CfgRate)}
+	raw := &CfgOld{rate: new(ubxbin.CfgRate)}
 	raw.rate.NavRate = 1
 	ver := new(Version)
 

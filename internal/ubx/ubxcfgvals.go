@@ -69,6 +69,13 @@ func MakeCfgVals() CfgVals {
 	return CfgVals{make(ucv.Map)}
 }
 
+func (vals *CfgVals) valsPtr() *CfgVals {
+	if vals.isNil() {
+		*vals = MakeCfgVals()
+	}
+	return vals
+}
+
 func (vals *CfgVals) isNil() bool {
 	return vals.Map == nil
 }

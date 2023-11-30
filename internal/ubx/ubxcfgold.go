@@ -7,29 +7,20 @@ import (
 	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
-func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigMap {
-	if raw == nil {
-		return nil
-	}
-	cm := &gpsprot.ConfigMap{}
-	raw.cookPrt(cm)
-	if !raw.vals.isNil() {
-		raw.vals.Cook(ver, raw.valPort(), cm)
-	} else {
-		raw.cookTmode2(cm)
-		if raw.tmode2 == nil {
-			raw.cookTmode3(cm)
-		}
-		raw.cookTp5(cm)
-		raw.cookGNSS(cm)
-		raw.cookRate(cm, ver)
-		// must call cookNav5 after cookTp5, because we want to prefer primary GNSS from TP5
-		raw.cookNav5(cm)
-	}
-	return cm
+const nPort = 6
+
+type CfgOld struct {
+	tmode2  *bin.CfgTmode2
+	tmode3  *bin.CfgTmode3
+	tp5     *bin.CfgTp5
+	gnss    *bin.CfgGNSS
+	rate    *bin.CfgRate
+	nav5    *bin.CfgNav5
+	prt     *bin.CfgPrt
+	msgRate map[bin.MsgID][nPort]byte
 }
 
-func (raw *RawConfig) SetMsgRate(msgID bin.MsgID, rate byte) {
+func (raw *CfgOld) SetMsgRate(msgID bin.MsgID, rate byte) {
 	if raw == nil || raw.prt == nil {
 		return
 	}
@@ -45,7 +36,7 @@ func (raw *RawConfig) SetMsgRate(msgID bin.MsgID, rate byte) {
 	raw.msgRate[msgID] = rates
 }
 
-func (raw *RawConfig) cookPrt(cm *gpsprot.ConfigMap) {
+func (raw *CfgOld) cookPrt(cm *gpsprot.ConfigMap) {
 	prt := raw.prt
 	if prt == nil {
 		return
@@ -56,7 +47,7 @@ func (raw *RawConfig) cookPrt(cm *gpsprot.ConfigMap) {
 	}
 }
 
-func (raw *RawConfig) changePrt(cm *gpsprot.ConfigMap) *bin.CfgPrt {
+func (raw *CfgOld) changePrt(cm *gpsprot.ConfigMap) *bin.CfgPrt {
 	if raw.prt == nil {
 		return nil
 	}
@@ -80,7 +71,7 @@ func (raw *RawConfig) changePrt(cm *gpsprot.ConfigMap) *bin.CfgPrt {
 	return &prt
 }
 
-func (raw *RawConfig) cookTmode2(cm *gpsprot.ConfigMap) {
+func (raw *CfgOld) cookTmode2(cm *gpsprot.ConfigMap) {
 	tm := raw.tmode2
 	if tm == nil {
 		return
@@ -103,7 +94,7 @@ func (raw *RawConfig) cookTmode2(cm *gpsprot.ConfigMap) {
 	}
 }
 
-func (raw *RawConfig) cookTmode3(cm *gpsprot.ConfigMap) {
+func (raw *CfgOld) cookTmode3(cm *gpsprot.ConfigMap) {
 	tm := raw.tmode3
 	if tm == nil {
 		return
@@ -130,7 +121,7 @@ func lengthHP(l int32, h int8) gpsprot.Length {
 	return gpsprot.Length(l)*gpsprot.Centimeter + gpsprot.Length(h)*(gpsprot.Millimeter/10)
 }
 
-func (raw *RawConfig) cookTp5(cm *gpsprot.ConfigMap) {
+func (raw *CfgOld) cookTp5(cm *gpsprot.ConfigMap) {
 	tp := raw.tp5
 	if tp == nil {
 		return
@@ -196,7 +187,7 @@ func tpPeriodWidth(freqPeriod, lenRatio uint32, flags bin.CfgTp5Flags) (time.Dur
 	return period, width
 }
 
-func (raw *RawConfig) changeTp5(cm *gpsprot.ConfigMap) *bin.CfgTp5 {
+func (raw *CfgOld) changeTp5(cm *gpsprot.ConfigMap) *bin.CfgTp5 {
 	if raw.tp5 == nil {
 		return nil
 	}
@@ -321,7 +312,7 @@ func (raw *RawConfig) changeTp5(cm *gpsprot.ConfigMap) *bin.CfgTp5 {
 	return &tp
 }
 
-func (raw *RawConfig) changeTp5GNSS(cm *gpsprot.ConfigMap) gpsprot.GNSS {
+func (raw *CfgOld) changeTp5GNSS(cm *gpsprot.ConfigMap) gpsprot.GNSS {
 	g, _ := gpsprot.CfgPrimaryGNSS.Get(cm)
 	// if the primary GNSS is explicitly specified, then use that (regardless of whether it's enabled)
 	if g.IsMajor() {
@@ -357,7 +348,7 @@ func (raw *RawConfig) changeTp5GNSS(cm *gpsprot.ConfigMap) gpsprot.GNSS {
 	return gpsprot.GPS
 }
 
-func (raw *RawConfig) cookGNSS(cm *gpsprot.ConfigMap) {
+func (raw *CfgOld) cookGNSS(cm *gpsprot.ConfigMap) {
 	gnss := raw.gnss
 	if gnss == nil {
 		return
@@ -380,7 +371,7 @@ func gnssEnabledSet(gnss *bin.CfgGNSS) gpsprot.GNSSSet {
 	return enabled
 }
 
-func (raw *RawConfig) cookRate(cm *gpsprot.ConfigMap, ver *Version) {
+func (raw *CfgOld) cookRate(cm *gpsprot.ConfigMap, ver *Version) {
 	rate := raw.rate
 	if rate == nil {
 		return
@@ -396,7 +387,7 @@ func rateSolutionPeriod(rate *bin.CfgRate, ver *Version) time.Duration {
 	return period
 }
 
-func (raw *RawConfig) changeRate(cm *gpsprot.ConfigMap, ver *Version) *bin.CfgRate {
+func (raw *CfgOld) changeRate(cm *gpsprot.ConfigMap, ver *Version) *bin.CfgRate {
 	if raw.rate == nil {
 		return nil
 	}
@@ -435,7 +426,7 @@ func setSolutionPeriod(rate *bin.CfgRate, period time.Duration, ver *Version) {
 	rate.NavRate = 1
 }
 
-func (raw *RawConfig) cookNav5(cm *gpsprot.ConfigMap) {
+func (raw *CfgOld) cookNav5(cm *gpsprot.ConfigMap) {
 	nav5 := raw.nav5
 	if nav5 == nil {
 		return
@@ -470,7 +461,7 @@ func nav5GNSS(nav5 *bin.CfgNav5) gpsprot.GNSS {
 	return 0
 }
 
-func (raw *RawConfig) changeNav5(cm *gpsprot.ConfigMap) *bin.CfgNav5 {
+func (raw *CfgOld) changeNav5(cm *gpsprot.ConfigMap) *bin.CfgNav5 {
 	if raw.nav5 == nil {
 		return nil
 	}
@@ -508,61 +499,7 @@ func (raw *RawConfig) changeNav5(cm *gpsprot.ConfigMap) *bin.CfgNav5 {
 	return &nav5
 }
 
-func (raw *RawConfig) AddMsg(m bin.Msg) (bool, error) {
-	if raw == nil {
-		return false, nil
-	}
-	switch mt := m.(type) {
-	case *bin.CfgTmode2:
-		raw.tmode2 = mt
-	case *bin.CfgTmode3:
-		raw.tmode3 = mt
-	case *bin.CfgTp5:
-		raw.tp5 = mt
-	case *bin.CfgGNSS:
-		raw.gnss = mt
-	case *bin.CfgRate:
-		raw.rate = mt
-	case *bin.CfgNav5:
-		raw.nav5 = mt
-	case *bin.CfgPrt:
-		raw.prt = mt
-	case *bin.CfgMsg:
-		raw.addMsgRate(mt.MsgID, mt.Rate)
-	case *bin.CfgValget:
-		// this is a response to a poll
-		if mt.Layer == 0 {
-			err := raw.addVal(mt.CfgData)
-			if err != nil {
-				return false, err
-			}
-		}
-	case *bin.CfgValset:
-		// this is an acknowledgement of a set
-		if mt.Layers&bin.CfgValsetLayerRAM != 0 {
-			err := raw.addVal(mt.CfgData)
-			if err != nil {
-				return false, err
-			}
-		}
-	default:
-		return false, nil
-	}
-	return true, nil
-}
-
-func (raw *RawConfig) addVal(cfgData []byte) error {
-	return raw.valsPtr().AddData(cfgData)
-}
-
-func (raw *RawConfig) valsPtr() *CfgVals {
-	if raw.vals.isNil() {
-		raw.vals = MakeCfgVals()
-	}
-	return &raw.vals
-}
-
-func (raw *RawConfig) addMsgRate(msgID bin.MsgID, rate [6]byte) {
+func (raw *CfgOld) addMsgRate(msgID bin.MsgID, rate [6]byte) {
 	if raw.msgRate == nil {
 		raw.msgRate = make(map[bin.MsgID][6]byte)
 	}
