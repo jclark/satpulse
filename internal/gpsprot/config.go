@@ -61,6 +61,17 @@ type CfgKey interface {
 	cfgKey()
 }
 
+type CfgKeySet map[CfgKey]struct{}
+
+func (s CfgKeySet) Contains(k CfgKey) bool {
+	_, exists := s[k]
+	return exists
+}
+
+func (s CfgKeySet) Add(k CfgKey) {
+	s[k] = struct{}{}
+}
+
 func (c *ConfigMap) Contains(k CfgKey) bool {
 	_, exists := c.m[k.String()]
 	return exists

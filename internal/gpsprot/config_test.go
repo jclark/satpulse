@@ -88,3 +88,15 @@ func TestPoint3DRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestCfgKeySet(t *testing.T) {
+	cks := make(CfgKeySet)
+	cks.Add(CfgSolutionPeriod)
+	cks.Add(CfgTimePulsePeriod)
+	if !cks.Contains(CfgSolutionPeriod) {
+		t.Errorf("expected CfgSolutionPeriod to be in the set")
+	}
+	if !cks.Contains(CfgTimePulsePeriod) {
+		t.Errorf("expected CfgTimePulsePeriod to be in the set")
+	}
+}
