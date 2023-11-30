@@ -2,6 +2,8 @@ package ubx
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -69,6 +71,15 @@ func MakeCfgVals() CfgVals {
 
 func (vals *CfgVals) isNil() bool {
 	return vals.Map == nil
+}
+
+func (raw *CfgVals) AddData(cfgData []byte) error {
+	items, err := ucv.UnmarshalItems(cfgData)
+	if err != nil {
+		return err
+	}
+	raw.AddItems(items)
+	return nil
 }
 
 func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cm *gpsprot.ConfigMap) {
@@ -636,4 +647,16 @@ func portBaudRateKey(port ucv.Port) ucv.KeyU {
 		return ucv.KUart2Baudrate
 	}
 	return 0
+}
+
+// splitLength splits a Length into a int32 and int8.
+// The int32 is the length in centimeters. The int8 is the remainder in units of 0.1mm.
+func splitLength(n gpsprot.Length) (int32, int8, error) {
+	q, r := divModRound(int64(n), int64(gpsprot.Centimeter))
+	if q < math.MinInt32 || q > math.MaxInt32 {
+		return 0, 0, fmt.Errorf("length %v is out of range", n)
+	}
+	cm := int32(q)
+	q, _ = divModRound(r, int64(gpsprot.Millimeter/10))
+	return cm, int8(q), nil
 }
