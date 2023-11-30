@@ -130,12 +130,23 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 
 ## GPS configuration
 
+* Bring legacy (<= UBX gen8) configuration to parity with cfgval configuration
+   * choose GNSS time message based on primary GNSS constellation
+   * implement setting GNSS constellation
+   * implement baud rate property
+   * saving to flash
+   * survey-in
+   * poll only the things we need
 * Log ongoing and completed survey progress
-* Option for satpulsetool to get survey result
-* satpulsetool should use NDELAY TCP option
+* Finish mapping from CfgVals to from ConfigMap
 * Support for setting ECEF fixed position and accuracy
    * satpulsed TOML properties: `posAcc = 10`, `pos=[1,2,3]`
    * `satpulsetool config --pos X,Y,Z --pos-acc 10`
+* Allow daemon TOML configuration of important things that we cannot determine for the user
+   * primary GNSS constellation
+   * antenna delay
+* Option for satpulsetool to get survey result
+* satpulsetool should use NDELAY TCP option
 * Need to check we got something back from a poll (not just check the ACK)
 * Message enablement should be in ConfigMap rather than ConfigOptions so we can turn messages off
    * `satpulsetool config --nmea` should probably turn off time-related UBX messages
@@ -143,27 +154,16 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * How do we deal with different kinds of time message (per GNSS, UTC, TP, TOS)?
    * In particular, how do we deal with GNSS messages for non-primary GNSS? Do we turn them off?
    * This ties into to how configuration should tell syncer about what message to use.
-* Legacy (<= UBX gen8) configuration
-   * choose GNSS time message based on primary GNSS constellation
-   * implement setting GNSS constellation
-   * implement baud rate property
-   * saving to flash
-   * survey-in
-   * poll only the things we need
 * Pay attention to version in CFG-UBX-TP5
-* Allow TOML configuration of things that user must specify
-   * primary GNSS constellation
-   * antenna delay
 * Control of what kind of configuration satpulsed does to the receiver
     * disable sending any message to receiver
     * disable use of UBX
     * disable modifying receiver configuration
-    * disable use of new-style UBX configuration
+    * forceUBXLegacyCfg
 * Make satpulsed recover better from configuration errors
 * Add `satpulsetool config --binary` option to disable NMEA and enable UBX Time/LeapSecond/Survey messages
-* For new-style ublox configuration, map from config items to abstract config
 * Might need to set CFG-NAVSPG-WKNROLLOVER
-* Add `satpulsetool config` option to show the configuration e.g. `--show`
+* Add `satpulsetool config` option to show the configuration e.g. `--show`. Requires extending gpsprot interface.
 
 ## Antenna supervision
 
