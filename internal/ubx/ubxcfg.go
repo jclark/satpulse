@@ -16,6 +16,7 @@ type Configurator struct {
 	stepIndex int
 	target    *gpsprot.ConfigMap // never nil
 	opts      gpsprot.ConfigOptions
+	survey    bool // start a survey
 }
 
 type RawConfig struct {
@@ -34,6 +35,7 @@ var normalConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).enableTpMsg,
 	(*Configurator).pollTmode,
 	(*Configurator).setTmode,
+	(*Configurator).reqSurvey,
 	(*Configurator).enableSurveyMsg,
 	(*Configurator).pollRate,
 	(*Configurator).setRate,
@@ -280,17 +282,36 @@ func (c *Configurator) setRate() (gpsprot.ConfigRequest, error) {
 func (c *Configurator) setTmode() (gpsprot.ConfigRequest, error) {
 	switch c.ver.ProductCategory() {
 	case "FTS", "TIM":
-		tm := c.raw.changeTmode2(c.target, c.opts)
-		if tm == nil {
-			break
+		var tm *bin.CfgTmode2
+		tm, c.survey = c.raw.changeTmode2(c.target, c.opts)
+		if tm != nil {
+			return c.msgSetRequest(tm)
 		}
-		return c.msgSetRequest(tm)
 	case "HPG":
-		tm := c.raw.changeTmode3(c.target, c.opts)
-		if tm == nil {
-			break
+		var tm *bin.CfgTmode3
+		tm, c.survey = c.raw.changeTmode3(c.target, c.opts)
+		if tm != nil {
+			return c.msgSetRequest(tm)
 		}
-		return c.msgSetRequest(tm)
+	}
+	return nil, nil
+}
+
+func (c *Configurator) reqSurvey() (gpsprot.ConfigRequest, error) {
+	if !c.survey {
+		return nil, nil
+	}
+	switch c.ver.ProductCategory() {
+	case "FTS", "TIM":
+		tm := c.raw.surveyTmode2(c.opts)
+		if tm != nil {
+			return c.msgSetRequest(tm)
+		}
+	case "HPG":
+		tm := c.raw.surveyTmode3(c.opts)
+		if tm != nil {
+			return c.msgSetRequest(tm)
+		}
 	}
 	return nil, nil
 }
