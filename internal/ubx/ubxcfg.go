@@ -2,6 +2,7 @@ package ubx
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ubx/bin"
@@ -32,11 +33,12 @@ var normalConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).setTp5,
 	(*Configurator).enableTpMsg,
 	(*Configurator).pollTmode,
+	(*Configurator).setTmode,
+	(*Configurator).enableSurveyMsg,
 	(*Configurator).pollRate,
 	(*Configurator).setRate,
 	(*Configurator).pollNav5,
 	(*Configurator).setNav5,
-	(*Configurator).pollSurvey,
 	(*Configurator).reset,
 }
 
@@ -208,7 +210,7 @@ func (c *Configurator) enableTpMsg() (gpsprot.ConfigRequest, error) {
 	if flags&bin.CfgTp5AlignToTow == 0 || flags&bin.CfgTp5LockGpsFreq == 0 || flags&bin.CfgTp5GridUTCGNSS == bin.CfgTp5GridUTC {
 		return nil, nil
 	}
-	return c.enableMsgRequest(bin.TimTPID)
+	return c.enableMsgRequest(bin.TimTPID, true)
 }
 
 func (c *Configurator) enableTimeGNSSMsg() (gpsprot.ConfigRequest, error) {
@@ -216,9 +218,9 @@ func (c *Configurator) enableTimeGNSSMsg() (gpsprot.ConfigRequest, error) {
 		return nil, nil
 	}
 	if c.ver.ProductCategory() == "FTS" {
-		return c.enableMsgRequest(bin.TimTosID)
+		return c.enableMsgRequest(bin.TimTosID, true)
 	} else {
-		return c.enableMsgRequest(bin.NavTimeGPSID)
+		return c.enableMsgRequest(bin.NavTimeGPSID, true)
 	}
 }
 
@@ -226,18 +228,26 @@ func (c *Configurator) enableLeapSecondMsg() (gpsprot.ConfigRequest, error) {
 	if !c.opts.EnableLeapSecondMsg {
 		return nil, nil
 	}
-	return c.enableMsgRequest(bin.NavTimeLSID)
+	return c.enableMsgRequest(bin.NavTimeLSID, true)
 }
 
-// XXX not clear what to do about waiting for response for SVIN messages
-// we don't have to wait for the response (unlike with CFG messages)
-// should handle this like leap second messages
-func (c *Configurator) pollSurvey() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) enableSurveyMsg() (gpsprot.ConfigRequest, error) {
+	msgID := bin.TimSvinID
+	surveyMode := false
 	switch c.ver.ProductCategory() {
 	case "TIM", "FTS":
-		return pollRequest{bin.TimSvinID}, nil
+		surveyMode = c.raw.tmode2 != nil && c.raw.tmode2.TimeMode == bin.CfgTmode2SurveyIn
 	case "HPG":
-		return pollRequest{bin.NavSvinID}, nil
+		msgID = bin.NavSvinID
+		surveyMode = c.raw.tmode3 != nil && c.raw.tmode3.Flags&bin.CfgTmode3Mode == bin.CfgTmode3SurveyIn
+	default:
+		return nil, nil
+	}
+	if surveyMode {
+		return c.enableMsgRequest(msgID, true)
+	}
+	if _, exists := gpsprot.CfgTimeMode.Get(c.target); exists {
+		return c.enableMsgRequest(msgID, false)
 	}
 	return nil, nil
 }
@@ -265,6 +275,24 @@ func (c *Configurator) setRate() (gpsprot.ConfigRequest, error) {
 		return nil, nil
 	}
 	return c.msgSetRequest(rate)
+}
+
+func (c *Configurator) setTmode() (gpsprot.ConfigRequest, error) {
+	switch c.ver.ProductCategory() {
+	case "FTS", "TIM":
+		tm := c.raw.changeTmode2(c.target, c.opts)
+		if tm == nil {
+			break
+		}
+		return c.msgSetRequest(tm)
+	case "HPG":
+		tm := c.raw.changeTmode3(c.target, c.opts)
+		if tm == nil {
+			break
+		}
+		return c.msgSetRequest(tm)
+	}
+	return nil, nil
 }
 
 func (c *Configurator) setTp5() (gpsprot.ConfigRequest, error) {
@@ -399,23 +427,61 @@ func (r pollTp5Request) Packet() []byte {
 	return bin.PollCfgTp5(r.tpIdx)
 }
 
-func (c *Configurator) enableMsgRequest(msgID bin.MsgID) (gpsprot.ConfigRequest, error) {
-	return enableMsgRequest{&c.raw, msgID}, nil
+func (c *Configurator) enableMsgRequest(msgID bin.MsgID, enabled bool) (gpsprot.ConfigRequest, error) {
+	rate := byte(0)
+	if enabled {
+		rate = 1
+	}
+	return msgRateRequest{&c.raw, msgID, rate}, nil
 }
 
-type enableMsgRequest struct {
+type msgRateRequest struct {
 	raw   *RawConfig
 	msgID bin.MsgID
+	rate  byte
 }
 
-func (r enableMsgRequest) Packet() []byte {
+func (r msgRateRequest) Packet() []byte {
 	return bin.SetCfgMsg(r.msgID, 1)
 }
 
-func (r enableMsgRequest) Done() {
-	r.raw.SetMsgRate(r.msgID, 1)
+func (r msgRateRequest) Done() {
+	r.raw.SetMsgRate(r.msgID, r.rate)
 }
 
-func (r enableMsgRequest) Ackable() bool { return true }
+func (r msgRateRequest) Ackable() bool { return true }
 
-func (r enableMsgRequest) ID() string { return bin.CfgMsgID.String() }
+func (r msgRateRequest) ID() string { return bin.CfgMsgID.String() }
+
+func lengthHP(l int32, h int8) gpsprot.Length {
+	return gpsprot.Length(l)*gpsprot.Centimeter + gpsprot.Length(h)*(gpsprot.Millimeter/10)
+}
+
+// splitLength splits a Length into a int32 and int8.
+// The int32 is the length in centimeters. The int8 is the remainder in units of 0.1mm.
+func splitLength(n gpsprot.Length) (int32, int8, error) {
+	q, r := divModRound(int64(n), int64(gpsprot.Centimeter))
+	if q < math.MinInt32 || q > math.MaxInt32 {
+		return 0, 0, fmt.Errorf("length %v is out of range", n)
+	}
+	cm := int32(q)
+	q, _ = divModRound(r, int64(gpsprot.Millimeter/10))
+	return cm, int8(q), nil
+}
+
+// divModRound returns the quotient and remainder of division of x by y, with the quotient rounded.
+// If the result is (q, r), then x = q*y + r, and |r| <= y/2.
+// y is assumed to be positive and even.
+func divModRound(x, y int64) (int64, int64) {
+	if y <= 0 || y%2 != 0 {
+		panic("divisor y must be positive and even")
+	}
+	xRound := x
+	if x >= 0 {
+		xRound += y / 2
+	} else {
+		xRound -= y / 2
+	}
+	quotient := xRound / y
+	return quotient, x - quotient*y
+}

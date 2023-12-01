@@ -2,8 +2,6 @@ package ubx
 
 import (
 	"errors"
-	"fmt"
-	"math"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -208,6 +206,8 @@ func (known *CfgVals) Change(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, 
 	return items, keys, nil
 }
 
+// XXX I think this isn't going to work right: second time Change get called it will see disabled time mode
+// which will affect whether opts.Survey.When is applicable.
 func (known *CfgVals) configPreSetItems(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions) []ucv.Item {
 	if tm, ok := cfgValGet(known, ucv.KTmodeMode); !ok || tm != ucv.ETmodeModeSurveyIn {
 		return nil
@@ -656,14 +656,3 @@ func portBaudRateKey(port ucv.Port) ucv.KeyU {
 	return 0
 }
 
-// splitLength splits a Length into a int32 and int8.
-// The int32 is the length in centimeters. The int8 is the remainder in units of 0.1mm.
-func splitLength(n gpsprot.Length) (int32, int8, error) {
-	q, r := divModRound(int64(n), int64(gpsprot.Centimeter))
-	if q < math.MinInt32 || q > math.MaxInt32 {
-		return 0, 0, fmt.Errorf("length %v is out of range", n)
-	}
-	cm := int32(q)
-	q, _ = divModRound(r, int64(gpsprot.Millimeter/10))
-	return cm, int8(q), nil
-}

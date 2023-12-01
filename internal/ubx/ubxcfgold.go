@@ -94,6 +94,110 @@ func (raw *CfgOld) cookTmode2(cm *gpsprot.ConfigMap) {
 	}
 }
 
+func (raw *CfgOld) changeTmode2(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions) *bin.CfgTmode2 {
+	if raw.tmode2 == nil {
+		return nil
+	}
+	tm := *raw.tmode2
+
+	mode := gpsprot.TimeModeDisabled
+	switch tm.TimeMode {
+	case bin.CfgTmode2SurveyIn:
+		mode = gpsprot.TimeModeSurvey
+	case bin.CfgTmode2FixedMode:
+		mode = gpsprot.TimeModeFixed
+	}
+	if v, ok := gpsprot.CfgTimeMode.Get(cm); ok {
+		mode = v
+	}
+	if opts.Survey.When.Contains(mode) {
+		mode = gpsprot.TimeModeSurvey
+		tm.SvinMinDur = uint32(opts.Survey.MinDur.Round(time.Second) / time.Second)
+		q, _ := divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter))
+		tm.SvinAccLimit = uint32(q)
+	}
+
+	switch mode {
+	case gpsprot.TimeModeDisabled:
+		tm.TimeMode = bin.CfgTmode2Disabled
+	case gpsprot.TimeModeSurvey:
+		tm.TimeMode = bin.CfgTmode2SurveyIn
+	case gpsprot.TimeModeFixed:
+		tm.TimeMode = bin.CfgTmode2FixedMode
+	}
+
+	if ecef, exists := gpsprot.CfgFixedPosECEF.Get(cm); exists {
+		var hp int8
+		err := changeECEF(ecef, &tm.EcefXOrLat, &tm.EcefYOrLon, &tm.EcefZOrAlt, &hp, &hp, &hp)
+		if err != nil {
+			return nil
+		}
+		tm.Flags &^= bin.CfgTmode2LLA
+	}
+
+	if tm == *raw.tmode2 {
+		return nil
+	}
+	return &tm
+}
+
+func (raw *CfgOld) changeTmode3(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions) *bin.CfgTmode3 {
+	if raw.tmode3 == nil {
+		return nil
+	}
+	tm := *raw.tmode3
+	mode := gpsprot.TimeModeDisabled
+	switch tm.Flags & bin.CfgTmode3Mode {
+	case bin.CfgTmode3SurveyIn:
+		mode = gpsprot.TimeModeSurvey
+	case bin.CfgTmode3FixedMode:
+		mode = gpsprot.TimeModeFixed
+	}
+	if v, ok := gpsprot.CfgTimeMode.Get(cm); ok {
+		mode = v
+	}
+	if opts.Survey.When.Contains(mode) {
+		mode = gpsprot.TimeModeSurvey
+		tm.SvinMinDur = uint32(opts.Survey.MinDur.Round(time.Second) / time.Second)
+		q, _ := divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter/10))
+		tm.SvinAccLimit = uint32(q)
+	}
+	switch mode {
+	case gpsprot.TimeModeDisabled:
+	case gpsprot.TimeModeSurvey:
+		tm.Flags |= bin.CfgTmode3SurveyIn
+	case gpsprot.TimeModeFixed:
+		tm.Flags |= bin.CfgTmode3FixedMode
+	}
+	if ecef, exists := gpsprot.CfgFixedPosECEF.Get(cm); exists {
+		err := changeECEF(ecef, &tm.EcefXOrLat, &tm.EcefYOrLon, &tm.EcefZOrAlt,
+			&tm.EcefXOrLatHP, &tm.EcefYOrLonHP, &tm.EcefZOrAltHP)
+		if err != nil {
+			return nil
+		}
+		tm.Flags &^= bin.CfgTmode3LLA
+	}
+
+	if tm == *raw.tmode3 {
+		return nil
+	}
+	return &tm
+
+}
+
+func changeECEF(ecef gpsprot.Point3D, x, y, z *int32, xhp, yhp, zhp *int8) (err error) {
+	var lo [3]int32
+	var hi [3]int8
+	for i := 0; i < 3; i++ {
+		lo[i], hi[i], err = splitLength(ecef[0])
+		if err != nil {
+			return
+		}
+	}
+	*x, *y, *z, *xhp, *yhp, *zhp = lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
+	return
+}
+
 func (raw *CfgOld) cookTmode3(cm *gpsprot.ConfigMap) {
 	tm := raw.tmode3
 	if tm == nil {
@@ -115,10 +219,6 @@ func (raw *CfgOld) cookTmode3(cm *gpsprot.ConfigMap) {
 		}
 		gpsprot.CfgFixedPosAcc.Set(cm, gpsprot.Length(tm.FixedPosAcc)*(gpsprot.Millimeter/10))
 	}
-}
-
-func lengthHP(l int32, h int8) gpsprot.Length {
-	return gpsprot.Length(l)*gpsprot.Centimeter + gpsprot.Length(h)*(gpsprot.Millimeter/10)
 }
 
 func (raw *CfgOld) cookTp5(cm *gpsprot.ConfigMap) {
@@ -206,8 +306,7 @@ func (raw *CfgOld) changeTp5(cm *gpsprot.ConfigMap) *bin.CfgTp5 {
 	}
 
 	// Handle CfgTimePulseAlignGNSS
-	align, exists := gpsprot.CfgTimePulseAlignToGNSS.Get(cm)
-	if exists {
+	if align, exists := gpsprot.CfgTimePulseAlignToGNSS.Get(cm); exists {
 		gnssFlags := bin.CfgTp5AlignToTow | bin.CfgTp5LockGpsFreq
 		if align {
 			tp.Flags |= gnssFlags
@@ -524,21 +623,4 @@ func idToGNSS(g bin.GNSSID) gpsprot.GNSS {
 		return gpsprot.SBAS
 	}
 	return 0
-}
-
-// divModRound returns the quotient and remainder of division of x by y, with the quotient rounded.
-// If the result is (q, r), then x = q*y + r, and |r| <= y/2.
-// y is assumed to be positive and even.
-func divModRound(x, y int64) (int64, int64) {
-	if y <= 0 || y%2 != 0 {
-		panic("divisor y must be positive and even")
-	}
-	xRound := x
-	if x >= 0 {
-		xRound += y / 2
-	} else {
-		xRound -= y / 2
-	}
-	quotient := xRound / y
-	return quotient, x - quotient*y
 }

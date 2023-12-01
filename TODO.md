@@ -135,8 +135,8 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * implement setting GNSS constellation
    * implement baud rate property
    * saving to flash
-   * survey-in
    * poll only the things we need
+* Need better approach for ensuring new survey gets started
 * Log ongoing and completed survey progress
 * Finish mapping from CfgVals to from ConfigMap
 * Support for setting ECEF fixed position and accuracy
