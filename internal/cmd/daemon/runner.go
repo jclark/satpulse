@@ -14,6 +14,7 @@ import (
 	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/internal/servo"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/tsync"
 	"github.com/jclark/satpulse/internal/ubx"
@@ -32,7 +33,7 @@ type SyncRunner struct {
 }
 
 func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, cfg *Config, guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
-	servo, err := tsync.NewServo(clk, lg, sseCh)
+	servo, err := servo.New(clk, lg, sseCh)
 	if err != nil {
 		return nil, err
 	}

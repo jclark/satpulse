@@ -1,4 +1,4 @@
-package tsync
+package servo
 
 import (
 	"log/slog"
@@ -40,7 +40,7 @@ type sampler interface {
 	sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
 }
 
-func NewServo(clk Clock, lg *slog.Logger, sseCh chan<- sse.Event) (*Servo, error) {
+func New(clk Clock, lg *slog.Logger, sseCh chan<- sse.Event) (*Servo, error) {
 	s := Servo{}
 	s.clk = clk
 	s.lg = lg
