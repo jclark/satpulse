@@ -131,14 +131,14 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cm *gpsprot.ConfigMap) {
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func (known *CfgVals) Change(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
+func (known *CfgVals) Change(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, port ucv.Port) ([]ucv.Item, []ucv.Key, bool, error) {
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
 	tg := known.changeTimePulse(cm, &items, &keys)
 
-	err := known.changeTimeMode(cm, opts, ver, port, &items, &keys)
+	survey, err := known.changeTimeMode(cm, opts, ver, port, &items, &keys)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
 	if v, ok := gpsprot.CfgAntennaCableDelay.Get(cm); ok {
@@ -188,7 +188,7 @@ func (known *CfgVals) Change(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, 
 	if v, ok := gpsprot.CfgGNSSEnabled.Get(cm); ok {
 		supportedGNSS := ver.GNSS
 		if v&supportedGNSS&gpsprot.MajorGNSSSet == 0 {
-			return nil, nil, errors.New("must enable at least one major GNSS")
+			return nil, nil, false, errors.New("must enable at least one major GNSS")
 		}
 		for g, k := range enaKeys {
 			if supportedGNSS.Contains(g) {
@@ -203,32 +203,16 @@ func (known *CfgVals) Change(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, 
 	if opts.EnableLeapSecondMsg {
 		ucv.AddItem(&items, ucv.KUbxNavTimels.KeyU(port), 1)
 	}
-	return items, keys, nil
+	return items, keys, survey, nil
 }
 
-// XXX I think this isn't going to work right: second time Change get called it will see disabled time mode
-// which will affect whether opts.Survey.When is applicable.
-func (known *CfgVals) configPreSetItems(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions) []ucv.Item {
-	if tm, ok := cfgValGet(known, ucv.KTmodeMode); !ok || tm != ucv.ETmodeModeSurveyIn {
-		return nil
-	}
-	// we know the receiver is in currenntly in survey mode
-	// Do we want to start a survey when we are in survey mode?
-	if !opts.Survey.When.Contains(gpsprot.TimeModeSurvey) {
-		return nil
-	}
-	// If so, we need to set the mode to Disabled first
-	return []ucv.Item{
-		ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeDisabled),
-		// on F9P HPG 1.12, it's not enough just to set the mode to Disabled
-		// this seems to do the trick
-		// actually not: seems only changing the survey parameters from the last survey
-		ucv.MakeItem(ucv.KTmodeSvinAccLimit, 0),
-		ucv.MakeItem(ucv.KTmodeSvinMinDur, 0),
-	}
+func (known *CfgVals) Survey(opts gpsprot.ConfigOptions) []ucv.Item {
+	items := []ucv.Item{}
+	addSurveyItems(&items, opts.Survey)
+	return items
 }
 
-func (known *CfgVals) changeTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, port ucv.Port, items *[]ucv.Item, keys *[]ucv.Key) error {
+func (known *CfgVals) changeTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, port ucv.Port, items *[]ucv.Item, keys *[]ucv.Key) (bool, error) {
 	svMsgKey := ucv.KUbxTimSvin
 	switch ver.ProductCategory() {
 	case "FTS": // do nothing
@@ -236,12 +220,12 @@ func (known *CfgVals) changeTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigO
 	case "HPG":
 		svMsgKey = ucv.KUbxNavSvin
 	default:
-		return nil
+		return false, nil
 	}
 	if v, ok := gpsprot.CfgFixedPosECEF.Get(cm); ok {
 		err := addTmodeECEF(items, v)
 		if err != nil {
-			return err
+			return false, err
 		}
 	}
 	tmReq := gpsprot.TimeMode(0)
@@ -262,7 +246,7 @@ func (known *CfgVals) changeTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigO
 		}
 		if needToKnow {
 			ucv.AddKey(keys, ucv.KTmodeMode)
-			return nil
+			return false, nil
 		}
 	}
 	tm := tmKnown
@@ -271,29 +255,54 @@ func (known *CfgVals) changeTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigO
 	}
 	if tm == 0 {
 		// no time mode known, no time mode requested and no possibility of starting a survey
-		return nil
+		return false, nil
 	}
 	if when.Contains(tm) {
-		// need to do a survey
-		ucv.AddItem(items, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
-		ucv.AddItem(items, ucv.KTmodeSvinMinDur, uint64(opts.Survey.MinDur.Round(time.Second)/time.Second))
-		var mm10 int64
-		mm10, _ = divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter/10))
-		ucv.AddItem(items, ucv.KTmodeSvinAccLimit, uint64(mm10))
 		ucv.AddItem(items, svMsgKey.KeyU(port), 1)
-		return nil
+		// This doesn't seem to work so disable for now.
+		// XXX need to try on some more receivers
+		if false && !opts.Flash && tmKnown != gpsprot.TimeModeFixed {
+			// We want to force the receiver to start a new survey.
+			// Returning true here will result in second CFG-VALSET using the settings from the Survey method,
+			// which will set the survey parameters that we actually want (using addSurveyItems)
+			// However, that by itself is not enough to make the receiver start a new survey if it has already done a survey.
+			// There isn't a documented mechanism to do this.  I tried setting time mode to disabled
+			// (which is documented as working for CFG-TMODE2), but that didn't work (F9P HPG 1.12).
+
+			// ucv.AddItem(items, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
+
+			// So instead we set slightly survey parameters here that are slightly different from the ones we actually want
+			// and will set later. A change in the survey parameters seems sufficient to force the receiver to start a new
+			// survey. This doesn't seem to work either.
+			sv := opts.Survey
+			sv.MinDur -= time.Second
+			sv.AccLimit -= gpsprot.Centimeter
+			addSurveyItems(items, sv)
+
+			return true, nil
+		}
+		addSurveyItems(items, opts.Survey)
+		return false, nil
 	}
 
 	if tmReq != gpsprot.TimeModeSurvey {
 		ucv.AddItem(items, ucv.KTmodeMode, timeModeToTmodeMode(tmReq))
 		ucv.AddItem(items, svMsgKey.KeyU(port), 0)
-		return nil
+		return false, nil
 	}
 	// Remaining possibility:
 	// The user requested TimeMode=Survey in the ConfigMap,
 	// but in ConfigOptions says not to start a Survey when the TimeMode is Survey.
 	// This is actually OK, if the receiver is already in Survey mode.
-	return nil
+	return false, nil
+}
+
+func addSurveyItems(items *[]ucv.Item, opts gpsprot.Survey) {
+	ucv.AddItem(items, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
+	ucv.AddItem(items, ucv.KTmodeSvinMinDur, uint64(opts.MinDur.Round(time.Second)/time.Second))
+	var mm10 int64
+	mm10, _ = divModRound(int64(opts.AccLimit), int64(gpsprot.Millimeter/10))
+	ucv.AddItem(items, ucv.KTmodeSvinAccLimit, uint64(mm10))
 }
 
 func (raw *CfgVals) cookTmodeECEF() (gpsprot.Point3D, bool) {
@@ -496,10 +505,6 @@ func (known *CfgVals) inferTimegridTp1(cm *gpsprot.ConfigMap, items *[]ucv.Item,
 	return ucv.ETpTimegridTp1Utc
 }
 
-func cfgValSet[T comparable](vals *CfgVals, k ucv.TypedKey[T], v T) {
-	ucv.MapSet(vals.Map, k, v)
-}
-
 func cfgValGet[T comparable](vals *CfgVals, k ucv.TypedKey[T]) (t T, ok bool) {
 	return ucv.MapGet(vals.Map, k)
 }
@@ -655,4 +660,3 @@ func portBaudRateKey(port ucv.Port) ucv.KeyU {
 	}
 	return 0
 }
-

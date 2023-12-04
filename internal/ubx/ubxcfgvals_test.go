@@ -13,9 +13,12 @@ func TestConfigItems_Sane(t *testing.T) {
 	cm.SetPPS()
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	opts := gpsprot.ConfigOptions{}
-	_, missing, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
+	_, missing, survey, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
+	}
+	if survey {
+		t.Errorf("expected survey to be false")
 	}
 	if len(missing) == 0 {
 		t.Error("expected missing to be non-empty")
@@ -38,9 +41,12 @@ func TestConfigItems_Sane(t *testing.T) {
 }
 
 func testSanity(t *testing.T, cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, known *CfgVals) *CfgVals {
-	items, missing, err := known.Change(cm, opts, ver, ucv.UART1)
+	items, missing, survey, err := known.Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
+	}
+	if survey {
+		t.Errorf("expected survey to be false")
 	}
 	if len(missing) != 0 {
 		t.Errorf("expected missing to be empty, got %v", missing)
@@ -89,9 +95,12 @@ func TestConfigItems_GNSS(t *testing.T) {
 	opts := gpsprot.ConfigOptions{}
 	gpsprot.CfgPrimaryGNSS.Set(cm, gpsprot.GAL)
 	gpsprot.CfgGNSSEnabled.Set(cm, gpsprot.GNSSFlag(gpsprot.GAL))
-	items, missing, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
+	items, missing, survey, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
+	}
+	if survey {
+		t.Errorf("expected survey to be false")
 	}
 	if len(missing) != 0 {
 		t.Errorf("expected missing to be empty, got %v", missing)
@@ -115,9 +124,12 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 	gpsprot.CfgAntennaCableDelay.Set(cm, nanos*time.Nanosecond)
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 
-	items, missing, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
+	items, missing, survey, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
+	}
+	if survey {
+		t.Errorf("expected survey to be false")
 	}
 	if len(missing) != 0 {
 		t.Errorf("expected missing to be empty, got %v", missing)
@@ -144,9 +156,12 @@ func TestConfigItems_Survey(t *testing.T) {
 		GNSS: gpsprot.MajorGNSSSet,
 		FW:   &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
 	}
-	_, missing, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
+	_, missing, survey, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems[1]: %v", err)
+	}
+	if survey {
+		t.Errorf("expected survey to be false")
 	}
 	if len(missing) != 1 {
 		t.Fatalf("expected missing to be 1, got %v", missing)
@@ -156,20 +171,37 @@ func TestConfigItems_Survey(t *testing.T) {
 	}
 	m := newCfgVals()
 	cfgValSet(m, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
-	items, missing, err := m.Change(cm, opts, ver, ucv.UART1)
+	items, missing, survey, err := m.Change(cm, opts, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems[2]: %v", err)
 	}
-	if len(missing) != 0 {
-		t.Fatalf("expected missing to be empty, got %v", missing)
+	// we've disabled this in the code, so disable here too
+	if false {
+		if !survey {
+			t.Errorf("expected survey to be true")
+		}
+		if len(missing) != 0 {
+			t.Fatalf("expected missing to be empty, got %v", missing)
+		}
+		m = newCfgVals()
+		m.AddItems(items)
+		expectItem(t, m, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
+		expectItem(t, m, ucv.KTmodeSvinMinDur, 2001)
+		expectItem(t, m, ucv.KTmodeSvinAccLimit, 10*1000*10)
+		items = m.Survey(opts)
 	}
 	m = newCfgVals()
 	m.AddItems(items)
 	expectItem(t, m, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
 	expectItem(t, m, ucv.KTmodeSvinMinDur, 2000)
+	expectItem(t, m, ucv.KTmodeSvinAccLimit, 10*1000*10)
 }
 
 func newCfgVals() *CfgVals {
 	vals := MakeCfgVals()
 	return &vals
+}
+
+func cfgValSet[T comparable](vals *CfgVals, k ucv.TypedKey[T], v T) {
+	ucv.MapSet(vals.Map, k, v)
 }

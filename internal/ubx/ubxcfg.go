@@ -47,8 +47,8 @@ var normalConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 var newConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).pollPrt,
 	(*Configurator).valGet,
-	(*Configurator).valPreSet,
 	(*Configurator).valSet,
+	(*Configurator).valSurvey,
 	(*Configurator).reset,
 }
 
@@ -80,7 +80,7 @@ func (c *Configurator) reset() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) valGet() (gpsprot.ConfigRequest, error) {
-	_, missing, err := c.raw.valsPtr().Change(c.target, c.opts, c.ver, c.raw.valPort())
+	_, missing, _, err := c.raw.valsPtr().Change(c.target, c.opts, c.ver, c.raw.valPort())
 	if err != nil {
 		return nil, err
 	}
@@ -94,21 +94,8 @@ func (c *Configurator) valGet() (gpsprot.ConfigRequest, error) {
 	return msgRequest{newCfgValgetRequest(missing, layer)}, nil
 }
 
-func (c *Configurator) valPreSet() (gpsprot.ConfigRequest, error) {
-	items := c.raw.valsPtr().configPreSetItems(c.target, c.opts)
-	// Don't think this makes sense when saving to Flash
-	if len(items) == 0 || c.opts.Flash {
-		return nil, nil
-	}
-	val, err := newCfgValsetRequest(items, bin.CfgValsetLayerRAM)
-	if err != nil {
-		return nil, err
-	}
-	return c.msgSetRequest(val)
-}
-
 func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
-	items, missing, err := c.raw.valsPtr().Change(c.target, c.opts, c.ver, c.raw.valPort())
+	items, missing, survey, err := c.raw.valsPtr().Change(c.target, c.opts, c.ver, c.raw.valPort())
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +110,22 @@ func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
 		layer = bin.CfgValsetLayerFlash
 	}
 	val, err := newCfgValsetRequest(items, layer)
+	if err != nil {
+		return nil, err
+	}
+	c.survey = survey
+	return c.msgSetRequest(val)
+}
+
+func (c *Configurator) valSurvey() (gpsprot.ConfigRequest, error) {
+	if !c.survey {
+		return nil, nil
+	}
+	items := c.raw.valsPtr().Survey(c.opts)
+	if len(items) == 0 {
+		return nil, nil
+	}
+	val, err := newCfgValsetRequest(items, bin.CfgValsetLayerRAM)
 	if err != nil {
 		return nil, err
 	}
