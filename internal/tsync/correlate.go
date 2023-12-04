@@ -31,7 +31,7 @@ type Sampler interface {
 	// ref is the reference time; local is our local time.
 	// local is the time of the PHC at which the time pulse from the GPS was received.
 	// ref is the time in the PTP time scale that the time pulse was aligned to by the GPS;
-	// this the start of the second, but maybe adjusted for a few seconds by applying a correction specified
+	// this the start of the second, but maybe adjusted for a few nanoseconds by applying a correction specified
 	// by the GPS (sometimes called sawtooth correction).
 	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
 }
