@@ -136,7 +136,7 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * implement baud rate property
    * saving to flash
    * poll only the things we need
-* Fix ensuring new survey gets started with new style config
+* Figure out how to make U-blox receivers start a new survey, when they have already done one
 * Log ongoing and completed survey progress
 * Finish mapping from CfgVals to from ConfigMap
 * Support for setting ECEF fixed position and accuracy
@@ -145,6 +145,13 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 * Allow daemon TOML configuration of important things that we cannot determine for the user
    * primary GNSS constellation
    * antenna delay
+* TOML configuration to control of what kind of configuration satpulsed does to the receiver
+    * disable sending any message to receiver
+    * disable use of UBX
+    * disable modifying receiver configuration
+    * forceUBXLegacyCfg
+* TOML configuration for pulseWidth/dutyCycle
+    * use in conjunction with no configuration for input to correlator
 * Option for satpulsetool to get survey result
 * satpulsetool should use NDELAY TCP option
 * Need to check we got something back from a poll (not just check the ACK)
@@ -155,11 +162,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * In particular, how do we deal with GNSS messages for non-primary GNSS? Do we turn them off?
    * This ties into to how configuration should tell syncer about what message to use.
 * Pay attention to version in CFG-UBX-TP5
-* Control of what kind of configuration satpulsed does to the receiver
-    * disable sending any message to receiver
-    * disable use of UBX
-    * disable modifying receiver configuration
-    * forceUBXLegacyCfg
 * Make satpulsed recover better from configuration errors
 * Add `satpulsetool config --binary` option to disable NMEA and enable UBX Time/LeapSecond/Survey messages
 * Might need to set CFG-NAVSPG-WKNROLLOVER
