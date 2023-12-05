@@ -81,6 +81,10 @@ const maxEdges = 8
 func (c *Correlator) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 	c.lg.Debug("correlator got pulse edge", "t", tClock.T, "era", tClock.Era)
 	edge := clockTimeReading{ClockTime: tClock, tRead: tRead}
+	if len(c.edges) > 0 {
+		off := tRead.Sub(c.edges[len(c.edges)-1].tRead)
+		c.lg.Debug("read offset from last pulse edge", "off", off)
+	}
 	c.edges = append(c.edges, edge)
 	c.correlate()
 	if len(c.edges) > maxEdges {
@@ -155,6 +159,7 @@ func (c *Correlator) followEdge() int {
 	if c.edgesPerPulse < len(c.edges) && consistent(c.gpsSampled, c.gpsPending, c.edges[0], c.edges[c.edgesPerPulse]) {
 		return c.edgesPerPulse
 	}
+	c.lg.Debug("abnormal case in correlator followEdge", "len(edges)", len(c.edges))
 	for i := 1; i < len(c.edges); i++ {
 		// Should do some more sanity testing here
 		// XXX how to deal with both edges here
