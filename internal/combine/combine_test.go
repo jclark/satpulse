@@ -7,7 +7,7 @@ import (
 )
 
 func TestSearch(t *testing.T) {
-	secStates := []*secMsgState{
+	secStates := secList{
 		{sec: 100},
 		{sec: 200},
 		{sec: 300},
@@ -25,7 +25,7 @@ func TestSearch(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		i := search(secStates, tc.sec)
+		i := secStates.search(tc.sec)
 		if i != tc.expected {
 			t.Errorf("search(secStates, %v) = %v, want %v", tc.sec, i, tc.expected)
 		}
