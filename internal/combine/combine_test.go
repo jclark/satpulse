@@ -7,7 +7,7 @@ import (
 )
 
 func TestSearch(t *testing.T) {
-	secStates := secList{
+	secStates := secMsgList{
 		{sec: 100},
 		{sec: 200},
 		{sec: 300},

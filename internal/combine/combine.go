@@ -14,10 +14,6 @@ type pulseEdge struct {
 	tRead time.Time
 }
 
-func (pe pulseEdge) isZero() bool {
-	return pe.tRead.IsZero()
-}
-
 type Sampler interface {
 	// Sample records a time sample that can be used to adjust the time.
 	// ref is the reference time; local is our local time.
@@ -48,6 +44,7 @@ type knownEdgeFilter struct {
 
 const pulseWidthAccuracy = 10 * time.Millisecond
 
+// include returns true if the pulse edge should be treated as the significant edge of a pulse.
 // If we don't include the second edge and do include the third edge, then we return the first edge as delayed along with the third edge.
 // If we do include the second edge, then there's no delayed edge.
 func (f *knownEdgeFilter) include(edge pulseEdge) (bool, []pulseEdge) {
@@ -72,17 +69,16 @@ func (f *knownEdgeFilter) include(edge pulseEdge) (bool, []pulseEdge) {
 
 type secMsgState struct {
 	sec               ptime.Time
-	pulseOff          *time.Duration
+	optPulseOffset    *time.Duration
 	navSolnMsgTRead   time.Time
 	nextPulseMsgTRead time.Time
 	prevPulseMsgTRead time.Time
 }
 
-type secList []*secMsgState
+type secMsgList []*secMsgState
 
 type Sample struct {
 	sec         ptime.Time
-	secState    *secMsgState // can be nil if we don't have a message for this second
 	pulseOffset time.Duration
 	pulse       pulseEdge
 }
@@ -101,7 +97,7 @@ type Combiner struct {
 	edgeFilter      edgeFilter
 	lg              *slog.Logger
 	pulses          []pulseEdge
-	secList         secList
+	secMsgList      secMsgList
 	waitPulseOffset bool
 	refSample       *Sample
 	lastSample      *Sample
@@ -136,10 +132,33 @@ func NewCombiner(cfg Config, sampler Sampler, lg *slog.Logger) *Combiner {
 	return c
 }
 
+// TimeMsg handles a message from the GPS receiver that gives information about the current time.
 func (c *Combiner) TimeMsg(sec ptime.Time, tRead time.Time, pulseOff *time.Duration, ref gpsprot.TimeRef) {
-	if !c.addTimeMsg(sec, tRead, pulseOff, ref) {
+	sl, i, err := c.secMsgList.addSec(sec)
+	c.secMsgList = sl
+	if err != nil {
+		c.lg.Warn(err.Error(), "sec", sec)
 		return
 	}
+	secState := c.secMsgList[i]
+	if pulseOff != nil {
+		secState.optPulseOffset = pulseOff
+	}
+	switch ref {
+	case gpsprot.NavSolution:
+		if secState.navSolnMsgTRead.IsZero() {
+			secState.navSolnMsgTRead = tRead
+			c.tryUpgradeLastSample(secState)
+		}
+	case gpsprot.NextPulse:
+		secState.nextPulseMsgTRead = tRead
+	case gpsprot.LastPulse:
+		secState.prevPulseMsgTRead = tRead
+		if pulseOff != nil {
+			c.waitPulseOffset = true
+		}
+	}
+	// XXX need to limit number of messages stored
 	if len(c.pulses) != 0 {
 		if c.refSample == nil {
 			c.tryEmitFirstSample()
@@ -149,94 +168,21 @@ func (c *Combiner) TimeMsg(sec ptime.Time, tRead time.Time, pulseOff *time.Durat
 	}
 }
 
-func (c *Combiner) addTimeMsg(sec ptime.Time, tRead time.Time, pulseOff *time.Duration, ref gpsprot.TimeRef) bool {
-	sl, i, err := c.secList.addSec(sec)
-	c.secList = sl
-	if err != nil {
-		c.lg.Warn(err.Error(), "sec", sec)
-		return false
-	}
-	secState := c.secList[i]
-	switch ref {
-	case gpsprot.NavSolution:
-		secState.navSolnMsgTRead = tRead
-	case gpsprot.NextPulse:
-		secState.nextPulseMsgTRead = tRead
-	case gpsprot.LastPulse:
-		secState.prevPulseMsgTRead = tRead
-	}
-	if pulseOff != nil {
-		secState.pulseOff = pulseOff
-	}
-	return true
-}
-
-func (sl secList) bestMatch(pulse pulseEdge, cfg *Config) secMatch {
-	pt := pulse.tRead
-	// this is our estimate of the system time at which this pulse occurred
-	pt = pt.Add(-cfg.MaxPulseReadDelay / 2)
-	//var lastOff *time.Duration
-	for i := len(sl) - 1; i >= 0; i-- {
-		secState := sl[i]
-		mt := secState.prevPulseMsgTRead
-		if mt.IsZero() {
-			mt = secState.navSolnMsgTRead
-			if mt.IsZero() {
-				//lastOff = nil
-				continue
-			}
-			mt = mt.Add(-cfg.NavSolnDelay)
-		}
-		mt = mt.Add(-cfg.SerialDelay)
-		// mt decreases in this loop, so off increases
-		off := pt.Sub(mt)
-		if off > 0 {
-			// we've gone past the pulse
-			break
-		}
-		//lastOff = &off
-	}
-	return secMatch{q: matchNone}
-}
-
-var errOutOfOrderMsg = errors.New("out of order message")
-
-func (sl secList) addSec(sec ptime.Time) (secStates secList, i int, err error) {
-	secStates = sl
-	i = secStates.search(sec)
-	for j := i; j < len(secStates); j++ {
-		if secStates[j].happened() {
-			i = -1
-			err = errOutOfOrderMsg
-			return
-		}
-	}
-	newSec := secMsgState{sec: sec}
-	if i == len(secStates) {
-		secStates = append(secStates, &newSec)
+func (c *Combiner) tryUpgradeLastSample(secState *secMsgState) {
+	if c.lastSample == nil {
 		return
 	}
-	if secStates[i].sec == sec {
+	if c.lastSample == c.refSample {
 		return
 	}
-	before := secStates[:i]
-	after := secStates[i:]
-	secStates = append(before, &newSec)
-	secStates = append(secStates, after...)
-	return
-}
-
-// search returns the greatest index i such that for all j < i, sl[j].sec < sec
-// The return value is >= 0 and <= len(sl).
-// Assumes that secStates is in ascending order of sec with no duplicates.
-// Note that when sec is greater than all sl[j].sec, then i == len(sl).
-// The implementation searchs from the end of the slice, since this will be the common case.
-func (sl secList) search(sec ptime.Time) int {
-	i := len(sl)
-	for i > 0 && sl[i-1].sec >= sec {
-		i--
+	if c.lastSample.sec != secState.sec {
+		return
 	}
-	return i
+	q := c.cfg.navSolnMsgMatchQuality(secState.navSolnMsgTRead.Sub(c.lastSample.pulse.tRead))
+	if q < matchMedium {
+		return
+	}
+	c.refSample = c.lastSample
 }
 
 // PulseEdge records the PHC time at which a pulse edge was received.
@@ -252,6 +198,7 @@ func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 			return
 		}
 		c.pulses = append(c.pulses, edge)
+		// XXX limit total number of pulses kept
 		c.tryEmitFirstSample()
 	} else {
 		if delayed != nil {
@@ -267,19 +214,28 @@ func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 		c.pulses = append(c.pulses, edge)
 		c.tryEmitNextSample()
 	}
-
 }
 
-// tryEmitFirstSample attempts to emit a sample for the current pulse in the case when we have not emitted any samples yet.
-// If latest pulse is for second N, possibilities for last secMsgState (when everything is OK) are:
-//  1. it has a NextPulse message for second N + 1, and no other messages; this is usually the case just after the NextPulse message
-//     was received;
-//  2. it has a NavSolution or LastPulse message for second N; this will usually be the case just after the message was received
-//  3. it has a NavSolution or LastPulse message for second N - 1; this will usually be the case just after the pulse was received
-//  4. it has a NavSolution or LastPulse message for second N + 1; this is unusual, but can happen just after the message was
-//     was received, if the pulse was delayed (i.e. on the CM4)
 func (c *Combiner) tryEmitFirstSample() {
-
+	if len(c.pulses) == 0 {
+		return
+	}
+	pulse := c.pulses[len(c.pulses)-1]
+	q, i := c.secMsgList.bestMatch(pulse, &c.cfg)
+	if q == matchNone {
+		return
+	}
+	secMsg := c.secMsgList[i]
+	// XXX emit delayed pulses
+	sample := &Sample{
+		sec:         secMsg.sec,
+		pulse:       pulse,
+		pulseOffset: secMsg.pulseOffset(),
+	}
+	c.refSample = sample
+	c.lastSample = sample
+	c.emit(sample, false)
+	c.pulses = c.pulses[:0]
 }
 
 func (c *Combiner) tryEmitNextSample() {
@@ -294,7 +250,7 @@ func (c *Combiner) tryEmitNextSample() {
 		panic("tryEmitNextSample when number of pulses is more than 1")
 	}
 	pulse := c.pulses[0]
-	sec := c.cfg.chooseNextSec(c.refSample, pulse)
+	sec, useAsRef := c.refSample.chooseNextSec(pulse, &c.cfg)
 	if sec == 0 {
 		return
 	}
@@ -308,12 +264,11 @@ func (c *Combiner) tryEmitNextSample() {
 		pulse:       pulse,
 		pulseOffset: pulseOff,
 	}
-	c.refSample = &sample
+	c.lastSample = &sample
+	if useAsRef {
+		c.refSample = &sample
+	}
 	c.emit(&sample, false)
-}
-
-func (s *Sample) masterTime() ptime.Time {
-	return s.sec.Add(-s.pulseOffset)
 }
 
 func (c *Combiner) emit(sample *Sample, delayed bool) {
@@ -322,20 +277,90 @@ func (c *Combiner) emit(sample *Sample, delayed bool) {
 }
 
 func (c *Combiner) findPulseOffset(sec ptime.Time) (pulseOff time.Duration, wait bool) {
-	i := c.secList.search(sec)
+	i := c.secMsgList.search(sec)
 	var secState *secMsgState
-	if i < len(c.secList) && c.secList[i].sec == sec {
-		secState = c.secList[i]
+	if i < len(c.secMsgList) && c.secMsgList[i].sec == sec {
+		secState = c.secMsgList[i]
 	}
-	if secState != nil && secState.pulseOff != nil {
-		pulseOff = *secState.pulseOff
+	if secState != nil && secState.optPulseOffset != nil {
+		pulseOff = *secState.optPulseOffset
 	} else if c.waitPulseOffset && (secState == nil || secState.prevPulseMsgTRead.IsZero()) {
 		wait = true
 	}
 	return
 }
 
-func (c *Config) chooseNextSec(refSample *Sample, curPulse pulseEdge) ptime.Time {
+// bestMatch finds the second that is the best match for a pulse in a list of seconds.
+// It returns the quality of the match and the index of the message.
+// It does not consider messages of the kind that are emitted before the pulse.
+func (sl secMsgList) bestMatch(pulse pulseEdge, cfg *Config) (matchQuality, int) {
+	pt := pulse.tRead
+	qualities := make([]matchQuality, len(sl))
+	var bestMatchQual = matchNone
+	var bestMatchIndex = -1
+	for i := len(sl) - 1; i >= 0; i-- {
+		q := matchNone
+		if !sl[i].prevPulseMsgTRead.IsZero() {
+			q = cfg.prevPulseMsgMatchQuality(sl[i].prevPulseMsgTRead.Sub(pt))
+		} else if !sl[i].navSolnMsgTRead.IsZero() {
+			q = cfg.navSolnMsgMatchQuality(sl[i].navSolnMsgTRead.Sub(pt))
+		}
+		if q > bestMatchQual {
+			bestMatchQual = q
+			bestMatchIndex = i
+		}
+		if q < bestMatchQual {
+			// past local maximum
+			break
+		}
+	}
+	if bestMatchQual == matchNone || bestMatchIndex > 0 && qualities[bestMatchIndex-1] == bestMatchQual {
+		return matchNone, -1
+	}
+	return bestMatchQual, bestMatchIndex
+}
+
+var errOutOfOrderMsg = errors.New("out of order message")
+
+func (sml secMsgList) addSec(sec ptime.Time) (secMsgList, int, error) {
+	i := sml.search(sec)
+	for j := i; j < len(sml); j++ {
+		if sml[j].happened() {
+			return sml, -1, errOutOfOrderMsg
+		}
+	}
+	newSec := secMsgState{sec: sec}
+	if i == len(sml) {
+		sml = append(sml, &newSec)
+		return sml, i, nil
+	}
+	if sml[i].sec == sec {
+		return sml, i, nil
+	}
+	before := sml[:i]
+	after := sml[i:]
+	sml = append(before, &newSec)
+	sml = append(sml, after...)
+	return sml, i, nil
+}
+
+// search returns the greatest index i such that for all j < i, sl[j].sec < sec
+// The return value is >= 0 and <= len(sl).
+// Assumes that secStates is in ascending order of sec with no duplicates.
+// Note that when sec is greater than all sl[j].sec, then i == len(sl).
+// The implementation searchs from the end of the slice, since this will be the common case.
+func (sml secMsgList) search(sec ptime.Time) int {
+	i := len(sml)
+	for i > 0 && sml[i-1].sec >= sec {
+		i--
+	}
+	return i
+}
+
+// chooseNextSec chooses the second for a pulse based on an existing sample.
+// It returns 0 if no second can be chosen.
+// The bool return value says whether the choice is good enough to be used as the reference sample.
+func (s *Sample) chooseNextSec(pulse pulseEdge, cfg *Config) (ptime.Time, bool) {
 	const (
 		sourceRead = iota
 		sourcePHC
@@ -343,10 +368,10 @@ func (c *Config) chooseNextSec(refSample *Sample, curPulse pulseEdge) ptime.Time
 		nSource
 	)
 	var matches [nSource]secMatch
-	matches[sourcePHC] = refSample.phcMatch(curPulse, c)
-	matches[sourceRead] = refSample.readMatch(curPulse, c)
+	matches[sourcePHC] = s.phcMatch(pulse, cfg)
+	matches[sourceRead] = s.readMatch(pulse, cfg)
 	// XXX: need to add matches from messages
-	return 0
+	return 0, false
 }
 
 func (s *Sample) readMatch(pulse pulseEdge, cfg *Config) secMatch {
@@ -363,8 +388,23 @@ func (s *Sample) phcMatch(pulse pulseEdge, cfg *Config) secMatch {
 	return secMatch{sec, cfg.phcSampleMatchQuality(frac)}
 }
 
+func (s *Sample) masterTime() ptime.Time {
+	return s.sec.Add(-s.pulseOffset)
+}
+
+func (s *secMsgState) pulseOffset() time.Duration {
+	if s.optPulseOffset == nil {
+		return 0
+	}
+	return *s.optPulseOffset
+}
+
 func (s *secMsgState) happened() bool {
 	return !s.navSolnMsgTRead.IsZero() || !s.prevPulseMsgTRead.IsZero()
+}
+
+func (p pulseEdge) isZero() bool {
+	return p.tRead.IsZero()
 }
 
 func (p pulseEdge) subTRead(q pulseEdge) time.Duration {
@@ -380,15 +420,20 @@ func (p pulseEdge) subT(q pulseEdge) (time.Duration, bool) {
 
 // delay is the tRead of the message minus the tRead of the pulse
 func (cfg *Config) navSolnMsgMatchQuality(delay time.Duration) matchQuality {
+	// XXX
 	return matchNone
 }
 
+func (cfg *Config) prevPulseMsgMatchQuality(delay time.Duration) matchQuality {
+	// XXX
+	return matchNone
+}
 func (cfg *Config) readSampleMatchQuality(off time.Duration) matchQuality {
 	off = off.Abs()
 	if off <= time.Millisecond {
 		return matchGood
 	}
-	if off <= cfg.MaxPulseReadDelay+time.Millisecond {
+	if off <= cfg.MaxPulseReadDelay+time.Millisecond*10 {
 		return matchMedium
 	}
 	return matchBad
