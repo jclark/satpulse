@@ -114,9 +114,9 @@ func (s GNSSSet) Items() []GNSS {
 type TimeRef int
 
 const (
-	NavSolution TimeRef = iota
-	NextPulse
-	LastPulse
+	NavSolution TimeRef = iota // a message provding part of the result of a navigation solution (e.g. UBX-NAV-TIMEGPS)
+	PrePulse                   // a message that is emitted before a pulse (e.g. UBX-TIM-TP)
+	PostPulse                  // a message that is emitted immediately after a pulse (e.g. UBX-TIM-TOS)
 )
 
 type TimeMsg struct {

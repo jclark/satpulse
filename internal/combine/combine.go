@@ -71,8 +71,8 @@ type secMsgState struct {
 	sec               ptime.Time
 	optPulseOffset    *time.Duration
 	navSolnMsgTRead   time.Time
-	nextPulseMsgTRead time.Time
-	prevPulseMsgTRead time.Time
+	prePulseMsgTRead  time.Time
+	postPulseMsgTRead time.Time
 }
 
 type secMsgList []*secMsgState
@@ -150,10 +150,10 @@ func (c *Combiner) TimeMsg(sec ptime.Time, tRead time.Time, pulseOff *time.Durat
 			secState.navSolnMsgTRead = tRead
 			c.tryUpgradeLastSample(secState)
 		}
-	case gpsprot.NextPulse:
-		secState.nextPulseMsgTRead = tRead
-	case gpsprot.LastPulse:
-		secState.prevPulseMsgTRead = tRead
+	case gpsprot.PrePulse:
+		secState.prePulseMsgTRead = tRead
+	case gpsprot.PostPulse:
+		secState.postPulseMsgTRead = tRead
 		if pulseOff != nil {
 			c.waitPulseOffset = true
 		}
@@ -284,7 +284,7 @@ func (c *Combiner) findPulseOffset(sec ptime.Time) (pulseOff time.Duration, wait
 	}
 	if secState != nil && secState.optPulseOffset != nil {
 		pulseOff = *secState.optPulseOffset
-	} else if c.waitPulseOffset && (secState == nil || secState.prevPulseMsgTRead.IsZero()) {
+	} else if c.waitPulseOffset && (secState == nil || secState.postPulseMsgTRead.IsZero()) {
 		wait = true
 	}
 	return
@@ -300,8 +300,8 @@ func (sl secMsgList) bestMatch(pulse pulseEdge, cfg *Config) (matchQuality, int)
 	var bestMatchIndex = -1
 	for i := len(sl) - 1; i >= 0; i-- {
 		q := matchNone
-		if !sl[i].prevPulseMsgTRead.IsZero() {
-			q = cfg.prevPulseMsgMatchQuality(sl[i].prevPulseMsgTRead.Sub(pt))
+		if !sl[i].postPulseMsgTRead.IsZero() {
+			q = cfg.postPulseMsgMatchQuality(sl[i].postPulseMsgTRead.Sub(pt))
 		} else if !sl[i].navSolnMsgTRead.IsZero() {
 			q = cfg.navSolnMsgMatchQuality(sl[i].navSolnMsgTRead.Sub(pt))
 		}
@@ -400,7 +400,7 @@ func (s *secMsgState) pulseOffset() time.Duration {
 }
 
 func (s *secMsgState) happened() bool {
-	return !s.navSolnMsgTRead.IsZero() || !s.prevPulseMsgTRead.IsZero()
+	return !s.navSolnMsgTRead.IsZero() || !s.postPulseMsgTRead.IsZero()
 }
 
 func (p pulseEdge) isZero() bool {
@@ -424,7 +424,8 @@ func (cfg *Config) navSolnMsgMatchQuality(delay time.Duration) matchQuality {
 	return matchNone
 }
 
-func (cfg *Config) prevPulseMsgMatchQuality(delay time.Duration) matchQuality {
+// delay is the tRead of the message minus the tRead of the pulse
+func (cfg *Config) postPulseMsgMatchQuality(delay time.Duration) matchQuality {
 	// XXX
 	return matchNone
 }
