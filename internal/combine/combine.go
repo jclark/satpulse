@@ -217,7 +217,7 @@ func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 		}
 		if excess >= len(c.pulses) {
 			c.pulses = delayed
-		} else {
+		} else if excess > 0 {
 			c.pulses = c.pulses[excess:]
 			if delayed != nil {
 				c.pulses = append(c.pulses, delayed...)
@@ -428,7 +428,13 @@ func (sml secMsgList) addSec(sec ptime.Time, maxLength int) (secMsgList, int, er
 	}
 	if len(sml) >= maxLength {
 		// we want new length now to be maxLength - 1
-		sml = sml[len(sml)-(maxLength-1):]
+		// but if we found it, don't throw it out for now
+		excess := len(sml) - (maxLength - 1)
+		sml = sml[excess:]
+		i -= excess
+		if i < 0 {
+			i = 0
+		}
 	}
 	newSec := secMsgState{sec: sec}
 	if i == len(sml) {
