@@ -36,7 +36,7 @@ func (e pulseEdge) emit(c *Combiner) {
 func (e pulseEdge) t() time.Time { return e.tRead }
 
 func TestCombiner(t *testing.T) {
-	combinerTest(t, 20, genNavSoln, PulseType{EdgesPerPulse: 1}, 1)
+	combinerTest(t, 10000, genNavSoln, PulseType{EdgesPerPulse: 1}, 1)
 }
 
 const (

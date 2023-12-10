@@ -548,7 +548,7 @@ func (cfg *Config) readSampleMatchQuality(off time.Duration) matchQuality {
 	if off <= time.Millisecond {
 		return matchGood
 	}
-	if off <= cfg.PulsePollInterval+time.Millisecond*10 {
+	if off <= cfg.PulsePollInterval+cfg.PulseReadDelay {
 		return matchMedium
 	}
 	return matchBad
