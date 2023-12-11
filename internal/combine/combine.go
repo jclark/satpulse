@@ -156,7 +156,7 @@ func NewCombiner(pt PulseType, sampler Sampler, lg *slog.Logger, cfg *Config) *C
 		}
 		c.edgeFilter = &knownEdgeFilter{
 			pulseWidth:         pt.PulseWidth,
-			pulseWidthAccuracy: c.cfg.PulseWidthAccuracy,
+			pulseWidthAccuracy: c.cfg.PulseWidthAccuracy + c.cfg.PulseReadDelay,
 		}
 	} else if pt.EdgesPerPulse == 1 {
 		c.edgeFilter = &noEdgeFilter{}
@@ -217,8 +217,10 @@ func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 		}
 		if excess >= len(c.pulses) {
 			c.pulses = delayed
-		} else if excess > 0 {
-			c.pulses = c.pulses[excess:]
+		} else {
+			if excess > 0 {
+				c.pulses = c.pulses[excess:]
+			}
 			if delayed != nil {
 				c.pulses = append(c.pulses, delayed...)
 			}

@@ -39,8 +39,16 @@ func TestCombinerNavSoln1(t *testing.T) {
 	combinerTest(t, 10000, genNavSoln, PulseType{EdgesPerPulse: 1}, 1)
 }
 
+func TestCombinerNavSoln2(t *testing.T) {
+	combinerTest(t, 1000, genNavSoln, PulseType{EdgesPerPulse: 2, PulseWidth: time.Second / 10}, 1)
+}
+
 func TestCombinerPostPulse1(t *testing.T) {
 	combinerTest(t, 10000, genPostPulse, PulseType{EdgesPerPulse: 1}, 1)
+}
+
+func TestCombinerPostPulse2(t *testing.T) {
+	combinerTest(t, 1000, genPostPulse, PulseType{EdgesPerPulse: 2, PulseWidth: time.Second / 10}, 1)
 }
 
 const (
@@ -124,6 +132,7 @@ func genEvents(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent
 	eventsPerPulse := bits.OnesCount(flags&(genPrePulse|genPostPulse|genNavSoln)) + pt.EdgesPerPulse
 	events := make([]testEvent, 0, nSecs*eventsPerPulse)
 	samples := make([]sampleData, nSecs)
+	era := ptime.Era(1)
 	for i := 0; i < nSecs; i++ {
 		elapsed := time.Duration(i) * time.Second
 		tRead := readStart.Add(elapsed)
@@ -146,7 +155,7 @@ func genEvents(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent
 		edge := pulseEdge{
 			ClockTime: ptime.ClockTime{
 				T:   tai.Add(randSignedD(r, time.Microsecond)),
-				Era: 1,
+				Era: era,
 			},
 			tRead: tRead.Add(pulseDelay),
 		}
@@ -155,6 +164,17 @@ func genEvents(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent
 			sec:         tai,
 			pulseOffset: 0,
 			pulse:       edge,
+		}
+		if pt.EdgesPerPulse == 2 {
+			pulseDelay = randD(r, cfg.PulseReadDelay+cfg.PulsePollInterval)
+			edge = pulseEdge{
+				ClockTime: ptime.ClockTime{
+					T:   tai.Add(pt.PulseWidth + randSignedD(r, cfg.PulseWidthAccuracy)),
+					Era: era,
+				},
+				tRead: tRead.Add(pt.PulseWidth + pulseDelay),
+			}
+			events = append(events, edge)
 		}
 	}
 	slices.SortFunc(events, func(a, b testEvent) int { return a.t().Compare(b.t()) })
