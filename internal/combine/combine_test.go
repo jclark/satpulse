@@ -35,7 +35,7 @@ func (e pulseEdge) emit(c *Combiner) {
 
 func (e pulseEdge) t() time.Time { return e.tRead }
 
-func TestCombiner(t *testing.T) {
+func TestCombinerNavSoln1(t *testing.T) {
 	combinerTest(t, 10000, genNavSoln, PulseType{EdgesPerPulse: 1}, 1)
 }
 
@@ -82,12 +82,9 @@ func (s *testSampler) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool
 		if ref <= expected.sec {
 			if expected.sec != ref {
 				s.t.Errorf("sample %d: ref = %v, want %v", s.i, ref, expected.sec)
-			}
-
-			if expected.pulse.ClockTime != local {
+			} else if expected.pulse.ClockTime != local {
 				s.t.Errorf("sample %d: local = %v, want %v", s.i, local, expected.pulse.ClockTime)
-			}
-			if false && expectDelayed != delayed {
+			} else if expectDelayed != delayed {
 				s.t.Errorf("sample %d: delayed = %v, want %v", s.i, delayed, expectDelayed)
 			}
 			break

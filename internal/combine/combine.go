@@ -334,7 +334,7 @@ func (c *Combiner) tryEmitNextSample() {
 }
 
 func (c *Combiner) emit(sample *sampleData, delayed bool) {
-	c.sampler.Sample(sample.masterTime(), sample.pulse.ClockTime, false)
+	c.sampler.Sample(sample.masterTime(), sample.pulse.ClockTime, delayed)
 	c.lastSample = sample
 }
 
