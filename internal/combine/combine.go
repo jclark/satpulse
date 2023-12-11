@@ -3,6 +3,7 @@ package combine
 import (
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -406,8 +407,9 @@ func (sl secMsgList) bestMatch(pulse pulseEdge, cfg *Config) (matchQuality, int)
 			// past local maximum
 			break
 		}
-		if delay < time.Second {
-			// delay is going to get worse
+		if delay < 0 {
+			// delay is going to decrease by about a second on next iteration
+			// need to have < 0 here, because delay above is 0 if there is only a PrePulse message
 			break
 		}
 	}
@@ -452,10 +454,7 @@ func (sml secMsgList) addSec(sec ptime.Time, maxLength int) (secMsgList, int, er
 		sml = append(sml, &newSec)
 		return sml, i, nil
 	}
-	before := sml[:i]
-	after := sml[i:]
-	sml = append(before, &newSec)
-	sml = append(sml, after...)
+	sml = slices.Insert(sml, i, &newSec)
 	return sml, i, nil
 }
 

@@ -24,7 +24,11 @@ type testMsgEvent struct {
 }
 
 func (e testMsgEvent) emit(c *Combiner) {
-	c.TimeMsg(e.TAITime, e.tRead, nil, e.Ref)
+	pulseOff := &e.PulseOffset
+	if *pulseOff == 0 {
+		pulseOff = nil
+	}
+	c.TimeMsg(e.TAITime, e.tRead, pulseOff, e.Ref)
 }
 
 func (e testMsgEvent) t() time.Time { return e.tRead }
@@ -51,6 +55,14 @@ func TestCombinerPostPulse2(t *testing.T) {
 	combinerTest(t, 1000, genPostPulse, PulseType{EdgesPerPulse: 2, PulseWidth: time.Second / 10}, 1)
 }
 
+func TestCombinerPrePulse1(t *testing.T) {
+	combinerTest(t, 1000, genPrePulse|genNavSoln, PulseType{EdgesPerPulse: 1}, 1)
+}
+
+func TestCombinerPulseOff1(t *testing.T) {
+	combinerTest(t, 1000, genPrePulse|genNavSoln|genPulseOff, PulseType{EdgesPerPulse: 1}, 1)
+}
+
 const (
 	genPrePulse uint = 1 << iota
 	genPostPulse
@@ -59,7 +71,7 @@ const (
 )
 
 func combinerTest(t *testing.T, nSecs int, flags uint, pt PulseType, nDelayed int) {
-	events, samples := genEvents(nSecs, flags, pt, nil)
+	events, samples := genTestData(nSecs, flags, pt, nil)
 	sampler := newTestSampler(t, samples, nDelayed)
 	c := NewCombiner(pt, sampler, testLogger(), nil)
 	for _, e := range events {
@@ -94,9 +106,11 @@ func (s *testSampler) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool
 		expected := s.expected[s.i]
 		expectDelayed := s.i < s.nDelayed
 		s.i++
-		if ref <= expected.sec {
-			if expected.sec != ref {
-				s.t.Errorf("sample %d: ref = %v, want %v", s.i, ref, expected.sec)
+		refSec := ref.Round(time.Second)
+		if refSec <= expected.sec {
+			expectedRef := expected.masterTime()
+			if expectedRef != ref {
+				s.t.Errorf("sample %d: ref = %v, want %v", s.i, ref, expectedRef)
 			} else if expected.pulse.ClockTime != local {
 				s.t.Errorf("sample %d: local = %v, want %v", s.i, local, expected.pulse.ClockTime)
 			} else if expectDelayed != delayed {
@@ -121,7 +135,7 @@ func newTestSampler(t *testing.T, expected []sampleData, nDelayed int) *testSamp
 
 const randSeed = 42
 
-func genEvents(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent, []sampleData) {
+func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent, []sampleData) {
 	var cfg Config
 	if cfgOpt != nil {
 		cfg = *cfgOpt
@@ -136,6 +150,11 @@ func genEvents(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent
 	events := make([]testEvent, 0, nSecs*eventsPerPulse)
 	samples := make([]sampleData, nSecs)
 	era := ptime.Era(1)
+	var pulseOff time.Duration
+	// if we are using just prePulse, then we won't get a pulseOff for the first pulse
+	if flags&(genPulseOff|genPostPulse) == (genPulseOff | genPostPulse) {
+		pulseOff = 7 // first pulse offset
+	}
 	for i := 0; i < nSecs; i++ {
 		elapsed := time.Duration(i) * time.Second
 		tRead := readStart.Add(elapsed)
@@ -144,7 +163,7 @@ func genEvents(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent
 		if flags&genPostPulse != 0 {
 			events = append(events, testMsgEvent{
 				tRead:   tRead.Add(delay),
-				TimeMsg: gpsprot.TimeMsg{TAITime: tai, Ref: gpsprot.PostPulse},
+				TimeMsg: gpsprot.TimeMsg{TAITime: tai, Ref: gpsprot.PostPulse, PulseOffset: pulseOff},
 			})
 		}
 		if flags&genNavSoln != 0 {
@@ -165,7 +184,7 @@ func genEvents(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent
 		events = append(events, edge)
 		samples[i] = sampleData{
 			sec:         tai,
-			pulseOffset: 0,
+			pulseOffset: pulseOff,
 			pulse:       edge,
 		}
 		if pt.EdgesPerPulse == 2 {
@@ -178,6 +197,20 @@ func genEvents(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent
 				tRead: tRead.Add(pt.PulseWidth + pulseDelay),
 			}
 			events = append(events, edge)
+		}
+		// PrePulse for the next second
+		if flags&genPulseOff != 0 {
+			pulseOff = randSignedD(r, time.Nanosecond*15)
+			if pulseOff == 0 {
+				pulseOff++
+			}
+		}
+		if flags&genPrePulse != 0 {
+			delay := randD(r, cfg.SerialDelay+time.Second/5)
+			events = append(events, testMsgEvent{
+				tRead:   tRead.Add(delay),
+				TimeMsg: gpsprot.TimeMsg{TAITime: tai.Add(time.Second), Ref: gpsprot.PrePulse, PulseOffset: pulseOff},
+			})
 		}
 	}
 	slices.SortFunc(events, func(a, b testEvent) int { return a.t().Compare(b.t()) })
