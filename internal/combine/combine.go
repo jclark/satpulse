@@ -113,15 +113,16 @@ func DefaultConfig(pt PulseType) Config {
 }
 
 type Combiner struct {
-	cfg             Config
-	sampler         Sampler
-	edgeFilter      edgeFilter
-	lg              *slog.Logger
-	pulses          []pulseEdge
-	secMsgList      secMsgList
-	waitPulseOffset bool
-	refSample       *sampleData
-	lastSample      *sampleData
+	cfg               Config
+	sampler           Sampler
+	edgeFilter        edgeFilter
+	lg                *slog.Logger
+	pulses            []pulseEdge
+	secMsgList        secMsgList
+	waitPulseOffset   bool
+	refSample         *sampleData
+	lastSample        *sampleData
+	PulseDiscardCount int
 }
 
 type matchQuality int
@@ -215,15 +216,22 @@ func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 		if inc {
 			excess++
 		}
+		nDiscarded := 0
 		if excess >= len(c.pulses) {
+			nDiscarded = len(c.pulses)
 			c.pulses = delayed
 		} else {
 			if excess > 0 {
+				nDiscarded = excess
 				c.pulses = c.pulses[excess:]
 			}
 			if delayed != nil {
 				c.pulses = append(c.pulses, delayed...)
 			}
+		}
+		if nDiscarded > 0 {
+			c.lg.Warn("discarded pulses during initialization", "n", nDiscarded)
+			c.PulseDiscardCount += nDiscarded
 		}
 		if !inc {
 			return
@@ -240,6 +248,7 @@ func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 		for _, p := range c.pulses {
 			c.lg.Warn("failed to emit sample for pulse", "t", p.T)
 		}
+		c.PulseDiscardCount += len(c.pulses)
 		c.pulses = c.pulses[:0]
 		c.pulses = append(c.pulses, edge)
 		c.tryEmitNextSample()

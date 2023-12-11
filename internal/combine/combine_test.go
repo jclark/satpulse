@@ -66,6 +66,9 @@ func combinerTest(t *testing.T, nSecs int, flags uint, pt PulseType, nDelayed in
 		e.emit(c)
 	}
 	sampler.Done()
+	if c.PulseDiscardCount > 0 {
+		t.Errorf("discarded %d pulses, want 0", c.PulseDiscardCount)
+	}
 }
 
 func testLogger() *slog.Logger {
