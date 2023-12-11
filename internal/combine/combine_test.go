@@ -39,6 +39,10 @@ func TestCombinerNavSoln1(t *testing.T) {
 	combinerTest(t, 10000, genNavSoln, PulseType{EdgesPerPulse: 1}, 1)
 }
 
+func TestCombinerPostPulse1(t *testing.T) {
+	combinerTest(t, 10000, genPostPulse, PulseType{EdgesPerPulse: 1}, 1)
+}
+
 const (
 	genPrePulse uint = 1 << iota
 	genPostPulse
@@ -124,18 +128,24 @@ func genEvents(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent
 		elapsed := time.Duration(i) * time.Second
 		tRead := readStart.Add(elapsed)
 		tai := taiStart.Add(elapsed)
-		if flags&genNavSoln != 0 {
-			delay := cfg.NavSolnDelay + cfg.SerialDelay
-			delay = delay/2 + randAbsD(r, delay/2)
+		delay := randD(r, cfg.SerialDelay)
+		if flags&genPostPulse != 0 {
 			events = append(events, testMsgEvent{
 				tRead:   tRead.Add(delay),
-				TimeMsg: gpsprot.TimeMsg{TAITime: tai},
+				TimeMsg: gpsprot.TimeMsg{TAITime: tai, Ref: gpsprot.PostPulse},
+			})
+		}
+		if flags&genNavSoln != 0 {
+			delay += randD(r, cfg.NavSolnDelay)
+			events = append(events, testMsgEvent{
+				tRead:   tRead.Add(delay),
+				TimeMsg: gpsprot.TimeMsg{TAITime: tai, Ref: gpsprot.NavSolution},
 			})
 		}
 		pulseDelay := randD(r, cfg.PulseReadDelay+cfg.PulsePollInterval)
 		edge := pulseEdge{
 			ClockTime: ptime.ClockTime{
-				T:   tai.Add(randAbsD(r, time.Microsecond)),
+				T:   tai.Add(randSignedD(r, time.Microsecond)),
 				Era: 1,
 			},
 			tRead: tRead.Add(pulseDelay),
@@ -151,8 +161,8 @@ func genEvents(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEvent
 	return events, samples
 }
 
-// randAbsD returns a random duration in the range [-d, d].
-func randAbsD(r *rand.Rand, d time.Duration) time.Duration {
+// randSignedD returns a random duration in the range [-d, d].
+func randSignedD(r *rand.Rand, d time.Duration) time.Duration {
 	// if d is 2, we want the interval [-2, 2]
 	return time.Duration(r.Int63n(int64(d)*2+1) - int64(d))
 }
