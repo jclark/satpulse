@@ -42,12 +42,12 @@ Others
 * Test with Lady Heather
 * Control over IPv4/IPv6
 
-## Time sync
+## Servo
 
 High priority
 * Better handle the case where we lose sync: may need to step clock
 * Log some statistics about the servo (similar to what ptp4l does)
-* Make correlator and servo configurable from TOML
+* Make servo configurable from TOML
    * kp, ki constants
    * initial observe time
    * when to step clock
@@ -55,28 +55,67 @@ High priority
 
 Others
 
-* Can we improve how UBX-TIM-TP is handled and the corresponding PulseOffset message? Problem is that on CM4 there can be one then 1 sec between receiving the PulseOffset message and the PHC time stamp event being delivered to user space. This is because the CM4 PHY kernel driver can delay delivering the PHC timestamp by up to 0.25s
+* Experiment with different ki/kp coefficients for PI controller
+* PI controller starts off with a large integral term, which I suspect is not optimal
+* Should the servo do something different if there is more than 1 second since last sample? Interpolate?
+* See what we can learn from the Meta time library servo package.
+* See what we can learn from NTP standard
+
+## Combine
+
+Finish this package.
+
+* Handle change of era
+  * Confirm with GPS message
+  * Add tests
+* Add some more logging
+* Implement auto-detection of number of edges per pulse and/or pulse width
+* Switch over to Combiner this rather than tsync.Correlator
+  * Pass in information about pulse width
+  * Pass in information about edges per pulse
+* TimeMsg method should use gpsprot.TimeMsg
+  * runner.go should just pass time messages on
+* Change gpsprot.TimeMsg to use pointer for pulse correction so as to distinguish case of no pulse correction vs correction of 0
+* Add some package docs
+* We should give an error if we have a 50% duty cycle and two edges per pulse
+* Improve how we generate TAI from UTC time messages
+  * Should prefer a message in UBX that provides TAI directly to NMEA
+  * Should use GPS receiver's idea of what the leap second offset is
+* More tests
+  * upgrading sample
+  * waiting for pulse correction
+  * unit tests for secMsgList
+  * test that we are emitting the sample at the right time (i.e. immediately after pulse)
+  * test with missing, extra pulses/messages
+* Configurable option to specify pulse width
+* Perform measurements to make sure we are applying the quantization error in the right direction
+  * Configurable option not to use pulse offset/correction
+* Sanity check first sample against system clock and log warning
+  * Can we figure out when system clock is supposed to be set?
+* Add separate optional stage to filter outliers (no need to use this when generating samples for chrony)
+  * This probably needs to keeip track of what frequency adjustments we have made
+  * Distinguish choosing the right second (which is quite coarse-grained) from filtering outliers
+  * Need to investigate the right statistical approach
+
+Lower priority
+* Bulletproof against invalid GPS message sequences
 * Investigate UBX-TIM-TP further
     * Does it work (ie provide qErr) on non-timing receivers?
     * Does it work on clones?
-* Should prefer a message in UBX that provides TAI directly to NMEA.
-    * Use UBX-NAV-EOE to wait for right message
-    * Need configuration to tell us whether we have UBX-NAV-EOE
-* Experiment with different ki/kp coefficients for PI controller
-* PI controller starts off with a large integral term, which I suspect is not optimal
-* Sanity check with system clock
-* Mode where we use system clock rather than GPS messages for time of day (like `ts2phc -s generic`)
-* See what we can learn from the Meta time library servo package.
-* Be more intelligent about pulse sanity check
-   * keep track of standard deviation of pulse interval
-   * bounds should make use of max amount of frequency adjustment
-* Should the servo do something different if there is more than 1 second since last sample? Interpolate?
-* Use sawtooth correction from UBX-TIM-TOS on LEA-M8F
-* Take advantage of GPSDO-like features of LEA-M8F for holdover
-* Be able to disable sawtooth correction
+* Currently we require both navigation message rate and pulse rate to be 1Hz? Is there any point in relaxing this?
+* Could we work with just UBX-TIM-TP? Should be OK with one edge per pulse.
+* Can we leverage UBX-NAV-EOE (for end of navigation era)?
 * Looks like ATGM332D may be using fTOW field of UBX-NAV-TIMEGPS to convey quantization error (rather than solution time)
-* We can use CFG-TP5 to get time pulse interval
-* Could we use the falling edge to get another sample?
+* More flexible approach to edge detection
+  * With 50% duty cycle could generate two samples
+  * Problem is that it makes it harder to align pulses
+* Mode where we use system clock rather than GPS messages for time of day (like `ts2phc -s generic`)
+  * Could just generate time messages from system clock.
+  * This should work reasonably well now we are mostly basing things on previous sample
+* Can we support idea of a UTC correction that would allow clients to align to UTC rather than GNSS time?
+  * GPS/BeiDou/Galileo all have concept of steering their system time to a UTC variant.
+  * But we align the pulse to GNSS system time (seems to work better)
+* Support holdover with LEA-M8F (not really in this package)
 
 ## Leap seconds
 
@@ -99,6 +138,7 @@ Others
 ## Serial port network access
 
 * There's a bug: we get a write error when user disconnects
+  * Same when using `satpulsetool --socket``
 
 ## Serial IO
 
