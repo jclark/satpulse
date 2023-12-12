@@ -526,7 +526,7 @@ func (p pulseEdge) subTRead(q pulseEdge) time.Duration {
 }
 
 func (p pulseEdge) subT(q pulseEdge) (time.Duration, bool) {
-	if p.Era != q.Era {
+	if p.Era != q.Era || p.Era.Uncertain() {
 		return 0, false
 	}
 	return p.T.Sub(q.T), true
