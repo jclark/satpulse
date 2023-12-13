@@ -65,9 +65,6 @@ Others
 
 Finish this package.
 
-* Handle change of era
-  * Confirm with GPS message
-  * Add tests
 * Add some more logging
 * Implement auto-detection of number of edges per pulse and/or pulse width
 * Switch over to Combiner this rather than tsync.Correlator
@@ -249,10 +246,14 @@ This is better than using PHC refclock because:
 
 For hardware timestamping, chrony needs a free running PHC. One way to do this is with virtual clocks. But in case where user is not interested in PTP, it should be possible to generate samples without modifying the PHC (by keeping track of phase/frequency difference between PHC and the correct time).
 
+We can also run the other way: if PHC is not synchronized, then we read samples from the system clock and
+feed them into the PHC and change the clock type appropriately (assuming system clock is controlled with NTP).
+
 ## Netlink events
 
 * Integrate experimental carrier program. Need to be able to stop and restart timesync goroutine.
-* This can also help when booting with systemd: be able to start up right away, and wait for interface to appear (but we also need to wait for serial device)
+* This can also help when booting with systemd: be able to start up right away, and wait for interface to appear.
+* Netlink is also used for udev events. So we can potentially use this to wait for USB device to appear.
 
 ## Raspberry Pi CM4
 

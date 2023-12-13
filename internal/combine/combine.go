@@ -171,7 +171,7 @@ func NewCombiner(pt PulseType, sampler Sampler, lg *slog.Logger, cfg *Config) *C
 
 // TimeMsg handles a message from the GPS receiver that gives information about the current time.
 func (c *Combiner) TimeMsg(sec ptime.Time, tRead time.Time, pulseOff *time.Duration, ref gpsprot.TimeRef) {
-	sl, i, err := c.secMsgList.addSec(sec, len(c.pulses)+3) // +3 probably overkill, but safe
+	sl, i, err := c.secMsgList.addSec(sec, len(c.pulses)+3) // we use extra messages in prePulseAdvance
 	c.secMsgList = sl
 	if err != nil {
 		c.lg.Warn(err.Error(), "sec", sec)
@@ -262,7 +262,7 @@ func (c *Combiner) tryEmitFirstSample() {
 	}
 	pulse := c.pulses[len(c.pulses)-1]
 	q, i := c.secMsgList.bestMatch(pulse, &c.cfg)
-	if q == matchNone {
+	if q < matchMedium {
 		return
 	}
 	secMsg := c.secMsgList[i]
@@ -300,7 +300,7 @@ func (c *Combiner) delayedSamples(msgIndex int, refSample *sampleData) []sampleD
 			pulse:       pulse,
 			pulseOffset: secMsg.pulseOffset(),
 		}
-		nextSec, _ := sample.chooseNextSec(c.pulses[pulseIndex], &c.cfg)
+		nextSec, _ := sample.chooseNextSec(c.pulses[pulseIndex], nil, &c.cfg)
 		if nextSec != nextSample.sec {
 			break
 		}
@@ -324,7 +324,7 @@ func (c *Combiner) tryEmitNextSample() {
 		panic("tryEmitNextSample when number of pulses is more than 1")
 	}
 	pulse := c.pulses[0]
-	sec, useAsRef := c.refSample.chooseNextSec(pulse, &c.cfg)
+	sec, useAsRef := c.refSample.chooseNextSec(pulse, c.secMsgList, &c.cfg)
 	if sec == 0 {
 		return
 	}
@@ -419,6 +419,77 @@ func (sl secMsgList) bestMatch(pulse pulseEdge, cfg *Config) (matchQuality, int)
 	return bestMatchQual, bestMatchIndex
 }
 
+func (sml secMsgList) prePulseMatch(pulse pulseEdge, cfg *Config) (secMatch secMatch) {
+	if len(sml) < 3 {
+		return
+	}
+	s := sml[len(sml)-1]
+	t := s.prePulseMsgTRead
+	if t.IsZero() {
+		return
+	}
+	if !s.postPulseMsgTRead.IsZero() || !s.navSolnMsgTRead.IsZero() {
+		return
+	}
+	advance := sml[:len(sml)-1].predictPrePulseAdvance(cfg)
+	if advance == 0 {
+		return
+	}
+	t = t.Add(advance)
+	delay := t.Sub(pulse.tRead)
+	q := matchNone
+
+	isPostPulse := !sml[len(sml)-2].postPulseMsgTRead.IsZero()
+	if isPostPulse {
+		q = cfg.postPulseMsgMatchQuality(delay)
+	} else {
+		q = cfg.navSolnMsgMatchQuality(delay)
+	}
+	if q == matchNone {
+		return
+	}
+	secMatch.q = q
+	secMatch.sec = s.sec
+	return
+}
+
+func (sml secMsgList) predictPrePulseAdvance(cfg *Config) time.Duration {
+	if len(sml) == 0 {
+		return 0
+	}
+	navMsgCount := 0
+	advances := make([]time.Duration, len(sml))
+	total := time.Duration(0)
+	for i, s := range sml {
+		t1 := s.prePulseMsgTRead
+		if t1.IsZero() {
+			return 0
+		}
+		if i > 0 && s.sec != sml[i-1].sec.Add(time.Second) {
+			return 0
+		}
+		t2 := s.postPulseMsgTRead
+		if t2.IsZero() {
+			t2 = s.navSolnMsgTRead
+			if t2.IsZero() {
+				return 0
+			}
+			navMsgCount++
+		}
+		advances[i] = t2.Sub(t1)
+		total += advances[i]
+	}
+	if navMsgCount != 0 && navMsgCount != len(sml) {
+		return 0
+	}
+	minAdv := slices.Min(advances)
+	maxAdv := slices.Max(advances)
+	if maxAdv-minAdv > cfg.SerialDelay {
+		return 0
+	}
+	return total / time.Duration(len(sml))
+}
+
 var errOutOfOrderMsg = errors.New("out of order message")
 
 // Add a new message to the list of messages.
@@ -474,16 +545,34 @@ func (sml secMsgList) search(sec ptime.Time) int {
 // chooseNextSec chooses the second for a pulse based on an existing sample.
 // It returns 0 if no second can be chosen.
 // The bool return value says whether the choice is good enough to be used as the reference sample.
-func (s *sampleData) chooseNextSec(pulse pulseEdge, cfg *Config) (ptime.Time, bool) {
+func (s *sampleData) chooseNextSec(pulse pulseEdge, sml secMsgList, cfg *Config) (ptime.Time, bool) {
 	phcMatch := s.phcMatch(pulse, cfg)
 	readMatch := s.readMatch(pulse, cfg)
 	phcQ := phcMatch.q
 	readQ := readMatch.q
 	maxQ := max(phcQ, readQ)
+	msgMatch := sml.prePulseMatch(pulse, cfg)
+	msgMatchIsAfter := false
+	if msgMatch.q == matchNone && len(sml) != 0 {
+		q, i := sml.bestMatch(pulse, cfg)
+		if q != matchNone {
+			msgMatch = secMatch{sml[i].sec, q}
+			msgMatchIsAfter = true
+		}
+	}
 	if maxQ >= matchGood && phcMatch.sec == readMatch.sec && min(phcMatch.q, readMatch.q) > matchBad {
-		return phcMatch.sec, false
+		return phcMatch.sec, msgMatch.q > matchBad
+	}
+
+	if phcMatch.q == matchNone {
+		msgQ := msgMatch.q
+		maxQ = max(readQ, msgQ)
+		if readMatch.sec == msgMatch.sec && min(readMatch.q, msgMatch.q) >= matchMedium {
+			return readMatch.sec, msgMatchIsAfter || maxQ >= matchGood
+		}
 	}
 	// XXX need to add matches from messages
+
 	// if we have a PrePulse message and it's consistent, then we can use as a reference sample right away
 	return 0, false
 }

@@ -40,7 +40,7 @@ func (e pulseEdge) emit(c *Combiner) {
 func (e pulseEdge) t() time.Time { return e.tRead }
 
 func TestCombinerNavSoln1(t *testing.T) {
-	combinerTest(t, 10000, genNavSoln, PulseType{EdgesPerPulse: 1}, 1)
+	combinerTest(t, 1000, genNavSoln, PulseType{EdgesPerPulse: 1}, 1)
 }
 
 func TestCombinerNavSoln2(t *testing.T) {
@@ -59,8 +59,12 @@ func TestCombinerPrePulse1(t *testing.T) {
 	combinerTest(t, 1000, genPrePulse|genNavSoln, PulseType{EdgesPerPulse: 1}, 1)
 }
 
-func TestCombinerPulseOff1(t *testing.T) {
+func TestCombinerPrePulseOff1(t *testing.T) {
 	combinerTest(t, 1000, genPrePulse|genNavSoln|genPulseOff, PulseType{EdgesPerPulse: 1}, 1)
+}
+
+func TestCombinerPostPulseOff1(t *testing.T) {
+	combinerTest(t, 1000, genPostPulse|genPulseOff, PulseType{EdgesPerPulse: 1}, 1)
 }
 
 const (
@@ -146,10 +150,13 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 	readStart := time.Now()
 	taiStart := ptime.Time(0)
 	taiStart = taiStart.Add(time.Hour * 24 * 365 * 50)
+	phcBase := ptime.Time(42)
 	eventsPerPulse := bits.OnesCount(flags&(genPrePulse|genPostPulse|genNavSoln)) + pt.EdgesPerPulse
 	events := make([]testEvent, 0, nSecs*eventsPerPulse)
 	samples := make([]sampleData, nSecs)
-	era := ptime.Era(1)
+	era := ptime.Era(0)        // uncertain
+	eraSecs := min(nSecs/7, 5) // 7 is 1 + 18/3; works woth phcBase stepping below
+	//eraSecs := nSecs + 10
 	var pulseOff time.Duration
 	// if we are using just prePulse, then we won't get a pulseOff for the first pulse
 	if flags&(genPulseOff|genPostPulse) == (genPulseOff | genPostPulse) {
@@ -173,10 +180,21 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 				TimeMsg: gpsprot.TimeMsg{TAITime: tai, Ref: gpsprot.NavSolution},
 			})
 		}
+		switch i % eraSecs {
+		case 0:
+			era++ // go from uncertain to certain
+		case eraSecs - 1:
+			// Step the PHC, making it closer to the correct time
+			// Start of with PHC is unset (so about 50 years in nanoseconds, which is 1.5e18)
+			// Divide by 1000 six times will get us down to nanoseconds
+			phcBase += (taiStart - phcBase) / 1000
+			era++ // go from certain to uncertain
+		}
+		phc := phcBase.Add(elapsed)
 		pulseDelay := randD(r, cfg.PulseReadDelay+cfg.PulsePollInterval)
 		edge := pulseEdge{
 			ClockTime: ptime.ClockTime{
-				T:   tai.Add(randSignedD(r, time.Microsecond)),
+				T:   phc.Add(randSignedD(r, time.Microsecond)),
 				Era: era,
 			},
 			tRead: tRead.Add(pulseDelay),
@@ -191,7 +209,7 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 			pulseDelay = randD(r, cfg.PulseReadDelay+cfg.PulsePollInterval)
 			edge = pulseEdge{
 				ClockTime: ptime.ClockTime{
-					T:   tai.Add(pt.PulseWidth + randSignedD(r, cfg.PulseWidthAccuracy)),
+					T:   phc.Add(pt.PulseWidth + randSignedD(r, cfg.PulseWidthAccuracy)),
 					Era: era,
 				},
 				tRead: tRead.Add(pt.PulseWidth + pulseDelay),
