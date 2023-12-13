@@ -10,11 +10,6 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-type pulseEdge struct {
-	ptime.ClockTime
-	tRead time.Time
-}
-
 type Sampler interface {
 	// Sample records a time sample that can be used to adjust the time.
 	// ref is the reference time; local is our local time.
@@ -23,48 +18,6 @@ type Sampler interface {
 	// this the start of the second, but maybe adjusted for a few nanoseconds by applying a correction specified
 	// by the GPS (sometimes called sawtooth correction).
 	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
-}
-
-type edgeFilter interface {
-	// delayed can only be non-nil once
-	// and delayed must be nil after include returns true
-	include(edge pulseEdge) (inc bool, delayed []pulseEdge)
-}
-
-type noEdgeFilter struct{}
-
-func (f *noEdgeFilter) include(edge pulseEdge) (bool, []pulseEdge) {
-	return true, nil
-}
-
-type knownEdgeFilter struct {
-	pulseWidth         time.Duration
-	pulseWidthAccuracy time.Duration
-	prev               pulseEdge
-	prevIsFirst        bool
-}
-
-// include returns true if the pulse edge should be treated as the significant edge of a pulse.
-// If we don't include the second edge and do include the third edge, then we return the first edge as delayed along with the third edge.
-// If we do include the second edge, then there's no delayed edge.
-func (f *knownEdgeFilter) include(edge pulseEdge) (bool, []pulseEdge) {
-	prev := f.prev
-	f.prev = edge
-	if prev.isZero() {
-		f.prevIsFirst = true
-		return false, nil
-	}
-	prevIsFirst := f.prevIsFirst
-	f.prevIsFirst = false
-	off := edge.tRead.Sub(prev.tRead)
-	if (f.pulseWidth - off).Abs() < f.pulseWidthAccuracy {
-		var delayed []pulseEdge
-		if prevIsFirst {
-			delayed = []pulseEdge{prev}
-		}
-		return false, delayed
-	}
-	return true, nil
 }
 
 type secMsgState struct {
@@ -157,8 +110,8 @@ func NewCombiner(pt PulseType, sampler Sampler, lg *slog.Logger, cfg *Config) *C
 			panic("pulse width detection not implemented yet")
 		}
 		c.edgeFilter = &knownEdgeFilter{
-			pulseWidth:         pt.PulseWidth,
-			pulseWidthAccuracy: c.cfg.PulseWidthAccuracy + c.cfg.PulseReadDelay,
+			pulseWidth:          pt.PulseWidth,
+			pulseWidthTolerance: c.cfg.PulseWidthAccuracy + c.cfg.PulseReadDelay,
 		}
 	} else if pt.EdgesPerPulse == 1 {
 		c.edgeFilter = &noEdgeFilter{}
