@@ -25,8 +25,8 @@ func IfDriverFlags(ifname string) (DriverFlags, error) {
 	if err != nil {
 		return 0, err
 	}
-	flags := IfDriverNameFlags(name)
-	if flags != 0 {
+	flags, lookAtPhy := IfDriverNameFlags(name)
+	if flags != 0 || !lookAtPhy {
 		return flags, nil
 	}
 	id, err := IfPhyID(ifname)
@@ -36,12 +36,16 @@ func IfDriverFlags(ifname string) (DriverFlags, error) {
 	return PhyIDDriverFlags(id), nil
 }
 
-func IfDriverNameFlags(driverName string) DriverFlags {
+// IfDriverNameFlags returns the driver flags for the given driver name.
+// The second return value is true if we should look at the PHY ID to get the flags.
+func IfDriverNameFlags(driverName string) (DriverFlags, bool) {
 	switch driverName {
 	case "igb", "igc":
-		return intelFlags
+		return intelFlags, false
+	case "bcmgenet":
+		return 0, true
 	default:
-		return 0
+		return 0, false
 	}
 }
 
