@@ -17,25 +17,29 @@ type PHCConfig struct {
 
 const timeout = 100 * time.Microsecond
 
-func openExttsClock(cfg PHCConfig) (*phc.Clock, error) {
+func openExttsClock(cfg PHCConfig) (*phc.Clock, phc.DriverFlags, error) {
 	ifName := cfg.Interface
 	phcIndex, err := phc.IfPhcIndex(ifName)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if phcIndex < 0 {
-		return nil, fmt.Errorf("interface %s cannot be used because it does not have a PTP hardware clock", ifName)
+		return nil, 0, fmt.Errorf("interface %s cannot be used because it does not have a PTP hardware clock", ifName)
+	}
+	flags, err := phc.IfDriverFlags(ifName)
+	if err != nil {
+		return nil, 0, err
 	}
 	clk, err := phc.Open(phc.ClockPath(phcIndex))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	err = validateTimePulseConfig(clk, cfg)
 	if err != nil {
 		clk.Close()
-		return nil, err
+		return nil, 0, err
 	}
-	return clk, nil
+	return clk, flags, nil
 }
 
 func validateTimePulseConfig(clk *phc.Clock, cfg PHCConfig) error {

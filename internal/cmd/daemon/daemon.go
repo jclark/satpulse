@@ -16,6 +16,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/sse"
@@ -82,11 +83,14 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		defer f.Close()
 	}
 
-	clk, err := openExttsClock(cfg.PHC)
+	clk, flags, err := openExttsClock(cfg.PHC)
 	if err != nil {
 		return err
 	}
-	lg.Info("selected PTP hardware clock", "path", clk.Path())
+	lg.Info("selected PTP hardware clock", "path", clk.Path(),
+		"known", flags&phc.DriverKnown != 0,
+		"bothEdges", flags&phc.DriverBothEdges != 0,
+		"poll4Hz", flags&phc.DriverPoll4Hz != 0)
 
 	defer func() {
 		clk.Close()
