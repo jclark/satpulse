@@ -51,7 +51,6 @@ High priority
    * kp, ki constants
    * initial observe time
    * when to step clock
-   * various correlator constants
 
 Others
 
@@ -67,9 +66,10 @@ Finish this package.
 
 * Add some more logging
 * Implement auto-detection of number of edges per pulse and/or pulse width
-* Switch over to Combiner this rather than tsync.Correlator
-  * Pass in information about pulse width
-  * Pass in information about edges per pulse
+* Switch over to Combiner this rather than tsync.Correlator. Pass in information about
+  * pulse width
+  * edges per pulse
+  * CM4 quirks
 * TimeMsg method should use gpsprot.TimeMsg
   * runner.go should just pass time messages on
 * Change gpsprot.TimeMsg to use pointer for pulse correction so as to distinguish case of no pulse correction vs correction of 0
@@ -203,12 +203,17 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 * Add `satpulsetool config --binary` option to disable NMEA and enable UBX Time/LeapSecond/Survey messages
 * Might need to set CFG-NAVSPG-WKNROLLOVER
 * Add `satpulsetool config` option to show the configuration e.g. `--show`. Requires extending gpsprot interface.
+* Configure UBX message interface
 
-## Antenna supervision
+## Monitoring
 
-Monitor messages about antenna and report when something bad happens (loss of power, jamming, short) via HTTP or logging.
-
-Requires configuration support.
+* Antenna monitoring (loss of power, jamming, short)
+  * report via HTTP or logging
+  * requires configuration support
+* Messages from receiver
+  * NMEA TXT messages
+  * UBX-INF-*
+* On CM4, logging should account for normality of lost pulses
 
 ## HTTP monitoring
 
@@ -242,7 +247,7 @@ Feed samples into chrony using the chrony SOCK refclock.
 This is better than using PHC refclock because:
 - we can feed samples only when PHC is synchronized
 - SOCK samples include leap status flag so we can feed in leap second info.
-- with CM4 we can avoid reading the PHC at a time which is likely to interfere with receiving the time pulse
+- with CM4 we can avoid reading the PHC at a time which is likely to interfere with reading the time pulse
 
 For hardware timestamping, chrony needs a free running PHC. One way to do this is with virtual clocks. But in case where user is not interested in PTP, it should be possible to generate samples without modifying the PHC (by keeping track of phase/frequency difference between PHC and the correct time).
 
@@ -251,18 +256,7 @@ feed them into the PHC and change the clock type appropriately (assuming system 
 
 ## Netlink events
 
-* Integrate experimental carrier program. Need to be able to stop and restart timesync goroutine.
+* Integrate experimental carrier program. Need to be able to stop and restart timesync goroutine on CM4.
 * This can also help when booting with systemd: be able to start up right away, and wait for interface to appear.
 * Netlink is also used for udev events. So we can potentially use this to wait for USB device to appear.
 
-## Raspberry Pi CM4
-
-Detect when we are on the CM4 and deal with its limitations.
-
-Could get the driver name using ETHTOOL_GDRVINFO or look in sysfs somewhere.
-
-Specifically deal with
-
-- when carrier is lost, things stop working (ties into netlink events)
-- we can lose pulses when reading from the PHC (ties into chrony integration)
-- delay in reporting timestamp events (makes ubx-tim-tp problematic)
