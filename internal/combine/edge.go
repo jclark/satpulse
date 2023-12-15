@@ -23,6 +23,9 @@ func (f *noEdgeFilter) include(edge pulseEdge) (bool, []pulseEdge) {
 	return true, nil
 }
 
+// knownEdgeFilter filters edges that are the trailing edge of the pulse
+// This is for the case where we both know that we will be getting two edges per pulse
+// and know the pulse width.
 type knownEdgeFilter struct {
 	pulseWidth          time.Duration
 	pulseWidthTolerance time.Duration
