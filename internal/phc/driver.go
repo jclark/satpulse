@@ -12,10 +12,27 @@ import (
 type DriverFlags uint32
 
 const (
-	DriverKnown DriverFlags = 1 << iota
+	DriverOneEdge DriverFlags = 1 << iota
 	DriverBothEdges
+	DriverKnown 
 	DriverPoll4Hz
+	DriverEdges DriverFlags = DriverOneEdge | DriverBothEdges
 )
+
+func (flags DriverFlags) Edges() int {
+	return int(flags & DriverEdges)
+}
+
+func (flags DriverFlags) SetEdges(edges int) DriverFlags {
+	if edges == 0 {
+		return flags
+	}
+	if edges != 1 && edges != 2 {
+		panic(fmt.Sprintf("invalid number of pulse edges %d", edges))
+	}
+	flags &^= DriverEdges
+	return flags | DriverFlags(edges)
+}
 
 const cm4Flags DriverFlags = DriverKnown | DriverPoll4Hz
 const intelFlags DriverFlags = DriverKnown | DriverBothEdges

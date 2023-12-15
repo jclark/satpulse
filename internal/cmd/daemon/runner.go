@@ -32,7 +32,7 @@ type SyncRunner struct {
 	lastTime ptime.Time
 }
 
-func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, cfg *Config, guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
+func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, cfg *Config, guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
 	servo, err := servo.New(clk, lg, sseCh)
 	if err != nil {
 		return nil, err

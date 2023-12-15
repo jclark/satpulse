@@ -83,14 +83,14 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		defer f.Close()
 	}
 
-	clk, flags, err := openExttsClock(cfg.PHC)
+	clk, phcFlags, err := openExttsClock(cfg.PHC)
 	if err != nil {
 		return err
 	}
 	lg.Info("selected PTP hardware clock", "path", clk.Path(),
-		"known", flags&phc.DriverKnown != 0,
-		"bothEdges", flags&phc.DriverBothEdges != 0,
-		"poll4Hz", flags&phc.DriverPoll4Hz != 0)
+		"known", phcFlags&phc.DriverKnown != 0,
+		"bothEdges", phcFlags&phc.DriverBothEdges != 0,
+		"poll4Hz", phcFlags&phc.DriverPoll4Hz != 0)
 
 	defer func() {
 		clk.Close()
@@ -200,16 +200,18 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 			return err
 		}
 	}
-	s, err := NewSyncRunner(lg, clk, cfg, gmUpdateCh, sseCh, inLog)
-	if err != nil {
-		return err
-	}
 
 	tsCh, edges, err := StartPPS(ctx, clk, cfg.PHC)
 	if err != nil {
 		return err
 	}
 	lg.Info("started external timestamping", "edges", edges)
+
+	s, err := NewSyncRunner(lg, clk, phcFlags.SetEdges(edges), cfg, gmUpdateCh, sseCh, inLog)
+	if err != nil {
+		return err
+	}
+
 	if pmcClient != nil {
 		cmd.WaitGroupGo(&wg, func() { mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg) })
 	}
