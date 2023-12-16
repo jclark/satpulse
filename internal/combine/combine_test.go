@@ -47,6 +47,10 @@ func TestCombinerNavSoln2(t *testing.T) {
 	combinerTest(t, 1000, genNavSoln, PulseType{EdgesPerPulse: 2, PulseWidth: time.Second / 10}, 1)
 }
 
+func TestDetectPulseWidth(t *testing.T) {
+	combinerTest(t, 1000, genNavSoln|genDetectPulseWidth, PulseType{EdgesPerPulse: 2, PulseWidth: time.Second / 10}, 1)
+}
+
 func TestCombinerPostPulse1(t *testing.T) {
 	combinerTest(t, 10000, genPostPulse, PulseType{EdgesPerPulse: 1}, 1)
 }
@@ -72,18 +76,34 @@ const (
 	genPostPulse
 	genNavSoln
 	genPulseOff
+	genDetectPulseWidth
 )
 
 func combinerTest(t *testing.T, nSecs int, flags uint, pt PulseType, nDelayed int) {
 	events, samples := genTestData(nSecs, flags, pt, nil)
 	sampler := newTestSampler(t, samples, nDelayed)
-	c := NewCombiner(pt, sampler, testLogger(), nil)
+	pulseWidth := pt.PulseWidth
+	if flags&genDetectPulseWidth != 0 {
+		pt.PulseWidth = 0
+	}
+	cfg := Config{}
+	cfg.SetDefault(pt)
+	c, err := NewCombiner(pt, sampler, testLogger(), &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, e := range events {
 		e.emit(c)
 	}
 	sampler.Done()
 	if c.PulseDiscardCount > 0 {
 		t.Errorf("discarded %d pulses, want 0", c.PulseDiscardCount)
+	}
+	if flags&genDetectPulseWidth != 0 {
+		w := c.edgeFilter.(*detectPulseWidthFilter).avgPulseWidth
+		if (w - pulseWidth).Abs() > cfg.PulseWidthAccuracy+cfg.PulseReadDelay {
+			t.Errorf("avgPulseWidth = %v, want about %v", w, pt.PulseWidth)
+		}
 	}
 }
 
@@ -144,7 +164,7 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 	if cfgOpt != nil {
 		cfg = *cfgOpt
 	} else {
-		cfg = DefaultConfig(pt)
+		cfg.SetDefault(pt)
 	}
 	r := rand.New(rand.NewSource(randSeed))
 	readStart := time.Now()

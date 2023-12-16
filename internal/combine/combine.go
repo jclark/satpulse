@@ -30,6 +30,17 @@ type secMsgState struct {
 
 type secMsgList []*secMsgState
 
+type pulseEdge struct {
+	ptime.ClockTime
+	tRead time.Time
+}
+
+type edgeFilter interface {
+	// delayed can only be non-nil once
+	// and delayed must be nil after include returns true
+	include(edge pulseEdge, cfg *Config) (inc bool, delayed []pulseEdge)
+}
+
 type sampleData struct {
 	sec         ptime.Time
 	pulseOffset time.Duration
@@ -47,23 +58,30 @@ type Config struct {
 	MessageWindowSize  time.Duration
 	NavSolnDelay       time.Duration
 	SerialDelay        time.Duration
-	PulseWidthAccuracy time.Duration
+	PulseWidthAccuracy time.Duration // when omitting trailing edges, how much variation in pulse width is allowed
+	PulseWidthMax      time.Duration // when detecting trailing edges, what is the maximum pulse width we detect
 }
 
-func DefaultConfig(pt PulseType) Config {
-	cfg := Config{
-		PulseReadDelay:     50 * time.Millisecond,
-		MessageWindowSize:  900 * time.Millisecond,
-		NavSolnDelay:       100 * time.Millisecond,
-		SerialDelay:        100 * time.Millisecond,
-		PulseWidthAccuracy: 10 * time.Millisecond,
-	}
+func (cfg *Config) SetDefault(pt PulseType) {
+	cfg.PulseReadDelay = 50 * time.Millisecond
+	cfg.MessageWindowSize = 900 * time.Millisecond
+	cfg.NavSolnDelay = 100 * time.Millisecond
+	cfg.SerialDelay = 100 * time.Millisecond
+	cfg.PulseWidthAccuracy = 10 * time.Millisecond
+	cfg.PulseWidthMax = 400 * time.Millisecond
 	if pt.EdgesPerPulse == 1 {
 		// this is for CM4
 		// XXX should have better detection for this
 		cfg.PulsePollInterval = 250 * time.Millisecond
 	}
-	return cfg
+}
+
+func (cfg *Config) Validate() error {
+	v := cfg.PulseWidthMax + cfg.PulseReadDelay + cfg.PulseWidthAccuracy
+	if v >= 500*time.Millisecond {
+		return errors.New("configured pulse width too large for pulse read delay and accuracy")
+	}
+	return nil
 }
 
 type Combiner struct {
@@ -94,7 +112,7 @@ type secMatch struct {
 	q   matchQuality
 }
 
-func NewCombiner(pt PulseType, sampler Sampler, lg *slog.Logger, cfg *Config) *Combiner {
+func NewCombiner(pt PulseType, sampler Sampler, lg *slog.Logger, cfg *Config) (*Combiner, error) {
 	c := &Combiner{
 		sampler: sampler,
 		lg:      lg,
@@ -102,24 +120,23 @@ func NewCombiner(pt PulseType, sampler Sampler, lg *slog.Logger, cfg *Config) *C
 	if cfg != nil {
 		c.cfg = *cfg
 	} else {
-		c.cfg = DefaultConfig(pt)
+		c.cfg.SetDefault(pt)
 	}
 	if pt.EdgesPerPulse == 2 {
 		if pt.PulseWidth == 0 {
-			// XXX implement this
-			panic("pulse width detection not implemented yet")
-		}
-		c.edgeFilter = &knownEdgeFilter{
-			pulseWidth:          pt.PulseWidth,
-			pulseWidthTolerance: c.cfg.PulseWidthAccuracy + c.cfg.PulseReadDelay,
+			c.edgeFilter = &detectPulseWidthFilter{}
+		} else {
+			c.edgeFilter = &knownEdgeFilter{
+				pulseWidth: pt.PulseWidth,
+			}
 		}
 	} else if pt.EdgesPerPulse == 1 {
 		c.edgeFilter = &noEdgeFilter{}
 	} else {
 		// XXX implement this
-		panic("unsupported number of edges per pulse")
+		return nil, errors.New("unsupported number of edges per pulse")
 	}
-	return c
+	return c, nil
 }
 
 // TimeMsg handles a message from the GPS receiver that gives information about the current time.
@@ -163,7 +180,7 @@ const maxInitPulses = 5
 // tRead is the system time when we received the timestamp event from the kernel.
 func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 	edge := pulseEdge{tClock, tRead}
-	inc, delayed := c.edgeFilter.include(edge)
+	inc, delayed := c.edgeFilter.include(edge, &c.cfg)
 	if c.refSample == nil {
 		// limit to maxInitPulses but use all of the delayed edges
 		excess := len(c.pulses) + len(delayed) - maxInitPulses
@@ -557,6 +574,101 @@ func (s *secMsgState) pulseOffset() time.Duration {
 
 func (s *secMsgState) happened() bool {
 	return !s.navSolnMsgTRead.IsZero() || !s.postPulseMsgTRead.IsZero()
+}
+
+type noEdgeFilter struct{}
+
+func (f *noEdgeFilter) include(_ pulseEdge, _ *Config) (bool, []pulseEdge) {
+	return true, nil
+}
+
+// knownEdgeFilter filters edges that are the trailing edge of the pulse
+// This is for the case where we both know that we will be getting two edges per pulse
+// and know the pulse width.
+type knownEdgeFilter struct {
+	pulseWidth  time.Duration
+	prev        pulseEdge
+	prevIsFirst bool
+}
+
+// include returns true if the pulse edge should be treated as the significant edge of a pulse.
+// If we don't include the second edge and do include the third edge, then we return the first edge as delayed along with the third edge.
+// If we do include the second edge, then there's no delayed edge.
+func (f *knownEdgeFilter) include(edge pulseEdge, cfg *Config) (bool, []pulseEdge) {
+	prev := f.prev
+	f.prev = edge
+	if prev.isZero() {
+		f.prevIsFirst = true
+		return false, nil
+	}
+	prevIsFirst := f.prevIsFirst
+	f.prevIsFirst = false
+	off := edge.tRead.Sub(prev.tRead)
+	if (f.pulseWidth - off).Abs() < cfg.PulseWidthAccuracy+cfg.PulseReadDelay {
+		var delayed []pulseEdge
+		if prevIsFirst {
+			delayed = []pulseEdge{prev}
+		}
+		return false, delayed
+	}
+	return true, nil
+}
+
+type detectPulseWidthFilter struct {
+	avgPulseWidth time.Duration
+	pulseWidths   []time.Duration
+	prev          pulseEdge
+	prevIsFirst   bool
+}
+
+func (f *detectPulseWidthFilter) include(edge pulseEdge, cfg *Config) (bool, []pulseEdge) {
+	prev := f.prev
+	f.prev = edge
+
+	off := edge.tRead.Sub(prev.tRead)
+	tolerance := cfg.PulseWidthAccuracy + cfg.PulseReadDelay
+	if f.avgPulseWidth != 0 {
+		// we use tolerance*2 here because our guess of the pulseWidth may be wrong by up to tolerance
+		// (unlikely, but possible)
+		max := min(f.avgPulseWidth+tolerance*2, cfg.PulseWidthMax+tolerance)
+		min := f.avgPulseWidth - tolerance*2
+		return !(min <= off && off <= max), nil
+	}
+	if prev.isZero() {
+		f.prevIsFirst = true
+		return false, nil
+	}
+	prevIsFirst := f.prevIsFirst
+	f.prevIsFirst = false
+	if off <= cfg.PulseWidthMax+tolerance {
+		var delayed []pulseEdge
+		if prevIsFirst {
+			delayed = []pulseEdge{prev}
+		}
+		f.pulseWidths = append(f.pulseWidths, off)
+		f.detectPulseWidth(cfg)
+		return false, delayed
+	}
+	return true, nil
+}
+
+func (f *detectPulseWidthFilter) detectPulseWidth(cfg *Config) {
+	const usePulseWidths = 9
+	const nOutliers = 2
+	if len(f.pulseWidths) < usePulseWidths {
+		return
+	}
+	// discard outliers and then use the average of the rest
+	slices.Sort(f.pulseWidths)
+	widths := f.pulseWidths[nOutliers : len(f.pulseWidths)-nOutliers]
+	sum := time.Duration(0)
+	for _, w := range widths {
+		sum += w
+	}
+	f.avgPulseWidth = sum / time.Duration(len(widths))
+	if f.avgPulseWidth > cfg.PulseWidthMax {
+		f.avgPulseWidth = cfg.PulseWidthMax
+	}
 }
 
 func (p pulseEdge) isZero() bool {
