@@ -15,6 +15,7 @@ import (
 	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsio"
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/pmc"
@@ -207,7 +208,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	}
 	lg.Info("started external timestamping", "edges", edges)
 
-	s, err := NewSyncRunner(lg, clk, phcFlags.SetEdges(edges), cfg, gmUpdateCh, sseCh, inLog)
+	pulseWidth, ok := gpsprot.CfgTimePulseWidth.Get(gcfg.ConfigMap)
+	if !ok {
+		pulseWidth = 0
+	}
+	s, err := NewSyncRunner(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gmUpdateCh, sseCh, inLog)
 	if err != nil {
 		return err
 	}

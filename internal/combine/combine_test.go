@@ -24,11 +24,7 @@ type testMsgEvent struct {
 }
 
 func (e testMsgEvent) emit(c *Combiner) {
-	pulseOff := &e.PulseOffset
-	if *pulseOff == 0 {
-		pulseOff = nil
-	}
-	c.TimeMsg(e.TAITime, e.tRead, pulseOff, e.Ref)
+	c.TimeMsg(e.TAITime, e.tRead, e.PulseOffset, e.Ref)
 }
 
 func (e testMsgEvent) t() time.Time { return e.tRead }
@@ -88,7 +84,11 @@ func combinerTest(t *testing.T, nSecs int, flags uint, pt PulseType, nDelayed in
 	}
 	cfg := Config{}
 	cfg.SetDefault(pt)
-	c, err := NewCombiner(pt, sampler, testLogger(), &cfg)
+	if pt.EdgesPerPulse == 1 {
+		// this is for CM4
+		cfg.PulsePollInterval = 250 * time.Millisecond
+	}
+	c, err := NewCombiner(pt, sampler, testLogger(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func (s *testSampler) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool
 		s.i++
 		refSec := ref.Round(time.Second)
 		if refSec <= expected.sec {
-			expectedRef := expected.masterTime()
+			expectedRef := expected.refTime()
 			if expectedRef != ref {
 				s.t.Errorf("sample %d: ref = %v, want %v", s.i, ref, expectedRef)
 			} else if expected.pulse.ClockTime != local {
@@ -176,7 +176,6 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 	samples := make([]sampleData, nSecs)
 	era := ptime.Era(0)        // uncertain
 	eraSecs := min(nSecs/7, 5) // 7 is 1 + 18/3; works woth phcBase stepping below
-	//eraSecs := nSecs + 10
 	var pulseOff time.Duration
 	// if we are using just prePulse, then we won't get a pulseOff for the first pulse
 	if flags&(genPulseOff|genPostPulse) == (genPulseOff | genPostPulse) {
@@ -189,8 +188,12 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 		delay := randD(r, cfg.SerialDelay)
 		if flags&genPostPulse != 0 {
 			events = append(events, testMsgEvent{
-				tRead:   tRead.Add(delay),
-				TimeMsg: gpsprot.TimeMsg{TAITime: tai, Ref: gpsprot.PostPulse, PulseOffset: pulseOff},
+				tRead: tRead.Add(delay),
+				TimeMsg: gpsprot.TimeMsg{
+					TAITime:     tai,
+					Ref:         gpsprot.PostPulse,
+					PulseOffset: maybePulseOff(pulseOff, flags),
+				},
 			})
 		}
 		if flags&genNavSoln != 0 {
@@ -246,13 +249,24 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 		if flags&genPrePulse != 0 {
 			delay := randD(r, cfg.SerialDelay+time.Second/5)
 			events = append(events, testMsgEvent{
-				tRead:   tRead.Add(delay),
-				TimeMsg: gpsprot.TimeMsg{TAITime: tai.Add(time.Second), Ref: gpsprot.PrePulse, PulseOffset: pulseOff},
+				tRead: tRead.Add(delay),
+				TimeMsg: gpsprot.TimeMsg{
+					TAITime:     tai.Add(time.Second),
+					Ref:         gpsprot.PrePulse,
+					PulseOffset: maybePulseOff(pulseOff, flags),
+				},
 			})
 		}
 	}
 	slices.SortFunc(events, func(a, b testEvent) int { return a.t().Compare(b.t()) })
 	return events, samples
+}
+
+func maybePulseOff(pulseOff time.Duration, flags uint) *time.Duration {
+	if flags&genPulseOff != 0 {
+		return &pulseOff
+	}
+	return nil
 }
 
 // randSignedD returns a random duration in the range [-d, d].

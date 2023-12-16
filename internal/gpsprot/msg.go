@@ -111,6 +111,7 @@ func (s GNSSSet) Items() []GNSS {
 	return items
 }
 
+//go:generate stringer -type=TimeRef
 type TimeRef int
 
 const (
@@ -124,7 +125,7 @@ type TimeMsg struct {
 	UTCTime     *ptime.UTCTime `json:"utcTime,omitempty"`
 	Accuracy    time.Duration  `json:"accuracy,omitempty"`
 	UTCOffset   uint8          `json:"utcOffset,omitempty"`
-	PulseOffset time.Duration  `json:"pulseOffset,omitempty"`
+	PulseOffset *time.Duration `json:"pulseOffset,omitempty"` // the time of the pulse minus the time of the top of the second
 	GNSS        GNSS           `json:"gnss,omitempty"`
 	Ref         TimeRef        `json:"ref,omitempty"`
 	NavEpoch    uint32         `json:"navEpoch,omitempty"`

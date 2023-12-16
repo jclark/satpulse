@@ -62,17 +62,9 @@ Others
 
 ## Combine
 
-Finish this package.
-
-* Add some more logging
-* Implement auto-detection of number of edges per pulse and/or pulse width
-* Switch over to Combiner this rather than tsync.Correlator. Pass in information about
-  * pulse width
-  * edges per pulse
-  * CM4 quirks
 * TimeMsg method should use gpsprot.TimeMsg
   * runner.go should just pass time messages on
-* Change gpsprot.TimeMsg to use pointer for pulse correction so as to distinguish case of no pulse correction vs correction of 0
+* Implement auto-detection of number of edges per pulse
 * Add some package docs
 * We should give an error if we have a 50% duty cycle and two edges per pulse
 * Improve how we generate TAI from UTC time messages

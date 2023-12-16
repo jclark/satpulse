@@ -7,6 +7,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/jclark/satpulse/internal/combine"
 	"github.com/jclark/satpulse/internal/geopos"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
@@ -16,7 +17,6 @@ import (
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/servo"
 	"github.com/jclark/satpulse/internal/sse"
-	"github.com/jclark/satpulse/internal/tsync"
 	"github.com/jclark/satpulse/internal/ubx"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 )
@@ -25,22 +25,35 @@ type SyncRunner struct {
 	gpsprot.DefaultHandler
 	inLog    io.Writer
 	sseCh    chan<- sse.Event
-	corr     *tsync.Correlator
+	corr     *combine.Combiner
 	m        *mon.Monitor
 	ls       ptime.LeapSecond
 	lg       *slog.Logger
 	lastTime ptime.Time
 }
 
-func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, cfg *Config, guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
+func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
 	servo, err := servo.New(clk, lg, sseCh)
 	if err != nil {
 		return nil, err
 	}
 	ls := cfg.LeapSecond.leapSecond()
 	m := mon.NewMonitor(ls, guCh, lg)
+	pt := combine.PulseType{
+		EdgesPerPulse: phcFlags.Edges(),
+		PulseWidth:    pulseWidth,
+	}
+	ccfg := combine.Config{}
+	ccfg.SetDefault(pt)
+	if phcFlags&phc.DriverPoll4Hz != 0 {
+		ccfg.PulsePollInterval = time.Second / 4
+	}
+	combiner, err := combine.NewCombiner(pt, combine.MultiSampler(servo, m), lg, ccfg)
+	if err != nil {
+		return nil, err
+	}
 	s := SyncRunner{
-		corr:  tsync.NewCorrelator(tsync.MultiSampler(servo, m), lg),
+		corr:  combiner,
 		m:     m,
 		ls:    ls,
 		lg:    lg,
@@ -146,10 +159,8 @@ func (s *SyncRunner) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 		s.lg.Debug("computed TAI time from UTC time", "tai", sec)
 	}
 	secRnd := sec.Round(time.Second)
-	if mt.Ref == gpsprot.PrePulse {
-		s.corr.PulseOffset(secRnd, tRead, mt.PulseOffset)
-	} else if secRnd > s.lastTime {
-		s.corr.GPSTime(secRnd, tRead)
+	s.corr.TimeMsg(secRnd, tRead, mt.PulseOffset, mt.Ref)
+	if mt.Ref != gpsprot.PrePulse && secRnd > s.lastTime {
 		s.sendEvent("time", TimeEvent{
 			UTC: s.ls.FormatTime(secRnd),
 			TAI: int64(secRnd) / 1e9,

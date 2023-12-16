@@ -15,6 +15,7 @@ func _() {
 	_ = x[NAVIC-5]
 	_ = x[QZSS-6]
 	_ = x[SBAS-7]
+	_ = x[GNSSLast-7]
 }
 
 const _GNSS_name = "GPSGALBDSGLONAVICQZSSSBAS"

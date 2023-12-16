@@ -69,11 +69,7 @@ func (cfg *Config) SetDefault(pt PulseType) {
 	cfg.SerialDelay = 100 * time.Millisecond
 	cfg.PulseWidthAccuracy = 10 * time.Millisecond
 	cfg.PulseWidthMax = 400 * time.Millisecond
-	if pt.EdgesPerPulse == 1 {
-		// this is for CM4
-		// XXX should have better detection for this
-		cfg.PulsePollInterval = 250 * time.Millisecond
-	}
+	cfg.PulsePollInterval = 0
 }
 
 func (cfg *Config) Validate() error {
@@ -112,15 +108,11 @@ type secMatch struct {
 	q   matchQuality
 }
 
-func NewCombiner(pt PulseType, sampler Sampler, lg *slog.Logger, cfg *Config) (*Combiner, error) {
+func NewCombiner(pt PulseType, sampler Sampler, lg *slog.Logger, cfg Config) (*Combiner, error) {
 	c := &Combiner{
 		sampler: sampler,
 		lg:      lg,
-	}
-	if cfg != nil {
-		c.cfg = *cfg
-	} else {
-		c.cfg.SetDefault(pt)
+		cfg:     cfg,
 	}
 	if pt.EdgesPerPulse == 2 {
 		if pt.PulseWidth == 0 {
@@ -151,6 +143,14 @@ func (c *Combiner) TimeMsg(sec ptime.Time, tRead time.Time, pulseOff *time.Durat
 	if pulseOff != nil {
 		secState.pulseOff = pulseOff
 	}
+	c.lg.Debug("combiner received time message",
+		"sec", sec,
+		"tRead", tRead,
+		"ref", ref,
+		"havePulseOff", pulseOff != nil,
+		"pulseOff", secState.pulseOff,
+		"index", i,
+		"len", len(sl))
 	switch ref {
 	case gpsprot.NavSolution:
 		if secState.navSolnMsgTRead.IsZero() {
@@ -181,6 +181,14 @@ const maxInitPulses = 5
 func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 	edge := pulseEdge{tClock, tRead}
 	inc, delayed := c.edgeFilter.include(edge, &c.cfg)
+	c.lg.Debug("combiner received pulse edge",
+		"t", edge.T,
+		"era", edge.Era,
+		"tRead", edge.tRead,
+		"included", inc,
+		"delayedEdges", delayed != nil,
+		"pending", len(c.pulses),
+		"haveRefSample", c.refSample != nil)
 	if c.refSample == nil {
 		// limit to maxInitPulses but use all of the delayed edges
 		excess := len(c.pulses) + len(delayed) - maxInitPulses
@@ -247,10 +255,12 @@ func (c *Combiner) tryEmitFirstSample() {
 		return
 	}
 	for _, s := range delayed {
+		c.lg.Debug("combiner about to emit delayed sample")
 		c.emit(&s, true)
 	}
 	c.refSample = sample
 	c.lastSample = sample
+	c.lg.Debug("combiner about to emit first non-delayed sample")
 	c.emit(sample, false)
 	c.pulses = c.pulses[:0]
 }
@@ -316,7 +326,7 @@ func (c *Combiner) tryEmitNextSample() {
 }
 
 func (c *Combiner) emit(sample *sampleData, delayed bool) {
-	c.sampler.Sample(sample.masterTime(), sample.pulse.ClockTime, delayed)
+	c.sampler.Sample(sample.refTime(), sample.pulse.ClockTime, delayed)
 	c.lastSample = sample
 }
 
@@ -561,8 +571,10 @@ func (s *sampleData) phcMatch(pulse pulseEdge, cfg *Config) secMatch {
 	return secMatch{sec, cfg.phcSampleMatchQuality(frac)}
 }
 
-func (s *sampleData) masterTime() ptime.Time {
-	return s.sec.Add(-s.pulseOffset)
+// The time according to the GPS at which the pulse occurred.
+func (s *sampleData) refTime() ptime.Time {
+	// the pulse offset is the time of the pulse minus the top of the second
+	return s.sec.Add(s.pulseOffset)
 }
 
 func (s *secMsgState) pulseOffset() time.Duration {

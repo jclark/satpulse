@@ -117,7 +117,10 @@ func timeTimTP(m *bin.TimTP) *gpsprot.TimeMsg {
 		return nil
 	}
 	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, SrcType: "UBX-TIM-TP"}
-	t.PulseOffset = ptime.Picoseconds(m.QErr)
+	if (m.Flags & bin.TimTPQErrInvalid) == 0 {
+		off := ptime.Picoseconds(m.QErr)
+		t.PulseOffset = &off
+	}
 	conv := ptime.GPS
 	switch m.RefInfo & bin.TimTPTimeRefGNSS {
 	case bin.TimTPTimeRefGPS:
@@ -145,7 +148,7 @@ func timeTimTos(m *bin.TimTos) *gpsprot.TimeMsg {
 		t.GNSS = utcStandardToGNSS(m.UTCStandard)
 		t.Accuracy = time.Duration(m.UTCUncertainty)
 	}
-	t.PulseOffset = time.Duration(m.UTCOffset)
+	// XXX how to deal with UTCOffset?
 	// If we have a GNSS time that we understand, then use that for accuracy/GNSS metadata.
 	// GLONASS works in UTC not TAI, so I don't see how it can work with a week number.
 	// XXX need to check what happens if we enable only GLONASS
@@ -155,7 +158,8 @@ func timeTimTos(m *bin.TimTos) *gpsprot.TimeMsg {
 			t.TAITime = toTAI(int16(m.Week), sTOW(m.TOW))
 			t.GNSS = g
 			t.Accuracy = time.Duration(m.GNSSUncertainty)
-			t.PulseOffset = time.Duration(m.GNSSOffset)
+			pulseOff := time.Duration(m.GNSSOffset)
+			t.PulseOffset = &pulseOff
 		}
 	}
 	return &t
