@@ -22,16 +22,7 @@ type InterfaceEvent struct {
 }
 
 func OpenNotifier() (*Notifier, error) {
-	const (
-		// Speak to route netlink using netlink
-		familyRoute = 0
-
-		// Listen for events triggered by addition or deletion of
-		// network interfaces
-		rtmGroupLink = 0x1
-	)
-
-	conn, err := netlink.Dial(familyRoute, &netlink.Config{Groups: rtmGroupLink})
+	conn, err := netlink.Dial(unix.NETLINK_ROUTE, &netlink.Config{Groups: unix.RTMGRP_LINK})
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial netlink: %w", err)
 	}
