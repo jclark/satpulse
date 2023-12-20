@@ -22,6 +22,32 @@ func (h *DefaultHandler) Time(msg *TimeMsg, tRead time.Time)             {}
 func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
 
+type multiHandler struct {
+	handlers []MsgHandler
+}
+
+func (h *multiHandler) Time(msg *TimeMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.Time(msg, tRead)
+	}
+}
+
+func (h *multiHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.LeapSecond(msg, tRead)
+	}
+}
+
+func (h *multiHandler) Survey(msg *SurveyMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.Survey(msg, tRead)
+	}
+}
+
+func MultiHandler(handlers ...MsgHandler) MsgHandler {
+	return &multiHandler{handlers: handlers}
+}
+
 //go:generate stringer -type=GNSS
 type GNSS int
 
