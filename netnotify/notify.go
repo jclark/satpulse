@@ -1,18 +1,24 @@
 package netnotify
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
-	"unsafe"
 
 	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
 )
 
-type Notifier struct {
-	Events <-chan InterfaceEvent
+type Notifier[E any] struct {
+	Events <-chan E
 	conn   *netlink.Conn
+}
+
+type setter interface {
+	setFromMessage(msg *netlink.Message) bool
+	setError(err error)
 }
 
 type InterfaceEvent struct {
@@ -21,18 +27,45 @@ type InterfaceEvent struct {
 	Err   error
 }
 
-func OpenNotifier() (*Notifier, error) {
-	conn, err := netlink.Dial(unix.NETLINK_ROUTE, &netlink.Config{Groups: unix.RTMGRP_LINK})
+func OpenNotifier() (*Notifier[InterfaceEvent], error) {
+	return open[InterfaceEvent](unix.NETLINK_ROUTE, unix.RTMGRP_LINK)
+}
+
+func open[E any, PE interface {
+	*E
+	setter
+}](family int, groups uint32) (*Notifier[E], error) {
+	conn, err := netlink.Dial(family, &netlink.Config{Groups: groups})
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial netlink: %w", err)
 	}
-	ch := make(chan InterfaceEvent)
-	n := &Notifier{Events: ch, conn: conn}
-	go n.recv(ch)
+	ch := make(chan E)
+	n := &Notifier[E]{Events: ch, conn: conn}
+	go func() {
+		defer close(ch)
+		for {
+			var ev E
+			var pev PE = &ev
+			msgs, err := n.conn.Receive()
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					break
+				}
+				pev.setError(fmt.Errorf("failed to receive messages: %w", err))
+				ch <- ev
+				continue
+			}
+			for i := range msgs {
+				if pev.setFromMessage(&msgs[i]) {
+					ch <- ev
+				}
+			}
+		}
+	}()
 	return n, nil
 }
 
-func (n *Notifier) Close() error {
+func (n *Notifier[E]) Close() error {
 	err := n.conn.Close()
 	if err != nil {
 		return err
@@ -43,38 +76,25 @@ func (n *Notifier) Close() error {
 	return nil
 }
 
-func (n *Notifier) recv(ch chan<- InterfaceEvent) {
-	defer close(ch)
-	for {
-		msgs, err := n.conn.Receive()
-		if err != nil {
-			if !errors.Is(err, net.ErrClosed) {
-				break
-			}
-			ch <- InterfaceEvent{Err: fmt.Errorf("failed to receive messages: %w", err)}
-			continue
-		}
-		for i := range msgs {
-			msg := &msgs[i]
-			if msg.Header.Type == unix.RTM_NEWLINK {
-				ch <- unpackIfInfomsg(msg.Data)
-			}
-		}
-	}
+func (ev *InterfaceEvent) setError(err error) {
+	ev.Err = err
 }
 
-func unpackIfInfomsg(data []byte) (iFlags InterfaceEvent) {
-	if len(data) < unix.SizeofIfInfomsg {
-		iFlags.Err = errors.New("RTM_NEWLINK message too short")
-		return
+func (ev *InterfaceEvent) setFromMessage(msg *netlink.Message) bool {
+	if msg.Header.Type != unix.RTM_NEWLINK {
+		return false
 	}
+	data := msg.Data
+	r := bytes.NewReader(data)
 	ifim := unix.IfInfomsg{}
-	type ptrIfInfoMsg = *[unix.SizeofIfInfomsg]byte
-	// This avoids relying on alignment.
-	*(ptrIfInfoMsg)(unsafe.Pointer(&ifim)) = *(ptrIfInfoMsg)(data)
-	iFlags.Index = int(ifim.Index)
-	iFlags.Flags = netFlags(ifim.Flags)
-	return
+	err := binary.Read(r, binary.NativeEndian, &ifim)
+	if err != nil {
+		ev.Err = fmt.Errorf("failed to interpret IfInfomsg: %w", err)
+		return true
+	}
+	ev.Index = int(ifim.Index)
+	ev.Flags = netFlags(ifim.Flags)
+	return true
 }
 
 func netFlags(rawFlags uint32) net.Flags {

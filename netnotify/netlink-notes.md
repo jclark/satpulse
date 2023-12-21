@@ -1,6 +1,8 @@
 
 # Notes on how to use netlink
 
+## For link state changes
+
 We need to detect CARRIER, NO-CARRIER events as in dhcpcd
 
 This describes states:
@@ -54,3 +56,16 @@ Also see:
 
 * https://gitlab.com/mergetb/tech/rtnl
 * https://github.com/jsimonetti/rtnetlink
+
+## For udev events
+
+Want to listen to family `NETLINK_KOBJECT_UEVENT`. The group is GROUP_UDEV which is defined in private systemd header as 2.
+
+See
+* https://insujang.github.io/2018-11-27/udev-device-manager-for-the-linux-kernel-in-userspace/
+
+Format of message is different for udev generated messages.
+Relevant code is in systemd `src/libsystemd/sd-device/device-monitor.c` in `device_monitor_receive_device`.
+
+See also https://github.com/snapcore/snapd/blob/master/osutil/udev/netlink/uevent.go
+
