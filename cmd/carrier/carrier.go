@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jclark/satpulse/internal/netlink"
+	"github.com/jclark/satpulse/netnotify"
 )
 
 var ifName string
@@ -29,7 +29,7 @@ func run() error {
 		return err
 	}
 	fmt.Printf("initial flags: %s\n", iface.Flags.String())
-	n, err := netlink.NotifyInterface()
+	n, err := netnotify.OpenNotifier()
 	if err != nil {
 		return err
 	}
