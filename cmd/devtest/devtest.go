@@ -32,8 +32,10 @@ func run() error {
 			}
 			if ev.Err != nil {
 				fmt.Printf("error: %v\n", ev.Err)
-			} else {
-				fmt.Printf("event: %v\n", ev.Properties)
+			} else if ev.Path != "" {
+				fmt.Printf("device path: %s\n", ev.Path)
+			} else if ev.IfName != "" {
+				fmt.Printf("interface %d: %s\n", ev.IfIndex, ev.IfName)
 			}
 		case <-timeout:
 			fmt.Println("timeout: closing")

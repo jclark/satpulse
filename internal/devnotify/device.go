@@ -6,15 +6,27 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 
 	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
 )
 
+type Action int
+
+const (
+	ActionAdd Action = iota + 1
+	ActionRemove
+	ActionChange
+)
+
 type DeviceEvent struct {
-	Properties map[string]string
-	Err        error
+	Action  Action
+	Path    string
+	IfName  string
+	IfIndex int
+	Err     error
 }
 
 type Notifier struct {
@@ -43,8 +55,8 @@ func Open() (*Notifier, error) {
 					break
 				}
 				ev.setError(fmt.Errorf("failed to receive messages: %w", err))
-			} else {
-				ev.setFromMessage(data)
+			} else if !ev.setFromMessage(data) {
+				continue
 			}
 			ch <- ev
 		}
@@ -99,13 +111,32 @@ func (ev *DeviceEvent) setError(err error) {
 	ev.Err = err
 }
 
-func (ev *DeviceEvent) setFromMessage(data []byte) {
+func (ev *DeviceEvent) setFromMessage(data []byte) bool {
 	props, err := makeUdevPropertiesMap(data)
 	if err != nil {
 		ev.Err = err
-	} else {
-		ev.Properties = props
+		return true
 	}
+	return ev.setFromProperties(props)
+}
+
+func (ev *DeviceEvent) setFromProperties(props map[string]string) bool {
+	switch props["ACTION"] {
+	case "add":
+		ev.Action = ActionAdd
+	case "remove":
+		ev.Action = ActionRemove
+	case "change":
+		ev.Action = ActionChange
+	default:
+		return false
+	}
+	ev.Path = props["DEVNAME"]
+	ev.IfName = props["INTERFACE"]
+	if n, err := strconv.Atoi(props["IFINDEX"]); err == nil && n > 0 {
+		ev.IfIndex = n
+	}
+	return ev.Path != "" || (ev.IfName != "" && ev.IfIndex > 0)
 }
 
 const udevMonitorMagic = 0xfeedcafe
