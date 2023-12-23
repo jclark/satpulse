@@ -30,7 +30,7 @@ func Open() (*Notifier, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial netlink: %w", err)
 	}
-	conn.SetOption(netlink.NoENOBUFS, true)
+	conn.SetReadBuffer(1024 * 1024)
 	ch := make(chan DeviceEvent)
 	n := &Notifier{Events: ch, conn: conn}
 	go func() {
@@ -52,29 +52,25 @@ func Open() (*Notifier, error) {
 	return n, nil
 }
 
-const bufSize = 64
-
 func (n *Notifier) receive() ([]byte, error) {
 	conn, err := n.conn.SyscallConn()
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, bufSize)
-	var nRead int
+	var (
+		nRead int
+		buf   []byte
+	)
 	conn.Read(func(fd uintptr) bool {
-		nRead, _, _, _, err = unix.Recvmsg(int(fd), buf, nil, unix.MSG_PEEK)
+		// use MSG_PEEK together with MSG_TRUNC to find out how much data is available
+		nRead, _, err = unix.Recvfrom(int(fd), nil, unix.MSG_PEEK|unix.MSG_TRUNC)
 		if err != nil {
-			return !errors.Is(err, unix.EAGAIN)
+			return !errIsTransient(err)
 		}
-		// might be more data than can fit in buf
-		if nRead >= len(buf) {
-			// try again with a bigger buffer
-			buf = make([]byte, len(buf)*2)
-			return false
-		}
-		nRead, err = unix.Read(int(fd), buf)
+		buf = make([]byte, nRead)
+		nRead, _, err = unix.Recvfrom(int(fd), buf, 0)
 		if err != nil {
-			return !errors.Is(err, unix.EAGAIN)
+			return !errIsTransient(err)
 		}
 		return true
 	})
@@ -82,6 +78,10 @@ func (n *Notifier) receive() ([]byte, error) {
 		return nil, err
 	}
 	return buf[:nRead], nil
+}
+
+func errIsTransient(err error) bool {
+	return errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.ENOBUFS)
 }
 
 func (n *Notifier) Close() error {
