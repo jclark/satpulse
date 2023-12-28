@@ -77,7 +77,7 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigMap, 
 	} else {
 		// XXX if ubxMsgCount > 0, then probably we cannot send to the GPS
 		lg.Info("GPS does not respond to UBX messages; continuing hopefully")
-
+		cm = new(gpsprot.ConfigMap)
 	}
 	return mh.finish(cm), nil
 }
