@@ -117,6 +117,9 @@ const (
 	MonHwID      MsgID = clsMon | (0x09 << 8)
 	MonMsgPPID   MsgID = clsMon | (0x06 << 8)
 	MonVerID     MsgID = clsMon | (0x04 << 8)
+	NavDOPID     MsgID = clsNav | (0x04 << 8)
+	NavPosECEFID MsgID = clsNav | (0x01 << 8)
+	NavSolID     MsgID = clsNav | (0x06 << 8)
 	NavPVTID     MsgID = clsNav | (0x07 << 8)
 	NavTimeGPSID MsgID = clsNav | (0x20 << 8)
 	NavTimeUTCID MsgID = clsNav | (0x21 << 8)
@@ -124,6 +127,7 @@ const (
 	NavTimeGLOID MsgID = clsNav | (0x23 << 8)
 	NavTimeGalID MsgID = clsNav | (0x25 << 8)
 	NavTimeLSID  MsgID = clsNav | (0x26 << 8)
+	NavVelECEFID MsgID = clsNav | (0x11 << 8)
 	NavSvinID    MsgID = clsNav | (0x3B << 8)
 	TimSvinID    MsgID = clsTim | (0x04 << 8)
 	TimTosID     MsgID = clsTim | (0x12 << 8)
@@ -153,7 +157,10 @@ func init() {
 	regMsg[MonHw]("HW")
 	regMsg[MonMsgPP]("MSGPP")
 	regMsg[MonVer]("VER")
+	regMsg[NavDOP]("DOP")
+	regMsg[NavPosECEF]("POSECEF")
 	regMsg[NavPVT]("PVT")
+	regMsg[NavSol]("SOL")
 	regMsg[NavSvin]("SVIN")
 	regMsg[NavTimeGPS]("TIMEGPS")
 	regMsg[NavTimeBDS]("TIMEBDS")
@@ -161,6 +168,7 @@ func init() {
 	regMsg[NavTimeGLO]("TIMEGLO")
 	regMsg[NavTimeUTC]("TIMEUTC")
 	regMsg[NavTimeLS]("TIMELS")
+	regMsg[NavVelECEF]("VELECEF")
 	regMsg[TimSvin]("SVIN")
 	regMsg[TimTos]("TOS")
 	regMsg[TimTP]("TP")
@@ -491,6 +499,35 @@ const (
 	UTCStandardUnknown UTCStandard = 15
 )
 
+type NavDOP struct {
+	ITOW uint32
+	GDOP uint16
+	PDOP uint16
+	TDOP uint16
+	VDOP uint16
+	HDOP uint16
+	NDOP uint16
+	EDOP uint16
+}
+
+func (m *NavDOP) ID() MsgID { return NavDOPID }
+
+type NavPosECEF struct {
+	ITOW uint32
+	ECEF [3]int32
+	PAcc uint32
+}
+
+func (m *NavPosECEF) ID() MsgID { return NavPosECEFID }
+
+type NavVelECEF struct {
+	ITOW  uint32
+	ECEFV [3]int32
+	SAcc  uint32
+}
+
+func (m *NavVelECEF) ID() MsgID { return NavVelECEFID }
+
 type NavPVT struct {
 	ITOW    uint32
 	Year    uint16
@@ -584,6 +621,44 @@ const (
 )
 
 func (m *NavPVT) ID() MsgID { return NavPVTID }
+
+type NavSol struct {
+	ITOW       uint32
+	FTOW       int32
+	Week       int16
+	GPSFixType NavSolGPSFixType
+	Flags      NavSolFlags
+	ECEF       [3]int32
+	PAcc       uint32
+	ECEFV      [3]int32
+	SAcc       uint32
+	PDOP       uint16
+	_          byte
+	NumSV      byte
+	_          [4]byte
+}
+
+type NavSolGPSFixType byte
+
+const (
+	NavSolNoFix NavSolGPSFixType = iota
+	NavSolDeadReckoningOnly
+	NavSol2DFix
+	NavSol3DFix
+	NavSolGPSDeadReckoning
+	NavSolTimeOnlyFix
+)
+
+type NavSolFlags byte
+
+const (
+	NavSolGPSFixOK NavSolFlags = 1 << iota
+	NavSolDiffSoln
+	NavSolWKNSET
+	NavSolTOWSET
+)
+
+func (m *NavSol) ID() MsgID { return NavSolID }
 
 type NavTimeGPS struct {
 	ITOW  uint32
