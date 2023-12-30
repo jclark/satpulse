@@ -44,18 +44,28 @@ type MgmtMsgPrefix struct {
 const SizeofMgmtMsgPrefix = 52
 
 type Header struct {
-	MessageType         MessageType
-	Version             uint8
-	MessageLength       uint16
-	DomainNumber        uint8
-	MinorSdoID          uint8
-	FlagField           uint16
-	CorrectionField     uint64
-	MessageTypeSpecific uint32
-	SourcePortIdentity  PortIdentity
-	SequenceID          uint16
-	ControlField        Control
-	LogMessageInterval  uint8
+	MajorSdoIDMessageType uint8
+	Version               uint8
+	MessageLength         uint16
+	DomainNumber          uint8
+	MinorSdoID            uint8
+	FlagField             uint16
+	CorrectionField       uint64
+	MessageTypeSpecific   uint32
+	SourcePortIdentity    PortIdentity
+	SequenceID            uint16
+	ControlField          Control
+	LogMessageInterval    uint8
+}
+
+func (h *Header) SetMessageType(mt MessageType) {
+	h.MajorSdoIDMessageType &^= 0x0f
+	h.MajorSdoIDMessageType |= uint8(mt) & 0x0f
+}
+
+func (h *Header) SetMajorSdoID(id uint8) {
+	h.MajorSdoIDMessageType &^= 0xf0
+	h.MajorSdoIDMessageType |= id << 4
 }
 
 type MessageType uint8
@@ -224,10 +234,12 @@ func initPrefix(p *MgmtMsgPrefix, action Action) {
 }
 
 func initHeader(h *Header) {
-	h.MessageType = MessageTypeMgmt // We can add transport specific stuff in MgmtClient.PrepareMsg
+	h.SetMessageType(MessageTypeMgmt) // We can add transport specific stuff in MgmtClient.PrepareMsg
 	// MessageLength is filled in by MarshalBinary
-	h.Version = 2
-	h.ControlField = ControlMgmt
+	h.Version = 0x12 // PTPv2.1
+	// Using non-zero value for ControlField is a legacy thing
+	// Standard says it should be 0, unless supporting some PTPv1 hardware compatibility and using IPv4
+	h.ControlField = 0
 	h.LogMessageInterval = 0x7f // required by Table 42 of the standard
 }
 
@@ -254,7 +266,7 @@ type MsgPreparer struct {
 
 func (c *MsgPreparer) PrepareMsg(m MgmtMsg) {
 	h := &m.Prefix().Header
-	h.Version |= c.MajorSdoID << 4
+	h.SetMajorSdoID(c.MajorSdoID)
 	h.DomainNumber = c.DomainNumber
 	h.SourcePortIdentity.PortNumber = c.PortNumber
 	h.MinorSdoID = c.MinorSdoID

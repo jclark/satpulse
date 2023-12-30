@@ -7,7 +7,7 @@ import (
 
 const PTP4LSocketPath = "/var/run/ptp4l"
 
-const localSocketPathFormat = "/tmp/satpulse%d.sock"
+const localSocketPathFormat = "/var/run/satpulse-pmc%d.sock"
 
 type Client struct {
 	MsgPreparer
@@ -46,6 +46,15 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 	}, nil
 }
 
+func (client *Client) Close() error {
+	closeErr := client.T.Conn.Close()
+	cleanErr := client.T.Cleanup()
+	if closeErr != nil {
+		return closeErr
+	}
+	return cleanErr
+}
+
 func (client *Client) SendRecv(msg MgmtMsg) (MgmtMsg, error) {
 	seqid, err := client.Send(msg)
 	if err != nil {
@@ -61,7 +70,7 @@ func (client *Client) Send(msg MgmtMsg) (uint16, error) {
 	if err != nil {
 		return seqid, fmt.Errorf("could not marshal PTP management message: %w", err)
 	}
-	_, err = client.T.Write(data)
+	_, err = client.T.Conn.WriteTo(data, client.T.RemoteAddr)
 	if err != nil {
 		return seqid, fmt.Errorf("could not send PTP management message: %w", err)
 	}

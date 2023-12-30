@@ -27,10 +27,6 @@ func (t *Transport) Cleanup() error {
 	return cleanup()
 }
 
-func (t *Transport) Write(data []byte) (int, error) {
-	return t.Conn.WriteTo(data, t.RemoteAddr)
-}
-
 func NewUnixTransport(lPath, rPath string) (*Transport, error) {
 	_ = os.Remove(lPath)
 	conn, err := net.DialUnix("unixgram", &net.UnixAddr{
@@ -39,6 +35,10 @@ func NewUnixTransport(lPath, rPath string) (*Transport, error) {
 	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create connection: %w", err)
+	}
+	err = os.Chmod(lPath, 0660)
+	if err != nil {
+		return nil, fmt.Errorf("could not chmod: %s: %w", lPath, err)
 	}
 	return &Transport{
 		cleanup: func() error { return os.Remove(lPath) },

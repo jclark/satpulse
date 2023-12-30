@@ -7,13 +7,13 @@ import (
 
 type GrandmasterUpdateRequest struct {
 	props GrandmasterProps
-	resp  chan<- *GrandmasterProps
+	resp  chan<- GrandmasterProps
 }
 
 type Grandmaster struct {
 	target   GrandmasterProps
 	actual   *GrandmasterProps
-	respCh   chan *GrandmasterProps          // maybe nil
+	respCh   chan GrandmasterProps           // maybe nil
 	updateCh chan<- GrandmasterUpdateRequest // never nil
 }
 
@@ -23,10 +23,15 @@ type GrandmasterProps struct {
 	ClockAccuracy uint8
 }
 
-func NewGrandmaster(updateCh chan<- GrandmasterUpdateRequest) *Grandmaster {
+func NewGrandmaster() (*Grandmaster, <-chan GrandmasterUpdateRequest) {
+	updateCh := make(chan GrandmasterUpdateRequest, 1)
 	gm := &Grandmaster{updateCh: updateCh}
 	gm.target.SetClockInSync(false)
-	return gm
+	return gm, updateCh
+}
+
+func (gm *Grandmaster) Close() {
+	close(gm.updateCh)
 }
 
 func (gm *Grandmaster) Update(inSync bool, leap ptime.LeapSecondState) {
@@ -47,9 +52,14 @@ func (gm *Grandmaster) Update(inSync bool, leap ptime.LeapSecondState) {
 		// Don't update if there is no change
 		return
 	}
-	respCh := make(chan *GrandmasterProps, 1)
-	gm.respCh = respCh
-	gm.updateCh <- GrandmasterUpdateRequest{props: gm.target, resp: respCh}
+	respCh := make(chan GrandmasterProps, 1)
+	select {
+	case gm.updateCh <- GrandmasterUpdateRequest{props: gm.target, resp: respCh}:
+		// expect a response
+		gm.respCh = respCh
+	default:
+		close(respCh)
+	}
 }
 
 func (gm *Grandmaster) handleResponse() {
@@ -57,9 +67,9 @@ func (gm *Grandmaster) handleResponse() {
 		return
 	}
 	select {
-	case props := <-gm.respCh:
-		if props != nil {
-			gm.actual = props
+	case props, ok := <-gm.respCh:
+		if ok {
+			gm.actual = &props
 		}
 		gm.respCh = nil
 	default:

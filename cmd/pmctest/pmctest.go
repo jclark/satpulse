@@ -29,18 +29,20 @@ func hexUint8Flag(name string, value hexUint8, usage string) *hexUint8 {
 	return &value
 }
 
-const localSocketPathFormat = "/tmp/satpulse%d.sock"
-
 func main() {
 	msg := createMsg()
 	cfg := pmc.NewClientConfig()
-	cfg.LocalSocketPathFormat = localSocketPathFormat
+	cfg.SetDefaults()
 	response, err := sendRecv(cfg, msg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	}
+	if response != nil {
+		fmt.Printf("Response: %+v\n", response)
+	}
+	if err != nil {
 		os.Exit(1)
 	}
-	fmt.Printf("Response: %+v\n", response)
 }
 
 func sendRecv(cfg *pmc.ClientConfig, msg pmc.MgmtMsg) (pmc.MgmtMsg, error) {
@@ -48,7 +50,12 @@ func sendRecv(cfg *pmc.ClientConfig, msg pmc.MgmtMsg) (pmc.MgmtMsg, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client.SendRecv(msg)
+	msg, err = client.SendRecv(msg)
+	if err != nil {
+		return nil, err
+	}
+	err = client.Close()
+	return msg, err
 }
 
 func createMsg() pmc.MgmtMsg {

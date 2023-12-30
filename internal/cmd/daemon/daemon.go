@@ -190,16 +190,20 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		}
 	}
 
-	gmUpdateCh := make(chan mon.GrandmasterUpdateRequest)
-	var pmcClient *pmc.Client
+	var (
+		gm *mon.Grandmaster
+		gmUpdateCh <-chan mon.GrandmasterUpdateRequest
+		pmcClient *pmc.Client
+	)
 	switch cfg.PTP.Impl {
 	case PTPImplNone:
-		gmUpdateCh = nil
+		// do nothing 
 	case PTPImplPTP4L:
 		pmcClient, err = cfg.PTP.NewClient()
 		if err != nil {
 			return err
 		}
+		gm, gmUpdateCh = mon.NewGrandmaster()
 	}
 
 	tsCh, edges, err := StartPPS(ctx, clk, cfg.PHC)
@@ -212,7 +216,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 	if !ok {
 		pulseWidth = 0
 	}
-	s, err := NewSyncRunner(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gmUpdateCh, sseCh, inLog)
+		
+	s, err := NewSyncRunner(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gm, sseCh, inLog)
 	if err != nil {
 		return err
 	}
@@ -228,7 +233,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 			s.LeapSecond(ls, time.Time{})
 		}
 		s.run(tsCh, pCh)
-		close(gmUpdateCh)
+		if gm != nil {
+			gm.Close()
+		}
 	})
 
 	return nil

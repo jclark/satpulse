@@ -21,14 +21,12 @@ type Monitor struct {
 	ppsStopped     bool
 }
 
-func NewMonitor(leapSecond ptime.LeapSecond, updateCh chan<- GrandmasterUpdateRequest, lg *slog.Logger) *Monitor {
+func NewMonitor(leapSecond ptime.LeapSecond, gm *Grandmaster, lg *slog.Logger) *Monitor {
 	mon := &Monitor{
 		leapSecond: leapSecond,
 		lg:         lg,
 		offsets:    NewQueue[float64](samplesToKeep),
-	}
-	if updateCh != nil {
-		mon.gm = NewGrandmaster(updateCh)
+		gm: 	   gm,
 	}
 	return mon
 }

@@ -32,13 +32,13 @@ type SyncRunner struct {
 	lastTime ptime.Time
 }
 
-func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, guCh chan<- mon.GrandmasterUpdateRequest, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
+func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
 	servo, err := servo.New(clk, lg, sseCh)
 	if err != nil {
 		return nil, err
 	}
 	ls := cfg.LeapSecond.leapSecond()
-	m := mon.NewMonitor(ls, guCh, lg)
+	m := mon.NewMonitor(ls, gm, lg)
 	pt := combine.PulseType{
 		EdgesPerPulse: phcFlags.Edges(),
 		PulseWidth:    pulseWidth,

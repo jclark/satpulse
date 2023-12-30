@@ -5,43 +5,57 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"time"
 
 	"github.com/jclark/satpulse/internal/pmc"
 	"golang.org/x/sys/unix"
 )
 
+// Time to send and receive a PTP management message to/from ptp4l.
+const ptp4lTimeout = time.Second / 10
+
 // The updating goroutine must wait for a response to each request before sending another request.
 func PTP4LWorker(ctx context.Context, client *pmc.Client, reqCh <-chan GrandmasterUpdateRequest, lg *slog.Logger) {
 	lg.Debug("the PTP management goroutine has started")
-	socketOK := true
+	sockExists := true
 	for {
 		req, ok := <-reqCh
 		if !ok {
 			break
 		}
 		props := req.props
+		tStart := time.Now()
+		client.T.Conn.SetDeadline(tStart.Add(ptp4lTimeout))
 		err := sendRecv(ctx, client, props)
 		if err != nil {
 			if errors.Is(err, unix.ENOENT) {
-				if socketOK {
-					lg.Info("the PTP management Unix domain socket does not yet exist", "path", client.T.RemoteAddr)
-					socketOK = false
+				if sockExists {
+					lg.Info("the ptp4l management socket does not exist (ptp4l not running)", "path", client.T.RemoteAddr)
+					sockExists = false
 				}
+			} else if errors.Is(err, os.ErrDeadlineExceeded) && sockExists {
+				lg.Info("timeout on ptp4l management socket", "path", client.T.RemoteAddr)
 			} else if ctx.Err() == nil {
-				lg.Error("error while updating the PTP grandmaster using PTP management protocol", "err", err)
+				lg.Warn("error while updating the PTP grandmaster using PTP management protocol", "err", err)
 			}
-			req.resp <- nil
 		} else {
-			if !socketOK {
-				lg.Info("the PTP management Unix domain socket has been created", "path", client.T.RemoteAddr)
-				socketOK = true
+			if !sockExists {
+				lg.Info("the ptp4l management socket now exists", "path", client.T.RemoteAddr)
+				sockExists = true
 			}
 			lg.Info("successfully updated the grandmaster using the PTP managment protocol", "clockClass", props.ClockClass, "clockAccuracy", props.ClockAccuracy,
-				"utcOffset", props.UTCOffset, "leapTonight", props.LeapTonight)
-			req.resp <- &props
+				"utcOffset", props.UTCOffset, "leapTonight", props.LeapTonight, "responseTime", time.Since(tStart))
+			req.resp <- props
 		}
+		close(req.resp)
 	}
-	lg.Debug("the PTP management goroutine is about to exit")
+	lg.Debug("the PTP4L worker is about to close the PTP management client")
+	err := client.Close()
+	if err != nil {
+		lg.Warn("error while closing the PTP management client", "err", err)
+	}
+	lg.Debug("the PTP4L worker is about to exit")
 }
 
 func sendRecv(ctx context.Context, client *pmc.Client, props GrandmasterProps) error {
