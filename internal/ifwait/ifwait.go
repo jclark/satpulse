@@ -32,13 +32,13 @@ func NewIfWaiter(ifname string) (*IfWaiter, error) {
 		return nil, fmt.Errorf("failed to dial netlink: %w", err)
 	}
 	w := &IfWaiter{ifname: ifname, conn: conn}
-	iface, err := net.InterfaceByName(ifname)
-	if err == nil {
-		w.ifindex = iface.Index
-		w.flags = iface.Flags
+	// I'm hoping that doing it this way (rather than using net.InterfaceByName) avoids the possibility
+	// of missing a flag change that happens between the time InterfaceByName returns and the Receive.
+	_, err = conn.Send(makeGetLinkReq())
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to send netlink RTM_LINK message: %w", err)
 	}
-	// There's a race condition here (I think) in that the interface flag change might happen
-	// between the call to net.InterfaceByName and the call to conn.Receive.
 	go w.work(conn)
 	return w, nil
 }
@@ -189,6 +189,27 @@ func (w *IfWaiter) setError(err error) {
 		w.f = nil // for GC
 	}
 }
+
+func makeGetLinkReq() netlink.Message {
+	return netlink.Message{
+		Header: netlink.Header{
+			Type:  unix.RTM_GETLINK,
+			Flags: netlink.Request | netlink.Dump,
+		},
+		Data: []byte{unix.AF_UNSPEC},
+	}
+}
+
+/*
+// this avoids relying on the layout of RtGenmsg
+func packRtgenmsg(family int) []byte {
+	var buf [unix.SizeofRtGenmsg]byte
+	msg := unix.RtGenmsg{Family: uint8(family)}
+	type ptrRtGenmsg = *[unix.SizeofRtGenmsg]byte
+	buf = *(ptrRtGenmsg)(unsafe.Pointer(&msg))
+	return buf[:]
+}
+*/
 
 func unpackIfInfomsg(data []byte) (int, net.Flags, error) {
 	if len(data) < unix.SizeofIfInfomsg {
