@@ -10,7 +10,6 @@ High priority
    * how GPS should be configured
 * Control over logging in the non-sdlog case
 * Better error for no PPS
-* Check that the interface is up
 * Stats about time sync quality
    * Maximum offset
    * RMS offset
@@ -248,7 +247,8 @@ feed them into the PHC and change the clock type appropriately (assuming system 
 
 ## Netlink events
 
-* Integrate experimental carrier program. Need to be able to stop and restart timesync goroutine on CM4.
-* This can also help when booting with systemd: be able to start up right away, and wait for interface to appear.
+* Need to be handle loss of carrier
+   * CM4 timestamping doesn't work properly when there is no carrier
+   * Have also observed problems with NetworkManager
 * Netlink is also used for udev events. So we can potentially use this to wait for USB device to appear.
 

@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net"
 	"time"
 
+	"github.com/jclark/satpulse/internal/ifwait"
 	"github.com/jclark/satpulse/internal/phc"
 )
 
@@ -13,12 +16,34 @@ type PHCConfig struct {
 	Interface string `toml:"interface"`
 	Pin       uint8  `toml:"pin"`
 	Channel   uint8  `toml:"channel"`
+	Wait      bool   `toml:"wait"`
 }
 
 const timeout = 100 * time.Microsecond
+const existTimeout = 30 * time.Second
+const logWaitTimeout = time.Second / 2 // log if we have to wait more than this for an interface
 
-func openExttsClock(cfg PHCConfig) (*phc.Clock, phc.DriverFlags, error) {
+func openExttsClock(lg *slog.Logger, cfg PHCConfig) (*phc.Clock, phc.DriverFlags, error) {
 	ifName := cfg.Interface
+	var (
+		w   *ifwait.IfWaiter
+		err error
+	)
+	if cfg.Wait {
+		w, err = ifwait.NewIfWaiter(ifName)
+		if err != nil {
+			return nil, 0, err
+		}
+		defer w.Close()
+		err = waitIface(w, lg, nil, "does not exist", existTimeout)
+		if err != nil {
+			return nil, 0, err
+		}
+		err = waitIface(w, lg, func(flags net.Flags) bool { return flags&net.FlagUp != 0 }, "is down", 0)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	phcIndex, err := phc.IfPhcIndex(ifName)
 	if err != nil {
 		return nil, 0, err
@@ -30,6 +55,12 @@ func openExttsClock(cfg PHCConfig) (*phc.Clock, phc.DriverFlags, error) {
 	if err != nil {
 		return nil, 0, err
 	}
+	if w != nil && flags&phc.DriverCarrier != 0 {
+		err = waitIface(w, lg, func(flags net.Flags) bool { return flags&net.FlagRunning != 0 }, "has no carrier", 0)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	clk, err := phc.Open(phc.ClockPath(phcIndex))
 	if err != nil {
 		return nil, 0, err
@@ -40,6 +71,35 @@ func openExttsClock(cfg PHCConfig) (*phc.Clock, phc.DriverFlags, error) {
 		return nil, 0, err
 	}
 	return clk, flags, nil
+}
+
+func waitIface(w *ifwait.IfWaiter, lg *slog.Logger, f func(net.Flags) bool, status string, timeout time.Duration) error {
+	var timeoutTimer <-chan time.Time
+	if timeout != 0 {
+		timeoutTimer = time.After(timeout)
+	}
+	start := time.Now()
+	logTimer := time.After(logWaitTimeout)
+	ch := w.SetCond(f)
+loop:
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return w.Err()
+			}
+			break loop
+		case <-logTimer:
+			lg.Info("interface not ready; waiting", "name", w.Name(), "status", status)
+			logTimer = nil
+		case <-timeoutTimer:
+			return fmt.Errorf("interface %s %s: waited for %s: giving up", w.Name(), status, existTimeout.String())
+		}
+	}
+	if logTimer == nil {
+		lg.Info("waited for interface", "name", w.Name(), "t", time.Since(start).String())
+	}
+	return nil
 }
 
 func validateTimePulseConfig(clk *phc.Clock, cfg PHCConfig) error {

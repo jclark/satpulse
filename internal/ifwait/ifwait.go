@@ -43,6 +43,10 @@ func NewIfWaiter(ifname string) (*IfWaiter, error) {
 	return w, nil
 }
 
+func (w *IfWaiter) Name() string {
+	return w.ifname
+}
+
 func (w *IfWaiter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -240,5 +244,67 @@ func IfName(ifindex int) (ifname string, err error) {
 		return
 	}
 	ifname = ifreq.Name()
+	return
+}
+
+func IfFlags(ifname string) (flags net.Flags, err error) {
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM, 0)
+	if err != nil {
+		return 0, fmt.Errorf("could not create a socket: %w", err)
+	}
+	defer func() {
+		err2 := unix.Close(fd)
+		if err == nil {
+			err = err2
+		}
+	}()
+	ifreq, err := unix.NewIfreq(ifname)
+	if err != nil {
+		err = fmt.Errorf("NewIfreq %s: %w", ifname, err)
+		return
+	}
+	err = unix.IoctlIfreq(fd, unix.SIOCGIFFLAGS, ifreq)
+	if err != nil {
+		err = fmt.Errorf("SIOCGIFFLAGS %s: %w", ifname, err)
+		return
+	}
+	flags = netFlags(uint32(ifreq.Uint16()))
+	return
+}
+
+func IfChangeFlags(ifname string, flags uint16, set bool) (oflags uint16, err error) {
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM, 0)
+	if err != nil {
+		return 0, fmt.Errorf("could not create a socket: %w", err)
+	}
+	defer func() {
+		err2 := unix.Close(fd)
+		if err == nil {
+			err = err2
+		}
+	}()
+	ifreq, err := unix.NewIfreq(ifname)
+	if err != nil {
+		err = fmt.Errorf("NewIfreq %s: %w", ifname, err)
+		return
+	}
+	err = unix.IoctlIfreq(fd, unix.SIOCGIFFLAGS, ifreq)
+	if err != nil {
+		err = fmt.Errorf("SIOCGIFFLAGS %s: %w", ifname, err)
+		return
+	}
+	nflags := ifreq.Uint16()
+	oflags = nflags
+	if set {
+		nflags |= flags
+	} else {
+		nflags &^= flags
+	}
+	ifreq.SetUint16(nflags)
+	err = unix.IoctlIfreq(fd, unix.SIOCSIFFLAGS, ifreq)
+	if err != nil {
+		err = fmt.Errorf("SIOCGIFFLAGS %s: %w", ifname, err)
+		return
+	}
 	return
 }

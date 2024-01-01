@@ -34,7 +34,8 @@
 		"properties": {
 		  "interface": { "type": "string" },
 		  "pin": { "type": "integer" },
-		  "channel": { "type": "integer" }
+		  "channel": { "type": "integer" },
+		  "wait": { "type": "boolean" }
 		},
 		"required": ["interface"]
 	  },

@@ -14,9 +14,10 @@ type DriverFlags uint32
 const (
 	DriverOneEdge DriverFlags = 1 << iota
 	DriverBothEdges
-	DriverKnown 
+	DriverKnown
 	DriverPoll4Hz
-	DriverEdges DriverFlags = DriverOneEdge | DriverBothEdges
+	DriverCarrier             // PHC needs a carrier to work
+	DriverEdges   DriverFlags = DriverOneEdge | DriverBothEdges
 )
 
 func (flags DriverFlags) Edges() int {
@@ -34,7 +35,7 @@ func (flags DriverFlags) SetEdges(edges int) DriverFlags {
 	return flags | DriverFlags(edges)
 }
 
-const cm4Flags DriverFlags = DriverKnown | DriverPoll4Hz
+const cm4Flags DriverFlags = DriverKnown | DriverPoll4Hz | DriverCarrier
 const intelFlags DriverFlags = DriverKnown | DriverBothEdges
 
 func IfDriverFlags(ifname string) (DriverFlags, error) {

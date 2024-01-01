@@ -30,6 +30,7 @@ func Cmd(progName string, args []string) {
 	var sdLog bool
 	var showVersion bool
 	var inputLogFile string
+	var wait bool
 
 	flags := flag.NewFlagSet("config", flag.ExitOnError)
 
@@ -38,10 +39,23 @@ func Cmd(progName string, args []string) {
 	flags.BoolVar(&showVersion, "version", false, "show version information")
 	flags.BoolVar(&debugEnable, "debug", false, "log debugging information")
 	flags.BoolVar(&sdLog, "sdlog", false, "log to stdout with priorities in systemd-compatible format")
+	flags.BoolVar(&wait, "wait", false, "wait for the network interface to be ready")
 	flags.Parse(args)
 	if showVersion {
 		fmt.Println(cmd.VersionInfo())
 		os.Exit(0)
+	}
+	cfg, err := LoadConfig(configFile)
+	if err != nil {
+		cmd.ErrPrintln(progName, err)
+		s := configErrorDetail(err)
+		if s != "" {
+			fmt.Fprintln(os.Stderr, s)
+		}
+		os.Exit(1)
+	}
+	if wait {
+		cfg.PHC.Wait = true
 	}
 	level := slog.LevelInfo
 	if debugEnable {
@@ -57,23 +71,14 @@ func Cmd(progName string, args []string) {
 	slog.SetDefault(lg)
 	ctx := context.Background()
 	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
-	err := run(ctx, lg, cancel, configFile, inputLogFile)
+	err = run(ctx, lg, cancel, cfg, inputLogFile)
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
-		s := configErrorDetail(err)
-		if s != "" {
-			fmt.Fprintln(os.Stderr, s)
-		}
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFile string, inputLogFile string) error {
-	cfg, err := LoadConfig(cfgFile)
-	if err != nil {
-		return err
-	}
-
+func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config, inputLogFile string) error {
 	var inLog io.Writer
 	if inputLogFile != "" {
 		f, err := os.Create(inputLogFile)
@@ -84,7 +89,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfgFil
 		defer f.Close()
 	}
 
-	clk, phcFlags, err := openExttsClock(cfg.PHC)
+	clk, phcFlags, err := openExttsClock(lg, cfg.PHC)
 	if err != nil {
 		return err
 	}
