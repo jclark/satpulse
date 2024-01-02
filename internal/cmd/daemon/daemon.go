@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,27 +24,21 @@ import (
 )
 
 func Cmd(progName string, args []string) {
-	var configFile string
-	var debugEnable bool
-	var sdLog bool
-	var showVersion bool
-	var inputLogFile string
-	var wait bool
-
-	flags := flag.NewFlagSet("config", flag.ExitOnError)
-
-	flags.StringVar(&configFile, "f", defaultConfigFile, "configuration file")
-	flags.StringVar(&inputLogFile, "inputLogFile", "", "input log file")
-	flags.BoolVar(&showVersion, "version", false, "show version information")
-	flags.BoolVar(&debugEnable, "debug", false, "log debugging information")
-	flags.BoolVar(&sdLog, "sdlog", false, "log to stdout with priorities in systemd-compatible format")
-	flags.BoolVar(&wait, "wait", false, "wait for the network interface to be ready")
-	flags.Parse(args)
-	if showVersion {
-		fmt.Println(cmd.VersionInfo())
-		os.Exit(0)
+	vars, msg, err := parseFlags(progName, args)
+	if vars == nil {
+		exitCode := 0
+		if err != nil {
+			cmd.ErrPrintln(progName, err)
+			if msg != "" {
+				exitCode = 2
+			} else {
+				exitCode = 1
+			}
+		}
+		fmt.Fprint(os.Stderr, msg)
+		os.Exit(exitCode)
 	}
-	cfg, err := LoadConfig(configFile)
+	cfg, err := LoadConfig(vars.configFile)
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
 		s := configErrorDetail(err)
@@ -54,15 +47,18 @@ func Cmd(progName string, args []string) {
 		}
 		os.Exit(1)
 	}
-	if wait {
+	if vars.wait {
 		cfg.PHC.Wait = true
 	}
+	if vars.serialDevice != "" {
+		cfg.Serial.Device = vars.serialDevice
+	}
 	level := slog.LevelInfo
-	if debugEnable {
+	if vars.verbose {
 		level = slog.LevelDebug
 	}
 	var handler slog.Handler
-	if sdLog {
+	if vars.sdLog {
 		handler = NewSdHandler(level, os.Stdout)
 	} else {
 		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
@@ -71,7 +67,7 @@ func Cmd(progName string, args []string) {
 	slog.SetDefault(lg)
 	ctx := context.Background()
 	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, cancel, cfg, inputLogFile)
+	err = run(ctx, lg, cancel, cfg, vars.inputLogFile)
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
 		os.Exit(1)
@@ -196,13 +192,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 
 	var (
-		gm *mon.Grandmaster
+		gm         *mon.Grandmaster
 		gmUpdateCh <-chan mon.GrandmasterUpdateRequest
-		pmcClient *pmc.Client
+		pmcClient  *pmc.Client
 	)
 	switch cfg.PTP.Impl {
 	case PTPImplNone:
-		// do nothing 
+		// do nothing
 	case PTPImplPTP4L:
 		pmcClient, err = cfg.PTP.NewClient()
 		if err != nil {
@@ -221,7 +217,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if !ok {
 		pulseWidth = 0
 	}
-		
+
 	s, err := NewSyncRunner(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gm, sseCh, inLog)
 	if err != nil {
 		return err
