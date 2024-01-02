@@ -1,11 +1,12 @@
 # Things to do
 
+These are things that have not yet been made into GitHub issues.
+
 ## General
 
 High priority
 
 * More documentation
-   * config file
    * http monitoring
    * how GPS should be configured
 * Control over logging in the non-sdlog case
@@ -27,8 +28,6 @@ High priority
 
 * Estimate clock accuracy and dynamically update grandmaster settings. In particular, on startup, update with low accuracy and then improve it as we settle down.
 * More sophisticated, configurable detection of whether we are synced (mostly covered by previous point)
-* Set a read/write deadline on the conn for the Unix domain socket
-* Should update grandmaster settings to a non-synced status when we shutdown.
 
 Others
 * Enable configuration of non-synced settings or read current settings at startup
@@ -81,9 +80,10 @@ Others
 * Sanity check first sample against system clock and log warning
   * Can we figure out when system clock is supposed to be set?
 * Add separate optional stage to filter outliers (no need to use this when generating samples for chrony)
-  * This probably needs to keeip track of what frequency adjustments we have made
+  * This probably needs to keep track of what frequency adjustments we have made
   * Distinguish choosing the right second (which is quite coarse-grained) from filtering outliers
   * Need to investigate the right statistical approach
+  * Maybe only do this when we are in sync
 
 Lower priority
 * Bulletproof against invalid GPS message sequences
@@ -103,7 +103,6 @@ Lower priority
 * Can we support idea of a UTC correction that would allow clients to align to UTC rather than GNSS time?
   * GPS/BeiDou/Galileo all have concept of steering their system time to a UTC variant.
   * But we align the pulse to GNSS system time (seems to work better)
-* Support holdover with LEA-M8F (not really in this package)
 
 ## Leap seconds
 
@@ -244,11 +243,3 @@ For hardware timestamping, chrony needs a free running PHC. One way to do this i
 
 We can also run the other way: if PHC is not synchronized, then we read samples from the system clock and
 feed them into the PHC and change the clock type appropriately (assuming system clock is controlled with NTP).
-
-## Netlink events
-
-* Need to be handle loss of carrier
-   * CM4 timestamping doesn't work properly when there is no carrier
-   * Have also observed problems with NetworkManager
-* Netlink is also used for udev events. So we can potentially use this to wait for USB device to appear.
-
