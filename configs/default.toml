@@ -1,5 +1,6 @@
 # Config file for satpulse
 [serial]
+# This can be overridden with the -d option on the command-line
 device = "/dev/ttyUSB0"
 speed = 9600
 

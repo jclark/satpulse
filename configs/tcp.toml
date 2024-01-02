@@ -1,5 +1,6 @@
 # Example serial to network proxy configuration
 [serial]
+# This can be overridden with the -d option on the command-line
 device = "/dev/ttyS0"
 speed = 9600
 
