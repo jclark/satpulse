@@ -17,8 +17,7 @@
 		"properties": {
 		  "device": { "type": "string" },
 		  "speed": { "type": "integer" }
-		},
-		"required": ["device"]
+		}
 	  },
 	  "receiver": {
 		"type": "object",
@@ -102,5 +101,5 @@
 		}
 	  }
 	},
-	"required": ["serial", "phc"]
+	"required": ["phc"]
 }
