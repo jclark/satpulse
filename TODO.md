@@ -57,6 +57,7 @@ Others
 * Should the servo do something different if there is more than 1 second since last sample? Interpolate?
 * See what we can learn from the Meta time library servo package.
 * See what we can learn from NTP standard
+* Divide into two phases: initial sync, continuing sync; use different ki/kp values for each phase.
 
 ## Combine
 
