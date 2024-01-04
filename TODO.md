@@ -233,13 +233,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 
 ## Chrony integration
 
-Feed samples into chrony using the chrony SOCK refclock.
-
-This is better than using PHC refclock because:
-- we can feed samples only when PHC is synchronized
-- SOCK samples include leap status flag so we can feed in leap second info.
-- with CM4 we can avoid reading the PHC at a time which is likely to interfere with reading the time pulse
-
 For hardware timestamping, chrony needs a free running PHC. One way to do this is with virtual clocks. But in case where user is not interested in PTP, it should be possible to generate samples without modifying the PHC (by keeping track of phase/frequency difference between PHC and the correct time).
 
 We can also run the other way: if PHC is not synchronized, then we read samples from the system clock and
