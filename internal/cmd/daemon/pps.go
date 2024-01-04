@@ -19,7 +19,7 @@ type PHCConfig struct {
 	Wait      bool   `toml:"wait"`
 }
 
-const timeout = 100 * time.Microsecond
+const exttsTimeout = 100 * time.Microsecond // if we hit this timeout, then the next one isn't stale
 const existTimeout = 30 * time.Second
 const logWaitTimeout = time.Second / 2 // log if we have to wait more than this for an interface
 
@@ -127,7 +127,7 @@ func StartPPS(ctx context.Context, clk *phc.Clock, cfg PHCConfig) (<-chan phc.Ts
 	}
 	c := make(chan phc.TsEvent, 1)
 	go func() {
-		clk.ReadWorker(ctx.Done(), c, timeout)
+		clk.ReadWorker(ctx.Done(), c, exttsTimeout)
 	}()
 	return c, edges, nil
 }
