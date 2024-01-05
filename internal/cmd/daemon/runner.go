@@ -23,13 +23,14 @@ import (
 
 type SyncRunner struct {
 	gpsprot.DefaultHandler
-	inLog    io.Writer
-	sseCh    chan<- sse.Event
-	corr     *combine.Combiner
-	m        *mon.Monitor
-	ls       ptime.LeapSecond
-	lg       *slog.Logger
-	lastTime ptime.Time
+	inLog                 io.Writer
+	sseCh                 chan<- sse.Event
+	corr                  *combine.Combiner
+	m                     *mon.Monitor
+	ls                    ptime.LeapSecond
+	lg                    *slog.Logger
+	lastTime              ptime.Time
+	loggedUnknownProtocol bool
 }
 
 func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
@@ -130,7 +131,10 @@ func (s *SyncRunner) handlePacket(pkt scan.Packet) {
 			lg.Error("failed to parse UBX message", "err", err)
 		}
 	case scan.Invalid:
-		lg.Info("received data from GPS in unknown protocol (serial communication problem?)", "len", len(pkt.Data), "data", pkt.Data)
+		if !s.loggedUnknownProtocol {
+			lg.Info("received data from GPS in unknown protocol (serial communication problem?)", "len", len(pkt.Data), "data", pkt.Data)
+			s.loggedUnknownProtocol = true
+		}
 	}
 }
 
