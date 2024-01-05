@@ -474,21 +474,21 @@ var errOutOfOrderMsg = errors.New("out of order message")
 
 // Add a new message to the list of messages.
 // If there's already a message for the same second, then don't add it again.
-// Return the possibly modified list, the index of the message,
-// and an error if a message for that second should not be possible now.
+// Return the possibly modified list, the index of the message.
 // discard messages from the front if necessary to keep length <= maxLength
 func (sml secMsgList) addSec(sec ptime.Time, maxLength int) (secMsgList, int, error) {
 	if maxLength < 1 {
 		panic("maxLength must be >= 1")
 	}
 	i := sml.search(sec)
-	for j := i; j < len(sml); j++ {
+	for j := len(sml) - 1; j >= i; j-- {
+		// Avoid giving out of order message for duplicate time message
+		if j == i && sml[j].sec == sec {
+			return sml, j, nil
+		}
 		if sml[j].happened() {
 			return sml, -1, errOutOfOrderMsg
 		}
-	}
-	if i < len(sml) && sml[i].sec == sec {
-		return sml, i, nil
 	}
 	if len(sml) >= maxLength {
 		// we want new length now to be maxLength - 1
