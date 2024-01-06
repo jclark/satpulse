@@ -8,6 +8,24 @@ import (
 	"time"
 )
 
+// Protocol manages the processing and generation of packets for a GPS receiver.
+// An implementation of protocol captures the semantics of a particular GPS receiver protocol,
+// such as UBX or NMEA.
+// Methods on Protocol do not themselves send or receive
+// Splitting sequences of bytes in packets is handled by the scan package.
+// Packets to be processed are passed to ProcessPacket.
+// There are three stages: probing, configuration, and normal operation.
+// In normal operation, calls to ProcessPacket result in calls to the MsgHandler,
+// which is set by SetHandler.
+// In probing, ProbePacket returns a packet to be sent to the GPS receiver;
+// ProbeOK as soon as a packet has been processed that indicates the GPS receiver is responding.
+// Configuration is managed by a Configurator created by Configure;
+// repeated calls to NextRequest return the next request to be sent to the GPS receiver.
+// After a Configurator has been created, calls to ProcessPacket will pass configuration-related packets
+// to the Configurator.
+// The packets processed by ProcessPacket determine the requests returned by NextRequest.
+// If the Ackable method of a ConfigRequest returns true, then FindAck should be used
+// to find whether the acknowledgement has been received.
 type Protocol interface {
 	ProbePacket() []byte
 	ProbeOK() bool
@@ -18,19 +36,40 @@ type Protocol interface {
 }
 
 type Ack struct {
-	OK    bool
+	// OK is true if the acknowledgement was an ACK rather than a NACK.
+	OK bool
+	// TRead is the time at which the acknowledgement was received.
 	TRead time.Time
 }
 
+// Configurator manages the generation and interpretation of configuration-related packets.
+// It is created by the Configure method of a Protocol.
+// It will receive packets to interpret via calls to ProcessPacket on the Protocol that created it.
 type Configurator interface {
+	// ConfigMap returns the current configuration of the GPS receiver.
+	// It should be called after NextRequest returns nil.
 	ConfigMap() *ConfigMap
+	// NextRequest returns the next request that should be sent to the GPS receiver.
+	// If there are no more requests, it returns nil, nil.
 	NextRequest() (ConfigRequest, error)
 }
 
+// ConfigRequest represents a request to be sent to the GPS receiver to configure it.
+// The request may expect an acknowledgement.
+// The request may be getting aspects of the current configuration,
+// or setting aspects of the configuration.
+// A ConfigRequest is associated with the Configurator that created it.
 type ConfigRequest interface {
+	// Packet returns the packet to be sent to the GPS receiver.
 	Packet() []byte
+	// Ackable returns true if the packet is one that needs an acknowledgement.
+	// An acknowledgement can either be an ACK or a NACK.
 	Ackable() bool
+	// Done should be called when the request has been sent and the acknowledgement received,
+	// and the acknowledge was an ACK.
+	// This causes the Configurator to update its state to reflect that the configuration has been applied.
 	Done()
+	// ID returns a human-readable identifier for the request type.
 	ID() string
 }
 
