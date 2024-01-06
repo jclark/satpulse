@@ -224,13 +224,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.Protocol, targ
 		if req == nil {
 			break
 		}
-		t := time.Now()
-		pkt := req.Packet()
-		_, err = port.Write(pkt)
-		if err != nil {
-			return nil, err
-		}
-		err = mh.waitAfterSend(ctx, prot, req, pkt, t, port)
+		err = mh.doRequest(ctx, cfgtor, req, port)
 		if err != nil {
 			return nil, err
 		}
@@ -238,16 +232,47 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.Protocol, targ
 	return cfgtor.ConfigMap(), nil
 }
 
+const maxTries = 3
+
+func (mh *msgHandler) doRequest(ctx context.Context, cfgtor gpsprot.Configurator, req gpsprot.ConfigRequest, port gpsio.OutPort) error {
+	try := 0
+	pkt := req.Packet()
+	for {
+		t := time.Now()
+		_, err := port.Write(pkt)
+		if err != nil {
+			return err
+		}
+		err = mh.waitAfterSend(ctx, cfgtor, req, port, pkt, t)
+		if err == nil {
+			break
+		}
+		try++
+		if try >= maxTries {
+			return err
+		}
+		if !errors.Is(err, errNoResponse) && !errors.Is(err, errNoAck) {
+			return err
+		}
+		mh.lg.Info("retrying configuration request", "msgID", req.ID())
+	}
+	return nil
+}
+
 const minWaitAfterSend = 10 * time.Millisecond
 
-func (mh *msgHandler) waitAfterSend(ctx context.Context, prot gpsprot.Protocol, req gpsprot.ConfigRequest, pkt []byte, tSend time.Time, port gpsio.OutPort) error {
-	ackable := req.Ackable()
-	w := time.Millisecond * 1500
+var errNoResponse = errors.New("no response to configuration poll message")
+var errNoAck = errors.New("no ack to configuration message")
+
+func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configurator, req gpsprot.ConfigRequest, port gpsio.OutPort, pkt []byte, tSend time.Time) error {
+	w := max(port.TransmitTime(len(pkt)), minWaitAfterSend)
+	awaitingAck := req.Ackable()
+	awaitingResp := req.AwaitingResponse(tSend)
+	if awaitingAck || awaitingResp {
+		w = time.Millisecond * 1500
+	}
 	reqID := req.ID()
 	mh.lg.Debug("sent configuration message", "msgID", reqID, "len", len(pkt))
-	if !ackable {
-		w = max(port.TransmitTime(len(pkt)), minWaitAfterSend)
-	}
 	timerCh := time.After(w)
 	for timerCh != nil {
 		select {
@@ -256,24 +281,35 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, prot gpsprot.Protocol, 
 				return mh.packetChClosed(ctx)
 			}
 			mh.packet(packet)
-			if ackable {
-				ack := prot.FindAck(pkt, tSend)
+			if awaitingResp {
+				awaitingResp = req.AwaitingResponse(tSend)
+			}
+			if awaitingAck {
+				ack := cfgtor.FindAck(pkt, tSend)
 				if ack != nil {
 					if !ack.OK {
 						return fmt.Errorf("configuration message %s rejected", reqID)
 					}
 					req.Done()
-					mh.lg.Debug("configuration accepted", "msgID", reqID, "delay", ack.TRead.Sub(tSend).String())
-					return nil
+					mh.lg.Debug("configuration message accepted", "msgID", reqID, "delay", ack.TRead.Sub(tSend).String())
+					awaitingAck = false
+					if awaitingResp {
+						mh.lg.Info("configuration message acknowledged before poll response", "msgID", reqID)
+					}
 				}
 			}
-
+			if !awaitingAck && !awaitingResp {
+				return nil
+			}
 		case <-timerCh:
 			timerCh = nil
 		}
 	}
-	if ackable {
-		return fmt.Errorf("no ack received for configuration message %s", reqID)
+	if awaitingAck {
+		return fmt.Errorf("%w %s", errNoAck, reqID)
+	}
+	if awaitingResp {
+		return fmt.Errorf("%w %s", errNoResponse, reqID)
 	}
 	return nil
 }

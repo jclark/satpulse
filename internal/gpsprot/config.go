@@ -24,15 +24,12 @@ import (
 // After a Configurator has been created, calls to ProcessPacket will pass configuration-related packets
 // to the Configurator.
 // The packets processed by ProcessPacket determine the requests returned by NextRequest.
-// If the Ackable method of a ConfigRequest returns true, then FindAck should be used
-// to find whether the acknowledgement has been received.
 type Protocol interface {
 	ProbePacket() []byte
 	ProbeOK() bool
 	SetHandler(h MsgHandler)
 	ProcessPacket(data string, tRead time.Time) error
 	Configure(target *ConfigMap, opts ConfigOptions) (Configurator, error)
-	FindAck(packet []byte, tSent time.Time) *Ack
 }
 
 type Ack struct {
@@ -45,6 +42,8 @@ type Ack struct {
 // Configurator manages the generation and interpretation of configuration-related packets.
 // It is created by the Configure method of a Protocol.
 // It will receive packets to interpret via calls to ProcessPacket on the Protocol that created it.
+// If the Ackable method of a ConfigRequest returns true, then FindAck should be used
+// to find whether the acknowledgement has been received.
 type Configurator interface {
 	// ConfigMap returns the current configuration of the GPS receiver.
 	// It should be called after NextRequest returns nil.
@@ -52,6 +51,7 @@ type Configurator interface {
 	// NextRequest returns the next request that should be sent to the GPS receiver.
 	// If there are no more requests, it returns nil, nil.
 	NextRequest() (ConfigRequest, error)
+	FindAck(packet []byte, tSent time.Time) *Ack
 }
 
 // ConfigRequest represents a request to be sent to the GPS receiver to configure it.
@@ -71,6 +71,7 @@ type ConfigRequest interface {
 	Done()
 	// ID returns a human-readable identifier for the request type.
 	ID() string
+	AwaitingResponse(tSent time.Time) bool
 }
 
 type ConfigOptions struct {

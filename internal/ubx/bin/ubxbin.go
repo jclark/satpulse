@@ -67,8 +67,12 @@ func (mid MsgID) unpack() (byte, byte) {
 }
 
 func (mid MsgID) Ackable() bool {
+	return mid.CfgClass() && mid != CfgRstID
+}
+
+func (mid MsgID) CfgClass() bool {
 	cls, _ := mid.unpack()
-	return cls == clsCfg && mid != CfgRstID
+	return cls == clsCfg
 }
 
 type Msg interface {

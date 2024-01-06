@@ -3,6 +3,7 @@ package ubx
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ubx/bin"
@@ -11,12 +12,21 @@ import (
 
 type Configurator struct {
 	ver       *Version // never nil
+	acks      ackList
+	tRead     map[bin.MsgID]time.Time
 	raw       RawConfig
 	steps     []func(*Configurator) (gpsprot.ConfigRequest, error)
 	stepIndex int
 	target    *gpsprot.ConfigMap // never nil
 	opts      gpsprot.ConfigOptions
 	survey    bool // start a survey
+}
+
+type ackList []*Ack
+
+type Ack struct {
+	msgID bin.MsgID
+	gpsprot.Ack
 }
 
 type RawConfig struct {
@@ -54,6 +64,20 @@ var newConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
 
+func newConfigurator(target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version) *Configurator {
+	steps := normalConfigSteps
+	if ver.protVerGreater(23, 1) {
+		steps = newConfigSteps
+	}
+	return &Configurator{
+		ver:    ver,
+		target: target,
+		steps:  steps,
+		opts:   opts,
+		tRead:  make(map[bin.MsgID]time.Time),
+	}
+}
+
 func (c *Configurator) ConfigMap() *gpsprot.ConfigMap {
 	return c.raw.Config(c.ver)
 }
@@ -67,6 +91,32 @@ func (c *Configurator) NextRequest() (gpsprot.ConfigRequest, error) {
 		}
 	}
 	return nil, nil
+}
+
+func (c *Configurator) FindAck(packet []byte, tSent time.Time) *gpsprot.Ack {
+	a := c.acks.findAckByMsgId(bin.PacketMsgId(packet), tSent)
+	if a == nil {
+		return nil
+	}
+	return &a.Ack
+}
+
+func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
+	switch mt := msg.(type) {
+	case *bin.AckAck:
+		c.acks.ack(mt.MsgID, true, t)
+		return true, nil
+	case *bin.AckNak:
+		c.acks.ack(mt.MsgID, false, t)
+		return true, nil
+	}
+	mid := msg.ID()
+	if mid.CfgClass() {
+		c.tRead[mid] = t
+		_, err := c.raw.AddMsg(msg)
+		return true, err
+	}
+	return false, nil
 }
 
 func (c *Configurator) reset() (gpsprot.ConfigRequest, error) {
@@ -91,7 +141,7 @@ func (c *Configurator) valGet() (gpsprot.ConfigRequest, error) {
 	if c.opts.Flash {
 		layer = bin.CfgValgetLayerFlash
 	}
-	return msgRequest{newCfgValgetRequest(missing, layer)}, nil
+	return c.msgPollRequest(newCfgValgetRequest(missing, layer)), nil
 }
 
 func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
@@ -165,27 +215,27 @@ func newCfgValsetRequest(items []ucv.Item, layers bin.CfgValsetLayer) (*bin.CfgV
 }
 
 func (c *Configurator) pollPrt() (gpsprot.ConfigRequest, error) {
-	return pollRequest{bin.CfgPrtID}, nil
+	return c.pollRequest(bin.CfgPrtID), nil
 }
 
 func (c *Configurator) pollGNSS() (gpsprot.ConfigRequest, error) {
-	return pollRequest{bin.CfgGNSSID}, nil
+	return c.pollRequest(bin.CfgGNSSID), nil
 }
 
 func (c *Configurator) pollRate() (gpsprot.ConfigRequest, error) {
-	return pollRequest{bin.CfgRateID}, nil
+	return c.pollRequest(bin.CfgRateID), nil
 }
 
 func (c *Configurator) pollNav5() (gpsprot.ConfigRequest, error) {
-	return pollRequest{bin.CfgNav5ID}, nil
+	return c.pollRequest(bin.CfgNav5ID), nil
 }
 
 func (c *Configurator) pollTmode() (gpsprot.ConfigRequest, error) {
 	switch c.ver.ProductCategory() {
 	case "FTS", "TIM":
-		return pollRequest{bin.CfgTmode2ID}, nil
+		return c.pollRequest(bin.CfgTmode2ID), nil
 	case "HPG":
-		return pollRequest{bin.CfgTmode3ID}, nil
+		return c.pollRequest(bin.CfgTmode3ID), nil
 	}
 	return nil, nil
 }
@@ -195,10 +245,7 @@ func (c *Configurator) pollTp5() (gpsprot.ConfigRequest, error) {
 	if c.ver.ProductCategory() == "FTS" {
 		tpIdx = 1
 	}
-	return pollTp5Request{
-		pollRequest: pollRequest{bin.CfgTp5ID},
-		tpIdx:       tpIdx,
-	}, nil
+	return c.pollTp5Request(tpIdx), nil
 }
 
 func (c *Configurator) enableTpMsg() (gpsprot.ConfigRequest, error) {
@@ -327,6 +374,26 @@ func (c *Configurator) setTp5() (gpsprot.ConfigRequest, error) {
 	return c.msgSetRequest(tp5)
 }
 
+func (acks *ackList) ack(msgID bin.MsgID, ok bool, t time.Time) {
+	*acks = append(*acks, &Ack{msgID, gpsprot.Ack{OK: ok, TRead: t}})
+}
+
+func (acks *ackList) findAckByMsgId(msgID bin.MsgID, tSent time.Time) (ack *Ack) {
+	stale := 0
+	for i, a := range *acks {
+		if !a.TRead.After(tSent) {
+			stale = i + 1
+		} else if a.msgID == msgID {
+			ack = a
+			break
+		}
+	}
+	if stale > 0 {
+		*acks = (*acks)[stale:]
+	}
+	return
+}
+
 func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigMap {
 	if raw == nil {
 		return nil
@@ -396,6 +463,8 @@ type msgRequest struct {
 	msg bin.Msg
 }
 
+var _ gpsprot.ConfigRequest = (*msgRequest)(nil)
+
 func (r msgRequest) Packet() []byte {
 	pkt, err := bin.Serialize(r.msg)
 	if err != nil {
@@ -408,16 +477,46 @@ func (r msgRequest) ID() string { return r.msg.ID().String() }
 
 func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
 
+func (r msgRequest) AwaitingResponse(time.Time) bool { return false }
+
 func (r msgRequest) Done() {}
 
 func (c *Configurator) msgSetRequest(msg bin.Msg) (gpsprot.ConfigRequest, error) {
 	return msgSetRequest{msgRequest{msg}, &c.raw}, nil
 }
 
+func (c *Configurator) msgPollRequest(msg bin.Msg) gpsprot.ConfigRequest {
+	return msgPollRequest{msgRequest: msgRequest{msg}, tRead: c.tRead}
+}
+
+func (c *Configurator) pollRequest(mid bin.MsgID) gpsprot.ConfigRequest {
+	return pollRequest{c.tRead, mid}
+}
+
+func (c *Configurator) pollTp5Request(tpIdx int) gpsprot.ConfigRequest {
+	return pollTp5Request{
+		pollRequest: pollRequest{c.tRead, bin.CfgTp5ID},
+		tpIdx:       tpIdx,
+	}
+}
+
+type msgPollRequest struct {
+	msgRequest
+	tRead map[bin.MsgID]time.Time
+}
+
+func (r msgPollRequest) AwaitingResponse(tSent time.Time) bool {
+	return r.tRead[r.msg.ID()].Before(tSent)
+}
+
+var _ gpsprot.ConfigRequest = (*msgPollRequest)(nil)
+
 type msgSetRequest struct {
 	msgRequest
 	raw *RawConfig
 }
+
+var _ gpsprot.ConfigRequest = (*msgSetRequest)(nil)
 
 func (r msgSetRequest) Done() {
 	_, err := r.raw.AddMsg(r.msg)
@@ -427,6 +526,7 @@ func (r msgSetRequest) Done() {
 }
 
 type pollRequest struct {
+	tRead map[bin.MsgID]time.Time
 	msgID bin.MsgID
 }
 
@@ -440,6 +540,10 @@ func (r pollRequest) Done() {}
 
 func (r pollRequest) Ackable() bool {
 	return r.msgID.Ackable()
+}
+
+func (r pollRequest) AwaitingResponse(tSent time.Time) bool {
+	return r.tRead[r.msgID].Before(tSent)
 }
 
 type pollTp5Request struct {
@@ -474,6 +578,8 @@ func (r msgRateRequest) Done() {
 }
 
 func (r msgRateRequest) Ackable() bool { return true }
+
+func (r msgRateRequest) AwaitingResponse(time.Time) bool { return false }
 
 func (r msgRateRequest) ID() string { return bin.CfgMsgID.String() }
 
