@@ -164,6 +164,10 @@ func (ls LeapSecond) StateAt(t Time) LeapSecondState {
 	return state
 }
 
+func Unix(sec int64, nsec int64) Time {
+	return Time(sec*1e9 + nsec)
+}
+
 func TimespecToTime(t unix.Timespec) Time {
 	return Time(t.Nano())
 }

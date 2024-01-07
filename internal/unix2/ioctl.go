@@ -26,6 +26,30 @@ func IoctlPTPClockGetCaps(fd int, value *PTPClockCaps) error {
 	return ioctlPtr(fd, PTP_CLOCK_GETCAPS, unsafe.Pointer(value))
 }
 
+func IoctlPTPSysOffset(fd int, value *PTPSysOffset) error {
+	return ioctlPtr(fd, PTP_SYS_OFFSET, unsafe.Pointer(value))
+}
+
+func IoctlPTPSysOffset2(fd int, value *PTPSysOffset) error {
+	return ioctlPtr(fd, PTP_SYS_OFFSET2, unsafe.Pointer(value))
+}
+
+func IoctlPTPSysOffsetExtended(fd int, value *PTPSysOffsetExtended) error {
+	return ioctlPtr(fd, PTP_SYS_OFFSET_EXTENDED, unsafe.Pointer(value))
+}
+
+func IoctlPTPSysOffsetExtended2(fd int, value *PTPSysOffsetExtended) error {
+	return ioctlPtr(fd, PTP_SYS_OFFSET_EXTENDED2, unsafe.Pointer(value))
+}
+
+func IoctlPTPSysOffsetPrecise(fd int, value *PTPSysOffsetPrecise) error {
+	return ioctlPtr(fd, PTP_SYS_OFFSET_PRECISE, unsafe.Pointer(value))
+}
+
+func IoctlPTPSysOffsetPrecise2(fd int, value *PTPSysOffsetPrecise) error {
+	return ioctlPtr(fd, PTP_SYS_OFFSET_PRECISE2, unsafe.Pointer(value))
+}
+
 func IoctlGetSerialICounter(fd int, value *SerialICounter) error {
 	return ioctlPtr(fd, unix.TIOCGICOUNT, unsafe.Pointer(value))
 }

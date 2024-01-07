@@ -166,6 +166,76 @@ func (clk *Clock) ExttsChanCount() int {
 	return int(clk.caps.N_ext_ts)
 }
 
+type Sample struct {
+	Sys time.Time
+	PHC ptime.Time
+}
+
+type ExtendedSample struct {
+	SysPre  time.Time
+	PHC     ptime.Time
+	SysPost time.Time
+}
+
+func (clk *Clock) SysOffsetExtended(nSamples int) ([]ExtendedSample, error) {
+	buf := unix2.PTPSysOffsetExtended{}
+	if nSamples <= 0 || nSamples > unix2.PTP_MAX_SAMPLES {
+		return nil, unix.EINVAL
+	}
+	buf.Samples = uint32(nSamples)
+	err := clk.wrapErr(unix2.IoctlPTPSysOffsetExtended(clk.fd, &buf), "ioctl(PTP_SYS_OFFSET_EXTENDED)")
+	if err != nil {
+		return nil, err
+	}
+	samples := make([]ExtendedSample, nSamples)
+	for i := 0; i < nSamples; i++ {
+		samples[i].init(&buf.Ts[i])
+	}
+	return samples, nil
+}
+
+func ReduceExtendedSamples(samples []ExtendedSample) Sample {
+	i := SelectExtendedSample(samples)
+	return samples[i].Average()
+}
+
+func SelectExtendedSample(samples []ExtendedSample) int {
+	best := 0
+	minInterval := samples[0].Interval()
+	for i := 1; i < len(samples); i++ {
+		if interval := samples[i].Interval(); interval < minInterval {
+			minInterval = interval
+			best = i
+		}
+	}
+	return best
+}
+
+func (xs *ExtendedSample) Interval() time.Duration {
+	return xs.SysPost.Sub(xs.SysPre)
+}
+
+func (xs *ExtendedSample) Average() Sample {
+	return Sample{
+		Sys: xs.SysPre.Add(xs.Interval() / 2),
+		PHC: xs.PHC,
+	}
+}
+
+func (xs *ExtendedSample) init(ts *[3]unix2.PTPClockTime) {
+	xs.SysPre = ptpClockTimeToTimeSys(ts[0])
+	xs.PHC = ptpClockTimeToTimePHC(ts[1])
+	xs.SysPost = ptpClockTimeToTimeSys(ts[2])
+}
+
+func ptpClockTimeToTimeSys(t unix2.PTPClockTime) time.Time {
+	return time.Unix(t.Sec, int64(t.Nsec))
+}
+
+func ptpClockTimeToTimePHC(t unix2.PTPClockTime) ptime.Time {
+	return ptime.Unix(t.Sec, int64(t.Nsec))
+}
+
 func (clk *Clock) AdjTime(d time.Duration) (ptime.Era, error) {
 	secs := int64(d) / 1e9
 	nsecs := int64(d) % 1e9
