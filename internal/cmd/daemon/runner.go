@@ -25,7 +25,7 @@ type SyncRunner struct {
 	gpsprot.DefaultHandler
 	inLog                 io.Writer
 	sseCh                 chan<- sse.Event
-	corr                  *combine.Combiner
+	cb                    *combine.Combiner
 	m                     *mon.Monitor
 	ls                    ptime.LeapSecond
 	lg                    *slog.Logger
@@ -54,7 +54,7 @@ func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pu
 		return nil, err
 	}
 	s := SyncRunner{
-		corr:  combiner,
+		cb:    combiner,
 		m:     m,
 		ls:    ls,
 		lg:    lg,
@@ -93,7 +93,7 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 						lg.Info("skipped stale PTP hardware clock timestamps", "n", nSkipped)
 						nSkipped = 0
 					}
-					s.corr.PulseEdge(e.ClockTime, e.TRead)
+					s.cb.PulseEdge(e.ClockTime, e.TRead)
 				}
 			} else {
 				lg.Debug("timestamp channel of sync worker goroutine was closed")
@@ -163,7 +163,7 @@ func (s *SyncRunner) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 		s.lg.Debug("computed TAI time from UTC time", "tai", sec)
 	}
 	secRnd := sec.Round(time.Second)
-	s.corr.TimeMsg(secRnd, tRead, mt.PulseOffset, mt.Ref)
+	s.cb.TimeMsg(secRnd, tRead, mt.PulseOffset, mt.Ref)
 	if mt.Ref != gpsprot.PrePulse && secRnd > s.lastTime {
 		s.sendEvent("time", TimeEvent{
 			UTC: s.ls.FormatTime(secRnd),
