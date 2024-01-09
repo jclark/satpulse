@@ -29,8 +29,8 @@ type LeapSecond struct {
 }
 
 type LeapSecondState struct {
-	UTCOffset   int16
-	LeapTonight LeapSecondKind
+	UTCOffset   int16          // TAI-UTC offset before the LeapTonight leap second
+	LeapTonight LeapSecondKind // future leap second, if any
 }
 
 type LeapSecondKind int16
@@ -134,6 +134,26 @@ func (ls LeapSecond) UTCtoTime(ut UTCTime) Time {
 		s = ls.UTCOffBefore
 	}
 	return Time(ut.Date.Add(ut.TimeOfDay).UnixNano() + int64(s)*1e9)
+}
+
+// SysToTime converts a system time to a TAI time.
+// The boolean return value is false if the system time is ambiguous,
+// which happens if the system time is during a positive leap second;
+// In this SysToTime returns the first TAI time that has this system time.
+// This will give incorrect results if ls is not the applicable leap second for sys.
+func (ls LeapSecond) SysToTime(sys time.Time) (Time, bool) {
+	t := Time(sys.UnixNano())
+	// This is the 00:00 following the leap second
+	leapOverTime := time.Unix(int64(ls.OffChangeTime)/1e9-int64(ls.UTCOffAfter), 0)
+	timeTillLeapOver := leapOverTime.Sub(sys)
+	if timeTillLeapOver <= 0 {
+		// leap second is already over
+		return t.Add(time.Second * time.Duration(ls.UTCOffAfter)), true
+	}
+	// the system time is in the range [23:59:59, 00:00:00) on the day of the leap second
+	// we don't know what TAI time this is, since this range will happen twice
+	ambig := ls.UTCOffAfter > ls.UTCOffBefore && timeTillLeapOver <= time.Second
+	return t.Add(time.Second * time.Duration(ls.UTCOffBefore)), !ambig
 }
 
 // Date returns the date of the leap second

@@ -98,3 +98,45 @@ func TestGNSS(t *testing.T) {
 		}
 	}
 }
+
+func TestSysToTime(t *testing.T) {
+	lsDate := time.Date(2016, time.December, 31, 0, 0, 0, 0, time.UTC)
+	lsOver := lsDate.AddDate(0, 0, 1)
+	ls := LeapSecondOnDate(lsDate, 36, 37)
+
+	testTimes := []time.Time{
+		time.Date(2024, time.January, 8, 36, 0, 0, 0, time.UTC),
+		time.Date(2023, time.December, 31, 23, 59, 59, 0, time.UTC),
+		time.Date(2023, time.December, 31, 23, 59, 59, 1e9-1, time.UTC),
+		time.Date(2024, time.January, 1, 1, 0, 0, 0, time.UTC),
+		time.Date(2016, time.January, 8, 36, 0, 0, 0, time.UTC),
+		time.Date(2015, time.January, 8, 36, 0, 0, 0, time.UTC),
+		lsOver,
+		lsOver.Add(-time.Second - time.Nanosecond),
+	}
+	for _, tm := range testTimes {
+		sysTimeTest(t, tm, ls, false)
+	}
+	ambigTimes := []time.Time{
+		lsOver.Add(-time.Second / 2),
+		lsOver.Add(-time.Second),
+		lsOver.Add(-time.Nanosecond),
+	}
+	for _, tm := range ambigTimes {
+		sysTimeTest(t, tm, ls, true)
+	}
+}
+
+func sysTimeTest(t *testing.T, tm time.Time, ls LeapSecond, ambig bool) {
+	year, month, day := tm.Date()
+	hour, min, sec := tm.Clock()
+	utm := UTC(uint16(year), uint8(month), uint8(day), uint8(hour), uint8(min), uint8(sec), int32(tm.Nanosecond()))
+	ptu := ls.UTCtoTime(utm)
+	pts, ok := ls.SysToTime(tm)
+	if ok != !ambig {
+		t.Fatalf("SysToTime(%v) = %v, want %v", tm, ok, !ambig)
+	}
+	if pts != ptu {
+		t.Fatalf("SysToTime(%v) = %v, want %v", tm, pts, ptu)
+	}
+}
