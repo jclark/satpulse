@@ -37,14 +37,13 @@ func run(dev string) error {
 	if err != nil {
 		return err
 	}
-	i := phc.SelectExtendedSample(samples)
-	xs := samples[i]
-	fmt.Printf("Sample interval: %v\n", xs.Interval())
-	sample := xs.Average()
-	fmt.Printf("System time: %v\n", sample.Sys)
-	phcTime := time.Unix(0, int64(sample.PHC))
+	i := samples.Select()
+	fmt.Printf("Sample interval: %v\n", samples.SysInterval(i))
+	p, sys := samples.Extract(i)
+	fmt.Printf("System time: %v\n", sys)
+	phcTime := time.Unix(0, int64(p))
 	fmt.Printf("TAI time from PHC: %v\n", phcTime)
-	off := phcTime.Sub(sample.Sys)
+	off := phcTime.Sub(sys)
 	off -= time.Duration(utcOffset) * time.Second
 	fmt.Printf("PHC offset (assuming %d leap seconds): %v\n", utcOffset, off)
 	return nil

@@ -166,44 +166,54 @@ func (clk *Clock) ExttsChanCount() int {
 	return int(clk.caps.N_ext_ts)
 }
 
-type Sample struct {
-	Sys time.Time
-	PHC ptime.Time
+// A MultiSample is a series of samples of the PHC and system clocks.
+// In the case of a MultiSample returned by SysOffset, the number
+// of PHC samples is the one more than the number of system clock samples.
+// In the case of a MultiSample returned by SysOffsetExtended,
+// the number of system clock samples is twice the number of PHC samples;
+// the system clock samples are the system clock times immediately before and after the PHC clock time.
+// In the case of a MultiSample returns by SysOffsetPrecise, the number of PHC samples
+// and of system clocks samples is both one.
+type MultiSample struct {
+	PHC []ptime.Time
+	Sys []time.Time
 }
 
-type ExtendedSample struct {
-	SysPre  time.Time
-	PHC     ptime.Time
-	SysPost time.Time
-}
-
-func (clk *Clock) SysOffsetExtended(nSamples int) ([]ExtendedSample, error) {
+func (clk *Clock) SysOffsetExtended(nSamples int) (MultiSample, error) {
+	ms := MultiSample{}
 	buf := unix2.PTPSysOffsetExtended{}
 	if nSamples <= 0 || nSamples > unix2.PTP_MAX_SAMPLES {
-		return nil, unix.EINVAL
+		return ms, unix.EINVAL
 	}
 	buf.Samples = uint32(nSamples)
 	err := clk.wrapErr(unix2.IoctlPTPSysOffsetExtended(clk.fd, &buf), "ioctl(PTP_SYS_OFFSET_EXTENDED)")
 	if err != nil {
-		return nil, err
+		return ms, err
 	}
-	samples := make([]ExtendedSample, nSamples)
+	ms.PHC = make([]ptime.Time, nSamples)
+	ms.Sys = make([]time.Time, nSamples*2)
 	for i := 0; i < nSamples; i++ {
-		samples[i].init(&buf.Ts[i])
+		ts := &buf.Ts[i]
+		ms.Sys[i*2] = ptpClockTimeToTimeSys(ts[0])
+		ms.PHC[i] = ptpClockTimeToTimePHC(ts[1])
+		ms.Sys[i*2+1] = ptpClockTimeToTimeSys(ts[2])
 	}
-	return samples, nil
+	return ms, nil
 }
 
-func ReduceExtendedSamples(samples []ExtendedSample) Sample {
-	i := SelectExtendedSample(samples)
-	return samples[i].Average()
+func (ms MultiSample) Reduce() (ptime.Time, time.Time) {
+	return ms.Extract(ms.Select())
 }
 
-func SelectExtendedSample(samples []ExtendedSample) int {
+func (ms MultiSample) Extract(i int) (ptime.Time, time.Time) {
+	return ms.PHC[i], ms.SysAverage(i)
+}
+
+func (ms MultiSample) Select() int {
 	best := 0
-	minInterval := samples[0].Interval()
-	for i := 1; i < len(samples); i++ {
-		if interval := samples[i].Interval(); interval < minInterval {
+	minInterval := ms.SysInterval(0)
+	for i := 1; i < len(ms.PHC); i++ {
+		if interval := ms.SysInterval(i); interval < minInterval {
 			minInterval = interval
 			best = i
 		}
@@ -211,21 +221,30 @@ func SelectExtendedSample(samples []ExtendedSample) int {
 	return best
 }
 
-func (xs *ExtendedSample) Interval() time.Duration {
-	return xs.SysPost.Sub(xs.SysPre)
+func (ms MultiSample) SysInterval(i int) time.Duration {
+	pre, post := ms.SysPrePost(i)
+	return post.Sub(pre)
 }
 
-func (xs *ExtendedSample) Average() Sample {
-	return Sample{
-		Sys: xs.SysPre.Add(xs.Interval() / 2),
-		PHC: xs.PHC,
+// SysPrePost returns the system times immediately before and after the i-th PHC sample.
+func (ms MultiSample) SysPrePost(i int) (pre, post time.Time) {
+	phcLen := len(ms.PHC)
+	switch len(ms.Sys) {
+	case phcLen * 2:
+		return ms.Sys[i*2], ms.Sys[i*2+1]
+	case phcLen + 1:
+		return ms.Sys[i], ms.Sys[i+1]
+	case 1:
+		return ms.Sys[0], ms.Sys[0]
+	default:
+		panic("invalid MultiSample sys length")
 	}
 }
 
-func (xs *ExtendedSample) init(ts *[3]unix2.PTPClockTime) {
-	xs.SysPre = ptpClockTimeToTimeSys(ts[0])
-	xs.PHC = ptpClockTimeToTimePHC(ts[1])
-	xs.SysPost = ptpClockTimeToTimeSys(ts[2])
+// SysAverage returns the average of the system times for the i-th PHC sample.
+func (ms MultiSample) SysAverage(i int) time.Time {
+	pre, post := ms.SysPrePost(i)
+	return pre.Add(post.Sub(pre) / 2)
 }
 
 func ptpClockTimeToTimeSys(t unix2.PTPClockTime) time.Time {
