@@ -42,6 +42,10 @@ func NewClient(lPathFormat, rPath string) (*Client, error) {
 	}, nil
 }
 
+func (c *Client) RemotePath() string {
+	return c.remoteAddr.String()
+}
+
 // This is safe to call from multiple goroutines
 func (c *Client) cleanup() error {
 	c.cleanupMutex.Lock()
@@ -54,11 +58,13 @@ func (c *Client) cleanup() error {
 	return os.Remove(lPath)
 }
 
-func (c *Client) Send(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) error {
+func (c *Client) Send(sys time.Time, ref ptime.Time, ls ptime.LeapSecond, timeout time.Duration) error {
 	pkt, err := RefclockSockPacket(sys, ref, ls)
 	if err != nil {
 		return err
 	}
+	tStart := time.Now()
+	c.conn.SetWriteDeadline(tStart.Add(timeout))
 	_, err = c.conn.WriteTo(pkt, c.remoteAddr)
 	if err != nil {
 		return fmt.Errorf("could not send chrony update message: %w", err)
