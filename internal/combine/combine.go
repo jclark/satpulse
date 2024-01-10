@@ -176,8 +176,9 @@ func (c *Combiner) TimeMsg(sec ptime.Time, tRead time.Time, pulseOff *time.Durat
 
 const maxInitPulses = 5
 
-// PulseEdge records the PHC time at which a pulse edge was received.
-// tRead is the system time when we received the timestamp event from the kernel.
+// PulseEdge provides information about a pulse edge received by the PHC.
+// tClock gives the PHC time when the pulse edge was timestamped by the PHC hardware.
+// tRead is the system time when this process received the timestamp event from the kernel.
 func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
 	edge := pulseEdge{tClock, tRead}
 	inc, delayed := c.edgeFilter.include(edge, &c.cfg)
