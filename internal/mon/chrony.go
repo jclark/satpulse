@@ -18,6 +18,28 @@ type NTPSample struct {
 	Ls  ptime.LeapSecond
 }
 
+type NTPServer struct {
+	sampleCh chan<- NTPSample
+}
+
+func NewNTPServer() (*NTPServer, <-chan NTPSample) {
+	sampleCh := make(chan NTPSample, 1)
+	return &NTPServer{sampleCh: sampleCh}, sampleCh
+}
+
+func (s *NTPServer) Close() {
+	close(s.sampleCh)
+}
+
+func (s *NTPServer) Sample(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) bool {
+	select {
+	case s.sampleCh <- NTPSample{Sys: sys, Ref: ref, Ls: ls}:
+		return true
+	default:
+		return false
+	}
+}
+
 const chronyTimeout = time.Second / 10
 
 // The updating goroutine must wait for a response to each request before sending another request.

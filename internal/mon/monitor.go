@@ -16,17 +16,19 @@ type Monitor struct {
 	leapSecond     ptime.LeapSecond
 	lg             *slog.Logger
 	gm             *Grandmaster // maybe nil
+	ntp            *NTPServer   // maybe nil
 	inSync         bool
 	lastRefTime    ptime.Time
 	ppsStopped     bool
 }
 
-func NewMonitor(leapSecond ptime.LeapSecond, gm *Grandmaster, lg *slog.Logger) *Monitor {
+func NewMonitor(leapSecond ptime.LeapSecond, gm *Grandmaster, ntp *NTPServer, lg *slog.Logger) *Monitor {
 	mon := &Monitor{
 		leapSecond: leapSecond,
 		lg:         lg,
 		offsets:    NewQueue[float64](samplesToKeep),
-		gm: 	   gm,
+		gm:         gm,
+		ntp:        ntp,
 	}
 	return mon
 }
@@ -56,6 +58,15 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 		mon.ppsStopped = false
 	}
 	mon.updateInSync(inSync)
+}
+
+func (mon *Monitor) SysSample(ref ptime.Time, sys time.Time) {
+	if mon.ntp == nil || !mon.inSync {
+		return
+	}
+	if !mon.ntp.Sample(sys, ref, mon.leapSecond) {
+		mon.lg.Warn("NTP update goroutine is blocking")
+	}
 }
 
 const holdoverDuration = 10 * time.Second

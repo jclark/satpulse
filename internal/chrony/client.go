@@ -10,6 +10,8 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
+const LocalSocketPathFormat = "/var/run/satpulse-chrony%d.sock"
+
 type Client struct {
 	cleanupMutex sync.Mutex
 	conn         net.PacketConn

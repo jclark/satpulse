@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/internal/chrony"
 	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/pelletier/go-toml/v2"
@@ -30,6 +31,7 @@ type Config struct {
 	HTTP       []HTTPConfig
 	LeapSecond LeapSecondConfig
 	PTP        PTPConfig
+	NTP        NTPConfig
 }
 
 type SerialConfig struct {
@@ -48,6 +50,10 @@ type PTPConfig struct {
 	MajorSdoID   uint8   `toml:"majorSdoId"`
 	MinorSdoID   uint8   `toml:"minorSdoId"`
 	Impl         PTPImpl `toml:"impl"`
+}
+
+type NTPConfig struct {
+	ChronySockPath string `toml:"chronySockPath"`
 }
 
 type PTPImpl uint8
@@ -105,6 +111,13 @@ func defaultConfig() *Config {
 
 func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {
 	return ptime.LeapSecondOnDate(cfg.Date.AsTime((time.UTC)), int16(cfg.Before), int16(cfg.After))
+}
+
+func (cfg *NTPConfig) NewClient() (*chrony.Client, error) {
+	if cfg.ChronySockPath == "" {
+		return nil, nil
+	}
+	return chrony.NewClient(chrony.LocalSocketPathFormat, cfg.ChronySockPath)
 }
 
 func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {

@@ -20,8 +20,9 @@ type Clock struct {
 }
 
 type TsEvent struct {
-	ptime.ClockTime
+	Ts        ptime.ClockTime
 	TRead     time.Time
+	TReadPHC  ptime.ClockTime
 	ChanIndex uint32
 	Err       error
 }
@@ -99,12 +100,36 @@ Loop:
 			}
 			ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
 			tClock.T = ptime.TimespecToTime(unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)})
-			event.TRead = time.Now()
-			event.ClockTime = tClock
+			event.TReadPHC, event.TRead, err = clk.sample()
+			if err != nil {
+				event.Err = err
+				event.TRead = time.Now()
+			}
+			event.Ts = tClock
 		}
 		tsEvents <- event
 	}
 	close(tsEvents)
+}
+
+// sample reads the PHC and system clocks and returns the results.
+// This can be called only from ReadWorker.
+func (clk *Clock) sample() (tClock ptime.ClockTime, tSys time.Time, err error) {
+	eraPre := clk.eraCounter.Load()
+	ms, err := clk.SysOffsetExtended(6)
+	if err != nil {
+		return
+	}
+	eraPost := clk.eraCounter.Load()
+	if eraPre == eraPost || eraPre.Uncertain() {
+		tClock.Era = eraPre
+	} else if eraPost.Uncertain() {
+		tClock.Era = eraPost
+	} else {
+		tClock.Era = eraPre + 1
+	}
+	tClock.T, tSys = ms.Reduce()
+	return
 }
 
 // This is only safe when any ReadWorker has closed its tsEvents channel

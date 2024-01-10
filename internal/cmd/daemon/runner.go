@@ -33,13 +33,13 @@ type SyncRunner struct {
 	loggedUnknownProtocol bool
 }
 
-func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
+func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, ntp *mon.NTPServer, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
 	servo, err := servo.New(clk, lg, sseCh)
 	if err != nil {
 		return nil, err
 	}
 	ls := cfg.LeapSecond.leapSecond()
-	m := mon.NewMonitor(ls, gm, lg)
+	m := mon.NewMonitor(ls, gm, ntp, lg)
 	pt := combine.PulseType{
 		EdgesPerPulse: phcFlags.Edges(),
 		PulseWidth:    pulseWidth,
@@ -83,9 +83,15 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 		select {
 		case e, ok := <-tsCh:
 			if ok {
-				if e.Era == phc.StaleEra {
+				if e.Err != nil {
+					lg.Info("error from PTP hardware clock timestamp channel", "err", e.Err)
+					if e.Ts.T.IsZero() {
+						continue
+					}
+				}
+				if e.Ts.Era == phc.StaleEra {
 					if nSkipped == 0 {
-						lg.Debug("detected a stale PTP hardware clock timestamp", "t", e.T)
+						lg.Debug("detected a stale PTP hardware clock timestamp", "t", e.Ts.T)
 					}
 					nSkipped++
 				} else {
@@ -93,7 +99,17 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 						lg.Info("skipped stale PTP hardware clock timestamps", "n", nSkipped)
 						nSkipped = 0
 					}
-					s.cb.PulseEdge(e.ClockTime, e.TRead)
+					var delay time.Duration
+					trp := e.TReadPHC.T
+					if !trp.IsZero() && !e.TReadPHC.Era.Uncertain() && e.TReadPHC.Era == e.Ts.Era {
+						delay = trp.Sub(e.Ts.T)
+						lg.Debug("PHC timestamp delay", "delay", delay)
+					}
+					// Call PulseEdge before SysSample, because the former might change the sync status
+					s.cb.PulseEdge(e.Ts, e.TRead)
+					if !trp.IsZero() {
+						s.m.SysSample(trp, e.TRead)
+					}
 				}
 			} else {
 				lg.Debug("timestamp channel of sync worker goroutine was closed")
