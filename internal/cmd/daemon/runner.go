@@ -33,7 +33,7 @@ type SyncRunner struct {
 	loggedUnknownProtocol bool
 }
 
-func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, ntp *mon.NTPServer, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
+func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, ntp *mon.ProxyRefClock, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
 	servo, err := servo.New(clk, lg, sseCh)
 	if err != nil {
 		return nil, err

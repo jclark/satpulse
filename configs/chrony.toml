@@ -2,4 +2,4 @@
 # chrony.conf would need a line like:
 # refclock SOCK /var/run/chrony.satpulse.sock poll 2 filter 4 refid GNSS
 [ntp]
-chronySockPath = "/var/run/chrony.satpulse.sock"
+sock.path = "/var/run/chrony.satpulse.sock"

@@ -15,20 +15,20 @@ type Monitor struct {
 	lastSampleTime time.Time
 	leapSecond     ptime.LeapSecond
 	lg             *slog.Logger
-	gm             *Grandmaster // maybe nil
-	ntp            *NTPServer   // maybe nil
+	gm             *Grandmaster   // maybe nil
+	rc             *ProxyRefClock // maybe nil
 	inSync         bool
 	lastRefTime    ptime.Time
 	ppsStopped     bool
 }
 
-func NewMonitor(leapSecond ptime.LeapSecond, gm *Grandmaster, ntp *NTPServer, lg *slog.Logger) *Monitor {
+func NewMonitor(leapSecond ptime.LeapSecond, gm *Grandmaster, rc *ProxyRefClock, lg *slog.Logger) *Monitor {
 	mon := &Monitor{
 		leapSecond: leapSecond,
 		lg:         lg,
 		offsets:    NewQueue[float64](samplesToKeep),
 		gm:         gm,
-		ntp:        ntp,
+		rc:         rc,
 	}
 	return mon
 }
@@ -61,11 +61,12 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 }
 
 func (mon *Monitor) SysSample(ref ptime.Time, sys time.Time) {
-	if mon.ntp == nil || !mon.inSync {
+	if mon.rc == nil || !mon.inSync {
 		return
 	}
-	if !mon.ntp.Sample(sys, ref, mon.leapSecond) {
-		mon.lg.Warn("NTP update goroutine is blocking")
+	err := mon.rc.Sample(sys, ref, mon.leapSecond)
+	if err != nil {
+		mon.lg.Warn(err.Error())
 	}
 }
 

@@ -207,13 +207,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		gm, gmUpdateCh = mon.NewGrandmaster()
 	}
 
-	chronyClient, err := cfg.NTP.NewClient()
+	rc, err := cfg.NTP.NewRefClock(lg)
 	var (
-		ntp         *mon.NTPServer
-		ntpUpdateCh <-chan mon.NTPSample
+		rcProxy *mon.ProxyRefClock
+		rcCh    <-chan mon.RefClockSample
 	)
-	if chronyClient != nil {
-		ntp, ntpUpdateCh = mon.NewNTPServer()
+	if rc != nil {
+		rcProxy, rcCh = mon.NewProxyRefClock()
 	}
 	tsCh, edges, err := StartPPS(ctx, clk, cfg.PHC)
 	if err != nil {
@@ -226,7 +226,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		pulseWidth = 0
 	}
 
-	s, err := NewSyncRunner(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gm, ntp, sseCh, inLog)
+	s, err := NewSyncRunner(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gm, rcProxy, sseCh, inLog)
 	if err != nil {
 		return err
 	}
@@ -234,8 +234,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if pmcClient != nil {
 		cmd.WaitGroupGo(&wg, func() { mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg) })
 	}
-	if chronyClient != nil {
-		cmd.WaitGroupGo(&wg, func() { mon.ChronyWorker(ctx, chronyClient, ntpUpdateCh, lg) })
+	if rc != nil {
+		cmd.WaitGroupGo(&wg, func() { mon.RefClockWorker(rc, rcCh, lg) })
 	}
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
@@ -248,8 +248,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		if gm != nil {
 			gm.Close()
 		}
-		if ntp != nil {
-			ntp.Close()
+		if rcProxy != nil {
+			rcProxy.Close()
 		}
 	})
 

@@ -99,6 +99,18 @@
 		  "minorSdoId": { "type": "integer" },
 		  "impl": { "type": "integer" }
 		}
+	  },
+	  "ntp": {
+		"type": "object",
+		"properties": {
+			"sock": {
+				"type": "object",
+				"properties": {
+					"path": { "type": "string" }
+				},
+				"required": ["path"]
+			}
+		}
 	  }
 	},
 	"required": ["phc"]

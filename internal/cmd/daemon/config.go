@@ -4,13 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/internal/chrony"
 	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
+	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/sockrefclock"
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/jclark/satpulse/internal/pmc"
@@ -53,7 +55,11 @@ type PTPConfig struct {
 }
 
 type NTPConfig struct {
-	ChronySockPath string `toml:"chronySockPath"`
+	Sock *NTPSockConfig `toml:"sock"`
+}
+
+type NTPSockConfig struct {
+	Path string `toml:"path"`
 }
 
 type PTPImpl uint8
@@ -113,11 +119,15 @@ func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {
 	return ptime.LeapSecondOnDate(cfg.Date.AsTime((time.UTC)), int16(cfg.Before), int16(cfg.After))
 }
 
-func (cfg *NTPConfig) NewClient() (*chrony.Client, error) {
-	if cfg.ChronySockPath == "" {
+func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (mon.RefClock, error) {
+	if cfg.Sock == nil || cfg.Sock.Path == "" {
 		return nil, nil
 	}
-	return chrony.NewClient(chrony.LocalSocketPathFormat, cfg.ChronySockPath)
+	rc, err := sockrefclock.New("", cfg.Sock.Path)
+	if err != nil {
+		return nil, err
+	}
+	return mon.NewLoggingSockRefClock(lg, rc), nil
 }
 
 func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {

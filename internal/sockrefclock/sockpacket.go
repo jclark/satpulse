@@ -1,4 +1,4 @@
-package chrony
+package sockrefclock
 
 import (
 	"fmt"
@@ -30,8 +30,8 @@ type sockSample struct {
 
 const sizeofSockSample = (64*3 + 32*4) / 8 // timeval is 2 64-bit ints
 
-// SockPacket creates a Chrony refclock SOCK sample packet.
-func RefclockSockPacket(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) ([]byte, error) {
+// sockPacket creates a Chrony refclock SOCK sample packet.
+func sockPacket(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) ([]byte, error) {
 	var s sockSample
 	if err := initSockSample(&s, sys, ref, ls); err != nil {
 		return nil, err

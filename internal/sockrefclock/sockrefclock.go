@@ -1,4 +1,4 @@
-package chrony
+package sockrefclock
 
 import (
 	"fmt"
@@ -10,16 +10,24 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-const LocalSocketPathFormat = "/var/run/satpulse-chrony%d.sock"
+const defaultLocalPathFormat = "/var/run/satpulse-chrony%d.sock"
 
-type Client struct {
+type SockRefClock struct {
 	cleanupMutex sync.Mutex
 	conn         net.PacketConn
 	remoteAddr   net.Addr
 	localPath    string
 }
 
-func NewClient(lPathFormat, rPath string) (*Client, error) {
+// New creates a new SockRefClock.
+// lPathFormat is a format string for the local path;
+// it must contain a single format verb for the process ID.
+// If lPathFormat is empty, a default is used.
+// The local path is created with permissions 0660.
+func New(lPathFormat, rPath string) (*SockRefClock, error) {
+	if lPathFormat == "" {
+		lPathFormat = defaultLocalPathFormat
+	}
 	pid := os.Getpid()
 	lPath := fmt.Sprintf(lPathFormat, pid)
 	_ = os.Remove(lPath)
@@ -34,7 +42,7 @@ func NewClient(lPathFormat, rPath string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not chmod: %s: %w", lPath, err)
 	}
-	return &Client{
+	return &SockRefClock{
 		localPath: lPath,
 		conn:      conn,
 		remoteAddr: &net.UnixAddr{
@@ -44,12 +52,12 @@ func NewClient(lPathFormat, rPath string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) RemotePath() string {
+func (c *SockRefClock) RemotePath() string {
 	return c.remoteAddr.String()
 }
 
 // This is safe to call from multiple goroutines
-func (c *Client) cleanup() error {
+func (c *SockRefClock) cleanup() error {
 	c.cleanupMutex.Lock()
 	defer c.cleanupMutex.Unlock()
 	lPath := c.localPath
@@ -60,13 +68,15 @@ func (c *Client) cleanup() error {
 	return os.Remove(lPath)
 }
 
-func (c *Client) Send(sys time.Time, ref ptime.Time, ls ptime.LeapSecond, timeout time.Duration) error {
-	pkt, err := RefclockSockPacket(sys, ref, ls)
+const sockRefClockTimeout = time.Second / 10
+
+func (c *SockRefClock) Sample(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) error {
+	pkt, err := sockPacket(sys, ref, ls)
 	if err != nil {
 		return err
 	}
 	tStart := time.Now()
-	c.conn.SetWriteDeadline(tStart.Add(timeout))
+	c.conn.SetWriteDeadline(tStart.Add(sockRefClockTimeout))	
 	_, err = c.conn.WriteTo(pkt, c.remoteAddr)
 	if err != nil {
 		return fmt.Errorf("could not send chrony update message: %w", err)
@@ -74,7 +84,7 @@ func (c *Client) Send(sys time.Time, ref ptime.Time, ls ptime.LeapSecond, timeou
 	return nil
 }
 
-func (c *Client) Close() error {
+func (c *SockRefClock) Close() error {
 	closeErr := c.conn.Close()
 	cleanErr := c.cleanup()
 	if closeErr != nil {
