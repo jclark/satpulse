@@ -60,31 +60,35 @@ This assumes a Linux system that uses systemd, such as Ubuntu or Fedora.
 
 SatPulse provides the following features:
 
-- It filters the pulses received from the GNSS receiver to eliminate those that appear to be spurious. This prevents spurious pulses causing spikes in the PTP hardware clock.
-
-- It automatically handles NICs that generate timestamps for both edges of a pulse (some Intel NICs, including the i210, do this).
-
-- It can talk to U-blox receivers (or clones) using the UBX protocol, which is the native binary protocol of U-blox receivers. This gives SatPulse access to the full capabilities of U-blox receivers. UBX is a bidirectonal protocol, which allows SatPulse to make changes to the receiver's configuration. It can also use the ASCII NMEA protocol, which is universally supported, but provides limited capabilities.
-
-- By using the UBX protocol, it can take advantage of the sawtooth correction (sometimes called quantization error) information that is available from some U-blox receivers. This enables more precise synchronization of the PTP hardware clock.
-
-- It allows TCP connections with the GNSS receiver attached to the serial port (similar to ser2net). This means you can run SatPulse on a Linux box (such as a Raspberry Pi) and then connect back to the GNSS receiver over TCP from a Windows PC, using a program like u-center (from U-blox), to monitor or configure the GNSS receiver, *at the same time as* it is being used for PTP. (This provides plenty of opportunity to break things, but is quite handy.)
- 
-- By using the UBX protocol, it can get the current time from the GNSS receiver as atomic time, and use that directly to set the PTP hardware clock. Both GNSS and PTP work natively using atomic time (without leap seconds) rather than UTC. With the NMEA protocol, time has to be converted to UTC and then back to atomic time.
-
 - It provides the PTP grandmaster instance with the data it needs about an external source of time. With ptp4l, this is done using the PTP management protocol.
 
     - It provides information about whether the PTP hardware clock is synchronized with GNSS receiver. This information will be provided by ptp4l to its clients, which can then use this in selecting the best grandmaster.
 
     - It provides information about how UTC time can be derived from atomic time. While GNSS and PTP both work natively in atomic time, which does not have leap seconds, they also provide information about leap seconds to enable UTC time to be derived from atomic time.
 
+- It can act as a chrony SOCK refclock (similar to `phc2sys -E refclock_sock` in LinuxPTP 4.x).
+
+- It can talk to U-blox receivers (or clones) using the UBX protocol, which is the native binary protocol of U-blox receivers. This gives SatPulse access to the full capabilities of U-blox receivers. 
+It can also use the ASCII NMEA protocol, which is universally supported, but provides limited capabilities.
+
+    - It can determine the receiver's configuration, and automatically make changes so that it works optimally for timing purposes.
+      (Changes are made only to the receiver's RAM configuration, so will be undone if the receiver is power cycled.)
+
+    - It can take advantage of the sawtooth correction (sometimes called quantization error) information that is available from some U-blox receivers.
+      This enables more precise synchronization of the PTP hardware clock.
+
+    - It can get the current time from the GNSS receiver as atomic time, and use that directly to set the PTP hardware clock.
+      Both GNSS and PTP work natively using atomic time (without leap seconds) rather than UTC. With the NMEA protocol, time has to be converted to UTC and then back to atomic time.
+
+    - It can get information about upcoming leap seconds from GNSS and provide that information to the PTP grandmaster.
+
+- It automatically handles NICs that generate timestamps for both edges of a pulse (Intel NICs, including the i210, do this). (Using the UBX protocol we can get the pulse width.)
+
+- It is aware of the quirks of the Raspberry CM4 and has code to cleanly work around them.
+
+- It allows TCP connections with the GNSS receiver attached to the serial port (similar to ser2net). This means you can run SatPulse on a Linux box (such as a Raspberry Pi) and then connect back to the GNSS receiver over TCP from a Windows PC, using a program like u-center (from U-blox), to monitor or configure the GNSS receiver, *at the same time as* it is being used for PTP. (This provides plenty of opportunity to break things, but is quite handy.)
+
 - It provides an HTTP interface for monitoring.
-
-The following features are in the process of being implemented:
-
-- It can examine the configuration of the U-blox receiver and reconfigure as necessary so it works well for timing purposes.
-
-- The PTP hardware clock on the CM4 does not work properly when the network cable is unplugged; SatPulse detects this and handles it automatically.
 
 ## What hardware to get
 
