@@ -80,11 +80,6 @@ Others
   * Configurable option not to use pulse offset/correction
 * Sanity check first sample against system clock and log warning
   * Can we figure out when system clock is supposed to be set?
-* Add separate optional stage to filter outliers (no need to use this when generating samples for chrony)
-  * This probably needs to keep track of what frequency adjustments we have made
-  * Distinguish choosing the right second (which is quite coarse-grained) from filtering outliers
-  * Need to investigate the right statistical approach
-  * Maybe only do this when we are in sync
 
 Lower priority
 * Bulletproof against invalid GPS message sequences
