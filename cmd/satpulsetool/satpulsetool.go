@@ -7,6 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/cmd/tool/configcmd"
+	"github.com/jclark/satpulse/internal/cmd/tool/pmccmd"
 	"github.com/spf13/pflag"
 )
 
@@ -55,9 +56,15 @@ func main() {
 	slog.SetDefault(lg)
 
 	exitCode := 0
+	var exec func(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (usage string, err error)
 	switch cmdName {
 	case "config":
-		usage, err := configcmd.Cmd(lg, progName, cmdName, cmdArgs)
+		exec = configcmd.Cmd
+	case "pmc":
+		exec = pmccmd.Cmd
+	}
+	if exec != nil {
+		usage, err := exec(lg, progName, cmdName, cmdArgs)
 		if err != nil {
 			cmd.ErrPrintln(progName, err)
 		}
@@ -69,12 +76,11 @@ func main() {
 				exitCode = 1
 			}
 		}
-	default:
+	} else {
 		cmd.ErrPrintln(progName, "unknown command: "+cmdName)
 		usage(progName, flags)
 		exitCode = 2
 	}
-
 	if exitCode != 0 {
 		os.Exit(exitCode)
 	}
@@ -82,7 +88,9 @@ func main() {
 
 func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "Usage:", progName, "[global-options] command [options] arg...")
-	fmt.Fprintln(os.Stderr, "Commands: config")
+	fmt.Fprintln(os.Stderr, "Commands:")
+	fmt.Fprintln(os.Stderr, "  config - configure a GPS device")
+	fmt.Fprintln(os.Stderr, "  pmc - test PTP management client")
 	fmt.Fprintln(os.Stderr, "Global options:")
 	flags.PrintDefaults()
 }

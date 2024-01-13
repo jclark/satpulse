@@ -1,12 +1,13 @@
-package main
+package pmccmd
 
 import (
-	"flag"
 	"fmt"
-	"os"
+	"log/slog"
 	"strconv"
 
+	"github.com/jclark/satpulse/internal/cmd/tool"
 	"github.com/jclark/satpulse/internal/pmc"
+	"github.com/spf13/pflag"
 )
 
 type hexUint8 int
@@ -24,25 +25,31 @@ func (i *hexUint8) String() string {
 	return fmt.Sprintf("0x%02x", uint8(*i))
 }
 
-func hexUint8Flag(name string, value hexUint8, usage string) *hexUint8 {
-	flag.CommandLine.Var(&value, name, usage)
+func (i *hexUint8) Type() string {
+	return "int"
+}
+
+func hexUint8Flag(flags *pflag.FlagSet, name string, value hexUint8, usage string) *hexUint8 {
+	flags.Var(&value, name, usage)
 	return &value
 }
 
-func main() {
-	msg := createMsg()
+func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage string, err error) {
+	msg, usageFunc, err := createMsg(cmdName, args)
+	if msg == nil {
+		usage = usageFunc(progName)
+		return
+	}
 	cfg := pmc.NewClientConfig()
 	cfg.SetDefaults()
 	response, err := sendRecv(cfg, msg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return
 	}
 	if response != nil {
-		fmt.Printf("Response: %+v\n", response)
+		fmt.Printf("Response: %+v\n", response.Value())
 	}
-	if err != nil {
-		os.Exit(1)
-	}
+	return
 }
 
 func sendRecv(cfg *pmc.ClientConfig, msg pmc.MgmtMsg) (pmc.MgmtMsg, error) {
@@ -58,12 +65,18 @@ func sendRecv(cfg *pmc.ClientConfig, msg pmc.MgmtMsg) (pmc.MgmtMsg, error) {
 	return msg, err
 }
 
-func createMsg() pmc.MgmtMsg {
-	utcOffset := flag.Int("utcOffset", 37, "TAI-UTC offset in seconds")
-	clockClass := hexUint8Flag("clockClass", 0x6, "clock class")
-	clockAccuracy := hexUint8Flag("clockAccuracy", 0x23, "clock accuracy")
-	offsetScaledLogVariance := flag.Uint("offsetScaledLogVariance", 0xFFFF, "offset scaled log variance")
-	timeSource := hexUint8Flag("timeSource", 0x20, "time source")
+const summary = `[-h|--help] [--utfOffset N] [--clockClass N] [--clockAccuracy N] [--offsetScaledLogVariance N] [--timeSource N] [--leap61] [--leap59] [--currentUtcOffsetValid] [--ptpTimescale] [--timeTraceable] [--frequencyTraceable] [--get mgmtID]`
+
+func createMsg(cmdName string, args[]string) (pmc.MgmtMsg, func(string) string, error) {
+	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
+	help := false
+	flags.BoolVarP(&help, "help", "h", false, "show help")
+
+	utcOffset := flags.Int("utcOffset", 37, "TAI-UTC offset in seconds")
+	clockClass := hexUint8Flag(flags, "clockClass", 0x6, "clock class")
+	clockAccuracy := hexUint8Flag(flags, "clockAccuracy", 0x23, "clock accuracy")
+	offsetScaledLogVariance := flags.Uint("offsetScaledLogVariance", 0xFFFF, "offset scaled log variance")
+	timeSource := hexUint8Flag(flags, "timeSource", 0x20, "time source")
 	timeBoolFlags := map[string]*struct {
 		flag  pmc.TimeFlags
 		usage string
@@ -77,12 +90,19 @@ func createMsg() pmc.MgmtMsg {
 		"frequencyTraceable":    {usage: "frequency is traceable", flag: pmc.FrequencyTraceable},
 	}
 	for name, f := range timeBoolFlags {
-		flag.BoolVar(&f.set, name, false, f.usage)
+		flags.BoolVar(&f.set, name, false, f.usage)
 	}
-	getMID := flag.Uint("get", 0, "management message ID to get")
-	flag.Parse()
+	getMID := flags.Uint("get", 0, "management message ID to get")
+	usage := tool.UsageFunc(cmdName, summary, flags)
+	err := flags.Parse(args)
+	if err != nil {
+		return nil, usage, err
+	}
+	if help {
+		return nil, usage, nil
+	}
 	if *getMID != 0 {
-		return pmc.NewMgmtGetMsg(pmc.MgmtID(*getMID))
+		return pmc.NewMgmtGetMsg(pmc.MgmtID(*getMID)), nil, nil
 	}
 	var gs pmc.GrandmasterSettings
 	gs.UTCOffset = int16(*utcOffset)
@@ -95,5 +115,5 @@ func createMsg() pmc.MgmtMsg {
 			gs.TimeFlags |= f.flag
 		}
 	}
-	return pmc.NewMgmtSetMsg(gs)
+	return pmc.NewMgmtSetMsg(gs), nil, nil
 }
