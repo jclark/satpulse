@@ -177,7 +177,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
     * use in conjunction with no configuration for input to correlator
 * Option for satpulsetool to get survey result
 * satpulsetool should use NDELAY TCP option
-* Need to check we got something back from a poll (not just check the ACK)
 * Message enablement should be in ConfigMap rather than ConfigOptions so we can turn messages off
    * `satpulsetool config --nmea` should probably turn off time-related UBX messages
    * Do we model message rate in the property?
