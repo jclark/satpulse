@@ -5,6 +5,8 @@ package pmc
 import (
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -30,10 +32,36 @@ func (mid MgmtID) String() string {
 		return "PARENT_DATA_SET"
 	case MIDTimePropertiesDataSet:
 		return "TIME_PROPERTIES_DATA_SET"
+	case MIDUTCProperties:
+		return "UTC_PROPERTIES"
 	case MIDGrandmasterSettings:
 		return "GRANDMASTER_SETTINGS_NP"
 	}
 	return fmt.Sprintf("0x%04x", uint16(mid))
+}
+
+func ParseMID(s string) (MgmtID, error) {
+	switch strings.ToUpper(strings.ReplaceAll(s, "-", "_")) {
+	case "NULL_PTP_MANAGEMENT":
+		return MIDNullPTPManagement, nil
+	case "DEFAULT_DATA_SET":
+		return MIDDefaultDataSet, nil
+	case "CURRENT_DATA_SET":
+		return MIDCurrentDataSet, nil
+	case "PARENT_DATA_SET":
+		return MIDParentDataSet, nil
+	case "TIME_PROPERTIES_DATA_SET":
+		return MIDTimePropertiesDataSet, nil
+	case "UTC_PROPERTIES":
+		return MIDUTCProperties, nil
+	case "GRANDMASTER_SETTINGS_NP":
+		return MIDGrandmasterSettings, nil
+	}
+	mid, err := strconv.ParseUint(s, 0, 16)
+	if err == nil {
+		return MgmtID(mid), nil
+	}
+	return 0, fmt.Errorf("invalid management ID: %s", s)
 }
 
 func unmarshalMID(r io.Reader, mid MgmtID) (MgmtMsg, error) {
