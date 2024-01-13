@@ -1,0 +1,17 @@
+# This is systemd unit file for ptp4l for Debian.
+# It should be installed as /etc/systemd/system/ptp4l.service
+# It is used instead of the ptp4l@.service that comes with the linunxptp package on Debian.
+# This is necessary for the Raspberry Pi CM4, since the ptp4l@.service will start too early
+# (before the PTP hardware clock is attached to the network interface).
+[Unit]
+Description=Precision Time Protocol (PTP) service
+Documentation=man:ptp4l
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/ptp4l -f /etc/linuxptp/ptp4l.conf
+
+[Install]
+WantedBy=multi-user.target
