@@ -90,7 +90,7 @@ func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "Usage:", progName, "[global-options] command [options] arg...")
 	fmt.Fprintln(os.Stderr, "Commands:")
 	fmt.Fprintln(os.Stderr, "  config - configure a GPS device")
-	fmt.Fprintln(os.Stderr, "  pmc - test PTP management client")
+	fmt.Fprintln(os.Stderr, "  pmc - send a PTP management message to ptp4l process")
 	fmt.Fprintln(os.Stderr, "Global options:")
 	flags.PrintDefaults()
 }
