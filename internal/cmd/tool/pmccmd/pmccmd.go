@@ -1,6 +1,7 @@
 package pmccmd
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -37,7 +38,9 @@ func hexUint8Flag(flags *pflag.FlagSet, name string, value hexUint8, usage strin
 func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage string, err error) {
 	msg, usageFunc, err := createMsg(cmdName, args)
 	if msg == nil {
-		usage = usageFunc(progName)
+		if usageFunc != nil {
+			usage = usageFunc(progName)
+		}
 		return
 	}
 	cfg := pmc.NewClientConfig()
@@ -65,34 +68,37 @@ func sendRecv(cfg *pmc.ClientConfig, msg pmc.MgmtMsg) (pmc.MgmtMsg, error) {
 	return msg, err
 }
 
-const summary = `[-h|--help] [--utfOffset N] [--clockClass N] [--clockAccuracy N] [--offsetScaledLogVariance N] [--timeSource N] [--leap61] [--leap59] [--currentUtcOffsetValid] [--ptpTimescale] [--timeTraceable] [--frequencyTraceable] [--get mgmtID]`
+const summary = `[-h|--help] [-s|--set] [-m|--mid ID]
+     [--utc-offset N] [--clock-class N] [--clock-accuracy N] [--offset-scaled-log-variance N] [--time-source N]
+	 [--leap61] [--leap59] [--current-utc-offset-valid] [--ptp-timescale] [--time-traceable] [--frequency-traceable]`
 
-func createMsg(cmdName string, args[]string) (pmc.MgmtMsg, func(string) string, error) {
+func createMsg(cmdName string, args []string) (pmc.MgmtMsg, func(string) string, error) {
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	help := false
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 
-	utcOffset := flags.Int("utcOffset", 37, "TAI-UTC offset in seconds")
-	clockClass := hexUint8Flag(flags, "clockClass", 0x6, "clock class")
-	clockAccuracy := hexUint8Flag(flags, "clockAccuracy", 0x23, "clock accuracy")
-	offsetScaledLogVariance := flags.Uint("offsetScaledLogVariance", 0xFFFF, "offset scaled log variance")
-	timeSource := hexUint8Flag(flags, "timeSource", 0x20, "time source")
+	set := flags.BoolP("set", "s", false, "set the grandmaster settings")
+	utcOffset := flags.Int("utc-offset", 37, "TAI-UTC offset in seconds")
+	clockClass := hexUint8Flag(flags, "clock-class", 0x6, "clock class")
+	clockAccuracy := hexUint8Flag(flags, "clock-acccuracy", 0x23, "clock accuracy")
+	offsetScaledLogVariance := flags.Uint("offset-scaled-log-variance", 0xFFFF, "offset scaled log variance")
+	timeSource := hexUint8Flag(flags, "time-source", 0x20, "time source")
 	timeBoolFlags := map[string]*struct {
 		flag  pmc.TimeFlags
 		usage string
 		set   bool
 	}{
-		"leap61":                {usage: "positive leap second at end of current UTC day", flag: pmc.Leap61},
-		"leap59":                {usage: "negative leap second at end of current UTC day", flag: pmc.Leap59},
-		"currentUtcOffsetValid": {usage: "current UTC offset is traceable", flag: pmc.CurrentUTCOffsetValid},
-		"ptpTimescale":          {usage: "use PTP timescale", flag: pmc.PTPTimescale},
-		"timeTraceable":         {usage: "time is traceable", flag: pmc.TimeTraceable},
-		"frequencyTraceable":    {usage: "frequency is traceable", flag: pmc.FrequencyTraceable},
+		"leap61":                   {usage: "positive leap second at end of current UTC day", flag: pmc.Leap61},
+		"leap59":                   {usage: "negative leap second at end of current UTC day", flag: pmc.Leap59},
+		"current-utc-offset-valid": {usage: "current UTC offset is traceable", flag: pmc.CurrentUTCOffsetValid},
+		"ptp-timescale":            {usage: "use PTP timescale", flag: pmc.PTPTimescale},
+		"time-traceable":           {usage: "time is traceable", flag: pmc.TimeTraceable},
+		"frequency-traceable":      {usage: "frequency is traceable", flag: pmc.FrequencyTraceable},
 	}
 	for name, f := range timeBoolFlags {
 		flags.BoolVar(&f.set, name, false, f.usage)
 	}
-	getMID := flags.Uint("get", 0, "management message ID to get")
+	midFlag := flags.StringP("mid", "m", "GRANDMASTER_SETTINGS_NP", "management message ID to get")
 	usage := tool.UsageFunc(cmdName, summary, flags)
 	err := flags.Parse(args)
 	if err != nil {
@@ -101,8 +107,15 @@ func createMsg(cmdName string, args[]string) (pmc.MgmtMsg, func(string) string, 
 	if help {
 		return nil, usage, nil
 	}
-	if *getMID != 0 {
-		return pmc.NewMgmtGetMsg(pmc.MgmtID(*getMID)), nil, nil
+	mid, err := pmc.ParseMID(*midFlag)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !*set {
+		return pmc.NewMgmtGetMsg(pmc.MgmtID(mid)), nil, nil
+	}
+	if mid != pmc.MIDGrandmasterSettings {
+		return nil, nil, errors.New("only GRANDMASTER_SETTINGS_NP can be set")
 	}
 	var gs pmc.GrandmasterSettings
 	gs.UTCOffset = int16(*utcOffset)
