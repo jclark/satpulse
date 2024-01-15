@@ -17,7 +17,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/phc"
-	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/ubx"
@@ -194,16 +193,12 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	var (
 		gm         *mon.Grandmaster
 		gmUpdateCh <-chan mon.GrandmasterUpdateRequest
-		pmcClient  *pmc.Client
 	)
-	switch cfg.PTP.Impl {
-	case PTPImplNone:
-		// do nothing
-	case PTPImplPTP4L:
-		pmcClient, err = cfg.PTP.NewClient()
-		if err != nil {
-			return err
-		}
+	pmcClient, err := cfg.PTP.NewClient()
+	if err != nil {
+		return err
+	}
+	if pmcClient != nil {
 		gm, gmUpdateCh = mon.NewGrandmaster()
 	}
 

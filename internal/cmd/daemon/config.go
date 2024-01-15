@@ -2,11 +2,9 @@ package daemon
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
@@ -47,11 +45,14 @@ type LeapSecondConfig struct {
 }
 
 type PTPConfig struct {
-	UDSAddress   string  `toml:"udsAddress"`
-	DomainNumber uint8   `toml:"domainNumber"`
-	MajorSdoID   uint8   `toml:"majorSdoId"`
-	MinorSdoID   uint8   `toml:"minorSdoId"`
-	Impl         PTPImpl `toml:"impl"`
+	DomainNumber uint8        `toml:"domainNumber"`
+	MajorSdoID   uint8        `toml:"majorSdoId"`
+	MinorSdoID   uint8        `toml:"minorSdoId"`
+	PTP4L        *PTP4LConfig `toml:"ptp4l"`
+}
+
+type PTP4LConfig struct {
+	UDSAddress string `toml:"udsAddress"`
 }
 
 type NTPConfig struct {
@@ -62,23 +63,10 @@ type NTPSockConfig struct {
 	Path string `toml:"path"`
 }
 
-type PTPImpl uint8
-
-const (
-	PTPImplNone PTPImpl = iota
-	PTPImplPTP4L
-	PTPImplPTP4U
-)
-
 var leapSecondDefault = LeapSecondConfig{
 	Date:   toml.LocalDate{Year: 2016, Month: int(time.December), Day: 31},
 	Before: 36,
 	After:  37,
-}
-
-var ptpConfigDefault = PTPConfig{
-	UDSAddress: pmc.PTP4LSocketPath,
-	Impl:       PTPImplPTP4L,
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -111,7 +99,6 @@ func defaultConfig() *Config {
 	cfg := new(Config)
 	cfg.Receiver = receiverDefault
 	cfg.LeapSecond = leapSecondDefault
-	cfg.PTP = ptpConfigDefault
 	return cfg
 }
 
@@ -131,8 +118,12 @@ func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (mon.RefClock, error) {
 }
 
 func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
+	ptp4l := cfg.PTP4L
+	if ptp4l == nil {
+		return nil, nil
+	}
 	cc := pmc.NewClientConfig()
-	cc.RemoteSocketPath = cfg.UDSAddress
+	cc.RemoteSocketPath = ptp4l.UDSAddress
 	cl, err := pmc.NewClient(cc)
 	if err != nil {
 		return nil, err
@@ -143,30 +134,3 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 	return cl, nil
 }
 
-func (pi PTPImpl) String() string {
-	switch pi {
-	case PTPImplPTP4L:
-		return "ptp4l"
-	case PTPImplPTP4U:
-		return "ptp4u"
-	case PTPImplNone:
-		return "none"
-	default:
-		return fmt.Sprintf("PTPImpl(%d)", pi)
-	}
-}
-
-func (pi *PTPImpl) UnmarshalText(text []byte) error {
-	switch strings.ToLower(string(text)) {
-	case "ptp4l":
-		*pi = PTPImplPTP4L
-	// Not implemented yet
-	//case "ptp4u":
-	//	*pi = PTPImplPTP4U
-	case "none":
-		*pi = PTPImplNone
-	default:
-		return fmt.Errorf("invalid PTP implementation: %q", string(text))
-	}
-	return nil
-}

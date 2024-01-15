@@ -35,17 +35,16 @@ func TestLoadConfig(t *testing.T) {
 
 func TestPTPConfig(t *testing.T) {
 	cfgStr := `[ptp]
-	udsAddress = "/tmp/ptp4l"
+	ptp4l.udsAddress = "/tmp/ptp4l"
 	domainNumber = 1
 	majorSdoId = 2
-	minorSdoId = 12
-	impl = "none"`
+	minorSdoId = 12`
 	r := strings.NewReader(cfgStr)
 	cfg, err := readConfig(r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.PTP.UDSAddress != "/tmp/ptp4l" || cfg.PTP.DomainNumber != 1 || cfg.PTP.MajorSdoID != 2 || cfg.PTP.MinorSdoID != 12 || cfg.PTP.Impl != PTPImplNone {
+	if cfg.PTP.PTP4L.UDSAddress != "/tmp/ptp4l" || cfg.PTP.DomainNumber != 1 || cfg.PTP.MajorSdoID != 2 || cfg.PTP.MinorSdoID != 12 {
 		t.Fatal("PTP config not parsed correctly")
 	}
 }
