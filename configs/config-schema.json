@@ -92,12 +92,17 @@
 	  },
 	  "ptp": {
 		"type": "object",
-		"properties": {
-		  "udsAddress": { "type": "string" },
+		"properties": {		  
 		  "domainNumber": { "type": "integer" },
 		  "majorSdoId": { "type": "integer" },
 		  "minorSdoId": { "type": "integer" },
-		  "impl": { "type": "integer" }
+		  "ptp4l": {
+			"type": "object",
+			"properties": {
+				"udsAddress": { "type": "string" }
+			},
+			"required": ["udsAddress"]
+		  }
 		}
 	  },
 	  "ntp": {
