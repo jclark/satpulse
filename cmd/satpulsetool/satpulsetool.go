@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/jclark/satpulse/internal/cmd"
-	"github.com/jclark/satpulse/internal/cmd/tool/configcmd"
+	"github.com/jclark/satpulse/internal/cmd/tool/gpscmd"
 	"github.com/jclark/satpulse/internal/cmd/tool/pmccmd"
 	"github.com/spf13/pflag"
 )
@@ -58,8 +58,8 @@ func main() {
 	exitCode := 0
 	var exec func(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (usage string, err error)
 	switch cmdName {
-	case "config":
-		exec = configcmd.Cmd
+	case "gps":
+		exec = gpscmd.Cmd
 	case "pmc":
 		exec = pmccmd.Cmd
 	}
@@ -89,7 +89,7 @@ func main() {
 func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "Usage:", progName, "[global-options] command [options] arg...")
 	fmt.Fprintln(os.Stderr, "Commands:")
-	fmt.Fprintln(os.Stderr, "  config - configure a GPS device")
+	fmt.Fprintln(os.Stderr, "  gps - configure a GPS device")
 	fmt.Fprintln(os.Stderr, "  pmc - send a PTP management message to ptp4l process")
 	fmt.Fprintln(os.Stderr, "Global options:")
 	flags.PrintDefaults()

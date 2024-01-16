@@ -1,4 +1,4 @@
-package configcmd
+package gpscmd
 
 import (
 	"fmt"
@@ -41,17 +41,17 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.BoolVar(&vars.flash, "flash", false, "save the configuration changes to flash memory on the GNSS receiver")
-	flags.BoolVar(&vars.reset, "reset", false, "reset the GNSS receiver")
-	flags.BoolVar(&vars.nmea, "nmea", false, "enable NMEA output from the GNSS receiver")
+	flags.BoolVar(&vars.flash, "flash", false, "save the configuration changes to flash memory on the GPS receiver")
+	flags.BoolVar(&vars.reset, "reset", false, "reset the GPS receiver")
+	flags.BoolVar(&vars.nmea, "nmea", false, "enable NMEA output from the GPS receiver")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device to configure")
-	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS")
+	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.IntVarP(&vars.localSpeed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
-	flags.IntVar(&vars.remoteSpeed, "speed", 0, "set GNSS receiver baud-rate in `bps`")
+	flags.IntVar(&vars.remoteSpeed, "speed", 0, "set GPS receiver baud-rate in `bps`")
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
-	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the receiver to enable a PPS signal")
+	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
 	flags.BoolVar(&vars.disableTimeMode, "disable-time-mode", false, "disable time mode")
-	flags.BoolVar(&vars.survey, "survey", false, "instruct the receiver to perform a survey")
+	flags.BoolVar(&vars.survey, "survey", false, "instruct the GPS receiver to perform a survey")
 	flags.Uint32Var(&vars.surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
 	flags.Float64Var(&vars.surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
 	usage := tool.UsageFunc(cmdName, summary, flags)

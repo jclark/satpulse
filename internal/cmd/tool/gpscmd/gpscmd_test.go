@@ -1,4 +1,4 @@
-package configcmd
+package gpscmd
 
 import (
 	"testing"
