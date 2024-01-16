@@ -1,7 +1,6 @@
 package sockrefclock
 
 import (
-	"fmt"
 	"time"
 	"unsafe"
 
@@ -43,12 +42,10 @@ func sockPacket(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) ([]byte, err
 }
 
 func initSockSample(s *sockSample, sys time.Time, ref ptime.Time, ls ptime.LeapSecond) error {
-	sysTAI, ok := ls.SysToTime(sys)
-	if !ok {
-		return fmt.Errorf("cannot create sample for system time %v because it occurs during a positive leap second", sys)
-	}
 	s.tv = unix.Timeval{Sec: sys.Unix(), Usec: int64(sys.Nanosecond() / 1000)}
-	s.offset = ref.Sub(sysTAI).Seconds()
+	// chrony will ignore measurements in the vicinity of leap seconds, so we don't have to worry about them
+	// but I still wonder if we should filter out cases where either of the two times are ambiguous
+	s.offset = ls.TimeToSys(ref).Sub(sys).Seconds()
 	s.leap = refSockLeap(ref, ls)
 	s.magic = sockMagic
 	return nil
