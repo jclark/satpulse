@@ -156,6 +156,15 @@ func (ls LeapSecond) SysToTime(sys time.Time) (Time, bool) {
 	return t.Add(time.Second * time.Duration(ls.UTCOffBefore)), !ambig
 }
 
+// TimeToSys converts a TAI time to a system time.
+func (ls LeapSecond) TimeToSys(t Time) time.Time {
+	off := ls.UTCOffAfter
+	if t < ls.OffChangeTime {
+		off = ls.UTCOffBefore
+	}
+	return time.Unix(-int64(off), int64(t)).In(time.UTC)
+}
+
 // Date returns the date of the leap second
 // The leap second occurs at the end of the UTC day of that date.
 func (ls LeapSecond) Date() time.Time {

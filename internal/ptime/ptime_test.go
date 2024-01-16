@@ -99,7 +99,7 @@ func TestGNSS(t *testing.T) {
 	}
 }
 
-func TestSysToTime(t *testing.T) {
+func TestSysTime(t *testing.T) {
 	lsDate := time.Date(2016, time.December, 31, 0, 0, 0, 0, time.UTC)
 	lsOver := lsDate.AddDate(0, 0, 1)
 	ls := LeapSecondOnDate(lsDate, 36, 37)
@@ -116,6 +116,7 @@ func TestSysToTime(t *testing.T) {
 	}
 	for _, tm := range testTimes {
 		sysTimeTest(t, tm, ls, false)
+		timeSysTest(t, tm, ls)
 	}
 	ambigTimes := []time.Time{
 		lsOver.Add(-time.Second / 2),
@@ -138,5 +139,16 @@ func sysTimeTest(t *testing.T, tm time.Time, ls LeapSecond, ambig bool) {
 	}
 	if pts != ptu {
 		t.Fatalf("SysToTime(%v) = %v, want %v", tm, pts, ptu)
+	}
+}
+
+func timeSysTest(t *testing.T, tm time.Time, ls LeapSecond) {
+	year, month, day := tm.Date()
+	hour, min, sec := tm.Clock()
+	utm := UTC(uint16(year), uint8(month), uint8(day), uint8(hour), uint8(min), uint8(sec), int32(tm.Nanosecond()))
+	ptu := ls.UTCtoTime(utm)
+	pts := ls.TimeToSys(ptu)
+	if pts != tm {
+		t.Fatalf("TimeToSys(%v) = %v, want %v", ptu, pts, tm)
 	}
 }
