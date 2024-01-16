@@ -19,7 +19,7 @@
 		  "speed": { "type": "integer" }
 		}
 	  },
-	  "receiver": {
+	  "gps": {
 		"type": "object",
 		"properties": {
 		  "timeMode": { "type": "boolean" },

@@ -8,21 +8,21 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
-type ReceiverConfig struct {
+type GPSConfig struct {
 	TimeMode   bool    `toml:"timeMode"`
 	Resurvey   bool    `toml:"resurvey"`
 	SurveyTime uint32  `toml:"surveyTime"`
 	SurveyAcc  float64 `toml:"surveyAcc"`
 }
 
-var receiverDefault = ReceiverConfig{
+var gpsDefault = GPSConfig{
 	TimeMode:   true,
 	Resurvey:   false,
 	SurveyTime: 2000, // 2000 seconds
 	SurveyAcc:  20,   // 20 meters
 }
 
-func gpsConfig(r ReceiverConfig) (*gpsprot.ConfigMap, gpsprot.ConfigOptions, error) {
+func (r GPSConfig) gpsprot() (*gpsprot.ConfigMap, gpsprot.ConfigOptions, error) {
 	m := gpscfg.RequiredConfig()
 	opts := gpscfg.RequiredOptions()
 	if !r.TimeMode {

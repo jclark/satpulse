@@ -25,7 +25,7 @@ var defaultConfigFile = defaultConfigFileConst
 
 type Config struct {
 	Serial     SerialConfig
-	Receiver   ReceiverConfig
+	GPS        GPSConfig
 	PHC        PHCConfig
 	Proxy      proxy.Config
 	HTTP       []HTTPConfig
@@ -97,7 +97,7 @@ func readConfig(r io.Reader) (*Config, error) {
 
 func defaultConfig() *Config {
 	cfg := new(Config)
-	cfg.Receiver = receiverDefault
+	cfg.GPS = gpsDefault
 	cfg.LeapSecond = leapSecondDefault
 	return cfg
 }
@@ -133,4 +133,3 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 	cl.MinorSdoID = cfg.MinorSdoID
 	return cl, nil
 }
-
