@@ -75,4 +75,17 @@ func TestOverlapADev(t *testing.T) {
 		}
 		m *= 2
 	}
+	// Test with empty phase data
+	emptyData := []float64{}
+	if !math.IsNaN(OverlapADev(emptyData, 1.0, 1)) {
+		t.Errorf("OverlapADev() with empty data should return NaN")
+	}
+
+	// Test with insufficient length relative to m
+	insufficientData := []float64{1.0, 2.0, 3.0, 4.0} // Length is less than 2*m for m > 2
+	for m := 3; m <= 5; m++ {
+		if !math.IsNaN(OverlapADev(insufficientData, 1.0, m)) {
+			t.Errorf("OverlapADev() with insufficient data length for m=%v should return NaN", m)
+		}
+	}
 }

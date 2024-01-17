@@ -21,6 +21,12 @@ func OverlapADev[T Numeric](phase []T, tau0 T, m int) float64 {
 	if nSamples <= 0 {
 		return math.NaN()
 	}
+	if tau0 <= 0 {
+		panic("tau0 must be positive")
+	}
+	if m <= 0 {
+		panic("m must be positive")
+	}
 	sum := 0.0
 	for i := 0; i < nSamples; i++ {
 		v := float64(phase[i+2*m] - 2*phase[i+m] + phase[i])
