@@ -3,6 +3,7 @@ package allan
 import (
 	"math"
 	"testing"
+	"time"
 )
 
 func TestOverlapADev(t *testing.T) {
@@ -58,6 +59,19 @@ func TestOverlapADev(t *testing.T) {
 		got := OverlapADev(phaseData, 1.0, m)
 		if math.Abs(got-adev) > 1e-15 {
 			t.Errorf("OverlapADev() = %v, want %v", got, adev)
+		}
+		m *= 2
+	}
+
+	durations := make([]time.Duration, len(phaseData))
+	for i, f := range phaseData {
+		durations[i] = time.Duration(f * float64(time.Second))
+	}
+	m = 1
+	for _, adev := range adevs {
+		got := OverlapADev(durations, time.Second, m)
+		if math.Abs(got-adev) > 1e-9 {
+			t.Errorf("OverlapADevDurations() = %v, want %v", got, adev)
 		}
 		m *= 2
 	}
