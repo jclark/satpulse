@@ -17,6 +17,7 @@ type Numeric interface {
 // T will typically be float64 or time.Duration; in the latter case,
 // tau0 should be time.Second for PPS data.
 func OverlapADev[T Numeric](phase []T, tau0 T, m int) float64 {
+	// See Handbook of Frequency Stability Analysis, section 5.2.4
 	nSamples := len(phase) - 2*m
 	if nSamples <= 0 {
 		return math.NaN()
