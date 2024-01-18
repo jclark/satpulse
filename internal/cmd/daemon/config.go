@@ -1,7 +1,7 @@
 package daemon
 
 import (
-	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -79,9 +79,8 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 func configErrorDetail(err error) string {
-	var derr *toml.DecodeError
-	if errors.As(err, &derr) {
-		return derr.String()
+	if s, ok := err.(fmt.Stringer); ok {
+		return s.String()
 	}
 	return ""
 }
