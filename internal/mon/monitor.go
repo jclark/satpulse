@@ -35,7 +35,6 @@ func NewMonitor(leapSecond ptime.LeapSecond, gm *Grandmaster, rc *ProxyRefClock,
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	off := local.T.Sub(ref)
-	mon.offsets.Append(float64(int64(off)) / 1e9)
 	ref = ref.Round(time.Second)
 	if !mon.lastRefTime.IsZero() {
 		diff := int(ref.Sub(mon.lastRefTime) / time.Second)
@@ -47,6 +46,7 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 		}
 	}
 	mon.lastRefTime = ref
+	mon.offsets.Append(off.Seconds())
 	if delayed {
 		return
 	}
