@@ -125,6 +125,7 @@ func TestSysTime(t *testing.T) {
 	}
 	for _, tm := range ambigTimes {
 		sysTimeTest(t, tm, ls, true)
+		timeSysTest(t, tm, ls)
 	}
 }
 
@@ -150,5 +151,20 @@ func timeSysTest(t *testing.T, tm time.Time, ls LeapSecond) {
 	pts := ls.TimeToSys(ptu)
 	if pts != tm {
 		t.Fatalf("TimeToSys(%v) = %v, want %v", ptu, pts, tm)
+	}
+}
+
+func TestTimeToSysAmbig(t *testing.T) {
+	lsDate := time.Date(2016, time.December, 31, 0, 0, 0, 0, time.UTC)
+	ls := LeapSecondOnDate(lsDate, 36, 37)
+	t1 := ls.TimeToSys(ls.OffChangeTime.Add(-time.Second * 3 / 2))
+	t2 := ls.TimeToSys(ls.OffChangeTime.Add(-time.Second / 2))
+	if t1 != t2 {
+		t.Fatalf("ambiguous seconds not equal %v, %v", t1, t2)
+	}
+	t1 = ls.TimeToSys(ls.OffChangeTime.Add(-time.Second * 2))
+	t2 = ls.TimeToSys(ls.OffChangeTime.Add(-time.Second))
+	if t1 != t2 {
+		t.Fatalf("ambiguous seconds not equal %v, %v", t1, t2)
 	}
 }

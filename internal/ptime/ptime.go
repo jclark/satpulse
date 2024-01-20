@@ -23,7 +23,7 @@ type UTCTime struct {
 }
 
 type LeapSecond struct {
-	OffChangeTime Time  // Time at which TAI-UTC offset changes (i.e. when leap second is over)
+	OffChangeTime Time  // Time at which TAI-UTC offset changes (i.e. when leap second is over 00:00:00 UTC)
 	UTCOffBefore  int16 // TAI-UTC offset before leap second
 	UTCOffAfter   int16 // TAI-UTC offset after leap second
 }
@@ -159,10 +159,24 @@ func (ls LeapSecond) SysToTime(sys time.Time) (Time, bool) {
 // TimeToSys converts a TAI time to a system time.
 func (ls LeapSecond) TimeToSys(t Time) time.Time {
 	off := ls.UTCOffAfter
-	if t < ls.OffChangeTime {
+	// Linux steps the clock back before a positive leap second.
+	// So during the leap second, we want to apply the After offset.
+	if ls.Compare(t) < 0 {
 		off = ls.UTCOffBefore
 	}
 	return time.Unix(-int64(off), int64(t)).In(time.UTC)
+}
+
+// Compare returns -1, 0, 1 according as t is before, during or after the leap second
+func (ls LeapSecond) Compare(t Time) int {
+	timeTillLeapOver := ls.OffChangeTime.Sub(t)
+	if timeTillLeapOver <= 0 {
+		return 1
+	}
+	if ls.UTCOffAfter > ls.UTCOffBefore && timeTillLeapOver <= time.Second {
+		return 0
+	}
+	return -1
 }
 
 // Date returns the date of the leap second
