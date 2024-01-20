@@ -24,8 +24,8 @@ type Servo struct {
 	reset             *resetter
 	comp              *compensator
 	piControl         *piController
-	freqOff              float64 // frequency offset in PPB
-	maxFreqOff           float64
+	freqOff           float64 // frequency offset in PPB
+	maxFreqOff        float64
 	adjSetOffsetDelay time.Duration
 }
 
