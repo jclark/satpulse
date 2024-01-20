@@ -300,7 +300,7 @@ func (clk *Clock) AdjTime(d time.Duration) (ptime.Era, error) {
 	return era, err
 }
 
-func (clk *Clock) FreqAdj() (float64, error) {
+func (clk *Clock) FreqOffset() (float64, error) {
 	tx, err := clk.timexRead()
 	if err != nil {
 		return 0, err
@@ -309,20 +309,20 @@ func (clk *Clock) FreqAdj() (float64, error) {
 	return float64(tx.Freq) / 65.536, nil
 }
 
-func (clk *Clock) SetFreqAdj(fa float64) error {
+func (clk *Clock) SetFreqOffset(fo float64) error {
 	tx := unix.Timex{}
 	tx.Modes = unix.ADJ_FREQUENCY
-	newFreq := int64(fa * 65.536)
+	newFreq := int64(fo * 65.536)
 	tx.Freq = newFreq
 	_, err := clk.adjtimex(&tx, "(ADJ_FREQUENCY)")
 	if tx.Freq != newFreq {
-		return fmt.Errorf("error freq setting freq to %vppb (got %v)", fa, float64(tx.Freq)/65.536)
+		return fmt.Errorf("error setting freq offset to %vppb (got %v)", fo, float64(tx.Freq)/65.536)
 	}
 	return err
 }
 
-// Maximum supported frequency adjustment in parts per billion
-func (clk *Clock) MaxFreqAdj() float64 {
+// Maximum supported frequency offset adjustment in parts per billion
+func (clk *Clock) MaxFreqOffset() float64 {
 	return float64(clk.caps.Max_adj)
 }
 

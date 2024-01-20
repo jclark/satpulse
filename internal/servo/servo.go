@@ -10,9 +10,9 @@ import (
 )
 
 type Clock interface {
-	SetFreqAdj(fa float64) error
-	FreqAdj() (float64, error)
-	MaxFreqAdj() float64
+	SetFreqOffset(float64) error
+	FreqOffset() (float64, error)
+	MaxFreqOffset() float64
 	AdjTime(d time.Duration) (ptime.Era, error)
 }
 
@@ -24,8 +24,8 @@ type Servo struct {
 	reset             *resetter
 	comp              *compensator
 	piControl         *piController
-	freqAdj           float64
-	maxFreqAdj        float64
+	freqOff              float64 // frequency offset in PPB
+	maxFreqOff           float64
 	adjSetOffsetDelay time.Duration
 }
 
@@ -55,12 +55,12 @@ func New(clk Clock, lg *slog.Logger, sseCh chan<- sse.Event) (*Servo, error) {
 	s.reset = rst
 	s.comp = comp
 	s.sampler = rst
-	freqAdj, err := clk.FreqAdj()
+	f, err := clk.FreqOffset()
 	if err != nil {
 		return nil, err
 	}
-	s.freqAdj = freqAdj
-	s.maxFreqAdj = clk.MaxFreqAdj()
+	s.freqOff = f
+	s.maxFreqOff = clk.MaxFreqOffset()
 	return &s, nil
 }
 
@@ -83,7 +83,7 @@ func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 		Offset:            float64(off),
 		StepCount:         uint32(stepCount),
 		StepCountChanging: changing,
-		Freq:              s.freqAdj,
+		Freq:              s.freqOff,
 	})
 	if err != nil {
 		s.lg.Error("error creating sample event", "err", err)
@@ -92,18 +92,18 @@ func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	s.sseCh <- event
 }
 
-func (s *Servo) setFreqAdj(fa float64) {
-	fa = clamp(fa, s.maxFreqAdj)
-	if fa == s.freqAdj {
+func (s *Servo) setFreqOff(f float64) {
+	f = clamp(f, s.maxFreqOff)
+	if f == s.freqOff {
 		return
 	}
-	err := s.clk.SetFreqAdj(fa)
+	err := s.clk.SetFreqOffset(f)
 	if err != nil {
-		s.lg.Error("error adjusting the PHC frequency", "err", err, "freqAdj", fa)
+		s.lg.Error("error adjusting the PHC frequency", "err", err, "freq", f)
 		return
 	}
-	s.lg.Debug("adjusted the PHC frequency", "oldFreqAdj", s.freqAdj, "newFreqAdj", fa, "diff", fa-s.freqAdj)
-	s.freqAdj = fa
+	s.lg.Debug("adjusted the PHC frequency", "oldFreq", s.freqOff, "newFreq", f, "diff", f-s.freqOff)
+	s.freqOff = f
 }
 
 func (s *Servo) adjTime(off time.Duration) ptime.Era {
@@ -136,12 +136,12 @@ func (p *piController) sample(ref ptime.Time, local ptime.ClockTime, delayed boo
 	p.offSum += fOff
 	out := kp*fOff + ki*p.offSum
 	// fmt.Printf("off %v, offSum %v, out %v\n", off, p.offSum, out)
-	p.servo.lg.Info("adjusted PHC frequency using the PI servo", "off", off, "freq", p.servo.freqAdj+out)
-	p.servo.setFreqAdj(-out)
+	p.servo.lg.Info("adjusted PHC frequency using the PI servo", "off", off, "freq", p.servo.freqOff+out)
+	p.servo.setFreqOff(-out)
 }
 
-func (p *piController) init(freqAdj float64) {
-	p.offSum = -freqAdj / ki
+func (p *piController) init(freq float64) {
+	p.offSum = -freq / ki
 }
 
 const observePeriod = time.Second * 4
@@ -164,26 +164,26 @@ func (r *resetter) sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 		return
 	}
 
-	freqAdj := r.servo.freqAdj
+	freqOff := r.servo.freqOff
 	/*
-		Semantics of freqAdj in ppb is that a period that the local clock measured with freqAdj 0 as N seconds
-		will be measured with freqAdj A as N*F seconds where F is (1e9 + A)/1e9.
+		Semantics of freqOff in ppb is that a period that the local clock measured with freqOff 0 as N seconds
+		will be measured with freqOff P as N*F seconds where F is (1e9 + P)/1e9.
 
 		We know that N*F1 = (L2 - L1) where N is the time that the unadjusted clock would measure and L1, L2 are the
-		local clocks at the beginning and end of the period and F1 is (1e9 + A1)/1e9, where A1 is current freqAdj.
+		local clocks at the beginning and end of the period and F1 is (1e9 + O1)/1e9, where O1 is current freqAdj.
 		We want to find F2 such that N*F2 = (R2 - R1).
 		So we have (L2 - L1)/F1 = (R2 - R1)/F2. So F2 = F1*(R2 - R1)/(L2 - L1)
-		So A2 = (A1 + 1e9)*(R2 - R1)/(L2 - L1) - 1e9
+		So O2 = (O1 + 1e9)*(R2 - R1)/(L2 - L1) - 1e9
 	*/
 
 	ratio := float64(refPeriod) / float64(localPeriod)
-	freqAdj = (1e9+freqAdj)*ratio - 1e9
+	freqOff = (1e9+freqOff)*ratio - 1e9
 
-	r.servo.setFreqAdj(freqAdj)
+	r.servo.setFreqOff(freqOff)
 
 	r.servo.comp.era = r.servo.adjTime(ref.Sub(local.T))
 	r.servo.sampler = r.servo.comp
-	r.servo.piControl.init(freqAdj)
+	r.servo.piControl.init(freqOff)
 }
 
 // A compensator compensates for the inaccuracy of ADJ_SETOFFSET.
