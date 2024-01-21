@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/sse"
 )
 
 const samplesToKeep = 3600
@@ -21,13 +22,15 @@ type Monitor struct {
 	inSync         bool
 	lastRefTime    ptime.Time
 	ppsStopped     bool
+	sseCh          chan<- sse.Event
 }
 
 type Servo interface {
 	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
+	FreqOffset() float64
 }
 
-func NewMonitor(leapSecond ptime.LeapSecond, servo Servo, gm *Grandmaster, rc *ProxyRefClock, lg *slog.Logger) *Monitor {
+func NewMonitor(leapSecond ptime.LeapSecond, servo Servo, gm *Grandmaster, rc *ProxyRefClock, lg *slog.Logger, sseCh chan<- sse.Event) *Monitor {
 	mon := &Monitor{
 		leapSecond: leapSecond,
 		servo:      servo,
@@ -35,13 +38,15 @@ func NewMonitor(leapSecond ptime.LeapSecond, servo Servo, gm *Grandmaster, rc *P
 		offsets:    NewQueue[float64](samplesToKeep),
 		gm:         gm,
 		rc:         rc,
+		sseCh:      sseCh,
 	}
 	return mon
 }
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
-	mon.servo.Sample(ref, local, delayed)
 	off := local.T.Sub(ref)
+	mon.sendEvent(off, local.Era)
+	mon.servo.Sample(ref, local, delayed)
 	ref = ref.Round(time.Second)
 	if !mon.lastRefTime.IsZero() {
 		diff := int(ref.Sub(mon.lastRefTime) / time.Second)
@@ -65,6 +70,31 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 		mon.ppsStopped = false
 	}
 	mon.updateInSync(inSync)
+}
+
+type SampleEvent struct {
+	Offset            float64 `json:"offset"` // in nanoseconds
+	Freq              float64 `json:"freq"`   // in parts per billion
+	StepCount         uint32  `json:"stepCount"`
+	StepCountChanging bool    `json:"stepCountChanging,omitempty"`
+}
+
+func (mon *Monitor) sendEvent(off time.Duration, era ptime.Era) {
+	if mon.sseCh == nil {
+		return
+	}
+	stepCount, changing := era.StepCount()
+	event, err := sse.Make("phc", &SampleEvent{
+		Offset:            float64(off),
+		StepCount:         uint32(stepCount),
+		StepCountChanging: changing,
+		Freq:              mon.servo.FreqOffset(),
+	})
+	if err != nil {
+		mon.lg.Error("error creating sample event", "err", err)
+		return
+	}
+	mon.sseCh <- event
 }
 
 func (mon *Monitor) SysSample(ref ptime.Time, sys time.Time) {

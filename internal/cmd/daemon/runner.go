@@ -34,12 +34,12 @@ type SyncRunner struct {
 }
 
 func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, ntp *mon.ProxyRefClock, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
-	servo, err := servo.New(clk, lg, sseCh)
+	servo, err := servo.New(clk, lg)
 	if err != nil {
 		return nil, err
 	}
 	ls := cfg.LeapSecond.leapSecond()
-	m := mon.NewMonitor(ls, servo, gm, ntp, lg)
+	m := mon.NewMonitor(ls, servo, gm, ntp, lg, sseCh)
 	pt := combine.PulseType{
 		EdgesPerPulse: phcFlags.Edges(),
 		PulseWidth:    pulseWidth,

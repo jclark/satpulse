@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/ptime"
-	"github.com/jclark/satpulse/internal/sse"
 )
 
 type Clock interface {
@@ -19,7 +18,6 @@ type Clock interface {
 type Servo struct {
 	clk               Clock
 	lg                *slog.Logger
-	sseCh             chan<- sse.Event
 	sampler           sampler
 	reset             *resetter
 	comp              *compensator
@@ -29,22 +27,14 @@ type Servo struct {
 	adjSetOffsetDelay time.Duration
 }
 
-type SampleEvent struct {
-	Offset            float64 `json:"offset"` // in nanoseconds
-	Freq              float64 `json:"freq"`   // in parts per billion
-	StepCount         uint32  `json:"stepCount"`
-	StepCountChanging bool    `json:"stepCountChanging,omitempty"`
-}
-
 type sampler interface {
 	sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
 }
 
-func New(clk Clock, lg *slog.Logger, sseCh chan<- sse.Event) (*Servo, error) {
+func New(clk Clock, lg *slog.Logger) (*Servo, error) {
 	s := Servo{}
 	s.clk = clk
 	s.lg = lg
-	s.sseCh = sseCh
 	rst := new(resetter)
 	pi := new(piController)
 	comp := new(compensator)
@@ -73,23 +63,10 @@ func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	off := local.T.Sub(ref)
 	s.lg.Debug("sample received by servo", "off", off, "gps", ref, "phc", local.T, "era", local.Era, "delayed", delayed)
 	s.sampler.sample(ref, local, delayed)
+}
 
-	if s.sseCh == nil {
-		return
-	}
-	stepCount, changing := local.Era.StepCount()
-
-	event, err := sse.Make("phc", &SampleEvent{
-		Offset:            float64(off),
-		StepCount:         uint32(stepCount),
-		StepCountChanging: changing,
-		Freq:              s.freqOff,
-	})
-	if err != nil {
-		s.lg.Error("error creating sample event", "err", err)
-		return
-	}
-	s.sseCh <- event
+func (s *Servo) FreqOffset() float64 {
+	return s.freqOff
 }
 
 func (s *Servo) setFreqOff(f float64) {
