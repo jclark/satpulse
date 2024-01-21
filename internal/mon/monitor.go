@@ -14,6 +14,7 @@ type Monitor struct {
 	offsets        *Queue[float64]
 	lastSampleTime time.Time
 	leapSecond     ptime.LeapSecond
+	servo          Servo // never nil
 	lg             *slog.Logger
 	gm             *Grandmaster   // maybe nil
 	rc             *ProxyRefClock // maybe nil
@@ -22,9 +23,14 @@ type Monitor struct {
 	ppsStopped     bool
 }
 
-func NewMonitor(leapSecond ptime.LeapSecond, gm *Grandmaster, rc *ProxyRefClock, lg *slog.Logger) *Monitor {
+type Servo interface {
+	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
+}
+
+func NewMonitor(leapSecond ptime.LeapSecond, servo Servo, gm *Grandmaster, rc *ProxyRefClock, lg *slog.Logger) *Monitor {
 	mon := &Monitor{
 		leapSecond: leapSecond,
+		servo:      servo,
 		lg:         lg,
 		offsets:    NewQueue[float64](samplesToKeep),
 		gm:         gm,
@@ -34,6 +40,7 @@ func NewMonitor(leapSecond ptime.LeapSecond, gm *Grandmaster, rc *ProxyRefClock,
 }
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
+	mon.servo.Sample(ref, local, delayed)
 	off := local.T.Sub(ref)
 	ref = ref.Round(time.Second)
 	if !mon.lastRefTime.IsZero() {

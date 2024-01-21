@@ -39,7 +39,7 @@ func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pu
 		return nil, err
 	}
 	ls := cfg.LeapSecond.leapSecond()
-	m := mon.NewMonitor(ls, gm, ntp, lg)
+	m := mon.NewMonitor(ls, servo, gm, ntp, lg)
 	pt := combine.PulseType{
 		EdgesPerPulse: phcFlags.Edges(),
 		PulseWidth:    pulseWidth,
@@ -49,7 +49,7 @@ func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pu
 	if phcFlags&phc.DriverPoll4Hz != 0 {
 		ccfg.PulsePollInterval = time.Second / 4
 	}
-	combiner, err := combine.NewCombiner(pt, combine.MultiSampler(servo, m), lg, ccfg)
+	combiner, err := combine.NewCombiner(pt, m, lg, ccfg)
 	if err != nil {
 		return nil, err
 	}
