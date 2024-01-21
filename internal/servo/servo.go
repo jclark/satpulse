@@ -65,6 +65,11 @@ func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	s.sampler.sample(ref, local, delayed)
 }
 
+func (s *Servo) Locked() bool {
+	_, ok := s.sampler.(*piController)
+	return ok
+}
+
 func (s *Servo) FreqOffset() float64 {
 	return s.freqOff
 }
@@ -87,9 +92,9 @@ func (s *Servo) adjTime(off time.Duration) ptime.Era {
 	totalOff := off + s.adjSetOffsetDelay
 	era, err := s.clk.AdjTime(totalOff)
 	if err != nil {
-		s.lg.Error("error adjusting the PHC time", "err", err, "totalOff", totalOff)
+		s.lg.Error("error stepping the PHC time", "err", err, "totalOff", totalOff)
 	} else {
-		s.lg.Info("adjusted the PHC time", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
+		s.lg.Info("stepped the PHC time", "totalOff", totalOff, "off", off, "delay", s.adjSetOffsetDelay)
 	}
 	return era
 }
@@ -112,8 +117,6 @@ func (p *piController) sample(ref ptime.Time, local ptime.ClockTime, delayed boo
 	fOff := float64(off)
 	p.offSum += fOff
 	out := kp*fOff + ki*p.offSum
-	// fmt.Printf("off %v, offSum %v, out %v\n", off, p.offSum, out)
-	p.servo.lg.Info("adjusted PHC frequency using the PI servo", "off", off, "freq", p.servo.freqOff+out)
 	p.servo.setFreqOff(-out)
 }
 

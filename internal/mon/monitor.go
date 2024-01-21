@@ -28,6 +28,7 @@ type Monitor struct {
 type Servo interface {
 	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
 	FreqOffset() float64
+	Locked() bool // this says whether it is currently using the PI controller
 }
 
 func NewMonitor(leapSecond ptime.LeapSecond, servo Servo, gm *Grandmaster, rc *ProxyRefClock, lg *slog.Logger, sseCh chan<- sse.Event) *Monitor {
@@ -44,9 +45,13 @@ func NewMonitor(leapSecond ptime.LeapSecond, servo Servo, gm *Grandmaster, rc *P
 }
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
-	off := local.T.Sub(ref)
-	mon.sendEvent(off, local.Era)
 	mon.servo.Sample(ref, local, delayed)
+	off := local.T.Sub(ref)
+	freq := mon.servo.FreqOffset()
+	if mon.servo.Locked() {
+		mon.lg.Info("adjusting clock frequency", "off", off, "freq", freq)
+	}
+	mon.sendEvent(off, local.Era, freq)
 	ref = ref.Round(time.Second)
 	if !mon.lastRefTime.IsZero() {
 		diff := int(ref.Sub(mon.lastRefTime) / time.Second)
@@ -79,7 +84,7 @@ type SampleEvent struct {
 	StepCountChanging bool    `json:"stepCountChanging,omitempty"`
 }
 
-func (mon *Monitor) sendEvent(off time.Duration, era ptime.Era) {
+func (mon *Monitor) sendEvent(off time.Duration, era ptime.Era, freq float64) {
 	if mon.sseCh == nil {
 		return
 	}
@@ -88,7 +93,7 @@ func (mon *Monitor) sendEvent(off time.Duration, era ptime.Era) {
 		Offset:            float64(off),
 		StepCount:         uint32(stepCount),
 		StepCountChanging: changing,
-		Freq:              mon.servo.FreqOffset(),
+		Freq:              freq,
 	})
 	if err != nil {
 		mon.lg.Error("error creating sample event", "err", err)
