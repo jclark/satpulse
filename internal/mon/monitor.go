@@ -45,6 +45,7 @@ func NewMonitor(leapSecond ptime.LeapSecond, servo Servo, gm *Grandmaster, rc *P
 }
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
+	mon.addMissingOffsets(ref)
 	mon.servo.Sample(ref, local, delayed)
 	off := local.T.Sub(ref)
 	freq := mon.servo.FreqOffset()
@@ -52,17 +53,6 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 		mon.lg.Info("adjusting clock frequency", "off", off, "freq", freq)
 	}
 	mon.sendEvent(off, local.Era, freq)
-	ref = ref.Round(time.Second)
-	if !mon.lastRefTime.IsZero() {
-		diff := int(ref.Sub(mon.lastRefTime) / time.Second)
-		if diff > 1 {
-			mon.lg.Warn("missed 1PPS samples", "n", diff-1)
-			for i := 1; i < diff; i++ {
-				mon.offsets.Append(math.NaN())
-			}
-		}
-	}
-	mon.lastRefTime = ref
 	mon.offsets.Append(off.Seconds())
 	if delayed {
 		return
@@ -75,6 +65,23 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 		mon.ppsStopped = false
 	}
 	mon.updateInSync(inSync)
+}
+
+func (mon *Monitor) addMissingOffsets(ref ptime.Time) {
+	ref = ref.Round(time.Second)
+	lastRef := mon.lastRefTime
+	mon.lastRefTime = ref
+	if lastRef.IsZero() {
+		return
+	}
+	diff := int(ref.Sub(lastRef) / time.Second)
+	if diff <= 1 {
+		return
+	}
+	mon.lg.Warn("missed 1PPS samples", "n", diff-1)
+	for i := 1; i < diff; i++ {
+		mon.offsets.Append(math.NaN())
+	}
 }
 
 type SampleEvent struct {
