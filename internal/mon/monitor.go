@@ -9,10 +9,10 @@ import (
 	"github.com/jclark/satpulse/internal/sse"
 )
 
-const samplesToKeep = 3600
+const samplesToKeep = 60
 
 type Monitor struct {
-	offsets        *Queue[float64]
+	samples        *sampleWindow
 	lastSampleTime time.Time
 	leapSecond     ptime.LeapSecond
 	servo          Servo // never nil
@@ -23,6 +23,30 @@ type Monitor struct {
 	lastRefTime    ptime.Time
 	ppsStopped     bool
 	sseCh          chan<- sse.Event
+	stats          stats
+}
+
+type stats struct {
+	interval   int
+	accumPhase accumPhase
+	accumFreq  accumFreq
+}
+
+type sampleKind int
+
+const (
+	sampleMissing sampleKind = iota
+	sampleOK
+	sampleOutlier
+)
+
+type sampleData struct {
+	off  float64
+	kind sampleKind
+}
+
+type sampleWindow struct {
+	window[sampleData]
 }
 
 type Servo interface {
@@ -36,24 +60,32 @@ func NewMonitor(leapSecond ptime.LeapSecond, servo Servo, gm *Grandmaster, rc *P
 		leapSecond: leapSecond,
 		servo:      servo,
 		lg:         lg,
-		offsets:    NewQueue[float64](samplesToKeep),
+		samples:    newSampleWindow(samplesToKeep),
 		gm:         gm,
 		rc:         rc,
 		sseCh:      sseCh,
+		stats:      stats{interval: 30},
 	}
 	return mon
 }
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	mon.addMissingOffsets(ref)
-	mon.servo.Sample(ref, local, delayed)
 	off := local.T.Sub(ref)
+	offSecs := off.Seconds()
+	mon.servo.Sample(ref, local, delayed)
+
 	freq := mon.servo.FreqOffset()
 	if mon.servo.Locked() {
-		mon.lg.Info("adjusting clock frequency", "off", off, "freq", freq)
+		if mon.stats.interval == 0 {
+			mon.lg.Info("adjusting clock frequency", "off", off, "freq", freq)
+		} else if mon.stats.accum(sampleOK, offSecs, freq) {
+			mon.stats.log(mon.lg)
+			mon.stats.clear()
+		}
 	}
 	mon.sendEvent(off, local.Era, freq)
-	mon.offsets.Append(off.Seconds())
+	mon.samples.append(offSecs, sampleOK)
 	if delayed {
 		return
 	}
@@ -79,8 +111,19 @@ func (mon *Monitor) addMissingOffsets(ref ptime.Time) {
 		return
 	}
 	mon.lg.Warn("missed 1PPS samples", "n", diff-1)
+	freq := mon.servo.FreqOffset()
+	locked := mon.servo.Locked()
+	// XXX we should add a missing sample in Tick, then we wouldn't need to protect against an avalanche of missing samples here
+	logged := false
 	for i := 1; i < diff; i++ {
-		mon.offsets.Append(math.NaN())
+		mon.samples.append(0, sampleMissing)
+		if locked && mon.stats.interval > 0 && mon.stats.accum(sampleMissing, 0, freq) {
+			if !logged {
+				mon.stats.log(mon.lg)
+				logged = true
+			}
+			mon.stats.clear()
+		}
 	}
 }
 
@@ -150,14 +193,15 @@ const syncNOffsets = 5
 const syncMaxMissing = 2
 
 func (mon *Monitor) samplesInSync() bool {
-	if mon.offsets.Len() < syncNOffsets {
+	w := mon.samples
+	if w.length() < syncNOffsets {
 		return false
 	}
-	a := accumSlice(mon.offsets.LastN(syncNOffsets))
-	if a.nNaN > 0 {
+	a := w.accum(syncNOffsets)
+	if a.nMissing > 0 {
 		// if we've gone out of sync, don't allow any missing values;
 		// otherwise allow up to syncMaxMissing
-		if !mon.inSync || a.nNaN > syncMaxMissing {
+		if !mon.inSync || a.nMissing > syncMaxMissing {
 			return false
 		}
 	}
@@ -186,31 +230,92 @@ func (mon *Monitor) SetLeapSecond(leapSecond ptime.LeapSecond) {
 	mon.gmUpdate()
 }
 
-type accum struct {
-	sum        float64
-	sumSquares float64
-	maxAbs     float64
-	nNaN       int
+func newSampleWindow(n int) *sampleWindow {
+	return &sampleWindow{
+		window: *newWindow[sampleData](n),
+	}
 }
 
-func accumSlice(values []float64) accum {
-	var a accum
-	a.addSlice(values)
+func (w *sampleWindow) append(off float64, kind sampleKind) {
+	w.window.append(sampleData{off: off, kind: kind})
+}
+
+func (w *sampleWindow) accum(n int) accumPhase {
+	var a accumPhase
+	w.iterate(func(i int, s sampleData) bool {
+		if i >= n {
+			return false
+		}
+		a.add(s.kind, s.off)
+		return true
+	})
 	return a
 }
 
-func (a *accum) addSlice(values []float64) {
-	for _, v := range values {
-		a.addValue(v)
+func (s *stats) accum(kind sampleKind, off float64, freq float64) bool {
+	s.accumPhase.add(kind, off)
+	s.accumFreq.add(freq)
+	return s.accumPhase.n == s.interval
+}
+
+func (s *stats) clear() {
+	s.accumPhase = accumPhase{}
+	s.accumFreq = accumFreq{}
+}
+
+func (s *stats) log(lg *slog.Logger) {
+	lg.Info("stats", "absOffMean", s.accumPhase.meanAbs(), "offRMS", s.accumPhase.rms(), "maxAbsOff", s.accumPhase.maxAbs, "nMissing", s.accumPhase.nMissing, "nOutliers", s.accumPhase.nOutliers, "freqMean", s.accumFreq.mean(), "freqStddev", s.accumFreq.stddev())
+}
+
+type accumPhase struct {
+	sumAbs     float64
+	sumSquares float64
+	maxAbs     float64
+	n          int
+	nMissing   int
+	nOutliers  int
+}
+
+type accumFreq struct {
+	sum                float64
+	sumMeanDiffSquares float64
+	n                  int
+}
+
+func (a *accumPhase) add(kind sampleKind, v float64) {
+	a.n++
+	switch kind {
+	case sampleOK:
+		av := math.Abs(v)
+		a.sumAbs += av
+		a.sumSquares += v * v
+		a.maxAbs = math.Max(a.maxAbs, av)
+	case sampleMissing:
+		a.nMissing++
+	case sampleOutlier:
+		a.nOutliers++
 	}
 }
 
-func (a *accum) addValue(v float64) {
-	if math.IsNaN(v) {
-		a.nNaN++
-	} else {
-		a.sum += v
-		a.sumSquares += v * v
-		a.maxAbs = math.Max(a.maxAbs, math.Abs(v))
-	}
+func (a *accumFreq) add(v float64) {
+	a.n++
+	a.sum += v
+	md := v - a.sum/float64(a.n)
+	a.sumMeanDiffSquares += md * md
+}
+
+func (a *accumPhase) meanAbs() float64 {
+	return a.sumAbs / float64(a.n)
+}
+
+func (a *accumPhase) rms() float64 {
+	return math.Sqrt(a.sumSquares / float64(a.n))
+}
+
+func (a *accumFreq) mean() float64 {
+	return a.sum / float64(a.n)
+}
+
+func (a *accumFreq) stddev() float64 {
+	return math.Sqrt(a.sumMeanDiffSquares / float64(a.n))
 }
