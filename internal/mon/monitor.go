@@ -28,9 +28,9 @@ type Monitor struct {
 }
 
 type stats struct {
-	interval   int
 	accumPhase accumPhase
 	accumFreq  accumFreq
+	interval   int
 }
 
 type sampleKind int
@@ -73,20 +73,10 @@ func NewMonitor(leapSecond ptime.LeapSecond, servo Servo, gm *Grandmaster, rc *P
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	mon.addMissingOffsets(ref)
 	off := local.T.Sub(ref)
-	offSecs := off.Seconds()
 	mon.servo.Sample(ref, local, delayed)
-
 	freq := mon.servo.FreqOffset()
-	if mon.servo.Locked() {
-		if mon.stats.interval == 0 {
-			mon.lg.Info("adjusting clock frequency", "off", off, "freq", freq)
-		} else if mon.stats.accum(sampleOK, offSecs, freq) {
-			mon.stats.log(mon.lg)
-			mon.stats.clear()
-		}
-	}
+	mon.recordSample(sampleOK, off, freq)
 	mon.sendEvent(off, local.Era, freq)
-	mon.samples.append(offSecs, sampleOK)
 	if delayed {
 		return
 	}
@@ -108,23 +98,33 @@ func (mon *Monitor) addMissingOffsets(ref ptime.Time) {
 		return
 	}
 	diff := int(ref.Sub(lastRef) / time.Second)
-	if diff <= 1 {
+	for i := 1; i < diff; i++ {
+		mon.recordSample(sampleMissing, 0, mon.servo.FreqOffset())
+	}
+}
+
+func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, freq float64) {
+	offSecs := off.Seconds()
+	mon.samples.append(kind, offSecs)
+	interval := mon.stats.interval
+	if interval <= 0 {
 		return
 	}
-	mon.lg.Warn("missed 1PPS samples", "n", diff-1)
-	freq := mon.servo.FreqOffset()
 	locked := mon.servo.Locked()
-	// XXX we should add a missing sample in Tick, then we wouldn't need to protect against an avalanche of missing samples here
-	logged := false
-	for i := 1; i < diff; i++ {
-		mon.samples.append(0, sampleMissing)
-		if locked && mon.stats.interval > 0 && mon.stats.accum(sampleMissing, 0, freq) {
-			if !logged {
-				mon.stats.log(mon.lg)
-				logged = true
-			}
-			mon.stats.clear()
+	if locked {
+		if interval > 1 {
+			mon.stats.sample(mon.lg, kind, offSecs, freq)
+			return
 		}
+		if kind == sampleOK {
+			mon.lg.Info("adjusting clock frequency", "off", off, "freq", freq)
+			return
+		}
+	}
+	// in case where sampleOK and not locked, the servo will log
+	if kind == sampleMissing {
+		mon.lg.Info("missed 1PPS sample")
+		return
 	}
 }
 
@@ -180,7 +180,9 @@ func (mon *Monitor) Tick(now time.Time) {
 		mon.lg.Warn("1PPS signal stopped")
 		mon.ppsStopped = true
 	}
-
+	mon.lastSampleTime = mon.lastSampleTime.Add(time.Second)
+	mon.lastRefTime = mon.lastRefTime.Add(time.Second)
+	mon.recordSample(sampleMissing, 0, mon.servo.FreqOffset())
 	if t > holdoverDuration {
 		mon.updateInSync(false)
 	}
@@ -237,7 +239,7 @@ func newSampleWindow(n int) *sampleWindow {
 	}
 }
 
-func (w *sampleWindow) append(off float64, kind sampleKind) {
+func (w *sampleWindow) append(kind sampleKind, off float64) {
 	w.window.append(sampleData{off: off, kind: kind})
 }
 
@@ -253,18 +255,12 @@ func (w *sampleWindow) accum(n int) accumPhase {
 	return a
 }
 
-func (s *stats) accum(kind sampleKind, off float64, freq float64) bool {
+func (s *stats) sample(lg *slog.Logger, kind sampleKind, off float64, freq float64) {
 	s.accumPhase.add(kind, off)
 	s.accumFreq.add(freq)
-	return s.accumPhase.n == s.interval
-}
-
-func (s *stats) clear() {
-	s.accumPhase = accumPhase{}
-	s.accumFreq = accumFreq{}
-}
-
-func (s *stats) log(lg *slog.Logger) {
+	if s.accumPhase.n != s.interval {
+		return
+	}
 	lg.Info("summary",
 		"absOffMax", fmt.Sprintf("%.0f", s.accumPhase.maxAbs*1e9),
 		"absOffMean", fmt.Sprintf("%.1f", s.accumPhase.meanAbs()*1e9),
@@ -274,6 +270,8 @@ func (s *stats) log(lg *slog.Logger) {
 		"nSecs", s.accumPhase.n,
 		"nMissing", s.accumPhase.nMissing,
 		"nOutliers", s.accumPhase.nOutliers)
+	s.accumPhase = accumPhase{}
+	s.accumFreq = accumFreq{}
 }
 
 type accumPhase struct {
