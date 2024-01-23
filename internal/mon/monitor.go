@@ -1,6 +1,7 @@
 package mon
 
 import (
+	"fmt"
 	"log/slog"
 	"math"
 	"time"
@@ -264,7 +265,15 @@ func (s *stats) clear() {
 }
 
 func (s *stats) log(lg *slog.Logger) {
-	lg.Info("stats", "absOffMean", s.accumPhase.meanAbs(), "offRMS", s.accumPhase.rms(), "maxAbsOff", s.accumPhase.maxAbs, "nMissing", s.accumPhase.nMissing, "nOutliers", s.accumPhase.nOutliers, "freqMean", s.accumFreq.mean(), "freqStddev", s.accumFreq.stddev())
+	lg.Info("summary",
+		"absOffMax", fmt.Sprintf("%.0f", s.accumPhase.maxAbs*1e9),
+		"absOffMean", fmt.Sprintf("%.1f", s.accumPhase.meanAbs()*1e9),
+		"offRMS", fmt.Sprintf("%.1f", s.accumPhase.rms()*1e9),
+		"freqMean", fmt.Sprintf("%.0f", s.accumFreq.mean()),
+		"freqStdDev", fmt.Sprintf("%.0f", s.accumFreq.stddev()),
+		"nSecs", s.accumPhase.n,
+		"nMissing", s.accumPhase.nMissing,
+		"nOutliers", s.accumPhase.nOutliers)
 }
 
 type accumPhase struct {
