@@ -90,6 +90,12 @@
 		},
 		"required": ["date", "before", "after"]
 	  },
+	  "log": {
+		"type": "object",
+		"properties": {
+		  "interval": { "type": "integer", "minimum": 0 }
+		}
+	  },
 	  "ptp": {
 		"type": "object",
 		"properties": {		  

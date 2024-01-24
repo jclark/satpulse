@@ -32,6 +32,7 @@ type Config struct {
 	LeapSecond LeapSecondConfig
 	PTP        PTPConfig
 	NTP        NTPConfig
+	Log        LogConfig
 }
 
 type SerialConfig struct {
@@ -61,6 +62,10 @@ type NTPConfig struct {
 
 type NTPSockConfig struct {
 	Path string `toml:"path"`
+}
+
+type LogConfig struct {
+	Interval int `toml:"interval"`
 }
 
 var leapSecondDefault = LeapSecondConfig{
@@ -98,6 +103,7 @@ func defaultConfig() *Config {
 	cfg := new(Config)
 	cfg.GPS = gpsDefault
 	cfg.LeapSecond = leapSecondDefault
+	cfg.Log.Interval = 30
 	return cfg
 }
 

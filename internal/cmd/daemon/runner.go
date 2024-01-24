@@ -44,6 +44,7 @@ func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pu
 		SSECh:       sseCh,
 		RefClock:    rc,
 		Grandmaster: gm,
+		LogInterval: cfg.Log.Interval,
 	})
 	pt := combine.PulseType{
 		EdgesPerPulse: phcFlags.Edges(),
