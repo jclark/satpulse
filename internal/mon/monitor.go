@@ -56,16 +56,24 @@ type Servo interface {
 	Locked() bool // this says whether it is currently using the PI controller
 }
 
-func NewMonitor(leapSecond ptime.LeapSecond, servo Servo, gm *Grandmaster, rc *ProxyRefClock, lg *slog.Logger, sseCh chan<- sse.Event) *Monitor {
+type MonitorConfig struct {
+	LeapSecond  ptime.LeapSecond
+	LogInterval int
+	RefClock    *ProxyRefClock
+	Grandmaster *Grandmaster
+	SSECh       chan<- sse.Event
+}
+
+func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) *Monitor {
 	mon := &Monitor{
-		leapSecond: leapSecond,
 		servo:      servo,
 		lg:         lg,
+		leapSecond: cfg.LeapSecond,
 		samples:    newSampleWindow(samplesToKeep),
-		gm:         gm,
-		rc:         rc,
-		sseCh:      sseCh,
-		stats:      stats{interval: 30},
+		gm:         cfg.Grandmaster,
+		rc:         cfg.RefClock,
+		sseCh:      cfg.SSECh,
+		stats:      stats{interval: cfg.LogInterval},
 	}
 	return mon
 }

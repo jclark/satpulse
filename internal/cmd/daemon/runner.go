@@ -33,13 +33,18 @@ type SyncRunner struct {
 	loggedUnknownProtocol bool
 }
 
-func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, ntp *mon.ProxyRefClock, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
+func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, inLog io.Writer) (*SyncRunner, error) {
 	servo, err := servo.New(clk, lg)
 	if err != nil {
 		return nil, err
 	}
 	ls := cfg.LeapSecond.leapSecond()
-	m := mon.NewMonitor(ls, servo, gm, ntp, lg, sseCh)
+	m := mon.NewMonitor(servo, lg, mon.MonitorConfig{
+		LeapSecond:  ls,
+		SSECh:       sseCh,
+		RefClock:    rc,
+		Grandmaster: gm,
+	})
 	pt := combine.PulseType{
 		EdgesPerPulse: phcFlags.Edges(),
 		PulseWidth:    pulseWidth,
