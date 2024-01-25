@@ -167,6 +167,37 @@ func (ls LeapSecond) TimeToSys(t Time) time.Time {
 	return time.Unix(-int64(off), int64(t)).In(time.UTC)
 }
 
+const epochUnixMJD = 40587
+
+// TimeToMJD converts a TAI time to a Modified Julian Date.
+// This is leap-second aware. The fractional part of the MJD is the fraction of the actual length of the day,
+// which will be 86401 seconds on a day with a positive leap second.
+func (ls LeapSecond) TimeToMJD(t Time) float64 {
+	dayDuration := 24 * time.Hour
+	leapDayDuration := dayDuration + time.Duration(ls.UTCOffAfter-ls.UTCOffBefore)*time.Second
+	timeTillLeap := ls.OffChangeTime.Sub(t)
+	var startOfDay Time
+	var dayNumber int64
+	if timeTillLeap > 0 && timeTillLeap <= leapDayDuration {
+		startOfDay = ls.OffChangeTime.Add(-leapDayDuration)
+		dayNumber = int64(startOfDay.Add(-time.Second*time.Duration(ls.UTCOffBefore))) / int64(dayDuration)
+		dayDuration = leapDayDuration
+		// in this case startOfDay and t are in TAI
+	} else {
+		off := ls.UTCOffBefore
+		if t >= ls.OffChangeTime {
+			off = ls.UTCOffAfter
+		}
+		t = t.Add(-time.Second * time.Duration(off))
+		dayNumber = int64(t) / int64(dayDuration)
+		startOfDay = Time(dayNumber * int64(dayDuration))
+		// in this case startOfDay and t are in POSIX time (ignoring leap seconds)
+	}
+	timeOfDay := t.Sub(startOfDay)
+	dayNumber += epochUnixMJD
+	return float64(dayNumber) + float64(timeOfDay)/float64(dayDuration)
+}
+
 // Compare returns -1, 0, 1 according as t is before, during or after the leap second
 func (ls LeapSecond) Compare(t Time) int {
 	timeTillLeapOver := ls.OffChangeTime.Sub(t)

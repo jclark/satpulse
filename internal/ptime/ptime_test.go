@@ -168,3 +168,32 @@ func TestTimeToSysAmbig(t *testing.T) {
 		t.Fatalf("ambiguous seconds not equal %v, %v", t1, t2)
 	}
 }
+
+func TestMJD(t *testing.T) {
+	ls := LeapSecondOnDate(time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
+	type testCase struct {
+		utc UTCTime
+		mjd float64
+	}
+	testCases := []testCase{
+		{UTC(2023, 2, 25, 0, 0, 0, 0), 60000},
+		{UTC(2023, 2, 26, 0, 0, 0, 0), 60001},
+		{UTC(2023, 2, 25, 12, 0, 0, 0), 60000.5},
+		{UTC(2028, 8, 17, 0, 0, 0, 0), 62000},
+		{UTC(2028, 8, 17, 12, 0, 0, 0), 62000.5},
+		{UTC(2028, 8, 18, 0, 0, 0, 0), 62001},
+		{UTC(2025, 6, 30, 0, 0, 0, 0), 60856},
+		{UTC(2025, 7, 1, 0, 0, 0, 0), 60857},
+		{UTC(2025, 6, 30, 12, 0, 0, 5e8), 60856.5},
+		{UTC(2025, 6, 30, 23, 59, 59, 0), 60856 + 86399.0/86401.0},
+		{UTC(2025, 6, 30, 23, 59, 60, 0), 60856 + 86400.0/86401.0},
+		{UTC(2025, 6, 30, 23, 59, 60, 5e8), 60856 + 86400.5/86401.0},
+	}
+	for _, tc := range testCases {
+		tm := ls.UTCtoTime(tc.utc)
+		mjd := ls.TimeToMJD(tm)
+		if mjd != tc.mjd {
+			t.Errorf("got %f, expect %f", mjd, tc.mjd)
+		}
+	}
+}
