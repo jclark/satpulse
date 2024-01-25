@@ -89,6 +89,14 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 	return mon, nil
 }
 
+func (mon *Monitor) Close() {
+	mon.lg.Debug("closing monitor")
+	if mon.stats.accumPhase.n > 0 {
+		mon.stats.flush(mon.lg)
+	}
+	mon.closeLog()
+}
+
 func (mon *Monitor) openLog() error {
 	if mon.logPath == "" {
 		return nil
@@ -102,16 +110,19 @@ func (mon *Monitor) openLog() error {
 }
 
 func (mon *Monitor) ReopenLog() error {
-	var closeErr error
-	if mon.logFile != nil {
-		closeErr = mon.logFile.Close()
-		mon.logFile = nil
+	mon.closeLog()
+	return mon.doOpenLog()
+}
+
+func (mon *Monitor) closeLog() {
+	if mon.logFile == nil {
+		return
 	}
-	openErr := mon.doOpenLog()
-	if openErr != nil {
-		return openErr
+	err := mon.logFile.Close()
+	if err != nil {
+		mon.lg.Error("error closing log file", "err", err, "path", mon.logPath)
 	}
-	return closeErr
+	mon.logFile = nil
 }
 
 func (mon *Monitor) doOpenLog() error {
@@ -345,9 +356,12 @@ func (w *sampleWindow) accum(n int) accumPhase {
 func (s *stats) sample(lg *slog.Logger, kind sampleKind, off float64, freq float64) {
 	s.accumPhase.add(kind, off)
 	s.accumFreq.add(freq)
-	if s.accumPhase.n != s.interval {
-		return
+	if s.accumPhase.n == s.interval {
+		s.flush(lg)
 	}
+}
+
+func (s *stats) flush(lg *slog.Logger) {
 	lg.Info("summary",
 		"absOffMax", fmt.Sprintf("%.0f", s.accumPhase.maxAbs*1e9),
 		"absOffMean", fmt.Sprintf("%.1f", s.accumPhase.meanAbs()*1e9),

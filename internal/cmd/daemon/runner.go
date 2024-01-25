@@ -26,7 +26,7 @@ type SyncRunner struct {
 	inLog                 io.Writer
 	sseCh                 chan<- sse.Event
 	cb                    *combine.Combiner
-	m                     *mon.Monitor
+	mon                   *mon.Monitor
 	ls                    ptime.LeapSecond
 	lg                    *slog.Logger
 	lastTime              ptime.Time
@@ -65,7 +65,7 @@ func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pu
 	}
 	s := SyncRunner{
 		cb:    combiner,
-		m:     m,
+		mon:   m,
 		ls:    ls,
 		lg:    lg,
 		sseCh: sseCh,
@@ -82,6 +82,8 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 	if sseCh != nil {
 		defer close(sseCh)
 	}
+	// close the monitor before the sseCh, since the monitor uses the sseCh
+	defer s.mon.Close()
 	ticker := time.NewTicker(tickPeriod)
 	defer ticker.Stop()
 	lg := s.lg
@@ -118,7 +120,7 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 					// Call PulseEdge before SysSample, because the former might change the sync status
 					s.cb.PulseEdge(e.Ts, e.TRead)
 					if !trp.IsZero() {
-						s.m.SysSample(trp, e.TRead)
+						s.mon.SysSample(trp, e.TRead)
 					}
 				}
 			} else {
@@ -133,7 +135,7 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 				pktCh = nil
 			}
 		case t := <-ticker.C:
-			s.m.Tick(t)
+			s.mon.Tick(t)
 		}
 	}
 }
@@ -254,7 +256,7 @@ func (s *SyncRunner) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
 		return
 	}
 	s.ls = msg.LeapSecond
-	s.m.SetLeapSecond(s.ls)
+	s.mon.SetLeapSecond(s.ls)
 }
 
 func (s *SyncRunner) UBX(msg ubxbin.Msg, tRead time.Time) {
