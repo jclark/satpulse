@@ -39,13 +39,17 @@ func NewSyncRunner(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pu
 		return nil, err
 	}
 	ls := cfg.LeapSecond.leapSecond()
-	m := mon.NewMonitor(servo, lg, mon.MonitorConfig{
-		LeapSecond:  ls,
-		SSECh:       sseCh,
-		RefClock:    rc,
-		Grandmaster: gm,
-		LogInterval: cfg.Log.Interval,
+	m, err := mon.NewMonitor(servo, lg, mon.MonitorConfig{
+		LeapSecond:   ls,
+		SSECh:        sseCh,
+		RefClock:     rc,
+		Grandmaster:  gm,
+		LogInterval:  cfg.Log.Interval,
+		ClockLogPath: cfg.Log.ClockPath(clk.Path()),
 	})
+	if err != nil {
+		return nil, err
+	}
 	pt := combine.PulseType{
 		EdgesPerPulse: phcFlags.Edges(),
 		PulseWidth:    pulseWidth,

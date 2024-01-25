@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
@@ -65,7 +66,9 @@ type NTPSockConfig struct {
 }
 
 type LogConfig struct {
-	Interval int `toml:"interval"`
+	Interval int    `toml:"interval"`
+	Dir      string `toml:"dir"`
+	Clock    bool   `toml:"clock"` // whether to generate a clock log
 }
 
 var leapSecondDefault = LeapSecondConfig{
@@ -104,6 +107,7 @@ func defaultConfig() *Config {
 	cfg.GPS = gpsDefault
 	cfg.LeapSecond = leapSecondDefault
 	cfg.Log.Interval = 30
+	cfg.Log.Dir = "/var/log/satpulse"
 	return cfg
 }
 
@@ -137,4 +141,13 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 	cl.MajorSdoID = cfg.MajorSdoID
 	cl.MinorSdoID = cfg.MinorSdoID
 	return cl, nil
+}
+
+// ClockPath returns the path for the clock log file.
+// phcPath is the path to the PHC device (e.g. /dev/ptp0)
+func (cfg *LogConfig) ClockPath(phcPath string) string {
+	if !cfg.Clock {
+		return ""
+	}
+	return filepath.Join(cfg.Dir, "clock."+filepath.Base(phcPath)+".log")
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jclark/satpulse/internal/ptime"
@@ -25,6 +27,8 @@ type Monitor struct {
 	ppsStopped     bool
 	sseCh          chan<- sse.Event
 	stats          stats
+	logFile        *os.File
+	logPath        string
 }
 
 type stats struct {
@@ -57,14 +61,15 @@ type Servo interface {
 }
 
 type MonitorConfig struct {
-	LeapSecond  ptime.LeapSecond
-	LogInterval int
-	RefClock    *ProxyRefClock
-	Grandmaster *Grandmaster
-	SSECh       chan<- sse.Event
+	LeapSecond   ptime.LeapSecond
+	LogInterval  int
+	ClockLogPath string
+	RefClock     *ProxyRefClock
+	Grandmaster  *Grandmaster
+	SSECh        chan<- sse.Event
 }
 
-func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) *Monitor {
+func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, error) {
 	mon := &Monitor{
 		servo:      servo,
 		lg:         lg,
@@ -74,8 +79,49 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) *Monitor {
 		rc:         cfg.RefClock,
 		sseCh:      cfg.SSECh,
 		stats:      stats{interval: cfg.LogInterval},
+		logPath:    cfg.ClockLogPath,
 	}
-	return mon
+
+	err := mon.openLog()
+	if err != nil {
+		return nil, err
+	}
+	return mon, nil
+}
+
+func (mon *Monitor) openLog() error {
+	if mon.logPath == "" {
+		return nil
+	}
+	dir := filepath.Dir(mon.logPath)
+	err := os.MkdirAll(dir, 0755)
+	if err != nil {
+		return err
+	}
+	return mon.doOpenLog()
+}
+
+func (mon *Monitor) ReopenLog() error {
+	var closeErr error
+	if mon.logFile != nil {
+		closeErr = mon.logFile.Close()
+		mon.logFile = nil
+	}
+	openErr := mon.doOpenLog()
+	if openErr != nil {
+		return openErr
+	}
+	return closeErr
+}
+
+func (mon *Monitor) doOpenLog() error {
+	f, err := os.OpenFile(mon.logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	mon.logFile = f
+	mon.writeLogHeader()
+	return nil
 }
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
@@ -84,6 +130,7 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	mon.servo.Sample(ref, local, delayed)
 	freq := mon.servo.FreqOffset()
 	mon.recordSample(sampleOK, off, freq)
+	mon.writeLogEntry(sampleOK, off, local.Era, freq)
 	mon.sendEvent(off, local.Era, freq)
 	if delayed {
 		return
@@ -134,6 +181,38 @@ func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, freq float6
 		mon.lg.Info("missed 1PPS sample")
 		return
 	}
+}
+
+const logHeader = "# offset freq outlier era\n"
+
+func (mon *Monitor) writeLogHeader() {
+	if mon.logFile == nil {
+		return
+	}
+	_, err := mon.logFile.WriteString(logHeader)
+	mon.handleLogWriteError(err)
+}
+
+func (mon *Monitor) writeLogEntry(kind sampleKind, off time.Duration, era ptime.Era, freq float64) {
+	if mon.logFile == nil || kind == sampleMissing {
+		return
+	}
+	outlierFlag := 0
+	if kind == sampleOutlier {
+		outlierFlag = 1
+	}
+	_, err := fmt.Fprintf(mon.logFile, "%3d %.0f %d %d\n", off, freq, outlierFlag, uint64(era))
+	mon.handleLogWriteError(err)
+
+}
+
+func (mon *Monitor) handleLogWriteError(err error) {
+	if err == nil {
+		return
+	}
+	mon.lg.Error("error writing to log file", "err", err, "path", mon.logPath)
+	mon.logFile.Close()
+	mon.logFile = nil
 }
 
 type SampleEvent struct {

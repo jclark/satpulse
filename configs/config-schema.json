@@ -93,7 +93,9 @@
 	  "log": {
 		"type": "object",
 		"properties": {
-		  "interval": { "type": "integer", "minimum": 0 }
+		  "interval": { "type": "integer", "minimum": 0 },
+		  "dir": { "type": "string" },
+		  "clock": { "type": "boolean" }
 		}
 	  },
 	  "ptp": {
