@@ -141,7 +141,7 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	mon.servo.Sample(ref, local, delayed)
 	freq := mon.servo.FreqOffset()
 	mon.recordSample(sampleOK, off, freq)
-	mon.writeLogEntry(sampleOK, off, local.Era, freq)
+	mon.writeLogEntry(sampleOK, ref, off, local.Era, freq)
 	mon.sendEvent(off, local.Era, freq)
 	if delayed {
 		return
@@ -194,7 +194,7 @@ func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, freq float6
 	}
 }
 
-const logHeader = "# offset freq outlier era\n"
+const logHeader = "# mjd offset freq outlier era\n"
 
 func (mon *Monitor) writeLogHeader() {
 	if mon.logFile == nil {
@@ -204,7 +204,7 @@ func (mon *Monitor) writeLogHeader() {
 	mon.handleLogWriteError(err)
 }
 
-func (mon *Monitor) writeLogEntry(kind sampleKind, off time.Duration, era ptime.Era, freq float64) {
+func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Duration, era ptime.Era, freq float64) {
 	if mon.logFile == nil || kind == sampleMissing {
 		return
 	}
@@ -212,7 +212,8 @@ func (mon *Monitor) writeLogEntry(kind sampleKind, off time.Duration, era ptime.
 	if kind == sampleOutlier {
 		outlierFlag = 1
 	}
-	_, err := fmt.Fprintf(mon.logFile, "%3d %.0f %d %d\n", off, freq, outlierFlag, uint64(era))
+	mjd := mon.leapSecond.TimeToMJD(ref)
+	_, err := fmt.Fprintf(mon.logFile, "%.5f %3d %.0f %d %d\n", mjd, off, freq, outlierFlag, uint64(era))
 	mon.handleLogWriteError(err)
 
 }
