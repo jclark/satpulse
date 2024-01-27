@@ -109,9 +109,15 @@ func (mon *Monitor) openLog() error {
 	return mon.doOpenLog()
 }
 
-func (mon *Monitor) ReopenLog() error {
+func (mon *Monitor) ReopenLog() {
+	if mon.logPath == "" {
+		return
+	}
 	mon.closeLog()
-	return mon.doOpenLog()
+	err := mon.doOpenLog()
+	if err != nil {
+		mon.lg.Error("error reopening log file", "path", mon.logPath, "err", err)
+	}
 }
 
 func (mon *Monitor) closeLog() {

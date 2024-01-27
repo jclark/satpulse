@@ -5,6 +5,8 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"os"
+	"os/signal"
 	"time"
 
 	"github.com/jclark/satpulse/internal/combine"
@@ -19,6 +21,7 @@ import (
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/ubx"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
+	"golang.org/x/sys/unix"
 )
 
 type SyncRunner struct {
@@ -86,6 +89,9 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 	defer s.mon.Close()
 	ticker := time.NewTicker(tickPeriod)
 	defer ticker.Stop()
+	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, unix.SIGHUP)
 	lg := s.lg
 	lg.Debug("sync worker goroutine started")
 
@@ -136,6 +142,8 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 			}
 		case t := <-ticker.C:
 			s.mon.Tick(t)
+		case <-sig:
+			s.mon.ReopenLog()
 		}
 	}
 }
