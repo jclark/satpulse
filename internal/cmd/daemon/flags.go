@@ -46,7 +46,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, string, error) {
 		return nil, usage(), nil
 	}
 	if showVersion {
-		return nil, cmd.VersionInfo(), nil
+		return nil, cmd.VersionInfo() + "\n", nil
 	}
 	if flags.NArg() != 0 {
 		return nil, usage(), fmt.Errorf("%s command must not have non-option arguments", cmdName)
