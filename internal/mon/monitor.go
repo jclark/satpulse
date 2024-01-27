@@ -144,11 +144,16 @@ func (mon *Monitor) doOpenLog() error {
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	mon.addMissingOffsets(ref)
 	off := local.T.Sub(ref)
-	mon.servo.Sample(ref, local, delayed)
+	kind := sampleOK
+	if !delayed && mon.isOutlier(off) {
+		kind = sampleOutlier
+	} else {
+		mon.servo.Sample(ref, local, delayed)
+	}
 	freq := mon.servo.FreqOffset()
-	mon.recordSample(sampleOK, off, freq)
-	mon.writeLogEntry(sampleOK, ref, off, local.Era, freq)
-	mon.sendEvent(off, local.Era, freq)
+	mon.recordSample(kind, off, freq)
+	mon.writeLogEntry(kind, ref, off, local.Era, freq)
+	mon.sendEvent(kind, off, local.Era, freq)
 	if delayed {
 		return
 	}
@@ -247,9 +252,10 @@ type SampleEvent struct {
 	Freq              float64 `json:"freq"`   // in parts per billion
 	StepCount         uint32  `json:"stepCount"`
 	StepCountChanging bool    `json:"stepCountChanging,omitempty"`
+	Outlier           bool    `json:"outlier,omitempty"`
 }
 
-func (mon *Monitor) sendEvent(off time.Duration, era ptime.Era, freq float64) {
+func (mon *Monitor) sendEvent(kind sampleKind, off time.Duration, era ptime.Era, freq float64) {
 	if mon.sseCh == nil {
 		return
 	}
@@ -259,6 +265,7 @@ func (mon *Monitor) sendEvent(off time.Duration, era ptime.Era, freq float64) {
 		StepCount:         uint32(stepCount),
 		StepCountChanging: changing,
 		Freq:              freq,
+		Outlier:           kind == sampleOutlier,
 	})
 	if err != nil {
 		mon.lg.Error("error creating sample event", "err", err)
@@ -322,7 +329,34 @@ func (mon *Monitor) samplesInSync() bool {
 			return false
 		}
 	}
-	return a.maxAbs < syncMaxOffsetSecs
+	return a.maxAbs <= syncMaxOffsetSecs
+}
+
+func (mon *Monitor) isOutlier(off time.Duration) bool {
+	// don't do outlier detection unles we are in sync
+	if !mon.inSync {
+		return false
+	}
+	// if the window isn't full yet (i.e. just after start up),
+	// then don't do outlier detection
+	if mon.samples.length() < mon.samples.capacity() {
+		return false
+	}
+	// if this offset isn't bad enough to take use out of sync,
+	// then there's no need to consider it as an outlier
+	absOff := math.Abs(off.Seconds())
+	if absOff <= syncMaxOffsetSecs {
+		return false
+	}
+	// if the previous sample was something strange (missing or outlier),
+	// then don't make this one an outlier
+	// XXX we could be more sophisticated here, but the outliers I've seen
+	// are single stray pulses, so this should be good enough
+	// We want to avoid any possibility of ignoring a lot of pulses from the GPS.
+	if mon.samples.last(0).kind != sampleOK {
+		return false
+	}
+	return true
 }
 
 func (mon *Monitor) updateInSync(inSync bool) {

@@ -22,6 +22,10 @@ func (w *window[T]) length() int {
 	return w.end
 }
 
+func (w *window[T]) capacity() int {
+	return len(w.buf)
+}
+
 func (w *window[T]) append(v T) {
 	if w.end == len(w.buf) {
 		w.end = 0
