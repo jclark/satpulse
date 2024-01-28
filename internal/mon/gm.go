@@ -20,7 +20,7 @@ type Grandmaster struct {
 type GrandmasterProps struct {
 	ptime.LeapSecondState
 	ClockClass    uint8
-	ClockAccuracy uint8
+	ClockAccuracy pmc.ClockAccuracy
 }
 
 func NewGrandmaster() (*Grandmaster, <-chan GrandmasterUpdateRequest) {

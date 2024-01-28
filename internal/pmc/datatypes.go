@@ -24,10 +24,12 @@ func AnyPortIdentity() PortIdentity {
 }
 
 type ClockQuality struct {
-	ClockClass              uint8
-	ClockAccuracy           uint8
+	ClockClass              uint8 // in the PTP standard this is not an enumeration
+	ClockAccuracy           ClockAccuracy
 	OffsetScaledLogVariance uint16
 }
+
+type ClockAccuracy uint8
 
 const OffsetScaledLogVarianceUnknown = 0xffff
 
@@ -41,7 +43,7 @@ const (
 )
 
 const (
-	ClockAccuracyWithin1ps = 0x17 + iota
+	ClockAccuracyWithin1ps ClockAccuracy = 0x17 + iota
 	ClockAccuracyWithin2point5ps
 	ClockAccuracyWithin10ps
 	ClockAccuracyWithin25ps
@@ -70,6 +72,67 @@ const (
 	ClockAccuracyGreater10s
 	ClockAccuracyUnknown = 0xFE
 )
+
+type scaledTime struct {
+	significand uint8
+	exponent    uint8
+}
+
+var clockAccuracyWithin = []scaledTime{
+	{1, 12},
+	{25, 11},
+	{10, 12},
+	{25, 12},
+	{100, 12},
+	{250, 12},
+	{1, 9},
+	{25, 8},
+	{10, 9},
+	{25, 9},
+	{100, 9},
+	{250, 9},
+	{1, 6},
+	{25, 5},
+	{10, 6},
+	{25, 6},
+	{100, 6},
+	{250, 6},
+	{1, 3},
+	{25, 2},
+	{10, 3},
+	{25, 3},
+	{100, 3},
+	{250, 3},
+	{1, 0},
+	{10, 0},
+}
+
+func (a ClockAccuracy) String() string {
+	return fmt.Sprintf("0x%02X", uint8(a))
+}
+
+func (a ClockAccuracy) Description() string {
+	if len(clockAccuracyWithin) != int(ClockAccuracyGreater10s-ClockAccuracyWithin1ps) {
+		panic("clockAccuracyWithing array is not correct")
+	}
+	if a >= ClockAccuracyWithin1ps && a < ClockAccuracyGreater10s {
+		st := clockAccuracyWithin[a-ClockAccuracyWithin1ps]
+		units := []string{"s", "ms", "us", "ns", "ps"}
+		exp := st.exponent
+		if exp%3 != 0 {
+			exp++
+			return fmt.Sprintf("<=%.1f%s", float64(st.significand)/10, units[exp/3])
+		}
+		return fmt.Sprintf("<=%d%s", st.significand, units[exp/3])
+	}
+	switch a {
+	case ClockAccuracyUnknown:
+		return "unknown"
+	case ClockAccuracyGreater10s:
+		return ">10s"
+	}
+	return "reserved"
+}
 
 type TimeInterval int64
 

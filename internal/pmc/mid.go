@@ -205,7 +205,36 @@ const (
 	TimeSourceHandSet            TimeSource = 0x60
 	TimeSourceOther              TimeSource = 0x90
 	TimeSourceInternalOscillator TimeSource = 0xA0
+	TimeSourceReserved           TimeSource = 0xFF
 )
+
+func (s TimeSource) String() string {
+	return fmt.Sprintf("0x%02X", uint8(s))
+}
+
+func (s TimeSource) Description() string {
+	switch s {
+	case TimeSourceAtomicClock:
+		return "atomic clock"
+	case TimeSourceGNSS:
+		return "GNSS"
+	case TimeSourceTerrestrialRadio:
+		return "terrestrial radio"
+	case TimeSourceSerialTimeCode:
+		return "serial time code"
+	case TimeSourcePTP:
+		return "PTP"
+	case TimeSourceNTP:
+		return "NTP"
+	case TimeSourceHandSet:
+		return "hand set"
+	case TimeSourceOther:
+		return "other"
+	case TimeSourceInternalOscillator:
+		return "internal oscillator"
+	}
+	return "unknown"
+}
 
 func (GrandmasterSettings) MgmtID() MgmtID {
 	return MIDGrandmasterSettings
