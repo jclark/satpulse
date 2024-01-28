@@ -59,14 +59,14 @@ func (clk *Clock) Path() string {
 const StaleEra ptime.Era = ptime.Era(0)
 
 func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- TsEvent, timeout time.Duration) {
+	defer close(tsEvents)
 	era := StaleEra
 	var bytes [unix2.SizeofPTPExttsEvent]byte
 	buf := bytes[:]
-Loop:
 	for {
 		select {
 		case <-done:
-			break Loop
+			return
 		default:
 		}
 		pollFds := make([]unix.PollFd, 1)
@@ -109,7 +109,6 @@ Loop:
 		}
 		tsEvents <- event
 	}
-	close(tsEvents)
 }
 
 // sample reads the PHC and system clocks and returns the results.
