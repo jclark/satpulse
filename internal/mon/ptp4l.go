@@ -1,7 +1,6 @@
 package mon
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,8 +14,13 @@ import (
 // Time to send and receive a PTP management message to/from ptp4l.
 const ptp4lTimeout = time.Second / 10
 
+// PTP4LWorker processes GrandmasterUpdateRequests and sends them to ptp4l.
+// It should be run in a goroutine.
+// It returns when reqCh is closed.
 // The updating goroutine must wait for a response to each request before sending another request.
-func PTP4LWorker(ctx context.Context, client *pmc.Client, reqCh <-chan GrandmasterUpdateRequest, lg *slog.Logger) {
+func PTP4LWorker(client *pmc.Client, reqCh <-chan GrandmasterUpdateRequest, lg *slog.Logger) {
+	// This doesn't take a context because a request is sent after the context is canceled,
+	// to set ptp4l to a non-synced state. 
 	lg.Debug("the PTP management goroutine has started")
 	sockExists := true
 	for {
@@ -27,7 +31,7 @@ func PTP4LWorker(ctx context.Context, client *pmc.Client, reqCh <-chan Grandmast
 		props := req.props
 		tStart := time.Now()
 		client.T.Conn.SetDeadline(tStart.Add(ptp4lTimeout))
-		err := sendRecv(ctx, client, props)
+		err := sendRecv(client, props)
 		if err != nil {
 			if errors.Is(err, unix.ENOENT) {
 				if sockExists {
@@ -36,7 +40,7 @@ func PTP4LWorker(ctx context.Context, client *pmc.Client, reqCh <-chan Grandmast
 				}
 			} else if errors.Is(err, os.ErrDeadlineExceeded) && sockExists {
 				lg.Info("timeout on ptp4l management socket", "path", client.T.RemoteAddr)
-			} else if ctx.Err() == nil {
+			} else {
 				lg.Warn("error while updating the PTP grandmaster using PTP management protocol", "err", err)
 			}
 		} else {
@@ -58,17 +62,11 @@ func PTP4LWorker(ctx context.Context, client *pmc.Client, reqCh <-chan Grandmast
 	lg.Debug("the PTP4L worker is about to exit")
 }
 
-func sendRecv(ctx context.Context, client *pmc.Client, props GrandmasterProps) error {
+func sendRecv(client *pmc.Client, props GrandmasterProps) error {
 	msg := pmc.NewMgmtSetMsg(props.Settings())
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
 	seqid, err := client.Send(msg)
 	if err != nil {
 		return err
-	}
-	if ctx.Err() != nil {
-		return ctx.Err()
 	}
 	respMsg, err := client.Recv(seqid)
 	if err != nil {

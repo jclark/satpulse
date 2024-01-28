@@ -91,6 +91,10 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 
 func (mon *Monitor) Close() {
 	mon.lg.Debug("closing monitor")
+	mon.updateInSync(false)
+	if mon.gm != nil {
+		mon.gm.Close()
+	}
 	if mon.stats.accumPhase.n > 0 {
 		mon.stats.flush(mon.lg)
 	}

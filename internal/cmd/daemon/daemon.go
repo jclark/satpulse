@@ -227,7 +227,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 
 	if pmcClient != nil {
-		cmd.WaitGroupGo(&wg, func() { mon.PTP4LWorker(ctx, pmcClient, gmUpdateCh, lg) })
+		cmd.WaitGroupGo(&wg, func() { mon.PTP4LWorker(pmcClient, gmUpdateCh, lg) })
 	}
 	if rc != nil {
 		cmd.WaitGroupGo(&wg, func() { mon.RefClockWorker(rc, rcCh, lg) })
@@ -240,9 +240,6 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 			s.LeapSecond(ls, time.Time{})
 		}
 		s.run(tsCh, pCh)
-		if gm != nil {
-			gm.Close()
-		}
 		if rcProxy != nil {
 			rcProxy.Close()
 		}
