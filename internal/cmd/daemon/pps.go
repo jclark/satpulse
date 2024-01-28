@@ -116,7 +116,7 @@ func validateTimePulseConfig(clk *phc.Clock, cfg PHCConfig) error {
 	return errors.New(msg)
 }
 
-func StartPPS(ctx context.Context, clk *phc.Clock, cfg PHCConfig) (<-chan phc.TsEvent, int, error) {
+func StartPPS(ctx context.Context, clk *phc.Clock, cfg PHCConfig, lg *slog.Logger) (<-chan phc.TsEvent, int, error) {
 	err := clk.PinSetFunc(uint32(cfg.Pin), phc.PinFuncExtts, uint32(cfg.Channel))
 	if err != nil {
 		return nil, 0, err
@@ -128,6 +128,10 @@ func StartPPS(ctx context.Context, clk *phc.Clock, cfg PHCConfig) (<-chan phc.Ts
 	c := make(chan phc.TsEvent, 1)
 	go func() {
 		clk.ReadWorker(ctx.Done(), c, exttsTimeout)
+		_, err := clk.ExttsEnable(uint32(cfg.Channel), false)
+		if err != nil {
+			lg.Warn("error while disabling external timestamping", "path", clk.Path(), "err", err)
+		}
 	}()
 	return c, edges, nil
 }

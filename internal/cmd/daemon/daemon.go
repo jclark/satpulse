@@ -210,7 +210,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if rc != nil {
 		rcProxy, rcCh = mon.NewProxyRefClock()
 	}
-	tsCh, edges, err := StartPPS(ctx, clk, cfg.PHC)
+	tsCh, edges, err := StartPPS(ctx, clk, cfg.PHC, lg)
 	if err != nil {
 		return err
 	}
