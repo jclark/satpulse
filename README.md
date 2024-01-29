@@ -42,8 +42,8 @@ This assumes a Linux distribution that uses systemd. Instructions differ slightl
 
 ### Install satpulse
 
-1. [Install Go](https://go.dev/doc/install).
-2. Make sure you have `git`` installed
+1. [Install Go](https://go.dev/doc/install)
+2. Make sure you have `git` installed
    * On Debian: `sudo apt install git`
    * On Fedora: `sudo dnf install git`
 3. Clone the satpulse repository: `git clone https://github.com/jclark/satpulse.git`
@@ -63,21 +63,23 @@ After this, you will have
 1. Edit the configuration file: `sudo nano /usr/local/etc/satpulse.toml`. In particular, you may need to change:
     * the serial port speed
     * the network interface that the PPS input is connected to
-2. Start it: `sudo systemctl start satpulse.service@ttyX` where `/dev/ttyX` is the serial device connected to your GPS receiver 
+2. Start it: `sudo systemctl start satpulse.service@ttyX`, where `/dev/ttyX` is the serial device connected to your GPS receiver 
 3. Check that it started ok: `sudo systemctl status satpulse.service@ttyX`
 4. Check the logs: `journalctl -u satpulse@ttyX`
 5. Enable it at boot: `sudo systemctl enable satpulse.service@ttyX`
 
 ### Install and configure ptp4l
 
-1. `sudo apt install linuxptp`
+1. Install the linuxptp package:
+   * On Debian: `sudo apt install linuxptp`
+   * On Fedora: `sudo dnf install linuxptp`
 2. Install a ptp4l service
    * On Debian: `sudo cp configs/ptp4l.service /etc/systemd/system/`
-   * On Fedora: there's nothing needed; the service provided by the RPM is fine
+   * On Fedora: there's nothing needed; the service provided by the package is fine
 3. Modify the ptp4l config file; use [configs/ptp4l.conf](configs/ptp4l.conf) as a starting point
    * On Debian: the file is `/etc/linuxptp/ptp4l.conf`
    * On Fedora: the file is `/etc/ptp4l.conf`
-4. `sudo systemctl enable --now ptp4l`
+4. Start and enable the ptp4l service: `sudo systemctl enable --now ptp4l`
 
 ## Features
 
