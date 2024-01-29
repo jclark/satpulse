@@ -27,11 +27,17 @@ allarch: $(ALL_GOARCH)
 $(ALL_GOARCH):
 	env GOOS=linux GOARCH=$@ go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" ./...
 
-install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool
+out/arm64/satpulse.toml: configs/satpulse.toml
+	sed -e '/^interface/s/enp1s0/eth0/' -e '/^device/s/ttyUSB0/ttyAMA0/' $< > $@
+
+out/amd64/satpulse.toml: configs/satpulse.toml
+	cp $< $@
+
+install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulse.toml
 	cp out/$(GOARCH)/satpulsed /usr/local/sbin/satpulsed
 	cp out/$(GOARCH)/satpulsetool /usr/local/bin/satpulsetool
 	cp satpulse@.service /etc/systemd/system/
-	[ -f "$(CONFIG_FILE)" ] || cp configs/$(USE_CONFIG).toml $(CONFIG_FILE)
+	[ -f "$(CONFIG_FILE)" ] || cp out/$(GOARCH)/satpulse.toml $(CONFIG_FILE)
 	systemctl daemon-reload
 
 test:

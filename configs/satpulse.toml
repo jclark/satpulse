@@ -1,10 +1,13 @@
-# Config file for satpulse on the Raspberry Pi CM4
-[serial]
-device = "/dev/ttyAMA0"
-speed = 9600
-
+# Config file for satpulse
 [phc]
-interface = "eth0"
+interface = "enp1s0"
+channel = 0
+pin = 0
+
+[serial]
+# This can be overridden with the -d option on the command-line
+device = "/dev/ttyUSB0"
+speed = 9600
 
 [ptp]
 # Unix domain socket for PTP management
@@ -17,13 +20,19 @@ domainNumber = 0
 # (It's called majorSdoId in latest version of PTP standard.) 
 majorSdoId = 0
 
-# Uncomment this to allow a TCP connection to proxy the serial port
-#[[proxy.tcp]]
-#listen = ":2006"
-#readOnly = true
-
 [ntp]
 # Uncomment the sock.path line to act as a refclock SOCK for chrony
 # chrony.conf would need a line like:
 # refclock SOCK /var/run/chrony.satpulse.sock poll 2 filter 4 refid GNSS
 #sock.path = "/var/run/chrony.satpulse.sock"
+
+# Uncomment this to allow a TCP connection to proxy the serial port
+#[[proxy.tcp]]
+#listen = ":2006"
+#readOnly = true
+
+# Uncomment this to allow a Unix domain socket to proxy the serial port
+# This can be used with
+#    satpulsetool gps --socket /var/run/satpulse.sock
+#[[proxy.socket]]
+#path = "/var/run/satpulse.sock"
