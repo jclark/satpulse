@@ -33,28 +33,51 @@ The ptp4l daemon (part of the LinuxPTP project) then uses PTP to distribute the 
 
 ## Quick start
 
-This assumes a Linux system that uses systemd, such as Ubuntu or Fedora.
+Before you start, ensure you have suitable hardware. See the [What hardware to get](#what-hardware-to-get) section below.
 
-1. Ensure you have suitable hardware. See the [What hardware to get](#what-hardware-to-get) section below.
-2. [Install Go](https://go.dev/doc/install).
-3. Make sure you have git installed: `sudo apt install git`
-4. Clone the satpulse repository: `git clone https://github.com/jclark/satpulse.git`
-5. Change into the satpulse directory: `cd satpulse`
-6. Build it: `./build.sh`
-7. Install it: `sudo ./install.sh` (this will install it as `/usr/local/sbin/satpulse`)
-8. Edit the configuration file: `sudo nano /usr/local/etc/satpulse.toml`. In particular, you may need to change:
-    * the serial port device
+This assumes a Linux distribution that uses systemd. Instructions differ slightly between:
+
+* Debian-based distributions: Debian, Raspberry Pi OS, Ubuntu
+* RPM-based distributions: Fedora, CentOS, RHEL
+
+### Install satpulse
+
+1. [Install Go](https://go.dev/doc/install).
+2. Make sure you have `git`` installed
+   * On Debian: `sudo apt install git`
+   * On Fedora: `sudo dnf install git`
+3. Clone the satpulse repository: `git clone https://github.com/jclark/satpulse.git`
+4. Change into the satpulse directory: `cd satpulse`
+5. Build it: `make`
+6. Install it: `sudo make install`
+
+After this, you will have
+
+* the SatPulse daemon installed `/usr/local/sbin/satpulsed`
+* the configuration file for the daemon installed as `/usr/local/etc/satpulse.toml`
+* the systemd unit file for the daemon installed as `/etc/systemd/system/satpulse@.service`
+* the SatPulse command line tool installed as `/usr/local/sbin/satpulsetool`
+
+### Configure satpulse
+
+1. Edit the configuration file: `sudo nano /usr/local/etc/satpulse.toml`. In particular, you may need to change:
     * the serial port speed
     * the network interface that the PPS input is connected to
-9. Start it: `sudo systemctl start satpulse.service`
-10. Check that it started ok: `sudo systemctl status satpulse.service`
-12. Check the logs: `journalctl -u satpulse`
-13. Enable it at boot: `sudo systemctl enable satpulse.service`
-14. Install and configure ptp4l
-    * `sudo apt install linuxptp`
-    * Modify `/etc/linuxptp/ptp4l.conf`; use [configs/ptp4l.conf](configs/ptp4l.conf) as a starting point
-    * `sudo systemctl start ptp4l@eth0.service`; replace `eth0` by the appropriate network interface
-    * `sudo systemctl enable ptp4l@eth0.service`
+2. Start it: `sudo systemctl start satpulse.service@ttyX` where `/dev/ttyX` is the serial device connected to your GPS receiver 
+3. Check that it started ok: `sudo systemctl status satpulse.service@ttyX`
+4. Check the logs: `journalctl -u satpulse@ttyX`
+5. Enable it at boot: `sudo systemctl enable satpulse.service@ttyX`
+
+### Install and configure ptp4l
+
+1. `sudo apt install linuxptp`
+2. Install a ptp4l service
+   * On Debian: `sudo cp configs/ptp4l.service /etc/systemd/system/`
+   * On Fedora: there's nothing needed; the service provided by the RPM is fine
+3. Modify the ptp4l config file; use [configs/ptp4l.conf](configs/ptp4l.conf) as a starting point
+   * On Debian: the file is `/etc/linuxptp/ptp4l.conf`
+   * On Fedora: the file is `/etc/ptp4l.conf`
+4. `sudo systemctl enable --now ptp4l`
 
 ## Features
 
@@ -124,8 +147,6 @@ The [gpsd](https://gpsd.gitlab.io/gpsd/) project provides a daemon that talks to
 
 - it assumes the PPS signal connected to a serial line, rather than to a NIC; the sawtooth correction information is linked to the PPS information, so isn't available when the PPS is connected to the NIC
 - it provides time in UTC not atomic time, and doesn't provide leap second information
-
-
 
 
 

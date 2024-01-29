@@ -1,1 +1,0 @@
-CONFIG_FILE=/usr/local/etc/satpulse.toml
