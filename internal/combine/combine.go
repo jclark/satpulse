@@ -527,35 +527,48 @@ func (sml secMsgList) search(sec ptime.Time) int {
 // It returns 0 if no second can be chosen.
 // The bool return value says whether the choice is good enough to be used as the reference sample.
 func (s *sampleData) chooseNextSec(pulse pulseEdge, sml secMsgList, cfg *Config) (ptime.Time, bool) {
-	phcMatch := s.phcMatch(pulse, cfg)
 	readMatch := s.readMatch(pulse, cfg)
-	phcQ := phcMatch.q
-	readQ := readMatch.q
-	maxQ := max(phcQ, readQ)
-	msgMatch := sml.prePulseMatch(pulse, cfg)
-	msgMatchIsAfter := false
-	if msgMatch.q == matchNone && len(sml) != 0 {
+	var msgMatch secMatch
+	if len(sml) != 0 {
 		q, i := sml.bestMatch(pulse, cfg)
 		if q != matchNone {
 			msgMatch = secMatch{sml[i].sec, q}
-			msgMatchIsAfter = true
 		}
 	}
-	if maxQ >= matchGood && phcMatch.sec == readMatch.sec && min(phcMatch.q, readMatch.q) > matchBad {
-		return phcMatch.sec, msgMatch.q > matchBad
-	}
-
-	if phcMatch.q == matchNone {
-		msgQ := msgMatch.q
-		maxQ = max(readQ, msgQ)
-		if readMatch.sec == msgMatch.sec && min(readMatch.q, msgMatch.q) >= matchMedium {
-			return readMatch.sec, msgMatchIsAfter || maxQ >= matchGood
+	if msgMatch.q > matchBad {
+		if readMatch.q > matchBad && readMatch.sec != msgMatch.sec && pulse.subTRead(s.pulse) < time.Millisecond*2500 {
+			return 0, false
 		}
+		return msgMatch.sec, true
 	}
-	// XXX need to add matches from messages
+	if readMatch.q < matchMedium {
+		return 0, false
+	}
+	// now we have a match based on the time the pulse was read
+	if msgMatch.q == matchNone {
+		msgMatch = sml.prePulseMatch(pulse, cfg)
+	}
 
-	// if we have a PrePulse message and it's consistent, then we can use as a reference sample right away
-	return 0, false
+	readConfirmed := readMatch.q >= matchGood
+	if !readConfirmed {
+		phcMatch := s.phcMatch(pulse, cfg)
+		readConfirmed = phcMatch.q >= matchGood && phcMatch.sec == readMatch.sec
+	}
+
+	if msgMatch.q > matchBad {
+		if readMatch.sec != msgMatch.sec {
+			// something weird going on here: let's wait for the post message
+			return 0, false
+		}
+		return readMatch.sec, readConfirmed
+	}
+
+	// tryEmitFirstSample calls this function with len(sml) == 0
+	// in that case a mediumQuality readMatch is good enough
+	if !readConfirmed && len(sml) > 0 {
+		return 0, false
+	}
+	return readMatch.sec, false
 }
 
 func (s *sampleData) readMatch(pulse pulseEdge, cfg *Config) secMatch {

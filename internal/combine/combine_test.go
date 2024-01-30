@@ -67,12 +67,22 @@ func TestCombinerPostPulseOff1(t *testing.T) {
 	combinerTest(t, 1000, genPostPulse|genPulseOff, PulseType{EdgesPerPulse: 1}, 1)
 }
 
+func TestCombinerFreqLow(t *testing.T) {
+	combinerTest(t, 1000, genNavSoln|genFreqLow, PulseType{EdgesPerPulse: 1}, 1)
+}
+
+func TestCombinerFreqHigh(t *testing.T) {
+	combinerTest(t, 1000, genNavSoln|genFreqHigh, PulseType{EdgesPerPulse: 1}, 1)
+}
+
 const (
 	genPrePulse uint = 1 << iota
 	genPostPulse
 	genNavSoln
 	genPulseOff
 	genDetectPulseWidth
+	genFreqLow
+	genFreqHigh
 )
 
 func combinerTest(t *testing.T, nSecs int, flags uint, pt PulseType, nDelayed int) {
@@ -143,7 +153,7 @@ func (s *testSampler) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool
 			break
 		}
 		// ref >= expected.sec
-		s.t.Errorf("missing sample for second %v", expected.sec)
+		s.t.Errorf("missing sample %d for second %v", s.i, expected.sec)
 	}
 }
 
@@ -213,7 +223,7 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 			phcBase += (taiStart - phcBase) / 1000
 			era++ // go from certain to uncertain
 		}
-		phc := phcBase.Add(elapsed)
+		phc := phcBase.Add(phcScaleDuration(elapsed, flags))
 		pulseDelay := randD(r, cfg.PulseReadDelay+cfg.PulsePollInterval)
 		edge := pulseEdge{
 			ClockTime: ptime.ClockTime{
@@ -232,7 +242,7 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 			pulseDelay = randD(r, cfg.PulseReadDelay+cfg.PulsePollInterval)
 			edge = pulseEdge{
 				ClockTime: ptime.ClockTime{
-					T:   phc.Add(pt.PulseWidth + randSignedD(r, cfg.PulseWidthAccuracy)),
+					T:   phc.Add(phcScaleDuration(pt.PulseWidth, flags) + randSignedD(r, cfg.PulseWidthAccuracy)),
 					Era: era,
 				},
 				tRead: tRead.Add(pt.PulseWidth + pulseDelay),
@@ -260,6 +270,19 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 	}
 	slices.SortFunc(events, func(a, b testEvent) int { return a.t().Compare(b.t()) })
 	return events, samples
+}
+
+func phcScaleDuration(t time.Duration, flags uint) time.Duration {
+	percent := 0
+	switch flags & (genFreqLow | genFreqHigh) {
+	case genFreqLow:
+		percent = 90
+	case genFreqHigh:
+		percent = 110
+	default:
+		return t
+	}
+	return time.Duration((t * time.Duration(percent)) / 100)
 }
 
 func maybePulseOff(pulseOff time.Duration, flags uint) *time.Duration {
