@@ -121,10 +121,9 @@ func (s *SyncRunner) run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 					trp := e.TReadPHC.T
 					if !trp.IsZero() && !e.TReadPHC.Era.Uncertain() && e.TReadPHC.Era == e.Ts.Era {
 						delay = trp.Sub(e.Ts.T)
-						lg.Debug("PHC timestamp delay", "delay", delay)
 					}
 					// Call PulseEdge before SysSample, because the former might change the sync status
-					s.cb.PulseEdge(e.Ts, e.TRead)
+					s.cb.PulseEdge(e.Ts, e.TRead, delay)
 					if !trp.IsZero() {
 						s.mon.SysSample(trp, e.TRead)
 					}

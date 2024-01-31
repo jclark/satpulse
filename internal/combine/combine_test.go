@@ -30,7 +30,7 @@ func (e testMsgEvent) emit(c *Combiner) {
 func (e testMsgEvent) t() time.Time { return e.tRead }
 
 func (e pulseEdge) emit(c *Combiner) {
-	c.PulseEdge(e.ClockTime, e.tRead)
+	c.PulseEdge(e.ClockTime, e.tRead, e.tReadDelay)
 }
 
 func (e pulseEdge) t() time.Time { return e.tRead }
@@ -230,7 +230,8 @@ func genTestData(nSecs int, flags uint, pt PulseType, cfgOpt *Config) ([]testEve
 				T:   phc.Add(randSignedD(r, time.Microsecond)),
 				Era: era,
 			},
-			tRead: tRead.Add(pulseDelay),
+			tRead:      tRead.Add(pulseDelay),
+			tReadDelay: pulseDelay + randSignedD(r, time.Microsecond),
 		}
 		events = append(events, edge)
 		samples[i] = sampleData{

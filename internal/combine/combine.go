@@ -32,7 +32,8 @@ type secMsgList []*secMsgState
 
 type pulseEdge struct {
 	ptime.ClockTime
-	tRead time.Time
+	tRead      time.Time
+	tReadDelay time.Duration
 }
 
 type edgeFilter interface {
@@ -64,9 +65,9 @@ type Config struct {
 
 func (cfg *Config) SetDefault(pt PulseType) {
 	cfg.PulseReadDelay = 50 * time.Millisecond
-	cfg.MessageWindowSize = 900 * time.Millisecond
-	cfg.NavSolnDelay = 100 * time.Millisecond
-	cfg.SerialDelay = 100 * time.Millisecond
+	cfg.MessageWindowSize = 850 * time.Millisecond
+	cfg.NavSolnDelay = 200 * time.Millisecond
+	cfg.SerialDelay = 200 * time.Millisecond
 	cfg.PulseWidthAccuracy = 10 * time.Millisecond
 	cfg.PulseWidthMax = 400 * time.Millisecond
 	cfg.PulsePollInterval = 0
@@ -179,13 +180,14 @@ const maxInitPulses = 5
 // PulseEdge provides information about a pulse edge received by the PHC.
 // tClock gives the PHC time when the pulse edge was timestamped by the PHC hardware.
 // tRead is the system time when this process received the timestamp event from the kernel.
-func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time) {
-	edge := pulseEdge{tClock, tRead}
+func (c *Combiner) PulseEdge(tClock ptime.ClockTime, tRead time.Time, tReadDelay time.Duration) {
+	edge := pulseEdge{tClock, tRead, tReadDelay}
 	inc, delayed := c.edgeFilter.include(edge, &c.cfg)
 	c.lg.Debug("combiner received pulse edge",
 		"t", edge.T,
 		"era", edge.Era,
 		"tRead", edge.tRead,
+		"tReadDelay", tReadDelay,
 		"included", inc,
 		"delayedEdges", delayed != nil,
 		"pending", len(c.pulses),
@@ -242,6 +244,7 @@ func (c *Combiner) tryEmitFirstSample() {
 	pulse := c.pulses[len(c.pulses)-1]
 	q, i := c.secMsgList.bestMatch(pulse, &c.cfg)
 	if q < matchMedium {
+		c.lg.Debug("no matching message for pulse", "t", pulse.T)
 		return
 	}
 	secMsg := c.secMsgList[i]
@@ -253,6 +256,7 @@ func (c *Combiner) tryEmitFirstSample() {
 	delayed := c.delayedSamples(i, sample)
 	if len(delayed) == 0 {
 		// wait for at least one consistent sample
+		c.lg.Debug("initial sample discarded because no consistent previous samples")
 		return
 	}
 	for _, s := range delayed {
@@ -341,7 +345,8 @@ func (c *Combiner) tryUpgradeLastSample(secState *secMsgState) {
 	if c.lastSample.sec != secState.sec {
 		return
 	}
-	q := c.cfg.navSolnMsgMatchQuality(secState.navSolnMsgTRead.Sub(c.lastSample.pulse.tRead))
+	delay, acc := c.cfg.readDelayAcc(secState.navSolnMsgTRead, c.lastSample.pulse)
+	q := c.cfg.navSolnMsgMatchQuality(delay, acc)
 	if q < matchMedium {
 		return
 	}
@@ -366,7 +371,6 @@ func (c *Combiner) findPulseOffset(sec ptime.Time) (off time.Duration, wait bool
 // It returns the quality of the match and the index of the message.
 // It does not consider messages of the kind that are emitted before the pulse.
 func (sl secMsgList) bestMatch(pulse pulseEdge, cfg *Config) (matchQuality, int) {
-	pt := pulse.tRead
 	qualities := make([]matchQuality, len(sl))
 	var bestMatchQual = matchNone
 	var bestMatchIndex = -1
@@ -374,11 +378,11 @@ func (sl secMsgList) bestMatch(pulse pulseEdge, cfg *Config) (matchQuality, int)
 		q := matchNone
 		delay := time.Duration(0)
 		if !sl[i].postPulseMsgTRead.IsZero() {
-			delay = sl[i].postPulseMsgTRead.Sub(pt)
-			q = cfg.postPulseMsgMatchQuality(delay)
+			delay, acc := cfg.readDelayAcc(sl[i].postPulseMsgTRead, pulse)
+			q = cfg.postPulseMsgMatchQuality(delay, acc)
 		} else if !sl[i].navSolnMsgTRead.IsZero() {
-			delay = sl[i].navSolnMsgTRead.Sub(pt)
-			q = cfg.navSolnMsgMatchQuality(delay)
+			delay, acc := cfg.readDelayAcc(sl[i].navSolnMsgTRead, pulse)
+			q = cfg.navSolnMsgMatchQuality(delay, acc)
 		}
 		if q > bestMatchQual {
 			bestMatchQual = q
@@ -417,14 +421,14 @@ func (sml secMsgList) prePulseMatch(pulse pulseEdge, cfg *Config) (secMatch secM
 		return
 	}
 	t = t.Add(advance)
-	delay := t.Sub(pulse.tRead)
+	delay, acc := cfg.readDelayAcc(t, pulse)
 	q := matchNone
 
 	isPostPulse := !sml[len(sml)-2].postPulseMsgTRead.IsZero()
 	if isPostPulse {
-		q = cfg.postPulseMsgMatchQuality(delay)
+		q = cfg.postPulseMsgMatchQuality(delay, acc)
 	} else {
-		q = cfg.navSolnMsgMatchQuality(delay)
+		q = cfg.navSolnMsgMatchQuality(delay, acc)
 	}
 	if q == matchNone {
 		return
@@ -536,7 +540,7 @@ func (s *sampleData) chooseNextSec(pulse pulseEdge, sml secMsgList, cfg *Config)
 		}
 	}
 	if msgMatch.q > matchBad {
-		if readMatch.q > matchBad && readMatch.sec != msgMatch.sec && pulse.subTRead(s.pulse) < time.Millisecond*2500 {
+		if readMatch.q > matchBad && readMatch.sec != msgMatch.sec && pulse.tDiff(s.pulse) < time.Millisecond*2500 {
 			return 0, false
 		}
 		return msgMatch.sec, true
@@ -572,8 +576,9 @@ func (s *sampleData) chooseNextSec(pulse pulseEdge, sml secMsgList, cfg *Config)
 }
 
 func (s *sampleData) readMatch(pulse pulseEdge, cfg *Config) secMatch {
-	sec, frac := nextSec(s.sec, pulse.subTRead(s.pulse))
-	return secMatch{sec, cfg.readSampleMatchQuality(frac)}
+	diff, acc := cfg.pulseDiffAcc(pulse, s.pulse)
+	sec, frac := nextSec(s.sec, diff)
+	return secMatch{sec, cfg.readSampleMatchQuality(frac, acc)}
 }
 
 func (s *sampleData) phcMatch(pulse pulseEdge, cfg *Config) secMatch {
@@ -701,8 +706,24 @@ func (p pulseEdge) isZero() bool {
 	return p.tRead.IsZero()
 }
 
-func (p pulseEdge) subTRead(q pulseEdge) time.Duration {
-	return p.tRead.Sub(q.tRead)
+func (p pulseEdge) tPulse() time.Time {
+	return p.tRead.Add(-p.tReadDelay)
+}
+
+func (p pulseEdge) tDiff(q pulseEdge) time.Duration {
+	return p.tPulse().Sub(q.tPulse())
+}
+
+func (p pulseEdge) tDiffAcc(q pulseEdge) (time.Duration, int) {
+	diff := p.tDiff(q)
+	n := 0
+	if p.tReadDelay == 0 {
+		n++
+	}
+	if q.tReadDelay == 0 {
+		n++
+	}
+	return diff, n
 }
 
 func (p pulseEdge) subT(q pulseEdge) (time.Duration, bool) {
@@ -712,33 +733,48 @@ func (p pulseEdge) subT(q pulseEdge) (time.Duration, bool) {
 	return p.T.Sub(q.T), true
 }
 
-// delay is the tRead of the message minus the tRead of the pulse
-func (cfg *Config) navSolnMsgMatchQuality(delay time.Duration) matchQuality {
-	return cfg.msgMatchQuality(delay, cfg.NavSolnDelay)
+func (cfg *Config) pulseDiffAcc(p, q pulseEdge) (diff, acc time.Duration) {
+	diff, n := p.tDiffAcc(q)
+	acc = time.Duration(n) * (cfg.PulsePollInterval + cfg.PulseReadDelay)
+	return
+}
+
+func (cfg *Config) readDelayAcc(tRead time.Time, p pulseEdge) (diff, acc time.Duration) {
+	diff = tRead.Sub(p.tRead)
+	if p.tReadDelay == 0 {
+		acc = cfg.PulsePollInterval + cfg.PulseReadDelay
+	} else {
+		diff += p.tReadDelay
+	}
+	return
 }
 
 // delay is the tRead of the message minus the tRead of the pulse
-func (cfg *Config) postPulseMsgMatchQuality(delay time.Duration) matchQuality {
-	return cfg.msgMatchQuality(delay, 0)
+func (cfg *Config) navSolnMsgMatchQuality(delay time.Duration, acc time.Duration) matchQuality {
+	return cfg.msgMatchQuality(delay, acc, cfg.NavSolnDelay)
 }
 
-func (cfg *Config) msgMatchQuality(delay time.Duration, extraExpectedDelay time.Duration) matchQuality {
-	windowStart := -cfg.PulsePollInterval - cfg.PulseReadDelay
-	if delay < windowStart || delay > windowStart+cfg.MessageWindowSize {
+// delay is the tRead of the message minus the tRead of the pulse
+func (cfg *Config) postPulseMsgMatchQuality(delay time.Duration, acc time.Duration) matchQuality {
+	return cfg.msgMatchQuality(delay, acc, 0)
+}
+
+func (cfg *Config) msgMatchQuality(delay time.Duration, acc time.Duration, extraExpectedDelay time.Duration) matchQuality {
+	if delay < 0 || delay > cfg.MessageWindowSize {
 		return matchNone
 	}
-	if delay < windowStart+cfg.SerialDelay+extraExpectedDelay {
+	if delay < cfg.SerialDelay+extraExpectedDelay+acc {
 		return matchGood
 	}
 	return matchMedium
 }
 
-func (cfg *Config) readSampleMatchQuality(off time.Duration) matchQuality {
+func (cfg *Config) readSampleMatchQuality(off time.Duration, acc time.Duration) matchQuality {
 	off = off.Abs()
 	if off <= time.Millisecond {
 		return matchGood
 	}
-	if off <= cfg.PulsePollInterval+cfg.PulseReadDelay {
+	if off < acc+time.Millisecond && acc < time.Second/2 {
 		return matchMedium
 	}
 	return matchBad
