@@ -207,6 +207,10 @@ func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, freq float6
 		mon.lg.Info("missed 1PPS sample")
 		return
 	}
+	if kind == sampleOutlier {
+		mon.lg.Info("outlier sample", "off", off, "freq", freq)
+		return
+	}
 }
 
 const logHeader = "# mjd offset freq outlier era\n"
