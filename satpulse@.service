@@ -1,7 +1,7 @@
 [Unit]
 Description=Synchronize PTP hardware clock to GPS on /dev/%I
 After=time-set.target
-After=dev-%i.service
+After=dev-%i.device
 
 [Service]
 Type=simple
