@@ -1,0 +1,7 @@
+Package: satpulse
+Version:
+Section: base
+Priority: optional
+Architecture: any
+Maintainer: James Clark <jjc@jclark.com>
+Description: Use a GPS as a precision time server
