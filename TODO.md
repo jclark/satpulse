@@ -10,7 +10,6 @@ High priority
    * http monitoring
    * how GPS should be configured
 * Control over logging in the non-sdlog case
-* Better error for no PPS  
 
 Others
 * More testing (include fuzzing)
