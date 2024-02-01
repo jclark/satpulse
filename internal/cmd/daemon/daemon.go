@@ -53,7 +53,7 @@ func Cmd(progName string, args []string) {
 		cfg.Serial.Device = vars.serialDevice
 	}
 	level := slog.LevelInfo
-	if vars.verbose {
+	if vars.verbose || cfg.Log.Verbose {
 		level = slog.LevelDebug
 	}
 	var handler slog.Handler

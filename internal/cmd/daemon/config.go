@@ -67,6 +67,7 @@ type NTPSockConfig struct {
 
 type LogConfig struct {
 	Interval int    `toml:"interval"`
+	Verbose  bool   `toml:"verbose"`
 	Dir      string `toml:"dir"`
 	Clock    bool   `toml:"clock"` // whether to generate a clock log
 }
