@@ -13,11 +13,13 @@ import (
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
 	"github.com/jclark/satpulse/internal/gpscfg"
+	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/internal/servo"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/ubx"
 )
@@ -221,7 +223,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		pulseWidth = 0
 	}
 
-	s, err := NewSyncRunner(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gm, rcProxy, sseCh, inLog)
+	d, err := NewDispatcher(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gm, rcProxy, sseCh, inLog)
 	if err != nil {
 		return err
 	}
@@ -237,15 +239,35 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	ls := gcfg.LeapSecond
 	cmd.WaitGroupGo(&wg, func() {
 		if ls != nil {
-			s.LeapSecond(ls, time.Time{})
+			d.LeapSecond(ls, time.Time{})
 		}
-		s.run(tsCh, pCh)
+		d.Run(tsCh, pCh)
 		if rcProxy != nil {
 			rcProxy.Close()
 		}
 	})
 
 	return nil
+}
+
+func NewDispatcher(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, inLog io.Writer) (*gpsevent.Dispatcher, error) {
+	servo, err := servo.New(clk, lg)
+	if err != nil {
+		return nil, err
+	}
+	ls := cfg.LeapSecond.leapSecond()
+	m, err := mon.NewMonitor(servo, lg, mon.MonitorConfig{
+		LeapSecond:   ls,
+		SSECh:        sseCh,
+		RefClock:     rc,
+		Grandmaster:  gm,
+		LogInterval:  cfg.Log.Interval,
+		ClockLogPath: cfg.Log.ClockPath(clk.Path()),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return gpsevent.NewDispatcher(lg, m, ls, clk, phcFlags, pulseWidth, sseCh, inLog)
 }
 
 type InitData struct {
