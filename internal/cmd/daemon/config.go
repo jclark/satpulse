@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
@@ -17,12 +19,7 @@ import (
 	"github.com/jclark/satpulse/internal/pmc"
 )
 
-const programName = "satpulse"
-
-const defaultConfigFileConst = "/usr/local/etc/" + programName + ".toml"
-
-// This is a var so that it can be overridden at build time or test time.
-var defaultConfigFile = defaultConfigFileConst
+const configFileEnvVar = "SATPULSE_CONFIG_FILE"
 
 type Config struct {
 	Serial     SerialConfig
@@ -78,13 +75,29 @@ var leapSecondDefault = LeapSecondConfig{
 	After:  37,
 }
 
-func LoadConfig(path string) (*Config, error) {
-	f, err := os.Open(path)
+func LoadConfig(paths ...string) (*Config, error) {
+	f, err := openConfig(paths)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 	return readConfig(f)
+}
+
+func openConfig(paths []string) (*os.File, error) {
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err == nil {
+			return f, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) || len(paths) == 1 {
+			return nil, err
+		}
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no configuration files specified")
+	}
+	return nil, fmt.Errorf("cannot open any of the configuration files: %s", strings.Join(paths, ", "))
 }
 
 func configErrorDetail(err error) string {

@@ -39,7 +39,7 @@ func Cmd(progName string, args []string) {
 		fmt.Fprint(os.Stderr, msg)
 		os.Exit(exitCode)
 	}
-	cfg, err := LoadConfig(vars.configFile)
+	cfg, err := LoadConfig(vars.configFiles...)
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
 		s := configErrorDetail(err)
