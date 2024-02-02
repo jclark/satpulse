@@ -277,10 +277,10 @@ func (c *Configurator) enableTimeGNSSMsg() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) enableLeapSecondMsg() (gpsprot.ConfigRequest, error) {
-	if !c.opts.EnableLeapSecondMsg {
-		return nil, nil
+	if c.opts.EnableLeapSecondMsg && c.ver.protVerAtLeast(18, 0) {
+		return c.enableMsgRequest(bin.NavTimeLSID, true)
 	}
-	return c.enableMsgRequest(bin.NavTimeLSID, true)
+	return nil, nil
 }
 
 func (c *Configurator) enableSurveyMsg() (gpsprot.ConfigRequest, error) {
