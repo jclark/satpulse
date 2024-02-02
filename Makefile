@@ -2,7 +2,7 @@ CONFIG_DIR=/usr/local/etc/satpulse
 CMD=github.com/jclark/satpulse/internal/cmd
 BUILD_DATE:=$(shell date -u --rfc-3339=seconds)
 DIRTY:=$(shell git diff-index --quiet HEAD || echo .dirty)
-GIT_VERSION:=$(shell git log -1 --format="%cd.%h" --date=format:%Y%m%d)$(DIRTY)
+GIT_VERSION:=$(shell env TZ=UTC git log -1 --format="%cd.%h" --date=format-local:%Y%m%d)$(DIRTY)
 DEB_VERSION=1
 DEB_PKG_VERSION:= 0.0~git$(GIT_VERSION)-$(DEB_VERSION)
 XFLAGS:=-X \"$(CMD).gitVersion=$(GIT_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
@@ -52,14 +52,18 @@ clean:
 deb: out/satpulse_$(DEB_PKG_VERSION)_arm64.deb out/satpulse_$(DEB_PKG_VERSION)_amd64.deb
 
 out/satpulse_$(DEB_PKG_VERSION)_%.deb: % out/%/default.toml
-	install -D -m 644 debian/conffiles out/deb/$*/DEBIAN/conffiles
-	install -D debian/postinst out/deb/$*/DEBIAN/postinst
-	sed -e '/^Architecture:/s/any/$*/' -e '/^Version:/s/:.*/: $(DEB_PKG_VERSION)/' debian/control >out/deb/$*/DEBIAN/control
-	install -D out/$*/satpulsed out/deb/$*/usr/sbin/satpulsed
-	install -D out/$*/satpulsetool out/deb/$*/usr/bin/satpulsetool
-	install -D -m 644 out/$*/default.toml out/deb/$*/etc/satpulse/default.toml
-	mkdir -p out/deb/$*/lib/systemd/system
-	sed -e 's;/usr/local/etc/;/etc/;g' -e 's;/usr/local/;/usr/;g' satpulse@.service >out/deb/$*/lib/systemd/system/satpulse@.service
-	dpkg-deb --root-owner-group --build out/deb/$* out
+	install -D -m 644 debian/conffiles out/$*/deb/DEBIAN/conffiles
+	install -D debian/postinst out/$*/deb/DEBIAN/postinst
+	install -D out/$*/satpulsed out/$*/deb/usr/sbin/satpulsed
+	install -D out/$*/satpulsetool out/$*/deb/usr/bin/satpulsetool
+	install -D -m 644 out/$*/default.toml out/$*/deb/etc/satpulse/default.toml
+	install -D -m 644 LICENSE out/$*/deb/usr/share/doc/satpulse/copyright
+	mkdir -p out/$*/deb/lib/systemd/system
+	sed -e 's;/usr/local/etc/;/etc/;g' -e 's;/usr/local/;/usr/;g' satpulse@.service >out/$*/deb/lib/systemd/system/satpulse@.service
+	installed_size=`du -s -k out/$*/deb | cut -f1`;\
+	sed -e '/^Architecture:/s/any/$*/' -e '/^Package:/a\
+	Version: $(DEB_PKG_VERSION)' -e '/^Maintainer:/a\
+	Installed-Size: '"$$installed_size" debian/control >out/$*/deb/DEBIAN/control
+	dpkg-deb --root-owner-group --build out/$*/deb out
 
 .PHONY: $(ALL_GOARCH) all test install clean deb

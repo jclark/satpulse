@@ -1,7 +1,12 @@
 Package: satpulse
-Version:
-Section: base
+Homepage: https://github.com/jclark/satpulse
+Section: misc
 Priority: optional
 Architecture: any
+Recommends: linuxptp
+Suggests: chrony
 Maintainer: James Clark <jjc@jclark.com>
-Description: Use a GPS as a precision time server
+Description: Use a GPS receiver to provide precision time to PTP and NTP daemons
+  This requires an ethernet controller with a PPS input pin that is supported by
+  the kernel's PTP hardware clock infratructure, such as the Intel i210
+  or the Raspberry Pi CM4.
