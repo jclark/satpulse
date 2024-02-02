@@ -75,6 +75,7 @@ type ConfigRequest interface {
 }
 
 type ConfigOptions struct {
+	InputOnly           bool
 	Flash               bool
 	Reset               bool
 	Detect              bool

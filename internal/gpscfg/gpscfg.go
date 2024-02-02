@@ -44,6 +44,11 @@ type badCount struct {
 var _ ubx.ProtHandler = &msgHandler{}
 
 func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
+	if opts.InputOnly {
+		return &Result{
+			ConfigMap: new(gpsprot.ConfigMap),
+		}, nil
+	}
 	mh := msgHandler{}
 	mh.init(lg, packetCh)
 	var err error

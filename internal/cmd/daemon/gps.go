@@ -9,6 +9,7 @@ import (
 )
 
 type GPSConfig struct {
+	InputOnly  bool    `toml:"inputOnly"`
 	TimeMode   bool    `toml:"timeMode"`
 	Resurvey   bool    `toml:"resurvey"`
 	SurveyTime uint32  `toml:"surveyTime"`
@@ -39,5 +40,6 @@ func (r GPSConfig) gpsprot() (*gpsprot.ConfigMap, gpsprot.ConfigOptions, error) 
 			return nil, opts, fmt.Errorf("survey accuracy %v is too small", opts.Survey.AccLimit)
 		}
 	}
+	opts.InputOnly = r.InputOnly
 	return m, opts, nil
 }
