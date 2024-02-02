@@ -57,6 +57,8 @@ out/satpulse_$(DEB_PKG_VERSION)_%.deb: % out/%/default.toml
 	install -D out/$*/satpulsed out/$*/deb/usr/sbin/satpulsed
 	install -D out/$*/satpulsetool out/$*/deb/usr/bin/satpulsetool
 	install -D -m 644 out/$*/default.toml out/$*/deb/etc/satpulse/default.toml
+	install -D -m 644 configs/ptp4l.service out/$*/deb/usr/share/doc/satpulse/ptp4l.service
+	install -D -m 644 configs/chrony.conf out/$*/deb/usr/share/doc/satpulse/chrony.conf
 	install -D -m 644 LICENSE out/$*/deb/usr/share/doc/satpulse/copyright
 	mkdir -p out/$*/deb/lib/systemd/system
 	sed -e 's;/usr/local/etc/;/etc/;g' -e 's;/usr/local/;/usr/;g' satpulse@.service >out/$*/deb/lib/systemd/system/satpulse@.service
