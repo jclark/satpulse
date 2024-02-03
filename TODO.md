@@ -119,14 +119,6 @@ Others
 
 ## Serial IO
 
-* Problem with writing to serial device that is not connected to anything
-   * Attempting to Close (after doing write) hangs for 30s
-   * Why does happen? If there's no flow control, the UART should transmit the data even if the serial device is not connected.
-   * Possible fixes (not mutually exclusive)
-      * run close in a goroutine with a timeout
-      * change closing_wait by using the same Linux API as setserial (TIOCSSERIAL/TIOCGSERIAL and serial_struct); but this probably needs root
-      * (current approach) do not write until some input is received
-      * make sure we aren't restoring serial port settings to something with flow control
 * Deal with absence of CLOCAL potentially causing open to block
 * Cancelled write should complete UBX message but not drain
 * Can we be detect when baud rate is too low for information passed?
