@@ -38,7 +38,6 @@ Others
 
 High priority
 * Better handle the case where we lose sync: may need to step clock
-* Log some statistics about the servo (similar to what ptp4l does)
 * Make servo configurable from TOML
    * kp, ki constants
    * initial observe time
@@ -49,7 +48,6 @@ Others
 * Experiment with different ki/kp coefficients for PI controller
 * PI controller starts off with a large integral term, which I suspect is not optimal
 * Should the servo do something different if there is more than 1 second since last sample? Interpolate?
-* See what we can learn from the Meta time library servo package.
 * See what we can learn from NTP standard
 * Divide into two phases: initial sync, continuing sync; use different ki/kp values for each phase.
 
@@ -140,7 +138,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 ## GPS configuration
 
 * Bring legacy (<= UBX gen8) configuration to parity with cfgval configuration
-   * choose GNSS time message based on primary GNSS constellation
    * implement setting GNSS constellation
    * implement baud rate property
    * saving to flash
@@ -154,11 +151,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 * Allow daemon TOML configuration of important things that we cannot determine for the user
    * primary GNSS constellation
    * antenna delay
-* TOML configuration to control of what kind of configuration satpulsed does to the receiver
-    * disable sending any message to receiver
-    * disable use of UBX
-    * disable modifying receiver configuration
-    * forceUBXLegacyCfg
 * TOML configuration for pulseWidth/dutyCycle
     * use in conjunction with no configuration for input to correlator
 * Option for satpulsetool to get survey result
