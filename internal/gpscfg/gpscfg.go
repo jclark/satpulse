@@ -229,7 +229,8 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.Protocol, targ
 	for {
 		req, err := cfgtor.NextRequest()
 		if err != nil {
-			return nil, err
+			mh.lg.Warn("GPS configuration failed", "err", err)
+			continue
 		}
 		if req == nil {
 			break
@@ -298,7 +299,8 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 				ack := cfgtor.FindAck(pkt, tSend)
 				if ack != nil {
 					if !ack.OK {
-						return fmt.Errorf("configuration message %s rejected", reqID)
+						mh.lg.Warn("GPS configuration failed: message rejected", "msgID", reqID)
+						return nil
 					}
 					req.Done()
 					mh.lg.Debug("configuration message accepted", "msgID", reqID, "delay", ack.TRead.Sub(tSend).String())

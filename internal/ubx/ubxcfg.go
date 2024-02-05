@@ -15,8 +15,9 @@ type Configurator struct {
 	acks      ackList
 	tRead     map[bin.MsgID]time.Time
 	raw       RawConfig
+	origPrt   *bin.CfgPrt
 	steps     []func(*Configurator) (gpsprot.ConfigRequest, error)
-	stepIndex int
+	stepIndex int                // -1 says to perform recovery
 	target    *gpsprot.ConfigMap // never nil
 	opts      gpsprot.ConfigOptions
 	survey    bool // start a survey
@@ -34,15 +35,15 @@ type RawConfig struct {
 	CfgVals // access with valsPtr() so it gets lazily initialized
 }
 
-var normalConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
+var legacyConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).pollPrt,
-	(*Configurator).setPrt,              // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
-	(*Configurator).enableLeapSecondMsg, // do this soon, to avoid risk of GPS being completely silent
-	(*Configurator).pollGNSS,            // need this to know which will be primary GNSS
-	(*Configurator).enableTimeGNSSMsg,
+	(*Configurator).setPrt,            // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
+	(*Configurator).pollGNSS,          // need this to know which will be primary GNSS, which we need for enabling the time message
+	(*Configurator).enableTimeGNSSMsg, // do this early to minimize likelihood of leaving GPS in unuseable state with no time messages being output
 	(*Configurator).pollTp5,
 	(*Configurator).setTp5,
 	(*Configurator).enableTpMsg,
+	(*Configurator).enableLeapSecondMsg,
 	(*Configurator).pollTmode,
 	(*Configurator).setTmode,
 	(*Configurator).reqSurvey,
@@ -65,7 +66,7 @@ var newConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 var _ gpsprot.Configurator = (*Configurator)(nil)
 
 func newConfigurator(target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version) *Configurator {
-	steps := normalConfigSteps
+	steps := legacyConfigSteps
 	if ver.protVerGreater(23, 1) {
 		steps = newConfigSteps
 	}
@@ -83,10 +84,17 @@ func (c *Configurator) ConfigMap() *gpsprot.ConfigMap {
 }
 
 func (c *Configurator) NextRequest() (gpsprot.ConfigRequest, error) {
+	if c.stepIndex < 0 {
+		c.stepIndex = len(c.steps)
+		return c.recover()
+	}
 	for c.stepIndex < len(c.steps) {
 		req, err := c.steps[c.stepIndex](c)
 		c.stepIndex++
 		if req != nil || err != nil {
+			if err != nil {
+				c.stepIndex = -1
+			}
 			return req, err
 		}
 	}
@@ -98,7 +106,28 @@ func (c *Configurator) FindAck(packet []byte, tSent time.Time) *gpsprot.Ack {
 	if a == nil {
 		return nil
 	}
+	if !a.OK {
+		c.stepIndex = -1
+	}
 	return &a.Ack
+}
+
+func (c *Configurator) recover() (gpsprot.ConfigRequest, error) {
+	// only need to do recovery for legacy configuration
+	if &c.steps[0] != &legacyConfigSteps[0] {
+		return nil, nil
+	}
+	// if we didn't cause NMEA output to be disabled, then we don't need to perform recovery
+	if !c.raw.prtNMEAOutDisabled(c.origPrt) {
+		return nil, nil
+	}
+	// if we got far enough to enable the time GNSS message, then do need to switch back to NMEA
+	if c.timeGNSSMsgEnabled() {
+		return nil, nil
+	}
+	// we disabled NMEA output, but didn't get far enough to enable the time GNSS message
+	// we had better reenable NMEA output, or the GPS will be silent
+	return c.msgSetRequest(c.origPrt)
 }
 
 func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
@@ -276,6 +305,13 @@ func (c *Configurator) enableTimeGNSSMsg() (gpsprot.ConfigRequest, error) {
 	}
 }
 
+func (c *Configurator) timeGNSSMsgEnabled() bool {
+	if c.ver.ProductCategory() == "FTS" {
+		return c.raw.msgEnabled(bin.TimTosID)
+	}
+	return c.raw.msgEnabled(bin.NavTimeGPSID)
+}
+
 func (c *Configurator) enableLeapSecondMsg() (gpsprot.ConfigRequest, error) {
 	if c.opts.EnableLeapSecondMsg && c.ver.protVerAtLeast(18, 0) {
 		return c.enableMsgRequest(bin.NavTimeLSID, true)
@@ -309,6 +345,8 @@ func (c *Configurator) setPrt() (gpsprot.ConfigRequest, error) {
 	if prt == nil {
 		return nil, nil
 	}
+	c.origPrt = new(bin.CfgPrt)
+	*c.origPrt = *c.raw.prt
 	return c.msgSetRequest(prt)
 }
 

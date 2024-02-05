@@ -36,6 +36,28 @@ func (raw *CfgOld) SetMsgRate(msgID bin.MsgID, rate byte) {
 	raw.msgRate[msgID] = rates
 }
 
+func (raw *CfgOld) msgEnabled(msgID bin.MsgID) bool {
+	if raw == nil || raw.prt == nil {
+		return false
+	}
+	prt := raw.prt.PortID
+	if prt >= nPort {
+		return false
+	}
+	if raw.msgRate == nil {
+		return false
+	}
+	rates := raw.msgRate[msgID]
+	return rates[int(prt)] == 1
+}
+
+func (raw *CfgOld) prtNMEAOutDisabled(origPrt *bin.CfgPrt) bool {
+	if origPrt == nil {
+		return false
+	}
+	return origPrt.OutProtoMask&bin.CfgPrtProtoNMEA != 0 && raw.prt.OutProtoMask&bin.CfgPrtProtoNMEA == 0
+}
+
 func (raw *CfgOld) cookPrt(cm *gpsprot.ConfigMap) {
 	prt := raw.prt
 	if prt == nil {
