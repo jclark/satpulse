@@ -1,6 +1,7 @@
 package ubx
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -107,85 +108,35 @@ func TestRate(t *testing.T) {
 }
 
 func TestConfiguratorSane(t *testing.T) {
-	testConfigurator(t, func(raw *RawConfig, target *gpsprot.ConfigMap, ver *Version) {
-		target.SetPPS()
-	})
-
+	target := &gpsprot.ConfigMap{}
+	target.SetPPS()
+	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGPS(t *testing.T) {
-	testConfigurator(t, func(raw *RawConfig, target *gpsprot.ConfigMap, ver *Version) {
-		target.SetPPS()
-		gpsprot.CfgPrimaryGNSS.Set(target, gpsprot.GPS)
-	})
+	target := &gpsprot.ConfigMap{}
+	target.SetPPS()
+	gpsprot.CfgPrimaryGNSS.Set(target, gpsprot.GPS)
+	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGalileo(t *testing.T) {
-	testConfigurator(t, func(raw *RawConfig, target *gpsprot.ConfigMap, ver *Version) {
-		target.SetPPS()
-		raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
-		gpsprot.CfgPrimaryGNSS.Set(target, gpsprot.GAL)
-	})
+	target := &gpsprot.ConfigMap{}
+	target.SetPPS()
+	gpsprot.CfgPrimaryGNSS.Set(target, gpsprot.GAL)
+	rcvr := newLegacyReceiver()
+	rcvr.raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
+	testConfigurator(t, rcvr, target)
 }
 
-func testConfigurator(t *testing.T, setup func(*RawConfig, *gpsprot.ConfigMap, *Version)) *Configurator {
-	raw := newRawConfig()
-	target := &gpsprot.ConfigMap{}
-	ver := &Version{}
-	setup(raw, target, ver)
-
-	prot := &Protocol{}
-	prot.ver = ver
-
-	c, err := prot.Configure(target, gpsprot.ConfigOptions{})
+func testConfigurator(t *testing.T, rcvr gpsReceiver, target *gpsprot.ConfigMap) {
+	c, naks, err := runConfiguration(rcvr, target, gpsprot.ConfigOptions{})
 	if err != nil {
-		t.Fatalf("unexpected error from Configure: %v", err)
+		t.Fatalf("unexpected error from runConfiguration: %v", err)
 	}
-	tm := time.Now()
-	for {
-		tm = tm.Add(time.Second / 10)
-		req, err := c.NextRequest()
-		if err != nil {
-			t.Errorf("unexpected error from NextRequest: %v", err)
-			break
-		}
-		if req == nil {
-			break
-		}
-		const pollMaxLen = 9
-		pkt := req.Packet()
-		msgID := ubxbin.PacketMsgId(pkt)
-		if len(pkt) <= pollMaxLen {
-			var msg ubxbin.Msg
-			switch msgID {
-			case ubxbin.CfgPrtID:
-				msg = raw.prt
-			case ubxbin.CfgTp5ID:
-				msg = raw.tp5
-			case ubxbin.CfgNav5ID:
-				msg = raw.nav5
-			case ubxbin.CfgRateID:
-				msg = raw.rate
-			case ubxbin.CfgGNSSID:
-				msg = raw.gnss
-			}
-			if msg != nil {
-				resp, err := ubxbin.Serialize(msg)
-				if err != nil {
-					t.Errorf("unexpected serialization error: %v", err)
-				} else {
-					err = prot.ProcessPacket(string(resp), tm)
-					if err != nil {
-						t.Errorf("unexpected error processing response packet: %v", err)
-					}
-				}
-			}
-		}
-		if req.Ackable() {
-			req.Done()
-		}
+	if len(naks) > 0 {
+		t.Errorf("unexpected naks: %v", naks)
 	}
-
 	result := c.ConfigMap()
 
 	bad := target.Inconsistent(result)
@@ -196,9 +147,143 @@ func testConfigurator(t *testing.T, setup func(*RawConfig, *gpsprot.ConfigMap, *
 	if !missing.IsEmpty() {
 		t.Errorf("final configuration is missing: %v", missing)
 	}
+}
 
+func TestConfiguratorRecover1(t *testing.T) {
+	c := testConfiguratorRecover(t, ubxbin.CfgGNSSID)
+	if c.raw.prt.OutProtoMask&ubxbin.CfgPrtProtoNMEA == 0 {
+		t.Errorf("expected NMEA to be enabled, but it wasn't")
+	}
+}
+
+func TestConfiguratorRecover2(t *testing.T) {
+	c := testConfiguratorRecover(t, ubxbin.CfgRateID)
+	// in this case we got far enough to enable the time message, so we don't need to disable NMEA
+	if c.raw.prt.OutProtoMask&ubxbin.CfgPrtProtoNMEA != 0 {
+		t.Errorf("expected NMEA not to be enabled, but it was")
+	}
+}
+
+func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator {
+	target := &gpsprot.ConfigMap{}
+	target.SetPPS()
+	gpsprot.CfgNMEAEnabled.Set(target, false)
+	rcvr := newLegacyReceiver()
+	rcvr.nakPollMsgID = nakMsgID
+	c, naks, err := runConfiguration(rcvr, target, gpsprot.ConfigOptions{EnableTimeMsg: true})
+	if err != nil {
+		t.Errorf("unexpected error from runConfiguration: %v", err)
+	}
+	if len(naks) != 1 {
+		t.Errorf("expected 1 nak, got %d", len(naks))
+	}
+	return c
+}
+
+type gpsReceiver interface {
+	sendReceive(pkt []byte) [][]byte
+	version() *Version
+}
+
+func runConfiguration(rcvr gpsReceiver, target *gpsprot.ConfigMap, options gpsprot.ConfigOptions) (*Configurator, []string, error) {
+	prot := &Protocol{}
+	prot.ver = rcvr.version()
+	var naks []string
+
+	c, err := prot.Configure(target, options)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unexpected error from Configure: %w", err)
+	}
+	tm := time.Now()
+	for {
+		tm = tm.Add(time.Second / 10)
+		req, err := c.NextRequest()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unexpected error from NextRequest: %w", err)
+		}
+		if req == nil {
+			break
+		}
+		sendTm := tm
+		pkt := req.Packet()
+		resps := rcvr.sendReceive(pkt)
+		for _, resp := range resps {
+			tm = tm.Add(time.Second / 10)
+			err = prot.ProcessPacket(string(resp), tm)
+			if err != nil {
+				return nil, nil, fmt.Errorf("unexpected error processing response packet: %w", err)
+			}
+		}
+		ack := c.FindAck(pkt, sendTm)
+		if ack == nil {
+			return nil, nil, fmt.Errorf("no ack found for request %s", req.ID())
+		} else if ack.OK {
+			req.Done()
+		} else {
+			naks = append(naks, req.ID())
+		}
+	}
 	uc := c.(*Configurator)
-	return uc
+	return uc, naks, nil
+}
+
+type legacyReceiver struct {
+	ver          *Version
+	raw          *RawConfig
+	nakPollMsgID ubxbin.MsgID
+}
+
+func newLegacyReceiver() *legacyReceiver {
+	return &legacyReceiver{
+		ver: new(Version),
+		raw: newRawConfig(),
+	}
+}
+
+func (r *legacyReceiver) version() *Version {
+	return r.ver
+}
+
+func (r *legacyReceiver) sendReceive(pkt []byte) [][]byte {
+	msgID := ubxbin.PacketMsgId(pkt)
+	const pollMaxLen = 9
+	var responses [][]byte
+
+	if len(pkt) <= pollMaxLen {
+		if msgID == r.nakPollMsgID {
+			nak := ubxbin.AckNak{MsgID: msgID}
+			resp, _ := ubxbin.Serialize(&nak)
+			return [][]byte{resp}
+		}
+		var msg ubxbin.Msg
+		switch msgID {
+		case ubxbin.CfgPrtID:
+			msg = r.raw.prt
+		case ubxbin.CfgTp5ID:
+			msg = r.raw.tp5
+		case ubxbin.CfgNav5ID:
+			msg = r.raw.nav5
+		case ubxbin.CfgRateID:
+			msg = r.raw.rate
+		case ubxbin.CfgGNSSID:
+			msg = r.raw.gnss
+		}
+		if msg != nil {
+			if resp, err := ubxbin.Serialize(msg); err == nil {
+				responses = append(responses, resp)
+			}
+		}
+
+	}
+	// XXX if it's not a poll we should update the receiver's state
+	if msgID.Ackable() {
+		ack := ubxbin.AckAck{MsgID: msgID}
+
+		if resp, err := ubxbin.Serialize(&ack); err == nil {
+			responses = append(responses, resp)
+		}
+	}
+	return responses
 }
 
 func newRawConfig() *RawConfig {
