@@ -79,6 +79,7 @@ type ConfigOptions struct {
 	Flash               bool
 	Reset               bool
 	Detect              bool
+	ForceOutput         bool
 	EnableLeapSecondMsg bool
 	EnableTimeMsg       bool
 	Survey              Survey

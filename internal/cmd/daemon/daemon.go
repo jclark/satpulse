@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -170,7 +171,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 	gcfg, err := gpscfg.Configure(ctx, lg, gmap, gopts, pCh, conn)
 	if err != nil {
-		return err
+		if errors.Is(err, gpscfg.ErrNoResponse) {
+			lg.Info(err.Error())
+		} else {
+			return err
+		}
 	}
 	if ctx.Err() != nil {
 		return nil

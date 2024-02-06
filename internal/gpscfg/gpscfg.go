@@ -43,6 +43,8 @@ type badCount struct {
 
 var _ ubx.ProtHandler = &msgHandler{}
 
+var ErrNoResponse = errors.New("no response to configuration poll message; not configuring GPS")
+
 func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetCh)
@@ -50,18 +52,21 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigMap, 
 	if opts.Detect {
 		err = mh.detect(ctx)
 	}
-	if opts.InputOnly {
+	if err != nil {
 		// even with InputOnly, we want to run detect in order to deal with framing errors
-		if err != nil {
-			// there's no point in giving up here, maybe we can bring it back to life using satpulsetool
+		if opts.InputOnly {
+			// there's no point in giving up with InputOnly, maybe we can bring it back to life using satpulsetool
 			lg.Warn(err.Error())
+		} else if opts.ForceOutput {
+			lg.Info("no output detected from GPS, but trying to probe GPS anyway")
+		} else {
+			return nil, err
 		}
+	}
+	if opts.InputOnly {
 		return &Result{
 			ConfigMap: new(gpsprot.ConfigMap),
 		}, nil
-	}
-	if err != nil {
-		return nil, err
 	}
 	// After we have done detection, bad stuff is a cause for concern.
 	badStart := mh.bad
@@ -86,8 +91,9 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigMap, 
 		}
 	} else {
 		// XXX if ubxMsgCount > 0, then probably we cannot send to the GPS
-		lg.Info("GPS does not respond to UBX messages; continuing hopefully")
-		cm = new(gpsprot.ConfigMap)
+		return &Result{
+			ConfigMap: new(gpsprot.ConfigMap),
+		}, ErrNoResponse
 	}
 	return mh.finish(cm), nil
 }

@@ -14,6 +14,7 @@ type flagVars struct {
 	reset           bool
 	pps             bool
 	nmea            bool
+	force           bool
 	localSpeed      int
 	remoteSpeed     int
 	serialDevice    string
@@ -27,7 +28,7 @@ type flagVars struct {
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--socket path]
-            [--flash] [--reset] [--speed bps] [--nmea] [-p|--pps]
+            [--flash] [--reset] [--speed bps] [--nmea] [--force] [-p|--pps]
 			[-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [--disable-time-mode]`
 
 const defaultSurveyTime = 2000
@@ -44,6 +45,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&vars.flash, "flash", false, "save the configuration changes to flash memory on the GPS receiver")
 	flags.BoolVar(&vars.reset, "reset", false, "reset the GPS receiver")
 	flags.BoolVar(&vars.nmea, "nmea", false, "enable NMEA output from the GPS receiver")
+	flags.BoolVar(&vars.force, "force", false, "force writing to serial device even if no GPS detected")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device to configure")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.IntVarP(&vars.localSpeed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
