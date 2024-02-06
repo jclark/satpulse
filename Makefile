@@ -51,7 +51,10 @@ clean:
 
 deb: out/satpulse_$(DEB_PKG_VERSION)_arm64.deb out/satpulse_$(DEB_PKG_VERSION)_amd64.deb
 
-out/satpulse_$(DEB_PKG_VERSION)_%.deb: % out/%/default.toml
+out/satpulse@.service: satpulse@.service
+	sed -e 's;/usr/local/etc/;/etc/;g' -e 's;/usr/local/;/usr/;g' $< >$@
+
+out/satpulse_$(DEB_PKG_VERSION)_%.deb: % out/%/default.toml out/satpulse@.service
 	install -D -m 644 debian/conffiles out/$*/deb/DEBIAN/conffiles
 	install -D debian/postinst out/$*/deb/DEBIAN/postinst
 	install -D out/$*/satpulsed out/$*/deb/usr/sbin/satpulsed
@@ -60,8 +63,7 @@ out/satpulse_$(DEB_PKG_VERSION)_%.deb: % out/%/default.toml
 	install -D -m 644 configs/ptp4l.service out/$*/deb/usr/share/doc/satpulse/ptp4l.service
 	install -D -m 644 configs/chrony.conf out/$*/deb/usr/share/doc/satpulse/chrony.conf
 	install -D -m 644 LICENSE out/$*/deb/usr/share/doc/satpulse/copyright
-	mkdir -p out/$*/deb/lib/systemd/system
-	sed -e 's;/usr/local/etc/;/etc/;g' -e 's;/usr/local/;/usr/;g' satpulse@.service >out/$*/deb/lib/systemd/system/satpulse@.service
+	install -D -m 644 out/satpulse@.service out/$*/deb/lib/systemd/system/satpulse@.service
 	installed_size=`du -s -k out/$*/deb | cut -f1`;\
 	sed -e '/^Architecture:/s/any/$*/' -e '/^Package:/a\
 	Version: $(DEB_PKG_VERSION)' -e '/^Maintainer:/a\
