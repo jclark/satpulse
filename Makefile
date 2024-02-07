@@ -5,11 +5,13 @@ DIRTY:=$(shell git diff-index --quiet HEAD || echo .dirty)
 GIT_VERSION:=$(shell env TZ=UTC git log -1 --format="%cd.%h" --date=format-local:%Y%m%d)$(DIRTY)
 DEB_VERSION=1
 DEB_PKG_VERSION:= 0.0~git$(GIT_VERSION)-$(DEB_VERSION)
+RPM_RELEASE=1
+RPM_VERSION=$(shell env TZ=UTC git log -1 --format="0^%cdgit%h" --date=format-local:%Y%m%d)
+RPM_PKG_VERSION=$(RPM_VERSION)-$(RPM_RELEASE)
 XFLAGS:=-X \"$(CMD).gitVersion=$(GIT_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
 TAGS=netgo,osusergo
 # The GOARCHs we support.
 ALL_GOARCH=arm64 amd64
-
 ARCH:=$(shell uname -m)
 
 # Set goarch based on detected architecture
@@ -49,12 +51,15 @@ test:
 clean:
 	-rm -rf out
 
-deb: out/satpulse_$(DEB_PKG_VERSION)_arm64.deb out/satpulse_$(DEB_PKG_VERSION)_amd64.deb
+DEB_PATTERN=out/%/satpulse_$(DEB_PKG_VERSION)_%.deb
+DEBS=$(patsubst %,$(DEB_PATTERN), $(ALL_GOARCH))
+
+deb: $(DEBS)
 
 out/satpulse@.service: satpulse@.service
 	sed -e 's;/usr/local/etc/;/etc/;g' -e 's;/usr/local/;/usr/;g' $< >$@
 
-out/satpulse_$(DEB_PKG_VERSION)_%.deb: % out/%/default.toml out/satpulse@.service
+$(DEB_PATTERN): % out/%/default.toml out/satpulse@.service
 	install -D -m 644 debian/conffiles out/$*/deb/DEBIAN/conffiles
 	install -D debian/postinst out/$*/deb/DEBIAN/postinst
 	install -D out/$*/satpulsed out/$*/deb/usr/sbin/satpulsed
@@ -68,6 +73,23 @@ out/satpulse_$(DEB_PKG_VERSION)_%.deb: % out/%/default.toml out/satpulse@.servic
 	sed -e '/^Architecture:/s/any/$*/' -e '/^Package:/a\
 	Version: $(DEB_PKG_VERSION)' -e '/^Maintainer:/a\
 	Installed-Size: '"$$installed_size" debian/control >out/$*/deb/DEBIAN/control
-	dpkg-deb --root-owner-group --build out/$*/deb out
+	dpkg-deb --root-owner-group --build out/$*/deb out/$*
 
-.PHONY: $(ALL_GOARCH) all test install clean deb
+RPM_PATTERN=out/%/satpulse-$(RPM_PKG_VERSION).%.rpm
+ALL_RPM_ARCH=aarch64 x86_64
+RPMS=$(patsubst %,$(RPM_PATTERN),$(ALL_RPM_ARCH))
+TOMLS:=$(patsubst %,out/%/default.toml,$(ALL_GOARCH))
+rpm: $(RPMS)
+
+$(RPM_PATTERN): $(ALL_GOARCH) $(TOMLS) out/satpulse@.service
+	goarch=$(subst x86_64,amd64,$(subst aarch64,arm64,$*)); \
+	test -L out/$* || ln -s $$goarch out/$*; \
+	cwd=`pwd`; \
+	rpmbuild -bb --target $* --define "goarch $$goarch" \
+	--build-in-place \
+	--buildroot "$$cwd/out/$*/rpm" \
+	--define "version $(RPM_VERSION)" \
+	--define "_rpmdir $$cwd/out" \
+	satpulse.spec
+
+.PHONY: $(ALL_GOARCH) all test install clean deb rpm
