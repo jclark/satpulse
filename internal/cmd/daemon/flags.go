@@ -14,11 +14,10 @@ type flagVars struct {
 	wait         bool
 	configFiles  []string
 	serialDevice string
-	inputLogFile string
 }
 
 const summary = `[-h|--help] [-V|--version] [-v|--verbose] [-w|--wait] [-s|--systemd-log]
-       [-f|--config-file path] [-d|--serial-device device-path] [--input-log-file path]`
+       [-f|--config-file path] [-d|--serial-device device-path]`
 
 // parseFlags parses the command line flags and returns the flagVars, a string to display, and an error.
 // The caller will display the string and exit if the flagVars are nil.
@@ -36,7 +35,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, string, error) {
 	flags.BoolVarP(&showVersion, "version", "V", false, "show version information")
 	flags.StringSliceVarP(&vars.configFiles, "config-file", "f", nil, "configuration file")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device to configure")
-	flags.StringVar(&vars.inputLogFile, "input-log-file", "", "input log file")
 	usage := func() string {
 		return fmt.Sprintf("Usage: %s %s\nOptions:\n%s", cmdName, summary, flags.FlagUsages())
 	}

@@ -67,6 +67,7 @@ type LogConfig struct {
 	Verbose  bool   `toml:"verbose"`
 	Dir      string `toml:"dir"`
 	Clock    bool   `toml:"clock"` // whether to generate a clock log
+	Event    bool   `toml:"event"` // whether to generate an event log
 }
 
 var leapSecondDefault = LeapSecondConfig{
@@ -159,9 +160,17 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 
 // ClockPath returns the path for the clock log file.
 // phcPath is the path to the PHC device (e.g. /dev/ptp0)
-func (cfg *LogConfig) ClockPath(phcPath string) string {
-	if !cfg.Clock {
+func (cfg *LogConfig) ClockPath(phcPath, ext string) string {
+	return cfg.path(cfg.Clock, "clock", phcPath, ext)
+}
+
+func (cfg *LogConfig) EventPath(serialPath, ext string) string {
+	return cfg.path(cfg.Event, "event", serialPath, ext)
+}
+
+func (cfg *LogConfig) path(enable bool, kind, devPath, ext string) string {
+	if !enable {
 		return ""
 	}
-	return filepath.Join(cfg.Dir, "clock."+filepath.Base(phcPath)+".log")
+	return filepath.Join(cfg.Dir, kind+"."+filepath.Base(devPath)+ext)
 }

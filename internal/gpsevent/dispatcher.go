@@ -2,7 +2,6 @@ package gpsevent
 
 import (
 	"encoding/json"
-	"io"
 	"log/slog"
 	"math"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/combine"
 	"github.com/jclark/satpulse/internal/geopos"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/logfile"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/phc"
@@ -23,19 +23,22 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const LogExtension = ".jsonl"
+
 type Dispatcher struct {
 	gpsprot.DefaultHandler
-	inLog                 io.Writer
 	sseCh                 chan<- sse.Event
 	cb                    *combine.Combiner
 	mon                   *mon.Monitor
 	ls                    ptime.LeapSecond
 	lg                    *slog.Logger
+	lf                    logfile.LogFile
 	lastTime              ptime.Time
 	loggedUnknownProtocol bool
+	tStart                time.Time
 }
 
-func NewDispatcher(lg *slog.Logger, m *mon.Monitor, ls ptime.LeapSecond, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, sseCh chan<- sse.Event, inLog io.Writer) (*Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, m *mon.Monitor, ls ptime.LeapSecond, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, sseCh chan<- sse.Event, eventLogPath string) (*Dispatcher, error) {
 	pt := combine.PulseType{
 		EdgesPerPulse: phcFlags.Edges(),
 		PulseWidth:    pulseWidth,
@@ -50,12 +53,16 @@ func NewDispatcher(lg *slog.Logger, m *mon.Monitor, ls ptime.LeapSecond, clk *ph
 		return nil, err
 	}
 	d := Dispatcher{
-		cb:    combiner,
-		mon:   m,
-		ls:    ls,
-		lg:    lg,
-		sseCh: sseCh,
-		inLog: inLog,
+		cb:     combiner,
+		mon:    m,
+		ls:     ls,
+		lg:     lg,
+		sseCh:  sseCh,
+		tStart: time.Now(),
+	}
+	err = d.lf.Open(eventLogPath)
+	if err != nil {
+		return nil, err
 	}
 	return &d, nil
 }
@@ -76,6 +83,7 @@ func (d *Dispatcher) Run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, unix.SIGHUP)
 	lg := d.lg
+	defer d.lf.Close(d.lg)
 	lg.Debug("sync worker goroutine started")
 
 	nSkipped := 0
@@ -100,16 +108,7 @@ func (d *Dispatcher) Run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 						lg.Info("skipped stale PTP hardware clock timestamps", "n", nSkipped)
 						nSkipped = 0
 					}
-					var delay time.Duration
-					trp := e.TReadPHC.T
-					if !trp.IsZero() && !e.TReadPHC.Era.Uncertain() && e.TReadPHC.Era == e.Ts.Era {
-						delay = trp.Sub(e.Ts.T)
-					}
-					// Call PulseEdge before SysSample, because the former might change the sync status
-					d.cb.PulseEdge(e.Ts, e.TRead, delay)
-					if !trp.IsZero() {
-						d.mon.SysSample(trp, e.TRead)
-					}
+					d.timestamp(e)
 				}
 			} else {
 				lg.Debug("timestamp channel of sync worker goroutine was closed")
@@ -126,13 +125,9 @@ func (d *Dispatcher) Run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 			d.mon.Tick(t)
 		case <-sig:
 			d.mon.ReopenLog()
+			d.lf.Reopen(d.lg)
 		}
 	}
-}
-
-type TimeEvent struct {
-	UTC string `json:"utc"`
-	TAI int64  `json:"tai"`
 }
 
 func (d *Dispatcher) handlePacket(pkt scan.Packet) {
@@ -156,19 +151,42 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	}
 }
 
-func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
-	if d.inLog != nil {
-		bytes, err := json.Marshal(mt)
-		if err != nil {
-			d.lg.Info("failed to convert Time message to JSON", "err", err)
-		} else {
-			bytes = append(bytes, '\n')
-			_, err = d.inLog.Write(bytes)
-			if err != nil {
-				d.lg.Info("failed to write to input log", "err", err)
-			}
-		}
+type LogEvent struct {
+	T          time.Time              `json:"t"`
+	Nanos      time.Duration          `json:"nanos"`
+	Timestamp  *Timestamp             `json:"timestamp,omitempty"`
+	Time       *gpsprot.TimeMsg       `json:"time,omitempty"`
+	Survey     *gpsprot.SurveyMsg     `json:"survey,omitempty"`
+	LeapSecond *gpsprot.LeapSecondMsg `json:"leapSecond,omitempty"`
+}
+
+type Timestamp struct {
+	T     ptime.Time    `json:"t"`
+	Era   ptime.Era     `json:"era"`
+	Delay time.Duration `json:"delay,omitempty"`
+}
+
+func (d *Dispatcher) timestamp(e phc.TsEvent) {
+	var delay time.Duration
+	trp := e.TReadPHC.T
+	if !trp.IsZero() && !e.TReadPHC.Era.Uncertain() && e.TReadPHC.Era == e.Ts.Era {
+		delay = trp.Sub(e.Ts.T)
 	}
+	d.logEvent(LogEvent{T: e.TRead, Timestamp: &Timestamp{T: e.Ts.T, Era: e.Ts.Era, Delay: delay}})
+	// Call PulseEdge before SysSample, because the former might change the sync status
+	d.cb.PulseEdge(e.Ts, e.TRead, delay)
+	if !trp.IsZero() {
+		d.mon.SysSample(trp, e.TRead)
+	}
+}
+
+type TimeSSE struct {
+	UTC string `json:"utc"`
+	TAI int64  `json:"tai"`
+}
+
+func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
+	d.logEvent(LogEvent{T: tRead, Time: mt})
 	var sec ptime.Time
 	if !mt.TAITime.IsZero() {
 		sec = mt.TAITime
@@ -183,7 +201,7 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	secRnd := sec.Round(time.Second)
 	d.cb.TimeMsg(secRnd, tRead, mt.PulseOffset, mt.Ref)
 	if mt.Ref != gpsprot.PrePulse && secRnd > d.lastTime {
-		d.sendEvent("time", TimeEvent{
+		d.sendSSE("time", TimeSSE{
 			UTC: d.ls.FormatTime(secRnd),
 			TAI: int64(secRnd) / 1e9,
 		})
@@ -191,7 +209,8 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	}
 }
 
-type SurveyEvent struct {
+// SurveySSE is the type of the SSE for survey progress.
+type SurveySSE struct {
 	X          float64    `json:"x"`
 	Y          float64    `json:"y"`
 	Z          float64    `json:"z"`
@@ -204,7 +223,7 @@ type SurveyEvent struct {
 	Valid      bool       `json:"valid"`
 }
 
-func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, _ time.Time) {
+func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	ecef := geopos.ECEF{}
 	for i := range ecef {
 		ecef[i] = m.Position[i].Meters()
@@ -215,7 +234,7 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, _ time.Time) {
 		lla.Lon = math.NaN()
 		lla.Alt = math.NaN()
 	}
-	d.sendEvent("survey", SurveyEvent{
+	d.sendSSE("survey", SurveySSE{
 		X:          ecef[0],
 		Y:          ecef[1],
 		Z:          ecef[2],
@@ -229,7 +248,7 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, _ time.Time) {
 	})
 }
 
-func (d *Dispatcher) sendEvent(name string, data any) {
+func (d *Dispatcher) sendSSE(name string, data any) {
 	if d.sseCh == nil {
 		return
 	}
@@ -251,4 +270,19 @@ func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
 
 func (d *Dispatcher) UBX(msg ubxbin.Msg, tRead time.Time) {
 	d.lg.Debug("unused UBX message", "msg", msg)
+}
+
+func (d *Dispatcher) logEvent(event LogEvent) {
+	if d.lf.File == nil {
+		return
+	}
+	event.Nanos = event.T.Sub(d.tStart)
+	bytes, err := json.Marshal(event)
+	if err != nil {
+		d.lg.Warn("failed to convert event to JSON", "event", event, "err", err)
+		return
+	}
+	bytes = append(bytes, '\n')
+	_, err = d.lf.File.Write(bytes)
+	d.lf.HandleWriteError(err, d.lg)
 }

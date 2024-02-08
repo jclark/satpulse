@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"sync"
@@ -69,24 +68,14 @@ func Cmd(progName string, args []string) {
 	slog.SetDefault(lg)
 	ctx := context.Background()
 	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, cancel, cfg, vars.inputLogFile)
+	err = run(ctx, lg, cancel, cfg)
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config, inputLogFile string) error {
-	var inLog io.Writer
-	if inputLogFile != "" {
-		f, err := os.Create(inputLogFile)
-		if err != nil {
-			return err
-		}
-		inLog = f
-		defer f.Close()
-	}
-
+func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config) error {
 	clk, phcFlags, err := openExttsClock(lg, cfg.PHC)
 	if err != nil {
 		return err
@@ -228,7 +217,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		pulseWidth = 0
 	}
 
-	d, err := NewDispatcher(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gm, rcProxy, sseCh, inLog)
+	d, err := NewDispatcher(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gm, rcProxy, sseCh)
 	if err != nil {
 		return err
 	}
@@ -255,7 +244,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, inLog io.Writer) (*gpsevent.Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event) (*gpsevent.Dispatcher, error) {
 	servo, err := servo.New(clk, lg)
 	if err != nil {
 		return nil, err
@@ -267,12 +256,13 @@ func NewDispatcher(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pu
 		RefClock:     rc,
 		Grandmaster:  gm,
 		LogInterval:  cfg.Log.Interval,
-		ClockLogPath: cfg.Log.ClockPath(clk.Path()),
+		ClockLogPath: cfg.Log.ClockPath(clk.Path(), mon.ClockLogExtension),
 	})
 	if err != nil {
 		return nil, err
 	}
-	return gpsevent.NewDispatcher(lg, m, ls, clk, phcFlags, pulseWidth, sseCh, inLog)
+	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
+	return gpsevent.NewDispatcher(lg, m, ls, clk, phcFlags, pulseWidth, sseCh, eventLogPath)
 }
 
 type InitData struct {

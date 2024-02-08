@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"os"
-	"path/filepath"
 	"time"
 
+	"github.com/jclark/satpulse/internal/logfile"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/sse"
 )
@@ -27,8 +26,7 @@ type Monitor struct {
 	ppsStopped     bool
 	sseCh          chan<- sse.Event
 	stats          stats
-	logFile        *os.File
-	logPath        string
+	lf             logfile.LogFile
 }
 
 type stats struct {
@@ -69,6 +67,8 @@ type MonitorConfig struct {
 	SSECh        chan<- sse.Event
 }
 
+const ClockLogExtension = ".log"
+
 func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, error) {
 	mon := &Monitor{
 		servo:      servo,
@@ -79,13 +79,13 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 		rc:         cfg.RefClock,
 		sseCh:      cfg.SSECh,
 		stats:      stats{interval: cfg.LogInterval},
-		logPath:    cfg.ClockLogPath,
 	}
 
-	err := mon.openLog()
+	err := mon.lf.Open(cfg.ClockLogPath)
 	if err != nil {
 		return nil, err
 	}
+	mon.writeLogHeader()
 	return mon, nil
 }
 
@@ -98,51 +98,12 @@ func (mon *Monitor) Close() {
 	if mon.stats.accumPhase.n > 0 {
 		mon.stats.flush(mon.lg)
 	}
-	mon.closeLog()
-}
-
-func (mon *Monitor) openLog() error {
-	if mon.logPath == "" {
-		return nil
-	}
-	dir := filepath.Dir(mon.logPath)
-	err := os.MkdirAll(dir, 0755)
-	if err != nil {
-		return err
-	}
-	return mon.doOpenLog()
+	mon.lf.Close(mon.lg)
 }
 
 func (mon *Monitor) ReopenLog() {
-	if mon.logPath == "" {
-		return
-	}
-	mon.closeLog()
-	err := mon.doOpenLog()
-	if err != nil {
-		mon.lg.Error("error reopening log file", "path", mon.logPath, "err", err)
-	}
-}
-
-func (mon *Monitor) closeLog() {
-	if mon.logFile == nil {
-		return
-	}
-	err := mon.logFile.Close()
-	if err != nil {
-		mon.lg.Error("error closing log file", "err", err, "path", mon.logPath)
-	}
-	mon.logFile = nil
-}
-
-func (mon *Monitor) doOpenLog() error {
-	f, err := os.OpenFile(mon.logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	mon.logFile = f
+	mon.lf.Reopen(mon.lg)
 	mon.writeLogHeader()
-	return nil
 }
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
@@ -216,15 +177,15 @@ func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, freq float6
 const logHeader = "# mjd offset freq outlier era\n"
 
 func (mon *Monitor) writeLogHeader() {
-	if mon.logFile == nil {
+	if mon.lf.File == nil {
 		return
 	}
-	_, err := mon.logFile.WriteString(logHeader)
-	mon.handleLogWriteError(err)
+	_, err := mon.lf.File.WriteString(logHeader)
+	mon.lf.HandleWriteError(err, mon.lg)
 }
 
 func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Duration, era ptime.Era, freq float64) {
-	if mon.logFile == nil || kind == sampleMissing {
+	if mon.lf.File == nil || kind == sampleMissing {
 		return
 	}
 	outlierFlag := 0
@@ -242,17 +203,8 @@ func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Dura
 	// We represent dates in MJD, because that is what Stable32 can handle.
 	// It also seems to be a standard approach in the timekeeping world.
 	mjd := mon.leapSecond.TimeToMJD(ref)
-	_, err := fmt.Fprintf(mon.logFile, "%.5f %s %.0f %d %d\n", mjd, offStr, freq, outlierFlag, uint64(era))
-	mon.handleLogWriteError(err)
-}
-
-func (mon *Monitor) handleLogWriteError(err error) {
-	if err == nil {
-		return
-	}
-	mon.lg.Error("error writing to log file", "err", err, "path", mon.logPath)
-	mon.logFile.Close()
-	mon.logFile = nil
+	_, err := fmt.Fprintf(mon.lf.File, "%.5f %s %.0f %d %d\n", mjd, offStr, freq, outlierFlag, uint64(era))
+	mon.lf.HandleWriteError(err, mon.lg)
 }
 
 type SampleEvent struct {

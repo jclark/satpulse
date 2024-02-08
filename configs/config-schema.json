@@ -97,7 +97,8 @@
 		  "interval": { "type": "integer", "minimum": 0 },
 		  "verbose": { "type": "boolean" },
 		  "dir": { "type": "string" },
-		  "clock": { "type": "boolean" }
+		  "clock": { "type": "boolean" },
+		  "event": { "type": "boolean" }
 		}
 	  },
 	  "ptp": {
