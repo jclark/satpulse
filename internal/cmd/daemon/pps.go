@@ -125,6 +125,7 @@ func StartPPS(ctx context.Context, clk *phc.Clock, cfg PHCConfig, lg *slog.Logge
 	if err != nil {
 		return nil, 0, err
 	}
+	lg.Info("enabled external timestamping on the PTP hardware clock", "device", clk.Path(), "pin", cfg.Pin, "channel", cfg.Channel, "edgesPerPulse", edges)
 	c := make(chan phc.TsEvent, 1)
 	go func() {
 		clk.ReadWorker(ctx.Done(), c, exttsTimeout)

@@ -87,11 +87,17 @@ func (d *Dispatcher) Run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 	lg.Debug("sync worker goroutine started")
 
 	nSkipped := 0
+	// give a warning if we haven't received a timestamp by the time this fires
+	firstTsDeadline := time.After(time.Second * 2)
 
 	for tsCh != nil || pktCh != nil {
 		select {
 		case e, ok := <-tsCh:
 			if ok {
+				if firstTsDeadline != nil {
+					lg.Info("successfully received a external timestamp from the PTP hardware clock")
+					firstTsDeadline = nil
+				}
 				if e.Err != nil {
 					lg.Info("error from PTP hardware clock timestamp channel", "err", e.Err)
 					if e.Ts.T.IsZero() {
@@ -123,6 +129,9 @@ func (d *Dispatcher) Run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 			}
 		case t := <-ticker.C:
 			d.mon.Tick(t)
+		case <-firstTsDeadline:
+			lg.Warn("no PTP hardware clock external timestamps being received")
+			firstTsDeadline = nil
 		case <-sig:
 			d.mon.ReopenLog()
 			d.lf.Reopen(d.lg)

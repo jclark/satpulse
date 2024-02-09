@@ -210,7 +210,6 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if err != nil {
 		return err
 	}
-	lg.Info("started external timestamping", "edges", edges)
 
 	pulseWidth, ok := gpsprot.CfgTimePulseWidth.Get(gcfg.ConfigMap)
 	if !ok {
