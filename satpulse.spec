@@ -7,6 +7,7 @@ URL: https://github.com/jclark/satpulse
 
 %global _build_id_links none
 %global source_date_epoch_from_changelog 0
+%global __os_install_post %{nil}
 
 %description
 This requires an ethernet controller with a PPS input pin that is supported by
@@ -15,18 +16,17 @@ or the Raspberry Pi CM4.
 
 %install
 rm -rf %{buildroot}
-install -D out/%{goarch}/satpulsed %{buildroot}%{_sbindir}/satpulsed
-install -D out/%{goarch}/satpulsetool %{buildroot}%{_bindir}/satpulsetool
-install -D -m 644 out/%{goarch}/default.toml %{buildroot}%{_sysconfdir}/satpulse/default.toml
-install -D -m 644 configs/chrony.conf %{buildroot}%{_docdir}/satpulse/chrony.conf
-install -D -m 644 LICENSE %{buildroot}%{_docdir}/satpulse/copyright
-install -D -m 644 out/satpulse@.service %{buildroot}%{_unitdir}/satpulse@.service
+install -D out/%{goarch}/satpulsed %{buildroot}/usr/sbin/satpulsed
+install -D out/%{goarch}/satpulsetool %{buildroot}/usr/bin/satpulsetool
+install -D -m 644 out/%{goarch}/satpulse.toml %{buildroot}/etc/satpulse.toml
+install -D -m 644 configs/satpulse@.service %{buildroot}/usr/lib/systemd/system/satpulse@.service
+install -D -m 644 configs/chrony.conf %{buildroot}/usr/share/doc/satpulse/chrony.conf
+install -D -m 644 LICENSE %{buildroot}/usr/share/doc/satpulse/copyright
 
 %files
-%{_sbindir}/satpulsed
-%{_bindir}/satpulsetool
-%dir %{_sysconfdir}/satpulse
-%config(noreplace) %{_sysconfdir}/satpulse/default.toml
-%{_unitdir}/satpulse@.service
-%{_docdir}/satpulse/chrony.conf
-%{_docdir}/satpulse/copyright
+/usr/sbin/satpulsed
+/usr/bin/satpulsetool
+%config(noreplace) /etc/satpulse.toml
+/usr/lib/systemd/system/satpulse@.service
+/usr/share/doc/satpulse/chrony.conf
+/usr/share/doc/satpulse/copyright
