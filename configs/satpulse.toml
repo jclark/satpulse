@@ -9,6 +9,11 @@ pin = 0
 device = "/dev/ttyUSB0"
 speed = 9600
 
+[gps]
+# Uncommenting the following line will enable configuration of the GPS
+# (changes are not persistent across GPS reboots
+#config= true
+
 [ptp]
 # Unix domain socket for PTP management
 # Corresponds to ptp4l uds_address config option

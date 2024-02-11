@@ -108,29 +108,29 @@ func TestRate(t *testing.T) {
 }
 
 func TestConfiguratorSane(t *testing.T) {
-	target := &gpsprot.ConfigMap{}
-	target.SetPPS()
+	target := gpsprot.NewConfigTarget(false)
+	target.Map.SetPPS()
 	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGPS(t *testing.T) {
-	target := &gpsprot.ConfigMap{}
-	target.SetPPS()
-	gpsprot.CfgPrimaryGNSS.Set(target, gpsprot.GPS)
+	target := gpsprot.NewConfigTarget(false)
+	target.Map.SetPPS()
+	gpsprot.CfgPrimaryGNSS.Set(&target.Map, gpsprot.GPS)
 	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGalileo(t *testing.T) {
-	target := &gpsprot.ConfigMap{}
-	target.SetPPS()
-	gpsprot.CfgPrimaryGNSS.Set(target, gpsprot.GAL)
+	target := gpsprot.NewConfigTarget(false)
+	target.Map.SetPPS()
+	gpsprot.CfgPrimaryGNSS.Set(&target.Map, gpsprot.GAL)
 	rcvr := newLegacyReceiver()
 	rcvr.raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
 	testConfigurator(t, rcvr, target)
 }
 
-func testConfigurator(t *testing.T, rcvr gpsReceiver, target *gpsprot.ConfigMap) {
-	c, naks, err := runConfiguration(rcvr, target, gpsprot.ConfigOptions{})
+func testConfigurator(t *testing.T, rcvr gpsReceiver, target *gpsprot.ConfigTarget) {
+	c, naks, err := runConfiguration(rcvr, target)
 	if err != nil {
 		t.Fatalf("unexpected error from runConfiguration: %v", err)
 	}
@@ -139,11 +139,11 @@ func testConfigurator(t *testing.T, rcvr gpsReceiver, target *gpsprot.ConfigMap)
 	}
 	result := c.ConfigMap()
 
-	bad := target.Inconsistent(result)
+	bad := target.Map.Inconsistent(result)
 	if !bad.IsEmpty() {
 		t.Errorf("final configuration is inconsistent: %v", bad)
 	}
-	missing := result.Missing(target)
+	missing := result.Missing(&target.Map)
 	if !missing.IsEmpty() {
 		t.Errorf("final configuration is missing: %v", missing)
 	}
@@ -165,12 +165,13 @@ func TestConfiguratorRecover2(t *testing.T) {
 }
 
 func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator {
-	target := &gpsprot.ConfigMap{}
-	target.SetPPS()
-	gpsprot.CfgNMEAEnabled.Set(target, false)
+	target := gpsprot.NewConfigTarget(false)
+	target.Map.SetPPS()
+	gpsprot.CfgNMEAEnabled.Set(&target.Map, false)
+	target.Opts.EnableTimeMsg = true
 	rcvr := newLegacyReceiver()
 	rcvr.nakPollMsgID = nakMsgID
-	c, naks, err := runConfiguration(rcvr, target, gpsprot.ConfigOptions{EnableTimeMsg: true})
+	c, naks, err := runConfiguration(rcvr, target)
 	if err != nil {
 		t.Errorf("unexpected error from runConfiguration: %v", err)
 	}
@@ -180,17 +181,35 @@ func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator 
 	return c
 }
 
+func TestConfigurationEmpty(t *testing.T) {
+	target := gpsprot.NewConfigTarget(false)
+	rcvr := newLegacyReceiver()
+	rcvr.ver = &Version{
+		FW: &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
+	}
+	rcvr.raw.tmode2 = &ubxbin.CfgTmode2{
+		TimeMode: ubxbin.CfgTmode2SurveyIn,
+	}
+	_, _, err := runConfiguration(rcvr, target)
+	if err != nil {
+		t.Errorf("unexpected error from runConfiguration: %v", err)
+	}
+	if rcvr.nSent != 0 {
+		t.Errorf("expected no messages to be sent, got %d", rcvr.nSent)
+	}
+}
+
 type gpsReceiver interface {
 	sendReceive(pkt []byte) [][]byte
 	version() *Version
 }
 
-func runConfiguration(rcvr gpsReceiver, target *gpsprot.ConfigMap, options gpsprot.ConfigOptions) (*Configurator, []string, error) {
+func runConfiguration(rcvr gpsReceiver, target *gpsprot.ConfigTarget) (*Configurator, []string, error) {
 	prot := &Protocol{}
 	prot.ver = rcvr.version()
 	var naks []string
 
-	c, err := prot.Configure(target, options)
+	c, err := prot.Configure(target)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unexpected error from Configure: %w", err)
 	}
@@ -231,6 +250,7 @@ type legacyReceiver struct {
 	ver          *Version
 	raw          *RawConfig
 	nakPollMsgID ubxbin.MsgID
+	nSent        int
 }
 
 func newLegacyReceiver() *legacyReceiver {
@@ -245,6 +265,7 @@ func (r *legacyReceiver) version() *Version {
 }
 
 func (r *legacyReceiver) sendReceive(pkt []byte) [][]byte {
+	r.nSent++
 	msgID := ubxbin.PacketMsgId(pkt)
 	const pollMaxLen = 9
 	var responses [][]byte
@@ -267,6 +288,10 @@ func (r *legacyReceiver) sendReceive(pkt []byte) [][]byte {
 			msg = r.raw.rate
 		case ubxbin.CfgGNSSID:
 			msg = r.raw.gnss
+		case ubxbin.CfgTmode2ID:
+			msg = r.raw.tmode2
+		case ubxbin.CfgTmode3ID:
+			msg = r.raw.tmode3
 		}
 		if msg != nil {
 			if resp, err := ubxbin.Serialize(msg); err == nil {

@@ -141,7 +141,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * implement setting GNSS constellation
    * implement baud rate property
    * saving to flash
-   * poll only the things we need
 * Figure out how to make U-blox receivers start a new survey, when they have already done one
 * Log ongoing and completed survey progress
 * Finish mapping from CfgVals to from ConfigMap

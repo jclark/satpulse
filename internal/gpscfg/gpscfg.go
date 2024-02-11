@@ -45,25 +45,26 @@ var _ ubx.ProtHandler = &msgHandler{}
 
 var ErrNoResponse = errors.New("no response to configuration poll message; not configuring GPS")
 
-func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
+func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetCh)
 	var err error
-	if opts.Detect {
+	if !target.Opts.Detected {
 		err = mh.detect(ctx)
 	}
+	noop := target.NoOp()
 	if err != nil {
 		// even with InputOnly, we want to run detect in order to deal with framing errors
-		if opts.InputOnly {
+		if noop {
 			// there's no point in giving up with InputOnly, maybe we can bring it back to life using satpulsetool
 			lg.Warn(err.Error())
-		} else if opts.ForceOutput {
+		} else if target.Opts.ForceProbe {
 			lg.Info("no output detected from GPS, but trying to probe GPS anyway")
 		} else {
 			return nil, err
 		}
 	}
-	if opts.InputOnly {
+	if noop {
 		return &Result{
 			ConfigMap: new(gpsprot.ConfigMap),
 		}, nil
@@ -83,7 +84,7 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigMap, 
 	}
 	var cm *gpsprot.ConfigMap
 	if ubxOK {
-		cm, err = mh.configure(ctx, mh.ubxProt, target, opts, port)
+		cm, err = mh.configure(ctx, mh.ubxProt, target, port)
 		if err != nil {
 			// XXX try to recover from this
 			// provided we have some messages working, we should be OK
@@ -96,18 +97,6 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigMap, 
 		}, ErrNoResponse
 	}
 	return mh.finish(cm), nil
-}
-
-func RequiredConfig() *gpsprot.ConfigMap {
-	cm := &gpsprot.ConfigMap{}
-	cm.SetPPS()
-	// Config is very slow on 8-th gen if NMEA is enabled
-	gpsprot.CfgNMEAEnabled.Set(cm, false)
-	return cm
-}
-
-func RequiredOptions() gpsprot.ConfigOptions {
-	return gpsprot.ConfigOptions{EnableLeapSecondMsg: true, EnableTimeMsg: true, Detect: true}
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
@@ -227,8 +216,8 @@ func (mh *msgHandler) probe(ctx context.Context, prot gpsprot.Protocol, port gps
 	return false, nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.Protocol, target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, port gpsio.OutPort) (*gpsprot.ConfigMap, error) {
-	cfgtor, err := prot.Configure(target, opts)
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.Protocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigMap, error) {
+	cfgtor, err := prot.Configure(target)
 	if err != nil {
 		return nil, err
 	}

@@ -17,10 +17,9 @@ type Configurator struct {
 	raw       RawConfig
 	origPrt   *bin.CfgPrt
 	steps     []func(*Configurator) (gpsprot.ConfigRequest, error)
-	stepIndex int                // -1 says to perform recovery
-	target    *gpsprot.ConfigMap // never nil
-	opts      gpsprot.ConfigOptions
-	survey    bool // start a survey
+	stepIndex int                   // -1 says to perform recovery
+	target    *gpsprot.ConfigTarget // never nil
+	survey    bool                  // start a survey
 }
 
 type ackList []*Ack
@@ -65,7 +64,7 @@ var newConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
 
-func newConfigurator(target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version) *Configurator {
+func newConfigurator(target *gpsprot.ConfigTarget, ver *Version) *Configurator {
 	steps := legacyConfigSteps
 	if ver.protVerGreater(23, 1) {
 		steps = newConfigSteps
@@ -74,7 +73,6 @@ func newConfigurator(target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver 
 		ver:    ver,
 		target: target,
 		steps:  steps,
-		opts:   opts,
 		tRead:  make(map[bin.MsgID]time.Time),
 	}
 }
@@ -121,7 +119,7 @@ func (c *Configurator) recover() (gpsprot.ConfigRequest, error) {
 	if !c.raw.prtNMEAOutDisabled(c.origPrt) {
 		return nil, nil
 	}
-	// if we got far enough to enable the time GNSS message, then do need to switch back to NMEA
+	// if we got far enough to enable the time GNSS message, then do not need to switch back to NMEA
 	if c.timeGNSSMsgEnabled() {
 		return nil, nil
 	}
@@ -149,7 +147,7 @@ func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
 }
 
 func (c *Configurator) reset() (gpsprot.ConfigRequest, error) {
-	if !c.opts.Reset {
+	if !c.target.Opts.Reset {
 		return nil, nil
 	}
 	return msgRequest{&bin.CfgRst{
@@ -159,7 +157,7 @@ func (c *Configurator) reset() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) valGet() (gpsprot.ConfigRequest, error) {
-	_, missing, _, err := c.raw.valsPtr().Change(c.target, c.opts, c.ver, c.raw.valPort())
+	_, missing, _, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort())
 	if err != nil {
 		return nil, err
 	}
@@ -167,14 +165,14 @@ func (c *Configurator) valGet() (gpsprot.ConfigRequest, error) {
 		return nil, nil
 	}
 	layer := bin.CfgValgetLayerRAM
-	if c.opts.Flash {
+	if c.target.Opts.Flash {
 		layer = bin.CfgValgetLayerFlash
 	}
 	return c.msgPollRequest(newCfgValgetRequest(missing, layer)), nil
 }
 
 func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
-	items, missing, survey, err := c.raw.valsPtr().Change(c.target, c.opts, c.ver, c.raw.valPort())
+	items, missing, survey, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort())
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +183,7 @@ func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
 		return nil, nil
 	}
 	layer := bin.CfgValsetLayerRAM
-	if c.opts.Flash {
+	if c.target.Opts.Flash {
 		layer = bin.CfgValsetLayerFlash
 	}
 	val, err := newCfgValsetRequest(items, layer)
@@ -200,7 +198,7 @@ func (c *Configurator) valSurvey() (gpsprot.ConfigRequest, error) {
 	if !c.survey {
 		return nil, nil
 	}
-	items := c.raw.valsPtr().Survey(c.opts)
+	items := c.raw.valsPtr().Survey(c.target.Opts)
 	if len(items) == 0 {
 		return nil, nil
 	}
@@ -244,22 +242,39 @@ func newCfgValsetRequest(items []ucv.Item, layers bin.CfgValsetLayer) (*bin.CfgV
 }
 
 func (c *Configurator) pollPrt() (gpsprot.ConfigRequest, error) {
+	// This is used both by old and new.
+	if !c.target.UsesAny(cfgOldKeys.prt...) && !c.target.Opts.EnableTimeMsg && !c.target.Opts.EnableLeapSecondMsg &&
+		c.target.Opts.Survey.When == 0 {
+		return nil, nil
+	}
 	return c.pollRequest(bin.CfgPrtID), nil
 }
 
 func (c *Configurator) pollGNSS() (gpsprot.ConfigRequest, error) {
+	if !c.target.UsesAny(cfgOldKeys.gnss...) {
+		return nil, nil
+	}
 	return c.pollRequest(bin.CfgGNSSID), nil
 }
 
 func (c *Configurator) pollRate() (gpsprot.ConfigRequest, error) {
+	if !c.target.UsesAny(cfgOldKeys.rate...) {
+		return nil, nil
+	}
 	return c.pollRequest(bin.CfgRateID), nil
 }
 
 func (c *Configurator) pollNav5() (gpsprot.ConfigRequest, error) {
+	if !c.target.UsesAny(cfgOldKeys.nav5...) {
+		return nil, nil
+	}
 	return c.pollRequest(bin.CfgNav5ID), nil
 }
 
 func (c *Configurator) pollTmode() (gpsprot.ConfigRequest, error) {
+	if !c.target.UsesAny(cfgOldKeys.tmode...) && c.target.Opts.Survey.When == 0 {
+		return nil, nil
+	}
 	switch c.ver.ProductCategory() {
 	case "FTS", "TIM":
 		return c.pollRequest(bin.CfgTmode2ID), nil
@@ -270,6 +285,9 @@ func (c *Configurator) pollTmode() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) pollTp5() (gpsprot.ConfigRequest, error) {
+	if !c.target.UsesAny(tp5Keys...) {
+		return nil, nil
+	}
 	tpIdx := 0
 	if c.ver.ProductCategory() == "FTS" {
 		tpIdx = 1
@@ -278,7 +296,7 @@ func (c *Configurator) pollTp5() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) enableTpMsg() (gpsprot.ConfigRequest, error) {
-	if !c.opts.EnableTimeMsg {
+	if !c.target.Opts.EnableTimeMsg {
 		return nil, nil
 	}
 	if c.ver.ProductCategory() == "FTS" {
@@ -295,7 +313,7 @@ func (c *Configurator) enableTpMsg() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) enableTimeGNSSMsg() (gpsprot.ConfigRequest, error) {
-	if !c.opts.EnableTimeMsg {
+	if !c.target.Opts.EnableTimeMsg {
 		return nil, nil
 	}
 	if c.ver.ProductCategory() == "FTS" {
@@ -313,7 +331,7 @@ func (c *Configurator) timeGNSSMsgEnabled() bool {
 }
 
 func (c *Configurator) enableLeapSecondMsg() (gpsprot.ConfigRequest, error) {
-	if c.opts.EnableLeapSecondMsg && c.ver.protVerAtLeast(18, 0) {
+	if c.target.Opts.EnableLeapSecondMsg && c.ver.protVerAtLeast(18, 0) {
 		return c.enableMsgRequest(bin.NavTimeLSID, true)
 	}
 	return nil, nil
@@ -331,17 +349,18 @@ func (c *Configurator) enableSurveyMsg() (gpsprot.ConfigRequest, error) {
 	default:
 		return nil, nil
 	}
+	// XXX this is not right: we should not change anything unless Target sets time mode
 	if surveyMode {
 		return c.enableMsgRequest(msgID, true)
 	}
-	if _, exists := gpsprot.CfgTimeMode.Get(c.target); exists {
+	if _, exists := gpsprot.CfgTimeMode.Get(&c.target.Map); exists {
 		return c.enableMsgRequest(msgID, false)
 	}
 	return nil, nil
 }
 
 func (c *Configurator) setPrt() (gpsprot.ConfigRequest, error) {
-	prt := c.raw.changePrt(c.target)
+	prt := c.raw.changePrt(&c.target.Map)
 	if prt == nil {
 		return nil, nil
 	}
@@ -351,7 +370,7 @@ func (c *Configurator) setPrt() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) setNav5() (gpsprot.ConfigRequest, error) {
-	nav5 := c.raw.changeNav5(c.target)
+	nav5 := c.raw.changeNav5(&c.target.Map)
 	if nav5 == nil {
 		return nil, nil
 	}
@@ -360,7 +379,7 @@ func (c *Configurator) setNav5() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) setRate() (gpsprot.ConfigRequest, error) {
-	rate := c.raw.changeRate(c.target, c.ver)
+	rate := c.raw.changeRate(&c.target.Map, c.ver)
 	if rate == nil {
 		return nil, nil
 	}
@@ -371,13 +390,13 @@ func (c *Configurator) setTmode() (gpsprot.ConfigRequest, error) {
 	switch c.ver.ProductCategory() {
 	case "FTS", "TIM":
 		var tm *bin.CfgTmode2
-		tm, c.survey = c.raw.changeTmode2(c.target, c.opts)
+		tm, c.survey = c.raw.changeTmode2(c.target)
 		if tm != nil {
 			return c.msgSetRequest(tm)
 		}
 	case "HPG":
 		var tm *bin.CfgTmode3
-		tm, c.survey = c.raw.changeTmode3(c.target, c.opts)
+		tm, c.survey = c.raw.changeTmode3(c.target)
 		if tm != nil {
 			return c.msgSetRequest(tm)
 		}
@@ -391,12 +410,12 @@ func (c *Configurator) reqSurvey() (gpsprot.ConfigRequest, error) {
 	}
 	switch c.ver.ProductCategory() {
 	case "FTS", "TIM":
-		tm := c.raw.surveyTmode2(c.opts)
+		tm := c.raw.surveyTmode2(c.target.Opts)
 		if tm != nil {
 			return c.msgSetRequest(tm)
 		}
 	case "HPG":
-		tm := c.raw.surveyTmode3(c.opts)
+		tm := c.raw.surveyTmode3(c.target.Opts)
 		if tm != nil {
 			return c.msgSetRequest(tm)
 		}
@@ -405,7 +424,7 @@ func (c *Configurator) reqSurvey() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) setTp5() (gpsprot.ConfigRequest, error) {
-	tp5 := c.raw.changeTp5(c.target)
+	tp5 := c.raw.changeTp5(&c.target.Map)
 	if tp5 == nil {
 		return nil, nil
 	}

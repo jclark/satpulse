@@ -27,9 +27,9 @@ import (
 type Protocol interface {
 	ProbePacket() []byte
 	ProbeOK() bool
-	SetHandler(h MsgHandler)
+	SetHandler(MsgHandler)
 	ProcessPacket(data string, tRead time.Time) error
-	Configure(target *ConfigMap, opts ConfigOptions) (Configurator, error)
+	Configure(*ConfigTarget) (Configurator, error)
 }
 
 type Ack struct {
@@ -74,15 +74,51 @@ type ConfigRequest interface {
 	AwaitingResponse(tSent time.Time) bool
 }
 
+type ConfigTarget struct {
+	Map  ConfigMap
+	Get  CfgKeySet
+	Opts ConfigOptions
+}
+
+func NewConfigTarget(config bool) *ConfigTarget {
+	t := &ConfigTarget{}
+	if !config {
+		return t
+	}
+	t.Map.SetPPS()
+	// Config is very slow on 8-th gen if NMEA is enabled
+	CfgNMEAEnabled.Set(&t.Map, false)
+	t.Opts.EnableLeapSecondMsg = true
+	t.Opts.EnableTimeMsg = true
+	return t
+}
+
+// NoOp says whether the target are a no-op, except possibly for detecting the receiver.
+func (act *ConfigTarget) NoOp() bool {
+	return act.Map.Len() == 0 && len(act.Get) == 0 && act.Opts.NoOp()
+}
+
+func (act *ConfigTarget) UsesAny(keys ...CfgKey) bool {
+	for _, k := range keys {
+		if act.Map.Contains(k) || act.Get.Contains(k) {
+			return true
+		}
+	}
+	return false
+}
+
 type ConfigOptions struct {
-	InputOnly           bool
-	Flash               bool
-	Reset               bool
-	Detect              bool
-	ForceOutput         bool
+	Detected            bool // has already been detected, no need to detect it again
+	ForceProbe          bool // force probe even if no input has been detected
+	Flash               bool // save state to flash
+	Reset               bool // perform a hard reset after making changes
 	EnableLeapSecondMsg bool
 	EnableTimeMsg       bool
 	Survey              Survey
+}
+
+func (o ConfigOptions) NoOp() bool {
+	return !o.Flash && !o.Reset && !o.EnableLeapSecondMsg && !o.EnableTimeMsg && o.Survey.When == TimeModeNone
 }
 
 // Survey specifies whether a survey should be performed, and if so, its parameters
@@ -96,6 +132,10 @@ type Survey struct {
 
 type ConfigMap struct {
 	m map[string]interface{}
+}
+
+func (cm ConfigMap) Len() int {
+	return len(cm.m)
 }
 
 type CfgKey interface {

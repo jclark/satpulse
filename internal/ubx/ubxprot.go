@@ -65,14 +65,13 @@ func (prot *Protocol) ProbeOK() bool {
 	return prot.ver != nil
 }
 
-func (prot *Protocol) Configure(target *gpsprot.ConfigMap, opts gpsprot.ConfigOptions) (gpsprot.Configurator, error) {
+func (prot *Protocol) Configure(target *gpsprot.ConfigTarget) (gpsprot.Configurator, error) {
 	if prot.ver == nil {
 		panic("Configure called before probe OK")
 	}
-	if opts.Flash && !prot.ver.Flash {
+	if target.Opts.Flash && !prot.ver.Flash {
 		return nil, errors.New("cannot save to flash: receiver does not have flash memory")
 	}
-	prot.cfg = newConfigurator(target, opts, prot.ver)
+	prot.cfg = newConfigurator(target, prot.ver)
 	return prot.cfg, nil
 }
-

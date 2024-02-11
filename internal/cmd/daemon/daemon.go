@@ -153,12 +153,12 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	gmap, gopts, err := cfg.GPS.gpsprot()
-	lg.Debug("GPS configure input", "map", gmap, "opts", gopts)
+	gct, err := cfg.GPS.target()
+	lg.Debug("GPS configure input", "target", gct)
 	if err != nil {
 		return err
 	}
-	gcfg, err := gpscfg.Configure(ctx, lg, gmap, gopts, pCh, conn)
+	gcfg, err := gpscfg.Configure(ctx, lg, gct, pCh, conn)
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoResponse) {
 			lg.Info(err.Error())

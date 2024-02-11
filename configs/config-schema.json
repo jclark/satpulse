@@ -22,7 +22,7 @@
 	  "gps": {
 		"type": "object",
 		"properties": {
-		  "inputOnly": { "type": "boolean" },
+		  "config": { "type": "boolean" },
 		  "timeMode": { "type": "boolean" },
 		  "resurvey": { "type": "boolean" },
 		  "surveyTime": { "type": "integer" },

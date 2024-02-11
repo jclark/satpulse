@@ -20,6 +20,46 @@ type CfgOld struct {
 	msgRate map[bin.MsgID][nPort]byte
 }
 
+// cfgOldKeys says when a field of CfgOld may be needed when getting or setting a key in a ConfigMap.
+// A ConfigMap key will be included in the slice for a field in cfgOldKeys if and only if
+// getting or setting that key may need to use the corresponding field in CfgOld.
+var cfgOldKeys = struct {
+	tmode, tp5, gnss, rate, nav5, prt []gpsprot.CfgKey
+}{
+	// tmode applies to both tmode2 and tmode3
+	tmode: []gpsprot.CfgKey{
+		gpsprot.CfgTimeMode,
+		gpsprot.CfgFixedPosECEF,
+		gpsprot.CfgFixedPosAcc,
+	},
+	tp5: []gpsprot.CfgKey{
+		gpsprot.CfgAntennaCableDelay,
+		gpsprot.CfgTimePulsePolarityRising,
+		gpsprot.CfgTimePulseAlignToGNSS,
+		gpsprot.CfgTimePulsePeriod,
+		gpsprot.CfgTimePulseWidth,
+		gpsprot.CfgTimePulseOnlyWhenLocked,
+		gpsprot.CfgPrimaryGNSS,
+	},
+	gnss: []gpsprot.CfgKey{
+		// XXX CfgPrimaryGNSS doesn't currently look at the gnss field (I think)
+		// CfgPrimaryGNSS is regarded as unset, if tp5 isn't aligned to a GNSS and nav5 also doesn't have a preferred GNSS
+		gpsprot.CfgGNSSEnabled,
+		gpsprot.CfgTimePulseAlignToGNSS, // cookTp5 can end up looking at the .gnss field for this
+	},
+	rate: []gpsprot.CfgKey{
+		gpsprot.CfgSolutionPeriod,
+	},
+	nav5: []gpsprot.CfgKey{
+		gpsprot.CfgPrimaryGNSS,
+		gpsprot.CfgStationary,
+	},
+	prt: []gpsprot.CfgKey{
+		gpsprot.CfgNMEAEnabled,
+		gpsprot.CfgBaudRate,
+	},
+}
+
 func (raw *CfgOld) SetMsgRate(msgID bin.MsgID, rate byte) {
 	if raw == nil || raw.prt == nil {
 		return
@@ -116,7 +156,7 @@ func (raw *CfgOld) cookTmode2(cm *gpsprot.ConfigMap) {
 	}
 }
 
-func (raw *CfgOld) changeTmode2(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions) (*bin.CfgTmode2, bool) {
+func (raw *CfgOld) changeTmode2(target *gpsprot.ConfigTarget) (*bin.CfgTmode2, bool) {
 	if raw.tmode2 == nil {
 		return nil, false
 	}
@@ -129,11 +169,12 @@ func (raw *CfgOld) changeTmode2(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOption
 	case bin.CfgTmode2FixedMode:
 		mode = gpsprot.TimeModeFixed
 	}
+	cm := &target.Map
 	if v, ok := gpsprot.CfgTimeMode.Get(cm); ok {
 		mode = v
 	}
 	survey := false
-	if opts.Survey.When.Contains(mode) {
+	if target.Opts.Survey.When.Contains(mode) {
 		survey = true
 		if tm.TimeMode != bin.CfgTmode2FixedMode {
 			mode = gpsprot.TimeModeDisabled
@@ -173,7 +214,8 @@ func (raw *CfgOld) surveyTmode2(opts gpsprot.ConfigOptions) *bin.CfgTmode2 {
 	return &tm
 }
 
-func (raw *CfgOld) changeTmode3(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions) (*bin.CfgTmode3, bool) {
+func (raw *CfgOld) changeTmode3(target *gpsprot.ConfigTarget) (*bin.CfgTmode3, bool) {
+	cm := &target.Map
 	if raw.tmode3 == nil {
 		return nil, false
 	}
@@ -189,7 +231,7 @@ func (raw *CfgOld) changeTmode3(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOption
 		mode = v
 	}
 	survey := false
-	if opts.Survey.When.Contains(mode) {
+	if target.Opts.Survey.When.Contains(mode) {
 		survey = true
 		if tm.Flags&bin.CfgTmode3Mode != bin.CfgTmode3FixedMode {
 			mode = gpsprot.TimeModeDisabled

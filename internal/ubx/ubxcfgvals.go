@@ -123,20 +123,20 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cm *gpsprot.ConfigMap) {
 	}
 }
 
-// Change generates changes that will take a known configuration to a desired configuration.
+// Transaction determines the transaction to achieve the specified target.
 // The known argument gives what is known about the current configuration.
-// cm is the desired configuration.
-// If additional keys are needed to compile the configuration correctly,
-// they are returned in the ucv.Key slice.
+// The returned items specifies configuration database changes that are needed.
+// If the specified changes cannot be determined because the value of some keys is not known, those keys are returned in the ucv.Key slice.
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func (known *CfgVals) Change(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, port ucv.Port) ([]ucv.Item, []ucv.Key, bool, error) {
+func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port) ([]ucv.Item, []ucv.Key, bool, error) {
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
-	tg := known.changeTimePulse(cm, &items, &keys)
+	cm := &target.Map
+	tg := known.timePulseTransaction(target, &items, &keys)
 
-	survey, err := known.changeTimeMode(cm, opts, ver, port, &items, &keys)
+	survey, err := known.timeModeTransaction(target, ver, port, &items, &keys)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -196,6 +196,7 @@ func (known *CfgVals) Change(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, 
 			}
 		}
 	}
+	opts := &target.Opts
 	if opts.EnableTimeMsg {
 		ucv.AddItem(&items, timegridTp1ToMsgRateKey(tg).KeyU(port), 1)
 		ucv.AddItem(&items, ucv.KUbxTimTp.KeyU(port), 1)
@@ -212,7 +213,7 @@ func (known *CfgVals) Survey(opts gpsprot.ConfigOptions) []ucv.Item {
 	return items
 }
 
-func (known *CfgVals) changeTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, port ucv.Port, items *[]ucv.Item, keys *[]ucv.Key) (bool, error) {
+func (known *CfgVals) timeModeTransaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port, items *[]ucv.Item, keys *[]ucv.Key) (bool, error) {
 	svMsgKey := ucv.KUbxTimSvin
 	switch ver.ProductCategory() {
 	case "FTS": // do nothing
@@ -222,6 +223,7 @@ func (known *CfgVals) changeTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigO
 	default:
 		return false, nil
 	}
+	cm := &target.Map
 	if v, ok := gpsprot.CfgFixedPosECEF.Get(cm); ok {
 		err := addTmodeECEF(items, v)
 		if err != nil {
@@ -234,6 +236,7 @@ func (known *CfgVals) changeTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigO
 	if tm, ok := cfgValGet(known, ucv.KTmodeMode); ok {
 		tmKnown = tmodeModeToTimeMode(tm)
 	}
+	opts := &target.Opts
 	when := opts.Survey.When
 	if tmKnown == 0 {
 		// We need to know the current time mode if we might initiate a survey
@@ -258,6 +261,7 @@ func (known *CfgVals) changeTimeMode(cm *gpsprot.ConfigMap, opts gpsprot.ConfigO
 		return false, nil
 	}
 	if when.Contains(tm) {
+		// XXX should not do this unless time mode is in the target
 		ucv.AddItem(items, svMsgKey.KeyU(port), 1)
 		// This doesn't seem to work so disable for now.
 		// XXX need to try on some more receivers
@@ -389,10 +393,11 @@ func (raw *CfgVals) getTimePulseWidth() (time.Duration, bool) {
 	return 0, false
 }
 
-// changeTimePulse compiles the parts of the configuration related to the time pulse.
+// timePulseTransaction compiles the parts of the configuration related to the time pulse.
 // If it infers the GNSS to which the pulse is aligned, it returns that.
-func (known *CfgVals) changeTimePulse(cm *gpsprot.ConfigMap, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
+func (known *CfgVals) timePulseTransaction(target *gpsprot.ConfigTarget, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
 	tg := ucv.ETpTimegridTp1Utc
+	cm := &target.Map
 	period, havePeriod := gpsprot.CfgTimePulsePeriod.Get(cm)
 	width, haveWidth := gpsprot.CfgTimePulseWidth.Get(cm)
 	align, haveAlign := gpsprot.CfgTimePulseAlignToGNSS.Get(cm)

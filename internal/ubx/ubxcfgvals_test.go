@@ -9,11 +9,10 @@ import (
 )
 
 func TestConfigItems_Sane(t *testing.T) {
-	cm := &gpsprot.ConfigMap{}
-	cm.SetPPS()
+	target := &gpsprot.ConfigTarget{}
+	target.Map.SetPPS()
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
-	opts := gpsprot.ConfigOptions{}
-	_, missing, survey, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
+	_, missing, survey, err := newCfgVals().Transaction(target, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -25,7 +24,7 @@ func TestConfigItems_Sane(t *testing.T) {
 	}
 	known := newCfgVals()
 	cfgValSet(known, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
-	_ = testSanity(t, cm, opts, ver, known)
+	_ = testSanity(t, target, ver, known)
 	known = newCfgVals()
 	cfgValSet(known, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Utc)
 	cfgValSet(known, ucv.KNavspgUtcstandard, ucv.ENavspgUtcstandardAuto)
@@ -33,15 +32,15 @@ func TestConfigItems_Sane(t *testing.T) {
 	cfgValSet(known, ucv.KSignalGloEna, false)
 	cfgValSet(known, ucv.KSignalGalEna, false)
 	cfgValSet(known, ucv.KSignalBdsEna, true)
-	m := testSanity(t, cm, opts, ver, known)
+	m := testSanity(t, target, ver, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Bds)
-	gpsprot.CfgPrimaryGNSS.Set(cm, gpsprot.GAL)
-	m = testSanity(t, cm, opts, ver, known)
+	gpsprot.CfgPrimaryGNSS.Set(&target.Map, gpsprot.GAL)
+	m = testSanity(t, target, ver, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
 }
 
-func testSanity(t *testing.T, cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, ver *Version, known *CfgVals) *CfgVals {
-	items, missing, survey, err := known.Change(cm, opts, ver, ucv.UART1)
+func testSanity(t *testing.T, target *gpsprot.ConfigTarget, ver *Version, known *CfgVals) *CfgVals {
+	items, missing, survey, err := known.Transaction(target, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -89,13 +88,31 @@ func expectMissing[T comparable](t *testing.T, m *CfgVals, key ucv.TypedKey[T]) 
 	}
 }
 
-func TestConfigItems_GNSS(t *testing.T) {
-	cm := &gpsprot.ConfigMap{}
+func TestConfigItems_Empty(t *testing.T) {
+	target := &gpsprot.ConfigTarget{}
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
-	opts := gpsprot.ConfigOptions{}
-	gpsprot.CfgPrimaryGNSS.Set(cm, gpsprot.GAL)
-	gpsprot.CfgGNSSEnabled.Set(cm, gpsprot.GNSSFlag(gpsprot.GAL))
-	items, missing, survey, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
+	items, missing, survey, err := newCfgVals().Transaction(target, ver, ucv.UART1)
+
+	if err != nil {
+		t.Fatalf("configItems: %v", err)
+	}
+	if survey {
+		t.Errorf("expected survey to be false")
+	}
+	if len(items) != 0 {
+		t.Errorf("expected items to be empty, got %v", items)
+	}
+	if len(missing) != 0 {
+		t.Errorf("expected missing to be empty, got %v", missing)
+	}
+}
+
+func TestConfigItems_GNSS(t *testing.T) {
+	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
+	target := &gpsprot.ConfigTarget{}
+	gpsprot.CfgPrimaryGNSS.Set(&target.Map, gpsprot.GAL)
+	gpsprot.CfgGNSSEnabled.Set(&target.Map, gpsprot.GNSSFlag(gpsprot.GAL))
+	items, missing, survey, err := newCfgVals().Transaction(target, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -118,13 +135,12 @@ func TestConfigItems_GNSS(t *testing.T) {
 }
 
 func TestConfigItems_AntennaCableDelay(t *testing.T) {
-	cm := &gpsprot.ConfigMap{}
-	opts := gpsprot.ConfigOptions{}
+	target := &gpsprot.ConfigTarget{}
 	const nanos = 10
-	gpsprot.CfgAntennaCableDelay.Set(cm, nanos*time.Nanosecond)
+	gpsprot.CfgAntennaCableDelay.Set(&target.Map, nanos*time.Nanosecond)
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 
-	items, missing, survey, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
+	items, missing, survey, err := newCfgVals().Transaction(target, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -145,9 +161,8 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 }
 
 func TestConfigItems_Survey(t *testing.T) {
-	cm := &gpsprot.ConfigMap{}
-	opts := gpsprot.ConfigOptions{}
-	opts.Survey = gpsprot.Survey{
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.Survey = gpsprot.Survey{
 		When:     gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled),
 		MinDur:   2000 * time.Second,
 		AccLimit: 10 * gpsprot.Meter,
@@ -156,7 +171,7 @@ func TestConfigItems_Survey(t *testing.T) {
 		GNSS: gpsprot.MajorGNSSSet,
 		FW:   &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
 	}
-	_, missing, survey, err := newCfgVals().Change(cm, opts, ver, ucv.UART1)
+	_, missing, survey, err := newCfgVals().Transaction(target, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems[1]: %v", err)
 	}
@@ -171,7 +186,7 @@ func TestConfigItems_Survey(t *testing.T) {
 	}
 	m := newCfgVals()
 	cfgValSet(m, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
-	items, missing, survey, err := m.Change(cm, opts, ver, ucv.UART1)
+	items, missing, survey, err := m.Transaction(target, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems[2]: %v", err)
 	}
@@ -188,7 +203,7 @@ func TestConfigItems_Survey(t *testing.T) {
 		expectItem(t, m, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
 		expectItem(t, m, ucv.KTmodeSvinMinDur, 2001)
 		expectItem(t, m, ucv.KTmodeSvinAccLimit, 10*1000*10)
-		items = m.Survey(opts)
+		items = m.Survey(target.Opts)
 	}
 	m = newCfgVals()
 	m.AddItems(items)

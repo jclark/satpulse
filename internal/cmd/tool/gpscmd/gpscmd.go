@@ -23,23 +23,24 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	}
 
 	opts := gpsprot.ConfigOptions{
-		Reset:       v.reset,
-		Flash:       v.flash,
-		ForceOutput: v.force,
+		Reset:      v.reset,
+		Flash:      v.flash,
+		ForceProbe: v.force,
 	}
 
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
 		conn, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
-		opts.Detect = true
 	} else {
 		conn, err = gpsio.OpenSocket(v.socketPath)
+		opts.Detected = true
+
 	}
 	if err != nil {
 		return
 	}
-	cm := &gpsprot.ConfigMap{}
-
+	target := gpsprot.NewConfigTarget(false)
+	cm := &target.Map
 	if v.pps {
 		cm.SetPPS()
 	}
@@ -70,11 +71,11 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, cm, opts, conn)
+	err = run(ctx, lg, target, conn)
 	return
 }
 
-func run(ctx context.Context, lg *slog.Logger, cm *gpsprot.ConfigMap, opts gpsprot.ConfigOptions, conn gpsio.Conn) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -93,7 +94,7 @@ func run(ctx context.Context, lg *slog.Logger, cm *gpsprot.ConfigMap, opts gpspr
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	info, err := gpscfg.Configure(ctx, lg, cm, opts, pCh, conn)
+	info, err := gpscfg.Configure(ctx, lg, target, pCh, conn)
 	if err == nil {
 		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigMap))
 	}
