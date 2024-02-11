@@ -285,7 +285,7 @@ func (c *Configurator) pollTmode() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) pollTp5() (gpsprot.ConfigRequest, error) {
-	if !c.target.UsesAny(tp5Keys...) {
+	if !c.target.UsesAny(cfgOldKeys.tp5...) {
 		return nil, nil
 	}
 	tpIdx := 0
