@@ -54,9 +54,9 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	}
 	noop := target.NoOp()
 	if err != nil {
-		// even with InputOnly, we want to run detect in order to deal with framing errors
+		// even with NoOp, we want to run detect in order to deal with framing errors
 		if noop {
-			// there's no point in giving up with InputOnly, maybe we can bring it back to life using satpulsetool
+			// there's no point in giving up with NoOp, maybe we can bring it back to life using satpulsetool
 			lg.Warn(err.Error())
 		} else if target.Opts.ForceProbe {
 			lg.Info("no output detected from GPS, but trying to probe GPS anyway")
@@ -65,6 +65,7 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 		}
 	}
 	if noop {
+		// no need to probe
 		return &Result{
 			ConfigMap: new(gpsprot.ConfigMap),
 		}, nil
