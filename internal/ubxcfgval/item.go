@@ -95,6 +95,10 @@ func UnmarshalItems(data []byte) ([]Item, error) {
 	return items, nil
 }
 
+func (k Key) String() string {
+	return fmt.Sprintf("0x%08x", uint32(k))
+}
+
 func (k Key) nValueBytes() int {
 	return (k.valueBits() + 7) / 8
 }
