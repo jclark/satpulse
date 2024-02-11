@@ -82,6 +82,7 @@ type ConfigTarget struct {
 
 func NewConfigTarget(config bool) *ConfigTarget {
 	t := &ConfigTarget{}
+	t.Get = make(CfgKeySet)
 	if !config {
 		return t
 	}

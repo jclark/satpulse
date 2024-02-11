@@ -110,6 +110,7 @@ func TestRate(t *testing.T) {
 func TestConfiguratorSane(t *testing.T) {
 	target := gpsprot.NewConfigTarget(false)
 	target.Map.SetPPS()
+	target.Get.Add(gpsprot.CfgTimePulseWidth)
 	testConfigurator(t, newLegacyReceiver(), target)
 }
 
@@ -196,6 +197,25 @@ func TestConfigurationEmpty(t *testing.T) {
 	}
 	if rcvr.nSent != 0 {
 		t.Errorf("expected no messages to be sent, got %d", rcvr.nSent)
+	}
+}
+
+func TestConfigurationGet(t *testing.T) {
+	target := gpsprot.NewConfigTarget(false)
+	target.Get.Add(gpsprot.CfgTimePulseWidth)
+	rcvr := newLegacyReceiver()
+	c, naks, err := runConfiguration(rcvr, target)
+	if err != nil {
+		t.Errorf("unexpected error from runConfiguration: %v", err)
+	}
+	if len(naks) != 0 {
+		t.Errorf("expected no naks, got %v", naks)
+	}
+	if w, ok := gpsprot.CfgTimePulseWidth.Get(c.ConfigMap()); !ok || w != time.Second/10 {
+		t.Errorf("expected pulse width to be 0.1s, got %v", w)
+	}
+	if rcvr.nSent != 1 {
+		t.Errorf("expected 1 message to be sent, got %d", rcvr.nSent)
 	}
 }
 
@@ -322,9 +342,9 @@ func newRawConfig() *RawConfig {
 		Flags:             ubxbin.CfgTp5IsLength | ubxbin.CfgTp5Active | ubxbin.CfgTp5LockGpsFreq | ubxbin.CfgTp5Polarity | ubxbin.CfgTp5AlignToTow | ubxbin.CfgTp5LockedOtherSet,
 		Version:           1,
 		PulseLenRatio:     0,
-		PulseLenRatioLock: 100,
-		FreqPeriod:        1000,
-		FreqPeriodLock:    1000,
+		PulseLenRatioLock: 100 * 1000,
+		FreqPeriod:        1000 * 1000,
+		FreqPeriodLock:    1000 * 1000,
 		AntCableDelay:     50,
 	}
 	raw.nav5 = &ubxbin.CfgNav5{

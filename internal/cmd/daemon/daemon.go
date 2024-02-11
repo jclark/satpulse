@@ -154,6 +154,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
 	gct, err := cfg.GPS.target()
+	if phcFlags.Edges() != 1 {
+		gct.Get.Add(gpsprot.CfgTimePulseWidth)
+	}
 	lg.Debug("GPS configure input", "target", gct)
 	if err != nil {
 		return err
