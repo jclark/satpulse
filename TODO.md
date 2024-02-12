@@ -142,14 +142,8 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * implement baud rate property
    * saving to flash
 * Figure out how to make U-blox receivers start a new survey, when they have already done one
-* Log ongoing and completed survey progress
 * Finish mapping from CfgVals to from ConfigMap
-* Support for setting ECEF fixed position and accuracy
-   * satpulsed TOML properties: `posAcc = 10`, `pos=[1,2,3]`
-   * `satpulsetool config --pos X,Y,Z --pos-acc 10`
-* Allow daemon TOML configuration of important things that we cannot determine for the user
-   * primary GNSS constellation
-   * antenna delay
+* satpulsetool support for setting ECEF fixed position and accuracy `satpulsetool gps --pos X,Y,Z --pos-acc 10` 
 * Option for satpulsetool to get survey result
 * satpulsetool should use NDELAY TCP option
 * Message enablement should be in ConfigMap rather than ConfigOptions so we can turn messages off
