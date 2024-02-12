@@ -2,6 +2,7 @@ package ubx
 
 import (
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -61,6 +62,15 @@ var AllMsgKeys = []ucv.KeyM{
 	ucv.KUbxNavSvin,
 	ucv.KUbxTimSvin,
 	ucv.KUbxTimTp,
+}
+
+var cfgValKeys = map[gpsprot.CfgKey][]ucv.AnyTypedKey{
+	gpsprot.CfgTimePulseWidth: {
+		ucv.KTpPulseLengthDef,
+		ucv.KTpUseLockedTp1,
+		ucv.KTpLenLockTp1,
+		ucv.KTpLenTp1,
+	},
 }
 
 func MakeCfgVals() CfgVals {
@@ -131,6 +141,17 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cm *gpsprot.ConfigMap) {
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
 func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port) ([]ucv.Item, []ucv.Key, bool, error) {
+	switch len(target.Get) {
+	case 0:
+		// do nothing
+	case 1:
+		if target.Get.Contains(gpsprot.CfgTimePulseWidth) {
+			break
+		}
+		fallthrough
+	default:
+		return nil, nil, false, errors.New("getting configuration properties with UBX-CFG-VALGET implemented only for time pulse width")
+	}
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
 	cm := &target.Map
@@ -396,8 +417,31 @@ func (raw *CfgVals) getTimePulseWidth() (time.Duration, bool) {
 // timePulseTransaction compiles the parts of the configuration related to the time pulse.
 // If it infers the GNSS to which the pulse is aligned, it returns that.
 func (known *CfgVals) timePulseTransaction(target *gpsprot.ConfigTarget, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
+	tg := known.timePulseWriteTransaction(&target.Map, items, keys)
+	*keys = known.timePulseReadTransaction(target.Get, *items, *keys)
+	return tg
+}
+
+func (known *CfgVals) timePulseReadTransaction(target gpsprot.CfgKeySet, items []ucv.Item, keys []ucv.Key) []ucv.Key {
+	// XXX implement for other keys
+	if !target.Contains(gpsprot.CfgTimePulseWidth) {
+		return keys
+	}
+	for _, item := range items {
+		if item.Key == ucv.KTpLenLockTp1.Key() || (item.Key == ucv.KTpLenTp1.Key() && item.Value != 0) {
+			return keys
+		}
+	}
+	for _, k := range cfgValKeys[gpsprot.CfgTimePulseWidth] {
+		keys = append(keys, k.Key())
+	}
+	slices.Sort(keys)
+	slices.Compact(keys)
+	return keys
+}
+
+func (known *CfgVals) timePulseWriteTransaction(cm *gpsprot.ConfigMap, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
 	tg := ucv.ETpTimegridTp1Utc
-	cm := &target.Map
 	period, havePeriod := gpsprot.CfgTimePulsePeriod.Get(cm)
 	width, haveWidth := gpsprot.CfgTimePulseWidth.Get(cm)
 	align, haveAlign := gpsprot.CfgTimePulseAlignToGNSS.Get(cm)

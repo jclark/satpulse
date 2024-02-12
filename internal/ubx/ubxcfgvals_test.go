@@ -107,6 +107,53 @@ func TestConfigItems_Empty(t *testing.T) {
 	}
 }
 
+func TestConfigItems_Get(t *testing.T) {
+	target := gpsprot.NewConfigTarget(false)
+	target.Get.Add(gpsprot.CfgTimePulseWidth)
+
+	vals := newCfgVals()
+	ver := &Version{}
+	items, missing, survey, err := vals.Transaction(target, ver, ucv.UART1)
+
+	if err != nil {
+		t.Fatalf("configItems: %v", err)
+	}
+	if survey {
+		t.Errorf("expected survey to be false")
+	}
+	if len(items) != 0 {
+		t.Errorf("expected items to be empty, got %v", items)
+	}
+	if len(missing) == 0 {
+		t.Errorf("expected missing to be non-empty, but empty")
+	}
+	items = make([]ucv.Item, 0, len(missing))
+	for _, k := range missing {
+		var item ucv.Item
+		switch k {
+		case ucv.KTpPulseLengthDef.Key():
+			item = ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength)
+		case ucv.KTpUseLockedTp1.Key():
+			item = ucv.MakeItem(ucv.KTpUseLockedTp1, true)
+		case ucv.KTpLenLockTp1.Key():
+			// it's in microseconds
+			item = ucv.MakeItem(ucv.KTpLenLockTp1, 1e5)
+		case ucv.KTpLenTp1.Key():
+			item = ucv.MakeItem(ucv.KTpLenTp1, 0)
+		default:
+			t.Errorf("unexpected missing key: %v", k)
+		}
+		items = append(items, item)
+	}
+	vals.AddItems(items)
+	cm := new(gpsprot.ConfigMap)
+	vals.Cook(ver, ucv.UART1, cm)
+	val, ok := gpsprot.CfgTimePulseWidth.Get(cm)
+	if !ok || val != time.Duration(1e5*time.Microsecond) {
+		t.Errorf("expected pulse width to be 1us, got %v", val)
+	}
+}
+
 func TestConfigItems_GNSS(t *testing.T) {
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	target := gpsprot.NewConfigTarget(false)
