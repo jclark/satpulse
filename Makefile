@@ -34,10 +34,10 @@ $(ALL_GOARCH):
 	env GOOS=linux GOARCH=$@ go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" ./...
 
 out/arm64/satpulse.toml: configs/satpulse.toml
-	sed -e '/^interface/s/enp1s0/eth0/' -e '/^device/s/ttyUSB0/ttyAMA0/' $< > $@
+	sed -e '/^#:schema /s; \./; /usr/share/doc/satpulse/;' -e '/^interface/s/enp1s0/eth0/' -e '/^device/s/ttyUSB0/ttyAMA0/' $< > $@
 
 out/amd64/satpulse.toml: configs/satpulse.toml
-	cp $< $@
+	sed -e '/^#:schema /s; \./; /usr/share/doc/satpulse/;' $< > $@
 
 install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulse.toml
 	install out/$(GOARCH)/satpulsed /usr/local/sbin/satpulsed
@@ -46,7 +46,8 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	  -e 's;/etc/satpulse.d/;/usr/local/etc/satpulse.d/;g' \
 	  -e 's;/usr/sbin/satpulsed;/usr/local/sbin/satpulsed;g' \
 	  configs/satpulse@.service >/etc/systemd/system/satpulse@.service
-	[ -f "$(CONFIG_FILE)" ] || install -D -m 644 out/$(GOARCH)/satpulse.toml "$(CONFIG_FILE)"
+	[ -f "$(CONFIG_FILE)" ] || sed -e '/^#:schema /s;/usr/;/usr/local/;' out/$(GOARCH)/satpulse.toml >"$(CONFIG_FILE)"
+	install -m 644 -D configs/config-schema.json /usr/local/share/doc/satpulse/config-schema.json
 	systemctl daemon-reload
 
 test:
@@ -67,6 +68,7 @@ $(DEB_PATTERN): % out/%/satpulse.toml
 	install -D -m 644 out/$*/satpulse.toml out/$*/deb/etc/satpulse.toml
 	install -D -m 644 configs/ptp4l.service out/$*/deb/usr/share/doc/satpulse/ptp4l.service
 	install -D -m 644 configs/chrony.conf out/$*/deb/usr/share/doc/satpulse/chrony.conf
+	install -D -m 644 configs/config-schema.json out/$*/deb/usr/share/doc/satpulse/config-schema.json
 	install -D -m 644 LICENSE out/$*/deb/usr/share/doc/satpulse/copyright
 	install -D -m 644 configs/satpulse@.service out/$*/deb/lib/systemd/system/satpulse@.service
 	installed_size=`du -s -k out/$*/deb | cut -f1`;\
