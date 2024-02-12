@@ -150,8 +150,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 * Allow daemon TOML configuration of important things that we cannot determine for the user
    * primary GNSS constellation
    * antenna delay
-* TOML configuration for pulseWidth/dutyCycle
-    * use in conjunction with no configuration for input to correlator
 * Option for satpulsetool to get survey result
 * satpulsetool should use NDELAY TCP option
 * Message enablement should be in ConfigMap rather than ConfigOptions so we can turn messages off
@@ -161,10 +159,8 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
    * In particular, how do we deal with GNSS messages for non-primary GNSS? Do we turn them off?
    * This ties into to how configuration should tell syncer about what message to use.
 * Pay attention to version in CFG-UBX-TP5
-* Make satpulsed recover better from configuration errors
 * Add `satpulsetool config --binary` option to disable NMEA and enable UBX Time/LeapSecond/Survey messages
 * Might need to set CFG-NAVSPG-WKNROLLOVER
-* Add `satpulsetool config` option to show the configuration e.g. `--show`. Requires extending gpsprot interface.
 * Configure UBX message interface
 
 ## Monitoring
