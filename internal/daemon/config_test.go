@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const configsDir = "../../../configs"
+const configsDir = "../../configs"
 
 func TestLoadConfig(t *testing.T) {
 	cfgFiles, err := os.ReadDir(configsDir)
