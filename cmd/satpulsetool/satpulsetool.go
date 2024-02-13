@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/jclark/satpulse/internal/cmd"
-	"github.com/jclark/satpulse/internal/cmd/tool/gpscmd"
-	"github.com/jclark/satpulse/internal/cmd/tool/pmccmd"
+	"github.com/jclark/satpulse/internal/gpscmd"
+	"github.com/jclark/satpulse/internal/pmccmd"
 	"github.com/spf13/pflag"
 )
 

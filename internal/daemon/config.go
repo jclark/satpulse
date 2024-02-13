@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
 	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/proxy"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/sockrefclock"
 	"github.com/pelletier/go-toml/v2"

@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/jclark/satpulse/internal/cmd/tool"
+	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/spf13/pflag"
 )
@@ -107,7 +107,7 @@ func createMsg(cmdName string, args []string) (pmc.MgmtMsg, func(string) string,
 		flags.BoolVar(&f.set, name, false, f.usage)
 	}
 	midFlag := flags.StringP("management-id", "m", "GRANDMASTER_SETTINGS_NP", "management id to get")
-	usage := tool.UsageFunc(cmdName, summary, flags)
+	usage := cmd.UsageFunc(cmdName, summary, flags)
 	err := flags.Parse(args)
 	if err != nil {
 		return nil, usage, err

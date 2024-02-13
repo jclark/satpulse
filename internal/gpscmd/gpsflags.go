@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jclark/satpulse/internal/cmd/tool"
+	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/spf13/pflag"
 )
@@ -56,7 +56,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&vars.survey, "survey", false, "instruct the GPS receiver to perform a survey")
 	flags.Uint32Var(&vars.surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
 	flags.Float64Var(&vars.surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
-	usage := tool.UsageFunc(cmdName, summary, flags)
+	usage := cmd.UsageFunc(cmdName, summary, flags)
 	err := flags.Parse(args)
 	if err != nil {
 		return nil, usage, err

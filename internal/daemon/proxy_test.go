@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jclark/satpulse/internal/cmd/daemon/proxy"
+	"github.com/jclark/satpulse/internal/proxy"
 	"golang.org/x/exp/slices"
 )
 
@@ -20,7 +20,7 @@ func TestProxyConfig(t *testing.T) {
 			proxy.Config{
 				TCP: []proxy.TCPService{
 					{
-						Listen:   "127.0.0.1:1234",
+						Listen:  "127.0.0.1:1234",
 						Options: proxy.Options{ReadOnly: true},
 					},
 				},
