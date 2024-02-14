@@ -23,10 +23,24 @@
 		"type": "object",
 		"properties": {
 		  "config": { "type": "boolean" },
+		  "gnss": {
+			"type": "string",
+			"enum": ["GPS", "GAL", "Galileo", "BDS", "BeiDou", "GLO", "GLONASS"]
+		  },
 		  "timeMode": { "type": "boolean" },
 		  "resurvey": { "type": "boolean" },
 		  "surveyTime": { "type": "integer" },
-		  "surveyAcc": { "type": "number" }
+		  "surveyAcc": { "type": "number" },
+		  "fixedPosAcc": { "type": "number" },
+		  "fixedPosECEF": {
+			"type": "array",
+			"items": { "type": "number" },
+			"minItems": 3,
+			"maxItems": 3
+		  },
+		  "antennaCableDelay": { "type": "number" },
+		  "antennaCableLength": { "type": "number" },
+		  "antennaCableVF": { "type": "number" }
 		}
 	  },
 	  "phc": {

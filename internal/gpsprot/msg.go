@@ -105,6 +105,14 @@ func (g GNSS) MarshalText() ([]byte, error) {
 	return []byte(g.String()), nil
 }
 
+func (gp *GNSS) UnmarshalText(text []byte) error {
+	g, err := ParseGNSS(string(text))
+	if err == nil {
+		*gp = g
+	}
+	return err
+}
+
 // GNSSSet is a set of GNSS values.
 // It is comparable.
 type GNSSSet uint32

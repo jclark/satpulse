@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"time"
 )
 
@@ -327,7 +328,11 @@ func ParseLength(s string) (Length, error) {
 type Point3D [3]Length
 
 func (p Point3D) String() string {
-	return fmt.Sprintf("%v,%v,%v", p[0].Meters(), p[1].Meters(), p[2].Meters())
+	var s [3]string
+	for i := 0; i < 3; i++ {
+		s[i] = strconv.FormatFloat(p[i].Meters(), 'f', -1, 64)
+	}
+	return fmt.Sprintf("%s,%s,%s", s[0], s[1], s[2])
 }
 
 func ParsePoint3D(s string) (Point3D, error) {
