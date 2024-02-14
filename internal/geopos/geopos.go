@@ -34,6 +34,10 @@ func (xyz ECEF) magnitude() float64 {
 	return math.Sqrt(xyz[0]*xyz[0] + xyz[1]*xyz[1] + xyz[2]*xyz[2])
 }
 
+func (xyz ECEF) IsZero() bool {
+	return xyz[0] == 0 && xyz[1] == 0 && xyz[2] == 0
+}
+
 // LLA represents latitude, longitude, and altitude.
 type LLA struct {
 	Lat, Lon, Alt float64 // Lat, Lon in degrees; Alt in meters
