@@ -22,6 +22,9 @@ If you put the wrong values for these, there will be an error in the logs.
 ## Quickstart
 
 After installation, there will be a configuration file and a systemd service template.
+You will need to edit the configuration file and use systemd commands with the name of the service template.
+
+## Configuration file
 
 The configuration file will be at
 
@@ -46,17 +49,20 @@ speed = 9600
 In the above, `#` starts a comment. The `[phc]` and `[serial]` lines mark the start of a *table*; the square brackets
 enclose the name of the table.
 `interface = "enp1s0"` is a key/value pair within the `phc` table. Values can be strings in double quotes
-(e.g. `"enp1s0"`), numbers (e.g. 9600) or booleans (e.g. `true`, `false`).
+(e.g. `"enp1s0"`), numbers (e.g. `9600`) or booleans (e.g. `true`, `false`).
 
 The `phc` table gives information about the PTP hardware clock that SatPulse will be working with.
 The `interface` key specifies the name of the ethernet interface with which the PTP hardware clock is associated.
-The `pin` key specified the index of the pin that the GPS's PPS output is attached to; the default for this is 0.
+The `pin` key specifies the index of the pin that the GPS's PPS output is attached to; the default for this is 0.
 
 The `serial` table provides information about the serial connection between the GPS receiver and the computer.
 The `speed` gives the speed of the connection in bits-per-second (baud).
+(Althought the serial device name can be given in the `serial` table in the configuration file,
+the system service template expects it to be given in systemd commands, as described in the next section.)
 
-Although the serial device name can be specified in the configuration file, the systemd service template expects it to be supplied as an argument.
-The systemd service template name is `satpulse@.service` and the argument for the systemd service template is the serial device name without `/dev/`.
+### Systemd commands
+
+The systemd service template name is `satpulse@.service` and the expected argument is the serial device name without `/dev/`.
 For example, if the serial device is `/dev/ttyS0`, then the instantiated service would be named `satpulse@ttyS0.service`.
 Systemd commmands need to be given the instantiated service name (although typically the `.service` part can be left out).
 
@@ -102,8 +108,7 @@ Show the logs for the last 5 minutes:
 sudo journalctl -u satpulse@ttyACM0 -S -5m
 ```
 
-
-
+## Configuration file tables
 
 
 
