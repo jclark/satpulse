@@ -35,6 +35,7 @@ type Dispatcher struct {
 	lf                    logfile.LogFile
 	lastTime              ptime.Time
 	loggedUnknownProtocol bool
+	loggedSurveyComplete  bool
 	tStart                time.Time
 }
 
@@ -233,6 +234,16 @@ type SurveySSE struct {
 }
 
 func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
+	if m.InProgress || !d.loggedSurveyComplete {
+		d.loggedSurveyComplete = !m.InProgress
+		d.lg.Info("survey progress",
+			"position", m.Position,
+			"accuracy", m.Accuracy,
+			"inProgress", m.InProgress,
+			"valid", m.Valid,
+			"obsCount", m.ObsCount,
+			"obsTime", m.ObsTime)
+	}
 	ecef := geopos.ECEF{}
 	for i := range ecef {
 		ecef[i] = m.Position[i].Meters()
