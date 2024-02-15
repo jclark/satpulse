@@ -1,5 +1,5 @@
-# Default config file for satpulse
 #:schema ./config-schema.json
+# Default config file for satpulse
 [phc]
 interface = "enp1s0"
 channel = 0
