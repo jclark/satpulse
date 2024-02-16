@@ -1,7 +1,7 @@
 # Configuring SatPulse
 
 Before doing the configuration described in this document,
-you should install SatPulse either from source or from a package (.deb or .rpm).
+you should install SatPulse either from source or from a package (`.deb` or `.rpm` file).
 
 ## Required information
 
@@ -158,6 +158,16 @@ sudo systemctl enable --now ptp4l
 ```
 
 ### chrony
+
+Add this to your chrony.conf file:
+
+```
+refclock SOCK /var/run/chrony.satpulse.sock poll 2 filter 4 refid GNSS
+```
+
+The socket path here `/var/run/chrony.satpulse.sock` needs to match that specified by the `sock.path` key in the `ntp` table.
+
+Then restart chrony.
 
 ## Configuration file details
 
@@ -319,16 +329,36 @@ sock.path = "/var/run/chrony.satpulse.sock"
 
 ### `log` table
 
-The `log` table is about SatPulse should log information.
+The `log` table controls how SatPulse should log information.
+
+XXX
 
 ### `http` table array
 
+The `http` table array specifies the port on which to enable an HTTP server for monitoring. It has a single key:
+
+* `listen` - a string specifying an address that the HTTP server should listen on; the address is the form *host*`:`*port*,
+where the *host* is a host name or IP address, and port is the port number; *host* can be omitted, which means to listen on all
+IP addresses
+
+This example would run an HTTP server on port 2006 on all IP addresses:
+
+```
+[[http]]
+listen = ":2006"
+```
+
+This would listen on two specific addresses:
+
+```
+[[http]]
+listen = "192.168.1.1:2006"
+
+[[http]]
+listen = "192.168.2.1:2006"
+```
+
 ### `proxy.tcp` and `proxy.sock` table arrays
 
-
-
-
-
-
-
+XXX
 
