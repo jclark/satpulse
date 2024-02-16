@@ -83,8 +83,7 @@
 			  ]
 			}
 		  }
-		},
-		"required": ["TCP", "Socket"]
+		}
 	  },
 	  "http": {
 		"type": "array",
