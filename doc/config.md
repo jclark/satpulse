@@ -63,7 +63,7 @@ Values can be strings in double quotes
 The above configuration file specifies that
 
 * the ethernet interface with the pin that the GPS output pin is attached to is `enp1s0` (the pin index is defaulted to 0)
-* the serial speed is 9600 baud
+* the serial speed is 9600 baud (the serial device is usually specified by systemd commands)
 * the GPS receiver should be configured to work optimally for timing; note that this won't make any persistent changes to the GPS
   receiver, so you can turn it off and on again to undo any changes
 * ptp4l should be updated using the Unix domain socket at `/var/run/ptp4l`
@@ -171,13 +171,7 @@ Then restart chrony.
 
 ## Configuration file details
 
-### TOML syntax
-
-Note that
-* Order of tables is not significant.
-* Order of key/value pairs within a table is not significant.
-* Case is significant.
-* Numbers can use exponenential format e.g. `21.3e6`
+### More on TOML syntax
 
 As well as strings, numbers and booleans, values can be
 
@@ -187,6 +181,12 @@ As well as strings, numbers and booleans, values can be
 As well as tables, the configuration file can contain *table arrays*. With table arrays, the name
 is enclosed in double square brackets, and each name can occur multiple times.
 See `http` for an example.
+
+Note that
+* Order of tables is not significant.
+* Order of key/value pairs within a table is not significant.
+* Case is significant.
+* Numbers can use exponenential format e.g. `21.3e6`
 
 ### Schema
 
@@ -224,7 +224,7 @@ channel = 0
 
 ### `serial` table
 
-The `serial` table provides information about the serial connection between the GPS receiver and the computer.
+The `serial` table relates to the serial connection between the GPS receiver and the computer.
 It can have the following keys:
 
 * `speed` - an integer giving the speed of the connection in bits-per-second (baud)
@@ -234,7 +234,7 @@ It can have the following keys:
 
 ### `gps` table
 
-The `gps` table is about how to configure the GPS receiver. It can have the following keys:
+The `gps` table relates to configuration of the GPS receiver. It can have the following keys:
 
 * `config` - a boolean saying whether to perform configuration of the GPS receiver; `true` means to perform configuration;
   currently this works only with GPS receivers that support the UBX protocol (like those from u-blox)
@@ -276,11 +276,11 @@ gnss = "GAL"
 
 ### `leapSecond` table
 
-The `leapSecond` table gives information about the most recently announced leap second. It has the following keys:
+The `leapSecond` table relates to leap seconds. It has the following keys:
 
-* `date`: a date specifying when the leap second occurs in form YYYY-MM-DD; the month and day should be `06-30` or `12-31`
-* `before`: the difference between TAI and UTC time before the leap second
-* `after`: the difference between TAI and UTC time after the leap second; with a positive leap second, `after` will be one more than `before`
+* `date` - a date giving the date of the most recently announced the leap second in the form YYYY-MM-DD; the month and day should be `06-30` or `12-31`
+* `before` - an integer giving the difference in seconds between TAI and UTC time before the leap second
+* `after`- an integer giving the difference in seconds between TAI and UTC time after the leap second; with a positive leap second, `after` will be one more than `before`
 
 
 The default is:
@@ -315,7 +315,7 @@ ptp4l.udsAddress = "/var/run/ptp4l"
 
 ### `ntp` table
 
-The `ntp` table controls how SatPulse sends information to an NTP daemon. Currently only chrony is supported.
+The `ntp` table is about how SatPulse sends information to an NTP daemon. Currently only chrony is supported.
 It can have the following keys:
 
 * `sock.path` - a string 
@@ -329,13 +329,13 @@ sock.path = "/var/run/chrony.satpulse.sock"
 
 ### `log` table
 
-The `log` table controls how SatPulse should log information.
+The `log` table is about how SatPulse should log information.
 
 XXX
 
 ### `http` table array
 
-The `http` table array specifies the port on which to enable an HTTP server for monitoring. It has a single key:
+The `http` table array controls the HTTP monitoring interface. It has a single key:
 
 * `listen` - a string specifying an address that the HTTP server should listen on; the address is the form *host*`:`*port*,
 where the *host* is a host name or IP address, and port is the port number; *host* can be omitted, which means to listen on all
@@ -348,7 +348,7 @@ This example would run an HTTP server on port 2006 on all IP addresses:
 listen = ":2006"
 ```
 
-This would listen on two specific addresses:
+This example would listen on two specific IP addresses:
 
 ```
 [[http]]
@@ -360,5 +360,31 @@ listen = "192.168.2.1:2006"
 
 ### `proxy.tcp` and `proxy.sock` table arrays
 
-XXX
+The `proxy.tcp` table array provides network access over TCP to the GPS receiver.
+This can be used with for example the [u-center](https://www.u-blox.com/en/product/u-center) program
+to monitor your GPS.
+**SatPulse does not perform any access control:
+using `proxy.tcp` without `readOnly=true` allows anyone on the local network to write to your GPS receiver.**
 
+It has the following key:
+
+* `listen` - a string specifying an address that the TCP server should listen on; the address is the form *host*`:`*port*,
+where the *host* is a host name or IP address, and port is the port number; *host* can be omitted, which means to listen on all
+IP addresses; this key is required in each `[[proxy.tcp]]` table array element
+
+The `proxy.sock` table array provides access to the GPS receiver over a Unix domain socket.
+
+
+It has the following key:
+
+* `path` - a string specifying the path of the socket; this key is required in each `[[proxy.sock]]` table array element;
+  this key is required in each `[[proxy.sock]]` table array element
+* `group` - the group id for the socket path; by default this is `dialout` (this is the usual group for the tty devices,
+   so a user that can access tty devices will be able to access the socket); when the socket is not readOnly, then the mode
+   will be 0660, so only root and members of this group will be able to write to the socket
+
+In addition, `proxy.tcp` and `proxy.sock` can both have the following keys:
+
+* `readOnly` - a boolean saying whether access to the GPS receiver should be read-only; this means that serial packets will be forwarded from the GPS receiver to the network, but the network will not be able to send packets to the GPS receiver
+* `nmeaOnly` - a boolean saying whether this should only proxy NMEA packets
+* `writeLockTimeout` - a number giving the time in seconds that a writer to the GPS receiver should have exclusive write access; if client writes to the GPS receiver (which is allowed only when readOnly is false), then no other client will be able to write to the GPS receiver for this period of time; the default is 2 seconds
