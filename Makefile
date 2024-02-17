@@ -48,6 +48,8 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	  configs/satpulse@.service >/etc/systemd/system/satpulse@.service
 	[ -f "$(CONFIG_FILE)" ] || sed -e '/^#:schema /s;/usr/;/usr/local/;' out/$(GOARCH)/satpulse.toml >"$(CONFIG_FILE)"
 	install -m 644 -D configs/config-schema.json /usr/local/share/doc/satpulse/config-schema.json
+	install -D -m 644 doc/config.md /usr/local/share/doc/satpulse/config.md
+	install -D -m 644 doc/quickstart.md /usr/local/share/doc/satpulse/quickstart.md
 	systemctl daemon-reload
 
 test:
@@ -69,6 +71,8 @@ $(DEB_PATTERN): % out/%/satpulse.toml
 	install -D -m 644 configs/ptp4l.service out/$*/deb/usr/share/doc/satpulse/ptp4l.service
 	install -D -m 644 configs/chrony.conf out/$*/deb/usr/share/doc/satpulse/chrony.conf
 	install -D -m 644 configs/config-schema.json out/$*/deb/usr/share/doc/satpulse/config-schema.json
+	install -D -m 644 doc/config.md out/$*/deb/usr/share/doc/satpulse/config.md
+	install -D -m 644 doc/quickstart.md out/$*/deb/usr/share/doc/satpulse/quickstart.md
 	install -D -m 644 LICENSE out/$*/deb/usr/share/doc/satpulse/copyright
 	install -D -m 644 configs/satpulse@.service out/$*/deb/lib/systemd/system/satpulse@.service
 	installed_size=`du -s -k out/$*/deb | cut -f1`;\

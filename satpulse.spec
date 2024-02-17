@@ -22,6 +22,8 @@ install -D -m 644 out/%{goarch}/satpulse.toml %{buildroot}/etc/satpulse.toml
 install -D -m 644 configs/satpulse@.service %{buildroot}/usr/lib/systemd/system/satpulse@.service
 install -D -m 644 configs/chrony.conf %{buildroot}/usr/share/doc/satpulse/chrony.conf
 install -D -m 644 configs/config-schema.json %{buildroot}/usr/share/doc/satpulse/config-schema.json
+install -D -m 644 doc/config.md %{buildroot}/usr/share/doc/satpulse/config.md
+install -D -m 644 doc/quickstart.md %{buildroot}/usr/share/doc/satpulse/quickstart.md
 install -D -m 644 LICENSE %{buildroot}/usr/share/doc/satpulse/copyright
 
 %files
@@ -31,4 +33,6 @@ install -D -m 644 LICENSE %{buildroot}/usr/share/doc/satpulse/copyright
 /usr/lib/systemd/system/satpulse@.service
 /usr/share/doc/satpulse/chrony.conf
 /usr/share/doc/satpulse/config-schema.json
+/usr/share/doc/satpulse/config.md
+/usr/share/doc/satpulse/quickstart.md
 /usr/share/doc/satpulse/copyright
