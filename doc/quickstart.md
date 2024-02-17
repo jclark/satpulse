@@ -29,7 +29,7 @@ After this, you will have
 
 * the SatPulse daemon installed `/usr/local/sbin/satpulsed`
 * the configuration file for the daemon installed as `/usr/local/etc/satpulse.toml`
-* the systemd unit file for the daemon installed as `/etc/systemd/system/satpulse@.service`
+* the systemd service template unit file for the daemon installed as `/etc/systemd/system/satpulse@.service`
 * the SatPulse command line tool installed as `/usr/local/sbin/satpulsetool`
 
 ### Install from a package
