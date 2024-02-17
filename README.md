@@ -34,8 +34,8 @@ Alternatively, you can compile from source and give it a try.
 
 ## Documentation
 
-The [documentation](docs/README.md) describes how to install and configure SatPulse.
-Start with the [Getting started](docs/quickstart.md) document.
+See the [documentation](doc/README.md) for how to install and configure SatPulse.
+Start with the [Getting started](doc/quickstart.md) document.
 
 Before you attempt this, make sure you have suitable hardware.
 See the [What hardware to get](#what-hardware-to-get) section below.
