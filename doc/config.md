@@ -1,194 +1,61 @@
-# Configuring SatPulse
+## SatPulse configuration file
 
-Before doing the configuration described in this document,
-you should install SatPulse either from source or from a package (`.deb` or `.rpm` file).
+## Location
 
-## Required information
-
-The GPS receiver must have two connections to the computer on which SatPulse is running.
-
-First, there will be a serial connection between the USB or serial port on the GPS receiver to a USB or serial port on the computer.
-You need to know which device this is. On a Raspberry Pi CM4 it is typically `/dev/ttyAMA0`.
-On a PC, it might be `/dev/ttyS0` or `/dev/ttyACM0` or `/dev/ttyUSB0`, with possibly a higher number than `0`.
-You also need to know the speed the GPS receiver is using; 9600 is the most common speed, but some recent devices use 38400.
-
-Second, there will be a PPS connection between the PPS output of the GPS receiver and the pin on the ethernet controller.
-You need to know the the name of the ethernet interface. On a Raspberry Pi CM4 using Raspberry Pi OS, it is typically `eth0`.
-On a PC, it is typically something like `enp1s0` or `enp2s0`.
-You also need to known the index of the pin; this is usually 0, but on a PC, could also be 1 or 2.
-
-If you put the wrong values for these, there will be an error in the logs.
-
-## Quickstart
-
-Installation will install a configuration file and a systemd service template.
-You will need to edit the configuration file and use systemd commands with the name of the service template.
-
-### Configuration file
-
-The configuration file will be at
+The SatPulse configuration file will be at
 
 - `/etc/satpulse.toml` if you installed from a package
 - `/usr/local/etc/satpulse.toml` if you installed from source
 
+## Syntax
+
 The configuration file is in [TOML](https://toml.io/en/) format, which is inspired by the INI file format
 and can be edited with a normal text editor (e.g. `nano`).
 
-A minimal configuration file would look like this:
+Comments begin with a `#` and continue to the end of the line.
+The configuration file consists of tables and table arrays:
+lines enclosed in single square brackets start tables;
+lines enclosed in double square brackets start table arrays.
+The name of the table or table array occurs within the square brackets.
+With a table, there is only one instance of the table.
+With a table array, there is one instance for each double square bracket line.
 
-```
-# Configuration file for satpulse
-[phc]
-interface = "enp1s0"
+After the starting line, a table or table array consists of key/value pairs
+of the form *key* `=` *value*. A value can be 
 
-[serial]
-speed = 9600
-
-# following are optional
-[gps]
-config = true
-
-[ptp]
-ptp4l.udsAddress = "/var/run/ptp4l"
-
-[ntp]
-sock.path = "/var/run/chrony.satpulse.sock"
-```
-
-In the above, `#` starts a comment. The lines with square brackets mark the start of a *table*; the square brackets
-enclose the name of the table. Following the start of each table are the key/value pairs in that table.
-Values can be strings in double quotes
-(e.g. `"enp1s0"`), numbers (e.g. `9600`) or booleans (e.g. `true`, `false`).
-
-The above configuration file specifies that
-
-* the ethernet interface with the pin that the GPS output pin is attached to is `enp1s0` (the pin index is defaulted to 0)
-* the serial speed is 9600 baud (the serial device is usually specified by systemd commands)
-* the GPS receiver should be configured to work optimally for timing; note that this won't make any persistent changes to the GPS
-  receiver, so you can turn it off and on again to undo any changes
-* ptp4l should be updated using the Unix domain socket at `/var/run/ptp4l`
-* timing samples should be sent to chrony using the SOCK protocol through a socket at `/var/run/chrony.satpulse.sock`
-
-
-### Systemd commands
-
-The systemd service template name is `satpulse@.service` and the expected argument is the serial device name without `/dev/`.
-For example, if the serial device is `/dev/ttyS0`, then the instantiated service would be named `satpulse@ttyS0.service`.
-Systemd commmands need to be given the instantiated service name (although typically the `.service` part can be left out).
-
-After editing the configuration file, you can start the service with
-
-```
-sudo systemctl start systemd@ttyS0.service
-```
-
-replacing `ttyS0` with the right value for your setup. You can the check that it is working with
-
-```
-sudo systemctl status systemd@ttyS0.service
-```
-
-This will make the service run automatically after the system boots:
-
-```
-sudo systemctl enable systemd@ttyS0.service
-```
-
-Here are some other systemd command you may need. Stop the service:
-
-```
-sudo systemctl stop systemd@ttyS0.service
-```
-
-Restart the service (e.g. after editing the configuration file)
-
-```
-sudo systemctl stop systemd@ttyS0.service
-```
-
-Enable the service:
-
-```
-sudo systemctl enable systemd@ttyS0.service
-```
-
-Show the logs for the last 5 minutes:
-
-```
-sudo journalctl -u satpulse@ttyACM0 -S -5m
-```
-
-### Install and configure ptp4l as a PTP server
-
-Install the linuxptp package:
-   * On Debian: `sudo apt install linuxptp`
-   * On Fedora: `sudo dnf install linuxptp`
-
-On Debian, the system supplied ptp4l service is not ideal, in particular it won't work for the Raspberry Pi CM4,
-So you should install a replacement `ptp4l.service` file as `/etc/systemd/system/ptp4l.service`.
-The replacement is in
-
-*  `configs/ptp4l.service` in the source, 
-*  `/usr/share/doc/satpulse/ptp4l.service when the .deb package has been installed
-
-Next you will need to edit the ptp4l config file.
-   * On Debian: the file is `/etc/linuxptp/ptp4l.conf`
-   * On Fedora: the file is `/etc/ptp4l.conf`
-
-You can start with this:
-
-```
-[global]
-# We don't want ptp4l and satpulse to both adjust the PHC, so only run as a master.
-masterOnly 1
-
-# Uncomment this for rPI CM4
-# tx_timestamp_timeout 100
-
-# The presence of this section makes ptp4l run on this interface.
-[eth0]
-```
-
-The network interface in the last line should match the interface in `satpulse.toml`.
-
-Then start and enable the ptp4l service:
-
-```
-sudo systemctl enable --now ptp4l
-```
-
-### chrony
-
-Add this to your chrony.conf file:
-
-```
-refclock SOCK /var/run/chrony.satpulse.sock poll 2 filter 4 refid GNSS
-```
-
-The socket path here `/var/run/chrony.satpulse.sock` needs to match that specified by the `sock.path` key in the `ntp` table.
-
-Then restart chrony.
-
-## Configuration file details
-
-### More on TOML syntax
-
-As well as strings, numbers and booleans, values can be
-
-* arrays e.g. `[1,2,3]` is an array of three numbers
-* dates e.g. `2024-02-23` is 23rd February 2024 (note no double quotes here)
-
-As well as tables, the configuration file can contain *table arrays*. With table arrays, the name
-is enclosed in double square brackets, and each name can occur multiple times.
-See `http` for an example.
+* a string in double quotes e.g. `"eth0"`
+* a number e.g. `2`, `9600`, `1.73e5`
+* a boolean e.g. `true`, `false`
+* a date e.g. `2024-02-23` is 23rd February 2024 (note no double quotes here)
+* an array e.g. `[1,2,3]` is an array of three numbers
 
 Note that
 * Order of tables is not significant.
 * Order of key/value pairs within a table is not significant.
 * Case is significant.
-* Numbers can use exponenential format e.g. `21.3e6`
 
-### Schema
+Example
+
+```
+# Configuration file for satpulse
+[phc]
+interface = "enp1s0"
+pin  = 0
+
+[serial]
+speed = 9600
+
+[gps]
+config = true
+
+[[http]]
+listen = "192.168.1.1:2006"
+
+[[http]]
+listen = "192.168.1.2:2006"
+```
+
+## Schema
 
 There is a JSON schema for the configuration file, which is installed in
 
@@ -204,7 +71,7 @@ extension supports schema-sensitive editing. The first line of the TOML file can
 
 to tell the extension which schema to use.
 
-### `phc` table
+## `phc` table
 
 The `phc` table is about the PTP hardware clock. It can have following keys:
 
@@ -222,7 +89,7 @@ pin = 1
 channel = 0
 ```
 
-### `serial` table
+## `serial` table
 
 The `serial` table relates to the serial connection between the GPS receiver and the computer.
 It can have the following keys:
@@ -232,7 +99,7 @@ It can have the following keys:
   device will usually be specified in systemd commands, which will override any value specified here
 
 
-### `gps` table
+## `gps` table
 
 The `gps` table relates to configuration of the GPS receiver. It can have the following keys:
 
@@ -274,7 +141,7 @@ gnss = "GAL"
 ```
 
 
-### `leapSecond` table
+## `leapSecond` table
 
 The `leapSecond` table relates to leap seconds. It has the following keys:
 
@@ -292,7 +159,7 @@ after=37
 before=36
 ```
 
-### `ptp` table
+## `ptp` table
 
 SatPulse can update a PTP server (called *grandmaster* in traditional PTP terminology) with metadata about the time.
 Currently the only supported server is `ptp4l`. Updating `ptp4l` is enabled by specifying the `ptp4l.udsAddress`.
@@ -313,7 +180,7 @@ Example
 ptp4l.udsAddress = "/var/run/ptp4l"
 ```
 
-### `ntp` table
+## `ntp` table
 
 The `ntp` table is about how SatPulse sends information to an NTP daemon. Currently only chrony is supported.
 It can have the following keys:
@@ -327,13 +194,13 @@ Example
 sock.path = "/var/run/chrony.satpulse.sock"
 ```
 
-### `log` table
+## `log` table
 
 The `log` table is about how SatPulse should log information.
 
 XXX
 
-### `http` table array
+## `http` table array
 
 The `http` table array controls the HTTP monitoring interface. It has a single key:
 
@@ -358,7 +225,7 @@ listen = "192.168.1.1:2006"
 listen = "192.168.2.1:2006"
 ```
 
-### `proxy.tcp` and `proxy.sock` table arrays
+## `proxy.tcp` and `proxy.sock` table arrays
 
 The `proxy.tcp` table array provides network access over TCP to the GPS receiver.
 This can be used with for example the [u-center](https://www.u-blox.com/en/product/u-center) program

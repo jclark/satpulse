@@ -32,6 +32,14 @@ open a new issue, and specify your hardware (including ethernet controller and G
 and Linux distro; I will then create or point you to a suitable binary release.
 Alternatively, you can compile from source and give it a try.
 
+## Documentation
+
+The [documentation](docs/README.md) describes how to install and configure SatPulse.
+Start with the [Getting started](docs/quickstart.md) document.
+
+Before you attempt this, make sure you have suitable hardware.
+See the [What hardware to get](#what-hardware-to-get) section below.
+
 ## Basics of how it works
 
 An ethernet controller that supports PTP has its own clock, called the PTP hardware clock (PHC), which is completely independent
@@ -65,56 +73,6 @@ chrony's refclock SOCK interface. Chrony uses these samples to adjust the system
 thus keeping the system clock in sync with UTC. Chrony can also act as an NTP server,
 allowing a NTP client to sync its system clock to UTC. The chrony interface thus enables the time from
 the GPS receiver to be used in two distinct ways: to synchronize the system clock and to provide NTP service.
-
-## Quick start
-
-Before you start, ensure you have suitable hardware. See the [What hardware to get](#what-hardware-to-get) section below.
-
-This assumes a Linux distribution that uses systemd. Instructions differ slightly between:
-
-* Debian-based distributions using apt-based package management: Debian, Raspberry Pi OS, Ubuntu
-* Fedora-based distributions using rpm-based package management: Fedora, CentOS, RHEL
-
-### Install satpulse
-
-1. [Install Go](https://go.dev/doc/install)
-2. Make sure you have `git` installed
-   * On Debian: `sudo apt install git`
-   * On Fedora: `sudo dnf install git`
-3. Clone the satpulse repository: `git clone https://github.com/jclark/satpulse.git`
-4. Change into the satpulse directory: `cd satpulse`
-5. Build it: `make`
-6. Install it: `sudo make install`
-
-After this, you will have
-
-* the SatPulse daemon installed `/usr/local/sbin/satpulsed`
-* the configuration file for the daemon installed as `/usr/local/etc/satpulse.toml`
-* the systemd unit file for the daemon installed as `/etc/systemd/system/satpulse@.service`
-* the SatPulse command line tool installed as `/usr/local/sbin/satpulsetool`
-
-### Configure satpulse
-
-1. Edit the configuration file: `sudo nano /usr/local/etc/satpulse.toml`. In particular, you may need to change:
-    * the serial port speed
-    * the network interface that the PPS input is connected to
-2. Start it: `sudo systemctl start satpulse.service@ttyX`, where `/dev/ttyX` is the serial device connected to your GPS receiver 
-3. Check that it started ok: `sudo systemctl status satpulse.service@ttyX`
-4. Check the logs: `journalctl -u satpulse@ttyX`
-5. Enable it at boot: `sudo systemctl enable satpulse.service@ttyX`
-
-### Install and configure ptp4l
-
-1. Install the linuxptp package:
-   * On Debian: `sudo apt install linuxptp`
-   * On Fedora: `sudo dnf install linuxptp`
-2. Install a ptp4l service
-   * On Debian: `sudo cp configs/ptp4l.service /etc/systemd/system/`
-   * On Fedora: there's nothing needed; the service provided by the package is fine
-3. Modify the ptp4l config file; use [configs/ptp4l.conf](configs/ptp4l.conf) as a starting point
-   * On Debian: the file is `/etc/linuxptp/ptp4l.conf`
-   * On Fedora: the file is `/etc/ptp4l.conf`
-4. Start and enable the ptp4l service: `sudo systemctl enable --now ptp4l`
 
 ## Features
 
