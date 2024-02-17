@@ -39,8 +39,9 @@ type SerialConfig struct {
 }
 
 type LeapSecondConfig struct {
-	Date          toml.LocalDate
-	Before, After uint8
+	Date   toml.LocalDate `toml:"date"`
+	Before uint8          `toml:"before"`
+	After  uint8          `toml:"after"`
 }
 
 type PTPConfig struct {
