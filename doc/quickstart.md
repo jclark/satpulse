@@ -157,7 +157,7 @@ So you should install a replacement `ptp4l.service` file as `/etc/systemd/system
 The replacement is in
 
 *  `configs/ptp4l.service` in the source, 
-*  `/usr/share/doc/satpulse/ptp4l.service when the .deb package has been installed
+*  `/usr/share/doc/satpulse/ptp4l.service` when the .deb package has been installed
 
 Next you will need to edit the ptp4l config file.
    * On Debian: the file is `/etc/linuxptp/ptp4l.conf`
@@ -187,12 +187,16 @@ sudo systemctl enable --now ptp4l
 
 ## chrony
 
-Add this to your chrony.conf file:
+Make sure chrony is installed. The package is called `chrony` on both Fedora and Debian.
+
+Add this line to your chrony configuration:
 
 ```
 refclock SOCK /var/run/chrony.satpulse.sock poll 2 filter 4 refid GNSS
 ```
 
+On Fedora, just add it to `/etc/chrony.conf`.
+On Debian, I suggest making it a separate file `/etc/chrony.d/conf.d/satpulse.conf`.
 The socket path here `/var/run/chrony.satpulse.sock` needs to match that specified by the `sock.path` key in the `ntp` table.
 
-Then restart chrony.
+Then restart chrony. The service is named `chrony` on Debian, and `chronyd` on Fedora.
