@@ -196,9 +196,23 @@ sock.path = "/var/run/chrony.satpulse.sock"
 
 ## `log` table
 
-The `log` table is about how SatPulse should log information.
+The `log` table is about how SatPulse should log information. SatPulse does two kinds of logging: it logs through systemd,
+and it can also write its own applicaton-specific log files.
 
-XXX
+The following keys relate to logging through systemd:
+
+* `verbose` - a boolean saying whether to log verbosely; default is false
+* `interval` - an integer giving the time in seconds over which a log message should summarize the synchronization status;
+  the default is 30; the status is computed once per second, and a value of 1 will log that status directly; a value
+  of 0 will not log the synchronization status
+
+The following keys relate to its own log
+
+* `clock` - a boolean saying whether to create a *clock* log; the clock log is in text format and records offsets between the PHC and the GPS;
+   it is intended to be convenient for statistical analysis using [TimeLab](https://www.miles.io/timelab/beta.htm) or  [Stable32](http://www.stable32.com/)
+* `event` a boolean saying whether to create an  *event* log; the event log is on JSON Lines format and
+  records the events input into the synchronization process (pulses and GPS messages)
+* `dir` - a string giving the directory in which to write log files; this defaults to `/var/log/satpulse`
 
 ## `http` table array
 
