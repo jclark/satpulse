@@ -6,15 +6,18 @@ These are things that have not yet been made into GitHub issues.
 
 High priority
 
-* More documentation
-   * http monitoring
-   * how GPS should be configured
+
 * Control over logging in the non-sdlog case
 
 Others
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
 * Allow SIGHUP to reload config: useful for disabling TCP connections.
+
+## Documentation
+
+* Man pages
+* How we expect GPS to be configured with gps.config=false
 
 ## Grandmaster management
 
@@ -57,7 +60,6 @@ Others
   * runner.go should just pass time messages on
 * Implement auto-detection of number of edges per pulse
 * Add some package docs
-* We should give an error if we have a 50% duty cycle and two edges per pulse
 * Improve how we generate TAI from UTC time messages
   * Should prefer a message in UBX that provides TAI directly to NMEA
   * Should use GPS receiver's idea of what the leap second offset is
@@ -67,7 +69,6 @@ Others
   * unit tests for secMsgList
   * test that we are emitting the sample at the right time (i.e. immediately after pulse)
   * test with missing, extra pulses/messages
-* Configurable option to specify pulse width
 * Perform measurements to make sure we are applying the quantization error in the right direction
   * Configurable option not to use pulse offset/correction
 * Sanity check first sample against system clock and log warning
@@ -79,7 +80,7 @@ Lower priority
     * Does it work (ie provide qErr) on non-timing receivers?
     * Does it work on clones?
 * Currently we require both navigation message rate and pulse rate to be 1Hz? Is there any point in relaxing this?
-* Could we work with just UBX-TIM-TP? Should be OK with one edge per pulse.
+* Could we work with just UBX-TIM-TP?
 * Can we leverage UBX-NAV-EOE (for end of navigation era)?
 * Looks like ATGM332D may be using fTOW field of UBX-NAV-TIMEGPS to convey quantization error (rather than solution time)
 * More flexible approach to edge detection
@@ -101,10 +102,6 @@ High priority
 Others
 * When we get notification of a new leap second, we should store that in a file in /var somewhere, and then read that on startup.
 * Include source of leap second information in gpsmsg leap second message
-* Work with a leap-seconds.list format file
-  * fetch from specified URL
-  * use to initialize current leap second if up to date
-  * update from leap second notifications
 * We could tell the GPS about stored leap seconds using UBX-MGA-GPS-UTC (but this has other stuff that is hard to specify)
 * How should we hook up with NTP-centric kernel support for leap seconds?
   * If the TAI-UTC offset is set in the kernel (presumably from NTP), we could get that and use it as our default.
