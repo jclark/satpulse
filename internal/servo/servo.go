@@ -89,7 +89,7 @@ func (s *Servo) adjTime(off time.Duration) ptime.Era {
 const kp = 0.7
 const ki = 0.3
 
-func (s *Servo) piControlSampler(freq float64, era ptime.Era) {
+func (s *Servo) piControlSampler(era ptime.Era, freq float64) {
 	offSum := -freq / ki
 	s.sampler = func(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 		if local.Era != era || delayed {
@@ -105,6 +105,10 @@ func (s *Servo) piControlSampler(freq float64, era ptime.Era) {
 }
 
 const observePeriod = time.Second * 4
+// minInitialStep is the minimum offset above which the clock will be stepped on startup.
+// The idea behind this value is that is very roughly how accurately you can step the clock,
+// given the delay between the time you read the clock and the time you write the new value.
+const minInitialStep = time.Microsecond * 5
 
 func (s *Servo) resetSampler() {
 	var ref1, local1 ptime.Time
@@ -137,8 +141,12 @@ func (s *Servo) resetSampler() {
 
 		s.setFreqOff(freqOff)
 		off := ref.Sub(local.T)
-		nextEra := s.adjTime(off)
-		s.compensateSampler(nextEra, freqOff)
+		if off.Abs() < minInitialStep {
+			s.piControlSampler(local.Era, freqOff)
+		} else {
+			nextEra := s.adjTime(off)
+			s.compensateSampler(nextEra, freqOff)
+		}
 	}
 }
 
@@ -162,7 +170,7 @@ func (s *Servo) compensateSampler(era ptime.Era, freqOff float64) {
 		// this call will have the offset applied twice, once here
 		// and once in Servo.adjTime
 		nextEra := s.adjTime(off)
-		s.piControlSampler(freqOff, nextEra)
+		s.piControlSampler(nextEra, freqOff)
 	}
 }
 
