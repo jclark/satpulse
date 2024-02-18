@@ -149,12 +149,16 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		wg.Wait()
 		lg.Debug("wait group counter dropped to zero")
 	}()
-
+	
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
 	gct, err := cfg.GPS.target()
-	if phcFlags.Edges() != 1 {
+	defaultPulseWidth, err := cfg.GPS.pulseWidth()
+	if err != nil {
+		return fmt.Errorf("invalid pulse width in configuration file: %w", err)
+	}
+	if phcFlags.Edges() != 1 && defaultPulseWidth == 0 {
 		gct.Get.Add(gpsprot.CfgTimePulseWidth)
 	}
 	lg.Debug("GPS configure input", "target", gct)
@@ -216,7 +220,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 
 	pulseWidth, ok := gpsprot.CfgTimePulseWidth.Get(gcfg.ConfigMap)
 	if !ok {
-		pulseWidth = 0
+		pulseWidth = defaultPulseWidth
 	}
 
 	d, err := NewDispatcher(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gm, rcProxy, sseCh)

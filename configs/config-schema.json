@@ -23,6 +23,11 @@
 		"type": "object",
 		"properties": {
 		  "config": { "type": "boolean" },
+		  "pulseWidth": {
+			"type": "number",
+			"exclusiveMinimum": 0,
+			"exclusiveMaximum": 1
+		  },
 		  "gnss": {
 			"type": "string",
 			"enum": ["GPS", "GAL", "Galileo", "BDS", "BeiDou", "GLO", "GLONASS"]

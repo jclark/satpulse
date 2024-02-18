@@ -21,6 +21,7 @@ type GPSConfig struct {
 	AntennaCableLength float64      `toml:"antennaCableLength"` // in meters
 	AntennaCableVF     float64      `toml:"antennaCableVF"`     // velocity factor
 	GNSS               gpsprot.GNSS `toml:"gnss"`
+	PulseWidth         float64      `toml:"pulseWidth"`
 }
 
 const defaultAccuracy = 20.0 // in meters
@@ -34,6 +35,7 @@ var gpsDefault = GPSConfig{
 	AntennaCableDelay:  math.NaN(),
 	AntennaCableLength: math.NaN(),
 	AntennaCableVF:     0.66, // typical value for RG-58 cable
+	PulseWidth:         math.NaN(),
 }
 
 func (c *GPSConfig) target() (*gpsprot.ConfigTarget, error) {
@@ -141,4 +143,15 @@ func (c *GPSConfig) getDelay(cm *gpsprot.ConfigMap) error {
 	}
 	gpsprot.CfgAntennaCableDelay.Set(cm, time.Duration(delay))
 	return nil
+}
+
+func (c *GPSConfig) pulseWidth() (time.Duration, error) {
+	if math.IsNaN(c.PulseWidth) {
+		return 0, nil
+	}
+	d := time.Duration(c.PulseWidth * float64(time.Second))
+	if d <= 0 || d >= time.Second {
+		return 0, fmt.Errorf("GPS pulse width must be > 0 and < 1.0: %v", c.PulseWidth)
+	}
+	return d, nil
 }

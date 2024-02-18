@@ -106,8 +106,12 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
 * `config` - a boolean saying whether to perform configuration of the GPS receiver; `true` means to perform configuration;
   currently this works only with GPS receivers that support the UBX protocol (like those from u-blox)
   this won't make any persistent changes to the GPS receiver, which means you can turn the receiver off and on again to undo any changes made by SatPulse;
-  if you use `false` here, then all the other keys in the table will be ignored
+  if you use `false` here, then all the other keys in the table other than `pulseWidth` will be ignored
   and it is your responsibility to configure the GPS receiver appropriately
+* `pulseWidth` - a number giving the time pulse width in seconds that this GPS receiver has been configured with; this is not relevant
+   unless the ethernet controller is one that timestamps both edges (e.g. Intel i210); it is also not relevant if SatPulse
+   is performing configuration of the GPS receiver (in which case the pulse width will be set to a known value); if this is not
+   specified, then SatPulse will attempt to retrieve the configured time pulse width using the UBX protocol
 * `gnss` - a string giving the GNSS system to which the time pulse should be aligned; the GNSS specified here must be already be enabled on the receiver
   (SatPulse will not change the enabled GNSS systems since that is a rather disruptive operation); possible values are
    * `"GPS"` for the GNSS system operated by the USA
@@ -139,7 +143,6 @@ Example
 config = true
 gnss = "GAL"
 ```
-
 
 ## `leapSecond` table
 
