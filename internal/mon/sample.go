@@ -47,6 +47,19 @@ type sampleConfig struct {
 	madMinSamples int
 }
 
+var defaultSampleConfig = sampleConfig{
+	// For sync, require that the maximum absolute offset is less than 50ns.
+	// Reasoning is we are claiming 100ns accuracy, and we need to budget for other sources of error,
+	// specifically errors in GPS signal
+	maxOffset:    50e-9,
+	minGood:      4,
+	maxConsecBad: holdoverSecs,
+	// Stable32 uses 5 here, but outliers for GPS are usually quite extreme compared to the normal offsets which are usually <30ns
+	// If it's too low, then during settling phase things can be incorrectly marked as outliers
+	madMultiple:   25,
+	madMinSamples: 10,
+}
+
 func (w *sampleWindow) isInSync(curInSync bool, cfg *sampleConfig) bool {
 	inSync := false
 	nGood := 0

@@ -253,21 +253,8 @@ func (mon *Monitor) Tick(now time.Time) {
 	}
 }
 
-var sampleCfg = sampleConfig{
-	// For sync, require that the maximum absolute offset is less than 50ns.
-	// Reasoning is we are claiming 100ns accuracy, and we need to budget for other sources of error,
-	// specifically errors in GPS signal
-	maxOffset:    50e-9,
-	minGood:      4,
-	maxConsecBad: holdoverSecs,
-	// Stable32 uses 5 here, but outliers for GPS are usually quite extreme compared to the normal offsets which are usually <30ns
-	// If it's too low, then during settling phase things can be incorrectly marked as outliers
-	madMultiple:   25,
-	madMinSamples: 5,
-}
-
 func (mon *Monitor) isInSync() bool {
-	return mon.samples.isInSync(mon.inSync, &sampleCfg)
+	return mon.samples.isInSync(mon.inSync, &defaultSampleConfig)
 }
 
 func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
@@ -276,14 +263,14 @@ func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
 	// if this offset isn't bad enough to take use out of sync,
 	// then there's no need to consider it as an outlier
 	// this should be a quick check that succeeds most of the time
-	if math.Abs(offSecs) <= sampleCfg.maxOffset {
+	if math.Abs(offSecs) <= defaultSampleConfig.maxOffset {
 		return false
 	}
 	// don't do outlier detection unless we are using the PI controller
 	if !mon.servo.Locked(era) {
 		return false
 	}
-	return mon.samples.madIsOutlier(offSecs, &sampleCfg)
+	return mon.samples.madIsOutlier(offSecs, &defaultSampleConfig)
 }
 
 func (mon *Monitor) updateInSync(inSync bool) {

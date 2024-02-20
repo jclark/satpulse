@@ -104,7 +104,10 @@ func (s *Servo) piControlSampler(era ptime.Era, freq float64) {
 	s.piControlEra = era
 }
 
-const observePeriod = time.Second * 4
+// this interacts with outlier detection in the monitor
+// if it's too long, then the median will be fixed by these initial samples
+// and when we start to adjust the next sample will be an outlier
+const observePeriod = (time.Second * 5) / 2
 
 // minInitialStep is the minimum offset above which the clock will be stepped on startup.
 // The idea behind this value is that is very roughly how accurately you can step the clock,
