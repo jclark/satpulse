@@ -69,3 +69,37 @@ func TestInSync(t *testing.T) {
 		}
 	}
 }
+
+var initTests = [][]float64{
+	{
+		258e-9,
+		255e-9,
+		261e-9,
+		250e-9,
+		255e-9,
+		229e-9,
+		207e-9,
+		195e-9,
+		174e-9,
+		162e-9,
+		13e-9,
+		-71e-9,
+		-161e-9,
+		-86e-9,
+		-40e-9,
+		-6e-9,
+		7e-9,
+	},
+}
+
+func TestOutlierInit(t *testing.T) {
+	for i, test := range initTests {
+		w := newSampleWindow(samplesToKeep)
+		for j, off := range test {
+			if w.madIsOutlier(off, &sampleCfg) {
+				t.Errorf("Test %d, sample %d, expected madIsOutlier == false", i, j)
+			}
+			w.append(sampleOK, off, 1)
+		}
+	}
+}

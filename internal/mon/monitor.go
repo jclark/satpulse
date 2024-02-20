@@ -260,7 +260,8 @@ var sampleCfg = sampleConfig{
 	minGood:      4,
 	maxConsecBad: holdoverSecs,
 	// Stable32 uses 5 here, but outliers for GPS are usually quite extreme compared to the normal offsets which are usually <30ns
-	madMultiple:   10,
+	// If it's too low, then during settling phase things can be incorrectly marked as outliers
+	madMultiple:   25,
 	madMinSamples: 5,
 }
 
