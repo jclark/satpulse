@@ -19,7 +19,7 @@ type Servo struct {
 	clk               Clock
 	lg                *slog.Logger
 	sampler           sampler
-	locked            bool
+	piControlEra      ptime.Era
 	freqOff           float64 // frequency offset in PPB
 	maxFreqOff        float64
 	adjSetOffsetDelay time.Duration
@@ -52,8 +52,8 @@ func (s *Servo) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	s.sampler(ref, local, delayed)
 }
 
-func (s *Servo) Locked() bool {
-	return s.locked
+func (s *Servo) Locked(era ptime.Era) bool {
+	return era == s.piControlEra && era != 0
 }
 
 func (s *Servo) FreqOffset() float64 {
@@ -101,10 +101,11 @@ func (s *Servo) piControlSampler(era ptime.Era, freq float64) {
 		out := kp*fOff + ki*offSum
 		s.setFreqOff(-out)
 	}
-	s.locked = true
+	s.piControlEra = era
 }
 
 const observePeriod = time.Second * 4
+
 // minInitialStep is the minimum offset above which the clock will be stepped on startup.
 // The idea behind this value is that is very roughly how accurately you can step the clock,
 // given the delay between the time you read the clock and the time you write the new value.

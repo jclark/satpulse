@@ -11,7 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/sse"
 )
 
-const samplesToKeep = 60
+const samplesToKeep = 30
 
 type Monitor struct {
 	samples        *sampleWindow
@@ -35,27 +35,10 @@ type stats struct {
 	interval   int
 }
 
-type sampleKind int
-
-const (
-	sampleMissing sampleKind = iota
-	sampleOK
-	sampleOutlier
-)
-
-type sampleData struct {
-	off  float64
-	kind sampleKind
-}
-
-type sampleWindow struct {
-	window[sampleData]
-}
-
 type Servo interface {
 	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
 	FreqOffset() float64
-	Locked() bool // this says whether it is currently using the PI controller
+	Locked(era ptime.Era) bool // this says whether it is currently using the PI controller
 }
 
 type MonitorConfig struct {
@@ -110,19 +93,19 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	mon.addMissingOffsets(ref)
 	off := local.T.Sub(ref)
 	kind := sampleOK
-	if !delayed && mon.isOutlier(off) {
+	if !delayed && mon.isOutlier(off, local.Era) {
 		kind = sampleOutlier
 	} else {
 		mon.servo.Sample(ref, local, delayed)
 	}
 	freq := mon.servo.FreqOffset()
-	mon.recordSample(kind, off, freq)
+	mon.recordSample(kind, off, local.Era, freq)
 	mon.writeLogEntry(kind, ref, off, local.Era, freq)
 	mon.sendEvent(kind, off, local.Era, freq)
 	if delayed {
 		return
 	}
-	inSync := mon.samplesInSync()
+	inSync := mon.isInSync()
 	now := time.Now()
 	mon.lastSampleTime = now
 	if mon.ppsStopped {
@@ -141,18 +124,18 @@ func (mon *Monitor) addMissingOffsets(ref ptime.Time) {
 	}
 	diff := int(ref.Sub(lastRef) / time.Second)
 	for i := 1; i < diff; i++ {
-		mon.recordSample(sampleMissing, 0, mon.servo.FreqOffset())
+		mon.recordSample(sampleMissing, 0, mon.samples.Era, mon.servo.FreqOffset())
 	}
 }
 
-func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, freq float64) {
+func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, era ptime.Era, freq float64) {
 	offSecs := off.Seconds()
-	mon.samples.append(kind, offSecs)
+	mon.samples.append(kind, offSecs, era)
 	interval := mon.stats.interval
 	if interval <= 0 {
 		return
 	}
-	locked := mon.servo.Locked()
+	locked := mon.servo.Locked(era)
 	if locked {
 		if interval > 1 {
 			mon.stats.sample(mon.lg, kind, offSecs, freq)
@@ -244,7 +227,7 @@ func (mon *Monitor) SysSample(ref ptime.Time, sys time.Time) {
 	}
 }
 
-const holdoverDuration = 10 * time.Second
+const holdoverSecs = 10
 const sampleIntervalMax = time.Second + time.Second/2
 
 func (mon *Monitor) Tick(now time.Time) {
@@ -263,60 +246,42 @@ func (mon *Monitor) Tick(now time.Time) {
 	}
 	mon.lastSampleTime = mon.lastSampleTime.Add(time.Second)
 	mon.lastRefTime = mon.lastRefTime.Add(time.Second)
-	mon.recordSample(sampleMissing, 0, mon.servo.FreqOffset())
-	if t > holdoverDuration {
+	mon.recordSample(sampleMissing, 0, mon.samples.Era, mon.servo.FreqOffset())
+	if t > holdoverSecs*time.Second {
 		mon.updateInSync(false)
 	}
 }
 
-// For sync, require that the maximum absolute offset is less than 50ns.
-// Reasoning is we are claiming 100ns accuracy, and we need to budget for other sources of error,
-// specifically errors in GPS signal
-const syncMaxOffsetSecs = 50e-9
-const syncNOffsets = 5
-const syncMaxMissing = 2
-
-func (mon *Monitor) samplesInSync() bool {
-	w := mon.samples
-	if w.length() < syncNOffsets {
-		return false
-	}
-	a := w.accum(syncNOffsets)
-	if a.nMissing > 0 {
-		// if we've gone out of sync, don't allow any missing values;
-		// otherwise allow up to syncMaxMissing
-		if !mon.inSync || a.nMissing > syncMaxMissing {
-			return false
-		}
-	}
-	return a.maxAbs <= syncMaxOffsetSecs
+var sampleCfg = sampleConfig{
+	// For sync, require that the maximum absolute offset is less than 50ns.
+	// Reasoning is we are claiming 100ns accuracy, and we need to budget for other sources of error,
+	// specifically errors in GPS signal
+	maxOffset:    50e-9,
+	minGood:      4,
+	maxConsecBad: holdoverSecs,
+	// Stable32 uses 5 here, but outliers for GPS are usually quite extreme compared to the normal offsets which are usually <30ns
+	madMultiple:   10,
+	madMinSamples: 5,
 }
 
-func (mon *Monitor) isOutlier(off time.Duration) bool {
-	// don't do outlier detection unles we are in sync
-	if !mon.inSync {
-		return false
-	}
-	// if the window isn't full yet (i.e. just after start up),
-	// then don't do outlier detection
-	if mon.samples.length() < mon.samples.capacity() {
-		return false
-	}
+func (mon *Monitor) isInSync() bool {
+	return mon.samples.isInSync(mon.inSync, &sampleCfg)
+}
+
+func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
+	offSecs := off.Seconds()
+
 	// if this offset isn't bad enough to take use out of sync,
 	// then there's no need to consider it as an outlier
-	absOff := math.Abs(off.Seconds())
-	if absOff <= syncMaxOffsetSecs {
+	// this should be a quick check that succeeds most of the time
+	if math.Abs(offSecs) <= sampleCfg.maxOffset {
 		return false
 	}
-	// if the previous sample was something strange (missing or outlier),
-	// then don't make this one an outlier
-	// XXX we could be more sophisticated here, but the outliers I've seen
-	// are single stray pulses, so this should be good enough
-	// We want to avoid any possibility of ignoring a lot of pulses from the GPS.
-	if mon.samples.last(0).kind != sampleOK {
+	// don't do outlier detection unless we are using the PI controller
+	if !mon.servo.Locked(era) {
 		return false
 	}
-	return true
+	return mon.samples.madIsOutlier(offSecs, &sampleCfg)
 }
 
 func (mon *Monitor) updateInSync(inSync bool) {
@@ -339,28 +304,6 @@ func (mon *Monitor) SetLeapSecond(leapSecond ptime.LeapSecond) {
 	}
 	mon.leapSecond = leapSecond
 	mon.gmUpdate()
-}
-
-func newSampleWindow(n int) *sampleWindow {
-	return &sampleWindow{
-		window: *newWindow[sampleData](n),
-	}
-}
-
-func (w *sampleWindow) append(kind sampleKind, off float64) {
-	w.window.append(sampleData{off: off, kind: kind})
-}
-
-func (w *sampleWindow) accum(n int) accumPhase {
-	var a accumPhase
-	w.iterate(func(i int, s sampleData) bool {
-		if i >= n {
-			return false
-		}
-		a.add(s.kind, s.off)
-		return true
-	})
-	return a
 }
 
 func (s *stats) sample(lg *slog.Logger, kind sampleKind, off float64, freq float64) {

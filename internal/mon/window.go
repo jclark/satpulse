@@ -15,6 +15,11 @@ func newWindow[T any](size int) *window[T] {
 	}
 }
 
+func (w *window[T]) clear() {
+	w.end = 0
+	w.full = false
+}
+
 func (w *window[T]) length() int {
 	if w.full {
 		return len(w.buf)
