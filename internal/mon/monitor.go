@@ -186,7 +186,8 @@ func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Dura
 	// We represent dates in MJD, because that is what Stable32 can handle.
 	// It also seems to be a standard approach in the timekeeping world.
 	mjd := mon.leapSecond.TimeToMJD(ref)
-	_, err := fmt.Fprintf(mon.lf.File, "%.5f %s %.0f %d %d\n", mjd, offStr, freq, outlierFlag, uint64(era))
+	// 5 decimal places for MJD is sufficient to distinguish seconds; but we use 6 so it's clear when there's a gap
+	_, err := fmt.Fprintf(mon.lf.File, "%.6f %s %.0f %d %d\n", mjd, offStr, freq, outlierFlag, uint64(era))
 	mon.lf.HandleWriteError(err, mon.lg)
 }
 
