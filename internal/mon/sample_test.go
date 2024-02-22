@@ -58,7 +58,7 @@ var inSyncTests = [][]sampleData{
 func TestInSync(t *testing.T) {
 	for i, test := range inSyncTests {
 		inSync := false
-		w := newSampleWindow(samplesToKeep)
+		w := newSampleWindow(sampleWindowSize)
 		for j, s := range test {
 			if s.kind != sampleMissing && w.madIsOutlier(s.off, &defaultSampleConfig) != (s.kind == sampleOutlier) {
 				n, min, max := w.mad(defaultSampleConfig.madMultiple)
@@ -128,7 +128,7 @@ var initTests = [][]float64{
 
 func TestOutlierInit(t *testing.T) {
 	for i, test := range initTests {
-		w := newSampleWindow(samplesToKeep)
+		w := newSampleWindow(sampleWindowSize)
 		for j, off := range test {
 			if w.madIsOutlier(off, &defaultSampleConfig) {
 				n, min, max := w.mad(defaultSampleConfig.madMultiple)

@@ -4,9 +4,9 @@ import "testing"
 
 func TestWindow(t *testing.T) {
 	// just tests unused functions at the moment
-	w := newWindow[float64](samplesToKeep)
-	if w.capacity() != samplesToKeep {
-		t.Errorf("capacity: got %d, want %d", w.capacity(), samplesToKeep)
+	w := newWindow[float64](sampleWindowSize)
+	if w.capacity() != sampleWindowSize {
+		t.Errorf("capacity: got %d, want %d", w.capacity(), sampleWindowSize)
 	}
 	w.append(1)
 	w.append(17)

@@ -11,7 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/sse"
 )
 
-const samplesToKeep = 30
+const sampleWindowSize = 30
 
 type Monitor struct {
 	samples        *sampleWindow
@@ -57,7 +57,7 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 		servo:      servo,
 		lg:         lg,
 		leapSecond: cfg.LeapSecond,
-		samples:    newSampleWindow(samplesToKeep),
+		samples:    newSampleWindow(sampleWindowSize),
 		gm:         cfg.Grandmaster,
 		rc:         cfg.RefClock,
 		sseCh:      cfg.SSECh,
