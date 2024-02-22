@@ -11,7 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/sse"
 )
 
-const sampleWindowSize = 30
+const sampleWindowSize = 60
 
 type Monitor struct {
 	samples        *sampleWindow
