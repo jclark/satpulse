@@ -186,7 +186,7 @@ func Split(data string) *Message {
 	fields := strings.Split(before, ",")
 	msg := Message{
 		Fields:     fields[1:],
-		ChecksumOK: checksum(before) == hexToByte(after),
+		ChecksumOK: Checksum(before) == hexToByte(after),
 	}
 	addr := fields[0]
 	if strings.IndexByte(before, '^') >= 0 {
@@ -203,7 +203,7 @@ func Split(data string) *Message {
 	return &msg
 }
 
-func checksum(data string) byte {
+func Checksum(data string) byte {
 	var c byte
 	for i := 0; i < len(data); i++ {
 		c ^= data[i]
