@@ -83,6 +83,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	lg.Info("selected PTP hardware clock", "path", clk.Path(),
 		"known", phcFlags&phc.DriverKnown != 0,
 		"bothEdges", phcFlags&phc.DriverBothEdges != 0,
+		"oneEdge", phcFlags&phc.DriverOneEdge != 0,
 		"poll4Hz", phcFlags&phc.DriverPoll4Hz != 0)
 
 	defer func() {
@@ -149,7 +150,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		wg.Wait()
 		lg.Debug("wait group counter dropped to zero")
 	}()
-	
+
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
