@@ -33,7 +33,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
-		sseHandleRequest(ctx, lg, wg, w, r, b, initEvent)
+		sseHandleRequest(ctx, lg, w, r, b, initEvent)
 	})
 
 	fileServer := http.FileServer(http.FS(web.Content()))
@@ -79,7 +79,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	return nil
 }
 
-func sseHandleRequest(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[sse.Event], initEvent sse.Event) {
+func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[sse.Event], initEvent sse.Event) {
 	defer lg.Debug("about to exit HTTP SSE request handler")
 	lg.Debug("starting to handle HTTP SSE request")
 	w.Header().Set("Content-Type", "text/event-stream")

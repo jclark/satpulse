@@ -452,7 +452,7 @@ func (known *CfgVals) timePulseWriteTransaction(cm *gpsprot.ConfigMap, items *[]
 		ucv.AddItem(items, ucv.KTpAlignToTowTp1, align)
 		ucv.AddItem(items, ucv.KTpSyncGnssTp1, align)
 		if _, ok := gpsprot.CfgPrimaryGNSS.Get(cm); !ok {
-			tg = known.inferTimegridTp1(cm, items, keys)
+			tg = known.inferTimegridTp1(items, keys)
 		}
 	} else {
 		if havePeriod || haveWidth {
@@ -484,7 +484,7 @@ func (known *CfgVals) timePulseWriteTransaction(cm *gpsprot.ConfigMap, items *[]
 				}
 				ucv.AddItem(items, ucv.KTpLenTp1, usNoLock)
 			} else {
-				known.inferTpLenTp1(us, cm, items, keys)
+				known.inferTpLenTp1(us, items, keys)
 			}
 		} else {
 			ucv.AddItem(items, ucv.KTpLenTp1, us)
@@ -497,7 +497,7 @@ func (known *CfgVals) timePulseWriteTransaction(cm *gpsprot.ConfigMap, items *[]
 	return tg
 }
 
-func (known *CfgVals) inferTpLenTp1(lenLock uint64, cm *gpsprot.ConfigMap, items *[]ucv.Item, keys *[]ucv.Key) {
+func (known *CfgVals) inferTpLenTp1(lenLock uint64, items *[]ucv.Item, keys *[]ucv.Key) {
 	if def, ok := cfgValGet(known, ucv.KTpPulseLengthDef); ok {
 		if def == ucv.ETpPulseLengthDefLength {
 			// we can just leave as is
@@ -518,7 +518,7 @@ func (known *CfgVals) inferTpLenTp1(lenLock uint64, cm *gpsprot.ConfigMap, items
 	ucv.AddKey(keys, ucv.KTpDutyTp1)
 }
 
-func (known *CfgVals) inferTimegridTp1(cm *gpsprot.ConfigMap, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
+func (known *CfgVals) inferTimegridTp1(items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
 	missing := []ucv.Key(nil)
 	if tg, ok := cfgValGetMiss(known, ucv.KTpTimegridTp1, &missing); ok && tg != ucv.ETpTimegridTp1Utc {
 		return tg
