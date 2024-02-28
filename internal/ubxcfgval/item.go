@@ -38,6 +38,11 @@ func (mp *Map) AddItems(items []Item) {
 	}
 }
 
+func (mp *Map) Contains(k Key) bool {
+	_, ok := (*mp)[k]
+	return ok
+}
+
 func (mp *Map) MarshalBinary() ([]byte, error) {
 	items := mp.Items()
 	SortItems(items)

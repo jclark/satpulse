@@ -433,7 +433,9 @@ func (known *CfgVals) timePulseReadTransaction(target gpsprot.CfgKeySet, items [
 		}
 	}
 	for _, k := range cfgValKeys[gpsprot.CfgTimePulseWidth] {
-		keys = append(keys, k.Key())
+		if !known.Contains(k.Key()) {
+			keys = append(keys, k.Key())
+		}
 	}
 	slices.Sort(keys)
 	keys = slices.Compact(keys)
