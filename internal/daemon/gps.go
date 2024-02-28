@@ -69,6 +69,9 @@ func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {
 		gpsprot.CfgTimeMode.Set(&target.Map, gpsprot.TimeModeDisabled)
 		opts.Survey.When = 0
 	} else {
+		// time mode implies stationary, but a GPS receiver without time mode, we cannot set time mode,
+		// so we should explicitly set stationary mode
+		gpsprot.CfgStationary.Set(&target.Map, true)
 		opts.Survey.When = gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled)
 		if c.Resurvey {
 			opts.Survey.When |= gpsprot.TimeModeFlags(gpsprot.TimeModeSurvey)
