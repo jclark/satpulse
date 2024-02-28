@@ -35,7 +35,7 @@ func (flags DriverFlags) SetEdges(edges int) DriverFlags {
 	return flags | DriverFlags(edges)
 }
 
-const cm4Flags DriverFlags = DriverKnown | DriverPoll4Hz | DriverCarrier
+const cm4Flags DriverFlags = DriverKnown | DriverOneEdge | DriverPoll4Hz | DriverCarrier
 const intelFlags DriverFlags = DriverKnown | DriverBothEdges
 
 func IfDriverFlags(ifname string) (DriverFlags, error) {
