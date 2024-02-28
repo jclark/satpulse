@@ -128,10 +128,10 @@ func findGNSS(extensions []string) (gnss gpsprot.GNSSSet) {
 }
 
 func findFlash(sw string, extensions []string) bool {
-	if strings.HasPrefix(sw, "EXT CORE ") {
+	if strings.HasPrefix(sw, "EXT ") {
 		return true
 	}
-	if strings.HasPrefix(sw, "ROM CORE ") {
+	if strings.HasPrefix(sw, "ROM ") {
 		return false
 	}
 	return findSubmatch(extensions, fisRegexp) != nil
