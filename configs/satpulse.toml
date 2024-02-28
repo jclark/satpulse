@@ -13,7 +13,11 @@ speed = 9600
 [gps]
 # Uncommenting the following line will enable configuration of the GPS
 # (changes are not persistent across GPS reboots
-#config= true
+#config = true
+
+[log]
+# Uncomment the following line to enable logging of PHC offsets (in /var/log/satpulse/)
+# clock = true
 
 [ptp]
 # Unix domain socket for PTP management
