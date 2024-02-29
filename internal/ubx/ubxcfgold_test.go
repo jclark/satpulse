@@ -1,9 +1,7 @@
 package ubx
 
 import (
-	"fmt"
 	"testing"
-	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
@@ -130,7 +128,7 @@ func TestConfiguratorGalileo(t *testing.T) {
 	testConfigurator(t, rcvr, target)
 }
 
-func testConfigurator(t *testing.T, rcvr gpsReceiver, target *gpsprot.ConfigTarget) {
+func testConfigurator(t *testing.T, rcvr *gpsReceiver, target *gpsprot.ConfigTarget) {
 	c, naks, err := runConfiguration(rcvr, target)
 	if err != nil {
 		t.Fatalf("unexpected error from runConfiguration: %v", err)
@@ -180,187 +178,6 @@ func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator 
 		t.Errorf("expected 1 nak, got %d", len(naks))
 	}
 	return c
-}
-
-func TestConfigurationEmpty(t *testing.T) {
-	target := gpsprot.NewConfigTarget(false)
-	rcvr := newLegacyReceiver()
-	rcvr.ver = &Version{
-		FW: &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
-	}
-	rcvr.raw.tmode2 = &ubxbin.CfgTmode2{
-		TimeMode: ubxbin.CfgTmode2SurveyIn,
-	}
-	_, _, err := runConfiguration(rcvr, target)
-	if err != nil {
-		t.Errorf("unexpected error from runConfiguration: %v", err)
-	}
-	if rcvr.nSent != 0 {
-		t.Errorf("expected no messages to be sent, got %d", rcvr.nSent)
-	}
-}
-
-func TestConfigurationGet(t *testing.T) {
-	target := gpsprot.NewConfigTarget(false)
-	target.Get.Add(gpsprot.CfgTimePulseWidth)
-	rcvr := newLegacyReceiver()
-	c, naks, err := runConfiguration(rcvr, target)
-	if err != nil {
-		t.Errorf("unexpected error from runConfiguration: %v", err)
-	}
-	if len(naks) != 0 {
-		t.Errorf("expected no naks, got %v", naks)
-	}
-	if w, ok := gpsprot.CfgTimePulseWidth.Get(c.ConfigMap()); !ok || w != time.Second/10 {
-		t.Errorf("expected pulse width to be 0.1s, got %v", w)
-	}
-	if rcvr.nSent != 1 {
-		t.Errorf("expected 1 message to be sent, got %d", rcvr.nSent)
-	}
-}
-
-type gpsReceiver interface {
-	sendReceive(pkt []byte) [][]byte
-	version() *Version
-}
-
-func runConfiguration(rcvr gpsReceiver, target *gpsprot.ConfigTarget) (*Configurator, []string, error) {
-	prot := &Protocol{}
-	prot.ver = rcvr.version()
-	var naks []string
-
-	c, err := prot.Configure(target)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unexpected error from Configure: %w", err)
-	}
-	tm := time.Now()
-	for {
-		tm = tm.Add(time.Second / 10)
-		req, err := c.NextRequest()
-		if err != nil {
-			return nil, nil, fmt.Errorf("unexpected error from NextRequest: %w", err)
-		}
-		if req == nil {
-			break
-		}
-		sendTm := tm
-		pkt := req.Packet()
-		resps := rcvr.sendReceive(pkt)
-		for _, resp := range resps {
-			tm = tm.Add(time.Second / 10)
-			err = prot.ProcessPacket(string(resp), tm)
-			if err != nil {
-				return nil, nil, fmt.Errorf("unexpected error processing response packet: %w", err)
-			}
-		}
-		ack := c.FindAck(pkt, sendTm)
-		if ack == nil {
-			return nil, nil, fmt.Errorf("no ack found for request %s", req.ID())
-		} else if ack.OK {
-			req.Done()
-		} else {
-			naks = append(naks, req.ID())
-		}
-	}
-	uc := c.(*Configurator)
-	return uc, naks, nil
-}
-
-type legacyReceiver struct {
-	ver          *Version
-	raw          *RawConfig
-	nakPollMsgID ubxbin.MsgID
-	nSent        int
-}
-
-func newLegacyReceiver() *legacyReceiver {
-	return &legacyReceiver{
-		ver: new(Version),
-		raw: newRawConfig(),
-	}
-}
-
-func (r *legacyReceiver) version() *Version {
-	return r.ver
-}
-
-func (r *legacyReceiver) sendReceive(pkt []byte) [][]byte {
-	r.nSent++
-	msgID := ubxbin.PacketMsgId(pkt)
-	const pollMaxLen = 9
-	var responses [][]byte
-
-	if len(pkt) <= pollMaxLen {
-		if msgID == r.nakPollMsgID {
-			nak := ubxbin.AckNak{MsgID: msgID}
-			resp, _ := ubxbin.Serialize(&nak)
-			return [][]byte{resp}
-		}
-		var msg ubxbin.Msg
-		switch msgID {
-		case ubxbin.CfgPrtID:
-			msg = r.raw.prt
-		case ubxbin.CfgTp5ID:
-			msg = r.raw.tp5
-		case ubxbin.CfgNav5ID:
-			msg = r.raw.nav5
-		case ubxbin.CfgRateID:
-			msg = r.raw.rate
-		case ubxbin.CfgGNSSID:
-			msg = r.raw.gnss
-		case ubxbin.CfgTmode2ID:
-			msg = r.raw.tmode2
-		case ubxbin.CfgTmode3ID:
-			msg = r.raw.tmode3
-		}
-		if msg != nil {
-			if resp, err := ubxbin.Serialize(msg); err == nil {
-				responses = append(responses, resp)
-			}
-		}
-
-	}
-	// XXX if it's not a poll we should update the receiver's state
-	if msgID.Ackable() {
-		ack := ubxbin.AckAck{MsgID: msgID}
-
-		if resp, err := ubxbin.Serialize(&ack); err == nil {
-			responses = append(responses, resp)
-		}
-	}
-	return responses
-}
-
-func newRawConfig() *RawConfig {
-	raw := RawConfig{}
-	raw.prt = &ubxbin.CfgPrt{
-		PortID:       ubxbin.PortUART1,
-		InProtoMask:  ubxbin.CfgPrtProtoUBX | ubxbin.CfgPrtProtoNMEA,
-		OutProtoMask: ubxbin.CfgPrtProtoUBX | ubxbin.CfgPrtProtoNMEA,
-	}
-	raw.tp5 = &ubxbin.CfgTp5{
-		Flags:             ubxbin.CfgTp5IsLength | ubxbin.CfgTp5Active | ubxbin.CfgTp5LockGpsFreq | ubxbin.CfgTp5Polarity | ubxbin.CfgTp5AlignToTow | ubxbin.CfgTp5LockedOtherSet,
-		Version:           1,
-		PulseLenRatio:     0,
-		PulseLenRatioLock: 100 * 1000,
-		FreqPeriod:        1000 * 1000,
-		FreqPeriodLock:    1000 * 1000,
-		AntCableDelay:     50,
-	}
-	raw.nav5 = &ubxbin.CfgNav5{
-		DynModel:    ubxbin.CfgNav5DynPortable,
-		UtcStandard: ubxbin.CfgNav5UtcAuto,
-	}
-	raw.rate = &ubxbin.CfgRate{
-		MeasRate: 1000,
-		NavRate:  1,
-		TimeRef:  ubxbin.CfgRateUTC,
-	}
-	raw.gnss = &ubxbin.CfgGNSS{
-		CfgGNSSFixed: ubxbin.CfgGNSSFixed{NumConfigBlocks: 1},
-		Blocks:       []ubxbin.CfgGNSSBlock{{GNSSID: ubxbin.GPS}},
-	}
-	return &raw
 }
 
 func TestDivModRound(t *testing.T) {

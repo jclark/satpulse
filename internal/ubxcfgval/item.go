@@ -67,6 +67,18 @@ func MarshalKeys(keys []Key) []byte {
 	return bytes
 }
 
+func UnmarshalKeys(data []byte) ([]Key, error) {
+	keys := make([]Key, 0, len(data)/4)
+	for len(data) >= 4 {
+		keys = append(keys, Key(binary.LittleEndian.Uint32(data)))
+		data = data[4:]
+	}
+	if len(data) > 0 {
+		return nil, fmt.Errorf("leftover data")
+	}
+	return keys, nil
+}
+
 func MarshalItems(items []Item) ([]byte, error) {
 	bytes := make([]byte, len(items)*12)
 	i := 0

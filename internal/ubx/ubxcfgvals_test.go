@@ -6,6 +6,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
+	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 )
 
 func TestConfigItems_Sane(t *testing.T) {
@@ -266,4 +267,66 @@ func newCfgVals() *CfgVals {
 
 func cfgValSet[T comparable](vals *CfgVals, k ucv.TypedKey[T], v T) {
 	ucv.MapSet(vals.Map, k, v)
+}
+
+func cfgValsInit(m *CfgVals) {
+	cfgValSet(m, ucv.KTpPulseDef, ucv.ETpPulseDefPeriod)
+	cfgValSet(m, ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength)
+	cfgValSet(m, ucv.KTpAntCabledelay, 50)
+	cfgValSet(m, ucv.KTpPeriodTp1, 1e6)
+	cfgValSet(m, ucv.KTpPeriodLockTp1, 1e6)
+	cfgValSet(m, ucv.KTpLenTp1, 0)
+	cfgValSet(m, ucv.KTpLenLockTp1, 1e5)
+	cfgValSet(m, ucv.KTpAlignToTowTp1, true)
+	cfgValSet(m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gps)
+	cfgValSet(m, ucv.KTpSyncGnssTp1, true)
+	cfgValSet(m, ucv.KTpUseLockedTp1, true)
+	cfgValSet(m, ucv.KTpTp1Ena, true)
+	cfgValSet(m, ucv.KTpPolTp1, true)
+	cfgValSet(m, ucv.KRateMeas, 1e3)
+	cfgValSet(m, ucv.KRateNav, 1)
+	cfgValSet(m, ucv.KRateTimeref, ucv.ERateTimerefGps)
+	cfgValSet(m, ucv.KNavspgUtcstandard, ucv.ENavspgUtcstandardAuto)
+	cfgValSet(m, ucv.KNavspgDynmodel, ucv.ENavspgDynmodelPort)
+	cfgValSet(m, ucv.KSignalGpsEna, true)
+	cfgValSet(m, ucv.KSignalGloEna, false)
+	cfgValSet(m, ucv.KSignalGalEna, true)
+	cfgValSet(m, ucv.KSignalBdsEna, true)
+}
+
+func (r *gpsReceiver) valgetResp(pkt []byte) ubxbin.Msg {
+	if r.nakPollMsgID == ubxbin.CfgValgetID {
+		return nil
+	}
+	msg, err := ubxbin.ParseMsg(string(pkt))
+	if err != nil {
+		panic(err)
+	}
+	vg := msg.(*ubxbin.CfgValget)
+	if vg.Version != ubxbin.CfgValgetVersionRequest {
+		panic("unexpected version")
+	}
+	keys, err := ucv.UnmarshalKeys(vg.CfgData)
+	if err != nil {
+		panic(err)
+	}
+	items := make([]ucv.Item, len(keys))
+	for i, k := range keys {
+		val, ok := r.raw.valsPtr().Map[k]
+		if !ok {
+			return nil
+		}
+		items[i] = ucv.Item{Key: k, Value: val}
+	}
+	data, err := ucv.MarshalItems(items)
+	if err != nil {
+		panic(err)
+	}
+	return &ubxbin.CfgValget{
+		CfgValgetFixed: ubxbin.CfgValgetFixed{
+			Layer:   vg.Layer,
+			Version: ubxbin.CfgValgetVersionResponse,
+		},
+		CfgData: data,
+	}
 }
