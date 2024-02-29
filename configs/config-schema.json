@@ -32,7 +32,7 @@
 			"type": "string",
 			"enum": ["GPS", "GAL", "Galileo", "BDS", "BeiDou", "GLO", "GLONASS"]
 		  },
-		  "timeMode": { "type": "boolean" },
+		  "stationary": { "type": "boolean" },
 		  "resurvey": { "type": "boolean" },
 		  "surveyTime": { "type": "integer" },
 		  "surveyAcc": { "type": "number" },

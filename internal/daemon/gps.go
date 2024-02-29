@@ -11,7 +11,7 @@ import (
 
 type GPSConfig struct {
 	Config             bool         `toml:"config"`
-	TimeMode           bool         `toml:"timeMode"`
+	Stationary         bool         `toml:"stationary"`
 	Resurvey           bool         `toml:"resurvey"`
 	SurveyTime         uint32       `toml:"surveyTime"`
 	SurveyAcc          float64      `toml:"surveyAcc"`
@@ -27,7 +27,7 @@ type GPSConfig struct {
 const defaultAccuracy = 20.0 // in meters
 
 var gpsDefault = GPSConfig{
-	TimeMode:           true,
+	Stationary:         true,
 	Resurvey:           false,
 	SurveyTime:         2000, // 2000 seconds
 	SurveyAcc:          defaultAccuracy,
@@ -65,12 +65,10 @@ func (c *GPSConfig) target() (*gpsprot.ConfigTarget, error) {
 
 func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {
 	opts := &target.Opts
-	if !c.TimeMode {
+	if !c.Stationary {
 		gpsprot.CfgTimeMode.Set(&target.Map, gpsprot.TimeModeDisabled)
 		opts.Survey.When = 0
 	} else {
-		// time mode implies stationary, but a GPS receiver without time mode, we cannot set time mode,
-		// so we should explicitly set stationary mode
 		gpsprot.CfgStationary.Set(&target.Map, true)
 		opts.Survey.When = gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled)
 		if c.Resurvey {

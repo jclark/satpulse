@@ -118,10 +118,11 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
    * `"GAL"`, `"Galileo"`for the GNSS system operated by the EU
    * `"BDS"`, `"BeiDou"` for the GNSS system operated by China
    * `"GLO"`, `"GLONASS"` for the GNSS system operated by Russia
-* `timeMode` - a boolean saying whether to enable time mode on the GPS receiver; GPS receivers designed for timing typically offer a mode
-in which they assume the the antenna has a known fixed position; they can compute the time using the signal from a single satellite;
-the position can be established by having the GPS spend some time determing the position itself (called a survey) or by explicitly
-specifying the position; on GPS receivers without a time mode, it will set a stationary dynamic platform model; the default is `true`
+* `stationary` - a boolean saying whether the GPS receiver is stationary; if this is true, the receiver will be configured to assume a stationary
+   position; on a timing receiver, time mode will be enabled, which is a mode in which a fixed position is established for the receiver,
+   and thereafter the time is computed using  a single satellite;
+   the position can be established by having the GPS spend some time determing the position itself (called a survey)
+   or by explicitly specifying the position (using `fixedPosECEF`); the default is `true`
 * `surveyTime` - a boolean giving the time in seconds to perform a survey to establish the position of the GPS receiver antenna;
    SatPulse will only do a survey when `timeMode` is true and no fixed position has been set; the default is 2000
 * `fixedPosECEF` - an array of three numbers giving the ECEF coordinates in meters of the GPS receiver's antenna receiver; if SatPulse initiaties a survey,
@@ -135,13 +136,13 @@ specifying the position; on GPS receivers without a time mode, it will set a sta
   the default is not to change the GPS receiver's configuration of the antenna cable delay; if both the `antennaCableLength` and the `antennaCableDelay`
   are specified, then the sum of the delays will be used
 
-
 Example
 
 ```
 [gps]
 config = true
 gnss = "GAL"
+fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
 ```
 
 ## `leapSecond` table
