@@ -107,6 +107,7 @@ func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
 	mh.ubxProt.SetHandler(mh)
 	mh.ubxProt.SetProtHandler(mh)
 	mh.nmeaSentences = map[string]map[string]bool{}
+	mh.rtcmMsgs = map[uint16]bool{}
 }
 
 func (mh *msgHandler) finish(cm *gpsprot.ConfigMap) *Result {
