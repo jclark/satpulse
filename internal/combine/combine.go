@@ -528,6 +528,8 @@ func (sml secMsgList) search(sec ptime.Time) int {
 }
 
 // chooseNextSec chooses the second for a pulse based on an existing sample.
+// s is the existing reference sample.
+// pulse is the pulse to which we are assigning a second
 // It returns 0 if no second can be chosen.
 // The bool return value says whether the choice is good enough to be used as the reference sample.
 func (s *sampleData) chooseNextSec(pulse pulseEdge, sml secMsgList, cfg *Config) (ptime.Time, bool) {
