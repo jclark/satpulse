@@ -2,6 +2,7 @@ package ptime
 
 import (
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -258,6 +259,34 @@ func (t Time) String() string {
 
 func (t Time) MarshalText() ([]byte, error) {
 	return []byte(t.String()), nil
+}
+
+func (t *Time) UnmarshalText(data []byte) error {
+	s := string(data)
+	secs, nanos, ok := parsePtime(s)
+	if !ok {
+		return fmt.Errorf("could not parse as ptime.Time: %s", s)
+	}
+	if nanos < 0 || nanos >= 1e9 {
+		return fmt.Errorf("invalid nanoseconds unmarshaling ptime.Time: %d", nanos)
+	}
+	*t = Time(secs*1e9 + nanos)
+	return nil
+}
+
+func parsePtime(s string) (secs, nanos int64, ok bool) {
+	before, after, found := strings.Cut(s, ".")
+	if !found {
+		return
+	}
+	if n, err := fmt.Sscanf(before, "%d", &secs); err != nil || n != 1 {
+		return
+	}
+	if n, err := fmt.Sscanf(after, "%09d", &nanos); err != nil || n != 1 {
+		return
+	}
+	ok = true
+	return
 }
 
 func (t Time) IsZero() bool {
