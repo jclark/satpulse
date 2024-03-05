@@ -12,7 +12,28 @@ After that you should get ptp4l and chrony working.
 
 ## Installation
 
-You can either install from source or from a package (`.deb` or `.rpm` file).
+You can either install from a package (`.deb` or `.rpm` file) or from source.
+
+### Install from a package
+
+Got to the [Releases](https://github.com/jclark/satpulse/releases) page, then under Assets, select the  package with the appropriate extension:
+
+| Distro | Intel/AMD | ARM |
+| --- | --- | --- |
+| Debian-based (include Raspberry Pi OS, Ubuntu) | `_amd64.deb` | `_arm64.deb` |
+| Fedora-based | `.x86_64.rpm` | `.aarch64.rpm` |
+
+The `.deb` file can be installed using e.g.
+
+```
+sudo dpkg -i satpulse_0.0.git20240229.8140799-1_arm64.deb
+```
+
+The `.rpm` file can be installed using e.g.
+
+```
+sudo rpm -i satpulse-0.20240229git8140799-1.x86_64.rpm
+```
 
 ### Install from source
 
@@ -31,10 +52,6 @@ After this, you will have
 * the configuration file for the daemon installed as `/usr/local/etc/satpulse.toml`
 * the systemd service template unit file for the daemon installed as `/etc/systemd/system/satpulse@.service`
 * the SatPulse command line tool installed as `/usr/local/sbin/satpulsetool`
-
-### Install from a package
-
-XXX
 
 ## Required information
 
