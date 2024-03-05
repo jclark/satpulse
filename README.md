@@ -6,11 +6,11 @@ PTP (Precision Time Protocol) server provided by the [LinuxPTP](https://linuxptp
 and the NTP server provided by the [chrony](https://chrony-project.org/) project.
 The role of SatPulse is to use the GPS receiver as a source of time for ptp4l and chrony.
 
-A time server based on SatPulse achieves its high precision by taking of advantage of hardware support for PTP.
+A time server based on SatPulse achieves its high precision by taking advantage of hardware support for PTP.
 The central piece of hardware required by SatPulse is an ethernet controller with a PPS (pulse-per-second)
 input pin, sometimes called an SDP (software-defined pin). Although many ethernet controllers have PTP support,
 few of those provide a suitable input pin, and even fewer of those are inexpensive. SatPulse runs only on Linux,
-since only Linux provides [APIs](https://docs.kernel.org/driver-api/ptp.html) that provide the necessary access
+since only Linux has [APIs](https://docs.kernel.org/driver-api/ptp.html) that provide the necessary access
 to the ethernet controller's PTP support. The ethernet controller must also have Linux drivers that support these APIs. 
 The main requirement for the GPS receiver is that it provide a PPS output signal that is electrically compatible with the PPS
 input pin on the ethernet controller. See the [What hardware to get](#what-hardware-to-get) section below.
@@ -25,9 +25,9 @@ The term GPS is used informally to refer to any GNSS system, and we will use it 
 
 ## Status
 
-The project is in active development and the sources may occasionally be broken from time to time.
+The project is in active development and the sources may occasionally be broken.
 
-It would benefit from a few active alpha testers. If you would like to alpha test, please
+I am seeking a few active alpha testers. If you would like to alpha test, please
 open a new issue, and specify your hardware (including ethernet controller and GPS receiver)
 and Linux distro; I will then create or point you to a suitable binary release.
 Alternatively, you can compile from source and give it a try.
@@ -46,7 +46,7 @@ An ethernet controller that supports PTP has its own clock, called the PTP hardw
 of the computer's system clock. The principal function of the PHC is to timestamp incoming and outgoing ethernet packets.
 Each packet is timestamped by the controller hardware, without going through the operating system; this allows the timestamp to be
 accurate to within a few nanoseconds. When the controller has a PPS input pin, the controller can also timestamp the pulses
-detected by the pin. As with the packets, the timestamp for the pulses are with respect to the PHC.
+detected by the pin. As with the packets, the timestamp of a pulse is with respect to the PHC.
 
 SatPulse provides two programs, written in the [Go](https://go.dev/) programming language: `satpulsed` and `satpulsetool`.
 The main one is `satpulsed`; it is a daemon, which
@@ -67,12 +67,12 @@ the time from the server's PHC to the client's PHC. A PTP server also provides t
 SatPulse communicates with ptp4l using the PTP management protocol and provides it with this metadata.
 
 NTP works a bit differently: the ultimate purpose of NTP is to keep the system clock of NTP clients in sync with UTC.
-SatPulse takes simultaneously samples of the system clock and the PHC. When the PHC is in sync with the GPS,
+SatPulse takes simultaneous samples of the system clock and the PHC. When the PHC is in sync with the GPS,
 SatPulse derives samples giving the system clock time and corresponding true UTC time, and sends them to chrony using
 chrony's refclock SOCK interface. Chrony uses these samples to adjust the system clock,
 thus keeping the system clock in sync with UTC. Chrony can also act as an NTP server,
 allowing a NTP client to sync its system clock to UTC. The chrony interface thus enables the time from
-the GPS receiver to be used in two distinct ways: to synchronize the system clock and to provide NTP service.
+the GPS receiver to be used in two distinct ways: to synchronize the system clock and to provide an NTP service.
 
 ## Features
 
@@ -90,9 +90,11 @@ SatPulse provides the following features:
 
     - It can get information about upcoming leap seconds from GPS and provide that information to the PTP grandmaster.
 
-- It automatically handles NICs that generate timestamps for both edges of a pulse (Intel NICs, including the i210, do this). (Using the UBX protocol we can get the pulse width.)
+- It automatically handles NICs that generate timestamps for both edges of a pulse (Intel NICs, including the i210, do this); this is enabled partly by using the UBX protocol, which allows us to get the pulse width.
 
-- It is aware of the quirks of the Raspberry CM4 and has code to cleanly work around them.
+- It is aware of the quirks of the Raspberry Pi CM4 and has code to cleanly work around them.
+
+- It can recover from occasional errors in the PPS signal from the GPS receiver.
 
 - It allows TCP connections with the GPS receiver attached to the serial port (similar to ser2net). This means you can run SatPulse on a Linux box (such as a Raspberry Pi) and then connect back to the GPS receiver over TCP from a Windows PC, using a program like u-center (from U-blox), to monitor or configure the GPS receiver, *at the same time as* it is being used for PTP. (This provides plenty of opportunity to break things, but is quite handy.)
 
@@ -130,7 +132,7 @@ The [LinuxPTP](https://linuxptp.sourceforge.net/) project provides a number of p
 
 The [gpsd](https://gpsd.gitlab.io/gpsd/) project provides a daemon that talks to GPS receivers and understands the UBX protocol, as well as several others, but it lacks PTP-specific functionality, and its protocol is not a good fit for the needs of PTP:
 
-- it assumes the PPS signal connected to a serial line, rather than to a NIC; the sawtooth correction information is linked to the PPS information, so isn't available when the PPS is connected to the NIC
+- it assumes the PPS signal connected to a serial or GPIO pin, using the kernel's PPS infrastructure, rather than to a NIC; the sawtooth correction information is linked to the PPS information, so isn't available when the PPS is connected to the NIC
 - it provides time in UTC not atomic time, and doesn't provide leap second information
 
 
