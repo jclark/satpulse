@@ -126,7 +126,9 @@ It would probably be possible to evolve these, but they are both written in C, a
 
 ### LinuxPTP
 
-The [LinuxPTP](https://linuxptp.sourceforge.net/) project provides a number of programs. The main one is ptp4l, which implements the PTP protocol. SatPulse is intended to work in conjunction with ptp4l. LinuxPTP also includes the ts2phc program, which with the `-s nmea` options performs the same basic function as SatPulse. However, it does not have the extra features that SatPulse provides. In particular, it understands only the NMEA protocol; this is simple, and universally supported, but the only time-related information it provides is the current UTC time.
+The [LinuxPTP](https://linuxptp.sourceforge.net/) project provides a number of programs. The main one is ptp4l, which implements the PTP protocol. SatPulse is intended to work in conjunction with ptp4l. LinuxPTP also includes the ts2phc program, which with the `-s nmea` options performs the same basic function as SatPulse. It also includes the phc2sys program, which, with the -E refclock_sock option, can generate samples for chrony.
+
+ However, it does not have the extra features that SatPulse provides. In particular, it understands only the NMEA protocol; this is simple, and universally supported, but the only time-related information it provides is the current UTC time.
 
 ### gpsd
 
@@ -134,7 +136,6 @@ The [gpsd](https://gpsd.gitlab.io/gpsd/) project provides a daemon that talks to
 
 - it assumes the PPS signal connected to a serial or GPIO pin, using the kernel's PPS infrastructure, rather than to a NIC; the sawtooth correction information is linked to the PPS information, so isn't available when the PPS is connected to the NIC
 - it provides time in UTC not atomic time, and doesn't provide leap second information
-
 
 
 
