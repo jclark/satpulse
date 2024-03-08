@@ -255,6 +255,9 @@ func connReadWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn ne
 				port = nil
 				continue
 			}
+			if err, ok := err.(net.Error); ok && err.Timeout() {
+				continue
+			}
 			if !errors.Is(err, io.EOF) {
 				logConnErr(lg, "error reading from proxy connection", err)
 			}
