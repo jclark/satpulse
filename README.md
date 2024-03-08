@@ -96,7 +96,10 @@ SatPulse provides the following features:
 
 - It can recover from occasional errors in the PPS signal from the GPS receiver.
 
-- It allows TCP connections with the GPS receiver attached to the serial port (similar to ser2net). This means you can run SatPulse on a Linux box (such as a Raspberry Pi) and then connect back to the GPS receiver over TCP from a Windows PC, using a program like u-center (from U-blox), to monitor or configure the GPS receiver, *at the same time as* it is being used for PTP. (This provides plenty of opportunity to break things, but is quite handy.)
+- It allows TCP connections with the GPS receiver attached to the serial port (similar to ser2net).
+This means you can run SatPulse on a Linux box (such as a Raspberry Pi) and then monitor or configure the GPS receiver over the network from a Windows PC,
+using a program like [u-center](https://www.u-blox.com/en/product/u-center) or [Lady Heather](http://www.ke5fx.com/heather/readme.htm),
+*at the same time as* it is being used for PTP. (This provides plenty of opportunity to break things, but is quite handy.)
 
 - It provides an HTTP interface for monitoring.
 
