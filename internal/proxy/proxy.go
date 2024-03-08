@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net"
@@ -188,6 +189,7 @@ func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg 
 }
 
 func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg svcConfig, conn net.Conn, b *bcast.Bcast[scan.Packet], portLock chan gpsio.OutPort) {
+	lg.Info("accepted proxy connection", "remoteAddr", conn.RemoteAddr())
 	// XXX both the read and write workers are closing the connection.
 	// Not sure if it would better for just one of them to do so.
 	cmd.WaitGroupGo(wg, func() { connWriteWorker(ctx, lg, cfg, conn, b) })
@@ -249,11 +251,13 @@ func connReadWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn ne
 		if err != nil {
 			if errors.Is(err, os.ErrDeadlineExceeded) {
 				portLock <- port
-				lg.Info("released the write lock on the serial port", "conn", conn)
+				lg.Debug("released the write lock on the serial port", "conn", conn)
 				port = nil
 				continue
 			}
-			logConnErr(lg, "error reading from proxy connection", err)
+			if !errors.Is(err, io.EOF) {
+				logConnErr(lg, "error reading from proxy connection", err)
+			}
 			return
 		}
 		if nRead == 0 {
@@ -269,7 +273,7 @@ func connReadWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn ne
 				if !ok {
 					return
 				}
-				lg.Info("acquired a write lock on the serial port", "conn", conn)
+				lg.Debug("acquired a write lock on the serial port", "conn", conn)
 			}
 		}
 		nWritten, err := port.Write(buf[:nRead])
