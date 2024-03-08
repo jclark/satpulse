@@ -245,9 +245,9 @@ listen = "192.168.2.1:2006"
 
 ## `proxy.tcp` and `proxy.sock` table arrays
 
-The `proxy.tcp` table array provides network access over TCP to the GPS receiver.
-This can be used with for example the [u-center](https://www.u-blox.com/en/product/u-center) program
-to monitor your GPS.
+The `proxy.tcp` table array provides network access to the GPS receiver over TCP/IP.
+This can be used with, for example, [u-center](https://www.u-blox.com/en/product/u-center)
+or [Lady Heather](http://www.ke5fx.com/heather/readme.htm) (with the `/ip` option) to monitor your GPS.
 **SatPulse does not perform any access control:
 using `proxy.tcp` without `readOnly=true` allows anyone on the local network to write to your GPS receiver.**
 
