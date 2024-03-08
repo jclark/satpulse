@@ -34,7 +34,6 @@ Others
 
 ## TCP server
 
-* Test with Lady Heather
 * Control over IPv4/IPv6
 
 ## Servo
