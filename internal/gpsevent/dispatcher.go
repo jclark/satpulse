@@ -181,6 +181,11 @@ func (d *Dispatcher) timestamp(e phc.TsEvent) {
 	trp := e.TReadPHC.T
 	if !trp.IsZero() && !e.TReadPHC.Era.Uncertain() && e.TReadPHC.Era == e.Ts.Era {
 		delay = trp.Sub(e.Ts.T)
+		if delay == 0 {
+			d.lg.Info("unexpected zero timestamp delay", "ts", e.Ts)
+		}
+	} else {
+		d.lg.Info("timestamp delay cannot be determined", "ts", e.Ts, "tReadPHC", e.TReadPHC)
 	}
 	d.logEvent(LogEvent{T: e.TRead, Timestamp: &Timestamp{T: e.Ts.T, Era: e.Ts.Era, Delay: delay}})
 	// Call PulseEdge before SysSample, because the former might change the sync status
