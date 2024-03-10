@@ -137,10 +137,14 @@ func defaultConfig() *Config {
 }
 
 func (cfg PHCConfig) OpenClock(lg *slog.Logger) (*ts.Clock, phc.DriverFlags, error) {
-	return openExttsClock(cfg.Interface, PinDesc{
-		PinIndex:  int(cfg.Pin),
-		ChanIndex: int(cfg.Channel),
-	}, cfg.Wait, lg)
+	return ts.OpenExttsClock(cfg.Interface, cfg.PinDesc(), cfg.Wait, lg)
+}
+
+func (cff PHCConfig) PinDesc() ts.PinDesc {
+	return ts.PinDesc{
+		PinIndex:  uint32(cff.Pin),
+		ChanIndex: uint32(cff.Channel),
+	}
 }
 
 func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {

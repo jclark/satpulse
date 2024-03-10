@@ -1,4 +1,4 @@
-package daemon
+package ts
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/jclark/satpulse/internal/ifwait"
 	"github.com/jclark/satpulse/internal/phc"
-	"github.com/jclark/satpulse/internal/ts"
 )
 
 const exttsTimeout = 100 * time.Microsecond // if we hit this timeout, then the next one isn't stale
@@ -18,11 +17,11 @@ const existTimeout = 30 * time.Second
 const logWaitTimeout = time.Second / 2 // log if we have to wait more than this for an interface
 
 type PinDesc struct {
-	ChanIndex int
-	PinIndex  int
+	PinIndex  uint32
+	ChanIndex uint32
 }
 
-func openExttsClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*ts.Clock, phc.DriverFlags, error) {
+func OpenExttsClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clock, phc.DriverFlags, error) {
 	var (
 		w   *ifwait.IfWaiter
 		err error
@@ -59,7 +58,7 @@ func openExttsClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) 
 			return nil, 0, err
 		}
 	}
-	clk, err := ts.Open(phc.ClockPath(phcIndex))
+	clk, err := Open(phc.ClockPath(phcIndex))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -100,13 +99,13 @@ loop:
 	return nil
 }
 
-func (cfg PinDesc) validate(clk *ts.Clock) error {
+func (cfg PinDesc) validate(clk *Clock) error {
 	var msg string
 	if clk.ExttsChanCount() == 0 || clk.PinCount() == 0 {
 		msg = fmt.Sprintf("PTP clock %s does not support external timestamping", clk.Path())
-	} else if int(cfg.PinIndex) >= clk.PinCount() {
+	} else if cfg.PinIndex >= uint32(clk.PinCount()) {
 		msg = fmt.Sprintf("pin index %d is out of range for PTP clock %s: maximum index is %d", cfg.PinIndex, clk.Path(), clk.PinCount()-1)
-	} else if int(cfg.ChanIndex) >= clk.ExttsChanCount() {
+	} else if cfg.ChanIndex >= uint32(clk.ExttsChanCount()) {
 		msg = fmt.Sprintf("channel index %d is out of range for PTP clock %s: maximum index is %d", cfg.ChanIndex, clk.Path(), clk.ExttsChanCount()-1)
 	} else {
 		return nil
@@ -114,20 +113,20 @@ func (cfg PinDesc) validate(clk *ts.Clock) error {
 	return errors.New(msg)
 }
 
-func StartPPS(ctx context.Context, clk *ts.Clock, cfg PHCConfig, lg *slog.Logger) (<-chan ts.Event, int, error) {
-	err := clk.PinSetFunc(uint32(cfg.Pin), phc.PinFuncExtts, uint32(cfg.Channel))
+func StartPPS(ctx context.Context, clk *Clock, cfg PinDesc, lg *slog.Logger) (<-chan Event, int, error) {
+	err := clk.PinSetFunc(uint32(cfg.PinIndex), phc.PinFuncExtts, uint32(cfg.ChanIndex))
 	if err != nil {
 		return nil, 0, err
 	}
-	edges, err := clk.ExttsEnable(uint32(cfg.Channel), true)
+	edges, err := clk.ExttsEnable(uint32(cfg.ChanIndex), true)
 	if err != nil {
 		return nil, 0, err
 	}
-	lg.Info("enabled external timestamping on the PTP hardware clock", "device", clk.Path(), "pin", cfg.Pin, "channel", cfg.Channel, "edgesPerPulse", edges)
-	c := make(chan ts.Event, 1)
+	lg.Info("enabled external timestamping on the PTP hardware clock", "device", clk.Path(), "pin", cfg.PinIndex, "channel", cfg.ChanIndex, "edgesPerPulse", edges)
+	c := make(chan Event, 1)
 	go func() {
 		clk.ReadWorker(ctx.Done(), c, exttsTimeout)
-		_, err := clk.ExttsEnable(uint32(cfg.Channel), false)
+		_, err := clk.ExttsEnable(uint32(cfg.ChanIndex), false)
 		if err != nil {
 			lg.Warn("error while disabling external timestamping", "path", clk.Path(), "err", err)
 		}
