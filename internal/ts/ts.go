@@ -11,6 +11,8 @@ import (
 type Clock struct {
 	phc.Clock
 	eraCounter atomicEra
+	pinIndex   uint32
+	chanIndex  uint32
 }
 
 type atomicEra atomic.Uint64
@@ -21,18 +23,6 @@ type Event struct {
 	TReadPHC  ptime.ClockTime
 	ChanIndex uint32
 	Err       error
-}
-
-func Open(path string) (*Clock, error) {
-	pc, err := phc.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	clk := &Clock{Clock: *pc}
-	// We start off with an era that is certain.
-	// Zero era represent stale PHC clock readings.
-	clk.eraCounter.inc()
-	return clk, nil
 }
 
 func (clk *Clock) AdjTime(d time.Duration) (ptime.Era, error) {
