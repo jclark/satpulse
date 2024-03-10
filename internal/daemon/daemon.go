@@ -269,7 +269,7 @@ func NewDispatcher(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pu
 		return nil, err
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, m, ls, clk, phcFlags, pulseWidth, sseCh, eventLogPath)
+	return gpsevent.NewDispatcher(lg, m, ls, phcFlags, pulseWidth, sseCh, eventLogPath)
 }
 
 type InitData struct {
