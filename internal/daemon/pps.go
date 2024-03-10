@@ -13,24 +13,21 @@ import (
 	"github.com/jclark/satpulse/internal/ts"
 )
 
-type PHCConfig struct {
-	Interface string `toml:"interface"`
-	Pin       uint8  `toml:"pin"`
-	Channel   uint8  `toml:"channel"`
-	Wait      bool   `toml:"wait"`
-}
-
 const exttsTimeout = 100 * time.Microsecond // if we hit this timeout, then the next one isn't stale
 const existTimeout = 30 * time.Second
 const logWaitTimeout = time.Second / 2 // log if we have to wait more than this for an interface
 
-func openExttsClock(lg *slog.Logger, cfg PHCConfig) (*ts.Clock, phc.DriverFlags, error) {
-	ifName := cfg.Interface
+type PinDesc struct {
+	ChanIndex int
+	PinIndex  int
+}
+
+func openExttsClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*ts.Clock, phc.DriverFlags, error) {
 	var (
 		w   *ifwait.IfWaiter
 		err error
 	)
-	if cfg.Wait {
+	if wait {
 		w, err = ifwait.NewIfWaiter(ifName)
 		if err != nil {
 			return nil, 0, err
@@ -66,7 +63,7 @@ func openExttsClock(lg *slog.Logger, cfg PHCConfig) (*ts.Clock, phc.DriverFlags,
 	if err != nil {
 		return nil, 0, err
 	}
-	err = validateTimePulseConfig(clk, cfg)
+	err = pinDesc.validate(clk)
 	if err != nil {
 		clk.Close()
 		return nil, 0, err
@@ -103,14 +100,14 @@ loop:
 	return nil
 }
 
-func validateTimePulseConfig(clk *ts.Clock, cfg PHCConfig) error {
+func (cfg PinDesc) validate(clk *ts.Clock) error {
 	var msg string
 	if clk.ExttsChanCount() == 0 || clk.PinCount() == 0 {
 		msg = fmt.Sprintf("PTP clock %s does not support external timestamping", clk.Path())
-	} else if int(cfg.Pin) >= clk.PinCount() {
-		msg = fmt.Sprintf("pin index %d is out of range for PTP clock %s: maximum index is %d", cfg.Pin, clk.Path(), clk.PinCount()-1)
-	} else if int(cfg.Channel) >= clk.ExttsChanCount() {
-		msg = fmt.Sprintf("channel index %d is out of range for PTP clock %s: maximum index is %d", cfg.Channel, clk.Path(), clk.ExttsChanCount()-1)
+	} else if int(cfg.PinIndex) >= clk.PinCount() {
+		msg = fmt.Sprintf("pin index %d is out of range for PTP clock %s: maximum index is %d", cfg.PinIndex, clk.Path(), clk.PinCount()-1)
+	} else if int(cfg.ChanIndex) >= clk.ExttsChanCount() {
+		msg = fmt.Sprintf("channel index %d is out of range for PTP clock %s: maximum index is %d", cfg.ChanIndex, clk.Path(), clk.ExttsChanCount()-1)
 	} else {
 		return nil
 	}

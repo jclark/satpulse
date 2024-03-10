@@ -77,7 +77,7 @@ func Cmd(progName string, args []string) {
 }
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config) error {
-	clk, phcFlags, err := openExttsClock(lg, cfg.PHC)
+	clk, phcFlags, err := cfg.PHC.OpenClock(lg)
 	if err != nil {
 		return err
 	}

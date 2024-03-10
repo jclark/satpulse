@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/proxy"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/sockrefclock"
+	"github.com/jclark/satpulse/internal/ts"
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/jclark/satpulse/internal/pmc"
@@ -36,6 +38,13 @@ type Config struct {
 type SerialConfig struct {
 	Device string
 	Speed  *int
+}
+
+type PHCConfig struct {
+	Interface string `toml:"interface"`
+	Pin       uint8  `toml:"pin"`
+	Channel   uint8  `toml:"channel"`
+	Wait      bool   `toml:"wait"`
 }
 
 type LeapSecondConfig struct {
@@ -125,6 +134,13 @@ func defaultConfig() *Config {
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
 	return cfg
+}
+
+func (cfg PHCConfig) OpenClock(lg *slog.Logger) (*ts.Clock, phc.DriverFlags, error) {
+	return openExttsClock(cfg.Interface, PinDesc{
+		PinIndex:  int(cfg.Pin),
+		ChanIndex: int(cfg.Channel),
+	}, cfg.Wait, lg)
 }
 
 func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {
