@@ -85,7 +85,7 @@ func (d *Dispatcher) Run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 	signal.Notify(sig, unix.SIGHUP)
 	lg := d.lg
 	defer d.lf.Close(d.lg)
-	lg.Debug("sync worker goroutine started")
+	lg.Debug("event dispatcher goroutine started")
 
 	nSkipped := 0
 	// give a warning if we haven't received a timestamp by the time this fires
@@ -118,14 +118,14 @@ func (d *Dispatcher) Run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 					d.timestamp(e)
 				}
 			} else {
-				lg.Debug("timestamp channel of sync worker goroutine was closed")
+				lg.Debug("timestamp channel of event dispatcher goroutine was closed")
 				tsCh = nil
 			}
 		case pkt, ok := <-pktCh:
 			if ok {
 				d.handlePacket(pkt)
 			} else {
-				lg.Debug("packet channel of sync worker goroutine was closed")
+				lg.Debug("packet channel of event dispatcher goroutine was closed")
 				pktCh = nil
 			}
 		case t := <-ticker.C:
