@@ -10,7 +10,23 @@ import (
 
 	"github.com/jclark/satpulse/internal/ifwait"
 	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/internal/ptime"
 )
+
+type Clock struct {
+	phc.Clock
+	eraCounter atomicEra
+	pinIndex   uint32
+	chanIndex  uint32
+}
+
+type Event struct {
+	Ts        ptime.ClockTime
+	TRead     time.Time
+	TReadPHC  ptime.ClockTime
+	ChanIndex uint32
+	Err       error
+}
 
 const exttsTimeout = 100 * time.Microsecond // if we hit this timeout, then the next one isn't stale
 const existTimeout = 30 * time.Second
@@ -136,4 +152,77 @@ func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event
 		}
 	}()
 	return c, edges, nil
+}
+
+const StaleEra ptime.Era = ptime.Era(0)
+
+func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- Event, timeout time.Duration) {
+	defer close(tsEvents)
+	era := StaleEra
+	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
+		// The idea is that if we poll and there are no pending events, then any step to the clock
+		// that we have made with adjtimex will be in effect for the next read.
+		if !clk.ExttsAvailable(timeout) {
+			era = clk.eraCounter.load()
+			continue
+		}
+		event := Event{}
+		t, err := clk.ReadExtts()
+		if err != nil {
+			event.Err = err
+		} else {
+			tClock := ptime.ClockTime{
+				T:   t,
+				Era: clk.eraCounter.load(),
+			}
+			if tClock.Era != era && !tClock.Era.Uncertain() {
+				if era.Uncertain() {
+					tClock.Era = era
+				} else {
+					// Make the era uncertain.
+					// We cannot be sure that the adjtimex is in effect now.
+					// We have to wait for a poll that does not return any events.
+					tClock.Era = era + 1
+				}
+			}
+			event.TReadPHC, event.TRead, event.Err = clk.sample()
+			event.Ts = tClock
+		}
+		tsEvents <- event
+	}
+}
+
+// sample reads the PHC and system clocks and returns the results.
+// This can be called only from ReadWorker.
+func (clk *Clock) sample() (tClock ptime.ClockTime, tSys time.Time, err error) {
+	eraPre := clk.eraCounter.load()
+	ms, err := clk.SysOffsetExtended(6)
+	if err != nil {
+		return
+	}
+	eraPost := clk.eraCounter.load()
+	if eraPre == eraPost || eraPre.Uncertain() {
+		tClock.Era = eraPre
+	} else if eraPost.Uncertain() {
+		tClock.Era = eraPost
+	} else {
+		tClock.Era = eraPre + 1
+	}
+	tClock.T, tSys = ms.Reduce()
+	return
+}
+
+func (clk *Clock) AdjTime(d time.Duration) (ptime.Era, error) {
+	clk.eraCounter.inc()
+	err := clk.Clock.AdjTime(d)
+	era := clk.eraCounter.inc()
+	if err != nil {
+		era = 0
+	}
+	return era, err
 }
