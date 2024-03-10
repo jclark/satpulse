@@ -14,19 +14,20 @@ import (
 const sampleWindowSize = 60
 
 type Monitor struct {
-	samples        *sampleWindow
-	lastSampleTime time.Time
-	leapSecond     ptime.LeapSecond
-	servo          Servo // never nil
-	lg             *slog.Logger
-	gm             *Grandmaster   // maybe nil
-	rc             *ProxyRefClock // maybe nil
-	inSync         bool
-	lastRefTime    ptime.Time
-	ppsStopped     bool
-	sseCh          chan<- sse.Event
-	stats          stats
-	lf             logfile.LogFile
+	samples         *sampleWindow
+	lastSampleTime  time.Time
+	leapSecond      ptime.LeapSecond
+	servo           Servo // never nil
+	lg              *slog.Logger
+	gm              *Grandmaster   // maybe nil
+	rc              *ProxyRefClock // maybe nil
+	inSync          bool
+	lastRefTime     ptime.Time
+	lastSyncRefTime ptime.Time
+	ppsStopped      bool
+	sseCh           chan<- sse.Event
+	stats           stats
+	lf              logfile.LogFile
 }
 
 type stats struct {
@@ -91,14 +92,14 @@ func (mon *Monitor) ReopenLog() {
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	mon.addMissingOffsets(ref)
-	off := local.T.Sub(ref)
 	kind := sampleOK
-	if !delayed && mon.isOutlier(off, local.Era) {
-		kind = sampleOutlier
+	if !delayed && mon.isInvalid(ref, local) {
+		kind = sampleInvalid
 	} else {
 		mon.servo.Sample(ref, local, delayed)
 	}
 	freq := mon.servo.FreqOffset()
+	off := local.T.Sub(ref)
 	mon.recordSample(kind, off, local.Era, freq)
 	mon.writeLogEntry(kind, ref, off, local.Era, freq)
 	mon.sendEvent(kind, off, local.Era, freq)
@@ -106,8 +107,12 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 		return
 	}
 	inSync := mon.isInSync()
-	now := time.Now()
-	mon.lastSampleTime = now
+	if kind == sampleOK {
+		mon.lastSampleTime = time.Now()
+		if inSync {
+			mon.lastSyncRefTime = ref
+		}
+	}
 	if mon.ppsStopped {
 		mon.lg.Warn("1PPS signal restored")
 		mon.ppsStopped = false
@@ -151,7 +156,7 @@ func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, era ptime.E
 		mon.lg.Info("missed 1PPS sample")
 		return
 	}
-	if kind == sampleOutlier {
+	if kind == sampleInvalid {
 		mon.lg.Info("outlier sample", "off", off, "freq", freq)
 		return
 	}
@@ -172,7 +177,7 @@ func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Dura
 		return
 	}
 	outlierFlag := 0
-	if kind == sampleOutlier {
+	if kind == sampleInvalid {
 		outlierFlag = 1
 	}
 	// Stable32 treats 0 as meaning a gap, so we output 1e-99 for 0.
@@ -209,7 +214,7 @@ func (mon *Monitor) sendEvent(kind sampleKind, off time.Duration, era ptime.Era,
 		StepCount:         uint32(stepCount),
 		StepCountChanging: changing,
 		Freq:              freq,
-		Outlier:           kind == sampleOutlier,
+		Outlier:           kind == sampleInvalid,
 	})
 	if err != nil {
 		mon.lg.Error("error creating sample event", "err", err)
@@ -257,20 +262,38 @@ func (mon *Monitor) isInSync() bool {
 	return mon.samples.isInSync(mon.inSync, &defaultSampleConfig)
 }
 
-func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
-	offSecs := off.Seconds()
+// maxValidDriftPPM is the maximum drift in PPM before considering sample invalid
+// This should kick in if there is some sort of hardware problem giving us crazy offsets
+const maxValidDriftPPM = 50
+
+func (mon *Monitor) isInvalid(ref ptime.Time, local ptime.ClockTime) bool {
+	off := local.T.Sub(ref).Seconds()
 
 	// if this offset isn't bad enough to take use out of sync,
 	// then there's no need to consider it as an outlier
 	// this should be a quick check that succeeds most of the time
-	if math.Abs(offSecs) <= defaultSampleConfig.maxOffset {
+	if math.Abs(off) <= defaultSampleConfig.maxOffset {
 		return false
 	}
 	// don't do outlier detection unless we are using the PI controller
-	if !mon.servo.Locked(era) {
+	if !mon.servo.Locked(local.Era) {
 		return false
 	}
-	return mon.samples.madIsOutlier(offSecs, &defaultSampleConfig)
+	return mon.isInsane(off, ref) || mon.samples.madIsOutlier(off, &defaultSampleConfig)
+}
+
+func (mon *Monitor) isInsane(off float64, ref ptime.Time) bool {
+	if mon.lastSyncRefTime.IsZero() {
+		return false
+	}
+	if math.Abs(mon.samples.last(0).off - off) < defaultSampleConfig.maxOffset {
+		return false
+	}
+	syncDiff := ref.Sub(mon.lastSyncRefTime).Seconds()
+	if math.Abs(off) > syncDiff*(maxValidDriftPPM/1e6) {
+		return true
+	}
+	return false
 }
 
 func (mon *Monitor) updateInSync(inSync bool) {
@@ -342,7 +365,7 @@ func (a *accumPhase) add(kind sampleKind, v float64) {
 		a.maxAbs = math.Max(a.maxAbs, av)
 	case sampleMissing:
 		a.nMissing++
-	case sampleOutlier:
+	case sampleInvalid:
 		a.nOutliers++
 	}
 }

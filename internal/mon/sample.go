@@ -12,7 +12,7 @@ type sampleKind int
 const (
 	sampleMissing sampleKind = iota
 	sampleOK
-	sampleOutlier
+	sampleInvalid
 )
 
 type sampleData struct {

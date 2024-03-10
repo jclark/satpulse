@@ -15,9 +15,9 @@ var inSyncTests = [][]sampleData{
 		sampleData{-19e-9, sampleOK},
 		sampleData{12e-9, sampleOK},
 		sampleData{-4e-9, sampleOK},
-		sampleData{-1e6, sampleOutlier},
+		sampleData{-1e6, sampleInvalid},
 		sampleData{0, sampleMissing},
-		sampleData{1e3, sampleOutlier},
+		sampleData{1e3, sampleInvalid},
 		sampleData{10e-9, sampleOK},
 		sampleData{-4e-9, sampleOK},
 	},
@@ -36,9 +36,9 @@ var inSyncTests = [][]sampleData{
 		sampleData{49e-9, sampleOK},
 		sampleData{3e-9, sampleOK},
 		sampleData{-4e-9, sampleOK},
-		sampleData{-1e6, sampleOutlier},
+		sampleData{-1e6, sampleInvalid},
 		sampleData{0, sampleMissing},
-		sampleData{1e3, sampleOutlier},
+		sampleData{1e3, sampleInvalid},
 		sampleData{10e-9, sampleOK},
 		sampleData{-4e-9, sampleOK},
 		sampleData{0, sampleMissing},
@@ -48,8 +48,8 @@ var inSyncTests = [][]sampleData{
 		sampleData{20e-9, sampleOK},
 		sampleData{3e-9, sampleOK},
 		sampleData{-4e-9, sampleOK},
-		sampleData{-2e6, sampleOutlier},
-		sampleData{-2e6, sampleOutlier},
+		sampleData{-2e6, sampleInvalid},
+		sampleData{-2e6, sampleInvalid},
 		sampleData{19e-9, sampleOK},
 		sampleData{-2e-9, sampleOK},
 	},
@@ -60,9 +60,9 @@ func TestInSync(t *testing.T) {
 		inSync := false
 		w := newSampleWindow(sampleWindowSize)
 		for j, s := range test {
-			if s.kind != sampleMissing && w.madIsOutlier(s.off, &defaultSampleConfig) != (s.kind == sampleOutlier) {
+			if s.kind != sampleMissing && w.madIsOutlier(s.off, &defaultSampleConfig) != (s.kind == sampleInvalid) {
 				n, min, max := w.mad(defaultSampleConfig.madMultiple)
-				t.Errorf("Test %d, sample %d, expected madIsOutlier == %v (n = %d, min = %v, max = %v)", i, j, s.kind == sampleOutlier, n, min, max)
+				t.Errorf("Test %d, sample %d, expected madIsOutlier == %v (n = %d, min = %v, max = %v)", i, j, s.kind == sampleInvalid, n, min, max)
 			}
 			w.append(s.kind, s.off, 1)
 			inSync = w.isInSync(inSync, &defaultSampleConfig)
