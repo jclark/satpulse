@@ -1,6 +1,7 @@
 package ts
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/jclark/satpulse/internal/phc"
@@ -9,8 +10,10 @@ import (
 
 type Clock struct {
 	phc.Clock
-	eraCounter ptime.AtomicEra
+	eraCounter atomicEra
 }
+
+type atomicEra atomic.Uint64
 
 type Event struct {
 	Ts        ptime.ClockTime
@@ -28,14 +31,14 @@ func Open(path string) (*Clock, error) {
 	clk := &Clock{Clock: *pc}
 	// We start off with an era that is certain.
 	// Zero era represent stale PHC clock readings.
-	clk.eraCounter.Inc()
+	clk.eraCounter.inc()
 	return clk, nil
 }
 
 func (clk *Clock) AdjTime(d time.Duration) (ptime.Era, error) {
-	clk.eraCounter.Inc()
+	clk.eraCounter.inc()
 	err := clk.Clock.AdjTime(d)
-	era := clk.eraCounter.Inc()
+	era := clk.eraCounter.inc()
 	if err != nil {
 		era = 0
 	}
@@ -56,7 +59,7 @@ func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- Event, timeou
 		// The idea is that if we poll and there are no pending events, then any step to the clock
 		// that we have made with adjtimex will be in effect for the next read.
 		if !clk.ExttsAvailable(timeout) {
-			era = clk.eraCounter.Load()
+			era = clk.eraCounter.load()
 			continue
 		}
 		event := Event{}
@@ -66,7 +69,7 @@ func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- Event, timeou
 		} else {
 			tClock := ptime.ClockTime{
 				T:   t,
-				Era: clk.eraCounter.Load(),
+				Era: clk.eraCounter.load(),
 			}
 			if tClock.Era != era && !tClock.Era.Uncertain() {
 				if era.Uncertain() {
@@ -88,12 +91,12 @@ func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- Event, timeou
 // sample reads the PHC and system clocks and returns the results.
 // This can be called only from ReadWorker.
 func (clk *Clock) sample() (tClock ptime.ClockTime, tSys time.Time, err error) {
-	eraPre := clk.eraCounter.Load()
+	eraPre := clk.eraCounter.load()
 	ms, err := clk.SysOffsetExtended(6)
 	if err != nil {
 		return
 	}
-	eraPost := clk.eraCounter.Load()
+	eraPost := clk.eraCounter.load()
 	if eraPre == eraPost || eraPre.Uncertain() {
 		tClock.Era = eraPre
 	} else if eraPost.Uncertain() {
@@ -103,4 +106,12 @@ func (clk *Clock) sample() (tClock ptime.ClockTime, tSys time.Time, err error) {
 	}
 	tClock.T, tSys = ms.Reduce()
 	return
+}
+
+func (c *atomicEra) inc() ptime.Era {
+	return ptime.Era((*atomic.Uint64)(c).Add(1))
+}
+
+func (c *atomicEra) load() ptime.Era {
+	return ptime.Era((*atomic.Uint64)(c).Load())
 }
