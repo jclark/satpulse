@@ -10,6 +10,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/ifwait"
 	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/internal/ts"
 )
 
 type PHCConfig struct {
@@ -23,7 +24,7 @@ const exttsTimeout = 100 * time.Microsecond // if we hit this timeout, then the 
 const existTimeout = 30 * time.Second
 const logWaitTimeout = time.Second / 2 // log if we have to wait more than this for an interface
 
-func openExttsClock(lg *slog.Logger, cfg PHCConfig) (*phc.Clock, phc.DriverFlags, error) {
+func openExttsClock(lg *slog.Logger, cfg PHCConfig) (*ts.Clock, phc.DriverFlags, error) {
 	ifName := cfg.Interface
 	var (
 		w   *ifwait.IfWaiter
@@ -61,7 +62,7 @@ func openExttsClock(lg *slog.Logger, cfg PHCConfig) (*phc.Clock, phc.DriverFlags
 			return nil, 0, err
 		}
 	}
-	clk, err := phc.Open(phc.ClockPath(phcIndex))
+	clk, err := ts.Open(phc.ClockPath(phcIndex))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -102,7 +103,7 @@ loop:
 	return nil
 }
 
-func validateTimePulseConfig(clk *phc.Clock, cfg PHCConfig) error {
+func validateTimePulseConfig(clk *ts.Clock, cfg PHCConfig) error {
 	var msg string
 	if clk.ExttsChanCount() == 0 || clk.PinCount() == 0 {
 		msg = fmt.Sprintf("PTP clock %s does not support external timestamping", clk.Path())
@@ -116,7 +117,7 @@ func validateTimePulseConfig(clk *phc.Clock, cfg PHCConfig) error {
 	return errors.New(msg)
 }
 
-func StartPPS(ctx context.Context, clk *phc.Clock, cfg PHCConfig, lg *slog.Logger) (<-chan phc.TsEvent, int, error) {
+func StartPPS(ctx context.Context, clk *ts.Clock, cfg PHCConfig, lg *slog.Logger) (<-chan ts.Event, int, error) {
 	err := clk.PinSetFunc(uint32(cfg.Pin), phc.PinFuncExtts, uint32(cfg.Channel))
 	if err != nil {
 		return nil, 0, err
@@ -126,7 +127,7 @@ func StartPPS(ctx context.Context, clk *phc.Clock, cfg PHCConfig, lg *slog.Logge
 		return nil, 0, err
 	}
 	lg.Info("enabled external timestamping on the PTP hardware clock", "device", clk.Path(), "pin", cfg.Pin, "channel", cfg.Channel, "edgesPerPulse", edges)
-	c := make(chan phc.TsEvent, 1)
+	c := make(chan ts.Event, 1)
 	go func() {
 		clk.ReadWorker(ctx.Done(), c, exttsTimeout)
 		_, err := clk.ExttsEnable(uint32(cfg.Channel), false)

@@ -21,6 +21,7 @@ import (
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/servo"
 	"github.com/jclark/satpulse/internal/sse"
+	"github.com/jclark/satpulse/internal/ts"
 	"github.com/jclark/satpulse/internal/ubx"
 )
 
@@ -251,7 +252,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, clk *phc.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event) (*gpsevent.Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, clk *ts.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event) (*gpsevent.Dispatcher, error) {
 	servo, err := servo.New(clk, lg)
 	if err != nil {
 		return nil, err
