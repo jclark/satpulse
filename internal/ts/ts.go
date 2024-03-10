@@ -109,7 +109,11 @@ func (clk *Clock) sample() (tClock ptime.ClockTime, tSys time.Time, err error) {
 }
 
 func (c *atomicEra) inc() ptime.Era {
-	return ptime.Era((*atomic.Uint64)(c).Add(1))
+	return c.add(1)
+}
+
+func (c *atomicEra) add(n uint64) ptime.Era {
+	return ptime.Era((*atomic.Uint64)(c).Add(n))
 }
 
 func (c *atomicEra) load() ptime.Era {
