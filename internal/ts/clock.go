@@ -15,9 +15,10 @@ import (
 
 type Clock struct {
 	phc.Clock
-	eraCounter atomicEra
-	pinIndex   uint32
-	chanIndex  uint32
+	eraCounter  atomicEra
+	pinIndex    uint32
+	chanIndex   uint32
+	DriverFlags phc.DriverFlags
 }
 
 type Event struct {
@@ -37,7 +38,7 @@ type PinDesc struct {
 	ChanIndex uint32
 }
 
-func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clock, phc.DriverFlags, error) {
+func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clock, error) {
 	var (
 		w   *ifwait.IfWaiter
 		err error
@@ -45,49 +46,49 @@ func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clo
 	if wait {
 		w, err = ifwait.NewIfWaiter(ifName)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		defer w.Close()
 		err = waitIface(w, lg, nil, "does not exist", existTimeout)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		err = waitIface(w, lg, func(flags net.Flags) bool { return flags&net.FlagUp != 0 }, "is down", 0)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 	}
 	phcIndex, err := phc.IfPhcIndex(ifName)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if phcIndex < 0 {
-		return nil, 0, fmt.Errorf("interface %s cannot be used because it does not have a PTP hardware clock", ifName)
+		return nil, fmt.Errorf("interface %s cannot be used because it does not have a PTP hardware clock", ifName)
 	}
 	flags, err := phc.IfDriverFlags(ifName)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if w != nil && flags&phc.DriverCarrier != 0 {
 		err = waitIface(w, lg, func(flags net.Flags) bool { return flags&net.FlagRunning != 0 }, "has no carrier", 0)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 	}
 	pc, err := phc.Open(phc.ClockPath(phcIndex))
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	clk := &Clock{Clock: *pc, pinIndex: pinDesc.PinIndex, chanIndex: pinDesc.ChanIndex}
+	clk := &Clock{Clock: *pc, pinIndex: pinDesc.PinIndex, chanIndex: pinDesc.ChanIndex, DriverFlags: flags}
 	// We start off with an era that is certain.
 	// Zero era represent stale PHC clock readings.
 	clk.eraCounter.inc()
 	err = clk.validatePinDesc()
 	if err != nil {
 		clk.Close()
-		return nil, 0, err
+		return nil, err
 	}
-	return clk, flags, nil
+	return clk, nil
 }
 
 func waitIface(w *ifwait.IfWaiter, lg *slog.Logger, f func(net.Flags) bool, status string, timeout time.Duration) error {
@@ -133,19 +134,20 @@ func (clk *Clock) validatePinDesc() error {
 	return errors.New(msg)
 }
 
-func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event, int, error) {
+func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event, error) {
 	err := clk.PinSetFunc(clk.pinIndex, phc.PinFuncExtts, clk.chanIndex)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	edges, err := clk.ExttsEnable(clk.chanIndex, true)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	lg.Info("enabled external timestamping on the PTP hardware clock", "device", clk.Path(), "pin", clk.pinIndex, "channel", clk.chanIndex, "edgesPerPulse", edges)
+	clk.DriverFlags = clk.DriverFlags.SetEdges(edges)
 	ch := make(chan Event, 1)
 	go clk.readWorker(ctx, lg, ch)
-	return ch, edges, nil
+	return ch, nil
 }
 
 const StaleEra ptime.Era = ptime.Era(0)

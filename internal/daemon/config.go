@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/mon"
-	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/proxy"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/sockrefclock"
@@ -136,7 +135,7 @@ func defaultConfig() *Config {
 	return cfg
 }
 
-func (cfg PHCConfig) OpenClock(lg *slog.Logger) (*ts.Clock, phc.DriverFlags, error) {
+func (cfg PHCConfig) OpenClock(lg *slog.Logger) (*ts.Clock, error) {
 	return ts.OpenClock(cfg.Interface, cfg.PinDesc(), cfg.Wait, lg)
 }
 

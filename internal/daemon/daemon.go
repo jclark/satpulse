@@ -77,7 +77,8 @@ func Cmd(progName string, args []string) {
 }
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config) error {
-	clk, phcFlags, err := cfg.PHC.OpenClock(lg)
+	clk, err := cfg.PHC.OpenClock(lg)
+	phcFlags := clk.DriverFlags
 	if err != nil {
 		return err
 	}
@@ -215,7 +216,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if rc != nil {
 		rcProxy, rcCh = mon.NewProxyRefClock()
 	}
-	tsCh, edges, err := ts.StartWorker(ctx, clk, lg)
+	tsCh, err := ts.StartWorker(ctx, clk, lg)
 	if err != nil {
 		return err
 	}
@@ -225,7 +226,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		pulseWidth = defaultPulseWidth
 	}
 
-	d, err := NewDispatcher(lg, clk, phcFlags.SetEdges(edges), pulseWidth, cfg, gm, rcProxy, sseCh)
+	d, err := NewDispatcher(lg, clk, pulseWidth, cfg, gm, rcProxy, sseCh)
 	if err != nil {
 		return err
 	}
@@ -252,7 +253,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, clk *ts.Clock, phcFlags phc.DriverFlags, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event) (*gpsevent.Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event) (*gpsevent.Dispatcher, error) {
 	servo, err := servo.New(clk, lg)
 	if err != nil {
 		return nil, err
@@ -270,7 +271,7 @@ func NewDispatcher(lg *slog.Logger, clk *ts.Clock, phcFlags phc.DriverFlags, pul
 		return nil, err
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, m, ls, phcFlags, pulseWidth, sseCh, eventLogPath)
+	return gpsevent.NewDispatcher(lg, m, ls, clk.DriverFlags, pulseWidth, sseCh, eventLogPath)
 }
 
 type InitData struct {
