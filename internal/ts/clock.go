@@ -143,31 +143,31 @@ func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event
 		return nil, 0, err
 	}
 	lg.Info("enabled external timestamping on the PTP hardware clock", "device", clk.Path(), "pin", clk.pinIndex, "channel", clk.chanIndex, "edgesPerPulse", edges)
-	c := make(chan Event, 1)
-	go func() {
-		clk.ReadWorker(ctx.Done(), c, exttsTimeout)
+	ch := make(chan Event, 1)
+	go clk.readWorker(ctx, lg, ch)
+	return ch, edges, nil
+}
+
+const StaleEra ptime.Era = ptime.Era(0)
+
+func (clk *Clock) readWorker(ctx context.Context, lg *slog.Logger, tsCh chan<- Event) {
+	defer func() {
 		_, err := clk.ExttsEnable(clk.chanIndex, false)
 		if err != nil {
 			lg.Warn("error while disabling external timestamping", "path", clk.Path(), "err", err)
 		}
 	}()
-	return c, edges, nil
-}
-
-const StaleEra ptime.Era = ptime.Era(0)
-
-func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- Event, timeout time.Duration) {
-	defer close(tsEvents)
+	defer close(tsCh)
 	era := StaleEra
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return
 		default:
 		}
 		// The idea is that if we poll and there are no pending events, then any step to the clock
 		// that we have made with adjtimex will be in effect for the next read.
-		if !clk.ExttsAvailable(timeout) {
+		if !clk.ExttsAvailable(exttsTimeout) {
 			era = clk.eraCounter.load()
 			continue
 		}
@@ -193,7 +193,7 @@ func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- Event, timeou
 			event.TReadPHC, event.TRead, event.Err = clk.sample()
 			event.Ts = tClock
 		}
-		tsEvents <- event
+		tsCh <- event
 	}
 }
 
