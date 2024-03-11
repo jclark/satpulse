@@ -53,18 +53,18 @@ func (clk *Clock) ExttsAvailable(timeout time.Duration) bool {
 	return nFds == 1 && (pollFds[0].Revents&unix.POLLIN) != 0
 }
 
-func (clk *Clock) ReadExtts() (ptime.Time, error) {
+func (clk *Clock) ReadExtts() (ptime.Time, uint32, error) {
 	var bytes [unix2.SizeofPTPExttsEvent]byte
 	buf := bytes[:]
 	n, err := unix.Read(clk.fd, buf)
 	if err != nil {
-		return 0, clk.wrapErr(err, "read")
+		return 0, 0, clk.wrapErr(err, "read")
 	}
 	if n != unix2.SizeofPTPExttsEvent {
-		return 0, clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
+		return 0, 0, clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
 	}
 	ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
-	return ptime.TimespecToTime(unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)}), nil
+	return ptime.TimespecToTime(unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)}), ptpEv.Index, nil
 }
 
 // This is only safe when any ReadWorker has closed its tsEvents channel

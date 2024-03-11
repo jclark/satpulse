@@ -100,12 +100,6 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 					lg.Info("successfully received a external timestamp from the PTP hardware clock")
 					firstTsDeadline = nil
 				}
-				if e.Err != nil {
-					lg.Info("error from PTP hardware clock timestamp channel", "err", e.Err)
-					if e.Ts.T.IsZero() {
-						continue
-					}
-				}
 				if e.Ts.Era == ts.StaleEra {
 					if nSkipped == 0 {
 						lg.Debug("detected a stale PTP hardware clock timestamp", "t", e.Ts.T)
