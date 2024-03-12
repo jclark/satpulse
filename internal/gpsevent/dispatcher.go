@@ -18,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/sse"
+	"github.com/jclark/satpulse/internal/ts"
 	"github.com/jclark/satpulse/internal/ubx"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 	"golang.org/x/sys/unix"
@@ -70,7 +71,7 @@ func NewDispatcher(lg *slog.Logger, m *mon.Monitor, ls ptime.LeapSecond, phcFlag
 
 const tickPeriod = time.Second / 4
 
-func (d *Dispatcher) Run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
+func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 	// loop until both channels are closed
 	sseCh := d.sseCh
 	if sseCh != nil {
@@ -99,13 +100,7 @@ func (d *Dispatcher) Run(tsCh <-chan phc.TsEvent, pktCh <-chan scan.Packet) {
 					lg.Info("successfully received a external timestamp from the PTP hardware clock")
 					firstTsDeadline = nil
 				}
-				if e.Err != nil {
-					lg.Info("error from PTP hardware clock timestamp channel", "err", e.Err)
-					if e.Ts.T.IsZero() {
-						continue
-					}
-				}
-				if e.Ts.Era == phc.StaleEra {
+				if e.Ts.Era == ts.StaleEra {
 					if nSkipped == 0 {
 						lg.Debug("detected a stale PTP hardware clock timestamp", "t", e.Ts.T)
 					}
@@ -176,7 +171,7 @@ type Timestamp struct {
 	Delay time.Duration `json:"delay,omitempty"`
 }
 
-func (d *Dispatcher) timestamp(e phc.TsEvent) {
+func (d *Dispatcher) timestamp(e ts.Event) {
 	var delay time.Duration
 	trp := e.TReadPHC.T
 	if !trp.IsZero() && !e.TReadPHC.Era.Uncertain() && e.TReadPHC.Era == e.Ts.Era {

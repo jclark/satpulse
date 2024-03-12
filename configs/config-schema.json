@@ -52,8 +52,8 @@
 		"type": "object",
 		"properties": {
 		  "interface": { "type": "string" },
-		  "pin": { "type": "integer" },
-		  "channel": { "type": "integer" },
+		  "pin": { "type": "integer", "minimum": 0 },
+		  "channel": { "type": "integer", "minimum": 0 },
 		  "wait": { "type": "boolean" }
 		},
 		"required": ["interface"]

@@ -13,18 +13,9 @@ import (
 )
 
 type Clock struct {
-	fd         int
-	path       string
-	caps       *unix2.PTPClockCaps
-	eraCounter ptime.AtomicEra
-}
-
-type TsEvent struct {
-	Ts        ptime.ClockTime
-	TRead     time.Time
-	TReadPHC  ptime.ClockTime
-	ChanIndex uint32
-	Err       error
+	fd   int
+	path string
+	caps *unix2.PTPClockCaps
 }
 
 func Open(path string) (*Clock, error) {
@@ -41,9 +32,7 @@ func Open(path string) (*Clock, error) {
 		fd:   fd,
 		path: path,
 	}
-	// We start off with an era that is certain.
-	// Zero era represent stale PHC clock readings.
-	clk.eraCounter.Inc()
+
 	err = clk.getCaps()
 	if err != nil {
 		unix.Close(fd)
@@ -56,79 +45,26 @@ func (clk *Clock) Path() string {
 	return clk.path
 }
 
-const StaleEra ptime.Era = ptime.Era(0)
-
-func (clk *Clock) ReadWorker(done <-chan struct{}, tsEvents chan<- TsEvent, timeout time.Duration) {
-	defer close(tsEvents)
-	era := StaleEra
-	var bytes [unix2.SizeofPTPExttsEvent]byte
-	buf := bytes[:]
-	for {
-		select {
-		case <-done:
-			return
-		default:
-		}
-		pollFds := make([]unix.PollFd, 1)
-		pollFds[0].Fd = int32(clk.fd)
-		pollFds[0].Events = unix.POLLIN | unix.POLLPRI
-		nFds, _ := unix.Poll(pollFds, int(timeout.Milliseconds()))
-		// The idea is that if we poll and there are no pending events, then any step to the clock
-		// that we have made with adjtimex will be in effect for the next read.
-		if nFds != 1 || (pollFds[0].Revents&unix.POLLIN) == 0 {
-			era = clk.eraCounter.Load()
-			continue
-		}
-		event := TsEvent{}
-		n, err := unix.Read(clk.fd, buf)
-		if err != nil {
-			event.Err = clk.wrapErr(err, "read")
-		} else if n != unix2.SizeofPTPExttsEvent {
-			event.Err = clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
-		} else {
-			tClock := ptime.ClockTime{}
-			tClock.Era = clk.eraCounter.Load()
-			if tClock.Era != era && !tClock.Era.Uncertain() {
-				if era.Uncertain() {
-					tClock.Era = era
-				} else {
-					// Make the era uncertain.
-					// We cannot be sure that the adjtimex is in effect now.
-					// We have to wait for a poll that does not return any events.
-					tClock.Era = era + 1
-				}
-			}
-			ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
-			tClock.T = ptime.TimespecToTime(unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)})
-			event.TReadPHC, event.TRead, err = clk.sample()
-			if err != nil {
-				event.Err = err
-				event.TRead = time.Now()
-			}
-			event.Ts = tClock
-		}
-		tsEvents <- event
-	}
+func (clk *Clock) ExttsAvailable(timeout time.Duration) bool {
+	pollFds := make([]unix.PollFd, 1)
+	pollFds[0].Fd = int32(clk.fd)
+	pollFds[0].Events = unix.POLLIN | unix.POLLPRI
+	nFds, _ := unix.Poll(pollFds, int(timeout.Milliseconds()))
+	return nFds == 1 && (pollFds[0].Revents&unix.POLLIN) != 0
 }
 
-// sample reads the PHC and system clocks and returns the results.
-// This can be called only from ReadWorker.
-func (clk *Clock) sample() (tClock ptime.ClockTime, tSys time.Time, err error) {
-	eraPre := clk.eraCounter.Load()
-	ms, err := clk.SysOffsetExtended(6)
+func (clk *Clock) ReadExtts() (ptime.Time, uint32, error) {
+	var bytes [unix2.SizeofPTPExttsEvent]byte
+	buf := bytes[:]
+	n, err := unix.Read(clk.fd, buf)
 	if err != nil {
-		return
+		return 0, 0, clk.wrapErr(err, "read")
 	}
-	eraPost := clk.eraCounter.Load()
-	if eraPre == eraPost || eraPre.Uncertain() {
-		tClock.Era = eraPre
-	} else if eraPost.Uncertain() {
-		tClock.Era = eraPost
-	} else {
-		tClock.Era = eraPre + 1
+	if n != unix2.SizeofPTPExttsEvent {
+		return 0, 0, clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
 	}
-	tClock.T, tSys = ms.Reduce()
-	return
+	ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
+	return ptime.TimespecToTime(unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)}), ptpEv.Index, nil
 }
 
 // This is only safe when any ReadWorker has closed its tsEvents channel
@@ -279,7 +215,7 @@ func ptpClockTimeToTimePHC(t unix2.PTPClockTime) ptime.Time {
 	return ptime.Unix(t.Sec, int64(t.Nsec))
 }
 
-func (clk *Clock) AdjTime(d time.Duration) (ptime.Era, error) {
+func (clk *Clock) AdjTime(d time.Duration) error {
 	secs := int64(d) / 1e9
 	nsecs := int64(d) % 1e9
 	if nsecs < 0 {
@@ -290,13 +226,8 @@ func (clk *Clock) AdjTime(d time.Duration) (ptime.Era, error) {
 	tx.Modes = unix.ADJ_SETOFFSET | unix.ADJ_NANO
 	tx.Time.Sec = secs
 	tx.Time.Usec = nsecs
-	clk.eraCounter.Inc()
 	_, err := clk.adjtimex(&tx, "(ADJ_SETOFFSET)")
-	era := clk.eraCounter.Inc()
-	if err != nil {
-		era = 0
-	}
-	return era, err
+	return err
 }
 
 func (clk *Clock) FreqOffset() (float64, error) {

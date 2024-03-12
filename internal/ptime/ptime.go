@@ -3,7 +3,6 @@ package ptime
 import (
 	"fmt"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -328,16 +327,6 @@ func (e Era) StepCount() (count uint64, changing bool) {
 		count++
 	}
 	return
-}
-
-type AtomicEra atomic.Uint64
-
-func (c *AtomicEra) Inc() Era {
-	return Era((*atomic.Uint64)(c).Add(1))
-}
-
-func (c *AtomicEra) Load() Era {
-	return Era((*atomic.Uint64)(c).Load())
 }
 
 func Picoseconds(ps int32) time.Duration {
