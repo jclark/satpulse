@@ -41,6 +41,10 @@ func New(clk Clock, lg *slog.Logger) (*Servo, error) {
 	return &s, nil
 }
 
+func (s *Servo) Reset() {
+	s.resetSampler()
+}
+
 func (s *Servo) Logger() *slog.Logger {
 	return s.lg
 }

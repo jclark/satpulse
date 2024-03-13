@@ -39,6 +39,7 @@ type Servo interface {
 	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
 	FreqOffset() float64
 	Locked(era ptime.Era) bool // this says whether it is currently using the PI controller
+	Reset()
 }
 
 type MonitorConfig struct {
@@ -87,6 +88,11 @@ func (mon *Monitor) Close() {
 func (mon *Monitor) ReopenLog() {
 	mon.lf.Reopen(mon.lg)
 	mon.writeLogHeader()
+}
+
+func (mon *Monitor) Pause() {
+	mon.updateInSync(false)
+	mon.servo.Reset()
 }
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
