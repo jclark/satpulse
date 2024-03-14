@@ -211,6 +211,8 @@ func (clk *Clock) handleNoCarrier(ctx context.Context, lg *slog.Logger, tsCh cha
 	case _, ok := <-wCh:
 		if !ok {
 			lg.Warn("netlink error waiting for interface state change", "err", clk.w.Err(), "interface", clk.ifName)
+		} else {
+			lg.Info("carrier restored", "interface", clk.ifName)
 		}
 	}
 	tsCh <- Event{
