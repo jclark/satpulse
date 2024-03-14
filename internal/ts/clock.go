@@ -15,17 +15,30 @@ import (
 
 type Clock struct {
 	phc.Clock
+	ifName      string
 	eraCounter  atomicEra
 	pinIndex    uint32
 	chanIndex   uint32
+	w           *ifwait.IfWaiter
 	DriverFlags phc.DriverFlags
 }
 
 type Event struct {
-	Ts       ptime.ClockTime
-	TRead    time.Time
-	TReadPHC ptime.ClockTime
+	Kind       EventKind
+	Ts         ptime.ClockTime
+	TRead      time.Time
+	TReadPHC   ptime.ClockTime
+	ResumeFunc func() ptime.Era
 }
+
+type EventKind int
+
+const (
+	_ EventKind = iota
+	EdgeEvent
+	PauseEvent
+	ResumeEvent
+)
 
 const exttsTimeout = 100 * time.Microsecond // if we hit this timeout, then the next one isn't stale
 const existTimeout = 30 * time.Second
@@ -41,12 +54,16 @@ func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clo
 		w   *ifwait.IfWaiter
 		err error
 	)
+	defer func() {
+		if w != nil {
+			w.Close()
+		}
+	}()
 	if wait {
 		w, err = ifwait.NewIfWaiter(ifName)
 		if err != nil {
 			return nil, err
 		}
-		defer w.Close()
 		err = waitIface(w, lg, nil, "does not exist", existTimeout)
 		if err != nil {
 			return nil, err
@@ -67,8 +84,14 @@ func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clo
 	if err != nil {
 		return nil, err
 	}
-	if w != nil && flags&phc.DriverCarrier != 0 {
-		err = waitIface(w, lg, func(flags net.Flags) bool { return flags&net.FlagRunning != 0 }, "has no carrier", 0)
+	if flags&phc.DriverCarrier != 0 {
+		if w == nil {
+			w, err = ifwait.NewIfWaiter(ifName)
+			if err != nil {
+				return nil, err
+			}
+		}
+		err = waitIface(w, lg, hasCarrier, "has no carrier", 0)
 		if err != nil {
 			return nil, err
 		}
@@ -77,7 +100,13 @@ func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clo
 	if err != nil {
 		return nil, err
 	}
-	clk := &Clock{Clock: *pc, pinIndex: pinDesc.PinIndex, chanIndex: pinDesc.ChanIndex, DriverFlags: flags}
+	clk := Clock{
+		Clock:       *pc,
+		ifName:      ifName,
+		pinIndex:    pinDesc.PinIndex,
+		chanIndex:   pinDesc.ChanIndex,
+		DriverFlags: flags,
+	}
 	// We start off with an era that is certain.
 	// Zero era represent stale PHC clock readings.
 	clk.eraCounter.inc()
@@ -86,7 +115,19 @@ func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clo
 		clk.Close()
 		return nil, err
 	}
-	return clk, nil
+	if flags&phc.DriverCarrier != 0 {
+		clk.w = w
+		w = nil
+	}
+	return &clk, nil
+}
+
+func Close(c *Clock) error {
+	var err error
+	if c.w != nil {
+		err = c.w.Close()
+	}
+	return errors.Join(c.Close(), err)
 }
 
 func waitIface(w *ifwait.IfWaiter, lg *slog.Logger, f func(net.Flags) bool, status string, timeout time.Duration) error {
@@ -150,19 +191,75 @@ func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event
 
 const StaleEra ptime.Era = ptime.Era(0)
 
-func (clk *Clock) readWorker(ctx context.Context, lg *slog.Logger, tsCh chan<- Event) {
-	defer func() {
-		_, err := clk.ExttsEnable(clk.chanIndex, false)
-		if err != nil {
-			lg.Warn("error while disabling external timestamping", "path", clk.Path(), "err", err)
+func hasCarrier(flags net.Flags) bool {
+	return flags&net.FlagRunning != 0
+}
+
+func noCarrier(flags net.Flags) bool {
+	return flags&net.FlagRunning == 0
+}
+
+func (clk *Clock) handleNoCarrier(ctx context.Context, lg *slog.Logger, tsCh chan<- Event, _ net.Flags) <-chan net.Flags {
+	tsCh <- Event{Kind: PauseEvent}
+	lg.Info("carrier lost; waiting for it to return", "interface", clk.ifName)
+	clk.logExttsEnable(lg, false)
+	wCh := clk.w.SetCond(hasCarrier)
+	// Note there's no default case in this select: we block until we get a carrier or cancellation
+	select {
+	case <-ctx.Done():
+		return nil
+	case _, ok := <-wCh:
+		if !ok {
+			lg.Warn("netlink error waiting for interface state change", "err", clk.w.Err(), "interface", clk.ifName)
+		} else {
+			lg.Info("carrier restored", "interface", clk.ifName)
 		}
-	}()
+	}
+	tsCh <- Event{
+		Kind: ResumeEvent,
+		ResumeFunc: func() ptime.Era {
+			era := clk.eraCounter.load()
+			clk.eraCounter.add(2)
+			return era
+		},
+	}
+	clk.logExttsEnable(lg, true)
+	return clk.w.SetCond(noCarrier)
+}
+
+func (clk *Clock) logExttsEnable(lg *slog.Logger, enable bool) {
+	_, err := clk.ExttsEnable(clk.chanIndex, enable)
+	if err != nil {
+		msg := "error disabling external timestamping"
+		if enable {
+			msg = "error enabling external timestamping"
+		}
+		lg.Warn(msg, "path", clk.Path(), "err", err)
+	}
+}
+
+func (clk *Clock) readWorker(ctx context.Context, lg *slog.Logger, tsCh chan<- Event) {
+	var wCh <-chan net.Flags
+	if clk.w != nil {
+		wCh = clk.w.SetCond(noCarrier)
+	}
+	defer clk.logExttsEnable(lg, false)
 	defer close(tsCh)
 	era := StaleEra
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case flags, ok := <-wCh:
+			if !ok {
+				lg.Warn("netlink error waiting for interface state change", "err", clk.w.Err())
+				wCh = nil
+				break
+			}
+			wCh = clk.handleNoCarrier(ctx, lg, tsCh, flags)
+			if wCh == nil {
+				return
+			}
 		default:
 		}
 		// The idea is that if we poll and there are no pending events, then any step to the clock

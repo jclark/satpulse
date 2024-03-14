@@ -88,6 +88,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 	defer d.lf.Close(d.lg)
 	lg.Debug("event dispatcher goroutine started")
 
+	staleEra := ts.StaleEra
 	nSkipped := 0
 	// give a warning if we haven't received a timestamp by the time this fires
 	firstTsDeadline := time.After(time.Second * 2)
@@ -95,27 +96,36 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 	for tsCh != nil || pktCh != nil {
 		select {
 		case e, ok := <-tsCh:
-			if ok {
-				if firstTsDeadline != nil {
-					lg.Info("successfully received a external timestamp from the PTP hardware clock")
-					firstTsDeadline = nil
-				}
-				if e.Ts.Era == ts.StaleEra {
-					if nSkipped == 0 {
-						lg.Debug("detected a stale PTP hardware clock timestamp", "t", e.Ts.T)
-					}
-					nSkipped++
-				} else {
-					if nSkipped > 0 {
-						lg.Info("skipped stale PTP hardware clock timestamps", "n", nSkipped)
-						nSkipped = 0
-					}
-					d.timestamp(e)
-				}
-			} else {
+			if !ok {
 				lg.Debug("timestamp channel of event dispatcher goroutine was closed")
 				tsCh = nil
+				continue
 			}
+			if e.Kind == ts.PauseEvent {
+				d.mon.Pause()
+				continue
+			}
+			if e.Kind == ts.ResumeEvent {
+				staleEra = e.ResumeFunc()
+				continue
+			}
+			if firstTsDeadline != nil {
+				lg.Info("successfully received a external timestamp from the PTP hardware clock")
+				firstTsDeadline = nil
+			}
+			if e.Ts.Era == staleEra {
+				if nSkipped == 0 {
+					lg.Debug("detected a stale PTP hardware clock timestamp", "t", e.Ts.T)
+				}
+				nSkipped++
+			} else {
+				if nSkipped > 0 {
+					lg.Info("skipped stale PTP hardware clock timestamps", "n", nSkipped)
+					nSkipped = 0
+				}
+				d.timestamp(e)
+			}
+
 		case pkt, ok := <-pktCh:
 			if ok {
 				d.handlePacket(pkt)
