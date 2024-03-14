@@ -22,6 +22,7 @@ type Monitor struct {
 	gm             *Grandmaster   // maybe nil
 	rc             *ProxyRefClock // maybe nil
 	inSync         bool
+	paused         bool
 	lastRefTime    ptime.Time
 	ppsStopped     bool
 	sseCh          chan<- sse.Event
@@ -93,10 +94,12 @@ func (mon *Monitor) ReopenLog() {
 func (mon *Monitor) Pause() {
 	mon.updateInSync(false)
 	mon.servo.Reset()
+	mon.paused = true
 }
 
 func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	mon.addMissingOffsets(ref)
+	mon.paused = false
 	off := local.T.Sub(ref)
 	kind := sampleOK
 	if !delayed && mon.isOutlier(off, local.Era) {
@@ -154,7 +157,9 @@ func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, era ptime.E
 	}
 	// in case where sampleOK and not locked, the servo will log
 	if kind == sampleMissing {
-		mon.lg.Info("missed 1PPS sample")
+		if !mon.paused {
+			mon.lg.Info("missed 1PPS sample")
+		}
 		return
 	}
 	if kind == sampleOutlier {
