@@ -103,6 +103,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 			}
 			if e.Kind == ts.PauseEvent {
 				d.mon.Pause()
+				continue
 			}
 			if e.Kind == ts.ResumeEvent {
 				staleEra = e.ResumeFunc()
