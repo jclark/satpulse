@@ -3,6 +3,7 @@ package combine
 import (
 	"errors"
 	"log/slog"
+	"math"
 	"slices"
 	"time"
 
@@ -270,6 +271,12 @@ func (c *Combiner) tryEmitFirstSample() {
 	c.pulses = c.pulses[:0]
 }
 
+// delayedSamples returns a list of samples for pulses that were delayed.
+// A pulse is delayed if we emit it after we have received a later pulse.
+// msgIndex is the index in c.secMsgList for the last pulse in c.pulses,
+// and refSample is the sampleData for that pulse.
+// The returned list is the samples for pulses preceding the last pulse in c.pulses.
+// The list should include only samples that are consistent with refSample.
 func (c *Combiner) delayedSamples(msgIndex int, refSample *sampleData) []sampleData {
 	pulseIndex := len(c.pulses) - 1
 	if pulseIndex == 0 {
@@ -285,8 +292,16 @@ func (c *Combiner) delayedSamples(msgIndex int, refSample *sampleData) []sampleD
 			pulse:       pulse,
 			pulseOffset: secMsg.pulseOffset(),
 		}
-		nextSec, _ := sample.chooseNextSec(c.pulses[pulseIndex], nil, &c.cfg)
-		if nextSec != nextSample.sec {
+		if sample.sec.Add(time.Second) != nextSample.sec {
+			break
+		}
+		d := nextSample.pulse.tDiff(pulse)
+		acc := math.Abs(1 - float64(d)/float64(time.Second))
+		// Require the interval between pulse read times to be within 15% of 1 second.
+		// If we make this too strict, then it will fail if the system clock is running very fast or very slow
+		// (which can happen if it is currently being adjusted by NTP).
+		// This check protects against missing pulses.
+		if acc > 0.15 {
 			break
 		}
 		pulseIndex--
@@ -294,6 +309,8 @@ func (c *Combiner) delayedSamples(msgIndex int, refSample *sampleData) []sampleD
 		samples[pulseIndex] = sample
 		nextSample = &sample
 	}
+	// XXX possibly require at least three pulses, and do some checks on consistency of difference
+	// between read times and difference between PHC times
 	return samples[pulseIndex:]
 }
 
