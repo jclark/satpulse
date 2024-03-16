@@ -1,0 +1,9 @@
+module satpulse 1.0;
+
+require {
+    type ptp4l_t;
+    type unconfined_service_t;
+    class unix_dgram_socket sendto;
+}
+
+allow ptp4l_t unconfined_service_t:unix_dgram_socket sendto;
