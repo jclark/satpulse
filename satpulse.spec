@@ -26,7 +26,7 @@ install -D -m 644 configs/config-schema.json %{buildroot}/usr/share/doc/satpulse
 install -D -m 644 doc/config.md %{buildroot}/usr/share/doc/satpulse/config.md
 install -D -m 644 doc/quickstart.md %{buildroot}/usr/share/doc/satpulse/quickstart.md
 install -D -m 644 LICENSE %{buildroot}/usr/share/doc/satpulse/copyright
-install -D -m 644 selinux/satpulse.pp.bz2 /usr/share/selinux/packages/%{selinuxtype}/satpulse.pp.bz2
+install -D -m 644 selinux/satpulse.pp.bz2 %{buildroot}/usr/share/selinux/packages/%{selinuxtype}/satpulse.pp.bz2
 
 %post
 systemctl daemon-reload
