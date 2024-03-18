@@ -35,6 +35,8 @@ The `.rpm` file can be installed using e.g.
 sudo rpm -i satpulse-0.20240229git8140799-1.x86_64.rpm
 ```
 
+Use `-U` instead of `-i` if you are upgrading from an earlier version.
+
 ### Install from source
 
 1. [Install Go](https://go.dev/doc/install)
