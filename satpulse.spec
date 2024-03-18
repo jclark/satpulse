@@ -8,6 +8,7 @@ URL: https://github.com/jclark/satpulse
 %global _build_id_links none
 %global source_date_epoch_from_changelog 0
 %global __os_install_post %{nil}
+%global selinuxtype targeted
 
 %description
 This requires an ethernet controller with a PPS input pin that is supported by
@@ -25,6 +26,16 @@ install -D -m 644 configs/config-schema.json %{buildroot}/usr/share/doc/satpulse
 install -D -m 644 doc/config.md %{buildroot}/usr/share/doc/satpulse/config.md
 install -D -m 644 doc/quickstart.md %{buildroot}/usr/share/doc/satpulse/quickstart.md
 install -D -m 644 LICENSE %{buildroot}/usr/share/doc/satpulse/copyright
+install -D -m 644 selinux/satpulse.pp.bz2 %{buildroot}/usr/share/selinux/packages/%{selinuxtype}/satpulse.pp.bz2
+
+%post
+systemctl daemon-reload
+semodule -i /usr/share/selinux/packages/%{selinuxtype}/satpulse.pp.bz2 >/dev/null 2>&1 || :
+
+%postun
+if [ $1 -eq 0 ]; then
+    semodule -r satpulse >/dev/null 2>&1 || :
+fi
 
 %files
 /usr/sbin/satpulsed
@@ -36,3 +47,4 @@ install -D -m 644 LICENSE %{buildroot}/usr/share/doc/satpulse/copyright
 /usr/share/doc/satpulse/config.md
 /usr/share/doc/satpulse/quickstart.md
 /usr/share/doc/satpulse/copyright
+/usr/share/selinux/packages/%{selinuxtype}/satpulse.pp.bz2
