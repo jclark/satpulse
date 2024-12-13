@@ -126,37 +126,37 @@ Systemd commmands need to be given the instantiated service name (although typic
 After editing the configuration file, you can start the service with
 
 ```
-sudo systemctl start systemd@ttyS0.service
+sudo systemctl start satpulse@ttyS0.service
 ```
 
 replacing `ttyS0` with the right value for your setup. You can the check that it is working with
 
 ```
-sudo systemctl status systemd@ttyS0.service
+sudo systemctl status satpulse@ttyS0.service
 ```
 
 This will make the service run automatically after the system boots:
 
 ```
-sudo systemctl enable systemd@ttyS0.service
+sudo systemctl enable satpulse@ttyS0.service
 ```
 
 Here are some other systemd command you may need. Stop the service:
 
 ```
-sudo systemctl stop systemd@ttyS0.service
+sudo systemctl stop satpulse@ttyS0.service
 ```
 
 Restart the service (e.g. after editing the configuration file)
 
 ```
-sudo systemctl stop systemd@ttyS0.service
+sudo systemctl stop satpulse@ttyS0.service
 ```
 
 Enable the service:
 
 ```
-sudo systemctl enable systemd@ttyS0.service
+sudo systemctl enable satpulse@ttyS0.service
 ```
 
 Show the logs for the last 5 minutes:
