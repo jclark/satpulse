@@ -22,11 +22,11 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 		return
 	}
 
-	opts := gpsprot.ConfigOptions{
-		Reset:      v.reset,
-		Flash:      v.flash,
-		ForceProbe: v.force,
-	}
+	target := gpsprot.NewConfigTarget(false)
+	opts := &target.Opts
+	opts.Reset = v.reset
+	opts.Flash = v.flash
+	opts.ForceProbe = v.force
 
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
@@ -39,7 +39,6 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	if err != nil {
 		return
 	}
-	target := gpsprot.NewConfigTarget(false)
 	cm := &target.Map
 	if v.pps {
 		cm.SetPPS()
