@@ -9,6 +9,7 @@ DEB_VERSION=1
 DEB_PKG_VERSION:= 0.0~git$(GIT_VERSION)-$(DEB_VERSION)
 RPM_RELEASE=1
 RPM_VERSION=$(shell env TZ=UTC git log -1 --format="0^%cdgit%h" --date=format-local:%Y%m%d)
+GITHUB_RELEASE=$(shell env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
 RPM_PKG_VERSION=$(RPM_VERSION)-$(RPM_RELEASE)
 XFLAGS:=-X \"$(CMD).gitVersion=$(GIT_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
 TAGS=netgo,osusergo
@@ -97,4 +98,15 @@ $(RPM_PATTERN): $(ALL_GOARCH) $(TOMLS)
 	--define "_rpmdir $$cwd/out" \
 	satpulse.spec
 
-.PHONY: $(ALL_GOARCH) all test install clean deb rpm
+release: $(DEBS) $(RPMS)
+	@if ! gh auth status >/dev/null 2>&1; then \
+		echo "GitHub CLI is not authenticated. Run 'gh auth login --insecure-storage' on the host and try again."; \
+		exit 1; \
+	fi
+	gh release create "v$(GITHUB_RELEASE)" \
+		--repo "jclark/satpulse" \
+		--title "Release v$(GITHUB_RELEASE)" \
+		--draft \
+		$(DEBS) $(RPMS)
+
+.PHONY: $(ALL_GOARCH) all test install clean deb rpm release
