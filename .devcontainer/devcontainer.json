@@ -2,20 +2,29 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/go
 {
 	"name": "Go",
-	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/go:1-1.22-bookworm",
-
-	// Features to add to the dev container. More info: https://containers.dev/features.
-	"features": {
-		"ghcr.io/devcontainers/features/github-cli:1": {}
-	},
+	
+	"build": {
+        "dockerfile": "Dockerfile"
+    },
 
 	// This is so that gh can use credentials from the host machine.
 	// This requires using `gh auth login --insecure-storage` on the host machine.
 	"mounts": [
 		"source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind"
 	],
+	// This ensures that the mounts work even if there was no previous gh configuration.
+	"initializeCommand": "[ -d ${HOME}/.config/gh ] || mkdir -p ${HOME}/.config/gh",
 	
+	"customizations": {
+    	// Configure properties specific to VS Code.
+    	"vscode": {
+      		// Add the IDs of extensions you want installed when the container is created.
+      		"extensions": [
+				"ms-azuretools.vscode-docker"
+			]
+    	}
+	},
+
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 
