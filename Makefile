@@ -59,8 +59,8 @@ test:
 clean:
 	-rm -rf out
 
-DEB_PATTERN=out/%/satpulse_$(DEB_PKG_VERSION)_%.deb
-DEBS=$(patsubst %,$(DEB_PATTERN), $(ALL_GOARCH))
+DEB_PATTERN=out/satpulse_$(DEB_PKG_VERSION)_%.deb
+DEBS:=$(patsubst %,$(DEB_PATTERN), $(ALL_GOARCH))
 deb: $(DEBS)
 
 $(DEB_PATTERN): % out/%/satpulse.toml
@@ -80,20 +80,24 @@ $(DEB_PATTERN): % out/%/satpulse.toml
 	sed -e '/^Architecture:/s/any/$*/' -e '/^Package:/a\
 	Version: $(DEB_PKG_VERSION)' -e '/^Maintainer:/a\
 	Installed-Size: '"$$installed_size" debian/control >out/$*/deb/DEBIAN/control
-	dpkg-deb --root-owner-group --build out/$*/deb out/$*
+	dpkg-deb --root-owner-group --build out/$*/deb out
 
-RPM_PATTERN=out/%/satpulse-$(RPM_PKG_VERSION).%.rpm
+RPM_PATTERN=out/satpulse-$(RPM_PKG_VERSION).%.rpm
 ALL_RPM_ARCH=aarch64 x86_64
-RPMS=$(patsubst %,$(RPM_PATTERN),$(ALL_RPM_ARCH))
+RPMS:=$(patsubst %,$(RPM_PATTERN),$(ALL_RPM_ARCH))
 rpm: $(RPMS)
 
+# The challenge here is that rpmbuild wants to put the generated RPMs in a subdirectory named by the architecture.
+# But if we follow that we will get endless pain from having patterns with two %s in them.
+# So we symlink each architecture to the current directory to avoid having the subdirectories.
 $(RPM_PATTERN): $(ALL_GOARCH) $(TOMLS)
 	goarch=$(subst x86_64,amd64,$(subst aarch64,arm64,$*)); \
-	test -L out/$* || ln -s $$goarch out/$*; \
+	test -L out/$* || ln -s . out/$*; \
+	echo ls -l out/$*; \
 	cwd=`pwd`; \
 	rpmbuild -bb --target $* --define "goarch $$goarch" \
 	--build-in-place \
-	--buildroot "$$cwd/out/$*/rpm" \
+	--buildroot "$$cwd/out/$$goarch/rpm" \
 	--define "version $(RPM_VERSION)" \
 	--define "_rpmdir $$cwd/out" \
 	satpulse.spec
