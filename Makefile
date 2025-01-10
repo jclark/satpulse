@@ -110,6 +110,7 @@ release: $(DEBS) $(RPMS)
 	gh release create "v$(GITHUB_RELEASE)" \
 		--repo "jclark/satpulse" \
 		--title "Release v$(GITHUB_RELEASE)" \
+		--notes "Automatically generated draft release" \
 		--draft \
 		$(DEBS) $(RPMS)
 
