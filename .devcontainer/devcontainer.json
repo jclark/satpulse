@@ -4,6 +4,8 @@
 	"name": "Go",
 	
 	"build": {
+		// Allow the Dockerfile to copy go.mod and go.sum.
+		"context": "..",
         "dockerfile": "Dockerfile"
     },
 
