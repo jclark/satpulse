@@ -9,7 +9,7 @@ DEB_VERSION=1
 DEB_PKG_VERSION:= 0.0~git$(GIT_VERSION)-$(DEB_VERSION)
 RPM_RELEASE=1
 RPM_VERSION=$(shell env TZ=UTC git log -1 --format="0^%cdgit%h" --date=format-local:%Y%m%d)
-GITHUB_RELEASE=$(shell env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
+GH_RELEASE=$(shell env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
 RPM_PKG_VERSION=$(RPM_VERSION)-$(RPM_RELEASE)
 XFLAGS:=-X \"$(CMD).gitVersion=$(GIT_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
 TAGS=netgo,osusergo
@@ -60,8 +60,15 @@ clean:
 	-rm -rf out
 
 DEB_PATTERN=out/satpulse_$(DEB_PKG_VERSION)_%.deb
+GH_DEB_PATTERN=out/satpulse_$(GH_RELEASE)_%.deb
 DEBS:=$(patsubst %,$(DEB_PATTERN), $(ALL_GOARCH))
-deb: $(DEBS)
+GH_DEBS:=$(patsubst %,$(GH_DEB_PATTERN), $(ALL_GOARCH))
+deb: $(GH_DEBS)
+
+$(GH_DEBS): $(DEBS)
+
+$(GH_DEB_PATTERN): $(DEB_PATTERN)
+	ln -s $< $@
 
 $(DEB_PATTERN): % out/%/satpulse.toml
 	install -D -m 644 debian/conffiles out/$*/deb/DEBIAN/conffiles
@@ -83,9 +90,13 @@ $(DEB_PATTERN): % out/%/satpulse.toml
 	dpkg-deb --root-owner-group --build out/$*/deb out
 
 RPM_PATTERN=out/satpulse-$(RPM_PKG_VERSION).%.rpm
+GH_RPM_PATTERN=out/satpulse-$(GH_RELEASE).%.rpm
 ALL_RPM_ARCH=aarch64 x86_64
 RPMS:=$(patsubst %,$(RPM_PATTERN),$(ALL_RPM_ARCH))
-rpm: $(RPMS)
+GH_RPMS:=$(patsubst %,$(GH_RPM_PATTERN),$(ALL_RPM_ARCH))
+rpm: $(GH_RPMS)
+
+$(GH_RPMS): $(RPMS)
 
 # The challenge here is that rpmbuild wants to put the generated RPMs in a subdirectory named by the architecture.
 # But if we follow that we will get endless pain from having patterns with two %s in them.
@@ -102,16 +113,19 @@ $(RPM_PATTERN): $(ALL_GOARCH) $(TOMLS)
 	--define "_rpmdir $$cwd/out" \
 	satpulse.spec
 
-release: $(DEBS) $(RPMS)
+$(GH_RPM_PATTERN): $(RPM_PATTERN)
+	ln -s $< $@
+
+release: $(GH_DEBS) $(GH_RPMS)
 	@if ! gh auth status >/dev/null 2>&1; then \
 		echo "GitHub CLI is not authenticated. Run 'gh auth login --insecure-storage' on the host and try again."; \
 		exit 1; \
 	fi
-	gh release create "v$(GITHUB_RELEASE)" \
+	gh release create "v$(GH_RELEASE)" \
 		--repo "jclark/satpulse" \
-		--title "Release v$(GITHUB_RELEASE)" \
+		--title "Release v$(GH_RELEASE)" \
 		--notes "Automatically generated draft release" \
 		--draft \
-		$(DEBS) $(RPMS)
+		$^
 
 .PHONY: $(ALL_GOARCH) all test install clean deb rpm release
