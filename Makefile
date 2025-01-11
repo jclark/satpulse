@@ -68,7 +68,7 @@ deb: $(GH_DEBS)
 $(GH_DEBS): $(DEBS)
 
 $(GH_DEB_PATTERN): $(DEB_PATTERN)
-	ln -s $< $@
+	ln -s $(notdir $<) $@
 
 $(DEB_PATTERN): % out/%/satpulse.toml
 	install -D -m 644 debian/conffiles out/$*/deb/DEBIAN/conffiles
@@ -114,7 +114,7 @@ $(RPM_PATTERN): $(ALL_GOARCH) $(TOMLS)
 	satpulse.spec
 
 $(GH_RPM_PATTERN): $(RPM_PATTERN)
-	ln -s $< $@
+	ln -s $(notdir $<) $@
 
 release: $(GH_DEBS) $(GH_RPMS)
 	@if ! gh auth status >/dev/null 2>&1; then \
