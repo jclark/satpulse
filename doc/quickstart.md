@@ -26,13 +26,13 @@ Got to the [Releases](https://github.com/jclark/satpulse/releases) page, then un
 The `.deb` file can be installed using e.g.
 
 ```
-sudo dpkg -i satpulse_0.0.git20240229.8140799-1_arm64.deb
+sudo dpkg -i satpulse_20250111_arm64.deb
 ```
 
 The `.rpm` file can be installed using e.g.
 
 ```
-sudo rpm -i satpulse-0.20240229git8140799-1.x86_64.rpm
+sudo rpm -i satpulse-20240229.x86_64.rpm
 ```
 
 Use `-U` instead of `-i` if you are upgrading from an earlier version.
@@ -61,7 +61,7 @@ The GPS receiver must have two connections to the computer on which SatPulse is 
 
 First, there will be a serial connection between the USB or serial port on the GPS receiver to a USB or serial port on the computer.
 You need to know which device this is. On a Raspberry Pi CM4 it is typically `/dev/ttyAMA0`.
-On a PC, it might be `/dev/ttyS0` or `/dev/ttyACM0` or `/dev/ttyUSB0`, with possibly a higher number than `0`.
+On a PC, it might be `/dev/ttyAMA0` or `/dev/ttyACM0` or `/dev/ttyUSB0`, with possibly a higher number than `0`.
 You also need to know the speed the GPS receiver is using; 9600 is the most common speed, but some recent devices use 38400.
 
 Second, there will be a PPS connection between the PPS output of the GPS receiver and the pin on the ethernet controller.
@@ -120,49 +120,49 @@ The above configuration file specifies that
 ## Systemd commands
 
 The systemd service template name is `satpulse@.service` and the expected argument is the serial device name without `/dev/`.
-For example, if the serial device is `/dev/ttyS0`, then the instantiated service would be named `satpulse@ttyS0.service`.
+For example, if the serial device is `/dev/ttyAMA0`, then the instantiated service would be named `satpulse@ttyAMA0.service`.
 Systemd commmands need to be given the instantiated service name (although typically the `.service` part can be left out).
 
 After editing the configuration file, you can start the service with
 
 ```
-sudo systemctl start satpulse@ttyS0.service
+sudo systemctl start satpulse@ttyAMA0.service
 ```
 
-replacing `ttyS0` with the right value for your setup. You can the check that it is working with
+replacing `ttyAMA0` with the right value for your setup. You can the check that it is working with
 
 ```
-sudo systemctl status satpulse@ttyS0.service
+sudo systemctl status satpulse@ttyAMA0.service
 ```
 
 This will make the service run automatically after the system boots:
 
 ```
-sudo systemctl enable satpulse@ttyS0.service
+sudo systemctl enable satpulse@ttyAMA0.service
 ```
 
 Here are some other systemd command you may need. Stop the service:
 
 ```
-sudo systemctl stop satpulse@ttyS0.service
+sudo systemctl stop satpulse@ttyAMA0.service
 ```
 
 Restart the service (e.g. after editing the configuration file)
 
 ```
-sudo systemctl stop satpulse@ttyS0.service
+sudo systemctl stop satpulse@ttyAMA0.service
 ```
 
 Enable the service:
 
 ```
-sudo systemctl enable satpulse@ttyS0.service
+sudo systemctl enable satpulse@ttyAMA0.service
 ```
 
 Show the logs for the last 5 minutes:
 
 ```
-sudo journalctl -u satpulse@ttyACM0 -S -5m
+sudo journalctl -u satpulse@ttyAMA0 -S -5m
 ```
 
 ## Install and configure ptp4l as a PTP server
@@ -189,7 +189,7 @@ You can start with this:
 # We don't want ptp4l and satpulse to both adjust the PHC, so only run as a master.
 masterOnly 1
 
-# Uncomment this for rPI CM4
+# Uncomment this for rPI CM4 or CM5
 # tx_timestamp_timeout 100
 
 # The presence of this section makes ptp4l run on this interface.
@@ -215,7 +215,7 @@ refclock SOCK /var/run/chrony.satpulse.sock poll 2 filter 4 refid GNSS
 ```
 
 On Fedora, just add it to `/etc/chrony.conf`.
-On Debian, I suggest making it a separate file `/etc/chrony.d/conf.d/satpulse.conf`.
+On Debian, I suggest making it a separate file `/etc/chrony/conf.d/satpulse.conf`.
 The socket path here `/var/run/chrony.satpulse.sock` needs to match that specified by the `sock.path` key in the `ntp` table.
 
 Then restart chrony. The service is named `chrony` on Debian, and `chronyd` on Fedora.
