@@ -38,6 +38,7 @@ func New(clk Clock, lg *slog.Logger) (*Servo, error) {
 	}
 	s.freqOff = f
 	s.maxFreqOff = clk.MaxFreqOffset()
+	lg.Info("initial uncorrected frequency offset", "freq", f, "maxFreq", s.maxFreqOff)
 	return &s, nil
 }
 
@@ -148,6 +149,7 @@ func (s *Servo) resetSampler() {
 		freqOff = (1e9+freqOff)*ratio - 1e9
 
 		s.setFreqOff(freqOff)
+		s.lg.Info("initial corrected frequency", "freq", freqOff, "refPeriod", refPeriod, "localPeriod", localPeriod)
 		off := ref.Sub(local.T)
 		if off.Abs() < minInitialStep {
 			s.piControlSampler(local.Era, freqOff)
@@ -162,11 +164,16 @@ func (s *Servo) resetSampler() {
 // In the ethernet drivers we are interested in, ADJ_SETOFFSET works by
 // reading a time value, applying a delta to the read value,
 // and then writing the value back. This takes time, which the drivers
-// don't attempt to compensate for. It's about 4.5 microseconds with an i210.
+// don't attempt to compensate for. It's of the order of a few microseconds with an i210.
 // To compensate for this, after the resetSampler sets the time correctly, we look at the offset
 // between the next pulse of the PHC clock and the GPS time, and assume
 // that this is the delay. We then set the clock again compensating for
 // this delay.
+// XXX This assumption isn't quite right, because the offset could also be due differences
+// in the frequency of the PHC clock and the GPS clock. We corrected the frequency just before
+// running this, but there is small delay between the time of the pulse and the time that the
+// frequency was corrected: during that time the the PHC clock was running at the wrong frequency,
+// which would cause the offset to be slightly wrong.
 func (s *Servo) compensateSampler(era ptime.Era, freqOff float64) {
 	s.sampler = func(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 		if local.Era != era || delayed {
