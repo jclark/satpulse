@@ -84,6 +84,15 @@ func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clo
 	if err != nil {
 		return nil, err
 	}
+	if !wait {
+		iface, err := net.InterfaceByName(ifName)
+		if err != nil {
+			return nil, err
+		}
+		if iface.Flags&net.FlagUp == 0 {
+			lg.Warn("interface is down: PTP hardware clock external timestamps may not work", "name", ifName)
+		}
+	}
 	if flags&phc.DriverCarrier != 0 {
 		if w == nil {
 			w, err = ifwait.NewIfWaiter(ifName)
