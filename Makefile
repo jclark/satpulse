@@ -53,6 +53,17 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	install -D -m 644 doc/quickstart.md /usr/local/share/doc/satpulse/quickstart.md
 	systemctl daemon-reload
 
+uninstall:
+	systemctl stop 'satpulse@*.service'
+	rm -f /etc/systemd/system/satpulse@.service
+	rm -f /usr/local/sbin/satpulsed
+	rm -f /usr/local/bin/satpulsetool
+	# we don't uninstall /usr/local/etc/satpulse.toml
+	rm -f /usr/local/share/doc/satpulse/config-schema.json
+	rm -f /usr/local/share/doc/satpulse/config.md
+	rm -f /usr/local/share/doc/satpulse/quickstart.md
+	systemctl daemon-reload
+
 test:
 	go test -v ./...
 
@@ -128,4 +139,4 @@ release: $(GH_DEBS) $(GH_RPMS)
 		--draft \
 		$^
 
-.PHONY: $(ALL_GOARCH) all test install clean deb rpm release
+.PHONY: $(ALL_GOARCH) all test install uninstall clean deb rpm release
