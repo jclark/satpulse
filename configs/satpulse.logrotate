@@ -1,0 +1,13 @@
+/var/log/satpulse/*.log /var/log/satpulse/*.jsonl {
+	missingok
+	nocreate
+	compress
+	daily
+	dateext
+	notifempty
+	rotate 14
+	sharedscripts
+	postrotate
+		systemctl kill --signal HUP 'satpulse@*.service' >/dev/null 2>&1 || true
+	endscript
+}
