@@ -70,6 +70,8 @@ test:
 clean:
 	-rm -rf out
 
+pkg: deb rpm
+
 DEB_PATTERN=out/satpulse_$(DEB_PKG_VERSION)_%.deb
 GH_DEB_PATTERN=out/satpulse_$(GH_RELEASE)_%.deb
 DEBS:=$(patsubst %,$(DEB_PATTERN), $(ALL_GOARCH))
@@ -139,4 +141,4 @@ release: $(GH_DEBS) $(GH_RPMS)
 		--draft \
 		$^
 
-.PHONY: $(ALL_GOARCH) all test install uninstall clean deb rpm release
+.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release
