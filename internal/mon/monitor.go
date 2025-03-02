@@ -12,6 +12,7 @@ import (
 )
 
 const sampleWindowSize = 60
+const alpha = 0.1
 
 type Monitor struct {
 	samples        *sampleWindow
@@ -28,6 +29,7 @@ type Monitor struct {
 	sseCh          chan<- sse.Event
 	stats          stats
 	lf             logfile.LogFile
+	avgFilter      *avgFilter
 }
 
 type stats struct {
@@ -64,6 +66,7 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 		rc:         cfg.RefClock,
 		sseCh:      cfg.SSECh,
 		stats:      stats{interval: cfg.LogInterval},
+		avgFilter:  newAvgFilter(alpha),
 	}
 
 	err := mon.lf.Open(cfg.ClockLogPath)
@@ -94,6 +97,7 @@ func (mon *Monitor) ReopenLog() {
 func (mon *Monitor) Pause() {
 	mon.updateInSync(false)
 	mon.servo.Reset()
+	mon.avgFilter.reset()
 	mon.paused = true
 }
 
@@ -102,10 +106,15 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	mon.paused = false
 	off := local.T.Sub(ref)
 	kind := sampleOK
+	smoothedOff := off.Seconds()
 	if !delayed && mon.isOutlier(off, local.Era) {
 		kind = sampleOutlier
 	} else {
-		mon.servo.Sample(ref, local, delayed)
+		smoothedOff = mon.avgFilter.add(smoothedOff, local.Era)
+		mon.servo.Sample(ref, ptime.ClockTime{
+			T:   ref.Add(time.Duration(smoothedOff) * time.Second),
+			Era: local.Era,
+		}, delayed)
 	}
 	freq := mon.servo.FreqOffset()
 	mon.recordSample(kind, off, local.Era, freq)
