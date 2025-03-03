@@ -60,7 +60,7 @@ func IfDriverNameFlags(driverName string) (DriverFlags, bool) {
 	switch driverName {
 	case "igb", "igc":
 		return intelFlags, false
-	case "bcmgenet":
+	case "bcmgenet", "macb":
 		return 0, true
 	default:
 		return 0, false
