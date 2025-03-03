@@ -12,7 +12,7 @@ import (
 )
 
 const sampleWindowSize = 60
-const alpha = 0.1
+const alpha = 0.3
 
 type Monitor struct {
 	samples        *sampleWindow
@@ -106,15 +106,19 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	mon.paused = false
 	off := local.T.Sub(ref)
 	kind := sampleOK
-	smoothedOff := off.Seconds()
 	if !delayed && mon.isOutlier(off, local.Era) {
 		kind = sampleOutlier
 	} else {
-		smoothedOff = mon.avgFilter.add(smoothedOff, local.Era)
-		mon.servo.Sample(ref, ptime.ClockTime{
-			T:   ref.Add(time.Duration(smoothedOff) * time.Second),
-			Era: local.Era,
-		}, delayed)
+		smoothedLocal := local
+		if mon.servo.Locked(local.Era) {
+			smoothedOff := mon.avgFilter.add(float64(off), local.Era)
+			mon.lg.Info("smoothed offset", "rawOff", off, "smoothedOff", time.Duration(smoothedOff))
+			smoothedLocal = ptime.ClockTime{
+				T:   ref.Add(time.Duration(smoothedOff)),
+				Era: local.Era,
+			}
+		}
+		mon.servo.Sample(ref, smoothedLocal, delayed)
 	}
 	freq := mon.servo.FreqOffset()
 	mon.recordSample(kind, off, local.Era, freq)

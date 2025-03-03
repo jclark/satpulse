@@ -18,53 +18,66 @@ import (
 // using the relationship: warmupCount = (2/alpha)-1, which corresponds to the
 // effective window size of the EMA.
 type avgFilter struct {
-	alpha       float64   // Target smoothing factor after warmup
-	value       float64   // Current EMA value
-	count       int       // Number of samples seen in current era
-	warmupCount int       // Number of samples for warmup
-	era         ptime.Era // Current era
+	alpha      float64   // Target smoothing factor after warmup
+	value      float64   // Current EMA value
+	initVals []float64 // Raw values during warmup phase
+	era        ptime.Era // Current era
 }
 
 func newAvgFilter(alpha float64) *avgFilter {
-	// Calculate warmup period based on alpha
-	warmupCount := int((2.0 / alpha) - 1)
-	if warmupCount < 3 {
-		warmupCount = 3
-	}
-
 	return &avgFilter{
-		alpha:       alpha,
-		warmupCount: warmupCount,
+		alpha:      alpha,
+		initVals: make([]float64, 0, warmupCount(alpha)),
 	}
 }
 
 func (af *avgFilter) reset() {
-	af.count = 0
+	af.initVals = make([]float64, 0, warmupCount(af.alpha))
+}
+
+func warmupCount(alpha float64) int {
+	count := int((2.0 / alpha) - 1)
+	if count < 3 {
+		count = 3
+	}
+	return count
 }
 
 func (af *avgFilter) add(v float64, era ptime.Era) float64 {
-	// First sample after reset: just use the raw value
-	if af.count == 0 || era != af.era {
+	if era != af.era {
 		af.era = era
-		af.count = 1
-		af.value = v
+		af.reset()
+	} else if af.initVals == nil {
+		// After warmup: use target alpha directly
+		af.value = af.alpha*v + (1-af.alpha)*af.value
+		return af.value
+	}
+
+	af.initVals = append(af.initVals, v)
+
+	count := len(af.initVals)
+
+	if count == 1 {
 		return v
 	}
 
-	// Calculate current alpha based on our position in the warmup period
-	var a float64
-	if af.count < af.warmupCount {
-		// Using the inverse of the warmupCount formula: a = 2/(n+1)
-		// This gives higher alpha values for smaller count values
-		a = 2.0 / (float64(af.count) + 1)
-	} else {
-		// After warmup: use target alpha
-		a = af.alpha
+	a := af.alpha
+
+	// If we haven't completed warmup, compute an appropriate alpha
+	// by inverting the formula in warmupCount.
+	if count < cap(af.initVals) {
+		a = 2.0 / (float64(len(af.initVals)) + 1)
 	}
 
-	// Apply EMA with current alpha
-	af.value = a*v + (1-a)*af.value
+	// Compute the EMA using the alpha.
+	ema := af.initVals[0]
+	for i := 1; i < count; i++ {
+		ema = a*af.initVals[i] + (1-a)*ema
+	}
 
-	af.count++
+	if count == cap(af.initVals) {
+		af.initVals = nil
+	}
+	af.value = ema
 	return af.value
 }
