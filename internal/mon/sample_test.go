@@ -55,9 +55,9 @@ var inSyncTests = [][]sampleData{
 	},
 }
 
-func TestInSync(t *testing.T) {
+func TestSyncState(t *testing.T) {
 	for i, test := range inSyncTests {
-		inSync := false
+		syncState := noSync
 		w := newSampleWindow(sampleWindowSize)
 		for j, s := range test {
 			if s.kind != sampleMissing && w.madIsOutlier(s.off, &defaultSampleConfig) != (s.kind == sampleOutlier) {
@@ -65,10 +65,13 @@ func TestInSync(t *testing.T) {
 				t.Errorf("Test %d, sample %d, expected madIsOutlier == %v (n = %d, min = %v, max = %v)", i, j, s.kind == sampleOutlier, n, min, max)
 			}
 			w.append(s.kind, s.off, 1)
-			inSync = w.isInSync(inSync, &defaultSampleConfig)
-			expectInSync := (j + 1) >= defaultSampleConfig.minGood
-			if inSync != expectInSync {
-				t.Errorf("Test %d, sample %d, expected isInSync == %v", i, j, expectInSync)
+			syncState = w.nextSyncState(inSync, &defaultSampleConfig)
+			expectSyncState := noSync
+			if (j + 1) >= defaultSampleConfig.minGood {
+				expectSyncState = inSync
+			}
+			if syncState != expectSyncState {
+				t.Errorf("Test %d, sample %d, expectedSyncState == %v", i, j, expectSyncState)
 			}
 		}
 	}

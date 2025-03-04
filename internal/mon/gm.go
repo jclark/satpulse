@@ -26,7 +26,7 @@ type GrandmasterProps struct {
 func NewGrandmaster() (*Grandmaster, <-chan GrandmasterUpdateRequest) {
 	updateCh := make(chan GrandmasterUpdateRequest, 1)
 	gm := &Grandmaster{updateCh: updateCh}
-	gm.target.SetClockInSync(false)
+	gm.SetClockSync(noSync)
 	return gm, updateCh
 }
 
@@ -34,8 +34,8 @@ func (gm *Grandmaster) Close() {
 	close(gm.updateCh)
 }
 
-func (gm *Grandmaster) Update(inSync bool, leap ptime.LeapSecondState) {
-	gm.target.SetClockInSync(inSync)
+func (gm *Grandmaster) Update(state syncState, leap ptime.LeapSecondState) {
+	gm.SetClockSync(state)
 	gm.target.LeapSecondState = leap
 
 	gm.handleResponse()
@@ -45,7 +45,7 @@ func (gm *Grandmaster) Update(inSync bool, leap ptime.LeapSecondState) {
 	}
 	if gm.actual == nil {
 		// First update
-		if !inSync {
+		if state == noSync {
 			return
 		}
 	} else if gm.target == *gm.actual {
@@ -76,19 +76,28 @@ func (gm *Grandmaster) handleResponse() {
 	}
 }
 
-func (props *GrandmasterProps) SetClockInSync(inSync bool) {
-	if inSync {
-		props.ClockClass = pmc.ClockClassSyncPrimaryRef
-		props.ClockAccuracy = pmc.ClockAccuracyWithin100ns
-	} else {
-		// DegradedA means using PTP timescale, not in sync, but won't be slave using default BMCA
-		props.ClockClass = pmc.ClockClassDegradedA
-		props.ClockAccuracy = pmc.ClockAccuracyUnknown
-	}
+func (gm *Grandmaster) SetClockSync(syncState syncState) {
+	gm.target.SetClock(gm.clockAccuracy(syncState))
 }
 
-func (props *GrandmasterProps) ClockInSync() bool {
-	return props.ClockClass == pmc.ClockClassSyncPrimaryRef
+const noSyncAccuracy = pmc.ClockAccuracyUnknown
+const inSyncAccuracy = pmc.ClockAccuracyWithin100ns
+
+func (gm *Grandmaster) clockAccuracy(syncState syncState) pmc.ClockAccuracy {
+	switch syncState {
+	case inSync:
+		return inSyncAccuracy
+	}
+	return noSyncAccuracy
+}
+
+func (props *GrandmasterProps) SetClock(acc pmc.ClockAccuracy) {
+	props.ClockAccuracy = acc
+	if acc == pmc.ClockAccuracyUnknown {
+		props.ClockClass = pmc.ClockClassDegradedA
+	} else {
+		props.ClockClass = pmc.ClockClassSyncPrimaryRef
+	}
 }
 
 func (props *GrandmasterProps) Settings() pmc.GrandmasterSettings {

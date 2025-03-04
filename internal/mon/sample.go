@@ -67,8 +67,8 @@ var defaultSampleConfig = sampleConfig{
 	madMinSamples: 10,
 }
 
-func (w *sampleWindow) isInSync(curInSync bool, cfg *sampleConfig) bool {
-	inSync := false
+func (w *sampleWindow) nextSyncState(curState syncState, cfg *sampleConfig) syncState {
+	nextState := noSync
 	nGood := 0
 	nConsecBad := 0
 	nTotalBad := 0
@@ -81,7 +81,7 @@ func (w *sampleWindow) isInSync(curInSync bool, cfg *sampleConfig) bool {
 			nGood++
 			nConsecBad = 0
 			if nGood >= cfg.minGood {
-				inSync = true
+				nextState = inSync
 				return false
 			}
 		default:
@@ -89,13 +89,13 @@ func (w *sampleWindow) isInSync(curInSync bool, cfg *sampleConfig) bool {
 			nTotalBad++
 			// if we've gone out of sync, don't allow any bad (missing/outlier) values;
 			// otherwise allow up to holdoverSecs consecutive bad values
-			if !curInSync || nConsecBad > cfg.maxConsecBad || nTotalBad > cfg.maxTotalBad {
+			if curState == noSync || nConsecBad > cfg.maxConsecBad || nTotalBad > cfg.maxTotalBad {
 				return false
 			}
 		}
 		return true
 	})
-	return inSync
+	return nextState
 }
 
 func (w *sampleWindow) madIsOutlier(offSecs float64, cfg *sampleConfig) bool {

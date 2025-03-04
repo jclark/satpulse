@@ -21,7 +21,7 @@ type Monitor struct {
 	lg             *slog.Logger
 	gm             *Grandmaster   // maybe nil
 	rc             *ProxyRefClock // maybe nil
-	inSync         bool
+	syncState      syncState
 	paused         bool
 	lastRefTime    ptime.Time
 	ppsStopped     bool
@@ -64,6 +64,7 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 		rc:         cfg.RefClock,
 		sseCh:      cfg.SSECh,
 		stats:      stats{interval: cfg.LogInterval},
+		syncState:  noSync,
 	}
 
 	err := mon.lf.Open(cfg.ClockLogPath)
@@ -76,7 +77,7 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 
 func (mon *Monitor) Close() {
 	mon.lg.Debug("closing monitor")
-	mon.updateInSync(false)
+	mon.updateSyncState(noSync)
 	if mon.gm != nil {
 		mon.gm.Close()
 	}
@@ -92,7 +93,7 @@ func (mon *Monitor) ReopenLog() {
 }
 
 func (mon *Monitor) Pause() {
-	mon.updateInSync(false)
+	mon.updateSyncState(noSync)
 	mon.servo.Reset()
 	mon.paused = true
 }
@@ -114,14 +115,14 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	if delayed {
 		return
 	}
-	inSync := mon.isInSync()
+	nextState := mon.nextSyncState()
 	now := time.Now()
 	mon.lastSampleTime = now
 	if mon.ppsStopped {
 		mon.lg.Warn("1PPS signal restored")
 		mon.ppsStopped = false
 	}
-	mon.updateInSync(inSync)
+	mon.updateSyncState(nextState)
 }
 
 func (mon *Monitor) addMissingOffsets(ref ptime.Time) {
@@ -230,7 +231,7 @@ func (mon *Monitor) sendEvent(kind sampleKind, off time.Duration, era ptime.Era,
 }
 
 func (mon *Monitor) SysSample(ref ptime.Time, sys time.Time) {
-	if mon.rc == nil || !mon.inSync {
+	if mon.rc == nil || mon.syncState == noSync {
 		return
 	}
 	err := mon.rc.Sample(sys, ref, mon.leapSecond)
@@ -243,7 +244,7 @@ const holdoverSecs = 10
 const sampleIntervalMax = time.Second + time.Second/2
 
 func (mon *Monitor) Tick(now time.Time) {
-	if !mon.inSync {
+	if mon.syncState == noSync {
 		return
 	}
 	t := now.Sub(mon.lastSampleTime)
@@ -260,12 +261,12 @@ func (mon *Monitor) Tick(now time.Time) {
 	mon.lastRefTime = mon.lastRefTime.Add(time.Second)
 	mon.recordSample(sampleMissing, 0, mon.samples.Era, mon.servo.FreqOffset())
 	if t > holdoverSecs*time.Second {
-		mon.updateInSync(false)
+		mon.updateSyncState(noSync)
 	}
 }
 
-func (mon *Monitor) isInSync() bool {
-	return mon.samples.isInSync(mon.inSync, &defaultSampleConfig)
+func (mon *Monitor) nextSyncState() syncState {
+	return mon.samples.nextSyncState(mon.syncState, &defaultSampleConfig)
 }
 
 func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
@@ -284,17 +285,17 @@ func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
 	return mon.samples.madIsOutlier(offSecs, &defaultSampleConfig)
 }
 
-func (mon *Monitor) updateInSync(inSync bool) {
-	if inSync != mon.inSync {
-		mon.lg.Warn("synchronization status has changed", "inSync", inSync)
-		mon.inSync = inSync
+func (mon *Monitor) updateSyncState(state syncState) {
+	if state != mon.syncState {
+		mon.lg.Warn("synchronization status has changed", "syncState", state)
+		mon.syncState = state
 	}
 	mon.gmUpdate()
 }
 
 func (mon *Monitor) gmUpdate() {
 	if mon.gm != nil && !mon.lastRefTime.IsZero() {
-		mon.gm.Update(mon.inSync, mon.leapSecond.StateAt(mon.lastRefTime))
+		mon.gm.Update(mon.syncState, mon.leapSecond.StateAt(mon.lastRefTime))
 	}
 }
 
