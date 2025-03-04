@@ -176,6 +176,7 @@ The `ptp` table controls this. It can have the following keys:
 * `domain` - the PTP domain number; this defaults to 0
 * `majorSdoId` - the PTP majorSdoId; this defaults to 0; in earlier versions of the PTP standard this is called `transportSpecific`
 * `minorSdoId` - the PTP minorSdoId; this defaults to 0
+* `clockAccuracy` - the accuracy in nanoseconds of the PHC to report to the grandmaster; this accuracy is reported when the PHC is determined to be in sync with the GPS; the maximum supported value is 1000; the default is 250; it will be rounded up to a value supported by PTP (i.e. 10, 25, 100, 250, 1000)
 
 Example
 

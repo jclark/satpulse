@@ -15,6 +15,7 @@ type Grandmaster struct {
 	actual   *GrandmasterProps
 	respCh   chan GrandmasterProps           // maybe nil
 	updateCh chan<- GrandmasterUpdateRequest // never nil
+	clockAcc pmc.ClockAccuracy
 }
 
 type GrandmasterProps struct {
@@ -23,9 +24,14 @@ type GrandmasterProps struct {
 	ClockAccuracy pmc.ClockAccuracy
 }
 
-func NewGrandmaster() (*Grandmaster, <-chan GrandmasterUpdateRequest) {
+const defaultClockAccuracy = pmc.ClockAccuracyWithin250ns
+
+func NewGrandmaster(clockAcc pmc.ClockAccuracy) (*Grandmaster, <-chan GrandmasterUpdateRequest) {
 	updateCh := make(chan GrandmasterUpdateRequest, 1)
-	gm := &Grandmaster{updateCh: updateCh}
+	if clockAcc == 0 {
+		clockAcc = defaultClockAccuracy
+	}
+	gm := &Grandmaster{updateCh: updateCh, clockAcc: clockAcc}
 	gm.SetClockSync(noSync)
 	return gm, updateCh
 }
@@ -81,12 +87,11 @@ func (gm *Grandmaster) SetClockSync(syncState syncState) {
 }
 
 const noSyncAccuracy = pmc.ClockAccuracyUnknown
-const inSyncAccuracy = pmc.ClockAccuracyWithin100ns
 
 func (gm *Grandmaster) clockAccuracy(syncState syncState) pmc.ClockAccuracy {
 	switch syncState {
 	case inSync:
-		return inSyncAccuracy
+		return gm.clockAcc
 	}
 	return noSyncAccuracy
 }

@@ -53,10 +53,11 @@ type LeapSecondConfig struct {
 }
 
 type PTPConfig struct {
-	DomainNumber uint8        `toml:"domainNumber"`
-	MajorSdoID   uint8        `toml:"majorSdoId"`
-	MinorSdoID   uint8        `toml:"minorSdoId"`
-	PTP4L        *PTP4LConfig `toml:"ptp4l"`
+	ClockAccuracy int       `toml:"clockAccuracy"`
+	DomainNumber  uint8        `toml:"domainNumber"`
+	MajorSdoID    uint8        `toml:"majorSdoId"`
+	MinorSdoID    uint8        `toml:"minorSdoId"`
+	PTP4L         *PTP4LConfig `toml:"ptp4l"`
 }
 
 type PTP4LConfig struct {
@@ -176,6 +177,17 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 	cl.MajorSdoID = cfg.MajorSdoID
 	cl.MinorSdoID = cfg.MinorSdoID
 	return cl, nil
+}
+
+func (cfg *PTPConfig) getClockAccuracy() (pmc.ClockAccuracy, error) {
+	if cfg.ClockAccuracy == 0 {
+		return 0, nil
+	}
+	acc := pmc.DurationToClockAccuracy(time.Duration(cfg.ClockAccuracy))
+	if acc == 0 {
+		return 0, fmt.Errorf("%d: out of range clock accuracy", cfg.ClockAccuracy)
+	}
+	return acc, nil
 }
 
 // ClockPath returns the path for the clock log file.

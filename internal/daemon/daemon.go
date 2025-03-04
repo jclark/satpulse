@@ -205,7 +205,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 	if pmcClient != nil {
-		gm, gmUpdateCh = mon.NewGrandmaster()
+		acc, err := cfg.PTP.getClockAccuracy()
+		if err != nil {
+			return err
+		}
+		gm, gmUpdateCh = mon.NewGrandmaster(acc)
 	}
 
 	rc, err := cfg.NTP.NewRefClock(lg)

@@ -121,7 +121,8 @@
 	  },
 	  "ptp": {
 		"type": "object",
-		"properties": {		  
+		"properties": {
+		  "clockAccuracy": { "type": "integer", "minimum": 0, "maximum": 1000 },		  
 		  "domainNumber": { "type": "integer" },
 		  "majorSdoId": { "type": "integer" },
 		  "minorSdoId": { "type": "integer" },
