@@ -1,6 +1,74 @@
 package pmc
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+func TestDurationToClockAccuracy(t *testing.T) {
+	tests := []struct {
+		name     string
+		duration time.Duration
+		want     ClockAccuracy
+	}{
+		{"Zero", 0, 0},
+		{"Negative", -1 * time.Nanosecond, 0},
+		{"Over10s", 11 * time.Second, 0},
+
+		// Test all accuracy levels
+		{"1ns", 1 * time.Nanosecond, ClockAccuracyWithin1ns},
+		{"2ns", 2 * time.Nanosecond, ClockAccuracyWithin2point5ns},
+		{"3ns", 3 * time.Nanosecond, ClockAccuracyWithin10ns},
+		{"10ns", 10 * time.Nanosecond, ClockAccuracyWithin10ns},
+		{"24ns", 24 * time.Nanosecond, ClockAccuracyWithin25ns},
+		{"25ns", 25 * time.Nanosecond, ClockAccuracyWithin25ns},
+		{"99ns", 99 * time.Nanosecond, ClockAccuracyWithin100ns},
+		{"100ns", 100 * time.Nanosecond, ClockAccuracyWithin100ns},
+		{"249ns", 249 * time.Nanosecond, ClockAccuracyWithin250ns},
+		{"250ns", 250 * time.Nanosecond, ClockAccuracyWithin250ns},
+
+		{"1µs", 1 * time.Microsecond, ClockAccuracyWithin1us},
+		{"2µs", 2 * time.Microsecond, ClockAccuracyWithin2point5us},
+		{"2.5µs", 2500 * time.Nanosecond, ClockAccuracyWithin2point5us},
+		{"3µs", 3 * time.Microsecond, ClockAccuracyWithin10us},
+		{"10µs", 10 * time.Microsecond, ClockAccuracyWithin10us},
+		{"24µs", 24 * time.Microsecond, ClockAccuracyWithin25us},
+		{"25µs", 25 * time.Microsecond, ClockAccuracyWithin25us},
+		{"99µs", 99 * time.Microsecond, ClockAccuracyWithin100us},
+		{"100µs", 100 * time.Microsecond, ClockAccuracyWithin100us},
+		{"249µs", 249 * time.Microsecond, ClockAccuracyWithin250us},
+		{"250µs", 250 * time.Microsecond, ClockAccuracyWithin250us},
+
+		{"1ms", 1 * time.Millisecond, ClockAccuracyWithin1ms},
+		{"2ms", 2 * time.Millisecond, ClockAccuracyWithin2point5ms},
+		{"2.5ms", 2500 * time.Microsecond, ClockAccuracyWithin2point5ms},
+		{"3ms", 3 * time.Millisecond, ClockAccuracyWithin10ms},
+		{"10ms", 10 * time.Millisecond, ClockAccuracyWithin10ms},
+		{"24ms", 24 * time.Millisecond, ClockAccuracyWithin25ms},
+		{"25ms", 25 * time.Millisecond, ClockAccuracyWithin25ms},
+		{"99ms", 99 * time.Millisecond, ClockAccuracyWithin100ms},
+		{"100ms", 100 * time.Millisecond, ClockAccuracyWithin100ms},
+		{"249ms", 249 * time.Millisecond, ClockAccuracyWithin250ms},
+		{"250ms", 250 * time.Millisecond, ClockAccuracyWithin250ms},
+
+		{"1s", 1 * time.Second, ClockAccuracyWithin1s},
+		{"9s", 9 * time.Second, ClockAccuracyWithin10s},
+		{"10s", 10 * time.Second, ClockAccuracyWithin10s},
+
+		// Edge cases
+		{"Just under 10s", 9999 * time.Millisecond, ClockAccuracyWithin10s},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DurationToClockAccuracy(tt.duration)
+			if got != tt.want {
+				t.Errorf("DurationToClockAccuracy(%v) = %v (%s), want %v (%s)",
+					tt.duration, got, got.Description(), tt.want, tt.want.Description())
+			}
+		})
+	}
+}
 
 func TestClockAccuracyDescription(t *testing.T) {
 	for _, tc := range []struct {

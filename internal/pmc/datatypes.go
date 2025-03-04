@@ -5,6 +5,7 @@ package pmc
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -80,31 +81,48 @@ type scaledTime struct {
 
 var clockAccuracyWithin = []scaledTime{
 	{1, 12},
-	{25, 11},
+	{25, 13},
 	{10, 12},
 	{25, 12},
 	{100, 12},
 	{250, 12},
 	{1, 9},
-	{25, 8},
+	{25, 10},
 	{10, 9},
 	{25, 9},
 	{100, 9},
 	{250, 9},
 	{1, 6},
-	{25, 5},
+	{25, 7},
 	{10, 6},
 	{25, 6},
 	{100, 6},
 	{250, 6},
 	{1, 3},
-	{25, 2},
+	{25, 4},
 	{10, 3},
 	{25, 3},
 	{100, 3},
 	{250, 3},
 	{1, 0},
 	{10, 0},
+}
+
+// DurationToClockAccuracy converts a time.Duration to the appropriate ClockAccuracy value,
+// rounding up to the next available accuracy level.
+// Returns 0 for durations <= 0 or > 10s.
+func DurationToClockAccuracy(d time.Duration) ClockAccuracy {
+	if d <= 0 {
+		return 0
+	}
+	nanos := d.Nanoseconds()
+	for i, st := range clockAccuracyWithin {
+		thresholdNanos := float64(st.significand) * float64(time.Second) * math.Pow10(-int(st.exponent))
+		if float64(nanos) <= thresholdNanos {
+			return ClockAccuracy(int(ClockAccuracyWithin1ps) + i)
+		}
+	}
+	return 0
 }
 
 func (a ClockAccuracy) String() string {
