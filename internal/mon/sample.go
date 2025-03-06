@@ -43,11 +43,11 @@ type sampleConfig struct {
 	maxOffset float64
 	// minimum number of OK samples in window, within maxOffset, to be in sync
 	minGood int
-	// if we get more than maxConsecBad consecutive bad samples (before minGood), we are out of sync
-	// bad sample here means missing or outlier (something not fed to the servo) rather than a large offset
-	maxConsecBad int
-	// if we get more than maxTotalBad bad samples (before minGood), we are out of sync
-	maxTotalBad   int
+	// if we get more than maxConsecInvalid consecutive invalid samples (before minGood), we are out of sync
+	// invalid sample here means missing or outlier (something not fed to the servo) rather than a large offset
+	maxConsecInvalid int
+	// if we get more than maxTotalInvalid invalid samples (before minGood), we are out of sync
+	maxTotalInvalid   int
 	madMultiple   float64
 	madMinSamples int
 }
@@ -59,8 +59,8 @@ var defaultSampleConfig = sampleConfig{
 	// any offset > maxOffset, that is not an outlier, makes us out of sync
 	maxOffset:    50e-9,
 	minGood:      4,
-	maxConsecBad: 7,
-	maxTotalBad:  12,
+	maxConsecInvalid: 7,
+	maxTotalInvalid:  12,
 	// Stable32 uses 5 here, but outliers for GPS are usually quite extreme compared to the normal offsets which are usually <30ns
 	// If it's too low, then during settling phase things can be incorrectly marked as outliers
 	madMultiple:   25,
@@ -70,8 +70,8 @@ var defaultSampleConfig = sampleConfig{
 func (w *sampleWindow) nextSyncState(curState syncState, cfg *sampleConfig) syncState {
 	nextState := noSync
 	nGood := 0
-	nConsecBad := 0
-	nTotalBad := 0
+	nConsecInvalid := 0
+	nTotalInvalid := 0
 	w.iterate(func(i int, sample sampleData) bool {
 		switch sample.kind {
 		case sampleOK:
@@ -79,17 +79,16 @@ func (w *sampleWindow) nextSyncState(curState syncState, cfg *sampleConfig) sync
 				return false
 			}
 			nGood++
-			nConsecBad = 0
+			nConsecInvalid = 0
 			if nGood >= cfg.minGood {
 				nextState = inSync
 				return false
 			}
 		default:
-			nConsecBad++
-			nTotalBad++
-			// if we've gone out of sync, don't allow any bad (missing/outlier) values;
-			// otherwise allow up to holdoverSecs consecutive bad values
-			if curState == noSync || nConsecBad > cfg.maxConsecBad || nTotalBad > cfg.maxTotalBad {
+			nConsecInvalid++
+			nTotalInvalid++
+			// if we've gone out of sync, don't allow any invalid (missing/outlier) values;
+			if curState == noSync || nConsecInvalid > cfg.maxConsecInvalid || nTotalInvalid > cfg.maxTotalInvalid {
 				return false
 			}
 		}
