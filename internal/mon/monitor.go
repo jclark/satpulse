@@ -271,13 +271,6 @@ func (mon *Monitor) nextSyncState() syncState {
 
 func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
 	offSecs := off.Seconds()
-
-	// if this offset isn't bad enough to take use out of sync,
-	// then there's no need to consider it as an outlier
-	// this should be a quick check that succeeds most of the time
-	if math.Abs(offSecs) <= defaultSampleConfig.maxOffset {
-		return false
-	}
 	// don't do outlier detection unless we are using the PI controller
 	if !mon.servo.Locked(era) {
 		return false

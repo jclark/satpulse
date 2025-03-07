@@ -47,9 +47,11 @@ type sampleConfig struct {
 	// invalid sample here means missing or outlier (something not fed to the servo) rather than a large offset
 	maxConsecInvalid int
 	// if we get more than maxTotalInvalid invalid samples (before minGood), we are out of sync
-	maxTotalInvalid   int
-	madMultiple   float64
-	madMinSamples int
+	maxTotalInvalid int
+	madMultiple     float64
+	madMinSamples   int
+	// minimum offset to be considered an outlier in seconds
+	minOutlier float64
 }
 
 var defaultSampleConfig = sampleConfig{
@@ -57,18 +59,46 @@ var defaultSampleConfig = sampleConfig{
 	// Reasoning is we are claiming 100ns accuracy, and we need to budget for other sources of error,
 	// specifically errors in GPS signal
 	// any offset > maxOffset, that is not an outlier, makes us out of sync
-	maxOffset:    50e-9,
-	minGood:      4,
+	maxOffset:        50e-9,
+	minGood:          4,
 	maxConsecInvalid: 7,
 	maxTotalInvalid:  12,
 	// Stable32 uses 5 here, but outliers for GPS are usually quite extreme compared to the normal offsets which are usually <30ns
 	// If it's too low, then during settling phase things can be incorrectly marked as outliers
 	madMultiple:   25,
 	madMinSamples: 10,
+	// if this offset isn't bad enough to take use out of sync,
+	// then there's no need to consider it as an outlier
+	minOutlier: 50e-9,
 }
 
 func (w *sampleWindow) nextSyncState(curState syncState, cfg *sampleConfig) syncState {
-	nextState := noSync
+	if curState == noSync {
+		if w.enterSync(cfg) {
+			return inSync
+		}
+	} else {
+		if !w.remainInSync(cfg) {
+			return noSync
+		}
+	}
+	return curState
+}
+
+func (w *sampleWindow) enterSync(cfg *sampleConfig) bool {
+	nGood := 0
+	w.iterate(func(i int, sample sampleData) bool {
+		if sample.kind != sampleOK || math.Abs(sample.off) > cfg.maxOffset {
+			return false
+		}
+		nGood++
+		return nGood >= cfg.minGood
+	})
+	return nGood >= cfg.minGood
+}
+
+func (w *sampleWindow) remainInSync(cfg *sampleConfig) bool {
+	remain := false
 	nGood := 0
 	nConsecInvalid := 0
 	nTotalInvalid := 0
@@ -81,23 +111,27 @@ func (w *sampleWindow) nextSyncState(curState syncState, cfg *sampleConfig) sync
 			nGood++
 			nConsecInvalid = 0
 			if nGood >= cfg.minGood {
-				nextState = inSync
+				remain = true
 				return false
 			}
 		default:
 			nConsecInvalid++
 			nTotalInvalid++
-			// if we've gone out of sync, don't allow any invalid (missing/outlier) values;
-			if curState == noSync || nConsecInvalid > cfg.maxConsecInvalid || nTotalInvalid > cfg.maxTotalInvalid {
+			if nConsecInvalid > cfg.maxConsecInvalid || nTotalInvalid > cfg.maxTotalInvalid {
 				return false
 			}
 		}
 		return true
 	})
-	return nextState
+	return remain
 }
 
 func (w *sampleWindow) madIsOutlier(offSecs float64, cfg *sampleConfig) bool {
+	// this should be a quick check that succeeds most of the time
+	// to avoid running complex MAD logic on every sample
+	if math.Abs(offSecs) < cfg.minOutlier {
+		return false
+	}
 	n, min, max := w.mad(cfg.madMultiple)
 	return n >= cfg.madMinSamples && (offSecs < min || offSecs > max)
 }
