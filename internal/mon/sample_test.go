@@ -57,21 +57,16 @@ var inSyncTests = [][]sampleData{
 
 func TestSyncState(t *testing.T) {
 	for i, test := range inSyncTests {
-		syncState := noSync
-		w := newSampleWindow(sampleWindowSize)
+		ss := newSampleState(sampleWindowSize)
 		for j, s := range test {
-			if s.kind != sampleMissing && w.madIsOutlier(s.off, &defaultSampleConfig) != (s.kind == sampleOutlier) {
-				n, min, max := w.mad(defaultSampleConfig.madMultiple)
+			if s.kind != sampleMissing && ss.madIsOutlier(s.off, &defaultSyncConfig) != (s.kind == sampleOutlier) {
+				n, min, max := ss.mad(defaultSyncConfig.madMultiple)
 				t.Errorf("Test %d, sample %d, expected madIsOutlier == %v (n = %d, min = %v, max = %v)", i, j, s.kind == sampleOutlier, n, min, max)
 			}
-			w.append(s.kind, s.off, 1)
-			syncState = w.nextSyncState(inSync, &defaultSampleConfig)
-			expectSyncState := noSync
-			if (j + 1) >= defaultSampleConfig.minGood {
-				expectSyncState = inSync
-			}
-			if syncState != expectSyncState {
-				t.Errorf("Test %d, sample %d, expectedSyncState == %v", i, j, expectSyncState)
+			ss.sample(s.kind, s.off, 1, inSync, &defaultSyncConfig)
+			state := ss.nextSyncState(inSync, &defaultSyncConfig)
+			if state == noSync {
+				t.Errorf("Test %d, sample %d, unexpected exit from sync", i, j)
 			}
 		}
 	}
@@ -131,13 +126,13 @@ var initTests = [][]float64{
 
 func TestOutlierInit(t *testing.T) {
 	for i, test := range initTests {
-		w := newSampleWindow(sampleWindowSize)
+		ss := newSampleState(sampleWindowSize)
 		for j, off := range test {
-			if w.madIsOutlier(off, &defaultSampleConfig) {
-				n, min, max := w.mad(defaultSampleConfig.madMultiple)
+			if ss.madIsOutlier(off, &defaultSyncConfig) {
+				n, min, max := ss.mad(defaultSyncConfig.madMultiple)
 				t.Errorf("Test %d, sample %d, expected madIsOutlier == false (n = %d, min = %v, max = %v)", i, j, n, min, max)
 			}
-			w.append(sampleOK, off, 1)
+			ss.win.append(sampleData{off: off, kind: sampleOK})
 		}
 	}
 }

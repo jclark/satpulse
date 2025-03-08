@@ -14,7 +14,7 @@ import (
 const sampleWindowSize = 60
 
 type Monitor struct {
-	samples        *sampleWindow
+	samples        *sampleState
 	lastSampleTime time.Time
 	leapSecond     ptime.LeapSecond
 	servo          Servo // never nil
@@ -28,6 +28,7 @@ type Monitor struct {
 	sseCh          chan<- sse.Event
 	stats          stats
 	lf             logfile.LogFile
+	cfg            syncConfig
 }
 
 type stats struct {
@@ -59,12 +60,13 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 		servo:      servo,
 		lg:         lg,
 		leapSecond: cfg.LeapSecond,
-		samples:    newSampleWindow(sampleWindowSize),
+		samples:    newSampleState(sampleWindowSize),
 		gm:         cfg.Grandmaster,
 		rc:         cfg.RefClock,
 		sseCh:      cfg.SSECh,
 		stats:      stats{interval: cfg.LogInterval},
 		syncState:  noSync,
+		cfg:        defaultSyncConfig,
 	}
 
 	err := mon.lf.Open(cfg.ClockLogPath)
@@ -134,13 +136,13 @@ func (mon *Monitor) addMissingOffsets(ref ptime.Time) {
 	}
 	diff := int(ref.Sub(lastRef) / time.Second)
 	for i := 1; i < diff; i++ {
-		mon.recordSample(sampleMissing, 0, mon.samples.Era, mon.servo.FreqOffset())
+		mon.recordSample(sampleMissing, 0, mon.samples.era, mon.servo.FreqOffset())
 	}
 }
 
 func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, era ptime.Era, freq float64) {
 	offSecs := off.Seconds()
-	mon.samples.append(kind, offSecs, era)
+	mon.samples.sample(kind, offSecs, era, mon.syncState, &mon.cfg)
 	interval := mon.stats.interval
 	if interval <= 0 {
 		return
@@ -259,29 +261,29 @@ func (mon *Monitor) Tick(now time.Time) {
 	}
 	mon.lastSampleTime = mon.lastSampleTime.Add(time.Second)
 	mon.lastRefTime = mon.lastRefTime.Add(time.Second)
-	mon.recordSample(sampleMissing, 0, mon.samples.Era, mon.servo.FreqOffset())
+	mon.recordSample(sampleMissing, 0, mon.samples.era, mon.servo.FreqOffset())
 	if t > holdoverSecs*time.Second {
 		mon.updateSyncState(noSync)
 	}
 }
 
 func (mon *Monitor) nextSyncState() syncState {
-	return mon.samples.nextSyncState(mon.syncState, &defaultSampleConfig)
+	return mon.samples.nextSyncState(mon.syncState, &mon.cfg)
 }
 
 func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
 	offSecs := off.Seconds()
-	// don't do outlier detection unless we are using the PI controller
 	if !mon.servo.Locked(era) {
 		return false
 	}
-	return mon.samples.madIsOutlier(offSecs, &defaultSampleConfig)
+	return mon.samples.madIsOutlier(offSecs, &mon.cfg)
 }
 
 func (mon *Monitor) updateSyncState(state syncState) {
 	if state != mon.syncState {
 		mon.lg.Warn("synchronization status has changed", "syncState", state)
 		mon.syncState = state
+		mon.samples.resetForSyncChange(state)
 	}
 	mon.gmUpdate()
 }
