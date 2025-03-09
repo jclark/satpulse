@@ -72,6 +72,45 @@ func TestSyncState(t *testing.T) {
 	}
 }
 
+var exitSyncTests = [][]int{
+	{20, -19, 5, 100, 101, 99, 98, 55, 120, 125, 130, 100, 88},
+	{20, -19, 5, 51, 60, 65, 49, 48, 52, 43, 45, 66, 70, 55, -66, 51, 49, 65, 70, 60, 63, 62, 55},
+}
+
+func TestExitSyncEMA(t *testing.T) {
+	cfg := defaultSyncConfig
+	cfg.maxOffset = 50e-9
+	cfg.emaAlpha = 0.1
+	for i, test := range exitSyncTests {
+		ss := newSampleState(sampleWindowSize)
+		state := inSync
+		for _, off := range test {
+			ss.sample(sampleOK, float64(off)*1e-9, 1, state, &cfg)
+			state = ss.nextSyncState(state, &cfg)
+			if state == noSync {
+				break
+			}
+		}
+		if state == inSync {
+			t.Errorf("Test %d, failed to exit sync", i)
+		}
+	}
+}
+
+func TestExitSyncMissing(t *testing.T) {
+	cfg := defaultSyncConfig
+	cfg.maxConsecInvalid = 7
+	ss := newSampleState(sampleWindowSize)
+	state := inSync
+	for i := range(cfg.maxConsecInvalid + 1) {
+		ss.sample(sampleMissing, 0, 1, state, &cfg)
+		state = ss.nextSyncState(state, &cfg)
+		if (state == noSync) != (i == cfg.maxConsecInvalid) {
+			t.Errorf("Exit sync at wrong time: sample %d, state %v, invalidWeight = %v", i, state, ss.invalidWeight)
+		}
+	}
+}
+
 var initTests = [][]float64{
 	{
 		258e-9,
