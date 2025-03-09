@@ -242,9 +242,9 @@ func (mon *Monitor) SysSample(ref ptime.Time, sys time.Time) {
 	}
 }
 
-const holdoverSecs = 10
 const sampleIntervalMax = time.Second + time.Second/2
 
+// This is called 4 times per second.
 func (mon *Monitor) Tick(now time.Time) {
 	if mon.syncState == noSync {
 		return
@@ -259,12 +259,12 @@ func (mon *Monitor) Tick(now time.Time) {
 		mon.lg.Warn("1PPS signal stopped")
 		mon.ppsStopped = true
 	}
+	// At this point we are overdue for a new sample.
+	// Note that we are updating lastSampleTime to one second after the previous sample time rather than now.
 	mon.lastSampleTime = mon.lastSampleTime.Add(time.Second)
 	mon.lastRefTime = mon.lastRefTime.Add(time.Second)
 	mon.recordSample(sampleMissing, 0, mon.samples.era, mon.servo.FreqOffset())
-	if t > holdoverSecs*time.Second {
-		mon.updateSyncState(noSync)
-	}
+	mon.updateSyncState(mon.nextSyncState())
 }
 
 func (mon *Monitor) nextSyncState() syncState {

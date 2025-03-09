@@ -48,7 +48,7 @@ type syncConfig struct {
 var defaultSyncConfig = syncConfig{
 	maxOffset:        50e-9,
 	minGood:          4,
-	maxConsecInvalid: 7,
+	maxConsecInvalid: 10,
 	emaDecayFactor:   0.5,
 	emaAlpha:         0.2,
 	madMultiple:      25,
