@@ -285,7 +285,7 @@ func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
 
 func (mon *Monitor) updateSyncState(state syncState) {
 	if state != mon.syncState {
-		mon.lg.Warn("synchronization status has changed", "syncState", state)
+		mon.lg.Warn("synchronization status has changed", "newSyncState", state)
 		mon.syncState = state
 		mon.samples.resetForSyncChange(state)
 	}
