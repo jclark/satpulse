@@ -268,7 +268,11 @@ func (mon *Monitor) Tick(now time.Time) {
 }
 
 func (mon *Monitor) nextSyncState() syncState {
-	return mon.samples.nextSyncState(mon.syncState, &mon.cfg)
+	state := mon.samples.nextSyncState(mon.syncState, &mon.cfg)
+	if state == noSync && mon.syncState == inSync {
+		mon.lg.Info("next sync state will be out of sync", "emaOffset", mon.samples.emaOffset, "invalidWeight", mon.samples.invalidWeight)
+	}
+	return state
 }
 
 func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
