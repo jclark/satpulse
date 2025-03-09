@@ -1,6 +1,9 @@
 package mon
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/jclark/satpulse/internal/ptime"
 )
@@ -24,16 +27,20 @@ type GrandmasterProps struct {
 	ClockAccuracy pmc.ClockAccuracy
 }
 
-const defaultClockAccuracy = pmc.ClockAccuracyWithin250ns
-
-func NewGrandmaster(clockAcc pmc.ClockAccuracy) (*Grandmaster, <-chan GrandmasterUpdateRequest) {
+func NewGrandmaster() (*Grandmaster, <-chan GrandmasterUpdateRequest) {
 	updateCh := make(chan GrandmasterUpdateRequest, 1)
-	if clockAcc == 0 {
-		clockAcc = defaultClockAccuracy
-	}
-	gm := &Grandmaster{updateCh: updateCh, clockAcc: clockAcc}
+	gm := &Grandmaster{updateCh: updateCh}
 	gm.SetClockSync(noSync)
 	return gm, updateCh
+}
+
+func (gm *Grandmaster) SetClockAccuracy(acc time.Duration) error {
+	ca := pmc.DurationToClockAccuracy(acc)
+	if ca == 0 {
+		return fmt.Errorf("%v: out of range clock accuracy", acc)
+	}
+	gm.clockAcc = ca
+	return nil
 }
 
 func (gm *Grandmaster) Close() {

@@ -53,7 +53,7 @@ type LeapSecondConfig struct {
 }
 
 type PTPConfig struct {
-	ClockAccuracy int       `toml:"clockAccuracy"`
+	ClockAccuracy int          `toml:"clockAccuracy"`
 	DomainNumber  uint8        `toml:"domainNumber"`
 	MajorSdoID    uint8        `toml:"majorSdoId"`
 	MinorSdoID    uint8        `toml:"minorSdoId"`
@@ -133,6 +133,7 @@ func defaultConfig() *Config {
 	cfg.LeapSecond = leapSecondDefault
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
+	cfg.PTP.ClockAccuracy = 150
 	return cfg
 }
 
@@ -177,17 +178,6 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 	cl.MajorSdoID = cfg.MajorSdoID
 	cl.MinorSdoID = cfg.MinorSdoID
 	return cl, nil
-}
-
-func (cfg *PTPConfig) getClockAccuracy() (pmc.ClockAccuracy, error) {
-	if cfg.ClockAccuracy == 0 {
-		return 0, nil
-	}
-	acc := pmc.DurationToClockAccuracy(time.Duration(cfg.ClockAccuracy))
-	if acc == 0 {
-		return 0, fmt.Errorf("%d: out of range clock accuracy", cfg.ClockAccuracy)
-	}
-	return acc, nil
 }
 
 // ClockPath returns the path for the clock log file.

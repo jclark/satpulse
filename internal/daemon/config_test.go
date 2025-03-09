@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/jclark/satpulse/internal/pmc"
 )
 
 const configsDir = "../../configs"
@@ -47,14 +45,7 @@ func TestPTPConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.PTP.PTP4L.UDSAddress != "/tmp/ptp4l" || cfg.PTP.DomainNumber != 1 || cfg.PTP.MajorSdoID != 2 || cfg.PTP.MinorSdoID != 12 {
+	if cfg.PTP.PTP4L.UDSAddress != "/tmp/ptp4l" || cfg.PTP.DomainNumber != 1 || cfg.PTP.MajorSdoID != 2 || cfg.PTP.MinorSdoID != 12 || cfg.PTP.ClockAccuracy != 20 {
 		t.Fatal("PTP config not parsed correctly")
-	}
-	acc, err := cfg.PTP.getClockAccuracy()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if acc != pmc.ClockAccuracyWithin25ns {
-		t.Fatalf("clock accuracy not converted correctly: expected %v, got %v", pmc.ClockAccuracyWithin25ns, acc)
 	}
 }

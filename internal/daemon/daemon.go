@@ -205,11 +205,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 	if pmcClient != nil {
-		acc, err := cfg.PTP.getClockAccuracy()
-		if err != nil {
-			return err
-		}
-		gm, gmUpdateCh = mon.NewGrandmaster(acc)
+		gm, gmUpdateCh = mon.NewGrandmaster()
 	}
 
 	rc, err := cfg.NTP.NewRefClock(lg)
@@ -270,6 +266,7 @@ func NewDispatcher(lg *slog.Logger, clk *ts.Clock, pulseWidth time.Duration, cfg
 		Grandmaster:  gm,
 		LogInterval:  cfg.Log.Interval,
 		ClockLogPath: cfg.Log.ClockPath(clk.Path(), mon.ClockLogExtension),
+		ClockAccuracy: time.Duration(cfg.PTP.ClockAccuracy),
 	})
 	if err != nil {
 		return nil, err

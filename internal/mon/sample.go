@@ -42,18 +42,16 @@ type syncConfig struct {
 	emaAlpha         float64 // Smoothing factor for calculating offset EMA, used for exiting sync
 	madMultiple      float64
 	madMinSamples    int
-	minOutlier       float64 // Minimum offset to be considered an outlier in seconds
 }
 
 var defaultSyncConfig = syncConfig{
-	maxOffset:        50e-9,
+	maxOffset:        50e-9, // this is usually overridden by the ClockAccuracy in the MonitorConfig
 	minGood:          4,
 	maxConsecInvalid: 10,
 	emaDecayFactor:   0.5,
 	emaAlpha:         0.08, // corresponds to 24 effective samples
 	madMultiple:      25,
 	madMinSamples:    10,
-	minOutlier:       50e-9,
 }
 
 func (ss *sampleState) sample(kind sampleKind, offSecs float64, era ptime.Era, state syncState, cfg *syncConfig) {
@@ -117,9 +115,11 @@ func (ss *sampleState) emaGoodSamples() float64 {
 }
 
 func (ss *sampleState) madIsOutlier(offSecs float64, cfg *syncConfig) bool {
-	// this should be a quick check that succeeds most of the time
-	// to avoid running complex MAD logic on every sample
-	if math.Abs(offSecs) < cfg.minOutlier {
+	// Idea is that if it is not enough to take the state out of sync,
+	// then it should not be considered as an outlier.
+	// This should be a quick check that succeeds most of the time,
+	// to avoid running complex MAD logic on every sample.
+	if math.Abs(offSecs) < cfg.maxOffset {
 		return false
 	}
 	n, min, max := ss.mad(cfg.madMultiple)

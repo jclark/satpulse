@@ -45,12 +45,13 @@ type Servo interface {
 }
 
 type MonitorConfig struct {
-	LeapSecond   ptime.LeapSecond
-	LogInterval  int
-	ClockLogPath string
-	RefClock     *ProxyRefClock
-	Grandmaster  *Grandmaster
-	SSECh        chan<- sse.Event
+	LeapSecond    ptime.LeapSecond
+	LogInterval   int
+	ClockLogPath  string
+	ClockAccuracy time.Duration
+	RefClock      *ProxyRefClock
+	Grandmaster   *Grandmaster
+	SSECh         chan<- sse.Event
 }
 
 const ClockLogExtension = ".log"
@@ -73,6 +74,11 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 	if err != nil {
 		return nil, err
 	}
+	err = mon.gm.SetClockAccuracy(cfg.ClockAccuracy)
+	if err != nil {
+		return nil, err
+	}
+	mon.cfg.maxOffset = cfg.ClockAccuracy.Seconds()
 	mon.writeLogHeader()
 	return mon, nil
 }
