@@ -50,7 +50,7 @@ var defaultSyncConfig = syncConfig{
 	minGood:          4,
 	maxConsecInvalid: 10,
 	emaDecayFactor:   0.5,
-	emaAlpha:         0.2,
+	emaAlpha:         0.08, // corresponds to 24 effective samples
 	madMultiple:      25,
 	madMinSamples:    10,
 	minOutlier:       50e-9,
