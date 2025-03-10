@@ -217,12 +217,26 @@ func (ls LeapSecond) Date() time.Time {
 }
 
 func (ls LeapSecond) FormatTime(t Time) string {
+	cmp := ls.Compare(t)
 	off := ls.UTCOffAfter
-	if t < ls.OffChangeTime {
+	if cmp <= 0 {
 		off = ls.UTCOffBefore
+		if cmp == 0 {
+			// Subtract a second if we're in a leap second; we will add it back later
+			t = t.Add(-time.Second)
+		}
 	}
-	// XXX this won't display leap second correctly
-	return epochUnix.Add(time.Duration(t) - time.Duration(off)*time.Second).Format(time.RFC3339)
+	s := epochUnix.Add(time.Duration(t) - time.Duration(off)*time.Second).Format(time.RFC3339)
+	// If we're in a leap second (cmp == 0), fix the output
+	if cmp == 0 {
+		// Find the last colon, which will be just before the seconds field
+		colonPos := strings.LastIndex(s, ":")
+		if colonPos >= 0 && len(s) >= colonPos+3 {
+			// Replace "59" with "60" in the seconds portion
+			s = s[:colonPos+1] + "60" + s[colonPos+3:]
+		}
+	}
+	return s
 }
 
 func (ls LeapSecond) StateAt(t Time) LeapSecondState {

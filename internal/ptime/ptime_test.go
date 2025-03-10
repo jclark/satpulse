@@ -39,7 +39,7 @@ func TestFormat(t *testing.T) {
 	leaps := LeapSecondOnDate(time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
 	testCases := [][6]uint8{
 		{25, 6, 30, 23, 59, 59},
-		// {25, 6, 30, 23, 59, 60}, // not implemented yet
+		{25, 6, 30, 23, 59, 60},
 		{25, 7, 1, 00, 00, 00},
 		{25, 7, 1, 00, 00, 01},
 	}
