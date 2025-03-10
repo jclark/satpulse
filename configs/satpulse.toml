@@ -29,6 +29,13 @@ domainNumber = 0
 # This corresponds to ptp4l transportSpecific option
 # (It's called majorSdoId in latest version of PTP standard.) 
 majorSdoId = 0
+# Maximum of absolute value of offset in nanoseconds between PHC and GPS when in sync.
+# The offsets are smoothed, so it is OK if this is exceeded occasionally.
+# It will be rounded up to the next value supported by PTP (e.g. 10, 25, 100, 250, 1000)
+# and set as the clockAccuracy attribute of the PTP instance.
+# 150 is conservative. With a good GPS and sky view, 60 should be achievable
+# (rounding up to clockAccuracy of 100ns).
+clockAccuracy = 150
 
 [ntp]
 # Uncomment the sock.path line to act as a refclock SOCK for chrony
