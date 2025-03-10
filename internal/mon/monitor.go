@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/internal/logfile"
@@ -177,7 +178,7 @@ func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, era ptime.E
 	}
 }
 
-const logHeader = "# mjd offset freq outlier era sync\n"
+const logHeader = "# date time offset freq outlier era sync\n"
 
 func (mon *Monitor) writeLogHeader() {
 	if mon.lf.File == nil {
@@ -195,20 +196,16 @@ func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Dura
 	if kind == sampleOutlier {
 		outlierFlag = 1
 	}
-	// Stable32 treats 0 as meaning a gap, so we output 1e-99 for 0.
-	// This means we need to output things in seconds (using exponenential format), not nanoseconds.
 	// Almost all the time, the absolute value of off will be < 100,
 	// so we format to a width of 3 so the values including the sign will align.
-	offStr := " 1e-99"
-	if off != 0 {
-		offStr = fmt.Sprintf("%3de-9", off)
-	}
-	// We represent dates in MJD, because that is what Stable32 can handle.
-	// It also seems to be a standard approach in the timekeeping world.
-	mjd := mon.leapSecond.TimeToMJD(ref)
-	// 5 decimal places for MJD is sufficient to distinguish seconds; but we use 6 so it's clear when there's a gap
-	_, err := fmt.Fprintf(mon.lf.File, "%.6f %s %.0f %d %d %d\n", mjd, offStr, freq, outlierFlag, uint64(era), int(syncState))
+	_, err := fmt.Fprintf(mon.lf.File, "%s %3d %.0f %d %d %d\n", logDateTime(ref, mon.leapSecond), off, freq, outlierFlag, uint64(era), int(syncState))
 	mon.lf.HandleWriteError(err, mon.lg)
+}
+
+func logDateTime(ref ptime.Time, ls ptime.LeapSecond) string {
+	s := ls.FormatTime(ref)
+	s = strings.Replace(s, "T", " ", 1)
+	return strings.Replace(s, "Z", "", 1)
 }
 
 type SampleEvent struct {
