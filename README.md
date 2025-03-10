@@ -92,7 +92,7 @@ SatPulse provides the following features:
 
 - It automatically handles NICs that generate timestamps for both edges of a pulse (Intel NICs, including the i210, do this); this is enabled partly by using the UBX protocol, which allows us to get the pulse width.
 
-- It is aware of the quirks of the Raspberry Pi CM4 and has code to cleanly work around them.
+- It is aware of the quirks of the Raspberry Pi CM4/CM5 and has code to cleanly work around them.
 
 - It can recover from occasional errors in the PPS signal from the GPS receiver.
 
@@ -105,15 +105,15 @@ using a program like [u-center](https://www.u-blox.com/en/product/u-center) or [
 
 ## What hardware to get
 
-There are very few inexpensive NICs that support PPS input. At the time of writing (2024Q1), the best options are:
+There are very few inexpensive NICs that support PPS input. At the time of writing (2025Q1), the best options are:
 
 - the Intel i210, specifically the i210-T1 card; this can be used with any PC;
-- Raspberry Pi Compute Module 4 (CM4), combined with the official CM4 IO board
+- Raspberry Pi Compute Module 4 (CM4) or Computer Module 5 (CM5), combined with the official CM4 or CM5 IO board
 
 For more information (including suitable GPS receivers)
 
 - for the i210 and other PC-based options, see my [pc-ptp-ntp-guide](https://github.com/jclark/pc-ptp-ntp-guide) project
-- for the CM4 option, see my [rpi-cm4-ptp-guide](https://github.com/jclark/rpi-cm4-ptp-guide) project 
+- for the CM4/CM5 option, see my [rpi-cm4-ptp-guide](https://github.com/jclark/rpi-cm4-ptp-guide) project 
 
 When choosing a GPS receiver for use with SatPulse, I recommend using a u-blox receiver.
 
