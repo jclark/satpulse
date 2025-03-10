@@ -16,23 +16,23 @@ You can either install from a package (`.deb` or `.rpm` file) or from source.
 
 ### Install from a package
 
-Got to the [Releases](https://github.com/jclark/satpulse/releases) page, then under Assets, select the  package with the appropriate extension:
+Go to the [Releases](https://github.com/jclark/satpulse/releases) page, then under Assets, select the  package with the appropriate extension:
 
 | Distro | Intel/AMD | ARM |
 | --- | --- | --- |
-| Debian-based (include Raspberry Pi OS, Ubuntu) | `_amd64.deb` | `_arm64.deb` |
+| Debian-based (includes Raspberry Pi OS, Ubuntu) | `_amd64.deb` | `_arm64.deb` |
 | Fedora-based | `.x86_64.rpm` | `.aarch64.rpm` |
 
 The `.deb` file can be installed using e.g.
 
 ```
-sudo dpkg -i satpulse_20250111_arm64.deb
+sudo dpkg -i satpulse_20250310_arm64.deb
 ```
 
 The `.rpm` file can be installed using e.g.
 
 ```
-sudo rpm -i satpulse-20240229.x86_64.rpm
+sudo rpm -i satpulse-20250310.x86_64.rpm
 ```
 
 Use `-U` instead of `-i` if you are upgrading from an earlier version.
@@ -65,9 +65,9 @@ On a PC, it might be `/dev/ttyAMA0` or `/dev/ttyACM0` or `/dev/ttyUSB0`, with po
 You also need to know the speed the GPS receiver is using; 9600 is the most common speed, but some recent devices use 38400.
 
 Second, there will be a PPS connection between the PPS output of the GPS receiver and the pin on the ethernet controller.
-You need to know the the name of the ethernet interface. On a Raspberry Pi CM4 using Raspberry Pi OS, it is typically `eth0`.
+You need to know the name of the ethernet interface. On a Raspberry Pi CM4 using Raspberry Pi OS, it is typically `eth0`.
 On a PC, it is typically something like `enp1s0` or `enp2s0`.
-You also need to known the index of the pin; this is usually 0, but on a PC, could also be 1 or 2.
+You also need to know the index of the pin; this is usually 0, but on a PC, could also be 1 or 2.
 
 If you put the wrong values for these, there will be an error in the logs.
 
@@ -121,7 +121,7 @@ The above configuration file specifies that
 
 The systemd service template name is `satpulse@.service` and the expected argument is the serial device name without `/dev/`.
 For example, if the serial device is `/dev/ttyAMA0`, then the instantiated service would be named `satpulse@ttyAMA0.service`.
-Systemd commmands need to be given the instantiated service name (although typically the `.service` part can be left out).
+Systemd commands need to be given the instantiated service name (although typically the `.service` part can be left out).
 
 After editing the configuration file, you can start the service with
 
@@ -150,7 +150,7 @@ sudo systemctl stop satpulse@ttyAMA0.service
 Restart the service (e.g. after editing the configuration file)
 
 ```
-sudo systemctl stop satpulse@ttyAMA0.service
+sudo systemctl restart satpulse@ttyAMA0.service
 ```
 
 Enable the service:
