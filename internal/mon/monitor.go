@@ -275,9 +275,7 @@ func (mon *Monitor) Tick(now time.Time) {
 
 func (mon *Monitor) nextSyncState() syncState {
 	state := mon.samples.nextSyncState(mon.syncState, &mon.cfg)
-	if state == noSync && mon.syncState == inSync {
-		mon.lg.Info("next sync state will be out of sync", "emaOffset", mon.samples.emaOffset, "invalidWeight", mon.samples.invalidWeight)
-	}
+	mon.lg.Debug("computed next sync state", "syncState", state, "emaOffset", mon.samples.emaOffset, "invalidWeight", mon.samples.invalidWeight, "goodSampleCount", mon.samples.goodSampleCount)
 	return state
 }
 
