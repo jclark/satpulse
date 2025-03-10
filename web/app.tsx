@@ -173,6 +173,7 @@ const timeFormat: EventFormat = {
 }
 
 const phcFormat: EventFormat = {
+    syncState: ["State"],
     offset: ["Offset from GPS", formatNanoseconds],
     freq: ["Frequency offset", (arg: number) => `${arg.toFixed(2)} ppb`],
     stepCount: (count: number, obj: Map) => [

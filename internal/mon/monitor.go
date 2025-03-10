@@ -118,12 +118,12 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	}
 	freq := mon.servo.FreqOffset()
 	mon.recordSample(kind, off, local.Era, freq)
-	mon.writeLogEntry(kind, ref, off, local.Era, freq)
-	mon.sendEvent(kind, off, local.Era, freq)
+	nextState := mon.nextSyncState()
+	mon.writeLogEntry(kind, ref, off, local.Era, freq, nextState)
+	mon.sendEvent(kind, off, local.Era, freq, nextState)
 	if delayed {
 		return
 	}
-	nextState := mon.nextSyncState()
 	now := time.Now()
 	mon.lastSampleTime = now
 	if mon.ppsStopped {
@@ -177,7 +177,7 @@ func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, era ptime.E
 	}
 }
 
-const logHeader = "# mjd offset freq outlier era\n"
+const logHeader = "# mjd offset freq outlier era sync\n"
 
 func (mon *Monitor) writeLogHeader() {
 	if mon.lf.File == nil {
@@ -187,7 +187,7 @@ func (mon *Monitor) writeLogHeader() {
 	mon.lf.HandleWriteError(err, mon.lg)
 }
 
-func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Duration, era ptime.Era, freq float64) {
+func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Duration, era ptime.Era, freq float64, syncState syncState) {
 	if mon.lf.File == nil || kind == sampleMissing {
 		return
 	}
@@ -207,7 +207,7 @@ func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Dura
 	// It also seems to be a standard approach in the timekeeping world.
 	mjd := mon.leapSecond.TimeToMJD(ref)
 	// 5 decimal places for MJD is sufficient to distinguish seconds; but we use 6 so it's clear when there's a gap
-	_, err := fmt.Fprintf(mon.lf.File, "%.6f %s %.0f %d %d\n", mjd, offStr, freq, outlierFlag, uint64(era))
+	_, err := fmt.Fprintf(mon.lf.File, "%.6f %s %.0f %d %d %d\n", mjd, offStr, freq, outlierFlag, uint64(era), int(syncState))
 	mon.lf.HandleWriteError(err, mon.lg)
 }
 
@@ -217,9 +217,10 @@ type SampleEvent struct {
 	StepCount         uint32  `json:"stepCount"`
 	StepCountChanging bool    `json:"stepCountChanging,omitempty"`
 	Outlier           bool    `json:"outlier,omitempty"`
+	SyncState         string  `json:"syncState"`
 }
 
-func (mon *Monitor) sendEvent(kind sampleKind, off time.Duration, era ptime.Era, freq float64) {
+func (mon *Monitor) sendEvent(kind sampleKind, off time.Duration, era ptime.Era, freq float64, syncState syncState) {
 	if mon.sseCh == nil {
 		return
 	}
@@ -230,6 +231,7 @@ func (mon *Monitor) sendEvent(kind sampleKind, off time.Duration, era ptime.Era,
 		StepCountChanging: changing,
 		Freq:              freq,
 		Outlier:           kind == sampleOutlier,
+		SyncState:         syncState.String(),
 	})
 	if err != nil {
 		mon.lg.Error("error creating sample event", "err", err)

@@ -579,6 +579,7 @@
     tai: ["TAI", formatTAI]
   };
   var phcFormat = {
+    syncState: ["State"],
     offset: ["Offset from GPS", formatNanoseconds],
     freq: ["Frequency offset", (arg) => `${arg.toFixed(2)} ppb`],
     stepCount: (count, obj) => [
