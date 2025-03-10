@@ -77,11 +77,15 @@ func Cmd(progName string, args []string) {
 }
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config) error {
-	clk, err := cfg.PHC.OpenClock(lg)
-	phcFlags := clk.DriverFlags
+	clk, err := cfg.PHC.OpenClock(ctx, lg)
 	if err != nil {
+		// don't report an error if interrupted
+		if ctx.Err() != nil {
+			return nil
+		}
 		return err
 	}
+	phcFlags := clk.DriverFlags
 	lg.Info("selected PTP hardware clock", "path", clk.Path(),
 		"known", phcFlags&phc.DriverKnown != 0,
 		"bothEdges", phcFlags&phc.DriverBothEdges != 0,
@@ -260,12 +264,12 @@ func NewDispatcher(lg *slog.Logger, clk *ts.Clock, pulseWidth time.Duration, cfg
 	}
 	ls := cfg.LeapSecond.leapSecond()
 	m, err := mon.NewMonitor(servo, lg, mon.MonitorConfig{
-		LeapSecond:   ls,
-		SSECh:        sseCh,
-		RefClock:     rc,
-		Grandmaster:  gm,
-		LogInterval:  cfg.Log.Interval,
-		ClockLogPath: cfg.Log.ClockPath(clk.Path(), mon.ClockLogExtension),
+		LeapSecond:    ls,
+		SSECh:         sseCh,
+		RefClock:      rc,
+		Grandmaster:   gm,
+		LogInterval:   cfg.Log.Interval,
+		ClockLogPath:  cfg.Log.ClockPath(clk.Path(), mon.ClockLogExtension),
 		ClockAccuracy: time.Duration(cfg.PTP.ClockAccuracy),
 	})
 	if err != nil {

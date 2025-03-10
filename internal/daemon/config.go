@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -137,8 +138,8 @@ func defaultConfig() *Config {
 	return cfg
 }
 
-func (cfg PHCConfig) OpenClock(lg *slog.Logger) (*ts.Clock, error) {
-	return ts.OpenClock(cfg.Interface, cfg.PinDesc(), cfg.Wait, lg)
+func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {
+	return ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
 }
 
 func (cff PHCConfig) PinDesc() ts.PinDesc {

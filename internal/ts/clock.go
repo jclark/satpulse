@@ -49,7 +49,7 @@ type PinDesc struct {
 	ChanIndex uint32
 }
 
-func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clock, error) {
+func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinDesc, wait bool) (*Clock, error) {
 	var (
 		w   *ifwait.IfWaiter
 		err error
@@ -64,11 +64,11 @@ func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clo
 		if err != nil {
 			return nil, err
 		}
-		err = waitIface(w, lg, nil, "does not exist", existTimeout)
+		err = waitIface(ctx, lg, w, nil, "does not exist", existTimeout)
 		if err != nil {
 			return nil, err
 		}
-		err = waitIface(w, lg, func(flags net.Flags) bool { return flags&net.FlagUp != 0 }, "is down", 0)
+		err = waitIface(ctx, lg, w, func(flags net.Flags) bool { return flags&net.FlagUp != 0 }, "is down", 0)
 		if err != nil {
 			return nil, err
 		}
@@ -100,7 +100,7 @@ func OpenClock(ifName string, pinDesc PinDesc, wait bool, lg *slog.Logger) (*Clo
 				return nil, err
 			}
 		}
-		err = waitIface(w, lg, hasCarrier, "has no carrier", 0)
+		err = waitIface(ctx, lg, w, hasCarrier, "has no carrier", 0)
 		if err != nil {
 			return nil, err
 		}
@@ -139,7 +139,7 @@ func Close(c *Clock) error {
 	return errors.Join(c.Close(), err)
 }
 
-func waitIface(w *ifwait.IfWaiter, lg *slog.Logger, f func(net.Flags) bool, status string, timeout time.Duration) error {
+func waitIface(ctx context.Context, lg *slog.Logger, w *ifwait.IfWaiter, f func(net.Flags) bool, status string, timeout time.Duration) error {
 	var timeoutTimer <-chan time.Time
 	if timeout != 0 {
 		timeoutTimer = time.After(timeout)
@@ -160,6 +160,8 @@ loop:
 			logTimer = nil
 		case <-timeoutTimer:
 			return fmt.Errorf("interface %s %s: waited for %s: giving up", w.Name(), status, existTimeout.String())
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 	if logTimer == nil {
