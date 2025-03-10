@@ -57,7 +57,7 @@ The main one is `satpulsed`; it is a daemon, which
   the messages received over the serial port are used to determine which second it is
 
 PTP does not concern itself with the system clock at all. The PTP server and client work together to transfer the
-the time from the server's PHC to the client's PHC. A PTP server also provides time-related metadata to its clients:
+time from the server's PHC to the client's PHC. A PTP server also provides time-related metadata to its clients:
 
 - a key idea in PTP is that there can be multiple servers and the client chooses the best; the metadata provides information about the clock
   accuracy, which the client uses in making its choice
@@ -108,7 +108,7 @@ using a program like [u-center](https://www.u-blox.com/en/product/u-center) or [
 There are very few inexpensive NICs that support PPS input. At the time of writing (2025Q1), the best options are:
 
 - the Intel i210, specifically the i210-T1 card; this can be used with any PC;
-- Raspberry Pi Compute Module 4 (CM4) or Computer Module 5 (CM5), combined with the official CM4 or CM5 IO board
+- Raspberry Pi Compute Module 4 (CM4) or Compute Module 5 (CM5), combined with the official CM4 or CM5 IO board
 
 For more information (including suitable GPS receivers)
 
@@ -123,7 +123,7 @@ For best results the network switches should also have PTP support. For a low-co
 
 ## Relationship to other software
 
-There are some existing, well-established open source projects that provide similar functionality, but they are don't do quite what SatPulse does.
+There are some existing, well-established open source projects that provide similar functionality, but they don't quite do what SatPulse does.
 
 It would probably be possible to evolve these, but they are both written in C, and I personally want to work in more modern, safer languages.
 
