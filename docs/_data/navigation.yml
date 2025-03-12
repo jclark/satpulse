@@ -1,0 +1,5 @@
+main:
+  - title: "Blog"
+    url: /blog/
+  - title: "GitHub"
+    url: https://github.com/jclark/satpulse
