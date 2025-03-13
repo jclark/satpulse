@@ -1,5 +1,7 @@
 main:
+  - title: "Quick-start guide"
+    url: "/quickstart.html"
   - title: "Blog"
-    url: /blog/
+    url: "/blog.html"
   - title: "GitHub"
     url: https://github.com/jclark/satpulse

@@ -1,3 +1,7 @@
+---
+title: Introduction to SatPulse
+layout: single
+---
 The purpose of SatPulse is to make it easy to run a time server for your local network that enables much more
 precise synchronization than is possible in a typical NTP-based setup, without having to spend a lot of money.
 A precision in the low tens of nanoseconds is achievable with hardware with a total cost in the low hundreds of dollars.
@@ -13,7 +17,7 @@ few of those provide a suitable input pin, and even fewer of those are inexpensi
 since only Linux has [APIs](https://docs.kernel.org/driver-api/ptp.html) that provide the necessary access
 to the ethernet controller's PTP support. The ethernet controller must also have Linux drivers that support these APIs. 
 The main requirement for the GPS receiver is that it provide a PPS output signal that is electrically compatible with the PPS
-input pin on the ethernet controller. See the [What hardware to get](#what-hardware-to-get) section below.
+input pin on the ethernet controller. See [What hardware to get]({%link hardware.md %}) for more details.
 In a typical NTP setup, the PPS output of the GPS receiver is connected to either a serial port or a GPIO pin; SatPulse does
 not support this, since it cannot achieve the precision that SatPulse is intended to enable.
 
@@ -22,23 +26,6 @@ are three other similar constellations with global coverage: Galileo, BeiDou and
 European Union, China and Russia respectively. The technically correct term for such a constellation is
 GNSS (Global Navigation Satellite System). SatPulse is designed to work any GNSS.
 The term GPS is used informally to refer to any GNSS system, and we will use it in that sense.
-
-## Status
-
-The project is in active development and the sources may occasionally be broken.
-
-I am seeking a few active alpha testers. If you would like to alpha test, please
-open a new issue, and specify your hardware (including ethernet controller and GPS receiver)
-and Linux distro; I will then create or point you to a suitable binary release.
-Alternatively, you can compile from source and give it a try.
-
-## Documentation
-
-See the [documentation](doc/README.md) for how to install and configure SatPulse.
-Start with the [Getting started](doc/quickstart.md) document.
-
-Before you attempt this, make sure you have suitable hardware.
-See the [What hardware to get](#what-hardware-to-get) section below.
 
 ## Basics of how it works
 
@@ -103,23 +90,6 @@ using a program like [u-center](https://www.u-blox.com/en/product/u-center) or [
 
 - It provides an HTTP interface for monitoring.
 
-## What hardware to get
-
-There are very few inexpensive NICs that support PPS input. At the time of writing (2025Q1), the best options are:
-
-- the Intel i210, specifically the i210-T1 card; this can be used with any PC;
-- Raspberry Pi Compute Module 4 (CM4) or Compute Module 5 (CM5), combined with the official CM4 or CM5 IO board
-
-For more information (including suitable GPS receivers)
-
-- for the i210 and other PC-based options, see my [pc-ptp-ntp-guide](https://github.com/jclark/pc-ptp-ntp-guide) project
-- for the CM4/CM5 option, see my [rpi-cm4-ptp-guide](https://github.com/jclark/rpi-cm4-ptp-guide) project 
-
-When choosing a GPS receiver for use with SatPulse, I recommend using a u-blox receiver.
-
-For PTP to work well, clients need to have NICs with PTP hardware timestamping support. This is a common feature of modern NICs. The PTP features also need to be supported by the driver. Intel NICs generally have PTP hardware timestamping with Linux driver support.
-
-For best results the network switches should also have PTP support. For a low-cost switch, I recommend the FS.com IES3110 series.
 
 ## Relationship to other software
 
@@ -139,6 +109,3 @@ The [gpsd](https://gpsd.gitlab.io/gpsd/) project provides a daemon that talks to
 
 - it assumes the PPS signal connected to a serial or GPIO pin, using the kernel's PPS infrastructure, rather than to a NIC; the sawtooth correction information is linked to the PPS information, so isn't available when the PPS is connected to the NIC
 - it provides time in UTC not atomic time, and doesn't provide leap second information
-
-
-

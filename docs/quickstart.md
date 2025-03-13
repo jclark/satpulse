@@ -1,5 +1,8 @@
-# Getting started with SatPulse
-
+---
+title: SatPulse quick-start guide
+toc: true
+layout: single
+---
 This assumes a Linux distribution that uses systemd. Instructions differ slightly between:
 
 * Debian-based distributions using apt-based package management: Debian, Raspberry Pi OS, Ubuntu

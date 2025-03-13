@@ -1,4 +1,8 @@
-## SatPulse configuration file
+---
+title: SatPulse configuration file
+layout: single
+toc: true
+---
 
 ## Location
 
