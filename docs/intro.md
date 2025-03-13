@@ -1,6 +1,5 @@
 ---
 title: Introduction to SatPulse
-layout: single
 ---
 The purpose of SatPulse is to make it easy to run a time server for your local network that enables much more
 precise synchronization than is possible in a typical NTP-based setup, without having to spend a lot of money.

@@ -1,6 +1,6 @@
 ---
 title: What hardware to get
-layout: single
+toc: false
 ---
 There are very few inexpensive ethernet controllers that support PPS input. At the time of writing (2025Q1), the best options are:
 

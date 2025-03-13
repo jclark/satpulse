@@ -1,7 +1,5 @@
 ---
 title: SatPulse quick-start guide
-toc: true
-layout: single
 ---
 This assumes a Linux distribution that uses systemd. Instructions differ slightly between:
 

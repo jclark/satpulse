@@ -1,9 +1,6 @@
 ---
 title: SatPulse configuration file
-layout: single
-toc: true
 ---
-
 ## Location
 
 The SatPulse configuration file will be at

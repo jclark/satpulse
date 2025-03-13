@@ -5,3 +5,13 @@ main:
     url: "/blog.html"
   - title: "GitHub"
     url: https://github.com/jclark/satpulse
+
+docs:
+  - title: "Introduction"
+    url: "/intro.html"
+  - title: "What hardware to get"
+    url: "/hardware.html"
+  - title: "Quick-start guide"
+    url: "/quickstart.html"
+  - title: "Configuration file"
+    url: "/config.html"
