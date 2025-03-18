@@ -149,7 +149,8 @@ func (clk *Clock) SysOffset(nSamples int) (MultiSample, error) {
 		clk.sysOffsetFunc = (*Clock).SysOffsetPrecise
 		return ms, nil
 	}
-	if errors.Is(err, unix.ENOTTY) {
+	// According to the ioctl man page, I think it should be returning ENOTTY in this case, but it actually returns EOPNOTSUPP.
+	if errors.Is(err, unix.ENOTTY) || errors.Is(err, unix.EOPNOTSUPP) {
 		clk.sysOffsetFunc = (*Clock).SysOffsetExtended
 	}
 	return clk.SysOffsetExtended(nSamples)
