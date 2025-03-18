@@ -203,7 +203,9 @@ func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Dura
 }
 
 func logDateTime(ref ptime.Time, ls ptime.LeapSecond) string {
-	s := ls.FormatTime(ref)
+	// We need to round because the reference time (which will be a whole number of seconds)
+	// may have had a pulse offset (sawtooth correction) of a few nanoseconds applied.
+	s := ls.FormatTime(ref.Round(time.Second))
 	s = strings.Replace(s, "T", " ", 1)
 	return strings.Replace(s, "Z", "", 1)
 }
