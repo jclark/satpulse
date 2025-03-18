@@ -13,9 +13,10 @@ import (
 )
 
 type Clock struct {
-	fd   int
-	path string
-	caps *unix2.PTPClockCaps
+	fd            int
+	path          string
+	caps          *unix2.PTPClockCaps
+	sysOffsetFunc func(*Clock, int) (MultiSample, error)
 }
 
 func Open(path string) (*Clock, error) {
@@ -139,6 +140,21 @@ type MultiSample struct {
 	Sys []time.Time
 }
 
+func (clk *Clock) SysOffset(nSamples int) (MultiSample, error) {
+	if clk.sysOffsetFunc != nil {
+		return clk.sysOffsetFunc(clk, nSamples)
+	}
+	ms, err := clk.SysOffsetPrecise(nSamples)
+	if err == nil {
+		clk.sysOffsetFunc = (*Clock).SysOffsetPrecise
+		return ms, nil
+	}
+	if errors.Is(err, unix.ENOTTY) {
+		clk.sysOffsetFunc = (*Clock).SysOffsetExtended
+	}
+	return clk.SysOffsetExtended(nSamples)
+}
+
 func (clk *Clock) SysOffsetExtended(nSamples int) (MultiSample, error) {
 	ms := MultiSample{}
 	buf := unix2.PTPSysOffsetExtended{}
@@ -158,6 +174,18 @@ func (clk *Clock) SysOffsetExtended(nSamples int) (MultiSample, error) {
 		ms.PHC[i] = ptpClockTimeToTimePHC(ts[1])
 		ms.Sys[i*2+1] = ptpClockTimeToTimeSys(ts[2])
 	}
+	return ms, nil
+}
+
+func (clk *Clock) SysOffsetPrecise(_ int) (MultiSample, error) {
+	ms := MultiSample{}
+	buf := unix2.PTPSysOffsetPrecise{}
+	err := clk.wrapErr(unix2.IoctlPTPSysOffsetPrecise(clk.fd, &buf), "ioctl(PTP_SYS_OFFSET_PRECISE)")
+	if err != nil {
+		return ms, err
+	}
+	ms.PHC = []ptime.Time{ptpClockTimeToTimePHC(buf.Device)}
+	ms.Sys = []time.Time{ptpClockTimeToTimeSys(buf.Realtime)}
 	return ms, nil
 }
 

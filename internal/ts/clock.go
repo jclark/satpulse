@@ -317,7 +317,7 @@ func (clk *Clock) readWorker(ctx context.Context, lg *slog.Logger, tsCh chan<- E
 // This can be called only from readWorker.
 func (clk *Clock) sample() (tClock ptime.ClockTime, tSys time.Time, err error) {
 	eraPre := clk.eraCounter.load()
-	ms, err := clk.SysOffsetExtended(6)
+	ms, err := clk.SysOffset(6)
 	if err != nil {
 		return
 	}
