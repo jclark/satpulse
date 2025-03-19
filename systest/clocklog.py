@@ -60,7 +60,7 @@ def analyze_data(runs, analyze_all):
     
     for run in runs:
         synced = False
-        
+
         for i, entry in enumerate(run):
             # Track first sync
             if not synced and entry.sync:
@@ -83,6 +83,7 @@ def analyze_data(runs, analyze_all):
     # Calculate out-of-sync time after initial sync
     lost_sync_duration = total_out_of_sync - out_of_sync_ignore
     
+    n_missing_secs = count_missing_secs(runs)
     # Analyze offset data
     data = [entry for run in runs for entry in run] if analyze_all else runs[-1]
     offsets = [abs(entry.offset) for entry in data if entry.sync and not entry.outlier]
@@ -117,11 +118,31 @@ def analyze_data(runs, analyze_all):
         
     print(f"Number of sync losses: {sync_loss_count}")
     print(f"Total time where sync lost: {lost_sync_duration}s")
-    
+    print(f"Number of missing pulses: {n_missing_secs}")
     print(f"Max offset: {max_offset}ns")
     print(f"Mean offset: {mean_offset:.2f}ns")
     print(f"95% offset: {percentile_95}ns")
     print(f"Number of outliers: {n_outliers}")
+
+def count_missing_secs(runs):
+    n_missing = 0
+    expected_sec = -1
+    for run in runs:
+        for entry in run:
+            sec = time_to_seconds(entry.time)
+            if expected_sec != -1 and sec != expected_sec:
+                n_missing += (sec - expected_sec) % 86400
+            expected_sec = (sec + 1) % 86400
+    return n_missing
+
+def time_to_seconds(time_str):
+    # Extract hours, minutes, and seconds using string slicing
+    hours = int(time_str[0:2])  # First two characters are hours
+    minutes = int(time_str[3:5])  # Characters at index 3 and 4 are minutes
+    seconds = int(time_str[6:8])  # Characters at index 6 and 7 are seconds
+    
+    # Calculate total seconds since midnight
+    return hours * 3600 + minutes * 60 + seconds
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze SatPulse clock log.")
