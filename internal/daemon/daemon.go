@@ -269,7 +269,7 @@ func NewDispatcher(lg *slog.Logger, clk *ts.Clock, pulseWidth time.Duration, cfg
 		RefClock:      rc,
 		Grandmaster:   gm,
 		LogInterval:   cfg.Log.Interval,
-		ClockLogPath:  cfg.Log.ClockPath(clk.Path(), mon.ClockLogExtension),
+		ClockLogPath:  cfg.Log.ClockPath(clk.IfName(), mon.ClockLogExtension),
 		ClockAccuracy: time.Duration(cfg.PTP.ClockAccuracy),
 	})
 	if err != nil {

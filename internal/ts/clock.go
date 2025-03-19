@@ -139,6 +139,10 @@ func Close(c *Clock) error {
 	return errors.Join(c.Close(), err)
 }
 
+func (clk *Clock) IfName() string {
+	return clk.ifName
+}
+
 func waitIface(ctx context.Context, lg *slog.Logger, w *ifwait.IfWaiter, f func(net.Flags) bool, status string, timeout time.Duration) error {
 	var timeoutTimer <-chan time.Time
 	if timeout != 0 {
