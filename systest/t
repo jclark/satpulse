@@ -1,0 +1,25 @@
+#!/bin/sh
+# Use e.g.
+#   t check
+# to run the check.yml playbook on the testing group. 
+# Check if at least one argument is provided
+if [ "$#" -lt 1 ]; then
+  echo "Usage: $0 playbook1 [playbook2 ...]" >&2
+  exit 1
+fi
+
+# Initialize an empty list of playbooks
+pbs=""
+
+# Loop through each argument, append .yml, and check if the file exists
+for pb in "$@"; do
+  f="${pb}.yml"
+  if [ ! -f "$f" ]; then
+    echo "Error: Playbook '$f' does not exist." >&2
+    exit 1
+  fi
+  pbs="$pbs $f"
+done
+
+# Run ansible-playbook with the constructed list of playbooks
+ansible-playbook -K -i inventory.yml -l testing $pbs
