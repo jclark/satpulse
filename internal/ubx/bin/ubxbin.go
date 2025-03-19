@@ -1304,7 +1304,7 @@ func ParseMsg(packet string) (Msg, error) {
 	trimmed := packet[2:checksumIndex]
 	ckA, ckB := checksum(trimmed)
 	if ckA != packet[checksumIndex] || ckB != packet[checksumIndex+1] {
-		return nil, fmt.Errorf("ubx message: checksum failed: in message 0x%02x%02x; got 0x%02x%02x; data %x", packet[checksumIndex], packet[checksumIndex+1], ckA, ckB, []byte(trimmed))
+		return nil, fmt.Errorf("ubx message: checksum failed: checksum in message 0x%02x%02x; computed checksum 0x%02x%02x; data %x", packet[checksumIndex], packet[checksumIndex+1], ckA, ckB, []byte(trimmed))
 	}
 	mid := makeMsgID(trimmed[0], trimmed[1])
 	ctor := msgMap[mid]
