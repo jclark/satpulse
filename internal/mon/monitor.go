@@ -14,6 +14,10 @@ import (
 
 const sampleWindowSize = 60
 
+// Warn if the 1PPS signal stops for more than this number of seconds.
+// Occasional missed samples are common, so we don't want to warn about them.
+const ppsStoppedWarn = 3
+
 type Monitor struct {
 	samples        *sampleState
 	lastSampleTime time.Time
@@ -25,7 +29,7 @@ type Monitor struct {
 	syncState      syncState
 	paused         bool
 	lastRefTime    ptime.Time
-	ppsStopped     bool
+	ppsStopped     int // number of missing samples recorded since 1PPS stopped
 	sseCh          chan<- sse.Event
 	stats          stats
 	lf             logfile.LogFile
@@ -127,10 +131,10 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	}
 	now := time.Now()
 	mon.lastSampleTime = now
-	if mon.ppsStopped {
+	if mon.ppsStopped >= ppsStoppedWarn {
 		mon.lg.Warn("1PPS signal restored")
-		mon.ppsStopped = false
 	}
+	mon.ppsStopped = 0
 	mon.updateSyncState(nextState)
 }
 
@@ -262,9 +266,9 @@ func (mon *Monitor) Tick(now time.Time) {
 		return
 	}
 
-	if !mon.ppsStopped {
+	mon.ppsStopped++
+	if mon.ppsStopped == ppsStoppedWarn {
 		mon.lg.Warn("1PPS signal stopped")
-		mon.ppsStopped = true
 	}
 	// At this point we are overdue for a new sample.
 	// Note that we are updating lastSampleTime to one second after the previous sample time rather than now.
