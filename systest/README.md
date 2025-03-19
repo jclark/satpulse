@@ -1,4 +1,8 @@
-These are Ansible playbooks that I use to automate system testing of SatPulse.
+These are files that I use to automate system testing of SatPulse.
+
+`clocklog.py` analyzes clock logs (in /var/log/satpulse.clock.IFNAME.log), enabled by `clock = true` in the `[log]` table in satpulse.toml.
+
+The `.yml` files are Ansible playbooks:
 
 * `inventory.yml` is the Ansible inventory that defines variables and hosts
 * `install.yml` installs the SatPulse package
