@@ -39,7 +39,21 @@
       fail:
         msg: "Clock offset difference ({{ offset_diff }} ns) exceeds threshold ({{ sys_clock_offset }} ns)"
       when: (offset_diff | int) > (sys_clock_offset | int)
-        
+
+    - name: Check chrony stratum
+      block:  
+        - name: Run chronyc tracking command
+          command: "chronyc tracking"
+          register: chronyc_output
+
+        - name: Extract stratum value directly from chronyc tracking output
+          set_fact:
+            chronyc_stratum: "{{ (chronyc_output.stdout | regex_search('Stratum\\s+:\\s+(\\d+)', '\\1')) | first }}"
+        - name: Fail if stratum is not 1
+          fail:
+            msg: "Test failed: Chrony stratum is {{ chronyc_stratum }}; expected 1"
+          when: chronyc_stratum != "1"
+       
     - name: Get the current service invocation ID
       command: "systemctl show --value -p InvocationID satpulse@{{ instance }}"  
       register: invocation_id
