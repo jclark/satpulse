@@ -1,0 +1,17 @@
+- name: Start SatPulse service
+  hosts: all
+  become: yes
+    
+  tasks:
+    - name: Stop SatPulse service
+      systemd:
+        name: "satpulse@{{ instance }}"
+        state: stopped
+
+    - name: Initialize PHC
+      command: "phc_ctl -q {{ interface }} set 0 freq 0"
+
+    - name: Start SatPulse service
+      systemd:
+        name: "satpulse@{{ instance }}"
+        state: restarted

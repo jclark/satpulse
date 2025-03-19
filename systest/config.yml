@@ -1,0 +1,33 @@
+---
+- name: Configure SatPulse
+  hosts: all
+  become: yes
+  tasks:
+    - name: Set device fact
+      set_fact:
+        device: "/dev/{{ instance }}"
+
+    - name: Stat the device so we can check if it is character device
+      ansible.builtin.stat:
+        path: "{{ device }}"
+      register: device_stat
+
+    - name: Fail if not a character device
+      fail:
+        msg: "{{ device }} is not a character device"
+      when: not (device_stat.stat.exists and device_stat.stat.ischr)
+
+    - name: Edit the SatPulse config file
+      ini_file:
+        path: "/etc/satpulse.toml"
+        section: "{{ item.section }}"
+        option: "{{ item.option }}"
+        value: "{{ item.value }}"
+      loop:
+        - { section: "phc", option: "interface", value: '"{{ interface }}"' }
+        - { section: "phc", option: "pin", value: "{{ pin }}" }
+        - { section: "serial", option: "device", value: '"{{ device }}"' }
+        - { section: "serial", option: "speed", value: "{{ speed }}" }
+        - { section: "gps", option: "config", value: "{{ config }}" }
+        - { section: "log", option: "clock", value: "true" }
+        - { section: "ntp", option: "sock.path", value: '"/var/run/chrony.satpulse.sock"'}

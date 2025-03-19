@@ -1,0 +1,9 @@
+- name: Stop SatPulse service
+  hosts: all
+  become: yes
+    
+  tasks:
+    - name: Stop SatPulse service
+      systemd:
+        name: "satpulse@{{ instance }}"
+        state: stopped

@@ -1,0 +1,75 @@
+- name: Check the running instance of SatPulse
+  hosts: all
+  become: yes
+  vars:
+    tai_utc_diff: 37  # TAI-UTC difference in seconds
+    sys_clock_offset: 100000  # Maximum allowed difference in nanoseconds
+    
+  tasks:
+    - name: Check if SatPulse service is running
+      command: "systemctl is-active satpulse@{{ instance }}"
+      register: service_status
+      failed_when: false
+ 
+    - name: Fail if service is not running
+      fail:
+        msg: "SatPulse service (satpulse@{{ instance }}) is not active"
+      when: service_status.stdout != "active"
+      
+    - name: Run phc_ctl to compare clock
+      command: "phc_ctl -q {{ interface }} cmp"
+      register: phc_result
+      
+    - name: Extract offset value
+      set_fact:
+        offset_raw: "{{ phc_result.stdout | regex_search('\\s(-?\\d+)ns', '\\1') | first }}"
+        
+    - name: Convert offset to number and calculate difference
+      set_fact:
+        offset_value: "{{ offset_raw | int }}"
+        expected_offset: "{{ (tai_utc_diff * -1000000000) | int }}"
+        offset_diff: "{{ ((offset_raw | int) - (tai_utc_diff * -1000000000)) | abs }}"
+
+    - name: Display clock offset information
+      debug:
+        msg: 
+          - "PHC and system clock difference: {{ offset_diff }}ns"
+          
+    - name: Fail if clock offset exceeds threshold
+      fail:
+        msg: "Clock offset difference ({{ offset_diff }} ns) exceeds threshold ({{ sys_clock_offset }} ns)"
+      when: (offset_diff | int) > (sys_clock_offset | int)
+        
+    - name: Get the current service invocation ID
+      command: "systemctl show --value -p InvocationID satpulse@{{ instance }}"  
+      register: invocation_id
+
+    - name: Collect logs for the completed service run
+      shell: "journalctl --priority=0..4 _SYSTEMD_INVOCATION_ID={{ invocation_id.stdout }} | grep -v '^-- Journal begins at'"
+      register: service_logs
+      
+    - name: Analyze logs for key indicators
+      block:
+        - name: Check if 'in sync' is present
+          set_fact:
+            in_sync_found: "{{ 'in sync' in service_logs.stdout }}"
+        
+        - name: Check if 'out of sync' is present
+          set_fact:
+            out_of_sync_found: "{{ 'out of sync' in service_logs.stdout }}"
+        
+        - name: Count log lines
+          set_fact:
+            line_count: "{{ service_logs.stdout_lines | length }}"
+        
+    - name: Check log requirements
+      block:
+        - name: Display raw logs for inspection
+          debug:
+            var: service_logs.stdout_lines
+        
+        - name: Fail if test requirements not met
+          fail:
+            msg: "Test failed: in_sync_found={{ in_sync_found }}, out_of_sync_found={{ out_of_sync_found }}, line_count={{ line_count }}"
+      when: not ((in_sync_found|bool) and not(out_of_sync_found|bool) and (line_count|int) == 1)
+

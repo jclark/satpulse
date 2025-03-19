@@ -1,0 +1,49 @@
+all:
+  vars:
+    ansible_user: jjc
+    ansible_python_interpreter: auto_silent
+    instance: ttyAMA0  # Instance for systemd service
+    pin: 0             # PHC pin
+    speed: 9600        # Baud rate
+    interface: eth0    # Network interface
+    config: "true"     # Enable GPS configuration
+
+  children:
+    testing:
+      hosts:
+        abondance.lan:
+        burrata.lan:
+        caciocavallo.lan:
+        morbier.lan:
+        toma.lan:
+        vacherin.lan:
+  
+  hosts:
+    vacherin.lan:
+      speed: 38400
+
+    burrata.lan:
+      interface: end0
+      instance: ttyAMA3
+
+    toma.lan:
+      instance: ttyACM0
+      speed: 38400
+      interface: enp1s0
+
+    abondance.lan:
+      instance: ttyACM0
+      interface: enp4s0
+      pin: 1
+  
+    ricotta.lan: # all default
+    
+    venaco.local:
+      speed: 38400
+
+    caciocavallo.lan:
+      instance: ttyAMA3
+      config: "false"
+
+    morbier.lan: # all default
+
