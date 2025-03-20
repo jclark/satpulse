@@ -3,6 +3,7 @@
 # The --all flag can be used to analyze the entire log instead of only the last run.
 import argparse
 from dataclasses import dataclass
+import math
 
 @dataclass
 class LogEntry:
@@ -98,12 +99,17 @@ def analyze_data(runs, analyze_all):
         offsets.sort()
         index = int(0.95 * len(offsets))
         percentile_95 = offsets[index]
+
+        # Calculate standard deviation
+        std_dev_offset = math.sqrt(sum(offset ** 2 for offset in offsets) / len(offsets))
     else:
         max_offset = 0
         mean_offset = 0
         percentile_95 = 0
+        std_dev_offset = 0
     
     # Print summary statistics
+    print(f"Number of samples: {len(offsets)}")
     if analyze_all:
         print(f"Runs that synced: {len(times_to_sync)}/{len(runs)}")
         if times_to_sync:
@@ -120,8 +126,9 @@ def analyze_data(runs, analyze_all):
     print(f"Total time where sync lost: {lost_sync_duration}s")
     print(f"Number of missing pulses: {n_missing_secs}")
     print(f"Max offset: {max_offset}ns")
-    print(f"Mean offset: {mean_offset:.2f}ns")
+    print(f"Mean absolute offset: {mean_offset:.2f}ns")
     print(f"95% offset: {percentile_95}ns")
+    print(f"Standard deviation of offsets: {std_dev_offset:.2f}ns")
     print(f"Number of outliers: {n_outliers}")
 
 def count_missing_secs(runs):
