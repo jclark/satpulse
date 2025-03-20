@@ -40,23 +40,23 @@
         path: "{{ package_dir }}"
         state: directory
     
-    - name: Copy latest package to remote machine
+    - name: Copy package to remote machine
       copy:
         src: "{{ control_machine_package_dir }}/{{ package }}"
         dest: "{{ package_dir }}/"
         mode: '0644'
 
-    - name: Stop SatPulse service
+    - name: Stop all instances of SatPulse service
       become: yes
       shell: "systemctl stop 'satpulse@*' || true"
       
-    - name: Remove old systemd service file from source install
+    - name: Remove any systemd service file from source install
       become: yes
       file:
         path: /etc/systemd/system/satpulse@.service
         state: absent
 
-    - name: Install latest package on Debian
+    - name: Install package on Debian
       become: yes
       apt:
         deb: "{{ package_dir }}/{{ package }}"
