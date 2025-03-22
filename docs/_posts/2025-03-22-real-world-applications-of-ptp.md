@@ -1,0 +1,36 @@
+---
+layout: single
+title: "Real-world applications of PTP"
+date: 2025-03-22
+---
+
+SatPulse makes it easy and inexpensive to run PTP on a network. Personally, I tinker with PTP because I find it interesting. Why be satisfied with your computer clock being accurate to a thousandth of a second, when it is possible to make it accurate to a ten millionth of second? But there are actually lots of real-world use cases for PTP. Here are the main ones I am aware of.
+
+**Telecom & 5G.** 5G cellular networks are one of the most commercially important users of PTP. 5G’s much improved bandwidth comes partly from more efficient use of the available spectrum, which requires basestations to precisely coordinate the timing of their transmissions. It also comes from deploying many more radios. This is enabled by an architecture where the traditional integrated basestation is split into separate components (radio units, distributed units, and centralized units) that may be physically distant from each other but must maintain precise synchronization to function effectively.
+
+**Power & energy.** In an AC power grid, electrical voltage oscillates sinusoidally at a frequency of 50 or 60 cycles per second (Hz). The flow of electrical power between two points is determined by the phase angle difference between them. To ensure stable and efficient power transmission, phase angle measurements must be taken at multiple locations throughout the grid and must be precisely time-synchronized so that accurate comparisons can be made, allowing operators to maintain the correct phase angle differences and ensure grid stability. This is done using devices called synchrophasors, which provide real-time, time-stamped measurements of voltage and current phasors. Synchrophasors require microsecond-level precision and can be synchronized using PTP.
+
+**Audio-visual.** In industries dealing with audio and visual data, there is often a need for a single event to be recorded by multiple audio or video devices. The recordings need to be synchronized so that they can be combined. To some extent, this is a matter of timestamping the recorded data. But in the case of video, it is sometimes desirable to ensure that frames are taken at the same instant on every device: for example, with live broadcasting or stereoscopic imaging. Another requirement is to synchronize audio playback across multiple speakers. Increasingly the industry, particularly at the high, is moving to connect input and output devices using general purpose IP and ethernet technologies.
+
+**Industrial automation & robotics.** On a production line, there can be sensors (such as cameras), material handling systems (such as a conveyor belt), and actuation systems (such as a linear actuator) whose operation needs to be precisely synchronized. For example, after a camera detects a faulty item, a linear actuator has to be actuated at exactly the right time to reject the faulty item.
+
+**Automotive.** The primary use of PTP in the automotive industry is for Advanced Driver Assistance Systems. These need to combine data from multiple sensors (cameras, radar, ultrasonic) into a unified view of the vehicle's surroundings, and coordinate the actuation of controls (steering, braking, acceleration) based on this data. A secondary use is for audio/video entertainment systems. The automotive industry has embraced ethernet to the extent that they have their own IEEE-defined physical layer (1000BASE-T1, 100BASE-T1) that is optimized for shorter distances and lighter wiring (using a single twisted pair of wires).
+
+**Finance & high-frequency trading.**  The finance industry depends on precision time particularly in the realm of high-frequency trading, where transactions occur in microseconds. Financial regulations such as MiFID II in Europe require trading data to be timestamped with a precision as high as 100 microseconds in some cases. These timestamps must be traceable, meaning that it must be possible to show a verifiable sequence of steps by which the timestamps have been derived from UTC. Precision timing is also used to optimize trading strategies, detect anomalies, and reconstruct the exact sequence of events during rapid market movements.
+
+**Datacenters.** Synchronized clocks are generally useful for improving efficiency in distributed systems: nodes can use timestamps to make local decisions, and thus reduce the need to communicate with other nodes. Particularly in distributed databases, synchronization enables various kinds of consistency guarantees to be provided efficiently. Precision timing is also useful for network monitoring: precision of the order of 100 nanoseconds makes it possible to accurately reconstruct the journey of a single packet through multiple hops.
+
+**Science.** Several scientific fields rely on precision timing. For example, in astrophysics radio telescopes like the Square Kilometre Array have thousands of antennas, and the signals from these have to be combined with high precision. In high energy physics, particle accelerators like the LHC at CERN use PTP to acquire timestamped data from thousands of detectors and trigger operations such as beam injection. CERN has pioneered a higher accuracy version of PTP called White Rabbit, which has now been standardized as the High Accuracy (HA) PTP profile. 
+
+There are a couple of design patterns that are shared across many of these industries. First, there is a pattern where distributed nodes with synchronized clocks acquire and timestamp data; the timestamps are then used to combine the data acquired from multiple nodes. Second, there is a pattern of time-triggered control, where instructions are sent in advance to a node to perform some action at a specified precise time in the future.
+
+There is also a common theme that many industries have had industry-specific communication technologies, which often include synchronization capabilities, but are replacing them by general purpose IP and ethernet technologies, which naturally leads to using PTP for synchronization. For example:
+
+* mobile networks used SONET/SDH
+* power grid and scientific research used IRIG
+* automotive used CAN
+* industrial automation used PROFIBUS, Devicenet and Modbus
+* video production used genlock and SDI 
+* audio production used AES3 and MADI
+
+PTP can be considered as an alternative to having a local GPS received at every node. Although GPS receivers can be inexpensive, a GPS receiver used for precision timing needs an antenna with at least a partial sky view. The specialized cabling used to carry the RF signal from the antenna to the receiver is expensive to install. In large buildings and urban areas, or when there are large numbers of nodes, the cabling needed for a GPS receiver at every node is not practical. Another more subtle challenge is transferring time from a GPS receiver to a computer clock. Typically, a GPS PPS output is connected to a GPIO or serial pin, but interrupt latency limits precision to microseconds - significantly below the accuracy that GPS receivers can achieve. PTP avoids this problem by taking advantage of hardware support for timestamping in the ethernet controller.
