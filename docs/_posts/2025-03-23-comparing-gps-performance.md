@@ -3,7 +3,7 @@ layout: single
 title: "Comparing GPS performance with SatPulse"
 date: 2025-03-23
 ---
-I have been doing some more systematic testing on SatPulse. I have 6 different systems set up for testing. I ran SatPulse on them for a couple of days, with SatPulse producing its "clock" log, which includes the offsets measured between the PTP hardware clock (PHC) and the pulses emitted every second by the GPS. SatPulse feeds this into a PI servo that continually adjusts the frequency of the PHC. These offsets give an objective indicator of the performance of the GPS and the PHC.
+I have been doing some more systematic testing on SatPulse. I have 6 different systems set up for testing. I ran SatPulse on them for 3 days, with SatPulse producing its "clock" log, which includes the offsets measured between the PTP hardware clock (PHC) and the pulses emitted every second by the GPS. SatPulse feeds this into a PI servo that continually adjusts the frequency of the PHC. These offsets give an objective indicator of the performance of the GPS and the PHC.
 
 Here is a table of the results:
  * GPS is the GPS used (configuration detailed below)
@@ -18,8 +18,8 @@ Here is a table of the results:
 | F9P | 6.2 | 7.6 | 14 | 200 |
 | F9T | 6.2 | 7.8 | 15 | 240 |
 | GPSDO | 9.0 | 11.0 | 21 | 200 |
-| M8T | 14.5 | 18.0 | 34 | 30 |
-| M10  | 16.7 | 26.4 | 64 | 7 |
+| M8T | 14.5 | 17.9 | 34 | 30 |
+| M10  | 18.3 | 28.7 | 67 | 7 |
 
 The systems are as follows:
 
