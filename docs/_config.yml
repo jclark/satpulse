@@ -316,6 +316,8 @@ defaults:
       comments: # true
       share: false
       related: true
+      sidebar:
+        nav: "docs"
   - scope:
       path: ""
       type: pages
