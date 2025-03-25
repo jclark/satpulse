@@ -21,7 +21,7 @@ I chose a GPS in the form factor that I have found easiest to fit inside CM4/CM5
  * includes a tiny battery;
  * has both power and PPS LEDs.
 
-There are quite a number of GPSs on the market in this form factor. The board I am using here is the Star River SR1723U10. I got it from [Star River's official shop on AliExpress](https://xinghewei.aliexpress.com/). (The shop is called Xing He Wei; Xing He means star river, which is a poetic name for the Milky Way in Chinese.) The SR1723 range has GPS boards in the same factor with a variety of different modules. This one uses the Star River [SR1612U10](http://sragps.com/down/SR1612U10%E8%A7%84%E6%A0%BC%E4%B9%A6.pdf) module, which uses the u-blox UBX-M100050-KB chip. So from a software perspective, it behaves like a u-blox 10th generation standard precision module. It costs about $7.
+There are quite a number of GPSs on the market in this form factor. The board I am using here is the Star River SR1723U10. I got it from [Star River's official shop on AliExpress](https://xinghewei.aliexpress.com/). (The shop is called Xing He Wei; Xing He means star river, which is a poetic name for the Milky Way in Chinese.) The SR1723 range has GPS boards in the same factor with a variety of different modules. This one uses the Star River [SR1612U10](http://sragps.com/down/SR1612U10%E8%A7%84%E6%A0%BC%E4%B9%A6.pdf) module, which uses the u-blox UBX-M10050-KB chip. So from a software perspective, it behaves like a u-blox 10th generation standard precision module. It costs about $7.
 
 You will of course need an antenna; this module is single-band L1, so a basic GPS puck antenna with a cable ending in a SMA male connector is sufficient.
 
