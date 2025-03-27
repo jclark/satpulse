@@ -4,6 +4,7 @@
 import argparse
 from dataclasses import dataclass
 import math
+from datetime import datetime
 
 @dataclass
 class LogEntry:
@@ -136,20 +137,15 @@ def count_missing_secs(runs):
     expected_sec = -1
     for run in runs:
         for entry in run:
-            sec = time_to_seconds(entry.time)
-            if expected_sec != -1 and sec != expected_sec:
-                n_missing += (sec - expected_sec) % 86400
-            expected_sec = (sec + 1) % 86400
+            sec = time_to_seconds(entry.date, entry.time)
+            if expected_sec != -1 and sec > expected_sec:
+                n_missing += sec - expected_sec
+            expected_sec = sec + 1
     return n_missing
 
-def time_to_seconds(time_str):
-    # Extract hours, minutes, and seconds using string slicing
-    hours = int(time_str[0:2])  # First two characters are hours
-    minutes = int(time_str[3:5])  # Characters at index 3 and 4 are minutes
-    seconds = int(time_str[6:8])  # Characters at index 6 and 7 are seconds
-    
-    # Calculate total seconds since midnight
-    return hours * 3600 + minutes * 60 + seconds
+def time_to_seconds(date_str, time_str):
+    dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S")
+    return int(dt.timestamp())
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze SatPulse clock log.")
