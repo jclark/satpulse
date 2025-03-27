@@ -125,6 +125,19 @@ func LeapSecondOnDate(date time.Time, utcOffBefore, utcOffAfter int16) LeapSecon
 	}
 }
 
+const LeapSecond2016Month = time.December
+const LeapSecond2016Day = 31
+const LeapSecond2016UTCOffBefore = 36
+const LeapSecond2016UTCOffAfter = 37
+
+var leapSecond2016Date = time.Date(2016, LeapSecond2016Month, LeapSecond2016Day, 0, 0, 0, 0, time.UTC)
+
+// LeapSecond2016 returns the leap second that occurred at the end of 2016.
+// This has been the current leap second for a long time (up at least till mid 2025).
+func LeapSecond2016() LeapSecond {
+	return LeapSecondOnDate(leapSecond2016Date, LeapSecond2016UTCOffBefore, LeapSecond2016UTCOffAfter)
+}
+
 func (ls LeapSecond) UTCtoTime(ut UTCTime) Time {
 	var s int16
 	// It is essential to do the comparison using the date of the leap second

@@ -100,9 +100,9 @@ func TestGNSS(t *testing.T) {
 }
 
 func TestSysTime(t *testing.T) {
-	lsDate := time.Date(2016, time.December, 31, 0, 0, 0, 0, time.UTC)
+	lsDate := leapSecond2016Date
 	lsOver := lsDate.AddDate(0, 0, 1)
-	ls := LeapSecondOnDate(lsDate, 36, 37)
+	ls := LeapSecondOnDate(lsDate, LeapSecond2016UTCOffBefore, LeapSecond2016UTCOffAfter)
 
 	testTimes := []time.Time{
 		time.Date(2024, time.January, 8, 36, 0, 0, 0, time.UTC),

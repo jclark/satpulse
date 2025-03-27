@@ -82,9 +82,9 @@ type LogConfig struct {
 }
 
 var leapSecondDefault = LeapSecondConfig{
-	Date:   toml.LocalDate{Year: 2016, Month: int(time.December), Day: 31},
-	Before: 36,
-	After:  37,
+	Date:   toml.LocalDate{Year: 2016, Month: int(ptime.LeapSecond2016Month), Day: ptime.LeapSecond2016Day},
+	Before: ptime.LeapSecond2016UTCOffBefore,
+	After:  ptime.LeapSecond2016UTCOffAfter,
 }
 
 func LoadConfig(paths ...string) (*Config, error) {
