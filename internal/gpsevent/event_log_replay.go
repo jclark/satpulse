@@ -70,7 +70,20 @@ func main() {
 	} else {
 		logLevel = slog.LevelInfo
 	}
-	warnCountHandler := gpsevent.NewWarnCountHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
+	var curTime time.Time
+	opts := &slog.HandlerOptions{
+		Level: logLevel,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if len(groups) == 0 && a.Key == "time" && !curTime.IsZero() {
+				return slog.Attr{
+					Key:   a.Key,
+					Value: slog.TimeValue(curTime),
+				}
+			}
+			return a
+		},
+	}
+	warnCountHandler := gpsevent.NewWarnCountHandler(slog.NewTextHandler(os.Stderr, opts))
 	lg := slog.New(warnCountHandler)
 
 	var phcFlags phc.DriverFlags
@@ -98,7 +111,7 @@ func main() {
 		output: output,
 	}
 
-	err := gpsevent.ReplayFile(fn, phcFlags, rs, ls, lg)
+	err := gpsevent.ReplayFile(fn, phcFlags, rs, ls, &curTime, lg)
 	if err != nil {
 		log.Fatalf("Error replaying file: %v", err)
 	}

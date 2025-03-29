@@ -20,6 +20,7 @@ type LogReplayer struct {
 	// this should include monotonic clock time
 	tStart time.Time
 	cb     *combine.Combiner
+	tPtr   *time.Time
 }
 
 func (r *LogReplayer) replayEvent(bytes []byte) error {
@@ -32,6 +33,9 @@ func (r *LogReplayer) replayEvent(bytes []byte) error {
 		r.tStartInit(&event)
 	}
 	tRead := r.tStart.Add(event.Nanos)
+	if r.tPtr != nil {
+		*r.tPtr = tRead
+	}
 	if event.Time != nil {
 		r.replayTime(event.Time, tRead)
 	} else if event.Timestamp != nil {
@@ -67,7 +71,7 @@ func (r *LogReplayer) replayTimestamp(ts *Timestamp, tRead time.Time) {
 	r.cb.PulseEdge(ptime.ClockTime{T: ts.T, Era: ts.Era}, tRead, ts.Delay)
 }
 
-func ReplayFile(fn string, phcFlags phc.DriverFlags, sampler combine.Sampler, ls ptime.LeapSecond, lg *slog.Logger) error {
+func ReplayFile(fn string, phcFlags phc.DriverFlags, sampler combine.Sampler, ls ptime.LeapSecond, tPtr *time.Time, lg *slog.Logger) error {
 	pt := combine.PulseType{EdgesPerPulse: phcFlags.Edges(), PulseWidth: time.Second / 10}
 	ccfg := combine.Config{}
 	ccfg.SetDefault(pt)
@@ -82,6 +86,7 @@ func ReplayFile(fn string, phcFlags phc.DriverFlags, sampler combine.Sampler, ls
 	replayer := LogReplayer{
 		ls: ls,
 		cb: cb,
+		tPtr: tPtr,
 	}
 
 	f, err := os.Open(fn)
