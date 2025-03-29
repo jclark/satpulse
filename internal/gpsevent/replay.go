@@ -14,7 +14,10 @@ import (
 )
 
 type LogReplayer struct {
-	ls     ptime.LeapSecond
+	ls ptime.LeapSecond
+	// the time of the tStart in the original process,
+	// which the Nanos event field is relative to;
+	// this should include monotonic clock time
 	tStart time.Time
 	cb     *combine.Combiner
 }
@@ -25,16 +28,22 @@ func (r *LogReplayer) replayEvent(bytes []byte) error {
 	if err != nil {
 		return err
 	}
-	tRead := event.T
-	if !r.tStart.IsZero() && event.Nanos != 0 {
-		tRead = r.tStart.Add(event.Nanos)
+	if r.tStart.IsZero() {
+		r.tStartInit(&event)
 	}
+	tRead := r.tStart.Add(event.Nanos)
 	if event.Time != nil {
 		r.replayTime(event.Time, tRead)
 	} else if event.Timestamp != nil {
 		r.replayTimestamp(event.Timestamp, tRead)
 	}
 	return nil
+}
+
+func (r *LogReplayer) tStartInit(event *LogEvent) {
+	now := time.Now()
+	replayDelay := now.Sub(event.T)
+	r.tStart = now.Add(-replayDelay).Add(-event.Nanos)
 }
 
 func (r *LogReplayer) replayTime(mt *gpsprot.TimeMsg, tRead time.Time) {
@@ -71,9 +80,8 @@ func ReplayFile(fn string, phcFlags phc.DriverFlags, sampler combine.Sampler, ls
 	}
 
 	replayer := LogReplayer{
-		ls:     ls,
-		tStart: time.Now(),
-		cb:     cb,
+		ls: ls,
+		cb: cb,
 	}
 
 	f, err := os.Open(fn)
