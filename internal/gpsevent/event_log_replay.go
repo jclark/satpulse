@@ -18,18 +18,20 @@ import (
 )
 
 type replaySampler struct {
-	ref   ptime.Time
-	ls    ptime.LeapSecond
-	lg    *slog.Logger
-	count int
+	ref    ptime.Time
+	ls     ptime.LeapSecond
+	lg     *slog.Logger
+	count  int
+	output *os.File // nil if no output file is specified
 }
 
 func (rs *replaySampler) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	// Format the reference time and calculate the offset
 	offset := local.T.Sub(ref)
 
-	// Print the formatted time and offset in nanoseconds
-	fmt.Printf("%s %3d\n", rs.logDateTime(ref), offset.Nanoseconds())
+	if rs.output != nil {
+		fmt.Fprintf(rs.output, "%s %3d\n", rs.logDateTime(ref), offset.Nanoseconds())
+	}
 
 	// Check for duplicate samples and log using slog.Logger
 	if ref == rs.ref {
@@ -53,6 +55,7 @@ func main() {
 	driverBothEdges := flag.Bool("2", false, "Use DriverBothEdges")
 	driverOneEdgePoll4Hz := flag.Bool("cm", false, "Use DriverOneEdge|DriverPoll4Hz")
 	verbose := flag.Bool("v", false, "Enable verbose (debug) logging")
+	outputFile := flag.String("o", "", "File to output samples to")
 	flag.Parse()
 
 	// Ensure a log file is provided
@@ -78,9 +81,20 @@ func main() {
 
 	ls := ptime.LeapSecond2016()
 
+	var output *os.File
+	if *outputFile != "" {
+		var err error
+		output, err = os.Create(*outputFile)
+		if err != nil {
+			log.Fatalf("Failed to open output file: %v", err)
+		}
+		defer output.Close()
+	}
+
 	rs := &replaySampler{
-		ls: ls,
-		lg: lg,
+		ls:     ls,
+		lg:     lg,
+		output: output,
 	}
 
 	err := gpsevent.ReplayFile(fn, phcFlags, rs, ls, lg)
