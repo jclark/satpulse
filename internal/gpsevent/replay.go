@@ -14,9 +14,13 @@ import (
 )
 
 type LogReplayer struct {
-	ls     ptime.LeapSecond
+	ls ptime.LeapSecond
+	// the time of the tStart in the original process,
+	// which the Nanos event field is relative to;
+	// this should include monotonic clock time
 	tStart time.Time
 	cb     *combine.Combiner
+	tPtr   *time.Time
 }
 
 func (r *LogReplayer) replayEvent(bytes []byte) error {
@@ -25,9 +29,12 @@ func (r *LogReplayer) replayEvent(bytes []byte) error {
 	if err != nil {
 		return err
 	}
-	tRead := event.T
-	if !r.tStart.IsZero() && event.Nanos != 0 {
-		tRead = r.tStart.Add(event.Nanos)
+	if r.tStart.IsZero() {
+		r.tStartInit(&event)
+	}
+	tRead := r.tStart.Add(event.Nanos)
+	if r.tPtr != nil {
+		*r.tPtr = tRead
 	}
 	if event.Time != nil {
 		r.replayTime(event.Time, tRead)
@@ -35,6 +42,12 @@ func (r *LogReplayer) replayEvent(bytes []byte) error {
 		r.replayTimestamp(event.Timestamp, tRead)
 	}
 	return nil
+}
+
+func (r *LogReplayer) tStartInit(event *LogEvent) {
+	now := time.Now()
+	replayDelay := now.Sub(event.T)
+	r.tStart = now.Add(-replayDelay).Add(-event.Nanos)
 }
 
 func (r *LogReplayer) replayTime(mt *gpsprot.TimeMsg, tRead time.Time) {
@@ -58,7 +71,7 @@ func (r *LogReplayer) replayTimestamp(ts *Timestamp, tRead time.Time) {
 	r.cb.PulseEdge(ptime.ClockTime{T: ts.T, Era: ts.Era}, tRead, ts.Delay)
 }
 
-func ReplayFile(fn string, phcFlags phc.DriverFlags, sampler combine.Sampler, ls ptime.LeapSecond, lg *slog.Logger) error {
+func ReplayFile(fn string, phcFlags phc.DriverFlags, sampler combine.Sampler, ls ptime.LeapSecond, tPtr *time.Time, lg *slog.Logger) error {
 	pt := combine.PulseType{EdgesPerPulse: phcFlags.Edges(), PulseWidth: time.Second / 10}
 	ccfg := combine.Config{}
 	ccfg.SetDefault(pt)
@@ -71,9 +84,9 @@ func ReplayFile(fn string, phcFlags phc.DriverFlags, sampler combine.Sampler, ls
 	}
 
 	replayer := LogReplayer{
-		ls:     ls,
-		tStart: time.Now(),
-		cb:     cb,
+		ls: ls,
+		cb: cb,
+		tPtr: tPtr,
 	}
 
 	f, err := os.Open(fn)

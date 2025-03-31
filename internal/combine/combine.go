@@ -550,48 +550,42 @@ func (sml secMsgList) search(sec ptime.Time) int {
 // It returns 0 if no second can be chosen.
 // The bool return value says whether the choice is good enough to be used as the reference sample.
 func (s *sampleData) chooseNextSec(pulse pulseEdge, sml secMsgList, cfg *Config) (ptime.Time, bool) {
+	// Note that we also get a readMatch with q of at least matchBad
 	readMatch := s.readMatch(pulse, cfg)
+
 	var msgMatch secMatch
 	if len(sml) != 0 {
 		q, i := sml.bestMatch(pulse, cfg)
 		if q != matchNone {
 			msgMatch = secMatch{sml[i].sec, q}
+		} else {
+			msgMatch = sml.prePulseMatch(pulse, cfg)
 		}
 	}
-	if msgMatch.q > matchBad {
-		if readMatch.q > matchBad && readMatch.sec != msgMatch.sec && pulse.tDiff(s.pulse) < time.Millisecond*2500 {
-			return 0, false
-		}
-		return msgMatch.sec, true
+	phcMatch := s.phcMatch(pulse, cfg)
+	// Use the phcMatch to upgrade the readMatch
+	if phcMatch.q > readMatch.q && readMatch.sec == phcMatch.sec {
+		readMatch.q = phcMatch.q
 	}
+
+	if msgMatch.q != matchNone {
+		// If we have contradictory information here, then it's probably better not to choose the wrong answer.
+		// But there's one exception: if the second of the readMatch is after the second of the msgMatch, but not by much
+		// then probably what's happened is that the serial communication has fallen behind
+		if msgMatch.sec != readMatch.sec {
+			if delay := readMatch.sec.Sub(msgMatch.sec); !(delay > 0 && delay <= 5*time.Second) {
+				return 0, false
+			}
+		} else if msgMatch.q >= matchMedium {
+			return msgMatch.sec, max(msgMatch.q, readMatch.q) >= matchGood
+		}
+	}
+
+	// now we have a read match only
 	if readMatch.q < matchMedium {
 		return 0, false
 	}
-	// now we have a match based on the time the pulse was read
-	if msgMatch.q == matchNone {
-		msgMatch = sml.prePulseMatch(pulse, cfg)
-	}
-
-	readConfirmed := readMatch.q >= matchGood
-	if !readConfirmed {
-		phcMatch := s.phcMatch(pulse, cfg)
-		readConfirmed = phcMatch.q >= matchGood && phcMatch.sec == readMatch.sec
-	}
-
-	if msgMatch.q > matchBad {
-		if readMatch.sec != msgMatch.sec {
-			// something weird going on here: let's wait for the post message
-			return 0, false
-		}
-		return readMatch.sec, readConfirmed
-	}
-
-	// tryEmitFirstSample calls this function with len(sml) == 0
-	// in that case a mediumQuality readMatch is good enough
-	if !readConfirmed && len(sml) > 0 {
-		return 0, false
-	}
-	return readMatch.sec, false
+	return readMatch.sec, readMatch.q >= matchGreat
 }
 
 func (s *sampleData) readMatch(pulse pulseEdge, cfg *Config) secMatch {
@@ -733,18 +727,6 @@ func (p pulseEdge) tDiff(q pulseEdge) time.Duration {
 	return p.tPulse().Sub(q.tPulse())
 }
 
-func (p pulseEdge) tDiffAcc(q pulseEdge) (time.Duration, int) {
-	diff := p.tDiff(q)
-	n := 0
-	if p.tReadDelay == 0 {
-		n++
-	}
-	if q.tReadDelay == 0 {
-		n++
-	}
-	return diff, n
-}
-
 func (p pulseEdge) subT(q pulseEdge) (time.Duration, bool) {
 	if p.Era != q.Era || p.Era.Uncertain() {
 		return 0, false
@@ -753,19 +735,19 @@ func (p pulseEdge) subT(q pulseEdge) (time.Duration, bool) {
 }
 
 func (cfg *Config) pulseDiffAcc(p, q pulseEdge) (diff, acc time.Duration) {
-	diff, n := p.tDiffAcc(q)
-	acc = time.Duration(n) * (cfg.PulsePollInterval + cfg.PulseReadDelay)
-	return
+	return p.tDiff(q), cfg.pulseReadDelayAcc(p) + cfg.pulseReadDelayAcc(q)
+}
+
+func (cfg *Config) pulseReadDelayAcc(p pulseEdge) time.Duration {
+	if p.tReadDelay == 0 {
+		return cfg.PulsePollInterval + cfg.PulseReadDelay
+	} else {
+		return p.tReadDelay / 10 // assume PHC clock can be 10% fast or slow
+	}
 }
 
 func (cfg *Config) readDelayAcc(tRead time.Time, p pulseEdge) (diff, acc time.Duration) {
-	diff = tRead.Sub(p.tRead)
-	if p.tReadDelay == 0 {
-		acc = cfg.PulsePollInterval + cfg.PulseReadDelay
-	} else {
-		diff += p.tReadDelay
-	}
-	return
+	return tRead.Sub(p.tRead) + p.tReadDelay, cfg.pulseReadDelayAcc(p)
 }
 
 // delay is the tRead of the message minus the tRead of the pulse

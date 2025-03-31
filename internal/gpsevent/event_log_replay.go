@@ -18,18 +18,20 @@ import (
 )
 
 type replaySampler struct {
-	ref   ptime.Time
-	ls    ptime.LeapSecond
-	lg    *slog.Logger
-	count int
+	ref    ptime.Time
+	ls     ptime.LeapSecond
+	lg     *slog.Logger
+	count  int
+	output *os.File // nil if no output file is specified
 }
 
 func (rs *replaySampler) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
 	// Format the reference time and calculate the offset
 	offset := local.T.Sub(ref)
 
-	// Print the formatted time and offset in nanoseconds
-	fmt.Printf("%s %3d\n", rs.logDateTime(ref), offset.Nanoseconds())
+	if rs.output != nil {
+		fmt.Fprintf(rs.output, "%s %3d\n", rs.logDateTime(ref), offset.Nanoseconds())
+	}
 
 	// Check for duplicate samples and log using slog.Logger
 	if ref == rs.ref {
@@ -53,6 +55,7 @@ func main() {
 	driverBothEdges := flag.Bool("2", false, "Use DriverBothEdges")
 	driverOneEdgePoll4Hz := flag.Bool("cm", false, "Use DriverOneEdge|DriverPoll4Hz")
 	verbose := flag.Bool("v", false, "Enable verbose (debug) logging")
+	outputFile := flag.String("o", "", "File to output samples to")
 	flag.Parse()
 
 	// Ensure a log file is provided
@@ -67,7 +70,21 @@ func main() {
 	} else {
 		logLevel = slog.LevelInfo
 	}
-	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
+	var curTime time.Time
+	opts := &slog.HandlerOptions{
+		Level: logLevel,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if len(groups) == 0 && a.Key == "time" && !curTime.IsZero() {
+				return slog.Attr{
+					Key:   a.Key,
+					Value: slog.TimeValue(curTime),
+				}
+			}
+			return a
+		},
+	}
+	warnCountHandler := gpsevent.NewWarnCountHandler(slog.NewTextHandler(os.Stderr, opts))
+	lg := slog.New(warnCountHandler)
 
 	var phcFlags phc.DriverFlags
 	if *driverBothEdges {
@@ -78,14 +95,25 @@ func main() {
 
 	ls := ptime.LeapSecond2016()
 
-	rs := &replaySampler{
-		ls: ls,
-		lg: lg,
+	var output *os.File
+	if *outputFile != "" {
+		var err error
+		output, err = os.Create(*outputFile)
+		if err != nil {
+			log.Fatalf("Failed to open output file: %v", err)
+		}
+		defer output.Close()
 	}
 
-	err := gpsevent.ReplayFile(fn, phcFlags, rs, ls, lg)
+	rs := &replaySampler{
+		ls:     ls,
+		lg:     lg,
+		output: output,
+	}
+
+	err := gpsevent.ReplayFile(fn, phcFlags, rs, ls, &curTime, lg)
 	if err != nil {
 		log.Fatalf("Error replaying file: %v", err)
 	}
-	lg.Info("Replay complete", "samples", rs.count)
+	lg.Info("Replay complete", "samples", rs.count, "warnings", warnCountHandler.WarnCount())
 }
