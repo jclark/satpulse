@@ -56,6 +56,40 @@ func nmeaBad(t *testing.T, data string) {
 	}
 }
 
+func TestMixedNMEA(t *testing.T) {
+	nmeaMixed(t, "$GPRMC,1,2,3*0F\r\n", 0)
+	nmeaMixed(t, "Hello$GPRMC,1,2,3*0F\r\n", 5)
+	nmeaMixed(t, "$GPRMC,1,2$GPRMC,1,2,3*0F\r\n", 10)
+}
+
+func nmeaMixed(t *testing.T, data string, nInvalidExpected int) {
+	trimmed := nmeaTrim(data)
+	r := strings.NewReader(data)
+	s := New(r, 64)
+	nInvalid := 0
+	for  {
+		f, err := s.Scan()
+		if err == io.EOF {
+			t.Fatalf(`EOF reading packet "%s" without NMEA packet; %d invalid bytes`, trimmed, nInvalid)
+		}
+		if err != nil {
+			t.Fatalf(`error reading packet "%s"`, trimmed)
+		}	
+		if f.Kind == Invalid {
+			nInvalid += len(f.Data)
+			continue
+		}
+		if f.Kind == NMEA {
+			break
+		} else {
+			t.Fatalf(`no valid NMEA message found in "%s"`, trimmed)
+		}
+	}
+	if nInvalidExpected != nInvalid {
+		t.Fatalf(`wrong number of invalid bytes in "%s: expected %d; got %d"`, trimmed, nInvalidExpected, nInvalid)
+	}
+}
+
 func nmeaTrim(data string) string {
 	trimmed := data
 	if len(data) > 0 && data[len(data)-1] == '\n' {

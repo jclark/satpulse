@@ -100,24 +100,41 @@ Loop:
 			p.Kind = Invalid
 			break Loop
 		}
+		k := finalStateKind(nextState)
+		if k == Invalid && nextState == syncScan && state != syncScan && packetLen > 0 {
+			// We had something that looked like the start of a packet,
+			// but turned out to be invalid.
+			// we need to start reprocessing it with the character that made it become invalid.
+			// This is sufficient for UBX and NMEA, because the $ which starts an NMEA packet
+			// isn't allowed with an NMEA packet. For UBX, the only way it's invalid is if the
+			// length is wrong or it didn't have the right second sync byte.
+			p.Kind = Invalid
+			break Loop
+		}
 		// accept this character
 		state = nextState
 		packetLen++
 		s.nextScanIndex++
-		switch state {
-		case nmeaComplete:
-			p.Kind = NMEA
-			break Loop
-		case ubxExpectN:
-			p.Kind = UBX
-			break Loop
-		case rtcmExpectN:
-			p.Kind = RTCM
+		if k != Invalid {
+			p.Kind = k
 			break Loop
 		}
 	}
 	p.Data = string(s.buf[s.nextScanIndex-packetLen : s.nextScanIndex])
 	return
+}
+
+func finalStateKind(state scanState) PacketKind {
+	switch state {
+	case nmeaComplete:
+		return NMEA
+	case ubxExpectN:
+		return UBX
+	case rtcmExpectN:
+		return RTCM
+	default:
+		return Invalid
+	}
 }
 
 // This returns the error it got from the Read, except in the case of EINTR.
@@ -242,7 +259,6 @@ func (state scanState) next(buf []byte, nextScanIndex int, packetLen int) scanSt
 			if b == ubxSync2 {
 				return ubxStarted
 			}
-			// XXX better handle the case where b is ubxSync1
 		case 5:
 			payloadLen := int(buf[nextScanIndex-1]) + int(b)*0x100
 			return scanState(int(ubxExpectN) + payloadLen + 2)
