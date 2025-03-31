@@ -12,7 +12,7 @@ speed = 9600
 
 [gps]
 # Uncommenting the following line will enable configuration of the GPS
-# (changes are not persistent across GPS reboots
+# (changes are not persistent across GPS reboots)
 #config = true
 
 [log]
