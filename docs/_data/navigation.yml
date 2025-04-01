@@ -15,3 +15,5 @@ docs:
     url: "/quickstart.html"
   - title: "Configuration file"
     url: "/config.html"
+  - title: "Internals"
+    url: "/internals.html"
