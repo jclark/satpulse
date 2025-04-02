@@ -79,7 +79,9 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 	if err != nil {
 		return nil, err
 	}
-	err = mon.gm.SetClockAccuracy(cfg.ClockAccuracy)
+	if mon.gm != nil {
+		err = mon.gm.SetClockAccuracy(cfg.ClockAccuracy)
+	}
 	if err != nil {
 		return nil, err
 	}
