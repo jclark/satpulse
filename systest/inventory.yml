@@ -19,18 +19,24 @@ all:
         vacherin.lan:
   
   hosts:
+    # LBE-1421
     vacherin.lan:
       speed: 38400
+      instance: ttyACM0
+      config: "false"
 
+    # LEA-6T
     burrata.lan:
       interface: end0
       instance: ttyAMA3
 
+    # EVK-F10T on USB
     toma.lan:
-      instance: ttyACM0
+      instance: ttyUSB0
       speed: 38400
       interface: enp1s0
 
+    # ZED-F9P in M.2 slot
     abondance.lan:
       instance: ttyACM0
       interface: enp4s0
@@ -41,9 +47,12 @@ all:
     venaco.local:
       speed: 38400
 
+    # LEA-M8T over RS232
     caciocavallo.lan:
       instance: ttyAMA3
-      config: "false"
 
+    # LEA-M8F in TimeBeat sandwich board
     morbier.lan: # all default
+
+    # LEA-F9T
     mascarpone.lan: # all default
