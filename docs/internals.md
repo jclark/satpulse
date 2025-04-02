@@ -64,7 +64,7 @@ Provides packages using domain-specific abstractions that are used by the applic
 
 `internal/nmea` implements `internal/gpsprot` abstractions for the NMEA protocol.
 
-`internal/phc` provides low level abstractions to acces the PTP hardware clock. It is highly Linux dependent. It builds on top of `internal/unix2` and does not contain unsafe code. It uses `internal/ptime`.
+`internal/phc` provides low level abstractions to access the PTP hardware clock. It is highly Linux dependent. It uses `internal/ptime`.
 
 `internal/sockrefclock` implements the chrony refclock protocol. It uses `internal/ptime`.
 
@@ -81,8 +81,6 @@ Provides a library of packages, which are potentially useful outside satpulse. T
 `internal/ifwait` use the Linux kernel's netlink subsystem to wait for changes in a network interface's status.
 
 `internal/devnotify` uses the Linux kernel's netlink subsystem to listen for creation of new devices by udev. (This is not used currently.)
-
-`internal/unix2` provides access to Linux system calls that are not supported by the Go standard library's unix package (golang.org/x/sys/unix). It contains unsafe code.
 
 `internal/pmc` implements a PTP management client.
 

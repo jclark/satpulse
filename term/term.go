@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/internal/unix2"
 	"golang.org/x/sys/unix"
 )
 
@@ -16,7 +15,7 @@ type Term struct {
 	path             string
 	byteTransmitTime time.Duration
 	tsSaved          unix.Termios
-	iCount           *unix2.SerialICounter
+	iCount           *SerialICounter
 }
 
 type Attr struct {
@@ -322,23 +321,22 @@ func (c ErrorCounts) String() string {
 // GetErrorCounts returns counts for serial errors that have occurred since the last call to GetErrorCounts.
 // If the serial driver does not provide information about error flags, GetErrorCounts returns a zero value
 func (t *Term) GetErrorCounts() (ec ErrorCounts) {
-	icNew := unix2.SerialICounter{}
-	err := unix2.IoctlGetSerialICounter(t.fd, &icNew)
+	icNew, err := IoctlGetSerialICounter(t.fd)
 	if err != nil {
 		t.iCount = nil
 		return
 	}
 	if t.iCount == nil {
-		t.iCount = &icNew
+		t.iCount = icNew
 		return
 	}
-	icPtr := t.iCount
-	ec.FrameErrs = icNew.Frame - icPtr.Frame
-	ec.OverrunErrs = icNew.Overrun - icPtr.Overrun
-	ec.ParityErrs = icNew.Parity - icPtr.Parity
-	ec.BreakErrs = icNew.Brk - icPtr.Brk
-	ec.BufOverrunErrs = icNew.Buf_overrun - icPtr.Buf_overrun
-	*icPtr = icNew
+	ic := t.iCount
+	ec.FrameErrs = icNew.Frame - ic.Frame
+	ec.OverrunErrs = icNew.Overrun - ic.Overrun
+	ec.ParityErrs = icNew.Parity - ic.Parity
+	ec.BreakErrs = icNew.Brk - ic.Brk
+	ec.BufOverrunErrs = icNew.Buf_overrun - ic.Buf_overrun
+	*ic = *icNew
 	return
 }
 

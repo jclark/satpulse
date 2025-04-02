@@ -6,16 +6,16 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"unsafe"
 
 	"github.com/jclark/satpulse/internal/ptime"
-	"github.com/jclark/satpulse/internal/unix2"
 	"golang.org/x/sys/unix"
 )
 
 type Clock struct {
 	fd            int
 	path          string
-	caps          *unix2.PTPClockCaps
+	caps          *unix.PtpClockCaps
 	sysOffsetFunc func(*Clock, int) (MultiSample, error)
 }
 
@@ -55,17 +55,17 @@ func (clk *Clock) ExttsAvailable(timeout time.Duration) bool {
 }
 
 func (clk *Clock) ReadExtts() (ptime.Time, uint32, error) {
-	var bytes [unix2.SizeofPTPExttsEvent]byte
-	buf := bytes[:]
+	event := unix.PtpExttsEvent{}
+	size := int(unsafe.Sizeof(event))
+	buf := unsafe.Slice((*byte)(unsafe.Pointer(&event)), size)
 	n, err := unix.Read(clk.fd, buf)
 	if err != nil {
 		return 0, 0, clk.wrapErr(err, "read")
 	}
-	if n != unix2.SizeofPTPExttsEvent {
-		return 0, 0, clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, unix2.SizeofPTPExttsEvent), "read")
+	if n != size {
+		return 0, 0, clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, size), "read")
 	}
-	ptpEv := unix2.PTPExttsEventFromBytes(&bytes)
-	return ptime.TimespecToTime(unix.Timespec{Sec: ptpEv.T.Sec, Nsec: int64(ptpEv.T.Nsec)}), ptpEv.Index, nil
+	return ptime.TimespecToTime(unix.Timespec{Sec: event.T.Sec, Nsec: int64(event.T.Nsec)}), event.Index, nil
 }
 
 // This is only safe when any ReadWorker has closed its tsEvents channel
@@ -76,14 +76,14 @@ func (clk *Clock) Close() error {
 type PinFunc uint32
 
 const (
-	PinFuncNone   PinFunc = unix2.PTP_PF_NONE
-	PinFuncExtts  PinFunc = unix2.PTP_PF_EXTTS
-	PinFuncPerout PinFunc = unix2.PTP_PF_PEROUT
+	PinFuncNone   PinFunc = unix.PTP_PF_NONE
+	PinFuncExtts  PinFunc = unix.PTP_PF_EXTTS
+	PinFuncPerout PinFunc = unix.PTP_PF_PEROUT
 )
 
 func (clk *Clock) PinSetFunc(pinIndex uint32, pinFunc PinFunc, chanIndex uint32) error {
-	pd := unix2.PTPPinDesc{Index: pinIndex, Func: uint32(pinFunc), Chan: chanIndex}
-	return clk.wrapErr(unix2.IoctlPTPPinSetFunc(clk.fd, &pd), "ioctl(PTP_PIN_SETFUNC)")
+	pd := unix.PtpPinDesc{Index: pinIndex, Func: uint32(pinFunc), Chan: chanIndex}
+	return clk.wrapErr(unix.IoctlPtpPinSetfunc(clk.fd, &pd), "ioctl(PTP_PIN_SETFUNC)")
 }
 
 func (clk *Clock) PinCount() int {
@@ -91,35 +91,28 @@ func (clk *Clock) PinCount() int {
 }
 
 func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err error) {
-	rq := unix2.PTPExttsRequest{Index: chanIndex}
+	rq := unix.PtpExttsRequest{Index: chanIndex}
+	// We want to know how many edges of the pulse are getting timestamped.
+	// We can do this by using the PTP_EXTTS_REQUEST2 ioctl with the PTP_STRICT_FLAGS set,
+	// which will give an EOPNOTSUPP error if it can't give the edges we request.
+	// Go's IoctlPtpExttsRequest in fact wraps PTP_EXTTS_REQUEST2, so we can use that.
+	// This is only supported since kernel 5.4.
+	const enableFlags = unix.PTP_ENABLE_FEATURE | unix.PTP_STRICT_FLAGS | unix.PTP_RISING_EDGE
 	if enabled {
-		// We want to know if possible how many edges of the pulse are getting timestamped.
-		// We can do this by using the PTP_EXTTS_REQUEST2 ioctl with the PTP_STRICT_FLAGS set,
-		// which will give an EOPNOTSUPP error if it can't give the edges we request.
-		// This is only supported since kernel 5.4.
-		rq.Flags = unix2.PTP_ENABLE_FEATURE | unix2.PTP_RISING_EDGE | unix2.PTP_STRICT_FLAGS
-		err = unix2.IoctlPTPExttsRequest2(clk.fd, &rq)
-		if err == nil {
-			edges = 1
-			return
-		}
-		if errors.Is(err, unix.EOPNOTSUPP) {
-			rq.Flags |= unix2.PTP_FALLING_EDGE
-			err = unix2.IoctlPTPExttsRequest2(clk.fd, &rq)
-			if err == nil {
-				edges = 2
-				return
-			}
-		}
-		// If we get ENOTTY here, it means the ioctl isn't recognized
-		if !errors.Is(err, unix.ENOTTY) {
-			err = clk.wrapErr(err, "ioctl(PTP_EXTTS_REQUEST2)")
-			return
-		}
-		// We get here if the kernel is older than 5.4 and does understand PTP_EXTTS_REQUEST2
-		rq.Flags = unix2.PTP_ENABLE_FEATURE
+		rq.Flags = enableFlags
+		edges = 1
 	}
-	err = clk.wrapErr(unix2.IoctlPTPExttsRequest(clk.fd, &rq), "ioctl(PTP_EXTTS_REQUEST)")
+	err = unix.IoctlPtpExttsRequest(clk.fd, &rq)
+	if err != nil && enabled && errors.Is(err, unix.EOPNOTSUPP) {
+		rq.Flags = enableFlags | unix.PTP_FALLING_EDGE
+		edges = 2
+		err = unix.IoctlPtpExttsRequest(clk.fd, &rq)
+	}
+	if err != nil {
+		err = clk.wrapErr(err, "ioctl(PTP_EXTTS_REQUEST2)")
+		edges = 0
+		return
+	}
 	return
 }
 
@@ -158,14 +151,12 @@ func (clk *Clock) SysOffset(nSamples int) (MultiSample, error) {
 
 func (clk *Clock) SysOffsetExtended(nSamples int) (MultiSample, error) {
 	ms := MultiSample{}
-	buf := unix2.PTPSysOffsetExtended{}
-	if nSamples <= 0 || nSamples > unix2.PTP_MAX_SAMPLES {
+	if nSamples <= 0 || nSamples > unix.PTP_MAX_SAMPLES {
 		return ms, unix.EINVAL
 	}
-	buf.Samples = uint32(nSamples)
-	err := clk.wrapErr(unix2.IoctlPTPSysOffsetExtended(clk.fd, &buf), "ioctl(PTP_SYS_OFFSET_EXTENDED)")
+	buf, err := unix.IoctlPtpSysOffsetExtended(clk.fd, uint(nSamples))
 	if err != nil {
-		return ms, err
+		return ms, clk.wrapErr(err, "ioctl(PTP_SYS_OFFSET_EXTENDED)")
 	}
 	ms.PHC = make([]ptime.Time, nSamples)
 	ms.Sys = make([]time.Time, nSamples*2)
@@ -180,10 +171,9 @@ func (clk *Clock) SysOffsetExtended(nSamples int) (MultiSample, error) {
 
 func (clk *Clock) SysOffsetPrecise(_ int) (MultiSample, error) {
 	ms := MultiSample{}
-	buf := unix2.PTPSysOffsetPrecise{}
-	err := clk.wrapErr(unix2.IoctlPTPSysOffsetPrecise(clk.fd, &buf), "ioctl(PTP_SYS_OFFSET_PRECISE)")
+	buf, err := unix.IoctlPtpSysOffsetPrecise(clk.fd) 
 	if err != nil {
-		return ms, err
+		return ms, clk.wrapErr(err, "ioctl(PTP_SYS_OFFSET_PRECISE)")
 	}
 	ms.PHC = []ptime.Time{ptpClockTimeToTimePHC(buf.Device)}
 	ms.Sys = []time.Time{ptpClockTimeToTimeSys(buf.Realtime)}
@@ -236,11 +226,11 @@ func (ms MultiSample) SysAverage(i int) time.Time {
 	return pre.Add(post.Sub(pre) / 2)
 }
 
-func ptpClockTimeToTimeSys(t unix2.PTPClockTime) time.Time {
+func ptpClockTimeToTimeSys(t unix.PtpClockTime) time.Time {
 	return time.Unix(t.Sec, int64(t.Nsec))
 }
 
-func ptpClockTimeToTimePHC(t unix2.PTPClockTime) ptime.Time {
+func ptpClockTimeToTimePHC(t unix.PtpClockTime) ptime.Time {
 	return ptime.Unix(t.Sec, int64(t.Nsec))
 }
 
@@ -286,8 +276,9 @@ func (clk *Clock) MaxFreqOffset() float64 {
 }
 
 func (clk *Clock) getCaps() error {
-	clk.caps = new(unix2.PTPClockCaps)
-	return clk.wrapErr(unix2.IoctlPTPClockGetCaps(clk.fd, clk.caps), "ioctl(PTP_CLOCK_GETCAPS)")
+	var err error
+	clk.caps, err = unix.IoctlPtpClockGetcaps(clk.fd)
+	return clk.wrapErr(err, "ioctl(PTP_CLOCK_GETCAPS)")
 }
 
 func (clk *Clock) timexRead() (*unix.Timex, error) {
@@ -338,7 +329,7 @@ func IfPhcIndex(ifname string) (phcIndex int, err error) {
 			err = err2
 		}
 	}()
-	tsInfo, err := unix2.IoctlGetEthtoolTsInfo(fd, ifname)
+	tsInfo, err := unix.IoctlGetEthtoolTsInfo(fd, ifname)
 	if err != nil {
 		err = fmt.Errorf("ETHTOOL_GET_TS_INFO %s: %w", ifname, err)
 		return
