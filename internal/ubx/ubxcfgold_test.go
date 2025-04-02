@@ -168,7 +168,8 @@ func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator 
 	target.Map.SetPPS()
 	gpsprot.CfgNMEAEnabled.Set(&target.Map, false)
 	target.Opts.EnableTimeMsg = true
-	rcvr := newLegacyReceiver()
+	// we can't use legacyReceiver here because it doesn't support the UBX-CFG-GNSS
+	rcvr := newGpsReceiver(&m8tVersion)
 	rcvr.nakPollMsgID = nakMsgID
 	c, naks, err := runConfiguration(rcvr, target)
 	if err != nil {
