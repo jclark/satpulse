@@ -1,6 +1,7 @@
 package ubx
 
 import (
+	"math"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -10,6 +11,7 @@ import (
 const nPort = 6
 
 type CfgOld struct {
+	tmode   *bin.CfgTmode
 	tmode2  *bin.CfgTmode2
 	tmode3  *bin.CfgTmode3
 	tp5     *bin.CfgTp5
@@ -26,7 +28,7 @@ type CfgOld struct {
 var cfgOldKeys = struct {
 	tmode, tp5, gnss, rate, nav5, prt []gpsprot.CfgKey
 }{
-	// tmode applies to both tmode2 and tmode3
+	// tmode applies to tmode2 and tmode3 as well
 	tmode: []gpsprot.CfgKey{
 		gpsprot.CfgTimeMode,
 		gpsprot.CfgFixedPosECEF,
@@ -131,6 +133,86 @@ func (raw *CfgOld) changePrt(cm *gpsprot.ConfigMap) *bin.CfgPrt {
 		return nil
 	}
 	return &prt
+}
+
+func (raw *CfgOld) cookTmode(cm *gpsprot.ConfigMap) {
+	tm := raw.tmode
+	if tm == nil {
+		return
+	}
+	switch tm.TimeMode {
+	case bin.CfgTmodeDisabled:
+		gpsprot.CfgTimeMode.Set(cm, gpsprot.TimeModeDisabled)
+	case bin.CfgTmodeSurveyIn:
+		gpsprot.CfgTimeMode.Set(cm, gpsprot.TimeModeSurvey)
+	case bin.CfgTmodeFixedMode:
+		gpsprot.CfgFixedPosECEF.Set(cm, gpsprot.Point3D{
+			gpsprot.Length(tm.FixedPosX) * gpsprot.Centimeter,
+			gpsprot.Length(tm.FixedPosY) * gpsprot.Centimeter,
+			gpsprot.Length(tm.FixedPosZ) * gpsprot.Centimeter,
+		})
+		acc := math.Sqrt(float64(tm.FixedPosVar))
+		gpsprot.CfgFixedPosAcc.Set(cm, gpsprot.Length(acc)*gpsprot.Millimeter)
+	}
+}
+
+func (raw *CfgOld) changeTmode(target *gpsprot.ConfigTarget) (*bin.CfgTmode, bool) {
+	if raw.tmode == nil {
+		return nil, false
+	}
+	tm := *raw.tmode
+
+	mode := gpsprot.TimeModeDisabled
+	switch tm.TimeMode {
+	case bin.CfgTmodeSurveyIn:
+		mode = gpsprot.TimeModeSurvey
+	case bin.CfgTmodeFixedMode:
+		mode = gpsprot.TimeModeFixed
+	}
+	cm := &target.Map
+	if v, ok := gpsprot.CfgTimeMode.Get(cm); ok {
+		mode = v
+	}
+	survey := false
+	if target.Opts.Survey.When.Contains(mode) {
+		survey = true
+		if tm.TimeMode != bin.CfgTmodeFixedMode {
+			mode = gpsprot.TimeModeDisabled
+		}
+	}
+	switch mode {
+	case gpsprot.TimeModeDisabled:
+		tm.TimeMode = bin.CfgTmodeDisabled
+	case gpsprot.TimeModeSurvey:
+		tm.TimeMode = bin.CfgTmodeSurveyIn
+	case gpsprot.TimeModeFixed:
+		tm.TimeMode = bin.CfgTmodeFixedMode
+	}
+
+	if ecef, exists := gpsprot.CfgFixedPosECEF.Get(cm); exists {
+		var hp int8
+		err := changeECEF(ecef, &tm.FixedPosX, &tm.FixedPosY, &tm.FixedPosZ, &hp, &hp, &hp)
+		if err != nil {
+			return nil, false
+		}
+	}
+	if tm == *raw.tmode {
+		return nil, survey
+	}
+	return &tm, survey
+}
+
+func (raw *CfgOld) surveyTmode(opts gpsprot.ConfigOptions) *bin.CfgTmode {
+	tm := *raw.tmode
+	tm.TimeMode = bin.CfgTmodeSurveyIn
+	tm.SvinMinDur = uint32(opts.Survey.MinDur.Round(time.Second) / time.Second)	
+	q, _ := divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter))
+	q = q * q
+	if q > math.MaxUint32 {
+		q = math.MaxUint32
+	}
+	tm.SvinVarLimit = uint32(q*q)
+	return &tm
 }
 
 func (raw *CfgOld) cookTmode2(cm *gpsprot.ConfigMap) {

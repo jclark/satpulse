@@ -40,6 +40,31 @@ func (v *Version) ProductCategory() string {
 	return fw.ProductCategory
 }
 
+func (v *Version) tmodeLevel() int {
+	switch v.ProductCategory() {
+	case "":
+		// We are trying to support LEA-6T here (and maybe LEA-5T)
+		// The LEA-6T doesn't report itself as a specific product category.
+		// If a module has protocol 14.00 or later, it might be a 7th gen, which
+		// won't have timing support.
+		// If it is less than 14.00, but at least 12.00, it is more likely to be a 6th gen.
+		// I don't think anybody will be using 6th gen at this point, unless it's a timing receiver.
+		// The LEA-5T currently available on eBat are LEA-5T-0-003 which is firmware 6.02,
+		// implying protocol 12.02.
+		// There aren't any 7th gen timing modules, and 8th gen reports the product category as "TIM".
+		// XXX We should recover from this if we get a NAK.
+		if v.protVerAtLeast(14, 0) || !v.protVerAtLeast(12, 0) {
+			break
+		}
+		return 1
+	case "FTS", "TIM":
+		return 2
+	case "HPG":
+		return 3
+	}
+	return 0
+}
+
 func (v *Version) protVerAtLeast(major, minor byte) bool {
 	if v == nil || v.Prot == nil {
 		return false
@@ -69,7 +94,32 @@ func monVer(parsed *bin.MonVer) *Version {
 		GNSS:       findGNSS(x),
 	}
 	v.Flash = findFlash(v.SW, x)
+	setLegacyProtVer(v)
 	return v
+}
+
+var swOldRegexp = regexp.MustCompile(`^([1-9][0-9]?)\.([0-9][0-9]) \([1-9][0-9]{3,5}\)$`)
+
+func setLegacyProtVer(ver *Version) {
+	if ver.Prot != nil {
+		return
+	}
+	submatches := swOldRegexp.FindStringSubmatch(ver.SW)
+	if submatches == nil {
+		return
+	}
+	major := mustAtob(submatches[1])
+	// LEA-5T and LEA-6T have versions from 4.xx up to 7.xx
+	// and may not have a PROTVER line.
+	// This is tested with a LEA-6T with firmware 6.02.
+	// For other cases, it's an informed guess based on the docs.
+	if major < 4 || major > 7 {
+		return
+	}
+	ver.Prot = &ProtVer{
+		Major: major + 6, // e.g. SW version 6.02 is Protocol version 12.02
+		Minor: mustAtob(submatches[2]),
+	}
 }
 
 func (pv ProtVer) String() string {

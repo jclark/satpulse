@@ -107,6 +107,7 @@ const (
 	CfgPrtID     MsgID = clsCfg | (0x00 << 8)
 	CfgRateID    MsgID = clsCfg | (0x08 << 8)
 	CfgRstID     MsgID = clsCfg | (0x04 << 8)
+	CfgTmodeID   MsgID = clsCfg | (0x1D << 8)
 	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
 	CfgTmode3ID  MsgID = clsCfg | (0x71 << 8)
 	CfgTp5ID     MsgID = clsCfg | (0x31 << 8)
@@ -147,6 +148,7 @@ func init() {
 	regMsg[CfgPrt]("PRT")
 	regMsg[CfgRate]("RATE")
 	regMsg[CfgRst]("RST")
+	regMsg[CfgTmode]("TMODE")
 	regMsg[CfgTmode2]("TMODE2")
 	regMsg[CfgTmode3]("TMODE3")
 	regMsg[CfgTp5]("TP5")
@@ -429,6 +431,26 @@ const (
 	CfgTp5GridGalileo
 	CfgTp5GridUTCGNSS CfgTp5Flags = 0b1111 << 7
 )
+
+type CfgTmodeTimeMode uint32
+
+const (
+	CfgTmodeDisabled CfgTmodeTimeMode = iota
+	CfgTmodeSurveyIn
+	CfgTmodeFixedMode
+)
+
+type CfgTmode struct {
+	TimeMode     CfgTmodeTimeMode
+	FixedPosX    int32
+	FixedPosY    int32
+	FixedPosZ    int32
+	FixedPosVar  uint32 // mm^2
+	SvinMinDur   uint32
+	SvinVarLimit uint32 // mm^2
+}
+
+func (m *CfgTmode) ID() MsgID { return CfgTmodeID }
 
 type CfgTmode2 struct {
 	TimeMode     CfgTmode2TimeMode

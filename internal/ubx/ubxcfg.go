@@ -251,7 +251,8 @@ func (c *Configurator) pollPrt() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) pollGNSS() (gpsprot.ConfigRequest, error) {
-	if !c.target.UsesAny(cfgOldKeys.gnss...) {
+	// UBX-CFG-GNSS needs at least protocol version 14.00
+	if !c.target.UsesAny(cfgOldKeys.gnss...) || !c.ver.protVerAtLeast(14, 0) {
 		return nil, nil
 	}
 	return c.pollRequest(bin.CfgGNSSID), nil
@@ -275,10 +276,12 @@ func (c *Configurator) pollTmode() (gpsprot.ConfigRequest, error) {
 	if !c.target.UsesAny(cfgOldKeys.tmode...) && c.target.Opts.Survey.When == 0 {
 		return nil, nil
 	}
-	switch c.ver.ProductCategory() {
-	case "FTS", "TIM":
+	switch c.ver.tmodeLevel() {
+	case 1:
+		return c.pollRequest(bin.CfgTmodeID), nil
+	case 2:
 		return c.pollRequest(bin.CfgTmode2ID), nil
-	case "HPG":
+	case 3:
 		return c.pollRequest(bin.CfgTmode3ID), nil
 	}
 	return nil, nil
@@ -340,10 +343,14 @@ func (c *Configurator) enableLeapSecondMsg() (gpsprot.ConfigRequest, error) {
 func (c *Configurator) enableSurveyMsg() (gpsprot.ConfigRequest, error) {
 	msgID := bin.TimSvinID
 	surveyMode := false
-	switch c.ver.ProductCategory() {
-	case "TIM", "FTS":
+	// note there is no survey progress message in early models that do not yet support tmode2
+	if !c.ver.protVerAtLeast(18, 0) {
+		return nil, nil
+	}
+	switch c.ver.tmodeLevel() {
+	case 2:
 		surveyMode = c.raw.tmode2 != nil && c.raw.tmode2.TimeMode == bin.CfgTmode2SurveyIn
-	case "HPG":
+	case 3:
 		msgID = bin.NavSvinID
 		surveyMode = c.raw.tmode3 != nil && c.raw.tmode3.Flags&bin.CfgTmode3Mode == bin.CfgTmode3SurveyIn
 	default:
@@ -387,14 +394,20 @@ func (c *Configurator) setRate() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) setTmode() (gpsprot.ConfigRequest, error) {
-	switch c.ver.ProductCategory() {
-	case "FTS", "TIM":
+	switch c.ver.tmodeLevel() {
+	case 1:
+		var tm *bin.CfgTmode
+		tm, c.survey = c.raw.changeTmode(c.target)
+		if tm != nil {
+			return c.msgSetRequest(tm)
+		}
+	case 2:
 		var tm *bin.CfgTmode2
 		tm, c.survey = c.raw.changeTmode2(c.target)
 		if tm != nil {
 			return c.msgSetRequest(tm)
 		}
-	case "HPG":
+	case 3:
 		var tm *bin.CfgTmode3
 		tm, c.survey = c.raw.changeTmode3(c.target)
 		if tm != nil {
@@ -408,13 +421,18 @@ func (c *Configurator) reqSurvey() (gpsprot.ConfigRequest, error) {
 	if !c.survey {
 		return nil, nil
 	}
-	switch c.ver.ProductCategory() {
-	case "FTS", "TIM":
+	switch c.ver.tmodeLevel() {
+	case 1:
+		tm := c.raw.surveyTmode(c.target.Opts)
+		if tm != nil {
+			return c.msgSetRequest(tm)
+		}
+	case 2:
 		tm := c.raw.surveyTmode2(c.target.Opts)
 		if tm != nil {
 			return c.msgSetRequest(tm)
 		}
-	case "HPG":
+	case 3:
 		tm := c.raw.surveyTmode3(c.target.Opts)
 		if tm != nil {
 			return c.msgSetRequest(tm)
@@ -460,9 +478,12 @@ func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigMap {
 	if !raw.CfgVals.isNil() {
 		raw.CfgVals.Cook(ver, raw.valPort(), cm)
 	} else {
-		raw.cookTmode2(cm)
-		if raw.tmode2 == nil {
+		if raw.tmode2 != nil {
+			raw.cookTmode2(cm)
+		} else if raw.tmode3 != nil {
 			raw.cookTmode3(cm)
+		} else if raw.tmode != nil {
+			raw.cookTmode(cm)
 		}
 		raw.cookTp5(cm)
 		raw.cookGNSS(cm)
@@ -478,6 +499,8 @@ func (raw *RawConfig) AddMsg(m bin.Msg) (bool, error) {
 		return false, nil
 	}
 	switch mt := m.(type) {
+	case *bin.CfgTmode:
+		raw.tmode = mt
 	case *bin.CfgTmode2:
 		raw.tmode2 = mt
 	case *bin.CfgTmode3:
