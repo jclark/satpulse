@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/go:1-1.22-bookworm
+FROM mcr.microsoft.com/devcontainers/go:1-1.23-bookworm
 
 # Install gh (for doing releases) and rpm (for building rpms)
 RUN apt-get update \
