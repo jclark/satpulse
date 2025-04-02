@@ -189,6 +189,22 @@ const (
 	rtcmExpectN = ubxExpectN + 0x10000 + 2
 )
 
+func LooksLike(buf []byte) PacketKind {
+	// XXX enhance this to report the length up until it becomes invalid (when state changes to syncScan)
+	if len(buf) == 0 {
+		return Invalid
+	}
+	switch syncScan.next(buf, 0, 0) {
+	case nmeaStarted:
+		return NMEA
+	case ubxStarted:
+		return UBX
+	case rtcmStarted:
+		return RTCM
+	}
+	return Invalid
+}
+
 const (
 	ubxSync1     = 0xB5
 	ubxSync2     = 0x62
