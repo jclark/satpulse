@@ -125,7 +125,7 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
    the position can be established by having the GPS spend some time determing the position itself (called a survey)
    or by explicitly specifying the position (using `fixedPosECEF`); the default is `true`
 * `surveyTime` - a boolean giving the time in seconds to perform a survey to establish the position of the GPS receiver antenna;
-   SatPulse will only do a survey when `timeMode` is true and no fixed position has been set; the default is 2000
+   SatPulse will only do a survey when `stationary` is true and no fixed position has been set; the default is 2000
 * `fixedPosECEF` - an array of three numbers giving the ECEF coordinates in meters of the GPS receiver's antenna receiver; if SatPulse initiaties a survey,
   then it will log the position determined by the survey when the survey finishes
 * `fixedPosAcc` - a number giving the accuracy in meters of the `fixedPosECEF` coordinates; SatPulse will log the accuracy along with the position when
