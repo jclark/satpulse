@@ -65,6 +65,6 @@
 
     - name: Install package on RedHat
       become: yes
-      command: "rpm -Uvh --oldpackage {{ package_dir }}/{{ package }}"
+      command: "rpm -Uvh --oldpackage --replacepkgs {{ package_dir }}/{{ package }}"
       when: ansible_os_family == "RedHat"
 
