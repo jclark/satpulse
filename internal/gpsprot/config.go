@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -46,9 +47,9 @@ type Ack struct {
 // If the Ackable method of a ConfigRequest returns true, then FindAck should be used
 // to find whether the acknowledgement has been received.
 type Configurator interface {
-	// ConfigMap returns the current configuration of the GPS receiver.
+	// ConfigProps returns the current configuration of the GPS receiver.
 	// It should be called after NextRequest returns nil.
-	ConfigMap() *ConfigMap
+	ConfigProps() *ConfigProps
 	// NextRequest returns the next request that should be sent to the GPS receiver.
 	// If there are no more requests, it returns nil, nil.
 	NextRequest() (ConfigRequest, error)
@@ -75,38 +76,76 @@ type ConfigRequest interface {
 	AwaitingResponse(tSent time.Time) bool
 }
 
+// ConfigTarget represents configuration target settings
 type ConfigTarget struct {
-	Map  ConfigMap
-	Get  CfgKeySet
-	Opts ConfigOptions
+	Props ConfigProps
+	Get   PropIDs // Bitmask of properties to retrieve
+	Opts  ConfigOptions
 }
 
-func NewConfigTarget(config bool) *ConfigTarget {
-	t := &ConfigTarget{}
-	t.Get = make(CfgKeySet)
-	if !config {
-		return t
-	}
-	t.Map.SetPPS()
-	// Config is very slow on 8-th gen if NMEA is enabled
-	CfgNMEAEnabled.Set(&t.Map, false)
-	t.Opts.EnableLeapSecondMsg = true
-	t.Opts.EnableTimeMsg = true
-	return t
+// PropIDs represents a set of configuration property names
+type PropIDs uint32
+
+// ConfigProps represents a collection configuration properties
+type ConfigProps struct {
+	valid                   PropIDs // says which fields are valid
+	gnssEnabled             GNSSSet
+	primaryGNSS             GNSS
+	solutionPeriod          time.Duration
+	timePulseWidth          time.Duration
+	timePulsePeriod         time.Duration
+	timePulseAlignToGNSS    bool
+	timePulseOnlyWhenLocked bool
+	timePulsePolarityRising bool
+	timeMode                TimeMode
+	antennaCableDelay       time.Duration
+	fixedPosECEF            Point3D
+	fixedPosAcc             Length
+	stationary              bool
+	nmeaEnabled             bool
+	baudRate                uint32
 }
 
-// NoOp says whether the target are a no-op, except possibly for detecting the receiver.
-func (act *ConfigTarget) NoOp() bool {
-	return act.Map.Len() == 0 && len(act.Get) == 0 && act.Opts.NoOp()
+const (
+	PropIDGNSSEnabled PropIDs = 1 << iota
+	PropIDPrimaryGNSS
+	PropIDSolutionPeriod
+	PropIDTimePulseWidth
+	PropIDTimePulsePeriod
+	PropIDTimePulseAlignToGNSS
+	PropIDTimePulseOnlyWhenLocked
+	PropIDTimePulsePolarityRising
+	PropIDTimeMode
+	PropIDAntennaCableDelay
+	PropIDFixedPosECEF
+	PropIDFixedPosAcc
+	PropIDStationary
+	PropIDNMEAEnabled
+	PropIDBaudRate
+)
+
+// propNames lists the property names in the same order as the bit constants
+var propNames = []string{
+	"GNSSEnabled",
+	"PrimaryGNSS",
+	"SolutionPeriod",
+	"TimePulseWidth",
+	"TimePulsePeriod",
+	"TimePulseAlignToGNSS",
+	"TimePulseOnlyWhenLocked",
+	"TimePulsePolarityRising",
+	"TimeMode",
+	"AntennaCableDelay",
+	"FixedPosECEF",
+	"FixedPosAcc",
+	"Stationary",
+	"NMEAEnabled",
+	"BaudRate",
 }
 
-func (act *ConfigTarget) UsesAny(keys ...CfgKey) bool {
-	for _, k := range keys {
-		if act.Map.Contains(k) || act.Get.Contains(k) {
-			return true
-		}
-	}
-	return false
+// IsEmpty returns true if no properties are set
+func (cp *ConfigProps) IsEmpty() bool {
+	return cp.valid == 0
 }
 
 type ConfigOptions struct {
@@ -119,176 +158,419 @@ type ConfigOptions struct {
 	Survey              Survey
 }
 
+func NewConfigTarget(config bool) *ConfigTarget {
+	t := &ConfigTarget{}
+	if !config {
+		return t
+	}
+	t.Props.SetPPS()
+	t.Props.SetNMEAEnabled(false) // Config is very slow on 8-th gen if NMEA is enabled
+	t.Opts.EnableLeapSecondMsg = true
+	t.Opts.EnableTimeMsg = true
+	return t
+}
+
+// NoOp says whether the target is a no-op, except possibly for detecting the receiver
+func (ct *ConfigTarget) NoOp() bool {
+	return ct.Props.IsEmpty() && ct.Get == 0 && ct.Opts.NoOp()
+}
+
+func (ct *ConfigTarget) UsesAny(props ...PropIDs) bool {
+	uses := ct.Props.valid | ct.Get
+	for _, p := range props {
+		if uses&p != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (o ConfigOptions) NoOp() bool {
 	return !o.Flash && !o.Reset && !o.EnableLeapSecondMsg && !o.EnableTimeMsg && o.Survey.When == TimeModeNone
 }
 
-// Survey specifies whether a survey should be performed, and if so, its parameters
-// The survey is performed when the time mode is one of the modes in When.
-// If When is non-zero, then AccLimit must also be non-zero.
-type Survey struct {
-	When     TimeModeSet   // perform a survey when the time mode is one of these
-	MinDur   time.Duration // survey should run at least this long
-	AccLimit Length        // survey should run until this accuracy is achieved
-}
-
-type ConfigMap struct {
-	m map[string]interface{}
-}
-
-func (cm ConfigMap) Len() int {
-	return len(cm.m)
-}
-
-type CfgKey interface {
-	fmt.Stringer
-	cfgKey()
-}
-
-type CfgKeySet map[CfgKey]struct{}
-
-func (s CfgKeySet) Contains(k CfgKey) bool {
-	_, exists := s[k]
-	return exists
-}
-
-func (s CfgKeySet) Add(k CfgKey) {
-	s[k] = struct{}{}
-}
-
-func (c *ConfigMap) Contains(k CfgKey) bool {
-	_, exists := c.m[k.String()]
-	return exists
-}
-
-type anyCfgKey struct {
-	s string
-}
-
-func (k anyCfgKey) cfgKey() {}
-
-func (k anyCfgKey) String() string {
-	return k.s
-}
-
-type TypedCfgKey[T comparable] struct {
-	anyCfgKey
-}
-
-func (k TypedCfgKey[T]) Get(cm *ConfigMap) (T, bool) {
-	if cm.m != nil {
-		value, exists := cm.m[k.s]
-		if exists {
-			return value.(T), true
+// String returns a human-readable representation of the PropIDs flags
+func (p PropIDs) String() string {
+	var names []string
+	for i := 0; i < len(propNames); i++ {
+		if p&(1<<i) != 0 {
+			names = append(names, propNames[i])
 		}
 	}
-	var zero T
-	return zero, false
+	return "PropIDs(" + strings.Join(names, "|") + ")"
 }
 
-func (k TypedCfgKey[T]) Set(cm *ConfigMap, v T) {
-	if cm.m == nil {
-		cm.m = make(map[string]interface{})
+// GetGNSSEnabled returns the gnssEnabled value and whether it's set
+func (cp *ConfigProps) GetGNSSEnabled() (GNSSSet, bool) {
+	if cp.valid&PropIDGNSSEnabled != 0 {
+		return cp.gnssEnabled, true
 	}
-	cm.m[k.s] = v
+	return 0, false
 }
 
-func (c *ConfigMap) MarshalJSON() ([]byte, error) {
-	return json.Marshal(c.serializableMap())
+// SetGNSSEnabled sets the gnssEnabled value
+func (cp *ConfigProps) SetGNSSEnabled(val GNSSSet) {
+	cp.gnssEnabled = val
+	cp.valid |= PropIDGNSSEnabled
 }
 
-func (c *ConfigMap) MarshalText() ([]byte, error) {
-	return []byte(c.String()), nil
+// GetPrimaryGNSS returns the primaryGNSS value and whether it's set
+func (cp *ConfigProps) GetPrimaryGNSS() (GNSS, bool) {
+	if cp.valid&PropIDPrimaryGNSS != 0 {
+		return cp.primaryGNSS, true
+	}
+	return 0, false
 }
 
-func (c *ConfigMap) String() string {
-	return fmt.Sprint(c.serializableMap())
+// SetPrimaryGNSS sets the primaryGNSS value
+func (cp *ConfigProps) SetPrimaryGNSS(val GNSS) {
+	cp.primaryGNSS = val
+	cp.valid |= PropIDPrimaryGNSS
 }
 
-// Inconsistent returns a Config with the entries in c2 that are inconsistent with c.
-// An entry is inconsistent if it exists in both c and c2 but has different values.
-func (c *ConfigMap) Inconsistent(c2 *ConfigMap) *ConfigMap {
+// GetSolutionPeriod returns the solutionPeriod value and whether it's set
+func (cp *ConfigProps) GetSolutionPeriod() (time.Duration, bool) {
+	if cp.valid&PropIDSolutionPeriod != 0 {
+		return cp.solutionPeriod, true
+	}
+	return 0, false
+}
+
+// SetSolutionPeriod sets the solutionPeriod value
+func (cp *ConfigProps) SetSolutionPeriod(val time.Duration) {
+	cp.solutionPeriod = val
+	cp.valid |= PropIDSolutionPeriod
+}
+
+// GetTimePulseWidth returns the timePulseWidth value and whether it's set
+func (cp *ConfigProps) GetTimePulseWidth() (time.Duration, bool) {
+	if cp.valid&PropIDTimePulseWidth != 0 {
+		return cp.timePulseWidth, true
+	}
+	return 0, false
+}
+
+// SetTimePulseWidth sets the timePulseWidth value
+func (cp *ConfigProps) SetTimePulseWidth(val time.Duration) {
+	cp.timePulseWidth = val
+	cp.valid |= PropIDTimePulseWidth
+}
+
+// GetTimePulsePeriod returns the timePulsePeriod value and whether it's set
+func (cp *ConfigProps) GetTimePulsePeriod() (time.Duration, bool) {
+	if cp.valid&PropIDTimePulsePeriod != 0 {
+		return cp.timePulsePeriod, true
+	}
+	return 0, false
+}
+
+// SetTimePulsePeriod sets the timePulsePeriod value
+func (cp *ConfigProps) SetTimePulsePeriod(val time.Duration) {
+	cp.timePulsePeriod = val
+	cp.valid |= PropIDTimePulsePeriod
+}
+
+// GetTimePulseAlignToGNSS returns the timePulseAlignToGNSS value and whether it's set
+func (cp *ConfigProps) GetTimePulseAlignToGNSS() (bool, bool) {
+	if cp.valid&PropIDTimePulseAlignToGNSS != 0 {
+		return cp.timePulseAlignToGNSS, true
+	}
+	return false, false
+}
+
+// SetTimePulseAlignToGNSS sets the timePulseAlignToGNSS value
+func (cp *ConfigProps) SetTimePulseAlignToGNSS(val bool) {
+	cp.timePulseAlignToGNSS = val
+	cp.valid |= PropIDTimePulseAlignToGNSS
+}
+
+// GetTimePulseOnlyWhenLocked returns the timePulseOnlyWhenLocked value and whether it's set
+func (cp *ConfigProps) GetTimePulseOnlyWhenLocked() (bool, bool) {
+	if cp.valid&PropIDTimePulseOnlyWhenLocked != 0 {
+		return cp.timePulseOnlyWhenLocked, true
+	}
+	return false, false
+}
+
+// SetTimePulseOnlyWhenLocked sets the timePulseOnlyWhenLocked value
+func (cp *ConfigProps) SetTimePulseOnlyWhenLocked(val bool) {
+	cp.timePulseOnlyWhenLocked = val
+	cp.valid |= PropIDTimePulseOnlyWhenLocked
+}
+
+// GetTimePulsePolarityRising returns the timePulsePolarityRising value and whether it's set
+func (cp *ConfigProps) GetTimePulsePolarityRising() (bool, bool) {
+	if cp.valid&PropIDTimePulsePolarityRising != 0 {
+		return cp.timePulsePolarityRising, true
+	}
+	return false, false
+}
+
+// SetTimePulsePolarityRising sets the timePulsePolarityRising value
+func (cp *ConfigProps) SetTimePulsePolarityRising(val bool) {
+	cp.timePulsePolarityRising = val
+	cp.valid |= PropIDTimePulsePolarityRising
+}
+
+// GetTimeMode returns the timeMode value and whether it's set
+func (cp *ConfigProps) GetTimeMode() (TimeMode, bool) {
+	if cp.valid&PropIDTimeMode != 0 {
+		return cp.timeMode, true
+	}
+	return 0, false
+}
+
+// SetTimeMode sets the timeMode value
+func (cp *ConfigProps) SetTimeMode(val TimeMode) {
+	cp.timeMode = val
+	cp.valid |= PropIDTimeMode
+}
+
+// GetAntennaCableDelay returns the antennaCableDelay value and whether it's set
+func (cp *ConfigProps) GetAntennaCableDelay() (time.Duration, bool) {
+	if cp.valid&PropIDAntennaCableDelay != 0 {
+		return cp.antennaCableDelay, true
+	}
+	return 0, false
+}
+
+// SetAntennaCableDelay sets the antennaCableDelay value
+func (cp *ConfigProps) SetAntennaCableDelay(val time.Duration) {
+	cp.antennaCableDelay = val
+	cp.valid |= PropIDAntennaCableDelay
+}
+
+// GetFixedPosECEF returns the fixedPosECEF value and whether it's set
+func (cp *ConfigProps) GetFixedPosECEF() (Point3D, bool) {
+	if cp.valid&PropIDFixedPosECEF != 0 {
+		return cp.fixedPosECEF, true
+	}
+	return Point3D{}, false
+}
+
+// SetFixedPosECEF sets the fixedPosECEF value
+func (cp *ConfigProps) SetFixedPosECEF(val Point3D) {
+	cp.fixedPosECEF = val
+	cp.valid |= PropIDFixedPosECEF
+}
+
+// GetFixedPosAcc returns the fixedPosAcc value and whether it's set
+func (cp *ConfigProps) GetFixedPosAcc() (Length, bool) {
+	if cp.valid&PropIDFixedPosAcc != 0 {
+		return cp.fixedPosAcc, true
+	}
+	return 0, false
+}
+
+// SetFixedPosAcc sets the fixedPosAcc value
+func (cp *ConfigProps) SetFixedPosAcc(val Length) {
+	cp.fixedPosAcc = val
+	cp.valid |= PropIDFixedPosAcc
+}
+
+// GetStationary returns the stationary value and whether it's set
+func (cp *ConfigProps) GetStationary() (bool, bool) {
+	if cp.valid&PropIDStationary != 0 {
+		return cp.stationary, true
+	}
+	return false, false
+}
+
+// SetStationary sets the stationary value
+func (cp *ConfigProps) SetStationary(val bool) {
+	cp.stationary = val
+	cp.valid |= PropIDStationary
+}
+
+// GetNMEAEnabled returns the nmeaEnabled value and whether it's set
+func (cp *ConfigProps) GetNMEAEnabled() (bool, bool) {
+	if cp.valid&PropIDNMEAEnabled != 0 {
+		return cp.nmeaEnabled, true
+	}
+	return false, false
+}
+
+// SetNMEAEnabled sets the nmeaEnabled value
+func (cp *ConfigProps) SetNMEAEnabled(val bool) {
+	cp.nmeaEnabled = val
+	cp.valid |= PropIDNMEAEnabled
+}
+
+// GetBaudRate returns the baudRate value and whether it's set
+func (cp *ConfigProps) GetBaudRate() (uint32, bool) {
+	if cp.valid&PropIDBaudRate != 0 {
+		return cp.baudRate, true
+	}
+	return 0, false
+}
+
+// SetBaudRate sets the baudRate value
+func (cp *ConfigProps) SetBaudRate(val uint32) {
+	cp.baudRate = val
+	cp.valid |= PropIDBaudRate
+}
+
+// MarshalJSON marshals the config properties to JSON
+func (cp *ConfigProps) MarshalJSON() ([]byte, error) {
+	m := cp.serializableMap()
+	return json.Marshal(m)
+}
+
+// MarshalText marshals the config properties to text
+func (cp *ConfigProps) MarshalText() ([]byte, error) {
+	return []byte(cp.String()), nil
+}
+
+// String returns a string representation of the configuration
+func (cp *ConfigProps) String() string {
+	m := cp.serializableMap()
+	return fmt.Sprint(m)
+}
+
+// Inconsistent returns a ConfigProps with entries in other that are inconsistent with this one.
+// An entry is inconsistent if it exists in both ConfigProps but has different values.
+func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
+	result := new(ConfigProps)
+
+	// Only check fields that are valid in both configs
+	both := cp.valid & other.valid
+
+	// Check each property that's valid in both
+	if both&PropIDGNSSEnabled != 0 && cp.gnssEnabled != other.gnssEnabled {
+		result.SetGNSSEnabled(other.gnssEnabled)
+	}
+	if both&PropIDPrimaryGNSS != 0 && cp.primaryGNSS != other.primaryGNSS {
+		result.SetPrimaryGNSS(other.primaryGNSS)
+	}
+	if both&PropIDSolutionPeriod != 0 && cp.solutionPeriod != other.solutionPeriod {
+		result.SetSolutionPeriod(other.solutionPeriod)
+	}
+	if both&PropIDTimePulseWidth != 0 && cp.timePulseWidth != other.timePulseWidth {
+		result.SetTimePulseWidth(other.timePulseWidth)
+	}
+	if both&PropIDTimePulsePeriod != 0 && cp.timePulsePeriod != other.timePulsePeriod {
+		result.SetTimePulsePeriod(other.timePulsePeriod)
+	}
+	if both&PropIDTimePulseAlignToGNSS != 0 && cp.timePulseAlignToGNSS != other.timePulseAlignToGNSS {
+		result.SetTimePulseAlignToGNSS(other.timePulseAlignToGNSS)
+	}
+	if both&PropIDTimePulseOnlyWhenLocked != 0 && cp.timePulseOnlyWhenLocked != other.timePulseOnlyWhenLocked {
+		result.SetTimePulseOnlyWhenLocked(other.timePulseOnlyWhenLocked)
+	}
+	if both&PropIDTimePulsePolarityRising != 0 && cp.timePulsePolarityRising != other.timePulsePolarityRising {
+		result.SetTimePulsePolarityRising(other.timePulsePolarityRising)
+	}
+	if both&PropIDTimeMode != 0 && cp.timeMode != other.timeMode {
+		result.SetTimeMode(other.timeMode)
+	}
+	if both&PropIDAntennaCableDelay != 0 && cp.antennaCableDelay != other.antennaCableDelay {
+		result.SetAntennaCableDelay(other.antennaCableDelay)
+	}
+	if both&PropIDFixedPosECEF != 0 && cp.fixedPosECEF != other.fixedPosECEF {
+		result.SetFixedPosECEF(other.fixedPosECEF)
+	}
+	if both&PropIDFixedPosAcc != 0 && cp.fixedPosAcc != other.fixedPosAcc {
+		result.SetFixedPosAcc(other.fixedPosAcc)
+	}
+	if both&PropIDStationary != 0 && cp.stationary != other.stationary {
+		result.SetStationary(other.stationary)
+	}
+	if both&PropIDNMEAEnabled != 0 && cp.nmeaEnabled != other.nmeaEnabled {
+		result.SetNMEAEnabled(other.nmeaEnabled)
+	}
+	if both&PropIDBaudRate != 0 && cp.baudRate != other.baudRate {
+		result.SetBaudRate(other.baudRate)
+	}
+	return result
+}
+
+// Missing returns a ConfigProps with entries from other that are missing from this one.
+// An entry is missing if it exists in other but not in this ConfigProps.
+func (cp *ConfigProps) Missing(other *ConfigProps) *ConfigProps {
+	result := new(ConfigProps)
+
+	// Copy all values from other
+	*result = *other
+
+	// Keep only the properties that are in other but not in this one
+	result.valid = other.valid &^ cp.valid
+
+	return result
+}
+
+// serializableMap converts the valid properties to a map suitable for serialization
+func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	m := make(map[string]interface{})
-	for k, v := range c.m {
-		if v2, exists := c2.m[k]; exists && v != v2 {
-			m[k] = v2
-		}
+
+	if cp.valid&PropIDGNSSEnabled != 0 {
+		m["gnssEnabled"] = cp.gnssEnabled.Items()
 	}
-	return &ConfigMap{m}
-}
-
-// Missing returns a Config with the entries from c2 that are missing from c.
-func (c *ConfigMap) Missing(c2 *ConfigMap) *ConfigMap {
-	m := make(map[string]interface{})
-	for k, v := range c2.m {
-		if _, exists := c.m[k]; !exists {
-			m[k] = v
-		}
+	if cp.valid&PropIDPrimaryGNSS != 0 {
+		m["primaryGNSS"] = cp.primaryGNSS
 	}
-	return &ConfigMap{m}
-}
-
-func (c *ConfigMap) IsEmpty() bool {
-	return len(c.m) == 0
-}
-
-func (c *ConfigMap) serializableMap() map[string]interface{} {
-	j := make(map[string]interface{})
-	for k, v := range c.m {
-		switch t := v.(type) {
-		case time.Duration:
-			j[k] = float64(t) / float64(time.Second)
-		case Length:
-			j[k] = float64(t) / float64(Meter)
-		case Point3D:
-			j[k] = []float64{t[0].Meters(), t[1].Meters(), t[2].Meters()}
-		case TimeMode:
-			switch t {
-			case TimeModeDisabled:
-				j[k] = "disabled"
-			case TimeModeSurvey:
-				j[k] = "survey"
-			case TimeModeFixed:
-				j[k] = "fixed"
-			default:
-				j[k] = t
-			}
-		case GNSSSet:
-			j[k] = t.Items()
+	if cp.valid&PropIDSolutionPeriod != 0 {
+		m["solutionPeriod"] = float64(cp.solutionPeriod) / float64(time.Second)
+	}
+	if cp.valid&PropIDTimePulseWidth != 0 {
+		m["timePulseWidth"] = float64(cp.timePulseWidth) / float64(time.Second)
+	}
+	if cp.valid&PropIDTimePulsePeriod != 0 {
+		m["timePulsePeriod"] = float64(cp.timePulsePeriod) / float64(time.Second)
+	}
+	if cp.valid&PropIDTimePulseAlignToGNSS != 0 {
+		m["timePulseAlignToGNSS"] = cp.timePulseAlignToGNSS
+	}
+	if cp.valid&PropIDTimePulseOnlyWhenLocked != 0 {
+		m["timePulseOnlyWhenLocked"] = cp.timePulseOnlyWhenLocked
+	}
+	if cp.valid&PropIDTimePulsePolarityRising != 0 {
+		m["timePulsePolarityRising"] = cp.timePulsePolarityRising
+	}
+	if cp.valid&PropIDTimeMode != 0 {
+		switch cp.timeMode {
+		case TimeModeDisabled:
+			m["timeMode"] = "disabled"
+		case TimeModeSurvey:
+			m["timeMode"] = "survey"
+		case TimeModeFixed:
+			m["timeMode"] = "fixed"
 		default:
-			j[k] = v
+			m["timeMode"] = cp.timeMode
 		}
 	}
-	return j
+	if cp.valid&PropIDAntennaCableDelay != 0 {
+		m["antennaCableDelay"] = float64(cp.antennaCableDelay) / float64(time.Second)
+	}
+	if cp.valid&PropIDFixedPosECEF != 0 {
+		m["fixedPosECEF"] = []float64{
+			cp.fixedPosECEF[0].Meters(),
+			cp.fixedPosECEF[1].Meters(),
+			cp.fixedPosECEF[2].Meters(),
+		}
+	}
+	if cp.valid&PropIDFixedPosAcc != 0 {
+		m["fixedPosAcc"] = float64(cp.fixedPosAcc) / float64(Meter)
+	}
+	if cp.valid&PropIDStationary != 0 {
+		m["stationary"] = cp.stationary
+	}
+	if cp.valid&PropIDNMEAEnabled != 0 {
+		m["nmeaEnabled"] = cp.nmeaEnabled
+	}
+	if cp.valid&PropIDBaudRate != 0 {
+		m["baudRate"] = cp.baudRate
+	}
+	return m
 }
 
-func makeCfgKey[T comparable](s string) TypedCfgKey[T] {
-	return TypedCfgKey[T]{anyCfgKey{s}}
-}
-
-var CfgGNSSEnabled = makeCfgKey[GNSSSet]("gnssEnabled")
-var CfgPrimaryGNSS = makeCfgKey[GNSS]("primaryGNSS")
-var CfgSolutionPeriod = makeCfgKey[time.Duration]("solutionPeriod")
-var CfgTimePulseWidth = makeCfgKey[time.Duration]("timePulseWidth")
-var CfgTimePulsePeriod = makeCfgKey[time.Duration]("timePulsePeriod")
-var CfgTimePulseAlignToGNSS = makeCfgKey[bool]("timePulseAlignToGNSS")
-var CfgTimePulseOnlyWhenLocked = makeCfgKey[bool]("timePulseOnlyWhenLocked")
-var CfgTimePulsePolarityRising = makeCfgKey[bool]("timePulsePolarityRising")
-var CfgTimeMode = makeCfgKey[TimeMode]("timeMode")
-var CfgAntennaCableDelay = makeCfgKey[time.Duration]("antennaCableDelay")
-var CfgFixedPosECEF = makeCfgKey[Point3D]("fixedPosECEF")
-var CfgFixedPosAcc = makeCfgKey[Length]("fixedPosAcc")
-var CfgStationary = makeCfgKey[bool]("stationary")
-var CfgNMEAEnabled = makeCfgKey[bool]("nmeaEnabled")
-var CfgBaudRate = makeCfgKey[uint32]("baudRate")
-
-func (cm *ConfigMap) SetPPS() {
-	CfgSolutionPeriod.Set(cm, 1*time.Second)
-	CfgTimePulsePeriod.Set(cm, 1*time.Second)
-	CfgTimePulseWidth.Set(cm, time.Second/10)
-	CfgTimePulsePolarityRising.Set(cm, true)
-	CfgTimePulseAlignToGNSS.Set(cm, true)
-	CfgTimePulseOnlyWhenLocked.Set(cm, true)
+// SetPPS configures the properties for a pulse-per-second output
+func (cp *ConfigProps) SetPPS() {
+	cp.SetSolutionPeriod(1 * time.Second)
+	cp.SetTimePulsePeriod(1 * time.Second)
+	cp.SetTimePulseWidth(time.Second / 10)
+	cp.SetTimePulsePolarityRising(true)
+	cp.SetTimePulseAlignToGNSS(true)
+	cp.SetTimePulseOnlyWhenLocked(true)
 }
 
 type Length int64
@@ -350,6 +632,15 @@ func ParsePoint3D(s string) (Point3D, error) {
 		p[i] = Length(n)
 	}
 	return p, nil
+}
+
+// Survey specifies whether a survey should be performed, and if so, its parameters
+// The survey is performed when the time mode is one of the modes in When.
+// If When is non-zero, then AccLimit must also be non-zero.
+type Survey struct {
+	When     TimeModeSet   // perform a survey when the time mode is one of these
+	MinDur   time.Duration // survey should run at least this long
+	AccLimit Length        // survey should run until this accuracy is achieved
 }
 
 type TimeMode byte

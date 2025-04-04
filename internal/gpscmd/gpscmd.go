@@ -34,27 +34,27 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	} else {
 		conn, err = gpsio.OpenSocket(v.socketPath)
 		opts.Detected = true
-
 	}
 	if err != nil {
 		return
 	}
-	cm := &target.Map
+
+	cp := &target.Props
 	if v.pps {
-		cm.SetPPS()
+		cp.SetPPS()
 	}
 	if v.nmea {
-		gpsprot.CfgNMEAEnabled.Set(cm, true)
+		cp.SetNMEAEnabled(true)
 	}
 	if v.primaryGNSS != 0 {
-		gpsprot.CfgPrimaryGNSS.Set(cm, v.primaryGNSS)
+		cp.SetPrimaryGNSS(v.primaryGNSS)
 	}
 	if v.enabledGNSS != 0 {
-		gpsprot.CfgGNSSEnabled.Set(cm, v.enabledGNSS)
+		cp.SetGNSSEnabled(v.enabledGNSS)
 	}
 	if v.disableTimeMode {
 		opts.Survey.When = 0
-		gpsprot.CfgTimeMode.Set(cm, gpsprot.TimeModeDisabled)
+		cp.SetTimeMode(gpsprot.TimeModeDisabled)
 	}
 	if v.survey {
 		opts.Survey.When = gpsprot.TimeModeAny
@@ -66,7 +66,7 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 			err = fmt.Errorf("invalid remote serial speed %d", v.remoteSpeed)
 			return
 		}
-		gpsprot.CfgBaudRate.Set(cm, uint32(v.remoteSpeed))
+		cp.SetBaudRate(uint32(v.remoteSpeed))
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
@@ -95,7 +95,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	var _ gpscfg.SerialError = gpsio.TermError{}
 	info, err := gpscfg.Configure(ctx, lg, target, pCh, conn)
 	if err == nil {
-		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigMap))
+		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigProps))
 	}
 
 	lg.Debug("about to wait")

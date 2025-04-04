@@ -77,7 +77,7 @@ func newConfigurator(target *gpsprot.ConfigTarget, ver *Version) *Configurator {
 	}
 }
 
-func (c *Configurator) ConfigMap() *gpsprot.ConfigMap {
+func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	return c.raw.Config(c.ver)
 }
 
@@ -243,7 +243,7 @@ func newCfgValsetRequest(items []ucv.Item, layers bin.CfgValsetLayer) (*bin.CfgV
 
 func (c *Configurator) pollPrt() (gpsprot.ConfigRequest, error) {
 	// This is used both by old and new.
-	if !c.target.UsesAny(cfgOldKeys.prt...) && !c.target.Opts.EnableTimeMsg && !c.target.Opts.EnableLeapSecondMsg &&
+	if !c.target.UsesAny(cfgOldProps.prt...) && !c.target.Opts.EnableTimeMsg && !c.target.Opts.EnableLeapSecondMsg &&
 		c.target.Opts.Survey.When == 0 {
 		return nil, nil
 	}
@@ -252,28 +252,28 @@ func (c *Configurator) pollPrt() (gpsprot.ConfigRequest, error) {
 
 func (c *Configurator) pollGNSS() (gpsprot.ConfigRequest, error) {
 	// UBX-CFG-GNSS needs at least protocol version 14.00
-	if !c.target.UsesAny(cfgOldKeys.gnss...) || !c.ver.protVerAtLeast(14, 0) {
+	if !c.target.UsesAny(cfgOldProps.gnss...) || !c.ver.protVerAtLeast(14, 0) {
 		return nil, nil
 	}
 	return c.pollRequest(bin.CfgGNSSID), nil
 }
 
 func (c *Configurator) pollRate() (gpsprot.ConfigRequest, error) {
-	if !c.target.UsesAny(cfgOldKeys.rate...) {
+	if !c.target.UsesAny(cfgOldProps.rate...) {
 		return nil, nil
 	}
 	return c.pollRequest(bin.CfgRateID), nil
 }
 
 func (c *Configurator) pollNav5() (gpsprot.ConfigRequest, error) {
-	if !c.target.UsesAny(cfgOldKeys.nav5...) {
+	if !c.target.UsesAny(cfgOldProps.nav5...) {
 		return nil, nil
 	}
 	return c.pollRequest(bin.CfgNav5ID), nil
 }
 
 func (c *Configurator) pollTmode() (gpsprot.ConfigRequest, error) {
-	if !c.target.UsesAny(cfgOldKeys.tmode...) && c.target.Opts.Survey.When == 0 {
+	if !c.target.UsesAny(cfgOldProps.tmode...) && c.target.Opts.Survey.When == 0 {
 		return nil, nil
 	}
 	switch c.ver.tmodeLevel() {
@@ -288,7 +288,7 @@ func (c *Configurator) pollTmode() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) pollTp5() (gpsprot.ConfigRequest, error) {
-	if !c.target.UsesAny(cfgOldKeys.tp5...) {
+	if !c.target.UsesAny(cfgOldProps.tp5...) {
 		return nil, nil
 	}
 	tpIdx := 0
@@ -360,14 +360,14 @@ func (c *Configurator) enableSurveyMsg() (gpsprot.ConfigRequest, error) {
 	if surveyMode {
 		return c.enableMsgRequest(msgID, true)
 	}
-	if _, exists := gpsprot.CfgTimeMode.Get(&c.target.Map); exists {
+	if _, exists := c.target.Props.GetTimeMode(); exists {
 		return c.enableMsgRequest(msgID, false)
 	}
 	return nil, nil
 }
 
 func (c *Configurator) setPrt() (gpsprot.ConfigRequest, error) {
-	prt := c.raw.changePrt(&c.target.Map)
+	prt := c.raw.changePrt(&c.target.Props)
 	if prt == nil {
 		return nil, nil
 	}
@@ -377,7 +377,7 @@ func (c *Configurator) setPrt() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) setNav5() (gpsprot.ConfigRequest, error) {
-	nav5 := c.raw.changeNav5(&c.target.Map)
+	nav5 := c.raw.changeNav5(&c.target.Props)
 	if nav5 == nil {
 		return nil, nil
 	}
@@ -386,7 +386,7 @@ func (c *Configurator) setNav5() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) setRate() (gpsprot.ConfigRequest, error) {
-	rate := c.raw.changeRate(&c.target.Map, c.ver)
+	rate := c.raw.changeRate(&c.target.Props, c.ver)
 	if rate == nil {
 		return nil, nil
 	}
@@ -442,7 +442,7 @@ func (c *Configurator) reqSurvey() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) setTp5() (gpsprot.ConfigRequest, error) {
-	tp5 := c.raw.changeTp5(&c.target.Map)
+	tp5 := c.raw.changeTp5(&c.target.Props)
 	if tp5 == nil {
 		return nil, nil
 	}
@@ -469,11 +469,11 @@ func (acks *ackList) findAckByMsgId(msgID bin.MsgID, tSent time.Time) (ack *Ack)
 	return
 }
 
-func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigMap {
+func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigProps {
 	if raw == nil {
 		return nil
 	}
-	cm := &gpsprot.ConfigMap{}
+	cm := &gpsprot.ConfigProps{}
 	raw.cookPrt(cm)
 	if !raw.CfgVals.isNil() {
 		raw.CfgVals.Cook(ver, raw.valPort(), cm)

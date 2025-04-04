@@ -47,16 +47,16 @@ func (c *GPSConfig) target() (*gpsprot.ConfigTarget, error) {
 	if err != nil {
 		return nil, err
 	}
-	cm := &target.Map
-	err = c.getPrimaryGNSS(cm)
+	cp := &target.Props
+	err = c.getPrimaryGNSS(cp)
 	if err != nil {
 		return nil, err
 	}
-	err = c.getDelay(cm)
+	err = c.getDelay(cp)
 	if err != nil {
 		return nil, err
 	}
-	err = c.getFixedPos(cm)
+	err = c.getFixedPos(cp)
 	if err != nil {
 		return nil, err
 	}
@@ -65,11 +65,13 @@ func (c *GPSConfig) target() (*gpsprot.ConfigTarget, error) {
 
 func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {
 	opts := &target.Opts
+	cp := &target.Props
+
 	if !c.Stationary {
-		gpsprot.CfgTimeMode.Set(&target.Map, gpsprot.TimeModeDisabled)
+		cp.SetTimeMode(gpsprot.TimeModeDisabled)
 		opts.Survey.When = 0
 	} else {
-		gpsprot.CfgStationary.Set(&target.Map, true)
+		cp.SetStationary(true)
 		opts.Survey.When = gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled)
 		if c.Resurvey {
 			opts.Survey.When |= gpsprot.TimeModeFlags(gpsprot.TimeModeSurvey)
@@ -83,18 +85,18 @@ func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {
 	return nil
 }
 
-func (c *GPSConfig) getPrimaryGNSS(cm *gpsprot.ConfigMap) error {
+func (c *GPSConfig) getPrimaryGNSS(cp *gpsprot.ConfigProps) error {
 	if c.GNSS == 0 {
 		return nil
 	}
 	if !c.GNSS.IsMajor() {
 		return fmt.Errorf("primary GNSS must be a major GNSS (%v is not)", c.GNSS)
 	}
-	gpsprot.CfgPrimaryGNSS.Set(cm, c.GNSS)
+	cp.SetPrimaryGNSS(c.GNSS)
 	return nil
 }
 
-func (c *GPSConfig) getFixedPos(cm *gpsprot.ConfigMap) error {
+func (c *GPSConfig) getFixedPos(cp *gpsprot.ConfigProps) error {
 	if c.FixedPosECEF.IsZero() {
 		return nil
 	}
@@ -106,7 +108,7 @@ func (c *GPSConfig) getFixedPos(cm *gpsprot.ConfigMap) error {
 	for i := 0; i < 3; i++ {
 		fixedPos[i] = gpsprot.Meters(c.FixedPosECEF[i])
 	}
-	gpsprot.CfgFixedPosECEF.Set(cm, fixedPos)
+	cp.SetFixedPosECEF(fixedPos)
 	acc := gpsprot.Meters(c.FixedPosAcc)
 	if acc < gpsprot.Millimeter {
 		return fmt.Errorf("fixed position accuracy %v is too small", c.FixedPosAcc)
@@ -114,7 +116,7 @@ func (c *GPSConfig) getFixedPos(cm *gpsprot.ConfigMap) error {
 	if acc > gpsprot.Meter*1000 {
 		return fmt.Errorf("fixed position accuracy %v is too large", c.FixedPosAcc)
 	}
-	gpsprot.CfgFixedPosAcc.Set(cm, acc)
+	cp.SetFixedPosAcc(acc)
 	return nil
 }
 
@@ -122,7 +124,7 @@ const speedOfLight = 0.299792458 // in meters per nanosecond
 
 const maxAntennaCableDelay = 30000 // in nanoseconds; needs to fit in signed 16-bit integer
 
-func (c *GPSConfig) getDelay(cm *gpsprot.ConfigMap) error {
+func (c *GPSConfig) getDelay(cp *gpsprot.ConfigProps) error {
 	delay := 0.0
 	specified := false
 	if !math.IsNaN(c.AntennaCableLength) {
@@ -142,7 +144,7 @@ func (c *GPSConfig) getDelay(cm *gpsprot.ConfigMap) error {
 	if !(math.Abs(delay) <= maxAntennaCableDelay) {
 		return fmt.Errorf("invalid cable delay %v (cable delay is in nanoseconds)", c.AntennaCableDelay)
 	}
-	gpsprot.CfgAntennaCableDelay.Set(cm, time.Duration(delay))
+	cp.SetAntennaCableDelay(time.Duration(delay))
 	return nil
 }
 
