@@ -18,6 +18,7 @@ all:
         morbier.lan:
         toma.lan:
         vacherin.lan:
+        valdeon.lan:
   
   hosts:
     # LBE-1421
@@ -52,8 +53,11 @@ all:
     caciocavallo.lan:
       instance: ttyAMA3
 
-    # LEA-M8F in TimeBeat sandwich board
+    # LEA-M8F in Timebeat sandwich board
     morbier.lan: # all default
+
+    # MAX-F10S in Timebeat sandwich board
+    valdeon.lan: # all default
 
     # LEA-F9T
     mascarpone.lan: # all default
