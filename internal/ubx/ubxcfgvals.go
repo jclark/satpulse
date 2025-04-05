@@ -147,7 +147,7 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
 	cp := &target.Props
-	tg := known.timePulseTransaction(target, &items, &keys)
+	tg := known.timePulseTransaction(target, ver, &items, &keys)
 
 	survey, err := known.timeModeTransaction(target, ver, port, &items, &keys)
 	if err != nil {
@@ -408,8 +408,8 @@ func (raw *CfgVals) getTimePulseWidth() (time.Duration, bool) {
 
 // timePulseTransaction compiles the parts of the configuration related to the time pulse.
 // If it infers the GNSS to which the pulse is aligned, it returns that.
-func (known *CfgVals) timePulseTransaction(target *gpsprot.ConfigTarget, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
-	tg := known.timePulseWriteTransaction(&target.Props, items, keys)
+func (known *CfgVals) timePulseTransaction(target *gpsprot.ConfigTarget, ver *Version, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
+	tg := known.timePulseWriteTransaction(&target.Props, ver, items, keys)
 	*keys = known.timePulseReadTransaction(target.Get, *items, *keys)
 	return tg
 }
@@ -434,7 +434,7 @@ func (known *CfgVals) timePulseReadTransaction(target gpsprot.PropIDs, items []u
 	return keys
 }
 
-func (known *CfgVals) timePulseWriteTransaction(cp *gpsprot.ConfigProps, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
+func (known *CfgVals) timePulseWriteTransaction(cp *gpsprot.ConfigProps, ver *Version, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
 	tg := ucv.ETpTimegridTp1Utc
 	period, havePeriod := cp.GetTimePulsePeriod()
 	width, haveWidth := cp.GetTimePulseWidth()
@@ -446,7 +446,7 @@ func (known *CfgVals) timePulseWriteTransaction(cp *gpsprot.ConfigProps, items *
 		ucv.AddItem(items, ucv.KTpAlignToTowTp1, align)
 		ucv.AddItem(items, ucv.KTpSyncGnssTp1, align)
 		if _, ok := cp.GetPrimaryGNSS(); !ok {
-			tg = known.inferTimegridTp1(items, keys)
+			tg = known.inferTimegridTp1(ver, items, keys)
 		}
 	} else {
 		if havePeriod || haveWidth {
@@ -512,7 +512,7 @@ func (known *CfgVals) inferTpLenTp1(lenLock uint64, items *[]ucv.Item, keys *[]u
 	ucv.AddKey(keys, ucv.KTpDutyTp1)
 }
 
-func (known *CfgVals) inferTimegridTp1(items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
+func (known *CfgVals) inferTimegridTp1(ver *Version, items *[]ucv.Item, keys *[]ucv.Key) ucv.EnumTpTimegridTp1 {
 	missing := []ucv.Key(nil)
 	if tg, ok := cfgValGetMiss(known, ucv.KTpTimegridTp1, &missing); ok && tg != ucv.ETpTimegridTp1Utc {
 		return tg
@@ -539,9 +539,13 @@ func (known *CfgVals) inferTimegridTp1(items *[]ucv.Item, keys *[]ucv.Key) ucv.E
 	sigEna := []ucv.KeyL{ucv.KSignalGpsEna, ucv.KSignalGalEna, ucv.KSignalBdsEna, ucv.KSignalGloEna}
 	sigTg := []ucv.EnumTpTimegridTp1{ucv.ETpTimegridTp1Gps, ucv.ETpTimegridTp1Gal, ucv.ETpTimegridTp1Bds, ucv.ETpTimegridTp1Glo}
 	for i, sig := range sigEna {
-		if ena, ok := cfgValGetMiss(known, sig, &missing); ok && ena && len(missing) == 0 {
-			ucv.AddItem(items, ucv.KTpTimegridTp1, sigTg[i])
-			return sigTg[i]
+		tg := sigTg[i]
+		// We need to check that the signal is supported by the receiver, before we use valget to see if it is enabled.
+		if gnss := timegridTp1ToGNSS(tg); gnss != 0 && ver.GNSS.Contains(gnss) {
+			if ena, ok := cfgValGetMiss(known, sig, &missing); ok && ena && len(missing) == 0 {
+				ucv.AddItem(items, ucv.KTpTimegridTp1, sigTg[i])
+				return sigTg[i]
+			}
 		}
 	}
 	*keys = append(*keys, missing...)
@@ -643,6 +647,22 @@ func gnssToTimegridTp1(g gpsprot.GNSS) ucv.EnumTpTimegridTp1 {
 	default:
 		return ucv.ETpTimegridTp1Utc
 	}
+}
+
+func timegridTp1ToGNSS(tg ucv.EnumTpTimegridTp1) gpsprot.GNSS {
+	switch tg {
+	case ucv.ETpTimegridTp1Gps:
+		return gpsprot.GPS
+	case ucv.ETpTimegridTp1Gal:
+		return gpsprot.GAL
+	case ucv.ETpTimegridTp1Glo:
+		return gpsprot.GLO
+	case ucv.ETpTimegridTp1Bds:
+		return gpsprot.BDS
+	case ucv.ETpTimegridTp1Navic:
+		return gpsprot.NAVIC
+	}
+	return 0
 }
 
 func timeModeToTmodeMode(t gpsprot.TimeMode) ucv.EnumTmodeMode {

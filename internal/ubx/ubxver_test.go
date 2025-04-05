@@ -12,12 +12,13 @@ func TestFindGNSS(t *testing.T) {
 		"PROTVER=18.00",
 		"GPS;GLO;GAL;BDS",
 		"SBAS;IMES;QZSS",
+		"NAVIC",
 	}
 
 	gnssSet := findGNSS(extensions)
 
 	expectedGNSSSet := gpsprot.MajorGNSSSet |
-		gpsprot.GNSSFlag(gpsprot.SBAS, gpsprot.QZSS)
+		gpsprot.GNSSFlag(gpsprot.SBAS, gpsprot.QZSS, gpsprot.NAVIC)
 
 	if gnssSet != expectedGNSSSet {
 		t.Errorf("Expected GNSSSet to be %v, got %v", expectedGNSSSet, gnssSet)
@@ -39,5 +40,13 @@ func testOldSwVerString(t *testing.T, swVer string, major, minor byte, tmodeLeve
 	}
 	if ver.tmodeLevel() != tmodeLevel {
 		t.Errorf("Expected tmodeLevel to be %d, got %d", tmodeLevel, ver.tmodeLevel())
+	}
+}
+
+func TestFWVerMAXF10S(t *testing.T) {
+	extensions := []string{ "FWVER=SPGL1L5 6.00" }
+	ver := findFWVer(extensions)
+	if ver == nil || ver.ProductCategory != "SPGL1L5" || ver.Major != 6 || ver.Minor != 0 {
+		t.Errorf("Expected FWVer to be SPGL1L5 6.00, got %v", ver)
 	}
 }

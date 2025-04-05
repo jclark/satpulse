@@ -126,7 +126,8 @@ func (pv ProtVer) String() string {
 	return fmt.Sprintf("%d.%0d", pv.Major, pv.Minor)
 }
 
-var fwVerRegexp = regexp.MustCompile(`^FWVER[= ]([A-Z]{3}) ([1-9][0-9]?)\.([0-9][0-9])$`)
+// MAX-F10S has a product category of SPGL1L5, so let's accomodate at least SPGL1L2L5
+var fwVerRegexp = regexp.MustCompile(`^FWVER[= ]([A-Z][A-Z0-9]+) ([1-9][0-9]?)\.([0-9][0-9])$`)
 
 // LEA-M8F with protocol version 16 has a line `FTS 1.01` without any preceding FWVER
 var fwVerOldRegexp = regexp.MustCompile(`^(FTS|TIM|HPG|SPG) ([1-9][0-9]?)\.([0-9][0-9])$`)
@@ -134,10 +135,13 @@ var protVerRegexp = regexp.MustCompile(`^PROTVER[= ]([1-9][0-9]?)\.([0-9][0-9])$
 var modRegexp = regexp.MustCompile(`^MOD[= ]([A-Z][-A-Z0-9]+)$`)
 var fisRegexp = regexp.MustCompile(`^FIS[= ]0[xX]`)
 var gnssRegexps = []*regexp.Regexp{
-	// Not sure how NavIC will show up: NAVIC or NavIC
-	// Neither a major GNSS nor just an augmentation system, so not sure which list it will be in
+	// Major GNSS
 	regexp.MustCompile(`^GPS(;[A-Z][A-Za-z]{2,4})*$`),
+	// Augmentation system
 	regexp.MustCompile(`^(SBAS|QZSS)(;[A-Z][A-Za-z]{2,4})*$`),
+	// Non-major GNSS
+	// On the MAX-F10S, NAVIC shows up non its own line
+	regexp.MustCompile(`^NAVIC(;[A-Z][A-Za-z]{2,4})*$`),
 }
 
 func findFWVer(extensions []string) *FWVer {
