@@ -145,6 +145,22 @@ func (s GNSSSet) Items() []GNSS {
 	return items
 }
 
+// String returns a comma-separated list of the GNSS names in the set.
+// Returns "(none)" if the set is empty.
+func (s GNSSSet) String() string {
+	if s == 0 {
+		return "(none)"
+	}
+
+	items := s.Items()
+	names := make([]string, len(items))
+	for i, g := range items {
+		names[i] = g.String()
+	}
+
+	return strings.Join(names, ",")
+}
+
 //go:generate stringer -type=TimeRef
 type TimeRef int
 
