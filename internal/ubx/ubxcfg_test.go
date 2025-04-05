@@ -96,7 +96,7 @@ func newGpsReceiver(ver *Version) *gpsReceiver {
 
 func testConfigurationGet(t *testing.T, rcvr *gpsReceiver) {
 	target := gpsprot.NewConfigTarget(false)
-	target.Get.Add(gpsprot.CfgTimePulseWidth)
+	target.Get |= gpsprot.PropIDTimePulseWidth
 	c, naks, err := runConfiguration(rcvr, target)
 	if err != nil {
 		t.Fatalf("unexpected error from runConfiguration: %v", err)
@@ -104,7 +104,7 @@ func testConfigurationGet(t *testing.T, rcvr *gpsReceiver) {
 	if len(naks) != 0 {
 		t.Errorf("expected no naks, got %v", naks)
 	}
-	if w, ok := gpsprot.CfgTimePulseWidth.Get(c.ConfigMap()); !ok || w != time.Second/10 {
+	if w, ok := c.ConfigProps().GetTimePulseWidth(); !ok || w != time.Second/10 {
 		t.Errorf("expected pulse width to be 0.1s, got %v", w)
 	}
 	if rcvr.nSent != 1 {

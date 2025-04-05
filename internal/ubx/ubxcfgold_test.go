@@ -11,37 +11,37 @@ func TestTp5(t *testing.T) {
 	raw := &CfgOld{tp5: new(ubxbin.CfgTp5)}
 	raw.tp5.Flags |= ubxbin.CfgTp5IsLength
 
-	cm := &gpsprot.ConfigMap{}
-	cm.SetPPS()
+	cp := &gpsprot.ConfigProps{}
+	cp.SetPPS()
 
-	raw.tp5 = raw.changeTp5(cm)
+	raw.tp5 = raw.changeTp5(cp)
 
-	ncm := gpsprot.ConfigMap{}
-	raw.cookTp5(&ncm)
-	bad := cm.Inconsistent(&ncm)
+	ncp := gpsprot.ConfigProps{}
+	raw.cookTp5(&ncp)
+	bad := cp.Inconsistent(&ncp)
 	if !bad.IsEmpty() {
 		t.Errorf("tp5 change failed: %v", bad)
 	}
 
-	rep := raw.changeTp5(cm)
+	rep := raw.changeTp5(cp)
 
 	if rep != nil {
 		t.Errorf("repeated changeTp5 wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeTp5(new(gpsprot.ConfigMap))
+	rep = raw.changeTp5(new(gpsprot.ConfigProps))
 	if rep != nil {
 		t.Errorf("changeTp5 with nothing wasn't a no-op: %v", rep)
 	}
 }
 
 func TestChangeTp5GNSS(t *testing.T) {
-	// Create a new RawConfig and Config
+	// Create a new RawConfig and ConfigProps
 	raw := CfgOld{tp5: new(ubxbin.CfgTp5)}
-	cm := gpsprot.ConfigMap{}
+	cp := gpsprot.ConfigProps{}
 
-	// Call changeTp5GNSS with the empty RawConfig and Config
-	gnss := raw.changeTp5GNSS(&cm)
+	// Call changeTp5GNSS with the empty RawConfig and ConfigProps
+	gnss := raw.changeTp5GNSS(&cp)
 
 	// Check that the result is gpsmsg.GPS
 	if gnss != gpsprot.GPS {
@@ -52,25 +52,25 @@ func TestChangeTp5GNSS(t *testing.T) {
 func TestNav5(t *testing.T) {
 	raw := &CfgOld{nav5: new(ubxbin.CfgNav5)}
 
-	cm := &gpsprot.ConfigMap{}
-	cm.SetPPS()
+	cp := &gpsprot.ConfigProps{}
+	cp.SetPPS()
 
-	raw.nav5 = raw.changeNav5(cm)
+	raw.nav5 = raw.changeNav5(cp)
 
-	ncm := gpsprot.ConfigMap{}
-	raw.cookNav5(&ncm)
-	bad := cm.Inconsistent(&ncm)
+	ncp := gpsprot.ConfigProps{}
+	raw.cookNav5(&ncp)
+	bad := cp.Inconsistent(&ncp)
 	if !bad.IsEmpty() {
 		t.Errorf("nav5 change failed: %v", bad)
 	}
 
-	rep := raw.changeNav5(cm)
+	rep := raw.changeNav5(cp)
 
 	if rep != nil {
 		t.Errorf("repeated changeNav5 wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeNav5(new(gpsprot.ConfigMap))
+	rep = raw.changeNav5(new(gpsprot.ConfigProps))
 	if rep != nil {
 		t.Errorf("changeNav5 with nothing wasn't a no-op: %v", rep)
 	}
@@ -81,25 +81,25 @@ func TestRate(t *testing.T) {
 	raw.rate.NavRate = 1
 	ver := new(Version)
 
-	cm := &gpsprot.ConfigMap{}
-	cm.SetPPS()
+	cp := &gpsprot.ConfigProps{}
+	cp.SetPPS()
 
-	raw.rate = raw.changeRate(cm, ver)
+	raw.rate = raw.changeRate(cp, ver)
 
-	ncm := gpsprot.ConfigMap{}
-	raw.cookRate(&ncm, ver)
-	bad := cm.Inconsistent(&ncm)
+	ncp := gpsprot.ConfigProps{}
+	raw.cookRate(&ncp, ver)
+	bad := cp.Inconsistent(&ncp)
 	if !bad.IsEmpty() {
 		t.Errorf("rate change failed: %v", bad)
 	}
 
-	rep := raw.changeRate(cm, ver)
+	rep := raw.changeRate(cp, ver)
 
 	if rep != nil {
 		t.Errorf("repeated changeRate wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeRate(new(gpsprot.ConfigMap), ver)
+	rep = raw.changeRate(new(gpsprot.ConfigProps), ver)
 	if rep != nil {
 		t.Errorf("changeRate with nothing wasn't a no-op: %v", rep)
 	}
@@ -107,22 +107,22 @@ func TestRate(t *testing.T) {
 
 func TestConfiguratorSane(t *testing.T) {
 	target := gpsprot.NewConfigTarget(false)
-	target.Map.SetPPS()
-	target.Get.Add(gpsprot.CfgTimePulseWidth)
+	target.Props.SetPPS()
+	target.Get = gpsprot.PropIDTimePulseWidth
 	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGPS(t *testing.T) {
 	target := gpsprot.NewConfigTarget(false)
-	target.Map.SetPPS()
-	gpsprot.CfgPrimaryGNSS.Set(&target.Map, gpsprot.GPS)
+	target.Props.SetPPS()
+	target.Props.SetPrimaryGNSS(gpsprot.GPS)
 	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGalileo(t *testing.T) {
 	target := gpsprot.NewConfigTarget(false)
-	target.Map.SetPPS()
-	gpsprot.CfgPrimaryGNSS.Set(&target.Map, gpsprot.GAL)
+	target.Props.SetPPS()
+	target.Props.SetPrimaryGNSS(gpsprot.GAL)
 	rcvr := newLegacyReceiver()
 	rcvr.raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
 	testConfigurator(t, rcvr, target)
@@ -136,13 +136,13 @@ func testConfigurator(t *testing.T, rcvr *gpsReceiver, target *gpsprot.ConfigTar
 	if len(naks) > 0 {
 		t.Errorf("unexpected naks: %v", naks)
 	}
-	result := c.ConfigMap()
+	result := c.ConfigProps()
 
-	bad := target.Map.Inconsistent(result)
+	bad := target.Props.Inconsistent(result)
 	if !bad.IsEmpty() {
 		t.Errorf("final configuration is inconsistent: %v", bad)
 	}
-	missing := result.Missing(&target.Map)
+	missing := result.Missing(&target.Props)
 	if !missing.IsEmpty() {
 		t.Errorf("final configuration is missing: %v", missing)
 	}
@@ -165,8 +165,8 @@ func TestConfiguratorRecover2(t *testing.T) {
 
 func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator {
 	target := gpsprot.NewConfigTarget(false)
-	target.Map.SetPPS()
-	gpsprot.CfgNMEAEnabled.Set(&target.Map, false)
+	target.Props.SetPPS()
+	target.Props.SetNMEAEnabled(false)
 	target.Opts.EnableTimeMsg = true
 	// we can't use legacyReceiver here because it doesn't support the UBX-CFG-GNSS
 	rcvr := newGpsReceiver(&m8tVersion)

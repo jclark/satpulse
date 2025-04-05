@@ -5,61 +5,61 @@ import (
 	"time"
 )
 
-func TestConfigDB(t *testing.T) {
-	cm := ConfigMap{}
+func TestConfigProps(t *testing.T) {
+	cp := new(ConfigProps)
 
-	// Set some values using CfgKey
-	CfgSolutionPeriod.Set(&cm, 10*time.Second)
-	CfgTimePulseWidth.Set(&cm, 1*time.Millisecond)
-	CfgTimePulseAlignToGNSS.Set(&cm, true)
+	// Set some values directly with setter methods
+	cp.SetSolutionPeriod(10 * time.Second)
+	cp.SetTimePulseWidth(1 * time.Millisecond)
+	cp.SetTimePulseAlignToGNSS(true)
 
-	keys := []CfgKey{CfgSolutionPeriod, CfgTimePulseWidth, CfgTimePulseAlignToGNSS}
-	nonKeys := []CfgKey{CfgTimePulsePeriod, CfgStationary}
+	validProps := []PropIDs{PropIDSolutionPeriod, PropIDTimePulseWidth, PropIDTimePulseAlignToGNSS}
+	invalidProps := []PropIDs{PropIDTimePulsePeriod, PropIDStationary}
 
-	// Get the values using CfgKey
-	solutionPeriod, ok := CfgSolutionPeriod.Get(&cm)
+	// Get the values using getter methods
+	solutionPeriod, ok := cp.GetSolutionPeriod()
 	if !ok {
-		t.Errorf("expected CfgSolutionPeriod to be set")
+		t.Errorf("expected solutionPeriod to be set")
 	}
 	if solutionPeriod != 10*time.Second {
-		t.Errorf("expected CfgSolutionPeriod to be 10s, got %v", solutionPeriod)
+		t.Errorf("expected solutionPeriod to be 10s, got %v", solutionPeriod)
 	}
 
-	timePulseWidth, ok := CfgTimePulseWidth.Get(&cm)
+	timePulseWidth, ok := cp.GetTimePulseWidth()
 	if !ok {
-		t.Errorf("expected CfgTimePulseWidth to be set")
+		t.Errorf("expected timePulseWidth to be set")
 	}
 	if timePulseWidth != 1*time.Millisecond {
-		t.Errorf("expected CfgTimePulseWidth to be 1ms, got %v", timePulseWidth)
+		t.Errorf("expected timePulseWidth to be 1ms, got %v", timePulseWidth)
 	}
 
-	timePulsePeriod, ok := CfgTimePulsePeriod.Get(&cm)
+	timePulsePeriod, ok := cp.GetTimePulsePeriod()
 	if ok {
-		t.Errorf("expected CfgTimePulsePeriod not to be set")
+		t.Errorf("expected timePulsePeriod not to be set")
 	}
 	if timePulsePeriod != 0 {
-		t.Errorf("expected CfgTimePulsePeriod to be 0, got %v", timePulsePeriod)
+		t.Errorf("expected timePulsePeriod to be 0, got %v", timePulsePeriod)
 	}
 
-	timePulseGNSS, ok := CfgTimePulseAlignToGNSS.Get(&cm)
+	timePulseGNSS, ok := cp.GetTimePulseAlignToGNSS()
 	if !ok {
-		t.Errorf("expected CfgTimePulseAlignGNSS to be set")
+		t.Errorf("expected timePulseAlignToGNSS to be set")
 	}
-	if timePulseGNSS != true {
-		t.Error("expected CfgTimePulseGNSS to be true, got false")
+	if !timePulseGNSS {
+		t.Error("expected timePulseAlignToGNSS to be true, got false")
 	}
 
-	for _, k := range keys {
-		if !cm.Contains(k) {
-			t.Errorf("expected %v to be set", k)
-		}
-	}
-	for _, k := range nonKeys {
-		if cm.Contains(k) {
-			t.Errorf("expected %v not to be set", k)
+	for _, propID := range validProps {
+		if cp.valid&propID == 0 {
+			t.Errorf("expected PropID %v to be set", propID)
 		}
 	}
 
+	for _, propID := range invalidProps {
+		if cp.valid&propID != 0 {
+			t.Errorf("expected PropID %v not to be set", propID)
+		}
+	}
 }
 
 func TestPoint3DRoundTrip(t *testing.T) {
@@ -78,8 +78,8 @@ func TestPoint3DRoundTrip(t *testing.T) {
 			t.Errorf("Expected coordinate %d to be %v, got %v", i, originalPoint[i], parsedPoint[i])
 		}
 	}
-	p, err := ParsePoint3D("1,2,3 ")
 
+	p, err := ParsePoint3D("1,2,3 ")
 	if err != nil {
 		t.Errorf("ParsePoint3D returned an error for trailing space")
 	} else {
@@ -89,14 +89,18 @@ func TestPoint3DRoundTrip(t *testing.T) {
 	}
 }
 
-func TestCfgKeySet(t *testing.T) {
-	cks := make(CfgKeySet)
-	cks.Add(CfgSolutionPeriod)
-	cks.Add(CfgTimePulsePeriod)
-	if !cks.Contains(CfgSolutionPeriod) {
-		t.Errorf("expected CfgSolutionPeriod to be in the set")
+func TestPropIDOperations(t *testing.T) {
+	props := PropIDSolutionPeriod | PropIDTimePulsePeriod
+
+	if props&PropIDSolutionPeriod == 0 {
+		t.Errorf("expected PropIDSolutionPeriod to be in the bitfield")
 	}
-	if !cks.Contains(CfgTimePulsePeriod) {
-		t.Errorf("expected CfgTimePulsePeriod to be in the set")
+
+	if props&PropIDTimePulsePeriod == 0 {
+		t.Errorf("expected PropIDTimePulsePeriod to be in the bitfield")
+	}
+
+	if props&PropIDTimePulseWidth != 0 {
+		t.Errorf("expected PropIDTimePulseWidth not to be in the bitfield")
 	}
 }

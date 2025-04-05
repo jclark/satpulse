@@ -166,7 +166,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return fmt.Errorf("invalid pulse width in configuration file: %w", err)
 	}
 	if phcFlags.Edges() != 1 && defaultPulseWidth == 0 {
-		gct.Get.Add(gpsprot.CfgTimePulseWidth)
+		gct.Get |= gpsprot.PropIDTimePulseWidth
 	}
 	lg.Debug("GPS configure input", "target", gct)
 	if err != nil {
@@ -225,7 +225,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 
-	pulseWidth, ok := gpsprot.CfgTimePulseWidth.Get(gcfg.ConfigMap)
+	pulseWidth, ok := gcfg.ConfigProps.GetTimePulseWidth()
 	if !ok {
 		pulseWidth = defaultPulseWidth
 	}

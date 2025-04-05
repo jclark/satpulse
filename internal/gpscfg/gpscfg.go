@@ -18,9 +18,9 @@ import (
 )
 
 type Result struct {
-	Version    *ubx.Version
-	ConfigMap  *gpsprot.ConfigMap
-	LeapSecond *gpsprot.LeapSecondMsg
+	Version     *ubx.Version
+	ConfigProps *gpsprot.ConfigProps
+	LeapSecond  *gpsprot.LeapSecondMsg
 }
 
 type msgHandler struct {
@@ -67,7 +67,7 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	if noop {
 		// no need to probe
 		return &Result{
-			ConfigMap: new(gpsprot.ConfigMap),
+			ConfigProps: new(gpsprot.ConfigProps),
 		}, nil
 	}
 	// After we have done detection, bad stuff is a cause for concern.
@@ -83,7 +83,7 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	if badNew.corruptMsgs > 0 {
 		return nil, errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
 	}
-	var cm *gpsprot.ConfigMap
+	var cm *gpsprot.ConfigProps
 	if ubxOK {
 		cm, err = mh.configure(ctx, mh.ubxProt, target, port)
 		if err != nil {
@@ -94,7 +94,7 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	} else {
 		// XXX if ubxMsgCount > 0, then probably we cannot send to the GPS
 		return &Result{
-			ConfigMap: new(gpsprot.ConfigMap),
+			ConfigProps: new(gpsprot.ConfigProps),
 		}, ErrNoResponse
 	}
 	return mh.finish(cm), nil
@@ -110,7 +110,7 @@ func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
 	mh.rtcmMsgs = map[uint16]bool{}
 }
 
-func (mh *msgHandler) finish(cm *gpsprot.ConfigMap) *Result {
+func (mh *msgHandler) finish(cm *gpsprot.ConfigProps) *Result {
 	lg := mh.lg
 	if cm != nil {
 		lg.Info("GPS configuration", "cfg", cm)
@@ -127,9 +127,9 @@ func (mh *msgHandler) finish(cm *gpsprot.ConfigMap) *Result {
 	lg.Info("finished GPS initialization",
 		"nmeaSentences", maps.Keys(mh.nmeaSentences))
 	return &Result{
-		Version:    ver,
-		ConfigMap:  cm,
-		LeapSecond: mh.leapSecond,
+		Version:     ver,
+		ConfigProps: cm,
+		LeapSecond:  mh.leapSecond,
 	}
 }
 
@@ -218,7 +218,7 @@ func (mh *msgHandler) probe(ctx context.Context, prot gpsprot.Protocol, port gps
 	return false, nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.Protocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigMap, error) {
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.Protocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, error) {
 	cfgtor, err := prot.Configure(target)
 	if err != nil {
 		return nil, err
@@ -237,7 +237,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.Protocol, targ
 			return nil, err
 		}
 	}
-	return cfgtor.ConfigMap(), nil
+	return cfgtor.ConfigProps(), nil
 }
 
 const maxTries = 3
