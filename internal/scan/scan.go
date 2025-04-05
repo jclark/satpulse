@@ -81,7 +81,7 @@ Loop:
 						// a timeout in between packets is OK, just keep on going
 						continue Loop
 					}
-					p.ReadError = fmt.Errorf("%w in the middle of a packet", err)
+					p.ReadError = fmt.Errorf("error in the middle of a packet: %w", e)
 				} else if temp, ok := e.(TemporaryError); ok && temp.Temporary() {
 					p.ReadError = e
 				}
