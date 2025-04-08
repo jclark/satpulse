@@ -1,4 +1,3 @@
-
 import { render, createContext, FunctionComponent } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
 import { formatUTCLocal, formatNanoseconds, formatTAI, formatDateTime } from './timefmt';
@@ -11,7 +10,7 @@ interface CardsElementProps {
 
 const CardsElement: FunctionComponent<CardsElementProps> = ({ children }) => {
     return (
-        <div class="cards">
+        <div className="columns-[18rem] gap-4 p-4">
             {children}
         </div>
     );
@@ -24,9 +23,9 @@ interface CardElementProps {
 
 const CardElement: FunctionComponent<CardElementProps> = ({ children, title }) => {
     return (
-        <div class="card">
-            <h3 class="card-title">{title}</h3>
-            <div class="fields">
+        <div className="p-4 rounded-lg mb-4 shadow-md break-inside-avoid bg-white dark:bg-gray-800 border-l-4 border-orange-500">
+            <h3 className="mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400">{title}</h3>
+            <div className="transition-all duration-300 max-h-[1000px] overflow-hidden">
                 {children}
             </div>
         </div>
@@ -40,30 +39,33 @@ interface FieldElementProps {
 
 const FieldElement: FunctionComponent<FieldElementProps> = ({ children, desc }) => {
     return (
-        <div class="field"><span class="field-name">{desc}:</span> <span class="field-value">{children}</span></div>
+        <div className="flex justify-between text-base mb-2 text-gray-600 dark:text-gray-300">
+            <span className="font-bold text-gray-800 dark:text-blue-200">{desc}:</span> 
+            <span className="tabular-nums text-gray-900 dark:text-gray-100">{children}</span>
+        </div>
     );
 };
 
 /*
 interface InitVersion {
-	hw?: string;
-	sw?: string;
-	extensions?: string[];
-	fw?: FWVer 
-	prot?: ProtVer 
-	mod?: string            
-	flash?: boolean              
-	gnss?: string[] 
+    hw?: string;
+    sw?: string;
+    extensions?: string[];
+    fw?: FWVer 
+    prot?: ProtVer 
+    mod?: string            
+    flash?: boolean              
+    gnss?: string[] 
 }*/
 
 interface ProtVer {
-	major: number;
+    major: number;
     minor: number;
 }
 
 interface FWVer {
-	productCategory: string;
-	major: number;
+    productCategory: string;
+    major: number;
     minor: number;
 }
 
@@ -203,7 +205,7 @@ function formatLL(arg: [number, number], _obj: Map): FormattedField[] {
         return [];
     }
     return [
-        ["Coordinates", <a href={mapsURL(arg)} target="_blank">{coordsToString(arg, 5)}</a>]
+        ["Coordinates", <a href={mapsURL(arg)} target="_blank" className="underline hover:text-blue-500">{coordsToString(arg, 5)}</a>]
     ];
 }
 
@@ -239,7 +241,16 @@ function formatBoolean(arg: boolean): string {
     return arg ? "Yes" : "No";
 }
 
-function createEventSource(): EventSource {
+function createEventSource(): EventSource { 
+    /*
+    // Check for URL parameter "sseUrl" for testing without embedding
+    const urlParams = new URLSearchParams(window.location.search);
+    const customSseUrl = urlParams.get('sseUrl');
+    
+    if (customSseUrl) {
+        return new EventSource(customSseUrl);
+    } */
+    
     const docURL = new URL(window.location.href);
     const sseURL = docURL.origin + docURL.pathname + "/sse";
     return new EventSource(sseURL);

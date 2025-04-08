@@ -23,7 +23,8 @@
       		// Add the IDs of extensions you want installed when the container is created.
       		"extensions": [
 				"ms-azuretools.vscode-docker",
-				"ms-vscode.makefile-tools"
+				"ms-vscode.makefile-tools",
+				"bradlc.vscode-tailwindcss"
 			]
     	}
 	},

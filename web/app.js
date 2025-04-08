@@ -490,22 +490,21 @@
   // app.tsx
   var EventSourceContext = J(null);
   var CardsElement = ({ children }) => {
-    return /* @__PURE__ */ u3("div", { class: "cards", children });
+    return /* @__PURE__ */ u3("div", { className: "columns-[18rem] gap-4 p-4", children });
   };
   var CardElement = ({ children, title }) => {
-    return /* @__PURE__ */ u3("div", { class: "card", children: [
-      /* @__PURE__ */ u3("h3", { class: "card-title", children: title }),
-      /* @__PURE__ */ u3("div", { class: "fields", children })
+    return /* @__PURE__ */ u3("div", { className: "p-4 rounded-lg mb-4 shadow-md break-inside-avoid bg-white dark:bg-gray-800 border-l-4 border-orange-500", children: [
+      /* @__PURE__ */ u3("h3", { className: "mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400", children: title }),
+      /* @__PURE__ */ u3("div", { className: "transition-all duration-300 max-h-[1000px] overflow-hidden", children })
     ] });
   };
   var FieldElement = ({ children, desc }) => {
-    return /* @__PURE__ */ u3("div", { class: "field", children: [
-      /* @__PURE__ */ u3("span", { class: "field-name", children: [
+    return /* @__PURE__ */ u3("div", { className: "flex justify-between text-base mb-2 text-gray-600 dark:text-gray-300", children: [
+      /* @__PURE__ */ u3("span", { className: "font-bold text-gray-800 dark:text-blue-200", children: [
         desc,
         ":"
       ] }),
-      " ",
-      /* @__PURE__ */ u3("span", { class: "field-value", children })
+      /* @__PURE__ */ u3("span", { className: "tabular-nums text-gray-900 dark:text-gray-100", children })
     ] });
   };
   function useEvent(name, key) {
@@ -606,7 +605,7 @@
       return [];
     }
     return [
-      ["Coordinates", /* @__PURE__ */ u3("a", { href: mapsURL(arg), target: "_blank", children: coordsToString(arg, 5) })]
+      ["Coordinates", /* @__PURE__ */ u3("a", { href: mapsURL(arg), target: "_blank", className: "underline hover:text-blue-500", children: coordsToString(arg, 5) })]
     ];
   }
   function mapsURL(arg) {
