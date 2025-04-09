@@ -1,6 +1,4 @@
 @import "tailwindcss" source(none);
 @source "app.tsx";
+@source "skyview.tsx";
 @source "index.html";
-
-  
-
