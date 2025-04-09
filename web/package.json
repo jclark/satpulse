@@ -15,7 +15,8 @@
     "jsbuild": "./build.mjs",
     "cssbuild": "npx @tailwindcss/cli -i input.css -o style.css",
     "build": "npm run cssbuild && npm run jsbuild",
-    "svtestbuild": "npm run cssbuild && node build-test-skyview.mjs", 
+    "svtestbuild": "npm run cssbuild && node build-test-skyview.mjs",
+    "dashtestbuild": "npm run cssbuild && node build-test-dashboard.mjs",
     "test": "jest",
     "typecheck": "tsc --noEmit"
   }
