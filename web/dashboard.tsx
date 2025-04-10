@@ -50,9 +50,9 @@ export const Dashboard: FunctionComponent = () => {
     return (
         <CardsElement>
         {events.time && <Card title="Current GPS Time" data={events.time} format={timeFormat} />}
-        {events.phc && <Card title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}
-        {events.survey && <Card title="Survey-in Status" data={events.survey} format={surveyFormat} />}
+        {events.phc && <Card title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}    
         {events.version && <Card title="GPS Receiver Version" data={events.version} format={versionFormat} />}
+        {events.survey && <Card title="Survey-in Status" data={events.survey} format={surveyFormat} />}
         </CardsElement>
     );
 };
@@ -63,7 +63,7 @@ interface CardsElementProps {
 
 const CardsElement: FunctionComponent<CardsElementProps> = ({ children }) => {
     return (
-        <div className="columns-[18rem] gap-4 p-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
         {children}
         </div>
     );
