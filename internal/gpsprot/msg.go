@@ -14,6 +14,7 @@ type MsgHandler interface {
 	Time(msg *TimeMsg, tRead time.Time)
 	LeapSecond(msg *LeapSecondMsg, tRead time.Time)
 	Survey(msg *SurveyMsg, tRead time.Time)
+	Satellites(msg *SatellitesMsg, tRead time.Time)
 }
 
 type DefaultHandler struct{}
@@ -21,6 +22,7 @@ type DefaultHandler struct{}
 func (h *DefaultHandler) Time(msg *TimeMsg, tRead time.Time)             {}
 func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
+func (h *DefaultHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {}
 
 type multiHandler struct {
 	handlers []MsgHandler
@@ -44,12 +46,18 @@ func (h *multiHandler) Survey(msg *SurveyMsg, tRead time.Time) {
 	}
 }
 
+func (h *multiHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.Satellites(msg, tRead)
+	}
+}
+
 func MultiHandler(handlers ...MsgHandler) MsgHandler {
 	return &multiHandler{handlers: handlers}
 }
 
 //go:generate stringer -type=GNSS
-type GNSS int
+type GNSS uint8
 
 // Constants for GNSS type.
 // Zero value means invalid/unknown/unspecified.
@@ -91,6 +99,27 @@ func ParseGNSS(s string) (GNSS, error) {
 		return 0, errors.New("invalid GNSS name: empty string")
 	}
 	return 0, fmt.Errorf("%s: invalid GNSS name", s)
+}
+
+func (g GNSS) SVIDPrefix() string {
+	switch g {
+	case GPS:
+		return "G"
+	case GAL:
+		return "E"
+	case BDS:
+		return "C"
+	case GLO:
+		return "R"
+	case NAVIC:
+		return "I"
+	case QZSS:
+		return "J"
+	case SBAS:
+		return "S"
+	default:
+		return ""
+	}
 }
 
 func (g GNSS) IsMajor() bool {
@@ -159,6 +188,33 @@ func (s GNSSSet) String() string {
 	}
 
 	return strings.Join(names, ",")
+}
+
+// SVID is an identifier of a space vehicle (satellite).
+type SVID struct {
+	GNSS GNSS
+	PRN  uint8 // PRN code number used by the satellite, or orbital slot number for GLONASS FDMA
+}
+
+func (sv SVID) String() string {
+	return fmt.Sprintf("%s%02d", sv.GNSS.SVIDPrefix(), sv.PRN)
+}
+
+func (sv SVID) MarshalJSON() ([]byte, error) {
+	return json.Marshal(sv.String())
+}
+
+// SVInfo contains information about a space vehicle (satellite).
+type SVInfo struct {
+	SVID      SVID  `json:"svid"`
+	Azimuth   int16 `json:"azimuth"`   // in degrees, 0 to 360
+	Elevation int8  `json:"elevation"` // in degrees, -90 to +90
+	CNO       uint8 `json:"cno"`       // C/NO signal to noise ratio
+}
+
+type SatellitesMsg struct {
+	NavEpoch uint32   `json:"navEpoch,omitempty"`
+	Info     []SVInfo `json:"info"` // info about satellites being tracked or acquired
 }
 
 //go:generate stringer -type=TimeRef

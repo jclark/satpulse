@@ -27,6 +27,15 @@ func Dispatch(m bin.Msg, tRead time.Time, h gpsprot.MsgHandler) bool {
 	var time *gpsprot.TimeMsg
 	var sv *gpsprot.SurveyMsg
 	switch mt := m.(type) {
+	case *bin.NavSat:
+		sats := satellitesNavSat(mt)
+		if sats == nil {
+			return false
+		}
+		if h != nil {
+			h.Satellites(sats, tRead)
+		}
+		return true
 	case *bin.NavTimeLS:
 		ls := leapSecond(mt)
 		if ls == nil {

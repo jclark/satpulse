@@ -278,6 +278,10 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	})
 }
 
+func (d *Dispatcher) Satellites(m *gpsprot.SatellitesMsg, tRead time.Time) {
+	d.lg.Debug("visible satellites", "num", len(m.Info), "info", m.Info)
+}
+
 func (d *Dispatcher) sendSSE(name string, data any) {
 	if d.sseCh == nil {
 		return
