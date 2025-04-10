@@ -487,14 +487,167 @@
     return l.vnode && l.vnode(l3), l3;
   }
 
-  // app.tsx
+  // skyview.tsx
+  function SkyView(satellites) {
+    const SIZE = 200;
+    const RADIUS = SIZE / 2;
+    const STROKE_PAD = 1;
+    const toXY = (az, el) => {
+      const r3 = (90 - el) / 90 * RADIUS;
+      const rad = (az - 90) * (Math.PI / 180);
+      const x3 = RADIUS + r3 * Math.cos(rad);
+      const y3 = RADIUS + r3 * Math.sin(rad);
+      return [x3, y3];
+    };
+    const tracked = satellites.filter((sv) => sv.cno > 0);
+    return /* @__PURE__ */ u3(
+      "svg",
+      {
+        viewBox: `${-STROKE_PAD} ${-STROKE_PAD} ${SIZE + 2 * STROKE_PAD} ${SIZE + 2 * STROKE_PAD}`,
+        preserveAspectRatio: "xMidYMid meet",
+        class: "w-full h-auto",
+        xmlns: "http://www.w3.org/2000/svg",
+        children: [
+          /* @__PURE__ */ u3("circle", { cx: RADIUS, cy: RADIUS, r: RADIUS, class: "stroke-gray-400 fill-none stroke-[1]" }),
+          [15, 30, 45, 60].map((el) => /* @__PURE__ */ u3(
+            "circle",
+            {
+              cx: RADIUS,
+              cy: RADIUS,
+              r: (90 - el) / 90 * RADIUS,
+              class: "stroke-gray-200 fill-none stroke-[0.5]"
+            },
+            el
+          )),
+          (() => {
+            const outerR = RADIUS;
+            const innerR = (90 - 60) / 90 * RADIUS;
+            return Array.from({ length: 12 }, (_2, i4) => {
+              const angle = i4 * 30;
+              const rad = (angle - 90) * (Math.PI / 180);
+              const x1 = RADIUS + outerR * Math.cos(rad);
+              const y1 = RADIUS + outerR * Math.sin(rad);
+              const x22 = RADIUS + innerR * Math.cos(rad);
+              const y22 = RADIUS + innerR * Math.sin(rad);
+              return /* @__PURE__ */ u3(
+                "line",
+                {
+                  x1,
+                  y1,
+                  x2: x22,
+                  y2: y22,
+                  class: "stroke-gray-300 stroke-[0.5]"
+                },
+                `radial-${angle}`
+              );
+            });
+          })(),
+          /* @__PURE__ */ u3("text", { x: RADIUS, y: 10, "text-anchor": "middle", class: "fill-gray-500 text-[6px]", children: "N" }),
+          tracked.map((sv) => {
+            const [x3, y3] = toXY(sv.azimuth, sv.elevation);
+            return /* @__PURE__ */ u3(
+              "text",
+              {
+                x: x3,
+                y: y3,
+                "text-anchor": "middle",
+                "dominant-baseline": "middle",
+                class: `text-[3px] font-bold ${colorClassFor(sv.svid)} ${opacityClassFor(sv.cno)}`,
+                children: sv.svid
+              },
+              sv.svid
+            );
+          })
+        ]
+      }
+    );
+  }
+  function opacityClassFor(cno) {
+    if (cno < 25) return "opacity-20";
+    if (cno < 30) return "opacity-40";
+    if (cno < 35) return "opacity-60";
+    if (cno < 42) return "opacity-75";
+    if (cno < 50) return "opacity-90";
+    return "opacity-100";
+  }
+  function colorClassFor(svid) {
+    const prefix = svid[0];
+    switch (prefix) {
+      case "G":
+      // GPS
+      case "S":
+        return "fill-blue-600 dark:fill-blue-400";
+      case "E":
+        return "fill-green-600 dark:fill-green-400";
+      case "C":
+        return "fill-red-600 dark:fill-red-400";
+      case "R":
+        return "fill-fuchsia-600 dark:fill-fuchsia-400";
+      case "J":
+        return "fill-orange-600 dark:fill-orange-400";
+      case "I":
+        return "fill-yellow-600 dark:fill-yellow-300";
+      default:
+        return "fill-gray-600 dark:fill-gray-400";
+    }
+  }
+
+  // dashboard.tsx
   var EventSourceContext = J(null);
+  var Dashboard = () => {
+    const context = x2(EventSourceContext);
+    const [events, setEvents] = d2({});
+    y2(() => {
+      const types = ["satellites", "time", "phc", "survey", "version", "init"];
+      const handler = (type) => (e3) => {
+        try {
+          const data = JSON.parse(e3.data);
+          if (!data || typeof data !== "object") {
+            console.warn(`Invalid ${type} event data:`, data);
+            return;
+          }
+          if (type === "init") {
+            for (const key of ["version", "time", "phc", "survey"]) {
+              if (data[key] && typeof data[key] === "object") {
+                setEvents((prev) => ({ ...prev, [key]: data[key] }));
+              }
+            }
+          } else if (type === "satellites") {
+            if (data.svs && Array.isArray(data.svs)) {
+              setEvents((prev) => ({ ...prev, [type]: data }));
+            } else {
+              console.warn("Invalid satellites event: missing svs array", data);
+            }
+          } else {
+            setEvents((prev) => ({ ...prev, [type]: data }));
+          }
+        } catch (err) {
+          console.warn(`Error parsing ${type} event:`, err);
+        }
+      };
+      for (const type of types) {
+        context.addEventListener(type, handler(type));
+      }
+      return () => {
+        for (const type of types) {
+          context.removeEventListener(type, handler(type));
+        }
+      };
+    }, []);
+    return /* @__PURE__ */ u3(CardsElement, { children: [
+      events.satellites && /* @__PURE__ */ u3(SkyViewCard, { svs: events.satellites.svs }),
+      events.time && /* @__PURE__ */ u3(PropertyCard, { title: "Current GPS Time", data: events.time, format: timeFormat }),
+      events.phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: events.phc, format: phcFormat }),
+      events.version && /* @__PURE__ */ u3(PropertyCard, { title: "GPS Receiver Version", data: events.version, format: versionFormat }),
+      events.survey && /* @__PURE__ */ u3(PropertyCard, { title: "Survey-in Status", data: events.survey, format: surveyFormat })
+    ] });
+  };
   var CardsElement = ({ children }) => {
-    return /* @__PURE__ */ u3("div", { className: "columns-[18rem] gap-4 p-4", children });
+    return /* @__PURE__ */ u3("div", { className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4", children });
   };
   var CardElement = ({ children, title }) => {
     return /* @__PURE__ */ u3("div", { className: "p-4 rounded-lg mb-4 shadow-md break-inside-avoid bg-white dark:bg-gray-800 border-l-4 border-orange-500", children: [
-      /* @__PURE__ */ u3("h3", { className: "mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400", children: title }),
+      title && /* @__PURE__ */ u3("h3", { className: "mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400", children: title }),
       /* @__PURE__ */ u3("div", { className: "transition-all duration-300 max-h-[1000px] overflow-hidden", children })
     ] });
   };
@@ -507,48 +660,9 @@
       /* @__PURE__ */ u3("span", { className: "tabular-nums text-gray-900 dark:text-gray-100", children })
     ] });
   };
-  function useEvent(name, key) {
-    const context = x2(EventSourceContext);
-    const [state, setState] = d2({});
-    const handleEvent = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data != null && typeof data === "object") {
-          if (key) {
-            const map = data;
-            if (key in map) {
-              const newState = map[key];
-              if (newState !== null && typeof newState === "object") {
-                setState(newState);
-              }
-            }
-          } else {
-            setState(data);
-          }
-        }
-      } catch (e3) {
-      }
-    };
-    y2(() => {
-      context.addEventListener(name, handleEvent);
-      return () => {
-        context.removeEventListener(name, handleEvent);
-      };
-    }, []);
-    return state;
-  }
-  var Card = ({ title, event, init }) => {
+  var PropertyCard = ({ title, data, format }) => {
     const fields = [];
-    if (init) {
-      const [key, format] = init;
-      const state = useEvent("init", key);
-      addFields(fields, state, format);
-    }
-    if (event) {
-      const [key, format] = event;
-      const state = useEvent(key);
-      addFields(fields, state, format);
-    }
+    addFields(fields, data, format);
     return /* @__PURE__ */ u3(CardElement, { title, children: fields.map(([desc, value]) => /* @__PURE__ */ u3(FieldElement, { desc, children: value })) });
   };
   function addFields(fields, state, format) {
@@ -635,19 +749,19 @@
   function formatBoolean(arg) {
     return arg ? "Yes" : "No";
   }
+  var SkyViewCard = ({ svs }) => {
+    return /* @__PURE__ */ u3("div", { className: "md:col-span-2 lg:col-span-2 md:row-span-2 lg:row-span-2", children: /* @__PURE__ */ u3(CardElement, { children: SkyView(svs) }) });
+  };
+
+  // app.tsx
   function createEventSource() {
-    const docURL = new URL(window.location.href);
-    const sseURL = docURL.origin + docURL.pathname + "/sse";
+    const base = new URL(window.location.href);
+    const sseURL = base.origin + base.pathname + "/sse";
     return new EventSource(sseURL);
   }
-  var rootElement = document.getElementById("root");
+  var root = document.getElementById("root");
   D(
-    /* @__PURE__ */ u3(EventSourceContext.Provider, { value: createEventSource(), children: /* @__PURE__ */ u3(CardsElement, { children: [
-      /* @__PURE__ */ u3(Card, { title: "Current GPS Time", event: ["time", timeFormat] }),
-      /* @__PURE__ */ u3(Card, { title: "PTP Hardware Clock", event: ["phc", phcFormat] }),
-      /* @__PURE__ */ u3(Card, { title: "Survey-in Status", event: ["survey", surveyFormat] }),
-      /* @__PURE__ */ u3(Card, { title: "GPS Receiver Version", init: ["version", versionFormat] })
-    ] }) }),
-    rootElement
+    /* @__PURE__ */ u3(EventSourceContext.Provider, { value: createEventSource(), children: /* @__PURE__ */ u3(Dashboard, {}) }),
+    root
   );
 })();
