@@ -24,7 +24,7 @@ var _GNSS_index = [...]uint8{0, 3, 6, 9, 12, 17, 21, 25}
 
 func (i GNSS) String() string {
 	i -= 1
-	if i < 0 || i >= GNSS(len(_GNSS_index)-1) {
+	if i >= GNSS(len(_GNSS_index)-1) {
 		return "GNSS(" + strconv.FormatInt(int64(i+1), 10) + ")"
 	}
 	return _GNSS_name[_GNSS_index[i]:_GNSS_index[i+1]]

@@ -126,6 +126,7 @@ const (
 	NavPosECEFID MsgID = clsNav | (0x01 << 8)
 	NavSolID     MsgID = clsNav | (0x06 << 8)
 	NavPVTID     MsgID = clsNav | (0x07 << 8)
+	NavSatID     MsgID = clsNav | (0x35 << 8)
 	NavTimeGPSID MsgID = clsNav | (0x20 << 8)
 	NavTimeUTCID MsgID = clsNav | (0x21 << 8)
 	NavTimeBDSID MsgID = clsNav | (0x24 << 8)
@@ -166,6 +167,7 @@ func init() {
 	regMsg[NavDOP]("DOP")
 	regMsg[NavPosECEF]("POSECEF")
 	regMsg[NavPVT]("PVT")
+	regMsg[NavSat]("SAT")
 	regMsg[NavSol]("SOL")
 	regMsg[NavSvin]("SVIN")
 	regMsg[NavTimeGPS]("TIMEGPS")
@@ -647,6 +649,97 @@ const (
 )
 
 func (m *NavPVT) ID() MsgID { return NavPVTID }
+
+type NavSat struct {
+	NavSatFixed
+	SVs []NavSatSV
+}
+
+type NavSatFixed struct {
+	ITOW    uint32
+	Version byte
+	NumSVs  byte
+	_       [2]byte
+}
+
+type NavSatSV struct {
+	GNSSID GNSSID
+	SVID   byte
+	CNO    byte
+	Elev   int8
+	Azim   int16
+	PRRes  int16
+	Flags  NavSatFlags
+}
+
+func (m *NavSat) ID() MsgID { return NavSatID }
+
+func (m *NavSat) InitForLen(payloadLen int) (err error) {
+	len, err := sliceLen(m, payloadLen, 8, 12)
+	if err == nil {
+		m.SVs = make([]NavSatSV, len)
+	}
+	return
+}
+
+func (m *NavSat) Parts() (fixed any, slice any) {
+	fixed = &m.NavSatFixed
+	slice = &m.SVs
+	return
+}
+
+type NavSatFlags uint32
+
+// Quality indicator values (bits 2..0)
+const (
+	NavSatQualityNoSignal NavSatFlags = iota
+	NavSatQualitySearchingSignal
+	NavSatQualitySignalAcquired
+	NavSatQualitySignalDetectedUnusable
+	NavSatQualityCodeLocked
+	NavSatQualityCodeAndCarrierLocked1
+	NavSatQualityCodeAndCarrierLocked2
+	NavSatQualityCodeAndCarrierLocked3
+)
+
+// Health values (bits 5..4)
+const (
+	NavSatHealthUnknown NavSatFlags = iota << 4
+	NavSatHealthHealthy
+	NavSatHealthUnhealthy
+)
+
+// Orbit source values (bits 10..8)
+const (
+	NavSatOrbitSourceNone NavSatFlags = iota << 8
+	NavSatOrbitSourceEphemeris
+	NavSatOrbitSourceAlmanac
+	NavSatOrbitSourceAssistNowOffline
+	NavSatOrbitSourceAssistNowAutonomous
+	NavSatOrbitSourceOther1
+	NavSatOrbitSourceOther2
+	NavSatOrbitSourceOther3
+)
+
+// Boolean flags
+const (
+	NavSatSVUsed   NavSatFlags = 1 << 3
+	NavSatDiffCorr NavSatFlags = 1 << 6
+	NavSatSmoothed NavSatFlags = 1 << 7
+	NavSatEphAvail NavSatFlags = 1 << (iota + 11)
+	NavSatAlmAvail
+	NavSatAnoAvail
+	NavSatAopAvail
+	_
+	NavSatSbasCorrUsed
+	NavSatRtcmCorrUsed
+	NavSatSlasCorrUsed
+	NavSatSpartnCorrUsed
+	NavSatPrCorrUsed
+	NavSatCrCorrUsed
+	NavSatDoCorrUsed
+	NavSatClasCorrUsed
+)
 
 type NavSol struct {
 	ITOW       uint32
