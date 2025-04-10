@@ -278,8 +278,13 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	})
 }
 
+type SatellitesSSE struct {
+	SVs []gpsprot.SVInfo `json:"svs"`
+}
+
 func (d *Dispatcher) Satellites(m *gpsprot.SatellitesMsg, tRead time.Time) {
 	d.lg.Debug("visible satellites", "num", len(m.Info), "info", m.Info)
+	d.sendSSE("satellites", SatellitesSSE{ SVs: m.Info })
 }
 
 func (d *Dispatcher) sendSSE(name string, data any) {
