@@ -1,18 +1,60 @@
-import { render, createContext, FunctionComponent } from 'preact';
+import { createContext, FunctionComponent } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
 import { formatUTCLocal, formatNanoseconds, formatTAI, formatDateTime } from './timefmt';
 
 export const EventSourceContext = createContext<EventSource | null>(null);
 
 export const Dashboard: FunctionComponent = () => {
-  return (
-    <CardsElement>
-      <Card title="Current GPS Time" event={["time", timeFormat]} />
-      <Card title="PTP Hardware Clock" event={["phc", phcFormat]} />
-      <Card title="Survey-in Status" event={["survey", surveyFormat]} />
-      <Card title="GPS Receiver Version" init={["version", versionFormat]} />
-    </CardsElement>
-  );
+    const context = useContext(EventSourceContext) as EventSource;
+    const [events, setEvents] = useState<Map>({});
+    
+    useEffect(() => {
+        const types = ["time", "phc", "survey", "version", "init"];
+        const handler = (type: string) => (e: MessageEvent<string>) => {
+            try {
+                const data = JSON.parse(e.data);
+                
+                // Basic validation that data is an object
+                if (!data || typeof data !== 'object') {
+                    console.warn(`Invalid ${type} event data:`, data);
+                    return;
+                }
+                
+                if (type === "init") {
+                    for (const key of ["version", "time", "phc", "survey"]) {
+                        // Validate each property is a proper object before adding to state
+                        if (data[key] && typeof data[key] === 'object') {
+                            setEvents(prev => ({ ...prev, [key]: data[key] }));
+                        }
+                    }
+                } else {
+                    // Only update state if we have a valid object
+                    setEvents(prev => ({ ...prev, [type]: data }));
+                }
+            } catch (err) {
+                console.warn(`Error parsing ${type} event:`, err);
+            }
+        };
+        
+        for (const type of types) {
+            context.addEventListener(type, handler(type));
+        }
+        
+        return () => {
+            for (const type of types) {
+                context.removeEventListener(type, handler(type));
+            }
+        };
+    }, []);
+    
+    return (
+        <CardsElement>
+        {events.time && <Card title="Current GPS Time" data={events.time} format={timeFormat} />}
+        {events.phc && <Card title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}
+        {events.survey && <Card title="Survey-in Status" data={events.survey} format={surveyFormat} />}
+        {events.version && <Card title="GPS Receiver Version" data={events.version} format={versionFormat} />}
+        </CardsElement>
+    );
 };
 
 interface CardsElementProps {
@@ -22,7 +64,7 @@ interface CardsElementProps {
 const CardsElement: FunctionComponent<CardsElementProps> = ({ children }) => {
     return (
         <div className="columns-[18rem] gap-4 p-4">
-            {children}
+        {children}
         </div>
     );
 };
@@ -35,10 +77,10 @@ interface CardElementProps {
 const CardElement: FunctionComponent<CardElementProps> = ({ children, title }) => {
     return (
         <div className="p-4 rounded-lg mb-4 shadow-md break-inside-avoid bg-white dark:bg-gray-800 border-l-4 border-orange-500">
-            <h3 className="mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400">{title}</h3>
-            <div className="transition-all duration-300 max-h-[1000px] overflow-hidden">
-                {children}
-            </div>
+        <h3 className="mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400">{title}</h3>
+        <div className="transition-all duration-300 max-h-[1000px] overflow-hidden">
+        {children}
+        </div>
         </div>
     );
 };
@@ -51,22 +93,22 @@ interface FieldElementProps {
 const FieldElement: FunctionComponent<FieldElementProps> = ({ children, desc }) => {
     return (
         <div className="flex justify-between text-base mb-2 text-gray-600 dark:text-gray-300">
-            <span className="font-bold text-gray-800 dark:text-blue-200">{desc}:</span> 
-            <span className="tabular-nums text-gray-900 dark:text-gray-100">{children}</span>
+        <span className="font-bold text-gray-800 dark:text-blue-200">{desc}:</span> 
+        <span className="tabular-nums text-gray-900 dark:text-gray-100">{children}</span>
         </div>
     );
 };
 
 /*
 interface InitVersion {
-    hw?: string;
-    sw?: string;
-    extensions?: string[];
-    fw?: FWVer 
-    prot?: ProtVer 
-    mod?: string            
-    flash?: boolean              
-    gnss?: string[] 
+hw?: string;
+sw?: string;
+extensions?: string[];
+fw?: FWVer 
+prot?: ProtVer 
+mod?: string            
+flash?: boolean              
+gnss?: string[] 
 }*/
 
 interface ProtVer {
@@ -82,67 +124,26 @@ interface FWVer {
 
 type CardProps = {
     title: string;
-    event?: [string, EventFormat];
-    init?: [string, EventFormat];
-
-}
+    data: Map;
+    format: EventFormat;
+};
 
 type Map = {[key: string]: any};
 
-function useEvent(name: string, key?: string): Object {
-    const context = useContext(EventSourceContext) as EventSource;
-    const [state, setState] = useState<Map>({});
-
-    const handleEvent = (event: MessageEvent<string>) => {
-        try {
-            const data = JSON.parse(event.data);
-            if (data != null && typeof data === 'object') {
-                if (key) {
-                    const map = data as Map;
-                    if (key in map) {
-                        const newState = map[key];
-                        if (newState !== null && typeof newState === 'object') {
-                            setState(newState);
-                        }
-                    }
-                } else {
-                    setState(data);
-                }
-            }
-        }
-        catch (e) {
-        }
-    };
-    useEffect(() => {
-        context.addEventListener(name, handleEvent);
-
-        return () => {
-            context.removeEventListener(name, handleEvent);
-        };
-    }, []);
-    return state;
-}
-
-type FormattedField = [string, any];
-
-const Card: FunctionComponent<CardProps> = ({title, event, init}) => {
+const Card: FunctionComponent<CardProps> = ({ title, data, format }) => {
     const fields: FormattedField[] = [];
-    if (init) {
-        const [key, format] = init;
-        const state = useEvent("init", key)
-        addFields(fields, state, format)
-    }
-    if (event) {
-        const [key, format] = event;
-        const state = useEvent(key)
-        addFields(fields, state, format)
-    }
+    addFields(fields, data, format);
+
     return (
         <CardElement title={title}>
-            {fields.map(([desc, value]) => <FieldElement desc={desc}>{value}</FieldElement>)}
+            {fields.map(([desc, value]) => (
+                <FieldElement desc={desc}>{value}</FieldElement>
+            ))}
         </CardElement>
     );
 };
+
+type FormattedField = [string, any];
 
 function addFields(fields: FormattedField[], state: Map, format: EventFormat) {
     for (const [key, f] of Object.entries(format)) {
@@ -160,10 +161,6 @@ function addFields(fields: FormattedField[], state: Map, format: EventFormat) {
             fields.push([desc, formatted]);
         }       
     }
-}
-
-type CardFormat = {
-    [key: string]: EventFormat;
 }
 
 type SimpleFormatter = (arg: any) => string;
@@ -206,7 +203,7 @@ const surveyFormat: EventFormat = {
     valid: ["Valid", formatBoolean],
     inProgress: ["In Progress", formatBoolean],
 }
-    
+
 function formatECEF(arg: number): string {
     return arg.toFixed(4);
 }
