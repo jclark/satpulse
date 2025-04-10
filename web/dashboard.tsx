@@ -5,51 +5,36 @@ import { SkyView, SVInfo } from './skyview';
 
 export const EventSourceContext = createContext<EventSource | null>(null);
 
+// Define a type for JSON values
+type JSONValue = string | number | boolean | null | JSONObject | JSONArray;
+type JSONObject = { [key: string]: JSONValue };
+type JSONArray = JSONValue[];
+
+// Use a more specific type for our parsed event data
+const EVENT_TYPES = ["satellites", "time", "phc", "survey", "version", "init"] as const;
+type EventType = typeof EVENT_TYPES[number];
+
+type Map = {[key: string]: any};
+
 export const Dashboard: FunctionComponent = () => {
     const context = useContext(EventSourceContext) as EventSource;
     const [events, setEvents] = useState<Map>({});
     
     useEffect(() => {
-        const types = ["satellites", "time", "phc", "survey", "version", "init"];
         const handler = (type: string) => (e: MessageEvent<string>) => {
-            try {
-                const data = JSON.parse(e.data);
-                
-                // Basic validation that data is an object
-                if (!data || typeof data !== 'object') {
-                    console.warn(`Invalid ${type} event data:`, data);
-                    return;
+            const parsedEvents = parseSSEMessage(type, e.data);
+            for (const [eventType, eventData] of parsedEvents) {
+                const obj : Map|null = validateEvent(eventType, eventData);
+                if (obj !== null) {
+                    setEvents(prev => ({ ...prev, [eventType]: obj }));
                 }
-                
-                if (type === "init") {
-                    for (const key of ["version", "time", "phc", "survey"]) {
-                        // Validate each property is a proper object before adding to state
-                        if (data[key] && typeof data[key] === 'object') {
-                            setEvents(prev => ({ ...prev, [key]: data[key] }));
-                        }
-                    }
-                } else if (type === "satellites") {
-                    // Validate satellite data has svs array
-                    if (data.svs && Array.isArray(data.svs)) {
-                        setEvents(prev => ({ ...prev, [type]: data }));
-                    } else {
-                        console.warn("Invalid satellites event: missing svs array", data);
-                    }
-                } else {
-                    // Only update state if we have a valid object
-                    setEvents(prev => ({ ...prev, [type]: data }));
-                }
-            } catch (err) {
-                console.warn(`Error parsing ${type} event:`, err);
             }
         };
-        
-        for (const type of types) {
+        for (const type of EVENT_TYPES) {
             context.addEventListener(type, handler(type));
         }
-        
         return () => {
-            for (const type of types) {
+            for (const type of EVENT_TYPES) {
                 context.removeEventListener(type, handler(type));
             }
         };
@@ -57,14 +42,81 @@ export const Dashboard: FunctionComponent = () => {
     
     return (
         <CardsElement>
-            {events.satellites && <SkyViewCard svs={events.satellites.svs} />}
-            {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
-            {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}    
-            {events.version && <PropertyCard title="GPS Receiver Version" data={events.version} format={versionFormat} />}
-            {events.survey && <PropertyCard title="Survey-in Status" data={events.survey} format={surveyFormat} />}
+        {events.satellites && <SkyViewCard svs={events.satellites.svs} />}
+        {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
+        {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}    
+        {events.version && <PropertyCard title="GPS Receiver Version" data={events.version} format={versionFormat} />}
+        {events.survey && <PropertyCard title="Survey-in Status" data={events.survey} format={surveyFormat} />}
         </CardsElement>
     );
 };
+
+/**
+* Parse an SSE event message and split init events into their components
+* @param type Event type name
+* @param data Raw JSON string from event
+* @returns Array of [eventType, eventData] pairs
+*/
+function parseSSEMessage(type: string, data: string): [string, JSONValue][] {
+    try {
+        const parsed = JSON.parse(data) as JSONValue; // throws if invalid JSON
+        if (type !== "init") {
+            return [[type, parsed]];
+        }
+        
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            console.warn(`Invalid init event data:`, parsed);
+            return [];
+        }
+        
+        const results: [string, JSONValue][] = [];
+        for (const key in parsed) {
+            if (key === "init") {
+                console.warn("init event cannot have an init key in its data");
+            } else {
+                results.push([key, parsed[key]]);
+            }
+        }
+
+        return results;
+    } catch (err) {
+        console.warn(`Error parsing ${type} event:`, err);
+        return [];
+    }
+}
+
+/**
+* Validate event data for specific event types
+* @param type Event type
+* @param data Parsed event data
+* @returns Validated data or null if invalid
+*/
+function validateEvent(type: string, data: JSONValue): JSONObject | null {
+    // Check that the type is one of the known types but not "init"
+    if (type === "init" || !EVENT_TYPES.includes(type as EventType)) {
+        console.warn(`Invalid event type: ${type}`);
+        return null;
+    }
+    
+    // Validate that data is a JSONObject
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        console.warn(`Invalid ${type} event data: not an object`, data);
+        return null;
+    }
+    
+    // Type-specific validation
+    switch (type) {
+        case "satellites":
+            const svs = data.svs;
+            if (!svs || !Array.isArray(svs)) {
+                console.warn("Invalid satellites event: missing svs array", data);
+                return null;
+            }
+            break;
+    }
+    
+    return data;
+}
 
 interface CardsElementProps {
     children: preact.ComponentChildren;
@@ -86,10 +138,10 @@ interface CardElementProps {
 const CardElement: FunctionComponent<CardElementProps> = ({ children, title }) => {
     return (
         <div className="p-4 rounded-lg mb-4 shadow-md break-inside-avoid bg-white dark:bg-gray-800 border-l-4 border-orange-500">
-            {title && <h3 className="mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400">{title}</h3>}
-            <div className="transition-all duration-300 max-h-[1000px] overflow-hidden">
-                {children}
-            </div>
+        {title && <h3 className="mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400">{title}</h3>}
+        <div className="transition-all duration-300 max-h-[1000px] overflow-hidden">
+        {children}
+        </div>
         </div>
     );
 };
@@ -137,17 +189,15 @@ type PropertyCardProps = {
     format: EventFormat;
 };
 
-type Map = {[key: string]: any};
-
 const PropertyCard: FunctionComponent<PropertyCardProps> = ({ title, data, format }) => {
     const fields: FormattedField[] = [];
     addFields(fields, data, format);
-
+    
     return (
         <CardElement title={title}>
-            {fields.map(([desc, value]) => (
-                <FieldElement desc={desc}>{value}</FieldElement>
-            ))}
+        {fields.map(([desc, value]) => (
+            <FieldElement desc={desc}>{value}</FieldElement>
+        ))}
         </CardElement>
     );
 };
@@ -265,9 +315,9 @@ interface SkyViewCardProps {
 const SkyViewCard: FunctionComponent<SkyViewCardProps> = ({ svs }) => {
     return (
         <div className="md:col-span-2 lg:col-span-2 md:row-span-2 lg:row-span-2">
-            <CardElement>
-                {SkyView(svs)}
-            </CardElement>
+        <CardElement>
+        {SkyView(svs)}
+        </CardElement>
         </div>
     );
 };
