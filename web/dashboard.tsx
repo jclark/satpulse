@@ -1,6 +1,7 @@
 import { createContext, FunctionComponent } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
 import { formatUTCLocal, formatNanoseconds, formatTAI, formatDateTime } from './timefmt';
+import { SkyView, SVInfo } from './skyview';
 
 export const EventSourceContext = createContext<EventSource | null>(null);
 
@@ -9,7 +10,7 @@ export const Dashboard: FunctionComponent = () => {
     const [events, setEvents] = useState<Map>({});
     
     useEffect(() => {
-        const types = ["time", "phc", "survey", "version", "init"];
+        const types = ["satellites", "time", "phc", "survey", "version", "init"];
         const handler = (type: string) => (e: MessageEvent<string>) => {
             try {
                 const data = JSON.parse(e.data);
@@ -26,6 +27,13 @@ export const Dashboard: FunctionComponent = () => {
                         if (data[key] && typeof data[key] === 'object') {
                             setEvents(prev => ({ ...prev, [key]: data[key] }));
                         }
+                    }
+                } else if (type === "satellites") {
+                    // Validate satellite data has svs array
+                    if (data.svs && Array.isArray(data.svs)) {
+                        setEvents(prev => ({ ...prev, [type]: data }));
+                    } else {
+                        console.warn("Invalid satellites event: missing svs array", data);
                     }
                 } else {
                     // Only update state if we have a valid object
@@ -49,10 +57,11 @@ export const Dashboard: FunctionComponent = () => {
     
     return (
         <CardsElement>
-        {events.time && <Card title="Current GPS Time" data={events.time} format={timeFormat} />}
-        {events.phc && <Card title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}    
-        {events.version && <Card title="GPS Receiver Version" data={events.version} format={versionFormat} />}
-        {events.survey && <Card title="Survey-in Status" data={events.survey} format={surveyFormat} />}
+            {events.satellites && <SkyViewCard svs={events.satellites.svs} />}
+            {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
+            {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}    
+            {events.version && <PropertyCard title="GPS Receiver Version" data={events.version} format={versionFormat} />}
+            {events.survey && <PropertyCard title="Survey-in Status" data={events.survey} format={surveyFormat} />}
         </CardsElement>
     );
 };
@@ -71,16 +80,16 @@ const CardsElement: FunctionComponent<CardsElementProps> = ({ children }) => {
 
 interface CardElementProps {
     children: preact.ComponentChildren;
-    title: string;
+    title?: string;
 }
 
 const CardElement: FunctionComponent<CardElementProps> = ({ children, title }) => {
     return (
         <div className="p-4 rounded-lg mb-4 shadow-md break-inside-avoid bg-white dark:bg-gray-800 border-l-4 border-orange-500">
-        <h3 className="mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400">{title}</h3>
-        <div className="transition-all duration-300 max-h-[1000px] overflow-hidden">
-        {children}
-        </div>
+            {title && <h3 className="mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400">{title}</h3>}
+            <div className="transition-all duration-300 max-h-[1000px] overflow-hidden">
+                {children}
+            </div>
         </div>
     );
 };
@@ -122,7 +131,7 @@ interface FWVer {
     minor: number;
 }
 
-type CardProps = {
+type PropertyCardProps = {
     title: string;
     data: Map;
     format: EventFormat;
@@ -130,7 +139,7 @@ type CardProps = {
 
 type Map = {[key: string]: any};
 
-const Card: FunctionComponent<CardProps> = ({ title, data, format }) => {
+const PropertyCard: FunctionComponent<PropertyCardProps> = ({ title, data, format }) => {
     const fields: FormattedField[] = [];
     addFields(fields, data, format);
 
@@ -248,3 +257,17 @@ function formatUTC(utc: string): FormattedField[] {
 function formatBoolean(arg: boolean): string {
     return arg ? "Yes" : "No";
 }
+
+interface SkyViewCardProps {
+    svs: SVInfo[];
+}
+
+const SkyViewCard: FunctionComponent<SkyViewCardProps> = ({ svs }) => {
+    return (
+        <div className="md:col-span-2 lg:col-span-2 md:row-span-2 lg:row-span-2">
+            <CardElement>
+                {SkyView(svs)}
+            </CardElement>
+        </div>
+    );
+};
