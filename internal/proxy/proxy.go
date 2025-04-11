@@ -17,6 +17,7 @@ import (
 	"github.com/jclark/satpulse/internal/bcast"
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpsio"
+	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"
 )
 
@@ -214,7 +215,7 @@ func connWriteWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn n
 			if !ok {
 				return
 			}
-			if cfg.nmeaOnly && msg.Kind != scan.NMEA {
+			if cfg.nmeaOnly && msg.Kind != nmea.PacketKind {
 				continue
 			}
 			_, err := conn.Write(([]byte)(msg.Data))

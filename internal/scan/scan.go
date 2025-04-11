@@ -5,26 +5,19 @@ import (
 	"io"
 	"time"
 
-	"github.com/jclark/crc24q"
-)
-
-type PacketKind uint16
-
-const (
-	Invalid PacketKind = iota
-	UBX
-	NMEA
-	RTCM
+	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/gpsreg"
 )
 
 type Packet struct {
-	Kind      PacketKind
+	Kind      gpsprot.PacketKind
 	ReadError error
 	Data      string
 	TRead     time.Time
 }
 
 type Scanner struct {
+	pktFormats []gpsprot.PacketFormat
 	r io.Reader
 	// there's valid data in buf up to len(buf); the capacity may be more
 	buf []byte
@@ -50,24 +43,30 @@ type TemporaryError interface {
 // New returns a new Scanner to read from r.
 func New(r io.Reader, bufSize int) *Scanner {
 	s := new(Scanner)
+	s.pktFormats = gpsreg.PacketFormats
 	s.r = r
 	s.buf = make([]byte, 0, bufSize)
 	return s
 }
 
+const stateSync = gpsprot.ScanStateSync
+const Invalid = gpsprot.InvalidPacketKind
+
 // Scan reads a packet from the underlying Reader.
 // A transient error, such as a timeout, will be returned in the ReadError field of the packet
 // with a Kind of Invalid, and err will be nil.
 func (s *Scanner) Scan() (p Packet, err error) {
-	state := syncScan
+	state := stateSync
 	// length of the packet so far
 	// the packet is in the buffer preceding s.nextScanIndex
 	packetLen := 0
 	p = Packet{TRead: s.tRead}
+	// this is non-nil if state != stateSync
+	var curPktFormat gpsprot.PacketFormat
 Loop:
 	for {
 		if s.nextScanIndex >= len(s.buf) {
-			if state == syncScan && packetLen > 0 {
+			if state == stateSync && packetLen > 0 {
 				p.Kind = Invalid
 				break Loop
 			}
@@ -93,15 +92,25 @@ Loop:
 				break Loop
 			}
 		}
-		nextState := state.next(s.buf, s.nextScanIndex, packetLen)
+		var nextState gpsprot.ScanState
+		if state != stateSync {
+			nextState = curPktFormat.Next(state, s.buf, s.nextScanIndex, packetLen)
+		} else {
+			for _, pf := range s.pktFormats {
+				nextState = pf.Next(state, s.buf, s.nextScanIndex, packetLen)
+				if nextState != stateSync {
+					curPktFormat = pf
+					break
+				}
+			}
+		}
 		// Looks like we may have a new packet.
 		// If we have invalid data before the start of the packet, need to clear it out now.
-		if nextState != syncScan && state == syncScan && packetLen > 0 {
+		if nextState != stateSync && state == stateSync && packetLen > 0 {
 			p.Kind = Invalid
 			break Loop
 		}
-		k := finalStateKind(nextState)
-		if k == Invalid && nextState == syncScan && state != syncScan && packetLen > 0 {
+		if state != stateSync && nextState == stateSync && packetLen > 0 {
 			// We had something that looked like the start of a packet,
 			// but turned out to be invalid.
 			// we need to start reprocessing it with the character that made it become invalid.
@@ -115,8 +124,10 @@ Loop:
 		state = nextState
 		packetLen++
 		s.nextScanIndex++
-		if k != Invalid {
-			p.Kind = k
+		if state == stateSync {
+			curPktFormat = nil
+		} else if curPktFormat.IsFinal(state) {
+			p.Kind = curPktFormat.Kind()
 			break Loop
 		}
 	}
@@ -124,18 +135,6 @@ Loop:
 	return
 }
 
-func finalStateKind(state scanState) PacketKind {
-	switch state {
-	case nmeaComplete:
-		return NMEA
-	case ubxExpectN:
-		return UBX
-	case rtcmExpectN:
-		return RTCM
-	default:
-		return Invalid
-	}
-}
 
 // This returns the error it got from the Read, except in the case of EINTR.
 // The packetLen bytes up to nextScanIndex must be kept.
@@ -170,173 +169,12 @@ func (s *Scanner) fill(packetLen int) error {
 	return nil
 }
 
-type scanState int
-
-const (
-	syncScan scanState = iota
-	nmeaStarted
-	nmeaHadCaret
-	nmeaHadCaretDigit1 // we depend on nmeaHadComma being after nmeaHadCaretDigit1
-	nmeaHadComma
-	nmeaHadStar
-	nmeaHadChecksum1
-	nmeaHadChecksum2
-	nmeaHadCR
-	nmeaComplete
-	ubxStarted
-	rtcmStarted
-	ubxExpectN
-	rtcmExpectN = ubxExpectN + 0x10000 + 2
-)
-
-func LooksLike(buf []byte) PacketKind {
-	// XXX enhance this to report the length up until it becomes invalid (when state changes to syncScan)
-	if len(buf) == 0 {
-		return Invalid
-	}
-	switch syncScan.next(buf, 0, 0) {
-	case nmeaStarted:
-		return NMEA
-	case ubxStarted:
-		return UBX
-	case rtcmStarted:
-		return RTCM
-	}
-	return Invalid
-}
-
-const (
-	ubxSync1     = 0xB5
-	ubxSync2     = 0x62
-	rtcmPreamble = 0xD3
-)
-
-// Return a new state based on the byte at nextScanIndex.
-// packetLen is number of bytes in the packet not including the one at nextScanIndex
-func (state scanState) next(buf []byte, nextScanIndex int, packetLen int) scanState {
-	b := buf[nextScanIndex]
-	switch state {
-	case syncScan:
-		switch b {
-		case '$':
-			return nmeaStarted
-		case ubxSync1:
-			return ubxStarted
-		case rtcmPreamble:
-			return rtcmStarted
-		}
-	case nmeaStarted:
-		if b == ',' || b == '*' {
-			if packetLen >= 5 { // $PUBX
-				if packetLen == 6 || buf[nextScanIndex-4] == 'P' {
-					// allowed to have just address field
-					if b == '*' {
-						return nmeaHadStar
-					}
-					return nmeaHadComma
-				}
-			}
-		} else if isAsciiUpperAlnum(b) && packetLen < 6 { // $GPRMC
-			return nmeaStarted
-		}
-	case nmeaHadComma:
-		if b == '*' {
-			return nmeaHadStar
-		}
-		if b == '^' {
-			if packetLen+2 < 82-5 {
-				return nmeaHadCaret
-			}
-		} else if isNmeaDataByte(b) && packetLen < 82-5 { // 82 is total excluding 3-byte checksum and CRLF
-			return nmeaHadComma
-		}
-	case nmeaHadCaret, nmeaHadCaretDigit1:
-		if isUpperHexDigit(b) {
-			return state + 1
-		}
-	case nmeaHadStar, nmeaHadChecksum1:
-		if isUpperHexDigit(b) {
-			return state + 1
-		}
-	case nmeaHadChecksum2:
-		if b == '\r' {
-			return nmeaHadCR
-		}
-		if b == '\n' {
-			return nmeaComplete
-		}
-	case nmeaHadCR:
-		if b == '\n' {
-			return nmeaComplete
-		}
-	case ubxStarted:
-		switch packetLen {
-		case 1:
-			if b == ubxSync2 {
-				return ubxStarted
-			}
-		case 5:
-			payloadLen := int(buf[nextScanIndex-1]) + int(b)*0x100
-			return scanState(int(ubxExpectN) + payloadLen + 2)
-		default:
-			return ubxStarted
-		}
-	case rtcmStarted:
-		switch packetLen {
-		case 2:
-			payloadLen := int(b) + int(buf[nextScanIndex-1]&0x3)*0x100
-			return scanState(int(rtcmExpectN) + payloadLen + 3)
-		case 1:
-			return rtcmStarted
-		}
-	default:
-		if state > ubxExpectN {
-			return state - 1
+// LooksLike returns the packet kind that it looks like
+func LooksLike(pktFormats []gpsprot.PacketFormat, buf []byte) gpsprot.PacketKind {
+	for i := 0; i < len(pktFormats); i++ {
+		if pktFormats[i].Next(stateSync, buf, 0, 0) != stateSync {
+			return pktFormats[i].Kind()
 		}
 	}
-	return syncScan
-}
-
-func isNmeaDataByte(b byte) bool {
-	if b < ' ' || b >= 0x7f {
-		return false
-	}
-	switch b {
-	case '*', '$', '^', '!':
-		return false
-	default:
-		return true
-	}
-}
-
-func isUpperHexDigit(b byte) bool {
-	if '0' <= b && b <= '9' {
-		return true
-	}
-	// NMEA requires checksum to use upper-case hex digits
-	if 'A' <= b && b <= 'F' {
-		return true
-	}
-	return false
-}
-
-func isAsciiUpperAlnum(b byte) bool {
-	if 'A' <= b && b <= 'Z' {
-		return true
-	}
-	if '0' <= b && b <= '9' {
-		return true
-	}
-	return false
-}
-
-func RTCMMsg(packet string) (msg string, checksumOK bool, msgType uint16) {
-	n := len(packet) - 3
-	checksumOK = crc24q.Checksum(packet[0:n]) == crc24q.Extract(packet, n)
-	msg = packet[3:n]
-	// treat 0-length message as type 0
-	if n != 3 {
-		msgType = (uint16(msg[0]) << 4) | uint16(msg[1]>>4)
-	}
-	return
+	return gpsprot.InvalidPacketKind
 }

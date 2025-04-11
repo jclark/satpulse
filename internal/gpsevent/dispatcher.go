@@ -148,17 +148,17 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	lg := d.lg
 	switch pkt.Kind {
-	case scan.NMEA:
+	case nmea.PacketKind:
 		err := nmea.ProcessPacket(pkt.Data, pkt.TRead, d, nil)
 		if err != nil {
 			lg.Error("failed to parse NMEA message", "err", err)
 		}
-	case scan.UBX:
+	case ubx.PacketKind:
 		err := ubx.ProcessPacket(pkt.Data, pkt.TRead, d, d)
 		if err != nil {
 			lg.Error("failed to parse UBX message", "err", err)
 		}
-	case scan.Invalid:
+	case gpsprot.InvalidPacketKind:
 		if !d.loggedUnknownProtocol {
 			lg.Info("received data from GPS in unknown protocol (serial communication problem?)", "len", len(pkt.Data), "data", pkt.Data)
 			d.loggedUnknownProtocol = true

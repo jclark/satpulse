@@ -5,6 +5,8 @@ import (
 	"math/rand"
 	"strings"
 	"testing"
+
+	"github.com/jclark/satpulse/internal/ubx"
 )
 
 // randomUBXPacket generates a random UBX packet for testing purposes.
@@ -95,7 +97,7 @@ func TestUBXRescan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error scanning first packet: %v", err)
 	}
-	if f.Kind != UBX {
+	if f.Kind != ubx.PacketKind {
 		t.Fatalf("First packet not recognized as UBX")
 	}
 	if f.Data != packet1 {
@@ -119,7 +121,7 @@ func TestUBXRescan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error scanning second packet: %v", err)
 	}
-	if f.Kind != UBX {
+	if f.Kind != ubx.PacketKind {
 		t.Fatalf("Second packet not recognized as UBX")
 	}
 	if f.Data != packet2 {
@@ -170,7 +172,7 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 
 		if packetIndex%2 == 0 {
 			// UBX packet
-			if f.Kind != UBX {
+			if f.Kind != ubx.PacketKind {
 				t.Fatalf("Packet %d: expected UBX, but got %v", packetIndex, f.Kind)
 			}
 			if f.Data != packets[packetIndex] {

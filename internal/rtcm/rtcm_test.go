@@ -1,9 +1,9 @@
-package scan
+package rtcm
 
 import (
-	"io"
-	"strings"
 	"testing"
+
+	"github.com/jclark/satpulse/internal/scantest"
 )
 
 // Example from RTCM 10403.2, section 4.2
@@ -15,21 +15,10 @@ func TestGoodRTCM(t *testing.T) {
 }
 
 func rtcmOK(t *testing.T, msgNum uint16, data string) {
-	r := strings.NewReader(data)
-	s := New(r, 64)
-	f, err := s.Scan()
-	if err != nil {
-		t.Fatalf(`error reading RTCM %d`, msgNum)
-	}
-	if f.Kind != RTCM {
-		t.Fatalf(`RTCM %d not recognized as valid`, msgNum)
-	}
-	if f.Data != data {
-		t.Fatalf(`wrong data for %q`, msgNum)
-	}
-	f, err = s.Scan()
-	if err != io.EOF || f.Kind != Invalid || f.Data != "" {
-		t.Fatalf(`did not get EOF with no data after RTCM %d`, msgNum)
+	buf := ([]byte)(data)
+	startPos, endPos, ok := scantest.FindPacket(PacketFormat, buf)
+	if startPos != 0 || endPos != len(buf) || !ok {
+		t.Fatalf("failed to scan valid RTCM packet")
 	}
 	_, ok, n := RTCMMsg(data)
 	if !ok {

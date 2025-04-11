@@ -11,6 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/rtcm"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/ubx"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
@@ -330,9 +331,9 @@ func (mh *msgHandler) suitableMessageCount() int {
 func (mh *msgHandler) packet(f scan.Packet) {
 	data := f.Data
 	switch f.Kind {
-	case scan.NMEA:
+	case nmea.PacketKind:
 		mh.nmea(data)
-	case scan.UBX:
+	case ubx.PacketKind:
 		mh.lg.Debug("configuration received UBX packet", "msgID", ubxbin.PacketMsgId(data).String(), "len", len(data))
 		err := mh.ubxProt.ProcessPacket(data, f.TRead)
 		if err != nil {
@@ -342,7 +343,7 @@ func (mh *msgHandler) packet(f scan.Packet) {
 		} else {
 			mh.ubxMsgCount++
 		}
-	case scan.RTCM:
+	case rtcm.PacketKind:
 		mh.rtcm(data)
 	default:
 		mh.invalid(data, f.ReadError)
@@ -377,7 +378,7 @@ func (mh *msgHandler) nmea(data string) {
 
 func (mh *msgHandler) rtcm(data string) {
 	lg := mh.lg
-	_, ok, msgType := scan.RTCMMsg(data)
+	_, ok, msgType := rtcm.RTCMMsg(data)
 	if !ok {
 		lg.Debug("received an RTCM message with invalid checksum during initialization")
 		mh.bad.corruptMsgs++

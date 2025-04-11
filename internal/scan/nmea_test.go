@@ -4,6 +4,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/scantest"
 )
 
 func TestGoodNMEA(t *testing.T) {
@@ -19,11 +22,11 @@ func nmeaOK(t *testing.T, data string) {
 	r := strings.NewReader(data)
 	s := New(r, 64)
 	f, err := s.Scan()
-	trimmed := nmeaTrim(data)
+	trimmed := scantest.TrimNMEA(data)
 	if err != nil {
 		t.Fatalf(`error reading packet "%s"`, trimmed)
 	}
-	if f.Kind != NMEA {
+	if f.Kind != nmea.PacketKind {
 		t.Fatalf(`NMEA message "%s" not recognized as valid`, trimmed)
 	}
 	if f.Data != data {
@@ -52,7 +55,7 @@ func nmeaBad(t *testing.T, data string) {
 	s := New(r, 64)
 	f, _ := s.Scan()
 	if f.Kind != Invalid {
-		t.Fatalf(`NMEA message "%s" not recognized as invalid`, nmeaTrim(data))
+		t.Fatalf(`NMEA message "%s" not recognized as invalid`, scantest.TrimNMEA(data))
 	}
 }
 
@@ -63,7 +66,7 @@ func TestMixedNMEA(t *testing.T) {
 }
 
 func nmeaMixed(t *testing.T, data string, nInvalidExpected int) {
-	trimmed := nmeaTrim(data)
+	trimmed := scantest.TrimNMEA(data)
 	r := strings.NewReader(data)
 	s := New(r, 64)
 	nInvalid := 0
@@ -79,7 +82,7 @@ func nmeaMixed(t *testing.T, data string, nInvalidExpected int) {
 			nInvalid += len(f.Data)
 			continue
 		}
-		if f.Kind == NMEA {
+		if f.Kind == nmea.PacketKind {
 			break
 		} else {
 			t.Fatalf(`no valid NMEA message found in "%s"`, trimmed)
@@ -88,15 +91,4 @@ func nmeaMixed(t *testing.T, data string, nInvalidExpected int) {
 	if nInvalidExpected != nInvalid {
 		t.Fatalf(`wrong number of invalid bytes in "%s: expected %d; got %d"`, trimmed, nInvalidExpected, nInvalid)
 	}
-}
-
-func nmeaTrim(data string) string {
-	trimmed := data
-	if len(data) > 0 && data[len(data)-1] == '\n' {
-		trimmed = data[0 : len(data)-1]
-	}
-	if len(trimmed) > 0 && trimmed[len(trimmed)-1] == '\r' {
-		trimmed = trimmed[0 : len(trimmed)-1]
-	}
-	return trimmed
 }
