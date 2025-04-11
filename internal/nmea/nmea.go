@@ -176,6 +176,10 @@ func talkerIDToGNSS(t string) gpsprot.GNSS {
 		return gpsprot.GAL
 	case "GB", "BD":
 		return gpsprot.BDS
+	case "GI":
+		return gpsprot.NAVIC
+	case "GQ":
+		return gpsprot.QZSS
 	default:
 		return 0
 	}
