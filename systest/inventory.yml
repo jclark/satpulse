@@ -14,7 +14,7 @@ all:
         abondance.lan:
         burrata.lan:
         caciocavallo.lan:
-        edam.lan:
+        chaource.lan:
         morbier.lan:
         toma.lan:
         vacherin.lan:
@@ -46,8 +46,10 @@ all:
   
     ricotta.lan: # all default
     
+    # TAU-1201
     venaco.local:
-      speed: 38400
+      speed: 115200
+      config: "false"
 
     # LEA-M8T over RS232
     caciocavallo.lan:
@@ -62,7 +64,6 @@ all:
     # LEA-F9T
     mascarpone.lan: # all default
 
-    # TAU-1201
-    edam.lan:
-      speed: 115200
-      config: "false"
+    # UBX-G7020 in SR1723U7
+    chaource.lan: # all default
+     
