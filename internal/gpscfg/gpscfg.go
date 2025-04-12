@@ -330,10 +330,10 @@ func (mh *msgHandler) suitableMessageCount() int {
 
 func (mh *msgHandler) packet(f scan.Packet) {
 	data := f.Data
-	switch f.Kind {
-	case nmea.PacketKind:
+	switch f.Tag {
+	case nmea.Tag:
 		mh.nmea(data)
-	case ubx.PacketKind:
+	case ubx.Tag:
 		mh.lg.Debug("configuration received UBX packet", "msgID", ubxbin.PacketMsgId(data).String(), "len", len(data))
 		err := mh.ubxProt.ProcessPacket(data, f.TRead)
 		if err != nil {
@@ -343,7 +343,7 @@ func (mh *msgHandler) packet(f scan.Packet) {
 		} else {
 			mh.ubxMsgCount++
 		}
-	case rtcm.PacketKind:
+	case rtcm.Tag:
 		mh.rtcm(data)
 	default:
 		mh.invalid(data, f.ReadError)

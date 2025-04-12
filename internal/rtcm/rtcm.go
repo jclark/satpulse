@@ -5,8 +5,8 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
-// PacketKind for RTCM packets
-const PacketKind gpsprot.PacketKind = "RTCM"
+// Tag for RTCM packets
+const Tag gpsprot.Tag = "RTCM"
 
 // PacketFormat returns the RTCM packet format
 var PacketFormat gpsprot.PacketFormat = packetFormat{}
@@ -14,15 +14,15 @@ var PacketFormat gpsprot.PacketFormat = packetFormat{}
 // packetFormat implements the gpsprot.PacketFormat interface for RTCM packets
 type packetFormat struct{}
 
-func (f packetFormat) Kind() gpsprot.PacketKind {
-	return PacketKind
+func (f packetFormat) Tag() gpsprot.Tag {
+	return Tag
 }
 
 // Constants for RTCM packet scanning (private)
 const (
 	stateSync gpsprot.ScanState = iota + gpsprot.ScanStateSync
-	stateStarted 
-	stateExpectN 
+	stateStarted
+	stateExpectN
 )
 
 const preambleByte = 0xD3
@@ -65,4 +65,3 @@ func RTCMMsg(packet string) (msg string, checksumOK bool, msgType uint16) {
 	}
 	return
 }
-

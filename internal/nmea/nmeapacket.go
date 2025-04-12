@@ -4,8 +4,8 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
-// PacketKind for NMEA packets
-const PacketKind gpsprot.PacketKind = "NMEA"
+// Tag for NMEA packets
+const Tag gpsprot.Tag = "NMEA"
 
 // PacketFormat returns the NMEA packet format
 var PacketFormat gpsprot.PacketFormat = packetFormat{}
@@ -13,8 +13,8 @@ var PacketFormat gpsprot.PacketFormat = packetFormat{}
 // packetFormat implements the gpsprot.PacketFormat interface for NMEA packets
 type packetFormat struct{}
 
-func (f packetFormat) Kind() gpsprot.PacketKind {
-	return PacketKind
+func (f packetFormat) Tag() gpsprot.Tag {
+	return Tag
 }
 
 // Constants for NMEA packet scanning (private)

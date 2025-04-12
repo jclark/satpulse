@@ -4,8 +4,8 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
-// PacketKind for UBX packets
-const PacketKind gpsprot.PacketKind = "UBX"
+// Tag for UBX packets
+const Tag gpsprot.Tag = "UBX"
 
 // PacketFormat is the UBX packet format
 var PacketFormat gpsprot.PacketFormat = packetFormat{}
@@ -13,8 +13,8 @@ var PacketFormat gpsprot.PacketFormat = packetFormat{}
 // packetFormat implements the gpsprot.PacketFormat interface for UBX packets
 type packetFormat struct{}
 
-func (f packetFormat) Kind() gpsprot.PacketKind {
-	return PacketKind
+func (f packetFormat) Tag() gpsprot.Tag {
+	return Tag
 }
 
 // First two bytes of UBX packet

@@ -215,7 +215,7 @@ func connWriteWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn n
 			if !ok {
 				return
 			}
-			if cfg.nmeaOnly && msg.Kind != nmea.PacketKind {
+			if cfg.nmeaOnly && msg.Tag != nmea.Tag {
 				continue
 			}
 			_, err := conn.Write(([]byte)(msg.Data))

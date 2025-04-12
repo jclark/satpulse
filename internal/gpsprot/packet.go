@@ -1,9 +1,9 @@
 package gpsprot
 
-// PacketKind identifies the kind of packet
-type PacketKind string
+// Tag identifies the kind of packet
+type Tag string
 
-const InvalidPacketKind PacketKind = "Invalid"
+const InvalidTag Tag = "Invalid"
 
 // ScanState represents the state of a packet scanner
 type ScanState uint32
@@ -15,8 +15,8 @@ const (
 
 // PacketFormat defines the interface for protocol-specific packet format handling
 type PacketFormat interface {
-	// Kind returns the protocol-specific packet kind
-	Kind() PacketKind
+	// Tag returns the protocol-specific packet kind
+	Tag() Tag
 
 	// Next takes the current state, buffer, index, and packet length, and returns the next state
 	// buf is the buffer containing the packet data

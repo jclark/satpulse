@@ -73,7 +73,7 @@ func TestGoodUBX(t *testing.T) {
 
 	// Ensure no extra data is left
 	f, err := s.Scan()
-	if err != io.EOF || f.Kind != Invalid || f.Data != "" {
+	if err != io.EOF || f.Tag != Invalid || f.Data != "" {
 		t.Fatalf("Expected EOF after all packets, but got: %v", err)
 	}
 }
@@ -97,7 +97,7 @@ func TestUBXRescan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error scanning first packet: %v", err)
 	}
-	if f.Kind != ubx.PacketKind {
+	if f.Tag != ubx.Tag {
 		t.Fatalf("First packet not recognized as UBX")
 	}
 	if f.Data != packet1 {
@@ -109,7 +109,7 @@ func TestUBXRescan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error scanning invalid packet: %v", err)
 	}
-	if f.Kind != Invalid {
+	if f.Tag != Invalid {
 		t.Fatalf("Invalid packet not recognized as invalid")
 	}
 	if f.Data != "\xB5" {
@@ -121,7 +121,7 @@ func TestUBXRescan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error scanning second packet: %v", err)
 	}
-	if f.Kind != ubx.PacketKind {
+	if f.Tag != ubx.Tag {
 		t.Fatalf("Second packet not recognized as UBX")
 	}
 	if f.Data != packet2 {
@@ -130,7 +130,7 @@ func TestUBXRescan(t *testing.T) {
 
 	// Ensure no extra data is left
 	f, err = s.Scan()
-	if err != io.EOF || f.Kind != Invalid || f.Data != "" {
+	if err != io.EOF || f.Tag != Invalid || f.Data != "" {
 		t.Fatalf("Expected EOF after all packets, but got: %v", err)
 	}
 }
@@ -172,8 +172,8 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 
 		if packetIndex%2 == 0 {
 			// UBX packet
-			if f.Kind != ubx.PacketKind {
-				t.Fatalf("Packet %d: expected UBX, but got %v", packetIndex, f.Kind)
+			if f.Tag != ubx.Tag {
+				t.Fatalf("Packet %d: expected UBX, but got %v", packetIndex, f.Tag)
 			}
 			if f.Data != packets[packetIndex] {
 				t.Fatalf("Packet %d: UBX data mismatch: expected %q, got %q", packetIndex, packets[packetIndex], f.Data)
@@ -184,8 +184,8 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 			packetIndex++ // Move to the next packet
 		} else {
 			// Invalid packet
-			if f.Kind != Invalid {
-				t.Fatalf("Packet %d: expected Invalid, but got %v", packetIndex, f.Kind)
+			if f.Tag != Invalid {
+				t.Fatalf("Packet %d: expected Invalid, but got %v", packetIndex, f.Tag)
 			}
 			concatenatedInvalid += f.Data
 			if concatenatedInvalid == packets[packetIndex] {

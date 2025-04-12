@@ -10,7 +10,7 @@ import (
 )
 
 type Packet struct {
-	Kind      gpsprot.PacketKind
+	Tag       gpsprot.Tag
 	ReadError error
 	Data      string
 	TRead     time.Time
@@ -18,7 +18,7 @@ type Packet struct {
 
 type Scanner struct {
 	pktFormats []gpsprot.PacketFormat
-	r io.Reader
+	r          io.Reader
 	// there's valid data in buf up to len(buf); the capacity may be more
 	buf []byte
 	// nextScanIndex is first index not yet returned in a packet
@@ -50,11 +50,11 @@ func New(r io.Reader, bufSize int) *Scanner {
 }
 
 const stateSync = gpsprot.ScanStateSync
-const Invalid = gpsprot.InvalidPacketKind
+const Invalid = gpsprot.InvalidTag
 
 // Scan reads a packet from the underlying Reader.
 // A transient error, such as a timeout, will be returned in the ReadError field of the packet
-// with a Kind of Invalid, and err will be nil.
+// with a Tag of Invalid, and err will be nil.
 func (s *Scanner) Scan() (p Packet, err error) {
 	state := stateSync
 	// length of the packet so far
@@ -67,7 +67,7 @@ Loop:
 	for {
 		if s.nextScanIndex >= len(s.buf) {
 			if state == stateSync && packetLen > 0 {
-				p.Kind = Invalid
+				p.Tag = Invalid
 				break Loop
 			}
 			e := s.fill(packetLen)
@@ -88,7 +88,7 @@ Loop:
 					// not a transient error
 					err = e
 				}
-				p.Kind = Invalid
+				p.Tag = Invalid
 				break Loop
 			}
 		}
@@ -107,7 +107,7 @@ Loop:
 		// Looks like we may have a new packet.
 		// If we have invalid data before the start of the packet, need to clear it out now.
 		if nextState != stateSync && state == stateSync && packetLen > 0 {
-			p.Kind = Invalid
+			p.Tag = Invalid
 			break Loop
 		}
 		if state != stateSync && nextState == stateSync && packetLen > 0 {
@@ -117,7 +117,7 @@ Loop:
 			// This is sufficient for UBX and NMEA, because the $ which starts an NMEA packet
 			// isn't allowed with an NMEA packet. For UBX, the only way it's invalid is if the
 			// length is wrong or it didn't have the right second sync byte.
-			p.Kind = Invalid
+			p.Tag = Invalid
 			break Loop
 		}
 		// accept this character
@@ -127,14 +127,13 @@ Loop:
 		if state == stateSync {
 			curPktFormat = nil
 		} else if curPktFormat.IsFinal(state) {
-			p.Kind = curPktFormat.Kind()
+			p.Tag = curPktFormat.Tag()
 			break Loop
 		}
 	}
 	p.Data = string(s.buf[s.nextScanIndex-packetLen : s.nextScanIndex])
 	return
 }
-
 
 // This returns the error it got from the Read, except in the case of EINTR.
 // The packetLen bytes up to nextScanIndex must be kept.
@@ -170,11 +169,11 @@ func (s *Scanner) fill(packetLen int) error {
 }
 
 // LooksLike returns the packet kind that it looks like
-func LooksLike(pktFormats []gpsprot.PacketFormat, buf []byte) gpsprot.PacketKind {
+func LooksLike(pktFormats []gpsprot.PacketFormat, buf []byte) gpsprot.Tag {
 	for i := 0; i < len(pktFormats); i++ {
 		if pktFormats[i].Next(stateSync, buf, 0, 0) != stateSync {
-			return pktFormats[i].Kind()
+			return pktFormats[i].Tag()
 		}
 	}
-	return gpsprot.InvalidPacketKind
+	return gpsprot.InvalidTag
 }
