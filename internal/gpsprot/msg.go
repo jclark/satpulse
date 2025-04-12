@@ -17,6 +17,17 @@ type MsgHandler interface {
 	Satellites(msg *SatellitesMsg, tRead time.Time)
 }
 
+// NativeMsgHandler handles protocol-specific messages that don't map to standard messages.
+type NativeMsgHandler interface {
+	// NativeMsg processes a protocol-specific message.
+	// tag: identifies the protocol (e.g., UBX, NMEA).
+	// msgType: identifies the message type within the protocol (e.g., UBX-NAV-PVT, NMEA-GGA).
+	// msg: the protocol-specific message object.
+	// tRead: timestamp when the message was received.
+	// Returns true if the message was handled.
+	NativeMsg(tag Tag, msgType string, msg interface{}, tRead time.Time) bool
+}
+
 type DefaultHandler struct{}
 
 func (h *DefaultHandler) Time(msg *TimeMsg, tRead time.Time)             {}

@@ -4,9 +4,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
-// Tag for UBX packets
-const Tag gpsprot.Tag = "UBX"
-
 // PacketFormat is the UBX packet format
 var PacketFormat gpsprot.PacketFormat = packetFormat{}
 

@@ -13,14 +13,11 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/logfile"
 	"github.com/jclark/satpulse/internal/mon"
-	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/ts"
-	"github.com/jclark/satpulse/internal/ubx"
-	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 	"golang.org/x/sys/unix"
 )
 
@@ -28,6 +25,7 @@ const LogExtension = ".jsonl"
 
 type Dispatcher struct {
 	gpsprot.DefaultHandler
+	pktProcs	   map[gpsprot.Tag]gpsprot.PacketProcessor
 	sseCh                 chan<- sse.Event
 	cb                    *combine.Combiner
 	mon                   *mon.Monitor
@@ -40,7 +38,7 @@ type Dispatcher struct {
 	tStart                time.Time
 }
 
-func NewDispatcher(lg *slog.Logger, m *mon.Monitor, ls ptime.LeapSecond, phcFlags phc.DriverFlags, pulseWidth time.Duration, sseCh chan<- sse.Event, eventLogPath string) (*Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, m *mon.Monitor, ls ptime.LeapSecond, phcFlags phc.DriverFlags, pulseWidth time.Duration, sseCh chan<- sse.Event, eventLogPath string) (*Dispatcher, error) {
 	pt := combine.PulseType{
 		EdgesPerPulse: phcFlags.Edges(),
 		PulseWidth:    pulseWidth,
@@ -55,12 +53,17 @@ func NewDispatcher(lg *slog.Logger, m *mon.Monitor, ls ptime.LeapSecond, phcFlag
 		return nil, err
 	}
 	d := Dispatcher{
+		pktProcs: pktProcs,
 		cb:     combiner,
 		mon:    m,
 		ls:     ls,
 		lg:     lg,
 		sseCh:  sseCh,
 		tStart: time.Now(),
+	}
+	for _, pp := range pktProcs {
+		pp.SetMsgHandler(&d)
+		pp.SetNativeMsgHandler(&d)
 	}
 	err = d.lf.Open(eventLogPath)
 	if err != nil {
@@ -147,23 +150,24 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 
 func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	lg := d.lg
-	switch pkt.Tag {
-	case nmea.Tag:
-		err := nmea.ProcessPacket(pkt.Data, pkt.TRead, d, nil)
-		if err != nil {
-			lg.Error("failed to parse NMEA message", "err", err)
-		}
-	case ubx.Tag:
-		err := ubx.ProcessPacket(pkt.Data, pkt.TRead, d, d)
-		if err != nil {
-			lg.Error("failed to parse UBX message", "err", err)
-		}
-	case gpsprot.InvalidTag:
-		if !d.loggedUnknownProtocol {
-			lg.Info("received data from GPS in unknown protocol (serial communication problem?)", "len", len(pkt.Data), "data", pkt.Data)
-			d.loggedUnknownProtocol = true
-		}
-	}
+	pp, ok := d.pktProcs[pkt.Tag]
+    if !ok {
+        if pkt.Tag == gpsprot.InvalidTag {
+            if !d.loggedUnknownProtocol {
+                lg.Info("received data from GPS in unrecognized format (serial communication problem?)", 
+                       "len", len(pkt.Data), "data", pkt.Data)
+                d.loggedUnknownProtocol = true
+            }
+        } else {
+            lg.Error("no processor registered for packet tag", "tag", pkt.Tag)
+        }
+        return
+    }
+    
+    err := pp.ProcessPacket(pkt.Data, pkt.TRead)
+    if err != nil {
+        lg.Error("failed to process packet", "tag", pkt.Tag, "err", err)
+    }
 }
 
 type LogEvent struct {
@@ -302,8 +306,9 @@ func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
 	d.mon.SetLeapSecond(d.ls)
 }
 
-func (d *Dispatcher) UBX(msg ubxbin.Msg, tRead time.Time) {
-	d.lg.Debug("unused UBX message", "msg", msg)
+func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgType string, msg interface{}, tRead time.Time) bool {
+    d.lg.Debug("unused message from GPS receiver", "tag", tag, "type", msgType, "msg", msg)    
+    return false
 }
 
 func (d *Dispatcher) logEvent(event LogEvent) {

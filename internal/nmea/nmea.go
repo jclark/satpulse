@@ -9,47 +9,82 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
+// Tag is the identifier for NMEA protocol packets
+const Tag gpsprot.Tag = "NMEA"
+
+// Ensure PacketProcessor implements gpsprot.PacketProcessor
+var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
+
 // For a proprietary sentence Pxxx, SentenceFmt is Pxxx and TalkerId is the empty string.
 type Message struct {
 	SentenceFmt string
 	TalkerID    string
 	Fields      []string
-	ChecksumOK  bool
+	ChecksumField byte
+	ComputedChecksum byte
 }
 
-// Protocol-specific handler
-type ProtHandler interface {
-	NMEA(msg *Message, tRead time.Time)
+func (m *Message) ID() string {
+	return m.TalkerID + m.SentenceFmt
 }
 
-func ProcessPacket(data string, tRead time.Time, h gpsprot.MsgHandler, ph ProtHandler) error {
+func (m *Message) ChecksumOK() bool {
+	return m.ChecksumField == m.ComputedChecksum
+}
+
+// PacketProcessor implements the gpsprot.PacketProcessor interface for NMEA packets
+type PacketProcessor struct {
+	gpsprot.DefaultPacketProcessor
+	mh gpsprot.MsgHandler
+}
+
+// NewPacketProcessor creates a new NMEA packet processor
+func NewPacketProcessor() *PacketProcessor {
+	return &PacketProcessor{}
+}
+
+// ProcessPacket processes an NMEA packet's data and returns any error
+func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) error {
 	msg, err := Parse(data)
 	if err != nil {
 		return err
 	}
-	return Dispatch(msg, tRead, h, ph)
+	handled, err := Dispatch(msg, tRead, p.mh)
+	if err != nil || handled {
+		return err
+	}
+	nmh := p.GetNativeMsgHandler()
+	if nmh != nil {
+		nmh.NativeMsg(Tag, msg.ID(), msg, tRead)
+	}
+	return nil
+}
+
+// SetMsgHandler sets the handler for protocol-agnostic messages
+func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
+	p.mh = handler
 }
 
 // Precondition is that data is valid according to Scanner.Read.
 func Parse(data string) (*Message, error) {
 	msg := Split(data)
-	if !msg.ChecksumOK {
-		return nil, fmt.Errorf("NMEA checksum error")
+	if !msg.ChecksumOK() {
+		return nil, fmt.Errorf("NMEA checksum error: checksum in message %02x, computed %02x", msg.ChecksumField, msg.ComputedChecksum)	
 	}
 	return msg, nil
 }
 
-func Dispatch(msg *Message, tRead time.Time, h gpsprot.MsgHandler, ph ProtHandler) error {
+// Dispatch handles standard messages and returns true if handled, along with any error
+func Dispatch(msg *Message, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
 	switch msg.SentenceFmt {
 	case "RMC":
-		return dispatchTime(parseRMC, msg, tRead, h)
+		err := dispatchTime(parseRMC, msg, tRead, h)
+		return err == nil, err
 	case "ZDA":
-		return dispatchTime(parseZDA, msg, tRead, h)
+		err := dispatchTime(parseZDA, msg, tRead, h)
+		return err == nil, err
 	}
-	if ph != nil {
-		ph.NMEA(msg, tRead)
-	}
-	return nil
+	return false, nil
 }
 
 func dispatchTime(parser func(*Message) (*ptime.UTCTime, error), msg *Message, tRead time.Time, h gpsprot.MsgHandler) error {
@@ -186,7 +221,8 @@ func Split(data string) *Message {
 	fields := strings.Split(before, ",")
 	msg := Message{
 		Fields:     fields[1:],
-		ChecksumOK: Checksum(before) == hexToByte(after),
+		ChecksumField: hexToByte(after),
+		ComputedChecksum: Checksum(before),
 	}
 	addr := fields[0]
 	if strings.IndexByte(before, '^') >= 0 {

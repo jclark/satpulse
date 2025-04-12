@@ -15,6 +15,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/proxy"
@@ -157,6 +158,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		lg.Debug("wait group counter dropped to zero")
 	}()
 
+	pktProcs := gpsreg.CreatePacketProcessors()
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
@@ -230,7 +232,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		pulseWidth = defaultPulseWidth
 	}
 
-	d, err := NewDispatcher(lg, clk, pulseWidth, cfg, gm, rcProxy, sseCh)
+	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, sseCh)
 	if err != nil {
 		return err
 	}
@@ -257,7 +259,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event) (*gpsevent.Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event) (*gpsevent.Dispatcher, error) {
 	servo, err := servo.New(clk, lg)
 	if err != nil {
 		return nil, err
@@ -276,7 +278,7 @@ func NewDispatcher(lg *slog.Logger, clk *ts.Clock, pulseWidth time.Duration, cfg
 		return nil, err
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, m, ls, clk.DriverFlags, pulseWidth, sseCh, eventLogPath)
+	return gpsevent.NewDispatcher(lg, pktProcs, m, ls, clk.DriverFlags, pulseWidth, sseCh, eventLogPath)
 }
 
 type InitData struct {

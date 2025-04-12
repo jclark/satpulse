@@ -7,19 +7,53 @@ import (
 	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
+// Tag is the identifier for UBX protocol packets
+const Tag gpsprot.Tag = "UBX"
+
 // Protocol-specific handler
 type ProtHandler interface {
 	UBX(msg bin.Msg, tRead time.Time)
 }
 
-func ProcessPacket(data string, tRead time.Time, h gpsprot.MsgHandler, ph ProtHandler) error {
+// Ensure PacketProcessor implements gpsprot.PacketProcessor
+var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
+
+// PacketProcessor implements the gpsprot.PacketProcessor interface for UBX packets
+type PacketProcessor struct {
+	gpsprot.DefaultPacketProcessor
+	mh  gpsprot.MsgHandler
+}
+
+// NewPacketProcessor creates a new UBX packet processor
+func NewPacketProcessor() *PacketProcessor {
+	return &PacketProcessor{}
+}
+
+// ProcessPacket processes a UBX packet's data and returns any error
+func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) error {
 	m, err := bin.ParseMsg(data)
 	if err != nil {
 		return err
 	}
-	if !Dispatch(m, tRead, h) && ph != nil {
-		ph.UBX(m, tRead)
+	if Dispatch(m, tRead, p.mh) {
+		return nil
 	}
+	nmh := p.GetNativeMsgHandler()
+	if nmh != nil {
+		nmh.NativeMsg(Tag, m.ID().String(), m, tRead)
+	}
+	return nil
+}
+
+// SetMsgHandler sets the handler for protocol-agnostic messages
+func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
+	p.mh = handler
+}
+
+// CreatePacketExchanger creates a PacketExchanger if configuration is supported
+// Returns nil if configuration is not supported
+func (p *PacketProcessor) CreatePacketExchanger() gpsprot.PacketExchanger {
+	// Will implement packet exchanger later
 	return nil
 }
 

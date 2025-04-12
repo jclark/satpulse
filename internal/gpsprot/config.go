@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-// Protocol manages the processing and generation of packets for a GPS receiver.
+// PacketExchanger manages the processing and generation of packets for a GPS receiver.
 // An implementation of protocol captures the semantics of a particular GPS receiver protocol,
 // such as UBX or NMEA.
-// Methods on Protocol do not themselves send or receive
+// Methods on PacketExchanger do not themselves send or receive
 // Splitting sequences of bytes in packets is handled by the scan package.
 // Packets to be processed are passed to ProcessPacket.
 // There are three stages: probing, configuration, and normal operation.
@@ -26,7 +26,7 @@ import (
 // After a Configurator has been created, calls to ProcessPacket will pass configuration-related packets
 // to the Configurator.
 // The packets processed by ProcessPacket determine the requests returned by NextRequest.
-type Protocol interface {
+type PacketExchanger interface {
 	ProbePacket() []byte
 	ProbeOK() bool
 	SetHandler(MsgHandler)

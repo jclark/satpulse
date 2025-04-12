@@ -4,9 +4,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
-// Tag for NMEA packets
-const Tag gpsprot.Tag = "NMEA"
-
 // PacketFormat returns the NMEA packet format
 var PacketFormat gpsprot.PacketFormat = packetFormat{}
 

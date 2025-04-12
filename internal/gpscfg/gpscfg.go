@@ -34,7 +34,7 @@ type msgHandler struct {
 	bad           badCount
 	nmeaSentences map[string]map[string]bool
 	rtcmMsgs      map[uint16]bool
-	ubxProt       *ubx.Protocol
+	ubxProt       *ubx.PacketExchanger
 	leapSecond    *gpsprot.LeapSecondMsg
 }
 
@@ -104,7 +104,7 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
 	mh.lg = lg
 	mh.packetCh = packetCh
-	mh.ubxProt = &ubx.Protocol{}
+	mh.ubxProt = &ubx.PacketExchanger{}
 	mh.ubxProt.SetHandler(mh)
 	mh.ubxProt.SetProtHandler(mh)
 	mh.nmeaSentences = map[string]map[string]bool{}
@@ -194,7 +194,7 @@ func (mh *msgHandler) packetChClosed(ctx context.Context) error {
 	return io.ErrUnexpectedEOF
 }
 
-func (mh *msgHandler) probe(ctx context.Context, prot gpsprot.Protocol, port gpsio.OutPort) (bool, error) {
+func (mh *msgHandler) probe(ctx context.Context, prot gpsprot.PacketExchanger, port gpsio.OutPort) (bool, error) {
 	msg := prot.ProbePacket()
 	_, err := port.Write(msg)
 	if err != nil {
@@ -219,7 +219,7 @@ func (mh *msgHandler) probe(ctx context.Context, prot gpsprot.Protocol, port gps
 	return false, nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.Protocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, error) {
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchanger, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, error) {
 	cfgtor, err := prot.Configure(target)
 	if err != nil {
 		return nil, err

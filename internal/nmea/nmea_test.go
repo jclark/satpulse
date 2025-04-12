@@ -11,7 +11,7 @@ import (
 func TestSplit(t *testing.T) {
 	f := Split("$GPGLL,5057.970,N,00146.110,E,142451,A*27\r\n")
 	df := f.Fields
-	if f.TalkerID != "GP" || f.SentenceFmt != "GLL" || !f.ChecksumOK || len(df) != 6 ||
+	if f.TalkerID != "GP" || f.SentenceFmt != "GLL" || !f.ChecksumOK() || len(df) != 6 ||
 		df[0] != "5057.970" || df[1] != "N" || df[2] != "00146.110" ||
 		df[3] != "E" || df[4] != "142451" || df[5] != "A" {
 		t.Fatalf("NMEASplit failed")
@@ -50,8 +50,8 @@ func testTime(t *testing.T, s string, expectUTC ptime.UTCTime) {
 	}
 	var h timeHandler
 	var zt time.Time
-	e = Dispatch(m, zt, &h, nil)
-	if e != nil {
+	handled, e := Dispatch(m, zt, &h)
+	if e != nil || !handled{
 		t.Fatalf("nmea.Dispatch failed: %v: %s", e, s)
 	}
 	utc := h.utc

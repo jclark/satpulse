@@ -13,3 +13,12 @@ var PacketFormats = []gpsprot.PacketFormat{
 	nmea.PacketFormat,
 	rtcm.PacketFormat,
 }
+
+// CreatePacketProcessors creates packet processors for all registered protocols
+func CreatePacketProcessors() map[gpsprot.Tag]gpsprot.PacketProcessor {
+	return map[gpsprot.Tag]gpsprot.PacketProcessor{
+		ubx.Tag:  ubx.NewPacketProcessor(),
+		nmea.Tag: nmea.NewPacketProcessor(),
+		rtcm.Tag: rtcm.NewPacketProcessor(),
+	}
+}

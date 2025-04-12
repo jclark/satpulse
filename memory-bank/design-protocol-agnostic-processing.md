@@ -127,9 +127,9 @@ type PacketProcessor interface {
 ```go
 // NativeMsgHandler handles protocol-specific messages
 type NativeMsgHandler interface {
-    // HandleNativeMsg handles a protocol-specific message
+    // NativeMsg handles a protocol-specific message
     // Returns true if the message was handled
-    HandleNativeMsg(tag Tag, msgType string, msg interface{}, tRead time.Time) bool
+    NativeMsg(tag Tag, msgType string, msg interface{}, tRead time.Time) bool
 }
 ```
 
@@ -178,7 +178,7 @@ func (p *Processor) ProcessPacket(data string, tRead time.Time) error {
     // If not a standard message, try the native handler
     if p.nativeHandler != nil {
         msgType := fmt.Sprintf("UBX-%s-%s", m.Class(), m.ID())
-        if p.nativeHandler.HandleNativeMsg(ubx.Tag, msgType, m, tRead) {
+        if p.nativeHandler.NativeMsg(ubx.Tag, msgType, m, tRead) {
             return nil
         }
     }
@@ -254,7 +254,7 @@ type exchangerNativeHandler struct {
     next     gpsprot.NativeMsgHandler
 }
 
-func (h *exchangerNativeHandler) HandleNativeMsg(tag gpsprot.Tag, msgType string, msg interface{}, tRead time.Time) bool {
+func (h *exchangerNativeHandler) NativeMsg(tag gpsprot.Tag, msgType string, msg interface{}, tRead time.Time) bool {
     // Only handle UBX messages
     if tag != ubx.Tag {
         return false
@@ -274,7 +274,7 @@ func (h *exchangerNativeHandler) HandleNativeMsg(tag gpsprot.Tag, msgType string
     
     // Pass to the next handler if we didn't handle it
     if h.next != nil {
-        return h.next.HandleNativeMsg(tag, msgType, msg, tRead)
+        return h.next.NativeMsg(tag, msgType, msg, tRead)
     }
     
     return false
@@ -311,7 +311,7 @@ type Dispatcher struct {
 }
 
 // Implement NativeMsgHandler
-func (d *Dispatcher) HandleNativeMsg(tag gpsprot.Tag, msgType string, msg interface{}, tRead time.Time) bool {
+func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgType string, msg interface{}, tRead time.Time) bool {
     // Log the message for debugging
     d.lg.Debug("received protocol-specific message", "tag", tag, "type", msgType)
     
