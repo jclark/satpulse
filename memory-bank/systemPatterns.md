@@ -69,6 +69,7 @@ SatPulse follows a layered architecture with clear separation of concerns. The s
    - GPS protocol adapters (UBX, NMEA)
    - PTP management client adapter
    - Chrony refclock adapter
+   - Protocol-agnostic packet processors (see [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md))
 
 6. **Factory Pattern**: Creating instances of protocol implementations
 
@@ -86,6 +87,11 @@ SatPulse follows a layered architecture with clear separation of concerns. The s
 1. **GPS Communication Flow**:
    ```
    gpsio → scan → gpsprot → (ubx or nmea) → gpsevent → combine → mon → servo
+   ```
+   
+   A planned refactoring ([design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md)) will improve this flow by decoupling both the `gpsevent.Dispatcher` and `gpscfg` package from specific protocols:
+   ```
+   gpsio → scan → [protocol-specific processors] → gpsevent → combine → mon → servo
    ```
 
 2. **Timestamp Flow**:

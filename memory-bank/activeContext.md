@@ -35,17 +35,19 @@ The SatPulse project is currently focused on:
 
 ## Next Steps
 
-1. **Expanded Hardware Support**: Investigate compatibility with additional ethernet controllers that have PPS input pins.
+1. **Protocol-Agnostic Processing**: Implement the design outlined in [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md) to decouple both the `gpsevent.Dispatcher` and `gpscfg` package from specific protocols.
 
-2. **Performance Optimization**: Further improve the precision of time synchronization, aiming for even lower jitter.
+2. **Expanded Hardware Support**: Investigate compatibility with additional ethernet controllers that have PPS input pins.
 
-3. **Enhanced Monitoring**: Expand the web interface with more detailed statistics and visualizations.
+3. **Performance Optimization**: Further improve the precision of time synchronization, aiming for even lower jitter.
 
-4. **User Feedback Integration**: Collect and incorporate feedback from early adopters to improve usability and features.
+4. **Enhanced Monitoring**: Expand the web interface with more detailed statistics and visualizations.
 
-5. **Documentation Expansion**: Add more examples, use cases, and troubleshooting guides.
+5. **User Feedback Integration**: Collect and incorporate feedback from early adopters to improve usability and features.
 
-6. **Testing Framework**: Develop more comprehensive testing, particularly for hardware-specific edge cases.
+6. **Documentation Expansion**: Add more examples, use cases, and troubleshooting guides.
+
+7. **Testing Framework**: Develop more comprehensive testing, particularly for hardware-specific edge cases.
 
 ## Active Decisions and Considerations
 
@@ -80,6 +82,7 @@ The SatPulse project is currently focused on:
    - Clear layering of components
    - Separation of concerns between packages
    - Domain-driven design for protocol implementations
+   - Protocol-agnostic interfaces (see [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md))
 
 2. **Concurrency Model**:
    - Extensive use of goroutines and channels

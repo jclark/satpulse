@@ -62,16 +62,21 @@
 
 ### Feature Enhancements
 
-1. **Additional Protocol Support**
+1. **Code Architecture Improvements**
+   - Protocol-agnostic processing for both packet handling and configuration (see [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md))
+   - Improved separation of concerns between components
+   - Better extensibility for supporting new protocols
+
+2. **Additional Protocol Support**
    - Support for other GPS protocols beyond UBX and NMEA
    - Enhanced RTCM support for differential GPS
 
-2. **Monitoring Improvements**
+3. **Monitoring Improvements**
    - More detailed statistics in the web interface
    - Graphical visualization of synchronization performance
    - Enhanced alerting for synchronization issues
 
-3. **Configuration Enhancements**
+4. **Configuration Enhancements**
    - More flexible configuration options
    - Better validation and error reporting for configuration
    - Dynamic reconfiguration without restart
@@ -197,12 +202,14 @@ The project is in a stable state with core functionality working reliably. It wa
 
 ## Next Milestones
 
-1. **Enhanced Monitoring**: Improve the web interface with more detailed statistics and visualizations.
+1. **Protocol-Agnostic Architecture**: Implement the design outlined in [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md) to decouple both the `gpsevent.Dispatcher` and `gpscfg` package from specific protocols.
 
-2. **Performance Optimization**: Further improve the precision of time synchronization, aiming for even lower jitter.
+2. **Enhanced Monitoring**: Improve the web interface with more detailed statistics and visualizations.
 
-3. **User Feedback Integration**: Collect and incorporate feedback from early adopters to improve usability and features.
+3. **Performance Optimization**: Further improve the precision of time synchronization, aiming for even lower jitter.
 
-4. **Documentation Expansion**: Add more examples, use cases, and troubleshooting guides.
+4. **User Feedback Integration**: Collect and incorporate feedback from early adopters to improve usability and features.
 
-5. **Testing Framework**: Develop more comprehensive testing, particularly for hardware-specific edge cases.
+5. **Documentation Expansion**: Add more examples, use cases, and troubleshooting guides.
+
+6. **Testing Framework**: Develop more comprehensive testing, particularly for hardware-specific edge cases.
