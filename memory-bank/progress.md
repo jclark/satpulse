@@ -63,8 +63,8 @@
 ### Feature Enhancements
 
 1. **Code Architecture Improvements**
-   - Protocol-agnostic processing for both packet handling and configuration (see [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md))
-   - Improved separation of concerns between components
+   - Refinement of protocol-agnostic processing implementation
+   - Further improved separation of concerns between components
    - Better extensibility for supporting new protocols
 
 2. **Additional Protocol Support**
@@ -202,7 +202,7 @@ The project is in a stable state with core functionality working reliably. It wa
 
 ## Next Milestones
 
-1. **Protocol-Agnostic Architecture**: Implement the design outlined in [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md) to decouple both the `gpsevent.Dispatcher` and `gpscfg` package from specific protocols.
+1. **Protocol-Agnostic Architecture Refinement**: Refine and optimize the protocol-agnostic architecture that has been implemented based on the design in [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md). The core interfaces and structure are in place, decoupling both the `gpsevent.Dispatcher` and `gpscfg` package from specific protocols.
 
 2. **Enhanced Monitoring**: Improve the web interface with more detailed statistics and visualizations.
 

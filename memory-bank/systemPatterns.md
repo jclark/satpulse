@@ -86,13 +86,10 @@ SatPulse follows a layered architecture with clear separation of concerns. The s
 
 1. **GPS Communication Flow**:
    ```
-   gpsio → scan → gpsprot → (ubx or nmea) → gpsevent → combine → mon → servo
-   ```
-   
-   A planned refactoring ([design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md)) will improve this flow by decoupling both the `gpsevent.Dispatcher` and `gpscfg` package from specific protocols:
-   ```
    gpsio → scan → [protocol-specific processors] → gpsevent → combine → mon → servo
    ```
+   
+   This improved flow has been implemented based on the design in [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md), decoupling both the `gpsevent.Dispatcher` and `gpscfg` package from specific protocols. Protocol-specific processors are registered in the `gpsreg` package and used by the dispatcher.
 
 2. **Timestamp Flow**:
    ```

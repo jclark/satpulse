@@ -16,26 +16,32 @@ The SatPulse project is currently focused on:
 
 ## Recent Changes
 
-1. **Public Repository**: The GitHub repository was made public on March 11, 2025.
+1. **Protocol-Agnostic Processing Implementation**: The protocol-agnostic packet processing architecture has been implemented, decoupling the `gpsevent.Dispatcher` and `gpscfg` package from specific protocols. This includes:
+   - New interfaces in `gpsprot` package: `PacketProcessor`, `PacketExchanger`, and `NativeMsgHandler`
+   - Protocol-specific implementations in `ubx`, `nmea`, and `rtcm` packages
+   - Registry of protocol processors in `gpsreg` package
+   - Updated dispatcher to use protocol-agnostic interfaces
 
-2. **Documentation Updates**: Comprehensive documentation has been added, including:
+2. **Public Repository**: The GitHub repository was made public on March 11, 2025.
+
+3. **Documentation Updates**: Comprehensive documentation has been added, including:
    - Introduction to SatPulse
    - Hardware requirements
    - Quick-start guide
    - Configuration reference
    - Internals documentation
 
-3. **Blog Posts**: Several blog posts have been published discussing:
+4. **Blog Posts**: Several blog posts have been published discussing:
    - The public release of SatPulse
    - Real-world applications of PTP
    - Comparing GPS performance
    - Hardware integration with Raspberry Pi CM5
 
-4. **Package Releases**: Both .deb and .rpm packages have been created for easy installation on different Linux distributions.
+5. **Package Releases**: Both .deb and .rpm packages have been created for easy installation on different Linux distributions.
 
 ## Next Steps
 
-1. **Protocol-Agnostic Processing**: Implement the design outlined in [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md) to decouple both the `gpsevent.Dispatcher` and `gpscfg` package from specific protocols.
+1. **Protocol-Agnostic Processing Refinement**: Complete and refine the protocol-agnostic processing implementation. The core interfaces and structure have been implemented as outlined in [design-protocol-agnostic-processing.md](design-protocol-agnostic-processing.md), decoupling both the `gpsevent.Dispatcher` and `gpscfg` package from specific protocols. Some refinements and optimizations may still be needed.
 
 2. **Expanded Hardware Support**: Investigate compatibility with additional ethernet controllers that have PPS input pins.
 
