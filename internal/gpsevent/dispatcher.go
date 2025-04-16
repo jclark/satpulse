@@ -164,7 +164,7 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
         return
     }
     
-    err := pp.ProcessPacket(pkt.Data, pkt.TRead)
+    _, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
     if err != nil {
         lg.Error("failed to process packet", "tag", pkt.Tag, "err", err)
     }
@@ -306,9 +306,9 @@ func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
 	d.mon.SetLeapSecond(d.ls)
 }
 
-func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgType string, msg interface{}, tRead time.Time) bool {
-    d.lg.Debug("unused message from GPS receiver", "tag", tag, "type", msgType, "msg", msg)    
-    return false
+func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+    d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID, "msg", msg)    
+    return nil
 }
 
 func (d *Dispatcher) logEvent(event LogEvent) {

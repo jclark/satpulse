@@ -43,21 +43,22 @@ func NewPacketProcessor() *PacketProcessor {
 	return &PacketProcessor{}
 }
 
-// ProcessPacket processes an NMEA packet's data and returns any error
-func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) error {
+// ProcessPacket processes an NMEA packet's data and returns the type of the message and any error
+func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
 	msg, err := Parse(data)
 	if err != nil {
-		return err
+		return "", err
 	}
+	msgID := msg.ID()
 	handled, err := Dispatch(msg, tRead, p.mh)
 	if err != nil || handled {
-		return err
+		return msgID, err
 	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
-		nmh.NativeMsg(Tag, msg.ID(), msg, tRead)
+		return msgID, nmh.NativeMsg(Tag, msgID, msg, tRead)
 	}
-	return nil
+	return msgID, nil
 }
 
 // SetMsgHandler sets the handler for protocol-agnostic messages

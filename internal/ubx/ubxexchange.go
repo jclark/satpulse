@@ -9,48 +9,37 @@ import (
 )
 
 type PacketExchanger struct {
-	ver *Version
-	cfg *Configurator
-	h   gpsprot.MsgHandler
-	ph  ProtHandler
+	ver     *Version
+	cfg     *Configurator
+	nmhNext gpsprot.NativeMsgHandler
 }
 
 var _ gpsprot.PacketExchanger = (*PacketExchanger)(nil)
+var _ gpsprot.NativeMsgHandler = (*PacketExchanger)(nil)
 
-func (px *PacketExchanger) ProcessPacket(data string, tRead time.Time) error {
-	m, err := bin.ParseMsg(data)
-	if err != nil {
-		return err
+func newPacketExchanger(nmhNext gpsprot.NativeMsgHandler) *PacketExchanger {
+	return &PacketExchanger{
+		nmhNext: nmhNext,
 	}
+}
+
+func (px *PacketExchanger) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+	m := msg.(bin.Msg)
 	if px.cfg != nil {
-		done, err := px.cfg.processMsg(m, tRead)
-		if err != nil {
+		handled, err := px.cfg.processMsg(m, tRead)
+		if err != nil || handled {
 			return err
 		}
-		if done {
-			return nil
-		}
-	}
-	if Dispatch(m, tRead, px.h) {
-		return nil
 	}
 	switch mt := m.(type) {
 	case *bin.MonVer:
 		px.ver = monVer(mt)
 	default:
-		if px.ph != nil {
-			px.ph.UBX(m, tRead)
+		if px.nmhNext != nil {
+			return px.nmhNext.NativeMsg(tag, msgID, msg, tRead)
 		}
 	}
 	return nil
-}
-
-func (px *PacketExchanger) SetHandler(h gpsprot.MsgHandler) {
-	px.h = h
-}
-
-func (px *PacketExchanger) SetProtHandler(ph ProtHandler) {
-	px.ph = ph
 }
 
 func (px *PacketExchanger) Version() *Version {

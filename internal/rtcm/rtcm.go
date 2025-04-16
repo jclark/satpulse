@@ -23,8 +23,11 @@ type Message struct {
 }
 
 var msgNames = map[uint16]string{
+	1005: "station-ARP",
+	1006: "station-ARP-height",
     1019: "eph-GPS",
     1020: "eph-GLONASS",
+	1041: "eph-NavIC",
     1042: "eph-BeiDou",
     1044: "eph-QZSS",
     1045: "eph-Galileo",
@@ -32,7 +35,7 @@ var msgNames = map[uint16]string{
     1230: "bias-GLONASS",
 }
 
-var gnss = []string{"GPS", "GLONASS", "Galileo", "SBAS", "QZSS", "BeiDou"}
+var gnss = []string{"GPS", "GLONASS", "Galileo", "SBAS", "QZSS", "BeiDou", "NavIC"}
 
 func (m *Message) ID() string {
 	g := (int(m.MsgType) / 10) - 107
@@ -107,17 +110,18 @@ func NewPacketProcessor() *PacketProcessor {
 }
 
 // ProcessPacket processes an RTCM packet's data and returns any error
-func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) error {
+func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
 	msg := ParseMessage(data)
+	msgID := msg.ID()
 	if !msg.ChecksumOK() {
 		// CRC24 so 24 bits, 6 hex digits
-		return fmt.Errorf("RTCM checksum error: checksum in message 0x%06x, computed %06x", msg.ChecksumField, msg.ComputedChecksum)	
+		return msgID, fmt.Errorf("RTCM checksum error: checksum in message 0x%06x, computed %06x", msg.ChecksumField, msg.ComputedChecksum)	
 	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
-		nmh.NativeMsg(Tag, msg.ID(), msg, tRead)
+		return msgID, nmh.NativeMsg(Tag, msgID, msg, tRead)
 	}
-	return nil
+	return msgID, nil
 }
 
 // ParseMessage parses a packet into an RTCM Message
@@ -141,9 +145,3 @@ func ParseMessage(packet string) *Message {
 	}
 }
 
-// RTCMMsg extracts message information from an RTCM packet
-// This is provided for backward compatibility
-func RTCMMsg(packet string) (msg string, checksumOK bool, msgType uint16) {
-	message := ParseMessage(packet)
-	return message.Payload, message.ChecksumOK(), message.MsgType
-}

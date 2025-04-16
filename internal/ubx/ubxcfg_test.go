@@ -120,8 +120,10 @@ type gpsReceiver struct {
 }
 
 func runConfiguration(rcvr *gpsReceiver, target *gpsprot.ConfigTarget) (*Configurator, []string, error) {
-	px := &PacketExchanger{}
-	px.ver = rcvr.version
+	pp := NewPacketProcessor()
+	px := pp.CreatePacketExchanger()
+	upx := px.(*PacketExchanger)
+	upx.ver = rcvr.version
 	var naks []string
 
 	c, err := px.Configure(target)
@@ -143,7 +145,7 @@ func runConfiguration(rcvr *gpsReceiver, target *gpsprot.ConfigTarget) (*Configu
 		resps := rcvr.sendReceive(pkt)
 		for _, resp := range resps {
 			tm = tm.Add(time.Second / 10)
-			err = px.ProcessPacket(string(resp), tm)
+			_, err = pp.ProcessPacket(string(resp), tm)
 			if err != nil {
 				return nil, nil, fmt.Errorf("unexpected error processing response packet: %w", err)
 			}

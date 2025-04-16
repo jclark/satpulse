@@ -51,7 +51,7 @@ func testTime(t *testing.T, s string, expectUTC ptime.UTCTime) {
 	var h timeHandler
 	var zt time.Time
 	handled, e := Dispatch(m, zt, &h)
-	if e != nil || !handled{
+	if e != nil || !handled {
 		t.Fatalf("nmea.Dispatch failed: %v: %s", e, s)
 	}
 	utc := h.utc

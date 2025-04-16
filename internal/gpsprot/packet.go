@@ -32,8 +32,8 @@ type PacketFormat interface {
 
 // PacketProcessor processes packets of a specific protocol
 type PacketProcessor interface {
-	// ProcessPacket processes a packet's data and returns any error
-	ProcessPacket(data string, tRead time.Time) error
+	// ProcessPacket processes a packet's data and returns a string with the type of the packet and an error
+	ProcessPacket(data string, tRead time.Time) (string, error)
 
 	// SetMsgHandler sets the handler for protocol-agnostic messages
 	SetMsgHandler(handler MsgHandler)

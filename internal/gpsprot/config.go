@@ -13,24 +13,22 @@ import (
 // PacketExchanger manages the processing and generation of packets for a GPS receiver.
 // An implementation of protocol captures the semantics of a particular GPS receiver protocol,
 // such as UBX or NMEA.
-// Methods on PacketExchanger do not themselves send or receive
+// Methods on PacketExchanger do not themselves send or receive.
+// A PacketExchanger is attached to a PacketProcessor when it is created
+// by PacketProcessor.CreatePacketExchanger and installs a NativeMsgHandler.
 // Splitting sequences of bytes in packets is handled by the scan package.
-// Packets to be processed are passed to ProcessPacket.
-// There are three stages: probing, configuration, and normal operation.
-// In normal operation, calls to ProcessPacket result in calls to the MsgHandler,
-// which is set by SetHandler.
+// Packets to be processed are passed to ProcessPacket method on the PacketProcessor.
+// There are two stages: probing and configuration.
 // In probing, ProbePacket returns a packet to be sent to the GPS receiver;
 // ProbeOK as soon as a packet has been processed that indicates the GPS receiver is responding.
 // Configuration is managed by a Configurator created by Configure;
 // repeated calls to NextRequest return the next request to be sent to the GPS receiver.
 // After a Configurator has been created, calls to ProcessPacket will pass configuration-related packets
-// to the Configurator.
+// to the Configurator via the NativeMsgHandler.
 // The packets processed by ProcessPacket determine the requests returned by NextRequest.
 type PacketExchanger interface {
 	ProbePacket() []byte
 	ProbeOK() bool
-	SetHandler(MsgHandler)
-	ProcessPacket(data string, tRead time.Time) error
 	Configure(*ConfigTarget) (Configurator, error)
 }
 

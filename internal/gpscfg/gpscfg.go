@@ -14,7 +14,6 @@ import (
 	"github.com/jclark/satpulse/internal/rtcm"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/ubx"
-	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 	"golang.org/x/exp/maps"
 )
 
@@ -26,29 +25,27 @@ type Result struct {
 
 type msgHandler struct {
 	gpsprot.DefaultHandler
-	lg            *slog.Logger
-	packetCh      <-chan scan.Packet
-	ubxMsgCount   int
-	nmeaMsgCount  int
-	rtcmMsgCount  int
-	bad           badCount
-	nmeaSentences map[string]map[string]bool
-	rtcmMsgs      map[uint16]bool
-	ubxProt       *ubx.PacketExchanger
-	leapSecond    *gpsprot.LeapSecondMsg
+	lg          *slog.Logger
+	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
+	packetExch  gpsprot.PacketExchanger
+	packetCh    <-chan scan.Packet
+	msgCount    map[gpsprot.Tag]int
+	bad         badCount
+	msgIDs      map[gpsprot.Tag]map[string]bool
+	leapSecond  *gpsprot.LeapSecondMsg
 }
 
 type badCount struct {
 	invalidBytes, corruptMsgs, framingErrs int
 }
 
-var _ ubx.ProtHandler = &msgHandler{}
+var _ gpsprot.NativeMsgHandler = &msgHandler{}
 
 var ErrNoResponse = errors.New("no response to configuration poll message; not configuring GPS")
 
-func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
+func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
-	mh.init(lg, packetCh)
+	mh.init(lg, packetProcs, packetCh)
 	var err error
 	if !target.Opts.Detected {
 		err = mh.detect(ctx)
@@ -73,7 +70,7 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	}
 	// After we have done detection, bad stuff is a cause for concern.
 	badStart := mh.bad
-	ubxOK, err := mh.probe(ctx, mh.ubxProt, port)
+	probeOK, err := mh.probe(ctx, mh.packetExch, port)
 	if err != nil {
 		return nil, err
 	}
@@ -85,15 +82,15 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 		return nil, errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
 	}
 	var cm *gpsprot.ConfigProps
-	if ubxOK {
-		cm, err = mh.configure(ctx, mh.ubxProt, target, port)
+	if probeOK {
+		cm, err = mh.configure(ctx, mh.packetExch, target, port)
 		if err != nil {
 			// XXX try to recover from this
 			// provided we have some messages working, we should be OK
 			return nil, err
 		}
 	} else {
-		// XXX if ubxMsgCount > 0, then probably we cannot send to the GPS
+		// XXX if msgCount for UBX > 0, but probe failed, then probably we cannot send to the GPS
 		return &Result{
 			ConfigProps: new(gpsprot.ConfigProps),
 		}, ErrNoResponse
@@ -101,14 +98,20 @@ func Configure(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	return mh.finish(cm), nil
 }
 
-func (mh *msgHandler) init(lg *slog.Logger, packetCh <-chan scan.Packet) {
+func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, packetCh <-chan scan.Packet) {
 	mh.lg = lg
+	mh.packetProcs = packetProcs
 	mh.packetCh = packetCh
-	mh.ubxProt = &ubx.PacketExchanger{}
-	mh.ubxProt.SetHandler(mh)
-	mh.ubxProt.SetProtHandler(mh)
-	mh.nmeaSentences = map[string]map[string]bool{}
-	mh.rtcmMsgs = map[uint16]bool{}
+	mh.msgCount = map[gpsprot.Tag]int{}
+	for tag, pp := range packetProcs {
+		pp.SetMsgHandler(mh)
+		pp.SetNativeMsgHandler(mh)
+		if mh.packetExch == nil {
+			mh.packetExch = pp.CreatePacketExchanger()
+		}
+		mh.msgCount[tag] = 0
+		mh.msgIDs[tag] = map[string]bool{}
+	}
 }
 
 func (mh *msgHandler) finish(cm *gpsprot.ConfigProps) *Result {
@@ -120,13 +123,17 @@ func (mh *msgHandler) finish(cm *gpsprot.ConfigProps) *Result {
 		lsdStr := mh.leapSecond.Date().Format("2006-01-02")
 		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", mh.leapSecond.UTCOffBefore, "utcOffAfter", mh.leapSecond.UTCOffAfter)
 	}
-	ver := mh.ubxProt.Version()
+	// XXX should find cleaner way to do this
+	ver := mh.packetExch.(*ubx.PacketExchanger).Version()
 	if ver != nil {
 		lg.Info("GPS version", "model", ver.Mod, "category", ver.ProductCategory(), "flash", ver.Flash,
 			"sw", ver.SW, "hw", ver.HW, "prot", ver.Prot, "gnss", ver.GNSS, "ext", ver.Extensions)
 	}
-	lg.Info("finished GPS initialization",
-		"nmeaSentences", maps.Keys(mh.nmeaSentences))
+	for tag, msgIDs := range mh.msgIDs {
+		if len(msgIDs) > 0 {
+			lg.Info("message types received during configuration", "protocol", tag, "msgIDs", maps.Keys(msgIDs))
+		}	
+	}
 	return &Result{
 		Version:     ver,
 		ConfigProps: cm,
@@ -167,7 +174,7 @@ func (mh *msgHandler) detect(ctx context.Context) error {
 		var msg string
 		if mh.bad.framingErrs > 0 {
 			msg = "framing errors reading GPS output (wrong speed?)"
-		} else if mh.rtcmMsgCount > 0 {
+		} else if mh.msgCount[rtcm.Tag] > 0 {
 			msg = "only RTCM messages detected from GPS"
 		} else if mh.bad.invalidBytes+mh.bad.corruptMsgs == 0 {
 			msg = "no output detected from GPS"
@@ -176,12 +183,12 @@ func (mh *msgHandler) detect(ctx context.Context) error {
 		} else {
 			msg = "cannot parse GPS output"
 		}
-		lg.Debug("not receiving data from GPS correctly", "bad", mh.bad, "rtcmMsgCount", mh.rtcmMsgCount)
+		lg.Debug("not receiving data from GPS correctly", "bad", mh.bad, "rtcmMsgCount", mh.msgCount[rtcm.Tag])
 		return errors.New(msg)
 	}
 	lg.Info("detected a GPS")
 
-	lg.Debug("received suitable output message from GPS", "isUBX", mh.ubxMsgCount > 0, "bad", mh.bad)
+	lg.Debug("received suitable output message from GPS", "msgCount", mh.msgCount, "bad", mh.bad)
 	return nil
 }
 
@@ -325,68 +332,40 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 }
 
 func (mh *msgHandler) suitableMessageCount() int {
-	return mh.nmeaMsgCount + mh.ubxMsgCount
+	return mh.msgCount[ubx.Tag] + mh.msgCount[nmea.Tag]
 }
 
 func (mh *msgHandler) packet(f scan.Packet) {
 	data := f.Data
-	switch f.Tag {
-	case nmea.Tag:
-		mh.nmea(data)
-	case ubx.Tag:
-		mh.lg.Debug("configuration received UBX packet", "msgID", ubxbin.PacketMsgId(data).String(), "len", len(data))
-		err := mh.ubxProt.ProcessPacket(data, f.TRead)
-		if err != nil {
-			mh.lg.Error("could not parse UBX message", "err", err)
-			// UBX parsing can handle unknown message types, so it's something worse then that.
-			mh.bad.corruptMsgs++
-		} else {
-			mh.ubxMsgCount++
-		}
-	case rtcm.Tag:
-		mh.rtcm(data)
-	default:
+	if f.Tag == gpsprot.InvalidTag {
 		mh.invalid(data, f.ReadError)
+		return
 	}
+	pp, ok := mh.packetProcs[f.Tag]
+	if !ok {
+		mh.lg.Error("no processor registered for protocol", "protocol", f.Tag)
+		return
+	}
+	msgID, err := pp.ProcessPacket(data, f.TRead)
+	if err != nil {
+		mh.lg.Error("GPS packet cannot be parsed", "protocol", f.Tag, "err", err)
+		mh.bad.corruptMsgs++
+	}
+	// only count parseable messages with good checksum
+	mh.msgCount[f.Tag]++
+	mh.msgIDs[f.Tag][msgID] = true
+}
+
+func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+	mh.lg.Debug("received an unused message during configuration stage", "protocol", tag, "msgID", msgID, "msg", msg)
+	if tag == nmea.Tag {
+		nmeaLog(mh.lg, msg.(*nmea.Message))
+	}
+	return nil
 }
 
 func (mh *msgHandler) LeapSecond(ls *gpsprot.LeapSecondMsg, _ time.Time) {
 	mh.leapSecond = ls
-}
-
-func (mh *msgHandler) UBX(u ubxbin.Msg, _ time.Time) {
-	mh.lg.Debug("received a UBX message during initialization", "id", u.ID().String(), "payload", u)
-}
-
-func (mh *msgHandler) nmea(data string) {
-	lg := mh.lg
-	msg, err := nmea.Parse(data)
-	if err != nil {
-		lg.Debug("received an NMEA message with invalid checksum during initialization")
-		mh.bad.corruptMsgs++
-		return
-	}
-	mh.nmeaMsgCount++
-	talkerMap := mh.nmeaSentences[msg.SentenceFmt]
-	if talkerMap == nil {
-		talkerMap = map[string]bool{}
-		mh.nmeaSentences[msg.SentenceFmt] = talkerMap
-	}
-	talkerMap[msg.TalkerID] = true
-	nmeaLog(lg, msg)
-}
-
-func (mh *msgHandler) rtcm(data string) {
-	lg := mh.lg
-	_, ok, msgType := rtcm.RTCMMsg(data)
-	if !ok {
-		lg.Debug("received an RTCM message with invalid checksum during initialization")
-		mh.bad.corruptMsgs++
-		return
-	}
-	lg.Debug("received a RTCM message during initialization", "msgType", msgType)
-	mh.rtcmMsgCount++
-	mh.rtcmMsgs[msgType] = true
 }
 
 // Some number of unparseable bytes is normal.

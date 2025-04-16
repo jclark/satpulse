@@ -11,6 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/term"
 )
@@ -93,7 +94,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	info, err := gpscfg.Configure(ctx, lg, target, pCh, conn)
+	info, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(), target, pCh, conn)
 	if err == nil {
 		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigProps))
 	}

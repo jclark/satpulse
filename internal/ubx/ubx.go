@@ -10,11 +10,6 @@ import (
 // Tag is the identifier for UBX protocol packets
 const Tag gpsprot.Tag = "UBX"
 
-// Protocol-specific handler
-type ProtHandler interface {
-	UBX(msg bin.Msg, tRead time.Time)
-}
-
 // Ensure PacketProcessor implements gpsprot.PacketProcessor
 var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 
@@ -29,20 +24,21 @@ func NewPacketProcessor() *PacketProcessor {
 	return &PacketProcessor{}
 }
 
-// ProcessPacket processes a UBX packet's data and returns any error
-func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) error {
+// ProcessPacket processes a UBX packet's data and returns the message ID and any error
+func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
 	m, err := bin.ParseMsg(data)
+	msgID := m.ID().String()
 	if err != nil {
-		return err
+		return msgID, err
 	}
 	if Dispatch(m, tRead, p.mh) {
-		return nil
+		return msgID, nil
 	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
-		nmh.NativeMsg(Tag, m.ID().String(), m, tRead)
+		return msgID, nmh.NativeMsg(Tag, msgID, m, tRead)
 	}
-	return nil
+	return msgID, nil
 }
 
 // SetMsgHandler sets the handler for protocol-agnostic messages
@@ -53,8 +49,9 @@ func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 // CreatePacketExchanger creates a PacketExchanger if configuration is supported
 // Returns nil if configuration is not supported
 func (p *PacketProcessor) CreatePacketExchanger() gpsprot.PacketExchanger {
-	// Will implement packet exchanger later
-	return nil
+	px := newPacketExchanger(p.GetNativeMsgHandler())
+	p.SetNativeMsgHandler(px)
+	return px
 }
 
 func Dispatch(m bin.Msg, tRead time.Time, h gpsprot.MsgHandler) bool {

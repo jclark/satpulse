@@ -174,7 +174,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if err != nil {
 		return err
 	}
-	gcfg, err := gpscfg.Configure(ctx, lg, gct, pCh, conn)
+	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, gct, pCh, conn)
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoResponse) {
 			lg.Info(err.Error())

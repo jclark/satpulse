@@ -21,11 +21,10 @@ type MsgHandler interface {
 type NativeMsgHandler interface {
 	// NativeMsg processes a protocol-specific message.
 	// tag: identifies the protocol (e.g., UBX, NMEA).
-	// msgType: identifies the message type within the protocol (e.g., UBX-NAV-PVT, NMEA-GGA).
+	// msgID: identifies the message type within the protocol (e.g., UBX-NAV-PVT, NMEA-GGA).
 	// msg: the protocol-specific message object.
 	// tRead: timestamp when the message was received.
-	// Returns true if the message was handled.
-	NativeMsg(tag Tag, msgType string, msg interface{}, tRead time.Time) bool
+	NativeMsg(tag Tag, msgID string, msg interface{}, tRead time.Time) error
 }
 
 type DefaultHandler struct{}

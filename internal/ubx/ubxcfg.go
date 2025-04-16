@@ -141,7 +141,7 @@ func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
 	if mid.CfgClass() {
 		c.tRead[mid] = t
 		_, err := c.raw.AddMsg(msg)
-		return true, err
+		return err == nil, err
 	}
 	return false, nil
 }
