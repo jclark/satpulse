@@ -23,15 +23,26 @@ type Message struct {
 }
 
 var msgNames = map[uint16]string{
+	1001: "L1-GPS",
+	1002: "L1x-GPS",
+	1003: "L1L2-GPS",
+	1004: "L1L2x-GPS",
 	1005: "station-ARP",
 	1006: "station-ARP-height",
+	1007: "antenna",
+	1008: "antenna-serial",
+	1009: "L1-GLONASS",
+	1010: "L1x-GLONASS",
+	1011: "L1L2-GLONASS",
+	1012: "L1L2x-GLONASS",
     1019: "eph-GPS",
     1020: "eph-GLONASS",
+	1033: "rcvr-antenna",
 	1041: "eph-NavIC",
     1042: "eph-BeiDou",
     1044: "eph-QZSS",
-    1045: "eph-Galileo",
-    1046: "eph-Galileo",
+    1045: "eph-Galileo-F",
+    1046: "eph-Galileo-I",
     1230: "bias-GLONASS",
 }
 
