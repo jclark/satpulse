@@ -103,6 +103,7 @@ func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.
 	mh.packetProcs = packetProcs
 	mh.packetCh = packetCh
 	mh.msgCount = map[gpsprot.Tag]int{}
+	mh.msgIDs = map[gpsprot.Tag]map[string]bool{}
 	for tag, pp := range packetProcs {
 		pp.SetMsgHandler(mh)
 		pp.SetNativeMsgHandler(mh)
