@@ -149,6 +149,12 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 }
 
 func (d *Dispatcher) handlePacket(pkt scan.Packet) {
+	if pkt.IsInterPacketTimeout() {
+		for _, pp := range d.pktProcs {
+			pp.Idle(pkt.TRead)
+		}
+		return
+	}
 	lg := d.lg
 	pp, ok := d.pktProcs[pkt.Tag]
     if !ok {

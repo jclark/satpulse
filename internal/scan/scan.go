@@ -16,6 +16,14 @@ type Packet struct {
 	TRead     time.Time
 }
 
+func (f Packet) IsInterPacketTimeout() bool {
+	if f.Tag == Invalid && f.ReadError != nil && len(f.Data) == 0 {
+		_, ok := f.ReadError.(TimeoutError)
+		return ok
+	}
+	return false
+}
+
 type Scanner struct {
 	pktFormats []gpsprot.PacketFormat
 	r          io.Reader
@@ -77,10 +85,11 @@ Loop:
 			if e != nil {
 				if timeout, ok := e.(TimeoutError); ok && timeout.Timeout() {
 					if packetLen == 0 && len(s.buf) == 0 {
-						// a timeout in between packets is OK, just keep on going
-						continue Loop
+						// don't wrap it, so it can be tested by Packet.IsInterPacketTimeout
+						p.ReadError = e
+					} else {
+						p.ReadError = fmt.Errorf("error in the middle of a packet: %w", e)
 					}
-					p.ReadError = fmt.Errorf("error in the middle of a packet: %w", e)
 				} else if temp, ok := e.(TemporaryError); ok && temp.Temporary() {
 					p.ReadError = e
 				}

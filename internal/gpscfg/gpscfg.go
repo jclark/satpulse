@@ -132,7 +132,7 @@ func (mh *msgHandler) finish(cm *gpsprot.ConfigProps) *Result {
 	for tag, msgIDs := range mh.msgIDs {
 		if len(msgIDs) > 0 {
 			lg.Info("message types received during configuration", "protocol", tag, "msgIDs", maps.Keys(msgIDs))
-		}	
+		}
 	}
 	return &Result{
 		Version:     ver,
@@ -336,6 +336,13 @@ func (mh *msgHandler) suitableMessageCount() int {
 }
 
 func (mh *msgHandler) packet(f scan.Packet) {
+	if f.IsInterPacketTimeout() {
+		mh.lg.Debug("inter-packet timeout detected during GPS configuration")
+		for _, pp := range mh.packetProcs {
+			pp.Idle(f.TRead)
+		}
+		return
+	}
 	data := f.Data
 	if f.Tag == gpsprot.InvalidTag {
 		mh.invalid(data, f.ReadError)

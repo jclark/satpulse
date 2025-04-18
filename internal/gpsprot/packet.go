@@ -35,6 +35,11 @@ type PacketProcessor interface {
 	// ProcessPacket processes a packet's data and returns a string with the type of the packet and an error
 	ProcessPacket(data string, tRead time.Time) (string, error)
 
+	// No data has been received for a period of time (usually 0.1s).
+	// tRead is the end of the period.
+	// There is no implication that data is received immediately after this.
+	Idle(tRead time.Time)
+
 	// SetMsgHandler sets the handler for protocol-agnostic messages
 	SetMsgHandler(handler MsgHandler)
 
@@ -57,6 +62,11 @@ type DefaultPacketProcessor struct {
 // ProcessPacket provides a default implementation that does nothing and returns nil
 func (p *DefaultPacketProcessor) ProcessPacket(data string, tRead time.Time) error {
 	return nil
+}
+
+// Idle provides a default implementation that does nothing
+func (p *DefaultPacketProcessor) Idle(tRead time.Time) {
+	// Intentionally empty
 }
 
 // SetMsgHandler does nothing in the default implementation
