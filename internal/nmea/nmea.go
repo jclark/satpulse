@@ -15,21 +15,21 @@ const Tag gpsprot.Tag = "NMEA"
 // Ensure PacketProcessor implements gpsprot.PacketProcessor
 var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 
-// For a proprietary sentence Pxxx, SentenceFmt is Pxxx and TalkerId is the empty string.
-type Message struct {
-	SentenceFmt string
-	TalkerID    string
-	Fields      []string
-	ChecksumField byte
+// For a proprietary sentence Pxxx, Format is Pxxx and TalkerId is the empty string.
+type Sentence struct {
+	Format           string
+	TalkerID         string
+	Fields           []string
+	ChecksumField    byte
 	ComputedChecksum byte
 }
 
-func (m *Message) ID() string {
-	return m.TalkerID + m.SentenceFmt
+func (s *Sentence) msgID() string {
+	return s.TalkerID + s.Format
 }
 
-func (m *Message) ChecksumOK() bool {
-	return m.ChecksumField == m.ComputedChecksum
+func (s *Sentence) ChecksumOK() bool {
+	return s.ChecksumField == s.ComputedChecksum
 }
 
 // PacketProcessor implements the gpsprot.PacketProcessor interface for NMEA packets
@@ -45,18 +45,18 @@ func NewPacketProcessor() *PacketProcessor {
 
 // ProcessPacket processes an NMEA packet's data and returns the type of the message and any error
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
-	msg, err := Parse(data)
+	sen, err := Parse(data)
 	if err != nil {
 		return "", err
 	}
-	msgID := msg.ID()
-	handled, err := Dispatch(msg, tRead, p.mh)
+	msgID := sen.msgID()
+	handled, err := Dispatch(sen, tRead, p.mh)
 	if err != nil || handled {
 		return msgID, err
 	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
-		return msgID, nmh.NativeMsg(Tag, msgID, msg, tRead)
+		return msgID, nmh.NativeMsg(Tag, msgID, sen, tRead)
 	}
 	return msgID, nil
 }
@@ -67,47 +67,47 @@ func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 }
 
 // Precondition is that data is valid according to Scanner.Read.
-func Parse(data string) (*Message, error) {
-	msg := Split(data)
-	if !msg.ChecksumOK() {
-		return nil, fmt.Errorf("NMEA checksum error: checksum in message %02x, computed %02x", msg.ChecksumField, msg.ComputedChecksum)	
+func Parse(data string) (*Sentence, error) {
+	sen := Split(data)
+	if !sen.ChecksumOK() {
+		return nil, fmt.Errorf("NMEA checksum error: checksum in message %02x, computed %02x", sen.ChecksumField, sen.ComputedChecksum)
 	}
-	return msg, nil
+	return sen, nil
 }
 
 // Dispatch handles standard messages and returns true if handled, along with any error
-func Dispatch(msg *Message, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
-	switch msg.SentenceFmt {
+func Dispatch(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
+	switch sen.Format {
 	case "RMC":
-		err := dispatchTime(parseRMC, msg, tRead, h)
+		err := dispatchTime(parseRMC, sen, tRead, h)
 		return err == nil, err
 	case "ZDA":
-		err := dispatchTime(parseZDA, msg, tRead, h)
+		err := dispatchTime(parseZDA, sen, tRead, h)
 		return err == nil, err
 	}
 	return false, nil
 }
 
-func dispatchTime(parser func(*Message) (*ptime.UTCTime, error), msg *Message, tRead time.Time, h gpsprot.MsgHandler) error {
-	utc, err := parser(msg)
+func dispatchTime(parser func(*Sentence) (*ptime.UTCTime, error), sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) error {
+	utc, err := parser(sen)
 	if err != nil {
 		return err
 	}
-	mt := gpsprot.TimeMsg{SrcType: "NMEA-" + msg.SentenceFmt, UTCTime: utc, GNSS: talkerIDToGNSS(msg.TalkerID)}
+	mt := gpsprot.TimeMsg{SrcType: "NMEA-" + sen.Format, UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID)}
 	if h != nil {
 		h.Time(&mt, tRead)
 	}
 	return nil
 }
 
-func parseRMC(msg *Message) (*ptime.UTCTime, error) {
-	k := msg.TalkerID + "RMC"
-	if len(msg.Fields) < 9 {
+func parseRMC(sen *Sentence) (*ptime.UTCTime, error) {
+	k := sen.TalkerID + "RMC"
+	if len(sen.Fields) < 9 {
 		return nil, fmt.Errorf("%s: too few fields", k)
 	}
-	timeStr := msg.Fields[0]
-	dateStr := msg.Fields[8]
-	if timeStr == "" || dateStr == "" || msg.Fields[1] != "A" {
+	timeStr := sen.Fields[0]
+	dateStr := sen.Fields[8]
+	if timeStr == "" || dateStr == "" || sen.Fields[1] != "A" {
 		return nil, nil
 	}
 	var year uint16
@@ -132,12 +132,12 @@ func parseRMC(msg *Message) (*ptime.UTCTime, error) {
 	return &utc, nil
 }
 
-func parseZDA(msg *Message) (*ptime.UTCTime, error) {
-	k := msg.TalkerID + "ZDA"
-	if len(msg.Fields) < 4 {
+func parseZDA(sen *Sentence) (*ptime.UTCTime, error) {
+	k := sen.TalkerID + "ZDA"
+	if len(sen.Fields) < 4 {
 		return nil, fmt.Errorf("%s: too few fields", k)
 	}
-	timeStr := msg.Fields[0]
+	timeStr := sen.Fields[0]
 	if timeStr == "" {
 		return nil, nil
 	}
@@ -148,7 +148,7 @@ func parseZDA(msg *Message) (*ptime.UTCTime, error) {
 		return nil, fmt.Errorf("%s: %s: invalid time", k, timeStr)
 	}
 	for i := 1; i < 4; i++ {
-		d := msg.Fields[i]
+		d := sen.Fields[i]
 		if d == "" {
 			return nil, nil
 		}
@@ -160,13 +160,13 @@ func parseZDA(msg *Message) (*ptime.UTCTime, error) {
 			return nil, fmt.Errorf("%s: %s: invalid date field", k, d)
 		}
 	}
-	_, _ = fmt.Sscanf(msg.Fields[1], "%02d", &day)
-	_, _ = fmt.Sscanf(msg.Fields[2], "%02d", &month)
-	_, _ = fmt.Sscanf(msg.Fields[3], "%04d", &year)
+	_, _ = fmt.Sscanf(sen.Fields[1], "%02d", &day)
+	_, _ = fmt.Sscanf(sen.Fields[2], "%02d", &month)
+	_, _ = fmt.Sscanf(sen.Fields[3], "%04d", &year)
 	// Need a limit on year to ensure ptime.Time isn't out of range
 	// Allow 1980 since first version of NMEA was issued was 1980.
 	if year < 1980 || year > 2099 {
-		return nil, fmt.Errorf("%s: %s: invalid year", k, msg.Fields[3])
+		return nil, fmt.Errorf("%s: %s: invalid year", k, sen.Fields[3])
 	}
 	utc := ptime.UTC(year, month, day, hour, min, sec, nanos)
 	return &utc, nil
@@ -217,12 +217,12 @@ func talkerIDToGNSS(t string) gpsprot.GNSS {
 	}
 }
 
-func Split(data string) *Message {
+func Split(data string) *Sentence {
 	before, after, _ := strings.Cut(data[1:], "*")
 	fields := strings.Split(before, ",")
-	msg := Message{
-		Fields:     fields[1:],
-		ChecksumField: hexToByte(after),
+	sen := Sentence{
+		Fields:           fields[1:],
+		ChecksumField:    hexToByte(after),
 		ComputedChecksum: Checksum(before),
 	}
 	addr := fields[0]
@@ -232,12 +232,12 @@ func Split(data string) *Message {
 		}
 	}
 	if len(addr) == 5 {
-		msg.TalkerID = addr[:2]
-		msg.SentenceFmt = addr[2:]
+		sen.TalkerID = addr[:2]
+		sen.Format = addr[2:]
 	} else {
-		msg.SentenceFmt = addr
+		sen.Format = addr
 	}
-	return &msg
+	return &sen
 }
 
 func Checksum(data string) byte {

@@ -367,7 +367,7 @@ func (mh *msgHandler) packet(f scan.Packet) {
 func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
 	mh.lg.Debug("received an unused message during configuration stage", "protocol", tag, "msgID", msgID, "msg", msg)
 	if tag == nmea.Tag {
-		nmeaLog(mh.lg, msg.(*nmea.Message))
+		nmeaLog(mh.lg, msg.(*nmea.Sentence))
 	}
 	return nil
 }
@@ -413,9 +413,9 @@ func (bc1 badCount) Sub(bc2 badCount) badCount {
 	}
 }
 
-func nmeaLog(lg *slog.Logger, msg *nmea.Message) {
-	if msg.SentenceFmt == "TXT" && len(msg.Fields) >= 4 {
+func nmeaLog(lg *slog.Logger, sen *nmea.Sentence) {
+	if sen.Format == "TXT" && len(sen.Fields) >= 4 {
 		// When we open an ACM device, the GPS receiver sends TXT messages with each line of the boot screen
-		lg.Debug("received NMEA TXT message", "s", msg.Fields[3])
+		lg.Debug("received NMEA TXT message", "s", sen.Fields[3])
 	}
 }
