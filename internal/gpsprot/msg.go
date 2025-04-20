@@ -203,7 +203,9 @@ func (s GNSSSet) String() string {
 // SVID is an identifier of a space vehicle (satellite).
 type SVID struct {
 	GNSS GNSS
-	PRN  uint8 // PRN code number used by the satellite, or orbital slot number for GLONASS FDMA
+	// PRN code number used by the satellite, or orbital slot number for GLONASS FDMA
+	// int16 because NMEA layer passes up non-standard three-digit SVIDs
+	PRN int16
 }
 
 func (sv SVID) String() string {

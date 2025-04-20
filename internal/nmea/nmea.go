@@ -2,6 +2,7 @@ package nmea
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -193,6 +194,94 @@ func scanTime(s string, hour, min, sec *uint8, nanos *int32) bool {
 	return true
 }
 
+// parseGSV parses the GSV sentence and returns a slice of SVInfo, a signal ID, a bool and an error.
+// The bool indicates whether the sentence is the last in the series (i.e. msgNum == numMsg)
+func parseGSV(sen *Sentence) ([]gpsprot.SVInfo, uint64, bool, error) {
+	gnss := talkerIDToGNSS(sen.TalkerID)
+	if gnss == 0 {
+		return nil, 0, false, fmt.Errorf("GSV: unknown talker ID %s", sen.TalkerID)
+	}
+	msgNum, err := parseUnsignedField(sen.Fields, 0, 1, 9, "GSV")
+	if err != nil {
+		return nil, 0, false, err
+	}
+	numMsg, err := parseUnsignedField(sen.Fields, 1, 1, 9, "GSV")
+	if err != nil {
+		return nil, 0, false, err
+	}
+	_, err = parseUnsignedField(sen.Fields, 2, 0, 99, "GSV")
+	if err != nil {
+		return nil, 0, false, err
+	}
+	complete := msgNum == numMsg
+	i := 3
+	var svs []gpsprot.SVInfo
+Loop:
+	for ; i+3 < len(sen.Fields); i += 4 {
+		for j := 0; j < 4; j++ {
+			if sen.Fields[i+j] == "" {
+				continue Loop
+			}
+		}
+		prn, err := parseUnsignedField(sen.Fields, i, 1, 999, "GSV")
+		if err != nil {
+			return nil, 0, false, err
+		}
+		elev, err := parseUnsignedField(sen.Fields, i+1, 0, 90, "GSV")
+		if err != nil {
+			return nil, 0, false, err
+		}
+		azim, err := parseUnsignedField(sen.Fields, i+2, 0, 359, "GSV")
+		if err != nil {
+			return nil, 0, false, err
+		}
+		cno, err := parseUnsignedField(sen.Fields, i+3, 0, 99, "GSV")
+		if err != nil {
+			return nil, 0, false, err
+		}
+		sv := gpsprot.SVInfo{
+			SVID:      makeSVID(gnss, int16(prn)),
+			Elevation: int8(elev),
+			Azimuth:   int16(azim),
+			CNO:       uint8(cno),
+		}
+		svs = append(svs, sv)
+	}
+	sigID := uint64(0)
+	if len(sen.Fields) > i+1 {
+		return nil, 0, false, fmt.Errorf("GSV: superfluous fields")
+	}
+	if len(sen.Fields) == i+1 {
+		sigID, err = parseUnsignedField(sen.Fields, i, 1, 255, "GSV")
+		if err != nil {
+			return nil, 0, false, err
+		}
+	}
+	return svs, sigID, complete, nil
+}
+
+func makeSVID(gnss gpsprot.GNSS, prn int16) gpsprot.SVID {
+	if gnss == gpsprot.GPS && prn >= 33 && prn <= 64 {
+		prn = 120 + (prn - 33)
+		gnss = gpsprot.SBAS
+	} else if gnss == gpsprot.GLO && prn >= 65 && prn <= 96 {
+		prn = 1 + (prn - 65)
+	}
+	// Other mappings are non-standard, so do not attempt to do them here.
+	return gpsprot.SVID{GNSS: gnss, PRN: prn}
+}
+
+func parseUnsignedField(fields []string, i int, min uint64, max uint64, format string) (uint64, error) {
+	n, err := strconv.ParseUint(fields[i], 10, 16)
+	if err == nil && (n < min || n > max) {
+		err = strconv.ErrRange
+	}
+	if err != nil {
+		return 0, fmt.Errorf("%s: invalid field %d: %s: %v", format, i, fields[i], err)
+	}
+	return n, nil
+}
+
 func isDigits(s string) bool {
 	for _, d := range s {
 		if d < '0' || d > '9' {
@@ -272,4 +361,15 @@ func hexWeight(b byte) byte {
 		return b - '0'
 	}
 	return (b - 'A') + 10
+}
+
+func Trim(data string) string {
+	trimmed := data
+	if len(data) > 0 && data[len(data)-1] == '\n' {
+		trimmed = data[0 : len(data)-1]
+	}
+	if len(trimmed) > 0 && trimmed[len(trimmed)-1] == '\r' {
+		trimmed = trimmed[0 : len(trimmed)-1]
+	}
+	return trimmed
 }

@@ -9,7 +9,7 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 	info := make([]gpsprot.SVInfo, u.NumSVs)
 	for i, usv := range u.SVs {
 		info[i] = gpsprot.SVInfo{
-			SVID: gpsprot.SVID{GNSS: idToGNSS(usv.GNSSID), PRN: usv.SVID},
+			SVID: gpsprot.SVID{GNSS: idToGNSS(usv.GNSSID), PRN: int16(usv.SVID)},
 			CNO:   usv.CNO,
 			Azimuth: usv.Azim,
 			Elevation: usv.Elev,
