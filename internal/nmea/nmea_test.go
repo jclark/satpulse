@@ -122,7 +122,15 @@ func TestGSV(t *testing.T) {
 				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 11}, Elevation: 27, Azimuth: 290, CNO: 40},
 			},
 		},
-		// "$GIGSV,2,1,06,904,67,205,47,907,45,158,45,903,34,227,44,909,20,257,40*63\r\n"
+		{
+			sen: "$GIGSV,2,1,06,904,67,205,47,907,45,158,45,903,34,227,44,909,20,257,40*63\r\n",
+			svs: []gpsprot.SVInfo{
+				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 904}, Elevation: 67, Azimuth: 205, CNO: 47},
+				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 907}, Elevation: 45, Azimuth: 158, CNO: 45},
+				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 903}, Elevation: 34, Azimuth: 227, CNO: 44},
+				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 909}, Elevation: 20, Azimuth: 257, CNO: 40},
+			},
+		},
 		{
 			sen: "$GPGSV,3,2,11,19,32,147,42,41,32,226,42,12,27,254,43,25,19,296,39,1*66",
 			svs: []gpsprot.SVInfo{
@@ -186,7 +194,16 @@ func TestGSV(t *testing.T) {
 			sigID: 2,
 			final: true,
 		},
-		// { sen: "$GIGSV,2,1,07,5,75,208,46,7,39,160,43,3,30,225,42,9,14,254,39,1*7D"},
+		{
+			sen: "$GIGSV,2,1,07,5,75,208,46,7,39,160,43,3,30,225,42,9,14,254,39,1*7D",
+			svs: []gpsprot.SVInfo{
+				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 5}, Elevation: 75, Azimuth: 208, CNO: 46},
+				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 7}, Elevation: 39, Azimuth: 160, CNO: 43},
+				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 3}, Elevation: 30, Azimuth: 225, CNO: 42},
+				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 9}, Elevation: 14, Azimuth: 254, CNO: 39},
+			},
+			sigID: 1,
+		},
 		// From Quectel docs
 		{
 			sen: "$GPGSV,2,1,05,10,77,300,36,12,40,082,31,23,58,153,35,25,46,137,33,1*67",
