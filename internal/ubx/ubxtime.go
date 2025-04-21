@@ -10,7 +10,7 @@ import (
 )
 
 func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsprot.TimeMsg {
-	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-TIMEGPS"}
+	t := gpsprot.TimeMsg{NativeMsgID: "UBX-NAV-TIMEGPS"}
 	if (m.Valid&bin.NavTimeGPSTOWValid) != 0 && (m.Valid&bin.NavTimeGPSWeekValid) != 0 {
 		// iTOW field is in milliseconds
 		t.TAITime = ptime.GPS(m.Week, msTOW(m.ITOW)+nsTOW(m.FTOW))
@@ -25,7 +25,7 @@ func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsprot.TimeMsg {
 }
 
 func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsprot.TimeMsg {
-	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-TIMEBDS"}
+	t := gpsprot.TimeMsg{NativeMsgID: "UBX-NAV-TIMEBDS"}
 	if (m.Valid&bin.NavTimeBDSSOWValid) != 0 && (m.Valid&bin.NavTimeBDSWeekValid) != 0 {
 		t.TAITime = ptime.BeiDou(m.Week, sTOW(m.SOW)+nsTOW(m.FSOW))
 	}
@@ -39,7 +39,7 @@ func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsprot.TimeMsg {
 }
 
 func timeNavTimeGal(m *bin.NavTimeGal) *gpsprot.TimeMsg {
-	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-TIMEGAL"}
+	t := gpsprot.TimeMsg{NativeMsgID: "UBX-NAV-TIMEGAL"}
 	if (m.Valid&bin.NavTimeGalTOWValid) != 0 && (m.Valid&bin.NavTimeGalWnoValid) != 0 {
 		// galTOW field is in seconds
 		t.TAITime = ptime.Galileo(m.GalWno, sTOW(m.GalTOW)+nsTOW(m.FGalTOW))
@@ -54,7 +54,7 @@ func timeNavTimeGal(m *bin.NavTimeGal) *gpsprot.TimeMsg {
 }
 
 func timeNavTimeGLO(m *bin.NavTimeGLO) *gpsprot.TimeMsg {
-	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-TIMEGLO"}
+	t := gpsprot.TimeMsg{NativeMsgID: "UBX-NAV-TIMEGLO"}
 	if (m.Valid&bin.NavTimeGLOTODValid) != 0 && (m.Valid&bin.NavTimeGLODateValid) != 0 {
 		u := ptime.GLONASS(m.N4, m.Nt, sTOW(m.TOD)+nsTOW(m.FTOD))
 		t.UTCTime = &u
@@ -69,7 +69,7 @@ func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsprot.TimeMsg {
 	if (m.Valid & bin.NavTimeUTCValidUTC) == 0 {
 		return nil
 	}
-	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-TIMEUTC"}
+	t := gpsprot.TimeMsg{NativeMsgID: "UBX-NAV-TIMEUTC"}
 	u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
 	t.UTCTime = &u
 	t.Accuracy = time.Duration(m.TAcc)
@@ -79,7 +79,7 @@ func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsprot.TimeMsg {
 }
 
 func timeNavPVT(m *bin.NavPVT) *gpsprot.TimeMsg {
-	t := gpsprot.TimeMsg{SrcType: "UBX-NAV-PVT"}
+	t := gpsprot.TimeMsg{NativeMsgID: "UBX-NAV-PVT"}
 	if (m.Valid & (bin.NavPVTValidTime | bin.NavPVTValidDate)) == (bin.NavPVTValidTime | bin.NavPVTValidDate) {
 		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
 		t.UTCTime = &u
@@ -116,7 +116,7 @@ func timeTimTP(m *bin.TimTP) *gpsprot.TimeMsg {
 		// Can we do better?
 		return nil
 	}
-	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, SrcType: "UBX-TIM-TP"}
+	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, NativeMsgID: "UBX-TIM-TP"}
 	if (m.Flags & bin.TimTPQErrInvalid) == 0 {
 		off := ptime.Picoseconds(m.QErr)
 		t.PulseOffset = &off
@@ -141,7 +141,7 @@ func timeTimTP(m *bin.TimTP) *gpsprot.TimeMsg {
 }
 
 func timeTimTos(m *bin.TimTos) *gpsprot.TimeMsg {
-	t := gpsprot.TimeMsg{Ref: gpsprot.PostPulse, SrcType: "UBX-TIM-TOS"}
+	t := gpsprot.TimeMsg{Ref: gpsprot.PostPulse, NativeMsgID: "UBX-TIM-TOS"}
 	if (m.Flags & bin.TimTosUTCTimeValid) != 0 {
 		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Minute, m.Second, 0)
 		t.UTCTime = &u

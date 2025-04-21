@@ -18,5 +18,7 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 	return &gpsprot.SatellitesMsg{
 		NavEpoch: iTOWEpoch(u.ITOW),
 		Info: info,
+		Tag: Tag,
+		NativeMsgID: "UBX-NAV-SAT",
 	}
 }

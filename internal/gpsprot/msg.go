@@ -225,8 +225,10 @@ type SVInfo struct {
 }
 
 type SatellitesMsg struct {
-	NavEpoch uint32   `json:"navEpoch,omitempty"`
-	Info     []SVInfo `json:"info"` // info about satellites being tracked or acquired
+	NavEpoch    uint32   `json:"navEpoch,omitempty"`
+	Tag         Tag      `json:"tag,omitempty"`
+	NativeMsgID string   `json:"nativeMsgID,omitempty"`
+	Info        []SVInfo `json:"info"` // info about satellites being tracked or acquired
 }
 
 //go:generate stringer -type=TimeRef
@@ -247,7 +249,8 @@ type TimeMsg struct {
 	GNSS        GNSS           `json:"gnss,omitempty"`
 	Ref         TimeRef        `json:"ref,omitempty"`
 	NavEpoch    uint32         `json:"navEpoch,omitempty"`
-	SrcType     string         `json:"srcType"`
+	Tag         Tag            `json:"tag,omitempty"`
+	NativeMsgID string         `json:"nativeMsgID,omitempty"`
 }
 
 type LeapSecondMsg struct {

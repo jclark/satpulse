@@ -106,6 +106,7 @@ func Dispatch(m bin.Msg, tRead time.Time, h gpsprot.MsgHandler) bool {
 		if sv != nil {
 			h.Survey(sv, tRead)
 		} else {
+			time.Tag = Tag
 			h.Time(time, tRead)
 		}
 	}

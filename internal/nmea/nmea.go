@@ -105,7 +105,7 @@ func dispatchTime(parser func(*Sentence) (*ptime.UTCTime, error), sen *Sentence,
 	if err != nil {
 		return err
 	}
-	mt := gpsprot.TimeMsg{SrcType: "NMEA-" + sen.Format, UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID)}
+	mt := gpsprot.TimeMsg{Tag: Tag, NativeMsgID: sen.msgID(), UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID)}
 	if h != nil {
 		h.Time(&mt, tRead)
 	}
@@ -231,11 +231,22 @@ func (g *gsvState) flush(h gpsprot.MsgHandler) {
 	if h != nil {
 		h.Satellites(&gpsprot.SatellitesMsg{
 			Info: g.svs,
+			Tag: Tag,
+			NativeMsgID: g.talkerID() + "GSV",
 		}, g.tRead)
 	}
 	g.svs = nil
 	g.tRead = time.Time{}
 	g.numTalkerIDs = 0
+}
+
+func (g *gsvState) talkerID() string {
+	if len(g.talkerIDExpected) == 1 {
+		for k := range g.talkerIDExpected {
+			return k
+		}
+	}
+	return "GN"
 }
 
 // process processes a GSV sentence and returns true if the sentence was a GSV sentence
