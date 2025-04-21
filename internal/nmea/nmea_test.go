@@ -1,6 +1,7 @@
 package nmea
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -43,7 +44,68 @@ func TestZDA(t *testing.T) {
 	testTime(t, "$GPZDA,234500,09,06,1995,-12,45*6C\r\n", ptime.UTC(1995, 6, 9, 23, 45, 0, 0))
 }
 
-func TestGSV(t *testing.T) {
+func testTime(t *testing.T, s string, expectUTC ptime.UTCTime) {
+	sen, e := Parse(s)
+	if e != nil {
+		t.Fatalf("nmea.Parse failed: %v: %s", e, s)
+	}
+	var h timeHandler
+	var zt time.Time
+	pp := NewPacketProcessor()
+	handled, e := pp.Dispatch(sen, zt, &h)
+	if e != nil || !handled {
+		t.Fatalf("nmea.Dispatch failed: %v: %s", e, s)
+	}
+	utc := h.utc
+	if utc == nil {
+		t.Fatalf("nmea.UTCTime failed: %s", s)
+	}
+	if *utc != expectUTC {
+		t.Fatalf("nmea.UTCTime wrong time: %s: got %v, want %v", s, utc, expectUTC)
+	}
+}
+
+type timeHandler struct {
+	gpsprot.DefaultHandler
+	utc *ptime.UTCTime
+}
+
+func (h *timeHandler) Time(msg *gpsprot.TimeMsg, _ time.Time) {
+	h.utc = msg.UTCTime
+}
+
+func TestScanTime(t *testing.T) {
+	var hour, min, sec uint8
+	var nanos int32
+	f := func(s string, n int32) {
+		if !scanTime("142451"+s, &hour, &min, &sec, &nanos) ||
+			hour != 14 || min != 24 || sec != 51 || nanos != n {
+			t.Fatalf("NMEAScanTime %s failed", s)
+		}
+	}
+	f("", 0)
+	f(".", 0)
+	f(".0", 0)
+	f(".00", 0)
+	f(".0000", 0)
+	f(".000000000", 0)
+	f(".000000001", 1)
+	f(".5", 5e8)
+
+	b := func(s string) {
+		if scanTime(s, &hour, &min, &sec, &nanos) {
+			t.Fatalf("NMEAScanTime %s succeeded", s)
+		}
+	}
+	b("14245")
+	b("14245 ")
+	b(" 142451")
+	b("142451. ")
+	b("14245X")
+	b("142451.0000000001")
+}
+
+func TestGSVParse(t *testing.T) {
 	tests := []struct {
 		sen   string
 		svs   []gpsprot.SVInfo
@@ -312,62 +374,63 @@ func TestGSV(t *testing.T) {
 	}
 }
 
-func testTime(t *testing.T, s string, expectUTC ptime.UTCTime) {
-	sen, e := Parse(s)
-	if e != nil {
-		t.Fatalf("nmea.Parse failed: %v: %s", e, s)
-	}
-	var h timeHandler
-	var zt time.Time
-	handled, e := Dispatch(sen, zt, &h)
-	if e != nil || !handled {
-		t.Fatalf("nmea.Dispatch failed: %v: %s", e, s)
-	}
-	utc := h.utc
-	if utc == nil {
-		t.Fatalf("nmea.UTCTime failed: %s", s)
-	}
-	if *utc != expectUTC {
-		t.Fatalf("nmea.UTCTime wrong time: %s: got %v, want %v", s, utc, expectUTC)
-	}
-}
-
-type timeHandler struct {
+type gsvTestMsgHandler struct {
 	gpsprot.DefaultHandler
-	utc *ptime.UTCTime
+	n int
 }
 
-func (h *timeHandler) Time(msg *gpsprot.TimeMsg, _ time.Time) {
-	h.utc = msg.UTCTime
+func (h *gsvTestMsgHandler) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
+	h.n = len(msg.Info)
 }
 
-func TestScanTime(t *testing.T) {
-	var hour, min, sec uint8
-	var nanos int32
-	f := func(s string, n int32) {
-		if !scanTime("142451"+s, &hour, &min, &sec, &nanos) ||
-			hour != 14 || min != 24 || sec != 51 || nanos != n {
-			t.Fatalf("NMEAScanTime %s failed", s)
-		}
+func TestGSVCombine(t *testing.T) {
+	sens := []string{
+		"$GPGSV,1,1,04,10,77,300,32,23,58,153,30,25,46,137,30,32,45,316,26,8*61", // 4
+		"$GLGSV,1,1,03,67,57,036,31,68,30,328,27,78,53,184,31,3*4A",              // 3
+		"$GAGSV,2,1,06,15,78,354,48,8,33,201,42,13,28,311,41,5,31,47,27,6*40",    // 4
+		"$GAGSV,2,2,06,15,78,354,46,13,28,311,41,2*75",                           // 2
+		"$GPRMC,210230,A,3855.4487,N,09446.0071,W,0.0,076.2,130495,003.8,E*69\r\n",
 	}
-	f("", 0)
-	f(".", 0)
-	f(".0", 0)
-	f(".00", 0)
-	f(".0000", 0)
-	f(".000000000", 0)
-	f(".000000001", 1)
-	f(".5", 5e8)
-
-	b := func(s string) {
-		if scanTime(s, &hour, &min, &sec, &nanos) {
-			t.Fatalf("NMEAScanTime %s succeeded", s)
-		}
+	tests := []struct {
+		order []int
+		expect []struct { i, count int }
+	}{
+		{
+			[]int{1, 2, 3, -1, 0, 1, 2, 3, 0, 1, 2, 3},
+			[]struct{ i, count int }{ {3, 9}, {7, 13}, {11, 13}, },
+		},
+		{
+			[]int{3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4},
+			[]struct{ i, count int }{ {1, 2},{5, 13}, {10, 13}, },
+		},
 	}
-	b("14245")
-	b("14245 ")
-	b(" 142451")
-	b("142451. ")
-	b("14245X")
-	b("142451.0000000001")
+	for ti, test := range tests {
+		test := test
+		t.Run(fmt.Sprintf("%d", ti), func(t *testing.T) {
+			order := test.order
+			expect := test.expect
+			gs := newGSVState()
+			k := 0
+			for i, j := range order {
+				h := gsvTestMsgHandler{n: -1}
+				if j >= 0 {
+					sen := Split(sens[j])
+					if !sen.ChecksumOK() {
+						t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
+					}
+					gs.process(sen, time.Time{}, &h)
+				} else {
+					gs.flush(&h)
+				}
+				if k < len(expect) && i == expect[k].i {
+					if h.n != expect[k].count {
+						t.Fatalf("GSV combine failed at %d: got %d, want %d", i, h.n, expect[k].count)
+					}
+					k++
+				} else if h.n != -1 {
+					t.Fatalf("GSV combine failed: got %d, want none", h.n)
+				}
+			}
+		})
+	}
 }
