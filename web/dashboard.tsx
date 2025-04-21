@@ -1,7 +1,7 @@
 import { createContext, FunctionComponent } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
 import { formatUTCLocal, formatNanoseconds, formatTAI, formatDateTime } from './timefmt';
-import { SkyView, SVInfo } from './skyview';
+import { SkyView, SVInfo, SignalGraph } from './svg';
 
 export const EventSourceContext = createContext<EventSource | null>(null);
 
@@ -43,6 +43,7 @@ export const Dashboard: FunctionComponent = () => {
     return (
         <CardsElement>
         {events.satellites && <SkyViewCard svs={events.satellites.svs} />}
+        {events.satellites && <SignalGraphCard svs={events.satellites.svs} />}
         {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
         {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}    
         {events.version && <PropertyCard title="GPS Receiver Version" data={events.version} format={versionFormat} />}
@@ -137,9 +138,9 @@ interface CardElementProps {
 
 const CardElement: FunctionComponent<CardElementProps> = ({ children, title }) => {
     return (
-        <div className="p-4 rounded-lg mb-4 shadow-md break-inside-avoid bg-white dark:bg-gray-800 border-l-4 border-orange-500">
+        <div className="p-4 rounded-lg mb-4 shadow-md break-inside-avoid bg-white dark:bg-gray-800 border-l-4 border-orange-500 h-full flex flex-col">
         {title && <h3 className="mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400">{title}</h3>}
-        <div className="transition-all duration-300 max-h-[1000px] overflow-hidden">
+        <div className="transition-all duration-300 overflow-hidden flex-grow">
         {children}
         </div>
         </div>
@@ -318,6 +319,20 @@ const SkyViewCard: FunctionComponent<SkyViewCardProps> = ({ svs }) => {
         <CardElement>
         {SkyView(svs)}
         </CardElement>
+        </div>
+    );
+};
+
+interface SignalGraphCardProps {
+    svs: SVInfo[];
+}
+
+const SignalGraphCard: FunctionComponent<SignalGraphCardProps> = ({ svs }) => {
+    return (
+        <div className="md:row-span-2 lg:row-span-2 h-full">
+            <CardElement>
+                {SignalGraph(svs)}
+            </CardElement>
         </div>
     );
 };

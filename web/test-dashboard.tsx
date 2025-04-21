@@ -1,6 +1,6 @@
 import { render } from 'preact';
 import { Dashboard, EventSourceContext } from './dashboard';
-import { SVInfo } from './skyview';
+import { SVInfo } from './svg';
 
 // Local minimal EventSource interface just for test
 interface MinimalEventSource {

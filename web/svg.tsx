@@ -108,3 +108,96 @@ export interface SVInfo {
 		return 'fill-gray-600 dark:fill-gray-400';
 	}
   }
+
+export function SignalGraph(satellites: SVInfo[]) {
+	const WIDTH = 300;
+	const HEIGHT = 480;
+	const MARGIN = { top: 20, right: 10, bottom: 10, left: 30 };
+	const CHART_WIDTH = WIDTH - MARGIN.left - MARGIN.right;
+	const CHART_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom;
+
+	// Filter and sort satellites
+	const trackedSatellites = satellites.filter(sv => sv.cno > 0);
+	const sortedSatellites = [...trackedSatellites].sort((a, b) => {
+		// First sort by constellation
+		if (a.svid[0] !== b.svid[0]) {
+		return a.svid[0].localeCompare(b.svid[0]);
+		}
+		// Then sort by the numeric part of the SVID
+		const aNum = parseInt(a.svid.substring(1));
+		const bNum = parseInt(b.svid.substring(1));
+		return aNum - bNum;
+	});
+
+	// Calculate bar height based on number of satellites
+	const barHeight = Math.min(20, CHART_HEIGHT / sortedSatellites.length);
+	const barSpacing = 4;
+	const totalBarHeight = barHeight + barSpacing;
+
+	return (
+		<svg
+		viewBox={`0 0 ${WIDTH} ${Math.max(HEIGHT, MARGIN.top + MARGIN.bottom + sortedSatellites.length * totalBarHeight)}`}
+		preserveAspectRatio="xMidYMid meet"
+		class="w-full h-full"
+		xmlns="http://www.w3.org/2000/svg"
+		>
+		{/* X-axis and grid lines */}
+		<g transform={`translate(${MARGIN.left}, ${MARGIN.top})`}>
+			{/* X-axis labels */}
+			{[0, 15, 30, 45, 60].map((value) => (
+			<text
+				key={`x-label-${value}`}
+				x={(value / 60) * CHART_WIDTH}
+				y={-5}
+				text-anchor="middle"
+				dominant-baseline="auto"
+				class="fill-gray-600 dark:fill-gray-100 text-xs"
+			>
+				{value}
+			</text>
+			))}
+			
+			{/* Vertical grid lines */}
+			{[0, 15, 30, 45, 60].map((value) => (
+			<line
+				key={`grid-${value}`}
+				x1={(value / 60) * CHART_WIDTH}
+				y1={0}
+				x2={(value / 60) * CHART_WIDTH}
+				y2={sortedSatellites.length * totalBarHeight}
+				class="stroke-gray-200 dark:stroke-gray-700 stroke-[0.5]"
+			/>
+			))}
+			
+			{/* Bars */}
+			{sortedSatellites.map((sv, i) => {
+			const barWidth = (sv.cno / 60) * CHART_WIDTH;
+			return (
+				<g key={sv.svid} transform={`translate(0, ${i * totalBarHeight})`}>
+				{/* SVID label */}
+				<text
+					x={-5}
+					y={barHeight / 2}
+					text-anchor="end"
+					dominant-baseline="central"
+					class="text-[10px] tabular-nums fill-gray-800 dark:fill-gray-200"
+				>
+					{sv.svid}
+				</text>
+				
+				{/* Bar */}
+				<rect
+					x={0}
+					y={0}
+					width={barWidth}
+					height={barHeight}
+					class={colorClassFor(sv.svid)}
+				/>
+				</g>
+			);
+			})}
+		</g>
+		</svg>
+	);
+}
+  

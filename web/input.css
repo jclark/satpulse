@@ -1,7 +1,7 @@
 @import "tailwindcss" source(none);
 @source "app.tsx";
 @source "dashboard.tsx";
-@source "skyview.tsx";
+@source "svg.tsx";
 @source "index.html";
 
 

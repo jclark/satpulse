@@ -28,10 +28,13 @@
     --color-gray-400: oklch(70.7% 0.022 261.325);
     --color-gray-500: oklch(55.1% 0.027 264.364);
     --color-gray-600: oklch(44.6% 0.03 256.802);
+    --color-gray-700: oklch(37.3% 0.034 259.733);
     --color-gray-800: oklch(27.8% 0.033 256.848);
     --color-gray-900: oklch(21% 0.034 264.665);
     --color-white: #fff;
     --spacing: 0.25rem;
+    --text-xs: 0.75rem;
+    --text-xs--line-height: calc(1 / 0.75);
     --text-base: 1rem;
     --text-base--line-height: calc(1.5 / 1);
     --text-xl: 1.25rem;
@@ -208,11 +211,17 @@
   .h-auto {
     height: auto;
   }
-  .max-h-\[1000px\] {
-    max-height: 1000px;
+  .h-full {
+    height: 100%;
   }
   .w-full {
     width: 100%;
+  }
+  .flex-grow {
+    flex-grow: 1;
+  }
+  .transform {
+    transform: var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y);
   }
   .cursor-pointer {
     cursor: pointer;
@@ -222,6 +231,9 @@
   }
   .grid-cols-1 {
     grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+  .flex-col {
+    flex-direction: column;
   }
   .justify-between {
     justify-content: space-between;
@@ -256,6 +268,9 @@
   }
   .fill-gray-600 {
     fill: var(--color-gray-600);
+  }
+  .fill-gray-800 {
+    fill: var(--color-gray-800);
   }
   .fill-green-600 {
     fill: var(--color-green-600);
@@ -298,11 +313,18 @@
     font-size: var(--text-xl);
     line-height: var(--tw-leading, var(--text-xl--line-height));
   }
+  .text-xs {
+    font-size: var(--text-xs);
+    line-height: var(--tw-leading, var(--text-xs--line-height));
+  }
   .text-\[3px\] {
     font-size: 3px;
   }
   .text-\[6px\] {
     font-size: 6px;
+  }
+  .text-\[10px\] {
+    font-size: 10px;
   }
   .font-bold {
     --tw-font-weight: var(--font-weight-bold);
@@ -410,6 +432,16 @@
       fill: var(--color-fuchsia-400);
     }
   }
+  .dark\:fill-gray-100 {
+    @media (prefers-color-scheme: dark) {
+      fill: var(--color-gray-100);
+    }
+  }
+  .dark\:fill-gray-200 {
+    @media (prefers-color-scheme: dark) {
+      fill: var(--color-gray-200);
+    }
+  }
   .dark\:fill-gray-400 {
     @media (prefers-color-scheme: dark) {
       fill: var(--color-gray-400);
@@ -433,6 +465,11 @@
   .dark\:fill-yellow-300 {
     @media (prefers-color-scheme: dark) {
       fill: var(--color-yellow-300);
+    }
+  }
+  .dark\:stroke-gray-700 {
+    @media (prefers-color-scheme: dark) {
+      stroke: var(--color-gray-700);
     }
   }
   .dark\:text-blue-200 {
@@ -464,6 +501,31 @@ body {
   @media (prefers-color-scheme: dark) {
     background-color: var(--color-gray-900);
   }
+}
+@property --tw-rotate-x {
+  syntax: "*";
+  inherits: false;
+  initial-value: rotateX(0);
+}
+@property --tw-rotate-y {
+  syntax: "*";
+  inherits: false;
+  initial-value: rotateY(0);
+}
+@property --tw-rotate-z {
+  syntax: "*";
+  inherits: false;
+  initial-value: rotateZ(0);
+}
+@property --tw-skew-x {
+  syntax: "*";
+  inherits: false;
+  initial-value: skewX(0);
+}
+@property --tw-skew-y {
+  syntax: "*";
+  inherits: false;
+  initial-value: skewY(0);
 }
 @property --tw-border-style {
   syntax: "*";
@@ -566,6 +628,11 @@ body {
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *, ::before, ::after, ::backdrop {
+      --tw-rotate-x: rotateX(0);
+      --tw-rotate-y: rotateY(0);
+      --tw-rotate-z: rotateZ(0);
+      --tw-skew-x: skewX(0);
+      --tw-skew-y: skewY(0);
       --tw-border-style: solid;
       --tw-font-weight: initial;
       --tw-ordinal: initial;
