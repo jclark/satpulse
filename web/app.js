@@ -487,69 +487,304 @@
     return l.vnode && l.vnode(l3), l3;
   }
 
-  // app.tsx
+  // svg.tsx
+  function SkyView(satellites) {
+    const SIZE = 200;
+    const RADIUS = SIZE / 2;
+    const STROKE_PAD = 1;
+    const toXY = (az, el) => {
+      const r3 = (90 - el) / 90 * RADIUS;
+      const rad = (az - 90) * (Math.PI / 180);
+      const x3 = RADIUS + r3 * Math.cos(rad);
+      const y3 = RADIUS + r3 * Math.sin(rad);
+      return [x3, y3];
+    };
+    const tracked = satellites.filter((sv) => sv.cno > 0);
+    return /* @__PURE__ */ u3(
+      "svg",
+      {
+        viewBox: `${-STROKE_PAD} ${-STROKE_PAD} ${SIZE + 2 * STROKE_PAD} ${SIZE + 2 * STROKE_PAD}`,
+        preserveAspectRatio: "xMidYMid meet",
+        class: "w-full h-auto",
+        xmlns: "http://www.w3.org/2000/svg",
+        children: [
+          /* @__PURE__ */ u3("circle", { cx: RADIUS, cy: RADIUS, r: RADIUS, class: "stroke-gray-400 fill-none stroke-[1]" }),
+          [15, 30, 45, 60].map((el) => /* @__PURE__ */ u3(
+            "circle",
+            {
+              cx: RADIUS,
+              cy: RADIUS,
+              r: (90 - el) / 90 * RADIUS,
+              class: "stroke-gray-200 fill-none stroke-[0.5]"
+            },
+            el
+          )),
+          (() => {
+            const outerR = RADIUS;
+            const innerR = (90 - 60) / 90 * RADIUS;
+            return Array.from({ length: 12 }, (_2, i4) => {
+              const angle = i4 * 30;
+              const rad = (angle - 90) * (Math.PI / 180);
+              const x1 = RADIUS + outerR * Math.cos(rad);
+              const y1 = RADIUS + outerR * Math.sin(rad);
+              const x22 = RADIUS + innerR * Math.cos(rad);
+              const y22 = RADIUS + innerR * Math.sin(rad);
+              return /* @__PURE__ */ u3(
+                "line",
+                {
+                  x1,
+                  y1,
+                  x2: x22,
+                  y2: y22,
+                  class: "stroke-gray-300 stroke-[0.5]"
+                },
+                `radial-${angle}`
+              );
+            });
+          })(),
+          /* @__PURE__ */ u3("text", { x: RADIUS, y: 10, "text-anchor": "middle", class: "fill-gray-500 text-[6px]", children: "N" }),
+          tracked.map((sv) => {
+            const [x3, y3] = toXY(sv.azimuth, sv.elevation);
+            return /* @__PURE__ */ u3(
+              "text",
+              {
+                x: x3,
+                y: y3,
+                "text-anchor": "middle",
+                "dominant-baseline": "middle",
+                class: `text-[3px] font-bold ${colorClassFor(sv.svid)} ${opacityClassFor(sv.cno)}`,
+                children: sv.svid
+              },
+              sv.svid
+            );
+          })
+        ]
+      }
+    );
+  }
+  function opacityClassFor(cno) {
+    if (cno < 25) return "opacity-20";
+    if (cno < 30) return "opacity-40";
+    if (cno < 35) return "opacity-60";
+    if (cno < 42) return "opacity-75";
+    if (cno < 50) return "opacity-90";
+    return "opacity-100";
+  }
+  function colorClassFor(svid) {
+    const prefix = svid[0];
+    switch (prefix) {
+      case "G":
+      // GPS
+      case "S":
+        return "fill-blue-600 dark:fill-blue-400";
+      case "E":
+        return "fill-green-600 dark:fill-green-400";
+      case "C":
+        return "fill-red-600 dark:fill-red-400";
+      case "R":
+        return "fill-fuchsia-600 dark:fill-fuchsia-400";
+      case "J":
+        return "fill-orange-600 dark:fill-orange-400";
+      case "I":
+        return "fill-yellow-600 dark:fill-yellow-300";
+      default:
+        return "fill-gray-600 dark:fill-gray-400";
+    }
+  }
+  function SignalGraph(satellites, maxSatelliteCount, isDoubleRow) {
+    const WIDTH = 300;
+    const MARGIN = { top: 20, right: 10, bottom: 10, left: 30 };
+    const VERTICAL_MARGINS = MARGIN.top + MARGIN.bottom;
+    const CHART_WIDTH = WIDTH - MARGIN.left - MARGIN.right;
+    const MIN_HEIGHT = 200;
+    const SINGLE_ROW_HEIGHT = 240;
+    const DOUBLE_ROW_HEIGHT = 480;
+    var height = isDoubleRow ? DOUBLE_ROW_HEIGHT : SINGLE_ROW_HEIGHT;
+    var chartHeight = height - VERTICAL_MARGINS;
+    const MIN_SATELLITES = 4;
+    const MAX_CNO = 55;
+    const MIN_BAR_HEIGHT = 14;
+    const MAX_BAR_HEIGHT = 24;
+    const BAR_SPACING = 4;
+    const trackedSatellites = satellites.filter((sv) => sv.cno > 0);
+    const sortedSatellites = [...trackedSatellites].sort((a3, b) => {
+      if (a3.svid[0] !== b.svid[0]) {
+        return a3.svid[0].localeCompare(b.svid[0]);
+      }
+      const aNum = parseInt(a3.svid.substring(1));
+      const bNum = parseInt(b.svid.substring(1));
+      return aNum - bNum;
+    });
+    const barHeight = Math.min(
+      MAX_BAR_HEIGHT,
+      Math.max(MIN_BAR_HEIGHT, chartHeight / Math.max(MIN_SATELLITES, maxSatelliteCount))
+    );
+    const spacedBarHeight = barHeight + BAR_SPACING;
+    const gridLineHeight = sortedSatellites.length * spacedBarHeight - BAR_SPACING;
+    chartHeight = maxSatelliteCount * spacedBarHeight;
+    height = Math.max(MIN_HEIGHT, chartHeight + VERTICAL_MARGINS);
+    return /* @__PURE__ */ u3(
+      "svg",
+      {
+        viewBox: `0 0 ${WIDTH} ${height}`,
+        preserveAspectRatio: "xMidYMid meet",
+        class: "w-full h-full",
+        xmlns: "http://www.w3.org/2000/svg",
+        children: /* @__PURE__ */ u3("g", { transform: `translate(${MARGIN.left}, ${MARGIN.top})`, children: [
+          [0, 10, 20, 30, 40, 50].map((value) => /* @__PURE__ */ u3(
+            "text",
+            {
+              x: value / MAX_CNO * CHART_WIDTH,
+              y: -5,
+              "text-anchor": "middle",
+              "dominant-baseline": "auto",
+              class: "fill-gray-600 dark:fill-gray-100 text-xs",
+              children: value
+            },
+            `x-label-${value}`
+          )),
+          [0, 10, 20, 30, 40, 50].map((value) => /* @__PURE__ */ u3(
+            "line",
+            {
+              x1: value / MAX_CNO * CHART_WIDTH,
+              y1: 0,
+              x2: value / MAX_CNO * CHART_WIDTH,
+              y2: gridLineHeight,
+              class: "stroke-gray-200 dark:stroke-gray-700 stroke-[0.5]"
+            },
+            `grid-${value}`
+          )),
+          sortedSatellites.map((sv, i4) => {
+            const cno = Math.min(sv.cno, MAX_CNO);
+            const barWidth = cno / MAX_CNO * CHART_WIDTH;
+            return /* @__PURE__ */ u3("g", { transform: `translate(0, ${i4 * spacedBarHeight})`, children: [
+              /* @__PURE__ */ u3(
+                "text",
+                {
+                  x: -5,
+                  y: barHeight / 2,
+                  "text-anchor": "end",
+                  "dominant-baseline": "central",
+                  class: "text-[10px] tabular-nums fill-gray-800 dark:fill-gray-200",
+                  children: sv.svid
+                }
+              ),
+              /* @__PURE__ */ u3(
+                "rect",
+                {
+                  x: 0,
+                  y: 0,
+                  width: barWidth,
+                  height: barHeight,
+                  class: colorClassFor(sv.svid)
+                }
+              )
+            ] }, sv.svid);
+          })
+        ] })
+      }
+    );
+  }
+
+  // dashboard.tsx
   var EventSourceContext = J(null);
+  var EVENT_TYPES = ["satellites", "time", "phc", "survey", "version", "init"];
+  var Dashboard = () => {
+    const context = x2(EventSourceContext);
+    const [events, setEvents] = d2({});
+    y2(() => {
+      const handler = (type) => (e3) => {
+        const parsedEvents = parseSSEMessage(type, e3.data);
+        for (const [eventType, eventData] of parsedEvents) {
+          const obj = validateEvent(eventType, eventData);
+          if (obj !== null) {
+            setEvents((prev) => ({ ...prev, [eventType]: obj }));
+          }
+        }
+      };
+      for (const type of EVENT_TYPES) {
+        context.addEventListener(type, handler(type));
+      }
+      return () => {
+        for (const type of EVENT_TYPES) {
+          context.removeEventListener(type, handler(type));
+        }
+      };
+    }, []);
+    return /* @__PURE__ */ u3(CardsElement, { children: [
+      events.satellites && /* @__PURE__ */ u3(SkyViewCard, { svs: events.satellites.svs }),
+      events.satellites && /* @__PURE__ */ u3(SignalGraphCard, { svs: events.satellites.svs }),
+      events.time && /* @__PURE__ */ u3(PropertyCard, { title: "Current GPS Time", data: events.time, format: timeFormat }),
+      events.phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: events.phc, format: phcFormat }),
+      events.version && /* @__PURE__ */ u3(PropertyCard, { title: "GPS Receiver Version", data: events.version, format: versionFormat }),
+      events.survey && /* @__PURE__ */ u3(PropertyCard, { title: "Survey-in Status", data: events.survey, format: surveyFormat })
+    ] });
+  };
+  function parseSSEMessage(type, data) {
+    try {
+      const parsed = JSON.parse(data);
+      if (type !== "init") {
+        return [[type, parsed]];
+      }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        console.warn(`Invalid init event data:`, parsed);
+        return [];
+      }
+      const results = [];
+      for (const key in parsed) {
+        if (key === "init") {
+          console.warn("init event cannot have an init key in its data");
+        } else {
+          results.push([key, parsed[key]]);
+        }
+      }
+      return results;
+    } catch (err) {
+      console.warn(`Error parsing ${type} event:`, err);
+      return [];
+    }
+  }
+  function validateEvent(type, data) {
+    if (type === "init" || !EVENT_TYPES.includes(type)) {
+      console.warn(`Invalid event type: ${type}`);
+      return null;
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      console.warn(`Invalid ${type} event data: not an object`, data);
+      return null;
+    }
+    switch (type) {
+      case "satellites":
+        const svs = data.svs;
+        if (!svs || !Array.isArray(svs)) {
+          console.warn("Invalid satellites event: missing svs array", data);
+          return null;
+        }
+        break;
+    }
+    return data;
+  }
   var CardsElement = ({ children }) => {
-    return /* @__PURE__ */ u3("div", { class: "cards", children });
+    return /* @__PURE__ */ u3("div", { className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4", children });
   };
   var CardElement = ({ children, title }) => {
-    return /* @__PURE__ */ u3("div", { class: "card", children: [
-      /* @__PURE__ */ u3("h3", { class: "card-title", children: title }),
-      /* @__PURE__ */ u3("div", { class: "fields", children })
+    return /* @__PURE__ */ u3("div", { className: "p-4 rounded-lg mb-4 shadow-md break-inside-avoid bg-white dark:bg-gray-800 border-l-4 border-orange-500 h-full flex flex-col", children: [
+      title && /* @__PURE__ */ u3("h3", { className: "mt-0 mb-4 text-xl cursor-pointer text-blue-600 dark:text-blue-400", children: title }),
+      /* @__PURE__ */ u3("div", { className: "transition-all duration-300 overflow-hidden flex-grow", children })
     ] });
   };
   var FieldElement = ({ children, desc }) => {
-    return /* @__PURE__ */ u3("div", { class: "field", children: [
-      /* @__PURE__ */ u3("span", { class: "field-name", children: [
+    return /* @__PURE__ */ u3("div", { className: "flex justify-between text-base mb-2 text-gray-600 dark:text-gray-300", children: [
+      /* @__PURE__ */ u3("span", { className: "font-bold text-gray-800 dark:text-blue-200", children: [
         desc,
         ":"
       ] }),
-      " ",
-      /* @__PURE__ */ u3("span", { class: "field-value", children })
+      /* @__PURE__ */ u3("span", { className: "tabular-nums text-gray-900 dark:text-gray-100", children })
     ] });
   };
-  function useEvent(name, key) {
-    const context = x2(EventSourceContext);
-    const [state, setState] = d2({});
-    const handleEvent = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data != null && typeof data === "object") {
-          if (key) {
-            const map = data;
-            if (key in map) {
-              const newState = map[key];
-              if (newState !== null && typeof newState === "object") {
-                setState(newState);
-              }
-            }
-          } else {
-            setState(data);
-          }
-        }
-      } catch (e3) {
-      }
-    };
-    y2(() => {
-      context.addEventListener(name, handleEvent);
-      return () => {
-        context.removeEventListener(name, handleEvent);
-      };
-    }, []);
-    return state;
-  }
-  var Card = ({ title, event, init }) => {
+  var PropertyCard = ({ title, data, format }) => {
     const fields = [];
-    if (init) {
-      const [key, format] = init;
-      const state = useEvent("init", key);
-      addFields(fields, state, format);
-    }
-    if (event) {
-      const [key, format] = event;
-      const state = useEvent(key);
-      addFields(fields, state, format);
-    }
+    addFields(fields, data, format);
     return /* @__PURE__ */ u3(CardElement, { title, children: fields.map(([desc, value]) => /* @__PURE__ */ u3(FieldElement, { desc, children: value })) });
   };
   function addFields(fields, state, format) {
@@ -606,7 +841,7 @@
       return [];
     }
     return [
-      ["Coordinates", /* @__PURE__ */ u3("a", { href: mapsURL(arg), target: "_blank", children: coordsToString(arg, 5) })]
+      ["Coordinates", /* @__PURE__ */ u3("a", { href: mapsURL(arg), target: "_blank", className: "underline hover:text-blue-500", children: coordsToString(arg, 5) })]
     ];
   }
   function mapsURL(arg) {
@@ -636,19 +871,31 @@
   function formatBoolean(arg) {
     return arg ? "Yes" : "No";
   }
+  var SkyViewCard = ({ svs }) => {
+    return /* @__PURE__ */ u3("div", { className: "md:col-span-2 lg:col-span-2 md:row-span-2 lg:row-span-2", children: /* @__PURE__ */ u3(CardElement, { children: SkyView(svs) }) });
+  };
+  var SignalGraphCard = ({ svs }) => {
+    const [maxSatelliteCount, setMaxSatelliteCount] = d2(0);
+    y2(() => {
+      const currentCount = svs.filter((sv) => sv.cno > 0).length;
+      if (currentCount > maxSatelliteCount) {
+        setMaxSatelliteCount(currentCount);
+      }
+    }, [svs, maxSatelliteCount]);
+    const isDoubleRow = maxSatelliteCount >= 15;
+    const rowSpanClass = isDoubleRow ? "md:row-span-2 lg:row-span-2" : "";
+    return /* @__PURE__ */ u3("div", { className: `${rowSpanClass} h-full`, children: /* @__PURE__ */ u3(CardElement, { title: "Signal Levels", children: SignalGraph(svs, maxSatelliteCount, isDoubleRow) }) });
+  };
+
+  // app.tsx
   function createEventSource() {
-    const docURL = new URL(window.location.href);
-    const sseURL = docURL.origin + docURL.pathname + "/sse";
+    const base = new URL(window.location.href);
+    const sseURL = base.origin + base.pathname + "/sse";
     return new EventSource(sseURL);
   }
-  var rootElement = document.getElementById("root");
+  var root = document.getElementById("root");
   D(
-    /* @__PURE__ */ u3(EventSourceContext.Provider, { value: createEventSource(), children: /* @__PURE__ */ u3(CardsElement, { children: [
-      /* @__PURE__ */ u3(Card, { title: "Current GPS Time", event: ["time", timeFormat] }),
-      /* @__PURE__ */ u3(Card, { title: "PTP Hardware Clock", event: ["phc", phcFormat] }),
-      /* @__PURE__ */ u3(Card, { title: "Survey-in Status", event: ["survey", surveyFormat] }),
-      /* @__PURE__ */ u3(Card, { title: "GPS Receiver Version", init: ["version", versionFormat] })
-    ] }) }),
-    rootElement
+    /* @__PURE__ */ u3(EventSourceContext.Provider, { value: createEventSource(), children: /* @__PURE__ */ u3(Dashboard, {}) }),
+    root
   );
 })();

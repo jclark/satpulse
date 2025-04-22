@@ -4,12 +4,18 @@
     "preact": "^10.13.2"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.1.3",
     "@types/jest": "^29.5.0",
+    "autoprefixer": "^10.4.21",
     "jest": "^29.5.0",
+    "tailwindcss": "^4.1.3",
     "ts-jest": "^29.1.0"
   },
   "scripts": {
-    "build": "./build.mjs",
+    "jsbuild": "./build.mjs",
+    "cssbuild": "npx @tailwindcss/cli -i input.css -o style.css",
+    "build": "npm run cssbuild && npm run jsbuild",
+    "dashtestbuild": "npm run cssbuild && node build-test-dashboard.mjs",
     "test": "jest",
     "typecheck": "tsc --noEmit"
   }
