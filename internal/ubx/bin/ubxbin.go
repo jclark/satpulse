@@ -721,6 +721,13 @@ const (
 	NavSatOrbitSourceOther3
 )
 
+// Masks to extract the quality, health, and orbit source values
+const (
+	NavSatQuality NavSatFlags = 0b111
+	NavSatHealth  NavSatFlags = 0b11 << 4
+	NavSatOrbit   NavSatFlags = 0b111 << 8
+)
+
 // Boolean flags
 const (
 	NavSatSVUsed   NavSatFlags = 1 << 3

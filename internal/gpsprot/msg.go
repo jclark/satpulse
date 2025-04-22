@@ -200,15 +200,21 @@ func (s GNSSSet) String() string {
 	return strings.Join(names, ",")
 }
 
+const GLOUnknown int16 = 0 // with GLONASS FDMA, it is possible to be tracking a satellite but not know its PRN
+
 // SVID is an identifier of a space vehicle (satellite).
 type SVID struct {
 	GNSS GNSS
 	// PRN code number used by the satellite, or orbital slot number for GLONASS FDMA
 	// int16 because NMEA layer passes up non-standard three-digit SVIDs
+	// This can be GLOUnknown, when the GNSS is GLONASS
 	PRN int16
 }
 
 func (sv SVID) String() string {
+	if sv.PRN == GLOUnknown {
+		return fmt.Sprintf("%s?", sv.GNSS.SVIDPrefix())
+	}
 	return fmt.Sprintf("%s%02d", sv.GNSS.SVIDPrefix(), sv.PRN)
 }
 
