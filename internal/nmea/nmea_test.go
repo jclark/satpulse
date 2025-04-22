@@ -2,6 +2,7 @@ package nmea
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -334,11 +335,18 @@ func TestGSVParse(t *testing.T) {
 			sigID: 3,
 			final: true,
 		},
+		{
+			sen: "$GLGSV,1,1,01,,65,190,31",
+			svs: []gpsprot.SVInfo{
+				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: gpsprot.GLOUnknown}, Elevation: 65, Azimuth: 190, CNO: 31},
+			},
+			final: true,
+		},
 	}
 	for _, test := range tests {
 		test := test
 		t.Run(Trim(test.sen), func(t *testing.T) {
-			sen := Split(test.sen)
+			sen := Split(addTrailer(test.sen))
 			if !sen.ChecksumOK() {
 				t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
 			}
@@ -372,6 +380,13 @@ func TestGSVParse(t *testing.T) {
 			}
 		})
 	}
+}
+
+func addTrailer(s string) string {
+	if !strings.Contains(s, "*") {
+		s += fmt.Sprintf("*%02X\r\n", Checksum(s[1:]))
+	}
+	return s
 }
 
 type gsvTestMsgHandler struct {

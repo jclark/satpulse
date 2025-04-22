@@ -306,15 +306,22 @@ func parseGSV(sen *Sentence) ([]gpsprot.SVInfo, uint64, bool, error) {
 	i := 3
 	var svs []gpsprot.SVInfo
 Loop:
-	for ; i+3 < len(sen.Fields); i += 4 {
-		for j := 0; j < 4; j++ {
+	for ; i+3 < len(sen.Fields); i += 4 {	
+		var svid gpsprot.SVID
+		prn, err := parseUnsignedField(sen.Fields, i, 1, 999, "GSV")
+		if err != nil {
+			if sen.Fields[i] == ""  && gnss == gpsprot.GLO {
+				svid = makeSVID(gnss, gpsprot.GLOUnknown)
+			} else {
+				return nil, 0, false, err
+			}
+		} else {
+			svid = makeSVID(gnss, int16(prn))
+		}
+		for j := 1; j < 4; j++ {
 			if sen.Fields[i+j] == "" {
 				continue Loop
 			}
-		}
-		prn, err := parseUnsignedField(sen.Fields, i, 1, 999, "GSV")
-		if err != nil {
-			return nil, 0, false, err
 		}
 		elev, err := parseUnsignedField(sen.Fields, i+1, 0, 90, "GSV")
 		if err != nil {
@@ -329,7 +336,7 @@ Loop:
 			return nil, 0, false, err
 		}
 		sv := gpsprot.SVInfo{
-			SVID:      makeSVID(gnss, int16(prn)),
+			SVID:      svid,
 			Elevation: int8(elev),
 			Azimuth:   int16(azim),
 			CNO:       uint8(cno),
