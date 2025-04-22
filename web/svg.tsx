@@ -115,6 +115,7 @@ export function SignalGraph(satellites: SVInfo[]) {
     const MARGIN = { top: 20, right: 10, bottom: 10, left: 30 };
     const CHART_WIDTH = WIDTH - MARGIN.left - MARGIN.right;
     const CHART_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom;
+    const MAX_CNO = 55;
 
     // Filter and sort satellites
     const trackedSatellites = satellites.filter(sv => sv.cno > 0);
@@ -144,10 +145,10 @@ export function SignalGraph(satellites: SVInfo[]) {
             {/* X-axis and grid lines */}
             <g transform={`translate(${MARGIN.left}, ${MARGIN.top})`}>
                 {/* X-axis labels */}
-                {[0, 15, 30, 45, 60].map((value) => (
+                {[0, 10, 20, 30, 40, 50].map((value) => (
                     <text
                         key={`x-label-${value}`}
-                        x={(value / 60) * CHART_WIDTH}
+                        x={(value / MAX_CNO) * CHART_WIDTH}
                         y={-5}
                         text-anchor="middle"
                         dominant-baseline="auto"
@@ -158,12 +159,12 @@ export function SignalGraph(satellites: SVInfo[]) {
                 ))}
 
                 {/* Vertical grid lines */}
-                {[0, 15, 30, 45, 60].map((value) => (
+                {[0, 10, 20, 30, 40, 50].map((value) => (
                     <line
                         key={`grid-${value}`}
-                        x1={(value / 60) * CHART_WIDTH}
+                        x1={(value / MAX_CNO) * CHART_WIDTH}
                         y1={0}
-                        x2={(value / 60) * CHART_WIDTH}
+                        x2={(value / MAX_CNO) * CHART_WIDTH}
                         y2={sortedSatellites.length * totalBarHeight}
                         class="stroke-gray-200 dark:stroke-gray-700 stroke-[0.5]"
                     />
@@ -171,7 +172,8 @@ export function SignalGraph(satellites: SVInfo[]) {
 
                 {/* Bars */}
                 {sortedSatellites.map((sv, i) => {
-                    const barWidth = (sv.cno / 60) * CHART_WIDTH;
+                    const cno = Math.min(sv.cno, MAX_CNO);
+                    const barWidth = (cno / MAX_CNO) * CHART_WIDTH;
                     return (
                         <g key={sv.svid} transform={`translate(0, ${i * totalBarHeight})`}>
                             {/* SVID label */}
