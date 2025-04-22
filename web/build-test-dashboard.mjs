@@ -26,7 +26,10 @@ const html = `<!DOCTYPE html>
 <body class="bg-gray-100 dark:bg-gray-900 font-sans m-0 p-0">
   <div id="root"></div>
   <script type="module">
-${jsCode}
+  // Include the bundled code
+  ${jsCode}
+  // Call renderDashboard with window.location.search
+  renderDashboard(window.location.search);
   </script>
 </body>
 </html>

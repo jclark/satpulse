@@ -126,6 +126,12 @@ const svs: SVInfo[] = [
 ];
 
 class MockEventSource implements MinimalEventSource {
+  private svidPrefixes: string;
+
+  constructor(svidPrefixes: string) {
+    this.svidPrefixes = svidPrefixes;
+  }
+
   addEventListener(type: string, listener: EventListener): void {
     if (type === 'survey') {
       setTimeout(() => {
@@ -145,7 +151,10 @@ class MockEventSource implements MinimalEventSource {
       }, 200);
     } else if (type === 'satellites') {
       setTimeout(() => {
-        listener(new MessageEvent('satellites', { data: JSON.stringify({ svs }) }));
+        const filteredSvs = this.svidPrefixes 
+          ? svs.filter(sv => this.svidPrefixes.includes(sv.svid[0]))
+          : svs;
+        listener(new MessageEvent('satellites', { data: JSON.stringify({ svs: filteredSvs }) }));
       }, 350);
     } else if (type === 'version') {
       setTimeout(() => {
@@ -158,10 +167,14 @@ class MockEventSource implements MinimalEventSource {
   close(): void {}
 }
 
-const root = document.getElementById('root')!;
-render(
-  <EventSourceContext.Provider value={new MockEventSource() as any}>
-    <Dashboard />
-  </EventSourceContext.Provider>,
-  root
-);
+// Export a rendering function that will be called by the HTML wrapper
+export function renderDashboard(searchString: string) {
+  const params = new URLSearchParams(searchString);
+  const root = document.getElementById('root')!;
+  render(
+    <EventSourceContext.Provider value={new MockEventSource(params.get('g') || '') as any}>
+      <Dashboard />
+    </EventSourceContext.Provider>,
+    root
+  );
+}
