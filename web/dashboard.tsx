@@ -328,10 +328,25 @@ interface SignalGraphCardProps {
 }
 
 const SignalGraphCard: FunctionComponent<SignalGraphCardProps> = ({ svs }) => {
+    const [maxSatelliteCount, setMaxSatelliteCount] = useState(0);
+    
+    // Only ever increase the max count (high water mark approach)
+    useEffect(() => {
+        const currentCount = svs.filter(sv => sv.cno > 0).length;
+        if (currentCount > maxSatelliteCount) {
+            setMaxSatelliteCount(currentCount);
+        }
+    }, [svs, maxSatelliteCount]);
+    
+    // Apply row-span-2 when max satellite count exceeds threshold
+    // Increased threshold to avoid unnecessary two-row layout with 10-11 satellites
+    const isDoubleRow = maxSatelliteCount >= 15;
+    const rowSpanClass = isDoubleRow ? "md:row-span-2 lg:row-span-2" : "";
+    
     return (
-        <div className="md:row-span-2 lg:row-span-2 h-full">
-            <CardElement>
-                {SignalGraph(svs)}
+        <div className={`${rowSpanClass} h-full`}>
+            <CardElement title="Signal Levels">
+                {SignalGraph(svs, maxSatelliteCount, isDoubleRow)}
             </CardElement>
         </div>
     );

@@ -109,14 +109,27 @@ function colorClassFor(svid: string): string {
     }
 }
 
-export function SignalGraph(satellites: SVInfo[]) {
+export function SignalGraph(satellites: SVInfo[], maxSatelliteCount: number, isDoubleRow: boolean) {
     const WIDTH = 300;
-    const HEIGHT = 480;
     const MARGIN = { top: 20, right: 10, bottom: 10, left: 30 };
+    const VERTICAL_MARGINS = MARGIN.top + MARGIN.bottom;
     const CHART_WIDTH = WIDTH - MARGIN.left - MARGIN.right;
-    const CHART_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom;
-    const MAX_CNO = 55;
+    
+    // Height constants (including margins)
+    const MIN_HEIGHT = 200;
+    const SINGLE_ROW_HEIGHT = 240;
+    const DOUBLE_ROW_HEIGHT = 480;
+    var height = isDoubleRow ? DOUBLE_ROW_HEIGHT : SINGLE_ROW_HEIGHT;
+    var chartHeight = height - VERTICAL_MARGINS;
 
+    const MIN_SATELLITES = 4
+    const MAX_CNO = 55; // accomodate CNO up to this
+    
+    // Bar styling
+    const MIN_BAR_HEIGHT = 14;
+    const MAX_BAR_HEIGHT = 24;
+    const BAR_SPACING = 4;
+    
     // Filter and sort satellites
     const trackedSatellites = satellites.filter(sv => sv.cno > 0);
     const sortedSatellites = [...trackedSatellites].sort((a, b) => {
@@ -129,15 +142,25 @@ export function SignalGraph(satellites: SVInfo[]) {
         const bNum = parseInt(b.svid.substring(1));
         return aNum - bNum;
     });
+        
+    // Calculate bar height based on satellite count
+    const barHeight = Math.min(
+        MAX_BAR_HEIGHT, 
+        Math.max(MIN_BAR_HEIGHT, chartHeight / Math.max(MIN_SATELLITES, maxSatelliteCount))
+    );
+    const spacedBarHeight = barHeight + BAR_SPACING;
 
-    // Calculate bar height based on number of satellites
-    const barHeight = Math.min(20, CHART_HEIGHT / sortedSatellites.length);
-    const barSpacing = 4;
-    const totalBarHeight = barHeight + barSpacing;
-
+    const gridLineHeight = (sortedSatellites.length * spacedBarHeight) - BAR_SPACING;
+    
+    // Recompute chart height using maxSatelliteCount not current number of satellites
+    chartHeight = maxSatelliteCount * spacedBarHeight
+    
+    // Recompute height
+    height = Math.max(MIN_HEIGHT, chartHeight + VERTICAL_MARGINS);
+    
     return (
         <svg
-            viewBox={`0 0 ${WIDTH} ${Math.max(HEIGHT, MARGIN.top + MARGIN.bottom + sortedSatellites.length * totalBarHeight)}`}
+            viewBox={`0 0 ${WIDTH} ${height}`}
             preserveAspectRatio="xMidYMid meet"
             class="w-full h-full"
             xmlns="http://www.w3.org/2000/svg"
@@ -165,7 +188,7 @@ export function SignalGraph(satellites: SVInfo[]) {
                         x1={(value / MAX_CNO) * CHART_WIDTH}
                         y1={0}
                         x2={(value / MAX_CNO) * CHART_WIDTH}
-                        y2={sortedSatellites.length * totalBarHeight}
+                        y2={gridLineHeight}
                         class="stroke-gray-200 dark:stroke-gray-700 stroke-[0.5]"
                     />
                 ))}
@@ -175,7 +198,7 @@ export function SignalGraph(satellites: SVInfo[]) {
                     const cno = Math.min(sv.cno, MAX_CNO);
                     const barWidth = (cno / MAX_CNO) * CHART_WIDTH;
                     return (
-                        <g key={sv.svid} transform={`translate(0, ${i * totalBarHeight})`}>
+                        <g key={sv.svid} transform={`translate(0, ${i * spacedBarHeight})`}>
                             {/* SVID label */}
                             <text
                                 x={-5}

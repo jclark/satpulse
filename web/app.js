@@ -591,12 +591,21 @@
         return "fill-gray-600 dark:fill-gray-400";
     }
   }
-  function SignalGraph(satellites) {
+  function SignalGraph(satellites, maxSatelliteCount, isDoubleRow) {
     const WIDTH = 300;
-    const HEIGHT = 480;
     const MARGIN = { top: 20, right: 10, bottom: 10, left: 30 };
+    const VERTICAL_MARGINS = MARGIN.top + MARGIN.bottom;
     const CHART_WIDTH = WIDTH - MARGIN.left - MARGIN.right;
-    const CHART_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom;
+    const MIN_HEIGHT = 200;
+    const SINGLE_ROW_HEIGHT = 240;
+    const DOUBLE_ROW_HEIGHT = 480;
+    var height = isDoubleRow ? DOUBLE_ROW_HEIGHT : SINGLE_ROW_HEIGHT;
+    var chartHeight = height - VERTICAL_MARGINS;
+    const MIN_SATELLITES = 4;
+    const MAX_CNO = 55;
+    const MIN_BAR_HEIGHT = 14;
+    const MAX_BAR_HEIGHT = 24;
+    const BAR_SPACING = 4;
     const trackedSatellites = satellites.filter((sv) => sv.cno > 0);
     const sortedSatellites = [...trackedSatellites].sort((a3, b) => {
       if (a3.svid[0] !== b.svid[0]) {
@@ -606,21 +615,26 @@
       const bNum = parseInt(b.svid.substring(1));
       return aNum - bNum;
     });
-    const barHeight = Math.min(20, CHART_HEIGHT / sortedSatellites.length);
-    const barSpacing = 4;
-    const totalBarHeight = barHeight + barSpacing;
+    const barHeight = Math.min(
+      MAX_BAR_HEIGHT,
+      Math.max(MIN_BAR_HEIGHT, chartHeight / Math.max(MIN_SATELLITES, maxSatelliteCount))
+    );
+    const spacedBarHeight = barHeight + BAR_SPACING;
+    const gridLineHeight = sortedSatellites.length * spacedBarHeight - BAR_SPACING;
+    chartHeight = maxSatelliteCount * spacedBarHeight;
+    height = Math.max(MIN_HEIGHT, chartHeight + VERTICAL_MARGINS);
     return /* @__PURE__ */ u3(
       "svg",
       {
-        viewBox: `0 0 ${WIDTH} ${Math.max(HEIGHT, MARGIN.top + MARGIN.bottom + sortedSatellites.length * totalBarHeight)}`,
+        viewBox: `0 0 ${WIDTH} ${height}`,
         preserveAspectRatio: "xMidYMid meet",
         class: "w-full h-full",
         xmlns: "http://www.w3.org/2000/svg",
         children: /* @__PURE__ */ u3("g", { transform: `translate(${MARGIN.left}, ${MARGIN.top})`, children: [
-          [0, 15, 30, 45, 60].map((value) => /* @__PURE__ */ u3(
+          [0, 10, 20, 30, 40, 50].map((value) => /* @__PURE__ */ u3(
             "text",
             {
-              x: value / 60 * CHART_WIDTH,
+              x: value / MAX_CNO * CHART_WIDTH,
               y: -5,
               "text-anchor": "middle",
               "dominant-baseline": "auto",
@@ -629,20 +643,21 @@
             },
             `x-label-${value}`
           )),
-          [0, 15, 30, 45, 60].map((value) => /* @__PURE__ */ u3(
+          [0, 10, 20, 30, 40, 50].map((value) => /* @__PURE__ */ u3(
             "line",
             {
-              x1: value / 60 * CHART_WIDTH,
+              x1: value / MAX_CNO * CHART_WIDTH,
               y1: 0,
-              x2: value / 60 * CHART_WIDTH,
-              y2: sortedSatellites.length * totalBarHeight,
+              x2: value / MAX_CNO * CHART_WIDTH,
+              y2: gridLineHeight,
               class: "stroke-gray-200 dark:stroke-gray-700 stroke-[0.5]"
             },
             `grid-${value}`
           )),
           sortedSatellites.map((sv, i4) => {
-            const barWidth = sv.cno / 60 * CHART_WIDTH;
-            return /* @__PURE__ */ u3("g", { transform: `translate(0, ${i4 * totalBarHeight})`, children: [
+            const cno = Math.min(sv.cno, MAX_CNO);
+            const barWidth = cno / MAX_CNO * CHART_WIDTH;
+            return /* @__PURE__ */ u3("g", { transform: `translate(0, ${i4 * spacedBarHeight})`, children: [
               /* @__PURE__ */ u3(
                 "text",
                 {
@@ -860,7 +875,16 @@
     return /* @__PURE__ */ u3("div", { className: "md:col-span-2 lg:col-span-2 md:row-span-2 lg:row-span-2", children: /* @__PURE__ */ u3(CardElement, { children: SkyView(svs) }) });
   };
   var SignalGraphCard = ({ svs }) => {
-    return /* @__PURE__ */ u3("div", { className: "md:row-span-2 lg:row-span-2 h-full", children: /* @__PURE__ */ u3(CardElement, { children: SignalGraph(svs) }) });
+    const [maxSatelliteCount, setMaxSatelliteCount] = d2(0);
+    y2(() => {
+      const currentCount = svs.filter((sv) => sv.cno > 0).length;
+      if (currentCount > maxSatelliteCount) {
+        setMaxSatelliteCount(currentCount);
+      }
+    }, [svs, maxSatelliteCount]);
+    const isDoubleRow = maxSatelliteCount >= 15;
+    const rowSpanClass = isDoubleRow ? "md:row-span-2 lg:row-span-2" : "";
+    return /* @__PURE__ */ u3("div", { className: `${rowSpanClass} h-full`, children: /* @__PURE__ */ u3(CardElement, { title: "Signal Levels", children: SignalGraph(svs, maxSatelliteCount, isDoubleRow) }) });
   };
 
   // app.tsx
