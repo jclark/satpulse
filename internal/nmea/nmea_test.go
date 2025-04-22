@@ -336,6 +336,11 @@ func TestGSVParse(t *testing.T) {
 			final: true,
 		},
 		{
+			sen: "$GPGSV,3,3,08,,,,,,,,,,,,,,,,*71",
+			svs: []gpsprot.SVInfo{},
+			final:true,
+		},
+		{
 			sen: "$GLGSV,1,1,01,,65,190,31",
 			svs: []gpsprot.SVInfo{
 				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: gpsprot.GLOUnknown}, Elevation: 65, Azimuth: 190, CNO: 31},

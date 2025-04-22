@@ -230,8 +230,8 @@ func (g *gsvState) flush(h gpsprot.MsgHandler) {
 	}
 	if h != nil {
 		h.Satellites(&gpsprot.SatellitesMsg{
-			Info: g.svs,
-			Tag: Tag,
+			Info:        g.svs,
+			Tag:         Tag,
 			NativeMsgID: g.talkerID() + "GSV",
 		}, g.tRead)
 	}
@@ -306,11 +306,14 @@ func parseGSV(sen *Sentence) ([]gpsprot.SVInfo, uint64, bool, error) {
 	i := 3
 	var svs []gpsprot.SVInfo
 Loop:
-	for ; i+3 < len(sen.Fields); i += 4 {	
+	for ; i+3 < len(sen.Fields); i += 4 {
 		var svid gpsprot.SVID
 		prn, err := parseUnsignedField(sen.Fields, i, 1, 999, "GSV")
 		if err != nil {
-			if sen.Fields[i] == ""  && gnss == gpsprot.GLO {
+			if sen.Fields[i] == "" {
+				if gnss != gpsprot.GLO {
+					continue Loop
+				}
 				svid = makeSVID(gnss, gpsprot.GLOUnknown)
 			} else {
 				return nil, 0, false, err
