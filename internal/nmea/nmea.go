@@ -225,7 +225,8 @@ func newGSVState() *gsvState {
 }
 
 func (g *gsvState) flush(h gpsprot.MsgHandler) {
-	if len(g.svs) == 0 {
+	// We want to produce an empty SatellitesMsg if we got a proper GSV message saying no satellites.
+	if g.numTalkerIDs == 0 {
 		return
 	}
 	if h != nil {
