@@ -225,9 +225,10 @@ func (sv SVID) MarshalJSON() ([]byte, error) {
 // SVInfo contains information about a space vehicle (satellite).
 type SVInfo struct {
 	SVID      SVID  `json:"svid"`
-	Azimuth   int16 `json:"azimuth"`   // in degrees, 0 to 360
-	Elevation int8  `json:"elevation"` // in degrees, -90 to +90
-	CNO       uint8 `json:"cno"`       // C/NO signal to noise ratio
+	Azimuth   int16 `json:"azimuth"`          // in degrees, 0 to 360
+	Elevation int8  `json:"elevation"`        // in degrees, -90 to +90
+	CNO       uint8 `json:"cno"`              // C/NO signal to noise ratio
+	Unused    bool  `json:"unused,omitempty"` // true if the satellite is known to be unused in the navigation solution
 }
 
 type SatellitesMsg struct {

@@ -24,6 +24,7 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 			CNO:       usv.CNO,
 			Azimuth:   usv.Azim,
 			Elevation: usv.Elev,
+			Unused:    usv.Flags&bin.NavSatSVUsed == 0,
 		})
 	}
 	return &gpsprot.SatellitesMsg{

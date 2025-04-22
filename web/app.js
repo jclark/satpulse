@@ -556,7 +556,11 @@
                 "text-anchor": "middle",
                 "dominant-baseline": "middle",
                 class: `text-[3px] font-bold ${colorClassFor(sv.svid)} ${opacityClassFor(sv.cno)}`,
-                children: sv.svid
+                children: [
+                  sv.unused ? /* @__PURE__ */ u3("tspan", { class: "opacity-0", children: "-" }) : "",
+                  sv.svid,
+                  sv.unused ? "-" : ""
+                ]
               },
               sv.svid
             );
