@@ -100,8 +100,8 @@ function colorClassFor(svid: string): string {
             return 'fill-red-600 dark:fill-red-400';
         case 'R': // GLONASS
             return 'fill-fuchsia-600 dark:fill-fuchsia-400';
-        case 'J': // QZSS
-            return 'fill-orange-600 dark:fill-orange-400';
+        case 'J': // QZSS - Japan
+            return 'fill-amber-600 dark:fill-amber-400';
         case 'I': // NavIC
             return 'fill-yellow-600 dark:fill-yellow-300';
         default:
