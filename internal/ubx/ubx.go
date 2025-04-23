@@ -57,16 +57,8 @@ func (p *PacketProcessor) CreatePacketExchanger() gpsprot.PacketExchanger {
 func Dispatch(m bin.Msg, tRead time.Time, h gpsprot.MsgHandler) bool {
 	var time *gpsprot.TimeMsg
 	var sv *gpsprot.SurveyMsg
+	var sats *gpsprot.SatellitesMsg
 	switch mt := m.(type) {
-	case *bin.NavSat:
-		sats := satellitesNavSat(mt)
-		if sats == nil {
-			return false
-		}
-		if h != nil {
-			h.Satellites(sats, tRead)
-		}
-		return true
 	case *bin.NavTimeLS:
 		ls := leapSecond(mt)
 		if ls == nil {
@@ -76,6 +68,10 @@ func Dispatch(m bin.Msg, tRead time.Time, h gpsprot.MsgHandler) bool {
 			h.LeapSecond(ls, tRead)
 		}
 		return true
+	case *bin.NavSat:
+		sats = satellitesNavSat(mt)
+	case *bin.NavSVInfo:
+		sats = satellitesNavSVInfo(mt)
 	case *bin.NavTimeGPS:
 		time = timeNavTimeGPS(mt)
 	case *bin.NavTimeBDS:
@@ -99,11 +95,13 @@ func Dispatch(m bin.Msg, tRead time.Time, h gpsprot.MsgHandler) bool {
 	default:
 		return false
 	}
-	if time == nil && sv == nil {
+	if time == nil && sv == nil && sats == nil {
 		return false
 	}
 	if h != nil {
-		if sv != nil {
+		if sats != nil {
+			h.Satellites(sats, tRead)
+		} else if sv != nil {
 			h.Survey(sv, tRead)
 		} else {
 			time.Tag = Tag

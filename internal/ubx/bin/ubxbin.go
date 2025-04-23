@@ -127,6 +127,7 @@ const (
 	NavSolID     MsgID = clsNav | (0x06 << 8)
 	NavPVTID     MsgID = clsNav | (0x07 << 8)
 	NavSatID     MsgID = clsNav | (0x35 << 8)
+	NavSVInfoID  MsgID = clsNav | (0x30 << 8)
 	NavTimeGPSID MsgID = clsNav | (0x20 << 8)
 	NavTimeUTCID MsgID = clsNav | (0x21 << 8)
 	NavTimeBDSID MsgID = clsNav | (0x24 << 8)
@@ -168,6 +169,7 @@ func init() {
 	regMsg[NavPosECEF]("POSECEF")
 	regMsg[NavPVT]("PVT")
 	regMsg[NavSat]("SAT")
+	regMsg[NavSVInfo]("SVINFO")
 	regMsg[NavSol]("SOL")
 	regMsg[NavSvin]("SVIN")
 	regMsg[NavTimeGPS]("TIMEGPS")
@@ -746,6 +748,81 @@ const (
 	NavSatCrCorrUsed
 	NavSatDoCorrUsed
 	NavSatClasCorrUsed
+)
+
+type NavSVInfo struct {
+	NavSVInfoFixed
+	SVs []NavSVInfoSV
+}
+
+type NavSVInfoFixed struct {
+	ITOW        uint32
+	NumCh       byte
+	GlobalFlags NavSVInfoGlobalFlags
+	_           [2]byte
+}
+
+type NavSVInfoSV struct {
+	ChN     byte
+	SVID    byte
+	Flags   NavSVInfoFlags
+	Quality NavSVInfoQuality
+	CNO     byte
+	Elev    int8
+	Azim    int16
+	PRRes   int32
+}
+
+func (m *NavSVInfo) ID() MsgID { return NavSVInfoID }
+
+func (m *NavSVInfo) InitForLen(payloadLen int) (err error) {
+	len, err := sliceLen(m, payloadLen, 8, 12)
+	if err == nil {
+		m.SVs = make([]NavSVInfoSV, len)
+	}
+	return
+}
+
+func (m *NavSVInfo) Parts() (fixed any, slice any) {
+	fixed = &m.NavSVInfoFixed
+	slice = &m.SVs
+	return
+}
+
+type NavSVInfoGlobalFlags byte
+
+const (
+	NavSVInfoAntaris NavSVInfoGlobalFlags = iota
+	NavSVInfoUblox5
+	NavSVInfoUblox6
+	NavSVInfoChipGen = 0b111
+)
+
+type NavSVInfoFlags byte
+
+const (
+	NavSVInfoSVUsed NavSVInfoFlags = 1 << iota
+	NavSVInfoDiffCorr
+	NavSVInfoOrbitAvail
+	NavSVInfoOrbitEph
+	NavSVInfoUnhealthy
+	NavSVInfoOrbitAlm
+	NavSVInfoOrbotAop
+	NavSVInfoSmoothed
+)
+
+type NavSVInfoQuality byte
+
+const (
+	NavSVInfoQualityIdle NavSVInfoQuality = iota
+	NavSVInfoQualitySearching
+	NavSVInfoQualitySignalAcquired
+	NavSVInfoQualitySignalDetectedUnusable
+	NavSVInfoQualityCodeLockOnSignal
+	NavSVInfoCodeAndCarrierLocked1
+	NavSVInfoCodeAndCarrierLocked2
+	NavSVInfoCodeAndCarrierLocked3
+	NavSVInfoQualityInd = 0b1111
 )
 
 type NavSol struct {
