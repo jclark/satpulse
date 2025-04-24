@@ -24,7 +24,7 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 			CNO:       usv.CNO,
 			Azimuth:   usv.Azim,
 			Elevation: usv.Elev,
-			Unused:    usv.Flags&bin.NavSatSVUsed == 0,
+			Used:      usv.Flags&bin.NavSatSVUsed != 0,
 		})
 	}
 	return &gpsprot.SatellitesMsg{
@@ -32,6 +32,7 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 		Info:        info,
 		Tag:         Tag,
 		NativeMsgID: "UBX-NAV-SAT",
+		UsedValid:   true,
 	}
 }
 
@@ -47,7 +48,7 @@ func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
 			CNO:       usv.CNO,
 			Azimuth:   usv.Azim,
 			Elevation: usv.Elev,
-			Unused:    usv.Flags&bin.NavSVInfoSVUsed == 0,
+			Used:      usv.Flags&bin.NavSVInfoSVUsed != 0,
 		})
 	}
 	return &gpsprot.SatellitesMsg{
@@ -55,6 +56,7 @@ func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
 		Info:        info,
 		Tag:         Tag,
 		NativeMsgID: "UBX-NAV-SVINFO",
+		UsedValid:   true,
 	}
 }
 
@@ -73,5 +75,5 @@ func svInfoSVID(uSVID byte) gpsprot.SVID {
 		g = gpsprot.GLO
 		prn = gpsprot.GLOUnknown
 	}
-	return gpsprot.SVID{ GNSS: g, PRN: prn }
+	return gpsprot.SVID{GNSS: g, PRN: prn}
 }

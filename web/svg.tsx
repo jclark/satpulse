@@ -3,7 +3,7 @@ export interface SVInfo {
     elevation: number;   // 0–90 degrees
     svid: string;        // e.g., "G01"
     cno: number;         // 0 = not tracked
-    unused?: boolean;      // true if known to be unused in navigation solution
+    used?: boolean;      // true if known to be used in navigation solution
 }
 
 export function SkyView(satellites: SVInfo[]) {
@@ -64,8 +64,11 @@ export function SkyView(satellites: SVInfo[]) {
             
             {tracked.map((sv) => {
                 const [x, y] = toXY(sv.azimuth, sv.elevation);
+                // A satellite is known to be unused if some satellite is marked as used and sv.used is not true.
                 // Mark unused satellites with "-" if known to be unused.
                 // Balance the trailing "-" with an invisible leading "-", so that the svid is centered.
+                const usedValid = tracked.some(s => s.used === true);
+                const unused = usedValid && !sv.used; // known unused               
                 return (
                     <text
                         key={sv.svid}
@@ -75,9 +78,9 @@ export function SkyView(satellites: SVInfo[]) {
                         dominant-baseline="middle"
                         class={`text-[3px] font-bold ${colorClassFor(sv.svid)} ${opacityClassFor(sv.cno)}`}
                     >
-                        {sv.unused ? <tspan class="opacity-0">-</tspan> : ''}
+                        {unused ? <tspan class="opacity-0">-</tspan> : ''}
                         {sv.svid}
-                        {sv.unused ? '-' : ''}
+                        {unused ? '-' : ''}
                     </text>
                 );
             })}

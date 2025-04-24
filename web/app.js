@@ -548,6 +548,8 @@
           /* @__PURE__ */ u3("text", { x: RADIUS, y: 10, "text-anchor": "middle", class: "fill-gray-500 text-[6px]", children: "N" }),
           tracked.map((sv) => {
             const [x3, y3] = toXY(sv.azimuth, sv.elevation);
+            const usedValid = tracked.some((s3) => s3.used === true);
+            const unused = usedValid && !sv.used;
             return /* @__PURE__ */ u3(
               "text",
               {
@@ -557,9 +559,9 @@
                 "dominant-baseline": "middle",
                 class: `text-[3px] font-bold ${colorClassFor(sv.svid)} ${opacityClassFor(sv.cno)}`,
                 children: [
-                  sv.unused ? /* @__PURE__ */ u3("tspan", { class: "opacity-0", children: "-" }) : "",
+                  unused ? /* @__PURE__ */ u3("tspan", { class: "opacity-0", children: "-" }) : "",
                   sv.svid,
-                  sv.unused ? "-" : ""
+                  unused ? "-" : ""
                 ]
               },
               sv.svid
