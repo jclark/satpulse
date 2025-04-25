@@ -22,6 +22,7 @@ type GPSConfig struct {
 	AntennaCableVF     float64      `toml:"antennaCableVF"`     // velocity factor
 	GNSS               gpsprot.GNSS `toml:"gnss"`
 	PulseWidth         float64      `toml:"pulseWidth"`
+	SatellitesOutput   *bool        `toml:"satellitesOutput"`
 }
 
 const defaultAccuracy = 20.0 // in meters
@@ -38,7 +39,7 @@ var gpsDefault = GPSConfig{
 	PulseWidth:         math.NaN(),
 }
 
-func (c *GPSConfig) target() (*gpsprot.ConfigTarget, error) {
+func (c *GPSConfig) target(speed int, wantSatellitesOutput bool) (*gpsprot.ConfigTarget, error) {
 	target := gpsprot.NewConfigTarget(c.Config)
 	if !c.Config {
 		return target, nil
@@ -60,6 +61,7 @@ func (c *GPSConfig) target() (*gpsprot.ConfigTarget, error) {
 	if err != nil {
 		return nil, err
 	}
+	target.Opts.SatellitesMsg = c.satellitesMsgStatus(speed, wantSatellitesOutput)
 	return target, nil
 }
 
@@ -157,4 +159,24 @@ func (c *GPSConfig) pulseWidth() (time.Duration, error) {
 		return 0, fmt.Errorf("GPS pulse width must be > 0 and < 1.0: %v", c.PulseWidth)
 	}
 	return d, nil
+}
+
+const minSpeedSatellitesOutput = 38400
+
+func (c *GPSConfig) satellitesMsgStatus(speed int, wantSatellitesOutput bool) gpsprot.MsgStatus {
+	if c.SatellitesOutput == nil {
+		if speed <= minSpeedSatellitesOutput {
+			// If the speed is too slow, then we won't have automatically enabled it,
+			// so we don't need to disable it.
+			return gpsprot.MsgStatusUnchanged
+		}
+		if wantSatellitesOutput {
+			return gpsprot.MsgStatusEnabled
+		}
+		return gpsprot.MsgStatusDisabled
+	}
+	if *c.SatellitesOutput {
+		return gpsprot.MsgStatusEnabled
+	}
+	return gpsprot.MsgStatusDisabled
 }

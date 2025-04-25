@@ -45,7 +45,8 @@
 		  },
 		  "antennaCableDelay": { "type": "number" },
 		  "antennaCableLength": { "type": "number" },
-		  "antennaCableVF": { "type": "number" }
+		  "antennaCableVF": { "type": "number" },
+		  "satellitesOutput": { "type": "boolean" }
 		}
 	  },
 	  "phc": {

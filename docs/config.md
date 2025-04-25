@@ -136,6 +136,7 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
 * `antennaCableDelay` - a number giving the delay in nanoseconds resulting from the propagation of the GPS signal through the antenna cable;
   the default is not to change the GPS receiver's configuration of the antenna cable delay; if both the `antennaCableLength` and the `antennaCableDelay`
   are specified, then the sum of the delays will be used
+* `satellitesOutput` - a boolean saying whether the GPS should be configured to output information about the satellites in view; this information can be used by the HTTP monitoring interface; the default is to configure output based on whether the HTTP interface is enabled, but not to perform configuration unless the serial speed is at least 38400 (this is because at low serials speeds the satellites output can cause significant delays in receiving the timing messages that SatPulse relies upon)
 
 Example
 
@@ -244,6 +245,12 @@ listen = "192.168.1.1:2006"
 [[http]]
 listen = "192.168.2.1:2006"
 ```
+
+Note that the HTTP monitoring interface can provide a graphical view of the available satellites, but the GPS receiver needs to output the necessary information.
+If the HTTP monitoring interface is enabled and GPS configuration is enabled, then the GPS receiver will be automatically configured to output this information.
+However, this will be done only if the serial speed is less than 38400.
+This can be overridden  using the `satellitesOutput` key in the `gps` table.
+But if you want the graphical view, it is recommended to increase the serial speed to at least 38400.
 
 ## `proxy.tcp` and `proxy.sock` table arrays
 

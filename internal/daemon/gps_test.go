@@ -20,7 +20,7 @@ func TestGPSConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := cfg.GPS.target()
+	target, err := cfg.GPS.target(9600, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,5 +40,31 @@ func TestGPSConfig(t *testing.T) {
 	ecef, _ := cp.GetFixedPosECEF()
 	if ecef.String() != "3978578.17,-8652.15,4968410.94" {
 		t.Errorf("fixedPosECEF: got %v, want 3978578.17,-8652.15,4968410.94", ecef)
+	}
+}
+
+func TestSatellitesInfo(t *testing.T) {
+	cfgStr := `[gps]
+	satellitesInfo = true`
+	r := strings.NewReader(cfgStr)
+	cfg, err := readConfig(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GPS.SatellitesOutput == nil || *cfg.GPS.SatellitesOutput != true {
+		t.Errorf("SatellitesInfo: got %v, want true", cfg.GPS.SatellitesOutput)
+	}
+	cfgStr = `[gps]`
+	r = strings.NewReader(cfgStr)
+	cfg, err = readConfig(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GPS.SatellitesOutput != nil {
+		t.Errorf("SatellitesInfo: got %v, want nil", cfg.GPS.SatellitesOutput)
+	}
+	ms := cfg.GPS.satellitesMsgStatus(38400, true)
+	if ms != gpsprot.MsgStatusEnabled {
+		t.Errorf("satellitesMsgStatus: got %v, want enabled", ms)
 	}
 }

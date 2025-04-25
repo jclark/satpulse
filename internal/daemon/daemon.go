@@ -162,7 +162,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	gct, err := cfg.GPS.target()
+	gct, err := cfg.GPS.target(conn.Speed(), len(cfg.HTTP) > 0)
 	defaultPulseWidth, err := cfg.GPS.pulseWidth()
 	if err != nil {
 		return fmt.Errorf("invalid pulse width in configuration file: %w", err)
