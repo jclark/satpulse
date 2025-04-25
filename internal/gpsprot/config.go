@@ -146,6 +146,26 @@ func (cp *ConfigProps) IsEmpty() bool {
 	return cp.valid == 0
 }
 
+type MsgStatus uint8
+
+const (
+	MsgStatusUnchanged MsgStatus = iota
+	MsgStatusEnabled
+	MsgStatusDisabled
+)
+
+func (status MsgStatus) IsZero() bool {
+	return status == MsgStatusUnchanged
+}
+	
+func (status MsgStatus) IsSet() bool {
+	return status != MsgStatusUnchanged
+}
+
+func (status MsgStatus) IsEnabled() bool {
+	return status == MsgStatusEnabled
+}
+
 type ConfigOptions struct {
 	Detected            bool // has already been detected, no need to detect it again
 	ForceProbe          bool // force probe even if no input has been detected
@@ -153,6 +173,7 @@ type ConfigOptions struct {
 	Reset               bool // perform a hard reset after making changes
 	EnableLeapSecondMsg bool
 	EnableTimeMsg       bool
+	SatellitesMsg       MsgStatus
 	Survey              Survey
 }
 
@@ -184,7 +205,7 @@ func (ct *ConfigTarget) UsesAny(props ...PropIDs) bool {
 }
 
 func (o ConfigOptions) NoOp() bool {
-	return !o.Flash && !o.Reset && !o.EnableLeapSecondMsg && !o.EnableTimeMsg && o.Survey.When == TimeModeNone
+	return !o.Flash && !o.Reset && !o.EnableLeapSecondMsg && !o.EnableTimeMsg && o.SatellitesMsg.IsZero() && o.Survey.When == TimeModeNone
 }
 
 // String returns a human-readable representation of the PropIDs flags
