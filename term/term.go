@@ -14,6 +14,7 @@ type Term struct {
 	fd               int
 	path             string
 	byteTransmitTime time.Duration
+	speed            int
 	tsSaved          unix.Termios
 	iCount           *SerialICounter
 }
@@ -70,9 +71,14 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	}
 	// XXX turn of IXOFF
 	err = t.setAttr(&attr.ts)
-	t.byteTransmitTime = byteTransmitTime(attr.ts)
+	t.byteTransmitTime = attr.byteTransmitTime()
+	t.speed = attr.speed()
 	_ = t.GetErrorCounts()
 	return
+}
+
+func (t *Term) Speed() int {
+	return t.speed
 }
 
 func (t *Term) lock() error {
@@ -107,17 +113,25 @@ func (t *Term) TransmitTime(nBytes int) time.Duration {
 	return t.byteTransmitTime * time.Duration(nBytes)
 }
 
-// byteTransmitTime returns the time it takes to send a byte using the given Termios settings.
-func byteTransmitTime(ts unix.Termios) time.Duration {
-	bits := bitsPerByte(ts)
-	b := ts.Ospeed
+func (attr *Attr) speed() int {
+	b := attr.ts.Ospeed
 	if b == 0 {
-		b = ts.Cflag & (unix.CBAUD)
+		b = attr.ts.Cflag & unix.CBAUD
 	}
 	speed := bToSpeed(b)
 	if speed <= 0 {
 		return 0
 	}
+	return speed
+}
+
+// byteTransmitTime returns the time it takes to send a byte using the given Termios settings.
+func (attr *Attr) byteTransmitTime() time.Duration {
+	speed := attr.speed()
+	if speed <= 0 {
+		return 0
+	}
+	bits := bitsPerByte(attr.ts)
 	// speed is bits per second
 	timePerBit := time.Second / time.Duration(speed)
 	return time.Duration(bits) * timePerBit

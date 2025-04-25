@@ -29,6 +29,8 @@ type SerialConn struct {
 
 var _ Conn = (*SerialConn)(nil)
 
+// OpenSerial opens a serial port at the given path and speed.
+// speed can be 0 meaning to use the current speed.
 func OpenSerial(path string, speed int) (*SerialConn, error) {
 	t, err := openTerm(path, speed)
 	if err != nil {
@@ -91,6 +93,10 @@ func (c *SerialConn) Buffered() (int, error) {
 
 func (c *SerialConn) TransmitTime(nBytes int) time.Duration {
 	return c.term.TransmitTime(nBytes)
+}
+
+func (c *SerialConn) Speed() int {
+	return c.term.Speed()
 }
 
 func (c *SerialConn) isStopped() bool {
