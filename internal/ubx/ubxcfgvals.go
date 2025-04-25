@@ -53,6 +53,7 @@ var AllKeys = []ucv.AnyTypedKey{
 }
 
 var AllMsgKeys = []ucv.KeyM{
+	ucv.KUbxNavSat,
 	ucv.KUbxNavTimegps,
 	ucv.KUbxNavTimegal,
 	ucv.KUbxNavTimeglo,
@@ -217,7 +218,17 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 	if opts.EnableLeapSecondMsg {
 		ucv.AddItem(&items, ucv.KUbxNavTimels.KeyU(port), 1)
 	}
+	if opts.SatellitesMsg.IsSet() {
+		ucv.AddItem(&items, ucv.KUbxNavSat.KeyU(port), msgRate(opts.SatellitesMsg))
+	}
 	return items, keys, survey, nil
+}
+
+func msgRate(status gpsprot.MsgStatus) uint64 {
+	if status == gpsprot.MsgStatusEnabled {
+		return 1
+	}
+	return 0
 }
 
 func (known *CfgVals) Survey(opts gpsprot.ConfigOptions) []ucv.Item {

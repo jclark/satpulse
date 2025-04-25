@@ -51,6 +51,7 @@ var legacyConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).setRate,
 	(*Configurator).pollNav5,
 	(*Configurator).setNav5,
+	(*Configurator).setSatellitesMsg,
 	(*Configurator).reset,
 }
 
@@ -244,7 +245,7 @@ func newCfgValsetRequest(items []ucv.Item, layers bin.CfgValsetLayer) (*bin.CfgV
 func (c *Configurator) pollPrt() (gpsprot.ConfigRequest, error) {
 	// This is used both by old and new.
 	if !c.target.UsesAny(cfgOldProps.prt...) && !c.target.Opts.EnableTimeMsg && !c.target.Opts.EnableLeapSecondMsg &&
-		c.target.Opts.Survey.When == 0 {
+		!c.target.Opts.SatellitesMsg.IsSet() && c.target.Opts.Survey.When == 0 {
 		return nil, nil
 	}
 	return c.pollRequest(bin.CfgPrtID), nil
@@ -362,6 +363,19 @@ func (c *Configurator) enableSurveyMsg() (gpsprot.ConfigRequest, error) {
 	}
 	if _, exists := c.target.Props.GetTimeMode(); exists {
 		return c.enableMsgRequest(msgID, false)
+	}
+	return nil, nil
+}
+
+func (c *Configurator) setSatellitesMsg() (gpsprot.ConfigRequest, error) {
+	msgStatus := c.target.Opts.SatellitesMsg
+	if msgStatus.IsSet() {
+		msgID := bin.NavSVInfoID
+		// UBX-NAV-SAT first appeared in protocol version 15.00
+		if c.ver.protVerAtLeast(15, 0) {
+			msgID = bin.NavSatID
+		}
+		return c.enableMsgRequest(msgID, msgStatus.IsEnabled())
 	}
 	return nil, nil
 }
