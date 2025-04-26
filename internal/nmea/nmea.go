@@ -256,17 +256,17 @@ func (g *gsvState) process(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler)
 		g.flush(h)
 		return false, nil
 	}
-	svs, _, final, err := parseGSV(sen)
+	gsv, err := parseGSV(sen)
 	if err != nil {
 		return false, err
 	}
 	if len(g.svs) == 0 {
-		g.svs = svs
+		g.svs = gsv.svs
 		g.tRead = tRead
 	} else {
-		g.svs = append(g.svs, svs...)
+		g.svs = append(g.svs, gsv.svs...)
 	}
-	if !final {
+	if gsv.msgNum != gsv.numMsg {
 		return true, nil
 	}
 	// The idea here is that we know we have seen all the talker IDs we are going to,
@@ -284,26 +284,86 @@ func (g *gsvState) process(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler)
 	return true, nil
 }
 
+type ggaSentence struct {
+	numSV int
+}
+
+func parseGGA(sen *Sentence) (ggaSentence, error) {
+	gga := ggaSentence{}
+	if len(sen.Fields) < 7 {
+		return gga, fmt.Errorf("GGA: too few fields")
+	}
+	numSV, err := parseUnsignedField(sen.Fields, 6, 0, 99, "GGA")
+	if err != nil {
+		return gga, err
+	}
+	gga.numSV = int(numSV)
+	return gga, nil
+}
+
+type gsaSentence struct {
+	svids []gpsprot.SVID
+}
+
+func parseGSA(sen *Sentence) (gsaSentence, error) {
+	gsa := gsaSentence{}
+	// Fix, Auto, 12*SVID, PDOP, HDOP, VDOP, opt sysID
+	gnss := gpsprot.GNSS(0)
+	if len(sen.Fields) >= 18 {
+		sysID, err := parseUnsignedField(sen.Fields, 17, 1, 6, "GSA")
+		if err != nil {
+			return gsa, err
+		}
+		gnss = systemIDToGNSS(int(sysID))
+	} else if len(sen.Fields) < 17 {
+		return gsa, fmt.Errorf("GSA: too few fields")
+	} else {
+		gnss = talkerIDToGNSS(sen.TalkerID)
+	}
+	svids := make([]gpsprot.SVID, 0, 12)
+	for i := 2; i < 14; i++ {
+		if sen.Fields[i] == "" {
+			continue
+		}
+		svid, err := parseUnsignedField(sen.Fields, i, 1, 999, "GSA")
+		if err != nil {
+			return gsa, err
+		}
+		svids = append(svids, makeSVID(gnss, int16(svid)))
+	}
+	gsa.svids = svids
+	return gsa, nil
+}
+
+type gsvSentence struct {
+	svs    []gpsprot.SVInfo
+	msgNum int
+	numMsg int
+	numSV  int
+	sigID  int
+}
+
 // parseGSV parses the GSV sentence and returns a slice of SVInfo, a signal ID, a bool and an error.
 // The bool indicates whether the sentence is the last in the series (i.e. msgNum == numMsg)
-func parseGSV(sen *Sentence) ([]gpsprot.SVInfo, uint64, bool, error) {
+func parseGSV(sen *Sentence) (gsvSentence, error) {
+	gsv := gsvSentence{}
+
 	gnss := talkerIDToGNSS(sen.TalkerID)
 	if gnss == 0 {
-		return nil, 0, false, fmt.Errorf("GSV: unknown talker ID %s", sen.TalkerID)
+		return gsv, fmt.Errorf("GSV: unknown talker ID %s", sen.TalkerID)
 	}
 	msgNum, err := parseUnsignedField(sen.Fields, 0, 1, 9, "GSV")
 	if err != nil {
-		return nil, 0, false, err
+		return gsv, err
 	}
 	numMsg, err := parseUnsignedField(sen.Fields, 1, 1, 9, "GSV")
 	if err != nil {
-		return nil, 0, false, err
+		return gsv, err
 	}
-	_, err = parseUnsignedField(sen.Fields, 2, 0, 99, "GSV")
+	numSV, err := parseUnsignedField(sen.Fields, 2, 0, 99, "GSV")
 	if err != nil {
-		return nil, 0, false, err
+		return gsv, err
 	}
-	final := msgNum == numMsg
 	i := 3
 	var svs []gpsprot.SVInfo
 Loop:
@@ -317,7 +377,7 @@ Loop:
 				}
 				svid = makeSVID(gnss, gpsprot.GLOUnknown)
 			} else {
-				return nil, 0, false, err
+				return gsv, err
 			}
 		} else {
 			svid = makeSVID(gnss, int16(prn))
@@ -329,15 +389,15 @@ Loop:
 		}
 		elev, err := parseUnsignedField(sen.Fields, i+1, 0, 90, "GSV")
 		if err != nil {
-			return nil, 0, false, err
+			return gsv, err
 		}
 		azim, err := parseUnsignedField(sen.Fields, i+2, 0, 359, "GSV")
 		if err != nil {
-			return nil, 0, false, err
+			return gsv, err
 		}
 		cno, err := parseUnsignedField(sen.Fields, i+3, 0, 99, "GSV")
 		if err != nil {
-			return nil, 0, false, err
+			return gsv, err
 		}
 		sv := gpsprot.SVInfo{
 			SVID:      svid,
@@ -349,23 +409,38 @@ Loop:
 	}
 	sigID := uint64(0)
 	if len(sen.Fields) > i+1 {
-		return nil, 0, false, fmt.Errorf("GSV: superfluous fields")
+		return gsv, fmt.Errorf("GSV: superfluous fields")
 	}
 	if len(sen.Fields) == i+1 {
 		sigID, err = parseUnsignedField(sen.Fields, i, 1, 255, "GSV")
 		if err != nil {
-			return nil, 0, false, err
+			return gsv, err
 		}
 	}
-	return svs, sigID, final, nil
+	gsv = gsvSentence{
+		svs:    svs,
+		sigID:  int(sigID),
+		numMsg: int(numMsg),
+		msgNum: int(msgNum),
+		numSV:  int(numSV),
+	}
+	return gsv, nil
 }
 
+// makeSVID creates a gpsprot.SVID from a GNSS and NMEA svid.
+// This is used for both GSA and GSV sentences.
+// The GNSS is derived from the NMEA talker ID or the system ID in NMEA 4.10 GSA
+// We want to get consistent SVIDs from GSA and GSV sentences.
+// But in some cases GSA maybe be 0 while GSV is non-zero.
 func makeSVID(gnss gpsprot.GNSS, prn int16) gpsprot.SVID {
-	if gnss == gpsprot.GPS && prn >= 33 && prn <= 64 {
+	if (gnss == gpsprot.GPS || gnss == 0) && prn >= 33 && prn <= 64 {
 		prn = 120 + (prn - 33)
 		gnss = gpsprot.SBAS
-	} else if gnss == gpsprot.GLO && prn >= 65 && prn <= 96 {
+	} else if (gnss == gpsprot.GLO || gnss == 0) && prn >= 65 && prn <= 96 {
 		prn = 1 + (prn - 65)
+		gnss = gpsprot.GLO
+	} else if gnss == 0 && prn <= 32 {
+		gnss = gpsprot.GPS
 	}
 	// Other mappings are non-standard, so do not attempt to do them here.
 	return gpsprot.SVID{GNSS: gnss, PRN: prn}
@@ -405,6 +480,25 @@ func talkerIDToGNSS(t string) gpsprot.GNSS {
 		return gpsprot.NAVIC
 	case "GQ":
 		return gpsprot.QZSS
+	default:
+		return 0
+	}
+}
+
+func systemIDToGNSS(sysID int) gpsprot.GNSS {
+	switch sysID {
+	case 1:
+		return gpsprot.GPS
+	case 2:
+		return gpsprot.GLO
+	case 3:
+		return gpsprot.GAL
+	case 4:
+		return gpsprot.BDS
+	case 5:
+		return gpsprot.QZSS
+	case 6:
+		return gpsprot.NAVIC
 	default:
 		return 0
 	}

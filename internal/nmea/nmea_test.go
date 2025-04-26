@@ -106,11 +106,77 @@ func TestScanTime(t *testing.T) {
 	b("142451.0000000001")
 }
 
+func TestGGAParse(t *testing.T) {
+	tests := []struct {
+		sen   string
+		numSV int
+	}{
+		{
+			sen:   "$GNGGA,071113.000,3957.7995312,N,11619.0286230,E,4,16,0.99,103.965,M,-8.408,M,1.0,4042*40",
+			numSV: 16,
+		},
+		{
+			sen:   "$GNGGA,025159.000,3149.29993210,N,11706.91264104,E,1,16,1.26,97.250,M,-4.945,M,,*5A",
+			numSV: 16,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(Trim(test.sen), func(t *testing.T) {
+			sen := Split(addTrailer(test.sen))
+			if !sen.ChecksumOK() {
+				t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
+			}
+			gga, err := parseGGA(sen)
+			if err != nil {
+				t.Fatalf("unexpected GGA parsing error: %v", err)
+			}
+			if gga.numSV != test.numSV {
+				t.Fatalf("GGA SV count mismatch: got %d, want %d", gga.numSV, test.numSV)
+			}
+		})
+	}
+}
+
+func TestGSAParse(t *testing.T) {
+	tests := []struct {
+		sen   string
+		svids []gpsprot.SVID
+	}{
+		{
+			sen: "$GNGSA,A,3,10,12,23,25,32,,,,,,,,2.38,1.26,2.01,1*0B",
+			svids: []gpsprot.SVID{
+				{GNSS: gpsprot.GPS, PRN: 10},
+				{GNSS: gpsprot.GPS, PRN: 12},
+				{GNSS: gpsprot.GPS, PRN: 23},
+				{GNSS: gpsprot.GPS, PRN: 25},
+				{GNSS: gpsprot.GPS, PRN: 32},
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(Trim(test.sen), func(t *testing.T) {
+			sen := Split(addTrailer(test.sen))
+			if !sen.ChecksumOK() {
+				t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
+			}
+			gsa, err := parseGSA(sen)
+			if err != nil {
+				t.Fatalf("unexpected GGA parsing error: %v", err)
+			}
+			if len(gsa.svids) != len(test.svids) {
+				t.Fatalf("unexpected number of SVIDs, expected %d, got %d", len(test.svids), len(gsa.svids))
+			}
+		})
+	}
+}
+
 func TestGSVParse(t *testing.T) {
 	tests := []struct {
 		sen   string
 		svs   []gpsprot.SVInfo
-		sigID uint64
+		sigID int
 		final bool
 	}{
 		// From ublox docs (unfortunately with null fields)
@@ -336,9 +402,9 @@ func TestGSVParse(t *testing.T) {
 			final: true,
 		},
 		{
-			sen: "$GPGSV,3,3,08,,,,,,,,,,,,,,,,*71",
-			svs: []gpsprot.SVInfo{},
-			final:true,
+			sen:   "$GPGSV,3,3,08,,,,,,,,,,,,,,,,*71",
+			svs:   []gpsprot.SVInfo{},
+			final: true,
 		},
 		{
 			sen: "$GLGSV,1,1,01,,65,190,31",
@@ -355,11 +421,11 @@ func TestGSVParse(t *testing.T) {
 			if !sen.ChecksumOK() {
 				t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
 			}
-			svs, sigID, final, err := parseGSV(sen)
+			gsv, err := parseGSV(sen)
 			if err != nil {
 				t.Fatalf("unexpected GSV parsing error: %v", err)
 			}
-
+			svs := gsv.svs
 			if len(svs) != len(test.svs) {
 				t.Fatalf("GSV SV count mismatch: got %d, want %d", len(svs), len(test.svs))
 			}
@@ -377,11 +443,12 @@ func TestGSVParse(t *testing.T) {
 					t.Fatalf("GSV CNO mismatch at index %d: got %d, want %d", i, sv.CNO, test.svs[i].CNO)
 				}
 			}
+			final := gsv.numMsg == gsv.msgNum
 			if final != test.final {
 				t.Fatalf("GSV final flag mismatch: got %v, want %v", final, test.final)
 			}
-			if sigID != test.sigID {
-				t.Fatalf("GSV sigID mismatch: got %d, want %d", sigID, test.sigID)
+			if gsv.sigID != test.sigID {
+				t.Fatalf("GSV sigID mismatch: got %d, want %d", gsv.sigID, test.sigID)
 			}
 		})
 	}
@@ -413,20 +480,20 @@ func TestGSVCombine(t *testing.T) {
 		"$GPGSV,3,3,08,,,,,,,,,,,,,,,,*71", // 0
 	}
 	tests := []struct {
-		order []int
-		expect []struct { i, count int }
+		order  []int
+		expect []struct{ i, count int }
 	}{
 		{
 			[]int{1, 2, 3, -1, 0, 1, 2, 3, 0, 1, 2, 3},
-			[]struct{ i, count int }{ {3, 9}, {7, 13}, {11, 13}, },
+			[]struct{ i, count int }{{3, 9}, {7, 13}, {11, 13}},
 		},
 		{
 			[]int{3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4},
-			[]struct{ i, count int }{ {1, 2},{5, 13}, {10, 13}, },
+			[]struct{ i, count int }{{1, 2}, {5, 13}, {10, 13}},
 		},
 		{
 			[]int{5, -1, 5},
-			[]struct{ i, count int }{ {1, 0}, {2, 0}, },
+			[]struct{ i, count int }{{1, 0}, {2, 0}},
 		},
 	}
 	for ti, test := range tests {
