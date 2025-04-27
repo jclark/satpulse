@@ -463,11 +463,18 @@ func addTrailer(s string) string {
 
 type testSatellitesBufferMsgHandler struct {
 	gpsprot.DefaultHandler
-	n int
+	nSV   int
+	nUsed int
 }
 
 func (h *testSatellitesBufferMsgHandler) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
-	h.n = len(msg.Info)
+	h.nSV = len(msg.Info)
+	h.nUsed = 0
+	for _, sv := range msg.Info {
+		if sv.Used {
+			h.nUsed++
+		}
+	}
 }
 
 func TestSatellitesBuffer(t *testing.T) {
@@ -478,22 +485,50 @@ func TestSatellitesBuffer(t *testing.T) {
 		"$GAGSV,2,2,06,15,78,354,46,13,28,311,41,2*75",                           // 2
 		"$GPRMC,210230,A,3855.4487,N,09446.0071,W,0.0,076.2,130495,003.8,E*69\r\n",
 		"$GPGSV,3,3,08,,,,,,,,,,,,,,,,*71", // 0
+		"$GNGSA,A,3,8,5,,,,,,,,,,,2.38,1.26,2.01,3",
+	}
+	type result struct {
+		i, nSV, nUsed int
 	}
 	tests := []struct {
 		order  []int
-		expect []struct{ i, count int }
+		expect []result
 	}{
 		{
-			[]int{1, 2, 3, -1, 0, 1, 2, 3, 0, 1, 2, 3},
-			[]struct{ i, count int }{{3, 9}, {7, 13}, {11, 13}},
+			order: []int{1, 2, 3, -1, 0, 1, 2, 3, 0, 1, 2, 3},
+			expect: []result{
+				{i: 3, nSV: 9},
+				{i: 7, nSV: 13},
+				{i: 11, nSV: 13},
+			},
 		},
 		{
-			[]int{3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4},
-			[]struct{ i, count int }{{1, 2}, {5, 13}, {10, 13}},
+			order: []int{3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4},
+			expect: []result{
+				{i: 1, nSV: 2},
+				{i: 5, nSV: 13},
+				{i: 10, nSV: 13},
+			},
 		},
 		{
-			[]int{5, -1, 5},
-			[]struct{ i, count int }{{1, 0}, {2, 0}},
+			order: []int{5, -1, 5},
+			expect: []result{
+				{i: 1, nSV: 0},
+				{i: 2, nSV: 0},
+			},
+		},
+		{
+			order: []int{2, 3, 6, -1},
+			expect: []result{
+				{i: 3, nSV: 6, nUsed: 2},
+			},
+		},
+		{
+			order: []int{2, 3, -1, 6, 2, 3},
+			expect: []result{
+				{i: 2, nSV: 6, nUsed: 0},
+				{i: 5, nSV: 6, nUsed: 2},
+			},
 		},
 	}
 	for ti, test := range tests {
@@ -504,9 +539,9 @@ func TestSatellitesBuffer(t *testing.T) {
 			sb := newSatellitesBuffer()
 			k := 0
 			for i, j := range order {
-				h := testSatellitesBufferMsgHandler{n: -1}
+				h := testSatellitesBufferMsgHandler{nSV: -1}
 				if j >= 0 {
-					sen := Split(sens[j])
+					sen := Split(addTrailer(sens[j]))
 					if !sen.ChecksumOK() {
 						t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
 					}
@@ -515,12 +550,15 @@ func TestSatellitesBuffer(t *testing.T) {
 					sb.flush(&h)
 				}
 				if k < len(expect) && i == expect[k].i {
-					if h.n != expect[k].count {
-						t.Fatalf("handling failed at %d: got %d, want %d", i, h.n, expect[k].count)
+					if h.nSV != expect[k].nSV {
+						t.Fatalf("wrong SV count at %d: got %d, want %d", i, h.nSV, expect[k].nSV)
+					}
+					if h.nUsed != expect[k].nUsed {
+						t.Fatalf("wrong used count at %d: got %d, want %d", i, h.nUsed, expect[k].nUsed)
 					}
 					k++
-				} else if h.n != -1 {
-					t.Fatalf("handling failed at %d: got %d, want none", i, h.n)
+				} else if h.nSV != -1 {
+					t.Fatalf("handling failed at %d: got %d, want none", i, h.nSV)
 				}
 			}
 		})

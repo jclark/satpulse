@@ -97,7 +97,7 @@ func (p *PacketProcessor) Dispatch(sen *Sentence, tRead time.Time, h gpsprot.Msg
 }
 
 func (p *PacketProcessor) Idle(_ time.Time) {
-	p.sb.flush(p.mh)
+	p.sb.idle(p.mh)
 }
 
 func dispatchTime(parser func(*Sentence) (*ptime.UTCTime, error), sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) error {
@@ -217,14 +217,40 @@ type satellitesBuffer struct {
 	gnssComplete gpsprot.GNSSSet // the set of GNSS for which there is a complete series in gsvs
 	gnssExpected gpsprot.GNSSSet
 	gnssKnown    bool
+	gsas         []gsaSentence
+	gsaWait      bool // wait for GSV after GSA is complete
 }
 
 func newSatellitesBuffer() *satellitesBuffer {
 	return &satellitesBuffer{}
 }
 
+func (sb *satellitesBuffer) idle(h gpsprot.MsgHandler) {
+	if len(sb.gsvs) == 0 && len(sb.gsas) > 0 {
+		sb.gsas = nil
+		sb.gsaWait = true
+		return
+	}
+	sb.flush(h)
+}
+
+func (sb *satellitesBuffer) maybeFlush(h gpsprot.MsgHandler) {
+	if len(sb.gsvs) == 0 {
+		return
+	}
+	if sb.gsaWait {
+		sb.gsaWait = false // wait only once
+	} else {
+		sb.flush(h)
+	}
+}
+
+// flush flushes out the GSV sentences
 func (sb *satellitesBuffer) flush(h gpsprot.MsgHandler) {
-	if len(sb.gsvs) > 0 && h != nil {
+	if len(sb.gsvs) == 0 {
+		return
+	}
+	if h != nil {
 		h.Satellites(sb.createSatellitesMsg(), sb.tRead)
 	}
 	sb.gsvClear()
@@ -237,12 +263,46 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 	for _, v := range sb.gsvs {
 		svs = append(svs, v.svs...)
 	}
-	// XXX try to fill in used fields from GSA and GGA
+	usedValid := sb.setUsed(svs)
 	return &gpsprot.SatellitesMsg{
 		Info:        svs,
 		Tag:         Tag,
 		NativeMsgID: sb.talkerID() + "GSV",
+		UsedValid:   usedValid,
 	}
+}
+
+func (sb *satellitesBuffer) setUsed(svs []gpsprot.SVInfo) bool {
+	if len(sb.gsas) == 0 {
+		return false
+	}
+	svidIndex := make(map[gpsprot.SVID]int)
+	for i, sv := range svs {
+		svidIndex[sv.SVID] = i
+		// In NMEA 4.01, GSA uses GNGSA, but there's no system ID (which was added in NMEA 4.11);
+		// But GSV will not use GNGSV, but will use a specific constellation.
+		if sv.SVID.PRN > 96 {
+			// It looks like we are using a non-standard extended NMEA SVID, where SVID identifies both the constellation and the SVID.
+			// In this case, GSA may be using GNSS of 0.
+			svid := sv.SVID
+			svid.GNSS = 0
+			svidIndex[svid] = i
+		}
+	}
+
+	for _, gsa := range sb.gsas {
+		for _, svid := range gsa.svids {
+			if i, ok := svidIndex[svid]; ok {
+				svs[i].Used = true
+			} else {
+				for i := range svs {
+					svs[i].Used = false
+				}
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (sb *satellitesBuffer) gsvClear() {
@@ -256,11 +316,32 @@ func (sb *satellitesBuffer) talkerID() string {
 }
 
 func (sb *satellitesBuffer) process(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
-	if sen.Format != "GSV" {
-		sb.flush(h)
-		sb.lastFormat = sen.Format
-		return false, nil
+	switch sen.Format {
+	case "GSV":
+		return sb.gsvProcess(sen, tRead, h)
+	case "GSA":
+		return sb.gsaProcess(sen)
 	}
+	sb.maybeFlush(h)
+	sb.lastFormat = sen.Format
+	return false, nil
+}
+
+func (sb *satellitesBuffer) gsaProcess(sen *Sentence) (bool, error) {
+	if sb.lastFormat != "GSA" {
+		sb.gsas = nil
+	}
+	sb.lastFormat = "GSA"
+	sb.gsaWait = false
+	gsa, err := parseGSA(sen)
+	if err != nil {
+		return false, err
+	}
+	sb.gsas = append(sb.gsas, gsa)
+	return true, nil
+}
+
+func (sb *satellitesBuffer) gsvProcess(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
 	gsv, err := parseGSV(sen)
 	if err != nil {
 		return false, err
@@ -272,10 +353,11 @@ func (sb *satellitesBuffer) process(sen *Sentence, tRead time.Time, h gpsprot.Ms
 	if len(sb.gsvs) == 0 {
 		sb.tRead = tRead
 	}
-	_ = sb.checkMsgNum(gsv) // XXX what to do if msgNum is wrong?
+	// If we get an error here, we will report it up so it can be logged, but still add the SVs.
+	err = sb.checkMsgNum(gsv)
 	sb.gsvs = append(sb.gsvs, gsv)
 	if gsv.numMsg != gsv.msgNum {
-		return true, nil
+		return true, err
 	}
 	// Now we know it is the final sentence in a series
 	flag := gpsprot.GNSSFlag(gsv.gnss)
@@ -286,10 +368,9 @@ func (sb *satellitesBuffer) process(sen *Sentence, tRead time.Time, h gpsprot.Ms
 	}
 	sb.gnssComplete |= flag
 	if sb.gnssKnown && sb.gnssComplete == sb.gnssExpected {
-		sb.flush(h)
-
+		sb.maybeFlush(h)
 	}
-	return true, nil
+	return true, err
 }
 
 func (sb *satellitesBuffer) checkMsgNum(gsv gsvSentence) error {
@@ -304,11 +385,11 @@ func (sb *satellitesBuffer) checkMsgNum(gsv gsvSentence) error {
 	if lastGSV.gnss == gsv.gnss {
 		if gsv.msgNum != lastGSV.msgNum+1 {
 			return fmt.Errorf("invalid GSV message number: expected %d, got %d", lastGSV.msgNum+1, gsv.msgNum)
-		} else if gsv.msgNum != 1 {
-			return fmt.Errorf("invalid GSV message number: expected 1, got %d", gsv.msgNum)
-		} else if lastGSV.msgNum != lastGSV.numMsg {
-			// Don't give an error here, because errors apply to current sentence
-		}
+		} 
+	} else if gsv.msgNum != 1 {
+		return fmt.Errorf("invalid GSV message number: expected 1, got %d", gsv.msgNum)
+	} else if lastGSV.msgNum != lastGSV.numMsg {
+		// Don't give an error here, because errors apply to current sentence
 	}
 	return nil
 }
