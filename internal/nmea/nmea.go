@@ -498,7 +498,7 @@ Loop:
 				continue Loop
 			}
 		}
-		elev, err := parseIntField(sen.Fields, i+1, 0, 90, "GSV")
+		elev, err := parseIntField(sen.Fields, i+1, -90, 90, "GSV")
 		if err != nil {
 			return gsv, err
 		}

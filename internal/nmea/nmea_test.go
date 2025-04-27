@@ -413,6 +413,13 @@ func TestGSVParse(t *testing.T) {
 			},
 			final: true,
 		},
+		{
+			sen: "$GPGSV,4,3,15,20,43,009,,23,-1,231,28,24,03,206,,25,26,283,38*61\r\n",
+			svs: []gpsprot.SVInfo{
+				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: -1, Azimuth: 231, CNO: 28},
+				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 26, Azimuth: 283, CNO: 38},
+			},
+		},
 	}
 	for _, test := range tests {
 		test := test
