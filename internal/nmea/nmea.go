@@ -37,13 +37,13 @@ func (s *Sentence) ChecksumOK() bool {
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
 	mh gpsprot.MsgHandler
-	gs gsvState
+	sb satellitesBuffer
 }
 
 // NewPacketProcessor creates a new NMEA packet processor
 func NewPacketProcessor() *PacketProcessor {
 	return &PacketProcessor{
-		gs: *newGSVState(),
+		sb: *newSatellitesBuffer(),
 	}
 }
 
@@ -81,7 +81,7 @@ func Parse(data string) (*Sentence, error) {
 
 // Dispatch handles standard messages and returns true if handled, along with any error
 func (p *PacketProcessor) Dispatch(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
-	handled, err := p.gs.process(sen, tRead, h)
+	handled, err := p.sb.process(sen, tRead, h)
 	if err != nil || handled {
 		return handled, err
 	}
@@ -97,7 +97,7 @@ func (p *PacketProcessor) Dispatch(sen *Sentence, tRead time.Time, h gpsprot.Msg
 }
 
 func (p *PacketProcessor) Idle(_ time.Time) {
-	p.gs.flush(p.mh)
+	p.sb.flush(p.mh)
 }
 
 func dispatchTime(parser func(*Sentence) (*ptime.UTCTime, error), sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) error {
@@ -205,83 +205,112 @@ func scanTime(s string, hour, min, sec *uint8, nanos *int32) bool {
 	return true
 }
 
-// gsvState is the state used for combining GSV sentences into a single SatellitesMsg
+// satellitesBuffer is the state used for combining GSV sentences into a single SatellitesMsg
 // First, there can be a series of GSV sentences with the same talker ID, with the sentence
 // explicitly saying this is M of N sentences.
 // Second, there will be multiple series of GSV sentences, one for each talker ID.
 // But we don't know up front which talker IDs will be used.
-type gsvState struct {
-	svs              []gpsprot.SVInfo    // accumulated GSV data
-	tRead            time.Time           // time of first GSV message in svs
-	numTalkerIDs     int                 // number of talker IDs accumulated in svs
-	talkerIDExpected map[string]struct{} // talker IDs expected for GSV messages
-	talkerIDsKnown   bool                // true when we know what talker IDs we are expecting
+type satellitesBuffer struct {
+	gsvs         []gsvSentence
+	tRead        time.Time       // read time of the first buffered GSV sentence
+	lastFormat   string          // format of last sentence received
+	gnssComplete gpsprot.GNSSSet // the set of GNSS for which there is a complete series in gsvs
+	gnssExpected gpsprot.GNSSSet
+	gnssKnown    bool
 }
 
-func newGSVState() *gsvState {
-	return &gsvState{
-		talkerIDExpected: make(map[string]struct{}),
+func newSatellitesBuffer() *satellitesBuffer {
+	return &satellitesBuffer{}
+}
+
+func (sb *satellitesBuffer) flush(h gpsprot.MsgHandler) {
+	if len(sb.gsvs) > 0 && h != nil {
+		h.Satellites(sb.createSatellitesMsg(), sb.tRead)
+	}
+	sb.gsvClear()
+}
+
+// createSatellitesMsg creates a SatellitesMsg from the current grouping state.
+// Precondition is that there is at least one GSV sentence in the group.
+func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
+	svs := []gpsprot.SVInfo{}
+	for _, v := range sb.gsvs {
+		svs = append(svs, v.svs...)
+	}
+	// XXX try to fill in used fields from GSA and GGA
+	return &gpsprot.SatellitesMsg{
+		Info:        svs,
+		Tag:         Tag,
+		NativeMsgID: sb.talkerID() + "GSV",
 	}
 }
 
-func (g *gsvState) flush(h gpsprot.MsgHandler) {
-	// We want to produce an empty SatellitesMsg if we got a proper GSV message saying no satellites.
-	if g.numTalkerIDs == 0 {
-		return
-	}
-	if h != nil {
-		h.Satellites(&gpsprot.SatellitesMsg{
-			Info:        g.svs,
-			Tag:         Tag,
-			NativeMsgID: g.talkerID() + "GSV",
-		}, g.tRead)
-	}
-	g.svs = nil
-	g.tRead = time.Time{}
-	g.numTalkerIDs = 0
+func (sb *satellitesBuffer) gsvClear() {
+	sb.gsvs = nil
+	sb.tRead = time.Time{}
+	sb.gnssComplete = 0
 }
 
-func (g *gsvState) talkerID() string {
-	if len(g.talkerIDExpected) == 1 {
-		for k := range g.talkerIDExpected {
-			return k
-		}
-	}
+func (sb *satellitesBuffer) talkerID() string {
 	return "GN"
 }
 
-// process processes a GSV sentence and returns true if the sentence was a GSV sentence
-func (g *gsvState) process(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
+func (sb *satellitesBuffer) process(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
 	if sen.Format != "GSV" {
-		g.flush(h)
+		sb.flush(h)
+		sb.lastFormat = sen.Format
 		return false, nil
 	}
 	gsv, err := parseGSV(sen)
 	if err != nil {
 		return false, err
 	}
-	if len(g.svs) == 0 {
-		g.svs = gsv.svs
-		g.tRead = tRead
-	} else {
-		g.svs = append(g.svs, gsv.svs...)
+	if sb.lastFormat != "GSV" || sb.gnssComplete.Contains(gsv.gnss) {
+		sb.gsvClear()
 	}
-	if gsv.msgNum != gsv.numMsg {
+	sb.lastFormat = "GSV"
+	if len(sb.gsvs) == 0 {
+		sb.tRead = tRead
+	}
+	_ = sb.checkMsgNum(gsv) // XXX what to do if msgNum is wrong?
+	sb.gsvs = append(sb.gsvs, gsv)
+	if gsv.numMsg != gsv.msgNum {
 		return true, nil
 	}
-	// The idea here is that we know we have seen all the talker IDs we are going to,
-	// as soon as we see a final talker ID (final means the N of N sentence) that we have already seen.
-	if !g.talkerIDsKnown {
-		_, ok := g.talkerIDExpected[sen.TalkerID]
-		g.talkerIDExpected[sen.TalkerID] = struct{}{}
-		// we have already seen this talker ID, so we know all the talker IDs we are going to see
-		g.talkerIDsKnown = ok
+	// Now we know it is the final sentence in a series
+	flag := gpsprot.GNSSFlag(gsv.gnss)
+	if sb.gnssExpected&flag != 0 {
+		sb.gnssKnown = true
+	} else {
+		sb.gnssExpected |= flag
 	}
-	g.numTalkerIDs++
-	if g.talkerIDsKnown && g.numTalkerIDs == len(g.talkerIDExpected) {
-		g.flush(h)
+	sb.gnssComplete |= flag
+	if sb.gnssKnown && sb.gnssComplete == sb.gnssExpected {
+		sb.flush(h)
+
 	}
 	return true, nil
+}
+
+func (sb *satellitesBuffer) checkMsgNum(gsv gsvSentence) error {
+	if len(sb.gsvs) == 0 {
+		if gsv.msgNum != 1 {
+			// Don't give an error here, because we may have started a new group too soon,
+			// or we might have started in the middle of a group.
+		}
+		return nil
+	}
+	lastGSV := sb.gsvs[len(sb.gsvs)-1]
+	if lastGSV.gnss == gsv.gnss {
+		if gsv.msgNum != lastGSV.msgNum+1 {
+			return fmt.Errorf("invalid GSV message number: expected %d, got %d", lastGSV.msgNum+1, gsv.msgNum)
+		} else if gsv.msgNum != 1 {
+			return fmt.Errorf("invalid GSV message number: expected 1, got %d", gsv.msgNum)
+		} else if lastGSV.msgNum != lastGSV.numMsg {
+			// Don't give an error here, because errors apply to current sentence
+		}
+	}
+	return nil
 }
 
 type ggaSentence struct {
@@ -294,7 +323,7 @@ func parseGGA(sen *Sentence) (ggaSentence, error) {
 		return gga, fmt.Errorf("GGA: too few fields")
 	}
 	numSV, err := parseUnsignedField(sen.Fields, 6, 0, 99, "GGA")
-	if err != nil {
+	if err != nil && sen.Fields[6] != "" {
 		return gga, err
 	}
 	gga.numSV = int(numSV)
@@ -336,6 +365,7 @@ func parseGSA(sen *Sentence) (gsaSentence, error) {
 }
 
 type gsvSentence struct {
+	gnss   gpsprot.GNSS
 	svs    []gpsprot.SVInfo
 	msgNum int
 	numMsg int
@@ -352,11 +382,11 @@ func parseGSV(sen *Sentence) (gsvSentence, error) {
 	if gnss == 0 {
 		return gsv, fmt.Errorf("GSV: unknown talker ID %s", sen.TalkerID)
 	}
-	msgNum, err := parseUnsignedField(sen.Fields, 0, 1, 9, "GSV")
+	numMsg, err := parseUnsignedField(sen.Fields, 0, 1, 9, "GSV")
 	if err != nil {
 		return gsv, err
 	}
-	numMsg, err := parseUnsignedField(sen.Fields, 1, 1, 9, "GSV")
+	msgNum, err := parseUnsignedField(sen.Fields, 1, 1, 9, "GSV")
 	if err != nil {
 		return gsv, err
 	}
@@ -418,6 +448,7 @@ Loop:
 		}
 	}
 	gsv = gsvSentence{
+		gnss:   gnss,
 		svs:    svs,
 		sigID:  int(sigID),
 		numMsg: int(numMsg),

@@ -461,16 +461,16 @@ func addTrailer(s string) string {
 	return s
 }
 
-type gsvTestMsgHandler struct {
+type testSatellitesBufferMsgHandler struct {
 	gpsprot.DefaultHandler
 	n int
 }
 
-func (h *gsvTestMsgHandler) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
+func (h *testSatellitesBufferMsgHandler) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
 	h.n = len(msg.Info)
 }
 
-func TestGSVCombine(t *testing.T) {
+func TestSatellitesBuffer(t *testing.T) {
 	sens := []string{
 		"$GPGSV,1,1,04,10,77,300,32,23,58,153,30,25,46,137,30,32,45,316,26,8*61", // 4
 		"$GLGSV,1,1,03,67,57,036,31,68,30,328,27,78,53,184,31,3*4A",              // 3
@@ -501,26 +501,26 @@ func TestGSVCombine(t *testing.T) {
 		t.Run(fmt.Sprintf("%d", ti), func(t *testing.T) {
 			order := test.order
 			expect := test.expect
-			gs := newGSVState()
+			sb := newSatellitesBuffer()
 			k := 0
 			for i, j := range order {
-				h := gsvTestMsgHandler{n: -1}
+				h := testSatellitesBufferMsgHandler{n: -1}
 				if j >= 0 {
 					sen := Split(sens[j])
 					if !sen.ChecksumOK() {
 						t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
 					}
-					gs.process(sen, time.Time{}, &h)
+					sb.process(sen, time.Time{}, &h)
 				} else {
-					gs.flush(&h)
+					sb.flush(&h)
 				}
 				if k < len(expect) && i == expect[k].i {
 					if h.n != expect[k].count {
-						t.Fatalf("GSV combine failed at %d: got %d, want %d", i, h.n, expect[k].count)
+						t.Fatalf("handling failed at %d: got %d, want %d", i, h.n, expect[k].count)
 					}
 					k++
 				} else if h.n != -1 {
-					t.Fatalf("GSV combine failed: got %d, want none", h.n)
+					t.Fatalf("handling failed at %d: got %d, want none", i, h.n)
 				}
 			}
 		})
