@@ -25,7 +25,7 @@ const LogExtension = ".jsonl"
 
 type Dispatcher struct {
 	gpsprot.DefaultHandler
-	pktProcs	   map[gpsprot.Tag]gpsprot.PacketProcessor
+	pktProcs              map[gpsprot.Tag]gpsprot.PacketProcessor
 	sseCh                 chan<- sse.Event
 	cb                    *combine.Combiner
 	mon                   *mon.Monitor
@@ -54,12 +54,12 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 	}
 	d := Dispatcher{
 		pktProcs: pktProcs,
-		cb:     combiner,
-		mon:    m,
-		ls:     ls,
-		lg:     lg,
-		sseCh:  sseCh,
-		tStart: time.Now(),
+		cb:       combiner,
+		mon:      m,
+		ls:       ls,
+		lg:       lg,
+		sseCh:    sseCh,
+		tStart:   time.Now(),
 	}
 	for _, pp := range pktProcs {
 		pp.SetMsgHandler(&d)
@@ -157,23 +157,23 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	}
 	lg := d.lg
 	pp, ok := d.pktProcs[pkt.Tag]
-    if !ok {
-        if pkt.Tag == gpsprot.InvalidTag {
-            if !d.loggedUnknownProtocol {
-                lg.Info("received data from GPS in unrecognized format (serial communication problem?)", 
-                       "len", len(pkt.Data), "data", pkt.Data)
-                d.loggedUnknownProtocol = true
-            }
-        } else {
-            lg.Error("no processor registered for packet tag", "tag", pkt.Tag)
-        }
-        return
-    }
-    
-    _, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
-    if err != nil {
-        lg.Error("failed to process packet", "tag", pkt.Tag, "err", err)
-    }
+	if !ok {
+		if pkt.Tag == gpsprot.InvalidTag {
+			if !d.loggedUnknownProtocol {
+				lg.Info("received data from GPS in unrecognized format (serial communication problem?)",
+					"len", len(pkt.Data), "data", pkt.Data)
+				d.loggedUnknownProtocol = true
+			}
+		} else {
+			lg.Error("no processor registered for packet tag", "tag", pkt.Tag)
+		}
+		return
+	}
+
+	_, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
+	if err != nil {
+		lg.Error("error processing packet", "err", err, "tag", pkt.Tag, "data", pkt.Data)
+	}
 }
 
 type LogEvent struct {
@@ -294,7 +294,7 @@ type SatellitesSSE struct {
 
 func (d *Dispatcher) Satellites(m *gpsprot.SatellitesMsg, tRead time.Time) {
 	d.lg.Debug("visible satellites", "num", len(m.Info), "info", m.Info)
-	d.sendSSE("satellites", SatellitesSSE{ SVs: m.Info })
+	d.sendSSE("satellites", SatellitesSSE{SVs: m.Info})
 }
 
 func (d *Dispatcher) sendSSE(name string, data any) {
@@ -318,8 +318,8 @@ func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
 }
 
 func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
-    d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID, "msg", msg)    
-    return nil
+	d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID, "msg", msg)
+	return nil
 }
 
 func (d *Dispatcher) logEvent(event LogEvent) {
