@@ -28,6 +28,7 @@ type SerialConn struct {
 }
 
 var _ Conn = (*SerialConn)(nil)
+var _ OutPort = (*SerialConn)(nil)
 
 // OpenSerial opens a serial port at the given path and speed.
 // speed can be 0 meaning to use the current speed.
