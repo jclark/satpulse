@@ -385,7 +385,7 @@ func (sb *satellitesBuffer) checkMsgNum(gsv gsvSentence) error {
 	if lastGSV.gnss == gsv.gnss {
 		if gsv.msgNum != lastGSV.msgNum+1 {
 			return fmt.Errorf("invalid GSV message number: expected %d, got %d", lastGSV.msgNum+1, gsv.msgNum)
-		} 
+		}
 	} else if gsv.msgNum != 1 {
 		return fmt.Errorf("invalid GSV message number: expected 1, got %d", gsv.msgNum)
 	} else if lastGSV.msgNum != lastGSV.numMsg {
@@ -403,7 +403,7 @@ func parseGGA(sen *Sentence) (ggaSentence, error) {
 	if len(sen.Fields) < 7 {
 		return gga, fmt.Errorf("GGA: too few fields")
 	}
-	numSV, err := parseUnsignedField(sen.Fields, 6, 0, 99, "GGA")
+	numSV, err := parseIntField(sen.Fields, 6, 0, 99, "GGA")
 	if err != nil && sen.Fields[6] != "" {
 		return gga, err
 	}
@@ -420,11 +420,11 @@ func parseGSA(sen *Sentence) (gsaSentence, error) {
 	// Fix, Auto, 12*SVID, PDOP, HDOP, VDOP, opt sysID
 	gnss := gpsprot.GNSS(0)
 	if len(sen.Fields) >= 18 {
-		sysID, err := parseUnsignedField(sen.Fields, 17, 1, 6, "GSA")
+		sysID, err := parseIntField(sen.Fields, 17, 1, 6, "GSA")
 		if err != nil {
 			return gsa, err
 		}
-		gnss = systemIDToGNSS(int(sysID))
+		gnss = systemIDToGNSS(sysID)
 	} else if len(sen.Fields) < 17 {
 		return gsa, fmt.Errorf("GSA: too few fields")
 	} else {
@@ -435,7 +435,7 @@ func parseGSA(sen *Sentence) (gsaSentence, error) {
 		if sen.Fields[i] == "" {
 			continue
 		}
-		svid, err := parseUnsignedField(sen.Fields, i, 1, 999, "GSA")
+		svid, err := parseIntField(sen.Fields, i, 1, 999, "GSA")
 		if err != nil {
 			return gsa, err
 		}
@@ -463,15 +463,15 @@ func parseGSV(sen *Sentence) (gsvSentence, error) {
 	if gnss == 0 {
 		return gsv, fmt.Errorf("GSV: unknown talker ID %s", sen.TalkerID)
 	}
-	numMsg, err := parseUnsignedField(sen.Fields, 0, 1, 9, "GSV")
+	numMsg, err := parseIntField(sen.Fields, 0, 1, 9, "GSV")
 	if err != nil {
 		return gsv, err
 	}
-	msgNum, err := parseUnsignedField(sen.Fields, 1, 1, 9, "GSV")
+	msgNum, err := parseIntField(sen.Fields, 1, 1, 9, "GSV")
 	if err != nil {
 		return gsv, err
 	}
-	numSV, err := parseUnsignedField(sen.Fields, 2, 0, 99, "GSV")
+	numSV, err := parseIntField(sen.Fields, 2, 0, 99, "GSV")
 	if err != nil {
 		return gsv, err
 	}
@@ -480,7 +480,7 @@ func parseGSV(sen *Sentence) (gsvSentence, error) {
 Loop:
 	for ; i+3 < len(sen.Fields); i += 4 {
 		var svid gpsprot.SVID
-		prn, err := parseUnsignedField(sen.Fields, i, 1, 999, "GSV")
+		prn, err := parseIntField(sen.Fields, i, 1, 999, "GSV")
 		if err != nil {
 			if sen.Fields[i] == "" {
 				if gnss != gpsprot.GLO {
@@ -498,15 +498,15 @@ Loop:
 				continue Loop
 			}
 		}
-		elev, err := parseUnsignedField(sen.Fields, i+1, 0, 90, "GSV")
+		elev, err := parseIntField(sen.Fields, i+1, 0, 90, "GSV")
 		if err != nil {
 			return gsv, err
 		}
-		azim, err := parseUnsignedField(sen.Fields, i+2, 0, 359, "GSV")
+		azim, err := parseIntField(sen.Fields, i+2, 0, 359, "GSV")
 		if err != nil {
 			return gsv, err
 		}
-		cno, err := parseUnsignedField(sen.Fields, i+3, 0, 99, "GSV")
+		cno, err := parseIntField(sen.Fields, i+3, 0, 99, "GSV")
 		if err != nil {
 			return gsv, err
 		}
@@ -518,12 +518,12 @@ Loop:
 		}
 		svs = append(svs, sv)
 	}
-	sigID := uint64(0)
+	sigID := 0
 	if len(sen.Fields) > i+1 {
 		return gsv, fmt.Errorf("GSV: superfluous fields")
 	}
 	if len(sen.Fields) == i+1 {
-		sigID, err = parseUnsignedField(sen.Fields, i, 1, 255, "GSV")
+		sigID, err = parseIntField(sen.Fields, i, 1, 255, "GSV")
 		if err != nil {
 			return gsv, err
 		}
@@ -531,10 +531,10 @@ Loop:
 	gsv = gsvSentence{
 		gnss:   gnss,
 		svs:    svs,
-		sigID:  int(sigID),
-		numMsg: int(numMsg),
-		msgNum: int(msgNum),
-		numSV:  int(numSV),
+		sigID:  sigID,
+		numMsg: numMsg,
+		msgNum: msgNum,
+		numSV:  numSV,
 	}
 	return gsv, nil
 }
@@ -558,15 +558,15 @@ func makeSVID(gnss gpsprot.GNSS, prn int16) gpsprot.SVID {
 	return gpsprot.SVID{GNSS: gnss, PRN: prn}
 }
 
-func parseUnsignedField(fields []string, i int, min uint64, max uint64, format string) (uint64, error) {
-	n, err := strconv.ParseUint(fields[i], 10, 16)
-	if err == nil && (n < min || n > max) {
+func parseIntField(fields []string, i int, min int, max int, format string) (int, error) {
+	n, err := strconv.ParseInt(fields[i], 10, 16)
+	if err == nil && (n < int64(min) || n > int64(max)) {
 		err = strconv.ErrRange
 	}
 	if err != nil {
 		return 0, fmt.Errorf("%s: invalid field %d: %s: %v", format, i, fields[i], err)
 	}
-	return n, nil
+	return int(n), nil
 }
 
 func isDigits(s string) bool {
