@@ -495,8 +495,9 @@
     const SIZE = 200;
     const RADIUS = SIZE / 2;
     const STROKE_PAD = 1;
+    const MIN_ELEVATION = -3;
     const toXY = (az, el) => {
-      const r3 = (90 - el) / 90 * RADIUS;
+      const r3 = (90 - Math.max(el, MIN_ELEVATION)) / 90 * RADIUS;
       const rad = (az - 90) * (Math.PI / 180);
       const x3 = RADIUS + r3 * Math.cos(rad);
       const y3 = RADIUS + r3 * Math.sin(rad);

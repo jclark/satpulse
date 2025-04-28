@@ -1,6 +1,6 @@
 export interface SVInfo {
-    azimuth: number;     // 0–360 degrees
-    elevation: number;   // 0–90 degrees
+    azimuth: number;     // 0 to 360 degrees
+    elevation: number;   // -90 to 90 degrees (negative unusual)
     svid: string;        // e.g., "G01"
     cno: number;         // 0 = not tracked
     used?: boolean;      // true if known to be used in navigation solution
@@ -10,9 +10,10 @@ export function SkyView(satellites: SVInfo[]) {
     const SIZE = 200;
     const RADIUS = SIZE / 2;
     const STROKE_PAD = 1;
+    const MIN_ELEVATION = -3; // minimum elevation to display; show just outside the circle
 
     const toXY = (az: number, el: number): [number, number] => {
-        const r = ((90 - el) / 90) * RADIUS;
+        const r = ((90 - Math.max(el, MIN_ELEVATION)) / 90) * RADIUS;
         const rad = (az - 90) * (Math.PI / 180); // 0° = east in SVG
         const x = RADIUS + r * Math.cos(rad);
         const y = RADIUS + r * Math.sin(rad);

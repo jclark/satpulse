@@ -102,7 +102,7 @@ const svs: SVInfo[] = [
   { svid: 'E08', azimuth: 217, elevation: 11, cno: 35, used: true },
   { svid: 'E09', azimuth: 35, elevation: 10, cno: 12 },
   { svid: 'E15', azimuth: 321, elevation: 8, cno: 17 },
-  { svid: 'E25', azimuth: 158, elevation: 3, cno: 8 },
+  { svid: 'E25', azimuth: 158, elevation: -3, cno: 8 },
   { svid: 'E30', azimuth: 256, elevation: 9, cno: 21 },
   { svid: 'E34', azimuth: 359, elevation: 45, cno: 27 },
   { svid: 'E36', azimuth: 79, elevation: 45, cno: 24 },
