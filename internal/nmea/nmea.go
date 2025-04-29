@@ -265,7 +265,7 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 	}
 	usedValid := sb.setUsed(svs)
 	return &gpsprot.SatellitesMsg{
-		Info:        svs,
+		SVs:         svs,
 		Tag:         Tag,
 		NativeMsgID: sb.talkerID() + "GSV",
 		UsedValid:   usedValid,
@@ -278,13 +278,13 @@ func (sb *satellitesBuffer) setUsed(svs []gpsprot.SVInfo) bool {
 	}
 	svidIndex := make(map[gpsprot.SVID]int)
 	for i, sv := range svs {
-		svidIndex[sv.SVID] = i
+		svidIndex[sv.ID] = i
 		// In NMEA 4.01, GSA uses GNGSA, but there's no system ID (which was added in NMEA 4.11);
 		// But GSV will not use GNGSV, but will use a specific constellation.
-		if sv.SVID.PRN > 96 {
+		if sv.ID.PRN > 96 {
 			// It looks like we are using a non-standard extended NMEA SVID, where SVID identifies both the constellation and the SVID.
 			// In this case, GSA may be using GNSS of 0.
-			svid := sv.SVID
+			svid := sv.ID
 			svid.GNSS = 0
 			svidIndex[svid] = i
 		}
@@ -511,10 +511,12 @@ Loop:
 			return gsv, err
 		}
 		sv := gpsprot.SVInfo{
-			SVID:      svid,
+			ID:        svid,
 			Elevation: int8(elev),
 			Azimuth:   int16(azim),
-			CNO:       uint8(cno),
+			Signals: []gpsprot.SignalInfo{
+				{CN0: uint8(cno)},
+			},
 		}
 		svs = append(svs, sv)
 	}

@@ -293,8 +293,8 @@ type SatellitesSSE struct {
 }
 
 func (d *Dispatcher) Satellites(m *gpsprot.SatellitesMsg, tRead time.Time) {
-	d.lg.Debug("visible satellites", "num", len(m.Info), "info", m.Info)
-	d.sendSSE("satellites", SatellitesSSE{SVs: m.Info})
+	d.lg.Debug("visible satellites", "num", len(m.SVs), "info", m.SVs)
+	d.sendSSE("satellites", SatellitesSSE{SVs: m.SVs})
 }
 
 func (d *Dispatcher) sendSSE(name string, data any) {

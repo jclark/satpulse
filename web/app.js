@@ -503,7 +503,6 @@
       const y3 = RADIUS + r3 * Math.sin(rad);
       return [x3, y3];
     };
-    const tracked = satellites.filter((sv) => sv.cno > 0);
     return /* @__PURE__ */ u3(
       "svg",
       {
@@ -547,9 +546,9 @@
             });
           })(),
           /* @__PURE__ */ u3("text", { x: RADIUS, y: 10, "text-anchor": "middle", class: "fill-gray-500 text-[6px]", children: "N" }),
-          tracked.map((sv) => {
+          satellites.map((sv) => {
             const [x3, y3] = toXY(sv.azimuth, sv.elevation);
-            const usedValid = tracked.some((s3) => s3.used === true);
+            const usedValid = satellites.some((s3) => s3.used === true);
             const unused = usedValid && !sv.used;
             return /* @__PURE__ */ u3(
               "text",
@@ -558,19 +557,37 @@
                 y: y3,
                 "text-anchor": "middle",
                 "dominant-baseline": "middle",
-                class: `text-[3px] font-bold ${colorClassFor(sv.svid)} ${opacityClassFor(sv.cno)}`,
+                class: `text-[3px] font-bold ${colorClassFor(sv.id)} ${opacityClassFor(sv.signals[0].cn0)}`,
                 children: [
                   unused ? /* @__PURE__ */ u3("tspan", { class: "opacity-0", children: "-" }) : "",
-                  sv.svid,
+                  sv.id,
                   unused ? "-" : ""
                 ]
               },
-              sv.svid
+              sv.id
             );
           })
         ]
       }
     );
+  }
+  function simplifySignals(satellites) {
+    return satellites.map((sv) => {
+      return {
+        ...sv,
+        signals: [{ cn0: signalsCN0(sv.signals) }]
+      };
+    }).filter((sv) => sv.signals[0].cn0 > 0);
+  }
+  function signalsCN0(signals) {
+    if (!signals) {
+      return 0;
+    }
+    let anonSignal = signals.find((s3) => s3.id === "" || s3.id === void 0);
+    if (anonSignal && anonSignal.cn0 > 0) {
+      return anonSignal.cn0;
+    }
+    return signals.reduce((maxCno, signal) => Math.max(maxCno, signal.cn0), 0);
   }
   function opacityClassFor(cno) {
     if (cno < 25) return "opacity-20";
@@ -616,13 +633,12 @@
     const MIN_BAR_HEIGHT = 14;
     const MAX_BAR_HEIGHT = 24;
     const BAR_SPACING = 4;
-    const trackedSatellites = satellites.filter((sv) => sv.cno > 0);
-    const sortedSatellites = [...trackedSatellites].sort((a3, b) => {
-      if (a3.svid[0] !== b.svid[0]) {
-        return a3.svid[0].localeCompare(b.svid[0]);
+    satellites.sort((a3, b) => {
+      if (a3.id[0] !== b.id[0]) {
+        return a3.id[0].localeCompare(b.id[0]);
       }
-      const aNum = parseInt(a3.svid.substring(1));
-      const bNum = parseInt(b.svid.substring(1));
+      const aNum = parseInt(a3.id.substring(1));
+      const bNum = parseInt(b.id.substring(1));
       return aNum - bNum;
     });
     const barHeight = Math.min(
@@ -630,7 +646,7 @@
       Math.max(MIN_BAR_HEIGHT, chartHeight / Math.max(MIN_SATELLITES, maxSatelliteCount))
     );
     const spacedBarHeight = barHeight + BAR_SPACING;
-    const gridLineHeight = sortedSatellites.length * spacedBarHeight - BAR_SPACING;
+    const gridLineHeight = satellites.length * spacedBarHeight - BAR_SPACING;
     chartHeight = maxSatelliteCount * spacedBarHeight;
     height = Math.max(MIN_HEIGHT, chartHeight + VERTICAL_MARGINS);
     return /* @__PURE__ */ u3(
@@ -664,8 +680,8 @@
             },
             `grid-${value}`
           )),
-          sortedSatellites.map((sv, i4) => {
-            const cno = Math.min(sv.cno, MAX_CNO);
+          satellites.map((sv, i4) => {
+            const cno = Math.min(sv.signals[0].cn0, MAX_CNO);
             const barWidth = cno / MAX_CNO * CHART_WIDTH;
             return /* @__PURE__ */ u3("g", { transform: `translate(0, ${i4 * spacedBarHeight})`, children: [
               /* @__PURE__ */ u3(
@@ -676,7 +692,7 @@
                   "text-anchor": "end",
                   "dominant-baseline": "central",
                   class: "text-[10px] tabular-nums fill-gray-800 dark:fill-gray-200",
-                  children: sv.svid
+                  children: sv.id
                 }
               ),
               /* @__PURE__ */ u3(
@@ -686,10 +702,10 @@
                   y: 0,
                   width: barWidth,
                   height: barHeight,
-                  class: colorClassFor(sv.svid)
+                  class: colorClassFor(sv.id)
                 }
               )
-            ] }, sv.svid);
+            ] }, sv.id);
           })
         ] })
       }
@@ -721,9 +737,10 @@
         }
       };
     }, []);
+    const svs = events.satellites ? simplifySignals(events.satellites.svs) : [];
     return /* @__PURE__ */ u3(CardsElement, { children: [
-      events.satellites && /* @__PURE__ */ u3(SkyViewCard, { svs: events.satellites.svs }),
-      events.satellites && /* @__PURE__ */ u3(SignalGraphCard, { svs: events.satellites.svs }),
+      events.satellites && /* @__PURE__ */ u3(SkyViewCard, { svs }),
+      events.satellites && /* @__PURE__ */ u3(SignalGraphCard, { svs }),
       events.time && /* @__PURE__ */ u3(PropertyCard, { title: "Current GPS Time", data: events.time, format: timeFormat }),
       events.phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: events.phc, format: phcFormat }),
       events.version && /* @__PURE__ */ u3(PropertyCard, { title: "GPS Receiver Version", data: events.version, format: versionFormat }),
@@ -887,9 +904,8 @@
   var SignalGraphCard = ({ svs }) => {
     const [maxSatelliteCount, setMaxSatelliteCount] = d2(0);
     y2(() => {
-      const currentCount = svs.filter((sv) => sv.cno > 0).length;
-      if (currentCount > maxSatelliteCount) {
-        setMaxSatelliteCount(currentCount);
+      if (svs.length > maxSatelliteCount) {
+        setMaxSatelliteCount(svs.length);
       }
     }, [svs, maxSatelliteCount]);
     const isDoubleRow = maxSatelliteCount >= 15;

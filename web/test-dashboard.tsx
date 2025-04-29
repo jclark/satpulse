@@ -90,39 +90,39 @@ const initEvent: { version: Version } = {
 };
 
 const svs: SVInfo[] = [
-  { svid: 'G15', azimuth: 352, elevation: 69, cno: 45, used: true },
-  { svid: 'G18', azimuth: 333, elevation: 26, cno: 23 },
-  { svid: 'G23', azimuth: 297, elevation: 23, cno: 36 },
-  { svid: 'G24', azimuth: 154, elevation: 38, cno: 39, used: true },
-  { svid: 'G25', azimuth: 212, elevation: 10, cno: 32 },
-  { svid: 'G29', azimuth: 262, elevation: 64, cno: 46, used: true },
-  { svid: 'E02', azimuth: 206, elevation: 15, cno: 33 },
-  { svid: 'E03', azimuth: 220, elevation: 62, cno: 44, used: true },
-  { svid: 'E05', azimuth: 33, elevation: 62, cno: 29, used: true },
-  { svid: 'E08', azimuth: 217, elevation: 11, cno: 35, used: true },
-  { svid: 'E09', azimuth: 35, elevation: 10, cno: 12 },
-  { svid: 'E15', azimuth: 321, elevation: 8, cno: 17 },
-  { svid: 'E25', azimuth: 158, elevation: -3, cno: 8 },
-  { svid: 'E30', azimuth: 256, elevation: 9, cno: 21 },
-  { svid: 'E34', azimuth: 359, elevation: 45, cno: 27 },
-  { svid: 'E36', azimuth: 79, elevation: 45, cno: 24 },
-  { svid: 'C06', azimuth: 159, elevation: 36, cno: 36 },
-  { svid: 'C07', azimuth: 185, elevation: 46, cno: 42, used: true },
-  { svid: 'C09', azimuth: 172, elevation: 28, cno: 38, used: true },
-  { svid: 'C10', azimuth: 202, elevation: 52, cno: 44, used: true },
-  { svid: 'C11', azimuth: 129, elevation: 69, cno: 46, used: true },
-  { svid: 'C12', azimuth: 142, elevation: 15, cno: 27 },
-  { svid: 'C13', azimuth: 345, elevation: 38, cno: 22 },
-  { svid: 'C14', azimuth: 351, elevation: 51, cno: 28 },
-  { svid: 'J02', azimuth: 147, elevation: 15, cno: 33, used: true },
-  { svid: 'J03', azimuth: 95, elevation: 51, cno: 29 },
-  { svid: 'J04', azimuth: 49, elevation: 46, cno: 26 },
-  { svid: 'J07', azimuth: 116, elevation: 56, cno: 36, used: true },
-  { svid: 'R03', azimuth: 2, elevation: 39, cno: 12 },
-  { svid: 'R04', azimuth: 283, elevation: 55, cno: 50, used: true },
-  { svid: 'R05', azimuth: 212, elevation: -22, cno: 46, used: true },
-  { svid: 'R17', azimuth: 123, elevation: 52, cno: 48, used: true },
-  { svid: 'R18', azimuth: 14, elevation: 62, cno: 35, used: true }
+  { id: 'G15', azimuth: 352, elevation: 69, signals: [ { cn0: 45, id: "L1 C/A" }, { cn0: 50, id: "L5" } ], used: true },
+  { id: 'G18', azimuth: 333, elevation: 26, signals: [ { cn0: 23 } ] },
+  { id: 'G23', azimuth: 297, elevation: 23, signals: [ { cn0: 36 } ] },
+  { id: 'G24', azimuth: 154, elevation: 38, signals: [ { cn0: 39 } ], used: true },
+  { id: 'G25', azimuth: 212, elevation: 10, signals: [ { cn0: 32 } ] },
+  { id: 'G29', azimuth: 262, elevation: 64, signals: [ { cn0: 46 } ], used: true },
+  { id: 'E02', azimuth: 206, elevation: 15, signals: [ { cn0: 33 } ] },
+  { id: 'E03', azimuth: 220, elevation: 62, signals: [ { cn0: 44 } ], used: true },
+  { id: 'E05', azimuth: 33, elevation: 62, signals: [ { cn0: 29 } ], used: true },
+  { id: 'E08', azimuth: 217, elevation: 11, signals: [ { cn0: 35 } ], used: true },
+  { id: 'E09', azimuth: 35, elevation: 10, signals: [ { cn0: 12 } ] },
+  { id: 'E15', azimuth: 321, elevation: 8, signals: [ { cn0: 17 } ] },
+  { id: 'E25', azimuth: 158, elevation: -3, signals: [ { cn0: 8 } ] },
+  { id: 'E30', azimuth: 256, elevation: 9, signals: [ { cn0: 21 } ] },
+  { id: 'E34', azimuth: 359, elevation: 45, signals: [ { cn0: 27 } ] },
+  { id: 'E36', azimuth: 79, elevation: 45, signals: [ { cn0: 24 } ] },
+  { id: 'C06', azimuth: 159, elevation: 36, signals: [ { cn0: 36 } ] },
+  { id: 'C07', azimuth: 185, elevation: 46, signals: [ { cn0: 42 } ], used: true },
+  { id: 'C09', azimuth: 172, elevation: 28, signals: [ { cn0: 38 } ], used: true },
+  { id: 'C10', azimuth: 202, elevation: 52, signals: [ { cn0: 44 } ], used: true },
+  { id: 'C11', azimuth: 129, elevation: 69, signals: [ { cn0: 46 } ], used: true },
+  { id: 'C12', azimuth: 142, elevation: 15, signals: [ { cn0: 27 } ] },
+  { id: 'C13', azimuth: 345, elevation: 38, signals: [ { cn0: 22 } ] },
+  { id: 'C14', azimuth: 351, elevation: 51, signals: [ { cn0: 28 } ] },
+  { id: 'J02', azimuth: 147, elevation: 15, signals: [ { cn0: 33 } ], used: true },
+  { id: 'J03', azimuth: 95, elevation: 51, signals: [ { cn0: 29 } ] },
+  { id: 'J04', azimuth: 49, elevation: 46, signals: [ { cn0: 26 } ] },
+  { id: 'J07', azimuth: 116, elevation: 56, signals: [ { cn0: 36 } ], used: true },
+  { id: 'R03', azimuth: 2, elevation: 39, signals: [ { cn0: 12 } ] },
+  { id: 'R04', azimuth: 283, elevation: 55, signals: [ { cn0: 50 } ], used: true },
+  { id: 'R05', azimuth: 212, elevation: -22, signals: [ { cn0: 46 } ], used: true },
+  { id: 'R17', azimuth: 123, elevation: 52, signals: [ { cn0: 48 } ], used: true },
+  { id: 'R18', azimuth: 14, elevation: 62, signals: [ { cn0: 35 } ], used: true }
 ];
 
 class MockEventSource implements MinimalEventSource {
@@ -152,7 +152,7 @@ class MockEventSource implements MinimalEventSource {
     } else if (type === 'satellites') {
       setTimeout(() => {
         const filteredSvs = this.svidPrefixes 
-          ? svs.filter(sv => this.svidPrefixes.includes(sv.svid[0]))
+          ? svs.filter(sv => this.svidPrefixes.includes(sv.id[0]))
           : svs;
         listener(new MessageEvent('satellites', { data: JSON.stringify({ svs: filteredSvs }) }));
       }, 350);

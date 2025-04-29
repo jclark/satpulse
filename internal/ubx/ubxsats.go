@@ -9,7 +9,7 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 	// This is the minimum quality signal we require to include in the SatellitesMsg.
 	// With CodeLocked, we have a CN0 of > 0 and it's reasonably stable.
 	const minQuality = bin.NavSatQualityCodeLocked
-	info := make([]gpsprot.SVInfo, 0, u.NumSVs)
+	svs := make([]gpsprot.SVInfo, 0, u.NumSVs)
 	for _, usv := range u.SVs {
 		if usv.Flags&bin.NavSatQuality < minQuality {
 			continue
@@ -19,9 +19,11 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 			// UBX uses 255 for unknown GLONASS SVID (NMEA uses null)
 			svid.PRN = gpsprot.GLOUnknown
 		}
-		info = append(info, gpsprot.SVInfo{
-			SVID:      svid,
-			CNO:       usv.CNO,
+		svs = append(svs, gpsprot.SVInfo{
+			ID: svid,
+			Signals: []gpsprot.SignalInfo{
+				{CN0: usv.CNO},
+			},
 			Azimuth:   usv.Azim,
 			Elevation: usv.Elev,
 			Used:      usv.Flags&bin.NavSatSVUsed != 0,
@@ -29,7 +31,7 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 	}
 	return &gpsprot.SatellitesMsg{
 		NavEpoch:    iTOWEpoch(u.ITOW),
-		Info:        info,
+		SVs:         svs,
 		Tag:         Tag,
 		NativeMsgID: "UBX-NAV-SAT",
 		UsedValid:   true,
@@ -38,14 +40,16 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 
 func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
 	const minQuality = bin.NavSVInfoQualityCodeLockOnSignal
-	info := make([]gpsprot.SVInfo, 0, u.NumCh)
+	svs := make([]gpsprot.SVInfo, 0, u.NumCh)
 	for _, usv := range u.SVs {
 		if usv.Quality&bin.NavSVInfoQualityInd < minQuality {
 			continue
 		}
-		info = append(info, gpsprot.SVInfo{
-			SVID:      svInfoSVID(usv.SVID),
-			CNO:       usv.CNO,
+		svs = append(svs, gpsprot.SVInfo{
+			ID: svInfoSVID(usv.SVID),
+			Signals: []gpsprot.SignalInfo{
+				{CN0: usv.CNO},
+			},
 			Azimuth:   usv.Azim,
 			Elevation: usv.Elev,
 			Used:      usv.Flags&bin.NavSVInfoSVUsed != 0,
@@ -53,7 +57,7 @@ func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
 	}
 	return &gpsprot.SatellitesMsg{
 		NavEpoch:    iTOWEpoch(u.ITOW),
-		Info:        info,
+		SVs:         svs,
 		Tag:         Tag,
 		NativeMsgID: "UBX-NAV-SVINFO",
 		UsedValid:   true,

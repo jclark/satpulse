@@ -1,7 +1,7 @@
 import { createContext, FunctionComponent } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
 import { formatUTCLocal, formatNanoseconds, formatTAI, formatDateTime } from './timefmt';
-import { SkyView, SVInfo, SignalGraph } from './svg';
+import { SkyView, SVInfo, SignalGraph, simplifySignals } from './svg';
 
 export const EventSourceContext = createContext<EventSource | null>(null);
 
@@ -40,10 +40,12 @@ export const Dashboard: FunctionComponent = () => {
         };
     }, []);
     
+    const svs = events.satellites ? simplifySignals(events.satellites.svs) : [];
+    
     return (
         <CardsElement>
-        {events.satellites && <SkyViewCard svs={events.satellites.svs} />}
-        {events.satellites && <SignalGraphCard svs={events.satellites.svs} />}
+        {events.satellites && <SkyViewCard svs={svs} />}
+        {events.satellites && <SignalGraphCard svs={svs} />}
         {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
         {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}    
         {events.version && <PropertyCard title="GPS Receiver Version" data={events.version} format={versionFormat} />}
@@ -332,14 +334,12 @@ const SignalGraphCard: FunctionComponent<SignalGraphCardProps> = ({ svs }) => {
     
     // Only ever increase the max count (high water mark approach)
     useEffect(() => {
-        const currentCount = svs.filter(sv => sv.cno > 0).length;
-        if (currentCount > maxSatelliteCount) {
-            setMaxSatelliteCount(currentCount);
+        if (svs.length > maxSatelliteCount) {
+            setMaxSatelliteCount(svs.length);
         }
     }, [svs, maxSatelliteCount]);
     
     // Apply row-span-2 when max satellite count exceeds threshold
-    // Increased threshold to avoid unnecessary two-row layout with 10-11 satellites
     const isDoubleRow = maxSatelliteCount >= 15;
     const rowSpanClass = isDoubleRow ? "md:row-span-2 lg:row-span-2" : "";
     

@@ -224,18 +224,24 @@ func (sv SVID) MarshalJSON() ([]byte, error) {
 
 // SVInfo contains information about a space vehicle (satellite).
 type SVInfo struct {
-	SVID      SVID  `json:"svid"`
-	Azimuth   int16 `json:"azimuth"`        // in degrees, 0 to 360
-	Elevation int8  `json:"elevation"`      // in degrees, -90 to +90
-	CNO       uint8 `json:"cno"`            // C/NO signal to noise ratio
-	Used      bool  `json:"used,omitempty"` // true if the satellite is known to be unused in the navigation solution
+	ID        SVID         `json:"svid"`
+	Azimuth   int16        `json:"azimuth"`        // in degrees, 0 to 360
+	Elevation int8         `json:"elevation"`      // in degrees, -90 to +90
+	Signals   []SignalInfo `json:"signals"`        // signals being transmitted by a satellite
+	Used      bool         `json:"used,omitempty"` // true if the satellite is known to be unused in the navigation solution
+}
+
+// SignalInfo contains information about a single signal transmitted by a satellite.
+type SignalInfo struct {
+	ID  string `json:"id,omitempty"` // human-readable identifier of the signal e.g. "L5"
+	CN0 uint8  `json:"cn0"`          // C/NO signal to noise ratio
 }
 
 type SatellitesMsg struct {
 	NavEpoch    uint32   `json:"navEpoch,omitempty"`
 	Tag         Tag      `json:"tag,omitempty"`
 	NativeMsgID string   `json:"nativeMsgID,omitempty"`
-	Info        []SVInfo `json:"info"`                // info about satellites being tracked or acquired
+	SVs         []SVInfo `json:"info"`                // info about satellites being tracked or acquired
 	UsedValid   bool     `json:"usedValid,omitempty"` // true if the used field is valid
 }
 

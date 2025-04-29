@@ -2,6 +2,7 @@ package nmea
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -207,80 +208,80 @@ func TestGSVParse(t *testing.T) {
 		{
 			sen: "$GPGSV,3,2,12,53,38,212,46,50,35,139,42,41,32,226,42,28,25,173,44*77\r\n",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.SBAS, PRN: 53 + 87}, Elevation: 38, Azimuth: 212, CNO: 46},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.SBAS, PRN: 50 + 87}, Elevation: 35, Azimuth: 139, CNO: 42},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.SBAS, PRN: 41 + 87}, Elevation: 32, Azimuth: 226, CNO: 42},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 28}, Elevation: 25, Azimuth: 173, CNO: 44},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, PRN: 53 + 87}, Elevation: 38, Azimuth: 212, Signals: anonSignal(46)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, PRN: 50 + 87}, Elevation: 35, Azimuth: 139, Signals: anonSignal(42)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, PRN: 41 + 87}, Elevation: 32, Azimuth: 226, Signals: anonSignal(42)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 28}, Elevation: 25, Azimuth: 173, Signals: anonSignal(44)},
 			},
 		},
 		{
 			sen: "$GPGSV,3,3,12,2,22,264,42,12,21,318,43,23,17,93,42,9,12,126,37*43\r\n",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 2}, Elevation: 22, Azimuth: 264, CNO: 42},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 12}, Elevation: 21, Azimuth: 318, CNO: 43},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: 17, Azimuth: 93, CNO: 42},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 9}, Elevation: 12, Azimuth: 126, CNO: 37},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 2}, Elevation: 22, Azimuth: 264, Signals: anonSignal(42)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 12}, Elevation: 21, Azimuth: 318, Signals: anonSignal(43)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: 17, Azimuth: 93, Signals: anonSignal(42)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 9}, Elevation: 12, Azimuth: 126, Signals: anonSignal(37)},
 			},
 			final: true,
 		},
 		{
 			sen: "$BDGSV,3,1,12,216,79,57,44,237,67,249,44,220,53,301,44,870,53,301,44*57\r\n",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 216}, Elevation: 79, Azimuth: 57, CNO: 44},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 237}, Elevation: 67, Azimuth: 249, CNO: 44},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 220}, Elevation: 53, Azimuth: 301, CNO: 44},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 870}, Elevation: 53, Azimuth: 301, CNO: 44},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 216}, Elevation: 79, Azimuth: 57, Signals: anonSignal(44)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 237}, Elevation: 67, Azimuth: 249, Signals: anonSignal(44)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 220}, Elevation: 53, Azimuth: 301, Signals: anonSignal(44)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 870}, Elevation: 53, Azimuth: 301, Signals: anonSignal(44)},
 			},
 		},
 		{
 			sen: "$GLGSV,2,2,08,79,24,299,45,78,22,254,49,81,18,303,45,66,10,181,44*6F\r\n",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 79 - 64}, Elevation: 24, Azimuth: 299, CNO: 45},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 78 - 64}, Elevation: 22, Azimuth: 254, CNO: 49},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 81 - 64}, Elevation: 18, Azimuth: 303, CNO: 45},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 66 - 64}, Elevation: 10, Azimuth: 181, CNO: 44},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 79 - 64}, Elevation: 24, Azimuth: 299, Signals: anonSignal(45)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 78 - 64}, Elevation: 22, Azimuth: 254, Signals: anonSignal(49)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 81 - 64}, Elevation: 18, Azimuth: 303, Signals: anonSignal(45)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 66 - 64}, Elevation: 10, Azimuth: 181, Signals: anonSignal(44)},
 			},
 			final: true,
 		},
 		{
 			sen: "$GAGSV,2,1,05,12,69,355,46,19,42,115,42,24,30,246,45,11,27,290,40*60\r\n",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 12}, Elevation: 69, Azimuth: 355, CNO: 46},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 19}, Elevation: 42, Azimuth: 115, CNO: 42},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 24}, Elevation: 30, Azimuth: 246, CNO: 45},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 11}, Elevation: 27, Azimuth: 290, CNO: 40},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 12}, Elevation: 69, Azimuth: 355, Signals: anonSignal(46)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 19}, Elevation: 42, Azimuth: 115, Signals: anonSignal(42)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 24}, Elevation: 30, Azimuth: 246, Signals: anonSignal(45)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 11}, Elevation: 27, Azimuth: 290, Signals: anonSignal(40)},
 			},
 		},
 		{
 			sen: "$GIGSV,2,1,06,904,67,205,47,907,45,158,45,903,34,227,44,909,20,257,40*63\r\n",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 904}, Elevation: 67, Azimuth: 205, CNO: 47},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 907}, Elevation: 45, Azimuth: 158, CNO: 45},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 903}, Elevation: 34, Azimuth: 227, CNO: 44},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 909}, Elevation: 20, Azimuth: 257, CNO: 40},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 904}, Elevation: 67, Azimuth: 205, Signals: anonSignal(47)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 907}, Elevation: 45, Azimuth: 158, Signals: anonSignal(45)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 903}, Elevation: 34, Azimuth: 227, Signals: anonSignal(44)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 909}, Elevation: 20, Azimuth: 257, Signals: anonSignal(40)},
 			},
 		},
 		{
 			sen: "$GPGSV,3,2,11,19,32,147,42,41,32,226,42,12,27,254,43,25,19,296,39,1*66",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 19}, Elevation: 32, Azimuth: 147, CNO: 42},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.SBAS, PRN: 41 + 87}, Elevation: 32, Azimuth: 226, CNO: 42},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 12}, Elevation: 27, Azimuth: 254, CNO: 43},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 19, Azimuth: 296, CNO: 39},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 19}, Elevation: 32, Azimuth: 147, Signals: anonSignal(42)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, PRN: 41 + 87}, Elevation: 32, Azimuth: 226, Signals: anonSignal(42)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 12}, Elevation: 27, Azimuth: 254, Signals: anonSignal(43)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 19, Azimuth: 296, Signals: anonSignal(39)},
 			},
 			sigID: 1,
 		},
 		{
 			sen: "$GPGSV,3,4,10,25,17,310,40,8*5C",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 17, Azimuth: 310, CNO: 40},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 17, Azimuth: 310, Signals: anonSignal(40)},
 			},
 			sigID: 8,
 		},
 		{
 			sen: "$BDGSV,4,4,16,10,18,213,35,1*4C",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 10}, Elevation: 18, Azimuth: 213, CNO: 35},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 10}, Elevation: 18, Azimuth: 213, Signals: anonSignal(35)},
 			},
 			sigID: 1,
 			final: true,
@@ -288,37 +289,37 @@ func TestGSVParse(t *testing.T) {
 		{
 			sen: "$BDGSV,4,5,16,29,83,343,45,20,76,109,45,30,38,124,42,4*40",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 29}, Elevation: 83, Azimuth: 343, CNO: 45},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 20}, Elevation: 76, Azimuth: 109, CNO: 45},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 30}, Elevation: 38, Azimuth: 124, CNO: 42},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 29}, Elevation: 83, Azimuth: 343, Signals: anonSignal(45)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 20}, Elevation: 76, Azimuth: 109, Signals: anonSignal(45)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, PRN: 30}, Elevation: 38, Azimuth: 124, Signals: anonSignal(42)},
 			},
 			sigID: 4,
 		},
 		{
 			sen: "$GLGSV,2,1,06,81,48,335,48,88,61,73,43,66,53,182,38,65,52,44,37,1*73",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 81 - 64}, Elevation: 48, Azimuth: 335, CNO: 48},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 88 - 64}, Elevation: 61, Azimuth: 73, CNO: 43},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 66 - 64}, Elevation: 53, Azimuth: 182, CNO: 38},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 65 - 64}, Elevation: 52, Azimuth: 44, CNO: 37},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 81 - 64}, Elevation: 48, Azimuth: 335, Signals: anonSignal(48)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 88 - 64}, Elevation: 61, Azimuth: 73, Signals: anonSignal(43)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 66 - 64}, Elevation: 53, Azimuth: 182, Signals: anonSignal(38)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 65 - 64}, Elevation: 52, Azimuth: 44, Signals: anonSignal(37)},
 			},
 			sigID: 1,
 		},
 		{
 			sen: "$GAGSV,2,1,06,15,78,354,48,8,33,201,42,13,28,311,41,5,31,47,27,6*40",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 15}, Elevation: 78, Azimuth: 354, CNO: 48},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 8}, Elevation: 33, Azimuth: 201, CNO: 42},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 13}, Elevation: 28, Azimuth: 311, CNO: 41},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 5}, Elevation: 31, Azimuth: 47, CNO: 27},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 15}, Elevation: 78, Azimuth: 354, Signals: anonSignal(48)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 8}, Elevation: 33, Azimuth: 201, Signals: anonSignal(42)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 13}, Elevation: 28, Azimuth: 311, Signals: anonSignal(41)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 5}, Elevation: 31, Azimuth: 47, Signals: anonSignal(27)},
 			},
 			sigID: 6,
 		},
 		{
 			sen: "$GAGSV,2,2,06,15,78,354,46,13,28,311,41,2*75",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 15}, Elevation: 78, Azimuth: 354, CNO: 46},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 13}, Elevation: 28, Azimuth: 311, CNO: 41},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 15}, Elevation: 78, Azimuth: 354, Signals: anonSignal(46)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, PRN: 13}, Elevation: 28, Azimuth: 311, Signals: anonSignal(41)},
 			},
 			sigID: 2,
 			final: true,
@@ -326,10 +327,10 @@ func TestGSVParse(t *testing.T) {
 		{
 			sen: "$GIGSV,2,1,07,5,75,208,46,7,39,160,43,3,30,225,42,9,14,254,39,1*7D",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 5}, Elevation: 75, Azimuth: 208, CNO: 46},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 7}, Elevation: 39, Azimuth: 160, CNO: 43},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 3}, Elevation: 30, Azimuth: 225, CNO: 42},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 9}, Elevation: 14, Azimuth: 254, CNO: 39},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 5}, Elevation: 75, Azimuth: 208, Signals: anonSignal(46)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 7}, Elevation: 39, Azimuth: 160, Signals: anonSignal(43)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 3}, Elevation: 30, Azimuth: 225, Signals: anonSignal(42)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, PRN: 9}, Elevation: 14, Azimuth: 254, Signals: anonSignal(39)},
 			},
 			sigID: 1,
 		},
@@ -337,17 +338,17 @@ func TestGSVParse(t *testing.T) {
 		{
 			sen: "$GPGSV,2,1,05,10,77,300,36,12,40,082,31,23,58,153,35,25,46,137,33,1*67",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 10}, Elevation: 77, Azimuth: 300, CNO: 36},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 12}, Elevation: 40, Azimuth: 82, CNO: 31},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: 58, Azimuth: 153, CNO: 35},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 46, Azimuth: 137, CNO: 33},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 10}, Elevation: 77, Azimuth: 300, Signals: anonSignal(36)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 12}, Elevation: 40, Azimuth: 82, Signals: anonSignal(31)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: 58, Azimuth: 153, Signals: anonSignal(35)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 46, Azimuth: 137, Signals: anonSignal(33)},
 			},
 			sigID: 1,
 		},
 		{
 			sen: "$GPGSV,2,2,05,32,45,316,34,1*52",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 32}, Elevation: 45, Azimuth: 316, CNO: 34},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 32}, Elevation: 45, Azimuth: 316, Signals: anonSignal(34)},
 			},
 			sigID: 1,
 			final: true,
@@ -355,17 +356,17 @@ func TestGSVParse(t *testing.T) {
 		{
 			sen: "$GPGSV,2,1,05,10,77,300,31,12,40,082,25,23,58,153,29,25,46,137,28,6*65",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 10}, Elevation: 77, Azimuth: 300, CNO: 31},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 12}, Elevation: 40, Azimuth: 82, CNO: 25},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: 58, Azimuth: 153, CNO: 29},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 46, Azimuth: 137, CNO: 28},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 10}, Elevation: 77, Azimuth: 300, Signals: anonSignal(31)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 12}, Elevation: 40, Azimuth: 82, Signals: anonSignal(25)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: 58, Azimuth: 153, Signals: anonSignal(29)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 46, Azimuth: 137, Signals: anonSignal(28)},
 			},
 			sigID: 6,
 		},
 		{
 			sen: "$GPGSV,2,2,05,32,45,316,25,6*55",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 32}, Elevation: 45, Azimuth: 316, CNO: 25},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 32}, Elevation: 45, Azimuth: 316, Signals: anonSignal(25)},
 			},
 			sigID: 6,
 			final: true,
@@ -373,10 +374,10 @@ func TestGSVParse(t *testing.T) {
 		{
 			sen: "$GPGSV,1,1,04,10,77,300,32,23,58,153,30,25,46,137,30,32,45,316,26,8*61",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 10}, Elevation: 77, Azimuth: 300, CNO: 32},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: 58, Azimuth: 153, CNO: 30},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 46, Azimuth: 137, CNO: 30},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 32}, Elevation: 45, Azimuth: 316, CNO: 26},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 10}, Elevation: 77, Azimuth: 300, Signals: anonSignal(32)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: 58, Azimuth: 153, Signals: anonSignal(30)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 46, Azimuth: 137, Signals: anonSignal(30)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 32}, Elevation: 45, Azimuth: 316, Signals: anonSignal(26)},
 			},
 			sigID: 8,
 			final: true,
@@ -384,9 +385,9 @@ func TestGSVParse(t *testing.T) {
 		{
 			sen: "$GLGSV,1,1,03,67,57,036,37,68,30,328,34,78,53,184,27,1*4B",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 67 - 64}, Elevation: 57, Azimuth: 36, CNO: 37},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 68 - 64}, Elevation: 30, Azimuth: 328, CNO: 34},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 78 - 64}, Elevation: 53, Azimuth: 184, CNO: 27},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 67 - 64}, Elevation: 57, Azimuth: 36, Signals: anonSignal(37)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 68 - 64}, Elevation: 30, Azimuth: 328, Signals: anonSignal(34)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 78 - 64}, Elevation: 53, Azimuth: 184, Signals: anonSignal(27)},
 			},
 			sigID: 1,
 			final: true,
@@ -394,9 +395,9 @@ func TestGSVParse(t *testing.T) {
 		{
 			sen: "$GLGSV,1,1,03,67,57,036,31,68,30,328,27,78,53,184,31,3*4A",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 67 - 64}, Elevation: 57, Azimuth: 36, CNO: 31},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 68 - 64}, Elevation: 30, Azimuth: 328, CNO: 27},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 78 - 64}, Elevation: 53, Azimuth: 184, CNO: 31},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 67 - 64}, Elevation: 57, Azimuth: 36, Signals: anonSignal(31)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 68 - 64}, Elevation: 30, Azimuth: 328, Signals: anonSignal(27)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: 78 - 64}, Elevation: 53, Azimuth: 184, Signals: anonSignal(31)},
 			},
 			sigID: 3,
 			final: true,
@@ -409,15 +410,15 @@ func TestGSVParse(t *testing.T) {
 		{
 			sen: "$GLGSV,1,1,01,,65,190,31",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: gpsprot.GLOUnknown}, Elevation: 65, Azimuth: 190, CNO: 31},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, PRN: gpsprot.GLOUnknown}, Elevation: 65, Azimuth: 190, Signals: anonSignal(31)},
 			},
 			final: true,
 		},
 		{
 			sen: "$GPGSV,4,3,15,20,43,009,,23,-1,231,28,24,03,206,,25,26,283,38*61\r\n",
 			svs: []gpsprot.SVInfo{
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: -1, Azimuth: 231, CNO: 28},
-				{SVID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 26, Azimuth: 283, CNO: 38},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 23}, Elevation: -1, Azimuth: 231, Signals: anonSignal(28)},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 25}, Elevation: 26, Azimuth: 283, Signals: anonSignal(38)},
 			},
 		},
 	}
@@ -437,8 +438,8 @@ func TestGSVParse(t *testing.T) {
 				t.Fatalf("GSV SV count mismatch: got %d, want %d", len(svs), len(test.svs))
 			}
 			for i, sv := range svs {
-				if sv.SVID != test.svs[i].SVID {
-					t.Fatalf("GSV SVID mismatch at index %d: got %v, want %v", i, sv.SVID, test.svs[i].SVID)
+				if sv.ID != test.svs[i].ID {
+					t.Fatalf("GSV SVID mismatch at index %d: got %v, want %v", i, sv.ID, test.svs[i].ID)
 				}
 				if sv.Elevation != test.svs[i].Elevation {
 					t.Fatalf("GSV Elevation mismatch at index %d: got %d, want %d", i, sv.Elevation, test.svs[i].Elevation)
@@ -446,8 +447,11 @@ func TestGSVParse(t *testing.T) {
 				if sv.Azimuth != test.svs[i].Azimuth {
 					t.Fatalf("GSV Azimuth mismatch at index %d: got %d, want %d", i, sv.Azimuth, test.svs[i].Azimuth)
 				}
-				if sv.CNO != test.svs[i].CNO {
-					t.Fatalf("GSV CNO mismatch at index %d: got %d, want %d", i, sv.CNO, test.svs[i].CNO)
+				if len(sv.Signals) != len(test.svs[i].Signals) {
+					t.Fatalf("wrong number of signals at index %d; got %d", i, len(sv.Signals))
+				}
+				if !slices.Equal(sv.Signals, test.svs[i].Signals) {
+					t.Fatalf("GSV Signals mismatch at index %d: got %v, want %v", i, sv.Signals, test.svs[i].Signals)
 				}
 			}
 			final := gsv.numMsg == gsv.msgNum
@@ -458,6 +462,13 @@ func TestGSVParse(t *testing.T) {
 				t.Fatalf("GSV sigID mismatch: got %d, want %d", gsv.sigID, test.sigID)
 			}
 		})
+	}
+}
+
+// anonSignal returns a length one slice of SignalInfo with the specified CN0
+func anonSignal(cn0 uint8) []gpsprot.SignalInfo {
+	return []gpsprot.SignalInfo{
+		{CN0: cn0},
 	}
 }
 
@@ -475,9 +486,9 @@ type testSatellitesBufferMsgHandler struct {
 }
 
 func (h *testSatellitesBufferMsgHandler) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
-	h.nSV = len(msg.Info)
+	h.nSV = len(msg.SVs)
 	h.nUsed = 0
-	for _, sv := range msg.Info {
+	for _, sv := range msg.SVs {
 		if sv.Used {
 			h.nUsed++
 		}

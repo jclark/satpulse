@@ -1,11 +1,18 @@
 export interface SVInfo {
     azimuth: number;     // 0 to 360 degrees
     elevation: number;   // -90 to 90 degrees (negative unusual)
-    svid: string;        // e.g., "G01"
-    cno: number;         // 0 = not tracked
+    id: string;        // e.g., "G01"
+    signals: SignalInfo[];  // Array of signal information
     used?: boolean;      // true if known to be used in navigation solution
 }
 
+export interface SignalInfo {
+    cn0: number;         // Signal carrier-to-noise ratio
+    id?: string;         // Optional signal identifier
+}
+
+// Generate the SVG element for the SkyView.
+// Assumes satellites has already been simplified with simplifySignals.
 export function SkyView(satellites: SVInfo[]) {
     const SIZE = 200;
     const RADIUS = SIZE / 2;
@@ -19,8 +26,6 @@ export function SkyView(satellites: SVInfo[]) {
         const y = RADIUS + r * Math.sin(rad);
         return [x, y];
     };
-
-    const tracked = satellites.filter((sv) => sv.cno > 0);
 
     return (
         <svg
@@ -63,30 +68,56 @@ export function SkyView(satellites: SVInfo[]) {
             })()}
             <text x={RADIUS} y={10} text-anchor="middle" class="fill-gray-500 text-[6px]">N</text>
             
-            {tracked.map((sv) => {
+            {satellites.map((sv) => {
                 const [x, y] = toXY(sv.azimuth, sv.elevation);
                 // A satellite is known to be unused if some satellite is marked as used and sv.used is not true.
                 // Mark unused satellites with "-" if known to be unused.
                 // Balance the trailing "-" with an invisible leading "-", so that the svid is centered.
-                const usedValid = tracked.some(s => s.used === true);
-                const unused = usedValid && !sv.used; // known unused               
+                const usedValid = satellites.some(s => s.used === true);
+                const unused = usedValid && !sv.used; // known unused             
                 return (
                     <text
-                        key={sv.svid}
+                        key={sv.id}
                         x={x}
                         y={y}
                         text-anchor="middle"
                         dominant-baseline="middle"
-                        class={`text-[3px] font-bold ${colorClassFor(sv.svid)} ${opacityClassFor(sv.cno)}`}
+                        class={`text-[3px] font-bold ${colorClassFor(sv.id)} ${opacityClassFor(sv.signals[0].cn0)}`}
                     >
                         {unused ? <tspan class="opacity-0">-</tspan> : ''}
-                        {sv.svid}
+                        {sv.id}
                         {unused ? '-' : ''}
                     </text>
                 );
             })}
         </svg>
     );
+}
+
+export function simplifySignals(satellites: SVInfo[]): SVInfo[] {
+    return satellites
+        .map(sv => {
+            return {
+                ...sv,
+                signals: [{ cn0: signalsCN0(sv.signals) }]
+            };
+        })
+        .filter(sv => sv.signals[0].cn0 > 0);
+}
+
+function signalsCN0(signals: SignalInfo[]): number {
+    if (!signals) {
+        return 0;
+    }
+    
+    // Look for anonymous signal (id == "" or undefined) that has non-zero CN0
+    let anonSignal = signals.find(s => (s.id === "" || s.id === undefined));
+    if (anonSignal && anonSignal.cn0 > 0) {
+        return anonSignal.cn0;
+    }
+    
+    // Otherwise, find the maximum CN0
+    return signals.reduce((maxCno, signal) => Math.max(maxCno, signal.cn0), 0);
 }
 
 function opacityClassFor(cno: number): string {
@@ -119,6 +150,8 @@ function colorClassFor(svid: string): string {
     }
 }
 
+// Generate the SVG element for the signal level bar graph.
+// Assumes satellites has already been simplified with simplifySignals.
 export function SignalGraph(satellites: SVInfo[], maxSatelliteCount: number, isDoubleRow: boolean) {
     const WIDTH = 300;
     const MARGIN = { top: 20, right: 10, bottom: 10, left: 30 };
@@ -140,16 +173,14 @@ export function SignalGraph(satellites: SVInfo[], maxSatelliteCount: number, isD
     const MAX_BAR_HEIGHT = 24;
     const BAR_SPACING = 4;
     
-    // Filter and sort satellites
-    const trackedSatellites = satellites.filter(sv => sv.cno > 0);
-    const sortedSatellites = [...trackedSatellites].sort((a, b) => {
+    satellites.sort((a, b) => {
         // First sort by constellation
-        if (a.svid[0] !== b.svid[0]) {
-            return a.svid[0].localeCompare(b.svid[0]);
+        if (a.id[0] !== b.id[0]) {
+            return a.id[0].localeCompare(b.id[0]);
         }
         // Then sort by the numeric part of the SVID
-        const aNum = parseInt(a.svid.substring(1));
-        const bNum = parseInt(b.svid.substring(1));
+        const aNum = parseInt(a.id.substring(1));
+        const bNum = parseInt(b.id.substring(1));
         return aNum - bNum;
     });
         
@@ -160,7 +191,7 @@ export function SignalGraph(satellites: SVInfo[], maxSatelliteCount: number, isD
     );
     const spacedBarHeight = barHeight + BAR_SPACING;
 
-    const gridLineHeight = (sortedSatellites.length * spacedBarHeight) - BAR_SPACING;
+    const gridLineHeight = (satellites.length * spacedBarHeight) - BAR_SPACING;
     
     // Recompute chart height using maxSatelliteCount not current number of satellites
     chartHeight = maxSatelliteCount * spacedBarHeight
@@ -204,11 +235,11 @@ export function SignalGraph(satellites: SVInfo[], maxSatelliteCount: number, isD
                 ))}
 
                 {/* Bars */}
-                {sortedSatellites.map((sv, i) => {
-                    const cno = Math.min(sv.cno, MAX_CNO);
+                {satellites.map((sv, i) => {
+                    const cno = Math.min(sv.signals[0].cn0, MAX_CNO);
                     const barWidth = (cno / MAX_CNO) * CHART_WIDTH;
                     return (
-                        <g key={sv.svid} transform={`translate(0, ${i * spacedBarHeight})`}>
+                        <g key={sv.id} transform={`translate(0, ${i * spacedBarHeight})`}>
                             {/* SVID label */}
                             <text
                                 x={-5}
@@ -217,7 +248,7 @@ export function SignalGraph(satellites: SVInfo[], maxSatelliteCount: number, isD
                                 dominant-baseline="central"
                                 class="text-[10px] tabular-nums fill-gray-800 dark:fill-gray-200"
                             >
-                                {sv.svid}
+                                {sv.id}
                             </text>
 
                             {/* Bar */}
@@ -226,7 +257,7 @@ export function SignalGraph(satellites: SVInfo[], maxSatelliteCount: number, isD
                                 y={0}
                                 width={barWidth}
                                 height={barHeight}
-                                class={colorClassFor(sv.svid)}
+                                class={colorClassFor(sv.id)}
                             />
                         </g>
                     );
