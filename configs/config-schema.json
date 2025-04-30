@@ -46,7 +46,11 @@
 		  "antennaCableDelay": { "type": "number" },
 		  "antennaCableLength": { "type": "number" },
 		  "antennaCableVF": { "type": "number" },
-		  "satellitesOutput": { "type": "boolean" }
+		  "satellitesOutput": { "type": "boolean" },
+		  "nmeaNumbering": {
+			"type": "string",
+			"enum": ["u-blox", "allystar"]
+		  }
 		}
 	  },
 	  "phc": {

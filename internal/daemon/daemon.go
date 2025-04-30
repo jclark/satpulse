@@ -15,7 +15,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/proxy"
@@ -158,7 +157,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		lg.Debug("wait group counter dropped to zero")
 	}()
 
-	pktProcs := gpsreg.CreatePacketProcessors()
+	pktProcs, err := cfg.GPS.CreatePacketProcessors()
+	if err != nil {
+		return err
+	}
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}

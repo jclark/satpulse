@@ -222,9 +222,36 @@ func (sv SVID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(sv.String())
 }
 
-// SVInfo contains information about a space vehicle (satellite).
+// IsValid checks if the SVID has a valid PRN for its GNSS type
+func (sv SVID) IsValid() bool {
+	if sv.PRN == GLOUnknown && sv.GNSS == GLO {
+		return true
+	}
+	if sv.PRN < 1 {
+		return false
+	}
+	switch sv.GNSS {
+	case GPS:
+		return sv.PRN <= 32
+	case GLO:
+		return sv.PRN <= 24
+	case GAL:
+		return sv.PRN <= 36
+	case BDS:
+		return sv.PRN <= 63
+	case QZSS:
+		return sv.PRN <= 10
+	case NAVIC:
+		return sv.PRN <= 14
+	case SBAS:
+		return sv.PRN >= 120 && sv.PRN <= 158
+	default:
+		return false
+	}
+}
+
 type SVInfo struct {
-	ID        SVID         `json:"svid"`
+	ID        SVID         `json:"id"`
 	Azimuth   int16        `json:"azimuth"`        // in degrees, 0 to 360
 	Elevation int8         `json:"elevation"`      // in degrees, -90 to +90
 	Signals   []SignalInfo `json:"signals"`        // signals being transmitted by a satellite

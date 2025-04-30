@@ -7,6 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/geopos"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/gpsreg"
 )
 
 type GPSConfig struct {
@@ -23,6 +24,7 @@ type GPSConfig struct {
 	GNSS               gpsprot.GNSS `toml:"gnss"`
 	PulseWidth         float64      `toml:"pulseWidth"`
 	SatellitesOutput   *bool        `toml:"satellitesOutput"`
+	NMEANumbering      string       `toml:"nmeaNumbering"`
 }
 
 const defaultAccuracy = 20.0 // in meters
@@ -63,6 +65,17 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool) (*gpsprot.Confi
 	}
 	target.Opts.SatellitesMsg = c.satellitesMsgStatus(speed, wantSatellitesOutput)
 	return target, nil
+}
+
+func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProcessor, error) {
+	nmeaNumbering := []gpsprot.NMEASVNumberingRange{}
+	if c.NMEANumbering != "" {
+		nmeaNumbering = gpsreg.FindNMEASVNumbering(c.NMEANumbering)
+		if nmeaNumbering == nil {
+			return nil, fmt.Errorf("unknown NMEA SV numbering: %s", c.NMEANumbering)
+		}
+	}
+	return gpsreg.CreatePacketProcessors(nmeaNumbering), nil
 }
 
 func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {

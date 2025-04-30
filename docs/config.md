@@ -107,7 +107,7 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
 * `config` - a boolean saying whether to perform configuration of the GPS receiver; `true` means to perform configuration;
   currently this works only with GPS receivers that support the UBX protocol (like those from u-blox)
   this won't make any persistent changes to the GPS receiver, which means you can turn the receiver off and on again to undo any changes made by SatPulse;
-  if you use `false` here, then all the other keys in the table other than `pulseWidth` will be ignored
+  if you use `false` here, then all the other keys in the table other than `pulseWidth` and `nmeaNumbering` will be ignored
   and it is your responsibility to configure the GPS receiver appropriately
 * `pulseWidth` - a number giving the time pulse width in seconds that this GPS receiver has been configured with; this is not relevant
    unless the ethernet controller is one that timestamps both edges (e.g. Intel i210); it is also not relevant if SatPulse
@@ -137,6 +137,7 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
   the default is not to change the GPS receiver's configuration of the antenna cable delay; if both the `antennaCableLength` and the `antennaCableDelay`
   are specified, then the sum of the delays will be used
 * `satellitesOutput` - a boolean saying whether the GPS should be configured to output information about the satellites in view; this information can be used by the HTTP monitoring interface; the default is to configure output based on whether the HTTP interface is enabled, but not to perform configuration unless the serial speed is at least 38400 (this is because at low serials speeds the satellites output can cause significant delays in receiving the timing messages that SatPulse relies upon)
+* `nmeaNumbering` - a string giving the GPS receiver manufacturer, used to interpret non-standard numbering of space vehicles in NMEA GSV and GSA sentences; his is needed to show all satellites in the satellites view, particularly when GPS receivers are using versions of NMEA before 4.11; possible values are `"u-blox"` and `"allystar"`; default is not to include satellites with non-standard numbers.
 
 Example
 

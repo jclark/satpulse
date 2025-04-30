@@ -88,3 +88,18 @@ func (p *DefaultPacketProcessor) GetNativeMsgHandler() NativeMsgHandler {
 func (p *DefaultPacketProcessor) CreatePacketExchanger() PacketExchanger {
 	return nil
 }
+
+type NMEAPacketProcessor interface {
+	PacketProcessor
+	// SetSVNumbering sets the satellite numbering scheme for NMEA.
+	// The ranges must be non-overlapping and in increasing order of MinID/MaxID.
+	SetSVNumbering([]NMEASVNumberingRange)
+}
+
+type NMEASVNumberingRange struct {
+	MinID    uint16
+	MaxID    uint16
+	MinPRN   uint8
+	GNSS     GNSS
+	SignalID string
+}

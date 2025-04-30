@@ -94,7 +94,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	info, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(), target, pCh, conn)
+	info, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), target, pCh, conn)
 	if err == nil {
 		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigProps))
 	}

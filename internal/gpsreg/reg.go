@@ -1,6 +1,9 @@
 package gpsreg
 
 import (
+	"strings"
+
+	"github.com/jclark/satpulse/internal/as"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/rtcm"
@@ -15,10 +18,25 @@ var PacketFormats = []gpsprot.PacketFormat{
 }
 
 // CreatePacketProcessors creates packet processors for all registered protocols
-func CreatePacketProcessors() map[gpsprot.Tag]gpsprot.PacketProcessor {
+func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gpsprot.Tag]gpsprot.PacketProcessor {
+	nmeaPP := nmea.NewPacketProcessor()
+	if nmeaNumbering != nil {
+		nmeaPP.SetSVNumbering(nmeaNumbering)
+	}
 	return map[gpsprot.Tag]gpsprot.PacketProcessor{
 		ubx.Tag:  ubx.NewPacketProcessor(),
-		nmea.Tag: nmea.NewPacketProcessor(),
+		nmea.Tag: nmeaPP,
 		rtcm.Tag: rtcm.NewPacketProcessor(),
+	}
+}
+
+func FindNMEASVNumbering(manu string) []gpsprot.NMEASVNumberingRange {
+	switch strings.ToLower(manu) {
+	case "allystar", "as":
+		return as.NewNMEASVNumbering()
+	case "ublox", "u-blox", "ubx":
+		return ubx.NewNMEASVNumbering()
+	default:
+		return nil
 	}
 }
