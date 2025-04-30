@@ -18,7 +18,9 @@ export function SkyView(satellites: SVInfo[]) {
     const RADIUS = SIZE / 2;
     const STROKE_PAD = 1;
     const MIN_ELEVATION = -3; // minimum elevation to display; show just outside the circle
-
+    const COMPASS_PADDING = 2; // padding for compass points from the edge
+    const CAP_X_HEIGHT_DIFF = 0.5; // Difference between middle of cap height and middle of x-height
+    
     const toXY = (az: number, el: number): [number, number] => {
         const r = ((90 - Math.max(el, MIN_ELEVATION)) / 90) * RADIUS;
         const rad = (az - 90) * (Math.PI / 180); // 0° = east in SVG
@@ -66,7 +68,10 @@ export function SkyView(satellites: SVInfo[]) {
                     );
                 });
             })()}
-            <text x={RADIUS} y={10} text-anchor="middle" class="fill-gray-500 text-[6px]">N</text>
+            <text x={RADIUS} y={COMPASS_PADDING} text-anchor="middle" dominant-baseline="hanging" class="fill-gray-500 text-[6px]">N</text>
+            <text x={RADIUS} y={SIZE - COMPASS_PADDING} text-anchor="middle" class="fill-gray-500 text-[6px]">S</text>
+            <text x={SIZE - COMPASS_PADDING} y={RADIUS + CAP_X_HEIGHT_DIFF} text-anchor="end" dominant-baseline="middle" class="fill-gray-500 text-[6px]">E</text>
+            <text x={COMPASS_PADDING} y={RADIUS + CAP_X_HEIGHT_DIFF} text-anchor="start" dominant-baseline="middle" class="fill-gray-500 text-[6px]">W</text>
             
             {satellites.map((sv) => {
                 const [x, y] = toXY(sv.azimuth, sv.elevation);

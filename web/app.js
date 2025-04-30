@@ -496,6 +496,8 @@
     const RADIUS = SIZE / 2;
     const STROKE_PAD = 1;
     const MIN_ELEVATION = -3;
+    const COMPASS_PADDING = 2;
+    const CAP_X_HEIGHT_DIFF = 0.5;
     const toXY = (az, el) => {
       const r3 = (90 - Math.max(el, MIN_ELEVATION)) / 90 * RADIUS;
       const rad = (az - 90) * (Math.PI / 180);
@@ -545,7 +547,10 @@
               );
             });
           })(),
-          /* @__PURE__ */ u3("text", { x: RADIUS, y: 10, "text-anchor": "middle", class: "fill-gray-500 text-[6px]", children: "N" }),
+          /* @__PURE__ */ u3("text", { x: RADIUS, y: COMPASS_PADDING, "text-anchor": "middle", "dominant-baseline": "hanging", class: "fill-gray-500 text-[6px]", children: "N" }),
+          /* @__PURE__ */ u3("text", { x: RADIUS, y: SIZE - COMPASS_PADDING, "text-anchor": "middle", class: "fill-gray-500 text-[6px]", children: "S" }),
+          /* @__PURE__ */ u3("text", { x: SIZE - COMPASS_PADDING, y: RADIUS + CAP_X_HEIGHT_DIFF, "text-anchor": "end", "dominant-baseline": "middle", class: "fill-gray-500 text-[6px]", children: "E" }),
+          /* @__PURE__ */ u3("text", { x: COMPASS_PADDING, y: RADIUS + CAP_X_HEIGHT_DIFF, "text-anchor": "start", "dominant-baseline": "middle", class: "fill-gray-500 text-[6px]", children: "W" }),
           satellites.map((sv) => {
             const [x3, y3] = toXY(sv.azimuth, sv.elevation);
             const usedValid = satellites.some((s3) => s3.used === true);
