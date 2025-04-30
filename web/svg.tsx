@@ -154,7 +154,7 @@ function colorClassFor(svid: string): string {
 // Assumes satellites has already been simplified with simplifySignals.
 export function SignalGraph(satellites: SVInfo[], maxSatelliteCount: number, isDoubleRow: boolean) {
     const WIDTH = 300;
-    const MARGIN = { top: 20, right: 10, bottom: 10, left: 30 };
+    const MARGIN = { top: 20, right: 10, bottom: 10, left: 35 };
     const VERTICAL_MARGINS = MARGIN.top + MARGIN.bottom;
     const CHART_WIDTH = WIDTH - MARGIN.left - MARGIN.right;
     
@@ -242,7 +242,7 @@ export function SignalGraph(satellites: SVInfo[], maxSatelliteCount: number, isD
                         <g key={sv.id} transform={`translate(0, ${i * spacedBarHeight})`}>
                             {/* SVID label */}
                             <text
-                                x={-5}
+                                x={-8} // Increased space from -5 to -8 to prevent text from being cut off
                                 y={barHeight / 2}
                                 text-anchor="end"
                                 dominant-baseline="central"

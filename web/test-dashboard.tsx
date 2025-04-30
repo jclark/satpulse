@@ -91,7 +91,7 @@ const initEvent: { version: Version } = {
 
 const svs: SVInfo[] = [
   { id: 'G15', azimuth: 352, elevation: 69, signals: [ { cn0: 45, id: "L1 C/A" }, { cn0: 50, id: "L5" } ], used: true },
-  { id: 'G18', azimuth: 333, elevation: 26, signals: [ { cn0: 23 } ] },
+  { id: 'S143', azimuth: 333, elevation: 26, signals: [ { cn0: 23 } ] },
   { id: 'G23', azimuth: 297, elevation: 23, signals: [ { cn0: 36 } ] },
   { id: 'G24', azimuth: 154, elevation: 38, signals: [ { cn0: 39 } ], used: true },
   { id: 'G25', azimuth: 212, elevation: 10, signals: [ { cn0: 32 } ] },

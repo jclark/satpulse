@@ -620,7 +620,7 @@
   }
   function SignalGraph(satellites, maxSatelliteCount, isDoubleRow) {
     const WIDTH = 300;
-    const MARGIN = { top: 20, right: 10, bottom: 10, left: 30 };
+    const MARGIN = { top: 20, right: 10, bottom: 10, left: 35 };
     const VERTICAL_MARGINS = MARGIN.top + MARGIN.bottom;
     const CHART_WIDTH = WIDTH - MARGIN.left - MARGIN.right;
     const MIN_HEIGHT = 200;
@@ -687,7 +687,7 @@
               /* @__PURE__ */ u3(
                 "text",
                 {
-                  x: -5,
+                  x: -8,
                   y: barHeight / 2,
                   "text-anchor": "end",
                   "dominant-baseline": "central",
