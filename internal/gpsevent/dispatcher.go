@@ -183,6 +183,7 @@ type LogEvent struct {
 	Time       *gpsprot.TimeMsg       `json:"time,omitempty"`
 	Survey     *gpsprot.SurveyMsg     `json:"survey,omitempty"`
 	LeapSecond *gpsprot.LeapSecondMsg `json:"leapSecond,omitempty"`
+	Satellites *gpsprot.SatellitesMsg `json:"satellites,omitempty"`
 }
 
 type Timestamp struct {
@@ -254,6 +255,7 @@ type SurveySSE struct {
 }
 
 func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
+	d.logEvent(LogEvent{T: tRead, Survey: m})
 	if m.InProgress || !d.loggedSurveyComplete {
 		d.loggedSurveyComplete = !m.InProgress
 		d.lg.Info("survey progress",
@@ -292,9 +294,9 @@ type SatellitesSSE struct {
 	SVs []gpsprot.SVInfo `json:"svs"`
 }
 
-func (d *Dispatcher) Satellites(m *gpsprot.SatellitesMsg, tRead time.Time) {
-	d.lg.Debug("visible satellites", "num", len(m.SVs), "info", m.SVs)
-	d.sendSSE("satellites", SatellitesSSE{SVs: m.SVs})
+func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
+	d.logEvent(LogEvent{T: tRead, Satellites: msg})
+	d.sendSSE("satellites", SatellitesSSE{SVs: msg.SVs})
 }
 
 func (d *Dispatcher) sendSSE(name string, data any) {
@@ -309,7 +311,8 @@ func (d *Dispatcher) sendSSE(name string, data any) {
 	}
 }
 
-func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
+func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
+	d.logEvent(LogEvent{T: tRead, LeapSecond: msg})
 	if msg.OffChangeTime <= d.ls.OffChangeTime {
 		return
 	}
