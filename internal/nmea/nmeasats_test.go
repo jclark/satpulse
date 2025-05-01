@@ -1,15 +1,14 @@
 package nmea
 
-
 import (
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/internal/as"
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
-
 
 func TestGGAParse(t *testing.T) {
 	tests := []struct {
@@ -459,7 +458,7 @@ func TestSatellitesBuffer(t *testing.T) {
 					}
 					sb.process(sen, time.Time{}, &h)
 				} else {
-					sb.flush(&h)
+					sb.idle(&h)
 				}
 				if k < len(expect) && i == expect[k].i {
 					if h.nSV != expect[k].nSV {
@@ -472,6 +471,53 @@ func TestSatellitesBuffer(t *testing.T) {
 				} else if h.nSV != -1 {
 					t.Fatalf("handling failed at %d: got %d, want none", i, h.nSV)
 				}
+			}
+		})
+	}
+}
+
+func TestSVID(t *testing.T) {
+	dflt := dfltSVNumbering
+	allystar := as.NewNMEASVNumbering()
+	tests := []struct {
+		gnss      gpsprot.GNSS
+		svid      int
+		sigid     int
+		svname    string
+		signame   string
+		numbering []gpsprot.NMEASVNumberingRange
+	}{
+		{gnss: gpsprot.GPS, svid: 15, sigid: 0, svname: "G15", signame: "", numbering: dflt},
+		{gnss: gpsprot.GPS, svid: 1, sigid: 1, svname: "G01", signame: "L1 C/A", numbering: dflt},
+		{gnss: gpsprot.GPS, svid: 35, sigid: 0, svname: "S122", signame: "", numbering: dflt},
+		{gnss: gpsprot.BDS, svid: 861, sigid: 0, svname: "C11", signame: "B2A", numbering: allystar},
+		{gnss: gpsprot.GPS, svid: 861, sigid: 0, numbering: allystar}, // fail because inconsistent GNSS
+		{gnss: gpsprot.GLO, svid: 0, sigid: 0, svname: "R?", signame: "", numbering: dflt},
+		{gnss: gpsprot.GLO, svid: 65, sigid: 0, svname: "R01", signame: "", numbering: dflt},
+		{gnss: gpsprot.GLO, svid: 88, sigid: 0, svname: "R24", signame: "", numbering: dflt},
+		{gnss: gpsprot.GLO, svid: 89, sigid: 0, numbering: dflt}, // fail because out of range for valid SVID
+	}
+	for ti, test := range tests {
+		test := test
+		t.Run(fmt.Sprintf("%d", ti), func(t *testing.T) {
+			sb := newSatellitesBuffer()
+			sb.setNumbering(test.numbering)
+			svid, signame := sb.convertSVID(test.gnss, test.svid, test.sigid)
+			if svid.IsZero() {
+				if test.svname != "" {
+					t.Fatalf("conversion to SVID failed, but expected %s", test.svname)
+				}
+				return
+			}
+			svname := svid.String()
+			if test.svname == "" {
+				t.Fatalf("conversion to SVID got %s, but expected to fail", svname)
+			}
+			if svname != test.svname {
+				t.Fatalf("SVID name mismatch: got %s, want %s", svname, test.svname)
+			}
+			if signame != test.signame {
+				t.Fatalf("Signal name mismatch: got %s, want %s", signame, test.signame)
 			}
 		})
 	}

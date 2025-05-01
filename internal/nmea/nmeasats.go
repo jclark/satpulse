@@ -138,10 +138,10 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 				i := len(svs)
 				svidIndex[svid] = i
 				svs = append(svs, gpsprot.SVInfo{
-					ID: svid,
-					Azimuth:  int16(sv.azim),
+					ID:        svid,
+					Azimuth:   int16(sv.azim),
 					Elevation: int8(sv.elev),
-					Signals: []gpsprot.SignalInfo{sig},
+					Signals:   []gpsprot.SignalInfo{sig},
 				})
 			}
 		}
@@ -265,7 +265,6 @@ func (sb *satellitesBuffer) checkMsgNum(gsv gsvSentence) error {
 	return nil
 }
 
-
 type ggaSentence struct {
 	numSV int
 }
@@ -284,7 +283,7 @@ func parseGGA(sen *Sentence) (ggaSentence, error) {
 }
 
 type gsaSentence struct {
-	gnss gpsprot.GNSS
+	gnss  gpsprot.GNSS
 	svids []int
 }
 
@@ -329,10 +328,10 @@ type gsvSentence struct {
 }
 
 type svInfo struct {
-	id    int // 0 means means null
-	azim  int
-	elev  int
-	cn0   int
+	id   int // 0 means means null
+	azim int
+	elev int
+	cn0  int
 }
 
 // parseGSV parses the GSV sentence and returns a slice of SVInfo, a signal ID, a bool and an error.
@@ -435,7 +434,6 @@ func systemIDToGNSS(sysID int) gpsprot.GNSS {
 	}
 }
 
-
 // This is from NMEA 4.11, which isn't freely available.
 // See Table 7-34 in
 // Unicore Reference Commands Manual for N4 High Precision Products R1.6
@@ -461,15 +459,15 @@ var sigIDMap = map[gpsprot.GNSS]map[int]string{
 		7: "E1", // friendlier name for L1-BC
 	},
 	gpsprot.BDS: {
-		1: "B1I", // ublox
-		2: "B1Q", // restricted
-		3: "B1C", // ublox
-		4: "B1A", // restricted
-		5: "B2a", // NMEA calls it B2-a
-		6: "B2b", // NMEA calls it B2-b
-		7: "B2a+b",
-		8: "B3I", // quectel
-		9: "B3Q", // restricted
+		1:   "B1I", // ublox
+		2:   "B1Q", // restricted
+		3:   "B1C", // ublox
+		4:   "B1A", // restricted
+		5:   "B2a", // NMEA calls it B2-a
+		6:   "B2b", // NMEA calls it B2-b
+		7:   "B2a+b",
+		8:   "B3I", // quectel
+		9:   "B3Q", // restricted
 		0xA: "B3A", // restricted
 		0xB: "B2I", // ublox
 		0xC: "B2Q", // restricted
@@ -481,20 +479,20 @@ var sigIDMap = map[gpsprot.GNSS]map[int]string{
 		4: "L2 P",
 	},
 	gpsprot.QZSS: {
-		1: "L1 C/A",
-		2: "L1C (D)",
-		3: "L1C (P)",
-		4: "L1S",
-		5: "L2C-M",
-		6: "L2C-L",
-		7: "L5-I",
-		8: "L5-Q",
-		9: "L6", // friendlier name for L6D
+		1:   "L1", // friendlier name for L1 C/A
+		2:   "L1C (D)",
+		3:   "L1C (P)",
+		4:   "L1S",
+		5:   "L2C-M",
+		6:   "L2C-L",
+		7:   "L5-I",
+		8:   "L5-Q",
+		9:   "L6", // friendlier name for L6D
 		0xA: "L6E",
 	},
 	gpsprot.NAVIC: {
-	 	1: "L5", // friendlier name for L5-SPS
-		2: "S", // friendlier name for L5-SPS
+		1: "L5", // friendlier name for L5-SPS
+		2: "S",  // friendlier name for L5-SPS
 		3: "L5-RS",
 		4: "S-RS",
 		5: "L1", // friendlier name for L1-SPS
@@ -503,7 +501,7 @@ var sigIDMap = map[gpsprot.GNSS]map[int]string{
 
 func gnssSigIDName(gnss gpsprot.GNSS, sigID int) string {
 	if sigNames, ok := sigIDMap[gnss]; ok {
-		return sigNames[sigID];
+		return sigNames[sigID]
 	}
 	return fmt.Sprintf("%X", sigID)
 }

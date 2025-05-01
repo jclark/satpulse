@@ -222,6 +222,10 @@ func (sv SVID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(sv.String())
 }
 
+func (sv SVID) IsZero() bool {
+	return sv.GNSS == 0 && sv.PRN == 0
+}
+
 // IsValid checks if the SVID has a valid PRN for its GNSS type
 func (sv SVID) IsValid() bool {
 	if sv.PRN == GLOUnknown && sv.GNSS == GLO {
