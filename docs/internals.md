@@ -58,11 +58,15 @@ Provides packages using domain-specific abstractions that are used by the applic
 
 `internal/scan` provides a Packet type representing a packet of GPS data in some protocol. It also provides a scan function to split up a stream of bytes into packets. It does not interpret the content of the packet.
 
-`internal/gpsprot` abstracts a GPS protocol such as UBX or NMEA. This operates in two phases: configuration and post-configuration. The post-configuration part of this defines types that represent the information contained in GPS messages in a protovo
+`internal/gpsprot` abstracts a GPS protocol such as UBX or NMEA. This operates in two phases: configuration and post-configuration. The post-configuration part of this defines types that represent the information contained in GPS messages in a protocol-independent way.
 
 `internal/ubx` implements `internal/gpsprot` abstractions for the UBX protocol. It uses `internal/ubx/bin` and `internal/ubxcfgval` to do this.
 
 `internal/nmea` implements `internal/gpsprot` abstractions for the NMEA protocol.
+
+`internal/rtcm` implements `internal/gpsprot` abstractions for the RTCM protocol.
+
+`internal/gpsreg` provides a registry for the various implementations of the `internal/gpsprot` layer. Higher layers avoid interacting with the implementations for specific protocols as much as possible. Generally the command-line layer interacts with `internal/gpsreg`, and passes the appropriate implementations into lower layers.
 
 `internal/phc` provides low level abstractions to access the PTP hardware clock. It is highly Linux dependent. It uses `internal/ptime`.
 
