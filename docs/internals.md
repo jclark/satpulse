@@ -52,7 +52,7 @@ Provides the main blocks of the applications.
 
 ### Domain layer
 
-Provides packages using domain-specific abstractions that are used by the application layer. These packages have mutual dependencies. They do not make use of goroutines nor do they perform no logging.
+Provides packages using domain-specific abstractions that are used by the application layer. These packages have mutual dependencies. They do not make use of goroutines nor do they perform logging.
 
 `internal/ptime` provides a Time type that represents time in the PTP timescale (nanoseconds in TAI timescale since 1970-01-01T00:00:00 TAI). This is used throught the domain layer and higher level layers.
 
