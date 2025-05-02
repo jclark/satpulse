@@ -24,7 +24,6 @@ Others
 High priority
 
 * Estimate clock accuracy and dynamically update grandmaster settings. In particular, on startup, update with low accuracy and then improve it as we settle down.
-* More sophisticated, configurable detection of whether we are synced (mostly covered by previous point)
 
 Others
 * Enable configuration of non-synced settings or read current settings at startup
@@ -55,8 +54,6 @@ Others
 
 ## Combine
 
-* TimeMsg method should use gpsprot.TimeMsg
-  * runner.go should just pass time messages on
 * Implement auto-detection of number of edges per pulse
 * Add some package docs
 * Improve how we generate TAI from UTC time messages
@@ -100,7 +97,7 @@ High priority
 
 Others
 * When we get notification of a new leap second, we should store that in a file in /var somewhere, and then read that on startup.
-* Include source of leap second information in gpsmsg leap second message
+* Include source of leap second information in gpsprot leap second message
 * We could tell the GPS about stored leap seconds using UBX-MGA-GPS-UTC (but this has other stuff that is hard to specify)
 * How should we hook up with NTP-centric kernel support for leap seconds?
   * If the TAI-UTC offset is set in the kernel (presumably from NTP), we could get that and use it as our default.
@@ -123,8 +120,6 @@ Others
 
 ## Scanning
 
-* Recognizing RTCM is a bit dangerous when we might have invalid data at the beginning, because it's only
-a single byte; we really cannot tell whether we have valid RTCM data until we have validated the checksum; maybe enable RTCM only once we have had a valid message of another type. Maybe have a separate state. This is alleviated by our timing out in the middle of a packet.
 * Support other framing protocols
    * Allystar (similar to UBX but uses 0xF1 0xD9)
    * Trimble TSIP
@@ -175,8 +170,6 @@ a single byte; we really cannot tell whether we have valid RTCM data until we ha
 * In PHC card, having something showing how long ago the sync happened
 * Information about visible satellites
    * Number of satellites
-   * Satellite elevations
-   * Could do sky view diagram using SVG or canvas
 * Prettier display of current time of day
 * Statistics about time-sync quality
     * Maybe query parameter on to give time period over which stats would be summarized
