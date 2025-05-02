@@ -40,7 +40,7 @@ const (
 	ResumeEvent
 )
 
-const exttsTimeout = 100 * time.Microsecond // if we hit this timeout, then the next one isn't stale
+const exttsTimeout = 100 * time.Millisecond // if we hit this timeout, then the next one isn't stale
 const existTimeout = 30 * time.Second
 const logWaitTimeout = time.Second / 2 // log if we have to wait more than this for an interface
 
