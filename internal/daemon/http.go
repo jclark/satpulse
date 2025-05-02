@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"sync"
 	"time"
 
@@ -18,9 +19,18 @@ import (
 
 type HTTPConfig struct {
 	Listen string `toml:"listen"`
+	PProf  bool   `toml:"pprof"`
 }
 
 const gracefulShutdownTimeout = 1 * time.Second
+
+func registerPprofHandlers(mux *http.ServeMux) {
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+}
 
 func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], initEvent sse.Event) error {
 	if len(cfg) == 0 {
@@ -31,19 +41,8 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 			return errors.New("must specify listen option for each HTTP element")
 		}
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
-		sseHandleRequest(ctx, lg, w, r, b, initEvent)
-	})
-
-	fileServer := http.FileServer(http.FS(web.Content()))
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fileServer.ServeHTTP(w, r)
-	})
 
 	listenCfg := net.ListenConfig{}
-
 	listeners := make([]net.Listener, len(cfg))
 	for i, c := range cfg {
 		listen, err := listenCfg.Listen(ctx, "tcp", c.Listen)
@@ -52,11 +51,25 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		}
 		listeners[i] = listen
 	}
-	// XXX we should supply an error logger that wraps lg
-	server := &http.Server{Handler: mux}
 
-	for _, listener := range listeners {
+	fileServer := http.FileServer(http.FS(web.Content()))
+	servers := make([]*http.Server, len(listeners))
+	for i, listener := range listeners {
 		listener := listener
+		mux := http.NewServeMux()
+		if cfg[i].PProf {
+			registerPprofHandlers(mux)
+		}
+		mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+			sseHandleRequest(ctx, lg, w, r, b, initEvent)
+		})
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			fileServer.ServeHTTP(w, r)
+		})
+
+		// XXX we should supply an error logger that wraps lg
+		server := &http.Server{Handler: mux}
+		servers[i] = server
 		cmd.WaitGroupGo(wg, func() {
 			lg.Debug("HTTP server listening", "addr", listener.Addr())
 			if err := server.Serve(listener); err != http.ErrServerClosed {
@@ -70,8 +83,10 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
 		defer cancel()
 		lg.Debug("initiating HTTP server shutdown")
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			lg.Error("Server shutdown error", "err", err)
+		for _, server := range servers {
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				lg.Error("Server shutdown error", "err", err)
+			}
 		}
 		lg.Debug("about to exit HTTP server shutdown goroutine")
 	})
