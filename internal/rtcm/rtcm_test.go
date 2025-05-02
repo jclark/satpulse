@@ -36,7 +36,7 @@ func TestMessageID(t *testing.T) {
 	}{
 		{999, "999"},
 		{1072, "MSM2-GPS"},
-		{1045, "eph-Galileo"},
+		{1045, "eph-Galileo-F"},
 		{1077, "MSM7-GPS"},
 		{1085, "MSM5-GLONASS"},
 		{1042, "eph-BeiDou"},
