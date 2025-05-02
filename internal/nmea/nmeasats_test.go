@@ -324,6 +324,14 @@ func TestGSVParse(t *testing.T) {
 				{id: 25, elev: 26, azim: 283, cn0: 38},
 			},
 		},
+		{
+			sen: "$GPGSV,1,1,01,21,65,360,31",
+			svs: []svInfo{
+				// LBE-1321 generates azimuth 360
+				{id: 21, elev: 65, azim: 360, cn0: 31},
+			},
+			final: true,
+		},
 	}
 	for _, test := range tests {
 		test := test

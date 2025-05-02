@@ -384,7 +384,7 @@ Loop:
 		if err != nil {
 			return gsv, err
 		}
-		sv.azim, err = parseIntField(sen.Fields, i+2, 0, 359, "GSV")
+		sv.azim, err = parseIntField(sen.Fields, i+2, 0, 360, "GSV")
 		if err != nil {
 			return gsv, err
 		}
