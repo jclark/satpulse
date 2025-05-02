@@ -45,14 +45,14 @@ func TestGPSConfig(t *testing.T) {
 
 func TestSatellitesInfo(t *testing.T) {
 	cfgStr := `[gps]
-	satellitesInfo = true`
+	satellitesOutput = true`
 	r := strings.NewReader(cfgStr)
 	cfg, err := readConfig(r)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.GPS.SatellitesOutput == nil || *cfg.GPS.SatellitesOutput != true {
-		t.Errorf("SatellitesInfo: got %v, want true", cfg.GPS.SatellitesOutput)
+		t.Errorf("SatellitesOutputs: got %v, want true", cfg.GPS.SatellitesOutput)
 	}
 	cfgStr = `[gps]`
 	r = strings.NewReader(cfgStr)
@@ -61,7 +61,7 @@ func TestSatellitesInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.GPS.SatellitesOutput != nil {
-		t.Errorf("SatellitesInfo: got %v, want nil", cfg.GPS.SatellitesOutput)
+		t.Errorf("SatellitesOutputs: got %v, want nil", cfg.GPS.SatellitesOutput)
 	}
 	ms := cfg.GPS.satellitesMsgStatus(38400, true)
 	if ms != gpsprot.MsgStatusEnabled {

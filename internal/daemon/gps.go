@@ -178,7 +178,7 @@ const minSpeedSatellitesOutput = 38400
 
 func (c *GPSConfig) satellitesMsgStatus(speed int, wantSatellitesOutput bool) gpsprot.MsgStatus {
 	if c.SatellitesOutput == nil {
-		if speed <= minSpeedSatellitesOutput {
+		if speed < minSpeedSatellitesOutput {
 			// If the speed is too slow, then we won't have automatically enabled it,
 			// so we don't need to disable it.
 			return gpsprot.MsgStatusUnchanged
