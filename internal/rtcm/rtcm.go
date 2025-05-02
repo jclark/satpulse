@@ -16,9 +16,9 @@ var PacketFormat gpsprot.PacketFormat = packetFormat{}
 
 // Message represents an RTCM message
 type Message struct {
-	Payload    string
-	MsgType    uint16
-	ChecksumField uint32
+	Payload          string
+	MsgType          uint16
+	ChecksumField    uint32
 	ComputedChecksum uint32
 }
 
@@ -35,29 +35,29 @@ var msgNames = map[uint16]string{
 	1010: "L1x-GLONASS",
 	1011: "L1L2-GLONASS",
 	1012: "L1L2x-GLONASS",
-    1019: "eph-GPS",
-    1020: "eph-GLONASS",
+	1019: "eph-GPS",
+	1020: "eph-GLONASS",
 	1033: "rcvr-antenna",
 	1041: "eph-NavIC",
-    1042: "eph-BeiDou",
-    1044: "eph-QZSS",
-    1045: "eph-Galileo-F",
-    1046: "eph-Galileo-I",
-    1230: "bias-GLONASS",
+	1042: "eph-BeiDou",
+	1044: "eph-QZSS",
+	1045: "eph-Galileo-F",
+	1046: "eph-Galileo-I",
+	1230: "bias-GLONASS",
 }
 
 var gnss = []string{"GPS", "GLONASS", "Galileo", "SBAS", "QZSS", "BeiDou", "NavIC"}
 
 func (m *Message) ID() string {
 	g := (int(m.MsgType) / 10) - 107
-    n := m.MsgType % 10
-    if g >= 0 && g < len(gnss) && n >= 1 && n <= 7 {
-        return fmt.Sprintf("MSM%d-%s", n, gnss[g])
-    }
-    if name, ok := msgNames[m.MsgType]; ok {
-        return name
-    }
-    return fmt.Sprintf("%d", m.MsgType)
+	n := m.MsgType % 10
+	if g >= 0 && g < len(gnss) && n >= 1 && n <= 7 {
+		return fmt.Sprintf("MSM%d-%s", n, gnss[g])
+	}
+	if name, ok := msgNames[m.MsgType]; ok {
+		return name
+	}
+	return fmt.Sprintf("%d", m.MsgType)
 }
 
 func (m *Message) ChecksumOK() bool {
@@ -126,7 +126,7 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 	msgID := msg.ID()
 	if !msg.ChecksumOK() {
 		// CRC24 so 24 bits, 6 hex digits
-		return msgID, fmt.Errorf("RTCM checksum error: checksum in message 0x%06x, computed %06x", msg.ChecksumField, msg.ComputedChecksum)	
+		return msgID, fmt.Errorf("RTCM checksum error: message number %d, checksum in message 0x%06x, computed %06x", msg.MsgType, msg.ChecksumField, msg.ComputedChecksum)
 	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
@@ -149,10 +149,9 @@ func ParseMessage(packet string) *Message {
 	}
 
 	return &Message{
-		Payload:    payload,
-		MsgType:    msgType,
-		ChecksumField: crc24q.Extract(packet, n),
+		Payload:          payload,
+		MsgType:          msgType,
+		ChecksumField:    crc24q.Extract(packet, n),
 		ComputedChecksum: crc24q.Checksum(packet[0:n]),
 	}
 }
-
