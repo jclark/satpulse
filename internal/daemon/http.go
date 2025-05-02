@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"sync"
 	"time"
 
@@ -22,6 +23,14 @@ type HTTPConfig struct {
 
 const gracefulShutdownTimeout = 1 * time.Second
 
+func registerPprofHandlers(mux *http.ServeMux) {
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+}
+
 func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], initEvent sse.Event) error {
 	if len(cfg) == 0 {
 		return nil
@@ -32,6 +41,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		}
 	}
 	mux := http.NewServeMux()
+	registerPprofHandlers(mux)
 	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
 		sseHandleRequest(ctx, lg, w, r, b, initEvent)
 	})
