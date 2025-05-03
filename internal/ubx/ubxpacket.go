@@ -2,6 +2,7 @@ package ubx
 
 import (
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
 // PacketFormat is the UBX packet format
@@ -16,8 +17,8 @@ func (f packetFormat) Tag() gpsprot.Tag {
 
 // First two bytes of UBX packet
 const (
-	sync1Byte = 0xB5
-	sync2Byte = 0x62
+	sync1Byte = bin.Sync1
+	sync2Byte = bin.Sync2
 )
 
 const (
@@ -55,4 +56,18 @@ func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, p
 
 func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 	return state == stateExpectN
+}
+
+// ExtractChecksum extracts the checksum from the UBX packet.
+// Precondition: the packet must be valid according to Next().
+func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
+	// UBX checksum is 2 bytes, so return the last 2 bytes of the buffer
+	return pkt[len(pkt)-2:]
+}
+
+// ComputeChecksum computes the checksum for the UBX packet.
+// Precondition: the packet must be valid according to Next().
+func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
+	ckA, ckB := bin.Checksum(pkt[2:len(pkt)-2])
+	return []byte{ckA, ckB}
 }

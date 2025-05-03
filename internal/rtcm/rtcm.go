@@ -107,6 +107,18 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 	return state == stateExpectN
 }
 
+// ExtractChecksum extracts the checksum from the RTCM packet.
+// Precondition: the packet must be valid according to Next().
+func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
+	// RTCM checksum is 3 bytes, so return the last 3 bytes of the buffer
+	return pkt[len(pkt)-3:]
+}
+
+func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
+	checksum := crc24q.Checksum(pkt[0:len(pkt)-3])
+	return []byte{byte(checksum >> 16), byte(checksum >> 8), byte(checksum)}
+}
+
 // PacketProcessor implements the gpsprot.PacketProcessor interface for RTCM packets
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor

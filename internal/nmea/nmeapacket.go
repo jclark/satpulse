@@ -89,6 +89,31 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 	return state == stateComplete
 }
 
+// ExtractChecksum extracts the checksum from the NMEA packet.
+// Precondition: the packet must be valid according to Next().
+// We represent the checksum as a single byte in the expectation that when a checksum error is described the bytes will be printed as hex.
+func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
+	i := starIndex(pkt) + 1
+	return []byte{(hexWeight(pkt[i]) << 4) | hexWeight(pkt[i+1])}
+}
+
+// ComputeChecksum computes the checksum for the NMEA packet.
+// Precondition: the packet must be valid according to Next().
+func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
+	return []byte{Checksum(pkt[1:starIndex(pkt)])}
+}
+
+func starIndex(pkt []byte) int {
+	starOffset := len(pkt) - 5
+	if pkt[starOffset] != '*' {
+		starOffset++
+		if pkt[starOffset] != '*' {
+			panic("Invalid NMEA packet passed to PacketFormat ComputeChecksum or ExtractChecksum")
+		}
+	}
+	return starOffset
+}
+
 // Helper functions (private)
 func isDataByte(b byte) bool {
 	if b < ' ' || b >= 0x7f {

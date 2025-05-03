@@ -1501,7 +1501,7 @@ func ParseMsg(packet string) (Msg, error) {
 	}
 	checksumIndex := n - 2
 	trimmed := packet[2:checksumIndex]
-	ckA, ckB := checksum(trimmed)
+	ckA, ckB := Checksum(trimmed)
 	if ckA != packet[checksumIndex] || ckB != packet[checksumIndex+1] {
 		return nil, fmt.Errorf("ubx message: checksum failed: checksum in message 0x%02x%02x; computed checksum 0x%02x%02x; data %x", packet[checksumIndex], packet[checksumIndex+1], ckA, ckB, []byte(trimmed))
 	}
@@ -1603,7 +1603,7 @@ func packMsg(mid MsgID, payload []byte) ([]byte, error) {
 		byte((len(payload) >> 8) & 0xFF),
 	}
 	packet = append(packet, payload...)
-	ckA, ckB := checksum(packet[2:])
+	ckA, ckB := Checksum(packet[2:])
 	packet = append(packet, ckA, ckB)
 	return packet, nil
 }
@@ -1617,7 +1617,7 @@ type Bytes interface {
 func PacketMsgId[B Bytes](packet B) MsgID {
 	return makeMsgID(packet[2], packet[3])
 }
-func checksum[B Bytes](bytes B) (ckA, ckB byte) {
+func Checksum[B Bytes](bytes B) (ckA, ckB byte) {
 	for i := 0; i < len(bytes); i++ {
 		ckA += bytes[i]
 		ckB += ckA

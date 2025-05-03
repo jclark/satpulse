@@ -259,7 +259,11 @@ func Split(data string) *Sentence {
 	return &sen
 }
 
-func Checksum(data string) byte {
+type Bytes interface {
+	string | []byte
+}
+
+func Checksum[B Bytes](data B) byte {
 	var c byte
 	for i := 0; i < len(data); i++ {
 		c ^= data[i]

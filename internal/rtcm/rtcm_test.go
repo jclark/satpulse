@@ -1,6 +1,7 @@
 package rtcm
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/jclark/satpulse/internal/scantest"
@@ -26,6 +27,9 @@ func rtcmOK(t *testing.T, msgNum uint16, data string) {
 	}
 	if m.MsgType != msgNum {
 		t.Fatalf(`wrong message number for RTCM %d`, msgNum)
+	}
+	if !bytes.Equal(PacketFormat.ComputeChecksum(buf), PacketFormat.ExtractChecksum(buf)) {
+		t.Fatalf(`checksum of RTCM %d not recognized as valid`, msgNum)
 	}
 }
 

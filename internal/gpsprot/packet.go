@@ -16,6 +16,7 @@ const (
 )
 
 // PacketFormat defines the interface for protocol-specific packet format handling
+// PacketFormat is immutable
 type PacketFormat interface {
 	// Tag returns the protocol-specific packet kind
 	Tag() Tag
@@ -28,6 +29,14 @@ type PacketFormat interface {
 
 	// IsFinal determines if the given state represents a complete packet
 	IsFinal(state ScanState) bool
+
+	// ExtractChecksum extracts the checksum from the packet
+	// Precondition: the packet must be valid according to Next()
+	ExtractChecksum(pkt []byte) []byte
+
+	// ComputeChecksum computes the checksum for the given packet
+	// Precondition: the packet must be valid according to Next()
+	ComputeChecksum(pkt []byte) []byte
 }
 
 // PacketProcessor processes packets of a specific protocol
