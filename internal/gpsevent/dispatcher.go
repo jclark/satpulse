@@ -156,23 +156,24 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 		return
 	}
 	lg := d.lg
-	pp, ok := d.pktProcs[pkt.Tag]
-	if !ok {
-		if pkt.Tag == gpsprot.InvalidTag {
-			if !d.loggedUnknownProtocol {
-				lg.Info("received data from GPS in unrecognized format (serial communication problem?)",
-					"len", len(pkt.Data), "data", pkt.Data)
-				d.loggedUnknownProtocol = true
-			}
-		} else {
-			lg.Error("no processor registered for packet tag", "tag", pkt.Tag)
+
+	if pkt.Format == nil {
+		if !d.loggedUnknownProtocol {
+			lg.Info("received data from GPS in unrecognized format (serial communication problem?)",
+				"len", len(pkt.Data), "data", pkt.Data)
+			d.loggedUnknownProtocol = true
 		}
+
+	}
+	tag := pkt.Format.Tag()
+	pp, ok := d.pktProcs[tag]
+	if !ok {
+		lg.Error("no processor registered for packet tag", "tag", tag)
 		return
 	}
-
 	_, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
-		lg.Error("error processing packet", "err", err, "tag", pkt.Tag, "data", pkt.Data)
+		lg.Error("error processing packet", "err", err, "tag", tag, "data", pkt.Data)
 	}
 }
 

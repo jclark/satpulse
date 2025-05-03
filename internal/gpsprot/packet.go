@@ -5,8 +5,6 @@ import "time"
 // Tag identifies the kind of packet
 type Tag string
 
-const InvalidTag Tag = "Invalid"
-
 // ScanState represents the state of a packet scanner
 type ScanState uint32
 

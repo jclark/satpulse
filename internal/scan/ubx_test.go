@@ -72,8 +72,8 @@ func TestGoodUBX(t *testing.T) {
 	}
 
 	// Ensure no extra data is left
-	f, err := s.Scan()
-	if err != io.EOF || f.Tag != Invalid || f.Data != "" {
+	pkt, err := s.Scan()
+	if err != io.EOF || pkt.Format != nil || pkt.Data != "" {
 		t.Fatalf("Expected EOF after all packets, but got: %v", err)
 	}
 }
@@ -93,44 +93,44 @@ func TestUBXRescan(t *testing.T) {
 	s := New(r, bufferSize)
 
 	// Scan the first packet
-	f, err := s.Scan()
+	pkt, err := s.Scan()
 	if err != nil {
 		t.Fatalf("Error scanning first packet: %v", err)
 	}
-	if f.Tag != ubx.Tag {
+	if !pkt.HasTag(ubx.Tag) {
 		t.Fatalf("First packet not recognized as UBX")
 	}
-	if f.Data != packet1 {
-		t.Fatalf("First packet data mismatch: expected %q, got %q", packet1, f.Data)
+	if pkt.Data != packet1 {
+		t.Fatalf("First packet data mismatch: expected %q, got %q", packet1, pkt.Data)
 	}
 
 	// Scan the invalid packet
-	f, err = s.Scan()
+	pkt, err = s.Scan()
 	if err != nil {
 		t.Fatalf("Error scanning invalid packet: %v", err)
 	}
-	if f.Tag != Invalid {
+	if pkt.Format != nil {
 		t.Fatalf("Invalid packet not recognized as invalid")
 	}
-	if f.Data != "\xB5" {
-		t.Fatalf("Invalid packet data mismatch: expected %q, got %q", "\xB5", f.Data)
+	if pkt.Data != "\xB5" {
+		t.Fatalf("Invalid packet data mismatch: expected %q, got %q", "\xB5", pkt.Data)
 	}
 
 	// Scan the second packet
-	f, err = s.Scan()
+	pkt, err = s.Scan()
 	if err != nil {
 		t.Fatalf("Error scanning second packet: %v", err)
 	}
-	if f.Tag != ubx.Tag {
+	if !pkt.HasTag(ubx.Tag) {
 		t.Fatalf("Second packet not recognized as UBX")
 	}
-	if f.Data != packet2 {
-		t.Fatalf("Second packet data mismatch: expected %q, got %q", packet2, f.Data)
+	if pkt.Data != packet2 {
+		t.Fatalf("Second packet data mismatch: expected %q, got %q", packet2, pkt.Data)
 	}
 
 	// Ensure no extra data is left
-	f, err = s.Scan()
-	if err != io.EOF || f.Tag != Invalid || f.Data != "" {
+	pkt, err = s.Scan()
+	if err != io.EOF || pkt.Format != nil || pkt.Data != "" {
 		t.Fatalf("Expected EOF after all packets, but got: %v", err)
 	}
 }
@@ -162,7 +162,7 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 	var concatenatedInvalid string
 	packetIndex := 0
 	for {
-		f, err := s.Scan()
+		pkt, err := s.Scan()
 		if err == io.EOF {
 			break
 		}
@@ -172,11 +172,11 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 
 		if packetIndex%2 == 0 {
 			// UBX packet
-			if f.Tag != ubx.Tag {
-				t.Fatalf("Packet %d: expected UBX, but got %v", packetIndex, f.Tag)
+			if !pkt.HasTag(ubx.Tag) {
+				t.Fatalf("Packet %d: expected UBX, but got %v", packetIndex, pkt.Format.Tag())
 			}
-			if f.Data != packets[packetIndex] {
-				t.Fatalf("Packet %d: UBX data mismatch: expected %q, got %q", packetIndex, packets[packetIndex], f.Data)
+			if pkt.Data != packets[packetIndex] {
+				t.Fatalf("Packet %d: UBX data mismatch: expected %q, got %q", packetIndex, packets[packetIndex], pkt.Data)
 			}
 			if concatenatedInvalid != "" {
 				t.Fatalf("Unexpected concatenated invalid data: %q", concatenatedInvalid)
@@ -184,10 +184,10 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 			packetIndex++ // Move to the next packet
 		} else {
 			// Invalid packet
-			if f.Tag != Invalid {
-				t.Fatalf("Packet %d: expected Invalid, but got %v", packetIndex, f.Tag)
+			if pkt.Format != nil {
+				t.Fatalf("Packet %d: expected Invalid, but got %v", packetIndex, pkt.Format.Tag())
 			}
-			concatenatedInvalid += f.Data
+			concatenatedInvalid += pkt.Data
 			if concatenatedInvalid == packets[packetIndex] {
 				// Once the concatenated invalid data matches the expected invalid packet, reset it
 				concatenatedInvalid = ""

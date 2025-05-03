@@ -21,19 +21,19 @@ func TestGoodNMEA(t *testing.T) {
 func nmeaOK(t *testing.T, data string) {
 	r := strings.NewReader(data)
 	s := New(r, 64)
-	f, err := s.Scan()
+	pkt, err := s.Scan()
 	trimmed := scantest.TrimNMEA(data)
 	if err != nil {
 		t.Fatalf(`error reading packet "%s"`, trimmed)
 	}
-	if f.Tag != nmea.Tag {
+	if !pkt.HasTag(nmea.Tag) {
 		t.Fatalf(`NMEA message "%s" not recognized as valid`, trimmed)
 	}
-	if f.Data != data {
+	if pkt.Data != data {
 		t.Fatalf(`wrong data for "%s"`, trimmed)
 	}
-	f, err = s.Scan()
-	if err != io.EOF || f.Tag != Invalid || f.Data != "" {
+	pkt, err = s.Scan()
+	if err != io.EOF || pkt.Format != nil || pkt.Data != "" {
 		t.Fatalf(`did not get EOF with no data after NMEA "%s"`, trimmed)
 	}
 }
@@ -53,8 +53,8 @@ func TestBadNMEA(t *testing.T) {
 func nmeaBad(t *testing.T, data string) {
 	r := strings.NewReader(data)
 	s := New(r, 64)
-	f, _ := s.Scan()
-	if f.Tag != Invalid {
+	pkt, _ := s.Scan()
+	if pkt.Format != nil {
 		t.Fatalf(`NMEA message "%s" not recognized as invalid`, scantest.TrimNMEA(data))
 	}
 }
@@ -71,18 +71,18 @@ func nmeaMixed(t *testing.T, data string, nInvalidExpected int) {
 	s := New(r, 64)
 	nInvalid := 0
 	for {
-		f, err := s.Scan()
+		pkt, err := s.Scan()
 		if err == io.EOF {
 			t.Fatalf(`EOF reading packet "%s" without NMEA packet; %d invalid bytes`, trimmed, nInvalid)
 		}
 		if err != nil {
 			t.Fatalf(`error reading packet "%s"`, trimmed)
 		}
-		if f.Tag == Invalid {
-			nInvalid += len(f.Data)
+		if pkt.Format == nil {
+			nInvalid += len(pkt.Data)
 			continue
 		}
-		if f.Tag == nmea.Tag {
+		if pkt.HasTag(nmea.Tag) {
 			break
 		} else {
 			t.Fatalf(`no valid NMEA message found in "%s"`, trimmed)

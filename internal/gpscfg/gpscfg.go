@@ -336,32 +336,33 @@ func (mh *msgHandler) suitableMessageCount() int {
 	return mh.msgCount[ubx.Tag] + mh.msgCount[nmea.Tag]
 }
 
-func (mh *msgHandler) packet(f scan.Packet) {
-	if f.IsInterPacketTimeout() {
+func (mh *msgHandler) packet(pkt scan.Packet) {
+	if pkt.IsInterPacketTimeout() {
 		mh.lg.Debug("inter-packet timeout detected during GPS configuration")
 		for _, pp := range mh.packetProcs {
-			pp.Idle(f.TRead)
+			pp.Idle(pkt.TRead)
 		}
 		return
 	}
-	data := f.Data
-	if f.Tag == gpsprot.InvalidTag {
-		mh.invalid(data, f.ReadError)
+	data := pkt.Data
+	if pkt.Format == nil {
+		mh.invalid(data, pkt.ReadError)
 		return
 	}
-	pp, ok := mh.packetProcs[f.Tag]
+	tag := pkt.Format.Tag()
+	pp, ok := mh.packetProcs[tag]
 	if !ok {
-		mh.lg.Error("no processor registered for protocol", "protocol", f.Tag)
+		mh.lg.Error("no processor registered for protocol", "protocol", tag)
 		return
 	}
-	msgID, err := pp.ProcessPacket(data, f.TRead)
+	msgID, err := pp.ProcessPacket(data, pkt.TRead)
 	if err != nil {
-		mh.lg.Error("GPS packet cannot be parsed", "protocol", f.Tag, "err", err)
+		mh.lg.Error("GPS packet cannot be parsed", "protocol", tag, "err", err)
 		mh.bad.corruptMsgs++
 	}
 	// only count parseable messages with good checksum
-	mh.msgCount[f.Tag]++
-	mh.msgIDs[f.Tag][msgID] = true
+	mh.msgCount[tag]++
+	mh.msgIDs[tag][msgID] = true
 }
 
 func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {

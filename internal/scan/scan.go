@@ -10,18 +10,22 @@ import (
 )
 
 type Packet struct {
-	Tag       gpsprot.Tag
+	Format    gpsprot.PacketFormat
 	ReadError error
 	Data      string
 	TRead     time.Time
 }
 
-func (f Packet) IsInterPacketTimeout() bool {
-	if f.Tag == Invalid && f.ReadError != nil && len(f.Data) == 0 {
-		_, ok := f.ReadError.(TimeoutError)
+func (pkt Packet) IsInterPacketTimeout() bool {
+	if pkt.Format == nil && pkt.ReadError != nil && len(pkt.Data) == 0 {
+		_, ok := pkt.ReadError.(TimeoutError)
 		return ok
 	}
 	return false
+}
+
+func (pkt Packet) HasTag(tag gpsprot.Tag) bool {
+	return pkt.Format != nil && pkt.Format.Tag() == tag
 }
 
 type Scanner struct {
@@ -58,7 +62,6 @@ func New(r io.Reader, bufSize int) *Scanner {
 }
 
 const stateSync = gpsprot.ScanStateSync
-const Invalid = gpsprot.InvalidTag
 
 // Scan reads a packet from the underlying Reader.
 // A transient error, such as a timeout, will be returned in the ReadError field of the packet
@@ -75,7 +78,6 @@ Loop:
 	for {
 		if s.nextScanIndex >= len(s.buf) {
 			if state == stateSync && packetLen > 0 {
-				p.Tag = Invalid
 				break Loop
 			}
 			e := s.fill(packetLen)
@@ -97,7 +99,6 @@ Loop:
 					// not a transient error
 					err = e
 				}
-				p.Tag = Invalid
 				break Loop
 			}
 		}
@@ -116,7 +117,6 @@ Loop:
 		// Looks like we may have a new packet.
 		// If we have invalid data before the start of the packet, need to clear it out now.
 		if nextState != stateSync && state == stateSync && packetLen > 0 {
-			p.Tag = Invalid
 			break Loop
 		}
 		if state != stateSync && nextState == stateSync && packetLen > 0 {
@@ -126,7 +126,6 @@ Loop:
 			// This is sufficient for UBX and NMEA, because the $ which starts an NMEA packet
 			// isn't allowed with an NMEA packet. For UBX, the only way it's invalid is if the
 			// length is wrong or it didn't have the right second sync byte.
-			p.Tag = Invalid
 			break Loop
 		}
 		// accept this character
@@ -136,7 +135,7 @@ Loop:
 		if state == stateSync {
 			curPktFormat = nil
 		} else if curPktFormat.IsFinal(state) {
-			p.Tag = curPktFormat.Tag()
+			p.Format = curPktFormat
 			break Loop
 		}
 	}
@@ -177,12 +176,12 @@ func (s *Scanner) fill(packetLen int) error {
 	return nil
 }
 
-// LooksLike returns the packet kind that it looks like
-func LooksLike(pktFormats []gpsprot.PacketFormat, buf []byte) gpsprot.Tag {
+// LooksLike returns the packet format that it looks like
+func LooksLike(pktFormats []gpsprot.PacketFormat, buf []byte) gpsprot.PacketFormat {
 	for i := 0; i < len(pktFormats); i++ {
 		if pktFormats[i].Next(stateSync, buf, 0, 0) != stateSync {
-			return pktFormats[i].Tag()
+			return pktFormats[i]
 		}
 	}
-	return gpsprot.InvalidTag
+	return nil
 }
