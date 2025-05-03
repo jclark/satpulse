@@ -103,6 +103,14 @@ func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
 	return []byte{Checksum(pkt[1:starIndex(pkt)])}
 }
 
+func Checksum(data []byte) byte {
+	var c byte
+	for i := 0; i < len(data); i++ {
+		c ^= data[i]
+	}
+	return c
+}
+
 func starIndex(pkt []byte) int {
 	starOffset := len(pkt) - 5
 	if pkt[starOffset] != '*' {

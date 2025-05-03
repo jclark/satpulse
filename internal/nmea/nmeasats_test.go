@@ -27,10 +27,7 @@ func TestGGAParse(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(Trim(test.sen), func(t *testing.T) {
-			sen := Split(addTrailer(test.sen))
-			if !sen.ChecksumOK() {
-				t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
-			}
+			sen := Parse(addTrailer(test.sen))
 			gga, err := parseGGA(sen)
 			if err != nil {
 				t.Fatalf("unexpected GGA parsing error: %v", err)
@@ -61,10 +58,7 @@ func TestGSAParse(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(Trim(test.sen), func(t *testing.T) {
-			sen := Split(addTrailer(test.sen))
-			if !sen.ChecksumOK() {
-				t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
-			}
+			sen := Parse(addTrailer(test.sen))
 			gsa, err := parseGSA(sen)
 			if err != nil {
 				t.Fatalf("unexpected GGA parsing error: %v", err)
@@ -336,10 +330,7 @@ func TestGSVParse(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(Trim(test.sen), func(t *testing.T) {
-			sen := Split(addTrailer(test.sen))
-			if !sen.ChecksumOK() {
-				t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
-			}
+			sen := Parse(addTrailer(test.sen))
 			gsv, err := parseGSV(sen)
 			if err != nil {
 				t.Fatalf("unexpected GSV parsing error: %v", err)
@@ -375,7 +366,7 @@ func TestGSVParse(t *testing.T) {
 
 func addTrailer(s string) string {
 	if !strings.Contains(s, "*") {
-		s += fmt.Sprintf("*%02X\r\n", Checksum(s[1:]))
+		s += fmt.Sprintf("*%02X\r\n", Checksum(([]byte)(s[1:])))
 	}
 	return s
 }
@@ -460,10 +451,7 @@ func TestSatellitesBuffer(t *testing.T) {
 			for i, j := range order {
 				h := testSatellitesBufferMsgHandler{nSV: -1}
 				if j >= 0 {
-					sen := Split(addTrailer(sens[j]))
-					if !sen.ChecksumOK() {
-						t.Fatalf("invalid checksum failed: computed %2X, in message %2X", sen.ComputedChecksum, sen.ChecksumField)
-					}
+					sen := Parse(addTrailer(sens[j]))
 					sb.process(sen, time.Time{}, &h)
 				} else {
 					sb.idle(&h)

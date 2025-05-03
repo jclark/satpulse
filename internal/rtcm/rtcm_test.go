@@ -22,14 +22,11 @@ func rtcmOK(t *testing.T, msgNum uint16, data string) {
 		t.Fatalf("failed to scan valid RTCM packet")
 	}
 	m := ParseMessage(data)
-	if !m.ChecksumOK() {
-		t.Fatalf(`checksum of RTCM %d not recognized as valid`, msgNum)
-	}
 	if m.MsgType != msgNum {
 		t.Fatalf(`wrong message number for RTCM %d`, msgNum)
 	}
 	if !bytes.Equal(PacketFormat.ComputeChecksum(buf), PacketFormat.ExtractChecksum(buf)) {
-		t.Fatalf(`checksum of RTCM %d not recognized as valid`, msgNum)
+		t.Fatalf(`checksum of RTCM %d not recognized as correct`, msgNum)
 	}
 }
 

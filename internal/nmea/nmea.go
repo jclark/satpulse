@@ -20,16 +20,10 @@ type Sentence struct {
 	Format           string
 	TalkerID         string
 	Fields           []string
-	ChecksumField    byte
-	ComputedChecksum byte
 }
 
 func (s *Sentence) msgID() string {
 	return s.TalkerID + s.Format
-}
-
-func (s *Sentence) ChecksumOK() bool {
-	return s.ChecksumField == s.ComputedChecksum
 }
 
 // PacketProcessor implements the gpsprot.PacketProcessor interface for NMEA packets
@@ -48,10 +42,7 @@ func NewPacketProcessor() *PacketProcessor {
 
 // ProcessPacket processes an NMEA packet's data and returns the type of the message and any error
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
-	sen, err := Parse(data)
-	if err != nil {
-		return "", err
-	}
+	sen := Parse(data)
 	msgID := sen.msgID()
 	handled, err := p.Dispatch(sen, tRead, p.mh)
 	if err != nil || handled {
@@ -71,15 +62,6 @@ func (p *PacketProcessor) SetSVNumbering(numbering []gpsprot.NMEASVNumberingRang
 // SetMsgHandler sets the handler for protocol-agnostic messages
 func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 	p.mh = handler
-}
-
-// Precondition is that data is valid according to Scanner.Read.
-func Parse(data string) (*Sentence, error) {
-	sen := Split(data)
-	if !sen.ChecksumOK() {
-		return nil, fmt.Errorf("NMEA checksum error: checksum in message %02x, computed %02x", sen.ChecksumField, sen.ComputedChecksum)
-	}
-	return sen, nil
 }
 
 // Dispatch handles standard messages and returns true if handled, along with any error
@@ -236,14 +218,12 @@ func talkerIDToGNSS(t string) gpsprot.GNSS {
 	}
 }
 
-func Split(data string) *Sentence {
-	before, after, _ := strings.Cut(data[1:], "*")
+// Precondition is that data is valid according to Scanner.Read.
+// The checksum is assumed to have been verified already.
+func Parse(data string) *Sentence {
+	before, _, _ := strings.Cut(data[1:], "*")
 	fields := strings.Split(before, ",")
-	sen := Sentence{
-		Fields:           fields[1:],
-		ChecksumField:    hexToByte(after),
-		ComputedChecksum: Checksum(before),
-	}
+	sen := Sentence{ Fields: fields[1:] }
 	addr := fields[0]
 	if strings.IndexByte(before, '^') >= 0 {
 		for i := 1; i < len(fields); i++ {
@@ -257,18 +237,6 @@ func Split(data string) *Sentence {
 		sen.Format = addr
 	}
 	return &sen
-}
-
-type Bytes interface {
-	string | []byte
-}
-
-func Checksum[B Bytes](data B) byte {
-	var c byte
-	for i := 0; i < len(data); i++ {
-		c ^= data[i]
-	}
-	return c
 }
 
 // Assumes that use of ^ has been validated by Scanner.Read.

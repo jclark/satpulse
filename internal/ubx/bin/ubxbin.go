@@ -1494,6 +1494,8 @@ func regMsg[T any, PT interface {
 // 2 bytes sync, 2 bytes clsid, 2 bytes length, 2 bytes checksum
 const packetMinLength = 8
 
+// ParseMsg parses a UBlox message from a string.
+// It assumes the checksums were already verified.
 func ParseMsg(packet string) (Msg, error) {
 	n := len(packet)
 	if n < packetMinLength {
@@ -1501,10 +1503,6 @@ func ParseMsg(packet string) (Msg, error) {
 	}
 	checksumIndex := n - 2
 	trimmed := packet[2:checksumIndex]
-	ckA, ckB := Checksum(trimmed)
-	if ckA != packet[checksumIndex] || ckB != packet[checksumIndex+1] {
-		return nil, fmt.Errorf("ubx message: checksum failed: checksum in message 0x%02x%02x; computed checksum 0x%02x%02x; data %x", packet[checksumIndex], packet[checksumIndex+1], ckA, ckB, []byte(trimmed))
-	}
 	mid := makeMsgID(trimmed[0], trimmed[1])
 	ctor := msgMap[mid]
 	payload := trimmed[4:]
@@ -1617,7 +1615,8 @@ type Bytes interface {
 func PacketMsgId[B Bytes](packet B) MsgID {
 	return makeMsgID(packet[2], packet[3])
 }
-func Checksum[B Bytes](bytes B) (ckA, ckB byte) {
+
+func Checksum(bytes []byte) (ckA, ckB byte) {
 	for i := 0; i < len(bytes); i++ {
 		ckA += bytes[i]
 		ckB += ckA

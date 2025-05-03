@@ -9,14 +9,14 @@ import (
 )
 
 func TestSplit(t *testing.T) {
-	f := Split("$GPGLL,5057.970,N,00146.110,E,142451,A*27\r\n")
+	f := Parse("$GPGLL,5057.970,N,00146.110,E,142451,A*27\r\n")
 	df := f.Fields
-	if f.TalkerID != "GP" || f.Format != "GLL" || !f.ChecksumOK() || len(df) != 6 ||
+	if f.TalkerID != "GP" || f.Format != "GLL" || len(df) != 6 ||
 		df[0] != "5057.970" || df[1] != "N" || df[2] != "00146.110" ||
 		df[3] != "E" || df[4] != "142451" || df[5] != "A" {
 		t.Fatalf("NMEASplit failed")
 	}
-	f = Split("$GPTXT,1,Hello^21,3*FF\r\n")
+	f = Parse("$GPTXT,1,Hello^21,3*FF\r\n")
 	df = f.Fields
 	if len(df) != 3 || df[1] != "Hello!" {
 		t.Fatalf("NMEASplit failed on caret")
@@ -44,10 +44,7 @@ func TestZDA(t *testing.T) {
 }
 
 func testTime(t *testing.T, s string, expectUTC ptime.UTCTime) {
-	sen, e := Parse(s)
-	if e != nil {
-		t.Fatalf("nmea.Parse failed: %v: %s", e, s)
-	}
+	sen := Parse(s)
 	var h timeHandler
 	var zt time.Time
 	pp := NewPacketProcessor()

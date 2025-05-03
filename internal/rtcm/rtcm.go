@@ -18,8 +18,6 @@ var PacketFormat gpsprot.PacketFormat = packetFormat{}
 type Message struct {
 	Payload          string
 	MsgType          uint16
-	ChecksumField    uint32
-	ComputedChecksum uint32
 }
 
 var msgNames = map[uint16]string{
@@ -58,10 +56,6 @@ func (m *Message) ID() string {
 		return name
 	}
 	return fmt.Sprintf("%d", m.MsgType)
-}
-
-func (m *Message) ChecksumOK() bool {
-	return m.ChecksumField == m.ComputedChecksum
 }
 
 // packetFormat implements the gpsprot.PacketFormat interface for RTCM packets
@@ -132,14 +126,11 @@ func NewPacketProcessor() *PacketProcessor {
 	return &PacketProcessor{}
 }
 
-// ProcessPacket processes an RTCM packet's data and returns any error
+// ProcessPacket processes an RTCM packet's data and returns any error.
+// It assumes checksum has already been verified.
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
 	msg := ParseMessage(data)
 	msgID := msg.ID()
-	if !msg.ChecksumOK() {
-		// CRC24 so 24 bits, 6 hex digits
-		return msgID, fmt.Errorf("RTCM checksum error: message number %d, checksum in message 0x%06x, computed %06x", msg.MsgType, msg.ChecksumField, msg.ComputedChecksum)
-	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
 		return msgID, nmh.NativeMsg(Tag, msgID, msg, tRead)
@@ -163,7 +154,5 @@ func ParseMessage(packet string) *Message {
 	return &Message{
 		Payload:          payload,
 		MsgType:          msgType,
-		ChecksumField:    crc24q.Extract(packet, n),
-		ComputedChecksum: crc24q.Checksum(packet[0:n]),
 	}
 }
