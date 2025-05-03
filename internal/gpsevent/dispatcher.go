@@ -171,11 +171,16 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 		lg.Error("no processor registered for packet tag", "tag", tag)
 		return
 	}
-	_, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
+	err := pkt.ChecksumError()
+	if err != nil{
+		lg.Warn(err.Error(), "tag", tag, "len", len(pkt.Data))
+	}
+	_, err = pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
 		lg.Error("error processing packet", "err", err, "tag", tag, "data", pkt.Data)
 	}
 }
+
 
 type LogEvent struct {
 	T          time.Time              `json:"t"`

@@ -355,10 +355,17 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 		mh.lg.Error("no processor registered for protocol", "protocol", tag)
 		return
 	}
+	err := pkt.ChecksumError()
+	if err != nil {
+		mh.lg.Warn(err.Error(), "tag", tag, "len", len(pkt.Data))
+		mh.bad.corruptMsgs++
+		return
+	}
 	msgID, err := pp.ProcessPacket(data, pkt.TRead)
 	if err != nil {
 		mh.lg.Error("GPS packet cannot be parsed", "protocol", tag, "err", err)
 		mh.bad.corruptMsgs++
+		return
 	}
 	// only count parseable messages with good checksum
 	mh.msgCount[tag]++

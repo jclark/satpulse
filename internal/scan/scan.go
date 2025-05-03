@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"time"
@@ -14,6 +15,7 @@ type Packet struct {
 	ReadError error
 	Data      string
 	TRead     time.Time
+	ChecksumValid bool
 }
 
 func (pkt Packet) IsInterPacketTimeout() bool {
@@ -26,6 +28,14 @@ func (pkt Packet) IsInterPacketTimeout() bool {
 
 func (pkt Packet) HasTag(tag gpsprot.Tag) bool {
 	return pkt.Format != nil && pkt.Format.Tag() == tag
+}
+
+func (pkt Packet) ChecksumError() error {
+	if pkt.ChecksumValid {
+		return nil
+	}
+	buf := []byte(pkt.Data)
+	return fmt.Errorf("incorrect checksum: in packet %x, computed %x", pkt.Format.ExtractChecksum(buf), pkt.Format.ComputeChecksum(buf))
 }
 
 type Scanner struct {
@@ -139,7 +149,11 @@ Loop:
 			break Loop
 		}
 	}
-	p.Data = string(s.buf[s.nextScanIndex-packetLen : s.nextScanIndex])
+	pkt := s.buf[s.nextScanIndex-packetLen : s.nextScanIndex]
+	p.Data = string(pkt)
+	if fmt := p.Format; fmt != nil {
+		p.ChecksumValid = bytes.Equal(fmt.ExtractChecksum(pkt), fmt.ComputeChecksum(pkt))
+	}
 	return
 }
 
