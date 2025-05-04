@@ -35,6 +35,11 @@ type PacketFormat interface {
 	// ComputeChecksum computes the checksum for the given packet
 	// Precondition: the packet must be valid according to Next()
 	ComputeChecksum(pkt []byte) []byte
+
+	// RescanOnBadChecksum determines if the scanner should rescan on a bad checksum
+	// starting with the byte after the first byte of the packet with the bad checksum
+	// prevPktValid indicates if the previous packet was valid
+	RescanOnBadChecksum(prevPktValid bool, pkt []byte) bool
 }
 
 // PacketProcessor processes packets of a specific protocol

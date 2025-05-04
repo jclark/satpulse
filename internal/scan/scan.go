@@ -47,6 +47,7 @@ type Scanner struct {
 	nextScanIndex int
 	// time at which byte at nextScanIndex was read
 	tRead time.Time
+	prevPktValid bool
 }
 
 // A TimeoutError indicates a read timed out.
@@ -150,10 +151,18 @@ Loop:
 		}
 	}
 	pkt := s.buf[s.nextScanIndex-packetLen : s.nextScanIndex]
-	p.Data = string(pkt)
 	if fmt := p.Format; fmt != nil {
 		p.ChecksumValid = bytes.Equal(fmt.ExtractChecksum(pkt), fmt.ComputeChecksum(pkt))
+		if !p.ChecksumValid && fmt.RescanOnBadChecksum(s.prevPktValid, pkt) {
+			s.nextScanIndex -= packetLen - 1
+			p.Format = nil
+			state = stateSync
+			packetLen = 1
+			goto Loop
+		} 
 	}
+	s.prevPktValid = p.Format != nil && p.ChecksumValid
+	p.Data = string(pkt)
 	return
 }
 

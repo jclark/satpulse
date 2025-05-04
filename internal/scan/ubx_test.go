@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/internal/ubx"
+	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 )
 
 // randomUBXPacket generates a random UBX packet for testing purposes.
@@ -27,18 +28,10 @@ func randomUBXPacket() string {
 		packet = append(packet, byte(rand.Intn(256)))
 	}
 
-	ckA, ckB := ubxChecksum(packet[2:])
+	ckA, ckB := ubxbin.Checksum(packet[2:])
 	packet = append(packet, ckA, ckB)
 
 	return string(packet)
-}
-
-func ubxChecksum(data []byte) (ckA, ckB byte) {
-	for _, b := range data {
-		ckA = (ckA + b) & 0xFF
-		ckB = (ckB + ckA) & 0xFF
-	}
-	return
 }
 
 func TestGoodUBX(t *testing.T) {
@@ -68,6 +61,9 @@ func TestGoodUBX(t *testing.T) {
 		}
 		if f.Data != expectedPacket {
 			t.Fatalf("Packet %d: expected data %q, got %q", i, expectedPacket, f.Data)
+		}
+		if !f.ChecksumValid {
+			t.Fatalf("Packet %d: checksum not valid", i)
 		}
 	}
 

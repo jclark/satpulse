@@ -2,6 +2,7 @@ package rtcm
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/jclark/crc24q"
@@ -16,45 +17,38 @@ var PacketFormat gpsprot.PacketFormat = packetFormat{}
 
 // Message represents an RTCM message
 type Message struct {
-	Payload          string
-	MsgType          uint16
+	Payload string
+	MsgType uint16
 }
 
-var msgNames = map[uint16]string{
-	1001: "L1-GPS",
-	1002: "L1x-GPS",
-	1003: "L1L2-GPS",
-	1004: "L1L2x-GPS",
-	1005: "station-ARP",
-	1006: "station-ARP-height",
-	1007: "antenna",
-	1008: "antenna-serial",
-	1009: "L1-GLONASS",
-	1010: "L1x-GLONASS",
-	1011: "L1L2-GLONASS",
-	1012: "L1L2x-GLONASS",
-	1019: "eph-GPS",
-	1020: "eph-GLONASS",
-	1033: "rcvr-antenna",
-	1041: "eph-NavIC",
-	1042: "eph-BeiDou",
-	1044: "eph-QZSS",
-	1045: "eph-Galileo-F",
-	1046: "eph-Galileo-I",
-	1230: "bias-GLONASS",
+var commomMsgTypes = []uint16{
+	1005, // station ARP
+	1006, // station ARP with height
+	1007, // antenna
+	1008, // antenna with serial number
+	1033, // receiver and antenna descriptor
+	// MSM 4 and 7
+	1074, 1077, // GPS
+	1084, 1087, // GLONASS
+	1094, 1097, // Galileo
+	1104, 1107, // SBAS
+	1114, 1117, // QZSS
+	1124, 1127, // BeiDou
+	1134, 1137, // NavIC (IRNSS)
+	1230, // GLONASS bias
 }
 
-var gnss = []string{"GPS", "GLONASS", "Galileo", "SBAS", "QZSS", "BeiDou", "NavIC"}
+func isCommonMsgType(msgType uint16) bool {
+	// Use binary search directly since the slice is already sorted
+	i := sort.Search(len(commomMsgTypes), func(i int) bool {
+		return commomMsgTypes[i] >= msgType
+	})
+
+	// Check if we found the message type
+	return i < len(commomMsgTypes) && commomMsgTypes[i] == msgType
+}
 
 func (m *Message) ID() string {
-	g := (int(m.MsgType) / 10) - 107
-	n := m.MsgType % 10
-	if g >= 0 && g < len(gnss) && n >= 1 && n <= 7 {
-		return fmt.Sprintf("MSM%d-%s", n, gnss[g])
-	}
-	if name, ok := msgNames[m.MsgType]; ok {
-		return name
-	}
 	return fmt.Sprintf("%d", m.MsgType)
 }
 
@@ -87,7 +81,9 @@ func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, p
 			payloadLen := int(b) + int(buf[nextScanIndex-1]&0x3)*0x100
 			return gpsprot.ScanState(int(stateExpectN) + payloadLen + 3)
 		case 1:
-			return stateStarted
+			if b&^0x3 == 0 {
+				return stateStarted
+			}
 		}
 	default:
 		if state > stateExpectN {
@@ -109,8 +105,12 @@ func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
 }
 
 func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
-	checksum := crc24q.Checksum(pkt[0:len(pkt)-3])
+	checksum := crc24q.Checksum(pkt[0 : len(pkt)-3])
 	return []byte{byte(checksum >> 16), byte(checksum >> 8), byte(checksum)}
+}
+
+func (f packetFormat) RescanOnBadChecksum(prevPktValid bool, pkt []byte) bool {
+	return !prevPktValid || !isCommonMsgType(extractMsgType(pkt))
 }
 
 // PacketProcessor implements the gpsprot.PacketProcessor interface for RTCM packets
@@ -140,19 +140,19 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 
 // ParseMessage parses a packet into an RTCM Message
 func ParseMessage(packet string) *Message {
-	n := len(packet) - 3
-	payload := packet[3:n]
-
-	// Default message type is 0 for empty messages
-	var msgType uint16 = 0
-
-	// Extract message type for non-empty messages
-	if n > 3 {
-		msgType = (uint16(payload[0]) << 4) | uint16(payload[1]>>4)
-	}
-
 	return &Message{
-		Payload:          payload,
-		MsgType:          msgType,
+		Payload: packet[3 : len(packet)-3],
+		MsgType: extractMsgType(packet),
 	}
+}
+
+type Bytes interface {
+	string | []byte
+}
+
+func extractMsgType[B Bytes](packet B) uint16 {
+	if len(packet) <= 6 {
+		return 0
+	}
+	return (uint16(packet[3]) << 4) | uint16(packet[4]>>4)
 }

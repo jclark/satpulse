@@ -30,28 +30,18 @@ func rtcmOK(t *testing.T, msgNum uint16, data string) {
 	}
 }
 
-func TestMessageID(t *testing.T) {
-	testCases := []struct {
-		msgType  uint16
-		expected string
-	}{
-		{999, "999"},
-		{1072, "MSM2-GPS"},
-		{1045, "eph-Galileo-F"},
-		{1077, "MSM7-GPS"},
-		{1085, "MSM5-GLONASS"},
-		{1042, "eph-BeiDou"},
-		{1127, "MSM7-BeiDou"},
-		{9999, "9999"},
+func TestIsCommonMsgType(t *testing.T) {
+	isCommon := map[uint16]bool{
+		1230: true,
+		1074: true,
+		1077: true,
+		0000: false,
+		9999: false,
+		1000: false,
 	}
-
-	for _, tc := range testCases {
-		msg := &Message{
-			MsgType: tc.msgType,
-		}
-		got := msg.ID()
-		if got != tc.expected {
-			t.Errorf("Message.ID() with type %d: got %q, want %q", tc.msgType, got, tc.expected)
+	for mt, b := range isCommon {
+		if isCommonMsgType(mt) != b {
+			t.Fatalf("isCommonMsgType(%d) = %v, want %v", mt, !b, b)
 		}
 	}
 }

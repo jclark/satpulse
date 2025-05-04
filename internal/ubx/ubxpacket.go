@@ -71,3 +71,8 @@ func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
 	ckA, ckB := bin.Checksum(pkt[2:len(pkt)-2])
 	return []byte{ckA, ckB}
 }
+
+func (f packetFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
+	// XXX not sure if we should rescan
+	return false
+}

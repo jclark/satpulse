@@ -103,6 +103,11 @@ func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
 	return []byte{Checksum(pkt[1:starIndex(pkt)])}
 }
 
+func (f packetFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
+	// no point in rescanning because valid packet constraints are quite strict
+	return false
+}
+
 func Checksum(data []byte) byte {
 	var c byte
 	for i := 0; i < len(data); i++ {
