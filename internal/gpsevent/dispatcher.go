@@ -163,7 +163,7 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 				"len", len(pkt.Data), "data", pkt.Data)
 			d.loggedUnknownProtocol = true
 		}
-
+		return
 	}
 	tag := pkt.Format.Tag()
 	pp, ok := d.pktProcs[tag]
@@ -172,7 +172,7 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 		return
 	}
 	err := pkt.ChecksumError()
-	if err != nil{
+	if err != nil {
 		lg.Warn(err.Error(), "tag", tag, "len", len(pkt.Data))
 	}
 	_, err = pp.ProcessPacket(pkt.Data, pkt.TRead)
@@ -180,7 +180,6 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 		lg.Error("error processing packet", "err", err, "tag", tag, "data", pkt.Data)
 	}
 }
-
 
 type LogEvent struct {
 	T          time.Time              `json:"t"`
