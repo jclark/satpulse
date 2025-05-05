@@ -158,6 +158,7 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	lg := d.lg
 
 	if pkt.Format == nil {
+		lg.Debug("received invalid data from GPS receiver", "len", len(pkt.Data), "data", pkt.Data)
 		if !d.loggedUnknownProtocol {
 			lg.Info("received data from GPS in unrecognized format (serial communication problem?)",
 				"len", len(pkt.Data), "data", pkt.Data)
@@ -326,7 +327,7 @@ func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 }
 
 func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
-	d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID, "msg", msg)
+	d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID)
 	return nil
 }
 
