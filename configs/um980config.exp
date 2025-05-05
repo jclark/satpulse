@@ -1,0 +1,63 @@
+#!/usr/bin/expect -f
+# Expect script to configure Unicore UM980 GNSS receiver
+# Install expect with: apt install expect
+# Edit device, baud and commands to taste.
+set device "/dev/ttyUSB0"
+set baud 115200
+set commands {
+    UNLOG
+    CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0
+    GPRMC 1
+    GPGSV 1
+    GPGSA 1
+    RTCM1005 1
+    RTCM1074 1
+    RTCM1094 1
+    RTCM1124 1 
+}
+
+set timeout 3
+log_user 0
+
+# Open serial port in raw non-blocking binary mode
+set serial [open $device r+]
+fconfigure $serial \
+    -mode "$baud,n,8,1" \
+    -blocking 0 \
+    -buffering none \
+    -translation binary
+
+spawn -open $serial
+puts "Opened $device at $baud baud"
+
+
+proc send_command {cmdstr} {
+    set fullcmd "$cmdstr\r\n"
+    send -- $fullcmd
+    puts "Sent command: $cmdstr"
+
+    expect {
+        -re "\\\$command,$cmdstr,response(.*?)\\*\[0-9A-Fa-f\]{2}\r\n" {
+            puts "Response$expect_out(1,string)"
+            return $expect_out(1,string)
+        }
+        timeout {
+            puts "Timeout waiting for response to $cmdstr"
+            exit 1
+        }
+    }
+}
+
+# Process each command
+set commands [split $commands "\n"]
+foreach cmd [lmap c $commands {string trim $c}] {
+    if {$cmd eq ""} continue
+    
+    set response [send_command $cmd]
+    
+    # Check if response is exactly ": OK"
+    if {$response ne ": OK"} {
+        puts "Stopping because response not OK"
+        break
+    }
+}
