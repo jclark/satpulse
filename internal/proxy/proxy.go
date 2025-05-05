@@ -282,7 +282,7 @@ func connReadWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn ne
 		}
 		nWritten, err := port.Write(buf[:nRead])
 		if nWritten > 0 {
-			lg.Debug("wrote to serial port", "nBytes", nWritten)
+			lg.Debug("wrote to serial port", "nBytes", nWritten, "data", buf[:nWritten])
 		}
 		if err != nil {
 			if ctx.Err() == nil {
