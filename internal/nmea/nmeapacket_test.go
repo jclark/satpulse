@@ -14,13 +14,15 @@ func TestGoodNMEA(t *testing.T) {
 	nmeaOK(t, "$GPTXT,01,01,02,u-blox ag - www.u-blox.com*50\r\n")
 	nmeaOK(t, "$GPVTG,77.52,T,,M,0.004,N,0.008,K,A*06\r\n")
 	nmeaOK(t, "$GPZDA,082710.00,16,09,2002,00,00*64\r\n")
+	// from Unicore - this exceeds 82 character NMEA maximum
+	nmeaOK(t, "$GNRMC,114650.00,A,1343.90931561,N,10038.68511804,E,0.005,221.7,040525,0.5,W,A,C*59\r\n")
 }
 
 func nmeaOK(t *testing.T, data string) {
-	for range(10) {
+	for range 10 {
 		buf, nRandom := scantest.InsertRandomPrefix(data, '$')
 		startPos, endPos, ok := scantest.FindPacket(PacketFormat, buf)
-		if !ok || startPos != nRandom || endPos - startPos != len(data) {
+		if !ok || startPos != nRandom || endPos-startPos != len(data) {
 			t.Fatalf("packet parsed incorrectly: %s", data)
 		}
 		pkt := buf[startPos:endPos]
@@ -45,7 +47,7 @@ func TestBadNMEA(t *testing.T) {
 }
 
 func nmeaBad(t *testing.T, data string) {
-	for range(10) {
+	for range 10 {
 		buf, _ := scantest.InsertRandomPrefix(data, '$')
 		_, _, ok := scantest.FindPacket(PacketFormat, buf)
 		if ok {

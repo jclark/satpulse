@@ -28,6 +28,15 @@ const (
 	stateComplete
 )
 
+// maxSentenceLength is max length of NMEA sentence (including checksum and CRLF)
+// NMEA specifies this as 82 characters, but modern receivers exceed this,
+// because they need more precision particularly in the latitude and longitude fields.
+// I am seeing this with the Unicore UM980: there is no option to limit the length of the sentence.
+// U-blox also has a Limit82 flag to limit the length of the sentence to 82 characters,
+// which implies that sentences will exceed this without the flag.
+// The Rust NMEA crate has a limit of 102 characters, so let's follow that.
+const maxSentenceLength = 102
+
 func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, packetLen int) gpsprot.ScanState {
 	b := buf[nextScanIndex]
 
@@ -55,10 +64,10 @@ func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, p
 			return stateHadStar
 		}
 		if b == '^' {
-			if packetLen+2 < 82-5 {
+			if packetLen+2 < maxSentenceLength-5 {
 				return stateHadCaret
 			}
-		} else if isDataByte(b) && packetLen < 82-5 { // 82 is total excluding 3-byte checksum and CRLF
+		} else if isDataByte(b) && packetLen < maxSentenceLength-5 { // excluding 3-byte checksum and CRLF
 			return stateHadComma
 		}
 	case stateHadCaret, stateHadCaretDigit1:
