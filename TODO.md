@@ -118,14 +118,6 @@ Others
   * TIOCEXCL - at least use TIOCGEXCL to check if it is already locked
 * Investigate kernel/HW [problem](https://github.com/raspberrypi/linux/issues/4453#issuecomment-1709315332) with framing errors on PL011. Possibly similar problem on M8T connnected to physical serial port.
 
-## Scanning
-
-* Support other framing protocols
-   * Allystar (similar to UBX but uses 0xF1 0xD9)
-   * Trimble TSIP
-   * SkyTraq binary
-   * CASIC (China Aerospace Science & Industry Corporation) Standard Interface Protocol (CSIP) - used by Zhongke Microelectronics
-
 ## GPS configuration
 
 * Bring legacy (<= UBX gen8) configuration to parity with cfgval configuration
