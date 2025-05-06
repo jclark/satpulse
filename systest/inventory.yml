@@ -21,10 +21,10 @@ all:
         valdeon.lan:
   
   hosts:
-    # LBE-1421
+    # UM980 on USB
     vacherin.lan:
-      speed: 38400
-      instance: ttyACM0
+      speed: 115200
+      instance: ttyUSB0
       config: "false"
 
     # LEA-6T
