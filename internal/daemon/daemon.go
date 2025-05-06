@@ -77,6 +77,7 @@ func Cmd(progName string, args []string) {
 }
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config) error {
+	tStart := time.Now()
 	clk, err := cfg.PHC.OpenClock(ctx, lg)
 	if err != nil {
 		// don't report an error if interrupted
@@ -234,7 +235,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		pulseWidth = defaultPulseWidth
 	}
 
-	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, sseCh)
+	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, sseCh, tStart)
 	if err != nil {
 		return err
 	}
@@ -261,7 +262,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event) (*gpsevent.Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, tStart time.Time) (*gpsevent.Dispatcher, error) {
 	servo, err := servo.New(clk, lg)
 	if err != nil {
 		return nil, err
@@ -280,7 +281,7 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		return nil, err
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, m, ls, clk.DriverFlags, pulseWidth, sseCh, eventLogPath)
+	return gpsevent.NewDispatcher(lg, pktProcs, m, ls, clk.DriverFlags, pulseWidth, sseCh, eventLogPath, tStart)
 }
 
 type InitData struct {

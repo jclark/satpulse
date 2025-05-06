@@ -38,7 +38,7 @@ type Dispatcher struct {
 	tStart                time.Time
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, m *mon.Monitor, ls ptime.LeapSecond, phcFlags phc.DriverFlags, pulseWidth time.Duration, sseCh chan<- sse.Event, eventLogPath string) (*Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, m *mon.Monitor, ls ptime.LeapSecond, phcFlags phc.DriverFlags, pulseWidth time.Duration, sseCh chan<- sse.Event, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
 	pt := combine.PulseType{
 		EdgesPerPulse: phcFlags.Edges(),
 		PulseWidth:    pulseWidth,
@@ -59,7 +59,7 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		ls:       ls,
 		lg:       lg,
 		sseCh:    sseCh,
-		tStart:   time.Now(),
+		tStart:   tStart,
 	}
 	for _, pp := range pktProcs {
 		pp.SetMsgHandler(&d)
