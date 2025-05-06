@@ -1,6 +1,7 @@
 package gpsreg
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/jclark/satpulse/internal/as"
@@ -39,4 +40,29 @@ func FindNMEASVNumbering(manu string) []gpsprot.NMEASVNumberingRange {
 	default:
 		return nil
 	}
+}
+
+// Protocol is like gpsprot.Tag but implements encoding.TextUnmarshaler
+// and enforces that the tag is one of the known protocols.
+type Protocol gpsprot.Tag
+
+func (prot Protocol) Tag() gpsprot.Tag {
+	return gpsprot.Tag(prot)
+}
+
+func (prot *Protocol) UnmarshalText(data []byte) error {
+	s := string(data)
+	switch strings.ToUpper(s) {
+	case "UBX":
+		*prot = Protocol(ubx.Tag)
+	case "NMEA":
+		*prot = Protocol(nmea.Tag)
+	case "RTCM":
+		*prot = Protocol(rtcm.Tag)
+	case "":
+		*prot = Protocol("")
+	default:
+		return fmt.Errorf("unknown protocol: %s", s)
+	}
+	return nil
 }
