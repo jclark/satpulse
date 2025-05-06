@@ -223,7 +223,7 @@ func connWriteWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn n
 			}
 			// when forwarding is restricted to a specific protocol, don't forward packets with an invalid checksum;
 			// forwarding in this case is semantic, so there's no point in forwarding a packeet that will be discarded
-			if !cfg.tag.IsZero() && (cfg.tag != msg.Format.Tag() || !msg.ChecksumValid) {
+			if !cfg.tag.IsZero() && (!msg.HasTag(cfg.tag) || !msg.ChecksumValid) {
 				continue
 			}
 			_, err := conn.Write(([]byte)(msg.Data))
