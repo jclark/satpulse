@@ -280,6 +280,6 @@ It has the following key:
 
 In addition, `proxy.tcp` and `proxy.sock` can both have the following keys:
 
-* `readOnly` - a boolean saying whether access to the GPS receiver should be read-only; this means that serial packets will be forwarded from the GPS receiver to the network, but the network will not be able to send packets to the GPS receiver
-* `nmeaOnly` - a boolean saying whether this should only proxy NMEA packets
+* `protocol` - a string saying that only packets with this protocol are to be forwarded; the value can be `"RTCM"`, `"NMEA"` or `"UBX"`
+* `readOnly` - a boolean saying whether access to the GPS receiver should be read-only; this means that serial packets will be forwarded from the GPS receiver to the network, but the network will not be able to send packets to the GPS receiver; this defaults to true if `protocol` is specified and false otherwise
 * `writeLockTimeout` - a number giving the time in seconds that a writer to the GPS receiver should have exclusive write access; if client writes to the GPS receiver (which is allowed only when readOnly is false), then no other client will be able to write to the GPS receiver for this period of time; the default is 2 seconds

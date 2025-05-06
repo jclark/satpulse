@@ -5,7 +5,10 @@
 		"type": "object",
 		"properties": {
 		  "readOnly": { "type": "boolean" },
-		  "nmeaOnly": { "type": "boolean" },
+		  "protocol": {
+			"type": "string",
+			"enum": ["NMEA", "UBX", "RTCM"]
+		   },
 		  "writeLockTimeout": { "type": "number" }
 		}
 	  }

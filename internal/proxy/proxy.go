@@ -17,7 +17,8 @@ import (
 	"github.com/jclark/satpulse/internal/bcast"
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpsio"
-	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/scan"
 )
 
@@ -27,9 +28,9 @@ type Config struct {
 }
 
 type Options struct {
-	ReadOnly         bool    `toml:"readOnly"`
-	NMEAOnly         bool    `toml:"nmeaOnly"`
-	WriteLockTimeout float64 `toml:"writeLockTimeout"`
+	ReadOnly         *bool           `toml:"readOnly"`
+	Protocol         gpsreg.Protocol `toml:"protocol"`
+	WriteLockTimeout float64         `toml:"writeLockTimeout"`
 }
 
 type TCPService struct {
@@ -47,7 +48,7 @@ type svcConfig struct {
 	network          string
 	address          string
 	readOnly         bool
-	nmeaOnly         bool
+	tag              gpsprot.Tag
 	writeLockTimeout time.Duration
 }
 
@@ -92,7 +93,7 @@ func Start(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg Config,
 			return err
 		}
 		if i < nSocket {
-			err = setSocketPerms(lg, cfg.Socket[i])
+			err = setSocketPerms(lg, cfg.Socket[i], sc)
 			if err != nil {
 				return err
 			}
@@ -126,23 +127,28 @@ func (s *svcConfig) setOptions(opts Options) error {
 		return err
 	}
 	s.writeLockTimeout = d
-	s.readOnly = opts.ReadOnly
-	s.nmeaOnly = opts.NMEAOnly
+	s.tag = opts.Protocol.Tag()
+	if opts.ReadOnly != nil {
+		s.readOnly = *opts.ReadOnly
+	} else {
+		// default to readOnly for protocol-specific services
+		s.readOnly = !s.tag.IsZero()
+	}
 	return nil
 }
 
 const defaultGroupName = "dialout"
 
-func setSocketPerms(lg *slog.Logger, sock SocketService) error {
+func setSocketPerms(lg *slog.Logger, sock SocketService, sc svcConfig) error {
 	mode := os.FileMode(0660)
-	if sock.ReadOnly {
+	if sc.readOnly {
 		mode = os.FileMode(0666)
 	}
 	err := os.Chmod(sock.Path, mode)
 	if err != nil {
 		return err
 	}
-	if sock.ReadOnly {
+	if sc.readOnly {
 		return nil
 	}
 	groupName := sock.Group
@@ -215,7 +221,9 @@ func connWriteWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn n
 			if !ok {
 				return
 			}
-			if cfg.nmeaOnly && !msg.HasTag(nmea.Tag) {
+			// when forwarding is restricted to a specific protocol, don't forward packets with an invalid checksum;
+			// forwarding in this case is semantic, so there's no point in forwarding a packeet that will be discarded
+			if !cfg.tag.IsZero() && (cfg.tag != msg.Format.Tag() || !msg.ChecksumValid) {
 				continue
 			}
 			_, err := conn.Write(([]byte)(msg.Data))

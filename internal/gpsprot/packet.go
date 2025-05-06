@@ -5,6 +5,10 @@ import "time"
 // Tag identifies the kind of packet
 type Tag string
 
+func (t Tag) IsZero() bool {
+	return t == ""
+}
+
 // ScanState represents the state of a packet scanner
 type ScanState uint32
 
