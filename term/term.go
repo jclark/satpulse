@@ -184,6 +184,8 @@ var baudRates = []struct {
 	{unix.B57600, 57600},
 	{unix.B115200, 115200},
 	{unix.B230400, 230400},
+	{unix.B460800, 460800},
+	{unix.B921600, 921600},
 }
 
 func bToSpeed(b uint32) int {
