@@ -63,14 +63,10 @@ func (h *SdHandler) Handle(c context.Context, r slog.Record) error {
 	defer h.shared.mu.Unlock()
 	err := h.handler.Handle(c, r)
 	fields := h.shared.buf.Bytes()
-	last := len(fields) - 1
-	if last > 0 && fields[last] == '\n' {
-		line = append(line, ' ', '{')
-		line = append(line, fields[:last]...)
-		line = append(line, '}', '\n')
-	} else {
-		line = append(line, fields...)
+	if len(fields) > 1 { // not just \n
+		line = append(line, ':', ' ')
 	}
+	line = append(line, fields...)
 	h.shared.buf.Reset()
 	if err != nil {
 		return err
