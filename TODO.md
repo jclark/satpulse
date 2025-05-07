@@ -6,7 +6,6 @@ These are things that have not yet been made into GitHub issues.
 
 High priority
 
-
 * Control over logging in the non-sdlog case
 
 Others
@@ -120,23 +119,10 @@ Others
 
 ## GPS configuration
 
-* Bring legacy (<= UBX gen8) configuration to parity with cfgval configuration
-   * implement setting GNSS constellation
-   * implement baud rate property
-   * saving to flash
 * Figure out how to make U-blox receivers start a new survey, when they have already done one
 * Finish mapping from CfgVals to from ConfigMap
-* satpulsetool support for setting ECEF fixed position and accuracy `satpulsetool gps --pos X,Y,Z --pos-acc 10` 
 * Option for satpulsetool to get survey result
-* satpulsetool should use NDELAY TCP option
-* Message enablement should be in ConfigMap rather than ConfigOptions so we can turn messages off
-   * `satpulsetool config --nmea` should probably turn off time-related UBX messages
-   * Do we model message rate in the property?
-   * How do we deal with different kinds of time message (per GNSS, UTC, TP, TOS)?
-   * In particular, how do we deal with GNSS messages for non-primary GNSS? Do we turn them off?
-   * This ties into to how configuration should tell syncer about what message to use.
 * Pay attention to version in CFG-UBX-TP5
-* Add `satpulsetool config --binary` option to disable NMEA and enable UBX Time/LeapSecond/Survey messages
 * Might need to set CFG-NAVSPG-WKNROLLOVER
 * Configure UBX message interface
 
