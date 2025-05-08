@@ -81,30 +81,17 @@ func logPacket(lg *slog.Logger, lf *logfile.LogFile, pkt scan.Packet) {
 	if len(pkt.Data) == 0 {
 		return
 	}
-	bin := HexString("")
-	ascii := ""
-	if useBinary(pkt) {
-		bin = HexString(pkt.Data)
-	} else {
-		ascii = pkt.Data
-	}
-	logEntry(lg, lf, &PacketLogEntry{
+	entry := &PacketLogEntry{
 		T:     pkt.TRead.UTC(),
 		Tag:   pkt.Tag(),
-		Bin:   bin,
-		Ascii: ascii,
-	})
+	}
+	setData(entry, pkt.Data, useBinary(pkt))
+	logEntry(lg, lf, entry)
 }
 
 func useBinary(pkt scan.Packet) bool {
 	if pkt.Format == nil {
-		// range over bytes not runes
-		for i := range len(pkt.Data) {
-			if b := pkt.Data[i]; (b < 0x20 && b != '\r' && b != '\n') || b >= 0x7F {
-				return true
-			}
-		}
-		return false
+		return containsBinary(pkt.Data)
 	}
 	sync1 := pkt.Data[0]
 	return sync1 < 0x20 || sync1 >= 0x7F
@@ -114,11 +101,30 @@ func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket) {
 	if len(pkt.Data) == 0 {
 		return
 	}
-	logEntry(lg, lf, &PacketLogEntry{
+	entry := &PacketLogEntry{
 		T:     pkt.TWrite.UTC(),
-		Bin:   HexString(pkt.Data),
-		Ascii: pkt.Data,
-	})
+		Out: true,
+	}
+	setData(entry, pkt.Data, containsBinary(pkt.Data))
+	logEntry(lg, lf, entry)
+}
+
+func containsBinary(data string) bool {
+	// range over bytes not runes
+	for i := 0; i < len(data) ; i++{
+		if b := data[i]; (b < 0x20 && b != '\r' && b != '\n') || b >= 0x7F {
+			return true
+		}
+	}
+	return false
+}
+
+func setData(entry *PacketLogEntry, data string, isBinary bool) {
+	if isBinary {
+		entry.Bin = HexString(data)
+	} else {
+		entry.Ascii = data
+	}
 }
 
 func logEntry(lg *slog.Logger, lf *logfile.LogFile, entry *PacketLogEntry) {
