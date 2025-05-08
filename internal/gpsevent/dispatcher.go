@@ -3,7 +3,6 @@ package gpsevent
 import (
 	"encoding/json"
 	"log/slog"
-	"math"
 	"os"
 	"os/signal"
 	"time"
@@ -248,16 +247,16 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 
 // SurveySSE is the type of the SSE for survey progress.
 type SurveySSE struct {
-	X          float64    `json:"x"`
-	Y          float64    `json:"y"`
-	Z          float64    `json:"z"`
-	Accuracy   float64    `json:"accuracy"`
-	Alt        float64    `json:"alt"`
-	LatLon     [2]float64 `json:"latLon,omitempty"`
-	ObsTime    uint32     `json:"obsTime"`
-	ObsCount   uint32     `json:"obsCount"`
-	InProgress bool       `json:"inProgress"`
-	Valid      bool       `json:"valid"`
+	X          float64     `json:"x"`
+	Y          float64     `json:"y"`
+	Z          float64     `json:"z"`
+	Accuracy   float64     `json:"accuracy"`
+	Alt        *float64    `json:"alt,omitempty"`
+	LatLon     *[2]float64 `json:"latLon,omitempty"`
+	ObsTime    uint32      `json:"obsTime"`
+	ObsCount   uint32      `json:"obsCount"`
+	InProgress bool        `json:"inProgress"`
+	Valid      bool        `json:"valid"`
 }
 
 func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
@@ -276,24 +275,24 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	for i := range ecef {
 		ecef[i] = m.Position[i].Meters()
 	}
-	lla, err := geopos.WGS84.ECEFtoLLA(ecef)
-	if err != nil {
-		lla.Lat = math.NaN()
-		lla.Lon = math.NaN()
-		lla.Alt = math.NaN()
-	}
-	d.sendSSE("survey", SurveySSE{
+	sse := SurveySSE{
 		X:          ecef[0],
 		Y:          ecef[1],
 		Z:          ecef[2],
 		Accuracy:   m.Accuracy.Meters(),
-		LatLon:     [2]float64{lla.Lat, lla.Lon},
-		Alt:        lla.Alt,
 		ObsTime:    uint32(m.ObsTime / time.Second),
 		ObsCount:   m.ObsCount,
 		InProgress: m.InProgress,
 		Valid:      m.Valid,
-	})
+	}
+	lla, err := geopos.WGS84.ECEFtoLLA(ecef)
+	if err == nil {
+		latLon := [2]float64{lla.Lat, lla.Lon}
+		sse.LatLon = &latLon
+		alt := lla.Alt
+		sse.Alt = &alt
+	}
+	d.sendSSE("survey", sse)
 }
 
 type SatellitesSSE struct {

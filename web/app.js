@@ -869,9 +869,6 @@
     return arg.toFixed(4);
   }
   function formatLL(arg, _obj) {
-    if (isNaN(arg[0]) || isNaN(arg[1])) {
-      return [];
-    }
     return [
       ["Coordinates", /* @__PURE__ */ u3("a", { href: mapsURL(arg), target: "_blank", className: "underline hover:text-blue-500", children: coordsToString(arg, 5) })]
     ];
@@ -883,9 +880,6 @@
     return `${arg[0].toFixed(nDigits)},${arg[1].toFixed(nDigits)}`;
   }
   function formatAlt(arg) {
-    if (isNaN(arg)) {
-      return "";
-    }
     return `${arg.toFixed(2)} m`;
   }
   function formatUTC(utc) {

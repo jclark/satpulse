@@ -271,9 +271,6 @@ function formatECEF(arg: number): string {
 }
 
 function formatLL(arg: [number, number], _obj: Map): FormattedField[] {
-    if (isNaN(arg[0]) || isNaN(arg[1])) {
-        return [];
-    }
     return [
         ["Coordinates", <a href={mapsURL(arg)} target="_blank" className="underline hover:text-blue-500">{coordsToString(arg, 5)}</a>]
     ];
@@ -288,9 +285,6 @@ function coordsToString(arg: [number, number], nDigits: number): string {
 }
 
 function formatAlt(arg: number): string {
-    if (isNaN(arg)) {
-        return "";
-    }
     return `${arg.toFixed(2)} m`;
 }
 
