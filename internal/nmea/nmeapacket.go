@@ -98,6 +98,13 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 	return state == stateComplete
 }
 
+func (f packetFormat) MsgID(pkt []byte) string {
+	if pkt[1] == 'P' {
+		return string(pkt[1:5])
+	}
+	return string(pkt[1:6])
+}
+
 // ExtractChecksum extracts the checksum from the NMEA packet.
 // Precondition: the packet must be valid according to Next().
 // We represent the checksum as a single byte in the expectation that when a checksum error is described the bytes will be printed as hex.

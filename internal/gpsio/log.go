@@ -18,7 +18,7 @@ import (
 
 const PacketLogExtension = ".jsonl"
 
-type HexString string
+type HexString []byte
 
 type OutPacket struct {
 	TWrite time.Time
@@ -72,6 +72,7 @@ func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet,
 type PacketLogEntry struct {
 	T     time.Time   `json:"t"`
 	Tag   gpsprot.Tag `json:"tag,omitempty"`
+	Msg   string      `json:"msg,omitempty"`
 	Bin   HexString   `json:"bin,omitempty"`
 	Ascii string      `json:"ascii,omitempty"`
 	Out   bool        `json:"out"` // use omitzero here when we upgrade to go 1.24
@@ -81,11 +82,21 @@ func logPacket(lg *slog.Logger, lf *logfile.LogFile, pkt scan.Packet) {
 	if len(pkt.Data) == 0 {
 		return
 	}
-	entry := &PacketLogEntry{
-		T:     pkt.TRead.UTC(),
-		Tag:   pkt.Tag(),
+	msgID := ""
+	bytes := []byte(pkt.Data)
+	if pkt.Format != nil {
+		msgID = pkt.Format.MsgID(bytes)
 	}
-	setData(entry, pkt.Data, useBinary(pkt))
+	entry := &PacketLogEntry{
+		T:   pkt.TRead.UTC(),
+		Tag: pkt.Tag(),
+		Msg: msgID,
+	}
+	if useBinary(pkt) {
+		entry.Bin = HexString(bytes)
+	} else {
+		entry.Ascii = pkt.Data
+	}
 	logEntry(lg, lf, entry)
 }
 
@@ -102,29 +113,25 @@ func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket) {
 		return
 	}
 	entry := &PacketLogEntry{
-		T:     pkt.TWrite.UTC(),
+		T:   pkt.TWrite.UTC(),
 		Out: true,
 	}
-	setData(entry, pkt.Data, containsBinary(pkt.Data))
+	if containsBinary(pkt.Data) {
+		entry.Bin = HexString(pkt.Data)
+	} else {
+		entry.Ascii = pkt.Data
+	}
 	logEntry(lg, lf, entry)
 }
 
 func containsBinary(data string) bool {
 	// range over bytes not runes
-	for i := 0; i < len(data) ; i++{
+	for i := 0; i < len(data); i++ {
 		if b := data[i]; (b < 0x20 && b != '\r' && b != '\n') || b >= 0x7F {
 			return true
 		}
 	}
 	return false
-}
-
-func setData(entry *PacketLogEntry, data string, isBinary bool) {
-	if isBinary {
-		entry.Bin = HexString(data)
-	} else {
-		entry.Ascii = data
-	}
 }
 
 func logEntry(lg *slog.Logger, lf *logfile.LogFile, entry *PacketLogEntry) {
@@ -143,7 +150,7 @@ func logEntry(lg *slog.Logger, lf *logfile.LogFile, entry *PacketLogEntry) {
 // MarshalJSON implements json.Marshaler for HexString
 // It marshals the HexString as a JSON string of hex digits
 func (hs HexString) MarshalJSON() ([]byte, error) {
-	return json.Marshal(hex.EncodeToString(([]byte)(hs)))
+	return json.Marshal(hex.EncodeToString(hs))
 }
 
 // UnmarshalJSON implements json.Unmarshaler for HexString

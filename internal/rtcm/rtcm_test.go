@@ -15,7 +15,7 @@ func TestGoodRTCM(t *testing.T) {
 	rtcmOK(t, 1005, string(rtcmEx))
 }
 
-func rtcmOK(t *testing.T, msgNum uint16, data string) {
+func rtcmOK(t *testing.T, msgNum MsgType, data string) {
 	buf := ([]byte)(data)
 	startPos, endPos, ok := scantest.FindPacket(PacketFormat, buf)
 	if startPos != 0 || endPos != len(buf) || !ok {
@@ -31,7 +31,7 @@ func rtcmOK(t *testing.T, msgNum uint16, data string) {
 }
 
 func TestIsCommonMsgType(t *testing.T) {
-	isCommon := map[uint16]bool{
+	isCommon := map[MsgType]bool{
 		1230: true,
 		1074: true,
 		1077: true,

@@ -34,6 +34,10 @@ type PacketFormat interface {
 	// IsFinal determines if the given state represents a complete packet
 	IsFinal(state ScanState) bool
 
+	// MsgID returns a human readable ID of the packet
+	// Precondition: the packet must be valid according to Next()
+	MsgID(pkt []byte) string
+
 	// ExtractChecksum extracts the checksum from the packet
 	// Precondition: the packet must be valid according to Next()
 	ExtractChecksum(pkt []byte) []byte

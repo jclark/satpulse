@@ -15,13 +15,15 @@ const Tag gpsprot.Tag = "RTCM"
 // PacketFormat returns the RTCM packet format
 var PacketFormat gpsprot.PacketFormat = packetFormat{}
 
+type MsgType uint16
+
 // Message represents an RTCM message
 type Message struct {
 	Payload string
-	MsgType uint16
+	MsgType MsgType
 }
 
-var commomMsgTypes = []uint16{
+var commomMsgTypes = []MsgType{
 	1005, // station ARP
 	1006, // station ARP with height
 	1007, // antenna
@@ -38,7 +40,7 @@ var commomMsgTypes = []uint16{
 	1230, // GLONASS bias
 }
 
-func isCommonMsgType(msgType uint16) bool {
+func isCommonMsgType(msgType MsgType) bool {
 	// Use binary search directly since the slice is already sorted
 	i := sort.Search(len(commomMsgTypes), func(i int) bool {
 		return commomMsgTypes[i] >= msgType
@@ -48,8 +50,8 @@ func isCommonMsgType(msgType uint16) bool {
 	return i < len(commomMsgTypes) && commomMsgTypes[i] == msgType
 }
 
-func (m *Message) ID() string {
-	return fmt.Sprintf("%d", m.MsgType)
+func (mt MsgType) String() string {
+	return fmt.Sprintf("%d", mt)
 }
 
 // packetFormat implements the gpsprot.PacketFormat interface for RTCM packets
@@ -97,6 +99,10 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 	return state == stateExpectN
 }
 
+func (f packetFormat) MsgID(pkt []byte) string {
+	return extractMsgType(pkt).String()
+}
+
 // ExtractChecksum extracts the checksum from the RTCM packet.
 // Precondition: the packet must be valid according to Next().
 func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
@@ -130,7 +136,7 @@ func NewPacketProcessor() *PacketProcessor {
 // It assumes checksum has already been verified.
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
 	msg := ParseMessage(data)
-	msgID := msg.ID()
+	msgID := msg.MsgType.String()
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
 		return msgID, nmh.NativeMsg(Tag, msgID, msg, tRead)
@@ -150,9 +156,9 @@ type Bytes interface {
 	string | []byte
 }
 
-func extractMsgType[B Bytes](packet B) uint16 {
+func extractMsgType[B Bytes](packet B) MsgType {
 	if len(packet) <= 6 {
 		return 0
 	}
-	return (uint16(packet[3]) << 4) | uint16(packet[4]>>4)
+	return (MsgType(packet[3]) << 4) | MsgType(packet[4]>>4)
 }
