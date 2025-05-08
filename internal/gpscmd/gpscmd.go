@@ -112,6 +112,6 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg) })
+	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg, nil) })
 	return msg
 }

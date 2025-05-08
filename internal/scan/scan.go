@@ -11,10 +11,10 @@ import (
 )
 
 type Packet struct {
-	Format    gpsprot.PacketFormat
-	ReadError error
-	Data      string
-	TRead     time.Time
+	Format        gpsprot.PacketFormat
+	ReadError     error
+	Data          string
+	TRead         time.Time
 	ChecksumValid bool
 }
 
@@ -24,6 +24,13 @@ func (pkt Packet) IsInterPacketTimeout() bool {
 		return ok
 	}
 	return false
+}
+
+func (pkt Packet) Tag() gpsprot.Tag {
+	if pkt.Format == nil {
+		return gpsprot.EmptyTag
+	}
+	return pkt.Format.Tag()
 }
 
 func (pkt Packet) HasTag(tag gpsprot.Tag) bool {
@@ -46,7 +53,7 @@ type Scanner struct {
 	// nextScanIndex is first index not yet returned in a packet
 	nextScanIndex int
 	// time at which byte at nextScanIndex was read
-	tRead time.Time
+	tRead        time.Time
 	prevPktValid bool
 }
 
@@ -159,7 +166,7 @@ Loop:
 			state = stateSync
 			packetLen = 1
 			goto Loop
-		} 
+		}
 	}
 	s.prevPktValid = p.Format != nil && p.ChecksumValid
 	p.Data = string(pkt)
@@ -186,8 +193,9 @@ func (s *Scanner) fill(packetLen int) error {
 		n, err := s.r.Read(rBuf)
 		if n > 0 {
 			s.buf = s.buf[0 : packetLen+n]
-			s.tRead = time.Now()
 		}
+		// we return packets of size 0, and we still want them to have a tRead
+		s.tRead = time.Now()
 		if err != nil {
 			return err
 		}

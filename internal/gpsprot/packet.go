@@ -5,6 +5,8 @@ import "time"
 // Tag identifies the kind of packet
 type Tag string
 
+const EmptyTag Tag = ""
+
 func (t Tag) IsZero() bool {
 	return t == ""
 }

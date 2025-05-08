@@ -1,0 +1,156 @@
+package gpsio
+
+import (
+	"encoding/hex"
+	"encoding/json"
+	"log/slog"
+	"os"
+	"os/signal"
+	"sync"
+	"time"
+
+	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/logfile"
+	"github.com/jclark/satpulse/internal/scan"
+	"golang.org/x/sys/unix"
+)
+
+const PacketLogExtension = ".jsonl"
+
+type HexString string
+
+type OutPacket struct {
+	TWrite time.Time
+	Data   string
+}
+
+func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (chan<- scan.Packet, chan<- OutPacket, error) {
+	if logPath == "" {
+		return nil, nil, nil
+	}
+	lf := logfile.LogFile{}
+	err := lf.Open(logPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	inCh := make(chan scan.Packet, 1)
+	outCh := make(chan OutPacket, 1)
+
+	cmd.WaitGroupGo(wg, func() {
+		doLogPackets(lg, &lf, inCh, outCh)
+	})
+	return inCh, outCh, nil
+}
+
+func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet, outCh <-chan OutPacket) {
+	defer lf.Close(lg)
+
+	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, unix.SIGHUP)
+	for inCh != nil || outCh != nil {
+		select {
+		case pkt, ok := <-inCh:
+			if !ok {
+				inCh = nil
+				continue
+			}
+			logPacket(lg, lf, pkt)
+		case pkt, ok := <-outCh:
+			if !ok {
+				outCh = nil
+				continue
+			}
+			logOutPacket(lg, lf, pkt)
+		case <-sig:
+			lf.Reopen(lg)
+		}
+	}
+}
+
+type PacketLogEntry struct {
+	T     time.Time   `json:"t"`
+	Tag   gpsprot.Tag `json:"tag,omitempty"`
+	Bin   HexString   `json:"bin,omitempty"`
+	Ascii string      `json:"ascii,omitempty"`
+	Out   bool        `json:"out"` // use omitzero here when we upgrade to go 1.24
+}
+
+func logPacket(lg *slog.Logger, lf *logfile.LogFile, pkt scan.Packet) {
+	if len(pkt.Data) == 0 {
+		return
+	}
+	bin := HexString("")
+	ascii := ""
+	if useBinary(pkt) {
+		bin = HexString(pkt.Data)
+	} else {
+		ascii = pkt.Data
+	}
+	logEntry(lg, lf, &PacketLogEntry{
+		T:     pkt.TRead.UTC(),
+		Tag:   pkt.Tag(),
+		Bin:   bin,
+		Ascii: ascii,
+	})
+}
+
+func useBinary(pkt scan.Packet) bool {
+	if pkt.Format == nil {
+		// range over bytes not runes
+		for i := range len(pkt.Data) {
+			if b := pkt.Data[i]; (b < 0x20 && b != '\r' && b != '\n') || b >= 0x7F {
+				return true
+			}
+		}
+		return false
+	}
+	sync1 := pkt.Data[0]
+	return sync1 < 0x20 || sync1 >= 0x7F
+}
+
+func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket) {
+	if len(pkt.Data) == 0 {
+		return
+	}
+	logEntry(lg, lf, &PacketLogEntry{
+		T:     pkt.TWrite.UTC(),
+		Bin:   HexString(pkt.Data),
+		Ascii: pkt.Data,
+	})
+}
+
+func logEntry(lg *slog.Logger, lf *logfile.LogFile, entry *PacketLogEntry) {
+	bytes, err := json.Marshal(entry)
+	if err != nil {
+		lg.Warn("failed to convert packet to JSON", "err", err)
+		return
+	}
+	bytes = append(bytes, '\n')
+	_, err = lf.File.Write(bytes)
+	if err != nil {
+		lg.Warn("error writing packet to log file", "err", err)
+	}
+}
+
+// MarshalJSON implements json.Marshaler for HexString
+// It marshals the HexString as a JSON string of hex digits
+func (hs HexString) MarshalJSON() ([]byte, error) {
+	return json.Marshal(hex.EncodeToString(([]byte)(hs)))
+}
+
+// UnmarshalJSON implements json.Unmarshaler for HexString
+// Expects a string of hex digits, two characters per byte
+func (hs *HexString) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	bytes, err := hex.DecodeString(s)
+	if err != nil {
+		return err
+	}
+	*hs = HexString(bytes)
+	return nil
+}

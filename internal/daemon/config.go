@@ -77,8 +77,9 @@ type LogConfig struct {
 	Interval int    `toml:"interval"`
 	Verbose  bool   `toml:"verbose"`
 	Dir      string `toml:"dir"`
-	Clock    bool   `toml:"clock"` // whether to generate a clock log
-	Event    bool   `toml:"event"` // whether to generate an event log
+	Clock    bool   `toml:"clock"`  // whether to generate a clock log
+	Event    bool   `toml:"event"`  // whether to generate an event log
+	Packet   bool   `toml:"packet"` // whether to generate a packet log
 }
 
 var leapSecondDefault = LeapSecondConfig{
@@ -189,6 +190,10 @@ func (cfg *LogConfig) ClockPath(phcPath, ext string) string {
 
 func (cfg *LogConfig) EventPath(serialPath, ext string) string {
 	return cfg.path(cfg.Event, "event", serialPath, ext)
+}
+
+func (cfg *LogConfig) PacketPath(serialPath, ext string) string {
+	return cfg.path(cfg.Packet, "packet", serialPath, ext)
 }
 
 func (cfg *LogConfig) path(enable bool, kind, devPath, ext string) string {
