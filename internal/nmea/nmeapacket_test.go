@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/scantest"
 )
 
@@ -19,6 +20,9 @@ func TestGoodNMEA(t *testing.T) {
 }
 
 func nmeaOK(t *testing.T, data string) {
+	if !gpsprot.IsValidPacket(PacketFormat, ([]byte)(data)) {
+		t.Fatalf("gpsprot.IsValidPacket says not valid: %s", data)
+	}
 	for range 10 {
 		buf, nRandom := scantest.InsertRandomPrefix(data, '$')
 		startPos, endPos, ok := scantest.FindPacket(PacketFormat, buf)
@@ -47,6 +51,9 @@ func TestBadNMEA(t *testing.T) {
 }
 
 func nmeaBad(t *testing.T, data string) {
+	if gpsprot.IsValidPacket(PacketFormat, ([]byte)(data)) {
+		t.Fatalf("gpsprot.IsValidPacket says valid: %s", data)
+	}
 	for range 10 {
 		buf, _ := scantest.InsertRandomPrefix(data, '$')
 		_, _, ok := scantest.FindPacket(PacketFormat, buf)

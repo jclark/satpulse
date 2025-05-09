@@ -11,6 +11,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/logfile"
 	"github.com/jclark/satpulse/internal/scan"
 	"golang.org/x/sys/unix"
@@ -38,12 +39,13 @@ func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (chan<- sca
 	outCh := make(chan OutPacket, 1)
 
 	cmd.WaitGroupGo(wg, func() {
-		doLogPackets(lg, &lf, inCh, outCh)
+		// XXX gpsreg.PacketFormats should be passed in to LogPackets
+		doLogPackets(lg, &lf, inCh, outCh, gpsreg.PacketFormats)
 	})
 	return inCh, outCh, nil
 }
 
-func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet, outCh <-chan OutPacket) {
+func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet, outCh <-chan OutPacket, pktFormats []gpsprot.PacketFormat) {
 	defer lf.Close(lg)
 
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
@@ -62,7 +64,7 @@ func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet,
 				outCh = nil
 				continue
 			}
-			logOutPacket(lg, lf, pkt)
+			logOutPacket(lg, lf, pkt, pktFormats)
 		case <-sig:
 			lf.Reopen(lg)
 		}
@@ -108,7 +110,7 @@ func useBinary(pkt scan.Packet) bool {
 	return sync1 < 0x20 || sync1 >= 0x7F
 }
 
-func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket) {
+func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket, pktFormats []gpsprot.PacketFormat) {
 	if len(pkt.Data) == 0 {
 		return
 	}
@@ -117,7 +119,15 @@ func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket) {
 		Out: true,
 	}
 	if containsBinary(pkt.Data) {
-		entry.Bin = HexString(pkt.Data)
+		bytes := []byte(pkt.Data)
+		entry.Bin = HexString(bytes)
+		for _, pf := range pktFormats {
+			if gpsprot.IsValidPacket(pf, bytes) {
+				entry.Tag = pf.Tag()
+				entry.Msg = pf.MsgID(bytes)
+				break
+			}
+		}
 	} else {
 		entry.Ascii = pkt.Data
 	}

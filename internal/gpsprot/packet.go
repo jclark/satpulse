@@ -52,6 +52,20 @@ type PacketFormat interface {
 	RescanOnBadChecksum(prevPktValid bool, pkt []byte) bool
 }
 
+// IsValidPacket says whether the given buffer is a valid packet in the given PacketFormat.
+// It uses only the Next method on PacketFormat.
+// It does not validate the checksum.
+func IsValidPacket(pf PacketFormat, buf []byte) bool {
+	state := ScanStateSync
+	for i := 0; i < len(buf); i++ {
+		state = pf.Next(state, buf, i, i)
+		if state == ScanStateSync {
+			return false
+		}
+	}
+	return pf.IsFinal(state)
+}
+
 // PacketProcessor processes packets of a specific protocol
 type PacketProcessor interface {
 	// ProcessPacket processes a packet's data and returns a string with the type of the packet and an error
