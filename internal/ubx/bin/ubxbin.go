@@ -99,7 +99,7 @@ func (mid MsgID) String() string {
 	} else {
 		s += fmt.Sprintf("0x%02X", id)
 	}
-	return "UBX-" + s
+	return s
 }
 
 const (
@@ -1542,11 +1542,11 @@ func ParseMsg(packet string) (Msg, error) {
 		err = binary.Read(r, binary.LittleEndian, slice)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("parsing ubx-%s: %v", mid.String(), err)
+		return nil, fmt.Errorf("parsing UBX-%s: %v", mid.String(), err)
 	}
 	_, err = r.ReadByte()
 	if err != io.EOF {
-		return nil, fmt.Errorf("parsing ubx-%s: trailing bytes", mid.String())
+		return nil, fmt.Errorf("parsing UBX-%s: trailing bytes", mid.String())
 	}
 	return msg, nil
 }
