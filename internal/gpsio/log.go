@@ -72,7 +72,7 @@ func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet,
 }
 
 type PacketLogEntry struct {
-	T     TimeMilli  `json:"t"`
+	T     TimeMilli   `json:"t"`
 	Tag   gpsprot.Tag `json:"tag,omitempty"`
 	Msg   string      `json:"msg,omitempty"`
 	Bin   HexString   `json:"bin,omitempty"`
