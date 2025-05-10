@@ -23,6 +23,8 @@ speed = 9600
 [log]
 # Uncomment the following line to enable logging of PHC offsets (in /var/log/satpulse/)
 # clock = true
+# Uncomment the following line to enable logging of packets from the GPS receiver (in /var/log/satpulse)
+# packet = true
 
 [ptp]
 # Unix domain socket for PTP management

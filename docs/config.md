@@ -218,7 +218,9 @@ The following keys relate to its own log
 
 * `clock` - a boolean saying whether to create a *clock* log; the clock log is in text format and records offsets between the PHC and the GPS;
    it is intended to be convenient for statistical analysis
-* `event` a boolean saying whether to create an  *event* log; the event log is on JSON Lines format and
+* `packet` - a boolean saying whether to create a *packet* log; the packet log is in JSON Lines format and
+  records packets received by and sent to the GPS receiver
+* `event` a boolean saying whether to create an  *event* log; the event log is in JSON Lines format and
   records the events input into the synchronization process (pulses and GPS messages)
 * `dir` - a string giving the directory in which to write log files; this defaults to `/var/log/satpulse`
 
