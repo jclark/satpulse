@@ -72,12 +72,22 @@ func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet,
 }
 
 type PacketLogEntry struct {
-	T     time.Time   `json:"t"`
+	T     TimeMilli  `json:"t"`
 	Tag   gpsprot.Tag `json:"tag,omitempty"`
 	Msg   string      `json:"msg,omitempty"`
 	Bin   HexString   `json:"bin,omitempty"`
 	Ascii string      `json:"ascii,omitempty"`
 	Out   bool        `json:"out"` // use omitzero here when we upgrade to go 1.24
+}
+
+// TimeMilli is a time.Time that marshals to JSON with 3 fractional digits
+type TimeMilli time.Time
+
+const RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
+
+// MarshalJSON implements json.Marshaler for TimeMillis`
+func (t TimeMilli) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Time(t).UTC().Format(RFC3339Milli))
 }
 
 func logPacket(lg *slog.Logger, lf *logfile.LogFile, pkt scan.Packet) {
@@ -90,7 +100,7 @@ func logPacket(lg *slog.Logger, lf *logfile.LogFile, pkt scan.Packet) {
 		msgID = pkt.Format.MsgID(bytes)
 	}
 	entry := &PacketLogEntry{
-		T:   pkt.TRead.UTC(),
+		T:   TimeMilli(pkt.TRead.UTC()),
 		Tag: pkt.Tag(),
 		Msg: msgID,
 	}
@@ -115,7 +125,7 @@ func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket, pktFormat
 		return
 	}
 	entry := &PacketLogEntry{
-		T:   pkt.TWrite.UTC(),
+		T:   TimeMilli(pkt.TWrite.UTC()),
 		Out: true,
 	}
 	if containsBinary(pkt.Data) {
