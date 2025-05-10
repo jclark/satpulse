@@ -94,8 +94,12 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 		return fmt.Errorf("failed to initialize packet logging: %w", err)
 	}
 	if logOutCh != nil {
-		// in gpsflags.go we only allow packet logging for serial connections
-		conn.(*gpsio.SerialConn).SetOutPacketLogChan(logOutCh)
+		if serConn, ok := conn.(*gpsio.SerialConn); ok {
+			serConn.SetOutPacketLogChan(logOutCh)
+		} else {
+			lg.Warn("logging output packets is not yet supported for socket connections")
+			close(logOutCh)
+		}
 	}
 	pCh := startScan(ctx, lg, &wg, conn, logCh)
 

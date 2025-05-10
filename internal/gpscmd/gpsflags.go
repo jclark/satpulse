@@ -73,9 +73,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if (vars.socketPath == "") == (vars.serialDevice == "") {
 		return nil, usage, fmt.Errorf("%s command must specify either --socket or --serial-device", cmdName)
 	}
-	if vars.socketPath != "" && vars.packetLogPath != "" {
-		return nil, usage, fmt.Errorf("%s command supports --log-packets only with --serial-device", cmdName)
-	}
 	if vars.disableTimeMode && vars.survey {
 		return nil, nil, fmt.Errorf("%s command must not specify both --disable-time-mode and --survey", cmdName)
 	}
