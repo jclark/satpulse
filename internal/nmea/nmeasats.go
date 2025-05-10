@@ -437,6 +437,8 @@ func systemIDToGNSS(sysID int) gpsprot.GNSS {
 // This is from NMEA 4.11, which isn't freely available.
 // See Table 7-34 in
 // Unicore Reference Commands Manual for N4 High Precision Products R1.6
+// It is also in IEC 61162-1-2010, which is corresponds to NMEA 4.00;
+// I have this, but it includes only GPS, GAL and GLO.
 var sigIDMap = map[gpsprot.GNSS]map[int]string{
 	gpsprot.GPS: {
 		1: "L1 C/A",
@@ -447,13 +449,13 @@ var sigIDMap = map[gpsprot.GNSS]map[int]string{
 		6: "L2C-L",
 		7: "L5-I",
 		8: "L5-Q",
-		9: "L1C", // Allystar, guessing a bit
+		// 9: "L1C", // not in 4.00; Allystar, guessing a bit
 	},
 	gpsprot.GAL: {
 		1: "E5a",
 		2: "E5b",
 		3: "E5a+b",
-		4: "E6-BC",
+		4: "E6-A",
 		5: "E6", // friendlier name for E6-BC
 		6: "L1-A",
 		7: "E1", // friendlier name for L1-BC
