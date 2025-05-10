@@ -71,11 +71,11 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, conn)
+	err = run(ctx, lg, target, conn, v.packetLogPath)
 	return
 }
 
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn, logPath string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -89,7 +89,19 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 
 	var wg sync.WaitGroup
 
-	pCh := startScan(ctx, lg, &wg, conn)
+	logCh, logOutCh, err := gpsio.LogPackets(lg, &wg, logPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize packet logging: %w", err)
+	}
+	if logOutCh != nil {
+		if serConn, ok := conn.(*gpsio.SerialConn); ok {
+			serConn.SetOutPacketLogChan(logOutCh)
+		} else {
+			lg.Warn("logging output packets is not yet supported for socket connections")
+			close(logOutCh)
+		}
+	}
+	pCh := startScan(ctx, lg, &wg, conn, logCh)
 
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
@@ -110,8 +122,8 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	return err
 }
 
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, logCh chan<- scan.Packet) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg) })
+	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg, logCh) })
 	return msg
 }

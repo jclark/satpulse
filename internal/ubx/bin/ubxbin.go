@@ -41,21 +41,25 @@ const (
 const NPort = 6
 
 const (
-	clsNav = 0x01
-	clsAck = 0x05
-	clsInf = 0x04
-	clsCfg = 0x06
-	clsMon = 0x0A
-	clsTim = 0x0D
+	clsNav  = 0x01
+	clsRxm  = 0x02
+	clsInf  = 0x04
+	clsAck  = 0x05
+	clsCfg  = 0x06
+	clsMon  = 0x0A
+	clsTim  = 0x0D
+	clsNav2 = 0x29
 )
 
 var clsMap = map[byte]string{
-	clsNav: "NAV",
-	clsAck: "ACK",
-	clsInf: "INF",
-	clsCfg: "CFG",
-	clsMon: "MON",
-	clsTim: "TIM",
+	clsNav:  "NAV",
+	clsRxm:  "RXM",
+	clsInf:  "INF",
+	clsAck:  "ACK",
+	clsCfg:  "CFG",
+	clsMon:  "MON",
+	clsTim:  "TIM",
+	clsNav2: "NAV2",
 }
 
 func makeMsgID(cls byte, id byte) MsgID {
@@ -139,6 +143,9 @@ const (
 	TimSvinID    MsgID = clsTim | (0x04 << 8)
 	TimTosID     MsgID = clsTim | (0x12 << 8)
 	TimTPID      MsgID = clsTim | (0x01 << 8)
+	// not implemented
+	RxmSfrbxID MsgID = clsRxm | (0x13 << 8)
+	RxmRawxID  MsgID = clsRxm | (0x15 << 8)
 )
 
 func init() {
@@ -182,6 +189,10 @@ func init() {
 	regMsg[TimSvin]("SVIN")
 	regMsg[TimTos]("TOS")
 	regMsg[TimTP]("TP")
+
+	// not implemented
+	idNameMap[RxmSfrbxID] = "SFRBX"
+	idNameMap[RxmRawxID] = "RAWX"
 }
 
 type AckNak struct {

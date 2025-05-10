@@ -58,6 +58,10 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 	return state == stateExpectN
 }
 
+func (f packetFormat) MsgID(pkt []byte) string {
+	return bin.PacketMsgId(pkt).String()
+}
+
 // ExtractChecksum extracts the checksum from the UBX packet.
 // Precondition: the packet must be valid according to Next().
 func (f packetFormat) ExtractChecksum(pkt []byte) []byte {

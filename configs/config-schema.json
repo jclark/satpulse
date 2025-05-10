@@ -124,7 +124,8 @@
 		  "verbose": { "type": "boolean" },
 		  "dir": { "type": "string" },
 		  "clock": { "type": "boolean" },
-		  "event": { "type": "boolean" }
+		  "event": { "type": "boolean" },
+		  "packet": { "type": "boolean" }
 		}
 	  },
 	  "ptp": {

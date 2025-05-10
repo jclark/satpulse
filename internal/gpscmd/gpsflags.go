@@ -25,9 +25,11 @@ type flagVars struct {
 	survey          bool
 	surveyTime      uint32
 	surveyAcc       float64
+	packetLogPath   string
 }
 
-const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--socket path]
+const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps]
+       		[--socket path] [--packet-log path]
             [--flash] [--reset] [--speed bps] [--nmea] [--force] [-p|--pps]
 			[-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [--disable-time-mode]`
 
@@ -48,6 +50,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&vars.force, "force", false, "force writing to serial device even if no GPS detected")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device to configure")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
+	flags.StringVar(&vars.packetLogPath, "log-packets", "", "log packets to `path`")
 	flags.IntVarP(&vars.localSpeed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.IntVar(&vars.remoteSpeed, "speed", 0, "set GPS receiver baud-rate in `bps`")
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")

@@ -5,6 +5,8 @@ import "time"
 // Tag identifies the kind of packet
 type Tag string
 
+const EmptyTag Tag = ""
+
 func (t Tag) IsZero() bool {
 	return t == ""
 }
@@ -32,6 +34,10 @@ type PacketFormat interface {
 	// IsFinal determines if the given state represents a complete packet
 	IsFinal(state ScanState) bool
 
+	// MsgID returns a human readable ID of the packet
+	// Precondition: the packet must be valid according to Next()
+	MsgID(pkt []byte) string
+
 	// ExtractChecksum extracts the checksum from the packet
 	// Precondition: the packet must be valid according to Next()
 	ExtractChecksum(pkt []byte) []byte
@@ -44,6 +50,20 @@ type PacketFormat interface {
 	// starting with the byte after the first byte of the packet with the bad checksum
 	// prevPktValid indicates if the previous packet was valid
 	RescanOnBadChecksum(prevPktValid bool, pkt []byte) bool
+}
+
+// IsValidPacket says whether the given buffer is a valid packet in the given PacketFormat.
+// It uses only the Next method on PacketFormat.
+// It does not validate the checksum.
+func IsValidPacket(pf PacketFormat, buf []byte) bool {
+	state := ScanStateSync
+	for i := 0; i < len(buf); i++ {
+		state = pf.Next(state, buf, i, i)
+		if state == ScanStateSync {
+			return false
+		}
+	}
+	return pf.IsFinal(state)
 }
 
 // PacketProcessor processes packets of a specific protocol
