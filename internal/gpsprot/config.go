@@ -62,6 +62,8 @@ type Configurator interface {
 type ConfigRequest interface {
 	// Packet returns the packet to be sent to the GPS receiver.
 	Packet() []byte
+	// ChangeSpeed returns the serial port speed to change to after the request is sent, or 0 if no change is needed
+	ChangeSpeed() int
 	// Ackable returns true if the packet is one that needs an acknowledgement.
 	// An acknowledgement can either be an ACK or a NACK.
 	Ackable() bool

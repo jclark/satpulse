@@ -254,9 +254,15 @@ const maxTries = 3
 func (mh *msgHandler) doRequest(ctx context.Context, cfgtor gpsprot.Configurator, req gpsprot.ConfigRequest, port gpsio.OutPort) error {
 	try := 0
 	pkt := req.Packet()
+	speed := req.ChangeSpeed()
 	for {
 		t := time.Now()
-		_, err := port.Write(pkt)
+		var err error
+		if serPort, ok := port.(*gpsio.SerialConn); ok && speed != 0 {
+			_, err = serPort.WriteThenChangeSpeed(pkt, speed)
+		} else {
+			_, err = port.Write(pkt)
+		}
 		if err != nil {
 			return err
 		}
@@ -265,7 +271,7 @@ func (mh *msgHandler) doRequest(ctx context.Context, cfgtor gpsprot.Configurator
 			break
 		}
 		try++
-		if try >= maxTries {
+		if try >= maxTries || speed != 0 { // don't retry speed change
 			return err
 		}
 		if !errors.Is(err, errNoResponse) && !errors.Is(err, errNoAck) {

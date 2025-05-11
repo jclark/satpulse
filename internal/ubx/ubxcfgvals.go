@@ -184,12 +184,7 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 			ucv.AddItem(&items, k, v)
 		}
 	}
-	if v, ok := cp.GetBaudRate(); ok {
-		k := portBaudRateKey(port)
-		if k != 0 {
-			ucv.AddItem(&items, k, uint64(v))
-		}
-	}
+
 	enaKeys := map[gpsprot.GNSS]ucv.KeyL{
 		gpsprot.GPS:   ucv.KSignalGpsEna,
 		gpsprot.GAL:   ucv.KSignalGalEna,
@@ -234,6 +229,17 @@ func msgRate(status gpsprot.MsgStatus) uint64 {
 func (known *CfgVals) Survey(opts gpsprot.ConfigOptions) []ucv.Item {
 	items := []ucv.Item{}
 	addSurveyItems(&items, opts.Survey)
+	return items
+}
+
+func (known *CfgVals) BaudRate(target *gpsprot.ConfigTarget, port ucv.Port) []ucv.Item {
+	items := []ucv.Item{}
+	if v, ok := target.Props.GetBaudRate(); ok {
+		k := portBaudRateKey(port)
+		if k != 0 {
+			ucv.AddItem(&items, k, uint64(v))
+		}
+	}
 	return items
 }
 

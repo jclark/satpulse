@@ -11,12 +11,11 @@ import (
 )
 
 type Term struct {
-	fd               int
-	path             string
-	byteTransmitTime time.Duration
-	speed            int
-	tsSaved          unix.Termios
-	iCount           *SerialICounter
+	fd      int
+	path    string
+	attr    Attr
+	tsSaved unix.Termios
+	iCount  *SerialICounter
 }
 
 type Attr struct {
@@ -70,15 +69,31 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 		}
 	}
 	// XXX turn of IXOFF
-	err = t.setAttr(&attr.ts)
-	t.byteTransmitTime = attr.byteTransmitTime()
-	t.speed = attr.speed()
+	err = t.setAttrNow(&attr.ts)
+	t.attr = attr
 	_ = t.GetErrorCounts()
 	return
 }
 
+// Change changes the attributes of the terminal after output has drained.
+func (t * Term) Change(opts ...AttrSetter) error {
+	attr := t.attr
+	for _, opt := range opts {
+		err := opt(&attr)
+		if err != nil {
+			return err
+		}
+	}
+	err := t.setAttrDrain(&attr.ts)
+	if err != nil {
+		return err
+	}
+	t.attr = attr
+	return nil
+}
+
 func (t *Term) Speed() int {
-	return t.speed
+	return t.attr.speed()
 }
 
 func (t *Term) lock() error {
@@ -110,7 +125,7 @@ func (t *Term) TransmitTime(nBytes int) time.Duration {
 	if nBytes <= 0 {
 		return 0
 	}
-	return t.byteTransmitTime * time.Duration(nBytes)
+	return t.attr.byteTransmitTime() * time.Duration(nBytes)
 }
 
 func (attr *Attr) speed() int {
@@ -357,7 +372,7 @@ func (t *Term) GetErrorCounts() (ec ErrorCounts) {
 }
 
 func (t *Term) Restore() error {
-	return t.setAttr(&t.tsSaved)
+	return t.setAttrNow(&t.tsSaved)
 }
 
 func (t *Term) Close() error {
@@ -374,8 +389,12 @@ func (t *Term) Flush() error {
 	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TCFLSH, unix.TCIOFLUSH), "ioctl(TCFLSH)")
 }
 
-func (t *Term) setAttr(attr *unix.Termios) error {
+func (t *Term) setAttrNow(attr *unix.Termios) error {
 	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TCSETS, attr), "ioctl(TCSETS)")
+}
+
+func (t *Term) setAttrDrain(attr *unix.Termios) error {
+	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TCSETSW, attr), "ioctl(TCSET)")
 }
 
 func (t *Term) getAttr() (tp *unix.Termios, err error) {

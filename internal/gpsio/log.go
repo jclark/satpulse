@@ -24,6 +24,7 @@ type HexString []byte
 type OutPacket struct {
 	TWrite time.Time
 	Data   string
+	Speed  int
 }
 
 func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (chan<- scan.Packet, chan<- OutPacket, error) {
@@ -77,6 +78,7 @@ type PacketLogEntry struct {
 	Msg   string      `json:"msg,omitempty"`
 	Bin   HexString   `json:"bin,omitempty"`
 	Ascii string      `json:"ascii,omitempty"`
+	Speed *int        `json:"speed,omitempty"`
 	Out   bool        `json:"out"` // use omitzero here when we upgrade to go 1.24
 }
 
@@ -121,12 +123,15 @@ func useBinary(pkt scan.Packet) bool {
 }
 
 func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket, pktFormats []gpsprot.PacketFormat) {
-	if len(pkt.Data) == 0 {
+	if len(pkt.Data) == 0 && pkt.Speed == 0 {
 		return
 	}
 	entry := &PacketLogEntry{
 		T:   TimeMilli(pkt.TWrite.UTC()),
 		Out: true,
+	}
+	if pkt.Speed != 0 {
+		entry.Speed = &pkt.Speed
 	}
 	if containsBinary(pkt.Data) {
 		bytes := []byte(pkt.Data)

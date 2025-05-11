@@ -60,6 +60,7 @@ var newConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).valGet,
 	(*Configurator).valSet,
 	(*Configurator).valSurvey,
+	(*Configurator).valBaudRate,
 	(*Configurator).reset,
 }
 
@@ -203,11 +204,29 @@ func (c *Configurator) valSurvey() (gpsprot.ConfigRequest, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
+	// XXX how does this work with the Flash option?
+	// XXX this is disabled for now, because Transaction doesn't set c.survey
 	val, err := newCfgValsetRequest(items, bin.CfgValsetLayerRAM)
 	if err != nil {
 		return nil, err
 	}
 	return c.msgSetRequest(val)
+}
+
+func (c *Configurator) valBaudRate() (gpsprot.ConfigRequest, error) {
+	items := c.raw.valsPtr().BaudRate(c.target, c.raw.valPort())
+	if len(items) == 0 {
+		return nil, nil
+	}
+	layer := bin.CfgValsetLayerRAM
+	if c.target.Opts.Flash {
+		layer = bin.CfgValsetLayerFlash
+	}
+	val, err := newCfgValsetRequest(items, layer)
+	if err != nil {
+		return nil, err
+	}
+	return c.msgSetSpeedRequest(val, int(items[0].Value))
 }
 
 func (raw *RawConfig) valPort() ucv.Port {
@@ -567,6 +586,8 @@ func (r msgRequest) Packet() []byte {
 	return pkt
 }
 
+func (r msgRequest) ChangeSpeed() int { return 0 }
+
 func (r msgRequest) ID() string { return r.msg.ID().String() }
 
 func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
@@ -577,6 +598,10 @@ func (r msgRequest) Done() {}
 
 func (c *Configurator) msgSetRequest(msg bin.Msg) (gpsprot.ConfigRequest, error) {
 	return msgSetRequest{msgRequest{msg}, &c.raw}, nil
+}
+
+func (c *Configurator) msgSetSpeedRequest(msg bin.Msg, speed int) (gpsprot.ConfigRequest, error) {
+	return msgSetSpeedRequest{msgSetRequest{msgRequest{msg}, &c.raw}, speed}, nil
 }
 
 func (c *Configurator) msgPollRequest(msg bin.Msg) gpsprot.ConfigRequest {
@@ -619,6 +644,17 @@ func (r msgSetRequest) Done() {
 	}
 }
 
+type msgSetSpeedRequest struct {
+	msgSetRequest
+	speed int
+}
+
+func (r msgSetSpeedRequest) ChangeSpeed() int {
+	return r.speed
+}
+
+var _ gpsprot.ConfigRequest = (*msgSetSpeedRequest)(nil)
+
 type pollRequest struct {
 	tRead map[bin.MsgID]time.Time
 	msgID bin.MsgID
@@ -627,6 +663,8 @@ type pollRequest struct {
 func (r pollRequest) Packet() []byte {
 	return bin.Poll(r.msgID)
 }
+
+func (r pollRequest) ChangeSpeed() int { return 0 }
 
 func (r pollRequest) ID() string { return r.msgID.String() }
 
@@ -666,6 +704,8 @@ type msgRateRequest struct {
 func (r msgRateRequest) Packet() []byte {
 	return bin.SetCfgMsg(r.msgID, 1)
 }
+
+func (r msgRateRequest) ChangeSpeed() int { return 0 }
 
 func (r msgRateRequest) Done() {
 	r.raw.SetMsgRate(r.msgID, r.rate)

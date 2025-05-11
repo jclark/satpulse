@@ -15,6 +15,11 @@ type OutPort interface {
 	TransmitTime(nBytes int) time.Duration
 }
 
+type SerialOutPort interface {
+	OutPort
+	WriteThenChangeSpeed(p []byte, speed int) (int, error)
+}
+
 type Conn interface {
 	io.Reader
 	io.Closer

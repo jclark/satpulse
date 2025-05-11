@@ -21,15 +21,16 @@ import (
 // before restoring serial settings and closing the underlying file descriptor.
 type SerialConn struct {
 	term      *term.Term
+	isUART    bool
 	mu        sync.Mutex
 	stopped   bool // protected by mu
 	readLock  chan struct{}
 	writeLock chan struct{}
-	outLogCh chan<- OutPacket
+	outLogCh  chan<- OutPacket
 }
 
 var _ Conn = (*SerialConn)(nil)
-var _ OutPort = (*SerialConn)(nil)
+var _ SerialOutPort = (*SerialConn)(nil)
 
 // OpenSerial opens a serial port at the given path and speed.
 // speed can be 0 meaning to use the current speed.
@@ -38,11 +39,12 @@ func OpenSerial(path string, speed int) (*SerialConn, error) {
 	if err != nil {
 		return nil, err
 	}
+	isUART := t.DevKind() == term.DevUART
 	readLock := make(chan struct{}, 1)
 	readLock <- struct{}{}
 	writeLock := make(chan struct{}, 1)
 	writeLock <- struct{}{}
-	return &SerialConn{term: t, readLock: readLock, writeLock: writeLock}, nil
+	return &SerialConn{term: t, readLock: readLock, writeLock: writeLock, isUART: isUART}, nil
 }
 
 func (c *SerialConn) LocalAddr() string {
@@ -70,6 +72,10 @@ func (c *SerialConn) Read(p []byte) (int, error) {
 }
 
 func (c *SerialConn) Write(p []byte) (int, error) {
+	return c.WriteThenChangeSpeed(p, 0)
+}
+
+func (c *SerialConn) WriteThenChangeSpeed(p []byte, speed int) (int, error) {
 	if c.isStopped() {
 		return 0, net.ErrClosed
 	}
@@ -87,9 +93,31 @@ func (c *SerialConn) Write(p []byte) (int, error) {
 		return 0, net.ErrClosed
 	}
 	n, err := c.term.Write(p)
-	// We need to do this while we have the write lock to guarantee that the channel is not closed
 	if err == nil {
-		c.logWrite(p)
+		if speed != 0 {
+			// If it's a UART, then the TCSETSW flag should in theory take care of delaying the speed change
+			// until the data as been transmitted.
+			// But I found that on the Raspberry Pi, which uses a PL011 UART, it doesn't work without a little delay,
+			// for reasons I don't understand.
+			// With something like a USB-serial converter, it seems unlikely that the TCSETW flag will work,
+			// since the kernel does not have access to the UART buffer to determine when it is empty.
+			// So in this case, we increase the delay to ensure the data is transmitted before we change the speed,
+			// since that is the most important thing.
+			// We ideally want get the ACK back, which means we need to change the speed promptly.
+			// But we can recover from a lost ACK.
+			const minDelay = time.Millisecond
+			delay := minDelay
+			if !c.isUART {
+				delay += c.TransmitTime(n)
+			}
+			time.Sleep(delay)
+			err = c.term.Change(term.Speed(speed))
+			if err != nil {
+				speed = 0
+			}
+		}
+		// We need to do this while we have the write lock to guarantee that the channel is not closed
+		c.logWrite(p, speed)
 	}
 	return n, err
 }
@@ -130,7 +158,7 @@ func (c *SerialConn) SetOutPacketLogChan(ch chan<- OutPacket) {
 	c.outLogCh = ch
 }
 
-func (c *SerialConn) logWrite(p []byte) {
+func (c *SerialConn) logWrite(p []byte, speed int) {
 	// Stop can be called asynchronously.
 	// We need to ensure we don't send to outLogCh after it is closed.
 	defer c.mu.Unlock()
@@ -141,6 +169,7 @@ func (c *SerialConn) logWrite(p []byte) {
 	c.outLogCh <- OutPacket{
 		TWrite: time.Now(),
 		Data:   string(p),
+		Speed:  speed,
 	}
 }
 
