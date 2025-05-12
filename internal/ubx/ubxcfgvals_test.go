@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
+	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
 func TestConfigItems_Sane(t *testing.T) {
@@ -159,7 +159,7 @@ func TestConfigItems_GNSS(t *testing.T) {
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	target := gpsprot.NewConfigTarget(false)
 	target.Props.SetPrimaryGNSS(gpsprot.GAL)
-	target.Props.SetGNSSEnabled(gpsprot.GNSSFlag(gpsprot.GAL))
+	target.Props.SetGNSSEnabled(gpsprot.GNSSSetOf(gpsprot.GAL))
 	items, missing, survey, err := newCfgVals().Transaction(target, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)

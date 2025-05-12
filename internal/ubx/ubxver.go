@@ -175,7 +175,7 @@ func findGNSS(extensions []string) (gnss gpsprot.GNSSSet) {
 			if err != nil {
 				continue
 			}
-			gnss |= gpsprot.GNSSFlag(g)
+			gnss |= gpsprot.GNSSSetOf(g)
 		}
 	}
 	return

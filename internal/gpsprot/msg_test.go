@@ -6,7 +6,7 @@ import (
 
 func TestGNSSSet(t *testing.T) {
 	// Create a new GNSSSet
-	set := GNSSFlag(GPS, GLO)
+	set := GNSSSetOf(GPS, GLO)
 
 	// Check that Contains works properly for values in the set
 	if !set.Contains(GPS) {
@@ -43,7 +43,7 @@ func TestGNSSSet(t *testing.T) {
 }
 
 func TestGNSSSetMarshalJSON(t *testing.T) {
-	gnssSet := GNSSFlag(GPS) | GNSSFlag(GAL)
+	gnssSet := GNSSSetOf(GPS) | GNSSSetOf(GAL)
 
 	marshaledJSON, err := gnssSet.MarshalJSON()
 

@@ -231,7 +231,7 @@ func (sb *satellitesBuffer) gsvProcess(sen *Sentence, tRead time.Time, h gpsprot
 		return true, err
 	}
 	// Now we know it is the final sentence in a series
-	flag := gpsprot.GNSSFlag(gsv.gnss)
+	flag := gpsprot.GNSSSetOf(gsv.gnss)
 	if sb.gnssExpected&flag != 0 {
 		sb.gnssKnown = true
 	} else {

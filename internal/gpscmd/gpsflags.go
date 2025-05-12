@@ -91,7 +91,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("first GNSS must be a major constellation: %s is not", primary)
 		}
 		vars.primaryGNSS = primary
-		vars.enabledGNSS = gpsprot.GNSSFlag(gl.gnss...)
+		vars.enabledGNSS = gpsprot.GNSSSetOf(gl.gnss...)
 	}
 	return &vars, nil, nil
 }

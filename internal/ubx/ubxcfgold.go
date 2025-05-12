@@ -631,7 +631,7 @@ func gnssEnabledSet(gnss *bin.CfgGNSS) gpsprot.GNSSSet {
 	for _, blk := range gnss.Blocks {
 		if blk.Enable != 0 {
 			if g := idToGNSS(blk.GNSSID); g != 0 {
-				enabled |= gpsprot.GNSSFlag(g)
+				enabled |= gpsprot.GNSSSetOf(g)
 			}
 		}
 	}
