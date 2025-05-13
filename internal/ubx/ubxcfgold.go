@@ -46,7 +46,7 @@ var cfgOldProps = struct {
 	gnss: []gpsprot.PropIDs{
 		// XXX PropIDPrimaryGNSS doesn't currently look at the gnss field (I think)
 		// PropIDPrimaryGNSS is regarded as unset, if tp5 isn't aligned to a GNSS and nav5 also doesn't have a preferred GNSS
-		gpsprot.PropIDGNSSEnabled,
+		gpsprot.PropIDSignalsEnabled,
 		gpsprot.PropIDTimePulseAlignToGNSS, // cookTp5 can end up looking at the .gnss field for this
 	},
 	rate: []gpsprot.PropIDs{
@@ -620,7 +620,47 @@ func (raw *CfgOld) cookGNSS(cp *gpsprot.ConfigProps) {
 	if gnss == nil {
 		return
 	}
-	cp.SetGNSSEnabled(gnssEnabledSet(gnss))
+	var ss gpsprot.SignalSet
+	for _, blk := range gnss.Blocks {
+		if blk.Enable&1 == 1 {
+			ss |= gnssCfgMaskSignals(blk.GNSSID, blk.SigCfgMask)
+		}
+	}
+	cp.SetSignalsEnabled(ss)
+}
+
+var gnssSigMask = []struct {
+	gnss bin.GNSSID
+	mask bin.CfgGNSSSigMask
+	sig  gpsprot.Signal
+}{
+	{bin.GPS, bin.CfgGNSSGPSL1CA, gpsprot.SigGPSL1CA},
+	{bin.GPS, bin.CfgGNSSGPSL2C, gpsprot.SigGPSL2C},
+	{bin.GPS, bin.CfgGNSSGPSL5, gpsprot.SigGPSL5},
+	{bin.SBAS, bin.CfgGNSSSBASL1CA, gpsprot.SigSBASL1CA},
+	{bin.GAL, bin.CfgGNSSGALE1, gpsprot.SigGALE1},
+	{bin.GAL, bin.CfgGNSSGALE5a, gpsprot.SigGALE5a},
+	{bin.GAL, bin.CfgGNSSGALE5b, gpsprot.SigGALE5b},
+	{bin.BDS, bin.CfgGNSSBDSB1I, gpsprot.SigBDSB1I},
+	{bin.BDS, bin.CfgGNSSBDSB2I, gpsprot.SigBDSB2I},
+	{bin.BDS, bin.CfgGNSSBDSB2A, gpsprot.SigBDSB2a},
+	{bin.GLO, bin.CfgGNSSGLOL1, gpsprot.SigGLOL1},
+	{bin.GLO, bin.CfgGNSSGLOL2, gpsprot.SigGLOL2},
+	{bin.QZSS, bin.CfgGNSSQZSSL1CA, gpsprot.SigQZSSL1CA},
+	{bin.QZSS, bin.CfgGNSSQZSSL1S, gpsprot.SigQZSSL1S},
+	{bin.QZSS, bin.CfgGNSSQZSSL2C, gpsprot.SigQZSSL2C},
+	{bin.QZSS, bin.CfgGNSSQZSSL5, gpsprot.SigQZSSL5},
+}
+
+func gnssCfgMaskSignals(g bin.GNSSID, mask bin.CfgGNSSSigMask) gpsprot.SignalSet {
+	ss := gpsprot.SignalSet(0)
+	// not an efficient algorithm, but it doesn't matter
+	for _, m := range gnssSigMask {
+		if m.gnss == g && m.mask&mask != 0 {
+			ss |= gpsprot.SignalSetOf(m.sig)
+		}
+	}
+	return ss
 }
 
 func gnssEnabledSet(gnss *bin.CfgGNSS) gpsprot.GNSSSet {

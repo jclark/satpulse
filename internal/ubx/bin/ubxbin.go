@@ -1250,6 +1250,8 @@ type CfgGNSSFixed struct {
 	NumConfigBlocks byte
 }
 
+type CfgGNSSSigMask byte
+
 type CfgGNSSBlock struct {
 	GNSSID     GNSSID
 	ResTrkCh   byte
@@ -1257,9 +1259,41 @@ type CfgGNSSBlock struct {
 	_          byte
 	Enable     byte
 	_          byte
-	SigCfgMask byte
+	SigCfgMask CfgGNSSSigMask
 	_          byte
 }
+
+const (
+	CfgGNSSGPSL1CA CfgGNSSSigMask = 0x01
+	CfgGNSSGPSL2C  CfgGNSSSigMask = 0x10
+	CfgGNSSGPSL5   CfgGNSSSigMask = 0x20
+)
+
+const CfgGNSSSBASL1CA CfgGNSSSigMask = 0x01
+
+const (
+	CfgGNSSGALE1  CfgGNSSSigMask = 0x01
+	CfgGNSSGALE5a CfgGNSSSigMask = 0x10
+	CfgGNSSGALE5b CfgGNSSSigMask = 0x20
+)
+
+const (
+	CfgGNSSBDSB1I CfgGNSSSigMask = 0x01
+	CfgGNSSBDSB2I CfgGNSSSigMask = 0x10
+	CfgGNSSBDSB2A CfgGNSSSigMask = 0x80
+)
+
+const (
+	CfgGNSSQZSSL1CA CfgGNSSSigMask = 0x01
+	CfgGNSSQZSSL1S  CfgGNSSSigMask = 0x04
+	CfgGNSSQZSSL2C  CfgGNSSSigMask = 0x10
+	CfgGNSSQZSSL5   CfgGNSSSigMask = 0x20
+)
+
+const (
+	CfgGNSSGLOL1 CfgGNSSSigMask = 0x01
+	CfgGNSSGLOL2 CfgGNSSSigMask = 0x10
+)
 
 func (m *CfgGNSS) ID() MsgID { return CfgGNSSID }
 

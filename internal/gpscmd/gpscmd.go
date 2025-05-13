@@ -51,7 +51,9 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 		cp.SetPrimaryGNSS(v.primaryGNSS)
 	}
 	if v.enabledGNSS != 0 {
-		cp.SetGNSSEnabled(v.enabledGNSS)
+		// XXX do some checking here
+		ss := gpsprot.BandAll.SignalSet(v.enabledGNSS.Items()...)
+		cp.SetSignalsEnabled(ss)
 	}
 	if v.disableTimeMode {
 		opts.Survey.When = 0

@@ -99,6 +99,9 @@ func (raw *CfgVals) AddData(cfgData []byte) error {
 }
 
 func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
+	if v, ok := raw.getSignalsEnabled(); ok {
+		cp.SetSignalsEnabled(v)
+	}
 	if v, ok := cfgValGet(raw, ucv.KTmodeMode); ok {
 		cp.SetTimeMode(tmodeModeToTimeMode(v))
 	}
@@ -185,26 +188,6 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 		}
 	}
 
-	enaKeys := map[gpsprot.GNSS]ucv.KeyL{
-		gpsprot.GPS:   ucv.KSignalGpsEna,
-		gpsprot.GAL:   ucv.KSignalGalEna,
-		gpsprot.GLO:   ucv.KSignalGloEna,
-		gpsprot.BDS:   ucv.KSignalBdsEna,
-		gpsprot.NAVIC: ucv.KSignalNavicEna,
-		gpsprot.QZSS:  ucv.KSignalQzssEna,
-		gpsprot.SBAS:  ucv.KSignalSbasEna,
-	}
-	if v, ok := cp.GetGNSSEnabled(); ok {
-		supportedGNSS := ver.GNSS
-		if v&supportedGNSS&gpsprot.MajorGNSSSet == 0 {
-			return nil, nil, false, errors.New("must enable at least one major GNSS")
-		}
-		for g, k := range enaKeys {
-			if supportedGNSS.Contains(g) {
-				ucv.AddItem(&items, k, v.Contains(g))
-			}
-		}
-	}
 	opts := &target.Opts
 	if opts.EnableTimeMsg {
 		ucv.AddItem(&items, timegridTp1ToMsgRateKey(tg).KeyU(port), 1)
@@ -739,4 +722,115 @@ func portBaudRateKey(port ucv.Port) ucv.KeyU {
 		return ucv.KUart2Baudrate
 	}
 	return 0
+}
+
+func (known *CfgVals) EnableSignals(enabled gpsprot.SignalSet) (gpsprot.SignalSet, []ucv.Item) {
+	supported := known.signalsSupported()
+	items := []ucv.Item{}
+	for g := gpsprot.GNSS(1); g <= gpsprot.GNSSLast; g++ {
+		gss := gpsprot.BandAll.SignalSet(g) & supported
+		if gss == 0 {
+			// this GNSS is not supported by the receiver
+			continue
+		}
+		gk := gnssKeyMap[g]
+		gEnabled := gss & enabled
+		if gEnabled == 0 {
+			// there are no signal enabled for this GNSS
+			// and this is a GNSS supported by the receiver
+			// so just disable this GNSS
+			ucv.AddItem(&items, gk, false)
+
+		} else {
+			// enable the GNSS
+			ucv.AddItem(&items, gk, true)
+			// set the supported signals in that GNSS to enabled or disabled
+			for sig := range gss.Signals() {
+				ucv.AddItem(&items, signalKeyMap[sig], enabled.Contains(sig))
+			}
+		}
+	}
+	return supported & enabled, items
+}
+
+func (raw *CfgVals) signalsSupported() gpsprot.SignalSet {
+	supported := gpsprot.SignalSet(0)
+	for k, sig := range keySignalMap {
+		_, ok := ucv.MapGet(raw.Map, k)
+		if ok {
+			supported |= gpsprot.SignalSetOf(sig)
+		}
+	}
+	return supported
+}
+
+func (raw *CfgVals) getSignalsEnabled() (gpsprot.SignalSet, bool) {
+	found := false
+	enabled1 := gpsprot.SignalSet(0)
+	for k, sig := range keySignalMap {
+		ena, ok := ucv.MapGet(raw.Map, k)
+		if ok {
+			found = true
+			if ena {
+				enabled1 |= gpsprot.SignalSetOf(sig)
+
+			}
+		}
+	}
+	enabled2 := gpsprot.SignalSet(0)
+	for k, g := range keyGNSSMap {
+		ena, ok := ucv.MapGet(raw.Map, k)
+		if ok {
+			found = true
+			if ena {
+				enabled2 |= gpsprot.BandAll.SignalSet(g)
+			}
+		}
+	}
+	return enabled1 & enabled2, found
+}
+
+var keySignalMap = map[ucv.KeyL]gpsprot.Signal{
+	ucv.KSignalGpsL1caEna:  gpsprot.SigGPSL1CA,  // GPS L1 C/A
+	ucv.KSignalGpsL2cEna:   gpsprot.SigGPSL2C,   // GPS L2C
+	ucv.KSignalGpsL5Ena:    gpsprot.SigGPSL5,    // GPS L5
+	ucv.KSignalGloL1Ena:    gpsprot.SigGLOL1,    // GLONASS L1
+	ucv.KSignalGloL2Ena:    gpsprot.SigGLOL2,    // GLONASS L2
+	ucv.KSignalGalE1Ena:    gpsprot.SigGALE1,    // Galileo E1
+	ucv.KSignalGalE5aEna:   gpsprot.SigGALE5a,   // Galileo E5a
+	ucv.KSignalGalE5bEna:   gpsprot.SigGALE5b,   // Galileo E5b
+	ucv.KSignalBdsB1Ena:    gpsprot.SigBDSB1I,   // BeiDou B1I
+	ucv.KSignalBdsB1cEna:   gpsprot.SigBDSB1C,   // BeiDou B1C
+	ucv.KSignalBdsB2Ena:    gpsprot.SigBDSB2I,   // BeiDou B2I
+	ucv.KSignalBdsB2aEna:   gpsprot.SigBDSB2a,   // BeiDou B2a
+	ucv.KSignalQzssL1caEna: gpsprot.SigQZSSL1CA, // QZSS L1 C/A
+	ucv.KSignalQzssL2cEna:  gpsprot.SigQZSSL2C,  // QZSS L2C
+	ucv.KSignalQzssL5Ena:   gpsprot.SigQZSSL5,   // QZSS L5
+	ucv.KSignalNavicL5Ena:  gpsprot.SigNAVICL5,  // NavIC L5
+	ucv.KSignalSbasL1caEna: gpsprot.SigSBASL1CA, // SBAS L1 C/A
+}
+
+var signalKeyMap map[gpsprot.Signal]ucv.KeyL
+
+var keyGNSSMap = map[ucv.KeyL]gpsprot.GNSS{
+	ucv.KSignalGpsEna:   gpsprot.GPS,   // GPS
+	ucv.KSignalGalEna:   gpsprot.GAL,   // Galileo
+	ucv.KSignalBdsEna:   gpsprot.BDS,   // BeiDou
+	ucv.KSignalGloEna:   gpsprot.GLO,   // GLONASS
+	ucv.KSignalNavicEna: gpsprot.NAVIC, // NavIC
+	ucv.KSignalQzssEna:  gpsprot.QZSS,  // QZSS
+	ucv.KSignalSbasEna:  gpsprot.SBAS,  // SBAS
+}
+
+var gnssKeyMap map[gpsprot.GNSS]ucv.KeyL
+
+func init() {
+	signalKeyMap = make(map[gpsprot.Signal]ucv.KeyL, len(keySignalMap))
+	for k, sig := range keySignalMap {
+		signalKeyMap[sig] = k
+	}
+	gnssKeyMap = make(map[gpsprot.GNSS]ucv.KeyL, len(keyGNSSMap))
+	for k, gnss := range keyGNSSMap {
+		gnssKeyMap[gnss] = k
+	}
 }

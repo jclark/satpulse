@@ -89,7 +89,7 @@ type PropIDs uint32
 // ConfigProps represents a collection configuration properties
 type ConfigProps struct {
 	valid                   PropIDs // says which fields are valid
-	gnssEnabled             GNSSSet
+	signalsEnabled          SignalSet
 	primaryGNSS             GNSS
 	solutionPeriod          time.Duration
 	timePulseWidth          time.Duration
@@ -107,7 +107,7 @@ type ConfigProps struct {
 }
 
 const (
-	PropIDGNSSEnabled PropIDs = 1 << iota
+	PropIDSignalsEnabled PropIDs = 1 << iota
 	PropIDPrimaryGNSS
 	PropIDSolutionPeriod
 	PropIDTimePulseWidth
@@ -126,7 +126,7 @@ const (
 
 // propNames lists the property names in the same order as the bit constants
 var propNames = []string{
-	"GNSSEnabled",
+	"SignalsEnabled",
 	"PrimaryGNSS",
 	"SolutionPeriod",
 	"TimePulseWidth",
@@ -159,7 +159,7 @@ const (
 func (status MsgStatus) IsZero() bool {
 	return status == MsgStatusUnchanged
 }
-	
+
 func (status MsgStatus) IsSet() bool {
 	return status != MsgStatusUnchanged
 }
@@ -221,18 +221,18 @@ func (p PropIDs) String() string {
 	return "PropIDs(" + strings.Join(names, "|") + ")"
 }
 
-// GetGNSSEnabled returns the gnssEnabled value and whether it's set
-func (cp *ConfigProps) GetGNSSEnabled() (GNSSSet, bool) {
-	if cp.valid&PropIDGNSSEnabled != 0 {
-		return cp.gnssEnabled, true
+// GetSignalsEnabled returns the signalsEnabled value and whether it's set
+func (cp *ConfigProps) GetSignalsEnabled() (SignalSet, bool) {
+	if cp.valid&PropIDSignalsEnabled != 0 {
+		return cp.signalsEnabled, true
 	}
 	return 0, false
 }
 
-// SetGNSSEnabled sets the gnssEnabled value
-func (cp *ConfigProps) SetGNSSEnabled(val GNSSSet) {
-	cp.gnssEnabled = val
-	cp.valid |= PropIDGNSSEnabled
+// SetSignalsEnabled sets the signalsEnabled value
+func (cp *ConfigProps) SetSignalsEnabled(val SignalSet) {
+	cp.signalsEnabled = val
+	cp.valid |= PropIDSignalsEnabled
 }
 
 // GetPrimaryGNSS returns the primaryGNSS value and whether it's set
@@ -457,8 +457,8 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	both := cp.valid & other.valid
 
 	// Check each property that's valid in both
-	if both&PropIDGNSSEnabled != 0 && cp.gnssEnabled != other.gnssEnabled {
-		result.SetGNSSEnabled(other.gnssEnabled)
+	if both&PropIDSignalsEnabled != 0 && cp.signalsEnabled != other.signalsEnabled {
+		result.SetSignalsEnabled(other.signalsEnabled)
 	}
 	if both&PropIDPrimaryGNSS != 0 && cp.primaryGNSS != other.primaryGNSS {
 		result.SetPrimaryGNSS(other.primaryGNSS)
@@ -523,8 +523,8 @@ func (cp *ConfigProps) Missing(other *ConfigProps) *ConfigProps {
 func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	m := make(map[string]interface{})
 
-	if cp.valid&PropIDGNSSEnabled != 0 {
-		m["gnssEnabled"] = cp.gnssEnabled.Items()
+	if cp.valid&PropIDSignalsEnabled != 0 {
+		m["signalsEnabled"] = cp.signalsEnabled
 	}
 	if cp.valid&PropIDPrimaryGNSS != 0 {
 		m["primaryGNSS"] = cp.primaryGNSS

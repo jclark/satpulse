@@ -1,6 +1,7 @@
 package ubx
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -57,6 +58,9 @@ var legacyConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 
 var newConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).pollPrt,
+	(*Configurator).valGetSignals,
+	// XXX we have to do this early at the moment, because we may need to deduce what GNSS is primary
+	(*Configurator).valSetSignals,
 	(*Configurator).valGet,
 	(*Configurator).valSet,
 	(*Configurator).valSurvey,
@@ -166,11 +170,38 @@ func (c *Configurator) valGet() (gpsprot.ConfigRequest, error) {
 	if len(missing) == 0 {
 		return nil, nil
 	}
-	layer := bin.CfgValgetLayerRAM
-	if c.target.Opts.Flash {
-		layer = bin.CfgValgetLayerFlash
+	return c.msgPollRequest(newCfgValgetRequest(missing, c.valGetLayer())), nil
+}
+
+func (c *Configurator) valGetSignals() (gpsprot.ConfigRequest, error) {
+	if _, ok := c.target.Props.GetSignalsEnabled(); !ok {
+		return nil, nil
 	}
-	return c.msgPollRequest(newCfgValgetRequest(missing, layer)), nil
+	keys := []ucv.Key{ucv.KSignalGpsEna.Key().GroupWildcard()}
+	return c.msgPollRequest(newCfgValgetRequest(keys, c.valGetLayer())), nil
+}
+
+func (c *Configurator) valSetSignals() (gpsprot.ConfigRequest, error) {
+	targetEnabled, ok := c.target.Props.GetSignalsEnabled()
+	if !ok {
+		return nil, nil
+	}
+	enabled, items := c.raw.valsPtr().EnableSignals(targetEnabled)
+	// Ensure we have one non-augmentation signal from a major GNSS
+	enabled &= gpsprot.SigSetMajor
+	enabled &^= gpsprot.SigSetAugment
+	if enabled == 0 {
+		if c.raw.valsPtr().signalsSupported() == 0 {
+			return nil, errors.New("could not determine supported GNSS signals")
+		}
+		return nil, fmt.Errorf("no suitable supported GNSS signal was enabled: %v", enabled)
+	}
+	val, err := newCfgValsetRequest(items, c.valSetLayer())
+	if err != nil {
+		return nil, err
+	}
+	// XXX we need to pause 0.5s after sending this
+	return c.msgSetRequest(val)
 }
 
 func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
@@ -184,16 +215,26 @@ func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
-	layer := bin.CfgValsetLayerRAM
-	if c.target.Opts.Flash {
-		layer = bin.CfgValsetLayerFlash
-	}
-	val, err := newCfgValsetRequest(items, layer)
+	val, err := newCfgValsetRequest(items, c.valSetLayer())
 	if err != nil {
 		return nil, err
 	}
 	c.survey = survey
 	return c.msgSetRequest(val)
+}
+
+func (c *Configurator) valGetLayer() bin.CfgValgetLayer {
+	if c.target.Opts.Flash {
+		return bin.CfgValgetLayerFlash
+	}
+	return bin.CfgValgetLayerRAM
+}
+
+func (c *Configurator) valSetLayer() bin.CfgValsetLayer {
+	if c.target.Opts.Flash {
+		return bin.CfgValsetLayerFlash
+	}
+	return bin.CfgValsetLayerRAM
 }
 
 func (c *Configurator) valSurvey() (gpsprot.ConfigRequest, error) {

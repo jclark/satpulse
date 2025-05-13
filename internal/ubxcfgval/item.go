@@ -136,3 +136,7 @@ func (k Key) MarshalBinary() ([]byte, error) {
 	binary.LittleEndian.PutUint32(bytes, uint32(k))
 	return bytes, nil
 }
+
+func (k Key) GroupWildcard() Key {
+	return k | 0xFFFF
+}

@@ -1,6 +1,8 @@
 package ubx
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -159,7 +161,6 @@ func TestConfigItems_GNSS(t *testing.T) {
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	target := gpsprot.NewConfigTarget(false)
 	target.Props.SetPrimaryGNSS(gpsprot.GAL)
-	target.Props.SetGNSSEnabled(gpsprot.GNSSSetOf(gpsprot.GAL))
 	items, missing, survey, err := newCfgVals().Transaction(target, ver, ucv.UART1)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
@@ -172,11 +173,6 @@ func TestConfigItems_GNSS(t *testing.T) {
 	}
 	m := newCfgVals()
 	m.AddItems(items)
-	expectItem(t, m, ucv.KSignalGpsEna, false)
-	expectItem(t, m, ucv.KSignalGloEna, false)
-	expectItem(t, m, ucv.KSignalGalEna, true)
-	expectItem(t, m, ucv.KSignalBdsEna, false)
-	expectMissing(t, m, ucv.KSignalNavicEna)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
 	expectItem(t, m, ucv.KNavspgUtcstandard, ucv.ENavspgUtcstandardEu)
 	expectItem(t, m, ucv.KRateTimeref, ucv.ERateTimerefGal)
@@ -328,5 +324,112 @@ func (r *gpsReceiver) valgetResp(pkt []byte) ubxbin.Msg {
 			Version: ubxbin.CfgValgetVersionResponse,
 		},
 		CfgData: data,
+	}
+}
+
+func TestEnableSignals(t *testing.T) {
+	tests := []struct {
+		supported []ucv.KeyL
+		enabled   gpsprot.SignalSet
+		expected  map[ucv.KeyL]bool
+	}{
+		{
+			supported: []ucv.KeyL{
+				ucv.KSignalGpsEna,
+				ucv.KSignalGpsL1caEna,
+				ucv.KSignalGloEna,
+				ucv.KSignalGloL1Ena,
+			},
+			enabled: (gpsprot.BandL1 | gpsprot.BandL2).SignalSet(gpsprot.GPS, gpsprot.GAL),
+			expected: map[ucv.KeyL]bool{
+				ucv.KSignalGpsEna:     true,
+				ucv.KSignalGpsL1caEna: true,
+				ucv.KSignalGloEna:     false,
+			},
+		},
+		{
+			supported: []ucv.KeyL{
+				ucv.KSignalGpsEna,
+				ucv.KSignalGpsL1caEna,
+				ucv.KSignalGpsL5Ena,
+				ucv.KSignalGalEna,
+				ucv.KSignalGalE1Ena,
+				ucv.KSignalGalE5aEna,
+				ucv.KSignalBdsB1Ena,
+			},
+			enabled: (gpsprot.BandL1 | gpsprot.BandL2 | gpsprot.BandL5).SignalSet(gpsprot.GPS, gpsprot.GLO, gpsprot.GAL),
+			expected: map[ucv.KeyL]bool{
+				ucv.KSignalGpsEna:     true,
+				ucv.KSignalGpsL1caEna: true,
+				ucv.KSignalGpsL5Ena:   true,
+				ucv.KSignalGalEna:     true,
+				ucv.KSignalGalE1Ena:   true,
+				ucv.KSignalGalE5aEna:  true,
+				ucv.KSignalBdsEna:     false,
+			},
+		},
+		{
+			supported: []ucv.KeyL{
+				ucv.KSignalBdsB1Ena,
+				ucv.KSignalBdsB2Ena,
+				ucv.KSignalBdsB1cEna,
+				ucv.KSignalBdsB2aEna,
+			},
+			enabled: (gpsprot.BandL1 | gpsprot.BandL5).SignalSet(gpsprot.BDS),
+			expected: map[ucv.KeyL]bool{
+				ucv.KSignalBdsEna:    true,
+				ucv.KSignalBdsB1Ena:  true,
+				ucv.KSignalBdsB2Ena:  false,
+				ucv.KSignalBdsB1cEna: true,
+				ucv.KSignalBdsB2aEna: true,
+			},
+		},
+		{
+			supported: []ucv.KeyL{
+				ucv.KSignalGpsEna,
+				ucv.KSignalGpsL1caEna,
+				ucv.KSignalGpsL5Ena,
+				ucv.KSignalGalEna,
+				ucv.KSignalGalE1Ena,
+				ucv.KSignalGalE5aEna,
+				ucv.KSignalBdsB1Ena,
+			},
+			enabled: gpsprot.SignalSetOf(gpsprot.SigGALE1),
+			expected: map[ucv.KeyL]bool{
+				ucv.KSignalGpsEna:    false,
+				ucv.KSignalGalEna:    true,
+				ucv.KSignalGalE1Ena:  true,
+				ucv.KSignalGalE5aEna: false,
+				ucv.KSignalBdsEna:    false,
+			},
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			m := newCfgVals()
+			for _, k := range tt.supported {
+				cfgValSet(m, k, true)
+			}
+			supported := m.signalsSupported()
+			_, items := m.EnableSignals(tt.enabled)
+			expectedItems := make([]ucv.Item, 0, len(tt.expected))
+			for k, v := range tt.expected {
+				ucv.AddItem(&expectedItems, k, v)
+			}
+			ucv.SortItems(items)
+			ucv.SortItems(expectedItems)
+			if !slices.Equal(items, expectedItems) {
+				t.Errorf("expected items to be %v, got %v", expectedItems, items)
+			}
+			m = newCfgVals()
+			for _, it := range items {
+				m.Map[it.Key] = it.Value
+			}
+			result, _ := m.getSignalsEnabled()
+			if tt.enabled&supported != result {
+				t.Errorf("expected signals to be %v, got %v", tt.enabled&supported, result)
+			}
+		})
 	}
 }

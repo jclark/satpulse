@@ -99,43 +99,53 @@ func SignalSetOf(sig ...Signal) SignalSet {
 	return ss
 }
 
+// Signal sets for each GNSS constellation
 const (
-	SigSetGPS   SignalSet = (1 << SigGPSL1CA) | (1 << SigGPSL1C) | (1 << SigGPSL2P) | (1 << SigGPSL2C) | (1 << SigGPSL5)
-	SigSetGLO   SignalSet = (1 << SigGLOL1) | (1 << SigGLOL1OC) | (1 << SigGLOL2) | (1 << SigGLOL2OC) | (1 << SigGLOL3)
-	SigSetGAL   SignalSet = (1 << SigGALE1) | (1 << SigGALE5a) | (1 << SigGALE5b) | (1 << SigGALE6)
-	SigSetBDS   SignalSet = (1 << SigBDSB1I) | (1 << SigBDSB1C) | (1 << SigBDSB2I) | (1 << SigBDSB2b) | (1 << SigBDSB2a) | (1 << SigBDSB3I)
-	SigSetQZSS  SignalSet = (1 << SigQZSSL1CA) | (1 << SigQZSSL1C) | (1 << SigQZSSL1S) | (1 << SigQZSSL2C) | (1 << SigQZSSL5) | (1 << SigQZSSL5S) | (1 << SigQZSSL6)
-	SigSetNAVIC SignalSet = (1 << SigNAVICL1) | (1 << SigNAVICL5)
-	SigSetSBAS  SignalSet = (1 << SigSBASL1CA) | (1 << SigSBASL5)
-	SigSetAll   SignalSet = SigSetGPS | SigSetGLO | SigSetGAL | SigSetBDS | SigSetQZSS | SigSetNAVIC | SigSetSBAS
+	SigSetGPS     SignalSet = (1 << SigGPSL1CA) | (1 << SigGPSL1C) | (1 << SigGPSL2P) | (1 << SigGPSL2C) | (1 << SigGPSL5)
+	SigSetGLO     SignalSet = (1 << SigGLOL1) | (1 << SigGLOL1OC) | (1 << SigGLOL2) | (1 << SigGLOL2OC) | (1 << SigGLOL3)
+	SigSetGAL     SignalSet = (1 << SigGALE1) | (1 << SigGALE5a) | (1 << SigGALE5b) | (1 << SigGALE6)
+	SigSetBDS     SignalSet = (1 << SigBDSB1I) | (1 << SigBDSB1C) | (1 << SigBDSB2I) | (1 << SigBDSB2b) | (1 << SigBDSB2a) | (1 << SigBDSB3I)
+	SigSetQZSS    SignalSet = (1 << SigQZSSL1CA) | (1 << SigQZSSL1C) | (1 << SigQZSSL1S) | (1 << SigQZSSL2C) | (1 << SigQZSSL5) | (1 << SigQZSSL5S) | (1 << SigQZSSL6)
+	SigSetNAVIC   SignalSet = (1 << SigNAVICL1) | (1 << SigNAVICL5)
+	SigSetSBAS    SignalSet = (1 << SigSBASL1CA) | (1 << SigSBASL5)
+)
+
+const (
+	SigSetMajor   SignalSet = SigSetGPS | SigSetGLO | SigSetGAL | SigSetBDS // signals for major GNSS constellations
+	SigSetAugment SignalSet = SigSetSBAS | (1 << SigGALE6) | (1 << SigBDSB2b) | (1 << SigQZSSL1S) | (1 << SigQZSSL5S) | (1 << SigQZSSL6)
+	SigSetAll     SignalSet = SigSetGPS | SigSetGLO | SigSetGAL | SigSetBDS | SigSetQZSS | SigSetNAVIC | SigSetSBAS
 )
 
 type Band uint16
 
+// E5b and L5 could be considered the same band: you can | them together to represent this
+// I prefer to keep L5 for just 1176.45 MHz, and then use E5b (for lack of a better name) for the rest
 const (
-	BandL1  Band = Band((1 << sigIndexL1Legacy) | (1 << sigIndexL1Modern) | (1 << sigIndexL1Augment)) // 1575.42 - 1609 MHz, 1559-1610
-	BandL2  Band = Band((1 << sigIndexL2Legacy) | (1 << sigIndexL2Modern))                            // 1227.60 - 1252 MHz, 1215-1252
-	// E5b and L5 could be considered the same band: you can | them together to represent this
-	// I prefer to keep L5 for just 1176.45 MHz, and then use E5b (for lack of a better name) for the rest
-	BandL5  Band = Band((1 << sigIndexL5) | (1 << sigIndexL5Augment))                                 // 1176.45 MHz, 1164-1210
-	BandE5b Band = Band((1 << sigIndexE5b) | (1 << sigIndexE5bAugment))                               // 1202.025 - 1207.14 MHz, 1164-1210
-	BandE6  Band = Band((1 << sigIndexE6) | (1 << sigIndexE6Augment))                                 // 1268.52 - 1278.75 MHz, 1260-1300
-	BandAll Band = Band((1 << sigIndexCount) - 1)
+	BandL1      Band = Band((1 << sigIndexL1Legacy) | (1 << sigIndexL1Modern) | (1 << sigIndexL1Augment)) // 1575.42 - 1609 MHz, 1559-1610
+	BandL2      Band = Band((1 << sigIndexL2Legacy) | (1 << sigIndexL2Modern))                            // 1227.60 - 1252 MHz, 1215-1252
+	BandL5      Band = Band((1 << sigIndexL5) | (1 << sigIndexL5Augment))                                 // 1176.45 MHz, 1164-1210
+	BandE5b     Band = Band((1 << sigIndexE5b) | (1 << sigIndexE5bAugment))                               // 1202.025 - 1207.14 MHz, 1164-1210
+	BandE6      Band = Band((1 << sigIndexE6) | (1 << sigIndexE6Augment))                                 // 1268.52 - 1278.75 MHz, 1260-1300
+	BandAll     Band = Band((1 << sigIndexCount) - 1)
 	BandAugment Band = Band((1 << sigIndexL1Augment) | (1 << sigIndexL5Augment) | (1 << sigIndexE5bAugment) | (1 << sigIndexE6Augment)) // 1559-1610, 1164-1210, 1260-1300
 )
 
 // SignalSet returns the set of signals for a given GNSS in the Band.
-func (b Band) SignalSet(g GNSS) SignalSet {
-	c := g
-	// The signal set numbering treats SBAS as being in the GPS constellation.
-	if g == SBAS {
-		c = GPS
-	}
-	ss := (SignalSet(b) << ((Signal(c) - 1) * sigIndexCount)) & SigSetAll
-	if g == GPS {
-		ss &^= SigSetSBAS
-	} else if g == SBAS {
-		ss &= SigSetSBAS
+func (b Band) SignalSet(gs ...GNSS) SignalSet {
+	ss := SignalSet(0)
+	for _, g := range gs {
+		c := g
+		// The signal set numbering treats SBAS as being in the GPS constellation.
+		if g == SBAS {
+			c = GPS
+		}
+		s := (SignalSet(b) << ((Signal(c) - 1) * sigIndexCount)) & SigSetAll
+		if g == GPS {
+			s &^= SigSetSBAS
+		} else if g == SBAS {
+			s &= SigSetSBAS
+		}
+		ss |= s
 	}
 	return ss
 }
@@ -165,6 +175,10 @@ func (ss SignalSet) Signals() func(yield func(Signal) bool) {
 			ss &= ss - 1 // Kernighan's bit clearing trick
 		}
 	}
+}
+
+func (ss SignalSet) Contains(sig Signal) bool {
+	return ss&SignalSet(1<<sig) != 0
 }
 
 // String returns a human-readable representation of the SignalSet in the form "GPS[L1,L5],GAL[E1,E5b]"
