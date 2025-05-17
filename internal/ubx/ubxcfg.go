@@ -18,8 +18,9 @@ type Configurator struct {
 	raw       RawConfig
 	origPrt   *bin.CfgPrt
 	monGNSS   *monGNSS
-	steps     []func(*Configurator) (gpsprot.ConfigRequest, error)
-	stepIndex int                   // -1 says to perform recovery
+	steps     []func(*Configurator) error
+	stepIndex int
+	reqs      []gpsprot.ConfigRequest
 	target    *gpsprot.ConfigTarget // never nil
 	survey    bool                  // start a survey
 }
@@ -44,7 +45,7 @@ type RawConfig struct {
 	CfgVals // access with valsPtr() so it gets lazily initialized
 }
 
-var legacyConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
+var legacyConfigSteps = []func(*Configurator) error{
 	(*Configurator).pollPrt,
 	(*Configurator).setPrt,   // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
 	(*Configurator).pollGNSS, // need this to know which will be primary GNSS, which we need for enabling the time message
@@ -70,7 +71,7 @@ var legacyConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).reset,
 }
 
-var newConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
+var newConfigSteps = []func(*Configurator) error{
 	(*Configurator).pollPrt,
 	(*Configurator).valGetSignals,
 	// XXX we have to do this early at the moment, because we may need to deduce what GNSS is primary
@@ -104,18 +105,20 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 }
 
 func (c *Configurator) NextRequest() (gpsprot.ConfigRequest, error) {
-	if c.stepIndex < 0 {
-		c.stepIndex = len(c.steps)
-		return c.recover()
-	}
-	for c.stepIndex < len(c.steps) {
-		req, err := c.steps[c.stepIndex](c)
+	for {
+		if len(c.reqs) > 0 {
+			req := c.reqs[0]
+			c.reqs = c.reqs[1:]
+			return req, nil
+		}
+		if c.stepIndex >= len(c.steps) {
+			break
+		}
+		err := c.steps[c.stepIndex](c)
 		c.stepIndex++
-		if req != nil || err != nil {
-			if err != nil {
-				c.stepIndex = -1
-			}
-			return req, err
+		if err != nil {
+			c.stop()
+			return nil, err
 		}
 	}
 	return nil, nil
@@ -127,7 +130,7 @@ func (c *Configurator) FindAck(packet []byte, tSent time.Time) *gpsprot.Ack {
 		return nil
 	}
 	if !a.OK {
-		c.stepIndex = -1
+		c.stop()
 	}
 	return &a.Ack
 }
@@ -136,22 +139,32 @@ func (c *Configurator) Abort() {
 	c.stepIndex = -1
 }
 
-func (c *Configurator) recover() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) stop() {
+	c.stepIndex = len(c.steps) // don't do any more steps
+	c.reqs = nil
+
+	// consider whether we need to perform recovery
+	
 	// only need to do recovery for legacy configuration
 	if &c.steps[0] != &legacyConfigSteps[0] {
-		return nil, nil
+		return
 	}
 	// if we didn't cause NMEA output to be disabled, then we don't need to perform recovery
 	if !c.raw.prtNMEAOutDisabled(c.origPrt) {
-		return nil, nil
+		return
 	}
 	// if we got far enough to enable the time GNSS message, then do not need to switch back to NMEA
 	if c.timeGNSSMsgEnabled() {
-		return nil, nil
+		return
 	}
 	// we disabled NMEA output, but didn't get far enough to enable the time GNSS message
 	// we had better reenable NMEA output, or the GPS will be silent
-	return c.msgSetRequest(c.origPrt)
+	_ = c.addMsgSetRequest(c.origPrt)
+}
+
+func (c *Configurator) addRequest(req gpsprot.ConfigRequest) error {
+	c.reqs = append(c.reqs, req)
+	return nil
 }
 
 func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
@@ -232,39 +245,39 @@ func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask bin.CfgCfgSe
 	}
 }
 
-func (c *Configurator) reset() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) reset() error {
 	if c.target.Opts.Reset <= gpsprot.ResetReload {
-		return nil, nil
+		return nil
 	}
-	return msgRequest{&bin.CfgRst{
+	return c.addRequest(msgRequest{&bin.CfgRst{
 		NavBbrMask: bin.CfgRstNavBbrColdStart,
 		ResetMode:  bin.CfgRstResetModeHardwareResetImmediately,
-	}}, nil
+	}})
 }
 
-func (c *Configurator) valGet() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) valGet() error {
 	_, missing, _, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if len(missing) == 0 {
-		return nil, nil
+		return nil
 	}
-	return c.msgPollRequest(newCfgValgetRequest(missing, c.valGetLayer())), nil
+	return c.addMsgPollRequest(newCfgValgetRequest(missing, c.valGetLayer()))
 }
 
-func (c *Configurator) valGetSignals() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) valGetSignals() error {
 	if _, ok := c.target.Props.GetSignalsEnabled(); !ok && c.target.Get&gpsprot.PropIDSignalsEnabled == 0 {
-		return nil, nil
+		return nil
 	}
 	keys := []ucv.Key{ucv.KSignalGpsEna.Key().GroupWildcard()}
-	return c.msgPollRequest(newCfgValgetRequest(keys, c.valGetLayer())), nil
+	return c.addMsgPollRequest(newCfgValgetRequest(keys, c.valGetLayer()))
 }
 
-func (c *Configurator) valSetSignals() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) valSetSignals() error {
 	targetEnabled, ok := c.target.Props.GetSignalsEnabled()
 	if !ok {
-		return nil, nil
+		return nil
 	}
 	enabled, items := c.raw.valsPtr().EnableSignals(targetEnabled)
 	// Ensure we have one non-augmentation signal from a major GNSS
@@ -272,35 +285,35 @@ func (c *Configurator) valSetSignals() (gpsprot.ConfigRequest, error) {
 	enabled &^= gpsprot.SigSetAugment
 	if enabled == 0 {
 		if c.raw.valsPtr().signalsSupported() == 0 {
-			return nil, errors.New("could not determine supported GNSS signals")
+			return errors.New("could not determine supported GNSS signals")
 		}
-		return nil, fmt.Errorf("no suitable supported GNSS signal was enabled: %v", enabled)
+		return fmt.Errorf("no suitable supported GNSS signal was enabled: %v", enabled)
 	}
 	val, err := newCfgValsetRequest(items, c.valSetLayer())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// XXX we need to pause 0.5s after sending this
-	return c.msgSetRequest(val)
+	return c.addMsgSetRequest(val)
 }
 
-func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) valSet() error {
 	items, missing, survey, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if len(missing) != 0 {
-		return nil, fmt.Errorf("missing config items: %v", missing)
+		return fmt.Errorf("missing config items: %v", missing)
 	}
 	if len(items) == 0 {
-		return nil, nil
+		return nil
 	}
 	val, err := newCfgValsetRequest(items, c.valSetLayer())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	c.survey = survey
-	return c.msgSetRequest(val)
+	return c.addMsgSetRequest(val)
 }
 
 func (c *Configurator) valGetLayer() bin.CfgValgetLayer {
@@ -316,33 +329,37 @@ func (c *Configurator) valSetLayer() bin.CfgValsetLayer {
 	return bin.CfgValsetLayerRAM
 }
 
-func (c *Configurator) valSurvey() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) valSurvey() error {
 	if !c.survey {
-		return nil, nil
+		return nil
 	}
 	items := c.raw.valsPtr().Survey(c.target.Opts)
 	if len(items) == 0 {
-		return nil, nil
+		return nil
 	}
 	// XXX how does this work with the Flash option?
 	// XXX this is disabled for now, because Transaction doesn't set c.survey
 	val, err := newCfgValsetRequest(items, bin.CfgValsetLayerRAM)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return c.msgSetRequest(val)
+	return c.addMsgSetRequest(val)
 }
 
-func (c *Configurator) valBaudRate() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) valBaudRate() error {
 	items := c.raw.valsPtr().BaudRate(c.target, c.raw.valPort())
 	if len(items) == 0 {
-		return nil, nil
+		return nil
 	}
-	val, err := newCfgValsetRequest(items, c.valSetLayer())
+	layer := bin.CfgValsetLayerRAM
+	if c.target.Opts.Flash {
+		layer = bin.CfgValsetLayerFlash
+	}
+	val, err := newCfgValsetRequest(items, layer)
 	if err != nil {
-		return nil, err
+		return nil
 	}
-	return c.msgSetSpeedRequest(val, int(items[0].Value))
+	return c.addMsgSetSpeedRequest(val, int(items[0].Value))
 }
 
 func (raw *RawConfig) valPort() ucv.Port {
@@ -377,22 +394,22 @@ func newCfgValsetRequest(items []ucv.Item, layers bin.CfgValsetLayer) (*bin.CfgV
 	}, nil
 }
 
-func (c *Configurator) pollPrt() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) pollPrt() error {
 	// This is used both by old and new.
 	if !c.target.UsesAny(cfgOldProps.prt...) &&
 		c.target.Opts.NMEAMsg.IsZero() && c.target.Opts.PVTMsg.IsZero() &&
 		c.target.Opts.SatellitesMsg.IsZero() && c.target.Opts.Survey.When == 0 {
-		return nil, nil
+		return nil
 	}
-	return c.pollRequest(bin.CfgPrtID), nil
+	return c.addPollRequest(bin.CfgPrtID)
 }
 
-func (c *Configurator) pollGNSS() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) pollGNSS() error {
 	// UBX-CFG-GNSS needs at least protocol version 14.00
 	if !c.target.UsesAny(cfgOldProps.gnss...) || !c.ver.protVerAtLeast(14, 0) {
-		return nil, nil
+		return nil
 	}
-	return c.pollRequest(bin.CfgGNSSID), nil
+	return c.addPollRequest(bin.CfgGNSSID)
 }
 
 func (c *Configurator) pollMonGNSS() (gpsprot.ConfigRequest, error) {
@@ -406,73 +423,73 @@ func (c *Configurator) pollMonGNSS() (gpsprot.ConfigRequest, error) {
 	return c.pollRequest(bin.MonGnssID), nil
 }
 
-func (c *Configurator) pollRate() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) pollRate() error {
 	if !c.target.UsesAny(cfgOldProps.rate...) {
-		return nil, nil
+		return nil
 	}
-	return c.pollRequest(bin.CfgRateID), nil
+	return c.addPollRequest(bin.CfgRateID)
 }
 
-func (c *Configurator) pollNav5() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) pollNav5() error {
 	if !c.target.UsesAny(cfgOldProps.nav5...) {
-		return nil, nil
+		return nil
 	}
-	return c.pollRequest(bin.CfgNav5ID), nil
+	return c.addPollRequest(bin.CfgNav5ID)
 }
 
-func (c *Configurator) pollTmode() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) pollTmode() error {
 	if !c.target.UsesAny(cfgOldProps.tmode...) && c.target.Opts.Survey.When == 0 {
-		return nil, nil
+		return nil
 	}
 	switch c.ver.tmodeLevel() {
 	case 1:
-		return c.pollRequest(bin.CfgTmodeID), nil
+		return c.addPollRequest(bin.CfgTmodeID)
 	case 2:
-		return c.pollRequest(bin.CfgTmode2ID), nil
+		return c.addPollRequest(bin.CfgTmode2ID)
 	case 3:
-		return c.pollRequest(bin.CfgTmode3ID), nil
+		return c.addPollRequest(bin.CfgTmode3ID)
 	}
-	return nil, nil
+	return nil
 }
 
-func (c *Configurator) pollTp5() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) pollTp5() error {
 	if !c.target.UsesAny(cfgOldProps.tp5...) {
-		return nil, nil
+		return nil
 	}
 	tpIdx := 0
 	if c.ver.ProductCategory() == "FTS" {
 		tpIdx = 1
 	}
-	return c.pollTp5Request(tpIdx), nil
+	return c.addPollTp5Request(tpIdx)
 }
 
-func (c *Configurator) enableTpMsg() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) enableTpMsg() error {
 	if c.target.Opts.PVTMsg.Get()&gpsprot.PVTMsgTimePulse == 0 {
-		return nil, nil
+		return nil
 	}
 	if c.ver.ProductCategory() == "FTS" {
-		return nil, nil
+		return nil
 	}
 	if c.raw.tp5 == nil {
-		return nil, nil
+		return nil
 	}
 	flags := c.raw.tp5.Flags
 	if flags&bin.CfgTp5AlignToTow == 0 || flags&bin.CfgTp5LockGpsFreq == 0 || flags&bin.CfgTp5GridUTCGNSS == bin.CfgTp5GridUTC {
-		return nil, nil
+		return nil
 	}
-	return c.enableMsgRequest(bin.TimTPID, true)
+	return c.addEnableMsgRequest(bin.TimTPID, true)
 }
 
-func (c *Configurator) enableTimeGNSSMsg() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) enableTimeGNSSMsg() error {
 	pvtMsg := &c.target.Opts.PVTMsg
 	if pvtMsg.Get()&gpsprot.PVTMsgTimePulse == 0 {
-		return nil, nil
+		return nil
 	}
 	if c.ver.ProductCategory() == "FTS" {
-		return c.enableMsgRequest(bin.TimTosID, true)
+		return c.addEnableMsgRequest(bin.TimTosID, true)
 	} else {
 		// XXX enable NavTimeUTC if TAI flag is not set
-		return c.enableMsgRequest(bin.NavTimeGPSID, true)
+		return c.addEnableMsgRequest(bin.NavTimeGPSID, true)
 	}
 }
 
@@ -483,19 +500,19 @@ func (c *Configurator) timeGNSSMsgEnabled() bool {
 	return c.raw.msgEnabled(bin.NavTimeGPSID)
 }
 
-func (c *Configurator) enableLeapSecondMsg() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) enableLeapSecondMsg() error {
 	if c.target.Opts.PVTMsg.Get()&gpsprot.PVTMsgLeapSecond != 0 && c.ver.protVerAtLeast(18, 0) {
-		return c.enableMsgRequest(bin.NavTimeLSID, true)
+		return c.addEnableMsgRequest(bin.NavTimeLSID, true)
 	}
-	return nil, nil
+	return nil
 }
 
-func (c *Configurator) enableSurveyMsg() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) enableSurveyMsg() error {
 	msgID := bin.TimSvinID
 	surveyMode := false
 	// note there is no survey progress message in early models that do not yet support tmode2
 	if !c.ver.protVerAtLeast(18, 0) {
-		return nil, nil
+		return nil
 	}
 	switch c.ver.tmodeLevel() {
 	case 2:
@@ -504,19 +521,19 @@ func (c *Configurator) enableSurveyMsg() (gpsprot.ConfigRequest, error) {
 		msgID = bin.NavSvinID
 		surveyMode = c.raw.tmode3 != nil && c.raw.tmode3.Flags&bin.CfgTmode3Mode == bin.CfgTmode3SurveyIn
 	default:
-		return nil, nil
+		return nil
 	}
 	// XXX this is not right: we should not change anything unless Target sets time mode
 	if surveyMode {
-		return c.enableMsgRequest(msgID, true)
+		return c.addEnableMsgRequest(msgID, true)
 	}
 	if _, exists := c.target.Props.GetTimeMode(); exists {
-		return c.enableMsgRequest(msgID, false)
+		return c.addEnableMsgRequest(msgID, false)
 	}
-	return nil, nil
+	return nil
 }
 
-func (c *Configurator) setSatellitesMsg() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) setSatellitesMsg() error {
 	satsMsg := c.target.Opts.SatellitesMsg
 	if satsMsg.IsSet() {
 		msgID := bin.NavSVInfoID
@@ -524,92 +541,92 @@ func (c *Configurator) setSatellitesMsg() (gpsprot.ConfigRequest, error) {
 		if c.ver.protVerAtLeast(15, 0) {
 			msgID = bin.NavSatID
 		}
-		return c.enableMsgRequest(msgID, satsMsg.Get()&gpsprot.SatellitesMsgSV != 0)
+		return c.addEnableMsgRequest(msgID, satsMsg.Get()&gpsprot.SatellitesMsgSV != 0)
 	}
-	return nil, nil
+	return nil
 }
 
-func (c *Configurator) setPrt() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) setPrt() error {
 	prt := c.raw.changePrt(c.target)
 	if prt == nil {
-		return nil, nil
+		return nil
 	}
 	c.origPrt = new(bin.CfgPrt)
 	*c.origPrt = *c.raw.prt
-	return c.msgSetRequest(prt)
+	return c.addMsgSetRequest(prt)
 }
 
-func (c *Configurator) setNav5() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) setNav5() error {
 	nav5 := c.raw.changeNav5(&c.target.Props)
 	if nav5 == nil {
-		return nil, nil
+		return nil
 	}
 	// XXX this isn't quite right, because of the mask
-	return c.msgSetRequest(nav5)
+	return c.addMsgSetRequest(nav5)
 }
 
-func (c *Configurator) setRate() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) setRate() error {
 	rate := c.raw.changeRate(&c.target.Props, c.ver)
 	if rate == nil {
-		return nil, nil
+		return nil
 	}
-	return c.msgSetRequest(rate)
+	return c.addMsgSetRequest(rate)
 }
 
-func (c *Configurator) setTmode() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) setTmode() error {
 	switch c.ver.tmodeLevel() {
 	case 1:
 		var tm *bin.CfgTmode
 		tm, c.survey = c.raw.changeTmode(c.target)
 		if tm != nil {
-			return c.msgSetRequest(tm)
+			return c.addMsgSetRequest(tm)
 		}
 	case 2:
 		var tm *bin.CfgTmode2
 		tm, c.survey = c.raw.changeTmode2(c.target)
 		if tm != nil {
-			return c.msgSetRequest(tm)
+			return c.addMsgSetRequest(tm)
 		}
 	case 3:
 		var tm *bin.CfgTmode3
 		tm, c.survey = c.raw.changeTmode3(c.target)
 		if tm != nil {
-			return c.msgSetRequest(tm)
+			return c.addMsgSetRequest(tm)
 		}
 	}
-	return nil, nil
+	return nil
 }
 
-func (c *Configurator) reqSurvey() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) reqSurvey() error {
 	if !c.survey {
-		return nil, nil
+		return nil
 	}
 	switch c.ver.tmodeLevel() {
 	case 1:
 		tm := c.raw.surveyTmode(c.target.Opts)
 		if tm != nil {
-			return c.msgSetRequest(tm)
+			return c.addMsgSetRequest(tm)
 		}
 	case 2:
 		tm := c.raw.surveyTmode2(c.target.Opts)
 		if tm != nil {
-			return c.msgSetRequest(tm)
+			return c.addMsgSetRequest(tm)
 		}
 	case 3:
 		tm := c.raw.surveyTmode3(c.target.Opts)
 		if tm != nil {
-			return c.msgSetRequest(tm)
+			return c.addMsgSetRequest(tm)
 		}
 	}
-	return nil, nil
+	return nil
 }
 
-func (c *Configurator) setTp5() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) setTp5() error {
 	tp5 := c.raw.changeTp5(&c.target.Props)
 	if tp5 == nil {
-		return nil, nil
+		return nil
 	}
-	return c.msgSetRequest(tp5)
+	return c.addMsgSetRequest(tp5)
 }
 
 func (c *Configurator) setGNSS() (gpsprot.ConfigRequest, error) {
@@ -734,27 +751,27 @@ func (r msgRequest) AwaitingResponse(time.Time) bool { return false }
 
 func (r msgRequest) Done() {}
 
-func (c *Configurator) msgSetRequest(msg bin.Msg) (gpsprot.ConfigRequest, error) {
-	return msgSetRequest{msgRequest{msg}, &c.raw}, nil
+func (c *Configurator) addMsgSetRequest(msg bin.Msg) error {
+	return c.addRequest(msgSetRequest{msgRequest{msg}, &c.raw})
 }
 
-func (c *Configurator) msgSetSpeedRequest(msg bin.Msg, speed int) (gpsprot.ConfigRequest, error) {
-	return msgSetSpeedRequest{msgSetRequest{msgRequest{msg}, &c.raw}, speed}, nil
+func (c *Configurator) addMsgSetSpeedRequest(msg bin.Msg, speed int) error {
+	return c.addRequest(msgSetSpeedRequest{msgSetRequest{msgRequest{msg}, &c.raw}, speed})
 }
 
-func (c *Configurator) msgPollRequest(msg bin.Msg) gpsprot.ConfigRequest {
-	return msgPollRequest{msgRequest: msgRequest{msg}, tRead: c.tRead}
+func (c *Configurator) addMsgPollRequest(msg bin.Msg) error {
+	return c.addRequest(msgPollRequest{msgRequest: msgRequest{msg}, tRead: c.tRead})
 }
 
-func (c *Configurator) pollRequest(mid bin.MsgID) gpsprot.ConfigRequest {
-	return pollRequest{c.tRead, mid}
+func (c *Configurator) addPollRequest(mid bin.MsgID) error {
+	return c.addRequest(pollRequest{c.tRead, mid})
 }
 
-func (c *Configurator) pollTp5Request(tpIdx int) gpsprot.ConfigRequest {
-	return pollTp5Request{
+func (c *Configurator) addPollTp5Request(tpIdx int) error {
+	return c.addRequest(pollTp5Request{
 		pollRequest: pollRequest{c.tRead, bin.CfgTp5ID},
 		tpIdx:       tpIdx,
-	}
+	})
 }
 
 type msgPollRequest struct {
@@ -825,12 +842,12 @@ func (r pollTp5Request) Packet() []byte {
 	return bin.PollCfgTp5(r.tpIdx)
 }
 
-func (c *Configurator) enableMsgRequest(msgID bin.MsgID, enabled bool) (gpsprot.ConfigRequest, error) {
+func (c *Configurator) addEnableMsgRequest(msgID bin.MsgID, enabled bool) error {
 	rate := byte(0)
 	if enabled {
 		rate = 1
 	}
-	return msgRateRequest{&c.raw, msgID, rate}, nil
+	return c.addRequest(msgRateRequest{&c.raw, msgID, rate})
 }
 
 type msgRateRequest struct {
