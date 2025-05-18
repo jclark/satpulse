@@ -123,6 +123,7 @@ const (
 	InfNoticeID  MsgID = clsInf | (0x02 << 8)
 	InfTestID    MsgID = clsInf | (0x03 << 8)
 	InfWarningID MsgID = clsInf | (0x01 << 8)
+	MonGnssID    MsgID = clsMon | (0x28 << 8)
 	MonHwID      MsgID = clsMon | (0x09 << 8)
 	MonMsgPPID   MsgID = clsMon | (0x06 << 8)
 	MonVerID     MsgID = clsMon | (0x04 << 8)
@@ -169,6 +170,7 @@ func init() {
 	regMsg[InfNotice]("NOTICE")
 	regMsg[InfTest]("TEST")
 	regMsg[InfWarning]("WARNING")
+	regMsg[MonGnss]("GNSS")
 	regMsg[MonHw]("HW")
 	regMsg[MonMsgPP]("MSGPP")
 	regMsg[MonVer]("VER")
@@ -1180,6 +1182,26 @@ type TimSvin struct {
 }
 
 func (m *TimSvin) ID() MsgID { return TimSvinID }
+
+type MonGnss struct {
+	Version      byte
+	Supported    MonGnssMajorGnss
+	DefaultGnss  MonGnssMajorGnss
+	Enabled      MonGnssMajorGnss
+	Simultaneous uint8
+	_            [3]byte
+}
+
+func (m *MonGnss) ID() MsgID { return MonGnssID }
+
+type MonGnssMajorGnss uint8
+
+const (
+	MonGnssGPS MonGnssMajorGnss = 1 << iota
+	MonGnssGlonass
+	MonGnssBeidou
+	MonGnssGalileo
+)
 
 type MonHw struct {
 	PinSel        uint32
