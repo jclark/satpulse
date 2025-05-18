@@ -327,3 +327,12 @@ defaults:
       toc_sticky: true
       sidebar:
         nav: "docs"
+  - scope:
+      path: "man"
+      type: pages
+    values:
+      title: ""
+      layout: single
+      toc: false
+      sidebar:
+        nav: "docs"

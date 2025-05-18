@@ -15,5 +15,11 @@ docs:
     url: "/quickstart.html"
   - title: "Configuration file"
     url: "/config.html"
+  - title: "Man pages"
+    children:
+      - title: "satpulsetool(1)"
+        url: "/man/satpulsetool.1.html"
+      - title: "satpulsetool-gps(1)"
+        url: "/man/satpulsetool-gps.1.html"
   - title: "Internals"
     url: "/internals.html"

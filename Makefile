@@ -40,6 +40,11 @@ out/arm64/satpulse.toml: configs/satpulse.toml
 out/amd64/satpulse.toml: configs/satpulse.toml
 	sed -e '/^#:schema /s; \./; /usr/share/doc/satpulse/;' $< > $@
 
+man: out/satpulsetool.1 out/satpulsetool-gps.1
+
+out/%: docs/man/%.md
+	pandoc -s --metadata=title="satpulsetool" --metadata=section=1 --metadata=author="James Clark" -t man -o $@ $<
+
 install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulse.toml
 	install out/$(GOARCH)/satpulsed /usr/local/sbin/satpulsed
 	install out/$(GOARCH)/satpulsetool /usr/local/bin/satpulsetool
@@ -141,4 +146,5 @@ release: $(GH_DEBS) $(GH_RPMS)
 		--draft \
 		$^
 
-.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release
+.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man
+
