@@ -128,6 +128,10 @@ func (g GNSS) SVIDPrefix() string {
 	}
 }
 
+func (g GNSS) IsValid() bool {
+	return g > 0 && g <= GNSSLast
+}
+
 func (g GNSS) IsMajor() bool {
 	return g >= GPS && g <= GLO
 }
@@ -155,7 +159,9 @@ type GNSSSet uint32
 func GNSSSetOf(gs ...GNSS) GNSSSet {
 	var flags GNSSSet
 	for _, g := range gs {
-		flags |= 1 << g
+		if g != 0 {
+			flags |= 1 << g
+		}
 	}
 	return flags
 }

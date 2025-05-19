@@ -101,13 +101,13 @@ func SignalSetOf(sig ...Signal) SignalSet {
 
 // Signal sets for each GNSS constellation
 const (
-	SigSetGPS     SignalSet = (1 << SigGPSL1CA) | (1 << SigGPSL1C) | (1 << SigGPSL2P) | (1 << SigGPSL2C) | (1 << SigGPSL5)
-	SigSetGLO     SignalSet = (1 << SigGLOL1) | (1 << SigGLOL1OC) | (1 << SigGLOL2) | (1 << SigGLOL2OC) | (1 << SigGLOL3)
-	SigSetGAL     SignalSet = (1 << SigGALE1) | (1 << SigGALE5a) | (1 << SigGALE5b) | (1 << SigGALE6)
-	SigSetBDS     SignalSet = (1 << SigBDSB1I) | (1 << SigBDSB1C) | (1 << SigBDSB2I) | (1 << SigBDSB2b) | (1 << SigBDSB2a) | (1 << SigBDSB3I)
-	SigSetQZSS    SignalSet = (1 << SigQZSSL1CA) | (1 << SigQZSSL1C) | (1 << SigQZSSL1S) | (1 << SigQZSSL2C) | (1 << SigQZSSL5) | (1 << SigQZSSL5S) | (1 << SigQZSSL6)
-	SigSetNAVIC   SignalSet = (1 << SigNAVICL1) | (1 << SigNAVICL5)
-	SigSetSBAS    SignalSet = (1 << SigSBASL1CA) | (1 << SigSBASL5)
+	SigSetGPS   SignalSet = (1 << SigGPSL1CA) | (1 << SigGPSL1C) | (1 << SigGPSL2P) | (1 << SigGPSL2C) | (1 << SigGPSL5)
+	SigSetGLO   SignalSet = (1 << SigGLOL1) | (1 << SigGLOL1OC) | (1 << SigGLOL2) | (1 << SigGLOL2OC) | (1 << SigGLOL3)
+	SigSetGAL   SignalSet = (1 << SigGALE1) | (1 << SigGALE5a) | (1 << SigGALE5b) | (1 << SigGALE6)
+	SigSetBDS   SignalSet = (1 << SigBDSB1I) | (1 << SigBDSB1C) | (1 << SigBDSB2I) | (1 << SigBDSB2b) | (1 << SigBDSB2a) | (1 << SigBDSB3I)
+	SigSetQZSS  SignalSet = (1 << SigQZSSL1CA) | (1 << SigQZSSL1C) | (1 << SigQZSSL1S) | (1 << SigQZSSL2C) | (1 << SigQZSSL5) | (1 << SigQZSSL5S) | (1 << SigQZSSL6)
+	SigSetNAVIC SignalSet = (1 << SigNAVICL1) | (1 << SigNAVICL5)
+	SigSetSBAS  SignalSet = (1 << SigSBASL1CA) | (1 << SigSBASL5)
 )
 
 const (
@@ -134,6 +134,9 @@ const (
 func (b Band) SignalSet(gs ...GNSS) SignalSet {
 	ss := SignalSet(0)
 	for _, g := range gs {
+		if g == 0 {
+			continue
+		}
 		c := g
 		// The signal set numbering treats SBAS as being in the GPS constellation.
 		if g == SBAS {
