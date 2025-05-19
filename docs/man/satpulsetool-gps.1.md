@@ -74,7 +74,7 @@ Start a survey for 3000 seconds with 1.5m accuracy:
 
 Connect over a socket and reset the receiver:
 
-    satpulsetool gps --socket /tmp/gps.sock --reset
+    satpulsetool gps --socket /var/run/satpulse.sock --reset
 
 # SEE ALSO
 
