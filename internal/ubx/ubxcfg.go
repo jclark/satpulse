@@ -17,10 +17,19 @@ type Configurator struct {
 	tRead     map[bin.MsgID]time.Time
 	raw       RawConfig
 	origPrt   *bin.CfgPrt
+	monGNSS   *monGNSS
 	steps     []func(*Configurator) (gpsprot.ConfigRequest, error)
 	stepIndex int                   // -1 says to perform recovery
 	target    *gpsprot.ConfigTarget // never nil
 	survey    bool                  // start a survey
+}
+
+// monGNSS records information from UBX-MON-GNSS
+// We need to be a little bit careful here, and should not include anything that might be
+// invalidated by a configuration change by by UBX-CFG-GNSS.
+// We could add supported GNSS signals here.
+type monGNSS struct {
+	maxSimultaneousMajorGNSS int
 }
 
 type ackList []*Ack
@@ -37,8 +46,10 @@ type RawConfig struct {
 
 var legacyConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).pollPrt,
-	(*Configurator).setPrt,            // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
-	(*Configurator).pollGNSS,          // need this to know which will be primary GNSS, which we need for enabling the time message
+	(*Configurator).setPrt,   // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
+	(*Configurator).pollGNSS, // need this to know which will be primary GNSS, which we need for enabling the time message
+	(*Configurator).pollMonGNSS,
+	(*Configurator).setGNSS,           // do this early because we may need to know enabled GNSS to deduce primary GNSS
 	(*Configurator).enableTimeGNSSMsg, // do this early to minimize likelihood of leaving GPS in unuseable state with no time messages being output
 	(*Configurator).pollTp5,
 	(*Configurator).setTp5,
@@ -141,6 +152,11 @@ func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
 		return true, nil
 	case *bin.AckNak:
 		c.acks.ack(mt.MsgID, false, t)
+		return true, nil
+	case *bin.MonGnss:
+		mg := monGNSS{maxSimultaneousMajorGNSS: int(mt.Simultaneous)}
+		c.tRead[mt.ID()] = t
+		c.monGNSS = &mg
 		return true, nil
 	}
 	mid := msg.ID()
@@ -317,6 +333,17 @@ func (c *Configurator) pollGNSS() (gpsprot.ConfigRequest, error) {
 		return nil, nil
 	}
 	return c.pollRequest(bin.CfgGNSSID), nil
+}
+
+func (c *Configurator) pollMonGNSS() (gpsprot.ConfigRequest, error) {
+	if _, ok := c.target.Props.GetSignalsEnabled(); !ok {
+		return nil, nil
+	}
+	// UBX-MON-GNSS needs at least protocol version 15.00
+	if !c.ver.protVerAtLeast(15, 0) {
+		return nil, nil
+	}
+	return c.pollRequest(bin.MonGnssID), nil
 }
 
 func (c *Configurator) pollRate() (gpsprot.ConfigRequest, error) {
@@ -521,6 +548,14 @@ func (c *Configurator) setTp5() (gpsprot.ConfigRequest, error) {
 		return nil, nil
 	}
 	return c.msgSetRequest(tp5)
+}
+
+func (c *Configurator) setGNSS() (gpsprot.ConfigRequest, error) {
+	gnss, err := c.raw.changeGNSS(&c.target.Props, c.ver, c.monGNSS)
+	if gnss == nil || err != nil {
+		return nil, err
+	}
+	return c.msgSetRequest(gnss)
 }
 
 func (acks *ackList) ack(msgID bin.MsgID, ok bool, t time.Time) {

@@ -1,7 +1,9 @@
 package ubx
 
 import (
+	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -676,6 +678,140 @@ func gnssEnabledSet(gnss *bin.CfgGNSS) gpsprot.GNSSSet {
 		}
 	}
 	return enabled
+}
+
+func (raw *CfgOld) changeGNSS(cp *gpsprot.ConfigProps, ver *Version, monGNSS *monGNSS) (*bin.CfgGNSS, error) {
+	if raw.gnss == nil {
+		return nil, nil
+	}
+	signals, exists := cp.GetSignalsEnabled()
+	if !exists {
+		return nil, nil
+	}
+	gnss := *raw.gnss
+	blocks := make([]bin.CfgGNSSBlock, len(gnss.Blocks))
+	copy(blocks, gnss.Blocks)
+	gnss.Blocks = blocks
+	nMajor := 0
+	// Note that `blk, i := range blocks` won't work here because we modify blocks[i]
+	for i := range blocks {
+		blk := &blocks[i]
+		if blk.GNSSID == bin.IMES {
+			// don't mess with IMES
+			// it's not a GNSS, and our configuration doesn't touch it
+			continue
+		}
+		cfgMask := bin.CfgGNSSSigMask(0)
+		g := idToGNSS(blk.GNSSID)
+		if g != 0 && (ver.GNSS.Contains(g) || (ver.GNSS == 0 && blk.GNSSID == bin.GPS)) {
+			// the signal corresponding to the 0x1 bit in the SigCfgMask is always supported if the GNSS is available
+			if gnssCfgMaskSignals(blk.GNSSID, 0x01)&signals != 0 {
+				cfgMask |= 0x1
+			}
+			if blk.Enable&0x1 != 0 && blk.SigCfgMask&^0x01 != 0 {
+				for i := 1; i < 8; i++ {
+					m := bin.CfgGNSSSigMask(1 << i)
+					if blk.SigCfgMask&m != 0 {
+						if signals&gnssCfgMaskSignals(blk.GNSSID, m) != 0 {
+							cfgMask |= m
+						}
+					}
+				}
+			}
+			// Figure out whether to enable QZSS L1S
+			// 19.2 is documented as first version supporting UBX-NAV-SLAS, which is specific to QZSS L1S
+			if blk.GNSSID == bin.QZSS && signals&gpsprot.SignalSetOf(gpsprot.SigQZSSL1S) != 0 && ver.protVerAtLeast(19, 2) {
+				cfgMask |= bin.CfgGNSSQZSSL1S
+			}
+		}
+		blk.SigCfgMask = cfgMask
+		if cfgMask != 0 {
+			blk.Enable = 0x1
+			if g.IsMajor() {
+				nMajor++
+			}
+		} else {
+			blk.Enable = 0
+		}
+	}
+	if monGNSS != nil && nMajor >= monGNSS.maxSimultaneousMajorGNSS {
+		if nMajor == 4 || monGNSS.maxSimultaneousMajorGNSS == 3 {
+			// handle this case by disabling GLONASS
+			for i := range blocks {
+				blk := &blocks[i]
+				if blk.GNSSID == bin.GLO {
+					blk.Enable = 0
+					blk.SigCfgMask = 0
+					break
+				}
+			}
+		} else {
+			// no obvious way to handle this; but I don't think it should ever happen
+			return nil, fmt.Errorf("%d major GNSSs enabled; exceeds maximum %d", nMajor, monGNSS.maxSimultaneousMajorGNSS)
+		}
+	}
+	if !ver.protVerGreater(23, 0) {
+		adjustTrackingChannels(&gnss)
+	}
+	// if no changes, then no need to send a message
+	if gnss.CfgGNSSFixed == raw.gnss.CfgGNSSFixed && slices.Equal(gnss.Blocks, raw.gnss.Blocks) {
+		return nil, nil
+	}
+	return &gnss, nil
+}
+
+// adjustTrackingChannels makes sure that the tracking channels comply with constraints in the spec.
+// This is only called for protocol versions where the relevant fields are not read-only.
+// This is conservative, and won't make any changes if the tracking channels do not violate the constraints.
+func adjustTrackingChannels(gnss *bin.CfgGNSS) {
+	numTrkChUse := min(gnss.NumTrkChHw, gnss.NumTrkChUse)
+
+	resTotal := 0
+	for i := range gnss.Blocks {
+		blk := &gnss.Blocks[i]
+		if blk.GNSSID == bin.IMES {
+			continue
+		}
+		if blk.MaxTrkCh > numTrkChUse {
+			blk.MaxTrkCh = numTrkChUse
+		} else if blk.MaxTrkCh < 4 && idToGNSS(blk.GNSSID).IsMajor() {
+			// It is required to be at least 4 for a major GNSS
+			// If it's somehow less than 4, then make it something reasonable;
+			// default is usually half the available tracking channels.
+			blk.MaxTrkCh = max(4, numTrkChUse/2)
+		}
+		// Sum of reserved must be less than numTrkChUse
+		// The spec is not explicit whether this applies to only the enabled GNSS or all of them.
+		// But experimentation shows that it applies to enabled only.
+		if blk.Enable&0x1 != 0 {
+			resTotal += int(blk.ResTrkCh)
+		}
+	}
+	if resTotal <= int(numTrkChUse) {
+		return
+	}
+	if resTotal <= int(gnss.NumTrkChHw) {
+		// problem was NumTrkChUse was too small
+		gnss.NumTrkChUse = gnss.NumTrkChHw
+		return
+	}
+	// There's some bigger problem, so fix up the ResTrkCh to something reasonable
+	for i := range gnss.Blocks {
+		blk := &gnss.Blocks[i]
+		if blk.Enable&0x1 == 0 || blk.GNSSID == bin.IMES {
+			continue
+		}
+		if idToGNSS(blk.GNSSID).IsMajor() {
+			blk.ResTrkCh = gnss.NumTrkChHw / 4
+			// Seems like a bad idea to have ResTrkCh > MaxTrkCh
+			// even though spec doesn't explicitly disallow it
+			if blk.ResTrkCh > blk.MaxTrkCh {
+				blk.MaxTrkCh = gnss.NumTrkChHw / 2
+			}
+		} else {
+			blk.ResTrkCh = 0
+		}
+	}
 }
 
 func (raw *CfgOld) cookRate(cp *gpsprot.ConfigProps, ver *Version) {
