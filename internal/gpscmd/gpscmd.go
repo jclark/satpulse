@@ -19,7 +19,9 @@ import (
 func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage string, err error) {
 	v, usageFunc, err := parseFlags(cmdName, args)
 	if v == nil {
-		usage = usageFunc(progName)
+		if usageFunc != nil {
+			usage = usageFunc(progName)
+		}
 		return
 	}
 
@@ -50,10 +52,8 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	if v.primaryGNSS != 0 {
 		cp.SetPrimaryGNSS(v.primaryGNSS)
 	}
-	if v.enabledGNSS != 0 {
-		// XXX do some checking here
-		ss := gpsprot.BandAll.SignalSet(v.enabledGNSS.Items()...)
-		cp.SetSignalsEnabled(ss)
+	if v.enabledSignals != 0 {
+		cp.SetSignalsEnabled(v.enabledSignals)
 	}
 	if v.disableTimeMode {
 		opts.Survey.When = 0

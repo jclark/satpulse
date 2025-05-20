@@ -18,17 +18,23 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **-d**, **--serial-device** *path*  
 : Path to the serial device to communicate with the GPS receiver.
 
+**-s**, **--device-speed** *bps*  
+: Set the speed of the host serial port (as specified by **-d**) in bits per second.
+
 **--socket** *path*  
 : Path to a Unix-domain socket to connect to the GPS receiver instead of a serial device.
 
-**-s**, **--device-speed** *bps*  
-: Local serial port speed in bits per second (must be non-zero).
-
 **--speed** *bps*  
-: Set receiver's serial speed in bits per second (must be non-zero).
+: Configure the GPS receiver's serial speed in bits per second.
 
 **--log-packets** *path*  
-: Log raw GPS packets to the specified path.
+: Log to *path* a description of the packets sent to and received from the GPS receiver. The log is in `.jsonl` (JSON lines) format.
+
+**-g**, **--gnss** *list*  
+: List of GNSS constellations that should be enabled. The list is comma-separated and valid constellation names are: `GPS`, `GAL` or `Galileo`, `BDS` or `BeiDou`, `GLO` or `GLONASS`, `QZSS`, `NAVIC`, `SBAS`.  
+  
+**-b**, **--band** *list*
+: List of frequency bands that should be enabled for the specified GNSS constellations. The list is command-separated and valid band names are: `L1`, `L2`, `L5`, `E5`, `E6` or `L6`. `L1` covers 1559-1610 MHz, including the L1 C/A, L1C, E1 and B1C signals at 1575.42MHz, as well as the GLONASS L1 and BeiDou B1I signals. `L2` covers 1215-1252 MHz. `L5` covers only signals at 1176.45 MHz such as GPS L5, Galileo E5a, BeiDou B2a. `E5` covers both `L5` and other signals in the range 1164-1210 Mhz. `E6` and `L6` mean the same and cover 1260-1300 Mhz.
 
 **--flash**  
 : Save the configuration changes to receiver's flash memory.
@@ -45,9 +51,6 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **-p**, **--pps**  
 : Configure the GPS receiver to enable PPS (pulse-per-second) output.
 
-**-g**, **--gnss** *list*  
-: Enable a list of GNSS constellations (comma-separated). Valid values are: `GPS`, `GAL`, `BDS`, `GLO`, `QZSS`, `NAVIC`, `SBAS`.  
-  The first GNSS listed must be a major constellation.
 
 **--disable-time-mode**  
 : Disable time mode (cannot be used with `--survey`).

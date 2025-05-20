@@ -20,7 +20,7 @@ type flagVars struct {
 	serialDevice    string
 	socketPath      string
 	primaryGNSS     gpsprot.GNSS
-	enabledGNSS     gpsprot.GNSSSet // avoid using a slice here, so flagVars is comparable
+	enabledSignals  gpsprot.SignalSet
 	disableTimeMode bool
 	survey          bool
 	surveyTime      uint32
@@ -31,7 +31,8 @@ type flagVars struct {
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps]
        		[--socket path] [--packet-log path]
             [--flash] [--reset] [--speed bps] [--nmea] [--force] [-p|--pps]
-			[-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [--disable-time-mode]`
+			[-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...]
+			[-b|--band L1|L2|L5|E5|L6,...] [--disable-time-mode]`
 
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20.0
@@ -40,6 +41,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	help := false
 	vars := flagVars{}
 	gl := gnssList{}
+	bands := bands(gpsprot.BandAll)
 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 
@@ -54,6 +56,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.IntVarP(&vars.localSpeed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.IntVar(&vars.remoteSpeed, "speed", 0, "set GPS receiver baud-rate in `bps`")
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
+	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
 	flags.BoolVar(&vars.disableTimeMode, "disable-time-mode", false, "disable time mode")
 	flags.BoolVar(&vars.survey, "survey", false, "instruct the GPS receiver to perform a survey")
@@ -86,12 +89,12 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 	}
 	if len(gl.gnss) != 0 {
-		primary := gl.gnss[0]
-		if !primary.IsMajor() {
-			return nil, nil, fmt.Errorf("first GNSS must be a major constellation: %s is not", primary)
+		vars.enabledSignals = gpsprot.Band(bands).SignalSet(gl.gnss...)
+		if (vars.enabledSignals&gpsprot.SigSetMajor)&^gpsprot.SigSetAugment == 0 {
+			return nil, nil, fmt.Errorf("at least one non-augmentation signal from a major GNSS must be enabled")
 		}
-		vars.primaryGNSS = primary
-		vars.enabledGNSS = gpsprot.GNSSSetOf(gl.gnss...)
+	} else if flags.Lookup("band").Changed {
+		return nil, nil, fmt.Errorf("%s command must specify --gnss when --band is specified", cmdName)
 	}
 	return &vars, nil, nil
 }
@@ -123,5 +126,67 @@ func (gl *gnssList) Set(s string) error {
 		}
 		gl.gnss = append(gl.gnss, gnss)
 	}
+	return nil
+}
+
+type bands gpsprot.Band
+
+var _ pflag.Value = (*bands)(nil)
+
+var bandTable = []struct {
+	name string
+	band gpsprot.Band
+}{
+	{"L1", gpsprot.BandL1},
+	{"L2", gpsprot.BandL2},
+	{"E5", gpsprot.BandL5 | gpsprot.BandE5b}, // needs to be before L5 for String() to work
+	{"L5", gpsprot.BandL5},
+	{"E6", gpsprot.BandE6},
+	{"L6", gpsprot.BandE6},
+}
+
+func (bp *bands) String() string {
+	b := gpsprot.Band(*bp)
+	if b == 0 {
+		return "(none)"
+	}
+	if b == gpsprot.BandAll {
+		return "all"
+	}
+	s := ""
+	for _, bn := range bandTable {
+		if bn.band&b == bn.band {
+			s += bn.name + ","
+			b &^= bn.band
+		}
+	}
+	if b == 0 {
+		return s[:len(s)-1]
+	}
+	return s + fmt.Sprintf("0x%4X", b)
+}
+
+func (bp *bands) Type() string {
+	return "bands"
+}
+
+func (bp *bands) Set(s string) error {
+	b := gpsprot.Band(0)
+	words := strings.Split(s, ",")
+	for _, w := range words {
+		w := strings.Trim(w, " \t")
+		found := false
+		for _, bn := range bandTable {
+			if strings.EqualFold(bn.name, w) {
+				b |= bn.band
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("unknown band: %s", w)
+		}
+	}
+	*bp = bands(b)
 	return nil
 }
