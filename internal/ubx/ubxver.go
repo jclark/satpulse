@@ -11,14 +11,14 @@ import (
 )
 
 type Version struct {
-	HW         string          `json:"hw"`
-	SW         string          `json:"sw"`
-	Extensions []string        `json:"extensions,omitempty"`
-	FW         *FWVer          `json:"fw,omitempty"`
-	Prot       *ProtVer        `json:"prot,omitempty"`
-	Mod        string          `json:"mod"`
-	Flash      bool            `json:"flash"`
-	GNSS       gpsprot.GNSSSet `json:"gnss,omitempty"`
+	HW            string          `json:"hw"`
+	SW            string          `json:"sw"`
+	Extensions    []string        `json:"extensions,omitempty"`
+	FW            *FWVer          `json:"fw,omitempty"`
+	Prot          *ProtVer        `json:"prot,omitempty"`
+	Mod           string          `json:"mod"`
+	RunsFromFlash bool            `json:"runsFromFlash"`
+	GNSS          gpsprot.GNSSSet `json:"gnss,omitempty"`
 }
 
 type ProtVer struct {
@@ -93,7 +93,7 @@ func monVer(parsed *bin.MonVer) *Version {
 		Mod:        findString(x, modRegexp),
 		GNSS:       findGNSS(x),
 	}
-	v.Flash = findFlash(v.SW, x)
+	v.RunsFromFlash = findFlash(v.SW, x)
 	setLegacyProtVer(v)
 	return v
 }
