@@ -734,6 +734,9 @@ func (raw *CfgOld) changeGNSS(cp *gpsprot.ConfigProps, ver *Version, monGNSS *mo
 			blk.Enable = 0
 		}
 	}
+	if nMajor == 0 {
+		return nil, fmt.Errorf("GPS receiver does not support specified GNSS signals")
+	}
 	if monGNSS != nil && nMajor >= monGNSS.maxSimultaneousMajorGNSS {
 		if nMajor == 4 || monGNSS.maxSimultaneousMajorGNSS == 3 {
 			// handle this case by disabling GLONASS
