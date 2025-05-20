@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/internal/ubx"
 	"github.com/jclark/satpulse/term"
 )
 
@@ -71,6 +73,9 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 		}
 		cp.SetBaudRate(uint32(v.remoteSpeed))
 	}
+	if target.NoOp() {
+		target.Get |= gpsprot.PropIDSignalsEnabled
+	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
 	err = run(ctx, lg, target, conn, v.packetLogPath)
@@ -108,9 +113,15 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	info, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), target, pCh, conn)
-	if err == nil {
-		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigProps))
+	rslt, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), target, pCh, conn)
+	if err == nil && rslt != nil {
+		target.Get &^= gpsprot.PropIDSignalsEnabled
+		if target.NoOp() {
+			// print out the version only if we did not specify anything else
+			printVersion(os.Stdout, rslt.Version)
+		}
+		// print out props that we know about (either requested or set)
+		printProps(os.Stdout, rslt.ConfigProps)
 	}
 
 	lg.Debug("about to wait")
@@ -122,6 +133,30 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	}
 	wg.Wait()
 	return err
+}
+
+func printVersion(f *os.File, v *ubx.Version) {
+	if v == nil {
+		return
+	}
+	if v.Mod != "" {
+		fmt.Fprintf(f, "Model: %s\n", v.Mod)
+	}
+	if v.FW != nil {
+		fmt.Fprintf(f, "Firmware version: %s\n", v.FW.String())
+	}
+	if v.Prot != nil {
+		fmt.Fprintf(f, "UBX protocol version: %s\n", v.Prot.String())
+	}
+}
+
+func printProps(f *os.File, p *gpsprot.ConfigProps) {
+	if p == nil {
+		return
+	}
+	if sigs, ok := p.GetSignalsEnabled(); ok {
+		fmt.Fprintf(f, "Signals enabled: %s\n", sigs.String())
+	}
 }
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, logCh chan<- scan.Packet) <-chan scan.Packet {
