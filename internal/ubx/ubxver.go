@@ -126,6 +126,10 @@ func (pv ProtVer) String() string {
 	return fmt.Sprintf("%d.%0d", pv.Major, pv.Minor)
 }
 
+func (fwv *FWVer) String() string {
+	return fmt.Sprintf("%s %d.%02d", fwv.ProductCategory, fwv.Major, fwv.Minor)
+}
+
 // MAX-F10S has a product category of SPGL1L5, so let's accomodate at least SPGL1L2L5
 var fwVerRegexp = regexp.MustCompile(`^FWVER[= ]([A-Z][A-Z0-9]+) ([1-9][0-9]?)\.([0-9][0-9])$`)
 
