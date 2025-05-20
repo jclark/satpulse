@@ -190,7 +190,7 @@ func (c *Configurator) valGet() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) valGetSignals() (gpsprot.ConfigRequest, error) {
-	if _, ok := c.target.Props.GetSignalsEnabled(); !ok {
+	if _, ok := c.target.Props.GetSignalsEnabled(); !ok && c.target.Get&gpsprot.PropIDSignalsEnabled == 0 {
 		return nil, nil
 	}
 	keys := []ucv.Key{ucv.KSignalGpsEna.Key().GroupWildcard()}

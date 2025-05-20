@@ -145,8 +145,8 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
 func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port) ([]ucv.Item, []ucv.Key, bool, error) {
-	if target.Get != 0 && target.Get != gpsprot.PropIDTimePulseWidth {
-		return nil, nil, false, errors.New("getting configuration properties with UBX-CFG-VALGET implemented only for time pulse width")
+	if target.Get&^(gpsprot.PropIDTimePulseWidth|gpsprot.PropIDSignalsEnabled) != 0 {
+		return nil, nil, false, errors.New("getting configuration properties with UBX-CFG-VALGET implemented only for time pulse width and signals enabled")
 	}
 	items := []ucv.Item{}
 	keys := []ucv.Key{}
