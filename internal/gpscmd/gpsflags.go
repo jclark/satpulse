@@ -10,7 +10,7 @@ import (
 )
 
 type flagVars struct {
-	flash           bool
+	save            bool
 	reset           bool
 	pps             bool
 	nmea            bool
@@ -28,11 +28,9 @@ type flagVars struct {
 	packetLogPath   string
 }
 
-const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps]
-       		[--socket path] [--packet-log path]
-            [--flash] [--reset] [--speed bps] [--nmea] [--force-probe] [-p|--pps]
-			[-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...]
-			[-b|--band L1|L2|L5|E5|L6,...] [--disable-time-mode]`
+const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
+       	    [--socket path] [--packet-log path] [--save] [--reset] [--speed bps] [--nmea] 
+            [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]`
 
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20.0
@@ -46,22 +44,27 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.BoolVar(&vars.flash, "flash", false, "save the configuration changes to flash memory on the GPS receiver")
+	flags.BoolVar(&vars.save, "save", false, "save the configuration changes to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&vars.reset, "reset", false, "reset the GPS receiver")
 	flags.BoolVar(&vars.nmea, "nmea", false, "enable NMEA output from the GPS receiver")
 	flags.BoolVar(&vars.forceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
-	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device to configure")
+	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
-	flags.StringVar(&vars.packetLogPath, "log-packets", "", "log packets to `path`")
+	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
 	flags.IntVarP(&vars.localSpeed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.IntVar(&vars.remoteSpeed, "speed", 0, "set GPS receiver baud-rate in `bps`")
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
+	flags.MarkHidden("pps")
 	flags.BoolVar(&vars.disableTimeMode, "disable-time-mode", false, "disable time mode")
+	flags.MarkHidden("disable-time-mode")
 	flags.BoolVar(&vars.survey, "survey", false, "instruct the GPS receiver to perform a survey")
+	flags.MarkHidden("survey")
 	flags.Uint32Var(&vars.surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
+	flags.MarkHidden("survey-time")
 	flags.Float64Var(&vars.surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
+	flags.MarkHidden("survey-acc")
 	usage := cmd.UsageFunc(cmdName, summary, flags)
 	err := flags.Parse(args)
 	if err != nil {

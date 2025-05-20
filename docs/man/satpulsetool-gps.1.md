@@ -27,7 +27,7 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **--speed** *bps*  
 : Configure the GPS receiver's serial speed in bits per second.
 
-**--log-packets** *path*  
+**--packet-log** *path*  
 : Log to *path* a description of the packets sent to and received from the GPS receiver. The log is in `.jsonl` (JSON lines) format.
 
 **-g**, **--gnss** *list*  
@@ -36,8 +36,8 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **-b**, **--band** *list*
 : List of frequency bands that should be enabled for the specified GNSS constellations. The list is command-separated and valid band names are: `L1`, `L2`, `L5`, `E5`, `E6` or `L6`. `L1` covers 1559-1610 MHz, including the L1 C/A, L1C, E1 and B1C signals at 1575.42MHz, as well as the GLONASS L1 and BeiDou B1I signals. `L2` covers 1215-1252 MHz. `L5` covers only signals at 1176.45 MHz such as GPS L5, Galileo E5a, BeiDou B2a. `E5` covers both `L5` and other signals in the range 1164-1210 Mhz. `E6` and `L6` mean the same and cover 1260-1300 Mhz.
 
-**--flash**  
-: Save the configuration changes to receiver's flash memory.
+**--save**  
+: Save the configuration changes to GPS receiver's non-volatile memory.
 
 **--reset**  
 : Reset the GPS receiver.

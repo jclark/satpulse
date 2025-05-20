@@ -30,7 +30,7 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	target := gpsprot.NewConfigTarget(false)
 	opts := &target.Opts
 	opts.Reset = v.reset
-	opts.Flash = v.flash
+	opts.Save = v.save
 	opts.ForceProbe = v.forceProbe
 
 	var conn gpsio.Conn

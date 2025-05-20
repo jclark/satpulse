@@ -240,14 +240,14 @@ func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) valGetLayer() bin.CfgValgetLayer {
-	if c.target.Opts.Flash {
+	if c.target.Opts.Save {
 		return bin.CfgValgetLayerFlash
 	}
 	return bin.CfgValgetLayerRAM
 }
 
 func (c *Configurator) valSetLayer() bin.CfgValsetLayer {
-	if c.target.Opts.Flash {
+	if c.target.Opts.Save {
 		return bin.CfgValsetLayerFlash
 	}
 	return bin.CfgValsetLayerRAM
@@ -275,11 +275,7 @@ func (c *Configurator) valBaudRate() (gpsprot.ConfigRequest, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
-	layer := bin.CfgValsetLayerRAM
-	if c.target.Opts.Flash {
-		layer = bin.CfgValsetLayerFlash
-	}
-	val, err := newCfgValsetRequest(items, layer)
+	val, err := newCfgValsetRequest(items, c.valSetLayer())
 	if err != nil {
 		return nil, err
 	}

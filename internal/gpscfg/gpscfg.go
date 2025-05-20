@@ -127,7 +127,7 @@ func (mh *msgHandler) finish(cm *gpsprot.ConfigProps) *Result {
 	// XXX should find cleaner way to do this
 	ver := mh.packetExch.(*ubx.PacketExchanger).Version()
 	if ver != nil {
-		lg.Info("GPS version", "model", ver.Mod, "category", ver.ProductCategory(), "flash", ver.Flash,
+		lg.Info("GPS version", "model", ver.Mod, "category", ver.ProductCategory(), "flash", ver.RunsFromFlash,
 			"sw", ver.SW, "hw", ver.HW, "prot", ver.Prot, "gnss", ver.GNSS, "ext", ver.Extensions)
 	}
 	for tag, msgIDs := range mh.msgIDs {

@@ -171,7 +171,7 @@ func (status MsgStatus) IsEnabled() bool {
 type ConfigOptions struct {
 	Detected            bool // has already been detected, no need to detect it again
 	ForceProbe          bool // force probe even if no input has been detected
-	Flash               bool // save state to flash
+	Save                bool // save state to flash
 	Reset               bool // perform a hard reset after making changes
 	EnableLeapSecondMsg bool
 	EnableTimeMsg       bool
@@ -207,7 +207,7 @@ func (ct *ConfigTarget) UsesAny(props ...PropIDs) bool {
 }
 
 func (o ConfigOptions) NoOp() bool {
-	return !o.Flash && !o.Reset && !o.EnableLeapSecondMsg && !o.EnableTimeMsg && o.SatellitesMsg.IsZero() && o.Survey.When == TimeModeNone
+	return !o.Save && !o.Reset && !o.EnableLeapSecondMsg && !o.EnableTimeMsg && o.SatellitesMsg.IsZero() && o.Survey.When == TimeModeNone
 }
 
 // String returns a human-readable representation of the PropIDs flags
