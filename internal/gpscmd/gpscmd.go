@@ -29,7 +29,7 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	opts := &target.Opts
 	opts.Reset = v.reset
 	opts.Flash = v.flash
-	opts.ForceProbe = v.force
+	opts.ForceProbe = v.forceProbe
 
 	var conn gpsio.Conn
 	if v.serialDevice != "" {

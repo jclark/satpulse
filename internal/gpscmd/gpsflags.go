@@ -14,7 +14,7 @@ type flagVars struct {
 	reset           bool
 	pps             bool
 	nmea            bool
-	force           bool
+	forceProbe      bool
 	localSpeed      int
 	remoteSpeed     int
 	serialDevice    string
@@ -30,7 +30,7 @@ type flagVars struct {
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps]
        		[--socket path] [--packet-log path]
-            [--flash] [--reset] [--speed bps] [--nmea] [--force] [-p|--pps]
+            [--flash] [--reset] [--speed bps] [--nmea] [--force-probe] [-p|--pps]
 			[-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...]
 			[-b|--band L1|L2|L5|E5|L6,...] [--disable-time-mode]`
 
@@ -49,7 +49,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&vars.flash, "flash", false, "save the configuration changes to flash memory on the GPS receiver")
 	flags.BoolVar(&vars.reset, "reset", false, "reset the GPS receiver")
 	flags.BoolVar(&vars.nmea, "nmea", false, "enable NMEA output from the GPS receiver")
-	flags.BoolVar(&vars.force, "force", false, "force writing to serial device even if no GPS detected")
+	flags.BoolVar(&vars.forceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device to configure")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.StringVar(&vars.packetLogPath, "log-packets", "", "log packets to `path`")

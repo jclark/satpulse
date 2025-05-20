@@ -45,8 +45,8 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **--nmea**  
 : Enable NMEA output from the GPS receiver.
 
-**--force**  
-: Force writing configuration to serial device even if no GPS is detected.
+**--force-probe**  
+: Force writing probe to serial device even if when there is no output from the GPS receiver
 
 **-p**, **--pps**  
 : Configure the GPS receiver to enable PPS (pulse-per-second) output.
