@@ -26,24 +26,32 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 		}
 		return
 	}
-
-	target := gpsprot.NewConfigTarget(false)
-	opts := &target.Opts
-	opts.Reset = v.reset
-	opts.Save = v.save
-	opts.ForceProbe = v.forceProbe
-
+	target, err := createConfigTarget(v)
+	if err != nil {
+		return
+	}
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
 		conn, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
 	} else {
 		conn, err = gpsio.OpenSocket(v.socketPath)
-		opts.Detected = true
+		target.Opts.Detected = true
 	}
 	if err != nil {
 		return
-	}
+	}	
+	ctx := context.Background()
+	ctx, _ = cmd.CancelOnSignal(ctx, lg)
+	err = run(ctx, lg, target, conn, v.packetLogPath)
+	return
+}
 
+func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
+	target := gpsprot.NewConfigTarget(false)
+	opts := &target.Opts
+	opts.Reset = v.reset
+	opts.Save = v.save
+	opts.ForceProbe = v.forceProbe
 	cp := &target.Props
 	if v.pps {
 		cp.SetPPS()
@@ -68,18 +76,14 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	}
 	if v.remoteSpeed != 0 {
 		if !term.IsValidSpeed(v.remoteSpeed) {
-			err = fmt.Errorf("invalid remote serial speed %d", v.remoteSpeed)
-			return
+			return nil, fmt.Errorf("invalid remote serial speed %d", v.remoteSpeed)
 		}
 		cp.SetBaudRate(uint32(v.remoteSpeed))
 	}
 	if target.NoOp() {
 		target.Get |= gpsprot.PropIDSignalsEnabled
 	}
-	ctx := context.Background()
-	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, conn, v.packetLogPath)
-	return
+	return target, nil
 }
 
 func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn, logPath string) error {
