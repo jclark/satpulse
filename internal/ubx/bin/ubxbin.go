@@ -105,6 +105,7 @@ func (mid MsgID) String() string {
 const (
 	AckNakID     MsgID = clsAck | (0x00 << 8)
 	AckAckID     MsgID = clsAck | (0x01 << 8)
+	CfgCfgID     MsgID = clsCfg | (0x09 << 8)
 	CfgGNSSID    MsgID = clsCfg | (0x3E << 8)
 	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
 	CfgNav5ID    MsgID = clsCfg | (0x24 << 8)
@@ -152,6 +153,7 @@ const (
 func init() {
 	regMsg[AckNak]("NAK")
 	regMsg[AckAck]("ACK")
+	regMsg[CfgCfg]("CFG")
 	regMsg[CfgGNSS]("GNSS")
 	regMsg[CfgMsg]("MSG")
 	regMsg[CfgNav5]("NAV5")
@@ -208,6 +210,69 @@ type AckAck struct {
 }
 
 func (m *AckAck) ID() MsgID { return AckAckID }
+
+type CfgCfg struct {
+	CfgCfgFixed
+	DeviceMask []CfgCfgDeviceMask  // this is optional so we use a slice; it will always be length 0 or 1
+}
+
+var _ VarLengthMsg = (*CfgCfg)(nil)
+
+func (m *CfgCfg) ID() MsgID { return CfgCfgID }
+
+func (m *CfgCfg) InitForLen(payloadLen int) error {
+	// The implementation of InitForLen is different for CfgCfg from others
+	// because with CfgCfg the variable part is at most 1 byte long.
+	if payloadLen == 13 {
+		m.DeviceMask = make([]CfgCfgDeviceMask, 1)
+	} else if payloadLen != 12 {
+		// use similar message to sliceLen
+		return fmt.Errorf("bad UBX-CFG-CFG payload length (%d bytes); expected 12 or 13", payloadLen)
+	}
+	return nil
+}
+
+func (m *CfgCfg) Parts() (fixed any, slice any) {
+	fixed = &m.CfgCfgFixed
+	slice = &m.DeviceMask
+	return
+}
+
+type CfgCfgFixed struct {
+	ClearMask   CfgCfgSectionMask
+	SaveMask    CfgCfgSectionMask
+	LoadMask CfgCfgSectionMask
+}
+
+type CfgCfgSectionMask uint32
+
+const (
+	CfgCfgIOPort CfgCfgSectionMask = 1 << iota
+	CfgCfgMsgConf
+	CfgCfgInfMsg
+	CfgCfgNavConf
+	CfgCfgRXMConf
+	_
+	_
+	_
+	CfgCfgSenConf
+	CfgCfgRinvConf
+	CfgCfgAntConf
+	CfgCfgLogConf
+	CfgCfgFtsConf
+)
+
+const CfgCfgSectionMaskAll CfgCfgSectionMask = 0x1F1F
+
+type CfgCfgDeviceMask uint8
+
+const (
+	CfgCfgDevBBR CfgCfgDeviceMask = 1 << iota
+	CfgCfgDevFlash
+	CfgCfgDevEEPROM
+	_
+	CfgCfgDevSpiFlash
+)
 
 type CfgMsg struct {
 	MsgID MsgID
@@ -1536,7 +1601,7 @@ type VarLengthMsg interface {
 func sliceLen(m VarLengthMsg, payloadLen, minLen, elemLen int) (int, error) {
 	extraLen := payloadLen - minLen
 	if extraLen < 0 || extraLen%elemLen != 0 {
-		return 0, fmt.Errorf("bad %v payload length (%d bytes)", m.ID(), payloadLen)
+		return 0, fmt.Errorf("bad UBX-%v payload length (%d bytes)", m.ID(), payloadLen)
 	}
 	return extraLen / elemLen, nil
 }

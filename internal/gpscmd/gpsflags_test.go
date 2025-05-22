@@ -15,10 +15,11 @@ type validFlagsTestCase struct {
 
 var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{}, flagVars{}},
-	{"ttyS0", []string{"--save"}, flagVars{save: true}},
-	{"ttyS0", []string{"--reset"}, flagVars{reset: true}},
+	{"ttyS0", []string{"--reset"}, flagVars{reset: gpsprot.ResetCold}},
 	{"ttyS0", []string{"--nmea"}, flagVars{nmea: true}},
+	{"ttyS0", []string{"--nmea", "--save"}, flagVars{nmea: true, save: gpsprot.SaveMinimal}},
 	{"ttyS0", []string{"--pps"}, flagVars{pps: true}},
+	{"ttyS0", []string{"--pps", "--save"}, flagVars{pps: true, save: gpsprot.SaveMinimal}},
 	{"ttyS0", []string{"--disable-time-mode"}, flagVars{disableTimeMode: true}},
 	{"ttyS0", []string{"--survey"}, flagVars{survey: true}},
 	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{
@@ -29,7 +30,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"-p"}, flagVars{pps: true}},
 	{"ttyS0", []string{"--speed", "9600"}, flagVars{remoteSpeed: 9600}},
 	{"ttyS0", []string{"--device-speed", "9600"}, flagVars{localSpeed: 9600}},
-	{"ttyS0", []string{"--save", "--reset"}, flagVars{save: true, reset: true}},
+	{"ttyS0", []string{"--save-all", "--reset"}, flagVars{save: gpsprot.SaveAll, reset: gpsprot.ResetCold}},
 	{"ttyS0", []string{"--gnss", "GPS,GLO,GAL,BDS"}, flagVars{
 		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GLO, gpsprot.GAL, gpsprot.BDS),
 	}},
@@ -50,7 +51,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 		enabledSignals: (gpsprot.BandL5 | gpsprot.BandE5b).SignalSet(gpsprot.GAL),
 	}},
 	{"ttyS0", []string{"--gnss", "GAL", "--band", "L1,E6"}, flagVars{
-		enabledSignals: (gpsprot.BandL1|gpsprot.BandE6).SignalSet(gpsprot.GAL),
+		enabledSignals: (gpsprot.BandL1 | gpsprot.BandE6).SignalSet(gpsprot.GAL),
 	}},
 	{"ttyS0", []string{"--gnss", "GPS,GAL", "--band", "L1,L2"}, flagVars{
 		enabledSignals: (gpsprot.BandL1 | gpsprot.BandL2).SignalSet(gpsprot.GPS, gpsprot.GAL),
@@ -67,6 +68,11 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"-g", "GPS,GAL,BDS", "--band", "L1,L2,L5,E5,E6"}, flagVars{
 		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GAL, gpsprot.BDS),
 	}},
+	{"ttyS0", []string{"--save-all"}, flagVars{save: gpsprot.SaveAll}},
+	{"ttyS0", []string{"--factory-reset"}, flagVars{reset: gpsprot.ResetFactory}},
+	// Need configuration changes with --save
+	{"ttyS0", []string{"--reset", "--save", "--nmea"}, flagVars{reset: gpsprot.ResetCold, save: gpsprot.SaveMinimal, nmea: true}},
+	{"ttyS0", []string{"--reset", "--save-all"}, flagVars{reset: gpsprot.ResetCold, save: gpsprot.SaveAll}},
 }
 
 func TestParseFlagsValid(t *testing.T) {
@@ -104,10 +110,21 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--speed", "9600", "--gnss", "GPS", "--band", "L3"},
 	{"--reset"},
 	{"--survey", "--disable-time-mode"},
-	{"--serial-device", "ttyS0", "--gnss", "SBAS"},                // only augmentation signals
-	{"--serial-device", "ttyS0", "--gnss", "GLO", "--band", "L5"}, // no signals in GNSS+band
-	{"--serial-device", "ttyS0", "--gnss", "SBAS,QZSS"},           // non-major GNSS
-	{"--serial-device", "ttyS0", "--gnss", "GAL", "--band", "E6"}, // only augmentation signals
+	{"--serial-device", "ttyS0", "--gnss", "SBAS"},                             // only augmentation signals
+	{"--serial-device", "ttyS0", "--gnss", "GLO", "--band", "L5"},              // no signals in GNSS+band
+	{"--serial-device", "ttyS0", "--gnss", "SBAS,QZSS"},                        // non-major GNSS
+	{"--serial-device", "ttyS0", "--gnss", "GAL", "--band", "E6"},              // only augmentation signals
+	{"--serial-device", "ttyS0", "--save", "--save-all"},                       // can't use both save and save-all
+	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                  // can't use factory-reset with save
+	{"--serial-device", "ttyS0", "--factory-reset", "--reset"},                 // can't use factory-reset with reset
+	{"--serial-device", "ttyS0", "--factory-reset", "--nmea"},                  // can't use factory-reset with config changes
+	{"--serial-device", "ttyS0", "--factory-reset", "--gnss", "GPS"},           // can't use factory-reset with config changes
+	{"--serial-device", "ttyS0", "--reset", "--gnss", "GPS"},                   // reset without save would lose config changes
+	{"--serial-device", "ttyS0", "--save"},                                     // no config changes to save
+	{"--serial-device", "ttyS0", "--reset", "--save"},                          // no config changes to save with --save
+	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                  // incompatible options
+	{"--serial-device", "ttyS0", "--factory-reset", "--save-all"},              // incompatible options
+	{"--serial-device", "ttyS0", "--factory-reset", "--save", "--gnss", "GPS"}, // multiple incompatible options
 }
 
 func TestParseFlagsInvalid(t *testing.T) {

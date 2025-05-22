@@ -86,30 +86,36 @@ type ConfigTarget struct {
 // PropIDs represents a set of configuration property names
 type PropIDs uint32
 
+// TimePulse represents the time pulse configuration settings
+type TimePulse struct {
+	Width          time.Duration
+	Period         time.Duration
+	AlignToGNSS    bool
+	OnlyWhenLocked bool
+	PolarityRising bool
+}
+
 // ConfigProps represents a collection configuration properties
 type ConfigProps struct {
-	valid                   PropIDs // says which fields are valid
-	signalsEnabled          SignalSet
-	primaryGNSS             GNSS
-	solutionPeriod          time.Duration
-	timePulseWidth          time.Duration
-	timePulsePeriod         time.Duration
-	timePulseAlignToGNSS    bool
-	timePulseOnlyWhenLocked bool
-	timePulsePolarityRising bool
-	timeMode                TimeMode
-	antennaCableDelay       time.Duration
-	fixedPosECEF            Point3D
-	fixedPosAcc             Length
-	stationary              bool
-	nmeaEnabled             bool
-	baudRate                uint32
+	valid             PropIDs // says which fields are valid
+	signalsEnabled    SignalSet
+	primaryGNSS       GNSS
+	solutionPeriod    time.Duration
+	timePulse         TimePulse
+	timeMode          TimeMode
+	antennaCableDelay time.Duration
+	fixedPosECEF      Point3D
+	fixedPosAcc       Length
+	stationary        bool
+	nmeaEnabled       bool
+	baudRate          uint32
 }
 
 const (
 	PropIDSignalsEnabled PropIDs = 1 << iota
 	PropIDPrimaryGNSS
 	PropIDSolutionPeriod
+	// eventually the individual time pulse properties will be combined into a single property
 	PropIDTimePulseWidth
 	PropIDTimePulsePeriod
 	PropIDTimePulseAlignToGNSS
@@ -168,11 +174,27 @@ func (status MsgStatus) IsEnabled() bool {
 	return status == MsgStatusEnabled
 }
 
+type SaveType uint8
+
+const (
+	SaveNone    SaveType = iota
+	SaveMinimal          // save the minimum to save the configuration changes specified in ConfigTarget
+	SaveAll              // save the current configuration
+)
+
+type ResetType uint8
+
+const (
+	ResetNone    ResetType = iota
+	ResetCold              // restore configuration from non-volatile memory and perform a cold start
+	ResetFactory           // restore non-volatile memory to factory defaults and then ResetCold
+)
+
 type ConfigOptions struct {
-	Detected            bool // has already been detected, no need to detect it again
-	ForceProbe          bool // force probe even if no input has been detected
-	Save                bool // save state to flash
-	Reset               bool // perform a hard reset after making changes
+	Detected            bool      // has already been detected, no need to detect it again
+	ForceProbe          bool      // force probe even if no input has been detected
+	Save                SaveType  // what to save to non-volatile memory
+	Reset               ResetType // what kind of reset to perform
 	EnableLeapSecondMsg bool
 	EnableTimeMsg       bool
 	SatellitesMsg       MsgStatus
@@ -207,7 +229,7 @@ func (ct *ConfigTarget) UsesAny(props ...PropIDs) bool {
 }
 
 func (o ConfigOptions) NoOp() bool {
-	return !o.Save && !o.Reset && !o.EnableLeapSecondMsg && !o.EnableTimeMsg && o.SatellitesMsg.IsZero() && o.Survey.When == TimeModeNone
+	return o.Save == 0 && o.Reset == 0 && !o.EnableLeapSecondMsg && !o.EnableTimeMsg && o.SatellitesMsg.IsZero() && o.Survey.When == TimeModeNone
 }
 
 // String returns a human-readable representation of the PropIDs flags
@@ -266,71 +288,90 @@ func (cp *ConfigProps) SetSolutionPeriod(val time.Duration) {
 // GetTimePulseWidth returns the timePulseWidth value and whether it's set
 func (cp *ConfigProps) GetTimePulseWidth() (time.Duration, bool) {
 	if cp.valid&PropIDTimePulseWidth != 0 {
-		return cp.timePulseWidth, true
+		return cp.timePulse.Width, true
 	}
 	return 0, false
 }
 
 // SetTimePulseWidth sets the timePulseWidth value
 func (cp *ConfigProps) SetTimePulseWidth(val time.Duration) {
-	cp.timePulseWidth = val
+	cp.timePulse.Width = val
 	cp.valid |= PropIDTimePulseWidth
 }
 
 // GetTimePulsePeriod returns the timePulsePeriod value and whether it's set
 func (cp *ConfigProps) GetTimePulsePeriod() (time.Duration, bool) {
 	if cp.valid&PropIDTimePulsePeriod != 0 {
-		return cp.timePulsePeriod, true
+		return cp.timePulse.Period, true
 	}
 	return 0, false
 }
 
 // SetTimePulsePeriod sets the timePulsePeriod value
 func (cp *ConfigProps) SetTimePulsePeriod(val time.Duration) {
-	cp.timePulsePeriod = val
+	cp.timePulse.Period = val
 	cp.valid |= PropIDTimePulsePeriod
 }
 
 // GetTimePulseAlignToGNSS returns the timePulseAlignToGNSS value and whether it's set
 func (cp *ConfigProps) GetTimePulseAlignToGNSS() (bool, bool) {
 	if cp.valid&PropIDTimePulseAlignToGNSS != 0 {
-		return cp.timePulseAlignToGNSS, true
+		return cp.timePulse.AlignToGNSS, true
 	}
 	return false, false
 }
 
 // SetTimePulseAlignToGNSS sets the timePulseAlignToGNSS value
 func (cp *ConfigProps) SetTimePulseAlignToGNSS(val bool) {
-	cp.timePulseAlignToGNSS = val
+	cp.timePulse.AlignToGNSS = val
 	cp.valid |= PropIDTimePulseAlignToGNSS
 }
 
 // GetTimePulseOnlyWhenLocked returns the timePulseOnlyWhenLocked value and whether it's set
 func (cp *ConfigProps) GetTimePulseOnlyWhenLocked() (bool, bool) {
 	if cp.valid&PropIDTimePulseOnlyWhenLocked != 0 {
-		return cp.timePulseOnlyWhenLocked, true
+		return cp.timePulse.OnlyWhenLocked, true
 	}
 	return false, false
 }
 
 // SetTimePulseOnlyWhenLocked sets the timePulseOnlyWhenLocked value
 func (cp *ConfigProps) SetTimePulseOnlyWhenLocked(val bool) {
-	cp.timePulseOnlyWhenLocked = val
+	cp.timePulse.OnlyWhenLocked = val
 	cp.valid |= PropIDTimePulseOnlyWhenLocked
 }
 
 // GetTimePulsePolarityRising returns the timePulsePolarityRising value and whether it's set
 func (cp *ConfigProps) GetTimePulsePolarityRising() (bool, bool) {
 	if cp.valid&PropIDTimePulsePolarityRising != 0 {
-		return cp.timePulsePolarityRising, true
+		return cp.timePulse.PolarityRising, true
 	}
 	return false, false
 }
 
 // SetTimePulsePolarityRising sets the timePulsePolarityRising value
 func (cp *ConfigProps) SetTimePulsePolarityRising(val bool) {
-	cp.timePulsePolarityRising = val
+	cp.timePulse.PolarityRising = val
 	cp.valid |= PropIDTimePulsePolarityRising
+}
+
+// timePulseProps combines all time pulse related property IDs
+const timePulseProps = PropIDTimePulseWidth | PropIDTimePulsePeriod |
+	PropIDTimePulseAlignToGNSS | PropIDTimePulseOnlyWhenLocked | PropIDTimePulsePolarityRising
+
+// GetTimePulse returns the entire TimePulse struct and whether all TimePulse properties are set
+func (cp *ConfigProps) GetTimePulse() (TimePulse, bool) {
+	// Check if all TimePulse properties are valid
+	if (cp.valid & timePulseProps) == timePulseProps {
+		return cp.timePulse, true
+	}
+	return TimePulse{}, false
+}
+
+// SetTimePulse sets all timePulse properties at once
+func (cp *ConfigProps) SetTimePulse(tp TimePulse) {
+	cp.timePulse = tp
+	cp.valid |= timePulseProps
 }
 
 // GetTimeMode returns the timeMode value and whether it's set
@@ -466,20 +507,20 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	if both&PropIDSolutionPeriod != 0 && cp.solutionPeriod != other.solutionPeriod {
 		result.SetSolutionPeriod(other.solutionPeriod)
 	}
-	if both&PropIDTimePulseWidth != 0 && cp.timePulseWidth != other.timePulseWidth {
-		result.SetTimePulseWidth(other.timePulseWidth)
+	if both&PropIDTimePulseWidth != 0 && cp.timePulse.Width != other.timePulse.Width {
+		result.SetTimePulseWidth(other.timePulse.Width)
 	}
-	if both&PropIDTimePulsePeriod != 0 && cp.timePulsePeriod != other.timePulsePeriod {
-		result.SetTimePulsePeriod(other.timePulsePeriod)
+	if both&PropIDTimePulsePeriod != 0 && cp.timePulse.Period != other.timePulse.Period {
+		result.SetTimePulsePeriod(other.timePulse.Period)
 	}
-	if both&PropIDTimePulseAlignToGNSS != 0 && cp.timePulseAlignToGNSS != other.timePulseAlignToGNSS {
-		result.SetTimePulseAlignToGNSS(other.timePulseAlignToGNSS)
+	if both&PropIDTimePulseAlignToGNSS != 0 && cp.timePulse.AlignToGNSS != other.timePulse.AlignToGNSS {
+		result.SetTimePulseAlignToGNSS(other.timePulse.AlignToGNSS)
 	}
-	if both&PropIDTimePulseOnlyWhenLocked != 0 && cp.timePulseOnlyWhenLocked != other.timePulseOnlyWhenLocked {
-		result.SetTimePulseOnlyWhenLocked(other.timePulseOnlyWhenLocked)
+	if both&PropIDTimePulseOnlyWhenLocked != 0 && cp.timePulse.OnlyWhenLocked != other.timePulse.OnlyWhenLocked {
+		result.SetTimePulseOnlyWhenLocked(other.timePulse.OnlyWhenLocked)
 	}
-	if both&PropIDTimePulsePolarityRising != 0 && cp.timePulsePolarityRising != other.timePulsePolarityRising {
-		result.SetTimePulsePolarityRising(other.timePulsePolarityRising)
+	if both&PropIDTimePulsePolarityRising != 0 && cp.timePulse.PolarityRising != other.timePulse.PolarityRising {
+		result.SetTimePulsePolarityRising(other.timePulse.PolarityRising)
 	}
 	if both&PropIDTimeMode != 0 && cp.timeMode != other.timeMode {
 		result.SetTimeMode(other.timeMode)
@@ -532,20 +573,24 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	if cp.valid&PropIDSolutionPeriod != 0 {
 		m["solutionPeriod"] = float64(cp.solutionPeriod) / float64(time.Second)
 	}
-	if cp.valid&PropIDTimePulseWidth != 0 {
-		m["timePulseWidth"] = float64(cp.timePulseWidth) / float64(time.Second)
-	}
-	if cp.valid&PropIDTimePulsePeriod != 0 {
-		m["timePulsePeriod"] = float64(cp.timePulsePeriod) / float64(time.Second)
-	}
-	if cp.valid&PropIDTimePulseAlignToGNSS != 0 {
-		m["timePulseAlignToGNSS"] = cp.timePulseAlignToGNSS
-	}
-	if cp.valid&PropIDTimePulseOnlyWhenLocked != 0 {
-		m["timePulseOnlyWhenLocked"] = cp.timePulseOnlyWhenLocked
-	}
-	if cp.valid&PropIDTimePulsePolarityRising != 0 {
-		m["timePulsePolarityRising"] = cp.timePulsePolarityRising
+	if cp.valid&timePulseProps != 0 {
+		tpm := make(map[string]interface{})
+		if cp.valid&PropIDTimePulseWidth != 0 {
+			tpm["width"] = float64(cp.timePulse.Width) / float64(time.Second)
+		}
+		if cp.valid&PropIDTimePulsePeriod != 0 {
+			tpm["period"] = float64(cp.timePulse.Period) / float64(time.Second)
+		}
+		if cp.valid&PropIDTimePulseAlignToGNSS != 0 {
+			tpm["alignToGNSS"] = cp.timePulse.AlignToGNSS
+		}
+		if cp.valid&PropIDTimePulseOnlyWhenLocked != 0 {
+			tpm["onlyWhenLocked"] = cp.timePulse.OnlyWhenLocked
+		}
+		if cp.valid&PropIDTimePulsePolarityRising != 0 {
+			tpm["polarityRising"] = cp.timePulse.PolarityRising
+		}
+		m["timePulse"] = tpm
 	}
 	if cp.valid&PropIDTimeMode != 0 {
 		switch cp.timeMode {
@@ -587,11 +632,13 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 // SetPPS configures the properties for a pulse-per-second output
 func (cp *ConfigProps) SetPPS() {
 	cp.SetSolutionPeriod(1 * time.Second)
-	cp.SetTimePulsePeriod(1 * time.Second)
-	cp.SetTimePulseWidth(time.Second / 10)
-	cp.SetTimePulsePolarityRising(true)
-	cp.SetTimePulseAlignToGNSS(true)
-	cp.SetTimePulseOnlyWhenLocked(true)
+	cp.SetTimePulse(TimePulse{
+		Period:         1 * time.Second,
+		Width:          time.Second / 10,
+		PolarityRising: true,
+		AlignToGNSS:    true,
+		OnlyWhenLocked: true,
+	})
 }
 
 type Length int64

@@ -37,16 +37,22 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 : List of frequency bands that should be enabled for the specified GNSS constellations. The list is command-separated and valid band names are: `L1`, `L2`, `L5`, `E5`, `E6` or `L6`. `L1` covers 1559-1610 MHz, including the L1 C/A, L1C, E1 and B1C signals at 1575.42MHz, as well as the GLONASS L1 and BeiDou B1I signals. `L2` covers 1215-1252 MHz. `L5` covers only signals at 1176.45 MHz such as GPS L5, Galileo E5a, BeiDou B2a. `E5` covers both `L5` and other signals in the range 1164-1210 Mhz. `E6` and `L6` mean the same and cover 1260-1300 Mhz.
 
 **--save**  
-: Save the configuration changes to GPS receiver's non-volatile memory.
+: Save the configuration changed by this command to GPS receiver's non-volatile memory. Exactly what is saved depends on the specific GPS receiver; satpulsetool will save the minimum possible to ensure that everything that was changed by this command is saved.
+
+**--save-all**  
+: Save the current running configuration of the GPS receiver to its non-volatile memory.
 
 **--reset**  
-: Reset the GPS receiver.
+: Perform a reset that discards configuration that has not been saved to non-volatile memory of the GPS receiver, and discards information about the last known position, current time, and satellite orbital data (both ephemeris and almanac).
+
+**--factory-reset**
+: Restore the non-volatile memory of the GPS receiver to its default settings, and the perform a reset as with the **--reset** option.
 
 **--nmea**  
 : Enable NMEA output from the GPS receiver.
 
 **--force-probe**  
-: Force writing probe to serial device even if when there is no output from the GPS receiver
+: Force writing probe to serial device even when there is no output from the GPS receiver
 
 **-p**, **--pps**  
 : Configure the GPS receiver to enable PPS (pulse-per-second) output.

@@ -64,6 +64,8 @@ var legacyConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).pollNav5,
 	(*Configurator).setNav5,
 	(*Configurator).setSatellitesMsg,
+	(*Configurator).saveMinimal,
+	(*Configurator).setCfg,
 	(*Configurator).reset,
 }
 
@@ -76,6 +78,7 @@ var newConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).valSet,
 	(*Configurator).valSurvey,
 	(*Configurator).valBaudRate,
+	(*Configurator).setCfg,
 	(*Configurator).reset,
 }
 
@@ -168,8 +171,56 @@ func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
 	return false, nil
 }
 
+func (c *Configurator) saveMinimal() (gpsprot.ConfigRequest, error) {
+	// This is just for legacy configuration.
+	// For new configuration, we use CFG-VALSET to save to the right layer.
+	var saveMask bin.CfgCfgSectionMask
+	if c.target.Opts.Save != gpsprot.SaveMinimal {
+		return nil, nil
+	}
+	if c.target.UsesAny(gpsprot.PropIDBaudRate, gpsprot.PropIDNMEAEnabled) {
+		saveMask |= bin.CfgCfgIOPort
+	}
+	if c.target.UsesAny(gpsprot.PropIDSignalsEnabled, gpsprot.PropIDPrimaryGNSS) {
+		saveMask |= bin.CfgCfgRXMConf
+	} else if _, ok := c.target.Props.GetTimePulse(); ok {  // XXX fix this when we combine time pulse properties into one
+		saveMask |= bin.CfgCfgRXMConf
+	}
+	// XXX handle time mode when we fix that up in satpulsetool
+	if saveMask == 0 {
+		return nil, nil
+	}	
+	return msgRequest{c.newCfgCfgRequest(0, saveMask)}, nil
+}
+
+func (c *Configurator) setCfg() (gpsprot.ConfigRequest, error) {
+	var saveMask, clearMask bin.CfgCfgSectionMask
+
+	if c.target.Opts.Save == gpsprot.SaveAll {
+		saveMask = bin.CfgCfgSectionMaskAll
+	}
+	if c.target.Opts.Reset == gpsprot.ResetFactory {
+		clearMask = bin.CfgCfgSectionMaskAll
+	}
+	if clearMask == 0 && saveMask == 0 {
+		return nil, nil
+	}
+	return msgRequest{c.newCfgCfgRequest(clearMask, saveMask)}, nil
+}
+
+func (*Configurator) newCfgCfgRequest(clearMask, saveMask bin.CfgCfgSectionMask) *bin.CfgCfg {
+	return &bin.CfgCfg{
+		CfgCfgFixed: bin.CfgCfgFixed{
+			ClearMask: clearMask,
+			SaveMask:  saveMask,
+			LoadMask:  0,
+		},
+		DeviceMask: []bin.CfgCfgDeviceMask{bin.CfgCfgDevFlash | bin.CfgCfgDevBBR},
+	}
+}
+
 func (c *Configurator) reset() (gpsprot.ConfigRequest, error) {
-	if !c.target.Opts.Reset {
+	if c.target.Opts.Reset == 0 {
 		return nil, nil
 	}
 	return msgRequest{&bin.CfgRst{
@@ -240,15 +291,14 @@ func (c *Configurator) valSet() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) valGetLayer() bin.CfgValgetLayer {
-	if c.target.Opts.Save {
-		return bin.CfgValgetLayerFlash
-	}
 	return bin.CfgValgetLayerRAM
 }
 
 func (c *Configurator) valSetLayer() bin.CfgValsetLayer {
-	if c.target.Opts.Save {
-		return bin.CfgValsetLayerFlash
+	if c.target.Opts.Save == gpsprot.SaveMinimal {
+		// SaveMinimal is implemented by writing to non-volatile layers.
+		// SaveAll is implemented using UBX-CFG-CFG to save everything
+		return bin.CfgValsetLayerFlash | bin.CfgValsetLayerBBR | bin.CfgValsetLayerRAM
 	}
 	return bin.CfgValsetLayerRAM
 }

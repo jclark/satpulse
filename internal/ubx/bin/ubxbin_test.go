@@ -18,6 +18,37 @@ func TestNavTimeGPS(t *testing.T) {
 	})
 }
 
+func TestCfgCfg(t *testing.T) {
+	m := CfgCfg{
+		CfgCfgFixed{
+			ClearMask: CfgCfgIOPort,
+			SaveMask:  CfgCfgRXMConf,
+			LoadMask:  CfgCfgNavConf,
+		},
+		[]CfgCfgDeviceMask{CfgCfgDevFlash},
+	}
+	p2 := testMsgType1(t, m)
+	if !EqualCfgCfg(&m, p2.(*CfgCfg)) {
+		t.Fatalf("msg cfg-cfg not roundtripped %v => %v", &m, p2)
+	}
+	m = CfgCfg{
+		CfgCfgFixed{
+			ClearMask: CfgCfgIOPort,
+			SaveMask:  CfgCfgRXMConf,
+			LoadMask:  CfgCfgNavConf,
+		},
+		[]CfgCfgDeviceMask{},
+	}
+	p2 = testMsgType1(t, m)
+	if !EqualCfgCfg(&m, p2.(*CfgCfg)) {
+		t.Fatalf("msg cfg-cfg not roundtripped %v => %v", &m, p2)
+	}
+}
+
+func EqualCfgCfg(p1, p2 *CfgCfg) bool {
+	return p1.CfgCfgFixed == p2.CfgCfgFixed && slices.Equal(p1.DeviceMask, p2.DeviceMask)
+}
+
 func TestMonVer(t *testing.T) {
 	m := MonVer{
 		MonVerFixed{[30]byte{1, 2, 3}, [10]byte{4, 5}},

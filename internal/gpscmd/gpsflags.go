@@ -10,8 +10,8 @@ import (
 )
 
 type flagVars struct {
-	save            bool
-	reset           bool
+	save            gpsprot.SaveType
+	reset           gpsprot.ResetType
 	pps             bool
 	nmea            bool
 	forceProbe      bool
@@ -29,7 +29,8 @@ type flagVars struct {
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
-       	    [--socket path] [--packet-log path] [--save] [--reset] [--speed bps] [--nmea] 
+       	    [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea]
+            [--save] [--save-all] [--reset]	[--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]`
 
 const defaultSurveyTime = 2000
@@ -40,12 +41,18 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	vars := flagVars{}
 	gl := gnssList{}
 	bands := bands(gpsprot.BandAll)
+	save := false
+	saveAll := false
+	reset := false
+	factoryReset := false
 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.BoolVar(&vars.save, "save", false, "save the configuration changes to non-volatile memory on the GPS receiver")
-	flags.BoolVar(&vars.reset, "reset", false, "reset the GPS receiver")
+	flags.BoolVar(&save, "save", false, "save configuration changes to non-volatile memory on the GPS receiver")
+	flags.BoolVar(&saveAll, "save-all", false, "save the current configuration to non-volatile memory on the GPS receiver")
+	flags.BoolVar(&reset, "reset", false, "reset the GPS receiver and perform a cold start")
+	flags.BoolVar(&factoryReset, "factory-reset", false, "reset the GPS receiver to factory defaults")
 	flags.BoolVar(&vars.nmea, "nmea", false, "enable NMEA output from the GPS receiver")
 	flags.BoolVar(&vars.forceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
@@ -91,13 +98,40 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, usage, fmt.Errorf("0 is not a valid value for --%s", s)
 		}
 	}
+	configChanged := false
 	if len(gl.gnss) != 0 {
 		vars.enabledSignals = gpsprot.Band(bands).SignalSet(gl.gnss...)
 		if (vars.enabledSignals&gpsprot.SigSetMajor)&^gpsprot.SigSetAugment == 0 {
 			return nil, nil, fmt.Errorf("at least one non-augmentation signal from a major GNSS must be enabled")
 		}
+		configChanged = true
 	} else if flags.Lookup("band").Changed {
 		return nil, nil, fmt.Errorf("%s command must specify --gnss when --band is specified", cmdName)
+	}
+	if vars.remoteSpeed != 0 || vars.pps || vars.nmea || vars.primaryGNSS != 0 {
+		configChanged = true
+	}
+	if save {
+		if !configChanged {
+			return nil, nil, fmt.Errorf("no configuration changes to save with --save; use --save-all to save current configuration")
+		}
+		if saveAll {
+			return nil, nil, fmt.Errorf("cannot use --save-all with --save")
+		}
+		vars.save = gpsprot.SaveMinimal
+	} else if saveAll {
+		vars.save = gpsprot.SaveAll
+	}
+	if factoryReset {
+		if save || saveAll || reset || configChanged {
+			return nil, nil, fmt.Errorf("cannot use --factory-reset with --save, --save-all, --reset or configuration changes")
+		}
+		vars.reset = gpsprot.ResetFactory
+	} else if reset {
+		if configChanged && !save && !saveAll {
+			return nil, nil, fmt.Errorf("--reset without saving would lose configuration changes")
+		}
+		vars.reset = gpsprot.ResetCold
 	}
 	return &vars, nil, nil
 }

@@ -278,7 +278,7 @@ func (known *CfgVals) timeModeTransaction(target *gpsprot.ConfigTarget, ver *Ver
 		ucv.AddItem(items, svMsgKey.KeyU(port), 1)
 		// This doesn't seem to work so disable for now.
 		// XXX need to try on some more receivers
-		if false && !opts.Save && tmKnown != gpsprot.TimeModeFixed {
+		if false && opts.Save == 0 && tmKnown != gpsprot.TimeModeFixed {
 			// We want to force the receiver to start a new survey.
 			// Returning true here will result in second CFG-VALSET using the settings from the Survey method,
 			// which will set the survey parameters that we actually want (using addSurveyItems)
