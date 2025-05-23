@@ -13,13 +13,13 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(ubxcfgval.GetDfltSchema()); err != nil {
 		fmt.Fprintf(os.Stderr, "ubxanno: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(schema *ubxcfgval.Schema) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 	for scanner.Scan() {
@@ -51,9 +51,9 @@ func run() error {
 		if cfgData != nil {
 			var encodedCfgData interface{}
 			if cdt == cfgDataItems {
-				encodedCfgData, err = encodeCfgDataItems(cfgData)
+				encodedCfgData, err = encodeCfgDataItems(schema, cfgData)
 			} else {
-				encodedCfgData, err = encodeCfgDataKeys(cfgData)
+				encodedCfgData, err = encodeCfgDataKeys(schema, cfgData)
 			}
 			if err == nil {
 				entry["cfgData"] = encodedCfgData
@@ -69,20 +69,20 @@ func run() error {
 	return nil
 }
 
-func encodeCfgDataItems(cfgData []byte) (interface{}, error) {
-	items, err := ubxcfgval.UnmarshalItems(cfgData)
+func encodeCfgDataItems(schema *ubxcfgval.Schema, cfgData []byte) (interface{}, error) {
+	keys, values, err := schema.UnmarshalItemsFlat(cfgData)
 	if err != nil {
 		return nil, err
+	}
+	items := make([][2]interface{}, len(keys))
+	for i := range keys {
+		items[i] = [2]interface{}{keys[i], values[i]}
 	}
 	return items, nil
 }
 
-func encodeCfgDataKeys(cfgData []byte) (interface{}, error) {
-	keys, err := ubxcfgval.UnmarshalKeys(cfgData)
-	if err != nil {
-		return nil, err
-	}
-	return keys, nil
+func encodeCfgDataKeys(schema *ubxcfgval.Schema, cfgData []byte) (interface{}, error) {
+	return schema.UnmarshalKeysFlat(cfgData)
 }
 
 type cfgDataType int
