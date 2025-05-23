@@ -804,6 +804,7 @@ var keySignalMap = map[ucv.KeyL]gpsprot.Signal{
 	ucv.KSignalBdsB2Ena:    gpsprot.SigBDSB2I,   // BeiDou B2I
 	ucv.KSignalBdsB2aEna:   gpsprot.SigBDSB2a,   // BeiDou B2a
 	ucv.KSignalQzssL1caEna: gpsprot.SigQZSSL1CA, // QZSS L1 C/A
+	ucv.KSignalQzssL1sEna:  gpsprot.SigQZSSL1S,  // QZSS L1S
 	ucv.KSignalQzssL2cEna:  gpsprot.SigQZSSL2C,  // QZSS L2C
 	ucv.KSignalQzssL5Ena:   gpsprot.SigQZSSL5,   // QZSS L5
 	ucv.KSignalNavicL5Ena:  gpsprot.SigNAVICL5,  // NavIC L5
