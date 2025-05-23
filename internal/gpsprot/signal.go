@@ -160,6 +160,15 @@ func (sig Signal) GNSS() GNSS {
 	return GNSS(sig/sigIndexCount + 1)
 }
 
+func (sig Signal) String() string {
+	if sig < 0 || int(sig) >= len(sigName) {
+		return ""
+	}
+	// Remove the " C/A" suffix
+	name, _, _ := strings.Cut(sigName[sig], " ")
+	return name
+}
+
 // Signals returns an iterator that yields each signal in the SignalSet.
 func (ss SignalSet) Signals() func(yield func(Signal) bool) {
 	return func(yield func(Signal) bool) {
@@ -218,9 +227,7 @@ func (ss SignalSet) String() string {
 				result.WriteString(",")
 			}
 			sigFirst = false
-			// Remove the " C/A" suffix
-			name, _, _ := strings.Cut(sigName[sig], " ")
-			result.WriteString(name)
+			result.WriteString(sig.String())
 		}
 		result.WriteString("]")
 	}

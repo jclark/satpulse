@@ -122,9 +122,12 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// logCh will be closed by the startScan goroutine
 	// outLogCh will be closed by the conn when Stop() is called
 	// gpsio.Scan starts a goroutine that calls conn.Stop() when the context is cancelled
-	logCh, outLogCh, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension))
+	logCh, outLogCh, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension))
 	if err != nil {
 		return err
+	}
+	if lf != nil {
+		defer lf.Close(lg)
 	}
 	if outLogCh != nil {
 		conn.SetOutPacketLogChan(outLogCh)

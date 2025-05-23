@@ -39,10 +39,10 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	}
 	if err != nil {
 		return
-	}	
+	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, conn, v.packetLogPath)
+	err = run(ctx, lg, target, conn, v.packetLogPath, v.packetLogMode, args)
 	return
 }
 
@@ -86,7 +86,7 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	return target, nil
 }
 
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn, logPath string) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn, logPath string, logMode packetLogMode, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -100,9 +100,15 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 
 	var wg sync.WaitGroup
 
-	logCh, logOutCh, err := gpsio.LogPackets(lg, &wg, logPath)
+	logCh, logOutCh, lf, err := gpsio.LogPackets(lg, &wg, logPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize packet logging: %w", err)
+	}
+	if lf != nil {
+		defer lf.Close(lg)
+		if logMode == testLogMode {
+			writeTestLogHead(lf, lg, args)
+		}
 	}
 	if logOutCh != nil {
 		if serConn, ok := conn.(*gpsio.SerialConn); ok {
@@ -136,6 +142,9 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	for range pCh {
 	}
 	wg.Wait()
+	if logMode == testLogMode && lf != nil && rslt != nil {
+		writeTestLogTail(lf, lg, rslt)
+	}
 	return err
 }
 

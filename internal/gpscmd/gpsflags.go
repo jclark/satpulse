@@ -9,6 +9,13 @@ import (
 	"github.com/spf13/pflag"
 )
 
+type packetLogMode int
+
+const (
+	packetsOnlyLogMode packetLogMode = iota
+	testLogMode
+)
+
 type flagVars struct {
 	save            gpsprot.SaveType
 	reset           gpsprot.ResetType
@@ -26,6 +33,7 @@ type flagVars struct {
 	surveyTime      uint32
 	surveyAcc       float64
 	packetLogPath   string
+	packetLogMode   packetLogMode
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
@@ -45,6 +53,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	saveAll := false
 	reset := false
 	factoryReset := false
+	testLogPath := ""
 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 
@@ -58,6 +67,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
+	flags.StringVar(&testLogPath, "test-log", "", "log test data to `path`")
+	flags.MarkHidden("test-log")
 	flags.IntVarP(&vars.localSpeed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.IntVar(&vars.remoteSpeed, "speed", 0, "set GPS receiver baud-rate in `bps`")
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
@@ -85,6 +96,13 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if (vars.socketPath == "") == (vars.serialDevice == "") {
 		return nil, usage, fmt.Errorf("%s command must specify either --socket or --serial-device", cmdName)
+	}
+	if testLogPath != "" {
+		if vars.packetLogPath != "" {
+			return nil, usage, fmt.Errorf("%s command must not specify both --packet-log and --test-log", cmdName)
+		}
+		vars.packetLogPath = testLogPath
+		vars.packetLogMode = testLogMode
 	}
 	if vars.disableTimeMode && vars.survey {
 		return nil, nil, fmt.Errorf("%s command must not specify both --disable-time-mode and --survey", cmdName)

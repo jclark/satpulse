@@ -27,27 +27,25 @@ type OutPacket struct {
 	Speed  int
 }
 
-func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (chan<- scan.Packet, chan<- OutPacket, error) {
+func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (chan<- scan.Packet, chan<- OutPacket, *logfile.LogFile, error) {
 	if logPath == "" {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
-	lf := logfile.LogFile{}
+	lf := &logfile.LogFile{}
 	err := lf.Open(logPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	inCh := make(chan scan.Packet, 1)
 	outCh := make(chan OutPacket, 1)
-
 	cmd.WaitGroupGo(wg, func() {
 		// XXX gpsreg.PacketFormats should be passed in to LogPackets
-		doLogPackets(lg, &lf, inCh, outCh, gpsreg.PacketFormats)
+		doLogPackets(lg, lf, inCh, outCh, gpsreg.PacketFormats)
 	})
-	return inCh, outCh, nil
+	return inCh, outCh, lf, nil
 }
 
 func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet, outCh <-chan OutPacket, pktFormats []gpsprot.PacketFormat) {
-	defer lf.Close(lg)
 
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
