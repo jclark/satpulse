@@ -90,6 +90,20 @@ func (t TimeMilli) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Time(t).UTC().Format(RFC3339Milli))
 }
 
+// UnmarshalJSON implements json.Unmarshaler for TimeMilli
+func (t *TimeMilli) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	parsed, err := time.Parse(RFC3339Milli, s)
+	if err != nil {
+		return err
+	}
+	*t = TimeMilli(parsed)
+	return nil
+}
+
 func logPacket(lg *slog.Logger, lf *logfile.LogFile, pkt scan.Packet) {
 	if len(pkt.Data) == 0 {
 		return
