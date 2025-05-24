@@ -47,13 +47,10 @@ func writeTestLogHead(lf *logfile.LogFile, lg *slog.Logger, args []string) {
 func writeTestLogTail(lf *logfile.LogFile, lg *slog.Logger, rslt *gpscfg.Result, err error) {
 	var props *gpsprot.ConfigProps
 	if rslt != nil {
+		writeTestLogReceiver(lf, lg, rslt.Version)
 		props = rslt.ConfigProps
 	}
 	writeTestLogConfigProps(lf, lg, props, err)
-	if rslt == nil {
-		return
-	}
-	writeTestLogReceiver(lf, lg, rslt.Version)
 }
 
 func writeTestLogReceiver(lf *logfile.LogFile, lg *slog.Logger, version *ubx.Version) {
