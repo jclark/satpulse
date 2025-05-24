@@ -40,7 +40,11 @@ func testReplayFile(t *testing.T, name string) {
 		}
 
 		t.Run(fmt.Sprintf("%s_%d", name, testNum), func(t *testing.T) {
-			runTest(t, test)
+			r, err := newReplayer(t, test)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.run()
 		})
 		testNum++
 	}
@@ -101,32 +105,6 @@ func readTest(scanner *bufio.Scanner) (*replayTest, error) {
 	return nil, errors.New("test missing config entry")
 }
 
-func runTest(t *testing.T, test *replayTest) {
-	v, _, err := parseFlags("gps", test.env.Args)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v == nil {
-		t.Fatal("parseFlags returned nil")
-	}
-
-	target, err := createConfigTarget(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create packet processors like gpscfg does
-	packetProcs := gpsreg.CreatePacketProcessors(nil)
-
-	r := &replayer{
-		t:           t,
-		test:        test,
-		target:      target,
-		packetProcs: packetProcs,
-	}
-	r.run()
-}
-
 type replayer struct {
 	gpsprot.DefaultHandler
 	t           *testing.T
@@ -136,6 +114,29 @@ type replayer struct {
 	idx         int
 	px          gpsprot.PacketExchanger
 	cfgtor      gpsprot.Configurator
+}
+
+func newReplayer(t *testing.T, test *replayTest) (*replayer, error) {
+	v, _, err := parseFlags("gps", test.env.Args)
+	if err != nil {
+		return nil, err
+	}
+
+	target, err := createConfigTarget(v)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create packet processors like gpscfg does
+	packetProcs := gpsreg.CreatePacketProcessors(nil)
+
+	r := replayer{
+		t:           t,
+		test:        test,
+		target:      target,
+		packetProcs: packetProcs,
+	}
+	return &r, nil
 }
 
 func (r *replayer) run() {
