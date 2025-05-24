@@ -28,7 +28,7 @@ type TestLogReceiverEntry struct {
 
 type TestLogConfigEntry struct {
 	Type           string      `json:"type"`
-	SignalsEnabled [][2]string `json:"signalsEnabled,omitempty"`
+	SignalsEnabled [][]string `json:"signalsEnabled,omitempty"`
 	BaudRate       *uint32     `json:"baudRate,omitempty"`
 	NMEAEnabled    *bool       `json:"nmeaEnabled,omitempty"`
 }
@@ -73,9 +73,7 @@ func writeTestLogConfigProps(lf *logfile.LogFile, lg *slog.Logger, props *gpspro
 		Type: "config",
 	}
 	if sigs, ok := props.GetSignalsEnabled(); ok {
-		for sig := range sigs.Signals() {
-			entry.SignalsEnabled = append(entry.SignalsEnabled, [2]string{sig.GNSS().String(), sig.String()})
-		}
+		entry.SignalsEnabled = sigs.GNSSStringGroups()
 	}
 	if br, ok := props.GetBaudRate(); ok {
 		entry.BaudRate = &br

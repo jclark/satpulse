@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -167,8 +168,21 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 	if p == nil {
 		return
 	}
-	if sigs, ok := p.GetSignalsEnabled(); ok {
-		fmt.Fprintf(f, "Signals enabled: %s\n", sigs.String())
+	sigs, ok := p.GetSignalsEnabled()
+	if !ok {
+		return
+	}
+	groups := sigs.GNSSStringGroups()
+	if len(groups) == 0 {
+		return
+	}
+	constellations := make([]string, len(groups))
+	for i, group := range groups {
+		constellations[i] = group[0]
+	}
+	fmt.Fprintf(f, "Constellations enabled: %s\n", strings.Join(constellations, ", "))
+	for _, group := range groups {
+		fmt.Fprintf(f, "%s signals enabled: %s\n", group[0], strings.Join(group[1:], ", "))
 	}
 }
 

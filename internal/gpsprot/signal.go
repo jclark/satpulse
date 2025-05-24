@@ -199,39 +199,31 @@ func (ss SignalSet) String() string {
 	if ss == 0 {
 		return "None"
 	}
+	groups := ss.GNSSStringGroups()
+	parts := make([]string, len(groups))
+	for i, group := range groups {
+		parts[i] = group[0] + "[" + strings.Join(group[1:], ",") + "]"
+	}
+	return strings.Join(parts, ",")
+}
 
-	// Group signals by GNSS (index 0 is unused, since GNSS values start at 1)
-	gnssSignals := make([][]Signal, GNSSLast+1)
+// GNSSStringGroups returns the signal set as [][]string where each []string starts with the GNSS name
+// followed by the signal names for that GNSS.
+func (ss SignalSet) GNSSStringGroups() [][]string {
+	gnssSignals := make([][]string, GNSSLast+1)
 	for sig := range ss.Signals() {
 		g := sig.GNSS()
-		gnssSignals[g] = append(gnssSignals[g], sig)
+		gnssSignals[g] = append(gnssSignals[g], sig.String())
 	}
-
-	// Build the output string
-	var result strings.Builder
-	first := true
+	result := [][]string{}
 	for g := GNSS(1); g <= GNSSLast; g++ {
-		signals := gnssSignals[g]
-		if len(signals) == 0 {
+		if len(gnssSignals[g]) == 0 {
 			continue
 		}
-		if !first {
-			result.WriteString(",")
-		}
-		first = false
-		result.WriteString(g.String())
-		result.WriteString("[")
-		sigFirst := true
-		for _, sig := range signals {
-			if !sigFirst {
-				result.WriteString(",")
-			}
-			sigFirst = false
-			result.WriteString(sig.String())
-		}
-		result.WriteString("]")
+		slice := append([]string{g.String()}, gnssSignals[g]...)
+		result = append(result, slice)
 	}
-	return result.String()
+	return result
 }
 
 // sigName provides human-readable names for each signal

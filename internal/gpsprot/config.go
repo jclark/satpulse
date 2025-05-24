@@ -565,7 +565,7 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	m := make(map[string]interface{})
 
 	if cp.valid&PropIDSignalsEnabled != 0 {
-		m["signalsEnabled"] = cp.signalsEnabled
+		m["signalsEnabled"] = cp.signalsEnabled.GNSSStringGroups()
 	}
 	if cp.valid&PropIDPrimaryGNSS != 0 {
 		m["primaryGNSS"] = cp.primaryGNSS
