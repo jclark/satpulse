@@ -27,10 +27,11 @@ type TestLogReceiverEntry struct {
 }
 
 type TestLogConfigEntry struct {
-	Type           string      `json:"type"`
+	Type           string     `json:"type"`
+	Error          string     `json:"error,omitempty"`
 	SignalsEnabled [][]string `json:"signalsEnabled,omitempty"`
-	BaudRate       *uint32     `json:"baudRate,omitempty"`
-	NMEAEnabled    *bool       `json:"nmeaEnabled,omitempty"`
+	BaudRate       *uint32    `json:"baudRate,omitempty"`
+	NMEAEnabled    *bool      `json:"nmeaEnabled,omitempty"`
 }
 
 func writeTestLogHead(lf *logfile.LogFile, lg *slog.Logger, args []string) {
@@ -43,8 +44,15 @@ func writeTestLogHead(lf *logfile.LogFile, lg *slog.Logger, args []string) {
 	})
 }
 
-func writeTestLogTail(lf *logfile.LogFile, lg *slog.Logger, rslt *gpscfg.Result) {
-	writeTestLogConfigProps(lf, lg, rslt.ConfigProps)
+func writeTestLogTail(lf *logfile.LogFile, lg *slog.Logger, rslt *gpscfg.Result, err error) {
+	var props *gpsprot.ConfigProps
+	if rslt != nil {
+		props = rslt.ConfigProps
+	}
+	writeTestLogConfigProps(lf, lg, props, err)
+	if rslt == nil {
+		return
+	}
 	writeTestLogReceiver(lf, lg, rslt.Version)
 }
 
@@ -65,21 +73,22 @@ func writeTestLogReceiver(lf *logfile.LogFile, lg *slog.Logger, version *ubx.Ver
 	writeTestLogEntry(lf, lg, entry)
 }
 
-func writeTestLogConfigProps(lf *logfile.LogFile, lg *slog.Logger, props *gpsprot.ConfigProps) {
-	if props == nil {
-		return
-	}
+func writeTestLogConfigProps(lf *logfile.LogFile, lg *slog.Logger, props *gpsprot.ConfigProps, err error) {
 	entry := TestLogConfigEntry{
 		Type: "config",
 	}
-	if sigs, ok := props.GetSignalsEnabled(); ok {
-		entry.SignalsEnabled = sigs.GNSSStringGroups()
-	}
-	if br, ok := props.GetBaudRate(); ok {
-		entry.BaudRate = &br
-	}
-	if nmea, ok := props.GetNMEAEnabled(); ok {
-		entry.NMEAEnabled = &nmea
+	if err != nil {
+		entry.Error = err.Error()
+	} else if props != nil {
+		if sigs, ok := props.GetSignalsEnabled(); ok {
+			entry.SignalsEnabled = sigs.GNSSStringGroups()
+		}
+		if br, ok := props.GetBaudRate(); ok {
+			entry.BaudRate = &br
+		}
+		if nmea, ok := props.GetNMEAEnabled(); ok {
+			entry.NMEAEnabled = &nmea
+		}
 	}
 	writeTestLogEntry(lf, lg, entry)
 }

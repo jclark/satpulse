@@ -143,8 +143,8 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	for range pCh {
 	}
 	wg.Wait()
-	if logMode == testLogMode && lf != nil && rslt != nil {
-		writeTestLogTail(lf, lg, rslt)
+	if logMode == testLogMode && lf != nil {
+		writeTestLogTail(lf, lg, rslt, err)
 	}
 	return err
 }
