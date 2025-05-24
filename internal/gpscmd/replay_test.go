@@ -45,16 +45,19 @@ func testReplayFile(t *testing.T, name string) {
 				t.Fatal(err)
 			}
 			r.run()
+			r.verify()
 		})
 		testNum++
 	}
 }
 
 type replayTest struct {
-	env      TestLogEnvEntry
-	packets  []gpsio.PacketLogEntry
-	receiver *TestLogReceiverEntry
-	config   TestLogConfigEntry
+	env        TestLogEnvEntry
+	inPackets  []gpsio.PacketLogEntry
+	outPackets []gpsio.PacketLogEntry
+	inBefore   []int // number of input packets before each output packet
+	receiver   *TestLogReceiverEntry
+	config     TestLogConfigEntry
 }
 
 func readTest(scanner *bufio.Scanner) (*replayTest, error) {
@@ -74,9 +77,16 @@ func readTest(scanner *bufio.Scanner) (*replayTest, error) {
 	// Read packets and other entries until config
 	for scanner.Scan() {
 		// Try packet first
+		// Note: json.Unmarshal succeeds on any valid JSON, so we need to check
+		// if it actually parsed packet fields (like T) to know it's really a packet
 		var pkt gpsio.PacketLogEntry
-		if err := json.Unmarshal(scanner.Bytes(), &pkt); err != nil {
-			test.packets = append(test.packets, pkt)
+		if err := json.Unmarshal(scanner.Bytes(), &pkt); err == nil && !time.Time(pkt.T).IsZero() {
+			if pkt.Out {
+				test.outPackets = append(test.outPackets, pkt)
+				test.inBefore = append(test.inBefore, len(test.inPackets))
+			} else {
+				test.inPackets = append(test.inPackets, pkt)
+			}
 			continue
 		}
 
@@ -111,9 +121,11 @@ type replayer struct {
 	test        *replayTest
 	target      *gpsprot.ConfigTarget
 	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
-	idx         int
+	inIdx       int
+	outIdx      int
 	px          gpsprot.PacketExchanger
 	cfgtor      gpsprot.Configurator
+	err         error
 }
 
 func newReplayer(t *testing.T, test *replayTest) (*replayer, error) {
@@ -148,19 +160,29 @@ func (r *replayer) run() {
 		}
 	}
 
+	// Feed input packets before first output packet (probe)
+	r.feedUpTo(0)
+
+	if len(r.test.outPackets) == 0 {
+		// we decided not to probe, so nothing to do
+		return
+	}
 	// Check the probe packet matches the first output packet
 	probePacket := r.px.ProbePacket()
-	if r.idx < len(r.test.packets) && r.test.packets[r.idx].Out {
-		expected := r.test.packets[r.idx]
-		if string(probePacket) != string(expected.Bin) {
-			r.t.Errorf("probe packet mismatch")
-		}
-		r.idx++
-	}
 
-	// Feed packets until probe succeeds
-	for !r.px.ProbeOK() && r.idx < len(r.test.packets) {
-		r.feedNext()
+	expected := r.test.outPackets[0]
+	if string(probePacket) != string(expected.Bin) {
+		r.t.Errorf("probe packet mismatch")
+	}
+	r.outIdx++
+
+	// Feed input packets before second output packet
+	r.feedUpTo(1)
+
+	// Should be probed now
+	if !r.px.ProbeOK() {
+		r.t.Error("probe did not succeed after feeding initial packets")
+		return
 	}
 
 	// Create configurator
@@ -180,98 +202,77 @@ func (r *replayer) run() {
 		if req == nil {
 			break
 		}
-		r.processRequest(req)
-	}
 
-	// Feed remaining packets
-	for r.idx < len(r.test.packets) {
-		r.feedNext()
-	}
-
-	r.verify()
-}
-
-func (r *replayer) processRequest(req gpsprot.ConfigRequest) {
-	// Find next output packet
-	outIdx := r.idx
-	for outIdx < len(r.test.packets) && !r.test.packets[outIdx].Out {
-		outIdx++
-	}
-
-	if outIdx >= len(r.test.packets) {
-		r.t.Fatalf("unexpected request %s, no more output packets", req.ID())
-	}
-
-	// Verify packet matches
-	expected := r.test.packets[outIdx]
-	actual := req.Packet()
-	if string(actual) != string(expected.Bin) {
-		r.t.Errorf("packet mismatch for %s", req.ID())
-	}
-
-	tSent := time.Time(expected.T)
-	done := false
-	acked := false
-
-	// Feed packets up to and including this output packet
-	for r.idx <= outIdx {
-		r.feedNext()
-	}
-
-	// Process responses
-	for r.idx < len(r.test.packets) {
-		p := r.test.packets[r.idx]
-		pTime := time.Time(p.T)
-		if pTime.Sub(tSent) > 2*time.Second {
-			break
+		// Verify output packet matches
+		if r.outIdx >= len(r.test.outPackets) {
+			r.t.Fatalf("unexpected request %s, no more output packets", req.ID())
 		}
 
-		r.feedNext()
+		expected := r.test.outPackets[r.outIdx]
+		actual := req.Packet()
+		if string(actual) != string(expected.Bin) {
+			r.t.Errorf("packet mismatch for %s", req.ID())
+		}
 
-		if req.Ackable() && !acked {
+		tSent := time.Time(expected.T)
+		r.outIdx++
+
+		// Feed all input packets before next output packet
+		r.feedUpTo(r.outIdx)
+
+		// Check for ACK if needed
+		if req.Ackable() {
 			ack := r.cfgtor.FindAck(actual, tSent)
-			if ack != nil {
-				if ack.OK {
-					req.Done()
-					done = true
-				}
-				acked = true
+			if ack == nil {
+				r.err = fmt.Errorf("no ACK found for %s", req.ID())
+				return
+			}
+			if ack.OK {
+				req.Done()
 			}
 		}
 
-		if done || (!req.AwaitingResponse(tSent) && !req.Ackable()) {
-			break
+		// Should not be awaiting response anymore
+		if req.AwaitingResponse(tSent) {
+			r.err = fmt.Errorf("still awaiting response for %s", req.ID())
+			return
 		}
+	}
+
+	if r.outIdx < len(r.test.outPackets) {
+		r.t.Fatalf("failed to generate all output packets, got %d, want %d",
+			r.outIdx, len(r.test.outPackets))
 	}
 }
 
-func (r *replayer) feedNext() {
-	if r.idx >= len(r.test.packets) {
-		return
-	}
-	p := r.test.packets[r.idx]
-	r.idx++
-
-	// Skip output packets - we only feed input packets
-	if p.Out {
-		return
+func (r *replayer) feedUpTo(outIdx int) {
+	// Determine how many input packets to feed
+	targetInIdx := len(r.test.inPackets)
+	if outIdx < len(r.test.inBefore) {
+		targetInIdx = r.test.inBefore[outIdx]
 	}
 
-	// Skip packets without a tag (invalid packets)
-	if p.Tag == "" {
-		return
-	}
+	// Feed input packets
+	for r.inIdx < targetInIdx {
+		p := r.test.inPackets[r.inIdx]
+		r.inIdx++
 
-	// Get the packet processor for this packet's tag
-	pp, ok := r.packetProcs[p.Tag]
-	if !ok {
-		r.t.Errorf("no processor for tag %s", p.Tag)
-		return
-	}
+		// Skip packets without a tag (invalid packets)
+		if p.Tag == "" {
+			continue
+		}
 
-	_, err := pp.ProcessPacket(string(p.Bin), time.Time(p.T))
-	if err != nil {
-		r.t.Errorf("error processing packet: %v", err)
+		// Get the packet processor for this packet's tag
+		pp, ok := r.packetProcs[p.Tag]
+		if !ok {
+			r.t.Errorf("no processor for tag %s", p.Tag)
+			continue
+		}
+
+		_, err := pp.ProcessPacket(string(p.Bin), time.Time(p.T))
+		if err != nil {
+			r.t.Errorf("error processing packet: %v", err)
+		}
 	}
 }
 
@@ -280,8 +281,14 @@ func (r *replayer) verify() {
 	cfg := &r.test.config
 
 	if cfg.Error != "" {
-		r.t.Logf("expected error %q not yet implemented", cfg.Error)
-		return
+		if r.err != nil {
+			r.t.Logf("error while logging %q; error while testing %q", cfg.Error, r.err.Error())
+			return
+		}
+		r.t.Fatalf("error while logging %q; but no error while testing", cfg.Error)
+	}
+	if r.err != nil {
+		r.t.Fatalf("no error while logging; but error while testing %q", r.err.Error())
 	}
 
 	// Verify signals
