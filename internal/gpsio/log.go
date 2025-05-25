@@ -66,7 +66,7 @@ func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, ch <-chan PacketLogEntry
 }
 
 type PacketLogEntry struct {
-	T     TimeMilli   `json:"t"`
+	T     TimeMicro   `json:"t"`
 	Tag   gpsprot.Tag `json:"tag,omitempty"`
 	Msg   string      `json:"msg,omitempty"`
 	Bin   HexString   `json:"bin,omitempty"`
@@ -75,27 +75,34 @@ type PacketLogEntry struct {
 	Out   bool        `json:"out"` // use omitzero here when we upgrade to go 1.24
 }
 
-// TimeMilli is a time.Time that marshals to JSON with 3 fractional digits
-type TimeMilli time.Time
+func (ple *PacketLogEntry) Data() string {
+	if len(ple.Bin) != 0 {
+		return string(ple.Bin)
+	}
+	return ple.Ascii
+}
 
-const RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
+// TimeMicro is a time.Time that marshals to JSON with 6 fractional digits
+type TimeMicro time.Time
 
-// MarshalJSON implements json.Marshaler for TimeMillis`
-func (t TimeMilli) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Time(t).UTC().Format(RFC3339Milli))
+const RFC3339Micro = "2006-01-02T15:04:05.999999Z07:00"
+
+// MarshalJSON implements json.Marshaler for TimeMicro
+func (t TimeMicro) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Time(t).UTC().Format(RFC3339Micro))
 }
 
 // UnmarshalJSON implements json.Unmarshaler for TimeMilli
-func (t *TimeMilli) UnmarshalJSON(data []byte) error {
+func (t *TimeMicro) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err
 	}
-	parsed, err := time.Parse(RFC3339Milli, s)
+	parsed, err := time.Parse(RFC3339Micro, s)
 	if err != nil {
 		return err
 	}
-	*t = TimeMilli(parsed)
+	*t = TimeMicro(parsed)
 	return nil
 }
 
@@ -127,7 +134,7 @@ func (pl *PacketLog) LogInput(pkt scan.Packet) {
 		msgID = pkt.Format.MsgID(bytes)
 	}
 	entry := PacketLogEntry{
-		T:   TimeMilli(pkt.TRead.UTC()),
+		T:   TimeMicro(pkt.TRead.UTC()),
 		Tag: pkt.Tag(),
 		Msg: msgID,
 	}
@@ -153,7 +160,7 @@ func (pl *PacketLog) LogOutput(tWrite time.Time, bytes []byte, speed int) {
 		return
 	}
 	entry := PacketLogEntry{
-		T:   TimeMilli(tWrite.UTC()),
+		T:   TimeMicro(tWrite.UTC()),
 		Out: true,
 	}
 	if speed != 0 {
