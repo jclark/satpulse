@@ -36,12 +36,12 @@ var _ scan.TemporaryError = TermError{}
 
 const scanBufSize = 16
 
-func Scan(ctx context.Context, lg *slog.Logger, conn Conn, ch chan<- scan.Packet, logCh chan<- scan.Packet) {
+func Scan(ctx context.Context, lg *slog.Logger, conn Conn, ch chan<- scan.Packet, pLog *PacketLog) {
 	lg.Debug("the scan worker goroutine has started")
 	defer func() {
 		close(ch)
-		if logCh != nil {
-			close(logCh)
+		if pLog != nil {
+			pLog.SemiClose()
 		}
 		lg.Debug("the scan worker goroutine is about to exit")
 	}()
@@ -53,8 +53,8 @@ func Scan(ctx context.Context, lg *slog.Logger, conn Conn, ch chan<- scan.Packet
 	for {
 		pkt, err := scanner.Scan()
 		ch <- pkt
-		if logCh != nil {
-			logCh <- pkt
+		if pLog != nil {
+			pLog.LogInput(pkt)
 		}
 		if err != nil {
 			if err != io.EOF {

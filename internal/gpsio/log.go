@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jclark/satpulse/internal/cmd"
@@ -27,43 +28,37 @@ type OutPacket struct {
 	Speed  int
 }
 
-func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (chan<- scan.Packet, chan<- OutPacket, *logfile.LogFile, error) {
+func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (*PacketLog, *logfile.LogFile, error) {
 	if logPath == "" {
-		return nil, nil, nil, nil
+		return nil, nil, nil
 	}
 	lf := &logfile.LogFile{}
 	err := lf.Open(logPath)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	inCh := make(chan scan.Packet, 1)
-	outCh := make(chan OutPacket, 1)
+	ch := make(chan PacketLogEntry, 2) // 2 because LogInput and LogOutput can be called from separate goroutines
+	pktLogger := &PacketLog{
+		ch:         ch,
+		pktFormats: gpsreg.PacketFormats,
+	}
 	cmd.WaitGroupGo(wg, func() {
-		// XXX gpsreg.PacketFormats should be passed in to LogPackets
-		doLogPackets(lg, lf, inCh, outCh, gpsreg.PacketFormats)
+		doLogPackets(lg, lf, ch)
 	})
-	return inCh, outCh, lf, nil
+	return pktLogger, lf, nil
 }
 
-func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet, outCh <-chan OutPacket, pktFormats []gpsprot.PacketFormat) {
-
+func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, ch <-chan PacketLogEntry) {
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, unix.SIGHUP)
-	for inCh != nil || outCh != nil {
+	for {
 		select {
-		case pkt, ok := <-inCh:
+		case entry, ok := <-ch:
 			if !ok {
-				inCh = nil
-				continue
+				return
 			}
-			logPacket(lg, lf, pkt)
-		case pkt, ok := <-outCh:
-			if !ok {
-				outCh = nil
-				continue
-			}
-			logOutPacket(lg, lf, pkt, pktFormats)
+			logEntry(lg, lf, &entry)
 		case <-sig:
 			lf.Reopen(lg)
 		}
@@ -104,7 +99,25 @@ func (t *TimeMilli) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func logPacket(lg *slog.Logger, lf *logfile.LogFile, pkt scan.Packet) {
+// PacketLog provides methods for logging GPS packets.
+// It is safe for concurrent use by multiple goroutines.
+type PacketLog struct {
+	ch         chan<- PacketLogEntry
+	pktFormats []gpsprot.PacketFormat
+	closeCount atomic.Int32
+}
+
+// SemiClose must be called twice, once when LogInput will no longer be called,
+// and once when LogOutput will no longer be called.
+// The underlying channel is closed when SemiClose has been called twice.
+func (pl *PacketLog) SemiClose() {
+	if pl.closeCount.Add(1) == 2 {
+		close(pl.ch)
+	}
+}
+
+// LogInput logs an incoming packet from the GPS.
+func (pl *PacketLog) LogInput(pkt scan.Packet) {
 	if len(pkt.Data) == 0 {
 		return
 	}
@@ -113,42 +126,42 @@ func logPacket(lg *slog.Logger, lf *logfile.LogFile, pkt scan.Packet) {
 	if pkt.Format != nil {
 		msgID = pkt.Format.MsgID(bytes)
 	}
-	entry := &PacketLogEntry{
+	entry := PacketLogEntry{
 		T:   TimeMilli(pkt.TRead.UTC()),
 		Tag: pkt.Tag(),
 		Msg: msgID,
 	}
-	if useBinary(pkt) {
+	if useBinary(pkt.Format, bytes) {
 		entry.Bin = HexString(bytes)
 	} else {
 		entry.Ascii = pkt.Data
 	}
-	logEntry(lg, lf, entry)
+	pl.ch <- entry
 }
 
-func useBinary(pkt scan.Packet) bool {
-	if pkt.Format == nil {
-		return containsBinary(pkt.Data)
+func useBinary(fmt gpsprot.PacketFormat, bytes []byte) bool {
+	if fmt == nil {
+		return containsBinary(bytes)
 	}
-	sync1 := pkt.Data[0]
+	sync1 := bytes[0]
 	return sync1 < 0x20 || sync1 >= 0x7F
 }
 
-func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket, pktFormats []gpsprot.PacketFormat) {
-	if len(pkt.Data) == 0 && pkt.Speed == 0 {
+// LogOutput logs an outgoing packet to the GPS.
+func (pl *PacketLog) LogOutput(tWrite time.Time, bytes []byte, speed int) {
+	if len(bytes) == 0 && speed == 0 {
 		return
 	}
-	entry := &PacketLogEntry{
-		T:   TimeMilli(pkt.TWrite.UTC()),
+	entry := PacketLogEntry{
+		T:   TimeMilli(tWrite.UTC()),
 		Out: true,
 	}
-	if pkt.Speed != 0 {
-		entry.Speed = &pkt.Speed
+	if speed != 0 {
+		entry.Speed = &speed
 	}
-	if containsBinary(pkt.Data) {
-		bytes := []byte(pkt.Data)
+	if containsBinary(bytes) {
 		entry.Bin = HexString(bytes)
-		for _, pf := range pktFormats {
+		for _, pf := range pl.pktFormats {
 			if gpsprot.IsValidPacket(pf, bytes) {
 				entry.Tag = pf.Tag()
 				entry.Msg = pf.MsgID(bytes)
@@ -156,15 +169,14 @@ func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket, pktFormat
 			}
 		}
 	} else {
-		entry.Ascii = pkt.Data
+		entry.Ascii = string(bytes)
 	}
-	logEntry(lg, lf, entry)
+	pl.ch <- entry
 }
 
-func containsBinary(data string) bool {
-	// range over bytes not runes
-	for i := 0; i < len(data); i++ {
-		if b := data[i]; (b < 0x20 && b != '\r' && b != '\n') || b >= 0x7F {
+func containsBinary(data []byte) bool {
+	for _, b := range data {
+		if (b < 0x20 && b != '\r' && b != '\n') || b >= 0x7F {
 			return true
 		}
 	}

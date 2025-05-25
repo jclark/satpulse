@@ -26,7 +26,7 @@ type SerialConn struct {
 	stopped   bool // protected by mu
 	readLock  chan struct{}
 	writeLock chan struct{}
-	outLogCh  chan<- OutPacket
+	pktLog    *PacketLog
 }
 
 var _ Conn = (*SerialConn)(nil)
@@ -144,33 +144,29 @@ func (c *SerialConn) Stop() {
 	defer c.mu.Unlock()
 	c.mu.Lock()
 	c.stopped = true
-	if c.outLogCh != nil {
+	if c.pktLog != nil {
 		// We need close promptly so that the logging goroutine can exit.
-		close(c.outLogCh)
-		c.outLogCh = nil
+		c.pktLog.SemiClose()
+		c.pktLog = nil
 	}
 }
 
-// SetOutPacketLogChan sets the channel to which outgoing packets are logged.
-func (c *SerialConn) SetOutPacketLogChan(ch chan<- OutPacket) {
+// SetPacketLog sets the packet logger for outgoing packets.
+func (c *SerialConn) SetPacketLog(pl *PacketLog) {
 	defer c.mu.Unlock()
 	c.mu.Lock()
-	c.outLogCh = ch
+	c.pktLog = pl
 }
 
 func (c *SerialConn) logWrite(p []byte, speed int) {
 	// Stop can be called asynchronously.
-	// We need to ensure we don't send to outLogCh after it is closed.
+	// We need to ensure we don't use pktLog after it is closed.
 	defer c.mu.Unlock()
 	c.mu.Lock()
-	if c.outLogCh == nil {
+	if c.pktLog == nil {
 		return
 	}
-	c.outLogCh <- OutPacket{
-		TWrite: time.Now(),
-		Data:   string(p),
-		Speed:  speed,
-	}
+	c.pktLog.LogOutput(time.Now(), p, speed)
 }
 
 func (c *SerialConn) Close() error {

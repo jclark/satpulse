@@ -106,7 +106,6 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 
-	var outLogCh chan<- gpsio.OutPacket
 	defer func() {
 		serialDev := cfg.Serial.Device
 		lg.Debug("closing the serial port", "path", serialDev)
@@ -119,20 +118,19 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}()
 
 	var wg sync.WaitGroup
-	// logCh will be closed by the startScan goroutine
-	// outLogCh will be closed by the conn when Stop() is called
+	// pLog must be closed by both the startScan goroutine and the conn
 	// gpsio.Scan starts a goroutine that calls conn.Stop() when the context is cancelled
-	logCh, outLogCh, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension))
+	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension))
 	if err != nil {
 		return err
 	}
 	if lf != nil {
 		defer lf.Close(lg)
 	}
-	if outLogCh != nil {
-		conn.SetOutPacketLogChan(outLogCh)
+	if pLog != nil {
+		conn.SetPacketLog(pLog)
 	}
-	pCh := startScan(ctx, lg, &wg, conn, logCh)
+	pCh := startScan(ctx, lg, &wg, conn, pLog)
 
 	pb := startBcast(ctx, lg, &wg, pCh)
 
@@ -305,9 +303,9 @@ func newInitData(r *gpscfg.Result) *InitData {
 	return &InitData{Version: r.Version}
 }
 
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, logCh chan<- scan.Packet) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg, logCh) })
+	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg, pLog) })
 	return msg
 }
 
