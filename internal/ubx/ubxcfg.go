@@ -130,6 +130,10 @@ func (c *Configurator) FindAck(packet []byte, tSent time.Time) *gpsprot.Ack {
 	return &a.Ack
 }
 
+func (c *Configurator) Abort() {
+	c.stepIndex = -1
+}
+
 func (c *Configurator) recover() (gpsprot.ConfigRequest, error) {
 	// only need to do recovery for legacy configuration
 	if &c.steps[0] != &legacyConfigSteps[0] {
@@ -183,13 +187,13 @@ func (c *Configurator) saveMinimal() (gpsprot.ConfigRequest, error) {
 	}
 	if c.target.UsesAny(gpsprot.PropIDSignalsEnabled, gpsprot.PropIDPrimaryGNSS) {
 		saveMask |= bin.CfgCfgRXMConf
-	} else if _, ok := c.target.Props.GetTimePulse(); ok {  // XXX fix this when we combine time pulse properties into one
+	} else if _, ok := c.target.Props.GetTimePulse(); ok { // XXX fix this when we combine time pulse properties into one
 		saveMask |= bin.CfgCfgRXMConf
 	}
 	// XXX handle time mode when we fix that up in satpulsetool
 	if saveMask == 0 {
 		return nil, nil
-	}	
+	}
 	return msgRequest{c.newCfgCfgRequest(0, saveMask)}, nil
 }
 

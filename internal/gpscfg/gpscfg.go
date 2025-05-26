@@ -41,7 +41,7 @@ type badCount struct {
 
 var _ gpsprot.NativeMsgHandler = &msgHandler{}
 
-var ErrNoResponse = errors.New("no response to configuration poll message; not configuring GPS")
+var ErrNoProbeResponse = errors.New("no response to configuration probe message; not configuring GPS")
 
 func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
@@ -81,21 +81,18 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	if badNew.corruptMsgs > 0 {
 		return nil, errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
 	}
-	var cm *gpsprot.ConfigProps
-	if probeOK {
-		cm, err = mh.configure(ctx, mh.packetExch, target, port)
-		if err != nil {
-			// XXX try to recover from this
-			// provided we have some messages working, we should be OK
-			return nil, err
-		}
-	} else {
+	if !probeOK {
 		// XXX if msgCount for UBX > 0, but probe failed, then probably we cannot send to the GPS
 		return &Result{
 			ConfigProps: new(gpsprot.ConfigProps),
-		}, ErrNoResponse
+		}, ErrNoProbeResponse
 	}
-	return mh.finish(cm), nil
+	cm, err := mh.configure(ctx, mh.packetExch, target, port)
+	if err != nil && !isKnownError(err) {
+		return nil, err
+	}
+	// If we got a known error, then still return the configuration properties.
+	return mh.finish(cm), err
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, packetCh <-chan scan.Packet) {
@@ -232,10 +229,14 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchange
 	if err != nil {
 		return nil, err
 	}
+	var knownErr error // error that we know how to handle
 	for {
 		req, err := cfgtor.NextRequest()
 		if err != nil {
-			mh.lg.Warn("GPS configuration failed", "err", err)
+			if knownErr == nil {
+				mh.lg.Warn("GPS configuration failed", "err", err)
+				knownErr = err
+			}
 			continue
 		}
 		if req == nil {
@@ -243,10 +244,22 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchange
 		}
 		err = mh.doRequest(ctx, cfgtor, req, port)
 		if err != nil {
-			return nil, err
+			if !isKnownError(err) {
+				return nil, err
+			}
+			if knownErr == nil {
+				// the configurator doesn't need to be told about NACK; it gives up itself
+				if !errors.Is(err, errNack) {
+					mh.lg.Warn("GPS configuration failed", "msgID", req.ID(), "err", err)
+					cfgtor.Abort()
+				}
+				knownErr = err
+			}
+			// keep going to allow the configurator to generate recovery requests
+			continue
 		}
 	}
-	return cfgtor.ConfigProps(), nil
+	return cfgtor.ConfigProps(), knownErr
 }
 
 const maxTries = 3
@@ -286,6 +299,11 @@ const minWaitAfterSend = 10 * time.Millisecond
 
 var errNoResponse = errors.New("no response to configuration poll message")
 var errNoAck = errors.New("no ack to configuration message")
+var errNack = errors.New("configuration message rejected by GPS")
+
+func isKnownError(err error) bool {
+	return errors.Is(err, errNoResponse) || errors.Is(err, errNoAck) || errors.Is(err, errNack)
+}
 
 func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configurator, req gpsprot.ConfigRequest, port gpsio.OutPort, pkt []byte, tSend time.Time) error {
 	w := max(port.TransmitTime(len(pkt)), minWaitAfterSend)
@@ -312,7 +330,7 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 				if ack != nil {
 					if !ack.OK {
 						mh.lg.Warn("GPS configuration failed: message rejected", "msgID", reqID)
-						return nil
+						return fmt.Errorf("%w: %s", errNack, reqID)
 					}
 					req.Done()
 					mh.lg.Debug("configuration message accepted", "msgID", reqID, "delay", ack.TRead.Sub(tSend).String())
@@ -330,10 +348,10 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 		}
 	}
 	if awaitingAck {
-		return fmt.Errorf("%w %s", errNoAck, reqID)
+		return fmt.Errorf("%w: %s", errNoAck, reqID)
 	}
 	if awaitingResp {
-		return fmt.Errorf("%w %s", errNoResponse, reqID)
+		return fmt.Errorf("%w: %s", errNoResponse, reqID)
 	}
 	return nil
 }

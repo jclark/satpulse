@@ -44,14 +44,30 @@ type Ack struct {
 // It will receive packets to interpret via calls to ProcessPacket on the Protocol that created it.
 // If the Ackable method of a ConfigRequest returns true, then FindAck should be used
 // to find whether the acknowledgement has been received.
+// When configuration errors occur, NextRequest may return an error but the caller should
+// continue calling NextRequest to allow recovery operations; ConfigProps should be called
+// even after errors to see what configuration was achieved.
 type Configurator interface {
 	// ConfigProps returns the current configuration of the GPS receiver.
 	// It should be called after NextRequest returns nil.
 	ConfigProps() *ConfigProps
 	// NextRequest returns the next request that should be sent to the GPS receiver.
 	// If there are no more requests, it returns nil, nil.
+	// If the error is non-nil, then ConfigRequest will be nil;
+	// this indicates an error generating the request; the caller should report
+	// the error, but continue calling NextRequest to allow recovery operations.
 	NextRequest() (ConfigRequest, error)
+	// FindAck will search for acknowledgement response for the request.
+	// It must be called after the request has been sent.
+	// Finding a negative acknowledgement (ie. Ack.OK is false) usually causes the
+	// Configurator to initiate recovery (which may involve sending more requests).
+	// It is the caller's responsibility to report the negative acknowledgement.
 	FindAck(packet []byte, tSent time.Time) *Ack
+	// Abort informs the Configurator that configuration should be aborted.
+	// This typically triggers recovery operations on the next NextRequest call.
+	// This should be called if a request does not get a response or an ACK within a reasonable time.
+	// It doesn't need to be called if it got a NACK.
+	Abort()
 }
 
 // ConfigRequest represents a request to be sent to the GPS receiver to configure it.

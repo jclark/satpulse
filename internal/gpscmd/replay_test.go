@@ -19,6 +19,10 @@ func TestReplayZ9PNoop(t *testing.T) {
 	testReplayFile(t, "z9p-noop")
 }
 
+func TestReplayZ9PSignal(t *testing.T) {
+	testReplayFile(t, "z9p-signal")
+}
+
 func testReplayFile(t *testing.T, name string) {
 	path := filepath.Join("testdata", name+".jsonl")
 	f, err := os.Open(path)
@@ -125,7 +129,7 @@ type replayer struct {
 	outIdx      int
 	px          gpsprot.PacketExchanger
 	cfgtor      gpsprot.Configurator
-	err         error
+	configErr   error // first configuration error encountered
 }
 
 func newReplayer(t *testing.T, test *replayTest) (*replayer, error) {
@@ -171,7 +175,7 @@ func (r *replayer) run() {
 	probePacket := r.px.ProbePacket()
 
 	expected := r.test.outPackets[0]
-	if string(probePacket) != string(expected.Bin) {
+	if string(probePacket) != expected.Data() {
 		r.t.Errorf("probe packet mismatch")
 	}
 	r.outIdx++
@@ -197,6 +201,9 @@ func (r *replayer) run() {
 		req, err := r.cfgtor.NextRequest()
 		if err != nil {
 			r.t.Logf("NextRequest error: %v", err)
+			if r.configErr == nil {
+				r.configErr = err
+			}
 			continue
 		}
 		if req == nil {
@@ -210,39 +217,67 @@ func (r *replayer) run() {
 
 		expected := r.test.outPackets[r.outIdx]
 		actual := req.Packet()
-		if string(actual) != string(expected.Bin) {
+		if string(actual) != expected.Data() {
 			r.t.Errorf("packet mismatch for %s", req.ID())
 		}
-
-		tSent := time.Time(expected.T)
 		r.outIdx++
+		r.waitAfterSend(req, time.Time(expected.T), actual)
 
-		// Feed all input packets before next output packet
-		r.feedUpTo(r.outIdx)
-
-		// Check for ACK if needed
-		if req.Ackable() {
-			ack := r.cfgtor.FindAck(actual, tSent)
-			if ack == nil {
-				r.err = fmt.Errorf("no ACK found for %s", req.ID())
-				return
-			}
-			if ack.OK {
-				req.Done()
-			}
-		}
-
-		// Should not be awaiting response anymore
-		if req.AwaitingResponse(tSent) {
-			r.err = fmt.Errorf("still awaiting response for %s", req.ID())
-			return
-		}
 	}
 
 	if r.outIdx < len(r.test.outPackets) {
 		r.t.Fatalf("failed to generate all output packets, got %d, want %d",
 			r.outIdx, len(r.test.outPackets))
 	}
+}
+
+const maxTries = 3
+
+func (r *replayer) waitAfterSend(req gpsprot.ConfigRequest, tSent time.Time, actual []byte) {
+	var err error
+	awaitingAck := req.Ackable()
+	awaitingResp := true 
+	for range maxTries {
+		// Feed all input packets before next output packet
+		r.feedUpTo(r.outIdx)
+
+		if awaitingAck {
+			ack := r.cfgtor.FindAck(actual, tSent)
+			if ack != nil {
+				if !ack.OK {
+					if r.configErr == nil {
+						r.configErr = fmt.Errorf("NACK received for %s", req.ID())
+					}
+					return
+				}
+				req.Done()
+				awaitingAck = false
+			}
+		}
+		if awaitingResp {
+			awaitingResp = req.AwaitingResponse(tSent)
+		}
+		if !awaitingAck && !awaitingResp {
+			return
+		}
+		if awaitingAck {
+			err = fmt.Errorf("no ACK received for %s", req.ID())
+		} else  {
+			err = fmt.Errorf("no response received for %s", req.ID())
+		}
+		if r.outIdx < len(r.test.outPackets) && r.test.outPackets[r.outIdx].Data() == r.test.outPackets[r.outIdx-1].Data() {
+			// we didn't get an ACK or response, and the next recorded output packet was the same as the last one;
+			// this means (almost certainly) that originally there was a retry, so we can just skip over this and keep trying
+			r.outIdx++
+			continue
+		}
+		// do not retry
+		break
+	}
+	if r.configErr == nil {
+		r.configErr = err
+	}
+	r.cfgtor.Abort()
 }
 
 func (r *replayer) feedUpTo(outIdx int) {
@@ -269,7 +304,7 @@ func (r *replayer) feedUpTo(outIdx int) {
 			continue
 		}
 
-		_, err := pp.ProcessPacket(string(p.Bin), time.Time(p.T))
+		_, err := pp.ProcessPacket(p.Data(), time.Time(p.T))
 		if err != nil {
 			r.t.Errorf("error processing packet: %v", err)
 		}
@@ -281,14 +316,14 @@ func (r *replayer) verify() {
 	cfg := &r.test.config
 
 	if cfg.Error != "" {
-		if r.err != nil {
-			r.t.Logf("error while logging %q; error while testing %q", cfg.Error, r.err.Error())
+		if r.configErr != nil {
+			r.t.Logf("error while logging %q; error while testing %q", cfg.Error, r.configErr.Error())
 			return
 		}
 		r.t.Fatalf("error while logging %q; but no error while testing", cfg.Error)
 	}
-	if r.err != nil {
-		r.t.Fatalf("no error while logging; but error while testing %q", r.err.Error())
+	if r.configErr != nil {
+		r.t.Fatalf("no error while logging; but error while testing %q", r.configErr.Error())
 	}
 
 	// Verify signals
