@@ -65,6 +65,7 @@ var legacyConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).setNav5,
 	(*Configurator).setSatellitesMsg,
 	(*Configurator).saveMinimal,
+	(*Configurator).reloadCfg,
 	(*Configurator).setCfg,
 	(*Configurator).reset,
 }
@@ -78,6 +79,7 @@ var newConfigSteps = []func(*Configurator) (gpsprot.ConfigRequest, error){
 	(*Configurator).valSet,
 	(*Configurator).valSurvey,
 	(*Configurator).valBaudRate,
+	(*Configurator).reloadCfg,
 	(*Configurator).setCfg,
 	(*Configurator).reset,
 }
@@ -194,7 +196,7 @@ func (c *Configurator) saveMinimal() (gpsprot.ConfigRequest, error) {
 	if saveMask == 0 {
 		return nil, nil
 	}
-	return msgRequest{c.newCfgCfgRequest(0, saveMask)}, nil
+	return msgRequest{c.newCfgCfgRequest(0, saveMask, 0, bin.CfgCfgDevFlash | bin.CfgCfgDevBBR)}, nil
 }
 
 func (c *Configurator) setCfg() (gpsprot.ConfigRequest, error) {
@@ -209,22 +211,29 @@ func (c *Configurator) setCfg() (gpsprot.ConfigRequest, error) {
 	if clearMask == 0 && saveMask == 0 {
 		return nil, nil
 	}
-	return msgRequest{c.newCfgCfgRequest(clearMask, saveMask)}, nil
+	return msgRequest{c.newCfgCfgRequest(clearMask, saveMask, 0, bin.CfgCfgDevFlash | bin.CfgCfgDevBBR)}, nil
 }
 
-func (*Configurator) newCfgCfgRequest(clearMask, saveMask bin.CfgCfgSectionMask) *bin.CfgCfg {
+func (c *Configurator) reloadCfg() (gpsprot.ConfigRequest, error) {
+	if c.target.Opts.Reset != gpsprot.ResetReload {
+		return nil, nil
+	}
+	return msgRequest{c.newCfgCfgRequest(0, 0, bin.CfgCfgSectionMaskAll, 0)}, nil
+}
+
+func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask bin.CfgCfgSectionMask, deviceMask bin.CfgCfgDeviceMask) *bin.CfgCfg {
 	return &bin.CfgCfg{
 		CfgCfgFixed: bin.CfgCfgFixed{
 			ClearMask: clearMask,
 			SaveMask:  saveMask,
-			LoadMask:  0,
+			LoadMask:  loadMask,
 		},
-		DeviceMask: []bin.CfgCfgDeviceMask{bin.CfgCfgDevFlash | bin.CfgCfgDevBBR},
+		DeviceMask: []bin.CfgCfgDeviceMask{deviceMask},
 	}
 }
 
 func (c *Configurator) reset() (gpsprot.ConfigRequest, error) {
-	if c.target.Opts.Reset == 0 {
+	if c.target.Opts.Reset <= gpsprot.ResetReload {
 		return nil, nil
 	}
 	return msgRequest{&bin.CfgRst{

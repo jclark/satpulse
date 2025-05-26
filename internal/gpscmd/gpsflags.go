@@ -38,7 +38,7 @@ type flagVars struct {
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
        	    [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea]
-            [--save] [--save-all] [--reset]	[--factory-reset]
+            [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]`
 
 const defaultSurveyTime = 2000
@@ -53,6 +53,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	saveAll := false
 	reset := false
 	factoryReset := false
+	reload := false
 	testLogPath := ""
 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
@@ -61,6 +62,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&save, "save", false, "save configuration changes to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&saveAll, "save-all", false, "save the current configuration to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&reset, "reset", false, "reset the GPS receiver and perform a cold start")
+	flags.BoolVar(&reload, "reload", false, "reload the GPS receiver configuration from non-volatile memory")
 	flags.BoolVar(&factoryReset, "factory-reset", false, "reset the GPS receiver to factory defaults")
 	flags.BoolVar(&vars.nmea, "nmea", false, "enable NMEA output from the GPS receiver")
 	flags.BoolVar(&vars.forceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
@@ -141,15 +143,22 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		vars.save = gpsprot.SaveAll
 	}
 	if factoryReset {
-		if save || saveAll || reset || configChanged {
-			return nil, nil, fmt.Errorf("cannot use --factory-reset with --save, --save-all, --reset or configuration changes")
+		if save || saveAll || reset || reload || configChanged {
+			return nil, nil, fmt.Errorf("cannot use --factory-reset with --save, --save-all, --reset, --reload or configuration changes")
 		}
 		vars.reset = gpsprot.ResetFactory
-	} else if reset {
+	} else if reset || reload {
 		if configChanged && !save && !saveAll {
-			return nil, nil, fmt.Errorf("--reset without saving would lose configuration changes")
+			return nil, nil, fmt.Errorf("--reset or --reload without saving would lose configuration changes")
 		}
-		vars.reset = gpsprot.ResetCold
+		if reset && reload {
+			return nil, nil, fmt.Errorf("cannot use both --reset and --reload")
+		}
+		if reload {
+			vars.reset = gpsprot.ResetReload
+		} else {
+			vars.reset = gpsprot.ResetCold
+		}
 	}
 	return &vars, nil, nil
 }

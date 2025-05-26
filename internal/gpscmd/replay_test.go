@@ -23,6 +23,10 @@ func TestReplayF9PSignal(t *testing.T) {
 	testReplayFile(t, "f9p-signal")
 }
 
+func TestReplayF9PReload(t *testing.T) {
+	testReplayFile(t, "f9p-reload")
+}
+
 func testReplayFile(t *testing.T, name string) {
 	path := filepath.Join("testdata", name+".jsonl")
 	f, err := os.Open(path)

@@ -42,8 +42,11 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **--save-all**  
 : Save the current running configuration of the GPS receiver to its non-volatile memory.
 
+**--reload**
+: Reloads the configuration of the GPS receiver from its non-volatile memory. Any configuration settings that have not been saved will be lost.
+
 **--reset**  
-: Perform a reset that discards configuration that has not been saved to non-volatile memory of the GPS receiver, and discards information about the last known position, current time, and satellite orbital data (both ephemeris and almanac).
+: Perform a reset that reloads the configuration of the GPS receiver from its non-volatile memory (as with the **-reload** option), and discards information about the last known position, current time, and satellite orbital data (both ephemeris and almanac).
 
 **--factory-reset**
 : Restore the non-volatile memory of the GPS receiver to its default settings, and the perform a reset as with the **--reset** option.
