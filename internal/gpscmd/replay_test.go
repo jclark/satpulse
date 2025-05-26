@@ -15,12 +15,12 @@ import (
 	"github.com/jclark/satpulse/internal/gpsreg"
 )
 
-func TestReplayZ9PNoop(t *testing.T) {
-	testReplayFile(t, "z9p-noop")
+func TestReplayF9PNoop(t *testing.T) {
+	testReplayFile(t, "f9p-noop")
 }
 
-func TestReplayZ9PSignal(t *testing.T) {
-	testReplayFile(t, "z9p-signal")
+func TestReplayF9PSignal(t *testing.T) {
+	testReplayFile(t, "f9p-signal")
 }
 
 func testReplayFile(t *testing.T, name string) {
@@ -236,7 +236,7 @@ const maxTries = 3
 func (r *replayer) waitAfterSend(req gpsprot.ConfigRequest, tSent time.Time, actual []byte) {
 	var err error
 	awaitingAck := req.Ackable()
-	awaitingResp := true 
+	awaitingResp := true
 	for range maxTries {
 		// Feed all input packets before next output packet
 		r.feedUpTo(r.outIdx)
@@ -262,7 +262,7 @@ func (r *replayer) waitAfterSend(req gpsprot.ConfigRequest, tSent time.Time, act
 		}
 		if awaitingAck {
 			err = fmt.Errorf("no ACK received for %s", req.ID())
-		} else  {
+		} else {
 			err = fmt.Errorf("no response received for %s", req.ID())
 		}
 		if r.outIdx < len(r.test.outPackets) && r.test.outPackets[r.outIdx].Data() == r.test.outPackets[r.outIdx-1].Data() {
