@@ -21,6 +21,7 @@ type flagVars struct {
 	reset           gpsprot.ResetType
 	pps             bool
 	nmea            bool
+	binary          bool
 	forceProbe      bool
 	localSpeed      int
 	remoteSpeed     int
@@ -37,7 +38,7 @@ type flagVars struct {
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
-       	    [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea]
+       	    [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea] [--binary]
             [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]`
 
@@ -65,6 +66,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&reload, "reload", false, "reload the GPS receiver configuration from non-volatile memory")
 	flags.BoolVar(&factoryReset, "factory-reset", false, "reset the GPS receiver to factory defaults")
 	flags.BoolVar(&vars.nmea, "nmea", false, "enable NMEA output from the GPS receiver")
+	flags.BoolVar(&vars.binary, "binary", false, "enable binary output from the GPS receiver")
 	flags.BoolVar(&vars.forceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
@@ -128,15 +130,18 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	} else if flags.Lookup("band").Changed {
 		return nil, nil, fmt.Errorf("%s command must specify --gnss when --band is specified", cmdName)
 	}
-	if vars.remoteSpeed != 0 || vars.pps || vars.nmea || vars.primaryGNSS != 0 {
+	if vars.remoteSpeed != 0 || vars.pps || vars.nmea || vars.binary || vars.primaryGNSS != 0 {
 		configChanged = true
+		if vars.nmea && vars.binary {
+			return nil, nil, fmt.Errorf("%s command must not specify both --nmea and --binary options", cmdName)
+		}
 	}
 	if save {
 		if !configChanged {
 			return nil, nil, fmt.Errorf("no configuration changes to save with --save; use --save-all to save current configuration")
 		}
 		if saveAll {
-			return nil, nil, fmt.Errorf("cannot use --save-all with --save")
+			return nil, nil, fmt.Errorf("%s command must not specify both --save and --save-all", cmdName)
 		}
 		vars.save = gpsprot.SaveMinimal
 	} else if saveAll {
@@ -144,7 +149,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if factoryReset {
 		if save || saveAll || reset || reload || configChanged {
-			return nil, nil, fmt.Errorf("cannot use --factory-reset with --save, --save-all, --reset, --reload or configuration changes")
+			return nil, nil, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload or configuration changes", cmdName)
 		}
 		vars.reset = gpsprot.ResetFactory
 	} else if reset || reload {
