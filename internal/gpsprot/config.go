@@ -202,6 +202,7 @@ type ResetType uint8
 
 const (
 	ResetNone    ResetType = iota
+	ResetReload            // reload the configuration from non-volatile memory without a reset/start (if possible)
 	ResetCold              // restore configuration from non-volatile memory and perform a cold start
 	ResetFactory           // restore non-volatile memory to factory defaults and then ResetCold
 )
