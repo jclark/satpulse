@@ -43,7 +43,7 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 : Save the current running configuration of the GPS receiver to its non-volatile memory.
 
 **--reload**
-: Reloads the configuration of the GPS receiver from its non-volatile memory. Any configuration settings that have not been saved will be lost.
+: Reloads the configuration of the GPS receiver from its non-volatile memory. Any configuration settings that have not been saved will be lost. This can be used to undo any changes made by the satpulse daemon.
 
 **--reset**  
 : Perform a reset that reloads the configuration of the GPS receiver from its non-volatile memory (as with the **-reload** option), and discards information about the last known position, current time, and satellite orbital data (both ephemeris and almanac).
@@ -54,12 +54,14 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **--nmea**  
 : Enable NMEA output from the GPS receiver.
 
+**--binary**
+: Enable binary messages from the GPS receiver instead of NMEA.
+
 **--force-probe**  
 : Force writing probe to serial device even when there is no output from the GPS receiver
 
 **-p**, **--pps**  
 : Configure the GPS receiver to enable PPS (pulse-per-second) output.
-
 
 **--disable-time-mode**  
 : Disable time mode (cannot be used with `--survey`).

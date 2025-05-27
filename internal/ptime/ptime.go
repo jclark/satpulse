@@ -115,6 +115,18 @@ func UTC(year uint16, month, day, hour, min, sec uint8, nanos int32) UTCTime {
 	return UTCTime{date, t.Sub(date)}
 }
 
+// GPSUTC creates a UTCTime from a GPS week number and time of week
+// GPS week number means number of weeks since GPS epoch
+// tow is time ignoring leap seconds since start of week
+// This is what UBX-TIM-TP uses when time base is UTC.
+func GPSUTC(week uint16, tow time.Duration) UTCTime {
+	startOfWeek := epochGPS.AddDate(0, 0, int(week)*7)
+	t := startOfWeek.Add(tow)
+	y, m, d := t.Date()
+	date := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	return UTCTime{date, t.Sub(date)}
+}
+
 // LeapSecondOnDate returns a LeapSecond that occurs at the end of the UTC day of the given date.
 // date should be the last day of a month
 func LeapSecondOnDate(date time.Time, utcOffBefore, utcOffAfter int16) LeapSecond {

@@ -197,3 +197,11 @@ func TestMJD(t *testing.T) {
 		}
 	}
 }
+
+func TestGPSUTC(t *testing.T) {
+	expected := UTC(2025, 5, 27, 3, 38, 53, 0)
+	ut := GPSUTC(2368,185933*time.Second)
+	if expected != ut {
+		t.Errorf("GPSUTC(2368, 185933) = %v, want %v", ut, expected)
+	}
+}
