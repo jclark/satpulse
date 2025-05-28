@@ -58,11 +58,11 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		cp.SetPPS()
 	}
 	if v.nmea {
-		cp.SetNMEAEnabled(true)
+		target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgOther)
 	}
 	if v.binary {
-		cp.SetNMEAEnabled(false)
-		target.Opts.EnableTimeMsg = true
+		target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
+		target.Opts.PVTMsg.Set(gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI)
 	}
 	if v.primaryGNSS != 0 {
 		cp.SetPrimaryGNSS(v.primaryGNSS)

@@ -31,7 +31,6 @@ type TestLogConfigEntry struct {
 	Error          string     `json:"error,omitempty"`
 	SignalsEnabled [][]string `json:"signalsEnabled,omitempty"`
 	BaudRate       *uint32    `json:"baudRate,omitempty"`
-	NMEAEnabled    *bool      `json:"nmeaEnabled,omitempty"`
 }
 
 func writeTestLogHead(lf *logfile.LogFile, lg *slog.Logger, args []string) {
@@ -82,9 +81,6 @@ func writeTestLogConfigProps(lf *logfile.LogFile, lg *slog.Logger, props *gpspro
 		}
 		if br, ok := props.GetBaudRate(); ok {
 			entry.BaudRate = &br
-		}
-		if nmea, ok := props.GetNMEAEnabled(); ok {
-			entry.NMEAEnabled = &nmea
 		}
 	}
 	writeTestLogEntry(lf, lg, entry)

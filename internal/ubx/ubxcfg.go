@@ -184,7 +184,7 @@ func (c *Configurator) saveMinimal() (gpsprot.ConfigRequest, error) {
 	if c.target.Opts.Save != gpsprot.SaveMinimal {
 		return nil, nil
 	}
-	if c.target.UsesAny(gpsprot.PropIDBaudRate, gpsprot.PropIDNMEAEnabled) {
+	if c.target.UsesAny(gpsprot.PropIDBaudRate) || c.target.Opts.NMEAMsg.IsSet() {
 		saveMask |= bin.CfgCfgIOPort
 	}
 	if c.target.UsesAny(gpsprot.PropIDSignalsEnabled, gpsprot.PropIDPrimaryGNSS) {
@@ -196,7 +196,7 @@ func (c *Configurator) saveMinimal() (gpsprot.ConfigRequest, error) {
 	if saveMask == 0 {
 		return nil, nil
 	}
-	return msgRequest{c.newCfgCfgRequest(0, saveMask, 0, bin.CfgCfgDevFlash | bin.CfgCfgDevBBR)}, nil
+	return msgRequest{c.newCfgCfgRequest(0, saveMask, 0, bin.CfgCfgDevFlash|bin.CfgCfgDevBBR)}, nil
 }
 
 func (c *Configurator) setCfg() (gpsprot.ConfigRequest, error) {
@@ -211,7 +211,7 @@ func (c *Configurator) setCfg() (gpsprot.ConfigRequest, error) {
 	if clearMask == 0 && saveMask == 0 {
 		return nil, nil
 	}
-	return msgRequest{c.newCfgCfgRequest(clearMask, saveMask, 0, bin.CfgCfgDevFlash | bin.CfgCfgDevBBR)}, nil
+	return msgRequest{c.newCfgCfgRequest(clearMask, saveMask, 0, bin.CfgCfgDevFlash|bin.CfgCfgDevBBR)}, nil
 }
 
 func (c *Configurator) reloadCfg() (gpsprot.ConfigRequest, error) {
@@ -379,8 +379,9 @@ func newCfgValsetRequest(items []ucv.Item, layers bin.CfgValsetLayer) (*bin.CfgV
 
 func (c *Configurator) pollPrt() (gpsprot.ConfigRequest, error) {
 	// This is used both by old and new.
-	if !c.target.UsesAny(cfgOldProps.prt...) && !c.target.Opts.EnableTimeMsg && !c.target.Opts.EnableLeapSecondMsg &&
-		!c.target.Opts.SatellitesMsg.IsSet() && c.target.Opts.Survey.When == 0 {
+	if !c.target.UsesAny(cfgOldProps.prt...) &&
+		c.target.Opts.NMEAMsg.IsZero() && c.target.Opts.PVTMsg.IsZero() &&
+		c.target.Opts.SatellitesMsg.IsZero() && c.target.Opts.Survey.When == 0 {
 		return nil, nil
 	}
 	return c.pollRequest(bin.CfgPrtID), nil
@@ -446,7 +447,7 @@ func (c *Configurator) pollTp5() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) enableTpMsg() (gpsprot.ConfigRequest, error) {
-	if !c.target.Opts.EnableTimeMsg {
+	if c.target.Opts.PVTMsg.Get()&gpsprot.PVTMsgTimePulse == 0 {
 		return nil, nil
 	}
 	if c.ver.ProductCategory() == "FTS" {
@@ -463,12 +464,14 @@ func (c *Configurator) enableTpMsg() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) enableTimeGNSSMsg() (gpsprot.ConfigRequest, error) {
-	if !c.target.Opts.EnableTimeMsg {
+	pvtMsg := &c.target.Opts.PVTMsg
+	if pvtMsg.Get()&gpsprot.PVTMsgTimePulse == 0 {
 		return nil, nil
 	}
 	if c.ver.ProductCategory() == "FTS" {
 		return c.enableMsgRequest(bin.TimTosID, true)
 	} else {
+		// XXX enable NavTimeUTC if TAI flag is not set
 		return c.enableMsgRequest(bin.NavTimeGPSID, true)
 	}
 }
@@ -481,7 +484,7 @@ func (c *Configurator) timeGNSSMsgEnabled() bool {
 }
 
 func (c *Configurator) enableLeapSecondMsg() (gpsprot.ConfigRequest, error) {
-	if c.target.Opts.EnableLeapSecondMsg && c.ver.protVerAtLeast(18, 0) {
+	if c.target.Opts.PVTMsg.Get()&gpsprot.PVTMsgLeapSecond != 0 && c.ver.protVerAtLeast(18, 0) {
 		return c.enableMsgRequest(bin.NavTimeLSID, true)
 	}
 	return nil, nil
@@ -514,20 +517,20 @@ func (c *Configurator) enableSurveyMsg() (gpsprot.ConfigRequest, error) {
 }
 
 func (c *Configurator) setSatellitesMsg() (gpsprot.ConfigRequest, error) {
-	msgStatus := c.target.Opts.SatellitesMsg
-	if msgStatus.IsSet() {
+	satsMsg := c.target.Opts.SatellitesMsg
+	if satsMsg.IsSet() {
 		msgID := bin.NavSVInfoID
 		// UBX-NAV-SAT first appeared in protocol version 15.00
 		if c.ver.protVerAtLeast(15, 0) {
 			msgID = bin.NavSatID
 		}
-		return c.enableMsgRequest(msgID, msgStatus.IsEnabled())
+		return c.enableMsgRequest(msgID, satsMsg.Get()&gpsprot.SatellitesMsgSV != 0)
 	}
 	return nil, nil
 }
 
 func (c *Configurator) setPrt() (gpsprot.ConfigRequest, error) {
-	prt := c.raw.changePrt(&c.target.Props)
+	prt := c.raw.changePrt(c.target)
 	if prt == nil {
 		return nil, nil
 	}

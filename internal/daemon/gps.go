@@ -63,7 +63,7 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool) (*gpsprot.Confi
 	if err != nil {
 		return nil, err
 	}
-	target.Opts.SatellitesMsg = c.satellitesMsgStatus(speed, wantSatellitesOutput)
+	target.Opts.SatellitesMsg = c.satellitesMsg(speed, wantSatellitesOutput)
 	return target, nil
 }
 
@@ -176,20 +176,22 @@ func (c *GPSConfig) pulseWidth() (time.Duration, error) {
 
 const minSpeedSatellitesOutput = 38400
 
-func (c *GPSConfig) satellitesMsgStatus(speed int, wantSatellitesOutput bool) gpsprot.MsgStatus {
+func (c *GPSConfig) satellitesMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.Option[gpsprot.SatellitesMsgFlags]) {
 	if c.SatellitesOutput == nil {
 		if speed < minSpeedSatellitesOutput {
 			// If the speed is too slow, then we won't have automatically enabled it,
 			// so we don't need to disable it.
-			return gpsprot.MsgStatusUnchanged
+			return
 		}
 		if wantSatellitesOutput {
-			return gpsprot.MsgStatusEnabled
+			opt.Set(gpsprot.SatellitesMsgSV)
+		} else {
+			opt.Set(gpsprot.SatellitesMsgNone)
 		}
-		return gpsprot.MsgStatusDisabled
+	} else if *c.SatellitesOutput {
+		opt.Set(gpsprot.SatellitesMsgSV)
+	} else {
+		opt.Set(gpsprot.SatellitesMsgNone)
 	}
-	if *c.SatellitesOutput {
-		return gpsprot.MsgStatusEnabled
-	}
-	return gpsprot.MsgStatusDisabled
+	return
 }

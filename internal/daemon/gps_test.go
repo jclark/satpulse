@@ -63,8 +63,8 @@ func TestSatellitesInfo(t *testing.T) {
 	if cfg.GPS.SatellitesOutput != nil {
 		t.Errorf("SatellitesOutputs: got %v, want nil", cfg.GPS.SatellitesOutput)
 	}
-	ms := cfg.GPS.satellitesMsgStatus(38400, true)
-	if ms != gpsprot.MsgStatusEnabled {
-		t.Errorf("satellitesMsgStatus: got %v, want enabled", ms)
+	opt := cfg.GPS.satellitesMsg(38400, true)
+	if opt.Get() != gpsprot.SatellitesMsgSV {
+		t.Errorf("setSatellitesMsg: got %v, want SatellitesMsgSV", opt.Get())
 	}
 }

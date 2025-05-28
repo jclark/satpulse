@@ -129,9 +129,6 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 	if v, ok := cfgValGet(raw, ucv.KNavspgDynmodel); ok {
 		cp.SetStationary(v == ucv.ENavspgDynmodelStat)
 	}
-	if v, ok := cfgValGet(raw, portOutprotNmeaKey(port)); ok {
-		cp.SetNMEAEnabled(v)
-	}
 	if v, ok := cfgValGet(raw, portBaudRateKey(port)); ok {
 		cp.SetBaudRate(uint32(v))
 	}
@@ -181,32 +178,32 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 		}
 		ucv.AddItem(&items, ucv.KNavspgDynmodel, dm)
 	}
-	if v, ok := cp.GetNMEAEnabled(); ok {
+	opts := &target.Opts
+	if opts.NMEAMsg.IsSet() {
+		v := opts.NMEAMsg.Get() != 0
 		k := portOutprotNmeaKey(port)
 		if k != 0 {
 			ucv.AddItem(&items, k, v)
 		}
 	}
-
-	opts := &target.Opts
-	if opts.EnableTimeMsg {
+	if opts.PVTMsg.Get()&gpsprot.PVTMsgTimePulse != 0 {
+		// XXX this is not consistent with the legacy case
+		// simpler just to enable NAV-TIMEGPS
+		// the fractional TOW will not be the same but we don't use that
 		ucv.AddItem(&items, timegridTp1ToMsgRateKey(tg).KeyU(port), 1)
 		ucv.AddItem(&items, ucv.KUbxTimTp.KeyU(port), 1)
 	}
-	if opts.EnableLeapSecondMsg {
+	if opts.PVTMsg.Get()&gpsprot.PVTMsgLeapSecond != 0 {
 		ucv.AddItem(&items, ucv.KUbxNavTimels.KeyU(port), 1)
 	}
 	if opts.SatellitesMsg.IsSet() {
-		ucv.AddItem(&items, ucv.KUbxNavSat.KeyU(port), msgRate(opts.SatellitesMsg))
+		rate := uint64(0)
+		if opts.SatellitesMsg.Get()&gpsprot.SatellitesMsgSV != 0 {
+			rate = 1
+		}
+		ucv.AddItem(&items, ucv.KUbxNavSat.KeyU(port), rate)
 	}
 	return items, keys, survey, nil
-}
-
-func msgRate(status gpsprot.MsgStatus) uint64 {
-	if status == gpsprot.MsgStatusEnabled {
-		return 1
-	}
-	return 0
 }
 
 func (known *CfgVals) Survey(opts gpsprot.ConfigOptions) []ucv.Item {

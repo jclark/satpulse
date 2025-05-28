@@ -123,7 +123,6 @@ type ConfigProps struct {
 	fixedPosECEF      Point3D
 	fixedPosAcc       Length
 	stationary        bool
-	nmeaEnabled       bool
 	baudRate          uint32
 }
 
@@ -142,7 +141,6 @@ const (
 	PropIDFixedPosECEF
 	PropIDFixedPosAcc
 	PropIDStationary
-	PropIDNMEAEnabled
 	PropIDBaudRate
 )
 
@@ -161,33 +159,12 @@ var propNames = []string{
 	"FixedPosECEF",
 	"FixedPosAcc",
 	"Stationary",
-	"NMEAEnabled",
 	"BaudRate",
 }
 
 // IsEmpty returns true if no properties are set
 func (cp *ConfigProps) IsEmpty() bool {
 	return cp.valid == 0
-}
-
-type MsgStatus uint8
-
-const (
-	MsgStatusUnchanged MsgStatus = iota
-	MsgStatusEnabled
-	MsgStatusDisabled
-)
-
-func (status MsgStatus) IsZero() bool {
-	return status == MsgStatusUnchanged
-}
-
-func (status MsgStatus) IsSet() bool {
-	return status != MsgStatusUnchanged
-}
-
-func (status MsgStatus) IsEnabled() bool {
-	return status == MsgStatusEnabled
 }
 
 type SaveType uint8
@@ -207,15 +184,52 @@ const (
 	ResetFactory           // restore non-volatile memory to factory defaults and then ResetCold
 )
 
+type Option[T any] struct {
+	set bool
+	val T
+}
+
+func (o *Option[T]) Set(v T)      { o.set, o.val = true, v }
+func (o *Option[T]) Get() T       { return o.val }
+func (o *Option[T]) Clear()       { var zero T; o.set, o.val = false, zero }
+func (o *Option[T]) IsSet() bool  { return o.set }
+func (o *Option[T]) IsZero() bool { return !o.set }
+
+// PVTMsgFlags says what messages relating to Position, Velocity, and Time are wanted.
+type PVTMsgFlags uint16
+
+const (
+	PVTMsgTimePulse  PVTMsgFlags = 1 << iota // time of time pulse as opposed to time of navigation solution
+	PVTMsgLeapSecond                         // date of most recently announced leap second
+	PVTMsgTAI                                // want time in TAI not UTC
+	PVTMsgNone       PVTMsgFlags = 0
+	PVTMsgAny        PVTMsgFlags = PVTMsgTimePulse | PVTMsgLeapSecond // any message (not flag)
+)
+
+type SatellitesMsgFlags uint8
+
+const (
+	SatellitesMsgSV   SatellitesMsgFlags = 1 << iota // position of SVs
+	SatellitesMsgNone SatellitesMsgFlags = 0
+)
+
+type NMEAMsgFlags uint16
+
+const (
+	NMEAMsgOther NMEAMsgFlags = 1 << iota
+	NMEAMsgNone  NMEAMsgFlags = 0
+	NMEAMsgAny   NMEAMsgFlags = NMEAMsgOther // any message (not flag)
+)
+
 type ConfigOptions struct {
-	Detected            bool      // has already been detected, no need to detect it again
-	ForceProbe          bool      // force probe even if no input has been detected
-	Save                SaveType  // what to save to non-volatile memory
-	Reset               ResetType // what kind of reset to perform
-	EnableLeapSecondMsg bool
-	EnableTimeMsg       bool
-	SatellitesMsg       MsgStatus
-	Survey              Survey
+	Detected      bool      // has already been detected, no need to detect it again
+	ForceProbe    bool      // force probe even if no input has been detected
+	Save          SaveType  // what to save to non-volatile memory
+	Reset         ResetType // what kind of reset to perform
+	PVTMsg        Option[PVTMsgFlags]
+	SatellitesMsg Option[SatellitesMsgFlags]
+	NMEAMsg       Option[NMEAMsgFlags]
+	Survey        Survey
 }
 
 func NewConfigTarget(config bool) *ConfigTarget {
@@ -224,9 +238,8 @@ func NewConfigTarget(config bool) *ConfigTarget {
 		return t
 	}
 	t.Props.SetPPS()
-	t.Props.SetNMEAEnabled(false) // Config is very slow on 8-th gen if NMEA is enabled
-	t.Opts.EnableLeapSecondMsg = true
-	t.Opts.EnableTimeMsg = true
+	t.Opts.NMEAMsg.Set(NMEAMsgNone) // Config is very slow on 8-th gen if NMEA is enabled
+	t.Opts.PVTMsg.Set(PVTMsgTimePulse | PVTMsgTAI | PVTMsgLeapSecond)
 	return t
 }
 
@@ -246,7 +259,7 @@ func (ct *ConfigTarget) UsesAny(props ...PropIDs) bool {
 }
 
 func (o ConfigOptions) NoOp() bool {
-	return o.Save == 0 && o.Reset == 0 && !o.EnableLeapSecondMsg && !o.EnableTimeMsg && o.SatellitesMsg.IsZero() && o.Survey.When == TimeModeNone
+	return o.Save == 0 && o.Reset == 0 && o.PVTMsg.IsZero() && o.SatellitesMsg.IsZero() && o.NMEAMsg.IsZero() && o.Survey.When == TimeModeNone
 }
 
 // String returns a human-readable representation of the PropIDs flags
@@ -461,20 +474,6 @@ func (cp *ConfigProps) SetStationary(val bool) {
 	cp.valid |= PropIDStationary
 }
 
-// GetNMEAEnabled returns the nmeaEnabled value and whether it's set
-func (cp *ConfigProps) GetNMEAEnabled() (bool, bool) {
-	if cp.valid&PropIDNMEAEnabled != 0 {
-		return cp.nmeaEnabled, true
-	}
-	return false, false
-}
-
-// SetNMEAEnabled sets the nmeaEnabled value
-func (cp *ConfigProps) SetNMEAEnabled(val bool) {
-	cp.nmeaEnabled = val
-	cp.valid |= PropIDNMEAEnabled
-}
-
 // GetBaudRate returns the baudRate value and whether it's set
 func (cp *ConfigProps) GetBaudRate() (uint32, bool) {
 	if cp.valid&PropIDBaudRate != 0 {
@@ -553,9 +552,6 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	}
 	if both&PropIDStationary != 0 && cp.stationary != other.stationary {
 		result.SetStationary(other.stationary)
-	}
-	if both&PropIDNMEAEnabled != 0 && cp.nmeaEnabled != other.nmeaEnabled {
-		result.SetNMEAEnabled(other.nmeaEnabled)
 	}
 	if both&PropIDBaudRate != 0 && cp.baudRate != other.baudRate {
 		result.SetBaudRate(other.baudRate)
@@ -636,9 +632,6 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	}
 	if cp.valid&PropIDStationary != 0 {
 		m["stationary"] = cp.stationary
-	}
-	if cp.valid&PropIDNMEAEnabled != 0 {
-		m["nmeaEnabled"] = cp.nmeaEnabled
 	}
 	if cp.valid&PropIDBaudRate != 0 {
 		m["baudRate"] = cp.baudRate

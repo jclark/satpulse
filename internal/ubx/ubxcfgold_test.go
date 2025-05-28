@@ -166,8 +166,8 @@ func TestConfiguratorRecover2(t *testing.T) {
 func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator {
 	target := gpsprot.NewConfigTarget(false)
 	target.Props.SetPPS()
-	target.Props.SetNMEAEnabled(false)
-	target.Opts.EnableTimeMsg = true
+	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
+	target.Opts.PVTMsg.Set(gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI)
 	// we can't use legacyReceiver here because it doesn't support the UBX-CFG-GNSS
 	rcvr := newGpsReceiver(&m8tVersion)
 	rcvr.nakPollMsgID = nakMsgID

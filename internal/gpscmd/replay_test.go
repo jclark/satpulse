@@ -356,16 +356,6 @@ func (r *replayer) verify() {
 			r.t.Errorf("baud rate mismatch: got %d, want %d", actual, *cfg.BaudRate)
 		}
 	}
-
-	// Verify NMEA
-	if cfg.NMEAEnabled != nil {
-		actual, ok := props.GetNMEAEnabled()
-		if !ok {
-			r.t.Error("NMEA enabled not set")
-		} else if actual != *cfg.NMEAEnabled {
-			r.t.Errorf("NMEA enabled mismatch: got %v, want %v", actual, *cfg.NMEAEnabled)
-		}
-	}
 }
 
 func equalStringSlices(a, b [][]string) bool {

@@ -59,7 +59,6 @@ var cfgOldProps = struct {
 		gpsprot.PropIDStationary,
 	},
 	prt: []gpsprot.PropIDs{
-		gpsprot.PropIDNMEAEnabled,
 		gpsprot.PropIDBaudRate,
 	},
 }
@@ -107,20 +106,20 @@ func (raw *CfgOld) cookPrt(cp *gpsprot.ConfigProps) {
 	if prt == nil {
 		return
 	}
-	cp.SetNMEAEnabled(prt.OutProtoMask&bin.CfgPrtProtoNMEA != 0)
 	if prt.PortID == bin.PortUART1 || prt.PortID == bin.PortUART2 {
 		cp.SetBaudRate(prt.BaudRate)
 	}
 }
 
-func (raw *CfgOld) changePrt(cp *gpsprot.ConfigProps) *bin.CfgPrt {
+func (raw *CfgOld) changePrt(target *gpsprot.ConfigTarget) *bin.CfgPrt {
 	if raw.prt == nil {
 		return nil
 	}
 
 	prt := *raw.prt
-	if nmeaEnabled, exists := cp.GetNMEAEnabled(); exists {
-		if nmeaEnabled {
+	cp := &target.Props
+	if target.Opts.NMEAMsg.IsSet() {
+		if target.Opts.NMEAMsg.Get() != 0 {
 			prt.OutProtoMask |= bin.CfgPrtProtoNMEA
 		} else {
 			prt.OutProtoMask &^= bin.CfgPrtProtoNMEA
