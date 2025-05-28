@@ -146,6 +146,8 @@ const (
 	TimTosID     MsgID = clsTim | (0x12 << 8)
 	TimTPID      MsgID = clsTim | (0x01 << 8)
 	// not implemented
+	RxmRawID   MsgID = clsRxm | (0x10 << 8)
+	RxmSfrbID  MsgID = clsRxm | (0x12 << 8)
 	RxmSfrbxID MsgID = clsRxm | (0x13 << 8)
 	RxmRawxID  MsgID = clsRxm | (0x15 << 8)
 )
@@ -195,6 +197,8 @@ func init() {
 	regMsg[TimTP]("TP")
 
 	// not implemented
+	idNameMap[RxmRawID] = "RAW"
+	idNameMap[RxmSfrbID] = "SFRB"
 	idNameMap[RxmSfrbxID] = "SFRBX"
 	idNameMap[RxmRawxID] = "RAWX"
 }
@@ -213,7 +217,7 @@ func (m *AckAck) ID() MsgID { return AckAckID }
 
 type CfgCfg struct {
 	CfgCfgFixed
-	DeviceMask []CfgCfgDeviceMask  // this is optional so we use a slice; it will always be length 0 or 1
+	DeviceMask []CfgCfgDeviceMask // this is optional so we use a slice; it will always be length 0 or 1
 }
 
 var _ VarLengthMsg = (*CfgCfg)(nil)
@@ -239,9 +243,9 @@ func (m *CfgCfg) Parts() (fixed any, slice any) {
 }
 
 type CfgCfgFixed struct {
-	ClearMask   CfgCfgSectionMask
-	SaveMask    CfgCfgSectionMask
-	LoadMask CfgCfgSectionMask
+	ClearMask CfgCfgSectionMask
+	SaveMask  CfgCfgSectionMask
+	LoadMask  CfgCfgSectionMask
 }
 
 type CfgCfgSectionMask uint32
