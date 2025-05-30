@@ -178,32 +178,39 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 		}
 		ucv.AddItem(&items, ucv.KNavspgDynmodel, dm)
 	}
-	opts := &target.Opts
+	err = known.Messages(&target.Opts, ver, port, tg, &items)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	return items, keys, survey, nil
+}
+
+func (known *CfgVals) Messages(opts *gpsprot.ConfigOptions, ver *Version, port ucv.Port, tg ucv.EnumTpTimegridTp1, items *[]ucv.Item) error {
 	if opts.NMEAMsg.IsSet() {
 		v := opts.NMEAMsg.Get() != 0
 		k := portOutprotNmeaKey(port)
 		if k != 0 {
-			ucv.AddItem(&items, k, v)
+			ucv.AddItem(items, k, v)
 		}
 	}
 	if opts.PVTMsg.Get()&gpsprot.PVTMsgTimePulse != 0 {
 		// XXX this is not consistent with the legacy case
 		// simpler just to enable NAV-TIMEGPS
 		// the fractional TOW will not be the same but we don't use that
-		ucv.AddItem(&items, timegridTp1ToMsgRateKey(tg).KeyU(port), 1)
-		ucv.AddItem(&items, ucv.KUbxTimTp.KeyU(port), 1)
+		ucv.AddItem(items, timegridTp1ToMsgRateKey(tg).KeyU(port), 1)
+		ucv.AddItem(items, ucv.KUbxTimTp.KeyU(port), 1)
 	}
 	if opts.PVTMsg.Get()&gpsprot.PVTMsgLeapSecond != 0 {
-		ucv.AddItem(&items, ucv.KUbxNavTimels.KeyU(port), 1)
+		ucv.AddItem(items, ucv.KUbxNavTimels.KeyU(port), 1)
 	}
-	if opts.SatellitesMsg.IsSet() {
+	if opts.SatsMsg.IsSet() {
 		rate := uint64(0)
-		if opts.SatellitesMsg.Get()&gpsprot.SatellitesMsgSV != 0 {
+		if opts.SatsMsg.Get()&gpsprot.SatsMsgSV != 0 {
 			rate = 1
 		}
-		ucv.AddItem(&items, ucv.KUbxNavSat.KeyU(port), rate)
+		ucv.AddItem(items, ucv.KUbxNavSat.KeyU(port), rate)
 	}
-	return items, keys, survey, nil
+	return nil
 }
 
 func (known *CfgVals) Survey(opts gpsprot.ConfigOptions) []ucv.Item {
@@ -707,6 +714,18 @@ func portOutprotNmeaKey(port ucv.Port) ucv.KeyL {
 		return ucv.KUart2outprotNmea
 	case ucv.USB:
 		return ucv.KUsboutprotNmea
+	}
+	return 0
+}
+
+func portOutprotRtcm3xKey(port ucv.Port) ucv.KeyL {
+	switch port {
+	case ucv.UART1:
+		return ucv.KUart1outprotRtcm3x
+	case ucv.UART2:
+		return ucv.KUart2outprotRtcm3x
+	case ucv.USB:
+		return ucv.KUsboutprotRtcm3x
 	}
 	return 0
 }

@@ -185,8 +185,8 @@ const (
 )
 
 type Option[T any] struct {
-	set bool
 	val T
+	set bool
 }
 
 func (o *Option[T]) Set(v T)      { o.set, o.val = true, v }
@@ -195,41 +195,83 @@ func (o *Option[T]) Clear()       { var zero T; o.set, o.val = false, zero }
 func (o *Option[T]) IsSet() bool  { return o.set }
 func (o *Option[T]) IsZero() bool { return !o.set }
 
+// MakeOption creates an Option with the given value set
+func MakeOption[T any](v T) Option[T] {
+	var opt Option[T]
+	opt.Set(v)
+	return opt
+}
+
 // PVTMsgFlags says what messages relating to Position, Velocity, and Time are wanted.
 type PVTMsgFlags uint16
 
 const (
-	PVTMsgTimePulse  PVTMsgFlags = 1 << iota // time of time pulse as opposed to time of navigation solution
+	PVTMsgPos        PVTMsgFlags = 1 << iota // position
+	PVTMsgTime                               // time of navigation solution
+	PVTMsgTimePulse                          // time of time pulse
 	PVTMsgLeapSecond                         // date of most recently announced leap second
 	PVTMsgTAI                                // want time in TAI not UTC
+	PVTMsgECEF                               // want position in ECEF coordinates
+	PVTMsgMin                                // specified is minimum set of PVT messages; do not need to turn off any that are not set
 	PVTMsgNone       PVTMsgFlags = 0
-	PVTMsgAny        PVTMsgFlags = PVTMsgTimePulse | PVTMsgLeapSecond // any message (not flag)
+	PVTMsgAny        PVTMsgFlags = PVTMsgPos | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond // any message (not flag)
 )
 
-type SatellitesMsgFlags uint8
+type SatsMsgFlags uint8
 
 const (
-	SatellitesMsgSV   SatellitesMsgFlags = 1 << iota // position of SVs
-	SatellitesMsgNone SatellitesMsgFlags = 0
+	SatsMsgSV     SatsMsgFlags = 1 << iota // position of SVs
+	SatsMsgSignal                          // signal strength of each signal from each SV
+	SatsMsgNone   SatsMsgFlags = 0
 )
 
 type NMEAMsgFlags uint16
 
 const (
-	NMEAMsgOther NMEAMsgFlags = 1 << iota
-	NMEAMsgNone  NMEAMsgFlags = 0
-	NMEAMsgAny   NMEAMsgFlags = NMEAMsgOther // any message (not flag)
+	NMEAMsgRMC NMEAMsgFlags = 1 << iota
+	NMEAMsgGGA
+	NMEAMsgGSA
+	NMEAMsgGSV
+	NMEAMsgOther NMEAMsgFlags = 1 << 15 // other unspecified NMEA messages
+	// may have flags like NMEA version or rate in the future
+	NMEAMsgNone NMEAMsgFlags = 0
+	NMEAMsgAny  NMEAMsgFlags = NMEAMsgRMC | NMEAMsgGGA | NMEAMsgGSA | NMEAMsgGSV | NMEAMsgOther // any message (not flag)
+)
+
+type RTCMMsgFlags uint16
+
+const (
+	RTCMMsgMSM4  RTCMMsgFlags = 1 << iota // MSM4 for all enabled GNSS
+	_                                     // 5
+	_                                     // 6
+	RTCMMsgMSM7                           // MSM7 for all enabled GNSS
+	RTCMMsgARP                            // RTCM message 1005
+	RTCMMsgOther RTCMMsgFlags = 1 << 15   // other unspecified RTCM messages
+	// may have flags for rate
+	RTCMMsgNone RTCMMsgFlags = 0
+	RTCMMsgAny  RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgOther // any message (not flag)
+)
+
+type RawMsgFlags uint8
+
+const (
+	RawMsgObs     RawMsgFlags = 1 << iota // Raw observation messages (for RINEX)
+	RawMsgNavData                         // Raw navigation date e.g. subframes for GPS
+	RawMsgNone    RawMsgFlags = 0
+	RawMsgAny     RawMsgFlags = RawMsgObs | RawMsgNavData // any message (not flag)
 )
 
 type ConfigOptions struct {
-	Detected      bool      // has already been detected, no need to detect it again
-	ForceProbe    bool      // force probe even if no input has been detected
-	Save          SaveType  // what to save to non-volatile memory
-	Reset         ResetType // what kind of reset to perform
-	PVTMsg        Option[PVTMsgFlags]
-	SatellitesMsg Option[SatellitesMsgFlags]
-	NMEAMsg       Option[NMEAMsgFlags]
-	Survey        Survey
+	Detected   bool                // has already been detected, no need to detect it again
+	ForceProbe bool                // force probe even if no input has been detected
+	Save       SaveType            // what to save to non-volatile memory
+	Reset      ResetType           // what kind of reset to perform
+	PVTMsg     Option[PVTMsgFlags] // messages relating to Position, Velocity, and Time
+	NMEAMsg    Option[NMEAMsgFlags]
+	RTCMMsg    Option[RTCMMsgFlags] // RTCM 3.x messages
+	SatsMsg    Option[SatsMsgFlags]
+	RawMsg     Option[RawMsgFlags]
+	Survey     Survey
 }
 
 func NewConfigTarget(config bool) *ConfigTarget {
@@ -259,7 +301,7 @@ func (ct *ConfigTarget) UsesAny(props ...PropIDs) bool {
 }
 
 func (o ConfigOptions) NoOp() bool {
-	return o.Save == 0 && o.Reset == 0 && o.PVTMsg.IsZero() && o.SatellitesMsg.IsZero() && o.NMEAMsg.IsZero() && o.Survey.When == TimeModeNone
+	return o.Save == 0 && o.Reset == 0 && o.PVTMsg.IsZero() && o.SatsMsg.IsZero() && o.NMEAMsg.IsZero() && o.Survey.When == TimeModeNone
 }
 
 // String returns a human-readable representation of the PropIDs flags

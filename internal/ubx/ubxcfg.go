@@ -394,7 +394,7 @@ func (c *Configurator) pollPrt() error {
 	// This is used both by old and new.
 	if !c.target.UsesAny(cfgOldProps.prt...) &&
 		c.target.Opts.NMEAMsg.IsZero() && c.target.Opts.PVTMsg.IsZero() &&
-		c.target.Opts.SatellitesMsg.IsZero() && c.target.Opts.Survey.When == 0 {
+		c.target.Opts.SatsMsg.IsZero() && c.target.Opts.Survey.When == 0 {
 		return nil
 	}
 	return c.addPollRequest(bin.CfgPrtID)
@@ -530,14 +530,14 @@ func (c *Configurator) enableSurveyMsg() error {
 }
 
 func (c *Configurator) setSatellitesMsg() error {
-	satsMsg := c.target.Opts.SatellitesMsg
+	satsMsg := c.target.Opts.SatsMsg
 	if satsMsg.IsSet() {
 		msgID := bin.NavSVInfoID
 		// UBX-NAV-SAT first appeared in protocol version 15.00
 		if c.ver.protVerAtLeast(15, 0) {
 			msgID = bin.NavSatID
 		}
-		return c.addEnableMsgRequest(msgID, satsMsg.Get()&gpsprot.SatellitesMsgSV != 0)
+		return c.addEnableMsgRequest(msgID, satsMsg.Get()&gpsprot.SatsMsgSV != 0)
 	}
 	return nil
 }

@@ -57,13 +57,6 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.pps {
 		cp.SetPPS()
 	}
-	if v.nmea {
-		target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgOther)
-	}
-	if v.binary {
-		target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
-		target.Opts.PVTMsg.Set(gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI)
-	}
 	if v.primaryGNSS != 0 {
 		cp.SetPrimaryGNSS(v.primaryGNSS)
 	}
@@ -85,6 +78,10 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		}
 		cp.SetBaudRate(uint32(v.remoteSpeed))
 	}
+	opts.RawMsg = v.rawMsg
+	opts.PVTMsg = v.pvtMsg
+	opts.RTCMMsg = v.rtcmMsg
+	opts.NMEAMsg = v.nmeaMsg
 	if target.NoOp() {
 		target.Get |= gpsprot.PropIDSignalsEnabled
 	}
