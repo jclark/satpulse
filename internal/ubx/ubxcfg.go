@@ -144,7 +144,7 @@ func (c *Configurator) stop() {
 	c.reqs = nil
 
 	// consider whether we need to perform recovery
-	
+
 	// only need to do recovery for legacy configuration
 	if &c.steps[0] != &legacyConfigSteps[0] {
 		return
@@ -190,12 +190,12 @@ func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
 	return false, nil
 }
 
-func (c *Configurator) saveMinimal() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) saveMinimal() error {
 	// This is just for legacy configuration.
 	// For new configuration, we use CFG-VALSET to save to the right layer.
 	var saveMask bin.CfgCfgSectionMask
 	if c.target.Opts.Save != gpsprot.SaveMinimal {
-		return nil, nil
+		return nil
 	}
 	if c.target.UsesAny(gpsprot.PropIDBaudRate) || c.target.Opts.NMEAMsg.IsSet() {
 		saveMask |= bin.CfgCfgIOPort
@@ -207,12 +207,12 @@ func (c *Configurator) saveMinimal() (gpsprot.ConfigRequest, error) {
 	}
 	// XXX handle time mode when we fix that up in satpulsetool
 	if saveMask == 0 {
-		return nil, nil
+		return nil
 	}
-	return msgRequest{c.newCfgCfgRequest(0, saveMask, 0, bin.CfgCfgDevFlash|bin.CfgCfgDevBBR)}, nil
+	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, saveMask, 0, bin.CfgCfgDevFlash|bin.CfgCfgDevBBR)})
 }
 
-func (c *Configurator) setCfg() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) setCfg() error {
 	var saveMask, clearMask bin.CfgCfgSectionMask
 
 	if c.target.Opts.Save == gpsprot.SaveAll {
@@ -222,16 +222,16 @@ func (c *Configurator) setCfg() (gpsprot.ConfigRequest, error) {
 		clearMask = bin.CfgCfgSectionMaskAll
 	}
 	if clearMask == 0 && saveMask == 0 {
-		return nil, nil
+		return nil
 	}
-	return msgRequest{c.newCfgCfgRequest(clearMask, saveMask, 0, bin.CfgCfgDevFlash|bin.CfgCfgDevBBR)}, nil
+	return c.addRequest(msgRequest{c.newCfgCfgRequest(clearMask, saveMask, 0, bin.CfgCfgDevFlash|bin.CfgCfgDevBBR)})
 }
 
-func (c *Configurator) reloadCfg() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) reloadCfg() error {
 	if c.target.Opts.Reset != gpsprot.ResetReload {
-		return nil, nil
+		return nil
 	}
-	return msgRequest{c.newCfgCfgRequest(0, 0, bin.CfgCfgSectionMaskAll, 0)}, nil
+	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, 0, bin.CfgCfgSectionMaskAll, 0)})
 }
 
 func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask bin.CfgCfgSectionMask, deviceMask bin.CfgCfgDeviceMask) *bin.CfgCfg {
@@ -351,11 +351,7 @@ func (c *Configurator) valBaudRate() error {
 	if len(items) == 0 {
 		return nil
 	}
-	layer := bin.CfgValsetLayerRAM
-	if c.target.Opts.Flash {
-		layer = bin.CfgValsetLayerFlash
-	}
-	val, err := newCfgValsetRequest(items, layer)
+	val, err := newCfgValsetRequest(items, c.valSetLayer())
 	if err != nil {
 		return nil
 	}
@@ -412,15 +408,15 @@ func (c *Configurator) pollGNSS() error {
 	return c.addPollRequest(bin.CfgGNSSID)
 }
 
-func (c *Configurator) pollMonGNSS() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) pollMonGNSS() error {
 	if _, ok := c.target.Props.GetSignalsEnabled(); !ok {
-		return nil, nil
+		return nil
 	}
 	// UBX-MON-GNSS needs at least protocol version 15.00
 	if !c.ver.protVerAtLeast(15, 0) {
-		return nil, nil
+		return nil
 	}
-	return c.pollRequest(bin.MonGnssID), nil
+	return c.addPollRequest(bin.MonGnssID)
 }
 
 func (c *Configurator) pollRate() error {
@@ -629,12 +625,12 @@ func (c *Configurator) setTp5() error {
 	return c.addMsgSetRequest(tp5)
 }
 
-func (c *Configurator) setGNSS() (gpsprot.ConfigRequest, error) {
+func (c *Configurator) setGNSS() error {
 	gnss, err := c.raw.changeGNSS(&c.target.Props, c.ver, c.monGNSS)
 	if gnss == nil || err != nil {
-		return nil, err
+		return err
 	}
-	return c.msgSetRequest(gnss)
+	return c.addMsgSetRequest(gnss)
 }
 
 func (acks *ackList) ack(msgID bin.MsgID, ok bool, t time.Time) {
