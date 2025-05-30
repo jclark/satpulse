@@ -49,6 +49,7 @@ const (
 	clsMon  = 0x0A
 	clsTim  = 0x0D
 	clsNav2 = 0x29
+	clsRtcm = 0xF5
 )
 
 var clsMap = map[byte]string{
@@ -60,6 +61,7 @@ var clsMap = map[byte]string{
 	clsMon:  "MON",
 	clsTim:  "TIM",
 	clsNav2: "NAV2",
+	clsRtcm: "RTCM",
 }
 
 func makeMsgID(cls byte, id byte) MsgID {
@@ -130,6 +132,7 @@ const (
 	MonVerID     MsgID = clsMon | (0x04 << 8)
 	NavDOPID     MsgID = clsNav | (0x04 << 8)
 	NavPosECEFID MsgID = clsNav | (0x01 << 8)
+	NavPosLLHID  MsgID = clsNav | (0x02 << 8)
 	NavSolID     MsgID = clsNav | (0x06 << 8)
 	NavPVTID     MsgID = clsNav | (0x07 << 8)
 	NavSatID     MsgID = clsNav | (0x35 << 8)
@@ -141,16 +144,37 @@ const (
 	NavTimeGalID MsgID = clsNav | (0x25 << 8)
 	NavTimeLSID  MsgID = clsNav | (0x26 << 8)
 	NavVelECEFID MsgID = clsNav | (0x11 << 8)
+	NavVelNEDID  MsgID = clsNav | (0x12 << 8)
 	NavSvinID    MsgID = clsNav | (0x3B << 8)
 	TimSvinID    MsgID = clsTim | (0x04 << 8)
 	TimTosID     MsgID = clsTim | (0x12 << 8)
 	TimTPID      MsgID = clsTim | (0x01 << 8)
-	// not implemented
+	// following are used for enabling/disabling messages
 	RxmRawID   MsgID = clsRxm | (0x10 << 8)
 	RxmSfrbID  MsgID = clsRxm | (0x12 << 8)
 	RxmSfrbxID MsgID = clsRxm | (0x13 << 8)
 	RxmRawxID  MsgID = clsRxm | (0x15 << 8)
+	// it's just the message type - 1000
+	Rtcm1005ID MsgID = clsRtcm | (0x05 << 8)
+	Rtcm1006ID MsgID = clsRtcm | (0x06 << 8)
+	Rtcm1007ID MsgID = clsRtcm | (0x07 << 8)
+	Rtcm1074ID MsgID = clsRtcm | (0x4A << 8)
+	Rtcm1077ID MsgID = clsRtcm | (0x4D << 8)
+	Rtcm1084ID MsgID = clsRtcm | (0x54 << 8)
+	Rtcm1087ID MsgID = clsRtcm | (0x57 << 8)
+	Rtcm1094ID MsgID = clsRtcm | (0x5E << 8)
+	Rtcm1097ID MsgID = clsRtcm | (0x61 << 8)
+	Rtcm1124ID MsgID = clsRtcm | (0x7C << 8)
+	Rtcm1127ID MsgID = clsRtcm | (0x7F << 8)
+	Rtcm1230ID MsgID = clsRtcm | (0xE6 << 8)
 )
+
+func RTCMMsgID(msgType int) (MsgID, bool) {
+	if msgType > 1000 && msgType < 1256 {
+		return MsgID(clsRtcm | ((msgType - 1000) << 8)), true
+	}
+	return 0, false
+}
 
 func init() {
 	regMsg[AckNak]("NAK")
@@ -180,6 +204,7 @@ func init() {
 	regMsg[MonVer]("VER")
 	regMsg[NavDOP]("DOP")
 	regMsg[NavPosECEF]("POSECEF")
+	regMsg[NavPosLLH]("POSLLH")
 	regMsg[NavPVT]("PVT")
 	regMsg[NavSat]("SAT")
 	regMsg[NavSVInfo]("SVINFO")
@@ -192,6 +217,7 @@ func init() {
 	regMsg[NavTimeUTC]("TIMEUTC")
 	regMsg[NavTimeLS]("TIMELS")
 	regMsg[NavVelECEF]("VELECEF")
+	regMsg[NavVelNED]("VELNED")
 	regMsg[TimSvin]("SVIN")
 	regMsg[TimTos]("TOS")
 	regMsg[TimTP]("TP")
@@ -201,6 +227,14 @@ func init() {
 	idNameMap[RxmSfrbID] = "SFRB"
 	idNameMap[RxmSfrbxID] = "SFRBX"
 	idNameMap[RxmRawxID] = "RAWX"
+	idNameMap[Rtcm1005ID] = "1005"
+	idNameMap[Rtcm1074ID] = "1074"
+	idNameMap[Rtcm1077ID] = "1077"
+	idNameMap[Rtcm1084ID] = "1084"
+	idNameMap[Rtcm1087ID] = "1087"
+	idNameMap[Rtcm1124ID] = "1124"
+	idNameMap[Rtcm1127ID] = "1127"
+	idNameMap[Rtcm1230ID] = "1230"
 }
 
 type AckNak struct {
@@ -639,6 +673,30 @@ type NavVelECEF struct {
 }
 
 func (m *NavVelECEF) ID() MsgID { return NavVelECEFID }
+
+type NavPosLLH struct {
+	ITOW   uint32
+	Lon    int32
+	Lat    int32
+	Height int32
+	HMSL   int32
+	HAcc   uint32
+	VAcc   uint32
+}
+
+func (m *NavPosLLH) ID() MsgID { return NavPosLLHID }
+
+type NavVelNED struct {
+	ITOW    uint32
+	VelNED  [3]int32
+	Speed   uint32
+	GSpeed  uint32
+	Heading int32
+	SAcc    uint32
+	CAcc    uint32
+}
+
+func (m *NavVelNED) ID() MsgID { return NavVelNEDID }
 
 type NavPVT struct {
 	ITOW    uint32
