@@ -623,6 +623,10 @@ UART1INPROT:
     key: 0x10730002
     type: L
     description: Flag to indicate if NMEA should be an input protocol on UART1
+  RTCM3X:
+    key: 0x10730004
+    type: L
+    description: Flag to indicate if RTCM3X should be an input protocol on UART1
 UART1OUTPROT:
   UBX:
     key: 0x10740001
@@ -632,6 +636,10 @@ UART1OUTPROT:
     key: 0x10740002
     type: L
     description: Flag to indicate if NMEA should be an output protocol on UART1
+  RTCM3X:
+    key: 0x10740004
+    type: L
+    description: Flag to indicate if RTCM3X should be an output protocol on UART1
 UART2:
   BAUDRATE:
     key: 0x40530001
@@ -692,6 +700,10 @@ UART2INPROT:
     key: 0x10750002
     type: L
     description: Flag to indicate if NMEA should be an input protocol on UART2
+  RTCM3X:
+    key: 0x10750004
+    type: L
+    description: Flag to indicate if RTCM3X should be an input protocol on UART2
 UART2OUTPROT:
   UBX:
     key: 0x10760001
@@ -701,6 +713,10 @@ UART2OUTPROT:
     key: 0x10760002
     type: L
     description: Flag to indicate if NMEA should be an output protocol on UART2
+  RTCM3X:
+    key: 0x10760004
+    type: L
+    description: Flag to indicate if RTCM3X should be an output protocol on UART2
 USBINPROT:
   UBX:
     key: 0x10770001
@@ -710,6 +726,10 @@ USBINPROT:
     key: 0x10770002
     type: L
     description: Flag to indicate if NMEA should be an input protocol on USB
+  RTCM3X:
+    key: 0x10770004
+    type: L
+    description: Flag to indicate if RTCM3X should be an input protocol on USB
 USBOUTPROT:
   UBX:
     key: 0x10780001
@@ -719,6 +739,10 @@ USBOUTPROT:
     key: 0x10780002
     type: L
     description: Flag to indicate if NMEA should be an output protocol on USB
+  RTCM3X:
+    key: 0x10780004
+    type: L
+    description: Flag to indicate if RTCM3X should be an output protocol on USB
 RATE:
   MEAS:
     key: 0x30210001

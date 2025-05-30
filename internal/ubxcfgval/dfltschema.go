@@ -150,10 +150,12 @@ var dfltSchema = MustNewSchema(map[string]map[string]Desc{
 	},
 	"UART1INPROT":{
 		"NMEA": L(0x10730002),
+		"RTCM3X": L(0x10730004),
 		"UBX": L(0x10730001),
 	},
 	"UART1OUTPROT":{
 		"NMEA": L(0x10740002),
+		"RTCM3X": L(0x10740004),
 		"UBX": L(0x10740001),
 	},
 	"UART2":{
@@ -165,18 +167,22 @@ var dfltSchema = MustNewSchema(map[string]map[string]Desc{
 	},
 	"UART2INPROT":{
 		"NMEA": L(0x10750002),
+		"RTCM3X": L(0x10750004),
 		"UBX": L(0x10750001),
 	},
 	"UART2OUTPROT":{
 		"NMEA": L(0x10760002),
+		"RTCM3X": L(0x10760004),
 		"UBX": L(0x10760001),
 	},
 	"USBINPROT":{
 		"NMEA": L(0x10770002),
+		"RTCM3X": L(0x10770004),
 		"UBX": L(0x10770001),
 	},
 	"USBOUTPROT":{
 		"NMEA": L(0x10780002),
+		"RTCM3X": L(0x10780004),
 		"UBX": L(0x10780001),
 	},
 })

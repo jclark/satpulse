@@ -328,8 +328,10 @@ const (
 	EUart1StopbitsTwo
 )
 const KUart1inprotNmea KeyL = 0x10730002
+const KUart1inprotRtcm3x KeyL = 0x10730004
 const KUart1inprotUbx KeyL = 0x10730001
 const KUart1outprotNmea KeyL = 0x10740002
+const KUart1outprotRtcm3x KeyL = 0x10740004
 const KUart1outprotUbx KeyL = 0x10740001
 const KUart2Baudrate KeyU = 0x40530001
 const KUart2Databits KeyE[EnumUart2Databits] = 0x20530003
@@ -355,10 +357,14 @@ const (
 	EUart2StopbitsTwo
 )
 const KUart2inprotNmea KeyL = 0x10750002
+const KUart2inprotRtcm3x KeyL = 0x10750004
 const KUart2inprotUbx KeyL = 0x10750001
 const KUart2outprotNmea KeyL = 0x10760002
+const KUart2outprotRtcm3x KeyL = 0x10760004
 const KUart2outprotUbx KeyL = 0x10760001
 const KUsbinprotNmea KeyL = 0x10770002
+const KUsbinprotRtcm3x KeyL = 0x10770004
 const KUsbinprotUbx KeyL = 0x10770001
 const KUsboutprotNmea KeyL = 0x10780002
+const KUsboutprotRtcm3x KeyL = 0x10780004
 const KUsboutprotUbx KeyL = 0x10780001
