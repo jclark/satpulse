@@ -40,6 +40,33 @@ var commomMsgTypes = []MsgType{
 	1230, // GLONASS bias
 }
 
+const ARPMsgType MsgType = 1005
+const GLONASSBiasMsgType MsgType = 1230	
+
+// MSMMsgType returns the RTCM message type for a given GNSS and MSM number.
+// Returns 0 if the mapping cannot be done.
+func MSMMsgType(gnss gpsprot.GNSS, msm int) MsgType {
+	if msm < 1 || msm > 7 {
+		return 0
+	}
+	var base MsgType
+	switch gnss {
+	case gpsprot.GPS:
+		base = 1070
+	case gpsprot.GLO:
+		base = 1080
+	case gpsprot.GAL:
+		base = 1090
+	case gpsprot.BDS:
+		base = 1120
+	case gpsprot.NAVIC:
+		base = 1130
+	default:
+		return 0
+	}
+	return base + MsgType(msm)
+}
+
 func isCommonMsgType(msgType MsgType) bool {
 	// Use binary search directly since the slice is already sorted
 	i := sort.Search(len(commomMsgTypes), func(i int) bool {
