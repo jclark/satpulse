@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/spf13/pflag"
 )
@@ -89,7 +90,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
-	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|time|tp|leap|tai|ecef|off,...")
+	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|time|tp|leap|tai|ecef|daemon|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|none,...")
 	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|none,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
@@ -424,6 +425,8 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 			flags |= gpsprot.PVTMsgECEF
 		case "off":
 			flags |= gpsprot.PVTMsgOff
+		case "daemon":
+			flags |= gpsevent.PVTMsgFlags
 		default:
 			return fmt.Errorf("unknown pvt output flag: %s", w)
 		}

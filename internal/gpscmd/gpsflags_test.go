@@ -1,7 +1,10 @@
 package gpscmd
+
 import (
 	"strings"
 	"testing"
+
+	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 type validFlagsTestCase struct {
@@ -95,6 +98,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--raw-out", "none"}, flagVars{rawMsg: gpsprot.MakeOption(gpsprot.RawMsgFlags(0))}},
 	{"ttyS0", []string{"--raw-out", "obs", "--save"}, flagVars{rawMsg: gpsprot.MakeOption(gpsprot.RawMsgObs), save: gpsprot.SaveMinimal}},
 	// Test --pvt-out flag
+	{"ttyS0", []string{"--pvt-out", "daemon"}, flagVars{pvtMsg: gpsevent.PVTMsgFlags}},
 	{"ttyS0", []string{"--pvt-out", "pos"}, flagVars{pvtMsg: gpsprot.PVTMsgPos}},
 	{"ttyS0", []string{"--pvt-out", "time"}, flagVars{pvtMsg: gpsprot.PVTMsgTime}},
 	{"ttyS0", []string{"--pvt-out", "tp"}, flagVars{pvtMsg: gpsprot.PVTMsgTimePulse}},
