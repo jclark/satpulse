@@ -134,6 +134,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--nmea-out", "GGA"}, flagVars{nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgGGA)}},
 	{"ttyS0", []string{"--nmea-out", "GSA"}, flagVars{nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgGSA)}},
 	{"ttyS0", []string{"--nmea-out", "GSV"}, flagVars{nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgGSV)}},
+	{"ttyS0", []string{"--nmea-out", "ZDA"}, flagVars{nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgZDA)}},
 	{"ttyS0", []string{"--nmea-out", "RMC,GGA"}, flagVars{nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)}},
 	{"ttyS0", []string{"--nmea-out", "RMC,GSA,GSV"}, flagVars{nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV)}},
 	{"ttyS0", []string{"--nmea-out", "RMC,GGA,GSA,GSV"}, flagVars{nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV)}},

@@ -92,7 +92,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
 	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|time|tp|leap|tai|ecef|daemon|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|none,...")
-	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|none,...")
+	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|none,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
 	flags.MarkHidden("pps")
 	flags.BoolVar(&vars.disableTimeMode, "disable-time-mode", false, "disable time mode")
@@ -516,7 +516,10 @@ func (nmeaOut *nmeaOutOpt) String() string {
 	if flags&gpsprot.NMEAMsgGSV != 0 {
 		parts = append(parts, "GSV")
 	}
-	// Note: We don't expose NMEAMsgOther as per requirement
+	if flags&gpsprot.NMEAMsgZDA != 0 {
+		parts = append(parts, "ZDA")
+	}
+	// Don't expose NMEAMsgOther
 	return strings.Join(parts, ",")
 }
 
@@ -540,6 +543,8 @@ func (nmeaOut *nmeaOutOpt) Set(s string) error {
 			flags |= gpsprot.NMEAMsgGSA
 		case "GSV":
 			flags |= gpsprot.NMEAMsgGSV
+		case "ZDA":
+			flags |= gpsprot.NMEAMsgZDA
 		case "NONE":
 			// do nothing
 		default:
