@@ -175,7 +175,19 @@ func (m *msgChanges) nmea(flags gpsprot.NMEAMsgFlags, _ *Version) {
 		m.protoDisable |= bin.CfgPrtProtoNMEA
 		return
 	}
-	m.protoEnable |= bin.CfgPrtProtoNMEA
+	m.protoEnable |= bin.CfgPrtProtoNMEA	
+	m.rate[bin.NmeaRmcID] = nmeaRate(flags & gpsprot.NMEAMsgRMC)
+	m.rate[bin.NmeaGgaID] = nmeaRate(flags & gpsprot.NMEAMsgGGA)
+	m.rate[bin.NmeaGsaID] = nmeaRate(flags & gpsprot.NMEAMsgGSA)
+	m.rate[bin.NmeaGsvID] = nmeaRate(flags & gpsprot.NMEAMsgGSV)
+	m.rate[bin.NmeaZdaID] = nmeaRate(flags & gpsprot.NMEAMsgZDA)
+}
+
+func nmeaRate(flags gpsprot.NMEAMsgFlags) uint8 {
+	if flags != 0 {
+		return 1
+	}
+	return 0
 }
 
 func (m *msgChanges) raw(flags gpsprot.RawMsgFlags, ver *Version) error {
@@ -280,6 +292,15 @@ var msgIDKey = map[bin.MsgID]ucv.KeyM{
 	bin.RxmRawxID:  ucv.KUbxRxmRawx,
 	bin.RxmSfrbxID: ucv.KUbxRxmSfrbx,
 	bin.TimTPID:    ucv.KUbxTimTp,
+	// NMEA messages
+	bin.NmeaGgaID: ucv.KNmeaIdGga,
+	bin.NmeaGllID: ucv.KNmeaIdGll,
+	bin.NmeaGsaID: ucv.KNmeaIdGsa,
+	bin.NmeaGsvID: ucv.KNmeaIdGsv,
+	bin.NmeaRmcID: ucv.KNmeaIdRmc,
+	bin.NmeaVtgID: ucv.KNmeaIdVtg,
+	bin.NmeaZdaID: ucv.KNmeaIdZda,
+	bin.NmeaGnsID: ucv.KNmeaIdGns,
 	// RTCM messages
 	bin.Rtcm1005ID: ucv.KRtcm3xType1005,
 	bin.Rtcm1074ID: ucv.KRtcm3xType1074,

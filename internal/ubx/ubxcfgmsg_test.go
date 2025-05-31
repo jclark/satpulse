@@ -755,3 +755,182 @@ func TestMsgChangesSats(t *testing.T) {
 		})
 	}
 }
+
+// TestMsgChangesNMEA tests msgChanges.nmea
+func TestMsgChangesNMEA(t *testing.T) {
+	tests := []struct {
+		name             string
+		flags            gpsprot.NMEAMsgFlags
+		expectedRates    map[bin.MsgID]uint8
+		expectedEnable   bin.CfgPrtProtoMask
+		expectedDisable  bin.CfgPrtProtoMask
+	}{
+		{
+			name:             "None - disable protocol",
+			flags:            gpsprot.NMEAMsgNone,
+			expectedRates:    map[bin.MsgID]uint8{},
+			expectedEnable:   0,
+			expectedDisable:  bin.CfgPrtProtoNMEA,
+		},
+		{
+			name:            "RMC only",
+			flags:           gpsprot.NMEAMsgRMC,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]uint8{
+				bin.NmeaRmcID: 1,
+				bin.NmeaGgaID: 0,
+				bin.NmeaGsaID: 0,
+				bin.NmeaGsvID: 0,
+				bin.NmeaZdaID: 0,
+			},
+		},
+		{
+			name:            "GGA only",
+			flags:           gpsprot.NMEAMsgGGA,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]uint8{
+				bin.NmeaRmcID: 0,
+				bin.NmeaGgaID: 1,
+				bin.NmeaGsaID: 0,
+				bin.NmeaGsvID: 0,
+				bin.NmeaZdaID: 0,
+			},
+		},
+		{
+			name:            "GSA only",
+			flags:           gpsprot.NMEAMsgGSA,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]uint8{
+				bin.NmeaRmcID: 0,
+				bin.NmeaGgaID: 0,
+				bin.NmeaGsaID: 1,
+				bin.NmeaGsvID: 0,
+				bin.NmeaZdaID: 0,
+			},
+		},
+		{
+			name:            "GSV only",
+			flags:           gpsprot.NMEAMsgGSV,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]uint8{
+				bin.NmeaRmcID: 0,
+				bin.NmeaGgaID: 0,
+				bin.NmeaGsaID: 0,
+				bin.NmeaGsvID: 1,
+				bin.NmeaZdaID: 0,
+			},
+		},
+		{
+			name:            "ZDA only",
+			flags:           gpsprot.NMEAMsgZDA,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]uint8{
+				bin.NmeaRmcID: 0,
+				bin.NmeaGgaID: 0,
+				bin.NmeaGsaID: 0,
+				bin.NmeaGsvID: 0,
+				bin.NmeaZdaID: 1,
+			},
+		},
+		{
+			name:            "Multiple messages",
+			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSV,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]uint8{
+				bin.NmeaRmcID: 1,
+				bin.NmeaGgaID: 1,
+				bin.NmeaGsaID: 0,
+				bin.NmeaGsvID: 1,
+				bin.NmeaZdaID: 0,
+			},
+		},
+		{
+			name:            "All standard messages",
+			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]uint8{
+				bin.NmeaRmcID: 1,
+				bin.NmeaGgaID: 1,
+				bin.NmeaGsaID: 1,
+				bin.NmeaGsvID: 1,
+				bin.NmeaZdaID: 1,
+			},
+		},
+		{
+			name:            "Other flag only - enables protocol but no specific messages",
+			flags:           gpsprot.NMEAMsgOther,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]uint8{
+				bin.NmeaRmcID: 0,
+				bin.NmeaGgaID: 0,
+				bin.NmeaGsaID: 0,
+				bin.NmeaGsvID: 0,
+				bin.NmeaZdaID: 0,
+			},
+		},
+		{
+			name:            "RMC with Other flag",
+			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgOther,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]uint8{
+				bin.NmeaRmcID: 1,
+				bin.NmeaGgaID: 0,
+				bin.NmeaGsaID: 0,
+				bin.NmeaGsvID: 0,
+				bin.NmeaZdaID: 0,
+			},
+		},
+		{
+			name:            "All messages with Other flag",
+			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgOther,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]uint8{
+				bin.NmeaRmcID: 1,
+				bin.NmeaGgaID: 1,
+				bin.NmeaGsaID: 1,
+				bin.NmeaGsvID: 1,
+				bin.NmeaZdaID: 1,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := newMsgChanges()
+			mc.nmea(tt.flags, nil)
+
+			// Check protocol enable/disable
+			if mc.protoEnable != tt.expectedEnable {
+				t.Errorf("protoEnable = %v, want %v", mc.protoEnable, tt.expectedEnable)
+			}
+			if mc.protoDisable != tt.expectedDisable {
+				t.Errorf("protoDisable = %v, want %v", mc.protoDisable, tt.expectedDisable)
+			}
+
+			// Check message rates
+			for msgID, expectedRate := range tt.expectedRates {
+				if actualRate, ok := mc.rate[msgID]; !ok || actualRate != expectedRate {
+					t.Errorf("message %v: got rate %v, want %v", msgID, actualRate, expectedRate)
+				}
+			}
+
+			// Check no unexpected messages
+			for msgID := range mc.rate {
+				if _, expected := tt.expectedRates[msgID]; !expected {
+					t.Errorf("unexpected message %v with rate %v", msgID, mc.rate[msgID])
+				}
+			}
+		})
+	}
+}
+
