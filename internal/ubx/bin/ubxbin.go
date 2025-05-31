@@ -178,7 +178,8 @@ const (
 	NmeaVtgID MsgID = clsNmea | (0x05 << 8)
 	NmeaZdaID MsgID = clsNmea | (0x08 << 8)
 	NmeaGnsID MsgID = clsNmea | (0x0D << 8)
-	NmeaTxtID MsgID = clsNmea | (0x41 << 8)
+	// NmeaTxtID is intentionally omitted because it is not a navigation message
+	// and is emitted spontaneously. Gen9 does not allow configuration of it.
 )
 
 func RTCMMsgID(msgType int) (MsgID, bool) {
@@ -255,7 +256,6 @@ func init() {
 	idNameMap[NmeaVtgID] = "VTG"
 	idNameMap[NmeaZdaID] = "ZDA"
 	idNameMap[NmeaGnsID] = "GNS"
-	idNameMap[NmeaTxtID] = "TXT"
 }
 
 type AckNak struct {
