@@ -48,7 +48,7 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 }
 
 func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	opts := &target.Opts
 	opts.Reset = v.reset
 	opts.Save = v.save

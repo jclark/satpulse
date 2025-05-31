@@ -106,21 +106,21 @@ func TestRate(t *testing.T) {
 }
 
 func TestConfiguratorSane(t *testing.T) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	target.Props.SetPPS()
 	target.Get = gpsprot.PropIDTimePulseWidth
 	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGPS(t *testing.T) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	target.Props.SetPPS()
 	target.Props.SetPrimaryGNSS(gpsprot.GPS)
 	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGalileo(t *testing.T) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	target.Props.SetPPS()
 	target.Props.SetPrimaryGNSS(gpsprot.GAL)
 	rcvr := newLegacyReceiver()
@@ -164,7 +164,7 @@ func TestConfiguratorRecover2(t *testing.T) {
 }
 
 func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	target.Props.SetPPS()
 	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
 	target.Opts.PVTMsg.Set(gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI)

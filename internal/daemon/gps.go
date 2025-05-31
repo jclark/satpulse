@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/geopos"
+	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
 )
@@ -42,10 +43,12 @@ var gpsDefault = GPSConfig{
 }
 
 func (c *GPSConfig) target(speed int, wantSatellitesOutput bool) (*gpsprot.ConfigTarget, error) {
-	target := gpsprot.NewConfigTarget(c.Config)
+	target := gpsprot.NewConfigTarget()
 	if !c.Config {
 		return target, nil
 	}
+	target.Props.SetPPS()
+	gpsevent.SetMsgOptions(target)
 	err := c.getTimeMode(target)
 	if err != nil {
 		return nil, err

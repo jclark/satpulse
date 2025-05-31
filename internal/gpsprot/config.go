@@ -274,15 +274,8 @@ type ConfigOptions struct {
 	Survey     Survey
 }
 
-func NewConfigTarget(config bool) *ConfigTarget {
-	t := &ConfigTarget{}
-	if !config {
-		return t
-	}
-	t.Props.SetPPS()
-	t.Opts.NMEAMsg.Set(NMEAMsgNone) // Config is very slow on 8-th gen if NMEA is enabled
-	t.Opts.PVTMsg.Set(PVTMsgTimePulse | PVTMsgTAI | PVTMsgLeapSecond)
-	return t
+func NewConfigTarget() *ConfigTarget {
+	return &ConfigTarget{}
 }
 
 // NoOp says whether the target is a no-op, except possibly for detecting the receiver

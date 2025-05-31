@@ -12,7 +12,7 @@ import (
 )
 
 func TestConfigItems_Sane(t *testing.T) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	target.Props.SetPPS()
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	_, missing, survey, err := newCfgVals().Transaction(target, ver, ucv.UART1)
@@ -92,7 +92,7 @@ func expectMissing[T comparable](t *testing.T, m *CfgVals, key ucv.TypedKey[T]) 
 }
 
 func TestConfigItems_Empty(t *testing.T) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	items, missing, survey, err := newCfgVals().Transaction(target, ver, ucv.UART1)
 
@@ -111,7 +111,7 @@ func TestConfigItems_Empty(t *testing.T) {
 }
 
 func TestConfigItems_Get(t *testing.T) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	target.Get = gpsprot.PropIDTimePulseWidth
 
 	vals := newCfgVals()
@@ -159,7 +159,7 @@ func TestConfigItems_Get(t *testing.T) {
 
 func TestConfigItems_GNSS(t *testing.T) {
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	target.Props.SetPrimaryGNSS(gpsprot.GAL)
 	items, missing, survey, err := newCfgVals().Transaction(target, ver, ucv.UART1)
 	if err != nil {
@@ -179,7 +179,7 @@ func TestConfigItems_GNSS(t *testing.T) {
 }
 
 func TestConfigItems_AntennaCableDelay(t *testing.T) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	const nanos = 10
 	target.Props.SetAntennaCableDelay(nanos * time.Nanosecond)
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
@@ -205,7 +205,7 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 }
 
 func TestConfigItems_Survey(t *testing.T) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	target.Opts.Survey = gpsprot.Survey{
 		When:     gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled),
 		MinDur:   2000 * time.Second,

@@ -62,7 +62,7 @@ func TestConfigurationEmpty_Legacy(t *testing.T) {
 }
 
 func testConfigurationEmpty(t *testing.T, ver *Version) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	rcvr := newGpsReceiver(ver)
 	rcvr.raw.tmode2 = &ubxbin.CfgTmode2{
 		TimeMode: ubxbin.CfgTmode2SurveyIn,
@@ -95,7 +95,7 @@ func newGpsReceiver(ver *Version) *gpsReceiver {
 }
 
 func testConfigurationGet(t *testing.T, rcvr *gpsReceiver) {
-	target := gpsprot.NewConfigTarget(false)
+	target := gpsprot.NewConfigTarget()
 	target.Get |= gpsprot.PropIDTimePulseWidth
 	c, naks, err := runConfiguration(rcvr, target)
 	if err != nil {
