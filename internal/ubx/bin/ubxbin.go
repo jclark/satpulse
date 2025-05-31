@@ -49,6 +49,7 @@ const (
 	clsMon  = 0x0A
 	clsTim  = 0x0D
 	clsNav2 = 0x29
+	clsNmea = 0xF0
 	clsRtcm = 0xF5
 )
 
@@ -61,6 +62,7 @@ var clsMap = map[byte]string{
 	clsMon:  "MON",
 	clsTim:  "TIM",
 	clsNav2: "NAV2",
+	clsNmea: "NMEA",
 	clsRtcm: "RTCM",
 }
 
@@ -167,6 +169,16 @@ const (
 	Rtcm1124ID MsgID = clsRtcm | (0x7C << 8)
 	Rtcm1127ID MsgID = clsRtcm | (0x7F << 8)
 	Rtcm1230ID MsgID = clsRtcm | (0xE6 << 8)
+	// NMEA message IDs
+	NmeaGgaID MsgID = clsNmea | (0x00 << 8)
+	NmeaGllID MsgID = clsNmea | (0x01 << 8)
+	NmeaGsaID MsgID = clsNmea | (0x02 << 8)
+	NmeaGsvID MsgID = clsNmea | (0x03 << 8)
+	NmeaRmcID MsgID = clsNmea | (0x04 << 8)
+	NmeaVtgID MsgID = clsNmea | (0x05 << 8)
+	NmeaZdaID MsgID = clsNmea | (0x08 << 8)
+	NmeaGnsID MsgID = clsNmea | (0x0D << 8)
+	NmeaTxtID MsgID = clsNmea | (0x41 << 8)
 )
 
 func RTCMMsgID(msgType int) (MsgID, bool) {
@@ -235,6 +247,15 @@ func init() {
 	idNameMap[Rtcm1124ID] = "1124"
 	idNameMap[Rtcm1127ID] = "1127"
 	idNameMap[Rtcm1230ID] = "1230"
+	idNameMap[NmeaGgaID] = "GGA"
+	idNameMap[NmeaGllID] = "GLL"
+	idNameMap[NmeaGsaID] = "GSA"
+	idNameMap[NmeaGsvID] = "GSV"
+	idNameMap[NmeaRmcID] = "RMC"
+	idNameMap[NmeaVtgID] = "VTG"
+	idNameMap[NmeaZdaID] = "ZDA"
+	idNameMap[NmeaGnsID] = "GNS"
+	idNameMap[NmeaTxtID] = "TXT"
 }
 
 type AckNak struct {
