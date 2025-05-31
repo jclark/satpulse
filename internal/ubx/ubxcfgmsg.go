@@ -98,11 +98,17 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	navTimeUTC := false
 	navPosECEF := false
 	navPosLLH := false
+	navVelECEF := false
+	navVelNED := false
 	navPVT := false
 	navTimeLS := flags&gpsprot.PVTMsgLeapSecond != 0
 	if flags&gpsprot.PVTMsgPos != 0 && flags&gpsprot.PVTMsgECEF != 0 {
 		navPosECEF = true
 		flags &^= gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF
+	}
+	if flags&gpsprot.PVTMsgVel != 0 && flags&gpsprot.PVTMsgECEF != 0 {
+		navVelECEF = true
+		flags &^= gpsprot.PVTMsgVel | gpsprot.PVTMsgECEF
 	}
 	if fts && flags&gpsprot.PVTMsgTimePulse != 0 {
 		timTOS = true
@@ -117,9 +123,19 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 		flags &^= gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI
 	}
 	if navPVTSupported {
-		if flags&(gpsprot.PVTMsgTime|gpsprot.PVTMsgTimePulse) != 0 && flags&gpsprot.PVTMsgPos != 0 {
+		nPVT := 0
+		if flags&(gpsprot.PVTMsgTime|gpsprot.PVTMsgTimePulse) != 0 {
+			nPVT++
+		}
+		if flags&gpsprot.PVTMsgPos != 0 {
+			nPVT++
+		}
+		if flags&gpsprot.PVTMsgVel != 0 {
+			nPVT++
+		}
+		if nPVT >= 2 {
 			navPVT = true
-			flags &^= gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos
+			flags &^= gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos | gpsprot.PVTMsgVel
 		}
 	}
 	if flags&(gpsprot.PVTMsgTime|gpsprot.PVTMsgTimePulse) != 0 {
@@ -129,6 +145,10 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	if flags&gpsprot.PVTMsgPos != 0 {
 		navPosLLH = true
 		flags &^= gpsprot.PVTMsgPos
+	}
+	if flags&gpsprot.PVTMsgVel != 0 {
+		navVelNED = true
+		flags &^= gpsprot.PVTMsgVel
 	}
 	if fts {
 		mc.pvtMsg(bin.TimTosID, timTOS, off)
@@ -142,6 +162,8 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	mc.pvtMsg(bin.NavTimeUTCID, navTimeUTC, off)
 	mc.pvtMsg(bin.NavPosECEFID, navPosECEF, off)
 	mc.pvtMsg(bin.NavPosLLHID, navPosLLH, off)
+	mc.pvtMsg(bin.NavVelECEFID, navVelECEF, off)
+	mc.pvtMsg(bin.NavVelNEDID, navVelNED, off)
 	if ver.protVerAtLeast(18, 0) {
 		mc.pvtMsg(bin.NavTimeLSID, navTimeLS, off)
 	}
@@ -175,7 +197,7 @@ func (m *msgChanges) nmea(flags gpsprot.NMEAMsgFlags, _ *Version) {
 		m.protoDisable |= bin.CfgPrtProtoNMEA
 		return
 	}
-	m.protoEnable |= bin.CfgPrtProtoNMEA	
+	m.protoEnable |= bin.CfgPrtProtoNMEA
 	m.rate[bin.NmeaRmcID] = nmeaRate(flags & gpsprot.NMEAMsgRMC)
 	m.rate[bin.NmeaGgaID] = nmeaRate(flags & gpsprot.NMEAMsgGGA)
 	m.rate[bin.NmeaGsaID] = nmeaRate(flags & gpsprot.NMEAMsgGSA)

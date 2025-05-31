@@ -75,14 +75,44 @@ func TestMsgChangesPVT(t *testing.T) {
 			expected: []bin.MsgID{bin.NavPosLLHID},
 		},
 		{
+			name:     "Vel",
+			flags:    gpsprot.PVTMsgVel,
+			version:  testVers.f9p,
+			expected: []bin.MsgID{bin.NavVelNEDID},
+		},
+		{
 			name:     "Pos,ECEF",
 			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
 			version:  testVers.f9p,
 			expected: []bin.MsgID{bin.NavPosECEFID},
 		},
 		{
+			name:     "Vel,ECEF",
+			flags:    gpsprot.PVTMsgVel | gpsprot.PVTMsgECEF,
+			version:  testVers.f9p,
+			expected: []bin.MsgID{bin.NavVelECEFID},
+		},
+		{
 			name:     "Time,Pos (NAV-PVT supported)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgPos,
+			version:  testVers.f9p,
+			expected: []bin.MsgID{bin.NavPVTID},
+		},
+		{
+			name:     "Time,Vel (NAV-PVT supported)",
+			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgVel,
+			version:  testVers.f9p,
+			expected: []bin.MsgID{bin.NavPVTID},
+		},
+		{
+			name:     "Pos,Vel (NAV-PVT supported)",
+			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgVel,
+			version:  testVers.f9p,
+			expected: []bin.MsgID{bin.NavPVTID},
+		},
+		{
+			name:     "Time,Pos,Vel (NAV-PVT supported)",
+			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgPos | gpsprot.PVTMsgVel,
 			version:  testVers.f9p,
 			expected: []bin.MsgID{bin.NavPVTID},
 		},
@@ -113,6 +143,12 @@ func TestMsgChangesPVT(t *testing.T) {
 		{
 			name:     "TimePulse,Pos",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos,
+			version:  testVers.f9p,
+			expected: []bin.MsgID{bin.TimTPID, bin.NavPVTID},
+		},
+		{
+			name:     "TimePulse,Vel",
+			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgVel,
 			version:  testVers.f9p,
 			expected: []bin.MsgID{bin.TimTPID, bin.NavPVTID},
 		},
@@ -167,6 +203,24 @@ func TestMsgChangesPVT(t *testing.T) {
 			expected: []bin.MsgID{bin.NavTimeUTCID, bin.NavPosLLHID},
 		},
 		{
+			name:     "Vel (no NAV-PVT)",
+			flags:    gpsprot.PVTMsgVel,
+			version:  testVers.lea6t,
+			expected: []bin.MsgID{bin.NavVelNEDID},
+		},
+		{
+			name:     "Time,Vel (no NAV-PVT)",
+			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgVel,
+			version:  testVers.lea6t,
+			expected: []bin.MsgID{bin.NavTimeUTCID, bin.NavVelNEDID},
+		},
+		{
+			name:     "Pos,Vel (no NAV-PVT)",
+			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgVel,
+			version:  testVers.lea6t,
+			expected: []bin.MsgID{bin.NavPosLLHID, bin.NavVelNEDID},
+		},
+		{
 			name:     "TimePulse,Pos (no NAV-PVT)",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos,
 			version:  testVers.lea6t,
@@ -189,6 +243,12 @@ func TestMsgChangesPVT(t *testing.T) {
 			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
 			version:  testVers.lea6t,
 			expected: []bin.MsgID{bin.NavPosECEFID},
+		},
+		{
+			name:     "Vel,ECEF (LEA-6T)",
+			flags:    gpsprot.PVTMsgVel | gpsprot.PVTMsgECEF,
+			version:  testVers.lea6t,
+			expected: []bin.MsgID{bin.NavVelECEFID},
 		},
 		{
 			name:     "Time,Pos,TAI (no NAV-PVT)",

@@ -100,11 +100,13 @@ var validFlagsTestCases = []validFlagsTestCase{
 	// Test --pvt-out flag
 	{"ttyS0", []string{"--pvt-out", "daemon"}, flagVars{pvtMsg: gpsevent.PVTMsgFlags}},
 	{"ttyS0", []string{"--pvt-out", "pos"}, flagVars{pvtMsg: gpsprot.PVTMsgPos}},
+	{"ttyS0", []string{"--pvt-out", "vel"}, flagVars{pvtMsg: gpsprot.PVTMsgVel}},
 	{"ttyS0", []string{"--pvt-out", "time"}, flagVars{pvtMsg: gpsprot.PVTMsgTime}},
 	{"ttyS0", []string{"--pvt-out", "tp"}, flagVars{pvtMsg: gpsprot.PVTMsgTimePulse}},
 	{"ttyS0", []string{"--pvt-out", "leap"}, flagVars{pvtMsg: gpsprot.PVTMsgLeapSecond}},
 	{"ttyS0", []string{"--pvt-out", "tai"}, flagVars{pvtMsg: gpsprot.PVTMsgTAI}},
 	{"ttyS0", []string{"--pvt-out", "pos,time"}, flagVars{pvtMsg: gpsprot.PVTMsgPos | gpsprot.PVTMsgTime}},
+	{"ttyS0", []string{"--pvt-out", "pos,vel"}, flagVars{pvtMsg: gpsprot.PVTMsgPos | gpsprot.PVTMsgVel}},
 	{"ttyS0", []string{"--pvt-out", "tp,tai,leap"}, flagVars{pvtMsg: gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond}},
 	{"ttyS0", []string{"--pvt-out", "off"}, flagVars{pvtMsg: gpsprot.PVTMsgOff}},
 	{"ttyS0", []string{"--pvt-out", "pos", "--save"}, flagVars{pvtMsg: gpsprot.PVTMsgPos, save: gpsprot.SaveMinimal}},

@@ -210,6 +210,7 @@ type PVTMsgFlags uint16
 
 const (
 	PVTMsgPos        PVTMsgFlags = 1 << iota // position
+	PVTMsgVel                                // velocity
 	PVTMsgTime                               // time of navigation solution
 	PVTMsgTimePulse                          // time of time pulse
 	PVTMsgLeapSecond                         // date of most recently announced leap second
@@ -217,7 +218,7 @@ const (
 	PVTMsgECEF                               // want position in ECEF coordinates
 	PVTMsgOff                                // turn off any unneeded PVT messages
 	PVTMsgNone       PVTMsgFlags = 0
-	PVTMsgAny        PVTMsgFlags = PVTMsgPos | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond // any message (not flag)
+	PVTMsgAny        PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond // any message (not flag)
 )
 
 // These methods are to make PVTMsgFlags more consistent with Option[*Flags] for the other flags.
@@ -288,11 +289,11 @@ const (
 )
 
 type ConfigOptions struct {
-	Detected   bool                // has already been detected, no need to detect it again
-	ForceProbe bool                // force probe even if no input has been detected
-	Save       SaveType            // what to save to non-volatile memory
-	Reset      ResetType           // what kind of reset to perform
-	PVTMsg     PVTMsgFlags         // messages relating to Position, Velocity, and Time
+	Detected   bool        // has already been detected, no need to detect it again
+	ForceProbe bool        // force probe even if no input has been detected
+	Save       SaveType    // what to save to non-volatile memory
+	Reset      ResetType   // what kind of reset to perform
+	PVTMsg     PVTMsgFlags // messages relating to Position, Velocity, and Time
 	NMEAMsg    Option[NMEAMsgFlags]
 	RTCMMsg    Option[RTCMMsgFlags] // RTCM 3.x messages
 	SatsMsg    Option[SatsMsgFlags]
