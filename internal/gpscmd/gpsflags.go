@@ -431,7 +431,7 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 		case "off":
 			flags |= gpsprot.PVTMsgOff
 		case "daemon":
-			flags |= gpsevent.PVTMsgFlags
+			flags |= gpsevent.PVTMsgFlags | gpsprot.PVTMsgOff
 		default:
 			return fmt.Errorf("unknown pvt output flag: %s", w)
 		}
