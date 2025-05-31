@@ -203,6 +203,9 @@ func MakeOption[T any](v T) Option[T] {
 }
 
 // PVTMsgFlags says what messages relating to Position, Velocity, and Time are wanted.
+// The PVTMsgOff option says to turn off PVT messages that are not enabled.
+// This makes PVTMsgFlags different from the other message flags,
+// where the equivalent of PVTMsgOff semantics is always applied.
 type PVTMsgFlags uint16
 
 const (
@@ -212,10 +215,32 @@ const (
 	PVTMsgLeapSecond                         // date of most recently announced leap second
 	PVTMsgTAI                                // want time in TAI not UTC
 	PVTMsgECEF                               // want position in ECEF coordinates
-	PVTMsgMin                                // specified is minimum set of PVT messages; do not need to turn off any that are not set
+	PVTMsgOff                                // turn off any unneeded PVT messages
 	PVTMsgNone       PVTMsgFlags = 0
 	PVTMsgAny        PVTMsgFlags = PVTMsgPos | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond // any message (not flag)
 )
+
+// These methods are to make PVTMsgFlags more consistent with Option[*Flags] for the other flags.
+
+// IsZero returns true if no PVT message flags are set
+func (f *PVTMsgFlags) IsZero() bool {
+	return *f == 0
+}
+
+// IsSet returns true if any PVT message flags are set
+func (f *PVTMsgFlags) IsSet() bool {
+	return *f != 0
+}
+
+// Get returns the PVT message flags value
+func (f *PVTMsgFlags) Get() PVTMsgFlags {
+	return *f
+}
+
+// Set sets the PVT message flags value
+func (f *PVTMsgFlags) Set(v PVTMsgFlags) {
+	*f = v
+}
 
 type SatsMsgFlags uint8
 
@@ -266,7 +291,7 @@ type ConfigOptions struct {
 	ForceProbe bool                // force probe even if no input has been detected
 	Save       SaveType            // what to save to non-volatile memory
 	Reset      ResetType           // what kind of reset to perform
-	PVTMsg     Option[PVTMsgFlags] // messages relating to Position, Velocity, and Time
+	PVTMsg     PVTMsgFlags         // messages relating to Position, Velocity, and Time
 	NMEAMsg    Option[NMEAMsgFlags]
 	RTCMMsg    Option[RTCMMsgFlags] // RTCM 3.x messages
 	SatsMsg    Option[SatsMsgFlags]

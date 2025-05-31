@@ -29,7 +29,7 @@ const PVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI | gpsprot.PVTMsg
 // It disables NMEA (which is slow on 8th gen) and enables the required PVT messages.
 func SetMsgOptions(target *gpsprot.ConfigTarget) {
 	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone) // Config is very slow on 8-th gen if NMEA is enabled
-	target.Opts.PVTMsg.Set(PVTMsgFlags)
+	target.Opts.PVTMsg = PVTMsgFlags
 }
 
 type Dispatcher struct {

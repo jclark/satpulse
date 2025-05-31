@@ -33,8 +33,8 @@ type flagVars struct {
 	surveyAcc       float64
 	packetLogPath   string
 	packetLogMode   packetLogMode
+	pvtMsg          gpsprot.PVTMsgFlags
 	rawMsg          gpsprot.Option[gpsprot.RawMsgFlags]
-	pvtMsg          gpsprot.Option[gpsprot.PVTMsgFlags]
 	rtcmMsg         gpsprot.Option[gpsprot.RTCMMsgFlags]
 	nmeaMsg         gpsprot.Option[gpsprot.NMEAMsgFlags]
 	satsMsg         gpsprot.Option[gpsprot.SatsMsgFlags]
@@ -44,7 +44,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
        	    [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea] [--binary]
             [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
-            [--raw-out obs|nav|none,...] [--pvt-out pos|time|tp|leap|tai|ecef|min|none,...]
+            [--raw-out obs|nav|none,...] [--pvt-out pos|time|tp|leap|tai|ecef|off,...]
             [--rtcm-out MSM4|MSM7|ARP|none,...] [--nmea-out RMC|GGA|GSA|GSV|none,...]`
 
 const defaultSurveyTime = 2000
@@ -61,10 +61,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	factoryReset := false
 	reload := false
 	testLogPath := ""
-	rawOut := rawOutOpt{}
-	pvtOut := pvtOutOpt{}
-	rtcmOut := rtcmOutOpt{}
-	nmeaOut := nmeaOutOpt{}
+	var rawOut rawOutOpt
+	var pvtOut pvtOutOpt
+	var rtcmOut rtcmOutOpt
+	var nmeaOut nmeaOutOpt
 	nmea := false
 	binary := false
 
@@ -89,7 +89,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
-	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|time|tp|leap|tai|ecef|min|none,...")
+	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|time|tp|leap|tai|ecef|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|none,...")
 	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|none,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
@@ -145,8 +145,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	} else if flags.Lookup("band").Changed {
 		return nil, nil, fmt.Errorf("%s command must specify --gnss when --band is specified", cmdName)
 	}
+	pvtMsg := gpsprot.PVTMsgFlags(pvtOut)
 	rawMsg := (gpsprot.Option[gpsprot.RawMsgFlags])(rawOut)
-	pvtMsg := (gpsprot.Option[gpsprot.PVTMsgFlags])(pvtOut)
 	rtcmMsg := (gpsprot.Option[gpsprot.RTCMMsgFlags])(rtcmOut)
 	nmeaMsg := (gpsprot.Option[gpsprot.NMEAMsgFlags])(nmeaOut)
 
@@ -365,18 +365,14 @@ func (rawOut *rawOutOpt) Set(s string) error {
 	return nil
 }
 
-type pvtOutOpt gpsprot.Option[gpsprot.PVTMsgFlags]
+type pvtOutOpt gpsprot.PVTMsgFlags
 
 var _ pflag.Value = (*pvtOutOpt)(nil)
 
 func (pvtOut *pvtOutOpt) String() string {
-	msg := (*gpsprot.Option[gpsprot.PVTMsgFlags])(pvtOut)
-	if !msg.IsSet() {
+	flags := gpsprot.PVTMsgFlags(*pvtOut)
+	if !flags.IsSet() {
 		return ""
-	}
-	flags := msg.Get()
-	if flags == 0 {
-		return "none"
 	}
 	var parts []string
 	if flags&gpsprot.PVTMsgPos != 0 {
@@ -397,8 +393,8 @@ func (pvtOut *pvtOutOpt) String() string {
 	if flags&gpsprot.PVTMsgECEF != 0 {
 		parts = append(parts, "ecef")
 	}
-	if flags&gpsprot.PVTMsgMin != 0 {
-		parts = append(parts, "min")
+	if flags&gpsprot.PVTMsgOff != 0 {
+		parts = append(parts, "off")
 	}
 	return strings.Join(parts, ",")
 }
@@ -411,8 +407,7 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 	if s == "" {
 		return fmt.Errorf("empty value for --pvt-out")
 	}
-	msg := (*gpsprot.Option[gpsprot.PVTMsgFlags])(pvtOut)
-	flags := gpsprot.PVTMsgFlags(0)
+	flags := gpsprot.PVTMsgFlags(*pvtOut)
 	for _, w := range strings.Split(s, ",") {
 		switch strings.ToLower(strings.TrimSpace(w)) {
 		case "pos":
@@ -427,15 +422,13 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 			flags |= gpsprot.PVTMsgTAI
 		case "ecef":
 			flags |= gpsprot.PVTMsgECEF
-		case "min":
-			flags |= gpsprot.PVTMsgMin
-		case "none":
-			// do nothing
+		case "off":
+			flags |= gpsprot.PVTMsgOff
 		default:
 			return fmt.Errorf("unknown pvt output flag: %s", w)
 		}
 	}
-	msg.Set(flags)
+	*pvtOut = pvtOutOpt(flags)
 	return nil
 }
 
