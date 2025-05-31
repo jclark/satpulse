@@ -170,7 +170,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			nmeaMsg.Set(gpsprot.NMEAMsgRMC)
 		}
 		rtcmMsg.Set(gpsprot.RTCMMsgNone)
-		pvtMsg.Set(0)
+		pvtMsg.Set(gpsprot.PVTMsgOff)
 		rawMsg.Set(gpsprot.RawMsgNone)
 		// we aren't exposing satsMsg in the CLI yet (waiting to implement UBX-CFG-SIGNAL)
 		vars.satsMsg.Set(gpsprot.SatsMsgNone)

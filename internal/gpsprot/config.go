@@ -206,6 +206,7 @@ func MakeOption[T any](v T) Option[T] {
 // The PVTMsgOff option says to turn off PVT messages that are not enabled.
 // This makes PVTMsgFlags different from the other message flags,
 // where the equivalent of PVTMsgOff semantics is always applied.
+// A zero value means no specific PVT message configuration is requested.
 type PVTMsgFlags uint16
 
 const (
@@ -217,7 +218,6 @@ const (
 	PVTMsgTAI                                // want time in TAI not UTC
 	PVTMsgECEF                               // want position in ECEF coordinates
 	PVTMsgOff                                // turn off any unneeded PVT messages
-	PVTMsgNone       PVTMsgFlags = 0
 	PVTMsgAny        PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond // any message (not flag)
 )
 

@@ -18,12 +18,14 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--nmea"}, flagVars{
 		nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC),
 		rtcmMsg: gpsprot.MakeOption(gpsprot.RTCMMsgNone),
+		pvtMsg:  gpsprot.PVTMsgOff,
 		rawMsg:  gpsprot.MakeOption(gpsprot.RawMsgNone),
 		satsMsg: gpsprot.MakeOption(gpsprot.SatsMsgNone),
 	}},
 	{"ttyS0", []string{"--nmea", "--save"}, flagVars{
 		nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC),
 		rtcmMsg: gpsprot.MakeOption(gpsprot.RTCMMsgNone),
+		pvtMsg:  gpsprot.PVTMsgOff,
 		rawMsg:  gpsprot.MakeOption(gpsprot.RawMsgNone),
 		satsMsg: gpsprot.MakeOption(gpsprot.SatsMsgNone),
 		save:    gpsprot.SaveMinimal,
@@ -86,6 +88,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 		save:    gpsprot.SaveMinimal,
 		nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC),
 		rtcmMsg: gpsprot.MakeOption(gpsprot.RTCMMsgNone),
+		pvtMsg:  gpsprot.PVTMsgOff,
 		rawMsg:  gpsprot.MakeOption(gpsprot.RawMsgNone),
 		satsMsg: gpsprot.MakeOption(gpsprot.SatsMsgNone),
 	}},
@@ -176,6 +179,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--nmea", "--nmea-out", "GGA,GSA"}, flagVars{
 		nmeaMsg: gpsprot.MakeOption(gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA),
 		rtcmMsg: gpsprot.MakeOption(gpsprot.RTCMMsgNone),
+		pvtMsg:  gpsprot.PVTMsgOff,
 		rawMsg:  gpsprot.MakeOption(gpsprot.RawMsgNone),
 		satsMsg: gpsprot.MakeOption(gpsprot.SatsMsgNone),
 	}},
