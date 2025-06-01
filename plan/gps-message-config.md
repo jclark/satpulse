@@ -22,11 +22,13 @@ The basic idea is to divide messages into the following categories, and then hav
     - Signal - information per-SV, and per-signal e.g. signal level of each satellite (uses more bandwidth)
   - Text - messages from the GPS receiver intended for humans to read e.g. UBX-INF-WARNING
   - NMEA - NMEA messages to be enabled
-    - RMC
-    - GGA
-    - GSA
-    - GSV
-    - also maybe VTG, ZDA and GNS
+    - RMC (0xf004)
+    - GGA (0xf000)
+    - GSA (0xf002)
+    - GSV (0xf003)
+    - also maybe GLL (0xf001), VTG (0xf005), ZDA (0xf008), GNS (0xf00d)
+    - not TXT since not a nav message and config not supported by gen 9
+    - GNS not supported by LEA-6T
     - Other - when this flag is missing together with all others, then it will disable NMEA on the port; if this flag only is specified; it will disable specific messages
  - RTCM - RTCM messages to be enabled; GLONASS code phase bias 1230 will be automatically enabled if an MSM message is enabled and GLONASS is enabled
      - MSM4 - enable MSM4 messages for all enabled constellations
