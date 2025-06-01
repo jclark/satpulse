@@ -66,8 +66,6 @@ func testSanity(t *testing.T, target *gpsprot.ConfigTarget, ver *Version, known 
 	expectItem(t, m, ucv.KTpSyncGnssTp1, true)
 	expectItem(t, m, ucv.KTpUseLockedTp1, true)
 	expectItem(t, m, ucv.KTpTp1Ena, true)
-	expectItem(t, m, ucv.KRateMeas, 1e3)
-	expectItem(t, m, ucv.KRateNav, 1)
 
 	if tg, ok := cfgValGet(m, ucv.KTpTimegridTp1); ok && tg == ucv.ETpTimegridTp1Utc {
 		t.Errorf("expected KTpTimegridTp1 not to be UTC")

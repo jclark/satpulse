@@ -167,10 +167,6 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 		ucv.AddItem(&items, ucv.KNavspgUtcstandard, gnssToEnumNavspgUtcstandard(v))
 		ucv.AddItem(&items, ucv.KRateTimeref, gnssToRateTimeref(v))
 	}
-	if v, ok := cp.GetSolutionPeriod(); ok {
-		ucv.AddItem(&items, ucv.KRateMeas, uint64(uint16(v.Round(time.Millisecond)/time.Millisecond)))
-		ucv.AddItem(&items, ucv.KRateNav, 1)
-	}
 	if v, ok := cp.GetStationary(); ok {
 		dm := ucv.ENavspgDynmodelPort
 		if v {
@@ -178,14 +174,24 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 		}
 		ucv.AddItem(&items, ucv.KNavspgDynmodel, dm)
 	}
-	err = known.Messages(&target.Opts, ver, port, tg, &items)
+	if false {
+		// new code, under development
+		err = known.Messages(&target.Opts, ver, port, &items)
+	} else {
+		// old code
+		err = known.MessagesOld(&target.Opts, ver, port, tg, &items)
+	}
 	if err != nil {
 		return nil, nil, false, err
 	}
 	return items, keys, survey, nil
 }
 
-func (known *CfgVals) Messages(opts *gpsprot.ConfigOptions, ver *Version, port ucv.Port, tg ucv.EnumTpTimegridTp1, items *[]ucv.Item) error {
+func (known *CfgVals) MessagesOld(opts *gpsprot.ConfigOptions, ver *Version, port ucv.Port, tg ucv.EnumTpTimegridTp1, items *[]ucv.Item) error {
+	if opts.EnablesMsgs() {
+		ucv.AddItem(items, ucv.KRateMeas, 1000)
+		ucv.AddItem(items, ucv.KRateNav, 1)
+	}
 	if opts.NMEAMsg.IsSet() {
 		v := opts.NMEAMsg.Get() != 0
 		k := portOutprotNmeaKey(port)
@@ -210,6 +216,21 @@ func (known *CfgVals) Messages(opts *gpsprot.ConfigOptions, ver *Version, port u
 		}
 		ucv.AddItem(items, ucv.KUbxNavSat.KeyU(port), rate)
 	}
+	return nil
+}
+
+func (known *CfgVals) Messages(opts *gpsprot.ConfigOptions, ver *Version, port ucv.Port, items *[]ucv.Item) error {
+	msgChanges := newMsgChanges()
+	// XXX ver.GNSS isn't right here: need enabled GNSS which we can get from MON-GNSS
+	err := msgChanges.options(opts, ver, ver.GNSS)
+	if err != nil {
+		return err
+	}
+	if msgChanges.usesRate() {
+		ucv.AddItem(items, ucv.KRateMeas, 1000)
+		ucv.AddItem(items, ucv.KRateNav, 1)
+	}
+	*items = append(*items, msgChanges.items(port)...)
 	return nil
 }
 

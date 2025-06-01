@@ -28,7 +28,7 @@ type CfgOld struct {
 // A PropID will be included in the slice for a field in cfgOldProps if and only if
 // getting or setting that property may need to use the corresponding field in CfgOld.
 var cfgOldProps = struct {
-	tmode, tp5, gnss, rate, nav5, prt []gpsprot.PropIDs
+	tmode, tp5, gnss, nav5, prt []gpsprot.PropIDs
 }{
 	// tmode applies to tmode2 and tmode3 as well
 	tmode: []gpsprot.PropIDs{
@@ -50,9 +50,6 @@ var cfgOldProps = struct {
 		// PropIDPrimaryGNSS is regarded as unset, if tp5 isn't aligned to a GNSS and nav5 also doesn't have a preferred GNSS
 		gpsprot.PropIDSignalsEnabled,
 		gpsprot.PropIDTimePulseAlignToGNSS, // cookTp5 can end up looking at the .gnss field for this
-	},
-	rate: []gpsprot.PropIDs{
-		gpsprot.PropIDSolutionPeriod,
 	},
 	nav5: []gpsprot.PropIDs{
 		gpsprot.PropIDPrimaryGNSS,
@@ -816,31 +813,17 @@ func adjustTrackingChannels(gnss *bin.CfgGNSS) {
 	}
 }
 
-func (raw *CfgOld) cookRate(cp *gpsprot.ConfigProps, ver *Version) {
-	rate := raw.rate
-	if rate == nil {
-		return
-	}
-	cp.SetSolutionPeriod(rateSolutionPeriod(rate, ver))
-}
-
-func rateSolutionPeriod(rate *bin.CfgRate, ver *Version) time.Duration {
-	period := time.Duration(rate.MeasRate) * time.Millisecond
-	if ver.protVerAtLeast(18, 0) && rate.NavRate != 0 {
-		period /= time.Duration(rate.NavRate)
-	}
-	return period
-}
-
-func (raw *CfgOld) changeRate(cp *gpsprot.ConfigProps, ver *Version) *bin.CfgRate {
+func (raw *CfgOld) changeRate(ct *gpsprot.ConfigTarget, ver *Version) *bin.CfgRate {
 	if raw.rate == nil {
 		return nil
 	}
 	rate := *raw.rate
-	if period, exists := cp.GetSolutionPeriod(); exists {
-		setSolutionPeriod(&rate, period, ver)
+	// XXX also survey progress message
+	if ct.Opts.EnablesMsgs() {
+		rate.MeasRate = 1000 // 1 second
+		rate.NavRate = 1
 	}
-	if gnss, exists := cp.GetPrimaryGNSS(); exists {
+	if gnss, exists := ct.Props.GetPrimaryGNSS(); exists {
 		switch gnss {
 		case gpsprot.GPS:
 			rate.TimeRef = bin.CfgRateGPS
@@ -856,19 +839,6 @@ func (raw *CfgOld) changeRate(cp *gpsprot.ConfigProps, ver *Version) *bin.CfgRat
 		return nil
 	}
 	return &rate
-}
-
-func setSolutionPeriod(rate *bin.CfgRate, period time.Duration, ver *Version) {
-	// don't unnecessatily change navRate
-	if rateSolutionPeriod(rate, ver) == period {
-		return
-	}
-	measRate := period.Round(time.Millisecond) / time.Millisecond
-	if measRate <= 0 || measRate > 0xffff {
-		return
-	}
-	rate.MeasRate = uint16(measRate)
-	rate.NavRate = 1
 }
 
 func (raw *CfgOld) cookNav5(cp *gpsprot.ConfigProps) {
@@ -969,4 +939,21 @@ func idToGNSS(g bin.GNSSID) gpsprot.GNSS {
 		return gpsprot.SBAS
 	}
 	return 0
+}
+
+func monGNSSSet(mon bin.MonGnssMajorGnss) gpsprot.GNSSSet {
+	g := gpsprot.GNSSSet(0)
+	if mon&bin.MonGnssGPS != 0 {
+		g |= gpsprot.GNSSSetOf(gpsprot.GPS)
+	}
+	if mon&bin.MonGnssGlonass != 0 {
+		g |= gpsprot.GNSSSetOf(gpsprot.GLO)
+	}
+	if mon&bin.MonGnssBeidou != 0 {
+		g |= gpsprot.GNSSSetOf(gpsprot.BDS)
+	}
+	if mon&bin.MonGnssGalileo != 0 {
+		g |= gpsprot.GNSSSetOf(gpsprot.GAL)
+	}
+	return g
 }

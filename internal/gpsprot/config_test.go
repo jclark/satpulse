@@ -9,21 +9,11 @@ func TestConfigProps(t *testing.T) {
 	cp := new(ConfigProps)
 
 	// Set some values directly with setter methods
-	cp.SetSolutionPeriod(10 * time.Second)
 	cp.SetTimePulseWidth(1 * time.Millisecond)
 	cp.SetTimePulseAlignToGNSS(true)
 
-	validProps := []PropIDs{PropIDSolutionPeriod, PropIDTimePulseWidth, PropIDTimePulseAlignToGNSS}
+	validProps := []PropIDs{PropIDTimePulseWidth, PropIDTimePulseAlignToGNSS}
 	invalidProps := []PropIDs{PropIDTimePulsePeriod, PropIDStationary}
-
-	// Get the values using getter methods
-	solutionPeriod, ok := cp.GetSolutionPeriod()
-	if !ok {
-		t.Errorf("expected solutionPeriod to be set")
-	}
-	if solutionPeriod != 10*time.Second {
-		t.Errorf("expected solutionPeriod to be 10s, got %v", solutionPeriod)
-	}
 
 	timePulseWidth, ok := cp.GetTimePulseWidth()
 	if !ok {
@@ -90,10 +80,10 @@ func TestPoint3DRoundTrip(t *testing.T) {
 }
 
 func TestPropIDOperations(t *testing.T) {
-	props := PropIDSolutionPeriod | PropIDTimePulsePeriod
+	props := PropIDSignalsEnabled | PropIDTimePulsePeriod
 
-	if props&PropIDSolutionPeriod == 0 {
-		t.Errorf("expected PropIDSolutionPeriod to be in the bitfield")
+	if props&PropIDSignalsEnabled == 0 {
+		t.Errorf("expected PropIDSignalsEnabled to be in the bitfield")
 	}
 
 	if props&PropIDTimePulsePeriod == 0 {

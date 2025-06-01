@@ -116,7 +116,6 @@ type ConfigProps struct {
 	valid             PropIDs // says which fields are valid
 	signalsEnabled    SignalSet
 	primaryGNSS       GNSS
-	solutionPeriod    time.Duration
 	timePulse         TimePulse
 	timeMode          TimeMode
 	antennaCableDelay time.Duration
@@ -129,7 +128,6 @@ type ConfigProps struct {
 const (
 	PropIDSignalsEnabled PropIDs = 1 << iota
 	PropIDPrimaryGNSS
-	PropIDSolutionPeriod
 	// eventually the individual time pulse properties will be combined into a single property
 	PropIDTimePulseWidth
 	PropIDTimePulsePeriod
@@ -148,7 +146,6 @@ const (
 var propNames = []string{
 	"SignalsEnabled",
 	"PrimaryGNSS",
-	"SolutionPeriod",
 	"TimePulseWidth",
 	"TimePulsePeriod",
 	"TimePulseAlignToGNSS",
@@ -210,14 +207,14 @@ func MakeOption[T any](v T) Option[T] {
 type PVTMsgFlags uint16
 
 const (
-	PVTMsgPos        PVTMsgFlags = 1 << iota // position
-	PVTMsgVel                                // velocity
-	PVTMsgTime                               // time of navigation solution
-	PVTMsgTimePulse                          // time of time pulse
-	PVTMsgLeapSecond                         // date of most recently announced leap second
-	PVTMsgTAI                                // want time in TAI not UTC
-	PVTMsgECEF                               // want position in ECEF coordinates
-	PVTMsgOff                                // turn off any unneeded PVT messages
+	PVTMsgPos        PVTMsgFlags = 1 << iota                                                               // position
+	PVTMsgVel                                                                                              // velocity
+	PVTMsgTime                                                                                             // time of navigation solution
+	PVTMsgTimePulse                                                                                        // time of time pulse
+	PVTMsgLeapSecond                                                                                       // date of most recently announced leap second
+	PVTMsgTAI                                                                                              // want time in TAI not UTC
+	PVTMsgECEF                                                                                             // want position in ECEF coordinates
+	PVTMsgOff                                                                                              // turn off any unneeded PVT messages
 	PVTMsgAny        PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond // any message (not flag)
 )
 
@@ -249,6 +246,7 @@ const (
 	SatsMsgSV     SatsMsgFlags = 1 << iota // position of SVs
 	SatsMsgSignal                          // signal strength of each signal from each SV
 	SatsMsgNone   SatsMsgFlags = 0
+	SatsMsgAny    SatsMsgFlags = SatsMsgSV | SatsMsgSignal // any message (not flag)
 )
 
 type NMEAMsgFlags uint16
@@ -324,6 +322,14 @@ func (o ConfigOptions) NoOp() bool {
 	return o.Save == 0 && o.Reset == 0 && o.PVTMsg.IsZero() && o.SatsMsg.IsZero() && o.NMEAMsg.IsZero() && o.Survey.When == TimeModeNone
 }
 
+func (o *ConfigOptions) SetsMsgs() bool {
+	return o.PVTMsg.IsSet() || o.SatsMsg.IsSet() || o.NMEAMsg.IsSet() || o.RTCMMsg.IsSet() || o.RawMsg.IsSet()
+}
+
+func (o *ConfigOptions) EnablesMsgs() bool {
+	return o.PVTMsg&PVTMsgAny != 0 || o.SatsMsg.Get()&SatsMsgAny != 0 || o.NMEAMsg.Get()&NMEAMsgAny != 0 || o.RTCMMsg.Get()&RTCMMsgAny != 0 || o.RawMsg.Get()&RawMsgAny != 0
+}
+
 // String returns a human-readable representation of the PropIDs flags
 func (p PropIDs) String() string {
 	var names []string
@@ -361,20 +367,6 @@ func (cp *ConfigProps) GetPrimaryGNSS() (GNSS, bool) {
 func (cp *ConfigProps) SetPrimaryGNSS(val GNSS) {
 	cp.primaryGNSS = val
 	cp.valid |= PropIDPrimaryGNSS
-}
-
-// GetSolutionPeriod returns the solutionPeriod value and whether it's set
-func (cp *ConfigProps) GetSolutionPeriod() (time.Duration, bool) {
-	if cp.valid&PropIDSolutionPeriod != 0 {
-		return cp.solutionPeriod, true
-	}
-	return 0, false
-}
-
-// SetSolutionPeriod sets the solutionPeriod value
-func (cp *ConfigProps) SetSolutionPeriod(val time.Duration) {
-	cp.solutionPeriod = val
-	cp.valid |= PropIDSolutionPeriod
 }
 
 // GetTimePulseWidth returns the timePulseWidth value and whether it's set
@@ -582,9 +574,6 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	if both&PropIDPrimaryGNSS != 0 && cp.primaryGNSS != other.primaryGNSS {
 		result.SetPrimaryGNSS(other.primaryGNSS)
 	}
-	if both&PropIDSolutionPeriod != 0 && cp.solutionPeriod != other.solutionPeriod {
-		result.SetSolutionPeriod(other.solutionPeriod)
-	}
 	if both&PropIDTimePulseWidth != 0 && cp.timePulse.Width != other.timePulse.Width {
 		result.SetTimePulseWidth(other.timePulse.Width)
 	}
@@ -645,9 +634,6 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	if cp.valid&PropIDPrimaryGNSS != 0 {
 		m["primaryGNSS"] = cp.primaryGNSS
 	}
-	if cp.valid&PropIDSolutionPeriod != 0 {
-		m["solutionPeriod"] = float64(cp.solutionPeriod) / float64(time.Second)
-	}
 	if cp.valid&timePulseProps != 0 {
 		tpm := make(map[string]interface{})
 		if cp.valid&PropIDTimePulseWidth != 0 {
@@ -703,7 +689,6 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 
 // SetPPS configures the properties for a pulse-per-second output
 func (cp *ConfigProps) SetPPS() {
-	cp.SetSolutionPeriod(1 * time.Second)
 	cp.SetTimePulse(TimePulse{
 		Period:         1 * time.Second,
 		Width:          time.Second / 10,

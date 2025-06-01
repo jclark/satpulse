@@ -392,9 +392,7 @@ func newCfgValsetRequest(items []ucv.Item, layers bin.CfgValsetLayer) (*bin.CfgV
 
 func (c *Configurator) pollPrt() error {
 	// This is used both by old and new.
-	if !c.target.UsesAny(cfgOldProps.prt...) &&
-		c.target.Opts.NMEAMsg.IsZero() && c.target.Opts.PVTMsg.IsZero() &&
-		c.target.Opts.SatsMsg.IsZero() && c.target.Opts.Survey.When == 0 {
+	if !c.target.UsesAny(cfgOldProps.prt...) && !c.target.Opts.SetsMsgs() && c.target.Opts.Survey.When == 0 {
 		return nil
 	}
 	return c.addPollRequest(bin.CfgPrtID)
@@ -420,7 +418,8 @@ func (c *Configurator) pollMonGNSS() error {
 }
 
 func (c *Configurator) pollRate() error {
-	if !c.target.UsesAny(cfgOldProps.rate...) {
+	// XXX also handle survey message
+	if _, ok := c.target.Props.GetPrimaryGNSS(); !ok && !c.target.Opts.EnablesMsgs() {
 		return nil
 	}
 	return c.addPollRequest(bin.CfgRateID)
@@ -562,7 +561,7 @@ func (c *Configurator) setNav5() error {
 }
 
 func (c *Configurator) setRate() error {
-	rate := c.raw.changeRate(&c.target.Props, c.ver)
+	rate := c.raw.changeRate(c.target, c.ver)
 	if rate == nil {
 		return nil
 	}
@@ -671,7 +670,6 @@ func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigProps {
 		}
 		raw.cookTp5(cm)
 		raw.cookGNSS(cm)
-		raw.cookRate(cm, ver)
 		// must call cookNav5 after cookTp5, because we want to prefer primary GNSS from TP5
 		raw.cookNav5(cm)
 	}

@@ -44,6 +44,18 @@ func (mc *msgChanges) changeOutProtoMask(mask bin.CfgPrtProtoMask) bin.CfgPrtPro
 	return (mask &^ mc.protoDisable) | mc.protoEnable
 }
 
+// usesRates returns true if any message rate is non-zero.
+// Semantically our rates our in Hz, so if this is true then we
+// need to ensure that a 1 here means 1Hz.
+func (mc *msgChanges) usesRate() bool {
+	for _, rate := range mc.rate {
+		if rate != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *msgChanges) options(opts *gpsprot.ConfigOptions, ver *Version, enabledGNSS gpsprot.GNSSSet) error {
 	if opts.PVTMsg.IsSet() {
 		m.pvt(opts.PVTMsg.Get(), ver)

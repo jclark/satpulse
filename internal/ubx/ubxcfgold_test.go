@@ -76,35 +76,6 @@ func TestNav5(t *testing.T) {
 	}
 }
 
-func TestRate(t *testing.T) {
-	raw := &CfgOld{rate: new(ubxbin.CfgRate)}
-	raw.rate.NavRate = 1
-	ver := new(Version)
-
-	cp := &gpsprot.ConfigProps{}
-	cp.SetPPS()
-
-	raw.rate = raw.changeRate(cp, ver)
-
-	ncp := gpsprot.ConfigProps{}
-	raw.cookRate(&ncp, ver)
-	bad := cp.Inconsistent(&ncp)
-	if !bad.IsEmpty() {
-		t.Errorf("rate change failed: %v", bad)
-	}
-
-	rep := raw.changeRate(cp, ver)
-
-	if rep != nil {
-		t.Errorf("repeated changeRate wasn't a no-op: %v", rep)
-	}
-
-	rep = raw.changeRate(new(gpsprot.ConfigProps), ver)
-	if rep != nil {
-		t.Errorf("changeRate with nothing wasn't a no-op: %v", rep)
-	}
-}
-
 func TestConfiguratorSane(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	target.Props.SetPPS()
