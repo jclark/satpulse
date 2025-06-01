@@ -1,3 +1,5 @@
+//go:build linux
+
 package phc
 
 import (
@@ -9,31 +11,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type DriverFlags uint32
-
-const (
-	DriverOneEdge DriverFlags = 1 << iota
-	DriverBothEdges
-	DriverKnown
-	DriverPoll4Hz
-	DriverCarrier             // PHC needs a carrier to work
-	DriverEdges   DriverFlags = DriverOneEdge | DriverBothEdges
-)
-
-func (flags DriverFlags) Edges() int {
-	return int(flags & DriverEdges)
-}
-
-func (flags DriverFlags) SetEdges(edges int) DriverFlags {
-	if edges == 0 {
-		return flags
-	}
-	if edges != 1 && edges != 2 {
-		panic(fmt.Sprintf("invalid number of pulse edges %d", edges))
-	}
-	flags &^= DriverEdges
-	return flags | DriverFlags(edges)
-}
 
 const cm4Flags DriverFlags = DriverKnown | DriverOneEdge | DriverPoll4Hz | DriverCarrier
 const intelFlags DriverFlags = DriverKnown | DriverBothEdges
@@ -92,7 +69,6 @@ func IfDriverName(ifname string) (name string, err error) {
 	return
 }
 
-type PhyID uint32
 
 func IfPhyID(ifname string) (PhyID, error) {
 	path := fmt.Sprintf("/sys/class/net/%s/phydev/phy_id", ifname)
