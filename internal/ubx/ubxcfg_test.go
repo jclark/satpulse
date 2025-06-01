@@ -49,7 +49,8 @@ var m10Version = Version{
 }
 
 var m8tVersion = Version{
-	Prot: &ProtVer{Major: 23, Minor: 01},
+	Prot: &ProtVer{Major: 22, Minor: 00},
+	Mod:  "LEA-M8T-0",
 	FW:   &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
 }
 
