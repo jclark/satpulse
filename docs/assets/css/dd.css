@@ -1,0 +1,4 @@
+/* Fix for nested definition list font sizes */
+.page__content dd {
+    font-size: 1rem;
+}
