@@ -63,6 +63,84 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **-p**, **--pps**  
 : Configure the GPS receiver to enable PPS (pulse-per-second) output.
 
+**--pvt-out** *flags*  
+: Configure which Position, Velocity, and Time (PVT) messages to output. The *flags* parameter is a comma-separated list of:
+  
+  **pos**
+  : Enable position messages (latitude, longitude, altitude by default)
+  
+  **vel**
+  : Enable velocity messages (North, East, Down components by default)
+  
+  **time**
+  : Enable time of navigation solution messages
+  
+  **tp**
+  : Enable time pulse messages (time of the PPS signal)
+  
+  **leap**
+  : Enable leap second information messages
+  
+  **tai**
+  : Request time in TAI (or constant offset from TAI) rather than UTC
+  
+  **ecef**
+  : Request position/velocity in Earth-Centered, Earth-Fixed coordinates
+  
+  **off**
+  : Turn off PVT messages that are not explicitly enabled
+  
+  **daemon**
+  : Enable messages needed by satpulsed (equivalent to `tp,tai,leap,off`)
+
+**--raw-out** *flags*  
+: Configure raw data message output. The *flags* parameter is a comma-separated list of:
+  
+  **obs**
+  : Enable raw observation/measurement messages (for RINEX observation files)
+  
+  **nav**
+  : Enable raw navigation data messages (e.g., GPS subframe data)
+  
+  **none**
+  : Disable all raw data messages
+
+**--rtcm-out** *flags*  
+: Configure RTCM 3.x message output. The *flags* parameter is a comma-separated list of:
+  
+  **MSM4**
+  : Enable MSM4 messages for all enabled GNSS constellations
+  
+  **MSM7**
+  : Enable MSM7 messages for all enabled GNSS constellations
+  
+  **ARP**
+  : Enable Antenna Reference Point messages (RTCM message type 1005)
+  
+  **none**
+  : Disable all RTCM messages
+
+**--nmea-out** *flags*  
+: Configure NMEA message output. The *flags* parameter is a comma-separated list of:
+  
+  **RMC**
+  : Enable RMC (Recommended Minimum) messages
+  
+  **GGA**
+  : Enable GGA (Global Positioning System Fix Data) messages
+  
+  **GSA**
+  : Enable GSA (DOP and Active Satellites) messages
+  
+  **GSV**
+  : Enable GSV (Satellites in View) messages
+  
+  **ZDA**
+  : Enable ZDA (Time and Date) messages
+  
+  **none**
+  : Disable all NMEA messages
+
 **--disable-time-mode**  
 : Disable time mode (cannot be used with `--survey`).
 
@@ -89,6 +167,18 @@ Start a survey for 3000 seconds with 1.5m accuracy:
 Connect over a socket and reset the receiver:
 
     satpulsetool gps --socket /var/run/satpulse.sock --reset
+
+Configure receiver for satpulsed with time pulse and leap second messages:
+
+    satpulsetool gps -d /dev/ttyACM0 --pvt-out daemon
+
+Enable RTCM MSM4 output for base station use:
+
+    satpulsetool gps -d /dev/ttyUSB0 --rtcm-out MSM4,ARP --gnss GPS,GAL,BDS
+
+Enable only NMEA RMC messages:
+
+    satpulsetool gps -d /dev/ttyACM0 --nmea --nmea-out RMC
 
 # SEE ALSO
 
