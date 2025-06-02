@@ -207,15 +207,16 @@ func MakeOption[T any](v T) Option[T] {
 type PVTMsgFlags uint16
 
 const (
-	PVTMsgPos        PVTMsgFlags = 1 << iota                                                               // position
-	PVTMsgVel                                                                                              // velocity
-	PVTMsgTime                                                                                             // time of navigation solution
-	PVTMsgTimePulse                                                                                        // time of time pulse
-	PVTMsgLeapSecond                                                                                       // date of most recently announced leap second
-	PVTMsgTAI                                                                                              // want time in TAI not UTC
-	PVTMsgECEF                                                                                             // want position in ECEF coordinates
-	PVTMsgOff                                                                                              // turn off any unneeded PVT messages
-	PVTMsgAny        PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond // any message (not flag)
+	PVTMsgPos            PVTMsgFlags = 1 << iota                                                               // position
+	PVTMsgVel                                                                                                  // velocity
+	PVTMsgTime                                                                                                 // time of navigation solution
+	PVTMsgTimePulse                                                                                            // time of time pulse
+	PVTMsgLeapSecond                                                                                           // date of most recently announced leap second
+	PVTMsgTAI                                                                                                  // want time in TAI not UTC
+	PVTMsgECEF                                                                                                 // want position in ECEF coordinates
+	PVTMsgTimePulseAfter                                                                                       // ensure there is a time message following the time pulse
+	PVTMsgOff                                                                                                  // turn off any unneeded PVT messages
+	PVTMsgAny            PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond // any message (not flag)
 )
 
 // These methods are to make PVTMsgFlags more consistent with Option[*Flags] for the other flags.

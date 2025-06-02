@@ -128,15 +128,20 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	}
 	if flags&gpsprot.PVTMsgTimePulse != 0 {
 		timTP = true
-		// we don't clear TimePulse here, because we also want a message following the time pulse
+		flags &^= gpsprot.PVTMsgTimePulse
+		// TimePulseAfter is just like Time, except on FTS
+		if flags&gpsprot.PVTMsgTimePulseAfter != 0 {
+			flags |= gpsprot.PVTMsgTime
+		}
 	}
-	if flags&gpsprot.PVTMsgTAI != 0 && flags&(gpsprot.PVTMsgTime|gpsprot.PVTMsgTimePulse) != 0 {
+	flags &^= gpsprot.PVTMsgTimePulseAfter
+	if flags&gpsprot.PVTMsgTAI != 0 && flags&gpsprot.PVTMsgTime != 0 {
 		navTimeGPS = true
-		flags &^= gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI
+		flags &^= gpsprot.PVTMsgTime | gpsprot.PVTMsgTAI
 	}
 	if navPVTSupported {
 		nPVT := 0
-		if flags&(gpsprot.PVTMsgTime|gpsprot.PVTMsgTimePulse) != 0 {
+		if flags&gpsprot.PVTMsgTime != 0 {
 			nPVT++
 		}
 		if flags&gpsprot.PVTMsgPos != 0 {
@@ -147,12 +152,12 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 		}
 		if nPVT >= 2 {
 			navPVT = true
-			flags &^= gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos | gpsprot.PVTMsgVel
+			flags &^= gpsprot.PVTMsgTime | gpsprot.PVTMsgPos | gpsprot.PVTMsgVel
 		}
 	}
-	if flags&(gpsprot.PVTMsgTime|gpsprot.PVTMsgTimePulse) != 0 {
+	if flags&gpsprot.PVTMsgTime != 0 {
 		navTimeUTC = true
-		flags &^= gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse
+		flags &^= gpsprot.PVTMsgTime
 	}
 	if flags&gpsprot.PVTMsgPos != 0 {
 		navPosLLH = true

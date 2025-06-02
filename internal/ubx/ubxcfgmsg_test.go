@@ -120,7 +120,7 @@ func TestMsgChangesPVT(t *testing.T) {
 			name:     "TimePulse",
 			flags:    gpsprot.PVTMsgTimePulse,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeUTCID},
+			expected: []bin.MsgID{bin.TimTPID},
 		},
 		{
 			name:     "Time,TAI",
@@ -132,7 +132,7 @@ func TestMsgChangesPVT(t *testing.T) {
 			name:     "TimePulse,TAI",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeGPSID},
+			expected: []bin.MsgID{bin.TimTPID},
 		},
 		{
 			name:     "LeapSecond",
@@ -144,25 +144,37 @@ func TestMsgChangesPVT(t *testing.T) {
 			name:     "TimePulse,Pos",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavPVTID},
+			expected: []bin.MsgID{bin.TimTPID, bin.NavPosLLHID},
 		},
 		{
 			name:     "TimePulse,Vel",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgVel,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavPVTID},
+			expected: []bin.MsgID{bin.TimTPID, bin.NavVelNEDID},
 		},
 		{
 			name:     "TimePulse,TAI,Pos",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI | gpsprot.PVTMsgPos,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeGPSID, bin.NavPosLLHID},
+			expected: []bin.MsgID{bin.TimTPID, bin.NavPosLLHID},
 		},
 		{
 			name:     "TimePulse,TAI,LeapSecond",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeGPSID, bin.NavTimeLSID},
+			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeLSID},
+		},
+		{
+			name:     "TimePulse,After",
+			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter,
+			version:  testVers.f9p,
+			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeUTCID},
+		},
+		{
+			name:     "TimePulse,After,TAI",
+			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI,
+			version:  testVers.f9p,
+			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeGPSID},
 		},
 		// FTS (M8F) specific tests - uses TIM-TOS instead of TIM-TP
 		{
@@ -195,6 +207,12 @@ func TestMsgChangesPVT(t *testing.T) {
 			version:  testVers.m8f,
 			expected: []bin.MsgID{bin.TimTosID},
 		},
+		{
+			name:     "TimePulse,After (FTS)",
+			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter,
+			version:  testVers.m8f,
+			expected: []bin.MsgID{bin.TimTosID},
+		},
 		// LEA-6T specific tests - no NAV-PVT support
 		{
 			name:     "Time,Pos (no NAV-PVT)",
@@ -224,7 +242,7 @@ func TestMsgChangesPVT(t *testing.T) {
 			name:     "TimePulse,Pos (no NAV-PVT)",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeUTCID, bin.NavPosLLHID},
+			expected: []bin.MsgID{bin.TimTPID, bin.NavPosLLHID},
 		},
 		{
 			name:     "Time,TAI (LEA-6T)",
@@ -236,7 +254,7 @@ func TestMsgChangesPVT(t *testing.T) {
 			name:     "TimePulse,TAI (LEA-6T)",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeGPSID},
+			expected: []bin.MsgID{bin.TimTPID},
 		},
 		{
 			name:     "Pos,ECEF (LEA-6T)",
@@ -260,7 +278,7 @@ func TestMsgChangesPVT(t *testing.T) {
 			name:     "TimePulse,Pos,ECEF (no NAV-PVT)",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeUTCID, bin.NavPosECEFID},
+			expected: []bin.MsgID{bin.TimTPID, bin.NavPosECEFID},
 		},
 	}
 

@@ -7,11 +7,13 @@ import (
 	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
+
 type validFlagsTestCase struct {
 	dev  string
 	args []string
 	vars flagVars
 }
+
 var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{}, flagVars{}},
 	{"ttyS0", []string{"--reset"}, flagVars{reset: gpsprot.ResetCold}},
@@ -101,13 +103,12 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--raw-out", "none"}, flagVars{rawMsg: gpsprot.MakeOption(gpsprot.RawMsgFlags(0))}},
 	{"ttyS0", []string{"--raw-out", "obs", "--save"}, flagVars{rawMsg: gpsprot.MakeOption(gpsprot.RawMsgObs), save: gpsprot.SaveMinimal}},
 	// Test --pvt-out flag
-	{"ttyS0", []string{"--pvt-out", "daemon"}, flagVars{pvtMsg: gpsevent.PVTMsgFlags}},
+	{"ttyS0", []string{"--pvt-out", "daemon"}, flagVars{pvtMsg: gpsevent.PVTMsgFlags|gpsprot.PVTMsgOff}},
 	{"ttyS0", []string{"--pvt-out", "pos"}, flagVars{pvtMsg: gpsprot.PVTMsgPos}},
 	{"ttyS0", []string{"--pvt-out", "vel"}, flagVars{pvtMsg: gpsprot.PVTMsgVel}},
 	{"ttyS0", []string{"--pvt-out", "time"}, flagVars{pvtMsg: gpsprot.PVTMsgTime}},
 	{"ttyS0", []string{"--pvt-out", "tp"}, flagVars{pvtMsg: gpsprot.PVTMsgTimePulse}},
 	{"ttyS0", []string{"--pvt-out", "leap"}, flagVars{pvtMsg: gpsprot.PVTMsgLeapSecond}},
-	{"ttyS0", []string{"--pvt-out", "tai"}, flagVars{pvtMsg: gpsprot.PVTMsgTAI}},
 	{"ttyS0", []string{"--pvt-out", "pos,time"}, flagVars{pvtMsg: gpsprot.PVTMsgPos | gpsprot.PVTMsgTime}},
 	{"ttyS0", []string{"--pvt-out", "pos,vel"}, flagVars{pvtMsg: gpsprot.PVTMsgPos | gpsprot.PVTMsgVel}},
 	{"ttyS0", []string{"--pvt-out", "tp,tai,leap"}, flagVars{pvtMsg: gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond}},
@@ -184,6 +185,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 		satsMsg: gpsprot.MakeOption(gpsprot.SatsMsgNone),
 	}},
 }
+
 func TestParseFlagsValid(t *testing.T) {
 	for _, tc := range validFlagsTestCases {
 		expect := tc.vars
@@ -210,6 +212,7 @@ func TestParseFlagsValid(t *testing.T) {
 		})
 	}
 }
+
 var invalidTestCases = [][]string{
 	{"--socket", "/tmp/socket", "--serial-device", "ttyS0"},
 	{"--serial-device", "ttyS0", "--speed", "0"},
@@ -237,6 +240,11 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--raw-out", "obs,invalid"},                   // partially invalid raw-out flags
 	{"--serial-device", "ttyS0", "--pvt-out", ""},                              // empty pvt-out value
 	{"--serial-device", "ttyS0", "--pvt-out", "invalid"},                       // invalid pvt-out flag
+	{"--serial-device", "ttyS0", "--pvt-out", "time,after"},                    // after requires tp
+	{"--serial-device", "ttyS0", "--pvt-out", "pos,tai"},                       // tai requires after or time
+	{"--serial-device", "ttyS0", "--pvt-out", "time,ecef"},                     // ecef requires pos or vel
+	{"--serial-device", "ttyS0", "--pvt-out", "after,tai"},                     // after requires tp
+	{"--serial-device", "ttyS0", "--pvt-out", "ecef,tai"},                   // ecef requires pos or vel, tai requires after or time
 	{"--serial-device", "ttyS0", "--pvt-out", "pos,invalid"},                   // partially invalid pvt-out flags
 	{"--serial-device", "ttyS0", "--rtcm-out", ""},                             // empty rtcm-out value
 	{"--serial-device", "ttyS0", "--rtcm-out", "invalid"},                      // invalid rtcm-out flag
@@ -254,6 +262,7 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--nmea", "--raw-out", "obs"},                // can't use --nmea with --raw-out
 	{"--serial-device", "ttyS0", "--binary", "--nmea-out", "RMC"},             // can't use --binary with --nmea-out
 }
+
 func TestParseFlagsInvalid(t *testing.T) {
 	for _, args := range invalidTestCases {
 		t.Run(strings.Join(args, ","), func(t *testing.T) {

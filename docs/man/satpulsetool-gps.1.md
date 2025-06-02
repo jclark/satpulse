@@ -112,22 +112,25 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   : Enable time of navigation solution messages
   
   **tp**
-  : Enable time pulse messages (time of the PPS signal)
+  : Enable time pulse messages (time of the PPS pulse)
   
   **leap**
   : Enable leap second information messages
   
   **tai**
-  : Request time in TAI (or constant offset from TAI) rather than UTC
+  : Prefer time in TAI (or constant offset from TAI) rather than UTC
   
   **ecef**
-  : Request position/velocity in Earth-Centered, Earth-Fixed coordinates
+  : Prefer position and velocity in ECEF coordinates rather than latitude and longitude
+  
+  **after**
+  : If the time pulse message enabled by **tp** is emitted before the time pulse, then emit a time message also
   
   **off**
   : Turn off PVT messages that are not explicitly enabled
   
   **daemon**
-  : Enable messages needed by satpulsed (equivalent to `tp,tai,leap,off`)
+  : Enable messages needed by satpulsed (equivalent to `tp,after,tai,leap,off`)
 
 **--raw-out** *flags*  
 : Configure raw data message output. The *flags* parameter is a comma-separated list of:

@@ -90,7 +90,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
-	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|tai|ecef|daemon|off,...")
+	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|tai|ecef|after|daemon|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|none,...")
 	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|none,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
@@ -184,6 +184,21 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		// ensure we have some non-NMEA output
 		if rtcmMsg.Get()&gpsprot.RTCMMsgAny == 0 && pvtMsg.Get()&gpsprot.PVTMsgAny == 0 {
 			pvtMsg.Set(gpsprot.PVTMsgPos | gpsprot.PVTMsgTime) // analogous to NMEA RMC
+		}
+	}
+	// Validate PVT flag combinations
+	if pvtMsg.IsSet() {
+		// "after" requires "tp"
+		if pvtMsg&gpsprot.PVTMsgTimePulseAfter != 0 && pvtMsg&gpsprot.PVTMsgTimePulse == 0 {
+			return nil, nil, fmt.Errorf("--pvt-out: 'after' requires 'tp'")
+		}
+		// "tai" requires "after" or "time"
+		if pvtMsg&gpsprot.PVTMsgTAI != 0 && pvtMsg&(gpsprot.PVTMsgTimePulse|gpsprot.PVTMsgTime) == 0 {
+			return nil, nil, fmt.Errorf("--pvt-out: 'tai' requires 'tp' or 'time'")
+		}
+		// "ecef" requires "pos" or "vel"
+		if pvtMsg&gpsprot.PVTMsgECEF != 0 && pvtMsg&(gpsprot.PVTMsgPos|gpsprot.PVTMsgVel) == 0 {
+			return nil, nil, fmt.Errorf("--pvt-out: 'ecef' requires 'pos' or 'vel'")
 		}
 	}
 	vars.nmeaMsg = nmeaMsg
@@ -397,6 +412,9 @@ func (pvtOut *pvtOutOpt) String() string {
 	if flags&gpsprot.PVTMsgECEF != 0 {
 		parts = append(parts, "ecef")
 	}
+	if flags&gpsprot.PVTMsgTimePulseAfter != 0 {
+		parts = append(parts, "after")
+	}
 	if flags&gpsprot.PVTMsgOff != 0 {
 		parts = append(parts, "off")
 	}
@@ -428,6 +446,8 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 			flags |= gpsprot.PVTMsgTAI
 		case "ecef":
 			flags |= gpsprot.PVTMsgECEF
+		case "after":
+			flags |= gpsprot.PVTMsgTimePulseAfter
 		case "off":
 			flags |= gpsprot.PVTMsgOff
 		case "daemon":

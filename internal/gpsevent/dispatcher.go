@@ -23,7 +23,7 @@ import (
 const LogExtension = ".jsonl"
 
 // PVTMsgFlags are the PVT message flags suitably for the gpsevent package.
-const PVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond
+const PVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond
 
 // SetMsgOptions configures the message options suitably for the gpsevent package.
 // It disables NMEA (which is slow on 8th gen) and enables the required PVT messages.
