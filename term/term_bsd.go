@@ -10,6 +10,11 @@ import (
 
 type SerialICounter struct{}
 
+func (ic *SerialICounter) errorCounts() (ec ErrorCounts) {
+	// BSD does not support error counts, so we return zero values.
+	return
+}
+
 var baudRates = []struct {
 	b     uint32
 	speed int
@@ -52,8 +57,8 @@ func (attr *Attr) speed() int {
 	return int(attr.ts.Ospeed)
 }
 
-func (t *Term) GetErrorCounts() (ec ErrorCounts) {
-	return
+func (t *Term) GetErrorCounts() ErrorCounts {
+	return t.iCount.errorCounts()
 }
 
 func (t *Term) DevKind() DevKind {
