@@ -1,12 +1,14 @@
 //go:build darwin || freebsd
+
 package term
 
 import (
 	"fmt"
+
 	"golang.org/x/sys/unix"
 )
 
-type SerialICounter struct {}
+type SerialICounter struct{}
 
 var baudRates = []struct {
 	b     uint32
@@ -59,7 +61,7 @@ func (t *Term) DevKind() DevKind {
 }
 
 func (t *Term) Flush() error {
-	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TIOCFLUSH, unix.TCIOFLUSH), "ioctl(TIOCFLUSH)")
+	return t.wrapErr(unix.IoctlSetPointerInt(t.fd, unix.TIOCFLUSH, 0), "ioctl(TIOCFLUSH)")
 }
 
 func (t *Term) setAttrNow(attr *unix.Termios) error {
