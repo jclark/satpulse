@@ -19,7 +19,7 @@ outdir="out/${os}_${goarch}"
 target="${outdir}/satpulsetool"
 
 # Build info
-build_date=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+build_date=$(date -u -Iseconds | tr 'T' ' ')
 git_version=$(env TZ=UTC git log -1 --format="%cd.%h" --date=format-local:%Y%m%d)
 if ! git diff-index --quiet HEAD 2>/dev/null; then
     git_version="${git_version}.dirty"
