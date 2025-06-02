@@ -1,3 +1,5 @@
+//go:build linux
+
 package phc
 
 import (
@@ -73,8 +75,6 @@ func (clk *Clock) Close() error {
 	return clk.wrapErr(unix.Close(clk.fd), "close")
 }
 
-type PinFunc uint32
-
 const (
 	PinFuncNone   PinFunc = unix.PTP_PF_NONE
 	PinFuncExtts  PinFunc = unix.PTP_PF_EXTTS
@@ -118,19 +118,6 @@ func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err er
 
 func (clk *Clock) ExttsChanCount() int {
 	return int(clk.caps.N_ext_ts)
-}
-
-// A MultiSample is a series of samples of the PHC and system clocks.
-// In the case of a MultiSample returned by SysOffset, the number
-// of PHC samples is the one more than the number of system clock samples.
-// In the case of a MultiSample returned by SysOffsetExtended,
-// the number of system clock samples is twice the number of PHC samples;
-// the system clock samples are the system clock times immediately before and after the PHC clock time.
-// In the case of a MultiSample returns by SysOffsetPrecise, the number of PHC samples
-// and of system clocks samples is both one.
-type MultiSample struct {
-	PHC []ptime.Time
-	Sys []time.Time
 }
 
 func (clk *Clock) SysOffset(nSamples int) (MultiSample, error) {
@@ -178,52 +165,6 @@ func (clk *Clock) SysOffsetPrecise(_ int) (MultiSample, error) {
 	ms.PHC = []ptime.Time{ptpClockTimeToTimePHC(buf.Device)}
 	ms.Sys = []time.Time{ptpClockTimeToTimeSys(buf.Realtime)}
 	return ms, nil
-}
-
-func (ms MultiSample) Reduce() (ptime.Time, time.Time) {
-	return ms.Extract(ms.Select())
-}
-
-func (ms MultiSample) Extract(i int) (ptime.Time, time.Time) {
-	return ms.PHC[i], ms.SysAverage(i)
-}
-
-func (ms MultiSample) Select() int {
-	best := 0
-	minInterval := ms.SysInterval(0)
-	for i := 1; i < len(ms.PHC); i++ {
-		if interval := ms.SysInterval(i); interval < minInterval {
-			minInterval = interval
-			best = i
-		}
-	}
-	return best
-}
-
-func (ms MultiSample) SysInterval(i int) time.Duration {
-	pre, post := ms.SysPrePost(i)
-	return post.Sub(pre)
-}
-
-// SysPrePost returns the system times immediately before and after the i-th PHC sample.
-func (ms MultiSample) SysPrePost(i int) (pre, post time.Time) {
-	phcLen := len(ms.PHC)
-	switch len(ms.Sys) {
-	case phcLen * 2:
-		return ms.Sys[i*2], ms.Sys[i*2+1]
-	case phcLen + 1:
-		return ms.Sys[i], ms.Sys[i+1]
-	case 1:
-		return ms.Sys[0], ms.Sys[0]
-	default:
-		panic("invalid MultiSample sys length")
-	}
-}
-
-// SysAverage returns the average of the system times for the i-th PHC sample.
-func (ms MultiSample) SysAverage(i int) time.Time {
-	pre, post := ms.SysPrePost(i)
-	return pre.Add(post.Sub(pre) / 2)
 }
 
 func ptpClockTimeToTimeSys(t unix.PtpClockTime) time.Time {

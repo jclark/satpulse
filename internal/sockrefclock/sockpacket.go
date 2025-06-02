@@ -42,7 +42,7 @@ func sockPacket(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) ([]byte, err
 }
 
 func initSockSample(s *sockSample, sys time.Time, ref ptime.Time, ls ptime.LeapSecond) error {
-	s.tv = unix.Timeval{Sec: sys.Unix(), Usec: int64(sys.Nanosecond() / 1000)}
+	s.tv = unix.NsecToTimeval(sys.UnixNano())
 	// chrony will ignore measurements in the vicinity of leap seconds, so we don't have to worry about them
 	// but I still wonder if we should filter out cases where either of the two times are ambiguous
 	s.offset = ls.TimeToSys(ref).Sub(sys).Seconds()

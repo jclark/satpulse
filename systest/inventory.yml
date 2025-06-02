@@ -66,4 +66,9 @@ all:
 
     # UBX-G7020 in SR1723U7
     chaource.lan: # all default
+
+    # UM960 on UART
+    wensleydale.lan:
+      speed: 115200
+      config: "false"
      
