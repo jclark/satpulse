@@ -16,7 +16,7 @@ esac
 
 # Output directory
 outdir="out/${os}_${goarch}"
-target="${outdir}/satpulsetool"
+targets="./cmd/satpulsetool ./cmd/ubxanno ./cmd/pollpps"
 
 # Build info
 build_date=$(date -u -Iseconds | tr 'T' ' ')
@@ -29,10 +29,10 @@ fi
 mkdir -p "$outdir"
 
 # Build
-echo "Building satpulsetool for $os/$goarch"
+echo "Building $targets for $os/$goarch"
 env GOOS=$os GOARCH=$goarch go build -tags "netgo,osusergo" \
-    -o "$target" \
+    -o "$outdir" \
     -ldflags "-X \"github.com/jclark/satpulse/internal/cmd.gitVersion=$git_version\" -X \"github.com/jclark/satpulse/internal/cmd.buildDate=$build_date\"" \
-    ./cmd/satpulsetool
+    $targets
 
-echo "Built: $target"
+echo "Built: $targets"

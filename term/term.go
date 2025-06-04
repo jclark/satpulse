@@ -76,7 +76,7 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 }
 
 // Change changes the attributes of the terminal after output has drained.
-func (t * Term) Change(opts ...AttrSetter) error {
+func (t *Term) Change(opts ...AttrSetter) error {
 	attr := t.attr
 	for _, opt := range opts {
 		err := opt(&attr)
@@ -264,6 +264,24 @@ func (t *Term) Buffered() (n int, err error) {
 	return
 }
 
+const (
+	// in means input to PC from modem; out vice-versa
+	MODEM_DCD = unix.TIOCM_CAR // Data carrier detect; pin 1; in
+	MODEM_DTR = unix.TIOCM_DTR // Data terminal ready; pin 4; out
+	MODEM_DSR = unix.TIOCM_DSR // Data set ready; pin 6; in
+	MODEM_RTS = unix.TIOCM_RTS // Request to send; pin 7; out
+	MODEM_CTS = unix.TIOCM_CTS // Clear to send; pin 8; in
+	MODEM_RI  = unix.TIOCM_RI  // Ring indicator; pin 9; in
+)
+
+func (t *Term) ModemStatus() (int, error) {
+	status, err := unix.IoctlGetInt(t.fd, unix.TIOCMGET)
+	if err != nil {
+		return 0, t.wrapErr(err, "ioctl(TIOCMGET)")
+	}
+	return status, nil
+}
+
 type ErrorCounts struct {
 	FrameErrs, OverrunErrs, ParityErrs, BreakErrs, BufOverrunErrs int32
 }
@@ -295,8 +313,6 @@ func (c ErrorCounts) String() string {
 	return strings.Join(s, " ")
 }
 
-
-
 func (t *Term) Restore() error {
 	return t.setAttrNow(&t.tsSaved)
 }
@@ -310,7 +326,6 @@ func (t *Term) Close() error {
 func (t *Term) Path() string {
 	return t.path
 }
-
 
 func (t *Term) wrapErr(err error, op string) error {
 	if err == nil {
@@ -332,4 +347,3 @@ const (
 	DevUSBtoUART
 	DevBT
 )
-
