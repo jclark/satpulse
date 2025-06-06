@@ -472,7 +472,7 @@ func (c *Configurator) enableTpMsg() error {
 	if flags&bin.CfgTp5AlignToTow == 0 || flags&bin.CfgTp5LockGpsFreq == 0 || flags&bin.CfgTp5GridUTCGNSS == bin.CfgTp5GridUTC {
 		return nil
 	}
-	return c.addEnableMsgRequest(bin.TimTPID, true)
+	return c.addMsgRateRequest(bin.TimTPID, 1)
 }
 
 func (c *Configurator) enableTimeGNSSMsg() error {
@@ -481,10 +481,10 @@ func (c *Configurator) enableTimeGNSSMsg() error {
 		return nil
 	}
 	if c.ver.ProductCategory() == "FTS" {
-		return c.addEnableMsgRequest(bin.TimTosID, true)
+		return c.addMsgRateRequest(bin.TimTosID, 1)
 	} else {
 		// XXX enable NavTimeUTC if TAI flag is not set
-		return c.addEnableMsgRequest(bin.NavTimeGPSID, true)
+		return c.addMsgRateRequest(bin.NavTimeGPSID, 1)
 	}
 }
 
@@ -497,7 +497,7 @@ func (c *Configurator) timeGNSSMsgEnabled() bool {
 
 func (c *Configurator) enableLeapSecondMsg() error {
 	if c.target.Opts.PVTMsg.Get()&gpsprot.PVTMsgLeapSecond != 0 && c.ver.protVerAtLeast(18, 0) {
-		return c.addEnableMsgRequest(bin.NavTimeLSID, true)
+		return c.addMsgRateRequest(bin.NavTimeLSID, 1)
 	}
 	return nil
 }
@@ -520,10 +520,10 @@ func (c *Configurator) enableSurveyMsg() error {
 	}
 	// XXX this is not right: we should not change anything unless Target sets time mode
 	if surveyMode {
-		return c.addEnableMsgRequest(msgID, true)
+		return c.addMsgRateRequest(msgID, 1)
 	}
 	if _, exists := c.target.Props.GetTimeMode(); exists {
-		return c.addEnableMsgRequest(msgID, false)
+		return c.addMsgRateRequest(msgID, 0)
 	}
 	return nil
 }
@@ -536,7 +536,11 @@ func (c *Configurator) setSatellitesMsg() error {
 		if c.ver.protVerAtLeast(15, 0) {
 			msgID = bin.NavSatID
 		}
-		return c.addEnableMsgRequest(msgID, satsMsg.Get()&gpsprot.SatsMsgSV != 0)
+		var rate MsgRate
+		if satsMsg.Get()&gpsprot.SatsMsgSV != 0 {
+			rate = 1
+		}
+		return c.addMsgRateRequest(msgID, rate)
 	}
 	return nil
 }
@@ -836,12 +840,8 @@ func (r pollTp5Request) Packet() []byte {
 	return bin.PollCfgTp5(r.tpIdx)
 }
 
-func (c *Configurator) addEnableMsgRequest(msgID bin.MsgID, enabled bool) error {
-	rate := byte(0)
-	if enabled {
-		rate = 1
-	}
-	return c.addRequest(msgRateRequest{&c.raw, msgID, rate})
+func (c *Configurator) addMsgRateRequest(msgID bin.MsgID, rate MsgRate) error {
+	return c.addRequest(msgRateRequest{&c.raw, msgID, uint8(rate)})
 }
 
 type msgRateRequest struct {
