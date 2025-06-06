@@ -11,20 +11,22 @@ import (
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
+type MsgRate byte
+
 type msgChanges struct {
-	rate         map[bin.MsgID]uint8
+	rate         map[bin.MsgID]MsgRate
 	protoEnable  bin.CfgPrtProtoMask
 	protoDisable bin.CfgPrtProtoMask
 }
 
 func newMsgChanges() *msgChanges {
 	return &msgChanges{
-		rate: make(map[bin.MsgID]uint8),
+		rate: make(map[bin.MsgID]MsgRate),
 	}
 }
 
-func (m *msgChanges) rates() iter.Seq2[bin.MsgID, uint8] {
-	return func(yield func(bin.MsgID, uint8) bool) {
+func (m *msgChanges) rates() iter.Seq2[bin.MsgID, MsgRate] {
+	return func(yield func(bin.MsgID, MsgRate) bool) {
 		keys := make([]bin.MsgID, 0, len(m.rate))
 		for k := range m.rate {
 			keys = append(keys, k)
@@ -187,7 +189,7 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 }
 
 func (mc *msgChanges) pvtMsg(msgID bin.MsgID, enable, off bool) {
-	rate := uint8(0)
+	rate := MsgRate(0)
 	if enable {
 		rate = 1
 	}
@@ -202,7 +204,7 @@ func (m *msgChanges) sats(flags gpsprot.SatsMsgFlags, ver *Version) {
 	if ver.protVerAtLeast(15, 0) {
 		msgID = bin.NavSatID
 	}
-	rate := uint8(0)
+	rate := MsgRate(0)
 	if flags&gpsprot.SatsMsgSV != 0 {
 		rate = 1
 	}
@@ -222,7 +224,7 @@ func (m *msgChanges) nmea(flags gpsprot.NMEAMsgFlags, _ *Version) {
 	m.rate[bin.NmeaZdaID] = nmeaRate(flags & gpsprot.NMEAMsgZDA)
 }
 
-func nmeaRate(flags gpsprot.NMEAMsgFlags) uint8 {
+func nmeaRate(flags gpsprot.NMEAMsgFlags) MsgRate {
 	if flags != 0 {
 		return 1
 	}
@@ -237,7 +239,7 @@ func (m *msgChanges) raw(flags gpsprot.RawMsgFlags, ver *Version) error {
 		}
 		return nil
 	}
-	var obsRate, navRate uint8
+	var obsRate, navRate MsgRate
 	obsMsgID := bin.RxmRawxID
 	navMsgID := bin.RxmSfrbxID
 	if rawLevel == 1 {

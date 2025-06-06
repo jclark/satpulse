@@ -313,56 +313,56 @@ func TestMsgChangesRaw(t *testing.T) {
 		name     string
 		flags    gpsprot.RawMsgFlags
 		version  Version
-		expected map[bin.MsgID]uint8
+		expected map[bin.MsgID]MsgRate
 		wantErr  bool
 	}{
 		{
 			name:     "Obs (LEA-6T)",
 			flags:    gpsprot.RawMsgObs,
 			version:  testVers.lea6t,
-			expected: map[bin.MsgID]uint8{bin.RxmRawID: 1, bin.RxmSfrbID: 0},
+			expected: map[bin.MsgID]MsgRate{bin.RxmRawID: 1, bin.RxmSfrbID: 0},
 		},
 		{
 			name:     "NavData (LEA-6T)",
 			flags:    gpsprot.RawMsgNavData,
 			version:  testVers.lea6t,
-			expected: map[bin.MsgID]uint8{bin.RxmRawID: 0, bin.RxmSfrbID: 1},
+			expected: map[bin.MsgID]MsgRate{bin.RxmRawID: 0, bin.RxmSfrbID: 1},
 		},
 		{
 			name:     "Obs,NavData (LEA-6T)",
 			flags:    gpsprot.RawMsgObs | gpsprot.RawMsgNavData,
 			version:  testVers.lea6t,
-			expected: map[bin.MsgID]uint8{bin.RxmRawID: 1, bin.RxmSfrbID: 1},
+			expected: map[bin.MsgID]MsgRate{bin.RxmRawID: 1, bin.RxmSfrbID: 1},
 		},
 		{
 			name:     "None (LEA-6T)",
 			flags:    gpsprot.RawMsgNone,
 			version:  testVers.lea6t,
-			expected: map[bin.MsgID]uint8{bin.RxmRawID: 0, bin.RxmSfrbID: 0},
+			expected: map[bin.MsgID]MsgRate{bin.RxmRawID: 0, bin.RxmSfrbID: 0},
 		},
 		{
 			name:     "Obs (F9P)",
 			flags:    gpsprot.RawMsgObs,
 			version:  testVers.f9p,
-			expected: map[bin.MsgID]uint8{bin.RxmRawxID: 1, bin.RxmSfrbxID: 0},
+			expected: map[bin.MsgID]MsgRate{bin.RxmRawxID: 1, bin.RxmSfrbxID: 0},
 		},
 		{
 			name:     "NavData (F9P)",
 			flags:    gpsprot.RawMsgNavData,
 			version:  testVers.f9p,
-			expected: map[bin.MsgID]uint8{bin.RxmRawxID: 0, bin.RxmSfrbxID: 1},
+			expected: map[bin.MsgID]MsgRate{bin.RxmRawxID: 0, bin.RxmSfrbxID: 1},
 		},
 		{
 			name:     "Obs,NavData (F9P)",
 			flags:    gpsprot.RawMsgObs | gpsprot.RawMsgNavData,
 			version:  testVers.f9p,
-			expected: map[bin.MsgID]uint8{bin.RxmRawxID: 1, bin.RxmSfrbxID: 1},
+			expected: map[bin.MsgID]MsgRate{bin.RxmRawxID: 1, bin.RxmSfrbxID: 1},
 		},
 		{
 			name:     "None (F9P)",
 			flags:    gpsprot.RawMsgNone,
 			version:  testVers.f9p,
-			expected: map[bin.MsgID]uint8{bin.RxmRawxID: 0, bin.RxmSfrbxID: 0},
+			expected: map[bin.MsgID]MsgRate{bin.RxmRawxID: 0, bin.RxmSfrbxID: 0},
 		},
 		{
 			name:    "Obs (F10S - not supported)",
@@ -374,7 +374,7 @@ func TestMsgChangesRaw(t *testing.T) {
 			name:     "None (F10S - not supported)",
 			flags:    gpsprot.RawMsgNone,
 			version:  testVers.f10s,
-			expected: map[bin.MsgID]uint8{},
+			expected: map[bin.MsgID]MsgRate{},
 			wantErr:  false, // not an error to disable raw messages for something that doesn't support them
 		},
 	}
@@ -484,7 +484,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 		flags           gpsprot.RTCMMsgFlags
 		version         Version
 		enabledGNSS     gpsprot.GNSSSet
-		expectedRates   map[bin.MsgID]uint8
+		expectedRates   map[bin.MsgID]MsgRate
 		expectedEnable  bin.CfgPrtProtoMask
 		expectedDisable bin.CfgPrtProtoMask
 		wantErr         bool
@@ -494,7 +494,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM4,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1074ID: 1, // GPS MSM4
 				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
 				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
@@ -511,7 +511,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GLO),
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1074ID: 0, // GPS MSM4 disabled
 				bin.Rtcm1077ID: 1, // GPS MSM7
 				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
@@ -529,7 +529,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1074ID: 1,
 				bin.Rtcm1077ID: 1,
 				bin.Rtcm1084ID: 0, // GLO disabled
@@ -546,7 +546,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgARP,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1005ID: 1, // ARP
 				bin.Rtcm1074ID: 0, // GPS MSM4 disabled
 				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
@@ -578,7 +578,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM4,
 			version:     testVers.m8p,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1074ID: 1, // GPS MSM4
 				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
 				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
@@ -600,7 +600,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9t,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1077ID: 1, // GPS MSM7
 				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
 				bin.Rtcm1097ID: 0, // GAL MSM7 disabled
@@ -627,7 +627,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM4,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1074ID: 1, // GPS MSM4
 				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
 				bin.Rtcm1084ID: 1, // GLO MSM4
@@ -645,7 +645,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1074ID: 0, // GPS MSM4 disabled
 				bin.Rtcm1077ID: 1, // GPS MSM7
 				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
@@ -663,7 +663,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1074ID: 1, // GPS MSM4
 				bin.Rtcm1077ID: 1, // GPS MSM7
 				bin.Rtcm1084ID: 1, // GLO MSM4
@@ -681,7 +681,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM4,
 			version:     testVers.m8p,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1074ID: 1, // GPS MSM4
 				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
 				bin.Rtcm1084ID: 1, // GLO MSM4
@@ -697,7 +697,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9t20,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.Rtcm1074ID: 0, // GPS MSM4 disabled
 				bin.Rtcm1077ID: 1, // GPS MSM7
 				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
@@ -776,13 +776,13 @@ func TestMsgChangesSats(t *testing.T) {
 		name          string
 		flags         gpsprot.SatsMsgFlags
 		version       Version
-		expectedRates map[bin.MsgID]uint8
+		expectedRates map[bin.MsgID]MsgRate
 	}{
 		{
 			name:    "SV (F9P - uses NAV-SAT)",
 			flags:   gpsprot.SatsMsgSV,
 			version: testVers.f9p,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NavSatID: 1,
 			},
 		},
@@ -790,7 +790,7 @@ func TestMsgChangesSats(t *testing.T) {
 			name:    "None (F9P)",
 			flags:   gpsprot.SatsMsgNone,
 			version: testVers.f9p,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NavSatID: 0,
 			},
 		},
@@ -798,7 +798,7 @@ func TestMsgChangesSats(t *testing.T) {
 			name:    "SV (LEA-6T - uses NAV-SVINFO)",
 			flags:   gpsprot.SatsMsgSV,
 			version: testVers.lea6t,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NavSVInfoID: 1,
 			},
 		},
@@ -806,7 +806,7 @@ func TestMsgChangesSats(t *testing.T) {
 			name:    "None (LEA-6T)",
 			flags:   gpsprot.SatsMsgNone,
 			version: testVers.lea6t,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NavSVInfoID: 0,
 			},
 		},
@@ -839,14 +839,14 @@ func TestMsgChangesNMEA(t *testing.T) {
 	tests := []struct {
 		name             string
 		flags            gpsprot.NMEAMsgFlags
-		expectedRates    map[bin.MsgID]uint8
+		expectedRates    map[bin.MsgID]MsgRate
 		expectedEnable   bin.CfgPrtProtoMask
 		expectedDisable  bin.CfgPrtProtoMask
 	}{
 		{
 			name:             "None - disable protocol",
 			flags:            gpsprot.NMEAMsgNone,
-			expectedRates:    map[bin.MsgID]uint8{},
+			expectedRates:    map[bin.MsgID]MsgRate{},
 			expectedEnable:   0,
 			expectedDisable:  bin.CfgPrtProtoNMEA,
 		},
@@ -855,7 +855,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 			flags:           gpsprot.NMEAMsgRMC,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NmeaRmcID: 1,
 				bin.NmeaGgaID: 0,
 				bin.NmeaGsaID: 0,
@@ -868,7 +868,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 			flags:           gpsprot.NMEAMsgGGA,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NmeaRmcID: 0,
 				bin.NmeaGgaID: 1,
 				bin.NmeaGsaID: 0,
@@ -881,7 +881,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 			flags:           gpsprot.NMEAMsgGSA,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NmeaRmcID: 0,
 				bin.NmeaGgaID: 0,
 				bin.NmeaGsaID: 1,
@@ -894,7 +894,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 			flags:           gpsprot.NMEAMsgGSV,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NmeaRmcID: 0,
 				bin.NmeaGgaID: 0,
 				bin.NmeaGsaID: 0,
@@ -907,7 +907,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 			flags:           gpsprot.NMEAMsgZDA,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NmeaRmcID: 0,
 				bin.NmeaGgaID: 0,
 				bin.NmeaGsaID: 0,
@@ -920,7 +920,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSV,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NmeaRmcID: 1,
 				bin.NmeaGgaID: 1,
 				bin.NmeaGsaID: 0,
@@ -933,7 +933,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NmeaRmcID: 1,
 				bin.NmeaGgaID: 1,
 				bin.NmeaGsaID: 1,
@@ -946,7 +946,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 			flags:           gpsprot.NMEAMsgOther,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NmeaRmcID: 0,
 				bin.NmeaGgaID: 0,
 				bin.NmeaGsaID: 0,
@@ -959,7 +959,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgOther,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NmeaRmcID: 1,
 				bin.NmeaGgaID: 0,
 				bin.NmeaGsaID: 0,
@@ -972,7 +972,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgOther,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]uint8{
+			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NmeaRmcID: 1,
 				bin.NmeaGgaID: 1,
 				bin.NmeaGsaID: 1,
