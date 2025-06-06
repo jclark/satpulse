@@ -3,10 +3,12 @@ package gpscmd
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/term"
 	"github.com/spf13/pflag"
 )
 
@@ -18,27 +20,16 @@ const (
 )
 
 type flagVars struct {
-	save            gpsprot.SaveType
-	reset           gpsprot.ResetType
-	pps             bool
-	forceProbe      bool
 	localSpeed      int
-	remoteSpeed     int
 	serialDevice    string
 	socketPath      string
-	primaryGNSS     gpsprot.GNSS
-	enabledSignals  gpsprot.SignalSet
-	disableTimeMode bool
-	survey          bool
-	surveyTime      uint32
-	surveyAcc       float64
 	packetLogPath   string
 	packetLogMode   packetLogMode
-	pvtMsg          gpsprot.PVTMsgFlags
-	rawMsg          gpsprot.Option[gpsprot.RawMsgFlags]
-	rtcmMsg         gpsprot.Option[gpsprot.RTCMMsgFlags]
-	nmeaMsg         gpsprot.Option[gpsprot.NMEAMsgFlags]
-	satsMsg         gpsprot.Option[gpsprot.SatsMsgFlags]
+	primaryGNSS     gpsprot.GNSS
+	enabledSignals  gpsprot.SignalSet
+	pps             bool
+	disableTimeMode bool
+	configOpts      gpsprot.ConfigOptions
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
@@ -56,18 +47,23 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	vars := flagVars{}
 	gl := gnssList{}
 	bands := bands(gpsprot.BandAll)
+
 	save := false
 	saveAll := false
 	reset := false
 	factoryReset := false
 	reload := false
 	testLogPath := ""
+	nmea := false
+	binary := false
+	survey := false
+	surveyTime := uint32(defaultSurveyTime)
+	surveyAcc := defaultSurveyAcc
+
 	var rawOut rawOutOpt
 	var pvtOut pvtOutOpt
 	var rtcmOut rtcmOutOpt
 	var nmeaOut nmeaOutOpt
-	nmea := false
-	binary := false
 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 
@@ -79,14 +75,14 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&factoryReset, "factory-reset", false, "reset the GPS receiver to factory defaults")
 	flags.BoolVar(&nmea, "nmea", false, "enable NMEA output and disable binary output from the GPS receiver")
 	flags.BoolVar(&binary, "binary", false, "enable binary output and disable NMEA output from the GPS receiver")
-	flags.BoolVar(&vars.forceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
+	flags.BoolVar(&vars.configOpts.ForceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
 	flags.StringVar(&testLogPath, "test-log", "", "log test data to `path`")
 	flags.MarkHidden("test-log")
 	flags.IntVarP(&vars.localSpeed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
-	flags.IntVar(&vars.remoteSpeed, "speed", 0, "set GPS receiver baud-rate in `bps`")
+	flags.Uint32Var(&vars.configOpts.BaudRate, "speed", 0, "set GPS receiver baud-rate in `bps`")
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
@@ -97,11 +93,11 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.MarkHidden("pps")
 	flags.BoolVar(&vars.disableTimeMode, "disable-time-mode", false, "disable time mode")
 	flags.MarkHidden("disable-time-mode")
-	flags.BoolVar(&vars.survey, "survey", false, "instruct the GPS receiver to perform a survey")
+	flags.BoolVar(&survey, "survey", false, "instruct the GPS receiver to perform a survey")
 	flags.MarkHidden("survey")
-	flags.Uint32Var(&vars.surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
+	flags.Uint32Var(&surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
 	flags.MarkHidden("survey-time")
-	flags.Float64Var(&vars.surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
+	flags.Float64Var(&surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
 	flags.MarkHidden("survey-acc")
 	usage := cmd.UsageFunc(cmdName, summary, flags)
 	err := flags.Parse(args)
@@ -124,12 +120,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		vars.packetLogPath = testLogPath
 		vars.packetLogMode = testLogMode
 	}
-	if vars.disableTimeMode && vars.survey {
-		return nil, nil, fmt.Errorf("%s command must not specify both --disable-time-mode and --survey", cmdName)
-	}
-	if vars.surveyAcc < 0.001 {
-		return nil, nil, fmt.Errorf("--survey-acc must at least 0.001 (1 mm)")
-	}
+
 	for _, s := range []string{"device-speed", "speed"} {
 		f := flags.Lookup(s)
 		if f.Changed && f.Value.String() == "0" {
@@ -137,6 +128,14 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 	}
 	configChanged := false
+
+	if vars.configOpts.BaudRate != 0 {
+		configChanged = true
+		if !term.IsValidSpeed(int(vars.configOpts.BaudRate)) {
+			return nil, nil, fmt.Errorf("invalid remote serial speed %d", vars.configOpts.BaudRate)
+		}
+	}
+
 	if len(gl.gnss) != 0 {
 		vars.enabledSignals = gpsprot.Band(bands).SignalSet(gl.gnss...)
 		if (vars.enabledSignals&gpsprot.SigSetMajor)&^gpsprot.SigSetAugment == 0 {
@@ -173,7 +172,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		pvtMsg.Set(gpsprot.PVTMsgOff)
 		rawMsg.Set(gpsprot.RawMsgNone)
 		// we aren't exposing satsMsg in the CLI yet (waiting to implement UBX-CFG-SIGNAL)
-		vars.satsMsg.Set(gpsprot.SatsMsgNone)
+		vars.configOpts.SatsMsg.Set(gpsprot.SatsMsgNone)
 	} else if binary {
 		configChanged = true
 		if nmeaMsg.IsSet() {
@@ -201,11 +200,28 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("--pvt-out: 'ecef' requires 'pos' or 'vel'")
 		}
 	}
-	vars.nmeaMsg = nmeaMsg
-	vars.rtcmMsg = rtcmMsg
-	vars.pvtMsg = pvtMsg
-	vars.rawMsg = rawMsg
-	if vars.remoteSpeed != 0 || vars.pps || vars.primaryGNSS != 0 {
+	vars.configOpts.NMEAMsg = nmeaMsg
+	vars.configOpts.RTCMMsg = rtcmMsg
+	vars.configOpts.PVTMsg = pvtMsg
+	vars.configOpts.RawMsg = rawMsg
+
+	if survey {
+		configChanged = true
+		vars.configOpts.Survey.When = gpsprot.TimeModeAny
+		vars.configOpts.Survey.MinDur = time.Duration(surveyTime) * time.Second
+		if surveyAcc < 0.001 {
+			return nil, nil, fmt.Errorf("--survey-acc must at least 0.001 (1 mm)")
+		}
+		vars.configOpts.Survey.AccLimit = gpsprot.Meters(surveyAcc)
+		if vars.disableTimeMode {
+			return nil, nil, fmt.Errorf("%s command must not specify both --disable-time-mode and --survey", cmdName)
+		}
+	} else if vars.disableTimeMode {
+		configChanged = true
+		vars.configOpts.Survey.When = 0
+	}
+
+	if vars.pps || vars.primaryGNSS != 0 {
 		configChanged = true
 	}
 	if save {
@@ -215,15 +231,15 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		if saveAll {
 			return nil, nil, fmt.Errorf("%s command must not specify both --save and --save-all", cmdName)
 		}
-		vars.save = gpsprot.SaveMinimal
+		vars.configOpts.Save = gpsprot.SaveMinimal
 	} else if saveAll {
-		vars.save = gpsprot.SaveAll
+		vars.configOpts.Save = gpsprot.SaveAll
 	}
 	if factoryReset {
 		if save || saveAll || reset || reload || configChanged {
 			return nil, nil, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload or configuration changes", cmdName)
 		}
-		vars.reset = gpsprot.ResetFactory
+		vars.configOpts.Reset = gpsprot.ResetFactory
 	} else if reset || reload {
 		if configChanged && !save && !saveAll {
 			return nil, nil, fmt.Errorf("--reset or --reload without saving would lose configuration changes")
@@ -232,9 +248,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("cannot use both --reset and --reload")
 		}
 		if reload {
-			vars.reset = gpsprot.ResetReload
+			vars.configOpts.Reset = gpsprot.ResetReload
 		} else {
-			vars.reset = gpsprot.ResetCold
+			vars.configOpts.Reset = gpsprot.ResetCold
 		}
 	}
 	return &vars, nil, nil

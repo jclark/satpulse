@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpscfg"
@@ -16,7 +15,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/ubx"
-	"github.com/jclark/satpulse/term"
 )
 
 func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage string, err error) {
@@ -49,10 +47,9 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 
 func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	target := gpsprot.NewConfigTarget()
-	opts := &target.Opts
-	opts.Reset = v.reset
-	opts.Save = v.save
-	opts.ForceProbe = v.forceProbe
+
+	target.Opts = v.configOpts
+
 	cp := &target.Props
 	if v.pps {
 		cp.SetPPS()
@@ -64,24 +61,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		cp.SetSignalsEnabled(v.enabledSignals)
 	}
 	if v.disableTimeMode {
-		opts.Survey.When = 0
 		cp.SetTimeMode(gpsprot.TimeModeDisabled)
 	}
-	if v.survey {
-		opts.Survey.When = gpsprot.TimeModeAny
-		opts.Survey.MinDur = time.Duration(v.surveyTime) * time.Second
-		opts.Survey.AccLimit = gpsprot.Meters(v.surveyAcc)
-	}
-	if v.remoteSpeed != 0 {
-		if !term.IsValidSpeed(v.remoteSpeed) {
-			return nil, fmt.Errorf("invalid remote serial speed %d", v.remoteSpeed)
-		}
-		opts.BaudRate = uint32(v.remoteSpeed)
-	}
-	opts.RawMsg = v.rawMsg
-	opts.PVTMsg = v.pvtMsg
-	opts.RTCMMsg = v.rtcmMsg
-	opts.NMEAMsg = v.nmeaMsg
+
 	if target.NoOp() {
 		target.Get |= gpsprot.PropIDSignalsEnabled
 	}
