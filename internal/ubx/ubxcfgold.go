@@ -28,7 +28,7 @@ type CfgOld struct {
 // A PropID will be included in the slice for a field in cfgOldProps if and only if
 // getting or setting that property may need to use the corresponding field in CfgOld.
 var cfgOldProps = struct {
-	tmode, tp5, gnss, nav5, prt []gpsprot.PropIDs
+	tmode, tp5, gnss, nav5 []gpsprot.PropIDs
 }{
 	// tmode applies to tmode2 and tmode3 as well
 	tmode: []gpsprot.PropIDs{
@@ -54,9 +54,6 @@ var cfgOldProps = struct {
 	nav5: []gpsprot.PropIDs{
 		gpsprot.PropIDPrimaryGNSS,
 		gpsprot.PropIDStationary,
-	},
-	prt: []gpsprot.PropIDs{
-		gpsprot.PropIDBaudRate,
 	},
 }
 
@@ -98,15 +95,6 @@ func (raw *CfgOld) prtNMEAOutDisabled(origPrt *bin.CfgPrt) bool {
 	return origPrt.OutProtoMask&bin.CfgPrtProtoNMEA != 0 && raw.prt.OutProtoMask&bin.CfgPrtProtoNMEA == 0
 }
 
-func (raw *CfgOld) cookPrt(cp *gpsprot.ConfigProps) {
-	prt := raw.prt
-	if prt == nil {
-		return
-	}
-	if prt.PortID == bin.PortUART1 || prt.PortID == bin.PortUART2 {
-		cp.SetBaudRate(prt.BaudRate)
-	}
-}
 
 func (raw *CfgOld) changePrt(target *gpsprot.ConfigTarget) *bin.CfgPrt {
 	if raw.prt == nil {
@@ -114,7 +102,6 @@ func (raw *CfgOld) changePrt(target *gpsprot.ConfigTarget) *bin.CfgPrt {
 	}
 
 	prt := *raw.prt
-	cp := &target.Props
 	if target.Opts.NMEAMsg.IsSet() {
 		if target.Opts.NMEAMsg.Get() != 0 {
 			prt.OutProtoMask |= bin.CfgPrtProtoNMEA
@@ -122,9 +109,9 @@ func (raw *CfgOld) changePrt(target *gpsprot.ConfigTarget) *bin.CfgPrt {
 			prt.OutProtoMask &^= bin.CfgPrtProtoNMEA
 		}
 	}
-	if baudRate, exists := cp.GetBaudRate(); exists {
+	if target.Opts.BaudRate != 0 {
 		if prt.PortID == bin.PortUART1 || prt.PortID == bin.PortUART2 {
-			prt.BaudRate = baudRate
+			prt.BaudRate = target.Opts.BaudRate
 		}
 	}
 	if prt == *raw.prt {

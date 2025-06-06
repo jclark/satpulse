@@ -129,9 +129,6 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 	if v, ok := cfgValGet(raw, ucv.KNavspgDynmodel); ok {
 		cp.SetStationary(v == ucv.ENavspgDynmodelStat)
 	}
-	if v, ok := cfgValGet(raw, portBaudRateKey(port)); ok {
-		cp.SetBaudRate(uint32(v))
-	}
 }
 
 // Transaction determines the transaction to achieve the specified target.
@@ -280,10 +277,11 @@ func (known *CfgVals) Survey(opts gpsprot.ConfigOptions) []ucv.Item {
 
 func (known *CfgVals) BaudRate(target *gpsprot.ConfigTarget, port ucv.Port) []ucv.Item {
 	items := []ucv.Item{}
-	if v, ok := target.Props.GetBaudRate(); ok {
+	baudRate := target.Opts.BaudRate
+	if baudRate != 0 {
 		k := portBaudRateKey(port)
 		if k != 0 {
-			ucv.AddItem(&items, k, uint64(v))
+			ucv.AddItem(&items, k, uint64(baudRate))
 		}
 	}
 	return items

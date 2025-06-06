@@ -76,7 +76,7 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		if !term.IsValidSpeed(v.remoteSpeed) {
 			return nil, fmt.Errorf("invalid remote serial speed %d", v.remoteSpeed)
 		}
-		cp.SetBaudRate(uint32(v.remoteSpeed))
+		opts.BaudRate = uint32(v.remoteSpeed)
 	}
 	opts.RawMsg = v.rawMsg
 	opts.PVTMsg = v.pvtMsg

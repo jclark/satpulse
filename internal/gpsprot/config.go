@@ -122,7 +122,6 @@ type ConfigProps struct {
 	fixedPosECEF      Point3D
 	fixedPosAcc       Length
 	stationary        bool
-	baudRate          uint32
 }
 
 const (
@@ -139,7 +138,6 @@ const (
 	PropIDFixedPosECEF
 	PropIDFixedPosAcc
 	PropIDStationary
-	PropIDBaudRate
 )
 
 // propNames lists the property names in the same order as the bit constants
@@ -156,7 +154,6 @@ var propNames = []string{
 	"FixedPosECEF",
 	"FixedPosAcc",
 	"Stationary",
-	"BaudRate",
 }
 
 // IsEmpty returns true if no properties are set
@@ -298,6 +295,7 @@ type ConfigOptions struct {
 	SatsMsg    Option[SatsMsgFlags]
 	RawMsg     Option[RawMsgFlags]
 	Survey     Survey
+	BaudRate   uint32      // serial port baud rate, 0 means do not change
 }
 
 func NewConfigTarget() *ConfigTarget {
@@ -320,7 +318,7 @@ func (ct *ConfigTarget) UsesAny(props ...PropIDs) bool {
 }
 
 func (o ConfigOptions) NoOp() bool {
-	return o.Save == 0 && o.Reset == 0 && o.PVTMsg.IsZero() && o.SatsMsg.IsZero() && o.NMEAMsg.IsZero() && o.Survey.When == TimeModeNone
+	return o.Save == 0 && o.Reset == 0 && o.PVTMsg.IsZero() && o.SatsMsg.IsZero() && o.NMEAMsg.IsZero() && o.Survey.When == TimeModeNone && o.BaudRate == 0
 }
 
 func (o *ConfigOptions) SetsMsgs() bool {
@@ -529,19 +527,6 @@ func (cp *ConfigProps) SetStationary(val bool) {
 	cp.valid |= PropIDStationary
 }
 
-// GetBaudRate returns the baudRate value and whether it's set
-func (cp *ConfigProps) GetBaudRate() (uint32, bool) {
-	if cp.valid&PropIDBaudRate != 0 {
-		return cp.baudRate, true
-	}
-	return 0, false
-}
-
-// SetBaudRate sets the baudRate value
-func (cp *ConfigProps) SetBaudRate(val uint32) {
-	cp.baudRate = val
-	cp.valid |= PropIDBaudRate
-}
 
 // MarshalJSON marshals the config properties to JSON
 func (cp *ConfigProps) MarshalJSON() ([]byte, error) {
@@ -604,9 +589,6 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	}
 	if both&PropIDStationary != 0 && cp.stationary != other.stationary {
 		result.SetStationary(other.stationary)
-	}
-	if both&PropIDBaudRate != 0 && cp.baudRate != other.baudRate {
-		result.SetBaudRate(other.baudRate)
 	}
 	return result
 }
@@ -681,9 +663,6 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	}
 	if cp.valid&PropIDStationary != 0 {
 		m["stationary"] = cp.stationary
-	}
-	if cp.valid&PropIDBaudRate != 0 {
-		m["baudRate"] = cp.baudRate
 	}
 	return m
 }

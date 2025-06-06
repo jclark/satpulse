@@ -79,14 +79,11 @@ func writeTestLogConfigProps(lf *logfile.LogFile, lg *slog.Logger, props *gpspro
 		if sigs, ok := props.GetSignalsEnabled(); ok {
 			entry.SignalsEnabled = sigs.GNSSStringGroups()
 		}
-		if br, ok := props.GetBaudRate(); ok {
-			entry.BaudRate = &br
-		}
 	}
 	writeTestLogEntry(lf, lg, entry)
 }
 
-func writeTestLogEntry(lf *logfile.LogFile, lg *slog.Logger, entry interface{}) {
+func writeTestLogEntry(lf *logfile.LogFile, lg *slog.Logger, entry any) {
 	bytes, err := json.Marshal(entry)
 	if err != nil {
 		lg.Warn("failed to convert test log entry to JSON", "err", err)

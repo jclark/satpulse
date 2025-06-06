@@ -347,15 +347,6 @@ func (r *replayer) verify() {
 		}
 	}
 
-	// Verify baud rate
-	if cfg.BaudRate != nil {
-		actual, ok := props.GetBaudRate()
-		if !ok {
-			r.t.Error("baud rate not set")
-		} else if actual != *cfg.BaudRate {
-			r.t.Errorf("baud rate mismatch: got %d, want %d", actual, *cfg.BaudRate)
-		}
-	}
 }
 
 func equalStringSlices(a, b [][]string) bool {
