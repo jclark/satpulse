@@ -47,7 +47,7 @@ func (mc *msgChanges) changeOutProtoMask(mask bin.CfgPrtProtoMask) bin.CfgPrtPro
 }
 
 // usesRates returns true if any message rate is non-zero.
-// Semantically our rates our in Hz, so if this is true then we
+// Semantically our rates are in Hz, so if this is true then we
 // need to ensure that a 1 here means 1Hz.
 func (mc *msgChanges) usesRate() bool {
 	for _, rate := range mc.rate {
@@ -58,24 +58,32 @@ func (mc *msgChanges) usesRate() bool {
 	return false
 }
 
-func (m *msgChanges) options(opts *gpsprot.ConfigOptions, ver *Version, enabledGNSS gpsprot.GNSSSet) error {
+func (mc *msgChanges) options(opts *gpsprot.ConfigOptions, ver *Version, enabledGNSS gpsprot.GNSSSet) error {
+	mc.options1(opts, ver)
+	return mc.options2(opts, ver, enabledGNSS)	
+}
+
+func (mc *msgChanges) options1(opts *gpsprot.ConfigOptions, ver *Version) {
 	if opts.PVTMsg.IsSet() {
-		m.pvt(opts.PVTMsg.Get(), ver)
-	}
-	if opts.SatsMsg.IsSet() {
-		m.sats(opts.SatsMsg.Get(), ver)
+		mc.pvt(opts.PVTMsg.Get(), ver)
 	}
 	if opts.NMEAMsg.IsSet() {
-		m.nmea(opts.NMEAMsg.Get(), ver)
+		mc.nmea(opts.NMEAMsg.Get(), ver)
+	}
+}
+
+func (mc *msgChanges) options2(opts *gpsprot.ConfigOptions, ver *Version, enabledGNSS gpsprot.GNSSSet) error {
+	if opts.SatsMsg.IsSet() {
+		mc.sats(opts.SatsMsg.Get(), ver)
 	}
 	if opts.RawMsg.IsSet() {
-		err := m.raw(opts.RawMsg.Get(), ver)
+		err := mc.raw(opts.RawMsg.Get(), ver)
 		if err != nil {
 			return err
 		}
 	}
 	if opts.RTCMMsg.IsSet() {
-		err := m.rtcm(opts.RTCMMsg.Get(), ver, enabledGNSS)
+		err := mc.rtcm(opts.RTCMMsg.Get(), ver, enabledGNSS)
 		if err != nil {
 			return err
 		}

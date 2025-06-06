@@ -47,24 +47,21 @@ type RawConfig struct {
 
 var legacyConfigSteps = []func(*Configurator) error{
 	(*Configurator).pollPrt,
-	(*Configurator).setPrt,   // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
+	(*Configurator).setMsg1,  // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
 	(*Configurator).pollGNSS, // need this to know which will be primary GNSS, which we need for enabling the time message
 	(*Configurator).pollMonGNSS,
-	(*Configurator).setGNSS,           // do this early because we may need to know enabled GNSS to deduce primary GNSS
-	(*Configurator).enableTimeGNSSMsg, // do this early to minimize likelihood of leaving GPS in unuseable state with no time messages being output
+	(*Configurator).setGNSS, // do this early because we may need to know enabled GNSS to deduce primary GNSS
 	(*Configurator).pollTp5,
 	(*Configurator).setTp5,
-	(*Configurator).enableTpMsg,
-	(*Configurator).enableLeapSecondMsg,
 	(*Configurator).pollTmode,
 	(*Configurator).setTmode,
 	(*Configurator).reqSurvey,
-	(*Configurator).enableSurveyMsg,
 	(*Configurator).pollRate,
-	(*Configurator).setRate,
 	(*Configurator).pollNav5,
 	(*Configurator).setNav5,
-	(*Configurator).setSatellitesMsg,
+	(*Configurator).enableSurveyMsg,
+	(*Configurator).setMsg2,
+	(*Configurator).setRate, // setRate must come after all the messages have been enabled, so it can tell if rate needs setting
 	(*Configurator).saveMinimal,
 	(*Configurator).reloadCfg,
 	(*Configurator).setCfg,
@@ -153,8 +150,8 @@ func (c *Configurator) stop() {
 	if !c.raw.prtNMEAOutDisabled(c.origPrt) {
 		return
 	}
-	// if we got far enough to enable the time GNSS message, then do not need to switch back to NMEA
-	if c.timeGNSSMsgEnabled() {
+	// if we got far enough to enable a message, then do not need to switch back to NMEA
+	if c.raw.anyMsgEnabled() {
 		return
 	}
 	// we disabled NMEA output, but didn't get far enough to enable the time GNSS message
@@ -197,15 +194,21 @@ func (c *Configurator) saveMinimal() error {
 	if c.target.Opts.Save != gpsprot.SaveMinimal {
 		return nil
 	}
-	if c.target.Opts.BaudRate != 0 || c.target.Opts.NMEAMsg.IsSet() {
+	// Port has bits for wther NMEA/RTCM output is enabled at all on the port.
+	if c.target.Opts.BaudRate != 0 || c.target.Opts.NMEAMsg.IsSet() || c.target.Opts.RTCMMsg.IsSet() {
 		saveMask |= bin.CfgCfgIOPort
 	}
-	if c.target.UsesAny(gpsprot.PropIDSignalsEnabled, gpsprot.PropIDPrimaryGNSS) {
-		saveMask |= bin.CfgCfgRXMConf
-	} else if _, ok := c.target.Props.GetTimePulse(); ok { // XXX fix this when we combine time pulse properties into one
+	if c.target.Opts.SetsMsgs() {
+		saveMask |= bin.CfgCfgMsgConf
+	}
+	if c.target.UsesAny(gpsprot.PropIDSignalsEnabled) || c.target.UsesAny(cfgOldProps.tp5...) {
 		saveMask |= bin.CfgCfgRXMConf
 	}
-	// XXX handle time mode when we fix that up in satpulsetool
+	// If any messages are enabled, then the rate is set, which is part of the Nav configuration section.
+	// XXX handle survey when we fix that up ip satpulsetool gps
+	if c.target.UsesAny(cfgOldProps.nav5...) || c.target.Opts.EnablesMsgs() {
+		saveMask |= bin.CfgCfgNavConf
+	}
 	if saveMask == 0 {
 		return nil
 	}
@@ -458,50 +461,6 @@ func (c *Configurator) pollTp5() error {
 	return c.addPollTp5Request(tpIdx)
 }
 
-func (c *Configurator) enableTpMsg() error {
-	if c.target.Opts.PVTMsg.Get()&gpsprot.PVTMsgTimePulse == 0 {
-		return nil
-	}
-	if c.ver.ProductCategory() == "FTS" {
-		return nil
-	}
-	if c.raw.tp5 == nil {
-		return nil
-	}
-	flags := c.raw.tp5.Flags
-	if flags&bin.CfgTp5AlignToTow == 0 || flags&bin.CfgTp5LockGpsFreq == 0 || flags&bin.CfgTp5GridUTCGNSS == bin.CfgTp5GridUTC {
-		return nil
-	}
-	return c.addMsgRateRequest(bin.TimTPID, 1)
-}
-
-func (c *Configurator) enableTimeGNSSMsg() error {
-	pvtMsg := &c.target.Opts.PVTMsg
-	if pvtMsg.Get()&gpsprot.PVTMsgTimePulse == 0 {
-		return nil
-	}
-	if c.ver.ProductCategory() == "FTS" {
-		return c.addMsgRateRequest(bin.TimTosID, 1)
-	} else {
-		// XXX enable NavTimeUTC if TAI flag is not set
-		return c.addMsgRateRequest(bin.NavTimeGPSID, 1)
-	}
-}
-
-func (c *Configurator) timeGNSSMsgEnabled() bool {
-	if c.ver.ProductCategory() == "FTS" {
-		return c.raw.msgEnabled(bin.TimTosID)
-	}
-	return c.raw.msgEnabled(bin.NavTimeGPSID)
-}
-
-func (c *Configurator) enableLeapSecondMsg() error {
-	if c.target.Opts.PVTMsg.Get()&gpsprot.PVTMsgLeapSecond != 0 && c.ver.protVerAtLeast(18, 0) {
-		return c.addMsgRateRequest(bin.NavTimeLSID, 1)
-	}
-	return nil
-}
-
 func (c *Configurator) enableSurveyMsg() error {
 	msgID := bin.TimSvinID
 	surveyMode := false
@@ -528,31 +487,32 @@ func (c *Configurator) enableSurveyMsg() error {
 	return nil
 }
 
-func (c *Configurator) setSatellitesMsg() error {
-	satsMsg := c.target.Opts.SatsMsg
-	if satsMsg.IsSet() {
-		msgID := bin.NavSVInfoID
-		// UBX-NAV-SAT first appeared in protocol version 15.00
-		if c.ver.protVerAtLeast(15, 0) {
-			msgID = bin.NavSatID
-		}
-		var rate MsgRate
-		if satsMsg.Get()&gpsprot.SatsMsgSV != 0 {
-			rate = 1
-		}
-		return c.addMsgRateRequest(msgID, rate)
-	}
+func (c *Configurator) setMsg1() error {
+	c.origPrt = new(bin.CfgPrt)
+	*c.origPrt = *c.raw.prt
+	mc := newMsgChanges()
+	mc.options1(&c.target.Opts, c.ver)
+	c.setMsgChanges(mc)
 	return nil
 }
 
-func (c *Configurator) setPrt() error {
-	prt := c.raw.changePrt(c.target)
-	if prt == nil {
-		return nil
+func (c *Configurator) setMsg2() error {
+	mc := newMsgChanges()
+	// XXX need to use enabled GNSS not supported GNSS from c.ver
+	mc.options2(&c.target.Opts, c.ver, c.ver.GNSS)
+	// this will end up doing about CFG-PRT in the event that RTCM protocol is enable/disabled
+	c.setMsgChanges(mc)
+	return nil
+}
+
+func (c *Configurator) setMsgChanges(mc *msgChanges) {
+	prt := c.raw.changePrt(&c.target.Opts, mc)
+	if prt != nil {
+		c.addMsgSetRequest(prt)
 	}
-	c.origPrt = new(bin.CfgPrt)
-	*c.origPrt = *c.raw.prt
-	return c.addMsgSetRequest(prt)
+	for msgID, rate := range mc.rates() {
+		c.addMsgRateRequest(msgID, rate)
+	}
 }
 
 func (c *Configurator) setNav5() error {
@@ -565,7 +525,7 @@ func (c *Configurator) setNav5() error {
 }
 
 func (c *Configurator) setRate() error {
-	rate := c.raw.changeRate(c.target, c.ver)
+	rate := c.raw.changeRate(&c.target.Props)
 	if rate == nil {
 		return nil
 	}

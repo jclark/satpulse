@@ -73,7 +73,7 @@ func (raw *CfgOld) SetMsgRate(msgID bin.MsgID, rate byte) {
 	raw.msgRate[msgID] = rates
 }
 
-func (raw *CfgOld) msgEnabled(msgID bin.MsgID) bool {
+func (raw *CfgOld) anyMsgEnabled() bool {
 	if raw == nil || raw.prt == nil {
 		return false
 	}
@@ -84,8 +84,12 @@ func (raw *CfgOld) msgEnabled(msgID bin.MsgID) bool {
 	if raw.msgRate == nil {
 		return false
 	}
-	rates := raw.msgRate[msgID]
-	return rates[int(prt)] == 1
+	for _, rates := range raw.msgRate {
+		if rates[int(prt)] != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (raw *CfgOld) prtNMEAOutDisabled(origPrt *bin.CfgPrt) bool {
@@ -96,22 +100,16 @@ func (raw *CfgOld) prtNMEAOutDisabled(origPrt *bin.CfgPrt) bool {
 }
 
 
-func (raw *CfgOld) changePrt(target *gpsprot.ConfigTarget) *bin.CfgPrt {
+func (raw *CfgOld) changePrt(opts *gpsprot.ConfigOptions, mc *msgChanges) *bin.CfgPrt {
 	if raw.prt == nil {
 		return nil
 	}
 
 	prt := *raw.prt
-	if target.Opts.NMEAMsg.IsSet() {
-		if target.Opts.NMEAMsg.Get() != 0 {
-			prt.OutProtoMask |= bin.CfgPrtProtoNMEA
-		} else {
-			prt.OutProtoMask &^= bin.CfgPrtProtoNMEA
-		}
-	}
-	if target.Opts.BaudRate != 0 {
+	prt.OutProtoMask = mc.changeOutProtoMask(prt.OutProtoMask)
+	if opts.BaudRate != 0 {
 		if prt.PortID == bin.PortUART1 || prt.PortID == bin.PortUART2 {
-			prt.BaudRate = target.Opts.BaudRate
+			prt.BaudRate = opts.BaudRate
 		}
 	}
 	if prt == *raw.prt {
@@ -800,17 +798,16 @@ func adjustTrackingChannels(gnss *bin.CfgGNSS) {
 	}
 }
 
-func (raw *CfgOld) changeRate(ct *gpsprot.ConfigTarget, ver *Version) *bin.CfgRate {
+func (raw *CfgOld) changeRate(cp *gpsprot.ConfigProps) *bin.CfgRate {
 	if raw.rate == nil {
 		return nil
 	}
 	rate := *raw.rate
-	// XXX also survey progress message
-	if ct.Opts.EnablesMsgs() {
+	if raw.anyMsgEnabled() {
 		rate.MeasRate = 1000 // 1 second
 		rate.NavRate = 1
 	}
-	if gnss, exists := ct.Props.GetPrimaryGNSS(); exists {
+	if gnss, exists := cp.GetPrimaryGNSS(); exists {
 		switch gnss {
 		case gpsprot.GPS:
 			rate.TimeRef = bin.CfgRateGPS
