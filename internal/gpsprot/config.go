@@ -295,7 +295,7 @@ type ConfigOptions struct {
 	SatsMsg    Option[SatsMsgFlags]
 	RawMsg     Option[RawMsgFlags]
 	Survey     Survey
-	BaudRate   uint32      // serial port baud rate, 0 means do not change
+	BaudRate   uint32 // serial port baud rate, 0 means do not change
 }
 
 func NewConfigTarget() *ConfigTarget {
@@ -527,6 +527,15 @@ func (cp *ConfigProps) SetStationary(val bool) {
 	cp.valid |= PropIDStationary
 }
 
+// SetsAny returns true if any of the specified properties are set in the ConfigProps
+func (cp *ConfigProps) SetsAny(props ...PropIDs) bool {
+	for _, p := range props {
+		if cp.valid&p != 0 {
+			return true
+		}
+	}
+	return false
+}
 
 // MarshalJSON marshals the config properties to JSON
 func (cp *ConfigProps) MarshalJSON() ([]byte, error) {
