@@ -120,7 +120,7 @@ func testConfigurator(t *testing.T, rcvr *gpsReceiver, target *gpsprot.ConfigTar
 }
 
 func TestConfiguratorRecover1(t *testing.T) {
-	c := testConfiguratorRecover(t, ubxbin.CfgGNSSID)
+	c := testConfiguratorRecover(t, ubxbin.CfgMsgID)
 	if c.raw.prt.OutProtoMask&ubxbin.CfgPrtProtoNMEA == 0 {
 		t.Errorf("expected NMEA to be enabled, but it wasn't")
 	}

@@ -194,10 +194,10 @@ func (r *gpsReceiver) sendReceive(pkt []byte) [][]byte {
 		case ubxbin.CfgTmode3ID:
 			respMsg = r.raw.tmode3
 		}
-		if msgID == r.nakPollMsgID {
-			nak = true
-			respMsg = nil
-		}
+	}
+	if msgID == r.nakPollMsgID {
+		nak = true
+		respMsg = nil
 	}
 	if respMsg != nil {
 		if respPkt, err := ubxbin.Serialize(respMsg); err == nil {
