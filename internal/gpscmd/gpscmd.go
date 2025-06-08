@@ -60,8 +60,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.enabledSignals != 0 {
 		cp.SetSignalsEnabled(v.enabledSignals)
 	}
-	if v.disableTimeMode {
+	if v.mobile {
 		cp.SetTimeMode(gpsprot.TimeModeDisabled)
+		cp.SetStationary(false)
 	}
 
 	if target.NoOp() {

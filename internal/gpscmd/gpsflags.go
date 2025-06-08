@@ -20,16 +20,16 @@ const (
 )
 
 type flagVars struct {
-	localSpeed      int
-	serialDevice    string
-	socketPath      string
-	packetLogPath   string
-	packetLogMode   packetLogMode
-	primaryGNSS     gpsprot.GNSS
-	enabledSignals  gpsprot.SignalSet
-	pps             bool
-	disableTimeMode bool
-	configOpts      gpsprot.ConfigOptions
+	localSpeed     int
+	serialDevice   string
+	socketPath     string
+	packetLogPath  string
+	packetLogMode  packetLogMode
+	primaryGNSS    gpsprot.GNSS
+	enabledSignals gpsprot.SignalSet
+	pps            bool
+	mobile         bool
+	configOpts     gpsprot.ConfigOptions
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
@@ -91,8 +91,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|none,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
 	flags.MarkHidden("pps")
-	flags.BoolVar(&vars.disableTimeMode, "disable-time-mode", false, "disable time mode")
-	flags.MarkHidden("disable-time-mode")
+	flags.BoolVar(&vars.mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
+	flags.MarkHidden("mobile")
 	flags.BoolVar(&survey, "survey", false, "instruct the GPS receiver to perform a survey")
 	flags.MarkHidden("survey")
 	flags.Uint32Var(&surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
@@ -213,10 +213,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("--survey-acc must at least 0.001 (1 mm)")
 		}
 		vars.configOpts.Survey.AccLimit = gpsprot.Meters(surveyAcc)
-		if vars.disableTimeMode {
+		if vars.mobile {
 			return nil, nil, fmt.Errorf("%s command must not specify both --disable-time-mode and --survey", cmdName)
 		}
-	} else if vars.disableTimeMode {
+	} else if vars.mobile {
 		configChanged = true
 		vars.configOpts.Survey.When = 0
 	}

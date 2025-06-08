@@ -35,7 +35,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	}}},
 	{"ttyS0", []string{"--pps"}, flagVars{pps: true}},
 	{"ttyS0", []string{"--pps", "--save"}, flagVars{pps: true, configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveMinimal}}},
-	{"ttyS0", []string{"--disable-time-mode"}, flagVars{disableTimeMode: true}},
+	{"ttyS0", []string{"--mobile"}, flagVars{mobile: true}},
 	{"ttyS0", []string{"--survey"}, flagVars{configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{When: gpsprot.TimeModeAny, MinDur: defaultSurveyTime * time.Second, AccLimit: gpsprot.Meters(defaultSurveyAcc)}}}},
 	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{When: gpsprot.TimeModeAny, MinDur: 300 * time.Second, AccLimit: gpsprot.Meters(5.5)}}}},
 	{"ttyS0", []string{"-p"}, flagVars{pps: true}},
@@ -100,7 +100,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--raw-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgFlags(0))}}},
 	{"ttyS0", []string{"--raw-out", "obs", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgObs), Save: gpsprot.SaveMinimal}}},
 	// Test --pvt-out flag
-	{"ttyS0", []string{"--pvt-out", "daemon"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsevent.PVTMsgFlags|gpsprot.PVTMsgOff}}},
+	{"ttyS0", []string{"--pvt-out", "daemon"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsevent.PVTMsgFlags | gpsprot.PVTMsgOff}}},
 	{"ttyS0", []string{"--pvt-out", "pos"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgPos}}},
 	{"ttyS0", []string{"--pvt-out", "vel"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgVel}}},
 	{"ttyS0", []string{"--pvt-out", "time"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgTime}}},
@@ -235,7 +235,7 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--pvt-out", "pos,tai"},                       // tai requires after or time
 	{"--serial-device", "ttyS0", "--pvt-out", "time,ecef"},                     // ecef requires pos or vel
 	{"--serial-device", "ttyS0", "--pvt-out", "after,tai"},                     // after requires tp
-	{"--serial-device", "ttyS0", "--pvt-out", "ecef,tai"},                   // ecef requires pos or vel, tai requires after or time
+	{"--serial-device", "ttyS0", "--pvt-out", "ecef,tai"},                      // ecef requires pos or vel, tai requires after or time
 	{"--serial-device", "ttyS0", "--pvt-out", "pos,invalid"},                   // partially invalid pvt-out flags
 	{"--serial-device", "ttyS0", "--rtcm-out", ""},                             // empty rtcm-out value
 	{"--serial-device", "ttyS0", "--rtcm-out", "invalid"},                      // invalid rtcm-out flag
@@ -246,12 +246,12 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--nmea-out", "RMC,invalid"},                  // partially invalid nmea-out flags
 	{"--serial-device", "ttyS0", "--nmea-out", "other"},                        // trying to use hidden "other" flag
 	// Test invalid combinations with --nmea and --binary
-	{"--serial-device", "ttyS0", "--nmea", "--binary"},                         // can't use both --nmea and --binary
-	{"--serial-device", "ttyS0", "--binary", "--nmea"},                         // can't use both --binary and --nmea
-	{"--serial-device", "ttyS0", "--nmea", "--rtcm-out", "MSM4"},              // can't use --nmea with --rtcm-out
-	{"--serial-device", "ttyS0", "--nmea", "--pvt-out", "pos"},                // can't use --nmea with --pvt-out
-	{"--serial-device", "ttyS0", "--nmea", "--raw-out", "obs"},                // can't use --nmea with --raw-out
-	{"--serial-device", "ttyS0", "--binary", "--nmea-out", "RMC"},             // can't use --binary with --nmea-out
+	{"--serial-device", "ttyS0", "--nmea", "--binary"},            // can't use both --nmea and --binary
+	{"--serial-device", "ttyS0", "--binary", "--nmea"},            // can't use both --binary and --nmea
+	{"--serial-device", "ttyS0", "--nmea", "--rtcm-out", "MSM4"},  // can't use --nmea with --rtcm-out
+	{"--serial-device", "ttyS0", "--nmea", "--pvt-out", "pos"},    // can't use --nmea with --pvt-out
+	{"--serial-device", "ttyS0", "--nmea", "--raw-out", "obs"},    // can't use --nmea with --raw-out
+	{"--serial-device", "ttyS0", "--binary", "--nmea-out", "RMC"}, // can't use --binary with --nmea-out
 }
 
 func TestParseFlagsInvalid(t *testing.T) {
