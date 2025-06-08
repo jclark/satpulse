@@ -335,7 +335,13 @@ func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS
 
 var msgIDKey = map[bin.MsgID]ucv.KeyM{
 	bin.NavTimeGPSID: ucv.KUbxNavTimegps,
+	bin.NavTimeUTCID: ucv.KUbxNavTimeutc,
+	bin.NavTimeLSID: ucv.KUbxNavTimels,
 	bin.NavPVTID:     ucv.KUbxNavPvt,
+	bin.NavPosECEFID: ucv.KUbxNavPosecef,
+	bin.NavPosLLHID:  ucv.KUbxNavPosllh,
+	bin.NavVelECEFID: ucv.KUbxNavVelecef,
+	bin.NavVelNEDID:  ucv.KUbxNavVelned,
 	bin.NavSatID:     ucv.KUbxNavSat,
 	//bin.NavSigID: ucv.KUbxNavSig,
 	bin.RxmRawxID:  ucv.KUbxRxmRawx,
