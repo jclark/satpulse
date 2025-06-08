@@ -116,6 +116,9 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   
   **leap**
   : Enable leap second information messages
+
+  **survey**
+  : Enable survey-in progress messages
   
   **tai**
   : Prefer time in TAI (or constant offset from TAI) rather than UTC
@@ -130,7 +133,7 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   : Turn off PVT messages that are not explicitly enabled
   
   **daemon**
-  : Enable messages needed by satpulsed (equivalent to `tp,after,tai,leap,off`)
+  : Enable messages needed by satpulsed (equivalent to `tp,after,tai,leap,survey,off`)
 
 **--raw-out** *flags*  
 : Configure raw data message output. The *flags* parameter is a comma-separated list of:
