@@ -23,10 +23,9 @@ if already in survey mode, don't resurvey unless resurvey is true.
 
 ## Design of abstract interface in gpsprot
 
-
 ### Mode property
 
-Handle a single composite property in ConfigProps, working name is Mode
+A single composite property in ConfigProps (replacing the existing TimeMode, Stationary, FixedPosECEF, and FixedPosAcc properties).
 
 ```
 type Mode struct {
@@ -43,10 +42,10 @@ Constraints:
 Semantics:
 * Static true requests receiver to operate in a mode where it assumes position (of antenna) does not move
 * If Static is true, then FixedPosECEF, if non-zero, gives coordinates in ECEF of antenna position
-* If Stationary is true and FixedPosECEF non-zero, then FixedPosAcc is accuracy of FixedPos
+* If Static is true and FixedPosECEF non-zero, then FixedPosAcc is accuracy of FixedPos
    * acc zero on read means receiver doesn't use the concept
-   * what does acc zero on write mean? use application default
-* If static is true and FixedPosECEF is zero, it means that the receiver determines the fixed position itself
+   * acc zero on write means use sensible device-dependent default
+* If static is true and FixedPosECEF is zero, it means that the receiver determines the fixed position itself (typically through survey)
 
 Later extend to LLH
 * have FixedPosLLH field
@@ -58,22 +57,32 @@ UBX interpretation:
    * in TIM/FTS/HPG, static is true iff time mode is fixed or survey
    * on SPG, static is true iff dynmodel is stationary
 * on write
-  * in TIM/FTS/HPS
-     * sets time mode to fixed if fixedposecef is fixed
+  * in TIM/FTS/HPG
+     * sets time mode to fixed if fixedposecef is provided
      * otherwise sets time mode to survey
   * on SPG, sets dynmodel to stationary or portable
 
 ### SetStatic config option
 
-In addition, have two fields in ConfigOptions:
+A configuration option in ConfigOptions that ensures the receiver is in static mode without changing any existing fixed position configuration.
 
    ```
    SetStatic bool
    ```
 
-If true, sets the mode to static, but without affecting the fixedpos.
+Semantics:
+* SetStatic ensures that Mode.Static will be true after configuration
+* Does NOT modify any existing FixedPosECEF or FixedPosAcc values
+* Allows the daemon to request static mode while preserving user configuration
+
+Typical daemon usage:
+* If user has already configured the receiver with a fixed position (Mode.Static=true with FixedPosECEF set), SetStatic preserves this
+* If receiver is unconfigured (Mode.Static=false or TimeMode=disabled), SetStatic will enable static mode, triggering a survey if no fixed position exists
 
 ### Survey config option
+
+Provide parameters to use if survey is triggered. Also allow control over whether to do another survey, when receiver is already in survey mode.
+
 ```
 type SurveyFlags int
 
@@ -83,74 +92,79 @@ const (
 
 type Survey struct {
   Flags    SurveyFlags
-	MinDur   time.Duration // survey should run at least this long
-	AccLimit Length        // survey should run until this accuracy is achieved
+  MinDur   time.Duration // survey should run at least this long
+  AccLimit Length        // survey should run until this accuracy is achieved
 }
 ```
 
 Semantics:
 
-* MinDur of zero means use sensible default (possibly configured value); non-zero must be greater than one second
+* MinDur of zero means use sensible default (possibly from TOML configuration); non-zero must be greater than one second
 * AccLimit of zero means don't constrain based on accuracy; just use time
-* If we save to flash, then effect should be to perform the survey on startup
-* SurveyAgain says to try to force the receiver to do a survey even if it has already done one
+* If saved to flash, survey will be performed on receiver startup
+* SurveyAgain forces the receiver to do a new survey even if it has already completed one
+   * Implementation details for forcing new survey are receiver-specific (hidden from user)
    * on gen8, set to disabled, and then set to survey
    * on gen9
       * if not survey again, then do not set survey params to same value
       * if survey again, then ensure survey params are set to a different value
 
-
-Issues
-
-- should we use number of observations rather than duration?
-- should MinDur/AccLimit be a property?
-  - inconsistent with FixedPos in Mode: setting that makes it use fixedpos
+We have chosen not to make MinDur/AccLimit a property
+  - would be inconsistent with FixedPosECEF in Mode: setting that makes it use fixedpos
   - doesn't really make sense when it is a command to do something
-  - makes sense as a property saved to Flash
+  - (although does makes sense as a property saved to Flash)
   - but not really useful; when doing a survey, don't want to use the mindur/acclimit that happened to be configured; want to use sensible defaults
 
 ### Survey messages
 
-Add PVTMsgSurvey flag added to PVTMsgs.
+Add PVTMsgSurvey flag to PVTMsgFlags for controlling survey progress messages.
 
 Semantics:
 * Turn on survey messages if we initiated a survey
-* If we didn't but we are in survey mode, then poll
-* If PvtMsgOff is set, then turn off survey messages on a receiver than enables them
-* Add this to set of messages enabled by events
+* If we didn't initiate but receiver is in survey mode, poll for status
+* If PVTMsgOff is set, turn off survey messages on receivers that support them
 
-Issues:
-
-- when do we enable survey-in; only when we initiated a survey otherwise poll once
-- what is the event that UBX-TIM-SVIN is tied to? will it keep generating after survey is complete, yes
+Implementation notes:
+- UBX-TIM-SVIN continues generating after survey completion
 
 ## Common scenarios
 
-* daemon behaviour
-  * stationary TOML sets SetStatic option, but does not set Mode
-  * surveyTime TOML sets Survey.MinDur option
-  * fixedPos TOML sets mode to static, with the fixedPos
-* cli
-  * --survey sets Mode to static with no fixedPos
-  * --fixedPos sets Mode to static with a fixedPos
+### Daemon behaviour
+* `stationary=true` in TOML → sets SetStatic option (does NOT set Mode property)
+* `surveyTime` in TOML → sets Survey.MinDur option  
+* `surveyAcc` in TOML → sets Survey.AccLimit option
+* `fixedPosECEF` in TOML → sets Mode property with Static=true and the position
+* `resurvey=true` in TOML → sets SurveyAgain flag
+
+### CLI behaviour
+* `--mobile` → sets Mode.Static to false
+* `--survey` → requests a survey; sets Mode.Static to true and zeros Mode.FixedPosECEF
+* `--fixedPos` → sets Mode with Static=true and a fixed position
 
 ## CLI change
 
-Currently we have --disable-time-mode
-Change to --mobile: semantics is to set Mode.Static to false
+Replace `--disable-time-mode` with `--mobile`
+* Semantics: sets Mode.Static to false
+* More intuitive naming that aligns with the Static field
 
-## Compared to current design
+## Migration from current design
 
-We have four properties currently
-- TimeMode: three way enum mapping direct to ublox
-- Stationary: corresponds to dyn model of stationary vs portable
-- FixedPosECEF: corresponds to u-blox ECEF property, only does anything if TimeMode is TimeModeFixed
-- FixedPosAcc: corresponds to u-blox fixedposacc property, only does anything it
+Current design has four separate properties:
+- TimeMode: three-way enum (disabled/survey/fixed) tied to u-blox concepts
+- Stationary: corresponds to dynamic model (stationary vs portable)
+- FixedPosECEF: only used when TimeMode is TimeModeFixed
+- FixedPosAcc: only used when TimeMode is TimeModeFixed
 
-Too much ties to u-blox
+New design consolidates these into one.
 
-Survey has When property that is set of timemode flags for when to do survey.
+In terms of options. Complicated/confusing Survey.When option is replaced by
+- SetStatic option, with clear semantics relative to Mode, and
+- SurveyAgain flag
 
+Problems with current design:
+- Too tied to u-blox specific concepts
+- Unclear interaction between TimeMode and Stationary
+- Survey.When is complicated/confusing
 
 ## Background
 
@@ -217,11 +231,11 @@ the position again. If the
 distance between the
 optimized coordinates and
 that saved in Flash is less
-than the value of “Distance”,
+than the value of "Distance",
 the receiver will set the
 coordinates saved in Flash as
 the base station coordinates.
-The range of “Distance” is 0 ≤
+The range of "Distance" is 0 ≤
 Distance ≤ 10. If Distance = 0,
 the receiver will start in self-
 optimizing base station mode
