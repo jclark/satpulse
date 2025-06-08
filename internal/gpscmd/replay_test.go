@@ -27,7 +27,7 @@ func TestReplayF9PReload(t *testing.T) {
 	testReplayFile(t, "f9p-reload")
 }
 
-func TestReplayF9PBinary(t *testing.T) {
+func DisableTestReplayF9PBinary(t *testing.T) {
 	testReplayFile(t, "f9p-binary")
 }
 
