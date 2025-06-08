@@ -166,6 +166,55 @@ Problems with current design:
 - Unclear interaction between TimeMode and Stationary
 - Survey.When is complicated/confusing
 
+## Implementation Plan
+
+### UBX tmodeConfig intermediate representation
+
+To reduce code duplication between legacy (TMODE/TMODE2/TMODE3) and modern (cfgval) implementations, introduce an intermediate `tmodeConfig` struct that represents time mode configuration in a format close to the gen 9 configuration keys:
+
+```go
+type tmodeConfig struct {
+    // Core time mode fields
+    mode          uint8   // 0=disabled, 1=survey, 2=fixed
+
+    // Fixed position fields (split high-precision format)
+    ecefHP        [3]int8   // High-precision fractional parts in 0.1mm
+    ecef          [3]int32  // Main ECEF values in cm
+     
+    // Future LLH support
+    useLLH        bool
+    latLonHP      [2]int8   // Lat/Lon high-precision fractional parts in degrees * 1e-9
+    heightHP      int8      // Height high-precision fractional part in 0.1mm
+    latLon        [2]int32  // Lat/Lon main values in degrees * 1e-7
+    height        int32     // Height main value in cm (same units as ECEF)
+
+    fixedPosAcc   uint32     // Position accuracy in 0.1mm units
+
+    // Survey parameters  
+    svinMinDur    uint32    // seconds
+    svinAccLimit  uint32     // Survey accuracy limit in 0.1mm units
+}
+```
+
+### Translation layers
+
+1. **ConfigTarget ↔ tmodeConfig**: Apply Mode property and SetStatic logic, translate between abstract interface and UBX concepts
+2. **tmodeConfig ↔ wire formats**: Handle format-specific conversions:
+   - **TMODE**: Position in cm, accuracy as mm² variance
+   - **TMODE2**: Position in cm, accuracy in mm  
+   - **TMODE3**: Split format with direct mapping (cm + 0.1mm)
+   - **cfgval**: Convert split format to 0.1mm units
+3. **Wire formats → tmodeConfig**: Parse responses and build tmodeConfig
+4. **tmodeConfig → ConfigProps**: Build Mode property from tmodeConfig
+
+### Benefits
+
+- **Code reuse**: Common translation logic shared between legacy and modern implementations
+- **Type safety**: Intermediate representation prevents unit confusion
+- **Future extensibility**: Easy to add new receiver generations or formats
+- **Cleaner testing**: Translation layers can be tested independently
+- **Reduced complexity**: Hide format-specific details in translation layer
+
 ## Background
 
 ### U-blox
