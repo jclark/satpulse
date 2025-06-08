@@ -442,8 +442,12 @@ func (c *Configurator) pollTp5() error {
 }
 
 func (c *Configurator) setMsg1() error {
-	c.origPrt = new(bin.CfgPrt)
-	*c.origPrt = *c.raw.prt
+	if c.raw.prt != nil {
+		// save the original port configuration
+		// so we can restore during recovery
+		c.origPrt = new(bin.CfgPrt)
+		*c.origPrt = *c.raw.prt
+	}
 	mc := newMsgChanges()
 	mc.options1(&c.target.Opts, c.ver)
 	c.setMsgChanges(mc)
