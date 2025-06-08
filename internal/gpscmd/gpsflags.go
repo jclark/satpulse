@@ -36,7 +36,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
        	    [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea] [--binary]
             [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
-            [--raw-out obs|nav|none,...] [--pvt-out pos|vel|time|tp|leap|tai|ecef|off,...]
+            [--raw-out obs|nav|none,...] [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
             [--rtcm-out MSM4|MSM7|ARP|none,...] [--nmea-out RMC|GGA|GSA|GSV|none,...]`
 
 const defaultSurveyTime = 2000
@@ -86,7 +86,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
-	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|tai|ecef|after|daemon|off,...")
+	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|tai|ecef|after|daemon|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|none,...")
 	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|none,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
@@ -422,6 +422,9 @@ func (pvtOut *pvtOutOpt) String() string {
 	if flags&gpsprot.PVTMsgLeapSecond != 0 {
 		parts = append(parts, "leap")
 	}
+	if flags&gpsprot.PVTMsgSurvey != 0 {
+		parts = append(parts, "survey")
+	}
 	if flags&gpsprot.PVTMsgTAI != 0 {
 		parts = append(parts, "tai")
 	}
@@ -458,6 +461,8 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 			flags |= gpsprot.PVTMsgTimePulse
 		case "leap":
 			flags |= gpsprot.PVTMsgLeapSecond
+		case "survey":
+			flags |= gpsprot.PVTMsgSurvey
 		case "tai":
 			flags |= gpsprot.PVTMsgTAI
 		case "ecef":

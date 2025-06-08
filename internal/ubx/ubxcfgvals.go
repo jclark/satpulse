@@ -138,13 +138,13 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port) ([]ucv.Item, []ucv.Key, bool, error) {
+func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
 	tb := newTxnBuilder(known, target, ver, port)
 	err := tb.build()
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, err
 	}
-	return tb.items, tb.keys, tb.survey, nil
+	return tb.items, tb.keys, nil
 }
 
 // txnBuilder builds a configuration transaction by accumulating the configuration database
@@ -208,7 +208,7 @@ func (tb *txnBuilder) build() error {
 		}
 		txnAddItem(tb, ucv.KNavspgDynmodel, dm)
 	}
-	if false {
+	if true {
 		// new code, under development
 		err = tb.messagesBuild()
 	} else {
@@ -244,6 +244,15 @@ func (tb *txnBuilder) messagesBuildOld(tg ucv.EnumTpTimegridTp1) error {
 	if opts.PVTMsg.Get()&gpsprot.PVTMsgLeapSecond != 0 {
 		txnAddItem(tb, ucv.KUbxNavTimels.KeyU(tb.port), 1)
 	}
+	if opts.PVTMsg.Get()&gpsprot.PVTMsgSurvey != 0 {
+		// XXX this isn't turning it off as it did before
+		switch tb.ver.ProductCategory() {
+		case "TIM":
+			txnAddItem(tb, ucv.KUbxTimSvin.KeyU(tb.port), 1)
+		case "HPG":
+			txnAddItem(tb, ucv.KUbxNavSvin.KeyU(tb.port), 1)
+		}
+	}
 	if opts.SatsMsg.IsSet() {
 		rate := uint64(0)
 		if opts.SatsMsg.Get()&gpsprot.SatsMsgSV != 0 {
@@ -257,7 +266,7 @@ func (tb *txnBuilder) messagesBuildOld(tg ucv.EnumTpTimegridTp1) error {
 func (tb *txnBuilder) messagesBuild() error {
 	msgChanges := newMsgChanges()
 	// XXX tb.ver.GNSS isn't right here: need enabled GNSS which we can get from MON-GNSS
-	err := msgChanges.options(&tb.target.Opts, tb.ver, tb.ver.GNSS)
+	err := msgChanges.options(&tb.target.Opts, tb.ver, tb.ver.GNSS, tb.survey)
 	if err != nil {
 		return err
 	}
@@ -267,12 +276,6 @@ func (tb *txnBuilder) messagesBuild() error {
 	}
 	tb.items = append(tb.items, msgChanges.items(tb.port)...)
 	return nil
-}
-
-func (known *CfgVals) Survey(opts gpsprot.ConfigOptions) []ucv.Item {
-	items := []ucv.Item{}
-	addSurveyItems(&items, opts.Survey)
-	return items
 }
 
 func (known *CfgVals) BaudRate(target *gpsprot.ConfigTarget, port ucv.Port) []ucv.Item {
@@ -288,12 +291,9 @@ func (known *CfgVals) BaudRate(target *gpsprot.ConfigTarget, port ucv.Port) []uc
 }
 
 func (tb *txnBuilder) timeModeBuild() error {
-	svMsgKey := ucv.KUbxTimSvin
 	switch tb.ver.ProductCategory() {
-	case "FTS": // do nothing
-	case "TIM": // do nothing
-	case "HPG":
-		svMsgKey = ucv.KUbxNavSvin
+	case "FTS", "TIM", "HPG": 
+		// these products support time mode
 	default:
 		return nil
 	}
@@ -335,38 +335,13 @@ func (tb *txnBuilder) timeModeBuild() error {
 		return nil
 	}
 	if when.Contains(tm) {
-		// XXX should not do this unless time mode is in the target
-		txnAddItem(tb, svMsgKey.KeyU(tb.port), uint64(1))
-		// This doesn't seem to work so disable for now.
-		// XXX need to try on some more receivers
-		if false && opts.Save == 0 && tmKnown != gpsprot.TimeModeFixed {
-			// We want to force the receiver to start a new survey.
-			// Returning true here will result in second CFG-VALSET using the settings from the Survey method,
-			// which will set the survey parameters that we actually want (using addSurveyItems)
-			// However, that by itself is not enough to make the receiver start a new survey if it has already done a survey.
-			// There isn't a documented mechanism to do this.  I tried setting time mode to disabled
-			// (which is documented as working for CFG-TMODE2), but that didn't work (F9P HPG 1.12).
-
-			// addItem(tb, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
-
-			// So instead we set slightly survey parameters here that are slightly different from the ones we actually want
-			// and will set later. A change in the survey parameters seems sufficient to force the receiver to start a new
-			// survey. This doesn't seem to work either.
-			sv := opts.Survey
-			sv.MinDur -= time.Second
-			sv.AccLimit -= gpsprot.Centimeter
-			addSurveyItems(&tb.items, sv)
-
-			tb.survey = true
-			return nil
-		}
+		tb.survey = true
 		addSurveyItems(&tb.items, opts.Survey)
 		return nil
 	}
 
 	if tmReq != gpsprot.TimeModeSurvey {
 		txnAddItem(tb, ucv.KTmodeMode, timeModeToTmodeMode(tmReq))
-		txnAddItem(tb, svMsgKey.KeyU(tb.port), uint64(0))
 		return nil
 	}
 	// Remaining possibility:

@@ -59,7 +59,6 @@ var legacyConfigSteps = []func(*Configurator) error{
 	(*Configurator).pollRate,
 	(*Configurator).pollNav5,
 	(*Configurator).setNav5,
-	(*Configurator).enableSurveyMsg,
 	(*Configurator).setMsg2,
 	(*Configurator).setRate, // setRate must come after all the messages have been enabled, so it can tell if rate needs setting
 	(*Configurator).saveMinimal,
@@ -75,7 +74,6 @@ var newConfigSteps = []func(*Configurator) error{
 	(*Configurator).valSetSignals,
 	(*Configurator).valGet,
 	(*Configurator).valSet,
-	(*Configurator).valSurvey,
 	(*Configurator).valBaudRate,
 	(*Configurator).reloadCfg,
 	(*Configurator).setCfg,
@@ -259,7 +257,7 @@ func (c *Configurator) reset() error {
 }
 
 func (c *Configurator) valGet() error {
-	_, missing, _, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort())
+	_, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort())
 	if err != nil {
 		return err
 	}
@@ -301,7 +299,7 @@ func (c *Configurator) valSetSignals() error {
 }
 
 func (c *Configurator) valSet() error {
-	items, missing, survey, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort())
+	items, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort())
 	if err != nil {
 		return err
 	}
@@ -315,7 +313,6 @@ func (c *Configurator) valSet() error {
 	if err != nil {
 		return err
 	}
-	c.survey = survey
 	return c.addMsgSetRequest(val)
 }
 
@@ -330,23 +327,6 @@ func (c *Configurator) valSetLayer() bin.CfgValsetLayer {
 		return bin.CfgValsetLayerFlash | bin.CfgValsetLayerBBR | bin.CfgValsetLayerRAM
 	}
 	return bin.CfgValsetLayerRAM
-}
-
-func (c *Configurator) valSurvey() error {
-	if !c.survey {
-		return nil
-	}
-	items := c.raw.valsPtr().Survey(c.target.Opts)
-	if len(items) == 0 {
-		return nil
-	}
-	// XXX how does this work with the Flash option?
-	// XXX this is disabled for now, because Transaction doesn't set c.survey
-	val, err := newCfgValsetRequest(items, bin.CfgValsetLayerRAM)
-	if err != nil {
-		return err
-	}
-	return c.addMsgSetRequest(val)
 }
 
 func (c *Configurator) valBaudRate() error {
@@ -461,32 +441,6 @@ func (c *Configurator) pollTp5() error {
 	return c.addPollTp5Request(tpIdx)
 }
 
-func (c *Configurator) enableSurveyMsg() error {
-	msgID := bin.TimSvinID
-	surveyMode := false
-	// note there is no survey progress message in early models that do not yet support tmode2
-	if !c.ver.protVerAtLeast(18, 0) {
-		return nil
-	}
-	switch c.ver.tmodeLevel() {
-	case 2:
-		surveyMode = c.raw.tmode2 != nil && c.raw.tmode2.TimeMode == bin.CfgTmode2SurveyIn
-	case 3:
-		msgID = bin.NavSvinID
-		surveyMode = c.raw.tmode3 != nil && c.raw.tmode3.Flags&bin.CfgTmode3Mode == bin.CfgTmode3SurveyIn
-	default:
-		return nil
-	}
-	// XXX this is not right: we should not change anything unless Target sets time mode
-	if surveyMode {
-		return c.addMsgRateRequest(msgID, 1)
-	}
-	if _, exists := c.target.Props.GetTimeMode(); exists {
-		return c.addMsgRateRequest(msgID, 0)
-	}
-	return nil
-}
-
 func (c *Configurator) setMsg1() error {
 	c.origPrt = new(bin.CfgPrt)
 	*c.origPrt = *c.raw.prt
@@ -499,7 +453,7 @@ func (c *Configurator) setMsg1() error {
 func (c *Configurator) setMsg2() error {
 	mc := newMsgChanges()
 	// XXX need to use enabled GNSS not supported GNSS from c.ver
-	mc.options2(&c.target.Opts, c.ver, c.ver.GNSS)
+	mc.options2(&c.target.Opts, c.ver, c.ver.GNSS, c.survey)
 	// this will end up doing about CFG-PRT in the event that RTCM protocol is enable/disabled
 	c.setMsgChanges(mc)
 	return nil

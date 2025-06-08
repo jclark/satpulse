@@ -58,9 +58,9 @@ func (mc *msgChanges) usesRate() bool {
 	return false
 }
 
-func (mc *msgChanges) options(opts *gpsprot.ConfigOptions, ver *Version, enabledGNSS gpsprot.GNSSSet) error {
+func (mc *msgChanges) options(opts *gpsprot.ConfigOptions, ver *Version, enabledGNSS gpsprot.GNSSSet, surveyRequested bool) error {
 	mc.options1(opts, ver)
-	return mc.options2(opts, ver, enabledGNSS)	
+	return mc.options2(opts, ver, enabledGNSS, surveyRequested)
 }
 
 func (mc *msgChanges) options1(opts *gpsprot.ConfigOptions, ver *Version) {
@@ -72,7 +72,10 @@ func (mc *msgChanges) options1(opts *gpsprot.ConfigOptions, ver *Version) {
 	}
 }
 
-func (mc *msgChanges) options2(opts *gpsprot.ConfigOptions, ver *Version, enabledGNSS gpsprot.GNSSSet) error {
+func (mc *msgChanges) options2(opts *gpsprot.ConfigOptions, ver *Version, enabledGNSS gpsprot.GNSSSet, surveyRequested bool) error {
+	if opts.PVTMsg.IsSet() {
+		mc.survey(opts.PVTMsg.Get(), ver, surveyRequested)
+	}
 	if opts.SatsMsg.IsSet() {
 		mc.sats(opts.SatsMsg.Get(), ver)
 	}
@@ -194,6 +197,27 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	if ver.protVerAtLeast(18, 0) {
 		mc.pvtMsg(bin.NavTimeLSID, navTimeLS, off)
 	}
+}
+
+func (mc *msgChanges) survey(flags gpsprot.PVTMsgFlags, ver *Version, surveyRequested bool) {	
+	// note there is no survey progress message in early models that do not yet support tmode2
+	if !ver.protVerAtLeast(15, 0) {
+		return
+	}
+	var msgID bin.MsgID
+	switch ver.tmodeLevel() {
+	case 2:
+		msgID = bin.TimSvinID
+	case 3:
+		msgID = bin.NavSvinID
+	default:
+		return
+	}
+	enable := false
+	if flags&gpsprot.PVTMsgSurvey != 0 && surveyRequested {
+		enable = true
+	}
+	mc.pvtMsg(msgID, enable, flags&gpsprot.PVTMsgOff != 0)
 }
 
 func (mc *msgChanges) pvtMsg(msgID bin.MsgID, enable, off bool) {
@@ -334,9 +358,10 @@ func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS
 }
 
 var msgIDKey = map[bin.MsgID]ucv.KeyM{
+	bin.NavSvinID:    ucv.KUbxNavSvin,
 	bin.NavTimeGPSID: ucv.KUbxNavTimegps,
 	bin.NavTimeUTCID: ucv.KUbxNavTimeutc,
-	bin.NavTimeLSID: ucv.KUbxNavTimels,
+	bin.NavTimeLSID:  ucv.KUbxNavTimels,
 	bin.NavPVTID:     ucv.KUbxNavPvt,
 	bin.NavPosECEFID: ucv.KUbxNavPosecef,
 	bin.NavPosLLHID:  ucv.KUbxNavPosllh,
@@ -346,6 +371,7 @@ var msgIDKey = map[bin.MsgID]ucv.KeyM{
 	//bin.NavSigID: ucv.KUbxNavSig,
 	bin.RxmRawxID:  ucv.KUbxRxmRawx,
 	bin.RxmSfrbxID: ucv.KUbxRxmSfrbx,
+	bin.TimSvinID:  ucv.KUbxTimSvin,
 	bin.TimTPID:    ucv.KUbxTimTp,
 	// NMEA messages
 	bin.NmeaGgaID: ucv.KNmeaIdGga,

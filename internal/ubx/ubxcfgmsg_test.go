@@ -307,6 +307,160 @@ func TestMsgChangesPVT(t *testing.T) {
 	}
 }
 
+// TestMsgChangesSurvey tests msgChanges.survey
+func TestMsgChangesSurvey(t *testing.T) {
+	tests := []struct {
+		name            string
+		flags           gpsprot.PVTMsgFlags
+		version         Version
+		surveyRequested bool
+		expectedMsgID   bin.MsgID
+		expectedRate    MsgRate
+	}{
+		// Early models that don't support survey (protocol < 18)
+		{
+			name:            "LEA-6T no survey support",
+			flags:           gpsprot.PVTMsgSurvey,
+			version:         testVers.lea6t,
+			surveyRequested: true,
+		},
+		// Models with tmode2 (protocol >= 18, < 20)
+		{
+			name:            "M8F survey enabled",
+			flags:           gpsprot.PVTMsgSurvey,
+			version:         testVers.m8f,
+			surveyRequested: true,
+			expectedMsgID:   bin.TimSvinID,
+			expectedRate:    1,
+		},
+		{
+			name:            "M8F survey flag not set",
+			flags:           gpsprot.PVTMsgTimePulse,
+			version:         testVers.m8f,
+			surveyRequested: true,
+		},
+		{
+			name:            "M8F survey not requested",
+			flags:           gpsprot.PVTMsgSurvey,
+			version:         testVers.m8f,
+			surveyRequested: false,
+		},
+		{
+			name:            "M8F survey with Off flag",
+			flags:           gpsprot.PVTMsgSurvey | gpsprot.PVTMsgOff,
+			version:         testVers.m8f,
+			surveyRequested: true,
+			expectedMsgID:   bin.TimSvinID,
+			expectedRate:    1,
+		},
+		{
+			name:            "M8P survey enabled",
+			flags:           gpsprot.PVTMsgSurvey,
+			version:         testVers.m8p,
+			surveyRequested: true,
+			expectedMsgID:   bin.NavSvinID,
+			expectedRate:    1,
+		},
+		// Models with tmode3 (protocol >= 20)
+		{
+			name:            "F9P survey enabled",
+			flags:           gpsprot.PVTMsgSurvey,
+			version:         testVers.f9p,
+			surveyRequested: true,
+			expectedMsgID:   bin.NavSvinID,
+			expectedRate:    1,
+		},
+		{
+			name:            "F9P survey flag not set",
+			flags:           gpsprot.PVTMsgTime,
+			version:         testVers.f9p,
+			surveyRequested: true,
+		},
+		{
+			name:            "F9P survey not requested",
+			flags:           gpsprot.PVTMsgSurvey,
+			version:         testVers.f9p,
+			surveyRequested: false,
+		},
+		{
+			name:            "F9P survey with Off flag",
+			flags:           gpsprot.PVTMsgSurvey | gpsprot.PVTMsgOff,
+			version:         testVers.f9p,
+			surveyRequested: true,
+			expectedMsgID:   bin.NavSvinID,
+			expectedRate:    1,
+		},
+		{
+			name:            "F9T survey enabled",
+			flags:           gpsprot.PVTMsgSurvey,
+			version:         testVers.f9t,
+			surveyRequested: true,
+			expectedMsgID:   bin.TimSvinID,
+			expectedRate:    1,
+		},
+		{
+			name:            "F9T20 survey enabled",
+			flags:           gpsprot.PVTMsgSurvey,
+			version:         testVers.f9t20,
+			surveyRequested: true,
+			expectedMsgID:   bin.TimSvinID,
+			expectedRate:    1,
+		},
+		// Model that doesn't support tmode
+		{
+			name:            "F10S no tmode support",
+			flags:           gpsprot.PVTMsgSurvey,
+			version:         testVers.f10s,
+			surveyRequested: true,
+		},
+		// Survey with multiple flags
+		{
+			name:            "F9P survey with other PVT flags",
+			flags:           gpsprot.PVTMsgSurvey | gpsprot.PVTMsgTime | gpsprot.PVTMsgPos,
+			version:         testVers.f9p,
+			surveyRequested: true,
+			expectedMsgID:   bin.NavSvinID,
+			expectedRate:    1,
+		},
+		// Off flag without survey flag
+		{
+			name:            "F9P Off flag only",
+			flags:           gpsprot.PVTMsgOff,
+			version:         testVers.f9p,
+			surveyRequested: true,
+			expectedMsgID:   bin.NavSvinID,
+			expectedRate:    0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := newMsgChanges()
+			mc.survey(tt.flags, &tt.version, tt.surveyRequested)
+
+			if tt.expectedMsgID == 0 {
+				// Verify no message was set
+				if len(mc.rate) > 0 {
+					t.Errorf("expected no messages to be set, but got %v", mc.rate)
+				}
+				return
+			}
+
+			// Check that the expected message was set with the correct rate
+			if actualRate, ok := mc.rate[tt.expectedMsgID]; !ok {
+				t.Errorf("expected message %v to be set, but it wasn't", tt.expectedMsgID)
+			} else if actualRate != tt.expectedRate {
+				t.Errorf("message %v: got rate %v, want %v", tt.expectedMsgID, actualRate, tt.expectedRate)
+			}
+
+			// Check that only the expected message was set
+			if len(mc.rate) != 1 {
+				t.Errorf("expected exactly 1 message to be set, but got %d: %v", len(mc.rate), mc.rate)
+			}
+		})
+	}
+}
+
 // TestMsgChangesRaw tests msgChanges.raw
 func TestMsgChangesRaw(t *testing.T) {
 	tests := []struct {
