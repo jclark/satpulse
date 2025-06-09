@@ -47,7 +47,9 @@ func run(schema *ubxcfgval.Schema) error {
 			continue
 		}
 		out, _ := entry["out"].(bool)
-		entry["payload"] = msg
+		if _, isUnknown := msg.(*ubxbin.UnknownMsg); !isUnknown {
+			entry["payload"] = msg
+		}
 		cfgData, cdt := msgCfgData(msg, out)
 		if cfgData != nil {
 			var encodedCfgData interface{}
