@@ -62,6 +62,29 @@ func GetDfltSchema() *Schema {
 	return dfltSchema
 }
 
+func (s *Schema) AddGroup(groupName string, group map[string]Desc) *Schema {
+	// Copy existing groups
+	groups := make(map[string]map[string]Desc)
+	for k, v := range s.groups {
+		groups[k] = v
+	}
+	groups[groupName] = group
+	
+	// Copy existing keys
+	keys := make(map[Key]NameDesc)
+	for k, v := range s.keys {
+		keys[k] = v
+	}
+	
+	// Add keys from new group
+	for itemName, d := range group {
+		keys[d.key()] = NameDesc{groupName, itemName, d}
+	}
+	
+	return &Schema{groups, keys}
+}
+
+
 func MustNewSchema(groups map[string]map[string]Desc) *Schema {
 	s, err := NewSchema(groups)
 	if err != nil {

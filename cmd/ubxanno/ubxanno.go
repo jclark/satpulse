@@ -13,7 +13,8 @@ import (
 )
 
 func main() {
-	if err := run(ubxcfgval.GetDfltSchema()); err != nil {
+	schema := ubxcfgval.NewSchemaWithMsgout(ubxcfgval.GetDfltSchema())
+	if err := run(schema); err != nil {
 		fmt.Fprintf(os.Stderr, "ubxanno: %v\n", err)
 		os.Exit(1)
 	}
