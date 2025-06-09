@@ -183,17 +183,17 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   **none**
   : Disable all NMEA messages
 
-**--disable-time-mode**  
-: Disable time mode (cannot be used with `--survey`).
-
 **--survey**  
-: Instruct the GPS receiver to perform a position survey.
+: Perform a survey to determine the position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The survey makes measurements for a period of time and then computes the position based on those measurements.
 
 **--survey-time** *seconds*  
 : Set duration of the position survey (default: 2000).
 
 **--survey-acc** *meters*  
 : Required survey accuracy in meters (default: 20.0). Minimum value is 0.001 (1 mm).
+
+**--mobile**
+: Run in a normal mode, where the position of the antenna may change. This undoes the effect of **--survey**.
 
 
 # EXAMPLES
