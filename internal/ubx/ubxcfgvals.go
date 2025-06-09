@@ -89,13 +89,19 @@ func (vals *CfgVals) isNil() bool {
 	return vals.Map == nil
 }
 
-func (raw *CfgVals) AddData(cfgData []byte) error {
+// AddData adds cfgData containing items to the CfgVals map.
+// It returns a map of the groups that were added.
+func (raw *CfgVals) AddData(cfgData []byte) (map[uint8]struct{}, error) {
 	items, err := ucv.UnmarshalItems(cfgData)
 	if err != nil {
-		return err
+		return nil, err
+	}	
+	groups := make(map[uint8]struct{})
+	for _, item := range items {
+		groups[item.Key.Group()] = struct{}{}
 	}
 	raw.AddItems(items)
-	return nil
+	return groups, nil
 }
 
 func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
@@ -138,8 +144,8 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port) ([]ucv.Item, []ucv.Key, error) {
-	tb := newTxnBuilder(known, target, ver, port)
+func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port, monEnabledGNSS gpsprot.GNSSSet) ([]ucv.Item, []ucv.Key, error) {
+	tb := newTxnBuilder(known, target, ver, port, monEnabledGNSS)
 	err := tb.build()
 	if err != nil {
 		return nil, nil, err
@@ -151,23 +157,25 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 // changes needed to achieve the target configuration. The builder tracks both required
 // config items and any additional keys that need to be queried.
 type txnBuilder struct {
-	known  *CfgVals
-	target *gpsprot.ConfigTarget
-	ver    *Version
-	port   ucv.Port
-	items  []ucv.Item
-	keys   []ucv.Key
-	survey bool
+	known         *CfgVals
+	monEnabledGNSS gpsprot.GNSSSet // enabled GNSS from UBX-MON-GNSS, zero value means no MON-GNSS info available
+	target        *gpsprot.ConfigTarget
+	ver           *Version
+	port          ucv.Port
+	items         []ucv.Item
+	keys          []ucv.Key
+	survey        bool
 }
 
-func newTxnBuilder(known *CfgVals, target *gpsprot.ConfigTarget, ver *Version, port ucv.Port) *txnBuilder {
+func newTxnBuilder(known *CfgVals, target *gpsprot.ConfigTarget, ver *Version, port ucv.Port, monEnabledGNSS gpsprot.GNSSSet) *txnBuilder {
 	return &txnBuilder{
-		known:  known,
-		target: target,
-		ver:    ver,
-		port:   port,
-		items:  []ucv.Item{},
-		keys:   []ucv.Key{},
+		known:         known,
+		monEnabledGNSS: monEnabledGNSS,
+		target:        target,
+		ver:           ver,
+		port:          port,
+		items:         []ucv.Item{},
+		keys:          []ucv.Key{},
 	}
 }
 
@@ -265,8 +273,13 @@ func (tb *txnBuilder) messagesBuildOld(tg ucv.EnumTpTimegridTp1) error {
 
 func (tb *txnBuilder) messagesBuild() error {
 	msgChanges := newMsgChanges()
-	// XXX tb.ver.GNSS isn't right here: need enabled GNSS which we can get from MON-GNSS
-	err := msgChanges.options(&tb.target.Opts, tb.ver, tb.ver.GNSS, tb.survey)
+	enabledGNSS := tb.monEnabledGNSS
+	if enabledGNSS == 0 {
+		if enabledSignals, ok := tb.known.getSignalsEnabled(); ok {
+			enabledGNSS = enabledSignals.GNSSSet()
+		}
+	}
+	err := msgChanges.options(&tb.target.Opts, tb.ver, enabledGNSS, tb.survey)
 	if err != nil {
 		return err
 	}

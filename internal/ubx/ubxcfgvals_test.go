@@ -15,7 +15,7 @@ func TestConfigItems_Sane(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	target.Props.SetPPS()
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
-	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1)
+	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestConfigItems_Sane(t *testing.T) {
 }
 
 func testSanity(t *testing.T, target *gpsprot.ConfigTarget, ver *Version, known *CfgVals) *CfgVals {
-	items, missing, err := known.Transaction(target, ver, ucv.UART1)
+	items, missing, err := known.Transaction(target, ver, ucv.UART1, 0)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -86,7 +86,7 @@ func expectMissing[T comparable](t *testing.T, m *CfgVals, key ucv.TypedKey[T]) 
 func TestConfigItems_Empty(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
-	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1)
+	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
 
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
@@ -105,7 +105,7 @@ func TestConfigItems_Get(t *testing.T) {
 
 	vals := newCfgVals()
 	ver := &Version{}
-	items, missing, err := vals.Transaction(target, ver, ucv.UART1)
+	items, missing, err := vals.Transaction(target, ver, ucv.UART1, 0)
 
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
@@ -147,7 +147,7 @@ func TestConfigItems_GNSS(t *testing.T) {
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	target := gpsprot.NewConfigTarget()
 	target.Props.SetPrimaryGNSS(gpsprot.GAL)
-	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1)
+	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 	target.Props.SetAntennaCableDelay(nanos * time.Nanosecond)
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 
-	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1)
+	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestConfigItems_Survey(t *testing.T) {
 		GNSS: gpsprot.MajorGNSSSet,
 		FW:   &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
 	}
-	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1)
+	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
 	if err != nil {
 		t.Fatalf("configItems[1]: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestConfigItems_Survey(t *testing.T) {
 	}
 	m := newCfgVals()
 	cfgValSet(m, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
-	items, missing, err := m.Transaction(target, ver, ucv.UART1)
+	items, missing, err := m.Transaction(target, ver, ucv.UART1, 0)
 	if err != nil {
 		t.Fatalf("configItems[2]: %v", err)
 	}

@@ -299,6 +299,10 @@ func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS
 		}
 		return nil
 	}
+	if enabledGNSS == 0 {
+		// this is an internal error, we should never get here
+		return errors.New("enabled GNSS not properly computed as needed for RTCM messages")
+	}
 	gloEnabled := false
 	msmFlags := []gpsprot.RTCMMsgFlags{gpsprot.RTCMMsgMSM4, gpsprot.RTCMMsgMSM7}
 	for _, g := range supGNSS.Items() {

@@ -140,3 +140,7 @@ func (k Key) MarshalBinary() ([]byte, error) {
 func (k Key) GroupWildcard() Key {
 	return k | 0xFFFF
 }
+
+func (k Key) Group() uint8 {
+	return uint8((k >> 16) & 0xFF)
+}

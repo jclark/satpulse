@@ -29,6 +29,59 @@ func TestGNSSSignalSet(t *testing.T) {
 	}
 }
 
+func TestSignalSetGNSSSet(t *testing.T) {
+	tests := []struct {
+		name     string
+		signals  SignalSet
+		expected GNSSSet
+	}{
+		{
+			name:     "Empty signal set",
+			signals:  0,
+			expected: 0,
+		},
+		{
+			name:     "GPS signals only",
+			signals:  SignalSetOf(SigGPSL1CA, SigGPSL5),
+			expected: GNSSSetOf(GPS),
+		},
+		{
+			name:     "Multiple GNSS",
+			signals:  SignalSetOf(SigGPSL1CA, SigGALE1, SigBDSB1I),
+			expected: GNSSSetOf(GPS, GAL, BDS),
+		},
+		{
+			name:     "All major GNSS",
+			signals:  SignalSetOf(SigGPSL1CA, SigGALE1, SigBDSB1I, SigGLOL1),
+			expected: GNSSSetOf(GPS, GAL, BDS, GLO),
+		},
+		{
+			name:     "SBAS signals",
+			signals:  SignalSetOf(SigSBASL1CA),
+			expected: GNSSSetOf(SBAS),
+		},
+		{
+			name:     "Mixed with SBAS",
+			signals:  SignalSetOf(SigGPSL1CA, SigSBASL1CA),
+			expected: GNSSSetOf(GPS, SBAS),
+		},
+		{
+			name:     "All constellation types",
+			signals:  SignalSetOf(SigGPSL1CA, SigGALE1, SigBDSB1I, SigGLOL1, SigQZSSL1CA, SigNAVICL1, SigSBASL1CA),
+			expected: GNSSSetOf(GPS, GAL, BDS, GLO, QZSS, NAVIC, SBAS),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.signals.GNSSSet()
+			if got != tt.expected {
+				t.Errorf("SignalSet.GNSSSet() = %s, want %s", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestSignalSetString(t *testing.T) {
 	tests := []struct {
 		name     string

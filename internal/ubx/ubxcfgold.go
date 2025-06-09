@@ -49,7 +49,7 @@ var cfgOldProps = struct {
 		// XXX PropIDPrimaryGNSS doesn't currently look at the gnss field (I think)
 		// PropIDPrimaryGNSS is regarded as unset, if tp5 isn't aligned to a GNSS and nav5 also doesn't have a preferred GNSS
 		gpsprot.PropIDSignalsEnabled,
-		gpsprot.PropIDTimePulseAlignToGNSS, // cookTp5 can end up looking at the .gnss field for this
+		gpsprot.PropIDTimePulseAlignToGNSS, // changeTp5 can end up looking at the .gnss field for this
 	},
 	nav5: []gpsprot.PropIDs{
 		gpsprot.PropIDPrimaryGNSS,

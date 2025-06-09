@@ -26,11 +26,14 @@ type Configurator struct {
 }
 
 // monGNSS records information from UBX-MON-GNSS
-// We need to be a little bit careful here, and should not include anything that might be
-// invalidated by a configuration change by by UBX-CFG-GNSS.
-// We could add supported GNSS signals here.
+// Since enabledGNSS can be invalidated by changed to the GNSS configuration,
+// we store the gnssChangeCount at the time monGNSS was created.
+// enabledGNSS is only valid if gnssChangeCount in monGNSS is the same as raw.gnssChangeCount.
 type monGNSS struct {
 	maxSimultaneousMajorGNSS int
+	supportedGNSS            gpsprot.GNSSSet
+	enabledGNSS              gpsprot.GNSSSet
+	gnssChangeCount          int
 }
 
 type ackList []*Ack
@@ -42,7 +45,8 @@ type Ack struct {
 
 type RawConfig struct {
 	CfgOld
-	CfgVals // access with valsPtr() so it gets lazily initialized
+	CfgVals             // access with valsPtr() so it gets lazily initialized
+	gnssChangeCount int // incremented each time GNSS configuration changes
 }
 
 var legacyConfigSteps = []func(*Configurator) error{
@@ -69,6 +73,7 @@ var legacyConfigSteps = []func(*Configurator) error{
 
 var newConfigSteps = []func(*Configurator) error{
 	(*Configurator).pollPrt,
+	(*Configurator).valPollMonGNSS,
 	(*Configurator).valGetSignals,
 	// XXX we have to do this early at the moment, because we may need to deduce what GNSS is primary
 	(*Configurator).valSetSignals,
@@ -171,9 +176,8 @@ func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
 		c.acks.ack(mt.MsgID, false, t)
 		return true, nil
 	case *bin.MonGnss:
-		mg := monGNSS{maxSimultaneousMajorGNSS: int(mt.Simultaneous)}
 		c.tRead[mt.ID()] = t
-		c.monGNSS = &mg
+		c.monGNSS = c.newMonGNSS(mt)
 		return true, nil
 	}
 	mid := msg.ID()
@@ -183,6 +187,16 @@ func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
 		return err == nil, err
 	}
 	return false, nil
+}
+
+func (c *Configurator) newMonGNSS(mt *bin.MonGnss) *monGNSS {
+	mg := monGNSS{
+		maxSimultaneousMajorGNSS: int(mt.Simultaneous),
+		supportedGNSS:            monGNSSSet(mt.Supported),
+		enabledGNSS:              monGNSSSet(mt.Enabled),
+		gnssChangeCount:          c.raw.gnssChangeCount,
+	}
+	return &mg
 }
 
 func (c *Configurator) saveMinimal() error {
@@ -257,7 +271,7 @@ func (c *Configurator) reset() error {
 }
 
 func (c *Configurator) valGet() error {
-	_, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort())
+	_, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort(), c.monEnabledGNSS())
 	if err != nil {
 		return err
 	}
@@ -267,8 +281,35 @@ func (c *Configurator) valGet() error {
 	return c.addMsgPollRequest(newCfgValgetRequest(missing, c.valGetLayer()))
 }
 
+// valPollMonGNSS polls UBX-MON-GNSS for non-legacy configuration.
+func (c *Configurator) valPollMonGNSS() error {
+	// ZED-X20P is version 50 and its UBX-MON-GNSS is a different version,
+	// which has a completely different structure, which we don't yet support.
+	if c.ver.protVerAtLeast(50,0) {
+		return nil
+	}
+	if !c.valNeedsMonGNSS() {
+		return nil
+	}
+	return c.addPollRequest(bin.MonGnssID)
+}
+
+func (c *Configurator) valNeedsMonGNSS() bool {
+	// At the moment we use MON-GNSS only for enabledGNSS when enabling RTCM messages.
+	// XXX in the future use for maxSimultaneousMajorGNSS (needed for F10T at least)
+	// XXX in the future use also when inferring primary GNSS
+	if !c.target.Opts.RTCMMsg.IsSet() {
+		return false
+	}
+	// If we are already getting signals, then we don't need MON-GNSS.
+	if c.target.UsesAny(gpsprot.PropIDSignalsEnabled) {
+		return false
+	}
+	return true
+}
+
 func (c *Configurator) valGetSignals() error {
-	if _, ok := c.target.Props.GetSignalsEnabled(); !ok && c.target.Get&gpsprot.PropIDSignalsEnabled == 0 {
+	if !c.target.UsesAny(gpsprot.PropIDSignalsEnabled) {
 		return nil
 	}
 	keys := []ucv.Key{ucv.KSignalGpsEna.Key().GroupWildcard()}
@@ -299,7 +340,7 @@ func (c *Configurator) valSetSignals() error {
 }
 
 func (c *Configurator) valSet() error {
-	items, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort())
+	items, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort(), c.monEnabledGNSS())
 	if err != nil {
 		return err
 	}
@@ -327,6 +368,13 @@ func (c *Configurator) valSetLayer() bin.CfgValsetLayer {
 		return bin.CfgValsetLayerFlash | bin.CfgValsetLayerBBR | bin.CfgValsetLayerRAM
 	}
 	return bin.CfgValsetLayerRAM
+}
+
+func (c *Configurator) monEnabledGNSS() gpsprot.GNSSSet {
+	if c.monGNSS != nil && c.monGNSS.gnssChangeCount == c.raw.gnssChangeCount {
+		return c.monGNSS.enabledGNSS
+	}
+	return 0
 }
 
 func (c *Configurator) valBaudRate() error {
@@ -389,15 +437,30 @@ func (c *Configurator) pollGNSS() error {
 	return c.addPollRequest(bin.CfgGNSSID)
 }
 
+// This is just for legacy configuration.
+// It is called after polling GNSS (if any)
 func (c *Configurator) pollMonGNSS() error {
-	if _, ok := c.target.Props.GetSignalsEnabled(); !ok {
-		return nil
-	}
 	// UBX-MON-GNSS needs at least protocol version 15.00
 	if !c.ver.protVerAtLeast(15, 0) {
 		return nil
 	}
+	if !c.needsMonGNSS() {
+		return nil
+	}	
 	return c.addPollRequest(bin.MonGnssID)
+}
+
+func (c *Configurator) needsMonGNSS() bool {
+	// Need maxSimultaneousMajorGNSS in this case.
+	if _, ok := c.target.Props.GetSignalsEnabled(); ok {
+		return true
+	}
+	// Need enabledGNSS for RTCM messages.
+	// But only need it if we can't get it from raw.gnss.
+	if c.target.Opts.RTCMMsg.IsSet() && c.raw.gnss == nil {
+		return true
+	}
+	return false
 }
 
 func (c *Configurator) pollRate() error {
@@ -456,8 +519,14 @@ func (c *Configurator) setMsg1() error {
 
 func (c *Configurator) setMsg2() error {
 	mc := newMsgChanges()
-	// XXX need to use enabled GNSS not supported GNSS from c.ver
-	mc.options2(&c.target.Opts, c.ver, c.ver.GNSS, c.survey)
+	enabledGNSS := c.monEnabledGNSS()
+	if enabledGNSS == 0 {
+		enabledGNSS = gnssEnabledSet(c.raw.gnss)
+	}
+	err := mc.options2(&c.target.Opts, c.ver, enabledGNSS, c.survey)
+	if err != nil {
+		return err
+	}
 	// this will end up doing about CFG-PRT in the event that RTCM protocol is enable/disabled
 	c.setMsgChanges(mc)
 	return nil
@@ -612,6 +681,7 @@ func (raw *RawConfig) AddMsg(m bin.Msg) (bool, error) {
 		raw.tp5 = mt
 	case *bin.CfgGNSS:
 		raw.gnss = mt
+		raw.gnssChangeCount++
 	case *bin.CfgRate:
 		raw.rate = mt
 	case *bin.CfgNav5:
@@ -622,8 +692,8 @@ func (raw *RawConfig) AddMsg(m bin.Msg) (bool, error) {
 		raw.addMsgRate(mt.MsgID, mt.Rate)
 	case *bin.CfgValget:
 		// this is a response to a poll
-		if mt.Layer == 0 {
-			err := raw.valsPtr().AddData(mt.CfgData)
+		if mt.Layer == bin.CfgValgetLayerRAM {
+			_, err := raw.valsPtr().AddData(mt.CfgData)
 			if err != nil {
 				return false, err
 			}
@@ -631,9 +701,12 @@ func (raw *RawConfig) AddMsg(m bin.Msg) (bool, error) {
 	case *bin.CfgValset:
 		// this is an acknowledgement of a set
 		if mt.Layers&bin.CfgValsetLayerRAM != 0 {
-			err := raw.valsPtr().AddData(mt.CfgData)
+			groups, err := raw.valsPtr().AddData(mt.CfgData)
 			if err != nil {
 				return false, err
+			}
+			if _, found := groups[ucv.KSignalGpsEna.Key().Group()]; found {
+				raw.gnssChangeCount++
 			}
 		}
 	default:

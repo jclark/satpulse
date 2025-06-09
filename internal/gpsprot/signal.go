@@ -226,6 +226,16 @@ func (ss SignalSet) GNSSStringGroups() [][]string {
 	return result
 }
 
+// GNSSSet returns the set of GNSS constellations that have at least one enabled signal.
+func (ss SignalSet) GNSSSet() GNSSSet {
+	var result GNSSSet
+	for sig := range ss.Signals() {
+		g := sig.GNSS()
+		result |= GNSSSetOf(g)
+	}
+	return result
+}
+
 // sigName provides human-readable names for each signal
 var sigName [64]string
 
