@@ -320,7 +320,8 @@ func (ct *ConfigTarget) UsesAny(props ...PropIDs) bool {
 }
 
 func (o ConfigOptions) NoOp() bool {
-	return o.Save == 0 && o.Reset == 0 && o.PVTMsg.IsZero() && o.SatsMsg.IsZero() && o.NMEAMsg.IsZero() && o.Survey.When == TimeModeNone && o.BaudRate == 0
+	var zero ConfigOptions
+	return o == zero
 }
 
 func (o *ConfigOptions) SetsMsgs() bool {
