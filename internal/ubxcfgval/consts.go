@@ -2,6 +2,7 @@
 
 package ubxcfgval
 
+const KGpsL5HealthOverride KeyL = 0x10320001
 const KHwAntCfgOpendet KeyL = 0x10a30031
 const KHwAntCfgOpendetPol KeyL = 0x10a30032
 const KHwAntCfgPwrdown KeyL = 0x10a30033

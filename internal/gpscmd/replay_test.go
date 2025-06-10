@@ -20,17 +20,7 @@ import (
 var ubxSchema = ubxcfgval.NewSchemaWithMsgout(ubxcfgval.GetDfltSchema())
 
 func TestReplay(t *testing.T) {
-	files := []string{
-		"f9p-noop",
-		"f9p-signal", 
-		"f9p-reload",
-		//"f9p-binary",
-		"f9p-raw-out",
-		"f9p-rtcm-out",
-		"f9p-pvt-out",
-	}
-
-	for _, filename := range files {
+	for _, filename := range replayFiles {
 		t.Run(filename, func(t *testing.T) {
 			testReplayFile(t, filename)
 		})
@@ -231,8 +221,7 @@ func (r *replayer) run() {
 
 		expected := r.test.outPackets[r.outIdx]
 		actual := req.Packet()
-		actualStr := string(actual)
-		if actualStr != expected.Data() && !(req.ID() == "CFG-VALSET" && valsetPacketsEqual(r.t, actualStr, expected.Data())) {
+		if !r.packetsEqual(req.ID(), actual, expected) {
 			r.t.Errorf("packet mismatch for %s", req.ID())
 		}
 		r.outIdx++
@@ -323,6 +312,27 @@ func (r *replayer) feedUpTo(outIdx int) {
 		if err != nil {
 			r.t.Errorf("error processing packet: %v", err)
 		}
+	}
+}
+
+func (r *replayer) packetsEqual(msgID string, actual []byte, expected gpsio.PacketLogEntry) bool {
+	actualStr := string(actual)
+	expectedStr := expected.Data()
+	
+	// First check if they're exactly equal
+	if actualStr == expectedStr {
+		return true
+	}
+	
+	// If not, check special cases for messages that might have reordered data
+	switch msgID {
+	case "CFG-VALSET":
+		return valsetPacketsEqual(r.t, actualStr, expectedStr)
+	case "CFG-VALGET":
+		// For output packets (which these always are), cfgData contains keys
+		return valgetPacketsEqual(r.t, actualStr, expectedStr)
+	default:
+		return false
 	}
 }
 
@@ -442,6 +452,79 @@ func valsetPacketsEqual(t *testing.T, actual, expected string) bool {
 	for key, actualVal := range actualMap {
 		if _, exists := expectedMap[key]; !exists {
 			t.Errorf("CFG-VALSET: unexpected key: %s (actual value: %v)", key, actualVal)
+			equal = false
+		}
+	}
+
+	return equal
+}
+
+func valgetPacketsEqual(t *testing.T, actual, expected string) bool {
+	// Parse both packets
+	actualMsg, err := ubxbin.ParseMsg(actual)
+	if err != nil {
+		t.Errorf("CFG-VALGET: failed to parse actual packet: %v", err)
+		return false
+	}
+	expectedMsg, err := ubxbin.ParseMsg(expected)
+	if err != nil {
+		t.Errorf("CFG-VALGET: failed to parse expected packet: %v", err)
+		return false
+	}
+
+	actualValget, ok := actualMsg.(*ubxbin.CfgValget)
+	if !ok {
+		return false
+	}
+	expectedValget, ok := expectedMsg.(*ubxbin.CfgValget)
+	if !ok {
+		return false
+	}
+
+	// Compare fixed fields
+	if actualValget.CfgValgetFixed != expectedValget.CfgValgetFixed {
+		t.Errorf("CFG-VALGET: fixed fields differ: actual %+v, expected %+v", 
+			actualValget.CfgValgetFixed, expectedValget.CfgValgetFixed)
+		return false
+	}
+
+	// For output packets, cfgData contains keys only
+	actualKeys, err := ubxSchema.UnmarshalKeysFlat(actualValget.CfgData)
+	if err != nil {
+		t.Errorf("CFG-VALGET: failed to unmarshal actual keys: %v", err)
+		return false
+	}
+
+	expectedKeys, err := ubxSchema.UnmarshalKeysFlat(expectedValget.CfgData)
+	if err != nil {
+		t.Errorf("CFG-VALGET: failed to unmarshal expected keys: %v", err)
+		return false
+	}
+
+	// Create maps for comparison (to ignore order)
+	actualMap := make(map[string]bool)
+	expectedMap := make(map[string]bool)
+	
+	for _, key := range actualKeys {
+		actualMap[key] = true
+	}
+	for _, key := range expectedKeys {
+		expectedMap[key] = true
+	}
+
+	// Check each expected key
+	equal := true
+	for key := range expectedMap {
+		if !actualMap[key] {
+			t.Errorf("CFG-VALGET: missing expected key: %s", key)
+			equal = false
+		}
+	}
+
+	// Check for unexpected keys
+	for key := range actualMap {
+		if !expectedMap[key] {
+			t.Errorf("CFG-VALGET: unexpected extra key: %s", key)
 			equal = false
 		}
 	}

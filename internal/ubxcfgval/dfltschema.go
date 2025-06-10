@@ -3,6 +3,9 @@
 package ubxcfgval
 
 var dfltSchema = MustNewSchema(map[string]map[string]Desc{
+	"GPS":{
+		"L5_HEALTH_OVERRIDE": L(0x10320001),
+	},
 	"HW":{
 		"ANT_CFG_OPENDET": L(0x10a30031),
 		"ANT_CFG_OPENDET_POL": L(0x10a30032),

@@ -76,6 +76,7 @@ sleep 1
 echo Setting binary mode
 satpulsetool gps --binary -d /dev/tty$tty -s $speed
 
+set +e
 # Source and run the commands file
 source "$commands_file"
 

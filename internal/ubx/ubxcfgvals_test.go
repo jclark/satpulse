@@ -373,8 +373,9 @@ func TestEnableSignals(t *testing.T) {
 			for _, k := range tt.supported {
 				cfgValSet(m, k, true)
 			}
-			supported := m.signalsSupported()
-			_, items := m.EnableSignals(tt.enabled)
+			ver := Version{GNSS: gpsprot.MajorGNSSSet}
+			supported := m.signalsSupported(&ver)
+			_, items := m.EnableSignals(tt.enabled, &ver)
 			expectedItems := make([]ucv.Item, 0, len(tt.expected))
 			for k, v := range tt.expected {
 				ucv.AddItem(&expectedItems, k, v)

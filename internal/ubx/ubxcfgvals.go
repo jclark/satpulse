@@ -95,7 +95,7 @@ func (raw *CfgVals) AddData(cfgData []byte) (map[uint8]struct{}, error) {
 	items, err := ucv.UnmarshalItems(cfgData)
 	if err != nil {
 		return nil, err
-	}	
+	}
 	groups := make(map[uint8]struct{})
 	for _, item := range items {
 		groups[item.Key.Group()] = struct{}{}
@@ -157,25 +157,25 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 // changes needed to achieve the target configuration. The builder tracks both required
 // config items and any additional keys that need to be queried.
 type txnBuilder struct {
-	known         *CfgVals
+	known          *CfgVals
 	monEnabledGNSS gpsprot.GNSSSet // enabled GNSS from UBX-MON-GNSS, zero value means no MON-GNSS info available
-	target        *gpsprot.ConfigTarget
-	ver           *Version
-	port          ucv.Port
-	items         []ucv.Item
-	keys          []ucv.Key
-	survey        bool
+	target         *gpsprot.ConfigTarget
+	ver            *Version
+	port           ucv.Port
+	items          []ucv.Item
+	keys           []ucv.Key
+	survey         bool
 }
 
 func newTxnBuilder(known *CfgVals, target *gpsprot.ConfigTarget, ver *Version, port ucv.Port, monEnabledGNSS gpsprot.GNSSSet) *txnBuilder {
 	return &txnBuilder{
-		known:         known,
+		known:          known,
 		monEnabledGNSS: monEnabledGNSS,
-		target:        target,
-		ver:           ver,
-		port:          port,
-		items:         []ucv.Item{},
-		keys:          []ucv.Key{},
+		target:         target,
+		ver:            ver,
+		port:           port,
+		items:          []ucv.Item{},
+		keys:           []ucv.Key{},
 	}
 }
 
@@ -305,7 +305,7 @@ func (known *CfgVals) BaudRate(target *gpsprot.ConfigTarget, port ucv.Port) []uc
 
 func (tb *txnBuilder) timeModeBuild() error {
 	switch tb.ver.ProductCategory() {
-	case "FTS", "TIM", "HPG": 
+	case "FTS", "TIM", "HPG":
 		// these products support time mode
 	default:
 		return nil
@@ -792,8 +792,8 @@ func portBaudRateKey(port ucv.Port) ucv.KeyU {
 	return 0
 }
 
-func (known *CfgVals) EnableSignals(enabled gpsprot.SignalSet) (gpsprot.SignalSet, []ucv.Item) {
-	supported := known.signalsSupported()
+func (known *CfgVals) EnableSignals(enabled gpsprot.SignalSet, ver *Version) (gpsprot.SignalSet, []ucv.Item) {
+	supported := known.signalsSupported(ver)
 	items := []ucv.Item{}
 	for g := gpsprot.GNSS(1); g <= gpsprot.GNSSLast; g++ {
 		gss := gpsprot.BandAll.SignalSet(g) & supported
@@ -818,16 +818,27 @@ func (known *CfgVals) EnableSignals(enabled gpsprot.SignalSet) (gpsprot.SignalSe
 			}
 		}
 	}
+	// If we are enabling GPS L5, and the special key to override the health of GPS L5 is known, then enable it.
+	// Otherwise, L5 wil be ignored if GPS L5 is not yet fully operational.
+	if _, ok := ucv.MapGet(known.Map, ucv.KGpsL5HealthOverride); ok && (supported & enabled).Contains(gpsprot.SigGPSL5) {
+		ucv.AddItem(&items, ucv.KGpsL5HealthOverride, true)
+	}
 	return supported & enabled, items
 }
 
-func (raw *CfgVals) signalsSupported() gpsprot.SignalSet {
+func (raw *CfgVals) signalsSupported(ver *Version) gpsprot.SignalSet {
 	supported := gpsprot.SignalSet(0)
 	for k, sig := range keySignalMap {
 		_, ok := ucv.MapGet(raw.Map, k)
 		if ok {
 			supported |= gpsprot.SignalSetOf(sig)
 		}
+	}
+	if ver.Mod == "NEO-F10T" {
+		// The NEO-F10T does not support BDS B1I,
+		// despite the fact that it has a key for it. Argh!
+		// This must be a bug in the firmware.
+		supported &^= gpsprot.SignalSetOf(gpsprot.SigBDSB1I)
 	}
 	return supported
 }

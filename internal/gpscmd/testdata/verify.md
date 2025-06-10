@@ -168,7 +168,7 @@ Each `.jsonl` file contains results from multiple sequential GPS configuration c
 
 ## Standard Configuration Elements
 
-All configuration commands should include:
+All configuration commands that enable messages should include:
 
 **Rate Configuration:**
 ```jsonl
@@ -204,6 +204,25 @@ Depends on connection type (_USB, _UART1, etc.)
 - Behavior should match source code logic
 
 ## Practical Verification Techniques
+
+### Regenerating Command Files from Test Data
+
+You can recreate a command file (like `signal.sh`) from an existing `.jsonl` test data file using:
+
+```bash
+cat filename.jsonl | jq -r 'select(.type == "env") | "t " + (.args[6:] | join(" "))'
+```
+
+This extracts the GPS-specific arguments from each test block, skipping the device connection arguments (`-d /dev/ttyACM0 -s 9600 --test-log filename.jsonl`) and formatting them as command file entries.
+
+**Example output:**
+```
+t --gnss GPS
+t --gnss GPS,GAL
+t --gnss BDS --band L1,L2
+```
+
+You can then add comments, sleep delays, and any missing test cases to create a complete command file.
 
 ### Using jq for JSONL Analysis
 

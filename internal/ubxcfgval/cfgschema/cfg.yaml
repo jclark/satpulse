@@ -1344,3 +1344,10 @@ NAVSPG:
       63DBHZ:
         value: 63
         description: Maximum expected C/NO level is 63 dBHz
+GPS:
+  L5_HEALTH_OVERRIDE:
+    key: 0x10320001
+    type: L
+    description: Override health status of L5 signal with L1 signal
+    condition: L5
+    note: Documented in GPS L5 Configuration Application Note

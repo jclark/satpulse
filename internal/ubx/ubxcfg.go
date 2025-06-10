@@ -285,7 +285,7 @@ func (c *Configurator) valGet() error {
 func (c *Configurator) valPollMonGNSS() error {
 	// ZED-X20P is version 50 and its UBX-MON-GNSS is a different version,
 	// which has a completely different structure, which we don't yet support.
-	if c.ver.protVerAtLeast(50,0) {
+	if c.ver.protVerAtLeast(50, 0) {
 		return nil
 	}
 	if !c.valNeedsMonGNSS() {
@@ -312,7 +312,10 @@ func (c *Configurator) valGetSignals() error {
 	if !c.target.UsesAny(gpsprot.PropIDSignalsEnabled) {
 		return nil
 	}
-	keys := []ucv.Key{ucv.KSignalGpsEna.Key().GroupWildcard()}
+	keys := []ucv.Key{
+		ucv.KSignalGpsEna.Key().GroupWildcard(),
+		ucv.KGpsL5HealthOverride.Key().GroupWildcard(),
+	}
 	return c.addMsgPollRequest(newCfgValgetRequest(keys, c.valGetLayer()))
 }
 
@@ -321,12 +324,12 @@ func (c *Configurator) valSetSignals() error {
 	if !ok {
 		return nil
 	}
-	enabled, items := c.raw.valsPtr().EnableSignals(targetEnabled)
+	enabled, items := c.raw.valsPtr().EnableSignals(targetEnabled, c.ver)
 	// Ensure we have one non-augmentation signal from a major GNSS
 	enabled &= gpsprot.SigSetMajor
 	enabled &^= gpsprot.SigSetAugment
 	if enabled == 0 {
-		if c.raw.valsPtr().signalsSupported() == 0 {
+		if c.raw.valsPtr().signalsSupported(c.ver) == 0 {
 			return errors.New("could not determine supported GNSS signals")
 		}
 		return fmt.Errorf("no suitable supported GNSS signal was enabled: %v", enabled)
@@ -446,7 +449,7 @@ func (c *Configurator) pollMonGNSS() error {
 	}
 	if !c.needsMonGNSS() {
 		return nil
-	}	
+	}
 	return c.addPollRequest(bin.MonGnssID)
 }
 
