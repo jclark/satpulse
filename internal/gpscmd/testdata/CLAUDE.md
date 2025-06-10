@@ -21,13 +21,13 @@ The traces are created using a structured testing approach:
 - Define GPS receiver-specific settings like device path and baud rate
 - Example: `tty=ACM0` and `speed=9600` for a ZED-F9P on USB
 
-**Command Files** (e.g., `pvt-out.sh`):
+**Command Files** (e.g., `cmd/pvt-out.sh`):
 - Define sequences of GPS configuration commands to test
 - Each command calls the `t` function with different `satpulsetool gps` options
 - Example: `t --pvt-out pos`, `t --pvt-out vel`, etc.
 
 **Test Execution** (`run.sh`):
-1. Takes receiver config and command file as arguments: `./run.sh f9p.sh pvt-out.sh`
+1. Takes receiver config and command file as arguments: `./run.sh f9p.sh cmd/pvt-out.sh`
 2. Sources the receiver configuration to set GPS connection parameters
 3. Runs initial setup commands (reload, binary mode)
 4. Sources and executes the command file, generating `filename.jsonl`
@@ -35,7 +35,7 @@ The traces are created using a structured testing approach:
 
 **Example workflow:**
 ```bash
-./run.sh f9p.sh pvt-out.sh
+./run.sh f9p.sh cmd/pvt-out.sh
 # Generates: f9p-pvt-out.jsonl and f9p-pvt-out.anno.jsonl
 ```
 
@@ -43,7 +43,7 @@ The traces are created using a structured testing approach:
 
 1. **Setup receiver config**: Create or use existing receiver file (e.g., `f9p.sh`)
 2. **Define test commands**: Create command file with GPS options to test
-3. **Generate trace**: `./run.sh receiver.sh commands.sh` with real GPS hardware
+3. **Generate trace**: `./run.sh receiver.sh cmd/commands.sh` with real GPS hardware
 4. **Verify trace**: Use this document to validate the generated `.anno.jsonl` file
 5. **Add to test suite**: Copy verified traces to permanent test data collection
 

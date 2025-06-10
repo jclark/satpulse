@@ -7,7 +7,7 @@ set -e
 
 if [ $# -ne 2 ]; then
     echo "Usage: $0 <receiver-config> <commands-file>"
-    echo "Example: $0 f9p.sh pvt-out.sh"
+    echo "Example: $0 f9p.sh cmd/pvt-out.sh"
     exit 1
 fi
 
@@ -16,6 +16,7 @@ commands_file=$2
 
 # Extract base names without .sh extension
 receiver_base=$(basename "$receiver_config" .sh)
+# Handle path in commands_file (e.g., cmd/pvt-out.sh -> pvt-out)
 commands_base=$(basename "$commands_file" .sh)
 
 # Source receiver configuration
