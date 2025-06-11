@@ -53,7 +53,7 @@ out/%: docs/man/%.md
 out/%.gz: out/%
 	gzip -c $< > $@
 
-install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulse.toml
+install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulse.toml $(MAN_TARGETS)
 	install out/$(GOARCH)/satpulsed /usr/local/sbin/satpulsed
 	install out/$(GOARCH)/satpulsetool /usr/local/bin/satpulsetool
 	sed -e 's;/etc/satpulse.toml;$(CONFIG_FILE);g' \
@@ -64,6 +64,10 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	install -m 644 -D configs/config-schema.json /usr/local/share/doc/satpulse/config-schema.json
 	install -D -m 644 docs/config.md /usr/local/share/doc/satpulse/config.md
 	install -D -m 644 docs/quickstart.md /usr/local/share/doc/satpulse/quickstart.md
+	install -D -m 644 out/satpulsetool.1 /usr/local/share/man/man1/satpulsetool.1
+	install -D -m 644 out/satpulsetool-gps.1 /usr/local/share/man/man1/satpulsetool-gps.1
+	install -d /usr/local/share/man/man8
+	sed 's;/etc/satpulse.toml;$(CONFIG_FILE);g' out/satpulsed.8 > /usr/local/share/man/man8/satpulsed.8
 	systemctl daemon-reload
 
 uninstall:
@@ -75,6 +79,9 @@ uninstall:
 	rm -f /usr/local/share/doc/satpulse/config-schema.json
 	rm -f /usr/local/share/doc/satpulse/config.md
 	rm -f /usr/local/share/doc/satpulse/quickstart.md
+	rm -f /usr/local/share/man/man1/satpulsetool.1
+	rm -f /usr/local/share/man/man1/satpulsetool-gps.1
+	rm -f /usr/local/share/man/man8/satpulsed.8
 	systemctl daemon-reload
 
 test:
@@ -96,7 +103,7 @@ $(GH_DEBS): $(DEBS)
 $(GH_DEB_PATTERN): $(DEB_PATTERN)
 	ln -sf $(notdir $<) $@
 
-$(DEB_PATTERN): % out/%/satpulse.toml
+$(DEB_PATTERN): % out/%/satpulse.toml $(MAN_GZ_TARGETS)
 	install -D -m 644 debian/conffiles out/$*/deb/DEBIAN/conffiles
 	install -D debian/postinst out/$*/deb/DEBIAN/postinst
 	install -D out/$*/satpulsed out/$*/deb/usr/sbin/satpulsed
@@ -109,6 +116,9 @@ $(DEB_PATTERN): % out/%/satpulse.toml
 	install -D -m 644 docs/quickstart.md out/$*/deb/usr/share/doc/satpulse/quickstart.md
 	install -D -m 644 LICENSE out/$*/deb/usr/share/doc/satpulse/copyright
 	install -D -m 644 configs/satpulse@.service out/$*/deb/lib/systemd/system/satpulse@.service
+	install -D -m 644 out/satpulsetool.1.gz out/$*/deb/usr/share/man/man1/satpulsetool.1.gz
+	install -D -m 644 out/satpulsetool-gps.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-gps.1.gz
+	install -D -m 644 out/satpulsed.8.gz out/$*/deb/usr/share/man/man8/satpulsed.8.gz
 	installed_size=`du -s -k out/$*/deb | cut -f1`;\
 	sed -e '/^Architecture:/s/any/$*/' -e '/^Package:/a\
 	Version: $(DEB_PKG_VERSION)' -e '/^Maintainer:/a\
@@ -127,7 +137,7 @@ $(GH_RPMS): $(RPMS)
 # The challenge here is that rpmbuild wants to put the generated RPMs in a subdirectory named by the architecture.
 # But if we follow that we will get endless pain from having patterns with two %s in them.
 # So we symlink each architecture to the current directory to avoid having the subdirectories.
-$(RPM_PATTERN): $(ALL_GOARCH) $(TOMLS)
+$(RPM_PATTERN): $(ALL_GOARCH) $(TOMLS) $(MAN_GZ_TARGETS)
 	goarch=$(subst x86_64,amd64,$(subst aarch64,arm64,$*)); \
 	test -L out/$* || ln -s . out/$*; \
 	echo ls -l out/$*; \
