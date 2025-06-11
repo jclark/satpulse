@@ -17,6 +17,8 @@ docs:
     url: "/config.html"
   - title: "Man pages"
     children:
+      - title: "satpulsed(8)"
+        url: "/man/satpulsed.8.html"
       - title: "satpulsetool(1)"
         url: "/man/satpulsetool.1.html"
       - title: "satpulsetool-gps(1)"
