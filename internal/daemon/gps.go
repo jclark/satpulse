@@ -90,14 +90,18 @@ func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {
 		opts.Survey.When = 0
 	} else {
 		cp.SetStationary(true)
-		opts.Survey.When = gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled)
-		if c.Resurvey {
-			opts.Survey.When |= gpsprot.TimeModeFlags(gpsprot.TimeModeSurvey)
-		}
-		opts.Survey.MinDur = time.Second * time.Duration(c.SurveyTime)
-		opts.Survey.AccLimit = gpsprot.Meters(c.SurveyAcc)
-		if opts.Survey.AccLimit < gpsprot.Millimeter {
-			return fmt.Errorf("survey accuracy %v is too small", opts.Survey.AccLimit)
+		if !c.FixedPosECEF.IsZero() {
+			cp.SetTimeMode(gpsprot.TimeModeFixed)
+		} else {
+			opts.Survey.When = gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled)
+			if c.Resurvey {
+				opts.Survey.When |= gpsprot.TimeModeFlags(gpsprot.TimeModeSurvey)
+			}
+			opts.Survey.MinDur = time.Second * time.Duration(c.SurveyTime)
+			opts.Survey.AccLimit = gpsprot.Meters(c.SurveyAcc)
+			if opts.Survey.AccLimit < gpsprot.Millimeter {
+				return fmt.Errorf("survey accuracy %v is too small", opts.Survey.AccLimit)
+			}
 		}
 	}
 	return nil
