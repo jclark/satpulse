@@ -4,7 +4,7 @@ satpulsetool-gps - configure a GPS receiver
 
 # SYNOPSIS
 
-**satpulsetool** [*global options*] **gps** [*options*]
+**satpulsetool** [*global options*] **gps** [-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe] [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea] [--binary] [--save] [--save-all] [--reset] [--reload] [--factory-reset] [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...] [--raw-out obs|nav|none,...] [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...] [--rtcm-out MSM4|MSM7|ARP|none,...] [--nmea-out RMC|GGA|GSA|GSV|none,...]
 
 # DESCRIPTION
 
