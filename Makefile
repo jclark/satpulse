@@ -17,6 +17,9 @@ TAGS=netgo,osusergo
 ALL_GOARCH=arm64 amd64
 TOMLS:=$(patsubst %,out/%/satpulse.toml,$(ALL_GOARCH))
 ARCH:=$(shell uname -m)
+MAN_PAGES=satpulsed.8 satpulsetool.1 satpulsetool-gps.1
+MAN_TARGETS = $(addprefix out/, $(MAN_PAGES))
+MAN_GZ_TARGETS = $(addsuffix .gz, $(MAN_TARGETS))
 
 # Set goarch based on detected architecture
 ifeq ($(ARCH),x86_64)
@@ -40,12 +43,12 @@ out/arm64/satpulse.toml: configs/satpulse.toml
 out/amd64/satpulse.toml: configs/satpulse.toml
 	sed -e '/^#:schema /s; \./; /usr/share/doc/satpulse/;' $< > $@
 
-man: out/satpulsetool.1 out/satpulsetool-gps.1
+man: $(MAN_TARGETS)
 
-man.gz: out/satpulsetool.1.gz out/satpulsetool-gps.1.gz
+man.gz: $(MAN_GZ_TARGETS)
 
 out/%: docs/man/%.md
-	pandoc -s --metadata=title="satpulsetool" --metadata=section=1 --metadata=author="James Clark" -t man -o $@ $<
+	pandoc -s --metadata=title="$(basename $*)" --metadata=section="$(subst .,,$(suffix $*))" --metadata=author="James Clark" -t man -o $@ $<
 
 out/%.gz: out/%
 	gzip -c $< > $@

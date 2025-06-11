@@ -4,7 +4,8 @@ satpulsed - use a GPS receiver as an external clock source for PTP
 
 # SYNOPSIS
 
-**satpulsed** [-h|--help] [-V|--version] [-v|--verbose] [-w|--wait] [-s|--systemd-log] [-f|--config-file path] [-d|--serial-device device-path]
+**satpulsed** [**\-h**\|**\-\-help**] [**\-V**\|**\-\-version**] [**\-v**\|**\-\-verbose**] [**\-w**\|**\-\-wait**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-s**\|**\-\-systemd\-log**] [**\-f**\|**\-\-config\-file** *path*] [**\-d**\|**\-\-serial\-device** *device-path*]
 
 # DESCRIPTION
 
@@ -27,31 +28,31 @@ The companion program **satpulsetool(1)** supports the use of **satpulsed**; in 
 
 # OPTIONS
 
-**-h**, **--help**  
+**\-h**, **\-\-help**  
 : Show help.
 
-**-V**, **--version**
+**\-V**, **\-\-version**
 : Show version information.
 
-**-v**, **--verbose**
+**\-v**, **\-\-verbose**
 : Log more information.
 
-**-w**, **--wait**
+**\-w**, **\-\-wait**
 : Wait for the network interface to be ready. This would typically be used in a systemd service file.
 
-**-s**, **--systemd-log**
+**\-s**, **\-\-systemd\-log**
 : Log to standard output in a format suitable for **systemd**.
 
-**-f**, **--config-file** *path*
+**\-f**, **\-\-config\-file** *path*
 : Configuration file.
 
-**-d**, **--serial-device** *device-path*
+**\-d**, **\-\-serial\-device** *device-path*
 : Serial device to use.
 
 # ENVIRONMENT
 
 **SATPULSE_CONFIG_FILE**
-: Default configuration file path if -f option is not specified.
+: Default configuration file path if **\-f** option is not specified.
 
 # FILES
 
@@ -60,7 +61,7 @@ The companion program **satpulsetool(1)** supports the use of **satpulsed**; in 
 
 # EXAMPLES
 
-Start the daemon with a specific configuration file:
+Start the daemon with the normal configuration file:
 
     satpulsed -f /etc/satpulse/satpulse.toml
 

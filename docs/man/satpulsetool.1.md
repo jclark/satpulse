@@ -24,20 +24,24 @@ The *command* must be one of the following.
 
 These options must be specified before the *command*.
 
-**-h**, **--help**  
+**\-h**, **\-\-help**  
 : Show usage help.
 
-**-V**, **--version**
+**\-V**, **\-\-version**
 : Show the version and exit.
 
-**-v**
-: Be verbose. Multiple **-v** options will increase verbosity.
+**\-v**
+: Be verbose. Multiple **\-v** options will increase verbosity.
 
 # EXAMPLES
 
-Show the satpulsetool version:
+Show help for satpulsetool:
 
-    satpulsetool --version
+    satpulsetool --help
+
+Show help for satpulsetool gps command:
+
+    satpulsetool gps --help
 
 # SEE ALSO
 

@@ -4,7 +4,18 @@ satpulsetool-gps - configure a GPS receiver
 
 # SYNOPSIS
 
-**satpulsetool** [*global options*] **gps** [-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe] [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea] [--binary] [--save] [--save-all] [--reset] [--reload] [--factory-reset] [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...] [--raw-out obs|nav|none,...] [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...] [--rtcm-out MSM4|MSM7|ARP|none,...] [--nmea-out RMC|GGA|GSA|GSV|none,...]
+**satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*] [**\-\-socket** *path*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-force\-probe**] [**\-\-packet\-log** *path*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea**] [**\-\-binary**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pvt\-out** **pos**\|**vel**\|**time**\|**tp**\|**leap**\|**survey**\|**tai**\|**ecef**\|**off**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-raw\-out** **obs**\|**nav**\|**none**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**none**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **RMC**\|**GGA**\|**GSA**\|**GSV**\|**none**,...]
 
 # DESCRIPTION
 
@@ -12,25 +23,25 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 
 # OPTIONS
 
-**-h**, **--help**  
-: Show usage help for the `gps` command.
+**\-h**, **\-\-help**  
+: Show usage help for the **gps** command.
 
-**-d**, **--serial-device** *path*  
+**\-d**, **\-\-serial\-device** *path*  
 : Path to the serial device to communicate with the GPS receiver.
 
-**-s**, **--device-speed** *bps*  
-: Set the speed of the host serial port (as specified by **-d**) in bits per second.
+**\-s**, **\-\-device\-speed** *bps*  
+: Set the speed of the host serial port (as specified by **\-d**) in bits per second.
 
-**--socket** *path*  
+**\-\-socket** *path*  
 : Path to a Unix-domain socket to connect to the GPS receiver instead of a serial device.
 
-**--speed** *bps*  
+**\-\-speed** *bps*  
 : Configure the GPS receiver's serial speed in bits per second.
 
-**--packet-log** *path*  
+**\-\-packet\-log** *path*  
 : Log to *path* a description of the packets sent to and received from the GPS receiver. The log is in `.jsonl` (JSON lines) format.
 
-**-g**, **--gnss** *list*  
+**\-g**, **\-\-gnss** *list*  
 : List of GNSS constellations that should be enabled. The *list* parameter is a comma-separated list of:
   
   **GPS**
@@ -54,7 +65,7 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   **SBAS**
   : Satellite-Based Augmentation Systems (various countries)
   
-**-b**, **--band** *list*
+**\-b**, **\-\-band** *list*
 : List of frequency bands that should be enabled for the specified GNSS constellations. The *list* parameter is a comma-separated list of:
   
   **L1**
@@ -72,34 +83,34 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   **E6** or **L6**
   : 1260-1300 MHz band
 
-**--save**  
+**\-\-save**  
 : Save the configuration changed by this command to GPS receiver's non-volatile memory. Exactly what is saved depends on the specific GPS receiver; satpulsetool will save the minimum possible to ensure that everything that was changed by this command is saved.
 
-**--save-all**  
+**\-\-save\-all**  
 : Save the current running configuration of the GPS receiver to its non-volatile memory.
 
-**--reload**
+**\-\-reload**
 : Reloads the configuration of the GPS receiver from its non-volatile memory. Any configuration settings that have not been saved will be lost. This can be used to undo any changes made by the satpulse daemon.
 
-**--reset**  
-: Perform a reset that reloads the configuration of the GPS receiver from its non-volatile memory (as with the **-reload** option), and discards information about the last known position, current time, and satellite orbital data (both ephemeris and almanac).
+**\-\-reset**  
+: Perform a reset that reloads the configuration of the GPS receiver from its non-volatile memory (as with the **\-reload** option), and discards information about the last known position, current time, and satellite orbital data (both ephemeris and almanac).
 
-**--factory-reset**
-: Restore the non-volatile memory of the GPS receiver to its default settings, and the perform a reset as with the **--reset** option.
+**\-\-factory\-reset**
+: Restore the non-volatile memory of the GPS receiver to its default settings, and the perform a reset as with the **\-\-reset** option.
 
-**--nmea**  
+**\-\-nmea**  
 : Enable NMEA output from the GPS receiver.
 
-**--binary**
+**\-\-binary**
 : Enable binary messages from the GPS receiver instead of NMEA.
 
-**--force-probe**  
+**\-\-force\-probe**  
 : Force writing probe to serial device even when there is no output from the GPS receiver
 
-**-p**, **--pps**  
+**\-p**, **\-\-pps**  
 : Configure the GPS receiver to enable PPS (pulse-per-second) output.
 
-**--pvt-out** *flags*  
+**\-\-pvt\-out** *flags*  
 : Configure which Position, Velocity, and Time (PVT) messages to output. The *flags* parameter is a comma-separated list of:
   
   **pos**
@@ -135,7 +146,7 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   **daemon**
   : Enable messages needed by satpulsed (equivalent to `tp,after,tai,leap,survey,off`)
 
-**--raw-out** *flags*  
+**\-\-raw\-out** *flags*  
 : Configure raw data message output. The *flags* parameter is a comma-separated list of:
   
   **obs**
@@ -147,7 +158,7 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   **none**
   : Disable all raw data messages
 
-**--rtcm-out** *flags*  
+**\-\-rtcm\-out** *flags*  
 : Configure RTCM 3.x message output. The *flags* parameter is a comma-separated list of:
   
   **MSM4**
@@ -162,7 +173,7 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   **none**
   : Disable all RTCM messages
 
-**--nmea-out** *flags*  
+**\-\-nmea\-out** *flags*  
 : Configure NMEA message output. The *flags* parameter is a comma-separated list of:
   
   **RMC**
@@ -183,17 +194,17 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   **none**
   : Disable all NMEA messages
 
-**--survey**  
+**\-\-survey**  
 : Perform a survey to determine the position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The survey makes measurements for a period of time and then computes the position based on those measurements.
 
-**--survey-time** *seconds*  
+**\-\-survey\-time** *seconds*  
 : Set duration of the position survey (default: 2000).
 
-**--survey-acc** *meters*  
+**\-\-survey\-acc** *meters*  
 : Required survey accuracy in meters (default: 20.0). Minimum value is 0.001 (1 mm).
 
-**--mobile**
-: Run in a normal mode, where the position of the antenna may change. This undoes the effect of **--survey**.
+**\-\-mobile**
+: Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey**.
 
 
 # EXAMPLES
