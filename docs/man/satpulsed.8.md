@@ -56,18 +56,18 @@ The companion program **satpulsetool(1)** supports the use of **satpulsed**; in 
 
 # FILES
 
-**/etc/satpulse/satpulse.toml**
+**/etc/satpulse.toml**
 : Conventional location of configuration file.
 
 # EXAMPLES
 
 Start the daemon with the normal configuration file:
 
-    satpulsed -f /etc/satpulse/satpulse.toml
+    satpulsed -f /etc/satpulse.toml
 
 Run in verbose mode with systemd logging:
 
-    satpulsed --systemd-log --wait -f /etc/satpulse/satpulse.toml
+    satpulsed --systemd-log --wait -f /etc/satpulse.toml
 
 # SEE ALSO
 
