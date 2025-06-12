@@ -1,22 +1,27 @@
 package bin
 
+import (
+	"fmt"
+)
+
 const (
-	NavDOPID     MsgID = clsNav | (0x04 << 8)
-	NavPosECEFID MsgID = clsNav | (0x01 << 8)
-	NavPosLLHID  MsgID = clsNav | (0x02 << 8)
-	NavSolID     MsgID = clsNav | (0x06 << 8)
-	NavPVTID     MsgID = clsNav | (0x07 << 8)
-	NavSatID     MsgID = clsNav | (0x35 << 8)
-	NavSVInfoID  MsgID = clsNav | (0x30 << 8)
-	NavTimeGPSID MsgID = clsNav | (0x20 << 8)
-	NavTimeUTCID MsgID = clsNav | (0x21 << 8)
-	NavTimeBDSID MsgID = clsNav | (0x24 << 8)
-	NavTimeGLOID MsgID = clsNav | (0x23 << 8)
-	NavTimeGalID MsgID = clsNav | (0x25 << 8)
-	NavTimeLSID  MsgID = clsNav | (0x26 << 8)
-	NavVelECEFID MsgID = clsNav | (0x11 << 8)
-	NavVelNEDID  MsgID = clsNav | (0x12 << 8)
-	NavSvinID    MsgID = clsNav | (0x3B << 8)
+	NavDOPID         MsgID = clsNav | (0x04 << 8)
+	NavPosECEFID     MsgID = clsNav | (0x01 << 8)
+	NavPosLLHID      MsgID = clsNav | (0x02 << 8)
+	NavSolID         MsgID = clsNav | (0x06 << 8)
+	NavPVTID         MsgID = clsNav | (0x07 << 8)
+	NavSatID         MsgID = clsNav | (0x35 << 8)
+	NavSVInfoID      MsgID = clsNav | (0x30 << 8)
+	NavTimeGPSID     MsgID = clsNav | (0x20 << 8)
+	NavTimeUTCID     MsgID = clsNav | (0x21 << 8)
+	NavTimeBDSID     MsgID = clsNav | (0x24 << 8)
+	NavTimeGLOID     MsgID = clsNav | (0x23 << 8)
+	NavTimeGalID     MsgID = clsNav | (0x25 << 8)
+	NavTimeLSID      MsgID = clsNav | (0x26 << 8)
+	NavTimeTrustedID MsgID = clsNav | (0x64 << 8)
+	NavVelECEFID     MsgID = clsNav | (0x11 << 8)
+	NavVelNEDID      MsgID = clsNav | (0x12 << 8)
+	NavSvinID        MsgID = clsNav | (0x3B << 8)
 )
 
 type NavDOP struct {
@@ -170,7 +175,7 @@ type NavPVTFlags3 uint16
 const (
 	NavPVTInvalidLlh   NavPVTFlags3 = 1 << 0
 	NavPVTAuthTime     NavPVTFlags3 = 1 << 13
-	NavPVTNmaFixStatus NavPVTFlags3 = 1 << 14	
+	NavPVTNmaFixStatus NavPVTFlags3 = 1 << 14
 )
 
 const (
@@ -570,6 +575,75 @@ const (
 
 func (m *NavTimeLS) ID() MsgID { return NavTimeLSID }
 
+type NavTimeTrusted struct {
+	Version byte
+	NavTimeTrustedV1
+	Unknown []byte
+}
+
+type NavTimeTrustedV1 struct {
+	RefSys   NavTimeTrustedRefSys
+	Valid    NavTimeTrustedValid
+	_        byte
+	ITOW     uint32
+	IniWno   uint16
+	PropWno  uint16
+	IniTow   uint32
+	PropTow  uint32
+	IniTAcc  uint32
+	PropTAcc uint32
+	DeltaS   int32
+	DeltaMs  int32
+	_        [4]byte
+}
+
+type NavTimeTrustedRefSys byte
+
+const (
+	NavTimeTrustedRefSysNone  NavTimeTrustedRefSys = 0
+	NavTimeTrustedRefSysGPS   NavTimeTrustedRefSys = 1
+	NavTimeTrustedRefSysGal   NavTimeTrustedRefSys = 2
+	NavTimeTrustedRefSysBDS   NavTimeTrustedRefSys = 3
+	NavTimeTrustedRefSysNavIC NavTimeTrustedRefSys = 15
+)
+
+type NavTimeTrustedValid byte
+
+const (
+	NavTimeTrustedValidTrustedTime NavTimeTrustedValid = 1 << iota
+	NavTimeTrustedValidDeltaTime
+)
+
+var _ VaryingMsg = (*NavTimeTrusted)(nil)
+
+func (m *NavTimeTrusted) ID() MsgID { return NavTimeTrustedID }
+
+func (m *NavTimeTrusted) InitVaryingPart(payloadLen int) error {
+	if m.Version == 1 {
+		if payloadLen != 40 {
+			return fmt.Errorf("bad UBX-NAV-TIMETRUSTED v1 payload length (%d bytes); expected 40", payloadLen)
+		}
+		m.Unknown = nil
+	} else {
+		if payloadLen < 1 {
+			return fmt.Errorf("bad UBX-NAV-TIMETRUSTED payload length (%d bytes); expected at least 1", payloadLen)
+		}
+		m.Unknown = make([]byte, payloadLen-1)
+	}
+	return nil
+}
+
+func (m *NavTimeTrusted) FixedPart() any {
+	return &m.Version
+}
+
+func (m *NavTimeTrusted) VaryingPart() any {
+	if m.Version == 1 {
+		return &m.NavTimeTrustedV1
+	}
+	return &m.Unknown
+}
+
 type NavSvin struct {
 	Version byte
 	_       [3]byte
@@ -606,6 +680,7 @@ func init() {
 	regMsg[NavTimeGLO]("TIMEGLO")
 	regMsg[NavTimeUTC]("TIMEUTC")
 	regMsg[NavTimeLS]("TIMELS")
+	regMsg[NavTimeTrusted]("TIMETRUSTED")
 	regMsg[NavVelECEF]("VELECEF")
 	regMsg[NavVelNED]("VELNED")
 }
