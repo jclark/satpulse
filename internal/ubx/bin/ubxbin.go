@@ -275,7 +275,7 @@ type CfgCfg struct {
 	DeviceMask []CfgCfgDeviceMask // this is optional so we use a slice; it will always be length 0 or 1
 }
 
-var _ VarLengthMsg = (*CfgCfg)(nil)
+var _ VaryingMsg = (*CfgCfg)(nil)
 
 func (m *CfgCfg) ID() MsgID { return CfgCfgID }
 
@@ -291,10 +291,12 @@ func (m *CfgCfg) InitForLen(payloadLen int) error {
 	return nil
 }
 
-func (m *CfgCfg) Parts() (fixed any, slice any) {
-	fixed = &m.CfgCfgFixed
-	slice = &m.DeviceMask
-	return
+func (m *CfgCfg) FixedPart() any {
+	return &m.CfgCfgFixed
+}
+
+func (m *CfgCfg) VaryingPart() any {
+	return &m.DeviceMask
 }
 
 type CfgCfgFixed struct {
@@ -845,10 +847,12 @@ func (m *NavSat) InitForLen(payloadLen int) (err error) {
 	return
 }
 
-func (m *NavSat) Parts() (fixed any, slice any) {
-	fixed = &m.NavSatFixed
-	slice = &m.SVs
-	return
+func (m *NavSat) FixedPart() any {
+	return &m.NavSatFixed
+}
+
+func (m *NavSat) VaryingPart() any {
+	return &m.SVs
 }
 
 type NavSatFlags uint32
@@ -944,10 +948,12 @@ func (m *NavSVInfo) InitForLen(payloadLen int) (err error) {
 	return
 }
 
-func (m *NavSVInfo) Parts() (fixed any, slice any) {
-	fixed = &m.NavSVInfoFixed
-	slice = &m.SVs
-	return
+func (m *NavSVInfo) FixedPart() any {
+	return &m.NavSVInfoFixed
+}
+
+func (m *NavSVInfo) VaryingPart() any {
+	return &m.SVs
 }
 
 type NavSVInfoGlobalFlags byte
@@ -1402,10 +1408,12 @@ func (m *MonVer) InitForLen(payloadLen int) (err error) {
 	return
 }
 
-func (m *MonVer) Parts() (fixed any, slice any) {
-	fixed = &m.MonVerFixed
-	slice = &m.Extension
-	return
+func (m *MonVer) FixedPart() any {
+	return &m.MonVerFixed
+}
+
+func (m *MonVer) VaryingPart() any {
+	return &m.Extension
 }
 
 type CfgGNSS struct {
@@ -1475,10 +1483,12 @@ func (m *CfgGNSS) InitForLen(payloadLen int) (err error) {
 	return
 }
 
-func (m *CfgGNSS) Parts() (fixed any, slice any) {
-	fixed = &m.CfgGNSSFixed
-	slice = &m.Blocks
-	return
+func (m *CfgGNSS) FixedPart() any {
+	return &m.CfgGNSSFixed
+}
+
+func (m *CfgGNSS) VaryingPart() any {
+	return &m.Blocks
 }
 
 type CfgValget struct {
@@ -1518,10 +1528,12 @@ func (m *CfgValget) InitForLen(payloadLen int) (err error) {
 	return
 }
 
-func (m *CfgValget) Parts() (fixed any, slice any) {
-	fixed = &m.CfgValgetFixed
-	slice = &m.CfgData
-	return
+func (m *CfgValget) FixedPart() any {
+	return &m.CfgValgetFixed
+}
+
+func (m *CfgValget) VaryingPart() any {
+	return &m.CfgData
 }
 
 // This is shared between valdel and valset
@@ -1571,10 +1583,12 @@ func (m *CfgValset) InitForLen(payloadLen int) (err error) {
 	return
 }
 
-func (m *CfgValset) Parts() (fixed any, slice any) {
-	fixed = &m.CfgValsetFixed
-	slice = &m.CfgData
-	return
+func (m *CfgValset) FixedPart() any {
+	return &m.CfgValsetFixed
+}
+
+func (m *CfgValset) VaryingPart() any {
+	return &m.CfgData
 }
 
 type CfgValdel struct {
@@ -1613,10 +1627,12 @@ func (m *CfgValdel) InitForLen(payloadLen int) (err error) {
 	return
 }
 
-func (m *CfgValdel) Parts() (fixed any, slice any) {
-	fixed = &m.CfgValdelFixed
-	slice = &m.CfgData
-	return
+func (m *CfgValdel) FixedPart() any {
+	return &m.CfgValdelFixed
+}
+
+func (m *CfgValdel) VaryingPart() any {
+	return &m.CfgData
 }
 
 type InfDebug []byte
@@ -1626,8 +1642,13 @@ func (m *InfDebug) InitForLen(payloadLen int) error {
 	*m = make([]byte, payloadLen)
 	return nil
 }
-func (m *InfDebug) Parts() (fixed any, slice any) {
-	return nil, (*[]byte)(m)
+
+func (m *InfDebug) FixedPart() any {
+	return nil
+}
+
+func (m *InfDebug) VaryingPart() any {
+	return (*[]byte)(m)
 }
 
 type InfError []byte
@@ -1637,8 +1658,13 @@ func (m *InfError) InitForLen(payloadLen int) error {
 	*m = make([]byte, payloadLen)
 	return nil
 }
-func (m *InfError) Parts() (fixed any, slice any) {
-	return nil, (*[]byte)(m)
+
+func (m *InfError) FixedPart() any {
+	return nil
+}
+
+func (m *InfError) VaryingPart() any {
+	return (*[]byte)(m)
 }
 
 type InfNotice []byte
@@ -1648,8 +1674,13 @@ func (m *InfNotice) InitForLen(payloadLen int) error {
 	*m = make([]byte, payloadLen)
 	return nil
 }
-func (m *InfNotice) Parts() (fixed any, slice any) {
-	return nil, (*[]byte)(m)
+
+func (m *InfNotice) FixedPart() any {
+	return nil
+}
+
+func (m *InfNotice) VaryingPart() any {
+	return (*[]byte)(m)
 }
 
 type InfTest []byte
@@ -1659,8 +1690,13 @@ func (m *InfTest) InitForLen(payloadLen int) error {
 	*m = make([]byte, payloadLen)
 	return nil
 }
-func (m *InfTest) Parts() (fixed any, slice any) {
-	return nil, (*[]byte)(m)
+
+func (m *InfTest) FixedPart() any {
+	return nil
+}
+
+func (m *InfTest) VaryingPart() any {
+	return (*[]byte)(m)
 }
 
 type InfWarning []byte
@@ -1670,18 +1706,24 @@ func (m *InfWarning) InitForLen(payloadLen int) error {
 	*m = make([]byte, payloadLen)
 	return nil
 }
-func (m *InfWarning) Parts() (fixed any, slice any) {
-	return nil, (*[]byte)(m)
+
+func (m *InfWarning) FixedPart() any {
+	return nil
 }
 
-type VarLengthMsg interface {
+func (m *InfWarning) VaryingPart() any {
+	return (*[]byte)(m)
+}
+
+type VaryingMsg interface {
 	Msg
 	InitForLen(payloadLen int) error
-	Parts() (fixed any, slice any)
+	FixedPart() any
+	VaryingPart() any
 }
 
 // Use VarLengthMsg here to help ensure that InitForLen is correctly declared for each type
-func sliceLen(m VarLengthMsg, payloadLen, minLen, elemLen int) (int, error) {
+func sliceLen(m VaryingMsg, payloadLen, minLen, elemLen int) (int, error) {
 	extraLen := payloadLen - minLen
 	if extraLen < 0 || extraLen%elemLen != 0 {
 		return 0, fmt.Errorf("bad UBX-%v payload length (%d bytes)", m.ID(), payloadLen)
@@ -1725,16 +1767,17 @@ func ParseMsg(packet string) (Msg, error) {
 		return &UnknownMsg{MsgID: mid, Payload: payload}, nil
 	}
 	msg := ctor()
-	var fixed, slice any
-	if vMsg, ok := msg.(VarLengthMsg); ok {
+	var fixed, vary any
+	if vMsg, ok := msg.(VaryingMsg); ok {
 		err := vMsg.InitForLen(len(payload))
 		if err != nil {
 			return nil, err
 		}
-		fixed, slice = vMsg.Parts()
+		fixed = vMsg.FixedPart()
+		vary = vMsg.VaryingPart()
 	} else {
 		fixed = msg
-		slice = nil
+		vary = nil
 	}
 	r := strings.NewReader(payload)
 	var err error
@@ -1742,8 +1785,8 @@ func ParseMsg(packet string) (Msg, error) {
 	if fixed != nil {
 		err = binary.Read(r, binary.LittleEndian, fixed)
 	}
-	if err == nil && slice != nil {
-		err = binary.Read(r, binary.LittleEndian, slice)
+	if err == nil && vary != nil {
+		err = binary.Read(r, binary.LittleEndian, vary)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("parsing UBX-%s: %v", mid.String(), err)
@@ -1761,15 +1804,16 @@ func Serialize(msg Msg) ([]byte, error) {
 	}
 	buf := new(bytes.Buffer)
 	var v any
-	if vMsg, ok := msg.(VarLengthMsg); ok {
-		fixed, slice := vMsg.Parts()
+	if vMsg, ok := msg.(VaryingMsg); ok {
+		fixed := vMsg.FixedPart()
+		vary := vMsg.VaryingPart()
 		if fixed != nil {
 			err := binary.Write(buf, binary.LittleEndian, fixed)
 			if err != nil {
 				return nil, err
 			}
 		}
-		v = slice
+		v = vary
 	} else {
 		v = msg
 	}
