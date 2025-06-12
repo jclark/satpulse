@@ -1344,6 +1344,22 @@ NAVSPG:
       63DBHZ:
         value: 63
         description: Maximum expected C/NO level is 63 dBHz
+  PL_ENA:
+    key: 0x101100d7
+    type: L
+    description: Enable Protection level
+    note: If enabled, protection level computing is on.
+  ONLY_AUTHDATA:
+    key: 0x101100dd
+    type: L
+    description: Enable using only signals with authenticated navigation data
+    note: In dual filter operation, this configuration item is applied to the primary output.
+  MAX_TIMETRUSTED_ACC:
+    key: 0x301100de
+    type: U2
+    unit: s
+    description: Maximum trusted time accuracy
+    note: Maximum trusted time accuracy value to perform time authentication.
 GPS:
   L5_HEALTH_OVERRIDE:
     key: 0x10320001
@@ -1351,3 +1367,250 @@ GPS:
     description: Override health status of L5 signal with L1 signal
     condition: L5
     note: Documented in GPS L5 Configuration Application Note
+GAL:
+  USE_OSNMA:
+    key: 0x10350005
+    type: L
+    description: Enable using Galileo Open Service Navigation Message Authentication (OSNMA) protocol
+  OSNMA_MINTAGLENGTH:
+    key: 0x20350007
+    type: U1
+    description: Minimum equivalent tag length
+  OSNMA_TIMESYNC:
+    key: 0x10350009
+    type: L
+    description: Apply the time synchronization requirement
+BDS:
+  USE_GEO_PRN:
+    key: 0x10340014
+    type: L
+    description: Use BeiDou geostationary satellites (PRN 1-5 and 59-63)
+RTCM:
+  DF003_OUT:
+    key: 0x30090001
+    type: U2
+    description: RTCM DF003 (Reference station ID) output value
+    note: >
+      Value to set in RTCM data field DF003 (Reference station ID) in RTCM output messages containing DF003.
+      The value can be 0..4095.
+    min: 0
+    max: 4095
+  DF003_IN:
+    key: 0x30090008
+    type: U2
+    description: RTCM DF003 (Reference station ID) input value
+    note: >
+      Value to use for filtering out RTCM input messages based on their DF003 data field (Reference station ID) value.
+      To be used in conjunction with CFG-RTCM-DF003_IN_FILTER. The value can be 0..4095.
+    min: 0
+    max: 4095
+  DF003_IN_FILTER:
+    key: 0x20090009
+    type: E1
+    description: RTCM input filter configuration based on RTCM DF003 (Reference station ID) value
+    note: >
+      Configures if and how the filtering out of RTCM input messages based on their DF003 data field
+      (Reference station ID) operates.
+    constants:
+      DISABLED:
+        value: 0
+        description: Disabled RTCM input filter; all input messages allowed
+      RELAXED:
+        value: 1
+        description: >
+          Relaxed RTCM input filter; input messages allowed must contain a DF003 data field matching the
+          CFG-RTCM-DF003_IN value or not contain by specification the DF003 data field
+      STRICT:
+        value: 2
+        description: >
+          Strict RTCM input filter; input messages allowed must contain a DF003 data field matching the
+          CFG-RTCM-DF003_IN value
+NMEA:
+  PROTVER:
+    key: 0x20930001
+    type: E1
+    description: NMEA protocol version
+    constants:
+      V21:
+        value: 21
+        description: NMEA protocol version 2.1
+      V23:
+        value: 23
+        description: NMEA protocol version 2.3
+      V40:
+        value: 40
+        description: NMEA protocol version 4.0 (not available in all products)
+      V41:
+        value: 41
+        description: NMEA protocol version 4.10 (not available in all products)
+      V411:
+        value: 42
+        description: NMEA protocol version 4.11 (not available in all products)
+  MAXSVS:
+    key: 0x20930002
+    type: E1
+    description: Maximum number of SVs to report per Talker ID
+    constants:
+      UNLIM:
+        value: 0
+        description: Unlimited
+      8SVS:
+        value: 8
+        description: 8 SVs
+      12SVS:
+        value: 12
+        description: 12 SVs
+      16SVS:
+        value: 16
+        description: 16 SVs
+  COMPAT:
+    key: 0x10930003
+    type: L
+    description: Enable compatibility mode
+    note: >
+      This might be needed for certain applications, e.g. for an NMEA parser that expects a fixed number
+      of digits in position coordinates.
+  CONSIDER:
+    key: 0x10930004
+    type: L
+    description: Enable considering mode
+    note: >
+      This affects the way the used satellite count in NMEA output is calculated. If set, also considered
+      but rejected satellites (e.g. RAIMED) are counted as used satellites as well.
+  LIMIT82:
+    key: 0x10930005
+    type: L
+    description: Enable strict limit to 82 characters maximum NMEA message length
+  HIGHPREC:
+    key: 0x10930006
+    type: L
+    description: Enable high precision mode
+    note: This flag cannot be set in conjunction with either CFG-NMEA-COMPAT or CFG-NMEA-LIMIT82 mode.
+  SVNUMBERING:
+    key: 0x20930007
+    type: E1
+    description: Display configuration for SVs that do not have value defined in NMEA
+    note: >
+      Configures the display of satellites that do not have an NMEA-defined value.
+      Note: this does not apply to satellites with an unknown ID. See also Satellite Numbering.
+    constants:
+      STRICT:
+        value: 0
+        description: Strict - satellites are not output
+      EXTENDED:
+        value: 1
+        description: Extended - use proprietary numbering
+  FILT_GPS:
+    key: 0x10930011
+    type: L
+    description: Disable reporting of GPS satellites
+  FILT_SBAS:
+    key: 0x10930012
+    type: L
+    description: Disable reporting of SBAS satellites
+  FILT_GAL:
+    key: 0x10930013
+    type: L
+    description: Disable reporting of Galileo satellites
+  FILT_QZSS:
+    key: 0x10930015
+    type: L
+    description: Disable reporting of QZSS satellites
+  FILT_GLO:
+    key: 0x10930016
+    type: L
+    description: Disable reporting of GLONASS satellites
+  FILT_BDS:
+    key: 0x10930017
+    type: L
+    description: Disable reporting of BeiDou satellites
+  OUT_INVFIX:
+    key: 0x10930021
+    type: L
+    description: Enable position output for failed or invalid fixes
+  OUT_MSKFIX:
+    key: 0x10930022
+    type: L
+    description: Enable position output for invalid fixes
+  OUT_INVTIME:
+    key: 0x10930023
+    type: L
+    description: Enable time output for invalid times
+  OUT_INVDATE:
+    key: 0x10930024
+    type: L
+    description: Enable date output for invalid dates
+  OUT_ONLYGPS:
+    key: 0x10930025
+    type: L
+    description: Restrict output to GPS satellites only
+  OUT_FROZENCOG:
+    key: 0x10930026
+    type: L
+    description: Enable course over ground output even if it is frozen
+  MAINTALKERID:
+    key: 0x20930031
+    type: E1
+    description: Main Talker ID
+    note: >
+      By default the main Talker ID (i.e. the Talker ID used for all messages other than GSV) is determined
+      by the GNSS assignment of the receiver's channels (see CFG-SIGNAL). This field enables the main Talker ID
+      to be overridden.
+    constants:
+      AUTO:
+        value: 0
+        description: Main Talker ID is not overridden
+      GP:
+        value: 1
+        description: Set main Talker ID to 'GP'
+      GL:
+        value: 2
+        description: Set main Talker ID to 'GL'
+      GN:
+        value: 3
+        description: Set main Talker ID to 'GN'
+      GA:
+        value: 4
+        description: Set main Talker ID to 'GA' (not available in all products)
+      GB:
+        value: 5
+        description: Set main Talker ID to 'GB' (not available in all products)
+      GQ:
+        value: 7
+        description: Set main Talker ID to 'GQ' (not available in all products)
+  GSVTALKERID:
+    key: 0x20930032
+    type: E1
+    description: Talker ID for GSV NMEA messages
+    note: >
+      By default the Talker ID for GSV messages is GNSS-specific (as defined by NMEA).
+      This field enables the GSV Talker ID to be overridden.
+    constants:
+      GNSS:
+        value: 0
+        description: Use GNSS-specific Talker ID (as defined by NMEA)
+      MAIN:
+        value: 1
+        description: Use the main Talker ID
+  BDSTALKERID:
+    key: 0x30930033
+    type: U2
+    description: BeiDou Talker ID
+    note: >
+      Sets the two ASCII characters that should be used for the BeiDou Talker ID.
+      If these are set to zero, the receiver uses the default BeiDou Talker ID.
+NAVHPG:
+  DGNSSMODE:
+    key: 0x20140011
+    type: E1
+    description: Differential corrections mode
+    constants:
+      RTK_FLOAT:
+        value: 2
+        description: No attempts made to fix ambiguities
+      RTK_FIXED:
+        value: 3
+        description: Ambiguities are fixed whenever possible
+      RTK_CAR:
+        value: 5
+        description: Conservative ambiguity resolution
