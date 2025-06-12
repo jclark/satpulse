@@ -182,6 +182,24 @@ var validFlagsTestCases = []validFlagsTestCase{
 		RawMsg:  gpsprot.MakeOption(gpsprot.RawMsgNone),
 		SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgNone),
 	}}},
+	// Test --time-gnss flag
+	{"ttyS0", []string{"--time-gnss", "GPS"}, flagVars{timeGNSS: gpsprot.GPS}},
+	{"ttyS0", []string{"--time-gnss", "GAL"}, flagVars{timeGNSS: gpsprot.GAL}},
+	{"ttyS0", []string{"--time-gnss", "BDS"}, flagVars{timeGNSS: gpsprot.BDS}},
+	{"ttyS0", []string{"--time-gnss", "GLO"}, flagVars{timeGNSS: gpsprot.GLO}},
+	// Test valid combinations of --gnss and --time-gnss
+	{"ttyS0", []string{"--gnss", "GPS,GAL", "--time-gnss", "GPS"}, flagVars{
+		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GAL),
+		timeGNSS:       gpsprot.GPS,
+	}},
+	{"ttyS0", []string{"--gnss", "GPS,GAL,BDS", "--time-gnss", "GAL"}, flagVars{
+		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GAL, gpsprot.BDS),
+		timeGNSS:       gpsprot.GAL,
+	}},
+	{"ttyS0", []string{"--gnss", "BDS,GLO", "--time-gnss", "BDS"}, flagVars{
+		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.BDS, gpsprot.GLO),
+		timeGNSS:       gpsprot.BDS,
+	}},
 }
 
 func TestParseFlagsValid(t *testing.T) {
@@ -253,6 +271,16 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--nmea", "--pvt-out", "pos"},    // can't use --nmea with --pvt-out
 	{"--serial-device", "ttyS0", "--nmea", "--raw-out", "obs"},    // can't use --nmea with --raw-out
 	{"--serial-device", "ttyS0", "--binary", "--nmea-out", "RMC"}, // can't use --binary with --nmea-out
+	// Test invalid --time-gnss options
+	{"--serial-device", "ttyS0", "--time-gnss", "SBAS"},   // not a major GNSS constellation
+	{"--serial-device", "ttyS0", "--time-gnss", "QZSS"},   // not a major GNSS constellation
+	{"--serial-device", "ttyS0", "--time-gnss", "NAVIC"},  // not a major GNSS constellation
+	{"--serial-device", "ttyS0", "--time-gnss", "invalid"}, // invalid GNSS constellation
+	// Test invalid combinations of --gnss and --time-gnss
+	{"--serial-device", "ttyS0", "--gnss", "GPS,GAL", "--time-gnss", "BDS"},    // BDS not in enabled GNSS
+	{"--serial-device", "ttyS0", "--gnss", "GPS", "--time-gnss", "GLO"},        // GLO not in enabled GNSS
+	{"--serial-device", "ttyS0", "--gnss", "GAL,BDS", "--time-gnss", "GPS"},    // GPS not in enabled GNSS
+	{"--serial-device", "ttyS0", "--gnss", "BDS", "--time-gnss", "GAL"},        // GAL not in enabled GNSS
 }
 
 func TestParseFlagsInvalid(t *testing.T) {

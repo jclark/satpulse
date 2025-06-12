@@ -25,7 +25,7 @@ type flagVars struct {
 	socketPath     string
 	packetLogPath  string
 	packetLogMode  packetLogMode
-	primaryGNSS    gpsprot.GNSS
+	timeGNSS       gpsprot.GNSS
 	enabledSignals gpsprot.SignalSet
 	pps            bool
 	mobile         bool
@@ -36,6 +36,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
        	    [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea] [--binary]
             [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
+            [--time-gnss GPS|GAL|BDS|GLO]
             [--raw-out obs|nav|none,...] [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
             [--rtcm-out MSM4|MSM7|ARP|none,...] [--nmea-out RMC|GGA|GSA|GSV|none,...]`
 
@@ -47,6 +48,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	vars := flagVars{}
 	gl := gnssList{}
 	bands := bands(gpsprot.BandAll)
+	var timeGNSS majorGNSS
 
 	save := false
 	saveAll := false
@@ -85,6 +87,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Uint32Var(&vars.configOpts.BaudRate, "speed", 0, "set GPS receiver baud-rate in `bps`")
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
+	flags.Var(&timeGNSS, "time-gnss", "GNSS `constellation` used for timing: GPS|GAL|BDS|GLO")
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
 	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|tai|ecef|after|daemon|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|none,...")
@@ -220,8 +223,13 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		configChanged = true
 		vars.configOpts.Survey.When = 0
 	}
-
-	if vars.pps || vars.primaryGNSS != 0 {
+	vars.timeGNSS = gpsprot.GNSS(timeGNSS)
+	if vars.timeGNSS != 0 && len(gl.gnss) != 0 {
+		if vars.enabledSignals.GNSSSet()&gpsprot.GNSSSetOf(vars.timeGNSS) == 0 {
+			return nil, nil, fmt.Errorf("%s specified as --time-gnss but not included in --gnss", vars.timeGNSS)
+		}
+	}
+	if vars.pps || vars.timeGNSS != 0 {
 		configChanged = true
 	}
 	if save {
@@ -254,6 +262,34 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 	}
 	return &vars, nil, nil
+}
+
+type majorGNSS gpsprot.GNSS
+
+var _ pflag.Value = (*majorGNSS)(nil)
+
+func (mg *majorGNSS) String() string {
+	if *mg == 0 {
+		// this stops it printing "GNSS(0)" as the default value in help
+		return ""
+	}
+	return gpsprot.GNSS(*mg).String()
+}
+
+func (mg *majorGNSS) Type() string {
+	return "major-gnss"
+}
+
+func (mg *majorGNSS) Set(s string) error {
+	gnss, err := gpsprot.ParseGNSS(s)
+	if err != nil {
+		return err
+	}
+	if !gnss.IsMajor() {
+		return fmt.Errorf("%s: not a major GNSS constellation; use GPS, GAL, BDS, or GLO", s)
+	}
+	*mg = majorGNSS(gnss)
+	return nil
 }
 
 type gnssList struct {
