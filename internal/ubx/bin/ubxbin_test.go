@@ -183,3 +183,145 @@ func EqualMonGnss(p1, p2 *MonGnss) bool {
 	}
 	return slices.Equal(p1.Unknown, p2.Unknown)
 }
+
+func TestMgaIniTimeUTC(t *testing.T) {
+	// Test constants
+	const (
+		msgType     = MgaIniTypeTimeUTC // TIME_UTC
+		msgVersion  = 0x00
+		refValue    = 0x05 // bits 3:0=source=1, bit 4=fall=0, bit 5=last=1
+		leapSecs    = 18
+		year        = 2024
+		month       = 12
+		day         = 15
+		hour        = 10
+		minute      = 30
+		second      = 45
+		bitfield0   = 0x01 // trustedSource=1
+		ns          = 1000000000
+		tAccS       = 5
+		tAccNs      = 1000000000
+	)
+
+	// Manually construct the expected byte sequence for UBX-MGA-INI-TIME-UTC
+	packet := []byte{
+		0xB5, 0x62, // sync bytes
+		0x13, 0x40, // class=MGA(0x13), id=INI(0x40)
+		0x18, 0x00, // length = 24 bytes
+		// Payload starts here:
+		byte(msgType),             // type = 0x10 (TIME_UTC)
+		msgVersion,          // version = 0x00
+		refValue,            // ref = 0x05
+		leapSecs,            // leapSecs = 18
+		year & 0xFF, year >> 8, // year = 2024 (little endian)
+		month,               // month = 12
+		day,                 // day = 15
+		hour,                // hour = 10
+		minute,              // minute = 30
+		second,              // second = 45
+		bitfield0,           // bitfield0 = 0x01
+		byte(ns & 0xFF), byte((ns >> 8) & 0xFF), byte((ns >> 16) & 0xFF), byte((ns >> 24) & 0xFF), // ns (little endian)
+		byte(tAccS & 0xFF), byte((tAccS >> 8) & 0xFF), // tAccS (little endian)
+		0x00, 0x00, // reserved
+		byte(tAccNs & 0xFF), byte((tAccNs >> 8) & 0xFF), byte((tAccNs >> 16) & 0xFF), byte((tAccNs >> 24) & 0xFF), // tAccNs (little endian)
+	}
+	
+	// Calculate and append checksum
+	ckA, ckB := Checksum(packet[2:]) // Skip sync bytes for checksum
+	packet = append(packet, ckA, ckB)
+
+	// Parse the message
+	msg, err := ParseMsg(string(packet))
+	if err != nil {
+		t.Fatalf("failed to parse MGA-INI-TIME-UTC: %v", err)
+	}
+
+	// Verify it's the right type
+	mgaIni, ok := msg.(*MgaIni)
+	if !ok {
+		t.Fatalf("expected *MgaIni, got %T", msg)
+	}
+
+	// Check fixed part
+	if mgaIni.Type != msgType {
+		t.Errorf("expected Type=0x%02x, got 0x%02x", msgType, mgaIni.Type)
+	}
+	if mgaIni.Version != msgVersion {
+		t.Errorf("expected Version=0x%02x, got 0x%02x", msgVersion, mgaIni.Version)
+	}
+
+	// Check varying part is TimeUTC
+	timeUTC, ok := mgaIni.VaryingPart().(*MgaIniTimeUTC)
+	if !ok {
+		t.Fatalf("expected *MgaIniTimeUTC, got %T", mgaIni.VaryingPart())
+	}
+
+	// Verify all fields using constants
+	if timeUTC.Ref != refValue {
+		t.Errorf("expected Ref=0x%02x, got 0x%02x", refValue, timeUTC.Ref)
+	}
+	if timeUTC.LeapSecs != leapSecs {
+		t.Errorf("expected LeapSecs=%d, got %d", leapSecs, timeUTC.LeapSecs)
+	}
+	if timeUTC.Year != year {
+		t.Errorf("expected Year=%d, got %d", year, timeUTC.Year)
+	}
+	if timeUTC.Month != month {
+		t.Errorf("expected Month=%d, got %d", month, timeUTC.Month)
+	}
+	if timeUTC.Day != day {
+		t.Errorf("expected Day=%d, got %d", day, timeUTC.Day)
+	}
+	if timeUTC.Hour != hour {
+		t.Errorf("expected Hour=%d, got %d", hour, timeUTC.Hour)
+	}
+	if timeUTC.Minute != minute {
+		t.Errorf("expected Minute=%d, got %d", minute, timeUTC.Minute)
+	}
+	if timeUTC.Second != second {
+		t.Errorf("expected Second=%d, got %d", second, timeUTC.Second)
+	}
+	if timeUTC.Bitfield0 != bitfield0 {
+		t.Errorf("expected Bitfield0=0x%02x, got 0x%02x", bitfield0, timeUTC.Bitfield0)
+	}
+	if timeUTC.Ns != ns {
+		t.Errorf("expected Ns=%d, got %d", ns, timeUTC.Ns)
+	}
+	if timeUTC.TAccS != tAccS {
+		t.Errorf("expected TAccS=%d, got %d", tAccS, timeUTC.TAccS)
+	}
+	if timeUTC.TAccNs != tAccNs {
+		t.Errorf("expected TAccNs=%d, got %d", tAccNs, timeUTC.TAccNs)
+	}
+
+	// Test serialization by creating a new message with the same data
+	newMsg := &MgaIni{
+		MgaIniFixed: MgaIniFixed{
+			Type:    msgType,
+			Version: msgVersion,
+		},
+		payload: &MgaIniTimeUTC{
+			Ref:       refValue,
+			LeapSecs:  leapSecs,
+			Year:      year,
+			Month:     month,
+			Day:       day,
+			Hour:      hour,
+			Minute:    minute,
+			Second:    second,
+			Bitfield0: bitfield0,
+			Ns:        ns,
+			TAccS:     tAccS,
+			TAccNs:    tAccNs,
+		},
+	}
+
+	serialized, err := Serialize(newMsg)
+	if err != nil {
+		t.Fatalf("failed to serialize MGA-INI-TIME-UTC: %v", err)
+	}
+
+	if !slices.Equal(serialized, packet) {
+		t.Errorf("serialization mismatch:\nexpected: %x\ngot:      %x", packet, serialized)
+	}
+}

@@ -48,6 +48,7 @@ const (
 	clsCfg  = 0x06
 	clsMon  = 0x0A
 	clsTim  = 0x0D
+	clsMga  = 0x13
 	clsNav2 = 0x29
 	clsNmea = 0xF0
 	clsRtcm = 0xF5
@@ -61,6 +62,7 @@ var clsMap = map[byte]string{
 	clsCfg:  "CFG",
 	clsMon:  "MON",
 	clsTim:  "TIM",
+	clsMga:  "MGA",
 	clsNav2: "NAV2",
 	clsNmea: "NMEA",
 	clsRtcm: "RTCM",
@@ -128,6 +130,7 @@ const (
 	InfNoticeID  MsgID = clsInf | (0x02 << 8)
 	InfTestID    MsgID = clsInf | (0x03 << 8)
 	InfWarningID MsgID = clsInf | (0x01 << 8)
+	MgaIniID     MsgID = clsMga | (0x40 << 8)
 	MonGnssID    MsgID = clsMon | (0x28 << 8)
 	MonHwID      MsgID = clsMon | (0x09 << 8)
 	MonMsgPPID   MsgID = clsMon | (0x06 << 8)
@@ -211,6 +214,7 @@ func init() {
 	regMsg[InfNotice]("NOTICE")
 	regMsg[InfTest]("TEST")
 	regMsg[InfWarning]("WARNING")
+	regMsg[MgaIni]("INI")
 	regMsg[MonGnss]("GNSS")
 	regMsg[MonHw]("HW")
 	regMsg[MonMsgPP]("MSGPP")
@@ -1702,6 +1706,171 @@ func (m *InfTest) ID() MsgID { return InfTestID }
 type InfWarning struct{ InfText }
 
 func (m *InfWarning) ID() MsgID { return InfWarningID }
+
+type MgaIni struct {
+	MgaIniFixed
+	payload MgaIniPayload
+}
+
+var _ VaryingMsg = (*MgaIni)(nil)
+
+type MgaIniFixed struct {
+	Type    MgaIniType
+	Version byte
+}
+
+type MgaIniType byte
+
+const (
+	MgaIniTypePosXYZ   MgaIniType = 0x00
+	MgaIniTypePosLLH   MgaIniType = 0x01
+	MgaIniTypeTimeUTC  MgaIniType = 0x10
+	MgaIniTypeTimeGNSS MgaIniType = 0x11
+	MgaIniTypeClkD     MgaIniType = 0x20
+	MgaIniTypeFreq     MgaIniType = 0x21
+)
+
+type MgaIniPayload interface {
+	mgaIniPayload()
+}
+
+func (m *MgaIni) ID() MsgID { return MgaIniID }
+
+func (m *MgaIni) FixedPart() any {
+	return &m.MgaIniFixed
+}
+
+func (m *MgaIni) VaryingPart() any {
+	return m.payload
+}
+
+func (m *MgaIni) InitVaryingPart(payloadLen int) error {
+	var expectedPayloadLen int
+
+	switch m.Type {
+	case MgaIniTypePosXYZ:
+		m.payload = &MgaIniPosXYZ{}
+		expectedPayloadLen = 20
+	case MgaIniTypePosLLH:
+		m.payload = &MgaIniPosLLH{}
+		expectedPayloadLen = 20
+	case MgaIniTypeTimeUTC:
+		m.payload = &MgaIniTimeUTC{}
+		expectedPayloadLen = 24
+	case MgaIniTypeTimeGNSS:
+		m.payload = &MgaIniTimeGNSS{}
+		expectedPayloadLen = 24
+	case MgaIniTypeClkD:
+		m.payload = &MgaIniClkD{}
+		expectedPayloadLen = 12
+	case MgaIniTypeFreq:
+		m.payload = &MgaIniFreq{}
+		expectedPayloadLen = 12
+	}
+
+	if m.Version == 0 {
+		if expectedPayloadLen == payloadLen {
+			return nil
+		}
+		return fmt.Errorf("bad UBX-MGA-INI payload length (%d bytes); expected %d", payloadLen, expectedPayloadLen)
+	}
+
+	if payloadLen < 2 {
+		return fmt.Errorf("bad UBX-MGA-INI payload length (%d bytes); expected at least 2", payloadLen)
+	}
+	unknown := make(MgaIniUnknown, payloadLen-2)
+	m.payload = &unknown
+	return nil
+}
+
+type MgaIniPosXYZ struct {
+	_      [2]byte
+	ECEF   [3]int32
+	PosAcc uint32
+}
+
+func (m *MgaIniPosXYZ) mgaIniPayload() {}
+
+type MgaIniPosLLH struct {
+	_      [2]byte
+	Lat    int32
+	Lon    int32
+	Alt    int32
+	PosAcc uint32
+}
+
+func (m *MgaIniPosLLH) mgaIniPayload() {}
+
+type MgaIniTimeUTC struct {
+	Ref       MgaIniTimeRef
+	LeapSecs  int8
+	Year      uint16
+	Month     byte
+	Day       byte
+	Hour      byte
+	Minute    byte
+	Second    byte
+	Bitfield0 MgaIniTimeBitfield0
+	Ns        uint32
+	TAccS     uint16
+	_         [2]byte
+	TAccNs    uint32
+}
+
+func (m *MgaIniTimeUTC) mgaIniPayload() {}
+
+type MgaIniTimeGNSS struct {
+	Ref       MgaIniTimeRef
+	GnssId    byte
+	Bitfield0 MgaIniTimeBitfield0
+	_         byte
+	Week      uint16
+	Tow       uint32
+	Ns        uint32
+	TAccS     uint16
+	_         [2]byte
+	TAccNs    uint32
+}
+
+func (m *MgaIniTimeGNSS) mgaIniPayload() {}
+
+type MgaIniTimeRef byte
+
+const (
+	MgaIniTimeRefSourceNone MgaIniTimeRef = iota
+	MgaIniTimeRefSourceEXTINT0
+	MgaIniTimeRefSourceEXTINT1
+	MgaIniTimeSourceMask MgaIniTimeRef = 0b00001111
+	MgaIniTimeRefFall    MgaIniTimeRef = 1 << 4
+	MgaIniTimeRefLast    MgaIniTimeRef = 1 << 5
+)
+
+type MgaIniTimeBitfield0 byte
+
+const (
+	MgaIniTimeTrustedSource MgaIniTimeBitfield0 = 1 << iota
+)
+
+type MgaIniClkD struct {
+	_       [2]byte
+	ClkD    int32
+	ClkDAcc uint32
+}
+
+func (m *MgaIniClkD) mgaIniPayload() {}
+
+type MgaIniFreq struct {
+	_       byte
+	Flags   byte
+	Freq    int32
+	FreqAcc uint32
+}
+
+func (m *MgaIniFreq) mgaIniPayload() {}
+
+type MgaIniUnknown []byte
+
+func (m *MgaIniUnknown) mgaIniPayload() {}
 
 type VaryingMsg interface {
 	Msg
