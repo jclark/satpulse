@@ -476,6 +476,10 @@ SIGNAL:
     key: 0x10310007
     type:  L
     description: Galileo E1
+  GAL_E6_ENA:
+    key: 0x1031000b
+    type: L
+    description: Galileo E6
   BDS_ENA:
     key: 0x10310022
     type:  L
@@ -488,6 +492,10 @@ SIGNAL:
     key: 0x1031000f
     type:  L
     description: BeiDou B1C
+  BDS_B3_ENA:
+    key: 0x10310010
+    type: L
+    description: BeiDou B3I
   QZSS_ENA:
     key: 0x10310024
     type:  L

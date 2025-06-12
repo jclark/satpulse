@@ -878,10 +878,12 @@ var keySignalMap = map[ucv.KeyL]gpsprot.Signal{
 	ucv.KSignalGalE1Ena:    gpsprot.SigGALE1,    // Galileo E1
 	ucv.KSignalGalE5aEna:   gpsprot.SigGALE5a,   // Galileo E5a
 	ucv.KSignalGalE5bEna:   gpsprot.SigGALE5b,   // Galileo E5b
+	ucv.KSignalGalE6Ena:    gpsprot.SigGALE6,    // Galileo E6
 	ucv.KSignalBdsB1Ena:    gpsprot.SigBDSB1I,   // BeiDou B1I
 	ucv.KSignalBdsB1cEna:   gpsprot.SigBDSB1C,   // BeiDou B1C
 	ucv.KSignalBdsB2Ena:    gpsprot.SigBDSB2I,   // BeiDou B2I
 	ucv.KSignalBdsB2aEna:   gpsprot.SigBDSB2a,   // BeiDou B2a
+	ucv.KSignalBdsB3Ena:    gpsprot.SigBDSB3I,   // BeiDou B3I
 	ucv.KSignalQzssL1caEna: gpsprot.SigQZSSL1CA, // QZSS L1 C/A
 	ucv.KSignalQzssL1sEna:  gpsprot.SigQZSSL1S,  // QZSS L1S
 	ucv.KSignalQzssL2cEna:  gpsprot.SigQZSSL2C,  // QZSS L2C
