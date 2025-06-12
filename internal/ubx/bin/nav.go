@@ -101,7 +101,8 @@ type NavPVT struct {
 	SAcc    uint32
 	HeadAcc uint32
 	PDOP    uint16
-	_       [6]byte
+	Flags3  NavPVTFlags3
+	_       [4]byte
 	HeadVeh int32
 	MagDec  int16
 	MagAcc  uint16
@@ -162,6 +163,31 @@ const (
 	NavPVTConfirmedAvai NavPVTFlags2 = 1 << (iota + 5)
 	NavPVTConfirmedDate
 	NavPVTConfirmedTime
+)
+
+type NavPVTFlags3 uint16
+
+const (
+	NavPVTInvalidLlh   NavPVTFlags3 = 1 << 0
+	NavPVTAuthTime     NavPVTFlags3 = 1 << 13
+	NavPVTNmaFixStatus NavPVTFlags3 = 1 << 14	
+)
+
+const (
+	NavPVTLastCorrectionAgeNotAvailable NavPVTFlags3 = iota << 1
+	NavPVTLastCorrectionAge0to1
+	NavPVTLastCorrectionAge1to2
+	NavPVTLastCorrectionAge2to5
+	NavPVTLastCorrectionAge5to10
+	NavPVTLastCorrectionAge10to15
+	NavPVTLastCorrectionAge15to20
+	NavPVTLastCorrectionAge20to30
+	NavPVTLastCorrectionAge30to45
+	NavPVTLastCorrectionAge45to60
+	NavPVTLastCorrectionAge60to90
+	NavPVTLastCorrectionAge90to120
+	NavPVTLastCorrectionAge120Plus
+	NavPVTLastCorrectionAgeMask NavPVTFlags3 = 0b1111 << 1
 )
 
 func (m *NavPVT) ID() MsgID { return NavPVTID }
