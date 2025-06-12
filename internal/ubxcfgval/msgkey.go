@@ -109,6 +109,7 @@ const KUbxNavTimeglo KeyM = 0x04C
 const KUbxNavTimegps KeyM = 0x047
 const KUbxNavTimels KeyM = 0x060
 const KUbxNavTimenavic KeyM = 0x6A2
+const KUbxNavTimetrusted KeyM = 0x3A8
 const KUbxNavTimeutc KeyM = 0x05B
 const KUbxNavVelecef KeyM = 0x03D
 const KUbxNavVelned KeyM = 0x042
@@ -119,6 +120,7 @@ const KUbxRxmRlm KeyM = 0x25E
 const KUbxRxmRtcm KeyM = 0x268
 const KUbxRxmSfrbx KeyM = 0x231
 const KUbxRxmTm KeyM = 0x610
+const KUbxSecOsnma KeyM = 0x6CA
 const KUbxSecSig KeyM = 0x634
 const KUbxSecSiglog KeyM = 0x689
 const KUbxTimSvin KeyM = 0x097
@@ -220,6 +222,7 @@ var msgKeyNames = map[KeyM]string{
 	KUbxNavTimegps:       "UBX_NAV_TIMEGPS",
 	KUbxNavTimels:        "UBX_NAV_TIMELS",
 	KUbxNavTimenavic:     "UBX_NAV_TIMENAVIC",
+	KUbxNavTimetrusted:   "UBX_NAV_TIMETRUSTED",
 	KUbxNavTimeutc:       "UBX_NAV_TIMEUTC",
 	KUbxNavVelecef:       "UBX_NAV_VELECEF",
 	KUbxNavVelned:        "UBX_NAV_VELNED",
@@ -230,6 +233,7 @@ var msgKeyNames = map[KeyM]string{
 	KUbxRxmRtcm:          "UBX_RXM_RTCM",
 	KUbxRxmSfrbx:         "UBX_RXM_SFRBX",
 	KUbxRxmTm:            "UBX_RXM_TM",
+	KUbxSecOsnma:         "UBX_SEC_OSNMA",
 	KUbxSecSig:           "UBX_SEC_SIG",
 	KUbxSecSiglog:        "UBX_SEC_SIGLOG",
 	KUbxTimSvin:          "UBX_TIM_SVIN",
