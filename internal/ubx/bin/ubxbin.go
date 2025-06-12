@@ -1338,7 +1338,12 @@ type TimSvin struct {
 func (m *TimSvin) ID() MsgID { return TimSvinID }
 
 type MonGnss struct {
-	Version      byte
+	Version byte
+	MonGnssV0
+	Unknown []byte // when version is not 0, ZED-X20
+}
+
+type MonGnssV0 struct {
 	Supported    MonGnssMajorGnss
 	DefaultGnss  MonGnssMajorGnss
 	Enabled      MonGnssMajorGnss
@@ -1346,7 +1351,35 @@ type MonGnss struct {
 	_            [3]byte
 }
 
+var _ VaryingMsg = (*MonGnss)(nil)
+
 func (m *MonGnss) ID() MsgID { return MonGnssID }
+
+func (m *MonGnss) InitVaryingPart(payloadLen int) error {
+	if m.Version == 0 {
+		if payloadLen != 8 {
+			return fmt.Errorf("bad UBX-MON-GNSS v0 payload length (%d bytes); expected 8", payloadLen)
+		}
+		m.Unknown = nil
+	} else {
+		if payloadLen < 1 {
+			return fmt.Errorf("bad UBX-MON-GNSS payload length (%d bytes); expected at least 1", payloadLen)
+		}
+		m.Unknown = make([]byte, payloadLen-1)
+	}
+	return nil
+}
+
+func (m *MonGnss) FixedPart() any {
+	return &m.Version
+}
+
+func (m *MonGnss) VaryingPart() any {
+	if m.Version == 0 {
+		return &m.MonGnssV0
+	}
+	return &m.Unknown
+}
 
 type MonGnssMajorGnss uint8
 
