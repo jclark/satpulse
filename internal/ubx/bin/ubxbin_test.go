@@ -325,3 +325,356 @@ func TestMgaIniTimeUTC(t *testing.T) {
 		t.Errorf("serialization mismatch:\nexpected: %x\ngot:      %x", packet, serialized)
 	}
 }
+
+func TestMgaIniUnknown(t *testing.T) {
+	// Test unknown message type with version 0 (should succeed as unknown after the fix)
+	packet := []byte{
+		0xB5, 0x62, // sync bytes
+		0x13, 0x40, // class=MGA(0x13), id=INI(0x40)
+		0x0A, 0x00, // length = 10 bytes
+		// Payload starts here:
+		0x30,       // type = 0x30 (unknown type - not implemented)
+		0x00,       // version = 0x00
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // 8 bytes of data
+	}
+	
+	ckA, ckB := Checksum(packet[2:])
+	packet = append(packet, ckA, ckB)
+
+	// This should succeed as unknown (after the fix)
+	msg, err := ParseMsg(string(packet))
+	if err != nil {
+		t.Fatalf("failed to parse unknown MGA-INI with version 0: %v", err)
+	}
+
+	mgaIni, ok := msg.(*MgaIni)
+	if !ok {
+		t.Fatalf("expected *MgaIni, got %T", msg)
+	}
+
+	if mgaIni.Type != 0x30 {
+		t.Errorf("expected Type=0x30, got 0x%02x", mgaIni.Type)
+	}
+	if mgaIni.Version != 0x00 {
+		t.Errorf("expected Version=0x00, got 0x%02x", mgaIni.Version)
+	}
+
+	unknown, ok := mgaIni.VaryingPart().(*MgaIniUnknown)
+	if !ok {
+		t.Fatalf("expected *MgaIniUnknown, got %T", mgaIni.VaryingPart())
+	}
+
+	expectedUnknown := MgaIniUnknown{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+	if !slices.Equal(*unknown, expectedUnknown) {
+		t.Errorf("expected unknown payload=%x, got %x", expectedUnknown, *unknown)
+	}
+
+	// Test unknown message type with version 1 (should also succeed as unknown)
+	packet[7] = 0x01 // Change version to 1
+	ckA, ckB = Checksum(packet[2:len(packet)-2])
+	packet[len(packet)-2] = ckA
+	packet[len(packet)-1] = ckB
+
+	msg, err = ParseMsg(string(packet))
+	if err != nil {
+		t.Fatalf("failed to parse unknown MGA-INI with version 1: %v", err)
+	}
+
+	mgaIni, ok = msg.(*MgaIni)
+	if !ok {
+		t.Fatalf("expected *MgaIni, got %T", msg)
+	}
+
+	if mgaIni.Type != 0x30 {
+		t.Errorf("expected Type=0x30, got 0x%02x", mgaIni.Type)
+	}
+	if mgaIni.Version != 0x01 {
+		t.Errorf("expected Version=0x01, got 0x%02x", mgaIni.Version)
+	}
+
+	unknown, ok = mgaIni.VaryingPart().(*MgaIniUnknown)
+	if !ok {
+		t.Fatalf("expected *MgaIniUnknown, got %T", mgaIni.VaryingPart())
+	}
+
+	expectedUnknown = MgaIniUnknown{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+	if !slices.Equal(*unknown, expectedUnknown) {
+		t.Errorf("expected unknown payload=%x, got %x", expectedUnknown, *unknown)
+	}
+}
+
+func TestMgaGalOSNMAPubkey(t *testing.T) {
+	// Test constants for UBX-MGA-GAL-OSNMA-PUBKEY
+	const (
+		msgType     = MgaGalTypeOSNMAPubkey // 0x07
+		msgVersion  = 0x00
+		pubKeyID    = 0x05 // Public Key ID (bits 3:0)
+		pubKeyType  = 0x01 // ECDSA P-256 (bits 7:4)
+	)
+
+	// Construct bitfield0 = pubKeyType << 4 | pubKeyID
+	bitfield0 := MgaGalOSNMAPubkeyBitfield0((pubKeyType << 4) | pubKeyID)
+
+	// Test public key point (67 bytes of test data)
+	var pubKeyPoint [67]byte
+	for i := range pubKeyPoint {
+		pubKeyPoint[i] = byte(i + 1) // Fill with 1, 2, 3, ... 67
+	}
+
+	// Manually construct the expected byte sequence for UBX-MGA-GAL-OSNMA-PUBKEY
+	packet := []byte{
+		0xB5, 0x62, // sync bytes
+		0x13, 0x02, // class=MGA(0x13), id=GAL(0x02)
+		0x48, 0x00, // length = 72 bytes
+		// Payload starts here:
+		byte(msgType),   // type = 0x07 (OSNMA_PUBKEY)
+		msgVersion,      // version = 0x00
+		byte(bitfield0), // bitfield0 = (pubKeyType << 4) | pubKeyID
+		0x00,            // reserved
+	}
+	
+	// Append the 67-byte public key point
+	packet = append(packet, pubKeyPoint[:]...)
+	// Append final reserved byte
+	packet = append(packet, 0x00)
+
+	// Calculate and append checksum
+	ckA, ckB := Checksum(packet[2:]) // Skip sync bytes for checksum
+	packet = append(packet, ckA, ckB)
+
+	// Parse the message
+	msg, err := ParseMsg(string(packet))
+	if err != nil {
+		t.Fatalf("failed to parse MGA-GAL-OSNMA-PUBKEY: %v", err)
+	}
+
+	// Verify it's the right type
+	mgaGal, ok := msg.(*MgaGal)
+	if !ok {
+		t.Fatalf("expected *MgaGal, got %T", msg)
+	}
+
+	// Check fixed part
+	if mgaGal.Type != msgType {
+		t.Errorf("expected Type=0x%02x, got 0x%02x", msgType, mgaGal.Type)
+	}
+	if mgaGal.Version != msgVersion {
+		t.Errorf("expected Version=0x%02x, got 0x%02x", msgVersion, mgaGal.Version)
+	}
+
+	// Check varying part is OSNMAPubkey
+	pubkey, ok := mgaGal.VaryingPart().(*MgaGalOSNMAPubkey)
+	if !ok {
+		t.Fatalf("expected *MgaGalOSNMAPubkey, got %T", mgaGal.VaryingPart())
+	}
+
+	// Verify bitfield and extracted values
+	if pubkey.Bitfield0 != bitfield0 {
+		t.Errorf("expected Bitfield0=0x%02x, got 0x%02x", bitfield0, pubkey.Bitfield0)
+	}
+	if pubkey.Bitfield0.PubKeyID() != pubKeyID {
+		t.Errorf("expected PubKeyID=%d, got %d", pubKeyID, pubkey.Bitfield0.PubKeyID())
+	}
+	if pubkey.Bitfield0.PubKeyType() != pubKeyType {
+		t.Errorf("expected PubKeyType=%d, got %d", pubKeyType, pubkey.Bitfield0.PubKeyType())
+	}
+	if pubkey.PubKeyPoint != pubKeyPoint {
+		t.Errorf("expected PubKeyPoint=%x, got %x", pubKeyPoint, pubkey.PubKeyPoint)
+	}
+
+	// Test serialization roundtrip
+	newMsg := &MgaGal{
+		MgaGalFixed: MgaGalFixed{
+			Type:    msgType,
+			Version: msgVersion,
+		},
+		payload: &MgaGalOSNMAPubkey{
+			Bitfield0:   bitfield0,
+			PubKeyPoint: pubKeyPoint,
+		},
+	}
+
+	serialized, err := Serialize(newMsg)
+	if err != nil {
+		t.Fatalf("failed to serialize MGA-GAL-OSNMA-PUBKEY: %v", err)
+	}
+
+	if !slices.Equal(serialized, packet) {
+		t.Errorf("serialization mismatch:\nexpected: %x\ngot:      %x", packet, serialized)
+	}
+}
+
+func TestMgaGalOSNMAMerkle(t *testing.T) {
+	// Test constants for UBX-MGA-GAL-OSNMA-MERKLE
+	const (
+		msgType           = MgaGalTypeOSNMAMerkle // 0x08
+		msgVersion        = 0x00
+		applicabilityTime = true // bit 0 = 1 (future key)
+	)
+
+	// Construct bitfield0
+	var bitfield0 MgaGalOSNMAMerkleBitfield0
+	if applicabilityTime {
+		bitfield0 |= MgaGalOSNMAMerkleApplicabilityTime
+	}
+
+	// Test Merkle tree node (32 bytes of test data)
+	var treeNode [32]byte
+	for i := range treeNode {
+		treeNode[i] = byte(0xFF - i) // Fill with 255, 254, 253, ... 224
+	}
+
+	// Manually construct the expected byte sequence for UBX-MGA-GAL-OSNMA-MERKLE
+	packet := []byte{
+		0xB5, 0x62, // sync bytes
+		0x13, 0x02, // class=MGA(0x13), id=GAL(0x02)
+		0x24, 0x00, // length = 36 bytes
+		// Payload starts here:
+		byte(msgType),   // type = 0x08 (OSNMA_MERKLE)
+		msgVersion,      // version = 0x00
+		byte(bitfield0), // bitfield0 = applicabilityTime bit
+		0x00,            // reserved
+	}
+	
+	// Append the 32-byte tree node
+	packet = append(packet, treeNode[:]...)
+
+	// Calculate and append checksum
+	ckA, ckB := Checksum(packet[2:]) // Skip sync bytes for checksum
+	packet = append(packet, ckA, ckB)
+
+	// Parse the message
+	msg, err := ParseMsg(string(packet))
+	if err != nil {
+		t.Fatalf("failed to parse MGA-GAL-OSNMA-MERKLE: %v", err)
+	}
+
+	// Verify it's the right type
+	mgaGal, ok := msg.(*MgaGal)
+	if !ok {
+		t.Fatalf("expected *MgaGal, got %T", msg)
+	}
+
+	// Check fixed part
+	if mgaGal.Type != msgType {
+		t.Errorf("expected Type=0x%02x, got 0x%02x", msgType, mgaGal.Type)
+	}
+	if mgaGal.Version != msgVersion {
+		t.Errorf("expected Version=0x%02x, got 0x%02x", msgVersion, mgaGal.Version)
+	}
+
+	// Check varying part is OSNMAMerkle
+	merkle, ok := mgaGal.VaryingPart().(*MgaGalOSNMAMerkle)
+	if !ok {
+		t.Fatalf("expected *MgaGalOSNMAMerkle, got %T", mgaGal.VaryingPart())
+	}
+
+	// Verify bitfield and extracted values
+	if merkle.Bitfield0 != bitfield0 {
+		t.Errorf("expected Bitfield0=0x%02x, got 0x%02x", bitfield0, merkle.Bitfield0)
+	}
+	if merkle.Bitfield0.ApplicabilityTime() != applicabilityTime {
+		t.Errorf("expected ApplicabilityTime=%t, got %t", applicabilityTime, merkle.Bitfield0.ApplicabilityTime())
+	}
+	if merkle.TreeNode != treeNode {
+		t.Errorf("expected TreeNode=%x, got %x", treeNode, merkle.TreeNode)
+	}
+
+	// Test serialization roundtrip
+	newMsg := &MgaGal{
+		MgaGalFixed: MgaGalFixed{
+			Type:    msgType,
+			Version: msgVersion,
+		},
+		payload: &MgaGalOSNMAMerkle{
+			Bitfield0: bitfield0,
+			TreeNode:  treeNode,
+		},
+	}
+
+	serialized, err := Serialize(newMsg)
+	if err != nil {
+		t.Fatalf("failed to serialize MGA-GAL-OSNMA-MERKLE: %v", err)
+	}
+
+	if !slices.Equal(serialized, packet) {
+		t.Errorf("serialization mismatch:\nexpected: %x\ngot:      %x", packet, serialized)
+	}
+}
+
+func TestMgaGalUnknown(t *testing.T) {
+	// Test unknown message type with version 0 (should now succeed as unknown)
+	packet := []byte{
+		0xB5, 0x62, // sync bytes
+		0x13, 0x02, // class=MGA(0x13), id=GAL(0x02)
+		0x0A, 0x00, // length = 10 bytes
+		// Payload starts here:
+		0x01,       // type = 0x01 (EPH - not implemented)
+		0x00,       // version = 0x00
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // 8 bytes of data
+	}
+	
+	ckA, ckB := Checksum(packet[2:])
+	packet = append(packet, ckA, ckB)
+
+	// This should now succeed as unknown (after the fix)
+	msg, err := ParseMsg(string(packet))
+	if err != nil {
+		t.Fatalf("failed to parse unknown MGA-GAL with version 0: %v", err)
+	}
+
+	mgaGal, ok := msg.(*MgaGal)
+	if !ok {
+		t.Fatalf("expected *MgaGal, got %T", msg)
+	}
+
+	if mgaGal.Type != 0x01 {
+		t.Errorf("expected Type=0x01, got 0x%02x", mgaGal.Type)
+	}
+	if mgaGal.Version != 0x00 {
+		t.Errorf("expected Version=0x00, got 0x%02x", mgaGal.Version)
+	}
+
+	unknown, ok := mgaGal.VaryingPart().(*MgaGalUnknown)
+	if !ok {
+		t.Fatalf("expected *MgaGalUnknown, got %T", mgaGal.VaryingPart())
+	}
+
+	expectedUnknown := MgaGalUnknown{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+	if !slices.Equal(*unknown, expectedUnknown) {
+		t.Errorf("expected unknown payload=%x, got %x", expectedUnknown, *unknown)
+	}
+
+	// Test unknown message type with version 1 (should also succeed as unknown)
+	packet[7] = 0x01 // Change version to 1
+	ckA, ckB = Checksum(packet[2:len(packet)-2])
+	packet[len(packet)-2] = ckA
+	packet[len(packet)-1] = ckB
+
+	msg, err = ParseMsg(string(packet))
+	if err != nil {
+		t.Fatalf("failed to parse unknown MGA-GAL with version 1: %v", err)
+	}
+
+	mgaGal, ok = msg.(*MgaGal)
+	if !ok {
+		t.Fatalf("expected *MgaGal, got %T", msg)
+	}
+
+	if mgaGal.Type != 0x01 {
+		t.Errorf("expected Type=0x01, got 0x%02x", mgaGal.Type)
+	}
+	if mgaGal.Version != 0x01 {
+		t.Errorf("expected Version=0x01, got 0x%02x", mgaGal.Version)
+	}
+
+	unknown, ok = mgaGal.VaryingPart().(*MgaGalUnknown)
+	if !ok {
+		t.Fatalf("expected *MgaGalUnknown, got %T", mgaGal.VaryingPart())
+	}
+
+	expectedUnknown = MgaGalUnknown{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+	if !slices.Equal(*unknown, expectedUnknown) {
+		t.Errorf("expected unknown payload=%x, got %x", expectedUnknown, *unknown)
+	}
+}

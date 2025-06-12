@@ -131,6 +131,7 @@ const (
 	InfTestID    MsgID = clsInf | (0x03 << 8)
 	InfWarningID MsgID = clsInf | (0x01 << 8)
 	MgaIniID     MsgID = clsMga | (0x40 << 8)
+	MgaGalID     MsgID = clsMga | (0x02 << 8)
 	MonGnssID    MsgID = clsMon | (0x28 << 8)
 	MonHwID      MsgID = clsMon | (0x09 << 8)
 	MonMsgPPID   MsgID = clsMon | (0x06 << 8)
@@ -215,6 +216,7 @@ func init() {
 	regMsg[InfTest]("TEST")
 	regMsg[InfWarning]("WARNING")
 	regMsg[MgaIni]("INI")
+	regMsg[MgaGal]("GAL")
 	regMsg[MonGnss]("GNSS")
 	regMsg[MonHw]("HW")
 	regMsg[MonMsgPP]("MSGPP")
@@ -1768,7 +1770,7 @@ func (m *MgaIni) InitVaryingPart(payloadLen int) error {
 		expectedPayloadLen = 12
 	}
 
-	if m.Version == 0 {
+	if m.Version == 0 && expectedPayloadLen != 0 {
 		if expectedPayloadLen == payloadLen {
 			return nil
 		}
@@ -1871,6 +1873,116 @@ func (m *MgaIniFreq) mgaIniPayload() {}
 type MgaIniUnknown []byte
 
 func (m *MgaIniUnknown) mgaIniPayload() {}
+
+type MgaGal struct {
+	MgaGalFixed
+	payload MgaGalPayload
+}
+
+var _ VaryingMsg = (*MgaGal)(nil)
+
+type MgaGalFixed struct {
+	Type    MgaGalType
+	Version byte
+}
+
+type MgaGalType byte
+
+const (
+	MgaGalTypeEph         MgaGalType = 0x01
+	MgaGalTypeAlm         MgaGalType = 0x02
+	MgaGalTypeTimeOffset  MgaGalType = 0x03
+	MgaGalTypeUTC         MgaGalType = 0x05
+	MgaGalTypeOSNMAPubkey MgaGalType = 0x07
+	MgaGalTypeOSNMAMerkle MgaGalType = 0x08
+)
+
+type MgaGalPayload interface {
+	mgaGalPayload()
+}
+
+func (m *MgaGal) ID() MsgID { return MgaGalID }
+
+func (m *MgaGal) FixedPart() any {
+	return &m.MgaGalFixed
+}
+
+func (m *MgaGal) VaryingPart() any {
+	return m.payload
+}
+
+func (m *MgaGal) InitVaryingPart(payloadLen int) error {
+	var expectedPayloadLen int
+
+	switch m.Type {
+	case MgaGalTypeOSNMAPubkey:
+		m.payload = &MgaGalOSNMAPubkey{}
+		expectedPayloadLen = 72
+	case MgaGalTypeOSNMAMerkle:
+		m.payload = &MgaGalOSNMAMerkle{}
+		expectedPayloadLen = 36
+	}
+
+	if m.Version == 0 && expectedPayloadLen != 0 {
+		if expectedPayloadLen == payloadLen {
+			return nil
+		}
+		return fmt.Errorf("bad UBX-MGA-GAL payload length (%d bytes); expected %d", payloadLen, expectedPayloadLen)
+	}
+
+	if payloadLen < 2 {
+		return fmt.Errorf("bad UBX-MGA-GAL payload length (%d bytes); expected at least 2", payloadLen)
+	}
+	unknown := make(MgaGalUnknown, payloadLen-2)
+	m.payload = &unknown
+	return nil
+}
+
+type MgaGalOSNMAPubkey struct {
+	Bitfield0   MgaGalOSNMAPubkeyBitfield0
+	_           byte
+	PubKeyPoint [67]byte
+	_           byte
+}
+
+func (m *MgaGalOSNMAPubkey) mgaGalPayload() {}
+
+type MgaGalOSNMAPubkeyBitfield0 byte
+
+const (
+	MgaGalOSNMAPubkeyIDMask   MgaGalOSNMAPubkeyBitfield0 = 0x0F
+	MgaGalOSNMAPubkeyTypeMask MgaGalOSNMAPubkeyBitfield0 = 0xF0
+)
+
+func (b MgaGalOSNMAPubkeyBitfield0) PubKeyID() byte {
+	return byte(b & MgaGalOSNMAPubkeyIDMask)
+}
+
+func (b MgaGalOSNMAPubkeyBitfield0) PubKeyType() byte {
+	return byte((b & MgaGalOSNMAPubkeyTypeMask) >> 4)
+}
+
+type MgaGalOSNMAMerkle struct {
+	Bitfield0 MgaGalOSNMAMerkleBitfield0
+	_         byte
+	TreeNode  [32]byte
+}
+
+func (m *MgaGalOSNMAMerkle) mgaGalPayload() {}
+
+type MgaGalOSNMAMerkleBitfield0 byte
+
+const (
+	MgaGalOSNMAMerkleApplicabilityTime MgaGalOSNMAMerkleBitfield0 = 0x01
+)
+
+func (b MgaGalOSNMAMerkleBitfield0) ApplicabilityTime() bool {
+	return (b & MgaGalOSNMAMerkleApplicabilityTime) != 0
+}
+
+type MgaGalUnknown []byte
+
+func (m *MgaGalUnknown) mgaGalPayload() {}
 
 type VaryingMsg interface {
 	Msg
