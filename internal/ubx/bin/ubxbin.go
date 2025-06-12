@@ -279,8 +279,8 @@ var _ VaryingMsg = (*CfgCfg)(nil)
 
 func (m *CfgCfg) ID() MsgID { return CfgCfgID }
 
-func (m *CfgCfg) InitForLen(payloadLen int) error {
-	// The implementation of InitForLen is different for CfgCfg from others
+func (m *CfgCfg) InitVaryingPart(payloadLen int) error {
+	// The implementation of InitVaryingPart is different for CfgCfg from others
 	// because with CfgCfg the variable part is at most 1 byte long.
 	if payloadLen == 13 {
 		m.DeviceMask = make([]CfgCfgDeviceMask, 1)
@@ -839,7 +839,7 @@ type NavSatSV struct {
 
 func (m *NavSat) ID() MsgID { return NavSatID }
 
-func (m *NavSat) InitForLen(payloadLen int) (err error) {
+func (m *NavSat) InitVaryingPart(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 8, 12)
 	if err == nil {
 		m.SVs = make([]NavSatSV, len)
@@ -940,7 +940,7 @@ type NavSVInfoSV struct {
 
 func (m *NavSVInfo) ID() MsgID { return NavSVInfoID }
 
-func (m *NavSVInfo) InitForLen(payloadLen int) (err error) {
+func (m *NavSVInfo) InitVaryingPart(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 8, 12)
 	if err == nil {
 		m.SVs = make([]NavSVInfoSV, len)
@@ -1400,7 +1400,7 @@ type MonVer struct {
 
 func (m *MonVer) ID() MsgID { return MonVerID }
 
-func (m *MonVer) InitForLen(payloadLen int) (err error) {
+func (m *MonVer) InitVaryingPart(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 30+10, 30)
 	if err == nil {
 		m.Extension = make([][30]byte, len)
@@ -1475,7 +1475,7 @@ const (
 
 func (m *CfgGNSS) ID() MsgID { return CfgGNSSID }
 
-func (m *CfgGNSS) InitForLen(payloadLen int) (err error) {
+func (m *CfgGNSS) InitVaryingPart(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 4, 8)
 	if err == nil {
 		m.Blocks = make([]CfgGNSSBlock, len)
@@ -1520,7 +1520,7 @@ const (
 	CfgValgetLayerDefault CfgValgetLayer = 7
 )
 
-func (m *CfgValget) InitForLen(payloadLen int) (err error) {
+func (m *CfgValget) InitVaryingPart(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 4, 1)
 	if err == nil {
 		m.CfgData = make([]byte, len)
@@ -1575,7 +1575,7 @@ const (
 	CfgValsetLayerFlash
 )
 
-func (m *CfgValset) InitForLen(payloadLen int) (err error) {
+func (m *CfgValset) InitVaryingPart(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 4, 1)
 	if err == nil {
 		m.CfgData = make([]byte, len)
@@ -1619,7 +1619,7 @@ const (
 	CfgValdelLayerFlash CfgValdelLayer = 2
 )
 
-func (m *CfgValdel) InitForLen(payloadLen int) (err error) {
+func (m *CfgValdel) InitVaryingPart(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 4, 1)
 	if err == nil {
 		m.CfgData = make([]byte, len)
@@ -1637,7 +1637,7 @@ func (m *CfgValdel) VaryingPart() any {
 
 type InfText []byte
 
-func (m *InfText) InitForLen(payloadLen int) error {
+func (m *InfText) InitVaryingPart(payloadLen int) error {
 	*m = make([]byte, payloadLen)
 	return nil
 }
@@ -1672,12 +1672,12 @@ func (m *InfWarning) ID() MsgID { return InfWarningID }
 
 type VaryingMsg interface {
 	Msg
-	InitForLen(payloadLen int) error
+	InitVaryingPart(payloadLen int) error
 	FixedPart() any
 	VaryingPart() any
 }
 
-// Use VarLengthMsg here to help ensure that InitForLen is correctly declared for each type
+// Use VaryingMsg here to help ensure that InitVaryingPart is correctly declared for each type
 func sliceLen(m VaryingMsg, payloadLen, minLen, elemLen int) (int, error) {
 	extraLen := payloadLen - minLen
 	if extraLen < 0 || extraLen%elemLen != 0 {
@@ -1724,12 +1724,7 @@ func ParseMsg(packet string) (Msg, error) {
 	msg := ctor()
 	var fixed, vary any
 	if vMsg, ok := msg.(VaryingMsg); ok {
-		err := vMsg.InitForLen(len(payload))
-		if err != nil {
-			return nil, err
-		}
 		fixed = vMsg.FixedPart()
-		vary = vMsg.VaryingPart()
 	} else {
 		fixed = msg
 		vary = nil
@@ -1739,6 +1734,13 @@ func ParseMsg(packet string) (Msg, error) {
 	// For UBX-INF-* messages, the payload does not have a fixed part.
 	if fixed != nil {
 		err = binary.Read(r, binary.LittleEndian, fixed)
+	}
+	if vMsg, ok := msg.(VaryingMsg); ok && err == nil {
+		err = vMsg.InitVaryingPart(len(payload))
+		if err != nil {
+			return nil, err
+		}
+		vary = vMsg.VaryingPart()
 	}
 	if err == nil && vary != nil {
 		err = binary.Read(r, binary.LittleEndian, vary)
