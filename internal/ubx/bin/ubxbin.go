@@ -1635,85 +1635,40 @@ func (m *CfgValdel) VaryingPart() any {
 	return &m.CfgData
 }
 
-type InfDebug []byte
+type InfText []byte
+
+func (m *InfText) InitForLen(payloadLen int) error {
+	*m = make([]byte, payloadLen)
+	return nil
+}
+
+func (m *InfText) FixedPart() any {
+	return nil
+}
+
+func (m *InfText) VaryingPart() any {
+	return (*[]byte)(m)
+}
+
+type InfDebug struct{ InfText }
 
 func (m *InfDebug) ID() MsgID { return InfDebugID }
-func (m *InfDebug) InitForLen(payloadLen int) error {
-	*m = make([]byte, payloadLen)
-	return nil
-}
 
-func (m *InfDebug) FixedPart() any {
-	return nil
-}
-
-func (m *InfDebug) VaryingPart() any {
-	return (*[]byte)(m)
-}
-
-type InfError []byte
+type InfError struct{ InfText }
 
 func (m *InfError) ID() MsgID { return InfErrorID }
-func (m *InfError) InitForLen(payloadLen int) error {
-	*m = make([]byte, payloadLen)
-	return nil
-}
 
-func (m *InfError) FixedPart() any {
-	return nil
-}
-
-func (m *InfError) VaryingPart() any {
-	return (*[]byte)(m)
-}
-
-type InfNotice []byte
+type InfNotice struct{ InfText }
 
 func (m *InfNotice) ID() MsgID { return InfNoticeID }
-func (m *InfNotice) InitForLen(payloadLen int) error {
-	*m = make([]byte, payloadLen)
-	return nil
-}
 
-func (m *InfNotice) FixedPart() any {
-	return nil
-}
-
-func (m *InfNotice) VaryingPart() any {
-	return (*[]byte)(m)
-}
-
-type InfTest []byte
+type InfTest struct{ InfText }
 
 func (m *InfTest) ID() MsgID { return InfTestID }
-func (m *InfTest) InitForLen(payloadLen int) error {
-	*m = make([]byte, payloadLen)
-	return nil
-}
 
-func (m *InfTest) FixedPart() any {
-	return nil
-}
-
-func (m *InfTest) VaryingPart() any {
-	return (*[]byte)(m)
-}
-
-type InfWarning []byte
+type InfWarning struct{ InfText }
 
 func (m *InfWarning) ID() MsgID { return InfWarningID }
-func (m *InfWarning) InitForLen(payloadLen int) error {
-	*m = make([]byte, payloadLen)
-	return nil
-}
-
-func (m *InfWarning) FixedPart() any {
-	return nil
-}
-
-func (m *InfWarning) VaryingPart() any {
-	return (*[]byte)(m)
-}
 
 type VaryingMsg interface {
 	Msg
