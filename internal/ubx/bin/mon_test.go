@@ -22,38 +22,46 @@ func EqualMonVer(p1, p2 *MonVer) bool {
 }
 
 func TestMonGnssV0(t *testing.T) {
-	m := MonGnss{
-		Version: 0,
-		MonGnssV0: MonGnssV0{
-			Supported:    MonGnssGPS | MonGnssGalileo,
-			DefaultGnss:  MonGnssGPS,
-			Enabled:      MonGnssGPS | MonGnssBeidou,
-			Simultaneous: 4,
-		},
-	}
-	p2 := testMsgType1(t, m)
-	if !EqualMonGnss(&m, p2.(*MonGnss)) {
-		t.Fatalf("msg mon-gnss v0 not roundtripped %v => %v", &m, p2)
-	}
+	testMsgType(t, MonGnss{
+		Version:      0,
+		Supported:    MonGnssGPS | MonGnssGalileo,
+		DefaultGnss:  MonGnssGPS,
+		Enabled:      MonGnssGPS | MonGnssBeidou,
+		Simultaneous: 4,
+	})
 }
 
-func TestMonGnssV1(t *testing.T) {
-	m := MonGnss{
-		Version: 1,
-		Unknown: []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10},
+func TestMonGnssUnknownVersion(t *testing.T) {
+	// Test that unknown version gets parsed as UnknownMsg
+	packet := []byte{
+		0xB5, 0x62, // sync bytes
+		0x0A, 0x28, // class=MON(0x0A), id=GNSS(0x28)
+		0x08, 0x00, // length = 8 bytes
+		// Payload starts here:
+		0x01,                   // version = 1 (unknown)
+		0x0F, 0x0E, 0x0D, 0x0C, // Some data
+		0x04, 0x00, 0x00,       // More data
 	}
-	p2 := testMsgType1(t, m)
-	if !EqualMonGnss(&m, p2.(*MonGnss)) {
-		t.Fatalf("msg mon-gnss v1 not roundtripped %v => %v", &m, p2)
-	}
-}
+	ckA, ckB := Checksum(packet[2:])
+	packet = append(packet, ckA, ckB)
 
-func EqualMonGnss(p1, p2 *MonGnss) bool {
-	if p1.Version != p2.Version {
-		return false
+	msg, err := ParseMsg(string(packet))
+	if err != nil {
+		t.Fatalf("failed to parse MON-GNSS v1: %v", err)
 	}
-	if p1.Version == 0 {
-		return p1.MonGnssV0 == p2.MonGnssV0
+
+	// Should be parsed as UnknownMsg
+	unknownMsg, ok := msg.(*UnknownMsg)
+	if !ok {
+		t.Fatalf("expected *UnknownMsg for unknown version, got %T", msg)
 	}
-	return slices.Equal(p1.Unknown, p2.Unknown)
+
+	if unknownMsg.MsgID != MonGnssID {
+		t.Errorf("expected MsgID=%v, got %v", MonGnssID, unknownMsg.MsgID)
+	}
+
+	expectedPayload := string([]byte{0x01, 0x0F, 0x0E, 0x0D, 0x0C, 0x04, 0x00, 0x00})
+	if unknownMsg.Payload != expectedPayload {
+		t.Errorf("expected payload=%x, got %x", expectedPayload, unknownMsg.Payload)
+	}
 }

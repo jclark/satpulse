@@ -2,8 +2,6 @@ package bin
 
 import (
 	"testing"
-
-	"golang.org/x/exp/slices"
 )
 
 func TestNavTimeGPS(t *testing.T) {
@@ -18,45 +16,59 @@ func TestNavTimeGPS(t *testing.T) {
 }
 
 func TestNavTimeTrustedV1(t *testing.T) {
-	m := NavTimeTrusted{
-		Version: 1,
-		NavTimeTrustedV1: NavTimeTrustedV1{
-			RefSys:   NavTimeTrustedRefSysGPS,
-			Valid:    NavTimeTrustedValidTrustedTime | NavTimeTrustedValidDeltaTime,
-			ITOW:     0x12345678,
-			IniWno:   2100,
-			PropWno:  2101,
-			IniTow:   123456000,
-			PropTow:  123457000,
-			IniTAcc:  50,
-			PropTAcc: 75,
-			DeltaS:   -2,
-			DeltaMs:  -250,
-		},
-	}
-	p2 := testMsgType1(t, m)
-	if !EqualNavTimeTrusted(&m, p2.(*NavTimeTrusted)) {
-		t.Fatalf("msg nav-timetrusted v1 not roundtripped %v => %v", &m, p2)
-	}
+	testMsgType(t, NavTimeTrusted{
+		Version:  1,
+		RefSys:   NavTimeTrustedRefSysGPS,
+		Valid:    NavTimeTrustedValidTrustedTime | NavTimeTrustedValidDeltaTime,
+		ITOW:     0x12345678,
+		IniWno:   2100,
+		PropWno:  2101,
+		IniTow:   123456000,
+		PropTow:  123457000,
+		IniTAcc:  50,
+		PropTAcc: 75,
+		DeltaS:   -2,
+		DeltaMs:  -250,
+	})
 }
 
-func TestNavTimeTrustedUnknown(t *testing.T) {
-	m := NavTimeTrusted{
-		Version: 2,
-		Unknown: []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+func TestNavTimeTrustedUnknownVersion(t *testing.T) {
+	// Test that unknown version gets parsed as UnknownMsg
+	packet := []byte{
+		0xB5, 0x62, // sync bytes
+		0x01, 0x64, // class=NAV(0x01), id=TIMETRUSTED(0x64)
+		0x28, 0x00, // length = 40 bytes
+		// Payload starts here:
+		0x02,       // version = 2 (unknown)
+		0x01,       // RefSys = GPS
+		0x03,       // Valid
+		0x00,       // reserved
+		0x78, 0x56, 0x34, 0x12, // ITOW
+		0x34, 0x08, // IniWno
+		0x35, 0x08, // PropWno
+		0x00, 0x5B, 0x5A, 0x07, // IniTow
+		0x00, 0x6F, 0x5A, 0x07, // PropTow
+		0x32, 0x00, 0x00, 0x00, // IniTAcc
+		0x4B, 0x00, 0x00, 0x00, // PropTAcc
+		0xFE, 0xFF, 0xFF, 0xFF, // DeltaS
+		0x06, 0xFF, 0xFF, 0xFF, // DeltaMs
+		0x00, 0x00, 0x00, 0x00, // reserved
 	}
-	p2 := testMsgType1(t, m)
-	if !EqualNavTimeTrusted(&m, p2.(*NavTimeTrusted)) {
-		t.Fatalf("msg nav-timetrusted v2 not roundtripped %v => %v", &m, p2)
-	}
-}
+	ckA, ckB := Checksum(packet[2:])
+	packet = append(packet, ckA, ckB)
 
-func EqualNavTimeTrusted(p1, p2 *NavTimeTrusted) bool {
-	if p1.Version != p2.Version {
-		return false
+	msg, err := ParseMsg(string(packet))
+	if err != nil {
+		t.Fatalf("failed to parse NAV-TIMETRUSTED v2: %v", err)
 	}
-	if p1.Version == 1 {
-		return p1.NavTimeTrustedV1 == p2.NavTimeTrustedV1
+
+	// Should be parsed as UnknownMsg
+	unknownMsg, ok := msg.(*UnknownMsg)
+	if !ok {
+		t.Fatalf("expected *UnknownMsg for unknown version, got %T", msg)
 	}
-	return slices.Equal(p1.Unknown, p2.Unknown)
+
+	if unknownMsg.MsgID != NavTimeTrustedID {
+		t.Errorf("expected MsgID=%v, got %v", NavTimeTrustedID, unknownMsg.MsgID)
+	}
 }

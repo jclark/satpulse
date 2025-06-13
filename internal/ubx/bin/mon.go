@@ -1,9 +1,5 @@
 package bin
 
-import (
-	"fmt"
-)
-
 const (
 	MonGnssID  MsgID = clsMon | (0x28 << 8)
 	MonHwID    MsgID = clsMon | (0x09 << 8)
@@ -12,12 +8,7 @@ const (
 )
 
 type MonGnss struct {
-	Version byte
-	MonGnssV0
-	Unknown []byte // when version is not 0, ZED-X20
-}
-
-type MonGnssV0 struct {
+	Version      byte
 	Supported    MonGnssMajorGnss
 	DefaultGnss  MonGnssMajorGnss
 	Enabled      MonGnssMajorGnss
@@ -25,34 +16,12 @@ type MonGnssV0 struct {
 	_            [3]byte
 }
 
-var _ VaryingMsg = (*MonGnss)(nil)
+var _ PartiallyHandledMsg = (*MonGnss)(nil)
 
 func (m *MonGnss) ID() MsgID { return MonGnssID }
 
-func (m *MonGnss) InitVaryingPart(payloadLen int) error {
-	if m.Version == 0 {
-		if payloadLen != 8 {
-			return fmt.Errorf("bad UBX-MON-GNSS v0 payload length (%d bytes); expected 8", payloadLen)
-		}
-		m.Unknown = nil
-	} else {
-		if payloadLen < 1 {
-			return fmt.Errorf("bad UBX-MON-GNSS payload length (%d bytes); expected at least 1", payloadLen)
-		}
-		m.Unknown = make([]byte, payloadLen-1)
-	}
-	return nil
-}
-
-func (m *MonGnss) FixedPart() any {
-	return &m.Version
-}
-
-func (m *MonGnss) VaryingPart() any {
-	if m.Version == 0 {
-		return &m.MonGnssV0
-	}
-	return &m.Unknown
+func (m *MonGnss) IsHandled() bool {
+	return m.Version == 0
 }
 
 type MonGnssMajorGnss uint8

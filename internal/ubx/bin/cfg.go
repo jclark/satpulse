@@ -303,7 +303,15 @@ type CfgTp5 struct {
 	Flags             CfgTp5Flags
 }
 
+var _ PartiallyHandledMsg = (*CfgTp5)(nil)
+
 func (m *CfgTp5) ID() MsgID { return CfgTp5ID }
+
+func (m *CfgTp5) IsHandled() bool {
+	// Support both version 0 (protocol 15) and version 1 (protocols 16-23)
+	// Version 1 is a compatible upgrade to version 0
+	return m.Version == 0 || m.Version == 1
+}
 
 type CfgTp5Flags uint32
 
@@ -392,7 +400,13 @@ type CfgTmode3 struct {
 	_            [8]byte
 }
 
+var _ PartiallyHandledMsg = (*CfgTmode3)(nil)
+
 func (m *CfgTmode3) ID() MsgID { return CfgTmode3ID }
+
+func (m *CfgTmode3) IsHandled() bool {
+	return m.Version == 0
+}
 
 type CfgTmode3Flags uint16
 

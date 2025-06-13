@@ -15,6 +15,7 @@ type MgaIni struct {
 }
 
 var _ VaryingMsg = (*MgaIni)(nil)
+var _ PartiallyHandledMsg = (*MgaIni)(nil)
 
 type MgaIniFixed struct {
 	Type    MgaIniType
@@ -46,6 +47,16 @@ func (m *MgaIni) VaryingPart() any {
 	return m.payload
 }
 
+func (m *MgaIni) IsHandled() bool {
+	switch m.Type {
+	case MgaIniTypePosXYZ, MgaIniTypePosLLH, MgaIniTypeTimeUTC, MgaIniTypeTimeGNSS, MgaIniTypeClkD, MgaIniTypeFreq:
+		// The only version we know about for these message types is 0
+		return m.Version == 0
+	}
+	// Unknown types are not handled
+	return false
+}
+
 func (m *MgaIni) InitVaryingPart(payloadLen int) error {
 	var expectedPayloadLen int
 
@@ -70,7 +81,7 @@ func (m *MgaIni) InitVaryingPart(payloadLen int) error {
 		expectedPayloadLen = 12
 	}
 
-	if m.Version == 0 && expectedPayloadLen != 0 {
+	if expectedPayloadLen != 0 {
 		if expectedPayloadLen == payloadLen {
 			return nil
 		}
@@ -180,6 +191,7 @@ type MgaGal struct {
 }
 
 var _ VaryingMsg = (*MgaGal)(nil)
+var _ PartiallyHandledMsg = (*MgaGal)(nil)
 
 type MgaGalFixed struct {
 	Type    MgaGalType
@@ -211,6 +223,17 @@ func (m *MgaGal) VaryingPart() any {
 	return m.payload
 }
 
+func (m *MgaGal) IsHandled() bool {
+	// Only version 0 is supported for known message types
+	// Unknown message types should return false to become UnknownMsg
+	switch m.Type {
+	case MgaGalTypeOSNMAPubkey, MgaGalTypeOSNMAMerkle:
+		return m.Version == 0
+	default:
+		return false // Unknown types become UnknownMsg
+	}
+}
+
 func (m *MgaGal) InitVaryingPart(payloadLen int) error {
 	var expectedPayloadLen int
 
@@ -223,7 +246,7 @@ func (m *MgaGal) InitVaryingPart(payloadLen int) error {
 		expectedPayloadLen = 36
 	}
 
-	if m.Version == 0 && expectedPayloadLen != 0 {
+	if expectedPayloadLen != 0 {
 		if expectedPayloadLen == payloadLen {
 			return nil
 		}

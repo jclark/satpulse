@@ -30,7 +30,13 @@ type TimTos struct {
 	ExtOscUncertainty uint32
 }
 
+var _ PartiallyHandledMsg = (*TimTos)(nil)
+
 func (m *TimTos) ID() MsgID { return TimTosID }
+
+func (m *TimTos) IsHandled() bool {
+	return m.Version == 0
+}
 
 type TimTosFlags uint32
 

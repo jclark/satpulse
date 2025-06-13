@@ -1,9 +1,5 @@
 package bin
 
-import (
-	"fmt"
-)
-
 const (
 	NavDOPID         MsgID = clsNav | (0x04 << 8)
 	NavPosECEFID     MsgID = clsNav | (0x01 << 8)
@@ -219,7 +215,14 @@ type NavSatSV struct {
 	Flags  NavSatFlags
 }
 
+var _ VaryingMsg = (*NavSat)(nil)
+var _ PartiallyHandledMsg = (*NavSat)(nil)
+
 func (m *NavSat) ID() MsgID { return NavSatID }
+
+func (m *NavSat) IsHandled() bool {
+	return m.Version == 1
+}
 
 func (m *NavSat) InitVaryingPart(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 8, 12)
@@ -573,15 +576,16 @@ const (
 	NavTimeLSValidTimeToLSEvent
 )
 
+var _ PartiallyHandledMsg = (*NavTimeLS)(nil)
+
 func (m *NavTimeLS) ID() MsgID { return NavTimeLSID }
 
-type NavTimeTrusted struct {
-	Version byte
-	NavTimeTrustedV1
-	Unknown []byte
+func (m *NavTimeLS) IsHandled() bool {
+	return m.Version == 0
 }
 
-type NavTimeTrustedV1 struct {
+type NavTimeTrusted struct {
+	Version  byte
 	RefSys   NavTimeTrustedRefSys
 	Valid    NavTimeTrustedValid
 	_        byte
@@ -614,34 +618,12 @@ const (
 	NavTimeTrustedValidDeltaTime
 )
 
-var _ VaryingMsg = (*NavTimeTrusted)(nil)
+var _ PartiallyHandledMsg = (*NavTimeTrusted)(nil)
 
 func (m *NavTimeTrusted) ID() MsgID { return NavTimeTrustedID }
 
-func (m *NavTimeTrusted) InitVaryingPart(payloadLen int) error {
-	if m.Version == 1 {
-		if payloadLen != 40 {
-			return fmt.Errorf("bad UBX-NAV-TIMETRUSTED v1 payload length (%d bytes); expected 40", payloadLen)
-		}
-		m.Unknown = nil
-	} else {
-		if payloadLen < 1 {
-			return fmt.Errorf("bad UBX-NAV-TIMETRUSTED payload length (%d bytes); expected at least 1", payloadLen)
-		}
-		m.Unknown = make([]byte, payloadLen-1)
-	}
-	return nil
-}
-
-func (m *NavTimeTrusted) FixedPart() any {
-	return &m.Version
-}
-
-func (m *NavTimeTrusted) VaryingPart() any {
-	if m.Version == 1 {
-		return &m.NavTimeTrustedV1
-	}
-	return &m.Unknown
+func (m *NavTimeTrusted) IsHandled() bool {
+	return m.Version == 1
 }
 
 type NavSvin struct {
@@ -663,7 +645,13 @@ type NavSvin struct {
 	_       [2]byte
 }
 
+var _ PartiallyHandledMsg = (*NavSvin)(nil)
+
 func (m *NavSvin) ID() MsgID { return NavSvinID }
+
+func (m *NavSvin) IsHandled() bool {
+	return m.Version == 0
+}
 
 func init() {
 	regMsg[NavDOP]("DOP")

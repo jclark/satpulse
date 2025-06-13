@@ -149,7 +149,7 @@ func TestMgaIniTimeUTC(t *testing.T) {
 }
 
 func TestMgaIniUnknown(t *testing.T) {
-	// Test unknown message type with version 0 (should succeed as unknown after the fix)
+	// Test unknown message type with version 0 (should become UnknownMsg)
 	packet := []byte{
 		0xB5, 0x62, // sync bytes
 		0x13, 0x40, // class=MGA(0x13), id=INI(0x40)
@@ -163,35 +163,27 @@ func TestMgaIniUnknown(t *testing.T) {
 	ckA, ckB := Checksum(packet[2:])
 	packet = append(packet, ckA, ckB)
 
-	// This should succeed as unknown (after the fix)
+	// This should become UnknownMsg
 	msg, err := ParseMsg(string(packet))
 	if err != nil {
 		t.Fatalf("failed to parse unknown MGA-INI with version 0: %v", err)
 	}
 
-	mgaIni, ok := msg.(*MgaIni)
+	unknownMsg, ok := msg.(*UnknownMsg)
 	if !ok {
-		t.Fatalf("expected *MgaIni, got %T", msg)
+		t.Fatalf("expected *UnknownMsg, got %T", msg)
 	}
 
-	if mgaIni.Type != 0x30 {
-		t.Errorf("expected Type=0x30, got 0x%02x", mgaIni.Type)
-	}
-	if mgaIni.Version != 0x00 {
-		t.Errorf("expected Version=0x00, got 0x%02x", mgaIni.Version)
+	if unknownMsg.MsgID != MgaIniID {
+		t.Errorf("expected MsgID=%s, got %s", MgaIniID, unknownMsg.MsgID)
 	}
 
-	unknown, ok := mgaIni.VaryingPart().(*MgaIniUnknown)
-	if !ok {
-		t.Fatalf("expected *MgaIniUnknown, got %T", mgaIni.VaryingPart())
+	expectedPayload := string([]byte{0x30, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08})
+	if unknownMsg.Payload != expectedPayload {
+		t.Errorf("expected payload=%x, got %x", expectedPayload, unknownMsg.Payload)
 	}
 
-	expectedUnknown := MgaIniUnknown{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
-	if !slices.Equal(*unknown, expectedUnknown) {
-		t.Errorf("expected unknown payload=%x, got %x", expectedUnknown, *unknown)
-	}
-
-	// Test unknown message type with version 1 (should also succeed as unknown)
+	// Test unknown message type with version 1 (should also become UnknownMsg)
 	packet[7] = 0x01 // Change version to 1
 	ckA, ckB = Checksum(packet[2:len(packet)-2])
 	packet[len(packet)-2] = ckA
@@ -202,26 +194,18 @@ func TestMgaIniUnknown(t *testing.T) {
 		t.Fatalf("failed to parse unknown MGA-INI with version 1: %v", err)
 	}
 
-	mgaIni, ok = msg.(*MgaIni)
+	unknownMsg, ok = msg.(*UnknownMsg)
 	if !ok {
-		t.Fatalf("expected *MgaIni, got %T", msg)
+		t.Fatalf("expected *UnknownMsg, got %T", msg)
 	}
 
-	if mgaIni.Type != 0x30 {
-		t.Errorf("expected Type=0x30, got 0x%02x", mgaIni.Type)
-	}
-	if mgaIni.Version != 0x01 {
-		t.Errorf("expected Version=0x01, got 0x%02x", mgaIni.Version)
+	if unknownMsg.MsgID != MgaIniID {
+		t.Errorf("expected MsgID=%s, got %s", MgaIniID, unknownMsg.MsgID)
 	}
 
-	unknown, ok = mgaIni.VaryingPart().(*MgaIniUnknown)
-	if !ok {
-		t.Fatalf("expected *MgaIniUnknown, got %T", mgaIni.VaryingPart())
-	}
-
-	expectedUnknown = MgaIniUnknown{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
-	if !slices.Equal(*unknown, expectedUnknown) {
-		t.Errorf("expected unknown payload=%x, got %x", expectedUnknown, *unknown)
+	expectedPayload = string([]byte{0x30, 0x01, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08})
+	if unknownMsg.Payload != expectedPayload {
+		t.Errorf("expected payload=%x, got %x", expectedPayload, unknownMsg.Payload)
 	}
 }
 
@@ -425,7 +409,7 @@ func TestMgaGalOSNMAMerkle(t *testing.T) {
 }
 
 func TestMgaGalUnknown(t *testing.T) {
-	// Test unknown message type with version 0 (should now succeed as unknown)
+	// Test unknown message type with version 0 (should become UnknownMsg)
 	packet := []byte{
 		0xB5, 0x62, // sync bytes
 		0x13, 0x02, // class=MGA(0x13), id=GAL(0x02)
@@ -439,35 +423,27 @@ func TestMgaGalUnknown(t *testing.T) {
 	ckA, ckB := Checksum(packet[2:])
 	packet = append(packet, ckA, ckB)
 
-	// This should now succeed as unknown (after the fix)
+	// This should become UnknownMsg
 	msg, err := ParseMsg(string(packet))
 	if err != nil {
 		t.Fatalf("failed to parse unknown MGA-GAL with version 0: %v", err)
 	}
 
-	mgaGal, ok := msg.(*MgaGal)
+	unknownMsg, ok := msg.(*UnknownMsg)
 	if !ok {
-		t.Fatalf("expected *MgaGal, got %T", msg)
+		t.Fatalf("expected *UnknownMsg, got %T", msg)
 	}
 
-	if mgaGal.Type != 0x01 {
-		t.Errorf("expected Type=0x01, got 0x%02x", mgaGal.Type)
-	}
-	if mgaGal.Version != 0x00 {
-		t.Errorf("expected Version=0x00, got 0x%02x", mgaGal.Version)
+	if unknownMsg.MsgID != MgaGalID {
+		t.Errorf("expected MsgID=%s, got %s", MgaGalID, unknownMsg.MsgID)
 	}
 
-	unknown, ok := mgaGal.VaryingPart().(*MgaGalUnknown)
-	if !ok {
-		t.Fatalf("expected *MgaGalUnknown, got %T", mgaGal.VaryingPart())
+	expectedPayload := string([]byte{0x01, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08})
+	if unknownMsg.Payload != expectedPayload {
+		t.Errorf("expected payload=%x, got %x", expectedPayload, unknownMsg.Payload)
 	}
 
-	expectedUnknown := MgaGalUnknown{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
-	if !slices.Equal(*unknown, expectedUnknown) {
-		t.Errorf("expected unknown payload=%x, got %x", expectedUnknown, *unknown)
-	}
-
-	// Test unknown message type with version 1 (should also succeed as unknown)
+	// Test unknown message type with version 1 (should also become UnknownMsg)
 	packet[7] = 0x01 // Change version to 1
 	ckA, ckB = Checksum(packet[2:len(packet)-2])
 	packet[len(packet)-2] = ckA
@@ -478,25 +454,17 @@ func TestMgaGalUnknown(t *testing.T) {
 		t.Fatalf("failed to parse unknown MGA-GAL with version 1: %v", err)
 	}
 
-	mgaGal, ok = msg.(*MgaGal)
+	unknownMsg, ok = msg.(*UnknownMsg)
 	if !ok {
-		t.Fatalf("expected *MgaGal, got %T", msg)
+		t.Fatalf("expected *UnknownMsg, got %T", msg)
 	}
 
-	if mgaGal.Type != 0x01 {
-		t.Errorf("expected Type=0x01, got 0x%02x", mgaGal.Type)
-	}
-	if mgaGal.Version != 0x01 {
-		t.Errorf("expected Version=0x01, got 0x%02x", mgaGal.Version)
+	if unknownMsg.MsgID != MgaGalID {
+		t.Errorf("expected MsgID=%s, got %s", MgaGalID, unknownMsg.MsgID)
 	}
 
-	unknown, ok = mgaGal.VaryingPart().(*MgaGalUnknown)
-	if !ok {
-		t.Fatalf("expected *MgaGalUnknown, got %T", mgaGal.VaryingPart())
-	}
-
-	expectedUnknown = MgaGalUnknown{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
-	if !slices.Equal(*unknown, expectedUnknown) {
-		t.Errorf("expected unknown payload=%x, got %x", expectedUnknown, *unknown)
+	expectedPayload = string([]byte{0x01, 0x01, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08})
+	if unknownMsg.Payload != expectedPayload {
+		t.Errorf("expected payload=%x, got %x", expectedPayload, unknownMsg.Payload)
 	}
 }

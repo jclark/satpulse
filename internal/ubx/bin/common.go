@@ -49,6 +49,7 @@ const (
 	clsMon  = 0x0A
 	clsTim  = 0x0D
 	clsMga  = 0x13
+	clsSec  = 0x27
 	clsNav2 = 0x29
 	clsNmea = 0xF0
 	clsRtcm = 0xF5
@@ -63,6 +64,7 @@ var clsMap = map[byte]string{
 	clsMon:  "MON",
 	clsTim:  "TIM",
 	clsMga:  "MGA",
+	clsSec:  "SEC",
 	clsNav2: "NAV2",
 	clsNmea: "NMEA",
 	clsRtcm: "RTCM",
@@ -113,6 +115,11 @@ type VaryingMsg interface {
 	InitVaryingPart(payloadLen int) error
 	FixedPart() any
 	VaryingPart() any
+}
+
+type PartiallyHandledMsg interface {
+	Msg
+	IsHandled() bool
 }
 
 // Use VaryingMsg here to help ensure that InitVaryingPart is correctly declared for each type
@@ -172,6 +179,12 @@ func ParseMsg(packet string) (Msg, error) {
 	// For UBX-INF-* messages, the payload does not have a fixed part.
 	if fixed != nil {
 		err = binary.Read(r, binary.LittleEndian, fixed)
+	}
+	// Check if this is a partially handled message that we don't handle.
+	if err == nil {
+		if phMsg, ok := msg.(PartiallyHandledMsg); ok && !phMsg.IsHandled() {
+			return &UnknownMsg{MsgID: mid, Payload: payload}, nil
+		}
 	}
 	if vMsg, ok := msg.(VaryingMsg); ok && err == nil {
 		err = vMsg.InitVaryingPart(len(payload))
