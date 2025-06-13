@@ -207,7 +207,7 @@ func TestConfigItems_Survey(t *testing.T) {
 	}
 	m := newCfgVals()
 	cfgValSet(m, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
-	items, missing, err := m.Transaction(target, ver, ucv.UART1, 0)
+	items, _, err := m.Transaction(target, ver, ucv.UART1, 0)
 	if err != nil {
 		t.Fatalf("configItems[2]: %v", err)
 	}
