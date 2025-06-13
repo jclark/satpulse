@@ -61,6 +61,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	survey := false
 	surveyTime := uint32(defaultSurveyTime)
 	surveyAcc := defaultSurveyAcc
+	sysTimeTrusted := false
 
 	var rawOut rawOutOpt
 	var pvtOut pvtOutOpt
@@ -102,6 +103,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.MarkHidden("survey-time")
 	flags.Float64Var(&surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
 	flags.MarkHidden("survey-acc")
+	flags.BoolVar(&sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
+	flags.MarkHidden("sys-time-trusted")
 	usage := cmd.UsageFunc(cmdName, summary, flags)
 	err := flags.Parse(args)
 	if err != nil {
@@ -231,6 +234,14 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if vars.pps || vars.timeGNSS != 0 {
 		configChanged = true
+	}
+	if sysTimeTrusted {
+		est, err := EstimateSystemTime()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to estimate system time: %w", err)
+		}
+		vars.configOpts.TimeAssist = *est
+		vars.configOpts.TimeAssist.Trusted = true
 	}
 	if save {
 		if !configChanged {

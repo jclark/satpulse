@@ -9,20 +9,20 @@ import (
 func TestMgaIniTimeUTC(t *testing.T) {
 	// Test constants
 	const (
-		msgType     = MgaIniTypeTimeUTC // TIME_UTC
-		msgVersion  = 0x00
-		refValue    = 0x05 // bits 3:0=source=1, bit 4=fall=0, bit 5=last=1
-		leapSecs    = 18
-		year        = 2024
-		month       = 12
-		day         = 15
-		hour        = 10
-		minute      = 30
-		second      = 45
-		bitfield0   = 0x01 // trustedSource=1
-		ns          = 1000000000
-		tAccS       = 5
-		tAccNs      = 1000000000
+		msgType    = MgaIniTypeTimeUTC // TIME_UTC
+		msgVersion = 0x00
+		refValue   = 0x05 // bits 3:0=source=1, bit 4=fall=0, bit 5=last=1
+		leapSecs   = 18
+		year       = 2024
+		month      = 12
+		day        = 15
+		hour       = 10
+		minute     = 30
+		second     = 45
+		bitfield0  = 0x01 // trustedSource=1
+		ns         = 1000000000
+		tAccS      = 5
+		tAccNs     = 1000000000
 	)
 
 	// Manually construct the expected byte sequence for UBX-MGA-INI-TIME-UTC
@@ -31,23 +31,23 @@ func TestMgaIniTimeUTC(t *testing.T) {
 		0x13, 0x40, // class=MGA(0x13), id=INI(0x40)
 		0x18, 0x00, // length = 24 bytes
 		// Payload starts here:
-		byte(msgType),             // type = 0x10 (TIME_UTC)
-		msgVersion,          // version = 0x00
-		refValue,            // ref = 0x05
-		leapSecs,            // leapSecs = 18
+		byte(msgType),          // type = 0x10 (TIME_UTC)
+		msgVersion,             // version = 0x00
+		refValue,               // ref = 0x05
+		leapSecs,               // leapSecs = 18
 		year & 0xFF, year >> 8, // year = 2024 (little endian)
-		month,               // month = 12
-		day,                 // day = 15
-		hour,                // hour = 10
-		minute,              // minute = 30
-		second,              // second = 45
-		bitfield0,           // bitfield0 = 0x01
+		month,                                                                                     // month = 12
+		day,                                                                                       // day = 15
+		hour,                                                                                      // hour = 10
+		minute,                                                                                    // minute = 30
+		second,                                                                                    // second = 45
+		bitfield0,                                                                                 // bitfield0 = 0x01
 		byte(ns & 0xFF), byte((ns >> 8) & 0xFF), byte((ns >> 16) & 0xFF), byte((ns >> 24) & 0xFF), // ns (little endian)
 		byte(tAccS & 0xFF), byte((tAccS >> 8) & 0xFF), // tAccS (little endian)
 		0x00, 0x00, // reserved
 		byte(tAccNs & 0xFF), byte((tAccNs >> 8) & 0xFF), byte((tAccNs >> 16) & 0xFF), byte((tAccNs >> 24) & 0xFF), // tAccNs (little endian)
 	}
-	
+
 	// Calculate and append checksum
 	ckA, ckB := Checksum(packet[2:]) // Skip sync bytes for checksum
 	packet = append(packet, ckA, ckB)
@@ -122,7 +122,7 @@ func TestMgaIniTimeUTC(t *testing.T) {
 			Type:    msgType,
 			Version: msgVersion,
 		},
-		payload: &MgaIniTimeUTC{
+		Payload: &MgaIniTimeUTC{
 			Ref:       refValue,
 			LeapSecs:  leapSecs,
 			Year:      year,
@@ -155,11 +155,11 @@ func TestMgaIniUnknown(t *testing.T) {
 		0x13, 0x40, // class=MGA(0x13), id=INI(0x40)
 		0x0A, 0x00, // length = 10 bytes
 		// Payload starts here:
-		0x30,       // type = 0x30 (unknown type - not implemented)
-		0x00,       // version = 0x00
+		0x30,                                           // type = 0x30 (unknown type - not implemented)
+		0x00,                                           // version = 0x00
 		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // 8 bytes of data
 	}
-	
+
 	ckA, ckB := Checksum(packet[2:])
 	packet = append(packet, ckA, ckB)
 
@@ -185,7 +185,7 @@ func TestMgaIniUnknown(t *testing.T) {
 
 	// Test unknown message type with version 1 (should also become UnknownMsg)
 	packet[7] = 0x01 // Change version to 1
-	ckA, ckB = Checksum(packet[2:len(packet)-2])
+	ckA, ckB = Checksum(packet[2 : len(packet)-2])
 	packet[len(packet)-2] = ckA
 	packet[len(packet)-1] = ckB
 
@@ -212,10 +212,10 @@ func TestMgaIniUnknown(t *testing.T) {
 func TestMgaGalOSNMAPubkey(t *testing.T) {
 	// Test constants for UBX-MGA-GAL-OSNMA-PUBKEY
 	const (
-		msgType     = MgaGalTypeOSNMAPubkey // 0x07
-		msgVersion  = 0x00
-		pubKeyID    = 0x05 // Public Key ID (bits 3:0)
-		pubKeyType  = 0x01 // ECDSA P-256 (bits 7:4)
+		msgType    = MgaGalTypeOSNMAPubkey // 0x07
+		msgVersion = 0x00
+		pubKeyID   = 0x05 // Public Key ID (bits 3:0)
+		pubKeyType = 0x01 // ECDSA P-256 (bits 7:4)
 	)
 
 	// Construct bitfield0 = pubKeyType << 4 | pubKeyID
@@ -238,7 +238,7 @@ func TestMgaGalOSNMAPubkey(t *testing.T) {
 		byte(bitfield0), // bitfield0 = (pubKeyType << 4) | pubKeyID
 		0x00,            // reserved
 	}
-	
+
 	// Append the 67-byte public key point
 	packet = append(packet, pubKeyPoint[:]...)
 	// Append final reserved byte
@@ -341,7 +341,7 @@ func TestMgaGalOSNMAMerkle(t *testing.T) {
 		byte(bitfield0), // bitfield0 = applicabilityTime bit
 		0x00,            // reserved
 	}
-	
+
 	// Append the 32-byte tree node
 	packet = append(packet, treeNode[:]...)
 
@@ -415,11 +415,11 @@ func TestMgaGalUnknown(t *testing.T) {
 		0x13, 0x02, // class=MGA(0x13), id=GAL(0x02)
 		0x0A, 0x00, // length = 10 bytes
 		// Payload starts here:
-		0x01,       // type = 0x01 (EPH - not implemented)
-		0x00,       // version = 0x00
+		0x01,                                           // type = 0x01 (EPH - not implemented)
+		0x00,                                           // version = 0x00
 		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // 8 bytes of data
 	}
-	
+
 	ckA, ckB := Checksum(packet[2:])
 	packet = append(packet, ckA, ckB)
 
@@ -445,7 +445,7 @@ func TestMgaGalUnknown(t *testing.T) {
 
 	// Test unknown message type with version 1 (should also become UnknownMsg)
 	packet[7] = 0x01 // Change version to 1
-	ckA, ckB = Checksum(packet[2:len(packet)-2])
+	ckA, ckB = Checksum(packet[2 : len(packet)-2])
 	packet[len(packet)-2] = ckA
 	packet[len(packet)-1] = ckB
 

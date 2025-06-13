@@ -79,6 +79,7 @@ var newConfigSteps = []func(*Configurator) error{
 	(*Configurator).valSetSignals,
 	(*Configurator).valGet,
 	(*Configurator).valSet,
+	(*Configurator).timeAssist,
 	(*Configurator).valBaudRate,
 	(*Configurator).reloadCfg,
 	(*Configurator).setCfg,
@@ -624,6 +625,17 @@ func (c *Configurator) setGNSS() error {
 		return err
 	}
 	return c.addMsgSetRequest(gnss)
+}
+
+func (c *Configurator) timeAssist() error {
+	mga, err := mgaTime(&c.target.Opts.TimeAssist, time.Now())
+	if err != nil {
+		return err
+	}
+	if mga == nil {
+		return nil
+	}
+	return c.addRequest(msgRequest{mga})
 }
 
 func (acks *ackList) ack(msgID bin.MsgID, ok bool, t time.Time) {

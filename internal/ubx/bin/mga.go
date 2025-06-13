@@ -11,7 +11,7 @@ const (
 
 type MgaIni struct {
 	MgaIniFixed
-	payload MgaIniPayload
+	Payload MgaIniPayload
 }
 
 var _ VaryingMsg = (*MgaIni)(nil)
@@ -33,6 +33,8 @@ const (
 	MgaIniTypeFreq     MgaIniType = 0x21
 )
 
+const MgaIniVersion = 0
+
 type MgaIniPayload interface {
 	mgaIniPayload()
 }
@@ -44,14 +46,14 @@ func (m *MgaIni) FixedPart() any {
 }
 
 func (m *MgaIni) VaryingPart() any {
-	return m.payload
+	return m.Payload
 }
 
 func (m *MgaIni) IsHandled() bool {
 	switch m.Type {
 	case MgaIniTypePosXYZ, MgaIniTypePosLLH, MgaIniTypeTimeUTC, MgaIniTypeTimeGNSS, MgaIniTypeClkD, MgaIniTypeFreq:
 		// The only version we know about for these message types is 0
-		return m.Version == 0
+		return m.Version == MgaIniVersion
 	}
 	// Unknown types are not handled
 	return false
@@ -62,22 +64,22 @@ func (m *MgaIni) InitVaryingPart(payloadLen int) error {
 
 	switch m.Type {
 	case MgaIniTypePosXYZ:
-		m.payload = &MgaIniPosXYZ{}
+		m.Payload = &MgaIniPosXYZ{}
 		expectedPayloadLen = 20
 	case MgaIniTypePosLLH:
-		m.payload = &MgaIniPosLLH{}
+		m.Payload = &MgaIniPosLLH{}
 		expectedPayloadLen = 20
 	case MgaIniTypeTimeUTC:
-		m.payload = &MgaIniTimeUTC{}
+		m.Payload = &MgaIniTimeUTC{}
 		expectedPayloadLen = 24
 	case MgaIniTypeTimeGNSS:
-		m.payload = &MgaIniTimeGNSS{}
+		m.Payload = &MgaIniTimeGNSS{}
 		expectedPayloadLen = 24
 	case MgaIniTypeClkD:
-		m.payload = &MgaIniClkD{}
+		m.Payload = &MgaIniClkD{}
 		expectedPayloadLen = 12
 	case MgaIniTypeFreq:
-		m.payload = &MgaIniFreq{}
+		m.Payload = &MgaIniFreq{}
 		expectedPayloadLen = 12
 	}
 
@@ -92,7 +94,7 @@ func (m *MgaIni) InitVaryingPart(payloadLen int) error {
 		return fmt.Errorf("bad UBX-MGA-INI payload length (%d bytes); expected at least 2", payloadLen)
 	}
 	unknown := make(MgaIniUnknown, payloadLen-2)
-	m.payload = &unknown
+	m.Payload = &unknown
 	return nil
 }
 
@@ -116,7 +118,7 @@ func (m *MgaIniPosLLH) mgaIniPayload() {}
 
 type MgaIniTimeUTC struct {
 	Ref       MgaIniTimeRef
-	LeapSecs  int8
+	LeapSecs  int8 // since GPS epoch
 	Year      uint16
 	Month     byte
 	Day       byte
@@ -146,6 +148,8 @@ type MgaIniTimeGNSS struct {
 }
 
 func (m *MgaIniTimeGNSS) mgaIniPayload() {}
+
+const MgaIniTimeUTCLeapSecsUnknown int8 = -128
 
 type MgaIniTimeRef byte
 
