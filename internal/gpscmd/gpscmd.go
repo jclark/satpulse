@@ -64,7 +64,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		cp.SetTimeMode(gpsprot.TimeModeDisabled)
 		cp.SetStationary(false)
 	}
-
+	if v.navMsgAuth.IsSet() {
+		cp.SetNavMsgAuth(v.navMsgAuth.Get())
+	}
 	if target.NoOp() {
 		target.Get |= gpsprot.PropIDSignalsEnabled
 	}

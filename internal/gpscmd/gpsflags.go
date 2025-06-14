@@ -14,6 +14,9 @@ import (
 
 type packetLogMode int
 
+const OSNMAMerkleTreeRoot = 
+"\x83\x2E\x15\xED\xE5\x56\x55\xEA\xC6\xE3\x99\xA5\x39\x47\x7B\x7C\x03\x4C\xCE\x24\xC3\xC9\x3F\xFC\x90\x4A\xCD\x9B\xF8\x42\xF0\x4E"
+
 const (
 	packetsOnlyLogMode packetLogMode = iota
 	testLogMode
@@ -26,6 +29,7 @@ type flagVars struct {
 	packetLogPath  string
 	packetLogMode  packetLogMode
 	timeGNSS       gpsprot.GNSS
+	navMsgAuth     gpsprot.Option[gpsprot.NavMsgAuth]
 	enabledSignals gpsprot.SignalSet
 	pps            bool
 	mobile         bool
@@ -62,6 +66,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	surveyTime := uint32(defaultSurveyTime)
 	surveyAcc := defaultSurveyAcc
 	sysTimeTrusted := false
+	osnma := false
 
 	var rawOut rawOutOpt
 	var pvtOut pvtOutOpt
@@ -105,6 +110,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.MarkHidden("survey-acc")
 	flags.BoolVar(&sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
 	flags.MarkHidden("sys-time-trusted")
+	flags.BoolVar(&osnma, "osnma", false, "enable OSNMA authentication for Galileo")
+	flags.MarkHidden("osnma")
 	usage := cmd.UsageFunc(cmdName, summary, flags)
 	err := flags.Parse(args)
 	if err != nil {
@@ -242,6 +249,15 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 		vars.configOpts.TimeAssist = *est
 		vars.configOpts.TimeAssist.Trusted = true
+	}
+	if flags.Lookup("osnma").Changed {
+		configChanged = true
+		nma := gpsprot.NavMsgAuthNone
+		if osnma {
+			nma |= gpsprot.NavMsgAuthOSNMA
+			copy(vars.configOpts.OSNMA.MerkleTreeRoot[:], OSNMAMerkleTreeRoot)
+		}
+		vars.navMsgAuth.Set(nma)
 	}
 	if save {
 		if !configChanged {

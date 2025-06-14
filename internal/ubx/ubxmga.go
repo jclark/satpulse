@@ -83,3 +83,28 @@ func mgaTime(ta *gpsprot.TimeEstimate, now time.Time) (*bin.MgaIni, error) {
 		Payload: &utc,
 	}, nil
 }
+
+// mgaOSNMAMerkleTree creates an UBX-MGA-GAL-OSNMA_MERKLE message with the given Merkle tree root.
+func mgaOSNMAMerkle(rootNode [32]byte, future bool) *bin.MgaGal {
+	if rootNode == [32]byte{} {	
+		return nil
+	}
+	var bitfield0 bin.MgaGalOSNMAMerkleBitfield0
+	if future {
+		bitfield0 |= bin.MgaGalOSNMAMerkleApplicabilityTimeFuture
+	} else {
+		bitfield0 |= bin.MgaGalOSNMAMerkleApplicabilityTimeCurrent
+	}
+	merkle := bin.MgaGalOSNMAMerkle{
+		TreeNode: rootNode,
+		Bitfield0: bitfield0,
+	}
+	return &bin.MgaGal{
+		MgaGalFixed: bin.MgaGalFixed{
+			Type:    bin.MgaGalTypeOSNMAMerkle,
+			Version: bin.MgaGalVersion,
+		},
+		Payload: &merkle,
+	}
+}
+	

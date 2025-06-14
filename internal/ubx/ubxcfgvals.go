@@ -303,6 +303,19 @@ func (known *CfgVals) BaudRate(target *gpsprot.ConfigTarget, port ucv.Port) []uc
 	return items
 }
 
+func (known *CfgVals) NavMsgAuth(props *gpsprot.ConfigProps) []ucv.Item {
+	items := []ucv.Item{}
+	nma, ok := props.GetNavMsgAuth()
+	if ok {
+		osnmaEnable := false
+		if nma&gpsprot.NavMsgAuthOSNMA != 0 {
+			osnmaEnable = true
+		}
+		ucv.AddItem(&items, ucv.KGalUseOsnma, osnmaEnable)
+	}
+	return items
+}
+
 func (tb *txnBuilder) timeModeBuild() error {
 	switch tb.ver.ProductCategory() {
 	case "FTS", "TIM", "HPG":

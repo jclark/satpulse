@@ -278,11 +278,11 @@ func TestMgaGalOSNMAPubkey(t *testing.T) {
 	if pubkey.Bitfield0 != bitfield0 {
 		t.Errorf("expected Bitfield0=0x%02x, got 0x%02x", bitfield0, pubkey.Bitfield0)
 	}
-	if pubkey.Bitfield0.PubKeyID() != pubKeyID {
-		t.Errorf("expected PubKeyID=%d, got %d", pubKeyID, pubkey.Bitfield0.PubKeyID())
+	if pubkey.Bitfield0 & 0xF != pubKeyID {
+		t.Errorf("expected PubKeyID=%d, got %d", pubKeyID, pubkey.Bitfield0&0xF)
 	}
-	if pubkey.Bitfield0.PubKeyType() != pubKeyType {
-		t.Errorf("expected PubKeyType=%d, got %d", pubKeyType, pubkey.Bitfield0.PubKeyType())
+	if pubkey.Bitfield0>>4 != pubKeyType {
+		t.Errorf("expected PubKeyType=%d, got %d", pubKeyType, pubkey.Bitfield0>>4)
 	}
 	if pubkey.PubKeyPoint != pubKeyPoint {
 		t.Errorf("expected PubKeyPoint=%x, got %x", pubKeyPoint, pubkey.PubKeyPoint)
@@ -294,7 +294,7 @@ func TestMgaGalOSNMAPubkey(t *testing.T) {
 			Type:    msgType,
 			Version: msgVersion,
 		},
-		payload: &MgaGalOSNMAPubkey{
+		Payload: &MgaGalOSNMAPubkey{
 			Bitfield0:   bitfield0,
 			PubKeyPoint: pubKeyPoint,
 		},
@@ -315,15 +315,13 @@ func TestMgaGalOSNMAMerkle(t *testing.T) {
 	const (
 		msgType           = MgaGalTypeOSNMAMerkle // 0x08
 		msgVersion        = 0x00
-		applicabilityTime = true // bit 0 = 1 (future key)
+		applicabilityTime = MgaGalOSNMAMerkleApplicabilityTimeFuture
 	)
 
 	// Construct bitfield0
 	var bitfield0 MgaGalOSNMAMerkleBitfield0
-	if applicabilityTime {
-		bitfield0 |= MgaGalOSNMAMerkleApplicabilityTime
-	}
-
+	bitfield0 |= applicabilityTime
+	
 	// Test Merkle tree node (32 bytes of test data)
 	var treeNode [32]byte
 	for i := range treeNode {
@@ -379,8 +377,8 @@ func TestMgaGalOSNMAMerkle(t *testing.T) {
 	if merkle.Bitfield0 != bitfield0 {
 		t.Errorf("expected Bitfield0=0x%02x, got 0x%02x", bitfield0, merkle.Bitfield0)
 	}
-	if merkle.Bitfield0.ApplicabilityTime() != applicabilityTime {
-		t.Errorf("expected ApplicabilityTime=%t, got %t", applicabilityTime, merkle.Bitfield0.ApplicabilityTime())
+	if merkle.Bitfield0 & MgaGalOSNMAMerkleApplicabilityTimeMask != applicabilityTime {
+		t.Errorf("expected ApplicabilityTime=%x, got %x", applicabilityTime, merkle.Bitfield0&MgaGalOSNMAMerkleApplicabilityTimeMask)
 	}
 	if merkle.TreeNode != treeNode {
 		t.Errorf("expected TreeNode=%x, got %x", treeNode, merkle.TreeNode)
@@ -392,7 +390,7 @@ func TestMgaGalOSNMAMerkle(t *testing.T) {
 			Type:    msgType,
 			Version: msgVersion,
 		},
-		payload: &MgaGalOSNMAMerkle{
+		Payload: &MgaGalOSNMAMerkle{
 			Bitfield0: bitfield0,
 			TreeNode:  treeNode,
 		},

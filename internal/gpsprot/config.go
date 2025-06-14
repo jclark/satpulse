@@ -124,6 +124,7 @@ type ConfigProps struct {
 	fixedPosECEF      Point3D
 	fixedPosAcc       Length
 	stationary        bool
+	navMsgAuth        NavMsgAuth
 }
 
 const (
@@ -140,6 +141,7 @@ const (
 	PropIDFixedPosECEF
 	PropIDFixedPosAcc
 	PropIDStationary
+	PropIDNavMsgAuth
 )
 
 // propNames lists the property names in the same order as the bit constants
@@ -156,6 +158,7 @@ var propNames = []string{
 	"FixedPosECEF",
 	"FixedPosAcc",
 	"Stationary",
+	"NavMsgAuth",
 }
 
 // IsEmpty returns true if no properties are set
@@ -301,6 +304,11 @@ type ConfigOptions struct {
 	Survey     Survey
 	BaudRate   uint32       // serial port baud rate, 0 means do not change
 	TimeAssist TimeEstimate // provide time assistance to the receiver
+	OSNMA      OSNMAOptions // options for OSNMA authentication
+}
+
+type OSNMAOptions struct {
+	MerkleTreeRoot [32]byte // all zeros means not set
 }
 
 func NewConfigTarget() *ConfigTarget {
@@ -533,6 +541,20 @@ func (cp *ConfigProps) SetStationary(val bool) {
 	cp.valid |= PropIDStationary
 }
 
+// GetNavMsgAuth returns the navMsgAuth value and whether it's set
+func (cp *ConfigProps) GetNavMsgAuth() (NavMsgAuth, bool) {
+	if cp.valid&PropIDNavMsgAuth != 0 {
+		return cp.navMsgAuth, true
+	}
+	return NavMsgAuthNone, false
+}
+
+// SetNavMsgAuth sets the navMsgAuth value
+func (cp *ConfigProps) SetNavMsgAuth(val NavMsgAuth) {
+	cp.navMsgAuth = val
+	cp.valid |= PropIDNavMsgAuth
+}
+
 // SetsAny returns true if any of the specified properties are set in the ConfigProps
 func (cp *ConfigProps) SetsAny(props ...PropIDs) bool {
 	for _, p := range props {
@@ -604,6 +626,9 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	}
 	if both&PropIDStationary != 0 && cp.stationary != other.stationary {
 		result.SetStationary(other.stationary)
+	}
+	if both&PropIDNavMsgAuth != 0 && cp.navMsgAuth != other.navMsgAuth {
+		result.SetNavMsgAuth(other.navMsgAuth)
 	}
 	return result
 }
@@ -678,6 +703,14 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	}
 	if cp.valid&PropIDStationary != 0 {
 		m["stationary"] = cp.stationary
+	}
+	if cp.valid&PropIDNavMsgAuth != 0 {
+		switch cp.navMsgAuth {
+		case NavMsgAuthNone:
+			m["navMsgAuth"] = "none"
+		case NavMsgAuthOSNMA:
+			m["navMsgAuth"] = "OSNMA"
+		}
 	}
 	return m
 }
@@ -789,6 +822,13 @@ func TimeModeFlags(ms ...TimeMode) TimeModeSet {
 	}
 	return flags
 }
+
+type NavMsgAuth byte
+
+const (
+	NavMsgAuthNone NavMsgAuth = iota // no authentication
+	NavMsgAuthOSNMA
+)
 
 // TimeEstimate represents an estimate of the current UTC time that can be provided to the GPS receiver.
 // An EstimatedTime of zero means that no estimate is available.

@@ -77,9 +77,12 @@ var newConfigSteps = []func(*Configurator) error{
 	(*Configurator).valGetSignals,
 	// XXX we have to do this early at the moment, because we may need to deduce what GNSS is primary
 	(*Configurator).valSetSignals,
+	(*Configurator).valGetNMA,
+	(*Configurator).valSetNMA,
 	(*Configurator).valGet,
 	(*Configurator).valSet,
 	(*Configurator).timeAssist,
+	(*Configurator).osnmaAssist,
 	(*Configurator).valBaudRate,
 	(*Configurator).reloadCfg,
 	(*Configurator).setCfg,
@@ -340,6 +343,28 @@ func (c *Configurator) valSetSignals() error {
 		return err
 	}
 	// XXX we need to pause 0.5s after sending this
+	return c.addMsgSetRequest(val)
+}
+
+func (c *Configurator) valGetNMA() error {
+	if !c.target.UsesAny(gpsprot.PropIDNavMsgAuth) {
+		return nil
+	}
+	keys := []ucv.Key{
+		ucv.KGalUseOsnma.Key().GroupWildcard(),
+	}
+	return c.addMsgPollRequest(newCfgValgetRequest(keys, c.valGetLayer()))
+}
+
+func (c *Configurator) valSetNMA() error {
+	items := c.raw.valsPtr().NavMsgAuth(&c.target.Props)
+	if len(items) == 0 {
+		return nil
+	}
+	val, err := newCfgValsetRequest(items, c.valSetLayer())
+	if err != nil {
+		return nil
+	}
 	return c.addMsgSetRequest(val)
 }
 
@@ -632,6 +657,14 @@ func (c *Configurator) timeAssist() error {
 	if err != nil {
 		return err
 	}
+	if mga == nil {
+		return nil
+	}
+	return c.addRequest(msgRequest{mga})
+}
+
+func (c *Configurator) osnmaAssist() error {
+	mga := mgaOSNMAMerkle(c.target.Opts.OSNMA.MerkleTreeRoot, false)
 	if mga == nil {
 		return nil
 	}

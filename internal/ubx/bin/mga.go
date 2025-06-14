@@ -191,7 +191,7 @@ func (m *MgaIniUnknown) mgaIniPayload() {}
 
 type MgaGal struct {
 	MgaGalFixed
-	payload MgaGalPayload
+	Payload MgaGalPayload
 }
 
 var _ VaryingMsg = (*MgaGal)(nil)
@@ -213,6 +213,8 @@ const (
 	MgaGalTypeOSNMAMerkle MgaGalType = 0x08
 )
 
+const MgaGalVersion = 0
+
 type MgaGalPayload interface {
 	mgaGalPayload()
 }
@@ -224,7 +226,7 @@ func (m *MgaGal) FixedPart() any {
 }
 
 func (m *MgaGal) VaryingPart() any {
-	return m.payload
+	return m.Payload
 }
 
 func (m *MgaGal) IsHandled() bool {
@@ -243,10 +245,10 @@ func (m *MgaGal) InitVaryingPart(payloadLen int) error {
 
 	switch m.Type {
 	case MgaGalTypeOSNMAPubkey:
-		m.payload = &MgaGalOSNMAPubkey{}
+		m.Payload = &MgaGalOSNMAPubkey{}
 		expectedPayloadLen = 72
 	case MgaGalTypeOSNMAMerkle:
-		m.payload = &MgaGalOSNMAMerkle{}
+		m.Payload = &MgaGalOSNMAMerkle{}
 		expectedPayloadLen = 36
 	}
 
@@ -261,7 +263,7 @@ func (m *MgaGal) InitVaryingPart(payloadLen int) error {
 		return fmt.Errorf("bad UBX-MGA-GAL payload length (%d bytes); expected at least 2", payloadLen)
 	}
 	unknown := make(MgaGalUnknown, payloadLen-2)
-	m.payload = &unknown
+	m.Payload = &unknown
 	return nil
 }
 
@@ -281,14 +283,6 @@ const (
 	MgaGalOSNMAPubkeyTypeMask MgaGalOSNMAPubkeyBitfield0 = 0xF0
 )
 
-func (b MgaGalOSNMAPubkeyBitfield0) PubKeyID() byte {
-	return byte(b & MgaGalOSNMAPubkeyIDMask)
-}
-
-func (b MgaGalOSNMAPubkeyBitfield0) PubKeyType() byte {
-	return byte((b & MgaGalOSNMAPubkeyTypeMask) >> 4)
-}
-
 type MgaGalOSNMAMerkle struct {
 	Bitfield0 MgaGalOSNMAMerkleBitfield0
 	_         byte
@@ -300,12 +294,10 @@ func (m *MgaGalOSNMAMerkle) mgaGalPayload() {}
 type MgaGalOSNMAMerkleBitfield0 byte
 
 const (
-	MgaGalOSNMAMerkleApplicabilityTime MgaGalOSNMAMerkleBitfield0 = 0x01
+	MgaGalOSNMAMerkleApplicabilityTimeCurrent MgaGalOSNMAMerkleBitfield0 = iota
+	MgaGalOSNMAMerkleApplicabilityTimeFuture
+	MgaGalOSNMAMerkleApplicabilityTimeMask MgaGalOSNMAMerkleBitfield0 = 0x01
 )
-
-func (b MgaGalOSNMAMerkleBitfield0) ApplicabilityTime() bool {
-	return (b & MgaGalOSNMAMerkleApplicabilityTime) != 0
-}
 
 type MgaGalUnknown []byte
 
