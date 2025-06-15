@@ -388,7 +388,6 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 	msgID, err := pp.ProcessPacket(data, pkt.TRead)
 	if err != nil {
 		mh.lg.Error("GPS packet cannot be parsed", "protocol", tag, "err", err)
-		mh.bad.corruptMsgs++
 		return
 	}
 	// only count parseable messages with good checksum
