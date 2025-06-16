@@ -1,15 +1,16 @@
 package gpsio
 
 import (
+	"io"
 	"net"
 	"sync"
 	"time"
 )
 
 type NetConn struct {
-	conn net.Conn
-	mu sync.Mutex
-	closed bool
+	conn     net.Conn
+	mu       sync.Mutex
+	closed   bool
 	closeErr error
 }
 
@@ -30,7 +31,16 @@ func (c *NetConn) LocalAddr() string {
 func (c *NetConn) Read(p []byte) (int, error) {
 	deadline := time.Now().Add(readTimeout)
 	c.conn.SetReadDeadline(deadline)
-	return c.conn.Read(p)
+	n, err := c.conn.Read(p)
+	if err != nil {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		// scanner assumes we get io.EOF on end of stream
+		if c.closed {
+			err = io.EOF
+		}
+	}
+	return n, err
 }
 
 func (c *NetConn) Write(p []byte) (int, error) {
