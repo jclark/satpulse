@@ -1,3 +1,3 @@
 # ZED-F9P receiver configuration
-tty=ACM0
+dev=ttyACM0
 speed=9600

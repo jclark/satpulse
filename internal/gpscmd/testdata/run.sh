@@ -30,7 +30,15 @@ elif [ "$arch" = "aarch64" ]; then
     arch="arm64"
 fi
 
-PATH="../../../out/$arch:$PATH"
+# Detect OS and determine output directory
+os=$(uname -s | tr '[:upper:]' '[:lower:]')
+if [ "$os" = "linux" ]; then
+    outdir="$arch"
+else
+    outdir="${os}_${arch}"
+fi
+
+PATH="../../../out/$outdir:$PATH"
 export PATH
 
 # Output file name
@@ -62,8 +70,8 @@ backup_file "$anno_output_file"
 
 # Define the t function that runs satpulsetool
 t() {
-    echo Running: satpulsetool gps -d /dev/tty$tty -s $speed --test-log $output_file "$@"
-    satpulsetool gps -d "/dev/tty$tty" -s "$speed" --test-log "$output_file" "$@"
+    echo Running: satpulsetool gps -d /dev/$dev -s $speed --test-log $output_file "$@"
+    satpulsetool gps -d "/dev/$dev" -s "$speed" --test-log "$output_file" "$@"
 }
 
 # Display version first
@@ -71,11 +79,11 @@ satpulsetool --version
 
 # Discard temp state
 echo Running: satpulsetool gps --reload
-satpulsetool gps --reload -d /dev/tty$tty -s $speed
+satpulsetool gps --reload -d /dev/$dev -s $speed
 sleep 1
 
 echo Setting binary mode
-satpulsetool gps --binary -d /dev/tty$tty -s $speed
+satpulsetool gps --binary -d /dev/$dev -s $speed
 
 set +e
 # Source and run the commands file
