@@ -342,8 +342,7 @@ func (c *Configurator) valSetSignals() error {
 	if err != nil {
 		return err
 	}
-	// XXX we need to pause 0.5s after sending this
-	return c.addMsgSetRequest(val)
+	return c.addMsgSetPauseRequest(val, pauseAfterGNSSReset)
 }
 
 func (c *Configurator) valGetNMA() error {
@@ -649,7 +648,7 @@ func (c *Configurator) setGNSS() error {
 	if gnss == nil || err != nil {
 		return err
 	}
-	return c.addMsgSetRequest(gnss)
+	return c.addMsgSetPauseRequest(gnss, pauseAfterGNSSReset)
 }
 
 func (c *Configurator) timeAssist() error {
@@ -779,6 +778,8 @@ func (r msgRequest) Packet() []byte {
 
 func (r msgRequest) ChangeSpeed() int { return 0 }
 
+func (r msgRequest) Pause() time.Duration { return 0 }
+
 func (r msgRequest) ID() string { return r.msg.ID().String() }
 
 func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
@@ -793,6 +794,10 @@ func (c *Configurator) addMsgSetRequest(msg bin.Msg) error {
 
 func (c *Configurator) addMsgSetSpeedRequest(msg bin.Msg, speed int) error {
 	return c.addRequest(msgSetSpeedRequest{msgSetRequest{msgRequest{msg}, &c.raw}, speed})
+}
+
+func (c *Configurator) addMsgSetPauseRequest(msg bin.Msg, pause time.Duration) error {
+	return c.addRequest(msgSetPauseRequest{msgSetRequest{msgRequest{msg}, &c.raw}, pause})
 }
 
 func (c *Configurator) addMsgPollRequest(msg bin.Msg) error {
@@ -846,6 +851,19 @@ func (r msgSetSpeedRequest) ChangeSpeed() int {
 
 var _ gpsprot.ConfigRequest = (*msgSetSpeedRequest)(nil)
 
+const pauseAfterGNSSReset = time.Second / 2
+
+type msgSetPauseRequest struct {
+	msgSetRequest
+	pause time.Duration
+}
+
+func (r msgSetPauseRequest) Pause() time.Duration {
+	return r.pause
+}
+
+var _ gpsprot.ConfigRequest = (*msgSetPauseRequest)(nil)
+
 type pollRequest struct {
 	tRead map[bin.MsgID]time.Time
 	msgID bin.MsgID
@@ -856,6 +874,8 @@ func (r pollRequest) Packet() []byte {
 }
 
 func (r pollRequest) ChangeSpeed() int { return 0 }
+
+func (r pollRequest) Pause() time.Duration { return 0 }
 
 func (r pollRequest) ID() string { return r.msgID.String() }
 
@@ -893,6 +913,8 @@ func (r msgRateRequest) Packet() []byte {
 }
 
 func (r msgRateRequest) ChangeSpeed() int { return 0 }
+
+func (r msgRateRequest) Pause() time.Duration { return 0 }
 
 func (r msgRateRequest) Done() {
 	r.raw.SetMsgRate(r.msgID, r.rate)

@@ -8,4 +8,5 @@
 		"f9p-raw-out",
 		"f9p-rtcm-out",
 		"f9p-pvt-out",
+		"f9t-signal",
 	}

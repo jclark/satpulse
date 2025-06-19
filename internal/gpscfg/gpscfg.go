@@ -315,6 +315,8 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 	reqID := req.ID()
 	mh.lg.Debug("sent configuration message", "msgID", reqID, "len", len(pkt))
 	timerCh := time.After(w)
+	var pauseCh <-chan time.Time
+	loop:
 	for timerCh != nil {
 		select {
 		case packet, ok := <-mh.packetCh:
@@ -335,13 +337,18 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 					req.Done()
 					mh.lg.Debug("configuration message accepted", "msgID", reqID, "delay", ack.TRead.Sub(tSend).String())
 					awaitingAck = false
+					pause := req.Pause()
+					if pause > 0 {
+						mh.lg.Debug("scheduling pause after configuration message", "msgID", reqID, "pause", pause)
+						pauseCh = time.After(pause)
+					}
 					if awaitingResp {
 						mh.lg.Info("configuration message acknowledged before poll response", "msgID", reqID)
 					}
 				}
 			}
 			if !awaitingAck && !awaitingResp {
-				return nil
+				break loop
 			}
 		case <-timerCh:
 			timerCh = nil
@@ -352,6 +359,10 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 	}
 	if awaitingResp {
 		return fmt.Errorf("%w: %s", errNoResponse, reqID)
+	}
+	if pauseCh != nil {
+		<-pauseCh
+		mh.lg.Debug("pause over", "msgID", reqID)
 	}
 	return nil
 }
