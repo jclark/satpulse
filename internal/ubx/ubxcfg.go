@@ -65,6 +65,7 @@ var legacyConfigSteps = []func(*Configurator) error{
 	(*Configurator).setNav5,
 	(*Configurator).setMsg2,
 	(*Configurator).setRate, // setRate must come after all the messages have been enabled, so it can tell if rate needs setting
+	(*Configurator).setBaudRate,
 	(*Configurator).saveMinimal,
 	(*Configurator).reloadCfg,
 	(*Configurator).setCfg,
@@ -561,13 +562,21 @@ func (c *Configurator) setMsg2() error {
 }
 
 func (c *Configurator) setMsgChanges(mc *msgChanges) {
-	prt := c.raw.changePrt(&c.target.Opts, mc)
+	prt := c.raw.changePrtProto(mc)
 	if prt != nil {
 		c.addMsgSetRequest(prt)
 	}
 	for msgID, rate := range mc.rates() {
 		c.addMsgRateRequest(msgID, rate)
 	}
+}
+
+func (c *Configurator) setBaudRate() error {
+	prt := c.raw.changePrtBaudRate(&c.target.Opts)
+	if prt == nil {
+		return nil
+	}
+	return c.addMsgSetSpeedRequest(prt, int(c.target.Opts.BaudRate))
 }
 
 func (c *Configurator) setNav5() error {

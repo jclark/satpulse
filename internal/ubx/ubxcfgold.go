@@ -99,22 +99,26 @@ func (raw *CfgOld) prtNMEAOutDisabled(origPrt *bin.CfgPrt) bool {
 	return origPrt.OutProtoMask&bin.CfgPrtProtoNMEA != 0 && raw.prt.OutProtoMask&bin.CfgPrtProtoNMEA == 0
 }
 
-
-func (raw *CfgOld) changePrt(opts *gpsprot.ConfigOptions, mc *msgChanges) *bin.CfgPrt {
+func (raw *CfgOld) changePrtProto(mc *msgChanges) *bin.CfgPrt {
 	if raw.prt == nil {
 		return nil
 	}
-
-	prt := *raw.prt
-	prt.OutProtoMask = mc.changeOutProtoMask(prt.OutProtoMask)
-	if opts.BaudRate != 0 {
-		if prt.PortID == bin.PortUART1 || prt.PortID == bin.PortUART2 {
-			prt.BaudRate = opts.BaudRate
-		}
-	}
-	if prt == *raw.prt {
+	outProtoMask := mc.changeOutProtoMask(raw.prt.OutProtoMask)
+	if outProtoMask == raw.prt.OutProtoMask {
 		return nil
 	}
+	prt := *raw.prt
+	prt.OutProtoMask = outProtoMask
+	return &prt
+}
+
+func (raw *CfgOld) changePrtBaudRate(opts *gpsprot.ConfigOptions) *bin.CfgPrt {
+	if opts.BaudRate == 0 || raw.prt == nil || opts.BaudRate == raw.prt.BaudRate ||
+		(raw.prt.PortID != bin.PortUART1 && raw.prt.PortID != bin.PortUART2) {
+		return nil
+	}
+	prt := *raw.prt
+	prt.BaudRate = opts.BaudRate
 	return &prt
 }
 
