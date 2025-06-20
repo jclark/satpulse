@@ -25,14 +25,15 @@ type Result struct {
 
 type msgHandler struct {
 	gpsprot.DefaultHandler
-	lg          *slog.Logger
-	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
-	packetExch  gpsprot.PacketExchanger
-	packetCh    <-chan scan.Packet
-	msgCount    map[gpsprot.Tag]int
-	bad         badCount
-	msgIDs      map[gpsprot.Tag]map[string]bool
-	leapSecond  *gpsprot.LeapSecondMsg
+	lg               *slog.Logger
+	packetProcs      map[gpsprot.Tag]gpsprot.PacketProcessor
+	packetExch       gpsprot.PacketExchanger
+	packetCh         <-chan scan.Packet
+	msgCount         map[gpsprot.Tag]int
+	bad              badCount
+	msgIDs           map[gpsprot.Tag]map[string]bool
+	leapSecond       *gpsprot.LeapSecondMsg
+	okChecksumCount  int
 }
 
 type badCount struct {
@@ -306,12 +307,23 @@ func isKnownError(err error) bool {
 }
 
 func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configurator, req gpsprot.ConfigRequest, port gpsio.OutPort, pkt []byte, tSend time.Time) error {
+	// tChecksumOK is the last time when we received a packet with valid checksum.
+	// It is used for recovering from not receiving an ACK after a speed change.
+	var tChecksumOK time.Time
 	w := max(port.TransmitTime(len(pkt)), minWaitAfterSend)
 	awaitingAck := req.Ackable()
 	awaitingResp := req.AwaitingResponse(tSend)
 	if awaitingAck || awaitingResp {
-		w = time.Millisecond * 1500
+		w = time.Millisecond * 1500 // related to speedChangeDelay below
 	}
+	// speedChangeDelay is how long after tSend of a speed change packet till we assume a received packet
+	// must have been sent by the receiver after the speed change.
+	// Above, we wait for 1500ms for an ACK. If we don't get an ACK after a speed change,
+	// then we look for valid checksum in packets received up to that time.
+	// If speedChangeDelay is 400ms, then we have a window of 1100ms to receive a packet.
+	// Since we assume the receiver will send at least one packet per second, this window
+	// should be sufficient to receive a packet with valid checksum.
+	const speedChangeDelay = 400 * time.Millisecond
 	reqID := req.ID()
 	mh.lg.Debug("sent configuration message", "msgID", reqID, "len", len(pkt))
 	timerCh := time.After(w)
@@ -323,7 +335,11 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 			if !ok {
 				return mh.packetChClosed(ctx)
 			}
+			okChecksumCount := mh.okChecksumCount
 			mh.packet(packet)
+			if mh.okChecksumCount > okChecksumCount {
+				tChecksumOK = packet.TRead
+			}
 			if awaitingResp {
 				awaitingResp = req.AwaitingResponse(tSend)
 			}
@@ -355,7 +371,12 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 		}
 	}
 	if awaitingAck {
-		return fmt.Errorf("%w: %s", errNoAck, reqID)
+		if req.ChangeSpeed() == 0 {
+			return fmt.Errorf("%w: %s", errNoAck, reqID)
+		} else if tChecksumOK.Sub(tSend) < speedChangeDelay { // also handles tChecksumOK.IsZero()
+			return fmt.Errorf("%w and valid packets not being received after speed change", errNoAck)
+		}
+		mh.lg.Debug("no ACK but packet with valid checksum received after speed change", "msgID", reqID)
 	}
 	if awaitingResp {
 		return fmt.Errorf("%w: %s", errNoResponse, reqID)
@@ -396,6 +417,7 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 		mh.bad.corruptMsgs++
 		return
 	}
+	mh.okChecksumCount++
 	msgID, err := pp.ProcessPacket(data, pkt.TRead)
 	if err != nil {
 		mh.lg.Error("GPS packet cannot be parsed", "protocol", tag, "err", err)
@@ -406,7 +428,7 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 	mh.msgIDs[tag][msgID] = true
 }
 
-func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
 	mh.lg.Debug("received an unused message during configuration stage", "protocol", tag, "msgID", msgID, "msg", msg)
 	if tag == nmea.Tag {
 		nmeaLog(mh.lg, msg.(*nmea.Sentence))
