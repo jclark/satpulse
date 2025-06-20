@@ -141,7 +141,7 @@ func (c *Configurator) FindAck(packet []byte, tSent time.Time) *gpsprot.Ack {
 }
 
 func (c *Configurator) Abort() {
-	c.stepIndex = -1
+	c.stop()
 }
 
 func (c *Configurator) stop() {

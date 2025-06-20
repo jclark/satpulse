@@ -117,6 +117,7 @@ type gpsReceiver struct {
 	version      *Version
 	raw          *RawConfig
 	nakPollMsgID ubxbin.MsgID
+	abortMsgID   ubxbin.MsgID  // simulate abort (timeout/corruption) when sending this message
 	nSent        int
 }
 
@@ -143,6 +144,16 @@ func runConfiguration(rcvr *gpsReceiver, target *gpsprot.ConfigTarget) (*Configu
 		}
 		sendTm := tm
 		pkt := req.Packet()
+		msgID := ubxbin.PacketMsgId(pkt)
+		
+		// Simulate abort scenario (timeout/corruption)
+		if msgID == rcvr.abortMsgID {
+			// This simulates what happens in gpscfg when there's a non-NACK error
+			c.Abort()
+			// Continue to allow the configurator to generate recovery requests
+			continue
+		}
+		
 		resps := rcvr.sendReceive(pkt)
 		for _, resp := range resps {
 			tm = tm.Add(time.Second / 10)
@@ -251,3 +262,4 @@ func newDefaultRawConfig() *RawConfig {
 	cfgValsInit(raw.valsPtr())
 	return &raw
 }
+

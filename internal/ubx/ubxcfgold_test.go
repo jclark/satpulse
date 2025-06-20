@@ -152,6 +152,40 @@ func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator 
 	return c
 }
 
+func testConfiguratorAbort(t *testing.T, abortMsgID ubxbin.MsgID) *Configurator {
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetPPS()
+	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
+	target.Opts.PVTMsg.Set(gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI)
+	// we can't use legacyReceiver here because it doesn't support the UBX-CFG-GNSS
+	rcvr := newGpsReceiver(&m8tVersion)
+	rcvr.abortMsgID = abortMsgID
+	c, naks, err := runConfiguration(rcvr, target)
+	if err != nil {
+		t.Errorf("unexpected error from runConfiguration: %v", err)
+	}
+	// No NAKs expected since abort simulates timeout/corruption, not negative acknowledgment
+	if len(naks) != 0 {
+		t.Errorf("expected 0 naks, got %d", len(naks))
+	}
+	return c
+}
+
+func TestConfiguratorAbort1(t *testing.T) {
+	c := testConfiguratorAbort(t, ubxbin.CfgMsgID)
+	if c.raw.prt.OutProtoMask&ubxbin.CfgPrtProtoNMEA == 0 {
+		t.Errorf("expected NMEA to be enabled after abort during message config, but it wasn't")
+	}
+}
+
+func TestConfiguratorAbort2(t *testing.T) {
+	c := testConfiguratorAbort(t, ubxbin.CfgRateID)
+	// in this case we got far enough to enable the time message, so we don't need to re-enable NMEA
+	if c.raw.prt.OutProtoMask&ubxbin.CfgPrtProtoNMEA != 0 {
+		t.Errorf("expected NMEA not to be enabled after abort during rate config, but it was")
+	}
+}
+
 func TestDivModRound(t *testing.T) {
 	testCases := []struct {
 		x, y, q int64
