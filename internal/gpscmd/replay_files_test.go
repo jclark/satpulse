@@ -9,4 +9,5 @@
 		"f9p-rtcm-out",
 		"f9p-pvt-out",
 		"f9t-signal",
+		"m8-speed",
 	}

@@ -241,9 +241,23 @@ func (r *replayer) waitAfterSend(req gpsprot.ConfigRequest, tSent time.Time, act
 	var err error
 	awaitingAck := req.Ackable()
 	awaitingResp := true
+	// tChecksumOK tracks the last time we received a packet with valid checksum
+	var tChecksumOK time.Time
+	
 	for range maxTries {
+		// Track packets with valid checksums before feeding them
+		initialInIdx := r.inIdx
+		
 		// Feed all input packets before next output packet
 		r.feedUpTo(r.outIdx)
+
+		// Check for valid checksum packets that were just fed
+		for i := initialInIdx; i < r.inIdx; i++ {
+			p := r.test.inPackets[i]
+			if p.Tag != "" { // packet has valid checksum if it has a tag
+				tChecksumOK = time.Time(p.T)
+			}
+		}
 
 		if awaitingAck {
 			ack := r.cfgtor.FindAck(actual, tSent)
@@ -278,6 +292,13 @@ func (r *replayer) waitAfterSend(req gpsprot.ConfigRequest, tSent time.Time, act
 		// do not retry
 		break
 	}
+	
+	// Handle speed change case: if no ACK but valid packets received after speed change sent
+	if awaitingAck && req.ChangeSpeed() != 0 && tChecksumOK.After(tSent) {
+		req.Done()
+		return
+	}
+	
 	if r.configErr == nil {
 		r.configErr = err
 	}
