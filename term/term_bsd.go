@@ -61,10 +61,6 @@ func (t *Term) GetErrorCounts() ErrorCounts {
 	return t.iCount.errorCounts()
 }
 
-func (t *Term) DevKind() DevKind {
-	return DevUnknown
-}
-
 func (t *Term) Flush() error {
 	return t.wrapErr(unix.IoctlSetPointerInt(t.fd, unix.TIOCFLUSH, 0), "ioctl(TIOCFLUSH)")
 }
