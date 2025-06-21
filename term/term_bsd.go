@@ -47,8 +47,8 @@ func Speed(speed int) AttrSetter {
 		}
 	}
 	return func(a *Attr) error {
-		a.ts.Ospeed = uint64(b)
-		a.ts.Ispeed = uint64(b)
+		a.ts.Ospeed = unixspeed(b)
+		a.ts.Ispeed = unixspeed(b)
 		return nil
 	}
 }

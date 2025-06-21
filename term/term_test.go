@@ -34,7 +34,7 @@ func TestBToSpeedBad(t *testing.T) {
 }
 
 func TestSpeedToBBad(t *testing.T) {
-	tests := []int{-1, 0, 1 << 31}
+	tests := []int{-1, 0, 1 << 30}
 	for _, speed := range tests {
 		_, ok := speedToB(speed)
 		if ok {
