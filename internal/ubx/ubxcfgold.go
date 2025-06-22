@@ -722,20 +722,22 @@ func (raw *CfgOld) changeGNSS(cp *gpsprot.ConfigProps, ver *Version, monGNSS *mo
 	if nMajor == 0 {
 		return nil, fmt.Errorf("GPS receiver does not support specified GNSS signals")
 	}
-	if monGNSS != nil && nMajor >= monGNSS.maxSimultaneousMajorGNSS {
-		if nMajor == 4 || monGNSS.maxSimultaneousMajorGNSS == 3 {
-			// handle this case by disabling GLONASS
-			for i := range blocks {
-				blk := &blocks[i]
-				if blk.GNSSID == bin.GLO {
+	if monGNSS != nil && nMajor > monGNSS.maxSimultaneousMajorGNSS {
+		// try to disable GLONASS
+		for i := range blocks {
+			blk := &blocks[i]
+			if blk.GNSSID == bin.GLO {
+				if blk.Enable&0x1 == 0 {
 					blk.Enable = 0
 					blk.SigCfgMask = 0
-					break
+					nMajor--
 				}
+				break
 			}
-		} else {
-			// no obvious way to handle this; but I don't think it should ever happen
-			return nil, fmt.Errorf("%d major GNSSs enabled; exceeds maximum %d", nMajor, monGNSS.maxSimultaneousMajorGNSS)
+		}
+		// that wasn't enough: not clear which other GNSS to disable
+		if nMajor > monGNSS.maxSimultaneousMajorGNSS {
+			return nil, fmt.Errorf("receiver supports maximum of %d major GNSS; could not determine which to enable", monGNSS.maxSimultaneousMajorGNSS)
 		}
 	}
 	if !ver.protVerGreater(23, 0) {
