@@ -727,7 +727,7 @@ func (raw *CfgOld) changeGNSS(cp *gpsprot.ConfigProps, ver *Version, monGNSS *mo
 		for i := range blocks {
 			blk := &blocks[i]
 			if blk.GNSSID == bin.GLO {
-				if blk.Enable&0x1 == 0 {
+				if blk.Enable&0x1 != 0 {
 					blk.Enable = 0
 					blk.SigCfgMask = 0
 					nMajor--

@@ -15,4 +15,5 @@ t --gnss BDS --band L1,L2
 t --gnss GPS,GAL --band L1
 t --gnss BDS --band L1
 t --gnss GLO
+t --gnss GPS,BDS,GLO
 t --gnss GLO,GPS,BDS,GAL,QZSS
