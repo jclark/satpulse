@@ -232,7 +232,7 @@ var invalidTestCases = [][]string{
 	{},
 	{"--serial-device", "ttyS0", "--speed", "9600", "--gnss", "GPS", "--band", "L3"},
 	{"--reset"},
-	{"--survey", "--disable-time-mode"},
+	{"--serial-device", "ttyS0", "--speed", "9600", "--survey", "--mobile"},
 	{"--serial-device", "ttyS0", "--gnss", "SBAS"},                             // only augmentation signals
 	{"--serial-device", "ttyS0", "--gnss", "GLO", "--band", "L5"},              // no signals in GNSS+band
 	{"--serial-device", "ttyS0", "--gnss", "SBAS,QZSS"},                        // non-major GNSS
