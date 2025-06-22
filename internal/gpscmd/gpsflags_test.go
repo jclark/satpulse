@@ -67,6 +67,9 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--gnss", "GPS,GAL", "--band", "L1,L2"}, flagVars{
 		enabledSignals: (gpsprot.BandL1 | gpsprot.BandL2).SignalSet(gpsprot.GPS, gpsprot.GAL),
 	}},
+	{"ttyS0", []string{"--gnss", "GPS,GAL", "--band", "L1,L2,E5b"}, flagVars{
+		enabledSignals: (gpsprot.BandL1 | gpsprot.BandL2 | gpsprot.BandE5b).SignalSet(gpsprot.GPS, gpsprot.GAL),
+	}},
 	{"ttyS0", []string{"--gnss", "GPS", "-b", "L1,L2,L5"}, flagVars{
 		enabledSignals: (gpsprot.BandL1 | gpsprot.BandL2 | gpsprot.BandL5).SignalSet(gpsprot.GPS),
 	}},

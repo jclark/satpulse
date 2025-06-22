@@ -14,8 +14,7 @@ import (
 
 type packetLogMode int
 
-const OSNMAMerkleTreeRoot = 
-"\x83\x2E\x15\xED\xE5\x56\x55\xEA\xC6\xE3\x99\xA5\x39\x47\x7B\x7C\x03\x4C\xCE\x24\xC3\xC9\x3F\xFC\x90\x4A\xCD\x9B\xF8\x42\xF0\x4E"
+const OSNMAMerkleTreeRoot = "\x83\x2E\x15\xED\xE5\x56\x55\xEA\xC6\xE3\x99\xA5\x39\x47\x7B\x7C\x03\x4C\xCE\x24\xC3\xC9\x3F\xFC\x90\x4A\xCD\x9B\xF8\x42\xF0\x4E"
 
 const (
 	packetsOnlyLogMode packetLogMode = iota
@@ -359,8 +358,9 @@ var bandTable = []struct {
 }{
 	{"L1", gpsprot.BandL1},
 	{"L2", gpsprot.BandL2},
-	{"E5", gpsprot.BandL5 | gpsprot.BandE5b}, // needs to be before L5 for String() to work
+	{"E5", gpsprot.BandL5 | gpsprot.BandE5b}, // needs to be before L5 and E5b for String() to work
 	{"L5", gpsprot.BandL5},
+	{"E5b", gpsprot.BandE5b},
 	{"E6", gpsprot.BandE6},
 	{"L6", gpsprot.BandE6},
 }

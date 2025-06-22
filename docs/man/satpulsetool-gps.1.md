@@ -77,9 +77,12 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   
   **L5**
   : 1176.45 MHz signals including GPS L5, Galileo E5a, BeiDou B2a
+
+  **E5b**
+  : 1202.025-1207.14 MHz band including Galileo E5b, BeiDou B2I at 1207.14 and and GLONASS L3 at 1202.025
   
   **E5**
-  : 1164-1210 MHz band, includes L5 plus additional signals
+  : 1164-1210 MHz band, includes L5 and E5b
   
   **E6** or **L6**
   : 1260-1300 MHz band
