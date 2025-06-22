@@ -2,6 +2,8 @@
 # Tests various GNSS constellation and band configurations
 # GPS only
 t --gnss GPS
+# GAL only
+t --gnss GAL
 # GPS + Galileo
 t --gnss GPS,GAL
 # GPS + Galileo + GLONASS
