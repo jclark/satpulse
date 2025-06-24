@@ -8,6 +8,8 @@ t --gnss GAL
 t --gnss GPS,GAL
 # GPS + Galileo + GLONASS
 t --gnss GPS,GAL,GLO
+# F10T this works; but without --band it doesn't
+t --gnss GAL,GLO,GPS --band L1
 # BeiDou only
 t --gnss BDS
 # BeiDou with specific bands
