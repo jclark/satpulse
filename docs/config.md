@@ -113,7 +113,7 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
    unless the ethernet controller is one that timestamps both edges (e.g. Intel i210); it is also not relevant if SatPulse
    is performing configuration of the GPS receiver (in which case the pulse width will be set to a known value); if this is not
    specified, then SatPulse will attempt to retrieve the configured time pulse width using the UBX protocol
-* `gnss` - a string giving the GNSS system to which the time pulse should be aligned; the GNSS specified here must be already be enabled on the receiver
+* `timeGNSS` - a string giving the GNSS system to which the time pulse should be aligned; the GNSS specified here must be already be enabled on the receiver
   (SatPulse will not change the enabled GNSS systems since that is a rather disruptive operation); possible values are
    * `"GPS"` for the GNSS system operated by the USA
    * `"GAL"`, `"Galileo"`for the GNSS system operated by the EU

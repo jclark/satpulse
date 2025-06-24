@@ -22,7 +22,7 @@ type GPSConfig struct {
 	AntennaCableDelay  float64      `toml:"antennaCableDelay"`  // in nanoseconds
 	AntennaCableLength float64      `toml:"antennaCableLength"` // in meters
 	AntennaCableVF     float64      `toml:"antennaCableVF"`     // velocity factor
-	GNSS               gpsprot.GNSS `toml:"gnss"`
+	TimeGNSS           gpsprot.GNSS `toml:"timeGNSS"`
 	PulseWidth         float64      `toml:"pulseWidth"`
 	SatellitesOutput   *bool        `toml:"satellitesOutput"`
 	NMEANumbering      string       `toml:"nmeaNumbering"`
@@ -108,13 +108,13 @@ func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {
 }
 
 func (c *GPSConfig) getTimeGNSS(cp *gpsprot.ConfigProps) error {
-	if c.GNSS == 0 {
+	if c.TimeGNSS == 0 {
 		return nil
 	}
-	if !c.GNSS.IsMajor() {
-		return fmt.Errorf("time GNSS must be a major GNSS (%v is not)", c.GNSS)
+	if !c.TimeGNSS.IsMajor() {
+		return fmt.Errorf("time GNSS must be a major GNSS (%v is not)", c.TimeGNSS)
 	}
-	cp.SetTimeGNSS(c.GNSS)
+	cp.SetTimeGNSS(c.TimeGNSS)
 	return nil
 }
 
