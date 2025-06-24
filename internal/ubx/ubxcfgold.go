@@ -678,6 +678,14 @@ func (raw *CfgOld) changeGNSS(cp *gpsprot.ConfigProps, ver *Version, monGNSS *mo
 	copy(blocks, gnss.Blocks)
 	gnss.Blocks = blocks
 	nMajor := 0
+	// Gen 8 has restriction to two carrier frequencies
+	// GPS and GAL have the same L1 frequency, but BDS and GLO are both different
+	const (
+		freqGPSGAL = 0x1
+		freqGLO    = 0x2
+		freqBDS    = 0x4
+	)
+	freq := 0
 	// Note that `blk, i := range blocks` won't work here because we modify blocks[i]
 	for i := range blocks {
 		blk := &blocks[i]
@@ -714,6 +722,14 @@ func (raw *CfgOld) changeGNSS(cp *gpsprot.ConfigProps, ver *Version, monGNSS *mo
 			blk.Enable = 0x1
 			if g.IsMajor() {
 				nMajor++
+				switch g {
+				case gpsprot.GPS, gpsprot.GAL:
+					freq |= freqGPSGAL
+				case gpsprot.GLO:
+					freq |= freqGLO
+				case gpsprot.BDS:
+					freq |= freqBDS
+				}
 			}
 		} else {
 			blk.Enable = 0
@@ -722,7 +738,7 @@ func (raw *CfgOld) changeGNSS(cp *gpsprot.ConfigProps, ver *Version, monGNSS *mo
 	if nMajor == 0 {
 		return nil, fmt.Errorf("GPS receiver does not support specified GNSS signals")
 	}
-	if monGNSS != nil && nMajor > monGNSS.maxSimultaneousMajorGNSS {
+	if (monGNSS != nil && nMajor > monGNSS.maxSimultaneousMajorGNSS) || freq == freqGPSGAL|freqGLO|freqBDS {
 		// try to disable GLONASS
 		for i := range blocks {
 			blk := &blocks[i]
@@ -736,7 +752,7 @@ func (raw *CfgOld) changeGNSS(cp *gpsprot.ConfigProps, ver *Version, monGNSS *mo
 			}
 		}
 		// that wasn't enough: not clear which other GNSS to disable
-		if nMajor > monGNSS.maxSimultaneousMajorGNSS {
+		if monGNSS != nil && nMajor > monGNSS.maxSimultaneousMajorGNSS {
 			return nil, fmt.Errorf("receiver supports maximum of %d major GNSS; could not determine which to enable", monGNSS.maxSimultaneousMajorGNSS)
 		}
 	}
