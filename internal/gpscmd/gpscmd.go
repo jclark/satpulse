@@ -55,7 +55,7 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		cp.SetPPS()
 	}
 	if v.timeGNSS != 0 {
-		cp.SetPrimaryGNSS(v.timeGNSS)
+		cp.SetTimeGNSS(v.timeGNSS)
 	}
 	if v.enabledSignals != 0 {
 		cp.SetSignalsEnabled(v.enabledSignals)

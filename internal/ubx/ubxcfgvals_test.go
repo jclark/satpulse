@@ -34,7 +34,7 @@ func TestConfigItems_Sane(t *testing.T) {
 	cfgValSet(known, ucv.KSignalBdsEna, true)
 	m := testSanity(t, target, ver, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Bds)
-	target.Props.SetPrimaryGNSS(gpsprot.GAL)
+	target.Props.SetTimeGNSS(gpsprot.GAL)
 	m = testSanity(t, target, ver, known)
 	expectItem(t, m, ucv.KTpTimegridTp1, ucv.ETpTimegridTp1Gal)
 }
@@ -146,7 +146,7 @@ func TestConfigItems_Get(t *testing.T) {
 func TestConfigItems_GNSS(t *testing.T) {
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	target := gpsprot.NewConfigTarget()
-	target.Props.SetPrimaryGNSS(gpsprot.GAL)
+	target.Props.SetTimeGNSS(gpsprot.GAL)
 	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)

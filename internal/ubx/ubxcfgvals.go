@@ -203,7 +203,7 @@ func (tb *txnBuilder) build() error {
 	if v, ok := cp.GetTimePulsePolarityRising(); ok {
 		txnAddItem(tb, ucv.KTpPolTp1, v)
 	}
-	if v, ok := cp.GetPrimaryGNSS(); ok {
+	if v, ok := cp.GetTimeGNSS(); ok {
 		tg = gnssToTimegridTp1(v)
 		txnAddItem(tb, ucv.KTpTimegridTp1, tg)
 		txnAddItem(tb, ucv.KNavspgUtcstandard, gnssToEnumNavspgUtcstandard(v))
@@ -508,7 +508,7 @@ func (tb *txnBuilder) timePulseWrite() ucv.EnumTpTimegridTp1 {
 		txnAddItem(tb, ucv.KTpUseLockedTp1, align)
 		txnAddItem(tb, ucv.KTpAlignToTowTp1, align)
 		txnAddItem(tb, ucv.KTpSyncGnssTp1, align)
-		if _, ok := cp.GetPrimaryGNSS(); !ok {
+		if _, ok := cp.GetTimeGNSS(); !ok {
 			tg = tb.inferTimegridTp1()
 		}
 	} else {

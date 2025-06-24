@@ -54,7 +54,7 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool) (*gpsprot.Confi
 		return nil, err
 	}
 	cp := &target.Props
-	err = c.getPrimaryGNSS(cp)
+	err = c.getTimeGNSS(cp)
 	if err != nil {
 		return nil, err
 	}
@@ -107,14 +107,14 @@ func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {
 	return nil
 }
 
-func (c *GPSConfig) getPrimaryGNSS(cp *gpsprot.ConfigProps) error {
+func (c *GPSConfig) getTimeGNSS(cp *gpsprot.ConfigProps) error {
 	if c.GNSS == 0 {
 		return nil
 	}
 	if !c.GNSS.IsMajor() {
-		return fmt.Errorf("primary GNSS must be a major GNSS (%v is not)", c.GNSS)
+		return fmt.Errorf("time GNSS must be a major GNSS (%v is not)", c.GNSS)
 	}
-	cp.SetPrimaryGNSS(c.GNSS)
+	cp.SetTimeGNSS(c.GNSS)
 	return nil
 }
 

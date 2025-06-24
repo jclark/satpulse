@@ -52,9 +52,9 @@ type RawConfig struct {
 var legacyConfigSteps = []func(*Configurator) error{
 	(*Configurator).pollPrt,
 	(*Configurator).setMsg1,  // do this ASAP, because responses can be slow (at least on 8th gen) when NMEA is enabled
-	(*Configurator).pollGNSS, // need this to know which will be primary GNSS, which we need for enabling the time message
+	(*Configurator).pollGNSS, // need this to know which will be time GNSS, which we need for enabling the time message
 	(*Configurator).pollMonGNSS,
-	(*Configurator).setGNSS, // do this early because we may need to know enabled GNSS to deduce primary GNSS
+	(*Configurator).setGNSS, // do this early because we may need to know enabled GNSS to deduce time GNSS
 	(*Configurator).pollTp5,
 	(*Configurator).setTp5,
 	(*Configurator).pollTmode,
@@ -76,7 +76,7 @@ var newConfigSteps = []func(*Configurator) error{
 	(*Configurator).pollPrt,
 	(*Configurator).valPollMonGNSS,
 	(*Configurator).valGetSignals,
-	// XXX we have to do this early at the moment, because we may need to deduce what GNSS is primary
+	// XXX we have to do this early at the moment, because we may need to deduce what GNSS is time GNSS
 	(*Configurator).valSetSignals,
 	(*Configurator).valGetNMA,
 	(*Configurator).valSetNMA,
@@ -302,7 +302,7 @@ func (c *Configurator) valPollMonGNSS() error {
 func (c *Configurator) valNeedsMonGNSS() bool {
 	// At the moment we use MON-GNSS only for enabledGNSS when enabling RTCM messages.
 	// XXX in the future use for maxSimultaneousMajorGNSS (needed for F10T at least)
-	// XXX in the future use also when inferring primary GNSS
+	// XXX in the future use also when inferring time GNSS
 	if !c.target.Opts.RTCMMsg.IsSet() {
 		return false
 	}
@@ -494,7 +494,7 @@ func (c *Configurator) needsMonGNSS() bool {
 
 func (c *Configurator) pollRate() error {
 	// XXX also handle survey message
-	if _, ok := c.target.Props.GetPrimaryGNSS(); !ok && !c.target.Opts.EnablesMsgs() {
+	if _, ok := c.target.Props.GetTimeGNSS(); !ok && !c.target.Opts.EnablesMsgs() {
 		return nil
 	}
 	return c.addPollRequest(bin.CfgRateID)

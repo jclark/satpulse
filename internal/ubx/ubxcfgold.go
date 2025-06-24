@@ -43,16 +43,16 @@ var cfgOldProps = struct {
 		gpsprot.PropIDTimePulsePeriod,
 		gpsprot.PropIDTimePulseWidth,
 		gpsprot.PropIDTimePulseOnlyWhenLocked,
-		gpsprot.PropIDPrimaryGNSS,
+		gpsprot.PropIDTimeGNSS,
 	},
 	gnss: []gpsprot.PropIDs{
-		// XXX PropIDPrimaryGNSS doesn't currently look at the gnss field (I think)
-		// PropIDPrimaryGNSS is regarded as unset, if tp5 isn't aligned to a GNSS and nav5 also doesn't have a preferred GNSS
+		// XXX PropIDTimeGNSS doesn't currently look at the gnss field (I think)
+		// PropIDTimeGNSS is regarded as unset, if tp5 isn't aligned to a GNSS and nav5 also doesn't have a preferred GNSS
 		gpsprot.PropIDSignalsEnabled,
 		gpsprot.PropIDTimePulseAlignToGNSS, // changeTp5 can end up looking at the .gnss field for this
 	},
 	nav5: []gpsprot.PropIDs{
-		gpsprot.PropIDPrimaryGNSS,
+		gpsprot.PropIDTimeGNSS,
 		gpsprot.PropIDStationary,
 	},
 }
@@ -387,7 +387,7 @@ func (raw *CfgOld) cookTp5(cp *gpsprot.ConfigProps) {
 	gnss := tp5FlagsGNSS(flags)
 	cp.SetTimePulseAlignToGNSS(gnss != 0)
 	if gnss != 0 {
-		cp.SetPrimaryGNSS(gnss)
+		cp.SetTimeGNSS(gnss)
 	}
 	period, width := tpPeriodWidth(tp.FreqPeriod, tp.PulseLenRatio, flags)
 	onlyWhenLocked := false
@@ -567,7 +567,7 @@ func (raw *CfgOld) changeTp5(cp *gpsprot.ConfigProps) *bin.CfgTp5 {
 }
 
 func (raw *CfgOld) changeTp5GNSS(cp *gpsprot.ConfigProps) gpsprot.GNSS {
-	g, _ := cp.GetPrimaryGNSS()
+	g, _ := cp.GetTimeGNSS()
 	// if the primary GNSS is explicitly specified, then use that (regardless of whether it's enabled)
 	if g.IsMajor() {
 		return g
@@ -813,7 +813,7 @@ func (raw *CfgOld) changeRate(cp *gpsprot.ConfigProps) *bin.CfgRate {
 		rate.MeasRate = 1000 // 1 second
 		rate.NavRate = 1
 	}
-	if gnss, exists := cp.GetPrimaryGNSS(); exists {
+	if gnss, exists := cp.GetTimeGNSS(); exists {
 		switch gnss {
 		case gpsprot.GPS:
 			rate.TimeRef = bin.CfgRateGPS
@@ -840,10 +840,10 @@ func (raw *CfgOld) cookNav5(cp *gpsprot.ConfigProps) {
 	if nav5.DynModel == bin.CfgNav5DynStationary {
 		stationary = true
 	}
-	if _, exist := cp.GetPrimaryGNSS(); !exist {
+	if _, exist := cp.GetTimeGNSS(); !exist {
 		gnss := nav5GNSS(nav5)
 		if gnss != 0 {
-			cp.SetPrimaryGNSS(gnss)
+			cp.SetTimeGNSS(gnss)
 		}
 	}
 	cp.SetStationary(stationary)
@@ -882,7 +882,7 @@ func (raw *CfgOld) changeNav5(cp *gpsprot.ConfigProps) *bin.CfgNav5 {
 		nav5.Mask |= bin.CfgNav5MaskDyn
 	}
 
-	if gnss, exists := cp.GetPrimaryGNSS(); exists {
+	if gnss, exists := cp.GetTimeGNSS(); exists {
 		nav5.Mask |= bin.CfgNav5MaskUtc
 		switch gnss {
 		case gpsprot.GPS:
