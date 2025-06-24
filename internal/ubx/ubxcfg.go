@@ -918,7 +918,7 @@ type msgRateRequest struct {
 }
 
 func (r msgRateRequest) Packet() []byte {
-	return bin.SetCfgMsg(r.msgID, 1)
+	return bin.SetCfgMsg(r.msgID, r.rate)
 }
 
 func (r msgRateRequest) ChangeSpeed() int { return 0 }
