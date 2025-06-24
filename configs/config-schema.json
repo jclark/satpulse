@@ -31,7 +31,7 @@
 			"exclusiveMinimum": 0,
 			"exclusiveMaximum": 1
 		  },
-		  "gnss": {
+		  "timeGNSS": {
 			"type": "string",
 			"enum": ["GPS", "GAL", "Galileo", "BDS", "BeiDou", "GLO", "GLONASS"]
 		  },

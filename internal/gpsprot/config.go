@@ -119,7 +119,7 @@ type TimePulse struct {
 type ConfigProps struct {
 	valid             PropIDs // says which fields are valid
 	signalsEnabled    SignalSet
-	primaryGNSS       GNSS
+	timeGNSS          GNSS
 	timePulse         TimePulse
 	timeMode          TimeMode
 	antennaCableDelay time.Duration
@@ -131,7 +131,7 @@ type ConfigProps struct {
 
 const (
 	PropIDSignalsEnabled PropIDs = 1 << iota
-	PropIDPrimaryGNSS
+	PropIDTimeGNSS
 	// eventually the individual time pulse properties will be combined into a single property
 	PropIDTimePulseWidth
 	PropIDTimePulsePeriod
@@ -149,7 +149,7 @@ const (
 // propNames lists the property names in the same order as the bit constants
 var propNames = []string{
 	"SignalsEnabled",
-	"PrimaryGNSS",
+	"TimeGNSS",
 	"TimePulseWidth",
 	"TimePulsePeriod",
 	"TimePulseAlignToGNSS",
@@ -370,18 +370,18 @@ func (cp *ConfigProps) SetSignalsEnabled(val SignalSet) {
 	cp.valid |= PropIDSignalsEnabled
 }
 
-// GetPrimaryGNSS returns the primaryGNSS value and whether it's set
-func (cp *ConfigProps) GetPrimaryGNSS() (GNSS, bool) {
-	if cp.valid&PropIDPrimaryGNSS != 0 {
-		return cp.primaryGNSS, true
+// GetTimeGNSS returns the timeGNSS value and whether it's set
+func (cp *ConfigProps) GetTimeGNSS() (GNSS, bool) {
+	if cp.valid&PropIDTimeGNSS != 0 {
+		return cp.timeGNSS, true
 	}
 	return 0, false
 }
 
-// SetPrimaryGNSS sets the primaryGNSS value
-func (cp *ConfigProps) SetPrimaryGNSS(val GNSS) {
-	cp.primaryGNSS = val
-	cp.valid |= PropIDPrimaryGNSS
+// SetTimeGNSS sets the timeGNSS value
+func (cp *ConfigProps) SetTimeGNSS(val GNSS) {
+	cp.timeGNSS = val
+	cp.valid |= PropIDTimeGNSS
 }
 
 // GetTimePulseWidth returns the timePulseWidth value and whether it's set
@@ -596,8 +596,8 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	if both&PropIDSignalsEnabled != 0 && cp.signalsEnabled != other.signalsEnabled {
 		result.SetSignalsEnabled(other.signalsEnabled)
 	}
-	if both&PropIDPrimaryGNSS != 0 && cp.primaryGNSS != other.primaryGNSS {
-		result.SetPrimaryGNSS(other.primaryGNSS)
+	if both&PropIDTimeGNSS != 0 && cp.timeGNSS != other.timeGNSS {
+		result.SetTimeGNSS(other.timeGNSS)
 	}
 	if both&PropIDTimePulseWidth != 0 && cp.timePulse.Width != other.timePulse.Width {
 		result.SetTimePulseWidth(other.timePulse.Width)
@@ -656,8 +656,8 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	if cp.valid&PropIDSignalsEnabled != 0 {
 		m["signalsEnabled"] = cp.signalsEnabled.GNSSStringGroups()
 	}
-	if cp.valid&PropIDPrimaryGNSS != 0 {
-		m["primaryGNSS"] = cp.primaryGNSS
+	if cp.valid&PropIDTimeGNSS != 0 {
+		m["timeGNSS"] = cp.timeGNSS
 	}
 	if cp.valid&timePulseProps != 0 {
 		tpm := make(map[string]interface{})

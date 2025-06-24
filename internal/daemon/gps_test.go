@@ -29,7 +29,7 @@ func TestGPSConfig(t *testing.T) {
 	if (delay - time.Nanosecond*20*5).Abs() > time.Nanosecond {
 		t.Errorf("antennaCableDelay: got %v, want about 100ns", delay)
 	}
-	gnss, _ := cp.GetPrimaryGNSS()
+	gnss, _ := cp.GetTimeGNSS()
 	if gnss != gpsprot.GAL {
 		t.Errorf("GNSS: got %v, want %v", gnss, gpsprot.GAL)
 	}
@@ -91,7 +91,7 @@ func TestFixedPosECEFTimeMode(t *testing.T) {
 	}
 	cp := &target.Props
 	opts := &target.Opts
-	
+
 	// Check that time mode is set to Fixed
 	mode, ok := cp.GetTimeMode()
 	if !ok {
@@ -100,7 +100,7 @@ func TestFixedPosECEFTimeMode(t *testing.T) {
 	if mode != gpsprot.TimeModeFixed {
 		t.Errorf("timeMode: got %v, want TimeModeFixed", mode)
 	}
-	
+
 	// Check that survey parameters are not set when fixedPosECEF is provided
 	if opts.Survey.When != 0 {
 		t.Errorf("Survey.When: got %v, want 0 (no survey when fixed position is set)", opts.Survey.When)
@@ -111,7 +111,7 @@ func TestFixedPosECEFTimeMode(t *testing.T) {
 	if opts.Survey.AccLimit != 0 {
 		t.Errorf("Survey.AccLimit: got %v, want 0", opts.Survey.AccLimit)
 	}
-	
+
 	// Verify fixed position is set correctly
 	ecef, ok := cp.GetFixedPosECEF()
 	if !ok {

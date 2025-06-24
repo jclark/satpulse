@@ -86,14 +86,14 @@ func TestConfiguratorSane(t *testing.T) {
 func TestConfiguratorGPS(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	target.Props.SetPPS()
-	target.Props.SetPrimaryGNSS(gpsprot.GPS)
+	target.Props.SetTimeGNSS(gpsprot.GPS)
 	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGalileo(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	target.Props.SetPPS()
-	target.Props.SetPrimaryGNSS(gpsprot.GAL)
+	target.Props.SetTimeGNSS(gpsprot.GAL)
 	rcvr := newLegacyReceiver()
 	rcvr.raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
 	testConfigurator(t, rcvr, target)
