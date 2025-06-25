@@ -2,15 +2,20 @@
 title: Precisely determining antenna position
 ---
 
-The normal mode of operation of a GNSS receiver is to simultaneously solve for position, velocity and time using at least four satellites. GNSS receivers designed specifically for timing applications also offer a timing mode, where the position is fixed, the velocity is zero and the receiver solves only for time, which it can do using a single satellite.
+The normal mode of operation of a GNSS receiver is to simultaneously solve for position, velocity and time using at least four satellites. GNSS receivers designed specifically for timing applications also offer a timing mode, where the position is fixed, the velocity is zero and the receiver solves only for time, which it can do using a single satellite. High-precision receivers designed for RTK such as the u-blox ZED-F9P also offer a timing mode.
 
 In order to operate in timing mode, the position of the receiver must first be determined. Timing receivers typically offer a survey-in feature, where the receiver determines the position by averaging the position solutions over some user-configurable period. The SatPulse daemon will use this by default.
 
-This is convenient, but there is a more precise way to determine the antenna position, which can lead to improved performance. This involves collecting raw observation data from the receiver for a number of hours and then submitting this data to an online Precise Point Positioning (PPP) service. The online service has access to additional data about the satellite orbits and clocks, which enable it do produce a much more precise position. Final data about the satellite orbits at a particular time only becomes available about 2 weeks after that day. So for the best possible results it is necessary to wait for 2 weeks after the data is collected before submitting it to the service. But good results can also be obtained using a more rapid service using data that becomes available after about 2 days.
+This is convenient, but there is a more precise way to determine the antenna position, which can lead to improved performance. This involves collecting raw observation data from the receiver for a number of hours and then submitting this data to an online Precise Point Positioning (PPP) service. The online service has access to additional data about the satellite orbits and clocks, which enable it do produce a much more precise position. Final data about the satellite orbits at a particular time only becomes available about 2 weeks after that time. So for the best possible results it is necessary to wait for 2 weeks after the data is collected before submitting it to the service. But good results can also be obtained using a more rapid service using data that becomes available after about 2 days.
 
-This document explains how to collect data and submit it to the CSRS-PPP service operated by Canadian Geodetic Survey of Natural Resources Canada. Although this service is operated by the Canadian Government, it works for data collected anywhere in the world.
+Online PPP services typically expect the data to be in [RINEX](https://igs.org/wg/rinex/) format.
+This document explains how to use SatPulse to collect the data, convert it to RINEX format.
+It also explains how to use one particular PPP service, the CSRS-PPP service operated by Canadian Geodetic Survey of Natural Resources Canada. Although this service is operated by the Canadian Government, it works for data collected anywhere in the world.
+SatPulse currently 
 
-## Creating the file for submission
+This needs a u-blox timing or high-precision module (names have a a T or P suffix, like LEA-M8T or ZED-F9P): u-blox is needed because SatPulse current only knows how to configure GNSS receivers that use u-blox's UBX protocol; a timing or high-precision module is needed because only they have a timing mode and support raw output.
+
+## Creating RINEX observation file for submission
 
 Install rtklib
 ```
@@ -57,8 +62,9 @@ path = "/var/run/satpulse.sock"
 ```
 
 Start the satpulse service again
+
 ```
- sudo systemctl start satpulse@ttyAMA0
+sudo systemctl start satpulse@ttyAMA0
 ```
 
 Now enable raw output of observations using the socket
@@ -100,7 +106,7 @@ Compress it:
 gzip YYYYMMDD.obs
 ```
 
-## Submitting the file
+## Submitting the RINEX file to CSRS-PPP
 
 Register for the CSRS-PPP service at https://webapp.csrs-scrs.nrcan-rncan.gc.ca/geod/tools-outils/ppp.php
 
@@ -109,7 +115,7 @@ You now have to wait for a period of time depending on how good you want the res
 * Rapid service gives results 17-18 hours after the end of the day
 * Final service gives results 12-15 days after the end of the week
 
-After waiting, log in to CSRS-PPP page. Select Static and ITRF under processing mode and upload YYYYMMDD.obs.gz.
+After waiting, log in to CSRS-PPP page. Select Static and ITRF under processing mode and upload the compressed RINEX file YYYYMMDD.obs.gz.
 
 ## Using the results
 
