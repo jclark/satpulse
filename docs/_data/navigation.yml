@@ -23,5 +23,9 @@ docs:
         url: "/man/satpulsetool.1.html"
       - title: "satpulsetool-gps(1)"
         url: "/man/satpulsetool-gps.1.html"
+  - title: "Howtos"
+    children:
+      - title: "Precisely determine antenna position"
+        url: "/precise-position.html"
   - title: "Internals"
     url: "/internals.html"
