@@ -32,7 +32,8 @@ Set speed to 115200 (assuming current speed is 9600) persistently
 satpulsetool gps -d /dev/ttyAMA0 -s 9600 --speed 115200 --save
 ```
 
-Enable GPS, Galileo and GLONASS (with time pulse aligned to GPS)
+CSRS-PPP supports GPS (L1 and L2), GLONASS (L1 and L2) and Galileo (L1 and L5).
+So enable GPS, Galileo and GLONASS (with time pulse aligned to GPS)
 
 ```
 satpulsetool gps -d /dev/ttyAMA0 -s 115200 --gnss GPS,GAL,GLO --time-gnss GPS
