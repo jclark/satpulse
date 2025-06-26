@@ -92,7 +92,7 @@ Provides a library of packages, which are potentially useful outside satpulse. T
 
 `internal/allan` computes Allan deviations. (This is not used currently.)
 
-`internal/geopos` converts between positions in the ECEF and LLA geodetic coordinate systems. This is used by the web interface to link to Google makes.
+`internal/geopos` converts between positions in the ECEF and LLA geodetic coordinate systems. This is used by the web interface to link to Google maps.
 
 `term` provides access to the Linux terminal interface, which provides access to serial devices. This is similar to [github.com/pkg/term](https://github.com/pkg/term), but provides additional Linux-specific functionality.
 
