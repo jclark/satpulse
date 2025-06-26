@@ -16,4 +16,5 @@ var replayFiles = []string{
 	"m8t-binary",
 	"m8t-noop",
 	"m8t-signal",
+	"m8t-speed",
 }
