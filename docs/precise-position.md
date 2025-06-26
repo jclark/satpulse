@@ -133,4 +133,6 @@ fixedPosECEF=[-1144567.4109,6091234.9865,1504567.9101]
 fixedPosAcc=0.0180
 ```
 
-You can then paste that into the `[gps]` section of `/etc/satpulse.toml`. Then restart the satpulse service.
+You can then paste that into the `[gps]` section of `/etc/satpulse.toml`.
+However, I suggest first adding 0.02 or 0.03 to fixedPosAcc to account for the potential discrepancy between WGS84 (used by GNSS) and ITRF (used by CSRS). See this [paper](https://navi.ion.org/content/72/2/navi.693) for more details.
+Then restart the satpulse service.
