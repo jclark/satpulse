@@ -116,6 +116,8 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 		if target.NoOp() {
 			// print out the version only if we did not specify anything else
 			printVersion(os.Stdout, rslt.Version)
+		} else {
+			logFailedProps(lg, &target.Props, rslt.ConfigProps)
 		}
 		// print out props that we know about (either requested or set)
 		printProps(os.Stdout, rslt.ConfigProps)
@@ -133,6 +135,19 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 		writeTestLogTail(lf, lg, rslt, err)
 	}
 	return err
+}
+
+func logFailedProps(lg *slog.Logger, reqProps *gpsprot.ConfigProps, rsltProps *gpsprot.ConfigProps) {
+	if reqProps == nil || rsltProps == nil {
+		return
+	}
+	if reqSigs, ok := reqProps.GetSignalsEnabled(); ok {
+		if rsltSigs, ok := rsltProps.GetSignalsEnabled(); ok {
+			if reqSigs.GNSSSet() != rsltSigs.GNSSSet() {
+				lg.Warn("only some of the requested constellations were enabled; the receiver does not support enabling all of them")
+			}
+		}
+	}
 }
 
 func printVersion(f *os.File, v *ubx.Version) {
