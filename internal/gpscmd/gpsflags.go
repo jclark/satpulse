@@ -197,21 +197,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			pvtMsg.Set(gpsprot.PVTMsgPos | gpsprot.PVTMsgTime) // analogous to NMEA RMC
 		}
 	}
-	// Validate PVT flag combinations
-	if pvtMsg.IsSet() {
-		// "after" requires "tp"
-		if pvtMsg&gpsprot.PVTMsgTimePulseAfter != 0 && pvtMsg&gpsprot.PVTMsgTimePulse == 0 {
-			return nil, nil, fmt.Errorf("--pvt-out: 'after' requires 'tp'")
-		}
-		// "tai" requires "after" or "time"
-		if pvtMsg&gpsprot.PVTMsgTAI != 0 && pvtMsg&(gpsprot.PVTMsgTimePulse|gpsprot.PVTMsgTime) == 0 {
-			return nil, nil, fmt.Errorf("--pvt-out: 'tai' requires 'tp' or 'time'")
-		}
-		// "ecef" requires "pos" or "vel"
-		if pvtMsg&gpsprot.PVTMsgECEF != 0 && pvtMsg&(gpsprot.PVTMsgPos|gpsprot.PVTMsgVel) == 0 {
-			return nil, nil, fmt.Errorf("--pvt-out: 'ecef' requires 'pos' or 'vel'")
-		}
-	}
 	vars.configOpts.NMEAMsg = nmeaMsg
 	vars.configOpts.RTCMMsg = rtcmMsg
 	vars.configOpts.PVTMsg = pvtMsg
@@ -539,6 +524,19 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 		default:
 			return fmt.Errorf("unknown pvt output flag: %s", w)
 		}
+	}
+	// Validate PVT flag combinations
+	// "after" requires "tp"
+	if flags&gpsprot.PVTMsgTimePulseAfter != 0 && flags&gpsprot.PVTMsgTimePulse == 0 {
+		return fmt.Errorf("'after' requires 'tp'")
+	}
+	// "tai" requires "after" or "time"
+	if flags&gpsprot.PVTMsgTAI != 0 && flags&(gpsprot.PVTMsgTimePulse|gpsprot.PVTMsgTime) == 0 {
+		return fmt.Errorf("'tai' requires 'tp' or 'time'")
+	}
+	// "ecef" requires "pos" or "vel"
+	if flags&gpsprot.PVTMsgECEF != 0 && flags&(gpsprot.PVTMsgPos|gpsprot.PVTMsgVel) == 0 {
+		return fmt.Errorf("'ecef' requires 'pos' or 'vel'")
 	}
 	*pvtOut = pvtOutOpt(flags)
 	return nil
