@@ -12,7 +12,7 @@ func TestGPSConfig(t *testing.T) {
 	cfgStr := `[gps]
 	config = true
 	antennaCableLength = 20
-	GNSS="galileo"
+	timeGNSS="galileo"
 	fixedPosAcc = 5
 	fixedPosECEF = [3978578.17, -8652.15, 4968410.94]`
 	r := strings.NewReader(cfgStr)
