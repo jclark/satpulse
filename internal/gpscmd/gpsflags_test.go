@@ -121,10 +121,8 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--rtcm-out", "MSM4"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4)}}},
 	{"ttyS0", []string{"--rtcm-out", "MSM7"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM7)}}},
 	{"ttyS0", []string{"--rtcm-out", "ARP"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgARP)}}},
-	{"ttyS0", []string{"--rtcm-out", "MSM4,MSM7"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7)}}},
 	{"ttyS0", []string{"--rtcm-out", "MSM4,ARP"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)}}},
 	{"ttyS0", []string{"--rtcm-out", "MSM7,ARP"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP)}}},
-	{"ttyS0", []string{"--rtcm-out", "MSM4,MSM7,ARP"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP)}}},
 	{"ttyS0", []string{"--rtcm-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgFlags(0))}}},
 	{"ttyS0", []string{"--rtcm-out", "MSM4", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4), Save: gpsprot.SaveMinimal}}},
 	// Test case-insensitive RTCM flags
@@ -247,6 +245,8 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--reset", "--save"},                          // no config changes to save with --save
 	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                  // incompatible options
 	{"--serial-device", "ttyS0", "--factory-reset", "--save-all"},              // incompatible options
+	{"--serial-device", "ttyS0", "--rtcm-out", "MSM4,MSM7"},                    // MSM4 and MSM7 cannot be used together
+	{"--serial-device", "ttyS0", "--rtcm-out", "MSM4,MSM7,ARP"},                // MSM4 and MSM7 cannot be used together
 	{"--serial-device", "ttyS0", "--factory-reset", "--save", "--gnss", "GPS"}, // multiple incompatible options
 	{"--serial-device", "ttyS0", "--raw-out", ""},                              // empty raw-out value
 	{"--serial-device", "ttyS0", "--raw-out", "invalid"},                       // invalid raw-out flag

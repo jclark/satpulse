@@ -595,6 +595,9 @@ func (rtcmOut *rtcmOutOpt) Set(s string) error {
 			return fmt.Errorf("unknown rtcm output flag: %s", w)
 		}
 	}
+	if flags&(gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) == (gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) {
+		return fmt.Errorf("MSM4 and MSM7 cannot be used together")
+	}
 	msg.Set(flags)
 	return nil
 }
