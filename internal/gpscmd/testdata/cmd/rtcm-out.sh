@@ -11,3 +11,9 @@ t --rtcm-out none
 t --rtcm-out MSM4,ARP
 # Combined MSM7 and ARP
 t --rtcm-out MSM7,ARP
+# intelligent selection of MSM messages
+t --rtcm-out auto
+# intelligent selection of MSM messages with MSM7 preference
+t --rtcm-out auto,MSM7
+# Leave nothing enabled
+t --rtcm-out none

@@ -880,6 +880,63 @@ func TestMsgChangesRtcm(t *testing.T) {
 			// No expected rates or protocol changes
 			wantErr: false, // Not an error to disable RTCM on devices that don't support it
 		},
+		// Lax flag tests
+		{
+			name:        "MSM4+Lax all major GNSS (F9P - no fallback needed)",
+			flags:       gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgLax,
+			version:     testVers.f9p,
+			enabledGNSS: gpsprot.MajorGNSSSet,
+			expectedRates: map[bin.MsgID]MsgRate{
+				bin.Rtcm1074ID: 1, // GPS MSM4
+				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
+				bin.Rtcm1084ID: 1, // GLO MSM4
+				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
+				bin.Rtcm1094ID: 1, // GAL MSM4
+				bin.Rtcm1097ID: 0, // GAL MSM7 disabled
+				bin.Rtcm1124ID: 1, // BDS MSM4
+				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
+				bin.Rtcm1230ID: 1, // GLO bias
+			},
+			expectedEnable: bin.CfgPrtProtoRTCM3,
+		},
+		{
+			name:        "MSM4+Lax all major GNSS (F9T - fallback to MSM7)",
+			flags:       gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgLax,
+			version:     testVers.f9t,
+			enabledGNSS: gpsprot.MajorGNSSSet,
+			expectedRates: map[bin.MsgID]MsgRate{
+				bin.Rtcm1077ID: 1, // GPS MSM7 (fallback from MSM4)
+				bin.Rtcm1087ID: 1, // GLO MSM7 (fallback from MSM4)
+				bin.Rtcm1097ID: 1, // GAL MSM7 (fallback from MSM4)
+				bin.Rtcm1127ID: 1, // BDS MSM7 (fallback from MSM4)
+				bin.Rtcm1230ID: 1, // GLO bias
+			},
+			expectedEnable: bin.CfgPrtProtoRTCM3,
+		},
+		{
+			name:        "MSM7+Lax GPS (F9T20 - no fallback needed)",
+			flags:       gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgLax,
+			version:     testVers.f9t20,
+			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
+			expectedRates: map[bin.MsgID]MsgRate{
+				bin.Rtcm1074ID: 0, // GPS MSM4 disabled
+				bin.Rtcm1077ID: 1, // GPS MSM7
+				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
+				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
+				bin.Rtcm1094ID: 0, // GAL MSM4 disabled
+				bin.Rtcm1097ID: 0, // GAL MSM7 disabled
+				bin.Rtcm1124ID: 0, // BDS MSM4 disabled
+				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
+			},
+			expectedEnable: bin.CfgPrtProtoRTCM3,
+		},
+		{
+			name:        "MSM4+Lax without Lax (F9T - should fail)",
+			flags:       gpsprot.RTCMMsgMSM4,
+			version:     testVers.f9t,
+			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
+			wantErr:     true, // MSM4 not supported on F9T, no Lax fallback
+		},
 	}
 
 	for _, tt := range tests {

@@ -41,7 +41,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [--time-gnss GPS|GAL|BDS|GLO]
             [--raw-out obs|nav|none,...] [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
-            [--rtcm-out MSM4|MSM7|ARP|none,...] [--nmea-out RMC|GGA|GSA|GSV|none,...]`
+            [--rtcm-out MSM4|MSM7|ARP|auto|none,...] [--nmea-out RMC|GGA|GSA|GSV|none,...]`
 
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20.0
@@ -95,7 +95,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&timeGNSS, "time-gnss", "GNSS `constellation` used for timing: GPS|GAL|BDS|GLO")
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
 	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|tai|ecef|after|daemon|off,...")
-	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|none,...")
+	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|auto|none,...")
 	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|none,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
 	flags.MarkHidden("pps")
@@ -556,16 +556,20 @@ func (rtcmOut *rtcmOutOpt) String() string {
 		return "none"
 	}
 	var parts []string
-	if flags&gpsprot.RTCMMsgMSM4 != 0 {
+	auto := flags&gpsprot.RTCMMsgLax != 0
+	if !auto && flags&gpsprot.RTCMMsgMSM4 != 0 {
 		parts = append(parts, "MSM4")
 	}
 	if flags&gpsprot.RTCMMsgMSM7 != 0 {
 		parts = append(parts, "MSM7")
 	}
-	if flags&gpsprot.RTCMMsgARP != 0 {
+	if !auto && flags&gpsprot.RTCMMsgARP != 0 {
 		parts = append(parts, "ARP")
 	}
-	// Note: We don't expose RTCMMsgOther as per requirement
+	if auto {
+		parts = append(parts, "auto")
+	}
+	// We don't expose RTCMMsgOther
 	return strings.Join(parts, ",")
 }
 
@@ -579,6 +583,7 @@ func (rtcmOut *rtcmOutOpt) Set(s string) error {
 	}
 	msg := (*gpsprot.Option[gpsprot.RTCMMsgFlags])(rtcmOut)
 	flags := gpsprot.RTCMMsgFlags(0)
+	auto := false
 	for _, w := range strings.Split(s, ",") {
 		switch strings.ToUpper(strings.TrimSpace(w)) {
 		case "MSM4":
@@ -587,14 +592,22 @@ func (rtcmOut *rtcmOutOpt) Set(s string) error {
 			flags |= gpsprot.RTCMMsgMSM7
 		case "ARP":
 			flags |= gpsprot.RTCMMsgARP
+		case "AUTO":
+			auto = true
 		case "NONE":
 			// do nothing
 		default:
 			return fmt.Errorf("unknown rtcm output flag: %s", w)
 		}
 	}
-	if flags&(gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) == (gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) {
+	if flags&(gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) == (gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7) {
 		return fmt.Errorf("MSM4 and MSM7 cannot be used together")
+	}
+	if auto {
+		flags |= gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax
+		if flags&gpsprot.RTCMMsgMSM7 == 0 {
+			flags |= gpsprot.RTCMMsgMSM4
+		}
 	}
 	msg.Set(flags)
 	return nil

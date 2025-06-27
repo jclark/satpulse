@@ -278,6 +278,7 @@ const (
 	_                                     // 6
 	RTCMMsgMSM7                           // MSM7 for all enabled GNSS
 	RTCMMsgARP                            // RTCM message 1005
+	RTCMMsgLax                            // Do the best we can on enabling RTCM messages
 	RTCMMsgOther RTCMMsgFlags = 1 << 15   // other unspecified RTCM messages
 	// may have flags for rate
 	RTCMMsgNone RTCMMsgFlags = 0

@@ -15,7 +15,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea**] [**\-\-binary**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pvt\-out** **pos**\|**vel**\|**time**\|**tp**\|**leap**\|**survey**\|**tai**\|**ecef**\|**off**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-raw\-out** **obs**\|**nav**\|**none**,...]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**none**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**auto**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **RMC**\|**GGA**\|**GSA**\|**GSV**\|**none**,...]
 
 # DESCRIPTION
@@ -176,6 +176,9 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
   
   **ARP**
   : Enable Antenna Reference Point messages (RTCM message type 1005)
+  
+  **auto**
+  : Enable RTCM support intelligently. Enables ARP and either MSM4 or MSM7 messages. It will prefer MSM4 over MSM7 if both are available. Add the MSM7 flag to prefer MSM7.
   
   **none**
   : Disable all RTCM messages

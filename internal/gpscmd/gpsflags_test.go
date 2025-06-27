@@ -128,6 +128,10 @@ var validFlagsTestCases = []validFlagsTestCase{
 	// Test case-insensitive RTCM flags
 	{"ttyS0", []string{"--rtcm-out", "msm4"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4)}}},
 	{"ttyS0", []string{"--rtcm-out", "Msm4,Arp"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)}}},
+	// Test auto flag functionality
+	{"ttyS0", []string{"--rtcm-out", "auto"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax)}}},
+	{"ttyS0", []string{"--rtcm-out", "auto,msm7"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax)}}},
+	{"ttyS0", []string{"--rtcm-out", "msm7,auto"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax)}}},
 	// Test combining multiple output flags
 	{"ttyS0", []string{"--raw-out", "obs", "--pvt-out", "pos", "--rtcm-out", "MSM4"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		RawMsg:  gpsprot.MakeOption(gpsprot.RawMsgObs),

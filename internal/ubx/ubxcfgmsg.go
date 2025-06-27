@@ -199,7 +199,7 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	}
 }
 
-func (mc *msgChanges) survey(flags gpsprot.PVTMsgFlags, ver *Version, surveyRequested bool) {	
+func (mc *msgChanges) survey(flags gpsprot.PVTMsgFlags, ver *Version, surveyRequested bool) {
 	// note there is no survey progress message in early models that do not yet support tmode2
 	if !ver.protVerAtLeast(15, 0) {
 		return
@@ -304,6 +304,14 @@ func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS
 		return errors.New("enabled GNSS not properly computed as needed for RTCM messages")
 	}
 	gloEnabled := false
+	enableMSM := supMSM & flags
+	if enableMSM == 0 && flags&(gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) != 0 {
+		if flags&gpsprot.RTCMMsgLax == 0 {
+			return errors.New("specified type of MSM message not supported by this model")
+		}
+		// supMSM must have only one flag set, otherwise enableMSM would not be 0
+		enableMSM = supMSM
+	}
 	msmFlags := []gpsprot.RTCMMsgFlags{gpsprot.RTCMMsgMSM4, gpsprot.RTCMMsgMSM7}
 	for _, g := range supGNSS.Items() {
 		for _, m := range msmFlags {
@@ -311,7 +319,7 @@ func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS
 				continue
 			}
 			enable := false
-			if enabledGNSS.Contains(g) && flags&m != 0 {
+			if enabledGNSS.Contains(g) && enableMSM&m != 0 {
 				enable = true
 			}
 			msm := 4
