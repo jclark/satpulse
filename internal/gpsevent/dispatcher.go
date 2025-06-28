@@ -55,18 +55,22 @@ type Dispatcher struct {
 }
 
 func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, m *mon.Monitor, ls ptime.LeapSecond, phcFlags phc.DriverFlags, pulseWidth time.Duration, sseCh chan<- sse.Event, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
-	pt := combine.PulseType{
-		EdgesPerPulse: phcFlags.Edges(),
-		PulseWidth:    pulseWidth,
-	}
-	ccfg := combine.Config{}
-	ccfg.SetDefault(pt)
-	if phcFlags&phc.DriverPoll4Hz != 0 {
-		ccfg.PulsePollInterval = time.Second / 4
-	}
-	combiner, err := combine.NewCombiner(pt, m, lg, ccfg)
-	if err != nil {
-		return nil, err
+	var combiner *combine.Combiner
+	if m != nil {
+		pt := combine.PulseType{
+			EdgesPerPulse: phcFlags.Edges(),
+			PulseWidth:    pulseWidth,
+		}
+		ccfg := combine.Config{}
+		ccfg.SetDefault(pt)
+		if phcFlags&phc.DriverPoll4Hz != 0 {
+			ccfg.PulsePollInterval = time.Second / 4
+		}
+		var err error
+		combiner, err = combine.NewCombiner(pt, m, lg, ccfg)
+		if err != nil {
+			return nil, err
+		}
 	}
 	d := Dispatcher{
 		pktProcs: pktProcs,
@@ -81,7 +85,7 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		pp.SetMsgHandler(&d)
 		pp.SetNativeMsgHandler(&d)
 	}
-	err = d.lf.Open(eventLogPath)
+	err := d.lf.Open(eventLogPath)
 	if err != nil {
 		return nil, err
 	}
@@ -102,10 +106,15 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 	}
 	var ticker *time.Ticker
 	var tickerCh <-chan time.Time
+	var firstTsDeadline <-chan time.Time
 	if d.mon != nil {
 		ticker = time.NewTicker(tickPeriod)
 		defer ticker.Stop()
 		tickerCh = ticker.C
+	}
+	if tsCh != nil {
+		// give a warning if we haven't received a timestamp by the time this fires
+		firstTsDeadline = time.After(time.Second * 2)
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
@@ -116,8 +125,6 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 
 	staleEra := ts.StaleEra
 	nSkipped := 0
-	// give a warning if we haven't received a timestamp by the time this fires
-	firstTsDeadline := time.After(time.Second * 2)
 
 	for tsCh != nil || pktCh != nil {
 		select {
