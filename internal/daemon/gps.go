@@ -25,6 +25,7 @@ type GPSConfig struct {
 	TimeGNSS           gpsprot.GNSS `toml:"timeGNSS"`
 	PulseWidth         float64      `toml:"pulseWidth"`
 	SatellitesOutput   *bool        `toml:"satellitesOutput"`
+	RTCMOutput         *bool        `toml:"rtcmOutput"`
 	NMEANumbering      string       `toml:"nmeaNumbering"`
 }
 
@@ -67,6 +68,7 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool) (*gpsprot.Confi
 		return nil, err
 	}
 	target.Opts.SatsMsg = c.satsMsg(speed, wantSatellitesOutput)
+	target.Opts.RTCMMsg = c.rtcmMsg()
 	return target, nil
 }
 
@@ -199,6 +201,18 @@ func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.O
 		opt.Set(gpsprot.SatsMsgSV)
 	} else {
 		opt.Set(gpsprot.SatsMsgNone)
+	}
+	return
+}
+
+func (c *GPSConfig) rtcmMsg() (opt gpsprot.Option[gpsprot.RTCMMsgFlags]) {
+	if c.RTCMOutput == nil {
+		return
+	}
+	if *c.RTCMOutput {
+		opt.Set(gpsprot.RTCMMsgAuto)
+	} else {
+		opt.Set(gpsprot.RTCMMsgNone)
 	}
 	return
 }

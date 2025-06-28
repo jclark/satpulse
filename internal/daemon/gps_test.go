@@ -121,3 +121,49 @@ func TestFixedPosECEFTimeMode(t *testing.T) {
 		t.Errorf("fixedPosECEF: got %v, want 3978578.17,-8652.15,4968410.94", ecef)
 	}
 }
+
+func TestRTCMOutput(t *testing.T) {
+	cfgStr := `[gps]
+	rtcmOutput = true`
+	r := strings.NewReader(cfgStr)
+	cfg, err := readConfig(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GPS.RTCMOutput == nil || *cfg.GPS.RTCMOutput != true {
+		t.Errorf("RTCMOutput: got %v, want true", cfg.GPS.RTCMOutput)
+	}
+	opt := cfg.GPS.rtcmMsg()
+	if opt.Get() != gpsprot.RTCMMsgAuto {
+		t.Errorf("rtcmMsg: got %v, want RTCMMsgAuto", opt.Get())
+	}
+
+	cfgStr = `[gps]
+	rtcmOutput = false`
+	r = strings.NewReader(cfgStr)
+	cfg, err = readConfig(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GPS.RTCMOutput == nil || *cfg.GPS.RTCMOutput != false {
+		t.Errorf("RTCMOutput: got %v, want false", cfg.GPS.RTCMOutput)
+	}
+	opt = cfg.GPS.rtcmMsg()
+	if opt.Get() != gpsprot.RTCMMsgNone {
+		t.Errorf("rtcmMsg: got %v, want RTCMMsgNone", opt.Get())
+	}
+
+	cfgStr = `[gps]`
+	r = strings.NewReader(cfgStr)
+	cfg, err = readConfig(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GPS.RTCMOutput != nil {
+		t.Errorf("RTCMOutput: got %v, want nil", cfg.GPS.RTCMOutput)
+	}
+	opt = cfg.GPS.rtcmMsg()
+	if opt.IsSet() {
+		t.Errorf("rtcmMsg: got set option, want unset option")
+	}
+}

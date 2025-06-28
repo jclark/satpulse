@@ -282,6 +282,7 @@ const (
 	RTCMMsgOther RTCMMsgFlags = 1 << 15   // other unspecified RTCM messages
 	// may have flags for rate
 	RTCMMsgNone RTCMMsgFlags = 0
+	RTCMMsgAuto RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgARP | RTCMMsgLax // enable intelligently
 	RTCMMsgAny  RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgOther // any message (not flag)
 )
 

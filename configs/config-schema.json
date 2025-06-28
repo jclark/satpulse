@@ -50,6 +50,7 @@
 		  "antennaCableLength": { "type": "number" },
 		  "antennaCableVF": { "type": "number" },
 		  "satellitesOutput": { "type": "boolean" },
+		  "rtcmOutput": { "type": "boolean"},
 		  "nmeaNumbering": {
 			"type": "string",
 			"enum": ["u-blox", "allystar"]
