@@ -1,11 +1,15 @@
 package phc
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jclark/satpulse/internal/ptime"
 )
+
+// ErrNotSupported is returned when PHC operations are not supported on the current platform.
+var ErrNotSupported = errors.New("PHC not supported on this platform")
 
 // PinFunc represents a pin function type.
 type PinFunc uint32
