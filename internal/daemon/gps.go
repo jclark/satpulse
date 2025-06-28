@@ -11,6 +11,14 @@ import (
 	"github.com/jclark/satpulse/internal/gpsreg"
 )
 
+// gpsTimePulseFlags contains flags for GPS time pulse configuration
+type gpsTimePulseFlags int
+
+const (
+	// gpsTimePulseGetWidth queries the time pulse width
+	gpsTimePulseGetWidth gpsTimePulseFlags = 1 << iota
+)
+
 type GPSConfig struct {
 	Config             bool         `toml:"config"`
 	Stationary         bool         `toml:"stationary"`
@@ -43,33 +51,40 @@ var gpsDefault = GPSConfig{
 	PulseWidth:         math.NaN(),
 }
 
-func (c *GPSConfig) target(speed int, wantSatellitesOutput bool) (*gpsprot.ConfigTarget, error) {
+func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, tpFlags gpsTimePulseFlags) (*gpsprot.ConfigTarget, time.Duration, error) {
 	target := gpsprot.NewConfigTarget()
+	pulseWidth, err := c.pulseWidth()
+	if err != nil {
+		return nil, 0, err
+	}
 	if !c.Config {
-		return target, nil
+		return target, pulseWidth, nil
 	}
 	target.Props.SetPPS()
 	gpsevent.SetMsgOptions(target)
-	err := c.getTimeMode(target)
+	if tpFlags&gpsTimePulseGetWidth != 0 && pulseWidth == 0 {
+		target.Get |= gpsprot.PropIDTimePulseWidth
+	}
+	err = c.getTimeMode(target)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	cp := &target.Props
 	err = c.getTimeGNSS(cp)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	err = c.getDelay(cp)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	err = c.getFixedPos(cp)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	target.Opts.SatsMsg = c.satsMsg(speed, wantSatellitesOutput)
 	target.Opts.RTCMMsg = c.rtcmMsg()
-	return target, nil
+	return target, pulseWidth, nil
 }
 
 func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProcessor, error) {

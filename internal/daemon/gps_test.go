@@ -20,7 +20,7 @@ func TestGPSConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := cfg.GPS.target(9600, false)
+	target, _, err := cfg.GPS.target(9600, false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestFixedPosECEFTimeMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := cfg.GPS.target(9600, false)
+	target, _, err := cfg.GPS.target(9600, false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
