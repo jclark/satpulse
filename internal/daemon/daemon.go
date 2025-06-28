@@ -84,19 +84,26 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		if ctx.Err() != nil {
 			return nil
 		}
-		return err
+		if !errors.Is(err, phc.ErrNotSupported) {
+			return err
+		}
 	}
-	phcFlags := clk.DriverFlags
-	lg.Info("selected PTP hardware clock", "path", clk.Path(),
-		"known", phcFlags&phc.DriverKnown != 0,
-		"bothEdges", phcFlags&phc.DriverBothEdges != 0,
-		"oneEdge", phcFlags&phc.DriverOneEdge != 0,
-		"poll4Hz", phcFlags&phc.DriverPoll4Hz != 0)
-
-	defer func() {
-		clk.Close()
-		lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
-	}()
+	if clk == nil {
+		lg.Info("no interface specified, running in GPS only mode")
+	}
+	var phcFlags phc.DriverFlags
+	if clk != nil {
+		phcFlags = clk.DriverFlags
+		lg.Info("selected PTP hardware clock", "path", clk.Path(),
+			"known", phcFlags&phc.DriverKnown != 0,
+			"bothEdges", phcFlags&phc.DriverBothEdges != 0,
+			"oneEdge", phcFlags&phc.DriverOneEdge != 0,
+			"poll4Hz", phcFlags&phc.DriverPoll4Hz != 0)
+		defer func() {
+			clk.Close()
+			lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
+		}()
+	}
 	speed := 0
 	if cfg.Serial.Speed != nil {
 		speed = *cfg.Serial.Speed
@@ -177,8 +184,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
 	var tpFlags gpsTimePulseFlags
-	if phcFlags.Edges() != 1 {
-		tpFlags |= gpsTimePulseGetWidth
+	if clk != nil {
+		tpFlags |= gpsTimePulseEnable
+		if phcFlags.Edges() != 1 {
+			tpFlags |= gpsTimePulseGetWidth
+		}
 	}
 	gct, pulseWidth, err := cfg.GPS.target(conn.Speed(), len(cfg.HTTP) > 0, tpFlags)
 	lg.Debug("GPS configure input", "target", gct)
@@ -233,9 +243,12 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if rc != nil {
 		rcProxy, rcCh = mon.NewProxyRefClock()
 	}
-	tsCh, err := ts.StartWorker(ctx, clk, lg)
-	if err != nil {
-		return err
+	var tsCh <-chan ts.Event
+	if clk != nil {
+		tsCh, err = ts.StartWorker(ctx, clk, lg)
+		if err != nil {
+			return err
+		}
 	}
 	if pw, ok := gcfg.ConfigProps.GetTimePulseWidth(); ok {
 		pulseWidth = pw
@@ -269,25 +282,30 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 }
 
 func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, tStart time.Time) (*gpsevent.Dispatcher, error) {
-	servo, err := servo.New(clk, lg)
-	if err != nil {
-		return nil, err
-	}
 	ls := cfg.LeapSecond.leapSecond()
-	m, err := mon.NewMonitor(servo, lg, mon.MonitorConfig{
-		LeapSecond:    ls,
-		SSECh:         sseCh,
-		RefClock:      rc,
-		Grandmaster:   gm,
-		LogInterval:   cfg.Log.Interval,
-		ClockLogPath:  cfg.Log.ClockPath(clk.IfName(), mon.ClockLogExtension),
-		ClockAccuracy: time.Duration(cfg.PTP.ClockAccuracy),
-	})
-	if err != nil {
-		return nil, err
+	var m *mon.Monitor
+	var driverFlags phc.DriverFlags
+	if clk != nil {
+		servo, err := servo.New(clk, lg)
+		if err != nil {
+			return nil, err
+		}
+		m, err = mon.NewMonitor(servo, lg, mon.MonitorConfig{
+			LeapSecond:    ls,
+			SSECh:         sseCh,
+			RefClock:      rc,
+			Grandmaster:   gm,
+			LogInterval:   cfg.Log.Interval,
+			ClockLogPath:  cfg.Log.ClockPath(clk.IfName(), mon.ClockLogExtension),
+			ClockAccuracy: time.Duration(cfg.PTP.ClockAccuracy),
+		})
+		if err != nil {
+			return nil, err
+		}
+		driverFlags = clk.DriverFlags
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, m, ls, clk.DriverFlags, pulseWidth, sseCh, eventLogPath, tStart)
+	return gpsevent.NewDispatcher(lg, pktProcs, m, ls, driverFlags, pulseWidth, sseCh, eventLogPath, tStart)
 }
 
 type InitData struct {

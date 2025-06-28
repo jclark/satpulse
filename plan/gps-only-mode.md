@@ -25,21 +25,21 @@ func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock,
 - Update logging to indicate GPS-only vs PTP mode
 
 ### GPS Configuration Strategy
-**Initial Refactor Required**: 
-- Add `TimePulseEnable` flag to `cfg.GPS.target()` method signature  
-- When `TimePulseEnable` flag absent: don't call `target.Props.SetPPS()` (line 51 in gps.go)
+- Add `gpsTimePulseEnable` flag to `cfg.GPS.target()` method signature  
+- When `gpsTimePulseEnable` flag absent: don't call `target.Props.SetPPS()`
 - Pass time pulse enabled flag to `gpsevent.SetMsgOptions()` for appropriate message configuration
-- Also add `TimePulseGetWidth` flag for the existing PHC driver dependency (line 184)
+- Also add `gpsTimePulseGetWidth` flag for the existing PHC driver dependency
+- Return `pulseWidth` from target() method to consolidate validation
 
-**Current PTP mode**: Pass `TimePulseEnable` flag always, plus `TimePulseGetWidth` when `phcFlags.Edges() != 1 && defaultPulseWidth == 0`
-**GPS-only mode**: Don't pass `TimePulseEnable` flag - different GPS configuration and messages
+**PTP mode**: Set `gpsTimePulseEnable` flag always, plus `gpsTimePulseGetWidth` when `phcFlags.Edges() != 1`
+**GPS-only mode**: Don't set any flags - different GPS configuration and messages
 
 **Message Configuration**:
 - Modify `gpsevent.SetMsgOptions()` to accept `timePulseEnabled` parameter  
 - Configure different PVT messages based on this parameter:
-  - When `timePulseEnabled=true` (PTP mode): Current `PVTMsgFlags` (TimePulse, TimePulseAfter, TAI, LeapSecond, Survey)
-  - When `timePulseEnabled=false` (GPS-only mode): Enable Pos and Tim PVT messages instead
-- Binary mode (NMEA disabled) already happens in `SetMsgOptions()` line 31
+  - When `timePulseEnabled=true` (PTP mode): `TimePulsePVTMsgFlags` (TimePulse, TimePulseAfter, TAI, LeapSecond, Survey)
+  - When `timePulseEnabled=false` (GPS-only mode): `NoTimePulsePVTMsgFlags` (Pos, Time, LeapSecond, Survey messages)
+- Binary mode (NMEA disabled) already happens in `SetMsgOptions()`
 
 ## Dispatcher Creation
 

@@ -15,8 +15,10 @@ import (
 type gpsTimePulseFlags int
 
 const (
+	// gpsTimePulseEnable enables time pulse output
+	gpsTimePulseEnable gpsTimePulseFlags = 1 << iota
 	// gpsTimePulseGetWidth queries the time pulse width
-	gpsTimePulseGetWidth gpsTimePulseFlags = 1 << iota
+	gpsTimePulseGetWidth
 )
 
 type GPSConfig struct {
@@ -60,8 +62,11 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, tpFlags gpsTime
 	if !c.Config {
 		return target, pulseWidth, nil
 	}
-	target.Props.SetPPS()
-	gpsevent.SetMsgOptions(target)
+	timePulseEnabled := tpFlags&gpsTimePulseEnable != 0
+	if timePulseEnabled {
+		target.Props.SetPPS()
+	}
+	gpsevent.SetMsgOptions(target, timePulseEnabled)
 	if tpFlags&gpsTimePulseGetWidth != 0 && pulseWidth == 0 {
 		target.Get |= gpsprot.PropIDTimePulseWidth
 	}

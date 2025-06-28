@@ -520,7 +520,7 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 		case "off":
 			flags |= gpsprot.PVTMsgOff
 		case "daemon":
-			flags |= gpsevent.PVTMsgFlags | gpsprot.PVTMsgOff
+			flags |= gpsevent.TimePulsePVTMsgFlags | gpsprot.PVTMsgOff
 		default:
 			return fmt.Errorf("unknown pvt output flag: %s", w)
 		}

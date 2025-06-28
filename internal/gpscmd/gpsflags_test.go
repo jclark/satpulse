@@ -103,7 +103,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--raw-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgFlags(0))}}},
 	{"ttyS0", []string{"--raw-out", "obs", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgObs), Save: gpsprot.SaveMinimal}}},
 	// Test --pvt-out flag
-	{"ttyS0", []string{"--pvt-out", "daemon"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsevent.PVTMsgFlags | gpsprot.PVTMsgOff}}},
+	{"ttyS0", []string{"--pvt-out", "daemon"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsevent.TimePulsePVTMsgFlags | gpsprot.PVTMsgOff}}},
 	{"ttyS0", []string{"--pvt-out", "pos"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgPos}}},
 	{"ttyS0", []string{"--pvt-out", "vel"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgVel}}},
 	{"ttyS0", []string{"--pvt-out", "time"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgTime}}},
@@ -279,15 +279,15 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--nmea", "--raw-out", "obs"},    // can't use --nmea with --raw-out
 	{"--serial-device", "ttyS0", "--binary", "--nmea-out", "RMC"}, // can't use --binary with --nmea-out
 	// Test invalid --time-gnss options
-	{"--serial-device", "ttyS0", "--time-gnss", "SBAS"},   // not a major GNSS constellation
-	{"--serial-device", "ttyS0", "--time-gnss", "QZSS"},   // not a major GNSS constellation
-	{"--serial-device", "ttyS0", "--time-gnss", "NAVIC"},  // not a major GNSS constellation
+	{"--serial-device", "ttyS0", "--time-gnss", "SBAS"},    // not a major GNSS constellation
+	{"--serial-device", "ttyS0", "--time-gnss", "QZSS"},    // not a major GNSS constellation
+	{"--serial-device", "ttyS0", "--time-gnss", "NAVIC"},   // not a major GNSS constellation
 	{"--serial-device", "ttyS0", "--time-gnss", "invalid"}, // invalid GNSS constellation
 	// Test invalid combinations of --gnss and --time-gnss
-	{"--serial-device", "ttyS0", "--gnss", "GPS,GAL", "--time-gnss", "BDS"},    // BDS not in enabled GNSS
-	{"--serial-device", "ttyS0", "--gnss", "GPS", "--time-gnss", "GLO"},        // GLO not in enabled GNSS
-	{"--serial-device", "ttyS0", "--gnss", "GAL,BDS", "--time-gnss", "GPS"},    // GPS not in enabled GNSS
-	{"--serial-device", "ttyS0", "--gnss", "BDS", "--time-gnss", "GAL"},        // GAL not in enabled GNSS
+	{"--serial-device", "ttyS0", "--gnss", "GPS,GAL", "--time-gnss", "BDS"}, // BDS not in enabled GNSS
+	{"--serial-device", "ttyS0", "--gnss", "GPS", "--time-gnss", "GLO"},     // GLO not in enabled GNSS
+	{"--serial-device", "ttyS0", "--gnss", "GAL,BDS", "--time-gnss", "GPS"}, // GPS not in enabled GNSS
+	{"--serial-device", "ttyS0", "--gnss", "BDS", "--time-gnss", "GAL"},     // GAL not in enabled GNSS
 }
 
 func TestParseFlagsInvalid(t *testing.T) {

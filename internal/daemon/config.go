@@ -140,6 +140,9 @@ func defaultConfig() *Config {
 }
 
 func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {
+	if cfg.Interface == "" {
+		return nil, nil
+	}
 	return ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
 }
 

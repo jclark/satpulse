@@ -64,8 +64,7 @@
 		  "pin": { "type": "integer", "minimum": 0 },
 		  "channel": { "type": "integer", "minimum": 0 },
 		  "wait": { "type": "boolean" }
-		},
-		"required": ["interface"]
+		}
 	  },
 	  "proxy": {
 		"type": "object",
@@ -157,6 +156,5 @@
 			}
 		}
 	  }
-	},
-	"required": ["phc"]
+	}
 }

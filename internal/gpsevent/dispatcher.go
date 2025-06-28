@@ -22,14 +22,21 @@ import (
 
 const LogExtension = ".jsonl"
 
-// PVTMsgFlags are the PVT message flags suitably for the gpsevent package.
-const PVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey
+// TimePulsePVTMsgFlags are the PVT message flags when time pulse is enabled.
+const TimePulsePVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey
+
+// NoTimePulsePVTMsgFlags are the PVT message flags when time pulse is not enabled.
+const NoTimePulsePVTMsgFlags = gpsprot.PVTMsgPos | gpsprot.PVTMsgTime | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey
 
 // SetMsgOptions configures the message options suitably for the gpsevent package.
 // It disables NMEA (which is slow on 8th gen) and enables the required PVT messages.
-func SetMsgOptions(target *gpsprot.ConfigTarget) {
+func SetMsgOptions(target *gpsprot.ConfigTarget, timePulseEnabled bool) {
 	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone) // Config is very slow on 8-th gen if NMEA is enabled
-	target.Opts.PVTMsg = PVTMsgFlags
+	if timePulseEnabled {
+		target.Opts.PVTMsg = TimePulsePVTMsgFlags
+	} else {
+		target.Opts.PVTMsg = NoTimePulsePVTMsgFlags
+	}
 }
 
 type Dispatcher struct {
@@ -90,9 +97,16 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 		defer close(sseCh)
 	}
 	// close the monitor before the sseCh, since the monitor uses the sseCh
-	defer d.mon.Close()
-	ticker := time.NewTicker(tickPeriod)
-	defer ticker.Stop()
+	if d.mon != nil {
+		defer d.mon.Close()
+	}
+	var ticker *time.Ticker
+	var tickerCh <-chan time.Time
+	if d.mon != nil {
+		ticker = time.NewTicker(tickPeriod)
+		defer ticker.Stop()
+		tickerCh = ticker.C
+	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, unix.SIGHUP)
@@ -145,13 +159,15 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 				lg.Debug("packet channel of event dispatcher goroutine was closed")
 				pktCh = nil
 			}
-		case t := <-ticker.C:
+		case t := <-tickerCh:
 			d.mon.Tick(t)
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
 		case <-sig:
-			d.mon.ReopenLog()
+			if d.mon != nil {
+				d.mon.ReopenLog()
+			}
 			d.lf.Reopen(d.lg)
 		}
 	}
@@ -208,6 +224,7 @@ type Timestamp struct {
 }
 
 func (d *Dispatcher) timestamp(e ts.Event) {
+	// timestamp events only occur when PHC is available, so d.mon and d.cb are non-nil
 	var delay time.Duration
 	trp := e.TReadPHC.T
 	if !trp.IsZero() && !e.TReadPHC.Era.Uncertain() && e.TReadPHC.Era == e.Ts.Era {
@@ -245,7 +262,9 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 		d.lg.Debug("computed TAI time from UTC time", "tai", sec)
 	}
 	secRnd := sec.Round(time.Second)
-	d.cb.TimeMsg(secRnd, tRead, mt.PulseOffset, mt.Ref)
+	if d.cb != nil {
+		d.cb.TimeMsg(secRnd, tRead, mt.PulseOffset, mt.Ref)
+	}
 	if mt.Ref != gpsprot.PrePulse && secRnd > d.lastTime {
 		d.sendSSE("time", TimeSSE{
 			UTC: d.ls.FormatTime(secRnd),
@@ -332,7 +351,9 @@ func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 		return
 	}
 	d.ls = msg.LeapSecond
-	d.mon.SetLeapSecond(d.ls)
+	if d.mon != nil {
+		d.mon.SetLeapSecond(d.ls)
+	}
 }
 
 func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {

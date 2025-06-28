@@ -16,7 +16,7 @@ esac
 
 # Output directory
 outdir="out/${os}_${goarch}"
-targets="./cmd/satpulsetool ./cmd/ubxanno ./cmd/pollpps"
+targets="./cmd/satpulsed ./cmd/satpulsetool ./cmd/ubxanno ./cmd/pollpps"
 
 # Build info
 build_date=$(date -u -Iseconds | tr 'T' ' ')
