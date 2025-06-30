@@ -16,7 +16,7 @@ var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 // PacketProcessor implements the gpsprot.PacketProcessor interface for UBX packets
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
-	mh  gpsprot.MsgHandler
+	mh gpsprot.MsgHandler
 }
 
 // NewPacketProcessor creates a new UBX packet processor
@@ -27,10 +27,10 @@ func NewPacketProcessor() *PacketProcessor {
 // ProcessPacket processes a UBX packet's data and returns the message ID and any error
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
 	m, err := bin.ParseMsg(data)
-	msgID := m.ID().String()
 	if err != nil {
-		return msgID, err
+		return PacketFormat.MsgID([]byte(data)), err
 	}
+	msgID := m.ID().String()
 	if Dispatch(m, tRead, p.mh) {
 		return msgID, nil
 	}
