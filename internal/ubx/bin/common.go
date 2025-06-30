@@ -208,7 +208,7 @@ func ParseMsg(packet string) (Msg, error) {
 
 func Serialize(msg Msg) ([]byte, error) {
 	if uMsg, ok := msg.(*UnknownMsg); ok {
-		return packMsg(uMsg.MsgID, []byte(uMsg.Payload))
+		return PackMsg(uMsg.MsgID, []byte(uMsg.Payload))
 	}
 	buf := new(bytes.Buffer)
 	var v any
@@ -229,15 +229,15 @@ func Serialize(msg Msg) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return packMsg(msg.ID(), buf.Bytes())
+	return PackMsg(msg.ID(), buf.Bytes())
 }
 
 func Poll(mid MsgID) []byte {
-	packet, _ := packMsg(mid, []byte{})
+	packet, _ := PackMsg(mid, []byte{})
 	return packet
 }
 
-func packMsg(mid MsgID, payload []byte) ([]byte, error) {
+func PackMsg(mid MsgID, payload []byte) ([]byte, error) {
 	if len(payload) > 0xFFFF {
 		return nil, fmt.Errorf("ubx-%s payload too long (%d bytes", mid.String(), len(payload))
 	}

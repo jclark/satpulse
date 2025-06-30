@@ -5,20 +5,20 @@ import (
 )
 
 const (
-	CfgCfgID     MsgID = clsCfg | (0x09 << 8)
-	CfgGNSSID    MsgID = clsCfg | (0x3E << 8)
-	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
-	CfgNav5ID    MsgID = clsCfg | (0x24 << 8)
-	CfgPrtID     MsgID = clsCfg | (0x00 << 8)
-	CfgRateID    MsgID = clsCfg | (0x08 << 8)
-	CfgRstID     MsgID = clsCfg | (0x04 << 8)
-	CfgTmodeID   MsgID = clsCfg | (0x1D << 8)
-	CfgTmode2ID  MsgID = clsCfg | (0x3D << 8)
-	CfgTmode3ID  MsgID = clsCfg | (0x71 << 8)
-	CfgTp5ID     MsgID = clsCfg | (0x31 << 8)
-	CfgValdelID  MsgID = clsCfg | (0x8C << 8)
-	CfgValgetID  MsgID = clsCfg | (0x8B << 8)
-	CfgValsetID  MsgID = clsCfg | (0x8A << 8)
+	CfgCfgID    MsgID = clsCfg | (0x09 << 8)
+	CfgGNSSID   MsgID = clsCfg | (0x3E << 8)
+	CfgMsgID    MsgID = clsCfg | (0x01 << 8)
+	CfgNav5ID   MsgID = clsCfg | (0x24 << 8)
+	CfgPrtID    MsgID = clsCfg | (0x00 << 8)
+	CfgRateID   MsgID = clsCfg | (0x08 << 8)
+	CfgRstID    MsgID = clsCfg | (0x04 << 8)
+	CfgTmodeID  MsgID = clsCfg | (0x1D << 8)
+	CfgTmode2ID MsgID = clsCfg | (0x3D << 8)
+	CfgTmode3ID MsgID = clsCfg | (0x71 << 8)
+	CfgTp5ID    MsgID = clsCfg | (0x31 << 8)
+	CfgValdelID MsgID = clsCfg | (0x8C << 8)
+	CfgValgetID MsgID = clsCfg | (0x8B << 8)
+	CfgValsetID MsgID = clsCfg | (0x8A << 8)
 )
 
 type CfgCfg struct {
@@ -653,19 +653,19 @@ func (m *CfgValdel) VaryingPart() any {
 }
 
 func PollCfgTp5(tpIdx int) []byte {
-	packet, _ := packMsg(CfgTp5ID, []byte{byte(tpIdx)})
+	packet, _ := PackMsg(CfgTp5ID, []byte{byte(tpIdx)})
 	return packet
 }
 
 func SetCfgMsg(mid MsgID, rate byte) []byte {
 	cls, id := mid.unpack()
-	packet, _ := packMsg(CfgMsgID, []byte{cls, id, rate})
+	packet, _ := PackMsg(CfgMsgID, []byte{cls, id, rate})
 	return packet
 }
 
 func PollCfgMsg(mid MsgID) []byte {
 	cls, id := mid.unpack()
-	packet, _ := packMsg(CfgMsgID, []byte{cls, id})
+	packet, _ := PackMsg(CfgMsgID, []byte{cls, id})
 	return packet
 }
 

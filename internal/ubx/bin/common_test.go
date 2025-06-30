@@ -2,7 +2,7 @@ package bin
 
 import (
 	"strings"
-"testing"
+	"testing"
 )
 
 func testMsgType[M comparable, PM interface {
@@ -40,7 +40,7 @@ func testMsgType1[M any, PM interface {
 
 func TestTrailingBytes(t *testing.T) {
 	a := AckAck{}
-	b, _ := packMsg(a.ID(), []byte{clsCfg, 0x01,
+	b, _ := PackMsg(a.ID(), []byte{clsCfg, 0x01,
 		// extra byte
 		0x42})
 	s := string(b)
