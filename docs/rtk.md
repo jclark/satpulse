@@ -2,6 +2,20 @@
 title: Using RTK
 ---
 
+Real-Time Kinematic (RTK) positioning is a precision positioning technology, which uses two GNSS receivers: a base station with a precisely known position which provides correction data in the form of RTCM messages, and a rover, which can use this correction data to determine its position with centimeter-level accuracy.
+The distance between the base and the rover is limited to about 10-20 kilometers.
+
+The requirements for an RTK base station and a precision time server are similar.
+GNSS receivers that perform well for RTK typically also provide good timing performance, and because RTK is a much larger market, RTK-capable receivers often offer better value for timing applications.
+Both applications require a stationary antenna with a precisely known position.
+SatPulse enables a single GNSS receiver to be used simultaneously for both purposes.
+Running an RTK base and contributing to a public caster such as [RTK2go](http://rtk2go.com/) is a good way to make your GNSS receiver as useful as possible.
+RTK is also useful for determining the precise antenna position needed for GNSS time mode.
+
+This guide shows how to configure SatPulse as an RTK base station,
+and also how you can use SatPulse as a rover to verify the correct operation of the base station.
+This works best with u-blox receivers; with other receivers, you will need to use other tools for some of the configuration.
+I developed this guide with a u-blox ZED-F9T as the base and a u-blox ZED-F9P as the rover.
 
 ## Base station
 
@@ -32,13 +46,13 @@ You can alternatively use `satpulsetool gps --rtcm-out` for a bit more control. 
 
 ### Other receiver configuration
 
-RTCM messages consume bandwidth, so you should enable a sufficiently high bandwidth. Assuming the receiver is also being used for timing, it is important that the RTCM messages do not consume such a high percentage of the bandwidth that timing messages are significantly delay. I therefore recommend using a high baud-rate such as 115200. You can use `satpulsetool gps --speed` to configure this.
+RTCM messages consume bandwidth, so you should enable a sufficiently high baud rate. Assuming the receiver is also being used for timing, it is important that the RTCM messages do not consume such a high percentage of the bandwidth that timing messages are significantly delayed. I therefore recommend using a high baud rate such as 115200. You can use `satpulsetool gps --speed` to configure this.
 
 You should also think about the signals that should be enabled. Generally, more is better for RTK. You can specify the constellations that should be enabled using `satpulsetool gps --gnss`. For example, `satpulsetool gps --gnss GPS,GAL,BDS,QZSS` would enable GPS, Galileo, BeiDou and QZSS.
 
 ### Making RTCM messages available over TCP
 
-You also need to configure satpulsed to proxy RTCM packets that it gets from the receiver over GPS. This is done adding a section like this to `/etc/satpulse.toml`.
+You also need to configure satpulsed to proxy RTCM packets from the receiver over TCP. This is done by adding a section like this to `/etc/satpulse.toml`.
 
 ```
 [[proxy.tcp]]
@@ -52,7 +66,7 @@ This says to make RTCM packets available on port 2009.
 
 ### Using satpulsed
 
-You can use satpulsed on the rover side also, for example do determine the fixed position of the antenna using an RTK base station.
+You can use satpulsed on the rover side also, for example to determine the fixed position of the antenna using an RTK base station.
 
 First stop the satpulse service. Assuming your receiver is at `/dev/ttyACM0`
 
@@ -71,7 +85,7 @@ For example:
 config=false
 ```
 
-Next use satpulsetool to undo the non-persistent configuration satpulsed did. Assuming your receiver had previously been using 9600 baud do:
+Next use satpulsetool to undo any non-persistent configuration satpulsed did. Assuming your receiver had previously been using 9600 baud do:
 
 ```
 satpulsetool gps -d /dev/ttyACM0 -s 9600 --reload
@@ -86,7 +100,7 @@ satpulsetool gps -d /dev/ttyACM0 -s 9600 --speed 115200
 I also suggest enabling only RMC and GGA messages.
 
 ```
-satpulsetool gps -d /dev/ttyACM0 -s 9600 --nmea-out RMC,GGA
+satpulsetool gps -d /dev/ttyACM0 -s 115200 --nmea-out RMC,GGA
 ```
 
 ### Daemon configuration
@@ -139,7 +153,7 @@ Now if you do
 nc localhost 2007
 ```
 
-you should see soom NMEA sentences (including GGA and RMC).
+you should see some NMEA sentences (including GGA and RMC).
 
 The 6th comma-separated field of GGA sentences (where $xxGGA counts as field 0) should be 1 or 2 at this point.
 
@@ -222,12 +236,12 @@ Here
 To use NTRIP on the rover with satpulsed, you would need a writeable TCP connection
 (which is not secure). Add this to `/etc/satpulse.toml`
 
-``
+```
 [[proxy.tcp]]
 listen = ":2006"
 ```
 
-On the rover, we can then run a simple NTRIP client using the st2str program:
+On the rover, we can then run a simple NTRIP client using the str2str program:
 
 ```
 str2str -in ntrip://jjc:xyzzy@ptp.lan:2101/bkk -out tcpcli://localhost:2006
