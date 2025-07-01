@@ -27,5 +27,7 @@ docs:
     children:
       - title: "Precisely determine antenna position"
         url: "/precise-position.html"
+      - title: "Use RTK"
+        url: "/rtk.html"
   - title: "Internals"
     url: "/internals.html"
