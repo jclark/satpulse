@@ -321,12 +321,12 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 		InProgress: m.InProgress,
 		Valid:      m.Valid,
 	}
-	lla, err := geopos.WGS84.ECEFtoLLA(ecef)
+	llh, err := geopos.WGS84.ECEFtoLLH(ecef)
 	if err == nil {
-		latLon := [2]float64{lla.Lat, lla.Lon}
+		latLon := [2]float64{llh.Lat, llh.Lon}
 		sse.LatLon = &latLon
-		alt := lla.Alt
-		sse.Alt = &alt
+		h := llh.Height
+		sse.Alt = &h
 	}
 	d.sendSSE("survey", sse)
 }

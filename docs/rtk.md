@@ -195,11 +195,11 @@ The GGA line now gives the precise position:
 - field 9 is altitude above mean sea level
 - field 11 is geoid separation
 
-To get LLA coordinates, you need to
+To get LLH coordinates, you need to
 - convert ddmm.mmmm degress/minutes into decimal degrees dd + mm.mmmmm/60
 - add the altitude above mean sea level to geoid separation to get height above ellipsoid
 
-You can then stick this into an online LLA to ECEF converter like [ConvertECEF](https://convertecef.com/) (select HAE in the altitude box).
+You can then stick this into an online LLH to ECEF converter like [ConvertECEF](https://convertecef.com/) (select HAE in the altitude box).
 
 You could then use this ECEF position as the fixed position for time mode.
 

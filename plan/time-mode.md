@@ -215,6 +215,11 @@ type tmodeConfig struct {
 - **Cleaner testing**: Translation layers can be tested independently
 - **Reduced complexity**: Hide format-specific details in translation layer
 
+### Staging
+
+1. Introduce --fixed-pos-ecef and --fixed-pos-acc satpulsetool GPS options
+2. Generate some packet traces using 6T, M8T and F9P for time mode
+
 ## Background
 
 ### U-blox
@@ -319,7 +324,7 @@ CONFIGURE 1PPS TIMING – Configure 1PPS timing of the GNSS receiver (0x54)
   * survey length
   * survey stddev
 - timing static mode
-  * LLA (not ECEF!)
+  * LLH (not ECEF!)
 
 Flag to say whether to update to Flash as well as RAM.
 

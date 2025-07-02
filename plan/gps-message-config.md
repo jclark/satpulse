@@ -8,7 +8,7 @@ The basic idea is to divide messages into the following categories, and then hav
   - TAI - want time in TAI (or constant  number of seconds from TAI) rather than UTC
   - FutureLeapSecond - this is the key metadata that satpulsed ideally wants: information about any upcoming leap second (or the last leap second if no upcoming leap second has been announce)
   - Survey - this means the ECEF position and accuracy determined so far as part of survey; in UBX there is a specific message for this, but with other GPSs we might need to use messages to get the ECEF position and accuracy
-  - Pos - position from solution by default LLA
+  - Pos - position from solution by default LLH
   - Vel - velocity from solutio by default in NED
   - ECEF - Position/velocity in ECEF (not used yet)
   -  TDOP - Time DOP (not used yet)

@@ -25,7 +25,7 @@ func TestCheckOnEarthValid(t *testing.T) {
 	}
 }
 
-var landmarks = []LLA{
+var landmarks = []LLH{
 	{40.689247, -74.044502, 0},     // Statue of Liberty, New York, USA
 	{48.858222, 2.2945, 0},         // Eiffel Tower, Paris, France
 	{27.175, 78.042222, 0},         // Taj Mahal, Agra, India
@@ -50,21 +50,21 @@ var landmarks = []LLA{
 func TestRoundtip(t *testing.T) {
 	const tolerance = 1e-6
 	for _, lla := range landmarks {
-		ecef := WGS84.LLAtoECEF(lla)
-		lla2, err := WGS84.ECEFtoLLA(ecef)
+		ecef := WGS84.LLHtoECEF(lla)
+		lla2, err := WGS84.ECEFtoLLH(ecef)
 		if err != nil {
 			t.Errorf("Roundtrip failed: %v, error: %v", lla, err)
 		}
-		d := max(math.Abs(lla.Lat-lla2.Lat), math.Abs(lla.Lon-lla2.Lon), math.Abs(lla.Alt-lla2.Alt))
+		d := max(math.Abs(lla.Lat-lla2.Lat), math.Abs(lla.Lon-lla2.Lon), math.Abs(lla.Height-lla2.Height))
 		if d > tolerance {
 			t.Errorf("Roundtrip failed: %v, %v (max diff %f)", lla, lla2, d)
 		}
 	}
 }
 
-func TestCheckOnEarthValidLLA(t *testing.T) {
+func TestCheckOnEarthValidLLH(t *testing.T) {
 	for _, lla := range landmarks {
-		ecef := WGS84.LLAtoECEF(lla)
+		ecef := WGS84.LLHtoECEF(lla)
 		if err := ecef.CheckOnEarth(); err != nil {
 			t.Errorf("Valid position failed: %v, error: %v", lla, err)
 		}
@@ -89,10 +89,10 @@ func TestCheckOnEarthInvalid(t *testing.T) {
 	}
 }
 
-// TestLLAtoECEF tests the LLAtoECEF function with known input and expected output.
-func TestLLAtoECEF(t *testing.T) {
+// TestLLHtoECEF tests the LLHtoECEF function with known input and expected output.
+func TestLLHtoECEF(t *testing.T) {
 	// Test data
-	lla := LLA{51.477928, -0.001545, 0.0} // Coordinates for the Royal Observatory, Greenwich
+	lla := LLH{51.477928, -0.001545, 0.0} // Coordinates for the Royal Observatory, Greenwich
 
 	// Expected ECEF coordinates (approximate)
 	expected := [3]float64{3980570.07, -107.34, 4966833.39}
@@ -101,23 +101,23 @@ func TestLLAtoECEF(t *testing.T) {
 	const tolerance = 1e-2
 
 	// Perform conversion
-	ecef := WGS84.LLAtoECEF(lla)
+	ecef := WGS84.LLHtoECEF(lla)
 
 	// Check each component of the result against the expected values
 	for i, v := range ecef {
 		if math.Abs(v-expected[i]) > tolerance {
-			t.Errorf("LLAtoECEF(%v)[%d] = %f, want %f", lla, i, v, expected[i])
+			t.Errorf("LLHtoECEF(%v)[%d] = %f, want %f", lla, i, v, expected[i])
 		}
 	}
 }
 
-func TestECEF0ToLLA(t *testing.T) {
+func TestECEF0ToLLH(t *testing.T) {
 	// Test data
 	ecef := ECEF{0.0, 0.0, 0} // center of the earth
 
 	// Perform conversion
-	lla, err := WGS84.ECEFtoLLA(ecef)
+	lla, err := WGS84.ECEFtoLLH(ecef)
 	if err == nil {
-		t.Errorf("ECEFtoLLA(%v) = %v, wanted error", ecef, lla)
+		t.Errorf("ECEFtoLLH(%v) = %v, wanted error", ecef, lla)
 	}
 }

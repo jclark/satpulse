@@ -38,9 +38,9 @@ func (xyz ECEF) IsZero() bool {
 	return xyz[0] == 0 && xyz[1] == 0 && xyz[2] == 0
 }
 
-// LLA represents latitude, longitude, and altitude.
-type LLA struct {
-	Lat, Lon, Alt float64 // Lat, Lon in degrees; Alt in meters
+// LLH represents latitude, longitude, and height.
+type LLH struct {
+	Lat, Lon, Height float64 // Lat, Lon in degrees; Height above the ellipsoid in meters
 }
 
 // WGS84 constants
@@ -57,29 +57,29 @@ type wgs84 byte
 // It provides methods converting between LLA and ECEF coordinates.
 const WGS84 wgs84 = 0
 
-// LLAtoECEF converts latitude, longitude, and altitude to ECEF coordinates using WGS84 datum.
-func (wgs84) LLAtoECEF(lla LLA) ECEF {
+// LLHtoECEF converts latitude, longitude, and height to ECEF coordinates using WGS84 datum.
+func (wgs84) LLHtoECEF(llh LLH) ECEF {
 	// Convert degrees to radians
-	lat := lla.Lat * radiansPerDegree
-	lon := lla.Lon * radiansPerDegree
+	lat := llh.Lat * radiansPerDegree
+	lon := llh.Lon * radiansPerDegree
 	// Intermediate calculation (prime vertical radius of curvature)
 	r := wgs84a / math.Sqrt(1-wgs84eSquared*math.Sin(lat)*math.Sin(lat))
 	return ECEF{
-		(r + lla.Alt) * math.Cos(lat) * math.Cos(lon),
-		(r + lla.Alt) * math.Cos(lat) * math.Sin(lon),
-		((1-wgs84eSquared)*r + lla.Alt) * math.Sin(lat),
+		(r + llh.Height) * math.Cos(lat) * math.Cos(lon),
+		(r + llh.Height) * math.Cos(lat) * math.Sin(lon),
+		((1-wgs84eSquared)*r + llh.Height) * math.Sin(lat),
 	}
 }
 
 const degreesPerRadian = 180 / math.Pi
 
-// ECEFtoLLA converts ECEF coordinates to LLA (Latitude, Longitude, Altitude) using WGS84 datum.
+// ECEFtoLLH converts ECEF coordinates to LLH (Latitude, Longitude, Height) using WGS84 datum.
 // ecef is a [3]float64 array representing ECEF coordinates in meters.
-// Returns LLA struct with latitude and longitude in degrees, altitude in meters.
-func (wgs84) ECEFtoLLA(ecef ECEF) (LLA, error) {
+// Returns LLH struct with latitude and longitude in degrees, height in meters.
+func (wgs84) ECEFtoLLH(ecef ECEF) (LLH, error) {
 	err := ecef.CheckOnEarth()
 	if err != nil {
-		return LLA{}, err
+		return LLH{}, err
 	}
 	x, y, z := ecef[0], ecef[1], ecef[2]
 
@@ -101,7 +101,7 @@ func (wgs84) ECEFtoLLA(ecef ECEF) (LLA, error) {
 		lat = math.Atan2(z, h*(1-wgs84eSquared*(r/(r+alt))))
 		// write it like this to bulletproof against lat becoming NaN
 		if !(math.Abs(lat-latPrev) > tolerance) {
-			return LLA{Lat: lat * degreesPerRadian, Lon: lon, Alt: alt}, nil
+			return LLH{Lat: lat * degreesPerRadian, Lon: lon, Height: alt}, nil
 		}
 	}
 }
