@@ -13,12 +13,12 @@ Goals
 
 * surveyTime number in seconds
 * surveyAcc number in meters
-* stationary bool (default true)
+* mobile bool (default false)
 * resurvey bool (default false)
 * fixedPosECEF [X,Y,Z]
 * fixedPosAcc
 
-Does a survey if stationary is true and no fixedPos;
+Does a survey if mobile is false and no fixedPos;
 if already in survey mode, don't resurvey unless resurvey is true.
 
 ## Design of abstract interface in gpsprot
@@ -130,7 +130,7 @@ Implementation notes:
 ## Common scenarios
 
 ### Daemon behaviour
-* `stationary=true` in TOML → sets SetStatic option (does NOT set Mode property)
+* `mobile=false` in TOML → sets SetStatic option (does NOT set Mode property)
 * `surveyTime` in TOML → sets Survey.MinDur option  
 * `surveyAcc` in TOML → sets Survey.AccLimit option
 * `fixedPosECEF` in TOML → sets Mode property with Static=true and the position
@@ -139,7 +139,7 @@ Implementation notes:
 ### CLI behaviour
 * `--mobile` → sets Mode.Static to false
 * `--survey` → requests a survey; sets Mode.Static to true and zeros Mode.FixedPosECEF
-* `--fixedPos` → sets Mode with Static=true and a fixed position
+* `--fixed-pos-ecef` → sets Mode with Static=true and a fixed position
 
 ## CLI change
 
