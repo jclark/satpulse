@@ -23,7 +23,7 @@ const (
 
 type GPSConfig struct {
 	Config             bool         `toml:"config"`
-	Mobile         bool         `toml:"mobile"`
+	Mobile             bool         `toml:"mobile"`
 	Resurvey           bool         `toml:"resurvey"`
 	SurveyTime         uint32       `toml:"surveyTime"`
 	SurveyAcc          float64      `toml:"surveyAcc"`
@@ -42,7 +42,7 @@ type GPSConfig struct {
 const defaultAccuracy = 20.0 // in meters
 
 var gpsDefault = GPSConfig{
-	Mobile:         false,
+	Mobile:             false,
 	Resurvey:           false,
 	SurveyTime:         2000, // 2000 seconds
 	SurveyAcc:          defaultAccuracy,
