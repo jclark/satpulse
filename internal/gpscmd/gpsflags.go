@@ -41,7 +41,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [--time-gnss GPS|GAL|BDS|GLO]
             [--raw-out obs|nav|none,...] [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
-            [--rtcm-out MSM4|MSM7|ARP|auto|none,...] [--nmea-out RMC|GGA|GSA|GSV|none,...]`
+            [--rtcm-out MSM4|MSM7|ARP|auto|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|none,...]`
 
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20.0
@@ -96,7 +96,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
 	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|tai|ecef|after|daemon|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|auto|none,...")
-	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|none,...")
+	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|VTG|none,...")
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
 	flags.MarkHidden("pps")
 	flags.BoolVar(&vars.mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
@@ -642,6 +642,9 @@ func (nmeaOut *nmeaOutOpt) String() string {
 	if flags&gpsprot.NMEAMsgZDA != 0 {
 		parts = append(parts, "ZDA")
 	}
+	if flags&gpsprot.NMEAMsgVTG != 0 {
+		parts = append(parts, "VTG")
+	}
 	// Don't expose NMEAMsgOther
 	return strings.Join(parts, ",")
 }
@@ -668,6 +671,8 @@ func (nmeaOut *nmeaOutOpt) Set(s string) error {
 			flags |= gpsprot.NMEAMsgGSV
 		case "ZDA":
 			flags |= gpsprot.NMEAMsgZDA
+		case "VTG":
+			flags |= gpsprot.NMEAMsgVTG
 		case "NONE":
 			// do nothing
 		default:

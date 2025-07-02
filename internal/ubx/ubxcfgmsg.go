@@ -254,6 +254,7 @@ func (m *msgChanges) nmea(flags gpsprot.NMEAMsgFlags, _ *Version) {
 	m.rate[bin.NmeaGsaID] = nmeaRate(flags & gpsprot.NMEAMsgGSA)
 	m.rate[bin.NmeaGsvID] = nmeaRate(flags & gpsprot.NMEAMsgGSV)
 	m.rate[bin.NmeaZdaID] = nmeaRate(flags & gpsprot.NMEAMsgZDA)
+	m.rate[bin.NmeaVtgID] = nmeaRate(flags & gpsprot.NMEAMsgVTG)
 }
 
 func nmeaRate(flags gpsprot.NMEAMsgFlags) MsgRate {

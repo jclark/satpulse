@@ -1072,6 +1072,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				bin.NmeaGsaID: 0,
 				bin.NmeaGsvID: 0,
 				bin.NmeaZdaID: 0,
+				bin.NmeaVtgID: 0,
 			},
 		},
 		{
@@ -1085,6 +1086,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				bin.NmeaGsaID: 0,
 				bin.NmeaGsvID: 0,
 				bin.NmeaZdaID: 0,
+				bin.NmeaVtgID: 0,
 			},
 		},
 		{
@@ -1098,6 +1100,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				bin.NmeaGsaID: 1,
 				bin.NmeaGsvID: 0,
 				bin.NmeaZdaID: 0,
+				bin.NmeaVtgID: 0,
 			},
 		},
 		{
@@ -1111,6 +1114,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				bin.NmeaGsaID: 0,
 				bin.NmeaGsvID: 1,
 				bin.NmeaZdaID: 0,
+				bin.NmeaVtgID: 0,
 			},
 		},
 		{
@@ -1124,6 +1128,21 @@ func TestMsgChangesNMEA(t *testing.T) {
 				bin.NmeaGsaID: 0,
 				bin.NmeaGsvID: 0,
 				bin.NmeaZdaID: 1,
+				bin.NmeaVtgID: 0,
+			},
+		},
+		{
+			name:            "VTG only",
+			flags:           gpsprot.NMEAMsgVTG,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]MsgRate{
+				bin.NmeaRmcID: 0,
+				bin.NmeaGgaID: 0,
+				bin.NmeaGsaID: 0,
+				bin.NmeaGsvID: 0,
+				bin.NmeaZdaID: 0,
+				bin.NmeaVtgID: 1,
 			},
 		},
 		{
@@ -1137,11 +1156,12 @@ func TestMsgChangesNMEA(t *testing.T) {
 				bin.NmeaGsaID: 0,
 				bin.NmeaGsvID: 1,
 				bin.NmeaZdaID: 0,
+				bin.NmeaVtgID: 0,
 			},
 		},
 		{
 			name:            "All standard messages",
-			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA,
+			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgVTG,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
 			expectedRates: map[bin.MsgID]MsgRate{
@@ -1150,6 +1170,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				bin.NmeaGsaID: 1,
 				bin.NmeaGsvID: 1,
 				bin.NmeaZdaID: 1,
+				bin.NmeaVtgID: 1,
 			},
 		},
 		{
@@ -1163,6 +1184,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				bin.NmeaGsaID: 0,
 				bin.NmeaGsvID: 0,
 				bin.NmeaZdaID: 0,
+				bin.NmeaVtgID: 0,
 			},
 		},
 		{
@@ -1176,11 +1198,26 @@ func TestMsgChangesNMEA(t *testing.T) {
 				bin.NmeaGsaID: 0,
 				bin.NmeaGsvID: 0,
 				bin.NmeaZdaID: 0,
+				bin.NmeaVtgID: 0,
+			},
+		},
+		{
+			name:            "RMC with VTG",
+			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgVTG,
+			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[bin.MsgID]MsgRate{
+				bin.NmeaRmcID: 1,
+				bin.NmeaGgaID: 0,
+				bin.NmeaGsaID: 0,
+				bin.NmeaGsvID: 0,
+				bin.NmeaZdaID: 0,
+				bin.NmeaVtgID: 1,
 			},
 		},
 		{
 			name:            "All messages with Other flag",
-			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgOther,
+			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgVTG | gpsprot.NMEAMsgOther,
 			expectedEnable:  bin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
 			expectedRates: map[bin.MsgID]MsgRate{
@@ -1189,6 +1226,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				bin.NmeaGsaID: 1,
 				bin.NmeaGsvID: 1,
 				bin.NmeaZdaID: 1,
+				bin.NmeaVtgID: 1,
 			},
 		},
 	}

@@ -264,10 +264,11 @@ const (
 	NMEAMsgGSA
 	NMEAMsgGSV
 	NMEAMsgZDA
+	NMEAMsgVTG
 	NMEAMsgOther NMEAMsgFlags = 1 << 15 // other unspecified NMEA messages
 	// may have flags like NMEA version or rate in the future
 	NMEAMsgNone NMEAMsgFlags = 0
-	NMEAMsgAny  NMEAMsgFlags = NMEAMsgRMC | NMEAMsgGGA | NMEAMsgGSA | NMEAMsgGSV | NMEAMsgZDA | NMEAMsgOther // any message (not flag)
+	NMEAMsgAny  NMEAMsgFlags = NMEAMsgRMC | NMEAMsgGGA | NMEAMsgGSA | NMEAMsgGSV | NMEAMsgZDA | NMEAMsgVTG | NMEAMsgOther // any message (not flag)
 )
 
 type RTCMMsgFlags uint16
