@@ -11,7 +11,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-time\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-ant\-cable\-delay** *nanos*] [**\-\-time\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-mobile**] [**\-\-fixed\-pos\-ecef** *X,Y,Z*] [**\-\-fixed\-pos\-acc** *meters*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-survey**] [**\-\-survey\-time** *seconds*] [**\-\-survey\-acc** *meters*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea**] [**\-\-binary**]\
@@ -118,6 +118,9 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 
 **\-p**, **\-\-pps** *width*  
 : Configure the GPS receiver to enable a pulse-per-second (PPS) signal with the specified pulse width in seconds. The *width* must be >= 0 and < 1.0. A width of 0 disables the PPS signal.
+
+**\-\-ant\-cable\-delay** *nanos*  
+: Configure the antenna cable delay in nanoseconds. This setting compensates for the signal delay introduced by the antenna cable between the antenna and the GPS receiver.
 
 **\-\-pvt\-out** *flags*  
 : Configure which Position, Velocity, and Time (PVT) messages to output. The *flags* parameter is a comma-separated list of:

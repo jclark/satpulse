@@ -232,6 +232,11 @@ var validFlagsTestCases = []validFlagsTestCase{
 		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(3978578.17), gpsprot.Meters(-8652.15), gpsprot.Meters(4968410.94)},
 		fixedPosAcc:  gpsprot.Meters(0.001),
 	}},
+	// Test --ant-cable-delay flag
+	{"ttyS0", []string{"--ant-cable-delay", "100"}, flagVars{antCableDelay: gpsprot.MakeOption(100 * time.Nanosecond)}},
+	{"ttyS0", []string{"--ant-cable-delay", "0"}, flagVars{antCableDelay: gpsprot.MakeOption(time.Duration(0))}},
+	{"ttyS0", []string{"--ant-cable-delay", "1000000"}, flagVars{antCableDelay: gpsprot.MakeOption(1000000 * time.Nanosecond)}},
+	{"ttyS0", []string{"--ant-cable-delay", "-50"}, flagVars{antCableDelay: gpsprot.MakeOption(-50 * time.Nanosecond)}},
 }
 
 func TestParseFlagsValid(t *testing.T) {
@@ -334,6 +339,10 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--survey"},   // can't use with survey
 	{"--serial-device", "ttyS0", "--mobile", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"},   // can't use mobile with fixed-pos
 	{"--serial-device", "ttyS0", "--survey", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"},   // can't use survey with fixed-pos
+	// Test invalid --ant-cable-delay values
+	{"--serial-device", "ttyS0", "--ant-cable-delay", "abc"},      // invalid number
+	{"--serial-device", "ttyS0", "--ant-cable-delay", "1.5"},      // floating point not allowed
+	{"--serial-device", "ttyS0", "--ant-cable-delay", ""},         // empty value
 }
 
 func TestParseFlagsInvalid(t *testing.T) {

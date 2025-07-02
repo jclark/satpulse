@@ -54,6 +54,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.pps.IsSet() {
 		cp.SetPPS(v.pps.Get())
 	}
+	if v.antCableDelay.IsSet() {
+		cp.SetAntennaCableDelay(v.antCableDelay.Get())
+	}
 	if v.timeGNSS != 0 {
 		cp.SetTimeGNSS(v.timeGNSS)
 	}
