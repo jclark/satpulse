@@ -23,7 +23,7 @@ const (
 
 type GPSConfig struct {
 	Config             bool         `toml:"config"`
-	Stationary         bool         `toml:"stationary"`
+	Mobile         bool         `toml:"mobile"`
 	Resurvey           bool         `toml:"resurvey"`
 	SurveyTime         uint32       `toml:"surveyTime"`
 	SurveyAcc          float64      `toml:"surveyAcc"`
@@ -42,7 +42,7 @@ type GPSConfig struct {
 const defaultAccuracy = 20.0 // in meters
 
 var gpsDefault = GPSConfig{
-	Stationary:         true,
+	Mobile:         false,
 	Resurvey:           false,
 	SurveyTime:         2000, // 2000 seconds
 	SurveyAcc:          defaultAccuracy,
@@ -107,7 +107,7 @@ func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {
 	opts := &target.Opts
 	cp := &target.Props
 
-	if !c.Stationary {
+	if c.Mobile {
 		cp.SetTimeMode(gpsprot.TimeModeDisabled)
 		opts.Survey.When = 0
 	} else {

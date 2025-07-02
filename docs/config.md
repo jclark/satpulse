@@ -119,13 +119,13 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
    * `"GAL"`, `"Galileo"`for the GNSS system operated by the EU
    * `"BDS"`, `"BeiDou"` for the GNSS system operated by China
    * `"GLO"`, `"GLONASS"` for the GNSS system operated by Russia
-* `stationary` - a boolean saying whether the GPS receiver is stationary; if this is true, the receiver will be configured to assume a stationary
+* `mobile` - a boolean saying whether the GPS receiver is mobile; if this is false, the receiver will be configured to assume a stationary
    position; on a timing receiver, time mode will be enabled, which is a mode in which a fixed position is established for the receiver,
    and thereafter the time is computed using  a single satellite;
    the position can be established by having the GPS spend some time determing the position itself (called a survey)
-   or by explicitly specifying the position (using `fixedPosECEF`); the default is `true`
+   or by explicitly specifying the position (using `fixedPosECEF`); the default is `false`
 * `surveyTime` - a boolean giving the time in seconds to perform a survey to establish the position of the GPS receiver antenna;
-   SatPulse will only do a survey when `stationary` is true and no fixed position has been set; the default is 2000
+   SatPulse will only do a survey when `mobile` is false and no fixed position has been set; the default is 2000
 * `fixedPosECEF` - an array of three numbers giving the ECEF coordinates in meters of the GPS receiver's antenna receiver; if SatPulse initiaties a survey,
   then it will log the position determined by the survey when the survey finishes
 * `fixedPosAcc` - a number giving the accuracy in meters of the `fixedPosECEF` coordinates; SatPulse will log the accuracy along with the position when

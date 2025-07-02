@@ -35,7 +35,7 @@
 			"type": "string",
 			"enum": ["GPS", "GAL", "Galileo", "BDS", "BeiDou", "GLO", "GLONASS"]
 		  },
-		  "stationary": { "type": "boolean" },
+		  "mobile": { "type": "boolean" },
 		  "resurvey": { "type": "boolean" },
 		  "surveyTime": { "type": "integer" },
 		  "surveyAcc": { "type": "number" },

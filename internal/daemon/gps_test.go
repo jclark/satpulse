@@ -74,7 +74,7 @@ func TestFixedPosECEFTimeMode(t *testing.T) {
 	// and survey parameters are not set
 	cfgStr := `[gps]
 		config = true
-		stationary = true
+		mobile = false
 		resurvey = true
 		surveyTime = 3000
 		surveyAcc = 10
