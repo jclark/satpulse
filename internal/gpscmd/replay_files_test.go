@@ -8,6 +8,7 @@ var replayFiles = []string{
 	"f9p-raw-out",
 	"f9p-rtcm-out",
 	"f9p-pvt-out",
+	"f9p-tmode",
 	"f9t-signal",
 	"m8-speed",
 	"m8-signal",
@@ -17,4 +18,5 @@ var replayFiles = []string{
 	"m8t-noop",
 	"m8t-signal",
 	"m8t-speed",
+	"m8t-tmode",
 }

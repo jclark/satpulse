@@ -344,7 +344,7 @@ func changeECEF(ecef gpsprot.Point3D, x, y, z *int32, xhp, yhp, zhp *int8) (err 
 	var lo [3]int32
 	var hi [3]int8
 	for i := 0; i < 3; i++ {
-		lo[i], hi[i], err = splitLength(ecef[0])
+		lo[i], hi[i], err = splitLength(ecef[i])
 		if err != nil {
 			return
 		}
