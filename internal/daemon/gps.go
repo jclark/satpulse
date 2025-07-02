@@ -41,6 +41,9 @@ type GPSConfig struct {
 
 const defaultAccuracy = 20.0 // in meters
 
+// defaultPPSWidth is the default pulse width for PPS signals (100ms)
+const defaultPPSWidth = time.Second / 10
+
 var gpsDefault = GPSConfig{
 	Mobile:             false,
 	Resurvey:           false,
@@ -64,7 +67,7 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, tpFlags gpsTime
 	}
 	timePulseEnabled := tpFlags&gpsTimePulseEnable != 0
 	if timePulseEnabled {
-		target.Props.SetPPS()
+		target.Props.SetPPS(defaultPPSWidth)
 	}
 	gpsevent.SetMsgOptions(target, timePulseEnabled)
 	if tpFlags&gpsTimePulseGetWidth != 0 && pulseWidth == 0 {

@@ -51,8 +51,8 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	target.Opts = v.configOpts
 
 	cp := &target.Props
-	if v.pps {
-		cp.SetPPS()
+	if v.pps.IsSet() {
+		cp.SetPPS(v.pps.Get())
 	}
 	if v.timeGNSS != 0 {
 		cp.SetTimeGNSS(v.timeGNSS)

@@ -31,7 +31,7 @@ type flagVars struct {
 	timeGNSS       gpsprot.GNSS
 	navMsgAuth     gpsprot.Option[gpsprot.NavMsgAuth]
 	enabledSignals gpsprot.SignalSet
-	pps            bool
+	pps            gpsprot.Option[time.Duration]
 	mobile         bool
 	fixedPosECEF   gpsprot.Point3D
 	fixedPosAcc    gpsprot.Length
@@ -42,7 +42,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
        	    [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea] [--binary]
             [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
-            [--time-gnss GPS|GAL|BDS|GLO]
+            [-p|--pps width] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
             [--survey] [--survey-time seconds] [--survey-acc meters]
             [--raw-out obs|nav|none,...] [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
@@ -74,6 +74,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	osnma := false
 	var fixedPosECEF ecef
 	fixedPosAcc := defaultFixedPosAcc
+	pps := 0.0
 
 	var rawOut rawOutOpt
 	var pvtOut pvtOutOpt
@@ -105,8 +106,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|tai|ecef|after|daemon|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|auto|none,...")
 	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|VTG|none,...")
-	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
-	flags.MarkHidden("pps")
+	flags.Float64VarP(&pps, "pps", "p", 0, "configure the GPS receiver to enable a PPS signal with pulse `width` in seconds")
 	flags.BoolVar(&vars.mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
 	flags.BoolVar(&survey, "survey", false, "instruct the GPS receiver to perform a survey")
 	flags.Uint32Var(&surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
@@ -242,7 +242,14 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("%s specified as --time-gnss but not included in --gnss", vars.timeGNSS)
 		}
 	}
-	if vars.pps || vars.timeGNSS != 0 {
+	if flags.Lookup("pps").Changed {
+		if pps < 0 || pps >= 1 {
+			return nil, nil, fmt.Errorf("--pps pulse width must be >= 0 and < 1 second")
+		}
+		vars.pps.Set(time.Duration(pps * float64(time.Second)))
+		configChanged = true
+	}
+	if vars.timeGNSS != 0 {
 		configChanged = true
 	}
 	if sysTimeTrusted {

@@ -2,6 +2,7 @@ package ubx
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
@@ -12,7 +13,7 @@ func TestTp5(t *testing.T) {
 	raw.tp5.Flags |= ubxbin.CfgTp5IsLength
 
 	cp := &gpsprot.ConfigProps{}
-	cp.SetPPS()
+	cp.SetPPS(100 * time.Millisecond)
 
 	raw.tp5 = raw.changeTp5(cp)
 
@@ -53,7 +54,7 @@ func TestNav5(t *testing.T) {
 	raw := &CfgOld{nav5: new(ubxbin.CfgNav5)}
 
 	cp := &gpsprot.ConfigProps{}
-	cp.SetPPS()
+	cp.SetPPS(100 * time.Millisecond)
 
 	raw.nav5 = raw.changeNav5(cp)
 
@@ -78,21 +79,21 @@ func TestNav5(t *testing.T) {
 
 func TestConfiguratorSane(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
-	target.Props.SetPPS()
+	target.Props.SetPPS(100 * time.Millisecond)
 	target.Get = gpsprot.PropIDTimePulseWidth
 	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGPS(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
-	target.Props.SetPPS()
+	target.Props.SetPPS(100 * time.Millisecond)
 	target.Props.SetTimeGNSS(gpsprot.GPS)
 	testConfigurator(t, newLegacyReceiver(), target)
 }
 
 func TestConfiguratorGalileo(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
-	target.Props.SetPPS()
+	target.Props.SetPPS(100 * time.Millisecond)
 	target.Props.SetTimeGNSS(gpsprot.GAL)
 	rcvr := newLegacyReceiver()
 	rcvr.raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
@@ -136,7 +137,7 @@ func TestConfiguratorRecover2(t *testing.T) {
 
 func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator {
 	target := gpsprot.NewConfigTarget()
-	target.Props.SetPPS()
+	target.Props.SetPPS(100 * time.Millisecond)
 	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
 	target.Opts.PVTMsg.Set(gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI)
 	// we can't use legacyReceiver here because it doesn't support the UBX-CFG-GNSS
@@ -154,7 +155,7 @@ func testConfiguratorRecover(t *testing.T, nakMsgID ubxbin.MsgID) *Configurator 
 
 func testConfiguratorAbort(t *testing.T, abortMsgID ubxbin.MsgID) *Configurator {
 	target := gpsprot.NewConfigTarget()
-	target.Props.SetPPS()
+	target.Props.SetPPS(100 * time.Millisecond)
 	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
 	target.Opts.PVTMsg.Set(gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI)
 	// we can't use legacyReceiver here because it doesn't support the UBX-CFG-GNSS

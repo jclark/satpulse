@@ -13,7 +13,7 @@ import (
 
 func TestConfigItems_Sane(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
-	target.Props.SetPPS()
+	target.Props.SetPPS(100 * time.Millisecond)
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
 	if err != nil {

@@ -546,9 +546,7 @@ func (tb *txnBuilder) timePulseWrite() ucv.EnumTpTimegridTp1 {
 		} else {
 			txnAddItem(tb, ucv.KTpLenTp1, us)
 		}
-		if us != 0 {
-			txnAddItem(tb, ucv.KTpTp1Ena, true)
-		}
+		txnAddItem(tb, ucv.KTpTp1Ena, us != 0)
 		txnAddItem(tb, ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength)
 	}
 	return tg

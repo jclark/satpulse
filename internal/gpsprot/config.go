@@ -721,10 +721,10 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 }
 
 // SetPPS configures the properties for a pulse-per-second output
-func (cp *ConfigProps) SetPPS() {
+func (cp *ConfigProps) SetPPS(width time.Duration) {
 	cp.SetTimePulse(TimePulse{
 		Period:         1 * time.Second,
-		Width:          time.Second / 10,
+		Width:          width,
 		PolarityRising: true,
 		AlignToGNSS:    true,
 		OnlyWhenLocked: true,
