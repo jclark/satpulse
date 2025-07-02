@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/internal/geopos"
 	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/term"
@@ -32,6 +33,8 @@ type flagVars struct {
 	enabledSignals gpsprot.SignalSet
 	pps            bool
 	mobile         bool
+	fixedPosECEF   gpsprot.Point3D
+	fixedPosAcc    gpsprot.Length
 	configOpts     gpsprot.ConfigOptions
 }
 
@@ -45,6 +48,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
 
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20.0
+const defaultFixedPosAcc = 20.0
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
 	help := false
@@ -66,6 +70,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	surveyAcc := defaultSurveyAcc
 	sysTimeTrusted := false
 	osnma := false
+	var fixedPosECEF ecef
+	fixedPosAcc := defaultFixedPosAcc
 
 	var rawOut rawOutOpt
 	var pvtOut pvtOutOpt
@@ -107,6 +113,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.MarkHidden("survey-time")
 	flags.Float64Var(&surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
 	flags.MarkHidden("survey-acc")
+	flags.Var(&fixedPosECEF, "fixed-pos-ecef", "fixed ECEF position as `x,y,z` in meters")
+	flags.MarkHidden("fixed-pos-ecef")
+	flags.Float64Var(&fixedPosAcc, "fixed-pos-acc", defaultFixedPosAcc, "accuracy of fixed position in meters")
+	flags.MarkHidden("fixed-pos-acc")
 	flags.BoolVar(&sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
 	flags.MarkHidden("sys-time-trusted")
 	flags.BoolVar(&osnma, "osnma", false, "enable OSNMA authentication for Galileo")
@@ -211,11 +221,24 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 		vars.configOpts.Survey.AccLimit = gpsprot.Meters(surveyAcc)
 		if vars.mobile {
-			return nil, nil, fmt.Errorf("%s command must not specify both --disable-time-mode and --survey", cmdName)
+			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --survey", cmdName)
 		}
 	} else if vars.mobile {
 		configChanged = true
 		vars.configOpts.Survey.When = 0
+	}
+	if !gpsprot.Point3D(fixedPosECEF).IsZero() {
+		configChanged = true
+		vars.fixedPosECEF = gpsprot.Point3D(fixedPosECEF)
+		if fixedPosAcc < 0.001 {
+			return nil, nil, fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
+		}
+		vars.fixedPosAcc = gpsprot.Meters(fixedPosAcc)
+		if vars.mobile {
+			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --fixed-pos-ecef", cmdName)
+		} else if survey {
+			return nil, nil, fmt.Errorf("%s command must not specify both --survey and --fixed-pos-ecef", cmdName)
+		}
 	}
 	vars.timeGNSS = gpsprot.GNSS(timeGNSS)
 	if vars.timeGNSS != 0 && len(gl.gnss) != 0 {
@@ -680,5 +703,38 @@ func (nmeaOut *nmeaOutOpt) Set(s string) error {
 		}
 	}
 	msg.Set(flags)
+	return nil
+}
+
+type ecef gpsprot.Point3D
+
+var _ pflag.Value = (*ecef)(nil)
+
+func (e *ecef) String() string {
+	if e[0] == 0 && e[1] == 0 && e[2] == 0 {
+		return ""
+	}
+	return (*gpsprot.Point3D)(e).String()
+}
+
+func (e *ecef) Type() string {
+	return "x,y,z"
+}
+
+func (e *ecef) Set(s string) error {
+	pt, err := gpsprot.ParsePoint3D(s)
+	if err != nil {
+		return err
+	}
+	// Validate the coordinates are on Earth
+	ecefCoords := geopos.ECEF{
+		pt[0].Meters(),
+		pt[1].Meters(),
+		pt[2].Meters(),
+	}
+	if err := ecefCoords.CheckOnEarth(); err != nil {
+		return fmt.Errorf("invalid ECEF coordinates: %w", err)
+	}
+	*e = ecef(pt)
 	return nil
 }

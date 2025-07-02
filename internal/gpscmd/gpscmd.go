@@ -63,6 +63,11 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.mobile {
 		cp.SetTimeMode(gpsprot.TimeModeDisabled)
 		cp.SetStationary(false)
+	} else if !v.fixedPosECEF.IsZero() {
+		cp.SetTimeMode(gpsprot.TimeModeFixed)
+		cp.SetStationary(true)
+		cp.SetFixedPosECEF(v.fixedPosECEF)
+		cp.SetFixedPosAcc(v.fixedPosAcc)
 	}
 	if v.navMsgAuth.IsSet() {
 		cp.SetNavMsgAuth(v.navMsgAuth.Get())

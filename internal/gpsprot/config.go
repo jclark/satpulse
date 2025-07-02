@@ -775,6 +775,10 @@ func (p Point3D) String() string {
 	return fmt.Sprintf("%s,%s,%s", s[0], s[1], s[2])
 }
 
+func (p Point3D) IsZero() bool {
+	return p[0] == 0 && p[1] == 0 && p[2] == 0
+}
+
 func ParsePoint3D(s string) (Point3D, error) {
 	var p Point3D
 	var trailing string

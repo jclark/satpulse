@@ -205,6 +205,32 @@ var validFlagsTestCases = []validFlagsTestCase{
 		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.BDS, gpsprot.GLO),
 		timeGNSS:       gpsprot.BDS,
 	}},
+	// Test --fixed-pos-ecef flag with Big Ben coordinates
+	{"ttyS0", []string{"--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, flagVars{
+		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(3978578.17), gpsprot.Meters(-8652.15), gpsprot.Meters(4968410.94)},
+		fixedPosAcc:  gpsprot.Meters(defaultFixedPosAcc),
+	}},
+	// Test --fixed-pos-ecef with custom accuracy (Eiffel Tower)
+	{"ttyS0", []string{"--fixed-pos-ecef", "4200935.82,168323.10,4780213.04", "--fixed-pos-acc", "5.0"}, flagVars{
+		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(4200935.82), gpsprot.Meters(168323.10), gpsprot.Meters(4780213.04)},
+		fixedPosAcc:  gpsprot.Meters(5.0),
+	}},
+	// Test --fixed-pos-ecef with save (Statue of Liberty)
+	{"ttyS0", []string{"--fixed-pos-ecef", "1331340.65,-4656583.35,4136313.40", "--save"}, flagVars{
+		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(1331340.65), gpsprot.Meters(-4656583.35), gpsprot.Meters(4136313.40)},
+		fixedPosAcc:  gpsprot.Meters(defaultFixedPosAcc),
+		configOpts:   gpsprot.ConfigOptions{Save: gpsprot.SaveMinimal},
+	}},
+	// Test --fixed-pos-ecef with spaces around commas (Mount Everest)
+	{"ttyS0", []string{"--fixed-pos-ecef", "302769.89, 5636025.47, 2979493.09"}, flagVars{
+		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(302769.89), gpsprot.Meters(5636025.47), gpsprot.Meters(2979493.09)},
+		fixedPosAcc:  gpsprot.Meters(defaultFixedPosAcc),
+	}},
+	// Test --fixed-pos-ecef with minimum accuracy
+	{"ttyS0", []string{"--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.001"}, flagVars{
+		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(3978578.17), gpsprot.Meters(-8652.15), gpsprot.Meters(4968410.94)},
+		fixedPosAcc:  gpsprot.Meters(0.001),
+	}},
 }
 
 func TestParseFlagsValid(t *testing.T) {
@@ -288,6 +314,23 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--gnss", "GPS", "--time-gnss", "GLO"},     // GLO not in enabled GNSS
 	{"--serial-device", "ttyS0", "--gnss", "GAL,BDS", "--time-gnss", "GPS"}, // GPS not in enabled GNSS
 	{"--serial-device", "ttyS0", "--gnss", "BDS", "--time-gnss", "GAL"},     // GAL not in enabled GNSS
+	// Test invalid --fixed-pos-ecef values
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", ""},                           // empty value
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,2"},                        // too few coordinates
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,2,3,4"},                    // too many coordinates
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "abc,def,ghi"},                // invalid numbers
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,abc,3"},                    // partially invalid numbers
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "7000000,0,0"},                // coordinates too far from Earth
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "0,0,0"},                      // center of Earth (invalid)
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "8000000,8000000,8000000"},    // far outside valid range
+	// Test invalid --fixed-pos-acc values
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0"}, // accuracy too small
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.0005"}, // accuracy below minimum
+	// Test mutual exclusion with --mobile and --survey
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--mobile"},   // can't use with mobile
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--survey"},   // can't use with survey
+	{"--serial-device", "ttyS0", "--mobile", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"},   // can't use mobile with fixed-pos
+	{"--serial-device", "ttyS0", "--survey", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"},   // can't use survey with fixed-pos
 }
 
 func TestParseFlagsInvalid(t *testing.T) {
