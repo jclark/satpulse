@@ -12,6 +12,8 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-time\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-mobile**] [**\-\-fixed\-pos\-ecef** *X,Y,Z*] [**\-\-fixed\-pos\-acc** *meters*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-survey**] [**\-\-survey\-time** *seconds*] [**\-\-survey\-acc** *meters*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea**] [**\-\-binary**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pvt\-out** **pos**\|**vel**\|**time**\|**tp**\|**leap**\|**survey**\|**tai**\|**ecef**\|**off**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-raw\-out** **obs**\|**nav**\|**none**,...]\
@@ -216,9 +218,14 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **\-\-survey\-acc** *meters*  
 : Required survey accuracy in meters (default: 20.0). Minimum value is 0.001 (1 mm).
 
-**\-\-mobile**
-: Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey**.
+**\-\-fixed\-pos\-ecef** *X,Y,Z*  
+: Use the specified coordinates as the fixed position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The coordinates are comma-separated X, Y, and Z coordinates in meters in the Earth-Centered, Earth-Fixed coordinate system.
 
+**\-\-fixed\-pos\-acc** *meters*  
+: Set the accuracy of the fixed position in meters (default: 20.0). This value should reflect the actual uncertainty in the fixed position coordinates. Minimum value is 0.001 (1 mm).
+
+**\-\-mobile**
+: Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey** or **\-\-fixed-pos-ecef**.
 
 # EXAMPLES
 
@@ -228,23 +235,20 @@ Enable GPS and GALILEO on `/dev/ttyACM0` at 9600 baud:
 
 Start a survey for 3000 seconds with 1.5m accuracy:
 
-    satpulsetool gps --survey --survey-time 3000 --survey-acc 1.5 --serial-device /dev/ttyUSB0
+    satpulsetool gps --survey --survey-time 3000 --survey-acc 1.5 -d /dev/ttyUSB0 -s 38400
 
 Connect over a socket and reset the receiver:
 
     satpulsetool gps --socket /var/run/satpulse.sock --reset
 
-Configure receiver for satpulsed with time pulse and leap second messages:
-
-    satpulsetool gps -d /dev/ttyACM0 --pvt-out daemon
 
 Enable RTCM MSM4 output for base station use:
 
-    satpulsetool gps -d /dev/ttyUSB0 --rtcm-out MSM4,ARP --gnss GPS,GAL,BDS
+    satpulsetool gps -d /dev/ttyUSB0 -s 9600 -rtcm-out MSM4,ARP --gnss GPS,GAL,BDS
 
 Enable only NMEA RMC messages:
 
-    satpulsetool gps -d /dev/ttyACM0 --nmea --nmea-out RMC
+    satpulsetool gps -d /dev/ttyACM0 -s 19200 -nmea --nmea-out RMC
 
 # SEE ALSO
 

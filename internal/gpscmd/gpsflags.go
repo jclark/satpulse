@@ -43,6 +43,8 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [--time-gnss GPS|GAL|BDS|GLO]
+            [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
+            [--survey] [--survey-time seconds] [--survey-acc meters]
             [--raw-out obs|nav|none,...] [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
             [--rtcm-out MSM4|MSM7|ARP|auto|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|none,...]`
 
@@ -106,17 +108,11 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVarP(&vars.pps, "pps", "p", false, "configure the GPS receiver to enable a PPS signal")
 	flags.MarkHidden("pps")
 	flags.BoolVar(&vars.mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
-	flags.MarkHidden("mobile")
 	flags.BoolVar(&survey, "survey", false, "instruct the GPS receiver to perform a survey")
-	flags.MarkHidden("survey")
 	flags.Uint32Var(&surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
-	flags.MarkHidden("survey-time")
 	flags.Float64Var(&surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
-	flags.MarkHidden("survey-acc")
 	flags.Var(&fixedPosECEF, "fixed-pos-ecef", "fixed ECEF position as `x,y,z` in meters")
-	flags.MarkHidden("fixed-pos-ecef")
 	flags.Float64Var(&fixedPosAcc, "fixed-pos-acc", defaultFixedPosAcc, "accuracy of fixed position in meters")
-	flags.MarkHidden("fixed-pos-acc")
 	flags.BoolVar(&sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
 	flags.MarkHidden("sys-time-trusted")
 	flags.BoolVar(&osnma, "osnma", false, "enable OSNMA authentication for Galileo")
