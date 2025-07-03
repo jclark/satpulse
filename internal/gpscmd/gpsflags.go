@@ -33,9 +33,10 @@ type flagVars struct {
 	enabledSignals gpsprot.SignalSet
 	pps            gpsprot.Option[time.Duration]
 	antCableDelay  gpsprot.Option[time.Duration]
-	mobile         bool
-	fixedPosECEF   gpsprot.Point3D
-	fixedPosAcc    gpsprot.Length
+	mobile         bool                        // TODO: remove when switched to new interface
+	fixedPosECEF   gpsprot.Point3D             // TODO: remove when switched to new interface
+	fixedPosAcc    gpsprot.Length              // TODO: remove when switched to new interface
+	mode           gpsprot.Option[gpsprot.Mode]
 	configOpts     gpsprot.ConfigOptions
 }
 
@@ -219,12 +220,15 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("--survey-acc must at least 0.001 (1 mm)")
 		}
 		vars.configOpts.Survey.AccLimit = gpsprot.Meters(surveyAcc)
+		vars.configOpts.Survey.Flags |= gpsprot.SurveyAgain
+		vars.mode.Set(gpsprot.Mode{Static: true})
 		if vars.mobile {
 			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --survey", cmdName)
 		}
 	} else if vars.mobile {
 		configChanged = true
 		vars.configOpts.Survey.When = 0
+		vars.mode.Set(gpsprot.Mode{Static: false})
 	}
 	if !gpsprot.Point3D(fixedPosECEF).IsZero() {
 		configChanged = true
@@ -233,6 +237,12 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
 		}
 		vars.fixedPosAcc = gpsprot.Meters(fixedPosAcc)
+		vars.mode.Set(gpsprot.Mode{
+			Static:       true,
+			PosType:      gpsprot.PosTypeECEF,
+			FixedPosECEF: gpsprot.Point3D(fixedPosECEF),
+			FixedPosAcc:  gpsprot.Meters(fixedPosAcc),
+		})
 		if vars.mobile {
 			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --fixed-pos-ecef", cmdName)
 		} else if survey {

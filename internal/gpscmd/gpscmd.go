@@ -72,6 +72,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		cp.SetFixedPosECEF(v.fixedPosECEF)
 		cp.SetFixedPosAcc(v.fixedPosAcc)
 	}
+	if v.mode.IsSet() {
+		cp.SetMode(v.mode.Get())
+	}
 	if v.navMsgAuth.IsSet() {
 		cp.SetNavMsgAuth(v.navMsgAuth.Get())
 	}

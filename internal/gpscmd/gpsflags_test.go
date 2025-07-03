@@ -37,9 +37,9 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--pps", "0.1", "--save"}, flagVars{pps: gpsprot.MakeOption(100 * time.Millisecond), configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveMinimal}}},
 	{"ttyS0", []string{"--pps", "0"}, flagVars{pps: gpsprot.MakeOption(time.Duration(0))}},
 	{"ttyS0", []string{"-p", "0.1"}, flagVars{pps: gpsprot.MakeOption(100 * time.Millisecond)}},
-	{"ttyS0", []string{"--mobile"}, flagVars{mobile: true}},
-	{"ttyS0", []string{"--survey"}, flagVars{configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{When: gpsprot.TimeModeAny, MinDur: defaultSurveyTime * time.Second, AccLimit: gpsprot.Meters(defaultSurveyAcc)}}}},
-	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{When: gpsprot.TimeModeAny, MinDur: 300 * time.Second, AccLimit: gpsprot.Meters(5.5)}}}},
+	{"ttyS0", []string{"--mobile"}, flagVars{mobile: true, mode: gpsprot.MakeOption(gpsprot.Mode{Static: false})}},
+	{"ttyS0", []string{"--survey"}, flagVars{mode: gpsprot.MakeOption(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, When: gpsprot.TimeModeAny, MinDur: defaultSurveyTime * time.Second, AccLimit: gpsprot.Meters(defaultSurveyAcc)}}}},
+	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{mode: gpsprot.MakeOption(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, When: gpsprot.TimeModeAny, MinDur: 300 * time.Second, AccLimit: gpsprot.Meters(5.5)}}}},
 	{"ttyS0", []string{"--speed", "9600"}, flagVars{configOpts: gpsprot.ConfigOptions{BaudRate: 9600}}},
 	{"ttyS0", []string{"--device-speed", "9600"}, flagVars{localSpeed: 9600}},
 	{"ttyS0", []string{"--save-all", "--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveAll, Reset: gpsprot.ResetCold}}},
@@ -210,27 +210,57 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, flagVars{
 		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(3978578.17), gpsprot.Meters(-8652.15), gpsprot.Meters(4968410.94)},
 		fixedPosAcc:  gpsprot.Meters(defaultFixedPosAcc),
+		mode: gpsprot.MakeOption(gpsprot.Mode{
+			Static:       true,
+			PosType:      gpsprot.PosTypeECEF,
+			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(3978578.17), gpsprot.Meters(-8652.15), gpsprot.Meters(4968410.94)},
+			FixedPosAcc:  gpsprot.Meters(defaultFixedPosAcc),
+		}),
 	}},
 	// Test --fixed-pos-ecef with custom accuracy (Eiffel Tower)
 	{"ttyS0", []string{"--fixed-pos-ecef", "4200935.82,168323.10,4780213.04", "--fixed-pos-acc", "5.0"}, flagVars{
 		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(4200935.82), gpsprot.Meters(168323.10), gpsprot.Meters(4780213.04)},
 		fixedPosAcc:  gpsprot.Meters(5.0),
+		mode: gpsprot.MakeOption(gpsprot.Mode{
+			Static:       true,
+			PosType:      gpsprot.PosTypeECEF,
+			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(4200935.82), gpsprot.Meters(168323.10), gpsprot.Meters(4780213.04)},
+			FixedPosAcc:  gpsprot.Meters(5.0),
+		}),
 	}},
 	// Test --fixed-pos-ecef with save (Statue of Liberty)
 	{"ttyS0", []string{"--fixed-pos-ecef", "1331340.65,-4656583.35,4136313.40", "--save"}, flagVars{
 		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(1331340.65), gpsprot.Meters(-4656583.35), gpsprot.Meters(4136313.40)},
 		fixedPosAcc:  gpsprot.Meters(defaultFixedPosAcc),
+		mode: gpsprot.MakeOption(gpsprot.Mode{
+			Static:       true,
+			PosType:      gpsprot.PosTypeECEF,
+			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(1331340.65), gpsprot.Meters(-4656583.35), gpsprot.Meters(4136313.40)},
+			FixedPosAcc:  gpsprot.Meters(defaultFixedPosAcc),
+		}),
 		configOpts:   gpsprot.ConfigOptions{Save: gpsprot.SaveMinimal},
 	}},
 	// Test --fixed-pos-ecef with spaces around commas (Mount Everest)
 	{"ttyS0", []string{"--fixed-pos-ecef", "302769.89, 5636025.47, 2979493.09"}, flagVars{
 		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(302769.89), gpsprot.Meters(5636025.47), gpsprot.Meters(2979493.09)},
 		fixedPosAcc:  gpsprot.Meters(defaultFixedPosAcc),
+		mode: gpsprot.MakeOption(gpsprot.Mode{
+			Static:       true,
+			PosType:      gpsprot.PosTypeECEF,
+			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(302769.89), gpsprot.Meters(5636025.47), gpsprot.Meters(2979493.09)},
+			FixedPosAcc:  gpsprot.Meters(defaultFixedPosAcc),
+		}),
 	}},
 	// Test --fixed-pos-ecef with minimum accuracy
 	{"ttyS0", []string{"--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.001"}, flagVars{
 		fixedPosECEF: gpsprot.Point3D{gpsprot.Meters(3978578.17), gpsprot.Meters(-8652.15), gpsprot.Meters(4968410.94)},
 		fixedPosAcc:  gpsprot.Meters(0.001),
+		mode: gpsprot.MakeOption(gpsprot.Mode{
+			Static:       true,
+			PosType:      gpsprot.PosTypeECEF,
+			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(3978578.17), gpsprot.Meters(-8652.15), gpsprot.Meters(4968410.94)},
+			FixedPosAcc:  gpsprot.Meters(0.001),
+		}),
 	}},
 	// Test --ant-cable-delay flag
 	{"ttyS0", []string{"--ant-cable-delay", "100"}, flagVars{antCableDelay: gpsprot.MakeOption(100 * time.Nanosecond)}},
