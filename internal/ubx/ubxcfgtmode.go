@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ubx/bin"
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
@@ -40,6 +41,52 @@ type tmodeConfig struct {
 	// Survey parameters
 	svinMinDur   uint32 // seconds
 	svinAccLimit uint32 // Survey accuracy limit in 0.1mm units
+}
+
+// fromMode sets tmodeConfig from a gpsprot.Mode value.
+func (tc *tmodeConfig) fromMode(mode gpsprot.Mode) error {
+	if !mode.Static {
+		tc.mode = tmodeDisabled
+		return nil
+	}
+
+	tc.fixedPosAcc = tmodeAcc(mode.FixedPosAcc)
+
+	switch mode.PosType {
+	case gpsprot.PosTypeECEF:
+		tc.mode = tmodeFixed
+		tc.useLLH = false
+		for i := 0; i < 3; i++ {
+			cm, frac, err := splitLength(mode.FixedPosECEF[i])
+			if err != nil {
+				return err
+			}
+			tc.ecef[i] = cm
+			tc.ecefHP[i] = frac
+		}
+
+	case gpsprot.PosTypeLLH:
+		tc.mode = tmodeFixed
+		tc.useLLH = true
+		for i := 0; i < 2; i++ {
+			deg, frac, err := splitAngle(mode.FixedPosLLH[i])
+			if err != nil {
+				return err
+			}
+			tc.latLon[i] = deg
+			tc.latLonHP[i] = frac
+		}
+		cm, frac, err := splitLength(mode.Height)
+		if err != nil {
+			return err
+		}
+		tc.height = cm
+		tc.heightHP = frac
+
+	default:
+		tc.mode = tmodeSurveyIn
+	}
+	return nil
 }
 
 // toTmode3 converts the tmodeConfig to CfgTmode3.
@@ -243,7 +290,7 @@ func (tc *tmodeConfig) toTmode(tm *bin.CfgTmode) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -380,7 +427,7 @@ func (tc *tmodeConfig) fromCfgVals(vals *CfgVals, all bool) bool {
 			return false
 		}
 		tc.useLLH = (posType == ucv.ETmodePosTypeLlh)
-		
+
 		if tc.useLLH {
 			// LLH coordinates
 			if !cfgValGetInt32(vals, ucv.KTmodeLat, &tc.latLon[0]) ||
@@ -434,3 +481,8 @@ func cfgValGetInt8(vals *CfgVals, key ucv.KeyI, ptr *int8) bool {
 	return ok
 }
 
+// tmodeAcc converts a Length to the units used by tmodeConfig for accuracy i.e. 0.1mm.
+func tmodeAcc(meters gpsprot.Length) uint32 {
+	acc, _ := divModRound(int64(meters), int64(gpsprot.Millimeter/10))
+	return uint32(acc)
+}

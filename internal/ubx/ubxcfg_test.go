@@ -36,6 +36,33 @@ func TestSplitLength(t *testing.T) {
 	}
 }
 
+func TestSplitAngle(t *testing.T) {
+	testCases := []struct {
+		angle           gpsprot.Angle
+		expectedDegE7 int32
+		expectedDegE9 int8
+	}{
+		{105 * gpsprot.Nanodegrees, 1, 5},
+		{250 * gpsprot.Nanodegrees, 3, -50},
+		{-105 * gpsprot.Nanodegrees, -1, -5},
+		{-250 * gpsprot.Nanodegrees, -3, 50},
+		{12345 * gpsprot.Nanodegrees, 123, 45},
+		{45 * gpsprot.Degrees, 450000000, 0},
+		{45123456789 * gpsprot.Nanodegrees, 451234568, -11},
+	}
+
+	for _, tc := range testCases {
+		degreesE7, degreesE9, err := splitAngle(tc.angle)
+		if err != nil {
+			t.Errorf("splitAngle returned error: %v", err)
+		} else if degreesE9 < -99 || degreesE9 > 99 {
+			t.Errorf("splitAngle(%v) = (%v, %v), want degreesE9 in [-99, 99]", tc.angle, degreesE7, degreesE9)
+		} else if degreesE7 != tc.expectedDegE7 || degreesE9 != tc.expectedDegE9 {
+			t.Errorf("splitAngle(%v) = (%v, %v), want (%v, %v)", tc.angle, degreesE7, degreesE9, tc.expectedDegE7, tc.expectedDegE9)
+		}
+	}
+}
+
 func TestConfigurationGet_Legacy(t *testing.T) {
 	testConfigurationGet(t, newLegacyReceiver())
 }

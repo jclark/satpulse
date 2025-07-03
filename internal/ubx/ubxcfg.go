@@ -951,10 +951,25 @@ func splitLength(n gpsprot.Length) (int32, int8, error) {
 	return cm, int8(q), nil
 }
 
+// splitAngle splits an Angle into int32 and int8.
+// The int32 is the angle in degrees * 1e-7. The int8 is the remainder in degrees * 1e-9.
+func splitAngle(a gpsprot.Angle) (int32, int8, error) {
+	q, r := divModRound(int64(a), int64(gpsprot.Nanodegrees*100))
+	if q < math.MinInt32 || q > math.MaxInt32 {
+		return 0, 0, fmt.Errorf("angle %v is out of range", a)
+	}
+	deg := int32(q)
+	q, _ = divModRound(r, int64(gpsprot.Nanodegrees))
+	return deg, int8(q), nil
+}
+
 // divModRound returns the quotient and remainder of division of x by y, with the quotient rounded.
 // If the result is (q, r), then x = q*y + r, and |r| <= y/2.
-// y is assumed to be positive and even.
+// y must be positive and either 1 or even.
 func divModRound(x, y int64) (int64, int64) {
+	if y == 1 {
+		return x, 0
+	}
 	if y <= 0 || y%2 != 0 {
 		panic("divisor y must be positive and even")
 	}

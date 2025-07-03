@@ -122,6 +122,7 @@ type ConfigProps struct {
 	timeGNSS          GNSS
 	timePulse         TimePulse
 	timeMode          TimeMode
+	mode              Mode
 	antennaCableDelay time.Duration
 	fixedPosECEF      Point3D
 	fixedPosAcc       Length
@@ -139,6 +140,7 @@ const (
 	PropIDTimePulseOnlyWhenLocked
 	PropIDTimePulsePolarityRising
 	PropIDTimeMode
+	PropIDMode
 	PropIDAntennaCableDelay
 	PropIDFixedPosECEF
 	PropIDFixedPosAcc
@@ -156,6 +158,7 @@ var propNames = []string{
 	"TimePulseOnlyWhenLocked",
 	"TimePulsePolarityRising",
 	"TimeMode",
+	"Mode",
 	"AntennaCableDelay",
 	"FixedPosECEF",
 	"FixedPosAcc",
@@ -490,6 +493,20 @@ func (cp *ConfigProps) SetTimeMode(val TimeMode) {
 	cp.valid |= PropIDTimeMode
 }
 
+// GetMode returns the mode value and whether it's set
+func (cp *ConfigProps) GetMode() (Mode, bool) {
+	if cp.valid&PropIDMode != 0 {
+		return cp.mode, true
+	}
+	return Mode{}, false
+}
+
+// SetMode sets the mode value
+func (cp *ConfigProps) SetMode(val Mode) {
+	cp.mode = val
+	cp.valid |= PropIDMode
+}
+
 // GetAntennaCableDelay returns the antennaCableDelay value and whether it's set
 func (cp *ConfigProps) GetAntennaCableDelay() (time.Duration, bool) {
 	if cp.valid&PropIDAntennaCableDelay != 0 {
@@ -620,6 +637,9 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	if both&PropIDTimeMode != 0 && cp.timeMode != other.timeMode {
 		result.SetTimeMode(other.timeMode)
 	}
+	if both&PropIDMode != 0 && cp.mode != other.mode {
+		result.SetMode(other.mode)
+	}
 	if both&PropIDAntennaCableDelay != 0 && cp.antennaCableDelay != other.antennaCableDelay {
 		result.SetAntennaCableDelay(other.antennaCableDelay)
 	}
@@ -693,6 +713,28 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 			m["timeMode"] = cp.timeMode
 		}
 	}
+	if cp.valid&PropIDMode != 0 {
+		mm := make(map[string]interface{})
+		mm["static"] = cp.mode.Static
+		if cp.mode.PosType == PosTypeECEF {
+			mm["fixedPosECEF"] = []float64{
+				cp.mode.FixedPosECEF[0].Meters(),
+				cp.mode.FixedPosECEF[1].Meters(),
+				cp.mode.FixedPosECEF[2].Meters(),
+			}
+		}
+		if cp.mode.PosType == PosTypeLLH {
+			mm["fixedPosLLH"] = []float64{
+				cp.mode.FixedPosLLH[0].Degrees(),
+				cp.mode.FixedPosLLH[1].Degrees(),
+			}
+			mm["height"] = cp.mode.Height.Meters()
+		}
+		if cp.mode.PosType != PosTypeNone {
+			mm["fixedPosAcc"] = cp.mode.FixedPosAcc.Meters()
+		}
+		m["mode"] = mm
+	}
 	if cp.valid&PropIDAntennaCableDelay != 0 {
 		m["antennaCableDelay"] = float64(cp.antennaCableDelay) / float64(time.Second)
 	}
@@ -765,6 +807,40 @@ func ParseLength(s string) (Length, error) {
 	return Length(n), nil
 }
 
+type Angle int64
+
+const (
+	Nanodegrees  Angle = 1
+	Microdegrees Angle = 1000 * Nanodegrees
+	Millidegrees Angle = 1000 * Microdegrees
+	Degrees      Angle = 1000 * Millidegrees
+)
+
+func DegreesFromFloat(f float64) Angle {
+	return Angle(math.Round(f * float64(Degrees)))
+}
+
+func (a Angle) Degrees() float64 {
+	return float64(a) / float64(Degrees)
+}
+
+func (a Angle) String() string {
+	return fmt.Sprintf("%v", a.Degrees())
+}
+
+func ParseAngle(s string) (Angle, error) {
+	var f float64
+	var trailing string
+	if n, err := fmt.Sscanf(s, "%f%s", &f, &trailing); n != 1 || err != io.EOF {
+		return 0, fmt.Errorf("invalid angle: %q", s)
+	}
+	n, err := float64ToInt64(math.Round(f * float64(Degrees)))
+	if err != nil {
+		return 0, fmt.Errorf("invalid angle %f: %w", f, err)
+	}
+	return Angle(n), nil
+}
+
 type Point3D [3]Length
 
 func (p Point3D) String() string {
@@ -830,6 +906,27 @@ func TimeModeFlags(ms ...TimeMode) TimeModeSet {
 		flags |= 1 << m
 	}
 	return flags
+}
+
+type PosType byte
+
+const (
+	PosTypeNone PosType = iota
+	PosTypeECEF
+	PosTypeLLH
+)
+
+type Mode struct {
+	Static       bool     // true if receiver should assume antenna position does not move
+	PosType      PosType  // which coordinate system to use for fixed position
+	FixedPosECEF Point3D  // ECEF coordinates (when PosType == PosTypeECEF)
+	FixedPosLLH  [2]Angle // Latitude and Longitude (when PosType == PosTypeLLH)
+	Height       Length   // Height (when PosType == PosTypeLLH)
+	FixedPosAcc  Length   // accuracy of fixed position
+}
+
+func (m Mode) IsZero() bool {
+	return m == Mode{}
 }
 
 type NavMsgAuth byte
