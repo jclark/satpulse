@@ -123,6 +123,20 @@ func (raw *CfgOld) changePrtBaudRate(opts *gpsprot.ConfigOptions) *bin.CfgPrt {
 }
 
 func (raw *CfgOld) cookTmode(cp *gpsprot.ConfigProps) {
+	tmc := tmodeConfig{}
+	if raw.tmode3 != nil {
+		tmc.fromTmode3(raw.tmode3)
+	} else if raw.tmode2 != nil {
+		tmc.fromTmode2(raw.tmode2)
+	} else if raw.tmode != nil {
+		tmc.fromTmode(raw.tmode)
+	} else {
+		return
+	}
+	cp.SetMode(tmc.getMode())
+}
+
+func (raw *CfgOld) cookTmode1(cp *gpsprot.ConfigProps) {
 	tm := raw.tmode
 	if tm == nil {
 		return
@@ -143,7 +157,7 @@ func (raw *CfgOld) cookTmode(cp *gpsprot.ConfigProps) {
 	}
 }
 
-func (raw *CfgOld) changeTmode(target *gpsprot.ConfigTarget) (*bin.CfgTmode, bool) {
+func (raw *CfgOld) changeTmode1(target *gpsprot.ConfigTarget) (*bin.CfgTmode, bool) {
 	if raw.tmode == nil {
 		return nil, false
 	}
@@ -189,7 +203,7 @@ func (raw *CfgOld) changeTmode(target *gpsprot.ConfigTarget) (*bin.CfgTmode, boo
 	return &tm, survey
 }
 
-func (raw *CfgOld) surveyTmode(opts gpsprot.ConfigOptions) *bin.CfgTmode {
+func (raw *CfgOld) surveyTmode1(opts gpsprot.ConfigOptions) *bin.CfgTmode {
 	tm := *raw.tmode
 	tm.TimeMode = bin.CfgTmodeSurveyIn
 	tm.SvinMinDur = uint32(opts.Survey.MinDur.Round(time.Second) / time.Second)

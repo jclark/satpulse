@@ -114,6 +114,9 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 	if v, ok := raw.cookTmodeECEF(); ok {
 		cp.SetFixedPosECEF(v)
 	}
+	if v, ok := raw.getMode(); ok {
+		cp.SetMode(v)
+	}
 	if v, ok := raw.getTimePulseAlignToGNSS(); ok {
 		cp.SetTimePulseAlignToGNSS(v)
 	}
@@ -383,6 +386,14 @@ func addSurveyItems(items *[]ucv.Item, opts gpsprot.Survey) {
 	var mm10 int64
 	mm10, _ = divModRound(int64(opts.AccLimit), int64(gpsprot.Millimeter/10))
 	ucv.AddItem(items, ucv.KTmodeSvinAccLimit, uint64(mm10))
+}
+
+func (raw *CfgVals) getMode() (gpsprot.Mode, bool) {
+	tmc := tmodeConfig{}
+	if tmc.fromCfgVals(raw, false) {
+		return tmc.getMode(), true
+	}
+	return gpsprot.Mode{}, false
 }
 
 func (raw *CfgVals) cookTmodeECEF() (gpsprot.Point3D, bool) {

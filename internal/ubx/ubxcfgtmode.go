@@ -432,6 +432,11 @@ func (tc *tmodeConfig) toItems(items *[]ucv.Item, all bool) {
 // If all is true, it expects all fields to be present regardless of mode.
 // If all is false, it only requires fields relevant to the current mode.
 // Returns ok=false if required keys are missing.
+// XXX really need 4 info levels:
+// 1. just the mode
+// 2. what we need to file in gpsprot.Mode (no survey)
+// 3. everything relevant to the current mode
+// 4. everything
 func (tc *tmodeConfig) fromCfgVals(vals *CfgVals, all bool) bool {
 	// Always require mode
 	mode, ok := cfgValGet(vals, ucv.KTmodeMode)

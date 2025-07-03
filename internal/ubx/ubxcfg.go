@@ -600,7 +600,7 @@ func (c *Configurator) setTmode() error {
 	switch c.ver.tmodeLevel() {
 	case 1:
 		var tm *bin.CfgTmode
-		tm, c.survey = c.raw.changeTmode(c.target)
+		tm, c.survey = c.raw.changeTmode1(c.target)
 		if tm != nil {
 			return c.addMsgSetRequest(tm)
 		}
@@ -626,7 +626,7 @@ func (c *Configurator) reqSurvey() error {
 	}
 	switch c.ver.tmodeLevel() {
 	case 1:
-		tm := c.raw.surveyTmode(c.target.Opts)
+		tm := c.raw.surveyTmode1(c.target.Opts)
 		if tm != nil {
 			return c.addMsgSetRequest(tm)
 		}
@@ -712,8 +712,9 @@ func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigProps {
 		} else if raw.tmode3 != nil {
 			raw.cookTmode3(cm)
 		} else if raw.tmode != nil {
-			raw.cookTmode(cm)
+			raw.cookTmode1(cm)
 		}
+		raw.cookTmode(cm)
 		raw.cookTp5(cm)
 		raw.cookGNSS(cm)
 		// must call cookNav5 after cookTp5, because we want to prefer primary GNSS from TP5
