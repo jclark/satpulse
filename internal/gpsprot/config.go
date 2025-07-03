@@ -310,6 +310,7 @@ type ConfigOptions struct {
 	SatsMsg    Option[SatsMsgFlags]
 	RawMsg     Option[RawMsgFlags]
 	Survey     Survey
+	SetStatic  bool         // ensure receiver is in static mode without changing existing fixed position
 	BaudRate   uint32       // serial port baud rate, 0 means do not change
 	TimeAssist TimeEstimate // provide time assistance to the receiver
 	OSNMA      OSNMAOptions // options for OSNMA authentication
@@ -872,10 +873,17 @@ func ParsePoint3D(s string) (Point3D, error) {
 	return p, nil
 }
 
+type SurveyFlags int
+
+const (
+	SurveyAgain SurveyFlags = 1 << iota // do a survey even if we have done one already
+)
+
 // Survey specifies whether a survey should be performed, and if so, its parameters
 // The survey is performed when the time mode is one of the modes in When.
 // If When is non-zero, then AccLimit must also be non-zero.
 type Survey struct {
+	Flags    SurveyFlags   // control survey behavior
 	When     TimeModeSet   // perform a survey when the time mode is one of these
 	MinDur   time.Duration // survey should run at least this long
 	AccLimit Length        // survey should run until this accuracy is achieved

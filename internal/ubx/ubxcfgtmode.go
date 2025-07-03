@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ubx/bin"
@@ -43,50 +44,84 @@ type tmodeConfig struct {
 	svinAccLimit uint32 // Survey accuracy limit in 0.1mm units
 }
 
-// fromMode sets tmodeConfig from a gpsprot.Mode value.
-func (tc *tmodeConfig) fromMode(mode gpsprot.Mode) error {
+// newTmodeConfig creates tmodeConfig from gpsprot.Mode and gpsprot.Survey values.
+func newTmodeConfig(mode gpsprot.Mode, survey gpsprot.Survey) (*tmodeConfig, error) {
+	tc := &tmodeConfig{}
 	if !mode.Static {
 		tc.mode = tmodeDisabled
-		return nil
+		return tc, nil
 	}
-
+	if mode.PosType == gpsprot.PosTypeNone {
+		tc.mode = tmodeSurveyIn
+		tc.svinMinDur = uint32(survey.MinDur.Round(time.Second) / time.Second)
+		tc.svinAccLimit = tmodeAcc(survey.AccLimit)
+		return tc, nil
+	}
+	tc.mode = tmodeFixed
 	tc.fixedPosAcc = tmodeAcc(mode.FixedPosAcc)
-
-	switch mode.PosType {
-	case gpsprot.PosTypeECEF:
-		tc.mode = tmodeFixed
-		tc.useLLH = false
-		for i := 0; i < 3; i++ {
-			cm, frac, err := splitLength(mode.FixedPosECEF[i])
-			if err != nil {
-				return err
-			}
-			tc.ecef[i] = cm
-			tc.ecefHP[i] = frac
-		}
-
-	case gpsprot.PosTypeLLH:
-		tc.mode = tmodeFixed
-		tc.useLLH = true
-		for i := 0; i < 2; i++ {
+	tc.useLLH = mode.PosType == gpsprot.PosTypeLLH
+	if tc.useLLH {
+		for i := range 2 {
 			deg, frac, err := splitAngle(mode.FixedPosLLH[i])
 			if err != nil {
-				return err
+				return nil, err
 			}
 			tc.latLon[i] = deg
 			tc.latLonHP[i] = frac
 		}
 		cm, frac, err := splitLength(mode.Height)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		tc.height = cm
 		tc.heightHP = frac
-
-	default:
-		tc.mode = tmodeSurveyIn
+	} else {
+		for i := range 3 {
+			cm, frac, err := splitLength(mode.FixedPosECEF[i])
+			if err != nil {
+				return nil, err
+			}
+			tc.ecef[i] = cm
+			tc.ecefHP[i] = frac
+		}
 	}
-	return nil
+	return tc, nil
+}
+
+// getMode converts tmodeConfig to gpsprot.Mode.
+func (tc *tmodeConfig) getMode() gpsprot.Mode {
+	mode := gpsprot.Mode{}
+	
+	switch tc.mode {
+	case tmodeDisabled:
+		mode.Static = false
+		return mode
+		
+	case tmodeSurveyIn:
+		mode.Static = true
+		mode.PosType = gpsprot.PosTypeNone
+		return mode
+		
+	case tmodeFixed:
+		mode.Static = true
+		mode.FixedPosAcc = gpsprot.Length(tc.fixedPosAcc) * (gpsprot.Millimeter / 10)
+		
+		if tc.useLLH {
+			mode.PosType = gpsprot.PosTypeLLH
+			for i := range 2 {
+				mode.FixedPosLLH[i] = angleHP(tc.latLon[i], tc.latLonHP[i])
+			}
+			mode.Height = lengthHP(tc.height, tc.heightHP)
+		} else {
+			mode.PosType = gpsprot.PosTypeECEF
+			for i := range 3 {
+				mode.FixedPosECEF[i] = lengthHP(tc.ecef[i], tc.ecefHP[i])
+			}
+		}
+		return mode
+	}
+	
+	return mode
 }
 
 // toTmode3 converts the tmodeConfig to CfgTmode3.
@@ -486,3 +521,4 @@ func tmodeAcc(meters gpsprot.Length) uint32 {
 	acc, _ := divModRound(int64(meters), int64(gpsprot.Millimeter/10))
 	return uint32(acc)
 }
+

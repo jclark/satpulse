@@ -939,6 +939,10 @@ func lengthHP(l int32, h int8) gpsprot.Length {
 	return gpsprot.Length(l)*gpsprot.Centimeter + gpsprot.Length(h)*(gpsprot.Millimeter/10)
 }
 
+func angleHP(deg int32, hp int8) gpsprot.Angle {
+	return gpsprot.Angle(deg)*(gpsprot.Nanodegrees*100) + gpsprot.Angle(hp)*gpsprot.Nanodegrees
+}
+
 // splitLength splits a Length into a int32 and int8.
 // The int32 is the length in centimeters. The int8 is the remainder in units of 0.1mm.
 func splitLength(n gpsprot.Length) (int32, int8, error) {
