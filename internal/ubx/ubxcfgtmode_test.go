@@ -6,6 +6,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ubx/bin"
+	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
 func TestTmodeConfigRoundTrip(t *testing.T) {
@@ -197,6 +198,58 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 				if tc2 != expected {
 					t.Errorf("tmode roundtrip failed: got %+v, want %+v", tc2, expected)
 				}
+			})
+
+			// Test tmodeConfig -> items -> CfgVals -> tmodeConfig round-trip
+			t.Run("cfgvals_roundtrip", func(t *testing.T) {
+				tc, err := newTmodeConfig(tt.mode, tt.survey)
+				if err != nil {
+					t.Fatalf("newTmodeConfig failed: %v", err)
+				}
+
+				// Test with all=false (mode-specific items only)
+				t.Run("mode_specific", func(t *testing.T) {
+					// Convert tmodeConfig to items
+					var items []ucv.Item
+					tc.toItems(&items, false)
+
+					// Convert items to CfgVals
+					vals := MakeCfgVals()
+					vals.AddItems(items)
+
+					// Convert CfgVals back to tmodeConfig
+					var tc2 tmodeConfig
+					ok := tc2.fromCfgVals(&vals, false)
+					if !ok {
+						t.Fatalf("fromCfgVals failed with all=false")
+					}
+
+					if tc2 != *tc {
+						t.Errorf("cfgvals roundtrip (all=false) failed: got %+v, want %+v", tc2, *tc)
+					}
+				})
+
+				// Test with all=true (all items)
+				t.Run("all_items", func(t *testing.T) {
+					// Convert tmodeConfig to items
+					var items []ucv.Item
+					tc.toItems(&items, true)
+
+					// Convert items to CfgVals
+					vals := MakeCfgVals()
+					vals.AddItems(items)
+
+					// Convert CfgVals back to tmodeConfig
+					var tc2 tmodeConfig
+					ok := tc2.fromCfgVals(&vals, true)
+					if !ok {
+						t.Fatalf("fromCfgVals failed with all=true")
+					}
+
+					if tc2 != *tc {
+						t.Errorf("cfgvals roundtrip (all=true) failed: got %+v, want %+v", tc2, *tc)
+					}
+				})
 			})
 		})
 	}
