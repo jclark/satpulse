@@ -353,6 +353,23 @@ func (r *replayer) packetsEqual(msgID string, actual []byte, expected gpsio.Pack
 		// For output packets (which these always are), cfgData contains keys
 		return valgetPacketsEqual(r.t, actualStr, expectedStr)
 	default:
+		// Try to parse both messages to provide better error details
+		actualMsg, actualErr := ubxbin.ParseMsg(actualStr)
+		expectedMsg, expectedErr := ubxbin.ParseMsg(expectedStr)
+		
+		if actualErr != nil {
+			r.t.Errorf("%s: failed to parse actual packet: %v", msgID, actualErr)
+		}
+		if expectedErr != nil {
+			r.t.Errorf("%s: failed to parse expected packet: %v", msgID, expectedErr)
+		}
+		
+		if actualErr == nil && expectedErr == nil {
+			r.t.Errorf("%s: packets differ: actual %+v, expected %+v", msgID, actualMsg, expectedMsg)
+		} else if actualErr == nil || expectedErr == nil {
+			r.t.Errorf("%s: packet content differs (length actual=%d, expected=%d)", msgID, len(actualStr), len(expectedStr))
+		}
+		
 		return false
 	}
 }
