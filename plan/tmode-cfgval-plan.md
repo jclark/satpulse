@@ -43,6 +43,7 @@ Based on careful analysis of `createTmodeConfigs` implementation, determine exac
 - `tmodeInfoMode`: Just the current time mode
 - `tmodeInfoSurvey`: Survey parameters regardless of current mode
 - `tmodeInfoFixed`: Fixed position parameters regardless of current mode
+- `tmodeInfoRelevant`: Mode-dependent behavior - only fetch parameters relevant to the actual mode (survey params for survey mode, fixed params for fixed mode). This is needed because `ubxcfgvals` indirectly uses this in Cook functions where we don't know in advance what mode we're in.
 - `tmodeInfoAll`: Everything (equivalent to `Mode|Survey|Fixed`)
 
 ### 5. Design and implement info flags system
@@ -74,7 +75,8 @@ const (
 - Ensure backward compatibility with existing `fromCfgVals(vals, true/false)` calls
 
 ### 6. Add helper function to determine required keys for info levels
-Add a function that maps info levels to the specific CFG-VAL keys that need to be fetched:
+Add a function that maps info levels to the specific CFG-VAL keys that need to be fetched.
+Note: `tmodeRequiredKeys` cannot handle `tmodeInfoRelevant` since it requires knowing the mode first:
 
 **Function signature:**
 ```go
@@ -198,11 +200,17 @@ Successfully updated `ubxcfgold.go` to call `createTmodeConfigs(target, cur, res
 #### Additional: ✅ Added test coverage
 Updated `TestCreateTmodeConfigs` to include `resurveyMethod` field in all test cases with `resurveyDisable` value.
 
-### 🔄 CURRENT: Step 4 - Analyze info requirements
-
-### ⏳ REMAINING: Steps 5-6
-- Design info flags system based on requirements analysis
+### ⏳ REMAINING: Steps 6-7
+- Add helper function to determine required keys for info levels  
 - Implement new `timeModeBuild` function for gen9
+
+### ✅ COMPLETED: Steps 4-5
+
+#### Step 4: ✅ Analyzed info requirements 
+Completed requirements analysis showing exactly when `cur` is accessed in `createTmodeConfigs`.
+
+#### Step 5: ✅ Designed and implemented info flags system
+Successfully implemented the info flags system for `tmodeConfig.fromCfgVals()` including `tmodeInfoRelevant` for Cook functions in `ubxcfgvals`. The `tmodeRequiredKeys()` helper function was also implemented but step 6 covers the broader helper function design. All tests passing.
 
 ## Key Benefits of This Approach
 - Implementation-driven design: Understand actual requirements before over-engineering

@@ -33,6 +33,18 @@ const (
 	resurveyChange
 )
 
+// tmodeInfo specifies which configuration information to retrieve/require
+type tmodeInfo uint8
+
+const (
+	tmodeInfoMode     tmodeInfo = 1 << iota // Just the current time mode
+	tmodeInfoSurvey                         // Survey parameters regardless of current mode
+	tmodeInfoFixed                          // Fixed position parameters regardless of current mode
+	tmodeInfoRelevant                       // Mode-dependent: survey if survey mode, fixed if fixed mode
+	tmodeInfoAll      tmodeInfo = tmodeInfoMode | tmodeInfoSurvey | tmodeInfoFixed // Everything
+	tmodeInfoNone     tmodeInfo = 0 // No information requested
+)
+
 type tmodeConfig struct {
 	// Core time mode fields
 	mode tmodeMode
@@ -555,38 +567,40 @@ func (tc *tmodeConfig) toItems(items *[]ucv.Item, all bool) {
 }
 
 // fromCfgVals converts configuration items to tmodeConfig.
-// If all is true, it expects all fields to be present regardless of mode.
-// If all is false, it only requires fields relevant to the current mode.
+// info specifies which configuration information to retrieve/require.
 // Returns ok=false if required keys are missing.
-// XXX really need 4 info levels:
-// 1. just the mode
-// 2. what we need to file in gpsprot.Mode (no survey)
-// 3. everything relevant to the current mode
-// 4. everything
-func (tc *tmodeConfig) fromCfgVals(vals *CfgVals, all bool) bool {
-	// Always require mode
-	mode, ok := cfgValGet(vals, ucv.KTmodeMode)
-	if !ok {
-		return false
-	}
-	tc.mode = tmodeDisabled // Default to disabled
-	switch mode {
-	case ucv.ETmodeModeSurveyIn:
-		tc.mode = tmodeSurveyIn
-	case ucv.ETmodeModeFixed:
-		tc.mode = tmodeFixed
+func (tc *tmodeConfig) fromCfgVals(vals *CfgVals, info tmodeInfo) bool {
+	// Get mode if required
+	if info&(tmodeInfoMode|tmodeInfoRelevant) != 0 {
+		mode, ok := cfgValGet(vals, ucv.KTmodeMode)
+		if !ok {
+			return false
+		}
+		tc.mode = tmodeDisabled // Default to disabled
+		extraInfo := tmodeInfoNone
+		switch mode {
+		case ucv.ETmodeModeSurveyIn:
+			tc.mode = tmodeSurveyIn
+			extraInfo = tmodeInfoSurvey
+		case ucv.ETmodeModeFixed:
+			tc.mode = tmodeFixed
+			extraInfo = tmodeInfoFixed 
+		}
+		if info&tmodeInfoRelevant != 0 {
+			info |= extraInfo // Add relevant info based on mode
+		}
 	}
 
-	// For survey mode, get survey parameters
-	if tc.mode == tmodeSurveyIn || all {
+	// Get survey parameters if required
+	if info&tmodeInfoSurvey != 0 {
 		if !cfgValGetUint32(vals, ucv.KTmodeSvinMinDur, &tc.svinMinDur) ||
 			!cfgValGetUint32(vals, ucv.KTmodeSvinAccLimit, &tc.svinAccLimit) {
 			return false
 		}
 	}
 
-	// For fixed mode, get position and accuracy
-	if tc.mode == tmodeFixed || all {
+	// Get fixed position parameters if required
+	if info&tmodeInfoFixed != 0 {
 		// Position type determines coordinate system
 		posType, ok := cfgValGet(vals, ucv.KTmodePosType)
 		if !ok {
@@ -620,6 +634,35 @@ func (tc *tmodeConfig) fromCfgVals(vals *CfgVals, all bool) bool {
 		}
 	}
 	return true
+}
+
+// tmodeRequiredKeys returns the CFG-VAL keys that need to be fetched for the given info level
+func tmodeRequiredKeys(info tmodeInfo) []ucv.AnyTypedKey {
+	var keys []ucv.AnyTypedKey
+	
+	if info&tmodeInfoMode != 0 {
+		keys = append(keys, ucv.KTmodeMode)
+	}
+	
+	if info&tmodeInfoSurvey != 0 {
+		keys = append(keys, 
+			ucv.KTmodeSvinMinDur,
+			ucv.KTmodeSvinAccLimit,
+		)
+	}
+	
+	if info&tmodeInfoFixed != 0 {
+		keys = append(keys,
+			ucv.KTmodePosType,
+			ucv.KTmodeEcefX, ucv.KTmodeEcefY, ucv.KTmodeEcefZ,
+			ucv.KTmodeEcefXHp, ucv.KTmodeEcefYHp, ucv.KTmodeEcefZHp,
+			ucv.KTmodeLat, ucv.KTmodeLon, ucv.KTmodeHeight,
+			ucv.KTmodeLatHp, ucv.KTmodeLonHp, ucv.KTmodeHeightHp,
+			ucv.KTmodeFixedPosAcc,
+		)
+	}
+	
+	return keys
 }
 
 // Helper functions for getting values and storing in fields

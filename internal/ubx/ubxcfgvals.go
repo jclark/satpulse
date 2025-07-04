@@ -390,7 +390,7 @@ func addSurveyItems(items *[]ucv.Item, opts gpsprot.Survey) {
 
 func (raw *CfgVals) getMode() (gpsprot.Mode, bool) {
 	tmc := tmodeConfig{}
-	if tmc.fromCfgVals(raw, false) {
+	if tmc.fromCfgVals(raw, tmodeInfoRelevant) {
 		return tmc.getMode(), true
 	}
 	return gpsprot.Mode{}, false

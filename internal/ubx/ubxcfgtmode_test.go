@@ -219,13 +219,13 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 
 					// Convert CfgVals back to tmodeConfig
 					var tc2 tmodeConfig
-					ok := tc2.fromCfgVals(&vals, false)
+					ok := tc2.fromCfgVals(&vals, tmodeInfoRelevant)
 					if !ok {
-						t.Fatalf("fromCfgVals failed with all=false")
+						t.Fatalf("fromCfgVals failed with tmodeInfoRelevant")
 					}
 
 					if tc2 != *tc {
-						t.Errorf("cfgvals roundtrip (all=false) failed: got %+v, want %+v", tc2, *tc)
+						t.Errorf("cfgvals roundtrip (tmodeInfoRelevant) failed: got %+v, want %+v", tc2, *tc)
 					}
 				})
 
@@ -241,13 +241,13 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 
 					// Convert CfgVals back to tmodeConfig
 					var tc2 tmodeConfig
-					ok := tc2.fromCfgVals(&vals, true)
+					ok := tc2.fromCfgVals(&vals, tmodeInfoAll)
 					if !ok {
-						t.Fatalf("fromCfgVals failed with all=true")
+						t.Fatalf("fromCfgVals failed with tmodeInfoAll")
 					}
 
 					if tc2 != *tc {
-						t.Errorf("cfgvals roundtrip (all=true) failed: got %+v, want %+v", tc2, *tc)
+						t.Errorf("cfgvals roundtrip (tmodeInfoAll) failed: got %+v, want %+v", tc2, *tc)
 					}
 				})
 			})
