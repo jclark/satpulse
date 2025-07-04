@@ -2,7 +2,6 @@ package ubx
 
 import (
 	"fmt"
-	"math"
 	"slices"
 	"time"
 
@@ -32,9 +31,7 @@ var cfgOldProps = struct {
 }{
 	// tmode applies to tmode2 and tmode3 as well
 	tmode: []gpsprot.PropIDs{
-		gpsprot.PropIDTimeMode,
-		gpsprot.PropIDFixedPosECEF,
-		gpsprot.PropIDFixedPosAcc,
+		gpsprot.PropIDMode,
 	},
 	tp5: []gpsprot.PropIDs{
 		gpsprot.PropIDAntennaCableDelay,
@@ -144,27 +141,6 @@ func (raw *CfgOld) getTmodeConfig() *tmodeConfig {
 	return &tmc
 }
 
-func (raw *CfgOld) cookTmode1(cp *gpsprot.ConfigProps) {
-	tm := raw.tmode
-	if tm == nil {
-		return
-	}
-	switch tm.TimeMode {
-	case bin.CfgTmodeDisabled:
-		cp.SetTimeMode(gpsprot.TimeModeDisabled)
-	case bin.CfgTmodeSurveyIn:
-		cp.SetTimeMode(gpsprot.TimeModeSurvey)
-	case bin.CfgTmodeFixedMode:
-		cp.SetFixedPosECEF(gpsprot.Point3D{
-			gpsprot.Length(tm.FixedPosX) * gpsprot.Centimeter,
-			gpsprot.Length(tm.FixedPosY) * gpsprot.Centimeter,
-			gpsprot.Length(tm.FixedPosZ) * gpsprot.Centimeter,
-		})
-		acc := math.Sqrt(float64(tm.FixedPosVar))
-		cp.SetFixedPosAcc(gpsprot.Length(acc) * gpsprot.Millimeter)
-	}
-}
-
 func (raw *CfgOld) changeTmode(target *gpsprot.ConfigTarget) (bin.Msg, bin.Msg, error) {
 	// Get the current raw tmode message
 	var tmodeMsg bin.Msg
@@ -202,238 +178,6 @@ func (raw *CfgOld) changeTmode(target *gpsprot.ConfigTarget) (bin.Msg, bin.Msg, 
 	return msg[0], msg[1], nil
 }
 
-func (raw *CfgOld) changeTmode1(target *gpsprot.ConfigTarget) (*bin.CfgTmode, bool) {
-	if raw.tmode == nil {
-		return nil, false
-	}
-	tm := *raw.tmode
-
-	mode := gpsprot.TimeModeDisabled
-	switch tm.TimeMode {
-	case bin.CfgTmodeSurveyIn:
-		mode = gpsprot.TimeModeSurvey
-	case bin.CfgTmodeFixedMode:
-		mode = gpsprot.TimeModeFixed
-	}
-	cp := &target.Props
-	if timeMode, exists := cp.GetTimeMode(); exists {
-		mode = timeMode
-	}
-	survey := false
-	if target.Opts.Survey.When.Contains(mode) {
-		survey = true
-		if tm.TimeMode != bin.CfgTmodeFixedMode {
-			mode = gpsprot.TimeModeDisabled
-		}
-	}
-	switch mode {
-	case gpsprot.TimeModeDisabled:
-		tm.TimeMode = bin.CfgTmodeDisabled
-	case gpsprot.TimeModeSurvey:
-		tm.TimeMode = bin.CfgTmodeSurveyIn
-	case gpsprot.TimeModeFixed:
-		tm.TimeMode = bin.CfgTmodeFixedMode
-	}
-
-	if ecef, exists := cp.GetFixedPosECEF(); exists {
-		var hp int8
-		err := changeECEF(ecef, &tm.FixedPosX, &tm.FixedPosY, &tm.FixedPosZ, &hp, &hp, &hp)
-		if err != nil {
-			return nil, false
-		}
-	}
-	if tm == *raw.tmode {
-		return nil, survey
-	}
-	return &tm, survey
-}
-
-func (raw *CfgOld) surveyTmode1(opts gpsprot.ConfigOptions) *bin.CfgTmode {
-	tm := *raw.tmode
-	tm.TimeMode = bin.CfgTmodeSurveyIn
-	tm.SvinMinDur = uint32(opts.Survey.MinDur.Round(time.Second) / time.Second)
-	q, _ := divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter))
-	q = q * q
-	if q > math.MaxUint32 {
-		q = math.MaxUint32
-	}
-	tm.SvinVarLimit = uint32(q * q)
-	return &tm
-}
-
-func (raw *CfgOld) cookTmode2(cp *gpsprot.ConfigProps) {
-	tm := raw.tmode2
-	if tm == nil {
-		return
-	}
-	switch tm.TimeMode {
-	case bin.CfgTmode2Disabled:
-		cp.SetTimeMode(gpsprot.TimeModeDisabled)
-	case bin.CfgTmode2SurveyIn:
-		cp.SetTimeMode(gpsprot.TimeModeSurvey)
-	case bin.CfgTmode2FixedMode:
-		cp.SetTimeMode(gpsprot.TimeModeFixed)
-		if tm.Flags&bin.CfgTmode2LLA == 0 {
-			cp.SetFixedPosECEF(gpsprot.Point3D{
-				gpsprot.Length(tm.EcefXOrLat) * gpsprot.Centimeter,
-				gpsprot.Length(tm.EcefYOrLon) * gpsprot.Centimeter,
-				gpsprot.Length(tm.EcefZOrAlt) * gpsprot.Centimeter,
-			})
-		}
-		cp.SetFixedPosAcc(gpsprot.Length(tm.FixedPosAcc) * gpsprot.Millimeter)
-	}
-}
-
-func (raw *CfgOld) changeTmode2(target *gpsprot.ConfigTarget) (*bin.CfgTmode2, bool) {
-	if raw.tmode2 == nil {
-		return nil, false
-	}
-	tm := *raw.tmode2
-
-	mode := gpsprot.TimeModeDisabled
-	switch tm.TimeMode {
-	case bin.CfgTmode2SurveyIn:
-		mode = gpsprot.TimeModeSurvey
-	case bin.CfgTmode2FixedMode:
-		mode = gpsprot.TimeModeFixed
-	}
-	cp := &target.Props
-	if timeMode, exists := cp.GetTimeMode(); exists {
-		mode = timeMode
-	}
-	survey := false
-	if target.Opts.Survey.When.Contains(mode) {
-		survey = true
-		if tm.TimeMode != bin.CfgTmode2FixedMode {
-			mode = gpsprot.TimeModeDisabled
-		}
-	}
-
-	switch mode {
-	case gpsprot.TimeModeDisabled:
-		tm.TimeMode = bin.CfgTmode2Disabled
-	case gpsprot.TimeModeSurvey:
-		tm.TimeMode = bin.CfgTmode2SurveyIn
-	case gpsprot.TimeModeFixed:
-		tm.TimeMode = bin.CfgTmode2FixedMode
-	}
-
-	if ecef, exists := cp.GetFixedPosECEF(); exists {
-		var hp int8
-		err := changeECEF(ecef, &tm.EcefXOrLat, &tm.EcefYOrLon, &tm.EcefZOrAlt, &hp, &hp, &hp)
-		if err != nil {
-			return nil, false
-		}
-		tm.Flags &^= bin.CfgTmode2LLA
-	}
-
-	if tm == *raw.tmode2 {
-		return nil, survey
-	}
-	return &tm, survey
-}
-
-func (raw *CfgOld) surveyTmode2(opts gpsprot.ConfigOptions) *bin.CfgTmode2 {
-	tm := *raw.tmode2
-	tm.TimeMode = bin.CfgTmode2SurveyIn
-	tm.SvinMinDur = uint32(opts.Survey.MinDur.Round(time.Second) / time.Second)
-	q, _ := divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter))
-	tm.SvinAccLimit = uint32(q)
-	return &tm
-}
-
-func (raw *CfgOld) changeTmode3(target *gpsprot.ConfigTarget) (*bin.CfgTmode3, bool) {
-	if raw.tmode3 == nil {
-		return nil, false
-	}
-	tm := *raw.tmode3
-	mode := gpsprot.TimeModeDisabled
-	switch tm.Flags & bin.CfgTmode3Mode {
-	case bin.CfgTmode3SurveyIn:
-		mode = gpsprot.TimeModeSurvey
-	case bin.CfgTmode3FixedMode:
-		mode = gpsprot.TimeModeFixed
-	}
-	cp := &target.Props
-	if timeMode, exists := cp.GetTimeMode(); exists {
-		mode = timeMode
-	}
-	survey := false
-	if target.Opts.Survey.When.Contains(mode) {
-		survey = true
-		if tm.Flags&bin.CfgTmode3Mode != bin.CfgTmode3FixedMode {
-			mode = gpsprot.TimeModeDisabled
-		}
-	}
-	tm.Flags &^= bin.CfgTmode3Mode
-	switch mode {
-	case gpsprot.TimeModeDisabled:
-		// do nothing
-	case gpsprot.TimeModeSurvey:
-		tm.Flags |= bin.CfgTmode3SurveyIn
-	case gpsprot.TimeModeFixed:
-		tm.Flags |= bin.CfgTmode3FixedMode
-	}
-	if ecef, exists := cp.GetFixedPosECEF(); exists {
-		err := changeECEF(ecef, &tm.EcefXOrLat, &tm.EcefYOrLon, &tm.EcefZOrAlt,
-			&tm.EcefXOrLatHP, &tm.EcefYOrLonHP, &tm.EcefZOrAltHP)
-		if err != nil {
-			return nil, false
-		}
-		tm.Flags &^= bin.CfgTmode3LLA
-	}
-
-	if tm == *raw.tmode3 {
-		return nil, survey
-	}
-	return &tm, survey
-}
-
-func (raw *CfgOld) surveyTmode3(opts gpsprot.ConfigOptions) *bin.CfgTmode3 {
-	tm := *raw.tmode3
-	tm.Flags &^= bin.CfgTmode3Mode
-	tm.Flags |= bin.CfgTmode3SurveyIn
-	tm.SvinMinDur = uint32(opts.Survey.MinDur.Round(time.Second) / time.Second)
-	q, _ := divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter/10))
-	tm.SvinAccLimit = uint32(q)
-	return &tm
-}
-
-func changeECEF(ecef gpsprot.Point3D, x, y, z *int32, xhp, yhp, zhp *int8) (err error) {
-	var lo [3]int32
-	var hi [3]int8
-	for i := 0; i < 3; i++ {
-		lo[i], hi[i], err = splitLength(ecef[i])
-		if err != nil {
-			return
-		}
-	}
-	*x, *y, *z, *xhp, *yhp, *zhp = lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
-	return
-}
-
-func (raw *CfgOld) cookTmode3(cp *gpsprot.ConfigProps) {
-	tm := raw.tmode3
-	if tm == nil {
-		return
-	}
-	switch tm.Flags & bin.CfgTmode3Mode {
-	case bin.CfgTmode3Disabled:
-		cp.SetTimeMode(gpsprot.TimeModeDisabled)
-	case bin.CfgTmode3SurveyIn:
-		cp.SetTimeMode(gpsprot.TimeModeSurvey)
-	case bin.CfgTmode3FixedMode:
-		cp.SetTimeMode(gpsprot.TimeModeFixed)
-		if tm.Flags&bin.CfgTmode3LLA == 0 {
-			cp.SetFixedPosECEF(gpsprot.Point3D{
-				lengthHP(tm.EcefXOrLat, tm.EcefXOrLatHP),
-				lengthHP(tm.EcefYOrLon, tm.EcefYOrLonHP),
-				lengthHP(tm.EcefZOrAlt, tm.EcefZOrAltHP),
-			})
-		}
-		cp.SetFixedPosAcc(gpsprot.Length(tm.FixedPosAcc) * (gpsprot.Millimeter / 10))
-	}
-}
 
 func (raw *CfgOld) cookTp5(cp *gpsprot.ConfigProps) {
 	tp := raw.tp5

@@ -59,7 +59,6 @@ var legacyConfigSteps = []func(*Configurator) error{
 	(*Configurator).setTp5,
 	(*Configurator).pollTmode,
 	(*Configurator).setTmodeNew,
-	//(*Configurator).reqSurvey,
 	(*Configurator).pollRate,
 	(*Configurator).pollNav5,
 	(*Configurator).setNav5,
@@ -508,8 +507,7 @@ func (c *Configurator) pollNav5() error {
 }
 
 func (c *Configurator) pollTmode() error {
-	if !c.target.UsesAny(cfgOldProps.tmode...) && c.target.Opts.Survey.When == 0 && 
-		!tmodeConfigTargetOldPoll(c.target) {
+	if !tmodeConfigTargetOldPoll(c.target) {
 		return nil
 	}
 	switch c.ver.tmodeLevel() {
@@ -611,54 +609,6 @@ func (c *Configurator) setTmodeNew() error {
 	return nil
 }
 
-func (c *Configurator) setTmode() error {
-	switch c.ver.tmodeLevel() {
-	case 1:
-		var tm *bin.CfgTmode
-		tm, c.survey = c.raw.changeTmode1(c.target)
-		if tm != nil {
-			return c.addMsgSetRequest(tm)
-		}
-	case 2:
-		var tm *bin.CfgTmode2
-		tm, c.survey = c.raw.changeTmode2(c.target)
-		if tm != nil {
-			return c.addMsgSetRequest(tm)
-		}
-	case 3:
-		var tm *bin.CfgTmode3
-		tm, c.survey = c.raw.changeTmode3(c.target)
-		if tm != nil {
-			return c.addMsgSetRequest(tm)
-		}
-	}
-	return nil
-}
-
-func (c *Configurator) reqSurvey() error {
-	if !c.survey {
-		return nil
-	}
-	switch c.ver.tmodeLevel() {
-	case 1:
-		tm := c.raw.surveyTmode1(c.target.Opts)
-		if tm != nil {
-			return c.addMsgSetRequest(tm)
-		}
-	case 2:
-		tm := c.raw.surveyTmode2(c.target.Opts)
-		if tm != nil {
-			return c.addMsgSetRequest(tm)
-		}
-	case 3:
-		tm := c.raw.surveyTmode3(c.target.Opts)
-		if tm != nil {
-			return c.addMsgSetRequest(tm)
-		}
-	}
-	return nil
-}
-
 func (c *Configurator) setTp5() error {
 	tp5 := c.raw.changeTp5(&c.target.Props)
 	if tp5 == nil {
@@ -722,13 +672,7 @@ func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigProps {
 	if !raw.CfgVals.isNil() {
 		raw.CfgVals.Cook(ver, raw.valPort(), cm)
 	} else {
-		if raw.tmode2 != nil {
-			raw.cookTmode2(cm)
-		} else if raw.tmode3 != nil {
-			raw.cookTmode3(cm)
-		} else if raw.tmode != nil {
-			raw.cookTmode1(cm)
-		}
+
 		raw.cookTmode(cm)
 		raw.cookTp5(cm)
 		raw.cookGNSS(cm)
