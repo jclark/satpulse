@@ -114,7 +114,34 @@ func tmodeRequiredKeys(info tmodeInfo) []ucv.Key {
 }
 ```
 
-### 7. Implement new `timeModeBuild` function for gen9
+### 7. Add helper function to determine required info for resurveyChange case
+Add a function that analyzes a `gpsprot.ConfigTarget` to determine what `tmodeInfo` flags are needed for the `resurveyChange` method:
+
+**Function signature:**
+```go
+func tmodeRequiredInfoResurveyChange(target *gpsprot.ConfigTarget) tmodeInfo
+```
+
+**Implementation:**
+```go
+func tmodeRequiredInfoResurveyChange(target *gpsprot.ConfigTarget) tmodeInfo {
+    mode, haveMode := target.Props.GetMode()
+    survey := target.Opts.Survey
+    
+    // If we might need to do resurveyChange, we need survey info
+    if haveMode && mode.Static && mode.PosType == gpsprot.PosTypeNone && 
+       survey.Flags&gpsprot.SurveyAgain != 0 {
+        return tmodeInfoSurvey
+    }
+    
+    // For most cases, just mode is sufficient
+    return tmodeInfoMode
+}
+```
+
+This helper will be called by `timeModeBuild` to efficiently determine what information to request before calling `createTmodeConfigs`.
+
+### 8. Implement new `timeModeBuild` function for gen9
 Create the new function for gen9 that uses CFG-VAL configuration:
 
 **Function signature:**
@@ -125,7 +152,7 @@ func timeModeBuild(target *gpsprot.ConfigTarget, vals *CfgVals) ([]ucv.Item, err
 **Implementation steps:**
 1. **Determine required info level:**
    ```go
-   info := determineRequiredInfo(target)
+   info := tmodeRequiredInfoResurveyChange(target)
    ```
 
 2. **Check if required keys are available, request them if not:**
@@ -200,17 +227,22 @@ Successfully updated `ubxcfgold.go` to call `createTmodeConfigs(target, cur, res
 #### Additional: ✅ Added test coverage
 Updated `TestCreateTmodeConfigs` to include `resurveyMethod` field in all test cases with `resurveyDisable` value.
 
-### ⏳ REMAINING: Steps 6-7
-- Add helper function to determine required keys for info levels  
+### ⏳ REMAINING: Step 8
 - Implement new `timeModeBuild` function for gen9
 
-### ✅ COMPLETED: Steps 4-5
+### ✅ COMPLETED: Steps 4-7
 
 #### Step 4: ✅ Analyzed info requirements 
 Completed requirements analysis showing exactly when `cur` is accessed in `createTmodeConfigs`.
 
 #### Step 5: ✅ Designed and implemented info flags system
-Successfully implemented the info flags system for `tmodeConfig.fromCfgVals()` including `tmodeInfoRelevant` for Cook functions in `ubxcfgvals`. The `tmodeRequiredKeys()` helper function was also implemented but step 6 covers the broader helper function design. All tests passing.
+Successfully implemented the info flags system for `tmodeConfig.fromCfgVals()` including `tmodeInfoRelevant` for Cook functions in `ubxcfgvals`. All tests passing.
+
+#### Step 6: ✅ Added helper function to determine required keys for info levels
+Successfully implemented `tmodeRequiredKeys(info tmodeInfo) []ucv.AnyTypedKey` function that maps info levels to specific CFG-VAL keys. Returns `[]ucv.AnyTypedKey` for compatibility with the typed key system.
+
+#### Step 7: ✅ Added helper function to determine required info for resurveyChange case
+Successfully implemented `tmodeRequiredInfoResurveyChange(target *gpsprot.ConfigTarget) tmodeInfo` function that analyzes a target configuration to determine what info flags are needed for the resurveyChange method.
 
 ## Key Benefits of This Approach
 - Implementation-driven design: Understand actual requirements before over-engineering

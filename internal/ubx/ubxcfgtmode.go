@@ -124,6 +124,36 @@ func createTmodeConfigs(target *gpsprot.ConfigTarget, cur *tmodeConfig, method r
 	return tmc, nil, nil
 }
 
+// tmodeRequiredInfoResurveyChange determines what tmodeInfo flags are needed for the resurveyChange method
+func tmodeRequiredInfoResurveyChange(target *gpsprot.ConfigTarget) tmodeInfo {
+	mode, haveMode := target.Props.GetMode()
+	setStatic := target.Opts.SetStatic
+	survey := target.Opts.Survey
+	
+	// If no mode and no setStatic, createTmodeConfigs returns early without accessing cur
+	if !haveMode && !setStatic {
+		return tmodeInfoNone
+	}
+	
+	// We always need mode after this point
+	info := tmodeInfoMode
+	
+	// Check if we'll need survey info for resurveyChange comparison.
+	// We need survey parameters when:
+	// 1. SurveyAgain flag is set (forcing a new survey), AND
+	// 2. We'll end up in survey mode, which happens when:
+	//    a) setStatic without explicit mode (defaults to survey mode), OR
+	//    b) Explicit survey mode (Static=true, PosType=None)
+	// Note: !haveMode implies setStatic=true at this point due to early return above
+	// In these cases, createTmodeConfigs will compare cur.svinAccLimit for resurveyChange method
+	if survey.Flags&gpsprot.SurveyAgain != 0 && 
+		(!haveMode || (mode.Static && mode.PosType == gpsprot.PosTypeNone)) {
+		info |= tmodeInfoSurvey
+	}
+	
+	return info
+}
+
 // newTmodeConfig creates tmodeConfig from gpsprot.Mode and gpsprot.Survey values.
 func newTmodeConfig(mode gpsprot.Mode, survey gpsprot.Survey) (*tmodeConfig, error) {
 	tc := &tmodeConfig{}
