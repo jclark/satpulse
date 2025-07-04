@@ -123,6 +123,14 @@ func (raw *CfgOld) changePrtBaudRate(opts *gpsprot.ConfigOptions) *bin.CfgPrt {
 }
 
 func (raw *CfgOld) cookTmode(cp *gpsprot.ConfigProps) {
+	tmc := raw.getTmodeConfig()
+	if tmc == nil {
+		return
+	}
+	cp.SetMode(tmc.getMode())
+}
+
+func (raw *CfgOld) getTmodeConfig() *tmodeConfig {
 	tmc := tmodeConfig{}
 	if raw.tmode3 != nil {
 		tmc.fromTmode3(raw.tmode3)
@@ -131,9 +139,9 @@ func (raw *CfgOld) cookTmode(cp *gpsprot.ConfigProps) {
 	} else if raw.tmode != nil {
 		tmc.fromTmode(raw.tmode)
 	} else {
-		return
+		return nil
 	}
-	cp.SetMode(tmc.getMode())
+	return &tmc
 }
 
 func (raw *CfgOld) cookTmode1(cp *gpsprot.ConfigProps) {
@@ -155,6 +163,43 @@ func (raw *CfgOld) cookTmode1(cp *gpsprot.ConfigProps) {
 		acc := math.Sqrt(float64(tm.FixedPosVar))
 		cp.SetFixedPosAcc(gpsprot.Length(acc) * gpsprot.Millimeter)
 	}
+}
+
+func (raw *CfgOld) changeTmode(target *gpsprot.ConfigTarget) (bin.Msg, bin.Msg, error) {
+	// Get the current raw tmode message
+	var tmodeMsg bin.Msg
+	if raw.tmode3 != nil {
+		tmodeMsg = raw.tmode3
+	} else if raw.tmode2 != nil {
+		tmodeMsg = raw.tmode2
+	} else if raw.tmode != nil {
+		tmodeMsg = raw.tmode
+	} else {
+		// no tmode message, so nothing to change
+		return nil, nil, nil
+	}
+	// Convert the raw tmode message to the intermediate representation.
+	cur := &tmodeConfig{}
+	cur.fromTmodeMsg(tmodeMsg)
+	// Use the intermediate tmodeConfig representation to determine the messages to produce
+	var err error
+	var tmc [2]*tmodeConfig
+	tmc[0], tmc[1], err = tmodeConfigsTargetOld(target, cur)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Convert the intermediate messages back to the raw message type using the current tmodeMsg as a basis.
+	var msg [2]bin.Msg
+	for i := range 2 {
+		if tmc[i] == nil {
+			continue
+		}
+		msg[i], err = tmc[i].toTmodeMsg(tmodeMsg)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return msg[0], msg[1], nil
 }
 
 func (raw *CfgOld) changeTmode1(target *gpsprot.ConfigTarget) (*bin.CfgTmode, bool) {

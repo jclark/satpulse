@@ -44,6 +44,70 @@ type tmodeConfig struct {
 	svinAccLimit uint32 // Survey accuracy limit in 0.1mm units
 }
 
+var tmodeConfigDisabled = tmodeConfig{
+	mode: tmodeDisabled,
+}
+
+// tmodeConfigTargetOldPoll checks if it is necessary to poll the current tmode when doing legacy configuration.
+func tmodeConfigTargetOldPoll(target *gpsprot.ConfigTarget) bool {
+	_, ok := target.Props.GetMode()
+	return ok || target.Opts.SetStatic
+}
+
+// tmodeConfigsTargetOld returns up to two tmodeConfigs necessary to give effect to target with legacy receivers.
+// Two tmodeConfigs are returned when we want to force a survey: first one will have disabled mode, and second one will have survey mode.
+// Otherwise, at most one tmodeConfig is returned, and the second one will be nil.
+// If no tmodeConfig is needed, then both returned tmodeConfigs will be nil.
+// cur should be non-nil when tmodeConfigTargetOldPoll returns true for the target.
+func tmodeConfigsTargetOld(target *gpsprot.ConfigTarget, cur *tmodeConfig) (*tmodeConfig, *tmodeConfig, error) {
+	if cur == nil {
+		if tmodeConfigTargetOldPoll(target) {
+			return nil, nil, errors.New("failed to correctly poll current TMODE")
+		}
+		return nil, nil, nil
+	}
+	mode, ok := target.Props.GetMode()
+	if !ok {
+		switch cur.mode {
+		case tmodeFixed:
+			// no Mode property set, SetStatic is set, but we are already in fixed mode
+			// no need to change anything
+			return nil, nil, nil
+		case tmodeDisabled:
+			// will need to change to survey mode
+		case tmodeSurveyIn:
+			if target.Opts.Survey.Flags&gpsprot.SurveyAgain == 0 {
+				// don't want to survey again, so no need to change anything
+				return nil, nil, nil
+			}
+		}
+		// at this point we know we need to change to survey mode
+		tmc, err := newTmodeConfig(gpsprot.Mode{Static:true}, target.Opts.Survey)
+		if err != nil {
+			return nil, nil, err
+		}
+		if cur.mode == tmodeDisabled {
+			// we only need one tmodeConfig regardless of SurveyAgain
+			return tmc, nil, nil
+		}
+
+		return &tmodeConfigDisabled, tmc, nil
+	}
+	// strange case: we have a Mode property set as non-static, but SetStatic is set
+	if !mode.Static && target.Opts.SetStatic {
+		mode = gpsprot.Mode{Static: true}
+	}
+	// now we have a specified Mode property
+	tmc, err := newTmodeConfig(mode, target.Opts.Survey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if tmc.mode == tmodeSurveyIn && target.Opts.Survey.Flags&gpsprot.SurveyAgain != 0 && cur.mode == tmodeSurveyIn {
+		return &tmodeConfigDisabled, tmc, nil
+	}
+	return tmc, nil, nil
+}
+
 // newTmodeConfig creates tmodeConfig from gpsprot.Mode and gpsprot.Survey values.
 func newTmodeConfig(mode gpsprot.Mode, survey gpsprot.Survey) (*tmodeConfig, error) {
 	tc := &tmodeConfig{}
@@ -124,8 +188,50 @@ func (tc *tmodeConfig) getMode() gpsprot.Mode {
 	return mode
 }
 
+// toTmodeMsg converts tmodeConfig to a tmode msg using another tmode msg as the basis.
+// The basis says what kind of tmode message to produce.
+// The basis is used for fields that are not relevant to what is specified in tmodeConfig.
+func (tc *tmodeConfig) toTmodeMsg(msg bin.Msg) (bin.Msg, error) {
+	switch tm := msg.(type) {
+	case *bin.CfgTmode3:
+		cpy := *tm
+		tc.toTmode3(&cpy, false)
+		return &cpy, nil
+	case *bin.CfgTmode2:
+		cpy := *tm
+		tc.toTmode2(&cpy, false)
+		return &cpy, nil
+	case *bin.CfgTmode:
+		cpy := *tm
+		err := tc.toTmode(&cpy, false)
+		if err != nil {
+			return nil, err
+		}
+		return &cpy, nil
+	}
+	panic("unexpected message type for toTmodeMsg")
+}
+
+func (tc *tmodeConfig) fromTmodeMsg(msg bin.Msg)  {
+	if msg == nil {
+		return
+	}
+	switch tm := msg.(type) {
+	case *bin.CfgTmode3:
+		tc.fromTmode3(tm)
+	case *bin.CfgTmode2:
+		tc.fromTmode2(tm)
+	case *bin.CfgTmode:
+		tc.fromTmode(tm)
+	default:
+		// tmode not supported, do nothing
+	}
+}
+
 // toTmode3 converts the tmodeConfig to CfgTmode3.
-func (tc *tmodeConfig) toTmode3(tm *bin.CfgTmode3) {
+// If all is true, it sets all fields regardless of mode.
+// If all is false, it only sets fields relevant to the current mode.
+func (tc *tmodeConfig) toTmode3(tm *bin.CfgTmode3, all bool) {
 	tm.Version = 0
 	tm.Flags = 0
 
@@ -139,32 +245,35 @@ func (tc *tmodeConfig) toTmode3(tm *bin.CfgTmode3) {
 		tm.Flags |= bin.CfgTmode3FixedMode
 	}
 
-	// Set coordinate system flag and values
-	if tc.useLLH {
-		// LLH coordinates
-		tm.Flags |= bin.CfgTmode3LLA
-		tm.EcefXOrLat = tc.latLon[0]     // degrees * 1e-7
-		tm.EcefYOrLon = tc.latLon[1]     // degrees * 1e-7
-		tm.EcefZOrAlt = tc.height        // cm
-		tm.EcefXOrLatHP = tc.latLonHP[0] // degrees * 1e-9
-		tm.EcefYOrLonHP = tc.latLonHP[1] // degrees * 1e-9
-		tm.EcefZOrAltHP = tc.heightHP    // 0.1mm
-	} else {
-		// ECEF coordinates (LLA flag not set)
-		tm.EcefXOrLat = tc.ecef[0]     // cm
-		tm.EcefYOrLon = tc.ecef[1]     // cm
-		tm.EcefZOrAlt = tc.ecef[2]     // cm
-		tm.EcefXOrLatHP = tc.ecefHP[0] // 0.1mm
-		tm.EcefYOrLonHP = tc.ecefHP[1] // 0.1mm
-		tm.EcefZOrAltHP = tc.ecefHP[2] // 0.1mm
+	// Set coordinate system flag and values for fixed mode
+	if tc.mode == tmodeFixed || all {
+		if tc.useLLH {
+			// LLH coordinates
+			tm.Flags |= bin.CfgTmode3LLA
+			tm.EcefXOrLat = tc.latLon[0]     // degrees * 1e-7
+			tm.EcefYOrLon = tc.latLon[1]     // degrees * 1e-7
+			tm.EcefZOrAlt = tc.height        // cm
+			tm.EcefXOrLatHP = tc.latLonHP[0] // degrees * 1e-9
+			tm.EcefYOrLonHP = tc.latLonHP[1] // degrees * 1e-9
+			tm.EcefZOrAltHP = tc.heightHP    // 0.1mm
+		} else {
+			// ECEF coordinates (LLA flag not set)
+			tm.EcefXOrLat = tc.ecef[0]     // cm
+			tm.EcefYOrLon = tc.ecef[1]     // cm
+			tm.EcefZOrAlt = tc.ecef[2]     // cm
+			tm.EcefXOrLatHP = tc.ecefHP[0] // 0.1mm
+			tm.EcefYOrLonHP = tc.ecefHP[1] // 0.1mm
+			tm.EcefZOrAltHP = tc.ecefHP[2] // 0.1mm
+		}
+		// Fixed position accuracy
+		tm.FixedPosAcc = tc.fixedPosAcc // 0.1mm
 	}
 
-	// Fixed position accuracy
-	tm.FixedPosAcc = tc.fixedPosAcc // 0.1mm
-
-	// Survey-in parameters
-	tm.SvinMinDur = tc.svinMinDur     // seconds
-	tm.SvinAccLimit = tc.svinAccLimit // 0.1mm
+	// Survey-in parameters for survey mode
+	if tc.mode == tmodeSurveyIn || all {
+		tm.SvinMinDur = tc.svinMinDur     // seconds
+		tm.SvinAccLimit = tc.svinAccLimit // 0.1mm
+	}
 }
 
 // fromTmode3 converts CfgTmode3 to tmodeConfig.
@@ -209,7 +318,9 @@ func (tc *tmodeConfig) fromTmode3(tm *bin.CfgTmode3) {
 }
 
 // toTmode2 converts the tmodeConfig to CfgTmode2.
-func (tc *tmodeConfig) toTmode2(tm *bin.CfgTmode2) {
+// If all is true, it sets all fields regardless of mode.
+// If all is false, it only sets fields relevant to the current mode.
+func (tc *tmodeConfig) toTmode2(tm *bin.CfgTmode2, all bool) {
 	tm.Flags = 0
 
 	// Set mode in separate field
@@ -222,28 +333,31 @@ func (tc *tmodeConfig) toTmode2(tm *bin.CfgTmode2) {
 		tm.TimeMode = bin.CfgTmode2FixedMode
 	}
 
-	// Set coordinate system flag and values
-	if tc.useLLH {
-		tm.Flags |= bin.CfgTmode2LLA
-		// LLH coordinates (no HP fields in TMODE2)
-		tm.EcefXOrLat = tc.latLon[0] // degrees * 1e-7
-		tm.EcefYOrLon = tc.latLon[1] // degrees * 1e-7
-		tm.EcefZOrAlt = tc.height    // cm
-	} else {
-		// ECEF coordinates (LLA flag not set)
-		tm.EcefXOrLat = tc.ecef[0] // cm
-		tm.EcefYOrLon = tc.ecef[1] // cm
-		tm.EcefZOrAlt = tc.ecef[2] // cm
+	// Set coordinate system flag and values for fixed mode
+	if tc.mode == tmodeFixed || all {
+		if tc.useLLH {
+			tm.Flags |= bin.CfgTmode2LLA
+			// LLH coordinates (no HP fields in TMODE2)
+			tm.EcefXOrLat = tc.latLon[0] // degrees * 1e-7
+			tm.EcefYOrLon = tc.latLon[1] // degrees * 1e-7
+			tm.EcefZOrAlt = tc.height    // cm
+		} else {
+			// ECEF coordinates (LLA flag not set)
+			tm.EcefXOrLat = tc.ecef[0] // cm
+			tm.EcefYOrLon = tc.ecef[1] // cm
+			tm.EcefZOrAlt = tc.ecef[2] // cm
+		}
+		// Fixed position accuracy (convert from 0.1mm to mm with rounding)
+		fixedPosAccMm, _ := divModRound(int64(tc.fixedPosAcc), 10)
+		tm.FixedPosAcc = uint32(fixedPosAccMm)
 	}
 
-	// Fixed position accuracy (convert from 0.1mm to mm with rounding)
-	fixedPosAccMm, _ := divModRound(int64(tc.fixedPosAcc), 10)
-	tm.FixedPosAcc = uint32(fixedPosAccMm)
-
-	// Survey-in parameters
-	tm.SvinMinDur = tc.svinMinDur // seconds
-	svinAccLimitMm, _ := divModRound(int64(tc.svinAccLimit), 10)
-	tm.SvinAccLimit = uint32(svinAccLimitMm) // mm (convert from 0.1mm)
+	// Survey-in parameters for survey mode
+	if tc.mode == tmodeSurveyIn || all {
+		tm.SvinMinDur = tc.svinMinDur // seconds
+		svinAccLimitMm, _ := divModRound(int64(tc.svinAccLimit), 10)
+		tm.SvinAccLimit = uint32(svinAccLimitMm) // mm (convert from 0.1mm)
+	}
 }
 
 // fromTmode2 converts CfgTmode2 to tmodeConfig.
@@ -290,10 +404,12 @@ func (tc *tmodeConfig) fromTmode2(tm *bin.CfgTmode2) {
 }
 
 // toTmode converts the tmodeConfig to CfgTmode.
+// If all is true, it sets all fields regardless of mode.
+// If all is false, it only sets fields relevant to the current mode.
 // Returns error if accuracy values would cause overflow in variance calculations.
-func (tc *tmodeConfig) toTmode(tm *bin.CfgTmode) error {
+func (tc *tmodeConfig) toTmode(tm *bin.CfgTmode, all bool) error {
 	// TMODE only supports ECEF coordinates, not LLH
-	if tc.useLLH {
+	if tc.useLLH && (tc.mode == tmodeFixed || all) {
 		return ErrTmodeLLHNotSupported
 	}
 
@@ -307,23 +423,29 @@ func (tc *tmodeConfig) toTmode(tm *bin.CfgTmode) error {
 		tm.TimeMode = bin.CfgTmodeFixedMode
 	}
 
-	// ECEF coordinates only (no LLH support in TMODE)
-	tm.FixedPosX = tc.ecef[0] // cm
-	tm.FixedPosY = tc.ecef[1] // cm
-	tm.FixedPosZ = tc.ecef[2] // cm
+	// ECEF coordinates and fixed position accuracy for fixed mode
+	if tc.mode == tmodeFixed || all {
+		// ECEF coordinates only (no LLH support in TMODE)
+		tm.FixedPosX = tc.ecef[0] // cm
+		tm.FixedPosY = tc.ecef[1] // cm
+		tm.FixedPosZ = tc.ecef[2] // cm
 
-	// Fixed position variance (convert from 0.1mm accuracy to mm² variance)
-	var err error
-	tm.FixedPosVar, err = tmodeAccToVar(tc.fixedPosAcc, "fixed position accuracy")
-	if err != nil {
-		return err
+		// Fixed position variance (convert from 0.1mm accuracy to mm² variance)
+		var err error
+		tm.FixedPosVar, err = tmodeAccToVar(tc.fixedPosAcc, "fixed position accuracy")
+		if err != nil {
+			return err
+		}
 	}
 
-	// Survey-in parameters
-	tm.SvinMinDur = tc.svinMinDur // seconds
-	tm.SvinVarLimit, err = tmodeAccToVar(tc.svinAccLimit, "survey accuracy limit")
-	if err != nil {
-		return err
+	// Survey-in parameters for survey mode
+	if tc.mode == tmodeSurveyIn || all {
+		tm.SvinMinDur = tc.svinMinDur // seconds
+		var err error
+		tm.SvinVarLimit, err = tmodeAccToVar(tc.svinAccLimit, "survey accuracy limit")
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

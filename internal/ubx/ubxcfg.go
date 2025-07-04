@@ -58,8 +58,8 @@ var legacyConfigSteps = []func(*Configurator) error{
 	(*Configurator).pollTp5,
 	(*Configurator).setTp5,
 	(*Configurator).pollTmode,
-	(*Configurator).setTmode,
-	(*Configurator).reqSurvey,
+	(*Configurator).setTmodeNew,
+	//(*Configurator).reqSurvey,
 	(*Configurator).pollRate,
 	(*Configurator).pollNav5,
 	(*Configurator).setNav5,
@@ -508,7 +508,8 @@ func (c *Configurator) pollNav5() error {
 }
 
 func (c *Configurator) pollTmode() error {
-	if !c.target.UsesAny(cfgOldProps.tmode...) && c.target.Opts.Survey.When == 0 {
+	if !c.target.UsesAny(cfgOldProps.tmode...) && c.target.Opts.Survey.When == 0 && 
+		!tmodeConfigTargetOldPoll(c.target) {
 		return nil
 	}
 	switch c.ver.tmodeLevel() {
@@ -594,6 +595,20 @@ func (c *Configurator) setRate() error {
 		return nil
 	}
 	return c.addMsgSetRequest(rate)
+}
+
+func (c *Configurator) setTmodeNew() error {
+	msg1, msg2, err := c.raw.changeTmode(c.target)
+	if err != nil {
+		return err
+	}
+	if msg1 != nil {
+		c.addMsgSetRequest(msg1)
+	}
+	if msg2 != nil {
+		c.addMsgSetRequest(msg2)
+	}
+	return nil
 }
 
 func (c *Configurator) setTmode() error {

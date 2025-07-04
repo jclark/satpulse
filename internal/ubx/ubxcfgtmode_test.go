@@ -125,7 +125,7 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 				}
 
 				var tmode3 bin.CfgTmode3
-				tc.toTmode3(&tmode3)
+				tc.toTmode3(&tmode3, true)
 
 				var tc2 tmodeConfig
 				tc2.fromTmode3(&tmode3)
@@ -143,7 +143,7 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 				}
 
 				var tmode2 bin.CfgTmode2
-				tc.toTmode2(&tmode2)
+				tc.toTmode2(&tmode2, true)
 
 				var tc2 tmodeConfig
 				tc2.fromTmode2(&tmode2)
@@ -171,7 +171,7 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 				}
 
 				var tmode bin.CfgTmode
-				err = tc.toTmode(&tmode)
+				err = tc.toTmode(&tmode, true)
 				if tt.mode.PosType == gpsprot.PosTypeLLH {
 					// TMODE doesn't support LLH
 					if err == nil {
@@ -253,4 +253,256 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestTmodeConfigsTargetOld(t *testing.T) {
+	tests := []struct {
+		name         string
+		mode         *gpsprot.Mode // nil means no Mode property set
+		setStatic    bool
+		survey       gpsprot.Survey
+		cur          *tmodeConfig
+		expectFirst  *tmodeConfig
+		expectSecond *tmodeConfig
+		expectErr    bool
+	}{
+		// Test cases when cur is nil
+		{
+			name:         "nil current with no polling needed",
+			cur:          nil,
+			expectFirst:  nil,
+			expectSecond: nil,
+		},
+		{
+			name:      "nil current with polling needed",
+			setStatic: true,
+			cur:       nil,
+			expectErr: true,
+		},
+
+		// Test cases with SetStatic but no Mode property
+		{
+			name:      "SetStatic with current disabled",
+			setStatic: true,
+			survey: gpsprot.Survey{
+				MinDur:   300 * time.Second,
+				AccLimit: 2 * gpsprot.Meter,
+			},
+			cur: &tmodeConfig{mode: tmodeDisabled},
+			expectFirst: &tmodeConfig{
+				mode:         tmodeSurveyIn,
+				svinMinDur:   300,
+				svinAccLimit: 2e4, // 2m in 0.1mm units
+			},
+		},
+		{
+			name:      "SetStatic with current fixed",
+			setStatic: true,
+			cur: &tmodeConfig{
+				mode:        tmodeFixed,
+				ecef:        [3]int32{100, 200, 300},
+				fixedPosAcc: 1000,
+			},
+			expectFirst: nil,
+		},
+		{
+			name:      "SetStatic with current survey, no SurveyAgain",
+			setStatic: true,
+			cur: &tmodeConfig{
+				mode:         tmodeSurveyIn,
+				svinMinDur:   120,
+				svinAccLimit: 5000,
+			},
+			expectFirst: nil,
+		},
+		{
+			name:      "SetStatic with current survey, with SurveyAgain",
+			setStatic: true,
+			survey: gpsprot.Survey{
+				MinDur:   600 * time.Second,
+				AccLimit: gpsprot.Meter,
+				Flags:    gpsprot.SurveyAgain,
+			},
+			cur: &tmodeConfig{
+				mode:         tmodeSurveyIn,
+				svinMinDur:   120,
+				svinAccLimit: 5000,
+			},
+			expectFirst: &tmodeConfig{mode: tmodeDisabled},
+			expectSecond: &tmodeConfig{
+				mode:         tmodeSurveyIn,
+				svinMinDur:   600,
+				svinAccLimit: 1e4, // 1m in 0.1mm units
+			},
+		},
+
+		// Test cases with explicit Mode property
+		{
+			name: "Mode mobile (static=false)",
+			mode: &gpsprot.Mode{Static: false},
+			cur:  &tmodeConfig{mode: tmodeFixed},
+			expectFirst: &tmodeConfig{mode: tmodeDisabled},
+		},
+		{
+			name: "Mode survey (static=true, no position)",
+			mode: &gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeNone},
+			survey: gpsprot.Survey{
+				MinDur:   180 * time.Second,
+				AccLimit: 3 * gpsprot.Meter,
+			},
+			cur: &tmodeConfig{mode: tmodeDisabled},
+			expectFirst: &tmodeConfig{
+				mode:         tmodeSurveyIn,
+				svinMinDur:   180,
+				svinAccLimit: 3e4, // 3m in 0.1mm units
+			},
+		},
+		{
+			name: "Mode fixed (static=true, with position)",
+			mode: &gpsprot.Mode{
+				Static:  true,
+				PosType: gpsprot.PosTypeECEF,
+				FixedPosECEF: gpsprot.Point3D{
+					4000 * gpsprot.Meter * 1000, // 4000km
+					5000 * gpsprot.Meter * 1000, // 5000km
+					6000 * gpsprot.Meter * 1000, // 6000km
+				},
+				FixedPosAcc: gpsprot.Centimeter,
+			},
+			cur: &tmodeConfig{mode: tmodeDisabled},
+			expectFirst: &tmodeConfig{
+				mode:        tmodeFixed,
+				ecef:        [3]int32{4e8, 5e8, 6e8}, // 4000km, 5000km, 6000km in cm
+				fixedPosAcc: 100,                     // 1cm in 0.1mm units
+			},
+		},
+		{
+			name: "Mode survey with SurveyAgain when already surveying",
+			mode: &gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeNone},
+			survey: gpsprot.Survey{
+				MinDur:   240 * time.Second,
+				AccLimit: gpsprot.Meter + 500*gpsprot.Millimeter, // 1.5m
+				Flags:    gpsprot.SurveyAgain,
+			},
+			cur: &tmodeConfig{
+				mode:         tmodeSurveyIn,
+				svinMinDur:   120,
+				svinAccLimit: 5000,
+			},
+			expectFirst: &tmodeConfig{mode: tmodeDisabled},
+			expectSecond: &tmodeConfig{
+				mode:         tmodeSurveyIn,
+				svinMinDur:   240,
+				svinAccLimit: 1.5e4, // 1.5m in 0.1mm units
+			},
+		},
+		{
+			name: "Mode survey with SurveyAgain when not currently surveying",
+			mode: &gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeNone},
+			survey: gpsprot.Survey{
+				MinDur:   240 * time.Second,
+				AccLimit: gpsprot.Meter + 500*gpsprot.Millimeter, // 1.5m
+				Flags:    gpsprot.SurveyAgain,
+			},
+			cur: &tmodeConfig{mode: tmodeDisabled},
+			expectFirst: &tmodeConfig{
+				mode:         tmodeSurveyIn,
+				svinMinDur:   240,
+				svinAccLimit: 1.5e4, // 1.5m in 0.1mm units
+			},
+		},
+
+		// Edge case: Mode.Static=false but SetStatic=true
+		{
+			name:      "Mode mobile but SetStatic true",
+			mode:      &gpsprot.Mode{Static: false},
+			setStatic: true,
+			survey: gpsprot.Survey{
+				MinDur:   300 * time.Second,
+				AccLimit: 2 * gpsprot.Meter,
+			},
+			cur: &tmodeConfig{mode: tmodeDisabled},
+			expectFirst: &tmodeConfig{
+				mode:         tmodeSurveyIn,
+				svinMinDur:   300,
+				svinAccLimit: 2e4, // 2m in 0.1mm units
+			},
+		},
+
+		// Test with LLH coordinates
+		{
+			name: "Mode fixed with LLH coordinates",
+			mode: &gpsprot.Mode{
+				Static:  true,
+				PosType: gpsprot.PosTypeLLH,
+				FixedPosLLH: [2]gpsprot.Angle{
+					40*gpsprot.Degrees + 5*gpsprot.Nanodegrees,
+					50*gpsprot.Degrees + 6*gpsprot.Nanodegrees,
+				},
+				Height:      1000*gpsprot.Meter + 7*gpsprot.Millimeter/10,
+				FixedPosAcc: 5 * gpsprot.Millimeter,
+			},
+			cur: &tmodeConfig{mode: tmodeDisabled},
+			expectFirst: &tmodeConfig{
+				mode:         tmodeFixed,
+				useLLH:       true,
+				latLon:       [2]int32{4e8, 5e8}, // 40.0°, 50.0° in 1e-7 degrees
+				height:       1e5,                 // 1000m in cm
+				latLonHP:     [2]int8{5, 6},       // fractional parts in 1e-9 degrees
+				heightHP:     7,                   // fractional part in 0.1mm
+				fixedPosAcc:  50,                  // 5mm in 0.1mm units
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := &gpsprot.ConfigTarget{
+				Props: gpsprot.ConfigProps{},
+				Opts: gpsprot.ConfigOptions{
+					SetStatic: tt.setStatic,
+					Survey:    tt.survey,
+				},
+			}
+
+			if tt.mode != nil {
+				target.Props.SetMode(*tt.mode)
+			}
+
+			gotFirst, gotSecond, err := tmodeConfigsTargetOld(target, tt.cur)
+
+			if tt.expectErr {
+				if err == nil {
+					t.Errorf("tmodeConfigsTargetOld() expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("tmodeConfigsTargetOld() unexpected error: %v", err)
+				return
+			}
+
+			// Compare first result
+			if !tmodeConfigEqual(gotFirst, tt.expectFirst) {
+				t.Errorf("tmodeConfigsTargetOld() first result mismatch\ngot:  %+v\nwant: %+v", gotFirst, tt.expectFirst)
+			}
+
+			// Compare second result
+			if !tmodeConfigEqual(gotSecond, tt.expectSecond) {
+				t.Errorf("tmodeConfigsTargetOld() second result mismatch\ngot:  %+v\nwant: %+v", gotSecond, tt.expectSecond)
+			}
+		})
+	}
+}
+
+// Helper function to compare tmodeConfig structs
+func tmodeConfigEqual(a, b *tmodeConfig) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }
