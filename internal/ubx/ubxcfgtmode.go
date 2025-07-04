@@ -23,6 +23,16 @@ const (
 	tmodeFixed
 )
 
+// resurveyMethod specifies how to force a new survey when already in survey mode
+type resurveyMethod uint8
+
+const (
+	// resurveyDisable forces a new survey by disabling then re-enabling survey mode (legacy behavior)
+	resurveyDisable resurveyMethod = iota
+	// resurveyChange forces a new survey by changing survey parameters slightly (gen9 behavior)
+	resurveyChange
+)
+
 type tmodeConfig struct {
 	// Core time mode fields
 	mode tmodeMode
@@ -48,63 +58,57 @@ var tmodeConfigDisabled = tmodeConfig{
 	mode: tmodeDisabled,
 }
 
-// tmodeConfigTargetOldPoll checks if it is necessary to poll the current tmode when doing legacy configuration.
-func tmodeConfigTargetOldPoll(target *gpsprot.ConfigTarget) bool {
-	_, ok := target.Props.GetMode()
-	return ok || target.Opts.SetStatic
-}
-
-// tmodeConfigsTargetOld returns up to two tmodeConfigs necessary to give effect to target with legacy receivers.
+// createTmodeConfigs returns up to two tmodeConfigs necessary to give effect to target.
 // Two tmodeConfigs are returned when we want to force a survey: first one will have disabled mode, and second one will have survey mode.
 // Otherwise, at most one tmodeConfig is returned, and the second one will be nil.
 // If no tmodeConfig is needed, then both returned tmodeConfigs will be nil.
-// cur should be non-nil when tmodeConfigTargetOldPoll returns true for the target.
-func tmodeConfigsTargetOld(target *gpsprot.ConfigTarget, cur *tmodeConfig) (*tmodeConfig, *tmodeConfig, error) {
-	if cur == nil {
-		if tmodeConfigTargetOldPoll(target) {
-			return nil, nil, errors.New("failed to correctly poll current TMODE")
-		}
-		return nil, nil, nil
+// cur is accessed as follows:
+// - if there is no Mode property and SetStatic is false, then cur is never accessed
+func createTmodeConfigs(target *gpsprot.ConfigTarget, cur *tmodeConfig, method resurveyMethod) (*tmodeConfig, *tmodeConfig, error) {
+	mode, haveMode := target.Props.GetMode()
+	setStatic := target.Opts.SetStatic
+	if !haveMode && !setStatic {
+		return nil, nil, nil // No mode specified and not setStatic, nothing to do
 	}
-	mode, ok := target.Props.GetMode()
-	if !ok {
-		switch cur.mode {
-		case tmodeFixed:
-			// no Mode property set, SetStatic is set, but we are already in fixed mode
-			// no need to change anything
-			return nil, nil, nil
-		case tmodeDisabled:
-			// will need to change to survey mode
-		case tmodeSurveyIn:
-			if target.Opts.Survey.Flags&gpsprot.SurveyAgain == 0 {
-				// don't want to survey again, so no need to change anything
-				return nil, nil, nil
-			}
-		}
-		// at this point we know we need to change to survey mode
-		tmc, err := newTmodeConfig(gpsprot.Mode{Static:true}, target.Opts.Survey)
-		if err != nil {
-			return nil, nil, err
-		}
-		if cur.mode == tmodeDisabled {
-			// we only need one tmodeConfig regardless of SurveyAgain
-			return tmc, nil, nil
-		}
+	survey := target.Opts.Survey
 
-		return &tmodeConfigDisabled, tmc, nil
-	}
-	// strange case: we have a Mode property set as non-static, but SetStatic is set
-	if !mode.Static && target.Opts.SetStatic {
+	if !haveMode {
+		// setStatic must be true at this
+		if cur.mode == tmodeFixed {
+			// setStatic doesn't change tmodeFixed, so there's nothing to do
+			return nil, nil, nil
+		}
+		
+		if cur.mode == tmodeSurveyIn && survey.Flags&gpsprot.SurveyAgain == 0 {
+			// if we are already in survey mode and we are not forcing a new survey, then setStatic doesn't force anything
+			// XXX should we check if the survey parameters are the same?
+			// I think not: satpulsed does this by default, and we shouldn't mess with an existing survey
+			return nil, nil, nil
+		}
+		// have setStatic but no explicit Mode property and not in tmodeFixed mode;
+		// same as if we had a Mode property set to Static
+		mode = gpsprot.Mode{Static: true}
+	} else if !mode.Static && setStatic {
+		// strange case: we have a Mode property set as non-static, but SetStatic is set;
+		// again, same as if we had a Mode property set to Static
 		mode = gpsprot.Mode{Static: true}
 	}
-	// now we have a specified Mode property
-	tmc, err := newTmodeConfig(mode, target.Opts.Survey)
+	tmc, err := newTmodeConfig(mode, survey)
 	if err != nil {
 		return nil, nil, err
 	}
-	if tmc.mode == tmodeSurveyIn && target.Opts.Survey.Flags&gpsprot.SurveyAgain != 0 && cur.mode == tmodeSurveyIn {
-		return &tmodeConfigDisabled, tmc, nil
-	}
+	if tmc.mode == tmodeSurveyIn && survey.Flags&gpsprot.SurveyAgain != 0 {
+		switch method {
+		case resurveyDisable:
+			if cur.mode == tmodeSurveyIn {
+				return &tmodeConfigDisabled, tmc, nil
+			}
+		case resurveyChange:
+			if tmc.svinAccLimit == cur.svinAccLimit {
+				tmc.svinAccLimit++ // increment by 1 (0.1mm)	
+			}
+		}
+	} 
 	return tmc, nil, nil
 }
 

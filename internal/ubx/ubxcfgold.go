@@ -160,7 +160,7 @@ func (raw *CfgOld) changeTmode(target *gpsprot.ConfigTarget) (bin.Msg, bin.Msg, 
 	// Use the intermediate tmodeConfig representation to determine the messages to produce
 	var err error
 	var tmc [2]*tmodeConfig
-	tmc[0], tmc[1], err = tmodeConfigsTargetOld(target, cur)
+	tmc[0], tmc[1], err = createTmodeConfigs(target, cur, resurveyDisable)
 	if err != nil {
 		return nil, nil, err
 	}

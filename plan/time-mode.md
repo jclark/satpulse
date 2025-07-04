@@ -226,7 +226,8 @@ type tmodeConfig struct {
 
 - On F9T, TIM 2.01
    * disabling time mode while survey is in progress aborts it
-   * when survey is complete or in progress, sending a changed accuracy limit or min duration starts a new survey 
+   * when survey is complete or in progress, sending a changed accuracy limit or min duration starts a new survey
+- On F9P, when survey is in progress, sending changed accuracy limit starts a new survey 
 
 ### Quectel LG290P
 

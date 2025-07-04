@@ -255,29 +255,25 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 	}
 }
 
-func TestTmodeConfigsTargetOld(t *testing.T) {
+func TestCreateTmodeConfigs(t *testing.T) {
 	tests := []struct {
-		name         string
-		mode         *gpsprot.Mode // nil means no Mode property set
-		setStatic    bool
-		survey       gpsprot.Survey
-		cur          *tmodeConfig
-		expectFirst  *tmodeConfig
-		expectSecond *tmodeConfig
-		expectErr    bool
+		name           string
+		mode           *gpsprot.Mode // nil means no Mode property set
+		setStatic      bool
+		survey         gpsprot.Survey
+		cur            *tmodeConfig
+		resurveyMethod resurveyMethod
+		expectFirst    *tmodeConfig
+		expectSecond   *tmodeConfig
+		expectErr      bool
 	}{
 		// Test cases when cur is nil
 		{
-			name:         "nil current with no polling needed",
-			cur:          nil,
-			expectFirst:  nil,
-			expectSecond: nil,
-		},
-		{
-			name:      "nil current with polling needed",
-			setStatic: true,
-			cur:       nil,
-			expectErr: true,
+			name:           "nil current with no polling needed",
+			cur:            nil,
+			resurveyMethod: resurveyDisable,
+			expectFirst:    nil,
+			expectSecond:   nil,
 		},
 
 		// Test cases with SetStatic but no Mode property
@@ -289,6 +285,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				AccLimit: 2 * gpsprot.Meter,
 			},
 			cur: &tmodeConfig{mode: tmodeDisabled},
+			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:         tmodeSurveyIn,
 				svinMinDur:   300,
@@ -303,6 +300,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				ecef:        [3]int32{100, 200, 300},
 				fixedPosAcc: 1000,
 			},
+			resurveyMethod: resurveyDisable,
 			expectFirst: nil,
 		},
 		{
@@ -313,6 +311,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				svinMinDur:   120,
 				svinAccLimit: 5000,
 			},
+			resurveyMethod: resurveyDisable,
 			expectFirst: nil,
 		},
 		{
@@ -328,6 +327,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				svinMinDur:   120,
 				svinAccLimit: 5000,
 			},
+			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{mode: tmodeDisabled},
 			expectSecond: &tmodeConfig{
 				mode:         tmodeSurveyIn,
@@ -341,6 +341,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 			name: "Mode mobile (static=false)",
 			mode: &gpsprot.Mode{Static: false},
 			cur:  &tmodeConfig{mode: tmodeFixed},
+			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{mode: tmodeDisabled},
 		},
 		{
@@ -351,6 +352,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				AccLimit: 3 * gpsprot.Meter,
 			},
 			cur: &tmodeConfig{mode: tmodeDisabled},
+			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:         tmodeSurveyIn,
 				svinMinDur:   180,
@@ -370,6 +372,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				FixedPosAcc: gpsprot.Centimeter,
 			},
 			cur: &tmodeConfig{mode: tmodeDisabled},
+			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:        tmodeFixed,
 				ecef:        [3]int32{4e8, 5e8, 6e8}, // 4000km, 5000km, 6000km in cm
@@ -389,6 +392,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				svinMinDur:   120,
 				svinAccLimit: 5000,
 			},
+			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{mode: tmodeDisabled},
 			expectSecond: &tmodeConfig{
 				mode:         tmodeSurveyIn,
@@ -405,6 +409,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				Flags:    gpsprot.SurveyAgain,
 			},
 			cur: &tmodeConfig{mode: tmodeDisabled},
+			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:         tmodeSurveyIn,
 				svinMinDur:   240,
@@ -422,6 +427,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				AccLimit: 2 * gpsprot.Meter,
 			},
 			cur: &tmodeConfig{mode: tmodeDisabled},
+			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:         tmodeSurveyIn,
 				svinMinDur:   300,
@@ -443,6 +449,7 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				FixedPosAcc: 5 * gpsprot.Millimeter,
 			},
 			cur: &tmodeConfig{mode: tmodeDisabled},
+			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:         tmodeFixed,
 				useLLH:       true,
@@ -469,28 +476,28 @@ func TestTmodeConfigsTargetOld(t *testing.T) {
 				target.Props.SetMode(*tt.mode)
 			}
 
-			gotFirst, gotSecond, err := tmodeConfigsTargetOld(target, tt.cur)
+			gotFirst, gotSecond, err := createTmodeConfigs(target, tt.cur, tt.resurveyMethod)
 
 			if tt.expectErr {
 				if err == nil {
-					t.Errorf("tmodeConfigsTargetOld() expected error but got none")
+					t.Errorf("createTmodeConfigs() expected error but got none")
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("tmodeConfigsTargetOld() unexpected error: %v", err)
+				t.Errorf("createTmodeConfigs() unexpected error: %v", err)
 				return
 			}
 
 			// Compare first result
 			if !tmodeConfigEqual(gotFirst, tt.expectFirst) {
-				t.Errorf("tmodeConfigsTargetOld() first result mismatch\ngot:  %+v\nwant: %+v", gotFirst, tt.expectFirst)
+				t.Errorf("createTmodeConfigs() first result mismatch\ngot:  %+v\nwant: %+v", gotFirst, tt.expectFirst)
 			}
 
 			// Compare second result
 			if !tmodeConfigEqual(gotSecond, tt.expectSecond) {
-				t.Errorf("tmodeConfigsTargetOld() second result mismatch\ngot:  %+v\nwant: %+v", gotSecond, tt.expectSecond)
+				t.Errorf("createTmodeConfigs() second result mismatch\ngot:  %+v\nwant: %+v", gotSecond, tt.expectSecond)
 			}
 		})
 	}

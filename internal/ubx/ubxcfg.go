@@ -507,7 +507,7 @@ func (c *Configurator) pollNav5() error {
 }
 
 func (c *Configurator) pollTmode() error {
-	if !tmodeConfigTargetOldPoll(c.target) {
+	if !c.target.UsesAny(cfgOldProps.tmode...) && !c.target.Opts.SetStatic {
 		return nil
 	}
 	switch c.ver.tmodeLevel() {
