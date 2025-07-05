@@ -73,7 +73,7 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, tpFlags gpsTime
 	if tpFlags&gpsTimePulseGetWidth != 0 && pulseWidth == 0 {
 		target.Get |= gpsprot.PropIDTimePulseWidth
 	}
-	err = c.getTimeMode(target)
+	err = c.getMode(target)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -83,10 +83,6 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, tpFlags gpsTime
 		return nil, 0, err
 	}
 	err = c.getDelay(cp)
-	if err != nil {
-		return nil, 0, err
-	}
-	err = c.getFixedPos(cp)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -106,29 +102,48 @@ func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProc
 	return gpsreg.CreatePacketProcessors(nmeaNumbering), nil
 }
 
-func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {
+func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 	opts := &target.Opts
-	cp := &target.Props
-
-	if c.Mobile {
-		cp.SetTimeMode(gpsprot.TimeModeDisabled)
-		opts.Survey.When = 0
-	} else {
-		cp.SetStationary(true)
-		if !c.FixedPosECEF.IsZero() {
-			cp.SetTimeMode(gpsprot.TimeModeFixed)
-		} else {
-			opts.Survey.When = gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled)
-			if c.Resurvey {
-				opts.Survey.When |= gpsprot.TimeModeFlags(gpsprot.TimeModeSurvey)
-			}
-			opts.Survey.MinDur = time.Second * time.Duration(c.SurveyTime)
-			opts.Survey.AccLimit = gpsprot.Meters(c.SurveyAcc)
-			if opts.Survey.AccLimit < gpsprot.Millimeter {
-				return fmt.Errorf("survey accuracy %v is too small", opts.Survey.AccLimit)
-			}
-		}
+	opts.Survey.MinDur = time.Second * time.Duration(c.SurveyTime)
+	opts.Survey.AccLimit = gpsprot.Meters(c.SurveyAcc)
+	if opts.Survey.AccLimit < gpsprot.Millimeter {
+		return fmt.Errorf("survey accuracy %v is too small", opts.Survey.AccLimit)
 	}
+	if c.Resurvey {
+		opts.Survey.Flags |= gpsprot.SurveyAgain
+	}
+	cp := &target.Props
+	// mobile takes precedence over fixed position
+	// might want to temporarily turn off time mode
+	if c.Mobile {
+		cp.SetMode(gpsprot.Mode{Static: false})
+		return nil
+	}
+	if c.FixedPosECEF.IsZero() {	
+		opts.SetStatic = true
+		return nil
+	}
+	err := c.FixedPosECEF.CheckOnEarth()
+	if err != nil {
+		return fmt.Errorf("%v: invalid fixed position: %w", c.FixedPosECEF, err)
+	}
+	var fixedPos gpsprot.Point3D
+	for i := 0; i < 3; i++ {
+		fixedPos[i] = gpsprot.Meters(c.FixedPosECEF[i])
+	}
+	acc := gpsprot.Meters(c.FixedPosAcc)
+	if acc < gpsprot.Millimeter {
+		return fmt.Errorf("fixed position accuracy %v is too small", c.FixedPosAcc)
+	}
+	if acc > gpsprot.Meter*1000 {
+		return fmt.Errorf("fixed position accuracy %v is too large", c.FixedPosAcc)
+	}
+	cp.SetMode(gpsprot.Mode{
+		Static: true,
+		PosType: gpsprot.PosTypeECEF,
+		FixedPosECEF: fixedPos,
+		FixedPosAcc: acc,
+	})
 	return nil
 }
 
@@ -140,30 +155,6 @@ func (c *GPSConfig) getTimeGNSS(cp *gpsprot.ConfigProps) error {
 		return fmt.Errorf("time GNSS must be a major GNSS (%v is not)", c.TimeGNSS)
 	}
 	cp.SetTimeGNSS(c.TimeGNSS)
-	return nil
-}
-
-func (c *GPSConfig) getFixedPos(cp *gpsprot.ConfigProps) error {
-	if c.FixedPosECEF.IsZero() {
-		return nil
-	}
-	err := c.FixedPosECEF.CheckOnEarth()
-	if err != nil {
-		return fmt.Errorf("%v: invalid fixed position: %w", c.FixedPosECEF, err)
-	}
-	var fixedPos gpsprot.Point3D
-	for i := 0; i < 3; i++ {
-		fixedPos[i] = gpsprot.Meters(c.FixedPosECEF[i])
-	}
-	cp.SetFixedPosECEF(fixedPos)
-	acc := gpsprot.Meters(c.FixedPosAcc)
-	if acc < gpsprot.Millimeter {
-		return fmt.Errorf("fixed position accuracy %v is too small", c.FixedPosAcc)
-	}
-	if acc > gpsprot.Meter*1000 {
-		return fmt.Errorf("fixed position accuracy %v is too large", c.FixedPosAcc)
-	}
-	cp.SetFixedPosAcc(acc)
 	return nil
 }
 

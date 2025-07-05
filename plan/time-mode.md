@@ -130,11 +130,12 @@ Implementation notes:
 ## Common scenarios
 
 ### Daemon behaviour
-* `mobile=false` in TOML → sets SetStatic option (does NOT set Mode property)
+* `mobile=true` in TOML → sets Mode.Static to false (disables time mode entirely)
 * `surveyTime` in TOML → sets Survey.MinDur option  
 * `surveyAcc` in TOML → sets Survey.AccLimit option
 * `fixedPosECEF` in TOML → sets Mode property with Static=true and the position
 * `resurvey=true` in TOML → sets SurveyAgain flag
+* `mobile=false` (default) + `fixedPosECEF` not specified (default zero) → sets SetStatic=true but no Mode property
 
 ### CLI behaviour
 * `--mobile` → sets Mode.Static to false
