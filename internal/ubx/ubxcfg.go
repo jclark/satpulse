@@ -58,7 +58,7 @@ var legacyConfigSteps = []func(*Configurator) error{
 	(*Configurator).pollTp5,
 	(*Configurator).setTp5,
 	(*Configurator).pollTmode,
-	(*Configurator).setTmodeNew,
+	(*Configurator).setTmode,
 	(*Configurator).pollRate,
 	(*Configurator).pollNav5,
 	(*Configurator).setNav5,
@@ -595,7 +595,7 @@ func (c *Configurator) setRate() error {
 	return c.addMsgSetRequest(rate)
 }
 
-func (c *Configurator) setTmodeNew() error {
+func (c *Configurator) setTmode() error {
 	msg1, msg2, err := c.raw.changeTmode(c.target)
 	if err != nil {
 		return err
@@ -604,6 +604,7 @@ func (c *Configurator) setTmodeNew() error {
 		c.addMsgSetRequest(msg1)
 	}
 	if msg2 != nil {
+		c.survey = true // this is needed for enabling survey messages
 		c.addMsgSetRequest(msg2)
 	}
 	return nil
