@@ -9,59 +9,6 @@ import (
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 )
 
-func TestSplitLength(t *testing.T) {
-	const mm10 = gpsprot.Micrometer * 100
-
-	testCases := []struct {
-		length       gpsprot.Length
-		expectedCm   int32
-		expectedMm10 int8
-	}{
-		{105 * mm10, 1, 5},
-		{250 * mm10, 3, -50},
-		{-105 * mm10, -1, -5},
-		{-250 * mm10, -3, 50},
-		{10475 * gpsprot.Micrometer, 1, 5},
-	}
-
-	for _, tc := range testCases {
-		cm, mm10, err := splitLength(tc.length)
-		if err != nil {
-			t.Errorf("splitLength returned error: %v", err)
-		} else if mm10 < -99 || mm10 > 99 {
-			t.Errorf("splitLength(%v) = (%v, %v), want mm10 in [-99, 99]", tc.length, cm, mm10)
-		} else if cm != tc.expectedCm || mm10 != tc.expectedMm10 {
-			t.Errorf("splitLength(%v) = (%v, %v), want (%v, %v)", tc.length, cm, mm10, tc.expectedCm, tc.expectedMm10)
-		}
-	}
-}
-
-func TestSplitAngle(t *testing.T) {
-	testCases := []struct {
-		angle           gpsprot.Angle
-		expectedDegE7 int32
-		expectedDegE9 int8
-	}{
-		{105 * gpsprot.Nanodegrees, 1, 5},
-		{250 * gpsprot.Nanodegrees, 3, -50},
-		{-105 * gpsprot.Nanodegrees, -1, -5},
-		{-250 * gpsprot.Nanodegrees, -3, 50},
-		{12345 * gpsprot.Nanodegrees, 123, 45},
-		{45 * gpsprot.Degrees, 450000000, 0},
-		{45123456789 * gpsprot.Nanodegrees, 451234568, -11},
-	}
-
-	for _, tc := range testCases {
-		degreesE7, degreesE9, err := splitAngle(tc.angle)
-		if err != nil {
-			t.Errorf("splitAngle returned error: %v", err)
-		} else if degreesE9 < -99 || degreesE9 > 99 {
-			t.Errorf("splitAngle(%v) = (%v, %v), want degreesE9 in [-99, 99]", tc.angle, degreesE7, degreesE9)
-		} else if degreesE7 != tc.expectedDegE7 || degreesE9 != tc.expectedDegE9 {
-			t.Errorf("splitAngle(%v) = (%v, %v), want (%v, %v)", tc.angle, degreesE7, degreesE9, tc.expectedDegE7, tc.expectedDegE9)
-		}
-	}
-}
 
 func TestConfigurationGet_Legacy(t *testing.T) {
 	testConfigurationGet(t, newLegacyReceiver())

@@ -553,8 +553,8 @@ func TestTmodeRequiredInfo(t *testing.T) {
 			target: func() *gpsprot.ConfigTarget {
 				target := gpsprot.NewConfigTarget()
 				target.Props.SetMode(gpsprot.Mode{
-					Static:       true,
-					PosType:      gpsprot.PosTypeECEF,
+					Static:  true,
+					PosType: gpsprot.PosTypeECEF,
 					FixedPosECEF: [3]gpsprot.Length{
 						4194304 * gpsprot.Meter,
 						837860 * gpsprot.Meter,
@@ -587,7 +587,7 @@ func TestTmodeRequiredInfo(t *testing.T) {
 			method:   resurveyChange,
 			expected: tmodeInfoMode,
 		},
-			{
+		{
 			name: "setStatic without mode and with resurvey needs mode and survey",
 			target: func() *gpsprot.ConfigTarget {
 				target := gpsprot.NewConfigTarget()
@@ -596,7 +596,7 @@ func TestTmodeRequiredInfo(t *testing.T) {
 				return target
 			}(),
 			method:   resurveyChange,
-			expected: tmodeInfoMode|tmodeInfoSurvey,
+			expected: tmodeInfoMode | tmodeInfoSurvey,
 		},
 		{
 			name: "non-static mode with setStatic and resurvey needs survey info",
@@ -616,11 +616,102 @@ func TestTmodeRequiredInfo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.target.Opts.Survey.MinDur = 300 * time.Second
 			tt.target.Opts.Survey.AccLimit = 5 * gpsprot.Meter
-			
+
 			result := tmodeRequiredInfo(tt.target, tt.method)
 			if result != tt.expected {
 				t.Errorf("tmodeRequiredInfo() = %v, expected %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestSplitLength(t *testing.T) {
+	const mm10 = gpsprot.Micrometer * 100
+
+	testCases := []struct {
+		length       gpsprot.Length
+		expectedCm   int32
+		expectedMm10 int8
+	}{
+		{105 * mm10, 1, 5},
+		{250 * mm10, 3, -50},
+		{-105 * mm10, -1, -5},
+		{-250 * mm10, -3, 50},
+		{10475 * gpsprot.Micrometer, 1, 5},
+	}
+
+	for _, tc := range testCases {
+		cm, mm10, err := splitLength(tc.length)
+		if err != nil {
+			t.Errorf("splitLength returned error: %v", err)
+		} else if mm10 < -99 || mm10 > 99 {
+			t.Errorf("splitLength(%v) = (%v, %v), want mm10 in [-99, 99]", tc.length, cm, mm10)
+		} else if cm != tc.expectedCm || mm10 != tc.expectedMm10 {
+			t.Errorf("splitLength(%v) = (%v, %v), want (%v, %v)", tc.length, cm, mm10, tc.expectedCm, tc.expectedMm10)
+		}
+	}
+}
+
+func TestSplitAngle(t *testing.T) {
+	testCases := []struct {
+		angle         gpsprot.Angle
+		expectedDegE7 int32
+		expectedDegE9 int8
+	}{
+		{105 * gpsprot.Nanodegrees, 1, 5},
+		{250 * gpsprot.Nanodegrees, 3, -50},
+		{-105 * gpsprot.Nanodegrees, -1, -5},
+		{-250 * gpsprot.Nanodegrees, -3, 50},
+		{12345 * gpsprot.Nanodegrees, 123, 45},
+		{45 * gpsprot.Degrees, 450000000, 0},
+		{45123456789 * gpsprot.Nanodegrees, 451234568, -11},
+	}
+
+	for _, tc := range testCases {
+		degreesE7, degreesE9, err := splitAngle(tc.angle)
+		if err != nil {
+			t.Errorf("splitAngle returned error: %v", err)
+		} else if degreesE9 < -99 || degreesE9 > 99 {
+			t.Errorf("splitAngle(%v) = (%v, %v), want degreesE9 in [-99, 99]", tc.angle, degreesE7, degreesE9)
+		} else if degreesE7 != tc.expectedDegE7 || degreesE9 != tc.expectedDegE9 {
+			t.Errorf("splitAngle(%v) = (%v, %v), want (%v, %v)", tc.angle, degreesE7, degreesE9, tc.expectedDegE7, tc.expectedDegE9)
+		}
+	}
+}
+
+func TestDivModRound(t *testing.T) {
+	testCases := []struct {
+		x, y, q int64
+	}{
+		{500, 100, 5},
+		{550, 100, 6},
+		{449, 100, 4},
+		{-500, 100, -5},
+		{-550, 100, -6},
+		{-449, 100, -4},
+		{17, 10, 2},
+		{-17, 10, -2},
+		{17, 1000, 0},
+		{-17, 1000, 0},
+		{1005, 1000, 1},
+		{-1005, 1000, -1},
+		{13, 10, 1},
+		{15, 10, 2},
+		{18, 10, 2},
+		{-13, 10, -1},
+		{-15, 10, -2},
+		{-18, 10, -2},
+	}
+
+	for _, tc := range testCases {
+		q, r := divModRound(tc.x, tc.y)
+		if q != tc.q {
+			t.Errorf("divModRound(%d, %d) = (%d, %d), want quotient %d",
+				tc.x, tc.y, q, r, tc.q)
+		}
+		if tc.x != q*tc.y+r {
+			t.Errorf("divModRound(%d, %d) = (%d, %d), does not satisfy x = quotient*y + remainder",
+				tc.x, tc.y, q, r)
+		}
 	}
 }

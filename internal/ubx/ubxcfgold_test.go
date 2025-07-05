@@ -187,39 +187,3 @@ func TestConfiguratorAbort2(t *testing.T) {
 	}
 }
 
-func TestDivModRound(t *testing.T) {
-	testCases := []struct {
-		x, y, q int64
-	}{
-		{500, 100, 5},
-		{550, 100, 6},
-		{449, 100, 4},
-		{-500, 100, -5},
-		{-550, 100, -6},
-		{-449, 100, -4},
-		{17, 10, 2},
-		{-17, 10, -2},
-		{17, 1000, 0},
-		{-17, 1000, 0},
-		{1005, 1000, 1},
-		{-1005, 1000, -1},
-		{13, 10, 1},
-		{15, 10, 2},
-		{18, 10, 2},
-		{-13, 10, -1},
-		{-15, 10, -2},
-		{-18, 10, -2},
-	}
-
-	for _, tc := range testCases {
-		q, r := divModRound(tc.x, tc.y)
-		if q != tc.q {
-			t.Errorf("divModRound(%d, %d) = (%d, %d), want quotient %d",
-				tc.x, tc.y, q, r, tc.q)
-		}
-		if tc.x != q*tc.y+r {
-			t.Errorf("divModRound(%d, %d) = (%d, %d), does not satisfy x = quotient*y + remainder",
-				tc.x, tc.y, q, r)
-		}
-	}
-}
