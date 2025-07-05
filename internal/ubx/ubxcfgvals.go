@@ -326,67 +326,45 @@ func (tb *txnBuilder) timeModeBuild() error {
 	default:
 		return nil
 	}
-	cp := &tb.target.Props
-	if v, ok := cp.GetFixedPosECEF(); ok {
-		err := addTmodeECEF(&tb.items, v)
-		if err != nil {
-			return err
+	// Determine whether we have the needed keys
+	info := tmodeRequiredInfo(tb.target, resurveyChange)
+	requiredKeys := tmodeRequiredKeys(info)
+	for _, key := range requiredKeys {
+		if !tb.known.Contains(key.Key()) {
+			tb.keys = append(tb.keys, key.Key())
 		}
 	}
-	tmReq := gpsprot.TimeMode(0)
-	tmReq, _ = cp.GetTimeMode()
-	tmKnown := gpsprot.TimeMode(0)
-	if tm, ok := cfgValGet(tb.known, ucv.KTmodeMode); ok {
-		tmKnown = tmodeModeToTimeMode(tm)
-	}
-	opts := &tb.target.Opts
-	when := opts.Survey.When
-	if tmKnown == 0 {
-		// We need to know the current time mode if we might initiate a survey
-		needToKnow := false
-		if tmReq != 0 {
-			needToKnow = when.Contains(tmReq)
-		} else {
-			// need to know, if we might
-			needToKnow = when != 0
-		}
-		if needToKnow {
-			txnAddKey(tb, ucv.KTmodeMode)
-			return nil
-		}
-	}
-	tm := tmKnown
-	if tmReq != 0 {
-		tm = tmReq
-	}
-	if tm == 0 {
-		// no time mode known, no time mode requested and no possibility of starting a survey
-		return nil
-	}
-	if when.Contains(tm) {
-		tb.survey = true
-		addSurveyItems(&tb.items, opts.Survey)
+
+	// If we're missing keys, return early; will be called again after fetching
+	if len(tb.keys) > 0 {
 		return nil
 	}
 
-	if tmReq != gpsprot.TimeModeSurvey {
-		txnAddItem(tb, ucv.KTmodeMode, timeModeToTmodeMode(tmReq))
-		return nil
+	// Convert from keys to intermediate form (tmodeConfig)
+	var cur tmodeConfig
+	if !cur.fromCfgVals(tb.known, info) {
+		return errors.New("internal error: polling tmode config did not work correctly")
 	}
-	// Remaining possibility:
-	// The user requested TimeMode=Survey in the ConfigProps,
-	// but in ConfigOptions says not to start a Survey when the TimeMode is Survey.
-	// This is actually OK, if the receiver is already in Survey mode.
+
+	// Determine the time mode in intermediate form
+	// Second timeModeConfig will always be nil, because we are using resurveyChange
+	tmc, _, err := createTmodeConfigs(tb.target, &cur, resurveyChange)
+	if err != nil {
+		return err
+	}
+
+	// Convert from intermediate form to items
+	if tmc != nil {
+		tmc.addItems(&tb.items, false)
+		// Need to set survey flag so that survey messages get enabled
+		if tmc.mode == tmodeSurveyIn {
+			tb.survey = true
+		}
+	}
+
 	return nil
 }
 
-func addSurveyItems(items *[]ucv.Item, opts gpsprot.Survey) {
-	ucv.AddItem(items, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
-	ucv.AddItem(items, ucv.KTmodeSvinMinDur, uint64(opts.MinDur.Round(time.Second)/time.Second))
-	var mm10 int64
-	mm10, _ = divModRound(int64(opts.AccLimit), int64(gpsprot.Millimeter/10))
-	ucv.AddItem(items, ucv.KTmodeSvinAccLimit, uint64(mm10))
-}
 
 func (raw *CfgVals) getMode() (gpsprot.Mode, bool) {
 	tmc := tmodeConfig{}

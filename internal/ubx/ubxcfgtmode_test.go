@@ -211,7 +211,7 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 				t.Run("mode_specific", func(t *testing.T) {
 					// Convert tmodeConfig to items
 					var items []ucv.Item
-					tc.toItems(&items, false)
+					tc.addItems(&items, false)
 
 					// Convert items to CfgVals
 					vals := MakeCfgVals()
@@ -233,7 +233,7 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 				t.Run("all_items", func(t *testing.T) {
 					// Convert tmodeConfig to items
 					var items []ucv.Item
-					tc.toItems(&items, true)
+					tc.addItems(&items, true)
 
 					// Convert items to CfgVals
 					vals := MakeCfgVals()
@@ -284,7 +284,7 @@ func TestCreateTmodeConfigs(t *testing.T) {
 				MinDur:   300 * time.Second,
 				AccLimit: 2 * gpsprot.Meter,
 			},
-			cur: &tmodeConfig{mode: tmodeDisabled},
+			cur:            &tmodeConfig{mode: tmodeDisabled},
 			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:         tmodeSurveyIn,
@@ -301,7 +301,7 @@ func TestCreateTmodeConfigs(t *testing.T) {
 				fixedPosAcc: 1000,
 			},
 			resurveyMethod: resurveyDisable,
-			expectFirst: nil,
+			expectFirst:    nil,
 		},
 		{
 			name:      "SetStatic with current survey, no SurveyAgain",
@@ -312,7 +312,7 @@ func TestCreateTmodeConfigs(t *testing.T) {
 				svinAccLimit: 5000,
 			},
 			resurveyMethod: resurveyDisable,
-			expectFirst: nil,
+			expectFirst:    nil,
 		},
 		{
 			name:      "SetStatic with current survey, with SurveyAgain",
@@ -328,7 +328,7 @@ func TestCreateTmodeConfigs(t *testing.T) {
 				svinAccLimit: 5000,
 			},
 			resurveyMethod: resurveyDisable,
-			expectFirst: &tmodeConfig{mode: tmodeDisabled},
+			expectFirst:    &tmodeConfig{mode: tmodeDisabled},
 			expectSecond: &tmodeConfig{
 				mode:         tmodeSurveyIn,
 				svinMinDur:   600,
@@ -338,11 +338,11 @@ func TestCreateTmodeConfigs(t *testing.T) {
 
 		// Test cases with explicit Mode property
 		{
-			name: "Mode mobile (static=false)",
-			mode: &gpsprot.Mode{Static: false},
-			cur:  &tmodeConfig{mode: tmodeFixed},
+			name:           "Mode mobile (static=false)",
+			mode:           &gpsprot.Mode{Static: false},
+			cur:            &tmodeConfig{mode: tmodeFixed},
 			resurveyMethod: resurveyDisable,
-			expectFirst: &tmodeConfig{mode: tmodeDisabled},
+			expectFirst:    &tmodeConfig{mode: tmodeDisabled},
 		},
 		{
 			name: "Mode survey (static=true, no position)",
@@ -351,7 +351,7 @@ func TestCreateTmodeConfigs(t *testing.T) {
 				MinDur:   180 * time.Second,
 				AccLimit: 3 * gpsprot.Meter,
 			},
-			cur: &tmodeConfig{mode: tmodeDisabled},
+			cur:            &tmodeConfig{mode: tmodeDisabled},
 			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:         tmodeSurveyIn,
@@ -371,7 +371,7 @@ func TestCreateTmodeConfigs(t *testing.T) {
 				},
 				FixedPosAcc: gpsprot.Centimeter,
 			},
-			cur: &tmodeConfig{mode: tmodeDisabled},
+			cur:            &tmodeConfig{mode: tmodeDisabled},
 			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:        tmodeFixed,
@@ -393,7 +393,7 @@ func TestCreateTmodeConfigs(t *testing.T) {
 				svinAccLimit: 5000,
 			},
 			resurveyMethod: resurveyDisable,
-			expectFirst: &tmodeConfig{mode: tmodeDisabled},
+			expectFirst:    &tmodeConfig{mode: tmodeDisabled},
 			expectSecond: &tmodeConfig{
 				mode:         tmodeSurveyIn,
 				svinMinDur:   240,
@@ -408,7 +408,7 @@ func TestCreateTmodeConfigs(t *testing.T) {
 				AccLimit: gpsprot.Meter + 500*gpsprot.Millimeter, // 1.5m
 				Flags:    gpsprot.SurveyAgain,
 			},
-			cur: &tmodeConfig{mode: tmodeDisabled},
+			cur:            &tmodeConfig{mode: tmodeDisabled},
 			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:         tmodeSurveyIn,
@@ -426,7 +426,7 @@ func TestCreateTmodeConfigs(t *testing.T) {
 				MinDur:   300 * time.Second,
 				AccLimit: 2 * gpsprot.Meter,
 			},
-			cur: &tmodeConfig{mode: tmodeDisabled},
+			cur:            &tmodeConfig{mode: tmodeDisabled},
 			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
 				mode:         tmodeSurveyIn,
@@ -448,16 +448,16 @@ func TestCreateTmodeConfigs(t *testing.T) {
 				Height:      1000*gpsprot.Meter + 7*gpsprot.Millimeter/10,
 				FixedPosAcc: 5 * gpsprot.Millimeter,
 			},
-			cur: &tmodeConfig{mode: tmodeDisabled},
+			cur:            &tmodeConfig{mode: tmodeDisabled},
 			resurveyMethod: resurveyDisable,
 			expectFirst: &tmodeConfig{
-				mode:         tmodeFixed,
-				useLLH:       true,
-				latLon:       [2]int32{4e8, 5e8}, // 40.0°, 50.0° in 1e-7 degrees
-				height:       1e5,                 // 1000m in cm
-				latLonHP:     [2]int8{5, 6},       // fractional parts in 1e-9 degrees
-				heightHP:     7,                   // fractional part in 0.1mm
-				fixedPosAcc:  50,                  // 5mm in 0.1mm units
+				mode:        tmodeFixed,
+				useLLH:      true,
+				latLon:      [2]int32{4e8, 5e8}, // 40.0°, 50.0° in 1e-7 degrees
+				height:      1e5,                // 1000m in cm
+				latLonHP:    [2]int8{5, 6},      // fractional parts in 1e-9 degrees
+				heightHP:    7,                  // fractional part in 0.1mm
+				fixedPosAcc: 50,                 // 5mm in 0.1mm units
 			},
 		},
 	}
@@ -512,4 +512,115 @@ func tmodeConfigEqual(a, b *tmodeConfig) bool {
 		return false
 	}
 	return *a == *b
+}
+
+func TestTmodeRequiredInfo(t *testing.T) {
+	tests := []struct {
+		name     string
+		target   *gpsprot.ConfigTarget
+		method   resurveyMethod
+		expected tmodeInfo
+	}{
+		{
+			name:     "no mode and no setStatic",
+			target:   gpsprot.NewConfigTarget(),
+			method:   resurveyChange,
+			expected: tmodeInfoNone,
+		},
+		{
+			name: "survey mode without resurvey doesn't need survey info",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				return target
+			}(),
+			method:   resurveyChange,
+			expected: tmodeInfoNone,
+		},
+		{
+			name: "survey again needs survey info",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey.Flags |= gpsprot.SurveyAgain
+				return target
+			}(),
+			method:   resurveyChange,
+			expected: tmodeInfoSurvey,
+		},
+		{
+			name: "fixed position ECEF should need no info",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{
+					Static:       true,
+					PosType:      gpsprot.PosTypeECEF,
+					FixedPosECEF: [3]gpsprot.Length{
+						4194304 * gpsprot.Meter,
+						837860 * gpsprot.Meter,
+						4581200 * gpsprot.Meter,
+					},
+					FixedPosAcc: 10 * gpsprot.Millimeter,
+				})
+				return target
+			}(),
+			method:   resurveyChange,
+			expected: tmodeInfoNone,
+		},
+		{
+			name: "disable mode doesn't need info",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: false})
+				return target
+			}(),
+			method:   resurveyChange,
+			expected: tmodeInfoNone,
+		},
+		{
+			name: "setStatic without mode and without resurvey needs mode",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Opts.SetStatic = true
+				return target
+			}(),
+			method:   resurveyChange,
+			expected: tmodeInfoMode,
+		},
+			{
+			name: "setStatic without mode and with resurvey needs mode and survey",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Opts.SetStatic = true
+				target.Opts.Survey.Flags |= gpsprot.SurveyAgain
+				return target
+			}(),
+			method:   resurveyChange,
+			expected: tmodeInfoMode|tmodeInfoSurvey,
+		},
+		{
+			name: "non-static mode with setStatic and resurvey needs survey info",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: false})
+				target.Opts.SetStatic = true
+				target.Opts.Survey.Flags |= gpsprot.SurveyAgain
+				return target
+			}(),
+			method:   resurveyChange,
+			expected: tmodeInfoSurvey,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.target.Opts.Survey.MinDur = 300 * time.Second
+			tt.target.Opts.Survey.AccLimit = 5 * gpsprot.Meter
+			
+			result := tmodeRequiredInfo(tt.target, tt.method)
+			if result != tt.expected {
+				t.Errorf("tmodeRequiredInfo() = %v, expected %v", result, tt.expected)
+			}
+		})
+	}
 }

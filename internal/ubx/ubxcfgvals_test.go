@@ -187,10 +187,10 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 func TestConfigItems_Survey(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	target.Opts.Survey = gpsprot.Survey{
-		When:     gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled),
 		MinDur:   2000 * time.Second,
 		AccLimit: 10 * gpsprot.Meter,
 	}
+	target.Opts.SetStatic = true
 	ver := &Version{
 		GNSS: gpsprot.MajorGNSSSet,
 		FW:   &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
@@ -392,6 +392,312 @@ func TestEnableSignals(t *testing.T) {
 			result, _ := m.getSignalsEnabled()
 			if tt.enabled&supported != result {
 				t.Errorf("expected signals to be %v, got %v", tt.enabled&supported, result)
+			}
+		})
+	}
+}
+
+// Test timeModeBuild function - case where missing keys need to be fetched
+func TestTimeModeBuild_MissingKeys(t *testing.T) {
+	tests := []struct {
+		name      string
+		target    *gpsprot.ConfigTarget
+		known     *CfgVals
+		ver       *Version
+		expectErr bool
+		wantKeys  []ucv.Key
+	}{
+		{
+			name: "survey mode without resurvey needs no keys",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				return target
+			}(),
+			known: newCfgVals(),
+			ver: &Version{
+				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
+			},
+			expectErr: false,
+			wantKeys:  nil,
+		},
+		{
+			name: "non-supported product category",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				return target
+			}(),
+			known: newCfgVals(),
+			ver: &Version{
+				FW: &FWVer{ProductCategory: "NEO", Major: 9, Minor: 1},
+			},
+			expectErr: false,
+			wantKeys:  nil,
+		},
+		{
+			name: "survey again needs survey parameters",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{
+					Flags: gpsprot.SurveyAgain,
+				}
+				return target
+			}(),
+			known: newCfgVals(),
+			ver: &Version{
+				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
+			},
+			expectErr: false,
+			wantKeys:  []ucv.Key{ucv.KTmodeSvinMinDur.Key(), ucv.KTmodeSvinAccLimit.Key()},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tb := &txnBuilder{
+				target: tt.target,
+				known:  tt.known,
+				ver:    tt.ver,
+			}
+
+			err := tb.timeModeBuild()
+			if (err != nil) != tt.expectErr {
+				t.Errorf("timeModeBuild() error = %v, expectErr %v", err, tt.expectErr)
+				return
+			}
+
+			if len(tt.wantKeys) == 0 {
+				if len(tb.keys) != 0 {
+					t.Errorf("expected no keys, got %v", tb.keys)
+				}
+			} else {
+				if len(tb.keys) != len(tt.wantKeys) {
+					t.Errorf("expected %d keys, got %d", len(tt.wantKeys), len(tb.keys))
+				}
+				for _, wantKey := range tt.wantKeys {
+					found := false
+					for _, gotKey := range tb.keys {
+						if gotKey == wantKey {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Errorf("expected key %v not found in %v", wantKey, tb.keys)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Test timeModeBuild function - case where configuration items are generated
+func TestTimeModeBuild_GenerateItems(t *testing.T) {
+	tests := []struct {
+		name        string
+		target      *gpsprot.ConfigTarget
+		known       *CfgVals
+		ver         *Version
+		expectErr   bool
+		wantItems   []ucv.Item
+		wantSurvey  bool
+	}{
+		{
+			name: "disable mode",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: false})
+				return target
+			}(),
+			known: func() *CfgVals {
+				cv := newCfgVals()
+				cfgValSet(cv, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
+				return cv
+			}(),
+			ver: &Version{
+				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
+			},
+			expectErr: false,
+			wantItems: []ucv.Item{
+				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeDisabled),
+			},
+			wantSurvey: false,
+		},
+		{
+			name: "enable survey mode",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{
+					MinDur:   300 * time.Second,
+					AccLimit: 5 * gpsprot.Meter,
+				}
+				return target
+			}(),
+			known: func() *CfgVals {
+				cv := newCfgVals()
+				cfgValSet(cv, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
+				return cv
+			}(),
+			ver: &Version{
+				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
+			},
+			expectErr: false,
+			wantItems: []ucv.Item{
+				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeSurveyIn),
+				ucv.MakeItem(ucv.KTmodeSvinMinDur, 300),
+				ucv.MakeItem(ucv.KTmodeSvinAccLimit, 5*1000*10),
+			},
+			wantSurvey: true,
+		},
+		{
+			name: "force resurvey by changing parameters",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{
+					MinDur:   300 * time.Second,
+					AccLimit: 5 * gpsprot.Meter,
+					Flags:    gpsprot.SurveyAgain,
+				}
+				return target
+			}(),
+			known: func() *CfgVals {
+				cv := newCfgVals()
+				cfgValSet(cv, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
+				cfgValSet(cv, ucv.KTmodeSvinMinDur, 300)
+				cfgValSet(cv, ucv.KTmodeSvinAccLimit, 5*1000*10)
+				return cv
+			}(),
+			ver: &Version{
+				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
+			},
+			expectErr: false,
+			wantItems: []ucv.Item{
+				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeSurveyIn),
+				ucv.MakeItem(ucv.KTmodeSvinMinDur, 300),
+				ucv.MakeItem(ucv.KTmodeSvinAccLimit, 5*1000*10+1),
+			},
+			wantSurvey: true,
+		},
+		{
+			name: "existing survey mode with same parameters",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{
+					MinDur:   300 * time.Second,
+					AccLimit: 5 * gpsprot.Meter,
+				}
+				return target
+			}(),
+			known: func() *CfgVals {
+				cv := newCfgVals()
+				cfgValSet(cv, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
+				cfgValSet(cv, ucv.KTmodeSvinMinDur, 300)
+				cfgValSet(cv, ucv.KTmodeSvinAccLimit, 5*1000*10)
+				return cv
+			}(),
+			ver: &Version{
+				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
+			},
+			expectErr: false,
+			wantItems: []ucv.Item{
+				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeSurveyIn),
+				ucv.MakeItem(ucv.KTmodeSvinMinDur, 300),
+				ucv.MakeItem(ucv.KTmodeSvinAccLimit, 5*1000*10),
+			},
+			wantSurvey: true,
+		},
+		{
+			name: "fixed position ECEF mode",
+			target: func() *gpsprot.ConfigTarget {
+				target := gpsprot.NewConfigTarget()
+				target.Props.SetMode(gpsprot.Mode{
+					Static:       true,
+					PosType:      gpsprot.PosTypeECEF,
+					FixedPosECEF: [3]gpsprot.Length{
+						4194304 * gpsprot.Meter,  // X: 4194304m
+						837860 * gpsprot.Meter,   // Y: 837860m  
+						4581200 * gpsprot.Meter,  // Z: 4581200m
+					},
+					FixedPosAcc: 10 * gpsprot.Millimeter, // 1cm accuracy
+				})
+				return target
+			}(),
+			known: newCfgVals(),
+			ver: &Version{
+				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
+			},
+			expectErr: false,
+			wantItems: []ucv.Item{
+				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeFixed),
+				ucv.MakeItem(ucv.KTmodePosType, ucv.ETmodePosTypeEcef),
+				ucv.MakeItem(ucv.KTmodeEcefX, int64(419430400)),    // 4194304m in cm
+				ucv.MakeItem(ucv.KTmodeEcefY, int64(83786000)),     // 837860m in cm
+				ucv.MakeItem(ucv.KTmodeEcefZ, int64(458120000)),    // 4581200m in cm
+				ucv.MakeItem(ucv.KTmodeEcefXHp, int64(0)),          // No fractional part
+				ucv.MakeItem(ucv.KTmodeEcefYHp, int64(0)),          // No fractional part
+				ucv.MakeItem(ucv.KTmodeEcefZHp, int64(0)),          // No fractional part
+				ucv.MakeItem(ucv.KTmodeFixedPosAcc, uint64(100)),   // 10mm in 0.1mm units
+			},
+			wantSurvey: false,
+		},
+		{
+			name: "no mode specified, no changes needed",
+			target: gpsprot.NewConfigTarget(),
+			known: func() *CfgVals {
+				cv := newCfgVals()
+				cfgValSet(cv, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
+				return cv
+			}(),
+			ver: &Version{
+				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
+			},
+			expectErr: false,
+			wantItems: nil,
+			wantSurvey: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tb := &txnBuilder{
+				target: tt.target,
+				known:  tt.known,
+				ver:    tt.ver,
+			}
+
+			err := tb.timeModeBuild()
+			if (err != nil) != tt.expectErr {
+				t.Errorf("timeModeBuild() error = %v, expectErr %v", err, tt.expectErr)
+				return
+			}
+
+			if len(tt.wantItems) == 0 {
+				if len(tb.items) != 0 {
+					t.Errorf("expected no items, got %v", tb.items)
+				}
+			} else {
+				if len(tb.items) != len(tt.wantItems) {
+					t.Errorf("expected %d items, got %d: %v", len(tt.wantItems), len(tb.items), tb.items)
+				}
+				for i, wantItem := range tt.wantItems {
+					if i >= len(tb.items) {
+						t.Errorf("missing item %d: %v", i, wantItem)
+						continue
+					}
+					gotItem := tb.items[i]
+					if gotItem.Key != wantItem.Key || gotItem.Value != wantItem.Value {
+						t.Errorf("item %d: expected %v, got %v", i, wantItem, gotItem)
+					}
+				}
+			}
+
+			if tb.survey != tt.wantSurvey {
+				t.Errorf("expected survey flag %v, got %v", tt.wantSurvey, tb.survey)
 			}
 		})
 	}

@@ -440,6 +440,7 @@ func valsetPacketsEqual(t *testing.T, actual, expected string) bool {
 	}
 	expectedValset, ok := expectedMsg.(*ubxbin.CfgValset)
 	if !ok {
+		t.Errorf("expected %s, but got CFG-VALSET", expectedMsg.ID().String())
 		return false
 	}
 
@@ -516,6 +517,7 @@ func valgetPacketsEqual(t *testing.T, actual, expected string) bool {
 	}
 	expectedValget, ok := expectedMsg.(*ubxbin.CfgValget)
 	if !ok {
+		t.Errorf("expected %s, but got CFG-VALGET", expectedMsg.ID().String())
 		return false
 	}
 

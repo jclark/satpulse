@@ -37,12 +37,12 @@ const (
 type tmodeInfo uint8
 
 const (
-	tmodeInfoMode     tmodeInfo = 1 << iota // Just the current time mode
-	tmodeInfoSurvey                         // Survey parameters regardless of current mode
-	tmodeInfoFixed                          // Fixed position parameters regardless of current mode
-	tmodeInfoRelevant                       // Mode-dependent: survey if survey mode, fixed if fixed mode
+	tmodeInfoMode     tmodeInfo = 1 << iota                                        // Just the current time mode
+	tmodeInfoSurvey                                                                // Survey parameters regardless of current mode
+	tmodeInfoFixed                                                                 // Fixed position parameters regardless of current mode
+	tmodeInfoRelevant                                                              // Mode-dependent: survey if survey mode, fixed if fixed mode
 	tmodeInfoAll      tmodeInfo = tmodeInfoMode | tmodeInfoSurvey | tmodeInfoFixed // Everything
-	tmodeInfoNone     tmodeInfo = 0 // No information requested
+	tmodeInfoNone     tmodeInfo = 0                                                // No information requested
 )
 
 type tmodeConfig struct {
@@ -90,7 +90,7 @@ func createTmodeConfigs(target *gpsprot.ConfigTarget, cur *tmodeConfig, method r
 			// setStatic doesn't change tmodeFixed, so there's nothing to do
 			return nil, nil, nil
 		}
-		
+
 		if cur.mode == tmodeSurveyIn && survey.Flags&gpsprot.SurveyAgain == 0 {
 			// if we are already in survey mode and we are not forcing a new survey, then setStatic doesn't force anything
 			// XXX should we check if the survey parameters are the same?
@@ -117,41 +117,49 @@ func createTmodeConfigs(target *gpsprot.ConfigTarget, cur *tmodeConfig, method r
 			}
 		case resurveyChange:
 			if tmc.svinAccLimit == cur.svinAccLimit {
-				tmc.svinAccLimit++ // increment by 1 (0.1mm)	
+				tmc.svinAccLimit++ // increment by 1 (0.1mm)
 			}
 		}
-	} 
+	}
 	return tmc, nil, nil
 }
 
-// tmodeRequiredInfoResurveyChange determines what tmodeInfo flags are needed for the resurveyChange method
-func tmodeRequiredInfoResurveyChange(target *gpsprot.ConfigTarget) tmodeInfo {
+// tmodeRequiredInfo determines what tmodeInfo flags are needed for the specified resurvey method
+func tmodeRequiredInfo(target *gpsprot.ConfigTarget, method resurveyMethod) tmodeInfo {
 	mode, haveMode := target.Props.GetMode()
 	setStatic := target.Opts.SetStatic
 	survey := target.Opts.Survey
-	
-	// If no mode and no setStatic, createTmodeConfigs returns early without accessing cur
+
 	if !haveMode && !setStatic {
 		return tmodeInfoNone
 	}
-	
-	// We always need mode after this point
-	info := tmodeInfoMode
-	
-	// Check if we'll need survey info for resurveyChange comparison.
-	// We need survey parameters when:
-	// 1. SurveyAgain flag is set (forcing a new survey), AND
-	// 2. We'll end up in survey mode, which happens when:
-	//    a) setStatic without explicit mode (defaults to survey mode), OR
-	//    b) Explicit survey mode (Static=true, PosType=None)
-	// Note: !haveMode implies setStatic=true at this point due to early return above
-	// In these cases, createTmodeConfigs will compare cur.svinAccLimit for resurveyChange method
-	if survey.Flags&gpsprot.SurveyAgain != 0 && 
-		(!haveMode || (mode.Static && mode.PosType == gpsprot.PosTypeNone)) {
-		info |= tmodeInfoSurvey
+
+	// surveyInfo is the info we will need if there is a possibility of a survey
+	surveyInfo := tmodeInfoNone
+	if method == resurveyChange && survey.Flags&gpsprot.SurveyAgain != 0 {
+		surveyInfo = tmodeInfoSurvey
+	}  
+
+	if !haveMode {
+		// setStatic must be true because early return above
+		// possibility of survey
+		return tmodeInfoMode | surveyInfo
+
 	}
-	
-	return info
+	if !mode.Static && setStatic {
+		// strange case: we have a Mode property set as non-static, but SetStatic is set
+		return surveyInfo
+
+	} 
+	// we have a Mode property and it is static
+	// setStatic is ignored in this case
+	if mode.PosType == gpsprot.PosTypeNone {
+		// explicit survey
+		return surveyInfo
+	}
+
+	// explicit fixed position
+	return tmodeInfoNone
 }
 
 // newTmodeConfig creates tmodeConfig from gpsprot.Mode and gpsprot.Survey values.
@@ -201,21 +209,21 @@ func newTmodeConfig(mode gpsprot.Mode, survey gpsprot.Survey) (*tmodeConfig, err
 // getMode converts tmodeConfig to gpsprot.Mode.
 func (tc *tmodeConfig) getMode() gpsprot.Mode {
 	mode := gpsprot.Mode{}
-	
+
 	switch tc.mode {
 	case tmodeDisabled:
 		mode.Static = false
 		return mode
-		
+
 	case tmodeSurveyIn:
 		mode.Static = true
 		mode.PosType = gpsprot.PosTypeNone
 		return mode
-		
+
 	case tmodeFixed:
 		mode.Static = true
 		mode.FixedPosAcc = gpsprot.Length(tc.fixedPosAcc) * (gpsprot.Millimeter / 10)
-		
+
 		if tc.useLLH {
 			mode.PosType = gpsprot.PosTypeLLH
 			for i := range 2 {
@@ -230,7 +238,7 @@ func (tc *tmodeConfig) getMode() gpsprot.Mode {
 		}
 		return mode
 	}
-	
+
 	return mode
 }
 
@@ -258,7 +266,7 @@ func (tc *tmodeConfig) toTmodeMsg(msg bin.Msg) (bin.Msg, error) {
 	panic("unexpected message type for toTmodeMsg")
 }
 
-func (tc *tmodeConfig) fromTmodeMsg(msg bin.Msg)  {
+func (tc *tmodeConfig) fromTmodeMsg(msg bin.Msg) {
 	if msg == nil {
 		return
 	}
@@ -549,10 +557,10 @@ func tmodeVarToAcc(varMm2 uint32) uint32 {
 	return accMm * 10 // convert to 0.1mm
 }
 
-// toItems converts tmodeConfig to configuration items.
+// addItems converts tmodeConfig to configuration items.
 // If all is true, it produces items for all fields regardless of mode.
 // If all is false, it only produces items relevant to the current mode.
-func (tc *tmodeConfig) toItems(items *[]ucv.Item, all bool) {
+func (tc *tmodeConfig) addItems(items *[]ucv.Item, all bool) {
 	// Always include mode
 	mode := ucv.ETmodeModeDisabled
 	switch tc.mode {
@@ -614,7 +622,7 @@ func (tc *tmodeConfig) fromCfgVals(vals *CfgVals, info tmodeInfo) bool {
 			extraInfo = tmodeInfoSurvey
 		case ucv.ETmodeModeFixed:
 			tc.mode = tmodeFixed
-			extraInfo = tmodeInfoFixed 
+			extraInfo = tmodeInfoFixed
 		}
 		if info&tmodeInfoRelevant != 0 {
 			info |= extraInfo // Add relevant info based on mode
@@ -669,18 +677,18 @@ func (tc *tmodeConfig) fromCfgVals(vals *CfgVals, info tmodeInfo) bool {
 // tmodeRequiredKeys returns the CFG-VAL keys that need to be fetched for the given info level
 func tmodeRequiredKeys(info tmodeInfo) []ucv.AnyTypedKey {
 	var keys []ucv.AnyTypedKey
-	
+
 	if info&tmodeInfoMode != 0 {
 		keys = append(keys, ucv.KTmodeMode)
 	}
-	
+
 	if info&tmodeInfoSurvey != 0 {
-		keys = append(keys, 
+		keys = append(keys,
 			ucv.KTmodeSvinMinDur,
 			ucv.KTmodeSvinAccLimit,
 		)
 	}
-	
+
 	if info&tmodeInfoFixed != 0 {
 		keys = append(keys,
 			ucv.KTmodePosType,
@@ -691,7 +699,7 @@ func tmodeRequiredKeys(info tmodeInfo) []ucv.AnyTypedKey {
 			ucv.KTmodeFixedPosAcc,
 		)
 	}
-	
+
 	return keys
 }
 
