@@ -359,50 +359,12 @@ func (tb *txnBuilder) timeModeBuild() error {
 	return nil
 }
 
-
 func (raw *CfgVals) getMode() (gpsprot.Mode, bool) {
 	tmc := tmodeConfig{}
 	if tmc.fromCfgVals(raw, tmodeInfoRelevant) {
 		return tmc.getMode(), true
 	}
 	return gpsprot.Mode{}, false
-}
-
-func (raw *CfgVals) cookTmodeECEF() (gpsprot.Point3D, bool) {
-	pt := gpsprot.Point3D{}
-	ty, ok := cfgValGet(raw, ucv.KTmodePosType)
-	if !ok || ty != ucv.ETmodePosTypeEcef {
-		return pt, false
-	}
-	kecef := []ucv.KeyI{ucv.KTmodeEcefX, ucv.KTmodeEcefY, ucv.KTmodeEcefZ}
-	kecefhp := []ucv.KeyI{ucv.KTmodeEcefXHp, ucv.KTmodeEcefYHp, ucv.KTmodeEcefZHp}
-	for i := 0; i < 3; i++ {
-		v, ok := cfgValGet(raw, kecef[i])
-		if !ok {
-			return pt, false
-		}
-		hp, ok := cfgValGet(raw, kecefhp[i])
-		if !ok {
-			return pt, false
-		}
-		pt[i] = lengthHP(int32(v), int8(hp))
-	}
-	return pt, true
-}
-
-func addTmodeECEF(items *[]ucv.Item, p gpsprot.Point3D) error {
-	kecef := []ucv.KeyI{ucv.KTmodeEcefX, ucv.KTmodeEcefY, ucv.KTmodeEcefZ}
-	kecefhp := []ucv.KeyI{ucv.KTmodeEcefXHp, ucv.KTmodeEcefYHp, ucv.KTmodeEcefZHp}
-	for i := 0; i < 3; i++ {
-		cm, frac, err := splitLength(p[i])
-		if err != nil {
-			return err
-		}
-		ucv.AddItem(items, kecef[i], int64(cm))
-		ucv.AddItem(items, kecefhp[i], int64(frac))
-	}
-	ucv.AddItem(items, ucv.KTmodePosType, ucv.ETmodePosTypeEcef)
-	return nil
 }
 
 func (raw *CfgVals) getTimePulseOnlyWhenLocked() (v bool, ok bool) {
@@ -713,28 +675,6 @@ func timegridTp1ToGNSS(tg ucv.EnumTpTimegridTp1) gpsprot.GNSS {
 		return gpsprot.NAVIC
 	}
 	return 0
-}
-
-func timeModeToTmodeMode(t gpsprot.TimeMode) ucv.EnumTmodeMode {
-	switch t {
-	case gpsprot.TimeModeSurvey:
-		return ucv.ETmodeModeSurveyIn
-	case gpsprot.TimeModeFixed:
-		return ucv.ETmodeModeFixed
-	default:
-		return ucv.ETmodeModeDisabled
-	}
-}
-
-func tmodeModeToTimeMode(t ucv.EnumTmodeMode) gpsprot.TimeMode {
-	switch t {
-	case ucv.ETmodeModeSurveyIn:
-		return gpsprot.TimeModeSurvey
-	case ucv.ETmodeModeFixed:
-		return gpsprot.TimeModeFixed
-	default:
-		return gpsprot.TimeModeDisabled
-	}
 }
 
 func timegridTp1ToMsgRateKey(tg ucv.EnumTpTimegridTp1) ucv.KeyM {
