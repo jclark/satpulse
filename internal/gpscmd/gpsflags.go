@@ -117,6 +117,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Float64Var(&surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
 	flags.Var(&fixedPosECEF, "fixed-pos-ecef", "fixed ECEF position as `x,y,z` in meters")
 	flags.Float64Var(&fixedPosAcc, "fixed-pos-acc", defaultFixedPosAcc, "accuracy of fixed position in meters")
+	flags.BoolVar(&vars.configOpts.SetStatic, "static", false, "make the receiver use static positioning mode if it is not already doing so")
+	flags.MarkHidden("static")
 	flags.BoolVar(&sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
 	flags.MarkHidden("sys-time-trusted")
 	flags.BoolVar(&osnma, "osnma", false, "enable OSNMA authentication for Galileo")
