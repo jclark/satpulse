@@ -121,11 +121,8 @@ type ConfigProps struct {
 	signalsEnabled    SignalSet
 	timeGNSS          GNSS
 	timePulse         TimePulse
-	timeMode          TimeMode
 	mode              Mode
 	antennaCableDelay time.Duration
-	fixedPosECEF      Point3D
-	fixedPosAcc       Length
 	stationary        bool
 	navMsgAuth        NavMsgAuth
 }
@@ -139,11 +136,8 @@ const (
 	PropIDTimePulseAlignToGNSS
 	PropIDTimePulseOnlyWhenLocked
 	PropIDTimePulsePolarityRising
-	PropIDTimeMode
 	PropIDMode
 	PropIDAntennaCableDelay
-	PropIDFixedPosECEF
-	PropIDFixedPosAcc
 	PropIDStationary
 	PropIDNavMsgAuth
 )
@@ -157,11 +151,8 @@ var propNames = []string{
 	"TimePulseAlignToGNSS",
 	"TimePulseOnlyWhenLocked",
 	"TimePulsePolarityRising",
-	"TimeMode",
 	"Mode",
 	"AntennaCableDelay",
-	"FixedPosECEF",
-	"FixedPosAcc",
 	"Stationary",
 	"NavMsgAuth",
 }
@@ -480,19 +471,6 @@ func (cp *ConfigProps) SetTimePulse(tp TimePulse) {
 	cp.valid |= timePulseProps
 }
 
-// GetTimeMode returns the timeMode value and whether it's set
-func (cp *ConfigProps) GetTimeMode() (TimeMode, bool) {
-	if cp.valid&PropIDTimeMode != 0 {
-		return cp.timeMode, true
-	}
-	return 0, false
-}
-
-// SetTimeMode sets the timeMode value
-func (cp *ConfigProps) SetTimeMode(val TimeMode) {
-	cp.timeMode = val
-	cp.valid |= PropIDTimeMode
-}
 
 // GetMode returns the mode value and whether it's set
 func (cp *ConfigProps) GetMode() (Mode, bool) {
@@ -522,33 +500,7 @@ func (cp *ConfigProps) SetAntennaCableDelay(val time.Duration) {
 	cp.valid |= PropIDAntennaCableDelay
 }
 
-// GetFixedPosECEF returns the fixedPosECEF value and whether it's set
-func (cp *ConfigProps) GetFixedPosECEF() (Point3D, bool) {
-	if cp.valid&PropIDFixedPosECEF != 0 {
-		return cp.fixedPosECEF, true
-	}
-	return Point3D{}, false
-}
 
-// SetFixedPosECEF sets the fixedPosECEF value
-func (cp *ConfigProps) SetFixedPosECEF(val Point3D) {
-	cp.fixedPosECEF = val
-	cp.valid |= PropIDFixedPosECEF
-}
-
-// GetFixedPosAcc returns the fixedPosAcc value and whether it's set
-func (cp *ConfigProps) GetFixedPosAcc() (Length, bool) {
-	if cp.valid&PropIDFixedPosAcc != 0 {
-		return cp.fixedPosAcc, true
-	}
-	return 0, false
-}
-
-// SetFixedPosAcc sets the fixedPosAcc value
-func (cp *ConfigProps) SetFixedPosAcc(val Length) {
-	cp.fixedPosAcc = val
-	cp.valid |= PropIDFixedPosAcc
-}
 
 // GetStationary returns the stationary value and whether it's set
 func (cp *ConfigProps) GetStationary() (bool, bool) {
@@ -635,20 +587,11 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	if both&PropIDTimePulsePolarityRising != 0 && cp.timePulse.PolarityRising != other.timePulse.PolarityRising {
 		result.SetTimePulsePolarityRising(other.timePulse.PolarityRising)
 	}
-	if both&PropIDTimeMode != 0 && cp.timeMode != other.timeMode {
-		result.SetTimeMode(other.timeMode)
-	}
 	if both&PropIDMode != 0 && cp.mode != other.mode {
 		result.SetMode(other.mode)
 	}
 	if both&PropIDAntennaCableDelay != 0 && cp.antennaCableDelay != other.antennaCableDelay {
 		result.SetAntennaCableDelay(other.antennaCableDelay)
-	}
-	if both&PropIDFixedPosECEF != 0 && cp.fixedPosECEF != other.fixedPosECEF {
-		result.SetFixedPosECEF(other.fixedPosECEF)
-	}
-	if both&PropIDFixedPosAcc != 0 && cp.fixedPosAcc != other.fixedPosAcc {
-		result.SetFixedPosAcc(other.fixedPosAcc)
 	}
 	if both&PropIDStationary != 0 && cp.stationary != other.stationary {
 		result.SetStationary(other.stationary)
@@ -702,18 +645,6 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 		}
 		m["timePulse"] = tpm
 	}
-	if cp.valid&PropIDTimeMode != 0 {
-		switch cp.timeMode {
-		case TimeModeDisabled:
-			m["timeMode"] = "disabled"
-		case TimeModeSurvey:
-			m["timeMode"] = "survey"
-		case TimeModeFixed:
-			m["timeMode"] = "fixed"
-		default:
-			m["timeMode"] = cp.timeMode
-		}
-	}
 	if cp.valid&PropIDMode != 0 {
 		mm := make(map[string]interface{})
 		mm["static"] = cp.mode.Static
@@ -738,16 +669,6 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	}
 	if cp.valid&PropIDAntennaCableDelay != 0 {
 		m["antennaCableDelay"] = float64(cp.antennaCableDelay) / float64(time.Second)
-	}
-	if cp.valid&PropIDFixedPosECEF != 0 {
-		m["fixedPosECEF"] = []float64{
-			cp.fixedPosECEF[0].Meters(),
-			cp.fixedPosECEF[1].Meters(),
-			cp.fixedPosECEF[2].Meters(),
-		}
-	}
-	if cp.valid&PropIDFixedPosAcc != 0 {
-		m["fixedPosAcc"] = float64(cp.fixedPosAcc) / float64(Meter)
 	}
 	if cp.valid&PropIDStationary != 0 {
 		m["stationary"] = cp.stationary

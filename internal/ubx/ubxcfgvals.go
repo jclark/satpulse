@@ -108,12 +108,6 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 	if v, ok := raw.getSignalsEnabled(); ok {
 		cp.SetSignalsEnabled(v)
 	}
-	if v, ok := cfgValGet(raw, ucv.KTmodeMode); ok {
-		cp.SetTimeMode(tmodeModeToTimeMode(v))
-	}
-	if v, ok := raw.cookTmodeECEF(); ok {
-		cp.SetFixedPosECEF(v)
-	}
 	if v, ok := raw.getMode(); ok {
 		cp.SetMode(v)
 	}
