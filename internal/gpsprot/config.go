@@ -277,7 +277,7 @@ const (
 	RTCMMsgOther RTCMMsgFlags = 1 << 15   // other unspecified RTCM messages
 	// may have flags for rate
 	RTCMMsgNone RTCMMsgFlags = 0
-	RTCMMsgAuto RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgARP | RTCMMsgLax // enable intelligently
+	RTCMMsgAuto RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgARP | RTCMMsgLax                 // enable intelligently
 	RTCMMsgAny  RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgOther // any message (not flag)
 )
 
@@ -471,7 +471,6 @@ func (cp *ConfigProps) SetTimePulse(tp TimePulse) {
 	cp.valid |= timePulseProps
 }
 
-
 // GetMode returns the mode value and whether it's set
 func (cp *ConfigProps) GetMode() (Mode, bool) {
 	if cp.valid&PropIDMode != 0 {
@@ -499,8 +498,6 @@ func (cp *ConfigProps) SetAntennaCableDelay(val time.Duration) {
 	cp.antennaCableDelay = val
 	cp.valid |= PropIDAntennaCableDelay
 }
-
-
 
 // GetStationary returns the stationary value and whether it's set
 func (cp *ConfigProps) GetStationary() (bool, bool) {
@@ -800,12 +797,9 @@ const (
 	SurveyAgain SurveyFlags = 1 << iota // do a survey even if we have done one already
 )
 
-// Survey specifies whether a survey should be performed, and if so, its parameters
-// The survey is performed when the time mode is one of the modes in When.
-// If When is non-zero, then AccLimit must also be non-zero.
+// Survey specifies the parameters for performing a survey-in.
 type Survey struct {
 	Flags    SurveyFlags   // control survey behavior
-	When     TimeModeSet   // perform a survey when the time mode is one of these
 	MinDur   time.Duration // survey should run at least this long
 	AccLimit Length        // survey should run until this accuracy is achieved
 }

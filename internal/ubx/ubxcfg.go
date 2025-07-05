@@ -451,7 +451,7 @@ func newCfgValsetRequest(items []ucv.Item, layers bin.CfgValsetLayer) (*bin.CfgV
 
 func (c *Configurator) pollPrt() error {
 	// This is used both by old and new.
-	if c.target.Opts.BaudRate == 0 && !c.target.Opts.SetsMsgs() && c.target.Opts.Survey.When == 0 {
+	if c.target.Opts.BaudRate == 0 && !c.target.Opts.SetsMsgs() {
 		return nil
 	}
 	return c.addPollRequest(bin.CfgPrtID)

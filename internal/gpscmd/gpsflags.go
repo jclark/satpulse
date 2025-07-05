@@ -216,7 +216,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 
 	if survey {
 		configChanged = true
-		vars.configOpts.Survey.When = gpsprot.TimeModeAny
 		vars.configOpts.Survey.MinDur = time.Duration(surveyTime) * time.Second
 		if surveyAcc < 0.001 {
 			return nil, nil, fmt.Errorf("--survey-acc must at least 0.001 (1 mm)")
@@ -229,7 +228,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 	} else if vars.mobile {
 		configChanged = true
-		vars.configOpts.Survey.When = 0
 		vars.mode.Set(gpsprot.Mode{Static: false})
 	}
 	if !gpsprot.Point3D(fixedPosECEF).IsZero() {
