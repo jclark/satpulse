@@ -129,9 +129,6 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 	if v, ok := cfgValGet(raw, ucv.KTpPolTp1); ok {
 		cp.SetTimePulsePolarityRising(v)
 	}
-	if v, ok := cfgValGet(raw, ucv.KNavspgDynmodel); ok {
-		cp.SetStationary(v == ucv.ENavspgDynmodelStat)
-	}
 }
 
 // Transaction determines the transaction to achieve the specified target.
@@ -189,7 +186,7 @@ func (tb *txnBuilder) build() error {
 	cp := &tb.target.Props
 	tg := tb.timePulseBuild()
 
-	err := tb.timeModeBuild()
+	err := tb.modeBuild()
 	if err != nil {
 		return err
 	}
@@ -205,13 +202,6 @@ func (tb *txnBuilder) build() error {
 		txnAddItem(tb, ucv.KTpTimegridTp1, tg)
 		txnAddItem(tb, ucv.KNavspgUtcstandard, gnssToEnumNavspgUtcstandard(v))
 		txnAddItem(tb, ucv.KRateTimeref, gnssToRateTimeref(v))
-	}
-	if v, ok := cp.GetStationary(); ok {
-		dm := ucv.ENavspgDynmodelPort
-		if v {
-			dm = ucv.ENavspgDynmodelStat
-		}
-		txnAddItem(tb, ucv.KNavspgDynmodel, dm)
 	}
 	if true {
 		// new code, under development
@@ -313,13 +303,29 @@ func (known *CfgVals) NavMsgAuth(props *gpsprot.ConfigProps) []ucv.Item {
 	return items
 }
 
-func (tb *txnBuilder) timeModeBuild() error {
+func (tb *txnBuilder) modeBuild() error {
 	switch tb.ver.ProductCategory() {
 	case "FTS", "TIM", "HPG":
-		// these products support time mode
+		return tb.timeModeBuild()
 	default:
+		tb.dynModelBuild()
 		return nil
 	}
+}
+
+func (tb *txnBuilder) dynModelBuild() {
+	static := dynModelStatic(tb.target)
+	if static == nil {
+		return
+	}
+	dm := ucv.ENavspgDynmodelPort
+	if *static {
+		dm = ucv.ENavspgDynmodelStat
+	}
+	txnAddItem(tb, ucv.KNavspgDynmodel, dm)
+}
+
+func (tb *txnBuilder) timeModeBuild() error {
 	// Determine whether we have the needed keys
 	info := tmodeRequiredInfo(tb.target, resurveyChange)
 	requiredKeys := tmodeRequiredKeys(info)
@@ -364,7 +370,12 @@ func (raw *CfgVals) getMode() (gpsprot.Mode, bool) {
 	if tmc.fromCfgVals(raw, tmodeInfoRelevant) {
 		return tmc.getMode(), true
 	}
-	return gpsprot.Mode{}, false
+	mode := gpsprot.Mode{}
+	if v, ok := cfgValGet(raw, ucv.KNavspgDynmodel); ok {
+		mode.Static = v == ucv.ENavspgDynmodelStat
+		return mode, true
+	}
+	return mode, false
 }
 
 func (raw *CfgVals) getTimePulseOnlyWhenLocked() (v bool, ok bool) {

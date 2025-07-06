@@ -403,7 +403,6 @@ func TestTimeModeBuild_MissingKeys(t *testing.T) {
 		name      string
 		target    *gpsprot.ConfigTarget
 		known     *CfgVals
-		ver       *Version
 		expectErr bool
 		wantKeys  []ucv.Key
 	}{
@@ -415,9 +414,6 @@ func TestTimeModeBuild_MissingKeys(t *testing.T) {
 				return target
 			}(),
 			known: newCfgVals(),
-			ver: &Version{
-				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
-			},
 			expectErr: false,
 			wantKeys:  nil,
 		},
@@ -429,9 +425,6 @@ func TestTimeModeBuild_MissingKeys(t *testing.T) {
 				return target
 			}(),
 			known: newCfgVals(),
-			ver: &Version{
-				FW: &FWVer{ProductCategory: "NEO", Major: 9, Minor: 1},
-			},
 			expectErr: false,
 			wantKeys:  nil,
 		},
@@ -446,9 +439,6 @@ func TestTimeModeBuild_MissingKeys(t *testing.T) {
 				return target
 			}(),
 			known: newCfgVals(),
-			ver: &Version{
-				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
-			},
 			expectErr: false,
 			wantKeys:  []ucv.Key{ucv.KTmodeSvinMinDur.Key(), ucv.KTmodeSvinAccLimit.Key()},
 		},
@@ -459,7 +449,6 @@ func TestTimeModeBuild_MissingKeys(t *testing.T) {
 			tb := &txnBuilder{
 				target: tt.target,
 				known:  tt.known,
-				ver:    tt.ver,
 			}
 
 			err := tb.timeModeBuild()
@@ -477,14 +466,7 @@ func TestTimeModeBuild_MissingKeys(t *testing.T) {
 					t.Errorf("expected %d keys, got %d", len(tt.wantKeys), len(tb.keys))
 				}
 				for _, wantKey := range tt.wantKeys {
-					found := false
-					for _, gotKey := range tb.keys {
-						if gotKey == wantKey {
-							found = true
-							break
-						}
-					}
-					if !found {
+					if !slices.Contains(tb.keys, wantKey) {
 						t.Errorf("expected key %v not found in %v", wantKey, tb.keys)
 					}
 				}
@@ -499,7 +481,6 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 		name        string
 		target      *gpsprot.ConfigTarget
 		known       *CfgVals
-		ver         *Version
 		expectErr   bool
 		wantItems   []ucv.Item
 		wantSurvey  bool
@@ -516,9 +497,6 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 				cfgValSet(cv, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
 				return cv
 			}(),
-			ver: &Version{
-				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
-			},
 			expectErr: false,
 			wantItems: []ucv.Item{
 				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeDisabled),
@@ -541,9 +519,6 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 				cfgValSet(cv, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
 				return cv
 			}(),
-			ver: &Version{
-				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
-			},
 			expectErr: false,
 			wantItems: []ucv.Item{
 				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeSurveyIn),
@@ -571,9 +546,6 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 				cfgValSet(cv, ucv.KTmodeSvinAccLimit, 5*1000*10)
 				return cv
 			}(),
-			ver: &Version{
-				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
-			},
 			expectErr: false,
 			wantItems: []ucv.Item{
 				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeSurveyIn),
@@ -600,9 +572,6 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 				cfgValSet(cv, ucv.KTmodeSvinAccLimit, 5*1000*10)
 				return cv
 			}(),
-			ver: &Version{
-				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
-			},
 			expectErr: false,
 			wantItems: []ucv.Item{
 				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeSurveyIn),
@@ -628,9 +597,6 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 				return target
 			}(),
 			known: newCfgVals(),
-			ver: &Version{
-				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
-			},
 			expectErr: false,
 			wantItems: []ucv.Item{
 				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeFixed),
@@ -653,9 +619,6 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 				cfgValSet(cv, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
 				return cv
 			}(),
-			ver: &Version{
-				FW: &FWVer{ProductCategory: "TIM", Major: 9, Minor: 1},
-			},
 			expectErr: false,
 			wantItems: nil,
 			wantSurvey: false,
@@ -667,7 +630,6 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 			tb := &txnBuilder{
 				target: tt.target,
 				known:  tt.known,
-				ver:    tt.ver,
 			}
 
 			err := tb.timeModeBuild()
@@ -698,6 +660,93 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 
 			if tb.survey != tt.wantSurvey {
 				t.Errorf("expected survey flag %v, got %v", tt.wantSurvey, tb.survey)
+			}
+		})
+	}
+}
+
+
+// Test dynModelBuild function - SPG receiver dynamic model handling
+func TestDynModelBuild(t *testing.T) {
+	expectStat := ucv.ENavspgDynmodelStat
+	expectPort := ucv.ENavspgDynmodelPort
+	
+	tests := []struct {
+		name           string
+		mode           gpsprot.Option[gpsprot.Mode]
+		setStatic      bool
+		expectDynModel *ucv.EnumNavspgDynmodel // nil means no item expected
+	}{
+		{
+			name:           "SetStatic true - should set stationary",
+			setStatic:      true,
+			expectDynModel: &expectStat,
+		},
+		{
+			name: "Mode.Static true - should set stationary",
+			mode: func() gpsprot.Option[gpsprot.Mode] {
+				var m gpsprot.Option[gpsprot.Mode]
+				m.Set(gpsprot.Mode{Static: true})
+				return m
+			}(),
+			expectDynModel: &expectStat,
+		},
+		{
+			name: "Mode.Static false - should set portable",
+			mode: func() gpsprot.Option[gpsprot.Mode] {
+				var m gpsprot.Option[gpsprot.Mode]
+				m.Set(gpsprot.Mode{Static: false})
+				return m
+			}(),
+			expectDynModel: &expectPort,
+		},
+		{
+			name:           "no Mode, no SetStatic - should do nothing",
+			expectDynModel: nil,
+		},
+		{
+			name: "SetStatic true overrides Mode.Static false",
+			mode: func() gpsprot.Option[gpsprot.Mode] {
+				var m gpsprot.Option[gpsprot.Mode]
+				m.Set(gpsprot.Mode{Static: false})
+				return m
+			}(),
+			setStatic:      true,
+			expectDynModel: &expectStat,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := gpsprot.NewConfigTarget()
+			target.Opts.SetStatic = tt.setStatic
+			if tt.mode.IsSet() {
+				target.Props.SetMode(tt.mode.Get())
+			}
+			
+			tb := &txnBuilder{
+				target: target,
+				known:  newCfgVals(),
+			}
+
+			tb.dynModelBuild()
+
+			if tt.expectDynModel == nil {
+				if len(tb.items) != 0 {
+					t.Errorf("expected no items, got %v", tb.items)
+				}
+			} else {
+				if len(tb.items) != 1 {
+					t.Errorf("expected 1 item, got %d: %v", len(tb.items), tb.items)
+					return
+				}
+				item := tb.items[0]
+				if item.Key != ucv.KNavspgDynmodel.Key() {
+					t.Errorf("expected KNavspgDynmodel key, got %v", item.Key)
+				}
+				if ucv.EnumNavspgDynmodel(item.Value) != *tt.expectDynModel {
+					t.Errorf("expected dynmodel %v, got %v", *tt.expectDynModel, item.Value)
+				}
 			}
 		})
 	}

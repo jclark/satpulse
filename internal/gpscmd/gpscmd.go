@@ -63,11 +63,6 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.enabledSignals != 0 {
 		cp.SetSignalsEnabled(v.enabledSignals)
 	}
-	if v.mobile {
-		cp.SetStationary(false)
-	} else if !v.fixedPosECEF.IsZero() {
-		cp.SetStationary(true)
-	}
 	if v.mode.IsSet() {
 		cp.SetMode(v.mode.Get())
 	}

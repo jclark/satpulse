@@ -33,9 +33,6 @@ type flagVars struct {
 	enabledSignals gpsprot.SignalSet
 	pps            gpsprot.Option[time.Duration]
 	antCableDelay  gpsprot.Option[time.Duration]
-	mobile         bool                        // TODO: remove when switched to new interface
-	fixedPosECEF   gpsprot.Point3D             // TODO: remove when switched to new interface
-	fixedPosAcc    gpsprot.Length              // TODO: remove when switched to new interface
 	mode           gpsprot.Option[gpsprot.Mode]
 	configOpts     gpsprot.ConfigOptions
 }
@@ -78,6 +75,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	fixedPosAcc := defaultFixedPosAcc
 	pps := 0.0
 	antCableDelay := int64(0)
+	mobile := false
 
 	var rawOut rawOutOpt
 	var pvtOut pvtOutOpt
@@ -111,7 +109,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|VTG|none,...")
 	flags.Float64VarP(&pps, "pps", "p", 0, "configure the GPS receiver to enable a PPS signal with pulse `width` in seconds")
 	flags.Int64Var(&antCableDelay, "ant-cable-delay", 0, "antenna cable delay in nanoseconds")
-	flags.BoolVar(&vars.mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
+	flags.BoolVar(&mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
 	flags.BoolVar(&survey, "survey", false, "instruct the GPS receiver to perform a survey")
 	flags.Uint32Var(&surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
 	flags.Float64Var(&surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
@@ -223,27 +221,25 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		vars.configOpts.Survey.AccLimit = gpsprot.Meters(surveyAcc)
 		vars.configOpts.Survey.Flags |= gpsprot.SurveyAgain
 		vars.mode.Set(gpsprot.Mode{Static: true})
-		if vars.mobile {
+		if mobile {
 			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --survey", cmdName)
 		}
-	} else if vars.mobile {
+	} else if mobile {
 		configChanged = true
 		vars.mode.Set(gpsprot.Mode{Static: false})
 	}
 	if !gpsprot.Point3D(fixedPosECEF).IsZero() {
 		configChanged = true
-		vars.fixedPosECEF = gpsprot.Point3D(fixedPosECEF)
 		if fixedPosAcc < 0.001 {
 			return nil, nil, fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
 		}
-		vars.fixedPosAcc = gpsprot.Meters(fixedPosAcc)
 		vars.mode.Set(gpsprot.Mode{
 			Static:       true,
 			PosType:      gpsprot.PosTypeECEF,
 			FixedPosECEF: gpsprot.Point3D(fixedPosECEF),
 			FixedPosAcc:  gpsprot.Meters(fixedPosAcc),
 		})
-		if vars.mobile {
+		if mobile {
 			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --fixed-pos-ecef", cmdName)
 		} else if survey {
 			return nil, nil, fmt.Errorf("%s command must not specify both --survey and --fixed-pos-ecef", cmdName)

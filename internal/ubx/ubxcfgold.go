@@ -50,7 +50,6 @@ var cfgOldProps = struct {
 	},
 	nav5: []gpsprot.PropIDs{
 		gpsprot.PropIDTimeGNSS,
-		gpsprot.PropIDStationary,
 	},
 }
 
@@ -650,14 +649,13 @@ func (raw *CfgOld) changeRate(cp *gpsprot.ConfigProps) *bin.CfgRate {
 	return &rate
 }
 
-func (raw *CfgOld) cookNav5(cp *gpsprot.ConfigProps) {
+func (raw *CfgOld) cookNav5(cp *gpsprot.ConfigProps, ver *Version) {
 	nav5 := raw.nav5
 	if nav5 == nil {
 		return
 	}
-	stationary := false
-	if nav5.DynModel == bin.CfgNav5DynStationary {
-		stationary = true
+	if ver.tmodeLevel() == 0 {
+		cp.SetMode(gpsprot.Mode{Static: nav5.DynModel == bin.CfgNav5DynStationary})
 	}
 	if _, exist := cp.GetTimeGNSS(); !exist {
 		gnss := nav5GNSS(nav5)
@@ -665,7 +663,6 @@ func (raw *CfgOld) cookNav5(cp *gpsprot.ConfigProps) {
 			cp.SetTimeGNSS(gnss)
 		}
 	}
-	cp.SetStationary(stationary)
 }
 
 func nav5GNSS(nav5 *bin.CfgNav5) gpsprot.GNSS {
@@ -685,24 +682,27 @@ func nav5GNSS(nav5 *bin.CfgNav5) gpsprot.GNSS {
 	return 0
 }
 
-func (raw *CfgOld) changeNav5(cp *gpsprot.ConfigProps) *bin.CfgNav5 {
+func (raw *CfgOld) changeNav5(target *gpsprot.ConfigTarget, ver *Version) *bin.CfgNav5 {
 	if raw.nav5 == nil {
 		return nil
 	}
 
 	nav5 := *raw.nav5
+	// Note we cannot use our normal technique comparing new and old nav5 because of the Mask field.
+	// Instead we set the Mask only if something has changed.
 	nav5.Mask = 0
-	if stationary, exists := cp.GetStationary(); exists {
-		if stationary {
+	if static := dynModelStatic(target); static != nil && ver.tmodeLevel() == 0 {
+		if *static {
 			nav5.DynModel = bin.CfgNav5DynStationary
 		} else if nav5.DynModel == bin.CfgNav5DynStationary {
 			nav5.DynModel = bin.CfgNav5DynPortable
 		}
-		nav5.Mask |= bin.CfgNav5MaskDyn
+		if nav5.DynModel != raw.nav5.DynModel {
+			nav5.Mask |= bin.CfgNav5MaskDyn
+		}
 	}
 
-	if gnss, exists := cp.GetTimeGNSS(); exists {
-		nav5.Mask |= bin.CfgNav5MaskUtc
+	if gnss, exists := target.Props.GetTimeGNSS(); exists {
 		switch gnss {
 		case gpsprot.GPS:
 			nav5.UtcStandard = bin.CfgNav5UtcUSNO
@@ -712,12 +712,12 @@ func (raw *CfgOld) changeNav5(cp *gpsprot.ConfigProps) *bin.CfgNav5 {
 			nav5.UtcStandard = bin.CfgNav5UtcNTSC
 		case gpsprot.GAL:
 			nav5.UtcStandard = bin.CfgNav5UtcEU
-		default:
-			nav5.Mask &^= bin.CfgNav5MaskUtc
+		}
+		if nav5.UtcStandard != raw.nav5.UtcStandard {
+			nav5.Mask |= bin.CfgNav5MaskUtc
 		}
 	}
-
-	if nav5 == *raw.nav5 {
+	if nav5.Mask == 0 {
 		return nil
 	}
 	return &nav5

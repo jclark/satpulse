@@ -123,7 +123,6 @@ type ConfigProps struct {
 	timePulse         TimePulse
 	mode              Mode
 	antennaCableDelay time.Duration
-	stationary        bool
 	navMsgAuth        NavMsgAuth
 }
 
@@ -138,7 +137,6 @@ const (
 	PropIDTimePulsePolarityRising
 	PropIDMode
 	PropIDAntennaCableDelay
-	PropIDStationary
 	PropIDNavMsgAuth
 )
 
@@ -153,7 +151,6 @@ var propNames = []string{
 	"TimePulsePolarityRising",
 	"Mode",
 	"AntennaCableDelay",
-	"Stationary",
 	"NavMsgAuth",
 }
 
@@ -499,20 +496,6 @@ func (cp *ConfigProps) SetAntennaCableDelay(val time.Duration) {
 	cp.valid |= PropIDAntennaCableDelay
 }
 
-// GetStationary returns the stationary value and whether it's set
-func (cp *ConfigProps) GetStationary() (bool, bool) {
-	if cp.valid&PropIDStationary != 0 {
-		return cp.stationary, true
-	}
-	return false, false
-}
-
-// SetStationary sets the stationary value
-func (cp *ConfigProps) SetStationary(val bool) {
-	cp.stationary = val
-	cp.valid |= PropIDStationary
-}
-
 // GetNavMsgAuth returns the navMsgAuth value and whether it's set
 func (cp *ConfigProps) GetNavMsgAuth() (NavMsgAuth, bool) {
 	if cp.valid&PropIDNavMsgAuth != 0 {
@@ -590,9 +573,6 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	if both&PropIDAntennaCableDelay != 0 && cp.antennaCableDelay != other.antennaCableDelay {
 		result.SetAntennaCableDelay(other.antennaCableDelay)
 	}
-	if both&PropIDStationary != 0 && cp.stationary != other.stationary {
-		result.SetStationary(other.stationary)
-	}
 	if both&PropIDNavMsgAuth != 0 && cp.navMsgAuth != other.navMsgAuth {
 		result.SetNavMsgAuth(other.navMsgAuth)
 	}
@@ -666,9 +646,6 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	}
 	if cp.valid&PropIDAntennaCableDelay != 0 {
 		m["antennaCableDelay"] = float64(cp.antennaCableDelay) / float64(time.Second)
-	}
-	if cp.valid&PropIDStationary != 0 {
-		m["stationary"] = cp.stationary
 	}
 	if cp.valid&PropIDNavMsgAuth != 0 {
 		switch cp.navMsgAuth {

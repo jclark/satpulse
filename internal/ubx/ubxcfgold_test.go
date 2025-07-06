@@ -53,25 +53,27 @@ func TestChangeTp5GNSS(t *testing.T) {
 func TestNav5(t *testing.T) {
 	raw := &CfgOld{nav5: new(ubxbin.CfgNav5)}
 
-	cp := &gpsprot.ConfigProps{}
+	target := &gpsprot.ConfigTarget{}
+	ver := &Version{}
+	cp := &target.Props
 	cp.SetPPS(100 * time.Millisecond)
 
-	raw.nav5 = raw.changeNav5(cp)
+	raw.nav5 = raw.changeNav5(target, ver)
 
 	ncp := gpsprot.ConfigProps{}
-	raw.cookNav5(&ncp)
+	raw.cookNav5(&ncp, ver)
 	bad := cp.Inconsistent(&ncp)
 	if !bad.IsEmpty() {
 		t.Errorf("nav5 change failed: %v", bad)
 	}
 
-	rep := raw.changeNav5(cp)
+	rep := raw.changeNav5(target, ver)
 
 	if rep != nil {
 		t.Errorf("repeated changeNav5 wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeNav5(new(gpsprot.ConfigProps))
+	rep = raw.changeNav5(new(gpsprot.ConfigTarget), ver)
 	if rep != nil {
 		t.Errorf("changeNav5 with nothing wasn't a no-op: %v", rep)
 	}

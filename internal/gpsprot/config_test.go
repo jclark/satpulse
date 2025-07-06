@@ -13,7 +13,7 @@ func TestConfigProps(t *testing.T) {
 	cp.SetTimePulseAlignToGNSS(true)
 
 	validProps := []PropIDs{PropIDTimePulseWidth, PropIDTimePulseAlignToGNSS}
-	invalidProps := []PropIDs{PropIDTimePulsePeriod, PropIDStationary}
+	invalidProps := []PropIDs{PropIDTimePulsePeriod, PropIDMode}
 
 	timePulseWidth, ok := cp.GetTimePulseWidth()
 	if !ok {

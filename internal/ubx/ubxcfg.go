@@ -499,7 +499,9 @@ func (c *Configurator) pollRate() error {
 }
 
 func (c *Configurator) pollNav5() error {
-	if !c.target.UsesAny(cfgOldProps.nav5...) {
+	if !c.target.UsesAny(cfgOldProps.nav5...) &&
+		// this handles when we need to set dynmodel
+		!(dynModelStatic(c.target) != nil && c.ver.tmodeLevel() == 0) {
 		return nil
 	}
 	return c.addPollRequest(bin.CfgNav5ID)
@@ -578,11 +580,13 @@ func (c *Configurator) setBaudRate() error {
 }
 
 func (c *Configurator) setNav5() error {
-	nav5 := c.raw.changeNav5(&c.target.Props)
+	nav5 := c.raw.changeNav5(c.target, c.ver)
 	if nav5 == nil {
 		return nil
 	}
 	// XXX this isn't quite right, because of the mask
+	// msgSetRequest should pass a flag to AddMsg saying whether it came from a get or a set
+	// Then on a set AddMsg for nav5 should only update things according to the mask
 	return c.addMsgSetRequest(nav5)
 }
 
@@ -677,7 +681,7 @@ func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigProps {
 		raw.cookTp5(cm)
 		raw.cookGNSS(cm)
 		// must call cookNav5 after cookTp5, because we want to prefer primary GNSS from TP5
-		raw.cookNav5(cm)
+		raw.cookNav5(cm, ver)
 	}
 	return cm
 }

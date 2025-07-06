@@ -27,6 +27,10 @@ func TestReplay(t *testing.T) {
 	}
 }
 
+func HideTestReplayBug(t *testing.T) {
+	testReplayFile(t, "bug")
+}
+
 func testReplayFile(t *testing.T, name string) {
 	path := filepath.Join("testdata", name+".jsonl")
 	f, err := os.Open(path)

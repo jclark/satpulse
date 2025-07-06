@@ -138,7 +138,7 @@ func tmodeRequiredInfo(target *gpsprot.ConfigTarget, method resurveyMethod) tmod
 	surveyInfo := tmodeInfoNone
 	if method == resurveyChange && survey.Flags&gpsprot.SurveyAgain != 0 {
 		surveyInfo = tmodeInfoSurvey
-	}  
+	}
 
 	if !haveMode {
 		// setStatic must be true because early return above
@@ -150,7 +150,7 @@ func tmodeRequiredInfo(target *gpsprot.ConfigTarget, method resurveyMethod) tmod
 		// strange case: we have a Mode property set as non-static, but SetStatic is set
 		return surveyInfo
 
-	} 
+	}
 	// we have a Mode property and it is static
 	// setStatic is ignored in this case
 	if mode.PosType == gpsprot.PosTypeNone {
@@ -778,3 +778,18 @@ func divModRound(x, y int64) (int64, int64) {
 	return quotient, x - quotient*y
 }
 
+// dynModelStatic returns a pointer to a boolean saying how to set dynmodel
+// nil means do not set dynmodel
+// true means set dynmodel to static
+// false means set dynmodel to non-static (i.e. portable)
+func dynModelStatic(target *gpsprot.ConfigTarget) *bool {
+	static := target.Opts.SetStatic
+	if !static {
+		mode, ok := target.Props.GetMode()
+		if !ok {
+			return nil // no Mode, no SetStatic
+		}
+		static = mode.Static
+	}
+	return &static
+}
