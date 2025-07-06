@@ -171,10 +171,15 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 	if p == nil {
 		return
 	}
-	sigs, ok := p.GetSignalsEnabled()
-	if !ok {
-		return
+	if sigs, ok := p.GetSignalsEnabled(); ok {
+		printSignals(f, sigs)
 	}
+	if mode, ok := p.GetMode(); ok {
+		printMode(f, mode)
+	}
+}
+
+func printSignals(f *os.File, sigs gpsprot.SignalSet) {
 	groups := sigs.GNSSStringGroups()
 	if len(groups) == 0 {
 		return
@@ -187,6 +192,24 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 	for _, group := range groups {
 		fmt.Fprintf(f, "%s signals enabled: %s\n", group[0], strings.Join(group[1:], ", "))
 	}
+}
+
+func printMode(f *os.File, mode gpsprot.Mode) {
+	modeName := "mobile"
+	if mode.Static {
+		modeName = "static"
+	}
+	fmt.Fprintf(f, "Mode: %s\n", modeName)
+	if !mode.Static {
+		return
+	}
+	switch mode.PosType {
+	case gpsprot.PosTypeNone:
+		return
+	case gpsprot.PosTypeECEF:
+		fmt.Fprintf(f, "Fixed position ECEF: %s\n", mode.FixedPosECEF.String())
+	}
+	fmt.Fprintf(f, "Fixed position accuracy: %s m\n", mode.FixedPosAcc.String())
 }
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {

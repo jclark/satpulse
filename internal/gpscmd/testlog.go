@@ -31,6 +31,9 @@ type TestLogConfigEntry struct {
 	Error          string     `json:"error,omitempty"`
 	SignalsEnabled [][]string `json:"signalsEnabled,omitempty"`
 	BaudRate       *uint32    `json:"baudRate,omitempty"`
+	Static         *bool      `json:"static,omitempty"`
+	FixedPosECEF   []float64  `json:"fixedPosECEF,omitempty"`
+	FixedPosAcc    *float64   `json:"fixedPosAcc,omitempty"`
 }
 
 func writeTestLogHead(lf *logfile.LogFile, lg *slog.Logger, args []string) {
@@ -78,6 +81,18 @@ func writeTestLogConfigProps(lf *logfile.LogFile, lg *slog.Logger, props *gpspro
 	} else if props != nil {
 		if sigs, ok := props.GetSignalsEnabled(); ok {
 			entry.SignalsEnabled = sigs.GNSSStringGroups()
+		}
+		if mode, ok := props.GetMode(); ok {
+			static := mode.Static
+			entry.Static = &static
+			switch mode.PosType {
+			case gpsprot.PosTypeECEF:
+				for i := range 3 {
+					entry.FixedPosECEF = append(entry.FixedPosECEF, float64(mode.FixedPosECEF[i].Meters()))
+				}
+				acc := mode.FixedPosAcc.Meters()
+				entry.FixedPosAcc = &acc
+			}
 		}
 	}
 	writeTestLogEntry(lf, lg, entry)

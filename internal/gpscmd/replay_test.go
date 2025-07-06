@@ -247,11 +247,11 @@ func (r *replayer) waitAfterSend(req gpsprot.ConfigRequest, tSent time.Time, act
 	awaitingResp := true
 	// tChecksumOK tracks the last time we received a packet with valid checksum
 	var tChecksumOK time.Time
-	
+
 	for range maxTries {
 		// Track packets with valid checksums before feeding them
 		initialInIdx := r.inIdx
-		
+
 		// Feed all input packets before next output packet
 		r.feedUpTo(r.outIdx)
 
@@ -296,13 +296,13 @@ func (r *replayer) waitAfterSend(req gpsprot.ConfigRequest, tSent time.Time, act
 		// do not retry
 		break
 	}
-	
+
 	// Handle speed change case: if no ACK but valid packets received after speed change sent
 	if awaitingAck && req.ChangeSpeed() != 0 && tChecksumOK.After(tSent) {
 		req.Done()
 		return
 	}
-	
+
 	if r.configErr == nil {
 		r.configErr = err
 	}
@@ -343,12 +343,12 @@ func (r *replayer) feedUpTo(outIdx int) {
 func (r *replayer) packetsEqual(msgID string, actual []byte, expected gpsio.PacketLogEntry) bool {
 	actualStr := string(actual)
 	expectedStr := expected.Data()
-	
+
 	// First check if they're exactly equal
 	if actualStr == expectedStr {
 		return true
 	}
-	
+
 	// If not, check special cases for messages that might have reordered data
 	switch msgID {
 	case "CFG-VALSET":
@@ -360,20 +360,20 @@ func (r *replayer) packetsEqual(msgID string, actual []byte, expected gpsio.Pack
 		// Try to parse both messages to provide better error details
 		actualMsg, actualErr := ubxbin.ParseMsg(actualStr)
 		expectedMsg, expectedErr := ubxbin.ParseMsg(expectedStr)
-		
+
 		if actualErr != nil {
 			r.t.Errorf("%s: failed to parse actual packet: %v", msgID, actualErr)
 		}
 		if expectedErr != nil {
 			r.t.Errorf("%s: failed to parse expected packet: %v", msgID, expectedErr)
 		}
-		
+
 		if actualErr == nil && expectedErr == nil {
 			r.t.Errorf("%s: packets differ: actual %+v, expected %+v", msgID, actualMsg, expectedMsg)
 		} else if actualErr == nil || expectedErr == nil {
 			r.t.Errorf("%s: packet content differs (length actual=%d, expected=%d)", msgID, len(actualStr), len(expectedStr))
 		}
-		
+
 		return false
 	}
 }
@@ -402,6 +402,29 @@ func (r *replayer) verify() {
 			actualGroups := actual.GNSSStringGroups()
 			if !equalStringSlices(actualGroups, cfg.SignalsEnabled) {
 				r.t.Errorf("signals mismatch: got %v, want %v", actualGroups, cfg.SignalsEnabled)
+			}
+		}
+	}
+	// Verify mode
+	if cfg.Static != nil {
+		mode, ok := props.GetMode()
+		if !ok {
+			r.t.Error("mode not set")
+		} else {
+			if mode.Static != *cfg.Static {
+				r.t.Errorf("static mode mismatch: got %v, want %v", mode.Static, *cfg.Static)
+			}
+			if mode.PosType == gpsprot.PosTypeECEF && len(cfg.FixedPosECEF) == 3 {
+				for i := range 3 {
+					if mode.FixedPosECEF[i].Meters() != cfg.FixedPosECEF[i] {
+						r.t.Errorf("fixed position ECEF mismatch at index %d: got %f, want %f",
+							i, mode.FixedPosECEF[i].Meters(), cfg.FixedPosECEF[i])
+					}
+				}
+				if mode.FixedPosAcc.Meters() != *cfg.FixedPosAcc {
+					r.t.Errorf("fixed position accuracy mismatch: got %f, want %f",
+						mode.FixedPosAcc.Meters(), *cfg.FixedPosAcc)
+				}
 			}
 		}
 	}
@@ -450,7 +473,7 @@ func valsetPacketsEqual(t *testing.T, actual, expected string) bool {
 
 	// Compare fixed fields
 	if actualValset.CfgValsetFixed != expectedValset.CfgValsetFixed {
-		t.Errorf("CFG-VALSET: fixed fields differ: actual %+v, expected %+v", 
+		t.Errorf("CFG-VALSET: fixed fields differ: actual %+v, expected %+v",
 			actualValset.CfgValsetFixed, expectedValset.CfgValsetFixed)
 		return false
 	}
@@ -471,7 +494,7 @@ func valsetPacketsEqual(t *testing.T, actual, expected string) bool {
 	// Create maps for comparison
 	actualMap := make(map[string]any)
 	expectedMap := make(map[string]any)
-	
+
 	for i, key := range actualKeys {
 		actualMap[key] = actualValues[i]
 	}
@@ -527,7 +550,7 @@ func valgetPacketsEqual(t *testing.T, actual, expected string) bool {
 
 	// Compare fixed fields
 	if actualValget.CfgValgetFixed != expectedValget.CfgValgetFixed {
-		t.Errorf("CFG-VALGET: fixed fields differ: actual %+v, expected %+v", 
+		t.Errorf("CFG-VALGET: fixed fields differ: actual %+v, expected %+v",
 			actualValget.CfgValgetFixed, expectedValget.CfgValgetFixed)
 		return false
 	}
@@ -548,7 +571,7 @@ func valgetPacketsEqual(t *testing.T, actual, expected string) bool {
 	// Create maps for comparison (to ignore order)
 	actualMap := make(map[string]bool)
 	expectedMap := make(map[string]bool)
-	
+
 	for _, key := range actualKeys {
 		actualMap[key] = true
 	}
