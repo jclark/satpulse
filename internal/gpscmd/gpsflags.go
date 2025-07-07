@@ -212,17 +212,19 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	vars.configOpts.PVTMsg = pvtMsg
 	vars.configOpts.RawMsg = rawMsg
 
-	if survey {
+	if survey || vars.configOpts.SetStatic {
 		configChanged = true
 		vars.configOpts.Survey.MinDur = time.Duration(surveyTime) * time.Second
 		if surveyAcc < 0.001 {
 			return nil, nil, fmt.Errorf("--survey-acc must at least 0.001 (1 mm)")
 		}
 		vars.configOpts.Survey.AccLimit = gpsprot.Meters(surveyAcc)
-		vars.configOpts.Survey.Flags |= gpsprot.SurveyAgain
-		vars.mode.Set(gpsprot.Mode{Static: true})
-		if mobile {
-			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --survey", cmdName)
+		if survey {
+			vars.configOpts.Survey.Flags |= gpsprot.SurveyAgain
+			vars.mode.Set(gpsprot.Mode{Static: true})
+			if mobile {
+				return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --survey", cmdName)
+			}
 		}
 	} else if mobile {
 		configChanged = true
