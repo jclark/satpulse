@@ -220,8 +220,8 @@ func (c *Configurator) saveMinimal() error {
 		saveMask |= bin.CfgCfgRXMConf
 	}
 	// If any messages are enabled, then the rate is set, which is part of the Nav configuration section.
-	// XXX handle survey when we fix that up ip satpulsetool gps
-	if c.target.Props.SetsAny(cfgOldProps.nav5...) || c.target.Opts.EnablesMsgs() {
+	// c.survey case handles where SetStatic resulted in a survey
+	if c.target.Props.SetsAny(cfgOldProps.nav5...) || c.target.Props.SetsAny(cfgOldProps.tmode...) || c.survey || c.target.Opts.EnablesMsgs() {
 		saveMask |= bin.CfgCfgNavConf
 	}
 	if saveMask == 0 {
