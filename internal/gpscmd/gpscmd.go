@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpscfg"
@@ -174,6 +175,15 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 	if sigs, ok := p.GetSignalsEnabled(); ok {
 		printSignals(f, sigs)
 	}
+	if timeGNSS, ok := p.GetTimeGNSS(); ok {
+		printTimeGNSS(f, timeGNSS)
+	}
+	if antCableDelay, ok := p.GetAntennaCableDelay(); ok {
+		printAntennaCableDelay(f, antCableDelay)
+	}
+	if timePulse, ok := p.GetTimePulse(); ok {
+		printTimePulse(f, timePulse)
+	}
 	if mode, ok := p.GetMode(); ok {
 		printMode(f, mode)
 	}
@@ -210,6 +220,33 @@ func printMode(f *os.File, mode gpsprot.Mode) {
 		fmt.Fprintf(f, "Fixed position ECEF: %s\n", mode.FixedPosECEF.String())
 	}
 	fmt.Fprintf(f, "Fixed position accuracy: %s m\n", mode.FixedPosAcc.String())
+}
+
+func printTimeGNSS(f *os.File, timeGNSS gpsprot.GNSS) {
+	fmt.Fprintf(f, "Time GNSS: %s\n", timeGNSS.String())
+}
+
+func printAntennaCableDelay(f *os.File, delay time.Duration) {
+	fmt.Fprintf(f, "Antenna cable delay: %d ns\n", delay.Nanoseconds())
+}
+
+func printTimePulse(f *os.File, tp gpsprot.TimePulse) {
+	if tp.Width == 0 {
+		fmt.Fprint(f, "Time pulse: disabled\n")
+		return
+	}
+	polarity := "falling"
+	if tp.PolarityRising {
+		polarity = "rising"
+	}
+	flags := ""
+	if tp.AlignToGNSS {
+		flags = "; aligned to GNSS time"
+	}
+	if tp.OnlyWhenLocked {
+		flags += "; only when locked"
+	}
+	fmt.Fprintf(f, "Time pulse: enabled; width %g s; period %g s; polarity %s%s\n", tp.Width.Seconds(), tp.Period.Seconds(), polarity, flags)
 }
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {

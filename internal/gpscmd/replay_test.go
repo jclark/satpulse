@@ -428,6 +428,58 @@ func (r *replayer) verify() {
 			}
 		}
 	}
+	// Verify TimeGNSS
+	if cfg.TimeGNSS != "" {
+		timeGNSS, ok := props.GetTimeGNSS()
+		if !ok {
+			r.t.Error("timeGNSS not set")
+		} else {
+			if timeGNSS.String() != cfg.TimeGNSS {
+				r.t.Errorf("timeGNSS mismatch: got %v, want %v", timeGNSS.String(), cfg.TimeGNSS)
+			}
+		}
+	}
+	// Verify AntennaCableDelay
+	if cfg.AntennaCableDelay != nil {
+		antCableDelay, ok := props.GetAntennaCableDelay()
+		if !ok {
+			r.t.Error("antennaCableDelay not set")
+		} else {
+			if antCableDelay.Nanoseconds() != *cfg.AntennaCableDelay {
+				r.t.Errorf("antennaCableDelay mismatch: got %v, want %v", antCableDelay.Nanoseconds(), *cfg.AntennaCableDelay)
+			}
+		}
+	}
+	// Verify TimePulse
+	if cfg.TimePulse != nil {
+		timePulse, ok := props.GetTimePulse()
+		if !ok {
+			r.t.Error("timePulse not set")
+		} else {
+			// Check if enabled state matches
+			if timePulse.Width == 0 && cfg.TimePulse.timePulseEnabled() {
+				r.t.Error("timePulse config shows enabled but actual has zero width")
+			} else if timePulse.Width > 0 && !cfg.TimePulse.timePulseEnabled() {
+				r.t.Error("timePulse config shows disabled but actual has non-zero width")
+			}
+			
+			// If both are enabled, compare detailed properties
+			if cfg.TimePulse.Enabled && timePulse.Width != 0 {
+				if cfg.TimePulse.Width != nil && timePulse.Width.Seconds() != *cfg.TimePulse.Width {
+					r.t.Errorf("timePulse width mismatch: got %v, want %v", timePulse.Width.Seconds(), *cfg.TimePulse.Width)
+				}
+				if cfg.TimePulse.Period != nil && timePulse.Period.Seconds() != *cfg.TimePulse.Period {
+					r.t.Errorf("timePulse period mismatch: got %v, want %v", timePulse.Period.Seconds(), *cfg.TimePulse.Period)
+				}
+				if cfg.TimePulse.PolarityRising != nil && timePulse.PolarityRising != *cfg.TimePulse.PolarityRising {
+					r.t.Errorf("timePulse polarity mismatch: got %v, want %v", timePulse.PolarityRising, *cfg.TimePulse.PolarityRising)
+				}
+				if cfg.TimePulse.OnlyWhenLocked != nil && timePulse.OnlyWhenLocked != *cfg.TimePulse.OnlyWhenLocked {
+					r.t.Errorf("timePulse onlyWhenLocked mismatch: got %v, want %v", timePulse.OnlyWhenLocked, *cfg.TimePulse.OnlyWhenLocked)
+				}
+			}
+		}
+	}
 
 }
 
