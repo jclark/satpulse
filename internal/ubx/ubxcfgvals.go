@@ -111,6 +111,9 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 	if v, ok := raw.getMode(); ok {
 		cp.SetMode(v)
 	}
+	if v, ok := raw.getTimeGNSS(); ok {
+		cp.SetTimeGNSS(v)
+	}
 	if v, ok := raw.getTimePulseAlignToGNSS(); ok {
 		cp.SetTimePulseAlignToGNSS(v)
 	}
@@ -421,6 +424,13 @@ func (raw *CfgVals) getTimePulseWidth() (time.Duration, bool) {
 	}
 	if v, ok := cfgValGet(raw, ucv.KTpLenLockTp1); ok {
 		return time.Duration(v) * time.Microsecond, true
+	}
+	return 0, false
+}
+
+func (raw *CfgVals) getTimeGNSS() (gpsprot.GNSS, bool) {
+	if tg, ok := cfgValGet(raw, ucv.KTpTimegridTp1); ok {
+		return timegridTp1ToGNSS(tg), true
 	}
 	return 0, false
 }
