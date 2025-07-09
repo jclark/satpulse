@@ -2,4 +2,4 @@
 # This tests the default GPS behavior with no specific options
 
 t 
-t
+t --show-config

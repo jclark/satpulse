@@ -50,6 +50,7 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	target := gpsprot.NewConfigTarget()
 
 	target.Opts = v.configOpts
+	target.Get = v.configGet
 
 	cp := &target.Props
 	if v.pps.IsSet() {
@@ -71,9 +72,18 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		cp.SetNavMsgAuth(v.navMsgAuth.Get())
 	}
 	if target.NoOp() {
-		target.Get |= gpsprot.PropIDSignalsEnabled
+		target.Opts.ForceProbe |= gpsprot.ForceProbeWhenNoConfig
 	}
 	return target, nil
+}
+
+func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
+	if target.NoOp() {
+		return false
+	}
+	copy := *target
+	copy.Opts.ForceProbe &^= gpsprot.ForceProbeWhenNoConfig
+	return copy.NoOp()
 }
 
 func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn, logPath string, logMode packetLogMode, args []string) error {
@@ -115,8 +125,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	var _ gpscfg.SerialError = gpsio.TermError{}
 	rslt, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), target, pCh, conn)
 	if err == nil && rslt != nil {
-		target.Get &^= gpsprot.PropIDSignalsEnabled
-		if target.NoOp() {
+		if configTargetIsProbeOnly(target) {
 			// print out the version only if we did not specify anything else
 			printVersion(os.Stdout, rslt.Version)
 		} else {

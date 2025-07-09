@@ -138,6 +138,8 @@ const (
 	PropIDMode
 	PropIDAntennaCableDelay
 	PropIDNavMsgAuth
+	PropIDTimePulse PropIDs = PropIDTimePulseWidth | PropIDTimePulsePeriod |
+		PropIDTimePulseAlignToGNSS | PropIDTimePulseOnlyWhenLocked | PropIDTimePulsePolarityRising
 )
 
 // propNames lists the property names in the same order as the bit constants
@@ -287,10 +289,17 @@ const (
 	RawMsgAny     RawMsgFlags = RawMsgObs | RawMsgNavData // any message (not flag)
 )
 
+type ForceProbe uint8
+
+const (
+	ForceProbeWhenNoOutput ForceProbe = 1 << iota // force probe even if no input has been detected
+	ForceProbeWhenNoConfig                         // force probe even when no config changes needed
+)
+
 type ConfigOptions struct {
-	Detected   bool        // has already been detected, no need to detect it again
-	ForceProbe bool        // force probe even if no input has been detected
-	Save       SaveType    // what to save to non-volatile memory
+	Detected    bool        // has already been detected, no need to detect it again
+	ForceProbe  ForceProbe  // control when to force probing
+	Save        SaveType    // what to save to non-volatile memory
 	Reset      ResetType   // what kind of reset to perform
 	PVTMsg     PVTMsgFlags // messages relating to Position, Velocity, and Time
 	NMEAMsg    Option[NMEAMsgFlags]

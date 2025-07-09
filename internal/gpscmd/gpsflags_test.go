@@ -257,6 +257,11 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--ant-cable-delay", "0"}, flagVars{antCableDelay: gpsprot.MakeOption(time.Duration(0))}},
 	{"ttyS0", []string{"--ant-cable-delay", "1000000"}, flagVars{antCableDelay: gpsprot.MakeOption(1000000 * time.Nanosecond)}},
 	{"ttyS0", []string{"--ant-cable-delay", "-50"}, flagVars{antCableDelay: gpsprot.MakeOption(-50 * time.Nanosecond)}},
+	// Test --show-config flag
+	{"ttyS0", []string{"--show-config"}, flagVars{configGet: showProps}},
+	{"ttyS0", []string{"-c"}, flagVars{configGet: showProps}},
+	{"", []string{"--socket", "/tmp/socket", "--show-config"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
+	{"", []string{"--socket", "/tmp/socket", "-c"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
 }
 
 func TestParseFlagsValid(t *testing.T) {
@@ -363,6 +368,20 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--ant-cable-delay", "abc"},      // invalid number
 	{"--serial-device", "ttyS0", "--ant-cable-delay", "1.5"},      // floating point not allowed
 	{"--serial-device", "ttyS0", "--ant-cable-delay", ""},         // empty value
+	// Test invalid --show-config combinations
+	{"--serial-device", "ttyS0", "--show-config", "--factory-reset"},     // can't use show-config with factory-reset
+	{"--serial-device", "ttyS0", "--show-config", "--reset"},             // can't use show-config with reset
+	{"--serial-device", "ttyS0", "--show-config", "--reload"},            // can't use show-config with reload
+	{"--serial-device", "ttyS0", "--factory-reset", "--show-config"},     // can't use factory-reset with show-config
+	{"--serial-device", "ttyS0", "--reset", "--show-config"},             // can't use reset with show-config
+	{"--serial-device", "ttyS0", "--reload", "--show-config"},            // can't use reload with show-config
+	{"--serial-device", "ttyS0", "-c", "--factory-reset"},                // can't use short form with factory-reset
+	{"--serial-device", "ttyS0", "-c", "--reset"},                        // can't use short form with reset
+	{"--serial-device", "ttyS0", "-c", "--reload"},                       // can't use short form with reload
+	{"--serial-device", "ttyS0", "--factory-reset", "-c"},                // can't use factory-reset with short form
+	{"--serial-device", "ttyS0", "--reset", "-c"},                        // can't use reset with short form
+	{"--serial-device", "ttyS0", "--reload", "-c"},                       // can't use reload with short form
+	{"--serial-device", "ttyS0", "--show-config", "--factory-reset", "--gnss", "GPS"}, // multiple incompatible options
 }
 
 func TestParseFlagsInvalid(t *testing.T) {

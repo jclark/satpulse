@@ -35,11 +35,12 @@ type flagVars struct {
 	antCableDelay  gpsprot.Option[time.Duration]
 	mode           gpsprot.Option[gpsprot.Mode]
 	configOpts     gpsprot.ConfigOptions
+	configGet      gpsprot.PropIDs
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
        	    [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea] [--binary]
-            [--save] [--save-all] [--reset] [--reload] [--factory-reset]
+            [-c|--show-config] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
@@ -50,6 +51,11 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20.0
 const defaultFixedPosAcc = 20.0
+const showProps = gpsprot.PropIDSignalsEnabled |
+	gpsprot.PropIDMode |
+	gpsprot.PropIDTimePulse |
+	gpsprot.PropIDTimeGNSS |
+	gpsprot.PropIDAntennaCableDelay
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
 	help := false
@@ -63,6 +69,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	reset := false
 	factoryReset := false
 	reload := false
+	showConfig := false
 	testLogPath := ""
 	nmea := false
 	binary := false
@@ -71,6 +78,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	surveyAcc := defaultSurveyAcc
 	sysTimeTrusted := false
 	osnma := false
+	forceProbe := false
 	var fixedPosECEF ecef
 	fixedPosAcc := defaultFixedPosAcc
 	pps := 0.0
@@ -85,6 +93,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
+	flags.BoolVarP(&showConfig, "show-config", "c", false, "show current GPS receiver configuration")
 	flags.BoolVar(&save, "save", false, "save configuration changes to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&saveAll, "save-all", false, "save the current configuration to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&reset, "reset", false, "reset the GPS receiver and perform a cold start")
@@ -92,7 +101,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&factoryReset, "factory-reset", false, "reset the GPS receiver to factory defaults")
 	flags.BoolVar(&nmea, "nmea", false, "enable NMEA output and disable binary output from the GPS receiver")
 	flags.BoolVar(&binary, "binary", false, "enable binary output and disable NMEA output from the GPS receiver")
-	flags.BoolVar(&vars.configOpts.ForceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
+	flags.BoolVar(&forceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
@@ -284,6 +293,12 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 		vars.navMsgAuth.Set(nma)
 	}
+	if showConfig {
+		vars.configGet = showProps
+	}
+	if forceProbe {
+		vars.configOpts.ForceProbe = gpsprot.ForceProbeWhenNoOutput
+	}
 	if save {
 		if !configChanged {
 			return nil, nil, fmt.Errorf("no configuration changes to save with --save; use --save-all to save current configuration")
@@ -296,13 +311,16 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		vars.configOpts.Save = gpsprot.SaveAll
 	}
 	if factoryReset {
-		if save || saveAll || reset || reload || configChanged {
-			return nil, nil, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload or configuration changes", cmdName)
+		if save || saveAll || reset || reload || showConfig || configChanged {
+			return nil, nil, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config or configuration changes", cmdName)
 		}
 		vars.configOpts.Reset = gpsprot.ResetFactory
 	} else if reset || reload {
 		if configChanged && !save && !saveAll {
 			return nil, nil, fmt.Errorf("--reset or --reload without saving would lose configuration changes")
+		}
+		if showConfig {
+			return nil, nil, fmt.Errorf("cannot use --reset or --reload with --show-config")
 		}
 		if reset && reload {
 			return nil, nil, fmt.Errorf("cannot use both --reset and --reload")

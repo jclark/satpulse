@@ -7,7 +7,7 @@ satpulsetool-gps - configure a GPS receiver
 **satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*] [**\-\-socket** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-force\-probe**] [**\-\-packet\-log** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-c**\|**\-\-show\-config**] [**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...]\
@@ -28,6 +28,9 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 
 **\-h**, **\-\-help**  
 : Show usage help for the **gps** command.
+
+**\-c**, **\-\-show\-config**  
+: Show the current configuration of the GPS receiver.
 
 **\-d**, **\-\-serial\-device** *path*  
 : Path to the serial device to communicate with the GPS receiver.

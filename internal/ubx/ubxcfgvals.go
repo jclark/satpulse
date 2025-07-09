@@ -66,11 +66,36 @@ var AllMsgKeys = []ucv.KeyM{
 }
 
 var cfgValKeysByProp = map[gpsprot.PropIDs][]ucv.AnyTypedKey{
+	gpsprot.PropIDTimeGNSS: {
+		ucv.KTpTimegridTp1,
+	},
+	gpsprot.PropIDAntennaCableDelay: {
+		ucv.KTpAntCabledelay,
+	},
 	gpsprot.PropIDTimePulseWidth: {
 		ucv.KTpPulseLengthDef,
 		ucv.KTpUseLockedTp1,
 		ucv.KTpLenLockTp1,
 		ucv.KTpLenTp1,
+	},
+	gpsprot.PropIDTimePulsePolarityRising: {
+		ucv.KTpPolTp1,
+	},
+	gpsprot.PropIDTimePulse: {
+		ucv.KTpAlignToTowTp1,
+		ucv.KTpAntCabledelay,
+		ucv.KTpDutyTp1,
+		ucv.KTpLenLockTp1,
+		ucv.KTpLenTp1,
+		ucv.KTpPeriodLockTp1,
+		ucv.KTpPeriodTp1,
+		ucv.KTpPolTp1,
+		ucv.KTpPulseDef,
+		ucv.KTpPulseLengthDef,
+		ucv.KTpSyncGnssTp1,
+		ucv.KTpTimegridTp1,
+		ucv.KTpTp1Ena,
+		ucv.KTpUseLockedTp1,
 	},
 }
 
@@ -126,11 +151,11 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 	if v, ok := raw.getTimePulseOnlyWhenLocked(); ok {
 		cp.SetTimePulseOnlyWhenLocked(v)
 	}
-	if v, ok := cfgValGet(raw, ucv.KTpAntCabledelay); ok {
-		cp.SetAntennaCableDelay(time.Duration(v))
-	}
 	if v, ok := cfgValGet(raw, ucv.KTpPolTp1); ok {
 		cp.SetTimePulsePolarityRising(v)
+	}
+	if v, ok := cfgValGet(raw, ucv.KTpAntCabledelay); ok {
+		cp.SetAntennaCableDelay(time.Duration(v))
 	}
 }
 
@@ -147,7 +172,45 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 	if err != nil {
 		return nil, nil, err
 	}
-	return tb.items, tb.keys, nil
+	keys := known.addGetKeys(target.Get, ver, tb.keys)
+	slices.Sort(keys)
+	keys = slices.Compact(keys)
+	return tb.items, keys, nil
+}
+
+// addGetKeys adds the keys that are needed to get the specified properties.
+// This doesn't handle the SignalsEnabled or NMAMsgAuth properties, which are handled separately.
+func (known *CfgVals) addGetKeys(ids gpsprot.PropIDs, ver *Version, keys []ucv.Key) []ucv.Key {
+	tks := []ucv.AnyTypedKey{}
+	switch ids & gpsprot.PropIDTimePulse {
+	// we handle a few of these properties individually
+	case gpsprot.PropIDTimePulseWidth, gpsprot.PropIDAntennaCableDelay, 0:
+		// we will handle these below uniformly
+	default:
+		// handle these as a group
+		tks = append(tks, cfgValKeysByProp[gpsprot.PropIDTimePulse]...)
+		ids &^= gpsprot.PropIDTimePulse
+	}
+	for id, tk := range cfgValKeysByProp {
+		if id&ids == id { // be careful not to match PropIDTimePulse
+			tks = append(tks, tk...)
+		}
+	}
+	if ids&gpsprot.PropIDMode != 0 {
+		if ver.tmodeLevel() == 0 {
+			tks = append(tks, ucv.KNavspgDynmodel)
+		} else {
+			tks = append(tks, tmodeRequiredKeys(tmodeInfoAll)...)
+		}
+		ids &^= gpsprot.PropIDMode
+	}
+	for _, tk := range tks {
+		k := tk.Key()
+		if !known.Contains(k) {
+			keys = append(keys, k)
+		}
+	}
+	return keys
 }
 
 // txnBuilder builds a configuration transaction by accumulating the configuration database
@@ -182,10 +245,6 @@ func newTxnBuilder(known *CfgVals, target *gpsprot.ConfigTarget, ver *Version, p
 // are accumulated in the keys field. Typically this will be called twice:
 // first with partial knowledge, then again after fetching the needed keys.
 func (tb *txnBuilder) build() error {
-	if tb.target.Get&^(gpsprot.PropIDTimePulseWidth|gpsprot.PropIDSignalsEnabled) != 0 {
-		return errors.New("getting configuration properties with UBX-CFG-VALGET implemented only for time pulse width and signals enabled")
-	}
-
 	cp := &tb.target.Props
 	tg := tb.timePulseBuild()
 
@@ -430,7 +489,9 @@ func (raw *CfgVals) getTimePulseWidth() (time.Duration, bool) {
 
 func (raw *CfgVals) getTimeGNSS() (gpsprot.GNSS, bool) {
 	if tg, ok := cfgValGet(raw, ucv.KTpTimegridTp1); ok {
-		return timegridTp1ToGNSS(tg), true
+		if g := timegridTp1ToGNSS(tg); g != 0 {
+			return g, true
+		}
 	}
 	return 0, false
 }
@@ -438,31 +499,6 @@ func (raw *CfgVals) getTimeGNSS() (gpsprot.GNSS, bool) {
 // timePulseBuild compiles the parts of the configuration related to the time pulse.
 // If it infers the GNSS to which the pulse is aligned, it returns that.
 func (tb *txnBuilder) timePulseBuild() ucv.EnumTpTimegridTp1 {
-	tg := tb.timePulseWrite()
-	tb.timePulseRead()
-	return tg
-}
-
-func (tb *txnBuilder) timePulseRead() {
-	// XXX implement for other keys
-	if tb.target.Get&gpsprot.PropIDTimePulseWidth == 0 {
-		return
-	}
-	for _, item := range tb.items {
-		if item.Key == ucv.KTpLenLockTp1.Key() || (item.Key == ucv.KTpLenTp1.Key() && item.Value != 0) {
-			return
-		}
-	}
-	for _, k := range cfgValKeysByProp[gpsprot.PropIDTimePulseWidth] {
-		if !tb.known.Contains(k.Key()) {
-			tb.keys = append(tb.keys, k.Key())
-		}
-	}
-	slices.Sort(tb.keys)
-	tb.keys = slices.Compact(tb.keys)
-}
-
-func (tb *txnBuilder) timePulseWrite() ucv.EnumTpTimegridTp1 {
 	tg := ucv.ETpTimegridTp1Utc
 	cp := &tb.target.Props
 	period, havePeriod := cp.GetTimePulsePeriod()

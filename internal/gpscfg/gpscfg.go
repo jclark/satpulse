@@ -57,7 +57,7 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 		if noop {
 			// there's no point in giving up with NoOp, maybe we can bring it back to life using satpulsetool
 			lg.Warn(err.Error())
-		} else if target.Opts.ForceProbe {
+		} else if target.Opts.ForceProbe&gpsprot.ForceProbeWhenNoOutput != 0 {
 			lg.Info("no output detected from GPS, but trying to probe GPS anyway")
 		} else {
 			return nil, err

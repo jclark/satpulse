@@ -2,7 +2,7 @@
 # Test GNSS constellation configuration and reload functionality
 # Tests changing GNSS constellations and the reload command
 
-t --gnss GLO,GPS,BDS,GAL,QZSS
-t --gnss GPS
+t --gnss GPS --pps 0.01 --ant-cable-delay 100 --time-gnss GPS
+t --show-config
 t --reload
-t
+t --show-config

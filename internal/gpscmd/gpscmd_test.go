@@ -33,3 +33,28 @@ func TestGnssListSet(t *testing.T) {
 		t.Errorf("Unexpected error message for empty string, got %v", err.Error())
 	}
 }
+
+func TestCreateConfigTargetProbeOnly(t *testing.T) {
+	// Test that createConfigTarget returns probe-only when only -d and -s are specified
+	flagVars, _, err := parseFlags("gps", []string{"-d", "/dev/ttyACM0", "-s", "9600"})
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+	if flagVars == nil {
+		t.Fatalf("parseFlags returned nil flagVars")
+	}
+	
+	target, err := createConfigTarget(flagVars)
+	if err != nil {
+		t.Fatalf("createConfigTarget failed: %v", err)
+	}
+	
+	if !configTargetIsProbeOnly(target) {
+		t.Errorf("Expected configTargetIsProbeOnly() to be true with only -d and -s, but got false")
+		t.Logf("target.Get = %v", target.Get)
+		t.Logf("target.Props.IsEmpty() = %v", target.Props.IsEmpty())
+		t.Logf("target.Opts.NoOp() = %v", target.Opts.NoOp())
+		t.Logf("target.Opts.ForceProbe = %v", target.Opts.ForceProbe)
+	}
+}
+
