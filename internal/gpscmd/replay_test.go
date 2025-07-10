@@ -120,11 +120,38 @@ func readTest(scanner *bufio.Scanner) (*replayTest, error) {
 			if err := json.Unmarshal(scanner.Bytes(), &test.config); err != nil {
 				return nil, err
 			}
+			// Fix up inBefore to account for out-of-order packets
+			fixupInBefore(test)
 			return test, nil
 		}
 	}
 
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	
 	return nil, errors.New("test missing config entry")
+}
+
+// fixupInBefore adjusts the inBefore counts to deal with occasional relative
+// out of order between input and output packets
+func fixupInBefore(test *replayTest) {
+	for i, outPkt := range test.outPackets {
+		outTime := time.Time(outPkt.T)
+		count := test.inBefore[i]
+		
+		// Check if we need to adjust by looking at packets around the boundary
+		// Decrease count while the packet at count-1 has timestamp after outTime
+		for count > 0 && time.Time(test.inPackets[count-1].T).After(outTime) {
+			count--
+		}
+		// Increase count while the packet at count has timestamp before outTime
+		for count < len(test.inPackets) && time.Time(test.inPackets[count].T).Before(outTime) {
+			count++
+		}
+		
+		test.inBefore[i] = count
+	}
 }
 
 type replayer struct {
