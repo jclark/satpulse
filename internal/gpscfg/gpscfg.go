@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsio"
@@ -18,21 +19,22 @@ import (
 )
 
 type Result struct {
-	Version     *ubx.Version
-	ConfigProps *gpsprot.ConfigProps
-	LeapSecond  *gpsprot.LeapSecondMsg
+	Version               *ubx.Version
+	ConfigProps           *gpsprot.ConfigProps
+	LeapSecond            *gpsprot.LeapSecondMsg
+	PacketFormatsDetected []gpsprot.Tag
 }
 
 type msgHandler struct {
 	gpsprot.DefaultHandler
-	lg               *slog.Logger
-	packetProcs      map[gpsprot.Tag]gpsprot.PacketProcessor
-	packetExch       gpsprot.PacketExchanger
-	packetCh         <-chan scan.Packet
-	msgCount         map[gpsprot.Tag]int
-	bad              badCount
-	msgIDs           map[gpsprot.Tag]map[string]bool
-	leapSecond       *gpsprot.LeapSecondMsg
+	lg          *slog.Logger
+	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
+	packetExch  gpsprot.PacketExchanger
+	packetCh    <-chan scan.Packet
+	msgCount    map[gpsprot.Tag]int
+	bad         badCount
+	msgIDs      map[gpsprot.Tag]map[string]bool
+	leapSecond  *gpsprot.LeapSecondMsg
 }
 
 type badCount struct {
@@ -64,9 +66,7 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	}
 	if noop {
 		// no need to probe
-		return &Result{
-			ConfigProps: new(gpsprot.ConfigProps),
-		}, nil
+		return mh.noProbeResult(), nil
 	}
 	// After we have done detection, bad stuff is a cause for concern.
 	badStart := mh.bad
@@ -83,9 +83,7 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	}
 	if !probeOK {
 		// XXX if msgCount for UBX > 0, but probe failed, then probably we cannot send to the GPS
-		return &Result{
-			ConfigProps: new(gpsprot.ConfigProps),
-		}, ErrNoProbeResponse
+		return mh.noProbeResult(), ErrNoProbeResponse
 	}
 	cm, err := mh.configure(ctx, mh.packetExch, target, port)
 	if err != nil && !isKnownError(err) {
@@ -136,8 +134,21 @@ func (mh *msgHandler) finish(cm *gpsprot.ConfigProps) *Result {
 		Version:     ver,
 		ConfigProps: cm,
 		LeapSecond:  mh.leapSecond,
+		PacketFormatsDetected: maps.Keys(mh.msgCount),
 	}
 }
+
+// noProbeResult returns a Result when there was no probe or the probe failed.
+func (mh *msgHandler) noProbeResult() *Result {
+	tags := maps.Keys(mh.msgCount)
+	slices.Sort(tags)
+	return &Result{
+		ConfigProps: new(gpsprot.ConfigProps),
+		LeapSecond:  mh.leapSecond,
+		PacketFormatsDetected: tags,
+	}
+}
+
 
 func (mh *msgHandler) detect(ctx context.Context) error {
 	// Validate that we are receiving data correctly from a GPS.
@@ -327,7 +338,7 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 	mh.lg.Debug("sent configuration message", "msgID", reqID, "len", len(pkt))
 	timerCh := time.After(w)
 	var pauseCh <-chan time.Time
-	loop:
+loop:
 	for timerCh != nil {
 		select {
 		case packet, ok := <-mh.packetCh:
@@ -431,7 +442,7 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 		mh.lg.Error("GPS packet cannot be parsed", "protocol", tag, "err", err)
 		return
 	}
-	
+
 	mh.msgIDs[tag][msgID] = true
 }
 

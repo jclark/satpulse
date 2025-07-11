@@ -128,6 +128,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 		if configTargetIsProbeOnly(target) {
 			// print out the version only if we did not specify anything else
 			printVersion(os.Stdout, rslt.Version)
+			printPacketFormats(os.Stdout, rslt.PacketFormatsDetected)
 		} else {
 			logFailedProps(lg, &target.Props, rslt.ConfigProps)
 		}
@@ -175,6 +176,17 @@ func printVersion(f *os.File, v *ubx.Version) {
 	if v.Prot != nil {
 		fmt.Fprintf(f, "UBX protocol version: %s\n", v.Prot.String())
 	}
+}
+
+func printPacketFormats(f *os.File, tags []gpsprot.Tag) {
+	if len(tags) == 0 {
+		return
+	}
+	formats := make([]string, len(tags))
+	for i, tag := range tags {
+		formats[i] = string(tag)
+	}
+	fmt.Fprintf(f, "Packet formats detected: %s\n", strings.Join(formats, ", "))
 }
 
 func printProps(f *os.File, p *gpsprot.ConfigProps) {
