@@ -2,6 +2,7 @@ package gpscmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -124,6 +125,9 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	// gpscfg relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
 	rslt, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), target, pCh, conn)
+	if errors.Is(err, gpscfg.ErrNoProbeResponse) && configTargetIsProbeOnly(target) {
+		err = nil
+	}
 	if err == nil && rslt != nil {
 		if configTargetIsProbeOnly(target) {
 			// print out the version only if we did not specify anything else
