@@ -33,7 +33,6 @@ type msgHandler struct {
 	bad              badCount
 	msgIDs           map[gpsprot.Tag]map[string]bool
 	leapSecond       *gpsprot.LeapSecondMsg
-	okChecksumCount  int
 }
 
 type badCount struct {
@@ -335,9 +334,9 @@ func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configur
 			if !ok {
 				return mh.packetChClosed(ctx)
 			}
-			okChecksumCount := mh.okChecksumCount
+			okChecksumCount := mh.totalMsgCount()
 			mh.packet(packet)
-			if mh.okChecksumCount > okChecksumCount {
+			if mh.totalMsgCount() > okChecksumCount {
 				tChecksumOK = packet.TRead
 			}
 			if awaitingResp {
@@ -392,6 +391,14 @@ func (mh *msgHandler) suitableMessageCount() int {
 	return mh.msgCount[ubx.Tag] + mh.msgCount[nmea.Tag]
 }
 
+func (mh *msgHandler) totalMsgCount() int {
+	count := 0
+	for _, c := range mh.msgCount {
+		count += c
+	}
+	return count
+}
+
 func (mh *msgHandler) packet(pkt scan.Packet) {
 	if pkt.IsInterPacketTimeout() {
 		mh.lg.Debug("inter-packet timeout detected during GPS configuration")
@@ -417,14 +424,14 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 		mh.bad.corruptMsgs++
 		return
 	}
-	mh.okChecksumCount++
+	// only count messages with good checksum
+	mh.msgCount[tag]++
 	msgID, err := pp.ProcessPacket(data, pkt.TRead)
 	if err != nil {
 		mh.lg.Error("GPS packet cannot be parsed", "protocol", tag, "err", err)
 		return
 	}
-	// only count parseable messages with good checksum
-	mh.msgCount[tag]++
+	
 	mh.msgIDs[tag][msgID] = true
 }
 
