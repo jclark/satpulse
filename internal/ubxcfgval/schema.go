@@ -62,6 +62,29 @@ func GetDfltSchema() *Schema {
 	return dfltSchema
 }
 
+func (s *Schema) AddGroup(groupName string, group map[string]Desc) *Schema {
+	// Copy existing groups
+	groups := make(map[string]map[string]Desc)
+	for k, v := range s.groups {
+		groups[k] = v
+	}
+	groups[groupName] = group
+	
+	// Copy existing keys
+	keys := make(map[Key]NameDesc)
+	for k, v := range s.keys {
+		keys[k] = v
+	}
+	
+	// Add keys from new group
+	for itemName, d := range group {
+		keys[d.key()] = NameDesc{groupName, itemName, d}
+	}
+	
+	return &Schema{groups, keys}
+}
+
+
 func MustNewSchema(groups map[string]map[string]Desc) *Schema {
 	s, err := NewSchema(groups)
 	if err != nil {
@@ -96,7 +119,7 @@ func (s *Schema) MustMarshal(cfg map[string]map[string]any) []byte {
 	return b
 }
 
-func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, map[Key]uint64, error) {
+func (s *Schema) UnmarshalItems(data []byte) (map[string]map[string]any, map[Key]uint64, error) {
 	cfg := make(map[string]map[string]any)
 	unknown := make(map[Key]uint64)
 	items, err := UnmarshalItems(data)
@@ -125,6 +148,54 @@ func (s *Schema) Unmarshal(data []byte) (map[string]map[string]any, map[Key]uint
 		}
 	}
 	return cfg, unknown, nil
+}
+
+
+func (s *Schema) UnmarshalItemsFlat(data []byte) ([]string, []any, error) {
+	items, err := UnmarshalItems(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	keys := make([]string, len(items))
+	values := make([]any, len(items))
+	for i, it := range items {
+		nd, key, ok := s.decodeKey(it.Key)
+		var value any
+		if ok {
+			var err error
+			value, err = nd.d.UnmarshalValue(it.Value)
+			if err != nil {
+				ok = false
+			}
+		}
+		if !ok {
+			value = it.Value
+		}
+		keys[i] = key
+		values[i] = value
+	}
+	return keys, values, nil
+}
+
+func (s *Schema) UnmarshalKeysFlat(data []byte) ([]string, error) {
+	keyList, err := UnmarshalKeys(data)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, len(keyList))
+	for i, k := range keyList {
+		_, key, _ := s.decodeKey(k)
+		keys[i] = key
+	}
+	return keys, nil
+}
+
+func (s *Schema) decodeKey(k Key) (NameDesc, string, bool) {
+	nd, ok := s.keys[k]
+	if !ok {
+		return NameDesc{}, fmt.Sprintf("0x%08x", uint32(k)), false
+	}
+	return nd, fmt.Sprintf("CFG-%s-%s", nd.groupName, nd.itemName), true
 }
 
 func (s *Schema) Marshal(cfg map[string]map[string]any) ([]byte, error) {

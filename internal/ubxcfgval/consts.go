@@ -2,6 +2,11 @@
 
 package ubxcfgval
 
+const KBdsUseGeoPrn KeyL = 0x10340014
+const KGalOsnmaMintaglength KeyU = 0x20350007
+const KGalOsnmaTimesync KeyL = 0x10350009
+const KGalUseOsnma KeyL = 0x10350005
+const KGpsL5HealthOverride KeyL = 0x10320001
 const KHwAntCfgOpendet KeyL = 0x10a30031
 const KHwAntCfgOpendetPol KeyL = 0x10a30032
 const KHwAntCfgPwrdown KeyL = 0x10a30033
@@ -27,6 +32,16 @@ const (
 	EHwRfLnaModeNormal EnumHwRfLnaMode = iota
 	EHwRfLnaModeLowgain
 	EHwRfLnaModeBypass
+)
+const KNavhpgDgnssmode KeyE[EnumNavhpgDgnssmode] = 0x20140011
+type EnumNavhpgDgnssmode uint8
+const (
+	_ EnumNavhpgDgnssmode = iota
+	_
+	ENavhpgDgnssmodeRtkFloat
+	ENavhpgDgnssmodeRtkFixed
+	_
+	ENavhpgDgnssmodeRtkCar
 )
 const KNavspgAckaiding KeyL = 0x10110025
 const KNavspgConstrAlt KeyI = 0x401100c1
@@ -64,11 +79,14 @@ const KNavspgInfilMinelev KeyI = 0x201100a4
 const KNavspgInfilMinsvs KeyU = 0x201100a1
 const KNavspgInfilNcnothrs KeyU = 0x201100aa
 const KNavspgInifix3d KeyL = 0x10110013
+const KNavspgMaxTimetrustedAcc KeyU = 0x301100de
+const KNavspgOnlyAuthdata KeyL = 0x101100dd
 const KNavspgOutfilFacc KeyU = 0x301100b5
 const KNavspgOutfilPacc KeyU = 0x301100b3
 const KNavspgOutfilPdop KeyU = 0x301100b1
 const KNavspgOutfilTacc KeyU = 0x301100b4
 const KNavspgOutfilTdop KeyU = 0x301100b2
+const KNavspgPlEna KeyL = 0x101100d7
 const KNavspgSigattcomp KeyE[EnumNavspgSigattcomp] = 0x201100d6
 type EnumNavspgSigattcomp uint8
 const (
@@ -163,6 +181,65 @@ const (
 	ENavspgUtcstandardNict
 )
 const KNavspgWknrollover KeyU = 0x30110017
+const KNmeaBdstalkerid KeyU = 0x30930033
+const KNmeaCompat KeyL = 0x10930003
+const KNmeaConsider KeyL = 0x10930004
+const KNmeaFiltBds KeyL = 0x10930017
+const KNmeaFiltGal KeyL = 0x10930013
+const KNmeaFiltGlo KeyL = 0x10930016
+const KNmeaFiltGps KeyL = 0x10930011
+const KNmeaFiltQzss KeyL = 0x10930015
+const KNmeaFiltSbas KeyL = 0x10930012
+const KNmeaGsvtalkerid KeyE[EnumNmeaGsvtalkerid] = 0x20930032
+type EnumNmeaGsvtalkerid uint8
+const (
+	ENmeaGsvtalkeridGnss EnumNmeaGsvtalkerid = iota
+	ENmeaGsvtalkeridMain
+)
+const KNmeaHighprec KeyL = 0x10930006
+const KNmeaLimit82 KeyL = 0x10930005
+const KNmeaMaintalkerid KeyE[EnumNmeaMaintalkerid] = 0x20930031
+type EnumNmeaMaintalkerid uint8
+const (
+	ENmeaMaintalkeridAuto EnumNmeaMaintalkerid = iota
+	ENmeaMaintalkeridGp
+	ENmeaMaintalkeridGl
+	ENmeaMaintalkeridGn
+	ENmeaMaintalkeridGa
+	ENmeaMaintalkeridGb
+	_
+	ENmeaMaintalkeridGq
+)
+const KNmeaMaxsvs KeyE[EnumNmeaMaxsvs] = 0x20930002
+type EnumNmeaMaxsvs uint8
+const (
+	ENmeaMaxsvsUnlim EnumNmeaMaxsvs = iota
+	ENmeaMaxsvs8svs EnumNmeaMaxsvs = 8
+	ENmeaMaxsvs12svs EnumNmeaMaxsvs = 12
+	ENmeaMaxsvs16svs EnumNmeaMaxsvs = 16
+)
+const KNmeaOutFrozencog KeyL = 0x10930026
+const KNmeaOutInvdate KeyL = 0x10930024
+const KNmeaOutInvfix KeyL = 0x10930021
+const KNmeaOutInvtime KeyL = 0x10930023
+const KNmeaOutMskfix KeyL = 0x10930022
+const KNmeaOutOnlygps KeyL = 0x10930025
+const KNmeaProtver KeyE[EnumNmeaProtver] = 0x20930001
+type EnumNmeaProtver uint8
+const (
+	_ EnumNmeaProtver = iota
+	ENmeaProtverV21 EnumNmeaProtver = 21
+	ENmeaProtverV23 EnumNmeaProtver = 23
+	ENmeaProtverV40 EnumNmeaProtver = 40
+	ENmeaProtverV41 EnumNmeaProtver = 41
+	ENmeaProtverV411 EnumNmeaProtver = 42
+)
+const KNmeaSvnumbering KeyE[EnumNmeaSvnumbering] = 0x20930007
+type EnumNmeaSvnumbering uint8
+const (
+	ENmeaSvnumberingStrict EnumNmeaSvnumbering = iota
+	ENmeaSvnumberingExtended
+)
 const KRateMeas KeyU = 0x30210001
 const KRateNav KeyU = 0x30210002
 const KRateTimeref KeyE[EnumRateTimeref] = 0x20210003
@@ -174,14 +251,25 @@ const (
 	ERateTimerefBds
 	ERateTimerefGal
 )
+const KRtcmDf003In KeyU = 0x30090008
+const KRtcmDf003InFilter KeyE[EnumRtcmDf003InFilter] = 0x20090009
+type EnumRtcmDf003InFilter uint8
+const (
+	ERtcmDf003InFilterDisabled EnumRtcmDf003InFilter = iota
+	ERtcmDf003InFilterRelaxed
+	ERtcmDf003InFilterStrict
+)
+const KRtcmDf003Out KeyU = 0x30090001
 const KSignalBdsB1Ena KeyL = 0x1031000d
 const KSignalBdsB1cEna KeyL = 0x1031000f
 const KSignalBdsB2Ena KeyL = 0x1031000e
 const KSignalBdsB2aEna KeyL = 0x10310028
+const KSignalBdsB3Ena KeyL = 0x10310010
 const KSignalBdsEna KeyL = 0x10310022
 const KSignalGalE1Ena KeyL = 0x10310007
 const KSignalGalE5aEna KeyL = 0x10310009
 const KSignalGalE5bEna KeyL = 0x1031000a
+const KSignalGalE6Ena KeyL = 0x1031000b
 const KSignalGalEna KeyL = 0x10310021
 const KSignalGloEna KeyL = 0x10310025
 const KSignalGloL1Ena KeyL = 0x10310018
@@ -328,8 +416,10 @@ const (
 	EUart1StopbitsTwo
 )
 const KUart1inprotNmea KeyL = 0x10730002
+const KUart1inprotRtcm3x KeyL = 0x10730004
 const KUart1inprotUbx KeyL = 0x10730001
 const KUart1outprotNmea KeyL = 0x10740002
+const KUart1outprotRtcm3x KeyL = 0x10740004
 const KUart1outprotUbx KeyL = 0x10740001
 const KUart2Baudrate KeyU = 0x40530001
 const KUart2Databits KeyE[EnumUart2Databits] = 0x20530003
@@ -355,10 +445,14 @@ const (
 	EUart2StopbitsTwo
 )
 const KUart2inprotNmea KeyL = 0x10750002
+const KUart2inprotRtcm3x KeyL = 0x10750004
 const KUart2inprotUbx KeyL = 0x10750001
 const KUart2outprotNmea KeyL = 0x10760002
+const KUart2outprotRtcm3x KeyL = 0x10760004
 const KUart2outprotUbx KeyL = 0x10760001
 const KUsbinprotNmea KeyL = 0x10770002
+const KUsbinprotRtcm3x KeyL = 0x10770004
 const KUsbinprotUbx KeyL = 0x10770001
 const KUsboutprotNmea KeyL = 0x10780002
+const KUsboutprotRtcm3x KeyL = 0x10780004
 const KUsboutprotUbx KeyL = 0x10780001

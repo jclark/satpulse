@@ -71,19 +71,15 @@ type GNSS uint8
 
 // Constants for GNSS type.
 // Zero value means invalid/unknown/unspecified.
-// The major GNSS systems are first, in order of preference.
-// We prefer Galileo to BeiDou, because of close synchronization of Galileo and GPS.
-// GLONASS is least preferred, because its unusual handling of leap seconds fits poorly with PTP.
-// NavIC comes next because althought it is regional, it is standalone, not just an augmentation system
-// QZSS started off as an augmentation system, but is getting the capability to be a standalone system.
+// The major GNSS systems are first.
 // SBAS is an augmentation system, and not a standalone GNSS system.
 const (
 	GPS      GNSS = iota + 1 // GPS (USA)
 	GAL                      // Galileo (Europe)
 	BDS                      // BeiDou (China)
 	GLO                      // GLONASS (Russia)
-	NAVIC                    // NavIC (India)
 	QZSS                     // QZSS (Japan)
+	NAVIC                    // NavIC (India)
 	SBAS                     // Satellite-Based Augmentation System (e.g. WAAS, EGNOS, GAGAN, MSAS)
 	GNSSLast GNSS = SBAS
 )
@@ -132,6 +128,10 @@ func (g GNSS) SVIDPrefix() string {
 	}
 }
 
+func (g GNSS) IsValid() bool {
+	return g > 0 && g <= GNSSLast
+}
+
 func (g GNSS) IsMajor() bool {
 	return g >= GPS && g <= GLO
 }
@@ -156,10 +156,12 @@ func (gp *GNSS) UnmarshalText(text []byte) error {
 // It is comparable.
 type GNSSSet uint32
 
-func GNSSFlag(gs ...GNSS) GNSSSet {
+func GNSSSetOf(gs ...GNSS) GNSSSet {
 	var flags GNSSSet
 	for _, g := range gs {
-		flags |= 1 << g
+		if g != 0 {
+			flags |= 1 << g
+		}
 	}
 	return flags
 }
@@ -167,7 +169,7 @@ func GNSSFlag(gs ...GNSS) GNSSSet {
 const MajorGNSSSet GNSSSet = 1<<GPS | 1<<GAL | 1<<BDS | 1<<GLO
 
 func (s GNSSSet) Contains(g GNSS) bool {
-	return s&GNSSFlag(g) != 0
+	return s&GNSSSetOf(g) != 0
 }
 
 func (s GNSSSet) MarshalJSON() ([]byte, error) {

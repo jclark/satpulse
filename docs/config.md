@@ -113,19 +113,19 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
    unless the ethernet controller is one that timestamps both edges (e.g. Intel i210); it is also not relevant if SatPulse
    is performing configuration of the GPS receiver (in which case the pulse width will be set to a known value); if this is not
    specified, then SatPulse will attempt to retrieve the configured time pulse width using the UBX protocol
-* `gnss` - a string giving the GNSS system to which the time pulse should be aligned; the GNSS specified here must be already be enabled on the receiver
+* `timeGNSS` - a string giving the GNSS system to which the time pulse should be aligned; the GNSS specified here must be already be enabled on the receiver
   (SatPulse will not change the enabled GNSS systems since that is a rather disruptive operation); possible values are
    * `"GPS"` for the GNSS system operated by the USA
    * `"GAL"`, `"Galileo"`for the GNSS system operated by the EU
    * `"BDS"`, `"BeiDou"` for the GNSS system operated by China
    * `"GLO"`, `"GLONASS"` for the GNSS system operated by Russia
-* `stationary` - a boolean saying whether the GPS receiver is stationary; if this is true, the receiver will be configured to assume a stationary
+* `mobile` - a boolean saying whether the GPS receiver is mobile; if this is false, the receiver will be configured to assume a stationary
    position; on a timing receiver, time mode will be enabled, which is a mode in which a fixed position is established for the receiver,
    and thereafter the time is computed using  a single satellite;
    the position can be established by having the GPS spend some time determing the position itself (called a survey)
-   or by explicitly specifying the position (using `fixedPosECEF`); the default is `true`
+   or by explicitly specifying the position (using `fixedPosECEF`); the default is `false`
 * `surveyTime` - a boolean giving the time in seconds to perform a survey to establish the position of the GPS receiver antenna;
-   SatPulse will only do a survey when `stationary` is true and no fixed position has been set; the default is 2000
+   SatPulse will only do a survey when `mobile` is false and no fixed position has been set; the default is 2000
 * `fixedPosECEF` - an array of three numbers giving the ECEF coordinates in meters of the GPS receiver's antenna receiver; if SatPulse initiaties a survey,
   then it will log the position determined by the survey when the survey finishes
 * `fixedPosAcc` - a number giving the accuracy in meters of the `fixedPosECEF` coordinates; SatPulse will log the accuracy along with the position when
@@ -136,7 +136,8 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
 * `antennaCableDelay` - a number giving the delay in nanoseconds resulting from the propagation of the GPS signal through the antenna cable;
   the default is not to change the GPS receiver's configuration of the antenna cable delay; if both the `antennaCableLength` and the `antennaCableDelay`
   are specified, then the sum of the delays will be used
-* `satellitesOutput` - a boolean saying whether the GPS should be configured to output information about the satellites in view; this information can be used by the HTTP monitoring interface; the default is to configure output based on whether the HTTP interface is enabled, but not to perform configuration unless the serial speed is at least 38400 (this is because at low serials speeds the satellites output can cause significant delays in receiving the timing messages that SatPulse relies upon)
+* `rtcmOutput` - a boolean saying whether the GPS receiver should be configured to output RTCM messages; if true, then the receiver will be configured to generate MSM messages for each enabled constellation; it will generate MSM4 messages if those are available, and otherwise MSM7 messages; it will also generate ARP (1005) messages, and if GLONASS is enabled, GLONASS code phase bias (1230) messages; if false, then RTCM messages will be turned off; if the key is not specified, then the configuration of RTCM messages will not be changed
+* `satellitesOutput` - a boolean saying whether the GPS receiver should be configured to output information about the satellites in view; this information can be used by the HTTP monitoring interface; the default is to configure output based on whether the HTTP interface is enabled, but not to perform configuration unless the serial speed is at least 38400 (this is because at low serials speeds the satellites output can cause significant delays in receiving the timing messages that SatPulse relies upon)
 * `nmeaNumbering` - a string giving the GPS receiver manufacturer, used to interpret non-standard numbering of space vehicles in NMEA GSV and GSA sentences; his is needed to show all satellites in the satellites view, particularly when GPS receivers are using versions of NMEA before 4.11; possible values are `"u-blox"` and `"allystar"`; default is not to include satellites with non-standard numbers.
 
 Example

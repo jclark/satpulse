@@ -2,6 +2,7 @@ package ubxcfgval
 
 import (
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"sort"
@@ -103,7 +104,7 @@ func TestRoundtrip(t *testing.T) {
 		if err != nil {
 			t.Errorf("could not marshal config %d: %v", i, err)
 		} else {
-			cfg2, unknown, err := dfltSchema.Unmarshal(bytes)
+			cfg2, unknown, err := dfltSchema.UnmarshalItems(bytes)
 			if err != nil {
 				t.Errorf("could not unmarshal config %d: %v", i, err)
 			} else if !sameConfig(cfg, cfg2) || len(unknown) != 0 {
@@ -238,7 +239,7 @@ func TestUnmarshal(t *testing.T) {
 		// U-center format doesn't include the two sync bytes not the two-byte checksum.
 		// So to get the config data, we just have to skip cls+id, 2-byte length, and 4 byte fixed part.
 		cfgData := msg[8:]
-		cfg, unknown, err := dfltSchema.Unmarshal(cfgData)
+		cfg, unknown, err := dfltSchema.UnmarshalItems(cfgData)
 		if err != nil {
 			t.Errorf("test %d: could not unmarshal: %v", i, err)
 		} else {
@@ -304,4 +305,69 @@ func parseUCenterConfig(txt string) ([][]byte, error) {
 		}
 	}
 	return valgets, nil
+}
+
+func TestUnmarshalItemsFlat(t *testing.T) {
+	s := GetDfltSchema()
+	
+	data, err := hex.DecodeString("0100311001030031100107003110010a003110010d003110010e003110011200311001150031100118003110011a003110011f0031100121003110012200311001240031100125003110012700311001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	wantKeys := []string{
+		"CFG-SIGNAL-GPS_L1CA_ENA",
+		"CFG-SIGNAL-GPS_L2C_ENA", 
+		"CFG-SIGNAL-GAL_E1_ENA",
+		"CFG-SIGNAL-GAL_E5B_ENA",
+		"CFG-SIGNAL-BDS_B1_ENA",
+		"CFG-SIGNAL-BDS_B2_ENA",
+		"CFG-SIGNAL-QZSS_L1CA_ENA",
+		"CFG-SIGNAL-QZSS_L2C_ENA",
+		"CFG-SIGNAL-GLO_L1_ENA",
+		"CFG-SIGNAL-GLO_L2_ENA",
+		"CFG-SIGNAL-GPS_ENA",
+		"CFG-SIGNAL-GAL_ENA",
+		"CFG-SIGNAL-BDS_ENA",
+		"CFG-SIGNAL-QZSS_ENA",
+		"CFG-SIGNAL-GLO_ENA",
+		"0x10310027",
+	}
+	wantValues := []any{
+		true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, uint64(1),
+	}
+	
+	gotKeys, gotValues, err := s.UnmarshalItemsFlat(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	if !slices.Equal(wantKeys, gotKeys) {
+		t.Errorf("keys mismatch: got %v, want %v", gotKeys, wantKeys)
+	}
+	if !slices.Equal(wantValues, gotValues) {
+		t.Errorf("values mismatch: got %v, want %v", gotValues, wantValues)
+	}
+}
+
+func TestUnmarshalKeysFlat(t *testing.T) {
+	s := GetDfltSchema()
+	
+	data, err := hex.DecodeString("ffff3110")
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	want := []string{
+		"0x1031ffff",
+	}
+	
+	got, err := s.UnmarshalKeysFlat(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	if !slices.Equal(want, got) {
+		t.Errorf("UnmarshalKeysFlat() mismatch: got %v, want %v", got, want)
+	}
 }

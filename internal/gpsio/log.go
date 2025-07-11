@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jclark/satpulse/internal/cmd"
@@ -24,47 +25,40 @@ type HexString []byte
 type OutPacket struct {
 	TWrite time.Time
 	Data   string
+	Speed  int
 }
 
-func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (chan<- scan.Packet, chan<- OutPacket, error) {
+func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (*PacketLog, *logfile.LogFile, error) {
 	if logPath == "" {
 		return nil, nil, nil
 	}
-	lf := logfile.LogFile{}
+	lf := &logfile.LogFile{}
 	err := lf.Open(logPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	inCh := make(chan scan.Packet, 1)
-	outCh := make(chan OutPacket, 1)
-
+	ch := make(chan PacketLogEntry, 2) // 2 because LogInput and LogOutput can be called from separate goroutines
+	pktLogger := &PacketLog{
+		ch:         ch,
+		pktFormats: gpsreg.PacketFormats,
+	}
 	cmd.WaitGroupGo(wg, func() {
-		// XXX gpsreg.PacketFormats should be passed in to LogPackets
-		doLogPackets(lg, &lf, inCh, outCh, gpsreg.PacketFormats)
+		doLogPackets(lg, lf, ch)
 	})
-	return inCh, outCh, nil
+	return pktLogger, lf, nil
 }
 
-func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet, outCh <-chan OutPacket, pktFormats []gpsprot.PacketFormat) {
-	defer lf.Close(lg)
-
+func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, ch <-chan PacketLogEntry) {
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, unix.SIGHUP)
-	for inCh != nil || outCh != nil {
+	for {
 		select {
-		case pkt, ok := <-inCh:
+		case entry, ok := <-ch:
 			if !ok {
-				inCh = nil
-				continue
+				return
 			}
-			logPacket(lg, lf, pkt)
-		case pkt, ok := <-outCh:
-			if !ok {
-				outCh = nil
-				continue
-			}
-			logOutPacket(lg, lf, pkt, pktFormats)
+			logEntry(lg, lf, &entry)
 		case <-sig:
 			lf.Reopen(lg)
 		}
@@ -72,25 +66,65 @@ func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, inCh <-chan scan.Packet,
 }
 
 type PacketLogEntry struct {
-	T     TimeMilli   `json:"t"`
+	T     TimeMicro   `json:"t"`
 	Tag   gpsprot.Tag `json:"tag,omitempty"`
 	Msg   string      `json:"msg,omitempty"`
 	Bin   HexString   `json:"bin,omitempty"`
 	Ascii string      `json:"ascii,omitempty"`
+	Speed *int        `json:"speed,omitempty"`
 	Out   bool        `json:"out"` // use omitzero here when we upgrade to go 1.24
 }
 
-// TimeMilli is a time.Time that marshals to JSON with 3 fractional digits
-type TimeMilli time.Time
-
-const RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
-
-// MarshalJSON implements json.Marshaler for TimeMillis`
-func (t TimeMilli) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Time(t).UTC().Format(RFC3339Milli))
+func (ple *PacketLogEntry) Data() string {
+	if len(ple.Bin) != 0 {
+		return string(ple.Bin)
+	}
+	return ple.Ascii
 }
 
-func logPacket(lg *slog.Logger, lf *logfile.LogFile, pkt scan.Packet) {
+// TimeMicro is a time.Time that marshals to JSON with 6 fractional digits
+type TimeMicro time.Time
+
+const RFC3339Micro = "2006-01-02T15:04:05.999999Z07:00"
+
+// MarshalJSON implements json.Marshaler for TimeMicro
+func (t TimeMicro) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Time(t).UTC().Format(RFC3339Micro))
+}
+
+// UnmarshalJSON implements json.Unmarshaler for TimeMilli
+func (t *TimeMicro) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	parsed, err := time.Parse(RFC3339Micro, s)
+	if err != nil {
+		return err
+	}
+	*t = TimeMicro(parsed)
+	return nil
+}
+
+// PacketLog provides methods for logging GPS packets.
+// It is safe for concurrent use by multiple goroutines.
+type PacketLog struct {
+	ch         chan<- PacketLogEntry
+	pktFormats []gpsprot.PacketFormat
+	closeCount atomic.Int32
+}
+
+// SemiClose must be called twice, once when LogInput will no longer be called,
+// and once when LogOutput will no longer be called.
+// The underlying channel is closed when SemiClose has been called twice.
+func (pl *PacketLog) SemiClose() {
+	if pl.closeCount.Add(1) == 2 {
+		close(pl.ch)
+	}
+}
+
+// LogInput logs an incoming packet from the GPS.
+func (pl *PacketLog) LogInput(pkt scan.Packet) {
 	if len(pkt.Data) == 0 {
 		return
 	}
@@ -99,39 +133,42 @@ func logPacket(lg *slog.Logger, lf *logfile.LogFile, pkt scan.Packet) {
 	if pkt.Format != nil {
 		msgID = pkt.Format.MsgID(bytes)
 	}
-	entry := &PacketLogEntry{
-		T:   TimeMilli(pkt.TRead.UTC()),
+	entry := PacketLogEntry{
+		T:   TimeMicro(pkt.TRead.UTC()),
 		Tag: pkt.Tag(),
 		Msg: msgID,
 	}
-	if useBinary(pkt) {
+	if useBinary(pkt.Format, bytes) {
 		entry.Bin = HexString(bytes)
 	} else {
 		entry.Ascii = pkt.Data
 	}
-	logEntry(lg, lf, entry)
+	pl.ch <- entry
 }
 
-func useBinary(pkt scan.Packet) bool {
-	if pkt.Format == nil {
-		return containsBinary(pkt.Data)
+func useBinary(fmt gpsprot.PacketFormat, bytes []byte) bool {
+	if fmt == nil {
+		return containsBinary(bytes)
 	}
-	sync1 := pkt.Data[0]
+	sync1 := bytes[0]
 	return sync1 < 0x20 || sync1 >= 0x7F
 }
 
-func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket, pktFormats []gpsprot.PacketFormat) {
-	if len(pkt.Data) == 0 {
+// LogOutput logs an outgoing packet to the GPS.
+func (pl *PacketLog) LogOutput(tWrite time.Time, bytes []byte, speed int) {
+	if len(bytes) == 0 && speed == 0 {
 		return
 	}
-	entry := &PacketLogEntry{
-		T:   TimeMilli(pkt.TWrite.UTC()),
+	entry := PacketLogEntry{
+		T:   TimeMicro(tWrite.UTC()),
 		Out: true,
 	}
-	if containsBinary(pkt.Data) {
-		bytes := []byte(pkt.Data)
+	if speed != 0 {
+		entry.Speed = &speed
+	}
+	if containsBinary(bytes) {
 		entry.Bin = HexString(bytes)
-		for _, pf := range pktFormats {
+		for _, pf := range pl.pktFormats {
 			if gpsprot.IsValidPacket(pf, bytes) {
 				entry.Tag = pf.Tag()
 				entry.Msg = pf.MsgID(bytes)
@@ -139,15 +176,14 @@ func logOutPacket(lg *slog.Logger, lf *logfile.LogFile, pkt OutPacket, pktFormat
 			}
 		}
 	} else {
-		entry.Ascii = pkt.Data
+		entry.Ascii = string(bytes)
 	}
-	logEntry(lg, lf, entry)
+	pl.ch <- entry
 }
 
-func containsBinary(data string) bool {
-	// range over bytes not runes
-	for i := 0; i < len(data); i++ {
-		if b := data[i]; (b < 0x20 && b != '\r' && b != '\n') || b >= 0x7F {
+func containsBinary(data []byte) bool {
+	for _, b := range data {
+		if (b < 0x20 && b != '\r' && b != '\n') || b >= 0x7F {
 			return true
 		}
 	}

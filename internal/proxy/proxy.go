@@ -137,7 +137,6 @@ func (s *svcConfig) setOptions(opts Options) error {
 	return nil
 }
 
-const defaultGroupName = "dialout"
 
 func setSocketPerms(lg *slog.Logger, sock SocketService, sc svcConfig) error {
 	mode := os.FileMode(0660)

@@ -231,7 +231,7 @@ func (sb *satellitesBuffer) gsvProcess(sen *Sentence, tRead time.Time, h gpsprot
 		return true, err
 	}
 	// Now we know it is the final sentence in a series
-	flag := gpsprot.GNSSFlag(gsv.gnss)
+	flag := gpsprot.GNSSSetOf(gsv.gnss)
 	if sb.gnssExpected&flag != 0 {
 		sb.gnssKnown = true
 	} else {
@@ -399,7 +399,7 @@ Loop:
 		return gsv, fmt.Errorf("GSV: superfluous fields")
 	}
 	if len(sen.Fields) == i+1 {
-		sigID, err = parseHexField(sen.Fields, i, "GSV")
+		sigID, _, err = parseHexField(sen.Fields, i, "GSV") // treat missing sigID as 0
 		if err != nil {
 			return gsv, err
 		}
@@ -519,16 +519,19 @@ func parseIntField(fields []string, i int, min int, max int, format string) (int
 	return int(n), nil
 }
 
-func parseHexField(fields []string, i int, format string) (int, error) {
+func parseHexField(fields []string, i int, format string) (int, bool, error) {
 	s := fields[i]
+	if len(s) == 0 {
+		return 0, false, nil
+	}
 	if len(s) != 1 {
-		return 0, fmt.Errorf("%s: invalid field %d: %s: length must be 1", format, i, fields[i])
+		return 0, false, fmt.Errorf("%s: invalid field %d: %s: length must be 1", format, i, fields[i])
 	}
 	n := hexDigit(s[0])
 	if n < 0 {
-		return 0, fmt.Errorf("%s: invalid field %d: %s: invalid character", format, i, fields[i])
+		return 0, false, fmt.Errorf("%s: invalid field %d: %s: invalid character", format, i, fields[i])
 	}
-	return n, nil
+	return n, true, nil
 }
 
 func hexDigit(b byte) int {

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jclark/satpulse/internal/ptime"
 )
 
 // PacketExchanger manages the processing and generation of packets for a GPS receiver.
@@ -44,14 +46,30 @@ type Ack struct {
 // It will receive packets to interpret via calls to ProcessPacket on the Protocol that created it.
 // If the Ackable method of a ConfigRequest returns true, then FindAck should be used
 // to find whether the acknowledgement has been received.
+// When configuration errors occur, NextRequest may return an error but the caller should
+// continue calling NextRequest to allow recovery operations; ConfigProps should be called
+// even after errors to see what configuration was achieved.
 type Configurator interface {
 	// ConfigProps returns the current configuration of the GPS receiver.
 	// It should be called after NextRequest returns nil.
 	ConfigProps() *ConfigProps
 	// NextRequest returns the next request that should be sent to the GPS receiver.
 	// If there are no more requests, it returns nil, nil.
+	// If the error is non-nil, then ConfigRequest will be nil;
+	// this indicates an error generating the request; the caller should report
+	// the error, but continue calling NextRequest to allow recovery operations.
 	NextRequest() (ConfigRequest, error)
+	// FindAck will search for acknowledgement response for the request.
+	// It must be called after the request has been sent.
+	// Finding a negative acknowledgement (ie. Ack.OK is false) usually causes the
+	// Configurator to initiate recovery (which may involve sending more requests).
+	// It is the caller's responsibility to report the negative acknowledgement.
 	FindAck(packet []byte, tSent time.Time) *Ack
+	// Abort informs the Configurator that configuration should be aborted.
+	// This typically triggers recovery operations on the next NextRequest call.
+	// This should be called if a request does not get a response or an ACK within a reasonable time.
+	// It doesn't need to be called if it got a NACK.
+	Abort()
 }
 
 // ConfigRequest represents a request to be sent to the GPS receiver to configure it.
@@ -62,6 +80,10 @@ type Configurator interface {
 type ConfigRequest interface {
 	// Packet returns the packet to be sent to the GPS receiver.
 	Packet() []byte
+	// ChangeSpeed returns the serial port speed to change to after the request is sent, or 0 if no change is needed
+	ChangeSpeed() int
+	// Pause returns the time to wait after receiving the packet ACK before sending the next packet.
+	Pause() time.Duration
 	// Ackable returns true if the packet is one that needs an acknowledgement.
 	// An acknowledgement can either be an ACK or a NACK.
 	Ackable() bool
@@ -84,61 +106,54 @@ type ConfigTarget struct {
 // PropIDs represents a set of configuration property names
 type PropIDs uint32
 
+// TimePulse represents the time pulse configuration settings
+type TimePulse struct {
+	Width          time.Duration
+	Period         time.Duration
+	AlignToGNSS    bool
+	OnlyWhenLocked bool
+	PolarityRising bool
+}
+
 // ConfigProps represents a collection configuration properties
 type ConfigProps struct {
-	valid                   PropIDs // says which fields are valid
-	gnssEnabled             GNSSSet
-	primaryGNSS             GNSS
-	solutionPeriod          time.Duration
-	timePulseWidth          time.Duration
-	timePulsePeriod         time.Duration
-	timePulseAlignToGNSS    bool
-	timePulseOnlyWhenLocked bool
-	timePulsePolarityRising bool
-	timeMode                TimeMode
-	antennaCableDelay       time.Duration
-	fixedPosECEF            Point3D
-	fixedPosAcc             Length
-	stationary              bool
-	nmeaEnabled             bool
-	baudRate                uint32
+	valid             PropIDs // says which fields are valid
+	signalsEnabled    SignalSet
+	timeGNSS          GNSS
+	timePulse         TimePulse
+	mode              Mode
+	antennaCableDelay time.Duration
+	navMsgAuth        NavMsgAuth
 }
 
 const (
-	PropIDGNSSEnabled PropIDs = 1 << iota
-	PropIDPrimaryGNSS
-	PropIDSolutionPeriod
+	PropIDSignalsEnabled PropIDs = 1 << iota
+	PropIDTimeGNSS
+	// eventually the individual time pulse properties will be combined into a single property
 	PropIDTimePulseWidth
 	PropIDTimePulsePeriod
 	PropIDTimePulseAlignToGNSS
 	PropIDTimePulseOnlyWhenLocked
 	PropIDTimePulsePolarityRising
-	PropIDTimeMode
+	PropIDMode
 	PropIDAntennaCableDelay
-	PropIDFixedPosECEF
-	PropIDFixedPosAcc
-	PropIDStationary
-	PropIDNMEAEnabled
-	PropIDBaudRate
+	PropIDNavMsgAuth
+	PropIDTimePulse PropIDs = PropIDTimePulseWidth | PropIDTimePulsePeriod |
+		PropIDTimePulseAlignToGNSS | PropIDTimePulseOnlyWhenLocked | PropIDTimePulsePolarityRising
 )
 
 // propNames lists the property names in the same order as the bit constants
 var propNames = []string{
-	"GNSSEnabled",
-	"PrimaryGNSS",
-	"SolutionPeriod",
+	"SignalsEnabled",
+	"TimeGNSS",
 	"TimePulseWidth",
 	"TimePulsePeriod",
 	"TimePulseAlignToGNSS",
 	"TimePulseOnlyWhenLocked",
 	"TimePulsePolarityRising",
-	"TimeMode",
+	"Mode",
 	"AntennaCableDelay",
-	"FixedPosECEF",
-	"FixedPosAcc",
-	"Stationary",
-	"NMEAEnabled",
-	"BaudRate",
+	"NavMsgAuth",
 }
 
 // IsEmpty returns true if no properties are set
@@ -146,47 +161,164 @@ func (cp *ConfigProps) IsEmpty() bool {
 	return cp.valid == 0
 }
 
-type MsgStatus uint8
+type SaveType uint8
 
 const (
-	MsgStatusUnchanged MsgStatus = iota
-	MsgStatusEnabled
-	MsgStatusDisabled
+	SaveNone    SaveType = iota
+	SaveMinimal          // save the minimum to save the configuration changes specified in ConfigTarget
+	SaveAll              // save the current configuration
 )
 
-func (status MsgStatus) IsZero() bool {
-	return status == MsgStatusUnchanged
-}
-	
-func (status MsgStatus) IsSet() bool {
-	return status != MsgStatusUnchanged
+type ResetType uint8
+
+const (
+	ResetNone    ResetType = iota
+	ResetReload            // reload the configuration from non-volatile memory without a reset/start (if possible)
+	ResetCold              // restore configuration from non-volatile memory and perform a cold start
+	ResetFactory           // restore non-volatile memory to factory defaults and then ResetCold
+)
+
+type Option[T any] struct {
+	val T
+	set bool
 }
 
-func (status MsgStatus) IsEnabled() bool {
-	return status == MsgStatusEnabled
+func (o *Option[T]) Set(v T)      { o.set, o.val = true, v }
+func (o *Option[T]) Get() T       { return o.val }
+func (o *Option[T]) Clear()       { var zero T; o.set, o.val = false, zero }
+func (o *Option[T]) IsSet() bool  { return o.set }
+func (o *Option[T]) IsZero() bool { return !o.set }
+
+// MakeOption creates an Option with the given value set
+func MakeOption[T any](v T) Option[T] {
+	var opt Option[T]
+	opt.Set(v)
+	return opt
 }
+
+// PVTMsgFlags says what messages relating to Position, Velocity, and Time are wanted.
+// The PVTMsgOff option says to turn off PVT messages that are not enabled.
+// This makes PVTMsgFlags different from the other message flags,
+// where the equivalent of PVTMsgOff semantics is always applied.
+// A zero value means no specific PVT message configuration is requested.
+type PVTMsgFlags uint16
+
+const (
+	PVTMsgPos            PVTMsgFlags = 1 << iota // position
+	PVTMsgVel                                    // velocity
+	PVTMsgTime                                   // time of navigation solution
+	PVTMsgTimePulse                              // time of time pulse
+	PVTMsgLeapSecond                             // date of most recently announced leap second
+	PVTMsgSurvey                                 // survey-in progress
+	PVTMsgTAI                                    // want time in TAI not UTC (option)
+	PVTMsgECEF                                   // want position in ECEF coordinates (option)
+	PVTMsgTimePulseAfter                         // ensure there is a time message following the time pulse (option)
+	PVTMsgOff                                    // turn off any unneeded PVT messages (option)
+)
+
+const PVTMsgAny PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond | PVTMsgSurvey // any message (not option)
+
+// These methods are to make PVTMsgFlags more consistent with Option[*Flags] for the other flags.
+
+// IsZero returns true if no PVT message flags are set
+func (f *PVTMsgFlags) IsZero() bool {
+	return *f == 0
+}
+
+// IsSet returns true if any PVT message flags are set
+func (f *PVTMsgFlags) IsSet() bool {
+	return *f != 0
+}
+
+// Get returns the PVT message flags value
+func (f *PVTMsgFlags) Get() PVTMsgFlags {
+	return *f
+}
+
+// Set sets the PVT message flags value
+func (f *PVTMsgFlags) Set(v PVTMsgFlags) {
+	*f = v
+}
+
+type SatsMsgFlags uint8
+
+const (
+	SatsMsgSV     SatsMsgFlags = 1 << iota // position of SVs
+	SatsMsgSignal                          // signal strength of each signal from each SV
+	SatsMsgNone   SatsMsgFlags = 0
+	SatsMsgAny    SatsMsgFlags = SatsMsgSV | SatsMsgSignal // any message (not flag)
+)
+
+type NMEAMsgFlags uint16
+
+const (
+	NMEAMsgRMC NMEAMsgFlags = 1 << iota
+	NMEAMsgGGA
+	NMEAMsgGSA
+	NMEAMsgGSV
+	NMEAMsgZDA
+	NMEAMsgVTG
+	NMEAMsgOther NMEAMsgFlags = 1 << 15 // other unspecified NMEA messages
+	// may have flags like NMEA version or rate in the future
+	NMEAMsgNone NMEAMsgFlags = 0
+	NMEAMsgAny  NMEAMsgFlags = NMEAMsgRMC | NMEAMsgGGA | NMEAMsgGSA | NMEAMsgGSV | NMEAMsgZDA | NMEAMsgVTG | NMEAMsgOther // any message (not flag)
+)
+
+type RTCMMsgFlags uint16
+
+const (
+	RTCMMsgMSM4  RTCMMsgFlags = 1 << iota // MSM4 for all enabled GNSS
+	_                                     // 5
+	_                                     // 6
+	RTCMMsgMSM7                           // MSM7 for all enabled GNSS
+	RTCMMsgARP                            // RTCM message 1005
+	RTCMMsgLax                            // Do the best we can on enabling RTCM messages
+	RTCMMsgOther RTCMMsgFlags = 1 << 15   // other unspecified RTCM messages
+	// may have flags for rate
+	RTCMMsgNone RTCMMsgFlags = 0
+	RTCMMsgAuto RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgARP | RTCMMsgLax                 // enable intelligently
+	RTCMMsgAny  RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgOther // any message (not flag)
+)
+
+type RawMsgFlags uint8
+
+const (
+	RawMsgObs     RawMsgFlags = 1 << iota // Raw observation messages (for RINEX)
+	RawMsgNavData                         // Raw navigation date e.g. subframes for GPS
+	RawMsgNone    RawMsgFlags = 0
+	RawMsgAny     RawMsgFlags = RawMsgObs | RawMsgNavData // any message (not flag)
+)
+
+type ForceProbe uint8
+
+const (
+	ForceProbeWhenNoOutput ForceProbe = 1 << iota // force probe even if no input has been detected
+	ForceProbeWhenNoConfig                         // force probe even when no config changes needed
+)
 
 type ConfigOptions struct {
-	Detected            bool // has already been detected, no need to detect it again
-	ForceProbe          bool // force probe even if no input has been detected
-	Flash               bool // save state to flash
-	Reset               bool // perform a hard reset after making changes
-	EnableLeapSecondMsg bool
-	EnableTimeMsg       bool
-	SatellitesMsg       MsgStatus
-	Survey              Survey
+	Detected    bool        // has already been detected, no need to detect it again
+	ForceProbe  ForceProbe  // control when to force probing
+	Save        SaveType    // what to save to non-volatile memory
+	Reset      ResetType   // what kind of reset to perform
+	PVTMsg     PVTMsgFlags // messages relating to Position, Velocity, and Time
+	NMEAMsg    Option[NMEAMsgFlags]
+	RTCMMsg    Option[RTCMMsgFlags] // RTCM 3.x messages
+	SatsMsg    Option[SatsMsgFlags]
+	RawMsg     Option[RawMsgFlags]
+	Survey     Survey
+	SetStatic  bool         // ensure receiver is in static mode without changing existing fixed position
+	BaudRate   uint32       // serial port baud rate, 0 means do not change
+	TimeAssist TimeEstimate // provide time assistance to the receiver
+	OSNMA      OSNMAOptions // options for OSNMA authentication
 }
 
-func NewConfigTarget(config bool) *ConfigTarget {
-	t := &ConfigTarget{}
-	if !config {
-		return t
-	}
-	t.Props.SetPPS()
-	t.Props.SetNMEAEnabled(false) // Config is very slow on 8-th gen if NMEA is enabled
-	t.Opts.EnableLeapSecondMsg = true
-	t.Opts.EnableTimeMsg = true
-	return t
+type OSNMAOptions struct {
+	MerkleTreeRoot [32]byte // all zeros means not set
+}
+
+func NewConfigTarget() *ConfigTarget {
+	return &ConfigTarget{}
 }
 
 // NoOp says whether the target is a no-op, except possibly for detecting the receiver
@@ -205,7 +337,16 @@ func (ct *ConfigTarget) UsesAny(props ...PropIDs) bool {
 }
 
 func (o ConfigOptions) NoOp() bool {
-	return !o.Flash && !o.Reset && !o.EnableLeapSecondMsg && !o.EnableTimeMsg && o.SatellitesMsg.IsZero() && o.Survey.When == TimeModeNone
+	var zero ConfigOptions
+	return o == zero
+}
+
+func (o *ConfigOptions) SetsMsgs() bool {
+	return o.PVTMsg.IsSet() || o.SatsMsg.IsSet() || o.NMEAMsg.IsSet() || o.RTCMMsg.IsSet() || o.RawMsg.IsSet()
+}
+
+func (o *ConfigOptions) EnablesMsgs() bool {
+	return o.PVTMsg&PVTMsgAny != 0 || o.SatsMsg.Get()&SatsMsgAny != 0 || o.NMEAMsg.Get()&NMEAMsgAny != 0 || o.RTCMMsg.Get()&RTCMMsgAny != 0 || o.RawMsg.Get()&RawMsgAny != 0
 }
 
 // String returns a human-readable representation of the PropIDs flags
@@ -219,130 +360,135 @@ func (p PropIDs) String() string {
 	return "PropIDs(" + strings.Join(names, "|") + ")"
 }
 
-// GetGNSSEnabled returns the gnssEnabled value and whether it's set
-func (cp *ConfigProps) GetGNSSEnabled() (GNSSSet, bool) {
-	if cp.valid&PropIDGNSSEnabled != 0 {
-		return cp.gnssEnabled, true
+// GetSignalsEnabled returns the signalsEnabled value and whether it's set
+func (cp *ConfigProps) GetSignalsEnabled() (SignalSet, bool) {
+	if cp.valid&PropIDSignalsEnabled != 0 {
+		return cp.signalsEnabled, true
 	}
 	return 0, false
 }
 
-// SetGNSSEnabled sets the gnssEnabled value
-func (cp *ConfigProps) SetGNSSEnabled(val GNSSSet) {
-	cp.gnssEnabled = val
-	cp.valid |= PropIDGNSSEnabled
+// SetSignalsEnabled sets the signalsEnabled value
+func (cp *ConfigProps) SetSignalsEnabled(val SignalSet) {
+	cp.signalsEnabled = val
+	cp.valid |= PropIDSignalsEnabled
 }
 
-// GetPrimaryGNSS returns the primaryGNSS value and whether it's set
-func (cp *ConfigProps) GetPrimaryGNSS() (GNSS, bool) {
-	if cp.valid&PropIDPrimaryGNSS != 0 {
-		return cp.primaryGNSS, true
+// GetTimeGNSS returns the timeGNSS value and whether it's set
+func (cp *ConfigProps) GetTimeGNSS() (GNSS, bool) {
+	if cp.valid&PropIDTimeGNSS != 0 {
+		return cp.timeGNSS, true
 	}
 	return 0, false
 }
 
-// SetPrimaryGNSS sets the primaryGNSS value
-func (cp *ConfigProps) SetPrimaryGNSS(val GNSS) {
-	cp.primaryGNSS = val
-	cp.valid |= PropIDPrimaryGNSS
-}
-
-// GetSolutionPeriod returns the solutionPeriod value and whether it's set
-func (cp *ConfigProps) GetSolutionPeriod() (time.Duration, bool) {
-	if cp.valid&PropIDSolutionPeriod != 0 {
-		return cp.solutionPeriod, true
-	}
-	return 0, false
-}
-
-// SetSolutionPeriod sets the solutionPeriod value
-func (cp *ConfigProps) SetSolutionPeriod(val time.Duration) {
-	cp.solutionPeriod = val
-	cp.valid |= PropIDSolutionPeriod
+// SetTimeGNSS sets the timeGNSS value
+func (cp *ConfigProps) SetTimeGNSS(val GNSS) {
+	cp.timeGNSS = val
+	cp.valid |= PropIDTimeGNSS
 }
 
 // GetTimePulseWidth returns the timePulseWidth value and whether it's set
 func (cp *ConfigProps) GetTimePulseWidth() (time.Duration, bool) {
 	if cp.valid&PropIDTimePulseWidth != 0 {
-		return cp.timePulseWidth, true
+		return cp.timePulse.Width, true
 	}
 	return 0, false
 }
 
 // SetTimePulseWidth sets the timePulseWidth value
 func (cp *ConfigProps) SetTimePulseWidth(val time.Duration) {
-	cp.timePulseWidth = val
+	cp.timePulse.Width = val
 	cp.valid |= PropIDTimePulseWidth
 }
 
 // GetTimePulsePeriod returns the timePulsePeriod value and whether it's set
 func (cp *ConfigProps) GetTimePulsePeriod() (time.Duration, bool) {
 	if cp.valid&PropIDTimePulsePeriod != 0 {
-		return cp.timePulsePeriod, true
+		return cp.timePulse.Period, true
 	}
 	return 0, false
 }
 
 // SetTimePulsePeriod sets the timePulsePeriod value
 func (cp *ConfigProps) SetTimePulsePeriod(val time.Duration) {
-	cp.timePulsePeriod = val
+	cp.timePulse.Period = val
 	cp.valid |= PropIDTimePulsePeriod
 }
 
 // GetTimePulseAlignToGNSS returns the timePulseAlignToGNSS value and whether it's set
 func (cp *ConfigProps) GetTimePulseAlignToGNSS() (bool, bool) {
 	if cp.valid&PropIDTimePulseAlignToGNSS != 0 {
-		return cp.timePulseAlignToGNSS, true
+		return cp.timePulse.AlignToGNSS, true
 	}
 	return false, false
 }
 
 // SetTimePulseAlignToGNSS sets the timePulseAlignToGNSS value
 func (cp *ConfigProps) SetTimePulseAlignToGNSS(val bool) {
-	cp.timePulseAlignToGNSS = val
+	cp.timePulse.AlignToGNSS = val
 	cp.valid |= PropIDTimePulseAlignToGNSS
 }
 
 // GetTimePulseOnlyWhenLocked returns the timePulseOnlyWhenLocked value and whether it's set
 func (cp *ConfigProps) GetTimePulseOnlyWhenLocked() (bool, bool) {
 	if cp.valid&PropIDTimePulseOnlyWhenLocked != 0 {
-		return cp.timePulseOnlyWhenLocked, true
+		return cp.timePulse.OnlyWhenLocked, true
 	}
 	return false, false
 }
 
 // SetTimePulseOnlyWhenLocked sets the timePulseOnlyWhenLocked value
 func (cp *ConfigProps) SetTimePulseOnlyWhenLocked(val bool) {
-	cp.timePulseOnlyWhenLocked = val
+	cp.timePulse.OnlyWhenLocked = val
 	cp.valid |= PropIDTimePulseOnlyWhenLocked
 }
 
 // GetTimePulsePolarityRising returns the timePulsePolarityRising value and whether it's set
 func (cp *ConfigProps) GetTimePulsePolarityRising() (bool, bool) {
 	if cp.valid&PropIDTimePulsePolarityRising != 0 {
-		return cp.timePulsePolarityRising, true
+		return cp.timePulse.PolarityRising, true
 	}
 	return false, false
 }
 
 // SetTimePulsePolarityRising sets the timePulsePolarityRising value
 func (cp *ConfigProps) SetTimePulsePolarityRising(val bool) {
-	cp.timePulsePolarityRising = val
+	cp.timePulse.PolarityRising = val
 	cp.valid |= PropIDTimePulsePolarityRising
 }
 
-// GetTimeMode returns the timeMode value and whether it's set
-func (cp *ConfigProps) GetTimeMode() (TimeMode, bool) {
-	if cp.valid&PropIDTimeMode != 0 {
-		return cp.timeMode, true
+// timePulseProps combines all time pulse related property IDs
+const timePulseProps = PropIDTimePulseWidth | PropIDTimePulsePeriod |
+	PropIDTimePulseAlignToGNSS | PropIDTimePulseOnlyWhenLocked | PropIDTimePulsePolarityRising
+
+// GetTimePulse returns the entire TimePulse struct and whether all TimePulse properties are set
+func (cp *ConfigProps) GetTimePulse() (TimePulse, bool) {
+	// Check if all TimePulse properties are valid
+	if (cp.valid & timePulseProps) == timePulseProps {
+		return cp.timePulse, true
 	}
-	return 0, false
+	return TimePulse{}, false
 }
 
-// SetTimeMode sets the timeMode value
-func (cp *ConfigProps) SetTimeMode(val TimeMode) {
-	cp.timeMode = val
-	cp.valid |= PropIDTimeMode
+// SetTimePulse sets all timePulse properties at once
+func (cp *ConfigProps) SetTimePulse(tp TimePulse) {
+	cp.timePulse = tp
+	cp.valid |= timePulseProps
+}
+
+// GetMode returns the mode value and whether it's set
+func (cp *ConfigProps) GetMode() (Mode, bool) {
+	if cp.valid&PropIDMode != 0 {
+		return cp.mode, true
+	}
+	return Mode{}, false
+}
+
+// SetMode sets the mode value
+func (cp *ConfigProps) SetMode(val Mode) {
+	cp.mode = val
+	cp.valid |= PropIDMode
 }
 
 // GetAntennaCableDelay returns the antennaCableDelay value and whether it's set
@@ -359,74 +505,28 @@ func (cp *ConfigProps) SetAntennaCableDelay(val time.Duration) {
 	cp.valid |= PropIDAntennaCableDelay
 }
 
-// GetFixedPosECEF returns the fixedPosECEF value and whether it's set
-func (cp *ConfigProps) GetFixedPosECEF() (Point3D, bool) {
-	if cp.valid&PropIDFixedPosECEF != 0 {
-		return cp.fixedPosECEF, true
+// GetNavMsgAuth returns the navMsgAuth value and whether it's set
+func (cp *ConfigProps) GetNavMsgAuth() (NavMsgAuth, bool) {
+	if cp.valid&PropIDNavMsgAuth != 0 {
+		return cp.navMsgAuth, true
 	}
-	return Point3D{}, false
+	return NavMsgAuthNone, false
 }
 
-// SetFixedPosECEF sets the fixedPosECEF value
-func (cp *ConfigProps) SetFixedPosECEF(val Point3D) {
-	cp.fixedPosECEF = val
-	cp.valid |= PropIDFixedPosECEF
+// SetNavMsgAuth sets the navMsgAuth value
+func (cp *ConfigProps) SetNavMsgAuth(val NavMsgAuth) {
+	cp.navMsgAuth = val
+	cp.valid |= PropIDNavMsgAuth
 }
 
-// GetFixedPosAcc returns the fixedPosAcc value and whether it's set
-func (cp *ConfigProps) GetFixedPosAcc() (Length, bool) {
-	if cp.valid&PropIDFixedPosAcc != 0 {
-		return cp.fixedPosAcc, true
+// SetsAny returns true if any of the specified properties are set in the ConfigProps
+func (cp *ConfigProps) SetsAny(props ...PropIDs) bool {
+	for _, p := range props {
+		if cp.valid&p != 0 {
+			return true
+		}
 	}
-	return 0, false
-}
-
-// SetFixedPosAcc sets the fixedPosAcc value
-func (cp *ConfigProps) SetFixedPosAcc(val Length) {
-	cp.fixedPosAcc = val
-	cp.valid |= PropIDFixedPosAcc
-}
-
-// GetStationary returns the stationary value and whether it's set
-func (cp *ConfigProps) GetStationary() (bool, bool) {
-	if cp.valid&PropIDStationary != 0 {
-		return cp.stationary, true
-	}
-	return false, false
-}
-
-// SetStationary sets the stationary value
-func (cp *ConfigProps) SetStationary(val bool) {
-	cp.stationary = val
-	cp.valid |= PropIDStationary
-}
-
-// GetNMEAEnabled returns the nmeaEnabled value and whether it's set
-func (cp *ConfigProps) GetNMEAEnabled() (bool, bool) {
-	if cp.valid&PropIDNMEAEnabled != 0 {
-		return cp.nmeaEnabled, true
-	}
-	return false, false
-}
-
-// SetNMEAEnabled sets the nmeaEnabled value
-func (cp *ConfigProps) SetNMEAEnabled(val bool) {
-	cp.nmeaEnabled = val
-	cp.valid |= PropIDNMEAEnabled
-}
-
-// GetBaudRate returns the baudRate value and whether it's set
-func (cp *ConfigProps) GetBaudRate() (uint32, bool) {
-	if cp.valid&PropIDBaudRate != 0 {
-		return cp.baudRate, true
-	}
-	return 0, false
-}
-
-// SetBaudRate sets the baudRate value
-func (cp *ConfigProps) SetBaudRate(val uint32) {
-	cp.baudRate = val
-	cp.valid |= PropIDBaudRate
+	return false
 }
 
 // MarshalJSON marshals the config properties to JSON
@@ -455,50 +555,35 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	both := cp.valid & other.valid
 
 	// Check each property that's valid in both
-	if both&PropIDGNSSEnabled != 0 && cp.gnssEnabled != other.gnssEnabled {
-		result.SetGNSSEnabled(other.gnssEnabled)
+	if both&PropIDSignalsEnabled != 0 && cp.signalsEnabled != other.signalsEnabled {
+		result.SetSignalsEnabled(other.signalsEnabled)
 	}
-	if both&PropIDPrimaryGNSS != 0 && cp.primaryGNSS != other.primaryGNSS {
-		result.SetPrimaryGNSS(other.primaryGNSS)
+	if both&PropIDTimeGNSS != 0 && cp.timeGNSS != other.timeGNSS {
+		result.SetTimeGNSS(other.timeGNSS)
 	}
-	if both&PropIDSolutionPeriod != 0 && cp.solutionPeriod != other.solutionPeriod {
-		result.SetSolutionPeriod(other.solutionPeriod)
+	if both&PropIDTimePulseWidth != 0 && cp.timePulse.Width != other.timePulse.Width {
+		result.SetTimePulseWidth(other.timePulse.Width)
 	}
-	if both&PropIDTimePulseWidth != 0 && cp.timePulseWidth != other.timePulseWidth {
-		result.SetTimePulseWidth(other.timePulseWidth)
+	if both&PropIDTimePulsePeriod != 0 && cp.timePulse.Period != other.timePulse.Period {
+		result.SetTimePulsePeriod(other.timePulse.Period)
 	}
-	if both&PropIDTimePulsePeriod != 0 && cp.timePulsePeriod != other.timePulsePeriod {
-		result.SetTimePulsePeriod(other.timePulsePeriod)
+	if both&PropIDTimePulseAlignToGNSS != 0 && cp.timePulse.AlignToGNSS != other.timePulse.AlignToGNSS {
+		result.SetTimePulseAlignToGNSS(other.timePulse.AlignToGNSS)
 	}
-	if both&PropIDTimePulseAlignToGNSS != 0 && cp.timePulseAlignToGNSS != other.timePulseAlignToGNSS {
-		result.SetTimePulseAlignToGNSS(other.timePulseAlignToGNSS)
+	if both&PropIDTimePulseOnlyWhenLocked != 0 && cp.timePulse.OnlyWhenLocked != other.timePulse.OnlyWhenLocked {
+		result.SetTimePulseOnlyWhenLocked(other.timePulse.OnlyWhenLocked)
 	}
-	if both&PropIDTimePulseOnlyWhenLocked != 0 && cp.timePulseOnlyWhenLocked != other.timePulseOnlyWhenLocked {
-		result.SetTimePulseOnlyWhenLocked(other.timePulseOnlyWhenLocked)
+	if both&PropIDTimePulsePolarityRising != 0 && cp.timePulse.PolarityRising != other.timePulse.PolarityRising {
+		result.SetTimePulsePolarityRising(other.timePulse.PolarityRising)
 	}
-	if both&PropIDTimePulsePolarityRising != 0 && cp.timePulsePolarityRising != other.timePulsePolarityRising {
-		result.SetTimePulsePolarityRising(other.timePulsePolarityRising)
-	}
-	if both&PropIDTimeMode != 0 && cp.timeMode != other.timeMode {
-		result.SetTimeMode(other.timeMode)
+	if both&PropIDMode != 0 && cp.mode != other.mode {
+		result.SetMode(other.mode)
 	}
 	if both&PropIDAntennaCableDelay != 0 && cp.antennaCableDelay != other.antennaCableDelay {
 		result.SetAntennaCableDelay(other.antennaCableDelay)
 	}
-	if both&PropIDFixedPosECEF != 0 && cp.fixedPosECEF != other.fixedPosECEF {
-		result.SetFixedPosECEF(other.fixedPosECEF)
-	}
-	if both&PropIDFixedPosAcc != 0 && cp.fixedPosAcc != other.fixedPosAcc {
-		result.SetFixedPosAcc(other.fixedPosAcc)
-	}
-	if both&PropIDStationary != 0 && cp.stationary != other.stationary {
-		result.SetStationary(other.stationary)
-	}
-	if both&PropIDNMEAEnabled != 0 && cp.nmeaEnabled != other.nmeaEnabled {
-		result.SetNMEAEnabled(other.nmeaEnabled)
-	}
-	if both&PropIDBaudRate != 0 && cp.baudRate != other.baudRate {
-		result.SetBaudRate(other.baudRate)
+	if both&PropIDNavMsgAuth != 0 && cp.navMsgAuth != other.navMsgAuth {
+		result.SetNavMsgAuth(other.navMsgAuth)
 	}
 	return result
 }
@@ -521,75 +606,76 @@ func (cp *ConfigProps) Missing(other *ConfigProps) *ConfigProps {
 func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	m := make(map[string]interface{})
 
-	if cp.valid&PropIDGNSSEnabled != 0 {
-		m["gnssEnabled"] = cp.gnssEnabled.Items()
+	if cp.valid&PropIDSignalsEnabled != 0 {
+		m["signalsEnabled"] = cp.signalsEnabled.GNSSStringGroups()
 	}
-	if cp.valid&PropIDPrimaryGNSS != 0 {
-		m["primaryGNSS"] = cp.primaryGNSS
+	if cp.valid&PropIDTimeGNSS != 0 {
+		m["timeGNSS"] = cp.timeGNSS
 	}
-	if cp.valid&PropIDSolutionPeriod != 0 {
-		m["solutionPeriod"] = float64(cp.solutionPeriod) / float64(time.Second)
-	}
-	if cp.valid&PropIDTimePulseWidth != 0 {
-		m["timePulseWidth"] = float64(cp.timePulseWidth) / float64(time.Second)
-	}
-	if cp.valid&PropIDTimePulsePeriod != 0 {
-		m["timePulsePeriod"] = float64(cp.timePulsePeriod) / float64(time.Second)
-	}
-	if cp.valid&PropIDTimePulseAlignToGNSS != 0 {
-		m["timePulseAlignToGNSS"] = cp.timePulseAlignToGNSS
-	}
-	if cp.valid&PropIDTimePulseOnlyWhenLocked != 0 {
-		m["timePulseOnlyWhenLocked"] = cp.timePulseOnlyWhenLocked
-	}
-	if cp.valid&PropIDTimePulsePolarityRising != 0 {
-		m["timePulsePolarityRising"] = cp.timePulsePolarityRising
-	}
-	if cp.valid&PropIDTimeMode != 0 {
-		switch cp.timeMode {
-		case TimeModeDisabled:
-			m["timeMode"] = "disabled"
-		case TimeModeSurvey:
-			m["timeMode"] = "survey"
-		case TimeModeFixed:
-			m["timeMode"] = "fixed"
-		default:
-			m["timeMode"] = cp.timeMode
+	if cp.valid&timePulseProps != 0 {
+		tpm := make(map[string]interface{})
+		if cp.valid&PropIDTimePulseWidth != 0 {
+			tpm["width"] = float64(cp.timePulse.Width) / float64(time.Second)
 		}
+		if cp.valid&PropIDTimePulsePeriod != 0 {
+			tpm["period"] = float64(cp.timePulse.Period) / float64(time.Second)
+		}
+		if cp.valid&PropIDTimePulseAlignToGNSS != 0 {
+			tpm["alignToGNSS"] = cp.timePulse.AlignToGNSS
+		}
+		if cp.valid&PropIDTimePulseOnlyWhenLocked != 0 {
+			tpm["onlyWhenLocked"] = cp.timePulse.OnlyWhenLocked
+		}
+		if cp.valid&PropIDTimePulsePolarityRising != 0 {
+			tpm["polarityRising"] = cp.timePulse.PolarityRising
+		}
+		m["timePulse"] = tpm
+	}
+	if cp.valid&PropIDMode != 0 {
+		mm := make(map[string]interface{})
+		mm["static"] = cp.mode.Static
+		if cp.mode.PosType == PosTypeECEF {
+			mm["fixedPosECEF"] = []float64{
+				cp.mode.FixedPosECEF[0].Meters(),
+				cp.mode.FixedPosECEF[1].Meters(),
+				cp.mode.FixedPosECEF[2].Meters(),
+			}
+		}
+		if cp.mode.PosType == PosTypeLLH {
+			mm["fixedPosLLH"] = []float64{
+				cp.mode.FixedPosLLH[0].Degrees(),
+				cp.mode.FixedPosLLH[1].Degrees(),
+			}
+			mm["height"] = cp.mode.Height.Meters()
+		}
+		if cp.mode.PosType != PosTypeNone {
+			mm["fixedPosAcc"] = cp.mode.FixedPosAcc.Meters()
+		}
+		m["mode"] = mm
 	}
 	if cp.valid&PropIDAntennaCableDelay != 0 {
 		m["antennaCableDelay"] = float64(cp.antennaCableDelay) / float64(time.Second)
 	}
-	if cp.valid&PropIDFixedPosECEF != 0 {
-		m["fixedPosECEF"] = []float64{
-			cp.fixedPosECEF[0].Meters(),
-			cp.fixedPosECEF[1].Meters(),
-			cp.fixedPosECEF[2].Meters(),
+	if cp.valid&PropIDNavMsgAuth != 0 {
+		switch cp.navMsgAuth {
+		case NavMsgAuthNone:
+			m["navMsgAuth"] = "none"
+		case NavMsgAuthOSNMA:
+			m["navMsgAuth"] = "OSNMA"
 		}
-	}
-	if cp.valid&PropIDFixedPosAcc != 0 {
-		m["fixedPosAcc"] = float64(cp.fixedPosAcc) / float64(Meter)
-	}
-	if cp.valid&PropIDStationary != 0 {
-		m["stationary"] = cp.stationary
-	}
-	if cp.valid&PropIDNMEAEnabled != 0 {
-		m["nmeaEnabled"] = cp.nmeaEnabled
-	}
-	if cp.valid&PropIDBaudRate != 0 {
-		m["baudRate"] = cp.baudRate
 	}
 	return m
 }
 
 // SetPPS configures the properties for a pulse-per-second output
-func (cp *ConfigProps) SetPPS() {
-	cp.SetSolutionPeriod(1 * time.Second)
-	cp.SetTimePulsePeriod(1 * time.Second)
-	cp.SetTimePulseWidth(time.Second / 10)
-	cp.SetTimePulsePolarityRising(true)
-	cp.SetTimePulseAlignToGNSS(true)
-	cp.SetTimePulseOnlyWhenLocked(true)
+func (cp *ConfigProps) SetPPS(width time.Duration) {
+	cp.SetTimePulse(TimePulse{
+		Period:         1 * time.Second,
+		Width:          width,
+		PolarityRising: true,
+		AlignToGNSS:    true,
+		OnlyWhenLocked: true,
+	})
 }
 
 type Length int64
@@ -626,6 +712,40 @@ func ParseLength(s string) (Length, error) {
 	return Length(n), nil
 }
 
+type Angle int64
+
+const (
+	Nanodegrees  Angle = 1
+	Microdegrees Angle = 1000 * Nanodegrees
+	Millidegrees Angle = 1000 * Microdegrees
+	Degrees      Angle = 1000 * Millidegrees
+)
+
+func DegreesFromFloat(f float64) Angle {
+	return Angle(math.Round(f * float64(Degrees)))
+}
+
+func (a Angle) Degrees() float64 {
+	return float64(a) / float64(Degrees)
+}
+
+func (a Angle) String() string {
+	return fmt.Sprintf("%v", a.Degrees())
+}
+
+func ParseAngle(s string) (Angle, error) {
+	var f float64
+	var trailing string
+	if n, err := fmt.Sscanf(s, "%f%s", &f, &trailing); n != 1 || err != io.EOF {
+		return 0, fmt.Errorf("invalid angle: %q", s)
+	}
+	n, err := float64ToInt64(math.Round(f * float64(Degrees)))
+	if err != nil {
+		return 0, fmt.Errorf("invalid angle %f: %w", f, err)
+	}
+	return Angle(n), nil
+}
+
 type Point3D [3]Length
 
 func (p Point3D) String() string {
@@ -634,6 +754,10 @@ func (p Point3D) String() string {
 		s[i] = strconv.FormatFloat(p[i].Meters(), 'f', -1, 64)
 	}
 	return fmt.Sprintf("%s,%s,%s", s[0], s[1], s[2])
+}
+
+func (p Point3D) IsZero() bool {
+	return p[0] == 0 && p[1] == 0 && p[2] == 0
 }
 
 func ParsePoint3D(s string) (Point3D, error) {
@@ -653,11 +777,15 @@ func ParsePoint3D(s string) (Point3D, error) {
 	return p, nil
 }
 
-// Survey specifies whether a survey should be performed, and if so, its parameters
-// The survey is performed when the time mode is one of the modes in When.
-// If When is non-zero, then AccLimit must also be non-zero.
+type SurveyFlags int
+
+const (
+	SurveyAgain SurveyFlags = 1 << iota // do a survey even if we have done one already
+)
+
+// Survey specifies the parameters for performing a survey-in.
 type Survey struct {
-	When     TimeModeSet   // perform a survey when the time mode is one of these
+	Flags    SurveyFlags   // control survey behavior
 	MinDur   time.Duration // survey should run at least this long
 	AccLimit Length        // survey should run until this accuracy is achieved
 }
@@ -687,4 +815,47 @@ func TimeModeFlags(ms ...TimeMode) TimeModeSet {
 		flags |= 1 << m
 	}
 	return flags
+}
+
+type PosType byte
+
+const (
+	PosTypeNone PosType = iota
+	PosTypeECEF
+	PosTypeLLH
+)
+
+type Mode struct {
+	Static       bool     // true if receiver should assume antenna position does not move
+	PosType      PosType  // which coordinate system to use for fixed position
+	FixedPosECEF Point3D  // ECEF coordinates (when PosType == PosTypeECEF)
+	FixedPosLLH  [2]Angle // Latitude and Longitude (when PosType == PosTypeLLH)
+	Height       Length   // Height (when PosType == PosTypeLLH)
+	FixedPosAcc  Length   // accuracy of fixed position
+}
+
+func (m Mode) IsZero() bool {
+	return m == Mode{}
+}
+
+type NavMsgAuth byte
+
+const (
+	NavMsgAuthNone NavMsgAuth = iota // no authentication
+	NavMsgAuthOSNMA
+)
+
+// TimeEstimate represents an estimate of the current UTC time that can be provided to the GPS receiver.
+// An EstimatedTime of zero means that no estimate is available.
+// If TimeOfEstimate is non-zero, the EstimatedTime to be sent to the GPS receiver will be adjusted by the
+// elapsed time between the time at which the estimate is sent and TimeOfEstimate.
+// If TimeOfEstimate is zero, then the EstimatedTime is sent as-is, which is useful for testing purposes.
+// For a system time generated by time.Now(), EstimatedTime and TimeOfEstimate will be the same.
+// If EstimatedTime is non-zero, then the Accuracy must also be non-zero.
+type TimeEstimate struct {
+	EstimatedTime  time.Time             // the estimated wall-clock time
+	TimeOfEstimate time.Time             // the monotonic time at which the estimate was made
+	Accuracy       time.Duration         // the accuracy of the estimate
+	LeapSecond     ptime.LeapSecondState // leap second information, if known
+	Trusted        bool                  // whether the estimate is trusted
 }

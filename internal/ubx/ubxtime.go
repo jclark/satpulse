@@ -110,16 +110,18 @@ func utcStandardToGNSS(u bin.UTCStandard) gpsprot.GNSS {
 }
 
 func timeTimTP(m *bin.TimTP) *gpsprot.TimeMsg {
-	if (m.Flags & bin.TimTPTimeBase) == bin.TimTPTimeBaseUTC {
-		// In this case the m.TOWMS will not be the GPS time (but will have GPS-UTC offset subtracted)
-		// This will be problematic around a leap second, so ignore.
-		// Can we do better?
-		return nil
-	}
 	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, NativeMsgID: "UBX-TIM-TP"}
 	if (m.Flags & bin.TimTPQErrInvalid) == 0 {
 		off := ptime.Picoseconds(m.QErr)
 		t.PulseOffset = &off
+	}
+	tow := msTOW(m.TOWMS) + msScaledTOW(m.TOWSubMS)
+	if (m.Flags & bin.TimTPTimeBase) == bin.TimTPTimeBaseUTC {
+		// XXX This will be problematic around a leap second.
+		// we should return nil in the case that we might be on a leap second
+		utc := ptime.GPSUTC(m.Week, tow)
+		t.UTCTime = &utc
+		return &t
 	}
 	conv := ptime.GPS
 	switch m.RefInfo & bin.TimTPTimeRefGNSS {
@@ -136,7 +138,7 @@ func timeTimTP(m *bin.TimTP) *gpsprot.TimeMsg {
 	default:
 		return nil
 	}
-	t.TAITime = conv(int16(m.Week), msTOW(m.TOWMS)+msScaledTOW(m.TOWSubMS))
+	t.TAITime = conv(int16(m.Week), tow)
 	return &t
 }
 

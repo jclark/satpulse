@@ -1,7 +1,8 @@
 package ubx
 
 import (
-	"math"
+	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -26,13 +27,11 @@ type CfgOld struct {
 // A PropID will be included in the slice for a field in cfgOldProps if and only if
 // getting or setting that property may need to use the corresponding field in CfgOld.
 var cfgOldProps = struct {
-	tmode, tp5, gnss, rate, nav5, prt []gpsprot.PropIDs
+	tmode, tp5, gnss, nav5 []gpsprot.PropIDs
 }{
 	// tmode applies to tmode2 and tmode3 as well
 	tmode: []gpsprot.PropIDs{
-		gpsprot.PropIDTimeMode,
-		gpsprot.PropIDFixedPosECEF,
-		gpsprot.PropIDFixedPosAcc,
+		gpsprot.PropIDMode,
 	},
 	tp5: []gpsprot.PropIDs{
 		gpsprot.PropIDAntennaCableDelay,
@@ -41,24 +40,16 @@ var cfgOldProps = struct {
 		gpsprot.PropIDTimePulsePeriod,
 		gpsprot.PropIDTimePulseWidth,
 		gpsprot.PropIDTimePulseOnlyWhenLocked,
-		gpsprot.PropIDPrimaryGNSS,
+		gpsprot.PropIDTimeGNSS,
 	},
 	gnss: []gpsprot.PropIDs{
-		// XXX PropIDPrimaryGNSS doesn't currently look at the gnss field (I think)
-		// PropIDPrimaryGNSS is regarded as unset, if tp5 isn't aligned to a GNSS and nav5 also doesn't have a preferred GNSS
-		gpsprot.PropIDGNSSEnabled,
-		gpsprot.PropIDTimePulseAlignToGNSS, // cookTp5 can end up looking at the .gnss field for this
-	},
-	rate: []gpsprot.PropIDs{
-		gpsprot.PropIDSolutionPeriod,
+		// XXX PropIDTimeGNSS doesn't currently look at the gnss field (I think)
+		// PropIDTimeGNSS is regarded as unset, if tp5 isn't aligned to a GNSS and nav5 also doesn't have a preferred GNSS
+		gpsprot.PropIDSignalsEnabled,
+		gpsprot.PropIDTimePulseAlignToGNSS, // changeTp5 can end up looking at the .gnss field for this
 	},
 	nav5: []gpsprot.PropIDs{
-		gpsprot.PropIDPrimaryGNSS,
-		gpsprot.PropIDStationary,
-	},
-	prt: []gpsprot.PropIDs{
-		gpsprot.PropIDNMEAEnabled,
-		gpsprot.PropIDBaudRate,
+		gpsprot.PropIDTimeGNSS,
 	},
 }
 
@@ -78,7 +69,7 @@ func (raw *CfgOld) SetMsgRate(msgID bin.MsgID, rate byte) {
 	raw.msgRate[msgID] = rates
 }
 
-func (raw *CfgOld) msgEnabled(msgID bin.MsgID) bool {
+func (raw *CfgOld) anyMsgEnabled() bool {
 	if raw == nil || raw.prt == nil {
 		return false
 	}
@@ -89,8 +80,12 @@ func (raw *CfgOld) msgEnabled(msgID bin.MsgID) bool {
 	if raw.msgRate == nil {
 		return false
 	}
-	rates := raw.msgRate[msgID]
-	return rates[int(prt)] == 1
+	for _, rates := range raw.msgRate {
+		if rates[int(prt)] != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (raw *CfgOld) prtNMEAOutDisabled(origPrt *bin.CfgPrt) bool {
@@ -100,294 +95,88 @@ func (raw *CfgOld) prtNMEAOutDisabled(origPrt *bin.CfgPrt) bool {
 	return origPrt.OutProtoMask&bin.CfgPrtProtoNMEA != 0 && raw.prt.OutProtoMask&bin.CfgPrtProtoNMEA == 0
 }
 
-func (raw *CfgOld) cookPrt(cp *gpsprot.ConfigProps) {
-	prt := raw.prt
-	if prt == nil {
-		return
-	}
-	cp.SetNMEAEnabled(prt.OutProtoMask&bin.CfgPrtProtoNMEA != 0)
-	if prt.PortID == bin.PortUART1 || prt.PortID == bin.PortUART2 {
-		cp.SetBaudRate(prt.BaudRate)
-	}
-}
-
-func (raw *CfgOld) changePrt(cp *gpsprot.ConfigProps) *bin.CfgPrt {
+func (raw *CfgOld) changePrtProto(mc *msgChanges) *bin.CfgPrt {
 	if raw.prt == nil {
 		return nil
 	}
-
-	prt := *raw.prt
-	if nmeaEnabled, exists := cp.GetNMEAEnabled(); exists {
-		if nmeaEnabled {
-			prt.OutProtoMask |= bin.CfgPrtProtoNMEA
-		} else {
-			prt.OutProtoMask &^= bin.CfgPrtProtoNMEA
-		}
-	}
-	if baudRate, exists := cp.GetBaudRate(); exists {
-		if prt.PortID == bin.PortUART1 || prt.PortID == bin.PortUART2 {
-			prt.BaudRate = baudRate
-		}
-	}
-	if prt == *raw.prt {
+	outProtoMask := mc.changeOutProtoMask(raw.prt.OutProtoMask)
+	if outProtoMask == raw.prt.OutProtoMask {
 		return nil
 	}
+	prt := *raw.prt
+	prt.OutProtoMask = outProtoMask
+	return &prt
+}
+
+func (raw *CfgOld) changePrtBaudRate(opts *gpsprot.ConfigOptions) *bin.CfgPrt {
+	if opts.BaudRate == 0 || raw.prt == nil || opts.BaudRate == raw.prt.BaudRate ||
+		(raw.prt.PortID != bin.PortUART1 && raw.prt.PortID != bin.PortUART2) {
+		return nil
+	}
+	prt := *raw.prt
+	prt.BaudRate = opts.BaudRate
 	return &prt
 }
 
 func (raw *CfgOld) cookTmode(cp *gpsprot.ConfigProps) {
-	tm := raw.tmode
-	if tm == nil {
+	tmc := raw.getTmodeConfig()
+	if tmc == nil {
 		return
 	}
-	switch tm.TimeMode {
-	case bin.CfgTmodeDisabled:
-		cp.SetTimeMode(gpsprot.TimeModeDisabled)
-	case bin.CfgTmodeSurveyIn:
-		cp.SetTimeMode(gpsprot.TimeModeSurvey)
-	case bin.CfgTmodeFixedMode:
-		cp.SetFixedPosECEF(gpsprot.Point3D{
-			gpsprot.Length(tm.FixedPosX) * gpsprot.Centimeter,
-			gpsprot.Length(tm.FixedPosY) * gpsprot.Centimeter,
-			gpsprot.Length(tm.FixedPosZ) * gpsprot.Centimeter,
-		})
-		acc := math.Sqrt(float64(tm.FixedPosVar))
-		cp.SetFixedPosAcc(gpsprot.Length(acc) * gpsprot.Millimeter)
-	}
+	cp.SetMode(tmc.getMode())
 }
 
-func (raw *CfgOld) changeTmode(target *gpsprot.ConfigTarget) (*bin.CfgTmode, bool) {
-	if raw.tmode == nil {
-		return nil, false
+func (raw *CfgOld) getTmodeConfig() *tmodeConfig {
+	tmc := tmodeConfig{}
+	if raw.tmode3 != nil {
+		tmc.fromTmode3(raw.tmode3)
+	} else if raw.tmode2 != nil {
+		tmc.fromTmode2(raw.tmode2)
+	} else if raw.tmode != nil {
+		tmc.fromTmode(raw.tmode)
+	} else {
+		return nil
 	}
-	tm := *raw.tmode
+	return &tmc
+}
 
-	mode := gpsprot.TimeModeDisabled
-	switch tm.TimeMode {
-	case bin.CfgTmodeSurveyIn:
-		mode = gpsprot.TimeModeSurvey
-	case bin.CfgTmodeFixedMode:
-		mode = gpsprot.TimeModeFixed
+func (raw *CfgOld) changeTmode(target *gpsprot.ConfigTarget) (bin.Msg, bin.Msg, error) {
+	// Get the current raw tmode message
+	var tmodeMsg bin.Msg
+	if raw.tmode3 != nil {
+		tmodeMsg = raw.tmode3
+	} else if raw.tmode2 != nil {
+		tmodeMsg = raw.tmode2
+	} else if raw.tmode != nil {
+		tmodeMsg = raw.tmode
+	} else {
+		// no tmode message, so nothing to change
+		return nil, nil, nil
 	}
-	cp := &target.Props
-	if timeMode, exists := cp.GetTimeMode(); exists {
-		mode = timeMode
+	// Convert the raw tmode message to the intermediate representation.
+	cur := &tmodeConfig{}
+	cur.fromTmodeMsg(tmodeMsg)
+	// Use the intermediate tmodeConfig representation to determine the messages to produce
+	var err error
+	var tmc [2]*tmodeConfig
+	tmc[0], tmc[1], err = createTmodeConfigs(target, cur, resurveyDisable)
+	if err != nil {
+		return nil, nil, err
 	}
-	survey := false
-	if target.Opts.Survey.When.Contains(mode) {
-		survey = true
-		if tm.TimeMode != bin.CfgTmodeFixedMode {
-			mode = gpsprot.TimeModeDisabled
+	// Convert the intermediate messages back to the raw message type using the current tmodeMsg as a basis.
+	var msg [2]bin.Msg
+	for i := range 2 {
+		if tmc[i] == nil {
+			continue
 		}
-	}
-	switch mode {
-	case gpsprot.TimeModeDisabled:
-		tm.TimeMode = bin.CfgTmodeDisabled
-	case gpsprot.TimeModeSurvey:
-		tm.TimeMode = bin.CfgTmodeSurveyIn
-	case gpsprot.TimeModeFixed:
-		tm.TimeMode = bin.CfgTmodeFixedMode
-	}
-
-	if ecef, exists := cp.GetFixedPosECEF(); exists {
-		var hp int8
-		err := changeECEF(ecef, &tm.FixedPosX, &tm.FixedPosY, &tm.FixedPosZ, &hp, &hp, &hp)
+		msg[i], err = tmc[i].toTmodeMsg(tmodeMsg)
 		if err != nil {
-			return nil, false
+			return nil, nil, err
 		}
 	}
-	if tm == *raw.tmode {
-		return nil, survey
-	}
-	return &tm, survey
+	return msg[0], msg[1], nil
 }
 
-func (raw *CfgOld) surveyTmode(opts gpsprot.ConfigOptions) *bin.CfgTmode {
-	tm := *raw.tmode
-	tm.TimeMode = bin.CfgTmodeSurveyIn
-	tm.SvinMinDur = uint32(opts.Survey.MinDur.Round(time.Second) / time.Second)
-	q, _ := divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter))
-	q = q * q
-	if q > math.MaxUint32 {
-		q = math.MaxUint32
-	}
-	tm.SvinVarLimit = uint32(q * q)
-	return &tm
-}
-
-func (raw *CfgOld) cookTmode2(cp *gpsprot.ConfigProps) {
-	tm := raw.tmode2
-	if tm == nil {
-		return
-	}
-	switch tm.TimeMode {
-	case bin.CfgTmode2Disabled:
-		cp.SetTimeMode(gpsprot.TimeModeDisabled)
-	case bin.CfgTmode2SurveyIn:
-		cp.SetTimeMode(gpsprot.TimeModeSurvey)
-	case bin.CfgTmode2FixedMode:
-		cp.SetTimeMode(gpsprot.TimeModeFixed)
-		if tm.Flags&bin.CfgTmode2LLA == 0 {
-			cp.SetFixedPosECEF(gpsprot.Point3D{
-				gpsprot.Length(tm.EcefXOrLat) * gpsprot.Centimeter,
-				gpsprot.Length(tm.EcefYOrLon) * gpsprot.Centimeter,
-				gpsprot.Length(tm.EcefZOrAlt) * gpsprot.Centimeter,
-			})
-		}
-		cp.SetFixedPosAcc(gpsprot.Length(tm.FixedPosAcc) * gpsprot.Millimeter)
-	}
-}
-
-func (raw *CfgOld) changeTmode2(target *gpsprot.ConfigTarget) (*bin.CfgTmode2, bool) {
-	if raw.tmode2 == nil {
-		return nil, false
-	}
-	tm := *raw.tmode2
-
-	mode := gpsprot.TimeModeDisabled
-	switch tm.TimeMode {
-	case bin.CfgTmode2SurveyIn:
-		mode = gpsprot.TimeModeSurvey
-	case bin.CfgTmode2FixedMode:
-		mode = gpsprot.TimeModeFixed
-	}
-	cp := &target.Props
-	if timeMode, exists := cp.GetTimeMode(); exists {
-		mode = timeMode
-	}
-	survey := false
-	if target.Opts.Survey.When.Contains(mode) {
-		survey = true
-		if tm.TimeMode != bin.CfgTmode2FixedMode {
-			mode = gpsprot.TimeModeDisabled
-		}
-	}
-
-	switch mode {
-	case gpsprot.TimeModeDisabled:
-		tm.TimeMode = bin.CfgTmode2Disabled
-	case gpsprot.TimeModeSurvey:
-		tm.TimeMode = bin.CfgTmode2SurveyIn
-	case gpsprot.TimeModeFixed:
-		tm.TimeMode = bin.CfgTmode2FixedMode
-	}
-
-	if ecef, exists := cp.GetFixedPosECEF(); exists {
-		var hp int8
-		err := changeECEF(ecef, &tm.EcefXOrLat, &tm.EcefYOrLon, &tm.EcefZOrAlt, &hp, &hp, &hp)
-		if err != nil {
-			return nil, false
-		}
-		tm.Flags &^= bin.CfgTmode2LLA
-	}
-
-	if tm == *raw.tmode2 {
-		return nil, survey
-	}
-	return &tm, survey
-}
-
-func (raw *CfgOld) surveyTmode2(opts gpsprot.ConfigOptions) *bin.CfgTmode2 {
-	tm := *raw.tmode2
-	tm.TimeMode = bin.CfgTmode2SurveyIn
-	tm.SvinMinDur = uint32(opts.Survey.MinDur.Round(time.Second) / time.Second)
-	q, _ := divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter))
-	tm.SvinAccLimit = uint32(q)
-	return &tm
-}
-
-func (raw *CfgOld) changeTmode3(target *gpsprot.ConfigTarget) (*bin.CfgTmode3, bool) {
-	if raw.tmode3 == nil {
-		return nil, false
-	}
-	tm := *raw.tmode3
-	mode := gpsprot.TimeModeDisabled
-	switch tm.Flags & bin.CfgTmode3Mode {
-	case bin.CfgTmode3SurveyIn:
-		mode = gpsprot.TimeModeSurvey
-	case bin.CfgTmode3FixedMode:
-		mode = gpsprot.TimeModeFixed
-	}
-	cp := &target.Props
-	if timeMode, exists := cp.GetTimeMode(); exists {
-		mode = timeMode
-	}
-	survey := false
-	if target.Opts.Survey.When.Contains(mode) {
-		survey = true
-		if tm.Flags&bin.CfgTmode3Mode != bin.CfgTmode3FixedMode {
-			mode = gpsprot.TimeModeDisabled
-		}
-	}
-	tm.Flags &^= bin.CfgTmode3Mode
-	switch mode {
-	case gpsprot.TimeModeDisabled:
-		// do nothing
-	case gpsprot.TimeModeSurvey:
-		tm.Flags |= bin.CfgTmode3SurveyIn
-	case gpsprot.TimeModeFixed:
-		tm.Flags |= bin.CfgTmode3FixedMode
-	}
-	if ecef, exists := cp.GetFixedPosECEF(); exists {
-		err := changeECEF(ecef, &tm.EcefXOrLat, &tm.EcefYOrLon, &tm.EcefZOrAlt,
-			&tm.EcefXOrLatHP, &tm.EcefYOrLonHP, &tm.EcefZOrAltHP)
-		if err != nil {
-			return nil, false
-		}
-		tm.Flags &^= bin.CfgTmode3LLA
-	}
-
-	if tm == *raw.tmode3 {
-		return nil, survey
-	}
-	return &tm, survey
-}
-
-func (raw *CfgOld) surveyTmode3(opts gpsprot.ConfigOptions) *bin.CfgTmode3 {
-	tm := *raw.tmode3
-	tm.Flags &^= bin.CfgTmode3Mode
-	tm.Flags |= bin.CfgTmode3SurveyIn
-	tm.SvinMinDur = uint32(opts.Survey.MinDur.Round(time.Second) / time.Second)
-	q, _ := divModRound(int64(opts.Survey.AccLimit), int64(gpsprot.Millimeter/10))
-	tm.SvinAccLimit = uint32(q)
-	return &tm
-}
-
-func changeECEF(ecef gpsprot.Point3D, x, y, z *int32, xhp, yhp, zhp *int8) (err error) {
-	var lo [3]int32
-	var hi [3]int8
-	for i := 0; i < 3; i++ {
-		lo[i], hi[i], err = splitLength(ecef[0])
-		if err != nil {
-			return
-		}
-	}
-	*x, *y, *z, *xhp, *yhp, *zhp = lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
-	return
-}
-
-func (raw *CfgOld) cookTmode3(cp *gpsprot.ConfigProps) {
-	tm := raw.tmode3
-	if tm == nil {
-		return
-	}
-	switch tm.Flags & bin.CfgTmode3Mode {
-	case bin.CfgTmode3Disabled:
-		cp.SetTimeMode(gpsprot.TimeModeDisabled)
-	case bin.CfgTmode3SurveyIn:
-		cp.SetTimeMode(gpsprot.TimeModeSurvey)
-	case bin.CfgTmode3FixedMode:
-		cp.SetTimeMode(gpsprot.TimeModeFixed)
-		if tm.Flags&bin.CfgTmode3LLA == 0 {
-			cp.SetFixedPosECEF(gpsprot.Point3D{
-				lengthHP(tm.EcefXOrLat, tm.EcefXOrLatHP),
-				lengthHP(tm.EcefYOrLon, tm.EcefYOrLonHP),
-				lengthHP(tm.EcefZOrAlt, tm.EcefZOrAltHP),
-			})
-		}
-		cp.SetFixedPosAcc(gpsprot.Length(tm.FixedPosAcc) * (gpsprot.Millimeter / 10))
-	}
-}
 
 func (raw *CfgOld) cookTp5(cp *gpsprot.ConfigProps) {
 	tp := raw.tp5
@@ -400,7 +189,7 @@ func (raw *CfgOld) cookTp5(cp *gpsprot.ConfigProps) {
 	gnss := tp5FlagsGNSS(flags)
 	cp.SetTimePulseAlignToGNSS(gnss != 0)
 	if gnss != 0 {
-		cp.SetPrimaryGNSS(gnss)
+		cp.SetTimeGNSS(gnss)
 	}
 	period, width := tpPeriodWidth(tp.FreqPeriod, tp.PulseLenRatio, flags)
 	onlyWhenLocked := false
@@ -580,7 +369,7 @@ func (raw *CfgOld) changeTp5(cp *gpsprot.ConfigProps) *bin.CfgTp5 {
 }
 
 func (raw *CfgOld) changeTp5GNSS(cp *gpsprot.ConfigProps) gpsprot.GNSS {
-	g, _ := cp.GetPrimaryGNSS()
+	g, _ := cp.GetTimeGNSS()
 	// if the primary GNSS is explicitly specified, then use that (regardless of whether it's enabled)
 	if g.IsMajor() {
 		return g
@@ -620,7 +409,47 @@ func (raw *CfgOld) cookGNSS(cp *gpsprot.ConfigProps) {
 	if gnss == nil {
 		return
 	}
-	cp.SetGNSSEnabled(gnssEnabledSet(gnss))
+	var ss gpsprot.SignalSet
+	for _, blk := range gnss.Blocks {
+		if blk.Enable&1 == 1 {
+			ss |= gnssCfgMaskSignals(blk.GNSSID, blk.SigCfgMask)
+		}
+	}
+	cp.SetSignalsEnabled(ss)
+}
+
+var gnssSigMask = []struct {
+	gnss bin.GNSSID
+	mask bin.CfgGNSSSigMask
+	sig  gpsprot.Signal
+}{
+	{bin.GPS, bin.CfgGNSSGPSL1CA, gpsprot.SigGPSL1CA},
+	{bin.GPS, bin.CfgGNSSGPSL2C, gpsprot.SigGPSL2C},
+	{bin.GPS, bin.CfgGNSSGPSL5, gpsprot.SigGPSL5},
+	{bin.SBAS, bin.CfgGNSSSBASL1CA, gpsprot.SigSBASL1CA},
+	{bin.GAL, bin.CfgGNSSGALE1, gpsprot.SigGALE1},
+	{bin.GAL, bin.CfgGNSSGALE5a, gpsprot.SigGALE5a},
+	{bin.GAL, bin.CfgGNSSGALE5b, gpsprot.SigGALE5b},
+	{bin.BDS, bin.CfgGNSSBDSB1I, gpsprot.SigBDSB1I},
+	{bin.BDS, bin.CfgGNSSBDSB2I, gpsprot.SigBDSB2I},
+	{bin.BDS, bin.CfgGNSSBDSB2A, gpsprot.SigBDSB2a},
+	{bin.GLO, bin.CfgGNSSGLOL1, gpsprot.SigGLOL1},
+	{bin.GLO, bin.CfgGNSSGLOL2, gpsprot.SigGLOL2},
+	{bin.QZSS, bin.CfgGNSSQZSSL1CA, gpsprot.SigQZSSL1CA},
+	{bin.QZSS, bin.CfgGNSSQZSSL1S, gpsprot.SigQZSSL1S},
+	{bin.QZSS, bin.CfgGNSSQZSSL2C, gpsprot.SigQZSSL2C},
+	{bin.QZSS, bin.CfgGNSSQZSSL5, gpsprot.SigQZSSL5},
+}
+
+func gnssCfgMaskSignals(g bin.GNSSID, mask bin.CfgGNSSSigMask) gpsprot.SignalSet {
+	ss := gpsprot.SignalSet(0)
+	// not an efficient algorithm, but it doesn't matter
+	for _, m := range gnssSigMask {
+		if m.gnss == g && m.mask&mask != 0 {
+			ss |= gpsprot.SignalSetOf(m.sig)
+		}
+	}
+	return ss
 }
 
 func gnssEnabledSet(gnss *bin.CfgGNSS) gpsprot.GNSSSet {
@@ -631,38 +460,178 @@ func gnssEnabledSet(gnss *bin.CfgGNSS) gpsprot.GNSSSet {
 	for _, blk := range gnss.Blocks {
 		if blk.Enable != 0 {
 			if g := idToGNSS(blk.GNSSID); g != 0 {
-				enabled |= gpsprot.GNSSFlag(g)
+				enabled |= gpsprot.GNSSSetOf(g)
 			}
 		}
 	}
 	return enabled
 }
 
-func (raw *CfgOld) cookRate(cp *gpsprot.ConfigProps, ver *Version) {
-	rate := raw.rate
-	if rate == nil {
+func (raw *CfgOld) changeGNSS(cp *gpsprot.ConfigProps, ver *Version, monGNSS *monGNSS) (*bin.CfgGNSS, error) {
+	if raw.gnss == nil {
+		return nil, nil
+	}
+	signals, exists := cp.GetSignalsEnabled()
+	if !exists {
+		return nil, nil
+	}
+	gnss := *raw.gnss
+	blocks := make([]bin.CfgGNSSBlock, len(gnss.Blocks))
+	copy(blocks, gnss.Blocks)
+	gnss.Blocks = blocks
+	nMajor := 0
+	// Gen 8 has restriction to two carrier frequencies
+	// GPS and GAL have the same L1 frequency, but BDS and GLO are both different
+	const (
+		freqGPSGAL = 0x1
+		freqGLO    = 0x2
+		freqBDS    = 0x4
+	)
+	freq := 0
+	// Note that `blk, i := range blocks` won't work here because we modify blocks[i]
+	for i := range blocks {
+		blk := &blocks[i]
+		if blk.GNSSID == bin.IMES {
+			// don't mess with IMES
+			// it's not a GNSS, and our configuration doesn't touch it
+			continue
+		}
+		cfgMask := bin.CfgGNSSSigMask(0)
+		g := idToGNSS(blk.GNSSID)
+		if g != 0 && (ver.GNSS.Contains(g) || (ver.GNSS == 0 && blk.GNSSID == bin.GPS)) {
+			// the signal corresponding to the 0x1 bit in the SigCfgMask is always supported if the GNSS is available
+			if gnssCfgMaskSignals(blk.GNSSID, 0x01)&signals != 0 {
+				cfgMask |= 0x1
+			}
+			if blk.Enable&0x1 != 0 && blk.SigCfgMask&^0x01 != 0 {
+				for i := 1; i < 8; i++ {
+					m := bin.CfgGNSSSigMask(1 << i)
+					if blk.SigCfgMask&m != 0 {
+						if signals&gnssCfgMaskSignals(blk.GNSSID, m) != 0 {
+							cfgMask |= m
+						}
+					}
+				}
+			}
+			// Figure out whether to enable QZSS L1S
+			// 19.2 is documented as first version supporting UBX-NAV-SLAS, which is specific to QZSS L1S
+			if blk.GNSSID == bin.QZSS && signals&gpsprot.SignalSetOf(gpsprot.SigQZSSL1S) != 0 && ver.protVerAtLeast(19, 2) {
+				cfgMask |= bin.CfgGNSSQZSSL1S
+			}
+		}
+		blk.SigCfgMask = cfgMask
+		if cfgMask != 0 {
+			blk.Enable = 0x1
+			if g.IsMajor() {
+				nMajor++
+				switch g {
+				case gpsprot.GPS, gpsprot.GAL:
+					freq |= freqGPSGAL
+				case gpsprot.GLO:
+					freq |= freqGLO
+				case gpsprot.BDS:
+					freq |= freqBDS
+				}
+			}
+		} else {
+			blk.Enable = 0
+		}
+	}
+	if nMajor == 0 {
+		return nil, fmt.Errorf("GPS receiver does not support specified GNSS signals")
+	}
+	if (monGNSS != nil && nMajor > monGNSS.maxSimultaneousMajorGNSS) || freq == freqGPSGAL|freqGLO|freqBDS {
+		// try to disable GLONASS
+		for i := range blocks {
+			blk := &blocks[i]
+			if blk.GNSSID == bin.GLO {
+				if blk.Enable&0x1 != 0 {
+					blk.Enable = 0
+					blk.SigCfgMask = 0
+					nMajor--
+				}
+				break
+			}
+		}
+		// that wasn't enough: not clear which other GNSS to disable
+		if monGNSS != nil && nMajor > monGNSS.maxSimultaneousMajorGNSS {
+			return nil, fmt.Errorf("receiver supports maximum of %d major GNSS; could not determine which to enable", monGNSS.maxSimultaneousMajorGNSS)
+		}
+	}
+	if !ver.protVerGreater(23, 0) {
+		adjustTrackingChannels(&gnss)
+	}
+	// if no changes, then no need to send a message
+	if gnss.CfgGNSSFixed == raw.gnss.CfgGNSSFixed && slices.Equal(gnss.Blocks, raw.gnss.Blocks) {
+		return nil, nil
+	}
+	return &gnss, nil
+}
+
+// adjustTrackingChannels makes sure that the tracking channels comply with constraints in the spec.
+// This is only called for protocol versions where the relevant fields are not read-only.
+// This is conservative, and won't make any changes if the tracking channels do not violate the constraints.
+func adjustTrackingChannels(gnss *bin.CfgGNSS) {
+	numTrkChUse := min(gnss.NumTrkChHw, gnss.NumTrkChUse)
+
+	resTotal := 0
+	for i := range gnss.Blocks {
+		blk := &gnss.Blocks[i]
+		if blk.GNSSID == bin.IMES {
+			continue
+		}
+		if blk.MaxTrkCh > numTrkChUse {
+			blk.MaxTrkCh = numTrkChUse
+		} else if blk.MaxTrkCh < 4 && idToGNSS(blk.GNSSID).IsMajor() {
+			// It is required to be at least 4 for a major GNSS
+			// If it's somehow less than 4, then make it something reasonable;
+			// default is usually half the available tracking channels.
+			blk.MaxTrkCh = max(4, numTrkChUse/2)
+		}
+		// Sum of reserved must be less than numTrkChUse
+		// The spec is not explicit whether this applies to only the enabled GNSS or all of them.
+		// But experimentation shows that it applies to enabled only.
+		if blk.Enable&0x1 != 0 {
+			resTotal += int(blk.ResTrkCh)
+		}
+	}
+	if resTotal <= int(numTrkChUse) {
 		return
 	}
-	cp.SetSolutionPeriod(rateSolutionPeriod(rate, ver))
-}
-
-func rateSolutionPeriod(rate *bin.CfgRate, ver *Version) time.Duration {
-	period := time.Duration(rate.MeasRate) * time.Millisecond
-	if ver.protVerAtLeast(18, 0) && rate.NavRate != 0 {
-		period /= time.Duration(rate.NavRate)
+	if resTotal <= int(gnss.NumTrkChHw) {
+		// problem was NumTrkChUse was too small
+		gnss.NumTrkChUse = gnss.NumTrkChHw
+		return
 	}
-	return period
+	// There's some bigger problem, so fix up the ResTrkCh to something reasonable
+	for i := range gnss.Blocks {
+		blk := &gnss.Blocks[i]
+		if blk.Enable&0x1 == 0 || blk.GNSSID == bin.IMES {
+			continue
+		}
+		if idToGNSS(blk.GNSSID).IsMajor() {
+			blk.ResTrkCh = gnss.NumTrkChHw / 4
+			// Seems like a bad idea to have ResTrkCh > MaxTrkCh
+			// even though spec doesn't explicitly disallow it
+			if blk.ResTrkCh > blk.MaxTrkCh {
+				blk.MaxTrkCh = gnss.NumTrkChHw / 2
+			}
+		} else {
+			blk.ResTrkCh = 0
+		}
+	}
 }
 
-func (raw *CfgOld) changeRate(cp *gpsprot.ConfigProps, ver *Version) *bin.CfgRate {
+func (raw *CfgOld) changeRate(cp *gpsprot.ConfigProps) *bin.CfgRate {
 	if raw.rate == nil {
 		return nil
 	}
 	rate := *raw.rate
-	if period, exists := cp.GetSolutionPeriod(); exists {
-		setSolutionPeriod(&rate, period, ver)
+	if raw.anyMsgEnabled() {
+		rate.MeasRate = 1000 // 1 second
+		rate.NavRate = 1
 	}
-	if gnss, exists := cp.GetPrimaryGNSS(); exists {
+	if gnss, exists := cp.GetTimeGNSS(); exists {
 		switch gnss {
 		case gpsprot.GPS:
 			rate.TimeRef = bin.CfgRateGPS
@@ -680,35 +649,20 @@ func (raw *CfgOld) changeRate(cp *gpsprot.ConfigProps, ver *Version) *bin.CfgRat
 	return &rate
 }
 
-func setSolutionPeriod(rate *bin.CfgRate, period time.Duration, ver *Version) {
-	// don't unnecessatily change navRate
-	if rateSolutionPeriod(rate, ver) == period {
-		return
-	}
-	measRate := period.Round(time.Millisecond) / time.Millisecond
-	if measRate <= 0 || measRate > 0xffff {
-		return
-	}
-	rate.MeasRate = uint16(measRate)
-	rate.NavRate = 1
-}
-
-func (raw *CfgOld) cookNav5(cp *gpsprot.ConfigProps) {
+func (raw *CfgOld) cookNav5(cp *gpsprot.ConfigProps, ver *Version) {
 	nav5 := raw.nav5
 	if nav5 == nil {
 		return
 	}
-	stationary := false
-	if nav5.DynModel == bin.CfgNav5DynStationary {
-		stationary = true
+	if ver.tmodeLevel() == 0 {
+		cp.SetMode(gpsprot.Mode{Static: nav5.DynModel == bin.CfgNav5DynStationary})
 	}
-	if _, exist := cp.GetPrimaryGNSS(); !exist {
+	if _, exist := cp.GetTimeGNSS(); !exist {
 		gnss := nav5GNSS(nav5)
 		if gnss != 0 {
-			cp.SetPrimaryGNSS(gnss)
+			cp.SetTimeGNSS(gnss)
 		}
 	}
-	cp.SetStationary(stationary)
 }
 
 func nav5GNSS(nav5 *bin.CfgNav5) gpsprot.GNSS {
@@ -728,24 +682,27 @@ func nav5GNSS(nav5 *bin.CfgNav5) gpsprot.GNSS {
 	return 0
 }
 
-func (raw *CfgOld) changeNav5(cp *gpsprot.ConfigProps) *bin.CfgNav5 {
+func (raw *CfgOld) changeNav5(target *gpsprot.ConfigTarget, ver *Version) *bin.CfgNav5 {
 	if raw.nav5 == nil {
 		return nil
 	}
 
 	nav5 := *raw.nav5
+	// Note we cannot use our normal technique comparing new and old nav5 because of the Mask field.
+	// Instead we set the Mask only if something has changed.
 	nav5.Mask = 0
-	if stationary, exists := cp.GetStationary(); exists {
-		if stationary {
+	if static := dynModelStatic(target); static != nil && ver.tmodeLevel() == 0 {
+		if *static {
 			nav5.DynModel = bin.CfgNav5DynStationary
 		} else if nav5.DynModel == bin.CfgNav5DynStationary {
 			nav5.DynModel = bin.CfgNav5DynPortable
 		}
-		nav5.Mask |= bin.CfgNav5MaskDyn
+		if nav5.DynModel != raw.nav5.DynModel {
+			nav5.Mask |= bin.CfgNav5MaskDyn
+		}
 	}
 
-	if gnss, exists := cp.GetPrimaryGNSS(); exists {
-		nav5.Mask |= bin.CfgNav5MaskUtc
+	if gnss, exists := target.Props.GetTimeGNSS(); exists {
 		switch gnss {
 		case gpsprot.GPS:
 			nav5.UtcStandard = bin.CfgNav5UtcUSNO
@@ -755,12 +712,12 @@ func (raw *CfgOld) changeNav5(cp *gpsprot.ConfigProps) *bin.CfgNav5 {
 			nav5.UtcStandard = bin.CfgNav5UtcNTSC
 		case gpsprot.GAL:
 			nav5.UtcStandard = bin.CfgNav5UtcEU
-		default:
-			nav5.Mask &^= bin.CfgNav5MaskUtc
+		}
+		if nav5.UtcStandard != raw.nav5.UtcStandard {
+			nav5.Mask |= bin.CfgNav5MaskUtc
 		}
 	}
-
-	if nav5 == *raw.nav5 {
+	if nav5.Mask == 0 {
 		return nil
 	}
 	return &nav5
@@ -791,4 +748,21 @@ func idToGNSS(g bin.GNSSID) gpsprot.GNSS {
 		return gpsprot.SBAS
 	}
 	return 0
+}
+
+func monGNSSSet(mon bin.MonGnssMajorGnss) gpsprot.GNSSSet {
+	g := gpsprot.GNSSSet(0)
+	if mon&bin.MonGnssGPS != 0 {
+		g |= gpsprot.GNSSSetOf(gpsprot.GPS)
+	}
+	if mon&bin.MonGnssGlonass != 0 {
+		g |= gpsprot.GNSSSetOf(gpsprot.GLO)
+	}
+	if mon&bin.MonGnssBeidou != 0 {
+		g |= gpsprot.GNSSSetOf(gpsprot.BDS)
+	}
+	if mon&bin.MonGnssGalileo != 0 {
+		g |= gpsprot.GNSSSetOf(gpsprot.GAL)
+	}
+	return g
 }

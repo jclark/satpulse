@@ -34,7 +34,7 @@ func TestBToSpeedBad(t *testing.T) {
 }
 
 func TestSpeedToBBad(t *testing.T) {
-	tests := []int{-1, 0, 1 << 31}
+	tests := []int{-1, 0, 1 << 30}
 	for _, speed := range tests {
 		_, ok := speedToB(speed)
 		if ok {
@@ -45,19 +45,20 @@ func TestSpeedToBBad(t *testing.T) {
 
 func TestByteTransmitTime(t *testing.T) {
 	// Set up Termios settings for 9600 baud 8N1
-	var ts unix.Termios
-	ts.Cflag = unix.CLOCAL | unix.CREAD | unix.CS8 | unix.B9600
+	var attr Attr
+	ts := &attr.ts
+	ts.Cflag = unix.CLOCAL | unix.CREAD | unix.CS8
 	ts.Iflag = unix.IGNBRK
 	ts.Oflag = 0
 	ts.Lflag = 0
 	ts.Cc[unix.VMIN] = 1
 	ts.Cc[unix.VTIME] = 0
+	Speed(9600)(&attr)
 
 	// Calculate the expected duration to send a byte
 	expected := (time.Second / 9600) * 10
 
 	// Calculate the actual duration to send a byte
-	attr := Attr{ts: ts}
 	actual := attr.byteTransmitTime()
 
 	// Check that the actual duration matches the expected duration

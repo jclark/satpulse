@@ -12,15 +12,15 @@ func _() {
 	_ = x[GAL-2]
 	_ = x[BDS-3]
 	_ = x[GLO-4]
-	_ = x[NAVIC-5]
-	_ = x[QZSS-6]
+	_ = x[QZSS-5]
+	_ = x[NAVIC-6]
 	_ = x[SBAS-7]
 	_ = x[GNSSLast-7]
 }
 
-const _GNSS_name = "GPSGALBDSGLONAVICQZSSSBAS"
+const _GNSS_name = "GPSGALBDSGLOQZSSNAVICSBAS"
 
-var _GNSS_index = [...]uint8{0, 3, 6, 9, 12, 17, 21, 25}
+var _GNSS_index = [...]uint8{0, 3, 6, 9, 12, 16, 21, 25}
 
 func (i GNSS) String() string {
 	i -= 1

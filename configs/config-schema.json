@@ -31,11 +31,11 @@
 			"exclusiveMinimum": 0,
 			"exclusiveMaximum": 1
 		  },
-		  "gnss": {
+		  "timeGNSS": {
 			"type": "string",
 			"enum": ["GPS", "GAL", "Galileo", "BDS", "BeiDou", "GLO", "GLONASS"]
 		  },
-		  "stationary": { "type": "boolean" },
+		  "mobile": { "type": "boolean" },
 		  "resurvey": { "type": "boolean" },
 		  "surveyTime": { "type": "integer" },
 		  "surveyAcc": { "type": "number" },
@@ -50,6 +50,7 @@
 		  "antennaCableLength": { "type": "number" },
 		  "antennaCableVF": { "type": "number" },
 		  "satellitesOutput": { "type": "boolean" },
+		  "rtcmOutput": { "type": "boolean"},
 		  "nmeaNumbering": {
 			"type": "string",
 			"enum": ["u-blox", "allystar"]
@@ -63,8 +64,7 @@
 		  "pin": { "type": "integer", "minimum": 0 },
 		  "channel": { "type": "integer", "minimum": 0 },
 		  "wait": { "type": "boolean" }
-		},
-		"required": ["interface"]
+		}
 	  },
 	  "proxy": {
 		"type": "object",
@@ -156,6 +156,5 @@
 			}
 		}
 	  }
-	},
-	"required": ["phc"]
+	}
 }

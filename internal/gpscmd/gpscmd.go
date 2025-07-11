@@ -2,8 +2,11 @@ package gpscmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,69 +16,78 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/term"
+	"github.com/jclark/satpulse/internal/ubx"
 )
 
 func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage string, err error) {
 	v, usageFunc, err := parseFlags(cmdName, args)
 	if v == nil {
-		usage = usageFunc(progName)
+		if usageFunc != nil {
+			usage = usageFunc(progName)
+		}
 		return
 	}
-
-	target := gpsprot.NewConfigTarget(false)
-	opts := &target.Opts
-	opts.Reset = v.reset
-	opts.Flash = v.flash
-	opts.ForceProbe = v.force
-
+	target, err := createConfigTarget(v)
+	if err != nil {
+		return
+	}
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
 		conn, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
 	} else {
 		conn, err = gpsio.OpenSocket(v.socketPath)
-		opts.Detected = true
+		target.Opts.Detected = true
 	}
 	if err != nil {
 		return
 	}
-
-	cp := &target.Props
-	if v.pps {
-		cp.SetPPS()
-	}
-	if v.nmea {
-		cp.SetNMEAEnabled(true)
-	}
-	if v.primaryGNSS != 0 {
-		cp.SetPrimaryGNSS(v.primaryGNSS)
-	}
-	if v.enabledGNSS != 0 {
-		cp.SetGNSSEnabled(v.enabledGNSS)
-	}
-	if v.disableTimeMode {
-		opts.Survey.When = 0
-		cp.SetTimeMode(gpsprot.TimeModeDisabled)
-	}
-	if v.survey {
-		opts.Survey.When = gpsprot.TimeModeAny
-		opts.Survey.MinDur = time.Duration(v.surveyTime) * time.Second
-		opts.Survey.AccLimit = gpsprot.Meters(v.surveyAcc)
-	}
-	if v.remoteSpeed != 0 {
-		if !term.IsValidSpeed(v.remoteSpeed) {
-			err = fmt.Errorf("invalid remote serial speed %d", v.remoteSpeed)
-			return
-		}
-		cp.SetBaudRate(uint32(v.remoteSpeed))
-	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, conn, v.packetLogPath)
+	err = run(ctx, lg, target, conn, v.packetLogPath, v.packetLogMode, args)
 	return
 }
 
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn, logPath string) error {
+func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
+	target := gpsprot.NewConfigTarget()
+
+	target.Opts = v.configOpts
+	target.Get = v.configGet
+
+	cp := &target.Props
+	if v.pps.IsSet() {
+		cp.SetPPS(v.pps.Get())
+	}
+	if v.antCableDelay.IsSet() {
+		cp.SetAntennaCableDelay(v.antCableDelay.Get())
+	}
+	if v.timeGNSS != 0 {
+		cp.SetTimeGNSS(v.timeGNSS)
+	}
+	if v.enabledSignals != 0 {
+		cp.SetSignalsEnabled(v.enabledSignals)
+	}
+	if v.mode.IsSet() {
+		cp.SetMode(v.mode.Get())
+	}
+	if v.navMsgAuth.IsSet() {
+		cp.SetNavMsgAuth(v.navMsgAuth.Get())
+	}
+	if target.NoOp() {
+		target.Opts.ForceProbe |= gpsprot.ForceProbeWhenNoConfig
+	}
+	return target, nil
+}
+
+func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
+	if target.NoOp() {
+		return false
+	}
+	copy := *target
+	copy.Opts.ForceProbe &^= gpsprot.ForceProbeWhenNoConfig
+	return copy.NoOp()
+}
+
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn, logPath string, logMode packetLogMode, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -89,26 +101,43 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 
 	var wg sync.WaitGroup
 
-	logCh, logOutCh, err := gpsio.LogPackets(lg, &wg, logPath)
+	pktLog, lf, err := gpsio.LogPackets(lg, &wg, logPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize packet logging: %w", err)
 	}
-	if logOutCh != nil {
-		if serConn, ok := conn.(*gpsio.SerialConn); ok {
-			serConn.SetOutPacketLogChan(logOutCh)
-		} else {
-			lg.Warn("logging output packets is not yet supported for socket connections")
-			close(logOutCh)
+	if lf != nil {
+		defer lf.Close(lg)
+		if logMode == testLogMode {
+			writeTestLogHead(lf, lg, args)
 		}
 	}
-	pCh := startScan(ctx, lg, &wg, conn, logCh)
+	if pktLog != nil {
+		if serConn, ok := conn.(*gpsio.SerialConn); ok {
+			serConn.SetPacketLog(pktLog)
+		} else {
+			lg.Warn("logging output packets is not yet supported for socket connections")
+			pktLog.SemiClose() // Close needs to be called both for input and output packets
+		}
+	}
+	pCh := startScan(ctx, lg, &wg, conn, pktLog)
 
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	info, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), target, pCh, conn)
-	if err == nil {
-		fmt.Printf("set config to: %s\n", fmt.Sprint(info.ConfigProps))
+	rslt, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), target, pCh, conn)
+	if errors.Is(err, gpscfg.ErrNoProbeResponse) && configTargetIsProbeOnly(target) {
+		err = nil
+	}
+	if err == nil && rslt != nil {
+		if configTargetIsProbeOnly(target) {
+			// print out the version only if we did not specify anything else
+			printVersion(os.Stdout, rslt.Version)
+			printPacketFormats(os.Stdout, rslt.PacketFormatsDetected)
+		} else {
+			logFailedProps(lg, &target.Props, rslt.ConfigProps)
+		}
+		// print out props that we know about (either requested or set)
+		printProps(os.Stdout, rslt.ConfigProps)
 	}
 
 	lg.Debug("about to wait")
@@ -119,11 +148,134 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	for range pCh {
 	}
 	wg.Wait()
+	if logMode == testLogMode && lf != nil {
+		writeTestLogTail(lf, lg, rslt, err)
+	}
 	return err
 }
 
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, logCh chan<- scan.Packet) <-chan scan.Packet {
+func logFailedProps(lg *slog.Logger, reqProps *gpsprot.ConfigProps, rsltProps *gpsprot.ConfigProps) {
+	if reqProps == nil || rsltProps == nil {
+		return
+	}
+	if reqSigs, ok := reqProps.GetSignalsEnabled(); ok {
+		if rsltSigs, ok := rsltProps.GetSignalsEnabled(); ok {
+			if reqSigs.GNSSSet() != rsltSigs.GNSSSet() {
+				lg.Warn("only some of the requested constellations were enabled; the receiver does not support enabling all of them")
+			}
+		}
+	}
+}
+
+func printVersion(f *os.File, v *ubx.Version) {
+	if v == nil {
+		return
+	}
+	if v.Mod != "" {
+		fmt.Fprintf(f, "Model: %s\n", v.Mod)
+	}
+	if v.FW != nil {
+		fmt.Fprintf(f, "Firmware version: %s\n", v.FW.String())
+	}
+	if v.Prot != nil {
+		fmt.Fprintf(f, "UBX protocol version: %s\n", v.Prot.String())
+	}
+}
+
+func printPacketFormats(f *os.File, tags []gpsprot.Tag) {
+	if len(tags) == 0 {
+		return
+	}
+	formats := make([]string, len(tags))
+	for i, tag := range tags {
+		formats[i] = string(tag)
+	}
+	fmt.Fprintf(f, "Packet formats detected: %s\n", strings.Join(formats, ", "))
+}
+
+func printProps(f *os.File, p *gpsprot.ConfigProps) {
+	if p == nil {
+		return
+	}
+	if sigs, ok := p.GetSignalsEnabled(); ok {
+		printSignals(f, sigs)
+	}
+	if timeGNSS, ok := p.GetTimeGNSS(); ok {
+		printTimeGNSS(f, timeGNSS)
+	}
+	if antCableDelay, ok := p.GetAntennaCableDelay(); ok {
+		printAntennaCableDelay(f, antCableDelay)
+	}
+	if timePulse, ok := p.GetTimePulse(); ok {
+		printTimePulse(f, timePulse)
+	}
+	if mode, ok := p.GetMode(); ok {
+		printMode(f, mode)
+	}
+}
+
+func printSignals(f *os.File, sigs gpsprot.SignalSet) {
+	groups := sigs.GNSSStringGroups()
+	if len(groups) == 0 {
+		return
+	}
+	constellations := make([]string, len(groups))
+	for i, group := range groups {
+		constellations[i] = group[0]
+	}
+	fmt.Fprintf(f, "Constellations enabled: %s\n", strings.Join(constellations, ", "))
+	for _, group := range groups {
+		fmt.Fprintf(f, "%s signals enabled: %s\n", group[0], strings.Join(group[1:], ", "))
+	}
+}
+
+func printMode(f *os.File, mode gpsprot.Mode) {
+	modeName := "mobile"
+	if mode.Static {
+		modeName = "static"
+	}
+	fmt.Fprintf(f, "Mode: %s\n", modeName)
+	if !mode.Static {
+		return
+	}
+	switch mode.PosType {
+	case gpsprot.PosTypeNone:
+		return
+	case gpsprot.PosTypeECEF:
+		fmt.Fprintf(f, "Fixed position ECEF: %s\n", mode.FixedPosECEF.String())
+	}
+	fmt.Fprintf(f, "Fixed position accuracy: %s m\n", mode.FixedPosAcc.String())
+}
+
+func printTimeGNSS(f *os.File, timeGNSS gpsprot.GNSS) {
+	fmt.Fprintf(f, "Time GNSS: %s\n", timeGNSS.String())
+}
+
+func printAntennaCableDelay(f *os.File, delay time.Duration) {
+	fmt.Fprintf(f, "Antenna cable delay: %d ns\n", delay.Nanoseconds())
+}
+
+func printTimePulse(f *os.File, tp gpsprot.TimePulse) {
+	if tp.Width == 0 {
+		fmt.Fprint(f, "Time pulse: disabled\n")
+		return
+	}
+	polarity := "falling"
+	if tp.PolarityRising {
+		polarity = "rising"
+	}
+	flags := ""
+	if tp.AlignToGNSS {
+		flags = "; aligned to GNSS time"
+	}
+	if tp.OnlyWhenLocked {
+		flags += "; only when locked"
+	}
+	fmt.Fprintf(f, "Time pulse: enabled; width %g s; period %g s; polarity %s%s\n", tp.Width.Seconds(), tp.Period.Seconds(), polarity, flags)
+}
+
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg, logCh) })
+	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg, pLog) })
 	return msg
 }

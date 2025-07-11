@@ -6,13 +6,24 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/geopos"
+	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
 )
 
+// gpsTimePulseFlags contains flags for GPS time pulse configuration
+type gpsTimePulseFlags int
+
+const (
+	// gpsTimePulseEnable enables time pulse output
+	gpsTimePulseEnable gpsTimePulseFlags = 1 << iota
+	// gpsTimePulseGetWidth queries the time pulse width
+	gpsTimePulseGetWidth
+)
+
 type GPSConfig struct {
 	Config             bool         `toml:"config"`
-	Stationary         bool         `toml:"stationary"`
+	Mobile             bool         `toml:"mobile"`
 	Resurvey           bool         `toml:"resurvey"`
 	SurveyTime         uint32       `toml:"surveyTime"`
 	SurveyAcc          float64      `toml:"surveyAcc"`
@@ -21,16 +32,20 @@ type GPSConfig struct {
 	AntennaCableDelay  float64      `toml:"antennaCableDelay"`  // in nanoseconds
 	AntennaCableLength float64      `toml:"antennaCableLength"` // in meters
 	AntennaCableVF     float64      `toml:"antennaCableVF"`     // velocity factor
-	GNSS               gpsprot.GNSS `toml:"gnss"`
+	TimeGNSS           gpsprot.GNSS `toml:"timeGNSS"`
 	PulseWidth         float64      `toml:"pulseWidth"`
 	SatellitesOutput   *bool        `toml:"satellitesOutput"`
+	RTCMOutput         *bool        `toml:"rtcmOutput"`
 	NMEANumbering      string       `toml:"nmeaNumbering"`
 }
 
 const defaultAccuracy = 20.0 // in meters
 
+// defaultPPSWidth is the default pulse width for PPS signals (100ms)
+const defaultPPSWidth = time.Second / 10
+
 var gpsDefault = GPSConfig{
-	Stationary:         true,
+	Mobile:             false,
 	Resurvey:           false,
 	SurveyTime:         2000, // 2000 seconds
 	SurveyAcc:          defaultAccuracy,
@@ -41,30 +56,39 @@ var gpsDefault = GPSConfig{
 	PulseWidth:         math.NaN(),
 }
 
-func (c *GPSConfig) target(speed int, wantSatellitesOutput bool) (*gpsprot.ConfigTarget, error) {
-	target := gpsprot.NewConfigTarget(c.Config)
-	if !c.Config {
-		return target, nil
-	}
-	err := c.getTimeMode(target)
+func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, tpFlags gpsTimePulseFlags) (*gpsprot.ConfigTarget, time.Duration, error) {
+	target := gpsprot.NewConfigTarget()
+	pulseWidth, err := c.pulseWidth()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	if !c.Config {
+		return target, pulseWidth, nil
+	}
+	timePulseEnabled := tpFlags&gpsTimePulseEnable != 0
+	if timePulseEnabled {
+		target.Props.SetPPS(defaultPPSWidth)
+	}
+	gpsevent.SetMsgOptions(target, timePulseEnabled)
+	if tpFlags&gpsTimePulseGetWidth != 0 && pulseWidth == 0 {
+		target.Get |= gpsprot.PropIDTimePulseWidth
+	}
+	err = c.getMode(target)
+	if err != nil {
+		return nil, 0, err
 	}
 	cp := &target.Props
-	err = c.getPrimaryGNSS(cp)
+	err = c.getTimeGNSS(cp)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	err = c.getDelay(cp)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	err = c.getFixedPos(cp)
-	if err != nil {
-		return nil, err
-	}
-	target.Opts.SatellitesMsg = c.satellitesMsgStatus(speed, wantSatellitesOutput)
-	return target, nil
+	target.Opts.SatsMsg = c.satsMsg(speed, wantSatellitesOutput)
+	target.Opts.RTCMMsg = c.rtcmMsg()
+	return target, pulseWidth, nil
 }
 
 func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProcessor, error) {
@@ -78,41 +102,25 @@ func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProc
 	return gpsreg.CreatePacketProcessors(nmeaNumbering), nil
 }
 
-func (c *GPSConfig) getTimeMode(target *gpsprot.ConfigTarget) error {
+func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 	opts := &target.Opts
-	cp := &target.Props
-
-	if !c.Stationary {
-		cp.SetTimeMode(gpsprot.TimeModeDisabled)
-		opts.Survey.When = 0
-	} else {
-		cp.SetStationary(true)
-		opts.Survey.When = gpsprot.TimeModeFlags(gpsprot.TimeModeDisabled)
-		if c.Resurvey {
-			opts.Survey.When |= gpsprot.TimeModeFlags(gpsprot.TimeModeSurvey)
-		}
-		opts.Survey.MinDur = time.Second * time.Duration(c.SurveyTime)
-		opts.Survey.AccLimit = gpsprot.Meters(c.SurveyAcc)
-		if opts.Survey.AccLimit < gpsprot.Millimeter {
-			return fmt.Errorf("survey accuracy %v is too small", opts.Survey.AccLimit)
-		}
+	opts.Survey.MinDur = time.Second * time.Duration(c.SurveyTime)
+	opts.Survey.AccLimit = gpsprot.Meters(c.SurveyAcc)
+	if opts.Survey.AccLimit < gpsprot.Millimeter {
+		return fmt.Errorf("survey accuracy %v is too small", opts.Survey.AccLimit)
 	}
-	return nil
-}
-
-func (c *GPSConfig) getPrimaryGNSS(cp *gpsprot.ConfigProps) error {
-	if c.GNSS == 0 {
+	if c.Resurvey {
+		opts.Survey.Flags |= gpsprot.SurveyAgain
+	}
+	cp := &target.Props
+	// mobile takes precedence over fixed position
+	// might want to temporarily turn off time mode
+	if c.Mobile {
+		cp.SetMode(gpsprot.Mode{Static: false})
 		return nil
 	}
-	if !c.GNSS.IsMajor() {
-		return fmt.Errorf("primary GNSS must be a major GNSS (%v is not)", c.GNSS)
-	}
-	cp.SetPrimaryGNSS(c.GNSS)
-	return nil
-}
-
-func (c *GPSConfig) getFixedPos(cp *gpsprot.ConfigProps) error {
-	if c.FixedPosECEF.IsZero() {
+	if c.FixedPosECEF.IsZero() {	
+		opts.SetStatic = true
 		return nil
 	}
 	err := c.FixedPosECEF.CheckOnEarth()
@@ -123,7 +131,6 @@ func (c *GPSConfig) getFixedPos(cp *gpsprot.ConfigProps) error {
 	for i := 0; i < 3; i++ {
 		fixedPos[i] = gpsprot.Meters(c.FixedPosECEF[i])
 	}
-	cp.SetFixedPosECEF(fixedPos)
 	acc := gpsprot.Meters(c.FixedPosAcc)
 	if acc < gpsprot.Millimeter {
 		return fmt.Errorf("fixed position accuracy %v is too small", c.FixedPosAcc)
@@ -131,7 +138,23 @@ func (c *GPSConfig) getFixedPos(cp *gpsprot.ConfigProps) error {
 	if acc > gpsprot.Meter*1000 {
 		return fmt.Errorf("fixed position accuracy %v is too large", c.FixedPosAcc)
 	}
-	cp.SetFixedPosAcc(acc)
+	cp.SetMode(gpsprot.Mode{
+		Static: true,
+		PosType: gpsprot.PosTypeECEF,
+		FixedPosECEF: fixedPos,
+		FixedPosAcc: acc,
+	})
+	return nil
+}
+
+func (c *GPSConfig) getTimeGNSS(cp *gpsprot.ConfigProps) error {
+	if c.TimeGNSS == 0 {
+		return nil
+	}
+	if !c.TimeGNSS.IsMajor() {
+		return fmt.Errorf("time GNSS must be a major GNSS (%v is not)", c.TimeGNSS)
+	}
+	cp.SetTimeGNSS(c.TimeGNSS)
 	return nil
 }
 
@@ -176,20 +199,34 @@ func (c *GPSConfig) pulseWidth() (time.Duration, error) {
 
 const minSpeedSatellitesOutput = 38400
 
-func (c *GPSConfig) satellitesMsgStatus(speed int, wantSatellitesOutput bool) gpsprot.MsgStatus {
+func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.Option[gpsprot.SatsMsgFlags]) {
 	if c.SatellitesOutput == nil {
 		if speed < minSpeedSatellitesOutput {
 			// If the speed is too slow, then we won't have automatically enabled it,
 			// so we don't need to disable it.
-			return gpsprot.MsgStatusUnchanged
+			return
 		}
 		if wantSatellitesOutput {
-			return gpsprot.MsgStatusEnabled
+			opt.Set(gpsprot.SatsMsgSV)
+		} else {
+			opt.Set(gpsprot.SatsMsgNone)
 		}
-		return gpsprot.MsgStatusDisabled
+	} else if *c.SatellitesOutput {
+		opt.Set(gpsprot.SatsMsgSV)
+	} else {
+		opt.Set(gpsprot.SatsMsgNone)
 	}
-	if *c.SatellitesOutput {
-		return gpsprot.MsgStatusEnabled
+	return
+}
+
+func (c *GPSConfig) rtcmMsg() (opt gpsprot.Option[gpsprot.RTCMMsgFlags]) {
+	if c.RTCMOutput == nil {
+		return
 	}
-	return gpsprot.MsgStatusDisabled
+	if *c.RTCMOutput {
+		opt.Set(gpsprot.RTCMMsgAuto)
+	} else {
+		opt.Set(gpsprot.RTCMMsgNone)
+	}
+	return
 }

@@ -1,7 +1,6 @@
 package ubx
 
 import (
-	"errors"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -57,9 +56,6 @@ func (px *PacketExchanger) ProbeOK() bool {
 func (px *PacketExchanger) Configure(target *gpsprot.ConfigTarget) (gpsprot.Configurator, error) {
 	if px.ver == nil {
 		panic("Configure called before probe OK")
-	}
-	if target.Opts.Flash && !px.ver.Flash {
-		return nil, errors.New("cannot save to flash: receiver does not have flash memory")
 	}
 	px.cfg = newConfigurator(target, px.ver)
 	return px.cfg, nil

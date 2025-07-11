@@ -11,14 +11,14 @@ import (
 )
 
 type Version struct {
-	HW         string          `json:"hw"`
-	SW         string          `json:"sw"`
-	Extensions []string        `json:"extensions,omitempty"`
-	FW         *FWVer          `json:"fw,omitempty"`
-	Prot       *ProtVer        `json:"prot,omitempty"`
-	Mod        string          `json:"mod"`
-	Flash      bool            `json:"flash"`
-	GNSS       gpsprot.GNSSSet `json:"gnss,omitempty"`
+	HW            string          `json:"hw"`
+	SW            string          `json:"sw"`
+	Extensions    []string        `json:"extensions,omitempty"`
+	FW            *FWVer          `json:"fw,omitempty"`
+	Prot          *ProtVer        `json:"prot,omitempty"`
+	Mod           string          `json:"mod"`
+	RunsFromFlash bool            `json:"runsFromFlash"`
+	GNSS          gpsprot.GNSSSet `json:"gnss,omitempty"`
 }
 
 type ProtVer struct {
@@ -49,7 +49,7 @@ func (v *Version) tmodeLevel() int {
 		// won't have timing support.
 		// If it is less than 14.00, but at least 12.00, it is more likely to be a 6th gen.
 		// I don't think anybody will be using 6th gen at this point, unless it's a timing receiver.
-		// The LEA-5T currently available on eBat are LEA-5T-0-003 which is firmware 6.02,
+		// The LEA-5T currently available on eBay are LEA-5T-0-003 which is firmware 6.02,
 		// implying protocol 12.02.
 		// There aren't any 7th gen timing modules, and 8th gen reports the product category as "TIM".
 		// XXX We should recover from this if we get a NAK.
@@ -63,6 +63,61 @@ func (v *Version) tmodeLevel() int {
 		return 3
 	}
 	return 0
+}
+
+// rawLevel returns an integer representing what raw output messages are supported.
+// 0 means none; 1 means RAW/SFRB, 2 means RAWX/SFRBX
+func (v *Version) rawLevel() int {
+	switch v.ProductCategory() {
+	case "":
+		break
+	case "FTS", "TIM", "HPG":
+		// we only get the category in protocol version 18 and later
+		// and RAWX/SFRBX is support from protocol version 17
+		return 2
+	default:
+		return 0
+	}
+	if v.protVerAtLeast(12, 0) && !v.protVerAtLeast(14, 0) {
+		// 12.00 <= PROTVER < 14.00
+		// guess it's a LEA-5T or LEA-6T
+		return 1
+	}
+	return 0
+}
+
+// isLegacy returns true for Gen8 and earlier devices
+func (v *Version) genAtLeast9() bool {
+	return v.protVerAtLeast(27, 0)
+}
+
+func (v *Version) genUpTo8() bool {
+	return !v.protVerGreater(23, 1)
+}
+
+func (v *Version) rtcmSupport() (gpsprot.GNSSSet, gpsprot.RTCMMsgFlags) {
+	g := v.GNSS & gpsprot.MajorGNSSSet // nothing supports NavIC
+	switch v.ProductCategory() {
+	case "HPG":
+		if v.genUpTo8() {
+			// Gen 8 doesn't support GAL
+			g &^= gpsprot.GNSSSetOf(gpsprot.GAL)
+		}
+		return g, gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7
+	case "TIM":
+		// ZED-F9T has differential timing support
+		// NEO-F10T doesn't
+		if v.Mod != "ZED-F9T" {
+			break
+		}
+		// 29.25 added support for MSM4
+		if v.protVerAtLeast(29, 25) {
+			return g,  gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7
+		}
+		return g, gpsprot.RTCMMsgMSM7
+	}
+	// RTCM requires HPG or TIM
+	return 0, 0
 }
 
 func (v *Version) protVerAtLeast(major, minor byte) bool {
@@ -93,7 +148,7 @@ func monVer(parsed *bin.MonVer) *Version {
 		Mod:        findString(x, modRegexp),
 		GNSS:       findGNSS(x),
 	}
-	v.Flash = findFlash(v.SW, x)
+	v.RunsFromFlash = findFlash(v.SW, x)
 	setLegacyProtVer(v)
 	return v
 }
@@ -124,6 +179,10 @@ func setLegacyProtVer(ver *Version) {
 
 func (pv ProtVer) String() string {
 	return fmt.Sprintf("%d.%0d", pv.Major, pv.Minor)
+}
+
+func (fwv *FWVer) String() string {
+	return fmt.Sprintf("%s %d.%02d", fwv.ProductCategory, fwv.Major, fwv.Minor)
 }
 
 // MAX-F10S has a product category of SPGL1L5, so let's accomodate at least SPGL1L2L5
@@ -175,7 +234,7 @@ func findGNSS(extensions []string) (gnss gpsprot.GNSSSet) {
 			if err != nil {
 				continue
 			}
-			gnss |= gpsprot.GNSSFlag(g)
+			gnss |= gpsprot.GNSSSetOf(g)
 		}
 	}
 	return

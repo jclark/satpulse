@@ -3,6 +3,17 @@
 package ubxcfgval
 
 var dfltSchema = MustNewSchema(map[string]map[string]Desc{
+	"BDS":{
+		"USE_GEO_PRN": L(0x10340014),
+	},
+	"GAL":{
+		"OSNMA_MINTAGLENGTH": U(0x20350007),
+		"OSNMA_TIMESYNC": L(0x10350009),
+		"USE_OSNMA": L(0x10350005),
+	},
+	"GPS":{
+		"L5_HEALTH_OVERRIDE": L(0x10320001),
+	},
 	"HW":{
 		"ANT_CFG_OPENDET": L(0x10a30031),
 		"ANT_CFG_OPENDET_POL": L(0x10a30032),
@@ -20,6 +31,9 @@ var dfltSchema = MustNewSchema(map[string]map[string]Desc{
 		"ANT_SUP_SWITCH_PIN": U(0x20a30036),
 		"RF_LNA_MODE": E(0x20a30057, "NORMAL", "LOWGAIN", "BYPASS"),
 	},
+	"NAVHPG":{
+		"DGNSSMODE": E(0x20140011, "", "", "RTK_FLOAT", "RTK_FIXED", "", "RTK_CAR"),
+	},
 	"NAVSPG":{
 		"ACKAIDING": L(0x10110025),
 		"CONSTR_ALT": I(0x401100c1),
@@ -34,11 +48,14 @@ var dfltSchema = MustNewSchema(map[string]map[string]Desc{
 		"INFIL_MINSVS": U(0x201100a1),
 		"INFIL_NCNOTHRS": U(0x201100aa),
 		"INIFIX3D": L(0x10110013),
+		"MAX_TIMETRUSTED_ACC": U(0x301100de),
+		"ONLY_AUTHDATA": L(0x101100dd),
 		"OUTFIL_FACC": U(0x301100b5),
 		"OUTFIL_PACC": U(0x301100b3),
 		"OUTFIL_PDOP": U(0x301100b1),
 		"OUTFIL_TACC": U(0x301100b4),
 		"OUTFIL_TDOP": U(0x301100b2),
+		"PL_ENA": L(0x101100d7),
 		"SIGATTCOMP": E(0x201100d6, "DIS", "01DBHZ", "02DBHZ", "03DBHZ", "04DBHZ", "05DBHZ", "06DBHZ", "07DBHZ", "08DBHZ", "09DBHZ", "10DBHZ", "11DBHZ", "12DBHZ", "13DBHZ", "14DBHZ", "15DBHZ", "16DBHZ", "17DBHZ", "18DBHZ", "19DBHZ", "20DBHZ", "21DBHZ", "22DBHZ", "23DBHZ", "24DBHZ", "25DBHZ", "26DBHZ", "27DBHZ", "28DBHZ", "29DBHZ", "30DBHZ", "31DBHZ", "32DBHZ", "33DBHZ", "34DBHZ", "35DBHZ", "36DBHZ", "37DBHZ", "38DBHZ", "39DBHZ", "40DBHZ", "41DBHZ", "42DBHZ", "43DBHZ", "44DBHZ", "45DBHZ", "46DBHZ", "47DBHZ", "48DBHZ", "49DBHZ", "50DBHZ", "51DBHZ", "52DBHZ", "53DBHZ", "54DBHZ", "55DBHZ", "56DBHZ", "57DBHZ", "58DBHZ", "59DBHZ", "60DBHZ", "61DBHZ", "62DBHZ", "63DBHZ", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "AUTO"),
 		"USE_USRDAT": L(0x10110061),
 		"USRDAT_DX": R(0x40110064),
@@ -53,20 +70,51 @@ var dfltSchema = MustNewSchema(map[string]map[string]Desc{
 		"UTCSTANDARD": E(0x2011001c, "AUTO", "", "", "USNO", "", "EU", "SU", "NTSC", "NPLI", "NICT"),
 		"WKNROLLOVER": U(0x30110017),
 	},
+	"NMEA":{
+		"BDSTALKERID": U(0x30930033),
+		"COMPAT": L(0x10930003),
+		"CONSIDER": L(0x10930004),
+		"FILT_BDS": L(0x10930017),
+		"FILT_GAL": L(0x10930013),
+		"FILT_GLO": L(0x10930016),
+		"FILT_GPS": L(0x10930011),
+		"FILT_QZSS": L(0x10930015),
+		"FILT_SBAS": L(0x10930012),
+		"GSVTALKERID": E(0x20930032, "GNSS", "MAIN"),
+		"HIGHPREC": L(0x10930006),
+		"LIMIT82": L(0x10930005),
+		"MAINTALKERID": E(0x20930031, "AUTO", "GP", "GL", "GN", "GA", "GB", "", "GQ"),
+		"MAXSVS": E(0x20930002, "UNLIM", "", "", "", "", "", "", "", "8SVS", "", "", "", "12SVS", "", "", "", "16SVS"),
+		"OUT_FROZENCOG": L(0x10930026),
+		"OUT_INVDATE": L(0x10930024),
+		"OUT_INVFIX": L(0x10930021),
+		"OUT_INVTIME": L(0x10930023),
+		"OUT_MSKFIX": L(0x10930022),
+		"OUT_ONLYGPS": L(0x10930025),
+		"PROTVER": E(0x20930001, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "V21", "", "V23", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "V40", "V41", "V411"),
+		"SVNUMBERING": E(0x20930007, "STRICT", "EXTENDED"),
+	},
 	"RATE":{
 		"MEAS": U(0x30210001),
 		"NAV": U(0x30210002),
 		"TIMEREF": E(0x20210003, "UTC", "GPS", "GLO", "BDS", "GAL"),
+	},
+	"RTCM":{
+		"DF003_IN": U(0x30090008),
+		"DF003_IN_FILTER": E(0x20090009, "DISABLED", "RELAXED", "STRICT"),
+		"DF003_OUT": U(0x30090001),
 	},
 	"SIGNAL":{
 		"BDS_B1C_ENA": L(0x1031000f),
 		"BDS_B1_ENA": L(0x1031000d),
 		"BDS_B2A_ENA": L(0x10310028),
 		"BDS_B2_ENA": L(0x1031000e),
+		"BDS_B3_ENA": L(0x10310010),
 		"BDS_ENA": L(0x10310022),
 		"GAL_E1_ENA": L(0x10310007),
 		"GAL_E5A_ENA": L(0x10310009),
 		"GAL_E5B_ENA": L(0x1031000a),
+		"GAL_E6_ENA": L(0x1031000b),
 		"GAL_ENA": L(0x10310021),
 		"GLO_ENA": L(0x10310025),
 		"GLO_L1_ENA": L(0x10310018),
@@ -150,10 +198,12 @@ var dfltSchema = MustNewSchema(map[string]map[string]Desc{
 	},
 	"UART1INPROT":{
 		"NMEA": L(0x10730002),
+		"RTCM3X": L(0x10730004),
 		"UBX": L(0x10730001),
 	},
 	"UART1OUTPROT":{
 		"NMEA": L(0x10740002),
+		"RTCM3X": L(0x10740004),
 		"UBX": L(0x10740001),
 	},
 	"UART2":{
@@ -165,18 +215,22 @@ var dfltSchema = MustNewSchema(map[string]map[string]Desc{
 	},
 	"UART2INPROT":{
 		"NMEA": L(0x10750002),
+		"RTCM3X": L(0x10750004),
 		"UBX": L(0x10750001),
 	},
 	"UART2OUTPROT":{
 		"NMEA": L(0x10760002),
+		"RTCM3X": L(0x10760004),
 		"UBX": L(0x10760001),
 	},
 	"USBINPROT":{
 		"NMEA": L(0x10770002),
+		"RTCM3X": L(0x10770004),
 		"UBX": L(0x10770001),
 	},
 	"USBOUTPROT":{
 		"NMEA": L(0x10780002),
+		"RTCM3X": L(0x10780004),
 		"UBX": L(0x10780001),
 	},
 })

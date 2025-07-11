@@ -326,6 +326,10 @@ func TestGSVParse(t *testing.T) {
 			},
 			final: true,
 		},
+		{
+			sen:   "$GPGSV,1,1,00,", // sigID can be blank
+			final: true,
+		},
 	}
 	for _, test := range tests {
 		test := test
