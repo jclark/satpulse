@@ -4,6 +4,10 @@
 
 This plan describes implementing Prometheus metrics support for SatPulse (GitHub issue [#78](https://github.com/jclark/satpulse/issues/78)) by creating a harmonized observability interface that unifies SSE events, Prometheus metrics, and potentially logging.
 
+The implementation is split into two stages:
+- **Stage 1**: Observer interface refactoring (no new functionality, pure refactoring)
+- **Stage 2**: Prometheus metrics implementation using the new architecture
+
 ## Design Goals
 
 1. Create a `Sampler` interface in the `internal/mon` package for clock synchronization samples
@@ -11,7 +15,6 @@ This plan describes implementing Prometheus metrics support for SatPulse (GitHub
 3. Move SSE-specific code out of core packages into dedicated observability implementations
 4. Support multiple observability backends (SSE, Prometheus) through a fan-out pattern
 5. Enable/disable UI and metrics endpoints via configuration
-6. Support log rotation through the observer interface
 
 ## Architecture
 
@@ -44,9 +47,6 @@ type Observer interface {
     
     // Release cleans up resources (e.g., closes SSE channels)
     Release()
-    
-    // ReopenLog closes and reopen logs on SIGHUP, allowing log rotation
-    ReopenLog()
 }
 
 // MultiObserver fans out calls to multiple observers
@@ -134,19 +134,26 @@ Update `docs/config.md` and `configs/config-schema.json` to add per-endpoint con
 type HTTPConfig struct {
     Listen  string `toml:"listen"`
     PProf   bool   `toml:"pprof"`
-    UI      bool   `toml:"ui"`      // Serve web UI (default: true)
-    Metrics bool   `toml:"metrics"`  // Serve /metrics endpoint (default: true)
+    GUI     bool   `toml:"gui"`     // Serve graphical user interface (default: true)
+    Metrics bool   `toml:"metrics"`  // Serve /metrics endpoint (default: true) - Stage 2 only
 }
 
 // SetDefaults sets default values for HTTPConfig
 func (c *HTTPConfig) SetDefaults() {
     if c.Listen != "" {
         // Only set defaults if this is a configured endpoint
-        c.UI = true
-        c.Metrics = true
+        c.GUI = true
+        // c.Metrics = true  // Stage 2 only
     }
 }
 
+// Validate ensures HTTPConfig has valid settings
+func (c *HTTPConfig) Validate() error {
+    if c.Listen != "" && !c.PProf && !c.GUI {
+        return fmt.Errorf("HTTP endpoint %s must enable at least one of: pprof, gui", c.Listen)
+    }
+    return nil
+}
 ```
 
 #### `internal/daemon/daemon.go` Changes
@@ -163,10 +170,10 @@ func createPromObserver(cfg Config) *promobs.PrometheusObserver {
     return nil
 }
 
-// createSSEObserver creates SSE observer if any HTTP endpoint needs UI
+// createSSEObserver creates SSE observer if any HTTP endpoint needs GUI
 func createSSEObserver(cfg Config, lg *slog.Logger) *sseobs.SSEObserver {
     for _, httpCfg := range cfg.HTTP {
-        if httpCfg.UI {
+        if httpCfg.GUI {
             return sseobs.New(lg)
         }
     }
@@ -212,10 +219,9 @@ mon, err := mon.NewMonitor(servo, lg, mon.MonitorConfig{
 err = startHTTP(ctx, lg, wg, cfg.HTTP, sseBcast, promObs)
 ```
 
-3. Update HTTP server setup in `internal/daemon/http.go`:
+3. Update HTTP server setup in `internal/daemon/http.go` (Stage 1 - GUI only):
 ```go
-// Function signature only needs to add promObs parameter (already has broadcast)
-func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], promObs *promobs.PrometheusObserver) error
+// Stage 1: No function signature changes needed (no promObs parameter yet)
 
 // In startHTTP function, configure each endpoint based on its settings
 for i, listener := range listeners {
@@ -226,8 +232,8 @@ for i, listener := range listeners {
         registerPprofHandlers(mux)
     }
     
-    // Only register UI routes if enabled for this endpoint  
-    if cfg[i].UI && b != nil {
+    // Only register GUI routes if enabled for this endpoint  
+    if cfg[i].GUI && b != nil {
         mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
             sseHandleRequest(ctx, lg, w, r, b, initEvent)
         })
@@ -236,47 +242,81 @@ for i, listener := range listeners {
         })
     }
     
-    // Only register metrics endpoint if enabled for this endpoint
-    if cfg[i].Metrics && promObs != nil {
-        mux.Handle("/metrics", promObs.Handler())
-    }
-    
     server := &http.Server{Handler: mux}
     servers[i] = server
     // ... rest of server setup
 }
 ```
 
-## Implementation Steps
+**Stage 2 will add:**
+```go
+// Function signature change to add promObs parameter
+func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], promObs *promobs.PrometheusObserver) error
+
+// Additional metrics endpoint in the loop:
+    // Only register metrics endpoint if enabled for this endpoint
+    if cfg[i].Metrics && promObs != nil {
+        mux.Handle("/metrics", promObs.Handler())
+    }
+```
+
+## Implementation Stages
+
+### Stage 1: Observer Interface Refactoring
+
+**Goal**: Refactoring to introduce the Observer interface with no Prometheus functionality. Adds gui config variable but preserves existing SSE behavior.
+
+**Stage 1 Steps**:
 
 1. **Create Sampler interface** in `internal/mon/sampler.go`
 2. **Create obs package** with unified Observer interface and MultiObserver
 3. **Implement SSE observer** in `internal/obs/sseobs/`:
    - Move SSE event creation from `gpsevent/dispatcher.go`
    - Move sample event creation from `mon/monitor.go`
-4. **Implement basic Prometheus observer** in `internal/obs/promobs/`:
-   - Start with simple metrics: sync_state and clock_offset_nanoseconds
-   - Use custom registry (no global state)
-   - Get basic infrastructure working
-5. **Update gpsevent.Dispatcher**:
+   - Preserve exact same SSE events and behavior
+4. **Update gpsevent.Dispatcher**:
    - Replace `sseCh` with `Observer` interface
    - Remove SSE-specific code
    - Call observer methods instead
-6. **Update mon.Monitor**:
+5. **Update mon.Monitor**:
    - Replace `sseCh` with `Sampler` interface
    - Remove SSE-specific code
    - Call sampler.Sample() instead
+6. **Update configuration**:
+   - Add `gui` boolean field to HTTPConfig in schema
+   - Update docs/config.md to document the new field
+   - Add validation: error if both pprof and gui are false for an endpoint
 7. **Update daemon package**:
-   - Add UI and Metrics configuration
-   - Create appropriate observers based on config
-   - Update HTTP server routing
-8. **Update configuration**:
-   - Add ui and metrics boolean fields to HTTPConfig in schema
-   - Update docs/config.md to document the new fields
-9. **Expand Prometheus metrics incrementally**:
+   - Implement `createSSEObserver` function only
+   - Create SSE observer when any HTTP endpoint has gui=true
+   - Pass observer to dispatcher and monitor
+8. **Update HTTP implementation**:
+   - Modify `startHTTP` to only register `/sse` and `/` routes when `cfg[i].GUI` is true
+   - Keep existing pprof logic unchanged
+9. **Test**: Verify SSE functionality works identically to before refactoring
+
+### Stage 2: Prometheus Implementation
+
+**Goal**: Add Prometheus metrics using the new Observer architecture, with configuration options.
+
+**Stage 2 Steps**:
+
+1. **Implement basic Prometheus observer** in `internal/obs/promobs/`:
+   - Start with simple metrics: sync_state and clock_offset_nanoseconds
+   - Use custom registry (no global state)
+   - Get basic infrastructure working
+2. **Update daemon package**:
+   - Add Metrics configuration support (GUI already done in Stage 1)
+   - Create appropriate observers based on config (SSE, Prometheus, or both)
+   - Update HTTP server routing to support /metrics endpoint
+3. **Update configuration**:
+   - Add metrics boolean field to HTTPConfig in schema (gui already done in Stage 1)
+   - Update docs/config.md to document the new metrics field
+4. **Expand Prometheus metrics incrementally**:
    - First: Add remaining Sample-based metrics (frequency, histogram, stats)
    - Second: Add GPS message-based metrics (satellites, survey)
    - Third: Add system metrics (start time, last PPS)
+5. **Test**: Verify both SSE and Prometheus metrics work correctly
 
 ## Prometheus Metrics Specification
 
@@ -346,7 +386,7 @@ After implementing the observability architecture, several areas could be simpli
 
 2. **Implement MultiSampler** - a fan-out implementation similar to `MultiObserver` but only for the `Sampler` interface, useful for cases where only sample data is needed
 
-3. **Move clock log file generation** to use the `Sampler` interface - this would require extending the `Sampler` interface to include a `ReopenLog()` method, allowing the clock logging to be implemented as another sampler
+3. **Move clock log file generation** to use the `Sampler` interface - this would require extending the `Sampler` interface to include a `ReopenLog()` method, allowing the clock logging to be implemented as another sampler with proper log rotation support
 
 These changes would further consolidate observability concerns and reduce code duplication across the monitoring subsystem.
 
