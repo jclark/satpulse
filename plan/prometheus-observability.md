@@ -316,6 +316,8 @@ Based on GitHub issue [#78](https://github.com/jclark/satpulse/issues/78) requir
 - `satpulse_clock_frequency_ppb` (gauge) - Current frequency adjustment in parts per billion
 - `satpulse_samples_missing_total` (counter) - Total missing samples
 - `satpulse_samples_outlier_total` (counter) - Total outlier samples
+- `satpulse_sync_losses_total` (counter) - Total number of times sync was lost after being established
+- `satpulse_time_to_sync_seconds` (gauge) - Time in seconds from startup to first sync acquisition
 
 ### Rolling Statistics Metrics
 
