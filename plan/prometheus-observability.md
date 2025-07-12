@@ -260,6 +260,26 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
     }
 ```
 
+## Critical Implementation Constraints
+
+⚠️ **GOROUTINE AND CHANNEL LIFECYCLE PRESERVATION** ⚠️
+
+The Observer refactoring MUST preserve the exact same goroutine creation order and channel closure sequence as the current implementation. This is a tricky area where even small changes can introduce race conditions or deadlocks.
+
+**Requirements:**
+- NO changes to goroutine creation order or timing
+- NO changes to channel closure order or timing  
+- Current `close(sseCh)` becomes `observer.Release()` at the exact same point
+- Broadcast goroutine lifecycle remains identical
+- HTTP server goroutine lifecycle remains identical
+
+**Current behavior to preserve:**
+- `close(sseCh)` in current code → `observer.Release()` in new code
+- Same shutdown sequence and timing
+- Same goroutine coordination patterns
+
+This constraint ensures the refactoring is truly behavior-preserving and minimizes concurrency risks.
+
 ## Implementation Stages
 
 ### Stage 1: Observer Interface Refactoring
