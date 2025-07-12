@@ -21,10 +21,20 @@ This plan describes implementing Prometheus metrics support for SatPulse (GitHub
 ```go
 package mon
 
-// Sampler handles clock synchronization samples
+// SampleData contains all information about a synchronization sample
+type SampleData struct {
+    Kind      SampleKind    // sampleOK, sampleMissing, sampleOutlier - determines validity of other fields
+    Ref       ptime.Time    // GPS reference time (different from system time)
+    Offset    time.Duration // PHC/GPS offset (valid for sampleOK and sampleOutlier, 0 for sampleMissing)
+    Freq      float64       // current frequency adjustment in PPB (always valid)
+    SyncState SyncState     // current synchronization state (always valid)
+    Era       ptime.Era     // for clock step tracking and logging (always valid)
+}
+
+// Sampler handles clock synchronization samples of all types
 type Sampler interface {
-    // Sample reports a clock synchronization sample
-    Sample(ref ptime.Time, local ptime.ClockTime, delayed bool, kind SampleKind, offset time.Duration, freq float64, syncState SyncState)
+    // Sample reports a clock synchronization sample of any kind
+    Sample(data SampleData)
 }
 ```
 
@@ -92,6 +102,13 @@ func (s *SSEObserver) Release() {
 // Implement all Observer methods, moving SSE generation code from:
 // - internal/gpsevent/dispatcher.go (Time, Survey, Satellites events)
 // - internal/mon/monitor.go (phc sample events)
+//
+// Sample() implementation should:
+// - Reproduce EXACTLY the same SSE events as the current implementation
+// - Use data.Kind for outlier flag in SampleEvent
+// - Extract stepCount/stepCountChanging from data.Era  
+// - Use data.Offset directly (already in nanoseconds as time.Duration)
+// - Maintain identical event structure and timing to preserve web UI compatibility
 ```
 
 ### Prometheus Implementation
@@ -121,6 +138,15 @@ func New() *PrometheusObserver {
 func (p *PrometheusObserver) Handler() http.Handler {
     return promhttp.HandlerFor(p.reg, promhttp.HandlerOpts{})
 }
+
+// Sample() implementation should:
+// - Always update sync state gauge from data.SyncState
+// - Always update frequency gauge from data.Freq  
+// - For data.Kind == sampleOK: update offset histogram and rolling statistics
+// - For data.Kind == sampleOutlier: increment outlier counter only (don't include in stats)
+// - For data.Kind == sampleMissing: increment missing samples counter only
+// - Track clock steps from data.Era changes
+// - Maintain sliding window for rolling statistics (30-second window suggested)
 ```
 
 ### Daemon Integration
@@ -265,7 +291,8 @@ for i, listener := range listeners {
 6. **Update mon.Monitor**:
    - Replace `sseCh` with `Sampler` interface
    - Remove SSE-specific code
-   - Call sampler.Sample() instead
+   - Update `Monitor.Sample()` to call `sampler.Sample()` with populated `SampleData`
+   - Update `Monitor.Tick()` to call `sampler.Sample()` with `Kind: sampleMissing` for missing samples
 7. **Update daemon package**:
    - Add UI and Metrics configuration
    - Create appropriate observers based on config
@@ -284,24 +311,23 @@ Based on GitHub issue [#78](https://github.com/jclark/satpulse/issues/78) requir
 
 ### Clock Synchronization Metrics (from Sampler Interface)
 
-- `satpulse_sync_state` (gauge) - Synchronization status:
-  - 0 = out of sync
-  - 1 = in sync
-- `satpulse_clock_offset_nanoseconds` (gauge) - Current signed PHC/GPS offset in nanoseconds
-- `satpulse_clock_offset_abs_nanoseconds` (histogram) - Histogram of absolute offset values in nanoseconds
+- `satpulse_in_sync` (gauge) - Synchronization status (1 = in sync, 0 = out of sync)
+- `satpulse_clock_offset_abs_nanoseconds` (histogram) - Histogram of absolute offset values for good samples
 - `satpulse_clock_frequency_ppb` (gauge) - Current frequency adjustment in parts per billion
+- `satpulse_samples_missing_total` (counter) - Total missing samples
+- `satpulse_samples_outlier_total` (counter) - Total outlier samples
 
-### Statistics Metrics (from Monitor stats)
+### Rolling Statistics Metrics
 
-Current stats that are logged over intervals (default 30s):
+These require implementing rolling/sliding window calculations in the Prometheus observer:
 
-- `satpulse_offset_max_abs_nanoseconds` (gauge) - Maximum absolute offset in current interval
-- `satpulse_offset_mean_abs_nanoseconds` (gauge) - Mean absolute offset in current interval  
-- `satpulse_offset_rms_nanoseconds` (gauge) - RMS offset in current interval
-- `satpulse_frequency_mean_ppb` (gauge) - Mean frequency adjustment in current interval
-- `satpulse_frequency_stddev_ppb` (gauge) - Standard deviation of frequency in current interval
-- `satpulse_samples_missing_total` (counter) - Total missing samples in current interval
-- `satpulse_samples_outlier_total` (counter) - Total outlier samples in current interval
+- `satpulse_abs_offset_mean_nanoseconds` (gauge) - Rolling mean of absolute offsets over last WINDOW_SIZE seconds
+- `satpulse_offset_rms_nanoseconds` (gauge) - Rolling RMS of offsets over last WINDOW_SIZE seconds  
+- `satpulse_frequency_mean_ppb` (gauge) - Rolling mean of frequency adjustments over last WINDOW_SIZE seconds
+- `satpulse_frequency_stddev_ppb` (gauge) - Rolling standard deviation of frequency over last WINDOW_SIZE seconds
+
+Note: These rolling metrics require the Prometheus observer to maintain its own sliding window
+of recent samples. WINDOW_SIZE should be in the region of 20-30 seconds and may be made configurable.
 
 ### Satellite Metrics (from gpsprot.SatellitesMsg)
 
@@ -318,6 +344,11 @@ Current stats that are logged over intervals (default 30s):
 
 - `satpulse_start_time_seconds` (gauge) - Unix timestamp when daemon started
 - `satpulse_last_pps_time_seconds` (gauge) - Time in seconds since last PPS pulse received
+
+### Clock Step Metrics (from SampleData.Era)
+
+- `satpulse_clock_steps_total` (counter) - Total number of clock step adjustments (derived from Era changes)
+- `satpulse_clock_step_uncertain` (gauge) - 1 if step count is uncertain, 0 otherwise (from Era.StepCount())
 
 ### Future Metrics (from issue #112)
 
