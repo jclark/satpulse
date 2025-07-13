@@ -5,13 +5,16 @@ satpulsetool-gps - configure a GPS receiver
 # SYNOPSIS
 
 **satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*] [**\-\-socket** *path*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-socket** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-force\-probe**] [**\-\-packet\-log** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-c**\|**\-\-show\-config**] [**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-c**\|**\-\-show\-config**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-time\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-ant\-cable\-delay** *nanos*] [**\-\-time\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-ant\-cable\-delay** *nanos*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-mobile**] [**\-\-fixed\-pos\-ecef** *X,Y,Z*] [**\-\-fixed\-pos\-acc** *meters*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-survey**] [**\-\-survey\-time** *seconds*] [**\-\-survey\-acc** *meters*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea**] [**\-\-binary**]\
@@ -40,6 +43,7 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 
 **\-\-socket** *path*  
 : Path to a Unix-domain socket to connect to the GPS receiver instead of a serial device.
+This is for use with the `proxy.sock` table array in the TOML config file for **satpulsed**.
 
 **\-\-speed** *bps*  
 : Configure the GPS receiver's serial speed in bits per second.
@@ -246,7 +250,6 @@ Start a survey for 3000 seconds with 1.5m accuracy:
 Connect over a socket and reset the receiver:
 
     satpulsetool gps --socket /var/run/satpulse.sock --reset
-
 
 Enable RTCM MSM4 output for base station use:
 
