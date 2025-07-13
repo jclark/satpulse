@@ -9,7 +9,6 @@ import (
 
 	"github.com/jclark/satpulse/internal/logfile"
 	"github.com/jclark/satpulse/internal/ptime"
-	"github.com/jclark/satpulse/internal/sse"
 )
 
 const sampleWindowSize = 60
@@ -26,11 +25,11 @@ type Monitor struct {
 	lg             *slog.Logger
 	gm             *Grandmaster   // maybe nil
 	rc             *ProxyRefClock // maybe nil
-	syncState      syncState
+	syncState      SyncState
 	paused         bool
 	lastRefTime    ptime.Time
 	ppsStopped     int // number of missing samples recorded since 1PPS stopped
-	sseCh          chan<- sse.Event
+	sampler        Sampler
 	stats          stats
 	lf             logfile.LogFile
 	cfg            syncConfig
@@ -56,7 +55,7 @@ type MonitorConfig struct {
 	ClockAccuracy time.Duration
 	RefClock      *ProxyRefClock
 	Grandmaster   *Grandmaster
-	SSECh         chan<- sse.Event
+	Sampler       Sampler // never nil, uses DefaultObserver when no observability needed
 }
 
 const ClockLogExtension = ".log"
@@ -69,9 +68,9 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 		samples:    newSampleState(sampleWindowSize),
 		gm:         cfg.Grandmaster,
 		rc:         cfg.RefClock,
-		sseCh:      cfg.SSECh,
+		sampler:    cfg.Sampler,
 		stats:      stats{interval: cfg.LogInterval},
-		syncState:  noSync,
+		syncState:  NoSync,
 		cfg:        defaultSyncConfig,
 	}
 
@@ -92,7 +91,7 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 
 func (mon *Monitor) Close() {
 	mon.lg.Debug("closing monitor")
-	mon.updateSyncState(noSync)
+	mon.updateSyncState(NoSync)
 	if mon.gm != nil {
 		mon.gm.Close()
 	}
@@ -108,7 +107,7 @@ func (mon *Monitor) ReopenLog() {
 }
 
 func (mon *Monitor) Pause() {
-	mon.updateSyncState(noSync)
+	mon.updateSyncState(NoSync)
 	mon.servo.Reset()
 	mon.paused = true
 }
@@ -117,9 +116,9 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	mon.addMissingOffsets(ref)
 	mon.paused = false
 	off := local.T.Sub(ref)
-	kind := sampleOK
+	kind := SampleOK
 	if !delayed && mon.isOutlier(off, local.Era) {
-		kind = sampleOutlier
+		kind = SampleOutlier
 	} else {
 		mon.servo.Sample(ref, local, delayed)
 	}
@@ -127,7 +126,14 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	mon.recordSample(kind, off, local.Era, freq)
 	nextState := mon.nextSyncState()
 	mon.writeLogEntry(kind, ref, off, local.Era, freq, nextState)
-	mon.sendEvent(kind, off, local.Era, freq, nextState)
+	mon.sampler.Sample(SampleData{
+		Kind:      kind,
+		Ref:       ref,
+		Offset:    off,
+		Freq:      freq,
+		SyncState: nextState,
+		Era:       local.Era,
+	})
 	if delayed {
 		return
 	}
@@ -149,11 +155,11 @@ func (mon *Monitor) addMissingOffsets(ref ptime.Time) {
 	}
 	diff := int(ref.Sub(lastRef) / time.Second)
 	for i := 1; i < diff; i++ {
-		mon.recordSample(sampleMissing, 0, mon.samples.era, mon.servo.FreqOffset())
+		mon.recordSample(SampleMissing, 0, mon.samples.era, mon.servo.FreqOffset())
 	}
 }
 
-func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, era ptime.Era, freq float64) {
+func (mon *Monitor) recordSample(kind SampleKind, off time.Duration, era ptime.Era, freq float64) {
 	offSecs := off.Seconds()
 	mon.samples.sample(kind, offSecs, era, mon.syncState, &mon.cfg)
 	interval := mon.stats.interval
@@ -166,19 +172,19 @@ func (mon *Monitor) recordSample(kind sampleKind, off time.Duration, era ptime.E
 			mon.stats.sample(mon.lg, kind, offSecs, freq)
 			return
 		}
-		if kind == sampleOK {
+		if kind == SampleOK {
 			mon.lg.Info("adjusting clock frequency", "off", off, "freq", freq)
 			return
 		}
 	}
 	// in case where sampleOK and not locked, the servo will log
-	if kind == sampleMissing {
+	if kind == SampleMissing {
 		if !mon.paused {
 			mon.lg.Info("missed 1PPS sample")
 		}
 		return
 	}
-	if kind == sampleOutlier {
+	if kind == SampleOutlier {
 		mon.lg.Info("outlier sample", "off", off, "freq", freq)
 		return
 	}
@@ -194,12 +200,12 @@ func (mon *Monitor) writeLogHeader() {
 	mon.lf.HandleWriteError(err, mon.lg)
 }
 
-func (mon *Monitor) writeLogEntry(kind sampleKind, ref ptime.Time, off time.Duration, era ptime.Era, freq float64, syncState syncState) {
-	if mon.lf.File == nil || kind == sampleMissing {
+func (mon *Monitor) writeLogEntry(kind SampleKind, ref ptime.Time, off time.Duration, era ptime.Era, freq float64, syncState SyncState) {
+	if mon.lf.File == nil || kind == SampleMissing {
 		return
 	}
 	outlierFlag := 0
-	if kind == sampleOutlier {
+	if kind == SampleOutlier {
 		outlierFlag = 1
 	}
 	// Almost all the time, the absolute value of off will be < 100,
@@ -216,37 +222,9 @@ func logDateTime(ref ptime.Time, ls ptime.LeapSecond) string {
 	return strings.Replace(s, "Z", "", 1)
 }
 
-type SampleEvent struct {
-	Offset            float64 `json:"offset"` // in nanoseconds
-	Freq              float64 `json:"freq"`   // in parts per billion
-	StepCount         uint32  `json:"stepCount"`
-	StepCountChanging bool    `json:"stepCountChanging,omitempty"`
-	Outlier           bool    `json:"outlier,omitempty"`
-	SyncState         string  `json:"syncState"`
-}
-
-func (mon *Monitor) sendEvent(kind sampleKind, off time.Duration, era ptime.Era, freq float64, syncState syncState) {
-	if mon.sseCh == nil {
-		return
-	}
-	stepCount, changing := era.StepCount()
-	event, err := sse.Make("phc", &SampleEvent{
-		Offset:            float64(off),
-		StepCount:         uint32(stepCount),
-		StepCountChanging: changing,
-		Freq:              freq,
-		Outlier:           kind == sampleOutlier,
-		SyncState:         syncState.String(),
-	})
-	if err != nil {
-		mon.lg.Error("error creating sample event", "err", err)
-		return
-	}
-	mon.sseCh <- event
-}
 
 func (mon *Monitor) SysSample(ref ptime.Time, sys time.Time) {
-	if mon.rc == nil || mon.syncState == noSync {
+	if mon.rc == nil || mon.syncState == NoSync {
 		return
 	}
 	err := mon.rc.Sample(sys, ref, mon.leapSecond)
@@ -259,7 +237,7 @@ const sampleIntervalMax = time.Second + time.Second/2
 
 // This is called 4 times per second.
 func (mon *Monitor) Tick(now time.Time) {
-	if mon.syncState == noSync {
+	if mon.syncState == NoSync {
 		return
 	}
 	t := now.Sub(mon.lastSampleTime)
@@ -276,11 +254,21 @@ func (mon *Monitor) Tick(now time.Time) {
 	// Note that we are updating lastSampleTime to one second after the previous sample time rather than now.
 	mon.lastSampleTime = mon.lastSampleTime.Add(time.Second)
 	mon.lastRefTime = mon.lastRefTime.Add(time.Second)
-	mon.recordSample(sampleMissing, 0, mon.samples.era, mon.servo.FreqOffset())
-	mon.updateSyncState(mon.nextSyncState())
+	freq := mon.servo.FreqOffset()
+	mon.recordSample(SampleMissing, 0, mon.samples.era, freq)
+	nextState := mon.nextSyncState()
+	mon.sampler.Sample(SampleData{
+		Kind:      SampleMissing,
+		Ref:       mon.lastRefTime,
+		Offset:    0,
+		Freq:      freq,
+		SyncState: nextState,
+		Era:       mon.samples.era,
+	})
+	mon.updateSyncState(nextState)
 }
 
-func (mon *Monitor) nextSyncState() syncState {
+func (mon *Monitor) nextSyncState() SyncState {
 	state := mon.samples.nextSyncState(mon.syncState, &mon.cfg)
 	mon.lg.Debug("computed next sync state", "syncState", state, "emaOffset", mon.samples.emaOffset, "invalidWeight", mon.samples.invalidWeight, "goodSampleCount", mon.samples.goodSampleCount)
 	return state
@@ -294,7 +282,7 @@ func (mon *Monitor) isOutlier(off time.Duration, era ptime.Era) bool {
 	return mon.samples.madIsOutlier(offSecs, &mon.cfg)
 }
 
-func (mon *Monitor) updateSyncState(state syncState) {
+func (mon *Monitor) updateSyncState(state SyncState) {
 	if state != mon.syncState {
 		mon.lg.Warn("synchronization status has changed", "newSyncState", state)
 		mon.syncState = state
@@ -317,7 +305,7 @@ func (mon *Monitor) SetLeapSecond(leapSecond ptime.LeapSecond) {
 	mon.gmUpdate()
 }
 
-func (s *stats) sample(lg *slog.Logger, kind sampleKind, off float64, freq float64) {
+func (s *stats) sample(lg *slog.Logger, kind SampleKind, off float64, freq float64) {
 	s.accumPhase.add(kind, off)
 	s.accumFreq.add(freq)
 	if s.accumPhase.n == s.interval {
@@ -354,17 +342,17 @@ type accumFreq struct {
 	n                  int
 }
 
-func (a *accumPhase) add(kind sampleKind, v float64) {
+func (a *accumPhase) add(kind SampleKind, v float64) {
 	a.n++
 	switch kind {
-	case sampleOK:
+	case SampleOK:
 		av := math.Abs(v)
 		a.sumAbs += av
 		a.sumSquares += v * v
 		a.maxAbs = math.Max(a.maxAbs, av)
-	case sampleMissing:
+	case SampleMissing:
 		a.nMissing++
-	case sampleOutlier:
+	case SampleOutlier:
 		a.nOutliers++
 	}
 }

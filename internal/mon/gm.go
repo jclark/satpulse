@@ -30,7 +30,7 @@ type GrandmasterProps struct {
 func NewGrandmaster() (*Grandmaster, <-chan GrandmasterUpdateRequest) {
 	updateCh := make(chan GrandmasterUpdateRequest, 1)
 	gm := &Grandmaster{updateCh: updateCh}
-	gm.SetClockSync(noSync)
+	gm.SetClockSync(NoSync)
 	return gm, updateCh
 }
 
@@ -47,7 +47,7 @@ func (gm *Grandmaster) Close() {
 	close(gm.updateCh)
 }
 
-func (gm *Grandmaster) Update(state syncState, leap ptime.LeapSecondState) {
+func (gm *Grandmaster) Update(state SyncState, leap ptime.LeapSecondState) {
 	gm.SetClockSync(state)
 	gm.target.LeapSecondState = leap
 
@@ -58,7 +58,7 @@ func (gm *Grandmaster) Update(state syncState, leap ptime.LeapSecondState) {
 	}
 	if gm.actual == nil {
 		// First update
-		if state == noSync {
+		if state == NoSync {
 			return
 		}
 	} else if gm.target == *gm.actual {
@@ -89,15 +89,15 @@ func (gm *Grandmaster) handleResponse() {
 	}
 }
 
-func (gm *Grandmaster) SetClockSync(syncState syncState) {
+func (gm *Grandmaster) SetClockSync(syncState SyncState) {
 	gm.target.SetClock(gm.clockAccuracy(syncState))
 }
 
 const noSyncAccuracy = pmc.ClockAccuracyUnknown
 
-func (gm *Grandmaster) clockAccuracy(syncState syncState) pmc.ClockAccuracy {
+func (gm *Grandmaster) clockAccuracy(syncState SyncState) pmc.ClockAccuracy {
 	switch syncState {
-	case inSync:
+	case InSync:
 		return gm.clockAcc
 	}
 	return noSyncAccuracy

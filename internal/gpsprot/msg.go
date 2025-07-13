@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"strings"
 	"time"
 
@@ -34,36 +35,47 @@ func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
 func (h *DefaultHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {}
 
-type multiHandler struct {
+type MultiHandler struct {
 	handlers []MsgHandler
 }
 
-func (h *multiHandler) Time(msg *TimeMsg, tRead time.Time) {
+func (h *MultiHandler) Time(msg *TimeMsg, tRead time.Time) {
 	for _, handler := range h.handlers {
 		handler.Time(msg, tRead)
 	}
 }
 
-func (h *multiHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {
+func (h *MultiHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {
 	for _, handler := range h.handlers {
 		handler.LeapSecond(msg, tRead)
 	}
 }
 
-func (h *multiHandler) Survey(msg *SurveyMsg, tRead time.Time) {
+func (h *MultiHandler) Survey(msg *SurveyMsg, tRead time.Time) {
 	for _, handler := range h.handlers {
 		handler.Survey(msg, tRead)
 	}
 }
 
-func (h *multiHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {
+func (h *MultiHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {
 	for _, handler := range h.handlers {
 		handler.Satellites(msg, tRead)
 	}
 }
 
-func MultiHandler(handlers ...MsgHandler) MsgHandler {
-	return &multiHandler{handlers: handlers}
+func NewMultiHandler(handlers ...MsgHandler) *MultiHandler {
+	return &MultiHandler{handlers: handlers}
+}
+
+// Handlers returns an iterator over the message handlers
+func (h *MultiHandler) Handlers() iter.Seq[MsgHandler] {
+	return func(yield func(MsgHandler) bool) {
+		for _, handler := range h.handlers {
+			if !yield(handler) {
+				return
+			}
+		}
+	}
 }
 
 //go:generate stringer -type=GNSS
@@ -300,9 +312,30 @@ type TimeMsg struct {
 	NativeMsgID string         `json:"nativeMsgID,omitempty"`
 }
 
+// ComputeTAITime computes the TAI time from this message, using the leap second for UTC conversion if needed
+func (msg *TimeMsg) ComputeTAITime(ls ptime.LeapSecond) (ptime.Time, bool) {
+	if !msg.TAITime.IsZero() {
+		return msg.TAITime, true
+	}
+	if msg.UTCTime == nil {
+		return 0, false
+	}
+	return ls.UTCtoTime(*msg.UTCTime), true
+}
+
 type LeapSecondMsg struct {
 	ptime.LeapSecond
 	NavEpoch uint32 `json:"navEpoch,omitempty"`
+}
+
+// UpdateLeapSecond updates the target leap second if this message contains newer information
+// Returns true if the target was updated
+func (msg *LeapSecondMsg) UpdateLeapSecond(target *ptime.LeapSecond) bool {
+	if msg.OffChangeTime <= target.OffChangeTime {
+		return false
+	}
+	*target = msg.LeapSecond
+	return true
 }
 
 type SurveyMsg struct {

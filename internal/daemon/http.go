@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -20,6 +21,15 @@ import (
 type HTTPConfig struct {
 	Listen string `toml:"listen"`
 	PProf  bool   `toml:"pprof"`
+	GUI    *bool  `toml:"gui"` // Serve graphical user interface
+}
+
+// gui gives the value of the GUI option, defaulting to true if not set.
+func (hc HTTPConfig) gui() bool {
+	if hc.GUI == nil {
+		return true
+	}
+	return *hc.GUI
 }
 
 const gracefulShutdownTimeout = 1 * time.Second
@@ -39,6 +49,10 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	for _, c := range cfg {
 		if c.Listen == "" {
 			return errors.New("must specify listen option for each HTTP element")
+		}
+		// Validate that at least one endpoint is enabled
+		if !c.PProf && !c.gui() {
+			return fmt.Errorf("HTTP endpoint %s must enable at least one of: pprof, gui", c.Listen)
 		}
 	}
 
@@ -60,12 +74,15 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		if cfg[i].PProf {
 			registerPprofHandlers(mux)
 		}
-		mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
-			sseHandleRequest(ctx, lg, w, r, b, initEvent)
-		})
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			fileServer.ServeHTTP(w, r)
-		})
+		// Only register GUI routes if enabled for this endpoint
+		if cfg[i].gui() {
+			mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+				sseHandleRequest(ctx, lg, w, r, b, initEvent)
+			})
+			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				fileServer.ServeHTTP(w, r)
+			})
+		}
 
 		// XXX we should supply an error logger that wraps lg
 		server := &http.Server{Handler: mux}

@@ -11,7 +11,7 @@ The implementation is split into two stages:
 ## Design Goals
 
 1. Create a `Sampler` interface in the `internal/mon` package for clock synchronization samples
-2. Create a unified `Observer` interface in the `internal/obs` package that extends `Sampler` and `gpsprot.Handler`
+2. Create a unified `Observer` interface in the `internal/obs` package that extends `Sampler` and `gpsprot.MsgHandler`
 3. Move SSE-specific code out of core packages into dedicated observability implementations
 4. Support multiple observability backends (SSE, Prometheus) through a fan-out pattern
 5. Enable/disable UI and metrics endpoints via configuration
@@ -53,7 +53,7 @@ import (
 // Observer provides unified observability interface
 type Observer interface {
     mon.Sampler
-    gpsprot.Handler
+    gpsprot.MsgHandler
     
     // Release cleans up resources (e.g., closes SSE channels)
     Release()
@@ -70,7 +70,7 @@ func NewMultiObserver(observers ...Observer) *MultiObserver
 
 ### SSE Implementation
 
-#### `internal/obs/sseobs/sse.go`
+#### `internal/sseobs/sse.go`
 ```go
 package sseobs
 
@@ -113,7 +113,7 @@ func (s *SSEObserver) Release() {
 
 ### Prometheus Implementation
 
-#### `internal/obs/promobs/prometheus.go`
+#### `internal/promobs/prometheus.go`
 ```go
 package promobs
 
@@ -155,30 +155,13 @@ func (p *PrometheusObserver) Handler() http.Handler {
 
 Update `docs/config.md` and `configs/config-schema.json` to add per-endpoint configuration for HTTP endpoints.
 
-#### `internal/daemon/config.go`
+#### HTTPConfig (implemented in `internal/daemon/http.go`)
 ```go
 type HTTPConfig struct {
-    Listen  string `toml:"listen"`
-    PProf   bool   `toml:"pprof"`
-    GUI     bool   `toml:"gui"`     // Serve graphical user interface (default: true)
-    Metrics bool   `toml:"metrics"`  // Serve /metrics endpoint (default: true) - Stage 2 only
-}
-
-// SetDefaults sets default values for HTTPConfig
-func (c *HTTPConfig) SetDefaults() {
-    if c.Listen != "" {
-        // Only set defaults if this is a configured endpoint
-        c.GUI = true
-        // c.Metrics = true  // Stage 2 only
-    }
-}
-
-// Validate ensures HTTPConfig has valid settings
-func (c *HTTPConfig) Validate() error {
-    if c.Listen != "" && !c.PProf && !c.GUI {
-        return fmt.Errorf("HTTP endpoint %s must enable at least one of: pprof, gui", c.Listen)
-    }
-    return nil
+    Listen string `toml:"listen"`
+    PProf  bool   `toml:"pprof"`
+    GUI    *bool  `toml:"gui"` // Defaults to true, uses gui() method
+    // Metrics bool `toml:"metrics"` // Stage 2 only
 }
 ```
 
@@ -215,7 +198,7 @@ func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObs
     } else if sseObs != nil {
         return sseObs
     } else {
-        return obs.Null{}
+        return &obs.DefaultObserver{}
     }
 }
 ```
@@ -316,7 +299,7 @@ This constraint ensures the refactoring is truly behavior-preserving and minimiz
 
 1. **Create Sampler interface** in `internal/mon/sampler.go`
 2. **Create obs package** with unified Observer interface and MultiObserver
-3. **Implement SSE observer** in `internal/obs/sseobs/`:
+3. **Implement SSE observer** in `internal/sseobs/`:
    - Move SSE event creation from `gpsevent/dispatcher.go`
    - Move sample event creation from `mon/monitor.go`
    - Preserve exact same SSE events and behavior
@@ -364,6 +347,26 @@ This constraint ensures the refactoring is truly behavior-preserving and minimiz
    - Second: Add GPS message-based metrics (satellites, survey)
    - Third: Add system metrics (start time, last PPS)
 5. **Test**: Verify both SSE and Prometheus metrics work correctly
+
+## Implementation Progress
+
+### Stage 1: Observer Interface Refactoring ✅ COMPLETED
+
+- ✅ Created Sampler interface in `internal/mon/sampler.go`
+- ✅ Made MultiHandler type public and added Handlers() iterator in `internal/gpsprot/msg.go`
+- ✅ Created MultiSampler in `internal/mon/sampler.go`
+- ✅ Created Observer interface and MultiObserver in `internal/obs/observer.go`
+- ✅ Implemented SSE observer in `internal/sseobs/sse.go`
+- ✅ Updated gpsevent.Dispatcher to use Observer interface
+- ✅ Updated mon.Monitor to use Sampler interface
+- ✅ Added GUI configuration support with HTTPConfig.gui() method
+- ✅ Updated daemon package to use observer architecture
+- ✅ Updated HTTP implementation to conditionally register GUI routes
+- ✅ Code compiles and tests pass
+
+### Stage 2: Prometheus Implementation (pending)
+
+Ready to begin implementing Prometheus metrics using the new Observer architecture.
 
 ## Prometheus Metrics Specification
 

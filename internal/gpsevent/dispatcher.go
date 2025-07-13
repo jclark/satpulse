@@ -8,14 +8,13 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/combine"
-	"github.com/jclark/satpulse/internal/geopos"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/logfile"
 	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/ts"
 	"golang.org/x/sys/unix"
 )
@@ -42,7 +41,7 @@ func SetMsgOptions(target *gpsprot.ConfigTarget, timePulseEnabled bool) {
 type Dispatcher struct {
 	gpsprot.DefaultHandler
 	pktProcs              map[gpsprot.Tag]gpsprot.PacketProcessor
-	sseCh                 chan<- sse.Event
+	obs                   obs.Observer // never nil
 	cb                    *combine.Combiner
 	mon                   *mon.Monitor
 	ls                    ptime.LeapSecond
@@ -54,7 +53,7 @@ type Dispatcher struct {
 	tStart                time.Time
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, m *mon.Monitor, ls ptime.LeapSecond, phcFlags phc.DriverFlags, pulseWidth time.Duration, sseCh chan<- sse.Event, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, m *mon.Monitor, ls ptime.LeapSecond, phcFlags phc.DriverFlags, pulseWidth time.Duration, obs obs.Observer, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
 	var combiner *combine.Combiner
 	if m != nil {
 		pt := combine.PulseType{
@@ -78,11 +77,12 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		mon:      m,
 		ls:       ls,
 		lg:       lg,
-		sseCh:    sseCh,
+		obs:      obs,
 		tStart:   tStart,
 	}
+	multiHandler := gpsprot.NewMultiHandler(&d, obs)
 	for _, pp := range pktProcs {
-		pp.SetMsgHandler(&d)
+		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
 	}
 	err := d.lf.Open(eventLogPath)
@@ -96,11 +96,8 @@ const tickPeriod = time.Second / 4
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 	// loop until both channels are closed
-	sseCh := d.sseCh
-	if sseCh != nil {
-		defer close(sseCh)
-	}
-	// close the monitor before the sseCh, since the monitor uses the sseCh
+	defer d.obs.Release()
+	// close the monitor before the observer, since the monitor uses the observer
 	if d.mon != nil {
 		defer d.mon.Close()
 	}
@@ -250,22 +247,14 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	}
 }
 
-type TimeSSE struct {
-	UTC string `json:"utc"`
-	TAI int64  `json:"tai"`
-}
 
 func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, Time: mt})
-	var sec ptime.Time
-	if !mt.TAITime.IsZero() {
-		sec = mt.TAITime
-	} else {
-		u := mt.UTCTime
-		if u == nil {
-			return
-		}
-		sec = d.ls.UTCtoTime(*u)
+	sec, ok := mt.ComputeTAITime(d.ls)
+	if !ok {
+		return
+	}
+	if mt.UTCTime != nil && mt.TAITime.IsZero() {
 		d.lg.Debug("computed TAI time from UTC time", "tai", sec)
 	}
 	secRnd := sec.Round(time.Second)
@@ -273,27 +262,10 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 		d.cb.TimeMsg(secRnd, tRead, mt.PulseOffset, mt.Ref)
 	}
 	if mt.Ref != gpsprot.PrePulse && secRnd > d.lastTime {
-		d.sendSSE("time", TimeSSE{
-			UTC: d.ls.FormatTime(secRnd),
-			TAI: int64(secRnd) / 1e9,
-		})
 		d.lastTime = secRnd
 	}
 }
 
-// SurveySSE is the type of the SSE for survey progress.
-type SurveySSE struct {
-	X          float64     `json:"x"`
-	Y          float64     `json:"y"`
-	Z          float64     `json:"z"`
-	Accuracy   float64     `json:"accuracy"`
-	Alt        *float64    `json:"alt,omitempty"`
-	LatLon     *[2]float64 `json:"latLon,omitempty"`
-	ObsTime    uint32      `json:"obsTime"`
-	ObsCount   uint32      `json:"obsCount"`
-	InProgress bool        `json:"inProgress"`
-	Valid      bool        `json:"valid"`
-}
 
 func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, Survey: m})
@@ -307,58 +279,17 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 			"obsCount", m.ObsCount,
 			"obsTime", m.ObsTime)
 	}
-	ecef := geopos.ECEF{}
-	for i := range ecef {
-		ecef[i] = m.Position[i].Meters()
-	}
-	sse := SurveySSE{
-		X:          ecef[0],
-		Y:          ecef[1],
-		Z:          ecef[2],
-		Accuracy:   m.Accuracy.Meters(),
-		ObsTime:    uint32(m.ObsTime / time.Second),
-		ObsCount:   m.ObsCount,
-		InProgress: m.InProgress,
-		Valid:      m.Valid,
-	}
-	llh, err := geopos.WGS84.ECEFtoLLH(ecef)
-	if err == nil {
-		latLon := [2]float64{llh.Lat, llh.Lon}
-		sse.LatLon = &latLon
-		h := llh.Height
-		sse.Alt = &h
-	}
-	d.sendSSE("survey", sse)
 }
 
-type SatellitesSSE struct {
-	SVs []gpsprot.SVInfo `json:"svs"`
-}
 
 func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, Satellites: msg})
-	d.sendSSE("satellites", SatellitesSSE{SVs: msg.SVs})
 }
 
-func (d *Dispatcher) sendSSE(name string, data any) {
-	if d.sseCh == nil {
-		return
-	}
-	event, err := sse.Make(name, data)
-	if err != nil {
-		d.lg.Error("failed to create SSE event", "name", name, "err", err)
-	} else {
-		d.sseCh <- event
-	}
-}
 
 func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, LeapSecond: msg})
-	if msg.OffChangeTime <= d.ls.OffChangeTime {
-		return
-	}
-	d.ls = msg.LeapSecond
-	if d.mon != nil {
+	if msg.UpdateLeapSecond(&d.ls) && d.mon != nil {
 		d.mon.SetLeapSecond(d.ls)
 	}
 }

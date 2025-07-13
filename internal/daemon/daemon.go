@@ -16,11 +16,14 @@ import (
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/proxy"
+	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/servo"
 	"github.com/jclark/satpulse/internal/sse"
+	"github.com/jclark/satpulse/internal/sseobs"
 	"github.com/jclark/satpulse/internal/ts"
 	"github.com/jclark/satpulse/internal/ubx"
 )
@@ -190,7 +193,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 			tpFlags |= gpsTimePulseGetWidth
 		}
 	}
-	gct, pulseWidth, err := cfg.GPS.target(conn.Speed(), len(cfg.HTTP) > 0, tpFlags)
+	gct, pulseWidth, err := cfg.GPS.target(conn.Speed(), cfg.httpWantsSatellites(), tpFlags)
 	lg.Debug("GPS configure input", "target", gct)
 	if err != nil {
 		return err
@@ -283,6 +286,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 
 func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, tStart time.Time) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
+	obs := newSSEObserver(cfg, sseCh, ls, lg)
+
 	var m *mon.Monitor
 	var driverFlags phc.DriverFlags
 	if clk != nil {
@@ -292,7 +297,7 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		}
 		m, err = mon.NewMonitor(servo, lg, mon.MonitorConfig{
 			LeapSecond:    ls,
-			SSECh:         sseCh,
+			Sampler:       obs,
 			RefClock:      rc,
 			Grandmaster:   gm,
 			LogInterval:   cfg.Log.Interval,
@@ -305,7 +310,17 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		driverFlags = clk.DriverFlags
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, m, ls, driverFlags, pulseWidth, sseCh, eventLogPath, tStart)
+	return gpsevent.NewDispatcher(lg, pktProcs, m, ls, driverFlags, pulseWidth, obs, eventLogPath, tStart)
+}
+
+// newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
+func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger) obs.Observer {
+	for _, hc := range cfg.HTTP {
+		if hc.gui() {
+			return sseobs.New(sseCh, ls, lg)
+		}
+	}
+	return &obs.DefaultObserver{}
 }
 
 type InitData struct {

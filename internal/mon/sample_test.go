@@ -4,54 +4,54 @@ import "testing"
 
 var inSyncTests = [][]sampleData{
 	{
-		sampleData{-23e-9, sampleOK},
-		sampleData{14e-9, sampleOK},
-		sampleData{-5e-9, sampleOK},
-		sampleData{7e-9, sampleOK},
-		sampleData{-14e-9, sampleOK},
-		sampleData{20e-9, sampleOK},
-		sampleData{3e-9, sampleOK},
-		sampleData{-4e-9, sampleOK},
-		sampleData{-19e-9, sampleOK},
-		sampleData{12e-9, sampleOK},
-		sampleData{-4e-9, sampleOK},
-		sampleData{-1e6, sampleOutlier},
-		sampleData{0, sampleMissing},
-		sampleData{1e3, sampleOutlier},
-		sampleData{10e-9, sampleOK},
-		sampleData{-4e-9, sampleOK},
+		sampleData{-23e-9, SampleOK},
+		sampleData{14e-9, SampleOK},
+		sampleData{-5e-9, SampleOK},
+		sampleData{7e-9, SampleOK},
+		sampleData{-14e-9, SampleOK},
+		sampleData{20e-9, SampleOK},
+		sampleData{3e-9, SampleOK},
+		sampleData{-4e-9, SampleOK},
+		sampleData{-19e-9, SampleOK},
+		sampleData{12e-9, SampleOK},
+		sampleData{-4e-9, SampleOK},
+		sampleData{-1e6, SampleOutlier},
+		sampleData{0, SampleMissing},
+		sampleData{1e3, SampleOutlier},
+		sampleData{10e-9, SampleOK},
+		sampleData{-4e-9, SampleOK},
 	},
 	{
-		sampleData{-23e-9, sampleOK},
-		sampleData{14e-9, sampleOK},
-		sampleData{-5e-9, sampleOK},
-		sampleData{7e-9, sampleOK},
-		sampleData{-14e-9, sampleOK},
-		sampleData{20e-9, sampleOK},
-		sampleData{3e-9, sampleOK},
-		sampleData{-4e-9, sampleOK},
-		sampleData{-19e-9, sampleOK},
-		sampleData{12e-9, sampleOK},
-		sampleData{-4e-9, sampleOK},
-		sampleData{49e-9, sampleOK},
-		sampleData{3e-9, sampleOK},
-		sampleData{-4e-9, sampleOK},
-		sampleData{-1e6, sampleOutlier},
-		sampleData{0, sampleMissing},
-		sampleData{1e3, sampleOutlier},
-		sampleData{10e-9, sampleOK},
-		sampleData{-4e-9, sampleOK},
-		sampleData{0, sampleMissing},
-		sampleData{0, sampleMissing},
-		sampleData{15e-9, sampleOK},
-		sampleData{-4e-9, sampleOK},
-		sampleData{20e-9, sampleOK},
-		sampleData{3e-9, sampleOK},
-		sampleData{-4e-9, sampleOK},
-		sampleData{-2e6, sampleOutlier},
-		sampleData{-2e6, sampleOutlier},
-		sampleData{19e-9, sampleOK},
-		sampleData{-2e-9, sampleOK},
+		sampleData{-23e-9, SampleOK},
+		sampleData{14e-9, SampleOK},
+		sampleData{-5e-9, SampleOK},
+		sampleData{7e-9, SampleOK},
+		sampleData{-14e-9, SampleOK},
+		sampleData{20e-9, SampleOK},
+		sampleData{3e-9, SampleOK},
+		sampleData{-4e-9, SampleOK},
+		sampleData{-19e-9, SampleOK},
+		sampleData{12e-9, SampleOK},
+		sampleData{-4e-9, SampleOK},
+		sampleData{49e-9, SampleOK},
+		sampleData{3e-9, SampleOK},
+		sampleData{-4e-9, SampleOK},
+		sampleData{-1e6, SampleOutlier},
+		sampleData{0, SampleMissing},
+		sampleData{1e3, SampleOutlier},
+		sampleData{10e-9, SampleOK},
+		sampleData{-4e-9, SampleOK},
+		sampleData{0, SampleMissing},
+		sampleData{0, SampleMissing},
+		sampleData{15e-9, SampleOK},
+		sampleData{-4e-9, SampleOK},
+		sampleData{20e-9, SampleOK},
+		sampleData{3e-9, SampleOK},
+		sampleData{-4e-9, SampleOK},
+		sampleData{-2e6, SampleOutlier},
+		sampleData{-2e6, SampleOutlier},
+		sampleData{19e-9, SampleOK},
+		sampleData{-2e-9, SampleOK},
 	},
 }
 
@@ -59,13 +59,13 @@ func TestSyncState(t *testing.T) {
 	for i, test := range inSyncTests {
 		ss := newSampleState(sampleWindowSize)
 		for j, s := range test {
-			if s.kind != sampleMissing && ss.madIsOutlier(s.off, &defaultSyncConfig) != (s.kind == sampleOutlier) {
+			if s.kind != SampleMissing && ss.madIsOutlier(s.off, &defaultSyncConfig) != (s.kind == SampleOutlier) {
 				n, min, max := ss.mad(defaultSyncConfig.madMultiple)
-				t.Errorf("Test %d, sample %d, expected madIsOutlier == %v (n = %d, min = %v, max = %v)", i, j, s.kind == sampleOutlier, n, min, max)
+				t.Errorf("Test %d, sample %d, expected madIsOutlier == %v (n = %d, min = %v, max = %v)", i, j, s.kind == SampleOutlier, n, min, max)
 			}
-			ss.sample(s.kind, s.off, 1, inSync, &defaultSyncConfig)
-			state := ss.nextSyncState(inSync, &defaultSyncConfig)
-			if state == noSync {
+			ss.sample(s.kind, s.off, 1, InSync, &defaultSyncConfig)
+			state := ss.nextSyncState(InSync, &defaultSyncConfig)
+			if state == NoSync {
 				t.Errorf("Test %d, sample %d, unexpected exit from sync", i, j)
 			}
 		}
@@ -83,15 +83,15 @@ func TestExitSyncEMA(t *testing.T) {
 	cfg.emaAlpha = 0.1
 	for i, test := range exitSyncTests {
 		ss := newSampleState(sampleWindowSize)
-		state := inSync
+		state := InSync
 		for _, off := range test {
-			ss.sample(sampleOK, float64(off)*1e-9, 1, state, &cfg)
+			ss.sample(SampleOK, float64(off)*1e-9, 1, state, &cfg)
 			state = ss.nextSyncState(state, &cfg)
-			if state == noSync {
+			if state == NoSync {
 				break
 			}
 		}
-		if state == inSync {
+		if state == InSync {
 			t.Errorf("Test %d, failed to exit sync", i)
 		}
 	}
@@ -101,11 +101,11 @@ func TestExitSyncMissing(t *testing.T) {
 	cfg := defaultSyncConfig
 	cfg.maxConsecInvalid = 7
 	ss := newSampleState(sampleWindowSize)
-	state := inSync
-	for i := range(cfg.maxConsecInvalid + 1) {
-		ss.sample(sampleMissing, 0, 1, state, &cfg)
+	state := InSync
+	for i := range cfg.maxConsecInvalid + 1 {
+		ss.sample(SampleMissing, 0, 1, state, &cfg)
 		state = ss.nextSyncState(state, &cfg)
-		if (state == noSync) != (i == cfg.maxConsecInvalid) {
+		if (state == NoSync) != (i == cfg.maxConsecInvalid) {
 			t.Errorf("Exit sync at wrong time: sample %d, state %v, invalidWeight = %v", i, state, ss.invalidWeight)
 		}
 	}
@@ -171,7 +171,7 @@ func TestOutlierInit(t *testing.T) {
 				n, min, max := ss.mad(defaultSyncConfig.madMultiple)
 				t.Errorf("Test %d, sample %d, expected madIsOutlier == false (n = %d, min = %v, max = %v)", i, j, n, min, max)
 			}
-			ss.win.append(sampleData{off: off, kind: sampleOK})
+			ss.win.append(sampleData{off: off, kind: SampleOK})
 		}
 	}
 }
