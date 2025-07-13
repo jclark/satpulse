@@ -103,7 +103,9 @@
 		"items": {
 		  "type": "object",
 		  "properties": {
-			"listen": { "type": "string" }
+			"listen": { "type": "string" },
+			"gui": { "type": "boolean" },
+			"metrics": { "type": "boolean" }
 		  },
 		  "required": ["listen"]
 		}

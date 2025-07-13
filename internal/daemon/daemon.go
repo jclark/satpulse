@@ -18,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/internal/promobs"
 	"github.com/jclark/satpulse/internal/proxy"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/scan"
@@ -215,12 +216,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 
+	promObs := newPrometheusObserver(cfg)
 	if eb != nil {
 		initEvent, err := sse.Make("init", newInitData(gcfg))
 		if err != nil {
 			return err
 		}
-		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, initEvent)
+		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, initEvent, promObs)
 		if err != nil {
 			return err
 		}
@@ -257,7 +259,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		pulseWidth = pw
 	}
 
-	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, sseCh, tStart)
+	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, sseCh, promObs, tStart)
 	if err != nil {
 		return err
 	}
@@ -284,9 +286,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, tStart time.Time) (*gpsevent.Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, promObs *promobs.PrometheusObserver, tStart time.Time) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
-	obs := newSSEObserver(cfg, sseCh, ls, lg)
+	
+	sseObs := newSSEObserver(cfg, sseCh, ls, lg)
+	obs := combineObservers(promObs, sseObs)
 
 	var m *mon.Monitor
 	var driverFlags phc.DriverFlags
@@ -320,7 +324,30 @@ func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, ls ptime.LeapSecond, lg
 			return sseobs.New(sseCh, ls, lg)
 		}
 	}
-	return &obs.DefaultObserver{}
+	return nil
+}
+
+// newPrometheusObserver creates Prometheus observer if any HTTP endpoint needs metrics
+func newPrometheusObserver(cfg *Config) *promobs.PrometheusObserver {
+	for _, hc := range cfg.HTTP {
+		if hc.metrics() {
+			return promobs.New(cfg.PTP.ClockAccuracy)
+		}
+	}
+	return nil
+}
+
+// combineObservers combines individual observers into appropriate single observer
+func combineObservers(promObs *promobs.PrometheusObserver, sseObs obs.Observer) obs.Observer {
+	if promObs != nil && sseObs != nil {
+		return obs.NewMultiObserver(promObs, sseObs)
+	} else if promObs != nil {
+		return promObs
+	} else if sseObs != nil {
+		return sseObs
+	} else {
+		return &obs.DefaultObserver{}
+	}
 }
 
 type InitData struct {

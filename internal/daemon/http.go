@@ -14,14 +14,16 @@ import (
 
 	"github.com/jclark/satpulse/internal/bcast"
 	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/internal/promobs"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/web"
 )
 
 type HTTPConfig struct {
-	Listen string `toml:"listen"`
-	PProf  bool   `toml:"pprof"`
-	GUI    *bool  `toml:"gui"` // Serve graphical user interface
+	Listen  string `toml:"listen"`
+	PProf   bool   `toml:"pprof"`
+	GUI     *bool  `toml:"gui"`     // Serve graphical user interface
+	Metrics *bool  `toml:"metrics"` // Serve Prometheus metrics endpoint
 }
 
 // gui gives the value of the GUI option, defaulting to true if not set.
@@ -30,6 +32,14 @@ func (hc HTTPConfig) gui() bool {
 		return true
 	}
 	return *hc.GUI
+}
+
+// metrics gives the value of the Metrics option, defaulting to true if not set.
+func (hc HTTPConfig) metrics() bool {
+	if hc.Metrics == nil {
+		return true
+	}
+	return *hc.Metrics
 }
 
 const gracefulShutdownTimeout = 1 * time.Second
@@ -42,7 +52,7 @@ func registerPprofHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 }
 
-func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], initEvent sse.Event) error {
+func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], initEvent sse.Event, promObs *promobs.PrometheusObserver) error {
 	if len(cfg) == 0 {
 		return nil
 	}
@@ -51,8 +61,8 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 			return errors.New("must specify listen option for each HTTP element")
 		}
 		// Validate that at least one endpoint is enabled
-		if !c.PProf && !c.gui() {
-			return fmt.Errorf("HTTP endpoint %s must enable at least one of: pprof, gui", c.Listen)
+		if !c.PProf && !c.gui() && !c.metrics() {
+			return fmt.Errorf("HTTP endpoint %s must enable at least one of: pprof, gui, metrics", c.Listen)
 		}
 	}
 
@@ -82,6 +92,11 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 				fileServer.ServeHTTP(w, r)
 			})
+		}
+		
+		// Only register metrics endpoint if enabled for this endpoint
+		if cfg[i].metrics() {
+			mux.Handle("/metrics", promObs.Handler())
 		}
 
 		// XXX we should supply an error logger that wraps lg
