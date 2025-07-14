@@ -134,24 +134,28 @@ func (mh *msgHandler) finish(cm *gpsprot.ConfigProps) *Result {
 		Version:               ver,
 		ConfigProps:           cm,
 		LeapSecond:            mh.leapSecond,
-		PacketFormatsDetected: maps.Keys(mh.msgCount),
+		PacketFormatsDetected: mh.packetFormatsDetected(),
 	}
 }
 
 // noProbeResult returns a Result when there was no probe or the probe failed.
 func (mh *msgHandler) noProbeResult() *Result {
-	tags := []gpsprot.Tag{}
+	return &Result{
+		ConfigProps:           new(gpsprot.ConfigProps),
+		LeapSecond:            mh.leapSecond,
+		PacketFormatsDetected: mh.packetFormatsDetected(),
+	}
+}
+
+func (mh *msgHandler) packetFormatsDetected() []gpsprot.Tag {
+	tags := make([]gpsprot.Tag, 0, len(mh.msgCount))
 	for tag, count := range mh.msgCount {
 		if count > 0 {
 			tags = append(tags, tag)
 		}
 	}
 	slices.Sort(tags)
-	return &Result{
-		ConfigProps:           new(gpsprot.ConfigProps),
-		LeapSecond:            mh.leapSecond,
-		PacketFormatsDetected: tags,
-	}
+	return tags
 }
 
 func (mh *msgHandler) detect(ctx context.Context) error {
