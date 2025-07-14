@@ -14,7 +14,7 @@ Provides the user interface to the programs, including the command-line interfac
 
 `cmd/satpulsed` provides main for satpulsed.
 
-`internal/daemon` implements the satpulsed daemon. It orchestrates all the parts of the satpulsed program. It also handles the TOML config file.
+`internal/daemon` implements the satpulsed daemon. It orchestrates all the parts of the satpulsed program. It also handles the TOML config file and provides HTTP endpoints for the web interface and metrics.
 
 `internal/pmccmd` implements `pmc` subcommand of satpulsetool.
 
@@ -38,11 +38,17 @@ Provides the main blocks of the applications.
 
 `internal/combine` is called by `internal/gpsevent` with events for time pulses and with events for GPS messages giving the current time. It generates samples that combine the PHC time of a time pulse with the correct time of that time pulse in the PTP timescale. It then passes these samples to `internal/mon`.
 
-`internal/mon` is called by `internal/combine` and `internal/gpsevent`. It removes outliers from the samples it receives before passing them to `internal/servo`. It monitors the  synchronization status and reports it to the PTP grandmaster using `internal/pmc`. It also sends samples to chrony using `internal/sockrefclock`.
+`internal/mon` is called by `internal/combine` and `internal/gpsevent`. It removes outliers from the samples it receives before passing them to `internal/servo`. It monitors the  synchronization status and reports it to the PTP grandmaster using `internal/pmc`. It also sends samples to chrony using `internal/sockrefclock`. It provides a `Sampler` interface for observability backends to receive clock synchronization samples.
 
 `internal/servo` is called by `internal/mon`. It uses the samples it receives to drive a Proportional-Integral servo that adjusts the frequency of the PHC to bring it into phase with the GPS time pulses.
 
 `internal/proxy` implements proxying of GPS packets to TCP and Unix domain sockets.
+
+`internal/obs` provides unified observability interfaces including `Observer` (which extends `mon.Sampler` and `gpsprot.Handler`) for receiving both clock synchronization samples and GPS protocol messages.
+
+`internal/obs/sseobs` implements the `Observer` interface to generate Server-Sent Events data that the daemon uses for the web interface.
+
+`internal/obs/promobs` implements the `Observer` interface to collect Prometheus metrics that the daemon exposes via HTTP handlers.
 
 `web` embeds the HTML/JavaScript code for the web interface. This code is transpiled from TypeScript and uses Preact JavaScript library.
 
