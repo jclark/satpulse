@@ -62,7 +62,8 @@ all:
     valdeon.lan: # all default
 
     # LEA-F9T
-    mascarpone.lan: # all default
+    mascarpone.lan:
+      speed: 115200
 
     # UBX-G7020 in SR1723U7
     chaource.lan: # all default
