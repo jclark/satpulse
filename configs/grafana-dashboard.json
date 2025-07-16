@@ -104,7 +104,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "satpulse_in_sync{instance=\"${instance:raw}\"}",
+          "expr": "satpulse_phc_sync_status{instance=\"${instance:raw}\"}",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -164,7 +164,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "avg_over_time(satpulse_clock_frequency_ppb{instance=\"${instance:raw}\"}[20s])",
+          "expr": "avg_over_time(satpulse_phc_frequency_adjustment{instance=\"${instance:raw}\"}[20s]) * 1e9",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -229,7 +229,7 @@
               }
             ]
           },
-          "unit": "ns"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -261,7 +261,7 @@
             "uid": "aert3k8krs7i8d"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(1.0, sum(rate(satpulse_clock_abs_offset_nanoseconds_bucket{instance=\"${instance:raw}\"}[$tau])) by (le))",
+          "expr": "histogram_quantile(1.0, sum(rate(satpulse_phc_offset_abs_seconds_bucket{instance=\"${instance:raw}\"}[$tau])) by (le))",
           "hide": false,
           "instant": false,
           "legendFormat": "max",
@@ -274,7 +274,7 @@
             "uid": "aert3k8krs7i8d"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum(rate(satpulse_clock_abs_offset_nanoseconds_bucket{instance=\"${instance:raw}\"}[$tau])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(satpulse_phc_offset_abs_seconds_bucket{instance=\"${instance:raw}\"}[$tau])) by (le))",
           "hide": false,
           "instant": false,
           "legendFormat": "99%",
@@ -283,7 +283,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(satpulse_clock_abs_offset_nanoseconds_bucket{instance=\"${instance:raw}\"}[$tau])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(satpulse_phc_offset_abs_seconds_bucket{instance=\"${instance:raw}\"}[$tau])) by (le))",
           "legendFormat": "95%",
           "range": true,
           "refId": "P95"
@@ -294,7 +294,7 @@
             "uid": "aert3k8krs7i8d"
           },
           "editorMode": "code",
-          "expr": "sum(rate(satpulse_clock_abs_offset_nanoseconds_sum{instance=\"${instance:raw}\"}[$tau]))\n/\nsum(rate(satpulse_clock_abs_offset_nanoseconds_count{instance=\"${instance:raw}\"}[$tau]))",
+          "expr": "sum(rate(satpulse_phc_offset_abs_seconds_sum{instance=\"${instance:raw}\"}[$tau]))\n/\nsum(rate(satpulse_phc_offset_abs_seconds_count{instance=\"${instance:raw}\"}[$tau]))",
           "hide": false,
           "instant": false,
           "legendFormat": "mean",
@@ -307,7 +307,7 @@
             "uid": "aert3k8krs7i8d"
           },
           "editorMode": "code",
-          "expr": "sqrt(\n  (\n    sum(rate(satpulse_offset_sum_squares_nanoseconds_total{instance=\"${instance:raw}\"}[$tau]))\n    /\n    sum(rate(satpulse_clock_abs_offset_nanoseconds_count{instance=\"${instance:raw}\"}[$tau]))\n  )\n  -\n  (\n    sum(rate(satpulse_clock_abs_offset_nanoseconds_sum{instance=\"${instance:raw}\"}[$tau]))\n    /\n    sum(rate(satpulse_clock_abs_offset_nanoseconds_count{instance=\"${instance:raw}\"}[$tau]))\n  ) ^ 2\n)",
+          "expr": "sqrt(\n  (\n    sum(rate(satpulse_phc_offset_sum_squares_seconds_total{instance=\"${instance:raw}\"}[$tau]))\n    /\n    sum(rate(satpulse_phc_offset_abs_seconds_count{instance=\"${instance:raw}\"}[$tau]))\n  )\n  -\n  (\n    sum(rate(satpulse_phc_offset_abs_seconds_sum{instance=\"${instance:raw}\"}[$tau]))\n    /\n    sum(rate(satpulse_phc_offset_abs_seconds_count{instance=\"${instance:raw}\"}[$tau]))\n  ) ^ 2\n)",
           "hide": false,
           "instant": false,
           "legendFormat": "𝜎",
@@ -329,14 +329,14 @@
           "text": "All",
           "value": "$__all"
         },
-        "definition": "label_values(satpulse_in_sync,instance)",
+        "definition": "label_values(satpulse_phc_sync_status,instance)",
         "includeAll": true,
         "multi": true,
         "name": "instance",
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(satpulse_in_sync,instance)",
+          "query": "label_values(satpulse_phc_sync_status,instance)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,

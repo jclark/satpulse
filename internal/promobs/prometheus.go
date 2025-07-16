@@ -19,17 +19,13 @@ type PrometheusObserver struct {
 	reg        *prometheus.Registry
 	everInSync bool
 
-	inSyncGauge           prometheus.Gauge
-	offsetHistogram       prometheus.Histogram
-	offsetGauge           prometheus.Gauge
-	frequencyGauge        prometheus.Gauge
-	offsetAbsSumCounter   prometheus.Counter
-	offsetSumSqCounter    prometheus.Counter
-	missingCounter        prometheus.Counter
-	outlierCounter        prometheus.Counter
-	outOfSyncCounter      prometheus.Counter
-	goodCounter           prometheus.Counter
-	untilFirstSyncCounter prometheus.Counter
+	inSyncGauge         prometheus.Gauge
+	offsetHistogram     prometheus.Histogram
+	offsetGauge         prometheus.Gauge
+	frequencyGauge      prometheus.Gauge
+	offsetAbsSumCounter prometheus.Counter
+	offsetSumSqCounter  prometheus.Counter
+	samplesCounter      *prometheus.CounterVec
 }
 
 // New creates a new PrometheusObserver with basic metrics
@@ -38,65 +34,45 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 
 	// Sync state gauge
 	inSyncGauge := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "satpulse_in_sync",
-		Help: "Synchronization status (1 = in sync, 0 = out of sync)",
+		Name: "satpulse_phc_sync_status",
+		Help: "PHC synchronization status (0 = out of sync, 1 = in sync)",
 	})
 
 	// Clock offset histogram
 	offsetHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "satpulse_clock_abs_offset_nanoseconds",
-		Help:    "Histogram of absolute offset between PHC and GPS time in nanoseconds",
+		Name:    "satpulse_phc_offset_abs_seconds",
+		Help:    "Absolute offset between PHC and GPS time in seconds",
 		Buckets: makeBuckets(float64(clockAccuracyNanos)),
 	})
 
 	// Clock offset gauge (signed)
 	offsetGauge := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "satpulse_clock_offset_nanoseconds",
-		Help: "Current signed offset between PHC and GPS time in nanoseconds",
+		Name: "satpulse_phc_offset_seconds",
+		Help: "Current signed offset between PHC and GPS time in seconds",
 	})
 
 	// Clock frequency gauge
 	frequencyGauge := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "satpulse_clock_frequency_ppb",
-		Help: "Current frequency adjustment in parts per billion",
+		Name: "satpulse_phc_frequency_adjustment",
+		Help: "Current PHC frequency adjustment (dimensionless)",
 	})
 
 	// Statistical counters
 	offsetAbsSumCounter := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "satpulse_offset_abs_sum_nanoseconds_total",
-		Help: "Sum of absolute values of offsets from good samples (for mean calculation)",
+		Name: "satpulse_phc_offset_abs_sum_seconds_total",
+		Help: "Sum of absolute values of offsets from OK samples (for mean calculation)",
 	})
 
 	offsetSumSqCounter := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "satpulse_offset_sum_squares_nanoseconds_total",
-		Help: "Sum of squares of offsets from good samples (for stddev calculation)",
+		Name: "satpulse_phc_offset_sum_squares_seconds_total",
+		Help: "Sum of squares of offsets from OK samples (for stddev calculation)",
 	})
 
-	// Sample tracking counters
-	missingCounter := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "satpulse_samples_missing_total",
-		Help: "Total number of missing samples (time pulse not received)",
-	})
-
-	outlierCounter := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "satpulse_samples_outlier_total",
-		Help: "Total number of outlier samples (not used by servo)",
-	})
-
-	outOfSyncCounter := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "satpulse_samples_out_of_sync_total",
-		Help: "Total number of samples when out of sync",
-	})
-
-	goodCounter := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "satpulse_samples_good_total",
-		Help: "Total number of good samples (in sync and not outlier)",
-	})
-
-	samplesUntilFirstSyncCounter := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "satpulse_samples_until_first_sync_total",
-		Help: "Total number of samples processed before achieving first sync",
-	})
+	// Sample tracking counter with status labels
+	samplesCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "satpulse_phc_samples_total",
+		Help: "Total number of PHC samples by status",
+	}, []string{"status"})
 
 	// Register metrics
 	reg.MustRegister(inSyncGauge)
@@ -105,50 +81,43 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 	reg.MustRegister(frequencyGauge)
 	reg.MustRegister(offsetAbsSumCounter)
 	reg.MustRegister(offsetSumSqCounter)
-	reg.MustRegister(missingCounter)
-	reg.MustRegister(outlierCounter)
-	reg.MustRegister(outOfSyncCounter)
-	reg.MustRegister(goodCounter)
-	reg.MustRegister(samplesUntilFirstSyncCounter)
+	reg.MustRegister(samplesCounter)
 
 	return &PrometheusObserver{
-		reg:                   reg,
-		inSyncGauge:           inSyncGauge,
-		offsetHistogram:       offsetHistogram,
-		offsetGauge:           offsetGauge,
-		frequencyGauge:        frequencyGauge,
-		offsetAbsSumCounter:   offsetAbsSumCounter,
-		offsetSumSqCounter:    offsetSumSqCounter,
-		missingCounter:        missingCounter,
-		outlierCounter:        outlierCounter,
-		outOfSyncCounter:      outOfSyncCounter,
-		goodCounter:           goodCounter,
-		untilFirstSyncCounter: samplesUntilFirstSyncCounter,
+		reg:                 reg,
+		inSyncGauge:         inSyncGauge,
+		offsetHistogram:     offsetHistogram,
+		offsetGauge:         offsetGauge,
+		frequencyGauge:      frequencyGauge,
+		offsetAbsSumCounter: offsetAbsSumCounter,
+		offsetSumSqCounter:  offsetSumSqCounter,
+		samplesCounter:      samplesCounter,
 	}
 }
 
 // makeBuckets generates histogram buckets based on the clock accuracy
 // If a reasonable clockAccuracy is provided, it will be included in the buckets.
-func makeBuckets(clockAccuracy float64) []float64 {
-	// These are buckets in nanoseconds
+func makeBuckets(clockAccuracyNanos float64) []float64 {
+	// These are buckets in seconds
 	// We are trying to keep to under 50 buckets for Prometheus performance.
 	var buckets = []float64{
-		1, 2, 5,
-		10, 15, 20, 25, 30, 40, 50, 75,
-		10e1, 15e1, 20e1, 25e1, 30e1, 40e1, 50e1, 75e1,
-		10e2, 15e2, 20e2, 25e2, 30e2, 40e2, 50e2, 75e2,
-		10e3, 15e3, 20e3, 25e3, 30e3, 40e3, 50e3, 75e3,
-		10e4, 15e4, 20e4, 25e4, 30e4, 40e4, 50e4, 75e4,
-		1e6, // last bucket is a millisecond; for PTP that is an eternity
+		1e-9, 2e-9, 5e-9,
+		10e-9, 15e-9, 20e-9, 25e-9, 30e-9, 40e-9, 50e-9, 75e-9,
+		100e-9, 150e-9, 200e-9, 250e-9, 300e-9, 400e-9, 500e-9, 750e-9,
+		1000e-9, 1500e-9, 2000e-9, 2500e-9, 3000e-9, 4000e-9, 5000e-9, 7500e-9,
+		10e-6, 15e-6, 20e-6, 25e-6, 30e-6, 40e-6, 50e-6, 75e-6,
+		100e-6, 150e-6, 200e-6, 250e-6, 300e-6, 400e-6, 500e-6, 750e-6,
+		1e-3, // last bucket is a millisecond; for PTP that is an eternity
 	}
-	if clockAccuracy <= 0 {
+	if clockAccuracyNanos <= 0 {
 		return buckets
 	}
-	i, ok := slices.BinarySearch(buckets, clockAccuracy)
+	clockAccuracySeconds := clockAccuracyNanos / 1e9
+	i, ok := slices.BinarySearch(buckets, clockAccuracySeconds)
 	if ok {
 		return buckets
 	}
-	return slices.Insert(buckets, i, clockAccuracy)
+	return slices.Insert(buckets, i, clockAccuracySeconds)
 }
 
 // Handler returns the HTTP handler for /metrics endpoint
@@ -158,8 +127,8 @@ func (p *PrometheusObserver) Handler() http.Handler {
 
 // Sample implements mon.Sampler interface
 func (p *PrometheusObserver) Sample(data mon.SampleData) {
-	// Always update frequency gauge
-	p.frequencyGauge.Set(data.Freq)
+	// Always update frequency gauge (convert ppb to dimensionless)
+	p.frequencyGauge.Set(data.Freq / 1e9)
 
 	switch data.SyncState {
 	case mon.InSync:
@@ -170,26 +139,26 @@ func (p *PrometheusObserver) Sample(data mon.SampleData) {
 	case mon.NoSync:
 		p.inSyncGauge.Set(0)
 		if p.everInSync {
-			p.outOfSyncCounter.Inc()
+			p.samplesCounter.WithLabelValues("out_of_sync").Inc()
 		} else {
-			p.untilFirstSyncCounter.Inc()
+			p.samplesCounter.WithLabelValues("pre_sync").Inc()
 		}
 		return // No need to process further if out of sync
 	}
 
 	switch data.Kind {
 	case mon.SampleMissing:
-		p.missingCounter.Inc()
+		p.samplesCounter.WithLabelValues("missing").Inc()
 	case mon.SampleOutlier:
-		p.outlierCounter.Inc()
-		// Update offset gauge for outliers too
-		p.offsetGauge.Set(float64(data.Offset.Nanoseconds()))
+		p.samplesCounter.WithLabelValues("outlier").Inc()
+		// Update offset gauge for outliers too (convert to seconds)
+		p.offsetGauge.Set(data.Offset.Seconds())
 	case mon.SampleOK:
-		p.goodCounter.Inc()
-		offsetNs := float64(data.Offset.Nanoseconds())
-		p.offsetGauge.Set(offsetNs)
-		p.offsetHistogram.Observe(math.Abs(offsetNs))
-		p.offsetAbsSumCounter.Add(math.Abs(offsetNs))
-		p.offsetSumSqCounter.Add(offsetNs * offsetNs)
+		p.samplesCounter.WithLabelValues("ok").Inc()
+		offsetSeconds := data.Offset.Seconds()
+		p.offsetGauge.Set(offsetSeconds)
+		p.offsetHistogram.Observe(math.Abs(offsetSeconds))
+		p.offsetAbsSumCounter.Add(math.Abs(offsetSeconds))
+		p.offsetSumSqCounter.Add(offsetSeconds * offsetSeconds)
 	}
 }
