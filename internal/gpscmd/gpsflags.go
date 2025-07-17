@@ -46,7 +46,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
             [--survey] [--survey-time seconds] [--survey-acc meters]
             [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
-            [--sats-out sv|signal|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
+            [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
             [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|none,...]`
 
 const defaultSurveyTime = 2000
@@ -118,7 +118,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|tai|ecef|after|daemon|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|auto|none,...")
 	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|VTG|none,...")
-	flags.Var(&satsOut, "sats-out", "satellite data messages to output `flags`: sv|signal|none,...")
+	flags.Var(&satsOut, "sats-out", "satellite data messages to output `flags`: sat|sig|none,...")
 	flags.Float64VarP(&pps, "pps", "p", 0, "configure the GPS receiver to enable a PPS signal with pulse `width` in seconds")
 	flags.Int64Var(&antCableDelay, "ant-cable-delay", 0, "antenna cable delay in nanoseconds")
 	flags.BoolVar(&mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
@@ -760,11 +760,11 @@ func (satsOut *satsOutOpt) String() string {
 		return "none"
 	}
 	var parts []string
-	if flags&gpsprot.SatsMsgSV != 0 {
-		parts = append(parts, "sv")
+	if flags&gpsprot.SatsMsgSat != 0 {
+		parts = append(parts, "sat")
 	}
 	if flags&gpsprot.SatsMsgSignal != 0 {
-		parts = append(parts, "signal")
+		parts = append(parts, "sig")
 	}
 	return strings.Join(parts, ",")
 }
@@ -781,9 +781,9 @@ func (satsOut *satsOutOpt) Set(s string) error {
 	flags := gpsprot.SatsMsgFlags(0)
 	for _, w := range strings.Split(s, ",") {
 		switch strings.ToLower(strings.TrimSpace(w)) {
-		case "sv":
-			flags |= gpsprot.SatsMsgSV
-		case "signal":
+		case "sat":
+			flags |= gpsprot.SatsMsgSat
+		case "sig":
 			flags |= gpsprot.SatsMsgSignal
 		case "none":
 			// do nothing

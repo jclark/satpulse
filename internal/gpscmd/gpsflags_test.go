@@ -154,23 +154,23 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--nmea-out", "rmc"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC)}}},
 	{"ttyS0", []string{"--nmea-out", "Rmc,Gga"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)}}},
 	// Test --sats-out flag
-	{"ttyS0", []string{"--sats-out", "sv"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV)}}},
-	{"ttyS0", []string{"--sats-out", "signal"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSignal)}}},
-	{"ttyS0", []string{"--sats-out", "sv,signal"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV | gpsprot.SatsMsgSignal)}}},
-	{"ttyS0", []string{"--sats-out", "signal,sv"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV | gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "sat"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat)}}},
+	{"ttyS0", []string{"--sats-out", "sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "sat,sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "sig,sat"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal)}}},
 	{"ttyS0", []string{"--sats-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgFlags(0))}}},
-	{"ttyS0", []string{"--sats-out", "sv", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV), Save: gpsprot.SaveMinimal}}},
+	{"ttyS0", []string{"--sats-out", "sat", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat), Save: gpsprot.SaveMinimal}}},
 	// Test case-insensitive sats flags
-	{"ttyS0", []string{"--sats-out", "SV"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV)}}},
-	{"ttyS0", []string{"--sats-out", "Signal"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSignal)}}},
-	{"ttyS0", []string{"--sats-out", "SV,Signal"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV | gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "SAT"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat)}}},
+	{"ttyS0", []string{"--sats-out", "Sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "Sat,Sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal)}}},
 	// Test combining all output flags
-	{"ttyS0", []string{"--raw-out", "obs", "--pvt-out", "pos", "--rtcm-out", "MSM4", "--nmea-out", "RMC", "--sats-out", "sv"}, flagVars{configOpts: gpsprot.ConfigOptions{
+	{"ttyS0", []string{"--raw-out", "obs", "--pvt-out", "pos", "--rtcm-out", "MSM4", "--nmea-out", "RMC", "--sats-out", "sat"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		RawMsg:  gpsprot.MakeOption(gpsprot.RawMsgObs),
 		PVTMsg:  gpsprot.PVTMsgPos,
 		RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4),
 		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC),
-		SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV),
+		SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat),
 	}}},
 	// Test --binary flag
 	{"ttyS0", []string{"--binary"}, flagVars{configOpts: gpsprot.ConfigOptions{
@@ -244,7 +244,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(1331340.65), gpsprot.Meters(-4656583.35), gpsprot.Meters(4136313.40)},
 			FixedPosAcc:  gpsprot.Meters(defaultFixedPosAcc),
 		}),
-		configOpts:   gpsprot.ConfigOptions{Save: gpsprot.SaveMinimal},
+		configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveMinimal},
 	}},
 	// Test --fixed-pos-ecef with spaces around commas (Mount Everest)
 	{"ttyS0", []string{"--fixed-pos-ecef", "302769.89, 5636025.47, 2979493.09"}, flagVars{
@@ -344,14 +344,14 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--nmea-out", "other"},                        // trying to use hidden "other" flag
 	{"--serial-device", "ttyS0", "--sats-out", ""},                             // empty sats-out value
 	{"--serial-device", "ttyS0", "--sats-out", "invalid"},                      // invalid sats-out flag
-	{"--serial-device", "ttyS0", "--sats-out", "sv,invalid"},                   // partially invalid sats-out flags
+	{"--serial-device", "ttyS0", "--sats-out", "sat,invalid"},                  // partially invalid sats-out flags
 	// Test invalid combinations with --nmea and --binary
 	{"--serial-device", "ttyS0", "--nmea", "--binary"},            // can't use both --nmea and --binary
 	{"--serial-device", "ttyS0", "--binary", "--nmea"},            // can't use both --binary and --nmea
 	{"--serial-device", "ttyS0", "--nmea", "--rtcm-out", "MSM4"},  // can't use --nmea with --rtcm-out
 	{"--serial-device", "ttyS0", "--nmea", "--pvt-out", "pos"},    // can't use --nmea with --pvt-out
 	{"--serial-device", "ttyS0", "--nmea", "--raw-out", "obs"},    // can't use --nmea with --raw-out
-	{"--serial-device", "ttyS0", "--nmea", "--sats-out", "sv"},    // can't use --nmea with --sats-out
+	{"--serial-device", "ttyS0", "--nmea", "--sats-out", "sat"},   // can't use --nmea with --sats-out
 	{"--serial-device", "ttyS0", "--binary", "--nmea-out", "RMC"}, // can't use --binary with --nmea-out
 	// Test invalid --time-gnss options
 	{"--serial-device", "ttyS0", "--time-gnss", "SBAS"},    // not a major GNSS constellation
@@ -364,39 +364,39 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--gnss", "GAL,BDS", "--time-gnss", "GPS"}, // GPS not in enabled GNSS
 	{"--serial-device", "ttyS0", "--gnss", "BDS", "--time-gnss", "GAL"},     // GAL not in enabled GNSS
 	// Test invalid --fixed-pos-ecef values
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", ""},                           // empty value
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,2"},                        // too few coordinates
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,2,3,4"},                    // too many coordinates
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "abc,def,ghi"},                // invalid numbers
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,abc,3"},                    // partially invalid numbers
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "7000000,0,0"},                // coordinates too far from Earth
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "0,0,0"},                      // center of Earth (invalid)
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "8000000,8000000,8000000"},    // far outside valid range
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", ""},                        // empty value
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,2"},                     // too few coordinates
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,2,3,4"},                 // too many coordinates
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "abc,def,ghi"},             // invalid numbers
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,abc,3"},                 // partially invalid numbers
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "7000000,0,0"},             // coordinates too far from Earth
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "0,0,0"},                   // center of Earth (invalid)
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "8000000,8000000,8000000"}, // far outside valid range
 	// Test invalid --fixed-pos-acc values
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0"}, // accuracy too small
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0"},      // accuracy too small
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.0005"}, // accuracy below minimum
 	// Test mutual exclusion with --mobile and --survey
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--mobile"},   // can't use with mobile
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--survey"},   // can't use with survey
-	{"--serial-device", "ttyS0", "--mobile", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"},   // can't use mobile with fixed-pos
-	{"--serial-device", "ttyS0", "--survey", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"},   // can't use survey with fixed-pos
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--mobile"}, // can't use with mobile
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--survey"}, // can't use with survey
+	{"--serial-device", "ttyS0", "--mobile", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, // can't use mobile with fixed-pos
+	{"--serial-device", "ttyS0", "--survey", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, // can't use survey with fixed-pos
 	// Test invalid --ant-cable-delay values
-	{"--serial-device", "ttyS0", "--ant-cable-delay", "abc"},      // invalid number
-	{"--serial-device", "ttyS0", "--ant-cable-delay", "1.5"},      // floating point not allowed
-	{"--serial-device", "ttyS0", "--ant-cable-delay", ""},         // empty value
+	{"--serial-device", "ttyS0", "--ant-cable-delay", "abc"}, // invalid number
+	{"--serial-device", "ttyS0", "--ant-cable-delay", "1.5"}, // floating point not allowed
+	{"--serial-device", "ttyS0", "--ant-cable-delay", ""},    // empty value
 	// Test invalid --show-config combinations
-	{"--serial-device", "ttyS0", "--show-config", "--factory-reset"},     // can't use show-config with factory-reset
-	{"--serial-device", "ttyS0", "--show-config", "--reset"},             // can't use show-config with reset
-	{"--serial-device", "ttyS0", "--show-config", "--reload"},            // can't use show-config with reload
-	{"--serial-device", "ttyS0", "--factory-reset", "--show-config"},     // can't use factory-reset with show-config
-	{"--serial-device", "ttyS0", "--reset", "--show-config"},             // can't use reset with show-config
-	{"--serial-device", "ttyS0", "--reload", "--show-config"},            // can't use reload with show-config
-	{"--serial-device", "ttyS0", "-c", "--factory-reset"},                // can't use short form with factory-reset
-	{"--serial-device", "ttyS0", "-c", "--reset"},                        // can't use short form with reset
-	{"--serial-device", "ttyS0", "-c", "--reload"},                       // can't use short form with reload
-	{"--serial-device", "ttyS0", "--factory-reset", "-c"},                // can't use factory-reset with short form
-	{"--serial-device", "ttyS0", "--reset", "-c"},                        // can't use reset with short form
-	{"--serial-device", "ttyS0", "--reload", "-c"},                       // can't use reload with short form
+	{"--serial-device", "ttyS0", "--show-config", "--factory-reset"},                  // can't use show-config with factory-reset
+	{"--serial-device", "ttyS0", "--show-config", "--reset"},                          // can't use show-config with reset
+	{"--serial-device", "ttyS0", "--show-config", "--reload"},                         // can't use show-config with reload
+	{"--serial-device", "ttyS0", "--factory-reset", "--show-config"},                  // can't use factory-reset with show-config
+	{"--serial-device", "ttyS0", "--reset", "--show-config"},                          // can't use reset with show-config
+	{"--serial-device", "ttyS0", "--reload", "--show-config"},                         // can't use reload with show-config
+	{"--serial-device", "ttyS0", "-c", "--factory-reset"},                             // can't use short form with factory-reset
+	{"--serial-device", "ttyS0", "-c", "--reset"},                                     // can't use short form with reset
+	{"--serial-device", "ttyS0", "-c", "--reload"},                                    // can't use short form with reload
+	{"--serial-device", "ttyS0", "--factory-reset", "-c"},                             // can't use factory-reset with short form
+	{"--serial-device", "ttyS0", "--reset", "-c"},                                     // can't use reset with short form
+	{"--serial-device", "ttyS0", "--reload", "-c"},                                    // can't use reload with short form
 	{"--serial-device", "ttyS0", "--show-config", "--factory-reset", "--gnss", "GPS"}, // multiple incompatible options
 }
 

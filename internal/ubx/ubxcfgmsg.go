@@ -237,7 +237,7 @@ func (m *msgChanges) sats(flags gpsprot.SatsMsgFlags, ver *Version) {
 		msgID = bin.NavSatID
 	}
 	rate := MsgRate(0)
-	if flags&gpsprot.SatsMsgSV != 0 {
+	if flags&gpsprot.SatsMsgSat != 0 {
 		rate = 1
 	}
 	m.rate[msgID] = rate

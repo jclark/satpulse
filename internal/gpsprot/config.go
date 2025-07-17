@@ -243,10 +243,10 @@ func (f *PVTMsgFlags) Set(v PVTMsgFlags) {
 type SatsMsgFlags uint8
 
 const (
-	SatsMsgSV     SatsMsgFlags = 1 << iota // position of SVs
+	SatsMsgSat    SatsMsgFlags = 1 << iota // position of SVs
 	SatsMsgSignal                          // signal strength of each signal from each SV
 	SatsMsgNone   SatsMsgFlags = 0
-	SatsMsgAny    SatsMsgFlags = SatsMsgSV | SatsMsgSignal // any message (not flag)
+	SatsMsgAny    SatsMsgFlags = SatsMsgSat | SatsMsgSignal // any message (not flag)
 )
 
 type NMEAMsgFlags uint16
@@ -293,13 +293,13 @@ type ForceProbe uint8
 
 const (
 	ForceProbeWhenNoOutput ForceProbe = 1 << iota // force probe even if no input has been detected
-	ForceProbeWhenNoConfig                         // force probe even when no config changes needed
+	ForceProbeWhenNoConfig                        // force probe even when no config changes needed
 )
 
 type ConfigOptions struct {
-	Detected    bool        // has already been detected, no need to detect it again
-	ForceProbe  ForceProbe  // control when to force probing
-	Save        SaveType    // what to save to non-volatile memory
+	Detected   bool        // has already been detected, no need to detect it again
+	ForceProbe ForceProbe  // control when to force probing
+	Save       SaveType    // what to save to non-volatile memory
 	Reset      ResetType   // what kind of reset to perform
 	PVTMsg     PVTMsgFlags // messages relating to Position, Velocity, and Time
 	NMEAMsg    Option[NMEAMsgFlags]

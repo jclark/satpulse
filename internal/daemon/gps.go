@@ -119,7 +119,7 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 		cp.SetMode(gpsprot.Mode{Static: false})
 		return nil
 	}
-	if c.FixedPosECEF.IsZero() {	
+	if c.FixedPosECEF.IsZero() {
 		opts.SetStatic = true
 		return nil
 	}
@@ -139,10 +139,10 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 		return fmt.Errorf("fixed position accuracy %v is too large", c.FixedPosAcc)
 	}
 	cp.SetMode(gpsprot.Mode{
-		Static: true,
-		PosType: gpsprot.PosTypeECEF,
+		Static:       true,
+		PosType:      gpsprot.PosTypeECEF,
 		FixedPosECEF: fixedPos,
-		FixedPosAcc: acc,
+		FixedPosAcc:  acc,
 	})
 	return nil
 }
@@ -207,12 +207,12 @@ func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.O
 			return
 		}
 		if wantSatellitesOutput {
-			opt.Set(gpsprot.SatsMsgSV)
+			opt.Set(gpsprot.SatsMsgSat)
 		} else {
 			opt.Set(gpsprot.SatsMsgNone)
 		}
 	} else if *c.SatellitesOutput {
-		opt.Set(gpsprot.SatsMsgSV)
+		opt.Set(gpsprot.SatsMsgSat)
 	} else {
 		opt.Set(gpsprot.SatsMsgNone)
 	}

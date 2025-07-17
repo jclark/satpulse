@@ -991,7 +991,7 @@ func TestMsgChangesSats(t *testing.T) {
 	}{
 		{
 			name:    "SV (F9P - uses NAV-SAT)",
-			flags:   gpsprot.SatsMsgSV,
+			flags:   gpsprot.SatsMsgSat,
 			version: testVers.f9p,
 			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NavSatID: 1,
@@ -1009,7 +1009,7 @@ func TestMsgChangesSats(t *testing.T) {
 		},
 		{
 			name:    "SV (LEA-6T - uses NAV-SVINFO)",
-			flags:   gpsprot.SatsMsgSV,
+			flags:   gpsprot.SatsMsgSat,
 			version: testVers.lea6t,
 			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NavSVInfoID: 1,
@@ -1034,7 +1034,7 @@ func TestMsgChangesSats(t *testing.T) {
 		},
 		{
 			name:    "SV+Signal (F9P - uses both NAV-SAT and NAV-SIG)",
-			flags:   gpsprot.SatsMsgSV | gpsprot.SatsMsgSignal,
+			flags:   gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal,
 			version: testVers.f9p,
 			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NavSatID: 1,
@@ -1076,18 +1076,18 @@ func TestMsgChangesSats(t *testing.T) {
 // TestMsgChangesNMEA tests msgChanges.nmea
 func TestMsgChangesNMEA(t *testing.T) {
 	tests := []struct {
-		name             string
-		flags            gpsprot.NMEAMsgFlags
-		expectedRates    map[bin.MsgID]MsgRate
-		expectedEnable   bin.CfgPrtProtoMask
-		expectedDisable  bin.CfgPrtProtoMask
+		name            string
+		flags           gpsprot.NMEAMsgFlags
+		expectedRates   map[bin.MsgID]MsgRate
+		expectedEnable  bin.CfgPrtProtoMask
+		expectedDisable bin.CfgPrtProtoMask
 	}{
 		{
-			name:             "None - disable protocol",
-			flags:            gpsprot.NMEAMsgNone,
-			expectedRates:    map[bin.MsgID]MsgRate{},
-			expectedEnable:   0,
-			expectedDisable:  bin.CfgPrtProtoNMEA,
+			name:            "None - disable protocol",
+			flags:           gpsprot.NMEAMsgNone,
+			expectedRates:   map[bin.MsgID]MsgRate{},
+			expectedEnable:  0,
+			expectedDisable: bin.CfgPrtProtoNMEA,
 		},
 		{
 			name:            "RMC only",
@@ -1288,4 +1288,3 @@ func TestMsgChangesNMEA(t *testing.T) {
 		})
 	}
 }
-

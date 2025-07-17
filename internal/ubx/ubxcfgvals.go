@@ -312,7 +312,7 @@ func (tb *txnBuilder) messagesBuildOld(tg ucv.EnumTpTimegridTp1) error {
 	}
 	if opts.SatsMsg.IsSet() {
 		rate := uint64(0)
-		if opts.SatsMsg.Get()&gpsprot.SatsMsgSV != 0 {
+		if opts.SatsMsg.Get()&gpsprot.SatsMsgSat != 0 {
 			rate = 1
 		}
 		txnAddItem(tb, ucv.KUbxNavSat.KeyU(tb.port), rate)

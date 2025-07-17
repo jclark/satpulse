@@ -35,7 +35,7 @@ config = true`,
 			tpFlags:              gpsTimePulseEnable,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				// Default behavior: survey mode with SetStatic=true and default survey params
-				target.Opts.Survey.MinDur = 2000 * time.Second // default surveyTime
+				target.Opts.Survey.MinDur = 2000 * time.Second   // default surveyTime
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20) // default surveyAcc
 				target.Opts.SetStatic = true
 			},
@@ -106,7 +106,7 @@ fixedPosECEF = [3978578.17, -8652.15, 4968410.94]`,
 			tpFlags:              gpsTimePulseEnable,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetMode(gpsprot.Mode{Static: false})
-				target.Opts.Survey.MinDur = 2000 * time.Second // default
+				target.Opts.Survey.MinDur = 2000 * time.Second   // default
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20) // default
 			},
 		},
@@ -169,7 +169,7 @@ mobile = true`,
 				// Create fresh Props without PPS when time pulse is disabled
 				target.Props = gpsprot.ConfigProps{}
 				target.Props.SetMode(gpsprot.Mode{Static: false})
-				target.Opts.Survey.MinDur = 2000 * time.Second // default
+				target.Opts.Survey.MinDur = 2000 * time.Second   // default
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20) // default
 				target.Opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
 			},
@@ -193,8 +193,8 @@ surveyAcc = 8`,
 			},
 		},
 		{
-			name: "no config without time pulse",
-			config: `[gps]`,
+			name:                 "no config without time pulse",
+			config:               `[gps]`,
 			speed:                9600,
 			wantSatellitesOutput: false,
 			tpFlags:              0, // no time pulse
@@ -261,7 +261,7 @@ func TestSatellitesInfo(t *testing.T) {
 		t.Errorf("SatellitesOutputs: got %v, want nil", cfg.GPS.SatellitesOutput)
 	}
 	opt := cfg.GPS.satsMsg(38400, true)
-	if opt.Get() != gpsprot.SatsMsgSV {
+	if opt.Get() != gpsprot.SatsMsgSat {
 		t.Errorf("setSatellitesMsg: got %v, want SatellitesMsgSV", opt.Get())
 	}
 }
