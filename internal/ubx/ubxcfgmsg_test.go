@@ -995,6 +995,7 @@ func TestMsgChangesSats(t *testing.T) {
 			version: testVers.f9p,
 			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NavSatID: 1,
+				bin.NavSigID: 0,
 			},
 		},
 		{
@@ -1003,6 +1004,7 @@ func TestMsgChangesSats(t *testing.T) {
 			version: testVers.f9p,
 			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NavSatID: 0,
+				bin.NavSigID: 0,
 			},
 		},
 		{
@@ -1016,6 +1018,32 @@ func TestMsgChangesSats(t *testing.T) {
 		{
 			name:    "None (LEA-6T)",
 			flags:   gpsprot.SatsMsgNone,
+			version: testVers.lea6t,
+			expectedRates: map[bin.MsgID]MsgRate{
+				bin.NavSVInfoID: 0,
+			},
+		},
+		{
+			name:    "Signal (F9P - uses NAV-SIG)",
+			flags:   gpsprot.SatsMsgSignal,
+			version: testVers.f9p,
+			expectedRates: map[bin.MsgID]MsgRate{
+				bin.NavSatID: 0,
+				bin.NavSigID: 1,
+			},
+		},
+		{
+			name:    "SV+Signal (F9P - uses both NAV-SAT and NAV-SIG)",
+			flags:   gpsprot.SatsMsgSV | gpsprot.SatsMsgSignal,
+			version: testVers.f9p,
+			expectedRates: map[bin.MsgID]MsgRate{
+				bin.NavSatID: 1,
+				bin.NavSigID: 1,
+			},
+		},
+		{
+			name:    "Signal (LEA-6T - NAV-SIG not supported)",
+			flags:   gpsprot.SatsMsgSignal,
 			version: testVers.lea6t,
 			expectedRates: map[bin.MsgID]MsgRate{
 				bin.NavSVInfoID: 0,

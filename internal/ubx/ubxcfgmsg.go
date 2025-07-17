@@ -241,6 +241,15 @@ func (m *msgChanges) sats(flags gpsprot.SatsMsgFlags, ver *Version) {
 		rate = 1
 	}
 	m.rate[msgID] = rate
+	if ver.genAtLeast9() {
+		// UBX-NAV-SIG first appeared in protocol version 27.00
+		if flags&gpsprot.SatsMsgSignal != 0 {
+			rate = 1
+		} else {
+			rate = 0
+		}
+		m.rate[bin.NavSigID] = rate
+	}
 }
 
 func (m *msgChanges) nmea(flags gpsprot.NMEAMsgFlags, _ *Version) {
@@ -381,11 +390,11 @@ var msgIDKey = map[bin.MsgID]ucv.KeyM{
 	bin.NavVelECEFID: ucv.KUbxNavVelecef,
 	bin.NavVelNEDID:  ucv.KUbxNavVelned,
 	bin.NavSatID:     ucv.KUbxNavSat,
-	//bin.NavSigID: ucv.KUbxNavSig,
-	bin.RxmRawxID:  ucv.KUbxRxmRawx,
-	bin.RxmSfrbxID: ucv.KUbxRxmSfrbx,
-	bin.TimSvinID:  ucv.KUbxTimSvin,
-	bin.TimTPID:    ucv.KUbxTimTp,
+	bin.NavSigID:     ucv.KUbxNavSig,
+	bin.RxmRawxID:    ucv.KUbxRxmRawx,
+	bin.RxmSfrbxID:   ucv.KUbxRxmSfrbx,
+	bin.TimSvinID:    ucv.KUbxTimSvin,
+	bin.TimTPID:      ucv.KUbxTimTp,
 	// NMEA messages
 	bin.NmeaGgaID: ucv.KNmeaIdGga,
 	bin.NmeaGllID: ucv.KNmeaIdGll,
