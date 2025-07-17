@@ -87,7 +87,7 @@ This means you can run SatPulse on a Linux box (such as a Raspberry Pi) and then
 using a program like [u-center](https://www.u-blox.com/en/product/u-center) or [Lady Heather](http://www.ke5fx.com/heather/readme.htm),
 *at the same time as* it is being used for PTP. (This provides plenty of opportunity to break things, but is quite handy.)
 
-- It provides an HTTP interface for monitoring.
+- It provides an HTTP interface for monitoring, including a graphical web interface and a Prometheus `/metrics` endpoint.
 
 
 ## Relationship to other software

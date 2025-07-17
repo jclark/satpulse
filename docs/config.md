@@ -227,11 +227,13 @@ The following keys relate to its own log
 
 ## `http` table array
 
-The `http` table array controls the HTTP monitoring interface. It has a single key:
+The `http` table array controls the HTTP monitoring interface. It has the following keys:
 
 * `listen` - a string specifying an address that the HTTP server should listen on; the address is the form *host*`:`*port*,
 where the *host* is a host name or IP address, and port is the port number; *host* can be omitted, which means to listen on all
 IP addresses
+* `gui` - a boolean saying whether to enable the web GUI at `/` and Server-Sent Events at `/sse`; default is `true`
+* `metrics` - a boolean saying whether to enable Prometheus metrics at `/metrics`; default is `true`
 
 This example would run an HTTP server on port 2006 on all IP addresses:
 

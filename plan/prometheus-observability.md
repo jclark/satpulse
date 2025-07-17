@@ -11,7 +11,7 @@ The implementation is split into two stages:
 ## Design Goals
 
 1. Create a `Sampler` interface in the `internal/mon` package for clock synchronization samples
-2. Create a unified `Observer` interface in the `internal/obs` package that extends `Sampler` and `gpsprot.Handler`
+2. Create a unified `Observer` interface in the `internal/obs` package that extends `Sampler` and `gpsprot.MsgHandler`
 3. Move SSE-specific code out of core packages into dedicated observability implementations
 4. Support multiple observability backends (SSE, Prometheus) through a fan-out pattern
 5. Enable/disable UI and metrics endpoints via configuration
@@ -53,7 +53,7 @@ import (
 // Observer provides unified observability interface
 type Observer interface {
     mon.Sampler
-    gpsprot.Handler
+    gpsprot.MsgHandler
     
     // Release cleans up resources (e.g., closes SSE channels)
     Release()
@@ -70,7 +70,7 @@ func NewMultiObserver(observers ...Observer) *MultiObserver
 
 ### SSE Implementation
 
-#### `internal/obs/sseobs/sse.go`
+#### `internal/sseobs/sse.go`
 ```go
 package sseobs
 
@@ -113,7 +113,7 @@ func (s *SSEObserver) Release() {
 
 ### Prometheus Implementation
 
-#### `internal/obs/promobs/prometheus.go`
+#### `internal/promobs/prometheus.go`
 ```go
 package promobs
 
@@ -155,135 +155,75 @@ func (p *PrometheusObserver) Handler() http.Handler {
 
 Update `docs/config.md` and `configs/config-schema.json` to add per-endpoint configuration for HTTP endpoints.
 
-#### `internal/daemon/config.go`
+#### HTTPConfig (implemented in `internal/daemon/http.go`)
 ```go
 type HTTPConfig struct {
     Listen  string `toml:"listen"`
     PProf   bool   `toml:"pprof"`
-    GUI     bool   `toml:"gui"`     // Serve graphical user interface (default: true)
-    Metrics bool   `toml:"metrics"`  // Serve /metrics endpoint (default: true) - Stage 2 only
-}
-
-// SetDefaults sets default values for HTTPConfig
-func (c *HTTPConfig) SetDefaults() {
-    if c.Listen != "" {
-        // Only set defaults if this is a configured endpoint
-        c.GUI = true
-        // c.Metrics = true  // Stage 2 only
-    }
-}
-
-// Validate ensures HTTPConfig has valid settings
-func (c *HTTPConfig) Validate() error {
-    if c.Listen != "" && !c.PProf && !c.GUI {
-        return fmt.Errorf("HTTP endpoint %s must enable at least one of: pprof, gui", c.Listen)
-    }
-    return nil
+    GUI     *bool  `toml:"gui"`     // Defaults to true, uses gui() method
+    Metrics *bool  `toml:"metrics"` // Defaults to true, uses metrics() method
 }
 ```
 
 #### `internal/daemon/daemon.go` Changes
 
-1. Add focused observer creation functions:
+1. Observer creation pattern:
 ```go
-// createPromObserver creates Prometheus observer if any HTTP endpoint needs metrics
-func createPromObserver(cfg Config) *promobs.PrometheusObserver {
-    for _, httpCfg := range cfg.HTTP {
-        if httpCfg.Metrics {
-            return promobs.New()
-        }
-    }
-    return nil
-}
+// In main daemon function - create promObs early
+promObs := newPrometheusObserver(cfg)
 
-// createSSEObserver creates SSE observer if any HTTP endpoint needs GUI
-func createSSEObserver(cfg Config, lg *slog.Logger) *sseobs.SSEObserver {
-    for _, httpCfg := range cfg.HTTP {
-        if httpCfg.GUI {
-            return sseobs.New(lg)
-        }
-    }
-    return nil
-}
+// Pass promObs to NewDispatcher where it combines with sseObs
+d, err := NewDispatcher(..., promObs, ...)
+
+// Pass promObs to startHTTP for /metrics endpoint
+err = startHTTP(..., promObs)
+```
+
+Helper functions in `daemon.go`:
+```go
+// newPrometheusObserver creates Prometheus observer if any HTTP endpoint needs metrics
+func newPrometheusObserver(cfg *Config) *promobs.PrometheusObserver
+
+// newSSEObserver creates SSE observer if any HTTP endpoint needs GUI  
+func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger) obs.Observer
 
 // combineObservers combines individual observers into appropriate single observer
-func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver) obs.Observer {
-    if promObs != nil && sseObs != nil {
-        return obs.NewMultiObserver(promObs, sseObs)
-    } else if promObs != nil {
-        return promObs
-    } else if sseObs != nil {
-        return sseObs
-    } else {
-        return obs.Null{}
-    }
+func combineObservers(promObs *promobs.PrometheusObserver, sseObs obs.Observer) obs.Observer
+```
+
+2. NewDispatcher function signature updated:
+```go
+func NewDispatcher(..., promObs *promobs.PrometheusObserver, ...) (*gpsevent.Dispatcher, error) {
+    // Create sseObs internally 
+    sseObs := newSSEObserver(cfg, sseCh, ls, lg)
+    obs := combineObservers(promObs, sseObs)
+    // Use obs for monitoring
 }
 ```
 
-2. Use the focused functions in main daemon code:
+3. HTTP server setup updated in `internal/daemon/http.go`:
 ```go
-// In the main daemon function
-promObs := createPromObserver(cfg)
-sseObs := createSSEObserver(cfg, lg)
-observer := combineObservers(promObs, sseObs)
+// Function signature includes promObs parameter
+func startHTTP(..., promObs *promobs.PrometheusObserver) error
 
-// Create broadcast from SSE observer's channel if needed (same as current code)
-var sseBcast *bcast.Bcast[sse.Event]
-if sseObs != nil {
-    sseBcast = startBcast(ctx, lg, &wg, sseObs.Channel())
-}
-
-// Pass observer to dispatcher and monitor
-dispatcher, err := gpsevent.NewDispatcher(lg, pktProcs, mon, ls, phcFlags, pulseWidth, observer, eventLogPath, tStart)
-
-mon, err := mon.NewMonitor(servo, lg, mon.MonitorConfig{
-    // ... existing fields ...
-    Sampler: observer,  // Observer implements Sampler
-})
-
-// Pass broadcast and promObs to HTTP setup
-err = startHTTP(ctx, lg, wg, cfg.HTTP, sseBcast, promObs)
-```
-
-3. Update HTTP server setup in `internal/daemon/http.go` (Stage 1 - GUI only):
-```go
-// Stage 1: No function signature changes needed (no promObs parameter yet)
-
-// In startHTTP function, configure each endpoint based on its settings
+// In endpoint configuration loop:
 for i, listener := range listeners {
-    listener := listener
     mux := http.NewServeMux()
     
     if cfg[i].PProf {
         registerPprofHandlers(mux)
     }
     
-    // Only register GUI routes if enabled for this endpoint  
-    if cfg[i].GUI && b != nil {
-        mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
-            sseHandleRequest(ctx, lg, w, r, b, initEvent)
-        })
-        mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-            fileServer.ServeHTTP(w, r)
-        })
+    if cfg[i].gui() {
+        // Register GUI routes
     }
     
-    server := &http.Server{Handler: mux}
-    servers[i] = server
-    // ... rest of server setup
-}
-```
-
-**Stage 2 will add:**
-```go
-// Function signature change to add promObs parameter
-func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], promObs *promobs.PrometheusObserver) error
-
-// Additional metrics endpoint in the loop:
-    // Only register metrics endpoint if enabled for this endpoint
-    if cfg[i].Metrics && promObs != nil {
+    if cfg[i].metrics() {
         mux.Handle("/metrics", promObs.Handler())
     }
+    
+    // Validation: at least one of pprof, gui, metrics must be enabled
+}
 ```
 
 ## Critical Implementation Constraints
@@ -316,7 +256,7 @@ This constraint ensures the refactoring is truly behavior-preserving and minimiz
 
 1. **Create Sampler interface** in `internal/mon/sampler.go`
 2. **Create obs package** with unified Observer interface and MultiObserver
-3. **Implement SSE observer** in `internal/obs/sseobs/`:
+3. **Implement SSE observer** in `internal/sseobs/`:
    - Move SSE event creation from `gpsevent/dispatcher.go`
    - Move sample event creation from `mon/monitor.go`
    - Preserve exact same SSE events and behavior
@@ -348,7 +288,7 @@ This constraint ensures the refactoring is truly behavior-preserving and minimiz
 
 **Stage 2 Steps**:
 
-1. **Implement basic Prometheus observer** in `internal/obs/promobs/`:
+1. **Implement basic Prometheus observer** in `internal/promobs/`:
    - Start with simple metrics: sync_state and clock_offset_nanoseconds
    - Use custom registry (no global state)
    - Get basic infrastructure working
@@ -365,6 +305,41 @@ This constraint ensures the refactoring is truly behavior-preserving and minimiz
    - Third: Add system metrics (start time, last PPS)
 5. **Test**: Verify both SSE and Prometheus metrics work correctly
 
+## Implementation Progress
+
+### Stage 1: Observer Interface Refactoring ✅ COMPLETED
+
+- ✅ Created Sampler interface in `internal/mon/sampler.go`
+- ✅ Made MultiHandler type public and added Handlers() iterator in `internal/gpsprot/msg.go`
+- ✅ Created MultiSampler in `internal/mon/sampler.go`
+- ✅ Created Observer interface and MultiObserver in `internal/obs/observer.go`
+- ✅ Implemented SSE observer in `internal/sseobs/sse.go`
+- ✅ Updated gpsevent.Dispatcher to use Observer interface
+- ✅ Updated mon.Monitor to use Sampler interface
+- ✅ Added GUI configuration support with HTTPConfig.gui() method
+- ✅ Updated daemon package to use observer architecture
+- ✅ Updated HTTP implementation to conditionally register GUI routes
+- ✅ Code compiles and tests pass
+
+### Stage 2: Prometheus Implementation 🚧 IN PROGRESS
+
+**Completed:**
+- ✅ Created PrometheusObserver in `internal/promobs/prometheus.go`
+- ✅ Added Prometheus dependencies to go.mod  
+- ✅ Implemented basic metrics infrastructure with 2 core metrics:
+  - `satpulse_in_sync` gauge - Synchronization status 
+  - `satpulse_clock_offset_abs_nanoseconds` histogram - Offset distribution
+- ✅ Added `metrics` configuration field to HTTPConfig with `metrics()` method
+- ✅ Updated JSON schema for metrics configuration
+- ✅ Modified daemon to create PrometheusObserver and pass to both NewDispatcher and startHTTP
+- ✅ Updated startHTTP to register `/metrics` endpoint when enabled
+- ✅ Added validation requiring at least one of pprof, gui, or metrics per endpoint
+- ✅ Tested: `/metrics` endpoint accessible and returning real synchronization data
+- ✅ Clock synchronization metrics (with a few changes)
+
+**Still to do:**
+- ⏳ Other metrics as specified in the Prometheus Metrics Specification section
+
 ## Prometheus Metrics Specification
 
 Based on GitHub issue [#78](https://github.com/jclark/satpulse/issues/78) requirements and additional ideas from issue [#112](https://github.com/jclark/satpulse/issues/112):
@@ -373,23 +348,20 @@ Based on GitHub issue [#78](https://github.com/jclark/satpulse/issues/78) requir
 
 - `satpulse_in_sync` (gauge) - Synchronization status (1 = in sync, 0 = out of sync)
 - `satpulse_clock_offset_abs_nanoseconds` (histogram) - Histogram of absolute offset values for good samples
+- `satpulse_clock_offset_nanoseconds` (gauge) - Current signed offset between PHC and GPS time in nanoseconds (no abs)
 - `satpulse_clock_frequency_ppb` (gauge) - Current frequency adjustment in parts per billion
+- `satpulse_offset_abs_sum_nanoseconds_total` (counter) - Sum of absolute values of offsets from good samples (for mean calculation)
+- `satpulse_offset_sum_squares_nanoseconds_total` (counter) - Sum of squares of offsets from good samples (for stddev calculation)
 - `satpulse_samples_missing_total` (counter) - Total missing samples
 - `satpulse_samples_outlier_total` (counter) - Total outlier samples
+- `satpulse_samples_good_total` (counter) - Total good samples (in sync and not outlier)
 - `satpulse_sync_losses_total` (counter) - Total number of times sync was lost after being established
 - `satpulse_time_to_sync_seconds` (gauge) - Time in seconds from startup to first sync acquisition
 
-### Rolling Statistics Metrics
-
-These require implementing rolling/sliding window calculations in the Prometheus observer:
-
-- `satpulse_abs_offset_mean_nanoseconds` (gauge) - Rolling mean of absolute offsets over last WINDOW_SIZE seconds
-- `satpulse_offset_rms_nanoseconds` (gauge) - Rolling RMS of offsets over last WINDOW_SIZE seconds  
-- `satpulse_frequency_mean_ppb` (gauge) - Rolling mean of frequency adjustments over last WINDOW_SIZE seconds
-- `satpulse_frequency_stddev_ppb` (gauge) - Rolling standard deviation of frequency over last WINDOW_SIZE seconds
-
-Note: These rolling metrics require the Prometheus observer to maintain its own sliding window
-of recent samples. WINDOW_SIZE should be in the region of 20-30 seconds and may be made configurable.
+Note: The offset and frequency gauges should be scraped once per second for full resolution data. 
+The sum counters enable accurate computation of mean absolute offset and standard deviation using PromQL:
+- Mean absolute offset = rate(satpulse_offset_abs_sum_nanoseconds_total) / rate(satpulse_samples_good_total)
+- Standard deviation = sqrt(rate(satpulse_offset_sum_squares_nanoseconds_total) / rate(satpulse_samples_good_total))
 
 ### Satellite Metrics (from gpsprot.SatellitesMsg)
 

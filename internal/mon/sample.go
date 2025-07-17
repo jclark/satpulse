@@ -7,17 +7,10 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-type sampleKind int
-
-const (
-	sampleMissing sampleKind = iota
-	sampleOK
-	sampleOutlier
-)
 
 type sampleData struct {
 	off  float64
-	kind sampleKind
+	kind SampleKind
 }
 
 type sampleState struct {
@@ -54,7 +47,7 @@ var defaultSyncConfig = syncConfig{
 	madMinSamples:    10,
 }
 
-func (ss *sampleState) sample(kind sampleKind, offSecs float64, era ptime.Era, state syncState, cfg *syncConfig) {
+func (ss *sampleState) sample(kind SampleKind, offSecs float64, era ptime.Era, state SyncState, cfg *syncConfig) {
 	if era != ss.era {
 		ss.era = era
 		ss.win.clear()
@@ -63,19 +56,19 @@ func (ss *sampleState) sample(kind sampleKind, offSecs float64, era ptime.Era, s
 	ss.win.append(sampleData{off: offSecs, kind: kind})
 
 	// Handle invalid samples (missing or outlier)
-	if kind == sampleMissing || kind == sampleOutlier {
+	if kind == SampleMissing || kind == SampleOutlier {
 		ss.invalidWeight += 1.0
 	}
 
 	// Apply decay on valid samples
-	if kind == sampleOK {
+	if kind == SampleOK {
 		ss.invalidWeight *= cfg.emaDecayFactor
 		ss.emaOffset = cfg.emaAlpha*math.Abs(offSecs) + (1-cfg.emaAlpha)*ss.emaOffset
 	}
 
 	// Track good samples only when out of sync
-	if state == noSync {
-		if kind == sampleOK && math.Abs(offSecs) <= cfg.maxOffset {
+	if state == NoSync {
+		if kind == SampleOK && math.Abs(offSecs) <= cfg.maxOffset {
 			ss.goodSampleCount++
 		} else {
 			ss.goodSampleCount = 0
@@ -83,21 +76,21 @@ func (ss *sampleState) sample(kind sampleKind, offSecs float64, era ptime.Era, s
 	}
 }
 
-func (ss *sampleState) nextSyncState(currentState syncState, cfg *syncConfig) syncState {
-	if currentState == noSync {
+func (ss *sampleState) nextSyncState(currentState SyncState, cfg *syncConfig) SyncState {
+	if currentState == NoSync {
 		if ss.goodSampleCount >= cfg.minGood {
-			return inSync
+			return InSync
 		}
 	} else {
 		if ss.invalidWeight > float64(cfg.maxConsecInvalid) || ss.emaOffset > cfg.maxOffset {
-			return noSync
+			return NoSync
 		}
 	}
 	return currentState
 }
 
-func (ss *sampleState) resetForSyncChange(newState syncState) {
-	if newState == inSync {
+func (ss *sampleState) resetForSyncChange(newState SyncState) {
+	if newState == InSync {
 		ss.invalidWeight = 0
 		ss.emaOffset = ss.emaGoodSamples()
 	} else {
@@ -130,7 +123,7 @@ func (ss *sampleState) mad(k float64) (n int, min, max float64) {
 	d := make([]float64, 0, ss.win.length())
 	nMissing := 0
 	ss.win.iterate(func(i int, s sampleData) bool {
-		if s.kind == sampleMissing {
+		if s.kind == SampleMissing {
 			nMissing++
 		} else {
 			d = append(d, s.off)

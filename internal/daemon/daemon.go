@@ -16,11 +16,15 @@ import (
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/internal/promobs"
 	"github.com/jclark/satpulse/internal/proxy"
+	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/servo"
 	"github.com/jclark/satpulse/internal/sse"
+	"github.com/jclark/satpulse/internal/sseobs"
 	"github.com/jclark/satpulse/internal/ts"
 	"github.com/jclark/satpulse/internal/ubx"
 )
@@ -190,7 +194,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 			tpFlags |= gpsTimePulseGetWidth
 		}
 	}
-	gct, pulseWidth, err := cfg.GPS.target(conn.Speed(), len(cfg.HTTP) > 0, tpFlags)
+	gct, pulseWidth, err := cfg.GPS.target(conn.Speed(), cfg.httpWantsSatellites(), tpFlags)
 	lg.Debug("GPS configure input", "target", gct)
 	if err != nil {
 		return err
@@ -212,12 +216,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 
+	promObs := newPrometheusObserver(cfg)
 	if eb != nil {
 		initEvent, err := sse.Make("init", newInitData(gcfg))
 		if err != nil {
 			return err
 		}
-		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, initEvent)
+		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, initEvent, promObs)
 		if err != nil {
 			return err
 		}
@@ -254,7 +259,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		pulseWidth = pw
 	}
 
-	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, sseCh, tStart)
+	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, sseCh, promObs, tStart)
 	if err != nil {
 		return err
 	}
@@ -281,8 +286,12 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, tStart time.Time) (*gpsevent.Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, promObs *promobs.PrometheusObserver, tStart time.Time) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
+	
+	sseObs := newSSEObserver(cfg, sseCh, ls, lg)
+	obs := combineObservers(promObs, sseObs)
+
 	var m *mon.Monitor
 	var driverFlags phc.DriverFlags
 	if clk != nil {
@@ -292,7 +301,7 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		}
 		m, err = mon.NewMonitor(servo, lg, mon.MonitorConfig{
 			LeapSecond:    ls,
-			SSECh:         sseCh,
+			Sampler:       obs,
 			RefClock:      rc,
 			Grandmaster:   gm,
 			LogInterval:   cfg.Log.Interval,
@@ -305,7 +314,40 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		driverFlags = clk.DriverFlags
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, m, ls, driverFlags, pulseWidth, sseCh, eventLogPath, tStart)
+	return gpsevent.NewDispatcher(lg, pktProcs, m, ls, driverFlags, pulseWidth, obs, eventLogPath, tStart)
+}
+
+// newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
+func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger) obs.Observer {
+	for _, hc := range cfg.HTTP {
+		if hc.gui() {
+			return sseobs.New(sseCh, ls, lg)
+		}
+	}
+	return nil
+}
+
+// newPrometheusObserver creates Prometheus observer if any HTTP endpoint needs metrics
+func newPrometheusObserver(cfg *Config) *promobs.PrometheusObserver {
+	for _, hc := range cfg.HTTP {
+		if hc.metrics() {
+			return promobs.New(cfg.PTP.ClockAccuracy)
+		}
+	}
+	return nil
+}
+
+// combineObservers combines individual observers into appropriate single observer
+func combineObservers(promObs *promobs.PrometheusObserver, sseObs obs.Observer) obs.Observer {
+	if promObs != nil && sseObs != nil {
+		return obs.NewMultiObserver(promObs, sseObs)
+	} else if promObs != nil {
+		return promObs
+	} else if sseObs != nil {
+		return sseObs
+	} else {
+		return &obs.DefaultObserver{}
+	}
 }
 
 type InitData struct {

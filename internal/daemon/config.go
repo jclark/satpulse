@@ -139,6 +139,15 @@ func defaultConfig() *Config {
 	return cfg
 }
 
+func (cfg *Config) httpWantsSatellites() bool {
+	for _, c := range cfg.HTTP {
+		if c.gui() {
+			return true
+		}
+	}
+	return false
+}
+
 func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {
 	if cfg.Interface == "" {
 		return nil, nil
