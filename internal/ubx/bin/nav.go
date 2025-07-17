@@ -7,6 +7,7 @@ const (
 	NavSolID         MsgID = clsNav | (0x06 << 8)
 	NavPVTID         MsgID = clsNav | (0x07 << 8)
 	NavSatID         MsgID = clsNav | (0x35 << 8)
+	NavSigID         MsgID = clsNav | (0x43 << 8)
 	NavSVInfoID      MsgID = clsNav | (0x30 << 8)
 	NavTimeGPSID     MsgID = clsNav | (0x20 << 8)
 	NavTimeUTCID     MsgID = clsNav | (0x21 << 8)
@@ -298,6 +299,115 @@ const (
 	NavSatCrCorrUsed
 	NavSatDoCorrUsed
 	NavSatClasCorrUsed
+)
+
+type NavSig struct {
+	NavSigFixed
+	Signals []NavSigSignal
+}
+
+type NavSigFixed struct {
+	ITOW    uint32
+	Version byte
+	NumSigs byte
+	_       [2]byte
+}
+
+type NavSigSignal struct {
+	GNSSID     GNSSID
+	SVID       byte
+	SigID      byte
+	FreqID     byte
+	PRRes      int16
+	CNO        byte
+	QualityInd NavSigQuality
+	CorrSource NavSigCorrSource
+	IonoModel  NavSigIonoModel
+	SigFlags   NavSigFlags
+	_          [4]byte
+}
+
+var _ VaryingMsg = (*NavSig)(nil)
+var _ PartiallyHandledMsg = (*NavSig)(nil)
+
+func (m *NavSig) ID() MsgID { return NavSigID }
+
+func (m *NavSig) IsHandled() bool {
+	return m.Version == 0
+}
+
+func (m *NavSig) InitVaryingPart(payloadLen int) (err error) {
+	len, err := sliceLen(m, payloadLen, 8, 16)
+	if err == nil {
+		m.Signals = make([]NavSigSignal, len)
+	}
+	return
+}
+
+func (m *NavSig) FixedPart() any {
+	return &m.NavSigFixed
+}
+
+func (m *NavSig) VaryingPart() any {
+	return &m.Signals
+}
+
+type NavSigQuality byte
+
+const (
+	NavSigQualityNoSignal NavSigQuality = iota
+	NavSigQualitySearching
+	NavSigQualityAcquired
+	NavSigQualityDetectedUnusable
+	NavSigQualityCodeLocked
+	NavSigQualityCodeCarrierLocked5
+	NavSigQualityCodeCarrierLocked6
+	NavSigQualityCodeCarrierLocked7
+)
+
+type NavSigCorrSource byte
+
+const (
+	NavSigCorrSourceNone NavSigCorrSource = iota
+	NavSigCorrSourceSBAS
+	NavSigCorrSourceBeiDou
+	NavSigCorrSourceRTCM2
+	NavSigCorrSourceRTCM3OSR
+	NavSigCorrSourceRTCM3SSR
+	NavSigCorrSourceQZSSSLAS
+	NavSigCorrSourceSPARTN
+	NavSigCorrSourceCLAS
+)
+
+type NavSigIonoModel byte
+
+const (
+	NavSigIonoModelNone NavSigIonoModel = iota
+	NavSigIonoModelKlobucharGPS
+	NavSigIonoModelSBAS
+	NavSigIonoModelKlobucharBeiDou
+	NavSigIonoModelDualFreq NavSigIonoModel = 8
+)
+
+type NavSigFlags uint16
+
+// Boolean flags
+const (
+	NavSigHealthUnknown NavSigFlags = 0
+	NavSigHealthHealthy NavSigFlags = 1 << iota
+	NavSigHealthUnhealthy
+	NavSigPrSmoothed
+	NavSigPrUsed
+	NavSigCrUsed
+	NavSigDoUsed
+	NavSigPrCorrUsed
+	NavSigCrCorrUsed
+	NavSigDoCorrUsed
+)
+
+// Mask to extract health value
+const (
+	NavSigHealth NavSigFlags = 0b11
 )
 
 type NavSVInfo struct {
@@ -659,6 +769,7 @@ func init() {
 	regMsg[NavPosLLH]("POSLLH")
 	regMsg[NavPVT]("PVT")
 	regMsg[NavSat]("SAT")
+	regMsg[NavSig]("SIG")
 	regMsg[NavSVInfo]("SVINFO")
 	regMsg[NavSol]("SOL")
 	regMsg[NavSvin]("SVIN")

@@ -32,6 +32,42 @@ func TestNavTimeTrustedV1(t *testing.T) {
 	})
 }
 
+func TestNavSig(t *testing.T) {
+	testMsgType1(t, NavSig{
+		NavSigFixed: NavSigFixed{
+			ITOW:    0x12345678,
+			Version: 0,
+			NumSigs: 2,
+		},
+		Signals: []NavSigSignal{
+			{
+				GNSSID:     GPS,
+				SVID:       1,
+				SigID:      0,
+				FreqID:     0,
+				PRRes:      -123,
+				CNO:        45,
+				QualityInd: NavSigQualityCodeLocked,
+				CorrSource: NavSigCorrSourceRTCM3SSR,
+				IonoModel:  NavSigIonoModelKlobucharGPS,
+				SigFlags:   NavSigHealthHealthy | NavSigPrUsed | NavSigCrUsed,
+			},
+			{
+				GNSSID:     GAL,
+				SVID:       11,
+				SigID:      1,
+				FreqID:     0,
+				PRRes:      456,
+				CNO:        38,
+				QualityInd: NavSigQualityCodeCarrierLocked5,
+				CorrSource: NavSigCorrSourceSPARTN,
+				IonoModel:  NavSigIonoModelDualFreq,
+				SigFlags:   NavSigHealthUnhealthy | NavSigPrSmoothed | NavSigDoUsed,
+			},
+		},
+	})
+}
+
 func TestNavTimeTrustedUnknownVersion(t *testing.T) {
 	// Test that unknown version gets parsed as UnknownMsg
 	packet := []byte{
