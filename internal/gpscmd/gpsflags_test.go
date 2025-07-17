@@ -153,12 +153,24 @@ var validFlagsTestCases = []validFlagsTestCase{
 	// Test case-insensitive NMEA flags
 	{"ttyS0", []string{"--nmea-out", "rmc"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC)}}},
 	{"ttyS0", []string{"--nmea-out", "Rmc,Gga"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)}}},
+	// Test --sats-out flag
+	{"ttyS0", []string{"--sats-out", "sv"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV)}}},
+	{"ttyS0", []string{"--sats-out", "signal"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "sv,signal"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV | gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "signal,sv"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV | gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgFlags(0))}}},
+	{"ttyS0", []string{"--sats-out", "sv", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV), Save: gpsprot.SaveMinimal}}},
+	// Test case-insensitive sats flags
+	{"ttyS0", []string{"--sats-out", "SV"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV)}}},
+	{"ttyS0", []string{"--sats-out", "Signal"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "SV,Signal"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV | gpsprot.SatsMsgSignal)}}},
 	// Test combining all output flags
-	{"ttyS0", []string{"--raw-out", "obs", "--pvt-out", "pos", "--rtcm-out", "MSM4", "--nmea-out", "RMC"}, flagVars{configOpts: gpsprot.ConfigOptions{
+	{"ttyS0", []string{"--raw-out", "obs", "--pvt-out", "pos", "--rtcm-out", "MSM4", "--nmea-out", "RMC", "--sats-out", "sv"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		RawMsg:  gpsprot.MakeOption(gpsprot.RawMsgObs),
 		PVTMsg:  gpsprot.PVTMsgPos,
 		RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4),
 		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC),
+		SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSV),
 	}}},
 	// Test --binary flag
 	{"ttyS0", []string{"--binary"}, flagVars{configOpts: gpsprot.ConfigOptions{
@@ -330,12 +342,16 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--nmea-out", "invalid"},                      // invalid nmea-out flag
 	{"--serial-device", "ttyS0", "--nmea-out", "RMC,invalid"},                  // partially invalid nmea-out flags
 	{"--serial-device", "ttyS0", "--nmea-out", "other"},                        // trying to use hidden "other" flag
+	{"--serial-device", "ttyS0", "--sats-out", ""},                             // empty sats-out value
+	{"--serial-device", "ttyS0", "--sats-out", "invalid"},                      // invalid sats-out flag
+	{"--serial-device", "ttyS0", "--sats-out", "sv,invalid"},                   // partially invalid sats-out flags
 	// Test invalid combinations with --nmea and --binary
 	{"--serial-device", "ttyS0", "--nmea", "--binary"},            // can't use both --nmea and --binary
 	{"--serial-device", "ttyS0", "--binary", "--nmea"},            // can't use both --binary and --nmea
 	{"--serial-device", "ttyS0", "--nmea", "--rtcm-out", "MSM4"},  // can't use --nmea with --rtcm-out
 	{"--serial-device", "ttyS0", "--nmea", "--pvt-out", "pos"},    // can't use --nmea with --pvt-out
 	{"--serial-device", "ttyS0", "--nmea", "--raw-out", "obs"},    // can't use --nmea with --raw-out
+	{"--serial-device", "ttyS0", "--nmea", "--sats-out", "sv"},    // can't use --nmea with --sats-out
 	{"--serial-device", "ttyS0", "--binary", "--nmea-out", "RMC"}, // can't use --binary with --nmea-out
 	// Test invalid --time-gnss options
 	{"--serial-device", "ttyS0", "--time-gnss", "SBAS"},    // not a major GNSS constellation

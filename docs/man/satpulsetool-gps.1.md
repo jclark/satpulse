@@ -21,7 +21,8 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pvt\-out** **pos**\|**vel**\|**time**\|**tp**\|**leap**\|**survey**\|**tai**\|**ecef**\|**off**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-raw\-out** **obs**\|**nav**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**auto**\|**none**,...]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **RMC**\|**GGA**\|**GSA**\|**GSV**\|**ZDA**\|**VTG**\|**none**,...]
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **RMC**\|**GGA**\|**GSA**\|**GSV**\|**ZDA**\|**VTG**\|**none**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-sats\-out** **sv**\|**signal**\|**none**,...]
 
 # DESCRIPTION
 
@@ -218,6 +219,18 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
   
   **none**
   : Disable all NMEA messages
+
+**\-\-sats\-out** *flags*  
+: Configure messages providing information about satellites. The *flags* parameter is a comma-separated list of:
+  
+  **sv**
+  : Enable output of information about each individual space vehicle (SV), including azimuth and elevation; this does not include information about each of the signals from an SV.
+
+  **signal**
+  : Enable output of information about each signal received from each SV.
+  
+  **none**
+  : Disable all messages providing information about satellites.
 
 **\-\-survey**  
 : Perform a survey to determine the position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The survey makes measurements for a period of time and then computes the position based on those measurements.

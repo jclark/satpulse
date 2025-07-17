@@ -45,8 +45,9 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
             [--survey] [--survey-time seconds] [--survey-acc meters]
-            [--raw-out obs|nav|none,...] [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
-            [--rtcm-out MSM4|MSM7|ARP|auto|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|none,...]`
+            [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
+            [--sats-out sv|signal|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
+            [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|none,...]`
 
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20.0
@@ -89,6 +90,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	var pvtOut pvtOutOpt
 	var rtcmOut rtcmOutOpt
 	var nmeaOut nmeaOutOpt
+	var satsOut satsOutOpt
 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 
@@ -116,6 +118,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|tai|ecef|after|daemon|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|auto|none,...")
 	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|VTG|none,...")
+	flags.Var(&satsOut, "sats-out", "satellite data messages to output `flags`: sv|signal|none,...")
 	flags.Float64VarP(&pps, "pps", "p", 0, "configure the GPS receiver to enable a PPS signal with pulse `width` in seconds")
 	flags.Int64Var(&antCableDelay, "ant-cable-delay", 0, "antenna cable delay in nanoseconds")
 	flags.BoolVar(&mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
@@ -180,8 +183,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	rawMsg := (gpsprot.Option[gpsprot.RawMsgFlags])(rawOut)
 	rtcmMsg := (gpsprot.Option[gpsprot.RTCMMsgFlags])(rtcmOut)
 	nmeaMsg := (gpsprot.Option[gpsprot.NMEAMsgFlags])(nmeaOut)
+	satsMsg := (gpsprot.Option[gpsprot.SatsMsgFlags])(satsOut)
 
-	if rawMsg.IsSet() || pvtMsg.IsSet() || rtcmMsg.IsSet() || nmeaMsg.IsSet() {
+	if rawMsg.IsSet() || pvtMsg.IsSet() || rtcmMsg.IsSet() || nmeaMsg.IsSet() || satsMsg.IsSet() {
 		configChanged = true
 	}
 
@@ -193,8 +197,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		if binary {
 			return nil, nil, fmt.Errorf("%s command must not specify both --nmea and --binary options", cmdName)
 		}
-		if rtcmMsg.IsSet() || pvtMsg.IsSet() || rawMsg.IsSet() {
-			return nil, nil, fmt.Errorf("%s command must not specify --nmea together with --rtcm-out, --pvt-out or --raw-out options", cmdName)
+		if rtcmMsg.IsSet() || pvtMsg.IsSet() || rawMsg.IsSet() || satsMsg.IsSet() {
+			return nil, nil, fmt.Errorf("%s command must not specify --nmea together with --rtcm-out, --pvt-out, --raw-out or --sats-out options", cmdName)
 		}
 		if nmeaMsg.Get()&gpsprot.NMEAMsgAny == 0 {
 			nmeaMsg.Set(gpsprot.NMEAMsgRMC)
@@ -202,8 +206,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		rtcmMsg.Set(gpsprot.RTCMMsgNone)
 		pvtMsg.Set(gpsprot.PVTMsgOff)
 		rawMsg.Set(gpsprot.RawMsgNone)
-		// we aren't exposing satsMsg in the CLI yet (waiting to implement UBX-CFG-SIGNAL)
-		vars.configOpts.SatsMsg.Set(gpsprot.SatsMsgNone)
+		satsMsg.Set(gpsprot.SatsMsgNone)
 	} else if binary {
 		configChanged = true
 		if nmeaMsg.IsSet() {
@@ -220,6 +223,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	vars.configOpts.RTCMMsg = rtcmMsg
 	vars.configOpts.PVTMsg = pvtMsg
 	vars.configOpts.RawMsg = rawMsg
+	vars.configOpts.SatsMsg = satsMsg
 
 	if survey || vars.configOpts.SetStatic {
 		configChanged = true
@@ -736,6 +740,55 @@ func (nmeaOut *nmeaOutOpt) Set(s string) error {
 			// do nothing
 		default:
 			return fmt.Errorf("unknown nmea output flag: %s", w)
+		}
+	}
+	msg.Set(flags)
+	return nil
+}
+
+type satsOutOpt gpsprot.Option[gpsprot.SatsMsgFlags]
+
+var _ pflag.Value = (*satsOutOpt)(nil)
+
+func (satsOut *satsOutOpt) String() string {
+	msg := (*gpsprot.Option[gpsprot.SatsMsgFlags])(satsOut)
+	if !msg.IsSet() {
+		return ""
+	}
+	flags := msg.Get()
+	if flags == 0 {
+		return "none"
+	}
+	var parts []string
+	if flags&gpsprot.SatsMsgSV != 0 {
+		parts = append(parts, "sv")
+	}
+	if flags&gpsprot.SatsMsgSignal != 0 {
+		parts = append(parts, "signal")
+	}
+	return strings.Join(parts, ",")
+}
+
+func (satsOut *satsOutOpt) Type() string {
+	return "sats-flags"
+}
+
+func (satsOut *satsOutOpt) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("empty value for --sats-out")
+	}
+	msg := (*gpsprot.Option[gpsprot.SatsMsgFlags])(satsOut)
+	flags := gpsprot.SatsMsgFlags(0)
+	for _, w := range strings.Split(s, ",") {
+		switch strings.ToLower(strings.TrimSpace(w)) {
+		case "sv":
+			flags |= gpsprot.SatsMsgSV
+		case "signal":
+			flags |= gpsprot.SatsMsgSignal
+		case "none":
+			// do nothing
+		default:
+			return fmt.Errorf("unknown satellite output flag: %s", w)
 		}
 	}
 	msg.Set(flags)
