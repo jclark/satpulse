@@ -6,21 +6,21 @@ import (
 
 func TestNavTimeGPS(t *testing.T) {
 	testMsgType(t, NavTimeGPS{
-		ITOW:  0x12345678,
-		FTOW:  0,
-		Week:  6523,
-		LeapS: 37,
-		Valid: 0,
-		TAcc:  173,
+		NavITOW: NavITOW{ITOW: 0x12345678},
+		FTOW:    0,
+		Week:    6523,
+		LeapS:   37,
+		Valid:   0,
+		TAcc:    173,
 	})
 }
 
 func TestNavTimeTrustedV1(t *testing.T) {
 	testMsgType(t, NavTimeTrusted{
-		Version:  1,
-		RefSys:   NavTimeTrustedRefSysGPS,
-		Valid:    NavTimeTrustedValidTrustedTime | NavTimeTrustedValidDeltaTime,
-		ITOW:     0x12345678,
+		Version: 1,
+		RefSys:  NavTimeTrustedRefSysGPS,
+		Valid:   NavTimeTrustedValidTrustedTime | NavTimeTrustedValidDeltaTime,
+		NavITOW: NavITOW{ITOW: 0x12345678},
 		IniWno:   2100,
 		PropWno:  2101,
 		IniTow:   123456000,
@@ -35,7 +35,7 @@ func TestNavTimeTrustedV1(t *testing.T) {
 func TestNavSig(t *testing.T) {
 	testMsgType1(t, NavSig{
 		NavSigFixed: NavSigFixed{
-			ITOW:    0x12345678,
+			NavITOW: NavITOW{ITOW: 0x12345678},
 			Version: 0,
 			NumSigs: 2,
 		},
@@ -75,10 +75,10 @@ func TestNavTimeTrustedUnknownVersion(t *testing.T) {
 		0x01, 0x64, // class=NAV(0x01), id=TIMETRUSTED(0x64)
 		0x28, 0x00, // length = 40 bytes
 		// Payload starts here:
-		0x02,       // version = 2 (unknown)
-		0x01,       // RefSys = GPS
-		0x03,       // Valid
-		0x00,       // reserved
+		0x02,                   // version = 2 (unknown)
+		0x01,                   // RefSys = GPS
+		0x03,                   // Valid
+		0x00,                   // reserved
 		0x78, 0x56, 0x34, 0x12, // ITOW
 		0x34, 0x08, // IniWno
 		0x35, 0x08, // PropWno

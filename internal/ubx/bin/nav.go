@@ -21,8 +21,21 @@ const (
 	NavSvinID        MsgID = clsNav | (0x3B << 8)
 )
 
-type NavDOP struct {
+type NavMsg interface {
+	Msg
+	NavEpoch() uint32
+}
+
+type NavITOW struct {
 	ITOW uint32
+}
+
+func (m *NavITOW) NavEpoch() uint32 {
+	return m.ITOW
+}
+
+type NavDOP struct {
+	NavITOW
 	GDOP uint16
 	PDOP uint16
 	TDOP uint16
@@ -35,7 +48,7 @@ type NavDOP struct {
 func (m *NavDOP) ID() MsgID { return NavDOPID }
 
 type NavPosECEF struct {
-	ITOW uint32
+	NavITOW
 	ECEF [3]int32
 	PAcc uint32
 }
@@ -43,7 +56,7 @@ type NavPosECEF struct {
 func (m *NavPosECEF) ID() MsgID { return NavPosECEFID }
 
 type NavVelECEF struct {
-	ITOW  uint32
+	NavITOW
 	ECEFV [3]int32
 	SAcc  uint32
 }
@@ -51,7 +64,7 @@ type NavVelECEF struct {
 func (m *NavVelECEF) ID() MsgID { return NavVelECEFID }
 
 type NavPosLLH struct {
-	ITOW   uint32
+	NavITOW
 	Lon    int32
 	Lat    int32
 	Height int32
@@ -63,7 +76,7 @@ type NavPosLLH struct {
 func (m *NavPosLLH) ID() MsgID { return NavPosLLHID }
 
 type NavVelNED struct {
-	ITOW    uint32
+	NavITOW
 	VelNED  [3]int32
 	Speed   uint32
 	GSpeed  uint32
@@ -75,7 +88,7 @@ type NavVelNED struct {
 func (m *NavVelNED) ID() MsgID { return NavVelNEDID }
 
 type NavPVT struct {
-	ITOW    uint32
+	NavITOW
 	Year    uint16
 	Month   byte
 	Day     byte
@@ -200,7 +213,7 @@ type NavSat struct {
 }
 
 type NavSatFixed struct {
-	ITOW    uint32
+	NavITOW
 	Version byte
 	NumSVs  byte
 	_       [2]byte
@@ -307,7 +320,7 @@ type NavSig struct {
 }
 
 type NavSigFixed struct {
-	ITOW    uint32
+	NavITOW
 	Version byte
 	NumSigs byte
 	_       [2]byte
@@ -416,7 +429,7 @@ type NavSVInfo struct {
 }
 
 type NavSVInfoFixed struct {
-	ITOW        uint32
+	NavITOW
 	NumCh       byte
 	GlobalFlags NavSVInfoGlobalFlags
 	_           [2]byte
@@ -488,7 +501,7 @@ const (
 )
 
 type NavSol struct {
-	ITOW       uint32
+	NavITOW
 	FTOW       int32
 	Week       int16
 	GPSFixType NavSolGPSFixType
@@ -526,7 +539,7 @@ const (
 func (m *NavSol) ID() MsgID { return NavSolID }
 
 type NavTimeGPS struct {
-	ITOW  uint32
+	NavITOW
 	FTOW  int32
 	Week  int16
 	LeapS byte
@@ -545,7 +558,7 @@ const (
 func (m *NavTimeGPS) ID() MsgID { return NavTimeGPSID }
 
 type NavTimeUTC struct {
-	ITOW  uint32
+	NavITOW
 	TAcc  uint32
 	Nano  int32
 	Year  uint16
@@ -572,7 +585,7 @@ func (v NavTimeUTCValid) UTCStandard() UTCStandard {
 }
 
 type NavTimeBDS struct {
-	ITOW  uint32
+	NavITOW
 	SOW   uint32
 	FSOW  int32
 	Week  int16
@@ -592,7 +605,7 @@ const (
 )
 
 type NavTimeGal struct {
-	ITOW    uint32
+	NavITOW
 	GalTOW  uint32
 	FGalTOW int32
 	GalWno  int16
@@ -612,7 +625,7 @@ const (
 )
 
 type NavTimeGLO struct {
-	ITOW  uint32
+	NavITOW
 	TOD   uint32
 	FTOD  int32
 	Nt    uint16
@@ -631,7 +644,7 @@ const (
 )
 
 type NavTimeLS struct {
-	ITOW          uint32
+	NavITOW
 	Version       byte
 	_             [3]byte
 	SrcOfCurrLS   NavTimeSrcOfCurrLS
@@ -699,7 +712,7 @@ type NavTimeTrusted struct {
 	RefSys   NavTimeTrustedRefSys
 	Valid    NavTimeTrustedValid
 	_        byte
-	ITOW     uint32
+	NavITOW
 	IniWno   uint16
 	PropWno  uint16
 	IniTow   uint32
@@ -739,7 +752,7 @@ func (m *NavTimeTrusted) IsHandled() bool {
 type NavSvin struct {
 	Version byte
 	_       [3]byte
-	ITOW    uint32
+	NavITOW
 	Dur     uint32
 	MeanX   int32
 	MeanY   int32
