@@ -283,7 +283,6 @@ type SignalInfo struct {
 }
 
 type SatellitesMsg struct {
-	NavEpoch    uint32   `json:"navEpoch,omitempty"`
 	Tag         Tag      `json:"tag,omitempty"`
 	NativeMsgID string   `json:"nativeMsgID,omitempty"`
 	SVs         []SVInfo `json:"info"`                // info about satellites being tracked or acquired
@@ -325,7 +324,6 @@ func (msg *TimeMsg) ComputeTAITime(ls ptime.LeapSecond) (ptime.Time, bool) {
 
 type LeapSecondMsg struct {
 	ptime.LeapSecond
-	NavEpoch uint32 `json:"navEpoch,omitempty"`
 }
 
 // UpdateLeapSecond updates the target leap second if this message contains newer information
@@ -341,7 +339,6 @@ func (msg *LeapSecondMsg) UpdateLeapSecond(target *ptime.LeapSecond) bool {
 type SurveyMsg struct {
 	Position   Point3D       `json:"position"`
 	Accuracy   Length        `json:"accuracy"`
-	NavEpoch   uint32        `json:"navEpoch,omitempty"`
 	ObsCount   uint32        `json:"obsCount"`
 	ObsTime    time.Duration `json:"obsTime"`
 	Valid      bool          `json:"valid"`

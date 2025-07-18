@@ -20,7 +20,6 @@ func surveyNavSvin(m *bin.NavSvin) *gpsprot.SurveyMsg {
 		InProgress: m.Active != 0,
 		ObsCount:   m.Obs,
 		ObsTime:    time.Duration(m.Dur) * time.Second,
-		NavEpoch:   iTOWEpoch(m.ITOW),
 	}
 }
 

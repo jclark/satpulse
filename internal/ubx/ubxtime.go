@@ -20,7 +20,6 @@ func timeNavTimeGPS(m *bin.NavTimeGPS) *gpsprot.TimeMsg {
 	}
 	t.Accuracy = time.Duration(m.TAcc)
 	t.GNSS = gpsprot.GPS
-	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
 
@@ -34,7 +33,6 @@ func timeNavTimeBDS(m *bin.NavTimeBDS) *gpsprot.TimeMsg {
 	}
 	t.Accuracy = time.Duration(m.TAcc)
 	t.GNSS = gpsprot.BDS
-	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
 
@@ -49,7 +47,6 @@ func timeNavTimeGal(m *bin.NavTimeGal) *gpsprot.TimeMsg {
 	}
 	t.Accuracy = time.Duration(m.TAcc)
 	t.GNSS = gpsprot.GAL
-	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
 
@@ -60,7 +57,6 @@ func timeNavTimeGLO(m *bin.NavTimeGLO) *gpsprot.TimeMsg {
 		t.UTCTime = &u
 	}
 	t.GNSS = gpsprot.GLO
-	t.NavEpoch = iTOWEpoch(m.ITOW)
 	t.Accuracy = time.Duration(m.TAcc)
 	return &t
 }
@@ -74,7 +70,6 @@ func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsprot.TimeMsg {
 	t.UTCTime = &u
 	t.Accuracy = time.Duration(m.TAcc)
 	t.GNSS = utcStandardToGNSS(m.Valid.UTCStandard())
-	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
 }
 
@@ -86,12 +81,7 @@ func timeNavPVT(m *bin.NavPVT) *gpsprot.TimeMsg {
 	}
 	t.Accuracy = time.Duration(m.TAcc)
 	// XXX there are some interesting validity flags that we should try to represent
-	t.NavEpoch = iTOWEpoch(m.ITOW)
 	return &t
-}
-
-func iTOWEpoch(iTOW uint32) uint32 {
-	return iTOW + 1
 }
 
 func utcStandardToGNSS(u bin.UTCStandard) gpsprot.GNSS {

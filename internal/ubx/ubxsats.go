@@ -30,7 +30,6 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 		})
 	}
 	return &gpsprot.SatellitesMsg{
-		NavEpoch:    iTOWEpoch(u.ITOW),
 		SVs:         svs,
 		Tag:         Tag,
 		NativeMsgID: "UBX-NAV-SAT",
@@ -56,7 +55,6 @@ func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
 		})
 	}
 	return &gpsprot.SatellitesMsg{
-		NavEpoch:    iTOWEpoch(u.ITOW),
 		SVs:         svs,
 		Tag:         Tag,
 		NativeMsgID: "UBX-NAV-SVINFO",

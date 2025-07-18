@@ -9,7 +9,7 @@ import (
 )
 
 func leapSecond(u *bin.NavTimeLS) *gpsprot.LeapSecondMsg {
-	ls := gpsprot.LeapSecondMsg{NavEpoch: iTOWEpoch(u.ITOW)}
+	ls := gpsprot.LeapSecondMsg{}
 	var date time.Time
 	if !leapSecondUTCOffset(u, &ls) || !leapSecondDate(u, &date) {
 		return nil
