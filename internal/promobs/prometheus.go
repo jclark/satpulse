@@ -1,13 +1,16 @@
 package promobs
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
 )
@@ -19,6 +22,7 @@ type PrometheusObserver struct {
 	reg        *prometheus.Registry
 	everInSync bool
 
+	// PHC
 	inSyncGauge         prometheus.Gauge
 	offsetHistogram     prometheus.Histogram
 	offsetGauge         prometheus.Gauge
@@ -26,6 +30,12 @@ type PrometheusObserver struct {
 	offsetAbsSumCounter prometheus.Counter
 	offsetSumSqCounter  prometheus.Counter
 	samplesCounter      *prometheus.CounterVec
+
+	// Satellites
+	azimuthGauge       *prometheus.GaugeVec
+	elevationGauge     *prometheus.GaugeVec
+	satelliteUsedGauge *prometheus.GaugeVec
+	signalLevelGauge   *prometheus.GaugeVec
 }
 
 // New creates a new PrometheusObserver with basic metrics
@@ -74,6 +84,26 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		Help: "Total number of PHC samples by status",
 	}, []string{"status"})
 
+	azimuthGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "satpulse_satellite_azimuth_degrees",
+		Help: "Azimuth of satellite in degrees",
+	}, []string{"gnss", "sv"})
+
+	elevationGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "satpulse_satellite_elevation_degrees",
+		Help: "Elevation of satellite in degrees",
+	}, []string{"gnss", "sv"})
+
+	satelliteUsedGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "satpulse_satellite_used",
+		Help: "Flags that a satellite is used in the navigation solution (1 = used)",
+	}, []string{"gnss", "sv"})
+
+	signalLevelGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "satpulse_satellite_signal_level_dbhz",
+		Help: "Signal level of satellite in dB-Hz",
+	}, []string{"gnss", "sv", "signal"})
+
 	// Register metrics
 	reg.MustRegister(inSyncGauge)
 	reg.MustRegister(offsetHistogram)
@@ -82,6 +112,10 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 	reg.MustRegister(offsetAbsSumCounter)
 	reg.MustRegister(offsetSumSqCounter)
 	reg.MustRegister(samplesCounter)
+	reg.MustRegister(azimuthGauge)
+	reg.MustRegister(elevationGauge)
+	reg.MustRegister(satelliteUsedGauge)
+	reg.MustRegister(signalLevelGauge)
 
 	return &PrometheusObserver{
 		reg:                 reg,
@@ -92,6 +126,10 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		offsetAbsSumCounter: offsetAbsSumCounter,
 		offsetSumSqCounter:  offsetSumSqCounter,
 		samplesCounter:      samplesCounter,
+		azimuthGauge:        azimuthGauge,
+		elevationGauge:      elevationGauge,
+		satelliteUsedGauge:  satelliteUsedGauge,
+		signalLevelGauge:    signalLevelGauge,
 	}
 }
 
@@ -160,5 +198,23 @@ func (p *PrometheusObserver) Sample(data mon.SampleData) {
 		p.offsetHistogram.Observe(math.Abs(offsetSeconds))
 		p.offsetAbsSumCounter.Add(math.Abs(offsetSeconds))
 		p.offsetSumSqCounter.Add(offsetSeconds * offsetSeconds)
+	}
+}
+
+func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
+	for _, sv := range msg.SVs {
+		labels := []string{sv.ID.GNSS.String(), fmt.Sprintf("%02d", sv.ID.PRN)}
+		p.azimuthGauge.WithLabelValues(labels...).Set(float64(sv.Azimuth))
+		p.elevationGauge.WithLabelValues(labels...).Set(float64(sv.Elevation))
+		if msg.UsedValid {
+			p.satelliteUsedGauge.WithLabelValues(labels...).Set(1)
+		}
+		for _, sig := range sv.Signals {
+			if sig.CN0 == 0 {
+				continue
+			}
+			sigLabels := append(labels, string(sig.ID))
+			p.signalLevelGauge.WithLabelValues(sigLabels...).Set(float64(sig.CN0))
+		}
 	}
 }
