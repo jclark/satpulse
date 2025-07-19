@@ -141,7 +141,7 @@ func defaultConfig() *Config {
 
 func (cfg *Config) httpWantsSatellites() bool {
 	for _, c := range cfg.HTTP {
-		if c.gui() {
+		if c.gui() || c.metrics() {
 			return true
 		}
 	}

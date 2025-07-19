@@ -41,9 +41,9 @@ func (sb *satellitesBuffer) setNumbering(numbering []gpsprot.NMEASVNumberingRang
 	sb.numbering = numbering
 }
 
-func (sb *satellitesBuffer) convertSVID(gnss gpsprot.GNSS, svid int, sigID int) (gpsprot.SVID, string) {
+func (sb *satellitesBuffer) convertSVID(gnss gpsprot.GNSS, svid int, sigID int) (gpsprot.SVID, gpsprot.SignalID) {
 	id := gpsprot.SVID{}
-	sigIDName := ""
+	sigIDName := gpsprot.SignalID("")
 	if sigID != 0 {
 		sigIDName = gnssSigIDName(gnss, sigID)
 	}
@@ -439,73 +439,73 @@ func systemIDToGNSS(sysID int) gpsprot.GNSS {
 // Unicore Reference Commands Manual for N4 High Precision Products R1.6
 // It is also in IEC 61162-1-2010, which is corresponds to NMEA 4.00;
 // I have this, but it includes only GPS, GAL and GLO.
-var sigIDMap = map[gpsprot.GNSS]map[int]string{
+var sigIDMap = map[gpsprot.GNSS]map[int]gpsprot.SignalID{
 	gpsprot.GPS: {
-		1: "L1 C/A",
-		2: "L1 P(Y)",
-		3: "L1 M",
-		4: "L2 P(Y)",
-		5: "L2C-M",
-		6: "L2C-L",
-		7: "L5-I",
-		8: "L5-Q",
-		// 9: "L1C", // not in 4.00; Allystar, guessing a bit
+		1: gpsprot.SigIDGPSL1CA,
+		2: gpsprot.SigIDGPSL1PY,
+		3: gpsprot.SigIDGPSL1M,
+		4: gpsprot.SigIDGPSL2P,
+		5: gpsprot.SigIDGPSL2CM,
+		6: gpsprot.SigIDGPSL2CL,
+		7: gpsprot.SigIDGPSL5I,
+		8: gpsprot.SigIDGPSL5Q,
+		// 9: gpsprot.SigIDGPSL1C, // not in 4.00; Allystar, guessing a bit
 	},
 	gpsprot.GAL: {
-		1: "E5a",
-		2: "E5b",
-		3: "E5a+b",
-		4: "E6-A",
-		5: "E6", // friendlier name for E6-BC
-		6: "L1-A",
-		7: "E1", // friendlier name for L1-BC
+		1: gpsprot.SigIDGALE5a,
+		2: gpsprot.SigIDGALE5b,
+		3: gpsprot.SigIDGALE5,
+		4: gpsprot.SigIDGALE6A,
+		5: gpsprot.SigIDGALE6,
+		6: gpsprot.SigIDGALE1A,
+		7: gpsprot.SigIDGALE1,
 	},
 	gpsprot.BDS: {
-		1:   "B1I", // ublox
-		2:   "B1Q", // restricted
-		3:   "B1C", // ublox
-		4:   "B1A", // restricted
-		5:   "B2a", // NMEA calls it B2-a
-		6:   "B2b", // NMEA calls it B2-b
-		7:   "B2a+b",
-		8:   "B3I", // quectel
-		9:   "B3Q", // restricted
-		0xA: "B3A", // restricted
-		0xB: "B2I", // ublox
-		0xC: "B2Q", // restricted
+		1:   gpsprot.SigIDBDSB1I,
+		2:   gpsprot.SigIDBDSB1Q,
+		3:   gpsprot.SigIDBDSB1C,
+		4:   gpsprot.SigIDBDSB1A,
+		5:   gpsprot.SigIDBDSB2a,
+		6:   gpsprot.SigIDBDSB2b,
+		7:   gpsprot.SigIDBDSB2ab,
+		8:   gpsprot.SigIDBDSB3I,
+		9:   gpsprot.SigIDBDSB3Q,
+		0xA: gpsprot.SigIDBDSB3A,
+		0xB: gpsprot.SigIDBDSB2I,
+		0xC: gpsprot.SigIDBDSB2Q,
 	},
 	gpsprot.GLO: {
-		1: "L1", // friendlier name for L1 C/A
-		2: "L1 P",
-		3: "L2", // friendlier name for L2 C/A
-		4: "L2 P",
+		1: gpsprot.SigIDGLOL1,
+		2: gpsprot.SigIDGLOL1P,
+		3: gpsprot.SigIDGLOL2,
+		4: gpsprot.SigIDGLOL2P,
 	},
 	gpsprot.QZSS: {
-		1:   "L1", // friendlier name for L1 C/A
-		2:   "L1C (D)",
-		3:   "L1C (P)",
-		4:   "L1S",
-		5:   "L2C-M",
-		6:   "L2C-L",
-		7:   "L5-I",
-		8:   "L5-Q",
-		9:   "L6", // friendlier name for L6D
-		0xA: "L6E",
+		1:   gpsprot.SigIDQZSSL1CA,
+		2:   gpsprot.SigIDQZSSL1CD,
+		3:   gpsprot.SigIDQZSSL1CP,
+		4:   gpsprot.SigIDQZSSL1S,
+		5:   gpsprot.SigIDQZSSL2CM,
+		6:   gpsprot.SigIDQZSSL2CL,
+		7:   gpsprot.SigIDQZSSL5I,
+		8:   gpsprot.SigIDQZSSL5Q,
+		9:   gpsprot.SigIDQZSSL6,
+		0xA: gpsprot.SigIDQZSSL6E,
 	},
 	gpsprot.NAVIC: {
-		1: "L5", // friendlier name for L5-SPS
-		2: "S",  // friendlier name for L5-SPS
-		3: "L5-RS",
-		4: "S-RS",
-		5: "L1", // friendlier name for L1-SPS
+		1: gpsprot.SigIDNAVICL5,
+		2: gpsprot.SigIDNAVICS,
+		3: gpsprot.SigIDNAVICL5RS,
+		4: gpsprot.SigIDNAVICSRS,
+		5: gpsprot.SigIDNAVICL1,
 	},
 }
 
-func gnssSigIDName(gnss gpsprot.GNSS, sigID int) string {
+func gnssSigIDName(gnss gpsprot.GNSS, sigID int) gpsprot.SignalID {
 	if sigNames, ok := sigIDMap[gnss]; ok {
 		return sigNames[sigID]
 	}
-	return fmt.Sprintf("%X", sigID)
+	return gpsprot.SignalID(fmt.Sprintf("%X", sigID))
 }
 
 func parseIntField(fields []string, i int, min int, max int, format string) (int, error) {

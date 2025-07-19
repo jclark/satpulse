@@ -5,7 +5,15 @@ import (
 	"strings"
 )
 
+// Signal represents a signal that be enabled in a GNSS receiver.
+// The signal identies both the GNSS constellation and the signal.
 type Signal int
+
+// SignalID is a human-readable string that distinguishes the signals transmitted by a satellite.
+// The SignalID does not identify the GNSS constellation.
+// It distinguishes signals that are transmitted separately, and have independent signal levels.
+// There may be separate SignalIDs for the components of a Signal.
+type SignalID string
 
 // SignalSet is a bitmask representing a set of GNSS signals.
 // SignalSet makes it convenient to manipulate sets of signals based on GNSS and band.
@@ -235,6 +243,89 @@ func (ss SignalSet) GNSSSet() GNSSSet {
 	}
 	return result
 }
+
+// SignalID constants
+const (
+	// GPS SignalID constants
+	SigIDGPSL1CA SignalID = "L1 C/A"
+	SigIDGPSL1PY SignalID = "L1 P(Y)" // restricted
+	SigIDGPSL1M  SignalID = "L1M"     // restricted
+	SigIDGPSL1C  SignalID = "L1C"
+	SigIDGPSL2P  SignalID = "L2P"   // restricted
+	SigIDGPSL2CM SignalID = "L2C-M" // L2C data
+	SigIDGPSL2CL SignalID = "L2C-L" // L2C pilot
+	SigIDGPSL5I  SignalID = "L5-I"  // L5 data
+	SigIDGPSL5Q  SignalID = "L5-Q"  // L5 pilot
+
+	// GLONASS SignalID constants
+	SigIDGLOL1  SignalID = "L1"  // friendlier name for L1 C/A
+	SigIDGLOL1P SignalID = "L1P" // restricted
+	SigIDGLOL2  SignalID = "L2"  // friendlier name for L2 C/A
+	SigIDGLOL2P SignalID = "L2P" // restricted
+
+	// Galileo SignalID constants
+	SigIDGALE5a SignalID = "E5a"
+	SigIDGALE5b SignalID = "E5b"
+	SigIDGALE5  SignalID = "E5"   // combo of E5a and E5b
+	SigIDGALE6A SignalID = "E6-A" // restricted
+	SigIDGALE6  SignalID = "E6"   // combo of E6-B and E6-C, sometimes called E6BC
+	SigIDGALE1A SignalID = "E1-A" // restricted
+	SigIDGALE1  SignalID = "E1"   // combo of E1B plus E1C, sometimes called E1BC
+	// Constants for Galileo components
+	SigIDGALE1C  SignalID = "E1-C"  // E1 pilot
+	SigIDGALE1B  SignalID = "E1-B"  // E1 data
+	SigIDGALE5aI SignalID = "E5a-I" // E5a data
+	SigIDGALE5aQ SignalID = "E5a-Q" // E5a pilot
+	SigIDGALE5bI SignalID = "E5b-I" // E5b  data
+	SigIDGALE5bQ SignalID = "E5b-Q" // E5b pilot
+	SigIDGALE6B  SignalID = "E6-B"  // E6 data
+	SigIDGALE6C  SignalID = "E6-C"  // E6 pilot
+
+	// BeiDou SignalID constants
+	SigIDBDSB1I  SignalID = "B1I"
+	SigIDBDSB1Q  SignalID = "B1Q" // restricted
+	SigIDBDSB1C  SignalID = "B1C"
+	SigIDBDSB1A  SignalID = "B1A"   // restricted
+	SigIDBDSB2a  SignalID = "B2a"   // NMEA calls it B2-a
+	SigIDBDSB2b  SignalID = "B2b"   // NMEA calls it B2-b
+	SigIDBDSB2ab SignalID = "B2a+b" // u-blox tracks these together
+	SigIDBDSB3I  SignalID = "B3I"
+	SigIDBDSB3Q  SignalID = "B3Q" // restricted
+	SigIDBDSB3A  SignalID = "B3A" // restricted
+	SigIDBDSB2I  SignalID = "B2I"
+	SigIDBDSB2Q  SignalID = "B2Q" // restricted
+	// Constants for BeiDou formats/components
+	SigIDBDSB1ID1 SignalID = "B1I-D1" // B1I D1 format
+	SigIDBDSB1ID2 SignalID = "B1I-D2" // B1I D2 format
+	SigIDBDSB2ID1 SignalID = "B2I-D1" // B2I D1 format
+	SigIDBDSB2ID2 SignalID = "B2I-D2" // B2I D2 format
+	SigIDBDSB3ID1 SignalID = "B3I-D1" // B3I D1 format
+	SigIDBDSB3ID2 SignalID = "B3I-D2" // B3I D2 format
+	SigIDBDSB1CP  SignalID = "B1C-P"  // B1C pilot
+	SigIDBDSB1CD  SignalID = "B1C-D"  // B1C data
+	SigIDBDSB2aP  SignalID = "B2a-P"  // B2a pilot
+	SigIDBDSB2aD  SignalID = "B2a-D"  // B2a data
+
+	// QZSS SignalID constants
+	SigIDQZSSL1CA SignalID = "L1 C/A"
+	SigIDQZSSL1CD SignalID = "L1C (D)" // L1C data
+	SigIDQZSSL1CP SignalID = "L1C (P)" // L1C pilot
+	SigIDQZSSL1S  SignalID = "L1S"
+	SigIDQZSSL2CM SignalID = "L2C-M"  // L2C data
+	SigIDQZSSL2CL SignalID = "L2C-L"  // L2C pilot
+	SigIDQZSSL5I  SignalID = "L5-I"   // L5 data
+	SigIDQZSSL5Q  SignalID = "L5-Q"   // L5 pilot
+	SigIDQZSSL6   SignalID = "L6"     // friendlier name for L6D
+	SigIDQZSSL6E  SignalID = "L6E"    // restricted
+	SigIDQZSSL1CB SignalID = "L1 C/B" // replacement for L1 C/A
+
+	// NavIC SignalID constants
+	SigIDNAVICL5   SignalID = "L5"    // friendlier name for L5-SPS
+	SigIDNAVICS    SignalID = "S"     // friendlier name for S-SPS
+	SigIDNAVICL5RS SignalID = "L5-RS" // restricted
+	SigIDNAVICSRS  SignalID = "S-RS"  // restricted
+	SigIDNAVICL1   SignalID = "L1"    // friendlier name for L1-SPS
+)
 
 // sigName provides human-readable names for each signal
 var sigName [64]string

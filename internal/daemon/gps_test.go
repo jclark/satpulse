@@ -261,8 +261,8 @@ func TestSatellitesInfo(t *testing.T) {
 		t.Errorf("SatellitesOutputs: got %v, want nil", cfg.GPS.SatellitesOutput)
 	}
 	opt := cfg.GPS.satsMsg(38400, true)
-	if opt.Get() != gpsprot.SatsMsgSat {
-		t.Errorf("setSatellitesMsg: got %v, want SatellitesMsgSV", opt.Get())
+	if opt.Get() != gpsprot.SatsMsgSat|gpsprot.SatsMsgSignal {
+		t.Errorf("setSatellitesMsg: got %v, want SatsMsgSat|SatsMsgSignal", opt.Get())
 	}
 }
 

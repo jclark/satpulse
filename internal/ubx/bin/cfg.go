@@ -658,13 +658,13 @@ func PollCfgTp5(tpIdx int) []byte {
 }
 
 func SetCfgMsg(mid MsgID, rate byte) []byte {
-	cls, id := mid.unpack()
+	cls, id := mid.Unpack()
 	packet, _ := PackMsg(CfgMsgID, []byte{cls, id, rate})
 	return packet
 }
 
 func PollCfgMsg(mid MsgID) []byte {
-	cls, id := mid.unpack()
+	cls, id := mid.Unpack()
 	packet, _ := PackMsg(CfgMsgID, []byte{cls, id})
 	return packet
 }

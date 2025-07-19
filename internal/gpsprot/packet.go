@@ -137,5 +137,5 @@ type NMEASVNumberingRange struct {
 	MaxID    uint16
 	MinPRN   uint8
 	GNSS     GNSS
-	SignalID string
+	SignalID SignalID
 }

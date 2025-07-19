@@ -484,13 +484,13 @@ func TestSVID(t *testing.T) {
 		svid      int
 		sigid     int
 		svname    string
-		signame   string
+		signame   gpsprot.SignalID
 		numbering []gpsprot.NMEASVNumberingRange
 	}{
 		{gnss: gpsprot.GPS, svid: 15, sigid: 0, svname: "G15", signame: "", numbering: dflt},
 		{gnss: gpsprot.GPS, svid: 1, sigid: 1, svname: "G01", signame: "L1 C/A", numbering: dflt},
 		{gnss: gpsprot.GPS, svid: 35, sigid: 0, svname: "S122", signame: "", numbering: dflt},
-		{gnss: gpsprot.BDS, svid: 861, sigid: 0, svname: "C11", signame: "B2A", numbering: allystar},
+		{gnss: gpsprot.BDS, svid: 861, sigid: 0, svname: "C11", signame: "B2a", numbering: allystar},
 		{gnss: gpsprot.GPS, svid: 861, sigid: 0, numbering: allystar}, // fail because inconsistent GNSS
 		{gnss: gpsprot.GLO, svid: 0, sigid: 0, svname: "R?", signame: "", numbering: dflt},
 		{gnss: gpsprot.GLO, svid: 65, sigid: 0, svname: "R01", signame: "", numbering: dflt},

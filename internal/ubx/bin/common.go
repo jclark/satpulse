@@ -74,7 +74,7 @@ func makeMsgID(cls byte, id byte) MsgID {
 	return MsgID(uint16(cls) | (uint16(id) << 8))
 }
 
-func (mid MsgID) unpack() (byte, byte) {
+func (mid MsgID) Unpack() (byte, byte) {
 	return byte(mid & 0xFF), byte((mid >> 8) & 0xFF)
 }
 
@@ -83,7 +83,7 @@ func (mid MsgID) Ackable() bool {
 }
 
 func (mid MsgID) CfgClass() bool {
-	cls, _ := mid.unpack()
+	cls, _ := mid.Unpack()
 	return cls == clsCfg
 }
 
@@ -96,7 +96,7 @@ var idNameMap = make(map[MsgID]string)
 
 func (mid MsgID) String() string {
 	idName := idNameMap[mid]
-	cls, id := mid.unpack()
+	cls, id := mid.Unpack()
 	s := clsMap[cls]
 	if s == "" {
 		s = fmt.Sprintf("0x%02X", cls)
@@ -241,7 +241,7 @@ func PackMsg(mid MsgID, payload []byte) ([]byte, error) {
 	if len(payload) > 0xFFFF {
 		return nil, fmt.Errorf("ubx-%s payload too long (%d bytes", mid.String(), len(payload))
 	}
-	cls, id := mid.unpack()
+	cls, id := mid.Unpack()
 	packet := []byte{
 		Sync1,
 		Sync2,

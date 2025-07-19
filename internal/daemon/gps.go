@@ -200,6 +200,7 @@ func (c *GPSConfig) pulseWidth() (time.Duration, error) {
 const minSpeedSatellitesOutput = 38400
 
 func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.Option[gpsprot.SatsMsgFlags]) {
+	const full = gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal
 	if c.SatellitesOutput == nil {
 		if speed < minSpeedSatellitesOutput {
 			// If the speed is too slow, then we won't have automatically enabled it,
@@ -207,12 +208,12 @@ func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.O
 			return
 		}
 		if wantSatellitesOutput {
-			opt.Set(gpsprot.SatsMsgSat)
+			opt.Set(full)
 		} else {
 			opt.Set(gpsprot.SatsMsgNone)
 		}
 	} else if *c.SatellitesOutput {
-		opt.Set(gpsprot.SatsMsgSat)
+		opt.Set(full)
 	} else {
 		opt.Set(gpsprot.SatsMsgNone)
 	}

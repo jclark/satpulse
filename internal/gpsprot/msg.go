@@ -278,8 +278,8 @@ type SVInfo struct {
 
 // SignalInfo contains information about a single signal transmitted by a satellite.
 type SignalInfo struct {
-	ID  string `json:"id,omitempty"` // human-readable identifier of the signal e.g. "L5"
-	CN0 uint8  `json:"cn0"`          // C/NO signal to noise ratio
+	ID  SignalID `json:"id,omitempty"` // human-readable label of the signal e.g. "L5"
+	CN0 uint8    `json:"cn0"`          // C/NO signal to noise ratio
 }
 
 type SatellitesMsg struct {
