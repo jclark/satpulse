@@ -192,8 +192,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 			tpFlags |= gpsTimePulseGetWidth
 		}
 	}
-	gct, pulseWidth, err := cfg.GPS.target(conn.Speed(), cfg.httpWantsSatellites(), tpFlags)
-	lg.Debug("GPS configure input", "target", gct)
+	gct, pulseWidth, err := createConfigTarget(lg, cfg, conn.Speed(), tpFlags)
 	if err != nil {
 		return err
 	}
@@ -351,4 +350,18 @@ func startBcast[T any](ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	b := bcast.New(msg)
 	cmd.WaitGroupGo(wg, func() { b.Run(ctx, lg) })
 	return b
+}
+
+func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, tpFlags gpsTimePulseFlags) (*gpsprot.ConfigTarget, time.Duration, error) {
+	httpWantsSatellites := cfg.httpWantsSatellites()
+	gct, pulseWidth, err := cfg.GPS.target(speed, httpWantsSatellites, tpFlags)
+	lg.Debug("GPS configure input", "target", gct)
+	if err != nil {
+		return nil, 0, err
+	}
+	if httpWantsSatellites && gct.Opts.SatsMsg.Get() == gpsprot.SatsMsgNone {
+		lg.Warn("satellites output will not be enabled, because serial speed is too low",
+			"speed", speed, "minSpeedForSatellitesOutput", minSpeedSatellitesOutput)
+	}
+	return gct, pulseWidth, nil
 }
