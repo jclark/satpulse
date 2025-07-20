@@ -36,7 +36,6 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 		conn, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
 	} else {
 		conn, err = gpsio.OpenSocket(v.socketPath)
-		target.Opts.Detected = true
 	}
 	if err != nil {
 		return
@@ -72,6 +71,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.navMsgAuth.IsSet() {
 		cp.SetNavMsgAuth(v.navMsgAuth.Get())
 	}
+	if v.socketPath != "" {
+		target.Opts.Detected = true
+	}
 	if target.NoOp() {
 		target.Opts.ForceProbe |= gpsprot.ForceProbeWhenNoConfig
 	}
@@ -84,6 +86,7 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 	}
 	copy := *target
 	copy.Opts.ForceProbe &^= gpsprot.ForceProbeWhenNoConfig
+	copy.Opts.Detected = false
 	return copy.NoOp()
 }
 
