@@ -5,7 +5,7 @@ import "github.com/jclark/satpulse/internal/gpsprot"
 // NewNMEASVNumbering returns a slice of NMEASVNumberingRange describing the NMEA satellite numbering scheme used by Allystar.
 func NewNMEASVNumbering() []gpsprot.NMEASVNumberingRange {
 	return []gpsprot.NMEASVNumberingRange{
-		{MinID: 33, MaxID: 64, MinNum: 120, GNSS: gpsprot.SBAS, SignalID: ""},
+		{MinID: 33, MaxID: 64, MinNum: 20, GNSS: gpsprot.SBAS, SignalID: ""},
 		{MinID: 65, MaxID: 96, MinNum: 1, GNSS: gpsprot.GLO, SignalID: ""},
 		{MinID: 193, MaxID: 199, MinNum: 1, GNSS: gpsprot.QZSS, SignalID: ""},
 		{MinID: 201, MaxID: 263, MinNum: 1, GNSS: gpsprot.BDS, SignalID: ""},

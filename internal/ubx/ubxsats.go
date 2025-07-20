@@ -155,10 +155,19 @@ func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
 }
 
 func gnssSVID(gnss bin.GNSSID, uSVID byte) gpsprot.SVID {
-	if gnss == bin.GLO && uSVID == 255 {
-		// UBX uses 255 for unknown GLONASS SVID (NMEA uses null)
-		uSVID = gpsprot.GLOUnknown
-	}
+	switch gnss {
+	case bin.SBAS:
+		// UBX SVIDs for SBAS are the PRN, which start at 120.
+		if uSVID >= 120 {
+			// RINEX (which we follow) uses PRN - 100 for SBAS (to keep numbers to two digits)
+			uSVID -= 100
+		}
+	case bin.GLO:
+		if uSVID == 255 {
+			// UBX uses 255 for unknown GLONASS SVID (NMEA uses null)
+			uSVID = gpsprot.GLOUnknown
+		}
+	}	
 	return gpsprot.SVID{GNSS: idToGNSS(gnss), Num: uSVID}
 }
 
@@ -167,6 +176,7 @@ func svInfoSVID(uSVID byte) gpsprot.SVID {
 	num := uSVID
 	if uSVID >= 120 && uSVID <= 158 {
 		g = gpsprot.SBAS
+		num -= 100 // RINEX 3.04 uses PRN - 120 for SBAS (to keep numbers to two digits)
 	} else if uSVID >= 193 && uSVID <= 197 {
 		g = gpsprot.QZSS
 		num -= 192

@@ -27,7 +27,7 @@ type satellitesBuffer struct {
 }
 
 var dfltSVNumbering = []gpsprot.NMEASVNumberingRange{
-	{MinID: 33, MaxID: 64, MinNum: 120, GNSS: gpsprot.SBAS, SignalID: ""},
+	{MinID: 33, MaxID: 64, MinNum: 20, GNSS: gpsprot.SBAS, SignalID: ""},
 	{MinID: 65, MaxID: 96, MinNum: 1, GNSS: gpsprot.GLO, SignalID: ""},
 }
 

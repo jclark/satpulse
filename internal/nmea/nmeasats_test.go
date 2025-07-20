@@ -489,7 +489,7 @@ func TestSVID(t *testing.T) {
 	}{
 		{gnss: gpsprot.GPS, svid: 15, sigid: 0, svname: "G15", signame: "", numbering: dflt},
 		{gnss: gpsprot.GPS, svid: 1, sigid: 1, svname: "G01", signame: "L1 C/A", numbering: dflt},
-		{gnss: gpsprot.GPS, svid: 35, sigid: 0, svname: "S122", signame: "", numbering: dflt},
+		{gnss: gpsprot.GPS, svid: 35, sigid: 0, svname: "S22", signame: "", numbering: dflt},
 		{gnss: gpsprot.BDS, svid: 861, sigid: 0, svname: "C11", signame: "B2a", numbering: allystar},
 		{gnss: gpsprot.GPS, svid: 861, sigid: 0, numbering: allystar}, // fail because inconsistent GNSS
 		{gnss: gpsprot.GLO, svid: 0, sigid: 0, svname: "R?", signame: "", numbering: dflt},

@@ -156,6 +156,8 @@ func (g GNSS) MarshalText() ([]byte, error) {
 	return []byte(g.String()), nil
 }
 
+// IsValidSVNum checks if the given SV number is valid for the GNSS type.
+// Numbers are as in RINEX 3.04.
 func (g GNSS) IsValidSVNum(num int) bool {
 	if num < 1 {
 		return false
@@ -174,7 +176,7 @@ func (g GNSS) IsValidSVNum(num int) bool {
 	case NAVIC:
 		return num <= 14
 	case SBAS:
-		return num >= 120 && num <= 158
+		return num >= 20 && num <= 58
 	default:
 		return false
 	}
@@ -244,10 +246,13 @@ const GLOUnknown uint8 = 0 // with GLONASS FDMA, it is possible to be tracking a
 type SVID struct {
 	GNSS GNSS
 	// Num is a number identifying the SV within a specific GNSS.
-	// For GPS, GAL, BDS, NAVIC, SBAS, this is the PRN (pseudo-random noise) number.
-	// For QZSS, this is the PRN number minus 192.
+	// Numbering is the same as in RINEX 3.04.
+	// For GPS, GAL, BDS, NAVIC, this is the PRN (pseudo-random noise) number.
 	// For GLONASS, this is the orbital slot number.
-	// This can be GLOUnknown, when the GNSS is GLONASS
+	// For SBAS, this is the PRN number minus 120.
+	// For QZSS, this is the PRN number minus 192.
+	// This gives two-digit, non-zero numbers.
+	// In addition, this can be GLOUnknown, when the GNSS is GLONASS
 	Num uint8
 }
 
