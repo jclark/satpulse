@@ -47,11 +47,11 @@ func TestGSAParse(t *testing.T) {
 		{
 			sen: "$GNGSA,A,3,10,12,23,25,32,,,,,,,,2.38,1.26,2.01,1*0B",
 			svids: []gpsprot.SVID{
-				{GNSS: gpsprot.GPS, PRN: 10},
-				{GNSS: gpsprot.GPS, PRN: 12},
-				{GNSS: gpsprot.GPS, PRN: 23},
-				{GNSS: gpsprot.GPS, PRN: 25},
-				{GNSS: gpsprot.GPS, PRN: 32},
+				{GNSS: gpsprot.GPS, Num: 10},
+				{GNSS: gpsprot.GPS, Num: 12},
+				{GNSS: gpsprot.GPS, Num: 23},
+				{GNSS: gpsprot.GPS, Num: 25},
+				{GNSS: gpsprot.GPS, Num: 32},
 			},
 		},
 	}

@@ -156,6 +156,30 @@ func (g GNSS) MarshalText() ([]byte, error) {
 	return []byte(g.String()), nil
 }
 
+func (g GNSS) IsValidSVNum(num int) bool {
+	if num < 1 {
+		return false
+	}
+	switch g {
+	case GPS:
+		return num <= 32
+	case GLO:
+		return num <= 24
+	case GAL:
+		return num <= 36
+	case BDS:
+		return num <= 63
+	case QZSS:
+		return num <= 10
+	case NAVIC:
+		return num <= 14
+	case SBAS:
+		return num >= 120 && num <= 158
+	default:
+		return false
+	}
+}
+
 func (gp *GNSS) UnmarshalText(text []byte) error {
 	g, err := ParseGNSS(string(text))
 	if err == nil {
@@ -214,22 +238,24 @@ func (s GNSSSet) String() string {
 	return strings.Join(names, ",")
 }
 
-const GLOUnknown int16 = 0 // with GLONASS FDMA, it is possible to be tracking a satellite but not know its PRN
+const GLOUnknown uint8 = 0 // with GLONASS FDMA, it is possible to be tracking a satellite but not know its PRN
 
 // SVID is an identifier of a space vehicle (satellite).
 type SVID struct {
 	GNSS GNSS
-	// PRN code number used by the satellite, or orbital slot number for GLONASS FDMA
-	// int16 because NMEA layer passes up non-standard three-digit SVIDs
+	// Num is a number identifying the SV within a specific GNSS.
+	// For GPS, GAL, BDS, NAVIC, SBAS, this is the PRN (pseudo-random noise) number.
+	// For QZSS, this is the PRN number minus 192.
+	// For GLONASS, this is the orbital slot number.
 	// This can be GLOUnknown, when the GNSS is GLONASS
-	PRN int16
+	Num uint8
 }
 
 func (sv SVID) String() string {
-	if sv.PRN == GLOUnknown {
+	if sv.Num == GLOUnknown {
 		return fmt.Sprintf("%s?", sv.GNSS.SVIDPrefix())
 	}
-	return fmt.Sprintf("%s%02d", sv.GNSS.SVIDPrefix(), sv.PRN)
+	return fmt.Sprintf("%s%02d", sv.GNSS.SVIDPrefix(), sv.Num)
 }
 
 func (sv SVID) MarshalJSON() ([]byte, error) {
@@ -237,35 +263,12 @@ func (sv SVID) MarshalJSON() ([]byte, error) {
 }
 
 func (sv SVID) IsZero() bool {
-	return sv.GNSS == 0 && sv.PRN == 0
+	return sv.GNSS == 0 && sv.Num == 0
 }
 
-// IsValid checks if the SVID has a valid PRN for its GNSS type
+// IsValid checks if the SVID has a valid Num for its GNSS type
 func (sv SVID) IsValid() bool {
-	if sv.PRN == GLOUnknown && sv.GNSS == GLO {
-		return true
-	}
-	if sv.PRN < 1 {
-		return false
-	}
-	switch sv.GNSS {
-	case GPS:
-		return sv.PRN <= 32
-	case GLO:
-		return sv.PRN <= 24
-	case GAL:
-		return sv.PRN <= 36
-	case BDS:
-		return sv.PRN <= 63
-	case QZSS:
-		return sv.PRN <= 10
-	case NAVIC:
-		return sv.PRN <= 14
-	case SBAS:
-		return sv.PRN >= 120 && sv.PRN <= 158
-	default:
-		return false
-	}
+	return sv.GNSS.IsValidSVNum(int(sv.Num))
 }
 
 type SVInfo struct {

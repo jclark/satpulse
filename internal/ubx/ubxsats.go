@@ -16,11 +16,7 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 		if usv.Flags&bin.NavSatQuality < minQuality {
 			continue
 		}
-		svid := gpsprot.SVID{GNSS: idToGNSS(usv.GNSSID), PRN: int16(usv.SVID)}
-		if svid.GNSS == gpsprot.GLO && svid.PRN == 255 {
-			// UBX uses 255 for unknown GLONASS SVID (NMEA uses null)
-			svid.PRN = gpsprot.GLOUnknown
-		}
+		svid := gnssSVID(usv.GNSSID, usv.SVID)
 		svs = append(svs, gpsprot.SVInfo{
 			ID: svid,
 			Signals: []gpsprot.SignalInfo{
@@ -47,7 +43,7 @@ func satellitesAddNavSig(sats *gpsprot.SatellitesMsg, u *bin.NavSig) {
 		if usig.QualityInd < minQuality {
 			continue
 		}
-		svid := gpsprot.SVID{GNSS: idToGNSS(usig.GNSSID), PRN: int16(usig.SVID)}
+		svid := gnssSVID(usig.GNSSID, usig.SVID)
 		sigs[svid] = append(sigs[svid], gpsprot.SignalInfo{
 			ID:  signalID(usig.GNSSID, usig.SigID),
 			CN0: usig.CNO,
@@ -55,7 +51,6 @@ func satellitesAddNavSig(sats *gpsprot.SatellitesMsg, u *bin.NavSig) {
 		if usig.SigFlags&bin.NavSigPrUsed != 0 {
 			sigUsed[svid] = struct{}{}
 		}
-
 	}
 	for i := range sats.SVs {
 		sv := &sats.SVs[i]
@@ -159,20 +154,28 @@ func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
 	}
 }
 
+func gnssSVID(gnss bin.GNSSID, uSVID byte) gpsprot.SVID {
+	if gnss == bin.GLO && uSVID == 255 {
+		// UBX uses 255 for unknown GLONASS SVID (NMEA uses null)
+		uSVID = gpsprot.GLOUnknown
+	}
+	return gpsprot.SVID{GNSS: idToGNSS(gnss), Num: uSVID}
+}
+
 func svInfoSVID(uSVID byte) gpsprot.SVID {
 	g := gpsprot.GPS
-	prn := int16(uSVID)
+	num := uSVID
 	if uSVID >= 120 && uSVID <= 158 {
 		g = gpsprot.SBAS
 	} else if uSVID >= 193 && uSVID <= 197 {
 		g = gpsprot.QZSS
-		prn -= 192
+		num -= 192
 	} else if uSVID >= 65 && uSVID <= 96 {
 		g = gpsprot.GLO
-		prn -= 64
+		num -= 64
 	} else if uSVID == 255 {
 		g = gpsprot.GLO
-		prn = gpsprot.GLOUnknown
+		num = gpsprot.GLOUnknown
 	}
-	return gpsprot.SVID{GNSS: g, PRN: prn}
+	return gpsprot.SVID{GNSS: g, Num: num}
 }

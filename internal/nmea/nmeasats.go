@@ -27,8 +27,8 @@ type satellitesBuffer struct {
 }
 
 var dfltSVNumbering = []gpsprot.NMEASVNumberingRange{
-	{MinID: 33, MaxID: 64, MinPRN: 120, GNSS: gpsprot.SBAS, SignalID: ""},
-	{MinID: 65, MaxID: 96, MinPRN: 1, GNSS: gpsprot.GLO, SignalID: ""},
+	{MinID: 33, MaxID: 64, MinNum: 120, GNSS: gpsprot.SBAS, SignalID: ""},
+	{MinID: 65, MaxID: 96, MinNum: 1, GNSS: gpsprot.GLO, SignalID: ""},
 }
 
 func newSatellitesBuffer() *satellitesBuffer {
@@ -42,7 +42,6 @@ func (sb *satellitesBuffer) setNumbering(numbering []gpsprot.NMEASVNumberingRang
 }
 
 func (sb *satellitesBuffer) convertSVID(gnss gpsprot.GNSS, svid int, sigID int) (gpsprot.SVID, gpsprot.SignalID) {
-	id := gpsprot.SVID{}
 	sigIDName := gpsprot.SignalID("")
 	if sigID != 0 {
 		sigIDName = gnssSigIDName(gnss, sigID)
@@ -55,28 +54,24 @@ func (sb *satellitesBuffer) convertSVID(gnss gpsprot.GNSS, svid int, sigID int) 
 		r := sb.numbering[i]
 		// Check for consistency in case wrong numbering table has been configured.
 		if !gnssConsistent(gnss, r.GNSS) {
-			return id, ""
-		}
-		prn := int16((svid - int(r.MinID)) + int(r.MinPRN))
-		id = gpsprot.SVID{GNSS: r.GNSS, PRN: prn}
-		if !id.IsValid() {
 			return gpsprot.SVID{}, ""
 		}
+		svid = (svid - int(r.MinID)) + int(r.MinNum)
+		gnss = r.GNSS
 		if sigID == 0 {
 			sigIDName = r.SignalID
 		}
 	} else if gnss == gpsprot.GLO && svid == 0 {
-		return gpsprot.SVID{GNSS: gpsprot.GLO, PRN: gpsprot.GLOUnknown}, ""
+		return gpsprot.SVID{GNSS: gpsprot.GLO, Num: gpsprot.GLOUnknown}, ""
 	} else {
 		if svid <= 32 && gnss == 0 {
 			gnss = gpsprot.GPS
 		}
-		id = gpsprot.SVID{GNSS: gnss, PRN: int16(svid)}
 	}
-	if !id.IsValid() {
+	if !gnss.IsValidSVNum(svid) {
 		return gpsprot.SVID{}, ""
 	}
-	return id, sigIDName
+	return gpsprot.SVID{GNSS: gnss, Num: uint8(svid)}, sigIDName
 }
 
 func gnssConsistent(sen, found gpsprot.GNSS) bool {
