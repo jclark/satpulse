@@ -136,12 +136,12 @@
               "L1 C/A": false,
               "Time": true,
               "instance": true,
-              "satpulse_satellite_signal_level_dbhz": false
+              "satpulse_satellite_signal_level_dbhz": true
             },
             "includeByName": {},
             "indexByName": {},
             "renameByName": {
-              "satpulse_satellite_signal_level_dbhz": "Signal level",
+              "satpulse_satellite_signal_level_dbhz": "",
               "signal": ""
             }
           }
@@ -159,8 +159,8 @@
       {
         "allowCustomValue": false,
         "current": {
-          "text": "mascarpone.lan:2000",
-          "value": "mascarpone.lan:2000"
+          "text": "abondance.lan:2000",
+          "value": "abondance.lan:2000"
         },
         "definition": "label_values(satpulse_satellite_signal_level_dbhz,instance)",
         "label": "Instance",
@@ -179,12 +179,14 @@
         "allowCustomValue": false,
         "current": {
           "text": [
-            "BDS",
-            "GAL"
+            "GPS",
+            "GAL",
+            "BDS"
           ],
           "value": [
-            "BDS",
-            "GAL"
+            "GPS",
+            "GAL",
+            "BDS"
           ]
         },
         "definition": "label_values(satpulse_satellite_signal_level_dbhz,gnss)",
@@ -205,12 +207,12 @@
     ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-3h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "SatPulse satellites",
   "uid": "eb4ae041-39ed-4f21-b8df-722d0c25a6c3",
-  "version": 12
+  "version": 13
 }
