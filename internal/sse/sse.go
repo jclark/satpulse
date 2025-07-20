@@ -31,6 +31,10 @@ func (e Event) Format() string {
 	return data
 }
 
+func (e Event) IsZero() bool {
+	return e.event == "" && e.data == ""
+}
+
 func formatData(data string) string {
 	if !strings.ContainsAny(data, "\r\n") {
 		return "data: " + data + "\n"

@@ -16,6 +16,7 @@ import (
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/promobs"
 	"github.com/jclark/satpulse/internal/sse"
+	"github.com/jclark/satpulse/internal/sseobs"
 	"github.com/jclark/satpulse/web"
 )
 
@@ -52,7 +53,7 @@ func registerPprofHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 }
 
-func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], initEvent sse.Event, promObs *promobs.PrometheusObserver) error {
+func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], sseObs *sseobs.SSEObserver, promObs *promobs.PrometheusObserver) error {
 	if len(cfg) == 0 {
 		return nil
 	}
@@ -87,7 +88,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		// Only register GUI routes if enabled for this endpoint
 		if cfg[i].gui() {
 			mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
-				sseHandleRequest(ctx, lg, w, r, b, initEvent)
+				sseHandleRequest(ctx, lg, w, r, b, sseObs.InitEvent())
 			})
 			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 				fileServer.ServeHTTP(w, r)
@@ -133,10 +134,12 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWrite
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	flusher := w.(http.Flusher)
-	_, err := w.Write(([]byte)(initEvent.Format()))
-	if err != nil {
-		lg.Error("error writing HTTP response", "err", err)
-		return
+	if !initEvent.IsZero() {
+		_, err := w.Write(([]byte)(initEvent.Format()))
+		if err != nil {
+			lg.Error("error writing HTTP response", "err", err)
+			return
+		}
 	}
 	ch := b.Subscribe()
 	defer b.Unsubscribe(ch)

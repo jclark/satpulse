@@ -5,14 +5,21 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/geopos"
+	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/sse"
+	"github.com/jclark/satpulse/internal/ubx"
 )
 
-// SSE data structures - copied exactly from existing code
+// SSE data structures
+
+// InitSSE is the type of the SSE for the initialization event
+type InitSSE struct {
+	Version *ubx.Version `json:"version,omitempty"`
+}
 
 // TimeSSE is the type of the SSE for time events
 type TimeSSE struct {
@@ -39,8 +46,8 @@ type SatellitesSSE struct {
 	SVs []gpsprot.SVInfo `json:"svs"`
 }
 
-// SampleEvent is the type of the SSE for PHC sample events
-type SampleEvent struct {
+// SampleSSE is the type of the SSE for PHC sample events
+type SampleSSE struct {
 	Offset            float64 `json:"offset"` // in nanoseconds
 	Freq              float64 `json:"freq"`   // in parts per billion
 	StepCount         uint32  `json:"stepCount"`
@@ -52,23 +59,35 @@ type SampleEvent struct {
 // SSEObserver implements obs.Observer for Server-Sent Events
 type SSEObserver struct {
 	obs.DefaultObserver
-	sseCh    chan<- sse.Event
-	lg       *slog.Logger
-	lastTime ptime.Time
-	ls       ptime.LeapSecond
+	sseCh     chan<- sse.Event
+	lg        *slog.Logger
+	lastTime  ptime.Time
+	ls        ptime.LeapSecond
+	initEvent sse.Event
 }
 
 // New creates a new SSE observer with the provided channel and leap second.
 // The sseCh parameter must be non-nil.
-func New(sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger) *SSEObserver {
+func New(sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger, cfgResult *gpscfg.Result) *SSEObserver {
 	if sseCh == nil {
 		panic("sseCh must be non-nil")
 	}
-	return &SSEObserver{
-		sseCh: sseCh,
-		ls:    ls,
-		lg:    lg,
+	initEvent, err := sse.Make("init", InitSSE{
+		Version: cfgResult.Version,
+	})
+	if err != nil {
+		lg.Error("failed to create SSE event", "name", "init", "err", err)
 	}
+	return &SSEObserver{
+		sseCh:     sseCh,
+		ls:        ls,
+		lg:        lg,
+		initEvent: initEvent,
+	}
+}
+
+func (o *SSEObserver) InitEvent() sse.Event {
+	return o.initEvent
 }
 
 // SetLeapSecond updates the leap second used for time formatting
@@ -84,19 +103,15 @@ func (o *SSEObserver) Release() {
 // Sample implements mon.Sampler - generates PHC sample SSE events (copied exactly from monitor.go)
 func (o *SSEObserver) Sample(data mon.SampleData) {
 	stepCount, changing := data.Era.StepCount()
-	event, err := sse.Make("phc", &SampleEvent{
+	event := SampleSSE{
 		Offset:            float64(data.Offset),
 		StepCount:         uint32(stepCount),
 		StepCountChanging: changing,
 		Freq:              data.Freq,
 		Outlier:           data.Kind == mon.SampleOutlier,
 		SyncState:         data.SyncState.String(),
-	})
-	if err != nil {
-		o.lg.Error("error creating sample event", "err", err)
-		return
 	}
-	o.sseCh <- event
+	o.sendSSE("phc", event)
 }
 
 // Time implements gpsprot.MsgHandler - generates time SSE events (copied exactly from dispatcher.go)
@@ -125,7 +140,7 @@ func (o *SSEObserver) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	for i := range ecef {
 		ecef[i] = m.Position[i].Meters()
 	}
-	sse := SurveySSE{
+	event := SurveySSE{
 		X:          ecef[0],
 		Y:          ecef[1],
 		Z:          ecef[2],
@@ -138,19 +153,19 @@ func (o *SSEObserver) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	llh, err := geopos.WGS84.ECEFtoLLH(ecef)
 	if err == nil {
 		latLon := [2]float64{llh.Lat, llh.Lon}
-		sse.LatLon = &latLon
+		event.LatLon = &latLon
 		h := llh.Height
-		sse.Alt = &h
+		event.Alt = &h
 	}
-	o.sendSSE("survey", sse)
+	o.sendSSE("survey", event)
 }
 
-// Satellites implements gpsprot.MsgHandler - generates satellites SSE events (copied exactly from dispatcher.go)
+// Satellites implements gpsprot.MsgHandler - generates satellites SSE events
 func (o *SSEObserver) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 	o.sendSSE("satellites", SatellitesSSE{SVs: msg.SVs})
 }
 
-// sendSSE is a helper method to send SSE events (copied exactly from dispatcher.go)
+// sendSSE is a helper method to send SSE events
 func (o *SSEObserver) sendSSE(name string, data any) {
 	event, err := sse.Make(name, data)
 	if err != nil {

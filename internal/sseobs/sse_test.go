@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/sse"
+	"github.com/jclark/satpulse/internal/ubx"
 )
 
 const oneYearSecs = 365 * 24 * 3600
@@ -24,6 +26,15 @@ func TestSSEObserver_Events(t *testing.T) {
 		eventType    string
 		expectedJSON string
 	}{
+		{
+			name: "init",
+			action: func(obs *SSEObserver) {
+				event := obs.InitEvent()
+				obs.sseCh <- event
+			},
+			eventType:    "init",
+			expectedJSON: `{"version":{"hw":"00080000","sw":"EXT CORE 1.00 (61b2dd)","mod":"ZED-F9P","runsFromFlash":true,"prot":{"major":27,"minor":31},"fw":{"productCategory":"HPG","major":1,"minor":32}}}`,
+		},
 		{
 			name: "sample_ok",
 			action: func(obs *SSEObserver) {
@@ -101,7 +112,17 @@ func TestSSEObserver_Events(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ch := make(chan sse.Event, 1)
-			obs := New(ch, ptime.LeapSecond{}, slog.Default())
+			cfgResult := &gpscfg.Result{
+				Version: &ubx.Version{
+					HW:            "00080000",
+					SW:            "EXT CORE 1.00 (61b2dd)",
+					Mod:           "ZED-F9P",
+					RunsFromFlash: true,
+					Prot:          &ubx.ProtVer{Major: 27, Minor: 31},
+					FW:            &ubx.FWVer{ProductCategory: "HPG", Major: 1, Minor: 32},
+				},
+			}
+			obs := New(ch, ptime.LeapSecond{}, slog.Default(), cfgResult)
 
 			tt.action(obs)
 

@@ -20,13 +20,11 @@ import (
 	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/promobs"
 	"github.com/jclark/satpulse/internal/proxy"
-	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/servo"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/sseobs"
 	"github.com/jclark/satpulse/internal/ts"
-	"github.com/jclark/satpulse/internal/ubx"
 )
 
 func Cmd(progName string, args []string) {
@@ -217,12 +215,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 
 	promObs := newPrometheusObserver(cfg)
+	sseObs := newSSEObserver(cfg, sseCh, lg, gcfg)
 	if eb != nil {
-		initEvent, err := sse.Make("init", newInitData(gcfg))
-		if err != nil {
-			return err
-		}
-		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, initEvent, promObs)
+		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, sseObs, promObs)
 		if err != nil {
 			return err
 		}
@@ -259,7 +254,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		pulseWidth = pw
 	}
 
-	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, sseCh, promObs, tStart)
+	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, combineObservers(promObs, sseObs), tStart)
 	if err != nil {
 		return err
 	}
@@ -286,12 +281,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, sseCh chan<- sse.Event, promObs *promobs.PrometheusObserver, tStart time.Time) (*gpsevent.Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, obs obs.Observer, tStart time.Time) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
-	
-	sseObs := newSSEObserver(cfg, sseCh, ls, lg)
-	obs := combineObservers(promObs, sseObs)
-
 	var m *mon.Monitor
 	var driverFlags phc.DriverFlags
 	if clk != nil {
@@ -318,10 +309,10 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
-func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger) obs.Observer {
+func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, lg *slog.Logger, gcfg *gpscfg.Result) *sseobs.SSEObserver {
 	for _, hc := range cfg.HTTP {
 		if hc.gui() {
-			return sseobs.New(sseCh, ls, lg)
+			return sseobs.New(sseCh, cfg.LeapSecond.leapSecond(), lg, gcfg)
 		}
 	}
 	return nil
@@ -348,14 +339,6 @@ func combineObservers(promObs *promobs.PrometheusObserver, sseObs obs.Observer) 
 	} else {
 		return &obs.DefaultObserver{}
 	}
-}
-
-type InitData struct {
-	Version *ubx.Version `json:"version,omitempty"`
-}
-
-func newInitData(r *gpscfg.Result) *InitData {
-	return &InitData{Version: r.Version}
 }
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {
