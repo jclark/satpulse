@@ -125,7 +125,7 @@
         },
         "onclick": "// Event handling\n/*\n// 'data', 'variables', 'options', 'utils', and 'event' are passed as arguments\n\ntry {\n  const { type: eventType, data: eventData } = event;\n  const { timeZone, dayjs, locationService, getTemplateSrv } = utils;\n\n  switch (eventType) {\n    case 'click':\n      console.log('Click event:', eventData.points);\n      break;\n    case 'select':\n      console.log('Selection event:', eventData.range);\n      break;\n    case 'zoom':\n      console.log('Zoom event:', eventData);\n      break;\n    default:\n      console.log('Unhandled event type:', eventType, eventData);\n  }\n\n  console.log('Current time zone:', timeZone);\n  console.log('From time:', dayjs(variables.__from).format());\n  console.log('To time:', dayjs(variables.__to).format());\n\n  // Example of using locationService\n  // locationService.partial({ 'var-example': 'test' }, true);\n\n} catch (error) {\n  console.error('Error in onclick handler:', error);\n}\n*/\n  ",
         "resScale": 2,
-        "script": "// Step 1: Reshape Grafana fields into a plain object\nfunction extractFields(series) {\n  return Object.fromEntries(series.fields.map(f => [f.name, Array.from(f.values)]));\n}\n\n// Step 2: Replace GNSS values with RINEX prefixes (in-place)\nfunction mapGnssPrefixes(fields) {\n  const prefixMap = {\n    GPS: 'G', GLO: 'R', GAL: 'E', BDS: 'C',\n    QZSS: 'J', NAVIC: 'I', SBAS: 'S'\n  };\n  fields.gnss = fields.gnss.map(g => prefixMap[g] ?? g);\n  return fields;\n}\n\n// Step 3: Group all rows by GNSS prefix\nfunction groupByGnss(fields) {\n  const groups = {};\n  for (let i = 0; i < fields.gnss.length; i++) {\n    const key = fields.gnss[i];\n    if (!groups[key]) {\n      groups[key] = Object.fromEntries(Object.keys(fields).map(f => [f, []]));\n    }\n    for (const [f, values] of Object.entries(fields)) {\n      groups[key][f].push(values[i]);\n    }\n  }\n  return groups;\n}\n\n// Step 4: Create one Plotly trace per GNSS group\nfunction makeTraces(groups) {\n  const colorMap = {\n    G: 'blue', R: 'cyan', E: 'green', C: 'red',\n    J: 'orange', I: 'purple', S: 'gray'\n  };\n\n  return Object.entries(groups).map(([gnss, group]) => ({\n    type: 'scatterpolar',\n    mode: 'markers+text',\n    name: gnss,\n    theta: group.azimuth,\n    r: group.elevation,\n    text: group.gnss.map((prefix, i) => prefix + group.sv[i]),\n    textposition: 'top center',\n    marker: {\n      size: 8,\n      color: colorMap[gnss] ?? 'black'\n    }\n  }));\n}\n\n// Main entry point\nif (!data.series.length) return { data: [] };\n\nreturn {\n  data: makeTraces(\n    groupByGnss(\n      mapGnssPrefixes(\n        extractFields(data.series[0])\n      )\n    )\n  )\n};\n",
+        "script": "// Step 1: Reshape Grafana fields into a plain object\nfunction extractFields(series) {\n  return Object.fromEntries(series.fields.map(f => [f.name, Array.from(f.values)]));\n}\n\n// Step 2: Replace GNSS values with RINEX prefixes (in-place)\nfunction mapGnssPrefixes(fields) {\n  const prefixMap = {\n    GPS: 'G', GLO: 'R', GAL: 'E', BDS: 'C',\n    QZSS: 'J', NAVIC: 'I', SBAS: 'S'\n  };\n  fields.gnss = fields.gnss.map(g => prefixMap[g] ?? g);\n  return fields;\n}\n\n// Step 3: Group all rows by GNSS prefix\nfunction groupByGnss(fields) {\n  const groups = {};\n  for (let i = 0; i < fields.gnss.length; i++) {\n    const key = fields.gnss[i];\n    if (!groups[key]) {\n      groups[key] = Object.fromEntries(Object.keys(fields).map(f => [f, []]));\n    }\n    for (const [f, values] of Object.entries(fields)) {\n      groups[key][f].push(values[i]);\n    }\n  }\n  return groups;\n}\n\n// Step 4: Create one Plotly trace per GNSS group\nfunction makeTraces(groups) {\n  const colorMap = {\n    G: 'blue', R: 'magenta', E: 'green', C: 'red',\n    J: 'orange', I: 'yellow', S: 'blue'\n  };\n\n  return Object.entries(groups).map(([gnss, group]) => ({\n    type: 'scatterpolar',\n    mode: 'markers+text',\n    name: gnss,\n    theta: group.azimuth,\n    r: group.elevation,\n    text: group.gnss.map((prefix, i) => prefix + group.sv[i]),\n    textposition: 'top center',\n    marker: {\n      size: 8,\n      color: colorMap[gnss] ?? 'black'\n    }\n  }));\n}\n\n// Main entry point\nif (!data.series.length) return { data: [] };\n\nreturn {\n  data: makeTraces(\n    groupByGnss(\n      mapGnssPrefixes(\n        extractFields(data.series[0])\n      )\n    )\n  )\n};\n",
         "syncTimeRange": false,
         "timeCol": ""
       },
@@ -183,6 +183,7 @@
       "type": "nline-plotlyjs-panel"
     }
   ],
+  "refresh": "30s",
   "schemaVersion": 41,
   "tags": [],
   "templating": {
@@ -211,6 +212,6 @@
   "timezone": "browser",
   "title": "SatPulse sky view",
   "uid": "27bb5861-3dc6-4fbe-9a5a-42e7052ea48d",
-  "version": 14,
+  "version": 20,
   "weekStart": ""
 }
