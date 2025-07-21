@@ -135,7 +135,7 @@ type NMEAPacketProcessor interface {
 type NMEASVNumberingRange struct {
 	MinID    uint16
 	MaxID    uint16
-	MinPRN   uint8
+	MinNum   uint8
 	GNSS     GNSS
 	SignalID SignalID
 }

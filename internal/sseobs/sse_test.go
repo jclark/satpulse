@@ -95,7 +95,7 @@ func TestSSEObserver_Events(t *testing.T) {
 				obs.Satellites(&gpsprot.SatellitesMsg{
 					SVs: []gpsprot.SVInfo{
 						{
-							ID:        gpsprot.SVID{GNSS: gpsprot.GPS, PRN: 1},
+							ID:        gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
 							Azimuth:   45,
 							Elevation: 30,
 							Signals:   []gpsprot.SignalInfo{{ID: "L1"}},
@@ -162,6 +162,6 @@ func jsonEqual(a, b string) bool {
 	if err := json.Unmarshal([]byte(b), &objB); err != nil {
 		return false
 	}
-	
+
 	return reflect.DeepEqual(objA, objB)
 }

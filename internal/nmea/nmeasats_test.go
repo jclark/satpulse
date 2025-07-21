@@ -47,11 +47,11 @@ func TestGSAParse(t *testing.T) {
 		{
 			sen: "$GNGSA,A,3,10,12,23,25,32,,,,,,,,2.38,1.26,2.01,1*0B",
 			svids: []gpsprot.SVID{
-				{GNSS: gpsprot.GPS, PRN: 10},
-				{GNSS: gpsprot.GPS, PRN: 12},
-				{GNSS: gpsprot.GPS, PRN: 23},
-				{GNSS: gpsprot.GPS, PRN: 25},
-				{GNSS: gpsprot.GPS, PRN: 32},
+				{GNSS: gpsprot.GPS, Num: 10},
+				{GNSS: gpsprot.GPS, Num: 12},
+				{GNSS: gpsprot.GPS, Num: 23},
+				{GNSS: gpsprot.GPS, Num: 25},
+				{GNSS: gpsprot.GPS, Num: 32},
 			},
 		},
 	}
@@ -489,7 +489,7 @@ func TestSVID(t *testing.T) {
 	}{
 		{gnss: gpsprot.GPS, svid: 15, sigid: 0, svname: "G15", signame: "", numbering: dflt},
 		{gnss: gpsprot.GPS, svid: 1, sigid: 1, svname: "G01", signame: "L1 C/A", numbering: dflt},
-		{gnss: gpsprot.GPS, svid: 35, sigid: 0, svname: "S122", signame: "", numbering: dflt},
+		{gnss: gpsprot.GPS, svid: 35, sigid: 0, svname: "S22", signame: "", numbering: dflt},
 		{gnss: gpsprot.BDS, svid: 861, sigid: 0, svname: "C11", signame: "B2a", numbering: allystar},
 		{gnss: gpsprot.GPS, svid: 861, sigid: 0, numbering: allystar}, // fail because inconsistent GNSS
 		{gnss: gpsprot.GLO, svid: 0, sigid: 0, svname: "R?", signame: "", numbering: dflt},

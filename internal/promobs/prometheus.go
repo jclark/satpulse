@@ -203,7 +203,7 @@ func (p *PrometheusObserver) Sample(data mon.SampleData) {
 
 func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
 	for _, sv := range msg.SVs {
-		labels := []string{sv.ID.GNSS.String(), fmt.Sprintf("%02d", sv.ID.PRN)}
+		labels := []string{sv.ID.GNSS.String(), fmt.Sprintf("%02d", sv.ID.Num)}
 		p.azimuthGauge.WithLabelValues(labels...).Set(float64(sv.Azimuth))
 		p.elevationGauge.WithLabelValues(labels...).Set(float64(sv.Elevation))
 		if msg.UsedValid {
