@@ -1,4 +1,35 @@
 {
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "barchart",
+      "name": "Bar chart",
+      "version": ""
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "12.0.2"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    }
+  ],
   "annotations": {
     "list": [
       {
@@ -18,13 +49,13 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 4,
+  "id": null,
   "links": [],
   "panels": [
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "aert3k8krs7i8d"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -109,7 +140,11 @@
           "instant": true,
           "legendFormat": "__auto",
           "range": false,
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "title": "$gnss signal levels",
@@ -150,18 +185,13 @@
       "type": "barchart"
     }
   ],
-  "preload": false,
-  "refresh": "5s",
   "schemaVersion": 41,
   "tags": [],
   "templating": {
     "list": [
       {
         "allowCustomValue": false,
-        "current": {
-          "text": "abondance.lan:2000",
-          "value": "abondance.lan:2000"
-        },
+        "current": {},
         "definition": "label_values(satpulse_satellite_signal_level_dbhz,instance)",
         "label": "Instance",
         "name": "instance",
@@ -177,18 +207,7 @@
       },
       {
         "allowCustomValue": false,
-        "current": {
-          "text": [
-            "GPS",
-            "GAL",
-            "BDS"
-          ],
-          "value": [
-            "GPS",
-            "GAL",
-            "BDS"
-          ]
-        },
+        "current": {},
         "definition": "label_values(satpulse_satellite_signal_level_dbhz,gnss)",
         "includeAll": true,
         "label": "GNSS",
@@ -207,12 +226,13 @@
     ]
   },
   "time": {
-    "from": "now-3h",
+    "from": "now-6h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "SatPulse satellites",
+  "title": "SatPulse signals",
   "uid": "eb4ae041-39ed-4f21-b8df-722d0c25a6c3",
-  "version": 13
+  "version": 14,
+  "weekStart": ""
 }
