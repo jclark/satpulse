@@ -47,6 +47,8 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		Name: "satpulse_phc_sync_status",
 		Help: "PHC synchronization status (0 = out of sync, 1 = in sync)",
 	})
+	// It takes a while for samples to start coming through: during this period we should be observed as out of sync.
+	inSyncGauge.Set(0)
 
 	// Clock offset histogram
 	offsetHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
