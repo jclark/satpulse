@@ -19,8 +19,9 @@ import (
 type PrometheusObserver struct {
 	obs.DefaultObserver
 
-	reg        *prometheus.Registry
-	everInSync bool
+	reg              *prometheus.Registry
+	everInSync       bool
+	activeSatellites map[gpsprot.SVID]map[gpsprot.SignalID]struct{}
 
 	// PHC
 	inSyncGauge         prometheus.Gauge
@@ -122,6 +123,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		lookAngleGauge:      lookAngleGauge,
 		satelliteUsedGauge:  satelliteUsedGauge,
 		signalLevelGauge:    signalLevelGauge,
+		activeSatellites:    make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
 	}
 }
 
@@ -194,6 +196,16 @@ func (p *PrometheusObserver) Sample(data mon.SampleData) {
 }
 
 func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
+	// This is more complicated that one might expect.
+	// Prometheus gauges retain their last Set() value until explicitly deleted or updated.
+	// Since we only call Set() for currently active satellites/signals, we must actively
+	// delete metrics for satellites or signals that are no longer present.
+	// Otherwise, stale metrics would continue to be exported on each scrape indefinitely;
+	// this would lead to Grafana showing the higher water mark of satellites/signals.
+
+	prevSats := p.activeSatellites
+	curSats := make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{})
+
 	for _, s := range msg.SVs {
 		if s.ID.Num == gpsprot.GLOUnknown && s.ID.GNSS == gpsprot.GLO {
 			// Skip GLONASS satellites where orbital slot is not yet known
@@ -202,21 +214,50 @@ func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time)
 		gnss := s.ID.GNSS.String()
 		sv := fmt.Sprintf("%02d", s.ID.Num)
 
-		goodSignal := false
+		curSigs := make(map[gpsprot.SignalID]struct{})
 		for _, sig := range s.Signals {
 			if sig.CN0 == 0 {
 				continue
 			}
-			goodSignal = true
+			curSigs[sig.ID] = struct{}{}
 			p.signalLevelGauge.WithLabelValues(gnss, sv, string(sig.ID)).Set(float64(sig.CN0))
 		}
-		if !goodSignal {
+
+		if len(curSigs) == 0 {
 			continue
 		}
+
+		// Clean up stale signals for this satellite
+		if prevSigs, exists := prevSats[s.ID]; exists {
+			for sigID := range prevSigs {
+				if _, stillExists := curSigs[sigID]; !stillExists {
+					p.signalLevelGauge.DeleteLabelValues(gnss, sv, string(sigID))
+				}
+			}
+		}
+
+		curSats[s.ID] = curSigs
 		p.lookAngleGauge.WithLabelValues(gnss, sv, "azimuth").Set(float64(s.Azimuth))
 		p.lookAngleGauge.WithLabelValues(gnss, sv, "elevation").Set(float64(s.Elevation))
+
+		// Always set used state (0 or 1)
+		usedValue := float64(0)
 		if msg.UsedValid && s.Used {
-			p.satelliteUsedGauge.WithLabelValues(gnss, sv).Set(1)
+			usedValue = 1
+		}
+		p.satelliteUsedGauge.WithLabelValues(gnss, sv).Set(usedValue)
+	}
+
+	// Clean up satellites that are no longer present
+	for svid := range prevSats {
+		if _, exists := curSats[svid]; !exists {
+			gnss := svid.GNSS.String()
+			sv := fmt.Sprintf("%02d", svid.Num)
+			p.signalLevelGauge.DeletePartialMatch(prometheus.Labels{"gnss": gnss, "sv": sv})
+			p.lookAngleGauge.DeletePartialMatch(prometheus.Labels{"gnss": gnss, "sv": sv})
+			p.satelliteUsedGauge.DeleteLabelValues(gnss, sv)
 		}
 	}
+
+	p.activeSatellites = curSats
 }
