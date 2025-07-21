@@ -31,3 +31,4 @@
         - { section: "gps", option: "config", value: "{{ config }}" }
         - { section: "log", option: "clock", value: "true" }
         - { section: "ntp", option: "sock.path", value: '"/var/run/chrony.satpulse.sock"'}
+        - { section: "[http]", option: "listen", value: '":2000"' }
