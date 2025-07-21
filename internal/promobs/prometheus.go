@@ -32,8 +32,7 @@ type PrometheusObserver struct {
 	samplesCounter      *prometheus.CounterVec
 
 	// Satellites
-	azimuthGauge       *prometheus.GaugeVec
-	elevationGauge     *prometheus.GaugeVec
+	lookAngleGauge     *prometheus.GaugeVec
 	satelliteUsedGauge *prometheus.GaugeVec
 	signalLevelGauge   *prometheus.GaugeVec
 }
@@ -84,15 +83,10 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		Help: "Total number of PHC samples by status",
 	}, []string{"status"})
 
-	azimuthGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "satpulse_satellite_azimuth_degrees",
-		Help: "Azimuth of satellite in degrees",
-	}, []string{"gnss", "sv"})
-
-	elevationGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "satpulse_satellite_elevation_degrees",
-		Help: "Elevation of satellite in degrees",
-	}, []string{"gnss", "sv"})
+	lookAngleGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "satpulse_satellite_look_angle_degrees",
+		Help: "Look angle (direction) of satellite in degrees",
+	}, []string{"gnss", "sv", "angle"})
 
 	satelliteUsedGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "satpulse_satellite_used",
@@ -112,8 +106,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 	reg.MustRegister(offsetAbsSumCounter)
 	reg.MustRegister(offsetSumSqCounter)
 	reg.MustRegister(samplesCounter)
-	reg.MustRegister(azimuthGauge)
-	reg.MustRegister(elevationGauge)
+	reg.MustRegister(lookAngleGauge)
 	reg.MustRegister(satelliteUsedGauge)
 	reg.MustRegister(signalLevelGauge)
 
@@ -126,8 +119,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		offsetAbsSumCounter: offsetAbsSumCounter,
 		offsetSumSqCounter:  offsetSumSqCounter,
 		samplesCounter:      samplesCounter,
-		azimuthGauge:        azimuthGauge,
-		elevationGauge:      elevationGauge,
+		lookAngleGauge:      lookAngleGauge,
 		satelliteUsedGauge:  satelliteUsedGauge,
 		signalLevelGauge:    signalLevelGauge,
 	}
@@ -202,19 +194,29 @@ func (p *PrometheusObserver) Sample(data mon.SampleData) {
 }
 
 func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
-	for _, sv := range msg.SVs {
-		labels := []string{sv.ID.GNSS.String(), fmt.Sprintf("%02d", sv.ID.Num)}
-		p.azimuthGauge.WithLabelValues(labels...).Set(float64(sv.Azimuth))
-		p.elevationGauge.WithLabelValues(labels...).Set(float64(sv.Elevation))
-		if msg.UsedValid {
-			p.satelliteUsedGauge.WithLabelValues(labels...).Set(1)
+	for _, s := range msg.SVs {
+		if s.ID.Num == gpsprot.GLOUnknown && s.ID.GNSS == gpsprot.GLO {
+			// Skip GLONASS satellites where orbital slot is not yet known
+			continue
 		}
-		for _, sig := range sv.Signals {
+		gnss := s.ID.GNSS.String()
+		sv := fmt.Sprintf("%02d", s.ID.Num)
+
+		goodSignal := false
+		for _, sig := range s.Signals {
 			if sig.CN0 == 0 {
 				continue
 			}
-			sigLabels := append(labels, string(sig.ID))
-			p.signalLevelGauge.WithLabelValues(sigLabels...).Set(float64(sig.CN0))
+			goodSignal = true
+			p.signalLevelGauge.WithLabelValues(gnss, sv, string(sig.ID)).Set(float64(sig.CN0))
+		}
+		if !goodSignal {
+			continue
+		}
+		p.lookAngleGauge.WithLabelValues(gnss, sv, "azimuth").Set(float64(s.Azimuth))
+		p.lookAngleGauge.WithLabelValues(gnss, sv, "elevation").Set(float64(s.Elevation))
+		if msg.UsedValid && s.Used {
+			p.satelliteUsedGauge.WithLabelValues(gnss, sv).Set(1)
 		}
 	}
 }
