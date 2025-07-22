@@ -209,7 +209,7 @@ You could then use this ECEF position as the fixed position for time mode.
 In the above example, we have used a direct, unsecured TCP connection between the base and rover.
 
 In production, it is more common to use NTRIP. With NTRIP, there are three roles
-- an server, which is connected to the receiver on the base
+- a server, which is connected to the receiver on the base
 - a client, which is connected to the receiver on the rover
 - a caster, which can relay data between multiple servers and clients
 
