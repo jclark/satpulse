@@ -11,7 +11,7 @@ type JSONObject = { [key: string]: JSONValue };
 type JSONArray = JSONValue[];
 
 // Use a more specific type for our parsed event data
-const EVENT_TYPES = ["satellites", "time", "phc", "survey", "version", "init"] as const;
+const EVENT_TYPES = ["satellites", "time", "phc", "survey", "receiver", "init"] as const;
 type EventType = typeof EVENT_TYPES[number];
 
 type Map = {[key: string]: any};
@@ -48,7 +48,7 @@ export const Dashboard: FunctionComponent = () => {
         {events.satellites && <SignalGraphCard svs={svs} />}
         {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
         {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}    
-        {events.version && <PropertyCard title="GPS Receiver Version" data={events.version} format={versionFormat} />}
+        {events.receiver && <PropertyCard title="Receiver" data={events.receiver} format={receiverFormat} />}
         {events.survey && <PropertyCard title="Survey-in Status" data={events.survey} format={surveyFormat} />}
         </CardsElement>
     );
@@ -163,28 +163,6 @@ const FieldElement: FunctionComponent<FieldElementProps> = ({ children, desc }) 
     );
 };
 
-/*
-interface InitVersion {
-hw?: string;
-sw?: string;
-extensions?: string[];
-fw?: FWVer 
-prot?: ProtVer 
-mod?: string            
-flash?: boolean              
-gnss?: string[] 
-}*/
-
-interface ProtVer {
-    major: number;
-    minor: number;
-}
-
-interface FWVer {
-    productCategory: string;
-    major: number;
-    minor: number;
-}
 
 type PropertyCardProps = {
     title: string;
@@ -232,11 +210,18 @@ type EventFormat = {
     [key: string]: [string, SimpleFormatter?]|ComplexFormatter;
 };
 
-const versionFormat: EventFormat = {
-    hw: ["Hardware"],
-    mod: ["Module"],
-    prot: ["UBX Protocol", (arg: ProtVer) => `${arg.major}.${arg.minor}`],
-    fw: ["Firmware", (arg: FWVer) => `${arg.productCategory} ${arg.major}.${arg.minor}`],
+const receiverFormat: EventFormat = {
+    vendor: ["Vendor"],
+    hardware: ["Hardware"],
+    firmware: ["Firmware"],
+    supportedGNSS: ["Supported GNSS", formatGNSS],
+}
+
+function formatGNSS(gnssArray: string[]): string {
+    if (!gnssArray || !Array.isArray(gnssArray)) {
+        return "";
+    }
+    return gnssArray.join(", ");
 }
 
 const timeFormat: EventFormat = {

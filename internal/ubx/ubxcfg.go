@@ -3,6 +3,7 @@ package ubx
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -105,6 +106,34 @@ func newConfigurator(target *gpsprot.ConfigTarget, ver *Version) *Configurator {
 
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	return c.raw.Config(c.ver)
+}
+
+// ReceiverInfo returns static information about the GPS receiver.
+func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
+	ver := c.ver	
+	var fwParts []string
+	if ver.FW != nil {
+		fwParts = append(fwParts, ver.FW.String())
+	}
+	if ver.Prot != nil {
+		fwParts = append(fwParts, "PROTVER", ver.Prot.String())
+	}
+
+	rcvrInfo := gpsprot.ReceiverInfo{
+		Vendor:         "u-blox",
+		Hardware:       ver.Mod,
+		Firmware:       strings.Join(fwParts, " "),
+		SupportedGNSS:  ver.GNSS,
+		VendorSpecific: ver,
+	}
+
+	// MON-GNSS provides supported GNSS directly rather than requiring us to parse them out,
+	// so I think more reliable if we have it.
+	if c.monGNSS != nil {
+		rcvrInfo.SupportedGNSS = c.monGNSS.supportedGNSS
+	}
+
+	return &rcvrInfo
 }
 
 func (c *Configurator) NextRequest() (gpsprot.ConfigRequest, error) {

@@ -11,14 +11,13 @@ import (
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/sse"
-	"github.com/jclark/satpulse/internal/ubx"
 )
 
 // SSE data structures
 
 // InitSSE is the type of the SSE for the initialization event
 type InitSSE struct {
-	Version *ubx.Version `json:"version,omitempty"`
+	Receiver *gpsprot.ReceiverInfo `json:"receiver,omitempty"`
 }
 
 // TimeSSE is the type of the SSE for time events
@@ -73,7 +72,7 @@ func New(sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger, cfgResult
 		panic("sseCh must be non-nil")
 	}
 	initEvent, err := sse.Make("init", InitSSE{
-		Version: cfgResult.Version,
+		Receiver: cfgResult.ReceiverInfo,
 	})
 	if err != nil {
 		lg.Error("failed to create SSE event", "name", "init", "err", err)

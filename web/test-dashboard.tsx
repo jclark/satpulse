@@ -9,26 +9,11 @@ interface MinimalEventSource {
   close(): void;
 }
 
-interface ProtVer {
-  major: number;
-  minor: number;
-}
-
-interface FWVer {
-  productCategory: string;
-  major: number;
-  minor: number;
-}
-
-interface Version {
-  hw: string;
-  sw: string;
-  extensions?: string[];
-  fw?: FWVer;
-  prot?: ProtVer;
-  mod: string;
-  flash: boolean;
-  gnss: string;
+interface ReceiverInfo {
+  vendor: string;
+  firmware: string;
+  hardware: string;
+  supportedGNSS: string[];
 }
 
 const surveyEvent = {
@@ -59,33 +44,13 @@ const phcEvent = {
   syncState: "in sync"
 };
 
-// Add initEvent with version data matching Version struct from ubxver.go
-const initEvent: { version: Version } = {
-  version: {
-    hw: "00190000",
-    sw: "EXT CORE 4.04 (7eb82)",
-    extensions: [
-      "FWVER=TIM 1.02",
-      "PROTVER=18.00",
-      "MOD=ZED-F9T",
-      "GPS;QZSS",
-      "GLO",
-      "GAL",
-      "BDS",
-      "FIS=0xEF4015 (100111)"
-    ],
-    fw: {
-      productCategory: "TIM",
-      major: 1,
-      minor: 2
-    },
-    prot: {
-      major: 18,
-      minor: 0
-    },
-    mod: "ZED-F9T",
-    flash: true,
-    gnss: "GPS,GAL,GLO,BDS"
+// Add initEvent with receiver data matching ReceiverInfo struct
+const initEvent: { receiver: ReceiverInfo } = {
+  receiver: {
+    vendor: "u-blox",
+    hardware: "ZED-F9T",
+    firmware: "TIM 1.02 PROTVER 18.00",
+    supportedGNSS: ["GPS", "GLO", "GAL", "BDS"]
   }
 };
 
@@ -156,9 +121,9 @@ class MockEventSource implements MinimalEventSource {
           : svs;
         listener(new MessageEvent('satellites', { data: JSON.stringify({ svs: filteredSvs }) }));
       }, 350);
-    } else if (type === 'version') {
+    } else if (type === 'receiver') {
       setTimeout(() => {
-        listener(new MessageEvent('version', { data: JSON.stringify(initEvent.version) }));
+        listener(new MessageEvent('receiver', { data: JSON.stringify(initEvent.receiver) }));
       }, 250);
     }
   }

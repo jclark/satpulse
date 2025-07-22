@@ -14,7 +14,6 @@ import (
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/sse"
-	"github.com/jclark/satpulse/internal/ubx"
 )
 
 const oneYearSecs = 365 * 24 * 3600
@@ -33,7 +32,7 @@ func TestSSEObserver_Events(t *testing.T) {
 				obs.sseCh <- event
 			},
 			eventType:    "init",
-			expectedJSON: `{"version":{"hw":"00080000","sw":"EXT CORE 1.00 (61b2dd)","mod":"ZED-F9P","runsFromFlash":true,"prot":{"major":27,"minor":31},"fw":{"productCategory":"HPG","major":1,"minor":32}}}`,
+			expectedJSON: `{"receiver":{"vendor":"u-blox","firmware":"HPG 1.32 PROTVER 27.31","hardware":"ZED-F9P","supportedGNSS":["GPS","GLO"]}}`,
 		},
 		{
 			name: "sample_ok",
@@ -113,13 +112,11 @@ func TestSSEObserver_Events(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ch := make(chan sse.Event, 1)
 			cfgResult := &gpscfg.Result{
-				Version: &ubx.Version{
-					HW:            "00080000",
-					SW:            "EXT CORE 1.00 (61b2dd)",
-					Mod:           "ZED-F9P",
-					RunsFromFlash: true,
-					Prot:          &ubx.ProtVer{Major: 27, Minor: 31},
-					FW:            &ubx.FWVer{ProductCategory: "HPG", Major: 1, Minor: 32},
+				ReceiverInfo: &gpsprot.ReceiverInfo{
+					Vendor:        "u-blox",
+					Hardware:      "ZED-F9P",
+					Firmware:      "HPG 1.32 PROTVER 27.31",
+					SupportedGNSS: gpsprot.GNSSSetOf(gpsprot.GPS) | gpsprot.GNSSSetOf(gpsprot.GLO),
 				},
 			}
 			obs := New(ch, ptime.LeapSecond{}, slog.Default(), cfgResult)

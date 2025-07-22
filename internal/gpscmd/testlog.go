@@ -9,7 +9,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/logfile"
-	"github.com/jclark/satpulse/internal/ubx"
 )
 
 type TestLogEnvEntry struct {
@@ -20,23 +19,24 @@ type TestLogEnvEntry struct {
 }
 
 type TestLogReceiverEntry struct {
-	Type     string `json:"type"`
-	Model    string `json:"model,omitempty"`
-	Firmware string `json:"firmware,omitempty"`
-	Protocol string `json:"protocol,omitempty"`
+	Type     string         `json:"type"`
+	Vendor   string         `json:"vendor,omitempty"`
+	Hardware string         `json:"hardware,omitempty"`
+	Firmware string         `json:"firmware,omitempty"`
+	GNSS     []gpsprot.GNSS `json:"gnss,omitempty"` // GNSS systems supported by the receiver
 }
 
 type TestLogConfigEntry struct {
-	Type              string     `json:"type"`
-	Error             string     `json:"error,omitempty"`
-	SignalsEnabled    [][]string `json:"signalsEnabled,omitempty"`
-	TimeGNSS          string     `json:"timeGNSS,omitempty"`
-	AntennaCableDelay *int64     `json:"antennaCableDelay,omitempty"`
+	Type              string           `json:"type"`
+	Error             string           `json:"error,omitempty"`
+	SignalsEnabled    [][]string       `json:"signalsEnabled,omitempty"`
+	TimeGNSS          string           `json:"timeGNSS,omitempty"`
+	AntennaCableDelay *int64           `json:"antennaCableDelay,omitempty"`
 	TimePulse         *TimePulseConfig `json:"timePulse,omitempty"`
-	BaudRate          *uint32    `json:"baudRate,omitempty"`
-	Static            *bool      `json:"static,omitempty"`
-	FixedPosECEF      []float64  `json:"fixedPosECEF,omitempty"`
-	FixedPosAcc       *float64   `json:"fixedPosAcc,omitempty"`
+	BaudRate          *uint32          `json:"baudRate,omitempty"`
+	Static            *bool            `json:"static,omitempty"`
+	FixedPosECEF      []float64        `json:"fixedPosECEF,omitempty"`
+	FixedPosAcc       *float64         `json:"fixedPosAcc,omitempty"`
 }
 
 type TimePulseConfig struct {
@@ -64,25 +64,22 @@ func writeTestLogHead(lf *logfile.LogFile, lg *slog.Logger, args []string) {
 func writeTestLogTail(lf *logfile.LogFile, lg *slog.Logger, rslt *gpscfg.Result, err error) {
 	var props *gpsprot.ConfigProps
 	if rslt != nil {
-		writeTestLogReceiver(lf, lg, rslt.Version)
+		writeTestLogReceiver(lf, lg, rslt.ReceiverInfo)
 		props = rslt.ConfigProps
 	}
 	writeTestLogConfigProps(lf, lg, props, err)
 }
 
-func writeTestLogReceiver(lf *logfile.LogFile, lg *slog.Logger, version *ubx.Version) {
-	if version == nil {
+func writeTestLogReceiver(lf *logfile.LogFile, lg *slog.Logger, rcvrInfo *gpsprot.ReceiverInfo) {
+	if rcvrInfo == nil {
 		return
 	}
 	entry := TestLogReceiverEntry{
-		Type:  "receiver",
-		Model: version.Mod,
-	}
-	if version.FW != nil {
-		entry.Firmware = version.FW.String()
-	}
-	if version.Prot != nil {
-		entry.Protocol = version.Prot.String()
+		Type:     "receiver",
+		Hardware: rcvrInfo.Hardware,
+		Firmware: rcvrInfo.Firmware,
+		Vendor:   rcvrInfo.Vendor,
+		GNSS:     rcvrInfo.SupportedGNSS.Items(),
 	}
 	writeTestLogEntry(lf, lg, entry)
 }

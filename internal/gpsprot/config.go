@@ -53,6 +53,8 @@ type Configurator interface {
 	// ConfigProps returns the current configuration of the GPS receiver.
 	// It should be called after NextRequest returns nil.
 	ConfigProps() *ConfigProps
+	// ReceiverInfo returns static information about the GPS receiver.
+	ReceiverInfo() *ReceiverInfo
 	// NextRequest returns the next request that should be sent to the GPS receiver.
 	// If there are no more requests, it returns nil, nil.
 	// If the error is non-nil, then ConfigRequest will be nil;
@@ -70,6 +72,15 @@ type Configurator interface {
 	// This should be called if a request does not get a response or an ACK within a reasonable time.
 	// It doesn't need to be called if it got a NACK.
 	Abort()
+}
+
+// ReceiverInfo provides static information about the GPS receiver.
+type ReceiverInfo struct {
+	Vendor          string      `json:"vendor"`          // receiver vendor (e.g., "u-blox")
+	Firmware        string      `json:"firmware"`        // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
+	Hardware        string      `json:"hardware"`        // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
+	SupportedGNSS   GNSSSet     `json:"supportedGNSS"`   // supported GNSS constellations
+	VendorSpecific  interface{} `json:"-"`               // vendor-specific information, excluded from JSON
 }
 
 // ConfigRequest represents a request to be sent to the GPS receiver to configure it.

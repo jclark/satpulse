@@ -719,7 +719,7 @@
 
   // dashboard.tsx
   var EventSourceContext = K(null);
-  var EVENT_TYPES = ["satellites", "time", "phc", "survey", "version", "init"];
+  var EVENT_TYPES = ["satellites", "time", "phc", "survey", "receiver", "init"];
   var Dashboard = () => {
     const context = x2(EventSourceContext);
     const [events, setEvents] = d2({});
@@ -748,7 +748,7 @@
       events.satellites && /* @__PURE__ */ u3(SignalGraphCard, { svs }),
       events.time && /* @__PURE__ */ u3(PropertyCard, { title: "Current GPS Time", data: events.time, format: timeFormat }),
       events.phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: events.phc, format: phcFormat }),
-      events.version && /* @__PURE__ */ u3(PropertyCard, { title: "GPS Receiver Version", data: events.version, format: versionFormat }),
+      events.receiver && /* @__PURE__ */ u3(PropertyCard, { title: "Receiver", data: events.receiver, format: receiverFormat }),
       events.survey && /* @__PURE__ */ u3(PropertyCard, { title: "Survey-in Status", data: events.survey, format: surveyFormat })
     ] });
   };
@@ -835,12 +835,18 @@
       }
     }
   }
-  var versionFormat = {
-    hw: ["Hardware"],
-    mod: ["Module"],
-    prot: ["UBX Protocol", (arg) => `${arg.major}.${arg.minor}`],
-    fw: ["Firmware", (arg) => `${arg.productCategory} ${arg.major}.${arg.minor}`]
+  var receiverFormat = {
+    vendor: ["Vendor"],
+    hardware: ["Hardware"],
+    firmware: ["Firmware"],
+    supportedGNSS: ["Supported GNSS", formatGNSS]
   };
+  function formatGNSS(gnssArray) {
+    if (!gnssArray || !Array.isArray(gnssArray)) {
+      return "";
+    }
+    return gnssArray.join(", ");
+  }
   var timeFormat = {
     utc: formatUTC,
     tai: ["TAI", formatTAI]

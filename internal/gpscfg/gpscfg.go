@@ -19,7 +19,7 @@ import (
 )
 
 type Result struct {
-	Version               *ubx.Version
+	ReceiverInfo          *gpsprot.ReceiverInfo
 	ConfigProps           *gpsprot.ConfigProps
 	LeapSecond            *gpsprot.LeapSecondMsg
 	PacketFormatsDetected []gpsprot.Tag
@@ -85,12 +85,12 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 		// XXX if msgCount for UBX > 0, but probe failed, then probably we cannot send to the GPS
 		return mh.noProbeResult(), ErrNoProbeResponse
 	}
-	cm, err := mh.configure(ctx, mh.packetExch, target, port)
+	cfgProps, rcvrInfo, err := mh.configure(ctx, mh.packetExch, target, port)
 	if err != nil && !isKnownError(err) {
 		return nil, err
 	}
 	// If we got a known error, then still return the configuration properties.
-	return mh.finish(cm), err
+	return mh.finish(cfgProps, rcvrInfo), err
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, packetCh <-chan scan.Packet) {
@@ -110,20 +110,18 @@ func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.
 	}
 }
 
-func (mh *msgHandler) finish(cm *gpsprot.ConfigProps) *Result {
+func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.ReceiverInfo) *Result {
 	lg := mh.lg
-	if cm != nil {
-		lg.Info("GPS configuration", "cfg", cm)
+	if cfgProps != nil {
+		lg.Info("GPS configuration", "cfg", cfgProps)
 	}
 	if mh.leapSecond != nil {
 		lsdStr := mh.leapSecond.Date().Format("2006-01-02")
 		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", mh.leapSecond.UTCOffBefore, "utcOffAfter", mh.leapSecond.UTCOffAfter)
 	}
-	// XXX should find cleaner way to do this
-	ver := mh.packetExch.(*ubx.PacketExchanger).Version()
-	if ver != nil {
-		lg.Info("GPS version", "model", ver.Mod, "category", ver.ProductCategory(), "flash", ver.RunsFromFlash,
-			"sw", ver.SW, "hw", ver.HW, "prot", ver.Prot, "gnss", ver.GNSS, "ext", ver.Extensions)
+	if rcvrInfo != nil {
+		lg.Info("GPS receiver", "vendor", rcvrInfo.Vendor, "hardware", rcvrInfo.Hardware,
+			"firmware", rcvrInfo.Firmware, "gnss", rcvrInfo.SupportedGNSS)
 	}
 	for tag, msgIDs := range mh.msgIDs {
 		if len(msgIDs) > 0 {
@@ -131,8 +129,8 @@ func (mh *msgHandler) finish(cm *gpsprot.ConfigProps) *Result {
 		}
 	}
 	return &Result{
-		Version:               ver,
-		ConfigProps:           cm,
+		ReceiverInfo:          rcvrInfo,
+		ConfigProps:           cfgProps,
 		LeapSecond:            mh.leapSecond,
 		PacketFormatsDetected: mh.packetFormatsDetected(),
 	}
@@ -243,10 +241,10 @@ func (mh *msgHandler) probe(ctx context.Context, prot gpsprot.PacketExchanger, p
 	return false, nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchanger, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, error) {
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchanger, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, error) {
 	cfgtor, err := prot.Configure(target)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var knownErr error // error that we know how to handle
 	for {
@@ -264,7 +262,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchange
 		err = mh.doRequest(ctx, cfgtor, req, port)
 		if err != nil {
 			if !isKnownError(err) {
-				return nil, err
+				return nil, nil, err
 			}
 			if knownErr == nil {
 				// the configurator doesn't need to be told about NACK; it gives up itself
@@ -278,7 +276,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchange
 			continue
 		}
 	}
-	return cfgtor.ConfigProps(), knownErr
+	return cfgtor.ConfigProps(), cfgtor.ReceiverInfo(), knownErr
 }
 
 const maxTries = 3

@@ -16,7 +16,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/internal/ubx"
 )
 
 func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage string, err error) {
@@ -134,7 +133,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	if err == nil && rslt != nil {
 		if configTargetIsProbeOnly(target) {
 			// print out the version only if we did not specify anything else
-			printVersion(os.Stdout, rslt.Version)
+			printReceiverInfo(os.Stdout, rslt.ReceiverInfo)
 			printPacketFormats(os.Stdout, rslt.PacketFormatsDetected)
 		} else {
 			logFailedProps(lg, &target.Props, rslt.ConfigProps)
@@ -170,18 +169,21 @@ func logFailedProps(lg *slog.Logger, reqProps *gpsprot.ConfigProps, rsltProps *g
 	}
 }
 
-func printVersion(f *os.File, v *ubx.Version) {
-	if v == nil {
+func printReceiverInfo(f *os.File, info *gpsprot.ReceiverInfo) {
+	if info == nil {
 		return
 	}
-	if v.Mod != "" {
-		fmt.Fprintf(f, "Model: %s\n", v.Mod)
+	if info.Vendor != "" {
+		fmt.Fprintf(f, "Vendor: %s\n", info.Vendor)
 	}
-	if v.FW != nil {
-		fmt.Fprintf(f, "Firmware version: %s\n", v.FW.String())
+	if info.Hardware != "" {
+		fmt.Fprintf(f, "Hardware: %s\n", info.Hardware)
 	}
-	if v.Prot != nil {
-		fmt.Fprintf(f, "UBX protocol version: %s\n", v.Prot.String())
+	if info.Firmware != "" {
+		fmt.Fprintf(f, "Firmware: %s\n", info.Firmware)
+	}
+	if info.SupportedGNSS != 0 {
+		fmt.Fprintf(f, "Supported GNSS: %s\n", info.SupportedGNSS)
 	}
 }
 
