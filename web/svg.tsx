@@ -1,14 +1,19 @@
 export interface SVInfo {
-    azimuth: number;     // 0 to 360 degrees
-    elevation: number;   // -90 to 90 degrees (negative unusual)
     id: string;        // e.g., "G01"
+    lookAngles?: LookAngles;  // look angle of the satellite
     signals: SignalInfo[];  // Array of signal information
     used?: boolean;      // true if known to be used in navigation solution
+}
+
+export interface LookAngles {
+    azimuth: number;     // 0 to 360 degrees
+    elevation: number;   // -90 to 90 degrees (negative unusual)
 }
 
 export interface SignalInfo {
     cn0: number;         // Signal carrier-to-noise ratio
     id?: string;         // Optional signal identifier
+    used?: boolean;      // true if the signal is used in the navigation solution
 }
 
 // Generate the SVG element for the SkyView.
@@ -74,7 +79,8 @@ export function SkyView(satellites: SVInfo[]) {
             <text x={COMPASS_PADDING} y={RADIUS + CAP_X_HEIGHT_DIFF} text-anchor="start" dominant-baseline="middle" class="fill-gray-500 text-[6px]">W</text>
             
             {satellites.map((sv) => {
-                const [x, y] = toXY(sv.azimuth, sv.elevation);
+                if (!sv.lookAngles) return null;
+                const [x, y] = toXY(sv.lookAngles.azimuth, sv.lookAngles.elevation);
                 // A satellite is known to be unused if some satellite is marked as used and sv.used is not true.
                 // Mark unused satellites with "-" if known to be unused.
                 // Balance the trailing "-" with an invisible leading "-", so that the svid is centered.

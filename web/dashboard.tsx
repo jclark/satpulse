@@ -19,6 +19,7 @@ type Map = {[key: string]: any};
 export const Dashboard: FunctionComponent = () => {
     const context = useContext(EventSourceContext) as EventSource;
     const [events, setEvents] = useState<Map>({});
+    const [haveLookAngles, setHaveLookAngles] = useState(false);
     
     useEffect(() => {
         const handler = (type: string) => (e: MessageEvent<string>) => {
@@ -26,6 +27,9 @@ export const Dashboard: FunctionComponent = () => {
             for (const [eventType, eventData] of parsedEvents) {
                 const obj : Map|null = validateEvent(eventType, eventData);
                 if (obj !== null) {
+                    if (eventType === 'satellites' && obj.svs && obj.svs.length > 0) {
+                        setHaveLookAngles(obj.svs.some((sv: any) => sv.lookAngles));
+                    }
                     setEvents(prev => ({ ...prev, [eventType]: obj }));
                 }
             }
@@ -44,7 +48,7 @@ export const Dashboard: FunctionComponent = () => {
     
     return (
         <CardsElement>
-        {events.satellites && <SkyViewCard svs={svs} />}
+        {events.satellites && haveLookAngles && <SkyViewCard svs={svs} />}
         {events.satellites && <SignalGraphCard svs={svs} />}
         {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
         {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}    

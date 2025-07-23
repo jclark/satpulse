@@ -552,7 +552,8 @@
           /* @__PURE__ */ u3("text", { x: SIZE - COMPASS_PADDING, y: RADIUS + CAP_X_HEIGHT_DIFF, "text-anchor": "end", "dominant-baseline": "middle", class: "fill-gray-500 text-[6px]", children: "E" }),
           /* @__PURE__ */ u3("text", { x: COMPASS_PADDING, y: RADIUS + CAP_X_HEIGHT_DIFF, "text-anchor": "start", "dominant-baseline": "middle", class: "fill-gray-500 text-[6px]", children: "W" }),
           satellites.map((sv) => {
-            const [x3, y3] = toXY(sv.azimuth, sv.elevation);
+            if (!sv.lookAngles) return null;
+            const [x3, y3] = toXY(sv.lookAngles.azimuth, sv.lookAngles.elevation);
             const usedValid = satellites.some((s3) => s3.used === true);
             const unused = usedValid && !sv.used;
             return /* @__PURE__ */ u3(
@@ -723,12 +724,16 @@
   var Dashboard = () => {
     const context = x2(EventSourceContext);
     const [events, setEvents] = d2({});
+    const [haveLookAngles, setHaveLookAngles] = d2(false);
     y2(() => {
       const handler = (type) => (e3) => {
         const parsedEvents = parseSSEMessage(type, e3.data);
         for (const [eventType, eventData] of parsedEvents) {
           const obj = validateEvent(eventType, eventData);
           if (obj !== null) {
+            if (eventType === "satellites" && obj.svs && obj.svs.length > 0) {
+              setHaveLookAngles(obj.svs.some((sv) => sv.lookAngles));
+            }
             setEvents((prev) => ({ ...prev, [eventType]: obj }));
           }
         }
@@ -744,7 +749,7 @@
     }, []);
     const svs = events.satellites ? simplifySignals(events.satellites.svs) : [];
     return /* @__PURE__ */ u3(CardsElement, { children: [
-      events.satellites && /* @__PURE__ */ u3(SkyViewCard, { svs }),
+      events.satellites && haveLookAngles && /* @__PURE__ */ u3(SkyViewCard, { svs }),
       events.satellites && /* @__PURE__ */ u3(SignalGraphCard, { svs }),
       events.time && /* @__PURE__ */ u3(PropertyCard, { title: "Current GPS Time", data: events.time, format: timeFormat }),
       events.phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: events.phc, format: phcFormat }),

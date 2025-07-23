@@ -239,15 +239,18 @@ func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time)
 		}
 
 		curSats[s.ID] = curSigs
-		p.lookAngleGauge.WithLabelValues(gnss, sv, "azimuth").Set(float64(s.Azimuth))
-		p.lookAngleGauge.WithLabelValues(gnss, sv, "elevation").Set(float64(s.Elevation))
-
 		// Always set used state (0 or 1)
 		usedValue := float64(0)
-		if msg.UsedValid && s.Used {
+		if msg.UsedValidity >= gpsprot.SatelliteUsedSV && s.Used {
 			usedValue = 1
 		}
 		p.satelliteUsedGauge.WithLabelValues(gnss, sv).Set(usedValue)
+		if s.LookAngles == nil {
+			continue
+		}
+		lookAngles := s.LookAngles
+		p.lookAngleGauge.WithLabelValues(gnss, sv, "azimuth").Set(float64(lookAngles.Azimuth))
+		p.lookAngleGauge.WithLabelValues(gnss, sv, "elevation").Set(float64(lookAngles.Elevation))
 	}
 
 	// Clean up satellites that are no longer present

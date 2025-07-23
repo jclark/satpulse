@@ -99,17 +99,65 @@ func (h *testMsgHandler) Survey(msg *gpsprot.SurveyMsg, tRead time.Time) {
 func TestNavEpochHandling(t *testing.T) {
 	tests := []testNavEpochTestCase{
 		{
+			name: "complete_epoch_flushing",
+			steps: []testNavEpochStep{
+				// We can always flush when we have both NAV-SAT and NAV-SIG
+				{msgID: bin.NavSatID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: 0},
+				{msgID: bin.NavSigID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSatID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: 0},
+				{msgID: bin.NavSigID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSatID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: 0},
+				{msgID: bin.NavSigID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSatID, navEpoch: 400, tRead: time.Unix(7, 0), expectMsgs: 0},
+				{msgID: bin.NavSigID, navEpoch: 400, tRead: time.Unix(8, 0), expectMsgs: testExpectSatellites},
+			},
+		},
+		{
+			name: "nav_sat_only",
+			steps: []testNavEpochStep{
+				// Epoch 1
+				{msgID: bin.NavTimeGPSID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: testExpectTime},
+				{msgID: bin.NavSatID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: 0},
+				// Epoch 2
+				{msgID: bin.NavTimeGPSID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectTime| testExpectSatellites},
+				{msgID: bin.NavSatID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: 0},
+				// Epoch  3
+				{msgID: bin.NavTimeGPSID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectTime| testExpectSatellites},
+				// we have seen a complete epoch without NAV-SIG, so we can flush NAV-SAT without waiting for NAV-SIG
+				{msgID: bin.NavSatID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
+				// Epoch  4 - everything is flushed right away
+				{msgID: bin.NavTimeGPSID, navEpoch: 400, tRead: time.Unix(7, 0), expectMsgs: testExpectTime},
+				{msgID: bin.NavSatID, navEpoch: 400, tRead: time.Unix(8, 0), expectMsgs: testExpectSatellites},
+			},
+		},
+		{
+			name: "nav_sig_only",
+			steps: []testNavEpochStep{
+				// Epoch 1
+				{msgID: bin.NavTimeGPSID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: testExpectTime},
+				{msgID: bin.NavSigID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: 0},
+				// Epoch 2
+				{msgID: bin.NavTimeGPSID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectTime| testExpectSatellites},
+				{msgID: bin.NavSigID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: 0},
+				// Epoch  3
+				{msgID: bin.NavTimeGPSID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectTime| testExpectSatellites},
+				// we have seen a complete epoch without NAV-SIG, so we can flush NAV-SAT without waiting for NAV-SIG
+				{msgID: bin.NavSigID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
+				// Epoch  4 - everything is flushed right away
+				{msgID: bin.NavTimeGPSID, navEpoch: 400, tRead: time.Unix(7, 0), expectMsgs: testExpectTime},
+				{msgID: bin.NavSigID, navEpoch: 400, tRead: time.Unix(8, 0), expectMsgs: testExpectSatellites},
+			},
+		},
+		{
 			name: "basic_epoch_flushing",
 			steps: []testNavEpochStep{
 				// Epoch 1 (potentially incomplete)
 				{msgID: bin.NavSatID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: 0},
-				{msgID: bin.NavSigID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: 0},
 				// Epoch 2 (first complete) - epoch 1 gets flushed when epoch 2 starts
-				{msgID: bin.NavSatID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
-				{msgID: bin.NavSigID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: 0},
+				{msgID: bin.NavSigID, navEpoch: 200, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites},
 				// Epoch 3 - epoch 2 gets flushed when epoch 3 starts
-				{msgID: bin.NavSatID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectSatellites},
-				{msgID: bin.NavSigID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSatID, navEpoch: 300, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSigID, navEpoch: 300, tRead: time.Unix(4, 0), expectMsgs: testExpectSatellites},
 			},
 		},
 		{
@@ -117,13 +165,11 @@ func TestNavEpochHandling(t *testing.T) {
 			steps: []testNavEpochStep{
 				// Epoch 1 - NAV-SIG arrives before NAV-SAT
 				{msgID: bin.NavSigID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: 0},
-				{msgID: bin.NavSatID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: 0},
-				// Epoch 2 - same pattern, epoch 1 gets flushed when epoch 2 starts
-				{msgID: bin.NavSigID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
-				{msgID: bin.NavSatID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: 0},
+				// Epoch 2 - other way round
+				{msgID: bin.NavSatID, navEpoch: 200, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites},
 				// Epoch 3 - epoch 2 gets flushed when epoch 3 starts, then completed
-				{msgID: bin.NavSigID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectSatellites},
-				{msgID: bin.NavSatID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSigID, navEpoch: 300, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSatID, navEpoch: 300, tRead: time.Unix(4, 0), expectMsgs: testExpectSatellites},
 			},
 		},
 		{
@@ -132,44 +178,40 @@ func TestNavEpochHandling(t *testing.T) {
 				// Epoch 1 - mix of NAV messages
 				{msgID: bin.NavTimeGPSID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: testExpectTime},
 				{msgID: bin.NavSatID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: 0},
-				{msgID: bin.NavSigID, navEpoch: 100, tRead: time.Unix(3, 0), expectMsgs: 0},
 				// Epoch 2 - epoch 1 gets flushed, more mixed messages
-				{msgID: bin.NavSatID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: testExpectSatellites},
-				{msgID: bin.NavTimeGPSID, navEpoch: 200, tRead: time.Unix(5, 0), expectMsgs: testExpectTime},
-				{msgID: bin.NavSigID, navEpoch: 200, tRead: time.Unix(6, 0), expectMsgs: 0},
+				{msgID: bin.NavSigID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavTimeGPSID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: testExpectTime},
 				// Epoch 3 - epoch 2 gets flushed when epoch 3 starts
-				{msgID: bin.NavTimeGPSID, navEpoch: 300, tRead: time.Unix(7, 0), expectMsgs: testExpectTime | testExpectSatellites},
-				{msgID: bin.NavSatID, navEpoch: 300, tRead: time.Unix(8, 0), expectMsgs: 0},
-				{msgID: bin.NavSigID, navEpoch: 300, tRead: time.Unix(9, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavTimeGPSID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectTime | testExpectSatellites},
+				{msgID: bin.NavSatID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: 0},
+				{msgID: bin.NavSigID, navEpoch: 300, tRead: time.Unix(7, 0), expectMsgs: testExpectSatellites},
 			},
 		},
 		{
-			name: "advanced_epoch_logic_after_three_epochs",
+			name: "epoch_logic_after_three_epochs",
 			steps: []testNavEpochStep{
 				// Epoch 1 - complete epoch
 				{msgID: bin.NavSatID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: 0},
-				{msgID: bin.NavSigID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: 0},
 				// Epoch 2 - complete epoch, epoch 1 flushed
-				{msgID: bin.NavSatID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
-				{msgID: bin.NavSigID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: 0},
+				{msgID: bin.NavSigID, navEpoch: 200, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites},
 				// Epoch 3 - complete epoch, epoch 2 flushed
-				{msgID: bin.NavSatID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectSatellites},
-				{msgID: bin.NavSigID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSatID, navEpoch: 300, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSigID, navEpoch: 300, tRead: time.Unix(4, 0), expectMsgs: testExpectSatellites},
 				// Epoch 4 - complete with NAV-SIG, now prevNavMsgs logic applies
 				// Previous epoch (300) had NAV-SIG, so wait for NAV-SIG
-				{msgID: bin.NavSatID, navEpoch: 400, tRead: time.Unix(7, 0), expectMsgs: 0},
-				{msgID: bin.NavSigID, navEpoch: 400, tRead: time.Unix(8, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSatID, navEpoch: 400, tRead: time.Unix(5, 0), expectMsgs: 0},
+				{msgID: bin.NavSigID, navEpoch: 400, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
 				// Epoch 5 - previous epoch (400) had NAV-SIG, so wait for NAV-SIG
-				{msgID: bin.NavSatID, navEpoch: 500, tRead: time.Unix(9, 0), expectMsgs: 0},
-				{msgID: bin.NavSigID, navEpoch: 500, tRead: time.Unix(10, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSatID, navEpoch: 500, tRead: time.Unix(7, 0), expectMsgs: 0},
+				{msgID: bin.NavSigID, navEpoch: 500, tRead: time.Unix(8, 0), expectMsgs: testExpectSatellites},
 				// Epoch 6 - incomplete epoch (no NAV-SIG in previous epoch 500)
 				// Previous epoch had NAV-SIG, so still wait for NAV-SIG
-				{msgID: bin.NavSatID, navEpoch: 600, tRead: time.Unix(11, 0), expectMsgs: 0},
+				{msgID: bin.NavSatID, navEpoch: 600, tRead: time.Unix(9, 0), expectMsgs: 0},
 				// No NAV-SIG for epoch 600
 				// Epoch 7 - previous epoch (600) had NO NAV-SIG, so flush immediately with new epoch
-				{msgID: bin.NavTimeGPSID, navEpoch: 700, tRead: time.Unix(12, 0), expectMsgs: testExpectSatellites | testExpectTime},
-				{msgID: bin.NavSatID, navEpoch: 700, tRead: time.Unix(13, 0), expectMsgs: testExpectSatellites},
-				{msgID: bin.NavSigID, navEpoch: 700, tRead: time.Unix(14, 0), expectMsgs: 0},
+				{msgID: bin.NavTimeGPSID, navEpoch: 700, tRead: time.Unix(10, 0), expectMsgs: testExpectSatellites | testExpectTime},
+				{msgID: bin.NavSatID, navEpoch: 700, tRead: time.Unix(11, 0), expectMsgs: testExpectSatellites},
+				{msgID: bin.NavSigID, navEpoch: 700, tRead: time.Unix(12, 0), expectMsgs: 0},
 			},
 		},
 	}
@@ -223,20 +265,11 @@ func TestNavEpochHandling(t *testing.T) {
 			
 			// Build expected satellite message tReads
 			expectedSatTReads := []time.Time{}
-			for i, step := range tt.steps {
-				if step.msgID == bin.NavSatID {
-					// Check if there's a preceding NAV-SIG with the same epoch
-					var tRead time.Time = step.tRead
-					for j := i - 1; j >= 0; j-- {
-						if tt.steps[j].navEpoch != step.navEpoch {
-							break // Different epoch, stop looking
-						}
-						if tt.steps[j].msgID == bin.NavSigID {
-							tRead = tt.steps[j].tRead
-							break
-						}
-					}
-					expectedSatTReads = append(expectedSatTReads, tRead)
+			var epoch uint32
+			for _, step := range tt.steps {
+				if (step.msgID == bin.NavSatID || step.msgID == bin.NavSigID) && step.navEpoch != epoch {
+					expectedSatTReads = append(expectedSatTReads, step.tRead)
+					epoch = step.navEpoch
 				}
 			}
 			

@@ -27,8 +27,8 @@ type PacketProcessor struct {
 	nEpochsSeen       int       // Number of distinct epochs seen
 	// Satellite message accumulation: NAV-SAT and NAV-SIG messages are combined
 	// into a single SatellitesMsg when both are available
-	satMsg            *bin.NavSat
-	sigMsg            *bin.NavSig
+	satMsg            *gpsprot.SatellitesMsg
+	sigMsg            *gpsprot.SatellitesMsg
 	satSigTRead       time.Time // Timestamp of first message in the pair
 }
 
@@ -94,26 +94,32 @@ func (p *PacketProcessor) flushNavEpoch() {
 }
 
 // maybeFlushSats decides whether to emit a SatellitesMsg or wait for more data.
-// If we have NAV-SAT but not NAV-SIG, we check if NAV-SIG was present in the
-// previous epoch to decide whether to wait for it.
+// If we have one but not both of NAV-SAT and NAV-SIG, we decide whether to wait
+// for the other based on whether the missing message was seen in the previous epoch.
 func (p *PacketProcessor) maybeFlushSats() {
+	var missing bin.MsgID 
+	if p.satMsg == nil {
+		if p.sigMsg == nil {
+			return
+		}
+		missing = bin.NavSatID
+	} else if p.sigMsg == nil {
+		missing = bin.NavSigID
+	} else {
+		p.flushSats()
+	}
 	if p.nEpochsSeen < 3 {
 		// We need to see at least 3 epochs before we can make reliable decisions:
 		// - Epoch 1: May be incomplete (we might have started listening mid-epoch)
 		// - Epoch 2: First complete epoch, but prevNavMsgs still contains epoch 1
 		// - Epoch 3: Now prevNavMsgs contains the complete epoch 2, so we can
-		//   use it to decide whether to wait for NAV-SIG
+		//   use it to decide whether to wait for NAV-SIG or NAV-SAT
 		return
 	}
-	if p.satMsg == nil {
-		// Always require a NAV-SAT message for now
+	_, missingNavMsg := missing.Unpack()
+	// If the prevNavMsgs contains the missing message, then we should expect it in this epoch, so wait
+	if p.prevNavMsgs.contains(missingNavMsg) {
 		return
-	}
-	if p.sigMsg == nil {
-		_, id := bin.NavSigID.Unpack()
-		if p.prevNavMsgs.contains(id) {
-			return // wait for NAV-SIG since we expect it based on previous epoch
-		}
 	}
 	p.flushSats()
 }
@@ -123,16 +129,12 @@ func (p *PacketProcessor) maybeFlushSats() {
 func (p *PacketProcessor) flushSats() {
 	satMsg := p.satMsg
 	sigMsg := p.sigMsg
+	if satMsg == nil && sigMsg == nil {
+		return // nothing to flush
+	}
 	p.satMsg = nil
 	p.sigMsg = nil
-	if satMsg == nil {
-		return
-	}
-	sats := satellitesNavSat(satMsg)
-	if sigMsg != nil {
-		satellitesAddNavSig(sats, sigMsg)
-	}
-	p.mh.Satellites(sats, p.satSigTRead)
+	p.mh.Satellites(satellitesCombine(satMsg, sigMsg), p.satSigTRead)
 	p.satSigTRead = time.Time{}
 }
 
@@ -152,14 +154,14 @@ func (p *PacketProcessor) Dispatch(m bin.Msg, tRead time.Time) bool {
 		}
 		return true
 	case *bin.NavSat:
-		p.satMsg = mt
+		p.satMsg = satellitesNavSat(mt)
 		if p.satSigTRead.IsZero() {
 			p.satSigTRead = tRead
 		}
 		p.maybeFlushSats()
 		return true
 	case *bin.NavSig:
-		p.sigMsg = mt
+		p.sigMsg = satellitesNavSig(mt)
 		if p.satSigTRead.IsZero() {
 			p.satSigTRead = tRead
 		}

@@ -7,3 +7,4 @@
 
 You can test the dashboard by doing `npm run dashtestbuild` and then opening `test-dashboard.html` in your browser.
 You can also open e.g. `test-dashboard.html?g=GE` to show only satellites with a SVID starting with G or E (i.e. GPS or Galileo).
+Use `test-dashboard.html?angles=0` to simulate UBX-NAV-SIG only mode (no look angles) - this shows signal graph but no sky view.

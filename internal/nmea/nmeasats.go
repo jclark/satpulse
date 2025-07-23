@@ -133,10 +133,12 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 				i := len(svs)
 				svidIndex[svid] = i
 				svs = append(svs, gpsprot.SVInfo{
-					ID:        svid,
-					Azimuth:   int16(sv.azim),
-					Elevation: int8(sv.elev),
-					Signals:   []gpsprot.SignalInfo{sig},
+					ID: svid,
+					LookAngles: &gpsprot.LookAngles{
+						Azimuth:   int16(sv.azim),
+						Elevation: int8(sv.elev),
+					},
+					Signals: []gpsprot.SignalInfo{sig},
 				})
 			}
 		}
@@ -164,10 +166,10 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 		}
 	}
 	return &gpsprot.SatellitesMsg{
-		SVs:         svs,
-		Tag:         Tag,
-		NativeMsgID: sb.talkerID() + "GSV",
-		UsedValid:   usedValid,
+		SVs:          svs,
+		Tag:          Tag,
+		NativeMsgID:  sb.talkerID() + "GSV",
+		UsedValidity: gpsprot.SatelliteUsedSV,
 	}
 }
 

@@ -94,17 +94,19 @@ func TestSSEObserver_Events(t *testing.T) {
 				obs.Satellites(&gpsprot.SatellitesMsg{
 					SVs: []gpsprot.SVInfo{
 						{
-							ID:        gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
-							Azimuth:   45,
-							Elevation: 30,
-							Signals:   []gpsprot.SignalInfo{{ID: "L1"}},
-							Used:      true,
+							ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
+							LookAngles: &gpsprot.LookAngles{
+								Azimuth:   45,
+								Elevation: 30,
+							},
+							Signals: []gpsprot.SignalInfo{{ID: "L1"}},
+							Used:    true,
 						},
 					},
 				}, time.Now())
 			},
 			eventType:    "satellites",
-			expectedJSON: `{"svs":[{"id":"G01","azimuth":45,"elevation":30,"signals":[{"id":"L1","cn0":0}],"used":true}]}`,
+			expectedJSON: `{"svs":[{"id":"G01","lookAngles":{"azimuth":45,"elevation":30},"signals":[{"id":"L1","cn0":0}],"used":true}]}`,
 		},
 	}
 

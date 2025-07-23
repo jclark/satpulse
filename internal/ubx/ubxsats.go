@@ -17,53 +17,111 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 			continue
 		}
 		svid := gnssSVID(usv.GNSSID, usv.SVID)
+		used := usv.Flags&bin.NavSatSVUsed != 0
 		svs = append(svs, gpsprot.SVInfo{
 			ID: svid,
 			Signals: []gpsprot.SignalInfo{
-				{CN0: usv.CNO},
+				{CN0: usv.CNO, Used: used},
 			},
-			Azimuth:   usv.Azim,
-			Elevation: usv.Elev,
-			Used:      usv.Flags&bin.NavSatSVUsed != 0,
+			LookAngles: &gpsprot.LookAngles{
+				Azimuth:   usv.Azim,
+				Elevation: usv.Elev,
+			},
+			Used: used,
 		})
 	}
 	return &gpsprot.SatellitesMsg{
 		SVs:         svs,
 		Tag:         Tag,
 		NativeMsgID: "UBX-NAV-SAT",
-		UsedValid:   true,
+		// Although we are told only that the satellite is used, we only have one signal,
+		// so that signal is used iff the satellite is used.
+		// This is different from the NMEA case, where we have multiple signals,
+		// but know only where the satellite is used.
+		UsedValidity: gpsprot.SatelliteUsedSignal,
 	}
 }
 
-func satellitesAddNavSig(sats *gpsprot.SatellitesMsg, u *bin.NavSig) {
-	sigs := make(map[gpsprot.SVID][]gpsprot.SignalInfo)
-	sigUsed := make(map[gpsprot.SVID]struct{})
+func satellitesNavSig(u *bin.NavSig) *gpsprot.SatellitesMsg {
+	sigIndex := make(map[gpsprot.SVID]int)
 	const minQuality = bin.NavSigQualityCodeLocked
+	svs := make([]gpsprot.SVInfo, 0)
 	for _, usig := range u.Signals {
 		if usig.QualityInd < minQuality {
 			continue
 		}
 		svid := gnssSVID(usig.GNSSID, usig.SVID)
-		sigs[svid] = append(sigs[svid], gpsprot.SignalInfo{
-			ID:  signalID(usig.GNSSID, usig.SigID),
-			CN0: usig.CNO,
+		i, ok := sigIndex[svid]
+		if !ok {
+			i = len(svs)
+			svs = append(svs, gpsprot.SVInfo{ID: svid})
+			sigIndex[svid] = i
+		}
+		sigs := &svs[i].Signals
+		*sigs = append(*sigs, gpsprot.SignalInfo{
+			ID:   signalID(usig.GNSSID, usig.SigID),
+			CN0:  usig.CNO,
+			Used: usig.SigFlags&bin.NavSigPrUsed != 0,
 		})
-		if usig.SigFlags&bin.NavSigPrUsed != 0 {
-			sigUsed[svid] = struct{}{}
+	}
+	for i := range svs {
+		sv := &svs[i]
+		for _, sig := range sv.Signals {
+			if sig.Used {
+				sv.Used = true
+				break
+			}
 		}
 	}
+	return &gpsprot.SatellitesMsg{
+		SVs:          svs,
+		Tag:          Tag,
+		NativeMsgID:  "UBX-NAV-SIG",
+		UsedValidity: gpsprot.SatelliteUsedSignal,
+	}
+}
+
+// satellitesCombine combines two SatellitesMsg one from UBX-NAV-SAT and one from UBX-NAV-SIG.
+// It replaces the signals in UBX-NAV-SAT with the signals from UBX-NAV-SIG.
+func satellitesCombine(sats, sigs *gpsprot.SatellitesMsg) *gpsprot.SatellitesMsg {
+	if sats == nil {
+		return sigs
+	}
+	if sigs == nil {
+		return sats
+	}
+	sats = satellitesCopy(sats)
+	svIndex := make(map[gpsprot.SVID]int)
+	for i, sv := range sats.SVs {
+		svIndex[sv.ID] = i
+	}
+	for _, sv := range sigs.SVs {
+		if i, ok := svIndex[sv.ID]; ok {
+			// replace the signals from UBX-NAV-SAT with the signals from UBX-NAV-SIG
+			sats.SVs[i].Signals = sv.Signals
+		} else {
+			svIndex[sv.ID] = len(sats.SVs) - 1
+			sats.SVs = append(sats.SVs, sv)
+		}
+	}
+	return sats
+}
+
+// satellitesCopy creates a deep copy of the SatellitesMsg.
+// The slices are both copied, but the LookAngles is not.
+func satellitesCopy(sats *gpsprot.SatellitesMsg) *gpsprot.SatellitesMsg {
+	if sats == nil {
+		return nil
+	}
+	copied := *sats
+	copied.SVs = make([]gpsprot.SVInfo, len(sats.SVs))
+	copy(copied.SVs, sats.SVs)
 	for i := range sats.SVs {
-		sv := &sats.SVs[i]
-		svSigs := sigs[sv.ID]
-		if len(svSigs) == 0 {
-			continue
-		}
-		// I think the used we get from NavSat is L1 only, but I think the right used semantic is any signal is used
-		sv.Signals = svSigs
-		if _, ok := sigUsed[sv.ID]; ok {
-			sv.Used = true
-		}
+		copiedSV := &copied.SVs[i]
+		copiedSV.Signals = make([]gpsprot.SignalInfo, len(copiedSV.Signals))
+		copy(copiedSV.Signals, sats.SVs[i].Signals)
 	}
+	return &copied
 }
 
 // sigIDMap maps GNSSID and SigID to a SignalID.
@@ -141,16 +199,18 @@ func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
 			Signals: []gpsprot.SignalInfo{
 				{CN0: usv.CNO},
 			},
-			Azimuth:   usv.Azim,
-			Elevation: usv.Elev,
-			Used:      usv.Flags&bin.NavSVInfoSVUsed != 0,
+			LookAngles: &gpsprot.LookAngles{
+				Azimuth:   usv.Azim,
+				Elevation: usv.Elev,
+			},
+			Used: usv.Flags&bin.NavSVInfoSVUsed != 0,
 		})
 	}
 	return &gpsprot.SatellitesMsg{
-		SVs:         svs,
-		Tag:         Tag,
-		NativeMsgID: "UBX-NAV-SVINFO",
-		UsedValid:   true,
+		SVs:          svs,
+		Tag:          Tag,
+		NativeMsgID:  "UBX-NAV-SVINFO",
+		UsedValidity: gpsprot.SatelliteUsedSV,
 	}
 }
 
@@ -167,7 +227,7 @@ func gnssSVID(gnss bin.GNSSID, uSVID byte) gpsprot.SVID {
 			// UBX uses 255 for unknown GLONASS SVID (NMEA uses null)
 			uSVID = gpsprot.GLOUnknown
 		}
-	}	
+	}
 	return gpsprot.SVID{GNSS: idToGNSS(gnss), Num: uSVID}
 }
 

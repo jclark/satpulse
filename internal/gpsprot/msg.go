@@ -277,24 +277,37 @@ func (sv SVID) IsValid() bool {
 }
 
 type SVInfo struct {
-	ID        SVID         `json:"id"`
-	Azimuth   int16        `json:"azimuth"`        // in degrees, 0 to 360
-	Elevation int8         `json:"elevation"`      // in degrees, -90 to +90
-	Signals   []SignalInfo `json:"signals"`        // signals being transmitted by a satellite
-	Used      bool         `json:"used,omitempty"` // true if the satellite is known to be unused in the navigation solution
+	ID         SVID         `json:"id"`
+	LookAngles *LookAngles  `json:"lookAngles,omitempty"` // look angle of the satellite
+	Signals    []SignalInfo `json:"signals"`              // signals being transmitted by a satellite
+	Used       bool         `json:"used,omitempty"`       // true if the satellite is used in the navigation solution
+}
+
+type LookAngles struct {
+	Azimuth   int16 `json:"azimuth"`   // in degrees, 0 to 360
+	Elevation int8  `json:"elevation"` // in degrees, -
 }
 
 // SignalInfo contains information about a single signal transmitted by a satellite.
 type SignalInfo struct {
-	ID  SignalID `json:"id,omitempty"` // human-readable label of the signal e.g. "L5"
-	CN0 uint8    `json:"cn0"`          // C/NO signal to noise ratio
+	ID   SignalID `json:"id,omitempty"`   // human-readable label of the signal e.g. "L5"
+	CN0  uint8    `json:"cn0"`            // C/NO signal to noise ratio
+	Used bool     `json:"used,omitempty"` // true if the signal is used in the navigation solution
 }
 
+type SatelliteUsedValidity int
+
+const (
+	SatelliteUsedInvalid SatelliteUsedValidity = iota // Used is not specified in both SVInfo and SignalInfo
+	SatelliteUsedSV                                   // Used is specified in SVInfo, but not in SignalInfo
+	SatelliteUsedSignal                               // Used is specified in SignalInfo and in SVInfo
+)
+
 type SatellitesMsg struct {
-	Tag         Tag      `json:"tag,omitempty"`
-	NativeMsgID string   `json:"nativeMsgID,omitempty"`
-	SVs         []SVInfo `json:"info"`                // info about satellites being tracked or acquired
-	UsedValid   bool     `json:"usedValid,omitempty"` // true if the used field is valid
+	Tag          Tag                   `json:"tag,omitempty"`
+	NativeMsgID  string                `json:"nativeMsgID,omitempty"`
+	SVs          []SVInfo              `json:"info"`                   // satellites being tracked
+	UsedValidity SatelliteUsedValidity `json:"usedValidity,omitempty"` // says whether Used fields in SVInfo and SignalInfo are valid
 }
 
 //go:generate stringer -type=TimeRef
