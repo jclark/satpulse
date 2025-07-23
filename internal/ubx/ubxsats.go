@@ -97,8 +97,9 @@ func satellitesCombine(sats, sigs *gpsprot.SatellitesMsg) *gpsprot.SatellitesMsg
 	}
 	for _, sv := range sigs.SVs {
 		if i, ok := svIndex[sv.ID]; ok {
-			// replace the signals from UBX-NAV-SAT with the signals from UBX-NAV-SIG
+			// replace the signals and Used flag from UBX-NAV-SAT with those from UBX-NAV-SIG
 			sats.SVs[i].Signals = sv.Signals
+			sats.SVs[i].Used = sv.Used
 		} else {
 			svIndex[sv.ID] = len(sats.SVs) - 1
 			sats.SVs = append(sats.SVs, sv)

@@ -155,19 +155,28 @@ func TestSatellitesCopy(t *testing.T) {
 
 func TestSatellitesCombine(t *testing.T) {
 	tests := []struct {
-		name string
-		sats *gpsprot.SatellitesMsg
-		sigs *gpsprot.SatellitesMsg
+		name     string
+		sats     *gpsprot.SatellitesMsg
+		sigs     *gpsprot.SatellitesMsg
+		expected *gpsprot.SatellitesMsg
 	}{
 		{
-			name: "both nil",
-			sats: nil,
-			sigs: nil,
+			name:     "both nil",
+			sats:     nil,
+			sigs:     nil,
+			expected: nil,
 		},
 		{
 			name: "sats nil, sigs not nil",
 			sats: nil,
 			sigs: &gpsprot.SatellitesMsg{
+				Tag:         Tag,
+				NativeMsgID: "UBX-NAV-SIG",
+				SVs: []gpsprot.SVInfo{
+					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}},
+				},
+			},
+			expected: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
 				NativeMsgID: "UBX-NAV-SIG",
 				SVs: []gpsprot.SVInfo{
@@ -185,6 +194,59 @@ func TestSatellitesCombine(t *testing.T) {
 				},
 			},
 			sigs: nil,
+			expected: &gpsprot.SatellitesMsg{
+				Tag:         Tag,
+				NativeMsgID: "UBX-NAV-SAT",
+				SVs: []gpsprot.SVInfo{
+					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}},
+				},
+			},
+		},
+		{
+			name: "used flag should be copied from sigs when signals are replaced",
+			sats: &gpsprot.SatellitesMsg{
+				Tag:         Tag,
+				NativeMsgID: "UBX-NAV-SAT",
+				SVs: []gpsprot.SVInfo{
+					{
+						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
+						Signals: []gpsprot.SignalInfo{
+							{CN0: 45, Used: true}, // SAT says it's used
+						},
+						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						Used:       true, // SAT says satellite is used
+					},
+				},
+			},
+			sigs: &gpsprot.SatellitesMsg{
+				Tag:         Tag,
+				NativeMsgID: "UBX-NAV-SIG",
+				SVs: []gpsprot.SVInfo{
+					{
+						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
+						Signals: []gpsprot.SignalInfo{
+							{CN0: 42, Used: false}, // SIG says L1 not used
+							{CN0: 38, Used: false}, // SIG says L5 not used
+						},
+						Used: false, // SIG correctly sets this to false (OR of signal Used flags)
+					},
+				},
+			},
+			expected: &gpsprot.SatellitesMsg{
+				Tag:         Tag,
+				NativeMsgID: "UBX-NAV-SAT",
+				SVs: []gpsprot.SVInfo{
+					{
+						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
+						Signals: []gpsprot.SignalInfo{
+							{CN0: 42, Used: false}, // Signals from SIG
+							{CN0: 38, Used: false}, // Signals from SIG
+						},
+						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45}, // LookAngles from SAT
+						Used:       false,                                           // Should be false (from SIG), not true (from SAT)
+					},
+				},
+			},
 		},
 		{
 			name: "combine overlapping satellites",
@@ -220,12 +282,44 @@ func TestSatellitesCombine(t *testing.T) {
 							{CN0: 42, Used: true},
 							{CN0: 38, Used: false},
 						},
+						Used: true,
 					},
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 3},
 						Signals: []gpsprot.SignalInfo{
 							{CN0: 35, Used: true},
 						},
+						Used: true,
+					},
+				},
+			},
+			expected: &gpsprot.SatellitesMsg{
+				Tag:         Tag,
+				NativeMsgID: "UBX-NAV-SAT",
+				SVs: []gpsprot.SVInfo{
+					{
+						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
+						Signals: []gpsprot.SignalInfo{
+							{CN0: 42, Used: true},
+							{CN0: 38, Used: false},
+						},
+						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						Used:       true,
+					},
+					{
+						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 2},
+						Signals: []gpsprot.SignalInfo{
+							{CN0: 40, Used: false},
+						},
+						LookAngles: &gpsprot.LookAngles{Azimuth: 180, Elevation: 30},
+						Used:       false,
+					},
+					{
+						ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 3},
+						Signals: []gpsprot.SignalInfo{
+							{CN0: 35, Used: true},
+						},
+						Used: true,
 					},
 				},
 			},
@@ -233,18 +327,50 @@ func TestSatellitesCombine(t *testing.T) {
 		{
 			name: "combine non-overlapping satellites",
 			sats: &gpsprot.SatellitesMsg{
+				Tag:         Tag,
+				NativeMsgID: "UBX-NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{
-						ID:      gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
-						Signals: []gpsprot.SignalInfo{{CN0: 45}},
+						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
+						Signals: []gpsprot.SignalInfo{
+							{CN0: 45, Used: true},
+						},
+						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						Used:       true,
 					},
 				},
 			},
 			sigs: &gpsprot.SatellitesMsg{
+				Tag:         Tag,
+				NativeMsgID: "UBX-NAV-SIG",
 				SVs: []gpsprot.SVInfo{
 					{
-						ID:      gpsprot.SVID{GNSS: gpsprot.GAL, Num: 2},
-						Signals: []gpsprot.SignalInfo{{CN0: 40}},
+						ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 2},
+						Signals: []gpsprot.SignalInfo{
+							{CN0: 40, Used: false},
+						},
+						Used: false,
+					},
+				},
+			},
+			expected: &gpsprot.SatellitesMsg{
+				Tag:         Tag,
+				NativeMsgID: "UBX-NAV-SAT",
+				SVs: []gpsprot.SVInfo{
+					{
+						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
+						Signals: []gpsprot.SignalInfo{
+							{CN0: 45, Used: true},
+						},
+						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						Used:       true,
+					},
+					{
+						ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 2},
+						Signals: []gpsprot.SignalInfo{
+							{CN0: 40, Used: false},
+						},
+						Used: false,
 					},
 				},
 			},
@@ -255,83 +381,8 @@ func TestSatellitesCombine(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := satellitesCombine(tt.sats, tt.sigs)
 
-			if tt.sats == nil && tt.sigs == nil {
-				if result != nil {
-					t.Error("expected nil when both inputs are nil")
-				}
-				return
-			}
-
-			if tt.sats == nil {
-				if result != tt.sigs {
-					t.Error("expected sigs to be returned when sats is nil")
-				}
-				return
-			}
-
-			if tt.sigs == nil {
-				if result != tt.sats {
-					t.Error("expected sats to be returned when sigs is nil")
-				}
-				return
-			}
-
-			// When both are non-nil, result should be a copy of sats
-			if result == tt.sats {
-				t.Error("result should be a copy of sats, not the same pointer")
-			}
-
-			// Calculate expected number of satellites
-			expectedCount := len(tt.sats.SVs)
-			for _, sigSV := range tt.sigs.SVs {
-				found := false
-				for _, satSV := range tt.sats.SVs {
-					if sigSV.ID == satSV.ID {
-						found = true
-						break
-					}
-				}
-				if !found {
-					expectedCount++
-				}
-			}
-
-			if len(result.SVs) != expectedCount {
-				t.Errorf("expected %d SVs, got %d", expectedCount, len(result.SVs))
-			}
-
-			// Verify satellites from sigs are present and signals are replaced
-			for _, sigSV := range tt.sigs.SVs {
-				found := false
-				for _, resSV := range result.SVs {
-					if resSV.ID == sigSV.ID {
-						found = true
-						if len(resSV.Signals) != len(sigSV.Signals) {
-							t.Errorf("SV %v: expected %d signals, got %d", resSV.ID, len(sigSV.Signals), len(resSV.Signals))
-						}
-						for i, signal := range sigSV.Signals {
-							if resSV.Signals[i] != signal {
-								t.Errorf("SV %v signal %d: expected %+v, got %+v", resSV.ID, i, signal, resSV.Signals[i])
-							}
-						}
-						break
-					}
-				}
-				if !found {
-					t.Errorf("SV %v from sigs not found in result", sigSV.ID)
-				}
-			}
-
-			// Verify satellites from sats that don't overlap preserve LookAngles
-			for _, satSV := range tt.sats.SVs {
-				for _, resSV := range result.SVs {
-					if resSV.ID == satSV.ID {
-						if resSV.LookAngles != satSV.LookAngles {
-							t.Errorf("SV %v: LookAngles should be preserved from sats", resSV.ID)
-						}
-						break
-					}
-				}
+			if !reflect.DeepEqual(result, tt.expected) {
+				t.Errorf("satellitesCombine() = %+v, expected %+v", result, tt.expected)
 			}
 		})
 	}
