@@ -357,11 +357,11 @@ func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, tpFlags gpsTime
 	gct, pulseWidth, err := cfg.GPS.target(speed, httpWantsSatellites, tpFlags)
 	lg.Debug("GPS configure input", "target", gct)
 	if err != nil {
-		return nil, 0, err
-	}
-	if httpWantsSatellites && gct.Opts.SatsMsg.Get() == gpsprot.SatsMsgNone {
-		lg.Warn("satellites output will not be enabled, because serial speed is too low",
-			"speed", speed, "minSpeedForSatellitesOutput", minSpeedSatellitesOutput)
+		if errors.Is(err, errSatsOutNotEnabled) {
+			lg.Warn(err.Error())
+		} else {
+			return nil, 0, err
+		}
 	}
 	return gct, pulseWidth, nil
 }

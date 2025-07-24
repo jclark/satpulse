@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -56,6 +57,8 @@ var gpsDefault = GPSConfig{
 	PulseWidth:         math.NaN(),
 }
 
+// target creates a GPS configuration target based on the current GPSConfig.
+// If the returned error is errSatsOutNotEnabled, and the caller should log it as a warning and continue.
 func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, tpFlags gpsTimePulseFlags) (*gpsprot.ConfigTarget, time.Duration, error) {
 	target := gpsprot.NewConfigTarget()
 	pulseWidth, err := c.pulseWidth()
@@ -86,9 +89,9 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, tpFlags gpsTime
 	if err != nil {
 		return nil, 0, err
 	}
-	target.Opts.SatsMsg = c.satsMsg(speed, wantSatellitesOutput)
 	target.Opts.RTCMMsg = c.rtcmMsg()
-	return target, pulseWidth, nil
+	target.Opts.SatsMsg, err = c.satsMsg(speed, wantSatellitesOutput)
+	return target, pulseWidth, err
 }
 
 func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProcessor, error) {
@@ -197,14 +200,20 @@ func (c *GPSConfig) pulseWidth() (time.Duration, error) {
 	return d, nil
 }
 
+var errSatsOutNotEnabled = errors.New("satellites output will not be enabled")
+
 const minSpeedSatellitesOutput = 38400
 
-func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.Option[gpsprot.SatsMsgFlags]) {
+// satsMsg returns the satellites message option based on the configuration and speed.
+// If the error is errSatsOutNotEnabled, and the caller should log it as a warning and continue.
+func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.Option[gpsprot.SatsMsgFlags], err error) {
 	const full = gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal
 	if c.SatellitesOutput == nil {
 		if speed < minSpeedSatellitesOutput {
 			// If the speed is too slow, then we won't have automatically enabled it,
 			// so we don't need to disable it.
+			// But we should tell the user about it. The caller should log this error as a warning and continue.
+			err = fmt.Errorf("%w: serial speed %d is too low; minimum speed is %d", errSatsOutNotEnabled, speed, minSpeedSatellitesOutput)
 			return
 		}
 		if wantSatellitesOutput {
