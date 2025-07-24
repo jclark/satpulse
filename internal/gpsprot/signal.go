@@ -246,6 +246,7 @@ func (ss SignalSet) GNSSSet() GNSSSet {
 
 // SignalID constants
 const (
+	SigIDInvalid SignalID = "" // Invalid SignalID
 	// GPS SignalID constants
 	SigIDGPSL1CA SignalID = "L1 C/A"
 	SigIDGPSL1PY SignalID = "L1 P(Y)" // restricted
@@ -270,7 +271,7 @@ const (
 	SigIDGALE6A SignalID = "E6-A" // restricted
 	SigIDGALE6  SignalID = "E6"   // combo of E6-B and E6-C, sometimes called E6BC
 	SigIDGALE1A SignalID = "E1-A" // restricted
-	SigIDGALE1  SignalID = "E1"   // combo of E1B plus E1C, sometimes called E1BC
+	SigIDGALE1  SignalID = "E1"   // combo of E1-B plus E1-C, sometimes called E1-B/C or E1BC
 	// Constants for Galileo components
 	SigIDGALE1C  SignalID = "E1-C"  // E1 pilot
 	SigIDGALE1B  SignalID = "E1-B"  // E1 data

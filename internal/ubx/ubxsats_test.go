@@ -436,7 +436,7 @@ func TestSatellitesNavSat(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 45, Used: true},
+							{ID: gpsprot.SigIDGPSL1CA, CN0: 45, Used: true},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 30},
 						Used:       true,
@@ -535,7 +535,7 @@ func TestSatellitesNavSat(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 45, Used: true},
+							{ID: gpsprot.SigIDGPSL1CA, CN0: 45, Used: true},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 30},
 						Used:       true,
@@ -543,7 +543,7 @@ func TestSatellitesNavSat(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 40, Used: false},
+							{ID: gpsprot.SigIDBDSB1I, CN0: 40, Used: false},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 270, Elevation: 60},
 						Used:       false,
@@ -551,7 +551,7 @@ func TestSatellitesNavSat(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 30},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 35, Used: true},
+							{ID: gpsprot.SigIDGPSL1CA, CN0: 35, Used: true},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 0, Elevation: 70},
 						Used:       true,
@@ -559,7 +559,7 @@ func TestSatellitesNavSat(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: gpsprot.GLOUnknown},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 30, Used: false},
+							{ID: gpsprot.SigIDGLOL1, CN0: 30, Used: false},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 315, Elevation: 20},
 						Used:       false,

@@ -21,7 +21,11 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 		svs = append(svs, gpsprot.SVInfo{
 			ID: svid,
 			Signals: []gpsprot.SignalInfo{
-				{CN0: usv.CNO, Used: used},
+				{
+					ID:   navSatSignalId(usv.GNSSID),
+					CN0:  usv.CNO,
+					Used: used,
+				},
 			},
 			LookAngles: &gpsprot.LookAngles{
 				Azimuth:   usv.Azim,
@@ -40,6 +44,28 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 		// but know only where the satellite is used.
 		UsedValidity: gpsprot.SatelliteUsedSignal,
 	}
+}
+
+// navSatSigIDMap maps GNSSID to a SignalID for the signal level reported in a UBX-NAV-SAT message.
+// It turns out UBX-NAV-SAT reports the signal level for the L1 signal.
+// Not entirely clear which L1 signal we should report, but we opt for the legacy one.
+// We try to be not too specific here, so we use E1 rather than E1-C (the pilot signal, which is what UBX-NAV-SIG reports),
+// and B1I rather than B1I D1 (since there's a chance that it is D2).
+var navSatSigIDMap = map[bin.GNSSID]gpsprot.SignalID{
+	bin.GPS:  gpsprot.SigIDGPSL1CA,
+	bin.SBAS: gpsprot.SigIDGPSL1CA,
+	bin.GAL:  gpsprot.SigIDGALE1,
+	bin.BDS:  gpsprot.SigIDBDSB1I,
+	bin.QZSS: gpsprot.SigIDQZSSL1CA,
+	bin.GLO:  gpsprot.SigIDGLOL1,
+}
+
+// navSatSignalId returns the SignalID for the signal level reported in a UBX-NAV-SAT message.
+func navSatSignalId(gnssID bin.GNSSID) gpsprot.SignalID {
+	if sigID, ok := navSatSigIDMap[gnssID]; ok {
+		return sigID
+	}
+	return gpsprot.SigIDInvalid
 }
 
 func satellitesNavSig(u *bin.NavSig) *gpsprot.SatellitesMsg {
