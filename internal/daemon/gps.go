@@ -212,8 +212,10 @@ func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.O
 		if speed < minSpeedSatellitesOutput {
 			// If the speed is too slow, then we won't have automatically enabled it,
 			// so we don't need to disable it.
-			// But we should tell the user about it. The caller should log this error as a warning and continue.
-			err = fmt.Errorf("%w: serial speed %d is too low; minimum speed is %d", errSatsOutNotEnabled, speed, minSpeedSatellitesOutput)
+			if wantSatellitesOutput {
+				// But we should tell the user about it. The caller should log this error as a warning and continue.
+				err = fmt.Errorf("%w: serial speed %d is too low; minimum speed is %d", errSatsOutNotEnabled, speed, minSpeedSatellitesOutput)
+			}
 			return
 		}
 		if wantSatellitesOutput {
