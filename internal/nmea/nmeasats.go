@@ -9,21 +9,41 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
+
 // satellitesBuffer is the state used for combining GSV sentences into a single SatellitesMsg
 // First, there can be a series of GSV sentences with the same talker ID, with the sentence
 // explicitly saying this is M of N sentences.
 // Second, there will be multiple series of GSV sentences, one for each talker ID.
 // But we don't know up front which talker IDs will be used.
+//
+// gsvKeys and haveBoundary are used to implement the flushing logic.
+// The flushing logic is based on the assumption that all the GSV and GSA sentences
+// describing a single navigation solution wil be emitted in a butst with no idle period
+// between sentences. (Idle periods of at least 0.1s will turn into calls to idle().)
+// The goal is to combine GSV (satellite view) and GSA (satellite active) messages
+// into complete SatellitesMsg reports. NMEA 4.10+ receivers send multiple GSV
+// sequences per GNSS constellation (one per signal ID), making it impossible to
+// predict when "all GPS data" is complete.
+//
+// Our approach uses two flush triggers:
+// 1. idle() calls - Primary mechanism when receiver pauses between bursts
+// 2. Repeated GNSS/signal combinations - Protection when idle() never comes
+//
+// For approach 2, we try to establish a reasonable boundary between bursts:
+// this is the first idle() call or sentence format change (e.g. RMC to GSV).
 type satellitesBuffer struct {
-	gsvs         []gsvSentence
-	tRead        time.Time       // read time of the first buffered GSV sentence
-	lastFormat   string          // format of last sentence received
-	gnssComplete gpsprot.GNSSSet // the set of GNSS for which there is a complete series in gsvs
-	gnssExpected gpsprot.GNSSSet
-	gnssKnown    bool
-	gsas         []gsaSentence
-	gsaWait      bool // wait for GSV after GSA is complete
 	numbering    []gpsprot.NMEASVNumberingRange
+	gsvs         []gsvSentence
+	gsvKeys      map[gsvKey]struct{} // the set of gnss and signal IDs occurring in gsvs
+	tRead        time.Time           // read time of the first buffered GSV sentence
+	lastFormat   string              // format of last sentence received
+	gsas         []gsaSentence
+	haveBoundary bool                // have we established a plausible boundary between bursts
+}
+
+type gsvKey struct {
+	gnss  gpsprot.GNSS
+	sigID int // signal ID, 0 means no signal ID
 }
 
 var dfltSVNumbering = []gpsprot.NMEASVNumberingRange{
@@ -34,6 +54,7 @@ var dfltSVNumbering = []gpsprot.NMEASVNumberingRange{
 func newSatellitesBuffer() *satellitesBuffer {
 	return &satellitesBuffer{
 		numbering: dfltSVNumbering,
+		gsvKeys:  make(map[gsvKey]struct{}),
 	}
 }
 
@@ -85,34 +106,24 @@ func gnssConsistent(sen, found gpsprot.GNSS) bool {
 }
 
 func (sb *satellitesBuffer) idle(h gpsprot.MsgHandler) {
-	if len(sb.gsvs) == 0 && len(sb.gsas) > 0 {
-		sb.gsas = nil
-		sb.gsaWait = true
-		return
-	}
+	// Do possibleBoundary before flush, so that partial (probably incorrect) set is not used.
+	sb.possibleBoundary()
 	sb.flush(h)
 }
 
-func (sb *satellitesBuffer) maybeFlush(h gpsprot.MsgHandler) {
-	if len(sb.gsvs) == 0 {
+func (sb *satellitesBuffer) possibleBoundary() {
+	if sb.haveBoundary {
 		return
 	}
-	if sb.gsaWait {
-		sb.gsaWait = false // wait only once
-	} else {
-		sb.flush(h)
-	}
+	sb.haveBoundary = true
+	sb.clear()
 }
 
-// flush flushes out the GSV sentences
 func (sb *satellitesBuffer) flush(h gpsprot.MsgHandler) {
-	if len(sb.gsvs) == 0 {
-		return
-	}
-	if h != nil {
+	if h != nil && len(sb.gsvs) > 0 {
 		h.Satellites(sb.createSatellitesMsg(), sb.tRead)
 	}
-	sb.gsvClear()
+	sb.clear()
 }
 
 // createSatellitesMsg creates a SatellitesMsg from the current grouping state.
@@ -153,6 +164,7 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 			if i, ok := svidIndex[svid]; ok {
 				svs[i].Used = true
 			} else {
+				// XXX this isn't right because we might have filtered out the
 				usedValid = false
 				break
 			}
@@ -173,10 +185,11 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 	}
 }
 
-func (sb *satellitesBuffer) gsvClear() {
+func (sb *satellitesBuffer) clear() {
 	sb.gsvs = nil
+	sb.gsvKeys = make(map[gsvKey]struct{}) // reset the keys
+	sb.gsas = nil
 	sb.tRead = time.Time{}
-	sb.gnssComplete = 0
 }
 
 func (sb *satellitesBuffer) talkerID() string {
@@ -184,23 +197,20 @@ func (sb *satellitesBuffer) talkerID() string {
 }
 
 func (sb *satellitesBuffer) process(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
+	if sb.lastFormat != sen.Format && sb.lastFormat != "" {
+		sb.possibleBoundary()
+	}
+	sb.lastFormat = sen.Format
 	switch sen.Format {
 	case "GSV":
 		return sb.gsvProcess(sen, tRead, h)
 	case "GSA":
 		return sb.gsaProcess(sen)
 	}
-	sb.maybeFlush(h)
-	sb.lastFormat = sen.Format
 	return false, nil
 }
 
 func (sb *satellitesBuffer) gsaProcess(sen *Sentence) (bool, error) {
-	if sb.lastFormat != "GSA" {
-		sb.gsas = nil
-	}
-	sb.lastFormat = "GSA"
-	sb.gsaWait = false
 	gsa, err := parseGSA(sen)
 	if err != nil {
 		return false, err
@@ -214,10 +224,6 @@ func (sb *satellitesBuffer) gsvProcess(sen *Sentence, tRead time.Time, h gpsprot
 	if err != nil {
 		return false, err
 	}
-	if sb.lastFormat != "GSV" || sb.gnssComplete.Contains(gsv.gnss) {
-		sb.gsvClear()
-	}
-	sb.lastFormat = "GSV"
 	if len(sb.gsvs) == 0 {
 		sb.tRead = tRead
 	}
@@ -227,17 +233,12 @@ func (sb *satellitesBuffer) gsvProcess(sen *Sentence, tRead time.Time, h gpsprot
 	if gsv.numMsg != gsv.msgNum {
 		return true, err
 	}
-	// Now we know it is the final sentence in a series
-	flag := gpsprot.GNSSSetOf(gsv.gnss)
-	if sb.gnssExpected&flag != 0 {
-		sb.gnssKnown = true
-	} else {
-		sb.gnssExpected |= flag
+	// Here we have a complete series of GSV sentences.
+	k := gsvKey{gnss: gsv.gnss, sigID: gsv.sigID}
+	if _, exists := sb.gsvKeys[k]; exists {
+		sb.flush(h)
 	}
-	sb.gnssComplete |= flag
-	if sb.gnssKnown && sb.gnssComplete == sb.gnssExpected {
-		sb.maybeFlush(h)
-	}
+	sb.gsvKeys[k] = struct{}{}
 	return true, err
 }
 
@@ -250,7 +251,7 @@ func (sb *satellitesBuffer) checkMsgNum(gsv gsvSentence) error {
 		return nil
 	}
 	lastGSV := sb.gsvs[len(sb.gsvs)-1]
-	if lastGSV.gnss == gsv.gnss {
+	if lastGSV.gnss == gsv.gnss && lastGSV.sigID == gsv.sigID {
 		if gsv.msgNum != lastGSV.msgNum+1 {
 			return fmt.Errorf("invalid GSV message number: expected %d, got %d", lastGSV.msgNum+1, gsv.msgNum)
 		}

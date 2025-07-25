@@ -409,39 +409,117 @@ func TestSatellitesBuffer(t *testing.T) {
 		expect []result
 	}{
 		{
+			// Realistic scenario: partial burst to establish boundary, then complete burst
+			order: []int{3, -1, 0, 1, 2, 3, 6, -1},
+			expect: []result{
+				// i=0: GAGSV 2/2 (partial), i=1: idle establishes boundary
+				{i: 7, nSV: 11, nUsed: 2}, // idle flushes GPS(4) + GLO(3) + GAL(4) with GSA info
+			},
+		},
+		{
+			// Multiple bursts with idle between
+			order: []int{0, 1, 2, 3, -1, 0, 1, 2, 3, -1},
+			expect: []result{
+				// First idle establishes boundary, clears buffer
+				{i: 9, nSV: 11, nUsed: 0}, // Second idle flushes all
+			},
+		},
+		{
+			// NMEA 4.10: Multiple signal IDs for same GNSS
+			order: []int{0, 1, -1, 0, 5, 1, -1},
+			expect: []result{
+				// First idle establishes boundary, clears buffer
+				// After boundary: GPS sigID=8, GLO sigID=3
+				{i: 6, nSV: 7, nUsed: 0}, // idle flushes GPS(4) + GLO(3) + 0 from GPGSV 3/3
+			},
+		},
+		{
+			// Protection against missing idle: continuous stream with no idle
+			// Simulates receiver sending bursts back-to-back
+			order: []int{4, 0, 1, 2, 3, 6, 4, 0, 1, 2, 3, 6, 4, 0},
+			expect: []result{
+				// i=0: GPRMC, i=1: GPGSV - format change establishes boundary
+				// i=1-5: First burst accumulates
+				// i=6: GPRMC - format change, no flush
+				// i=7: GPGSV - repeats! 
+				{i: 7, nSV: 11, nUsed: 2},  // GPS repeats, flush first burst with GSA
+				// i=8-11: Second burst accumulates
+				// i=12: GPRMC - format change
+				// i=13: GPGSV - repeats!
+				{i: 13, nSV: 11, nUsed: 2}, // GPS repeats, flush second burst
+			},
+		},
+		{
+			// Edge case: Only GSV messages, no idle, no format changes
+			// Start with partial burst, then repeated complete bursts
+			order: []int{2, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3},
+			expect: []result{
+				// i=0: GAGSV 1/2 (partial burst)
+				// i=1: GPGSV - format change, possibleBoundary clears buffer
+				// i=2-4: First complete burst (GPS+GLO+GAL)
+				// i=5: GPGSV - GPS repeats!
+				{i: 5, nSV: 11}, // GPS repeats, flush first burst
+				// i=6-8: Second complete burst accumulates
+				// i=9: GPGSV - GPS repeats again!
+				{i: 9, nSV: 11}, // GPS repeats, flush second burst  
+				// i=10-12: Third burst accumulates
+				// No more flushes (would need another repeat)
+			},
+		},
+		// Legacy tests from previous GNSS-tracking buffering approach
+		// These mostly test edge cases where the new approach doesn't flush
+		{
 			order: []int{1, 2, 3, -1, 0, 1, 2, 3, 0, 1, 2, 3},
 			expect: []result{
-				{i: 3, nSV: 7},
-				{i: 7, nSV: 11},
-				{i: 11, nSV: 11},
+				// First idle clears buffer (no flush) to establish boundary
+				{i: 8, nSV: 11},   // GPS repeats: flush all (GPS+GLO+GAL)
+				// After flush at i=8, buffer has only GPS(4)
+				// i=9: GLO added (first time), no flush
+				// i=10,11: GAL parts added, no flush yet
 			},
 		},
 		{
 			order: []int{3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4},
 			expect: []result{
-				{i: 1, nSV: 2},
-				{i: 5, nSV: 11},
-				{i: 10, nSV: 11},
+				// i=0: GAGSV 2/2 sigID=2 (incomplete)
+				// i=1: GPRMC - first format change, possibleBoundary clears buffer
+				// i=2: GPS sigID=8, i=3: GLO sigID=3, i=4-5: GAL sigID=6,2
+				// i=6: GPRMC - no flush
+				// i=7: GPS sigID=8 repeats
+				{i: 7, nSV: 11},   // GPS repeats: flush all
+				// Buffer cleared, gsvKeys reset
+				// i=8: GLO sigID=3 (first time in new buffer)
+				// i=9-10: GAL sigID=6,2 (first time in new buffer) 
+				// i=11: GPRMC - no flush
 			},
 		},
 		{
 			order: []int{5, -1, 5},
 			expect: []result{
-				{i: 1, nSV: 0},
-				{i: 2, nSV: 0},
+				// i=0: GPGSV 3/3 (incomplete, has no satellites)
+				// i=1: idle - first idle clears buffer (no flush)
+				// i=2: GPGSV 3/3 again (still no satellites)
+				// No flushes expected
 			},
 		},
 		{
 			order: []int{2, 3, 6, -1},
 			expect: []result{
-				{i: 3, nSV: 4, nUsed: 2},
+				// i=0-1: GAGSV parts (4 satellites)
+				// i=2: GNGSA (provides used info)
+				// i=3: idle - first idle clears buffer (no flush)
+				// No flush expected with new design
 			},
 		},
 		{
 			order: []int{2, 3, -1, 6, 2, 3},
 			expect: []result{
-				{i: 2, nSV: 4, nUsed: 0},
-				{i: 5, nSV: 4, nUsed: 2},
+				// i=0-1: GAGSV parts (4 satellites)
+				// i=2: idle - first idle clears buffer (no flush)
+				// i=3: GNGSA
+				// i=4: GAGSV 1/2 - format change GSA->GSV, possibleBoundary does nothing
+				// i=5: GAGSV 2/2 - completes GAL sigID=2
+				// No flush expected - need idle or repeated key
 			},
 		},
 	}
@@ -522,3 +600,406 @@ func TestSVID(t *testing.T) {
 		})
 	}
 }
+
+type testPacketHandler struct {
+	gpsprot.DefaultHandler
+	satellites []*gpsprot.SatellitesMsg
+}
+
+func (h *testPacketHandler) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
+	h.satellites = append(h.satellites, msg)
+}
+
+func TestPacketProcessorSatellites(t *testing.T) {
+	tests := []struct {
+		name         string
+		nmeaMessages []string
+		expectedSVs  []gpsprot.SVInfo
+	}{
+		{
+			name: "simple GPS GSV only",
+			nmeaMessages: []string{
+				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
+				"$GPGSV,3,1,11,05,53,234,47,11,39,354,26,12,42,301,42,17,24,109,27,1*63\r\n",
+				"$GPGSV,3,2,11,19,41,088,23,20,72,306,41,21,82,339,44,22,23,161,38,1*62\r\n",
+				"$GPGSV,3,3,11,41,64,233,51,42,56,116,47,50,56,116,40,1*51\r\n",
+				"$GNGLL,1343.91062,N,10038.68405,E,011451.00,A,D*7E\r\n",
+			},
+			expectedSVs: []gpsprot.SVInfo{
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 234, Elevation: 53}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 11}, LookAngles: &gpsprot.LookAngles{Azimuth: 354, Elevation: 39}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 26}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 12}, LookAngles: &gpsprot.LookAngles{Azimuth: 301, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 17}, LookAngles: &gpsprot.LookAngles{Azimuth: 109, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 27}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 88, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 23}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 306, Elevation: 72}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 41}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 339, Elevation: 82}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 161, Elevation: 23}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 38}}, Used: false},
+				// SBAS satellites (GPS IDs 41, 42, 50 -> SBAS 28, 29, 37)
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 28}, LookAngles: &gpsprot.LookAngles{Azimuth: 233, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 37}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}}, Used: false},
+			},
+		},
+		{
+			name: "GPS GSV messages with multiple signals",
+			nmeaMessages: []string{
+				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
+				"$GNGSA,M,3,12,11,21,22,20,05,,,,,,,99.99,99.99,99.99,1*3A\r\n",        // GPS: 12,11,21,22,20,05 used
+				"$GPGSV,3,1,11,05,53,234,47,11,39,354,26,12,42,301,42,17,24,109,27,1*63\r\n",
+				"$GPGSV,3,2,11,19,41,088,23,20,72,306,41,21,82,339,44,22,23,161,38,1*62\r\n",
+				"$GPGSV,3,3,11,41,64,233,51,42,56,116,47,50,56,116,40,1*51\r\n",
+				"$GPGSV,2,1,06,05,53,234,43,06,24,035,15,11,39,354,25,12,42,301,39,6*67\r\n",
+				"$GPGSV,2,2,06,17,24,109,18,21,82,339,49,6*69\r\n",
+				"$GPGSV,2,1,07,09,10,057,,13,16,176,,14,06,155,,15,03,203,,0*6A\r\n",
+				"$GPGSV,2,2,07,24,04,235,,25,13,314,,40,35,255,,0*57\r\n",
+				"$GNGLL,1343.91062,N,10038.68405,E,011451.00,A,D*7E\r\n",
+			},
+			expectedSVs: []gpsprot.SVInfo{
+				// GPS satellites with signal combinations from sigID 1 and 6 - GSA indicates 12,11,21,22,20,05 are used
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 234, Elevation: 53}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}, {ID: "L2C-L", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 35, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "L2C-L", CN0: 15}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 11}, LookAngles: &gpsprot.LookAngles{Azimuth: 354, Elevation: 39}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 26}, {ID: "L2C-L", CN0: 25}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 12}, LookAngles: &gpsprot.LookAngles{Azimuth: 301, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}, {ID: "L2C-L", CN0: 39}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 17}, LookAngles: &gpsprot.LookAngles{Azimuth: 109, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 27}, {ID: "L2C-L", CN0: 18}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 88, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 23}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 306, Elevation: 72}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 41}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 339, Elevation: 82}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}, {ID: "L2C-L", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 161, Elevation: 23}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 38}}, Used: true},
+				// SBAS satellites (GPS IDs 41, 42, 50 -> SBAS 28, 29, 37)
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 28}, LookAngles: &gpsprot.LookAngles{Azimuth: 233, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 37}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}}, Used: false},
+			},
+		},
+		{
+			name: "GLONASS GSV messages",
+			nmeaMessages: []string{
+				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
+				"$GNGSA,M,3,80,69,73,,,,,,,,,,99.99,99.99,99.99,2*3D\r\n",              // GLO: 80->R16, 69->R05, 73->R09 used
+				"$GLGSV,2,1,05,68,45,067,19,69,47,148,49,73,37,258,49,80,22,195,37,1*77\r\n",
+				"$GLGSV,2,2,05,83,26,016,28,1*4F\r\n",
+				"$GLGSV,2,1,05,68,45,067,30,69,47,148,48,73,37,258,47,80,22,195,37,3*71\r\n",
+				"$GLGSV,2,2,05,83,26,016,16,3*40\r\n",
+				"$GLGSV,2,1,05,67,07,033,,70,00,195,,74,19,306,,82,10,065,,0*75\r\n",
+				"$GLGSV,2,2,05,84,15,320,,0*45\r\n",
+				"$GNGLL,1343.91062,N,10038.68405,E,011451.00,A,D*7E\r\n",
+			},
+			expectedSVs: []gpsprot.SVInfo{
+				// GLONASS satellites (NMEA IDs 68,69,73,80,83 -> GLO nums 4,5,9,16,19) - GSA indicates 80->R16, 69->R05, 73->R09 are used
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 67, Elevation: 45}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 19}, {ID: "L2", CN0: 30}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 148, Elevation: 47}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 258, Elevation: 37}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 195, Elevation: 22}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 37}, {ID: "L2", CN0: 37}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 16, Elevation: 26}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 28}, {ID: "L2", CN0: 16}}, Used: false},
+			},
+		},
+		{
+			name: "Galileo GSV messages", 
+			nmeaMessages: []string{
+				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
+				"$GNGSA,M,3,24,09,04,31,25,11,16,36,06,,,,99.99,99.99,99.99,3*35\r\n",  // GAL: 24,09,04,31,25,11,16,36,06 used
+				"$GAGSV,3,1,10,04,31,114,31,06,31,144,45,09,22,169,45,10,35,012,22,2*73\r\n",
+				"$GAGSV,3,2,10,11,41,337,33,16,64,273,49,24,65,202,48,25,45,304,49,2*7F\r\n",
+				"$GAGSV,3,3,10,31,20,158,40,36,22,282,41,2*77\r\n",
+				"$GAGSV,3,1,10,04,31,114,28,06,31,144,38,09,22,169,38,10,35,012,25,7*79\r\n",
+				"$GAGSV,3,2,10,11,41,337,28,16,64,273,48,24,65,202,47,25,45,304,43,7*74\r\n",
+				"$GAGSV,3,3,10,31,20,158,38,36,22,282,36,7*7D\r\n",
+				"$GAGSV,1,1,02,12,22,035,,19,08,061,,0*74\r\n",
+				"$GNGLL,1343.91062,N,10038.68405,E,011451.00,A,D*7E\r\n",
+			},
+			expectedSVs: []gpsprot.SVInfo{
+				// Galileo satellites (E5b sigID=2, E1 sigID=7) - GSA indicates 24,09,04,31,25,11,16,36,06 are used
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 114, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 31}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 144, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 169, Elevation: 22}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 12, Elevation: 35}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 25}, {ID: "E5b", CN0: 22}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 11}, LookAngles: &gpsprot.LookAngles{Azimuth: 337, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 33}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 273, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 48}, {ID: "E5b", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 24}, LookAngles: &gpsprot.LookAngles{Azimuth: 202, Elevation: 65}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 47}, {ID: "E5b", CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 25}, LookAngles: &gpsprot.LookAngles{Azimuth: 304, Elevation: 45}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 43}, {ID: "E5b", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 31}, LookAngles: &gpsprot.LookAngles{Azimuth: 158, Elevation: 20}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 40}}, Used: true},
+			},
+		},
+		{
+			name: "BeiDou GSV messages",
+			nmeaMessages: []string{
+				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
+				"$GNGSA,M,3,19,45,06,36,16,38,10,09,07,13,40,08,99.99,99.99,99.99,4*3F\r\n", // BDS: 19,45,06,36,16,38,10,09,07,13,40,08 used
+				"$GBGSV,4,1,15,06,14,179,26,07,71,063,39,08,79,316,43,09,17,193,34,1*77\r\n",
+				"$GBGSV,4,2,15,10,71,016,41,13,76,269,49,19,66,141,50,20,41,055,26,1*78\r\n",
+				"$GBGSV,4,3,15,22,24,198,44,29,42,034,27,35,24,324,35,36,19,181,42,1*7C\r\n",
+				"$GBGSV,4,4,15,38,69,006,44,40,58,071,31,45,33,234,47,1*4A\r\n",
+				"$GBGSV,2,1,07,06,14,179,36,07,71,063,40,08,79,316,46,09,17,193,41,B*09\r\n",
+				"$GBGSV,2,2,07,10,71,016,43,13,76,269,47,16,13,177,30,B*3F\r\n",
+				"$GBGSV,3,1,09,01,38,103,,02,63,228,,03,70,144,,04,22,096,,0*75\r\n",
+				"$GBGSV,3,2,09,05,39,252,,26,13,289,,30,16,086,,39,10,165,,0*73\r\n",
+				"$GBGSV,3,3,09,47,33,059,,0*41\r\n",
+				"$GNGLL,1343.91062,N,10038.68405,E,011451.00,A,D*7E\r\n",
+			},
+			expectedSVs: []gpsprot.SVInfo{
+				// BeiDou satellites - GSA lists 19,45,06,36,16,38,10,09,07,13,40,08 as used, but only those with valid CN0 appear in output
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 179, Elevation: 14}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}, {ID: "B2I", CN0: 36}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 63, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 39}, {ID: "B2I", CN0: 40}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: &gpsprot.LookAngles{Azimuth: 316, Elevation: 79}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B2I", CN0: 46}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 193, Elevation: 17}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 34}, {ID: "B2I", CN0: 41}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 16, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 41}, {ID: "B2I", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 13}, LookAngles: &gpsprot.LookAngles{Azimuth: 269, Elevation: 76}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 49}, {ID: "B2I", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 177, Elevation: 13}, Signals: []gpsprot.SignalInfo{{ID: "B2I", CN0: 30}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 141, Elevation: 66}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 50}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 55, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 198, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 34, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 27}}, Used: false},
+			},
+		},
+		{
+			name: "QZSS GSV messages",
+			nmeaMessages: []string{
+				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
+				"$GNGSA,M,3,04,02,,,,,,,,,,,99.99,99.99,99.99,5*3F\r\n",                // QZSS: 04,02 used
+				"$GQGSV,1,1,03,02,42,137,40,04,49,093,22,07,56,116,37,1*56\r\n",
+				"$GQGSV,1,1,03,02,42,137,43,04,49,093,30,07,56,116,44,6*55\r\n",
+				"$GQGSV,1,1,01,03,42,047,,0*53\r\n",
+				"$GNGLL,1343.91062,N,10038.68405,E,011451.00,A,D*7E\r\n",
+			},
+			expectedSVs: []gpsprot.SVInfo{
+				// QZSS satellites - GSA lists 04,02 as used
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 137, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}, {ID: "L2C-L", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 93, Elevation: 49}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 22}, {ID: "L2C-L", CN0: 30}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 37}, {ID: "L2C-L", CN0: 44}}, Used: false},
+			},
+		},
+		{
+			name: "complete NMEA message set",
+			nmeaMessages: []string{
+				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
+				"$GNGSA,M,3,12,11,21,22,20,05,,,,,,,99.99,99.99,99.99,1*3A\r\n",        // GPS: 12,11,21,22,20,05
+				"$GNGSA,M,3,80,69,73,,,,,,,,,,99.99,99.99,99.99,2*3D\r\n",              // GLO: 80->15, 69->4, 73->8
+				"$GNGSA,M,3,24,09,04,31,25,11,16,36,06,,,,99.99,99.99,99.99,3*35\r\n",  // GAL: 24,09,04,31,25,11,16,36,06
+				"$GNGSA,M,3,19,45,06,36,16,38,10,09,07,13,40,08,99.99,99.99,99.99,4*3F\r\n", // BDS: 19,45,06,36,16,38,10,09,07,13,40,08
+				"$GNGSA,M,3,04,02,,,,,,,,,,,99.99,99.99,99.99,5*3F\r\n",                // QZSS: 04,02
+				"$GPGSV,3,1,11,05,53,234,47,11,39,354,26,12,42,301,42,17,24,109,27,1*63\r\n",
+				"$GPGSV,3,2,11,19,41,088,23,20,72,306,41,21,82,339,44,22,23,161,38,1*62\r\n",
+				"$GPGSV,3,3,11,41,64,233,51,42,56,116,47,50,56,116,40,1*51\r\n",
+				"$GPGSV,2,1,06,05,53,234,43,06,24,035,15,11,39,354,25,12,42,301,39,6*67\r\n",
+				"$GPGSV,2,2,06,17,24,109,18,21,82,339,49,6*69\r\n",
+				"$GPGSV,2,1,07,09,10,057,,13,16,176,,14,06,155,,15,03,203,,0*6A\r\n",
+				"$GPGSV,2,2,07,24,04,235,,25,13,314,,40,35,255,,0*57\r\n",
+				"$GLGSV,2,1,05,68,45,067,19,69,47,148,49,73,37,258,49,80,22,195,37,1*77\r\n",
+				"$GLGSV,2,2,05,83,26,016,28,1*4F\r\n",
+				"$GLGSV,2,1,05,68,45,067,30,69,47,148,48,73,37,258,47,80,22,195,37,3*71\r\n",
+				"$GLGSV,2,2,05,83,26,016,16,3*40\r\n",
+				"$GLGSV,2,1,05,67,07,033,,70,00,195,,74,19,306,,82,10,065,,0*75\r\n",
+				"$GLGSV,2,2,05,84,15,320,,0*45\r\n",
+				"$GAGSV,3,1,10,04,31,114,31,06,31,144,45,09,22,169,45,10,35,012,22,2*73\r\n",
+				"$GAGSV,3,2,10,11,41,337,33,16,64,273,49,24,65,202,48,25,45,304,49,2*7F\r\n",
+				"$GAGSV,3,3,10,31,20,158,40,36,22,282,41,2*77\r\n",
+				"$GAGSV,3,1,10,04,31,114,28,06,31,144,38,09,22,169,38,10,35,012,25,7*79\r\n",
+				"$GAGSV,3,2,10,11,41,337,28,16,64,273,48,24,65,202,47,25,45,304,43,7*74\r\n",
+				"$GAGSV,3,3,10,31,20,158,38,36,22,282,36,7*7D\r\n",
+				"$GAGSV,1,1,02,12,22,035,,19,08,061,,0*74\r\n",
+				"$GBGSV,4,1,15,06,14,179,26,07,71,063,39,08,79,316,43,09,17,193,34,1*77\r\n",
+				"$GBGSV,4,2,15,10,71,016,41,13,76,269,49,19,66,141,50,20,41,055,26,1*78\r\n",
+				"$GBGSV,4,3,15,22,24,198,44,29,42,034,27,35,24,324,35,36,19,181,42,1*7C\r\n",
+				"$GBGSV,4,4,15,38,69,006,44,40,58,071,31,45,33,234,47,1*4A\r\n",
+				"$GBGSV,2,1,07,06,14,179,36,07,71,063,40,08,79,316,46,09,17,193,41,B*09\r\n",
+				"$GBGSV,2,2,07,10,71,016,43,13,76,269,47,16,13,177,30,B*3F\r\n",
+				"$GBGSV,3,1,09,01,38,103,,02,63,228,,03,70,144,,04,22,096,,0*75\r\n",
+				"$GBGSV,3,2,09,05,39,252,,26,13,289,,30,16,086,,39,10,165,,0*73\r\n",
+				"$GBGSV,3,3,09,47,33,059,,0*41\r\n",
+				"$GQGSV,1,1,03,02,42,137,40,04,49,093,22,07,56,116,37,1*56\r\n",
+				"$GQGSV,1,1,03,02,42,137,43,04,49,093,30,07,56,116,44,6*55\r\n",
+				"$GQGSV,1,1,01,03,42,047,,0*53\r\n",
+				"$GNGLL,1343.91062,N,10038.68405,E,011451.00,A,D*7E\r\n",
+			},
+			expectedSVs: []gpsprot.SVInfo{
+				// GPS satellites with correct Used flags (from GPS test)
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 234, Elevation: 53}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}, {ID: "L2C-L", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 35, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "L2C-L", CN0: 15}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 11}, LookAngles: &gpsprot.LookAngles{Azimuth: 354, Elevation: 39}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 26}, {ID: "L2C-L", CN0: 25}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 12}, LookAngles: &gpsprot.LookAngles{Azimuth: 301, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}, {ID: "L2C-L", CN0: 39}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 17}, LookAngles: &gpsprot.LookAngles{Azimuth: 109, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 27}, {ID: "L2C-L", CN0: 18}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 88, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 23}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 306, Elevation: 72}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 41}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 339, Elevation: 82}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}, {ID: "L2C-L", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 161, Elevation: 23}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 38}}, Used: true},
+				
+				// SBAS satellites (from GPS test)
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 28}, LookAngles: &gpsprot.LookAngles{Azimuth: 233, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 37}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}}, Used: false},
+				
+				// GLONASS satellites with correct Used flags (from GLONASS test)
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 67, Elevation: 45}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 19}, {ID: "L2", CN0: 30}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 148, Elevation: 47}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 258, Elevation: 37}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 195, Elevation: 22}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 37}, {ID: "L2", CN0: 37}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 16, Elevation: 26}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 28}, {ID: "L2", CN0: 16}}, Used: false},
+				
+				// Galileo satellites with correct Used flags (from Galileo test)
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 114, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 31}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 144, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 169, Elevation: 22}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 12, Elevation: 35}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 25}, {ID: "E5b", CN0: 22}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 11}, LookAngles: &gpsprot.LookAngles{Azimuth: 337, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 33}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 273, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 48}, {ID: "E5b", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 24}, LookAngles: &gpsprot.LookAngles{Azimuth: 202, Elevation: 65}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 47}, {ID: "E5b", CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 25}, LookAngles: &gpsprot.LookAngles{Azimuth: 304, Elevation: 45}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 43}, {ID: "E5b", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 31}, LookAngles: &gpsprot.LookAngles{Azimuth: 158, Elevation: 20}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 40}}, Used: true},
+				
+				// BeiDou satellites with correct Used flags (from BeiDou test)
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 179, Elevation: 14}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}, {ID: "B2I", CN0: 36}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 63, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 39}, {ID: "B2I", CN0: 40}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: &gpsprot.LookAngles{Azimuth: 316, Elevation: 79}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B2I", CN0: 46}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 193, Elevation: 17}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 34}, {ID: "B2I", CN0: 41}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 16, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 41}, {ID: "B2I", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 13}, LookAngles: &gpsprot.LookAngles{Azimuth: 269, Elevation: 76}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 49}, {ID: "B2I", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 177, Elevation: 13}, Signals: []gpsprot.SignalInfo{{ID: "B2I", CN0: 30}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 141, Elevation: 66}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 50}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 55, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 198, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 34, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 27}}, Used: false},
+				
+				// QZSS satellites with correct Used flags (from QZSS test)
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 137, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}, {ID: "L2C-L", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 93, Elevation: 49}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 22}, {ID: "L2C-L", CN0: 30}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 37}, {ID: "L2C-L", CN0: 44}}, Used: false},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			processor := NewPacketProcessor()
+			handler := &testPacketHandler{}
+			processor.SetMsgHandler(handler)
+
+			// Process all messages
+			testTime := time.Date(2025, 7, 24, 1, 14, 51, 0, time.UTC)
+			for i, msg := range test.nmeaMessages {
+				msgID, err := processor.ProcessPacket(Trim(msg), testTime.Add(time.Duration(i)*time.Millisecond))
+				if err != nil {
+					t.Fatalf("error processing message %d (%s): %v", i, msgID, err)
+				}
+			}
+
+			// Call Idle to flush any remaining data
+			processor.Idle(testTime.Add(time.Duration(len(test.nmeaMessages))*time.Millisecond))
+
+			// Verify we got exactly one SatellitesMsg
+			if len(handler.satellites) != 1 {
+				t.Fatalf("expected exactly 1 SatellitesMsg, got %d", len(handler.satellites))
+			}
+
+			actualMsg := handler.satellites[0]
+			expectedMsg := &gpsprot.SatellitesMsg{
+				Tag:          Tag,
+				NativeMsgID:  "GNGSV",
+				UsedValidity: gpsprot.SatelliteUsedSV,
+				SVs:          test.expectedSVs,
+			}
+
+			testCompareSatellitesMsgs(t, actualMsg, expectedMsg)
+		})
+	}
+}
+
+
+// testCompareSatellitesMsgs compares two SatellitesMsg in an order-insensitive way
+func testCompareSatellitesMsgs(t *testing.T, actual, expected *gpsprot.SatellitesMsg) {
+	if actual.Tag != expected.Tag {
+		t.Errorf("Tag mismatch: got %s, expected %s", actual.Tag, expected.Tag)
+	}
+	if actual.NativeMsgID != expected.NativeMsgID {
+		t.Errorf("NativeMsgID mismatch: got %s, expected %s", actual.NativeMsgID, expected.NativeMsgID)
+	}
+	if actual.UsedValidity != expected.UsedValidity {
+		t.Errorf("UsedValidity mismatch: got %v, expected %v", actual.UsedValidity, expected.UsedValidity)
+	}
+
+	if len(actual.SVs) != len(expected.SVs) {
+		t.Errorf("Different number of satellites: got %d, expected %d", len(actual.SVs), len(expected.SVs))
+		return
+	}
+
+	// Create maps for order-insensitive comparison
+	actualMap := make(map[gpsprot.SVID]gpsprot.SVInfo)
+	expectedMap := make(map[gpsprot.SVID]gpsprot.SVInfo)
+	
+	for _, sv := range actual.SVs {
+		actualMap[sv.ID] = sv
+	}
+	for _, sv := range expected.SVs {
+		expectedMap[sv.ID] = sv
+	}
+
+	// Check each expected satellite exists in actual
+	for svid, expectedSV := range expectedMap {
+		actualSV, exists := actualMap[svid]
+		if !exists {
+			t.Errorf("Missing satellite %s in actual results", svid)
+			continue
+		}
+		
+		// Compare satellite fields
+		if actualSV.Used != expectedSV.Used {
+			t.Errorf("Satellite %s Used mismatch: got %v, expected %v", svid, actualSV.Used, expectedSV.Used)
+		}
+		
+		// Compare look angles
+		if (actualSV.LookAngles == nil) != (expectedSV.LookAngles == nil) {
+			t.Errorf("Satellite %s LookAngles nil mismatch: got %v, expected %v", svid, actualSV.LookAngles == nil, expectedSV.LookAngles == nil)
+		} else if actualSV.LookAngles != nil {
+			if actualSV.LookAngles.Azimuth != expectedSV.LookAngles.Azimuth {
+				t.Errorf("Satellite %s Azimuth mismatch: got %d, expected %d", svid, actualSV.LookAngles.Azimuth, expectedSV.LookAngles.Azimuth)
+			}
+			if actualSV.LookAngles.Elevation != expectedSV.LookAngles.Elevation {
+				t.Errorf("Satellite %s Elevation mismatch: got %d, expected %d", svid, actualSV.LookAngles.Elevation, expectedSV.LookAngles.Elevation)
+			}
+		}
+		
+		// Compare signals order-insensitively
+		if len(actualSV.Signals) != len(expectedSV.Signals) {
+			t.Errorf("Satellite %s signal count mismatch: got %d, expected %d", svid, len(actualSV.Signals), len(expectedSV.Signals))
+			continue
+		}
+		
+		actualSignalMap := make(map[gpsprot.SignalID]gpsprot.SignalInfo)
+		expectedSignalMap := make(map[gpsprot.SignalID]gpsprot.SignalInfo)
+		
+		for _, sig := range actualSV.Signals {
+			actualSignalMap[sig.ID] = sig
+		}
+		for _, sig := range expectedSV.Signals {
+			expectedSignalMap[sig.ID] = sig
+		}
+		
+		for sigID, expectedSig := range expectedSignalMap {
+			actualSig, exists := actualSignalMap[sigID]
+			if !exists {
+				t.Errorf("Satellite %s missing signal %s", svid, sigID)
+				continue
+			}
+			if actualSig.CN0 != expectedSig.CN0 {
+				t.Errorf("Satellite %s signal %s CN0 mismatch: got %d, expected %d", svid, sigID, actualSig.CN0, expectedSig.CN0)
+			}
+			if actualSig.Used != expectedSig.Used {
+				t.Errorf("Satellite %s signal %s Used mismatch: got %v, expected %v", svid, sigID, actualSig.Used, expectedSig.Used)
+			}
+		}
+		
+		// Check for extra signals in actual
+		for sigID := range actualSignalMap {
+			if _, exists := expectedSignalMap[sigID]; !exists {
+				t.Errorf("Satellite %s has unexpected signal %s", svid, sigID)
+			}
+		}
+	}
+
+	// Check for extra satellites in actual
+	for svid := range actualMap {
+		if _, exists := expectedMap[svid]; !exists {
+			t.Errorf("Unexpected satellite %s in actual results", svid)
+		}
+	}
+}
+
