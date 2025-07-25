@@ -330,6 +330,10 @@ func TestGSVParse(t *testing.T) {
 			sen:   "$GPGSV,1,1,00,", // sigID can be blank
 			final: true,
 		},
+		{
+			sen:   "$GPGSV,1,1,00*79", // no antenna - zero satellites, no sigID field
+			final: true,
+		},
 	}
 	for _, test := range tests {
 		test := test

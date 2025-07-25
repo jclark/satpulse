@@ -336,7 +336,7 @@ type svInfo struct {
 func parseGSV(sen *Sentence) (gsvSentence, error) {
 	gsv := gsvSentence{}
 
-	if len(sen.Fields) < 4 {
+	if len(sen.Fields) < 3 {
 		return gsv, fmt.Errorf("GSV: too few fields")
 	}
 	gnss := talkerIDToGNSS(sen.TalkerID)
