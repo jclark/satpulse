@@ -154,7 +154,7 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 			}
 		}
 	}
-	usedValid := true
+	usedValidity := gpsprot.SatelliteUsedSV
 	for _, gsa := range sb.gsas {
 		for _, id := range gsa.svids {
 			svid, _ := sb.convertSVID(gsa.gnss, id, 0)
@@ -164,13 +164,12 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 			if i, ok := svidIndex[svid]; ok {
 				svs[i].Used = true
 			} else {
-				// XXX this isn't right because we might have filtered out the
-				usedValid = false
+				usedValidity = gpsprot.SatelliteUsedInvalid
 				break
 			}
 		}
 	}
-	if !usedValid {
+	if usedValidity == gpsprot.SatelliteUsedInvalid {
 		// GSA info isn't matching up with the GSV info for reasons unknown.
 		// Treat this as not having information about which satellites are used.
 		for i := range svs {
@@ -181,7 +180,7 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 		SVs:          svs,
 		Tag:          Tag,
 		NativeMsgID:  sb.talkerID() + "GSV",
-		UsedValidity: gpsprot.SatelliteUsedSV,
+		UsedValidity: usedValidity,
 	}
 }
 
