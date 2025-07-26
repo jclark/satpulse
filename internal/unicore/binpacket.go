@@ -54,8 +54,9 @@ func (f binPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex
 			if b == sync3 {
 				return binStateStarted
 			}
-		case 8: // We have enough bytes to read the payload length (at offset 6-7)
-			payloadLen := int(binary.LittleEndian.Uint16(buf[6:8]))
+		case 8: // We have enough bytes to read the payload length (at offset 6-7 from packet start)
+			packetStart := nextScanIndex - packetLen
+			payloadLen := int(binary.LittleEndian.Uint16(buf[packetStart+6:packetStart+8]))
 			totalLen := headerLength + payloadLen + crcLength
 
 			// We have already read packetLen + 1 bytes (9 bytes).
