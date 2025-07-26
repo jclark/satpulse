@@ -5,6 +5,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"strings"
+
+	"github.com/jclark/satpulse/internal/fieldenc"
 )
 
 // MsgID represents a Unicore message identifier (uint16)
@@ -39,18 +42,80 @@ func (ts TimeStatus) String() string {
 	}
 }
 
+// TimeRef represents the time reference system in Unicore messages
+type TimeRef byte
+
+const (
+	TimeRefGPS TimeRef = 0 // GPS time reference
+	TimeRefBDS TimeRef = 1 // BDS time reference
+)
+
+// String returns the ASCII representation of TimeRef
+func (tr TimeRef) String() string {
+	switch tr {
+	case TimeRefGPS:
+		return "GPS"
+	case TimeRefBDS:
+		return "BDS"
+	default:
+		return fmt.Sprintf("%d", tr)
+	}
+}
+
+// ParseTimeRef converts an ASCII time ref string to TimeRef enum
+func ParseTimeRef(s string) (TimeRef, error) {
+	switch s {
+	case "GPS":
+		return TimeRefGPS, nil
+	case "BDS":
+		return TimeRefBDS, nil
+	default:
+		return 0, fmt.Errorf("unknown time reference: %s", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler for fieldenc support
+func (tr *TimeRef) UnmarshalText(text []byte) error {
+	val, err := ParseTimeRef(string(text))
+	if err != nil {
+		return err
+	}
+	*tr = val
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler for fieldenc support
+func (tr TimeRef) MarshalText() ([]byte, error) {
+	return []byte(tr.String()), nil
+}
+
 // ParseTimeStatus converts an ASCII time status string to TimeStatus enum
-func ParseTimeStatus(s string) TimeStatus {
+func ParseTimeStatus(s string) (TimeStatus, error) {
 	switch s {
 	case "UNKNOWN":
-		return TimeStatusUnknown
+		return TimeStatusUnknown, nil
 	case "COARSE":
-		return TimeStatusCoarse
+		return TimeStatusCoarse, nil
 	case "FINE":
-		return TimeStatusFine
+		return TimeStatusFine, nil
 	default:
-		return TimeStatusUnknown
+		return 0, fmt.Errorf("unknown time status: %s", s)
 	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler for fieldenc support
+func (ts *TimeStatus) UnmarshalText(text []byte) error {
+	val, err := ParseTimeStatus(string(text))
+	if err != nil {
+		return err
+	}
+	*ts = val
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler for fieldenc support
+func (ts TimeStatus) MarshalText() ([]byte, error) {
+	return []byte(ts.String()), nil
 }
 
 // BinaryHeader represents the 24-byte header of a Unicore binary packet
@@ -66,7 +131,7 @@ type BinaryHeader struct {
 
 // TimingHeader contains timing and status information from Unicore message headers
 type TimingHeader struct {
-	TimeRef            byte       // Reference time (GPST or BDST)
+	TimeRef            TimeRef    // Reference time (GPS or BDS)
 	TimeStatus         TimeStatus // GPS Reference Time Status
 	Week               uint16     // Week number
 	MillisecondsOfWeek uint32     // Seconds of week (milliseconds)
@@ -83,6 +148,14 @@ type MessageHeader struct {
 	TimingHeader        // Embedded timing info
 }
 
+// AsciiHeader represents the header fields from a Unicore ASCII message
+// Fields are processed by fieldenc in struct field order
+type AsciiHeader struct {
+	MessageName string // Message name (e.g., "PPSSTATUSA")
+	CPUIdle     byte   // CPU idle percentage
+	TimingHeader       // Embedded timing fields
+}
+
 // Msg interface that all Unicore messages must implement
 type Msg interface {
 	ID() MsgID
@@ -90,6 +163,7 @@ type Msg interface {
 
 var msgMap = make(map[MsgID]func() Msg)
 var idNameMap = make(map[MsgID]string)
+var asciiNameIDMap = make(map[string]MsgID)
 
 // String returns a string representation of the message ID
 func (mid MsgID) String() string {
@@ -100,13 +174,21 @@ func (mid MsgID) String() string {
 	return fmt.Sprintf("%d", uint16(mid))
 }
 
-// UnknownMsg represents an unrecognized message
+// UnknownMsg represents an unrecognized binary message
 type UnknownMsg struct {
 	MsgID   MsgID
 	Payload []byte
 }
 
 func (m *UnknownMsg) ID() MsgID { return m.MsgID }
+
+// UnknownAsciiMsg represents an unrecognized ASCII message
+type UnknownAsciiMsg struct {
+	MsgID   MsgID
+	Payload string
+}
+
+func (m *UnknownAsciiMsg) ID() MsgID { return m.MsgID }
 
 // regMsg registers a message type with its ID and name
 func regMsg[T any, PT interface {
@@ -117,11 +199,12 @@ func regMsg[T any, PT interface {
 	mid := m.ID()
 	msgMap[mid] = func() Msg { return PT(new(T)) }
 	idNameMap[mid] = idName
+	asciiNameIDMap[idName+"A"] = mid
 }
 
-// ParseMsg parses a Unicore binary message from bytes.
+// ParseBinMsg parses a Unicore binary message from bytes.
 // It assumes the checksums were already verified.
-func ParseMsg(packet []byte) (MessageHeader, Msg, error) {
+func ParseBinMsg(packet []byte) (MessageHeader, Msg, error) {
 	n := len(packet)
 	minLen := headerLength + crcLength
 	if n < minLen {
@@ -178,8 +261,8 @@ func ParseMsg(packet []byte) (MessageHeader, Msg, error) {
 	return msgHeader, msg, nil
 }
 
-// SerializeMsg serializes a Unicore message with header into binary format
-func SerializeMsg(header MessageHeader, msg Msg) ([]byte, error) {
+// SerializeBinMsg serializes a Unicore message with header into binary format
+func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	var payload []byte
 	var err error
 
@@ -229,8 +312,78 @@ func SerializeMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	return packet, nil
 }
 
-// PacketMsgID returns the MsgID of a packet
-func PacketMsgID(packet []byte) MsgID {
+// ParseAsciiMessage parses a Unicore ASCII message from bytes.
+// It assumes the packet format scanner has validated the packet structure
+// and checksums were already verified.
+func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
+	asciiMsg := string(packet)
+	
+	// Remove # prefix and \r\n suffix
+	asciiMsg = asciiMsg[1 : len(asciiMsg)-2]
+	
+	// Split header from rest at first semicolon
+	headerPart, rest, _ := strings.Cut(asciiMsg, ";")
+	
+	// Determine data part based on packet ending
+	var dataPart string
+	if rest == "" {
+		// Case (a): packet ends with semicolon - no data part
+		dataPart = ""
+	} else {
+		// Case (b) or (c): packet has data and ends with '*' + hex digits
+		dataPart, _, _ = strings.Cut(rest, "*")
+	}
+	
+	// Parse header fields
+	headerFields := strings.Split(headerPart, ",")
+	
+	// Parse header using fieldenc
+	var asciiHeader AsciiHeader
+	err := fieldenc.Decode(headerFields, &asciiHeader)
+	if err != nil {
+		return MessageHeader{}, nil, fmt.Errorf("parsing header: %v", err)
+	}
+	
+	// Convert to MessageHeader
+	msgHeader := MessageHeader{
+		CPUIdlePercent: asciiHeader.CPUIdle,
+		TimingHeader:   asciiHeader.TimingHeader,
+	}
+	
+	// Look up message ID by name
+	msgID, ok := asciiNameIDMap[asciiHeader.MessageName]
+	if !ok {
+		return MessageHeader{}, nil, fmt.Errorf("unknown message type: %s", asciiHeader.MessageName)
+	}
+	
+	// Look up message constructor
+	ctor := msgMap[msgID]
+	if ctor == nil {
+		return msgHeader, &UnknownAsciiMsg{MsgID: msgID, Payload: dataPart}, nil
+	}
+	
+	// Parse data fields
+	// strings.Split("", ",") returns []string{""} but we want []string{} for empty data
+	// so that fieldenc.Decode gets no fields instead of one empty field
+	var dataFields []string
+	if dataPart == "" {
+		dataFields = []string{}
+	} else {
+		dataFields = strings.Split(dataPart, ",")
+	}
+	
+	// Create and populate message
+	msg := ctor()
+	err = fieldenc.Decode(dataFields, msg)
+	if err != nil {
+		return MessageHeader{}, nil, fmt.Errorf("parsing %s data: %v", asciiHeader.MessageName, err)
+	}
+	
+	return msgHeader, msg, nil
+}
+
+// BinPacketMsgID returns the MsgID of a packet
+func BinPacketMsgID(packet []byte) MsgID {
 	if len(packet) < 6 {
 		return 0
 	}

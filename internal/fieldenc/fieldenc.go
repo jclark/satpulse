@@ -180,7 +180,7 @@ func Encode(v interface{}) ([]string, error) {
 		return nil, fmt.Errorf("fieldenc: v must be a struct or pointer to struct")
 	}
 	
-	var fields []string
+	fields := []string{}
 	
 	// Process each struct field in order
 	for i := 0; i < rv.NumField(); i++ {
@@ -220,7 +220,7 @@ func Encode(v interface{}) ([]string, error) {
 
 // encodeStruct recursively encodes a struct value to string fields
 func encodeStruct(rv reflect.Value) ([]string, error) {
-	var fields []string
+	fields := []string{}
 	rt := rv.Type()
 	
 	for i := 0; i < rv.NumField(); i++ {

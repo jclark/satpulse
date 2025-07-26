@@ -333,6 +333,11 @@ func TestCanonical(t *testing.T) {
 				return s
 			}(),
 		},
+		{
+			name:   "empty struct with no fields",
+			fields: []string{},
+			value:  struct{}{},
+		},
 	}
 
 	for _, tt := range tests {

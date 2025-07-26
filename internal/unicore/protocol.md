@@ -313,8 +313,23 @@ Based on Novatel OEM7 time status values. The Unicore ASCII header shows "Unknow
 
 ASCII messages start with a \# character, followed by a header, a semicolon ;, the data payload, an asterisk \*, and a 4-byte hexadecimal CRC. Fields are comma-separated.
 
-ASCII Header Structure:  
-\#MessageName,Port,Sequence,IdleTime,TimeStatus,Week,ms,ReceiverStatus,Reserved,SWVersion;
+**ASCII Header Structure (Table 7-51):**
+
+| ID | Field | Type | Description |
+|---|---|---|---|
+| 1 | Sync | CHAR | # character |
+| 2 | Message | CHAR | ASCII message name |
+| 3 | CPUIdle | UCHAR | CPU idle percentage |
+| 4 | TimeRef | UCHAR | Reference time (GPS/BDS) |
+| 5 | TimeStatus | UCHAR | Time quality (UNKNOWN/FINE) |
+| 6 | Wn | USHORT | GPS week number |
+| 7 | Ms | ULONG | GPS seconds of week (ms) |
+| 8 | Version | ULONG | Unicore format version |
+| 9 | Reserved | UCHAR | Reserved |
+| 10 | Leap sec | UCHAR | Leap second |
+| 11 | Output Delay | USHORT | Output delay (ms) |
+
+**Format:** `#MessageName,CPUIdle,TimeRef,TimeStatus,Wn,Ms,Version,Reserved,LeapSec,OutputDelay;`
 
 #### **Checksum**
 
