@@ -9,8 +9,8 @@ import (
 func TestPPSSTATUS(t *testing.T) {
 	t.Run("BinaryDecode", func(t *testing.T) {
 		// Extract payload (skip header, exclude CRC)
-		payload := ppsStatusBPacket[headerLength : len(ppsStatusBPacket)-crcLength]
-		
+		payload := testPPSStatusBPacket[headerLength : len(testPPSStatusBPacket)-crcLength]
+
 		// Decode using binary.Read
 		reader := bytes.NewReader(payload)
 		var decoded PPSSTATUS
@@ -24,7 +24,7 @@ func TestPPSSTATUS(t *testing.T) {
 		expected := PPSSTATUS{
 			Status:       3,          // First field after semicolon
 			Week:         2376,       // Second field
-			MsSecInWeek:  540336000,  // Third field  
+			MsSecInWeek:  540336000,  // Third field
 			PPSPulseErr:  -4,         // Fourth field
 			OffsetTime:   -27676000,  // Fifth field
 			ConfigInfo:   0x03E80020, // Sixth field (hex format as in ASCII)

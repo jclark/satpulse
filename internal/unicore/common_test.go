@@ -12,8 +12,8 @@ func TestBinaryHeader(t *testing.T) {
 	// #PPSSTATUSA,93,GPS,FINE,2376,540337000,0,0,18,29;...
 	t.Run("ParseHeaderWithBinaryRead", func(t *testing.T) {
 		// Create a reader from the packet bytes
-		reader := bytes.NewReader(ppsStatusBPacket[:24]) // Just the header
-		
+		reader := bytes.NewReader(testPPSStatusBPacket[:24]) // Just the header
+
 		var header BinaryHeader
 		err := binary.Read(reader, binary.LittleEndian, &header)
 		if err != nil {
@@ -22,21 +22,21 @@ func TestBinaryHeader(t *testing.T) {
 
 		// Expected values based on the ASCII header from the packet log
 		expected := BinaryHeader{
-			Sync1:         0xAA,  // Sync byte 1
-			Sync2:         0x44,  // Sync byte 2
-			Sync3:         0xB5,  // Sync byte 3
+			Sync1:          0xAA, // Sync byte 1
+			Sync2:          0x44, // Sync byte 2
+			Sync3:          0xB5, // Sync byte 3
 			CPUIdlePercent: 93,   // From ASCII: "93"
-			MessageID:     9000,  // PPSSTATUS
-			MessageLength: 60,    // PPSSTATUS payload size
+			MessageID:      9000, // PPSSTATUS
+			MessageLength:  60,   // PPSSTATUS payload size
 			TimingHeader: TimingHeader{
-				TimeRef:            0,                 // 0 = GPS
-				TimeStatus:         TimeStatusFine,    // 0xA0 = 160 = FINE, from ASCII: "FINE"
-				Week:               2376,              // From ASCII: "2376"
-				MillisecondsOfWeek: 540337000,         // From ASCII: "540337000"
-				Reserved:           0,                 // Reserved field
-				Version:            0,                 // Version field
-				LeapSec:            18,                // From ASCII: "18"
-				DelayMs:            29,                // From ASCII: "29"
+				TimeRef:            0,              // 0 = GPS
+				TimeStatus:         TimeStatusFine, // 0xA0 = 160 = FINE, from ASCII: "FINE"
+				Week:               2376,           // From ASCII: "2376"
+				MillisecondsOfWeek: 540337000,      // From ASCII: "540337000"
+				Reserved:           0,              // Reserved field
+				Version:            0,              // Version field
+				LeapSec:            18,             // From ASCII: "18"
+				DelayMs:            29,             // From ASCII: "29"
 			},
 		}
 
@@ -49,7 +49,7 @@ func TestBinaryHeader(t *testing.T) {
 func TestParseAndSerializeMsg(t *testing.T) {
 	t.Run("PPSSTATUSRoundTrip", func(t *testing.T) {
 		// Parse the captured PPSSTATUS packet
-		msgHeader, msg, err := ParseMsg(ppsStatusBPacket)
+		msgHeader, msg, err := ParseMsg(testPPSStatusBPacket)
 		if err != nil {
 			t.Fatalf("ParseMsg() error = %v", err)
 		}
@@ -69,7 +69,7 @@ func TestParseAndSerializeMsg(t *testing.T) {
 		expectedHeader := MessageHeader{
 			CPUIdlePercent: 93, // From test data
 			TimingHeader: TimingHeader{
-				TimeRef:            0,             // GPS
+				TimeRef:            0,              // GPS
 				TimeStatus:         TimeStatusFine, // FINE
 				Week:               2376,
 				MillisecondsOfWeek: 540337000,
@@ -91,13 +91,13 @@ func TestParseAndSerializeMsg(t *testing.T) {
 		}
 
 		// Verify the serialized packet matches the original
-		if len(serialized) != len(ppsStatusBPacket) {
-			t.Errorf("Serialized length = %d, want %d", len(serialized), len(ppsStatusBPacket))
+		if len(serialized) != len(testPPSStatusBPacket) {
+			t.Errorf("Serialized length = %d, want %d", len(serialized), len(testPPSStatusBPacket))
 		}
 
-		if string(serialized) != string(ppsStatusBPacket) {
+		if string(serialized) != string(testPPSStatusBPacket) {
 			t.Errorf("Serialized packet does not match original")
-			t.Logf("Original:   %x", ppsStatusBPacket)
+			t.Logf("Original:   %x", testPPSStatusBPacket)
 			t.Logf("Serialized: %x", serialized)
 		}
 	})

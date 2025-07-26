@@ -35,7 +35,7 @@ func (ts TimeStatus) String() string {
 	case TimeStatusFine:
 		return "FINE"
 	default:
-		return fmt.Sprintf("UNKNOWN(%d)", byte(ts))
+		return fmt.Sprintf("%d", ts)
 	}
 }
 
@@ -55,13 +55,13 @@ func ParseTimeStatus(s string) TimeStatus {
 
 // BinaryHeader represents the 24-byte header of a Unicore binary packet
 type BinaryHeader struct {
-	Sync1         byte   // 0xAA
-	Sync2         byte   // 0x44
-	Sync3         byte   // 0xB5
+	Sync1          byte   // 0xAA
+	Sync2          byte   // 0x44
+	Sync3          byte   // 0xB5
 	CPUIdlePercent byte   // CPU idle percentage (0-100)
-	MessageID     uint16 // Message identifier
-	MessageLength uint16 // Length of data payload (not including header or CRC)
-	TimingHeader         // Embedded timing header
+	MessageID      MsgID  // Message identifier
+	MessageLength  uint16 // Length of data payload (not including header or CRC)
+	TimingHeader          // Embedded timing header
 }
 
 // TimingHeader contains timing and status information from Unicore message headers
@@ -125,56 +125,56 @@ func ParseMsg(packet []byte) (MessageHeader, Msg, error) {
 	n := len(packet)
 	minLen := headerLength + crcLength
 	if n < minLen {
-		return MessageHeader{}, nil, fmt.Errorf("Unicore message too short (length %d bytes)", n)
+		return MessageHeader{}, nil, fmt.Errorf("UNCB message too short (length %d bytes)", n)
 	}
-	
+
 	// Parse binary header
 	var binHeader BinaryHeader
 	headerReader := bytes.NewReader(packet[:headerLength])
 	err := binary.Read(headerReader, binary.LittleEndian, &binHeader)
 	if err != nil {
-		return MessageHeader{}, nil, fmt.Errorf("parsing Unicore header: %v", err)
+		return MessageHeader{}, nil, fmt.Errorf("parsing UNCB header: %v", err)
 	}
-	
+
 	// Extract message header info
 	msgHeader := MessageHeader{
 		CPUIdlePercent: binHeader.CPUIdlePercent,
 		TimingHeader:   binHeader.TimingHeader,
 	}
-	
+
 	// Extract message ID and payload length
 	msgID := MsgID(binHeader.MessageID)
 	payloadLen := int(binHeader.MessageLength)
-	
+
 	// Calculate expected total length
 	expectedLen := headerLength + payloadLen + crcLength
 	if n != expectedLen {
-		return MessageHeader{}, nil, fmt.Errorf("Unicore message length mismatch: got %d, expected %d", n, expectedLen)
+		return MessageHeader{}, nil, fmt.Errorf("UNCB message length mismatch: got %d, expected %d", n, expectedLen)
 	}
-	
+
 	// Extract payload
 	payload := packet[headerLength : headerLength+payloadLen]
-	
+
 	// Look up message constructor
 	ctor := msgMap[msgID]
 	if ctor == nil {
 		return msgHeader, &UnknownMsg{MsgID: msgID, Payload: payload}, nil
 	}
-	
+
 	// Create and populate message
 	msg := ctor()
 	r := bytes.NewReader(payload)
 	err = binary.Read(r, binary.LittleEndian, msg)
 	if err != nil {
-		return MessageHeader{}, nil, fmt.Errorf("parsing Unicore-%s: %v", msgID.String(), err)
+		return MessageHeader{}, nil, fmt.Errorf("parsing UNCB-%s: %v", msgID.String(), err)
 	}
-	
+
 	// Check for trailing bytes
 	_, err = r.ReadByte()
 	if err != io.EOF {
-		return MessageHeader{}, nil, fmt.Errorf("parsing Unicore-%s: trailing bytes", msgID.String())
+		return MessageHeader{}, nil, fmt.Errorf("parsing UNCB-%s: trailing bytes", msgID.String())
 	}
-	
+
 	return msgHeader, msg, nil
 }
 
@@ -182,7 +182,7 @@ func ParseMsg(packet []byte) (MessageHeader, Msg, error) {
 func SerializeMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	var payload []byte
 	var err error
-	
+
 	if uMsg, ok := msg.(*UnknownMsg); ok {
 		payload = uMsg.Payload
 	} else {
@@ -194,38 +194,38 @@ func SerializeMsg(header MessageHeader, msg Msg) ([]byte, error) {
 		}
 		payload = buf.Bytes()
 	}
-	
+
 	if len(payload) > 0xFFFF {
 		return nil, fmt.Errorf("unicore-%s payload too long (%d bytes)", msg.ID().String(), len(payload))
 	}
-	
+
 	// Create binary header
 	binHeader := BinaryHeader{
-		Sync1:         sync1,
-		Sync2:         sync2,
-		Sync3:         sync3,
+		Sync1:          sync1,
+		Sync2:          sync2,
+		Sync3:          sync3,
 		CPUIdlePercent: header.CPUIdlePercent,
-		MessageID:     uint16(msg.ID()),
-		MessageLength: uint16(len(payload)),
-		TimingHeader:  header.TimingHeader,
+		MessageID:      msg.ID(),
+		MessageLength:  uint16(len(payload)),
+		TimingHeader:   header.TimingHeader,
 	}
-	
+
 	// Serialize header
 	headerBuf := new(bytes.Buffer)
 	err = binary.Write(headerBuf, binary.LittleEndian, &binHeader)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Combine header and payload
 	packet := append(headerBuf.Bytes(), payload...)
-	
+
 	// Calculate and append CRC
 	crc := crc32(packet)
 	crcBytes := make([]byte, crcLength)
 	binary.LittleEndian.PutUint32(crcBytes, crc)
 	packet = append(packet, crcBytes...)
-	
+
 	return packet, nil
 }
 

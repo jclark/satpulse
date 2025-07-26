@@ -15,7 +15,7 @@ type binPacketFormat struct{}
 
 
 func (f binPacketFormat) Tag() gpsprot.Tag {
-	return "UnicoreBinary"
+	return "UNCB" // Unicore Binary
 }
 
 // First three bytes of a Unicore binary packet
