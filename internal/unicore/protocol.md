@@ -333,7 +333,7 @@ ASCII messages start with a \# character, followed by a header, a semicolon ;, t
 
 #### **Checksum**
 
-A 32-bit CRC is calculated over the entire message (including the header for binary, and from \# for ASCII).
+A 32-bit CRC is calculated over the entire message (including the header for binary, and from the first character after \# up to \* for ASCII).
 
 **Checksum Algorithm (C code from Appendix 1):**
 
