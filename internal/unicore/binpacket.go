@@ -13,23 +13,6 @@ var BinPacketFormat gpsprot.PacketFormat = binPacketFormat{}
 // binPacketFormat implements the gpsprot.PacketFormat interface for Unicore binary packets
 type binPacketFormat struct{}
 
-// BinaryHeader represents the 24-byte header of a Unicore binary packet
-type BinaryHeader struct {
-	Sync1              byte   // 0xAA
-	Sync2              byte   // 0x44
-	Sync3              byte   // 0xB5
-	CPUIdlePercent     byte   // CPU idle percentage (0-100)
-	MessageID          uint16 // Message identifier
-	MessageLength      uint16 // Length of data payload (not including header or CRC)
-	TimeRef            byte   // Reference time (GPST or BDST)
-	TimeStatus         byte   // Time status
-	Week               uint16 // Week number
-	MillisecondsOfWeek uint32 // Seconds of week (milliseconds)
-	Reserved           uint32 // Reserved
-	Version            byte   // Release version
-	LeapSec            byte   // Leap second
-	DelayMs            uint16 // Output delay
-}
 
 func (f binPacketFormat) Tag() gpsprot.Tag {
 	return "UnicoreBinary"

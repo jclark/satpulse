@@ -1,8 +1,6 @@
 package unicore
 
 import (
-	"bytes"
-	"encoding/binary"
 	"encoding/hex"
 	"testing"
 
@@ -54,40 +52,3 @@ func TestBinPacketFormat(t *testing.T) {
 	})
 }
 
-func TestBinaryHeader(t *testing.T) {
-	// This test compares the binary header with the corresponding ASCII header
-	// from the packet log. The ASCII header for this packet shows:
-	// #PPSSTATUSA,93,GPS,FINE,2376,540337000,0,0,18,29;...
-	t.Run("ParseHeaderWithBinaryRead", func(t *testing.T) {
-		// Create a reader from the packet bytes
-		reader := bytes.NewReader(ppsStatusBPacket[:24]) // Just the header
-		
-		var header BinaryHeader
-		err := binary.Read(reader, binary.LittleEndian, &header)
-		if err != nil {
-			t.Fatalf("binary.Read() error = %v", err)
-		}
-
-		// Expected values based on the ASCII header from the packet log
-		expected := BinaryHeader{
-			Sync1:              0xAA,
-			Sync2:              0x44,
-			Sync3:              0xB5,
-			CPUIdlePercent:     93,      // From ASCII: "93"
-			MessageID:          9000,    // PPSSTATUS
-			MessageLength:      60,      // PPSSTATUS payload size
-			TimeRef:            0,       // 0 = GPS
-			TimeStatus:         0xA0,    // Time status from binary
-			Week:               2376,    // From ASCII: "2376"
-			MillisecondsOfWeek: 540337000, // From ASCII: "540337000"
-			Reserved:           0,       // Reserved field
-			Version:            0,       // Version field
-			LeapSec:            18,      // From ASCII: "18"
-			DelayMs:            29,      // From ASCII: "29"
-		}
-
-		if header != expected {
-			t.Errorf("Header mismatch:\nGot:      %+v\nExpected: %+v", header, expected)
-		}
-	})
-}

@@ -291,6 +291,24 @@ Binary Header Structure (24 bytes total):
 | Leap Sec | UCHAR | 1 | 21 | Leap second |  
 | Delay ms | USHORT | 2 | 22 | Output delay |
 
+**Time Status Values (GPS Reference Time Status):**
+
+Based on Novatel OEM7 time status values. The Unicore ASCII header shows "Unknown" or "Fine", indicating that only a subset of these values are typically used.
+
+| Decimal | ASCII | Description |
+|---|---|---|
+| 20 | UNKNOWN | Time validity is unknown |
+| 60 | APPROXIMATE | Time is set approximately |
+| 80 | COARSEADJUSTING | Time is approaching coarse precision |
+| 100 | COARSE | Time is valid to coarse precision |
+| 120 | COARSESTEERING | Time is coarse set and is being steered |
+| 130 | FREEWHEELING | Position is lost and the range bias cannot be calculated |
+| 140 | FINEADJUSTING | Time is adjusting to fine precision |
+| 160 | FINE | Time has fine precision |
+| 170 | FINEBACKUPSTEERING | Time is fine set and is being steered by the backup system |
+| 180 | FINESTEERING | Time is fine set and is being steered |
+| 200 | SATTIME | Time from satellite. Only used in logs containing satellite data such as ephemeris and almanac |
+
 #### **ASCII packet format**
 
 ASCII messages start with a \# character, followed by a header, a semicolon ;, the data payload, an asterisk \*, and a 4-byte hexadecimal CRC. Fields are comma-separated.

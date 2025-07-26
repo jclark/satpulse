@@ -20,3 +20,8 @@ type PPSSTATUS struct {
 	_             uint32 // Reserved
 	_             uint32 // Reserved
 }
+
+// ID returns the message ID for PPSSTATUS
+func (p *PPSSTATUS) ID() MsgID {
+	return PPSStatusID
+}
