@@ -31,7 +31,7 @@ func TestBinPacketFormat(t *testing.T) {
 	})
 
 	t.Run("MsgID", func(t *testing.T) {
-		const expectedID = "9000"
+		const expectedID = "PPSSTATUS"
 		msgID := BinPacketFormat.MsgID(testPPSStatusBPacket)
 		if msgID != expectedID {
 			t.Errorf("MsgID() = %q, want %q", msgID, expectedID)

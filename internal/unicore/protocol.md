@@ -562,19 +562,18 @@ Position or Velocity Type (pos type, vel type) (Table 0-4):
   | reserve | Byte | 1 | Reserved |  
   | reserve | Byte | 1 | Reserved |  
   | reserve | Byte | 1 | Reserved |  
-  | Satellite Block (repeats Sat number times) | | | |  
   | Frq flag | Byte | 1 | Frequency flag bitmask for this satellite |  
+  | Satellite Block (repeats Sat number times) | | | |  
   | PRN | Byte | 1 | Satellite PRN number |  
   | Azimuth | Short | 2 | Azimuth (degrees) |  
-  | Elevation | Byte | 1 | Elevation (degrees) |  
+  | Elevation | Byte | 1 | Elevation (degrees) |
+  | Frequency Block (repeats Freq No times) | | | |  
   | Sys status | Byte | 1 | System identifier |  
   | SNR | Byte | 1 | Signal-to-noise ratio |  
   | Freq status | Byte | 1 | Frequency identifier |  
-  | Freq No | Byte | 1 | Number of frequencies for this PRN |  
-  | Frequency Block (repeats Freq No times) | | | |  
-  | SNR | Byte | 1 | Signal-to-noise ratio for this frequency |  
-  | Freq status | Byte | 1 | Frequency identifier for this frequency |  
-  | Reserved | Short | 2 | Reserved |
+  | Freq No | Byte | 1 | Number of frequencies for this PRN |   
+
+Manual says: “freq No.” is updated according to the real time calculation.
 
 #### **BESTSAT**
 

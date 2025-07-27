@@ -161,6 +161,14 @@ type Msg interface {
 	ID() MsgID
 }
 
+// ChunkedMsg interface for messages with variable-length structure
+// that need to be read/written in chunks
+type ChunkedMsg interface {
+	Msg
+	// Chunks returns a push iterator that yields each chunk for sequential reading/writing
+	Chunks() func(yield func(chunk any) bool)
+}
+
 var msgMap = make(map[MsgID]func() Msg)
 var idNameMap = make(map[MsgID]string)
 var asciiNameIDMap = make(map[string]MsgID)
@@ -247,9 +255,26 @@ func ParseBinMsg(packet []byte) (MessageHeader, Msg, error) {
 	// Create and populate message
 	msg := ctor()
 	r := bytes.NewReader(payload)
-	err = binary.Read(r, binary.LittleEndian, msg)
-	if err != nil {
-		return MessageHeader{}, nil, fmt.Errorf("parsing UNCB-%s: %v", msgID.String(), err)
+	
+	// Check if this is a chunked message
+	if chunkedMsg, ok := msg.(ChunkedMsg); ok {
+		// Use the chunks iterator to read the message
+		chunks := chunkedMsg.Chunks()
+		chunks(func(chunk any) bool {
+			if err = binary.Read(r, binary.LittleEndian, chunk); err != nil {
+				return false
+			}
+			return true
+		})
+		if err != nil {
+			return MessageHeader{}, nil, fmt.Errorf("parsing UNCB-%s: %v", msgID.String(), err)
+		}
+	} else {
+		// Use single read for fixed-length messages
+		err = binary.Read(r, binary.LittleEndian, msg)
+		if err != nil {
+			return MessageHeader{}, nil, fmt.Errorf("parsing UNCB-%s: %v", msgID.String(), err)
+		}
 	}
 
 	// Check for trailing bytes
@@ -271,9 +296,26 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	} else {
 		// Serialize the message payload
 		buf := new(bytes.Buffer)
-		err = binary.Write(buf, binary.LittleEndian, msg)
-		if err != nil {
-			return nil, err
+		
+		// Check if this is a chunked message
+		if chunkedMsg, ok := msg.(ChunkedMsg); ok {
+			// Use the chunks iterator to write the message
+			chunks := chunkedMsg.Chunks()
+			chunks(func(chunk any) bool {
+				if err = binary.Write(buf, binary.LittleEndian, chunk); err != nil {
+					return false
+				}
+				return true
+			})
+			if err != nil {
+				return nil, fmt.Errorf("serializing %s: %v", msg.ID().String(), err)
+			}
+		} else {
+			// Use single write for fixed-length messages
+			err = binary.Write(buf, binary.LittleEndian, msg)
+			if err != nil {
+				return nil, err
+			}
 		}
 		payload = buf.Bytes()
 	}
