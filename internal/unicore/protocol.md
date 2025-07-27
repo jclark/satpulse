@@ -582,6 +582,30 @@ Position or Velocity Type (pos type, vel type) (Table 0-4):
 * Description: Information about the satellites used in the position solution. The message consists of a header followed by a variable number of satellite blocks.  
   | Field | Type | Bytes | Description |  
   |---|---|---|---|  
+  | #entries | Ulong | 4 | Number of satellite entries to follow |  
+  | Satellite Block (repeats #entries times) | | | |  
+  | Satellite system | Enum | 4 | GNSS system |  
+  | Satellite ID | Ulong | 4 | Satellite PRN number |  
+  | Status | Enum | 4 | Status (always "GOOD") |  
+  | Signal mask | Hex 4 | 4 | Bitmask of signals used from this satellite |
+
+**Satellite System Enum (from Table 7-116):**
+
+* **0:** GPS  
+* **1:** GLONASS  
+* **2:** SBAS  
+* **5:** GALILEO  
+* **6:** BEIDOU  
+* **7:** QZSS  
+* **9:** NAVIC
+
+
+#### **BESTSAT**
+
+* **Message ID:** 1041  
+* Description: Information about the satellites used in the position solution. The message consists of a header followed by a variable number of satellite blocks.  
+  | Field | Type | Bytes | Description |  
+  |---|---|---|---|  
   | \#entries | Ulong | 4 | Number of satellite entries to follow |  
   | Satellite Block (repeats \#entries times) | | | |  
   | Satellite system | Enum | 4 | GNSS system |  
