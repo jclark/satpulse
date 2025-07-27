@@ -7,13 +7,14 @@ import (
 	"strconv"
 )
 
-// Decode parses string fields into a Go struct, similar to encoding/binary.Read.
+// PartialDecode parses string fields into a Go struct, similar to encoding/binary.Read.
 // Fields are processed in struct field order. Custom types should implement encoding.TextUnmarshaler.
-func Decode(fields []string, v interface{}) error {
+// Returns the number of fields consumed and an error.
+func PartialDecode(fields []string, v interface{}) (int, error) {
 	// Get reflection info
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Ptr || rv.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("fieldenc: v must be a pointer to struct")
+		return 0, fmt.Errorf("fieldenc: v must be a pointer to struct")
 	}
 	
 	rv = rv.Elem() // Dereference pointer
@@ -28,16 +29,16 @@ func Decode(fields []string, v interface{}) error {
 		if field.CanSet() || rt.Field(i).Name == "_" {
 			fieldType := rt.Field(i)
 			
-			// Skip fields named "_" (used for padding/alignment)
+			// Error on fields named "_" - not supported
 			if fieldType.Name == "_" {
-				continue
+				return 0, fmt.Errorf("fieldenc: blank identifier fields ('_') are not supported")
 			}
 			
 			// Handle embedded structs
 			if fieldType.Anonymous && field.Kind() == reflect.Struct {
 				err := decodeStruct(fields, &fieldIndex, field)
 				if err != nil {
-					return fmt.Errorf("fieldenc: embedded struct %s: %w", fieldType.Name, err)
+					return fieldIndex, fmt.Errorf("fieldenc: embedded struct %s: %w", fieldType.Name, err)
 				}
 			} else {
 				if fieldIndex >= len(fields) {
@@ -49,13 +50,27 @@ func Decode(fields []string, v interface{}) error {
 				
 				err := setField(field, value)
 				if err != nil {
-					return fmt.Errorf("fieldenc: field %s: %w", fieldType.Name, err)
+					return fieldIndex, fmt.Errorf("fieldenc: field %s: %w", fieldType.Name, err)
 				}
 			}
 		}
 		// Skip unexported fields (no CanSet() and not "_")
 	}
 	
+	return fieldIndex, nil
+}
+
+// Decode parses string fields into a Go struct, similar to encoding/binary.Read.
+// Fields are processed in struct field order. Custom types should implement encoding.TextUnmarshaler.
+// Returns an error if not all fields are consumed or if parsing fails.
+func Decode(fields []string, v interface{}) error {
+	fieldsConsumed, err := PartialDecode(fields, v)
+	if err != nil {
+		return err
+	}
+	if fieldsConsumed != len(fields) {
+		return fmt.Errorf("fieldenc: expected to consume %d fields, consumed %d", len(fields), fieldsConsumed)
+	}
 	return nil
 }
 
@@ -70,9 +85,9 @@ func decodeStruct(fields []string, fieldIndex *int, rv reflect.Value) error {
 		if field.CanSet() || rt.Field(i).Name == "_" {
 			fieldType := rt.Field(i)
 			
-			// Skip fields named "_" (used for padding/alignment)
+			// Error on fields named "_" - not supported
 			if fieldType.Name == "_" {
-				continue
+				return fmt.Errorf("fieldenc: blank identifier fields ('_') are not supported")
 			}
 			
 			// Handle nested embedded structs
@@ -192,9 +207,9 @@ func Encode(v interface{}) ([]string, error) {
 		if field.CanSet() || field.CanInterface() || rt.Field(i).Name == "_" {
 			fieldType := rt.Field(i)
 			
-			// Skip fields named "_" (used for padding/alignment)
+			// Error on fields named "_" - not supported
 			if fieldType.Name == "_" {
-				continue
+				return nil, fmt.Errorf("fieldenc: blank identifier fields ('_') are not supported")
 			}
 			
 			// Handle embedded structs
@@ -231,9 +246,9 @@ func encodeStruct(rv reflect.Value) ([]string, error) {
 		if field.CanSet() || field.CanInterface() || rt.Field(i).Name == "_" {
 			fieldType := rt.Field(i)
 			
-			// Skip fields named "_" (used for padding/alignment)
+			// Error on fields named "_" - not supported
 			if fieldType.Name == "_" {
-				continue
+				return nil, fmt.Errorf("fieldenc: blank identifier fields ('_') are not supported")
 			}
 			
 			// Handle nested embedded structs

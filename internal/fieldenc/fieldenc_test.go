@@ -3,6 +3,7 @@ package fieldenc
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -286,31 +287,6 @@ func TestCanonical(t *testing.T) {
 			value:  NestedMessage{},
 		},
 		{
-			name:   "struct with _ field padding",
-			fields: []string{"hello", "12345", "true"}, // Only 3 fields, _ fields are skipped
-			value: StructWithPadding{
-				Field1: "hello",
-				// _ fields are not encoded/decoded
-				Field2: 12345,
-				// _ fields are not encoded/decoded  
-				Field3: true,
-			},
-		},
-		{
-			name:   "struct with embedded _ field padding",
-			fields: []string{"start", "42", "test", "false"}, // 4 fields, _ field in embedded struct is skipped
-			value: StructWithEmbeddedPadding{
-				Start: "start",
-				EmbeddedWithPadding: EmbeddedWithPadding{
-					Value1: 42,
-					// _ field skipped
-					Value2: "test",
-				},
-				// _ field skipped
-				End: false,
-			},
-		},
-		{
 			name:   "custom types without TextUnmarshaler",
 			fields: []string{"-123", "456789", "3.14159", "true", "custom_string"},
 			value: CustomTypesStruct{
@@ -435,6 +411,142 @@ func TestDecode(t *testing.T) {
 			result := reflect.ValueOf(target).Elem().Interface()
 			if !reflect.DeepEqual(result, tt.expected) {
 				t.Errorf("expected %+v, got %+v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPartialDecode(t *testing.T) {
+	// Test cases for PartialDecode - verifies field consumption counting
+	tests := []struct {
+		name                string
+		fields              []string
+		target              interface{}
+		expectedConsumed    int
+		expectedValue       interface{}
+	}{
+		{
+			name:             "consume all fields",
+			fields:           []string{"hello", "42"},
+			target:           &BasicStruct{},
+			expectedConsumed: 2,
+			expectedValue: BasicStruct{
+				Str:   "hello",
+				Int32: 42,
+			},
+		},
+		{
+			name:             "consume partial fields",
+			fields:           []string{"hello", "42", "123", "3.14", "true", "extra", "fields"},
+			target:           &BasicStruct{},
+			expectedConsumed: 5, // All 5 fields of BasicStruct consumed
+			expectedValue: BasicStruct{
+				Str:    "hello",
+				Int32:  42,
+				Uint64: 123,
+				Float:  3.14,
+				Bool:   true,
+			},
+		},
+		{
+			name:             "empty fields",
+			fields:           []string{},
+			target:           &BasicStruct{},
+			expectedConsumed: 0,
+			expectedValue:    BasicStruct{},
+		},
+		{
+			name:             "embedded struct partial",
+			fields:           []string{"BESTNAV", "1", "12345", "49.246", "-123.003", "46.405", "3735928559", "extra1", "extra2"},
+			target:           &CompleteMessage{},
+			expectedConsumed: 7, // All fields of CompleteMessage consumed
+			expectedValue: CompleteMessage{
+				HeaderFields: HeaderFields{
+					MessageName: "BESTNAV",
+					Port:        1,
+					Sequence:    12345,
+				},
+				PayloadFields: PayloadFields{
+					Lat: 49.246,
+					Lon: -123.003,
+					Alt: 46.405,
+				},
+				Checksum: 3735928559,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fieldsConsumed, err := PartialDecode(tt.fields, tt.target)
+			if err != nil {
+				t.Fatalf("PartialDecode failed: %v", err)
+			}
+			
+			if fieldsConsumed != tt.expectedConsumed {
+				t.Errorf("expected to consume %d fields, consumed %d", tt.expectedConsumed, fieldsConsumed)
+			}
+			
+			result := reflect.ValueOf(tt.target).Elem().Interface()
+			if !reflect.DeepEqual(result, tt.expectedValue) {
+				t.Errorf("expected %+v, got %+v", tt.expectedValue, result)
+			}
+		})
+	}
+}
+
+func TestDecodeWithExcessFields(t *testing.T) {
+	// Test that Decode fails when there are excess fields
+	var target BasicStruct
+	err := Decode([]string{"hello", "42", "excess"}, &target)
+	if err == nil {
+		t.Error("expected error when excess fields provided, got none")
+	}
+}
+
+func TestBlankFieldErrors(t *testing.T) {
+	// Test that blank identifier fields produce errors
+	tests := []struct {
+		name   string
+		target interface{}
+	}{
+		{
+			name:   "decode struct with _ field",
+			target: &StructWithPadding{},
+		},
+		{
+			name:   "decode struct with embedded _ field",
+			target: &StructWithEmbeddedPadding{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test Decode
+			err := Decode([]string{"test"}, tt.target)
+			if err == nil {
+				t.Error("expected error for _ field in Decode, got none")
+			}
+			if !strings.Contains(err.Error(), "blank identifier fields") {
+				t.Errorf("expected blank identifier error, got: %v", err)
+			}
+
+			// Test PartialDecode  
+			_, err = PartialDecode([]string{"test"}, tt.target)
+			if err == nil {
+				t.Error("expected error for _ field in PartialDecode, got none")
+			}
+			if !strings.Contains(err.Error(), "blank identifier fields") {
+				t.Errorf("expected blank identifier error, got: %v", err)
+			}
+
+			// Test Encode
+			_, err = Encode(tt.target)
+			if err == nil {
+				t.Error("expected error for _ field in Encode, got none")
+			}
+			if !strings.Contains(err.Error(), "blank identifier fields") {
+				t.Errorf("expected blank identifier error, got: %v", err)
 			}
 		})
 	}

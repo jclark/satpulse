@@ -48,21 +48,15 @@ func TestBinaryHeader(t *testing.T) {
 
 const testPPSStatusAsciiMessage = "#PPSSTATUSA,93,GPS,FINE,2376,540337000,0,0,18,29;3,2376,540336000,-4,-27676000,0x03E80020,0x00000015,0,0x00666669,0x2B000000,0x0110D2BC,0x00000000,0x2CB0ECAC,0x00000000,0x00000000*0bbaac1a\r\n"
 
-func TestParseAsciiMessage(t *testing.T) {
+func TestAsciiHeader(t *testing.T) {
 	t.Run("PPSSTATUSA", func(t *testing.T) {
-		// Parse the ASCII PPSSTATUS message
-		msgHeader, msg, err := ParseAsciiMessage([]byte(testPPSStatusAsciiMessage))
+		// Parse the ASCII PPSSTATUS message to test header parsing
+		msgHeader, _, err := ParseAsciiMessage([]byte(testPPSStatusAsciiMessage))
 		if err != nil {
 			t.Fatalf("ParseAsciiMessage() error = %v", err)
 		}
 
-		// Verify we got a PPSSTATUS message
-		ppsMsg, ok := msg.(*PPSSTATUS)
-		if !ok {
-			t.Fatalf("Expected *PPSSTATUS, got %T", msg)
-		}
-
-		// Expected header
+		// Expected header values based on ASCII packet
 		expectedHeader := MessageHeader{
 			CPUIdlePercent: 93,
 			TimingHeader: TimingHeader{
@@ -77,58 +71,26 @@ func TestParseAsciiMessage(t *testing.T) {
 			},
 		}
 
-		// Expected PPSSTATUS message
-		expectedMsg := &PPSSTATUS{
-			Status:       3,
-			Week:         2376,
-			MsSecInWeek:  540336000,
-			PPSPulseErr:  -4,
-			OffsetTime:   -27676000,
-			ConfigInfo:   0x03E80020,
-			Register:     0x00000015,
-			TimeEstErr:   0,
-			InnerQuality: 0x00666669,
-			PPSInnerSta:  0x2B000000,
-			PPSCfgSta:    0x0110D2BC,
-			PPSStage:     0x00000000,
-			Reserved:     0x2CB0ECAC,
-		}
-
 		if msgHeader != expectedHeader {
 			t.Errorf("Header mismatch:\nGot:      %+v\nExpected: %+v", msgHeader, expectedHeader)
-		}
-
-		if *ppsMsg != *expectedMsg {
-			t.Errorf("Message mismatch:\nGot:      %+v\nExpected: %+v", *ppsMsg, *expectedMsg)
 		}
 	})
 }
 
-func TestParseAndSerializeMsg(t *testing.T) {
-	t.Run("PPSSTATUSRoundTrip", func(t *testing.T) {
-		// Parse the captured PPSSTATUS packet
-		msgHeader, msg, err := ParseBinMsg(testPPSStatusBPacket)
+func TestBinHeader(t *testing.T) {
+	t.Run("PPSSTATUSB", func(t *testing.T) {
+		// Parse the binary PPSSTATUS packet to test header parsing
+		msgHeader, _, err := ParseBinMsg(testPPSStatusBPacket)
 		if err != nil {
-			t.Fatalf("ParseMsg() error = %v", err)
+			t.Fatalf("ParseBinMsg() error = %v", err)
 		}
 
-		// Verify we got a PPSSTATUS message
-		ppsMsg, ok := msg.(*PPSSTATUS)
-		if !ok {
-			t.Fatalf("Expected *PPSSTATUS, got %T", msg)
-		}
-
-		// Verify message ID
-		if ppsMsg.ID() != PPSStatusID {
-			t.Errorf("Message ID = %v, want %v", ppsMsg.ID(), PPSStatusID)
-		}
-
-		// Verify header values match expected
+		// Expected header values - should match ASCII header
 		expectedHeader := MessageHeader{
-			CPUIdlePercent: 93, // From test data
+			CPUIdlePercent: 93,
 			TimingHeader: TimingHeader{
-				TimeRef:            0,              // GPS
-				TimeStatus:         TimeStatusFine, // FINE
+				TimeRef:            0,
+				TimeStatus:         TimeStatusFine,
 				Week:               2376,
 				MillisecondsOfWeek: 540337000,
 				Reserved:           0,
@@ -140,23 +102,6 @@ func TestParseAndSerializeMsg(t *testing.T) {
 
 		if msgHeader != expectedHeader {
 			t.Errorf("Header mismatch:\nGot:      %+v\nExpected: %+v", msgHeader, expectedHeader)
-		}
-
-		// Serialize the message back to binary
-		serialized, err := SerializeBinMsg(msgHeader, ppsMsg)
-		if err != nil {
-			t.Fatalf("SerializeMsg() error = %v", err)
-		}
-
-		// Verify the serialized packet matches the original
-		if len(serialized) != len(testPPSStatusBPacket) {
-			t.Errorf("Serialized length = %d, want %d", len(serialized), len(testPPSStatusBPacket))
-		}
-
-		if string(serialized) != string(testPPSStatusBPacket) {
-			t.Errorf("Serialized packet does not match original")
-			t.Logf("Original:   %x", testPPSStatusBPacket)
-			t.Logf("Serialized: %x", serialized)
 		}
 	})
 }

@@ -14,9 +14,9 @@ type SatsInfo struct {
 type SatsInfoInitChunk struct {
 	SatNumber     byte // Number of tracked satellites to follow
 	VersionNumber byte // Version number, default = 2
-	_             byte // Reserved
-	_             byte // Reserved
-	_             byte // Reserved
+	Reserved1     byte // Reserved
+	Reserved2     byte // Reserved
+	Reserved3     byte // Reserved
 	FreqFlag      byte // Frequency flag bitmask for this satellite
 }
 

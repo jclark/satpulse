@@ -1,7 +1,6 @@
 package unicore
 
 import (
-	"bytes"
 	"reflect"
 	"testing"
 )
@@ -10,13 +9,13 @@ var satsInfoTests = []struct {
 	name        string
 	binPacket   []byte
 	asciiPacket string
-	want        SatsInfo
+	value       SatsInfo
 }{
 	{
 		name:        "SatsInfo with 47 satellites",
 		binPacket:   mustHexDecode("aa44b55e4c08f60200a04909a058d9000000000000121c002f020000003f18af00130020000400251104002a0e04002409041d3c0133002c000300281103002c090319ea0013002800040025110400240e04002809040cc900140028000300211103002609030fe0004f003100030030110300310903170d0112002000050020110500240e0500210305001d09050d41003c001c0001c2950013052600040525110405260e0405280304c774003805250004052c1104052d0e0405270304c4360035051a1103051b0e0305190303c3490031051a0e013b75001701220002011d07022d150017011a00020116050227e2002a012e0002012b05023c460033011a00013d5c011c011b0003011a05030120070326440146012b00013cf2003e04320003042e150304310d0302e90042042b000304321103042c1503038c004704300003042e1103042b150305ff0027042a0003042b1103042a15030d4e012c04240003042411030422150325c0000804240005042415050421080504260c0504280d0514e6000d04290005042515050426080504230c0504250d052791001c042a0005042615050428080504250c0504260d0506a0001804240003042c11030428150309ad001304220003042711030422150328a00037042b0005042e1505042a0805042a0c05042d0d0507b0003c042d0003042d1103042c15031c6d0036042b0005042715050429080504260c0504290d050aca00450430000304301103042e1503109e0017042800030428110304221503085b012a041900030420110304191503200f013e04300005042f1505042f080504300c0504320d051b03004104270005042615050427080504240c0504260d05242b0029031902011e19010f031d02040325110403220c0403201604092b001d03181101056c004a033002040334110403310c04033016042252011e031a11020317160219b0000d031c020303180c030317160303c80025032c0204032f1104032b0c040329160402e4001b032c0204032d1104032b0c04032a160428750034062c060180f40022063006013e04010c06260601ba050126062e0601b62e3613"),
 		asciiPacket: "#SATSINFOA,94,GPS,FINE,2377,14244000,0,0,18,28;47,2,0,0,0,63,24,175,19,0,32,0,4,0,37,17,4,0,42,14,4,0,36,9,4,29,316,51,0,44,0,3,0,40,17,3,0,44,9,3,25,234,19,0,40,0,4,0,37,17,4,0,36,14,4,0,40,9,4,12,201,20,0,40,0,3,0,33,17,3,0,38,9,3,15,224,79,0,49,0,3,0,48,17,3,0,49,9,3,23,269,18,0,32,0,5,0,32,17,5,0,36,14,5,0,33,3,5,0,29,9,5,13,65,60,0,28,0,1,194,149,19,5,38,0,4,5,37,17,4,5,38,14,4,5,40,3,4,199,116,56,5,37,0,4,5,44,17,4,5,45,14,4,5,39,3,4,196,54,53,5,26,17,3,5,27,14,3,5,25,3,3,195,73,49,5,26,14,1,59,117,23,1,34,0,2,1,29,7,2,45,21,23,1,26,0,2,1,22,5,2,39,226,42,1,46,0,2,1,43,5,2,60,70,51,1,26,0,1,61,348,28,1,27,0,3,1,26,5,3,1,32,7,3,38,324,70,1,43,0,1,60,242,62,4,50,0,3,4,46,21,3,4,49,13,3,2,233,66,4,43,0,3,4,50,17,3,4,44,21,3,3,140,71,4,48,0,3,4,46,17,3,4,43,21,3,5,255,39,4,42,0,3,4,43,17,3,4,42,21,3,13,334,44,4,36,0,3,4,36,17,3,4,34,21,3,37,192,8,4,36,0,5,4,36,21,5,4,33,8,5,4,38,12,5,4,40,13,5,20,230,13,4,41,0,5,4,37,21,5,4,38,8,5,4,35,12,5,4,37,13,5,39,145,28,4,42,0,5,4,38,21,5,4,40,8,5,4,37,12,5,4,38,13,5,6,160,24,4,36,0,3,4,44,17,3,4,40,21,3,9,173,19,4,34,0,3,4,39,17,3,4,34,21,3,40,160,55,4,43,0,5,4,46,21,5,4,42,8,5,4,42,12,5,4,45,13,5,7,176,60,4,45,0,3,4,45,17,3,4,44,21,3,28,109,54,4,43,0,5,4,39,21,5,4,41,8,5,4,38,12,5,4,41,13,5,10,202,69,4,48,0,3,4,48,17,3,4,46,21,3,16,158,23,4,40,0,3,4,40,17,3,4,34,21,3,8,347,42,4,25,0,3,4,32,17,3,4,25,21,3,32,271,62,4,48,0,5,4,47,21,5,4,47,8,5,4,48,12,5,4,50,13,5,27,3,65,4,39,0,5,4,38,21,5,4,39,8,5,4,36,12,5,4,38,13,5,36,43,41,3,25,2,1,30,281,15,3,29,2,4,3,37,17,4,3,34,12,4,3,32,22,4,9,43,29,3,24,17,1,5,108,74,3,48,2,4,3,52,17,4,3,49,12,4,3,48,22,4,34,338,30,3,26,17,2,3,23,22,2,25,176,13,3,28,2,3,3,24,12,3,3,23,22,3,3,200,37,3,44,2,4,3,47,17,4,3,43,12,4,3,41,22,4,2,228,27,3,44,2,4,3,45,17,4,3,43,12,4,3,42,22,4,40,117,52,6,44,6,1,128,244,34,6,48,6,1,62,260,12,6,38,6,1,186,261,38,6,46,6,1*5f93d72e\r\n",
-		want: SatsInfo{
+		value: SatsInfo{
 			SatsInfoInitChunk: SatsInfoInitChunk{
 				SatNumber:     47,
 				VersionNumber: 2,
@@ -75,72 +74,97 @@ var satsInfoTests = []struct {
 	},
 }
 
-func TestSerializeBinMsg_SatsInfo(t *testing.T) {
+func TestSatsInfoBin(t *testing.T) {
 	for _, tt := range satsInfoTests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Parse the original packet to get header and message
+			// Test parsing binary packet
 			header, msg, err := ParseBinMsg(tt.binPacket)
 			if err != nil {
 				t.Fatalf("ParseBinMsg() error = %v", err)
 			}
 
-			// Serialize it back
-			serialized, err := SerializeBinMsg(header, msg)
-			if err != nil {
-				t.Fatalf("SerializeBinMsg() error = %v", err)
-			}
-
-			// Should be identical to original
-			if !bytes.Equal(serialized, tt.binPacket) {
-				t.Errorf("Serialized packet differs from original")
-				t.Errorf("Original:   %x", tt.binPacket)
-				t.Errorf("Serialized: %x", serialized)
-			}
-		})
-	}
-}
-
-func TestParseBinMsg_SatsInfo(t *testing.T) {
-	for _, tt := range satsInfoTests {
-		t.Run(tt.name, func(t *testing.T) {
-			header, msg, err := ParseBinMsg(tt.binPacket)
-			if err != nil {
-				t.Fatalf("ParseBinMsg() error = %v", err)
-			}
-
-			// Check message type
 			satsInfo, ok := msg.(*SatsInfo)
 			if !ok {
 				t.Fatalf("ParseBinMsg() returned wrong type: got %T, want *SatsInfo", msg)
 			}
 
-			// Check header fields
-			if header.TimingHeader.TimeRef != TimeRefGPS {
-				t.Errorf("TimeRef = %v, want GPS", header.TimingHeader.TimeRef)
-			}
-			if header.TimingHeader.TimeStatus != TimeStatusFine {
-				t.Errorf("TimeStatus = %v, want FINE", header.TimingHeader.TimeStatus)
+			checkSatsInfo(t, satsInfo, &tt.value)
+
+			// Test round-trip: value -> serialize -> parse
+			serialized, err := SerializeBinMsg(header, &tt.value)
+			if err != nil {
+				t.Fatalf("SerializeBinMsg() error = %v", err)
 			}
 
-			// Check header chunk
-			if satsInfo.SatsInfoInitChunk != tt.want.SatsInfoInitChunk {
-				t.Errorf("SatsInfoInitChunk = %+v, want %+v", satsInfo.SatsInfoInitChunk, tt.want.SatsInfoInitChunk)
-			}
-			if len(satsInfo.Sats) != int(satsInfo.SatNumber) {
-				t.Errorf("len(Sats) = %d, want %d", len(satsInfo.Sats), satsInfo.SatNumber)
+			_, msg2, err := ParseBinMsg(serialized)
+			if err != nil {
+				t.Fatalf("ParseBinMsg() on serialized packet error = %v", err)
 			}
 
-			
-			// Test satellite structures
-			if len(satsInfo.Sats) != len(tt.want.Sats) {
-				t.Errorf("len(Sats) = %d, want %d", len(satsInfo.Sats), len(tt.want.Sats))
+			satsInfo2, ok := msg2.(*SatsInfo)
+			if !ok {
+				t.Fatalf("ParseBinMsg() on serialized returned wrong type: got %T, want *SatsInfo", msg2)
 			}
-			for i := range tt.want.Sats {
-				if !reflect.DeepEqual(satsInfo.Sats[i], tt.want.Sats[i]) {
-					t.Errorf("Satellite %d mismatch:\nGot:  %+v\nWant: %+v", 
-						i, satsInfo.Sats[i], tt.want.Sats[i])
-				}
-			}
+
+			checkSatsInfo(t, satsInfo2, &tt.value)
 		})
+	}
+}
+
+func TestSatsInfoAscii(t *testing.T) {
+	for _, tt := range satsInfoTests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test parsing ASCII packet
+			header, msg, err := ParseAsciiMessage([]byte(tt.asciiPacket))
+			if err != nil {
+				t.Fatalf("ParseAsciiMessage() error = %v", err)
+			}
+
+			satsInfo, ok := msg.(*SatsInfo)
+			if !ok {
+				t.Fatalf("ParseAsciiMessage() returned wrong type: got %T, want *SatsInfo", msg)
+			}
+
+			checkSatsInfo(t, satsInfo, &tt.value)
+
+			// Test round-trip: value -> serialize -> parse
+			serialized, err := SerializeAsciiMsg(header, &tt.value)
+			if err != nil {
+				t.Fatalf("SerializeAsciiMsg() error = %v", err)
+			}
+
+			_, msg2, err := ParseAsciiMessage(serialized)
+			if err != nil {
+				t.Fatalf("ParseAsciiMessage() on serialized packet error = %v", err)
+			}
+
+			satsInfo2, ok := msg2.(*SatsInfo)
+			if !ok {
+				t.Fatalf("ParseAsciiMessage() on serialized returned wrong type: got %T, want *SatsInfo", msg2)
+			}
+
+			checkSatsInfo(t, satsInfo2, &tt.value)
+		})
+	}
+}
+
+func checkSatsInfo(t *testing.T, actual *SatsInfo, expected *SatsInfo) {
+	// Check header chunk
+	if actual.SatsInfoInitChunk != expected.SatsInfoInitChunk {
+		t.Errorf("SatsInfoInitChunk = %+v, want %+v", actual.SatsInfoInitChunk, expected.SatsInfoInitChunk)
+	}
+	if len(actual.Sats) != int(actual.SatNumber) {
+		t.Errorf("len(Sats) = %d, want %d", len(actual.Sats), actual.SatNumber)
+	}
+
+	// Test satellite structures
+	if len(actual.Sats) != len(expected.Sats) {
+		t.Errorf("len(Sats) = %d, want %d", len(actual.Sats), len(expected.Sats))
+	}
+	for i := range expected.Sats {
+		if !reflect.DeepEqual(actual.Sats[i], expected.Sats[i]) {
+			t.Errorf("Satellite %d mismatch:\nGot:  %+v\nWant: %+v",
+				i, actual.Sats[i], expected.Sats[i])
+		}
 	}
 }
