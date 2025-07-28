@@ -1,4 +1,4 @@
-package unicore
+package uncmsg
 
 import (
 	"encoding/binary"
@@ -22,7 +22,7 @@ func TestCRC32(t *testing.T) {
 	expectedCRC := binary.LittleEndian.Uint32(expectedChecksumBytes)
 
 	t.Run("TableImplementation", func(t *testing.T) {
-		crc := crc32(data)
+		crc := CRC32(data)
 		if crc != expectedCRC {
 			t.Errorf("calculateCRC32() = 0x%X, want 0x%X", crc, expectedCRC)
 		}
@@ -35,7 +35,6 @@ func TestCRC32(t *testing.T) {
 		}
 	})
 }
-
 
 const testCRC32Polynomial uint32 = 0xEDB88320
 
@@ -70,9 +69,9 @@ func FuzzCRC32(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0x00})
 	f.Add([]byte{0xFF})
-	
+
 	f.Fuzz(func(t *testing.T, data []byte) {
-		table := crc32(data)
+		table := CRC32(data)
 		reference := testCRC32(data)
 		if table != reference {
 			t.Errorf("CRC32 implementations differ for data %x: table=0x%X, reference=0x%X", data, table, reference)

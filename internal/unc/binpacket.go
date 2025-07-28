@@ -1,9 +1,10 @@
-package unicore
+package unc
 
 import (
 	"encoding/binary"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
 // BinPacketFormat is the Unicore binary packet format
@@ -86,7 +87,7 @@ func (f binPacketFormat) MsgID(pkt []byte) string {
 		return ""
 	}
 	// Message ID is a USHORT at offset 4
-	msgID := MsgID(binary.LittleEndian.Uint16(pkt[4:6]))
+	msgID := uncmsg.MsgID(binary.LittleEndian.Uint16(pkt[4:6]))
 	return msgID.String()
 }
 
@@ -95,7 +96,7 @@ func (f binPacketFormat) ExtractChecksum(pkt []byte) []byte {
 }
 
 func (f binPacketFormat) ComputeChecksum(pkt []byte) []byte {
-	crc := crc32(pkt[:len(pkt)-crcLength])
+	crc := uncmsg.CRC32(pkt[:len(pkt)-crcLength])
 	checksumBytes := make([]byte, crcLength)
 	binary.LittleEndian.PutUint32(checksumBytes, crc)
 	return checksumBytes

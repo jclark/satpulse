@@ -1,4 +1,4 @@
-package unicore
+package uncmsg
 
 // Message IDs for satellite-related messages
 const (

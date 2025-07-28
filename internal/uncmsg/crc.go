@@ -1,4 +1,4 @@
-package unicore
+package uncmsg
 
 // This is a direct translation of the CRC32 algorithm provided in the Unicore documentation appendix.
 
@@ -37,12 +37,11 @@ var crc32Table = [256]uint32{
 	0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
 }
 
-// crc32 computes the 32-bit CRC for the given data slice using a pre-computed table.
-func crc32(data []byte) uint32 {
+// CRC32 computes the 32-bit CRC for the given data slice using a pre-computed table.
+func CRC32(data []byte) uint32 {
 	var crc uint32 = 0
 	for _, b := range data {
 		crc = crc32Table[(crc^uint32(b))&0xff] ^ (crc >> 8)
 	}
 	return crc
 }
-

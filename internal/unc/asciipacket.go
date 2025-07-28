@@ -1,4 +1,4 @@
-package unicore
+package unc
 
 // ASCII Packet Format Specification
 //
@@ -29,6 +29,7 @@ package unicore
 
 import (
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
 // AsciiPacketFormat is the Unicore ASCII packet format
@@ -173,8 +174,6 @@ func (f asciiPacketFormat) ExtractChecksum(pkt []byte) []byte {
 	return []byte{}
 }
 
-const hexDigits = "0123456789abcdef"
-
 func (f asciiPacketFormat) ComputeChecksum(pkt []byte) []byte {
 	// Check if packet ends at semicolon (no checksum)
 	if pkt[len(pkt)-3] == ';' {
@@ -185,7 +184,7 @@ func (f asciiPacketFormat) ComputeChecksum(pkt []byte) []byte {
 	if len(pkt) >= 11 && pkt[len(pkt)-11] == '*' {
 		// 32-bit CRC: data from '#' to '*' (exclusive)
 		data := pkt[1 : len(pkt)-11]
-		crc := crc32(data)
+		crc := uncmsg.CRC32(data)
 		return []byte{
 			byte((crc >> 24) & 0xff),
 			byte((crc >> 16) & 0xff),

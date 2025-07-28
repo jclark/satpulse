@@ -1,9 +1,17 @@
-package unicore
+package uncmsg
 
 import (
 	"bytes"
 	"encoding/binary"
 	"testing"
+)
+
+// testPPSStatusBPacket is a PPSSTATUSB packet captured from a UM980 receiver.
+// Message ID: 9000 (0x2328)
+var testPPSStatusBPacket = mustHexDecode(
+	"aa44b55d28233c0000a0480968e334200000000000121d000300000048090000" +
+		"80df3420fcffffffa0b259fe2000e803150000000000000069666600000000" +
+		"2bbcd2100100000000acecb02c000000000000000091a800a5",
 )
 
 func TestBinaryHeader(t *testing.T) {

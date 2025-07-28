@@ -1,6 +1,7 @@
-package unicore
+package uncmsg
 
 import (
+	"encoding/hex"
 	"reflect"
 	"testing"
 )
@@ -197,4 +198,12 @@ func TestDataAscii(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mustHexDecode(s string) []byte {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

@@ -1,4 +1,4 @@
-package unicore
+package uncmsg
 
 import (
 	"bytes"
@@ -10,9 +10,18 @@ import (
 	"github.com/jclark/satpulse/internal/fieldenc"
 )
 
+// First three bytes of a Unicore binary packet
+const (
+	sync1 byte = 0xAA
+	sync2 byte = 0x44
+	sync3 byte = 0xB5
+)
+
+const headerLength = 24 // Total header length including 3 sync bytes
+const crcLength = 4
+
 // MsgID represents a Unicore message identifier (uint16)
 type MsgID uint16
-
 
 // TimeStatus represents the GPS Reference Time Status field in Unicore messages
 // Based on Novatel OEM7 time status values
@@ -342,7 +351,7 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	packet := append(headerBuf.Bytes(), payload...)
 
 	// Calculate and append CRC
-	crc := crc32(packet)
+	crc := CRC32(packet)
 	crcBytes := make([]byte, crcLength)
 	binary.LittleEndian.PutUint32(crcBytes, crc)
 	packet = append(packet, crcBytes...)
@@ -505,7 +514,7 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	dataForChecksum := dataBuilder.String()
 
 	// Calculate CRC32 checksum on data (excluding '#')
-	checksum := crc32([]byte(dataForChecksum))
+	checksum := CRC32([]byte(dataForChecksum))
 
 	// Build final packet with '#' prefix and checksum
 	var packet strings.Builder
@@ -524,4 +533,3 @@ func BinPacketMsgID(packet []byte) MsgID {
 	}
 	return MsgID(binary.LittleEndian.Uint16(packet[4:6]))
 }
-

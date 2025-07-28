@@ -1,4 +1,4 @@
-package unicore
+package unc
 
 import (
 	"encoding/hex"
