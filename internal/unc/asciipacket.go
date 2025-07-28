@@ -32,6 +32,9 @@ import (
 	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
+// TagAscii is the identifier for Unicore ASCII packets
+const TagAscii gpsprot.Tag = "UNCA"
+
 // AsciiPacketFormat is the Unicore ASCII packet format
 var AsciiPacketFormat gpsprot.PacketFormat = asciiPacketFormat{}
 
@@ -39,7 +42,7 @@ var AsciiPacketFormat gpsprot.PacketFormat = asciiPacketFormat{}
 type asciiPacketFormat struct{}
 
 func (f asciiPacketFormat) Tag() gpsprot.Tag {
-	return "UNCA" // Unicore ASCII
+	return TagAscii
 }
 
 const (

@@ -7,6 +7,9 @@ import (
 	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
+// TagBinary is the identifier for Unicore binary packets
+const TagBinary gpsprot.Tag = "UNCB"
+
 // BinPacketFormat is the Unicore binary packet format
 var BinPacketFormat gpsprot.PacketFormat = binPacketFormat{}
 
@@ -15,7 +18,7 @@ type binPacketFormat struct{}
 
 
 func (f binPacketFormat) Tag() gpsprot.Tag {
-	return "UNCB" // Unicore Binary
+	return TagBinary
 }
 
 // First three bytes of a Unicore binary packet
