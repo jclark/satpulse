@@ -91,22 +91,23 @@ func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
 	if chunkedMsg, ok := msg.(ChunkedMsg); ok {
 		// Use the chunks iterator to parse the message
 		fieldIndex := 0
-		chunks := chunkedMsg.Chunks()
-		chunks(func(chunk any) bool {
+		for chunk := range chunkedMsg.Chunks() {
 			fieldsConsumed, chunkErr := fieldenc.PartialDecode(dataFields[fieldIndex:], chunk)
 			if chunkErr != nil {
 				err = chunkErr
-				return false
+				break
 			}
 			fieldIndex += fieldsConsumed
-			return true
-		})
+		}
 		if err != nil {
 			return MessageHeader{}, nil, fmt.Errorf("parsing %s data: %v", asciiHeader.MessageName, err)
 		}
+		// Ensure all fields were consumed
+		if fieldIndex != len(dataFields) {
+			return MessageHeader{}, nil, fmt.Errorf("parsing %s data: expected to consume %d fields, consumed %d", asciiHeader.MessageName, len(dataFields), fieldIndex)
+		}
 	} else {
-		// Use PartialDecode for fixed-length messages (allows excess fields)
-		_, err = fieldenc.PartialDecode(dataFields, msg)
+		err = fieldenc.Decode(dataFields, msg)
 		if err != nil {
 			return MessageHeader{}, nil, fmt.Errorf("parsing %s data: %v", asciiHeader.MessageName, err)
 		}
@@ -146,16 +147,14 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 		// Check if this is a chunked message
 		if chunkedMsg, ok := msg.(ChunkedMsg); ok {
 			// Use the chunks iterator to serialize the message
-			chunks := chunkedMsg.Chunks()
-			chunks(func(chunk any) bool {
+			for chunk := range chunkedMsg.Chunks() {
 				chunkFields, chunkErr := fieldenc.Encode(chunk)
 				if chunkErr != nil {
 					err = chunkErr
-					return false
+					break
 				}
 				dataFields = append(dataFields, chunkFields...)
-				return true
-			})
+			}
 			if err != nil {
 				return nil, fmt.Errorf("encoding %s data: %v", asciiMsgName, err)
 			}

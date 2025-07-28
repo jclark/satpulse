@@ -85,13 +85,11 @@ func ParseBinMsg(packet []byte) (MessageHeader, Msg, error) {
 	// Check if this is a chunked message
 	if chunkedMsg, ok := msg.(ChunkedMsg); ok {
 		// Use the chunks iterator to read the message
-		chunks := chunkedMsg.Chunks()
-		chunks(func(chunk any) bool {
+		for chunk := range chunkedMsg.Chunks() {
 			if err = binary.Read(r, binary.LittleEndian, chunk); err != nil {
-				return false
+				break
 			}
-			return true
-		})
+		}
 		if err != nil {
 			return MessageHeader{}, nil, fmt.Errorf("parsing UNCB-%s: %v", msgID.String(), err)
 		}
@@ -126,13 +124,11 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 		// Check if this is a chunked message
 		if chunkedMsg, ok := msg.(ChunkedMsg); ok {
 			// Use the chunks iterator to write the message
-			chunks := chunkedMsg.Chunks()
-			chunks(func(chunk any) bool {
+			for chunk := range chunkedMsg.Chunks() {
 				if err = binary.Write(buf, binary.LittleEndian, chunk); err != nil {
-					return false
+					break
 				}
-				return true
-			})
+			}
 			if err != nil {
 				return nil, fmt.Errorf("serializing %s: %v", msg.ID().String(), err)
 			}
