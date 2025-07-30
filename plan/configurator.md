@@ -234,7 +234,7 @@ type ConfigOrchestrator struct {
     cfgtor      Configurator
     startIndex  int          // First request not in a final state
     endIndex    int          // First request not yet discovered and ready
-    retries     map[int]int  // Track retries per request index
+    retries     []int        // Track retries per request index (grown as needed)
     maxRetries  int
 }
 
@@ -243,7 +243,7 @@ func NewConfigOrchestrator(cfgtor Configurator, maxRetries int) *ConfigOrchestra
         cfgtor:      cfgtor,
         startIndex:  0,
         endIndex:    0,
-        retries:     make(map[int]int),
+        retries:     nil, // Grown as needed
         maxRetries:  maxRetries,
     }
 }
@@ -295,6 +295,10 @@ func (co *ConfigOrchestrator) Instructions() iter.Seq[ConfigInstruction] {
                 state := co.cfgtor.GetState(i)
                 if state == StateReadyToSend || state == StateMayResend {
                     if state == StateMayResend {
+                        // Grow retries slice if needed
+                        for len(co.retries) <= i {
+                            co.retries = append(co.retries, 0)
+                        }
                         co.retries[i]++
                         if co.retries[i] >= co.maxRetries {
                             co.cfgtor.SetFailed(i)
@@ -352,42 +356,71 @@ func (co *ConfigOrchestrator) Instructions() iter.Seq[ConfigInstruction] {
 }
 ```
 
-### Simple Client Usage
+### Usage in internal/gpscfg/gpscfg.go
+
+This would replace the existing `msgHandler.configure()` method:
 
 ```go
-orchestrator := gpsprot.NewConfigOrchestrator(configurator, maxRetries)
-
-for instruction := range orchestrator.Instructions() {
-    switch instruction.Action {
-    case gpsprot.ActionSendRequest:
-        if instruction.Speed != 0 {
-            // Serial port specific - send then change speed
-            serPort.WriteThenChangeSpeed(instruction.Packet, instruction.Speed)
-        } else {
-            port.Write(instruction.Packet)
-        }
-        cfgtor.SetSentTime(instruction.Index, time.Now())
-        
-    case gpsprot.ActionCheckTimeout:
-        // Check if this specific request has timed out
-        if time.Now().After(instruction.Deadline) {
-            cfgtor.SetTimedOut(instruction.Index)
-        }
-        
-    case gpsprot.ActionWaitUntil:
-        select {
-        case <-time.After(time.Until(instruction.Deadline)):
-            // Iterator will handle the timeout on next iteration
-        case packet := <-packetCh:
-            // Packet processing happens via NativeMsgHandler
-        }
-        
-    case gpsprot.ActionError:
-        return instruction.Error
-        
-    case gpsprot.ActionSuccess:
-        return nil // Configuration complete
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchanger, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, error) {
+    cfgtor, err := prot.Configure(target)
+    if err != nil {
+        return nil, nil, err
     }
+    
+    orchestrator := gpsprot.NewConfigOrchestrator(cfgtor, maxTries)
+    var knownErr error // error that we know how to handle
+
+    for instruction := range orchestrator.Instructions() {
+        switch instruction.Action {
+        case gpsprot.ActionSendRequest:
+            var err error
+            if instruction.Speed != 0 {
+                // Serial port specific - send then change speed
+                if serPort, ok := port.(*gpsio.SerialConn); ok {
+                    _, err = serPort.WriteThenChangeSpeed(instruction.Packet, instruction.Speed)
+                } else {
+                    err = fmt.Errorf("speed change requested but port is not serial")
+                }
+            } else {
+                _, err = port.Write(instruction.Packet)
+            }
+            if err != nil {
+                return nil, nil, fmt.Errorf("failed to send configuration packet: %w", err)
+            }
+            cfgtor.SetSentTime(instruction.Index, time.Now())
+            
+        case gpsprot.ActionCheckTimeout:
+            // Check if this specific request has timed out
+            if time.Now().After(instruction.Deadline) {
+                cfgtor.SetTimedOut(instruction.Index)
+            }
+            
+        case gpsprot.ActionWaitUntil:
+            select {
+            case <-ctx.Done():
+                return nil, nil, ctx.Err()
+            case <-time.After(time.Until(instruction.Deadline)):
+                // Iterator will handle the timeout on next iteration
+            case packet, ok := <-mh.packetCh:
+                if !ok {
+                    return nil, nil, mh.packetChClosed(ctx)
+                }
+                mh.packet(packet)
+            }
+            
+        case gpsprot.ActionError:
+            if knownErr == nil {
+                mh.lg.Warn("GPS configuration failed", "err", instruction.Error)
+                knownErr = instruction.Error
+            }
+            // Continue to allow recovery operations
+            
+        case gpsprot.ActionSuccess:
+            return cfgtor.ConfigProps(), cfgtor.ReceiverInfo(), knownErr
+        }
+    }
+    
+    return nil, nil, fmt.Errorf("configuration iterator ended unexpectedly")
 }
 ```
 
@@ -417,6 +450,126 @@ The index-based design enhances replay testing:
 **Simplified Test Logic**: The replay harness becomes simpler because it no longer needs to simulate the caller's FindAck/Done logic - it just feeds packets and checks resulting states against expected values.
 
 This design addresses all the main weaknesses while preserving testability and making protocol implementations straightforward to write and maintain.
+
+### Replay Test Implementation
+
+Here's how `replayer.run()` from `internal/gpscmd/replay_test.go` can be rewritten using ConfigOrchestrator:
+
+```go
+func (r *replayer) run() {
+    // Initialize packet processors like gpscfg does (unchanged)
+    for _, pp := range r.packetProcs {
+        pp.SetMsgHandler(r)
+        if r.px == nil {
+            r.px = pp.CreatePacketExchanger()
+        }
+    }
+
+    // Probe phase (unchanged)
+    r.feedUpTo(0)
+    if len(r.test.outPackets) == 0 {
+        return
+    }
+    probePacket := r.px.ProbePacket()
+    expected := r.test.outPackets[0]
+    if string(probePacket) != expected.Data() {
+        r.t.Errorf("probe packet mismatch")
+    }
+    r.outIdx++
+    
+    r.feedUpTo(1)
+    if !r.px.ProbeOK() {
+        r.t.Error("probe did not succeed after feeding initial packets")
+        return
+    }
+
+    // Create configurator and orchestrator
+    var err error
+    r.cfgtor, err = r.px.Configure(r.target)
+    if err != nil {
+        r.t.Fatal(err)
+    }
+    
+    orchestrator := gpsprot.NewConfigOrchestrator(r.cfgtor, maxTries)
+
+    // Process configuration using orchestrator
+    for instruction := range orchestrator.Instructions() {
+        switch instruction.Action {
+        case gpsprot.ActionSendRequest:
+            // Verify output packet matches expected
+            if r.outIdx >= len(r.test.outPackets) {
+                r.t.Fatalf("unexpected request, no more output packets")
+            }
+
+            expected := r.test.outPackets[r.outIdx]
+            if !r.packetsEqual("", instruction.Packet, expected) {
+                r.t.Errorf("packet mismatch")
+            }
+            r.outIdx++
+            
+            // Mark as sent using recorded timestamp
+            r.cfgtor.SetSentTime(instruction.Index, time.Time(expected.T))
+            
+        case gpsprot.ActionCheckTimeout:
+            // Use recorded packet timestamps for deterministic timeout checking
+            // Find the last input packet timestamp we've processed
+            var lastProcessedTime time.Time
+            if r.inIdx > 0 {
+                lastProcessedTime = time.Time(r.test.inPackets[r.inIdx-1].T)
+            }
+            
+            // Check timeout against recorded timeline
+            if lastProcessedTime.After(instruction.Deadline) {
+                r.cfgtor.SetTimedOut(instruction.Index)
+            }
+            
+        case gpsprot.ActionWaitUntil:
+            // Feed packets until we reach the deadline or get the response we need
+            r.feedUpToTime(instruction.Deadline)
+            
+        case gpsprot.ActionError:
+            if r.configErr == nil {
+                r.configErr = instruction.Error
+            }
+            // Continue to allow recovery operations
+            
+        case gpsprot.ActionSuccess:
+            break // Configuration complete
+        }
+    }
+
+    if r.outIdx < len(r.test.outPackets) {
+        r.t.Fatalf("failed to generate all output packets, got %d, want %d",
+            r.outIdx, len(r.test.outPackets))
+    }
+}
+
+// Helper method to feed packets up to a specific time
+func (r *replayer) feedUpToTime(deadline time.Time) {
+    for r.inIdx < len(r.test.inPackets) {
+        p := r.test.inPackets[r.inIdx]
+        if time.Time(p.T).After(deadline) {
+            break // Don't feed packets beyond deadline
+        }
+        
+        r.inIdx++
+        if p.Tag == "" {
+            continue // Skip invalid packets
+        }
+        
+        pp, ok := r.packetProcs[p.Tag]
+        if !ok {
+            r.t.Errorf("no processor for tag %s", p.Tag)
+            continue
+        }
+        
+        _, err := pp.ProcessPacket(p.Data(), time.Time(p.T))
+        if err != nil {
+            r.t.Errorf("error processing packet: %v", err)
+        }
+    }
+}
+```
 
 ### UBX Implementation Outline
 
