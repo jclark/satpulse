@@ -209,95 +209,141 @@ Implementations can use various internal structures to track requests. The UBX i
 
 ### Helper Orchestrator
 
-To further simplify client usage, a helper struct manages the complexity:
+To further simplify client usage, a helper struct manages the complexity. It uses an "active window" of requests, defined by a start and end index, to efficiently manage batching and retries. This design supports protocols that allow for batching requests.
 
 ```go
 type ConfigAction int
 const (
     ActionSendRequest ConfigAction = iota
+    ActionCheckTimeout  // Client should check for timeouts
     ActionWaitUntil
-    ActionChangeSpeed  // After sending speed change request
     ActionError        // Unrecoverable error
     ActionSuccess      // Configuration complete
 )
 
 type ConfigInstruction struct {
     Action   ConfigAction
-    Index    int           // For ActionSendRequest
+    Index    int           // For ActionSendRequest, ActionCheckTimeout
     Packet   []byte       // For ActionSendRequest
-    Speed    int          // For ActionChangeSpeed
-    Deadline time.Time    // For ActionWaitUntil
+    Speed    int          // For ActionSendRequest (0 if no change)
+    Deadline time.Time    // For ActionWaitUntil, ActionCheckTimeout
     Error    error        // For ActionError
 }
 
 type ConfigOrchestrator struct {
     cfgtor      Configurator
-    currentIdx  int
-    retries     []int        // Track retries per request index, grows as needed
+    startIndex  int          // First request not in a final state
+    endIndex    int          // First request not yet discovered and ready
+    retries     map[int]int  // Track retries per request index
     maxRetries  int
 }
 
 func NewConfigOrchestrator(cfgtor Configurator, maxRetries int) *ConfigOrchestrator {
     return &ConfigOrchestrator{
         cfgtor:      cfgtor,
-        retries:     nil,        // Start with nil, allocate only when needed
+        startIndex:  0,
+        endIndex:    0,
+        retries:     make(map[int]int),
         maxRetries:  maxRetries,
     }
 }
 
+
 // Instructions returns an iterator over configuration instructions
-// Using Go 1.23+ push-style iterators (range-over-func)
 func (co *ConfigOrchestrator) Instructions() iter.Seq[ConfigInstruction] {
     return func(yield func(ConfigInstruction) bool) {
         for {
-            state := co.cfgtor.GetState(co.currentIdx)
+            // --- Phase 1: Update window state ---
+
+            // Advance startIndex past any completed (Succeeded, Skipped) requests
+            for co.startIndex < co.endIndex {
+                state := co.cfgtor.GetState(co.startIndex)
+                if state != StateSucceeded && state != StateSkipped {
+                    break
+                }
+                co.startIndex++
+            }
+
+            // Expand endIndex to discover all new immediately actionable requests
+            for {
+                state := co.cfgtor.GetState(co.endIndex)
+                if state == StateReadyToSend || state == StateSkipped {
+                    co.endIndex++
+                } else {
+                    // Stop at NotReady, AwaitingResponse, Failed, or EndOfRequests
+                    break
+                }
+            }
             
-            switch state {
-            case StateReadyToSend:
-                packet := co.cfgtor.GetPacket(co.currentIdx)
-                speed := co.cfgtor.GetSpeedChangeAfter(co.currentIdx)
-                if !yield(ConfigInstruction{
-                    Action: ActionSendRequest,
-                    Index:  co.currentIdx,
-                    Packet: packet,
-                    Speed:  speed,
-                }) {
-                    return
+            // Check for specific requests that need timeout checking
+            for i := co.startIndex; i < co.endIndex; i++ {
+                if co.cfgtor.GetState(i) == StateAwaitingResponse {
+                    if deadline, ok := co.cfgtor.GetDeadline(i); ok {
+                        if !yield(ConfigInstruction{
+                            Action:   ActionCheckTimeout,
+                            Index:    i,
+                            Deadline: deadline,
+                        }) { return }
+                    }
                 }
-                
-            case StateAwaitingResponse:
-                deadline, _ := co.cfgtor.GetDeadline(co.currentIdx)
-                if !yield(ConfigInstruction{
-                    Action:   ActionWaitUntil,
-                    Deadline: deadline,
-                }) {
-                    return
+            }
+
+            // --- Phase 2: Yield send instructions for ready requests (Batching) ---
+
+            var sentInBatch bool
+            for i := co.startIndex; i < co.endIndex; i++ {
+                state := co.cfgtor.GetState(i)
+                if state == StateReadyToSend || state == StateMayResend {
+                    if state == StateMayResend {
+                        co.retries[i]++
+                        if co.retries[i] >= co.maxRetries {
+                            co.cfgtor.SetFailed(i)
+                            continue // State is now Failed, will be handled in Phase 3
+                        }
+                    }
+
+                    if !yield(ConfigInstruction{
+                        Action: ActionSendRequest,
+                        Index:  i,
+                        Packet: co.cfgtor.GetPacket(i),
+                        Speed:  co.cfgtor.GetSpeedChangeAfter(i),
+                    }) { return }
+                    sentInBatch = true
                 }
-                
-            case StateMayResend:
-                // Grow retries slice if needed
-                for len(co.retries) <= co.currentIdx {
-                    co.retries = append(co.retries, 0)
+            }
+
+            if sentInBatch { continue }
+
+            // --- Phase 3: Determine next action (Wait, Fail, or Succeed) ---
+
+            var earliestDeadline time.Time
+            var hasAwaiting, hasFailure bool
+
+            for i := co.startIndex; i < co.endIndex; i++ {
+                state := co.cfgtor.GetState(i)
+                if state == StateFailed {
+                    hasFailure = true
+                    break
                 }
-                co.retries[co.currentIdx]++
-                
-                if co.retries[co.currentIdx] >= co.maxRetries {
-                    co.cfgtor.SetFailed(co.currentIdx)
+                if state == StateAwaitingResponse {
+                    hasAwaiting = true
+                    if deadline, ok := co.cfgtor.GetDeadline(i); ok {
+                        if earliestDeadline.IsZero() || deadline.Before(earliestDeadline) {
+                            earliestDeadline = deadline
+                        }
+                    }
                 }
-                // Loop continues to get next state
-                
-            case StateSucceeded:
-                co.currentIdx++
-                // Loop continues to get next request
-                
-            case StateFailed, StateSkipped:
-                yield(ConfigInstruction{
-                    Action: ActionError,
-                    Error:  fmt.Errorf("configuration failed at request %d", co.currentIdx),
-                })
+            }
+
+            if hasFailure {
+                yield(ConfigInstruction{Action: ActionError, Error: fmt.Errorf("configuration failed")})
                 return
-                
-            case StateEndOfRequests:
+            }
+
+            if hasAwaiting {
+                yield(ConfigInstruction{Action: ActionWaitUntil, Deadline: earliestDeadline})
+            } else if co.startIndex >= co.endIndex && co.cfgtor.GetState(co.startIndex) == StateEndOfRequests {
+                // Done: no requests in flight and no more to generate.
                 yield(ConfigInstruction{Action: ActionSuccess})
                 return
             }
@@ -321,6 +367,12 @@ for instruction := range orchestrator.Instructions() {
             port.Write(instruction.Packet)
         }
         cfgtor.SetSentTime(instruction.Index, time.Now())
+        
+    case gpsprot.ActionCheckTimeout:
+        // Check if this specific request has timed out
+        if time.Now().After(instruction.Deadline) {
+            cfgtor.SetTimedOut(instruction.Index)
+        }
         
     case gpsprot.ActionWaitUntil:
         select {
