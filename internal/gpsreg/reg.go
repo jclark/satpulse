@@ -9,6 +9,7 @@ import (
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/rtcm"
 	"github.com/jclark/satpulse/internal/ubx"
+	"github.com/jclark/satpulse/internal/unc"
 )
 
 // PacketFormats contains all known packet formats
@@ -16,6 +17,8 @@ var PacketFormats = []gpsprot.PacketFormat{
 	ubx.PacketFormat,
 	nmea.PacketFormat,
 	rtcm.PacketFormat,
+	unc.BinPacketFormat,
+	unc.AsciiPacketFormat,
 }
 
 // CreatePacketProcessors creates packet processors for all registered protocols
