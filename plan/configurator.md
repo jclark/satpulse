@@ -131,102 +131,83 @@ Current design has no concept of request dependencies:
 - How would this impact testability and replay?
 - Currently retries are not logged, creating challenges for replay testing
 
-## Design Options
+## Design
 
-### A. Index-Based Request Management with Parallel Slices
+The new design replaces the current `NextRequest()/FindAck()/Done()` pattern with index-based request management. The key principle is that ConfigRequest is no longer exposed through the gpsprot interface - instead, all requests are addressed by their index.
 
-This approach replaces the current `NextRequest()/FindAck()/Done()` pattern with index-based request lifecycle management.
-
-#### Core Design
+### Core Design
 
 ```go
-type RequestStatus int
+type RequestState int
 const (
-    StatusNotExists RequestStatus = iota     // Index beyond current requests
-    StatusNotReady                           // Dependencies not met
-    StatusReadyToSend                        // Can be sent now
-    StatusSent                               // Just sent, transitioning...
-    StatusAwaitingResponse                   // Waiting for ACK/response
-    StatusSucceeded                          // Completed successfully  
-    StatusRejected                           // Received NACK
-    StatusMayResend                          // Timed out, client can choose to retry
-    StatusSkipped                            // Skipped (dependency failed or client gave up)
-    StatusEndOfRequests                      // No more requests in sequence
+    StateNotReady RequestState = iota        // Dependencies not met
+    StateReadyToSend                         // Can be sent now
+    StateAwaitingResponse                    // Waiting for ACK/response
+    StateSucceeded                           // Completed successfully  
+    StateMayResend                           // Timed out, client can choose to retry
+    StateFailed                              // Failed (NACK received or was sent but did not work)
+    StateSkipped                             // Skipped (dependency failed, shouldn't be tried)
+    StateEndOfRequests                       // No more requests in sequence
 )
 
 type Configurator interface {
     // Index-based request management
-    RequestPacket(index int) []byte          // Get packet (must be ReadyToSend)
-    RequestSent(index int, tSent time.Time)  // Mark as sent
-    RequestStatus(index int) RequestStatus   // Current status
+    GetPacket(index int) []byte              // Get packet (must be StateReadyToSend)
+    GetSpeedChangeAfter(index int) int       // Get speed change (0 if none)
+    SetSentTime(index int, tSent time.Time)  // Mark as sent
+    GetState(index int) RequestState         // Current state
     
     // Timeout handling
-    GetDeadline(index int) (time.Time, bool) // Only valid for StatusAwaitingResponse
-    SetTimedOut(index int)                   // StatusAwaitingResponse → StatusMayResend
+    GetDeadline(index int) (time.Time, bool) // Only valid for StateAwaitingResponse
+    SetTimedOut(index int)                   // StateAwaitingResponse → StateMayResend
     
     // Retry decision
-    GiveUp(index int)                        // StatusMayResend → StatusSkipped
-    // (RequestSent again for StatusMayResend → retry)
-    
-    // Discovery
-    ReadyRequests() []int                    // Indices ready to send
+    SetFailed(index int)                     // StateMayResend → StateFailed
+    SetSkipped(index int)                    // StateNotReady → StateSkipped (dependency failed)
+    // (SetSentTime again for StateMayResend → retry)
 }
 ```
 
-#### Parallel Slice Architecture
+### Key Design Principles
 
-The implementation uses separate slices to track requests and their status:
+1. **ConfigRequest Encapsulation**: The ConfigRequest type is no longer exposed through the gpsprot interface. Instead:
+   - Requests are identified by their index (0, 1, 2, ...)
+   - All request operations use the index as the handle
+   - Request details remain internal to the protocol implementation
+   - The caller cannot misuse or directly access ConfigRequest objects
 
-```go
-type Configurator struct {
-    requests []ConfigRequest    // Permanent slice of all requests
-    statuses []RequestStatus    // Parallel slice tracking each request's status
-    sentTimes []time.Time       // When each request was sent
-    attempts []int              // Retry count for each request
-    // ... other existing fields
-}
-```
+2. **Automatic State Management**: The Configurator automatically handles state transitions based on received packets:
+   - When an ACK is received, the request transitions to `StateSucceeded`
+   - When a NACK is received, the request transitions to `StateFailed`
+   - When a poll response is received, the request transitions to `StateSucceeded`
+   - For certain errors, the Configurator may transition from `StateAwaitingResponse` directly to `StateFailed` (instead of allowing retries)
+   - The caller no longer needs to call `FindAck()` and `Done()` - this happens internally
 
-#### Benefits
+### Benefits
 
-1. **ConfigRequest Stays Private**: No longer exposed to caller, preventing misuse
-2. **Clear State Machine**: Explicit status transitions are easy to understand and test
-3. **Dynamic Discovery**: Client discovers requests incrementally as they're generated
-4. **Dependency Support**: `StatusNotReady` prevents sending requests before dependencies complete
-5. **Selective Recovery**: Failed requests can be skipped while independent ones continue
-6. **Natural Retry Handling**: `StatusMayResend` gives client explicit control over retry decisions
-7. **Batching Support**: Multiple requests can be marked `ReadyToSend` simultaneously for batch operations
+1. **Better Encapsulation**: ConfigRequest is no longer exposed, preventing misuse and simplifying the interface
+2. **Simplified Caller Logic**: No need to call `FindAck()` and `Done()` - packet processing handles state transitions automatically
+3. **Clear State Machine**: Explicit state transitions are easy to understand and test
+4. **Sequential Processing**: `StateNotReady` ensures requests are processed in order
+5. **Natural Retry Handling**: `StateMayResend` gives client explicit control over retry decisions
+6. **Protocol Independence**: Index-based addressing works for any protocol implementation
 
-#### Status Transitions
+### State Transitions
 
-- `StatusNotReady` → `StatusReadyToSend` (when dependencies complete)
-- `StatusReadyToSend` → `StatusSent` → `StatusAwaitingResponse` (via RequestSent)
-- `StatusAwaitingResponse` → `StatusSucceeded` | `StatusRejected` (via packet processing)
-- `StatusAwaitingResponse` → `StatusMayResend` (via SetTimedOut)
-- `StatusMayResend` → `StatusAwaitingResponse` (via RequestSent retry)
-- `StatusMayResend` → `StatusSkipped` (via GiveUp)
+- `StateNotReady` → `StateReadyToSend` (when previous request succeeds)
+- `StateReadyToSend` → `StateAwaitingResponse` | `StateSucceeded` (via SetSentTime)
+- `StateAwaitingResponse` → `StateSucceeded` | `StateFailed` (via packet processing)
+- `StateAwaitingResponse` → `StateMayResend` (via SetTimedOut)
+- `StateAwaitingResponse` → `StateFailed` (via Configurator decision - no retry allowed)
+- `StateMayResend` → `StateAwaitingResponse` (via SetSentTime retry)
+- `StateMayResend` → `StateFailed` (via SetFailed)
+- `StateNotReady` → `StateSkipped` (via SetSkipped when dependency fails)
 
-#### UBX Implementation Adaptation
+### Implementation Notes
 
-The existing UBX code can be adapted with minimal changes:
+Implementations can use various internal structures to track requests. The UBX implementation uses a single slice of structs containing the request and its state, but this is an implementation detail. The key requirement is that the gpsprot interface only exposes indices, never ConfigRequest objects.
 
-1. **Keep Existing Request Types**: All current `msgRequest`, `pollRequest`, etc. can be reused
-2. **Change from Queue to Permanent Slice**: Instead of popping from `c.reqs`, keep all requests
-3. **Add Parallel Status Tracking**: Add `statuses []RequestStatus` alongside the requests slice
-4. **Update Packet Processing**: Modify `processMsg()` to update request status instead of just ACK tracking
-5. **Preserve Domain Logic**: All the existing step functions and configuration logic remain unchanged
-
-Example adaptation:
-```go
-// Current: c.reqs = append(c.reqs, req)
-// New: 
-c.requests = append(c.requests, req)
-c.statuses = append(c.statuses, StatusReadyToSend)
-c.sentTimes = append(c.sentTimes, time.Time{})
-c.attempts = append(c.attempts, 0)
-```
-
-#### Helper Orchestrator
+### Helper Orchestrator
 
 To further simplify client usage, a helper struct manages the complexity:
 
@@ -235,6 +216,7 @@ type ConfigAction int
 const (
     ActionSendRequest ConfigAction = iota
     ActionWaitUntil
+    ActionChangeSpeed  // After sending speed change request
     ActionError        // Unrecoverable error
     ActionSuccess      // Configuration complete
 )
@@ -242,40 +224,108 @@ const (
 type ConfigInstruction struct {
     Action   ConfigAction
     Index    int           // For ActionSendRequest
-    Deadline time.Time     // For ActionWaitUntil
-    Error    error         // For ActionError
+    Packet   []byte       // For ActionSendRequest
+    Speed    int          // For ActionChangeSpeed
+    Deadline time.Time    // For ActionWaitUntil
+    Error    error        // For ActionError
 }
 
 type ConfigOrchestrator struct {
-    cfgtor    Configurator
-    maxIndex  int
-    retryPolicy RetryPolicy
+    cfgtor      Configurator
+    currentIdx  int
+    retries     []int        // Track retries per request index, grows as needed
+    maxRetries  int
 }
 
-func (co *ConfigOrchestrator) NextInstruction() ConfigInstruction {
-    // Handles request discovery, timeout management, retry decisions
-    // Returns simple instructions for the client to execute
+func NewConfigOrchestrator(cfgtor Configurator, maxRetries int) *ConfigOrchestrator {
+    return &ConfigOrchestrator{
+        cfgtor:      cfgtor,
+        retries:     nil,        // Start with nil, allocate only when needed
+        maxRetries:  maxRetries,
+    }
+}
+
+// Instructions returns an iterator over configuration instructions
+// Using Go 1.23+ push-style iterators (range-over-func)
+func (co *ConfigOrchestrator) Instructions() iter.Seq[ConfigInstruction] {
+    return func(yield func(ConfigInstruction) bool) {
+        for {
+            state := co.cfgtor.GetState(co.currentIdx)
+            
+            switch state {
+            case StateReadyToSend:
+                packet := co.cfgtor.GetPacket(co.currentIdx)
+                speed := co.cfgtor.GetSpeedChangeAfter(co.currentIdx)
+                if !yield(ConfigInstruction{
+                    Action: ActionSendRequest,
+                    Index:  co.currentIdx,
+                    Packet: packet,
+                    Speed:  speed,
+                }) {
+                    return
+                }
+                
+            case StateAwaitingResponse:
+                deadline, _ := co.cfgtor.GetDeadline(co.currentIdx)
+                if !yield(ConfigInstruction{
+                    Action:   ActionWaitUntil,
+                    Deadline: deadline,
+                }) {
+                    return
+                }
+                
+            case StateMayResend:
+                // Grow retries slice if needed
+                for len(co.retries) <= co.currentIdx {
+                    co.retries = append(co.retries, 0)
+                }
+                co.retries[co.currentIdx]++
+                
+                if co.retries[co.currentIdx] >= co.maxRetries {
+                    co.cfgtor.SetFailed(co.currentIdx)
+                }
+                // Loop continues to get next state
+                
+            case StateSucceeded:
+                co.currentIdx++
+                // Loop continues to get next request
+                
+            case StateFailed, StateSkipped:
+                yield(ConfigInstruction{
+                    Action: ActionError,
+                    Error:  fmt.Errorf("configuration failed at request %d", co.currentIdx),
+                })
+                return
+                
+            case StateEndOfRequests:
+                yield(ConfigInstruction{Action: ActionSuccess})
+                return
+            }
+        }
+    }
 }
 ```
 
-#### Simple Client Usage
+### Simple Client Usage
 
 ```go
-orchestrator := gpsprot.NewConfigOrchestrator(configurator, retryPolicy)
+orchestrator := gpsprot.NewConfigOrchestrator(configurator, maxRetries)
 
-for {
-    instruction := orchestrator.NextInstruction()
-    
+for instruction := range orchestrator.Instructions() {
     switch instruction.Action {
     case gpsprot.ActionSendRequest:
-        packet := cfgtor.RequestPacket(instruction.Index)
-        send(packet)
-        cfgtor.RequestSent(instruction.Index, time.Now())
+        if instruction.Speed != 0 {
+            // Serial port specific - send then change speed
+            serPort.WriteThenChangeSpeed(instruction.Packet, instruction.Speed)
+        } else {
+            port.Write(instruction.Packet)
+        }
+        cfgtor.SetSentTime(instruction.Index, time.Now())
         
     case gpsprot.ActionWaitUntil:
         select {
         case <-time.After(time.Until(instruction.Deadline)):
-            // NextInstruction() will handle the timeout
+            // Iterator will handle the timeout on next iteration
         case packet := <-packetCh:
             // Packet processing happens via NativeMsgHandler
         }
@@ -289,29 +339,242 @@ for {
 }
 ```
 
-#### Dependency Management
+### Sequential Processing
 
-The index-based design naturally supports request dependencies:
+The design enforces strict sequential processing as required by UBX protocol:
 
-**Dependency Tracking**: Each request can specify which other requests it depends on. The Configurator tracks these relationships and only marks requests as `StatusReadyToSend` when their dependencies have `StatusSucceeded`.
+**Sequential Enforcement**: The `nextIndex` field tracks the first request that hasn't succeeded yet. Only this request can be `StateReadyToSend`.
 
-**Common Dependency Patterns**:
-- **GET→SET Operations**: Request 5 polls current GNSS config, Request 6 sets new config (depends on 5 succeeding)
-- **Sequential Operations**: Speed change requires all prior requests to complete first
-- **Recovery Chains**: If Request 5 fails, Request 6 becomes `StatusSkipped` but Request 7 (independent) can still proceed
+**Simple State Logic**:
+- Requests before `nextIndex`: Already processed (show their actual state)
+- Request at `nextIndex`: Current request being processed
+- Requests after `nextIndex`: Always `StateNotReady`
 
-**Selective Recovery**: When a request fails, only its dependents are marked `StatusSkipped`. Independent operations continue normally, achieving partial configuration success rather than complete failure.
+**Abort on Failure**: When a request fails (NACK or too many retries), configuration stops and the Configurator initiates recovery operations.
 
-#### Replay Testing Compatibility
+### Replay Testing Compatibility
 
 The index-based design enhances replay testing:
 
 **Preserved Determinism**: The Configurator remains completely deterministic. All timing information comes from recorded timestamps, and packet processing follows the same logic as the current system.
 
-**Enhanced Test Clarity**: Instead of tracking complex FindAck/Done sequences, replay tests verify straightforward status transitions. Test assertions become clearer: "after feeding packet X, request 5 should be StatusSucceeded."
+**Enhanced Test Clarity**: Instead of tracking complex FindAck/Done sequences, replay tests verify straightforward state transitions. Test assertions become clearer: "after feeding packet X, request 5 should be StateSucceeded."
 
 **Better Error Reproduction**: Failed scenarios are easier to reproduce because request states are explicit. Tests can verify exactly which requests succeeded, failed, or were skipped.
 
-**Simplified Test Logic**: The replay harness becomes simpler because it no longer needs to simulate the caller's FindAck/Done logic - it just feeds packets and checks resulting statuses against expected values.
+**Simplified Test Logic**: The replay harness becomes simpler because it no longer needs to simulate the caller's FindAck/Done logic - it just feeds packets and checks resulting states against expected values.
 
 This design addresses all the main weaknesses while preserving testability and making protocol implementations straightforward to write and maintain.
+
+### UBX Implementation Outline
+
+```go
+// internal/ubx/ubxcfg.go
+
+// requestState tracks the state of a single configuration request (unexported)
+type requestState struct {
+    request   gpsprot.ConfigRequest  // The actual request (msgRequest, pollRequest, etc.)
+    sentTime  time.Time              // When the request was sent
+    state     gpsprot.RequestState   // Current state
+}
+
+type Configurator struct {
+    // New index-based tracking
+    requests  []requestState         // All requests and their state
+    nextIndex int                    // Index of first request that hasn't succeeded
+    
+    // Existing fields remain
+    ver       *Version
+    acks      ackList
+    tRead     map[bin.MsgID]time.Time
+    raw       RawConfig
+    origPrt   *bin.CfgPrt
+    monGNSS   *monGNSS
+    steps     []func(*Configurator) error
+    stepIndex int
+    target    *gpsprot.ConfigTarget
+    survey    bool
+}
+
+// Implementation of new interface methods
+func (c *Configurator) GetState(index int) gpsprot.RequestState {
+    // Generate more requests if needed
+    for index >= len(c.requests) && c.stepIndex < len(c.steps) {
+        err := c.steps[c.stepIndex](c)
+        c.stepIndex++
+        if err != nil {
+            return gpsprot.StateEndOfRequests
+        }
+    }
+    
+    if index >= len(c.requests) {
+        return gpsprot.StateEndOfRequests
+    }
+    
+    if index < c.nextIndex {
+        return c.requests[index].state  // Already processed
+    } else if index > c.nextIndex {
+        return gpsprot.StateNotReady     // Future request
+    }
+    
+    // This is the current request (index == c.nextIndex)
+    rs := &c.requests[index]
+    
+    // Update nextIndex if this request succeeded
+    if rs.state == gpsprot.StateSucceeded {
+        c.nextIndex++
+        // Set next request to ready if it exists
+        if c.nextIndex < len(c.requests) {
+            c.requests[c.nextIndex].state = gpsprot.StateReadyToSend
+        }
+    }
+    
+    return rs.state
+}
+
+func (c *Configurator) GetPacket(index int) []byte {
+    if index < len(c.requests) {
+        return c.requests[index].request.Packet()
+    }
+    return nil
+}
+
+func (c *Configurator) GetSpeedChangeAfter(index int) int {
+    if index < len(c.requests) {
+        return c.requests[index].request.ChangeSpeed()
+    }
+    return 0
+}
+
+func (c *Configurator) SetSentTime(index int, tSent time.Time) {
+    if index < len(c.requests) {
+        rs := &c.requests[index]
+        rs.sentTime = tSent
+        if rs.request.Ackable() || rs.request.AwaitingResponse(tSent) {
+            rs.state = gpsprot.StateAwaitingResponse
+        } else {
+            rs.state = gpsprot.StateSucceeded
+        }
+    }
+}
+
+func (c *Configurator) GetDeadline(index int) (time.Time, bool) {
+    if index < len(c.requests) && c.requests[index].state == gpsprot.StateAwaitingResponse {
+        req := c.requests[index].request
+        // Deadline is determined by the request type and protocol rules
+        if req.Ackable() || req.AwaitingResponse(c.requests[index].sentTime) {
+            return c.requests[index].sentTime.Add(1500 * time.Millisecond), true
+        }
+    }
+    return time.Time{}, false
+}
+
+func (c *Configurator) SetTimedOut(index int) {
+    if index < len(c.requests) {
+        c.requests[index].state = gpsprot.StateMayResend
+    }
+}
+
+func (c *Configurator) SetFailed(index int) {
+    if index < len(c.requests) {
+        c.requests[index].state = gpsprot.StateFailed
+        c.stop() // Trigger recovery
+    }
+}
+
+func (c *Configurator) SetSkipped(index int) {
+    if index < len(c.requests) {
+        c.requests[index].state = gpsprot.StateSkipped
+        // Don't trigger recovery - this is expected when dependencies fail
+    }
+}
+
+// Modified addRequest to work with new structure
+func (c *Configurator) addRequest(req gpsprot.ConfigRequest) error {
+    state := gpsprot.StateNotReady
+    // First request starts as ready
+    if len(c.requests) == 0 {
+        state = gpsprot.StateReadyToSend
+    }
+    
+    c.requests = append(c.requests, requestState{
+        request: req,
+        state:   state,
+    })
+    return nil
+}
+
+// Process incoming packets - update request status based on ACKs
+func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
+    switch mt := msg.(type) {
+    case *bin.AckAck:
+        // Update ack list as before
+        c.acks.ack(mt.MsgID, true, t)
+        
+        // Check if current request is waiting for this ACK
+        if c.nextIndex < len(c.requests) && 
+           c.requests[c.nextIndex].state == gpsprot.StateAwaitingResponse {
+            req := c.requests[c.nextIndex].request
+            if req.Ackable() && c.findAckForRequest(req, c.requests[c.nextIndex].sentTime) != nil {
+                c.requests[c.nextIndex].state = gpsprot.StateSucceeded
+                req.Done() // Update raw config
+            }
+        }
+        return true, nil
+        
+    case *bin.AckNak:
+        c.acks.ack(mt.MsgID, false, t)
+        
+        if c.nextIndex < len(c.requests) && 
+           c.requests[c.nextIndex].state == gpsprot.StateAwaitingResponse {
+            req := c.requests[c.nextIndex].request
+            if req.Ackable() && c.findAckForRequest(req, c.requests[c.nextIndex].sentTime) != nil {
+                c.requests[c.nextIndex].state = gpsprot.StateFailed
+                c.stop() // Trigger recovery
+            }
+        }
+        return true, nil
+        
+    case *bin.MonGnss:
+        c.tRead[mt.ID()] = t
+        c.monGNSS = c.newMonGNSS(mt)
+        // Check if this satisfies a poll response
+        if c.nextIndex < len(c.requests) && 
+           c.requests[c.nextIndex].state == gpsprot.StateAwaitingResponse {
+            req := c.requests[c.nextIndex].request
+            if !req.AwaitingResponse(c.requests[c.nextIndex].sentTime) {
+                c.requests[c.nextIndex].state = gpsprot.StateSucceeded
+            }
+        }
+        return true, nil
+    }
+    
+    // Handle other message types as before
+    mid := msg.ID()
+    if mid.CfgClass() {
+        c.tRead[mid] = t
+        _, err := c.raw.AddMsg(msg)
+        // Check if this satisfies a poll response
+        if c.nextIndex < len(c.requests) && 
+           c.requests[c.nextIndex].state == gpsprot.StateAwaitingResponse {
+            req := c.requests[c.nextIndex].request
+            if !req.AwaitingResponse(c.requests[c.nextIndex].sentTime) {
+                c.requests[c.nextIndex].state = gpsprot.StateSucceeded
+            }
+        }
+        return err == nil, err
+    }
+    
+    return false, nil
+}
+
+func (c *Configurator) findAckForRequest(req gpsprot.ConfigRequest, tSent time.Time) *gpsprot.Ack {
+    packet := req.Packet()
+    msgID := bin.PacketMsgId(packet)
+    a := c.acks.findAckByMsgId(msgID, tSent)
+    if a == nil {
+        return nil
+    }
+    return &a.Ack
+}
+```
