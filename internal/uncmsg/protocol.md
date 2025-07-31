@@ -79,7 +79,10 @@ The response is a standard ASCII log message, which starts with a `#` character.
 The payload part of the message describes the current mode.
 
 **Example Output:**  
-`#MODE,81,GPS,FINE,2230,547967000,0,0,18,518;MODE ROVER SURVEY,*1B`
+```
+#MODE,81,GPS,FINE,2230,547967000,0,0,18,518;MODE ROVER SURVEY,*1B
+#MODE,93,GPS,FINE,2377,327883000,0,0,18,517;MODE BASE -1144698.0455 6090335.4099 1504171.3914,*7F
+```
 
 The payload in the example is `MODE ROVER SURVEY` indicating that the current mode is the same as would result from the command `MODE ROVER SURVEY`.
 
@@ -97,11 +100,39 @@ Queries all current configurations of the receiver.
 
 **Syntax:** CONFIG
 
-Output Format: The receiver responds with a series of ASCII messages, each detailing a specific configuration.  
+Output Format: The receiver responds with a series of ASCII messages, each detailing a specific configuration.
+
+Each message has the form `$CONFIG,<key>,<command>,*<checksum>`
+
 Example Output:  
+```
 $CONFIG,COM1,CONFIG COM1 460800\*65  
 $CONFIG,COM2,CONFIG COM2 115200\*23  
 $CONFIG,PPS,CONFIG PPS ENABLE GPS POSITIVE 500000 1000 0 0\*6E
+```
+
+Complete example:
+```
+$CONFIG,ANTENNA,CONFIG ANTENNA POWERON*7A
+$CONFIG,NMEAVERSION,CONFIG NMEAVERSION V410*47
+$CONFIG,RTK,CONFIG RTK TIMEOUT 120*6C
+$CONFIG,RTK,CONFIG RTK RELIABILITY 3 1*76
+$CONFIG,PPP,CONFIG PPP TIMEOUT 120*6C
+$CONFIG,PPP,CONFIG PPP ENABLE E6-HAS*01
+$CONFIG,PPP,CONFIG PPP CONVERGE 20 30*24
+$CONFIG,DGPS,CONFIG DGPS TIMEOUT 300*6C
+$CONFIG,RTCMB1CB2A,CONFIG RTCMB1CB2A ENABLE*25
+$CONFIG,ANTENNADELTAHEN,CONFIG ANTENNADELTAHEN 0.0000 0.0000 0.0000*3A
+$CONFIG,PPS,CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0*6A
+$CONFIG,SIGNALGROUP,CONFIG SIGNALGROUP 2*16
+$CONFIG,ANTIJAM,CONFIG ANTIJAM AUTO*2B
+$CONFIG,AGNSS,CONFIG AGNSS DISABLE*70
+$CONFIG,BASEOBSFILTER,CONFIG BASEOBSFILTER DISABLE*70
+$CONFIG,LOGSEQ,CONFIG LOGSEQ 1*15
+$CONFIG,COM1,CONFIG COM1 115200*23
+$CONFIG,COM2,CONFIG COM2 115200*23
+$CONFIG,COM3,CONFIG COM3 115200*23
+```
 
 #### **Serial port config**
 
@@ -169,13 +200,15 @@ Sets the combination of signals tracked by the master and slave antennas. This c
 
 **Example:** CONFIG SIGNALGROUP 1
 
-### **MASK command**
+### **MASK/UNMASK command**
 
 Disables tracking of specific satellite systems, frequencies, or individual satellites, or sets the elevation mask.
 
+#### Setting Mask
+
 **Syntax:**
 
-* MASK \[system/frequency\]  
+* MASK \[system|frequency\]  
 * MASK \[elevation\_angle\]  
 * MASK \[system\] PRN \[satellite\_id\]
 
@@ -188,12 +221,64 @@ Disables tracking of specific satellite systems, frequencies, or individual sate
 * **QZSS:** Q1, Q2, Q5, Q1CA, Q1C, Q2C  
 * **IRNSS:** I5
 
+Notes:
+* GPS
+  * When masking L1, it disables L1C/A and L1C.
+  * When masking L2, it disables L2C and L2P.
+* BeiDou
+  * Supported frequencies of BDS-2: B1I, B2I, B3I
+  * Supported frequencies of BDS-3: B1I, B3I
+  * Supported frequencies of BDS-3: BD3B1C, BD3B2A, BD3B2B
+  * When masking B1, it disables B1I and BD3B1C.
+  * When masking B2, it disables B2I, B2a and B2b.
+  * When masking B3, it disables B3I.
+* QZSS
+  * Q5 means QZSS L5
+  * Q1CA means QZSS L1C/A
+  * Q1C means QZSS L1C
+  * Q2C means QZSS L2C
+  * When masking Q1, it disables QZSS L1C/A and QZSS L1C.
+  * When masking Q2, it disables QZSS L2C.
+  * When masking Q5, it disables QZSS L5.
+
 **Examples:**
 
 * MASK GPS: Disables tracking of all GPS satellites.  
 * MASK 10: Sets the elevation mask angle to 10 degrees.  
 * MASK B1: Disables tracking of BDS B1 signals.  
 * MASK GPS PRN 10: Disables tracking of GPS satellite PRN 10\.
+
+#### **Clearing mask**
+
+* UNMASK \[system|frequency\]  
+* UNMASK \[elevation\_angle\]  
+* UNMASK \[system\] PRN \[satellite\_id\]
+
+Removes a mask from the set of masks in effect.
+
+It is OK to unmask something that hasn't been masked: it does nothing.
+
+**Example:**
+
+* UNMASK GPS: Enables tracking of all GPS satellites
+
+#### **Querying mask**
+
+Queries all masks in effect.
+
+**Syntax:** `MASK`
+
+Output format: The receiver responds with a series of ASCII messages, each specifying a mask in effect. The output format is the same as for the `CONFIG` query.
+
+Each message has the form `$CONFIG,MASK,<Mask command>,\*<CHECKSUM>`
+
+**Example output:**
+
+With default masks in effect:
+
+```
+$CONFIG,MASK,MASK 5.0*25
+```
 
 ### **UNLOG command**
 
@@ -234,21 +319,41 @@ Saves the current receiver configuration to NVM.
 
 **Syntax:** SAVECONFIG
 
-### **UNILOGLIST command**
+### **LOGLIST command**
 
 Outputs a list of all currently configured periodic logs.
 
-**Syntax:** UNILOGLIST
+**Syntax:** LOGLIST
 
-Output Format: The receiver responds with a list of active logs.  
-Example Output:  
-\#UNILOGLIST,66,GPS,FINE,2203,447089000,0,0,18,33;  
-\< 3  
-\< PSRPOSA COM1 1  
-\< GPGGA COM1 1  
-\< HWSTATUSA COM1 1
+**Source:** This command is not documented in the Unicore reference manual, but is documented in the NovAtel OEM7 reference manual and is used by the Unicore Uprecise Windows software (the official tool for configuring Unicore receivers).
 
-The output shows the number of active logs, followed by each log's command string, port, and rate.
+**Output Format:** The receiver responds using NOVA format (lines beginning with `<`). The first line contains ASCII header fields similar to standard Unicore ASCII messages, followed by the log entries.
+
+**Example Output:**  
+```
+<LOGLIST COM1 13504 93.000000 FINE 2377 350719.000000 -1024084801 32 18
+<    13
+<    GPRMC COM1 1
+<    PPSSTATUSA COM1 1
+<    SATSINFOA COM1 1
+<    GPGGA COM2 1
+<    GPGSA COM2 1
+<    GPGST COM2 1
+<    GNGSV COM2 1
+<    GPRMC COM2 1
+<    GPGGA COM3 1
+<    GPGSA COM3 1
+<    GPGST COM3 1
+<    GNGSV COM3 1
+<    GPRMC COM3 1
+```
+
+**Format Details:**
+- **First line**: `<LOGLIST COM1 <ascii_header_fields>` - The `COM1` indicates the current communication port
+- **Second line**: `<[TAB]<count>` - Number of active logs (tab-separated)
+- **Log entries**: `<[TAB]<message> <port> <rate>` - Each active log with its configuration
+
+**Port Detection:** The `COM1` field in the first line is critical for determining the current communication port, which is required for baud rate configuration commands like `CONFIG COM1 <baudrate>`.
 
 ## **Unicore data output messages**
 
@@ -873,3 +978,32 @@ RTCM messages are enabled by sending a command with the message ID prefixed by "
 **Syntax:** RTCM\[Message ID\] \[Port\] \[Rate\]
 
 **Example:** RTCM1074 COM2 1
+
+## NovAtel OEM7 commands
+
+UM980 supports some NovAtel OEM7 commands.
+
+### Data output messages
+
+These are enabled in the same way as Unicore data output messages.
+But the binary messages will have a 28-byte message header starting with sync sequence of 0xAA 0x44 0x12.
+
+Commands tried so far with suffix
+* RANGE
+* BESTXYZ
+
+
+* BDSEPHEMERIS
+* GALEPHEMERIS
+* GPSEPHEM
+* IONUTC
+
+Working without suffix
+* GALCLOCK
+
+Not working
+* COMCONFIG
+* NAVICEPHEMERIS
+
+
+
