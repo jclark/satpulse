@@ -15,14 +15,75 @@ const Tag gpsprot.Tag = "NMEA"
 // Ensure PacketProcessor implements gpsprot.NMEAPacketProcessor
 var _ gpsprot.NMEAPacketProcessor = (*PacketProcessor)(nil)
 
-// For a proprietary sentence Pxxx, Format is Pxxx and TalkerId is the empty string.
 type Sentence struct {
-	Format           string
-	TalkerID         string
-	Fields           []string
+	SyntaxFlags SentenceSyntaxFlags
+	Payload     string
 }
 
-func (s *Sentence) msgID() string {
+type ApprovedSentence struct {
+	TalkerID string   // talker ID, e.g. "GP" for GPS
+	Format   string   // sentence format, e.g. "RMC"
+	Fields   []string // the data fields
+}
+
+func NewSentence(data string) *Sentence {
+	flags := CheckSyntax(data)
+	if flags&SentenceIsPacket == 0 {
+		return nil
+	}
+	asteriskIndex := len(data) - 4 // 3 for *XX and 1 for \n
+	if flags&SentenceEndsWithCRLF != 0 {
+		asteriskIndex -= 1
+	}
+	return &Sentence{
+		SyntaxFlags: flags,
+		Payload:     data[1:asteriskIndex],
+	}
+}
+
+func (s *Sentence) ApprovedSentence() *ApprovedSentence {
+	if !s.SyntaxFlags.IsValidGNSSTalkerNMEA() {
+		return nil // Not a valid NMEA approved sentence
+	}
+	fields := strings.Split(s.Payload, ",")
+	addr := fields[0]
+	fields = fields[1:] // Skip the address field
+	if s.SyntaxFlags&SentenceNoCarets == 0 {
+		for i := range fields {
+			fields[i] = unescape(fields[i])
+		}
+	}
+	return &ApprovedSentence{
+		TalkerID: addr[:2],
+		Format:   addr[2:],
+		Fields:   fields,
+	}
+}
+
+// Assumes that the string has the SentenceValidCaretEscaping flag set
+func unescape(s string) string {
+	unescaped := ""
+	for s != "" {
+		before, after, ok := strings.Cut(s, "^")
+		unescaped += before
+		if !ok {
+			break
+		}
+		unescaped += string(rune(hexToByte(after)))
+		s = after[2:]
+	}
+	return unescaped
+}
+
+func (s *Sentence) AddressField() string {
+	if s.SyntaxFlags&SentenceAddressLength5 != 0 {
+		return s.Payload[:5] // e.g. GPRMC
+	}
+	addr, _, _ := strings.Cut(s.Payload, ",")
+	return addr
+}
+
+func (s *ApprovedSentence) msgID() string {
 	return s.TalkerID + s.Format
 }
 
@@ -42,11 +103,17 @@ func NewPacketProcessor() *PacketProcessor {
 
 // ProcessPacket processes an NMEA packet's data and returns the type of the message and any error
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
-	sen := Parse(data)
-	msgID := sen.msgID()
-	handled, err := p.Dispatch(sen, tRead, p.mh)
-	if err != nil || handled {
-		return msgID, err
+	sen := NewSentence(data)
+	if sen == nil {
+		return "", fmt.Errorf("not a valid NMEA packet: %s", data)
+	}
+	msgID := sen.AddressField()
+	approvSen := sen.ApprovedSentence()
+	if approvSen != nil {
+		handled, err := p.Dispatch(approvSen, tRead, p.mh)
+		if err != nil || handled {
+			return msgID, err
+		}
 	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
@@ -65,7 +132,7 @@ func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 }
 
 // Dispatch handles standard messages and returns true if handled, along with any error
-func (p *PacketProcessor) Dispatch(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
+func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
 	handled, err := p.sb.process(sen, tRead, h)
 	if err != nil || handled {
 		return handled, err
@@ -85,7 +152,7 @@ func (p *PacketProcessor) Idle(_ time.Time) {
 	p.sb.idle(p.mh)
 }
 
-func dispatchTime(parser func(*Sentence) (*ptime.UTCTime, error), sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) error {
+func dispatchTime(parser func(*ApprovedSentence) (*ptime.UTCTime, error), sen *ApprovedSentence, tRead time.Time, h gpsprot.MsgHandler) error {
 	utc, err := parser(sen)
 	if err != nil {
 		return err
@@ -97,7 +164,7 @@ func dispatchTime(parser func(*Sentence) (*ptime.UTCTime, error), sen *Sentence,
 	return nil
 }
 
-func parseRMC(sen *Sentence) (*ptime.UTCTime, error) {
+func parseRMC(sen *ApprovedSentence) (*ptime.UTCTime, error) {
 	k := sen.TalkerID + "RMC"
 	if len(sen.Fields) < 9 {
 		return nil, fmt.Errorf("%s: too few fields", k)
@@ -129,7 +196,7 @@ func parseRMC(sen *Sentence) (*ptime.UTCTime, error) {
 	return &utc, nil
 }
 
-func parseZDA(sen *Sentence) (*ptime.UTCTime, error) {
+func parseZDA(sen *ApprovedSentence) (*ptime.UTCTime, error) {
 	k := sen.TalkerID + "ZDA"
 	if len(sen.Fields) < 4 {
 		return nil, fmt.Errorf("%s: too few fields", k)
@@ -216,42 +283,6 @@ func talkerIDToGNSS(t string) gpsprot.GNSS {
 	default:
 		return 0
 	}
-}
-
-// Precondition is that data is valid according to Scanner.Read.
-// The checksum is assumed to have been verified already.
-func Parse(data string) *Sentence {
-	before, _, _ := strings.Cut(data[1:], "*")
-	fields := strings.Split(before, ",")
-	sen := Sentence{ Fields: fields[1:] }
-	addr := fields[0]
-	if strings.IndexByte(before, '^') >= 0 {
-		for i := 1; i < len(fields); i++ {
-			fields[i] = unescape(fields[i])
-		}
-	}
-	if len(addr) == 5 {
-		sen.TalkerID = addr[:2]
-		sen.Format = addr[2:]
-	} else {
-		sen.Format = addr
-	}
-	return &sen
-}
-
-// Assumes that use of ^ has been validated by Scanner.Read.
-func unescape(s string) string {
-	unescaped := ""
-	for s != "" {
-		before, after, ok := strings.Cut(s, "^")
-		unescaped += before
-		if !ok {
-			break
-		}
-		unescaped += string(rune(hexToByte(after)))
-		s = after[2:]
-	}
-	return unescaped
 }
 
 func hexToByte(digits string) byte {

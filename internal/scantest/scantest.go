@@ -60,3 +60,24 @@ func TrimNMEA(data string) string {
 	}
 	return trimmed
 }
+
+// IsValidPacketBetween tests if a packet is valid when embedded in a larger buffer
+// start and end are indices in buf where the packet data is located
+func IsValidPacketBetween(pf gpsprot.PacketFormat, buf []byte, start, end int) bool {
+	if start < 0 || end > len(buf) || start >= end {
+		return false
+	}
+	
+	state := gpsprot.ScanStateSync
+	packetLen := 0
+	
+	for i := start; i < end; i++ {
+		state = pf.Next(state, buf, i, packetLen)
+		if state == gpsprot.ScanStateSync {
+			return false
+		}
+		packetLen++
+	}
+	
+	return pf.IsFinal(state)
+}
