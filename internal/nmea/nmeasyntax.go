@@ -62,6 +62,13 @@ func (f SentenceSyntaxFlags) IsValidProprietaryNMEA() bool {
 	return f&SentenceProprietaryNMEA == SentenceProprietaryNMEA
 }
 
+// IsValidApprovedNMEA checks if the flags represent a valid approved NMEA sentence.
+// This does not check whether the talker ID and format are registered with NMEA.
+// It does check that the address does not start with 'P'.
+func (f SentenceSyntaxFlags) IsValidApprovedNMEA() bool {
+	return f&(SentenceApprovedNMEA|SentenceProprietaryAddressFormat) == SentenceApprovedNMEA
+}
+
 // CheckSyntax analyzes an NMEA-like packet and returns its syntactic properties
 func CheckSyntax(data string) SentenceSyntaxFlags {
 	flags := SentenceIsPacket | SentenceValidDataChars | SentenceValidCaretEscaping | SentenceNoCarets
