@@ -18,7 +18,99 @@ This section covers modifications to existing SatPulse components necessary to e
 2. **Stricter parsing validation**: Move NMEA standard compliance checks to parsing stage; this would include checking of `^` escapes.
 3. **Invalid NMEA handling**: The representation of an NMEA packet (currently nmea.Sentence) that is passed to NativeMsgHandler would be changed so that it can represent anything detected as an NMEA packet. We should also take this opportunity to fix handling of compliant NMEA proprietary sentences, which is currently broken.
 
-### 1.2 Multi-Format PacketProcessor Support (Nice-to-Have)
+### 1.2 Multi-Protocol Configuration Support
+
+**Current Limitation**: The configuration system only supports a single protocol (UBX) because `gpscfg.go` creates just the first PacketExchanger it finds. Supporting multiple protocols like Unicore requires architectural changes.
+
+**Solution**: Extend PacketExchanger to include NativeMsgHandler, centralize PacketExchanger creation, and use parallel probing with message fan-out.
+
+#### 1.3.1 Interface Architecture
+
+**PacketExchanger Interface Extension**:
+```go
+// PacketExchanger manages packet processing and generation for GPS configuration
+type PacketExchanger interface {
+    NativeMsgHandler  // Embed the NativeMsgHandler interface
+    ProbePacket() []byte
+    ProbeOK() bool
+    Configure(*ConfigTarget) (Configurator, error)
+}
+```
+
+This makes the relationship explicit: PacketExchangers must handle native messages during configuration.
+
+#### 1.3.2 Centralized PacketExchanger Creation
+
+Add to `internal/gpsreg/reg.go`:
+```go
+// CreatePacketExchangers creates all available packet exchangers
+func CreatePacketExchangers() []gpsprot.PacketExchanger {
+    return []gpsprot.PacketExchanger{
+        ubx.NewPacketExchanger(),
+        unc.NewPacketExchanger(),
+        // future: other protocols
+    }
+}
+```
+
+Remove `CreatePacketExchanger()` from the PacketProcessor interface. This separation ensures PacketProcessors focus solely on packet parsing.
+
+#### 1.3.3 Message Fan-out During Probing
+
+Add to `internal/gpsprot/msg.go`:
+```go
+// MultiNativeMsgHandler fans out NativeMsg calls to multiple handlers
+type MultiNativeMsgHandler struct {
+    handlers []NativeMsgHandler
+}
+
+func NewMultiNativeMsgHandler(handlers ...NativeMsgHandler) *MultiNativeMsgHandler {
+    return &MultiNativeMsgHandler{handlers: handlers}
+}
+
+func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead time.Time) error {
+    var firstErr error
+    for _, h := range m.handlers {
+        if err := h.NativeMsg(tag, msgID, msg, tRead); err != nil && firstErr == nil {
+            firstErr = err
+        }
+    }
+    return firstErr
+}
+```
+
+#### 1.3.4 Parallel Probing Implementation
+
+Modify `gpscfg.go` to probe all protocols simultaneously:
+
+1. **Probe Phase**: Create all PacketExchangers, install MultiNativeMsgHandler to fan out messages to all
+2. **Send Probes**: Send probe packets for all protocols (e.g., UBX-MON-VER poll, Unicore VERSIONA)  
+3. **Select Winner**: First PacketExchanger to return ProbeOK() wins
+4. **Configure Phase**: Switch NativeMsgHandler to the selected PacketExchanger for direct routing
+
+**Benefits**:
+- Fast detection (first responder wins)
+- Clean architecture (parsing vs configuration separated)
+- No packet type interest declarations needed
+- Reusable MultiNativeMsgHandler component
+
+#### 1.3.5 Implementation Impact
+
+**Minimal changes required**:
+- UBX PacketExchanger already implements both interfaces
+- Unicore PacketExchanger will follow the same pattern
+- gpscfg modifications are localized to probe logic
+- PacketProcessors simplified (no configuration responsibility)
+
+**For Unicore specifically**:
+- Probe: Send `VERSIONA` command
+- ProbeOK: When `#VERSIONA` response received
+- NativeMsg: Handle command ACKs (`$command,...`), UNCA/UNCB messages
+- All packet types (UNCB, UNCA, NMEA, NOVA) naturally route through shared NativeMsgHandler
+
+This design provides a clean, extensible architecture for multi-protocol support without complex packet routing declarations.
+
+### 1.3 Multi-Format PacketProcessor Support (Nice-to-Have)
 
 **Current Limitation**: PacketProcessor interface assumes a one-to-one mapping between PacketFormat and PacketProcessor. However, Unicore has both ASCII and binary formats that logically belong to the same protocol and should be handled by a single PacketProcessor.
 
@@ -45,20 +137,6 @@ type PacketProcessor interface {
 - Update `gpsprot.PacketProcessor` interface definition
 - Modify existing PacketProcessor implementations (UBX, NMEA, RTCM) to accept Tag parameter
 - Unicore PacketProcessor can switch on Tag to handle ASCII vs binary parsing
-
-### 1.3 Multi-Tag PacketExchanger Support
-
-**Current Limitation**: Each PacketExchanger only processes packets with a single specific tag (e.g., UBX packets go to UBX PacketExchanger). Unicore needs to process multiple tags: `UNCB`, `UNCA`, `NMEA`, `NOVA`.
-
-**Required Interface Changes**:
-1. **Decouple routing from PacketExchanger creation**: Remove assumption that packet tag determines PacketExchanger
-2. **Multi-tag PacketExchanger support**: Allow PacketExchangers to declare interest in multiple packet types
-3. **Centralized routing**: Move routing decisions to higher level rather than per-packet-type basis
-
-**Configuration Logic Changes** (`gpscfg.go`):
-1. **Multi-PacketExchanger Probing**: Probe each available PacketExchanger type (UBX, Unicore, etc.)u
-2. **Single PacketExchanger Selection**: Select the PacketExchanger with successful probe
-3. **Universal Routing Setup**: Set selected PacketExchanger as handler for all relevant packet processors
 
 ### 1.4 Packet Scanner Architecture Updates (Nice-to-Have)
 
