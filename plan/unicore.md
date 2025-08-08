@@ -394,83 +394,142 @@ Design decision for examples above (use binary `*B` commands):
 
 #### 2.3.3 State-Based Configuration Architecture
 
-Unicore configuration uses a sophisticated state-based approach that handles the receiver's cumulative/stateful configuration model through pure functions.
+Configuration uses property-specific objects that know Unicore command/response syntax and map to/from gpsprot.ConfigProps. Concrete types (ppsProp, signalGroupProp, maskProp, modeProp, comProp) live in a nativeConfigProps map keyed by IDs ("PPS", "SIGNALGROUP", "MASK", "MODE", "COM1/2/3").
 
-**Four-Stage Pipeline**:
+Terms and data structures
+- nativeConfigProp interface
+  - IsZero() bool                           // no known value
+  - id() nativeConfigPropID                 // e.g., "PPS"
+  - idUsage() nativeConfigPropIDUsage       // usageNormal, usageMode, usageMask
+  - updateFromCommand(cmd string) error     // parse one normalized native line into this property
+  - convertToProps(*gpsprot.ConfigProps)    // contribute this property's abstract values
+  - updateFromProps(*gpsprot.ConfigProps)   // synthesize/modify this property's native form from abstract properties
+  - generateCommands(prev any) []string     // diff previous native vs current native, emit minimal commands
+  - clone() nativeConfigProp                // deep copy used to build target native while preserving non-abstract fields
+- idUsage
+  - usageNormal: CONFIG XYZ ... queries; single $CONFIG,XYZ,CONFIG XYZ ... response line
+  - usageMode: MODE ...; single #MODE ... line
+  - usageMask: MASK/UNMASK; multiple $CONFIG,MASK,MASK ... response lines; cumulative semantics
+- nativeConfigProps
+  - Map of id → property instance. We maintain two sets:
+    - Current native (observed + ack-applied)
+    - Target native (cloned from current, then modified by updateFromProps)
 
-1. **Query Parsing**: `CONFIG`/`MODE`/`MASK` responses → internal state representation
-2. **State Reading** (1 input): Complete internal state → all gpsprot properties (GET functionality)
-3. **State Merging** (2 inputs): Current properties + partial target properties → new complete internal state (SET functionality)  
-4. **Delta Generation**: Old state + new state → minimal command sequence including removals
+Accepted command/response forms (normalized)
+- $CONFIG,XYZ,CONFIG XYZ <params>
+- #MODE,<header>;MODE <params>*xx
+- $CONFIG,MASK,MASK <entry>
+- $command,<original>,response[: <status>]*XX (ACK for any sent command)
 
-**Key Design Insight: Two Distinct Mappings**
+End-to-end lifecycle
+1) Discover current native state
+   - Send queries (CONFIG, MODE, MASK, LOGLIST if needed).
+   - For each response line, route to the appropriate property and call updateFromCommand.
+   - For MASK, accumulate many lines into maskProp’s set.
+2) Native → Abstract (current snapshot)
+   - Create an empty gpsprot.ConfigProps “current”.
+   - For each property in current native, call convertToProps to populate a complete abstract “current” snapshot.
+3) Apply ConfigTarget → Abstract target
+   - Start from the abstract “current”.
+   - Overlay ConfigTarget’s fields to produce a complete abstract “target”.
+   - This yields a full set of gpsprot properties (no partials) representing the desired end state.
+4) Abstract target → Native target (via clone)
+   - For each property id, create targetNative[id] := currentNative[id].clone().
+   - Call targetNative[id].updateFromProps(abstractTarget) to modify only what is represented in gpsprot.ConfigProps.
+   - Result: a complete set of “target” native properties with non-abstract fields preserved from current.
+5) Plan (diff) old native → new native
+   - For each property id, call targetNative[id].generateCommands(currentNative[id]).
+   - Concatenate in a defined order (see ordering below). Properties with no changes emit no commands.
+   - Special cases:
+     - MASK: emit UNMASK for entries present in current but absent in target, then MASK for new entries.
+     - PPS: emit a single CONFIG PPS line synthesized from TimePulse*, TimeGNSS, and AntennaCableDelay (or DISABLE if Width==0).
+6) Execute and sync current native
+   - Send commands, one by one, in planned order.
+   - On successful ACK, call currentNative[id].updateFromCommand(normalizedOriginal) to advance the current native state.
+   - On failure (negative ACK/timeout), leave current native unchanged; re-plan or abort per policy.
 
-The reading and writing mappings are fundamentally different:
+Preservation semantics (clone + updateFromProps)
+- Clone preserves any native fields not represented (or not specified) in gpsprot.ConfigProps.
+- updateFromProps modifies only the elements represented by abstract properties:
+  - If an abstract property was changed by ConfigTarget, overwrite the cloned value.
+  - If an abstract property was not changed, the cloned value (derived from current) remains.
+  - Fields that have no abstract representation are always preserved from the clone.
+- PPS examples:
+  - userDelay (last PPS parameter) is not represented in gpsprot.ConfigProps → preserved from clone.
+  - rfDelay (antennaCableDelay) is represented; if ConfigTarget does not set it, it remains whatever was in current (because abstract target inherits current); if set, updateFromProps overwrites it.
+  - ENABLE/ENABLE2/ENABLE3, polarity, period, width derived from abstract TimePulse; other PPS-native flags remain unchanged unless driven by abstract properties.
 
-- **Reading Mapping**: `stateToProperties(state) → properties`
-  - Takes complete internal state representation
-  - Produces complete set of gpsprot properties
-  - Implements GET functionality for all properties
+Method responsibilities and invariants
+- clone
+  - Produces a deep copy sufficient for safe in-place modification by updateFromProps without affecting currentNative.
+- updateFromCommand
+  - Accepts both query responses and our own emitted commands (post-ACK) in the same normalized syntax.
+  - Must be tolerant of device canonicalization (e.g., quantization) and update internal representation accordingly.
+- convertToProps
+  - Contributes only fields it owns; multiple properties may fill the same gpsprot.ConfigProps.
+- updateFromProps
+  - Reads all needed abstract inputs (e.g., PPS needs TimePulse, TimeGNSS, AntennaCableDelay).
+  - Returns errMissingProp when required inputs are absent (it is called after producing a complete abstract target).
+  - Must preserve any native-only fields from the cloned base.
+- generateCommands(prev)
+  - Idempotent. If native text (or set, for MASK) equals prev, emit nothing.
+  - For cumulative props (MASK), emit removals first (UNMASK) then additions (MASK).
+  - For simple props, emit at most one CONFIG/MODE line in canonical text.
 
-- **Writing Mapping**: `propertiesToState(current, target) → newState`
-  - Takes current complete properties + target partial properties
-  - Produces new complete internal state representation
-  - Handles partial updates while preserving unchanged settings
-  - Enables complex multi-property commands like `CONFIG PPS`
+Ordering rules
+- SIGNALGROUP before MASK if group selection affects allowed masks.
+- UNMASK before MASK for the same domain.
+- PPS independent of MODE; either may come earlier.
+- Port/baud changes (COMx) last; after ACK, communication may need scanner re-sync.
+- SAVECONFIG/reset actions at the very end if requested by options.
 
-**Multi-Property Command Example**:
-`CONFIG PPS ENABLE GAL POSITIVE 1000000 1000 100 0` synthesized from:
-- TimePulse property (ENABLE, period, width, polarity)
-- TimeGNSS property (GAL)  
-- AntennaCableDelay property (100ns)
+PPS mapping specifics (ppsProp)
+- updateFromProps
+  - DISABLE when TimePulse.Width == 0
+  - ENABLE/ENABLE2/ENABLE3 selected from OnlyWhenLocked and AlignToGNSS
+  - Polarity from PolarityRising (POSITIVE/NEGATIVE)
+  - Units: width (µs), period (ms), rfDelay (ns), userDelay preserved from clone
+  - Bounds checking: width > 0 and < period; period within device range; rfDelay fits int16
+- convertToProps
+  - Parses CONFIG PPS ... text into TimePulse, TimeGNSS, AntennaCableDelay
+- Example emission:
+  - CONFIG PPS DISABLE
+  - CONFIG PPS ENABLE GPS POSITIVE 1000 1000 0 0
+  - CONFIG PPS ENABLE2 BDS NEGATIVE 10000 2000 -100 0
+  - CONFIG PPS ENABLE3 GPS POSITIVE 100000 1000 0 0
 
-**Delta Generation with UNMASK**:
+MASK mapping specifics (maskProp)
+- Maintains a set of mask entries (constellation disables, elevation mask numbers, etc.).
+- generateCommands(prev)
+  - UNMASK entries in prev − target
+  - MASK entries in target − prev
+- convertToProps / updateFromProps
+  - Map between SignalSet (and future ElevationMask) and mask entries; fine-grained diffs leverage UNMASK.
 
-Critical: Must generate removal commands for stateful configurations.
+Error handling and ACKs
+- Success ACK ($command,...,response: OK*XX): apply updateFromCommand to current native.
+- Failure ACK ($command,...,response: PARSING FAILED*XX, etc.): do not change current native; re-plan if needed.
+- Timeouts treated as failures per policy; planner re-diffs against unchanged current native.
 
-Example mask transition:
-```
-Old state: [MASK GPS, MASK 10]  // GPS disabled, 10° elevation
-New state: [MASK BDS, MASK 15]  // BDS disabled, 15° elevation
+Testing guidance
+- Pure property tests:
+  - updateFromProps on a cloned property preserves native-only fields (e.g., PPS userDelay) while updating abstract-driven fields.
+  - updateFromProps → command → convertToProps round-trips
+  - MASK set-delta tests ensuring UNMASK is emitted
+  - PPS bounds, polarity, ENABLE variants, period/width units, rfDelay preservation when not set
+- End-to-end planning tests:
+  - Construct current native from responses; produce abstract current
+  - Overlay ConfigTarget; build abstract target
+  - Clone current to target native; apply updateFromProps; generateCommands vs expected command list
+  - Simulate ACKs and verify current native advances correctly
+- Deterministic formatting:
+  - Commands are normalized for stable ACK correlation and reproducible tests.
 
-Generated commands:
-UNMASK GPS    // Remove old GPS mask
-UNMASK 10     // Remove old elevation mask  
-MASK BDS      // Add new BDS mask
-MASK 15       // Add new elevation mask
-```
-
-Without UNMASK commands, old masks remain active (cumulative behavior).
-
-**Testability Through Pure Functions**:
-
-Each stage is a pure function testable with simple input/output pairs:
-
-- **Query parsing**: Test with captured CONFIG/MODE/MASK responses
-- **State reading**: Test state → properties conversion
-- **State merging**: Test current + partial target → new complete state
-- **Delta generation**: Test old state + new state → command sequence
-
-Pure functions enable comprehensive table-driven testing without hardware, covering complex state transitions, multi-property synthesis, and removal scenarios.
-
-**State Consistency Through Command Acknowledgments**:
-
-The internal state representation stays synchronized with the actual receiver state through command acknowledgments:
-
-- **Command Success**: When `$command,CONFIG PPS ENABLE,response: OK*04` received → update internal state with that command
-- **Command Failure**: When `$command,CONFIG XYZ,response: PARSING FAILED*14` received → internal state remains unchanged
-- **Accurate Tracking**: Internal state always reflects actual receiver configuration, even when some commands are rejected
-
-This ensures the internal state representation is always accurate, enabling:
-- Correct delta generation for subsequent configuration changes
-- Reliable property GET operations based on actual receiver state
-- Proper error handling without losing state synchronization
-
-**Architectural Precedent**: This pattern mirrors the u-blox implementation in `internal/ubx/ubxcfg.go`:
-- `RawConfig` struct maintains internal state as collection of binary UBX commands
-- `msgSetRequest.Done()` updates state only after successful ACK-ACK (lines 838-843)
-- `RawConfig.AddMsg()` synchronizes state with received messages (lines 718-765)
-- Same acknowledgment-based state consistency used by both receiver types
+Rationale
+- Cloning ensures native-only attributes are preserved across updates.
+- Applying ConfigTarget to a fully-populated abstract snapshot yields a complete abstract target; updateFromProps then overlays onto a cloned native for minimal, stable diffs.
+- Native-level diffs produce minimal command sequences with explicit removals for cumulative state.
+- Current native updates only on ACK success, enabling robust retries.
 
 ## Implementation Status
 
@@ -492,7 +551,11 @@ This ensures the internal state representation is always accurate, enabling:
 
 **Multi-Protocol Infrastructure**
 - NMEA packet handling changes (essential)
-- Multi-tag PacketExchanger routing (essential)
+- Multi-protocol configuration support (essential):
+  - Extend PacketExchanger interface to include NativeMsgHandler
+  - Add CreatePacketExchangers() to gpsreg
+  - Add MultiNativeMsgHandler to gpsprot
+  - Modify gpscfg.go for parallel probing
 - Multi-format PacketProcessor support (nice-to-have)
 - Scanner architecture updates (nice-to-have)
 - ConfigResult enhancements (nice-to-have)
@@ -500,7 +563,7 @@ This ensures the internal state representation is always accurate, enabling:
 **Domain Layer (`internal/unc/`) - Remaining Implementations**
 - **NOVA abbreviated ASCII packet format (PacketFormat) - ESSENTIAL for port detection**
 - PacketProcessor interface implementation
-- PacketExchanger interface implementation
+- PacketExchanger interface implementation (must implement NativeMsgHandler)
 - Configurator interface implementation
 - Protocol registration with gpsreg
 

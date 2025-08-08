@@ -55,16 +55,16 @@ type nativeConfigProp interface {
 	// generate a list of lines (without line terminators) that can be sent to the receiver
 	// to set this property; empty slice if no command is needed
 	generateCommands(prevProp any) []string
-	// update updates the property based on a command string received from the receiver.
+	// updateFromCommand updates the property based on a command string understood by the receiver.
 	// The command string may be a response to query or may be one of the commands from generateCommands.
-	update(cmd string) error
-	// return new zero instance
-	newInstance() nativeConfigProp
-	// fromNative sets the gpsprot.ConfigProps using this native property
-	fromNative(*gpsprot.ConfigProps) error
-	// toNative sets this native property from gpsprot.ConfigProps
+	updateFromCommand(cmd string) error
+	// clone returns deep copy
+	clone() nativeConfigProp
+	// convertToProps sets the gpsprot.ConfigProps using this native property
+	convertToProps(*gpsprot.ConfigProps) error
+	// updateFromProps sets this native property from gpsprot.ConfigProps
 	// returns an error if the property cannot be set
-	toNative(*gpsprot.ConfigProps) error
+	updateFromProps(*gpsprot.ConfigProps) error
 }
 
 type nativeConfigProps map[nativeConfigPropID]nativeConfigProp
@@ -109,7 +109,7 @@ func (p *simpleConfigProp) idUsage() nativeConfigPropIDUsage {
 	return usageNormal
 }
 
-func (p *simpleConfigProp) update(cmd string) error {
+func (p *simpleConfigProp) updateFromCommand(cmd string) error {
 	if p.regexp != nil && !p.regexp.MatchString(cmd) {
 		return fmt.Errorf("invalid command format: %s", cmd)
 	}
@@ -117,12 +117,12 @@ func (p *simpleConfigProp) update(cmd string) error {
 	return nil
 }
 
-func (p *simpleConfigProp) fromNative(props *gpsprot.ConfigProps) error {
-	panic("fromNative not implemented for simpleConfigProp")
+func (p *simpleConfigProp) convertToProps(props *gpsprot.ConfigProps) error {
+	panic("convertToProps not implemented for simpleConfigProp")
 }
 
-func (p *simpleConfigProp) toNative(props *gpsprot.ConfigProps) error {
-	panic("toNative not implemented for simpleConfigProp")
+func (p *simpleConfigProp) updateFromProps(props *gpsprot.ConfigProps) error {
+	panic("updateFromProps not implemented for simpleConfigProp")
 }
 
 func (p *simpleConfigProp) generateCommands(prev any) []string {
@@ -148,11 +148,12 @@ func newPPSProp() *ppsProp {
 	}
 }
 
-func (p *ppsProp) newInstance() nativeConfigProp {
-	return newPPSProp()
+func (p *ppsProp) clone() nativeConfigProp {
+	copied := *p
+	return &copied
 }
 
-func (p *ppsProp) fromNative(props *gpsprot.ConfigProps) error {
+func (p *ppsProp) convertToProps(props *gpsprot.ConfigProps) error {
 	if p.command == "" {
 		return nil // No command to parse
 	}
@@ -214,7 +215,7 @@ func (p *ppsProp) fromNative(props *gpsprot.ConfigProps) error {
 
 const maxPPSPeriodSecs = 20
 
-func (p *ppsProp) toNative(props *gpsprot.ConfigProps) error {
+func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 	// Need TimePulse to construct PPS command
 	timePulse, ok := props.GetTimePulse()
 	if !ok {
@@ -272,11 +273,17 @@ func (p *ppsProp) toNative(props *gpsprot.ConfigProps) error {
 		return fmt.Errorf("antenna cable delay out of range: %v", cableDelay)
 	}
 
-	// userDelay is always 0 for our purposes
-	userDelay := 0
+	// userDelay preserved from existing command (native-only field)
+	userDelay := "0" // default value
+	if p.command != "" && p.regexp != nil {
+		matches := p.regexp.FindStringSubmatch(p.command)
+		if len(matches) > 7 { // ENABLE case with all capture groups
+			userDelay = matches[7]
+		}
+	}
 
 	// Construct the command
-	p.command = fmt.Sprintf("CONFIG PPS %s %s %s %d %d %d %d",
+	p.command = fmt.Sprintf("CONFIG PPS %s %s %s %d %d %d %s",
 		enable, gnssStr, polarity, widthUs, periodMs, rfDelayNs, userDelay)
 
 	return nil
@@ -297,8 +304,14 @@ func newSignalGroupProp() *signalGroupProp {
 	}
 }
 
-func (p *signalGroupProp) newInstance() nativeConfigProp {
-	return newSignalGroupProp()
+func (p *signalGroupProp) clone() nativeConfigProp {
+	return &signalGroupProp{
+		simpleConfigProp: simpleConfigProp{
+			name:    p.name,
+			regexp:  p.regexp,
+			command: p.command,
+		},
+	}
 }
 
 type comProp struct {
@@ -313,8 +326,9 @@ func newCOMProp(id nativeConfigPropID) *comProp {
 	}
 }
 
-func (p *comProp) newInstance() nativeConfigProp {
-	return newCOMProp(p.name)
+func (p *comProp) clone() nativeConfigProp {
+	copied := *p
+	return &copied
 }
 
 type maskProp struct {
@@ -327,8 +341,14 @@ func newMaskProp() *maskProp {
 	}
 }
 
-func (p *maskProp) newInstance() nativeConfigProp {
-	return newMaskProp()
+func (p *maskProp) clone() nativeConfigProp {
+	clonedMasks := make(map[string]struct{})
+	for k, v := range p.masks {
+		clonedMasks[k] = v
+	}
+	return &maskProp{
+		masks: clonedMasks,
+	}
 }
 
 func (p *maskProp) IsZero() bool {
@@ -343,7 +363,7 @@ func (p *maskProp) idUsage() nativeConfigPropIDUsage {
 	return usageMask
 }
 
-func (p *maskProp) update(cmd string) error {
+func (p *maskProp) updateFromCommand(cmd string) error {
 	args := strings.Split(cmd, ",")
 	if len(args) != 2 || args[0] != "MASK" {
 		return nil
@@ -352,12 +372,12 @@ func (p *maskProp) update(cmd string) error {
 	return nil
 }
 
-func (p *maskProp) fromNative(props *gpsprot.ConfigProps) error {
+func (p *maskProp) convertToProps(props *gpsprot.ConfigProps) error {
 	// TODO: implement mask to SignalsEnabled conversion
 	return nil
 }
 
-func (p *maskProp) toNative(props *gpsprot.ConfigProps) error {
+func (p *maskProp) updateFromProps(props *gpsprot.ConfigProps) error {
 	// TODO
 	return nil
 }
@@ -375,8 +395,9 @@ func (p *modeProp) IsZero() bool {
 	return p.command == ""
 }
 
-func (p *modeProp) newInstance() nativeConfigProp {
-	return &modeProp{}
+func (p *modeProp) clone() nativeConfigProp {
+	copied := *p
+	return &copied
 }
 
 func (p *modeProp) id() nativeConfigPropID {
@@ -387,17 +408,17 @@ func (p *modeProp) idUsage() nativeConfigPropIDUsage {
 	return usageMode
 }
 
-func (p *modeProp) update(cmd string) error {
+func (p *modeProp) updateFromCommand(cmd string) error {
 	p.command = cmd
 	return nil
 }
 
-func (p *modeProp) fromNative(props *gpsprot.ConfigProps) error {
+func (p *modeProp) convertToProps(props *gpsprot.ConfigProps) error {
 	// TODO: implement mode command parsing
 	return nil
 }
 
-func (p *modeProp) toNative(props *gpsprot.ConfigProps) error {
+func (p *modeProp) updateFromProps(props *gpsprot.ConfigProps) error {
 	// TODO: implement mode command serialization
 	return nil
 }

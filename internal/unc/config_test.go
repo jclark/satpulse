@@ -140,24 +140,24 @@ func TestPPS(t *testing.T) {
 				expectedProps.SetAntennaCableDelay(tt.antennaCableDelay)
 			}
 
-			// Test toNative: gpsprot.ConfigProps -> Unicore command
-			pps := props[idPropPPS].newInstance().(*ppsProp)
-			err := pps.toNative(&expectedProps)
+			// Test updateFromProps: Unicore command <- gpsprot.ConfigProps 
+			pps := props[idPropPPS].clone().(*ppsProp)
+			err := pps.updateFromProps(&expectedProps)
 			if err != nil {
-				t.Fatalf("toNative failed: %v", err)
+				t.Fatalf("updateFromProps failed: %v", err)
 			}
 
 			if pps.command != tt.command {
-				t.Errorf("toNative command mismatch:\ngot:  %q\nwant: %q", pps.command, tt.command)
+				t.Errorf("updateFromProps command mismatch:\ngot:  %q\nwant: %q", pps.command, tt.command)
 			}
 
-			// Test fromNative: Unicore command -> gpsprot.ConfigProps
+			// Test convertToProps: Unicore command -> gpsprot.ConfigProps
 			var actualProps gpsprot.ConfigProps
-			pps2 := pps.newInstance().(*ppsProp)
+			pps2 := pps.clone().(*ppsProp)
 			pps2.command = tt.command // Set command to parse
-			err = pps2.fromNative(&actualProps)
+			err = pps2.convertToProps(&actualProps)
 			if err != nil {
-				t.Fatalf("fromNative failed: %v", err)
+				t.Fatalf("convertToProps failed: %v", err)
 			}
 
 			// Verify round-trip conversion by comparing actual vs expected
@@ -165,5 +165,55 @@ func TestPPS(t *testing.T) {
 				t.Errorf("round-trip mismatch:\ngot:  %+v\nwant: %+v", actualProps, expectedProps)
 			}
 		})
+	}
+}
+
+func TestPPSUserDelayPreservation(t *testing.T) {
+	// Test that userDelay is preserved when cloning and updating props
+	props := NewNativeConfigProps()
+	
+	// Start with a PPS command that has a non-zero userDelay
+	originalPPS := props[idPropPPS].clone().(*ppsProp)
+	err := originalPPS.updateFromCommand("CONFIG PPS ENABLE GPS POSITIVE 1000 1000 0 123")
+	if err != nil {
+		t.Fatalf("updateFromCommand failed: %v", err)
+	}
+	
+	// Verify the command was stored correctly
+	expectedOriginalCommand := "CONFIG PPS ENABLE GPS POSITIVE 1000 1000 0 123"
+	if originalPPS.command != expectedOriginalCommand {
+		t.Fatalf("command not stored correctly: got %q, want %q", originalPPS.command, expectedOriginalCommand)
+	}
+	
+	// Clone the property
+	cloned := originalPPS.clone().(*ppsProp)
+	
+	// Verify command was preserved in clone
+	if cloned.command != expectedOriginalCommand {
+		t.Fatalf("command not preserved in clone: got %q, want %q", cloned.command, expectedOriginalCommand)
+	}
+	
+	// Now update from props - userDelay should be preserved from the existing command
+	var configProps gpsprot.ConfigProps
+	timePulse := gpsprot.TimePulse{
+		Width:          2 * time.Millisecond, // different width
+		Period:         time.Second,
+		PolarityRising: false, // different polarity
+		OnlyWhenLocked: true,
+		AlignToGNSS:    true,
+	}
+	configProps.SetTimePulse(timePulse)
+	configProps.SetTimeGNSS(gpsprot.BDS) // different GNSS
+	configProps.SetAntennaCableDelay(50 * time.Nanosecond) // different delay
+	
+	err = cloned.updateFromProps(&configProps)
+	if err != nil {
+		t.Fatalf("updateFromProps failed: %v", err)
+	}
+	
+	// The command should have updated values but preserved userDelay (123)
+	expectedCommand := "CONFIG PPS ENABLE BDS NEGATIVE 2000 1000 50 123"
+	if cloned.command != expectedCommand {
+		t.Errorf("updateFromProps did not preserve userDelay:\ngot:  %q\nwant: %q", cloned.command, expectedCommand)
 	}
 }
