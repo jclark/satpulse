@@ -200,6 +200,45 @@ Sets the combination of signals tracked by the master and slave antennas. This c
 
 **Example:** CONFIG SIGNALGROUP 1
 
+#### **SBAS config**
+
+Configures SBAS (Satellite Based Augmentation System) settings. There are two SBAS subcommands:
+
+**SBAS Enable/Disable Subcommand:**
+
+**Syntax:** CONFIG SBAS ENABLE [system] | CONFIG SBAS DISABLE
+
+**Parameters:**
+* **DISABLE**: Disable SBAS (Default)
+* **ENABLE** with system selection:
+  * **AUTO**: Automatic mode - receiver chooses SBAS system
+  * **WAAS**: Enable WAAS only
+  * **GAGAN**: Enable GAGAN only  
+  * **MSAS**: Enable MSAS only
+  * **EGNOS**: Enable EGNOS only
+  * **SDCM**: Enable SDCM only
+  * **ASECNA**: Enable ASECNA only
+  * **KASS**: Enable KASS only
+  * **SPAN**: Enable SPAN only
+  * **BDS**: Enable BDS SBAS only
+  * **SLAS**: Enable QZSS SLAS only (UM980, UM982, UB9A0 only)
+
+**SBAS Timeout Subcommand:**
+
+**Syntax:** CONFIG SBAS TIMEOUT [seconds]
+
+**Parameters:**
+* **[seconds]**: Timeout value in seconds
+
+**Applicable to:** UM960, UM980, UB9A0, UM982  
+**Note:** TIMEOUT configuration is applicable to UM982 Build9669 and later versions.
+
+**Examples:**
+* CONFIG SBAS ENABLE WAAS
+* CONFIG SBAS ENABLE AUTO  
+* CONFIG SBAS DISABLE
+* CONFIG SBAS TIMEOUT 600
+
 ### **MASK/UNMASK command**
 
 Disables tracking of specific satellite systems, frequencies, or individual satellites, or sets the elevation mask.

@@ -282,10 +282,10 @@ This section maps `gpsprot.ConfigProperties` and `gpsprot.ConfigOptions` to Unic
 
 **SignalsEnabled Property**
 - **Type**: `SignalSet` - specifies which GNSS signals should be enabled
-- **Query**: `CONFIG` (returns current SIGNALGROUP and mask settings)
-- **Set**: `CONFIG SIGNALGROUP` + `MASK`/`UNMASK`
-- **Implementation**: Map SignalSet to optimal SIGNALGROUP, then apply fine-grained masking
-- **Testing**: Verify CONFIG response parsing, test SIGNALGROUP selection algorithm, confirm receiver reset handling
+- **Query**: `CONFIG` (returns current SIGNALGROUP, mask settings, and SBAS configuration)
+- **Set**: `CONFIG SIGNALGROUP` + `MASK`/`UNMASK` + `CONFIG SBAS`
+- **Implementation**: Map SignalSet to optimal SIGNALGROUP, then apply fine-grained masking. Handle SBAS as a constellation using `CONFIG SBAS ENABLE [system]` or `CONFIG SBAS DISABLE`
+- **Testing**: Verify CONFIG response parsing, test SIGNALGROUP selection algorithm, confirm receiver reset handling, test SBAS enable/disable commands
 
 **TimeGNSS Property**
 - **Type**: `GNSS` - specifies which GNSS time system to use for time pulse
@@ -566,6 +566,7 @@ Rationale
 - PacketExchanger interface implementation (must implement NativeMsgHandler)
 - Configurator interface implementation
 - Protocol registration with gpsreg
+- **Update signal.go to include SBAS constellation support**: Add SBAS signals to maskSignals map and update signalGroups to handle SBAS-enabled configurations
 
 ### Testing Infrastructure
 
