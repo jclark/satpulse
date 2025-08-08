@@ -5,7 +5,6 @@ import (
 	"math"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -13,25 +12,20 @@ import (
 
 type nativeConfigPropID string
 
-// idUsageFlags describes how nativeConfigPropID is used
+// idUsageFlags describes how nativeConfigPropID is used in the protocolDDeN
 type nativeConfigPropIDUsage int
 
-// usageNormal means for a property XYZ
-// 1. It is set using CONFIG XYZ param...
-// 2. It queried using CONFIG with no additional parameters
-// 3. The response comes back as $CONFIG,XYZ,CONFIG XYZ param...
-// 4. There will only be a single $CONFIG,XYZ,... line in the response
 const (
 	// usageNormal means for a property XYZ
-	// 1. It is set using CONFIG XYZ param...
-	// 2. It queried using CONFIG with no additional parameters
+	// 1. Set using CONFIG XYZ param...
+	// 2. Queried using CONFIG with no additional parameters
 	// 3. The response comes back as $CONFIG,XYZ,CONFIG XYZ param...
 	// 4. There will only be a single $CONFIG,XYZ,... line in the response
 	usageNormal nativeConfigPropIDUsage = iota // Normal usage
 	// usageMode is like MODE command
 	// 1. Set use MODE param... (no CONFIG prefix)
 	// 2. Queries using MODE (no CONFIG prefix)
-	// 3. Response if a single #MODE line (note # not $)
+	// 3. Response is a single #MODE line (note that uses # not $)
 	usageMode
 	// usageMask is like MASK command
 	// 1. Set using MASK param... (no CONFIG prefix) and UNMASK param...
@@ -133,7 +127,8 @@ func (p *simpleConfigProp) generateCommands(prev any) []string {
 	return []string{p.command}
 }
 
-var ppsRegexp = `^CONFIG PPS (?:DISABLE|(ENABLE[23]?) (GPS|BDS|GAL|GLO) (POSITIVE|NEGATIVE) ([1-9]\d{0,5}) ([1-9]\d{0,8}) (-?\d{0,6}) (-?\d{0,6}))$`
+var ppsRegexp = regexp.MustCompile(
+	`^CONFIG PPS (?:DISABLE|(ENABLE[23]?) (GPS|BDS|GAL|GLO) (POSITIVE|NEGATIVE) ([1-9]\d{0,5}) ([1-9]\d{0,8}) (-?\d{0,6}) (-?\d{0,6}))$`)
 
 type ppsProp struct {
 	simpleConfigProp
@@ -143,7 +138,7 @@ func newPPSProp() *ppsProp {
 	return &ppsProp{
 		simpleConfigProp: simpleConfigProp{
 			name:   idPropPPS,
-			regexp: regexp.MustCompile(ppsRegexp),
+			regexp: ppsRegexp,
 		},
 	}
 }
@@ -293,25 +288,20 @@ type signalGroupProp struct {
 	simpleConfigProp
 }
 
-const signalGroupRegexp = `^CONFIG SIGNALGROUP ([1-9]\d?)(:? (\d\d?))$`
+var signalGroupRegexp = regexp.MustCompile(`^CONFIG SIGNALGROUP ([1-9]\d?)(:? (\d\d?))$`)
 
 func newSignalGroupProp() *signalGroupProp {
 	return &signalGroupProp{
 		simpleConfigProp: simpleConfigProp{
 			name:   idPropSignalGroup,
-			regexp: regexp.MustCompile(signalGroupRegexp),
+			regexp: signalGroupRegexp,
 		},
 	}
 }
 
 func (p *signalGroupProp) clone() nativeConfigProp {
-	return &signalGroupProp{
-		simpleConfigProp: simpleConfigProp{
-			name:    p.name,
-			regexp:  p.regexp,
-			command: p.command,
-		},
-	}
+	cloned := *p
+	return &cloned
 }
 
 type comProp struct {
@@ -327,32 +317,28 @@ func newCOMProp(id nativeConfigPropID) *comProp {
 }
 
 func (p *comProp) clone() nativeConfigProp {
-	copied := *p
-	return &copied
+	cloned := *p
+	return &cloned
 }
 
+var maskRegexp = regexp.MustCompile(`^(?:MASK (\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Z0-9]*)|[A-Z]+ PRN \d+)))$`)
+
 type maskProp struct {
-	masks map[string]struct{}
+	elevationMask string // e.g. "5" for 5 degrees
+	signalMask    gpsprot.SignalSet
 }
 
 func newMaskProp() *maskProp {
-	return &maskProp{
-		masks: make(map[string]struct{}),
-	}
+	return &maskProp{}
 }
 
 func (p *maskProp) clone() nativeConfigProp {
-	clonedMasks := make(map[string]struct{})
-	for k, v := range p.masks {
-		clonedMasks[k] = v
-	}
-	return &maskProp{
-		masks: clonedMasks,
-	}
+	cloned := *p
+	return &cloned
 }
 
 func (p *maskProp) IsZero() bool {
-	return len(p.masks) == 0
+	return *p == maskProp{}
 }
 
 func (p *maskProp) id() nativeConfigPropID {
@@ -364,11 +350,35 @@ func (p *maskProp) idUsage() nativeConfigPropIDUsage {
 }
 
 func (p *maskProp) updateFromCommand(cmd string) error {
-	args := strings.Split(cmd, ",")
-	if len(args) != 2 || args[0] != "MASK" {
-		return nil
+	matches := maskRegexp.FindStringSubmatch(cmd)
+	if matches == nil {
+		return fmt.Errorf("invalid mask command format: %s", cmd)
 	}
-	p.masks[args[1]] = struct{}{}
+	
+	elevation := matches[1]      // numeric elevation angle (if MASK elevation)
+	command := matches[3]        // MASK or UNMASK (for system/frequency cases)
+	systemFreq := matches[4]     // system/frequency name (if present)
+	
+	if elevation != "" {
+		// Handle elevation mask: MASK 5.0 (only MASK allowed)
+		p.elevationMask = elevation
+	} else if systemFreq != "" {
+		// Handle system/frequency mask: MASK GPS or UNMASK L1
+		signalSet, exists := maskSignalMap[systemFreq]
+		if !exists {
+			return fmt.Errorf("unknown mask target: %s", systemFreq)
+		}
+		
+		if command == "MASK" {
+			// Add these signals to the mask (they should be disabled)
+			p.signalMask = p.signalMask | signalSet
+		} else { // UNMASK
+			// Remove these signals from the mask (they should be enabled)
+			p.signalMask = p.signalMask &^ signalSet
+		}
+	}
+	// PRN masks are matched by the regexp but ignored (no capture group)
+	
 	return nil
 }
 
@@ -383,8 +393,32 @@ func (p *maskProp) updateFromProps(props *gpsprot.ConfigProps) error {
 }
 
 func (p *maskProp) generateCommands(prev any) []string {
-	// TODO: generate MASK/UNMASK commands
-	return []string{}
+	var commands []string
+	prevMask := prev.(*maskProp)
+	// Handle elevation mask changes
+	if p.elevationMask != prevMask.elevationMask {
+		if p.elevationMask != "" {
+			commands = append(commands, "MASK "+p.elevationMask)
+		}
+	}
+	// Handle signal mask changes
+	commands = append(commands, generateMaskCommands(p.signalMask, "MASK")...)
+	// Remove signals that are no longer masked
+	return append(commands, generateMaskCommands(prevMask.signalMask &^ p.signalMask, "UNMASK")...)
+}
+
+// generateMaskCommands generates MASK or UNMASK commands for a given signal set
+func generateMaskCommands(signals gpsprot.SignalSet, command string) []string {
+	var commands []string
+	targetSet := signals
+	// maskSignalList is ordered with supersets first, so we will get a minimal command set
+	for _, entry := range maskSignalList {
+		if (entry.signalSet & targetSet) == entry.signalSet {
+			commands = append(commands, command+" "+entry.name)
+			targetSet &^= entry.signalSet
+		}
+	}
+	return commands
 }
 
 type modeProp struct {
@@ -425,11 +459,8 @@ func (p *modeProp) updateFromProps(props *gpsprot.ConfigProps) error {
 
 func (p *modeProp) generateCommands(prev any) []string {
 	prevMode := prev.(*modeProp)
-	if prevMode.command == p.command {
+	if prevMode.command == p.command || p.command == "" {
 		return nil
-	}
-	if p.command == "" {
-		return []string{"MODE,0"}
 	}
 	return []string{p.command}
 }
