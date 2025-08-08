@@ -214,7 +214,7 @@ Disables tracking of specific satellite systems, frequencies, or individual sate
 
 **Frequency Syntax (from Table 5-5):**
 
-* **GPS:** L1, LICA, L1C, L2, L2C, L2P, L5  
+* **GPS:** L1, L1CA, L1C, L2, L2C, L2P, L5  
 * **BDS:** B1, B2, B3, B1I, B2I, B3I, BD3B1C, BD3B2A, BD3B2B  
 * **GLO:** R1, R2, R3  
 * **GAL:** E1, E5a, E5b, E6C  
