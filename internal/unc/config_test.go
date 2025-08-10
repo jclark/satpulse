@@ -128,7 +128,7 @@ func TestPPS(t *testing.T) {
 		},
 	}
 
-	props := NewNativeConfigProps()
+	props := makeNativeProps()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Construct expected ConfigProps using conditional logic once
@@ -171,7 +171,7 @@ func TestPPS(t *testing.T) {
 
 func TestPPSUserDelayPreservation(t *testing.T) {
 	// Test that userDelay is preserved when cloning and updating props
-	props := NewNativeConfigProps()
+	props := makeNativeProps()
 	
 	// Start with a PPS command that has a non-zero userDelay
 	originalPPS := props[idPropPPS].clone().(*ppsProp)
