@@ -557,6 +557,45 @@ func (cp *ConfigProps) String() string {
 	return fmt.Sprint(m)
 }
 
+// CopyFrom copies the properties in other to this ConfigProps.
+// Properties that are not set in other are unchanged in cp.
+func (cp *ConfigProps) CopyFrom(other *ConfigProps) {
+	if cp == other || other == nil {
+		return
+	}
+	if other.valid&PropIDSignalsEnabled != 0 {
+		cp.signalsEnabled = other.signalsEnabled
+	}
+	if other.valid&PropIDTimeGNSS != 0 {
+		cp.timeGNSS = other.timeGNSS
+	}
+	if other.valid&PropIDTimePulseWidth != 0 {
+		cp.timePulse.Width = other.timePulse.Width
+	}
+	if other.valid&PropIDTimePulsePeriod != 0 {
+		cp.timePulse.Period = other.timePulse.Period
+	}
+	if other.valid&PropIDTimePulseAlignToGNSS != 0 {
+		cp.timePulse.AlignToGNSS = other.timePulse.AlignToGNSS
+	}
+	if other.valid&PropIDTimePulseOnlyWhenLocked != 0 {
+		cp.timePulse.OnlyWhenLocked = other.timePulse.OnlyWhenLocked
+	}
+	if other.valid&PropIDTimePulsePolarityRising != 0 {
+		cp.timePulse.PolarityRising = other.timePulse.PolarityRising
+	}
+	if other.valid&PropIDMode != 0 {
+		cp.mode = other.mode
+	}
+	if other.valid&PropIDAntennaCableDelay != 0 {
+		cp.antennaCableDelay = other.antennaCableDelay
+	}
+	if other.valid&PropIDNavMsgAuth != 0 {
+		cp.navMsgAuth = other.navMsgAuth
+	}
+	cp.valid |= other.valid
+}
+
 // Inconsistent returns a ConfigProps with entries in other that are inconsistent with this one.
 // An entry is inconsistent if it exists in both ConfigProps but has different values.
 func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
