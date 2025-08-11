@@ -64,7 +64,7 @@ func makeNativeProps() nativeConfigProps {
 	return nativeConfigProps{}
 }
 
-func generateQueryCommands(target *gpsprot.ConfigTarget) []string {
+func generateQueryCommands(_ *gpsprot.ConfigTarget) []string {
 	return []string{
 		"CONFIG",
 		"MODE",
@@ -100,16 +100,24 @@ func (np *nativeConfigProps) convertToProps(props *gpsprot.ConfigProps) {
 		sigs &^= np.mask.signalMask
 		props.SetSignalsEnabled(sigs)
 	}
-	
-	// TODO handle mode
+	np.mode.convertToProps(props)
 }
 
 func (np *nativeConfigProps) generateCommands(prevProps *nativeConfigProps) []string {
 	cmds := np.pps.generateCommands(&prevProps.pps)
-	// Not changing signalgroup for now
+	// This won't do anything because we are not changing signal group.
+	cmds = append(cmds, np.signalGroup.generateCommands(&prevProps.signalGroup)...)
 	cmds = append(cmds, np.mask.generateCommands(&prevProps.mask)...)
-	// TODO handle mode
+	cmds = append(cmds, np.mode.generateCommands(&prevProps.mode)...)
 	return cmds
+}
+
+func (np *nativeConfigProps) updateFromQueryResponse(key, cmd string) error {
+	prop := np.getProp(key)
+	if prop == nil {
+		return nil
+	}
+	return prop.updateFromCommand(cmd)
 }
 
 // UpdateFromProps updates all native properties from gpsprot.ConfigProps
@@ -380,11 +388,6 @@ func (p *maskProp) updateFromProps(props *gpsprot.ConfigProps, availSignals gpsp
 	return nil
 }
 
-func (p *maskProp) convertToProps(props *gpsprot.ConfigProps) error {
-	// TODO: implement mask to SignalsEnabled conversion
-	return nil
-}
-
 func (p *maskProp) generateCommands(prevMask *maskProp) []string {
 	var commands []string
 	// Handle elevation mask changes
@@ -422,12 +425,12 @@ func (p *modeProp) updateFromCommand(cmd string) error {
 	return nil
 }
 
-func (p *modeProp) convertToProps(props *gpsprot.ConfigProps) error {
+func (p *modeProp) convertToProps(_ *gpsprot.ConfigProps) error {
 	// TODO: implement mode command parsing
 	return nil
 }
 
-func (p *modeProp) updateFromProps(props *gpsprot.ConfigProps) error {
+func (p *modeProp) updateFromProps(_ *gpsprot.ConfigProps) error {
 	// TODO: implement mode command serialization
 	return nil
 }

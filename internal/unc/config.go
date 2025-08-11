@@ -9,7 +9,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
-
 type Configurator struct {
 	nativeProps nativeConfigProps
 	reqs        []*ConfigRequest
@@ -45,7 +44,6 @@ type ConfigRequest struct {
 	tSent time.Time
 	err   error // error in handling this request
 }
-
 
 func (req *ConfigRequest) Packet() []byte {
 	return append([]byte(req.cmd), '\r', '\n')
@@ -86,7 +84,6 @@ func (c *Configurator) NMEAMessage(payload string, tRead time.Time) (error, bool
 	}
 	return nil, false
 }
-
 
 var responseFieldRegexp = regexp.MustCompile(`^response(?:: OK|[: ](.+))$`)
 
@@ -158,13 +155,11 @@ func (req *ConfigRequest) handleAck(responseErr string) {
 // `$CONFIG,PPS,CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0*6A`
 // fields here with be {"PPS","CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0"}
 func (c *Configurator) configQueryResponse(fields []string, tRead time.Time) error {
-	// find the response
-	// if it has a propID then call updateFromCommand on that nativeProp
-	// we may also need to mark the request a completed
-	return nil
+	// TODO find the matching request and possibly update the state
+	return c.nativeProps.updateFromQueryResponse(fields[0], fields[1])
 }
 
-func (c *Configurator) generateQueryReqs() {
+func (c *Configurator) GenerateQueryReqs() {
 	for _, cmd := range generateQueryCommands(c.target) {
 		c.reqs = append(c.reqs, &ConfigRequest{
 			cmd:   cmd,
@@ -176,4 +171,3 @@ func (c *Configurator) generateQueryReqs() {
 func (c *Configurator) GenerateConfigCommands() []string {
 	return c.nativeProps.generateConfigCommands(&c.target.Props)
 }
-
