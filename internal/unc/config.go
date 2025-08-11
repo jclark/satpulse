@@ -5,17 +5,18 @@ import (
 	"math"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
-
 type Configurator struct {
-	reqs []*ConfigRequest
-	nativeProps map[nativeConfigPropID]nativeConfigProp
-	target *gpsprot.ConfigTarget
-	complete bool // no more requests will be added to req
+	nativeProps nativeConfigProps
+	reqs        []*ConfigRequest
+	target      *gpsprot.ConfigTarget
+	complete    bool // no more requests will be added to req
+	nFinished   int  // number of finished requests
 }
 
 type configRequestState int
@@ -30,67 +31,49 @@ const (
 	stateSucceeded
 )
 
+func (state configRequestState) isFinal() bool {
+	switch state {
+	case stateFailed, stateSucceeded:
+		return true
+	}
+	return false
+}
+
 type ConfigRequest struct {
 	state configRequestState
-	cmd string // not including CR/LF
-	propID nativeConfigPropID // if not invalid, then this means it's a command that updates that propID
-	sentTime time.Time
-	err error // error in handling this request
+	cmd   string           // not including CR/LF
+	prop  nativeConfigProp // if non-nil, then this means it's a command that updates that prop
+	tSent time.Time
+	err   error // error in handling this request
 }
-
-type nativeConfigPropID string
-
-// nativeConfigProp describes property of the receiver's configuration
-type nativeConfigProp interface {
-	// IsZero returns true if this property is not known
-	IsZero() bool
-	// id returns the nativeConfigPropID for this property
-	id() nativeConfigPropID
-	// idUsage says how the ID is used in commands/responses in the protocol
-	idUsage() nativeConfigPropIDUsage
-	// generate a list of lines (without line terminators) that can be sent to the receiver
-	// to set this property; empty slice if no command is needed
-	generateCommands(prevProp any) []string
-	// updateFromCommand updates the property based on a command string understood by the receiver.
-	// The command string may be a response to query or may be one of the commands from generateCommands.
-	updateFromCommand(cmd string) error
-	// clone returns deep copy
-	clone() nativeConfigProp
-}
-
-
-// idUsageFlags describes how nativeConfigPropID is used in the protocolDDeN
-type nativeConfigPropIDUsage int
 
 const (
-	// usageNormal means for a property XYZ
-	// 1. Set using CONFIG XYZ param...
+	// idPropPPS works like this
+	// 1. Set using CONFIG PPS param...
 	// 2. Queried using CONFIG with no additional parameters
-	// 3. The response comes back as $CONFIG,XYZ,CONFIG XYZ param...
-	// 4. There will only be a single $CONFIG,XYZ,... line in the response
-	usageNormal nativeConfigPropIDUsage = iota // Normal usage
-	// usageMode is like MODE command
-	// 1. Set use MODE param... (no CONFIG prefix)
-	// 2. Queries using MODE (no CONFIG prefix)
-	// 3. Response is a single #MODE line (note that uses # not $)
-	usageMode
-	// usageMask is like MASK command
+	// 3. The response comes back as $CONFIG,PPS,CONFIG PPS param...
+	// 4. There will only be a single $CONFIG,PPS,... line in the response
+	idPropPPS = "PPS"
+	// idPropSignalGroup  works like PPS
+	idPropSignalGroup = "SIGNALGROUP"
+	// idPropMask works like this
 	// 1. Set using MASK param... (no CONFIG prefix) and UNMASK param...
 	// 2. Queries using MASK (no CONFIG prefix)
 	// 3. Query reponse is multiple $CONFIG,MASK,MASK param... lines
 	// 4. Can be multiple response lines for single MASK query
-	usageMask
+	idPropMask = "MASK"
+	// idPropMode works like this
+	// 1. Set use MODE param... (no CONFIG prefix)
+	// 2. Queries using MODE (no CONFIG prefix)
+	// 3. Response is a single #MODE line (note that uses # not $)
+	idPropMode = "MODE"
 )
 
-// indieNativeConfigProp describes properties that can be updated from gpsprot.ConfigProps independently
-// of other native properties
-type indieNativeConfigProp interface {
-	nativeConfigProp
-	// updateFromProps sets this native property from gpsprot.ConfigProps
-	// returns an error if the property cannot be set
-	updateFromProps(*gpsprot.ConfigProps) error
-	// convertToProps sets the gpsprot.ConfigProps using this native property
-	convertToProps(*gpsprot.ConfigProps) error
+// nativeConfigProp describes property of the receiver's configuration
+type nativeConfigProp interface {
+	// updateFromCommand updates the property based on a command string understood by the receiver.
+	// The command string may be a response to query or may be one of the commands from generateCommands.
+	updateFromCommand(cmd string) error
 }
 
 func (req *ConfigRequest) Packet() []byte {
@@ -98,26 +81,39 @@ func (req *ConfigRequest) Packet() []byte {
 }
 
 func (req *ConfigRequest) SetSentTime(tSent time.Time) {
-	req.sentTime = tSent
+	req.tSent = tSent
 }
 
 func NewConfigurator(target *gpsprot.ConfigTarget) *Configurator {
 	return &Configurator{
-		target: target,
+		target:      target,
 		nativeProps: makeNativeProps(),
 	}
 }
 
-func makeNativeProps() map[nativeConfigPropID]nativeConfigProp {
-	return map[nativeConfigPropID]nativeConfigProp{
-		idPropPPS:         newPPSProp(),
-		idPropSignalGroup: newSignalGroupProp(),
-		idPropMask:        newMaskProp(),
-		idPropMode:        &modeProp{},
-		idPropCOM1:        newCOMProp(idPropCOM1),
-		idPropCOM2:        newCOMProp(idPropCOM2),
-		idPropCOM3:        newCOMProp(idPropCOM3),
+type nativeConfigProps struct {
+	pps         ppsProp
+	signalGroup signalGroupProp
+	mask        maskProp
+	mode        modeProp
+}
+
+func (np *nativeConfigProps) getProp(propID string) nativeConfigProp {
+	switch propID {
+	case idPropPPS:
+		return &np.pps
+	case idPropSignalGroup:
+		return &np.signalGroup
+	case idPropMask:
+		return &np.mask
+	case idPropMode:
+		return &np.mode
 	}
+	return nil
+}
+
+func makeNativeProps() nativeConfigProps {
+	return nativeConfigProps{}
 }
 
 func (c *Configurator) Request(index int) *ConfigRequest {
@@ -127,40 +123,105 @@ func (c *Configurator) Request(index int) *ConfigRequest {
 func (c *Configurator) GetRequestCount() (int, bool) {
 	return len(c.reqs), c.complete
 }
+
+// payload is after $ up to but not including the * before the checksum
+func (c *Configurator) NMEAMessage(payload string, tRead time.Time) (error, bool) {
+	fields := strings.Split(payload, ",")
+	if len(fields) == 0 {
+		return nil, false
+	}
+	format := fields[0]
+	data := fields[1:]
+	switch format {
+	case "command":
+		return c.commandResponse(data, tRead), true
+	case "CONFIG":
+		return c.configQueryResponse(data, tRead), true
+	}
+	return nil, false
+}
+
+
+var responseFieldRegexp = regexp.MustCompile(`^response(?:: OK|[: ](.+))$`)
+
 // handle a command response of the form
 // `$command,CONFIG,response: OK*XX\r\f`
 // fields here will be {"CONFIG", "response: OK"}
-func (c *Configurator) commmandResponse(fields []string) error {
-	// TODO find the command in the list of sent requests list
-	// see if the response is OK
-	// 
-	// set the request state accordingly
-	return nil
+func (c *Configurator) commandResponse(fields []string, tRead time.Time) error {
+	if len(fields) != 2 {
+		return fmt.Errorf("invalid command response format: %s", fields)
+	}
+	cmd := fields[0]
+	response := fields[1]
+	matches := responseFieldRegexp.FindStringSubmatch(response)
+	if matches == nil {
+		return fmt.Errorf("invalid command response: %s", response)
+	}
+	responseErr := matches[1]
+	for i := c.nFinished; i < len(c.reqs); i++ {
+		req := c.reqs[i]
+		if req.matchesAck(cmd, tRead) {
+			req.handleAck(responseErr)
+			return nil
+		}
+	}
+	return fmt.Errorf("no matching request for command response: %s", cmd)
 }
 
-// configResponse handles a response to query, where the response has the form
+const maxResponseDelay = time.Second * 3 / 2
+
+func (req *ConfigRequest) matchesAck(cmd string, tRead time.Time) bool {
+	if req.cmd != cmd {
+		return false
+	}
+	delay := tRead.Sub(req.tSent)
+	if delay < 0 || delay > maxResponseDelay {
+		return false
+	}
+	switch req.state {
+	case stateAwaitingAck, stateAwaitingAckAndResponse:
+		break
+	default:
+		return false
+	}
+	return true
+}
+
+func (req *ConfigRequest) handleAck(responseErr string) {
+	if responseErr != "" {
+		req.state = stateFailed
+		req.err = fmt.Errorf("command rejected: %s", responseErr)
+		return
+	}
+	// since the request was accepted, update our state to reflect that the
+	// command was successfully performed, so our state matches the receiver state
+	if req.prop != nil {
+		err := req.prop.updateFromCommand(req.cmd)
+		if err != nil {
+			panic(fmt.Sprintf("could not parse generated command: %s: %v", req.cmd, err))
+		}
+	}
+	if req.state == stateAwaitingAckAndResponse {
+		req.state = stateAwaitingResponse
+	} else {
+		req.state = stateSucceeded
+	}
+}
+
+// configQueryResponse handles a response to query, where the response has the form
 // `$CONFIG,PPS,CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0*6A`
 // fields here with be {"PPS","CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0"}
-func (c *Configurator) configResponse(fields[] string) error {
-	// find the response 
+func (c *Configurator) configQueryResponse(fields []string, tRead time.Time) error {
+	// find the response
 	// if it has a propID then call updateFromCommand on that nativeProp
 	// we may also need to mark the request a completed
 	return nil
 }
 
-func (c *Configurator) maskProp() *maskProp {
-	return c.nativeProps[idPropMask].(*maskProp)
-}
-
-func (c *Configurator) signalGroupProp() *signalGroupProp {
-	return c.nativeProps[idPropSignalGroup].(*signalGroupProp)
-}
-
-
 func (c *Configurator) generateQueryReqs() {
 	for _, cmd := range generateQueryCommands(c.target) {
 		c.reqs = append(c.reqs, &ConfigRequest{
-			cmd: cmd,
+			cmd:   cmd,
 			state: stateReadyToSendQuery,
 		})
 	}
@@ -174,109 +235,101 @@ func generateQueryCommands(target *gpsprot.ConfigTarget) []string {
 	}
 }
 
-
 // error indicating toNative failed because the ConfigProps did not contain the necessary properties
 var errMissingProp = fmt.Errorf("missing property")
 
+func (c *Configurator) GenerateConfigCommands() []string {
+	return c.nativeProps.generateConfigCommands(&c.target.Props)
+}
+
+// generateConfigCommands generates commands to change the native state to have the abstract properties specified by target
+func (np *nativeConfigProps) generateConfigCommands(target *gpsprot.ConfigProps) []string {
+	// Create the full set of target abstract props
+	// Convert currrent native props to abstract props
+	fullTargetProps := gpsprot.ConfigProps{}
+	np.convertToProps(&fullTargetProps)
+	// Combine the target abstract props with partial abstract props
+	// to get complete set of target abstract props
+	fullTargetProps.CopyFrom(target)
+	// Make a copy of the native props, which will become the target
+	targetNativeProps := np
+	// map the complete target abstract props to the native props
+	targetNativeProps.updateFromProps(&fullTargetProps)
+	// generate commands to turn current native props to target native props
+	return targetNativeProps.generateCommands(np)
+}
+
+func (np *nativeConfigProps) convertToProps(props *gpsprot.ConfigProps) {
+	// Convert all native properties to gpsprot.ConfigProps
+	np.pps.convertToProps(props)
+	sigs := np.signalGroup.signalSet()
+	if sigs != 0 {
+		sigs &^= np.mask.signalMask
+		props.SetSignalsEnabled(sigs)
+	}
+	
+	// TODO handle mode
+}
+
+func (np *nativeConfigProps) generateCommands(prevProps *nativeConfigProps) []string {
+	cmds := np.pps.generateCommands(&prevProps.pps)
+	// Not changing signalgroup for now
+	cmds = append(cmds, np.mask.generateCommands(&prevProps.mask)...)
+	// TODO handle mode
+	return cmds
+}
+
 // UpdateFromProps updates all native properties from gpsprot.ConfigProps
-func (c *Configurator) UpdateFromProps(props *gpsprot.ConfigProps) error {
-	np := c.nativeProps
-	// First, handle all independent properties
-	for id, prop := range np {
-		if indieProp, ok := prop.(indieNativeConfigProp); ok {
-			if err := indieProp.updateFromProps(props); err != nil && err != errMissingProp {
-				return fmt.Errorf("updating %s: %w", id, err)
-			}
-		}
+func (np *nativeConfigProps) updateFromProps(props *gpsprot.ConfigProps) error {
+	err := np.pps.updateFromProps(props)
+	if err != nil && err != errMissingProp {
+		return err
+	}
+	err = np.mode.updateFromProps(props)
+	if err != nil && err != errMissingProp {
+		return err
+	}
+	availSignals := np.signalGroup.signalSet()
+	if availSignals != 0 {
+		np.mask.updateFromProps(props, availSignals)
 	}
 
-	availSignals := c.signalGroupProp().signalSet()
-	if availSignals != 0 {	
-		c.maskProp().updateFromProps(props, availSignals)
-	}
-		
-		
 	// TODO: Handle SBAS separately (CONFIG SBAS ENABLE/DISABLE)
 	// SBAS signals are not part of SIGNALGROUP, they're enabled via CONFIG SBAS
-	
-	
+
 	return nil
-}
-
-const (
-	idPropInvalid	  nativeConfigPropID = ""
-	idPropPPS         nativeConfigPropID = "PPS"
-	idPropSignalGroup nativeConfigPropID = "SIGNALGROUP"
-	idPropMask        nativeConfigPropID = "MASK"
-	idPropMode        nativeConfigPropID = "MODE"
-	idPropCOM1        nativeConfigPropID = "COM1"
-	idPropCOM2        nativeConfigPropID = "COM2"
-	idPropCOM3        nativeConfigPropID = "COM3"
-)
-
-type simpleConfigProp struct {
-	name    nativeConfigPropID
-	regexp  *regexp.Regexp
-	command string
-}
-
-func (p *simpleConfigProp) IsZero() bool {
-	return p.command == ""
-}
-
-func (p *simpleConfigProp) id() nativeConfigPropID {
-	return p.name
-}
-
-func (p *simpleConfigProp) idUsage() nativeConfigPropIDUsage {
-	return usageNormal
-}
-
-func (p *simpleConfigProp) updateFromCommand(cmd string) error {
-	if p.regexp != nil && !p.regexp.MatchString(cmd) {
-		return fmt.Errorf("invalid command format: %s", cmd)
-	}
-	p.command = cmd
-	return nil
-}
-
-func (p *simpleConfigProp) generateCommands(prev any) []string {
-	prevSimple := prev.(*simpleConfigProp)
-	if prevSimple.command == p.command || p.command == "" {
-		return nil
-	}
-	return []string{p.command}
 }
 
 var ppsRegexp = regexp.MustCompile(
 	`^CONFIG PPS (?:DISABLE|(ENABLE[23]?) (GPS|BDS|GAL|GLO) (POSITIVE|NEGATIVE) ([1-9]\d{0,5}) ([1-9]\d{0,8}) (-?\d{0,6}) (-?\d{0,6}))$`)
 
 type ppsProp struct {
-	simpleConfigProp
+	command string
 }
 
-func newPPSProp() *ppsProp {
-	return &ppsProp{
-		simpleConfigProp: simpleConfigProp{
-			name:   idPropPPS,
-			regexp: ppsRegexp,
-		},
+func (p *ppsProp) updateFromCommand(cmd string) error {
+	if !ppsRegexp.MatchString(cmd) {
+		return fmt.Errorf("invalid PPS command format: %s", cmd)
 	}
+	p.command = cmd
+	return nil
 }
 
-func (p *ppsProp) clone() nativeConfigProp {
-	copied := *p
-	return &copied
+func (p *ppsProp) generateCommands(prev *ppsProp) []string {
+	if prev.command == p.command || p.command == "" {
+		return nil
+	}
+	return []string{p.command}
 }
 
-func (p *ppsProp) convertToProps(props *gpsprot.ConfigProps) error {
+func (p *ppsProp) convertToProps(props *gpsprot.ConfigProps) {
 	if p.command == "" {
-		return nil // No command to parse
+		return // No command to parse
 	}
 
-	matches := p.regexp.FindStringSubmatch(p.command)
+	matches := ppsRegexp.FindStringSubmatch(p.command)
 	if matches == nil {
-		return fmt.Errorf("invalid PPS command format: %s", p.command)
+		panic("invalid PPS command format: " + p.command)
 	}
 
 	if matches[1] == "" {
@@ -289,7 +342,7 @@ func (p *ppsProp) convertToProps(props *gpsprot.ConfigProps) error {
 			AlignToGNSS:    true,
 		}
 		props.SetTimePulse(timePulse)
-		return nil
+		return
 	}
 
 	// Parse ENABLE case with parameters
@@ -325,8 +378,6 @@ func (p *ppsProp) convertToProps(props *gpsprot.ConfigProps) error {
 	}
 	props.SetTimeGNSS(gnss)
 	props.SetAntennaCableDelay(time.Duration(rfDelay) * time.Nanosecond)
-
-	return nil
 }
 
 const maxPPSPeriodSecs = 20
@@ -391,8 +442,8 @@ func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 
 	// userDelay preserved from existing command (native-only field)
 	userDelay := "0" // default value
-	if p.command != "" && p.regexp != nil {
-		matches := p.regexp.FindStringSubmatch(p.command)
+	if p.command != "" {
+		matches := ppsRegexp.FindStringSubmatch(p.command)
 		if len(matches) > 7 { // ENABLE case with all capture groups
 			userDelay = matches[7]
 		}
@@ -406,61 +457,45 @@ func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 }
 
 type signalGroupProp struct {
-	simpleConfigProp
+	command string
 }
 
 var signalGroupRegexp = regexp.MustCompile(`^CONFIG SIGNALGROUP ([1-9]\d?)(:? (\d\d?))$`)
 
-func newSignalGroupProp() *signalGroupProp {
-	return &signalGroupProp{
-		simpleConfigProp: simpleConfigProp{
-			name:   idPropSignalGroup,
-			regexp: signalGroupRegexp,
-		},
+func (p *signalGroupProp) updateFromCommand(cmd string) error {
+	if !signalGroupRegexp.MatchString(cmd) {
+		return fmt.Errorf("invalid CONFIG SIGNALGROUP format: %s", cmd)
 	}
+	p.command = cmd
+	return nil
 }
 
-func (p *signalGroupProp) clone() nativeConfigProp {
-	cloned := *p
-	return &cloned
+func (p *signalGroupProp) generateCommands(prev *signalGroupProp) []string {
+	if prev.command == p.command || p.command == "" {
+		return nil
+	}
+	return []string{p.command}
 }
 
 // signalSet returns the SignalSet for the signal group for the main antenna
 // Returns 0 if no signal group is set or if the group number is invalid
 func (p *signalGroupProp) signalSet() gpsprot.SignalSet {
-	if p.IsZero() {
+	if p.command == "" {
 		return 0
 	}
-	
+
 	// Parse signal group number from the command
 	matches := signalGroupRegexp.FindStringSubmatch(p.command)
 	if len(matches) < 2 {
 		return 0
 	}
-	
+
 	groupNum, err := strconv.ParseInt(matches[1], 10, 64)
 	if err != nil || groupNum < 0 || int(groupNum) >= len(signalGroups) {
 		return 0
 	}
-	
+
 	return signalGroups[groupNum]
-}
-
-type comProp struct {
-	simpleConfigProp
-}
-
-func newCOMProp(id nativeConfigPropID) *comProp {
-	return &comProp{
-		simpleConfigProp: simpleConfigProp{
-			name: id,
-		},
-	}
-}
-
-func (p *comProp) clone() nativeConfigProp {
-	cloned := *p
-	return &cloned
 }
 
 var maskRegexp = regexp.MustCompile(`^(?:MASK (\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Z0-9]*)|[A-Z]+ PRN \d+)))$`)
@@ -470,37 +505,16 @@ type maskProp struct {
 	signalMask    gpsprot.SignalSet
 }
 
-func newMaskProp() *maskProp {
-	return &maskProp{}
-}
-
-func (p *maskProp) clone() nativeConfigProp {
-	cloned := *p
-	return &cloned
-}
-
-func (p *maskProp) IsZero() bool {
-	return *p == maskProp{}
-}
-
-func (p *maskProp) id() nativeConfigPropID {
-	return idPropMask
-}
-
-func (p *maskProp) idUsage() nativeConfigPropIDUsage {
-	return usageMask
-}
-
 func (p *maskProp) updateFromCommand(cmd string) error {
 	matches := maskRegexp.FindStringSubmatch(cmd)
 	if matches == nil {
 		return fmt.Errorf("invalid mask command format: %s", cmd)
 	}
-	
-	elevation := matches[1]      // numeric elevation angle (if MASK elevation)
-	command := matches[3]        // MASK or UNMASK (for system/frequency cases)
-	systemFreq := matches[4]     // system/frequency name (if present)
-	
+
+	elevation := matches[1]  // numeric elevation angle (if MASK elevation)
+	command := matches[3]    // MASK or UNMASK (for system/frequency cases)
+	systemFreq := matches[4] // system/frequency name (if present)
+
 	if elevation != "" {
 		// Handle elevation mask: MASK 5.0 (only MASK allowed)
 		p.elevationMask = elevation
@@ -510,7 +524,7 @@ func (p *maskProp) updateFromCommand(cmd string) error {
 		if !exists {
 			return fmt.Errorf("unknown mask target: %s", systemFreq)
 		}
-		
+
 		if command == "MASK" {
 			// Add these signals to the mask (they should be disabled)
 			p.signalMask = p.signalMask | signalSet
@@ -520,7 +534,7 @@ func (p *maskProp) updateFromCommand(cmd string) error {
 		}
 	}
 	// PRN masks are matched by the regexp but ignored (no capture group)
-	
+
 	return nil
 }
 
@@ -538,9 +552,8 @@ func (p *maskProp) convertToProps(props *gpsprot.ConfigProps) error {
 	return nil
 }
 
-func (p *maskProp) generateCommands(prev any) []string {
+func (p *maskProp) generateCommands(prevMask *maskProp) []string {
 	var commands []string
-	prevMask := prev.(*maskProp)
 	// Handle elevation mask changes
 	if p.elevationMask != prevMask.elevationMask {
 		if p.elevationMask != "" {
@@ -550,7 +563,7 @@ func (p *maskProp) generateCommands(prev any) []string {
 	// Handle signal mask changes
 	commands = append(commands, generateMaskCommands(p.signalMask, "MASK")...)
 	// Remove signals that are no longer masked
-	return append(commands, generateMaskCommands(prevMask.signalMask &^ p.signalMask, "UNMASK")...)
+	return append(commands, generateMaskCommands(prevMask.signalMask&^p.signalMask, "UNMASK")...)
 }
 
 // generateMaskCommands generates MASK or UNMASK commands for a given signal set
@@ -571,23 +584,6 @@ type modeProp struct {
 	command string
 }
 
-func (p *modeProp) IsZero() bool {
-	return p.command == ""
-}
-
-func (p *modeProp) clone() nativeConfigProp {
-	copied := *p
-	return &copied
-}
-
-func (p *modeProp) id() nativeConfigPropID {
-	return idPropMode
-}
-
-func (p *modeProp) idUsage() nativeConfigPropIDUsage {
-	return usageMode
-}
-
 func (p *modeProp) updateFromCommand(cmd string) error {
 	p.command = cmd
 	return nil
@@ -603,8 +599,7 @@ func (p *modeProp) updateFromProps(props *gpsprot.ConfigProps) error {
 	return nil
 }
 
-func (p *modeProp) generateCommands(prev any) []string {
-	prevMode := prev.(*modeProp)
+func (p *modeProp) generateCommands(prevMode *modeProp) []string {
 	if prevMode.command == p.command || p.command == "" {
 		return nil
 	}

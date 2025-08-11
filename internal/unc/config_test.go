@@ -128,7 +128,6 @@ func TestPPS(t *testing.T) {
 		},
 	}
 
-	props := makeNativeProps()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Construct expected ConfigProps using conditional logic once
@@ -142,7 +141,7 @@ func TestPPS(t *testing.T) {
 			}
 
 			// Test updateFromProps: Unicore command <- gpsprot.ConfigProps 
-			pps := props[idPropPPS].clone().(*ppsProp)
+			pps := ppsProp{}
 			err := pps.updateFromProps(&expectedProps)
 			if err != nil {
 				t.Fatalf("updateFromProps failed: %v", err)
@@ -154,12 +153,9 @@ func TestPPS(t *testing.T) {
 
 			// Test convertToProps: Unicore command -> gpsprot.ConfigProps
 			var actualProps gpsprot.ConfigProps
-			pps2 := pps.clone().(*ppsProp)
+			pps2 := pps
 			pps2.command = tt.command // Set command to parse
-			err = pps2.convertToProps(&actualProps)
-			if err != nil {
-				t.Fatalf("convertToProps failed: %v", err)
-			}
+			pps2.convertToProps(&actualProps)
 
 			// Verify round-trip conversion by comparing actual vs expected
 			if actualProps != expectedProps {
@@ -171,10 +167,9 @@ func TestPPS(t *testing.T) {
 
 func TestPPSUserDelayPreservation(t *testing.T) {
 	// Test that userDelay is preserved when cloning and updating props
-	props := makeNativeProps()
 	
 	// Start with a PPS command that has a non-zero userDelay
-	originalPPS := props[idPropPPS].clone().(*ppsProp)
+	originalPPS := ppsProp{}
 	err := originalPPS.updateFromCommand("CONFIG PPS ENABLE GPS POSITIVE 1000 1000 0 123")
 	if err != nil {
 		t.Fatalf("updateFromCommand failed: %v", err)
@@ -187,7 +182,7 @@ func TestPPSUserDelayPreservation(t *testing.T) {
 	}
 	
 	// Clone the property
-	cloned := originalPPS.clone().(*ppsProp)
+	cloned := originalPPS
 	
 	// Verify command was preserved in clone
 	if cloned.command != expectedOriginalCommand {
@@ -285,10 +280,10 @@ func TestMaskPropRoundTrip(t *testing.T) {
 	for _, tc := range maskTestCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Test command generation
-			prop := &maskProp{signalMask: tc.signalSet}
-			prev := newMaskProp()
+			prop := maskProp{signalMask: tc.signalSet}
+			prev := maskProp{}
 
-			commands := prop.generateCommands(prev)
+			commands := prop.generateCommands(&prev)
 
 			// Convert to sets for comparison
 			gotSet := make(map[string]bool)
@@ -307,7 +302,7 @@ func TestMaskPropRoundTrip(t *testing.T) {
 			}
 
 			// Test round-trip: parse commands back
-			roundTrip := newMaskProp()
+			roundTrip := maskProp{}
 			for _, cmd := range commands {
 				if err := roundTrip.updateFromCommand(cmd); err != nil {
 					t.Fatalf("updateFromCommand(%q) failed: %v", cmd, err)
@@ -405,7 +400,7 @@ func TestMaskPropDifferentialUpdate(t *testing.T) {
 
 func TestMaskPropElevation(t *testing.T) {
 	// Test elevation mask parsing
-	prop := newMaskProp()
+	prop := maskProp{}
 	if err := prop.updateFromCommand("MASK 5.0"); err != nil {
 		t.Fatalf("updateFromCommand failed: %v", err)
 	}
@@ -414,7 +409,7 @@ func TestMaskPropElevation(t *testing.T) {
 	}
 
 	// Test integer elevation mask
-	prop2 := newMaskProp()
+	prop2 := maskProp{}
 	if err := prop2.updateFromCommand("MASK 10"); err != nil {
 		t.Fatalf("updateFromCommand failed: %v", err)
 	}
@@ -423,8 +418,8 @@ func TestMaskPropElevation(t *testing.T) {
 	}
 
 	// Test elevation mask generation
-	prev := newMaskProp()
-	commands := prop.generateCommands(prev)
+	prev := maskProp{}
+	commands := prop.generateCommands(&prev)
 	expected := []string{"MASK 5.0"}
 
 	// For elevation, order should be deterministic (only one command)
@@ -448,7 +443,7 @@ func TestMaskPropElevation(t *testing.T) {
 
 func TestMaskPropPRN(t *testing.T) {
 	// Test that PRN masks are accepted but ignored
-	prop := newMaskProp()
+	prop := maskProp{}
 	
 	// Should parse without error
 	if err := prop.updateFromCommand("MASK GPS PRN 10"); err != nil {
@@ -471,7 +466,7 @@ func TestMaskPropPRN(t *testing.T) {
 }
 
 func TestMaskPropInvalidCommands(t *testing.T) {
-	prop := newMaskProp()
+	prop := maskProp{}
 	
 	invalidCommands := []string{
 		"MASK",           // Missing argument
