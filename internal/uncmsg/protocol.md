@@ -198,6 +198,8 @@ Sets the combination of signals tracked by the master and slave antennas. This c
 * **9:** BDS (B1I, B2I, B3I, B1C, B2a, B2b), GPS (L1C/A, L2P(Y)/L2C, L5), GLO (L1C/A, L2C/A), GAL (E1C, E5A, E5B), QZSS (L1C/A, L2C, L5)  
 * **10:** BDS (B1I, B2I, B3I, B1C, B2a, B2b), GPS (L1C/A, L2C/L2P, L5), GLO (G1, G2), GAL (E1, E5a, E5b), QZSS (L1C/A, L2C, L5, L6)
 
+SIGNALGROUP 10 is supported only in UM980 build 16606 or later.
+
 **Example:** CONFIG SIGNALGROUP 1
 
 #### **SBAS config**
@@ -279,6 +281,29 @@ Notes:
   * When masking Q1, it disables QZSS L1C/A and QZSS L1C.
   * When masking Q2, it disables QZSS L2C.
   * When masking Q5, it disables QZSS L5.
+
+For firmware versions that support SIGNALGROUP 10, there is also undocumented support for additional QZSS masks:
+* Q6D means QZSS L6D (CLAS)
+* Q6E means QZSS L6E (MADOCA)
+* When masking Q6, it masks QZSS L6D and L6E.
+
+Furthermore, in firmware builds of at least 13504 or greater, the way signals are reported in the response to a MASK query is different from how they are specified in a MASK command. Specifically, the following labels are used for specific signals
+
+* **GPS:** GPSL1CA, GPSL1C, GPSL2C, GPSL2P, GPSL5  
+* **BDS:** BDSB1I, BDSB2I, BDSB3I, BD3B1C, BD3B2A, BD3B2B  
+* **GLO:** GLOL1, GLOL2, GLOL3  
+* **GAL:** GALE1, GALE5a, GALE5b, GALE6c
+* **QZSS:** QZSSL1CA, QZSSL1C, QZSSL2C, QZSSL6D, QZSSL6E  
+
+You can see this by doing e.g.
+
+```
+MASK QZSS
+UNMASK Q1C
+MASK
+```
+
+But these labels are not recognized when using the MASK command.
 
 **Examples:**
 
