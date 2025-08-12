@@ -284,7 +284,7 @@ func TestMaskPropRoundTrip(t *testing.T) {
 			prop := maskProp{signalMask: tc.signalSet}
 			prev := maskProp{}
 
-			commands := prop.generateCommands(&prev)
+			commands := prop.generateCommands(&prev, gpsprot.SigSetAll)
 
 			// Convert to sets for comparison
 			gotSet := make(map[string]bool)
@@ -379,7 +379,7 @@ func TestMaskPropDifferentialUpdate(t *testing.T) {
 			prev := &maskProp{signalMask: tc.prevSignals}
 			curr := &maskProp{signalMask: tc.currSignals}
 
-			commands := curr.generateCommands(prev)
+			commands := curr.generateCommands(prev, gpsprot.SigSetAll)
 
 			// Convert to sets for comparison
 			gotSet := make(map[string]bool)
@@ -420,7 +420,7 @@ func TestMaskPropElevation(t *testing.T) {
 
 	// Test elevation mask generation
 	prev := maskProp{}
-	commands := prop.generateCommands(&prev)
+	commands := prop.generateCommands(&prev, gpsprot.SigSetAll)
 	expected := []string{"MASK 5.0"}
 
 	// For elevation, order should be deterministic (only one command)
@@ -430,7 +430,7 @@ func TestMaskPropElevation(t *testing.T) {
 
 	// Test elevation mask change
 	prev2 := &maskProp{elevationMask: "10"}
-	commands2 := prop.generateCommands(prev2)
+	commands2 := prop.generateCommands(prev2, gpsprot.SigSetAll)
 	expected2 := []string{"MASK 5.0"}
 	if len(commands2) != len(expected2) || commands2[0] != expected2[0] {
 		t.Errorf("generateCommands() = %v, want %v", commands2, expected2)
@@ -605,11 +605,11 @@ func TestNativeConfigProps(t *testing.T) {
 			},
 			targetProps: func(props *gpsprot.ConfigProps) {
 				props.SetTimePulse(gpsprot.TimePulse{
-					Width:          300 * time.Microsecond, // changed
-					Period:         500 * time.Millisecond, // changed  
-					PolarityRising: true, // changed
-					OnlyWhenLocked: false, // changed
-					AlignToGNSS:    false, // changed
+					Width:          300 * time.Microsecond,
+					Period:         500 * time.Millisecond,
+					PolarityRising: true,
+					OnlyWhenLocked: false,
+					AlignToGNSS:    false,
 				})
 			},
 			expectedCmds: []string{"CONFIG PPS ENABLE3 BDS POSITIVE 300 500 150 0"},
@@ -623,6 +623,38 @@ func TestNativeConfigProps(t *testing.T) {
 				// Set no properties - everything should be preserved
 			},
 			expectedCmds: []string{},
+		},
+		{
+			name: "mask multiple constellations with signal group 2",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetSignalsEnabled(gpsprot.SigSetGPS)
+			},
+			expectedCmds: []string{
+				"MASK GLO",
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+				"MASK IRNSS",
+			},
+		},
+		{
+			name: "mask multiple constellations with signal group 1",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetSignalsEnabled(gpsprot.SigSetBDS)
+			},
+			expectedCmds: []string{
+				"MASK GPS",
+				"MASK GAL",
+				"MASK GLO",
+				"MASK QZSS",
+				// no MASK IRNSS since signal group 1 does not include IRNSS
+			},
 		},
 	}
 

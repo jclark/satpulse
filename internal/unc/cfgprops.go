@@ -107,7 +107,7 @@ func (np *nativeConfigProps) generateCommands(prevProps *nativeConfigProps) []st
 	cmds := np.pps.generateCommands(&prevProps.pps)
 	// This won't do anything because we are not changing signal group.
 	cmds = append(cmds, np.signalGroup.generateCommands(&prevProps.signalGroup)...)
-	cmds = append(cmds, np.mask.generateCommands(&prevProps.mask)...)
+	cmds = append(cmds, np.mask.generateCommands(&prevProps.mask, np.signalGroup.signalSet())...)
 	cmds = append(cmds, np.mode.generateCommands(&prevProps.mode)...)
 	return cmds
 }
@@ -301,7 +301,7 @@ type signalGroupProp struct {
 	command string
 }
 
-var signalGroupRegexp = regexp.MustCompile(`^CONFIG SIGNALGROUP ([1-9]\d?)(:? (\d\d?))$`)
+var signalGroupRegexp = regexp.MustCompile(`^CONFIG SIGNALGROUP ([1-9]\d?)(:? (\d\d?))?$`)
 
 func (p *signalGroupProp) updateFromCommand(cmd string) error {
 	if !signalGroupRegexp.MatchString(cmd) {
@@ -327,10 +327,6 @@ func (p *signalGroupProp) signalSet() gpsprot.SignalSet {
 
 	// Parse signal group number from the command
 	matches := signalGroupRegexp.FindStringSubmatch(p.command)
-	if len(matches) < 2 {
-		return 0
-	}
-
 	groupNum, err := strconv.ParseInt(matches[1], 10, 64)
 	if err != nil || groupNum < 0 || int(groupNum) >= len(signalGroups) {
 		return 0
@@ -388,7 +384,7 @@ func (p *maskProp) updateFromProps(props *gpsprot.ConfigProps, availSignals gpsp
 	return nil
 }
 
-func (p *maskProp) generateCommands(prevMask *maskProp) []string {
+func (p *maskProp) generateCommands(prevMask *maskProp, sigGroupSignals gpsprot.SignalSet) []string {
 	var commands []string
 	// Handle elevation mask changes
 	if p.elevationMask != prevMask.elevationMask {
@@ -397,18 +393,27 @@ func (p *maskProp) generateCommands(prevMask *maskProp) []string {
 		}
 	}
 	// Handle signal mask changes
-	commands = append(commands, generateMaskCommands(p.signalMask, "MASK")...)
+	commands = append(commands, generateMaskCommands(p.signalMask, sigGroupSignals, "MASK")...)
 	// Remove signals that are no longer masked
-	return append(commands, generateMaskCommands(prevMask.signalMask&^p.signalMask, "UNMASK")...)
+	return append(commands, generateMaskCommands(prevMask.signalMask&^p.signalMask, sigGroupSignals, "UNMASK")...)
 }
 
 // generateMaskCommands generates MASK or UNMASK commands for a given signal set
-func generateMaskCommands(signals gpsprot.SignalSet, command string) []string {
+func generateMaskCommands(signals gpsprot.SignalSet, sigGroupSignals gpsprot.SignalSet, command string) []string {
 	var commands []string
 	targetSet := signals
 	// maskSignalList is ordered with supersets first, so we will get a minimal command set
 	for _, entry := range maskSignalList {
-		if (entry.signalSet & targetSet) == entry.signalSet {
+		if targetSet == 0 {
+			break // No more signals to mask/unmask
+		}
+		// Using sigGroupSignals gives a slightly nicer set of MASK commands
+		// For example, signal group 2 does not include QZSS L6
+		// If using satpulsetool we do not include QZSS, then we want to get MASK QZSS
+		// But if we use applicable signals here, we would instead mask individually Q1, Q2 and Q5.
+		// This is safe since SIGNALGROUP does a reset.
+		applicableSignals := entry.signalSet & sigGroupSignals
+		if applicableSignals != 0 && (applicableSignals & targetSet) == applicableSignals {
 			commands = append(commands, command+" "+entry.name)
 			targetSet &^= entry.signalSet
 		}
