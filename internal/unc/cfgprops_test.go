@@ -2,6 +2,7 @@ package unc
 
 import (
 	"maps"
+	"strings"
 	"testing"
 	"time"
 
@@ -481,6 +482,201 @@ func TestMaskPropInvalidCommands(t *testing.T) {
 		if err := prop.updateFromCommand(cmd); err == nil {
 			t.Errorf("updateFromCommand(%q) should have failed but didn't", cmd)
 		}
+	}
+}
+
+func TestNativeConfigProps(t *testing.T) {
+	tests := []struct {
+		name            string
+		currentState    []string // commands representing current receiver state
+		targetProps     func(*gpsprot.ConfigProps) // function to set up target properties
+		expectedCmds    []string
+	}{
+		{
+			name: "enable PPS from disabled state",
+			currentState: []string{
+				"CONFIG PPS DISABLE",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetTimePulse(gpsprot.TimePulse{
+					Width:          100 * time.Microsecond,
+					Period:         time.Second,
+					PolarityRising: true,
+					OnlyWhenLocked: true,
+					AlignToGNSS:    true,
+				})
+				props.SetTimeGNSS(gpsprot.GPS)
+			},
+			expectedCmds: []string{"CONFIG PPS ENABLE GPS POSITIVE 100 1000 0 0"},
+		},
+		{
+			name: "change PPS from GPS to BDS with cable delay",
+			currentState: []string{
+				"CONFIG PPS ENABLE GPS POSITIVE 100 1000 0 0",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetTimePulse(gpsprot.TimePulse{
+					Width:          200 * time.Microsecond,
+					Period:         2 * time.Second,
+					PolarityRising: false,
+					OnlyWhenLocked: false,
+					AlignToGNSS:    true,
+				})
+				props.SetTimeGNSS(gpsprot.BDS)
+				props.SetAntennaCableDelay(50 * time.Nanosecond)
+			},
+			expectedCmds: []string{"CONFIG PPS ENABLE2 BDS NEGATIVE 200 2000 50 0"},
+		},
+		{
+			name: "disable PPS",
+			currentState: []string{
+				"CONFIG PPS ENABLE GPS POSITIVE 100 1000 0 0",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetTimePulse(gpsprot.TimePulse{
+					Width:          0, // Disabled
+					Period:         time.Second,
+					PolarityRising: true,
+					OnlyWhenLocked: true,
+					AlignToGNSS:    true,
+				})
+			},
+			expectedCmds: []string{"CONFIG PPS DISABLE"},
+		},
+		{
+			name: "no change needed",
+			currentState: []string{
+				"CONFIG PPS ENABLE GPS POSITIVE 100 1000 0 0",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetTimePulse(gpsprot.TimePulse{
+					Width:          100 * time.Microsecond,
+					Period:         time.Second,
+					PolarityRising: true,
+					OnlyWhenLocked: true,
+					AlignToGNSS:    true,
+				})
+				props.SetTimeGNSS(gpsprot.GPS)
+			},
+			expectedCmds: []string{},
+		},
+		{
+			name: "PPS preserving userDelay",
+			currentState: []string{
+				"CONFIG PPS ENABLE GPS POSITIVE 100 1000 0 456",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetTimePulse(gpsprot.TimePulse{
+					Width:          200 * time.Microsecond, // changed
+					Period:         time.Second,
+					PolarityRising: false, // changed
+					OnlyWhenLocked: true,
+					AlignToGNSS:    true,
+				})
+				props.SetTimeGNSS(gpsprot.BDS) // changed
+				props.SetAntennaCableDelay(100 * time.Nanosecond) // changed
+			},
+			expectedCmds: []string{"CONFIG PPS ENABLE BDS NEGATIVE 200 1000 100 456"}, // userDelay 456 preserved
+		},
+		{
+			name: "set just antenna cable delay",
+			currentState: []string{
+				"CONFIG PPS ENABLE GPS POSITIVE 100 1000 0 0",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetAntennaCableDelay(75 * time.Nanosecond)
+			},
+			expectedCmds: []string{"CONFIG PPS ENABLE GPS POSITIVE 100 1000 75 0"},
+		},
+		{
+			name: "set just timeGNSS",
+			currentState: []string{
+				"CONFIG PPS ENABLE GPS POSITIVE 100 1000 50 0",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetTimeGNSS(gpsprot.GAL)
+			},
+			expectedCmds: []string{"CONFIG PPS ENABLE GAL POSITIVE 100 1000 50 0"},
+		},
+		{
+			name: "preserve antenna cable delay when time pulse is set",
+			currentState: []string{
+				"CONFIG PPS ENABLE BDS NEGATIVE 500 2000 150 0",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetTimePulse(gpsprot.TimePulse{
+					Width:          300 * time.Microsecond, // changed
+					Period:         500 * time.Millisecond, // changed  
+					PolarityRising: true, // changed
+					OnlyWhenLocked: false, // changed
+					AlignToGNSS:    false, // changed
+				})
+			},
+			expectedCmds: []string{"CONFIG PPS ENABLE3 BDS POSITIVE 300 500 150 0"},
+		},
+		{
+			name: "preserve everything when no properties are set",
+			currentState: []string{
+				"CONFIG PPS ENABLE2 GAL NEGATIVE 750 3000 999 789",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Set no properties - everything should be preserved
+			},
+			expectedCmds: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up current state
+			np := makeNativeProps()
+			for _, cmd := range tt.currentState {
+				// Extract key from command: if starts with CONFIG, use second field, otherwise first field
+				fields := strings.Fields(cmd)
+				if len(fields) == 0 {
+					t.Fatalf("empty command in current state")
+				}
+				var key string
+				if fields[0] == "CONFIG" && len(fields) > 1 {
+					key = fields[1]
+				} else {
+					key = fields[0]
+				}
+				
+				err := np.updateFromQueryResponse(key, cmd)
+				if err != nil {
+					t.Fatalf("failed to set up current state for command %s: %v", cmd, err)
+				}
+			}
+
+			// Set up target properties
+			var targetProps gpsprot.ConfigProps
+			tt.targetProps(&targetProps)
+
+			// Generate commands for target
+			commands := np.generateConfigCommands(&targetProps)
+
+			// Convert expected commands to set for order-independent comparison
+			expectedSet := make(map[string]struct{})
+			for _, cmd := range tt.expectedCmds {
+				expectedSet[cmd] = struct{}{}
+			}
+
+			// Check length first
+			if len(commands) != len(tt.expectedCmds) {
+				t.Errorf("generateConfigCommands() returned %d commands, want %d", len(commands), len(tt.expectedCmds))
+				t.Errorf("got: %v", commands)
+				t.Errorf("want: %v", tt.expectedCmds)
+				return
+			}
+
+			// Check that each got command is in expected set
+			for _, cmd := range commands {
+				if _, exists := expectedSet[cmd]; !exists {
+					t.Errorf("generateConfigCommands() returned unexpected command: %s", cmd)
+				}
+			}
+		})
 	}
 }
 

@@ -85,7 +85,7 @@ func (np *nativeConfigProps) generateConfigCommands(target *gpsprot.ConfigProps)
 	// to get complete set of target abstract props
 	fullTargetProps.CopyFrom(target)
 	// Make a copy of the native props, which will become the target
-	targetNativeProps := np
+	targetNativeProps := *np
 	// map the complete target abstract props to the native props
 	targetNativeProps.updateFromProps(&fullTargetProps)
 	// generate commands to turn current native props to target native props
@@ -285,7 +285,7 @@ func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 	userDelay := "0" // default value
 	if p.command != "" {
 		matches := ppsRegexp.FindStringSubmatch(p.command)
-		if len(matches) > 7 { // ENABLE case with all capture groups
+		if matches[7] != "" {
 			userDelay = matches[7]
 		}
 	}
