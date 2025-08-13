@@ -20,16 +20,16 @@ This section covers modifications to existing SatPulse components necessary to e
 
 ### 1.2 Multi-Protocol Configuration Support
 
-**Current Limitation**: The configuration system only supports a single protocol (UBX) because `gpscfg.go` creates just the first PacketExchanger it finds. Supporting multiple protocols like Unicore requires architectural changes.
+**Current Limitation**: The configuration system incorrectly assumes a 1-to-1 relationship between packet formats and configuration protocols. This works for UBX (which uses only UBX packets for configuration) but fails for Unicore (which uses UNCB, UNCA, NMEA-like responses, and NOVA formats) and NMEA-based receivers (which use NMEA proprietary sentences). Currently `gpscfg.go` creates just the first PacketExchanger it finds, preventing multi-protocol support.
 
-**Solution**: Extend PacketExchanger to include NativeMsgHandler, centralize PacketExchanger creation, and use parallel probing with message fan-out.
+**Solution**: Separate packet parsing from configuration protocols. Rename PacketExchanger to ConfigProtocol, embed NativeMsgHandler to handle multiple packet formats, centralize ConfigProtocol creation, and use parallel probing with message fan-out.
 
 #### 1.2.1 Interface Architecture
 
-**PacketExchanger Interface Extension**:
+**ConfigProtocol Interface (renamed from PacketExchanger)**:
 ```go
-// PacketExchanger manages packet processing and generation for GPS configuration
-type PacketExchanger interface {
+// ConfigProtocol defines the configuration protocol for a category of GPS receivers
+type ConfigProtocol interface {
     NativeMsgHandler  // Embed the NativeMsgHandler interface
     ProbePacket() []byte
     ProbeOK() bool
@@ -37,23 +37,23 @@ type PacketExchanger interface {
 }
 ```
 
-This makes the relationship explicit: PacketExchangers must handle native messages during configuration.
+This separates concerns: PacketFormats handle packet parsing, while ConfigProtocols handle configuration logic for receiver categories. A ConfigProtocol can use multiple PacketFormats (e.g., Unicore uses UNCB, UNCA, NMEA-like, and NOVA formats).
 
-#### 1.2.2 Centralized PacketExchanger Creation
+#### 1.2.2 Centralized ConfigProtocol Creation
 
 Add to `internal/gpsreg/reg.go`:
 ```go
-// CreatePacketExchangers creates all available packet exchangers
-func CreatePacketExchangers() []gpsprot.PacketExchanger {
-    return []gpsprot.PacketExchanger{
-        ubx.NewPacketExchanger(),
-        unc.NewPacketExchanger(),
+// CreateConfigProtocols creates all available configuration protocols
+func CreateConfigProtocols() []gpsprot.ConfigProtocol {
+    return []gpsprot.ConfigProtocol{
+        ubx.NewConfigProtocol(),
+        unc.NewConfigProtocol(),
         // future: other protocols
     }
 }
 ```
 
-Remove `CreatePacketExchanger()` from the PacketProcessor interface. This separation ensures PacketProcessors focus solely on packet parsing.
+Remove `CreatePacketExchanger()` from the PacketProcessor interface. This separation ensures PacketProcessors focus solely on packet parsing, while ConfigProtocols handle configuration for receiver categories.
 
 #### 1.2.3 Message Fan-out During Probing
 
@@ -83,24 +83,30 @@ func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead 
 
 Modify `gpscfg.go` to probe all protocols simultaneously:
 
-1. **Probe Phase**: Create all PacketExchangers, install MultiNativeMsgHandler to fan out messages to all
+1. **Probe Phase**: Create all ConfigProtocols, install MultiNativeMsgHandler to fan out messages to all
 2. **Send Probes**: Send probe packets for all protocols (e.g., UBX-MON-VER poll, Unicore VERSIONA)  
-3. **Select Winner**: First PacketExchanger to return ProbeOK() wins
-4. **Configure Phase**: Switch NativeMsgHandler to the selected PacketExchanger for direct routing
+3. **Select Winner**: First ConfigProtocol to return ProbeOK() wins
+4. **Configure Phase**: Switch NativeMsgHandler to the selected ConfigProtocol for direct routing
 
 **Benefits**:
 - Fast detection (first responder wins)
-- Clean architecture (parsing vs configuration separated)
+- Clean architecture (packet parsing vs configuration protocols separated)
+- ConfigProtocols can handle multiple packet formats naturally
 - No packet type interest declarations needed
 - Reusable MultiNativeMsgHandler component
 
 #### 1.2.5 Implementation Impact
 
 **Minimal changes required**:
-- UBX PacketExchanger already implements both interfaces
-- Unicore PacketExchanger will follow the same pattern
+- UBX ConfigProtocol already implements both interfaces (rename from PacketExchanger)
+- Unicore ConfigProtocol will follow the same pattern
 - gpscfg modifications are localized to probe logic
 - PacketProcessors simplified (no configuration responsibility)
+
+**Key architectural insight**: Separates the many-to-1 relationship between packet formats and configuration protocols:
+- **UBX**: 1-to-1 relationship (UBX packets ↔ UBX configuration)
+- **Unicore**: Many-to-1 relationship (UNCB, UNCA, NMEA-like, NOVA ↔ Unicore configuration)
+- **NMEA-based receivers**: Shared format, different protocols (NMEA ↔ multiple manufacturer protocols)
 
 **For Unicore specifically**:
 - Probe: Send `VERSIONA` command
@@ -108,7 +114,7 @@ Modify `gpscfg.go` to probe all protocols simultaneously:
 - NativeMsg: Handle command ACKs (`$command,...`), UNCA/UNCB messages
 - All packet types (UNCB, UNCA, NMEA, NOVA) naturally route through shared NativeMsgHandler
 
-This design provides a clean, extensible architecture for multi-protocol support without complex packet routing declarations.
+This design provides a clean, extensible architecture supporting the true many-to-1 relationship between packet formats and configuration protocols.
 
 ### 1.3 Multi-Format PacketProcessor Support (Nice-to-Have)
 
