@@ -38,7 +38,7 @@ type satellitesBuffer struct {
 	tRead        time.Time           // read time of the first buffered GSV sentence
 	lastFormat   string              // format of last sentence received
 	gsas         []gsaSentence
-	haveBoundary bool                // have we established a plausible boundary between bursts
+	haveBoundary bool // have we established a plausible boundary between bursts
 }
 
 type gsvKey struct {
@@ -54,7 +54,7 @@ var dfltSVNumbering = []gpsprot.NMEASVNumberingRange{
 func newSatellitesBuffer() *satellitesBuffer {
 	return &satellitesBuffer{
 		numbering: dfltSVNumbering,
-		gsvKeys:  make(map[gsvKey]struct{}),
+		gsvKeys:   make(map[gsvKey]struct{}),
 	}
 }
 
@@ -195,7 +195,7 @@ func (sb *satellitesBuffer) talkerID() string {
 	return "GN"
 }
 
-func (sb *satellitesBuffer) process(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
+func (sb *satellitesBuffer) process(sen *ApprovedSentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
 	if sb.lastFormat != sen.Format && sb.lastFormat != "" {
 		sb.possibleBoundary()
 	}
@@ -209,7 +209,7 @@ func (sb *satellitesBuffer) process(sen *Sentence, tRead time.Time, h gpsprot.Ms
 	return false, nil
 }
 
-func (sb *satellitesBuffer) gsaProcess(sen *Sentence) (bool, error) {
+func (sb *satellitesBuffer) gsaProcess(sen *ApprovedSentence) (bool, error) {
 	gsa, err := parseGSA(sen)
 	if err != nil {
 		return false, err
@@ -218,7 +218,7 @@ func (sb *satellitesBuffer) gsaProcess(sen *Sentence) (bool, error) {
 	return true, nil
 }
 
-func (sb *satellitesBuffer) gsvProcess(sen *Sentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
+func (sb *satellitesBuffer) gsvProcess(sen *ApprovedSentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
 	gsv, err := parseGSV(sen)
 	if err != nil {
 		return false, err
@@ -266,7 +266,7 @@ type ggaSentence struct {
 	numSV int
 }
 
-func parseGGA(sen *Sentence) (ggaSentence, error) {
+func parseGGA(sen *ApprovedSentence) (ggaSentence, error) {
 	gga := ggaSentence{}
 	if len(sen.Fields) < 7 {
 		return gga, fmt.Errorf("GGA: too few fields")
@@ -284,7 +284,7 @@ type gsaSentence struct {
 	svids []int
 }
 
-func parseGSA(sen *Sentence) (gsaSentence, error) {
+func parseGSA(sen *ApprovedSentence) (gsaSentence, error) {
 	gsa := gsaSentence{}
 	// Fix, Auto, 12*SVID, PDOP, HDOP, VDOP, opt sysID
 	gnss := gpsprot.GNSS(0)
@@ -333,7 +333,7 @@ type svInfo struct {
 
 // parseGSV parses the GSV sentence and returns a slice of SVInfo, a signal ID, a bool and an error.
 // The bool indicates whether the sentence is the last in the series (i.e. msgNum == numMsg)
-func parseGSV(sen *Sentence) (gsvSentence, error) {
+func parseGSV(sen *ApprovedSentence) (gsvSentence, error) {
 	gsv := gsvSentence{}
 
 	if len(sen.Fields) < 3 {

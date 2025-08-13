@@ -9,14 +9,14 @@ import (
 )
 
 func TestSplit(t *testing.T) {
-	f := Parse("$GPGLL,5057.970,N,00146.110,E,142451,A*27\r\n")
+	f := parseApprovedSentence("$GPGLL,5057.970,N,00146.110,E,142451,A*27\r\n")
 	df := f.Fields
 	if f.TalkerID != "GP" || f.Format != "GLL" || len(df) != 6 ||
 		df[0] != "5057.970" || df[1] != "N" || df[2] != "00146.110" ||
 		df[3] != "E" || df[4] != "142451" || df[5] != "A" {
 		t.Fatalf("NMEASplit failed")
 	}
-	f = Parse("$GPTXT,1,Hello^21,3*FF\r\n")
+	f = parseApprovedSentence("$GPTXT,1,Hello^21,3*FF\r\n")
 	df = f.Fields
 	if len(df) != 3 || df[1] != "Hello!" {
 		t.Fatalf("NMEASplit failed on caret")
@@ -44,7 +44,7 @@ func TestZDA(t *testing.T) {
 }
 
 func testTime(t *testing.T, s string, expectUTC ptime.UTCTime) {
-	sen := Parse(s)
+	sen := parseApprovedSentence(s)
 	var h timeHandler
 	var zt time.Time
 	pp := NewPacketProcessor()
@@ -99,4 +99,12 @@ func TestScanTime(t *testing.T) {
 	b("142451. ")
 	b("14245X")
 	b("142451.0000000001")
+}
+
+func parseApprovedSentence(data string) *ApprovedSentence {
+	sen := NewSentence(data)
+	if sen == nil {
+		return nil
+	}
+	return sen.ApprovedSentence()
 }

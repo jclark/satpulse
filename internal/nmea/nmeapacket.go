@@ -17,10 +17,8 @@ func (f packetFormat) Tag() gpsprot.Tag {
 // Constants for NMEA packet scanning (private)
 const (
 	stateSync gpsprot.ScanState = iota + gpsprot.ScanStateSync
-	stateStarted
-	stateHadCaret
-	stateHadCaretDigit1
-	stateHadComma
+	stateHadDollar
+	stateNormal
 	stateHadStar
 	stateHadChecksum1
 	stateHadChecksum2
@@ -35,44 +33,42 @@ const (
 // U-blox also has a Limit82 flag to limit the length of the sentence to 82 characters,
 // which implies that sentences will exceed this without the flag.
 // The Rust NMEA crate has a limit of 102 characters, so let's follow that.
-const maxSentenceLength = 102
+// Unicore receivers use something that is not strictly NMEA; and this packet format
+// is designed to accept this, and it is documented as having a maximum length of 128 characters.
+const maxSentenceLength = 128
 
+// Next implements the gpsprot.PacketFormat interface for NMEA-like packets.
+// Constraints for acceptable NMEA-like packet (not necessarily completely NMEA compliant)
+// 1. First character is `$` and the packet does not contain any other `$` characters.
+// 2. Terminated with a line terminator (CR/LF or LF)
+// 3. All character before the line terminator must be printable ASCII (0x20-0x7E).
+// 4. Total length of packet does not exceed 128 characters (including the line terminator).
+// 5. Immediately before the line terminator there is a `*` and two uppercase hex digits;
+//    this `*` is the only one in the packet.
+// 6. The address field is non-empty, where the address is the substring between `$` and the first comma or `*`.
 func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, packetLen int) gpsprot.ScanState {
 	b := buf[nextScanIndex]
 
 	switch state {
 	case stateSync:
 		if b == '$' {
-			return stateStarted
+			return stateHadDollar
 		}
-	case stateStarted:
-		if b == ',' || b == '*' {
-			if packetLen >= 5 { // $PUBX
-				if packetLen == 6 || buf[nextScanIndex-4] == 'P' {
-					// allowed to have just address field
-					if b == '*' {
-						return stateHadStar
-					}
-					return stateHadComma
-				}
-			}
-		} else if isAsciiUpperAlnum(b) && packetLen < 6 { // $GPRMC
-			return stateStarted
+	case stateHadDollar:
+		if b == '*' || b == ',' {
+			break
 		}
-	case stateHadComma:
-		if b == '*' {
+		fallthrough
+	case stateNormal:
+		switch b {
+		case '*':
 			return stateHadStar
-		}
-		if b == '^' {
-			if packetLen+2 < maxSentenceLength-5 {
-				return stateHadCaret
+		case '$':
+			break
+		default:
+			if b >= ' ' && b < 0x7f && packetLen < maxSentenceLength-5 { // excluding 3-byte checksum and CRLF
+				return stateNormal
 			}
-		} else if isDataByte(b) && packetLen < maxSentenceLength-5 { // excluding 3-byte checksum and CRLF
-			return stateHadComma
-		}
-	case stateHadCaret, stateHadCaretDigit1:
-		if isUpperHexDigit(b) {
-			return state + 1
 		}
 	case stateHadStar, stateHadChecksum1:
 		if isUpperHexDigit(b) {
@@ -141,38 +137,4 @@ func starIndex(pkt []byte) int {
 		}
 	}
 	return starOffset
-}
-
-// Helper functions (private)
-func isDataByte(b byte) bool {
-	if b < ' ' || b >= 0x7f {
-		return false
-	}
-	switch b {
-	case '*', '$', '^', '!':
-		return false
-	default:
-		return true
-	}
-}
-
-func isUpperHexDigit(b byte) bool {
-	if '0' <= b && b <= '9' {
-		return true
-	}
-	// NMEA requires checksum to use upper-case hex digits
-	if 'A' <= b && b <= 'F' {
-		return true
-	}
-	return false
-}
-
-func isAsciiUpperAlnum(b byte) bool {
-	if 'A' <= b && b <= 'Z' {
-		return true
-	}
-	if '0' <= b && b <= '9' {
-		return true
-	}
-	return false
 }
