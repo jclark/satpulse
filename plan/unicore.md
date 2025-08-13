@@ -24,7 +24,7 @@ This section covers modifications to existing SatPulse components necessary to e
 
 **Solution**: Extend PacketExchanger to include NativeMsgHandler, centralize PacketExchanger creation, and use parallel probing with message fan-out.
 
-#### 1.3.1 Interface Architecture
+#### 1.2.1 Interface Architecture
 
 **PacketExchanger Interface Extension**:
 ```go
@@ -39,7 +39,7 @@ type PacketExchanger interface {
 
 This makes the relationship explicit: PacketExchangers must handle native messages during configuration.
 
-#### 1.3.2 Centralized PacketExchanger Creation
+#### 1.2.2 Centralized PacketExchanger Creation
 
 Add to `internal/gpsreg/reg.go`:
 ```go
@@ -55,7 +55,7 @@ func CreatePacketExchangers() []gpsprot.PacketExchanger {
 
 Remove `CreatePacketExchanger()` from the PacketProcessor interface. This separation ensures PacketProcessors focus solely on packet parsing.
 
-#### 1.3.3 Message Fan-out During Probing
+#### 1.2.3 Message Fan-out During Probing
 
 Add to `internal/gpsprot/msg.go`:
 ```go
@@ -79,7 +79,7 @@ func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead 
 }
 ```
 
-#### 1.3.4 Parallel Probing Implementation
+#### 1.2.4 Parallel Probing Implementation
 
 Modify `gpscfg.go` to probe all protocols simultaneously:
 
@@ -94,7 +94,7 @@ Modify `gpscfg.go` to probe all protocols simultaneously:
 - No packet type interest declarations needed
 - Reusable MultiNativeMsgHandler component
 
-#### 1.3.5 Implementation Impact
+#### 1.2.5 Implementation Impact
 
 **Minimal changes required**:
 - UBX PacketExchanger already implements both interfaces
