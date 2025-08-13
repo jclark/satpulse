@@ -4,183 +4,18 @@
 
 This document outlines the complete design and implementation plan for supporting Unicore receivers (specifically targeting Nebula IV series including UM980) in SatPulse. The implementation requires both Unicore-specific functionality and infrastructure changes to support multiple configurable protocols cleanly (current code only handles UBX).
 
-## 1. Refactoring Existing Code for Unicore Support
+## Infrastructure Prerequisites
 
-This section covers modifications to existing SatPulse components necessary to enable the Unicore-specific implementation.
+The Unicore implementation depends on several infrastructure improvements that are tracked as separate GitHub issues:
 
-### 1.1 NMEA Packet Handling Changes
+- [ ] #134: Make NMEA PacketFormat recognise NMEA-like packets (implemented in nmea-lax branch)
+- [ ] #131: Decouple packet formats and configuration protocols (REQUIRED)
+- [ ] #132: Add Tag parameter to PacketProcessor interface (nice-to-have)
+- [ ] #133: Allow dynamic changes to set of recognised packet formats (nice-to-have)
 
-**Problem**: Unicore command acknowledgment responses use format `$command,<params>*XX` which superficially resembles NMEA but violates NMEA standards.
+See the linked issues for detailed implementation specifications. The critical dependencies for Unicore support are #134 and #131.
 
-**Solution**: Modify division of responsibility between NMEA packet detection and parsing:
-
-1. **Looser packet detection**: Accept any packet starting with `$`, containing printable characters, ending with `*XX` checksum and CR/LF
-2. **Stricter parsing validation**: Move NMEA standard compliance checks to parsing stage; this would include checking of `^` escapes.
-3. **Invalid NMEA handling**: The representation of an NMEA packet (currently nmea.Sentence) that is passed to NativeMsgHandler would be changed so that it can represent anything detected as an NMEA packet. We should also take this opportunity to fix handling of compliant NMEA proprietary sentences, which is currently broken.
-
-### 1.2 Multi-Protocol Configuration Support
-
-**Current Limitation**: The configuration system incorrectly assumes a 1-to-1 relationship between packet formats and configuration protocols. This works for UBX (which uses only UBX packets for configuration) but fails for Unicore (which uses UNCB, UNCA, NMEA-like responses, and NOVA formats) and NMEA-based receivers (which use NMEA proprietary sentences). Currently `gpscfg.go` creates just the first PacketExchanger it finds, preventing multi-protocol support.
-
-**Solution**: Separate packet parsing from configuration protocols. Rename PacketExchanger to ConfigProtocol, embed NativeMsgHandler to handle multiple packet formats, centralize ConfigProtocol creation, and use parallel probing with message fan-out.
-
-#### 1.2.1 Interface Architecture
-
-**ConfigProtocol Interface (renamed from PacketExchanger)**:
-```go
-// ConfigProtocol defines the configuration protocol for a category of GPS receivers
-type ConfigProtocol interface {
-    NativeMsgHandler  // Embed the NativeMsgHandler interface
-    ProbePacket() []byte
-    ProbeOK() bool
-    Configure(*ConfigTarget) (Configurator, error)
-}
-```
-
-This separates concerns: PacketFormats handle packet parsing, while ConfigProtocols handle configuration logic for receiver categories. A ConfigProtocol can use multiple PacketFormats (e.g., Unicore uses UNCB, UNCA, NMEA-like, and NOVA formats).
-
-#### 1.2.2 Centralized ConfigProtocol Creation
-
-Add to `internal/gpsreg/reg.go`:
-```go
-// CreateConfigProtocols creates all available configuration protocols
-func CreateConfigProtocols() []gpsprot.ConfigProtocol {
-    return []gpsprot.ConfigProtocol{
-        ubx.NewConfigProtocol(),
-        unc.NewConfigProtocol(),
-        // future: other protocols
-    }
-}
-```
-
-Remove `CreatePacketExchanger()` from the PacketProcessor interface. This separation ensures PacketProcessors focus solely on packet parsing, while ConfigProtocols handle configuration for receiver categories.
-
-#### 1.2.3 Message Fan-out During Probing
-
-Add to `internal/gpsprot/msg.go`:
-```go
-// MultiNativeMsgHandler fans out NativeMsg calls to multiple handlers
-type MultiNativeMsgHandler struct {
-    handlers []NativeMsgHandler
-}
-
-func NewMultiNativeMsgHandler(handlers ...NativeMsgHandler) *MultiNativeMsgHandler {
-    return &MultiNativeMsgHandler{handlers: handlers}
-}
-
-func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead time.Time) error {
-    var firstErr error
-    for _, h := range m.handlers {
-        if err := h.NativeMsg(tag, msgID, msg, tRead); err != nil && firstErr == nil {
-            firstErr = err
-        }
-    }
-    return firstErr
-}
-```
-
-#### 1.2.4 Parallel Probing Implementation
-
-Modify `gpscfg.go` to probe all protocols simultaneously:
-
-1. **Probe Phase**: Create all ConfigProtocols, install MultiNativeMsgHandler to fan out messages to all
-2. **Send Probes**: Send probe packets for all protocols (e.g., UBX-MON-VER poll, Unicore VERSIONA)  
-3. **Select Winner**: First ConfigProtocol to return ProbeOK() wins
-4. **Configure Phase**: Switch NativeMsgHandler to the selected ConfigProtocol for direct routing
-
-**Benefits**:
-- Fast detection (first responder wins)
-- Clean architecture (packet parsing vs configuration protocols separated)
-- ConfigProtocols can handle multiple packet formats naturally
-- No packet type interest declarations needed
-- Reusable MultiNativeMsgHandler component
-
-#### 1.2.5 Implementation Impact
-
-**Minimal changes required**:
-- UBX ConfigProtocol already implements both interfaces (rename from PacketExchanger)
-- Unicore ConfigProtocol will follow the same pattern
-- gpscfg modifications are localized to probe logic
-- PacketProcessors simplified (no configuration responsibility)
-
-**Key architectural insight**: Separates the many-to-1 relationship between packet formats and configuration protocols:
-- **UBX**: 1-to-1 relationship (UBX packets ↔ UBX configuration)
-- **Unicore**: Many-to-1 relationship (UNCB, UNCA, NMEA-like, NOVA ↔ Unicore configuration)
-- **NMEA-based receivers**: Shared format, different protocols (NMEA ↔ multiple manufacturer protocols)
-
-**For Unicore specifically**:
-- Probe: Send `VERSIONA` command
-- ProbeOK: When `#VERSIONA` response received
-- NativeMsg: Handle command ACKs (`$command,...`), UNCA/UNCB messages
-- All packet types (UNCB, UNCA, NMEA, NOVA) naturally route through shared NativeMsgHandler
-
-This design provides a clean, extensible architecture supporting the true many-to-1 relationship between packet formats and configuration protocols.
-
-### 1.3 Multi-Format PacketProcessor Support (Nice-to-Have)
-
-**Current Limitation**: PacketProcessor interface assumes a one-to-one mapping between PacketFormat and PacketProcessor. However, Unicore has both ASCII and binary formats that logically belong to the same protocol and should be handled by a single PacketProcessor.
-
-**Problem**: The current `PacketProcessor.ProcessPacket()` method has no way to know which format the packet came from, making it difficult to handle multiple formats in a single processor.
-
-**Proposed Interface Change**:
-```go
-type PacketProcessor interface {
-    // Current interface (no Tag parameter)
-    ProcessPacket(data string, tRead time.Time) (string, error)
-    
-    // Proposed change: add Tag parameter like NativeMessageHandler
-    ProcessPacket(tag Tag, data string, tRead time.Time) (string, error)
-}
-```
-
-**Benefits**:
-1. **Logical grouping**: Single Unicore PacketProcessor can handle both UNCA and UNCB packets
-2. **Consistency**: Matches the `NativeMessageHandler` interface pattern which already uses Tag
-3. **Flexibility**: Allows PacketProcessors to dispatch internally based on format
-4. **Simplified architecture**: Reduces the number of PacketProcessor implementations needed
-
-**Implementation Impact**:
-- Update `gpsprot.PacketProcessor` interface definition
-- Modify existing PacketProcessor implementations (UBX, NMEA, RTCM) to accept Tag parameter
-- Unicore PacketProcessor can switch on Tag to handle ASCII vs binary parsing
-
-### 1.4 Packet Scanner Architecture Updates (Nice-to-Have)
-
-**Current Limitation**: Scanner gets packet format list from `gpsreg`, creating inappropriate coupling between scanner and protocol registry.
-
-**Required Changes**:
-
-#### Configuration Phase
-1. **Initial packet formats**: `gpsreg` provides comprehensive set of packet formats suitable for probing and configuration
-2. **Daemon/gpscmd responsibility**: These packages create scanner with appropriate initial packet format list
-3. **Scanner independence**: Scanner has no built-in knowledge of specific packet formats
-
-#### Post-Configuration Phase  
-1. **ConfigResult specification**: After successful configuration, `ConfigResult` includes list of packet format tags needed for operation
-2. **PacketExchanger knowledge**: Selected PacketExchanger knows what receiver type it's communicating with and can specify appropriate operational packet formats
-3. **Runtime reconfiguration**: Scanner packet format list updated based on ConfigResult
-
-**Scanner Interface Changes**:
-```go
-type PacketScanner interface {
-    UpdatePacketFormats(formats []PacketFormat) error
-    // ... existing methods
-}
-```
-
-**ConfigResult Enhancement**:
-```go
-type ConfigResult struct {
-    // ... existing fields
-    PacketTags []string  // Tags needed for operation (e.g., ["UNCB", "UNCA"])
-}
-```
-
-## 2. Unicore-Specific Functionality (`internal/unc/`)
-
-The `internal/unc/` package implements all the `gpsprot` interfaces for Unicore receivers, analogous to how `internal/ubx` implements them for u-blox receivers.
-
-### 2.1 PacketFormat Implementation
+## PacketFormat Implementation (`internal/unc/`)
 
 **UNCB Binary Packets** (`binpacket.go`) - ✅ Implemented
 - 24-byte header with sync bytes (0xAA, 0x44, 0xB5)
@@ -220,11 +55,11 @@ The `internal/unc/` package implements all the `gpsprot` interfaces for Unicore 
 - Test tab character handling
 - Test port detection from LOGLIST output parsing
 
-### 2.2 PacketProcessor Implementation
+## PacketProcessor Implementation
 
 Converts Unicore packets into abstract `gpsprot` messages.
 
-#### 2.2.1 Library Layer (`internal/uncmsg/`)
+### Library Layer (`internal/uncmsg/`)
 
 Low-level Unicore packet parsing library used by PacketProcessor to decode packet contents into Go structs. Analogous to `internal/ubx/bin`.
 
@@ -245,7 +80,7 @@ Low-level Unicore packet parsing library used by PacketProcessor to decode packe
 
 Several more message types need implementing.
 
-#### 2.2.2 Message Mapping - 🚧 Needs Implementation
+### Message Mapping - 🚧 Needs Implementation
 
 Using the decoded structs from `uncmsg`, map to gpsprot abstract messages:
 - `TimeMsg` - from Unicore time messages (RECTIMEB, etc.)
@@ -262,11 +97,11 @@ Using the decoded structs from `uncmsg`, map to gpsprot abstract messages:
 - Validate that ASCII and binary messages produce identical abstract messages
 - Test edge cases: week rollovers, leap seconds, coordinate system differences
 
-### 2.3 Configuration Support (PacketExchanger and Configurator)
+## Configuration Support (PacketExchanger and Configurator)
 
 Implements both `PacketExchanger` and `Configurator` interfaces for configuration-time operations.
 
-#### 2.3.1 Core Functionality - 🚧 Needs Implementation
+### Core Functionality - 🚧 Needs Implementation
 
 - Probe packet generation and response detection
 - Command generation for all ConfigProperties and ConfigOptions
@@ -280,7 +115,7 @@ Implements both `PacketExchanger` and `Configurator` interfaces for configuratio
 - Use replay testing (`replay_test.go`) to verify configuration sequences
 - Generate test data with `satpulsetool gps --test-log`
 
-#### 2.3.2 Configuration Command Mapping
+### Configuration Command Mapping
 
 This section maps `gpsprot.ConfigProperties` and `gpsprot.ConfigOptions` to Unicore protocol commands.
 
@@ -398,7 +233,7 @@ Design decision for examples above (use binary `*B` commands):
 
 *Key Consideration*: Binary Unicore messages use Unicore-specific sync bytes, making them receiver-specific. ASCII messages are more portable.
 
-#### 2.3.3 State-Based Configuration Architecture
+### State-Based Configuration Architecture
 
 **Separation of Concerns:**
 - `nativeConfigProps` (`cfgprops.go`): Pure transformation layer handling abstract↔native conversion, testable independently with table-driven tests
