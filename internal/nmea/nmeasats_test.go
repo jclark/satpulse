@@ -27,7 +27,10 @@ func TestGGAParse(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(Trim(test.sen), func(t *testing.T) {
-			sen := Parse(addTrailer(test.sen))
+			sen := parseApprovedSentence(addTrailer(test.sen))
+			if sen == nil {
+				t.Fatalf("did not parse as approved sentence: %s", test.sen)
+			}
 			gga, err := parseGGA(sen)
 			if err != nil {
 				t.Fatalf("unexpected GGA parsing error: %v", err)
@@ -58,7 +61,7 @@ func TestGSAParse(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(Trim(test.sen), func(t *testing.T) {
-			sen := Parse(addTrailer(test.sen))
+			sen := parseApprovedSentence(addTrailer(test.sen))
 			gsa, err := parseGSA(sen)
 			if err != nil {
 				t.Fatalf("unexpected GGA parsing error: %v", err)
@@ -338,7 +341,7 @@ func TestGSVParse(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(Trim(test.sen), func(t *testing.T) {
-			sen := Parse(addTrailer(test.sen))
+			sen := parseApprovedSentence(addTrailer(test.sen))
 			gsv, err := parseGSV(sen)
 			if err != nil {
 				t.Fatalf("unexpected GSV parsing error: %v", err)
@@ -375,6 +378,9 @@ func TestGSVParse(t *testing.T) {
 func addTrailer(s string) string {
 	if !strings.Contains(s, "*") {
 		s += fmt.Sprintf("*%02X\r\n", Checksum(([]byte)(s[1:])))
+	}
+	if !strings.HasSuffix(s, "\r\n") {
+		s += "\r\n"
 	}
 	return s
 }
@@ -445,8 +451,8 @@ func TestSatellitesBuffer(t *testing.T) {
 				// i=0: GPRMC, i=1: GPGSV - format change establishes boundary
 				// i=1-5: First burst accumulates
 				// i=6: GPRMC - format change, no flush
-				// i=7: GPGSV - repeats! 
-				{i: 7, nSV: 11, nUsed: 2},  // GPS repeats, flush first burst with GSA
+				// i=7: GPGSV - repeats!
+				{i: 7, nSV: 11, nUsed: 2}, // GPS repeats, flush first burst with GSA
 				// i=8-11: Second burst accumulates
 				// i=12: GPRMC - format change
 				// i=13: GPGSV - repeats!
@@ -465,7 +471,7 @@ func TestSatellitesBuffer(t *testing.T) {
 				{i: 5, nSV: 11}, // GPS repeats, flush first burst
 				// i=6-8: Second complete burst accumulates
 				// i=9: GPGSV - GPS repeats again!
-				{i: 9, nSV: 11}, // GPS repeats, flush second burst  
+				{i: 9, nSV: 11}, // GPS repeats, flush second burst
 				// i=10-12: Third burst accumulates
 				// No more flushes (would need another repeat)
 			},
@@ -476,7 +482,7 @@ func TestSatellitesBuffer(t *testing.T) {
 			order: []int{1, 2, 3, -1, 0, 1, 2, 3, 0, 1, 2, 3},
 			expect: []result{
 				// First idle clears buffer (no flush) to establish boundary
-				{i: 8, nSV: 11},   // GPS repeats: flush all (GPS+GLO+GAL)
+				{i: 8, nSV: 11}, // GPS repeats: flush all (GPS+GLO+GAL)
 				// After flush at i=8, buffer has only GPS(4)
 				// i=9: GLO added (first time), no flush
 				// i=10,11: GAL parts added, no flush yet
@@ -490,15 +496,15 @@ func TestSatellitesBuffer(t *testing.T) {
 				// i=2: GPS sigID=8, i=3: GLO sigID=3, i=4-5: GAL sigID=6,2
 				// i=6: GPRMC - no flush
 				// i=7: GPS sigID=8 repeats
-				{i: 7, nSV: 11},   // GPS repeats: flush all
+				{i: 7, nSV: 11}, // GPS repeats: flush all
 				// Buffer cleared, gsvKeys reset
 				// i=8: GLO sigID=3 (first time in new buffer)
-				// i=9-10: GAL sigID=6,2 (first time in new buffer) 
+				// i=9-10: GAL sigID=6,2 (first time in new buffer)
 				// i=11: GPRMC - no flush
 			},
 		},
 		{
-			order: []int{5, -1, 5},
+			order:  []int{5, -1, 5},
 			expect: []result{
 				// i=0: GPGSV 3/3 (incomplete, has no satellites)
 				// i=1: idle - first idle clears buffer (no flush)
@@ -507,7 +513,7 @@ func TestSatellitesBuffer(t *testing.T) {
 			},
 		},
 		{
-			order: []int{2, 3, 6, -1},
+			order:  []int{2, 3, 6, -1},
 			expect: []result{
 				// i=0-1: GAGSV parts (4 satellites)
 				// i=2: GNGSA (provides used info)
@@ -516,7 +522,7 @@ func TestSatellitesBuffer(t *testing.T) {
 			},
 		},
 		{
-			order: []int{2, 3, -1, 6, 2, 3},
+			order:  []int{2, 3, -1, 6, 2, 3},
 			expect: []result{
 				// i=0-1: GAGSV parts (4 satellites)
 				// i=2: idle - first idle clears buffer (no flush)
@@ -537,7 +543,7 @@ func TestSatellitesBuffer(t *testing.T) {
 			for i, j := range order {
 				h := testSatellitesBufferMsgHandler{nSV: -1}
 				if j >= 0 {
-					sen := Parse(addTrailer(sens[j]))
+					sen := parseApprovedSentence(addTrailer(sens[j]))
 					sb.process(sen, time.Time{}, &h)
 				} else {
 					sb.idle(&h)
@@ -648,7 +654,7 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			name: "GPS GSV messages with multiple signals",
 			nmeaMessages: []string{
 				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
-				"$GNGSA,M,3,12,11,21,22,20,05,,,,,,,99.99,99.99,99.99,1*3A\r\n",        // GPS: 12,11,21,22,20,05 used
+				"$GNGSA,M,3,12,11,21,22,20,05,,,,,,,99.99,99.99,99.99,1*3A\r\n", // GPS: 12,11,21,22,20,05 used
 				"$GPGSV,3,1,11,05,53,234,47,11,39,354,26,12,42,301,42,17,24,109,27,1*63\r\n",
 				"$GPGSV,3,2,11,19,41,088,23,20,72,306,41,21,82,339,44,22,23,161,38,1*62\r\n",
 				"$GPGSV,3,3,11,41,64,233,51,42,56,116,47,50,56,116,40,1*51\r\n",
@@ -679,7 +685,7 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			name: "GLONASS GSV messages",
 			nmeaMessages: []string{
 				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
-				"$GNGSA,M,3,80,69,73,,,,,,,,,,99.99,99.99,99.99,2*3D\r\n",              // GLO: 80->R16, 69->R05, 73->R09 used
+				"$GNGSA,M,3,80,69,73,,,,,,,,,,99.99,99.99,99.99,2*3D\r\n", // GLO: 80->R16, 69->R05, 73->R09 used
 				"$GLGSV,2,1,05,68,45,067,19,69,47,148,49,73,37,258,49,80,22,195,37,1*77\r\n",
 				"$GLGSV,2,2,05,83,26,016,28,1*4F\r\n",
 				"$GLGSV,2,1,05,68,45,067,30,69,47,148,48,73,37,258,47,80,22,195,37,3*71\r\n",
@@ -698,10 +704,10 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			},
 		},
 		{
-			name: "Galileo GSV messages", 
+			name: "Galileo GSV messages",
 			nmeaMessages: []string{
 				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
-				"$GNGSA,M,3,24,09,04,31,25,11,16,36,06,,,,99.99,99.99,99.99,3*35\r\n",  // GAL: 24,09,04,31,25,11,16,36,06 used
+				"$GNGSA,M,3,24,09,04,31,25,11,16,36,06,,,,99.99,99.99,99.99,3*35\r\n", // GAL: 24,09,04,31,25,11,16,36,06 used
 				"$GAGSV,3,1,10,04,31,114,31,06,31,144,45,09,22,169,45,10,35,012,22,2*73\r\n",
 				"$GAGSV,3,2,10,11,41,337,33,16,64,273,49,24,65,202,48,25,45,304,49,2*7F\r\n",
 				"$GAGSV,3,3,10,31,20,158,40,36,22,282,41,2*77\r\n",
@@ -759,7 +765,7 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			name: "QZSS GSV messages",
 			nmeaMessages: []string{
 				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
-				"$GNGSA,M,3,04,02,,,,,,,,,,,99.99,99.99,99.99,5*3F\r\n",                // QZSS: 04,02 used
+				"$GNGSA,M,3,04,02,,,,,,,,,,,99.99,99.99,99.99,5*3F\r\n", // QZSS: 04,02 used
 				"$GQGSV,1,1,03,02,42,137,40,04,49,093,22,07,56,116,37,1*56\r\n",
 				"$GQGSV,1,1,03,02,42,137,43,04,49,093,30,07,56,116,44,6*55\r\n",
 				"$GQGSV,1,1,01,03,42,047,,0*53\r\n",
@@ -776,11 +782,11 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			name: "complete NMEA message set",
 			nmeaMessages: []string{
 				"$GNRMC,011451.00,A,1343.91062,N,10038.68405,E,0.000,,240725,,,D,V*1B\r\n",
-				"$GNGSA,M,3,12,11,21,22,20,05,,,,,,,99.99,99.99,99.99,1*3A\r\n",        // GPS: 12,11,21,22,20,05
-				"$GNGSA,M,3,80,69,73,,,,,,,,,,99.99,99.99,99.99,2*3D\r\n",              // GLO: 80->15, 69->4, 73->8
-				"$GNGSA,M,3,24,09,04,31,25,11,16,36,06,,,,99.99,99.99,99.99,3*35\r\n",  // GAL: 24,09,04,31,25,11,16,36,06
+				"$GNGSA,M,3,12,11,21,22,20,05,,,,,,,99.99,99.99,99.99,1*3A\r\n",             // GPS: 12,11,21,22,20,05
+				"$GNGSA,M,3,80,69,73,,,,,,,,,,99.99,99.99,99.99,2*3D\r\n",                   // GLO: 80->15, 69->4, 73->8
+				"$GNGSA,M,3,24,09,04,31,25,11,16,36,06,,,,99.99,99.99,99.99,3*35\r\n",       // GAL: 24,09,04,31,25,11,16,36,06
 				"$GNGSA,M,3,19,45,06,36,16,38,10,09,07,13,40,08,99.99,99.99,99.99,4*3F\r\n", // BDS: 19,45,06,36,16,38,10,09,07,13,40,08
-				"$GNGSA,M,3,04,02,,,,,,,,,,,99.99,99.99,99.99,5*3F\r\n",                // QZSS: 04,02
+				"$GNGSA,M,3,04,02,,,,,,,,,,,99.99,99.99,99.99,5*3F\r\n",                     // QZSS: 04,02
 				"$GPGSV,3,1,11,05,53,234,47,11,39,354,26,12,42,301,42,17,24,109,27,1*63\r\n",
 				"$GPGSV,3,2,11,19,41,088,23,20,72,306,41,21,82,339,44,22,23,161,38,1*62\r\n",
 				"$GPGSV,3,3,11,41,64,233,51,42,56,116,47,50,56,116,40,1*51\r\n",
@@ -826,19 +832,19 @@ func TestPacketProcessorSatellites(t *testing.T) {
 				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 306, Elevation: 72}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 41}}, Used: true},
 				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 339, Elevation: 82}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}, {ID: "L2C-L", CN0: 49}}, Used: true},
 				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 161, Elevation: 23}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 38}}, Used: true},
-				
+
 				// SBAS satellites (from GPS test)
 				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 28}, LookAngles: &gpsprot.LookAngles{Azimuth: 233, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}}, Used: false},
 				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
 				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 37}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}}, Used: false},
-				
+
 				// GLONASS satellites with correct Used flags (from GLONASS test)
 				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 67, Elevation: 45}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 19}, {ID: "L2", CN0: 30}}, Used: false},
 				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 148, Elevation: 47}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 48}}, Used: true},
 				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 258, Elevation: 37}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 47}}, Used: true},
 				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 195, Elevation: 22}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 37}, {ID: "L2", CN0: 37}}, Used: true},
 				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 16, Elevation: 26}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 28}, {ID: "L2", CN0: 16}}, Used: false},
-				
+
 				// Galileo satellites with correct Used flags (from Galileo test)
 				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 114, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 31}}, Used: true},
 				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 144, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
@@ -849,7 +855,7 @@ func TestPacketProcessorSatellites(t *testing.T) {
 				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 24}, LookAngles: &gpsprot.LookAngles{Azimuth: 202, Elevation: 65}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 47}, {ID: "E5b", CN0: 48}}, Used: true},
 				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 25}, LookAngles: &gpsprot.LookAngles{Azimuth: 304, Elevation: 45}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 43}, {ID: "E5b", CN0: 49}}, Used: true},
 				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 31}, LookAngles: &gpsprot.LookAngles{Azimuth: 158, Elevation: 20}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 40}}, Used: true},
-				
+
 				// BeiDou satellites with correct Used flags (from BeiDou test)
 				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 179, Elevation: 14}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}, {ID: "B2I", CN0: 36}}, Used: true},
 				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 63, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 39}, {ID: "B2I", CN0: 40}}, Used: true},
@@ -862,7 +868,7 @@ func TestPacketProcessorSatellites(t *testing.T) {
 				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 55, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}}, Used: false},
 				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 198, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 44}}, Used: false},
 				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 34, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 27}}, Used: false},
-				
+
 				// QZSS satellites with correct Used flags (from QZSS test)
 				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 137, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}, {ID: "L2C-L", CN0: 43}}, Used: true},
 				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 93, Elevation: 49}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 22}, {ID: "L2C-L", CN0: 30}}, Used: true},
@@ -880,14 +886,14 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			// Process all messages
 			testTime := time.Date(2025, 7, 24, 1, 14, 51, 0, time.UTC)
 			for i, msg := range test.nmeaMessages {
-				msgID, err := processor.ProcessPacket(Trim(msg), testTime.Add(time.Duration(i)*time.Millisecond))
+				msgID, err := processor.ProcessPacket(msg, testTime.Add(time.Duration(i)*time.Millisecond))
 				if err != nil {
 					t.Fatalf("error processing message %d (%s): %v", i, msgID, err)
 				}
 			}
 
 			// Call Idle to flush any remaining data
-			processor.Idle(testTime.Add(time.Duration(len(test.nmeaMessages))*time.Millisecond))
+			processor.Idle(testTime.Add(time.Duration(len(test.nmeaMessages)) * time.Millisecond))
 
 			// Verify we got exactly one SatellitesMsg
 			if len(handler.satellites) != 1 {
@@ -906,7 +912,6 @@ func TestPacketProcessorSatellites(t *testing.T) {
 		})
 	}
 }
-
 
 // testCompareSatellitesMsgs compares two SatellitesMsg in an order-insensitive way
 func testCompareSatellitesMsgs(t *testing.T, actual, expected *gpsprot.SatellitesMsg) {
@@ -928,7 +933,7 @@ func testCompareSatellitesMsgs(t *testing.T, actual, expected *gpsprot.Satellite
 	// Create maps for order-insensitive comparison
 	actualMap := make(map[gpsprot.SVID]gpsprot.SVInfo)
 	expectedMap := make(map[gpsprot.SVID]gpsprot.SVInfo)
-	
+
 	for _, sv := range actual.SVs {
 		actualMap[sv.ID] = sv
 	}
@@ -943,12 +948,12 @@ func testCompareSatellitesMsgs(t *testing.T, actual, expected *gpsprot.Satellite
 			t.Errorf("Missing satellite %s in actual results", svid)
 			continue
 		}
-		
+
 		// Compare satellite fields
 		if actualSV.Used != expectedSV.Used {
 			t.Errorf("Satellite %s Used mismatch: got %v, expected %v", svid, actualSV.Used, expectedSV.Used)
 		}
-		
+
 		// Compare look angles
 		if (actualSV.LookAngles == nil) != (expectedSV.LookAngles == nil) {
 			t.Errorf("Satellite %s LookAngles nil mismatch: got %v, expected %v", svid, actualSV.LookAngles == nil, expectedSV.LookAngles == nil)
@@ -960,23 +965,23 @@ func testCompareSatellitesMsgs(t *testing.T, actual, expected *gpsprot.Satellite
 				t.Errorf("Satellite %s Elevation mismatch: got %d, expected %d", svid, actualSV.LookAngles.Elevation, expectedSV.LookAngles.Elevation)
 			}
 		}
-		
+
 		// Compare signals order-insensitively
 		if len(actualSV.Signals) != len(expectedSV.Signals) {
 			t.Errorf("Satellite %s signal count mismatch: got %d, expected %d", svid, len(actualSV.Signals), len(expectedSV.Signals))
 			continue
 		}
-		
+
 		actualSignalMap := make(map[gpsprot.SignalID]gpsprot.SignalInfo)
 		expectedSignalMap := make(map[gpsprot.SignalID]gpsprot.SignalInfo)
-		
+
 		for _, sig := range actualSV.Signals {
 			actualSignalMap[sig.ID] = sig
 		}
 		for _, sig := range expectedSV.Signals {
 			expectedSignalMap[sig.ID] = sig
 		}
-		
+
 		for sigID, expectedSig := range expectedSignalMap {
 			actualSig, exists := actualSignalMap[sigID]
 			if !exists {
@@ -990,7 +995,7 @@ func testCompareSatellitesMsgs(t *testing.T, actual, expected *gpsprot.Satellite
 				t.Errorf("Satellite %s signal %s Used mismatch: got %v, expected %v", svid, sigID, actualSig.Used, expectedSig.Used)
 			}
 		}
-		
+
 		// Check for extra signals in actual
 		for sigID := range actualSignalMap {
 			if _, exists := expectedSignalMap[sigID]; !exists {
@@ -1006,4 +1011,3 @@ func testCompareSatellitesMsgs(t *testing.T, actual, expected *gpsprot.Satellite
 		}
 	}
 }
-

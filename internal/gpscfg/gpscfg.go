@@ -502,8 +502,9 @@ func (bc1 badCount) Sub(bc2 badCount) badCount {
 }
 
 func nmeaLog(lg *slog.Logger, sen *nmea.Sentence) {
-	if sen.Format == "TXT" && len(sen.Fields) >= 4 {
+	approvSen := sen.ApprovedSentence()
+	if approvSen != nil && approvSen.Format == "TXT" && len(approvSen.Fields) >= 4 {
 		// When we open an ACM device, the GPS receiver sends TXT messages with each line of the boot screen
-		lg.Debug("received NMEA TXT message", "s", sen.Fields[3])
+		lg.Debug("received NMEA TXT message", "s", approvSen.Fields[3])
 	}
 }
