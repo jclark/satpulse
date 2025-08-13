@@ -8,12 +8,13 @@ This document outlines the complete design and implementation plan for supportin
 
 The Unicore implementation depends on several infrastructure improvements that are tracked as separate GitHub issues:
 
-- [ ] #134: Make NMEA PacketFormat recognise NMEA-like packets (implemented in nmea-lax branch)
+- [x] #134: Make NMEA PacketFormat recognise NMEA-like packets (implemented in nmea-lax branch)
 - [ ] #131: Decouple packet formats and configuration protocols (REQUIRED)
+- [ ] #136: Redesign Configurator interface for better usability and testability (REQUIRED)
 - [ ] #132: Add Tag parameter to PacketProcessor interface (nice-to-have)
 - [ ] #133: Allow dynamic changes to set of recognised packet formats (nice-to-have)
 
-See the linked issues for detailed implementation specifications. The critical dependencies for Unicore support are #134 and #131.
+See the linked issues for detailed implementation specifications. The critical dependencies for Unicore support are #134, #131, and #136.
 
 ## PacketFormat Implementation (`internal/unc/`)
 
