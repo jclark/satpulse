@@ -8,6 +8,10 @@ import (
 const (
 	RecTimeID   MsgID = 102
 	PPSStatusID MsgID = 9000
+	GPSUTCID    MsgID = 19
+	GALUTCID    MsgID = 20
+	BD3UTCID    MsgID = 22
+	BDSUTCID    MsgID = 2012
 )
 
 // ClockStatus represents the receiver clock model status
@@ -129,8 +133,99 @@ func (p *PPSStatus) ID() MsgID {
 	return PPSStatusID
 }
 
+// GPSUTC represents GPS UTC parameters from a Unicore receiver.
+// Message ID: 19
+// Parameters for converting GPS Time to UTC.
+type GPSUTC struct {
+	UTCWn     uint32  // UTC reference week number
+	Tot       uint32  // Reference time of UTC parameters
+	A0        float64 // Clock bias of GPST relative to UTC
+	A1        float64 // Clock rate of GPST relative to UTC
+	WnLsf     uint32  // Future week number for leap second
+	Dn        uint32  // Future day number for leap second
+	DeltatLs  int32   // Current leap seconds
+	DeltatLsf int32   // Future leap seconds
+	DeltatUTC uint32  // Time offset of GPST relative to UTC
+	Reserved  uint32  // Reserved
+}
+
+// ID returns the message ID for GPSUTC
+func (g *GPSUTC) ID() MsgID {
+	return GPSUTCID
+}
+
+// GALUTC represents Galileo UTC parameters from a Unicore receiver.
+// Message ID: 20
+// Parameters for converting Galileo Time to UTC.
+type GALUTC struct {
+	A0        float64 // Clock bias of Galileo time relative to UTC
+	A1        float64 // Clock rate of Galileo time relative to UTC
+	DeltatLs  int32   // Current leap seconds
+	Tot       uint32  // Reference time of UTC parameters
+	UTCWn     uint32  // UTC reference week number
+	WnLsf     uint32  // Future week number for leap second
+	Dn        uint32  // Future day number for leap second
+	DeltatLsf int32   // Future leap seconds
+	DA0g      float64 // Constant term for Galileo to GPS time conversion
+	DA1g      float64 // First order term for Galileo to GPS time conversion
+	UlT0g     uint32  // Reference second for Galileo to GPS time conversion
+	UlWN0g    uint32  // Reference week for Galileo to GPS time conversion
+}
+
+// ID returns the message ID for GALUTC
+func (g *GALUTC) ID() MsgID {
+	return GALUTCID
+}
+
+// BD3UTC represents BDS-3 UTC parameters from a Unicore receiver.
+// Message ID: 22
+// Parameters for converting BDS-3 Time to UTC.
+type BD3UTC struct {
+	UTCWn     uint32  // UTC reference week number
+	Tot       uint32  // Reference time of UTC parameters
+	A0        float64 // Clock bias of BDST relative to UTC
+	A1        float64 // Clock drift of BDST relative to UTC
+	A2        float64 // Clock drift rate of BDST relative to UTC
+	WnLsf     uint32  // Future week number for leap second
+	Dn        uint32  // Future day number for leap second
+	DeltatLs  int32   // Current leap seconds
+	DeltatLsf int32   // Future leap seconds
+	Reserved1 uint32  // Reserved
+	Reserved2 uint32  // Reserved
+}
+
+// ID returns the message ID for BD3UTC
+func (b *BD3UTC) ID() MsgID {
+	return BD3UTCID
+}
+
+// BDSUTC represents BDS UTC parameters from a Unicore receiver.
+// Message ID: 2012
+// Parameters for converting BDS Time to UTC.
+type BDSUTC struct {
+	Reserved1 uint32  // Reserved
+	Reserved2 uint32  // Reserved
+	A0        float64 // Clock bias of BDT relative to UTC
+	A1        float64 // Clock rate of BDT relative to UTC
+	WnLsf     uint32  // Future week number for leap second
+	Dn        uint32  // Future day number for leap second
+	DeltatLs  int32   // Current leap seconds
+	DeltatLsf int32   // Future leap seconds
+	Reserved3 uint32  // Reserved
+	Reserved4 uint32  // Reserved
+}
+
+// ID returns the message ID for BDSUTC
+func (b *BDSUTC) ID() MsgID {
+	return BDSUTCID
+}
+
 func init() {
 	// Register known message types
 	regMsg[RecTime]("RECTIME")
 	regMsg[PPSStatus]("PPSSTATUS")
+	regMsg[GPSUTC]("GPSUTC")
+	regMsg[GALUTC]("GALUTC")
+	regMsg[BD3UTC]("BD3UTC")
+	regMsg[BDSUTC]("BDSUTC")
 }

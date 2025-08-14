@@ -188,6 +188,133 @@ var dataTests = []struct {
 		},
 		fixupValueForBin: fixupVersionValueForBin,
 	},
+	{
+		name:        "GPSUTC with leap second information",
+		binPacket:   mustHexDecode("aa44b5611300300000a04b098065311600000000001214004b0900000000090000000000000010be000000000000e0bc89090000070000001200000012000000000000000000000054c1801f"),
+		asciiPacket: "#GPSUTCA,97,GPS,FINE,2379,372336000,0,0,18,20;2379,589824,-9.313225746154785e-10,-1.776356839e-15,2441,7,18,18,0,0*8301ddef\r\n",
+		header: MessageHeader{
+			CPUIdlePercent: 97,
+			TimingHeader: TimingHeader{
+				TimeRef:            TimeRefGPS,
+				TimeStatus:         TimeStatusFine,
+				Week:               2379,
+				MillisecondsOfWeek: 372336000,
+				Reserved:           0,
+				Version:            0,
+				LeapSec:            18,
+				DelayMs:            20,
+			},
+		},
+		value: &GPSUTC{
+			UTCWn:     2379,
+			Tot:       589824,
+			A0:        -9.313225746154785e-10,
+			A1:        -1.7763568394002505e-15,
+			WnLsf:     2441,
+			Dn:        7,
+			DeltatLs:  18,
+			DeltatLsf: 18,
+			DeltatUTC: 0,
+			Reserved:  0,
+		},
+		fixupValueForAscii: fixupGPSUTCValueForAscii,
+	},
+	{
+		name:        "GALUTC with Galileo UTC parameters",
+		binPacket:   mustHexDecode("aa44b5611400400000a04b09c04e3a160000000000121500000000000000103e000000000000000012000000600000004b0500008905000007000000120000000000000000001a3e000000000000c0bc004605000b000000d168e2d8"),
+		asciiPacket: "#GALUTCA,97,GPS,FINE,2379,372920000,0,0,18,21;9.313225746154785e-10,0.000000000000000e+00,18,96,1355,1417,7,18,1.513399183750153e-09,-4.440892098500626e-16,345600,11*3729930d\r\n",
+		header: MessageHeader{
+			CPUIdlePercent: 97,
+			TimingHeader: TimingHeader{
+				TimeRef:            TimeRefGPS,
+				TimeStatus:         TimeStatusFine,
+				Week:               2379,
+				MillisecondsOfWeek: 372920000,
+				Reserved:           0,
+				Version:            0,
+				LeapSec:            18,
+				DelayMs:            21,
+			},
+		},
+		value: &GALUTC{
+			A0:        9.313225746154785e-10,
+			A1:        0.0,
+			DeltatLs:  18,
+			Tot:       96,
+			UTCWn:     1355,
+			WnLsf:     1417,
+			Dn:        7,
+			DeltatLsf: 18,
+			DA0g:      1.5133991837501526e-09,
+			DA1g:      -4.440892098500626e-16,
+			UlT0g:     345600,
+			UlWN0g:    11,
+		},
+		fixupValueForAscii: fixupGALUTCValueForAscii,
+	},
+	{
+		name:        "BDSUTC with BDS UTC parameters",
+		binPacket:   mustHexDecode("aa44b561dc07300000a04b09a0773b1600000000001214000000000000000000000000000000203e00000000000006bd3d0400000600000004000000040000000000000000000000d67c80c1"),
+		asciiPacket: "#BDSUTCA,97,GPS,FINE,2379,372996000,0,0,18,20;0,0,1.862645149230957e-09,-9.769962617e-15,1085,6,4,4,0,0*2bd1f58c\r\n",
+		header: MessageHeader{
+			CPUIdlePercent: 97,
+			TimingHeader: TimingHeader{
+				TimeRef:            TimeRefGPS,
+				TimeStatus:         TimeStatusFine,
+				Week:               2379,
+				MillisecondsOfWeek: 372996000,
+				Reserved:           0,
+				Version:            0,
+				LeapSec:            18,
+				DelayMs:            20,
+			},
+		},
+		value: &BDSUTC{
+			Reserved1: 0,
+			Reserved2: 0,
+			A0:        1.862645149230957e-09,
+			A1:        -9.769962616701378e-15,
+			WnLsf:     1085,
+			Dn:        6,
+			DeltatLs:  4,
+			DeltatLsf: 4,
+			Reserved3: 0,
+			Reserved4: 0,
+		},
+		fixupValueForAscii: fixupBDSUTCValueForAscii,
+	},
+	{
+		name:        "BD3UTC with BDS-3 UTC parameters",
+		binPacket:   mustHexDecode("aa44b5611600380000a04b09f04b4e160000000000121500ff030000500000000000000000801b3e00000000000007bd00000000000000003d000000060000000400000004000000000000000000000050994c1a"),
+		asciiPacket: "#BD3UTCA,97,GPS,FINE,2379,374230000,0,0,18,21;1023,80,1.600710675120354e-09,-1.021405183e-14,0.000000000000000e+00,61,6,4,4,0,0*4b99b719\r\n",
+		header: MessageHeader{
+			CPUIdlePercent: 97,
+			TimingHeader: TimingHeader{
+				TimeRef:            TimeRefGPS,
+				TimeStatus:         TimeStatusFine,
+				Week:               2379,
+				MillisecondsOfWeek: 374230000,
+				Reserved:           0,
+				Version:            0,
+				LeapSec:            18,
+				DelayMs:            21,
+			},
+		},
+		value: &BD3UTC{
+			UTCWn:     1023,
+			Tot:       80,
+			A0:        1.6007106751203537e-09,
+			A1:        -1.021405182655144e-14,
+			A2:        0.0,
+			WnLsf:     61,
+			Dn:        6,
+			DeltatLs:  4,
+			DeltatLsf: 4,
+			Reserved1: 0,
+			Reserved2: 0,
+		},
+		fixupValueForAscii: fixupBD3UTCValueForAscii,
+	},
 }
 
 func TestDataBin(t *testing.T) {
@@ -288,24 +415,9 @@ func mustHexDecode(s string) []byte {
 	return b
 }
 
-// fixupRecTimeValueForAscii converts a RecTime with full binary precision
-// to match the limited precision values that come from ASCII parsing.
-// This simulates the receiver firmware's float-to-ASCII conversion using %.10g formatting.
-func fixupRecTimeValueForAscii(msg Msg) Msg {
-	r := msg.(*RecTime)
-	result := *r // Copy the struct
-
-	// Simulate receiver's ASCII formatting: binary -> printf("%.10g") -> parse back
-	fixupFloat(&result.Offset)
-	fixupFloat(&result.OffsetStd)
-	// UTCOffset typically stays exact since -18.0 is representable exactly
-
-	return &result
-}
-
 // fixupFloat simulates the receiver's float formatting by doing: binary -> sprintf -> parse
-func fixupFloat(val *float64) {
-	str := fmt.Sprintf("%.10g", *val)
+func fixupFloat(val *float64, format string) {
+	str := fmt.Sprintf(format, *val)
 	result, err := strconv.ParseFloat(str, 64)
 	if err != nil {
 		panic(fmt.Sprintf("failed to round-trip float64 %v: %v", *val, err))
