@@ -131,6 +131,7 @@ type Msg interface {
 	ID() MsgID
 }
 
+
 // ChunkedMsg interface for messages with variable-length structure
 // that need to be read/written in chunks
 type ChunkedMsg interface {

@@ -34,3 +34,84 @@ func TestAsciiHeader(t *testing.T) {
 		}
 	})
 }
+
+func TestSplitDataFields(t *testing.T) {
+	tests := []struct {
+		input  string
+		expect []string
+	}{
+		{
+			input:  `"foo","bar","baz"`,
+			expect: []string{"foo", "bar", "baz"},
+		},
+		{
+			input:  `"foo,with,commas","bar","baz"`,
+			expect: []string{"foo,with,commas", "bar", "baz"},
+		},
+		{
+			input:  `"first","","third"`,
+			expect: []string{"first", "", "third"},
+		},
+		{
+			input:  `"only one field"`,
+			expect: []string{"only one field"},
+		},
+		{
+			input:  `unquoted,fields,here`,
+			expect: []string{"unquoted", "fields", "here"},
+		},
+		{
+			input:  `"quoted","unquoted","quoted again"`,
+			expect: []string{"quoted", "unquoted", "quoted again"},
+		},
+		{
+			input:  `"UM980","R4.10Build13504","HRPT00-S10C-P"`,
+			expect: []string{"UM980", "R4.10Build13504", "HRPT00-S10C-P"},
+		},
+		{
+			input:  ``,
+			expect: []string{},
+		},
+		{
+			input:  `single`,
+			expect: []string{"single"},
+		},
+		{
+			input:  `"quoted,field,with,many,commas"`,
+			expect: []string{"quoted,field,with,many,commas"},
+		},
+		// Test mixed quoted and unquoted with commas inside quotes
+		{
+			input:  `"field,with,commas",plain,field,"another,quoted,field"`,
+			expect: []string{"field,with,commas", "plain", "field", "another,quoted,field"},
+		},
+		{
+			input:  `unquoted,"quoted,with,commas",last`,
+			expect: []string{"unquoted", "quoted,with,commas", "last"},
+		},
+		{
+			input:  `"first,comma,field",middle,"third,comma,field",final,"fifth,field"`,
+			expect: []string{"first,comma,field", "middle", "third,comma,field", "final", "fifth,field"},
+		},
+		// Test single field with commas
+		{
+			input:  `"one,field,with,many,commas"`,
+			expect: []string{"one,field,with,many,commas"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := splitDataFields(tt.input, len(tt.expect))
+			if len(got) != len(tt.expect) {
+				t.Errorf("splitDataFields(%q, %d) length = %d, want %d", tt.input, len(tt.expect), len(got), len(tt.expect))
+				return
+			}
+			for i := range got {
+				if got[i] != tt.expect[i] {
+					t.Errorf("splitDataFields(%q, %d)[%d] = %q, want %q", tt.input, len(tt.expect), i, got[i], tt.expect[i])
+				}
+			}
+		})
+	}
+}

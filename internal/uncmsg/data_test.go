@@ -7,11 +7,15 @@ import (
 )
 
 var dataTests = []struct {
-	name        string
-	binPacket   []byte
-	asciiPacket string
-	header      MessageHeader
-	value       Msg
+	name             string
+	binPacket        []byte
+	asciiPacket      string
+	header           MessageHeader
+	value            Msg
+	// this handles the fact that VERSIONA/VERSIONB are inconsistent
+	// the value is the value that VERSIONA gives;
+	// fixupValueForBin transforms that into the value that VERSIONB gives
+	fixupValueForBin func(Msg) Msg // Transform ASCII baseline to binary format
 }{
 	{
 		name:        "SatsInfo with 47 satellites",
@@ -120,6 +124,33 @@ var dataTests = []struct {
 			Reserved1:    0x2CB0ECAC,
 		},
 	},
+	{
+		name:        "VERSION message",
+		binPacket:   mustHexDecode("aa44b5612500340100a04b09f00e73150000000000120300120000003133353034000000000000000000000000000000000000000000000000000000004852505430302d533130432d500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000323331303431353030303030312d4d443232413632323435313839383200000000000000000000000000000000000000000000000000000000000000000000000000666633626164393933393561396166630000000000000000000000000000000000323032342f30342f3033000000000000000000000000000000000000000000000000000000000000000000e108e8bf"),
+		asciiPacket: "#VERSIONA,97,GPS,FINE,2379,359862000,0,0,18,3;\"UM980\",\"R4.10Build13504\",\"HRPT00-S10C-P\",\"2310415000001-MD22A6224518982\",\"ff3bad99395a9afc\",\"2024/04/03\"*8d58bb37\r\n",
+		header: MessageHeader{
+			CPUIdlePercent: 97,
+			TimingHeader: TimingHeader{
+				TimeRef:            TimeRefGPS,
+				TimeStatus:         TimeStatusFine,
+				Week:               2379,
+				MillisecondsOfWeek: 359862000,
+				Reserved:           0,
+				Version:            0,
+				LeapSec:            18,
+				DelayMs:            3,
+			},
+		},
+		value: &Version{
+			Type:        ProductModelUM980,
+			SwVersion:   [33]byte{'R', '4', '.', '1', '0', 'B', 'u', 'i', 'l', 'd', '1', '3', '5', '0', '4'},
+			Auth:        [129]byte{'H', 'R', 'P', 'T', '0', '0', '-', 'S', '1', '0', 'C', '-', 'P'},
+			Psn:         [66]byte{'2', '3', '1', '0', '4', '1', '5', '0', '0', '0', '0', '0', '1', '-', 'M', 'D', '2', '2', 'A', '6', '2', '2', '4', '5', '1', '8', '9', '8', '2'},
+			EfuseID:     [33]byte{'f', 'f', '3', 'b', 'a', 'd', '9', '9', '3', '9', '5', 'a', '9', 'a', 'f', 'c'},
+			CompileTime: [43]byte{'2', '0', '2', '4', '/', '0', '4', '/', '0', '3'},
+		},
+		fixupValueForBin: fixupVersionValueForBin,
+	},
 }
 
 func TestDataBin(t *testing.T) {
@@ -135,12 +166,18 @@ func TestDataBin(t *testing.T) {
 				t.Errorf("ParseBinMsg() header mismatch:\nGot:  %+v\nWant: %+v", header, tt.header)
 			}
 
-			if !reflect.DeepEqual(msg, tt.value) {
-				t.Errorf("ParseBinMsg() mismatch:\nGot:  %+v\nWant: %+v", msg, tt.value)
+			// Apply fixup for binary comparison if needed
+			expectedValue := tt.value
+			if tt.fixupValueForBin != nil {
+				expectedValue = tt.fixupValueForBin(tt.value)
 			}
 
-			// Test round-trip: value -> serialize -> parse
-			serialized, err := SerializeBinMsg(header, tt.value)
+			if !reflect.DeepEqual(msg, expectedValue) {
+				t.Errorf("ParseBinMsg() mismatch:\nGot:  %+v\nWant: %+v", msg, expectedValue)
+			}
+
+			// Test round-trip: value -> serialize -> parse using expectedValue for both directions
+			serialized, err := SerializeBinMsg(header, expectedValue)
 			if err != nil {
 				t.Fatalf("SerializeBinMsg() error = %v", err)
 			}
@@ -154,8 +191,8 @@ func TestDataBin(t *testing.T) {
 				t.Errorf("ParseBinMsg() on serialized header mismatch:\nGot:  %+v\nWant: %+v", header2, tt.header)
 			}
 
-			if !reflect.DeepEqual(msg2, tt.value) {
-				t.Errorf("ParseBinMsg() on serialized mismatch:\nGot:  %+v\nWant: %+v", msg2, tt.value)
+			if !reflect.DeepEqual(msg2, expectedValue) {
+				t.Errorf("ParseBinMsg() on serialized mismatch:\nGot:  %+v\nWant: %+v", msg2, expectedValue)
 			}
 		})
 	}
