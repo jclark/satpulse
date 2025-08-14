@@ -2,20 +2,25 @@ package uncmsg
 
 import (
 	"encoding/hex"
+	"fmt"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
 var dataTests = []struct {
-	name             string
-	binPacket        []byte
-	asciiPacket      string
-	header           MessageHeader
-	value            Msg
-	// this handles the fact that VERSIONA/VERSIONB are inconsistent
-	// the value is the value that VERSIONA gives;
-	// fixupValueForBin transforms that into the value that VERSIONB gives
+	name        string
+	binPacket   []byte
+	asciiPacket string
+	header      MessageHeader
+	value       Msg
+	// fixupValueForBin transforms value from ASCII message into value expected by binary format
+	// This is used for VERSIONA/VERSIONB inconsistency:
+	// VERSIONB has just build number; VERSIONA has additional info
 	fixupValueForBin func(Msg) Msg // Transform ASCII baseline to binary format
+	// fixupValueForAscii transforms value from binary message into value expected by ASCII format
+	// This is used to handle floating point differences, where ASCII has limited precision.
+	fixupValueForAscii func(Msg) Msg // Transform binary baseline to ASCII format
 }{
 	{
 		name:        "SatsInfo with 47 satellites",
@@ -125,6 +130,38 @@ var dataTests = []struct {
 		},
 	},
 	{
+		name:        "RECTIME with timing and UTC data",
+		binPacket:   mustHexDecode("aa44b56166002c0000a04b0988a70a16000000000012120000000000b39fb0a7e62a3fbfafeea64e93f94b3e00000000000032c0e9070000080e062a78e6000001000000b3998b61"),
+		asciiPacket: "#RECTIMEA,97,GPS,FINE,2379,369797000,0,0,18,18;VALID,-4.755795596e-04,1.302682980e-08,-18.00000000000,2025,8,14,6,42,59000,VALID*9f81d9db\r\n",
+		header: MessageHeader{
+			CPUIdlePercent: 97,
+			TimingHeader: TimingHeader{
+				TimeRef:            TimeRefGPS,
+				TimeStatus:         TimeStatusFine,
+				Week:               2379,
+				MillisecondsOfWeek: 369797000,
+				Reserved:           0,
+				Version:            0,
+				LeapSec:            18,
+				DelayMs:            18,
+			},
+		},
+		value: &RecTime{
+			ClockStatus: ClockStatusValid,
+			Offset:      -0.00047557955957921587,
+			OffsetStd:   1.3026829799647186e-08,
+			UTCOffset:   -18.0,
+			UTCYear:     2025,
+			UTCMonth:    8,
+			UTCDay:      14,
+			UTCHour:     6,
+			UTCMin:      42,
+			UTCMs:       59000,
+			UTCStatus:   UTCStatusValid,
+		},
+		fixupValueForAscii: fixupRecTimeValueForAscii,
+	},
+	{
 		name:        "VERSION message",
 		binPacket:   mustHexDecode("aa44b5612500340100a04b09f00e73150000000000120300120000003133353034000000000000000000000000000000000000000000000000000000004852505430302d533130432d500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000323331303431353030303030312d4d443232413632323435313839383200000000000000000000000000000000000000000000000000000000000000000000000000666633626164393933393561396166630000000000000000000000000000000000323032342f30342f3033000000000000000000000000000000000000000000000000000000000000000000e108e8bf"),
 		asciiPacket: "#VERSIONA,97,GPS,FINE,2379,359862000,0,0,18,3;\"UM980\",\"R4.10Build13504\",\"HRPT00-S10C-P\",\"2310415000001-MD22A6224518982\",\"ff3bad99395a9afc\",\"2024/04/03\"*8d58bb37\r\n",
@@ -211,12 +248,18 @@ func TestDataAscii(t *testing.T) {
 				t.Errorf("ParseAsciiMessage() header mismatch:\nGot:  %+v\nWant: %+v", header, tt.header)
 			}
 
-			if !reflect.DeepEqual(msg, tt.value) {
-				t.Errorf("ParseAsciiMessage() mismatch:\nGot:  %+v\nWant: %+v", msg, tt.value)
+			// Apply fixup for ASCII comparison if needed
+			expectedValue := tt.value
+			if tt.fixupValueForAscii != nil {
+				expectedValue = tt.fixupValueForAscii(tt.value)
 			}
 
-			// Test round-trip: value -> serialize -> parse
-			serialized, err := SerializeAsciiMsg(header, tt.value)
+			if !reflect.DeepEqual(msg, expectedValue) {
+				t.Errorf("ParseAsciiMessage() mismatch:\nGot:  %+v\nWant: %+v", msg, expectedValue)
+			}
+
+			// Test round-trip: value -> serialize -> parse using expectedValue for both directions
+			serialized, err := SerializeAsciiMsg(header, expectedValue)
 			if err != nil {
 				t.Fatalf("SerializeAsciiMsg() error = %v", err)
 			}
@@ -230,8 +273,8 @@ func TestDataAscii(t *testing.T) {
 				t.Errorf("ParseAsciiMessage() on serialized header mismatch:\nGot:  %+v\nWant: %+v", header2, tt.header)
 			}
 
-			if !reflect.DeepEqual(msg2, tt.value) {
-				t.Errorf("ParseAsciiMessage() on serialized mismatch:\nGot:  %+v\nWant: %+v", msg2, tt.value)
+			if !reflect.DeepEqual(msg2, expectedValue) {
+				t.Errorf("ParseAsciiMessage() on serialized mismatch:\nGot:  %+v\nWant: %+v", msg2, expectedValue)
 			}
 		})
 	}
@@ -243,4 +286,29 @@ func mustHexDecode(s string) []byte {
 		panic(err)
 	}
 	return b
+}
+
+// fixupRecTimeValueForAscii converts a RecTime with full binary precision
+// to match the limited precision values that come from ASCII parsing.
+// This simulates the receiver firmware's float-to-ASCII conversion using %.10g formatting.
+func fixupRecTimeValueForAscii(msg Msg) Msg {
+	r := msg.(*RecTime)
+	result := *r // Copy the struct
+
+	// Simulate receiver's ASCII formatting: binary -> printf("%.10g") -> parse back
+	fixupFloat(&result.Offset)
+	fixupFloat(&result.OffsetStd)
+	// UTCOffset typically stays exact since -18.0 is representable exactly
+
+	return &result
+}
+
+// fixupFloat simulates the receiver's float formatting by doing: binary -> sprintf -> parse
+func fixupFloat(val *float64) {
+	str := fmt.Sprintf("%.10g", *val)
+	result, err := strconv.ParseFloat(str, 64)
+	if err != nil {
+		panic(fmt.Sprintf("failed to round-trip float64 %v: %v", *val, err))
+	}
+	*val = result
 }
