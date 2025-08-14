@@ -8,13 +8,23 @@ This document outlines the complete design and implementation plan for supportin
 
 The Unicore implementation depends on several infrastructure improvements that are tracked as separate GitHub issues:
 
-- [x] #134: Make NMEA PacketFormat recognise NMEA-like packets (implemented in nmea-lax branch)
-- [ ] #131: Decouple packet formats and configuration protocols (REQUIRED)
-- [ ] #136: Redesign Configurator interface for better usability and testability (REQUIRED)
-- [ ] #132: Add Tag parameter to PacketProcessor interface (nice-to-have)
-- [ ] #133: Allow dynamic changes to set of recognised packet formats (nice-to-have)
+- #134: Make NMEA PacketFormat recognise NMEA-like packets (implemented in nmea-lax branch)
+- #131: Decouple packet formats and configuration protocols (REQUIRED)
+- #136: Redesign Configurator interface for better usability and testability (REQUIRED)
+  - **Part 1**: Implement new Configurator2/ConfigRequest2 interfaces alongside existing ones
+    - Create Configurator2 and ConfigRequest2 interfaces
+    - Unicore will use Configurator2/ConfigRequest2 from the start
+    - UBX continues using original Configurator/ConfigRequest
+    - Both interface sets coexist temporarily
+    - gpscfg.go will use both Configurator2/ConfigDirector and old Configurator
+  - **Part 2**: Migrate UBX to Configurator2/ConfigRequest2 and cleanup
+    - Port UBX implementation to Configurator2/ConfigRequest2
+    - Remove original Configurator/ConfigRequest interfaces
+    - Rename Configurator2/ConfigRequest2 to Configurator/ConfigRequest
+- #132: Add Tag parameter to PacketProcessor interface (nice-to-have)
+- #133: Allow dynamic changes to set of recognised packet formats (nice-to-have)
 
-See the linked issues for detailed implementation specifications. The critical dependencies for Unicore support are #134, #131, and #136.
+See the linked issues for detailed implementation specifications. The critical dependencies for Unicore support are #134, #131, and #136 Part 1.
 
 ## PacketFormat Implementation (`internal/unc/`)
 
@@ -65,12 +75,23 @@ Converts Unicore packets into abstract `gpsprot` messages.
 Low-level Unicore packet parsing library used by PacketProcessor to decode packet contents into Go structs. Analogous to `internal/ubx/bin`.
 
 **Components**:
-- **ASCII message parsing** (`ascii.go`) - Decodes ASCII log messages
-- **Binary message parsing** (`bin.go`) - Decodes binary messages
-- **CRC validation** (`crc.go`) - Implements Unicore 32-bit CRC algorithm
-- **Common structures** (`common.go`) - Shared data structures and constants
-- **Satellite handling** (`sats.go`) - Satellite-related message structures
-- **Time handling** (`time.go`) - Time-related message structures
+- **ASCII message parsing** (`ascii.go`) - Decodes ASCII log messages ✅
+- **Binary message parsing** (`bin.go`) - Decodes binary messages ✅
+- **CRC validation** (`crc.go`) - Implements Unicore 32-bit CRC algorithm ✅
+- **Common structures** (`common.go`) - Shared data structures and constants ✅
+- **Satellite handling** (`sats.go`) - Satellite-related message structures ✅
+- **Time handling** (`time.go`) - Time-related message structures ✅
+- **Version handling** (`version.go`) - Version-related message structures ✅
+
+**Implemented Message Types**:
+- **VERSIONA/VERSIONB** (ID: 37) - Product model, firmware version, serial number ✅
+- **RECTIMEA/RECTIMEB** (ID: 102) - Receiver clock and UTC time information ✅
+- **PPSSTATUS** (ID: 9000) - PPS status and phase error information ✅
+- **GPSUTC** (ID: 19) - GPS UTC leap second parameters ✅
+- **GALUTC** (ID: 20) - Galileo UTC leap second parameters ✅
+- **BD3UTC** (ID: 22) - BDS-3 UTC leap second parameters ✅
+- **BDSUTC** (ID: 2012) - BDS UTC leap second parameters ✅
+- **SATSINFOA/SATSINFOB** (ID: 2124) - Satellite tracking and signal information ✅
 
 **Testing with `data_test.go`:**
 - Capture ASCII/binary message pairs from real hardware (e.g., SATSINFOA and SATSINFOB)
@@ -79,15 +100,19 @@ Low-level Unicore packet parsing library used by PacketProcessor to decode packe
 - Use `satpulsetool gps --test-log` to generate test data
 - Use `uncanno` to validate message decoding during development
 
-Several more message types need implementing.
+**Message Types Still Needed for gpsprot Mapping**:
+- **BESTSAT** - Satellites used in navigation solution (needed for SatellitesMsg with Used field)
+
+**Future Message Types (when gpsprot is extended)**:
+- **BESTNAV/BESTNAVXYZ** - Position/velocity data (will be needed when PositionMsg is added to gpsprot)
 
 ### Message Mapping - 🚧 Needs Implementation
 
 Using the decoded structs from `uncmsg`, map to gpsprot abstract messages:
-- `TimeMsg` - from Unicore time messages (RECTIMEB, etc.)
-- `SatellitesMsg` - from Unicore satellite status messages (SATSINFOB, etc.)
-- `PVTMsg` - from Unicore position/velocity messages (BESTNAVB, etc.)
-- Other abstract message types as needed
+- `TimeMsg` - from RECTIMEB (ready to implement)
+- `LeapSecondMsg` - from GPSUTC, GALUTC, BD3UTC, BDSUTC (ready to implement)
+- `SatellitesMsg` - from SATSINFOB (partial - needs BESTSAT for Used field)
+- `SurveyMsg` - Not currently supported by Unicore messages
 
 **Testing message mapping:**
 - Use `uncanno` to decode captured packets and verify correct mappings
@@ -288,73 +313,85 @@ Accepted command/response forms (normalized)
 - **MASK**: Partial - signal masking implemented, elevation mask needs work  
 - **MODE**: Stub only - needs parsing and conversion logic
 
-## Implementation Status
+## Phased Implementation Approach
 
-### ✅ Completed Components
+The implementation will follow two parallel tracks to achieve working functionality as quickly as possible:
+
+### Track 1: Getting satpulsed to use Unicore binary messages
+
+**Initial goal**: Enable satpulsed to receive timing messages from Unicore receivers.
+
+1. Implement PacketProcessor interface in `internal/unc/`
+   - Map RECTIMEB to TimeMsg (minimum for timing sync)
+2. Register with gpsreg
+
+**Finish implementation**:
+- Map SATSINFOB to SatellitesMsg
+- Implement BESTSAT for Used field
+- Map UTC parameter messages to LeapSecondMsg
+
+### Track 2: Configuration
+
+We want to implement this using the new Configurator design in `plan/configurator.md`. This will help validate the design. But initially we have the new and old Configurator designs co-exist, so we do not need to modify ubx to new the new Configurator design, until we have validated/refined it through use with Unicore.
+
+**Initial goal**: Get satpulsetool gps to do something with Unicore receivers
+
+1. Develop unc.Configurator further so that it will be easy to implement the new gpsprot.Configurator2 interface, but without needing gpsprot changes yet
+   - Complete MODE property parsing/generation
+   - Handle `#MODE` responses
+   - Handling probing
+   - Test this in isolation to ensure it is working
+2. Implement #136 Part 1 (would be a separate branch off master)
+   - Add Configurator2 interface to gpsprot (matching what Unicore already has)
+   - Update gpscfg to use Configurator2 for protocols that provide it
+   - Test ConfigDirector on its own
+3. Fixup Unicore so that it actually implements Configurator2 and register with gpsreg
+
+**Next goal**: Configuration that is needed by satpulsed
+* Support for `MODE` property
+   * Implement parsing of #MODE response in uncmsg
+   * Handle MODE property in unc
+* PVT message enablement
+   * RECTIME initially
+   * GPSUTC for leap seconds
+* Satellites message enablement
+   * initally just SATSINFO
+
+**Finish implementation**:
+* Message enablement
+   - RTCM
+   - NMEA
+   - Raw messages 
+* Support for Save/Reset/FactoryReset
+* Handle SBAS
+* Support for baud-rate
+   * Add NOVA packet format for BaudRate support
+   * Handle LOGLIST output
+   * Handle BaudRate config option
+* #136 Part 2 - Migrate UBX to Configurator2 approach
+
+## Implementated so far
+
+**Infrastructure**
+
+- Flexible NMEA parsing #134
 
 **Library Layer (`internal/uncmsg/`)**
-- `ascii.go` - ASCII message parsing
-- `bin.go` - Binary message parsing  
-- `crc.go` - CRC validation
-- `common.go` - Shared structures and constants
-- `sats.go` - Satellite-related processing  
-- `time.go` - Time-related processing
 
-**Domain Layer (`internal/unc/`) - PacketFormat Implementation**
-- `asciipacket.go` - UNCA ASCII packet format
-- `binpacket.go` - UNCB binary packet format
+Parsing of binary and ASCII Unicore messages. Analogous to ubx/bin package.
 
-### 🚧 Remaining Components
-
-**Multi-Protocol Infrastructure**
-- NMEA packet handling changes (essential)
-- Multi-protocol configuration support (essential):
-  - Extend PacketExchanger interface to include NativeMsgHandler
-  - Add CreatePacketExchangers() to gpsreg
-  - Add MultiNativeMsgHandler to gpsprot
-  - Modify gpscfg.go for parallel probing
-- Multi-format PacketProcessor support (nice-to-have)
-- Scanner architecture updates (nice-to-have)
-- ConfigResult enhancements (nice-to-have)
-
-**Domain Layer (`internal/unc/`) - Remaining Implementations**
-- **NOVA abbreviated ASCII packet format (PacketFormat) - ESSENTIAL for port detection**
-- PacketProcessor interface implementation
-- PacketExchanger interface implementation (must implement NativeMsgHandler)
-- Configurator interface implementation
-- Protocol registration with gpsreg
-- **Update signal.go to include SBAS constellation support**: Add SBAS signals to maskSignals map and update signalGroups to handle SBAS-enabled configurations
-
-### Testing Infrastructure
-
-**Packet Replay Testing** (`internal/gpscmd/replay_test.go`):
-- Replays captured configuration sequences without hardware
-- Validates configuration logic produces same output packets
-- Enables regression testing across code changes
-- Works with Unicore's ASCII command acknowledgments
-
-**Test Data Generation**:
-- `satpulsetool gps --test-log filename.jsonl` - captures all packets during configuration
-- Records both commands sent and responses received
-- `uncanno` - annotates packets with decoded messages for analysis
-- Particularly useful for understanding Unicore's ASCII responses
-
-**Test Coverage Requirements**:
-- Basic probe and detection sequences
-- All ConfigProperties getters/setters with proper acknowledgment checking
-- All ConfigOptions implementations
-- Error cases (PARSING FAILED responses, timeouts)
-- Multi-packet command sequences
-- Command ordering constraints (e.g., SIGNALGROUP reset behavior)
+**Domain Layer (`internal/unc/`)**
+- `asciipacket.go` - UNCA ASCII packet format (PacketFormat)
+- `binpacket.go` - UNCB binary packet format (PacketFormat)
+- `cfgprops.go` - Native configuration properties implementation
+  - ppsProp with full PPS command handling
+  - signalGroupProp with basic signal group support
+  - maskProp with MASK/UNMASK command support
+- `config.go` - Configurator that partially implements new Configurator2 interface
 
 ## Future Enhancements
 
 ### Additional GNSS Features
-
-**PPP (Precise Point Positioning) Property**
-- Standard GNSS feature, not Unicore-specific
-- Support for BeiDou B2b, Galileo HAS, QZSS MADOCA services
-- Deferred until u-blox X20P protocol definition available
 
 **Elevation Mask Property** 
 - Handled by MASK with number; we will need to parse this anyway
