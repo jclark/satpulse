@@ -263,6 +263,8 @@ const (
 	SigIDGLOL1P SignalID = "L1P" // restricted
 	SigIDGLOL2  SignalID = "L2"  // friendlier name for L2 C/A
 	SigIDGLOL2P SignalID = "L2P" // restricted
+	SigIDGLOL3I SignalID = "L3-I" // L3 data
+	SigIDGLOL3Q SignalID = "L3-Q" // L3 pilot
 
 	// Galileo SignalID constants
 	SigIDGALE5a SignalID = "E5a"
@@ -306,6 +308,7 @@ const (
 	SigIDBDSB1CD  SignalID = "B1C-D"  // B1C data
 	SigIDBDSB2aP  SignalID = "B2a-P"  // B2a pilot
 	SigIDBDSB2aD  SignalID = "B2a-D"  // B2a data
+	SigIDBDSB2bI  SignalID = "B2b-I"  // B2b data
 
 	// QZSS SignalID constants
 	SigIDQZSSL1CA SignalID = "L1 C/A"
@@ -326,6 +329,8 @@ const (
 	SigIDNAVICL5RS SignalID = "L5-RS" // restricted
 	SigIDNAVICSRS  SignalID = "S-RS"  // restricted
 	SigIDNAVICL1   SignalID = "L1"    // friendlier name for L1-SPS
+	SigIDNAVICL5I  SignalID = "L5-I"  // L5 data
+	SigIDNAVICL5Q  SignalID = "L5-Q"  // L5 pilot
 )
 
 // sigName provides human-readable names for each signal
