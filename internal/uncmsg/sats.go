@@ -41,8 +41,8 @@ type SatsInfoFreq struct {
 }
 
 // ID returns the message ID for SATSINFO
-func (s *SatsInfo) ID() MsgID {
-	return SatsInfoID
+func (s *SatsInfo) ID() (MsgID, string) {
+	return SatsInfoID, "SATSINFOA"
 }
 
 // Chunks implements the ChunkedMsg interface for SatsInfo

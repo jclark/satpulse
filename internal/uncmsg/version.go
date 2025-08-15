@@ -101,8 +101,8 @@ type Version struct {
 }
 
 // ID returns the message ID for VERSION
-func (v *Version) ID() MsgID {
-	return VersionID
+func (v *Version) ID() (MsgID, string) {
+	return VersionID, "VERSIONA"
 }
 
 // quotedAscii marks Version as using quoted ASCII fields

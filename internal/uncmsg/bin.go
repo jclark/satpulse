@@ -34,7 +34,7 @@ type UnknownBinMsg struct {
 	Payload []byte
 }
 
-func (m *UnknownBinMsg) ID() MsgID { return m.MsgID }
+func (m *UnknownBinMsg) ID() (MsgID, string) { return m.MsgID, "" }
 
 // ParseBinMsg parses a Unicore binary message from bytes.
 // It assumes the checksums were already verified.
@@ -73,7 +73,7 @@ func ParseBinMsg(packet []byte) (MessageHeader, Msg, error) {
 	payload := packet[headerLength : headerLength+payloadLen]
 
 	// Look up message constructor
-	ctor := msgMap[msgID]
+	ctor := msgIDMap[msgID]
 	if ctor == nil {
 		return msgHeader, &UnknownBinMsg{MsgID: msgID, Payload: payload}, nil
 	}
@@ -112,6 +112,12 @@ func ParseBinMsg(packet []byte) (MessageHeader, Msg, error) {
 
 // SerializeBinMsg serializes a Unicore message with header into binary format
 func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
+	// Get message ID
+	msgID, _ := msg.ID()
+	if msgID == 0 {
+		return nil, fmt.Errorf("unknown ASCII message cannot be serialized as binary")
+	}
+
 	var payload []byte
 	var err error
 
@@ -130,7 +136,7 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 				}
 			}
 			if err != nil {
-				return nil, fmt.Errorf("serializing %s: %v", msg.ID().String(), err)
+				return nil, fmt.Errorf("serializing %s: %v", msgID.String(), err)
 			}
 		} else {
 			// Use single write for fixed-length messages
@@ -143,7 +149,7 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	}
 
 	if len(payload) > 0xFFFF {
-		return nil, fmt.Errorf("unicore-%s payload too long (%d bytes)", msg.ID().String(), len(payload))
+		return nil, fmt.Errorf("unicore-%s payload too long (%d bytes)", msgID.String(), len(payload))
 	}
 
 	// Create binary header
@@ -152,7 +158,7 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 		Sync2:          sync2,
 		Sync3:          sync3,
 		CPUIdlePercent: header.CPUIdlePercent,
-		MessageID:      msg.ID(),
+		MessageID:      msgID,
 		MessageLength:  uint16(len(payload)),
 		TimingHeader:   header.TimingHeader,
 	}

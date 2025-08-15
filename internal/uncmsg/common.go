@@ -128,7 +128,12 @@ type MessageHeader struct {
 
 // Msg interface that all Unicore messages must implement
 type Msg interface {
-	ID() MsgID
+	// ID returns the message identifiers:
+	// - MsgID: numeric identifier (0 for unknown ASCII messages)
+	// - string: ASCII wire format name (e.g., "VERSIONA", "PPSSTATUSA")
+	//   For known messages, this includes the "A" suffix.
+	//   For unknown messages, this is exactly what was received (may or may not have "A").
+	ID() (MsgID, string)
 }
 
 
@@ -140,9 +145,9 @@ type ChunkedMsg interface {
 	Chunks() func(yield func(chunk any) bool)
 }
 
-var msgMap = make(map[MsgID]func() Msg)
+var msgIDMap = make(map[MsgID]func() Msg)
+var msgNameMap = make(map[string]func() Msg)
 var idNameMap = make(map[MsgID]string)
-var asciiNameIDMap = make(map[string]MsgID)
 
 // String returns a string representation of the message ID
 func (mid MsgID) String() string {
@@ -155,12 +160,15 @@ func (mid MsgID) String() string {
 
 // regMsg registers a message type with its ID and name
 func regMsg[T any, PT interface {
-	ID() MsgID
+	ID() (MsgID, string)
 	*T
 }](idName string) {
 	m := PT(new(T))
-	mid := m.ID()
-	msgMap[mid] = func() Msg { return PT(new(T)) }
-	idNameMap[mid] = idName
-	asciiNameIDMap[idName+"A"] = mid
+	id, name := m.ID()
+	ctor := func() Msg { return PT(new(T)) }
+	// For registered messages, both IDs are guaranteed non-zero
+	msgIDMap[id] = ctor
+	// Register with the wire format name (already includes "A" suffix)
+	msgNameMap[name] = ctor
+	idNameMap[id] = idName
 }

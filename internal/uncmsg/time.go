@@ -49,8 +49,8 @@ type RecTime struct {
 }
 
 // ID returns the message ID for RECTIME
-func (r *RecTime) ID() MsgID {
-	return RecTimeID
+func (r *RecTime) ID() (MsgID, string) {
+	return RecTimeID, "RECTIMEA"
 }
 
 // MarshalText implements encoding.TextMarshaler
@@ -129,8 +129,8 @@ type PPSStatus struct {
 }
 
 // ID returns the message ID for PPSSTATUS
-func (p *PPSStatus) ID() MsgID {
-	return PPSStatusID
+func (p *PPSStatus) ID() (MsgID, string) {
+	return PPSStatusID, "PPSSTATUSA"
 }
 
 // GPSUTC represents GPS UTC parameters from a Unicore receiver.
@@ -150,8 +150,8 @@ type GPSUTC struct {
 }
 
 // ID returns the message ID for GPSUTC
-func (g *GPSUTC) ID() MsgID {
-	return GPSUTCID
+func (g *GPSUTC) ID() (MsgID, string) {
+	return GPSUTCID, "GPSUTCA"
 }
 
 // GALUTC represents Galileo UTC parameters from a Unicore receiver.
@@ -173,8 +173,8 @@ type GALUTC struct {
 }
 
 // ID returns the message ID for GALUTC
-func (g *GALUTC) ID() MsgID {
-	return GALUTCID
+func (g *GALUTC) ID() (MsgID, string) {
+	return GALUTCID, "GALUTCA"
 }
 
 // BD3UTC represents BDS-3 UTC parameters from a Unicore receiver.
@@ -195,8 +195,8 @@ type BD3UTC struct {
 }
 
 // ID returns the message ID for BD3UTC
-func (b *BD3UTC) ID() MsgID {
-	return BD3UTCID
+func (b *BD3UTC) ID() (MsgID, string) {
+	return BD3UTCID, "BD3UTCA"
 }
 
 // BDSUTC represents BDS UTC parameters from a Unicore receiver.
@@ -216,8 +216,8 @@ type BDSUTC struct {
 }
 
 // ID returns the message ID for BDSUTC
-func (b *BDSUTC) ID() MsgID {
-	return BDSUTCID
+func (b *BDSUTC) ID() (MsgID, string) {
+	return BDSUTCID, "BDSUTCA"
 }
 
 func init() {

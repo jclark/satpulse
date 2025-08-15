@@ -1,6 +1,7 @@
 package uncmsg
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -114,4 +115,125 @@ func TestSplitDataFields(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUnknownAsciiMessage(t *testing.T) {
+	t.Run("ParseUnknownMessage", func(t *testing.T) {
+		// Test parsing an unknown ASCII message
+		unknownMsg := "#UNKNOWNMSGA,93,GPS,FINE,2376,540337000,0,0,18,29;field1,field2,field3*12345678\r\n"
+		
+		msgHeader, msg, err := ParseAsciiMessage([]byte(unknownMsg))
+		if err != nil {
+			t.Fatalf("ParseAsciiMessage() error = %v", err)
+		}
+		
+		// Check that we got an UnknownAsciiMsg
+		unknownAscii, ok := msg.(*UnknownAsciiMsg)
+		if !ok {
+			t.Fatalf("Expected UnknownAsciiMsg, got %T", msg)
+		}
+		
+		// Check the message name
+		if unknownAscii.Name != "UNKNOWNMSGA" {
+			t.Errorf("UnknownAsciiMsg.Name = %q, want %q", unknownAscii.Name, "UNKNOWNMSGA")
+		}
+		
+		// Check the payload
+		expectedPayload := "field1,field2,field3"
+		if unknownAscii.Payload != expectedPayload {
+			t.Errorf("UnknownAsciiMsg.Payload = %q, want %q", unknownAscii.Payload, expectedPayload)
+		}
+		
+		// Check ID() method
+		id, name := unknownAscii.ID()
+		if id != 0 {
+			t.Errorf("UnknownAsciiMsg.ID() id = %d, want 0", id)
+		}
+		if name != "UNKNOWNMSGA" {
+			t.Errorf("UnknownAsciiMsg.ID() name = %q, want %q", name, "UNKNOWNMSGA")
+		}
+		
+		// Check header is still parsed correctly
+		if msgHeader.CPUIdlePercent != 93 {
+			t.Errorf("Header CPUIdlePercent = %d, want 93", msgHeader.CPUIdlePercent)
+		}
+	})
+	
+	t.Run("SerializeUnknownMessage", func(t *testing.T) {
+		// Create an unknown ASCII message
+		unknownMsg := &UnknownAsciiMsg{
+			Name:    "TESTMSGA",
+			Payload: "data1,data2,data3",
+		}
+		
+		header := MessageHeader{
+			CPUIdlePercent: 85,
+			TimingHeader: TimingHeader{
+				TimeRef:            TimeRefGPS,
+				TimeStatus:         TimeStatusFine,
+				Week:               2400,
+				MillisecondsOfWeek: 123456789,
+				Version:            1,
+				LeapSec:            18,
+				DelayMs:            42,
+			},
+		}
+		
+		// Serialize the message
+		packet, err := SerializeAsciiMsg(header, unknownMsg)
+		if err != nil {
+			t.Fatalf("SerializeAsciiMsg() error = %v", err)
+		}
+		
+		// Convert to string and check it contains expected parts
+		packetStr := string(packet)
+		if !strings.HasPrefix(packetStr, "#TESTMSGA,") {
+			t.Errorf("Serialized packet doesn't start with #TESTMSGA,: %q", packetStr)
+		}
+		if !strings.Contains(packetStr, ";data1,data2,data3*") {
+			t.Errorf("Serialized packet doesn't contain expected payload: %q", packetStr)
+		}
+		
+		// Parse it back and verify round-trip
+		msgHeader2, msg2, err := ParseAsciiMessage(packet)
+		if err != nil {
+			t.Fatalf("ParseAsciiMessage() round-trip error = %v", err)
+		}
+		
+		unknownAscii2, ok := msg2.(*UnknownAsciiMsg)
+		if !ok {
+			t.Fatalf("Round-trip: Expected UnknownAsciiMsg, got %T", msg2)
+		}
+		
+		if unknownAscii2.Name != unknownMsg.Name {
+			t.Errorf("Round-trip: Name = %q, want %q", unknownAscii2.Name, unknownMsg.Name)
+		}
+		if unknownAscii2.Payload != unknownMsg.Payload {
+			t.Errorf("Round-trip: Payload = %q, want %q", unknownAscii2.Payload, unknownMsg.Payload)
+		}
+		if msgHeader2.CPUIdlePercent != header.CPUIdlePercent {
+			t.Errorf("Round-trip: CPUIdlePercent = %d, want %d", msgHeader2.CPUIdlePercent, header.CPUIdlePercent)
+		}
+	})
+	
+	t.Run("SerializeUnknownBinaryMessageFails", func(t *testing.T) {
+		// Create an unknown binary message (has no name)
+		unknownMsg := &UnknownBinMsg{
+			MsgID:   12345,
+			Payload: []byte{1, 2, 3, 4},
+		}
+		
+		header := MessageHeader{
+			CPUIdlePercent: 85,
+		}
+		
+		// Try to serialize as ASCII - should fail
+		_, err := SerializeAsciiMsg(header, unknownMsg)
+		if err == nil {
+			t.Fatal("SerializeAsciiMsg() should have failed for UnknownBinMsg")
+		}
+		if !strings.Contains(err.Error(), "unknown binary message cannot be serialized as ASCII") {
+			t.Errorf("Expected error about binary message, got: %v", err)
+		}
+	})
 }

@@ -3,6 +3,7 @@ package uncmsg
 import (
 	"bytes"
 	"encoding/binary"
+	"strings"
 	"testing"
 )
 
@@ -79,6 +80,29 @@ func TestBinHeader(t *testing.T) {
 
 		if msgHeader != expectedHeader {
 			t.Errorf("Header mismatch:\nGot:      %+v\nExpected: %+v", msgHeader, expectedHeader)
+		}
+	})
+}
+
+func TestUnknownBinaryMessage(t *testing.T) {
+	t.Run("SerializeUnknownAsciiMessageFails", func(t *testing.T) {
+		// Create an unknown ASCII message (has no numeric ID)
+		unknownMsg := &UnknownAsciiMsg{
+			Name:    "TESTMSGA",
+			Payload: "data1,data2,data3",
+		}
+		
+		header := MessageHeader{
+			CPUIdlePercent: 85,
+		}
+		
+		// Try to serialize as binary - should fail
+		_, err := SerializeBinMsg(header, unknownMsg)
+		if err == nil {
+			t.Fatal("SerializeBinMsg() should have failed for UnknownAsciiMsg")
+		}
+		if !strings.Contains(err.Error(), "unknown ASCII message cannot be serialized as binary") {
+			t.Errorf("Expected error about ASCII message, got: %v", err)
 		}
 	})
 }

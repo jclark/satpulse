@@ -18,11 +18,11 @@ type AsciiHeader struct {
 
 // UnknownAsciiMsg represents an unrecognized ASCII message
 type UnknownAsciiMsg struct {
-	MsgID   MsgID
+	Name    string
 	Payload string
 }
 
-func (m *UnknownAsciiMsg) ID() MsgID { return m.MsgID }
+func (m *UnknownAsciiMsg) ID() (MsgID, string) { return 0, m.Name }
 
 // ParseAsciiMessage parses a Unicore ASCII message from bytes.
 // It assumes the packet format scanner has validated the packet structure
@@ -62,16 +62,11 @@ func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
 		TimingHeader:   asciiHeader.TimingHeader,
 	}
 
-	// Look up message ID by name
-	msgID, ok := asciiNameIDMap[asciiHeader.MessageName]
-	if !ok {
-		return MessageHeader{}, nil, fmt.Errorf("unknown message type: %s", asciiHeader.MessageName)
-	}
-
-	// Look up message constructor
-	ctor := msgMap[msgID]
+	// Look up message constructor by name
+	ctor := msgNameMap[asciiHeader.MessageName]
 	if ctor == nil {
-		return msgHeader, &UnknownAsciiMsg{MsgID: msgID, Payload: dataPart}, nil
+		// Unknown message - preserve the name and payload
+		return msgHeader, &UnknownAsciiMsg{Name: asciiHeader.MessageName, Payload: dataPart}, nil
 	}
 
 	// Create message instance before parsing data fields
@@ -183,12 +178,14 @@ func splitDataFields(dataPart string, expectedFieldCount int) []string {
 
 // SerializeAsciiMsg serializes a Unicore message with header into ASCII format
 func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
-	// Get message name from ID
-	msgName, found := idNameMap[msg.ID()]
-	if !found {
-		return nil, fmt.Errorf("unknown message ID: %d", msg.ID())
+	// Get message ID and name
+	_, msgName := msg.ID()
+	if msgName == "" {
+		return nil, fmt.Errorf("unknown binary message cannot be serialized as ASCII")
 	}
-	asciiMsgName := msgName + "A"
+	
+	// Use the name directly - it already contains the correct wire format
+	asciiMsgName := msgName
 
 	// Serialize header using fieldenc
 	asciiHeader := AsciiHeader{
