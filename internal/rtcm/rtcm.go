@@ -171,6 +171,11 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 	return msgID, nil
 }
 
+// NativeOnly returns true since RTCM only provides correction data
+func (p *PacketProcessor) NativeOnly() bool {
+	return true
+}
+
 // ParseMessage parses a packet into an RTCM Message
 func ParseMessage(packet string) *Message {
 	return &Message{

@@ -7,14 +7,13 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/nmea"
-	"github.com/jclark/satpulse/internal/rtcm"
 	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/internal/ubx"
 	"golang.org/x/exp/maps"
 )
 
@@ -189,8 +188,8 @@ func (mh *msgHandler) detect(ctx context.Context) error {
 		var msg string
 		if mh.bad.framingErrs > 0 {
 			msg = "framing errors reading GPS output (wrong speed?)"
-		} else if mh.msgCount[rtcm.Tag] > 0 {
-			msg = "only RTCM messages detected from GPS"
+		} else if nativeOnly := mh.nativeOnlyTags(); len(nativeOnly) > 0 {
+			msg = fmt.Sprintf("only messages with these protocols detected: %s", strings.Join(nativeOnly, ", "))
 		} else if mh.bad.invalidBytes+mh.bad.corruptMsgs == 0 {
 			msg = "no output detected from GPS"
 		} else if mh.bad.corruptMsgs > 0 {
@@ -198,7 +197,7 @@ func (mh *msgHandler) detect(ctx context.Context) error {
 		} else {
 			msg = "cannot parse GPS output"
 		}
-		lg.Debug("not receiving data from GPS correctly", "bad", mh.bad, "rtcmMsgCount", mh.msgCount[rtcm.Tag])
+		lg.Debug("not receiving data from GPS correctly", "bad", mh.bad, "nativeOnlyTags", mh.nativeOnlyTags())
 		return errors.New(msg)
 	}
 	lg.Info("detected a GPS")
@@ -405,7 +404,25 @@ loop:
 }
 
 func (mh *msgHandler) suitableMessageCount() int {
-	return mh.msgCount[ubx.Tag] + mh.msgCount[nmea.Tag]
+	count := 0
+	for tag, msgCount := range mh.msgCount {
+		if pp, ok := mh.packetProcs[tag]; ok && !pp.NativeOnly() {
+			count += msgCount
+		}
+	}
+	return count
+}
+
+func (mh *msgHandler) nativeOnlyTags() []string {
+	var tags []string
+	for tag, msgCount := range mh.msgCount {
+		if msgCount > 0 {
+			if pp, ok := mh.packetProcs[tag]; ok && pp.NativeOnly() {
+				tags = append(tags, string(tag))
+			}
+		}
+	}
+	return tags
 }
 
 func (mh *msgHandler) totalMsgCount() int {

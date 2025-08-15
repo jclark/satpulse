@@ -88,6 +88,12 @@ type PacketProcessor interface {
 	// CreatePacketExchanger creates a PacketExchanger if configuration is supported
 	// Returns nil if configuration is not supported
 	CreatePacketExchanger() PacketExchanger
+
+	// NativeOnly returns true if this processor only generates native messages
+	// and never produces protocol-agnostic messages like TimeMsg or SatellitesMsg.
+	// This is typically true for protocols that provide correction data rather
+	// than positioning solutions (e.g., RTCM).
+	NativeOnly() bool
 }
 
 // DefaultPacketProcessor provides default implementations of PacketProcessor methods
@@ -123,6 +129,11 @@ func (p *DefaultPacketProcessor) GetNativeMsgHandler() NativeMsgHandler {
 // CreatePacketExchanger returns nil by default as most protocols don't support configuration
 func (p *DefaultPacketProcessor) CreatePacketExchanger() PacketExchanger {
 	return nil
+}
+
+// NativeOnly returns false by default since most protocols provide timing/positioning
+func (p *DefaultPacketProcessor) NativeOnly() bool {
+	return false
 }
 
 type NMEAPacketProcessor interface {
