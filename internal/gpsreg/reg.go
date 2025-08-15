@@ -28,9 +28,11 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 		nmeaPP.SetSVNumbering(nmeaNumbering)
 	}
 	return map[gpsprot.Tag]gpsprot.PacketProcessor{
-		ubx.Tag:  ubx.NewPacketProcessor(),
-		nmea.Tag: nmeaPP,
-		rtcm.Tag: rtcm.NewPacketProcessor(),
+		ubx.Tag:       ubx.NewPacketProcessor(),
+		nmea.Tag:      nmeaPP,
+		rtcm.Tag:      rtcm.NewPacketProcessor(),
+		unc.TagBinary: unc.NewBinPacketProcessor(),
+		unc.TagAscii:  unc.NewAsciiPacketProcessor(),
 	}
 }
 
