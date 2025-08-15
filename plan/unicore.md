@@ -375,6 +375,7 @@ We want to implement this using the new Configurator design in `plan/configurato
 **Infrastructure**
 
 - Flexible NMEA parsing #134
+- Protocol-agnostic GPS detection #137 (removes hardcoded protocol knowledge from gpscfg)
 
 **Library Layer (`internal/uncmsg/`)**
 
@@ -383,11 +384,21 @@ Parsing of binary and ASCII Unicore messages. Analogous to ubx/bin package.
 **Domain Layer (`internal/unc/`)**
 - `asciipacket.go` - UNCA ASCII packet format (PacketFormat)
 - `binpacket.go` - UNCB binary packet format (PacketFormat)
+- `processor.go` - PacketProcessor implementation with:
+  - BinPacketProcessor for UNCB packets
+  - AsciiPacketProcessor for UNCA packets
+  - Registration in gpsreg
+- `time.go` - Time message mapping:
+  - RECTIMEB → TimeMsg conversion (basic timing functionality)
+  - UTC offset and accuracy conversion
+  - TimeRef to GNSS mapping
 - `cfgprops.go` - Native configuration properties implementation
   - ppsProp with full PPS command handling
   - signalGroupProp with basic signal group support
   - maskProp with MASK/UNMASK command support
 - `config.go` - Configurator that partially implements new Configurator2 interface
+
+**Track 1 Status**: Initial goal achieved - satpulsed can now use Unicore binary messages for timing when manually configured to output RECTIMEB
 
 ## Future Enhancements
 
