@@ -11,9 +11,8 @@ This is convenient, but there is a more precise way to determine the antenna pos
 Online PPP services typically expect the data to be in [RINEX](https://igs.org/wg/rinex/) format.
 This document explains how to use SatPulse to collect the data, convert it to RINEX format.
 It also explains how to use one particular PPP service, the CSRS-PPP service operated by Canadian Geodetic Survey of Natural Resources Canada. Although this service is operated by the Canadian Government, it works for data collected anywhere in the world.
-SatPulse currently 
 
-This needs a u-blox timing or high-precision module (names have a a T or P suffix, like LEA-M8T or ZED-F9P): u-blox is needed because SatPulse current only knows how to configure GNSS receivers that use u-blox's UBX protocol; a timing or high-precision module is needed because only they have a timing mode and support raw output.
+This needs a u-blox timing or high-precision module (names have a a T or P suffix, like LEA-M8T or ZED-F9P): u-blox is needed because SatPulse currently only knows how to configure GNSS receivers that use u-blox's UBX protocol; a timing or high-precision module is needed because only they have a timing mode and support raw output.
 
 ## Creating RINEX observation file for submission
 
