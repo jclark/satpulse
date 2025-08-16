@@ -90,12 +90,20 @@ func (p *packetProcessor) dispatch(header uncmsg.MessageHeader, msg uncmsg.Msg, 
 			p.mh.Time(tm, tRead)
 			return true, nil
 		}
+	case *uncmsg.SatsInfo:
+		sm, err := satellitesSatsInfo(header, m, tag)
+		if err != nil {
+			return false, err
+		}
+		if sm != nil {
+			p.mh.Satellites(sm, tRead)
+			return true, nil
+		}
 	// TODO: Add other message type conversions here
 	// case *uncmsg.GPSUTC:
 	// case *uncmsg.GALUTC:
 	// case *uncmsg.BD3UTC:
 	// case *uncmsg.BDSUTC:
-	// case *uncmsg.SatsInfo:
 	}
 	
 	return false, nil

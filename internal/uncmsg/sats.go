@@ -5,6 +5,96 @@ const (
 	SatsInfoID MsgID = 2124
 )
 
+// SysID represents the GNSS system identifier in Unicore messages
+// Based on Table 7-112 in protocol.md
+type SysID byte
+
+// GNSS system ID constants from Unicore protocol
+const (
+	SysGPS SysID = iota
+	SysGLO
+	SysSBAS
+	SysGAL
+	SysBDS
+	SysQZSS
+	SysNAVIC
+)
+
+// FreqID represents the frequency identifier in Unicore messages
+// Based on Table 7-113 in protocol.md
+type FreqID byte
+
+// Frequency ID constants from Unicore protocol (Table 7-113)
+// GPS frequencies
+const (
+	FreqGPSL1CA FreqID = 0  // L1 C/A
+	FreqGPSL2P  FreqID = 9  // L2P(Y)
+	FreqGPSL1CP FreqID = 3  // L1C pilot
+	FreqGPSL1CD FreqID = 11 // L1C data
+	FreqGPSL5D  FreqID = 6  // L5 data
+	FreqGPSL5P  FreqID = 14 // L5 pilot
+	FreqGPSL2CL FreqID = 17 // L2C(L)
+)
+
+// GLONASS frequencies
+const (
+	FreqGLOL1CA FreqID = 0 // L1 C/A
+	FreqGLOL2CA FreqID = 5 // L2 C/A
+	FreqGLOG3I  FreqID = 6 // G3I
+	FreqGLOG3Q  FreqID = 7 // G3Q
+)
+
+// Galileo frequencies
+const (
+	FreqGALE1B  FreqID = 1  // E1B
+	FreqGALE1C  FreqID = 2  // E1C
+	FreqGALE5AP FreqID = 12 // E5A pilot
+	FreqGALE5BP FreqID = 17 // E5B pilot
+	FreqGALE6B  FreqID = 18 // E6B
+	FreqGALE6C  FreqID = 22 // E6C
+)
+
+// BeiDou frequencies
+const (
+	FreqBDSB1I  FreqID = 0  // B1I
+	FreqBDSB1Q  FreqID = 4  // B1Q
+	FreqBDSB1CP FreqID = 8  // B1C(Pilot)
+	FreqBDSB1CD FreqID = 23 // B1C(Data)
+	FreqBDSB2Q  FreqID = 5  // B2Q
+	FreqBDSB2I  FreqID = 17 // B2I
+	FreqBDSB2aP FreqID = 12 // B2a(Pilot)
+	FreqBDSB2aD FreqID = 28 // B2a(Data)
+	FreqBDSB3Q  FreqID = 6  // B3Q
+	FreqBDSB3I  FreqID = 21 // B3I
+	FreqBDSB2bI FreqID = 13 // B2b(I)
+)
+
+// QZSS frequencies
+const (
+	FreqQZSSL1CA FreqID = 0  // L1 C/A
+	FreqQZSSL1CB FreqID = 1  // L1C/B
+	FreqQZSSL1CP FreqID = 3  // L1C pilot
+	FreqQZSSL1S  FreqID = 4  // L1S
+	FreqQZSSL5D  FreqID = 6  // L5 data
+	FreqQZSSL1CD FreqID = 11 // L1C data
+	FreqQZSSL5P  FreqID = 14 // L5 pilot
+	FreqQZSSL2CL FreqID = 17 // L2C(L)
+	FreqQZSSL6D  FreqID = 21 // L6D
+	FreqQZSSL6E  FreqID = 27 // L6E
+)
+
+// SBAS frequencies
+const (
+	FreqSBASL1CA FreqID = 0 // L1 C/A
+	FreqSBASL5I  FreqID = 6 // L5(I)
+)
+
+// NavIC frequencies
+const (
+	FreqNAVICL5D FreqID = 6  // L5 data
+	FreqNAVICL5P FreqID = 14 // L5 pilot
+)
+
 // SatsInfo represents detailed information for all tracked satellites
 type SatsInfo struct {
 	SatsInfoInitChunk
@@ -22,7 +112,7 @@ type SatsInfoInitChunk struct {
 
 type SatsInfoSat struct {
 	SatsInfoSatChunk
-	Freqs []SatsInfoFreq
+	Freqs []SatsInfoFreq // length guaranteed > 0
 }
 
 // SatsInfoSatChunk represents information for a single satellite in SATSINFO
@@ -34,9 +124,9 @@ type SatsInfoSatChunk struct {
 
 // SatsInfoFreq represents information for a single frequency in a satellite
 type SatsInfoFreq struct {
-	SysStatus  byte
+	SysStatus  SysID
 	SNR        byte
-	FreqStatus byte
+	FreqStatus FreqID
 	FreqNo     byte // Number of frequencies for this PRN
 }
 

@@ -392,6 +392,10 @@ Parsing of binary and ASCII Unicore messages. Analogous to ubx/bin package.
   - RECTIMEB → TimeMsg conversion (basic timing functionality)
   - UTC offset and accuracy conversion
   - TimeRef to GNSS mapping
+- `sats.go` - Satellite message mapping:
+  - SATSINFOB → SatellitesMsg conversion
+  - Signal tracking status and CN0 mapping
+  - Multi-constellation support
 - `cfgprops.go` - Native configuration properties implementation
   - ppsProp with full PPS command handling
   - signalGroupProp with basic signal group support
@@ -399,6 +403,7 @@ Parsing of binary and ASCII Unicore messages. Analogous to ubx/bin package.
 - `config.go` - Configurator that partially implements new Configurator2 interface
 
 **Track 1 Status**: Initial goal achieved - satpulsed can now use Unicore binary messages for timing when manually configured to output RECTIMEB
+- SATSINFO to SatellitesMsg conversion implemented
 
 ## Future Enhancements
 
