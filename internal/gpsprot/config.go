@@ -135,6 +135,8 @@ type ConfigProps struct {
 	mode              Mode
 	antennaCableDelay time.Duration
 	navMsgAuth        NavMsgAuth
+	rtcmBaseID        uint16
+	minElevation      Angle
 }
 
 const (
@@ -149,6 +151,8 @@ const (
 	PropIDMode
 	PropIDAntennaCableDelay
 	PropIDNavMsgAuth
+	PropIDRTCMBaseID
+	PropIDMinElevation
 	PropIDTimePulse PropIDs = PropIDTimePulseWidth | PropIDTimePulsePeriod |
 		PropIDTimePulseAlignToGNSS | PropIDTimePulseOnlyWhenLocked | PropIDTimePulsePolarityRising
 )
@@ -165,6 +169,8 @@ var propNames = []string{
 	"Mode",
 	"AntennaCableDelay",
 	"NavMsgAuth",
+	"RTCMBaseID",
+	"MinElevation",
 }
 
 // IsEmpty returns true if no properties are set
@@ -530,6 +536,34 @@ func (cp *ConfigProps) SetNavMsgAuth(val NavMsgAuth) {
 	cp.valid |= PropIDNavMsgAuth
 }
 
+// GetRTCMBaseID returns the rtcmBaseID value and whether it's set
+func (cp *ConfigProps) GetRTCMBaseID() (uint16, bool) {
+	if cp.valid&PropIDRTCMBaseID != 0 {
+		return cp.rtcmBaseID, true
+	}
+	return 0, false
+}
+
+// SetRTCMBaseID sets the rtcmBaseID value
+func (cp *ConfigProps) SetRTCMBaseID(val uint16) {
+	cp.rtcmBaseID = val
+	cp.valid |= PropIDRTCMBaseID
+}
+
+// GetMinElevation returns the minElevation value and whether it's set
+func (cp *ConfigProps) GetMinElevation() (Angle, bool) {
+	if cp.valid&PropIDMinElevation != 0 {
+		return cp.minElevation, true
+	}
+	return 0, false
+}
+
+// SetMinElevation sets the minElevation value
+func (cp *ConfigProps) SetMinElevation(val Angle) {
+	cp.minElevation = val
+	cp.valid |= PropIDMinElevation
+}
+
 // SetsAny returns true if any of the specified properties are set in the ConfigProps
 func (cp *ConfigProps) SetsAny(props ...PropIDs) bool {
 	for _, p := range props {
@@ -593,6 +627,12 @@ func (cp *ConfigProps) CopyFrom(other *ConfigProps) {
 	if other.valid&PropIDNavMsgAuth != 0 {
 		cp.navMsgAuth = other.navMsgAuth
 	}
+	if other.valid&PropIDRTCMBaseID != 0 {
+		cp.rtcmBaseID = other.rtcmBaseID
+	}
+	if other.valid&PropIDMinElevation != 0 {
+		cp.minElevation = other.minElevation
+	}
 	cp.valid |= other.valid
 }
 
@@ -634,6 +674,12 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	}
 	if both&PropIDNavMsgAuth != 0 && cp.navMsgAuth != other.navMsgAuth {
 		result.SetNavMsgAuth(other.navMsgAuth)
+	}
+	if both&PropIDRTCMBaseID != 0 && cp.rtcmBaseID != other.rtcmBaseID {
+		result.SetRTCMBaseID(other.rtcmBaseID)
+	}
+	if both&PropIDMinElevation != 0 && cp.minElevation != other.minElevation {
+		result.SetMinElevation(other.minElevation)
 	}
 	return result
 }
@@ -713,6 +759,12 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 		case NavMsgAuthOSNMA:
 			m["navMsgAuth"] = "OSNMA"
 		}
+	}
+	if cp.valid&PropIDRTCMBaseID != 0 {
+		m["rtcmBaseID"] = cp.rtcmBaseID
+	}
+	if cp.valid&PropIDMinElevation != 0 {
+		m["minElevation"] = cp.minElevation.Degrees()
 	}
 	return m
 }

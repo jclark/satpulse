@@ -249,7 +249,7 @@ type SVID struct {
 	// Numbering is the same as in RINEX 3.04.
 	// For GPS, GAL, BDS, NAVIC, this is the PRN (pseudo-random noise) number.
 	// For GLONASS, this is the orbital slot number.
-	// For SBAS, this is the PRN number minus 120.
+	// For SBAS, this is the PRN number minus 100.
 	// For QZSS, this is the PRN number minus 192.
 	// This gives two-digit, non-zero numbers.
 	// In addition, this can be GLOUnknown, when the GNSS is GLONASS
