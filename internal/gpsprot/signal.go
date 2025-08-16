@@ -257,6 +257,8 @@ const (
 	SigIDGPSL2CL SignalID = "L2C-L" // L2C pilot
 	SigIDGPSL5I  SignalID = "L5-I"  // L5 data
 	SigIDGPSL5Q  SignalID = "L5-Q"  // L5 pilot
+	SigIDGPSL1CD SignalID = "L1C-D" // L1C data
+	SigIDGPSL1CP SignalID = "L1C-P" // L1C pilot
 
 	// GLONASS SignalID constants
 	SigIDGLOL1  SignalID = "L1"  // friendlier name for L1 C/A
