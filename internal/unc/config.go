@@ -169,5 +169,5 @@ func (c *Configurator) GenerateQueryReqs() {
 }
 
 func (c *Configurator) GenerateConfigCommands() []string {
-	return c.nativeProps.generateConfigCommands(&c.target.Props)
+	return c.nativeProps.generateConfigCommands(c.target)
 }

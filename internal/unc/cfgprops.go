@@ -76,18 +76,30 @@ func generateQueryCommands(_ *gpsprot.ConfigTarget) []string {
 var errMissingProp = fmt.Errorf("missing property")
 
 // generateConfigCommands generates commands to change the native state to have the abstract properties specified by target
-func (np *nativeConfigProps) generateConfigCommands(target *gpsprot.ConfigProps) []string {
+func (np *nativeConfigProps) generateConfigCommands(target *gpsprot.ConfigTarget) []string {
 	// Create the full set of target abstract props
 	// Convert currrent native props to abstract props
 	fullTargetProps := gpsprot.ConfigProps{}
 	np.convertToProps(&fullTargetProps)
 	// Combine the target abstract props with partial abstract props
 	// to get complete set of target abstract props
-	fullTargetProps.CopyFrom(target)
+	fullTargetProps.CopyFrom(&target.Props)
+
+	// Handle SetStatic by forcing Mode.Static = true
+	if target.Opts.SetStatic {
+		if mode, modeSet := fullTargetProps.GetMode(); modeSet {
+			mode.Static = true
+			fullTargetProps.SetMode(mode)
+		} else {
+			// SetStatic without existing mode → create static mode
+			fullTargetProps.SetMode(gpsprot.Mode{Static: true})
+		}
+	}
+
 	// Make a copy of the native props, which will become the target
 	targetNativeProps := *np
-	// map the complete target abstract props to the native props
-	targetNativeProps.updateFromProps(&fullTargetProps)
+	// map the complete target to the native props
+	targetNativeProps.updateFromProps(&fullTargetProps, target.Opts.Survey)
 	// generate commands to turn current native props to target native props
 	return targetNativeProps.generateCommands(np)
 }
@@ -120,13 +132,13 @@ func (np *nativeConfigProps) updateFromQueryResponse(key, cmd string) error {
 	return prop.updateFromCommand(cmd)
 }
 
-// UpdateFromProps updates all native properties from gpsprot.ConfigProps
-func (np *nativeConfigProps) updateFromProps(props *gpsprot.ConfigProps) error {
+// updateFromProps updates all native properties from ConfigProps and Survey
+func (np *nativeConfigProps) updateFromProps(props *gpsprot.ConfigProps, survey gpsprot.Survey) error {
 	err := np.pps.updateFromProps(props)
 	if err != nil && err != errMissingProp {
 		return err
 	}
-	err = np.mode.updateFromProps(props)
+	err = np.mode.updateFromProps(props, survey)
 	if err != nil && err != errMissingProp {
 		return err
 	}
@@ -413,7 +425,7 @@ func generateMaskCommands(signals gpsprot.SignalSet, sigGroupSignals gpsprot.Sig
 		// But if we use applicable signals here, we would instead mask individually Q1, Q2 and Q5.
 		// This is safe since SIGNALGROUP does a reset.
 		applicableSignals := entry.signalSet & sigGroupSignals
-		if applicableSignals != 0 && (applicableSignals & targetSet) == applicableSignals {
+		if applicableSignals != 0 && (applicableSignals&targetSet) == applicableSignals {
 			commands = append(commands, command+" "+entry.name)
 			targetSet &^= entry.signalSet
 		}
@@ -421,22 +433,157 @@ func generateMaskCommands(signals gpsprot.SignalSet, sigGroupSignals gpsprot.Sig
 	return commands
 }
 
+var modeRegexp = regexp.MustCompile(
+	`^MODE (?:(ROVER(?: [A-Z]+)?(?: [A-Z]+)?)|(HEADING2(?: [A-Z]+)?)|(BASE)(?: (\d+))?(?: TIME (\d+)(?: (\d+))?| (-?\d+\.?\d*) (-?\d+\.?\d*) (-?\d+\.?\d*))?)$`)
+
 type modeProp struct {
 	command string
 }
 
 func (p *modeProp) updateFromCommand(cmd string) error {
+	if !modeRegexp.MatchString(cmd) {
+		return fmt.Errorf("invalid MODE command format: %s", cmd)
+	}
 	p.command = cmd
 	return nil
 }
 
-func (p *modeProp) convertToProps(_ *gpsprot.ConfigProps) error {
-	// TODO: implement mode command parsing
-	return nil
+func (p *modeProp) convertToProps(props *gpsprot.ConfigProps) {
+	if p.command == "" {
+		return
+	}
+
+	matches := modeRegexp.FindStringSubmatch(p.command)
+	if matches == nil {
+		// command was validated in updateFromCommand, so this shouldn't happen
+		panic("invalid MODE command format: " + p.command)
+	}
+
+	baseIDMatch := matches[4] // Base ID (if present)
+	// Set base ID if present (group 4)
+	if baseIDMatch != "" {
+		if baseID, err := strconv.ParseUint(baseIDMatch, 10, 16); err == nil {
+			props.SetRTCMBaseID(uint16(baseID))
+		}
+	}
+
+	// Parse the MODE command and set appropriate properties
+	roverMatch := matches[1]
+	heading2Match := matches[2]
+
+	if roverMatch != "" || heading2Match != "" {
+		// ROVER or HEADING2 mode - not static
+		props.SetMode(gpsprot.Mode{Static: false})
+		return
+	}
+
+	// regexp guarantees that we matched BASE
+	mode := gpsprot.Mode{
+		Static:  true,
+		PosType: gpsprot.PosTypeNone,
+	}
+
+	const coord0 = 7
+	if matches[coord0] == "" {
+		props.SetMode(mode) // No coordinates provided, just base ID
+		return
+	}
+
+	var coords [3]float64
+
+	for i := range 3 {
+		var err error
+		coordMatch := matches[coord0+i]
+		coords[i], err = strconv.ParseFloat(coordMatch, 64)
+		if err != nil {
+			// regexp should have caught this
+			panic("invalid coordinate: " + coordMatch)
+		}
+	}
+	if coordsIsLLH(coords) {
+		mode.PosType = gpsprot.PosTypeLLH
+		mode.FixedPosLLH[0] = gpsprot.DegreesFromFloat(coords[0])
+		mode.FixedPosLLH[1] = gpsprot.DegreesFromFloat(coords[1])
+		mode.Height = gpsprot.Meters(coords[2])
+	} else if coordsIsECEF(coords) {
+		mode.PosType = gpsprot.PosTypeECEF
+		for i := range 3 {
+			mode.FixedPosECEF[i] = gpsprot.Meters(coords[i])
+		}
+	}
+
+	// XXX need to decide what to do about FixedPosAcc
+	props.SetMode(mode)
 }
 
-func (p *modeProp) updateFromProps(_ *gpsprot.ConfigProps) error {
-	// TODO: implement mode command serialization
+func coordsIsLLH(coords [3]float64) bool {
+	for i, coord := range coords {
+		if !coordIsLLH(i, coord) {
+			return false
+		}
+	}
+	return true
+}
+
+func coordsIsECEF(coords [3]float64) bool {
+	for i, coord := range coords {
+		if coordIsLLH(i, coord) {
+			return false
+		}
+	}
+	return true
+}
+
+var maxCoordsLLH = [3]float64{90, 180, 30000}
+
+func coordIsLLH(i int, coord float64) bool {
+	return -maxCoordsLLH[i] <= coord && coord <= maxCoordsLLH[i]
+}
+
+func (p *modeProp) updateFromProps(props *gpsprot.ConfigProps, survey gpsprot.Survey) error {
+	m, modeSet := props.GetMode()
+
+	// Only generate a command if mode is explicitly set
+	if !modeSet {
+		// No mode configuration requested
+		return errMissingProp
+	}
+	var matches []string
+	if p.command != "" {
+		matches = modeRegexp.FindStringSubmatch(p.command)
+		if matches == nil {
+			panic("invalid MODE command format: " + p.command)
+		}
+	}
+	if !m.Static {
+		// if already ROVER or HEADING2 mode then leave as is, so as to preserve existing qualifiers;
+		// otherwise use default ROVER mode
+		if matches == nil || (matches[1] == "" && matches[2] == "") {
+			p.command = "MODE ROVER"
+		}
+		return nil
+	}
+	// Get RTCM base ID, use invalid marker if not set
+	cmd := "MODE BASE"
+	if baseID, ok := props.GetRTCMBaseID(); ok {
+		cmd += fmt.Sprintf(" %d", baseID)
+	}
+	switch m.PosType {
+	case gpsprot.PosTypeLLH:
+		// LLH coordinates: lat/lon 11 decimal places, altitude 6 decimal places
+		cmd += fmt.Sprintf(" %.11f %.11f %.6f", m.FixedPosLLH[0].Degrees(), m.FixedPosLLH[1].Degrees(), m.Height.Meters())
+	case gpsprot.PosTypeECEF:
+		// ECEF coordinates: all 4 decimal places
+		cmd += fmt.Sprintf(" %.4f %.4f %.4f", m.FixedPosECEF[0].Meters(), m.FixedPosECEF[1].Meters(), m.FixedPosECEF[2].Meters())
+	case gpsprot.PosTypeNone:
+		surveySecs := int64(survey.MinDur.Round(time.Second) / time.Second)
+		cmd += fmt.Sprintf(" TIME %d", surveySecs)
+		// Preserve TIME distance parameter if present in existing command
+		if matches != nil && matches[6] != "" {
+			cmd += fmt.Sprintf(" %s", matches[6])
+		}
+	}
+	p.command = cmd
 	return nil
 }
 

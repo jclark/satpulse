@@ -400,6 +400,7 @@ Parsing of binary and ASCII Unicore messages. Analogous to ubx/bin package.
   - ppsProp with full PPS command handling
   - signalGroupProp with basic signal group support
   - maskProp with MASK/UNMASK command support
+  - modeProp with MODE command handling (LLH/ECEF coordinates, survey mode, SetStatic support)
 - `config.go` - Configurator that partially implements new Configurator2 interface
 
 **Track 1 Status**: Initial goal achieved - satpulsed can now use Unicore binary messages for timing when manually configured to output RECTIMEB
