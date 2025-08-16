@@ -176,6 +176,13 @@ This section maps `gpsprot.ConfigProperties` and `gpsprot.ConfigOptions` to Unic
 - **Query**: `CONFIG` (extract RfDelay from PPS configuration)
 - **Set**: `CONFIG PPS` (modify RfDelay parameter)
 
+**MinElevation Property**
+- **Type**: `Angle` - minimum elevation angle for satellite tracking
+- **Query**: `MASK` (extract elevation mask from mask settings)
+- **Set**: `MASK [elevation_angle]` (set elevation mask in degrees)
+- **Implementation**: Handle via existing maskProp using `MASK [number]` command format
+- **Testing**: Test elevation mask parsing from MASK query response, verify elevation angle conversion
+
 **NavMsgAuth Property**
 - **Type**: `NavMsgAuth` - navigation message authentication method
 - **Status**: Not supported by Unicore receivers (return appropriate error)
