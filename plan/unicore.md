@@ -344,10 +344,10 @@ We want to implement this using the new Configurator design in `plan/configurato
 **Initial goal**: Get satpulsetool gps to do something with Unicore receivers
 
 1. Develop unc.Configurator further so that it will be easy to implement the new gpsprot.Configurator2 interface, but without needing gpsprot changes yet
-   - Complete MODE property parsing/generation
-   - Handle `#MODE` responses
-   - Handling probing
-   - Test this in isolation to ensure it is working
+   - Handling probing with VERSIONB (or VERSIONA)
+   - Implement Configurator.GenerateRequests using nativeConfigProps.generateCommands
+   - Implement ConfigRequest interface (but how to deal with ConfigRequestState type/constants?)
+   - Try to test this in isolation to ensure it is working
 2. Implement #136 Part 1 (would be a separate branch off master)
    - Add Configurator2 interface to gpsprot (matching what Unicore already has)
    - Update gpscfg to use Configurator2 for protocols that provide it
@@ -371,6 +371,7 @@ We want to implement this using the new Configurator design in `plan/configurato
    - Raw messages 
 * Support for Save/Reset/FactoryReset
 * Handle SBAS
+* MinElevation property
 * Support for baud-rate
    * Add NOVA packet format for BaudRate support
    * Handle LOGLIST output
