@@ -90,12 +90,13 @@ func (cp *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (*Configurator
 	if cp.ver == nil {
 		panic("Configure called without successful ProbeOK()")
 	}
-	return &Configurator{
+	cp.cfg = &Configurator{
 		target:      target,
 		ver:         cp.ver,
 		nativeProps: makeNativeProps(),
 		phase:       phaseInit,
-	}, nil
+	}
+	return cp.cfg, nil
 }
 
 func (c *Configurator) Request(index int) *ConfigRequest {
@@ -340,13 +341,23 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 
 // configQueryResponse handles a response to query, where the response has the form
 // `$CONFIG,PPS,CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0*6A`
-// fields here with be {"PPS","CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0"}
+// fields here will be {"PPS","CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0"}
+// or `$CONFIG,MASK,MASK 5*XX`  
+// fields here will be {"MASK","MASK 5"}
 func (c *Configurator) configQueryResponse(fields []string, tRead time.Time) error {
 	if len(fields) < 2 {
 		return fmt.Errorf("invalid config query response format: %v", fields)
 	}
 
-	return c.queryResponse("CONFIG", fields[0], fields[1], tRead)
+	// Determine which query this response belongs to
+	// CONFIG query gets responses with PPS, SIGNALGROUP keys
+	// MASK query gets responses with MASK key
+	query := "CONFIG"
+	if fields[0] == "MASK" {
+		query = "MASK"
+	}
+	
+	return c.queryResponse(query, fields[0], fields[1], tRead)
 }
 
 func (c *Configurator) modeResponse(mode *uncmsg.Mode, tRead time.Time) error {
