@@ -143,6 +143,7 @@ const (
     ConfigRequestNotReady ConfigRequestState = iota
     ConfigRequestReadyToSend
     ConfigRequestAwaitingResponse
+    ConfigRequestMaybeComplete
     ConfigRequestPausing
     ConfigRequestSucceeded
     ConfigRequestMayResend
@@ -154,12 +155,12 @@ type ConfigRequest interface {
     GetPacket() []byte
     GetSpeedChangeAfter() int
     GetState() ConfigRequestState
-    GetResponseDeadline() time.Time  // valid when state is ConfigRequestAwaitingResponse
+    GetResponseDeadline() time.Time  // valid when state is ConfigRequestAwaitingResponse or ConfigRequestMaybeComplete
     GetReadyTime() time.Time         // valid when state is ConfigRequestPausing
     GetError() error                 // valid when state is ConfigRequestFailed
 
     SetSentTime(tSent time.Time)
-    SetTimedOut()
+    SetResponseDeadlinePassed()
     SetWontResend()
 }
 
@@ -180,6 +181,8 @@ The state of the Configurator consists of a slice of requests and state that can
 
 **ConfigRequestAwaitingResponse**: The request has been sent and the Configurator is expecting to receive one or more packets in response from the receiver.
 
+**ConfigRequestMaybeComplete**: The request has received at least one response packet and may be waiting for more. This state is used for queries that can produce multiple response packets where the total number is not known in advance. The request will transition to Succeeded when the response deadline passes without new responses.
+
 **ConfigRequestPausing**: The request received its acknowledgment/response and is waiting for a protocol-specified pause duration before the next request can be sent.
 
 **ConfigRequestSucceeded**: The request completed successfully.
@@ -199,7 +202,8 @@ ConfigRequestState values change in response to:
 **Client-initiated transitions:**
 - `SetSentTime()`: ConfigRequestReadyToSend → ConfigRequestAwaitingResponse (if response expected) or ConfigRequestSucceeded (if no response expected)
 - `SetSentTime()`: ConfigRequestMayResend → ConfigRequestAwaitingResponse (client chooses to retry)
-- `SetTimedOut()`: ConfigRequestAwaitingResponse → ConfigRequestMayResend
+- `SetResponseDeadlinePassed()`: ConfigRequestAwaitingResponse → ConfigRequestMayResend
+- `SetResponseDeadlinePassed()`: ConfigRequestMaybeComplete → ConfigRequestSucceeded
 - `SetWontResend()`: ConfigRequestMayResend → ConfigRequestFailed
 
 **Automatic transitions from packet processing:**
@@ -208,6 +212,8 @@ ConfigRequestState values change in response to:
 - NACK received: ConfigRequestAwaitingResponse → ConfigRequestFailed  
 - Expected poll response received + pause needed: ConfigRequestAwaitingResponse → ConfigRequestPausing
 - Expected poll response received + no pause: ConfigRequestAwaitingResponse → ConfigRequestSucceeded
+- First response received for multi-response query: ConfigRequestAwaitingResponse → ConfigRequestMaybeComplete
+- Additional responses received: ConfigRequestMaybeComplete → ConfigRequestMaybeComplete (updates internal timing)
 - Protocol error detected: ConfigRequestAwaitingResponse → ConfigRequestFailed
 - Pause duration elapsed: ConfigRequestPausing → ConfigRequestSucceeded
 
@@ -252,10 +258,11 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 
 **GetResponseDeadline(index int) time.Time**:
 - Precondition: `index < GetRequestCount()`
-- Precondition: request state is ConfigRequestAwaitingResponse
-- Returns the absolute time by which all response packets must have been received
+- Precondition: request state is ConfigRequestAwaitingResponse or ConfigRequestMaybeComplete
+- Returns the absolute time by which response packets are expected
 - The returned time is non-zero and includes monotonic time for accurate timeout comparisons
-- The deadline is calculated based on protocol-specific timeout values and the timestamp provided to SetSentTime()
+- For ConfigRequestAwaitingResponse: deadline for receiving first/only response (based on SetSentTime timestamp)
+- For ConfigRequestMaybeComplete: deadline for receiving next response in burst (based on last response time + idle period)
 
 **GetReadyTime(index int) time.Time**:
 - Precondition: `index < GetRequestCount()`
@@ -278,13 +285,15 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 - State effect: ConfigRequestMayResend → ConfigRequestAwaitingResponse (client chooses to retry)
 - The timestamp is used for timeout calculations and protocol timing requirements
 
-**SetTimedOut(index int)**:
+**SetResponseDeadlinePassed(index int)**:
 - Precondition: `index < GetRequestCount()`
-- Precondition: request state is ConfigRequestAwaitingResponse
-- Marks a request as timed out
-- State effect: ConfigRequestAwaitingResponse → ConfigRequestMayResend
-- This should be called when no response is received by the deadline
-- The client can then decide whether to retry or abandon the request
+- Precondition: request state is ConfigRequestAwaitingResponse or ConfigRequestMaybeComplete
+- Notifies that the response deadline has passed
+- State effect: ConfigRequestAwaitingResponse → ConfigRequestMayResend (timeout, can retry)
+- State effect: ConfigRequestMaybeComplete → ConfigRequestSucceeded (idle period over, no more responses expected)
+- The client should call this when GetResponseDeadline() time has passed
+- For AwaitingResponse, the client can then decide whether to retry or abandon
+- For MaybeComplete, this indicates the response burst is considered complete
 
 **SetWontResend(index int)**:
 - Precondition: `index < GetRequestCount()`
@@ -319,14 +328,18 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 6. **Natural Retry Handling**: `ConfigRequestMayResend` state gives client explicit control over retry decisions
 7. **Protocol Independence**: The interface works for any protocol implementation
 8. **Easier Testing**: Request objects can be easily mocked and tested independently
+9. **Multi-Response Query Support**: `ConfigRequestMaybeComplete` state properly handles queries that produce variable numbers of response packets
 
 ### State Transitions
 
 - `ConfigRequestNotReady` → `ConfigRequestReadyToSend` (when previous request succeeds)
 - `ConfigRequestReadyToSend` → `ConfigRequestAwaitingResponse` | `ConfigRequestSucceeded` (via SetSentTime)
 - `ConfigRequestAwaitingResponse` → `ConfigRequestPausing` | `ConfigRequestSucceeded` | `ConfigRequestFailed` (via packet processing)
-- `ConfigRequestAwaitingResponse` → `ConfigRequestMayResend` (via SetTimedOut)
+- `ConfigRequestAwaitingResponse` → `ConfigRequestMaybeComplete` (via packet processing - first response for multi-response query)
+- `ConfigRequestAwaitingResponse` → `ConfigRequestMayResend` (via SetResponseDeadlinePassed)
 - `ConfigRequestAwaitingResponse` → `ConfigRequestFailed` (via Configurator decision - no retry allowed)
+- `ConfigRequestMaybeComplete` → `ConfigRequestMaybeComplete` (via packet processing - additional responses)
+- `ConfigRequestMaybeComplete` → `ConfigRequestSucceeded` (via SetResponseDeadlinePassed - idle period over)
 - `ConfigRequestPausing` → `ConfigRequestSucceeded` (when pause duration elapses)
 - `ConfigRequestMayResend` → `ConfigRequestAwaitingResponse` (via SetSentTime - client chooses retry)
 - `ConfigRequestMayResend` → `ConfigRequestFailed` (via SetWontResend)
@@ -548,10 +561,10 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchange
             req.SetSentTime(tSend)
             
         case gpsprot.ConfigActionCheckTimeout:
-            // Check if this specific request has timed out
+            // Check if this specific request's deadline has passed
             if time.Now().After(action.Deadline) {
                 req := cfgtor.Request(action.Index)
-                req.SetTimedOut()
+                req.SetResponseDeadlinePassed()
             }
             
         case gpsprot.ConfigActionWaitUntil:
@@ -697,11 +710,15 @@ func (cr *configRequest) SetSentTime(tSent time.Time) {
     }
 }
 
-func (cr *configRequest) SetTimedOut() {
-    if cr.state != gpsprot.ConfigRequestAwaitingResponse {
-        panic("SetTimedOut called in wrong state")
+func (cr *configRequest) SetResponseDeadlinePassed() {
+    switch cr.state {
+    case gpsprot.ConfigRequestAwaitingResponse:
+        cr.state = gpsprot.ConfigRequestMayResend
+    case gpsprot.ConfigRequestMaybeComplete:
+        cr.state = gpsprot.ConfigRequestSucceeded
+    default:
+        panic("SetResponseDeadlinePassed called in wrong state")
     }
-    cr.state = gpsprot.ConfigRequestMayResend
 }
 
 func (cr *configRequest) SetWontResend() {
@@ -967,7 +984,7 @@ func (r *replayer) run() {
             // Check timeout against recorded timeline
             if lastProcessedTime.After(action.Deadline) {
                 req := r.cfgtor.Request(action.Index)
-                req.SetTimedOut()
+                req.SetResponseDeadlinePassed()
             }
             
         case gpsprot.ConfigActionWaitUntil:
