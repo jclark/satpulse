@@ -343,16 +343,17 @@ We want to implement this using the new Configurator design in `plan/configurato
 
 **Initial goal**: Get satpulsetool gps to do something with Unicore receivers
 
-1. Develop unc.Configurator further so that it will be easy to implement the new gpsprot.Configurator2 interface, but without needing gpsprot changes yet
+1. Add unc.ConfigProtocol which will implement new ConfigProtocol (old PacketExchanger) from new Configurator design and issue #131, but without yet changing gpsprot.
+2. Develop unc.Configurator further so that it will be easy to implement the new gpsprot.Configurator2 interface, but without needing gpsprot changes yet
    - Handling probing with VERSIONB (or VERSIONA)
    - Implement Configurator.GenerateRequests using nativeConfigProps.generateCommands
    - Implement ConfigRequest interface (but how to deal with ConfigRequestState type/constants?)
    - Try to test this in isolation to ensure it is working
-2. Implement #136 Part 1 (would be a separate branch off master)
+3. Implement #136 Part 1 (would be a separate branch off master)
    - Add Configurator2 interface to gpsprot (matching what Unicore already has)
    - Update gpscfg to use Configurator2 for protocols that provide it
    - Test ConfigDirector on its own
-3. Fixup Unicore so that it actually implements Configurator2 and register with gpsreg
+4. Fixup Unicore so that it actually implements Configurator2 and register with gpsreg
 
 **Next goal**: Configuration that is needed by satpulsed
 * Support for `MODE` property

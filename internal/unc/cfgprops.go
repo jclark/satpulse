@@ -67,8 +67,8 @@ func makeNativeProps() nativeConfigProps {
 func generateQueryCommands(_ *gpsprot.ConfigTarget) []string {
 	return []string{
 		"CONFIG",
-		"MODE",
 		"MASK",
+		"MODE", // must be last because it has a single response
 	}
 }
 
