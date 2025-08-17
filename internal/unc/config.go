@@ -23,7 +23,7 @@ type Configurator struct {
 	reqs        []*ConfigRequest
 	target      *gpsprot.ConfigTarget
 	complete    bool // no more requests will be added to req
-	nFinished   int  // number of finished requests
+	nFinished   int  // all requests with index < nFinished are in final state
 }
 
 type configPhase int
@@ -38,22 +38,23 @@ type ConfigRequest struct {
 	state configRequestState
 	cmd   string           // not including CR/LF
 	prop  nativeConfigProp // if non-nil, then this means it's a command that updates that prop
-	tSent time.Time
-	err   error // error in handling this request
+	tBase time.Time        // base time for calculating response deadline (sent time or last response time)
+	err   error            // error in handling this request
 }
 
 type configRequestState int
 
 const (
-	stateReadyToSendCommand configRequestState = iota // maps to ConfigRequestReadyToSend
-	stateReadyToSendQuery                             // maps to ConfigRequestReadyToSend
-	stateAwaitingAckAndResponse                       // maps to ConfigRequestAwaitingResponse
-	stateAwaitingAck                                  // maps to ConfigRequestAwaitingResponse
-	stateAwaitingResponse                             // maps to ConfigRequestAwaitingResponse
-	stateMayResendCommand                             // maps to ConfigRequestMayResend
-	stateMayResendQuery                               // maps to ConfigRequestMayResend
-	stateFailed                                       // maps to ConfigRequestFailed
-	stateSucceeded                                    // maps to ConfigRequestSucceeded
+	stateReadyToSendCommand     configRequestState = iota // maps to ConfigRequestReadyToSend
+	stateReadyToSendQuery                                 // maps to ConfigRequestReadyToSend
+	stateAwaitingAckAndResponse                           // maps to ConfigRequestAwaitingResponse
+	stateAwaitingAck                                      // maps to ConfigRequestAwaitingResponse
+	stateAwaitingResponse                                 // maps to ConfigRequestAwaitingResponse
+	stateMaybeComplete                                    // maps to ConfigRequestMaybeComplete
+	stateMayResendCommand                                 // maps to ConfigRequestMayResend
+	stateMayResendQuery                                   // maps to ConfigRequestMayResend
+	stateFailed                                           // maps to ConfigRequestFailed
+	stateSucceeded                                        // maps to ConfigRequestSucceeded
 )
 
 func NewConfigProtocol() *ConfigProtocol {
@@ -111,24 +112,37 @@ func (c *Configurator) GenerateRequests() error {
 		c.generateQueryReqs()
 		c.phase = phaseQuery
 		return nil
-		
+
 	case phaseQuery:
-		if !c.allRequestsFinal() {
-			return nil // wait for query responses
+		// Scan through requests starting from nFinished
+		anyFailed := false
+		for i := c.nFinished; i < len(c.reqs); i++ {
+			req := c.reqs[i]
+			if !req.state.isFinal() {
+				// Found a non-final request, stop here
+				c.nFinished = i
+				return nil
+			}
+			if req.state == stateFailed {
+				anyFailed = true
+			}
 		}
 		
-		// All queries are final, generate config requests if none failed
-		if !c.anyRequestsFailed() {
+		// All requests are final
+		c.nFinished = len(c.reqs)
+		
+		// Generate config requests if none failed
+		if !anyFailed {
 			c.generateConfigReqs()
 		}
 		c.complete = true
 		c.phase = phaseFinal
 		return nil
-		
+
 	case phaseFinal:
 		return nil // nothing to do
 	}
-	
+
 	return nil
 }
 
@@ -141,23 +155,6 @@ func (c *Configurator) generateQueryReqs() {
 	}
 }
 
-func (c *Configurator) allRequestsFinal() bool {
-	for _, req := range c.reqs {
-		if !req.state.isFinal() {
-			return false
-		}
-	}
-	return true
-}
-
-func (c *Configurator) anyRequestsFailed() bool {
-	for _, req := range c.reqs {
-		if req.state == stateFailed {
-			return true
-		}
-	}
-	return false
-}
 
 func (c *Configurator) generateConfigReqs() {
 	for _, cmd := range c.nativeProps.generateConfigCommands(c.target) {
@@ -217,26 +214,27 @@ func (req *ConfigRequest) SetSentTime(tSent time.Time) {
 	default:
 		panic(fmt.Sprintf("SetSentTime called in invalid state: %v", req.state))
 	}
-	req.tSent = tSent
+	req.tBase = tSent
 }
 
-func (req *ConfigRequest) SetTimedOut() {
-	// Precondition: state maps to ConfigRequestAwaitingResponse
+func (req *ConfigRequest) SetResponseDeadlinePassed() {
 	switch req.state {
 	case stateAwaitingAck:
 		// Command timed out waiting for ACK
 		req.state = stateMayResendCommand
 	case stateAwaitingAckAndResponse, stateAwaitingResponse:
 		// Query timed out waiting for ACK and/or response
-		// (stateAwaitingResponse is reached after query gets ACK but still needs response)
 		req.state = stateMayResendQuery
+	case stateMaybeComplete:
+		// Idle period over - consider complete
+		req.state = stateSucceeded
 	default:
-		panic(fmt.Sprintf("SetTimedOut called in invalid state: %v", req.state))
+		panic(fmt.Sprintf("SetResponseDeadlinePassed called in invalid state: %v", req.state))
 	}
 }
 
 func (req *ConfigRequest) SetWontResend() {
-	// Precondition: state maps to ConfigRequestMayResend  
+	// Precondition: state maps to ConfigRequestMayResend
 	switch req.state {
 	case stateMayResendCommand, stateMayResendQuery:
 		req.state = stateFailed
@@ -245,6 +243,17 @@ func (req *ConfigRequest) SetWontResend() {
 		}
 	default:
 		panic(fmt.Sprintf("SetWontResend called in invalid state: %v", req.state))
+	}
+}
+
+func (req *ConfigRequest) GetResponseDeadline() time.Time {
+	switch req.state {
+	case stateAwaitingAck, stateAwaitingAckAndResponse, stateAwaitingResponse:
+		return req.tBase.Add(maxResponseDelay)
+	case stateMaybeComplete:
+		return req.tBase.Add(idlePeriod)
+	default:
+		panic(fmt.Sprintf("GetResponseDeadline called in invalid state: %v", req.state))
 	}
 }
 
@@ -272,13 +281,20 @@ func (c *Configurator) commandResponse(fields []string, tRead time.Time) error {
 	for i := c.nFinished; i < len(c.reqs); i++ {
 		req := c.reqs[i]
 		if req.handleAck(cmd, responseErr, tRead) {
+			// If request at index nFinished just became final, advance by one
+			if i == c.nFinished && req.state.isFinal() {
+				c.nFinished++
+			}
 			return nil
 		}
 	}
 	return fmt.Errorf("no matching request for command response: %s", cmd)
 }
 
-const maxResponseDelay = time.Second * 3 / 2
+const (
+	maxResponseDelay = time.Second * 3 / 2
+	idlePeriod       = 50 * time.Millisecond
+)
 
 // handleAck processes an ACK response for this request.
 // Returns true if this ACK matches this request, false otherwise.
@@ -287,13 +303,13 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 	if req.cmd != cmd {
 		return false
 	}
-	
+
 	// Check timing - ACK should come after request was sent
-	delay := tRead.Sub(req.tSent)
+	delay := tRead.Sub(req.tBase)
 	if delay < 0 || delay > maxResponseDelay {
 		return false
 	}
-	
+
 	// Check if we're in a state that expects an ACK and optimistically set success state
 	switch req.state {
 	case stateAwaitingAck:
@@ -303,14 +319,14 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 	default:
 		return false
 	}
-	
+
 	// This ACK is for us - check if it's an error
 	if responseErr != "" {
 		req.state = stateFailed
 		req.err = fmt.Errorf("command rejected: %s", responseErr)
 		return true
 	}
-	
+
 	// ACK was positive - update our state to reflect the successful command
 	if req.prop != nil {
 		err := req.prop.updateFromCommand(req.cmd)
@@ -318,7 +334,7 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 			panic(fmt.Sprintf("could not parse generated command: %s: %v", req.cmd, err))
 		}
 	}
-	
+
 	return true
 }
 
@@ -344,17 +360,56 @@ func (c *Configurator) modeResponse(mode *uncmsg.Mode, tRead time.Time) error {
 }
 
 func (c *Configurator) queryResponse(query, key, command string, tRead time.Time) error {
-	// Find matching request that is awaiting a response
-	for _, req := range c.reqs {
-		if req.state == stateAwaitingResponse && req.cmd == query {
-			// Check timing - response should come after request was sent
-			if !tRead.Before(req.tSent) {
-				req.state = stateSucceeded
-				return c.nativeProps.updateFromQueryResponse(key, command)
+	// Find the matching request and determine its index
+	var reqIndex int = -1
+	for i := c.nFinished; i < len(c.reqs); i++ {
+		req := c.reqs[i]
+		if req.cmd == query {
+			switch req.state {
+			case stateAwaitingResponse:
+				// First response to this query - check it's within valid window
+				delay := tRead.Sub(req.tBase)
+				if delay < 0 || delay > maxResponseDelay {
+					break
+				}
+				reqIndex = i
+
+				// Complete any EARLIER MaybeComplete requests
+				// (their response burst is definitely done since we got response to later query)
+				for j := c.nFinished; j < i; j++ {
+					if c.reqs[j].state == stateMaybeComplete {
+						c.reqs[j].state = stateSucceeded
+					}
+				}
+
+				if query == "CONFIG" || query == "MASK" {
+					// may have multiple responses
+					req.state = stateMaybeComplete
+					req.tBase = tRead
+				} else {
+					// MODE query - single response expected
+					req.state = stateSucceeded
+				}
+			case stateMaybeComplete:
+				// Additional response for multi-response query
+				reqIndex = i
+				// Check if this is within the idle period
+				if tRead.After(req.tBase.Add(idlePeriod)) {
+					// This should not happen - response outside idle period
+					return fmt.Errorf("unexpected late response to %s query (%.0fms after last response)",
+						query, tRead.Sub(req.tBase).Seconds()*1000)
+				}
+				req.tBase = tRead
+			}
+			if reqIndex >= 0 {
+				break
 			}
 		}
 	}
-	return fmt.Errorf("no matching request for query response: %s", key)
+	if reqIndex < 0 {
+		return fmt.Errorf("no matching request for query response: %s", key)
+	}
+	return c.nativeProps.updateFromQueryResponse(key, command)
 }
 
 func (state configRequestState) isFinal() bool {
