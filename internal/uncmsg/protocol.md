@@ -74,17 +74,25 @@ Queries the current operating mode. The receiver responds with an ASCII log mess
 
 **Output Format:**  
 The response is a standard ASCII log message, which starts with a `#` character.  
-`#MODE,<header_fields>;<payload>*<checksum>`
+`#MODE,<header_fields>;<field1>,<field2>*<checksum>`
 
-The payload part of the message describes the current mode.
+The payload has two comma-separated fields:
+1. **MODE field**: Operating mode string (e.g., "MODE ROVER SURVEY", "MODE BASE TIME 60 2.5 3.5")
+2. **HEADINGMODE field**: HEADING2 mode information (empty string if HEADING2 disabled)
 
 **Example Output:**  
 ```
 #MODE,81,GPS,FINE,2230,547967000,0,0,18,518;MODE ROVER SURVEY,*1B
 #MODE,93,GPS,FINE,2377,327883000,0,0,18,517;MODE BASE -1144698.0455 6090335.4099 1504171.3914,*7F
+#MODE,97,GPS,FINE,2379,562467000,0,0,18,271;MODE BASE 1234 TIME 60 2.5 3.5,*53
+#MODE,97,GPS,FINE,2380,8053000,0,0,18,871;MODE HEADING2,HEADINGMODE FIXLENGTH*2C
 ```
 
-The payload in the example is `MODE ROVER SURVEY` indicating that the current mode is the same as would result from the command `MODE ROVER SURVEY`.
+In these examples:
+- The first field is the operating mode (e.g., "MODE ROVER SURVEY", "MODE BASE 1234 TIME 60 2.5 3.5")
+- The second field is empty (with trailing comma after the first field) when HEADING2 mode is not in effect
+- When HEADING2 mode is in effect, the second field would contain HEADINGMODE following by the HEADER2 parameters (e.g., "HEADINGMODE FIXLENGTH")
+
 
 **Note:** The `MODE` query response, although it is an ASCII log, uses an 8-bit XOR checksum instead of the 32-bit CRC used by other ASCII logs.
 

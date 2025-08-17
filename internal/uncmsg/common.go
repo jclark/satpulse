@@ -136,7 +136,6 @@ type Msg interface {
 	ID() (MsgID, string)
 }
 
-
 // ChunkedMsg interface for messages with variable-length structure
 // that need to be read/written in chunks
 type ChunkedMsg interface {
@@ -166,9 +165,11 @@ func regMsg[T any, PT interface {
 	m := PT(new(T))
 	id, name := m.ID()
 	ctor := func() Msg { return PT(new(T)) }
-	// For registered messages, both IDs are guaranteed non-zero
-	msgIDMap[id] = ctor
-	// Register with the wire format name (already includes "A" suffix)
+	// Only register binary message ID if it's non-zero (ASCII-only messages have id=0)
+	if id != 0 {
+		msgIDMap[id] = ctor
+		idNameMap[id] = idName
+	}
+	// Always register with the wire format name (includes "A" suffix except for MODE)
 	msgNameMap[name] = ctor
-	idNameMap[id] = idName
 }
