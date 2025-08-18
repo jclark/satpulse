@@ -57,6 +57,11 @@ const (
 	stateSucceeded                                        // maps to ConfigRequestSucceeded
 )
 
+// Compile-time interface compliance checks
+var _ gpsprot.ConfigProtocol2 = (*ConfigProtocol)(nil)
+var _ gpsprot.Configurator2 = (*Configurator)(nil)
+var _ gpsprot.ConfigRequest2 = (*ConfigRequest)(nil)
+
 func NewConfigProtocol() *ConfigProtocol {
 	return &ConfigProtocol{}
 }
@@ -105,9 +110,9 @@ func (cp *ConfigProtocol) ProbeOK() bool {
 	return cp.ver != nil
 }
 
-func (cp *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (*Configurator, error) {
+func (cp *ConfigProtocol) Configure2(target *gpsprot.ConfigTarget) (gpsprot.Configurator2, error) {
 	if cp.ver == nil {
-		panic("Configure called without successful ProbeOK()")
+		panic("Configure2 called without successful ProbeOK()")
 	}
 	cp.cfg = &Configurator{
 		target:      target,
@@ -118,7 +123,7 @@ func (cp *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (*Configurator
 	return cp.cfg, nil
 }
 
-func (c *Configurator) Request(index int) *ConfigRequest {
+func (c *Configurator) Request(index int) gpsprot.ConfigRequest2 {
 	return c.reqs[index]
 }
 
@@ -204,15 +209,57 @@ func (c *Configurator) nmeaSentence(sentence *nmea.Sentence, tRead time.Time) er
 	return nil
 }
 
-func (req *ConfigRequest) Packet() []byte {
+// invalidStatePanic creates a consistent panic message for invalid state
+func (req *ConfigRequest) invalidStatePanic(method string) string {
+	return fmt.Sprintf("%s called when state is %v", method, req.GetState())
+}
+
+func (req *ConfigRequest) GetPacket() []byte {
 	// Precondition: state maps to ConfigRequestReadyToSend, ConfigRequestMayResend, or ConfigRequestFailed
 	switch req.state {
 	case stateReadyToSendCommand, stateReadyToSendQuery, stateMayResendCommand, stateMayResendQuery, stateFailed:
 		// Valid states
 	default:
-		panic(fmt.Sprintf("Packet called in invalid state: %v", req.state))
+		panic(req.invalidStatePanic("GetPacket"))
 	}
 	return append([]byte(req.cmd), '\r', '\n')
+}
+
+func (req *ConfigRequest) GetSpeedChangeAfter() int {
+	// Unicore doesn't yet use speed changes
+	return 0
+}
+
+func (req *ConfigRequest) GetState() gpsprot.ConfigRequestState {
+	// Map internal state to public ConfigRequestState
+	switch req.state {
+	case stateReadyToSendCommand, stateReadyToSendQuery:
+		return gpsprot.ConfigRequestReadyToSend
+	case stateAwaitingAckAndResponse, stateAwaitingAck, stateAwaitingResponse:
+		return gpsprot.ConfigRequestAwaitingResponse
+	case stateMaybeComplete:
+		return gpsprot.ConfigRequestMaybeComplete
+	case stateMayResendCommand, stateMayResendQuery:
+		return gpsprot.ConfigRequestMayResend
+	case stateFailed:
+		return gpsprot.ConfigRequestFailed
+	case stateSucceeded:
+		return gpsprot.ConfigRequestSucceeded
+	default:
+		panic(fmt.Sprintf("unexpected internal state: %v", req.state))
+	}
+}
+
+func (req *ConfigRequest) GetReadyTime() time.Time {
+	// Unicore doesn't use pausing
+	panic(req.invalidStatePanic("GetReadyTime"))
+}
+
+func (req *ConfigRequest) GetError() error {
+	if req.state != stateFailed {
+		panic(req.invalidStatePanic("GetError"))
+	}
+	return req.err
 }
 
 func (req *ConfigRequest) SetSentTime(tSent time.Time) {
@@ -231,7 +278,7 @@ func (req *ConfigRequest) SetSentTime(tSent time.Time) {
 		// Retry query - back to awaiting ACK and response
 		req.state = stateAwaitingAckAndResponse
 	default:
-		panic(fmt.Sprintf("SetSentTime called in invalid state: %v", req.state))
+		panic(req.invalidStatePanic("SetSentTime"))
 	}
 	req.tBase = tSent
 }
@@ -248,7 +295,7 @@ func (req *ConfigRequest) SetResponseDeadlinePassed() {
 		// Idle period over - consider complete
 		req.state = stateSucceeded
 	default:
-		panic(fmt.Sprintf("SetResponseDeadlinePassed called in invalid state: %v", req.state))
+		panic(req.invalidStatePanic("SetResponseDeadlinePassed"))
 	}
 }
 
@@ -261,7 +308,7 @@ func (req *ConfigRequest) SetWontResend() {
 			req.err = fmt.Errorf("request abandoned after timeout")
 		}
 	default:
-		panic(fmt.Sprintf("SetWontResend called in invalid state: %v", req.state))
+		panic(req.invalidStatePanic("SetWontResend"))
 	}
 }
 
@@ -272,14 +319,9 @@ func (req *ConfigRequest) GetResponseDeadline() time.Time {
 	case stateMaybeComplete:
 		return req.tBase.Add(idlePeriod)
 	default:
-		panic(fmt.Sprintf("GetResponseDeadline called in invalid state: %v", req.state))
+		panic(req.invalidStatePanic("GetResponseDeadline"))
 	}
 }
-
-// TODO: Add GetState() method when gpsprot.ConfigRequestState is available
-// func (req *ConfigRequest) GetState() gpsprot.ConfigRequestState {
-//     // Map internal state to public state
-// }
 
 var responseFieldRegexp = regexp.MustCompile(`^response(?:: OK|[: ](.+))$`)
 

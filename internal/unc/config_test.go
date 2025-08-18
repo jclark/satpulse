@@ -31,10 +31,11 @@ type testReceiver struct {
 
 func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Configurator, int, error) {
 	cp := &ConfigProtocol{ver: rcvr.version}
-	cfg, err := cp.Configure(target)
+	cfgInterface, err := cp.Configure2(target)
 	if err != nil {
 		return nil, 0, err
 	}
+	cfg := cfgInterface.(*Configurator)
 	
 	// Initialize retry count map if needed
 	if rcvr.retryCount == nil {
@@ -65,7 +66,9 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 			// Check if all requests are actually done
 			allDone := true
 			for i := 0; i < count; i++ {
-				if !cfg.Request(i).state.isFinal() {
+				req := cfg.Request(i)
+				state := req.GetState()
+				if state != gpsprot.ConfigRequestSucceeded && state != gpsprot.ConfigRequestFailed && state != gpsprot.ConfigRequestSkipped {
 					allDone = false
 					break
 				}
@@ -80,10 +83,10 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 		for i := 0; i < count; i++ {
 			req := cfg.Request(i)
 
-			switch req.state {
-			case stateReadyToSendQuery, stateReadyToSendCommand:
+			switch req.GetState() {
+			case gpsprot.ConfigRequestReadyToSend:
 				hasWork = true
-				pkt := req.Packet()
+				pkt := req.GetPacket()
 				rcvr.nSent++
 				
 				// Track sent packet
@@ -140,14 +143,14 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 					}
 				}
 
-			case stateAwaitingResponse, stateAwaitingAck, stateAwaitingAckAndResponse:
+			case gpsprot.ConfigRequestAwaitingResponse:
 				// Check for timeout
 				if t0.After(req.GetResponseDeadline()) {
 					hasWork = true
 					req.SetResponseDeadlinePassed()
 				}
 
-			case stateMaybeComplete:
+			case gpsprot.ConfigRequestMaybeComplete:
 				// Check idle period  
 				deadline := req.GetResponseDeadline()
 				if t0.After(deadline) {
@@ -155,15 +158,16 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 					req.SetResponseDeadlinePassed()
 				}
 
-			case stateMayResendQuery, stateMayResendCommand:
+			case gpsprot.ConfigRequestMayResend:
 				hasWork = true
 				// Allow one retry for error injection tests
-				rcvr.retryCount[req.cmd]++
-				if rcvr.retryCount[req.cmd] > 1 {
+				pkt := req.GetPacket()
+				cmd := strings.TrimSuffix(string(pkt), "\r\n")
+				rcvr.retryCount[cmd]++
+				if rcvr.retryCount[cmd] > 1 {
 					req.SetWontResend() // Don't retry more than once
 				} else {
 					// Retry the request - resend it
-					pkt := req.Packet()
 					rcvr.nSent++
 					
 					// Track sent packet
