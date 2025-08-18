@@ -12,23 +12,21 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-// PacketExchanger manages the processing and generation of packets for a GPS receiver.
-// An implementation of protocol captures the semantics of a particular GPS receiver protocol,
-// such as UBX or NMEA.
-// Methods on PacketExchanger do not themselves send or receive.
-// A PacketExchanger is attached to a PacketProcessor when it is created
-// by PacketProcessor.CreatePacketExchanger and installs a NativeMsgHandler.
+// ConfigProtocol manages the processing and generation of packets for a GPS receiver.
+// This captures the semantics of GPS receiver protocol used for configuration.
+// Methods on ConfigProtocol do not themselves send or receive packets.
+// ConfigProtocol embeds NativeMsgHandler to process protocol-specific messages directly.
 // Splitting sequences of bytes in packets is handled by the scan package.
-// Packets to be processed are passed to ProcessPacket method on the PacketProcessor.
 // There are two stages: probing and configuration.
 // In probing, ProbePacket returns a packet to be sent to the GPS receiver;
-// ProbeOK as soon as a packet has been processed that indicates the GPS receiver is responding.
+// ProbeOK returns true as soon as a message has been received that indicates the GPS receiver is responding.
 // Configuration is managed by a Configurator created by Configure;
 // repeated calls to NextRequest return the next request to be sent to the GPS receiver.
-// After a Configurator has been created, calls to ProcessPacket will pass configuration-related packets
-// to the Configurator via the NativeMsgHandler.
-// The packets processed by ProcessPacket determine the requests returned by NextRequest.
-type PacketExchanger interface {
+// After a Configurator has been created, messages received via NativeMsg will be passed
+// to the Configurator for processing.
+// The messages processed via NativeMsg determine the requests returned by NextRequest.
+type ConfigProtocol interface {
+	NativeMsgHandler
 	ProbePacket() []byte
 	ProbeOK() bool
 	Configure(*ConfigTarget) (Configurator, error)
@@ -76,11 +74,11 @@ type Configurator interface {
 
 // ReceiverInfo provides static information about the GPS receiver.
 type ReceiverInfo struct {
-	Vendor          string      `json:"vendor"`          // receiver vendor (e.g., "u-blox")
-	Firmware        string      `json:"firmware"`        // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
-	Hardware        string      `json:"hardware"`        // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
-	SupportedGNSS   GNSSSet     `json:"supportedGNSS"`   // supported GNSS constellations
-	VendorSpecific  interface{} `json:"-"`               // vendor-specific information, excluded from JSON
+	Vendor         string      `json:"vendor"`        // receiver vendor (e.g., "u-blox")
+	Firmware       string      `json:"firmware"`      // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
+	Hardware       string      `json:"hardware"`      // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
+	SupportedGNSS  GNSSSet     `json:"supportedGNSS"` // supported GNSS constellations
+	VendorSpecific interface{} `json:"-"`             // vendor-specific information, excluded from JSON
 }
 
 // ConfigRequest represents a request to be sent to the GPS receiver to configure it.

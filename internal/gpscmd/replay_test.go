@@ -129,7 +129,7 @@ func readTest(scanner *bufio.Scanner) (*replayTest, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	
+
 	return nil, errors.New("test missing config entry")
 }
 
@@ -149,7 +149,7 @@ func fixupInBefore(test *replayTest) {
 		for count < len(test.inPackets) && time.Time(test.inPackets[count].T).Before(outTime) {
 			count++
 		}
-		
+
 		test.inBefore[i] = count
 	}
 }
@@ -160,9 +160,10 @@ type replayer struct {
 	test        *replayTest
 	target      *gpsprot.ConfigTarget
 	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
+	configProts []gpsprot.ConfigProtocol
 	inIdx       int
 	outIdx      int
-	px          gpsprot.PacketExchanger
+	cp          gpsprot.ConfigProtocol
 	cfgtor      gpsprot.Configurator
 	configErr   error // first configuration error encountered
 }
@@ -180,12 +181,14 @@ func newReplayer(t *testing.T, test *replayTest) (*replayer, error) {
 
 	// Create packet processors like gpscfg does
 	packetProcs := gpsreg.CreatePacketProcessors(nil)
+	configProts := gpsreg.CreateConfigProtocols()
 
 	r := replayer{
 		t:           t,
 		test:        test,
 		target:      target,
 		packetProcs: packetProcs,
+		configProts: configProts,
 	}
 	return &r, nil
 }
@@ -194,9 +197,16 @@ func (r *replayer) run() {
 	// Initialize packet processors like gpscfg does
 	for _, pp := range r.packetProcs {
 		pp.SetMsgHandler(r)
-		if r.px == nil {
-			r.px = pp.CreatePacketExchanger()
-		}
+	}
+
+	// Set up MultiNativeMsgHandler to fan out to all protocols during probing
+	handlers := make([]gpsprot.NativeMsgHandler, len(r.configProts))
+	for i, prot := range r.configProts {
+		handlers[i] = prot
+	}
+	mnmh := gpsprot.NewMultiNativeMsgHandler(handlers...)
+	for _, pp := range r.packetProcs {
+		pp.SetNativeMsgHandler(mnmh)
 	}
 
 	// Feed input packets before first output packet (probe)
@@ -206,27 +216,48 @@ func (r *replayer) run() {
 		// we decided not to probe, so nothing to do
 		return
 	}
-	// Check the probe packet matches the first output packet
-	probePacket := r.px.ProbePacket()
 
-	expected := r.test.outPackets[0]
-	if string(probePacket) != expected.Data() {
-		r.t.Errorf("probe packet mismatch")
+	// Send probe packets for all protocols
+	probesSent := 0
+	for _, prot := range r.configProts {
+		probePacket := prot.ProbePacket()
+		
+		// Verify probe packet matches expected output
+		if r.outIdx < len(r.test.outPackets) {
+			expected := r.test.outPackets[r.outIdx]
+			if string(probePacket) == expected.Data() {
+				r.outIdx++
+				probesSent++
+			}
+		}
 	}
-	r.outIdx++
+	
+	if probesSent == 0 {
+		r.t.Error("no matching probe packets found")
+		return
+	}
 
-	// Feed input packets before second output packet
-	r.feedUpTo(1)
+	// Feed input packets after probe packets
+	r.feedUpTo(r.outIdx)
 
-	// Should be probed now
-	if !r.px.ProbeOK() {
+	// Check which protocol succeeded
+	for _, prot := range r.configProts {
+		if prot.ProbeOK() {
+			r.cp = prot
+			// Switch to single protocol for configuration
+			mnmh.Reset(prot)
+			break
+		}
+	}
+
+	if r.cp == nil {
 		r.t.Error("probe did not succeed after feeding initial packets")
 		return
 	}
 
 	// Create configurator
 	var err error
-	r.cfgtor, err = r.px.Configure(r.target)
+	r.cfgtor, err = r.cp.Configure(r.target)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -489,7 +520,7 @@ func (r *replayer) verify() {
 			} else if timePulse.Width > 0 && !cfg.TimePulse.timePulseEnabled() {
 				r.t.Error("timePulse config shows disabled but actual has non-zero width")
 			}
-			
+
 			// If both are enabled, compare detailed properties
 			if cfg.TimePulse.Enabled && timePulse.Width != 0 {
 				if cfg.TimePulse.Width != nil && timePulse.Width.Seconds() != *cfg.TimePulse.Width {

@@ -85,10 +85,6 @@ type PacketProcessor interface {
 	// GetNativeMsgHandler returns the current protocol message handler
 	GetNativeMsgHandler() NativeMsgHandler
 
-	// CreatePacketExchanger creates a PacketExchanger if configuration is supported
-	// Returns nil if configuration is not supported
-	CreatePacketExchanger() PacketExchanger
-
 	// NativeOnly returns true if this processor only generates native messages
 	// and never produces protocol-agnostic messages like TimeMsg or SatellitesMsg.
 	// This is typically true for protocols that provide correction data rather
@@ -124,11 +120,6 @@ func (p *DefaultPacketProcessor) SetNativeMsgHandler(handler NativeMsgHandler) {
 // GetNativeMsgHandler returns the current native message handler
 func (p *DefaultPacketProcessor) GetNativeMsgHandler() NativeMsgHandler {
 	return p.nmh
-}
-
-// CreatePacketExchanger returns nil by default as most protocols don't support configuration
-func (p *DefaultPacketProcessor) CreatePacketExchanger() PacketExchanger {
-	return nil
 }
 
 // NativeOnly returns false by default since most protocols provide timing/positioning

@@ -78,6 +78,29 @@ func (h *MultiHandler) Handlers() iter.Seq[MsgHandler] {
 	}
 }
 
+// MultiNativeMsgHandler fans out NativeMsg calls to multiple handlers
+type MultiNativeMsgHandler struct {
+	handlers []NativeMsgHandler
+}
+
+func NewMultiNativeMsgHandler(handlers ...NativeMsgHandler) *MultiNativeMsgHandler {
+	return &MultiNativeMsgHandler{handlers: handlers}
+}
+
+func (m *MultiNativeMsgHandler) Reset(handlers ...NativeMsgHandler) {
+	m.handlers = handlers
+}
+
+func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead time.Time) error {
+	var firstErr error
+	for _, h := range m.handlers {
+		if err := h.NativeMsg(tag, msgID, msg, tRead); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 //go:generate stringer -type=GNSS
 type GNSS uint8
 

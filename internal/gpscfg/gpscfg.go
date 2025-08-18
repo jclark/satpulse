@@ -28,7 +28,7 @@ type msgHandler struct {
 	gpsprot.DefaultHandler
 	lg          *slog.Logger
 	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
-	packetExch  gpsprot.PacketExchanger
+	configProts []gpsprot.ConfigProtocol
 	packetCh    <-chan scan.Packet
 	msgCount    map[gpsprot.Tag]int
 	bad         badCount
@@ -44,9 +44,9 @@ var _ gpsprot.NativeMsgHandler = &msgHandler{}
 
 var ErrNoProbeResponse = errors.New("no response to configuration probe message; not configuring GPS")
 
-func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
+func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
-	mh.init(lg, packetProcs, packetCh)
+	mh.init(lg, packetProcs, configProts, packetCh)
 	var err error
 	if !target.Opts.Detected {
 		err = mh.detect(ctx)
@@ -69,7 +69,10 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	}
 	// After we have done detection, bad stuff is a cause for concern.
 	badStart := mh.bad
-	probeOK, err := mh.probe(ctx, mh.packetExch, port)
+	// Set up a MultiNativeMsgHandler to fan out to all protocols during probing
+	mnmh, restore := mh.installNativeMsgHandlers()
+	defer restore()
+	configProt, err := mh.probe(ctx, port)
 	if err != nil {
 		return nil, err
 	}
@@ -80,11 +83,12 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	if badNew.corruptMsgs > 0 {
 		return nil, errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
 	}
-	if !probeOK {
+	if configProt == nil {
 		// XXX if msgCount for UBX > 0, but probe failed, then probably we cannot send to the GPS
 		return mh.noProbeResult(), ErrNoProbeResponse
 	}
-	cfgProps, rcvrInfo, err := mh.configure(ctx, mh.packetExch, target, port)
+	mnmh.Reset(&mh, configProt)
+	cfgProps, rcvrInfo, err := mh.configure(ctx, configProt, target, port)
 	if err != nil && !isKnownError(err) {
 		return nil, err
 	}
@@ -92,18 +96,15 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	return mh.finish(cfgProps, rcvrInfo), err
 }
 
-func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, packetCh <-chan scan.Packet) {
+func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, packetCh <-chan scan.Packet) {
 	mh.lg = lg
 	mh.packetProcs = packetProcs
 	mh.packetCh = packetCh
+	mh.configProts = configProts
 	mh.msgCount = map[gpsprot.Tag]int{}
 	mh.msgIDs = map[gpsprot.Tag]map[string]bool{}
 	for tag, pp := range packetProcs {
 		pp.SetMsgHandler(mh)
-		pp.SetNativeMsgHandler(mh)
-		if mh.packetExch == nil {
-			mh.packetExch = pp.CreatePacketExchanger()
-		}
 		mh.msgCount[tag] = 0
 		mh.msgIDs[tag] = map[string]bool{}
 	}
@@ -215,32 +216,63 @@ func (mh *msgHandler) packetChClosed(ctx context.Context) error {
 	return io.ErrUnexpectedEOF
 }
 
-func (mh *msgHandler) probe(ctx context.Context, prot gpsprot.PacketExchanger, port gpsio.OutPort) (bool, error) {
-	msg := prot.ProbePacket()
-	_, err := port.Write(msg)
-	if err != nil {
-		return false, err
+func (mh *msgHandler) probe(ctx context.Context, port gpsio.OutPort) (gpsprot.ConfigProtocol, error) {
+	if len(mh.configProts) == 0 {
+		return nil, nil
+	}	
+	// Send probe packets for all protocols
+	for _, prot := range mh.configProts {
+		msg := prot.ProbePacket()
+		_, err := port.Write(msg)
+		if err != nil {
+			return nil, err
+		}
 	}
 	timerCh := time.After(time.Millisecond * 1500)
-
 	for timerCh != nil {
 		select {
 		case packet, ok := <-mh.packetCh:
 			if !ok {
-				return false, mh.packetChClosed(ctx)
+				return nil, mh.packetChClosed(ctx)
 			}
 			mh.packet(packet)
-			if prot.ProbeOK() {
-				return true, nil
+			// Check if any protocol has succeeded
+			for _, prot := range mh.configProts {
+				if prot.ProbeOK() {
+					return prot, nil				
+				}
 			}
 		case <-timerCh:
 			timerCh = nil
 		}
 	}
-	return false, nil
+	return nil, nil
 }
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchanger, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, error) {
+// installNativeMsgHandlers creates a NativeMsgHandler than fans out to all config protocols.
+// It returns the MultiNativeMsgHandler and a function to restore the previous state.
+func (mh *msgHandler) installNativeMsgHandlers() (*gpsprot.MultiNativeMsgHandler, func()) {
+	handlers := make([]gpsprot.NativeMsgHandler, len(mh.configProts)+1)
+	handlers[0] = mh
+	for i, prot := range mh.configProts {
+		handlers[i+1] = prot
+	}
+	nmhSaved := make(map[gpsprot.Tag]gpsprot.NativeMsgHandler, len(mh.packetProcs))
+
+	mnmh := gpsprot.NewMultiNativeMsgHandler(handlers...)
+	for tag, pp := range mh.packetProcs {
+		nmhSaved[tag] = pp.GetNativeMsgHandler()
+		pp.SetNativeMsgHandler(mnmh)
+	}
+
+	return mnmh, func() {
+		for tag, pp := range mh.packetProcs {
+			pp.SetNativeMsgHandler(nmhSaved[tag])
+		}
+	}
+}
+
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, error) {
 	cfgtor, err := prot.Configure(target)
 	if err != nil {
 		return nil, nil, err

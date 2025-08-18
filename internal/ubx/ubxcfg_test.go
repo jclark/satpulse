@@ -9,7 +9,6 @@ import (
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
 )
 
-
 func TestConfigurationGet_Legacy(t *testing.T) {
 	testConfigurationGet(t, newLegacyReceiver())
 }
@@ -91,18 +90,19 @@ type gpsReceiver struct {
 	version      *Version
 	raw          *RawConfig
 	nakPollMsgID ubxbin.MsgID
-	abortMsgID   ubxbin.MsgID  // simulate abort (timeout/corruption) when sending this message
+	abortMsgID   ubxbin.MsgID // simulate abort (timeout/corruption) when sending this message
 	nSent        int
 }
 
 func runConfiguration(rcvr *gpsReceiver, target *gpsprot.ConfigTarget) (*Configurator, []string, error) {
-	pp := NewPacketProcessor()
-	px := pp.CreatePacketExchanger()
-	upx := px.(*PacketExchanger)
-	upx.ver = rcvr.version
+	cp := NewConfigProtocol()
+	cp.ver = rcvr.version
 	var naks []string
+	
+	pp := NewPacketProcessor()
+	pp.SetNativeMsgHandler(cp)
 
-	c, err := px.Configure(target)
+	c, err := cp.Configure(target)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unexpected error from Configure: %w", err)
 	}
@@ -119,7 +119,7 @@ func runConfiguration(rcvr *gpsReceiver, target *gpsprot.ConfigTarget) (*Configu
 		sendTm := tm
 		pkt := req.Packet()
 		msgID := ubxbin.PacketMsgId(pkt)
-		
+
 		// Simulate abort scenario (timeout/corruption)
 		if msgID == rcvr.abortMsgID {
 			// This simulates what happens in gpscfg when there's a non-NACK error
@@ -127,7 +127,7 @@ func runConfiguration(rcvr *gpsReceiver, target *gpsprot.ConfigTarget) (*Configu
 			// Continue to allow the configurator to generate recovery requests
 			continue
 		}
-		
+
 		resps := rcvr.sendReceive(pkt)
 		for _, resp := range resps {
 			tm = tm.Add(time.Second / 10)
@@ -236,4 +236,3 @@ func newDefaultRawConfig() *RawConfig {
 	cfgValsInit(raw.valsPtr())
 	return &raw
 }
-
