@@ -239,7 +239,7 @@ func (mh *msgHandler) probe(ctx context.Context, port gpsio.OutPort) (gpsprot.Co
 			// Check if any protocol has succeeded
 			for _, prot := range mh.configProts {
 				if prot.ProbeOK() {
-					return prot, nil				
+					return prot, nil
 				}
 			}
 		case <-timerCh:
