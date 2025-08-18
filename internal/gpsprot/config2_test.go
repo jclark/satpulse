@@ -1,0 +1,536 @@
+package gpsprot
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"testing"
+	"time"
+)
+
+// mockRequest implements ConfigRequest2 for testing
+type mockRequest struct {
+	packet       []byte
+	speedChange  int
+	state        ConfigRequestState
+	deadline     time.Time
+	readyTime    time.Time
+	err          error
+	sentTime     time.Time
+	responseTime time.Time // For MaybeComplete state
+}
+
+func (r *mockRequest) GetPacket() []byte {
+	switch r.state {
+	case ConfigRequestReadyToSend, ConfigRequestMayResend, ConfigRequestFailed:
+		return r.packet
+	default:
+		panic(fmt.Sprintf("GetPacket called in invalid state: %v", r.state))
+	}
+}
+
+func (r *mockRequest) GetSpeedChangeAfter() int {
+	switch r.state {
+	case ConfigRequestReadyToSend, ConfigRequestMayResend, ConfigRequestFailed:
+		return r.speedChange
+	default:
+		panic(fmt.Sprintf("GetSpeedChangeAfter called in invalid state: %v", r.state))
+	}
+}
+
+func (r *mockRequest) GetState() ConfigRequestState {
+	return r.state
+}
+
+func (r *mockRequest) GetResponseDeadline() time.Time {
+	switch r.state {
+	case ConfigRequestAwaitingResponse:
+		if r.deadline.IsZero() {
+			return r.sentTime.Add(time.Second)
+		}
+		return r.deadline
+	case ConfigRequestMaybeComplete:
+		if r.responseTime.IsZero() {
+			r.responseTime = time.Now()
+		}
+		return r.responseTime.Add(50 * time.Millisecond)
+	default:
+		panic(fmt.Sprintf("GetResponseDeadline called in invalid state: %v", r.state))
+	}
+}
+
+func (r *mockRequest) GetReadyTime() time.Time {
+	if r.state != ConfigRequestPausing {
+		panic(fmt.Sprintf("GetReadyTime called in invalid state: %v", r.state))
+	}
+	return r.readyTime
+}
+
+func (r *mockRequest) GetError() error {
+	if r.state != ConfigRequestFailed {
+		panic(fmt.Sprintf("GetError called in invalid state: %v", r.state))
+	}
+	return r.err
+}
+
+func (r *mockRequest) SetSentTime(tSent time.Time) {
+	switch r.state {
+	case ConfigRequestReadyToSend:
+		r.sentTime = tSent
+		r.state = ConfigRequestAwaitingResponse
+	case ConfigRequestMayResend:
+		r.sentTime = tSent
+		r.state = ConfigRequestAwaitingResponse
+	default:
+		panic(fmt.Sprintf("SetSentTime called in invalid state: %v", r.state))
+	}
+}
+
+func (r *mockRequest) SetResponseDeadlinePassed() {
+	switch r.state {
+	case ConfigRequestAwaitingResponse:
+		r.state = ConfigRequestMayResend
+	case ConfigRequestMaybeComplete:
+		r.state = ConfigRequestSucceeded
+	default:
+		panic(fmt.Sprintf("SetResponseDeadlinePassed called in invalid state: %v", r.state))
+	}
+}
+
+func (r *mockRequest) SetWontResend() {
+	if r.state != ConfigRequestMayResend {
+		panic(fmt.Sprintf("SetWontResend called in invalid state: %v", r.state))
+	}
+	r.state = ConfigRequestFailed
+	if r.err == nil {
+		r.err = errors.New("request abandoned after timeout")
+	}
+}
+
+// mockConfigurator implements Configurator2 for testing
+type mockConfigurator struct {
+	requests      []*mockRequest
+	complete      bool
+	generateErr   error
+	generateCalls int
+	props         *ConfigProps
+	info          *ReceiverInfo
+}
+
+func (c *mockConfigurator) GenerateRequests() error {
+	c.generateCalls++
+	return c.generateErr
+}
+
+func (c *mockConfigurator) GetRequestCount() (int, bool) {
+	return len(c.requests), c.complete
+}
+
+func (c *mockConfigurator) Request(index int) ConfigRequest2 {
+	if index >= len(c.requests) {
+		panic(fmt.Sprintf("index %d >= request count %d", index, len(c.requests)))
+	}
+	return c.requests[index]
+}
+
+func (c *mockConfigurator) ConfigProps() *ConfigProps {
+	if c.props == nil {
+		c.props = &ConfigProps{}
+	}
+	return c.props
+}
+
+func (c *mockConfigurator) ReceiverInfo() *ReceiverInfo {
+	if c.info == nil {
+		c.info = &ReceiverInfo{}
+	}
+	return c.info
+}
+
+// Test basic ConfigDirector operation with simple requests
+func TestConfigDirectorBasic(t *testing.T) {
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{packet: []byte("req1"), state: ConfigRequestReadyToSend},
+			{packet: []byte("req2"), state: ConfigRequestNotReady},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	var actions []ConfigAction
+
+	for action := range director.Actions() {
+		actions = append(actions, action)
+
+		// Simulate client behavior
+		if action.Type == ConfigActionSendRequest {
+			req := cfg.requests[action.Index]
+			req.SetSentTime(time.Now())
+			// Simulate immediate success (no response needed)
+			req.state = ConfigRequestSucceeded
+
+			// Make next request ready
+			if action.Index+1 < len(cfg.requests) {
+				cfg.requests[action.Index+1].state = ConfigRequestReadyToSend
+			}
+		}
+	}
+
+	// Verify we got send actions for both requests
+	sendCount := 0
+	for _, a := range actions {
+		if a.Type == ConfigActionSendRequest {
+			sendCount++
+		}
+	}
+	if sendCount != 2 {
+		t.Errorf("expected 2 send actions, got %d", sendCount)
+	}
+
+	// Verify GenerateRequests was called
+	if cfg.generateCalls == 0 {
+		t.Error("GenerateRequests was never called")
+	}
+}
+
+// Test retry logic
+func TestConfigDirectorRetry(t *testing.T) {
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{packet: []byte("req1"), state: ConfigRequestReadyToSend},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3) // Max 3 retries to get 3 total attempts
+	var actions []ConfigAction
+	sendCount := 0
+
+	for action := range director.Actions() {
+		actions = append(actions, action)
+
+		switch action.Type {
+		case ConfigActionSendRequest:
+			sendCount++
+			req := cfg.requests[action.Index]
+			req.SetSentTime(time.Now())
+
+		case ConfigActionCheckTimeout:
+			// For first 2 attempts, timeout to force retry
+			// On 3rd attempt, succeed
+			if sendCount < 3 {
+				req := cfg.requests[action.Index]
+				req.SetResponseDeadlinePassed()
+			} else {
+				// Success on third attempt
+				cfg.requests[action.Index].state = ConfigRequestSucceeded
+			}
+
+		case ConfigActionWaitUntil:
+			// Simulate time passing
+			time.Sleep(1 * time.Millisecond)
+		}
+	}
+
+	// Verify we got the expected number of send actions (1 original + 2 retries = 3 total)
+	if sendCount != 3 {
+		t.Errorf("expected 3 send actions (1 original + 2 retries), got %d", sendCount)
+	}
+}
+
+// Test max retry exceeded
+func TestConfigDirectorMaxRetryExceeded(t *testing.T) {
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{packet: []byte("req1"), state: ConfigRequestReadyToSend},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 1) // Max 1 retry
+	var errorAction *ConfigAction
+	retryCount := 0
+
+	for action := range director.Actions() {
+		switch action.Type {
+		case ConfigActionSendRequest:
+			req := cfg.requests[action.Index]
+			req.SetSentTime(time.Now())
+
+		case ConfigActionCheckTimeout:
+			// Always timeout
+			req := cfg.requests[action.Index]
+			req.SetResponseDeadlinePassed()
+			retryCount++
+
+		case ConfigActionError:
+			errorAction = &action
+		}
+	}
+
+	// Verify we got an error after max retries
+	if errorAction == nil {
+		t.Fatal("expected error action after max retries exceeded")
+	}
+
+	// Verify error count
+	if director.ErrorCount != 1 {
+		t.Errorf("expected ErrorCount=1, got %d", director.ErrorCount)
+	}
+}
+
+// Test multi-response query handling (MaybeComplete state)
+func TestConfigDirectorMultiResponse(t *testing.T) {
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{packet: []byte("query"), state: ConfigRequestReadyToSend},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	maybeCompleteChecks := 0
+
+	for action := range director.Actions() {
+		switch action.Type {
+		case ConfigActionSendRequest:
+			req := cfg.requests[action.Index]
+			req.SetSentTime(time.Now())
+
+		case ConfigActionCheckTimeout:
+			req := cfg.requests[action.Index]
+			if req.state == ConfigRequestAwaitingResponse {
+				// First response received, transition to MaybeComplete
+				req.state = ConfigRequestMaybeComplete
+				req.responseTime = time.Now()
+			} else if req.state == ConfigRequestMaybeComplete {
+				maybeCompleteChecks++
+				if maybeCompleteChecks >= 2 {
+					// Idle period passed, mark as complete
+					req.SetResponseDeadlinePassed()
+				}
+			}
+		}
+	}
+
+	// Verify we handled MaybeComplete state
+	if maybeCompleteChecks < 2 {
+		t.Errorf("expected at least 2 MaybeComplete checks, got %d", maybeCompleteChecks)
+	}
+
+	// Verify request succeeded
+	if cfg.requests[0].state != ConfigRequestSucceeded {
+		t.Errorf("expected request to succeed, got state %v", cfg.requests[0].state)
+	}
+}
+
+// Test pausing state
+func TestConfigDirectorPausing(t *testing.T) {
+	pauseTime := time.Now().Add(100 * time.Millisecond)
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{packet: []byte("req1"), state: ConfigRequestReadyToSend},
+			{packet: []byte("req2"), state: ConfigRequestNotReady},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	sawPausing := false
+
+	for action := range director.Actions() {
+		switch action.Type {
+		case ConfigActionSendRequest:
+			if action.Index == 0 {
+				// First request needs pause
+				cfg.requests[0].state = ConfigRequestPausing
+				cfg.requests[0].readyTime = pauseTime
+			} else {
+				// Second request succeeds immediately
+				cfg.requests[1].state = ConfigRequestSucceeded
+			}
+
+		case ConfigActionWaitUntil:
+			// Check if we're waiting for pause
+			req := cfg.requests[0]
+			if req.state == ConfigRequestPausing {
+				sawPausing = true
+				// After pause, mark as succeeded and make next ready
+				req.state = ConfigRequestSucceeded
+				if len(cfg.requests) > 1 {
+					cfg.requests[1].state = ConfigRequestReadyToSend
+				}
+			}
+		}
+	}
+
+	if !sawPausing {
+		t.Error("did not see pausing state")
+	}
+}
+
+// Test window management with multiple actionable requests
+func TestConfigDirectorWindow(t *testing.T) {
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{packet: []byte("req1"), state: ConfigRequestReadyToSend},
+			{packet: []byte("req2"), state: ConfigRequestReadyToSend}, // Both ready
+			{packet: []byte("req3"), state: ConfigRequestNotReady},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	sendIndices := []int{}
+
+	for action := range director.Actions() {
+		if action.Type == ConfigActionSendRequest {
+			sendIndices = append(sendIndices, action.Index)
+			// Mark as sent
+			cfg.requests[action.Index].SetSentTime(time.Now())
+			// Simulate immediate success
+			cfg.requests[action.Index].state = ConfigRequestSucceeded
+
+			// Make next request ready if exists
+			if action.Index+1 < len(cfg.requests) && 
+				cfg.requests[action.Index+1].state == ConfigRequestNotReady {
+				cfg.requests[action.Index+1].state = ConfigRequestReadyToSend
+			}
+		}
+	}
+
+	// Verify we processed requests in order
+	expected := []int{0, 1, 2}
+	if !slices.Equal(sendIndices, expected) {
+		t.Errorf("expected send indices %v, got %v", expected, sendIndices)
+	}
+}
+
+// Test error during GenerateRequests
+func TestConfigDirectorGenerateError(t *testing.T) {
+	generateErr := errors.New("generation failed")
+	cfg := &mockConfigurator{
+		generateErr: generateErr,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	var errorAction *ConfigAction
+
+	for action := range director.Actions() {
+		if action.Type == ConfigActionError {
+			errorAction = &action
+			break
+		}
+	}
+
+	if errorAction == nil {
+		t.Fatal("expected error action from GenerateRequests failure")
+	}
+
+	if errorAction.Error != generateErr {
+		t.Errorf("expected error %v, got %v", generateErr, errorAction.Error)
+	}
+
+	if director.ErrorCount != 1 {
+		t.Errorf("expected ErrorCount=1, got %d", director.ErrorCount)
+	}
+}
+
+// Test skipped requests
+func TestConfigDirectorSkipped(t *testing.T) {
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{packet: []byte("req1"), state: ConfigRequestFailed, err: errors.New("failed")},
+			{packet: []byte("req2"), state: ConfigRequestSkipped},
+			{packet: []byte("req3"), state: ConfigRequestReadyToSend},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	var actions []ConfigAction
+	actionCount := 0
+
+	for action := range director.Actions() {
+		actions = append(actions, action)
+		actionCount++
+		
+		if action.Type == ConfigActionSendRequest && action.Index == 2 {
+			// Third request succeeds
+			cfg.requests[2].state = ConfigRequestSucceeded
+		}
+	}
+
+	// Verify we got error for failed request
+	errorCount := 0
+	sendCount := 0
+	for _, a := range actions {
+		if a.Type == ConfigActionError {
+			errorCount++
+		}
+		if a.Type == ConfigActionSendRequest {
+			sendCount++
+		}
+	}
+
+	if errorCount != 1 {
+		t.Errorf("expected 1 error action for failed request, got %d", errorCount)
+	}
+
+	// Only the third request should be sent (first failed, second skipped)
+	if sendCount != 1 {
+		t.Errorf("expected 1 send action, got %d", sendCount)
+	}
+}
+
+// Test empty configuration (no requests)
+func TestConfigDirectorEmpty(t *testing.T) {
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	actionCount := 0
+
+	for range director.Actions() {
+		actionCount++
+		if actionCount > 10 {
+			t.Fatal("too many actions for empty configuration")
+		}
+	}
+
+	if actionCount != 0 {
+		t.Errorf("expected 0 actions for empty configuration, got %d", actionCount)
+	}
+}
+
+// Test speed change handling
+func TestConfigDirectorSpeedChange(t *testing.T) {
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{packet: []byte("baud"), state: ConfigRequestReadyToSend, speedChange: 115200},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	var sendAction *ConfigAction
+
+	for action := range director.Actions() {
+		if action.Type == ConfigActionSendRequest {
+			sendAction = &action
+			// Mark as succeeded
+			cfg.requests[0].state = ConfigRequestSucceeded
+		}
+	}
+
+	if sendAction == nil {
+		t.Fatal("expected send action")
+	}
+
+	if sendAction.Speed != 115200 {
+		t.Errorf("expected speed change to 115200, got %d", sendAction.Speed)
+	}
+}
