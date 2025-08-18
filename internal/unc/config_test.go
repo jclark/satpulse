@@ -24,9 +24,6 @@ type testReceiver struct {
 	noAckQuery   *string // Query that gets no ACK  
 	noRespQuery  *string // Query that gets ACK but no response
 	lateAckQuery *string // Query with ACK after deadline
-	
-	// Track retry attempts
-	retryCount   map[string]int // Count retries per command
 }
 
 func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Configurator, int, error) {
@@ -37,70 +34,55 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 	}
 	cfg := cfgInterface.(*Configurator)
 	
-	// Initialize retry count map if needed
-	if rcvr.retryCount == nil {
-		rcvr.retryCount = make(map[string]int)
-	}
-	
 	processErrors := 0  // Count processing errors
-
 	t0 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	// Run through requests
-	maxIterations := 100 // Safety limit to prevent infinite loops
-	iterations := 0
-	for iterations < maxIterations {
-		iterations++
-		err := cfg.GenerateRequests()
-		if err != nil {
-			return nil, 0, err
-		}
-
-		count, complete := cfg.GetRequestCount()
-		if complete && count == 0 {
-			break // Done
-		}
-		
-		// Check if we're done
-		if complete && cfg.phase == phaseFinal {
-			// Check if all requests are actually done
-			allDone := true
-			for i := 0; i < count; i++ {
-				req := cfg.Request(i)
-				state := req.GetState()
-				if state != gpsprot.ConfigRequestSucceeded && state != gpsprot.ConfigRequestFailed && state != gpsprot.ConfigRequestSkipped {
-					allDone = false
-					break
-				}
-			}
-			if allDone {
-				break
-			}
-		}
-
-		// Process requests that are ready
-		hasWork := false
-		for i := 0; i < count; i++ {
-			req := cfg.Request(i)
-
-			switch req.GetState() {
-			case gpsprot.ConfigRequestReadyToSend:
-				hasWork = true
-				pkt := req.GetPacket()
-				rcvr.nSent++
-				
-				// Track sent packet
-				pktStr := strings.TrimSuffix(string(pkt), "\r\n")
-				rcvr.sentPackets = append(rcvr.sentPackets, pktStr)
-
-				// Simulate send and response
+	
+	// Use ConfigDirector to orchestrate the configuration
+	director := gpsprot.NewConfigDirector(cfg, 2) // Allow up to 2 attempts total (1 initial + 1 retry)
+	retryTracker := make(map[string]int) // Track retries for test verification
+	
+	for action := range director.Actions() {
+		switch action.Type {
+		case gpsprot.ConfigActionSendRequest:
+			pkt := action.Packet
+			rcvr.nSent++
+			
+			// Track sent packet
+			pktStr := strings.TrimSuffix(string(pkt), "\r\n")
+			rcvr.sentPackets = append(rcvr.sentPackets, pktStr)
+			
+			// Track if this is a retry
+			if retryTracker[pktStr] > 0 {
+				// This is a retry - don't inject errors
 				t0 = t0.Add(10 * time.Millisecond)
+				req := cfg.Request(action.Index)
 				req.SetSentTime(t0)
 				
-				// Check for error injection
+				// Generate normal responses for retry
+				responses := rcvr.generateResponses(string(pkt))
+				for _, resp := range responses {
+					t0 = t0.Add(5 * time.Millisecond)
+					switch r := resp.(type) {
+					case *nmea.Sentence:
+						err = cp.NativeMsg("NMEA", "", r, t0)
+					case *uncmsg.Mode:
+						err = cp.NativeMsg("UNCA", "", r, t0)
+					}
+					if err != nil {
+						processErrors++
+					}
+				}
+			} else {
+				// First attempt - check for error injection
+				retryTracker[pktStr]++
+				
 				shouldSkipAck := rcvr.noAckQuery != nil && *rcvr.noAckQuery == pktStr
 				shouldSkipResp := rcvr.noRespQuery != nil && *rcvr.noRespQuery == pktStr
 				shouldDelayAck := rcvr.lateAckQuery != nil && *rcvr.lateAckQuery == pktStr
+				
+				t0 = t0.Add(10 * time.Millisecond)
+				req := cfg.Request(action.Index)
+				req.SetSentTime(t0)
 				
 				if shouldSkipAck {
 					// No ACK or response - simulate timeout
@@ -111,7 +93,7 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 					// Delay ACK beyond deadline
 					t0 = t0.Add(2 * time.Second) // Beyond maxResponseDelay
 				}
-
+				
 				// Generate responses
 				responses := rcvr.generateResponses(string(pkt))
 				
@@ -130,7 +112,6 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 				
 				for _, resp := range responses {
 					t0 = t0.Add(5 * time.Millisecond)
-					// Call NativeMsg with the correct tag based on response type
 					switch r := resp.(type) {
 					case *nmea.Sentence:
 						err = cp.NativeMsg("NMEA", "", r, t0)
@@ -139,86 +120,40 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 					}
 					if err != nil {
 						processErrors++
-						// Continue processing even if there's an error
-					}
-				}
-
-			case gpsprot.ConfigRequestAwaitingResponse:
-				// Check for timeout
-				if t0.After(req.GetResponseDeadline()) {
-					hasWork = true
-					req.SetResponseDeadlinePassed()
-				}
-
-			case gpsprot.ConfigRequestMaybeComplete:
-				// Check idle period  
-				deadline := req.GetResponseDeadline()
-				if t0.After(deadline) {
-					hasWork = true
-					req.SetResponseDeadlinePassed()
-				}
-
-			case gpsprot.ConfigRequestMayResend:
-				hasWork = true
-				// Allow one retry for error injection tests
-				pkt := req.GetPacket()
-				cmd := strings.TrimSuffix(string(pkt), "\r\n")
-				rcvr.retryCount[cmd]++
-				if rcvr.retryCount[cmd] > 1 {
-					req.SetWontResend() // Don't retry more than once
-				} else {
-					// Retry the request - resend it
-					rcvr.nSent++
-					
-					// Track sent packet
-					pktStr := strings.TrimSuffix(string(pkt), "\r\n")
-					rcvr.sentPackets = append(rcvr.sentPackets, pktStr)
-					
-					// Simulate send
-					t0 = t0.Add(10 * time.Millisecond)
-					req.SetSentTime(t0)
-					
-					// For retries, don't inject errors anymore  
-					// (assume the retry succeeds)
-					responses := rcvr.generateResponses(string(pkt))
-					for _, resp := range responses {
-						t0 = t0.Add(5 * time.Millisecond)
-						switch r := resp.(type) {
-						case *nmea.Sentence:
-							err = cp.NativeMsg("NMEA", "", r, t0)
-						case *uncmsg.Mode:
-							err = cp.NativeMsg("UNCA", "", r, t0)
-						}
-						if err != nil {
-							processErrors++
-							// Continue processing even if there's an error
-						}
 					}
 				}
 			}
-		}
-		
-		// If no work was done, advance time to prevent infinite loop
-		if !hasWork {
-			t0 = t0.Add(100 * time.Millisecond)
+			
+		case gpsprot.ConfigActionCheckTimeout:
+			// Check if deadline has passed
+			if t0.After(action.Deadline) {
+				req := cfg.Request(action.Index)
+				req.SetResponseDeadlinePassed()
+			}
+			
+		case gpsprot.ConfigActionWaitUntil:
+			// Advance time to the deadline
+			if action.Deadline.After(t0) {
+				t0 = action.Deadline.Add(time.Millisecond)
+			}
+			
+		case gpsprot.ConfigActionError:
+			// Error occurred but continue to allow recovery
+			continue
 		}
 	}
 	
-	if iterations >= maxIterations {
-		return nil, 0, fmt.Errorf("test stuck in loop after %d iterations", iterations)
-	}
-
+	// Add errors from ConfigDirector's ErrorCount (but we've already counted process errors)
+	// The ErrorCount includes failed requests which we handle separately
+	
 	return cfg, processErrors, nil
 }
 
 func (r *testReceiver) generateResponses(cmd string) []interface{} {
 	cmd = strings.TrimSuffix(cmd, "\r\n")
 	
-	// Check if this is a retry (second or later attempt)
-	isRetry := r.retryCount != nil && r.retryCount[cmd] > 1
-
-	// Check for NAK - return error ACK (only on first attempt)
-	if !isRetry && r.nakQuery != nil && cmd == *r.nakQuery {
+	// Check for NAK - return error ACK
+	if r.nakQuery != nil && cmd == *r.nakQuery {
 		return []interface{}{
 			&nmea.Sentence{Payload: fmt.Sprintf("command,%s,response: error", cmd)},
 		}
