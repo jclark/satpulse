@@ -385,6 +385,7 @@ We want to implement this using the new Configurator design in `plan/configurato
 
 - Flexible NMEA parsing #134
 - Protocol-agnostic GPS detection #137 (removes hardcoded protocol knowledge from gpscfg)
+- Decouple packet formats and configuration protocols #131
 
 **Library Layer (`internal/uncmsg/`)**
 
@@ -414,6 +415,8 @@ Parsing of binary and ASCII Unicore messages. Analogous to ubx/bin package.
 
 **Track 1 Status**: Initial goal achieved - satpulsed can now use Unicore binary messages for timing when manually configured to output RECTIMEB
 - SATSINFO to SatellitesMsg conversion implemented
+
+**Track 2 Status**: unc.Configurator and unc.ConfigProtocol are mostly implemented consistently with new Configurator design.
 
 ## Future Enhancements
 
