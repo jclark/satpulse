@@ -28,7 +28,7 @@ type msgHandler struct {
 	gpsprot.DefaultHandler
 	lg          *slog.Logger
 	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
-	configProts []gpsprot.ConfigProtocol
+	configProts []gpsprot.ConfigProtocol2
 	packetCh    <-chan scan.Packet
 	msgCount    map[gpsprot.Tag]int
 	bad         badCount
@@ -44,7 +44,7 @@ var _ gpsprot.NativeMsgHandler = &msgHandler{}
 
 var ErrNoProbeResponse = errors.New("no response to configuration probe message; not configuring GPS")
 
-func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
+func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol2, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetProcs, configProts, packetCh)
 	var err error
@@ -89,14 +89,15 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	}
 	mnmh.Reset(&mh, configProt)
 	cfgProps, rcvrInfo, err := mh.configure(ctx, configProt, target, port)
-	if err != nil && !isKnownError(err) {
+	// We have no ConfigProps and no ReceiverInfo, so return a nil result.
+	if err != nil && cfgProps == nil {
 		return nil, err
 	}
-	// If we got a known error, then still return the configuration properties.
+	// Return the configuration results, even if there were errors during configuration.
 	return mh.finish(cfgProps, rcvrInfo), err
 }
 
-func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, packetCh <-chan scan.Packet) {
+func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol2, packetCh <-chan scan.Packet) {
 	mh.lg = lg
 	mh.packetProcs = packetProcs
 	mh.packetCh = packetCh
@@ -216,7 +217,7 @@ func (mh *msgHandler) packetChClosed(ctx context.Context) error {
 	return io.ErrUnexpectedEOF
 }
 
-func (mh *msgHandler) probe(ctx context.Context, port gpsio.OutPort) (gpsprot.ConfigProtocol, error) {
+func (mh *msgHandler) probe(ctx context.Context, port gpsio.OutPort) (gpsprot.ConfigProtocol2, error) {
 	if len(mh.configProts) == 0 {
 		return nil, nil
 	}	
@@ -272,168 +273,78 @@ func (mh *msgHandler) installNativeMsgHandlers() (*gpsprot.MultiNativeMsgHandler
 	}
 }
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, error) {
-	cfgtor, err := prot.Configure(target)
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol2, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, error) {
+	cfgtor, err := prot.Configure2(target)
 	if err != nil {
 		return nil, nil, err
 	}
+	
+	director := gpsprot.NewConfigDirector(cfgtor, maxTries)
 	var knownErr error // error that we know how to handle
-	for {
-		req, err := cfgtor.NextRequest()
-		if err != nil {
-			if knownErr == nil {
-				mh.lg.Warn("GPS configuration failed", "err", err)
-				knownErr = err
-			}
-			continue
-		}
-		if req == nil {
-			break
-		}
-		err = mh.doRequest(ctx, cfgtor, req, port)
-		if err != nil {
-			if !isKnownError(err) {
-				return nil, nil, err
-			}
-			if knownErr == nil {
-				// the configurator doesn't need to be told about NACK; it gives up itself
-				if !errors.Is(err, errNack) {
-					mh.lg.Warn("GPS configuration failed", "msgID", req.ID(), "err", err)
-					cfgtor.Abort()
+
+	for action := range director.Actions() {
+		switch action.Type {
+		case gpsprot.ConfigActionSendRequest:
+			// Capture send time before write - ACK matching requires sentTime <= ackTime
+			tSend := time.Now()
+			var err error
+			if action.Speed != 0 {
+				// Serial port specific - send then change speed
+				if serPort, ok := port.(*gpsio.SerialConn); ok {
+					_, err = serPort.WriteThenChangeSpeed(action.Packet, action.Speed)
+				} else {
+					err = fmt.Errorf("speed change requested but port is not serial")
 				}
-				knownErr = err
+			} else {
+				_, err = port.Write(action.Packet)
 			}
-			// keep going to allow the configurator to generate recovery requests
-			continue
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to send configuration packet: %w", err)
+			}
+			req := cfgtor.Request(action.Index)
+			req.SetSentTime(tSend)
+			mh.lg.Debug("sent configuration message", "index", action.Index, "len", len(action.Packet))
+			
+		case gpsprot.ConfigActionCheckTimeout:
+			// Check if this specific request's deadline has passed
+			if time.Now().After(action.Deadline) {
+				req := cfgtor.Request(action.Index)
+				req.SetResponseDeadlinePassed()
+				mh.lg.Debug("configuration request timed out", "index", action.Index)
+			}
+			
+		case gpsprot.ConfigActionWaitUntil:
+			w := time.Until(action.Deadline)
+			if w > 0 {
+				timerCh := time.After(w)
+				select {
+				case <-ctx.Done():
+					return nil, nil, ctx.Err()
+				case <-timerCh:
+					// Continue to next iteration to check for state changes
+				case packet, ok := <-mh.packetCh:
+					if !ok {
+						return nil, nil, mh.packetChClosed(ctx)
+					}
+					mh.packet(packet)
+				}
+			}
+			
+		case gpsprot.ConfigActionError:
+			if knownErr == nil {
+				mh.lg.Warn("GPS configuration failed", "err", action.Error)
+				knownErr = action.Error
+			}
+			// Continue to allow recovery operations
 		}
 	}
+	
+	// Iterator ended - configuration complete.
+	// Return any configuration properties we obtained, even if there were errors.
 	return cfgtor.ConfigProps(), cfgtor.ReceiverInfo(), knownErr
 }
 
 const maxTries = 3
-
-func (mh *msgHandler) doRequest(ctx context.Context, cfgtor gpsprot.Configurator, req gpsprot.ConfigRequest, port gpsio.OutPort) error {
-	try := 0
-	pkt := req.Packet()
-	speed := req.ChangeSpeed()
-	for {
-		t := time.Now()
-		var err error
-		if serPort, ok := port.(*gpsio.SerialConn); ok && speed != 0 {
-			_, err = serPort.WriteThenChangeSpeed(pkt, speed)
-		} else {
-			_, err = port.Write(pkt)
-		}
-		if err != nil {
-			return err
-		}
-		err = mh.waitAfterSend(ctx, cfgtor, req, port, pkt, t)
-		if err == nil {
-			break
-		}
-		try++
-		if try >= maxTries || speed != 0 { // don't retry speed change
-			return err
-		}
-		if !errors.Is(err, errNoResponse) && !errors.Is(err, errNoAck) {
-			return err
-		}
-		mh.lg.Info("retrying configuration request", "msgID", req.ID())
-	}
-	return nil
-}
-
-const minWaitAfterSend = 10 * time.Millisecond
-
-var errNoResponse = errors.New("no response to configuration poll message")
-var errNoAck = errors.New("no ack to configuration message")
-var errNack = errors.New("configuration message rejected by GPS")
-
-func isKnownError(err error) bool {
-	return errors.Is(err, errNoResponse) || errors.Is(err, errNoAck) || errors.Is(err, errNack)
-}
-
-func (mh *msgHandler) waitAfterSend(ctx context.Context, cfgtor gpsprot.Configurator, req gpsprot.ConfigRequest, port gpsio.OutPort, pkt []byte, tSend time.Time) error {
-	// tChecksumOK is the last time when we received a packet with valid checksum.
-	// It is used for recovering from not receiving an ACK after a speed change.
-	var tChecksumOK time.Time
-	w := max(port.TransmitTime(len(pkt)), minWaitAfterSend)
-	awaitingAck := req.Ackable()
-	awaitingResp := req.AwaitingResponse(tSend)
-	if awaitingAck || awaitingResp {
-		w = time.Millisecond * 1500 // related to speedChangeDelay below
-	}
-	// speedChangeDelay is how long after tSend of a speed change packet till we assume a received packet
-	// must have been sent by the receiver after the speed change.
-	// Above, we wait for 1500ms for an ACK. If we don't get an ACK after a speed change,
-	// then we look for valid checksum in packets received up to that time.
-	// If speedChangeDelay is 400ms, then we have a window of 1100ms to receive a packet.
-	// Since we assume the receiver will send at least one packet per second, this window
-	// should be sufficient to receive a packet with valid checksum.
-	const speedChangeDelay = 400 * time.Millisecond
-	reqID := req.ID()
-	mh.lg.Debug("sent configuration message", "msgID", reqID, "len", len(pkt))
-	timerCh := time.After(w)
-	var pauseCh <-chan time.Time
-loop:
-	for timerCh != nil {
-		select {
-		case packet, ok := <-mh.packetCh:
-			if !ok {
-				return mh.packetChClosed(ctx)
-			}
-			okChecksumCount := mh.totalMsgCount()
-			mh.packet(packet)
-			if mh.totalMsgCount() > okChecksumCount {
-				tChecksumOK = packet.TRead
-			}
-			if awaitingResp {
-				awaitingResp = req.AwaitingResponse(tSend)
-			}
-			if awaitingAck {
-				ack := cfgtor.FindAck(pkt, tSend)
-				if ack != nil {
-					if !ack.OK {
-						mh.lg.Warn("GPS configuration failed: message rejected", "msgID", reqID)
-						return fmt.Errorf("%w: %s", errNack, reqID)
-					}
-					req.Done()
-					mh.lg.Debug("configuration message accepted", "msgID", reqID, "delay", ack.TRead.Sub(tSend).String())
-					awaitingAck = false
-					pause := req.Pause()
-					if pause > 0 {
-						mh.lg.Debug("scheduling pause after configuration message", "msgID", reqID, "pause", pause)
-						pauseCh = time.After(pause)
-					}
-					if awaitingResp {
-						mh.lg.Info("configuration message acknowledged before poll response", "msgID", reqID)
-					}
-				}
-			}
-			if !awaitingAck && !awaitingResp {
-				break loop
-			}
-		case <-timerCh:
-			timerCh = nil
-		}
-	}
-	if awaitingAck {
-		if req.ChangeSpeed() == 0 {
-			return fmt.Errorf("%w: %s", errNoAck, reqID)
-		} else if tChecksumOK.Sub(tSend) < speedChangeDelay { // also handles tChecksumOK.IsZero()
-			return fmt.Errorf("%w and valid packets not being received after speed change", errNoAck)
-		}
-		mh.lg.Debug("no ACK but packet with valid checksum received after speed change", "msgID", reqID)
-	}
-	if awaitingResp {
-		return fmt.Errorf("%w: %s", errNoResponse, reqID)
-	}
-	if pauseCh != nil {
-		<-pauseCh
-		mh.lg.Debug("pause over", "msgID", reqID)
-	}
-	return nil
-}
 
 func (mh *msgHandler) suitableMessageCount() int {
 	count := 0

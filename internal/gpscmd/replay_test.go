@@ -147,11 +147,11 @@ type replayer struct {
 	test        *replayTest
 	target      *gpsprot.ConfigTarget
 	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
-	configProts []gpsprot.ConfigProtocol
+	configProts []gpsprot.ConfigProtocol2
 	inIdx       int
 	outIdx      int
-	cp          gpsprot.ConfigProtocol
-	cfgtor      gpsprot.Configurator
+	cp          gpsprot.ConfigProtocol2
+	cfgtor      gpsprot.Configurator2
 	configErr   error // first configuration error encountered
 	packetCmp   packetCmpFunc
 }
@@ -246,38 +246,56 @@ func (r *replayer) run() {
 
 	// Create configurator
 	var err error
-	r.cfgtor, err = r.cp.Configure(r.target)
+	r.cfgtor, err = r.cp.Configure2(r.target)
 	if err != nil {
 		r.t.Fatal(err)
 	}
 
-	// Process configuration requests
-	for {
-		req, err := r.cfgtor.NextRequest()
-		if err != nil {
-			r.t.Logf("NextRequest error: %v", err)
-			if r.configErr == nil {
-				r.configErr = err
+	director := gpsprot.NewConfigDirector(r.cfgtor, maxTries)
+
+	// Process configuration using director
+	for action := range director.Actions() {
+		switch action.Type {
+		case gpsprot.ConfigActionSendRequest:
+			// Verify output packet matches expected
+			if r.outIdx >= len(r.test.outPackets) {
+				r.t.Fatalf("unexpected request, no more output packets")
 			}
-			continue
-		}
-		if req == nil {
-			break
-		}
 
-		// Verify output packet matches
-		if r.outIdx >= len(r.test.outPackets) {
-			r.t.Fatalf("unexpected request %s, no more output packets", req.ID())
-		}
+			expected := r.test.outPackets[r.outIdx]
+			if !r.packetCmp(r.t, "", action.Packet, expected) {
+				r.t.Errorf("packet mismatch")
+			}
+			r.outIdx++
 
-		expected := r.test.outPackets[r.outIdx]
-		actual := req.Packet()
-		if !r.packetCmp(r.t, req.ID(), actual, expected) {
-			r.t.Errorf("packet mismatch for %s", req.ID())
-		}
-		r.outIdx++
-		r.waitAfterSend(req, time.Time(expected.T), actual)
+			// Mark as sent using recorded timestamp
+			req := r.cfgtor.Request(action.Index)
+			req.SetSentTime(time.Time(expected.T))
 
+		case gpsprot.ConfigActionCheckTimeout:
+			// Use recorded packet timestamps for deterministic timeout checking
+			// Find the last input packet timestamp we've processed
+			var lastProcessedTime time.Time
+			if r.inIdx > 0 {
+				lastProcessedTime = time.Time(r.test.inPackets[r.inIdx-1].T)
+			}
+
+			// Check timeout against recorded timeline
+			if lastProcessedTime.After(action.Deadline) {
+				req := r.cfgtor.Request(action.Index)
+				req.SetResponseDeadlinePassed()
+			}
+
+		case gpsprot.ConfigActionWaitUntil:
+			// Feed packets until we reach the deadline or get the response we need
+			r.feedUpToTime(action.Deadline)
+
+		case gpsprot.ConfigActionError:
+			if r.configErr == nil {
+				r.configErr = action.Error
+			}
+			// Continue to allow recovery operations
+		}
 	}
 
 	if r.outIdx < len(r.test.outPackets) {
@@ -288,72 +306,30 @@ func (r *replayer) run() {
 
 const maxTries = 3
 
-func (r *replayer) waitAfterSend(req gpsprot.ConfigRequest, tSent time.Time, actual []byte) {
-	var err error
-	awaitingAck := req.Ackable()
-	awaitingResp := true
-	// tChecksumOK tracks the last time we received a packet with valid checksum
-	var tChecksumOK time.Time
-
-	for range maxTries {
-		// Track packets with valid checksums before feeding them
-		initialInIdx := r.inIdx
-
-		// Feed all input packets before next output packet
-		r.feedUpTo(r.outIdx)
-
-		// Check for valid checksum packets that were just fed
-		for i := initialInIdx; i < r.inIdx; i++ {
-			p := r.test.inPackets[i]
-			if p.Tag != "" { // packet has valid checksum if it has a tag
-				tChecksumOK = time.Time(p.T)
-			}
+// feedUpToTime feeds input packets up to a specific deadline
+func (r *replayer) feedUpToTime(deadline time.Time) {
+	for r.inIdx < len(r.test.inPackets) {
+		p := r.test.inPackets[r.inIdx]
+		if time.Time(p.T).After(deadline) {
+			break // Don't feed packets beyond deadline
 		}
 
-		if awaitingAck {
-			ack := r.cfgtor.FindAck(actual, tSent)
-			if ack != nil {
-				if !ack.OK {
-					if r.configErr == nil {
-						r.configErr = fmt.Errorf("NACK received for %s", req.ID())
-					}
-					return
-				}
-				req.Done()
-				awaitingAck = false
-			}
+		r.inIdx++
+		if p.Tag == "" {
+			continue // Skip invalid packets
 		}
-		if awaitingResp {
-			awaitingResp = req.AwaitingResponse(tSent)
-		}
-		if !awaitingAck && !awaitingResp {
-			return
-		}
-		if awaitingAck {
-			err = fmt.Errorf("no ACK received for %s", req.ID())
-		} else {
-			err = fmt.Errorf("no response received for %s", req.ID())
-		}
-		if r.outIdx < len(r.test.outPackets) && r.test.outPackets[r.outIdx].Data() == r.test.outPackets[r.outIdx-1].Data() {
-			// we didn't get an ACK or response, and the next recorded output packet was the same as the last one;
-			// this means (almost certainly) that originally there was a retry, so we can just skip over this and keep trying
-			r.outIdx++
+
+		pp, ok := r.packetProcs[p.Tag]
+		if !ok {
+			r.t.Errorf("no processor for tag %s", p.Tag)
 			continue
 		}
-		// do not retry
-		break
-	}
 
-	// Handle speed change case: if no ACK but valid packets received after speed change sent
-	if awaitingAck && req.ChangeSpeed() != 0 && tChecksumOK.After(tSent) {
-		req.Done()
-		return
+		_, err := pp.ProcessPacket(p.Data(), time.Time(p.T))
+		if err != nil {
+			r.t.Errorf("error processing packet: %v", err)
+		}
 	}
-
-	if r.configErr == nil {
-		r.configErr = err
-	}
-	r.cfgtor.Abort()
 }
 
 func (r *replayer) feedUpTo(outIdx int) {
