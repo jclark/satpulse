@@ -15,6 +15,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phc"
@@ -196,7 +197,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if err != nil {
 		return err
 	}
-	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, gct, pCh, conn)
+	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(), gct, pCh, conn)
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoProbeResponse) {
 			lg.Info(err.Error())

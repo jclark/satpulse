@@ -16,7 +16,7 @@ var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 // PacketProcessor implements the gpsprot.PacketProcessor interface for UBX packets
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
-	mh                gpsprot.MsgHandler
+	mh gpsprot.MsgHandler
 	// Navigation epoch tracking: UBX navigation messages (NAV-*) contain an iTOW field
 	// that identifies which navigation solution they belong to. Messages with the same
 	// iTOW are part of the same epoch and can be grouped together.
@@ -27,9 +27,9 @@ type PacketProcessor struct {
 	nEpochsSeen       int       // Number of distinct epochs seen
 	// Satellite message accumulation: NAV-SAT and NAV-SIG messages are combined
 	// into a single SatellitesMsg when both are available
-	satMsg            *gpsprot.SatellitesMsg
-	sigMsg            *gpsprot.SatellitesMsg
-	satSigTRead       time.Time // Timestamp of first message in the pair
+	satMsg      *gpsprot.SatellitesMsg
+	sigMsg      *gpsprot.SatellitesMsg
+	satSigTRead time.Time // Timestamp of first message in the pair
 }
 
 // NewPacketProcessor creates a new UBX packet processor
@@ -62,14 +62,6 @@ func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 	p.mh = handler
 }
 
-// CreatePacketExchanger creates a PacketExchanger if configuration is supported
-// Returns nil if configuration is not supported
-func (p *PacketProcessor) CreatePacketExchanger() gpsprot.PacketExchanger {
-	px := newPacketExchanger(p.GetNativeMsgHandler())
-	p.SetNativeMsgHandler(px)
-	return px
-}
-
 // handleNavEpoch tracks which messages we receive for each navigation epoch.
 // This allows us to know whether we should wait for additional messages
 // (e.g., wait for NAV-SIG if we saw it in the previous epoch).
@@ -97,7 +89,7 @@ func (p *PacketProcessor) flushNavEpoch() {
 // If we have one but not both of NAV-SAT and NAV-SIG, we decide whether to wait
 // for the other based on whether the missing message was seen in the previous epoch.
 func (p *PacketProcessor) maybeFlushSats() {
-	var missing bin.MsgID 
+	var missing bin.MsgID
 	if p.satMsg == nil {
 		if p.sigMsg == nil {
 			return

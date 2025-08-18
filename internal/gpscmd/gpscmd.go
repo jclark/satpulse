@@ -126,7 +126,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	rslt, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), target, pCh, conn)
+	rslt, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), gpsreg.CreateConfigProtocols(), target, pCh, conn)
 	if errors.Is(err, gpscfg.ErrNoProbeResponse) && configTargetIsProbeOnly(target) {
 		err = nil
 	}

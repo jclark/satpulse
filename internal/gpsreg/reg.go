@@ -31,6 +31,13 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 	}
 }
 
+// CreateConfigProtocols creates all available configuration protocols
+func CreateConfigProtocols() []gpsprot.ConfigProtocol {
+	return []gpsprot.ConfigProtocol{
+		ubx.NewConfigProtocol(),
+	}
+}
+
 func FindNMEASVNumbering(manu string) []gpsprot.NMEASVNumberingRange {
 	switch strings.ToLower(manu) {
 	case "allystar", "as":
