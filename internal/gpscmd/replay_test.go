@@ -13,25 +13,12 @@ import (
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
-	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
-	"github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
-var ubxSchema = ubxcfgval.NewSchemaWithMsgout(ubxcfgval.GetDfltSchema())
+// packetCmpFunc compares actual and expected packets for a specific protocol
+type packetCmpFunc func(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) bool
 
-func TestReplay(t *testing.T) {
-	for _, filename := range replayFiles {
-		t.Run(filename, func(t *testing.T) {
-			testReplayFile(t, filename)
-		})
-	}
-}
-
-func HideTestReplayBug(t *testing.T) {
-	testReplayFile(t, "bug")
-}
-
-func testReplayFile(t *testing.T, name string) {
+func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 	path := filepath.Join("testdata", name+".jsonl")
 	f, err := os.Open(path)
 	if err != nil {
@@ -52,7 +39,7 @@ func testReplayFile(t *testing.T, name string) {
 		}
 
 		t.Run(fmt.Sprintf("%s_%d", name, testNum), func(t *testing.T) {
-			r, err := newReplayer(t, test)
+			r, err := newReplayer(t, test, packetCmp)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -139,7 +126,7 @@ func fixupInBefore(test *replayTest) {
 	for i, outPkt := range test.outPackets {
 		outTime := time.Time(outPkt.T)
 		count := test.inBefore[i]
-		
+
 		// Check if we need to adjust by looking at packets around the boundary
 		// Decrease count while the packet at count-1 has timestamp after outTime
 		for count > 0 && time.Time(test.inPackets[count-1].T).After(outTime) {
@@ -166,9 +153,10 @@ type replayer struct {
 	cp          gpsprot.ConfigProtocol
 	cfgtor      gpsprot.Configurator
 	configErr   error // first configuration error encountered
+	packetCmp   packetCmpFunc
 }
 
-func newReplayer(t *testing.T, test *replayTest) (*replayer, error) {
+func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (*replayer, error) {
 	v, _, err := parseFlags("gps", test.env.Args)
 	if err != nil {
 		return nil, err
@@ -189,6 +177,7 @@ func newReplayer(t *testing.T, test *replayTest) (*replayer, error) {
 		target:      target,
 		packetProcs: packetProcs,
 		configProts: configProts,
+		packetCmp:   comparePackets,
 	}
 	return &r, nil
 }
@@ -221,7 +210,7 @@ func (r *replayer) run() {
 	probesSent := 0
 	for _, prot := range r.configProts {
 		probePacket := prot.ProbePacket()
-		
+
 		// Verify probe packet matches expected output
 		if r.outIdx < len(r.test.outPackets) {
 			expected := r.test.outPackets[r.outIdx]
@@ -231,7 +220,7 @@ func (r *replayer) run() {
 			}
 		}
 	}
-	
+
 	if probesSent == 0 {
 		r.t.Error("no matching probe packets found")
 		return
@@ -283,7 +272,7 @@ func (r *replayer) run() {
 
 		expected := r.test.outPackets[r.outIdx]
 		actual := req.Packet()
-		if !r.packetsEqual(req.ID(), actual, expected) {
+		if !r.packetCmp(r.t, req.ID(), actual, expected) {
 			r.t.Errorf("packet mismatch for %s", req.ID())
 		}
 		r.outIdx++
@@ -395,44 +384,6 @@ func (r *replayer) feedUpTo(outIdx int) {
 		if err != nil {
 			r.t.Errorf("error processing packet: %v", err)
 		}
-	}
-}
-
-func (r *replayer) packetsEqual(msgID string, actual []byte, expected gpsio.PacketLogEntry) bool {
-	actualStr := string(actual)
-	expectedStr := expected.Data()
-
-	// First check if they're exactly equal
-	if actualStr == expectedStr {
-		return true
-	}
-
-	// If not, check special cases for messages that might have reordered data
-	switch msgID {
-	case "CFG-VALSET":
-		return valsetPacketsEqual(r.t, actualStr, expectedStr)
-	case "CFG-VALGET":
-		// For output packets (which these always are), cfgData contains keys
-		return valgetPacketsEqual(r.t, actualStr, expectedStr)
-	default:
-		// Try to parse both messages to provide better error details
-		actualMsg, actualErr := ubxbin.ParseMsg(actualStr)
-		expectedMsg, expectedErr := ubxbin.ParseMsg(expectedStr)
-
-		if actualErr != nil {
-			r.t.Errorf("%s: failed to parse actual packet: %v", msgID, actualErr)
-		}
-		if expectedErr != nil {
-			r.t.Errorf("%s: failed to parse expected packet: %v", msgID, expectedErr)
-		}
-
-		if actualErr == nil && expectedErr == nil {
-			r.t.Errorf("%s: packets differ: actual %+v, expected %+v", msgID, actualMsg, expectedMsg)
-		} else if actualErr == nil || expectedErr == nil {
-			r.t.Errorf("%s: packet content differs (length actual=%d, expected=%d)", msgID, len(actualStr), len(expectedStr))
-		}
-
-		return false
 	}
 }
 
@@ -556,155 +507,4 @@ func equalStringSlices(a, b [][]string) bool {
 		}
 	}
 	return true
-}
-
-func valsetPacketsEqual(t *testing.T, actual, expected string) bool {
-	// Parse both packets
-	actualMsg, err := ubxbin.ParseMsg(actual)
-	if err != nil {
-		t.Errorf("CFG-VALSET: failed to parse actual packet: %v", err)
-		return false
-	}
-	expectedMsg, err := ubxbin.ParseMsg(expected)
-	if err != nil {
-		t.Errorf("CFG-VALSET: failed to parse expected packet: %v", err)
-		return false
-	}
-
-	actualValset, ok := actualMsg.(*ubxbin.CfgValset)
-	if !ok {
-		return false
-	}
-	expectedValset, ok := expectedMsg.(*ubxbin.CfgValset)
-	if !ok {
-		t.Errorf("expected %s, but got CFG-VALSET", expectedMsg.ID().String())
-		return false
-	}
-
-	// Compare fixed fields
-	if actualValset.CfgValsetFixed != expectedValset.CfgValsetFixed {
-		t.Errorf("CFG-VALSET: fixed fields differ: actual %+v, expected %+v",
-			actualValset.CfgValsetFixed, expectedValset.CfgValsetFixed)
-		return false
-	}
-
-	// Parse and compare configuration items
-	actualKeys, actualValues, err := ubxSchema.UnmarshalItemsFlat(actualValset.CfgData)
-	if err != nil {
-		t.Errorf("CFG-VALSET: failed to unmarshal actual items: %v", err)
-		return false
-	}
-
-	expectedKeys, expectedValues, err := ubxSchema.UnmarshalItemsFlat(expectedValset.CfgData)
-	if err != nil {
-		t.Errorf("CFG-VALSET: failed to unmarshal expected items: %v", err)
-		return false
-	}
-
-	// Create maps for comparison
-	actualMap := make(map[string]any)
-	expectedMap := make(map[string]any)
-
-	for i, key := range actualKeys {
-		actualMap[key] = actualValues[i]
-	}
-	for i, key := range expectedKeys {
-		expectedMap[key] = expectedValues[i]
-	}
-
-	// Check each expected key
-	equal := true
-	for key, expectedVal := range expectedMap {
-		if actualVal, exists := actualMap[key]; !exists {
-			t.Errorf("CFG-VALSET: missing key: %s (expected value: %v)", key, expectedVal)
-			equal = false
-		} else if actualVal != expectedVal {
-			t.Errorf("CFG-VALSET: key %s: actual %v, expected %v", key, actualVal, expectedVal)
-			equal = false
-		}
-	}
-
-	// Check for unexpected keys
-	for key, actualVal := range actualMap {
-		if _, exists := expectedMap[key]; !exists {
-			t.Errorf("CFG-VALSET: unexpected key: %s (actual value: %v)", key, actualVal)
-			equal = false
-		}
-	}
-
-	return equal
-}
-
-func valgetPacketsEqual(t *testing.T, actual, expected string) bool {
-	// Parse both packets
-	actualMsg, err := ubxbin.ParseMsg(actual)
-	if err != nil {
-		t.Errorf("CFG-VALGET: failed to parse actual packet: %v", err)
-		return false
-	}
-	expectedMsg, err := ubxbin.ParseMsg(expected)
-	if err != nil {
-		t.Errorf("CFG-VALGET: failed to parse expected packet: %v", err)
-		return false
-	}
-
-	actualValget, ok := actualMsg.(*ubxbin.CfgValget)
-	if !ok {
-		return false
-	}
-	expectedValget, ok := expectedMsg.(*ubxbin.CfgValget)
-	if !ok {
-		t.Errorf("expected %s, but got CFG-VALGET", expectedMsg.ID().String())
-		return false
-	}
-
-	// Compare fixed fields
-	if actualValget.CfgValgetFixed != expectedValget.CfgValgetFixed {
-		t.Errorf("CFG-VALGET: fixed fields differ: actual %+v, expected %+v",
-			actualValget.CfgValgetFixed, expectedValget.CfgValgetFixed)
-		return false
-	}
-
-	// For output packets, cfgData contains keys only
-	actualKeys, err := ubxSchema.UnmarshalKeysFlat(actualValget.CfgData)
-	if err != nil {
-		t.Errorf("CFG-VALGET: failed to unmarshal actual keys: %v", err)
-		return false
-	}
-
-	expectedKeys, err := ubxSchema.UnmarshalKeysFlat(expectedValget.CfgData)
-	if err != nil {
-		t.Errorf("CFG-VALGET: failed to unmarshal expected keys: %v", err)
-		return false
-	}
-
-	// Create maps for comparison (to ignore order)
-	actualMap := make(map[string]bool)
-	expectedMap := make(map[string]bool)
-
-	for _, key := range actualKeys {
-		actualMap[key] = true
-	}
-	for _, key := range expectedKeys {
-		expectedMap[key] = true
-	}
-
-	// Check each expected key
-	equal := true
-	for key := range expectedMap {
-		if !actualMap[key] {
-			t.Errorf("CFG-VALGET: missing expected key: %s", key)
-			equal = false
-		}
-	}
-
-	// Check for unexpected keys
-	for key := range actualMap {
-		if !expectedMap[key] {
-			t.Errorf("CFG-VALGET: unexpected extra key: %s", key)
-			equal = false
-		}
-	}
-
-	return equal
 }
