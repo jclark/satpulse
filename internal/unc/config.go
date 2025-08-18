@@ -78,6 +78,25 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 	return nil
 }
 
+// ReceiverInfo returns static information about the GPS receiver
+func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
+	buildNum, _ := c.ver.BuildNumber()
+	return &gpsprot.ReceiverInfo{
+		Vendor:         "Unicore",
+		Firmware:       fmt.Sprintf("Build%d", buildNum),
+		Hardware:       c.ver.Type.String(),
+		SupportedGNSS:  0, // Will be populated from CONFIG query responses
+		VendorSpecific: c.ver,
+	}
+}
+
+// ConfigProps returns the current configuration of the GPS receiver
+func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
+	props := &gpsprot.ConfigProps{}
+	c.nativeProps.convertToProps(props)
+	return props
+}
+
 func (cp *ConfigProtocol) ProbePacket() []byte {
 	return []byte("VERSIONB\r\n")
 }
@@ -128,10 +147,10 @@ func (c *Configurator) GenerateRequests() error {
 				anyFailed = true
 			}
 		}
-		
+
 		// All requests are final
 		c.nFinished = len(c.reqs)
-		
+
 		// Generate config requests if none failed
 		if !anyFailed {
 			c.generateConfigReqs()
@@ -155,7 +174,6 @@ func (c *Configurator) generateQueryReqs() {
 		})
 	}
 }
-
 
 func (c *Configurator) generateConfigReqs() {
 	for _, cmd := range c.nativeProps.generateConfigCommands(c.target) {
@@ -342,7 +360,7 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 // configQueryResponse handles a response to query, where the response has the form
 // `$CONFIG,PPS,CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0*6A`
 // fields here will be {"PPS","CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0"}
-// or `$CONFIG,MASK,MASK 5*XX`  
+// or `$CONFIG,MASK,MASK 5*XX`
 // fields here will be {"MASK","MASK 5"}
 func (c *Configurator) configQueryResponse(fields []string, tRead time.Time) error {
 	if len(fields) < 2 {
@@ -356,7 +374,7 @@ func (c *Configurator) configQueryResponse(fields []string, tRead time.Time) err
 	if fields[0] == "MASK" {
 		query = "MASK"
 	}
-	
+
 	return c.queryResponse(query, fields[0], fields[1], tRead)
 }
 
