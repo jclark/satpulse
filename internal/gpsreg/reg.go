@@ -40,7 +40,7 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 func CreateConfigProtocols() []gpsprot.ConfigProtocol2 {
 	return []gpsprot.ConfigProtocol2{
 		// ubx.NewConfigProtocol(),
-		// unc.NewConfigProtocol(),
+		unc.NewConfigProtocol(),
 	}
 }
 
