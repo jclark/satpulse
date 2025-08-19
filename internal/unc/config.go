@@ -181,9 +181,10 @@ func (c *Configurator) generateQueryReqs() {
 }
 
 func (c *Configurator) generateConfigReqs() {
-	for _, cmd := range c.nativeProps.generateConfigCommands(c.target) {
+	for _, nativeCmd := range c.nativeProps.generateConfigCommands(c.target) {
 		c.reqs = append(c.reqs, &ConfigRequest{
-			cmd:   cmd,
+			cmd:   nativeCmd.cmd,
+			prop:  c.nativeProps.getProp(nativeCmd.key),
 			state: stateReadyToSendCommand,
 		})
 	}

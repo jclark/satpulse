@@ -288,8 +288,8 @@ func TestMaskPropRoundTrip(t *testing.T) {
 
 			// Convert to sets for comparison
 			gotSet := make(map[string]bool)
-			for _, cmd := range commands {
-				gotSet[cmd] = true
+			for _, nativeCmd := range commands {
+				gotSet[nativeCmd.cmd] = true
 			}
 
 			wantSet := make(map[string]bool)
@@ -304,9 +304,9 @@ func TestMaskPropRoundTrip(t *testing.T) {
 
 			// Test round-trip: parse commands back
 			roundTrip := maskProp{}
-			for _, cmd := range commands {
-				if err := roundTrip.updateFromCommand(cmd); err != nil {
-					t.Fatalf("updateFromCommand(%q) failed: %v", cmd, err)
+			for _, nativeCmd := range commands {
+				if err := roundTrip.updateFromCommand(nativeCmd.cmd); err != nil {
+					t.Fatalf("updateFromCommand(%q) failed: %v", nativeCmd.cmd, err)
 				}
 			}
 
@@ -383,8 +383,8 @@ func TestMaskPropDifferentialUpdate(t *testing.T) {
 
 			// Convert to sets for comparison
 			gotSet := make(map[string]bool)
-			for _, cmd := range commands {
-				gotSet[cmd] = true
+			for _, nativeCmd := range commands {
+				gotSet[nativeCmd.cmd] = true
 			}
 
 			wantSet := make(map[string]bool)
@@ -424,7 +424,7 @@ func TestMaskPropElevation(t *testing.T) {
 	expected := []string{"MASK 5.0"}
 
 	// For elevation, order should be deterministic (only one command)
-	if len(commands) != len(expected) || commands[0] != expected[0] {
+	if len(commands) != len(expected) || commands[0].cmd != expected[0] {
 		t.Errorf("generateCommands() = %v, want %v", commands, expected)
 	}
 
@@ -432,7 +432,7 @@ func TestMaskPropElevation(t *testing.T) {
 	prev2 := &maskProp{elevationMask: "10"}
 	commands2 := prop.generateCommands(prev2, gpsprot.SigSetAll)
 	expected2 := []string{"MASK 5.0"}
-	if len(commands2) != len(expected2) || commands2[0] != expected2[0] {
+	if len(commands2) != len(expected2) || commands2[0].cmd != expected2[0] {
 		t.Errorf("generateCommands() = %v, want %v", commands2, expected2)
 	}
 
@@ -1212,16 +1212,16 @@ func TestNativeConfigProps(t *testing.T) {
 
 			// Check that each got command is in expected set and validate ordering
 			seenUnmask := false
-			for _, cmd := range commands {
-				if _, exists := expectedSet[cmd]; !exists {
-					t.Errorf("generateConfigCommands() returned unexpected command: %s", cmd)
+			for _, nativeCmd := range commands {
+				if _, exists := expectedSet[nativeCmd.cmd]; !exists {
+					t.Errorf("generateConfigCommands() returned unexpected command: %s", nativeCmd.cmd)
 				}
 				
 				// Check ordering: MASK commands must come before UNMASK commands
-				if strings.HasPrefix(cmd, "UNMASK") {
+				if strings.HasPrefix(nativeCmd.cmd, "UNMASK") {
 					seenUnmask = true
-				} else if strings.HasPrefix(cmd, "MASK") && seenUnmask {
-					t.Errorf("generateConfigCommands() returned MASK command after UNMASK command: %s", cmd)
+				} else if strings.HasPrefix(nativeCmd.cmd, "MASK") && seenUnmask {
+					t.Errorf("generateConfigCommands() returned MASK command after UNMASK command: %s", nativeCmd.cmd)
 				}
 			}
 		})

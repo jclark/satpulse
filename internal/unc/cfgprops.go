@@ -32,6 +32,12 @@ const (
 	idPropMode = "MODE"
 )
 
+// nativeCommand represents a command string paired with its property key
+type nativeCommand struct {
+	cmd string
+	key string
+}
+
 // nativeConfigProp describes property of the receiver's configuration
 type nativeConfigProp interface {
 	// updateFromCommand updates the property based on a command string understood by the receiver.
@@ -76,7 +82,7 @@ func generateQueryCommands(_ *gpsprot.ConfigTarget) []string {
 var errMissingProp = fmt.Errorf("missing property")
 
 // generateConfigCommands generates commands to change the native state to have the abstract properties specified by target
-func (np *nativeConfigProps) generateConfigCommands(target *gpsprot.ConfigTarget) []string {
+func (np *nativeConfigProps) generateConfigCommands(target *gpsprot.ConfigTarget) []nativeCommand {
 	// Create the full set of target abstract props
 	// Convert currrent native props to abstract props
 	fullTargetProps := gpsprot.ConfigProps{}
@@ -115,7 +121,7 @@ func (np *nativeConfigProps) convertToProps(props *gpsprot.ConfigProps) {
 	np.mode.convertToProps(props)
 }
 
-func (np *nativeConfigProps) generateCommands(prevProps *nativeConfigProps) []string {
+func (np *nativeConfigProps) generateCommands(prevProps *nativeConfigProps) []nativeCommand {
 	cmds := np.pps.generateCommands(&prevProps.pps)
 	// This won't do anything because we are not changing signal group.
 	cmds = append(cmds, np.signalGroup.generateCommands(&prevProps.signalGroup)...)
@@ -168,11 +174,11 @@ func (p *ppsProp) updateFromCommand(cmd string) error {
 	return nil
 }
 
-func (p *ppsProp) generateCommands(prev *ppsProp) []string {
+func (p *ppsProp) generateCommands(prev *ppsProp) []nativeCommand {
 	if prev.command == p.command || p.command == "" {
 		return nil
 	}
-	return []string{p.command}
+	return []nativeCommand{{cmd: p.command, key: idPropPPS}}
 }
 
 func (p *ppsProp) convertToProps(props *gpsprot.ConfigProps) {
@@ -323,11 +329,11 @@ func (p *signalGroupProp) updateFromCommand(cmd string) error {
 	return nil
 }
 
-func (p *signalGroupProp) generateCommands(prev *signalGroupProp) []string {
+func (p *signalGroupProp) generateCommands(prev *signalGroupProp) []nativeCommand {
 	if prev.command == p.command || p.command == "" {
 		return nil
 	}
-	return []string{p.command}
+	return []nativeCommand{{cmd: p.command, key: idPropSignalGroup}}
 }
 
 // signalSet returns the SignalSet for the signal group for the main antenna
@@ -396,12 +402,12 @@ func (p *maskProp) updateFromProps(props *gpsprot.ConfigProps, availSignals gpsp
 	return nil
 }
 
-func (p *maskProp) generateCommands(prevMask *maskProp, sigGroupSignals gpsprot.SignalSet) []string {
-	var commands []string
+func (p *maskProp) generateCommands(prevMask *maskProp, sigGroupSignals gpsprot.SignalSet) []nativeCommand {
+	var commands []nativeCommand
 	// Handle elevation mask changes
 	if p.elevationMask != prevMask.elevationMask {
 		if p.elevationMask != "" {
-			commands = append(commands, "MASK "+p.elevationMask)
+			commands = append(commands, nativeCommand{cmd: "MASK " + p.elevationMask, key: idPropMask})
 		}
 	}
 	// Handle signal mask changes
@@ -411,8 +417,8 @@ func (p *maskProp) generateCommands(prevMask *maskProp, sigGroupSignals gpsprot.
 }
 
 // generateMaskCommands generates MASK or UNMASK commands for a given signal set
-func generateMaskCommands(signals gpsprot.SignalSet, sigGroupSignals gpsprot.SignalSet, command string) []string {
-	var commands []string
+func generateMaskCommands(signals gpsprot.SignalSet, sigGroupSignals gpsprot.SignalSet, command string) []nativeCommand {
+	var commands []nativeCommand
 	targetSet := signals
 	// maskSignalList is ordered with supersets first, so we will get a minimal command set
 	for _, entry := range maskSignalList {
@@ -426,7 +432,7 @@ func generateMaskCommands(signals gpsprot.SignalSet, sigGroupSignals gpsprot.Sig
 		// This is safe since SIGNALGROUP does a reset.
 		applicableSignals := entry.signalSet & sigGroupSignals
 		if applicableSignals != 0 && (applicableSignals&targetSet) == applicableSignals {
-			commands = append(commands, command+" "+entry.name)
+			commands = append(commands, nativeCommand{cmd: command + " " + entry.name, key: idPropMask})
 			targetSet &^= entry.signalSet
 		}
 	}
@@ -587,9 +593,9 @@ func (p *modeProp) updateFromProps(props *gpsprot.ConfigProps, survey gpsprot.Su
 	return nil
 }
 
-func (p *modeProp) generateCommands(prevMode *modeProp) []string {
+func (p *modeProp) generateCommands(prevMode *modeProp) []nativeCommand {
 	if prevMode.command == p.command || p.command == "" {
 		return nil
 	}
-	return []string{p.command}
+	return []nativeCommand{{cmd: p.command, key: idPropMode}}
 }

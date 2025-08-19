@@ -14,14 +14,14 @@ import (
 
 // testReceiver simulates a Unicore receiver using nativeConfigProps
 type testReceiver struct {
-	nativeProps  nativeConfigProps
-	version      *uncmsg.Version
-	nSent        int
-	sentPackets  []string // Track all packets sent for verification
-	
+	nativeProps nativeConfigProps
+	version     *uncmsg.Version
+	nSent       int
+	sentPackets []string // Track all packets sent for verification
+
 	// Error injection
 	nakQuery     *string // Query that gets negative ACK
-	noAckQuery   *string // Query that gets no ACK  
+	noAckQuery   *string // Query that gets no ACK
 	noRespQuery  *string // Query that gets ACK but no response
 	lateAckQuery *string // Query with ACK after deadline
 }
@@ -33,31 +33,31 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 		return nil, 0, err
 	}
 	cfg := cfgInterface.(*Configurator)
-	
-	processErrors := 0  // Count processing errors
+
+	processErrors := 0 // Count processing errors
 	t0 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	
+
 	// Use ConfigDirector to orchestrate the configuration
 	director := gpsprot.NewConfigDirector(cfg, 2) // Allow up to 2 attempts total (1 initial + 1 retry)
-	retryTracker := make(map[string]int) // Track retries for test verification
-	
+	retryTracker := make(map[string]int)          // Track retries for test verification
+
 	for action := range director.Actions() {
 		switch action.Type {
 		case gpsprot.ConfigActionSendRequest:
 			pkt := action.Packet
 			rcvr.nSent++
-			
+
 			// Track sent packet
 			pktStr := strings.TrimSuffix(string(pkt), "\r\n")
 			rcvr.sentPackets = append(rcvr.sentPackets, pktStr)
-			
+
 			// Track if this is a retry
 			if retryTracker[pktStr] > 0 {
 				// This is a retry - don't inject errors
 				t0 = t0.Add(10 * time.Millisecond)
 				req := cfg.Request(action.Index)
 				req.SetSentTime(t0)
-				
+
 				// Generate normal responses for retry
 				responses := rcvr.generateResponses(string(pkt))
 				for _, resp := range responses {
@@ -75,28 +75,28 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 			} else {
 				// First attempt - check for error injection
 				retryTracker[pktStr]++
-				
+
 				shouldSkipAck := rcvr.noAckQuery != nil && *rcvr.noAckQuery == pktStr
 				shouldSkipResp := rcvr.noRespQuery != nil && *rcvr.noRespQuery == pktStr
 				shouldDelayAck := rcvr.lateAckQuery != nil && *rcvr.lateAckQuery == pktStr
-				
+
 				t0 = t0.Add(10 * time.Millisecond)
 				req := cfg.Request(action.Index)
 				req.SetSentTime(t0)
-				
+
 				if shouldSkipAck {
 					// No ACK or response - simulate timeout
 					continue
 				}
-				
+
 				if shouldDelayAck {
 					// Delay ACK beyond deadline
 					t0 = t0.Add(2 * time.Second) // Beyond maxResponseDelay
 				}
-				
+
 				// Generate responses
 				responses := rcvr.generateResponses(string(pkt))
-				
+
 				// Filter responses based on error injection
 				if shouldSkipResp {
 					// Keep only ACK, skip other responses
@@ -109,7 +109,7 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 					}
 					responses = ackOnly
 				}
-				
+
 				for _, resp := range responses {
 					t0 = t0.Add(5 * time.Millisecond)
 					switch r := resp.(type) {
@@ -123,35 +123,35 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 					}
 				}
 			}
-			
+
 		case gpsprot.ConfigActionCheckTimeout:
 			// Check if deadline has passed
 			if t0.After(action.Deadline) {
 				req := cfg.Request(action.Index)
 				req.SetResponseDeadlinePassed()
 			}
-			
+
 		case gpsprot.ConfigActionWaitUntil:
 			// Advance time to the deadline
 			if action.Deadline.After(t0) {
 				t0 = action.Deadline.Add(time.Millisecond)
 			}
-			
+
 		case gpsprot.ConfigActionError:
 			// Error occurred but continue to allow recovery
 			continue
 		}
 	}
-	
+
 	// Add errors from ConfigDirector's ErrorCount (but we've already counted process errors)
 	// The ErrorCount includes failed requests which we handle separately
-	
+
 	return cfg, processErrors, nil
 }
 
 func (r *testReceiver) generateResponses(cmd string) []interface{} {
 	cmd = strings.TrimSuffix(cmd, "\r\n")
-	
+
 	// Check for NAK - return error ACK
 	if r.nakQuery != nil && cmd == *r.nakQuery {
 		return []interface{}{
@@ -176,9 +176,9 @@ func (r *testReceiver) generateResponses(cmd string) []interface{} {
 		responses = append(responses, &nmea.Sentence{
 			Payload: fmt.Sprintf("CONFIG,PPS,%s", ppsCmd),
 		})
-		
+
 		// SIGNALGROUP response - always send something
-		sgCmd := r.nativeProps.signalGroup.command  
+		sgCmd := r.nativeProps.signalGroup.command
 		if sgCmd == "" {
 			sgCmd = "CONFIG SIGNALGROUP 2" // Default group
 		}
@@ -199,7 +199,7 @@ func (r *testReceiver) generateResponses(cmd string) []interface{} {
 		responses = append(responses, &nmea.Sentence{
 			Payload: fmt.Sprintf("CONFIG,MASK,MASK %s", maskCmd),
 		})
-		
+
 		// Add signal masks if configured
 		if r.nativeProps.mask.signalMask != 0 {
 			responses = append(responses, &nmea.Sentence{
@@ -241,21 +241,22 @@ func stringPtr(s string) *string {
 
 func TestConfigurator(t *testing.T) {
 	tests := []struct {
-		name           string
-		initialState   []string                     // Commands representing receiver state
-		targetProps    func(*gpsprot.ConfigProps)   // Target properties (optional)
-		targetOpts     func(*gpsprot.ConfigOptions) // Target options (optional)
-		
+		name         string
+		initialState []string                     // Commands representing receiver state
+		targetProps  func(*gpsprot.ConfigProps)   // Target properties (optional)
+		targetOpts   func(*gpsprot.ConfigOptions) // Target options (optional)
+
 		// Error injection (single query for each error type)
-		nakQuery       *string  // Query that gets negative ACK
-		noAckQuery     *string  // Query that gets no ACK
-		noRespQuery    *string  // Query that gets ACK but no response  
-		lateAckQuery   *string  // Query with ACK after deadline
-		
+		nakQuery     *string // Query that gets negative ACK
+		noAckQuery   *string // Query that gets no ACK
+		noRespQuery  *string // Query that gets ACK but no response
+		lateAckQuery *string // Query with ACK after deadline
+
 		// Expectations
-		expectedSent        []string                     // Expected packets sent (in order)
+		expectedSent        []string                      // Expected packets sent (in order)
 		expectedStates      map[string]configRequestState // Final states by command
 		expectProcessErrors int                           // Number of packets that should produce processing errors
+		expectProps         func(*gpsprot.ConfigProps)    // Expected final properties if different from targetProps
 	}{
 		// Realistic scenarios (like satpulsed would do)
 		{
@@ -279,7 +280,7 @@ func TestConfigurator(t *testing.T) {
 				o.Survey.MinDur = 60 * time.Second
 			},
 			expectedSent: []string{
-				"CONFIG", "MASK", "MODE",  // Query phase
+				"CONFIG", "MASK", "MODE", // Query phase
 				"CONFIG PPS ENABLE GPS POSITIVE 100000 1000 50 0",
 				"MODE BASE TIME 60",
 			},
@@ -309,8 +310,14 @@ func TestConfigurator(t *testing.T) {
 				})
 				p.SetRTCMBaseID(123)
 			},
+			// Unicore doesn't provide FixedPosAcc
+			expectProps: func(p *gpsprot.ConfigProps) {
+				mode, _ := p.GetMode()
+				mode.FixedPosAcc = 0
+				p.SetMode(mode)
+			},
 			expectedSent: []string{
-				"CONFIG", "MASK", "MODE",  // Query phase
+				"CONFIG", "MASK", "MODE", // Query phase
 				"MODE BASE 123 1000000.0000 2000000.0000 3000000.0000",
 			},
 			expectedStates: map[string]configRequestState{
@@ -331,17 +338,17 @@ func TestConfigurator(t *testing.T) {
 				})
 			},
 			expectedSent: []string{
-				"CONFIG", "MASK", "MODE",  // Query phase
+				"CONFIG", "MASK", "MODE", // Query phase
 				"MODE ROVER",
 			},
 			expectedStates: map[string]configRequestState{
-				"CONFIG": stateSucceeded,
-				"MASK":   stateSucceeded,
-				"MODE":   stateSucceeded,
+				"CONFIG":     stateSucceeded,
+				"MASK":       stateSucceeded,
+				"MODE":       stateSucceeded,
 				"MODE ROVER": stateSucceeded,
 			},
 		},
-		
+
 		// Query phase only tests
 		{
 			name: "query phase with multi-response",
@@ -360,7 +367,7 @@ func TestConfigurator(t *testing.T) {
 				"MODE":   stateSucceeded,
 			},
 		},
-		
+
 		// Error scenarios
 		{
 			name: "query with no ACK",
@@ -370,12 +377,12 @@ func TestConfigurator(t *testing.T) {
 			noAckQuery: stringPtr("MODE"),
 			expectedSent: []string{
 				"CONFIG", "MASK", "MODE",
-				"MODE",  // Retry after timeout
+				"MODE", // Retry after timeout
 			},
 			expectedStates: map[string]configRequestState{
 				"CONFIG": stateSucceeded,
-				"MASK":   stateSucceeded,  
-				"MODE":   stateSucceeded,  // Retry succeeds
+				"MASK":   stateSucceeded,
+				"MODE":   stateSucceeded, // Retry succeeds
 			},
 		},
 		{
@@ -386,10 +393,10 @@ func TestConfigurator(t *testing.T) {
 			noRespQuery: stringPtr("CONFIG"),
 			expectedSent: []string{
 				"CONFIG", "MASK", "MODE",
-				"CONFIG",  // Retry after timeout
+				"CONFIG", // Retry after timeout
 			},
 			expectedStates: map[string]configRequestState{
-				"CONFIG": stateSucceeded,  // Retry succeeds
+				"CONFIG": stateSucceeded, // Retry succeeds
 				"MASK":   stateSucceeded,
 				"MODE":   stateSucceeded,
 			},
@@ -408,9 +415,9 @@ func TestConfigurator(t *testing.T) {
 			expectedStates: map[string]configRequestState{
 				"CONFIG": stateSucceeded,
 				"MASK":   stateSucceeded,
-				"MODE":   stateFailed,  // NAK means immediate failure
+				"MODE":   stateFailed, // NAK means immediate failure
 			},
-			expectProcessErrors: 0,  // NAK is handled properly, no processing error
+			expectProcessErrors: 0, // NAK is handled properly, no processing error
 		},
 		{
 			name: "ACK arrives too late",
@@ -420,14 +427,14 @@ func TestConfigurator(t *testing.T) {
 			lateAckQuery: stringPtr("MASK"),
 			expectedSent: []string{
 				"CONFIG", "MASK", "MODE",
-				"MASK",  // Retry after timeout
+				"MASK", // Retry after timeout
 			},
 			expectedStates: map[string]configRequestState{
 				"CONFIG": stateSucceeded,
-				"MASK":   stateSucceeded,  // Retry succeeds
+				"MASK":   stateSucceeded, // Retry succeeds
 				"MODE":   stateSucceeded,
 			},
-			expectProcessErrors: 2,  // Both late ACK and late query response cause "no matching request" errors
+			expectProcessErrors: 2, // Both late ACK and late query response cause "no matching request" errors
 		},
 		{
 			name: "command gets negative ACK",
@@ -443,19 +450,19 @@ func TestConfigurator(t *testing.T) {
 			targetOpts: func(o *gpsprot.ConfigOptions) {
 				o.Survey.MinDur = 60 * time.Second
 			},
-			nakQuery: stringPtr("MODE BASE TIME 60"),  // NAK the command
+			nakQuery: stringPtr("MODE BASE TIME 60"), // NAK the command
 			expectedSent: []string{
 				"CONFIG", "MASK", "MODE",
 				"MODE BASE TIME 60",
 				// No retry for NAK - fails immediately
 			},
 			expectedStates: map[string]configRequestState{
-				"CONFIG": stateSucceeded,
-				"MASK":   stateSucceeded,
-				"MODE":   stateSucceeded,
-				"MODE BASE TIME 60": stateFailed,  // NAK means immediate failure
+				"CONFIG":            stateSucceeded,
+				"MASK":              stateSucceeded,
+				"MODE":              stateSucceeded,
+				"MODE BASE TIME 60": stateFailed, // NAK means immediate failure
 			},
-			expectProcessErrors: 0,  // NAK is handled properly, no processing error
+			expectProcessErrors: 0, // NAK is handled properly, no processing error
 		},
 		{
 			name: "query fails but config phase still runs",
@@ -469,15 +476,15 @@ func TestConfigurator(t *testing.T) {
 			expectedSent: []string{
 				"CONFIG", "MASK", "MODE",
 				// No retry for NAK - CONFIG fails immediately
-				"MODE BASE TIME 0",  // Config phase still runs (using defaults since CONFIG failed)
+				"MODE BASE TIME 0", // Config phase still runs (using defaults since CONFIG failed)
 			},
 			expectedStates: map[string]configRequestState{
-				"CONFIG": stateFailed,  // NAK means immediate failure
-				"MASK":   stateSucceeded,
-				"MODE":   stateSucceeded,
+				"CONFIG":           stateFailed, // NAK means immediate failure
+				"MASK":             stateSucceeded,
+				"MODE":             stateSucceeded,
 				"MODE BASE TIME 0": stateSucceeded,
 			},
-			expectProcessErrors: 0,  // NAK is handled properly
+			expectProcessErrors: 0, // NAK is handled properly
 		},
 	}
 
@@ -493,7 +500,7 @@ func TestConfigurator(t *testing.T) {
 				lateAckQuery: tt.lateAckQuery,
 				sentPackets:  []string{},
 			}
-			
+
 			// Set up initial state
 			for _, cmd := range tt.initialState {
 				fields := strings.Fields(cmd)
@@ -506,7 +513,7 @@ func TestConfigurator(t *testing.T) {
 				} else {
 					key = fields[0]
 				}
-				
+
 				err := rcvr.nativeProps.updateFromQueryResponse(key, cmd)
 				if err != nil {
 					t.Fatalf("failed to set up initial state for command %s: %v", cmd, err)
@@ -514,7 +521,7 @@ func TestConfigurator(t *testing.T) {
 			}
 			// Debug: check what's stored
 			// t.Logf("Initial mode command: %q", rcvr.nativeProps.mode.command)
-			
+
 			// Create target
 			target := &gpsprot.ConfigTarget{}
 			if tt.targetProps != nil {
@@ -523,26 +530,45 @@ func TestConfigurator(t *testing.T) {
 			if tt.targetOpts != nil {
 				tt.targetOpts(&target.Opts)
 			}
-			
+
 			// Run configuration
 			cfg, processErrors, err := runConfiguration(rcvr, target)
-			
+
 			// We don't expect runConfiguration to return an error for these test cases
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			
+
 			// Check process errors
 			if processErrors != tt.expectProcessErrors {
 				t.Errorf("process errors mismatch: got %d, want %d", processErrors, tt.expectProcessErrors)
 			}
-			
+
 			// Verify sent packets
 			if !slices.Equal(rcvr.sentPackets, tt.expectedSent) {
 				t.Errorf("sent packets mismatch\ngot:  %v\nwant: %v", rcvr.sentPackets, tt.expectedSent)
 			}
-			
-			// Verify final states  
+
+			reqFailed := false
+			for _, state := range tt.expectedStates {
+				if state == stateFailed {
+					reqFailed = true
+					break
+				}
+			}
+			// Verify properties
+			if !reqFailed && tt.targetProps != nil {
+				expectProps := target.Props
+				if tt.expectProps != nil {
+					tt.expectProps(&expectProps)
+				}
+				inconsistent := expectProps.Inconsistent(cfg.ConfigProps())
+				if !inconsistent.IsEmpty() {
+					t.Errorf("inconsistent properties: %s", inconsistent.String())
+				}
+			}
+
+			// Verify final states
 			if tt.expectedStates != nil {
 				// Debug: print all request states
 				if t.Failed() {
@@ -552,7 +578,7 @@ func TestConfigurator(t *testing.T) {
 					}
 					t.Logf("Phase: %v, Complete: %v, nFinished: %v", cfg.phase, cfg.complete, cfg.nFinished)
 				}
-				
+
 				for _, req := range cfg.reqs {
 					if expectedState, ok := tt.expectedStates[req.cmd]; ok {
 						if req.state != expectedState {
@@ -564,4 +590,3 @@ func TestConfigurator(t *testing.T) {
 		})
 	}
 }
-
