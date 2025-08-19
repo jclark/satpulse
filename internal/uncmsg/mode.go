@@ -1,9 +1,11 @@
 package uncmsg
 
+import "strings"
+
 // Mode represents the response to the MODE query command.
 // This message is ASCII-only and uses an 8-bit XOR checksum.
 // No binary message ID is assigned.
-// 
+//
 // The message has two comma-separated fields in the payload:
 // 1. MODE - Operating mode (e.g., "MODE ROVER SURVEY", "MODE BASE TIME 60 2.5 3.5")
 // 2. HEADINGMODE - HEADING2 mode info (empty string if HEADING2 disabled, dual-antenna only)
@@ -30,6 +32,15 @@ type Mode struct {
 // Returns 0 for MsgID since this is an ASCII-only message
 func (m *Mode) ID() (MsgID, string) {
 	return 0, "MODE"
+}
+
+// Command returns the equivalent MODE command that would establish this mode
+func (m *Mode) Command() string {
+	cmd := m.Mode
+	if cmd == "MODE HEADING2" && strings.HasPrefix(m.HeadingMode, "HEADINGMODE ") {
+		cmd += m.HeadingMode[len("HEADINGMODE"):]
+	}
+	return cmd
 }
 
 func init() {

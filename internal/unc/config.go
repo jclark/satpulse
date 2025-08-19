@@ -422,13 +422,7 @@ func (c *Configurator) configQueryResponse(fields []string, tRead time.Time) err
 }
 
 func (c *Configurator) modeResponse(mode *uncmsg.Mode, tRead time.Time) error {
-	// Combine Mode and HeadingMode fields as expected by updateFromCommand
-	cmd := mode.Mode
-	if mode.HeadingMode != "" {
-		// Include HEADING2 information if present - use space separator
-		cmd = cmd + " " + mode.HeadingMode
-	}
-	return c.queryResponse("MODE", "MODE", cmd, tRead)
+	return c.queryResponse("MODE", "MODE", mode.Command(), tRead)
 }
 
 func (c *Configurator) queryResponse(query, key, command string, tRead time.Time) error {
