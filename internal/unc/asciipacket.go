@@ -100,40 +100,33 @@ func (f asciiPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanInd
 		}
 		return asciiStateHadSemi
 	case asciiStateHadStar:
-		if isLowerHexDigit(b) {
+		if isHexDigit(b) {
 			return asciiStateHadChecksum1
 		}
-		return asciiStateSync
 	case asciiStateHadChecksum1:
-		if isLowerHexDigit(b) {
+		if isHexDigit(b) {
 			return asciiStateHadChecksum2
 		}
-		return asciiStateSync
 	case asciiStateHadChecksum2:
 		if b == '\r' {
 			return asciiStateHadCR
 		}
-		if isLowerHexDigit(b) {
+		if isHexDigit(b) {
 			return asciiStateHadChecksum3
 		}
-		return asciiStateSync
 	case asciiStateHadChecksum3, asciiStateHadChecksum4, asciiStateHadChecksum5, asciiStateHadChecksum6, asciiStateHadChecksum7:
-		if isLowerHexDigit(b) {
+		if isHexDigit(b) {
 			return state + 1
 		}
-		return asciiStateSync
 	case asciiStateHadChecksum8:
 		if b == '\r' {
 			return asciiStateHadCR
 		}
-		return asciiStateSync
 	case asciiStateHadCR:
 		if b == '\n' {
 			return asciiStateComplete
 		}
-		return asciiStateSync
 	}
-
 	return asciiStateSync
 }
 
@@ -156,7 +149,7 @@ func (f asciiPacketFormat) ExtractChecksum(pkt []byte) []byte {
 	if pkt[len(pkt)-3] == ';' {
 		return []byte{}
 	}
-	
+
 	// Check for 8-digit CRC32 checksum: *xxxxxxxx\r\n
 	if len(pkt) >= 11 && pkt[len(pkt)-11] == '*' {
 		h := pkt[len(pkt)-10 : len(pkt)-2]
@@ -167,13 +160,13 @@ func (f asciiPacketFormat) ExtractChecksum(pkt []byte) []byte {
 			hexByte(h, 6),
 		}
 	}
-	
+
 	// Check for 2-digit XOR checksum: *xx\r\n
 	if len(pkt) >= 5 && pkt[len(pkt)-5] == '*' {
 		h := pkt[len(pkt)-4 : len(pkt)-2]
 		return []byte{hexByte(h, 0)}
 	}
-	
+
 	return []byte{}
 }
 
@@ -182,7 +175,7 @@ func (f asciiPacketFormat) ComputeChecksum(pkt []byte) []byte {
 	if pkt[len(pkt)-3] == ';' {
 		return []byte{}
 	}
-	
+
 	// Check for 8-digit CRC32 checksum: *xxxxxxxx\r\n
 	if len(pkt) >= 11 && pkt[len(pkt)-11] == '*' {
 		// 32-bit CRC: data from '#' to '*' (exclusive)
@@ -195,19 +188,38 @@ func (f asciiPacketFormat) ComputeChecksum(pkt []byte) []byte {
 			byte(crc & 0xff),
 		}
 	}
-	
+
 	// Check for 2-digit XOR checksum: *xx\r\n
 	if len(pkt) >= 5 && pkt[len(pkt)-5] == '*' {
-		// 8-bit XOR: data from '#' to '*' (exclusive)
-		data := pkt[1 : len(pkt)-5]
+		// 8-bit XOR: data from '#' (inclusive) to '*' (exclusive)
+		// It's bizarre that it includes the '#', when the 8-digit checksum doesn't.
+		// But the $command and $CONFIG responses also include the leading '$/
+		data := pkt[0 : len(pkt)-5]
 		var xor byte
 		for _, b := range data {
 			xor ^= b
 		}
 		return []byte{xor}
 	}
-	
+
 	return []byte{}
+}
+
+func isPrintableAscii(b byte) bool {
+	return b >= 0x20 && b <= 0x7E
+}
+
+func isHexDigit(b byte) bool {
+	switch b {
+	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		return true
+	case 'a', 'b', 'c', 'd', 'e', 'f':
+		return true
+	case 'A', 'B', 'C', 'D', 'E', 'F':
+		return true
+	default:
+		return false
+	}
 }
 
 func hexByte(h []byte, i int) byte {
@@ -215,24 +227,18 @@ func hexByte(h []byte, i int) byte {
 }
 
 func hexValue(b byte) byte {
-	if b >= '0' && b <= '9' {
+	switch b {
+	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		return b - '0'
-	}
-	if b >= 'a' && b <= 'f' {
+	case 'a', 'b', 'c', 'd', 'e', 'f':
 		return b - 'a' + 10
+	case 'A', 'B', 'C', 'D', 'E', 'F':
+		return b - 'A' + 10
+	default:
+		return 0
 	}
-	return 0
 }
 
 func (f asciiPacketFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
 	return false
-}
-
-// Helper functions
-func isPrintableAscii(b byte) bool {
-	return b >= 0x20 && b <= 0x7E
-}
-
-func isLowerHexDigit(b byte) bool {
-	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f')
 }

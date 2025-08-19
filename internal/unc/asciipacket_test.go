@@ -13,6 +13,13 @@ func TestAsciiPacketValidation(t *testing.T) {
 		valid  bool
 	}{
 		// Valid packets
+		// Note that bizarrely the 2-digit MODE checksum uses upper-case hex
+		// whereas the 6-digit checksum uses lower-case hex
+		{
+			"MODE packet uses uppercase",
+			"#MODE,97,GPS,FINE,2380,188231000,0,0,18,321;MODE HEADING2,HEADINGMODE FIXLENGTH*2D\r\n",
+			true,
+		},
 		{
 			"ValidWithCRC32",
 			"#PPSSTATUSA,93,GPS,FINE,2376,540337000,0,0,18,29;3,2376,540336000*0bbaac1a\r\n",
@@ -36,6 +43,16 @@ func TestAsciiPacketValidation(t *testing.T) {
 		{
 			"ValidLongName",
 			"#VERYLONGMESSAGENAME,data,here;more,data*12345678\r\n",
+			true,
+		},
+				{
+			"StarUpperCase", // although examples show uppercase, we also allow lowercase
+			"#GPGGA,123045,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M;*1A\r\n",
+			true,
+		},
+		{
+			"CRC32UpperCase", // although examples show uppercase, we also allow lowercase
+			"#GPGGA,123045,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M;*1234567A\r\n",
 			true,
 		},
 		// All printable ASCII characters (0x20-0x7E)
@@ -117,16 +134,7 @@ func TestAsciiPacketValidation(t *testing.T) {
 			"#GPGGA,123045,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M;*1g\r\n",
 			false,
 		},
-		{
-			"StarUpperCase", // Should be lowercase
-			"#GPGGA,123045,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M;*1A\r\n",
-			false,
-		},
-		{
-			"CRC32UpperCase", // Should be lowercase
-			"#GPGGA,123045,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M;*1234567A\r\n",
-			false,
-		},
+
 
 		// Invalid packets - unprintable characters
 		{
