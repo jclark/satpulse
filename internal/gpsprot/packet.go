@@ -52,6 +52,20 @@ type PacketFormat interface {
 	RescanOnBadChecksum(prevPktValid bool, pkt []byte) bool
 }
 
+// AltChecksumPacketFormat provides an alternate method for computing the checksum,
+// which can be used to work around firmware quirks.
+// For examplem, on the Unicore UM980, the checksum for NMEA-like
+// packets used for configuration responses computes the checksum over the packet
+// including the leading $ (normal NMEA checksums exclude the $).
+// ComputeAltChecksum in this case can detect when it might be one of these packets and
+// return the checksum including the leading $.
+type AltChecksumPacketFormat interface {
+	PacketFormat
+	// ComputeChecksum computes an alternate checksum for the given packet
+	// Precondition: the packet must be valid according to Next()
+	ComputeAltChecksum(pkt []byte) []byte
+}
+
 // IsValidPacket says whether the given buffer is a valid packet in the given PacketFormat.
 // It uses only the Next method on PacketFormat.
 // It does not validate the checksum.
