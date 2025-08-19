@@ -1,12 +1,12 @@
 package nmea
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/scantest"
 )
-
 
 // TestPacketFormat tests PacketFormat.Next using gpsprot.IsValidPacket and scantest.IsValidPacketBetween.
 // with all syntax test cases. Test cases with expected flags as 0 should be invalid packets,
@@ -36,3 +36,65 @@ func TestPacketFormat(t *testing.T) {
 }
 
 
+type altChecksumUsage int
+
+const (
+	altNotAvailable altChecksumUsage = iota
+	altAvailableNotUsed
+	altUsed
+)
+
+func TestAltChecksum(t *testing.T) {
+	testCases := []struct {
+		packet   string
+		expected altChecksumUsage
+	}{
+		// Standard GNSS packets should not have alt checksum available
+		{"$GNRMC,071109.00,A,1343.91012,N,10038.68403,E,0.035,,100625,,,A,V*11\r\n", altNotAvailable},
+		{"$GNVTG,,T,,M,0.035,N,0.065,K,A*38\r\n", altNotAvailable},
+		{"$GNGLL,1343.91012,N,10038.68403,E,071109.00,A,A*74\r\n", altNotAvailable},
+		{"$GPGSV,1,1,00,0*65\r\n", altNotAvailable},
+		{"$GNGSA,M,1,,,,,,,,,,,,,99.99,99.99,99.99,1*3F\r\n", altNotAvailable},
+		
+		// Unicore packets use alt checksum
+		{"$command,VERSIONB,response: OK*46\r\n", altUsed},
+		{"$command,CONFIG,response: OK*54\r\n", altUsed},
+		{"$command,MASK,response: OK*4A\r\n", altUsed},
+		{"$command,MODE,response: OK*5D\r\n", altUsed},
+		{"$command,CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0,response: OK*49\r\n", altUsed},
+		{"$command,MODE BASE TIME 2000,response: OK*7F\r\n", altUsed},
+		
+		// Unicore Firebird packet PDTINFO uses normal checksum even though is alt available
+		{"$PDTINFO,UM621-02,G1B1L1E1,V1.2,R6.0.0.0Build2810,2310414000033,000101114303845*10\r\n", altAvailableNotUsed},
+	}
+
+	for _, tc := range testCases {
+		pkt := []byte(tc.packet)
+		extracted := PacketFormat.ExtractChecksum(pkt)
+		normal := PacketFormat.ComputeChecksum(pkt)
+		alt := PacketFormat.(gpsprot.AltChecksumPacketFormat).ComputeAltChecksum(pkt)
+		
+		normalOK := slices.Equal(extracted, normal)
+		var altOK bool
+		if alt != nil {
+			altOK = slices.Equal(extracted, alt)
+		}
+		var actual altChecksumUsage
+
+		if normalOK {
+			if alt == nil {
+				actual = altNotAvailable
+			} else {
+				actual = altAvailableNotUsed
+			}
+		} else if altOK {
+			actual = altUsed
+		} else {
+			t.Errorf("Packet %s did not match normal nor alt checksum", tc.packet)
+			continue
+		}
+		if actual != tc.expected {
+			t.Errorf("Alt checksum usage mismatch for %s: got %v, expected %v", tc.packet, actual, tc.expected)
+		}
+	}
+}
