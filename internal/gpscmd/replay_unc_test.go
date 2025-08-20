@@ -8,6 +8,7 @@ import (
 
 var uncReplayFiles = []string{
 	"unc/show",
+	"unc/gps",
 }
 
 func TestReplayUNC(t *testing.T) {
@@ -31,7 +32,7 @@ func uncPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.P
 	// For ASCII packets, we can compare them as strings directly
 	// For binary packets, we would need more sophisticated comparison, but
 	// the test data appears to be ASCII commands
-	
+
 	t.Errorf("%s: packets differ: actual %q, expected %q", msgID, actualStr, expectedStr)
 	return false
 }
