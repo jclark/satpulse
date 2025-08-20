@@ -488,9 +488,9 @@ func TestMaskPropInvalidCommands(t *testing.T) {
 func TestNativeConfigProps(t *testing.T) {
 	tests := []struct {
 		name         string
-		currentState []string                       // commands representing current receiver state
-		targetProps  func(*gpsprot.ConfigProps)     // function to set up target properties
-		targetOpts   func(*gpsprot.ConfigOptions)   // function to set up target options (optional)
+		currentState []string                     // commands representing current receiver state
+		targetProps  func(*gpsprot.ConfigProps)   // function to set up target properties
+		targetOpts   func(*gpsprot.ConfigOptions) // function to set up target options (optional)
 		expectedCmds []string
 	}{
 		{
@@ -1106,25 +1106,12 @@ func TestNativeConfigProps(t *testing.T) {
 			expectedCmds: []string{}, // No change
 		},
 		{
-			name: "Mode properties + SetStatic - Mode properties take precedence for PosType",
+			name: "Survey mode unchanged",
 			currentState: []string{
-				"MODE ROVER",
+				"MODE BASE TIME 2000",
 			},
-			targetProps: func(props *gpsprot.ConfigProps) {
-				props.SetMode(gpsprot.Mode{
-					Static:  false, // This will be overridden by SetStatic=true
-					PosType: gpsprot.PosTypeECEF, // This takes precedence
-					FixedPosECEF: gpsprot.Point3D{
-						gpsprot.Meters(500000.0),
-						gpsprot.Meters(600000.0),
-						gpsprot.Meters(700000.0),
-					},
-				})
-			},
-			targetOpts: func(opts *gpsprot.ConfigOptions) {
-				opts.SetStatic = true // Forces Static=true despite Mode.Static=false
-			},
-			expectedCmds: []string{"MODE BASE 500000.0000 600000.0000 700000.0000"},
+			targetProps:  func(props *gpsprot.ConfigProps) {},
+			expectedCmds: []string{}, // No change needed
 		},
 		{
 			name: "MODE preserve survey distance parameter when time changes",
@@ -1139,7 +1126,8 @@ func TestNativeConfigProps(t *testing.T) {
 				props.SetRTCMBaseID(456)
 			},
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
-				opts.Survey.MinDur = 180 * time.Second // Change time from 120 to 180
+				opts.Survey.MinDur = 180 * time.Second  // Change time from 120 to 180
+				opts.Survey.Flags = gpsprot.SurveyAgain // Force new survey with new duration
 			},
 			expectedCmds: []string{"MODE BASE 456 TIME 180 5"}, // Preserves distance parameter (5)
 		},
@@ -1154,6 +1142,105 @@ func TestNativeConfigProps(t *testing.T) {
 				})
 			},
 			expectedCmds: []string{}, // Should preserve existing HEADING2 STATIC
+		},
+		{
+			name: "SetStatic=false when already in survey mode should not preserve survey parameters",
+			currentState: []string{
+				"MODE BASE 123 TIME 180 5", // Currently in survey mode with 180 seconds
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Explicitly set non-static mode (ROVER)
+				props.SetMode(gpsprot.Mode{
+					Static:  false,
+					PosType: gpsprot.PosTypeNone, // Should be None when Static=false
+				})
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				// Even though we have survey options, they shouldn't matter since we're going to ROVER
+				opts.Survey.MinDur = 300 * time.Second
+			},
+			expectedCmds: []string{"MODE ROVER"},
+		},
+		{
+			name: "Survey to survey with same time but SurveyAgain not set should not regenerate MODE",
+			currentState: []string{
+				"MODE BASE 123 TIME 60", // Currently in survey mode with 60 seconds
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMode(gpsprot.Mode{
+					Static:  true,
+					PosType: gpsprot.PosTypeNone, // Survey mode
+				})
+				props.SetRTCMBaseID(123) // Same base ID
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.Survey.MinDur = 60 * time.Second // Same survey duration
+				// Note: SurveyAgain is NOT set
+			},
+			expectedCmds: []string{}, // Should NOT regenerate MODE command (would restart survey)
+		},
+		{
+			name: "Survey to survey with same time but SurveyAgain IS set should regenerate MODE",
+			currentState: []string{
+				"MODE BASE 123 TIME 60", // Currently in survey mode with 60 seconds
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMode(gpsprot.Mode{
+					Static:  true,
+					PosType: gpsprot.PosTypeNone, // Survey mode
+				})
+				props.SetRTCMBaseID(123) // Same base ID
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.Survey.MinDur = 60 * time.Second   // Same survey duration
+				opts.Survey.Flags = gpsprot.SurveyAgain // Force new survey
+			},
+			expectedCmds: []string{"MODE BASE 123 TIME 60"}, // Should regenerate MODE to restart survey
+		},
+		{
+			name: "SetStatic with explicit fixed coordinates should use those coordinates",
+			currentState: []string{
+				"MODE ROVER", // Currently in non-static mode
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMode(gpsprot.Mode{
+					Static:  true,
+					PosType: gpsprot.PosTypeECEF,
+					FixedPosECEF: gpsprot.Point3D{
+						gpsprot.Meters(1000000.0),
+						gpsprot.Meters(2000000.0),
+						gpsprot.Meters(3000000.0),
+					},
+				})
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.SetStatic = true                  // Redundant with Mode.Static=true but should not interfere
+				opts.Survey.MinDur = 120 * time.Second // Should be ignored since we have fixed coords
+			},
+			expectedCmds: []string{"MODE BASE 1000000.0000 2000000.0000 3000000.0000"},
+		},
+		{
+			name: "Transition from survey to fixed position should use new coordinates",
+			currentState: []string{
+				"MODE BASE 123 TIME 180 5", // Currently in survey mode
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMode(gpsprot.Mode{
+					Static:  true,
+					PosType: gpsprot.PosTypeLLH,
+					FixedPosLLH: [2]gpsprot.Angle{
+						gpsprot.DegreesFromFloat(40.0),
+						gpsprot.DegreesFromFloat(116.0),
+					},
+					Height: gpsprot.Meters(50.0),
+				})
+				props.SetRTCMBaseID(456) // Different base ID
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				// Survey options shouldn't matter since we're going to fixed position
+				opts.Survey.MinDur = 60 * time.Second
+			},
+			expectedCmds: []string{"MODE BASE 456 40.00000000000 116.00000000000 50.000000"},
 		},
 	}
 
@@ -1216,7 +1303,7 @@ func TestNativeConfigProps(t *testing.T) {
 				if _, exists := expectedSet[nativeCmd.cmd]; !exists {
 					t.Errorf("generateConfigCommands() returned unexpected command: %s", nativeCmd.cmd)
 				}
-				
+
 				// Check ordering: MASK commands must come before UNMASK commands
 				if strings.HasPrefix(nativeCmd.cmd, "UNMASK") {
 					seenUnmask = true
@@ -1230,95 +1317,101 @@ func TestNativeConfigProps(t *testing.T) {
 
 func TestModeRegexp(t *testing.T) {
 	tests := []struct {
-		name        string
-		command     string
-		expectMatch bool
+		name         string
+		command      string
+		expectMatch  bool
 		expectGroups map[int]string // capture group index -> expected value
 	}{
 		// ROVER variants
 		{
-			name:        "ROVER basic",
-			command:     "MODE ROVER",
-			expectMatch: true,
+			name:         "ROVER basic",
+			command:      "MODE ROVER",
+			expectMatch:  true,
 			expectGroups: map[int]string{1: "ROVER"},
 		},
 		{
-			name:        "ROVER SURVEY MOW",
-			command:     "MODE ROVER SURVEY MOW",
-			expectMatch: true,
+			name:         "ROVER SURVEY MOW",
+			command:      "MODE ROVER SURVEY MOW",
+			expectMatch:  true,
 			expectGroups: map[int]string{1: "ROVER SURVEY MOW"},
 		},
 		{
-			name:        "ROVER UAV HIGHDYN",
-			command:     "MODE ROVER UAV HIGHDYN",
-			expectMatch: true,
+			name:         "ROVER UAV HIGHDYN",
+			command:      "MODE ROVER UAV HIGHDYN",
+			expectMatch:  true,
 			expectGroups: map[int]string{1: "ROVER UAV HIGHDYN"},
 		},
-		
+
 		// HEADING2 variants
 		{
-			name:        "HEADING2 basic",
-			command:     "MODE HEADING2",
-			expectMatch: true,
+			name:         "HEADING2 basic",
+			command:      "MODE HEADING2",
+			expectMatch:  true,
 			expectGroups: map[int]string{2: "HEADING2"},
 		},
 		{
-			name:        "HEADING2 STATIC",
-			command:     "MODE HEADING2 STATIC",
-			expectMatch: true,
+			name:         "HEADING2 STATIC",
+			command:      "MODE HEADING2 STATIC",
+			expectMatch:  true,
 			expectGroups: map[int]string{2: "HEADING2 STATIC"},
 		},
-		
+
 		// BASE variants - no parameters
 		{
-			name:        "BASE default",
-			command:     "MODE BASE",
-			expectMatch: true,
+			name:         "BASE default",
+			command:      "MODE BASE",
+			expectMatch:  true,
 			expectGroups: map[int]string{3: "BASE"},
 		},
-		
+
 		// BASE with ID only
 		{
-			name:        "BASE with ID 123",
-			command:     "MODE BASE 123",
-			expectMatch: true,
+			name:         "BASE with ID 123",
+			command:      "MODE BASE 123",
+			expectMatch:  true,
 			expectGroups: map[int]string{3: "BASE", 4: "123"},
 		},
-		
+
 		// BASE with TIME (survey)
 		{
-			name:        "BASE TIME 60",
-			command:     "MODE BASE TIME 60",
-			expectMatch: true,
+			name:         "BASE TIME 60",
+			command:      "MODE BASE TIME 60",
+			expectMatch:  true,
 			expectGroups: map[int]string{3: "BASE", 5: "60"},
 		},
 		{
-			name:        "BASE ID TIME distance",
-			command:     "MODE BASE 123 TIME 60 5",
-			expectMatch: true,
+			name:         "BASE ID TIME distance",
+			command:      "MODE BASE 123 TIME 60 5",
+			expectMatch:  true,
 			expectGroups: map[int]string{3: "BASE", 4: "123", 5: "60", 6: "5"},
 		},
-		
+		{
+			name:         "BASE ID TIME extra param",
+			command:      "MODE BASE 123 TIME 60 0 0",
+			expectMatch:  true,
+			expectGroups: map[int]string{3: "BASE", 4: "123", 5: "60", 6: "0 0"},
+		},
+
 		// BASE with coordinates
 		{
-			name:        "BASE coords",
-			command:     "MODE BASE 40.0 116.0 50.0",
-			expectMatch: true,
+			name:         "BASE coords",
+			command:      "MODE BASE 40.0 116.0 50.0",
+			expectMatch:  true,
 			expectGroups: map[int]string{3: "BASE", 7: "40.0", 8: "116.0", 9: "50.0"},
 		},
 		{
-			name:        "BASE ID coords",
-			command:     "MODE BASE 123 -2160489.0 4383620.1 4084738.1",
-			expectMatch: true,
+			name:         "BASE ID coords",
+			command:      "MODE BASE 123 -2160489.0 4383620.1 4084738.1",
+			expectMatch:  true,
 			expectGroups: map[int]string{3: "BASE", 4: "123", 7: "-2160489.0", 8: "4383620.1", 9: "4084738.1"},
 		},
 		{
-			name:        "BASE with ID and coords",
-			command:     "MODE BASE 1 2 3 4",
-			expectMatch: true,
+			name:         "BASE with ID and coords",
+			command:      "MODE BASE 1 2 3 4",
+			expectMatch:  true,
 			expectGroups: map[int]string{3: "BASE", 4: "1", 7: "2", 8: "3", 9: "4"},
 		},
-		
+
 		// Invalid cases
 		{
 			name:        "Empty",
@@ -1351,7 +1444,7 @@ func TestModeRegexp(t *testing.T) {
 			expectMatch: false,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			matches := modeRegexp.FindStringSubmatch(tt.command)
@@ -1359,7 +1452,7 @@ func TestModeRegexp(t *testing.T) {
 			if got != tt.expectMatch {
 				t.Errorf("modeRegexp.MatchString(%q) = %v, expect %v", tt.command, got, tt.expectMatch)
 			}
-			
+
 			if tt.expectMatch && matches != nil {
 				// Check expected capture groups
 				for groupIdx, expectValue := range tt.expectGroups {

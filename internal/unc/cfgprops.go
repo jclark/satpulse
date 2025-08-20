@@ -81,33 +81,69 @@ func generateQueryCommands(_ *gpsprot.ConfigTarget) []string {
 // error indicating toNative failed because the ConfigProps did not contain the necessary properties
 var errMissingProp = fmt.Errorf("missing property")
 
+type modeGeneration int
+
+const (
+	modeGenerationProperty modeGeneration = iota // generate a MODE command normally like a property
+	modeGenerationNone                           //  do not generate a MODE command
+	modeGenerationForce                          // force the generation of a MODE command
+)
+
 // generateConfigCommands generates commands to change the native state to have the abstract properties specified by target
 func (np *nativeConfigProps) generateConfigCommands(target *gpsprot.ConfigTarget) []nativeCommand {
-	// Create the full set of target abstract props
 	// Convert currrent native props to abstract props
-	fullTargetProps := gpsprot.ConfigProps{}
-	np.convertToProps(&fullTargetProps)
-	// Combine the target abstract props with partial abstract props
-	// to get complete set of target abstract props
-	fullTargetProps.CopyFrom(&target.Props)
+	curProps := gpsprot.ConfigProps{}
+	np.convertToProps(&curProps)
+
+	// Now determine full set of abstract properties that we want the receiver to have
+	effectiveProps := curProps
+	// Override the curProps with any properties specified target.Props
+	// to determine the effective properties
+	effectiveProps.CopyFrom(&target.Props)
 
 	// Handle SetStatic by forcing Mode.Static = true
 	if target.Opts.SetStatic {
-		if mode, modeSet := fullTargetProps.GetMode(); modeSet {
-			mode.Static = true
-			fullTargetProps.SetMode(mode)
-		} else {
-			// SetStatic without existing mode → create static mode
-			fullTargetProps.SetMode(gpsprot.Mode{Static: true})
+		if m, ok := effectiveProps.GetMode(); !ok || !m.Static {
+			effectiveProps.SetMode(gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeNone})
 		}
 	}
 
+	modeGen := determineModeGeneration(&effectiveProps, &curProps, target.Opts.Survey)
 	// Make a copy of the native props, which will become the target
 	targetNativeProps := *np
+
 	// map the complete target to the native props
-	targetNativeProps.updateFromProps(&fullTargetProps, target.Opts.Survey)
+	targetNativeProps.updateFromProps(&effectiveProps, target.Opts.Survey)
+	switch modeGen {
+	case modeGenerationNone:
+		// modeProp.generateCommand will not generate a command that is the same as the previous one
+		targetNativeProps.mode.command = np.mode.command
+	case modeGenerationForce:
+		npGen := *np
+		// modeProp.generateCommand will always output a command if the previous one is empty
+		npGen.mode.command = ""
+		np = &npGen
+	}
 	// generate commands to turn current native props to target native props
 	return targetNativeProps.generateCommands(np)
+}
+
+// determineModeGeneration determines whether special handling is needed for the MODE command
+// Special handling may be needed to get survey semantics right.
+func determineModeGeneration(effectiveProps *gpsprot.ConfigProps, curProps *gpsprot.ConfigProps, survey gpsprot.Survey) modeGeneration {
+	// Only need special handling if the effective properties will result in a survey and the receiver is currently in survey mode
+	if mode, ok := effectiveProps.GetMode(); !ok || !mode.Static || mode.PosType != gpsprot.PosTypeNone {
+		return modeGenerationProperty
+	}
+	if mode, ok := curProps.GetMode(); !ok || !mode.Static || mode.PosType != gpsprot.PosTypeNone {
+		return modeGenerationProperty
+	}
+	if survey.Flags&gpsprot.SurveyAgain != 0 {
+		return modeGenerationForce // force generation of MODE command to ensure survey semantics
+	}
+	// Were in a survey before, want a survey now, but no SurveyAgain
+	// Do not generate a MODE command at all, because that would start a survey
+	return modeGenerationNone
 }
 
 func (np *nativeConfigProps) convertToProps(props *gpsprot.ConfigProps) {
@@ -439,8 +475,10 @@ func generateMaskCommands(signals gpsprot.SignalSet, sigGroupSignals gpsprot.Sig
 	return commands
 }
 
+// It accepts three numbers after "MODE BASE TIME", rather than two as documented.
+// Don't know what the third one means.
 var modeRegexp = regexp.MustCompile(
-	`^MODE (?:(ROVER(?: [A-Z]+)?(?: [A-Z]+)?)|(HEADING2(?: [A-Z]+)?)|(BASE)(?: (\d+))?(?: TIME (\d+)(?: (\d+))?| (-?\d+\.?\d*) (-?\d+\.?\d*) (-?\d+\.?\d*))?)$`)
+	`^MODE (?:(ROVER(?: [A-Z]+)?(?: [A-Z]+)?)|(HEADING2(?: [A-Z]+)?)|(BASE)(?: (\d+))?(?: TIME (\d+)(?: (\d+(?: \d+)?))?| (-?\d+\.?\d*) (-?\d+\.?\d*) (-?\d+\.?\d*))?)$`)
 
 type modeProp struct {
 	command string
