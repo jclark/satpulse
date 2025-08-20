@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -155,6 +156,8 @@ type replayer struct {
 	configErr   error // first configuration error encountered
 	packetCmp   packetCmpFunc
 	replayTime  time.Time // simulated current time for replay
+	timeline    []time.Time // sorted list of all packet timestamps
+	timelineIdx int // current position in timeline
 }
 
 func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (*replayer, error) {
@@ -172,11 +175,39 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 	packetProcs := gpsreg.CreatePacketProcessors(nil)
 	configProts := gpsreg.CreateConfigProtocols()
 
+	// Build timeline of all packet timestamps
+	timeline := make([]time.Time, 0, len(test.inPackets)+len(test.outPackets))
+	seen := make(map[time.Time]bool)
+	
+	for _, p := range test.inPackets {
+		t := time.Time(p.T)
+		if !seen[t] {
+			timeline = append(timeline, t)
+			seen[t] = true
+		}
+	}
+	for _, p := range test.outPackets {
+		t := time.Time(p.T)
+		if !seen[t] {
+			timeline = append(timeline, t)
+			seen[t] = true
+		}
+	}
+	
+	// Sort the timeline
+	slices.SortFunc(timeline, func(a, b time.Time) int {
+		if a.Before(b) {
+			return -1
+		}
+		if a.After(b) {
+			return 1
+		}
+		return 0
+	})
+	
 	var replayTime time.Time
-	if len(test.inPackets) > 0 {
-		replayTime = time.Time(test.inPackets[0].T)
-	} else if len(test.outPackets) > 0 {
-		replayTime = time.Time(test.outPackets[0].T)
+	if len(timeline) > 0 {
+		replayTime = timeline[0]
 	} else {
 		replayTime = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	}
@@ -189,6 +220,8 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 		configProts: configProts,
 		packetCmp:   comparePackets,
 		replayTime:  replayTime,
+		timeline:    timeline,
+		timelineIdx: 0,
 	}
 	return &r, nil
 }
@@ -279,9 +312,13 @@ func (r *replayer) run() {
 			}
 			r.outIdx++
 
-			// Mark as sent using recorded timestamp
+			// Advance time to the send time, processing any input packets with earlier timestamps
+			sendTime := time.Time(expected.T)
+			r.advanceTimeTo(sendTime)
+
+			// Now mark as sent using recorded timestamp
 			req := r.cfgtor.Request(action.Index)
-			req.SetSentTime(time.Time(expected.T))
+			req.SetSentTime(sendTime)
 
 		case gpsprot.ConfigActionCheckTimeout:
 			// Check if replay time has passed the deadline
@@ -291,13 +328,9 @@ func (r *replayer) run() {
 			}
 
 		case gpsprot.ConfigActionWaitUntil:
-			// Feed packets until we reach the deadline or get the response we need
-			r.feedUpToTime(action.Deadline)
-
-			// Advance replay time to just past the deadline if not already there
-			if action.Deadline.After(r.replayTime) {
-				r.replayTime = action.Deadline.Add(time.Millisecond)
-			}
+			// Advance to the next timeline instant, but not past the deadline
+			// This allows the director to re-evaluate after each packet is processed
+			r.advanceToNextInstant(action.Deadline)
 
 		case gpsprot.ConfigActionError:
 			if r.configErr == nil {
@@ -315,32 +348,66 @@ func (r *replayer) run() {
 
 const maxTries = 3
 
-// feedUpToTime feeds input packets up to a specific deadline
-func (r *replayer) feedUpToTime(deadline time.Time) {
+// advanceToNextInstant advances to the next timeline instant, but not past the deadline
+// Returns true if we advanced to a new instant, false if we've reached the deadline or end of timeline
+func (r *replayer) advanceToNextInstant(deadline time.Time) bool {
+	if r.timelineIdx >= len(r.timeline) {
+		// No more timeline instants
+		if deadline.After(r.replayTime) {
+			r.replayTime = deadline
+		}
+		return false
+	}
+	
+	instant := r.timeline[r.timelineIdx]
+	if instant.After(deadline) {
+		// Next instant is past the deadline
+		if deadline.After(r.replayTime) {
+			r.replayTime = deadline
+		}
+		return false
+	}
+	
+	// Feed any input packets at this instant
 	for r.inIdx < len(r.test.inPackets) {
 		p := r.test.inPackets[r.inIdx]
 		pktTime := time.Time(p.T)
-		if pktTime.After(deadline) {
-			break // Don't feed packets beyond deadline
+		
+		if pktTime.After(instant) {
+			break // This packet is for a later time
 		}
-
-		r.inIdx++
-		if p.Tag == "" {
-			continue // Skip invalid packets
+		
+		if pktTime.Equal(instant) {
+			r.inIdx++
+			if p.Tag == "" {
+				continue // Skip invalid packets
+			}
+			
+			pp, ok := r.packetProcs[p.Tag]
+			if !ok {
+				r.t.Errorf("no processor for tag %s", p.Tag)
+				continue
+			}
+			
+			_, err := pp.ProcessPacket(p.Data(), pktTime)
+			if err != nil {
+				r.t.Errorf("error processing packet at %v: %v (data: %q)", pktTime, err, p.Data())
+			}
+		} else {
+			// This packet is before the current instant, should have been processed already
+			r.inIdx++
 		}
+	}
+	
+	r.replayTime = instant
+	r.timelineIdx++
+	return true
+}
 
-		r.replayTime = pktTime
-
-		pp, ok := r.packetProcs[p.Tag]
-		if !ok {
-			r.t.Errorf("no processor for tag %s", p.Tag)
-			continue
-		}
-
-		_, err := pp.ProcessPacket(p.Data(), pktTime)
-		if err != nil {
-			r.t.Errorf("error processing packet: %v", err)
-		}
+// advanceTimeTo advances simulated time to the target, feeding input packets along the way
+func (r *replayer) advanceTimeTo(target time.Time) {
+	for r.advanceToNextInstant(target) {
+		// Keep advancing until we reach the target or run out of instants
 	}
 }
 
@@ -373,7 +440,7 @@ func (r *replayer) feedUpTo(outIdx int) {
 
 		_, err := pp.ProcessPacket(p.Data(), pktTime)
 		if err != nil {
-			r.t.Errorf("error processing packet: %v", err)
+			r.t.Errorf("error processing packet at %v: %v (data: %q)", pktTime, err, p.Data())
 		}
 	}
 }
