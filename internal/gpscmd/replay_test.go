@@ -154,6 +154,7 @@ type replayer struct {
 	cfgtor      gpsprot.Configurator2
 	configErr   error // first configuration error encountered
 	packetCmp   packetCmpFunc
+	replayTime  time.Time // simulated current time for replay
 }
 
 func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (*replayer, error) {
@@ -171,6 +172,15 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 	packetProcs := gpsreg.CreatePacketProcessors(nil)
 	configProts := gpsreg.CreateConfigProtocols()
 
+	var replayTime time.Time
+	if len(test.inPackets) > 0 {
+		replayTime = time.Time(test.inPackets[0].T)
+	} else if len(test.outPackets) > 0 {
+		replayTime = time.Time(test.outPackets[0].T)
+	} else {
+		replayTime = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+
 	r := replayer{
 		t:           t,
 		test:        test,
@@ -178,6 +188,7 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 		packetProcs: packetProcs,
 		configProts: configProts,
 		packetCmp:   comparePackets,
+		replayTime:  replayTime,
 	}
 	return &r, nil
 }
@@ -273,15 +284,8 @@ func (r *replayer) run() {
 			req.SetSentTime(time.Time(expected.T))
 
 		case gpsprot.ConfigActionCheckTimeout:
-			// Use recorded packet timestamps for deterministic timeout checking
-			// Find the last input packet timestamp we've processed
-			var lastProcessedTime time.Time
-			if r.inIdx > 0 {
-				lastProcessedTime = time.Time(r.test.inPackets[r.inIdx-1].T)
-			}
-
-			// Check timeout against recorded timeline
-			if lastProcessedTime.After(action.Deadline) {
+			// Check if replay time has passed the deadline
+			if r.replayTime.After(action.Deadline) {
 				req := r.cfgtor.Request(action.Index)
 				req.SetResponseDeadlinePassed()
 			}
@@ -289,6 +293,11 @@ func (r *replayer) run() {
 		case gpsprot.ConfigActionWaitUntil:
 			// Feed packets until we reach the deadline or get the response we need
 			r.feedUpToTime(action.Deadline)
+
+			// Advance replay time to just past the deadline if not already there
+			if action.Deadline.After(r.replayTime) {
+				r.replayTime = action.Deadline.Add(time.Millisecond)
+			}
 
 		case gpsprot.ConfigActionError:
 			if r.configErr == nil {
@@ -310,7 +319,8 @@ const maxTries = 3
 func (r *replayer) feedUpToTime(deadline time.Time) {
 	for r.inIdx < len(r.test.inPackets) {
 		p := r.test.inPackets[r.inIdx]
-		if time.Time(p.T).After(deadline) {
+		pktTime := time.Time(p.T)
+		if pktTime.After(deadline) {
 			break // Don't feed packets beyond deadline
 		}
 
@@ -319,13 +329,15 @@ func (r *replayer) feedUpToTime(deadline time.Time) {
 			continue // Skip invalid packets
 		}
 
+		r.replayTime = pktTime
+
 		pp, ok := r.packetProcs[p.Tag]
 		if !ok {
 			r.t.Errorf("no processor for tag %s", p.Tag)
 			continue
 		}
 
-		_, err := pp.ProcessPacket(p.Data(), time.Time(p.T))
+		_, err := pp.ProcessPacket(p.Data(), pktTime)
 		if err != nil {
 			r.t.Errorf("error processing packet: %v", err)
 		}
@@ -349,6 +361,9 @@ func (r *replayer) feedUpTo(outIdx int) {
 			continue
 		}
 
+		pktTime := time.Time(p.T)
+		r.replayTime = pktTime
+
 		// Get the packet processor for this packet's tag
 		pp, ok := r.packetProcs[p.Tag]
 		if !ok {
@@ -356,7 +371,7 @@ func (r *replayer) feedUpTo(outIdx int) {
 			continue
 		}
 
-		_, err := pp.ProcessPacket(p.Data(), time.Time(p.T))
+		_, err := pp.ProcessPacket(p.Data(), pktTime)
 		if err != nil {
 			r.t.Errorf("error processing packet: %v", err)
 		}
