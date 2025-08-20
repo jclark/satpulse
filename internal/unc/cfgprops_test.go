@@ -762,7 +762,7 @@ func TestNativeConfigProps(t *testing.T) {
 			name: "current state has frequency masked, target needs it - --gnss GPS,BDS --band L1,L5 equivalent",
 			currentState: []string{
 				"CONFIG SIGNALGROUP 2",
-				"MASK L5", // L5 frequency is masked across all constellations
+				"MASK GPSL5", // GPS L5 frequency is masked (use response form)
 			},
 			targetProps: func(props *gpsprot.ConfigProps) {
 				// Equivalent to: --gnss GPS,BDS --band L1,L5
@@ -932,6 +932,42 @@ func TestNativeConfigProps(t *testing.T) {
 				"MASK B1", "MASK B3", "MASK B2I", "MASK BD3B2B", // mask unwanted BDS frequencies (keep only B2a)
 				// UNMASK commands after
 				"UNMASK L1CA", "UNMASK BD3B2A", // unmask specific GPS L1C/A and BDS B2a
+			},
+		},
+		{
+			name: "Parse MASK query response with firmware aliases - mask all GPS",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				// Firmware uses these aliases in MASK query responses
+				"MASK GPSL1CA",
+				"MASK GPSL1C", 
+				"MASK GPSL2C",
+				"MASK GPSL2P",
+				"MASK GPSL5",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Enable everything except GPS (GPS should stay masked)
+				props.SetSignalsEnabled(gpsprot.SigSetBDS | gpsprot.SigSetGLO | gpsprot.SigSetGAL | gpsprot.SigSetQZSS | gpsprot.SigSetNAVIC)
+			},
+			expectedCmds: []string{
+				"MASK GPS", // Should recognize all GPS signals are masked
+			},
+		},
+		{
+			name: "Parse MASK query response with firmware aliases - mask all GLONASS",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				// Firmware uses these aliases in MASK query responses
+				"MASK GLOL1",
+				"MASK GLOL2",
+				"MASK GLOL3",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Enable everything except GLONASS (GLONASS should stay masked)
+				props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetBDS | gpsprot.SigSetGAL | gpsprot.SigSetQZSS | gpsprot.SigSetNAVIC)
+			},
+			expectedCmds: []string{
+				"MASK GLO", // Should recognize all GLONASS signals are masked
 			},
 		},
 		{

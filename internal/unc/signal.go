@@ -223,6 +223,7 @@ var maskSignalList = []maskSignalEntry{
 	{"Q1CA", gpsprot.SignalSetOf(gpsprot.SigQZSSL1CA)}, // QZSS L1C/A
 	{"Q1C", gpsprot.SignalSetOf(gpsprot.SigQZSSL1C)},  // QZSS L1C
 	{"Q2C", gpsprot.SignalSetOf(gpsprot.SigQZSSL2C)},  // QZSS L2C
+	{"Q6", gpsprot.SignalSetOf(gpsprot.SigQZSSL6)},    // QZSS L6
 
 	// IRNSS frequency-specific masks
 	{"I5", gpsprot.SignalSetOf(gpsprot.SigNAVICL5)}, // When masking I5, it disables IRNSS L5
@@ -231,10 +232,48 @@ var maskSignalList = []maskSignalEntry{
 // maskSignalMap provides fast lookup of mask names to signal sets
 var maskSignalMap map[string]gpsprot.SignalSet
 
+// signalAliases maps firmware response aliases to standard mask names
+// These are used in MASK query responses
+// (at least from firmware builds 13504+, maybe earlier)
+var signalAliases = map[string]string{
+	// GPS aliases
+	"GPSL1CA": "L1CA",
+	"GPSL1C":  "L1C",
+	"GPSL2C":  "L2C",
+	"GPSL2P":  "L2P",
+	"GPSL5":   "L5",
+	// BDS aliases
+	"BDSB1I":  "B1I",
+	"BDSB2I":  "B2I",
+	"BDSB3I":  "B3I",
+	// BD3B1C, BD3B2A, BD3B2B are already standard names
+	// GLO aliases
+	"GLOL1": "R1",
+	"GLOL2": "R2",
+	"GLOL3": "R3",
+	// GAL aliases
+	"GALE1":   "E1",
+	"GALE5a":  "E5a",
+	"GALE5b":  "E5b",
+	"GALE6c":  "E6C",
+	// QZSS aliases
+	"QZSSL1CA": "Q1CA",
+	"QZSSL1C":  "Q1C",
+	"QZSSL2C":  "Q2C",
+	"QZSSL6D":  "Q6", // Map both L6D and L6E to Q6
+	"QZSSL6E":  "Q6",
+}
+
 func init() {
 	// Create map from list for fast lookups
-	maskSignalMap = make(map[string]gpsprot.SignalSet, len(maskSignalList))
+	maskSignalMap = make(map[string]gpsprot.SignalSet, len(maskSignalList)+len(signalAliases))
 	for _, entry := range maskSignalList {
 		maskSignalMap[entry.name] = entry.signalSet
+	}
+	// Add aliases that map to the same signal sets
+	for alias, standard := range signalAliases {
+		if signalSet, ok := maskSignalMap[standard]; ok {
+			maskSignalMap[alias] = signalSet
+		}
 	}
 }
