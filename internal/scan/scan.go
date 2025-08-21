@@ -140,9 +140,36 @@ Loop:
 		if state != stateSync && nextState == stateSync && packetLen > 0 {
 			// We had something that looked like the start of a packet,
 			// but turned out to be invalid.
-			// we need to start reprocessing it with the character that made it become invalid.
+			
+			// Check if another packet format would also match the first byte
+			firstByteIndex := s.nextScanIndex - packetLen
+			foundCurrent := false
+			var nextFormat gpsprot.PacketFormat
+			
+			for _, pf := range s.pktFormats {
+				if foundCurrent {
+					// Check if this format would match the first byte
+					if pf.Next(stateSync, s.buf, firstByteIndex, 0) != stateSync {
+						nextFormat = pf
+						break
+					}
+				} else if pf == curPktFormat {
+					foundCurrent = true
+				}
+			}
+			
+			if nextFormat != nil {
+				// Try the next matching format from the beginning of the packet
+				curPktFormat = nextFormat
+				s.nextScanIndex -= packetLen - 1
+				state = stateSync
+				packetLen = 1
+				goto Loop
+			}
+			
+			// No more formats match the first byte, rescan from second byte
 			// This is sufficient for UBX and NMEA, because the $ which starts an NMEA packet
-			// isn't allowed with an NMEA packet. For UBX, the only way it's invalid is if the
+			// isn't allowed within an NMEA packet. For UBX, the only way it's invalid is if the
 			// length is wrong or it didn't have the right second sync byte.
 			break Loop
 		}
