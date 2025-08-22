@@ -7,6 +7,7 @@ import (
 	"github.com/jclark/satpulse/internal/as"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/nov"
 	"github.com/jclark/satpulse/internal/rtcm"
 	"github.com/jclark/satpulse/internal/ubx"
 	"github.com/jclark/satpulse/internal/unc"
@@ -19,6 +20,7 @@ var PacketFormats = []gpsprot.PacketFormat{
 	rtcm.PacketFormat,
 	unc.BinPacketFormat,
 	unc.AsciiPacketFormat,
+	nov.BinPacketFormat,
 }
 
 // CreatePacketProcessors creates packet processors for all registered protocols
@@ -33,6 +35,7 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 		rtcm.Tag:      rtcm.NewPacketProcessor(),
 		unc.TagBinary: unc.NewBinPacketProcessor(),
 		unc.TagAscii:  unc.NewAsciiPacketProcessor(),
+		nov.TagBinary: nov.NewBinPacketProcessor(),
 	}
 }
 
