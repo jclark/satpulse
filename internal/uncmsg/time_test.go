@@ -2,6 +2,8 @@ package uncmsg
 
 import (
 	"testing"
+
+	"github.com/jclark/satpulse/internal/novmsg"
 )
 
 var timeTests = []dataTestCase{
@@ -56,17 +58,19 @@ var timeTests = []dataTestCase{
 			},
 		},
 		value: &RecTime{
-			ClockStatus: ClockStatusValid,
-			Offset:      -0.00047557955957921587,
-			OffsetStd:   1.3026829799647186e-08,
-			UTCOffset:   -18.0,
-			UTCYear:     2025,
-			UTCMonth:    8,
-			UTCDay:      14,
-			UTCHour:     6,
-			UTCMin:      42,
-			UTCMs:       59000,
-			UTCStatus:   UTCStatusValid,
+			novmsg.Time{
+				ClockStatus: novmsg.ClockStatusValid,
+				Offset:      -0.00047557955957921587,
+				OffsetStd:   1.3026829799647186e-08,
+				UTCOffset:   -18.0,
+				UTCYear:     2025,
+				UTCMonth:    8,
+				UTCDay:      14,
+				UTCHour:     6,
+				UTCMin:      42,
+				UTCMs:       59000,
+				UTCStatus:   novmsg.UTCStatusValid,
+			},
 		},
 		fixupValueForAscii: fixupRecTimeValueForAscii,
 	},
@@ -271,8 +275,8 @@ func fixupBD3UTCValueForAscii(msg Msg) Msg {
 	result := *b // Copy the struct
 
 	// Different precision for different fields
-	fixupFloat(&result.A0, "%.16g")  // A0 matches with 16g
-	fixupFloat(&result.A1, "%.10g")  // A1 needs less precision
+	fixupFloat(&result.A0, "%.16g") // A0 matches with 16g
+	fixupFloat(&result.A1, "%.10g") // A1 needs less precision
 	// A2 maintains exact precision (0.0)
 
 	return &result

@@ -58,13 +58,11 @@ func TestTimeAscii(t *testing.T) {
 // This simulates the receiver firmware's float-to-ASCII conversion using %.10g formatting.
 func fixupTimeValueForAscii(msg Msg) Msg {
 	r := msg.(*Time)
-	result := *r // Copy the struct
+	result := *r
 
 	const floatFormat = "%.10g"
 	// Simulate receiver's ASCII formatting: binary -> printf("%.10g") -> parse back
 	fixupFloat(&result.Offset, floatFormat)
 	fixupFloat(&result.OffsetStd, floatFormat)
-	// UTCOffset typically stays exact since -18.0 is representable exactly
-
 	return &result
 }
