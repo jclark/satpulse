@@ -71,14 +71,11 @@ func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
 	// Create message instance before parsing data fields
 	msg := ctor()
 
-	// Parse data fields using adaptive splitting
-	var expectedFieldCount int
-	if quotedMsg, isQuoted := msg.(QuotedAsciiMsg); isQuoted {
-		expectedFieldCount = quotedMsg.QuotedFieldCount()
-	} else {
-		expectedFieldCount = 0 // No quoting expected
+	// Parse data fields - NovAtel doesn't use quoted fields
+	var dataFields []string
+	if dataPart != "" {
+		dataFields = strings.Split(dataPart, ",")
 	}
-	dataFields := splitDataFields(dataPart, expectedFieldCount)
 
 	// Check if this is a chunked message
 	if chunkedMsg, ok := msg.(ChunkedMsg); ok {
@@ -107,71 +104,6 @@ func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
 	}
 
 	return msgHeader, msg, nil
-}
-
-// QuotedAsciiMsg is a marker interface for messages that use CSV-like
-// quoted fields in their ASCII representation. Fields may contain commas
-// and other special characters when quoted.
-type QuotedAsciiMsg interface {
-	Msg
-	quotedAscii()          // unexported marker method
-	QuotedFieldCount() int // expected number of fields when quoted
-}
-
-// splitDataFields splits data fields using adaptive logic based on expected field count.
-// expectedFieldCount of 0 means no quoting expected (simple comma splitting).
-// For quoted messages, tries different strategies based on field count.
-func splitDataFields(dataPart string, expectedFieldCount int) []string {
-	// Handle empty data
-	if dataPart == "" {
-		return []string{}
-	}
-
-	// Start with simple comma splitting
-	fields := strings.Split(dataPart, ",")
-
-	// If no quoting expected, return simple split
-	if expectedFieldCount == 0 {
-		return fields
-	}
-
-	if len(fields) > expectedFieldCount {
-		// too many fields
-		// possible explanation is that some commas are inside double quotes
-		fieldSepPos := make([]int, 0, len(fields))
-		inQuotes := false
-		for i := 0; i < len(dataPart); i++ {
-			if dataPart[i] == '"' {
-				inQuotes = !inQuotes
-			} else if dataPart[i] == ',' && !inQuotes {
-				fieldSepPos = append(fieldSepPos, i)
-			}
-		}
-		if len(fieldSepPos)+1 != expectedFieldCount {
-			// that explanation isn't correct
-			return fields
-		}
-		// explanation is correct; split on the found positions
-		fields = make([]string, expectedFieldCount)
-		if expectedFieldCount > 1 {
-			fields[0] = dataPart[:fieldSepPos[0]]
-			// we guessed right, so split on the found positions
-			for i := 1; i < expectedFieldCount-1; i++ {
-				fields[i] = dataPart[fieldSepPos[i-1]+1 : fieldSepPos[i]]
-			}
-			fields[expectedFieldCount-1] = dataPart[fieldSepPos[expectedFieldCount-2]+1:]
-		} else {
-			fields[0] = dataPart
-		}
-	}
-
-	// Now remove quotes
-	for i, field := range fields {
-		if len(field) >= 2 && field[0] == '"' && field[len(field)-1] == '"' {
-			fields[i] = field[1 : len(field)-1]
-		}
-	}
-	return fields
 }
 
 // SerializeAsciiMsg serializes a NovAtel message with header into ASCII format
@@ -232,45 +164,20 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	dataBuilder.WriteString(strings.Join(headerFields, ","))
 	dataBuilder.WriteByte(';')
 	if len(dataFields) > 0 {
-		// Check if this message uses quoted fields
-		if _, isQuoted := msg.(QuotedAsciiMsg); isQuoted {
-			// Add quotes around each field
-			quotedFields := make([]string, len(dataFields))
-			for i, field := range dataFields {
-				quotedFields[i] = fmt.Sprintf(`"%s"`, field)
-			}
-			dataBuilder.WriteString(strings.Join(quotedFields, ","))
-		} else {
-			dataBuilder.WriteString(strings.Join(dataFields, ","))
-		}
+		dataBuilder.WriteString(strings.Join(dataFields, ","))
 	}
 
 	dataForChecksum := dataBuilder.String()
 
-	// Calculate checksum on data (excluding '#')
-	// NovAtel uses CRC32 or XOR depending on length like Unicore
-	var checksum uint32
-	if len(dataForChecksum) > 64 { // Use CRC32 for longer messages
-		checksum = CRC32([]byte(dataForChecksum))
-		// Build final packet with '#' prefix and 8-digit CRC32 checksum
-		var packet strings.Builder
-		packet.WriteByte('#')
-		packet.WriteString(dataForChecksum)
-		packet.WriteString(fmt.Sprintf("*%08x", checksum))
-		packet.WriteString("\r\n")
-		return []byte(packet.String()), nil
-	} else {
-		// Use 8-bit XOR for shorter messages
-		var xor byte
-		for _, b := range []byte("#" + dataForChecksum) { // XOR includes '#'
-			xor ^= b
-		}
-		// Build final packet with '#' prefix and 2-digit XOR checksum
-		var packet strings.Builder
-		packet.WriteByte('#')
-		packet.WriteString(dataForChecksum)
-		packet.WriteString(fmt.Sprintf("*%02X", xor))
-		packet.WriteString("\r\n")
-		return []byte(packet.String()), nil
-	}
+	// Calculate CRC32 checksum on data (excluding '#')
+	// NovAtel always uses CRC32 for serialization
+	checksum := CRC32([]byte(dataForChecksum))
+	
+	// Build final packet with '#' prefix and 8-digit CRC32 checksum
+	var packet strings.Builder
+	packet.WriteByte('#')
+	packet.WriteString(dataForChecksum)
+	packet.WriteString(fmt.Sprintf("*%08x", checksum))
+	packet.WriteString("\r\n")
+	return []byte(packet.String()), nil
 }
