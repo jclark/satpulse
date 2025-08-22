@@ -12,9 +12,8 @@ package nov
 // 2. Contains at least one ';' character (header/data separator)
 // 3. Ends with CR/LF (\r\n)
 // 4. Before the CR/LF, the packet ends with one of:
-//    a) The first semicolon in the packet (no checksum)
-//    b) '*' followed by exactly 2 lowercase hex digits (8-bit XOR checksum)
-//    c) '*' followed by exactly 8 lowercase hex digits (32-bit CRC)
+//    a) '*' followed by exactly 2 lowercase hex digits (8-bit XOR checksum)
+//    b) '*' followed by exactly 8 lowercase hex digits (32-bit CRC)
 // 5. Contains only printable ASCII characters (0x20-0x7E) before the terminating CR/LF
 // 6. First field after message name starts with alphabetic character (port name)
 //
@@ -116,9 +115,6 @@ func (f asciiPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanInd
 			return state
 		}
 	case asciiStateHadSemi:
-		if b == '\r' {
-			return asciiStateHadCR
-		}
 		if b == '*' {
 			return asciiStateHadStar
 		}
@@ -171,11 +167,6 @@ func (f asciiPacketFormat) MsgID(pkt []byte) string {
 }
 
 func (f asciiPacketFormat) ExtractChecksum(pkt []byte) []byte {
-	// Check if packet ends at semicolon (no checksum)
-	if pkt[len(pkt)-3] == ';' {
-		return []byte{}
-	}
-
 	// Check for 8-digit CRC32 checksum: *xxxxxxxx\r\n
 	if len(pkt) >= 11 && pkt[len(pkt)-11] == '*' {
 		h := pkt[len(pkt)-10 : len(pkt)-2]
@@ -197,11 +188,6 @@ func (f asciiPacketFormat) ExtractChecksum(pkt []byte) []byte {
 }
 
 func (f asciiPacketFormat) ComputeChecksum(pkt []byte) []byte {
-	// Check if packet ends at semicolon (no checksum)
-	if pkt[len(pkt)-3] == ';' {
-		return []byte{}
-	}
-
 	// Check for 8-digit CRC32 checksum: *xxxxxxxx\r\n
 	if len(pkt) >= 11 && pkt[len(pkt)-11] == '*' {
 		// 32-bit CRC: data from '#' to '*' (exclusive)

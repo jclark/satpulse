@@ -37,15 +37,9 @@ func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
 	// Split header from rest at first semicolon
 	headerPart, rest, _ := strings.Cut(asciiMsg, ";")
 
-	// Determine data part based on packet ending
-	var dataPart string
-	if rest == "" {
-		// Case (a): packet ends with semicolon - no data part
-		dataPart = ""
-	} else {
-		// Case (b) or (c): packet has data and ends with '*' + hex digits
-		dataPart, _, _ = strings.Cut(rest, "*")
-	}
+	// Extract data part (everything between semicolon and checksum)
+	// Packet must have checksum (ends with '*' + hex digits)
+	dataPart, _, _ := strings.Cut(rest, "*")
 
 	// Parse header fields
 	headerFields := strings.Split(headerPart, ",")

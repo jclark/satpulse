@@ -12,9 +12,8 @@ package unc
 // 2. Contains at least one ';' character (header/data separator)
 // 3. Ends with CR/LF (\r\n)
 // 4. Before the CR/LF, the packet ends with one of:
-//    a) The first semicolon in the packet (no checksum) (this handles the output of UNILOGLIST command)
-//    b) '*' followed by exactly 2 lowercase hex digits (8-bit XOR checksum) (this handles the output of MODE command)
-//    c) '*' followed by exactly 8 lowercase hex digits (32-bit CRC) (this is the normal case)
+//    a) '*' followed by exactly 2 lowercase hex digits (8-bit XOR checksum) (this handles the output of MODE command)
+//    b) '*' followed by exactly 8 lowercase hex digits (32-bit CRC) (this is the normal case)
 // 5. Contains only printable ASCII characters (0x20-0x7E) before the terminating CR/LF
 //
 // If ParseAsciiMessage receives a packet that does not satisfy these guarantees,

@@ -31,14 +31,14 @@ func TestAsciiPacketValidation(t *testing.T) {
 			true,
 		},
 		{
-			"ValidNoChecksum",
+			"InvalidNoChecksum",
 			"#GPGGA,123045,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M;\r\n",
-			true,
+			false, // No checksum is no longer allowed
 		},
 		{
-			"ValidMinimal",
+			"InvalidMinimalNoChecksum",
 			"#A,1;\r\n",
-			true,
+			false, // No checksum is no longer allowed
 		},
 		{
 			"ValidLongName",
