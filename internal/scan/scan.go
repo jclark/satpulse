@@ -92,6 +92,7 @@ func (s *Scanner) Scan() (p Packet, err error) {
 	p = Packet{TRead: s.tRead}
 	// this is non-nil if state != stateSync
 	var curPktFormat gpsprot.PacketFormat
+	var curPktFormatIndex int
 Loop:
 	for {
 		if s.nextScanIndex >= len(s.buf) {
@@ -124,10 +125,11 @@ Loop:
 		if state != stateSync {
 			nextState = curPktFormat.Next(state, s.buf, s.nextScanIndex, packetLen)
 		} else {
-			for _, pf := range s.pktFormats {
+			for i, pf := range s.pktFormats {
 				nextState = pf.Next(state, s.buf, s.nextScanIndex, packetLen)
 				if nextState != stateSync {
 					curPktFormat = pf
+					curPktFormatIndex = i
 					break
 				}
 			}
@@ -140,33 +142,21 @@ Loop:
 		if state != stateSync && nextState == stateSync && packetLen > 0 {
 			// We had something that looked like the start of a packet,
 			// but turned out to be invalid.
-			
-			// Check if another packet format would also match the first byte
-			firstByteIndex := s.nextScanIndex - packetLen
-			foundCurrent := false
-			var nextFormat gpsprot.PacketFormat
-			
-			for _, pf := range s.pktFormats {
-				if foundCurrent {
-					// Check if this format would match the first byte
-					if pf.Next(stateSync, s.buf, firstByteIndex, 0) != stateSync {
-						nextFormat = pf
-						break
-					}
-				} else if pf == curPktFormat {
-					foundCurrent = true
+
+			// Check if a subsequent packet format would also match the first byte
+			startIndex := s.nextScanIndex - packetLen
+			for i := curPktFormatIndex + 1; i < len(s.pktFormats); i++ {
+				pf := s.pktFormats[i]
+				nextState = pf.Next(stateSync, s.buf, startIndex, 0)
+				if nextState != stateSync {
+					// It did, so rescan using that packet format from the second byte
+					curPktFormat = pf
+					curPktFormatIndex = i
+					s.nextScanIndex = startIndex + 1
+					packetLen = 1
+					goto Loop
 				}
 			}
-			
-			if nextFormat != nil {
-				// Try the next matching format from the beginning of the packet
-				curPktFormat = nextFormat
-				s.nextScanIndex -= packetLen - 1
-				state = stateSync
-				packetLen = 1
-				goto Loop
-			}
-			
 			// No more formats match the first byte, rescan from second byte
 			// This is sufficient for UBX and NMEA, because the $ which starts an NMEA packet
 			// isn't allowed within an NMEA packet. For UBX, the only way it's invalid is if the
