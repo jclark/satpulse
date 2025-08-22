@@ -84,23 +84,9 @@ func ParseBinMsg(packet []byte) (MessageHeader, Msg, error) {
 	msg := ctor()
 	r := bytes.NewReader(payload)
 
-	// Check if this is a chunked message
-	if chunkedMsg, ok := msg.(ChunkedMsg); ok {
-		// Use the chunks iterator to read the message
-		for chunk := range chunkedMsg.Chunks() {
-			if err = binary.Read(r, binary.LittleEndian, chunk); err != nil {
-				break
-			}
-		}
-		if err != nil {
-			return MessageHeader{}, nil, fmt.Errorf("parsing UNCB-%s: %v", msgID.String(), err)
-		}
-	} else {
-		// Use single read for fixed-length messages
-		err = binary.Read(r, binary.LittleEndian, msg)
-		if err != nil {
-			return MessageHeader{}, nil, fmt.Errorf("parsing UNCB-%s: %v", msgID.String(), err)
-		}
+	err = novmsg.ReadBinChunked(r, msg, "UNCB-"+msgID.String())
+	if err != nil {
+		return MessageHeader{}, nil, err
 	}
 
 	// Check for trailing bytes
@@ -129,23 +115,9 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 		// Serialize the message payload
 		buf := new(bytes.Buffer)
 
-		// Check if this is a chunked message
-		if chunkedMsg, ok := msg.(ChunkedMsg); ok {
-			// Use the chunks iterator to write the message
-			for chunk := range chunkedMsg.Chunks() {
-				if err = binary.Write(buf, binary.LittleEndian, chunk); err != nil {
-					break
-				}
-			}
-			if err != nil {
-				return nil, fmt.Errorf("serializing %s: %v", msgID.String(), err)
-			}
-		} else {
-			// Use single write for fixed-length messages
-			err = binary.Write(buf, binary.LittleEndian, msg)
-			if err != nil {
-				return nil, err
-			}
+		err = novmsg.WriteBinChunked(buf, msg, msgID.String())
+		if err != nil {
+			return nil, err
 		}
 		payload = buf.Bytes()
 	}

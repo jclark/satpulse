@@ -1,5 +1,7 @@
 package uncmsg
 
+import "github.com/jclark/satpulse/internal/novmsg"
+
 // Message IDs for satellite-related messages
 const (
 	SatsInfoID MsgID = 2124
@@ -101,6 +103,8 @@ type SatsInfo struct {
 	Sats []SatsInfoSat
 }
 
+var _ novmsg.Chunked = (*SatsInfo)(nil)
+
 type SatsInfoInitChunk struct {
 	SatNumber     byte // Number of tracked satellites to follow
 	VersionNumber byte // Version number, default = 2
@@ -135,7 +139,7 @@ func (s *SatsInfo) ID() (MsgID, string) {
 	return SatsInfoID, "SATSINFOA"
 }
 
-// Chunks implements the ChunkedMsg interface for SatsInfo
+// Chunks implements the novmsg.Chunked interface for SatsInfo
 func (s *SatsInfo) Chunks() func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
 		// First yield the header chunk to read satellite count

@@ -158,13 +158,6 @@ type Msg interface {
 	ID() (MsgID, string)
 }
 
-// ChunkedMsg interface for messages with variable-length structure
-// that need to be read/written in chunks
-type ChunkedMsg interface {
-	Msg
-	// Chunks returns a push iterator that yields each chunk for sequential reading/writing
-	Chunks() func(yield func(chunk any) bool)
-}
 
 var msgIDMap = make(map[MsgID]func() Msg)
 var msgNameMap = make(map[string]func() Msg)

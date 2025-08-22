@@ -76,30 +76,9 @@ func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
 	}
 	dataFields := splitDataFields(dataPart, expectedFieldCount)
 
-	// Check if this is a chunked message
-	if chunkedMsg, ok := msg.(ChunkedMsg); ok {
-		// Use the chunks iterator to parse the message
-		fieldIndex := 0
-		for chunk := range chunkedMsg.Chunks() {
-			fieldsConsumed, chunkErr := fieldenc.PartialDecode(dataFields[fieldIndex:], chunk)
-			if chunkErr != nil {
-				err = chunkErr
-				break
-			}
-			fieldIndex += fieldsConsumed
-		}
-		if err != nil {
-			return MessageHeader{}, nil, fmt.Errorf("parsing %s data: %v", asciiHeader.MessageName, err)
-		}
-		// Ensure all fields were consumed
-		if fieldIndex != len(dataFields) {
-			return MessageHeader{}, nil, fmt.Errorf("parsing %s data: expected to consume %d fields, consumed %d", asciiHeader.MessageName, len(dataFields), fieldIndex)
-		}
-	} else {
-		err = fieldenc.Decode(dataFields, msg)
-		if err != nil {
-			return MessageHeader{}, nil, fmt.Errorf("parsing %s data: %v", asciiHeader.MessageName, err)
-		}
+	err = novmsg.DecodeAsciiChunked(dataFields, msg, asciiHeader.MessageName)
+	if err != nil {
+		return MessageHeader{}, nil, err
 	}
 
 	return msgHeader, msg, nil
@@ -201,26 +180,9 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 			dataFields = strings.Split(uMsg.Payload, ",")
 		}
 	} else {
-		// Check if this is a chunked message
-		if chunkedMsg, ok := msg.(ChunkedMsg); ok {
-			// Use the chunks iterator to serialize the message
-			for chunk := range chunkedMsg.Chunks() {
-				chunkFields, chunkErr := fieldenc.Encode(chunk)
-				if chunkErr != nil {
-					err = chunkErr
-					break
-				}
-				dataFields = append(dataFields, chunkFields...)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("encoding %s data: %v", asciiMsgName, err)
-			}
-		} else {
-			// Use single encode for fixed-length messages
-			dataFields, err = fieldenc.Encode(msg)
-			if err != nil {
-				return nil, fmt.Errorf("encoding %s data: %v", asciiMsgName, err)
-			}
+		dataFields, err = novmsg.EncodeAsciiChunked(msg, asciiMsgName)
+		if err != nil {
+			return nil, err
 		}
 	}
 
