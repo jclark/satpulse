@@ -102,32 +102,27 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 		return nil, fmt.Errorf("encoding header: %v", err)
 	}
 
-	// Serialize message data
-	var dataFields []string
-	if uMsg, ok := msg.(*UnknownAsciiMsg); ok {
-		// For unknown messages, use the raw payload
-		if uMsg.Payload != "" {
-			dataFields = strings.Split(uMsg.Payload, ",")
-		}
-	} else {
-		dataFields, err = EncodeAsciiChunked(msg, asciiMsgName)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Build the data part for checksum (excludes leading '#')
+		// Build the data part for checksum (excludes leading '#')
 	var dataBuilder strings.Builder
 	dataBuilder.WriteString(strings.Join(headerFields, ","))
 	dataBuilder.WriteByte(';')
-	if len(dataFields) > 0 {
-		dataBuilder.WriteString(strings.Join(dataFields, ","))
+	// Serialize message data
+	if uMsg, ok := msg.(*UnknownAsciiMsg); ok {
+		// For unknown messages, use the raw payload
+		dataBuilder.WriteString(uMsg.Payload)
+	} else {
+		dataFields, err := EncodeAsciiChunked(msg, asciiMsgName)
+		if err != nil {
+			return nil, err
+		}
+		if len(dataFields) > 0 {
+			dataBuilder.WriteString(strings.Join(dataFields, ","))
+		}
 	}
 
 	dataForChecksum := dataBuilder.String()
 
 	// Calculate CRC32 checksum on data (excluding '#')
-	// NovAtel always uses CRC32 for serialization
 	checksum := CRC32([]byte(dataForChecksum))
 
 	// Build final packet with '#' prefix and 8-digit CRC32 checksum

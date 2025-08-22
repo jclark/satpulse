@@ -157,7 +157,7 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	if msgName == "" {
 		return nil, fmt.Errorf("unknown binary message cannot be serialized as ASCII")
 	}
-	
+
 	// Use the name directly - it already contains the correct wire format
 	asciiMsgName := msgName
 
@@ -172,35 +172,33 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 		return nil, fmt.Errorf("encoding header: %v", err)
 	}
 
-	// Serialize message data
-	var dataFields []string
-	if uMsg, ok := msg.(*UnknownAsciiMsg); ok {
-		// For unknown messages, use the raw payload
-		if uMsg.Payload != "" {
-			dataFields = strings.Split(uMsg.Payload, ",")
-		}
-	} else {
-		dataFields, err = novmsg.EncodeAsciiChunked(msg, asciiMsgName)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// Build the data part for checksum (excludes leading '#')
 	var dataBuilder strings.Builder
 	dataBuilder.WriteString(strings.Join(headerFields, ","))
 	dataBuilder.WriteByte(';')
-	if len(dataFields) > 0 {
-		// Check if this message uses quoted fields
-		if _, isQuoted := msg.(QuotedAsciiMsg); isQuoted {
-			// Add quotes around each field
-			quotedFields := make([]string, len(dataFields))
-			for i, field := range dataFields {
-				quotedFields[i] = fmt.Sprintf(`"%s"`, field)
+	// Serialize message data
+	if uMsg, ok := msg.(*UnknownAsciiMsg); ok {
+		// For unknown messages, use the raw payload
+		if uMsg.Payload != "" {
+			dataBuilder.WriteString(uMsg.Payload)
+		}
+	} else {
+		dataFields, err := novmsg.EncodeAsciiChunked(msg, asciiMsgName)
+		if err != nil {
+			return nil, err
+		}
+		if len(dataFields) > 0 {
+			// Check if this message uses quoted fields
+			if _, isQuoted := msg.(QuotedAsciiMsg); isQuoted {
+				// Add quotes around each field
+				quotedFields := make([]string, len(dataFields))
+				for i, field := range dataFields {
+					quotedFields[i] = fmt.Sprintf(`"%s"`, field)
+				}
+				dataBuilder.WriteString(strings.Join(quotedFields, ","))
+			} else {
+				dataBuilder.WriteString(strings.Join(dataFields, ","))
 			}
-			dataBuilder.WriteString(strings.Join(quotedFields, ","))
-		} else {
-			dataBuilder.WriteString(strings.Join(dataFields, ","))
 		}
 	}
 
