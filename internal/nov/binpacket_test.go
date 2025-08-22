@@ -1,12 +1,14 @@
 package nov
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"testing"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/scantest"
+	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
 var testPacketsValid = []string{
@@ -22,7 +24,11 @@ var testPacketsValid = []string{
 }
 
 func TestNovAtelBinaryPackets(t *testing.T) {
-	for i, pkt := range testPacketsValid {
+	// Create test packets including one with extended header
+	testPackets := append([]string{}, testPacketsValid...)
+	testPackets = append(testPackets, testExtendPacketHeader(testPacketsValid[0]))
+
+	for i, pkt := range testPackets {
 		t.Run(fmt.Sprintf("Packet %d", i+1), func(t *testing.T) {
 			data, err := hex.DecodeString(pkt)
 			if err != nil {
@@ -98,4 +104,43 @@ func TestMsgID(t *testing.T) {
 	if got != expectedMsgID {
 		t.Errorf("Expected %q got %q", expectedMsgID, got)
 	}
+}
+
+// testExtendPacketHeader creates a NovAtel binary packet with an extended header
+// by taking an existing valid packet, adding extra bytes to the header, and recomputing the checksum.
+func testExtendPacketHeader(hexPacket string) string {
+	data, err := hex.DecodeString(hexPacket)
+	if err != nil {
+		panic(err)
+	}
+
+	// Original header is 28 bytes (0x1C at offset 3)
+	// Split into header, payload, and checksum
+	origHeaderLen := int(data[3])
+	payloadLen := int(binary.LittleEndian.Uint16(data[8:10]))
+
+	header := data[:origHeaderLen]
+	payload := data[origHeaderLen : origHeaderLen+payloadLen]
+
+	// Create extended header by adding 2 bytes (0xFE, 0xFF)
+	extendedHeader := make([]byte, origHeaderLen+2)
+	copy(extendedHeader, header)
+	extendedHeader[origHeaderLen] = 0xFE
+	extendedHeader[origHeaderLen+1] = 0xFF
+
+	// Update header length field to 30
+	extendedHeader[3] = 30
+
+	// Combine extended header and payload
+	newPacket := append(extendedHeader, payload...)
+
+	// Compute new CRC32 checksum
+	crc := uncmsg.CRC32(newPacket)
+	checksumBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(checksumBytes, crc)
+
+	// Append checksum
+	newPacket = append(newPacket, checksumBytes...)
+
+	return hex.EncodeToString(newPacket)
 }

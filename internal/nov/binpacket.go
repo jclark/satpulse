@@ -39,8 +39,8 @@ const (
 )
 
 const (
-	headerLength = 28 // Total header length including 3 sync bytes
 	crcLength = 4
+	headerLengthOffset = 3
 	msgIDOffset = 4
 	payloadLengthOffset = 8
 )
@@ -64,8 +64,9 @@ func (f binPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex
 			}
 		case payloadLengthOffset + 2:
 			packetStart := nextScanIndex - packetLen
+			headerLen := int(buf[packetStart+headerLengthOffset])
 			payloadLen := int(binary.LittleEndian.Uint16(buf[packetStart+payloadLengthOffset:packetStart+payloadLengthOffset+2]))
-			totalLen := headerLength + payloadLen + crcLength
+			totalLen := headerLen + payloadLen + crcLength
 
 			// We have already read packetLen + 1 bytes (11 bytes).
 			// The state represents the number of bytes to read *after* this one.
