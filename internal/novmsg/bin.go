@@ -15,8 +15,9 @@ const (
 	sync3 byte = 0x12
 )
 
-const headerLength = 28 // Total header length including 3 sync bytes
+const standardHeaderLength = 28 // Standard header length for creating new messages
 const crcLength = 4
+const headerLengthOffset = 3 // Offset to header length field in packet
 
 // MsgID represents a NovAtel binary message identifier (uint16)
 type MsgID uint16
@@ -60,7 +61,8 @@ func ParsePort(s string) (Port, error) {
 	}
 }
 
-// BinaryHeader represents the 28-byte header of a NovAtel binary packet
+// BinaryHeader represents the standard 28-byte header of a NovAtel binary packet
+// Note: NovAtel headers can have variable length, but this struct represents the standard format
 type BinaryHeader struct {
 	Sync1         byte // 0xAA
 	Sync2         byte // 0x44
@@ -85,14 +87,21 @@ func (m *UnknownBinMsg) ID() (MsgID, string) { return m.MsgID, "" }
 // It assumes the checksums were already verified.
 func ParseBinMsg(packet []byte) (MessageHeader, Msg, error) {
 	n := len(packet)
-	minLen := headerLength + crcLength
-	if n < minLen {
+	// Need at least 4 bytes to read header length
+	if n < 4 {
 		return MessageHeader{}, nil, fmt.Errorf("NOVB message too short (length %d bytes)", n)
+	}
+
+	// Read the actual header length from the packet
+	headerLen := int(packet[headerLengthOffset])
+	minLen := headerLen + crcLength
+	if n < minLen {
+		return MessageHeader{}, nil, fmt.Errorf("NOVB message too short (length %d bytes, need %d)", n, minLen)
 	}
 
 	// Parse binary header
 	var binHeader BinaryHeader
-	headerReader := bytes.NewReader(packet[:headerLength])
+	headerReader := bytes.NewReader(packet[:headerLen])
 	err := binary.Read(headerReader, binary.LittleEndian, &binHeader)
 	if err != nil {
 		return MessageHeader{}, nil, fmt.Errorf("parsing NOVB header: %v", err)
@@ -109,13 +118,13 @@ func ParseBinMsg(packet []byte) (MessageHeader, Msg, error) {
 	payloadLen := int(binHeader.MessageLength)
 
 	// Calculate expected total length
-	expectedLen := headerLength + payloadLen + crcLength
+	expectedLen := headerLen + payloadLen + crcLength
 	if n != expectedLen {
 		return MessageHeader{}, nil, fmt.Errorf("NOVB message length mismatch: got %d, expected %d", n, expectedLen)
 	}
 
 	// Extract payload
-	payload := packet[headerLength : headerLength+payloadLen]
+	payload := packet[headerLen : headerLen+payloadLen]
 
 	// Look up message constructor
 	ctor := msgIDMap[msgID]
@@ -182,7 +191,7 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 		Sync1:         sync1,
 		Sync2:         sync2,
 		Sync3:         sync3,
-		HeaderLength:  headerLength,
+		HeaderLength:  standardHeaderLength,
 		MessageID:     msgID,
 		MessageType:   0, // Default message type
 		Port:          port,
