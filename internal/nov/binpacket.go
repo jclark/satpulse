@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/uncmsg"
+	"github.com/jclark/satpulse/internal/novmsg"
 )
 
 // TagBinary is the identifier for NovAtel binary packets
@@ -105,7 +105,7 @@ func (f binPacketFormat) ExtractChecksum(pkt []byte) []byte {
 }
 
 func (f binPacketFormat) ComputeChecksum(pkt []byte) []byte {
-	crc := uncmsg.CRC32(pkt[:len(pkt)-crcLength])
+	crc := novmsg.CRC32(pkt[:len(pkt)-crcLength])
 	checksumBytes := make([]byte, crcLength)
 	binary.LittleEndian.PutUint32(checksumBytes, crc)
 	return checksumBytes

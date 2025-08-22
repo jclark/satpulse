@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/novmsg"
 	"github.com/jclark/satpulse/internal/scantest"
-	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
 var testPacketsValid = []string{
@@ -135,7 +135,7 @@ func testExtendPacketHeader(hexPacket string) string {
 	newPacket := append(extendedHeader, payload...)
 
 	// Compute new CRC32 checksum
-	crc := uncmsg.CRC32(newPacket)
+	crc := novmsg.CRC32(newPacket)
 	checksumBytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(checksumBytes, crc)
 

@@ -1,4 +1,4 @@
-package uncmsg
+package novmsg
 
 import (
 	"encoding/binary"

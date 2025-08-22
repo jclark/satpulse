@@ -21,6 +21,7 @@ var PacketFormats = []gpsprot.PacketFormat{
 	unc.BinPacketFormat,
 	unc.AsciiPacketFormat,
 	nov.BinPacketFormat,
+	nov.AsciiPacketFormat,
 }
 
 // CreatePacketProcessors creates packet processors for all registered protocols
@@ -36,6 +37,7 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 		unc.TagBinary: unc.NewBinPacketProcessor(),
 		unc.TagAscii:  unc.NewAsciiPacketProcessor(),
 		nov.TagBinary: nov.NewBinPacketProcessor(),
+		nov.TagAscii:  nov.NewAsciiPacketProcessor(),
 	}
 }
 

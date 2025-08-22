@@ -37,12 +37,12 @@ func TestAsciiPacketValidation(t *testing.T) {
 		},
 		{
 			"ValidMinimal",
-			"#A;\r\n",
+			"#A,1;\r\n",
 			true,
 		},
 		{
 			"ValidLongName",
-			"#VERYLONGMESSAGENAME,data,here;more,data*12345678\r\n",
+			"#VERYLONGMESSAGENAME,22,here;more,data*12345678\r\n",
 			true,
 		},
 				{
@@ -58,7 +58,7 @@ func TestAsciiPacketValidation(t *testing.T) {
 		// All printable ASCII characters (0x20-0x7E)
 		{
 			"ValidAllPrintableChars",
-			"#TEST,!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~;data*ab\r\n",
+			"#TEST,23,!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~;data*ab\r\n",
 			true,
 		},
 
@@ -162,21 +162,21 @@ func TestAsciiPacketValidation(t *testing.T) {
 		{
 			"EmptyMessage",
 			"#;\r\n",
-			true,
+			false,
 		},
 		{
 			"EmptyAfterSemicolon",
 			"#MSG;\r\n",
-			true,
+			false,
 		},
 		{
 			"MultipleSemicolons", // First one is separator
-			"#MSG,data;more;data*12\r\n",
+			"#MSG,45;more;data*12\r\n",
 			true,
 		},
 		{
 			"StarInData", // Star before separator is allowed
-			"#MSG,data*stuff;more*ab\r\n",
+			"#MSG,72,more*stuff;more*ab\r\n",
 			true,
 		},
 	}

@@ -1,20 +1,18 @@
-package uncmsg
+package novmsg
 
 import (
-	"encoding/binary"
 	"fmt"
 	"strings"
 
 	"github.com/jclark/satpulse/internal/fieldenc"
-	"github.com/jclark/satpulse/internal/novmsg"
 )
 
-// AsciiHeader represents the header fields from a Unicore ASCII message
+// AsciiHeader represents the header fields from a NovAtel ASCII message
 // Fields are processed by fieldenc in struct field order
 type AsciiHeader struct {
-	MessageName  string // Message name (e.g., "PPSSTATUSA")
-	CPUIdle      byte   // CPU idle percentage
-	TimingHeader        // Embedded timing fields
+	MessageName string // Message name (e.g., "BESTPOSA")
+	Port string
+	CommonHeader
 }
 
 // UnknownAsciiMsg represents an unrecognized ASCII message
@@ -25,7 +23,7 @@ type UnknownAsciiMsg struct {
 
 func (m *UnknownAsciiMsg) ID() (MsgID, string) { return 0, m.Name }
 
-// ParseAsciiMessage parses a Unicore ASCII message from bytes.
+// ParseAsciiMessage parses a NovAtel ASCII message from bytes.
 // It assumes the packet format scanner has validated the packet structure
 // and checksums were already verified.
 func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
@@ -57,10 +55,10 @@ func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
 		return MessageHeader{}, nil, fmt.Errorf("parsing header: %v", err)
 	}
 
-	// Convert to MessageHeader
+	// Convert to MessageHeader - create from CommonHeader and Port
 	msgHeader := MessageHeader{
-		CPUIdlePercent: asciiHeader.CPUIdle,
-		TimingHeader:   asciiHeader.TimingHeader,
+		Port:         asciiHeader.Port,
+		CommonHeader: asciiHeader.CommonHeader,
 	}
 
 	// Look up message constructor by name
@@ -174,25 +172,24 @@ func splitDataFields(dataPart string, expectedFieldCount int) []string {
 		}
 	}
 	return fields
-
 }
 
-// SerializeAsciiMsg serializes a Unicore message with header into ASCII format
+// SerializeAsciiMsg serializes a NovAtel message with header into ASCII format
 func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	// Get message ID and name
 	_, msgName := msg.ID()
 	if msgName == "" {
 		return nil, fmt.Errorf("unknown binary message cannot be serialized as ASCII")
 	}
-	
+
 	// Use the name directly - it already contains the correct wire format
 	asciiMsgName := msgName
 
 	// Serialize header using fieldenc
 	asciiHeader := AsciiHeader{
 		MessageName:  asciiMsgName,
-		CPUIdle:      header.CPUIdlePercent,
-		TimingHeader: header.TimingHeader,
+		Port:         header.Port,
+		CommonHeader: header.CommonHeader,
 	}
 	headerFields, err := fieldenc.Encode(asciiHeader)
 	if err != nil {
@@ -250,23 +247,30 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 
 	dataForChecksum := dataBuilder.String()
 
-	// Calculate CRC32 checksum on data (excluding '#')
-	checksum := novmsg.CRC32([]byte(dataForChecksum))
-
-	// Build final packet with '#' prefix and checksum
-	var packet strings.Builder
-	packet.WriteByte('#')
-	packet.WriteString(dataForChecksum)
-	packet.WriteString(fmt.Sprintf("*%08x", checksum))
-	packet.WriteString("\r\n")
-
-	return []byte(packet.String()), nil
-}
-
-// BinPacketMsgID returns the MsgID of a packet
-func BinPacketMsgID(packet []byte) MsgID {
-	if len(packet) < 6 {
-		return 0
+	// Calculate checksum on data (excluding '#')
+	// NovAtel uses CRC32 or XOR depending on length like Unicore
+	var checksum uint32
+	if len(dataForChecksum) > 64 { // Use CRC32 for longer messages
+		checksum = CRC32([]byte(dataForChecksum))
+		// Build final packet with '#' prefix and 8-digit CRC32 checksum
+		var packet strings.Builder
+		packet.WriteByte('#')
+		packet.WriteString(dataForChecksum)
+		packet.WriteString(fmt.Sprintf("*%08x", checksum))
+		packet.WriteString("\r\n")
+		return []byte(packet.String()), nil
+	} else {
+		// Use 8-bit XOR for shorter messages
+		var xor byte
+		for _, b := range []byte("#" + dataForChecksum) { // XOR includes '#'
+			xor ^= b
+		}
+		// Build final packet with '#' prefix and 2-digit XOR checksum
+		var packet strings.Builder
+		packet.WriteByte('#')
+		packet.WriteString(dataForChecksum)
+		packet.WriteString(fmt.Sprintf("*%02X", xor))
+		packet.WriteString("\r\n")
+		return []byte(packet.String()), nil
 	}
-	return MsgID(binary.LittleEndian.Uint16(packet[4:6]))
 }

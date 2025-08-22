@@ -1,4 +1,4 @@
-package uncmsg
+package novmsg
 
 // This is a direct translation of the CRC32 algorithm provided in the Unicore documentation appendix.
 
