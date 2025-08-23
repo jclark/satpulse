@@ -2,6 +2,7 @@ package novmsg
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 )
 
@@ -128,22 +129,23 @@ func (g *GPSec) UnmarshalText(text []byte) error {
 	return nil
 }
 
+// Percentage uses values in the range 0-200 to represent a percentage
 type Percentage uint8
 
 // MarshalText implements encoding.TextMarshaler for fieldenc support
-// Converts byte percentage to float string (e.g., 97 → "97.0")
+// Converts byte percentage to float string (e.g., 199 → "99.5")
 func (p Percentage) MarshalText() ([]byte, error) {
-	return []byte(fmt.Sprintf("%.1f", float64(p))), nil
+	return []byte(fmt.Sprintf("%.1f", float64(p)/2.0)), nil
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler for fieldenc support
-// Parses float string to byte percentage (e.g., "97.0" → 97)
+// Parses float string to byte percentage (e.g., "99.5" → 199)
 func (p *Percentage) UnmarshalText(text []byte) error {
 	val, err := strconv.ParseFloat(string(text), 64)
 	if err != nil {
 		return err
 	}
-	*p = Percentage(val)
+	*p = Percentage(math.Round(val*2))
 	return nil
 }
 
