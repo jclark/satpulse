@@ -1,31 +1,6 @@
 package nov
 
-// ASCII Packet Format Specification
-//
-// This file implements the gpsprot.PacketFormat interface for NovAtel ASCII packets.
-//
-// VALIDITY GUARANTEES:
-// The ASCII packet format scanner guarantees that any packet passed to ParseAsciiMessage
-// will satisfy ALL of the following criteria:
-//
-// 1. Starts with '#' character
-// 2. Contains at least one ';' character (header/data separator)
-// 3. Ends with CR/LF (\r\n)
-// 4. Before the CR/LF, the packet ends with one of:
-//    a) '*' followed by exactly 2 lowercase hex digits (8-bit XOR checksum)
-//    b) '*' followed by exactly 8 lowercase hex digits (32-bit CRC)
-// 5. Contains only printable ASCII characters (0x20-0x7E) before the terminating CR/LF
-// 6. First field after message name starts with alphabetic character (port name)
-//
-// If ParseAsciiMessage receives a packet that does not satisfy these guarantees,
-// it should panic as this indicates a bug in the packet format scanner.
-//
-// ASCII MESSAGE FORMAT:
-// #MessageName,Port,Sequence,IdleTime,TimeStatus,Week,Seconds,ReceiverStatus,Reserved,Version;data*checksum\r\n
-//
-// Examples:
-// #BESTPOSA,COM3,0,0.0,FINESTEERING,1975,393343.000,00000000,0000,113;...*checksum\r\n
-// #HEADINGA,COM3,0,0,FINESTEERING,1975,394129.000,00000000,0000,113;...*checksum\r\n
+
 
 import (
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -36,19 +11,29 @@ import (
 const TagAscii gpsprot.Tag = "NOVA"
 
 // AsciiPacketFormat is the NovAtel ASCII packet format
-var AsciiPacketFormat gpsprot.PacketFormat = MakePacketFormat(TagAscii, isAlpha)
+// Packets are recognized as valid if they meet all the following criteria:
+//
+// 1. Starts with '#' character
+// 2. Contains at least one ';' character (header/data separator)
+// 3. Ends with CR/LF (\r\n)
+// 4. Before the CR/LF, the packet ends with '*' followed by exactly 8 lowercase hex digits (32-bit CRC)
+// 5. Contains only printable ASCII characters (0x20-0x7E) before the terminating CR/LF
+// 6. First field in header after message name starts with alphabetic character (port name)
+var AsciiPacketFormat gpsprot.PacketFormat = MakePacketFormat(TagAscii, isAlpha, false)
 
 // asciiPacketFormat implements the gpsprot.PacketFormat interface for ASCII packets
 type asciiPacketFormat struct {
 	tag                 gpsprot.Tag
 	dataFieldValidStart func(byte) bool // validates first character after comma
+	allow2DigitChecksum bool            // whether to allow 2-digit XOR checksums
 }
 
 // MakePacketFormat creates an ASCII packet format with the given tag and validation function
-func MakePacketFormat(tag gpsprot.Tag, dataFieldValidStart func(byte) bool) gpsprot.PacketFormat {
+func MakePacketFormat(tag gpsprot.Tag, dataFieldValidStart func(byte) bool, allow2DigitChecksum bool) gpsprot.PacketFormat {
 	return asciiPacketFormat{
 		tag:                 tag,
 		dataFieldValidStart: dataFieldValidStart,
+		allow2DigitChecksum: allow2DigitChecksum,
 	}
 }
 
@@ -130,7 +115,7 @@ func (f asciiPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanInd
 			return asciiStateHadChecksum2
 		}
 	case asciiStateHadChecksum2:
-		if b == '\r' {
+		if b == '\r' && f.allow2DigitChecksum {
 			return asciiStateHadCR
 		}
 		if isHexDigit(b) {
