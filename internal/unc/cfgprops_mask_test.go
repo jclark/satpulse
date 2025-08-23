@@ -7,7 +7,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
-
 func TestMaskPropRoundTrip(t *testing.T) {
 	maskTestCases := []struct {
 		name      string
@@ -279,354 +278,361 @@ func TestMaskPropInvalidCommands(t *testing.T) {
 }
 
 func TestConfigMask(t *testing.T) {
-	testNativeConfigProps(t, maskTestCases)
-}
-
-
-var maskTestCases = []nativeConfigPropsTestCase{
-	{
-		name: "mask multiple constellations with signal group 2",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2",
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			props.SetSignalsEnabled(gpsprot.SigSetGPS)
-		},
-		expectedCmds: []string{
-			"MASK GLO",
-			"MASK GAL",
-			"MASK BDS",
-			"MASK QZSS",
-			"MASK IRNSS",
-		},
-	},
-	{
-		name: "mask multiple constellations with signal group 1",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 1",
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			props.SetSignalsEnabled(gpsprot.SigSetBDS)
-		},
-		expectedCmds: []string{
-			"MASK GPS",
-			"MASK GAL",
-			"MASK GLO",
-			"MASK QZSS",
-			// no MASK IRNSS since signal group 1 does not include IRNSS
-		},
-	},
-	{
-		name: "--gnss GPS,BDS --band L1 equivalent",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2", // has GPS, BDS, GAL, GLO, QZSS, NAVIC
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss GPS,BDS --band L1
-			props.SetSignalsEnabled(gpsprot.BandL1.SignalSet(gpsprot.GPS, gpsprot.BDS))
-		},
-		expectedCmds: []string{
-			"MASK L2", "MASK L5", // mask GPS non-L1 frequencies
-			"MASK B2", "MASK B3", // mask BDS non-L1 frequencies
-			"MASK GLO", "MASK GAL", "MASK QZSS", "MASK IRNSS", // mask entire constellations not in target
-		},
-	},
-	{
-		name: "--gnss GPS,GAL --band L5 equivalent",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 1", // has GPS, BDS, GAL, GLO, QZSS (no NAVIC)
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss GPS,GAL --band L5
-			props.SetSignalsEnabled(gpsprot.BandL5.SignalSet(gpsprot.GPS, gpsprot.GAL))
-		},
-		expectedCmds: []string{
-			"MASK L1", "MASK L2", // mask GPS non-L5 frequencies
-			"MASK E1", "MASK E5b", // mask Galileo non-L5 frequencies (E6 not in signal group 1)
-			"MASK BDS", "MASK GLO", "MASK QZSS", // mask entire constellations not in target
-		},
-	},
-	{
-		name: "--gnss GPS --band E5 equivalent (L5+E5b)",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2",
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss GPS --band E5 (which is BandL5 | BandE5b)
-			props.SetSignalsEnabled((gpsprot.BandL5 | gpsprot.BandE5b).SignalSet(gpsprot.GPS))
-		},
-		expectedCmds: []string{
-			"MASK L1", "MASK L2", // mask GPS non-L5 frequencies (GPS doesn't have E5b signals)
-			"MASK GLO", "MASK BDS", "MASK GAL", "MASK QZSS", "MASK IRNSS", // mask all other constellations
-		},
-	},
-	{
-		name: "current state has constellation masked, target wants it - --gnss GPS,BDS equivalent",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2", // has GPS, BDS, GAL, GLO, QZSS, NAVIC
-			"MASK GPS",             // GPS is currently masked
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss GPS,BDS (normal case - target constellations)
-			props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetBDS)
-		},
-		expectedCmds: []string{
-			"UNMASK GPS",                                      // need to unmask GPS constellation
-			"MASK GAL", "MASK GLO", "MASK QZSS", "MASK IRNSS", // mask unwanted constellations
-		},
-	},
-	{
-		name: "normal case - --gnss GPS,GAL equivalent",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 1", // has GPS, BDS, GAL, GLO, QZSS
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss GPS,GAL (normal constellation targeting)
-			props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetGAL)
-		},
-		expectedCmds: []string{
-			"MASK BDS", "MASK GLO", "MASK QZSS", // mask unwanted constellations
-		},
-	},
-	{
-		name: "normal case - --gnss BDS equivalent",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2", // has GPS, BDS, GAL, GLO, QZSS, NAVIC
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss BDS (single constellation)
-			props.SetSignalsEnabled(gpsprot.SigSetBDS)
-		},
-		expectedCmds: []string{
-			"MASK GPS", "MASK GAL", "MASK GLO", "MASK QZSS", "MASK IRNSS", // mask unwanted constellations
-		},
-	},
-	{
-		name: "multiple constellations masked, target wants subset",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2",
-			"MASK GPS", "MASK GAL", // two constellations masked
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Want GPS and BDS, so need to unmask GPS but keep GAL masked
-			props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetBDS)
-		},
-		expectedCmds: []string{
-			// Note: MASK GAL is generated even though it's already masked (implementation doesn't optimize this)
-			"MASK GAL", "MASK GLO", "MASK QZSS", "MASK IRNSS", // mask unwanted constellations
-			"UNMASK GPS", // unmask GPS since we want it
-		},
-	},
-	{
-		name: "current state has frequency masked, target needs it - --gnss GPS,BDS --band L1,L5 equivalent",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2",
-			"MASK GPSL5", // GPS L5 frequency is masked (use response form)
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss GPS,BDS --band L1,L5
-			props.SetSignalsEnabled((gpsprot.BandL1 | gpsprot.BandL5).SignalSet(gpsprot.GPS, gpsprot.BDS))
-		},
-		expectedCmds: []string{
-			"MASK L2",                            // mask GPS L2
-			"MASK B2I", "MASK BD3B2B", "MASK B3", // mask unwanted BDS frequencies
-			"MASK GAL", "MASK GLO", "MASK QZSS", "MASK IRNSS", // mask unwanted constellations
-			"UNMASK L5", // need to unmask L5 frequency
-		},
-	},
-	{
-		name: "current state has mixed masks - --gnss GAL,QZSS --band L1,E6 equivalent",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2",
-			"MASK E1",   // specific Galileo signal masked
-			"MASK QZSS", // whole QZSS constellation masked
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss GAL,QZSS --band L1,E6
-			props.SetSignalsEnabled((gpsprot.BandL1 | gpsprot.BandE6).SignalSet(gpsprot.GAL, gpsprot.QZSS))
-		},
-		expectedCmds: []string{
-			"MASK E5a", "MASK E5b", // mask non-target Galileo frequencies
-			"MASK Q2", "MASK Q5", // mask non-target QZSS frequencies (want L1 and L6/E6)
-			"MASK GPS", "MASK BDS", "MASK GLO", "MASK IRNSS", // mask unwanted constellations
-			"UNMASK E1", // need to unmask specific Galileo E1 signal (it's on L1 band)
-			"UNMASK Q1", // need to unmask QZSS Q1 (L1 band signals)
-		},
-	},
-	{
-		name: "signal group 8 - --gnss GPS equivalent",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 8", // GPS, BDS (limited), GAL - no GLO, QZSS, NAVIC
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss GPS (single constellation from group 8)
-			props.SetSignalsEnabled(gpsprot.SigSetGPS)
-		},
-		expectedCmds: []string{
-			"MASK BDS", "MASK GAL", // mask other constellations in signal group 8
-		},
-	},
-	{
-		name: "signal group 8 - --gnss BDS,GAL equivalent",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 8", // GPS, BDS, GAL only
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss BDS,GAL (subset of group 8)
-			props.SetSignalsEnabled(gpsprot.SigSetBDS | gpsprot.SigSetGAL)
-		},
-		expectedCmds: []string{
-			"MASK GPS", // mask GPS, keep BDS and GAL
-		},
-	},
-	{
-		name: "signal group 10 - --gnss GPS,QZSS equivalent",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 10", // includes QZSS L6, full constellation set
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Equivalent to: --gnss GPS,QZSS (includes QZSS L6 support)
-			props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetQZSS)
-		},
-		expectedCmds: []string{
-			"MASK BDS", "MASK GLO", "MASK GAL", // mask unwanted constellations
-			// QZSS includes L6 in signal group 10
-		},
-	},
-	{
-		name: "signal group 10 with specific frequency mask",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 10",
-			"MASK Q5", // QZSS L5 is masked
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Want all QZSS signals including L6 (which is only in group 10)
-			props.SetSignalsEnabled(gpsprot.SigSetQZSS)
-		},
-		expectedCmds: []string{
-			"MASK GPS", "MASK BDS", "MASK GLO", "MASK GAL", // mask unwanted constellations first
-			"UNMASK Q5", // then unmask QZSS L5 (UNMASK comes after MASK)
-		},
-	},
-	{
-		name: "target single specific signal - GPS L5 only",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2", // has full constellation set
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Target only GPS L5 signal
-			props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL5))
-		},
-		expectedCmds: []string{
-			"MASK L1", "MASK L2", // mask other GPS frequencies
-			"MASK BDS", "MASK GLO", "MASK GAL", "MASK QZSS", "MASK IRNSS", // mask all other constellations
-		},
-	},
-	{
-		name: "target single specific signal - BDS B1I only",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 1", // has BDS support
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Target only BDS B1I signal
-			props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigBDSB1I))
-		},
-		expectedCmds: []string{
-			"MASK BD3B1C", "MASK B2", "MASK B3", // mask other BDS frequencies (keep only B1I)
-			"MASK GPS", "MASK GLO", "MASK GAL", "MASK QZSS", // mask all other constellations
-		},
-	},
-	{
-		name: "target specific signal with MASK/UNMASK overlap",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2",
-			"MASK GPS", // GPS system is masked
-			"MASK L5",  // L5 frequency is separately masked (redundant but possible)
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Target only GPS L5 - need to unmask both GPS and L5
-			props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL5))
-		},
-		expectedCmds: []string{
-			// First all MASK commands are generated
-			"MASK BDS", "MASK GLO", "MASK GAL", "MASK QZSS", "MASK IRNSS", // mask other constellations
-			"MASK L1", "MASK L2", // mask other GPS frequencies
-			// Then all UNMASK commands (UNMASK always comes after MASK)
-			"UNMASK L5", // unmask L5 frequency (GPS system unmask not generated when we target specific signals)
-		},
-	},
-	{
-		name: "target specific signal with frequency conflict",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2",
-			"MASK GAL", // But also whole Galileo system is masked
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Target only Galileo E1 signal
-			props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGALE1))
-		},
-		expectedCmds: []string{
-			// MASK commands first
-			"MASK GPS", "MASK BDS", "MASK GLO", "MASK QZSS", "MASK IRNSS", // mask other constellations
-			"MASK E5a", "MASK E5b", "MASK E6C", // mask other Galileo frequencies
-			// UNMASK commands after (only E1 since implementation doesn't generate UNMASK GAL for specific signals)
-			"UNMASK E1", // unmask E1 frequency
-		},
-	},
-	{
-		name: "target multiple specific signals from different constellations",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2",
-			"MASK L1",  // GPS L1 frequencies masked
-			"MASK BDS", // BDS constellation masked
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Target GPS L1C/A and BDS B2a specifically
-			props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigBDSB2a))
-		},
-		expectedCmds: []string{
-			// MASK commands
-			"MASK GLO", "MASK GAL", "MASK QZSS", "MASK IRNSS", // mask unwanted constellations
-			"MASK L1C", "MASK L2", "MASK L5", // mask unwanted GPS frequencies (keep only L1CA)
-			"MASK B1", "MASK B3", "MASK B2I", "MASK BD3B2B", // mask unwanted BDS frequencies (keep only B2a)
-			// UNMASK commands after
-			"UNMASK L1CA", "UNMASK BD3B2A", // unmask specific GPS L1C/A and BDS B2a
-		},
-	},
-	{
-		name: "Parse MASK query response with firmware aliases - mask all GPS",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2",
-			// Firmware uses these aliases in MASK query responses
-			"MASK GPSL1CA",
-			"MASK GPSL1C",
-			"MASK GPSL2C",
-			"MASK GPSL2P",
-			"MASK GPSL5",
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Enable everything except GPS (GPS should stay masked)
-			props.SetSignalsEnabled(gpsprot.SigSetBDS | gpsprot.SigSetGLO | gpsprot.SigSetGAL | gpsprot.SigSetQZSS | gpsprot.SigSetNAVIC)
-		},
-		expectedCmds: []string{
-			"MASK GPS", // Should recognize all GPS signals are masked
-		},
-	},
-	{
-		name: "Parse MASK query response with firmware aliases - mask all GLONASS",
-		currentState: []string{
-			"CONFIG SIGNALGROUP 2",
-			// Firmware uses these aliases in MASK query responses
-			"MASK GLOL1",
-			"MASK GLOL2",
-			"MASK GLOL3",
-		},
-		targetProps: func(props *gpsprot.ConfigProps) {
-			// Enable everything except GLONASS (GLONASS should stay masked)
-			props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetBDS | gpsprot.SigSetGAL | gpsprot.SigSetQZSS | gpsprot.SigSetNAVIC)
-		},
-		expectedCmds: []string{
-			"MASK GLO", // Should recognize all GLONASS signals are masked
-		},
-	},
+	tc := []nativeConfigPropsTestCase{
+		{
+			name: "mask multiple constellations with signal group 2",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetSignalsEnabled(gpsprot.SigSetGPS)
+			},
+			expectedCmds: []string{
+				"MASK GLO",
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+				"MASK IRNSS",
+			},
+		},
+		{
+			name: "mask multiple constellations with signal group 1",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetSignalsEnabled(gpsprot.SigSetBDS)
+			},
+			expectedCmds: []string{
+				"MASK GPS",
+				"MASK GAL",
+				"MASK GLO",
+				"MASK QZSS",
+				// no MASK IRNSS since signal group 1 does not include IRNSS
+			},
+		},
+		{
+			name: "--gnss GPS,BDS --band L1 equivalent",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2", // has GPS, BDS, GAL, GLO, QZSS, NAVIC
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss GPS,BDS --band L1
+				props.SetSignalsEnabled(gpsprot.BandL1.SignalSet(gpsprot.GPS, gpsprot.BDS))
+			},
+			expectedCmds: []string{
+				"MASK L2", "MASK L5", // mask GPS non-L1 frequencies
+				"MASK B2", "MASK B3", // mask BDS non-L1 frequencies
+				"MASK GLO", "MASK GAL", "MASK QZSS", "MASK IRNSS", // mask entire constellations not in target
+			},
+		},
+		{
+			name: "--gnss GPS,GAL --band L5 equivalent",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1", // has GPS, BDS, GAL, GLO, QZSS (no NAVIC)
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss GPS,GAL --band L5
+				props.SetSignalsEnabled(gpsprot.BandL5.SignalSet(gpsprot.GPS, gpsprot.GAL))
+			},
+			expectedCmds: []string{
+				"MASK L1", "MASK L2", // mask GPS non-L5 frequencies
+				"MASK E1", "MASK E5b", // mask Galileo non-L5 frequencies (E6 not in signal group 1)
+				"MASK BDS", "MASK GLO", "MASK QZSS", // mask entire constellations not in target
+			},
+		},
+		{
+			name: "--gnss GPS --band E5 equivalent (L5+E5b)",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss GPS --band E5 (which is BandL5 | BandE5b)
+				props.SetSignalsEnabled((gpsprot.BandL5 | gpsprot.BandE5b).SignalSet(gpsprot.GPS))
+			},
+			expectedCmds: []string{
+				"MASK L1", "MASK L2", // mask GPS non-L5 frequencies (GPS doesn't have E5b signals)
+				"MASK GLO", "MASK BDS", "MASK GAL", "MASK QZSS", "MASK IRNSS", // mask all other constellations
+			},
+		},
+		{
+			name: "current state has constellation masked, target wants it - --gnss GPS,BDS equivalent",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2", // has GPS, BDS, GAL, GLO, QZSS, NAVIC
+				"MASK GPS",             // GPS is currently masked
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss GPS,BDS (normal case - target constellations)
+				props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetBDS)
+			},
+			expectedCmds: []string{
+				"UNMASK GPS",                                      // need to unmask GPS constellation
+				"MASK GAL", "MASK GLO", "MASK QZSS", "MASK IRNSS", // mask unwanted constellations
+			},
+		},
+		{
+			name: "normal case - --gnss GPS,GAL equivalent",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1", // has GPS, BDS, GAL, GLO, QZSS
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss GPS,GAL (normal constellation targeting)
+				props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetGAL)
+			},
+			expectedCmds: []string{
+				"MASK BDS", "MASK GLO", "MASK QZSS", // mask unwanted constellations
+			},
+		},
+		{
+			name: "normal case - --gnss BDS equivalent",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2", // has GPS, BDS, GAL, GLO, QZSS, NAVIC
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss BDS (single constellation)
+				props.SetSignalsEnabled(gpsprot.SigSetBDS)
+			},
+			expectedCmds: []string{
+				"MASK GPS", "MASK GAL", "MASK GLO", "MASK QZSS", "MASK IRNSS", // mask unwanted constellations
+			},
+		},
+		{
+			name: "multiple constellations masked, target wants subset",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK GPS", "MASK GAL", // two constellations masked
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Want GPS and BDS, so need to unmask GPS but keep GAL masked
+				props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetBDS)
+			},
+			expectedCmds: []string{
+				// Note: MASK GAL is generated even though it's already masked (implementation doesn't optimize this)
+				"MASK GAL", "MASK GLO", "MASK QZSS", "MASK IRNSS", // mask unwanted constellations
+				"UNMASK GPS", // unmask GPS since we want it
+			},
+		},
+		{
+			name: "current state has frequency masked, target needs it - --gnss GPS,BDS --band L1,L5 equivalent",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK GPSL5", // GPS L5 frequency is masked (use response form)
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss GPS,BDS --band L1,L5
+				props.SetSignalsEnabled((gpsprot.BandL1 | gpsprot.BandL5).SignalSet(gpsprot.GPS, gpsprot.BDS))
+			},
+			expectedCmds: []string{
+				"MASK L2",                            // mask GPS L2
+				"MASK B2I", "MASK BD3B2B", "MASK B3", // mask unwanted BDS frequencies
+				"MASK GAL", "MASK GLO", "MASK QZSS", "MASK IRNSS", // mask unwanted constellations
+				"UNMASK L5", // need to unmask L5 frequency
+			},
+		},
+		{
+			name: "current state has mixed masks - --gnss GAL,QZSS --band L1,E6 equivalent",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK E1",   // specific Galileo signal masked
+				"MASK QZSS", // whole QZSS constellation masked
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss GAL,QZSS --band L1,E6
+				props.SetSignalsEnabled((gpsprot.BandL1 | gpsprot.BandE6).SignalSet(gpsprot.GAL, gpsprot.QZSS))
+			},
+			expectedCmds: []string{
+				"MASK E5a", "MASK E5b", // mask non-target Galileo frequencies
+				"MASK Q2", "MASK Q5", // mask non-target QZSS frequencies (want L1 and L6/E6)
+				"MASK GPS", "MASK BDS", "MASK GLO", "MASK IRNSS", // mask unwanted constellations
+				"UNMASK E1", // need to unmask specific Galileo E1 signal (it's on L1 band)
+				"UNMASK Q1", // need to unmask QZSS Q1 (L1 band signals)
+			},
+		},
+		{
+			name: "signal group 8 - --gnss GPS equivalent",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 8", // GPS, BDS (limited), GAL - no GLO, QZSS, NAVIC
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss GPS (single constellation from group 8)
+				props.SetSignalsEnabled(gpsprot.SigSetGPS)
+			},
+			expectedCmds: []string{
+				"MASK BDS", "MASK GAL", // mask other constellations in signal group 8
+			},
+		},
+		{
+			name: "signal group 8 - --gnss BDS,GAL equivalent",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 8", // GPS, BDS, GAL only
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss BDS,GAL (subset of group 8)
+				props.SetSignalsEnabled(gpsprot.SigSetBDS | gpsprot.SigSetGAL)
+			},
+			expectedCmds: []string{
+				"MASK GPS", // mask GPS, keep BDS and GAL
+			},
+		},
+		{
+			name: "signal group 10 - --gnss GPS,QZSS equivalent",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 10", // includes QZSS L6, full constellation set
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Equivalent to: --gnss GPS,QZSS (includes QZSS L6 support)
+				props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetQZSS)
+			},
+			expectedCmds: []string{
+				"MASK BDS", "MASK GLO", "MASK GAL", // mask unwanted constellations
+				// QZSS includes L6 in signal group 10
+			},
+		},
+		{
+			name: "signal group 10 with specific frequency mask",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 10",
+				"MASK Q5", // QZSS L5 is masked
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Want all QZSS signals including L6 (which is only in group 10)
+				props.SetSignalsEnabled(gpsprot.SigSetQZSS)
+			},
+			expectedCmds: []string{
+				"MASK GPS", "MASK BDS", "MASK GLO", "MASK GAL", // mask unwanted constellations first
+				"UNMASK Q5", // then unmask QZSS L5 (UNMASK comes after MASK)
+			},
+		},
+		{
+			name: "target single specific signal - GPS L5 only",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2", // has full constellation set
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Target only GPS L5 signal
+				props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL5))
+			},
+			expectedCmds: []string{
+				"MASK L1", "MASK L2", // mask other GPS frequencies
+				"MASK BDS", "MASK GLO", "MASK GAL", "MASK QZSS", "MASK IRNSS", // mask all other constellations
+			},
+		},
+		{
+			name: "target single specific signal - BDS B1I only",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1", // has BDS support
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Target only BDS B1I signal
+				props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigBDSB1I))
+			},
+			expectedCmds: []string{
+				"MASK BD3B1C", "MASK B2", "MASK B3", // mask other BDS frequencies (keep only B1I)
+				"MASK GPS", "MASK GLO", "MASK GAL", "MASK QZSS", // mask all other constellations
+			},
+		},
+		{
+			name: "target specific signal with MASK/UNMASK overlap",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK GPS", // GPS system is masked
+				"MASK L5",  // L5 frequency is separately masked (redundant but possible)
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Target only GPS L5 - need to unmask both GPS and L5
+				props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL5))
+			},
+			expectedCmds: []string{
+				// First all MASK commands are generated
+				"MASK BDS", "MASK GLO", "MASK GAL", "MASK QZSS", "MASK IRNSS", // mask other constellations
+				"MASK L1", "MASK L2", // mask other GPS frequencies
+				// Then all UNMASK commands (UNMASK always comes after MASK)
+				"UNMASK L5", // unmask L5 frequency (GPS system unmask not generated when we target specific signals)
+			},
+		},
+		{
+			name: "target specific signal with frequency conflict",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK GAL", // But also whole Galileo system is masked
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Target only Galileo E1 signal
+				props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGALE1))
+			},
+			expectedCmds: []string{
+				// MASK commands first
+				"MASK GPS", "MASK BDS", "MASK GLO", "MASK QZSS", "MASK IRNSS", // mask other constellations
+				"MASK E5a", "MASK E5b", "MASK E6C", // mask other Galileo frequencies
+				// UNMASK commands after (only E1 since implementation doesn't generate UNMASK GAL for specific signals)
+				"UNMASK E1", // unmask E1 frequency
+			},
+		},
+		{
+			name: "target multiple specific signals from different constellations",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK L1",  // GPS L1 frequencies masked
+				"MASK BDS", // BDS constellation masked
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Target GPS L1C/A and BDS B2a specifically
+				props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigBDSB2a))
+			},
+			expectedCmds: []string{
+				// MASK commands
+				"MASK GLO", "MASK GAL", "MASK QZSS", "MASK IRNSS", // mask unwanted constellations
+				"MASK L1C", "MASK L2", "MASK L5", // mask unwanted GPS frequencies (keep only L1CA)
+				"MASK B1", "MASK B3", "MASK B2I", "MASK BD3B2B", // mask unwanted BDS frequencies (keep only B2a)
+				// UNMASK commands after
+				"UNMASK L1CA", "UNMASK BD3B2A", // unmask specific GPS L1C/A and BDS B2a
+			},
+		},
+		{
+			name: "Parse MASK query response with firmware aliases - mask all GPS",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				// Firmware uses these aliases in MASK query responses
+				"MASK GPSL1CA",
+				"MASK GPSL1C",
+				"MASK GPSL2C",
+				"MASK GPSL2P",
+				"MASK GPSL5",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Enable everything
+				props.SetSignalsEnabled(gpsprot.SigSetAll)
+			},
+			expectedCmds: []string{
+				"UNMASK GPS", // Should recognize all GPS signals need to be unmasked
+			},
+		},
+		{
+			name: "Parse MASK query response with firmware aliases - mask all GLONASS",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				// Firmware uses these aliases in MASK query responses
+				"MASK GLOL1",
+				"MASK GLOL2",
+				"MASK GLOL3",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetSignalsEnabled(gpsprot.SigSetAll)
+			},
+			expectedCmds: []string{
+				"UNMASK GLO", // Should recognize all GLONASS signals need to be unmasked
+			},
+		},
+		{
+			name: "no change with mask",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1",
+				"MASK GLO",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+			},
+			expectedCmds: []string{},
+		},
+	}
+	testNativeConfigProps(t, tc)
 }

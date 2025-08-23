@@ -446,6 +446,9 @@ func (p *maskProp) generateCommands(prevMask *maskProp, sigGroupSignals gpsprot.
 			commands = append(commands, nativeCommand{cmd: "MASK " + p.elevationMask, key: idPropMask})
 		}
 	}
+	if (p.signalMask & sigGroupSignals) == (prevMask.signalMask & sigGroupSignals) {
+		return commands
+	}
 	// Handle signal mask changes
 	commands = append(commands, generateMaskCommands(p.signalMask, sigGroupSignals, "MASK")...)
 	// Remove signals that are no longer masked
