@@ -30,6 +30,11 @@ const (
 	// 2. Queries using MODE (no CONFIG prefix)
 	// 3. Response is a single #MODE line (note that uses # not $)
 	idPropMode = "MODE"
+	// idPropSBAS works like PPS
+	// 1. Set using CONFIG SBAS param...
+	// 2. Queried using CONFIG with no additional parameters
+	// 3. The response comes back as $CONFIG,SBAS,CONFIG SBAS param...
+	idPropSBAS = "SBAS"
 )
 
 // nativeCommand represents a command string paired with its property key
@@ -50,6 +55,7 @@ type nativeConfigProps struct {
 	signalGroup signalGroupProp
 	mask        maskProp
 	mode        modeProp
+	sbas        sbasProp
 }
 
 func (np *nativeConfigProps) getProp(propID string) nativeConfigProp {
@@ -62,6 +68,8 @@ func (np *nativeConfigProps) getProp(propID string) nativeConfigProp {
 		return &np.mask
 	case idPropMode:
 		return &np.mode
+	case idPropSBAS:
+		return &np.sbas
 	}
 	return nil
 }
@@ -103,7 +111,8 @@ func (np *nativeConfigProps) generateTargetCommands(target *gpsprot.ConfigTarget
 	if ss, ok := target.Props.GetSignalsEnabled(); ok {
 		sg := np.signalGroup.signalSet()
 		if sg != 0 {
-			effectiveProps.SetSignalsEnabled(ss & sg) // only enable signals that are in the signal group
+			sg |= gpsprot.SigSetSBAS // SBAS is supported in every signal group
+			effectiveProps.SetSignalsEnabled(ss & sg)
 		}
 	}
 
@@ -168,6 +177,7 @@ func (np *nativeConfigProps) convertToProps(props *gpsprot.ConfigProps) {
 		sigs &^= np.mask.signalMask
 		props.SetSignalsEnabled(sigs)
 	}
+	np.sbas.convertToProps(props)
 	np.mask.convertElevationToProps(props)
 	np.mode.convertToProps(props)
 }
@@ -179,6 +189,7 @@ func (np *nativeConfigProps) generateUpdateCommands(prevProps *nativeConfigProps
 	cmds = append(cmds, np.signalGroup.generateCommands(&prevProps.signalGroup)...)
 	cmds = append(cmds, np.mask.generateCommands(&prevProps.mask, np.signalGroup.signalSet())...)
 	cmds = append(cmds, np.mode.generateCommands(&prevProps.mode)...)
+	cmds = append(cmds, np.sbas.generateCommands(&prevProps.sbas)...)
 	return cmds
 }
 
@@ -200,13 +211,13 @@ func (np *nativeConfigProps) updateFromProps(props *gpsprot.ConfigProps, survey 
 	if err != nil && err != errMissingProp {
 		return err
 	}
-	availSignals := np.signalGroup.signalSet()
-	if availSignals != 0 {
-		np.mask.updateFromProps(props, availSignals)
+	
+	err = np.sbas.updateFromProps(props)
+	if err != nil && err != errMissingProp {
+		return err
 	}
-
-	// TODO: Handle SBAS separately (CONFIG SBAS ENABLE/DISABLE)
-	// SBAS signals are not part of SIGNALGROUP, they're enabled via CONFIG SBAS
+	
+	np.mask.updateFromProps(props, np.signalGroup.signalSet())
 
 	return nil
 }
@@ -417,6 +428,96 @@ func (p *signalGroupProp) signalSet() gpsprot.SignalSet {
 		return 0
 	}
 	return signalGroups[p.master]
+}
+
+var sbasRegexp = regexp.MustCompile(`^CONFIG SBAS (?:(DISABLE|ENABLE(?:| [A-Z][A-Z0-9_]*))|(TIMEOUT \d+))$`)
+
+type sbasProp struct {
+	enable string // e.g. "DISABLE" or "ENABLE AUTO"
+	timeout string // e.g. "TIMEOUT 600"
+}
+
+// enabled returns true iff SBAS is enabled
+func (p *sbasProp) enabled() bool {
+	switch p.enable {
+	case "", "DISABLE":
+		return false
+	}
+	return p.timeout != "TIMEOUT 0"
+}
+
+func (p *sbasProp) updateFromCommand(cmd string) error {
+	matches := sbasRegexp.FindStringSubmatch(cmd)
+	if matches == nil {
+		return fmt.Errorf("invalid SBAS command format: %s", cmd)
+	}
+	
+	// matches[1] is the enable/disable capture group
+	// matches[2] is the timeout capture group
+	if matches[1] != "" {
+		p.enable = matches[1]
+	} else if matches[2] != "" {
+		p.timeout = matches[2]
+	}
+	
+	return nil
+}
+
+func (p *sbasProp) generateCommands(prev *sbasProp) []nativeCommand {
+	var cmds []nativeCommand
+	
+	// Generate enable/disable command if changed
+	// Don't generate a command when transitioning from uninitialized ("") to DISABLE
+	if p.enable != prev.enable && p.enable != "" && !(prev.enable == "" && p.enable == "DISABLE") {
+		cmds = append(cmds, nativeCommand{cmd: "CONFIG SBAS " + p.enable, key: idPropSBAS})
+	}
+	
+	// Generate timeout command if changed
+	if p.timeout != prev.timeout && p.timeout != "" {
+		cmds = append(cmds, nativeCommand{cmd: "CONFIG SBAS " + p.timeout, key: idPropSBAS})
+	}
+	
+	return cmds
+}
+
+// convertToProps adds SBAS signals to the enabled signals if SBAS is enabled
+func (p *sbasProp) convertToProps(props *gpsprot.ConfigProps) {
+	if !p.enabled() {
+		return
+	}
+	
+	// Get current signals and add SBAS
+	sigs, ok := props.GetSignalsEnabled()
+	if !ok {
+		sigs = 0
+	}
+	sigs |= gpsprot.SigSetSBAS
+	props.SetSignalsEnabled(sigs)
+}
+
+// updateFromProps determines SBAS state from enabled signals
+func (p *sbasProp) updateFromProps(props *gpsprot.ConfigProps) error {
+	sigs, ok := props.GetSignalsEnabled()
+	if !ok {
+		// If no signals are specified, don't change SBAS state
+		return errMissingProp
+	}
+	
+	// Check if SBAS signals are enabled
+	if sigs&gpsprot.SigSetSBAS != 0 {
+		// Enable SBAS if not already enabled
+		if p.enable == "" || p.enable == "DISABLE" {
+			p.enable = "ENABLE AUTO"
+		}
+		if p.timeout == "TIMEOUT 0" {
+			p.timeout = "TIMEOUT 1200" // 1200 is the factory default timeout
+		}
+	} else {
+		// Disable SBAS if signals are not requested
+		p.enable = "DISABLE"
+	}
+	
+	return nil
 }
 
 var maskRegexp = regexp.MustCompile(`^(?:MASK (-?\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Z0-9]*)|[A-Z]+ PRN \d+)))$`)

@@ -7,6 +7,10 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
+// allSignalsExceptSBAS represents all signals except SBAS, useful for testing
+// signal configurations without triggering SBAS-related commands
+const allSignalsExceptSBAS = gpsprot.SigSetAll &^ gpsprot.SigSetSBAS
+
 func TestMaskPropRoundTrip(t *testing.T) {
 	maskTestCases := []struct {
 		name      string
@@ -560,8 +564,8 @@ func TestConfigMask(t *testing.T) {
 				"MASK GPSL5",
 			},
 			targetProps: func(props *gpsprot.ConfigProps) {
-				// Enable everything
-				props.SetSignalsEnabled(gpsprot.SigSetAll)
+				// Enable everything except SBAS
+				props.SetSignalsEnabled(allSignalsExceptSBAS)
 			},
 			expectedCmds: []string{
 				"UNMASK GPS", // Should recognize all GPS signals need to be unmasked
@@ -577,7 +581,8 @@ func TestConfigMask(t *testing.T) {
 				"MASK GLOL3",
 			},
 			targetProps: func(props *gpsprot.ConfigProps) {
-				props.SetSignalsEnabled(gpsprot.SigSetAll)
+				// Enable everything except SBAS
+				props.SetSignalsEnabled(allSignalsExceptSBAS)
 			},
 			expectedCmds: []string{
 				"UNMASK GLO", // Should recognize all GLONASS signals need to be unmasked
@@ -695,6 +700,196 @@ func TestConfigMask(t *testing.T) {
 				// Just getting the current state, no changes
 			},
 			expectedCmds: []string{},
+		},
+	}
+	testNativeConfigProps(t, tc)
+}
+
+func TestSBASProp(t *testing.T) {
+	testCases := []struct {
+		name        string
+		command     string
+		expectError bool
+		enabled     bool
+	}{
+		{
+			name:        "SBAS disabled",
+			command:     "CONFIG SBAS DISABLE",
+			expectError: false,
+			enabled:     false,
+		},
+		{
+			name:        "SBAS enabled AUTO",
+			command:     "CONFIG SBAS ENABLE AUTO",
+			expectError: false,
+			enabled:     true,
+		},
+		{
+			name:        "SBAS enabled WAAS",
+			command:     "CONFIG SBAS ENABLE WAAS",
+			expectError: false,
+			enabled:     true,
+		},
+		{
+			name:        "SBAS enabled EGNOS",
+			command:     "CONFIG SBAS ENABLE EGNOS",
+			expectError: false,
+			enabled:     true,
+		},
+		{
+			name:        "SBAS timeout 600",
+			command:     "CONFIG SBAS TIMEOUT 600",
+			expectError: false,
+			enabled:     false, // timeout alone doesn't enable SBAS
+		},
+		{
+			name:        "SBAS timeout 0",
+			command:     "CONFIG SBAS TIMEOUT 0",
+			expectError: false,
+			enabled:     false, // timeout 0 disables
+		},
+		{
+			name:        "invalid SBAS command",
+			command:     "CONFIG SBAS INVALID",
+			expectError: true,
+			enabled:     false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			prop := sbasProp{}
+			err := prop.updateFromCommand(tc.command)
+			
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("expected error for command %q, but got none", tc.command)
+				}
+				return
+			}
+			
+			if err != nil {
+				t.Errorf("unexpected error for command %q: %v", tc.command, err)
+				return
+			}
+			
+			if prop.enabled() != tc.enabled {
+				t.Errorf("for command %q, expected enabled=%v, got %v", tc.command, tc.enabled, prop.enabled())
+			}
+		})
+	}
+}
+
+func TestSBASIntegration(t *testing.T) {
+	// Tests that verify SBAS is properly integrated with signal configuration
+	t.Run("SBAS enabled adds SBAS signals", func(t *testing.T) {
+		np := makeNativeProps()
+		
+		// Set up signal group 2
+		if err := np.signalGroup.updateFromCommand("CONFIG SIGNALGROUP 2"); err != nil {
+			t.Fatal(err)
+		}
+		// Enable SBAS
+		if err := np.sbas.updateFromCommand("CONFIG SBAS ENABLE AUTO"); err != nil {
+			t.Fatal(err)
+		}
+		
+		// Convert to ConfigProps
+		props := &gpsprot.ConfigProps{}
+		np.convertToProps(props)
+		
+		sigs, ok := props.GetSignalsEnabled()
+		if !ok {
+			t.Fatal("expected SignalsEnabled to be set")
+		}
+		// Should include SBAS signals
+		if sigs&gpsprot.SigSetSBAS == 0 {
+			t.Errorf("expected SBAS signals to be enabled, got %v", sigs)
+		}
+	})
+	
+	t.Run("SBAS disabled removes SBAS signals", func(t *testing.T) {
+		np := makeNativeProps()
+		
+		// Set up signal group 2
+		if err := np.signalGroup.updateFromCommand("CONFIG SIGNALGROUP 2"); err != nil {
+			t.Fatal(err)
+		}
+		// Disable SBAS
+		if err := np.sbas.updateFromCommand("CONFIG SBAS DISABLE"); err != nil {
+			t.Fatal(err)
+		}
+		
+		// Convert to ConfigProps
+		props := &gpsprot.ConfigProps{}
+		np.convertToProps(props)
+		
+		sigs, ok := props.GetSignalsEnabled()
+		if !ok {
+			t.Fatal("expected SignalsEnabled to be set")
+		}
+		// Should not include SBAS signals
+		if sigs&gpsprot.SigSetSBAS != 0 {
+			t.Errorf("expected SBAS signals to be disabled, got %v", sigs)
+		}
+	})
+
+	tc := []nativeConfigPropsTestCase{
+		{
+			name: "enable SBAS when requesting SBAS signals",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"CONFIG SBAS DISABLE",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Request GPS and SBAS signals
+				props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetSBAS)
+			},
+			expectedCmds: []string{
+				"MASK GLO",
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+				"MASK IRNSS",
+				"CONFIG SBAS ENABLE AUTO", // Should enable SBAS
+			},
+		},
+		{
+			name: "disable SBAS when not requesting SBAS signals",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"CONFIG SBAS ENABLE WAAS",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Request only GPS signals (no SBAS)
+				props.SetSignalsEnabled(gpsprot.SigSetGPS)
+			},
+			expectedCmds: []string{
+				"MASK GLO",
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+				"MASK IRNSS",
+				"CONFIG SBAS DISABLE", // Should disable SBAS
+			},
+		},
+		{
+			name: "preserve SBAS state when changing signal groups",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1",
+				"CONFIG SBAS ENABLE EGNOS",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Just enable GPS but preserve SBAS
+				props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetSBAS)
+			},
+			expectedCmds: []string{
+				"MASK GLO",
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+				// No SBAS command - already enabled
+			},
 		},
 	}
 	testNativeConfigProps(t, tc)
