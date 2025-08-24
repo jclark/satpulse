@@ -89,8 +89,8 @@ const (
 	modeGenerationForce                          // force the generation of a MODE command
 )
 
-// generateConfigCommands generates commands to change the native state to have the abstract properties specified by target
-func (np *nativeConfigProps) generateConfigCommands(target *gpsprot.ConfigTarget) []nativeCommand {
+// generateTargetCommands generates commands to change the native state to have the abstract properties specified by target
+func (np *nativeConfigProps) generateTargetCommands(target *gpsprot.ConfigTarget) []nativeCommand {
 	// Convert currrent native props to abstract props
 	curProps := gpsprot.ConfigProps{}
 	np.convertToProps(&curProps)
@@ -125,7 +125,7 @@ func (np *nativeConfigProps) generateConfigCommands(target *gpsprot.ConfigTarget
 		np = &npGen
 	}
 	// generate commands to turn current native props to target native props
-	return targetNativeProps.generateCommands(np)
+	return targetNativeProps.generateUpdateCommands(np)
 }
 
 // determineModeGeneration determines whether special handling is needed for the MODE command
@@ -157,7 +157,8 @@ func (np *nativeConfigProps) convertToProps(props *gpsprot.ConfigProps) {
 	np.mode.convertToProps(props)
 }
 
-func (np *nativeConfigProps) generateCommands(prevProps *nativeConfigProps) []nativeCommand {
+// generateUpdateCommands generates commands to update the receiver to have the state in np starting from state prevProps
+func (np *nativeConfigProps) generateUpdateCommands(prevProps *nativeConfigProps) []nativeCommand {
 	cmds := np.pps.generateCommands(&prevProps.pps)
 	// This won't do anything because we are not changing signal group.
 	cmds = append(cmds, np.signalGroup.generateCommands(&prevProps.signalGroup)...)

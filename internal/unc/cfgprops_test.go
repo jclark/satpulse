@@ -53,7 +53,7 @@ func testNativeConfigProps(t *testing.T, tests []nativeConfigPropsTestCase) {
 			target := &gpsprot.ConfigTarget{Props: targetProps, Opts: targetOpts}
 
 			// Generate commands for target
-			commands := np.generateConfigCommands(target)
+			commands := np.generateTargetCommands(target)
 
 			// Convert expected commands to set for order-independent comparison
 			expectedSet := make(map[string]struct{})
