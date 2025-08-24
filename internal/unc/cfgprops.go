@@ -355,41 +355,55 @@ func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 }
 
 type signalGroupProp struct {
-	command string
+	master uint8                 // 0 if not set
+	slave  gpsprot.Option[uint8]
 }
 
-var signalGroupRegexp = regexp.MustCompile(`^CONFIG SIGNALGROUP ([1-9]\d?)(:? (\d\d?))?$`)
+var signalGroupRegexp = regexp.MustCompile(`^CONFIG SIGNALGROUP ([1-9]\d?)(?: (\d\d?))?$`)
 
 func (p *signalGroupProp) updateFromCommand(cmd string) error {
-	if !signalGroupRegexp.MatchString(cmd) {
+	matches := signalGroupRegexp.FindStringSubmatch(cmd)
+	if matches == nil {
 		return fmt.Errorf("invalid CONFIG SIGNALGROUP format: %s", cmd)
 	}
-	p.command = cmd
+	
+	// Parse master group number - regexp guarantees it's a valid 1-2 digit number starting with 1-9
+	master, _ := strconv.Atoi(matches[1])
+	p.master = uint8(master)
+	
+	// Parse slave group number if present - regexp guarantees it's a valid 1-2 digit number
+	if matches[2] != "" {
+		slave, _ := strconv.Atoi(matches[2])
+		p.slave.Set(uint8(slave))
+	} else {
+		p.slave.Clear()
+	}
+	
 	return nil
 }
 
 func (p *signalGroupProp) generateCommands(prev *signalGroupProp) []nativeCommand {
-	if prev.command == p.command || p.command == "" {
+	if p.master == prev.master && p.slave == prev.slave {
 		return nil
 	}
-	return []nativeCommand{{cmd: p.command, key: idPropSignalGroup}}
+	if p.master == 0 {
+		return nil
+	}
+	
+	cmd := fmt.Sprintf("CONFIG SIGNALGROUP %d", p.master)
+	if p.slave.IsSet() {
+		cmd = fmt.Sprintf("%s %d", cmd, p.slave.Get())
+	}
+	return []nativeCommand{{cmd: cmd, key: idPropSignalGroup}}
 }
 
 // signalSet returns the SignalSet for the signal group for the main antenna
 // Returns 0 if no signal group is set or if the group number is invalid
 func (p *signalGroupProp) signalSet() gpsprot.SignalSet {
-	if p.command == "" {
+	if p.master == 0 || int(p.master) >= len(signalGroups) {
 		return 0
 	}
-
-	// Parse signal group number from the command
-	matches := signalGroupRegexp.FindStringSubmatch(p.command)
-	groupNum, err := strconv.ParseInt(matches[1], 10, 64)
-	if err != nil || groupNum < 0 || int(groupNum) >= len(signalGroups) {
-		return 0
-	}
-
-	return signalGroups[groupNum]
+	return signalGroups[p.master]
 }
 
 var maskRegexp = regexp.MustCompile(`^(?:MASK (-?\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Z0-9]*)|[A-Z]+ PRN \d+)))$`)

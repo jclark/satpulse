@@ -179,9 +179,14 @@ func (r *testReceiver) generateResponses(cmd string) []interface{} {
 		})
 
 		// SIGNALGROUP response - always send something
-		sgCmd := r.nativeProps.signalGroup.command
-		if sgCmd == "" {
+		var sgCmd string
+		if r.nativeProps.signalGroup.master == 0 {
 			sgCmd = "CONFIG SIGNALGROUP 2" // Default group
+		} else {
+			sgCmd = fmt.Sprintf("CONFIG SIGNALGROUP %d", r.nativeProps.signalGroup.master)
+			if r.nativeProps.signalGroup.slave.IsSet() {
+				sgCmd = fmt.Sprintf("%s %d", sgCmd, r.nativeProps.signalGroup.slave.Get())
+			}
 		}
 		responses = append(responses, &nmea.Sentence{
 			Payload: fmt.Sprintf("CONFIG,SIGNALGROUP,%s", sgCmd),
