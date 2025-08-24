@@ -100,6 +100,12 @@ func (np *nativeConfigProps) generateTargetCommands(target *gpsprot.ConfigTarget
 	// Override the curProps with any properties specified target.Props
 	// to determine the effective properties
 	effectiveProps.CopyFrom(&target.Props)
+	if ss, ok := target.Props.GetSignalsEnabled(); ok {
+		sg := np.signalGroup.signalSet()
+		if sg != 0 {
+			effectiveProps.SetSignalsEnabled(ss & sg) // only enable signals that are in the signal group
+		}
+	}
 
 	// Handle SetStatic by forcing Mode.Static = true
 	if target.Opts.SetStatic {
@@ -126,7 +132,14 @@ func (np *nativeConfigProps) generateTargetCommands(target *gpsprot.ConfigTarget
 	}
 	// generate commands to turn current native props to target native props
 	cmds := targetNativeProps.generateUpdateCommands(np)
-	return append(cmds, generateOptsCommands(&target.Opts)...)
+	
+	// Determine enabled GNSS from the effective signals
+	var enabledGNSS gpsprot.GNSSSet
+	if sigs, ok := effectiveProps.GetSignalsEnabled(); ok {
+		enabledGNSS = sigs.GNSSSet()
+	}
+	
+	return append(cmds, generateOptsCommands(&target.Opts, enabledGNSS)...)
 }
 
 // determineModeGeneration determines whether special handling is needed for the MODE command

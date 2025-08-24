@@ -18,13 +18,12 @@ func TestPVTMessages(t *testing.T) {
 			},
 		},
 		{
-			name: "enable PPSSTATUS for PVTMsgTimePulse",
+			name: "enable RECTIMEB for PVTMsgTimePulse",
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.PVTMsg = gpsprot.PVTMsgTimePulse
 			},
 			expectedCmds: []string{
-				"RECTIMEB 1", // RECTIMEB is also needed when PVTMsgTimePulse is on
-				"PPSSTATUS 1",
+				"RECTIMEB 1", // RECTIMEB is used for TimePulse
 			},
 		},
 		{
@@ -34,35 +33,30 @@ func TestPVTMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"RECTIMEB 1",
-				"PPSSTATUS 1",
 			},
 		},
 		{
 			name: "disable messages with PVTMsgOff",
 			currentState: []string{
 				"RECTIMEB 1",
-				"PPSSTATUS 1",
 			},
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.PVTMsg = gpsprot.PVTMsgOff
 			},
 			expectedCmds: []string{
 				"UNLOG RECTIMEB",
-				"UNLOG PPSSTATUS",
 			},
 		},
 		{
 			name: "keep needed message with PVTMsgOff",
 			currentState: []string{
 				"RECTIMEB 1",
-				"PPSSTATUS 1",
 			},
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.PVTMsg = gpsprot.PVTMsgTime | gpsprot.PVTMsgOff
 			},
 			expectedCmds: []string{
 				"RECTIMEB 1",
-				"UNLOG PPSSTATUS",
 			},
 		},
 	}
@@ -168,14 +162,51 @@ func TestNMEAMessages(t *testing.T) {
 func TestRTCMMessages(t *testing.T) {
 	tests := []nativeConfigPropsTestCase{
 		{
-			name: "enable RTCM MSM4 messages",
+			name: "enable RTCM MSM4 messages with all GNSS",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2", // Has GPS, GLO, GAL, BDS, QZSS
+			},
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
 			},
 			expectedCmds: []string{
-				"RTCM1074 1",
-				"RTCM1084 1",
-				"RTCM1124 1",
+				"RTCM1074 1", // GPS MSM4
+				"RTCM1084 1", // GLO MSM4
+				"RTCM1094 1", // GAL MSM4
+				"RTCM1114 1", // QZSS MSM4
+				"RTCM1124 1", // BDS MSM4
+				"RTCM1230 1", // GLO bias (added when GLO enabled)
+			},
+		},
+		{
+			name: "enable RTCM MSM4 with GPS only",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 8", // Has GPS, GAL, BDS (no GLO)
+				"MASK GAL",
+				"MASK BDS",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
+			},
+			expectedCmds: []string{
+				"RTCM1074 1", // Only GPS MSM4
+			},
+		},
+		{
+			name: "enable RTCM MSM4 with GPS and GLO",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1", // Has GPS, GLO, GAL, BDS, QZSS
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
+			},
+			expectedCmds: []string{
+				"RTCM1074 1", // GPS MSM4
+				"RTCM1084 1", // GLO MSM4
+				"RTCM1230 1", // GLO bias
 			},
 		},
 		{
@@ -189,14 +220,51 @@ func TestRTCMMessages(t *testing.T) {
 		},
 		{
 			name: "enable RTCM MSM4 and ARP",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2", // Has GPS, GLO, GAL, BDS, QZSS
+			},
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)
 			},
 			expectedCmds: []string{
-				"RTCM1074 1",
-				"RTCM1084 1",
-				"RTCM1124 1",
-				"RTCM1005 1",
+				"RTCM1074 1", // GPS MSM4
+				"RTCM1084 1", // GLO MSM4
+				"RTCM1094 1", // GAL MSM4
+				"RTCM1114 1", // QZSS MSM4
+				"RTCM1124 1", // BDS MSM4
+				"RTCM1230 1", // GLO bias
+				"RTCM1005 1", // ARP
+			},
+		},
+		{
+			name: "enable RTCM MSM7 messages with GPS and BDS",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 8", // Has GPS, GAL, BDS (no GLO)
+				"MASK GAL",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM7)
+			},
+			expectedCmds: []string{
+				"RTCM1077 1", // GPS MSM7
+				"RTCM1127 1", // BDS MSM7
+			},
+		},
+		{
+			name: "no RTCM messages when no GNSS enabled",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1",
+				"MASK GPS",
+				"MASK GLO",
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
+			},
+			expectedCmds: []string{
+				// No RTCM messages
 			},
 		},
 	}
@@ -216,9 +284,9 @@ func TestRawMessages(t *testing.T) {
 			},
 		},
 		{
-			name: "enable raw navigation data for enabled GNSS",
+			name: "enable raw navigation data for all GNSS",
 			currentState: []string{
-				"CONFIG SIGNALGROUP 2", // Signal group 2 includes GPS, BDS, GLO, GAL, QZSS
+				"CONFIG SIGNALGROUP 2", // Has GPS, BDS, GLO, GAL, QZSS, NAVIC
 			},
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.RawMsg.Set(gpsprot.RawMsgNavData)
@@ -229,6 +297,52 @@ func TestRawMessages(t *testing.T) {
 				"GLOEPHB 1",
 				"GALEPHB 1",
 				"QZSSEPHB 1",
+				// Note: No NAVICEPHB as Unicore doesn't support it
+			},
+		},
+		{
+			name: "enable raw navigation data for GPS only",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 8", // Has GPS, GAL, BDS (no GLO)
+				"MASK GAL",
+				"MASK BDS",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RawMsg.Set(gpsprot.RawMsgNavData)
+			},
+			expectedCmds: []string{
+				"GPSEPHB 1", // Only GPS ephemeris
+			},
+		},
+		{
+			name: "enable raw navigation data for GPS and BDS",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 8", // Has GPS, GAL, BDS
+				"MASK GAL",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RawMsg.Set(gpsprot.RawMsgNavData)
+			},
+			expectedCmds: []string{
+				"GPSEPHB 1",
+				"BDSEPHB 1",
+			},
+		},
+		{
+			name: "no raw navigation data when no GNSS enabled",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1",
+				"MASK GPS",
+				"MASK GLO",
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RawMsg.Set(gpsprot.RawMsgNavData)
+			},
+			expectedCmds: []string{
+				// No ephemeris messages
 			},
 		},
 	}
@@ -310,9 +424,24 @@ func TestCombinedMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"RECTIMEB 1",
-				"PPSSTATUS 1",
 				"SATSINFOB 1",
 				"GPGGA 1",
+			},
+		},
+		{
+			name: "enable messages with save",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgTime
+				opts.RTCMMsg.Set(gpsprot.RTCMMsgARP)
+				opts.Save = gpsprot.SaveMinimal
+			},
+			expectedCmds: []string{
+				"RECTIMEB 1",
+				"RTCM1005 1",
+				"SAVECONFIG",
 			},
 		},
 	}

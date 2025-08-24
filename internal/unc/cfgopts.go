@@ -3,8 +3,8 @@ package unc
 import "github.com/jclark/satpulse/internal/gpsprot"
 
 // generateOptsCommands generates native commands from ConfigOptions
-func generateOptsCommands(opts *gpsprot.ConfigOptions) []nativeCommand {
-	strs := append(generateMsgCommands(opts), generateSaveResetCommands(opts)...)
+func generateOptsCommands(opts *gpsprot.ConfigOptions, enabledGNSS gpsprot.GNSSSet) []nativeCommand {
+	strs := append(generateMsgCommands(opts, enabledGNSS), generateSaveResetCommands(opts)...)
 	cmds := make([]nativeCommand, len(strs))
 	for i, cmd := range strs {
 		cmds[i] = nativeCommand{cmd: cmd}
@@ -13,7 +13,7 @@ func generateOptsCommands(opts *gpsprot.ConfigOptions) []nativeCommand {
 }
 
 // generateMsgCommands generates all message enable/disable commands from ConfigOptions
-func generateMsgCommands(opts *gpsprot.ConfigOptions) []string {
+func generateMsgCommands(opts *gpsprot.ConfigOptions, enabledGNSS gpsprot.GNSSSet) []string {
 	var cmds []string
 	if opts.PVTMsg.IsSet() {
 		cmds = append(cmds, generatePVTMsgCommands(opts.PVTMsg.Get())...)
@@ -25,10 +25,10 @@ func generateMsgCommands(opts *gpsprot.ConfigOptions) []string {
 		cmds = append(cmds, generateNMEAMsgCommands(opts.NMEAMsg.Get())...)
 	}
 	if opts.RTCMMsg.IsSet() {
-		cmds = append(cmds, generateRTCMMsgCommands(opts.RTCMMsg.Get())...)
+		cmds = append(cmds, generateRTCMMsgCommands(opts.RTCMMsg.Get(), enabledGNSS)...)
 	}
 	if opts.RawMsg.IsSet() {
-		cmds = append(cmds, generateRawMsgCommands(opts.RawMsg.Get())...)
+		cmds = append(cmds, generateRawMsgCommands(opts.RawMsg.Get(), enabledGNSS)...)
 	}
 	return cmds
 }
@@ -37,18 +37,13 @@ func generateMsgCommands(opts *gpsprot.ConfigOptions) []string {
 func generatePVTMsgCommands(flags gpsprot.PVTMsgFlags) []string {
 	var cmds []string
 	off := flags&gpsprot.PVTMsgOff != 0
-	// RECTIMEB is needed for both Time and TimePulse
+	// RECTIMEB is used for Time and TimePulse
 	if flags&(gpsprot.PVTMsgTime|gpsprot.PVTMsgTimePulse) != 0 {
 		cmds = append(cmds, "RECTIMEB 1")
 	} else if off {
 		cmds = append(cmds, "UNLOG RECTIMEB")
 	}
-	// PPSSTATUS for TimePulse
-	if flags&gpsprot.PVTMsgTimePulse != 0 {
-		cmds = append(cmds, "PPSSTATUS 1")
-	} else if off {
-		cmds = append(cmds, "UNLOG PPSSTATUS")
-	}
+	// Note: We only use RECTIMEB for time pulse, not PPSSTATUS
 	// Future: Add leap second messages when LeapSecondMsg is implemented
 	// if flags&gpsprot.PVTMsgLeapSecond != 0 {
 	//     cmds = append(cmds, "GPSUTCB 1", "BD3UTCB 1", "GALUTCB 1")
@@ -99,19 +94,52 @@ func generateNMEAMsgCommands(flags gpsprot.NMEAMsgFlags) []string {
 }
 
 // generateRTCMMsgCommands maps RTCM flags to Unicore RTCM commands
-func generateRTCMMsgCommands(flags gpsprot.RTCMMsgFlags) []string {
+func generateRTCMMsgCommands(flags gpsprot.RTCMMsgFlags, enabledGNSS gpsprot.GNSSSet) []string {
 	var cmds []string
+	gloEnabled := false
+	
 	if flags&gpsprot.RTCMMsgMSM4 != 0 {
-		cmds = append(cmds, "RTCM1074 1") // GPS MSM4
-		cmds = append(cmds, "RTCM1084 1") // GLONASS MSM4
-		cmds = append(cmds, "RTCM1124 1") // BDS MSM4
-		// Could add more based on enabled GNSS
+		if enabledGNSS.Contains(gpsprot.GPS) {
+			cmds = append(cmds, "RTCM1074 1") // GPS MSM4
+		}
+		if enabledGNSS.Contains(gpsprot.GLO) {
+			cmds = append(cmds, "RTCM1084 1") // GLONASS MSM4
+			gloEnabled = true
+		}
+		if enabledGNSS.Contains(gpsprot.GAL) {
+			cmds = append(cmds, "RTCM1094 1") // Galileo MSM4
+		}
+		if enabledGNSS.Contains(gpsprot.QZSS) {
+			cmds = append(cmds, "RTCM1114 1") // QZSS MSM4
+		}
+		if enabledGNSS.Contains(gpsprot.BDS) {
+			cmds = append(cmds, "RTCM1124 1") // BDS MSM4
+		}
 	}
 	if flags&gpsprot.RTCMMsgMSM7 != 0 {
-		cmds = append(cmds, "RTCM1077 1") // GPS MSM7
-		cmds = append(cmds, "RTCM1087 1") // GLONASS MSM7
-		cmds = append(cmds, "RTCM1127 1") // BDS MSM7
+		if enabledGNSS.Contains(gpsprot.GPS) {
+			cmds = append(cmds, "RTCM1077 1") // GPS MSM7
+		}
+		if enabledGNSS.Contains(gpsprot.GLO) {
+			cmds = append(cmds, "RTCM1087 1") // GLONASS MSM7
+			gloEnabled = true
+		}
+		if enabledGNSS.Contains(gpsprot.GAL) {
+			cmds = append(cmds, "RTCM1097 1") // Galileo MSM7
+		}
+		if enabledGNSS.Contains(gpsprot.QZSS) {
+			cmds = append(cmds, "RTCM1117 1") // QZSS MSM7
+		}
+		if enabledGNSS.Contains(gpsprot.BDS) {
+			cmds = append(cmds, "RTCM1127 1") // BDS MSM7
+		}
 	}
+	
+	// Add GLONASS bias if GLONASS is enabled
+	if gloEnabled {
+		cmds = append(cmds, "RTCM1230 1") // GLONASS code-phase biases
+	}
+	
 	if flags&gpsprot.RTCMMsgARP != 0 {
 		cmds = append(cmds, "RTCM1005 1")
 	}
@@ -119,19 +147,28 @@ func generateRTCMMsgCommands(flags gpsprot.RTCMMsgFlags) []string {
 }
 
 // generateRawMsgCommands maps Raw flags to Unicore raw data commands
-func generateRawMsgCommands(flags gpsprot.RawMsgFlags) []string {
+func generateRawMsgCommands(flags gpsprot.RawMsgFlags, enabledGNSS gpsprot.GNSSSet) []string {
 	var cmds []string
 	if flags&gpsprot.RawMsgObs != 0 {
 		cmds = append(cmds, "OBSVMB 1")
 	}
 	if flags&gpsprot.RawMsgNavData != 0 {
-		// Enable ephemeris for all enabled GNSS
-		// TODO: Check signalGroup to determine which GNSS are actually enabled
-		cmds = append(cmds, "GPSEPHB 1")
-		cmds = append(cmds, "BDSEPHB 1")
-		cmds = append(cmds, "GLOEPHB 1")
-		cmds = append(cmds, "GALEPHB 1")
-		cmds = append(cmds, "QZSSEPHB 1")
+		// Only enable ephemeris for enabled GNSS
+		if enabledGNSS.Contains(gpsprot.GPS) {
+			cmds = append(cmds, "GPSEPHB 1")
+		}
+		if enabledGNSS.Contains(gpsprot.BDS) {
+			cmds = append(cmds, "BDSEPHB 1")
+		}
+		if enabledGNSS.Contains(gpsprot.GLO) {
+			cmds = append(cmds, "GLOEPHB 1")
+		}
+		if enabledGNSS.Contains(gpsprot.GAL) {
+			cmds = append(cmds, "GALEPHB 1")
+		}
+		if enabledGNSS.Contains(gpsprot.QZSS) {
+			cmds = append(cmds, "QZSSEPHB 1")
+		}
 	}
 	return cmds
 }
