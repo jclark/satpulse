@@ -3,6 +3,7 @@ package unc
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -192,8 +193,11 @@ func (r *testReceiver) generateResponses(cmd string) []interface{} {
 			Payload: fmt.Sprintf("command,%s,response: OK", cmd),
 		})
 		// Then send MASK responses - always send at least one
-		maskCmd := r.nativeProps.mask.elevationMask
-		if maskCmd == "" {
+		var maskCmd string
+		if r.nativeProps.mask.elevationMask.IsSet() {
+			// Use strconv.FormatFloat with precision -1 for minimal representation
+			maskCmd = strconv.FormatFloat(r.nativeProps.mask.elevationMask.Get(), 'f', -1, 64)
+		} else {
 			maskCmd = "10" // Default elevation mask
 		}
 		responses = append(responses, &nmea.Sentence{

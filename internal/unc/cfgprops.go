@@ -154,6 +154,7 @@ func (np *nativeConfigProps) convertToProps(props *gpsprot.ConfigProps) {
 		sigs &^= np.mask.signalMask
 		props.SetSignalsEnabled(sigs)
 	}
+	np.mask.convertElevationToProps(props)
 	np.mode.convertToProps(props)
 }
 
@@ -390,10 +391,10 @@ func (p *signalGroupProp) signalSet() gpsprot.SignalSet {
 	return signalGroups[groupNum]
 }
 
-var maskRegexp = regexp.MustCompile(`^(?:MASK (\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Z0-9]*)|[A-Z]+ PRN \d+)))$`)
+var maskRegexp = regexp.MustCompile(`^(?:MASK (-?\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Z0-9]*)|[A-Z]+ PRN \d+)))$`)
 
 type maskProp struct {
-	elevationMask string // e.g. "5" for 5 degrees
+	elevationMask gpsprot.Option[float64] // elevation angle in degrees
 	signalMask    gpsprot.SignalSet
 }
 
@@ -409,7 +410,11 @@ func (p *maskProp) updateFromCommand(cmd string) error {
 
 	if elevation != "" {
 		// Handle elevation mask: MASK 5.0 (only MASK allowed)
-		p.elevationMask = elevation
+		elev, err := strconv.ParseFloat(elevation, 64)
+		if err != nil {
+			return fmt.Errorf("invalid elevation angle: %s", elevation)
+		}
+		p.elevationMask.Set(elev)
 	} else if systemFreq != "" {
 		// Handle system/frequency mask: MASK GPS or UNMASK L1
 		signalSet, exists := maskSignalMap[systemFreq]
@@ -430,22 +435,41 @@ func (p *maskProp) updateFromCommand(cmd string) error {
 	return nil
 }
 
+func (p *maskProp) convertElevationToProps(props *gpsprot.ConfigProps) {
+	if p.elevationMask.IsSet() {
+		props.SetMinElevation(gpsprot.DegreesFromFloat(p.elevationMask.Get()))
+	}
+}
+
 func (p *maskProp) updateFromProps(props *gpsprot.ConfigProps, availSignals gpsprot.SignalSet) error {
-	signalsEnabled, ok := props.GetSignalsEnabled()
-	if !ok {
+	hasSignals := false
+	if signalsEnabled, ok := props.GetSignalsEnabled(); ok {
+		p.signalMask = availSignals &^ signalsEnabled
+		hasSignals = true
+	}
+	
+	hasElevation := false
+	// Handle MinElevation property
+	if minElev, ok := props.GetMinElevation(); ok {
+		p.elevationMask.Set(minElev.Degrees())
+		hasElevation = true
+	}
+	
+	// Return errMissingProp only if neither property is present
+	if !hasSignals && !hasElevation {
 		return errMissingProp
 	}
-	p.signalMask = availSignals &^ signalsEnabled
+	
 	return nil
 }
 
 func (p *maskProp) generateCommands(prevMask *maskProp, sigGroupSignals gpsprot.SignalSet) []nativeCommand {
 	var commands []nativeCommand
 	// Handle elevation mask changes
-	if p.elevationMask != prevMask.elevationMask {
-		if p.elevationMask != "" {
-			commands = append(commands, nativeCommand{cmd: "MASK " + p.elevationMask, key: idPropMask})
-		}
+	if p.elevationMask != prevMask.elevationMask && p.elevationMask.IsSet() {
+		// Use strconv.FormatFloat with precision -1 to output minimal representation
+		elevStr := strconv.FormatFloat(p.elevationMask.Get(), 'f', -1, 64)
+		commands = append(commands, nativeCommand{cmd: "MASK " + elevStr, key: idPropMask})
 	}
 	if (p.signalMask & sigGroupSignals) == (prevMask.signalMask & sigGroupSignals) {
 		return commands

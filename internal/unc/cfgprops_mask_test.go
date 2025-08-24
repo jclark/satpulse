@@ -191,48 +191,6 @@ func TestMaskPropDifferentialUpdate(t *testing.T) {
 	}
 }
 
-func TestMaskPropElevation(t *testing.T) {
-	// Test elevation mask parsing
-	prop := maskProp{}
-	if err := prop.updateFromCommand("MASK 5.0"); err != nil {
-		t.Fatalf("updateFromCommand failed: %v", err)
-	}
-	if prop.elevationMask != "5.0" {
-		t.Errorf("elevationMask = %q, want %q", prop.elevationMask, "5.0")
-	}
-
-	// Test integer elevation mask
-	prop2 := maskProp{}
-	if err := prop2.updateFromCommand("MASK 10"); err != nil {
-		t.Fatalf("updateFromCommand failed: %v", err)
-	}
-	if prop2.elevationMask != "10" {
-		t.Errorf("elevationMask = %q, want %q", prop2.elevationMask, "10")
-	}
-
-	// Test elevation mask generation
-	prev := maskProp{}
-	commands := prop.generateCommands(&prev, gpsprot.SigSetAll)
-	expected := []string{"MASK 5.0"}
-
-	// For elevation, order should be deterministic (only one command)
-	if len(commands) != len(expected) || commands[0].cmd != expected[0] {
-		t.Errorf("generateCommands() = %v, want %v", commands, expected)
-	}
-
-	// Test elevation mask change
-	prev2 := &maskProp{elevationMask: "10"}
-	commands2 := prop.generateCommands(prev2, gpsprot.SigSetAll)
-	expected2 := []string{"MASK 5.0"}
-	if len(commands2) != len(expected2) || commands2[0].cmd != expected2[0] {
-		t.Errorf("generateCommands() = %v, want %v", commands2, expected2)
-	}
-
-	// Verify UNMASK elevation is rejected by regex
-	if err := prop.updateFromCommand("UNMASK 5.0"); err == nil {
-		t.Error("UNMASK elevation should fail but didn't")
-	}
-}
 
 func TestMaskPropPRN(t *testing.T) {
 	// Test that PRN masks are accepted but ignored
@@ -268,6 +226,8 @@ func TestMaskPropInvalidCommands(t *testing.T) {
 		"UNMASK INVALID", // Unknown system/frequency
 		"MASK GPS BDS",   // Multiple systems
 		"ENABLE GPS",     // Wrong command
+		"UNMASK 5.0",     // UNMASK with elevation not allowed
+		"UNMASK -10",     // UNMASK with negative elevation not allowed
 	}
 
 	for _, cmd := range invalidCommands {
@@ -630,6 +590,109 @@ func TestConfigMask(t *testing.T) {
 				"MASK GLO",
 			},
 			targetProps: func(props *gpsprot.ConfigProps) {
+			},
+			expectedCmds: []string{},
+		},
+		{
+			name: "set min elevation mask",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMinElevation(gpsprot.DegreesFromFloat(10.5))
+			},
+			expectedCmds: []string{
+				"MASK 10.5",
+			},
+		},
+		{
+			name: "change min elevation mask",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK 5",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMinElevation(gpsprot.DegreesFromFloat(15))
+			},
+			expectedCmds: []string{
+				"MASK 15",
+			},
+		},
+		{
+			name: "no change in elevation mask",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK 10",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMinElevation(gpsprot.DegreesFromFloat(10))
+			},
+			expectedCmds: []string{},
+		},
+		{
+			name: "min elevation with signal masks",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK 5",
+				"MASK GLO",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMinElevation(gpsprot.DegreesFromFloat(10))
+				props.SetSignalsEnabled(gpsprot.SigSetGPS | gpsprot.SigSetGAL)
+			},
+			expectedCmds: []string{
+				"MASK 10",
+				"MASK BDS",
+				"MASK GLO",
+				"MASK QZSS",
+				"MASK IRNSS",
+			},
+		},
+		{
+			name: "set zero degree elevation mask",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMinElevation(gpsprot.DegreesFromFloat(0))
+			},
+			expectedCmds: []string{
+				"MASK 0",
+			},
+		},
+		{
+			name: "set negative elevation mask",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMinElevation(gpsprot.DegreesFromFloat(-5))
+			},
+			expectedCmds: []string{
+				"MASK -5",
+			},
+		},
+		{
+			name: "change from positive to negative elevation mask",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK 10",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetMinElevation(gpsprot.DegreesFromFloat(-10.5))
+			},
+			expectedCmds: []string{
+				"MASK -10.5",
+			},
+		},
+		{
+			name: "parse negative elevation mask from receiver",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK -15",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				// Just getting the current state, no changes
 			},
 			expectedCmds: []string{},
 		},
