@@ -41,7 +41,9 @@ func testNativeConfigProps(t *testing.T, tests []nativeConfigPropsTestCase) {
 
 			// Set up target properties
 			var targetProps gpsprot.ConfigProps
-			tt.targetProps(&targetProps)
+			if tt.targetProps != nil {
+				tt.targetProps(&targetProps)
+			}
 
 			// Set up target options
 			var targetOpts gpsprot.ConfigOptions

@@ -125,7 +125,8 @@ func (np *nativeConfigProps) generateTargetCommands(target *gpsprot.ConfigTarget
 		np = &npGen
 	}
 	// generate commands to turn current native props to target native props
-	return targetNativeProps.generateUpdateCommands(np)
+	cmds := targetNativeProps.generateUpdateCommands(np)
+	return append(cmds, generateOptsCommands(&target.Opts)...)
 }
 
 // determineModeGeneration determines whether special handling is needed for the MODE command
