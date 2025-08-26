@@ -3,7 +3,7 @@ FROM mcr.microsoft.com/devcontainers/go:1-1.23-bookworm
 # Install gh (for doing releases) and rpm (for building rpms) and pandoc (for manpages)
 RUN apt-get update \
   && export DEBIAN_FRONTEND=noninteractive \
-  && apt-get -y install gh rpm pandoc \
+  && apt-get install -y --no-install-recommends gh rpm pandoc ripgrep \
   && apt-get clean
 
 # Cache the go modules in the docker image
