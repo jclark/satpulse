@@ -54,7 +54,7 @@ var vendorNames = []string{
 	"SkyTraq",
 	"Trimble",
 	"u-blox",
-	"Unicore",
+	unc.Vendor,
 }
 
 var vendorMap = func() map[string]Vendor {

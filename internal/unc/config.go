@@ -11,6 +11,8 @@ import (
 	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
+const Vendor = "Unicore"
+
 type ConfigProtocol struct {
 	ver *uncmsg.Version // Stored from VERSIONB response for probing
 	cfg *Configurator   // Created during Configure() call
@@ -91,7 +93,7 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	buildNum, _ := c.ver.BuildNumber()
 	return &gpsprot.ReceiverInfo{
-		Vendor:         "Unicore",
+		Vendor:         Vendor,
 		Firmware:       fmt.Sprintf("Build%d", buildNum),
 		Hardware:       c.ver.Type.String(),
 		SupportedGNSS:  0, // Will be populated from CONFIG query responses
