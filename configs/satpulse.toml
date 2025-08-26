@@ -14,11 +14,13 @@ speed = 9600
 # Uncommenting the following line will enable configuration of the GPS
 # (changes are not persistent across GPS reboots)
 #config = true
-# This gives the scheme used for non-standard numbering of space vehicles in NMEA GSV and GSA sentences.
-# This is needed to show all satellites in the satellites view, particularly when GPS receivers
+# This specifies the vendor of your GPS module, if you know it; if you don't, leave it commented out.
+# Accepted values include u-blox, Allystar, Unicore, Quectel (and most other major vendors).
+# At the moment this is only used to handle non-standard numbering of space vehicles in NMEA GSV and GSA sentences.
+# which is needed to show all satellites in the satellites view, particularly when GPS receivers
 # are using versions of NMEA before 4.11.
-# Possible values are "u-blox" and "allystar". Default is not to include satellites with non-standard numbers.
-#nmeaNumbering = "u-blox"
+# In the future, it will be used to guide other aspects of configuration.
+#vendor = "u-blox"
 
 [log]
 # Uncomment the following line to enable logging of PHC offsets (in /var/log/satpulse/)

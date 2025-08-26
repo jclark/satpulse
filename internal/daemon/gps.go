@@ -37,7 +37,7 @@ type GPSConfig struct {
 	PulseWidth         float64      `toml:"pulseWidth"`
 	SatellitesOutput   *bool        `toml:"satellitesOutput"`
 	RTCMOutput         *bool        `toml:"rtcmOutput"`
-	NMEANumbering      string       `toml:"nmeaNumbering"`
+	Vendor             string       `toml:"vendor"`
 }
 
 const defaultAccuracy = 20.0 // in meters
@@ -95,12 +95,13 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, tpFlags gpsTime
 }
 
 func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProcessor, error) {
-	nmeaNumbering := []gpsprot.NMEASVNumberingRange{}
-	if c.NMEANumbering != "" {
-		nmeaNumbering = gpsreg.FindNMEASVNumbering(c.NMEANumbering)
-		if nmeaNumbering == nil {
-			return nil, fmt.Errorf("unknown NMEA SV numbering: %s", c.NMEANumbering)
+	var nmeaNumbering []gpsprot.NMEASVNumberingRange
+	if c.Vendor != "" {
+		vendor := gpsreg.ParseVendor(c.Vendor)
+		if vendor == gpsreg.VendorUnknown {
+			return nil, fmt.Errorf("unknown vendor: %s", c.Vendor)
 		}
+		nmeaNumbering = gpsreg.FindNMEASVNumbering(vendor)
 	}
 	return gpsreg.CreatePacketProcessors(nmeaNumbering), nil
 }

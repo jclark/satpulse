@@ -107,7 +107,7 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
 * `config` - a boolean saying whether to perform configuration of the GPS receiver; `true` means to perform configuration;
   currently this works only with GPS receivers that support the UBX protocol (like those from u-blox)
   this won't make any persistent changes to the GPS receiver, which means you can turn the receiver off and on again to undo any changes made by SatPulse;
-  if you use `false` here, then all the other keys in the table other than `pulseWidth` and `nmeaNumbering` will be ignored
+  if you use `false` here, then all the other keys in the table other than `pulseWidth` and `vendor` will be ignored
   and it is your responsibility to configure the GPS receiver appropriately
 * `pulseWidth` - a number giving the time pulse width in seconds that this GPS receiver has been configured with; this is not relevant
    unless the ethernet controller is one that timestamps both edges (e.g. Intel i210); it is also not relevant if SatPulse
@@ -138,7 +138,7 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
   are specified, then the sum of the delays will be used
 * `rtcmOutput` - a boolean saying whether the GPS receiver should be configured to output RTCM messages; if true, then the receiver will be configured to generate MSM messages for each enabled constellation; it will generate MSM4 messages if those are available, and otherwise MSM7 messages; it will also generate ARP (1005) messages, and if GLONASS is enabled, GLONASS code phase bias (1230) messages; if false, then RTCM messages will be turned off; if the key is not specified, then the configuration of RTCM messages will not be changed
 * `satellitesOutput` - a boolean saying whether the GPS receiver should be configured to output information about the satellites in view; this information can be used by the HTTP monitoring interface; the default is to configure output based on whether the HTTP interface is enabled, but not to perform configuration unless the serial speed is at least 38400 (this is because at low serials speeds the satellites output can cause significant delays in receiving the timing messages that SatPulse relies upon)
-* `nmeaNumbering` - a string giving the GPS receiver manufacturer, used to interpret non-standard numbering of space vehicles in NMEA GSV and GSA sentences; his is needed to show all satellites in the satellites view, particularly when GPS receivers are using versions of NMEA before 4.11; possible values are `"u-blox"` and `"allystar"`; default is not to include satellites with non-standard numbers.
+* `vendor` - a string giving the manufacturer of the GPS module; allowed values are `"u-blox"` and `"Allystar"`; this is used to interpret non-standard numbering of space vehicles in NMEA GSV and GSA sentences, when GPS receivers are using versions of NMEA before 4.11; if `vendor` is not specified, then satellites with non-standard numbers will not be included in the satellites view
 
 Example
 

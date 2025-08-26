@@ -51,9 +51,23 @@
 		  "antennaCableVF": { "type": "number" },
 		  "satellitesOutput": { "type": "boolean" },
 		  "rtcmOutput": { "type": "boolean"},
-		  "nmeaNumbering": {
+		  "vendor": {
 			"type": "string",
-			"enum": ["u-blox", "allystar"]
+			"enum": [
+			  "Allystar",
+			  "Bynav",
+			  "ComNav",
+			  "Furuno",
+			  "MediaTek",
+			  "NovAtel",
+			  "Quectel",
+			  "Septentrio",
+			  "SinoGNSS",
+			  "SkyTraq",
+			  "Trimble",
+			  "u-blox",
+			  "Unicore"
+			]
 		  }
 		}
 	  },

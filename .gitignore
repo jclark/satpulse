@@ -1,2 +1,6 @@
 out/
 .vscode/settings.json
+tmp/
+.codanna*
+.fastembed*
+.claude/settings.local.json

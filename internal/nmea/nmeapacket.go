@@ -95,10 +95,11 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 }
 
 func (f packetFormat) MsgID(pkt []byte) string {
-	if pkt[1] == 'P' {
-		return string(pkt[1:5])
+	i := 1
+	for i < len(pkt) && pkt[i] != '*' && pkt[i] != ',' {
+		i++
 	}
-	return string(pkt[1:6])
+	return string(pkt[1:i])
 }
 
 // ExtractChecksum extracts the checksum from the NMEA packet.
