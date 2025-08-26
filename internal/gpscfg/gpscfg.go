@@ -1,6 +1,7 @@
 package gpscfg
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -220,7 +221,7 @@ func (mh *msgHandler) packetChClosed(ctx context.Context) error {
 func (mh *msgHandler) probe(ctx context.Context, port gpsio.OutPort) (gpsprot.ConfigProtocol2, error) {
 	if len(mh.configProts) == 0 {
 		return nil, nil
-	}	
+	}
 	// Send probe packets for all protocols
 	for _, prot := range mh.configProts {
 		msg := prot.ProbePacket()
@@ -396,7 +397,7 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 		return
 	}
 	err := pkt.ChecksumError()
-	if err != nil {
+	if err != nil && !altChecksumValid(pkt) {
 		mh.lg.Warn(err.Error(), "tag", tag, "len", len(pkt.Data))
 		mh.bad.corruptMsgs++
 		return
@@ -410,6 +411,17 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 	}
 
 	mh.msgIDs[tag][msgID] = true
+}
+
+// altChecksumValid allows working around UM980 firmware bug which has incorrect checksum in some packets
+func altChecksumValid(pkt scan.Packet) bool {
+	if apf, ok := pkt.Format.(gpsprot.AltChecksumPacketFormat); ok {
+		data := []byte(pkt.Data)
+		if bytes.Equal(apf.ComputeAltChecksum(data), apf.ExtractChecksum(data)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
