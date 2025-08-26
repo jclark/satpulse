@@ -7,26 +7,26 @@ import (
 	"github.com/jclark/satpulse/internal/fieldenc"
 )
 
-// AsciiHeader represents the header fields from a NovAtel ASCII message
+// AsciiHdr represents the header fields from a NovAtel ASCII message
 // Fields are processed by fieldenc in struct field order
-type AsciiHeader struct {
+type AsciiHdr struct {
 	MessageName string // Message name (e.g., "BESTPOSA")
 	Port        string
-	CommonHeader
+	CommonHdr
 }
 
-// UnknownAsciiMsg represents an unrecognized ASCII message
-type UnknownAsciiMsg struct {
+// UnknownAsciiMsgBody represents an unrecognized ASCII message
+type UnknownAsciiMsgBody struct {
 	Name    string
 	Payload string
 }
 
-func (m *UnknownAsciiMsg) ID() (MsgID, string) { return 0, m.Name }
+func (m *UnknownAsciiMsgBody) ID() (MsgID, string) { return 0, m.Name }
 
 // ParseAsciiMessage parses a NovAtel ASCII message from bytes.
 // It assumes the packet format scanner has validated the packet structure
 // and checksums were already verified.
-func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
+func ParseAsciiMessage(packet []byte) (*Msg, error) {
 	asciiMsg := string(packet)
 
 	// Remove # prefix and \r\n suffix
@@ -43,27 +43,30 @@ func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
 	headerFields := strings.Split(headerPart, ",")
 
 	// Parse header using fieldenc
-	var asciiHeader AsciiHeader
-	err := fieldenc.Decode(headerFields, &asciiHeader)
+	var asciiHdr AsciiHdr
+	err := fieldenc.Decode(headerFields, &asciiHdr)
 	if err != nil {
-		return MessageHeader{}, nil, fmt.Errorf("parsing header: %v", err)
+		return nil, fmt.Errorf("parsing header: %v", err)
 	}
 
-	// Convert to MessageHeader - create from CommonHeader and Port
-	msgHeader := MessageHeader{
-		Port:         asciiHeader.Port,
-		CommonHeader: asciiHeader.CommonHeader,
+	// Convert to MsgHdr - create from CommonHdr and Port
+	msgHdr := MsgHdr{
+		Port:      asciiHdr.Port,
+		CommonHdr: asciiHdr.CommonHdr,
 	}
 
 	// Look up message constructor by name
-	ctor := msgNameMap[asciiHeader.MessageName]
+	ctor := msgNameMap[asciiHdr.MessageName]
 	if ctor == nil {
 		// Unknown message - preserve the name and payload
-		return msgHeader, &UnknownAsciiMsg{Name: asciiHeader.MessageName, Payload: dataPart}, nil
+		return &Msg{
+			Hdr:  msgHdr,
+			Body: &UnknownAsciiMsgBody{Name: asciiHdr.MessageName, Payload: dataPart},
+		}, nil
 	}
 
 	// Create message instance before parsing data fields
-	msg := ctor()
+	body := ctor()
 
 	// Parse data fields - NovAtel doesn't use quoted fields
 	var dataFields []string
@@ -72,18 +75,18 @@ func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
 	}
 
 	// Decode the message (handles both chunked and regular messages)
-	err = DecodeAsciiChunked(dataFields, msg, asciiHeader.MessageName)
+	err = DecodeAsciiChunked(dataFields, body, asciiHdr.MessageName)
 	if err != nil {
-		return MessageHeader{}, nil, err
+		return nil, err
 	}
 
-	return msgHeader, msg, nil
+	return &Msg{Hdr: msgHdr, Body: body}, nil
 }
 
 // SerializeAsciiMsg serializes a NovAtel message with header into ASCII format
-func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
+func SerializeAsciiMsg(msg *Msg) ([]byte, error) {
 	// Get message ID and name
-	_, msgName := msg.ID()
+	_, msgName := msg.Body.ID()
 	if msgName == "" {
 		return nil, fmt.Errorf("unknown binary message cannot be serialized as ASCII")
 	}
@@ -92,12 +95,12 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	asciiMsgName := msgName
 
 	// Serialize header using fieldenc
-	asciiHeader := AsciiHeader{
-		MessageName:  asciiMsgName,
-		Port:         header.Port,
-		CommonHeader: header.CommonHeader,
+	asciiHdr := AsciiHdr{
+		MessageName: asciiMsgName,
+		Port:        msg.Hdr.Port,
+		CommonHdr:   msg.Hdr.CommonHdr,
 	}
-	headerFields, err := fieldenc.Encode(asciiHeader)
+	headerFields, err := fieldenc.Encode(asciiHdr)
 	if err != nil {
 		return nil, fmt.Errorf("encoding header: %v", err)
 	}
@@ -107,11 +110,11 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	dataBuilder.WriteString(strings.Join(headerFields, ","))
 	dataBuilder.WriteByte(';')
 	// Serialize message data
-	if uMsg, ok := msg.(*UnknownAsciiMsg); ok {
+	if uMsg, ok := msg.Body.(*UnknownAsciiMsgBody); ok {
 		// For unknown messages, use the raw payload
 		dataBuilder.WriteString(uMsg.Payload)
 	} else {
-		dataFields, err := EncodeAsciiChunked(msg, asciiMsgName)
+		dataFields, err := EncodeAsciiChunked(msg.Body, asciiMsgName)
 		if err != nil {
 			return nil, err
 		}

@@ -61,9 +61,9 @@ func ParsePort(s string) (Port, error) {
 	}
 }
 
-// BinaryHeader represents the standard 28-byte header of a NovAtel binary packet
+// BinaryHdr represents the standard 28-byte header of a NovAtel binary packet
 // Note: NovAtel headers can have variable length, but this struct represents the standard format
-type BinaryHeader struct {
+type BinaryHdr struct {
 	Sync1         byte // 0xAA
 	Sync2         byte // 0x44
 	Sync3         byte // 0x12
@@ -72,55 +72,55 @@ type BinaryHeader struct {
 	MessageType   byte // Message type/format
 	Port          Port
 	MessageLength uint16 // Length of payload (not including header or CRC)
-	CommonHeader
+	CommonHdr
 }
 
-// UnknownBinMsg represents an unrecognized binary message
-type UnknownBinMsg struct {
+// UnknownBinMsgBody represents an unrecognized binary message
+type UnknownBinMsgBody struct {
 	MsgID   MsgID
 	Payload []byte
 }
 
-func (m *UnknownBinMsg) ID() (MsgID, string) { return m.MsgID, "" }
+func (m *UnknownBinMsgBody) ID() (MsgID, string) { return m.MsgID, "" }
 
 // ParseBinMsg parses a NovAtel binary message from bytes.
 // It assumes the checksums were already verified.
-func ParseBinMsg(packet []byte) (MessageHeader, Msg, error) {
+func ParseBinMsg(packet []byte) (*Msg, error) {
 	n := len(packet)
 	// Need at least 4 bytes to read header length
 	if n < 4 {
-		return MessageHeader{}, nil, fmt.Errorf("NOVB message too short (length %d bytes)", n)
+		return nil, fmt.Errorf("NOVB message too short (length %d bytes)", n)
 	}
 
 	// Read the actual header length from the packet
 	headerLen := int(packet[headerLengthOffset])
 	minLen := headerLen + crcLength
 	if n < minLen {
-		return MessageHeader{}, nil, fmt.Errorf("NOVB message too short (length %d bytes, need %d)", n, minLen)
+		return nil, fmt.Errorf("NOVB message too short (length %d bytes, need %d)", n, minLen)
 	}
 
 	// Parse binary header
-	var binHeader BinaryHeader
+	var binHdr BinaryHdr
 	headerReader := bytes.NewReader(packet[:headerLen])
-	err := binary.Read(headerReader, binary.LittleEndian, &binHeader)
+	err := binary.Read(headerReader, binary.LittleEndian, &binHdr)
 	if err != nil {
-		return MessageHeader{}, nil, fmt.Errorf("parsing NOVB header: %v", err)
+		return nil, fmt.Errorf("parsing NOVB header: %v", err)
 	}
 
-	// Extract message header info - create MessageHeader from CommonHeader and Port
-	msgHeader := MessageHeader{
-		Port:         binHeader.Port.String(),
-		CommonHeader: binHeader.CommonHeader,
+	// Extract message header info - create MsgHdr from CommonHdr and Port
+	msgHdr := MsgHdr{
+		Port:      binHdr.Port.String(),
+		CommonHdr: binHdr.CommonHdr,
 	}
 
 	// Extract message ID and payload length
-	msgID := MsgID(binHeader.MessageID)
-	payloadLen := int(binHeader.MessageLength)
+	msgID := MsgID(binHdr.MessageID)
+	payloadLen := int(binHdr.MessageLength)
 
 	// Calculate expected total length
 	expectedLen := headerLen + payloadLen + crcLength
 	if n != expectedLen {
-		return MessageHeader{}, nil, fmt.Errorf("NOVB message length mismatch: got %d, expected %d", n, expectedLen)
+		return nil, fmt.Errorf("NOVB message length mismatch: got %d, expected %d", n, expectedLen)
 	}
 
 	// Extract payload
@@ -129,32 +129,35 @@ func ParseBinMsg(packet []byte) (MessageHeader, Msg, error) {
 	// Look up message constructor
 	ctor := msgIDMap[msgID]
 	if ctor == nil {
-		return msgHeader, &UnknownBinMsg{MsgID: msgID, Payload: payload}, nil
+		return &Msg{
+			Hdr:  msgHdr,
+			Body: &UnknownBinMsgBody{MsgID: msgID, Payload: payload},
+		}, nil
 	}
 
 	// Create and populate message
-	msg := ctor()
+	body := ctor()
 	r := bytes.NewReader(payload)
 
 	// Read the message (handles both chunked and regular messages)
-	err = ReadBinChunked(r, msg, "NOVB-"+msgID.String())
+	err = ReadBinChunked(r, body, "NOVB-"+msgID.String())
 	if err != nil {
-		return MessageHeader{}, nil, err
+		return nil, err
 	}
 
 	// Check for trailing bytes
 	_, err = r.ReadByte()
 	if err != io.EOF {
-		return MessageHeader{}, nil, fmt.Errorf("parsing NOVB-%s: trailing bytes", msgID.String())
+		return nil, fmt.Errorf("parsing NOVB-%s: trailing bytes", msgID.String())
 	}
 
-	return msgHeader, msg, nil
+	return &Msg{Hdr: msgHdr, Body: body}, nil
 }
 
 // SerializeBinMsg serializes a NovAtel message with header into binary format
-func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
+func SerializeBinMsg(msg *Msg) ([]byte, error) {
 	// Get message ID
-	msgID, _ := msg.ID()
+	msgID, _ := msg.Body.ID()
 	if msgID == 0 {
 		return nil, fmt.Errorf("unknown ASCII message cannot be serialized as binary")
 	}
@@ -162,14 +165,14 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	var payload []byte
 	var err error
 
-	if uMsg, ok := msg.(*UnknownBinMsg); ok {
+	if uMsg, ok := msg.Body.(*UnknownBinMsgBody); ok {
 		payload = uMsg.Payload
 	} else {
 		// Serialize the message payload
 		buf := new(bytes.Buffer)
 
 		// Write the message (handles both chunked and regular messages)
-		err = WriteBinChunked(buf, msg, msgID.String())
+		err = WriteBinChunked(buf, msg.Body, msgID.String())
 		if err != nil {
 			return nil, err
 		}
@@ -181,13 +184,13 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	}
 
 	// Parse port from header
-	port, err := ParsePort(header.Port)
+	port, err := ParsePort(msg.Hdr.Port)
 	if err != nil {
-		return nil, fmt.Errorf("invalid port %q: %v", header.Port, err)
+		return nil, fmt.Errorf("invalid port %q: %v", msg.Hdr.Port, err)
 	}
 
 	// Create binary header
-	binHeader := BinaryHeader{
+	binHdr := BinaryHdr{
 		Sync1:         sync1,
 		Sync2:         sync2,
 		Sync3:         sync3,
@@ -196,12 +199,12 @@ func SerializeBinMsg(header MessageHeader, msg Msg) ([]byte, error) {
 		MessageType:   0, // Default message type
 		Port:          port,
 		MessageLength: uint16(len(payload)),
-		CommonHeader:  header.CommonHeader,
+		CommonHdr:     msg.Hdr.CommonHdr,
 	}
 
 	// Serialize header
 	headerBuf := new(bytes.Buffer)
-	err = binary.Write(headerBuf, binary.LittleEndian, &binHeader)
+	err = binary.Write(headerBuf, binary.LittleEndian, &binHdr)
 	if err != nil {
 		return nil, err
 	}

@@ -23,21 +23,21 @@ func TestBinaryHeader(t *testing.T) {
 		// Create a reader from the packet bytes
 		reader := bytes.NewReader(testPPSStatusBPacket[:24]) // Just the header
 
-		var header BinaryHeader
+		var header BinaryHdr
 		err := binary.Read(reader, binary.LittleEndian, &header)
 		if err != nil {
 			t.Fatalf("binary.Read() error = %v", err)
 		}
 
 		// Expected values based on the ASCII header from the packet log
-		expected := BinaryHeader{
+		expected := BinaryHdr{
 			Sync1:          0xAA, // Sync byte 1
 			Sync2:          0x44, // Sync byte 2
 			Sync3:          0xB5, // Sync byte 3
 			CPUIdlePercent: 93,   // From ASCII: "93"
 			MessageID:      9000, // PPSSTATUS
 			MessageLength:  60,   // PPSSTATUS payload size
-			TimingHeader: TimingHeader{
+			TimingHdr: TimingHdr{
 				TimeRef:            0,              // 0 = GPS
 				TimeStatus:         TimeStatusFine, // 0xA0 = 160 = FINE, from ASCII: "FINE"
 				Week:               2376,           // From ASCII: "2376"
@@ -58,15 +58,15 @@ func TestBinaryHeader(t *testing.T) {
 func TestBinHeader(t *testing.T) {
 	t.Run("PPSSTATUSB", func(t *testing.T) {
 		// Parse the binary PPSSTATUS packet to test header parsing
-		msgHeader, _, err := ParseBinMsg(testPPSStatusBPacket)
+		msg, err := ParseBinMsg(testPPSStatusBPacket)
 		if err != nil {
 			t.Fatalf("ParseBinMsg() error = %v", err)
 		}
 
 		// Expected header values - should match ASCII header
-		expectedHeader := MessageHeader{
+		expectedHeader := MsgHdr{
 			CPUIdlePercent: 93,
-			TimingHeader: TimingHeader{
+			TimingHdr: TimingHdr{
 				TimeRef:            0,
 				TimeStatus:         TimeStatusFine,
 				Week:               2376,
@@ -78,8 +78,8 @@ func TestBinHeader(t *testing.T) {
 			},
 		}
 
-		if msgHeader != expectedHeader {
-			t.Errorf("Header mismatch:\nGot:      %+v\nExpected: %+v", msgHeader, expectedHeader)
+		if msg.Hdr != expectedHeader {
+			t.Errorf("Header mismatch:\nGot:      %+v\nExpected: %+v", msg.Hdr, expectedHeader)
 		}
 	})
 }
@@ -87,17 +87,20 @@ func TestBinHeader(t *testing.T) {
 func TestUnknownBinaryMessage(t *testing.T) {
 	t.Run("SerializeUnknownAsciiMessageFails", func(t *testing.T) {
 		// Create an unknown ASCII message (has no numeric ID)
-		unknownMsg := &UnknownAsciiMsg{
+		unknownMsg := &UnknownAsciiMsgBody{
 			Name:    "TESTMSGA",
 			Payload: "data1,data2,data3",
 		}
 		
-		header := MessageHeader{
-			CPUIdlePercent: 85,
+		msg := &Msg{
+			Hdr: MsgHdr{
+				CPUIdlePercent: 85,
+			},
+			Body: unknownMsg,
 		}
 		
 		// Try to serialize as binary - should fail
-		_, err := SerializeBinMsg(header, unknownMsg)
+		_, err := SerializeBinMsg(msg)
 		if err == nil {
 			t.Fatal("SerializeBinMsg() should have failed for UnknownAsciiMsg")
 		}

@@ -10,15 +10,15 @@ const testPPSStatusAsciiMessage = "#PPSSTATUSA,93,GPS,FINE,2376,540337000,0,0,18
 func TestAsciiHeader(t *testing.T) {
 	t.Run("PPSSTATUSA", func(t *testing.T) {
 		// Parse the ASCII PPSSTATUS message to test header parsing
-		msgHeader, _, err := ParseAsciiMessage([]byte(testPPSStatusAsciiMessage))
+		msg, err := ParseAsciiMessage([]byte(testPPSStatusAsciiMessage))
 		if err != nil {
 			t.Fatalf("ParseAsciiMessage() error = %v", err)
 		}
 
 		// Expected header values based on ASCII packet
-		expectedHeader := MessageHeader{
+		expectedHeader := MsgHdr{
 			CPUIdlePercent: 93,
-			TimingHeader: TimingHeader{
+			TimingHdr: TimingHdr{
 				TimeRef:            0,
 				TimeStatus:         TimeStatusFine,
 				Week:               2376,
@@ -30,8 +30,8 @@ func TestAsciiHeader(t *testing.T) {
 			},
 		}
 
-		if msgHeader != expectedHeader {
-			t.Errorf("Header mismatch:\nGot:      %+v\nExpected: %+v", msgHeader, expectedHeader)
+		if msg.Hdr != expectedHeader {
+			t.Errorf("Header mismatch:\nGot:      %+v\nExpected: %+v", msg.Hdr, expectedHeader)
 		}
 	})
 }
@@ -122,15 +122,15 @@ func TestUnknownAsciiMessage(t *testing.T) {
 		// Test parsing an unknown ASCII message
 		unknownMsg := "#UNKNOWNMSGA,93,GPS,FINE,2376,540337000,0,0,18,29;field1,field2,field3*12345678\r\n"
 		
-		msgHeader, msg, err := ParseAsciiMessage([]byte(unknownMsg))
+		msg, err := ParseAsciiMessage([]byte(unknownMsg))
 		if err != nil {
 			t.Fatalf("ParseAsciiMessage() error = %v", err)
 		}
 		
-		// Check that we got an UnknownAsciiMsg
-		unknownAscii, ok := msg.(*UnknownAsciiMsg)
+		// Check that we got an UnknownAsciiMsgBody
+		unknownAscii, ok := msg.Body.(*UnknownAsciiMsgBody)
 		if !ok {
-			t.Fatalf("Expected UnknownAsciiMsg, got %T", msg)
+			t.Fatalf("Expected UnknownAsciiMsgBody, got %T", msg.Body)
 		}
 		
 		// Check the message name
@@ -154,33 +154,36 @@ func TestUnknownAsciiMessage(t *testing.T) {
 		}
 		
 		// Check header is still parsed correctly
-		if msgHeader.CPUIdlePercent != 93 {
-			t.Errorf("Header CPUIdlePercent = %d, want 93", msgHeader.CPUIdlePercent)
+		if msg.Hdr.CPUIdlePercent != 93 {
+			t.Errorf("Header CPUIdlePercent = %d, want 93", msg.Hdr.CPUIdlePercent)
 		}
 	})
 	
 	t.Run("SerializeUnknownMessage", func(t *testing.T) {
 		// Create an unknown ASCII message
-		unknownMsg := &UnknownAsciiMsg{
+		unknownMsg := &UnknownAsciiMsgBody{
 			Name:    "TESTMSGA",
 			Payload: "data1,data2,data3",
 		}
 		
-		header := MessageHeader{
-			CPUIdlePercent: 85,
-			TimingHeader: TimingHeader{
+		msg := &Msg{
+			Hdr: MsgHdr{
+				CPUIdlePercent: 85,
+				TimingHdr: TimingHdr{
 				TimeRef:            TimeRefGPS,
 				TimeStatus:         TimeStatusFine,
 				Week:               2400,
 				MillisecondsOfWeek: 123456789,
-				Version:            1,
-				LeapSec:            18,
-				DelayMs:            42,
+					Version:            1,
+					LeapSec:            18,
+					DelayMs:            42,
+				},
 			},
+			Body: unknownMsg,
 		}
 		
 		// Serialize the message
-		packet, err := SerializeAsciiMsg(header, unknownMsg)
+		packet, err := SerializeAsciiMsg(msg)
 		if err != nil {
 			t.Fatalf("SerializeAsciiMsg() error = %v", err)
 		}
@@ -195,14 +198,14 @@ func TestUnknownAsciiMessage(t *testing.T) {
 		}
 		
 		// Parse it back and verify round-trip
-		msgHeader2, msg2, err := ParseAsciiMessage(packet)
+		msg2, err := ParseAsciiMessage(packet)
 		if err != nil {
 			t.Fatalf("ParseAsciiMessage() round-trip error = %v", err)
 		}
 		
-		unknownAscii2, ok := msg2.(*UnknownAsciiMsg)
+		unknownAscii2, ok := msg2.Body.(*UnknownAsciiMsgBody)
 		if !ok {
-			t.Fatalf("Round-trip: Expected UnknownAsciiMsg, got %T", msg2)
+			t.Fatalf("Round-trip: Expected UnknownAsciiMsgBody, got %T", msg2.Body)
 		}
 		
 		if unknownAscii2.Name != unknownMsg.Name {
@@ -211,24 +214,27 @@ func TestUnknownAsciiMessage(t *testing.T) {
 		if unknownAscii2.Payload != unknownMsg.Payload {
 			t.Errorf("Round-trip: Payload = %q, want %q", unknownAscii2.Payload, unknownMsg.Payload)
 		}
-		if msgHeader2.CPUIdlePercent != header.CPUIdlePercent {
-			t.Errorf("Round-trip: CPUIdlePercent = %d, want %d", msgHeader2.CPUIdlePercent, header.CPUIdlePercent)
+		if msg2.Hdr.CPUIdlePercent != msg.Hdr.CPUIdlePercent {
+			t.Errorf("Round-trip: CPUIdlePercent = %d, want %d", msg2.Hdr.CPUIdlePercent, msg.Hdr.CPUIdlePercent)
 		}
 	})
 	
 	t.Run("SerializeUnknownBinaryMessageFails", func(t *testing.T) {
 		// Create an unknown binary message (has no name)
-		unknownMsg := &UnknownBinMsg{
+		unknownMsg := &UnknownBinMsgBody{
 			MsgID:   12345,
 			Payload: []byte{1, 2, 3, 4},
 		}
 		
-		header := MessageHeader{
-			CPUIdlePercent: 85,
+		msg := &Msg{
+			Hdr: MsgHdr{
+				CPUIdlePercent: 85,
+			},
+			Body: unknownMsg,
 		}
 		
 		// Try to serialize as ASCII - should fail
-		_, err := SerializeAsciiMsg(header, unknownMsg)
+		_, err := SerializeAsciiMsg(msg)
 		if err == nil {
 			t.Fatal("SerializeAsciiMsg() should have failed for UnknownBinMsg")
 		}

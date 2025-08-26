@@ -10,7 +10,7 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-func timeTime(header novmsg.MessageHeader, m *novmsg.Time, tag gpsprot.Tag) (*gpsprot.TimeMsg, error) {
+func timeMsgFromTime(hdr *novmsg.MsgHdr, m *novmsg.Time, tag gpsprot.Tag) (*gpsprot.TimeMsg, error) {
 	if m.ClockStatus != novmsg.ClockStatusValid {
 		return nil, nil
 	}
@@ -18,11 +18,10 @@ func timeTime(header novmsg.MessageHeader, m *novmsg.Time, tag gpsprot.Tag) (*gp
 		Tag:         tag,
 		NativeMsgID: "TIME",
 	}
-	// NovAtel always uses GPS week numbers
-	t.GNSS = gpsprot.GPS
-	if header.TimeStatus != novmsg.TimeStatusUnknown {
-		tow := time.Duration(header.MillisecondsOfWeek) * time.Millisecond
-		t.TAITime = ptime.GPS(int16(header.Week), tow)
+	// leave t.GNSS zero; we don't know what the reference GNSS is
+	if hdr.TimeStatus != novmsg.TimeStatusUnknown {
+		tow := time.Duration(hdr.MillisecondsOfWeek) * time.Millisecond
+		t.TAITime = ptime.GPS(int16(hdr.Week), tow)
 	}
 	return TimeMsgSetUTC(&t, m)
 }

@@ -73,12 +73,16 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 			return cp.cfg.nmeaSentence(mt, tRead)
 		}
 
-	case *uncmsg.Mode:
-		if cp.cfg != nil {
-			return cp.cfg.modeResponse(mt, tRead)
+	case *uncmsg.Msg:
+		// Extract the message body and handle based on its type
+		switch body := mt.Body.(type) {
+		case *uncmsg.Mode:
+			if cp.cfg != nil {
+				return cp.cfg.modeResponse(body, tRead)
+			}
+		case *uncmsg.Version:
+			cp.ver = body
 		}
-	case *uncmsg.Version:
-		cp.ver = mt
 	}
 	return nil
 }

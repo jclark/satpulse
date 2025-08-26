@@ -9,86 +9,86 @@ import (
 	"github.com/jclark/satpulse/internal/novmsg"
 )
 
-// AsciiHeader represents the header fields from a Unicore ASCII message
+// AsciiHdr represents the header fields from a Unicore ASCII message
 // Fields are processed by fieldenc in struct field order
-type AsciiHeader struct {
-	MessageName  string // Message name (e.g., "PPSSTATUSA")
-	CPUIdle      byte   // CPU idle percentage
-	TimingHeader        // Embedded timing fields
+type AsciiHdr struct {
+	MessageName string // Message name (e.g., "PPSSTATUSA")
+	CPUIdle     byte   // CPU idle percentage
+	TimingHdr          // Embedded timing fields
 }
 
-// UnknownAsciiMsg represents an unrecognized ASCII message
-type UnknownAsciiMsg struct {
+// UnknownAsciiMsgBody represents an unrecognized ASCII message
+type UnknownAsciiMsgBody struct {
 	Name    string
 	Payload string
 }
 
-func (m *UnknownAsciiMsg) ID() (MsgID, string) { return 0, m.Name }
+func (m *UnknownAsciiMsgBody) ID() (MsgID, string) { return 0, m.Name }
 
 // ParseAsciiMessage parses a Unicore ASCII message from bytes.
 // It assumes the packet format scanner has validated the packet structure
 // and checksums were already verified.
-func ParseAsciiMessage(packet []byte) (MessageHeader, Msg, error) {
+func ParseAsciiMessage(packet []byte) (*Msg, error) {
 	asciiMsg := string(packet)
 
 	// Remove # prefix and \r\n suffix
 	asciiMsg = asciiMsg[1 : len(asciiMsg)-2]
 
 	// Split header from rest at first semicolon
-	headerPart, rest, _ := strings.Cut(asciiMsg, ";")
+	hdrPart, rest, _ := strings.Cut(asciiMsg, ";")
 
 	// Extract data part (everything between semicolon and checksum)
 	// Packet must have checksum (ends with '*' + hex digits)
 	dataPart, _, _ := strings.Cut(rest, "*")
 
 	// Parse header fields
-	headerFields := strings.Split(headerPart, ",")
+	hdrFields := strings.Split(hdrPart, ",")
 
 	// Parse header using fieldenc
-	var asciiHeader AsciiHeader
-	err := fieldenc.Decode(headerFields, &asciiHeader)
+	var asciiHdr AsciiHdr
+	err := fieldenc.Decode(hdrFields, &asciiHdr)
 	if err != nil {
-		return MessageHeader{}, nil, fmt.Errorf("parsing header: %v", err)
+		return nil, fmt.Errorf("parsing header: %v", err)
 	}
 
-	// Convert to MessageHeader
-	msgHeader := MessageHeader{
-		CPUIdlePercent: asciiHeader.CPUIdle,
-		TimingHeader:   asciiHeader.TimingHeader,
+	// Convert to MsgHdr
+	msgHdr := MsgHdr{
+		CPUIdlePercent: asciiHdr.CPUIdle,
+		TimingHdr:      asciiHdr.TimingHdr,
 	}
 
 	// Look up message constructor by name
-	ctor := msgNameMap[asciiHeader.MessageName]
+	ctor := msgNameMap[asciiHdr.MessageName]
 	if ctor == nil {
 		// Unknown message - preserve the name and payload
-		return msgHeader, &UnknownAsciiMsg{Name: asciiHeader.MessageName, Payload: dataPart}, nil
+		return &Msg{Hdr: msgHdr, Body: &UnknownAsciiMsgBody{Name: asciiHdr.MessageName, Payload: dataPart}}, nil
 	}
 
 	// Create message instance before parsing data fields
-	msg := ctor()
+	msgBody := ctor()
 
 	// Parse data fields using adaptive splitting
 	var expectedFieldCount int
-	if quotedMsg, isQuoted := msg.(QuotedAsciiMsg); isQuoted {
+	if quotedMsg, isQuoted := msgBody.(QuotedAsciiMsgBody); isQuoted {
 		expectedFieldCount = quotedMsg.QuotedFieldCount()
 	} else {
 		expectedFieldCount = 0 // No quoting expected
 	}
 	dataFields := splitDataFields(dataPart, expectedFieldCount)
 
-	err = novmsg.DecodeAsciiChunked(dataFields, msg, asciiHeader.MessageName)
+	err = novmsg.DecodeAsciiChunked(dataFields, msgBody, asciiHdr.MessageName)
 	if err != nil {
-		return MessageHeader{}, nil, err
+		return nil, err
 	}
 
-	return msgHeader, msg, nil
+	return &Msg{Hdr: msgHdr, Body: msgBody}, nil
 }
 
-// QuotedAsciiMsg is a marker interface for messages that use CSV-like
+// QuotedAsciiMsgBody is a marker interface for messages that use CSV-like
 // quoted fields in their ASCII representation. Fields may contain commas
 // and other special characters when quoted.
-type QuotedAsciiMsg interface {
-	Msg
+type QuotedAsciiMsgBody interface {
+	MsgBody
 	quotedAscii()          // unexported marker method
 	QuotedFieldCount() int // expected number of fields when quoted
 }
@@ -151,9 +151,9 @@ func splitDataFields(dataPart string, expectedFieldCount int) []string {
 }
 
 // SerializeAsciiMsg serializes a Unicore message with header into ASCII format
-func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
+func SerializeAsciiMsg(msg *Msg) ([]byte, error) {
 	// Get message ID and name
-	_, msgName := msg.ID()
+	_, msgName := msg.Body.ID()
 	if msgName == "" {
 		return nil, fmt.Errorf("unknown binary message cannot be serialized as ASCII")
 	}
@@ -162,34 +162,34 @@ func SerializeAsciiMsg(header MessageHeader, msg Msg) ([]byte, error) {
 	asciiMsgName := msgName
 
 	// Serialize header using fieldenc
-	asciiHeader := AsciiHeader{
-		MessageName:  asciiMsgName,
-		CPUIdle:      header.CPUIdlePercent,
-		TimingHeader: header.TimingHeader,
+	asciiHdr := AsciiHdr{
+		MessageName: asciiMsgName,
+		CPUIdle:     msg.Hdr.CPUIdlePercent,
+		TimingHdr:   msg.Hdr.TimingHdr,
 	}
-	headerFields, err := fieldenc.Encode(asciiHeader)
+	hdrFields, err := fieldenc.Encode(asciiHdr)
 	if err != nil {
 		return nil, fmt.Errorf("encoding header: %v", err)
 	}
 
 	// Build the data part for checksum (excludes leading '#')
 	var dataBuilder strings.Builder
-	dataBuilder.WriteString(strings.Join(headerFields, ","))
+	dataBuilder.WriteString(strings.Join(hdrFields, ","))
 	dataBuilder.WriteByte(';')
 	// Serialize message data
-	if uMsg, ok := msg.(*UnknownAsciiMsg); ok {
+	if uMsg, ok := msg.Body.(*UnknownAsciiMsgBody); ok {
 		// For unknown messages, use the raw payload
 		if uMsg.Payload != "" {
 			dataBuilder.WriteString(uMsg.Payload)
 		}
 	} else {
-		dataFields, err := novmsg.EncodeAsciiChunked(msg, asciiMsgName)
+		dataFields, err := novmsg.EncodeAsciiChunked(msg.Body, asciiMsgName)
 		if err != nil {
 			return nil, err
 		}
 		if len(dataFields) > 0 {
 			// Check if this message uses quoted fields
-			if _, isQuoted := msg.(QuotedAsciiMsg); isQuoted {
+			if _, isQuoted := msg.Body.(QuotedAsciiMsgBody); isQuoted {
 				// Add quotes around each field
 				quotedFields := make([]string, len(dataFields))
 				for i, field := range dataFields {

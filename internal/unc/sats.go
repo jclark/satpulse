@@ -7,8 +7,8 @@ import (
 	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
-// satellitesSatsInfo converts a Unicore SATSINFO message to a gpsprot.SatellitesMsg
-func satellitesSatsInfo(_ uncmsg.MessageHeader, satsInfo *uncmsg.SatsInfo, tag gpsprot.Tag) (*gpsprot.SatellitesMsg, error) {
+// satellitesMsgFromSatsInfo converts a Unicore SATSINFO message to a gpsprot.SatellitesMsg
+func satellitesMsgFromSatsInfo(_ *uncmsg.MsgHdr, satsInfo *uncmsg.SatsInfo, tag gpsprot.Tag) (*gpsprot.SatellitesMsg, error) {
 	svs := make([]gpsprot.SVInfo, 0, len(satsInfo.Sats))
 	for _, sat := range satsInfo.Sats {
 		// SATSINFO guarantees that every satellite has at least one frequency.
@@ -78,7 +78,7 @@ func prnToNum(gnss gpsprot.GNSS, prn byte) (byte, bool) {
 		// SBAS: PRN 120-158 → SVID = PRN - 100
 		num -= 100
 	case gpsprot.QZSS:
-		// QZSS: PRN 193-202 → SVID = PRN - 192 
+		// QZSS: PRN 193-202 → SVID = PRN - 192
 		num -= 192
 	}
 	if gnss.IsValidSVNum(num) {
@@ -129,8 +129,8 @@ var freqMap = map[freqKey]gpsprot.SignalID{
 	{gpsprot.GPS, uncmsg.FreqGPSL2CL}: gpsprot.SigIDGPSL2CL,
 
 	// GLONASS signals
-	{gpsprot.GLO, uncmsg.FreqGLOL1CA}: gpsprot.SigIDGLOL1, // L1 C/A maps to L1
-	{gpsprot.GLO, uncmsg.FreqGLOL2CA}: gpsprot.SigIDGLOL2, // L2 C/A maps to L2
+	{gpsprot.GLO, uncmsg.FreqGLOL1CA}: gpsprot.SigIDGLOL1,  // L1 C/A maps to L1
+	{gpsprot.GLO, uncmsg.FreqGLOL2CA}: gpsprot.SigIDGLOL2,  // L2 C/A maps to L2
 	{gpsprot.GLO, uncmsg.FreqGLOG3I}:  gpsprot.SigIDGLOL3I, // G3 more properly known as L1
 	{gpsprot.GLO, uncmsg.FreqGLOG3Q}:  gpsprot.SigIDGLOL3Q,
 

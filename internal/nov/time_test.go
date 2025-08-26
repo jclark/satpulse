@@ -2,9 +2,12 @@ package nov
 
 import (
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/novmsg"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -93,5 +96,66 @@ func TestConvertUTCOffset(t *testing.T) {
 			t.Errorf("convertUTCOffset(%f) = %d, want %d (intermediate: %f)", 
 				tt.input, result, tt.expected, floatOff)
 		}
+	}
+}
+
+func TestTimeMsgFromTime(t *testing.T) {
+	tests := []struct {
+		name      string
+		packet    string
+		expect    *gpsprot.TimeMsg
+		expectErr bool
+	}{
+		{
+			name: "valid TIMEA packet",
+			packet: "#TIMEA,COM3,17548,97.0,FINE,2381,207960.000,117601205,13,18;VALID,3.107194079e-04,1.298132705e-08,-18.00000000000,2025,8,26,9,45,42000,VALID*14216034\r\n",
+			expect: &gpsprot.TimeMsg{
+				Tag:         TagAscii,
+				NativeMsgID: "TIME",
+				GNSS:        0, // NovAtel doesn't specify reference GNSS
+				TAITime:     ptime.GPS(2381, 207960*time.Second),
+				UTCTime: func() *ptime.UTCTime {
+					utc := ptime.UTC(2025, 8, 26, 9, 45, 42, 0)
+					return &utc
+				}(),
+				UTCOffset: 37, // TAI-UTC = 19 - (-18) = 37
+				Accuracy:  13 * time.Nanosecond, // 1.298132705e-08 seconds rounded up
+			},
+			expectErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := novmsg.ParseAsciiMessage([]byte(tt.packet))
+			if err != nil {
+				t.Fatalf("Failed to parse ASCII packet: %v", err)
+			}
+
+			timeMsg, ok := msg.Body.(*novmsg.Time)
+			if !ok {
+				t.Fatalf("Parsed message is not Time, got %T", msg.Body)
+			}
+
+			got, err := timeMsgFromTime(&msg.Hdr, timeMsg, TagAscii)
+			
+			if tt.expectErr {
+				if err == nil {
+					t.Errorf("Expected error, but got nil")
+				}
+				return
+			}
+			
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if !reflect.DeepEqual(got, tt.expect) {
+				t.Errorf("timeMsgFromTime() result mismatch")
+				t.Errorf("Got:      %+v", got)
+				t.Errorf("Expected: %+v", tt.expect)
+			}
+		})
 	}
 }

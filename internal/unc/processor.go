@@ -56,20 +56,20 @@ func (p *packetProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 
 // processPacket is the common packet processing logic for both binary and ASCII packets
 func (p *packetProcessor) processPacket(bytes []byte, tRead time.Time, tag gpsprot.Tag, msgID string,
-	parser func([]byte) (uncmsg.MessageHeader, uncmsg.Msg, error)) error {
-	header, msg, err := parser(bytes)
+	parser func([]byte) (*uncmsg.Msg, error)) error {
+	msg, err := parser(bytes)
 	if err != nil {
 		return err
-	}	
+	}
 	if p.mh != nil {
-		handled, err := p.dispatch(header, msg, tRead, tag)
+		handled, err := p.dispatch(msg, tRead, tag)
 		if err != nil {
 			return err
 		}
 		if handled {
 			return nil
 		}
-	}	
+	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
 		return nmh.NativeMsg(tag, msgID, msg, tRead)
@@ -79,10 +79,10 @@ func (p *packetProcessor) processPacket(bytes []byte, tRead time.Time, tag gpspr
 
 // dispatch attempts to convert and dispatch a message as a protocol-agnostic message
 // Returns (handled, error) where handled indicates if the message was processed
-func (p *packetProcessor) dispatch(header uncmsg.MessageHeader, msg uncmsg.Msg, tRead time.Time, tag gpsprot.Tag) (bool, error) {
-	switch m := msg.(type) {
+func (p *packetProcessor) dispatch(msg *uncmsg.Msg, tRead time.Time, tag gpsprot.Tag) (bool, error) {
+	switch body := msg.Body.(type) {
 	case *uncmsg.RecTime:
-		tm, err := timeRecTime(header, m, tag)
+		tm, err := timeMsgFromRecTime(&msg.Hdr, body, tag)
 		if err != nil {
 			return false, err
 		}
@@ -91,7 +91,7 @@ func (p *packetProcessor) dispatch(header uncmsg.MessageHeader, msg uncmsg.Msg, 
 			return true, nil
 		}
 	case *uncmsg.SatsInfo:
-		sm, err := satellitesSatsInfo(header, m, tag)
+		sm, err := satellitesMsgFromSatsInfo(&msg.Hdr, body, tag)
 		if err != nil {
 			return false, err
 		}
@@ -99,13 +99,12 @@ func (p *packetProcessor) dispatch(header uncmsg.MessageHeader, msg uncmsg.Msg, 
 			p.mh.Satellites(sm, tRead)
 			return true, nil
 		}
-	// TODO: Add other message type conversions here
-	// case *uncmsg.GPSUTC:
-	// case *uncmsg.GALUTC:
-	// case *uncmsg.BD3UTC:
-	// case *uncmsg.BDSUTC:
+		// TODO: Add other message type conversions here
+		// case *uncmsg.GPSUTC:
+		// case *uncmsg.GALUTC:
+		// case *uncmsg.BD3UTC:
+		// case *uncmsg.BDSUTC:
 	}
-	
+
 	return false, nil
 }
-

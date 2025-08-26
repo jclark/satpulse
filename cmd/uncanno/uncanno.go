@@ -50,8 +50,7 @@ func processLine(line []byte) ([]byte, error) {
 		return line, nil
 	}
 
-	var header uncmsg.MessageHeader
-	var payload interface{}
+	var msg *uncmsg.Msg
 	var err error
 
 	switch entry.Tag {
@@ -59,12 +58,12 @@ func processLine(line []byte) ([]byte, error) {
 		if entry.Ascii == "" {
 			return line, nil
 		}
-		header, payload, err = uncmsg.ParseAsciiMessage([]byte(entry.Ascii))
+		msg, err = uncmsg.ParseAsciiMessage([]byte(entry.Ascii))
 	case unc.TagBinary:
 		if len(entry.Bin) == 0 {
 			return line, nil
 		}
-		header, payload, err = uncmsg.ParseBinMsg(entry.Bin)
+		msg, err = uncmsg.ParseBinMsg(entry.Bin)
 	}
 
 	if err != nil {
@@ -72,22 +71,22 @@ func processLine(line []byte) ([]byte, error) {
 	}
 
 	// Don't add fields for unknown message types
-	switch payload.(type) {
-	case *uncmsg.UnknownBinMsg, *uncmsg.UnknownAsciiMsg:
+	switch msg.Body.(type) {
+	case *uncmsg.UnknownBinMsgBody, *uncmsg.UnknownAsciiMsgBody:
 		return line, nil
 	}
 
 	// Insert header and payload fields into the JSON
-	return insertFields(line, &header, payload)
+	return insertFields(line, msg)
 }
 
-func insertFields(line []byte, header *uncmsg.MessageHeader, payload interface{}) ([]byte, error) {
+func insertFields(line []byte, msg *uncmsg.Msg) ([]byte, error) {
 	// Marshal header and payload
-	headerJSON, err := json.Marshal(header)
+	headerJSON, err := json.Marshal(&msg.Hdr)
 	if err != nil {
 		return nil, err
 	}
-	payloadJSON, err := json.Marshal(payload)
+	payloadJSON, err := json.Marshal(msg.Body)
 	if err != nil {
 		return nil, err
 	}

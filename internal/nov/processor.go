@@ -56,20 +56,20 @@ func (p *packetProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 
 // processPacket is the common packet processing logic for both binary and ASCII packets
 func (p *packetProcessor) processPacket(bytes []byte, tRead time.Time, tag gpsprot.Tag, msgID string,
-	parser func([]byte) (novmsg.MessageHeader, novmsg.Msg, error)) error {
-	header, msg, err := parser(bytes)
+	parser func([]byte) (*novmsg.Msg, error)) error {
+	msg, err := parser(bytes)
 	if err != nil {
 		return err
-	}	
+	}
 	if p.mh != nil {
-		handled, err := p.dispatch(header, msg, tRead, tag)
+		handled, err := p.dispatch(&msg.Hdr, msg.Body, tRead, tag)
 		if err != nil {
 			return err
 		}
 		if handled {
 			return nil
 		}
-	}	
+	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
 		return nmh.NativeMsg(tag, msgID, msg, tRead)
@@ -79,10 +79,10 @@ func (p *packetProcessor) processPacket(bytes []byte, tRead time.Time, tag gpspr
 
 // dispatch attempts to convert and dispatch a message as a protocol-agnostic message
 // Returns (handled, error) where handled indicates if the message was processed
-func (p *packetProcessor) dispatch(header novmsg.MessageHeader, msg novmsg.Msg, tRead time.Time, tag gpsprot.Tag) (bool, error) {
-	switch m := msg.(type) {
+func (p *packetProcessor) dispatch(hdr *novmsg.MsgHdr, body novmsg.MsgBody, tRead time.Time, tag gpsprot.Tag) (bool, error) {
+	switch m := body.(type) {
 	case *novmsg.Time:
-		tm, err := timeTime(header, m, tag)
+		tm, err := timeMsgFromTime(hdr, m, tag)
 		if err != nil {
 			return false, err
 		}
@@ -90,10 +90,10 @@ func (p *packetProcessor) dispatch(header novmsg.MessageHeader, msg novmsg.Msg, 
 			p.mh.Time(tm, tRead)
 			return true, nil
 		}
-	// TODO: Add other message type conversions here
-	// case *novmsg.BestPos:
-	// case *novmsg.Heading:
+		// TODO: Add other message type conversions here
+		// case *novmsg.BestPos:
+		// case *novmsg.Heading:
 	}
-	
+
 	return false, nil
 }

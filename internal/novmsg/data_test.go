@@ -14,17 +14,17 @@ type dataTestCase struct {
 	name   string
 	ascii  string
 	hex    string
-	hdr    MessageHeader
-	value  Msg
+	hdr    MsgHdr
+	value  MsgBody
 	// fixupValueForBin transforms value from ASCII message into value expected by binary format
 	// This is used for VERSIONA/VERSIONB inconsistency:
 	// VERSIONB has just build number; VERSIONA has additional info
-	fixupValueForBin func(Msg) Msg // Transform ASCII baseline to binary format
+	fixupValueForBin func(MsgBody) MsgBody // Transform ASCII baseline to binary format
 	// fixupValueForAscii transforms value from binary message into value expected by ASCII format
 	// This is used to handle floating point differences, where ASCII has limited precision.
-	fixupValueForAscii func(Msg) Msg // Transform binary baseline to ASCII format
+	fixupValueForAscii func(MsgBody) MsgBody // Transform binary baseline to ASCII format
 	// fixupHeaderForAscii transforms header from binary baseline to ASCII format
-	fixupHeaderForAscii func(MessageHeader) MessageHeader
+	fixupHeaderForAscii func(MsgHdr) MsgHdr
 }
 
 func testDataBin(t *testing.T, tests []dataTestCase) {
@@ -48,7 +48,7 @@ func testDataBin(t *testing.T, tests []dataTestCase) {
 			}
 
 			// Test parsing binary packet
-			header, msg, err := ParseBinMsg(binPacket)
+			msg, err := ParseBinMsg(binPacket)
 			if err != nil {
 				t.Fatalf("ParseBinMsg() error = %v", err)
 			}
@@ -56,8 +56,8 @@ func testDataBin(t *testing.T, tests []dataTestCase) {
 			// Use the baseline header directly for binary comparison (binary is canonical)
 			expectedHeader := tt.hdr
 
-			if !reflect.DeepEqual(header, expectedHeader) {
-				t.Errorf("ParseBinMsg() header mismatch:\nGot:  %+v\nWant: %+v", header, expectedHeader)
+			if !reflect.DeepEqual(msg.Hdr, expectedHeader) {
+				t.Errorf("ParseBinMsg() header mismatch:\nGot:  %+v\nWant: %+v", msg.Hdr, expectedHeader)
 			}
 
 			// Apply fixup for binary comparison if needed
@@ -66,12 +66,13 @@ func testDataBin(t *testing.T, tests []dataTestCase) {
 				expectedValue = tt.fixupValueForBin(tt.value)
 			}
 
-			if !reflect.DeepEqual(msg, expectedValue) {
-				t.Errorf("ParseBinMsg() mismatch:\nGot:  %+v\nWant: %+v", msg, expectedValue)
+			if !reflect.DeepEqual(msg.Body, expectedValue) {
+				t.Errorf("ParseBinMsg() mismatch:\nGot:  %+v\nWant: %+v", msg.Body, expectedValue)
 			}
 
 			// Test round-trip: value -> serialize -> compare bytes directly
-			serialized, err := SerializeBinMsg(expectedHeader, expectedValue)
+			testMsg := &Msg{Hdr: expectedHeader, Body: expectedValue}
+			serialized, err := SerializeBinMsg(testMsg)
 			if err != nil {
 				t.Fatalf("SerializeBinMsg() error = %v", err)
 			}
@@ -88,7 +89,7 @@ func testDataAscii(t *testing.T, tests []dataTestCase) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test parsing ASCII packet
-			header, msg, err := ParseAsciiMessage([]byte(tt.ascii))
+			msg, err := ParseAsciiMessage([]byte(tt.ascii))
 			if err != nil {
 				t.Fatalf("ParseAsciiMessage() error = %v", err)
 			}
@@ -99,8 +100,8 @@ func testDataAscii(t *testing.T, tests []dataTestCase) {
 				expectedHeader = tt.fixupHeaderForAscii(tt.hdr)
 			}
 
-			if !reflect.DeepEqual(header, expectedHeader) {
-				t.Errorf("ParseAsciiMessage() header mismatch:\nGot:  %+v\nWant: %+v", header, expectedHeader)
+			if !reflect.DeepEqual(msg.Hdr, expectedHeader) {
+				t.Errorf("ParseAsciiMessage() header mismatch:\nGot:  %+v\nWant: %+v", msg.Hdr, expectedHeader)
 			}
 
 			// Apply fixup for ASCII comparison if needed
@@ -109,27 +110,28 @@ func testDataAscii(t *testing.T, tests []dataTestCase) {
 				expectedValue = tt.fixupValueForAscii(tt.value)
 			}
 
-			if !reflect.DeepEqual(msg, expectedValue) {
-				t.Errorf("ParseAsciiMessage() mismatch:\nGot:  %+v\nWant: %+v", msg, expectedValue)
+			if !reflect.DeepEqual(msg.Body, expectedValue) {
+				t.Errorf("ParseAsciiMessage() mismatch:\nGot:  %+v\nWant: %+v", msg.Body, expectedValue)
 			}
 
 			// Test round-trip: value -> serialize -> parse using expectedValue for both directions
-			serialized, err := SerializeAsciiMsg(expectedHeader, expectedValue)
+			testMsg := &Msg{Hdr: expectedHeader, Body: expectedValue}
+			serialized, err := SerializeAsciiMsg(testMsg)
 			if err != nil {
 				t.Fatalf("SerializeAsciiMsg() error = %v", err)
 			}
 
-			header2, msg2, err := ParseAsciiMessage(serialized)
+			msg2, err := ParseAsciiMessage(serialized)
 			if err != nil {
 				t.Fatalf("ParseAsciiMessage() on serialized packet error = %v", err)
 			}
 
-			if !reflect.DeepEqual(header2, expectedHeader) {
-				t.Errorf("ParseAsciiMessage() on serialized header mismatch:\nGot:  %+v\nWant: %+v", header2, expectedHeader)
+			if !reflect.DeepEqual(msg2.Hdr, expectedHeader) {
+				t.Errorf("ParseAsciiMessage() on serialized header mismatch:\nGot:  %+v\nWant: %+v", msg2.Hdr, expectedHeader)
 			}
 
-			if !reflect.DeepEqual(msg2, expectedValue) {
-				t.Errorf("ParseAsciiMessage() on serialized mismatch:\nGot:  %+v\nWant: %+v", msg2, expectedValue)
+			if !reflect.DeepEqual(msg2.Body, expectedValue) {
+				t.Errorf("ParseAsciiMessage() on serialized mismatch:\nGot:  %+v\nWant: %+v", msg2.Body, expectedValue)
 			}
 		})
 	}

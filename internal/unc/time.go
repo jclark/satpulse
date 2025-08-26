@@ -10,22 +10,22 @@ import (
 	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
-func timeRecTime(header uncmsg.MessageHeader, m *uncmsg.RecTime, tag gpsprot.Tag) (*gpsprot.TimeMsg, error) {
-	if m.ClockStatus != novmsg.ClockStatusValid {
+func timeMsgFromRecTime(hdr *uncmsg.MsgHdr, recTime *uncmsg.RecTime, tag gpsprot.Tag) (*gpsprot.TimeMsg, error) {
+	if recTime.ClockStatus != novmsg.ClockStatusValid {
 		return nil, nil
 	}
 	t := gpsprot.TimeMsg{
 		Tag:         tag,
 		NativeMsgID: "RECTIME",
 	}
-	gnss, toTAI := timeRefToTAI(header.TimeRef)
+	gnss, toTAI := timeRefToTAI(hdr.TimeRef)
 	t.GNSS = gnss
-	if toTAI != nil && header.TimeStatus == uncmsg.TimeStatusFine {
-		tow := time.Duration(header.MillisecondsOfWeek) * time.Millisecond
-		t.TAITime = toTAI(int16(header.Week), tow)
+	if toTAI != nil && hdr.TimeStatus == uncmsg.TimeStatusFine {
+		tow := time.Duration(hdr.MillisecondsOfWeek) * time.Millisecond
+		t.TAITime = toTAI(int16(hdr.Week), tow)
 	}
 
-	return nov.TimeMsgSetUTC(&t, &m.Time)
+	return nov.TimeMsgSetUTC(&t, &recTime.Time)
 }
 
 func timeRefToTAI(ref uncmsg.TimeRef) (gpsprot.GNSS, func(int16, time.Duration) ptime.Time) {

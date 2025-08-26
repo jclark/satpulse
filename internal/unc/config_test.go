@@ -13,6 +13,23 @@ import (
 	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
+// testResponse represents a typed response from the test receiver
+type testResponse struct {
+	nmea *nmea.Sentence
+	unc  *uncmsg.Msg
+}
+
+// processResponse processes a single typed response through NativeMsg
+func processResponse(cp *ConfigProtocol, resp testResponse, t0 time.Time) error {
+	if resp.nmea != nil {
+		return cp.NativeMsg("NMEA", "", resp.nmea, t0)
+	}
+	if resp.unc != nil {
+		return cp.NativeMsg("UNCA", "", resp.unc, t0)
+	}
+	return nil
+}
+
 // testReceiver simulates a Unicore receiver using nativeConfigProps
 type testReceiver struct {
 	nativeProps nativeConfigProps
@@ -63,12 +80,7 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 				responses := rcvr.generateResponses(string(pkt))
 				for _, resp := range responses {
 					t0 = t0.Add(5 * time.Millisecond)
-					switch r := resp.(type) {
-					case *nmea.Sentence:
-						err = cp.NativeMsg("NMEA", "", r, t0)
-					case *uncmsg.Mode:
-						err = cp.NativeMsg("UNCA", "", r, t0)
-					}
+					err = processResponse(cp, resp, t0)
 					if err != nil {
 						processErrors++
 					}
@@ -101,9 +113,9 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 				// Filter responses based on error injection
 				if shouldSkipResp {
 					// Keep only ACK, skip other responses
-					var ackOnly []interface{}
+					var ackOnly []testResponse
 					for _, resp := range responses {
-						if s, ok := resp.(*nmea.Sentence); ok && strings.Contains(s.Payload, "command,") {
+						if resp.nmea != nil && strings.Contains(resp.nmea.Payload, "command,") {
 							ackOnly = append(ackOnly, resp)
 							break
 						}
@@ -113,12 +125,7 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 
 				for _, resp := range responses {
 					t0 = t0.Add(5 * time.Millisecond)
-					switch r := resp.(type) {
-					case *nmea.Sentence:
-						err = cp.NativeMsg("NMEA", "", r, t0)
-					case *uncmsg.Mode:
-						err = cp.NativeMsg("UNCA", "", r, t0)
-					}
+					err = processResponse(cp, resp, t0)
 					if err != nil {
 						processErrors++
 					}
@@ -150,23 +157,25 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 	return cfg, processErrors, nil
 }
 
-func (r *testReceiver) generateResponses(cmd string) []interface{} {
+func (r *testReceiver) generateResponses(cmd string) []testResponse {
 	cmd = strings.TrimSuffix(cmd, "\r\n")
 
 	// Check for NAK - return error ACK
 	if r.nakQuery != nil && cmd == *r.nakQuery {
-		return []interface{}{
-			&nmea.Sentence{Payload: fmt.Sprintf("command,%s,response: error", cmd)},
+		return []testResponse{
+			{nmea: &nmea.Sentence{Payload: fmt.Sprintf("command,%s,response: error", cmd)}},
 		}
 	}
 
-	var responses []interface{}
+	var responses []testResponse
 
 	switch cmd {
 	case "CONFIG":
 		// First send ACK
-		responses = append(responses, &nmea.Sentence{
-			Payload: fmt.Sprintf("command,%s,response: OK", cmd),
+		responses = append(responses, testResponse{
+			nmea: &nmea.Sentence{
+				Payload: fmt.Sprintf("command,%s,response: OK", cmd),
+			},
 		})
 		// Then send CONFIG responses
 		// PPS response - use the stored command or default
@@ -174,8 +183,10 @@ func (r *testReceiver) generateResponses(cmd string) []interface{} {
 		if ppsCmd == "" {
 			ppsCmd = "CONFIG PPS DISABLE" // Default state
 		}
-		responses = append(responses, &nmea.Sentence{
-			Payload: fmt.Sprintf("CONFIG,PPS,%s", ppsCmd),
+		responses = append(responses, testResponse{
+			nmea: &nmea.Sentence{
+				Payload: fmt.Sprintf("CONFIG,PPS,%s", ppsCmd),
+			},
 		})
 
 		// SIGNALGROUP response - always send something
@@ -188,14 +199,18 @@ func (r *testReceiver) generateResponses(cmd string) []interface{} {
 				sgCmd = fmt.Sprintf("%s %d", sgCmd, r.nativeProps.signalGroup.slave.Get())
 			}
 		}
-		responses = append(responses, &nmea.Sentence{
-			Payload: fmt.Sprintf("CONFIG,SIGNALGROUP,%s", sgCmd),
+		responses = append(responses, testResponse{
+			nmea: &nmea.Sentence{
+				Payload: fmt.Sprintf("CONFIG,SIGNALGROUP,%s", sgCmd),
+			},
 		})
 
 	case "MASK":
 		// First send ACK
-		responses = append(responses, &nmea.Sentence{
-			Payload: fmt.Sprintf("command,%s,response: OK", cmd),
+		responses = append(responses, testResponse{
+			nmea: &nmea.Sentence{
+				Payload: fmt.Sprintf("command,%s,response: OK", cmd),
+			},
 		})
 		// Then send MASK responses - always send at least one
 		var maskCmd string
@@ -205,35 +220,47 @@ func (r *testReceiver) generateResponses(cmd string) []interface{} {
 		} else {
 			maskCmd = "10" // Default elevation mask
 		}
-		responses = append(responses, &nmea.Sentence{
-			Payload: fmt.Sprintf("CONFIG,MASK,MASK %s", maskCmd),
+		responses = append(responses, testResponse{
+			nmea: &nmea.Sentence{
+				Payload: fmt.Sprintf("CONFIG,MASK,MASK %s", maskCmd),
+			},
 		})
 
 		// Add signal masks if configured
 		if r.nativeProps.mask.signalMask != 0 {
-			responses = append(responses, &nmea.Sentence{
-				Payload: "CONFIG,MASK,MASK GPS",
+			responses = append(responses, testResponse{
+				nmea: &nmea.Sentence{
+					Payload: "CONFIG,MASK,MASK GPS",
+				},
 			})
 		}
 
 	case "MODE":
 		// First send ACK
-		responses = append(responses, &nmea.Sentence{
-			Payload: fmt.Sprintf("command,%s,response: OK", cmd),
+		responses = append(responses, testResponse{
+			nmea: &nmea.Sentence{
+				Payload: fmt.Sprintf("command,%s,response: OK", cmd),
+			},
 		})
 		// Then send MODE response - use stored mode command or default
 		modeCmd := r.nativeProps.mode.command
 		if modeCmd == "" {
 			modeCmd = "MODE ROVER" // Default mode
 		}
-		responses = append(responses, &uncmsg.Mode{
-			Mode: modeCmd,
+		responses = append(responses, testResponse{
+			unc: &uncmsg.Msg{
+				Body: &uncmsg.Mode{
+					Mode: modeCmd,
+				},
+			},
 		})
 
 	default:
 		// Commands - just send ACK
-		responses = append(responses, &nmea.Sentence{
-			Payload: fmt.Sprintf("command,%s,response: OK", cmd),
+		responses = append(responses, testResponse{
+			nmea: &nmea.Sentence{
+				Payload: fmt.Sprintf("command,%s,response: OK", cmd),
+			},
 		})
 	}
 

@@ -73,18 +73,18 @@ func TestSatsInfo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Parse the ASCII packet using uncmsg
-			hdr, msg, err := uncmsg.ParseAsciiMessage([]byte(tt.packet))
+			msg, err := uncmsg.ParseAsciiMessage([]byte(tt.packet))
 			if err != nil {
 				t.Fatalf("Failed to parse ASCII packet: %v", err)
 			}
 
-			satsInfo, ok := msg.(*uncmsg.SatsInfo)
+			_, ok := msg.Body.(*uncmsg.SatsInfo)
 			if !ok {
-				t.Fatalf("Expected SatsInfo message, got %T", msg)
+				t.Fatalf("Expected SatsInfo message, got %T", msg.Body)
 			}
 
 			// Test the existing satellitesSatsInfo function
-			result, err := satellitesSatsInfo(hdr, satsInfo, TagAscii)
+			result, err := satellitesMsgFromSatsInfo(&msg.Hdr, msg.Body.(*uncmsg.SatsInfo), TagAscii)
 			if err != nil {
 				t.Fatalf("Failed to convert SatsInfo: %v", err)
 			}
@@ -97,29 +97,30 @@ func TestSatsInfo(t *testing.T) {
 				}
 				t.Errorf("SatellitesMsg does not match expected.\nActual value as JSON:\n%s", string(actualJSON))
 			}
-			
+
 			// Verify binary packet size matches expected
 			t.Run("binary size verification", func(t *testing.T) {
 				// Count satellites and total frequencies
+				satsInfo := msg.Body.(*uncmsg.SatsInfo)
 				numSats := len(satsInfo.Sats)
 				totalFreqs := 0
 				for _, sat := range satsInfo.Sats {
 					totalFreqs += len(sat.Freqs)
 				}
-				
+
 				// Calculate expected binary size based on protocol.md
 				expectedSize := 24 + // Header
 					6 + // Fixed fields (Sat number, Version, 3 reserved, Frq flag)
 					numSats*4 + // Per satellite (PRN, Azimuth, Elevation)
 					totalFreqs*4 + // Per frequency (Sys status, SNR, Freq status, Freq No)
 					4 // CRC
-				
+
 				// Serialize to binary to get actual size
-				binaryPacket, err := uncmsg.SerializeBinMsg(hdr, satsInfo)
+				binaryPacket, err := uncmsg.SerializeBinMsg(msg)
 				if err != nil {
 					t.Fatalf("Failed to serialize to binary: %v", err)
 				}
-				
+
 				actualSize := len(binaryPacket)
 				if actualSize != expectedSize {
 					t.Errorf("Binary packet size mismatch: got %d, expected %d (sats=%d, freqs=%d)",

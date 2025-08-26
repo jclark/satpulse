@@ -93,12 +93,12 @@ func (ts TimeStatus) MarshalText() ([]byte, error) {
 	return []byte(ts.String()), nil
 }
 
-type MessageHeader struct {
+type MsgHdr struct {
 	Port string
-	CommonHeader
+	CommonHdr
 }
 
-type CommonHeader struct {
+type CommonHdr struct {
 	Sequence           uint16     // Sequence number
 	IdleTime           Percentage // Idle time percentage
 	TimeStatus         TimeStatus // GPS Reference Time Status
@@ -150,8 +150,8 @@ func (p *Percentage) UnmarshalText(text []byte) error {
 }
 
 
-// Msg interface that all NovAtel messages must implement
-type Msg interface {
+// MsgBody interface that all NovAtel messages must implement
+type MsgBody interface {
 	// ID returns the message identifiers:
 	// - MsgID: numeric identifier (0 for unknown ASCII messages)
 	// - string: ASCII wire format name (e.g., "BESTPOSA", "HEADINGA")
@@ -161,8 +161,14 @@ type Msg interface {
 }
 
 
-var msgIDMap = make(map[MsgID]func() Msg)
-var msgNameMap = make(map[string]func() Msg)
+// Msg struct combines header and body
+type Msg struct {
+	Hdr  MsgHdr
+	Body MsgBody
+}
+
+var msgIDMap = make(map[MsgID]func() MsgBody)
+var msgNameMap = make(map[string]func() MsgBody)
 var idNameMap = make(map[MsgID]string)
 
 // String returns a string representation of the message ID
@@ -181,7 +187,7 @@ func regMsg[T any, PT interface {
 }](idName string) {
 	m := PT(new(T))
 	id, name := m.ID()
-	ctor := func() Msg { return PT(new(T)) }
+	ctor := func() MsgBody { return PT(new(T)) }
 	// Only register binary message ID if it's non-zero (ASCII-only messages have id=0)
 	if id != 0 {
 		msgIDMap[id] = ctor
