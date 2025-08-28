@@ -102,9 +102,9 @@ func runConfiguration(rcvr *gpsReceiver, target *gpsprot.ConfigTarget) (*Configu
 	pp := NewPacketProcessor()
 	pp.SetNativeMsgHandler(cp)
 
-	c, err := cp.Configure2(target)
+	c, err := cp.Configure(target)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unexpected error from Configure2: %w", err)
+		return nil, nil, fmt.Errorf("unexpected error from Configure: %w", err)
 	}
 
 	// Use ConfigDirector to drive the configuration

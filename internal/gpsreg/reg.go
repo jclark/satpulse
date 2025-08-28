@@ -27,7 +27,7 @@ var PacketFormats = []gpsprot.PacketFormat{
 type Vendor int
 
 const (
-	VendorUnknown     Vendor = iota
+	VendorUnknown Vendor = iota
 	VendorAllystar
 	VendorBynav
 	VendorFuruno
@@ -105,8 +105,8 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 }
 
 // CreateConfigProtocols creates all available configuration protocols
-func CreateConfigProtocols() []gpsprot.ConfigProtocol2 {
-	return []gpsprot.ConfigProtocol2{
+func CreateConfigProtocols() []gpsprot.ConfigProtocol {
+	return []gpsprot.ConfigProtocol{
 		ubx.NewConfigProtocol(),
 		unc.NewConfigProtocol(),
 	}

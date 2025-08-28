@@ -149,17 +149,17 @@ type replayer struct {
 	test        *replayTest
 	target      *gpsprot.ConfigTarget
 	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
-	configProts []gpsprot.ConfigProtocol2
+	configProts []gpsprot.ConfigProtocol
 	inIdx       int
 	outIdx      int
-	cp          gpsprot.ConfigProtocol2
-	cfgtor      gpsprot.Configurator2
+	cp          gpsprot.ConfigProtocol
+	cfgtor      gpsprot.Configurator
 	director    *gpsprot.ConfigDirector // Store director for ValidPacketReceived calls
-	configErr   error // first configuration error encountered
+	configErr   error                   // first configuration error encountered
 	packetCmp   packetCmpFunc
-	replayTime  time.Time // simulated current time for replay
+	replayTime  time.Time   // simulated current time for replay
 	timeline    []time.Time // sorted list of all packet timestamps
-	timelineIdx int // current position in timeline
+	timelineIdx int         // current position in timeline
 }
 
 func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (*replayer, error) {
@@ -180,7 +180,7 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 	// Build timeline of all packet timestamps
 	timeline := make([]time.Time, 0, len(test.inPackets)+len(test.outPackets))
 	seen := make(map[time.Time]bool)
-	
+
 	for _, p := range test.inPackets {
 		t := time.Time(p.T)
 		if !seen[t] {
@@ -195,7 +195,7 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 			seen[t] = true
 		}
 	}
-	
+
 	// Sort the timeline
 	slices.SortFunc(timeline, func(a, b time.Time) int {
 		if a.Before(b) {
@@ -206,7 +206,7 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 		}
 		return 0
 	})
-	
+
 	var replayTime time.Time
 	if len(timeline) > 0 {
 		replayTime = timeline[0]
@@ -292,7 +292,7 @@ func (r *replayer) run() {
 
 	// Create configurator
 	var err error
-	r.cfgtor, err = r.cp.Configure2(r.target)
+	r.cfgtor, err = r.cp.Configure(r.target)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func (r *replayer) run() {
 	for action := range director.Actions() {
 		// Advance director's time to match replay time for automatic timeout processing
 		director.AdvanceTimeTo(r.replayTime)
-		
+
 		switch action.Type {
 		case gpsprot.ConfigActionSendRequest:
 			// Verify output packet matches expected
@@ -365,7 +365,7 @@ func (r *replayer) advanceToNextInstant(deadline time.Time) bool {
 		}
 		return false
 	}
-	
+
 	instant := r.timeline[r.timelineIdx]
 	if instant.After(deadline) {
 		// Next instant is past the deadline
@@ -374,28 +374,28 @@ func (r *replayer) advanceToNextInstant(deadline time.Time) bool {
 		}
 		return false
 	}
-	
+
 	// Feed any input packets at this instant
 	for r.inIdx < len(r.test.inPackets) {
 		p := r.test.inPackets[r.inIdx]
 		pktTime := time.Time(p.T)
-		
+
 		if pktTime.After(instant) {
 			break // This packet is for a later time
 		}
-		
+
 		if pktTime.Equal(instant) {
 			r.inIdx++
 			if p.Tag == "" {
 				continue // Skip invalid packets
 			}
-			
+
 			pp, ok := r.packetProcs[p.Tag]
 			if !ok {
 				r.t.Errorf("no processor for tag %s", p.Tag)
 				continue
 			}
-			
+
 			_, err := pp.ProcessPacket(p.Data(), pktTime)
 			if err != nil {
 				r.t.Errorf("error processing packet at %v: %v (data: %q)", pktTime, err, p.Data())
@@ -408,7 +408,7 @@ func (r *replayer) advanceToNextInstant(deadline time.Time) bool {
 			r.inIdx++
 		}
 	}
-	
+
 	r.replayTime = instant
 	r.timelineIdx++
 	return true

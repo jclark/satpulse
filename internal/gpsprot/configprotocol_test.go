@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// mockRequest implements ConfigRequest2 for testing
+// mockRequest implements ConfigRequest for testing
 type mockRequest struct {
 	packet       []byte
 	speedChange  int
@@ -117,7 +117,7 @@ func (r *mockRequest) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
 	// Mock doesn't implement speed changes
 }
 
-// mockConfigurator implements Configurator2 for testing
+// mockConfigurator implements Configurator for testing
 type mockConfigurator struct {
 	requests      []*mockRequest
 	complete      bool
@@ -136,7 +136,7 @@ func (c *mockConfigurator) GetRequestCount() (int, bool) {
 	return len(c.requests), c.complete
 }
 
-func (c *mockConfigurator) Request(index int) ConfigRequest2 {
+func (c *mockConfigurator) Request(index int) ConfigRequest {
 	if index >= len(c.requests) {
 		panic(fmt.Sprintf("index %d >= request count %d", index, len(c.requests)))
 	}
