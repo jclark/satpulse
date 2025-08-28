@@ -330,6 +330,7 @@ This is what is needed to implement everything that has been implemented for u-b
 ### Message Mapping (unc)
 - **LeapSecondMsg mapping** - Map GPSUTC, GALUTC, BD3UTC, BDSUTC to gpsprot.LeapSecondMsg
 - **BESTSAT to SatellitesMsg.Used** - Map which satellites are actually used in solution
+  * would benefit from additional SatsMsgFlag
 
 ### Configuration Options
 - **PVT leap second messages** - GPSUTCB, BD3UTCB, GALUTCB for PVTMsgLeapSecond flag
@@ -338,6 +339,7 @@ This is what is needed to implement everything that has been implemented for u-b
     * Use LOGLIST, which requires NovAtel Abbreviated ASCII packet format
     * Use OEM7 ASCII message: where header has field identifying port e.g. BESTPOSA (but how to route this to configurator)
   - CONFIG COMx command generation
+  - Requires implementing Configurator support related to speed changes
 
 ### Configuration Properties
 - **SignalGroup** - Support changing signal group. Signal group change causes reset. So perhaps if user requests save and reset, we could change the signal group for them. But very unclear how to choose signal group.
@@ -349,22 +351,3 @@ Adapt scripts in `internal/gpscmd/testdata` to work Unicore.
 Test configuration with UM980 and save logs for replay testing.
 
 Test with UM960 and see what needs fixing
-
-## Consequential modifications
-
-**Extensibility**
-- Be able to display native configuration state (this would be the config commands to bring it into effect)
-  * But what is common structure of native configuration state? Maybe `map[string]string`
-- Support for specifying individual commands to send (we can handle acknowledgement)
-
-**Minimum Elevation property** 
-- Support in daemon and satpulsetool gps for setting
-- Support in u-blox backend
-
-**RTCM Base ID propety**
-- Support in daemon and satpulsetool gps for setting
-- Support in u-blox backend (version 9+) only
-
-**LLH Coordinate Support**
-- Support in daemon and satpulsetool for setting fixed position as LLH as well as ECEF
-- Implemented already in UBX backend (?)
