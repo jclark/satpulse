@@ -38,7 +38,7 @@ type requestOps interface {
 	ID() string
 }
 
-// configRequest is the UBX implementation of gpsprot.ConfigRequest2
+// configRequest is the UBX implementation of gpsprot.ConfigRequest
 type configRequest struct {
 	ops            requestOps         // Request-specific operations
 	state          configRequestState // Internal state for ACK/response tracking
@@ -120,7 +120,7 @@ var newConfigSteps = []func(*Configurator) error{
 	(*Configurator).reset,
 }
 
-var _ gpsprot.Configurator2 = (*Configurator)(nil)
+var _ gpsprot.Configurator = (*Configurator)(nil)
 
 // GetPacket returns the packet bytes for this request.
 func (cr *configRequest) GetPacket() []byte {
@@ -343,8 +343,8 @@ func (c *Configurator) GetRequestCount() (count int, complete bool) {
 	return len(c.reqs), c.complete
 }
 
-// Request returns the ConfigRequest2 at the given index.
-func (c *Configurator) Request(index int) gpsprot.ConfigRequest2 {
+// Request returns the ConfigRequest at the given index.
+func (c *Configurator) Request(index int) gpsprot.ConfigRequest {
 	if index >= len(c.reqs) {
 		panic("index >= GetRequestCount()")
 	}
@@ -451,7 +451,7 @@ func (c *Configurator) handleFailedRequest(index int) {
 	})
 }
 
-// addRequest adds a new request to the Configurator2 interface
+// addRequest adds a new request to the Configurator interface
 func (c *Configurator) addRequest(ops requestOps) error {
 	c.reqs = append(c.reqs, &configRequest{
 		ops:   ops,

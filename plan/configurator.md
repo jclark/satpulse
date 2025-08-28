@@ -510,7 +510,7 @@ type requestOps interface {
     ID() string
 }
 
-// configRequest is the UBX implementation of gpsprot.ConfigRequest2
+// configRequest is the UBX implementation of gpsprot.ConfigRequest
 type configRequest struct {
     ops            requestOps            // The request-specific operations (msgRequest, pollRequest, etc.)
     state          configRequestState    // Internal state for ACK/response tracking

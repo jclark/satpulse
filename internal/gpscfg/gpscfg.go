@@ -29,7 +29,7 @@ type msgHandler struct {
 	gpsprot.DefaultHandler
 	lg          *slog.Logger
 	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
-	configProts []gpsprot.ConfigProtocol2
+	configProts []gpsprot.ConfigProtocol
 	packetCh    <-chan scan.Packet
 	msgCount    map[gpsprot.Tag]int
 	bad         badCount
@@ -45,7 +45,7 @@ var _ gpsprot.NativeMsgHandler = &msgHandler{}
 
 var ErrNoProbeResponse = errors.New("no response to configuration probe message; not configuring GPS")
 
-func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol2, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
+func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetProcs, configProts, packetCh)
 	var err error
@@ -98,7 +98,7 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	return mh.finish(cfgProps, rcvrInfo), err
 }
 
-func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol2, packetCh <-chan scan.Packet) {
+func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, packetCh <-chan scan.Packet) {
 	mh.lg = lg
 	mh.packetProcs = packetProcs
 	mh.packetCh = packetCh
@@ -218,7 +218,7 @@ func (mh *msgHandler) packetChClosed(ctx context.Context) error {
 	return io.ErrUnexpectedEOF
 }
 
-func (mh *msgHandler) probe(ctx context.Context, port gpsio.OutPort) (gpsprot.ConfigProtocol2, error) {
+func (mh *msgHandler) probe(ctx context.Context, port gpsio.OutPort) (gpsprot.ConfigProtocol, error) {
 	if len(mh.configProts) == 0 {
 		return nil, nil
 	}
@@ -277,8 +277,8 @@ func (mh *msgHandler) installNativeMsgHandlers() (*gpsprot.MultiNativeMsgHandler
 // maximum number of times to retry a request that doesn't get a response
 const maxTries = 3
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol2, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, error) {
-	cfgtor, err := prot.Configure2(target)
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, error) {
+	cfgtor, err := prot.Configure(target)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -5,12 +5,12 @@ import (
 	"time"
 )
 
-// ConfigProtocol2 manages the processing and generation of packets for a GPS receiver,
+// ConfigProtocol manages the processing and generation of packets for a GPS receiver,
 // replacing the old PacketExchanger interface with improved multi-format support.
 //
 // Methods do not send or receive packets themselves.
-// ConfigProtocol2 embeds NativeMsgHandler to process protocol-specific messages directly.
-type ConfigProtocol2 interface {
+// ConfigProtocol embeds NativeMsgHandler to process protocol-specific messages directly.
+type ConfigProtocol interface {
 	NativeMsgHandler
 
 	// ProbePacket returns a packet to be sent to the GPS receiver for probing.
@@ -19,19 +19,19 @@ type ConfigProtocol2 interface {
 	// ProbeOK returns true when a message has been received indicating the GPS receiver is responding.
 	ProbeOK() bool
 
-	// Configure2 creates a Configurator2 for the given configuration target.
-	// The returned Configurator2 will receive packets via NativeMsg calls on this ConfigProtocol2.
-	Configure2(target *ConfigTarget) (Configurator2, error)
+	// Configure creates a Configurator for the given configuration target.
+	// The returned Configurator will receive packets via NativeMsg calls on this ConfigProtocol.
+	Configure(target *ConfigTarget) (Configurator, error)
 }
 
-// Configurator2 manages the generation and interpretation of configuration-related packets.
+// Configurator manages the generation and interpretation of configuration-related packets.
 //
-// The Configurator maintains a slice of ConfigRequest2 instances, each with its own state.
+// The Configurator maintains a slice of ConfigRequest instances, each with its own state.
 // It can generate additional requests lazily and modify existing request states.
 // It processes incoming packets to automatically update request states.
 // Configurators are time-agnostic: they never call time.Now() or track wall clock time.
 // All time progression happens through client method calls, ensuring deterministic testability.
-type Configurator2 interface {
+type Configurator interface {
 	// ConfigProps returns the current configuration of the GPS receiver.
 	// Should be called after configuration completes to see what was achieved.
 	ConfigProps() *ConfigProps
@@ -53,10 +53,10 @@ type Configurator2 interface {
 	// When bool is false, the slice count may increase after calling GenerateRequests().
 	GetRequestCount() (count int, complete bool)
 
-	// Request returns the ConfigRequest2 at the given index.
+	// Request returns the ConfigRequest at the given index.
 	// Precondition: index < count from GetRequestCount()
 	// Panics if index is out of bounds.
-	Request(index int) ConfigRequest2
+	Request(index int) ConfigRequest
 }
 
 // ReceiverInfo provides static information about the GPS receiver.
@@ -116,7 +116,7 @@ const (
 	ConfigRequestSkipped
 )
 
-// ConfigRequest2 represents a configuration request with state-based lifecycle management.
+// ConfigRequest represents a configuration request with state-based lifecycle management.
 // Each request encapsulates both the request data and its execution state.
 //
 // State Transitions:
@@ -131,7 +131,7 @@ const (
 //   - ConfigRequestAwaitingResponse → ConfigRequestFailed (negative acknowledgment received)
 //
 // All precondition failures result in panics. All Get* methods are side-effect free.
-type ConfigRequest2 interface {
+type ConfigRequest interface {
 	// GetPacket returns the packet bytes for this request.
 	// Precondition: request state is ConfigRequestReadyToSend, ConfigRequestMayResend, or ConfigRequestFailed
 	// The returned packet is ready to transmit to the GPS receiver without modification.
@@ -199,7 +199,7 @@ type ConfigRequest2 interface {
 }
 
 // ConfigDirector coordinates configuration operations by providing high-level actions to clients.
-// It wraps a Configurator2 to provide:
+// It wraps a Configurator to provide:
 // - Automatic retry management
 // - Request windowing for efficient batching
 // - Simplified client interface via ConfigAction instructions
@@ -208,7 +208,7 @@ type ConfigRequest2 interface {
 // The same ConfigDirector can be used by both production code (gpscfg) and test code (replayer),
 // ensuring consistent behavior and eliminating duplicate logic.
 type ConfigDirector struct {
-	cfgtor              Configurator2
+	cfgtor              Configurator
 	startIndex          int              // First request not in a final state
 	endIndex            int              // First request not yet discovered and ready
 	retries             []int            // Track retries per request index
@@ -242,9 +242,9 @@ type ConfigAction struct {
 	Error    error     // Error details for Error action
 }
 
-// NewConfigDirector creates a new ConfigDirector for the given Configurator2.
+// NewConfigDirector creates a new ConfigDirector for the given Configurator.
 // maxRetries specifies the maximum number of retry attempts for timed-out requests.
-func NewConfigDirector(cfgtor Configurator2, maxRetries int) *ConfigDirector {
+func NewConfigDirector(cfgtor Configurator, maxRetries int) *ConfigDirector {
 	return &ConfigDirector{
 		cfgtor:              cfgtor,
 		maxRetries:          maxRetries,
