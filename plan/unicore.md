@@ -324,11 +324,6 @@ Accepted command/response forms (normalized)
 
 This is what is needed to implement everything that has been implemented for u-blox and is supported by Unicore.
 
-### Infrastructure (#136 Part 2)
-- **Migrate UBX to Configurator2** - Port UBX implementation to use Configurator2/ConfigRequest2 interfaces
-- **Remove old interfaces** - Delete original Configurator/ConfigRequest after UBX migration
-- **Rename interfaces** - Rename Configurator2/ConfigRequest2 to Configurator/ConfigRequest
-
 ### Message Parsing (uncmsg)
 - **BESTSAT message** - Parse satellites used in navigation solution (needed for SatellitesMsg.Used field)
 
