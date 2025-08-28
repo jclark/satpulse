@@ -12,7 +12,7 @@ type ConfigProtocol struct {
 	cfg     *Configurator
 }
 
-var _ gpsprot.ConfigProtocol = (*ConfigProtocol)(nil)
+var _ gpsprot.ConfigProtocol2 = (*ConfigProtocol)(nil)
 var _ gpsprot.NativeMsgHandler = (*ConfigProtocol)(nil)
 
 func NewConfigProtocol() *ConfigProtocol {
@@ -52,9 +52,10 @@ func (px *ConfigProtocol) ProbeOK() bool {
 	return px.ver != nil
 }
 
-func (px *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (gpsprot.Configurator, error) {
+// Configure2 creates a Configurator2 for the given configuration target.
+func (px *ConfigProtocol) Configure2(target *gpsprot.ConfigTarget) (gpsprot.Configurator2, error) {
 	if px.ver == nil {
-		panic("Configure called before probe OK")
+		panic("Configure2 called before probe OK")
 	}
 	px.cfg = newConfigurator(target, px.ver)
 	return px.cfg, nil

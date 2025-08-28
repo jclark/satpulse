@@ -42,7 +42,7 @@ func (r *mockRequest) GetState() ConfigRequestState {
 	return r.state
 }
 
-func (r *mockRequest) GetResponseDeadline() time.Time {
+func (r *mockRequest) GetDeadline() time.Time {
 	switch r.state {
 	case ConfigRequestAwaitingResponse:
 		if r.deadline.IsZero() {
@@ -51,11 +51,14 @@ func (r *mockRequest) GetResponseDeadline() time.Time {
 		return r.deadline
 	case ConfigRequestMaybeComplete:
 		if r.responseTime.IsZero() {
-			r.responseTime = time.Now()
+			r.responseTime = r.sentTime.Add(10 * time.Millisecond)
 		}
 		return r.responseTime.Add(50 * time.Millisecond)
+	case ConfigRequestPausing:
+		// This shouldn't be called for pausing requests, but return a safe value
+		return r.readyTime
 	default:
-		panic(fmt.Sprintf("GetResponseDeadline called in invalid state: %v", r.state))
+		panic(fmt.Sprintf("GetDeadline called in invalid state: %v", r.state))
 	}
 }
 
@@ -86,14 +89,17 @@ func (r *mockRequest) SetSentTime(tSent time.Time) {
 	}
 }
 
-func (r *mockRequest) SetResponseDeadlinePassed() {
+func (r *mockRequest) SetDeadlinePassed() {
 	switch r.state {
 	case ConfigRequestAwaitingResponse:
 		r.state = ConfigRequestMayResend
 	case ConfigRequestMaybeComplete:
 		r.state = ConfigRequestSucceeded
+	case ConfigRequestPausing:
+		// When pause deadline passes, request becomes ready to send
+		r.state = ConfigRequestReadyToSend
 	default:
-		panic(fmt.Sprintf("SetResponseDeadlinePassed called in invalid state: %v", r.state))
+		panic(fmt.Sprintf("SetDeadlinePassed called in invalid state: %v", r.state))
 	}
 }
 
@@ -105,6 +111,10 @@ func (r *mockRequest) SetWontResend() {
 	if r.err == nil {
 		r.err = errors.New("request abandoned after timeout")
 	}
+}
+
+func (r *mockRequest) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
+	// Mock doesn't implement speed changes
 }
 
 // mockConfigurator implements Configurator2 for testing
@@ -159,6 +169,7 @@ func TestConfigDirectorBasic(t *testing.T) {
 
 	director := NewConfigDirector(cfg, 3)
 	var actions []ConfigAction
+	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	for action := range director.Actions() {
 		actions = append(actions, action)
@@ -166,7 +177,8 @@ func TestConfigDirectorBasic(t *testing.T) {
 		// Simulate client behavior
 		if action.Type == ConfigActionSendRequest {
 			req := cfg.requests[action.Index]
-			req.SetSentTime(time.Now())
+			req.SetSentTime(testTime)
+			testTime = testTime.Add(10 * time.Millisecond)
 			// Simulate immediate success (no response needed)
 			req.state = ConfigRequestSucceeded
 
@@ -206,6 +218,7 @@ func TestConfigDirectorRetry(t *testing.T) {
 	director := NewConfigDirector(cfg, 3) // Max 3 retries to get 3 total attempts
 	var actions []ConfigAction
 	sendCount := 0
+	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	for action := range director.Actions() {
 		actions = append(actions, action)
@@ -214,22 +227,12 @@ func TestConfigDirectorRetry(t *testing.T) {
 		case ConfigActionSendRequest:
 			sendCount++
 			req := cfg.requests[action.Index]
-			req.SetSentTime(time.Now())
-
-		case ConfigActionCheckTimeout:
-			// For first 2 attempts, timeout to force retry
-			// On 3rd attempt, succeed
-			if sendCount < 3 {
-				req := cfg.requests[action.Index]
-				req.SetResponseDeadlinePassed()
-			} else {
-				// Success on third attempt
-				cfg.requests[action.Index].state = ConfigRequestSucceeded
-			}
+			req.SetSentTime(testTime)
+			testTime = testTime.Add(10 * time.Millisecond)
 
 		case ConfigActionWaitUntil:
-			// Simulate time passing
-			time.Sleep(1 * time.Millisecond)
+			// Advance time past deadline to trigger timeout
+			director.AdvanceTimeTo(action.Deadline.Add(time.Millisecond))
 		}
 	}
 
@@ -250,19 +253,18 @@ func TestConfigDirectorMaxRetryExceeded(t *testing.T) {
 
 	director := NewConfigDirector(cfg, 1) // Max 1 retry
 	var errorAction *ConfigAction
-	retryCount := 0
+	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	for action := range director.Actions() {
 		switch action.Type {
 		case ConfigActionSendRequest:
 			req := cfg.requests[action.Index]
-			req.SetSentTime(time.Now())
+			req.SetSentTime(testTime)
+			testTime = testTime.Add(10 * time.Millisecond)
 
-		case ConfigActionCheckTimeout:
-			// Always timeout
-			req := cfg.requests[action.Index]
-			req.SetResponseDeadlinePassed()
-			retryCount++
+		case ConfigActionWaitUntil:
+			// Advance time past deadline to trigger timeout
+			director.AdvanceTimeTo(action.Deadline.Add(time.Millisecond))
 
 		case ConfigActionError:
 			errorAction = &action
@@ -291,26 +293,26 @@ func TestConfigDirectorMultiResponse(t *testing.T) {
 
 	director := NewConfigDirector(cfg, 3)
 	maybeCompleteChecks := 0
+	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	for action := range director.Actions() {
 		switch action.Type {
 		case ConfigActionSendRequest:
 			req := cfg.requests[action.Index]
-			req.SetSentTime(time.Now())
+			req.SetSentTime(testTime)
+			testTime = testTime.Add(10 * time.Millisecond)
+			// Simulate multi-response by transitioning to MaybeComplete
+			req.state = ConfigRequestMaybeComplete
+			maybeCompleteChecks++
 
-		case ConfigActionCheckTimeout:
-			req := cfg.requests[action.Index]
-			if req.state == ConfigRequestAwaitingResponse {
-				// First response received, transition to MaybeComplete
-				req.state = ConfigRequestMaybeComplete
-				req.responseTime = time.Now()
-			} else if req.state == ConfigRequestMaybeComplete {
+		case ConfigActionWaitUntil:
+			// Check if waiting for more responses
+			req := cfg.requests[0]
+			if req.state == ConfigRequestMaybeComplete {
 				maybeCompleteChecks++
-				if maybeCompleteChecks >= 2 {
-					// Idle period passed, mark as complete
-					req.SetResponseDeadlinePassed()
-				}
 			}
+			// Advance time to complete the wait
+			director.AdvanceTimeTo(action.Deadline.Add(time.Millisecond))
 		}
 	}
 
@@ -327,7 +329,8 @@ func TestConfigDirectorMultiResponse(t *testing.T) {
 
 // Test pausing state
 func TestConfigDirectorPausing(t *testing.T) {
-	pauseTime := time.Now().Add(100 * time.Millisecond)
+	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	pauseTime := testTime.Add(100 * time.Millisecond)
 	cfg := &mockConfigurator{
 		requests: []*mockRequest{
 			{packet: []byte("req1"), state: ConfigRequestReadyToSend},
@@ -342,13 +345,17 @@ func TestConfigDirectorPausing(t *testing.T) {
 	for action := range director.Actions() {
 		switch action.Type {
 		case ConfigActionSendRequest:
+			req := cfg.requests[action.Index]
+			req.SetSentTime(testTime)
+			testTime = testTime.Add(10 * time.Millisecond)
+
 			if action.Index == 0 {
 				// First request needs pause
-				cfg.requests[0].state = ConfigRequestPausing
-				cfg.requests[0].readyTime = pauseTime
+				req.state = ConfigRequestPausing
+				req.readyTime = pauseTime
 			} else {
 				// Second request succeeds immediately
-				cfg.requests[1].state = ConfigRequestSucceeded
+				req.state = ConfigRequestSucceeded
 			}
 
 		case ConfigActionWaitUntil:
@@ -356,11 +363,16 @@ func TestConfigDirectorPausing(t *testing.T) {
 			req := cfg.requests[0]
 			if req.state == ConfigRequestPausing {
 				sawPausing = true
+				// Advance time to complete pause
+				director.AdvanceTimeTo(action.Deadline.Add(time.Millisecond))
 				// After pause, mark as succeeded and make next ready
 				req.state = ConfigRequestSucceeded
 				if len(cfg.requests) > 1 {
 					cfg.requests[1].state = ConfigRequestReadyToSend
 				}
+			} else {
+				// Advance time for other waits
+				director.AdvanceTimeTo(action.Deadline.Add(time.Millisecond))
 			}
 		}
 	}
@@ -383,17 +395,19 @@ func TestConfigDirectorWindow(t *testing.T) {
 
 	director := NewConfigDirector(cfg, 3)
 	sendIndices := []int{}
+	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	for action := range director.Actions() {
 		if action.Type == ConfigActionSendRequest {
 			sendIndices = append(sendIndices, action.Index)
 			// Mark as sent
-			cfg.requests[action.Index].SetSentTime(time.Now())
+			cfg.requests[action.Index].SetSentTime(testTime)
+			testTime = testTime.Add(10 * time.Millisecond)
 			// Simulate immediate success
 			cfg.requests[action.Index].state = ConfigRequestSucceeded
 
 			// Make next request ready if exists
-			if action.Index+1 < len(cfg.requests) && 
+			if action.Index+1 < len(cfg.requests) &&
 				cfg.requests[action.Index+1].state == ConfigRequestNotReady {
 				cfg.requests[action.Index+1].state = ConfigRequestReadyToSend
 			}
@@ -455,7 +469,7 @@ func TestConfigDirectorSkipped(t *testing.T) {
 	for action := range director.Actions() {
 		actions = append(actions, action)
 		actionCount++
-		
+
 		if action.Type == ConfigActionSendRequest && action.Index == 2 {
 			// Third request succeeds
 			cfg.requests[2].state = ConfigRequestSucceeded

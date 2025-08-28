@@ -14,6 +14,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
+	"github.com/jclark/satpulse/internal/ubx/bin"
 )
 
 // packetCmpFunc compares actual and expected packets for a specific protocol
@@ -153,6 +154,7 @@ type replayer struct {
 	outIdx      int
 	cp          gpsprot.ConfigProtocol2
 	cfgtor      gpsprot.Configurator2
+	director    *gpsprot.ConfigDirector // Store director for ValidPacketReceived calls
 	configErr   error // first configuration error encountered
 	packetCmp   packetCmpFunc
 	replayTime  time.Time // simulated current time for replay
@@ -296,9 +298,13 @@ func (r *replayer) run() {
 	}
 
 	director := gpsprot.NewConfigDirector(r.cfgtor, maxTries)
+	r.director = director // Store for ValidPacketReceived calls
 
 	// Process configuration using director
 	for action := range director.Actions() {
+		// Advance director's time to match replay time for automatic timeout processing
+		director.AdvanceTimeTo(r.replayTime)
+		
 		switch action.Type {
 		case gpsprot.ConfigActionSendRequest:
 			// Verify output packet matches expected
@@ -307,7 +313,12 @@ func (r *replayer) run() {
 			}
 
 			expected := r.test.outPackets[r.outIdx]
-			if !r.packetCmp(r.t, "", action.Packet, expected) {
+			// Extract message ID from packet for proper comparison
+			msgID := ""
+			if msg, err := bin.ParseMsg(string(action.Packet)); err == nil {
+				msgID = msg.ID().String()
+			}
+			if !r.packetCmp(r.t, msgID, action.Packet, expected) {
 				r.t.Errorf("packet mismatch")
 			}
 			r.outIdx++
@@ -320,17 +331,13 @@ func (r *replayer) run() {
 			req := r.cfgtor.Request(action.Index)
 			req.SetSentTime(sendTime)
 
-		case gpsprot.ConfigActionCheckTimeout:
-			// Check if replay time has passed the deadline
-			if r.replayTime.After(action.Deadline) {
-				req := r.cfgtor.Request(action.Index)
-				req.SetResponseDeadlinePassed()
-			}
-
 		case gpsprot.ConfigActionWaitUntil:
 			// Advance to the next timeline instant, but not past the deadline
 			// This allows the director to re-evaluate after each packet is processed
-			r.advanceToNextInstant(action.Deadline)
+			if !r.advanceToNextInstant(action.Deadline) {
+				// No packets found before deadline, advance to deadline
+				r.replayTime = action.Deadline
+			}
 
 		case gpsprot.ConfigActionError:
 			if r.configErr == nil {
@@ -392,6 +399,9 @@ func (r *replayer) advanceToNextInstant(deadline time.Time) bool {
 			_, err := pp.ProcessPacket(p.Data(), pktTime)
 			if err != nil {
 				r.t.Errorf("error processing packet at %v: %v (data: %q)", pktTime, err, p.Data())
+			} else if r.director != nil {
+				// Notify director of valid packet for speed change handling
+				r.director.ValidPacketReceived(pktTime)
 			}
 		} else {
 			// This packet is before the current instant, should have been processed already

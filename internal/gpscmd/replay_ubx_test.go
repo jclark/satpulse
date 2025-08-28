@@ -38,8 +38,7 @@ var replayFiles = []string{
 	"m8t-tmode",
 }
 
-// TODO: Re-enable after UBX is ported to ConfigProtocol2
-func DisabledTestReplayUBX(t *testing.T) {
+func TestReplayUBX(t *testing.T) {
 	for _, filename := range replayFiles {
 		t.Run(filename, func(t *testing.T) {
 			testReplayFile(t, filename, ubxPacketsEqual)

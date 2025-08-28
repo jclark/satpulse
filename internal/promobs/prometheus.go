@@ -23,7 +23,7 @@ type PrometheusObserver struct {
 	everInSync       bool
 	activeSatellites map[gpsprot.SVID]map[gpsprot.SignalID]struct{}
 
-	// PHC
+	// PHC metrics
 	inSyncGauge         prometheus.Gauge
 	offsetHistogram     prometheus.Histogram
 	offsetGauge         prometheus.Gauge
@@ -32,7 +32,7 @@ type PrometheusObserver struct {
 	offsetSumSqCounter  prometheus.Counter
 	samplesCounter      *prometheus.CounterVec
 
-	// Satellites
+	// Satellites metrics
 	lookAngleGauge     *prometheus.GaugeVec
 	satelliteUsedGauge *prometheus.GaugeVec
 	signalLevelGauge   *prometheus.GaugeVec
@@ -93,13 +93,13 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 
 	satelliteUsedGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "satpulse_satellite_used",
-		Help: "Flags that a satellite is used in the navigation solution (1 = used)",
+		Help: "Flags that a satellite is used in the navigation solution (1 = used, 0 = not used)",
 	}, []string{"gnss", "sv"})
 
 	signalLevelGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "satpulse_satellite_signal_level_dbhz",
 		Help: "Signal level of satellite in dB-Hz",
-	}, []string{"gnss", "sv", "signal"})
+	}, []string{"gnss", "sv", "signal", "used"})
 
 	// Register metrics
 	reg.MustRegister(inSyncGauge)
@@ -115,6 +115,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 
 	return &PrometheusObserver{
 		reg:                 reg,
+		activeSatellites:    make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
 		inSyncGauge:         inSyncGauge,
 		offsetHistogram:     offsetHistogram,
 		offsetGauge:         offsetGauge,
@@ -125,7 +126,6 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		lookAngleGauge:      lookAngleGauge,
 		satelliteUsedGauge:  satelliteUsedGauge,
 		signalLevelGauge:    signalLevelGauge,
-		activeSatellites:    make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
 	}
 }
 
@@ -136,11 +136,15 @@ func makeBuckets(clockAccuracyNanos float64) []float64 {
 	// We are trying to keep to under 50 buckets for Prometheus performance.
 	var buckets = []float64{
 		1e-9, 2e-9, 5e-9,
-		10e-9, 15e-9, 20e-9, 25e-9, 30e-9, 40e-9, 50e-9, 75e-9,
-		100e-9, 150e-9, 200e-9, 250e-9, 300e-9, 400e-9, 500e-9, 750e-9,
-		1000e-9, 1500e-9, 2000e-9, 2500e-9, 3000e-9, 4000e-9, 5000e-9, 7500e-9,
-		10e-6, 15e-6, 20e-6, 25e-6, 30e-6, 40e-6, 50e-6, 75e-6,
-		100e-6, 150e-6, 200e-6, 250e-6, 300e-6, 400e-6, 500e-6, 750e-6,
+		// keep it quite dense up 100 nanoseconds, since these are values we are likely to see
+		10e-9, 15e-9, 20e-9, 25e-9, 30e-9, 35e-9, 40e-9, 45e-9, 50e-9,
+		55e-9, 60e-9, 65e-9, 70e-9, 75e-9, 80e-9, 85e-9, 90e-9, 95e-9,
+		100e-9, 110e-9, 120e-9, 130e-9, 140e-9, 150e-9, 170e-9,
+		200e-9, 250e-9, 300e-9, 350e-9, 400e-9, 450e-9, 500e-9, 600e-9, 750e-9,
+		// these are the PTP clock accuracy buckets; not likely we will ever see these
+		1000e-9, 2500e-9,
+		10e-6, 25e-6,
+		100e-6, 250e-6,
 		1e-3, // last bucket is a millisecond; for PTP that is an eternity
 	}
 	if clockAccuracyNanos <= 0 {
@@ -209,20 +213,22 @@ func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time)
 	curSats := make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{})
 
 	for _, s := range msg.SVs {
-		if s.ID.Num == gpsprot.GLOUnknown && s.ID.GNSS == gpsprot.GLO {
-			// Skip GLONASS satellites where orbital slot is not yet known
-			continue
-		}
+
 		gnss := s.ID.GNSS.String()
 		sv := fmt.Sprintf("%02d", s.ID.Num)
+		if s.ID.Num == gpsprot.GLOUnknown && s.ID.GNSS == gpsprot.GLO {
+			// GLONASS satellites where orbital slot is not yet known
+			sv = "?"
+		}
 
 		curSigs := make(map[gpsprot.SignalID]struct{})
+
 		for _, sig := range s.Signals {
 			if sig.CN0 == 0 {
 				continue
 			}
 			curSigs[sig.ID] = struct{}{}
-			p.signalLevelGauge.WithLabelValues(gnss, sv, string(sig.ID)).Set(float64(sig.CN0))
+			p.signalLevelGauge.WithLabelValues(gnss, sv, signalIDString(sig.ID), usedLabel(msg.UsedValidity, s, sig)).Set(float64(sig.CN0))
 		}
 
 		if len(curSigs) == 0 {
@@ -233,13 +239,13 @@ func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time)
 		if prevSigs, exists := prevSats[s.ID]; exists {
 			for sigID := range prevSigs {
 				if _, stillExists := curSigs[sigID]; !stillExists {
-					p.signalLevelGauge.DeleteLabelValues(gnss, sv, string(sigID))
+					p.signalLevelGauge.DeletePartialMatch(prometheus.Labels{"gnss": gnss, "sv": sv, "signal": signalIDString(sigID)})
 				}
 			}
 		}
 
 		curSats[s.ID] = curSigs
-		// Always set used state (0 or 1)
+		// Always set used state (0 or 1) for every active satellite.
 		usedValue := float64(0)
 		if msg.UsedValidity >= gpsprot.SatelliteUsedSV && s.Used {
 			usedValue = 1
@@ -265,4 +271,33 @@ func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time)
 	}
 
 	p.activeSatellites = curSats
+}
+
+func usedLabel(usedValidity gpsprot.SatelliteUsedValidity, sv gpsprot.SVInfo, sig gpsprot.SignalInfo) string {
+	var used bool
+	switch usedValidity {
+	case gpsprot.SatelliteUsedSignal:
+		used = sig.Used
+	case gpsprot.SatelliteUsedSV:
+		if len(sv.Signals) == 1 {
+			// if the SV only has one signal,
+			// we can infer the signal's usage from the SV's usage
+			used = sv.Used
+			break
+		}
+		fallthrough // yeah, I used this Go feature once!
+	default:
+		return "unknown"
+	}
+	if used {
+		return "true"
+	}
+	return "false"
+}
+
+func signalIDString(id gpsprot.SignalID) string {
+	if id == gpsprot.SigIDInvalid {
+		return "L?"
+	}
+	return string(id)
 }

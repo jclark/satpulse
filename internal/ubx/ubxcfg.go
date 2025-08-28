@@ -11,18 +11,56 @@ import (
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
+// configRequestState is internal counterpart of gpsprot.ConfigRequestState
+type configRequestState int
+
+const (
+	stateNotReady               configRequestState = iota // Maps to ConfigRequestNotReady
+	stateReadyToSend                                      // Maps to ConfigRequestReadyToSend
+	stateAwaitingAck                                      // Maps to ConfigRequestAwaitingResponse
+	stateAwaitingResponse                                 // Maps to ConfigRequestAwaitingResponse
+	stateAwaitingAckAndResponse                           // Maps to ConfigRequestAwaitingResponse
+	statePausing                                          // Maps to ConfigRequestPausing
+	stateMayResend                                        // Maps to ConfigRequestMayResend
+	stateFailed                                           // Maps to ConfigRequestFailed
+	stateSucceeded                                        // Maps to ConfigRequestSucceeded
+	stateSkipped                                          // Maps to ConfigRequestSkipped
+)
+
+// requestOps defines operations available for different request types
+type requestOps interface {
+	Packet() []byte
+	ChangeSpeed() int
+	Pause() time.Duration
+	Ackable() bool
+	AwaitingResponse(tSent time.Time) bool
+	Done()
+	ID() string
+}
+
+// configRequest is the UBX implementation of gpsprot.ConfigRequest2
+type configRequest struct {
+	ops            requestOps         // Request-specific operations
+	state          configRequestState // Internal state for ACK/response tracking
+	sentTime       time.Time          // When the request was sent
+	pauseStartTime time.Time          // When the pause period started
+	err            error              // Error details for failed requests
+}
+
 type Configurator struct {
 	ver       *Version // never nil
-	acks      ackList
 	tRead     map[bin.MsgID]time.Time
 	raw       RawConfig
 	origPrt   *bin.CfgPrt
 	monGNSS   *monGNSS
 	steps     []func(*Configurator) error
 	stepIndex int
-	reqs      []gpsprot.ConfigRequest
+	reqs      []*configRequest
+	nextIndex int                   // Index of first request that is still in stateNotReady
+	complete  bool                  // True when no more requests can be added to reqs
 	target    *gpsprot.ConfigTarget // never nil
 	survey    bool                  // start a survey
+
 }
 
 // monGNSS records information from UBX-MON-GNSS
@@ -34,13 +72,6 @@ type monGNSS struct {
 	supportedGNSS            gpsprot.GNSSSet
 	enabledGNSS              gpsprot.GNSSSet
 	gnssChangeCount          int
-}
-
-type ackList []*Ack
-
-type Ack struct {
-	msgID bin.MsgID
-	gpsprot.Ack
 }
 
 type RawConfig struct {
@@ -89,7 +120,178 @@ var newConfigSteps = []func(*Configurator) error{
 	(*Configurator).reset,
 }
 
-var _ gpsprot.Configurator = (*Configurator)(nil)
+var _ gpsprot.Configurator2 = (*Configurator)(nil)
+
+// GetPacket returns the packet bytes for this request.
+func (cr *configRequest) GetPacket() []byte {
+	switch cr.state {
+	case stateReadyToSend, stateMayResend, stateFailed:
+		return cr.ops.Packet()
+	default:
+		panic(fmt.Sprintf("GetPacket called in wrong state: %v", cr.GetState()))
+	}
+}
+
+// GetSpeedChangeAfter returns the new baud rate to configure after sending.
+func (cr *configRequest) GetSpeedChangeAfter() int {
+	switch cr.state {
+	case stateReadyToSend, stateMayResend, stateFailed:
+		return cr.ops.ChangeSpeed()
+	default:
+		panic(fmt.Sprintf("GetSpeedChangeAfter called in wrong state: %v", cr.GetState()))
+	}
+}
+
+// GetState returns the current state of this request.
+func (cr *configRequest) GetState() gpsprot.ConfigRequestState {
+	switch cr.state {
+	case stateNotReady:
+		return gpsprot.ConfigRequestNotReady
+	case stateReadyToSend:
+		return gpsprot.ConfigRequestReadyToSend
+	case stateAwaitingAck, stateAwaitingResponse, stateAwaitingAckAndResponse:
+		return gpsprot.ConfigRequestAwaitingResponse
+	case statePausing:
+		return gpsprot.ConfigRequestPausing
+	case stateMayResend:
+		return gpsprot.ConfigRequestMayResend
+	case stateFailed:
+		return gpsprot.ConfigRequestFailed
+	case stateSucceeded:
+		return gpsprot.ConfigRequestSucceeded
+	case stateSkipped:
+		return gpsprot.ConfigRequestSkipped
+	default:
+		panic(fmt.Sprintf("unknown internal state: %v", cr.state))
+	}
+}
+
+// GetDeadline returns the absolute time by which response packets are expected.
+func (cr *configRequest) GetDeadline() time.Time {
+	switch cr.state {
+	case stateAwaitingAck, stateAwaitingResponse, stateAwaitingAckAndResponse:
+		// 1500ms timeout matching original gpscfg.go behavior
+		return cr.sentTime.Add(1500 * time.Millisecond)
+	case statePausing:
+		// Return pause completion deadline
+		return cr.pauseStartTime.Add(cr.ops.Pause())
+	default:
+		panic(fmt.Sprintf("GetDeadline called in wrong state: %v", cr.GetState()))
+	}
+}
+
+// GetError returns the error details for a failed request.
+func (cr *configRequest) GetError() error {
+	if cr.state != stateFailed {
+		panic(fmt.Sprintf("GetError called in wrong state: %v", cr.GetState()))
+	}
+	return cr.err
+}
+
+// SetSentTime records when the request packet was transmitted.
+func (cr *configRequest) SetSentTime(tSent time.Time) {
+	switch cr.state {
+	case stateReadyToSend, stateMayResend:
+		// ok
+	default:
+		panic(fmt.Sprintf("SetSentTime called in wrong state: %v", cr.GetState()))
+	}
+
+	cr.sentTime = tSent
+
+	// Determine initial awaiting state based on what this request needs
+	needsAck := cr.ops.Ackable()
+	needsResponse := cr.ops.AwaitingResponse(tSent)
+
+	if needsAck && needsResponse {
+		cr.state = stateAwaitingAckAndResponse
+	} else if needsAck {
+		cr.state = stateAwaitingAck
+	} else if needsResponse {
+		cr.state = stateAwaitingResponse
+	} else {
+		// Neither ACK nor response needed - immediately succeed
+		cr.state = stateSucceeded
+		cr.ops.Done()
+	}
+}
+
+// SetDeadlinePassed notifies that the response deadline has passed.
+func (cr *configRequest) SetDeadlinePassed() {
+	switch cr.state {
+	case stateAwaitingAck, stateAwaitingResponse, stateAwaitingAckAndResponse:
+		cr.state = stateMayResend
+	case statePausing:
+		// Pause duration elapsed - mark as succeeded
+		cr.state = stateSucceeded
+		cr.ops.Done()
+	default:
+		panic(fmt.Sprintf("SetDeadlinePassed called in wrong state: %v", cr.GetState()))
+	}
+}
+
+// SetWontResend marks a request as permanently failed.
+func (cr *configRequest) SetWontResend() {
+	if cr.state != stateMayResend {
+		panic(fmt.Sprintf("SetWontResend called in wrong state: %v", cr.GetState()))
+	}
+	cr.state = stateFailed
+	if cr.err == nil {
+		cr.err = fmt.Errorf("no response to request")
+	}
+}
+
+// MaybeSpeedChangeSucceeded checks if a valid packet can confirm a speed change.
+func (cr *configRequest) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
+	// Only applicable if we're awaiting ACK for a speed change
+	if cr.state != stateAwaitingAck || cr.ops.ChangeSpeed() == 0 {
+		return
+	}
+
+	// Check if enough time has passed since sending for the packet to be post-speed-change
+	if validPacketTime.Sub(cr.sentTime) > speedChangeDelay {
+		// This packet confirms the speed change succeeded
+		cr.state = stateSucceeded
+		cr.ops.Done()
+	}
+}
+
+// checkComplete determines if request is fully complete
+func (cr *configRequest) checkComplete(ackTime time.Time) {
+	switch cr.state {
+	case stateAwaitingAck:
+		// Got the ACK we were waiting for
+		if cr.ops.Pause() > 0 {
+			cr.state = statePausing
+			cr.pauseStartTime = ackTime
+		} else {
+			cr.state = stateSucceeded
+			cr.ops.Done()
+		}
+	case stateAwaitingResponse:
+		// Check if we have the response
+		if !cr.ops.AwaitingResponse(cr.sentTime) {
+			if cr.ops.Pause() > 0 {
+				cr.state = statePausing
+				cr.pauseStartTime = ackTime
+			} else {
+				cr.state = stateSucceeded
+				cr.ops.Done()
+			}
+		}
+	case stateAwaitingAckAndResponse:
+		// Need to check if we have both
+		// This will be called when either ACK arrives or response data updates
+		// For now, transition to appropriate single-waiting state
+		if !cr.ops.AwaitingResponse(cr.sentTime) {
+			// Got response, still waiting for ACK
+			cr.state = stateAwaitingAck
+			cr.checkComplete(ackTime)
+		}
+		// If only ACK arrived, we stay in stateAwaitingAckAndResponse
+		// The processAckNak will handle transitioning when ACK arrives
+	}
+}
 
 func newConfigurator(target *gpsprot.ConfigTarget, ver *Version) *Configurator {
 	steps := legacyConfigSteps
@@ -110,7 +312,7 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 
 // ReceiverInfo returns static information about the GPS receiver.
 func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
-	ver := c.ver	
+	ver := c.ver
 	var fwParts []string
 	if ver.FW != nil {
 		fwParts = append(fwParts, ver.FW.String())
@@ -136,47 +338,98 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	return &rcvrInfo
 }
 
-func (c *Configurator) NextRequest() (gpsprot.ConfigRequest, error) {
-	for {
-		if len(c.reqs) > 0 {
-			req := c.reqs[0]
-			c.reqs = c.reqs[1:]
-			return req, nil
-		}
-		if c.stepIndex >= len(c.steps) {
-			break
-		}
+// GetRequestCount returns the current number of requests and whether the slice is complete.
+func (c *Configurator) GetRequestCount() (count int, complete bool) {
+	return len(c.reqs), c.complete
+}
+
+// Request returns the ConfigRequest2 at the given index.
+func (c *Configurator) Request(index int) gpsprot.ConfigRequest2 {
+	if index >= len(c.reqs) {
+		panic("index >= GetRequestCount()")
+	}
+	return c.reqs[index]
+}
+
+// GenerateRequests attempts to generate more requests, potentially increasing the slice size.
+func (c *Configurator) GenerateRequests() error {
+	// First, handle state transitions and sequential progression
+	// Note: updateRequestStates is not needed here as pause completion
+	// is handled by the client via SetDeadlinePassed
+	c.advanceSequentialProgress()
+
+	// Only generate new requests if all existing requests are complete
+	// (nextIndex has caught up to the end of the request slice)
+	if c.nextIndex < len(c.reqs) {
+		return nil
+	}
+
+	// Then generate new requests lazily using the existing step-based approach
+	initialRequestCount := len(c.reqs)
+
+	for c.stepIndex < len(c.steps) {
 		err := c.steps[c.stepIndex](c)
 		c.stepIndex++
 		if err != nil {
-			c.stop()
-			return nil, err
+			return err
+		}
+
+		// If we generated new requests, return to allow processing them
+		// before generating more (subsequent requests may depend on results)
+		if len(c.reqs) > initialRequestCount {
+			// After generating new requests, ensure sequential progress is updated
+			c.advanceSequentialProgress()
+			return nil
 		}
 	}
-	return nil, nil
+
+	c.complete = true
+	return nil
 }
 
-func (c *Configurator) FindAck(packet []byte, tSent time.Time) *gpsprot.Ack {
-	a := c.acks.findAckByMsgId(bin.PacketMsgId(packet), tSent)
-	if a == nil {
-		return nil
+// advanceSequentialProgress advances nextIndex and makes next requests ready
+func (c *Configurator) advanceSequentialProgress() {
+	for c.nextIndex < len(c.reqs) {
+		cr := c.reqs[c.nextIndex]
+
+		// If current request succeeded, advance to next
+		if cr.state == stateSucceeded {
+			c.nextIndex++
+			// Make next request ready if it exists
+			if c.nextIndex < len(c.reqs) {
+				c.reqs[c.nextIndex].state = stateReadyToSend
+			}
+		} else if cr.state == stateFailed {
+			// Handle failed request - trigger recovery logic
+			c.handleFailedRequest(c.nextIndex)
+			break // Stop sequential progress after failure
+		} else if cr.state == stateNotReady {
+			// This request needs to become ready
+			cr.state = stateReadyToSend
+			break
+		} else {
+			break // Current request not ready to advance
+		}
 	}
-	if !a.OK {
-		c.stop()
+}
+
+// handleFailedRequest handles recovery logic when a request fails
+func (c *Configurator) handleFailedRequest(index int) {
+	// Recovery logic formerly in c.stop() method
+	// Mark remaining requests as skipped
+	for i := index + 1; i < len(c.reqs); i++ {
+		if c.reqs[i].state == stateNotReady {
+			c.reqs[i].state = stateSkipped
+		}
 	}
-	return &a.Ack
-}
+	// Move past the failed request to avoid reprocessing
+	c.nextIndex = index + 1
+	// Stop all further step processing - recovery should be final
+	c.stepIndex = len(c.steps)
+	// Mark as complete since we've handled failure and will add any recovery requests below
+	c.complete = true
 
-func (c *Configurator) Abort() {
-	c.stop()
-}
-
-func (c *Configurator) stop() {
-	c.stepIndex = len(c.steps) // don't do any more steps
-	c.reqs = nil
-
-	// consider whether we need to perform recovery
-
+	// Perform recovery if needed (from old stop() method)
 	// only need to do recovery for legacy configuration
 	if &c.steps[0] != &legacyConfigSteps[0] {
 		return
@@ -191,31 +444,78 @@ func (c *Configurator) stop() {
 	}
 	// we disabled NMEA output, but didn't get far enough to enable the time GNSS message
 	// we had better reenable NMEA output, or the GPS will be silent
-	_ = c.addMsgSetRequest(c.origPrt)
+	msg := c.origPrt
+	c.reqs = append(c.reqs, &configRequest{
+		ops:   msgSetRequest{msgRequest{msg}, &c.raw},
+		state: stateReadyToSend,
+	})
 }
 
-func (c *Configurator) addRequest(req gpsprot.ConfigRequest) error {
-	c.reqs = append(c.reqs, req)
+// addRequest adds a new request to the Configurator2 interface
+func (c *Configurator) addRequest(ops requestOps) error {
+	c.reqs = append(c.reqs, &configRequest{
+		ops:   ops,
+		state: stateNotReady,
+	})
 	return nil
+}
+
+// processAckNak handles both positive and negative acknowledgments
+func (c *Configurator) processAckNak(msgID bin.MsgID, ok bool, t time.Time) {
+	// Find the request that matches this ACK/NACK
+	for i := 0; i < len(c.reqs); i++ {
+		cr := c.reqs[i]
+		// Check if this request is awaiting an ACK
+		if cr.state == stateAwaitingAck || cr.state == stateAwaitingAckAndResponse {
+			packet := cr.ops.Packet()
+			if bin.PacketMsgId(packet) == msgID && !t.Before(cr.sentTime) {
+				if ok {
+					// ACK received
+					if cr.state == stateAwaitingAckAndResponse {
+						// Still waiting for response
+						cr.state = stateAwaitingResponse
+						cr.checkComplete(t)
+					} else {
+						// Only waiting for ACK
+						cr.checkComplete(t)
+					}
+				} else {
+					// NACK received
+					cr.state = stateFailed
+					cr.err = fmt.Errorf("GPS receiver sent NACK for request %s", cr.ops.ID())
+				}
+				break
+			}
+		}
+	}
+}
+
+// checkPollResponses checks if any awaiting poll requests are now satisfied
+func (c *Configurator) checkPollResponses(t time.Time) {
+	for i := 0; i < len(c.reqs); i++ {
+		c.reqs[i].checkComplete(t)
+	}
 }
 
 func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
 	switch mt := msg.(type) {
 	case *bin.AckAck:
-		c.acks.ack(mt.MsgID, true, t)
+		c.processAckNak(mt.MsgID, true, t)
 		return true, nil
 	case *bin.AckNak:
-		c.acks.ack(mt.MsgID, false, t)
+		c.processAckNak(mt.MsgID, false, t)
 		return true, nil
 	case *bin.MonGnss:
 		c.tRead[mt.ID()] = t
 		c.monGNSS = c.newMonGNSS(mt)
+		c.checkPollResponses(t)
 		return true, nil
 	}
 	mid := msg.ID()
 	if mid.CfgClass() {
 		c.tRead[mid] = t
 		_, err := c.raw.AddMsg(msg)
+		c.checkPollResponses(t)
 		return err == nil, err
 	}
 	return false, nil
@@ -677,26 +977,6 @@ func (c *Configurator) osnmaAssist() error {
 	return c.addRequest(msgRequest{mga})
 }
 
-func (acks *ackList) ack(msgID bin.MsgID, ok bool, t time.Time) {
-	*acks = append(*acks, &Ack{msgID, gpsprot.Ack{OK: ok, TRead: t}})
-}
-
-func (acks *ackList) findAckByMsgId(msgID bin.MsgID, tSent time.Time) (ack *Ack) {
-	stale := 0
-	for i, a := range *acks {
-		if !a.TRead.After(tSent) {
-			stale = i + 1
-		} else if a.msgID == msgID {
-			ack = a
-			break
-		}
-	}
-	if stale > 0 {
-		*acks = (*acks)[stale:]
-	}
-	return
-}
-
 func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigProps {
 	if raw == nil {
 		return nil
@@ -768,7 +1048,7 @@ type msgRequest struct {
 	msg bin.Msg
 }
 
-var _ gpsprot.ConfigRequest = (*msgRequest)(nil)
+var _ requestOps = (*msgRequest)(nil)
 
 func (r msgRequest) Packet() []byte {
 	pkt, err := bin.Serialize(r.msg)
@@ -826,14 +1106,14 @@ func (r msgPollRequest) AwaitingResponse(tSent time.Time) bool {
 	return r.tRead[r.msg.ID()].Before(tSent)
 }
 
-var _ gpsprot.ConfigRequest = (*msgPollRequest)(nil)
+var _ requestOps = (*msgPollRequest)(nil)
 
 type msgSetRequest struct {
 	msgRequest
 	raw *RawConfig
 }
 
-var _ gpsprot.ConfigRequest = (*msgSetRequest)(nil)
+var _ requestOps = (*msgSetRequest)(nil)
 
 func (r msgSetRequest) Done() {
 	_, err := r.raw.AddMsg(r.msg)
@@ -851,9 +1131,14 @@ func (r msgSetSpeedRequest) ChangeSpeed() int {
 	return r.speed
 }
 
-var _ gpsprot.ConfigRequest = (*msgSetSpeedRequest)(nil)
+var _ requestOps = (*msgSetSpeedRequest)(nil)
 
 const pauseAfterGNSSReset = time.Second / 2
+
+// speedChangeDelay is how long after sending a speed change command until we can
+// accept a valid packet as confirmation that the speed change succeeded.
+// This accounts for the time it takes the GPS to process and apply the speed change.
+const speedChangeDelay = 400 * time.Millisecond
 
 type msgSetPauseRequest struct {
 	msgSetRequest
@@ -864,7 +1149,7 @@ func (r msgSetPauseRequest) Pause() time.Duration {
 	return r.pause
 }
 
-var _ gpsprot.ConfigRequest = (*msgSetPauseRequest)(nil)
+var _ requestOps = (*msgSetPauseRequest)(nil)
 
 type pollRequest struct {
 	tRead map[bin.MsgID]time.Time
