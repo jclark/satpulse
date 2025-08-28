@@ -132,18 +132,13 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 				}
 			}
 
-		case gpsprot.ConfigActionCheckTimeout:
-			// Check if deadline has passed
-			if t0.After(action.Deadline) {
-				req := cfg.Request(action.Index)
-				req.SetResponseDeadlinePassed()
-			}
 
 		case gpsprot.ConfigActionWaitUntil:
 			// Advance time to the deadline
 			if action.Deadline.After(t0) {
 				t0 = action.Deadline.Add(time.Millisecond)
 			}
+			director.AdvanceTimeTo(t0)
 
 		case gpsprot.ConfigActionError:
 			// Error occurred but continue to allow recovery

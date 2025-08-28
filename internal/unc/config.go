@@ -290,7 +290,7 @@ func (req *ConfigRequest) SetSentTime(tSent time.Time) {
 	req.tBase = tSent
 }
 
-func (req *ConfigRequest) SetResponseDeadlinePassed() {
+func (req *ConfigRequest) SetDeadlinePassed() {
 	switch req.state {
 	case stateAwaitingAck:
 		// Command timed out waiting for ACK
@@ -302,7 +302,7 @@ func (req *ConfigRequest) SetResponseDeadlinePassed() {
 		// Idle period over - consider complete
 		req.state = stateSucceeded
 	default:
-		panic(req.invalidStatePanic("SetResponseDeadlinePassed"))
+		panic(req.invalidStatePanic("SetDeadlinePassed"))
 	}
 }
 
@@ -319,14 +319,19 @@ func (req *ConfigRequest) SetWontResend() {
 	}
 }
 
-func (req *ConfigRequest) GetResponseDeadline() time.Time {
+// MaybeSpeedChangeSucceeded checks if a valid packet can confirm a speed change.
+func (req *ConfigRequest) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
+	// UNC doesn't support speed changes yet, so this is a no-op
+}
+
+func (req *ConfigRequest) GetDeadline() time.Time {
 	switch req.state {
 	case stateAwaitingAck, stateAwaitingAckAndResponse, stateAwaitingResponse:
 		return req.tBase.Add(maxResponseDelay)
 	case stateMaybeComplete:
 		return req.tBase.Add(idlePeriod)
 	default:
-		panic(req.invalidStatePanic("GetResponseDeadline"))
+		panic(req.invalidStatePanic("GetDeadline"))
 	}
 }
 
