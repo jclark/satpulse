@@ -39,9 +39,7 @@ func testDataBin(t *testing.T, tests []dataTestCase) {
 				expectedMsg = tt.fixupMsgForBin(tt.msg)
 			}
 
-			if !reflect.DeepEqual(msg, expectedMsg) {
-				t.Errorf("ParseBinMsg() mismatch:\nGot:  %+v\nWant: %+v", msg, expectedMsg)
-			}
+			compareMsg(t, msg, expectedMsg, "ParseBinMsg()")
 
 			// Test round-trip: msg -> serialize -> compare bytes directly
 			serialized, err := SerializeBinMsg(expectedMsg)
@@ -72,9 +70,7 @@ func testDataAscii(t *testing.T, tests []dataTestCase) {
 				expectedMsg = tt.fixupMsgForAscii(tt.msg)
 			}
 
-			if !reflect.DeepEqual(msg, expectedMsg) {
-				t.Errorf("ParseAsciiMessage() mismatch:\nGot:  %+v\nWant: %+v", msg, expectedMsg)
-			}
+			compareMsg(t, msg, expectedMsg, "ParseAsciiMessage()")
 
 			// Test round-trip: msg -> serialize -> parse using expectedMsg for both directions
 			serialized, err := SerializeAsciiMsg(expectedMsg)
@@ -87,10 +83,19 @@ func testDataAscii(t *testing.T, tests []dataTestCase) {
 				t.Fatalf("ParseAsciiMessage() on serialized packet error = %v", err)
 			}
 
-			if !reflect.DeepEqual(msg2, expectedMsg) {
-				t.Errorf("ParseAsciiMessage() on serialized mismatch:\nGot:  %+v\nWant: %+v", msg2, expectedMsg)
-			}
+			compareMsg(t, msg2, expectedMsg, "ParseAsciiMessage() on serialized")
 		})
+	}
+}
+
+// compareMsg compares two Msg structs and reports detailed differences
+func compareMsg(t *testing.T, got, want *Msg, context string) {
+	t.Helper()
+	if !reflect.DeepEqual(got.Hdr, want.Hdr) {
+		t.Errorf("%s header mismatch:\nGot:  %+v\nWant: %+v", context, got.Hdr, want.Hdr)
+	}	
+	if !reflect.DeepEqual(got.Body, want.Body) {
+		t.Errorf("%s body mismatch:\nGot:  %+v\nWant: %+v", context, got.Body, want.Body)
 	}
 }
 

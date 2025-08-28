@@ -11,7 +11,7 @@ const (
 	BestNavHID   MsgID = 2119
 	BestNavXYZID MsgID = 240
 	BestNavXYZHID MsgID = 242
-	BestSatID    MsgID = 1041
+	// BestSatID    MsgID = 1041 // implemented in sats.go
 	BSLNEnuHD2ID MsgID = 1316
 	BSLNXyzHD2ID MsgID = 1317
 	DOPHD2ID     MsgID = 1333
@@ -120,7 +120,6 @@ func init() {
 	idNameMap[BestNavHID] = "BESTNAVH"
 	idNameMap[BestNavXYZID] = "BESTNAVXYZ"
 	idNameMap[BestNavXYZHID] = "BESTNAVXYZH"
-	idNameMap[BestSatID] = "BESTSAT"
 	idNameMap[BSLNEnuHD2ID] = "BSLNENUHD2"
 	idNameMap[BSLNXyzHD2ID] = "BSLNXYZHD2"
 	idNameMap[DOPHD2ID] = "DOPHD2"

@@ -756,14 +756,19 @@ Manual says: “freq No.” is updated according to the real time calculation.
 
 * **Message ID:** 1041  
 * Description: Information about the satellites used in the position solution. The message consists of a header followed by a variable number of satellite blocks.  
-  | Field | Type | Bytes | Description |  
-  |---|---|---|---|  
-  | #entries | Ulong | 4 | Number of satellite entries to follow |  
-  | Satellite Block (repeats #entries times) | | | |  
-  | Satellite system | Enum | 4 | GNSS system |  
-  | Satellite ID | Ulong | 4 | Satellite PRN number |  
-  | Status | Enum | 4 | Status (always "GOOD") |  
-  | Signal mask | Hex 4 | 4 | Bitmask of signals used from this satellite |
+
+**NOTE:** This implementation differs from the PDF specification:
+1. SatID bit layout: PDF spec has low/high bytes swapped - actual format has high 16 bits = PRN, low 16 bits = frequency channel
+2. GLONASS frequency separator: PDF shows "-" but actual format uses "+" (e.g., "40+12")
+
+  | Field | Type | Bytes | Offset | Description |  
+  |---|---|---|---|---|  
+  | #entries | Ulong | 4 | H+0 | Number of satellite entries to follow |  
+  | Satellite Block (repeats #entries times, 16 bytes each) | | | | |  
+  | Satellite system | Enum | 4 | H+4 | GNSS satellite system (see Table 7-116) |  
+  | Satellite ID | Ulong | 4 | H+8 | Satellite PRN number. In binary: high 16 bits = PRN, low 16 bits = frequency channel for GLONASS (zero for others). In ASCII: PRN with frequency channel appended for GLONASS using "+" (e.g., "40+12") |  
+  | Status | Enum | 4 | H+12 | Status: 0 in binary, "GOOD" in ASCII |  
+  | Signal mask | Hex 4 | 4 | H+16 | Bitmask of signals used from this satellite (see signal mask tables below) |
 
 **Satellite System Enum (from Table 7-116):**
 
@@ -775,29 +780,44 @@ Manual says: “freq No.” is updated according to the real time calculation.
 * **7:** QZSS  
 * **9:** NAVIC
 
+**Signal Mask Tables:**
+Signal masks indicate which signals from each satellite are used in the position solution.
 
-#### **BESTSAT**
+**Table 7-94: BESTSAT GPS Signal Mask**
+| Bit | Mask | Description |
+|-----|------|-------------|
+| 0 | 0x01 | GPS L1 used in Solution |
+| 1 | 0x02 | GPS L2 used in Solution |
+| 2 | 0x04 | GPS L5 used in Solution |
+| 3 | - | Reserved |
+| 4 | 0x10 | Common-view satellite shared with base station |
 
-* **Message ID:** 1041  
-* Description: Information about the satellites used in the position solution. The message consists of a header followed by a variable number of satellite blocks.  
-  | Field | Type | Bytes | Description |  
-  |---|---|---|---|  
-  | \#entries | Ulong | 4 | Number of satellite entries to follow |  
-  | Satellite Block (repeats \#entries times) | | | |  
-  | Satellite system | Enum | 4 | GNSS system |  
-  | Satellite ID | Ulong | 4 | Satellite PRN number |  
-  | Status | Enum | 4 | Status (always "GOOD") |  
-  | Signal mask | Hex 4 | 4 | Bitmask of signals used from this satellite |
+**Table 7-95: BESTSAT GLONASS Signal Mask**
+| Bit | Mask | Description |
+|-----|------|-------------|
+| 0 | 0x01 | GLONASS L1 used in Solution |
+| 1 | 0x02 | GLONASS L2 used in Solution |
+| 2 | 0x04 | GLONASS L3 used in Solution |
+| 3 | - | Reserved |
+| 4 | 0x10 | Common-view satellite shared with base station and used in resolution |
 
-**Satellite System Enum (from Table 7-116):**
+**Table 7-96: BESTSAT BDS Signal Mask**  
+| Bit | Mask | Description |
+|-----|------|-------------|
+| 0 | 0x01 | BeiDou B1 used in Solution |
+| 1 | 0x02 | BeiDou B2 used in Solution |
+| 2 | 0x04 | BeiDou B3 used in Solution |
+| 3 | - | Reserved |
+| 4 | 0x10 | Common-view satellite shared with base station |
 
-* **0:** GPS  
-* **1:** GLONASS  
-* **2:** SBAS  
-* **5:** GALILEO  
-* **6:** BEIDOU  
-* **7:** QZSS  
-* **9:** NAVIC
+**Table 7-97: BESTSAT Galileo Signal Mask**
+| Bit | Mask | Description |
+|-----|------|-------------|
+| 0 | 0x01 | Galileo E1 used in Solution |
+| 1 | 0x02 | Galileo E5A used in Solution |
+| 2 | 0x04 | Galileo E5B used in Solution |
+| 3 | 0x08 | Galileo ALTBOC used in Solution |
+| 4 | 0x10 | Common-view satellite shared with base station |
 
 #### **GPSUTC**
 

@@ -324,9 +324,6 @@ Accepted command/response forms (normalized)
 
 This is what is needed to implement everything that has been implemented for u-blox and is supported by Unicore.
 
-### Message Parsing (uncmsg)
-- **BESTSAT message** - Parse satellites used in navigation solution (needed for SatellitesMsg.Used field)
-
 ### Message Mapping (unc)
 - **LeapSecondMsg mapping** - Map GPSUTC, GALUTC, BD3UTC, BDSUTC to gpsprot.LeapSecondMsg
 - **BESTSAT to SatellitesMsg.Used** - Map which satellites are actually used in solution

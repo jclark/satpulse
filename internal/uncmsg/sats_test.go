@@ -81,7 +81,67 @@ var satsTests = []dataTestCase{
 			},
 		},
 	},
+	{
+		name:        "BestSat with 34 satellites",
+		binPacket:   mustHexDecode("aa44b5601104240200a04d09882573168c4400000012160022000000000000000000020000000000030000000000000000000a000000000007000000000000000000170000000000070000000000000000001a0000000000070000000000000000001c0000000000070000000000000000001f000000000003000000070000000000c3000000000007000000070000000000c7000000000007000000010000000c002800000000000100000001000000000033000000000003000000010000000700340000000000030000000100000006003500000000000300000001000000040037000000000003000000010000000a0038000000000003000000050000000000040000000000070000000500000000000a0000000000070000000500000000000c000000000007000000050000000000170000000000070000000500000000001f000000000007000000050000000000210000000000070000000600000000000200000000000700000006000000000003000000000007000000060000000000060000000000070000000600000000000700000000000700000006000000000008000000000007000000060000000000090000000000070000000600000000000a0000000000070000000600000000000d000000000007000000060000000000100000000000070000000600000000001800000000006d0000000600000000001900000000006d0000000600000000002600000000006d0000000600000000002800000000006d0000000600000000002b00000000006d00000081303601"),
+		asciiPacket: "#BESTSATA,96,GPS,FINE,2381,376645000,17548,0,18,22;34,GPS,2,GOOD,00000003,GPS,10,GOOD,00000007,GPS,23,GOOD,00000007,GPS,26,GOOD,00000007,GPS,28,GOOD,00000007,GPS,31,GOOD,00000003,QZSS,195,GOOD,00000007,QZSS,199,GOOD,00000007,GLONASS,40+12,GOOD,00000001,GLONASS,51,GOOD,00000003,GLONASS,52+7,GOOD,00000003,GLONASS,53+6,GOOD,00000003,GLONASS,55+4,GOOD,00000003,GLONASS,56+10,GOOD,00000003,GALILEO,4,GOOD,00000007,GALILEO,10,GOOD,00000007,GALILEO,12,GOOD,00000007,GALILEO,23,GOOD,00000007,GALILEO,31,GOOD,00000007,GALILEO,33,GOOD,00000007,BEIDOU,2,GOOD,00000007,BEIDOU,3,GOOD,00000007,BEIDOU,6,GOOD,00000007,BEIDOU,7,GOOD,00000007,BEIDOU,8,GOOD,00000007,BEIDOU,9,GOOD,00000007,BEIDOU,10,GOOD,00000007,BEIDOU,13,GOOD,00000007,BEIDOU,16,GOOD,00000007,BEIDOU,24,GOOD,0000006d,BEIDOU,25,GOOD,0000006d,BEIDOU,38,GOOD,0000006d,BEIDOU,40,GOOD,0000006d,BEIDOU,43,GOOD,0000006d*c48b5090\r\n",
+		msg: &Msg{
+			Hdr: MsgHdr{
+				CPUIdlePercent: 96,
+				TimingHdr: TimingHdr{
+					TimeRef:            TimeRefGPS,
+					TimeStatus:         TimeStatusFine,
+					Week:               2381,
+					MillisecondsOfWeek: 376645000,
+					Reserved:           17548,
+					Version:            0,
+					LeapSec:            18,
+					DelayMs:            22,
+				},
+			},
+			Body: &BestSat{
+				BestSatInitChunk: BestSatInitChunk{NumEntries: 34},
+				Sats: []BestSatEntry{
+					{System: SatSysGPS, SatID: MakeSatID(2), Status: SatStatusGood, SigMask: SigUsed(0x00000003)},
+					{System: SatSysGPS, SatID: MakeSatID(10), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysGPS, SatID: MakeSatID(23), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysGPS, SatID: MakeSatID(26), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysGPS, SatID: MakeSatID(28), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysGPS, SatID: MakeSatID(31), Status: SatStatusGood, SigMask: SigUsed(0x00000003)},
+					{System: SatSysQZSS, SatID: MakeSatID(195), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysQZSS, SatID: MakeSatID(199), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysGLONASS, SatID: MakeSatID(40, 12), Status: SatStatusGood, SigMask: SigUsed(0x00000001)},
+					{System: SatSysGLONASS, SatID: MakeSatID(51), Status: SatStatusGood, SigMask: SigUsed(0x00000003)},
+					{System: SatSysGLONASS, SatID: MakeSatID(52, 7), Status: SatStatusGood, SigMask: SigUsed(0x00000003)},
+					{System: SatSysGLONASS, SatID: MakeSatID(53, 6), Status: SatStatusGood, SigMask: SigUsed(0x00000003)},
+					{System: SatSysGLONASS, SatID: MakeSatID(55, 4), Status: SatStatusGood, SigMask: SigUsed(0x00000003)},
+					{System: SatSysGLONASS, SatID: MakeSatID(56, 10), Status: SatStatusGood, SigMask: SigUsed(0x00000003)},
+					{System: SatSysGALILEO, SatID: MakeSatID(4), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysGALILEO, SatID: MakeSatID(10), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysGALILEO, SatID: MakeSatID(12), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysGALILEO, SatID: MakeSatID(23), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysGALILEO, SatID: MakeSatID(31), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysGALILEO, SatID: MakeSatID(33), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(2), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(3), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(6), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(7), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(8), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(9), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(10), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(13), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(16), Status: SatStatusGood, SigMask: SigUsed(0x00000007)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(24), Status: SatStatusGood, SigMask: SigUsed(0x0000006d)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(25), Status: SatStatusGood, SigMask: SigUsed(0x0000006d)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(38), Status: SatStatusGood, SigMask: SigUsed(0x0000006d)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(40), Status: SatStatusGood, SigMask: SigUsed(0x0000006d)},
+					{System: SatSysBEIDOU, SatID: MakeSatID(43), Status: SatStatusGood, SigMask: SigUsed(0x0000006d)},
+				},
+			},
+		},
+	},
 }
+
 
 func TestSats(t *testing.T) {
 	t.Run("bin", func(t *testing.T) {
@@ -90,4 +150,27 @@ func TestSats(t *testing.T) {
 	t.Run("ascii", func(t *testing.T) {
 		testDataAscii(t, satsTests)
 	})
+}
+
+func TestSatID(t *testing.T) {
+	tests := []struct {
+		s    string
+		want SatID
+	}{
+		{"10", MakeSatID(10)},
+		{"13+4", MakeSatID(13, 4)},
+	}
+	for _, tt := range tests {
+		got, err := ParseSatID(tt.s)
+		if err != nil {
+			t.Errorf("ParseSatID(%q) error = %v", tt.s, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("ParseSatID(%q) = %v, want %v", tt.s, got, tt.want)
+		}
+		if got.String() != tt.s {
+			t.Errorf("SatID(%d).String() = %q, want %q", got, got.String(), tt.s)
+		}
+	}
 }
