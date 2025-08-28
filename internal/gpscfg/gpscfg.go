@@ -274,78 +274,57 @@ func (mh *msgHandler) installNativeMsgHandlers() (*gpsprot.MultiNativeMsgHandler
 	}
 }
 
+// maximum number of times to retry a request that doesn't get a response
+const maxTries = 3
+
 func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol2, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, error) {
 	cfgtor, err := prot.Configure2(target)
 	if err != nil {
 		return nil, nil, err
 	}
-	
 	director := gpsprot.NewConfigDirector(cfgtor, maxTries)
 	var knownErr error // error that we know how to handle
-
 	for action := range director.Actions() {
+		director.AdvanceTimeTo(time.Now())
 		switch action.Type {
 		case gpsprot.ConfigActionSendRequest:
-			// Capture send time before write - ACK matching requires sentTime <= ackTime
-			tSend := time.Now()
 			var err error
-			if action.Speed != 0 {
-				// Serial port specific - send then change speed
-				if serPort, ok := port.(*gpsio.SerialConn); ok {
-					_, err = serPort.WriteThenChangeSpeed(action.Packet, action.Speed)
-				} else {
-					err = fmt.Errorf("speed change requested but port is not serial")
-				}
+			if serPort, ok := port.(*gpsio.SerialConn); ok && action.Speed != 0 {
+				_, err = serPort.WriteThenChangeSpeed(action.Packet, action.Speed)
 			} else {
 				_, err = port.Write(action.Packet)
 			}
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to send configuration packet: %w", err)
 			}
-			req := cfgtor.Request(action.Index)
-			req.SetSentTime(tSend)
+			cfgtor.Request(action.Index).SetSentTime(time.Now())
 			mh.lg.Debug("sent configuration message", "index", action.Index, "len", len(action.Packet))
-			
-		case gpsprot.ConfigActionCheckTimeout:
-			// Check if this specific request's deadline has passed
-			if time.Now().After(action.Deadline) {
-				req := cfgtor.Request(action.Index)
-				req.SetResponseDeadlinePassed()
-				mh.lg.Debug("configuration request timed out", "index", action.Index)
-			}
-			
 		case gpsprot.ConfigActionWaitUntil:
-			w := time.Until(action.Deadline)
-			if w > 0 {
-				timerCh := time.After(w)
-				select {
-				case <-ctx.Done():
-					return nil, nil, ctx.Err()
-				case <-timerCh:
-					// Continue to next iteration to check for state changes
-				case packet, ok := <-mh.packetCh:
-					if !ok {
-						return nil, nil, mh.packetChClosed(ctx)
-					}
-					mh.packet(packet)
+			timerCh := time.After(time.Until(action.Deadline))
+			select {
+			case <-ctx.Done():
+				return nil, nil, ctx.Err()
+			case <-timerCh:
+				// Continue to next iteration to check for state changes
+			case packet, ok := <-mh.packetCh:
+				if !ok {
+					return nil, nil, mh.packetChClosed(ctx)
+				}
+				mh.packet(packet)
+				if packet.ChecksumValid {
+					director.ValidPacketReceived(packet.TRead)
 				}
 			}
-			
+
 		case gpsprot.ConfigActionError:
 			if knownErr == nil {
 				mh.lg.Warn("GPS configuration failed", "err", action.Error)
 				knownErr = action.Error
 			}
-			// Continue to allow recovery operations
 		}
 	}
-	
-	// Iterator ended - configuration complete.
-	// Return any configuration properties we obtained, even if there were errors.
 	return cfgtor.ConfigProps(), cfgtor.ReceiverInfo(), knownErr
 }
-
-const maxTries = 3
 
 func (mh *msgHandler) suitableMessageCount() int {
 	count := 0
@@ -367,14 +346,6 @@ func (mh *msgHandler) nativeOnlyTags() []string {
 		}
 	}
 	return tags
-}
-
-func (mh *msgHandler) totalMsgCount() int {
-	count := 0
-	for _, c := range mh.msgCount {
-		count += c
-	}
-	return count
 }
 
 func (mh *msgHandler) packet(pkt scan.Packet) {

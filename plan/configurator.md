@@ -155,12 +155,12 @@ type ConfigRequest interface {
     GetPacket() []byte
     GetSpeedChangeAfter() int
     GetState() ConfigRequestState
-    GetResponseDeadline() time.Time  // valid when state is ConfigRequestAwaitingResponse or ConfigRequestMaybeComplete
+    GetDeadline() time.Time  // valid when state is ConfigRequestAwaitingResponse or ConfigRequestMaybeComplete
     GetReadyTime() time.Time         // valid when state is ConfigRequestPausing
     GetError() error                 // valid when state is ConfigRequestFailed
 
     SetSentTime(tSent time.Time)
-    SetResponseDeadlinePassed()
+    SetDeadlinePassed()
     SetWontResend()
 }
 
@@ -202,8 +202,8 @@ ConfigRequestState values change in response to:
 **Client-initiated transitions:**
 - `SetSentTime()`: ConfigRequestReadyToSend → ConfigRequestAwaitingResponse (if response expected) or ConfigRequestSucceeded (if no response expected)
 - `SetSentTime()`: ConfigRequestMayResend → ConfigRequestAwaitingResponse (client chooses to retry)
-- `SetResponseDeadlinePassed()`: ConfigRequestAwaitingResponse → ConfigRequestMayResend
-- `SetResponseDeadlinePassed()`: ConfigRequestMaybeComplete → ConfigRequestSucceeded
+- `SetDeadlinePassed()`: ConfigRequestAwaitingResponse → ConfigRequestMayResend
+- `SetDeadlinePassed()`: ConfigRequestMaybeComplete → ConfigRequestSucceeded
 - `SetWontResend()`: ConfigRequestMayResend → ConfigRequestFailed
 
 **Automatic transitions from packet processing:**
@@ -256,7 +256,7 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 - Returns 0 if no speed change is required
 - Speed changes are protocol-specific operations that must be handled by the client after the packet is sent but before waiting for acknowledgment
 
-**GetResponseDeadline(index int) time.Time**:
+**GetDeadline(index int) time.Time**:
 - Precondition: `index < GetRequestCount()`
 - Precondition: request state is ConfigRequestAwaitingResponse or ConfigRequestMaybeComplete
 - Returns the absolute time by which response packets are expected
@@ -285,13 +285,13 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 - State effect: ConfigRequestMayResend → ConfigRequestAwaitingResponse (client chooses to retry)
 - The timestamp is used for timeout calculations and protocol timing requirements
 
-**SetResponseDeadlinePassed(index int)**:
+**SetDeadlinePassed(index int)**:
 - Precondition: `index < GetRequestCount()`
 - Precondition: request state is ConfigRequestAwaitingResponse or ConfigRequestMaybeComplete
 - Notifies that the response deadline has passed
 - State effect: ConfigRequestAwaitingResponse → ConfigRequestMayResend (timeout, can retry)
 - State effect: ConfigRequestMaybeComplete → ConfigRequestSucceeded (idle period over, no more responses expected)
-- The client should call this when GetResponseDeadline() time has passed
+- The client should call this when GetDeadline() time has passed
 - For AwaitingResponse, the client can then decide whether to retry or abandon
 - For MaybeComplete, this indicates the response burst is considered complete
 
@@ -322,7 +322,7 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 
 1. **Better Encapsulation**: Request details and state are encapsulated in a clean object interface
 2. **Simplified Caller Logic**: No need to call `FindAck()` and `Done()` - packet processing handles state transitions automatically
-3. **Type Safety**: Methods like `GetResponseDeadline()` can only be called on requests in appropriate states
+3. **Type Safety**: Methods like `GetDeadline()` can only be called on requests in appropriate states
 4. **Clear State Machine**: Explicit state transitions are easy to understand and test
 5. **Sequential Processing**: `ConfigRequestNotReady` ensures requests are processed in order
 6. **Natural Retry Handling**: `ConfigRequestMayResend` state gives client explicit control over retry decisions
@@ -336,10 +336,10 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 - `ConfigRequestReadyToSend` → `ConfigRequestAwaitingResponse` | `ConfigRequestSucceeded` (via SetSentTime)
 - `ConfigRequestAwaitingResponse` → `ConfigRequestPausing` | `ConfigRequestSucceeded` | `ConfigRequestFailed` (via packet processing)
 - `ConfigRequestAwaitingResponse` → `ConfigRequestMaybeComplete` (via packet processing - first response for multi-response query)
-- `ConfigRequestAwaitingResponse` → `ConfigRequestMayResend` (via SetResponseDeadlinePassed)
+- `ConfigRequestAwaitingResponse` → `ConfigRequestMayResend` (via SetDeadlinePassed)
 - `ConfigRequestAwaitingResponse` → `ConfigRequestFailed` (via Configurator decision - no retry allowed)
 - `ConfigRequestMaybeComplete` → `ConfigRequestMaybeComplete` (via packet processing - additional responses)
-- `ConfigRequestMaybeComplete` → `ConfigRequestSucceeded` (via SetResponseDeadlinePassed - idle period over)
+- `ConfigRequestMaybeComplete` → `ConfigRequestSucceeded` (via SetDeadlinePassed - idle period over)
 - `ConfigRequestPausing` → `ConfigRequestSucceeded` (when pause duration elapses)
 - `ConfigRequestMayResend` → `ConfigRequestAwaitingResponse` (via SetSentTime - client chooses retry)
 - `ConfigRequestMayResend` → `ConfigRequestFailed` (via SetWontResend)
@@ -347,7 +347,7 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 
 ### Implementation Notes
 
-Implementations can use various internal structures to track requests. The UBX implementation uses a single slice of structs containing the request and its state, but this is an implementation detail. The key requirement is that the gpsprot interface only exposes indices, never ConfigRequest objects.
+Implementations can use various internal structures to track requests. The UBX implementation uses a single slice of structs containing the request and its state, but this is an implementation detail. 
 
 ### ConfigDirector
 
@@ -401,127 +401,9 @@ func NewConfigDirector(cfgtor Configurator, maxRetries int) *ConfigDirector {
 
 // Actions returns an iterator over configuration actions
 func (cd *ConfigDirector) Actions() iter.Seq[ConfigAction] {
-    return func(yield func(ConfigAction) bool) {
-        for {
-            // Try to generate more requests
-            if err := cd.cfgtor.GenerateRequests(); err != nil {
-                cd.ErrorCount++
-                if !yield(ConfigAction{Type: ConfigActionError, Error: err}) { return }
-                return
-            }
-            
-            // Get current request count and completion status
-            count, complete := cd.cfgtor.GetRequestCount()
-            
-            // Check if we're done early
-            if complete && cd.startIndex >= count {
-                return // Configuration complete - no more actions
-            }
-            
-            // Update window bounds based on actual request states, yielding errors for failed requests
-            if !cd.updateWindow(count, yield) {
-                return
-            }
-            
-            // Process requests in the active window
-            var earliestDeadline time.Time
-            for i := cd.startIndex; i < cd.endIndex && i < count; i++ {
-                req := cd.cfgtor.Request(i)
-                state := req.GetState()
-                switch state {
-                case ConfigRequestAwaitingResponse:
-                    deadline := req.GetResponseDeadline()
-                    if !yield(ConfigAction{
-                        Type:     ConfigActionCheckTimeout,
-                        Index:    i,
-                        Deadline: deadline,
-                    }) { return }
-                    
-                    // Track earliest deadline for WaitUntil action
-                    if earliestDeadline.IsZero() || deadline.Before(earliestDeadline) {
-                        earliestDeadline = deadline
-                    }
-                    
-                case ConfigRequestPausing:
-                    readyTime := req.GetReadyTime()
-                    
-                    // Track earliest ready time for WaitUntil action
-                    if earliestDeadline.IsZero() || readyTime.Before(earliestDeadline) {
-                        earliestDeadline = readyTime
-                    }
-                    
-                case ConfigRequestMayResend:
-                    // Handle retry logic
-                    cd.ensureRetriesSize(i + 1)
-                    cd.retries[i]++
-                    if cd.retries[i] >= cd.maxRetries {
-                        req.SetWontResend()
-                        break // Move to next request in loop
-                    }
-                    fallthrough
-                    
-                case ConfigRequestReadyToSend:
-                    if !yield(ConfigAction{
-                        Type:   ConfigActionSendRequest,
-                        Index:  i,
-                        Packet: req.GetPacket(),
-                        Speed:  req.GetSpeedChangeAfter(),
-                    }) { return }
-                }
-            }
-            
-            
-            // If we have any awaiting requests, yield wait action
-            if !earliestDeadline.IsZero() {
-                if !yield(ConfigAction{Type: ConfigActionWaitUntil, Deadline: earliestDeadline}) { return }
-            }
-            
-        }
-    }
+  // ...
 }
 
-// updateWindow updates the window bounds based on actual request states
-func (cd *ConfigDirector) updateWindow(count int, yield func(ConfigAction) bool) bool {
-    // Advance startIndex past completed requests, yielding errors for failed ones
-    for cd.startIndex < count {
-        req := cd.cfgtor.Request(cd.startIndex)
-        state := req.GetState()
-        if state == ConfigRequestSucceeded || state == ConfigRequestSkipped {
-            cd.startIndex++
-        } else if state == ConfigRequestFailed {
-            // Yield error for this failed request exactly once as we advance past it
-            cd.ErrorCount++
-            err := req.GetError()
-            if !yield(ConfigAction{Type: ConfigActionError, Error: err}) { 
-                return false 
-            }
-            cd.startIndex++
-        } else {
-            break
-        }
-    }
-    
-    // Expand endIndex to include actionable requests
-    for cd.endIndex < count {
-        req := cd.cfgtor.Request(cd.endIndex)
-        state := req.GetState()
-        if state == ConfigRequestReadyToSend || state == ConfigRequestAwaitingResponse || 
-           state == ConfigRequestPausing || state == ConfigRequestMayResend {
-            cd.endIndex++
-        } else {
-            break
-        }
-    }
-    
-    return true
-}
-
-// ensureRetriesSize ensures the retries slice is large enough for the given size
-func (cd *ConfigDirector) ensureRetriesSize(size int) {
-    for len(cd.retries) < size {
-        cd.retries = append(cd.retries, 0)
-    }
-}
 ```
 
 ### Usage in internal/gpscfg/gpscfg.go
@@ -536,35 +418,17 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchange
     }
     
     director := gpsprot.NewConfigDirector(cfgtor, maxTries)
-    var knownErr error // error that we know how to handle
 
     for action := range director.Actions() {
         switch action.Type {
         case gpsprot.ConfigActionSendRequest:
-            // Capture send time before write - ACK matching requires sentTime <= ackTime
-            tSend := time.Now()
-            var err error
-            if action.Speed != 0 {
-                // Serial port specific - send then change speed
-                if serPort, ok := port.(*gpsio.SerialConn); ok {
-                    _, err = serPort.WriteThenChangeSpeed(action.Packet, action.Speed)
-                } else {
-                    err = fmt.Errorf("speed change requested but port is not serial")
-                }
-            } else {
-                _, err = port.Write(action.Packet)
-            }
-            if err != nil {
-                return nil, nil, fmt.Errorf("failed to send configuration packet: %w", err)
-            }
-            req := cfgtor.Request(action.Index)
-            req.SetSentTime(tSend)
-            
+           // send the packet and call req.SetSentTime
+           // ...
         case gpsprot.ConfigActionCheckTimeout:
             // Check if this specific request's deadline has passed
             if time.Now().After(action.Deadline) {
                 req := cfgtor.Request(action.Index)
-                req.SetResponseDeadlinePassed()
+                req.SetDeadlinePassed()
             }
             
         case gpsprot.ConfigActionWaitUntil:
@@ -614,13 +478,26 @@ This design addresses all the main weaknesses while preserving testability and m
 
 ### UBX Implementation Outline
 
-Based on the existing code in `internal/ubx/ubxcfg.go`, here's how the UBX Configurator would be updated to implement the new interface:
 
-**Step 1: Rename existing interface**
-First, the existing `ConfigRequest` interface would be renamed to `requestOps` to represent request-type-specific operations:
 
 ```go
 // internal/ubx/ubxcfg.go
+
+// Internal state enum to track detailed ACK/response lifecycle
+type configRequestState int
+
+const (
+    stateNotReady              configRequestState = iota // Maps to ConfigRequestNotReady
+    stateReadyToSend                                    // Maps to ConfigRequestReadyToSend
+    stateAwaitingAck                                   // Maps to ConfigRequestAwaitingResponse
+    stateAwaitingResponse                              // Maps to ConfigRequestAwaitingResponse
+    stateAwaitingAckAndResponse                        // Maps to ConfigRequestAwaitingResponse
+    statePausing                                       // Maps to ConfigRequestPausing
+    stateMayResend                                     // Maps to ConfigRequestMayResend
+    stateFailed                                        // Maps to ConfigRequestFailed
+    stateSucceeded                                     // Maps to ConfigRequestSucceeded
+    stateSkipped                                       // Maps to ConfigRequestSkipped
+)
 
 // requestOps defines the operations available for different request types (unexported)
 type requestOps interface {
@@ -633,21 +510,20 @@ type requestOps interface {
     ID() string
 }
 
-// configRequest is the UBX implementation of gpsprot.ConfigRequest
+// configRequest is the UBX implementation of gpsprot.ConfigRequest2
 type configRequest struct {
-    ops            requestOps                 // The request-specific operations (msgRequest, pollRequest, etc.)
-    sentTime       time.Time                  // When the request was sent
-    pauseStartTime time.Time                  // When the pause period started (for ConfigRequestPausing)
-    state          gpsprot.ConfigRequestState // Current state
-    err            error                      // Error details for failed requests
-    awaitingAck    bool                       // true if we still need an ACK for this request
+    ops            requestOps            // The request-specific operations (msgRequest, pollRequest, etc.)
+    state          configRequestState    // Internal state for ACK/response tracking
+    sentTime       time.Time             // When the request was sent
+    pauseStartTime time.Time             // When the pause period started
+    err            error                 // Error details for failed requests
 }
 
 type Configurator struct {
     // Request tracking
-    requests  []*configRequest       // All requests and their state
-    nextIndex int                    // Index of first request that hasn't succeeded
-    complete  bool                   // True when all steps have been processed
+    requests     []*configRequest       // All requests and their state
+    nextReadyIdx int                    // Index of first request that can be ready
+    complete     bool                   // True when all steps have been processed
 
     // Existing fields remain
     ver       *Version
@@ -659,245 +535,6 @@ type Configurator struct {
     stepIndex int
     target    *gpsprot.ConfigTarget
     survey    bool
-}
-
-// configRequest implements gpsprot.ConfigRequest
-func (cr *configRequest) GetPacket() []byte {
-    return cr.ops.Packet()
-}
-
-func (cr *configRequest) GetSpeedChangeAfter() int {
-    return cr.ops.ChangeSpeed()
-}
-
-func (cr *configRequest) GetState() gpsprot.ConfigRequestState {
-    return cr.state
-}
-
-func (cr *configRequest) GetResponseDeadline() time.Time {
-    if cr.state != gpsprot.ConfigRequestAwaitingResponse {
-        panic("GetResponseDeadline called in wrong state")
-    }
-    // Response deadline is determined by the request type and protocol rules
-    return cr.sentTime.Add(1500 * time.Millisecond)
-}
-
-func (cr *configRequest) GetReadyTime() time.Time {
-    if cr.state != gpsprot.ConfigRequestPausing {
-        panic("GetReadyTime called in wrong state")
-    }
-    // Return when the receiver will be ready (pause start time + pause duration)
-    return cr.pauseStartTime.Add(cr.ops.Pause())
-}
-
-func (cr *configRequest) GetError() error {
-    if cr.state != gpsprot.ConfigRequestFailed {
-        panic("GetError called in wrong state")
-    }
-    return cr.err
-}
-
-func (cr *configRequest) SetSentTime(tSent time.Time) {
-    cr.sentTime = tSent
-    cr.awaitingAck = cr.ops.Ackable()
-    
-    // Check if already complete (no ACK needed and no response needed)
-    if !cr.awaitingAck && !cr.ops.AwaitingResponse(tSent) {
-        cr.state = gpsprot.ConfigRequestSucceeded
-        cr.ops.Done()
-    } else {
-        cr.state = gpsprot.ConfigRequestAwaitingResponse
-    }
-}
-
-func (cr *configRequest) SetResponseDeadlinePassed() {
-    switch cr.state {
-    case gpsprot.ConfigRequestAwaitingResponse:
-        cr.state = gpsprot.ConfigRequestMayResend
-    case gpsprot.ConfigRequestMaybeComplete:
-        cr.state = gpsprot.ConfigRequestSucceeded
-    default:
-        panic("SetResponseDeadlinePassed called in wrong state")
-    }
-}
-
-func (cr *configRequest) SetWontResend() {
-    if cr.state != gpsprot.ConfigRequestMayResend {
-        panic("SetWontResend called in wrong state")
-    }
-    cr.state = gpsprot.ConfigRequestFailed
-    cr.err = fmt.Errorf("no response to request")
-}
-
-// Implementation of new interface methods
-func (c *Configurator) GenerateRequests() error {
-    // First, handle state transitions and sequential progression
-    c.updateRequestStates()
-    c.advanceSequentialProgress()
-    
-    // Then generate new requests lazily using the existing step-based approach
-    initialRequestCount := len(c.requests)
-    
-    for c.stepIndex < len(c.steps) {
-        err := c.steps[c.stepIndex](c)
-        c.stepIndex++
-        if err != nil {
-            return err
-        }
-        
-        // If we generated new requests, return to allow processing them
-        // before generating more (subsequent requests may depend on results)
-        if len(c.requests) > initialRequestCount {
-            return nil
-        }
-    }
-    
-    c.complete = true
-    return nil
-}
-
-// updateRequestStates handles automatic state transitions (e.g., pause completion)
-func (c *Configurator) updateRequestStates() {
-    for i := range c.requests {
-        rs := &c.requests[i]
-        
-        // Check if pausing request has completed its pause duration
-        if rs.state == gpsprot.ConfigRequestPausing {
-            pauseDuration := rs.request.Pause()
-            if time.Since(rs.pauseStartTime) >= pauseDuration {
-                rs.state = gpsprot.ConfigRequestSucceeded
-                rs.request.Done()
-            }
-        }
-    }
-}
-
-// advanceSequentialProgress advances nextIndex and makes next requests ready
-func (c *Configurator) advanceSequentialProgress() {
-    for c.nextIndex < len(c.requests) {
-        rs := &c.requests[c.nextIndex]
-        
-        // If current request succeeded, advance to next
-        if rs.state == gpsprot.ConfigRequestSucceeded {
-            c.nextIndex++
-            // Make next request ready if it exists
-            if c.nextIndex < len(c.requests) {
-                c.requests[c.nextIndex].state = gpsprot.ConfigRequestReadyToSend
-            }
-        } else if rs.state == gpsprot.ConfigRequestFailed {
-            // Handle failed request - trigger recovery logic that was formerly in c.stop()
-            c.handleFailedRequest(c.nextIndex)
-            break // Stop sequential progress after failure
-        } else {
-            break // Current request not ready to advance
-        }
-    }
-}
-
-// handleFailedRequest handles recovery logic when a request fails
-func (c *Configurator) handleFailedRequest(index int) {
-    // Recovery logic formerly in c.stop() method
-    // This could include marking dependent requests as skipped, 
-    // initiating recovery procedures, etc.
-    // Implementation depends on protocol-specific recovery strategy
-}
-
-func (c *Configurator) Request(index int) gpsprot.ConfigRequest {
-    if index >= len(c.requests) {
-        panic("index >= GetRequestCount()")
-    }
-    return c.requests[index]
-}
-
-// Modified addRequest to work with new structure
-func (c *Configurator) addRequest(ops requestOps) error {
-    state := gpsprot.ConfigRequestNotReady
-    // First request starts as ready
-    if len(c.requests) == 0 {
-        state = gpsprot.ConfigRequestReadyToSend
-    }
-    
-    c.requests = append(c.requests, &configRequest{
-        ops:         ops,
-        state:       state,
-        awaitingAck: false,  // Will be set when request is sent
-    })
-    return nil
-}
-
-// Process incoming packets - update request status based on ACKs
-func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
-    switch mt := msg.(type) {
-    case *bin.AckAck:
-        c.processAckNak(mt.MsgID, true, t)
-        return true, nil
-        
-    case *bin.AckNak:
-        c.processAckNak(mt.MsgID, false, t)
-        return true, nil
-        
-    case *bin.MonGnss:
-        c.tRead[mt.ID()] = t
-        c.monGNSS = c.newMonGNSS(mt)
-        c.checkPollResponses(t)
-        return true, nil
-    }
-    
-    // Handle other message types as before
-    mid := msg.ID()
-    if mid.CfgClass() {
-        c.tRead[mid] = t
-        _, err := c.raw.AddMsg(msg)
-        c.checkPollResponses(t)
-        return err == nil, err
-    }
-    
-    return false, nil
-}
-
-// processAckNak handles both positive and negative acknowledgments
-func (c *Configurator) processAckNak(msgID bin.MsgID, ok bool, t time.Time) {
-    // Find the request that matches this ACK/NACK
-    for i := 0; i < len(c.requests); i++ {
-        cr := c.requests[i]
-        if cr.state == gpsprot.ConfigRequestAwaitingResponse && cr.awaitingAck {
-            packet := cr.ops.Packet()
-            if bin.PacketMsgId(packet) == msgID && !t.Before(cr.sentTime) {
-                if ok {
-                    cr.awaitingAck = false  // ACK received
-                    cr.checkComplete(t)     // Pass ACK reception time
-                } else {
-                    cr.state = gpsprot.ConfigRequestFailed
-                    cr.err = fmt.Errorf("GPS receiver sent NACK for request %s", cr.ops.ID())
-                    // Note: Recovery logic now handled by GenerateRequests()
-                }
-                break
-            }
-        }
-    }
-}
-
-// checkPollResponses checks if any awaiting poll requests are now satisfied
-func (c *Configurator) checkPollResponses(t time.Time) {
-    for i := 0; i < len(c.requests); i++ {
-        c.requests[i].checkComplete(t)
-    }
-}
-
-// checkComplete determines if a request is fully complete (both ACK and response received as needed)
-// The ackTime parameter is the time when the ACK was actually received
-func (cr *configRequest) checkComplete(ackTime time.Time) {
-    if cr.state == gpsprot.ConfigRequestAwaitingResponse && 
-       !cr.awaitingAck && !cr.ops.AwaitingResponse(cr.sentTime) {
-        // Check if we need to pause before marking as succeeded
-        if cr.ops.Pause() > 0 {
-            cr.state = gpsprot.ConfigRequestPausing
-            cr.pauseStartTime = ackTime  // Pause starts from ACK reception time
-        } else {
-            cr.state = gpsprot.ConfigRequestSucceeded
-            cr.ops.Done()
-        }
-    }
 }
 ```
 
@@ -911,124 +548,5 @@ The key changes from the existing implementation:
 6. **Lazy generation**: GenerateRequests() replaces the lazy generation previously done in GetState()
 7. **Updated state names**: Uses ConfigRequestFailed consistently throughout
 8. **Method renaming**: SetFailed becomes SetWontResend with proper state preconditions
-9. **Method renaming**: GetDeadline becomes GetResponseDeadline for clarity
 
-### Replay Test Implementation
 
-Here's how `replayer.run()` from `internal/gpscmd/replay_test.go` can be rewritten using ConfigDirector:
-
-```go
-func (r *replayer) run() {
-    // Initialize packet processors like gpscfg does (unchanged)
-    for _, pp := range r.packetProcs {
-        pp.SetMsgHandler(r)
-        if r.px == nil {
-            r.px = pp.CreatePacketExchanger()
-        }
-    }
-
-    // Probe phase (unchanged)
-    r.feedUpTo(0)
-    if len(r.test.outPackets) == 0 {
-        return
-    }
-    probePacket := r.px.ProbePacket()
-    expected := r.test.outPackets[0]
-    if string(probePacket) != expected.Data() {
-        r.t.Errorf("probe packet mismatch")
-    }
-    r.outIdx++
-    
-    r.feedUpTo(1)
-    if !r.px.ProbeOK() {
-        r.t.Error("probe did not succeed after feeding initial packets")
-        return
-    }
-
-    // Create configurator and director
-    var err error
-    r.cfgtor, err = r.px.Configure(r.target)
-    if err != nil {
-        r.t.Fatal(err)
-    }
-    
-    director := gpsprot.NewConfigDirector(r.cfgtor, maxTries)
-
-    // Process configuration using director
-    for action := range director.Actions() {
-        switch action.Type {
-        case gpsprot.ConfigActionSendRequest:
-            // Verify output packet matches expected
-            if r.outIdx >= len(r.test.outPackets) {
-                r.t.Fatalf("unexpected request, no more output packets")
-            }
-
-            expected := r.test.outPackets[r.outIdx]
-            if !r.packetsEqual("", action.Packet, expected) {
-                r.t.Errorf("packet mismatch")
-            }
-            r.outIdx++
-            
-            // Mark as sent using recorded timestamp
-            req := r.cfgtor.Request(action.Index)
-            req.SetSentTime(time.Time(expected.T))
-            
-        case gpsprot.ConfigActionCheckTimeout:
-            // Use recorded packet timestamps for deterministic timeout checking
-            // Find the last input packet timestamp we've processed
-            var lastProcessedTime time.Time
-            if r.inIdx > 0 {
-                lastProcessedTime = time.Time(r.test.inPackets[r.inIdx-1].T)
-            }
-            
-            // Check timeout against recorded timeline
-            if lastProcessedTime.After(action.Deadline) {
-                req := r.cfgtor.Request(action.Index)
-                req.SetResponseDeadlinePassed()
-            }
-            
-        case gpsprot.ConfigActionWaitUntil:
-            // Feed packets until we reach the deadline or get the response we need
-            r.feedUpToTime(action.Deadline)
-            
-        case gpsprot.ConfigActionError:
-            if r.configErr == nil {
-                r.configErr = action.Error
-            }
-            // Continue to allow recovery operations
-            
-        }
-    }
-
-    if r.outIdx < len(r.test.outPackets) {
-        r.t.Fatalf("failed to generate all output packets, got %d, want %d",
-            r.outIdx, len(r.test.outPackets))
-    }
-}
-
-// Helper method to feed packets up to a specific time
-func (r *replayer) feedUpToTime(deadline time.Time) {
-    for r.inIdx < len(r.test.inPackets) {
-        p := r.test.inPackets[r.inIdx]
-        if time.Time(p.T).After(deadline) {
-            break // Don't feed packets beyond deadline
-        }
-        
-        r.inIdx++
-        if p.Tag == "" {
-            continue // Skip invalid packets
-        }
-        
-        pp, ok := r.packetProcs[p.Tag]
-        if !ok {
-            r.t.Errorf("no processor for tag %s", p.Tag)
-            continue
-        }
-        
-        _, err := pp.ProcessPacket(p.Data(), time.Time(p.T))
-        if err != nil {
-            r.t.Errorf("error processing packet: %v", err)
-        }
-    }
-}
-```
