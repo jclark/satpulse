@@ -60,9 +60,9 @@ const (
 )
 
 // Compile-time interface compliance checks
-var _ gpsprot.ConfigProtocol2 = (*ConfigProtocol)(nil)
-var _ gpsprot.Configurator2 = (*Configurator)(nil)
-var _ gpsprot.ConfigRequest2 = (*ConfigRequest)(nil)
+var _ gpsprot.ConfigProtocol = (*ConfigProtocol)(nil)
+var _ gpsprot.Configurator = (*Configurator)(nil)
+var _ gpsprot.ConfigRequest = (*ConfigRequest)(nil)
 
 func NewConfigProtocol() *ConfigProtocol {
 	return &ConfigProtocol{}
@@ -116,9 +116,9 @@ func (cp *ConfigProtocol) ProbeOK() bool {
 	return cp.ver != nil
 }
 
-func (cp *ConfigProtocol) Configure2(target *gpsprot.ConfigTarget) (gpsprot.Configurator2, error) {
+func (cp *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (gpsprot.Configurator, error) {
 	if cp.ver == nil {
-		panic("Configure2 called without successful ProbeOK()")
+		panic("Configure called without successful ProbeOK()")
 	}
 	cp.cfg = &Configurator{
 		target:      target,
@@ -129,7 +129,7 @@ func (cp *ConfigProtocol) Configure2(target *gpsprot.ConfigTarget) (gpsprot.Conf
 	return cp.cfg, nil
 }
 
-func (c *Configurator) Request(index int) gpsprot.ConfigRequest2 {
+func (c *Configurator) Request(index int) gpsprot.ConfigRequest {
 	return c.reqs[index]
 }
 

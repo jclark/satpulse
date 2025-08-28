@@ -46,7 +46,7 @@ type testReceiver struct {
 
 func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Configurator, int, error) {
 	cp := &ConfigProtocol{ver: rcvr.version}
-	cfgInterface, err := cp.Configure2(target)
+	cfgInterface, err := cp.Configure(target)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -131,7 +131,6 @@ func runConfiguration(rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Config
 					}
 				}
 			}
-
 
 		case gpsprot.ConfigActionWaitUntil:
 			// Advance time to the deadline
@@ -625,17 +624,17 @@ func TestConfigurator(t *testing.T) {
 func TestModeResponseBug(t *testing.T) {
 	// This test demonstrates the bug in modeResponse where it fails to strip
 	// "HEADINGMODE " from the beginning of Mode.HeadingMode field
-	
+
 	cfg := &Configurator{
 		nativeProps: makeNativeProps(),
 	}
-	
+
 	// Create a MODE response with HeadingMode field
 	mode := &uncmsg.Mode{
 		Mode:        "MODE HEADING2",
 		HeadingMode: "HEADINGMODE FIXLENGTH", // This should become just "FIXLENGTH"
 	}
-	
+
 	// Set up a query request for MODE so modeResponse has something to match
 	testTime := time.Now()
 	cfg.reqs = []*ConfigRequest{
@@ -646,14 +645,14 @@ func TestModeResponseBug(t *testing.T) {
 		},
 	}
 	cfg.nFinished = 0
-	
+
 	// Call modeResponse - this should expose the bug
 	err := cfg.modeResponse(mode, testTime.Add(10*time.Millisecond)) // Small delay
-	
+
 	// The bug manifests as a validation error because the malformed command
 	// "MODE HEADING2 HEADINGMODE FIXLENGTH" doesn't match the MODE regex
 	expectedBugError := "invalid MODE command format: MODE HEADING2 HEADINGMODE FIXLENGTH"
-	
+
 	if err != nil {
 		if err.Error() == expectedBugError {
 			t.Errorf("Bug confirmed: modeResponse created malformed command that failed validation.\nError: %v\nThe bug is that 'HEADINGMODE ' prefix was not stripped from HeadingMode field.\nShould have created: 'MODE HEADING2 FIXLENGTH'", err)
@@ -664,7 +663,7 @@ func TestModeResponseBug(t *testing.T) {
 		// If no error, check if the command was stored correctly (bug is fixed)
 		storedCommand := cfg.nativeProps.mode.command
 		expectedCommand := "MODE HEADING2 FIXLENGTH"
-		
+
 		if storedCommand == expectedCommand {
 			t.Logf("Bug is fixed: modeResponse created correct command: %q", storedCommand)
 		} else {
