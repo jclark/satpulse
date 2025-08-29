@@ -222,14 +222,13 @@ func TestGPSLeapSecond(t *testing.T) {
 
 	const sixMonths = 183 * 24 * time.Hour
 	futureDate := time.Date(2026, time.December, 31, 0, 0, 0, 0, time.UTC)
-	lastLeapSecond := LeapSecond2016()
 
 	testCases := []leapSecondTestCase{
 		{
 			name:   "GPS past (receiver showed WNLSF=2441, DN=7)",
 			now:    pastNowTAI,
 			gnss:   GNSSLeapSecond{WNLSF: 2441 % 256, DN: 7, DeltaLS: 18, DeltaLSF: 18}, // 137, Saturday (1-based)
-			expect: lastLeapSecond,
+			expect: LeapSecond2016(),
 		},
 		{
 			name:   "GPS future within horizon",
@@ -256,14 +255,13 @@ func TestGalileoLeapSecond(t *testing.T) {
 
 	const sixMonths = 183 * 24 * time.Hour
 	futureDate := time.Date(2026, time.December, 31, 0, 0, 0, 0, time.UTC)
-	lastLeapSecond := LeapSecond2016()
 
 	testCases := []leapSecondTestCase{
 		{
 			name:   "Galileo past (receiver showed WnLSF=1417, Dn=7)",
 			now:    pastNowTAI,
 			gnss:   GNSSLeapSecond{WNLSF: 1417 % 256, DN: 7, DeltaLS: 18, DeltaLSF: 18}, // 137, Saturday (1-based)
-			expect: lastLeapSecond,
+			expect: LeapSecond2016(),
 		},
 		{
 			name:   "Galileo future within horizon",

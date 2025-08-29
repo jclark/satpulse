@@ -381,8 +381,8 @@ func Picoseconds(ps int32) time.Duration {
 type GNSSLeapSecond struct {
 	WNLSF    uint8 // low 8 bits of GNSS week number of future leap second
 	DN       uint8 // day number in native GNSS format: GPS/Galileo 1-based (Sun=1), BeiDou 0-based (Sun=0)
-	DeltaLS  int8  // leap seconds since GNSS epoch BEFORE the event (as broadcast)
-	DeltaLSF int8  // leap seconds since GNSS epoch AFTER the event (as broadcast)
+	DeltaLS  int8  // leap seconds since GNSS epoch BEFORE the occurrence of the leap second
+	DeltaLSF int8  // leap seconds since GNSS epoch AFTER the occurrence of the leap second
 }
 
 // GPSLeapSecond converts GPS leap second data to a LeapSecond.
@@ -404,121 +404,98 @@ func BeiDouLeapSecond(g GNSSLeapSecond, now Time) (LeapSecond, error) {
 }
 
 // gnssLeapSecond converts a GNSS-encoded leap second to a LeapSecond.
-// Arguments:
-//   g: GNSS leap second data
-//   now: current time in TAI (as determined from GNSS)
-//   epoch: time of the GNSS epoch (from which GNSS week and day numbers count)
-//   epochLeapSeconds: (TAI − GNSS) at that epoch in whole seconds (GPS=19, GAL=19, BDS=33)
-//   dnBase: day numbering base (0 for BeiDou, 1 for GPS/Galileo)
 //
-// Policy:
-//   • If g.DeltaLS == g.DeltaLSF → no pending leap second (past reference):
-//       - Reconstruct the date by walking *backwards* in 256-week steps and pick the
-//         first legal end-of-quarter date ≤ now (error on ambiguity or none found).
-//       - Determine UTCOffBefore/After without trusting broadcast sign:
-//           · If the date == 2016-12-31 → use LeapSecond2016UTCOffBefore/After constants.
-//           · Else compare the broadcast "after" (TAI−UTC after event) to 37:
-//               >37 ⇒ assume past +1: before = after − 1
-//               <37 ⇒ assume past −1: before = after + 1
-//               =37 ⇒ assume past +1: before = 36, after = 37
-//   • If g.DeltaLS != g.DeltaLSF → pending leap second (future):
-//       - Walk *forwards* in 256-week steps to the first legal date ≥ now that is within
-//         a 6-month announcement horizon; error if none / ambiguous.
-//       - UTCOffBefore/After are taken from leapSecondsAtEpoch + g.Delta{LS,LSF}.
+//	g: GNSS-encoded leap second
+//	now: current time in TAI (as determined from GNSS)
+//	epoch: time of the GNSS epoch (from which GNSS week and day numbers count)
+//	epochLeapSeconds: (TAI − GNSS) at that epoch in whole seconds (GPS=19, GAL=19, BDS=33)
+//	dnBase: day numbering base (0 for BeiDou, 1 for GPS/Galileo)
 func gnssLeapSecond(g GNSSLeapSecond, now Time, epoch time.Time, epochLeapSeconds int16, dnBase uint8) (LeapSecond, error) {
 	dayOfWeek := int(g.DN) - int(dnBase)
+	isPast := g.DeltaLS == g.DeltaLSF
 
-	dateOf := func(week int) time.Time {
-		// Convert DN from native format to 0-based (subtract dnBase to normalize)
-		return epoch.AddDate(0, 0, week*7+dayOfWeek)
-	}
+	// Find candidate leap seconds using forward search from epoch
+	week := int(g.WNLSF)
+	var candidates []LeapSecond
+	maxTime := now.Add(6 * 30 * 24 * time.Hour) // now + 6 months (IERS horizon)
 
-	// Future iff offsets differ.
-	future := g.DeltaLS != g.DeltaLSF
+	for {
+		date := epoch.AddDate(0, 0, week*7+dayOfWeek)
 
-	// Convert now (TAI) → UTC using the *current* offset for ordering.
-	var currUTCOff int16
-	if future {
-		currUTCOff = epochLeapSeconds + int16(g.DeltaLS)
-	} else {
-		currUTCOff = epochLeapSeconds + int16(g.DeltaLSF)
-	}
-	nowUTC := time.Unix(int64(now)/1e9-int64(currUTCOff), int64(now)%1e9).UTC()
-
-	// Compute a base full week near now by splicing 8 LSBs.
-	weeksSinceEpoch := int(nowUTC.Sub(epoch) / (7 * 24 * time.Hour))
-	baseWeek := (weeksSinceEpoch &^ 0xFF) | int(g.WNLSF)
-
-	// Alias search with ambiguity detection (like ubxleap.go’s simple stepping).
-	search := func(startWeek, step, limit int, accept func(time.Time) bool) (time.Time, error) {
-		found := time.Time{}
-		for i := 0; i < limit; i++ {
-			w := startWeek + i*step
-			if w < 0 {
-				continue
-			}
-			d := dateOf(w)
-			if accept(d) {
-				if found.IsZero() {
-					found = d
-				} else {
-					return time.Time{}, fmt.Errorf("ambiguous leap-second alias: %v and %v", found, d)
-				}
-			}
+		// Stop if we've gone too far in the future (check date first to avoid unnecessary work)
+		if Unix(date.Unix(), 0) > maxTime {
+			break
 		}
-		if found.IsZero() {
-			return time.Time{}, fmt.Errorf("no valid leap-second alias found")
+
+		// Skip dates before 2016
+		if date.Before(leapSecond2016Date) {
+			week += 256
+			continue
 		}
-		return found, nil
-	}
 
-	const weekStride = 256
-	const maxAliases = 5
-	const announceHorizon = 183 * 24 * time.Hour // ~6 months
+		// Must be a valid quarter-end date
+		if !isLastDayOfQuarter(date) {
+			week += 256
+			continue
+		}
 
-	var chosen time.Time
-	var err error
-	if !future {
-		// Past reference: first legal date ≤ now, walking backwards.
-		chosen, err = search(baseWeek, -weekStride, maxAliases, func(d time.Time) bool {
-			return !d.After(nowUTC) && isLastDayOfQuarter(d)
-		})
-	} else {
-		// Future event: first legal date ≥ now within 6 months, walking forwards.
-		chosen, err = search(baseWeek, +weekStride, maxAliases, func(d time.Time) bool {
-			return !d.Before(nowUTC) && isLastDayOfQuarter(d) && d.Sub(nowUTC) <= announceHorizon
-		})
-	}
-	if err != nil {
-		return LeapSecond{}, fmt.Errorf("convertLeapSecond: %w (wn=%d dn=%d future=%v)", err, g.WNLSF, g.DN, future)
-	}
+		// Create candidate leap second
+		candidate := LeapSecondOnDate(date, epochLeapSeconds+int16(g.DeltaLS), epochLeapSeconds+int16(g.DeltaLSF))
 
-	// Offsets:
-	after := epochLeapSeconds + int16(g.DeltaLSF)
-	before := epochLeapSeconds + int16(g.DeltaLS)
-
-	if !future {
-		// Past reference: derive the sign robustly.
-		if chosen.Equal(leapSecond2016Date) {
-			before = LeapSecond2016UTCOffBefore
-			after = LeapSecond2016UTCOffAfter
+		// Check if candidate is appropriate for past/future with slack for edge cases
+		const slack = 24 * time.Hour
+		if isPast {
+			if candidate.OffChangeTime <= now.Add(slack) {
+				candidates = append(candidates, candidate)
+			}
 		} else {
-			switch {
-			case after > 37:
-				// Past +1 event.
-				before = after - 1
-			case after < 37:
-				// Past −1 event.
-				before = after + 1
-			default:
-				// Equal to the known post-2016 value: assume a +1 past leap like 2016.
-				before = 36
-				after = 37
+			if candidate.OffChangeTime >= now.Add(-slack) {
+				candidates = append(candidates, candidate)
 			}
 		}
+
+		week += 256
 	}
 
-	return LeapSecondOnDate(chosen, before, after), nil
+	// Check for ambiguity or no candidates
+	if len(candidates) == 0 {
+		return LeapSecond{}, fmt.Errorf("no valid leap second date found for WNLSF=%d DN=%d", g.WNLSF, g.DN)
+	}
+	if len(candidates) > 1 {
+		return LeapSecond{}, fmt.Errorf("ambiguous leap second dates: %v", candidates)
+	}
+
+	ls := candidates[0]
+
+	if isPast {
+		ls.UTCOffBefore = guessPastLeapSecondOffset(ls.OffChangeTime, ls.UTCOffAfter)
+	}
+
+	return ls, nil
+}
+
+// guessPastLeapSecondOffset guesses the before UTC offset for a past leap second
+// when only the after offset is known (DeltaLS == DeltaLSF).
+// leapTime is the Time when the leap second offset change occurs (OffChangeTime).
+func guessPastLeapSecondOffset(leapTime Time, after int16) int16 {
+	leapSecond2016 := LeapSecond2016()
+	if leapTime == leapSecond2016.OffChangeTime {
+		// Known reference point
+		return LeapSecond2016UTCOffBefore
+	}
+
+	// For other past leap seconds, derive based on after offset
+	if after > leapSecond2016.UTCOffAfter {
+		// Assume positive leap second (all historical ones have been)
+		return after - 1
+	} else if after < leapSecond2016.UTCOffAfter {
+		// Would indicate negative leap second (theoretically possible but never happened)
+		return after + 1
+	} else { // after == 37
+		// Could be 2016 or could have returned to 37 via negative leap
+		// Assume 2016 behavior (positive leap second)
+		return leapSecond2016.UTCOffBefore
+	}
 }
 
 func isLastDayOfQuarter(t time.Time) bool {
