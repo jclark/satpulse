@@ -375,65 +375,79 @@ func Picoseconds(ps int32) time.Duration {
 	return time.Duration(((ps + 500) / 1000))
 }
 
+// GNSSLeapSecond is information about a future leap second in a form similar to what is broadcast by GNSS systems.
+// GPS, Galileo, and BeiDou all use similar formats.
+// Day numbering uses each GNSS's native format: GPS/Galileo use 1-based (Sunday=1), BeiDou uses 0-based (Sunday=0).
+type GNSSLeapSecond struct {
+	WNLSF    uint8 // low 8 bits of GNSS week number of future leap second
+	DN       uint8 // day number in native GNSS format: GPS/Galileo 1-based (Sun=1), BeiDou 0-based (Sun=0)
+	DeltaLS  int8  // leap seconds since GNSS epoch BEFORE the event (as broadcast)
+	DeltaLSF int8  // leap seconds since GNSS epoch AFTER the event (as broadcast)
+}
 
+// GPSLeapSecond converts GPS leap second data to a LeapSecond.
+// The day number (DN) in g should be 1-based as broadcast by GPS (Sunday=1).
+func GPSLeapSecond(g GNSSLeapSecond, now Time) (LeapSecond, error) {
+	return gnssLeapSecond(g, now, epochGPS, TAIMinusGPS, 1)
+}
 
+// GalileoLeapSecond converts Galileo leap second data to a LeapSecond.
+// The day number (DN) in g should be 1-based as broadcast by Galileo (Sunday=1).
+func GalileoLeapSecond(g GNSSLeapSecond, now Time) (LeapSecond, error) {
+	return gnssLeapSecond(g, now, epochGalileo, TAIMinusGalileo, 1)
+}
 
-// convertLeapSecond resolves a GNSS-encoded leap second into a concrete ptime.LeapSecond.
+// BeiDouLeapSecond converts BeiDou leap second data to a LeapSecond.
+// The day number (DN) in g should be 0-based as broadcast by BeiDou (Sunday=0).
+func BeiDouLeapSecond(g GNSSLeapSecond, now Time) (LeapSecond, error) {
+	return gnssLeapSecond(g, now, epochBeiDou, TAIMinusBeiDou, 0)
+}
+
+// gnssLeapSecond converts a GNSS-encoded leap second to a LeapSecond.
 // Arguments:
-//   now:                 current time in TAI (as determined from GNSS)
-//   epoch:               time of the GNSS epoch (from which GNSS week and day numbers count)
-//   leapSecondsAtEpoch:  (TAI − GNSS) at that epoch in whole seconds (GPS=19, GAL=19, BDS=33)
-//   wn:                  low 8 bits of the GNSS week number of the leap-second event (as broadcast)
-//   dn:                  day number with Sunday=0 … Saturday=6  (subtract 1 from GPS, Galileo but not BeiDou before calling)
-//   deltaBefore:         leap seconds since GNSS epoch BEFORE the event (as broadcast)
-//   deltaAfter:          leap seconds since GNSS epoch AFTER the event (as broadcast)
+//   g: GNSS leap second data
+//   now: current time in TAI (as determined from GNSS)
+//   epoch: time of the GNSS epoch (from which GNSS week and day numbers count)
+//   epochLeapSeconds: (TAI − GNSS) at that epoch in whole seconds (GPS=19, GAL=19, BDS=33)
+//   dnBase: day numbering base (0 for BeiDou, 1 for GPS/Galileo)
 //
 // Policy:
-//   • If deltaBefore == deltaAfter → no pending leap second (past reference):
+//   • If g.DeltaLS == g.DeltaLSF → no pending leap second (past reference):
 //       - Reconstruct the date by walking *backwards* in 256-week steps and pick the
 //         first legal end-of-quarter date ≤ now (error on ambiguity or none found).
 //       - Determine UTCOffBefore/After without trusting broadcast sign:
 //           · If the date == 2016-12-31 → use LeapSecond2016UTCOffBefore/After constants.
-//           · Else compare the broadcast “after” (TAI−UTC after event) to 37:
+//           · Else compare the broadcast "after" (TAI−UTC after event) to 37:
 //               >37 ⇒ assume past +1: before = after − 1
 //               <37 ⇒ assume past −1: before = after + 1
 //               =37 ⇒ assume past +1: before = 36, after = 37
-//   • If deltaBefore != deltaAfter → pending leap second (future):
+//   • If g.DeltaLS != g.DeltaLSF → pending leap second (future):
 //       - Walk *forwards* in 256-week steps to the first legal date ≥ now that is within
 //         a 6-month announcement horizon; error if none / ambiguous.
-//       - UTCOffBefore/After are taken from leapSecondsAtEpoch + delta{Before,After}.
+//       - UTCOffBefore/After are taken from leapSecondsAtEpoch + g.Delta{LS,LSF}.
+func gnssLeapSecond(g GNSSLeapSecond, now Time, epoch time.Time, epochLeapSeconds int16, dnBase uint8) (LeapSecond, error) {
+	dayOfWeek := int(g.DN) - int(dnBase)
 
-func convertLeapSecond(
-	now Time,
-	epoch time.Time,
-	leapSecondsAtEpoch int16,
-	wn uint8,
-	dn uint8,
-	deltaBefore int8,
-	deltaAfter int8,
-) (LeapSecond, error) {
-	isLastDayOfQuarter := func(t time.Time) bool {
-		return t.AddDate(0, 0, 1).Day() == 1 && (t.Month()%3) == 0
-	}
 	dateOf := func(week int) time.Time {
-		return epoch.AddDate(0, 0, week*7+int(dn))
+		// Convert DN from native format to 0-based (subtract dnBase to normalize)
+		return epoch.AddDate(0, 0, week*7+dayOfWeek)
 	}
 
 	// Future iff offsets differ.
-	future := deltaBefore != deltaAfter
+	future := g.DeltaLS != g.DeltaLSF
 
 	// Convert now (TAI) → UTC using the *current* offset for ordering.
 	var currUTCOff int16
 	if future {
-		currUTCOff = leapSecondsAtEpoch + int16(deltaBefore)
+		currUTCOff = epochLeapSeconds + int16(g.DeltaLS)
 	} else {
-		currUTCOff = leapSecondsAtEpoch + int16(deltaAfter)
+		currUTCOff = epochLeapSeconds + int16(g.DeltaLSF)
 	}
 	nowUTC := time.Unix(int64(now)/1e9-int64(currUTCOff), int64(now)%1e9).UTC()
 
 	// Compute a base full week near now by splicing 8 LSBs.
 	weeksSinceEpoch := int(nowUTC.Sub(epoch) / (7 * 24 * time.Hour))
-	baseWeek := (weeksSinceEpoch &^ 0xFF) | int(wn)
+	baseWeek := (weeksSinceEpoch &^ 0xFF) | int(g.WNLSF)
 
 	// Alias search with ambiguity detection (like ubxleap.go’s simple stepping).
 	search := func(startWeek, step, limit int, accept func(time.Time) bool) (time.Time, error) {
@@ -476,12 +490,12 @@ func convertLeapSecond(
 		})
 	}
 	if err != nil {
-		return LeapSecond{}, fmt.Errorf("convertLeapSecond: %w (wn=%d dn=%d future=%v)", err, wn, dn, future)
+		return LeapSecond{}, fmt.Errorf("convertLeapSecond: %w (wn=%d dn=%d future=%v)", err, g.WNLSF, g.DN, future)
 	}
 
 	// Offsets:
-	after := leapSecondsAtEpoch + int16(deltaAfter)
-	before := leapSecondsAtEpoch + int16(deltaBefore)
+	after := epochLeapSeconds + int16(g.DeltaLSF)
+	before := epochLeapSeconds + int16(g.DeltaLS)
 
 	if !future {
 		// Past reference: derive the sign robustly.
@@ -505,4 +519,8 @@ func convertLeapSecond(
 	}
 
 	return LeapSecondOnDate(chosen, before, after), nil
+}
+
+func isLastDayOfQuarter(t time.Time) bool {
+	return t.AddDate(0, 0, 1).Day() == 1 && (t.Month()%3) == 0
 }
