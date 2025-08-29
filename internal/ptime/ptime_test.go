@@ -205,3 +205,94 @@ func TestGPSUTC(t *testing.T) {
 		t.Errorf("GPSUTC(2368, 185933) = %v, want %v", ut, expected)
 	}
 }
+
+func TestConvertLeapSecond_PastCases(t *testing.T) {
+	// Helper: construct a TAI Time from a UTC instant given current TAI−UTC.
+	nowUTC := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC) // comfortably after 2016-12-31
+	nowTAI := Unix(nowUTC.Unix()+37, 0)                   // all three systems have 37s (TAI−UTC) since 2017
+
+	wantDate := time.Date(2016, time.December, 31, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name            string
+		now             Time
+		epoch           time.Time
+		leapSecondsAtEp int16
+		wn              uint8
+		dn              uint8
+		deltaBefore     int8
+		deltaAfter      int8
+		wantDate        time.Time
+		wantBefore      int16
+		wantAfter       int16
+	}{
+		{
+			name:            "GPS past (receiver showed WNLSF=2441, DN=7)",
+			now:             nowTAI,
+			epoch:           epochGPS,
+			leapSecondsAtEp: TAIMinusGPS,
+			wn:              uint8(2441 % 256), // 137
+			dn:              6,                 // Saturday
+			deltaBefore:     18,
+			deltaAfter:      18,
+			wantDate:        wantDate,
+			wantBefore:      TAIMinusGPS + 17,
+			wantAfter:       TAIMinusGPS + 18,
+		},
+		{
+			name:            "Galileo past (receiver showed WnLSF=1417, Dn=7)",
+			now:             nowTAI,
+			epoch:           epochGalileo,
+			leapSecondsAtEp: TAIMinusGalileo,
+			wn:              uint8(1417 % 256), // 137
+			dn:              6,                 // Saturday
+			deltaBefore:     18,
+			deltaAfter:      18,
+			wantDate:        wantDate,
+			wantBefore:      TAIMinusGalileo + 17,
+			wantAfter:       TAIMinusGalileo + 18,
+		},
+		{
+			name:            "BeiDou-3 past (receiver showed WnLSF=61, Dn=6, ΔtLS=4, ΔtLSF=4)",
+			now:             nowTAI,
+			epoch:           epochBeiDou,
+			leapSecondsAtEp: TAIMinusBeiDou,
+			wn:              61,
+			dn:              6,
+			deltaBefore:     4,
+			deltaAfter:      4,
+			wantDate:        wantDate,
+			wantBefore:      TAIMinusBeiDou + 3,
+			wantAfter:       TAIMinusBeiDou + 4,
+		},
+		{
+			name:            "BeiDou-2 past (receiver showed WnLSF=1085, Dn=6, ΔtLS=4, ΔtLSF=4)",
+			now:             nowTAI,
+			epoch:           epochBeiDou,
+			leapSecondsAtEp: TAIMinusBeiDou,
+			wn:              uint8(1085 % 256), // 61
+			dn:              6,
+			deltaBefore:     4,
+			deltaAfter:      4,
+			wantDate:        wantDate,
+			wantBefore:      TAIMinusBeiDou + 3,
+			wantAfter:       TAIMinusBeiDou + 4,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ls, err := convertLeapSecond(tt.now, tt.epoch, tt.leapSecondsAtEp, tt.wn, tt.dn, tt.deltaBefore, tt.deltaAfter)
+			if err != nil {
+				t.Fatalf("convertLeapSecond error: %v", err)
+			}
+			if got := ls.Date(); !got.Equal(tt.wantDate) {
+				t.Errorf("Date() = %v, want %v", got, tt.wantDate)
+			}
+			if ls.UTCOffBefore != tt.wantBefore || ls.UTCOffAfter != tt.wantAfter {
+				t.Errorf("UTC offsets = before:%d after:%d, want before:%d after:%d",
+					ls.UTCOffBefore, ls.UTCOffAfter, tt.wantBefore, tt.wantAfter)
+			}
+		})
+	}
+}
