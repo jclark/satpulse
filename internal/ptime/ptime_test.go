@@ -200,8 +200,142 @@ func TestMJD(t *testing.T) {
 
 func TestGPSUTC(t *testing.T) {
 	expected := UTC(2025, 5, 27, 3, 38, 53, 0)
-	ut := GPSUTC(2368,185933*time.Second)
+	ut := GPSUTC(2368, 185933*time.Second)
 	if expected != ut {
 		t.Errorf("GPSUTC(2368, 185933) = %v, want %v", ut, expected)
+	}
+}
+
+type leapSecondTestCase struct {
+	name      string
+	now       Time
+	gnss      GNSSLeapSecond
+	expect    LeapSecond
+	expectErr bool
+}
+
+func TestGPSLeapSecond(t *testing.T) {
+	// Helper: construct a TAI Time from a UTC instant given current TAI−UTC.
+	pastNowUTC := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC) // comfortably after 2016-12-31
+	pastNowTAI := Unix(pastNowUTC.Unix()+37, 0)               // all three systems have 37s (TAI−UTC) since 2017
+	nowTAI := func(utc time.Time) Time { return Unix(utc.Unix()+37, 0) }
+
+	const sixMonths = 183 * 24 * time.Hour
+	futureDate := time.Date(2026, time.December, 31, 0, 0, 0, 0, time.UTC)
+
+	testCases := []leapSecondTestCase{
+		{
+			name:   "GPS past (receiver showed WNLSF=2441, DN=7)",
+			now:    pastNowTAI,
+			gnss:   GNSSLeapSecond{WNLSF: 2441 % 256, DN: 7, DeltaLS: 18, DeltaLSF: 18}, // 137, Saturday (1-based)
+			expect: LeapSecond2016(),
+		},
+		{
+			name:   "GPS future within horizon",
+			now:    nowTAI(futureDate.Add(-179 * 24 * time.Hour)),
+			gnss:   GNSSLeapSecond{WNLSF: 147, DN: 5, DeltaLS: 18, DeltaLSF: 19}, // Thursday (1-based: 5)
+			expect: LeapSecondOnDate(futureDate, TAIMinusGPS+18, TAIMinusGPS+19),
+		},
+		{
+			name:      "GPS future beyond horizon → error",
+			now:       nowTAI(futureDate.Add(-(sixMonths + 10*24*time.Hour))),
+			gnss:      GNSSLeapSecond{WNLSF: 147, DN: 5, DeltaLS: 18, DeltaLSF: 19},
+			expectErr: true,
+		},
+	}
+
+	runLeapSecondTests(t, testCases, GPSLeapSecond)
+}
+
+func TestGalileoLeapSecond(t *testing.T) {
+	// Helper: construct a TAI Time from a UTC instant given current TAI−UTC.
+	pastNowUTC := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	pastNowTAI := Unix(pastNowUTC.Unix()+37, 0)
+	nowTAI := func(utc time.Time) Time { return Unix(utc.Unix()+37, 0) }
+
+	const sixMonths = 183 * 24 * time.Hour
+	futureDate := time.Date(2026, time.December, 31, 0, 0, 0, 0, time.UTC)
+
+	testCases := []leapSecondTestCase{
+		{
+			name:   "Galileo past (receiver showed WnLSF=1417, Dn=7)",
+			now:    pastNowTAI,
+			gnss:   GNSSLeapSecond{WNLSF: 1417 % 256, DN: 7, DeltaLS: 18, DeltaLSF: 18}, // 137, Saturday (1-based)
+			expect: LeapSecond2016(),
+		},
+		{
+			name:   "Galileo future within horizon",
+			now:    nowTAI(futureDate.Add(-170 * 24 * time.Hour)),
+			gnss:   GNSSLeapSecond{WNLSF: 147, DN: 5, DeltaLS: 18, DeltaLSF: 19}, // Thursday (1-based: 5)
+			expect: LeapSecondOnDate(futureDate, TAIMinusGalileo+18, TAIMinusGalileo+19),
+		},
+		{
+			name:      "Galileo future beyond horizon → error",
+			now:       nowTAI(futureDate.Add(-(sixMonths + 1*time.Hour))),
+			gnss:      GNSSLeapSecond{WNLSF: 147, DN: 5, DeltaLS: 18, DeltaLSF: 19},
+			expectErr: true,
+		},
+	}
+
+	runLeapSecondTests(t, testCases, GalileoLeapSecond)
+}
+
+func TestBeiDouLeapSecond(t *testing.T) {
+	// Helper: construct a TAI Time from a UTC instant given current TAI−UTC.
+	pastNowUTC := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	pastNowTAI := Unix(pastNowUTC.Unix()+37, 0)
+	nowTAI := func(utc time.Time) Time { return Unix(utc.Unix()+37, 0) }
+
+	const sixMonths = 183 * 24 * time.Hour
+	futureDate := time.Date(2026, time.December, 31, 0, 0, 0, 0, time.UTC)
+	lastLeapSecond := LeapSecond2016()
+
+	testCases := []leapSecondTestCase{
+		{
+			name:   "BeiDou-3 past (receiver showed WnLSF=61, Dn=6, ΔtLS=4, ΔtLSF=4)",
+			now:    pastNowTAI,
+			gnss:   GNSSLeapSecond{WNLSF: 61, DN: 6, DeltaLS: 4, DeltaLSF: 4}, // Saturday (0-based)
+			expect: lastLeapSecond,
+		},
+		{
+			name:   "BeiDou-2 past (receiver showed WnLSF=1085, Dn=6, ΔtLS=4, ΔtLSF=4)",
+			now:    pastNowTAI,
+			gnss:   GNSSLeapSecond{WNLSF: 1085 % 256, DN: 6, DeltaLS: 4, DeltaLSF: 4}, // 61, Saturday (0-based)
+			expect: lastLeapSecond,
+		},
+		{
+			name:   "BeiDou-3 future within horizon",
+			now:    nowTAI(futureDate.Add(-150 * 24 * time.Hour)),
+			gnss:   GNSSLeapSecond{WNLSF: 71, DN: 4, DeltaLS: 4, DeltaLSF: 5}, // Thursday (0-based: 4)
+			expect: LeapSecondOnDate(futureDate, TAIMinusBeiDou+4, TAIMinusBeiDou+5),
+		},
+		{
+			name:      "BeiDou-3 future beyond horizon → error",
+			now:       nowTAI(futureDate.Add(-(sixMonths + 24*time.Hour))),
+			gnss:      GNSSLeapSecond{WNLSF: 71, DN: 4, DeltaLS: 4, DeltaLSF: 5},
+			expectErr: true,
+		},
+	}
+
+	runLeapSecondTests(t, testCases, BeiDouLeapSecond)
+}
+
+func runLeapSecondTests(t *testing.T, testCases []leapSecondTestCase, testFunc func(GNSSLeapSecond, Time) (LeapSecond, error)) {
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			ls, err := testFunc(tt.gnss, tt.now)
+			if tt.expectErr {
+				if err == nil {
+					t.Fatalf("expected error, got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("leap second conversion error: %v", err)
+			}
+			if ls != tt.expect {
+				t.Errorf("got %+v, expect %+v", ls, tt.expect)
+			}
+		})
 	}
 }

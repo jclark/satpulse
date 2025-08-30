@@ -15,6 +15,7 @@ func leapSecond(u *bin.NavTimeLS) *gpsprot.LeapSecondMsg {
 		return nil
 	}
 	ls.LeapSecond = ptime.LeapSecondOnDate(date, ls.UTCOffBefore, ls.UTCOffAfter)
+	ls.GNSS = leapSecondGNSS(u.SrcOfLSChange)
 	return &ls
 }
 
@@ -78,4 +79,23 @@ func leapSecondDate(tls *bin.NavTimeLS, lsDate *time.Time) bool {
 
 func isLastDayOfQuarter(t time.Time) bool {
 	return t.AddDate(0, 0, 1).Day() == 1 && t.Month()%3 == 0
+}
+
+func leapSecondGNSS(src bin.NavTimeLSSrcOfLSChange) gpsprot.GNSS {
+	switch src {
+	case bin.NavTimeLSSrcOfLSChangeGPS:
+		return gpsprot.GPS
+	case bin.NavTimeLSSrcOfLSChangeGalileo:
+		return gpsprot.GAL
+	case bin.NavTimeLSSrcOfLSChangeBeiDou:
+		return gpsprot.BDS
+	case bin.NavTimeLSSrcOfLSChangeGLONASS:
+		return gpsprot.GLO
+	case bin.NavTimeLSSrcOfLSChangeSBAS:
+		return gpsprot.SBAS
+	case bin.NavTimeLSSrcOfLSChangeNavIC:
+		return gpsprot.NAVIC
+	default:
+		return 0
+	}
 }
