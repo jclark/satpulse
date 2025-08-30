@@ -368,6 +368,7 @@ func (msg *TimeMsg) ComputeTAITime(ls ptime.LeapSecond) (ptime.Time, bool) {
 
 type LeapSecondMsg struct {
 	ptime.LeapSecond
+	GNSS GNSS `json:"gnss,omitempty"` // the GNSS that is the source of this leap second
 }
 
 // UpdateLeapSecond updates the target leap second if this message contains newer information
