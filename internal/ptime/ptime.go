@@ -2,6 +2,7 @@ package ptime
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -500,4 +501,53 @@ func guessPastLeapSecondOffset(leapTime Time, after int16) int16 {
 
 func isLastDayOfQuarter(t time.Time) bool {
 	return t.AddDate(0, 0, 1).Day() == 1 && (t.Month()%3) == 0
+}
+
+// CorrectionParams holds parameters for computing a correction to a time.
+// The correction is computed using the polynomial mode
+//   delta = Bias + Drift * (t - Ref)
+// The correction is expected to be subtracted from the time to be corrected.
+// Typically, the CorrectionParams hold parameters derived from messages broadcast
+// by a GNSS system. The correction is applied to GNSS system time as part
+// of the process of deriving UTC time. These corrections are usually a few nanoseconds.
+// These corrections are independent of offsets applied to handle leap seconds,
+// and to handle differences in the epochs of different GNSS systems.
+type CorrectionParams struct {
+	Ref   Time // reference time
+	Bias  float64    // bias in nanoseconds
+	Drift float64    // drift seconds/seconds (i.e. dimensionless)
+}
+
+const MaxCorrection = 50 * time.Nanosecond
+const MaxValidityPeriod = 7 * 24 * time.Hour
+
+// ApplyCorrection applies the correction to a time.
+// If the correction is not valid, then the time is returned unchanged.
+func (c *CorrectionParams) ApplyCorrection(t Time) Time {
+	delta, valid := c.Correction(t)
+	if valid {
+		return t.Add(-delta)
+	}
+	return t
+}
+
+// Correction computes the correction at time t.
+// and returns the correction and whether it's valid.
+// The correction is considered invalid
+// - absolute value of the time difference from reference exceeds MaxValidityPeriod (1 week), or
+// - absolute value of the correction exceeds MaxCorrection (50ns)
+func (c *CorrectionParams) Correction(t Time) (time.Duration, bool) {
+	timeDiff := t.Sub(c.Ref)
+	delta := time.Duration(math.Round(c.Bias + float64(timeDiff)*c.Drift))
+
+	if timeDiff < -MaxValidityPeriod || timeDiff > MaxValidityPeriod {
+		return delta, false
+	}
+
+	absDelta := time.Duration(math.Abs(float64(delta)))
+	if absDelta >= MaxCorrection {
+		return delta, false
+	}
+
+	return delta, true
 }
