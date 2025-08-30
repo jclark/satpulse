@@ -1,6 +1,7 @@
 package unc
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -74,5 +75,146 @@ func TestRecTime(t *testing.T) {
 	expectedAccuracy := time.Duration(8) // 7.786425700 nanoseconds rounds up to 8
 	if timeMsg.Accuracy != expectedAccuracy {
 		t.Errorf("Accuracy = %v, want %v", timeMsg.Accuracy, expectedAccuracy)
+	}
+}
+
+func TestUTCConversionParamsFromGPSUTC(t *testing.T) {
+	asciiPackets := []string{
+		"#GPSUTCA,97,GPS,FINE,2379,372336000,0,0,18,20;2379,589824,-9.313225746154785e-10,-1.776356839e-15,2441,7,18,18,0,0*8301ddef\r\n",
+		"#GPSUTCA,97,GPS,FINE,2381,533672000,17548,0,18,23;2382,61440,-2.793967723846436e-09,-2.664535259e-15,2441,7,18,18,0,0*e1854eff\r\n",
+	}
+
+	for i, asciiPacket := range asciiPackets {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			msg, err := uncmsg.ParseAsciiMessage([]byte(asciiPacket))
+			if err != nil {
+				t.Fatalf("Failed to parse ASCII packet: %v", err)
+			}
+
+			gpsutc, ok := msg.Body.(*uncmsg.GPSUTC)
+			if !ok {
+				t.Fatalf("Parsed message is not GPSUTC, got %T", msg.Body)
+			}
+
+			_, now := msgHdrTime(&msg.Hdr)
+			conversion, err := utcConversionParamsFromGPSUTC(gpsutc, now)
+			if err != nil {
+				t.Fatalf("utcConversionParamsFromGPSUTC failed: %v", err)
+			}
+			testUTCConversion(t, conversion, &msg.Hdr)
+		})
+	}
+}
+
+func TestUTCConversionParamsFromGALUTC(t *testing.T) {
+	asciiPackets := []string{
+		"#GALUTCA,97,GPS,FINE,2379,372920000,0,0,18,21;9.313225746154785e-10,0.000000000000000e+00,18,96,1355,1417,7,18,1.513399183750153e-09,-4.440892098500626e-16,345600,11*3729930d\r\n",
+		"#GALUTCA,97,GPS,FINE,2381,534975000,17548,0,18,23;9.313225746154785e-10,0.000000000000000e+00,18,144,1357,1417,7,18,2.211891114711761e-09,5.773159728050814e-15,518400,13*23b812c7\r\n",
+	}
+
+	for i, asciiPacket := range asciiPackets {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			msg, err := uncmsg.ParseAsciiMessage([]byte(asciiPacket))
+			if err != nil {
+				t.Fatalf("Failed to parse ASCII packet: %v", err)
+			}
+
+			galutc, ok := msg.Body.(*uncmsg.GALUTC)
+			if !ok {
+				t.Fatalf("Parsed message is not GALUTC, got %T", msg.Body)
+			}
+
+			_, now := msgHdrTime(&msg.Hdr)
+			conversion, err := utcConversionParamsFromGALUTC(galutc, now)
+			if err != nil {
+				t.Fatalf("utcConversionParamsFromGALUTC failed: %v", err)
+			}
+			testUTCConversion(t, conversion, &msg.Hdr)
+		})
+	}
+}
+
+func TestUTCConversionParamsFromBDSUTC(t *testing.T) {
+	asciiPackets := []string{
+		"#BDSUTCA,97,GPS,FINE,2379,372996000,0,0,18,20;0,0,1.862645149230957e-09,-9.769962617e-15,1085,6,4,4,0,0*2bd1f58c\r\n",
+	}
+
+	for i, asciiPacket := range asciiPackets {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			msg, err := uncmsg.ParseAsciiMessage([]byte(asciiPacket))
+			if err != nil {
+				t.Fatalf("Failed to parse ASCII packet: %v", err)
+			}
+
+			bdsutc, ok := msg.Body.(*uncmsg.BDSUTC)
+			if !ok {
+				t.Fatalf("Parsed message is not BDSUTC, got %T", msg.Body)
+			}
+
+			weekStart := msgHdrWeekStart(&msg.Hdr)
+			_, now := msgHdrTime(&msg.Hdr)
+			conversion, err := utcConversionParamsFromBDSUTC(bdsutc, weekStart, now)
+			if err != nil {
+				t.Fatalf("utcConversionParamsFromBDSUTC failed: %v", err)
+			}
+			testUTCConversion(t, conversion, &msg.Hdr)
+		})
+	}
+}
+
+func TestUTCConversionParamsFromBD3UTC(t *testing.T) {
+	asciiPackets := []string{
+		"#BD3UTCA,97,GPS,FINE,2379,374230000,0,0,18,21;1023,80,1.600710675120354e-09,-1.021405183e-14,0.000000000000000e+00,61,6,4,4,0,0*4b99b719\r\n",
+		"#BD3UTCA,97,GPS,FINE,2381,535516000,17548,0,18,23;1025,32,-6.984919309616089e-10,-1.021405183e-14,0.000000000000000e+00,61,6,4,4,0,0*9810311c",
+	}
+
+	for i, asciiPacket := range asciiPackets {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			msg, err := uncmsg.ParseAsciiMessage([]byte(asciiPacket))
+			if err != nil {
+				t.Fatalf("Failed to parse ASCII packet: %v", err)
+			}
+
+			bd3utc, ok := msg.Body.(*uncmsg.BD3UTC)
+			if !ok {
+				t.Fatalf("Parsed message is not BD3UTC, got %T", msg.Body)
+			}
+
+			_, now := msgHdrTime(&msg.Hdr)
+			conversion, err := utcConversionParamsFromBD3UTC(bd3utc, now)
+			if err != nil {
+				t.Fatalf("utcConversionParamsFromBD3UTC failed: %v", err)
+			}
+			testUTCConversion(t, conversion, &msg.Hdr)
+		})
+	}
+}
+
+func testUTCConversion(t *testing.T, ucp *utcConversionParams, hdr *uncmsg.MsgHdr) {
+	gnss, headerTime := msgHdrTime(hdr)
+	if gnss == 0 {
+		t.Fatal("Expected valid GNSS time from header")
+	}
+
+	correction, valid := ucp.Correction.Correction(headerTime)
+
+	t.Logf("Reference time: %v", ucp.Correction.Ref)
+	t.Logf("Header time: %v", headerTime)
+	t.Logf("Time difference: %v", headerTime.Sub(ucp.Correction.Ref))
+	t.Logf("Correction: %v", correction)
+	t.Logf("Correction valid: %v", valid)
+
+	if !valid {
+		t.Errorf("Correction should be valid")
+	}
+
+	if correction == 0 {
+		t.Errorf("Correction should be non-zero for this test case")
+	}
+
+	// Verify the LeapSecond matches LeapSecond2016
+	expectedLS := ptime.LeapSecond2016()
+	if ucp.LeapSecond != expectedLS {
+		t.Errorf("LeapSecond = %v, want %v", ucp.LeapSecond, expectedLS)
 	}
 }

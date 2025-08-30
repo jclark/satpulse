@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/uncmsg"
 )
 
@@ -99,12 +100,52 @@ func (p *packetProcessor) dispatch(msg *uncmsg.Msg, tRead time.Time, tag gpsprot
 			p.mh.Satellites(sm, tRead)
 			return true, nil
 		}
-		// TODO: Add other message type conversions here
-		// case *uncmsg.GPSUTC:
-		// case *uncmsg.GALUTC:
-		// case *uncmsg.BD3UTC:
-		// case *uncmsg.BDSUTC:
+	case *uncmsg.GPSUTC:
+		return dispatchUTC(&msg.Hdr, body, utcConversionParamsFromGPSUTC, gpsprot.GPS, p.mh, tRead)
+	case *uncmsg.GALUTC:
+		return dispatchUTC(&msg.Hdr, body, utcConversionParamsFromGALUTC, gpsprot.GAL, p.mh, tRead)
+	case *uncmsg.BD3UTC:
+		return dispatchUTC(&msg.Hdr, body, utcConversionParamsFromBD3UTC, gpsprot.BDS, p.mh, tRead)
+	case *uncmsg.BDSUTC:
+		return dispatchBDSUTC(&msg.Hdr, body, p.mh, tRead)
 	}
-
 	return false, nil
+}
+
+// dispatchUTC is a generic function that dispatches *UTC messages (GPS, Galileo, BD3)
+func dispatchUTC[T any](
+	hdr *uncmsg.MsgHdr,
+	body T,
+	convertFunc func(T, ptime.Time) (*utcConversionParams, error),
+	gnss gpsprot.GNSS,
+	mh gpsprot.MsgHandler,
+	tRead time.Time,
+) (bool, error) {
+	_, now := msgHdrTime(hdr)
+	params, err := convertFunc(body, now)
+	if err != nil {
+		return false, err
+	}
+	lsm := &gpsprot.LeapSecondMsg{
+		LeapSecond: params.LeapSecond,
+		GNSS:       gnss,
+	}
+	mh.LeapSecond(lsm, tRead)
+	return true, nil
+}
+
+// dispatchBDSUTC handles the special case of BDSUTC which needs weekStart
+func dispatchBDSUTC(hdr *uncmsg.MsgHdr, body *uncmsg.BDSUTC, mh gpsprot.MsgHandler, tRead time.Time) (bool, error) {
+	weekStart := msgHdrWeekStart(hdr)
+	_, now := msgHdrTime(hdr)
+	params, err := utcConversionParamsFromBDSUTC(body, weekStart, now)
+	if err != nil {
+		return false, err
+	}
+	lsm := &gpsprot.LeapSecondMsg{
+		LeapSecond: params.LeapSecond,
+		GNSS:       gpsprot.BDS,
+	}
+	mh.LeapSecond(lsm, tRead)
+	return true, nil
 }
