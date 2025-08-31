@@ -90,6 +90,8 @@ func (p *packetProcessor) dispatch(hdr *novmsg.MsgHdr, body novmsg.MsgBody, tRea
 			p.mh.Time(tm, tRead)
 			return true, nil
 		}
+	case *novmsg.IonUTC:
+		return dispatchIonUTC(hdr, m, p.mh, tRead)
 		// TODO: Add other message type conversions here
 		// case *novmsg.BestPos:
 		// case *novmsg.Heading:

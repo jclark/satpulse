@@ -38,9 +38,10 @@ var timeTestCases = []dataTestCase{
 		// ASCII format has different floating-point precision and header field values
 		fixupValueForAscii: fixupTimeValueForAscii,
 		fixupHeaderForAscii: func(hdr MsgHdr) MsgHdr {
+			// UM980 doesn't follow OEM7 spec here: the byte is exactly the percentage
+			hdr.IdleTime *= 2
 			// ASCII format has different Reserved field value
 			hdr.Reserved = 14
-			hdr.IdleTime *= 2 // UM980 doesn't follow OEM7 spec here: the byte is exactly the percentage
 			return hdr
 		},
 	},
@@ -80,6 +81,49 @@ var timeTestCases = []dataTestCase{
 			return hdr
 		},
 	},
+	{
+		name:  "UM980 IONUTC",
+		hex:   "aa44121c060000036c008c4461a04d09a8da88219d16261c21ec12000000000000005b3e000000000000583e00000000000080be00000000000080be0000000000400041000000000000e04000000000000010c10000000000001c414e09000000400200000000000000103e000000000000fc3c8909000007000000120000001200000000000000c9ca08ed",
+		ascii: "#IONUTCA,COM3,17548,97.0,FINE,2381,562617.000,472258205,22,18;2.514570951461792e-08,2.235174179077148e-08,-1.192092895507812e-07,-1.192092895507812e-07,1.331200000000000e+05,3.276800000000000e+04,-2.621440000000000e+05,4.587520000000000e+05,2382,147456,9.313225746154785e-10,6.217248938e-15,2441,7,18,18,0*37734163\r\n",
+		hdr: MsgHdr{
+			Port: "COM3",
+			CommonHdr: CommonHdr{
+				Sequence:           17548,
+				IdleTime:           Percentage(97),
+				TimeStatus:         TimeStatusFine,
+				Week:               2381,
+				MillisecondsOfWeek: GPSec(562617000),
+				RecvStatus:         472258205,
+				Reserved:           60449,
+				Version:            18,
+			},
+		},
+		value: &IonUTC{
+			Alpha0:    2.514570951461792e-08,
+			Alpha1:    2.2351741790771484e-08,
+			Alpha2:    -1.1920928955078125e-07,
+			Alpha3:    -1.1920928955078125e-07,
+			Beta0:     133120,
+			Beta1:     32768,
+			Beta2:     -262144,
+			Beta3:     458752,
+			UTCWn:     2382,
+			Tot:       147456,
+			A0:        9.313225746154785e-10,
+			A1:        6.217248937900877e-15,
+			WnLsf:     2441,
+			Dn:        7,
+			DeltatLs:  18,
+			DeltatLsf: 18,
+			Reserved:  0,
+		},
+		fixupValueForAscii: fixupIonUTCValueForAscii,
+		fixupHeaderForAscii: func(hdr MsgHdr) MsgHdr {
+			hdr.IdleTime *= 2
+			hdr.Reserved = 22
+			return hdr
+		},
+	},
 }
 
 func TestTimeBinary(t *testing.T) {
@@ -103,3 +147,25 @@ func fixupTimeValueForAscii(msg MsgBody) MsgBody {
 	fixupFloat(&result.OffsetStd, floatFormat)
 	return &result
 }
+
+// fixupIonUTCValueForAscii converts an IonUTC with full binary precision
+// to match the limited precision values that come from ASCII parsing.
+func fixupIonUTCValueForAscii(msg MsgBody) MsgBody {
+	r := msg.(*IonUTC)
+	result := *r
+
+	const floatFormat = "%.16g"
+	// Simulate receiver's ASCII formatting for all float64 fields
+	fixupFloat(&result.Alpha0, floatFormat)
+	fixupFloat(&result.Alpha1, floatFormat)
+	fixupFloat(&result.Alpha2, floatFormat)
+	fixupFloat(&result.Alpha3, floatFormat)
+	fixupFloat(&result.Beta0, floatFormat)
+	fixupFloat(&result.Beta1, floatFormat)
+	fixupFloat(&result.Beta2, floatFormat)
+	fixupFloat(&result.Beta3, floatFormat)
+	fixupFloat(&result.A0, floatFormat)
+	fixupFloat(&result.A1, "%.10g")
+	return &result
+}
+

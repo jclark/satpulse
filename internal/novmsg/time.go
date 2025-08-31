@@ -4,7 +4,8 @@ import "fmt"
 
 // Message IDs for time-related messages
 const (
-	TimeID MsgID = 101
+	TimeID   MsgID = 101
+	IonUTCID MsgID = 6 // XXX It's 6 on UM980 but 8 in the OEM6/7 manual
 )
 
 // ClockStatus represents the receiver clock model status
@@ -109,7 +110,35 @@ func (r *Time) ID() (MsgID, string) {
 	return TimeID, "TIMEA"
 }
 
+// IonUTC represents ionospheric and UTC correction parameters from a NovAtel receiver.
+// Message ID: 8
+// IONUTC messages contain GPS ionospheric model and UTC time parameters.
+type IonUTC struct {
+	Alpha0    float64 // Alpha parameter constant term
+	Alpha1    float64 // Alpha parameter 1st order term
+	Alpha2    float64 // Alpha parameter 2nd order term
+	Alpha3    float64 // Alpha parameter 3rd order term
+	Beta0     float64 // Beta parameter constant term
+	Beta1     float64 // Beta parameter 1st order term
+	Beta2     float64 // Beta parameter 2nd order term
+	Beta3     float64 // Beta parameter 3rd order term
+	UTCWn     uint32  // UTC reference week number
+	Tot       uint32  // Reference time of UTC parameters (s)
+	A0        float64 // UTC constant term of polynomial (s)
+	A1        float64 // UTC 1st order term of polynomial (s)
+	WnLsf     uint32  // Future week number
+	Dn        uint32  // Day number (1-7, Sunday=1, Saturday=7)
+	DeltatLs  int32   // Delta time due to leap seconds
+	DeltatLsf int32   // Future delta time due to leap seconds
+	Reserved  uint32  // Reserved field
+}
+
+func (r *IonUTC) ID() (MsgID, string) {
+	return IonUTCID, "IONUTCA"
+}
+
 func init() {
 	// Register known message types
-	regMsg[Time]("TIMEA")
+	regMsg[Time]("TIME")
+	regMsg[IonUTC]("IONUTC")
 }

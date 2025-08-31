@@ -159,3 +159,58 @@ func TestTimeMsgFromTime(t *testing.T) {
 		})
 	}
 }
+
+func TestUTCConversionParamsFromIonUTC(t *testing.T) {
+	asciiPacket := "#IONUTCA,COM3,17548,97.0,FINE,2381,562617.000,472258205,22,18;2.514570951461792e-08,2.235174179077148e-08,-1.192092895507812e-07,-1.192092895507812e-07,1.331200000000000e+05,3.276800000000000e+04,-2.621440000000000e+05,4.587520000000000e+05,2382,147456,9.313225746154785e-10,6.217248938e-15,2441,7,18,18,0*37734163\r\n"
+	
+	msg, err := novmsg.ParseAsciiMessage([]byte(asciiPacket))
+	if err != nil {
+		t.Fatalf("Failed to parse ASCII packet: %v", err)
+	}
+
+	ionutc, ok := msg.Body.(*novmsg.IonUTC)
+	if !ok {
+		t.Fatalf("Parsed message is not IonUTC, got %T", msg.Body)
+	}
+
+	_, now := msgHdrTime(&msg.Hdr)
+	conversion, err := utcConversionParamsFromIonUTC(ionutc, now)
+	if err != nil {
+		t.Fatalf("utcConversionParamsFromIonUTC failed: %v", err)
+	}
+
+	gnss, headerTime := msgHdrTime(&msg.Hdr)
+	if gnss == 0 {
+		t.Fatal("Expected valid GNSS time from header")
+	}
+
+	correction, valid := conversion.Correction.Correction(headerTime)
+
+	// Calculate the floating-point correction directly (matching ptime implementation)
+	timeDiff := headerTime.Sub(conversion.Correction.Ref)
+	fpCorrection := conversion.Correction.Bias + float64(timeDiff)*conversion.Correction.Drift
+
+	t.Logf("Reference time: %v", conversion.Correction.Ref)
+	t.Logf("Header time: %v", headerTime)
+	t.Logf("Time difference: %v", headerTime.Sub(conversion.Correction.Ref))
+	t.Logf("Time difference ns: %v", float64(timeDiff))
+	t.Logf("Bias: %v ns", conversion.Correction.Bias)
+	t.Logf("Drift: %v", conversion.Correction.Drift)
+	t.Logf("FP correction: %v ns", fpCorrection)
+	t.Logf("Duration correction: %v", correction)
+	t.Logf("Correction valid: %v", valid)
+
+	if !valid {
+		t.Errorf("Correction should be valid")
+	}
+
+	if fpCorrection == 0 {
+		t.Errorf("Floating-point correction should be non-zero for this test case, got %v", fpCorrection)
+	}
+
+	// Verify the LeapSecond matches LeapSecond2016
+	expectedLS := ptime.LeapSecond2016()
+	if conversion.LeapSecond != expectedLS {
+		t.Errorf("LeapSecond = %v, want %v", conversion.LeapSecond, expectedLS)
+	}
+}

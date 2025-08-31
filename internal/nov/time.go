@@ -68,3 +68,50 @@ func convertAccuracy(seconds float64) time.Duration {
 	}
 	return dur
 }
+
+// dispatchIonUTC handles IONUTC messages by converting them to LeapSecondMsg
+func dispatchIonUTC(hdr *novmsg.MsgHdr, ionutc *novmsg.IonUTC, mh gpsprot.MsgHandler, tRead time.Time) (bool, error) {
+	_, now := msgHdrTime(hdr)
+	params, err := utcConversionParamsFromIonUTC(ionutc, now)
+	if err != nil {
+		return false, err
+	}
+	lsm := &gpsprot.LeapSecondMsg{
+		LeapSecond: params.LeapSecond,
+		GNSS:       gpsprot.GPS,
+	}
+	mh.LeapSecond(lsm, tRead)
+	return true, nil
+}
+
+// msgHdrTime extracts GNSS and time from NovAtel message header
+func msgHdrTime(hdr *novmsg.MsgHdr) (gpsprot.GNSS, ptime.Time) {
+	// NovAtel messages are always GPS time reference
+	return gpsprot.GPS, ptime.GPS(int16(hdr.Week), time.Duration(hdr.MillisecondsOfWeek)*time.Millisecond)
+}
+
+type utcConversionParams struct {
+	Correction ptime.CorrectionParams
+	LeapSecond ptime.LeapSecond
+}
+
+func utcConversionParamsFromIonUTC(ionutc *novmsg.IonUTC, now ptime.Time) (*utcConversionParams, error) {
+	gnssLS := ptime.GNSSLeapSecond{
+		WNLSF:    uint8(ionutc.WnLsf),
+		DN:       uint8(ionutc.Dn),
+		DeltaLS:  int8(ionutc.DeltatLs),
+		DeltaLSF: int8(ionutc.DeltatLsf),
+	}
+	ls, err := ptime.GPSLeapSecond(gnssLS, now)
+	if err != nil {
+		return nil, err
+	}
+	return &utcConversionParams{
+		Correction: ptime.CorrectionParams{
+			Ref:   ptime.GPS(int16(ionutc.UTCWn), time.Duration(ionutc.Tot)*time.Second),
+			Bias:  ionutc.A0 * 1e9,
+			Drift: ionutc.A1,
+		},
+		LeapSecond: ls,
+	}, nil
+}
