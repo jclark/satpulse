@@ -59,6 +59,82 @@ func TestPVTMessages(t *testing.T) {
 				"RECTIMEB 1",
 			},
 		},
+		{
+			name: "enable UTCB messages for all GNSS",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2", // Has GPS, GLO, GAL, BDS, QZSS
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgLeapSecond
+			},
+			expectedCmds: []string{
+				"GPSUTCB 1",
+				"BD3UTCB 1",
+				"GALUTCB 1",
+			},
+		},
+		{
+			name: "enable UTCB messages for GPS only",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 8", // Has GPS, GAL, BDS
+				"MASK GAL",
+				"MASK BDS",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgLeapSecond
+			},
+			expectedCmds: []string{
+				"GPSUTCB 1",
+			},
+		},
+		{
+			name: "enable UTCB messages for GPS and BDS",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 8", // Has GPS, GAL, BDS
+				"MASK GAL",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgLeapSecond
+			},
+			expectedCmds: []string{
+				"GPSUTCB 1",
+				"BD3UTCB 1",
+			},
+		},
+		{
+			name: "disable UTCB messages with PVTMsgOff",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2", // Has GPS, GLO, GAL, BDS, QZSS
+				"RECTIMEB 1",
+				"GPSUTCB 1",
+				"BD3UTCB 1",
+				"GALUTCB 1",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgOff
+			},
+			expectedCmds: []string{
+				"UNLOG RECTIMEB",
+				"UNLOG GPSUTCB",
+				"UNLOG BD3UTCB",
+				"UNLOG GALUTCB",
+			},
+		},
+		{
+			name: "no UTCB messages when no GNSS enabled",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1",
+				"MASK GPS",
+				"MASK GAL",
+				"MASK BDS",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgLeapSecond
+			},
+			expectedCmds: []string{
+				// No UTCB messages
+			},
+		},
 	}
 
 	testNativeConfigProps(t, tests)

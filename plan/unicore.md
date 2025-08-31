@@ -329,7 +329,6 @@ This is what is needed to implement everything that has been implemented for u-b
   * would benefit from additional SatsMsgFlag
 
 ### Configuration Options
-- **PVT leap second messages** - GPSUTCB, BD3UTCB, GALUTCB for PVTMsgLeapSecond flag
 - **BaudRate option** - Requires:
   - Requires determining COM port. Two possibilities:
     * Use LOGLIST, which requires NovAtel Abbreviated ASCII packet format

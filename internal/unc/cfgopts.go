@@ -16,7 +16,7 @@ func generateOptsCommands(opts *gpsprot.ConfigOptions, enabledGNSS gpsprot.GNSSS
 func generateMsgCommands(opts *gpsprot.ConfigOptions, enabledGNSS gpsprot.GNSSSet) []string {
 	var cmds []string
 	if opts.PVTMsg.IsSet() {
-		cmds = append(cmds, generatePVTMsgCommands(opts.PVTMsg.Get())...)
+		cmds = append(cmds, generatePVTMsgCommands(opts.PVTMsg.Get(), enabledGNSS)...)
 	}
 	if opts.SatsMsg.IsSet() {
 		cmds = append(cmds, generateSatsMsgCommands(opts.SatsMsg.Get())...)
@@ -34,7 +34,7 @@ func generateMsgCommands(opts *gpsprot.ConfigOptions, enabledGNSS gpsprot.GNSSSe
 }
 
 // generatePVTMsgCommands maps PVT flags to Unicore message commands
-func generatePVTMsgCommands(flags gpsprot.PVTMsgFlags) []string {
+func generatePVTMsgCommands(flags gpsprot.PVTMsgFlags, enabledGNSS gpsprot.GNSSSet) []string {
 	var cmds []string
 	off := flags&gpsprot.PVTMsgOff != 0
 	// RECTIMEB is used for Time and TimePulse
@@ -44,11 +44,30 @@ func generatePVTMsgCommands(flags gpsprot.PVTMsgFlags) []string {
 		cmds = append(cmds, "UNLOG RECTIMEB")
 	}
 	// Note: We only use RECTIMEB for time pulse, not PPSSTATUS
-	// Future: Add leap second messages when LeapSecondMsg is implemented
-	// if flags&gpsprot.PVTMsgLeapSecond != 0 {
-	//     cmds = append(cmds, "GPSUTCB 1", "BD3UTCB 1", "GALUTCB 1")
-	// }
+	// Enable/disable UTCB messages based on enabled GNSS systems
+	var enable bool
+	if flags&gpsprot.PVTMsgLeapSecond != 0 {
+		enable = true
+	} else if off {
+		enable = false
+	} else {
+		return cmds
+	}
+	addUTCBCmd(&cmds, enabledGNSS, gpsprot.GPS, "GPSUTCB", enable)
+	addUTCBCmd(&cmds, enabledGNSS, gpsprot.BDS, "BD3UTCB", enable)
+	addUTCBCmd(&cmds, enabledGNSS, gpsprot.GAL, "GALUTCB", enable)
 	return cmds
+}
+
+// addUTCBCmd adds a UTCB command if the GNSS is enabled
+func addUTCBCmd(cmds *[]string, enabledGNSS gpsprot.GNSSSet, gnss gpsprot.GNSS, msgName string, enable bool) {
+	if enabledGNSS.Contains(gnss) {
+		if enable {
+			*cmds = append(*cmds, msgName+" 1")
+		} else {
+			*cmds = append(*cmds, "UNLOG "+msgName)
+		}
+	}
 }
 
 // generateSatsMsgCommands maps Sats flags to Unicore message commands
