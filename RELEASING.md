@@ -1,5 +1,12 @@
 # SatPulse release process
 
+This release process should be performed in a VSCode devcontainer:
+1. Open the repository in VSCode
+2. For minor releases, consider rebuilding without cache to get latest tools:
+   - Command Palette: "Dev Containers: Rebuild Container Without Cache"
+3. Reopen in Container when prompted (or use Command Palette: "Dev Containers: Reopen in Container")
+4. Open a terminal within VSCode to run the commands below
+
 ## Overview
 
 - **Prereleases**: Built automatically from any commit without a matching version tag
