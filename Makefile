@@ -179,5 +179,8 @@ tag:
 	git diff-index --exit-code HEAD
 	git tag -f -a "$(VERSION_TAG)" -m "Release $(VERSION_TAG)"
 
-.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz tag
+untag:
+	git tag -d "$(VERSION_TAG)"
+
+.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz tag untag
 
