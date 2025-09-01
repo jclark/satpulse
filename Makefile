@@ -166,5 +166,9 @@ release: $(GH_DEBS) $(GH_RPMS)
 		--draft \
 		$^
 
-.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz
+tag:
+	git diff-index --exit-code HEAD
+	git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
+
+.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz tag
 
