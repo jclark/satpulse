@@ -329,7 +329,7 @@ func newPrometheusObserver(cfg *Config) *promobs.PrometheusObserver {
 }
 
 // combineObservers combines individual observers into appropriate single observer
-func combineObservers(promObs *promobs.PrometheusObserver, sseObs obs.Observer) obs.Observer {
+func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver) obs.Observer {
 	if promObs != nil && sseObs != nil {
 		return obs.NewMultiObserver(promObs, sseObs)
 	} else if promObs != nil {
