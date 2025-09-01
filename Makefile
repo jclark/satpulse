@@ -3,15 +3,24 @@
 CONFIG_FILE=/usr/local/etc/satpulse.toml
 CMD=github.com/jclark/satpulse/internal/cmd
 VERSION:=$(shell cat VERSION)
+VERSION_TAG:=v$(VERSION)
 BUILD_DATE:=$(shell date -u --rfc-3339=seconds)
 DIRTY:=$(shell git diff-index --quiet HEAD || echo .dirty)
 GIT_VERSION:=$(shell env TZ=UTC git log -1 --format="%cd.%h" --date=format-local:%Y%m%d)$(DIRTY)
-CMD_VERSION:=$(VERSION)-pre.$(GIT_VERSION)
 DEB_VERSION=1
-DEB_PKG_VERSION:=$(VERSION)~git$(GIT_VERSION)-$(DEB_VERSION)
 RPM_RELEASE=1
-RPM_VERSION=$(VERSION)~$(shell env TZ=UTC git log -1 --format="%cdgit%h" --date=format-local:%Y%m%d)
-GH_RELEASE=$(VERSION)-pre-$(shell env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
+CMD_VERSION:=$(VERSION)
+DEB_PKG_VERSION:=$(VERSION)-$(DEB_VERSION)
+RPM_VERSION:=$(VERSION)
+GH_RELEASE:=$(VERSION)
+CURRENT_TAG:=$(shell git describe --tags --exact-match 2>/dev/null)
+ifneq ($(CURRENT_TAG)$(DIRTY),$(VERSION_TAG))
+# It's a prerelease
+CMD_VERSION:=$(VERSION)-pre.$(GIT_VERSION)
+DEB_PKG_VERSION:=$(VERSION)~git$(GIT_VERSION)-$(DEB_VERSION)
+RPM_VERSION:=$(VERSION)~$(shell env TZ=UTC git log -1 --format="%cdgit%h" --date=format-local:%Y%m%d)
+GH_RELEASE:=$(VERSION)-pre-$(shell env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
+endif
 RPM_PKG_VERSION=$(RPM_VERSION)-$(RPM_RELEASE)
 XFLAGS:=-X \"$(CMD).version=$(CMD_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
 TAGS=netgo,osusergo
@@ -168,7 +177,7 @@ release: $(GH_DEBS) $(GH_RPMS)
 
 tag:
 	git diff-index --exit-code HEAD
-	git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
+	git tag -a "$(VERSION_TAG)" -m "Release $(VERSION_TAG)"
 
 .PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz tag
 
