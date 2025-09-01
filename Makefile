@@ -177,7 +177,7 @@ release: $(GH_DEBS) $(GH_RPMS)
 
 tag:
 	git diff-index --exit-code HEAD
-	git tag -a "$(VERSION_TAG)" -m "Release $(VERSION_TAG)"
+	git tag -f -a "$(VERSION_TAG)" -m "Release $(VERSION_TAG)"
 
 .PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz tag
 
