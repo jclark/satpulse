@@ -1,12 +1,12 @@
 package cmd
 
-var gitVersion string
+var version string
 var buildDate string
 
 func VersionInfo() string {
 	s := ""
-	if gitVersion != "" {
-		s = "git version " + gitVersion
+	if version != "" {
+		s = "version " + version
 	}
 	if buildDate != "" {
 		if s != "" {

@@ -2,16 +2,18 @@
 # Where the config file will be installed by the install target.
 CONFIG_FILE=/usr/local/etc/satpulse.toml
 CMD=github.com/jclark/satpulse/internal/cmd
+VERSION:=$(shell cat VERSION)
 BUILD_DATE:=$(shell date -u --rfc-3339=seconds)
 DIRTY:=$(shell git diff-index --quiet HEAD || echo .dirty)
 GIT_VERSION:=$(shell env TZ=UTC git log -1 --format="%cd.%h" --date=format-local:%Y%m%d)$(DIRTY)
+CMD_VERSION:=$(VERSION)-pre.$(GIT_VERSION)
 DEB_VERSION=1
-DEB_PKG_VERSION:= 0.0~git$(GIT_VERSION)-$(DEB_VERSION)
+DEB_PKG_VERSION:=$(VERSION)~git$(GIT_VERSION)-$(DEB_VERSION)
 RPM_RELEASE=1
-RPM_VERSION=$(shell env TZ=UTC git log -1 --format="0^%cdgit%h" --date=format-local:%Y%m%d)
-GH_RELEASE=$(shell env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
+RPM_VERSION=$(VERSION)~$(shell env TZ=UTC git log -1 --format="%cdgit%h" --date=format-local:%Y%m%d)
+GH_RELEASE=$(VERSION)-pre-$(shell env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
 RPM_PKG_VERSION=$(RPM_VERSION)-$(RPM_RELEASE)
-XFLAGS:=-X \"$(CMD).gitVersion=$(GIT_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
+XFLAGS:=-X \"$(CMD).version=$(CMD_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
 TAGS=netgo,osusergo
 # The GOARCHs we support.
 ALL_GOARCH=arm64 amd64
