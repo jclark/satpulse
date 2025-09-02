@@ -30,8 +30,8 @@ type FlagConfig struct {
 	ShowStale bool
 	
 	// Common pin selection
-	Pin  string // Can be name or index
-	Chan uint32
+	Pin  string // Can be name or index, empty string means not specified
+	Chan int
 	
 	// Perout mode flags (for future)
 	PeroutWidth  float64
@@ -41,8 +41,10 @@ type FlagConfig struct {
 
 func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usageFunc func(string) string, err error) {
 	cfg = &FlagConfig{
+		Mode:    ModeShowPins,     // Default mode
 		Timeout: 2 * time.Second, // Default timeout
 		Chan:    0,                // Default channel
+		Pin:     "",               // Empty means not specified
 	}
 	
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
@@ -60,7 +62,7 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	flags.Float64VarP(&timeoutSec, "timeout", "t", 2.0, "timeout for monitoring in seconds (0 for unlimited)")
 	flags.BoolVar(&cfg.ShowStale, "show-stale", false, "include stale/buffered timestamps in output")
 	
-	flags.Float64VarP(&peroutWidth, "perout", "o", -1, "enable periodic output with pulse width in seconds")
+	flags.Float64VarP(&peroutWidth, "perout", "o", 0, "enable periodic output with pulse width in seconds")
 	flags.Float64Var(&cfg.PeroutPeriod, "period", 1.0, "period for periodic output in seconds")
 	flags.Float64Var(&cfg.PeroutPhase, "phase", 0, "phase offset for periodic output in seconds")
 	
@@ -68,9 +70,8 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	flags.BoolVar(&showFlag, "show", false, "show current configuration")
 	
 	// Common pin selection
-	flags.StringVar(&cfg.Pin, "pin", "0", "pin index or name")
-	var chanInt int
-	flags.IntVar(&chanInt, "chan", 0, "channel index")
+	flags.StringVar(&cfg.Pin, "pin", "", "pin index or name")
+	flags.IntVar(&cfg.Chan, "chan", 0, "channel index")
 
 	err = flags.Parse(args)
 	if err != nil {
@@ -86,7 +87,6 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	
 	// Convert timeout to Duration
 	cfg.Timeout = time.Duration(timeoutSec * float64(time.Second))
-	cfg.Chan = uint32(chanInt)
 	
 	// Validate positional arguments
 	if flags.NArg() > 1 {
@@ -105,7 +105,7 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 		cfg.Mode = ModeExtts
 		modeCount++
 	}
-	if peroutWidth >= 0 {
+	if flags.Lookup("perout").Changed {
 		cfg.Mode = ModePerout
 		cfg.PeroutWidth = peroutWidth
 		modeCount++
@@ -115,11 +115,7 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 		modeCount++
 	}
 	if showFlag {
-		if cfg.Interface != "" {
-			cfg.Mode = ModeShowPins
-		} else {
-			cfg.Mode = ModeShowIfaces
-		}
+		// Mode is already set to ModeShowPins by default
 		modeCount++
 	}
 	
@@ -129,13 +125,9 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 		return
 	}
 	
-	// Default mode based on interface
-	if modeCount == 0 {
-		if cfg.Interface != "" {
-			cfg.Mode = ModeShowPins
-		} else {
-			cfg.Mode = ModeShowIfaces
-		}
+	// Adjust show mode based on interface presence
+	if cfg.Mode == ModeShowPins && cfg.Interface == "" {
+		cfg.Mode = ModeShowIfaces
 	}
 	
 	// Validate mode-specific requirements
@@ -143,6 +135,56 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	case ModeExtts, ModePerout, ModeDisable:
 		if cfg.Interface == "" {
 			err = fmt.Errorf("interface name required for this mode")
+			return
+		}
+		// Set default pin if not specified
+		if cfg.Pin == "" && !flags.Lookup("pin").Changed {
+			cfg.Pin = "0"
+		}
+	}
+	
+	// Check for mode-specific flags used with wrong modes
+	// Check for perout-only flags used without perout mode
+	if cfg.Mode != ModePerout {
+		if flags.Lookup("period").Changed {
+			err = fmt.Errorf("--period can only be used with -o/--perout")
+			return
+		}
+		if flags.Lookup("phase").Changed {
+			err = fmt.Errorf("--phase can only be used with -o/--perout")
+			return
+		}
+	}
+	
+	// Check for extts-only flags used without extts mode
+	if cfg.Mode != ModeExtts {
+		if flags.Lookup("timeout").Changed && timeoutSec != 2.0 {
+			err = fmt.Errorf("--timeout can only be used with -i/--extts")
+			return
+		}
+		if flags.Lookup("show-stale").Changed {
+			err = fmt.Errorf("--show-stale can only be used with -i/--extts")
+			return
+		}
+	}
+
+	// Additional validation for perout mode
+	if cfg.Mode == ModePerout {
+		// Validate perout specific parameters  
+		if cfg.PeroutWidth < 0 {
+			err = fmt.Errorf("pulse width cannot be negative (got %f seconds)", cfg.PeroutWidth)
+			return
+		}
+		if cfg.PeroutPeriod <= 0 {
+			err = fmt.Errorf("period must be positive (got %f seconds)", cfg.PeroutPeriod)
+			return
+		}
+		if cfg.PeroutPhase < 0 {
+			err = fmt.Errorf("phase offset cannot be negative (got %f seconds)", cfg.PeroutPhase)
+			return
+		}
+		if cfg.PeroutWidth >= cfg.PeroutPeriod {
+			err = fmt.Errorf("pulse width (%f seconds) must be less than period (%f seconds)", cfg.PeroutWidth, cfg.PeroutPeriod)
 			return
 		}
 	}

@@ -18,7 +18,7 @@ func TestParseFlags(t *testing.T) {
 			expected: &FlagConfig{
 				Mode:    ModeShowIfaces,
 				Timeout: 2 * time.Second,
-				Pin:     "0",
+				Pin:     "",
 				Chan:    0,
 			},
 		},
@@ -29,7 +29,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModeShowPins,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 			},
 		},
@@ -165,7 +165,7 @@ func TestParseFlags(t *testing.T) {
 				Interface: "eth0",
 				JSONL:     true,
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 			},
 		},
@@ -210,6 +210,48 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "perout mode with exponential notation - microsecond width",
+			args: []string{"-o", "1e-6", "eth0"},
+			expected: &FlagConfig{
+				Mode:         ModePerout,
+				Interface:    "eth0",
+				Timeout:      2 * time.Second,
+				Pin:          "0",
+				Chan:         0,
+				PeroutWidth:  1e-6,
+				PeroutPeriod: 1.0,
+				PeroutPhase:  0,
+			},
+		},
+		{
+			name: "perout mode with exponential notation - nanosecond width",
+			args: []string{"-o", "1e-9", "eth0"},
+			expected: &FlagConfig{
+				Mode:         ModePerout,
+				Interface:    "eth0",
+				Timeout:      2 * time.Second,
+				Pin:          "0",
+				Chan:         0,
+				PeroutWidth:  1e-9,
+				PeroutPeriod: 1.0,
+				PeroutPhase:  0,
+			},
+		},
+		{
+			name: "perout mode with exponential notation for all time values",
+			args: []string{"-o", "1e-3", "--period", "1e-1", "--phase", "5e-2", "eth0"},
+			expected: &FlagConfig{
+				Mode:         ModePerout,
+				Interface:    "eth0",
+				Timeout:      2 * time.Second,
+				Pin:          "0",
+				Chan:         0,
+				PeroutWidth:  1e-3,
+				PeroutPeriod: 1e-1,
+				PeroutPhase:  5e-2,
+			},
+		},
+		{
 			name: "disable mode",
 			args: []string{"--disable", "eth0"},
 			expected: &FlagConfig{
@@ -238,7 +280,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModeShowPins,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 			},
 		},
@@ -248,7 +290,7 @@ func TestParseFlags(t *testing.T) {
 			expected: &FlagConfig{
 				Mode:    ModeShowIfaces,
 				Timeout: 2 * time.Second,
-				Pin:     "0",
+				Pin:     "",
 				Chan:    0,
 			},
 		},
@@ -296,6 +338,107 @@ func TestParseFlags(t *testing.T) {
 		{
 			name:        "too many positional arguments with mode",
 			args:        []string{"-i", "eth0", "eth1", "eth2"},
+			expectError: true,
+		},
+		{
+			name:        "perout width too large",
+			args:        []string{"-o", "1.5", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "perout width equals period",
+			args:        []string{"-o", "1.0", "--period", "1.0", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "perout negative width",
+			args:        []string{"-o", "-0.1", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "perout negative period",
+			args:        []string{"-o", "0.1", "--period", "-1.0", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "perout negative phase",
+			args:        []string{"-o", "0.1", "--phase", "-0.5", "eth0"},
+			expectError: true,
+		},
+		// Mode-specific flag validation tests
+		{
+			name:        "period flag without perout mode",
+			args:        []string{"--period", "2.0", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "phase flag without perout mode",
+			args:        []string{"--phase", "0.5", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "period flag with extts mode",
+			args:        []string{"-i", "--period", "2.0", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "phase flag with extts mode",
+			args:        []string{"-i", "--phase", "0.5", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "period flag with disable mode",
+			args:        []string{"--disable", "--period", "2.0", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "phase flag with disable mode",
+			args:        []string{"--disable", "--phase", "0.5", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "timeout flag without extts mode",
+			args:        []string{"--timeout", "5", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "show-stale flag without extts mode",
+			args:        []string{"--show-stale", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "timeout flag with perout mode",
+			args:        []string{"-o", "0.1", "--timeout", "5", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "show-stale flag with perout mode",
+			args:        []string{"-o", "0.1", "--show-stale", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "timeout flag with disable mode",
+			args:        []string{"--disable", "--timeout", "5", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "show-stale flag with disable mode",
+			args:        []string{"--disable", "--show-stale", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "timeout flag with show mode",
+			args:        []string{"--show", "--timeout", "10", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "show-stale flag with show all mode",
+			args:        []string{"--show-stale"},
+			expectError: true,
+		},
+		{
+			name:        "period and phase without perout in show mode",
+			args:        []string{"--period", "1", "--phase", "0.5", "eth0"},
 			expectError: true,
 		},
 	}

@@ -6,7 +6,6 @@ import (
 	"iter"
 	"log/slog"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/jclark/satpulse/internal/phc"
@@ -29,14 +28,14 @@ func (e *ExttsEvent) Print(f *os.File) {
 	fmt.Fprintln(f, e.Timestamp)
 }
 
-func extts(lg *slog.Logger, cfg *FlagConfig) iter.Seq[Printer] {
+func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 	return func(yield func(Printer) bool) {
 		lg.Debug("extts mode", "interface", cfg.Interface, "timeout", cfg.Timeout, "pin", cfg.Pin, "chan", cfg.Chan)
 		
 		// Get PHC index for interface
 		phcIndex, err := phc.IfPhcIndex(cfg.Interface)
 		if err != nil || phcIndex < 0 {
-			lg.Error("interface does not have a PTP hardware clock", "interface", cfg.Interface, "error", err)
+			*errp = fmt.Errorf("interface %s does not have a PTP hardware clock: %w", cfg.Interface, err)
 			return
 		}
 
@@ -44,44 +43,44 @@ func extts(lg *slog.Logger, cfg *FlagConfig) iter.Seq[Printer] {
 		phcPath := fmt.Sprintf("/dev/ptp%d", phcIndex)
 		clk, err := phc.Open(phcPath)
 		if err != nil {
-			lg.Error("failed to open PHC device", "path", phcPath, "error", err)
+			*errp = fmt.Errorf("failed to open PHC device for interface %s: %w", cfg.Interface, err)
 			return
 		}
 		defer clk.Close()
 
 		// Check if we have pins
 		if clk.PinCount() == 0 {
-			lg.Error("interface has no software-defined pins", "interface", cfg.Interface)
+			*errp = fmt.Errorf("interface %s has no software-defined pins", cfg.Interface)
 			return
 		}
 
 		// Resolve pin name to index if needed
 		pinIndex, err := resolvePinIndex(clk, cfg.Pin)
 		if err != nil {
-			lg.Error("pin not found", "pin", cfg.Pin, "interface", cfg.Interface, "error", err)
+			*errp = err
 			return
 		}
 
 		// Validate channel index
-		if int(cfg.Chan) >= clk.ExttsChanCount() {
-			lg.Error("channel out of range", "channel", cfg.Chan, "max", clk.ExttsChanCount()-1)
+		if err := validateExttsChannel(clk, cfg.Chan); err != nil {
+			*errp = err
 			return
 		}
 
 		// Configure pin for external timestamps
-		err = clk.PinSetFunc(pinIndex, phc.PinFuncExtts, cfg.Chan)
+		err = clk.PinSetFunc(uint32(pinIndex), phc.PinFuncExtts, uint32(cfg.Chan))
 		if err != nil {
-			lg.Error("failed to configure pin", "pin", pinIndex, "error", err)
+			*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", pinIndex, err)
 			return
 		}
 
 		// Enable external timestamps
-		_, err = clk.ExttsEnable(cfg.Chan, true)
+		_, err = clk.ExttsEnable(uint32(cfg.Chan), true)
 		if err != nil {
-			lg.Error("failed to enable external timestamps", "channel", cfg.Chan, "error", err)
+			*errp = fmt.Errorf("failed to enable external timestamps on channel %d: %w", cfg.Chan, err)
 			return
 		}
-		defer clk.ExttsEnable(cfg.Chan, false) // Cleanup on exit
+		defer clk.ExttsEnable(uint32(cfg.Chan), false) // Cleanup on exit
 
 		// Set up context with timeout
 		ctx := context.Background()
@@ -110,7 +109,7 @@ func extts(lg *slog.Logger, cfg *FlagConfig) iter.Seq[Printer] {
 				if !ok {
 					// Channel closed, worker done
 					if noEventsReceived && cfg.Timeout > 0 {
-						lg.Info("no timestamps received during monitoring period")
+						*errp = fmt.Errorf("no timestamps received during monitoring period")
 					}
 					return
 				}
@@ -181,36 +180,3 @@ func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, eventCh c
 	}
 }
 
-// resolvePinIndex converts a pin name or index string to a pin index
-func resolvePinIndex(clk *phc.Clock, pin string) (uint32, error) {
-	// Try to parse as integer first
-	if index, err := strconv.Atoi(pin); err == nil {
-		if index < 0 || index >= clk.PinCount() {
-			return 0, fmt.Errorf("pin index %d out of range (0-%d)", index, clk.PinCount()-1)
-		}
-		return uint32(index), nil
-	}
-
-	// Not a number, treat as pin name
-	for i := 0; i < clk.PinCount(); i++ {
-		desc, err := clk.PinGetFunc(uint32(i))
-		if err != nil {
-			continue
-		}
-		if string(desc.Name[:]) == pin || stripNulls(string(desc.Name[:])) == pin {
-			return uint32(i), nil
-		}
-	}
-
-	return 0, fmt.Errorf("pin name not found")
-}
-
-// stripNulls removes null bytes from a string (for C-style strings)
-func stripNulls(s string) string {
-	for i, c := range s {
-		if c == 0 {
-			return s[:i]
-		}
-	}
-	return s
-}
