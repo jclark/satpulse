@@ -2,6 +2,7 @@ package sdpcmd
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ type InterfaceInfo struct {
 	NumPeroutChannels int      `json:"n_perout_channels"` // From /sys/class/ptp/ptpX/n_periodic_outputs
 }
 
-func showAll() ([]Printer, error) {
+func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	var result []Printer
 
 	interfaces, err := net.Interfaces()

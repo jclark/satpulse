@@ -1,3 +1,4 @@
+
 # SDP tool - Software defined pin control for PTP hardware clocks
 
 ## Problem
@@ -126,6 +127,9 @@ Show the current configuration of the PHC including capabilities, pin assignment
 **-t**, **--timeout** *seconds*  
 How long to monitor for input events in seconds (default: 2.0). Use 0 for unlimited (monitor until interrupted).
 
+**--show-stale**  
+Include stale/buffered timestamps in output. By default, stale timestamps (those buffered in the kernel before monitoring started) are skipped. With this flag, they are included with `"stale": true` in JSON output.
+
 ### Options for --perout
 
 **--period** *seconds*  
@@ -176,6 +180,11 @@ satpulsetool sdp -i --chan 1 eth0
 satpulsetool sdp --jsonl eth0
 ```
 
+## Output conventions
+- All data output (interface info, pin status, timestamps) goes to stdout
+- All errors, warnings, and informational messages go to stderr  
+- All and only stdout output is affected by the `-j`/`--jsonl` flag
+- This allows proper piping and redirection (e.g., `satpulsetool sdp -i eth0 | tee timestamps.log`)
 
 
 ## Implementation plan
@@ -198,8 +207,9 @@ satpulsetool sdp --jsonl eth0
      - `n_periodic_outputs` - Number of perout channels
      - List files in `pins/` directory to get pin names (directory won't exist if n_pins=0)
    - Only include interfaces with PHC and n_pins > 0 in results
-   - If no interfaces have pins, print error to stderr and exit with status 1
-   - Output as text or JSON based on `--jsonl` flag
+   - If no interfaces have pins, print error to stderr and exit with status 2
+   - Output as text or JSON to stdout based on `--jsonl` flag
+   - **Note**: Consider reimplementing without sysfs since PHC ioctls don't require root for reading
 
 ### Phase 2: Show mode with interface specified
 1. Check if positional arg exists after flag parsing - that's the interface
@@ -218,44 +228,117 @@ satpulsetool sdp --jsonl eth0
    - Output `PinStatus` without index field
 8. Use `--jsonl` flag from Phase 1 parsing for output format
 
-### Phase 3: Flag parsing infrastructure
-1. Extend `sdpflags.go` from Phase 1
-2. Define mode flags: `-i`, `-o`, `--disable`, `--show`
-3. Parse common options: `--pin`, `--chan`
-4. Validate mutual exclusivity of mode flags
-5. Return parsed configuration struct
+### Phase 3: External timestamps mode (`-i`)
 
-### Phase 4: External timestamps mode (`-i`)
-1. Define `ExttsEvent` struct
-2. Create `sdpphc.go` for PHC helper functions
+#### Architecture
+1. **Mode-based flag parsing in `sdpflags.go`**:
+   - Add Mode enum: `ModeShowAll`, `ModeShow`, `ModeExtts`, `ModePerout`, `ModeDisable`
+   - Create `FlagConfig` struct with Mode field and mode-specific fields
+   - Parse `-i`/`--extts`, `-t`/`--timeout`, `--show-stale`, `--pin`, `--chan` flags
+   - Determine mode from flags (interface only → show, -i → extts, etc.)
+   - Validate only relevant flags are set for each mode
+   - Default timeout to 2.0 seconds, 0 for unlimited
+
+2. **Mode dispatch in `sdpcmd.go`**:
+   - Create handler map: `map[Mode]func(*FlagConfig) ([]Printer, error)`
+   - Panic on internal errors (e.g., unknown mode)
+   - Keep existing uniform output handling
+
+3. **Create `extts.go`** with timestamp monitoring:
+   - Define `ExttsEvent` struct implementing `Printer`
+   - Main `extts()` function opens device, configures pin, starts worker
+   - Worker goroutine pattern based on `internal/ts/clock.go:readWorker()`
+
+#### Implementation Details
+
+**ExttsEvent struct**:
+```go
+type ExttsEvent struct {
+    Timestamp float64 `json:"timestamp"` // seconds since epoch
+    Index     uint32  `json:"index"`     // channel index  
+    Stale     bool    `json:"stale,omitempty"` // true if buffered
+}
+
+func (e *ExttsEvent) Print(f *os.File) {
+    fmt.Fprintf(f, "%.9f\n", e.Timestamp)
+}
+```
+
+**Worker goroutine pattern** (based on `internal/ts/clock.go`):
+- Run `ExttsAvailable(100ms)` in a loop
+- Track stale state: starts true, becomes false after timeout with no events
+- Read timestamps with `ReadExtts()` when available
+- Send events on channel to main function
+- Handle context cancellation for cleanup
+
+**Main function pattern**:
+```go
+func extts(cfg *FlagConfig) ([]Printer, error) {
+    // 1. Open PHC device using phc.IfPhcIndex() and phc.Open()
+    // 2. Resolve pin name to index if needed (try parse as int first)
+    // 3. Configure pin: phc.PinSetFunc(pin, phc.PinFuncExtts, chan)
+    // 4. Enable timestamps: phc.ExttsEnable(chan, true)
+    
+    ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+    defer cancel()
+    defer phc.ExttsEnable(chan, false) // cleanup
+    
+    eventCh := make(chan ExttsEvent, 10)
+    go exttsWorker(ctx, clk, eventCh, cfg.Channel)
+    
+    var events []Printer
+    for {
+        select {
+        case event := <-eventCh:
+            if !event.Stale || cfg.ShowStale {
+                events = append(events, &event)
+                // Could also print immediately for streaming
+            }
+        case <-ctx.Done():
+            return events, nil
+        }
+    }
+}
+```
+
+**Pin name resolution**:
+- Try `strconv.Atoi()` first
+- If not a number, iterate pins 0 to n_pins-1 with `PinGetFunc()`
+- Compare name field, use matching index
+
+**Error messages**:
+- "interface %s does not have a PTP hardware clock"
+- "interface %s has no software-defined pins"  
+- "pin %s not found on interface %s"
+- "channel %d out of range (max %d)"
+
+#### Key differences from `internal/ts/clock.go`:
+- No era tracking (just simple stale boolean)
+- No carrier loss handling
+- No interface waiting logic
+- Simpler event structure (just timestamp, index, stale)
+- Output directly as ExttsEvent instead of complex Event type
+
+### Phase 4: Periodic output mode (`-o`)
+1. Extend `sdpflags.go` to parse `-o`/`--perout`, `--period`, `--phase`, `--pin`, `--chan` options
+2. Validate mutual exclusivity with `-i` mode
 3. Open PHC device (requires root)
-4. Implement pin name resolution if `--pin` is a string
+4. Parse `--pin` (handle both names and indices)
 5. Validate pin and channel indices against capabilities
-6. Use existing `phc` package functions:
-   - `phc.PinSetFunc()` to configure pin for extts
-   - `phc.ExttsEnable()` to enable timestamps
-   - `phc.ExttsAvailable()` and `phc.ReadExtts()` in loop
-7. Output stream of `ExttsEvent` structs
-8. Clean up on exit (disable timestamps)
+6. Convert float seconds to `PtpClockTime`
+7. Use `golang.org/x/sys/unix` directly:
+   - `unix.IoctlPtpPinSetfunc()` to configure pin for perout
+   - `unix.IoctlPtpPeroutRequest()` to set period/width/phase
+8. Handle width=0 as disable
+9. No output in this mode (configuration only)
 
-### Phase 5: Periodic output mode (`-o`)
-Parse `-o`/`--perout`, `--period`, `--phase`, `--pin`, `--chan` options:
-- Open PHC device (requires root)
-- Parse `--pin` (handle both names and indices)
-- Validate pin and channel indices against capabilities
-- Convert float seconds to `PtpClockTime`
-- Use `golang.org/x/sys/unix` directly:
-  - `unix.IoctlPtpPinSetfunc()` to configure pin for perout
-  - `unix.IoctlPtpPeroutRequest()` to set period/width/phase
-- Handle width=0 as disable
-- No output in this mode (configuration only)
-
-### Phase 6: Disable mode (`--disable`)
-Parse `--disable` and `--pin` options:
-- Open PHC device (requires root)
-- Parse `--pin` (handle both names and indices)
-- Use `unix.IoctlPtpPinSetfunc()` to set function to PTP_PF_NONE
-- No output in this mode
+### Phase 5: Disable mode (`--disable`)
+1. Extend `sdpflags.go` to parse `--disable` and `--pin` options
+2. Validate mutual exclusivity with other modes
+3. Open PHC device (requires root)
+4. Parse `--pin` (handle both names and indices)
+5. Use `unix.IoctlPtpPinSetfunc()` to set function to PTP_PF_NONE
+6. No output in this mode
 
 ## Technical Details
 
@@ -298,6 +381,7 @@ type PinStatus struct {
 type ExttsEvent struct {
     Timestamp float64 `json:"timestamp"` // seconds since epoch
     Index     uint32  `json:"index"`     // channel index
+    Stale     bool    `json:"stale,omitempty"` // true if timestamp was buffered before monitoring started
 }
 ```
 
@@ -352,6 +436,16 @@ These files are world-readable and provide basic PHC information without requiri
 - If specified interface has no pins: "interface %s has no software-defined pins"
 All errors should be printed to stderr and cause non-zero exit status.
 
+### Exit codes
+The tool uses the following exit codes:
+- **0**: Success - operation completed normally
+- **1**: Error - any error condition (invalid flags, device errors, permission errors, etc.)
+- **2**: No data - operation succeeded but no data was available:
+  - `showAll` mode when no interfaces with PHC and pins are detected
+  - `extts` mode when no timestamps are received during the monitoring period
+  
+This allows scripts to distinguish between actual errors and the absence of expected data.
+
 #### Time conversion
 - User provides time values as float64 seconds
 - Convert to `unix.PtpClockTime` for perout:
@@ -373,26 +467,70 @@ All errors should be printed to stderr and cause non-zero exit status.
 
 ```
 internal/sdpcmd/
-├── sdpcmd.go       # Main command entry point
-├── sdpflags.go     # Flag parsing and validation
-└── sdpphc.go       # PHC operations and ioctl wrappers
+├── sdpcmd.go       # Main command entry point with mode dispatch
+├── sdpflags.go     # Flag parsing and mode determination
+├── showall.go      # List all interfaces with PHC/pins
+├── show.go         # Show specific interface configuration
+├── extts.go        # External timestamp monitoring (-i mode)
+├── perout.go       # Periodic output configuration (-o mode)
+└── disable.go      # Disable pin function (--disable mode)
 ```
+
+### Architecture Design
+
+#### Flag Processing
+The `sdpflags.go` should:
+1. Parse all command-line flags
+2. Determine the mode based on flags:
+   - No interface specified → `showAll`
+   - Interface specified, no mode flags → `show`
+   - `-i`/`--extts` flag → `extts`
+   - `-o`/`--perout` flag → `perout`
+   - `--disable` flag → `disable`
+3. Validate that only relevant flags are set for each mode
+4. Return a struct with:
+   - `Mode` field indicating which mode
+   - Only the validated fields relevant to that mode
+
+#### Mode Dispatch
+The `sdpcmd.go` should:
+1. Define a common handler signature: `func(flags *FlagConfig) ([]Printer, error)`
+2. Create a map of mode to handler:
+   ```go
+   modeHandlers := map[Mode]func(*FlagConfig) ([]Printer, error){
+       ModeShowAll: showAll,
+       ModeShow:    show,
+       ModeExtts:   extts,
+       ModePerout:  perout,
+       ModeDisable: disable,
+   }
+   ```
+3. Call the appropriate handler based on the mode
+4. Handle the uniform output (text/JSON) for all modes
+
+#### Mode Implementation
+Each mode file implements its handler function:
+- Takes the validated flag config
+- Performs the mode-specific operation
+- Returns `[]Printer` for output (or empty/nil for no output)
+- Returns error on failure
 
 ## Implementation Status and Next Steps
 
 ### Current Status
-- Plan document complete with 6 implementation phases
-- Key design decisions made:
-  - Use interface names instead of /dev/ptpX
-  - Support pin names as well as indices
-  - Separate root and non-root capabilities
-  - Filter to only show interfaces with software-defined pins
+- **Phase 1 (showAll)** - COMPLETE in `showall.go` - Lists all interfaces with PHC/pins
+- **Phase 2 (show)** - COMPLETE in `show.go` - Shows specific interface configuration  
+- **Phase 3 (extts)** - TO BE IMPLEMENTED - External timestamp monitoring (`-i` mode)
+- **Phase 4 (perout)** - Not started - Periodic output (`-o` mode)
+- **Phase 5 (disable)** - Not started - Disable pin function (`--disable` mode)
 
-### Ready to Implement
-Start with **Phase 1: Show mode without interface**
-- This is the simplest functionality requiring no root
-- Tests basic sysfs reading and output formatting
-- Provides immediate value
+### Files to modify/create for Phase 3:
+1. **`sdpflags.go`** - Add Mode type, FlagConfig struct, full flag parsing
+2. **`extts.go`** - New file with extts handler and worker goroutine
+3. **`sdpcmd.go`** - Add mode dispatch map
+
+### Next Session Implementation
+Start with Phase 3 implementation using the detailed plan above
 
 ### Testing Requirements
 For testing the implementation, you'll need:
@@ -411,6 +549,8 @@ For testing the implementation, you'll need:
 3. **Kernel compatibility**:
    - Test with kernels using `n_pins` vs `n_programmable_pins`
    - Verify sysfs paths exist as expected
+
+4. **System testing**: Integrate `satpulsetool sdp` into the Ansible system testing approach in `systest/`
 
 ### Key Implementation Details from Discussion
 1. **Phase ordering**: Implement by major modes, not by infrastructure layers

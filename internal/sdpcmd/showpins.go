@@ -2,6 +2,7 @@ package sdpcmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -17,6 +18,9 @@ type PinStatus struct {
 	Channel  uint32 `json:"channel"`
 }
 
+// Compile-time assertion that PinStatus implements Printer
+var _ Printer = (*PinStatus)(nil)
+
 // Print outputs the pin status in human-readable format
 func (p *PinStatus) Print(f *os.File) {
 	fmt.Fprintf(f, "Pin %s\n", p.Name)
@@ -27,13 +31,13 @@ func (p *PinStatus) Print(f *os.File) {
 	}
 }
 
-func show(ifname string) ([]Printer, error) {
+func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	var result []Printer
 
 	// Get PHC index for interface
-	phcIndex, err := phc.IfPhcIndex(ifname)
+	phcIndex, err := phc.IfPhcIndex(cfg.Interface)
 	if err != nil || phcIndex < 0 {
-		return nil, fmt.Errorf("interface %s does not have a PTP hardware clock", ifname)
+		return nil, fmt.Errorf("interface %s does not have a PTP hardware clock", cfg.Interface)
 	}
 
 	ptpPath := fmt.Sprintf("/sys/class/ptp/ptp%d", phcIndex)
@@ -44,7 +48,7 @@ func show(ifname string) ([]Printer, error) {
 		nPins = readSysfsInt(fmt.Sprintf("%s/n_pins", ptpPath))
 	}
 	if nPins <= 0 {
-		return nil, fmt.Errorf("interface %s has no software-defined pins", ifname)
+		return nil, fmt.Errorf("interface %s has no software-defined pins", cfg.Interface)
 	}
 
 	// Try to get detailed pin info (requires root)
@@ -94,7 +98,7 @@ func show(ifname string) ([]Printer, error) {
 	pinsDir := fmt.Sprintf("%s/pins", ptpPath)
 	entries, err := os.ReadDir(pinsDir)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read pin information for %s (try running as root)", ifname)
+		return nil, fmt.Errorf("cannot read pin information for %s (try running as root)", cfg.Interface)
 	}
 
 	for i, entry := range entries {

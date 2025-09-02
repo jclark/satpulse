@@ -3,6 +3,7 @@ package sdpcmd
 import (
 	"encoding/json"
 	"fmt"
+	"iter"
 	"log/slog"
 	"os"
 )
@@ -14,8 +15,19 @@ type Printer interface {
 
 var _ Printer = (*InterfaceInfo)(nil)
 
+// sliceToIter converts a slice of Printers to an iterator
+func sliceToIter(items []Printer) iter.Seq[Printer] {
+	return func(yield func(Printer) bool) {
+		for _, item := range items {
+			if !yield(item) {
+				return
+			}
+		}
+	}
+}
+
 func Cmd(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (usage string, err error) {
-	jsonl, help, iface, usageFunc, err := parseFlags(cmdName, cmdArgs)
+	cfg, help, usageFunc, err := parseFlags(cmdName, cmdArgs)
 	if err != nil {
 		if usageFunc != nil {
 			usage = usageFunc(progName)
@@ -29,31 +41,43 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (us
 		return
 	}
 
-	// Choose mode based on whether interface was specified
-	var sections []Printer
-	if iface != "" {
-		// Phase 2: Show mode with interface specified
-		sections, err = show(iface)
+	// Special case for streaming modes vs static modes
+	var output iter.Seq[Printer]
+	
+	if cfg.Mode == ModeExtts {
+		// Streaming mode - returns iterator directly
+		output = extts(lg, cfg)
 	} else {
-		// Phase 1: List mode without interface
-		sections, err = showAll()
-	}
-	if err != nil {
-		return
+		// Static modes - look up in map and convert slice to iterator
+		modeHandlers := map[Mode]func(*slog.Logger, *FlagConfig) ([]Printer, error){
+			ModeShowIfaces: showIfaces,
+			ModeShowPins:   showPins,
+			// ModePerout and ModeDisable will be added in future phases
+		}
+		
+		handler, ok := modeHandlers[cfg.Mode]
+		if !ok {
+			panic(fmt.Sprintf("mode %v not implemented", cfg.Mode))
+		}
+		
+		sections, err := handler(lg, cfg)
+		if err != nil {
+			return "", err
+		}
+		output = sliceToIter(sections)
 	}
 
-	for i, sect := range sections {
-		if jsonl {
-			b, err := json.Marshal(sect)
+	// Single output loop for all modes
+	for item := range output {
+		if cfg.JSONL {
+			b, err := json.Marshal(item)
 			if err != nil {
+				lg.Debug("failed to marshal item", "error", err)
 				continue
 			}
 			fmt.Println(string(b))
 		} else {
-			if i > 0 {
-				fmt.Println()
-			}
-			sect.Print(os.Stdout)
+			item.Print(os.Stdout)
 		}
 	}
 
