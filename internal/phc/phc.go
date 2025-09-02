@@ -3,6 +3,7 @@
 package phc
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -76,9 +77,10 @@ func (clk *Clock) Close() error {
 }
 
 const (
-	PinFuncNone   PinFunc = unix.PTP_PF_NONE
-	PinFuncExtts  PinFunc = unix.PTP_PF_EXTTS
-	PinFuncPerout PinFunc = unix.PTP_PF_PEROUT
+	PinFuncNone    PinFunc = unix.PTP_PF_NONE
+	PinFuncExtts   PinFunc = unix.PTP_PF_EXTTS
+	PinFuncPerout  PinFunc = unix.PTP_PF_PEROUT
+	PinFuncPhysync PinFunc = unix.PTP_PF_PHYSYNC
 )
 
 func (clk *Clock) PinSetFunc(pinIndex uint32, pinFunc PinFunc, chanIndex uint32) error {
@@ -86,12 +88,24 @@ func (clk *Clock) PinSetFunc(pinIndex uint32, pinFunc PinFunc, chanIndex uint32)
 	return clk.wrapErr(unix.IoctlPtpPinSetfunc(clk.fd, &pd), "ioctl(PTP_PIN_SETFUNC)")
 }
 
-func (clk *Clock) PinGetFunc(pinIndex uint32) (*unix.PtpPinDesc, error) {
+func (clk *Clock) PinGetFunc(pinIndex uint32) (*PinDesc, error) {
 	pd, err := unix.IoctlPtpPinGetfunc(clk.fd, uint(pinIndex))
 	if err != nil {
 		return nil, clk.wrapErr(err, "ioctl(PTP_PIN_GETFUNC)")
 	}
-	return pd, nil
+	
+	// Convert C-style zero-terminated string to Go string
+	name := pd.Name[:]
+	if i := bytes.IndexByte(name, 0); i >= 0 {
+		name = name[:i]
+	}
+	
+	return &PinDesc{
+		Name:  string(name),
+		Index: pd.Index,
+		Func:  PinFunc(pd.Func),
+		Chan:  pd.Chan,
+	}, nil
 }
 
 func (clk *Clock) PinCount() int {
@@ -126,6 +140,10 @@ func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err er
 
 func (clk *Clock) ExttsChanCount() int {
 	return int(clk.caps.N_ext_ts)
+}
+
+func (clk *Clock) PeroutChanCount() int {
+	return int(clk.caps.N_per_out)
 }
 
 func (clk *Clock) SysOffset(nSamples int) (MultiSample, error) {

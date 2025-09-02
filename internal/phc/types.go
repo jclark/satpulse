@@ -14,6 +14,29 @@ var ErrNotSupported = errors.New("PHC not supported on this platform")
 // PinFunc represents a pin function type.
 type PinFunc uint32
 
+func (f PinFunc) String() string {
+	switch f {
+	case PinFuncNone:
+		return "none"
+	case PinFuncExtts:
+		return "extts"
+	case PinFuncPerout:
+		return "perout"
+	case PinFuncPhysync:
+		return "physync"
+	default:
+		return fmt.Sprintf("unknown(%d)", f)
+	}
+}
+
+// PinDesc describes a PHC pin configuration.
+type PinDesc struct {
+	Name  string
+	Index uint32
+	Func  PinFunc
+	Chan  uint32
+}
+
 // DriverFlags represents PHC driver capability flags.
 type DriverFlags uint32
 
