@@ -11,11 +11,12 @@ import (
 )
 
 type dataTestCase struct {
-	name   string
-	ascii  string
-	hex    string
-	hdr    MsgHdr
-	value  MsgBody
+	name    string
+	ascii   string
+	hex     string
+	hdr     MsgHdr
+	value   MsgBody
+	disable bool
 	// fixupValueForBin transforms value from ASCII message into value expected by binary format
 	// This is used for VERSIONA/VERSIONB inconsistency:
 	// VERSIONB has just build number; VERSIONA has additional info
@@ -30,6 +31,9 @@ type dataTestCase struct {
 func testDataBin(t *testing.T, tests []dataTestCase) {
 	t.Helper()
 	for _, tt := range tests {
+		if tt.disable {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			// Decode hex string to binary packet
 			binPacket, err := hex.DecodeString(tt.hex)

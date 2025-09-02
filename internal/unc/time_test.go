@@ -82,6 +82,7 @@ func TestUTCConversionParamsFromGPSUTC(t *testing.T) {
 	asciiPackets := []string{
 		"#GPSUTCA,97,GPS,FINE,2379,372336000,0,0,18,20;2379,589824,-9.313225746154785e-10,-1.776356839e-15,2441,7,18,18,0,0*8301ddef\r\n",
 		"#GPSUTCA,97,GPS,FINE,2381,533672000,17548,0,18,23;2382,61440,-2.793967723846436e-09,-2.664535259e-15,2441,7,18,18,0,0*e1854eff\r\n",
+		"#GPSUTCA,97,GPS,FINE,2382,10386000,17548,0,18,22;2382,147456,9.313225746154785e-10,6.217248938e-15,2441,7,18,18,0,0*9e9512e9\r\n",
 	}
 
 	for i, asciiPacket := range asciiPackets {
@@ -197,11 +198,19 @@ func testUTCConversion(t *testing.T, ucp *utcConversionParams, hdr *uncmsg.MsgHd
 	}
 
 	correction, valid := ucp.Correction.Correction(headerTime)
+	
+	// Calculate the floating-point correction directly (matching ptime implementation)
+	timeDiff := headerTime.Sub(ucp.Correction.Ref)
+	fpCorrection := ucp.Correction.Bias + float64(timeDiff)*ucp.Correction.Drift
 
 	t.Logf("Reference time: %v", ucp.Correction.Ref)
 	t.Logf("Header time: %v", headerTime)
 	t.Logf("Time difference: %v", headerTime.Sub(ucp.Correction.Ref))
-	t.Logf("Correction: %v", correction)
+	t.Logf("Time difference ns: %v", float64(timeDiff))
+	t.Logf("Bias: %v ns", ucp.Correction.Bias)
+	t.Logf("Drift: %v", ucp.Correction.Drift)
+	t.Logf("FP correction: %v ns", fpCorrection)
+	t.Logf("Duration correction: %v", correction)
 	t.Logf("Correction valid: %v", valid)
 
 	if !valid {

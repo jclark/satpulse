@@ -5,7 +5,7 @@ import "fmt"
 // Message IDs for time-related messages
 const (
 	TimeID   MsgID = 101
-	IonUTCID MsgID = 6 // XXX It's 6 on UM980 but 8 in the OEM6/7 manual
+	IonUTCID MsgID = 8 // XXX It's 6 on UM980 but 8 in the OEM6/7 manual
 )
 
 // ClockStatus represents the receiver clock model status
