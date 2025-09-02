@@ -15,6 +15,7 @@ import (
 // InterfaceInfo represents a network interface with PHC (for list mode)
 type InterfaceInfo struct {
 	Name              string   `json:"name"`
+	Status            string   `json:"status"`            // Interface status (up/down, carrier/no-carrier)
 	Driver            string   `json:"driver"`            // Network driver name
 	PCISlot           string   `json:"pci_slot,omitempty"`   // PCI slot (e.g., "04:00.0")
 	Vendor            string   `json:"vendor,omitempty"`     // PCI vendor name
@@ -83,6 +84,7 @@ func showAll() ([]Printer, error) {
 
 		info := InterfaceInfo{
 			Name:              iface.Name,
+			Status:            formatStatus(iface.Flags),
 			Driver:            driverName,
 			PCISlot:           pciSlot,
 			Vendor:            vendor,
@@ -100,6 +102,19 @@ func showAll() ([]Printer, error) {
 		return nil, fmt.Errorf("no interfaces with software-defined pins found")
 	}
 	return result, nil
+}
+
+func formatStatus(flags net.Flags) string {
+	up := flags&net.FlagUp != 0
+	carrier := flags&net.FlagRunning != 0
+	
+	if up {
+		if carrier {
+			return "up, carrier"
+		}
+		return "up, no-carrier"
+	}
+	return "down"
 }
 
 func readSysfsString(path string) string {
@@ -184,6 +199,7 @@ func getPCIInfo(ifname string) (slot string, vendor string, device string, revis
 // Print outputs the interface info in human-readable format
 func (info *InterfaceInfo) Print(f *os.File) {
 	fmt.Fprintf(f, "Interface: %s\n", info.Name)
+	fmt.Fprintf(f, "  Status: %s\n", info.Status)
 	if info.Driver != "" {
 		fmt.Fprintf(f, "  Driver: %s\n", info.Driver)
 	}
