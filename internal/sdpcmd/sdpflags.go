@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func parseFlags(cmdName string, args []string) (jsonl bool, help bool, usageFunc func(string) string, err error) {
+func parseFlags(cmdName string, args []string) (jsonl bool, help bool, iface string, usageFunc func(string) string, err error) {
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.SetInterspersed(false)
 
@@ -24,6 +24,11 @@ func parseFlags(cmdName string, args []string) (jsonl bool, help bool, usageFunc
 
 	usageFunc = func(progName string) string {
 		return usageString(progName, cmdName, flags)
+	}
+
+	// Check for positional argument (interface name)
+	if flags.NArg() > 0 {
+		iface = flags.Arg(0)
 	}
 
 	return

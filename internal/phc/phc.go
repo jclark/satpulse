@@ -86,6 +86,14 @@ func (clk *Clock) PinSetFunc(pinIndex uint32, pinFunc PinFunc, chanIndex uint32)
 	return clk.wrapErr(unix.IoctlPtpPinSetfunc(clk.fd, &pd), "ioctl(PTP_PIN_SETFUNC)")
 }
 
+func (clk *Clock) PinGetFunc(pinIndex uint32) (*unix.PtpPinDesc, error) {
+	pd, err := unix.IoctlPtpPinGetfunc(clk.fd, uint(pinIndex))
+	if err != nil {
+		return nil, clk.wrapErr(err, "ioctl(PTP_PIN_GETFUNC)")
+	}
+	return pd, nil
+}
+
 func (clk *Clock) PinCount() int {
 	return int(clk.caps.N_pins)
 }

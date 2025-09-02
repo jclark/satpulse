@@ -15,7 +15,7 @@ type Printer interface {
 var _ Printer = (*InterfaceInfo)(nil)
 
 func Cmd(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (usage string, err error) {
-	jsonl, help, usageFunc, err := parseFlags(cmdName, cmdArgs)
+	jsonl, help, iface, usageFunc, err := parseFlags(cmdName, cmdArgs)
 	if err != nil {
 		if usageFunc != nil {
 			usage = usageFunc(progName)
@@ -29,8 +29,15 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (us
 		return
 	}
 
-	// Phase 1: List mode without interface
-	sections, err := showAll()
+	// Choose mode based on whether interface was specified
+	var sections []Printer
+	if iface != "" {
+		// Phase 2: Show mode with interface specified
+		sections, err = show(iface)
+	} else {
+		// Phase 1: List mode without interface
+		sections, err = showAll()
+	}
 	if err != nil {
 		return
 	}
