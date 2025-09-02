@@ -8,6 +8,7 @@ import (
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpscmd"
 	"github.com/jclark/satpulse/internal/pmccmd"
+	"github.com/jclark/satpulse/internal/sdpcmd"
 	"github.com/spf13/pflag"
 )
 
@@ -62,6 +63,8 @@ func main() {
 		exec = gpscmd.Cmd
 	case "pmc":
 		exec = pmccmd.Cmd
+	case "sdp":
+		exec = sdpcmd.Cmd
 	}
 	if exec != nil {
 		usage, err := exec(lg, progName, cmdName, cmdArgs)
@@ -91,6 +94,7 @@ func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "Commands:")
 	fmt.Fprintln(os.Stderr, "  gps - configure a GPS device")
 	fmt.Fprintln(os.Stderr, "  pmc - send a PTP management message to ptp4l process")
+	fmt.Fprintln(os.Stderr, "  sdp - control software-defined pins on PTP hardware clocks")
 	fmt.Fprintln(os.Stderr, "Global options:")
 	flags.PrintDefaults()
 }
