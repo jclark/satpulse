@@ -6,7 +6,9 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 
 **satpulsetool** [*global options*] **sdp** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show**] [**\-i**\|**\-\-extts**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-o**\|**\-\-perout** *width*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-t**\|**\-\-timeout** *seconds*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-period** *seconds*] [**\-\-phase** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pin** *index*\|*name*] [**\-\-chan** *index*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-stale**] [**\-j**\|**\-\-jsonl**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[*interface*]
@@ -15,8 +17,8 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 
 The **satpulsetool** **sdp** command manages software-defined pins (SDP) on PTP hardware clocks (PHC). These pins can be configured for various functions including external timestamp input (PPS input) and periodic output (PPS output).
 
-At most one of the **\-\-show** and **\-\-extts** options can be specified.
-If neither of these options is specified, the command behaves as if **\-\-show** was specified.
+At most one of the **\-\-show**, **\-\-extts**, and **\-\-perout** options can be specified.
+If none of these options are specified, the command behaves as if **\-\-show** was specified.
 
 # OPTIONS
 
@@ -36,17 +38,41 @@ It will read timestamp events for the length of time specified by the **\-\-t** 
 if this is 0, it will read until interrupted.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
 The **\-\-chan** option can also be used to specify the timestamping channel to be used; the default is channel 0.
+Requires root privileges.
+
+**\-o**, **\-\-perout** *width*  
+: Enable periodic output on a pin.
+This configures a pin of the interface as an output pin generating periodic pulses.
+The *width* parameter specifies the pulse width in seconds. It must be >= 0.
+A width of 0 disables the output.
+Time values support exponential notation e.g., 1e-6 for 1 microsecond).
+The period can be specified with with **\-\-period**; it defaults to 1,
+resulting in a PPS signal.
+The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
+The **\-\-chan** option can also be used to specify the output channel to be used; the default is channel 0.
+Requires root privileges.
 
 **\-t**, **\-\-timeout** *seconds*  
 : Length of time in seconds for which to read timestamp events. 
 Applies only when **\-\-extts** options is specified.
 The default is 2.
 
+**\-\-period** *seconds*  
+: Set the period for periodic output in seconds. The default is 1.0 second (PPS).
+Supports exponential notation (e.g., 1e-1 for 100ms, 1e-3 for 1ms).
+Applies only when **\-\-perout** option is specified.
+
+**\-\-phase** *seconds*  
+: Set the phase offset for periodic output in seconds. The default is 0.
+This determines when the pulse starts relative to the time epoch.
+Supports exponential notation (e.g., 5e-2 for 50ms).
+Applies only when **\-\-perout** option is specified.
+
 **\-\-pin** *index*\|*name*  
-: Select the pin to be used by **\-\-extts**. The default is 0.
+: Select the pin to be used by **\-\-extts** or **\-\-perout**. The default is 0.
 
 **\-\-chan** *index*  
-: Select the channel to be used by **\-\-extts**. The default is 0.
+: Select the channel to be used by **\-\-extts** or **\-\-perout**. The default is 0.
 
 **\-\-show\-stale**  
 : Include stale timestamps in the output. By default, timestamps that were buffered before reading timestamp events started are not displayed. Applies only when **\-\-extts** options is specified.
@@ -56,56 +82,37 @@ The default is 2.
 
 # EXAMPLES
 
-List all interfaces with PTP hardware clock and pins:
+List all interfaces with PTP hardware clock that has SDPs:
 
     satpulsetool sdp
 
-Show pin configuration for interface enp4s0:
+Show SDP configuration for interface enp4s0:
 
     satpulsetool sdp enp4s0
 
-Check input on pin 1 of enp4s0 for 10 seconds:
+Check input on eth0, showing timestamp events received:
 
-    satpulsetool sdp -i --pin 1 --timeout 10 enp4s0
+    satpulsetool sdp -i eth0
 
-Check input continuously with JSON output:
+Output a PPS signal on eth0 with a 0.1s pulse width:
 
-    satpulsetool sdp -i --timeout 0 --jsonl enp4s0
+    satpulsetool sdp -o 0.1 eth0
 
-Show all timestamps including buffered ones for 5 seconds:
+Disable output signal on eth0:
 
-    satpulsetool sdp -i --show-stale --timeout 5 enp4s0
-
-# NOTES
-
-Software-defined pins are a feature of certain network interface cards with PTP hardware clock support. Common examples include Intel i210, i225, and i226 series controllers which provide 4 SDP pins (SDP0-SDP3).
-
-Pin functions must be configured before use. The **\-\-extts** mode handles this configuration automatically, but manual configuration through sysfs may be required for other use cases.
-
-External timestamp events from all channels are reported, not just the configured channel. The channel number is included in JSON output to distinguish between sources.
+    satpulsetool sdp -o 0 eth0
 
 # EXIT STATUS
 
 **0**  
-: Successful operation.
+: Success
 
 **1**  
-: An error occurred (invalid interface, permission denied, device error, etc.).
+: Error
 
 **2**  
-: No data available (no interfaces found in list mode, or no timestamps received in extts mode). This exit status is reserved for future implementation.
-
-# FILES
-
-**/dev/ptp***N*  
-: PTP hardware clock device files used for pin configuration and timestamp reading.
-
-**/sys/class/ptp/ptp***N***/**  
-: Sysfs directory containing PHC information including pin configuration.
-
-**/sys/class/net/***interface***/device/ptp/***  
-: Symlink to the PTP clock associated with a network interface.
+: No data found: no interfaces found to show, or no timestamps received with **\-\-extts**
 
 # SEE ALSO
 
-**satpulsetool(1)**, **satpulsed(8)**, **ptp4l(8)**, **phc2sys(8)**
+**satpulsetool(1)**, **satpulsed(8)**, **ptp4l(8)**, **ts2phc(8)**
