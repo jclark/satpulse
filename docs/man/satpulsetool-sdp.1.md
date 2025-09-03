@@ -6,8 +6,9 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 
 **satpulsetool** [*global options*] **sdp** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show**] [**\-i**\|**\-\-extts**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-o**\|**\-\-perout** *width*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-o**\|**\-\-perout**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-t**\|**\-\-timeout** *seconds*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-w**\|**\-\-width** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-period** *seconds*] [**\-\-phase** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pin** *index*\|*name*] [**\-\-chan** *index*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-stale**] [**\-j**\|**\-\-jsonl**]\
@@ -40,14 +41,12 @@ The pin to be used is specified with the **\-\-pin** option; the default is pin 
 The **\-\-chan** option can also be used to specify the timestamping channel to be used; the default is channel 0.
 Requires root privileges.
 
-**\-o**, **\-\-perout** *width*  
+**\-o**, **\-\-perout**  
 : Enable periodic output on a pin.
 This configures a pin of the interface as an output pin generating periodic pulses.
-The *width* parameter specifies the pulse width in seconds. It must be >= 0.
-A width of 0 disables the output.
-Time values support exponential notation e.g., 1e-6 for 1 microsecond).
-The period can be specified with with **\-\-period**; it defaults to 1,
-resulting in a PPS signal.
+To specify a pulse width, use the **\-\-width** option.
+If **\-\-width** is not specified, the output will be a continuous square wave (no duty cycle control).
+The period can be specified with **\-\-period**; it defaults to 1 second, resulting in a PPS signal.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
 The **\-\-chan** option can also be used to specify the output channel to be used; the default is channel 0.
 Requires root privileges.
@@ -57,13 +56,20 @@ Requires root privileges.
 Applies only when **\-\-extts** options is specified.
 The default is 2.
 
+**\-w**, **\-\-width** *seconds*  
+: Set the pulse width for periodic output in seconds.
+Must be greater than 0 and less than the period.
+If not specified, no duty cycle control is applied (continuous square wave).
+Supports exponential notation (e.g., 1e-1 for 100ms, 1e-6 for 1 microsecond).
+Applies only when **\-\-perout** option is specified.
+
 **\-\-period** *seconds*  
-: Set the period for periodic output in seconds. The default is 1.0 second (PPS).
+: Set the pulse period for periodic output in seconds. The default is 1.0 second (PPS).
 Supports exponential notation (e.g., 1e-1 for 100ms, 1e-3 for 1ms).
 Applies only when **\-\-perout** option is specified.
 
 **\-\-phase** *seconds*  
-: Set the phase offset for periodic output in seconds. The default is 0.
+: Set the pulse phase offset for periodic output in seconds. The default is 0.
 This determines when the pulse starts relative to the time epoch.
 Supports exponential notation (e.g., 5e-2 for 50ms).
 Applies only when **\-\-perout** option is specified.
@@ -96,11 +102,11 @@ Check input on eth0, showing timestamp events received:
 
 Output a PPS signal on eth0 with a 0.1s pulse width:
 
-    satpulsetool sdp -o 0.1 eth0
+    satpulsetool sdp -o -w 0.1 eth0
 
-Disable output signal on eth0:
+Output a PPS signal on eth0 with no duty cycle control (square wave):
 
-    satpulsetool sdp -o 0 eth0
+    satpulsetool sdp -o eth0
 
 # EXIT STATUS
 

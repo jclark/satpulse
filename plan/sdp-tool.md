@@ -79,7 +79,7 @@ Benefits:
 ```
 satpulsetool sdp [-h|--help] [--jsonl]
                  [-i|--extts] [-t|--timeout seconds]
-                 [-o|--perout width] [--period seconds] [--phase seconds]
+                 [-o|--perout] [-w|--width seconds] [--period seconds] [--phase seconds]
                  [--disable]
                  [--pin n] [--chan n]
                  [interface]
@@ -113,8 +113,11 @@ Output in JSON lines format instead of human-readable text.
 **-i**, **--extts**  
 Monitor external timestamp events (PPS input). Automatically configures the pin for external timestamping, enables it, and reads events. **Important**: The interface must be up for external timestamping to work.
 
-**-o**, **--perout** *width*  
-Enable periodic output with the specified pulse width in seconds. The width must be >= 0 and < 1.0. A width of 0 disables output. Period defaults to 1.0 seconds (PPS).
+**-o**, **--perout**  
+Enable periodic output. If **-w/--width** is specified, sets duty cycle control; otherwise generates a continuous square wave. Period defaults to 1.0 seconds (PPS).
+
+**-w**, **--width** *seconds*  
+Set the pulse width for periodic output in seconds. Must be greater than 0 and less than the period. If not specified, no duty cycle control is applied. Cannot be explicitly set to 0.
 
 **--disable**  
 Disable the pin function (sets pin to function 0).
@@ -131,6 +134,9 @@ How long to monitor for input events in seconds (default: 2.0). Use 0 for unlimi
 Include stale/buffered timestamps in output. By default, stale timestamps (those buffered in the kernel before monitoring started) are skipped. With this flag, they are included with `"stale": true` in JSON output.
 
 ### Options for --perout
+
+**-w**, **--width** *seconds*  
+Set the pulse width for periodic output in seconds. Must be greater than 0 and less than the period. If not specified, no duty cycle control is applied.
 
 **--period** *seconds*  
 Set the period for periodic output in seconds (default: 1.0).
@@ -162,13 +168,13 @@ satpulsetool sdp -i eth0
 satpulsetool sdp -i -t 0 eth0
 
 # Enable PPS output with 100ms pulse width
-satpulsetool sdp -o 0.1 eth0
+satpulsetool sdp -o -w 0.1 eth0
+
+# Enable PPS output with no duty cycle control (square wave)
+satpulsetool sdp -o eth0
 
 # Enable 10Hz output with 10ms pulse width
-satpulsetool sdp -o 0.01 --period 0.1 eth0
-
-# Disable output
-satpulsetool sdp -o 0 eth0
+satpulsetool sdp -o -w 0.01 --period 0.1 eth0
 
 # Disable pin 2
 satpulsetool sdp --disable --pin 2 eth0
@@ -320,16 +326,18 @@ func extts(cfg *FlagConfig) ([]Printer, error) {
 - Output directly as ExttsEvent instead of complex Event type
 
 ### Phase 4: Periodic output mode (`-o`)
-1. Extend `sdpflags.go` to parse `-o`/`--perout`, `--period`, `--phase`, `--pin`, `--chan` options
+1. Extend `sdpflags.go` to parse `-o`/`--perout`, `-w`/`--width`, `--period`, `--phase`, `--pin`, `--chan` options
 2. Validate mutual exclusivity with `-i` mode
-3. Open PHC device (requires root)
-4. Parse `--pin` (handle both names and indices)
-5. Validate pin and channel indices against capabilities
-6. Convert float seconds to `PtpClockTime`
-7. Use `golang.org/x/sys/unix` directly:
+3. Validate `--width` if specified (must be > 0 and < period, cannot be explicitly 0)
+4. Open PHC device (requires root)
+5. Parse `--pin` (handle both names and indices)
+6. Validate pin and channel indices against capabilities
+7. Convert float seconds to `PtpClockTime`
+8. Use `golang.org/x/sys/unix` directly:
    - `unix.IoctlPtpPinSetfunc()` to configure pin for perout
-   - `unix.IoctlPtpPeroutRequest()` to set period/width/phase
-8. Handle width=0 as disable
+   - `unix.IoctlPtpPeroutRequest2()` to set period/phase
+   - If width specified (> 0): set PTP_PEROUT_DUTY_CYCLE flag and width
+   - If width not specified (= 0): don't set duty cycle flag
 9. No output in this mode (configuration only)
 
 ### Phase 5: Disable mode (`--disable`)
