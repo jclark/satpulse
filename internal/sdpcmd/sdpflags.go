@@ -2,9 +2,9 @@ package sdpcmd
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/spf13/pflag"
 )
 
@@ -43,6 +43,12 @@ type FlagConfig struct {
 	Perout PeroutParams
 }
 
+const summary = `[-h|--help] [-j|--jsonl]
+            [-i|--extts] [-o|--perout] [--disable] [--show]
+            [-t|--timeout seconds] [-w|--width seconds] [--period seconds]
+            [--pin index|name] [--chan index] [--show-stale]
+            [interface]`
+
 func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usageFunc func(string) string, err error) {
 	cfg = &FlagConfig{
 		Mode:    ModeShowPins,     // Default mode
@@ -78,16 +84,13 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	flags.StringVar(&cfg.Pin, "pin", "", "select the pin to be used (index or name)")
 	flags.IntVar(&cfg.Chan, "chan", 0, "select the channel to be used")
 
+	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
 	err = flags.Parse(args)
 	if err != nil {
-		usageFunc = func(progName string) string {
-			return usageString(progName, cmdName, flags)
-		}
 		return
 	}
-
-	usageFunc = func(progName string) string {
-		return usageString(progName, cmdName, flags)
+	if help {
+		return
 	}
 	
 	// Convert timeout to Duration
@@ -218,13 +221,4 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	}
 
 	return
-}
-
-func usageString(progName string, cmdName string, flags *pflag.FlagSet) string {
-	buf := &strings.Builder{}
-	fmt.Fprintf(buf, "Usage: %s %s [options] [interface]\n", progName, cmdName)
-	fmt.Fprintln(buf, "Options:")
-	flags.SetOutput(buf)
-	flags.PrintDefaults()
-	return buf.String()
 }
