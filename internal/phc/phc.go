@@ -146,6 +146,41 @@ func (clk *Clock) PeroutChanCount() int {
 	return int(clk.caps.N_per_out)
 }
 
+func (clk *Clock) GetTime() (ptime.Time, error) {
+	var ts unix.Timespec
+	err := unix.ClockGettime(clk.clockId(), &ts)
+	if err != nil {
+		return 0, clk.wrapErr(err, "clock_gettime")
+	}
+	return ptime.TimespecToTime(ts), nil
+}
+
+func (clk *Clock) PeroutEnable(channel uint32, period, width time.Duration) error {
+	req := unix.PtpPeroutRequest{
+		Index: channel,
+		Period: durationToPtpClockTime(period),
+	}
+	
+	// Set duty cycle if width specified
+	if width > 0 {
+		req.Flags |= unix.PTP_PEROUT_DUTY_CYCLE
+		req.On = durationToPtpClockTime(width)
+	}
+	
+	// If period > 0, set start time to now + 2 seconds
+	// Period of 0 disables the output
+	if period > 0 {
+		now, err := clk.GetTime()
+		if err != nil {
+			return err
+		}
+		startTime := now + ptime.Time(2*time.Second)
+		req.StartOrPhase = timespecToPtpClockTime(startTime.Timespec())
+	}
+	
+	return clk.wrapErr(unix.IoctlPtpPeroutRequest(clk.fd, &req), "ioctl(PTP_PEROUT_REQUEST2)")
+}
+
 func (clk *Clock) SysOffset(nSamples int) (MultiSample, error) {
 	if clk.sysOffsetFunc != nil {
 		return clk.sysOffsetFunc(clk, nSamples)
@@ -303,4 +338,19 @@ func IfPhcIndex(ifname string) (phcIndex int, err error) {
 	}
 	phcIndex = int(tsInfo.Phc_index)
 	return
+}
+
+// durationToPtpClockTime converts a time.Duration to unix.PtpClockTime
+func durationToPtpClockTime(d time.Duration) unix.PtpClockTime {
+	sec := int64(d / time.Second)
+	nsec := uint32(d % time.Second)
+	return unix.PtpClockTime{Sec: sec, Nsec: nsec}
+}
+
+// timespecToPtpClockTime converts a unix.Timespec to unix.PtpClockTime
+func timespecToPtpClockTime(ts unix.Timespec) unix.PtpClockTime {
+	return unix.PtpClockTime{
+		Sec:  ts.Sec,
+		Nsec: uint32(ts.Nsec),
+	}
 }

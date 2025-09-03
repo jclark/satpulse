@@ -56,7 +56,8 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (us
 		modeHandlers := map[Mode]func(*slog.Logger, *FlagConfig) ([]Printer, error){
 			ModeShowIfaces: showIfaces,
 			ModeShowPins:   showPins,
-			// ModePerout and ModeDisable will be added in future phases
+			ModePerout:     perout,
+			ModeDisable:    disable,
 		}
 		
 		handler, ok := modeHandlers[cfg.Mode]

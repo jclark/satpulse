@@ -9,7 +9,7 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-o**\|**\-\-perout**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-w**\|**\-\-width** *seconds*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-period** *seconds*] [**\-\-phase** *seconds*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-period** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pin** *index*\|*name*] [**\-\-chan** *index*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-stale**] [**\-j**\|**\-\-jsonl**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[*interface*]
@@ -68,12 +68,6 @@ Applies only when **\-\-perout** option is specified.
 The default is 1.0 second, resulting in a PPS signal.
 A period of 0 disables the output signal.
 Supports exponential notation (e.g., 1e-1 for 100ms, 1e-3 for 1ms).
-Applies only when **\-\-perout** option is specified.
-
-**\-\-phase** *seconds*  
-: Set the pulse phase offset for periodic output in seconds. The default is 0.
-This determines when the pulse starts relative to the time epoch.
-Supports exponential notation (e.g., 5e-2 for 50ms).
 Applies only when **\-\-perout** option is specified.
 
 **\-\-pin** *index*\|*name*  
