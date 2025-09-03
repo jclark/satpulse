@@ -16,9 +16,9 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-ant\-cable\-delay** *nanos*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-mobile**] [**\-\-fixed\-pos\-ecef** *X,Y,Z*] [**\-\-fixed\-pos\-acc** *meters*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-survey**] [**\-\-survey\-time** *seconds*] [**\-\-survey\-acc** *meters*]\\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-survey**] [**\-\-survey\-time** *seconds*] [**\-\-survey\-acc** *meters*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea**] [**\-\-binary**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pvt\-out** **pos**\|**vel**\|**time**\|**tp**\|**leap**\|**survey**\|**tai**\|**ecef**\|**off**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pvt\-out** **pos**\|**vel**\|**time**\|**tp**\|**leap**\|**survey**\|**tai**\|**ecef**\|**after**\|**daemon**\|**off**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-sats\-out** **sat**\|**sig**\|**none**,...]
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-raw\-out** **obs**\|**nav**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**auto**\|**none**,...]\
@@ -160,11 +160,11 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
   **after**
   : If the time pulse message enabled by **tp** is emitted before the time pulse, then emit a time message also
   
-  **off**
-  : Turn off PVT messages that are not explicitly enabled
-  
   **daemon**
   : Enable messages needed by satpulsed (equivalent to `tp,after,tai,leap,survey,off`)
+  
+  **off**
+  : Turn off PVT messages that are not explicitly enabled
 
 **\-\-raw\-out** *flags*  
 : Configure raw data message output. The *flags* parameter is a comma-separated list of:
