@@ -93,13 +93,13 @@ func (clk *Clock) PinGetFunc(pinIndex uint32) (*PinDesc, error) {
 	if err != nil {
 		return nil, clk.wrapErr(err, "ioctl(PTP_PIN_GETFUNC)")
 	}
-	
+
 	// Convert C-style zero-terminated string to Go string
 	name := pd.Name[:]
 	if i := bytes.IndexByte(name, 0); i >= 0 {
 		name = name[:i]
 	}
-	
+
 	return &PinDesc{
 		Name:  string(name),
 		Index: pd.Index,
@@ -155,18 +155,25 @@ func (clk *Clock) GetTime() (ptime.Time, error) {
 	return ptime.TimespecToTime(ts), nil
 }
 
-func (clk *Clock) PeroutEnable(channel uint32, period, width time.Duration) error {
+
+
+// PeroutEnable enables a periodic pulse on a channel.
+// chanIndex is the index of the channel.
+// period is the period of the pulse; 0 means disable the pulse
+// width is the width of the pulse; 0 means use what driver provides
+// startOffset is the offset from the top of the second to the start
+func (clk *Clock) PeroutEnable(chanIndex uint32, period, width, startOffset time.Duration) error {
 	req := unix.PtpPeroutRequest{
-		Index: channel,
+		Index:  chanIndex,
 		Period: durationToPtpClockTime(period),
 	}
-	
+
 	// Set duty cycle if width specified
 	if width > 0 {
 		req.Flags |= unix.PTP_PEROUT_DUTY_CYCLE
 		req.On = durationToPtpClockTime(width)
 	}
-	
+
 	// If period > 0, set start time to now + 2 seconds
 	// Period of 0 disables the output
 	if period > 0 {
@@ -174,10 +181,10 @@ func (clk *Clock) PeroutEnable(channel uint32, period, width time.Duration) erro
 		if err != nil {
 			return err
 		}
-		startTime := now + ptime.Time(2*time.Second)
+		startTime := now.Round(time.Second).Add(2*time.Second + startOffset)
 		req.StartOrPhase = timespecToPtpClockTime(startTime.Timespec())
 	}
-	
+
 	return clk.wrapErr(unix.IoctlPtpPeroutRequest(clk.fd, &req), "ioctl(PTP_PEROUT_REQUEST2)")
 }
 
@@ -219,7 +226,7 @@ func (clk *Clock) SysOffsetExtended(nSamples int) (MultiSample, error) {
 
 func (clk *Clock) SysOffsetPrecise(_ int) (MultiSample, error) {
 	ms := MultiSample{}
-	buf, err := unix.IoctlPtpSysOffsetPrecise(clk.fd) 
+	buf, err := unix.IoctlPtpSysOffsetPrecise(clk.fd)
 	if err != nil {
 		return ms, clk.wrapErr(err, "ioctl(PTP_SYS_OFFSET_PRECISE)")
 	}

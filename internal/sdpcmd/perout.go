@@ -3,6 +3,7 @@ package sdpcmd
 import (
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jclark/satpulse/internal/phc"
 )
@@ -47,8 +48,20 @@ func perout(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 		return nil, fmt.Errorf("failed to configure pin %d for periodic output: %w", pinIndex, err)
 	}
 
+	driver, err := phc.IfDriverName(cfg.Interface)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get driver name for interface %s: %w", cfg.Interface, err)
+	}
+	startOff := time.Duration(0)
+	switch driver {
+	case "igb", "igc":
+		// igb and igc always use 50% duty cycle
+		// The start in PTP_PEROUT_ENABLE determines the start of the *low* part i.e. the falling edge.
+		// But we want the rising edge to be aligned with the start of the second.
+		startOff = cfg.Perout.Period / 2
+	}
 	// Enable periodic output with specified parameters
-	err = clk.PeroutEnable(uint32(cfg.Chan), cfg.Perout.Period, cfg.Perout.Width)
+	err = clk.PeroutEnable(uint32(cfg.Chan), cfg.Perout.Period, cfg.Perout.Width, startOff)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable periodic output: %w", err)
 	}
