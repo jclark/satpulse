@@ -64,7 +64,9 @@ Supports exponential notation (e.g., 1e-1 for 100ms, 1e-6 for 1 microsecond).
 Applies only when **\-\-perout** option is specified.
 
 **\-\-period** *seconds*  
-: Set the pulse period for periodic output in seconds. The default is 1.0 second (PPS).
+: Set the pulse period for periodic output in seconds.
+The default is 1.0 second, resulting in a PPS signal.
+A period of 0 disables the output signal.
 Supports exponential notation (e.g., 1e-1 for 100ms, 1e-3 for 1ms).
 Applies only when **\-\-perout** option is specified.
 
@@ -107,6 +109,10 @@ Output a PPS signal on eth0 with a 0.1s pulse width:
 Output a PPS signal on eth0 with no duty cycle control (square wave):
 
     satpulsetool sdp -o eth0
+
+Disable periodic output on eth0:
+
+    satpulsetool sdp -o --period 0 eth0
 
 # EXIT STATUS
 

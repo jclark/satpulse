@@ -136,10 +136,10 @@ Include stale/buffered timestamps in output. By default, stale timestamps (those
 ### Options for --perout
 
 **-w**, **--width** *seconds*  
-Set the pulse width for periodic output in seconds. Must be greater than 0 and less than the period. If not specified, no duty cycle control is applied.
+Set the pulse width for periodic output in seconds. Must be greater than 0 and less than the period. If not specified, no duty cycle control is applied. Cannot be used when period is 0.
 
 **--period** *seconds*  
-Set the period for periodic output in seconds (default: 1.0).
+Set the period for periodic output in seconds (default: 1.0). A period of 0 disables the output signal.
 
 **--phase** *seconds*  
 Set the phase offset for periodic output in seconds.
@@ -175,6 +175,9 @@ satpulsetool sdp -o eth0
 
 # Enable 10Hz output with 10ms pulse width
 satpulsetool sdp -o -w 0.01 --period 0.1 eth0
+
+# Disable periodic output
+satpulsetool sdp -o --period 0 eth0
 
 # Disable pin 2
 satpulsetool sdp --disable --pin 2 eth0

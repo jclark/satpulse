@@ -19,6 +19,13 @@ const (
 	ModeDisable                // Disable pin (--disable)
 )
 
+// PeroutParams holds parameters for periodic output mode
+type PeroutParams struct {
+	Width  time.Duration // 0 means no duty cycle control
+	Period time.Duration // defaults to 1 second
+	Phase  time.Duration // defaults to 0
+}
+
 // FlagConfig holds the parsed command-line flags and determined mode
 type FlagConfig struct {
 	Mode      Mode
@@ -33,10 +40,8 @@ type FlagConfig struct {
 	Pin  string // Can be name or index, empty string means not specified
 	Chan int
 	
-	// Perout mode flags
-	PeroutWidth  float64 // 0 means --width not specified
-	PeroutPeriod float64
-	PeroutPhase  float64
+	// Perout mode parameters
+	Perout PeroutParams
 }
 
 func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usageFunc func(string) string, err error) {
@@ -56,16 +61,17 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	// Mode flags
 	var extts, disable, showFlag, perout bool
 	var timeoutSec float64 = 2.0
-	var widthSpecified bool
+	var widthSec, periodSec, phaseSec float64
+	var widthSpecified, phaseSpecified bool
 	
 	flags.BoolVarP(&extts, "extts", "i", false, "check input on a pin")
 	flags.Float64VarP(&timeoutSec, "timeout", "t", 2.0, "length of time in seconds for which to read timestamp events (0 for unlimited)")
 	flags.BoolVar(&cfg.ShowStale, "show-stale", false, "include stale timestamps in the output")
 	
 	flags.BoolVarP(&perout, "perout", "o", false, "enable periodic output on a pin")
-	flags.Float64VarP(&cfg.PeroutWidth, "width", "w", 0, "set the pulse width for periodic output in seconds")
-	flags.Float64Var(&cfg.PeroutPeriod, "period", 1.0, "set the pulse period for periodic output in seconds")
-	flags.Float64Var(&cfg.PeroutPhase, "phase", 0, "set the pulse phase offset for periodic output in seconds")
+	flags.Float64VarP(&widthSec, "width", "w", 0, "set the pulse width for periodic output in seconds")
+	flags.Float64Var(&periodSec, "period", 1.0, "set the pulse period for periodic output in seconds")
+	flags.Float64Var(&phaseSec, "phase", 0, "set the pulse phase offset for periodic output in seconds")
 	
 	flags.BoolVar(&disable, "disable", false, "disable the pin function")
 	flags.BoolVar(&showFlag, "show", false, "show information about SDPs")
@@ -89,8 +95,9 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	// Convert timeout to Duration
 	cfg.Timeout = time.Duration(timeoutSec * float64(time.Second))
 	
-	// Check if --width was specified
+	// Check if --width and --phase were specified
 	widthSpecified = flags.Lookup("width").Changed
+	phaseSpecified = flags.Lookup("phase").Changed
 	
 	// Validate positional arguments
 	if flags.NArg() > 1 {
@@ -112,6 +119,12 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	if perout {
 		cfg.Mode = ModePerout
 		modeCount++
+		// Convert seconds to time.Duration and populate PeroutParams
+		cfg.Perout.Period = time.Duration(periodSec * float64(time.Second))
+		cfg.Perout.Phase = time.Duration(phaseSec * float64(time.Second))
+		if widthSpecified {
+			cfg.Perout.Width = time.Duration(widthSec * float64(time.Second))
+		}
 	}
 	if disable {
 		cfg.Mode = ModeDisable
@@ -177,30 +190,46 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 
 	// Additional validation for perout mode
 	if cfg.Mode == ModePerout {
-		// Validate perout specific parameters
+		// Check for negative period
+		if cfg.Perout.Period < 0 {
+			err = fmt.Errorf("period cannot be negative (got %v)", cfg.Perout.Period)
+			return
+		}
+		
+		// Special handling for period=0 (disable output)
+		if cfg.Perout.Period == 0 {
+			// Period=0 means disable output - width and phase don't make sense
+			if widthSpecified {
+				err = fmt.Errorf("--width cannot be used when disabling output (--period 0)")
+				return
+			}
+			if phaseSpecified {
+				err = fmt.Errorf("--phase cannot be used when disabling output (--period 0)")
+				return
+			}
+			// Period=0 is valid for disabling, no further validation needed
+			return
+		}
+		
+		// Normal validation for period > 0
 		if widthSpecified {
 			// --width was explicitly specified
-			if cfg.PeroutWidth == 0 {
+			if widthSec == 0 {
 				err = fmt.Errorf("--width cannot be explicitly set to 0; omit the flag instead")
 				return
 			}
-			if cfg.PeroutWidth < 0 {
-				err = fmt.Errorf("pulse width cannot be negative (got %f seconds)", cfg.PeroutWidth)
+			if widthSec < 0 {
+				err = fmt.Errorf("pulse width cannot be negative (got %f seconds)", widthSec)
 				return
 			}
-			if cfg.PeroutWidth >= cfg.PeroutPeriod {
-				err = fmt.Errorf("pulse width (%f seconds) must be less than period (%f seconds)", cfg.PeroutWidth, cfg.PeroutPeriod)
+			if cfg.Perout.Width >= cfg.Perout.Period {
+				err = fmt.Errorf("pulse width (%v) must be less than period (%v)", cfg.Perout.Width, cfg.Perout.Period)
 				return
 			}
 		}
-		// If --width not specified, cfg.PeroutWidth remains 0 (no duty cycle)
 		
-		if cfg.PeroutPeriod <= 0 {
-			err = fmt.Errorf("period must be positive (got %f seconds)", cfg.PeroutPeriod)
-			return
-		}
-		if cfg.PeroutPhase < 0 {
-			err = fmt.Errorf("phase offset cannot be negative (got %f seconds)", cfg.PeroutPhase)
+		if cfg.Perout.Phase < 0 {
+			err = fmt.Errorf("phase offset cannot be negative (got %v)", cfg.Perout.Phase)
 			return
 		}
 	}
