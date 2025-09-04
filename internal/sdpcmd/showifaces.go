@@ -116,7 +116,7 @@ func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	}
 
 	if len(result) == 0 {
-		return nil, fmt.Errorf("no interfaces with software-defined pins found")
+		return nil, NoDataError{msg: "no interfaces with software-defined pins found"}
 	}
 	return result, nil
 }

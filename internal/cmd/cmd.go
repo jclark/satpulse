@@ -11,6 +11,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// ExitCoder interface for errors that specify their own exit code
+type ExitCoder interface {
+	error
+	ExitCode() int
+}
+
 func ErrPrintln(progName string, arg any) {
 	fmt.Fprintln(os.Stderr, progName+":", arg)
 }

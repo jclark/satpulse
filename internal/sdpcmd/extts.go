@@ -17,7 +17,7 @@ type ExttsEvent struct {
 	Timestamp ptime.Time `json:"timestamp"` // PTP time
 	TRead     time.Time  `json:"tRead"`     // System time when we read the event
 	Chan      uint32     `json:"chan"`      // channel index
-	Stale     bool       `json:"stale,omitempty"` // true if timestamp was buffered before monitoring started
+	Stale     bool       `json:"stale,omitempty"` // true if timestamp was buffered before reading started
 }
 
 // Compile-time assertion that ExttsEvent implements Printer
@@ -67,7 +67,7 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 		}
 
 		// Log configuration
-		lg.Info("monitoring external timestamps", 
+		lg.Info("checking input", 
 			"interface", cfg.Interface,
 			"pin", pinIndex,
 			"channel", cfg.Chan,
@@ -84,7 +84,7 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 			case event, ok := <-eventCh:
 				if !ok {
 					if noEventsReceived && cfg.Timeout > 0 {
-						*errp = fmt.Errorf("no timestamps received during monitoring period")
+						*errp = NoDataError{msg: "no timestamps received"}
 					}
 					return
 				}

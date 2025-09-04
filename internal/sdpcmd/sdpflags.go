@@ -14,7 +14,7 @@ type Mode int
 const (
 	ModeShowIfaces Mode = iota // List all interfaces with PHC/pins
 	ModeShowPins               // Show pins for specific interface
-	ModeExtts                  // External timestamp monitoring (-i)
+	ModeExtts                  // External timestamp input (-i)
 	ModePerout                 // Periodic output (-o)
 	ModeDisable                // Disable pin (--disable)
 )

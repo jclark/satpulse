@@ -8,6 +8,19 @@ import (
 	"os"
 )
 
+// NoDataError represents a condition where no data was found (exit code 2)
+type NoDataError struct {
+	msg string
+}
+
+func (e NoDataError) Error() string {
+	return e.msg
+}
+
+func (e NoDataError) ExitCode() int {
+	return 2
+}
+
 type Printer interface {
 	Print(f *os.File)
 }

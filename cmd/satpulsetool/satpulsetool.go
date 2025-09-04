@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -70,15 +71,17 @@ func main() {
 		usage, err := exec(lg, progName, cmdName, cmdArgs)
 		if err != nil {
 			cmd.ErrPrintln(progName, err)
-		}
-		fmt.Fprint(os.Stderr, usage)
-		if err != nil {
-			if usage != "" {
+			// Check if error specifies its own exit code
+			var exitCoder cmd.ExitCoder
+			if errors.As(err, &exitCoder) {
+				exitCode = exitCoder.ExitCode()
+			} else if usage != "" {
 				exitCode = 2
 			} else {
 				exitCode = 1
 			}
 		}
+		fmt.Fprint(os.Stderr, usage)
 	} else {
 		cmd.ErrPrintln(progName, "unknown command: "+cmdName)
 		usage(progName, flags)
