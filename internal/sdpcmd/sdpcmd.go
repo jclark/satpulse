@@ -6,9 +6,6 @@ import (
 	"iter"
 	"log/slog"
 	"os"
-	"strconv"
-	
-	"github.com/jclark/satpulse/internal/phc"
 )
 
 
@@ -94,61 +91,5 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (us
 	return
 }
 
-// resolvePinIndex converts a pin name or index string to a pin index
-func resolvePinIndex(clk *phc.Clock, pin string) (int, error) {
-	// Try to parse as integer first
-	if index, err := strconv.Atoi(pin); err == nil {
-		if index < 0 {
-			return 0, fmt.Errorf("pin index cannot be negative (got %d)", index)
-		}
-		maxIndex := clk.PinCount() - 1
-		if index > maxIndex {
-			return 0, fmt.Errorf("pin index %d exceeds maximum (%d)", index, maxIndex)
-		}
-		return index, nil
-	}
-	
-	// Not a number, treat as pin name
-	for i := 0; i < clk.PinCount(); i++ {
-		desc, err := clk.PinGetFunc(uint32(i))
-		if err != nil {
-			continue
-		}
-		if desc.Name == pin {
-			return i, nil
-		}
-	}
-	
-	return 0, fmt.Errorf("pin name '%s' not found on this interface", pin)
-}
 
-// validateExttsChannel validates a channel for external timestamp use
-func validateExttsChannel(clk *phc.Clock, channel int) error {
-	if channel < 0 {
-		return fmt.Errorf("channel index cannot be negative (got %d)", channel)
-	}
-	maxChannel := clk.ExttsChanCount() - 1
-	if channel > maxChannel {
-		if maxChannel < 0 {
-			return fmt.Errorf("this PHC has no external timestamp channels")
-		}
-		return fmt.Errorf("channel index %d exceeds maximum (%d) for external timestamps", channel, maxChannel)
-	}
-	return nil
-}
-
-// validatePeroutChannel validates a channel for periodic output use
-func validatePeroutChannel(clk *phc.Clock, channel int) error {
-	if channel < 0 {
-		return fmt.Errorf("channel index cannot be negative (got %d)", channel)
-	}
-	maxChannel := clk.PeroutChanCount() - 1
-	if channel > maxChannel {
-		if maxChannel < 0 {
-			return fmt.Errorf("this PHC has no periodic output channels")
-		}
-		return fmt.Errorf("channel index %d exceeds maximum (%d) for periodic output", channel, maxChannel)
-	}
-	return nil
-}
 

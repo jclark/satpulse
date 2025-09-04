@@ -32,55 +32,35 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 	return func(yield func(Printer) bool) {
 		lg.Debug("extts mode", "interface", cfg.Interface, "timeout", cfg.Timeout, "pin", cfg.Pin, "chan", cfg.Chan)
 		
-		// Get PHC index for interface
-		phcIndex, err := phc.IfPhcIndex(cfg.Interface)
-		if err != nil || phcIndex < 0 {
-			*errp = fmt.Errorf("interface %s does not have a PTP hardware clock: %w", cfg.Interface, err)
-			return
-		}
-
-		// Open PHC device
-		phcPath := fmt.Sprintf("/dev/ptp%d", phcIndex)
-		clk, err := phc.Open(phcPath)
-		if err != nil {
-			*errp = fmt.Errorf("failed to open PHC device for interface %s: %w", cfg.Interface, err)
-			return
-		}
-		defer clk.Close()
-
-		// Check if we have pins
-		if clk.PinCount() == 0 {
-			*errp = fmt.Errorf("interface %s has no software-defined pins", cfg.Interface)
-			return
-		}
-
-		// Resolve pin name to index if needed
-		pinIndex, err := resolvePinIndex(clk, cfg.Pin)
+		// Open PHC and resolve pin
+		clk, pinIndex, err := phcOpen(cfg.Interface, cfg.Pin)
 		if err != nil {
 			*errp = err
 			return
 		}
+		defer clk.Close()
 
 		// Validate channel index
-		if err := validateExttsChannel(clk, cfg.Chan); err != nil {
+		chanIndex, err := validateExttsChannel(clk, cfg.Chan)
+		if err != nil {
 			*errp = err
 			return
 		}
 
 		// Configure pin for external timestamps
-		err = clk.PinSetFunc(uint32(pinIndex), phc.PinFuncExtts, uint32(cfg.Chan))
+		err = clk.PinSetFunc(pinIndex, phc.PinFuncExtts, chanIndex)
 		if err != nil {
 			*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", pinIndex, err)
 			return
 		}
 
 		// Enable external timestamps
-		_, err = clk.ExttsEnable(uint32(cfg.Chan), true)
+		_, err = clk.ExttsEnable(chanIndex, true)
 		if err != nil {
 			*errp = fmt.Errorf("failed to enable external timestamps on channel %d: %w", cfg.Chan, err)
 			return
 		}
-		defer clk.ExttsEnable(uint32(cfg.Chan), false) // Cleanup on exit
+		defer clk.ExttsEnable(chanIndex, false) // Cleanup on exit
 
 		// Set up context with timeout
 		ctx := context.Background()
@@ -180,3 +160,17 @@ func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, eventCh c
 	}
 }
 
+// validateExttsChannel validates a channel for external timestamp use
+func validateExttsChannel(clk *phc.Clock, channel int) (uint32, error) {
+	if channel < 0 {
+		return 0, fmt.Errorf("channel index cannot be negative (got %d)", channel)
+	}
+	maxChannel := clk.ExttsChanCount() - 1
+	if channel > maxChannel {
+		if maxChannel < 0 {
+			return 0, fmt.Errorf("this PHC has no external timestamp channels")
+		}
+		return 0, fmt.Errorf("channel index %d exceeds maximum (%d) for external timestamps", channel, maxChannel)
+	}
+	return uint32(channel), nil
+}
