@@ -28,11 +28,11 @@ func (e *ExttsEvent) Print(f *os.File) {
 	fmt.Fprintln(f, e.Timestamp)
 }
 
+// extts implements --extts/-i mode
 func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 	return func(yield func(Printer) bool) {
 		lg.Debug("extts mode", "interface", cfg.Interface, "timeout", cfg.Timeout, "pin", cfg.Pin, "chan", cfg.Chan)
 		
-		// Open PHC and resolve pin
 		clk, pinIndex, err := phcOpen(cfg.Interface, cfg.Pin)
 		if err != nil {
 			*errp = err
@@ -40,21 +40,18 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 		}
 		defer clk.Close()
 
-		// Validate channel index
 		chanIndex, err := validateExttsChannel(clk, cfg.Chan)
 		if err != nil {
 			*errp = err
 			return
 		}
 
-		// Configure pin for external timestamps
 		err = clk.PinSetFunc(pinIndex, phc.PinFuncExtts, chanIndex)
 		if err != nil {
 			*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", pinIndex, err)
 			return
 		}
 
-		// Enable external timestamps
 		_, err = clk.ExttsEnable(chanIndex, true)
 		if err != nil {
 			*errp = fmt.Errorf("failed to enable external timestamps on channel %d: %w", cfg.Chan, err)
@@ -62,7 +59,6 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 		}
 		defer clk.ExttsEnable(chanIndex, false) // Cleanup on exit
 
-		// Set up context with timeout
 		ctx := context.Background()
 		if cfg.Timeout > 0 {
 			var cancel context.CancelFunc
@@ -87,7 +83,6 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 			select {
 			case event, ok := <-eventCh:
 				if !ok {
-					// Channel closed, worker done
 					if noEventsReceived && cfg.Timeout > 0 {
 						*errp = fmt.Errorf("no timestamps received during monitoring period")
 					}
@@ -96,7 +91,6 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 				if !event.Stale || cfg.ShowStale {
 					noEventsReceived = false
 					if !yield(&event) {
-						// Consumer stopped iteration
 						return
 					}
 				}
@@ -116,10 +110,8 @@ func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, eventCh c
 	stale := true
 
 	for {
-		// Poll for available events with timeout
 		hasEvents := clk.ExttsAvailable(pollTimeout)
 		
-		// Check if we should exit
 		select {
 		case <-ctx.Done():
 			return
@@ -132,7 +124,6 @@ func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, eventCh c
 			continue
 		}
 
-		// Read the timestamp
 		t, chanIndex, err := clk.ReadExtts()
 		tRead := time.Now()
 		if err != nil {
@@ -140,7 +131,6 @@ func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, eventCh c
 			continue
 		}
 
-		// Send event (from any channel)
 		event := ExttsEvent{
 			Timestamp: t,
 			TRead:     tRead,
@@ -152,7 +142,6 @@ func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, eventCh c
 		
 		select {
 		case eventCh <- event:
-			// Event sent successfully
 		case <-ctx.Done():
 			lg.Debug("context cancelled, stopping worker")
 			return

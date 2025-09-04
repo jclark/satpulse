@@ -8,21 +8,19 @@ import (
 	"github.com/jclark/satpulse/internal/phc"
 )
 
+// perout implements --perout/-o mode
 func perout(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
-	// Open PHC and resolve pin
 	clk, pinIndex, err := phcOpen(cfg.Interface, cfg.Pin)
 	if err != nil {
 		return nil, err
 	}
 	defer clk.Close()
 
-	// Validate channel index
 	chanIndex, err := validatePeroutChannel(clk, cfg.Chan)
 	if err != nil {
 		return nil, err
 	}
 
-	// Configure pin for periodic output
 	err = clk.PinSetFunc(pinIndex, phc.PinFuncPerout, chanIndex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure pin %d for periodic output: %w", pinIndex, err)
@@ -40,13 +38,11 @@ func perout(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 		// But we want the rising edge to be aligned with the start of the second.
 		startOff = cfg.Perout.Period / 2
 	}
-	// Enable periodic output with specified parameters
 	err = clk.PeroutEnable(chanIndex, cfg.Perout.Period, cfg.Perout.Width, startOff)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable periodic output: %w", err)
 	}
 
-	// Log success message
 	if cfg.Perout.Period == 0 {
 		lg.Info("periodic output disabled",
 			"interface", cfg.Interface,
@@ -70,7 +66,6 @@ func perout(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 		}
 	}
 
-	// No data output for perout mode
 	return nil, nil
 }
 

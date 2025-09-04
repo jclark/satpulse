@@ -8,7 +8,6 @@ import (
 	"os"
 )
 
-
 type Printer interface {
 	Print(f *os.File)
 }
@@ -26,6 +25,7 @@ func sliceToIter(items []Printer) iter.Seq[Printer] {
 	}
 }
 
+// Cmd executes the sdp subcommand with the given arguments
 func Cmd(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (usage string, err error) {
 	cfg, help, usageFunc, err := parseFlags(cmdName, cmdArgs)
 	if err != nil {
@@ -69,7 +69,6 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (us
 		output = sliceToIter(sections)
 	}
 
-	// Single output loop for all modes
 	for item := range output {
 		if cfg.JSONL {
 			b, err := json.Marshal(item)

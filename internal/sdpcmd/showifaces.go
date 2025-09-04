@@ -16,18 +16,44 @@ import (
 // InterfaceInfo represents a network interface with PHC (for list mode)
 type InterfaceInfo struct {
 	Name              string   `json:"name"`
-	Status            string   `json:"status"`            // Interface status (up/down, carrier/no-carrier)
-	Driver            string   `json:"driver"`            // Network driver name
-	PCISlot           string   `json:"pci_slot,omitempty"`   // PCI slot (e.g., "04:00.0")
-	Vendor            string   `json:"vendor,omitempty"`     // PCI vendor name
-	Device            string   `json:"device,omitempty"`     // PCI device name
-	Revision          uint32   `json:"revision,omitempty"`   // PCI revision
-	ClockIndex        int      `json:"clock_index"`       // PHC index from ethtool
-	Pins              []string `json:"pins"`              // From /sys/class/ptp/ptpX/pins/ directory listing
-	NumExttsChannels  int      `json:"n_extts_channels"`  // From /sys/class/ptp/ptpX/n_external_timestamps
-	NumPeroutChannels int      `json:"n_perout_channels"` // From /sys/class/ptp/ptpX/n_periodic_outputs
+	Status            string   `json:"status"`             // Interface status (up/down, carrier/no-carrier)
+	Driver            string   `json:"driver"`             // Network driver name
+	PCISlot           string   `json:"pci_slot,omitempty"` // PCI slot (e.g., "04:00.0")
+	Vendor            string   `json:"vendor,omitempty"`   // PCI vendor name
+	Device            string   `json:"device,omitempty"`   // PCI device name
+	Revision          uint32   `json:"revision,omitempty"` // PCI revision
+	ClockIndex        int      `json:"clock_index"`        // PHC index from ethtool
+	Pins              []string `json:"pins"`               // From /sys/class/ptp/ptpX/pins/ directory listing
+	NumExttsChannels  int      `json:"n_extts_channels"`   // From /sys/class/ptp/ptpX/n_external_timestamps
+	NumPeroutChannels int      `json:"n_perout_channels"`  // From /sys/class/ptp/ptpX/n_periodic_outputs
 }
 
+// Print outputs the interface info in human-readable format
+func (info *InterfaceInfo) Print(f *os.File) {
+	fmt.Fprintf(f, "Interface: %s\n", info.Name)
+	fmt.Fprintf(f, "  Status: %s\n", info.Status)
+	if info.Driver != "" {
+		fmt.Fprintf(f, "  Driver: %s\n", info.Driver)
+	}
+	if info.PCISlot != "" {
+		fmt.Fprintf(f, "  PCI: %s\n", info.PCISlot)
+	}
+	if info.Vendor != "" {
+		fmt.Fprintf(f, "  Vendor: %s\n", info.Vendor)
+	}
+	if info.Device != "" {
+		fmt.Fprintf(f, "  Device: %s\n", info.Device)
+	}
+	if info.Revision > 0 {
+		fmt.Fprintf(f, "  Revision: %02x\n", info.Revision)
+	}
+	fmt.Fprintf(f, "  PTP clock device: /dev/ptp%d\n", info.ClockIndex)
+	fmt.Fprintf(f, "  Pins: %s\n", strings.Join(info.Pins, ", "))
+	fmt.Fprintf(f, "  External timestamp channels: %d\n", info.NumExttsChannels)
+	fmt.Fprintf(f, "  Periodic output channels: %d\n", info.NumPeroutChannels)
+}
+
+// showIfaces implements --show mode when no interface is specified
 func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	var result []Printer
 
@@ -43,10 +69,8 @@ func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 			continue
 		}
 
-		// Get driver name
 		driverName, _ := phc.IfDriverName(iface.Name)
 
-		// Get PCI info
 		pciSlot, vendor, device, revision := getPCIInfo(iface.Name)
 
 		ptpPath := fmt.Sprintf("/sys/class/ptp/ptp%d", phcIndex)
@@ -65,22 +89,14 @@ func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 		nExtts := readSysfsInt(filepath.Join(ptpPath, "n_external_timestamps"))
 		nPerout := readSysfsInt(filepath.Join(ptpPath, "n_periodic_outputs"))
 
-		// List pin names from pins directory
-		var pins []string
-		pinsDir := filepath.Join(ptpPath, "pins")
-		entries, err := os.ReadDir(pinsDir)
-		if err == nil {
-			for _, entry := range entries {
-				if !entry.IsDir() {
-					pins = append(pins, entry.Name())
-				}
-			}
-		}
+		pins := readPinNames(ptpPath)
 
-		// Check consistency between n_pins and actual pin count
 		if len(pins) != nPins {
-			fmt.Fprintf(os.Stderr, "warning: %s: expected %d pins but found %d in /sys/class/ptp/ptp%d/pins/\n",
-				iface.Name, nPins, len(pins), phcIndex)
+			lg.Debug("pin count mismatch",
+				"interface", iface.Name,
+				"expected", nPins,
+				"found", len(pins),
+				"phc", phcIndex)
 		}
 
 		info := InterfaceInfo{
@@ -108,7 +124,7 @@ func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 func formatStatus(flags net.Flags) string {
 	up := flags&net.FlagUp != 0
 	carrier := flags&net.FlagRunning != 0
-	
+
 	if up {
 		if carrier {
 			return "up, carrier"
@@ -147,6 +163,21 @@ func readHex(path string) (uint32, error) {
 	var v uint32
 	_, err = fmt.Sscanf(s, "0x%x", &v)
 	return v, err
+}
+
+// readPinNames reads pin names from the pins directory
+func readPinNames(ptpPath string) []string {
+	var pins []string
+	pinsDir := filepath.Join(ptpPath, "pins")
+	entries, err := os.ReadDir(pinsDir)
+	if err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				pins = append(pins, entry.Name())
+			}
+		}
+	}
+	return pins
 }
 
 func getPCIInfo(ifname string) (slot string, vendor string, device string, revision uint32) {
@@ -197,27 +228,3 @@ func getPCIInfo(ifname string) (slot string, vendor string, device string, revis
 	return
 }
 
-// Print outputs the interface info in human-readable format
-func (info *InterfaceInfo) Print(f *os.File) {
-	fmt.Fprintf(f, "Interface: %s\n", info.Name)
-	fmt.Fprintf(f, "  Status: %s\n", info.Status)
-	if info.Driver != "" {
-		fmt.Fprintf(f, "  Driver: %s\n", info.Driver)
-	}
-	if info.PCISlot != "" {
-		fmt.Fprintf(f, "  PCI: %s\n", info.PCISlot)
-	}
-	if info.Vendor != "" {
-		fmt.Fprintf(f, "  Vendor: %s\n", info.Vendor)
-	}
-	if info.Device != "" {
-		fmt.Fprintf(f, "  Device: %s\n", info.Device)
-	}
-	if info.Revision > 0 {
-		fmt.Fprintf(f, "  Revision: %02x\n", info.Revision)
-	}
-	fmt.Fprintf(f, "  PTP clock device: /dev/ptp%d\n", info.ClockIndex)
-	fmt.Fprintf(f, "  Pins: %s\n", strings.Join(info.Pins, ", "))
-	fmt.Fprintf(f, "  External timestamp channels: %d\n", info.NumExttsChannels)
-	fmt.Fprintf(f, "  Periodic output channels: %d\n", info.NumPeroutChannels)
-}

@@ -16,10 +16,20 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 
 # DESCRIPTION
 
-The **satpulsetool** **sdp** command manages software-defined pins (SDP) on PTP hardware clocks (PHC). These pins can be configured for various functions including external timestamp input (PPS input) and periodic output (PPS output).
+The **satpulsetool** **sdp** command manages software-defined pins (SDP) on PTP hardware clocks (PHC).
+A pin can be configured for input, allowing timestamps of pulses received by the pin to be read,
+for example when the pin is connected the the PPS output of a GNSS receiver.
+This is called external timestamping (extts).
+A pin can alternatively be configured for output, allowing periodic pulses aligned to the PHC
+to be generated, for example when the pin is connected to an oscilloscope.
+This is called periodic output (perout).
 
-At most one of the  **\-\-extts**, **\-\-perout**, **\-\-disable** and **\-\-show** options can be specified.
-If none of these options are specified, the command behaves as if **\-\-show** was specified.
+The mode of operation is determined by the **\-\-extts**, **\-\-perout**, **\-\-disable** and **\-\-show** options.
+At most one of these options can be specified;
+if none of them are specified, the command behaves as if **\-\-show** was specified.
+In **\-\-show** mode, the **interface** is optional.
+In other modes, it is required.
+If the **interface** is specified, then root privileges are required.
 
 # OPTIONS
 
@@ -34,7 +44,6 @@ It will read timestamp events for the length of time specified by the **\-\-t** 
 if this is 0, it will read until interrupted.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
 The **\-\-chan** option can also be used to specify the timestamping channel to be used; the default is channel 0.
-Requires root privileges.
 
 **\-o**, **\-\-perout**  
 : Enable periodic output on a pin.
@@ -46,13 +55,11 @@ For Intel igb and igc drivers, the width cannnot be specified, and is always hal
 i.e. a duty cycle of 50%.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
 The **\-\-chan** option can also be used to specify the periodic output channel to be used; the default is channel 0.
-Requires root privileges.
 
 **\-\-disable**  
 : Disable the pin function.
 This sets the specified pin's function to none, effectively disabling any input or output operations on that pin.
 The pin to disable is specified with the **\-\-pin** option; the default is pin 0.
-Requires root privileges.
 
 **\-\-show**  
 : Show information about SDPs.
@@ -115,7 +122,7 @@ Check input on pin 1 of eth0, showing timestamp events received for 30 seconds i
 
 Output a PPS signal on pin 1 of eth0:
 
-    satpulsetool sdp -o -p 1 eth0
+    satpulsetool sdp -o --pin 1 eth0
 
 Disable periodic output on eth0:
 
