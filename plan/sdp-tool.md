@@ -1,5 +1,5 @@
 
-# SDP tool - Software defined pin control for PTP hardware clocks
+# SDP subcommand for satpulsetool to manage PHC SDPs
 
 ## Problem
 
@@ -140,9 +140,6 @@ Set the pulse width for periodic output in seconds. Must be greater than 0 and l
 
 **--period** *seconds*  
 Set the period for periodic output in seconds (default: 1.0). A period of 0 disables the output signal.
-
-**--phase** *seconds*  
-Set the phase offset for periodic output in seconds.
 
 ### Common options
 
@@ -329,7 +326,8 @@ func extts(cfg *FlagConfig) ([]Printer, error) {
 - Output directly as ExttsEvent instead of complex Event type
 
 ### Phase 4: Periodic output mode (`-o`)
-1. Extend `sdpflags.go` to parse `-o`/`--perout`, `-w`/`--width`, `--period`, `--phase`, `--pin`, `--chan` options
+1. Extend `sdpflags.go` to parse `-o`/`--perout`, `-w`/`--width`, `--period`, `--pin`, `--chan` options
+   - Note: Phase offset feature of the kernel PEROUT API not exposed - not supported by drivers this project targets (igb, igc)
 2. Validate mutual exclusivity with `-i` mode
 3. Validate `--width` if specified (must be > 0 and < period, cannot be explicitly 0)
 4. Open PHC device (requires root)
@@ -526,23 +524,6 @@ Each mode file implements its handler function:
 - Returns `[]Printer` for output (or empty/nil for no output)
 - Returns error on failure
 
-## Implementation Status and Next Steps
-
-### Current Status
-- **Phase 1 (showAll)** - COMPLETE in `showall.go` - Lists all interfaces with PHC/pins
-- **Phase 2 (show)** - COMPLETE in `show.go` - Shows specific interface configuration  
-- **Phase 3 (extts)** - TO BE IMPLEMENTED - External timestamp monitoring (`-i` mode)
-- **Phase 4 (perout)** - Not started - Periodic output (`-o` mode)
-- **Phase 5 (disable)** - Not started - Disable pin function (`--disable` mode)
-
-### Files to modify/create for Phase 3:
-1. **`sdpflags.go`** - Add Mode type, FlagConfig struct, full flag parsing
-2. **`extts.go`** - New file with extts handler and worker goroutine
-3. **`sdpcmd.go`** - Add mode dispatch map
-
-### Next Session Implementation
-Start with Phase 3 implementation using the detailed plan above
-
 ### Testing Requirements
 For testing the implementation, you'll need:
 1. **Hardware with PHC and software-defined pins**
@@ -570,16 +551,15 @@ For testing the implementation, you'll need:
 4. **Error handling**: All errors to stderr, non-zero exit
 5. **JSON output**: Use `-j`/`--jsonl` flag from Phase 1
 
-### Files to Reference During Implementation
-- `internal/phc/phc.go` - Existing PHC functions for extts
-- `internal/gpscmd/` - Pattern for command structure
-- `golang.org/x/sys/unix` package - PTP ioctl wrappers (IoctlPtpPeroutRequest, etc.)
-- `tmp/ptp_clock.h` - Kernel PTP structures for reference
-- `tmp/testptp.c` - The kernel test utility we're replacing, shows:
-  - How to configure pins (lines 404-414, `-L` option)
-  - How to enable/disable extts (lines 416-441, `-e` option)
-  - How to configure perout (lines 475-504, `-p` option with `-w` and `-H`)
-  - How to list pins (lines 447-463, `-l` option)
+## Remaining work
+
+More testing:
+
+* More unit tests
+* Scripts that can be run on a machine to verify functionality
+* Integrate `satpulsetool sdp` into the Ansible system testing approach in `systest/`
+
+
 
 
 
