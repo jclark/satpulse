@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"net"
 	"os"
 	"time"
 
@@ -39,6 +40,14 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 			return
 		}
 		defer clk.Close()
+
+		iface, err := net.InterfaceByName(cfg.Interface)
+		if err == nil {
+			if iface.Flags&net.FlagUp == 0 {
+				lg.Warn("interface is not up, external timestamps may not work",
+					"interface", cfg.Interface)
+			}
+		}
 
 		chanIndex, err := validateExttsChannel(clk, cfg.Chan)
 		if err != nil {
