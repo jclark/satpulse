@@ -1,7 +1,9 @@
 package sdpcmd
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -62,6 +64,8 @@ func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 		return nil, fmt.Errorf("failed to list network interfaces: %w", err)
 	}
 
+	fsys := os.DirFS("/sys")
+
 	for _, iface := range interfaces {
 		phcIndex, err := phc.IfPhcIndex(iface.Name)
 		if err != nil || phcIndex < 0 {
@@ -69,50 +73,28 @@ func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 			continue
 		}
 
-		driverName, _ := phc.IfDriverName(iface.Name)
+		info, err := getInterfaceInfo(fsys, iface.Name, phcIndex)
+		if err != nil {
+			lg.Warn("PHC info error",
+				"interface", iface.Name,
+				"phc", phcIndex,
+				"error", err)
+		}
+		if info == nil {
+			continue // No usable data (no pins or fatal error)
+		}
+
+		// Add non-testable fields
+		info.Status = formatStatus(iface.Flags)
+		info.Driver, _ = phc.IfDriverName(iface.Name)
 
 		pciSlot, vendor, device, revision := getPCIInfo(iface.Name)
+		info.PCISlot = pciSlot
+		info.Vendor = vendor
+		info.Device = device
+		info.Revision = revision
 
-		ptpPath := fmt.Sprintf("/sys/class/ptp/ptp%d", phcIndex)
-
-		// Check for pins - try n_programmable_pins first, then n_pins
-		nPins := readSysfsInt(filepath.Join(ptpPath, "n_programmable_pins"))
-		if nPins <= 0 {
-			nPins = readSysfsInt(filepath.Join(ptpPath, "n_pins"))
-		}
-		if nPins <= 0 {
-			// No software-defined pins
-			continue
-		}
-
-		// Read other PHC info
-		nExtts := readSysfsInt(filepath.Join(ptpPath, "n_external_timestamps"))
-		nPerout := readSysfsInt(filepath.Join(ptpPath, "n_periodic_outputs"))
-
-		pins := readPinNames(ptpPath)
-
-		if len(pins) != nPins {
-			lg.Debug("pin count mismatch",
-				"interface", iface.Name,
-				"expected", nPins,
-				"found", len(pins),
-				"phc", phcIndex)
-		}
-
-		info := InterfaceInfo{
-			Name:              iface.Name,
-			Status:            formatStatus(iface.Flags),
-			Driver:            driverName,
-			PCISlot:           pciSlot,
-			Vendor:            vendor,
-			Device:            device,
-			Revision:          revision,
-			ClockIndex:        phcIndex,
-			Pins:              pins,
-			NumExttsChannels:  nExtts,
-			NumPeroutChannels: nPerout,
-		}
-		result = append(result, &info)
+		result = append(result, info)
 	}
 
 	if len(result) == 0 {
@@ -134,20 +116,49 @@ func formatStatus(flags net.Flags) string {
 	return "down"
 }
 
-func readSysfsString(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
+// getInterfaceInfo gathers PHC information from sysfs (testable)
+// Returns nil, nil if interface has no software-defined pins (not an error)
+// May return non-nil info AND error if data is incomplete but usable
+func getInterfaceInfo(fsys fs.FS, ifaceName string, phcIndex int) (*InterfaceInfo, error) {
+	ptpPath := fmt.Sprintf("class/ptp/ptp%d", phcIndex)
+
+	// Check for pins
+	nPins := readSysfsInt(fsys, filepath.Join(ptpPath, "n_programmable_pins"))
+	if nPins <= 0 {
+		nPins = readSysfsInt(fsys, filepath.Join(ptpPath, "n_pins"))
 	}
-	return strings.TrimSpace(string(data))
+	if nPins <= 0 {
+		return nil, nil // No software-defined pins - not an error
+	}
+
+	pins, err := readPinNames(fsys, ptpPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading pin names for %s: %w", ifaceName, err)
+	}
+
+	info := &InterfaceInfo{
+		Name:              ifaceName,
+		ClockIndex:        phcIndex,
+		Pins:              pins,
+		NumExttsChannels:  readSysfsInt(fsys, filepath.Join(ptpPath, "n_external_timestamps")),
+		NumPeroutChannels: readSysfsInt(fsys, filepath.Join(ptpPath, "n_periodic_outputs")),
+	}
+
+	// Check for inconsistency
+	if len(pins) != nPins {
+		return info, fmt.Errorf("pin count mismatch: expected %d, found %d", nPins, len(pins))
+	}
+
+	return info, nil
 }
 
-func readSysfsInt(path string) int {
-	s := readSysfsString(path)
-	if s == "" {
+
+func readSysfsInt(fsys fs.FS, path string) int {
+	data, err := fs.ReadFile(fsys, path)
+	if err != nil {
 		return 0
 	}
-	n, err := strconv.Atoi(s)
+	n, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil {
 		return 0
 	}
@@ -166,18 +177,22 @@ func readHex(path string) (uint32, error) {
 }
 
 // readPinNames reads pin names from the pins directory
-func readPinNames(ptpPath string) []string {
+func readPinNames(fsys fs.FS, ptpPath string) ([]string, error) {
 	var pins []string
 	pinsDir := filepath.Join(ptpPath, "pins")
-	entries, err := os.ReadDir(pinsDir)
-	if err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				pins = append(pins, entry.Name())
-			}
+	entries, err := fs.ReadDir(fsys, pinsDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil // Directory doesn't exist, return empty
+		}
+		return nil, err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			pins = append(pins, entry.Name())
 		}
 	}
-	return pins
+	return pins, nil
 }
 
 func getPCIInfo(ifname string) (slot string, vendor string, device string, revision uint32) {
