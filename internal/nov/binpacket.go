@@ -2,7 +2,6 @@ package nov
 
 import (
 	"encoding/binary"
-	"fmt"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/novmsg"
@@ -96,8 +95,8 @@ func (f binPacketFormat) MsgID(pkt []byte) string {
 		return ""
 	}
 	// Message ID is a USHORT at offset 4
-	msgID := binary.LittleEndian.Uint16(pkt[msgIDOffset:msgIDOffset+2])
-	return fmt.Sprintf("%d", msgID)
+	msgID := novmsg.MsgID(binary.LittleEndian.Uint16(pkt[msgIDOffset:msgIDOffset+2]))
+	return msgID.String()
 }
 
 func (f binPacketFormat) ExtractChecksum(pkt []byte) []byte {
