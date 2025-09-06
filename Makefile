@@ -2,22 +2,33 @@
 # Where the config file will be installed by the install target.
 CONFIG_FILE=/usr/local/etc/satpulse.toml
 CMD=github.com/jclark/satpulse/internal/cmd
+VERSION:=$(shell cat VERSION)
+VERSION_TAG:=v$(VERSION)
 BUILD_DATE:=$(shell date -u --rfc-3339=seconds)
 DIRTY:=$(shell git diff-index --quiet HEAD || echo .dirty)
 GIT_VERSION:=$(shell env TZ=UTC git log -1 --format="%cd.%h" --date=format-local:%Y%m%d)$(DIRTY)
 DEB_VERSION=1
-DEB_PKG_VERSION:= 0.0~git$(GIT_VERSION)-$(DEB_VERSION)
 RPM_RELEASE=1
-RPM_VERSION=$(shell env TZ=UTC git log -1 --format="0^%cdgit%h" --date=format-local:%Y%m%d)
-GH_RELEASE=$(shell env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
+CMD_VERSION:=$(VERSION)
+DEB_PKG_VERSION:=$(VERSION)-$(DEB_VERSION)
+RPM_VERSION:=$(VERSION)
+GH_RELEASE:=$(VERSION)
+CURRENT_TAG:=$(shell git describe --tags --exact-match 2>/dev/null)
+ifneq ($(CURRENT_TAG)$(DIRTY),$(VERSION_TAG))
+# It's a prerelease
+CMD_VERSION:=$(VERSION)-pre.$(GIT_VERSION)
+DEB_PKG_VERSION:=$(VERSION)~git$(GIT_VERSION)-$(DEB_VERSION)
+RPM_VERSION:=$(VERSION)~$(shell env TZ=UTC git log -1 --format="%cdgit%h" --date=format-local:%Y%m%d)
+GH_RELEASE:=$(VERSION)-pre-$(shell env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
+endif
 RPM_PKG_VERSION=$(RPM_VERSION)-$(RPM_RELEASE)
-XFLAGS:=-X \"$(CMD).gitVersion=$(GIT_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
+XFLAGS:=-X \"$(CMD).version=$(CMD_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
 TAGS=netgo,osusergo
 # The GOARCHs we support.
 ALL_GOARCH=arm64 amd64
 TOMLS:=$(patsubst %,out/%/satpulse.toml,$(ALL_GOARCH))
 ARCH:=$(shell uname -m)
-MAN_PAGES=satpulsed.8 satpulsetool.1 satpulsetool-gps.1
+MAN_PAGES=satpulsed.8 satpulsetool.1 satpulsetool-gps.1 satpulsetool-sdp.1
 MAN_TARGETS = $(addprefix out/, $(MAN_PAGES))
 MAN_GZ_TARGETS = $(addsuffix .gz, $(MAN_TARGETS))
 
@@ -66,6 +77,7 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	install -D -m 644 docs/quickstart.md /usr/local/share/doc/satpulse/quickstart.md
 	install -D -m 644 out/satpulsetool.1 /usr/local/share/man/man1/satpulsetool.1
 	install -D -m 644 out/satpulsetool-gps.1 /usr/local/share/man/man1/satpulsetool-gps.1
+	install -D -m 644 out/satpulsetool-sdp.1 /usr/local/share/man/man1/satpulsetool-sdp.1
 	install -d /usr/local/share/man/man8
 	sed 's;/etc/satpulse.toml;$(CONFIG_FILE);g' out/satpulsed.8 > /usr/local/share/man/man8/satpulsed.8
 	systemctl daemon-reload
@@ -81,6 +93,7 @@ uninstall:
 	rm -f /usr/local/share/doc/satpulse/quickstart.md
 	rm -f /usr/local/share/man/man1/satpulsetool.1
 	rm -f /usr/local/share/man/man1/satpulsetool-gps.1
+	rm -f /usr/local/share/man/man1/satpulsetool-sdp.1
 	rm -f /usr/local/share/man/man8/satpulsed.8
 	systemctl daemon-reload
 
@@ -118,6 +131,7 @@ $(DEB_PATTERN): % out/%/satpulse.toml $(MAN_GZ_TARGETS)
 	install -D -m 644 configs/satpulse@.service out/$*/deb/lib/systemd/system/satpulse@.service
 	install -D -m 644 out/satpulsetool.1.gz out/$*/deb/usr/share/man/man1/satpulsetool.1.gz
 	install -D -m 644 out/satpulsetool-gps.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-gps.1.gz
+	install -D -m 644 out/satpulsetool-sdp.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-sdp.1.gz
 	install -D -m 644 out/satpulsed.8.gz out/$*/deb/usr/share/man/man8/satpulsed.8.gz
 	installed_size=`du -s -k out/$*/deb | cut -f1`;\
 	sed -e '/^Architecture:/s/any/$*/' -e '/^Package:/a\
@@ -164,5 +178,12 @@ release: $(GH_DEBS) $(GH_RPMS)
 		--draft \
 		$^
 
-.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz
+tag:
+	git diff-index --exit-code HEAD
+	git tag -f -a "$(VERSION_TAG)" -m "Release $(VERSION_TAG)"
+
+untag:
+	git tag -d "$(VERSION_TAG)"
+
+.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz tag untag
 

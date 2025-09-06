@@ -17,7 +17,7 @@ all:
         chaource.lan:
         morbier.lan:
         toma.lan:
-        vacherin.lan:
+        #vacherin.lan:
         valdeon.lan:
   
   hosts:
@@ -32,9 +32,9 @@ all:
       interface: end0
       instance: ttyAMA3
 
-    # EVK-F10T on USB
+    # F9T-20B in gnss.store dongle
     toma.lan:
-      instance: ttyUSB0
+      instance: ttyACM0
       speed: 38400
       interface: enp1s0
 
@@ -42,6 +42,7 @@ all:
     abondance.lan:
       instance: ttyACM0
       interface: enp4s0
+      speed: 38400
       pin: 1
   
     ricotta.lan: # all default
@@ -51,7 +52,7 @@ all:
       speed: 115200
       config: "false"
 
-    # LEA-M8T over RS232
+    # GG7TBL GNSSDO-CM55 over RS232
     caciocavallo.lan:
       instance: ttyAMA3
 

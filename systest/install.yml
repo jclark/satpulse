@@ -10,12 +10,12 @@
   tasks:
     - name: Set package filename for Debian
       set_fact:
-        package_pattern: "satpulse_2[0-9]*_{{ debian_arch_map[ansible_architecture] }}.deb"
+        package_pattern: "satpulse_[0-9].[0-9]*_{{ debian_arch_map[ansible_architecture] }}.deb"
       when: ansible_os_family == "Debian"
 
     - name: Set package filename for RedHat
       set_fact:
-        package_pattern: "satpulse-2[0-9]*.{{ ansible_architecture }}.rpm"
+        package_pattern: "satpulse-[0-9].[0-9]*.{{ ansible_architecture }}.rpm"
       when: ansible_os_family == "RedHat"
 
     - name: Find latest package for each host (on control machine)
@@ -33,7 +33,7 @@
 
     - name: Choose package
       set_fact:
-        package: "{{ (found_packages.files | sort(attribute='path') | last)['path'] | basename }}"
+        package: "{{ (found_packages.files | sort(attribute='mtime') | last)['path'] | basename }}"
 
     - name: Ensure package directory exists
       file:

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpscmd"
 	"github.com/jclark/satpulse/internal/pmccmd"
+	"github.com/jclark/satpulse/internal/sdpcmd"
 	"github.com/spf13/pflag"
 )
 
@@ -62,20 +64,24 @@ func main() {
 		exec = gpscmd.Cmd
 	case "pmc":
 		exec = pmccmd.Cmd
+	case "sdp":
+		exec = sdpcmd.Cmd
 	}
 	if exec != nil {
 		usage, err := exec(lg, progName, cmdName, cmdArgs)
 		if err != nil {
 			cmd.ErrPrintln(progName, err)
-		}
-		fmt.Fprint(os.Stderr, usage)
-		if err != nil {
-			if usage != "" {
+			// Check if error specifies its own exit code
+			var exitCoder cmd.ExitCoder
+			if errors.As(err, &exitCoder) {
+				exitCode = exitCoder.ExitCode()
+			} else if usage != "" {
 				exitCode = 2
 			} else {
 				exitCode = 1
 			}
 		}
+		fmt.Fprint(os.Stderr, usage)
 	} else {
 		cmd.ErrPrintln(progName, "unknown command: "+cmdName)
 		usage(progName, flags)
@@ -91,6 +97,7 @@ func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "Commands:")
 	fmt.Fprintln(os.Stderr, "  gps - configure a GPS device")
 	fmt.Fprintln(os.Stderr, "  pmc - send a PTP management message to ptp4l process")
+	fmt.Fprintln(os.Stderr, "  sdp - control software-defined pins on PTP hardware clocks")
 	fmt.Fprintln(os.Stderr, "Global options:")
 	flags.PrintDefaults()
 }

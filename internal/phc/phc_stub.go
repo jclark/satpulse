@@ -12,6 +12,7 @@ const (
 	PinFuncNone PinFunc = iota
 	PinFuncExtts
 	PinFuncPerout
+	PinFuncPhysync
 )
 
 // Clock represents a PTP Hardware Clock on non-Linux systems.
@@ -52,6 +53,10 @@ func (clk *Clock) PinSetFunc(pinIndex uint32, pinFunc PinFunc, chanIndex uint32)
 	panic(ErrNotSupported)
 }
 
+func (clk *Clock) PinGetFunc(pinIndex uint32) (*PinDesc, error) {
+	panic(ErrNotSupported)
+}
+
 func (clk *Clock) PinCount() int {
 	panic(ErrNotSupported)
 }
@@ -61,6 +66,10 @@ func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err er
 }
 
 func (clk *Clock) ExttsChanCount() int {
+	panic(ErrNotSupported)
+}
+
+func (clk *Clock) PeroutChanCount() int {
 	panic(ErrNotSupported)
 }
 

@@ -17,6 +17,9 @@ The *command* must be one of the following.
 **gps**
 : Configure and control the GPS receiver.
 
+**sdp**
+: Manage Software Defined Pins (SDPs) of PTP Hardware Clocks (PHCs)
+
 **pmc**
 : PTP management client
 
@@ -45,4 +48,4 @@ Show help for satpulsetool gps command:
 
 # SEE ALSO
 
-**satpulsed(8)**, **satpulsetool-gps(1)**
+**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-sdp(1)**
