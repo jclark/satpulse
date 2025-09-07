@@ -1,3 +1,7 @@
+---
+title: Building a system using a Raspberry Pi Compute Model 4 or 5
+---
+
 # CM4/CM5-based computer
 
 A computer based on the CM4 or CM5 includes
