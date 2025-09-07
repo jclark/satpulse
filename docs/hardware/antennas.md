@@ -1,3 +1,3 @@
 ---
-title: Antennas
+title: GNSS antennas
 ---
