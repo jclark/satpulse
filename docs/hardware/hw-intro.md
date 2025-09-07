@@ -22,6 +22,8 @@ This also covers GNSS disciplined oscillators.
 Your GNSS receiver or board will need an antenna: the [Antennas]({%link hardware/antennas.md %}) page provides information about GNSS antennas.
 It also deals with antenna splitters.
 
+The [PTM]({%link hardware/ptm.md %}) page explains Precision Time Measurement, a PCIe feature that enables precise synchronization between a PHC and the system clock. This is important when a server is acting as a NTP server as well as PTP server, and for clients. SatPulse can take advantage of PTM.
+
 The [Clients]({%link hardware/clients.md %}) pages provides information about hardware for PTP clients.
 
 The [Switches]({%link hardware/switches.md %}) page provides information about PTP-aware switches, which hugely improve how accurately a client can synchronize: the improvements from a PTP-aware switch are much greater than those from a better GNSS receiver.

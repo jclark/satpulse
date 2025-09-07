@@ -25,6 +25,8 @@ docs:
         url: "/hardware/gnss-receivers.html"
       - title: "GNSS antennas"
         url: "/hardware/antennas.html"
+      - title: "PTM"
+        url: "/hardware/ptm.html"
       - title: "PTP clients"
         url: "/hardware/clients.html"
       - title: "PTP switches"
