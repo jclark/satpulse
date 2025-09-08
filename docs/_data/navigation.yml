@@ -23,6 +23,8 @@ docs:
         url: "/hardware/gnss-boards.html"
       - title: "GNSS receivers"
         url: "/hardware/gnss-receivers.html"
+      - title: "GNSSDOs"
+        url: "/hardware/gnssdo.html"
       - title: "GNSS antennas"
         url: "/hardware/antennas.html"
       - title: "PTM"
