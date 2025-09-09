@@ -17,7 +17,7 @@ In both cases, you will need a GNSS board, receiver or disciplined oscillaor. I 
 - [GNSS modules]({%link hardware/gnss-modules.md %}) explains about the various kinds of GNSS module you can get; a module is the main component of a GNSS board or receiver, and determines most of its capabilities.
 - [GNSS boards]({%link hardware/gnss-boards.md %}) explains the key requirements for a GNSS boards or cards that will live inside the computer case and lists some specific suitable products. Carrier boards for the CM4/CM5 provide pins that make it easy to connect boards. This does not work so well with an PC using an Intel NIC. However, there is an M.2 card that works inside a PC.
 - [GNSS receivers]({%link hardware/gnss-receivers.md %}) explains the key requirements for GNSS receivers with their own enclosure and lists some specific suitable products, which use the modules described on the previous page. These work equally well with CM4/CM5 or Intel systems.
-- [GNSSDOs]({%link hardware/gnssdo.md %}) covers GNSS disciplined oscillators. I have only found one suitable model, and it works equally well with CM4/CM5 or Intel systems.
+- [GNSSDOs]({%link hardware/gnssdos.md %}) covers GNSS disciplined oscillators. I have only found one suitable model, and it works equally well with CM4/CM5 or Intel systems.
 
 Your GNSS receiver or board will need an antenna: the [Antennas]({%link hardware/antennas.md %}) page provides information about GNSS antennas.
 It also deals with antenna splitters.
