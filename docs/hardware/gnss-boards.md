@@ -1,3 +1,86 @@
 ---
 title: GNSS boards and cards
 ---
+
+This page discusses GNSS boards and cards that are designed to be mounted inside a computer case.
+
+The following points should be considered for all boards:
+
+ - What GNSS module does it use? The choice of module is discussed in the [GNSS modules page]({% link hardware/gnss-modules.md %}).
+ - Does it have a PPS output signal? It is no use for timing purposes without this.
+ - What are its dimensions? If it is too big, it can be tricky to fit in the case.
+ - What antenna connectors are there? It needs to have an antenna connector rather than a built-in antenna. The most common is a U.FL connector, also known as an IPEX connector. Other kinds are MMCX, SMA and SMB. Some boards have a soldered SMA female connector.
+ - Does it have a battery? A battery allows it to acquire a lock faster after a cold start.
+
+For GNSS boards that will be connected using the header pins on the Raspberry Pi CM4/CM5 IO board, the following points should be considered:
+
+ - What signal pins are there? At a minimum, there need to be 5 pins: VCC (supplying power to the GNSS board), GND, TX, RX, PPS. The TX/RX pins must be TTL 3.3V.
+ - What voltage does the VCC pin accept? Typically it is between 3.3-5V. If it accepts neither 3.3V nor 5V, it cannot be plugged in to the power pins on the IO board.
+ - What is the physical pin connector type?
+    * The most convenient is Dupont 2.54mm pins. This is the same kind of pin that the IO board uses, and allows connections to be made using Dupont female-female jumpers. It is better if the pins are horizontal (parallel to the board). With vertical pins, the combined height of a jumper and a pin can be too tall for the case.
+	* Some boards have 2.54mm pitch through holes, which means you need to solder on a Dupont header to use it.
+	* Some boards use various kinds of JST connector. These require either buying or creating a special cable with a matching JST connector on one end and a Dupont pins on the other. 
+ - What are the number and diameter of the mounting holes? For mounting in the Raspberry Pi IO board case, M2.5 mounting holes are most convenient, since they match the holes in the board. M3 mounting holes also work, since typically a M2.5 screw can be used to secure a board with a M3 hole. If the board is small enough that it has only one mounting hole, that makes things even easier.
+
+There are a number of standard form factors for modules, so often the same board is available with different modules.
+For boards on Taobao and AliExpress, the same board is often available from different vendors with different modules.
+Accordingly, the rest of this page is divided up by board types, with each board type having a 3-letter mnemonic code.
+
+* M2W - M.2 in a form compatible with sockets designed for M.2 wifi cards
+* CMS - Raspberry Pi Compute Module 4/5 sandwich board; designed to be sandwiched between the compute module and the carrier board
+* RCB - telecom industry standard format for timing boards for cellular base stations
+* SR1 - small board with 1 mounting hole, Dupont pins, U.FL and SMA antenna connectors
+
+## M2W board type
+
+Pin connector: M.2, Key A and Key E (USB and power pins only)  
+Dimensions: 22mm x 30mm  
+PPS output: U.FL  
+Antenna connector: U.FL  
+
+ArduSimple make a couple of cards in a M.2 form factor, compatible with Wifi M.2 slots:
+
+* ZED-F9P
+* ZED-X20P
+
+## CMS board type
+
+Pin connector: 2 x CM4/CM5 compatible 100-pin, on both sides  
+Antenna connector: U.FL  
+Dimensions: 55mm x 40mm (same as CM4/CM5)  
+Battery: no  
+
+They make versions using three different modules, in increasing order of price:
+
+* [Essential](https://store.timebeat.app/products/open-timecard-mini-essential) using MAX-F10S
+* [Precision timing lite](https://store.timebeat.app/products/open-timecard-mini-precision-timing-lite) using NEO-F10T
+* [Precision timing](https://store.timebeat.app/products/open-timecard-mini-precision-timing) using ZED-F9T
+
+
+## SR1 board types
+
+Mounting holes: 1 x M3  
+Pin connector: 5 x Dupont 2.54mm pins, horizontal  
+USB: no  
+Antenna connectors: U.FL and SMA   
+Dimensions: 17mm x 23mm (excluding connectors); 17mm x 40mm (including connectors)  
+Battery: yes  
+
+[Star River](http://sragps.com/) make the SR1723 range of boards, which are an ideal form factor for use with the Compute Module 4/5.
+Most models are available in their AliExpress store; all of them are available in the Taobao store.
+
+
+## RCB board type
+
+Dimensions: 67mm x 32mm  
+Mounting holes: 4 x M2.5  
+Mounting hole pitch: 60.5mm x 26mm  
+Pin connector: 2.00mm Dupont 8-pin (4x2)  
+Antenna connector: SMB  
+USB: no  
+Battery: no  
+
+I recommend two boards with this type:
+
+* u-blox RCB-F9T
+* Huawei boards using LEA-M8T
