@@ -6,10 +6,10 @@ This page discusses GNSS boards and cards that are designed to be mounted inside
 
 The following points should be considered for all boards:
 
- - What GNSS module does it use? The choice of module is discussed in the [GNSS modules page]({% link hardware/gnss-modules.md %}).
+ - What GNSS module does it use? The choice of module is discussed in the [GNSS modules]({% link hardware/gnss-modules.md %}) page.
  - Does it have a PPS output signal? It is no use for timing purposes without this.
  - What are its dimensions? If it is too big, it can be tricky to fit in the case.
- - What antenna connectors are there? It needs to have an antenna connector rather than a built-in antenna. The most common is a U.FL connector, also known as an IPEX connector. Other kinds are MMCX, SMA and SMB. Some boards have a soldered SMA female connector.
+ - What antenna connectors are there? It needs to have an antenna connector rather than a built-in antenna. The most common is a U.FL connector, also known as an IPEX connector. Other kinds are MMCX, SMA and SMB. Some boards have a soldered SMA female pigtail.
  - Does it have a battery? A battery allows it to acquire a lock faster after a cold start.
 
 For GNSS boards that will be connected using the header pins on the Raspberry Pi CM4/CM5 IO board, the following points should be considered:
@@ -38,10 +38,11 @@ Dimensions: 22mm x 30mm
 PPS output: U.FL  
 Antenna connector: U.FL  
 
-ArduSimple make a couple of cards in a M.2 form factor, compatible with Wifi M.2 slots:
+ArduSimple make cards in a M.2 form factor, compatible with M.2 slots intended for Wifi cards,
+with a coouple of different modules:
 
-* ZED-F9P
-* ZED-X20P
+* u-blox [ZED-F9P](https://www.ardusimple.com/product/simplertk2b-m-2/)
+* u-blox [ZED-X20P](https://www.ardusimple.com/product/m-2-card-with-u-blox-zed-x20p/)
 
 ## CMS board type
 
@@ -52,9 +53,9 @@ Battery: no
 
 They make versions using three different modules, in increasing order of price:
 
-* [Essential](https://store.timebeat.app/products/open-timecard-mini-essential) using MAX-F10S
-* [Precision timing lite](https://store.timebeat.app/products/open-timecard-mini-precision-timing-lite) using NEO-F10T
-* [Precision timing](https://store.timebeat.app/products/open-timecard-mini-precision-timing) using ZED-F9T
+* [Essential](https://store.timebeat.app/products/open-timecard-mini-essential) using u-blox MAX-F10S
+* [Precision timing lite](https://store.timebeat.app/products/open-timecard-mini-precision-timing-lite) using u-blox NEO-F10T
+* [Precision timing](https://store.timebeat.app/products/open-timecard-mini-precision-timing) using u-blox ZED-F9T
 
 
 ## SR1 board types
