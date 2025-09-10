@@ -1,7 +1,7 @@
 ---
 title: Building a system using an Intel Ethernet controller
 ---
-There are several Intel Ethernet controllers that support PPS input and have Linux drivers: i210, i225 and i226.
+There are several affordable Intel Ethernet controllers that support PPS input and have Linux drivers: i210, i225 and i226.
 The i226 has replaced the i225. These controllers are available in a number of different cards.
 
 The i210 supports 1Gbps, whereas the i225/i226 support 2.5Gbps.
