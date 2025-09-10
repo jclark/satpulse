@@ -24,7 +24,7 @@ docs:
       - title: "GNSS receivers"
         url: "/hardware/gnss-receivers.html"
       - title: "GNSSDOs"
-        url: "/hardware/gnssdo.html"
+        url: "/hardware/gnssdos.html"
       - title: "GNSS antennas"
         url: "/hardware/antennas.html"
       - title: "PTM"
