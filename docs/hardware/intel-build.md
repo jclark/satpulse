@@ -24,6 +24,8 @@ The key point is that the card needs to expose the SDPs provided by the controll
 
 ### I210-T1
 
+![Intel I210-T1 network card](/assets/images/i210-t1.jpg)
+
 The most commonly used network card with a PPS input is the Intel [I210-T1](https://www.intel.com/content/www/us/en/products/sku/68668/intel-ethernet-server-adapter-i210t1/specifications.html).
 Although it's a 10-year old product, it remains an excellent choice.
 
@@ -48,14 +50,23 @@ The i210-T1 comes with both full and half-height brackets.
 
 ### I226-T1
 
+![Intel I226-T1 with pin numbering](/assets/images/i226-t1.jpg)
+
 The [I226-T1](https://www.intel.com/content/www/us/en/products/sku/225771/intel-ethernet-network-adapter-i226t1/specifications.html) is Intel's card using the i226.
 
 Unlike the I210-T1, the I226-T1 does not come with a pin header for the SDPs.
 But it does have a header pad (through holes) onto which a pin header can easily be soldered.
-Orienting the card with the RJ45 connector on the left,
-the SDP header pad is the 3x2 set of through holes to the right of the pin header.
-The upper row of 3 holes are all GND.
-The bottom row is, from left to right, SDP0, SDP1, SDP2.
+
+The functions of the pins (as numbered in the above photo) are as follows:
+
+| Pin | Function |
+| --- | --- |
+| 1 | SDP0 |
+| 2 | GND |
+| 3 | SDP1 |
+| 4 | GND |
+| 5 | SDP2 |
+| 6 | GND |
 
 Timebeat sell a [modified version of the i226-T1](https://store.timebeat.app/products/intel-i225-t1-with-sdp-headers-and-a-ufl-breakout-board) with the headers soldered on
 and a breakout board that provides U.FL connectors for the three SDP pins and DIP switches.
