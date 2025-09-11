@@ -1,5 +1,14 @@
 ---
 title: Building a system using a Raspberry Pi Compute Model 4 or 5
+adapter_plate:
+  - url: /assets/images/um960-plate.jpg
+    image_path: /assets/images/um960-plate.jpg
+    alt: "UM960 with custom adapter plate"
+    title: "UM960 module mounted on custom acrylic adapter plate"
+  - url: /assets/images/adapter-plate.svg
+    image_path: /assets/images/adapter-plate.svg
+    alt: "Adapter plate design"
+    title: "Laser-cut adapter plate design (SVG)"
 mounting_holes:
   - url: /assets/images/cm5-sr1723-assembled.jpg
     image_path: /assets/images/cm5-sr1723-assembled.jpg
@@ -227,7 +236,7 @@ For example, if the board takes M2.5 screws: an M2.5 screw goes through the GPS 
 
 #### Custom adapter plate
 
-![UM960 with adapter plate](/assets/images/um960-plate.jpg)
+{% include gallery id="adapter_plate" %}
 
 It is quite easy to get a custom laser-cut acrylic plate made.
 (To be expanded.)
