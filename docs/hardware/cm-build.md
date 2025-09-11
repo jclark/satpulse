@@ -1,5 +1,22 @@
 ---
 title: Building a system using a Raspberry Pi Compute Model 4 or 5
+mounting_holes:
+  - url: /assets/images/cm5-sr1723-assembled.jpg
+    image_path: /assets/images/cm5-sr1723-assembled.jpg
+    alt: "CM5 with SR1723 board assembled"
+    title: "CM5 IO board with SR1723 GNSS board mounted using single standoff"
+  - url: /assets/images/cm5-sr1723-parts.jpg
+    image_path: /assets/images/cm5-sr1723-parts.jpg
+    alt: "CM5 with SR1723 parts"
+    title: "Parts for mounting SR1723 board to CM5 IO board"
+  - url: /assets/images/cm5-quescan-4hole.jpg
+    image_path: /assets/images/cm5-quescan-4hole.jpg
+    alt: "CM5 with Quescan 4-hole board"
+    title: "Quescan board with 4 mounting holes on CM5"
+  - url: /assets/images/be-357g-cm4.jpg
+    image_path: /assets/images/be-357g-cm4.jpg
+    alt: "BE-357G board with CM4"
+    title: "BE-357G GNSS board mounted on CM4 IO board"
 ---
 
 ## Building the computer
@@ -183,6 +200,8 @@ The approaches that can be used depend on the size of the GPS board and the numb
 
 #### Using mounting holes in IO board
 
+{% include gallery id="mounting_holes" %}
+
 The IO board case uses M2.5 threaded standoffs. The IO board is attached to these using M2.5 screws.
 
 If the holes in the GPS board fit M2.5 screws, then things become easier.
@@ -196,6 +215,8 @@ Otherwise, you can attach a nylon 10mm female/female standoff to one or more of 
 
 #### Magnets
 
+![RCB-F9T board with magnets on CM5](/assets/images/rcb-f9t-cm5.jpg)
+
 The idea here is to attach magnetic stands to the holes in the GPS board, and then use these to attach the board magnetically to the inside top of the metal case.
 
 There are magnetic stands available with posts threaded to accept M3 screws. So if the mounting holes in the GPS board accept M3 screws,
@@ -204,9 +225,11 @@ you can screw the board directly to these stands.
 If the holes in the board are too small for M3 screws, then you can instead use magnets that have countersunk holes designed to accept screws.
 For example, if the board takes M2.5 screws: an M2.5 screw goes through the GPS board into one end of an M2.5 female-female standoff, and an M2.5 countersunk screw goes through the magnet into the other end of the standoff. The countersunk screw doesn't protrude from the magnet, allowing the magnet to sit flat against the case.
 
-#### Custom adapter board
+#### Custom adapter plate
 
-It is quite easy to get a custom laser-cut acrylic board made.
+![UM960 with adapter plate](/assets/images/um960-plate.jpg)
+
+It is quite easy to get a custom laser-cut acrylic plate made.
 (To be expanded.)
 
 ## Using a sandwich board
