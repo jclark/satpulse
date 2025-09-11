@@ -1,5 +1,48 @@
 ---
 title: GNSS boards and cards
+types:
+  - url: /assets/images/m2-f9p.jpg
+    image_path: /assets/images/m2-f9p.jpg
+    alt: "M2W board type"
+    title: "M2W board type"
+  - url: /assets/images/timecard-essential.webp
+    image_path: /assets/images/timecard-essential.webp
+    alt: "CMS board type"
+    title: "CMS board type"
+  - url: /assets/images/lea-m8t.jpeg
+    image_path: /assets/images/lea-m8t.jpeg
+    alt: "RCB board type"
+    title: "RCB board type"
+  - url: /assets/images/sr1723-u10-top.jpeg
+    image_path: /assets/images/sr1723-u10-top.jpeg
+    alt: "SR1 board type"
+    title: "SR1 board type"
+sr1723:
+  - url: /assets/images/sr1723-u10-top.jpeg
+    image_path: /assets/images/sr1723-u10-top.jpeg
+    alt: "Star River SR1723U10 top view"
+    title: "SR1723U10 with u-blox M10050-KB chip"
+  - url: /assets/images/sr1723-bottom.jpeg
+    image_path: /assets/images/sr1723-bottom.jpeg
+    alt: "Star River SR1723 bottom view"
+    title: "SR1723 bottom view showing horizontal pins"
+  - url: /assets/images/sr1723-u8-top.jpg
+    image_path: /assets/images/sr1723-u8-top.jpg
+    alt: "Star River SR1723U8 top view"
+    title: "SR1723U8 with 8th gen u-blox chip"
+rcb:
+  - url: /assets/images/lea-m8t.jpeg
+    image_path: /assets/images/lea-m8t.jpeg
+    alt: "Huawei LEA-M8T timing board"
+    title: "Huawei board with u-blox LEA-M8T"
+  - url: /assets/images/lea-5t.jpeg
+    image_path: /assets/images/lea-5t.jpeg
+    alt: "LEA-5T timing board"
+    title: "Board with u-blox LEA-5T"
+  - url: /assets/images/rcb-connector.jpg
+    image_path: /assets/images/rcb-connector.jpg
+    alt: "RCB connector pinout"
+    title: "RCB 2mm 8-pin connector"
 m2:
   - url: /assets/images/m2-f9p.jpg
     image_path: /assets/images/m2-f9p.jpg
@@ -48,6 +91,8 @@ There are a number of standard form factors for modules, so often the same board
 For boards on Taobao and AliExpress, the same board is often available from different vendors with different modules.
 Accordingly, the rest of this page is divided up by board types, with each board type having a 3-letter mnemonic code.
 
+{% include gallery id="types" %}
+
 * M2W - M.2 in a form compatible with sockets designed for M.2 wifi cards
 * CMS - Raspberry Pi Compute Module 4/5 sandwich board; designed to be sandwiched between the compute module and the carrier board
 * RCB - telecom industry standard format for timing boards for cellular base stations
@@ -86,6 +131,8 @@ They make versions using three different modules, in increasing order of price:
 
 ## SR1 board types
 
+{% include gallery id="sr1723" %}
+
 Mounting holes: 1 x M3  
 Pin connector: 5 x Dupont 2.54mm pins, horizontal  
 USB: no  
@@ -104,6 +151,8 @@ The U7 model is $2 cheaper, but I would recommend spending the extra $2.
 They also have models using the Zhongke Micro chip and the MTK3333, which I wouldn't recommend.
 
 ## RCB board type
+
+{% include gallery id="rcb" %}
 
 Dimensions: 67mm x 32mm  
 Mounting holes: 4 x M3  
@@ -125,7 +174,7 @@ A board in this form factor needs two cables to connect it:
 
 The pins need to be connected as follows:
 
-| GPS pin no | u-blox pin name | IO header | header pin no | header pin name | description |
+| RCB pin no | u-blox pin name | IO header | header pin no | header pin name | description |
 | --- | --- | --- | --- | --- | --- |
 | 1 | VCC_ANT | HAT | 2 | 5V | Antenna power |
 | 2 | VCC | HAT | 1 | 3V3 | Operating power for GPS |
