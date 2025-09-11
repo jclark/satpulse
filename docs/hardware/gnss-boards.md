@@ -106,7 +106,7 @@ They also have models using the Zhongke Micro chip and the MTK3333, which I woul
 ## RCB board type
 
 Dimensions: 67mm x 32mm  
-Mounting holes: 4 x M2.5  
+Mounting holes: 4 x M3  
 Mounting hole pitch: 60.5mm x 26mm  
 Pin connector: 2.00mm Dupont 8-pin (4x2)  
 Antenna connector: SMB male jack  
