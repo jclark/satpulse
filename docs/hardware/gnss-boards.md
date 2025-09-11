@@ -1,5 +1,27 @@
 ---
 title: GNSS boards and cards
+m2:
+  - url: /assets/images/m2-f9p.jpg
+    image_path: /assets/images/m2-f9p.jpg
+    alt: "ArduSimple M.2 card with ZED-F9P"
+    title: "ArduSimple simpleRTK2B M.2 with u-blox ZED-F9P"
+  - url: /assets/images/m2-x20p.jpg
+    image_path: /assets/images/m2-x20p.jpg
+    alt: "ArduSimple M.2 card with ZED-X20P"
+    title: "ArduSimple M.2 card with u-blox ZED-X20P"
+timecard:
+  - url: /assets/images/timecard-essential.webp
+    image_path: /assets/images/timecard-essential.webp
+    alt: "Timebeat Essential board"
+    title: "Timebeat Essential board with u-blox MAX-F10S"
+  - url: /assets/images/timecard-mini-cm5-top.jpg
+    image_path: /assets/images/timecard-mini-cm5-top.jpg
+    alt: "Timebeat sandwich board top view"
+    title: "Sandwich board between CM5 and carrier board - top view"
+  - url: /assets/images/timecard-mini-cm5-side.jpg
+    image_path: /assets/images/timecard-mini-cm5-side.jpg
+    alt: "Timebeat sandwich board side view"
+    title: "Sandwich board between CM5 and carrier board - side view"
 ---
 
 This page discusses GNSS boards and cards that are designed to be mounted inside a computer case.
@@ -33,6 +55,8 @@ Accordingly, the rest of this page is divided up by board types, with each board
 
 ## M2W board type
 
+{% include gallery id="m2" %}
+
 Pin connector: M.2, Key A and Key E (USB and power pins only)  
 Dimensions: 22mm x 30mm  
 PPS output: U.FL  
@@ -45,6 +69,8 @@ with a coouple of different modules:
 * u-blox [ZED-X20P](https://www.ardusimple.com/product/m-2-card-with-u-blox-zed-x20p/)
 
 ## CMS board type
+
+{% include gallery id="timecard" %}
 
 Pin connector: 2 x CM4/CM5 compatible 100-pin, on both sides  
 Antenna connector: U.FL  

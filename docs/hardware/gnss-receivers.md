@@ -1,5 +1,18 @@
 ---
 title: GNSS receivers
+evk_gallery:
+  - url: /assets/images/evk-f10t-top.jpg
+    image_path: /assets/images/evk-f10t-top.jpg
+    alt: "u-blox EVK-F10T top view"
+    title: "EVK-F10T top view"
+  - url: /assets/images/evk-f10t-front.jpg
+    image_path: /assets/images/evk-f10t-front.jpg
+    alt: "u-blox EVK-F10T front view"
+    title: "EVK-F10T front view"
+  - url: /assets/images/evk-f10t-rear.jpg
+    image_path: /assets/images/evk-f10t-rear.jpg
+    alt: "u-blox EVK-F10T rear view"
+    title: "EVK-F10T rear connectors"
 ---
 
 This page contains recommendations for GNSS boards that have their own enclosure, separate from the host PC.
@@ -13,7 +26,11 @@ With an RS-232 connection, there will be a separate DC power input.
 
 All the models listed here use u-blox GNSS modules.
 
+![Various GNSS receivers](/assets/images/gnss-receiver-compare.jpg)
+
 ## BG7TBL TS-1
+
+![BG7TBL TS-1 GNSS receiver](/assets/images/ts1-front.jpg)
 
 This has
 
@@ -26,7 +43,9 @@ It is CNY398 direct from BG7TBL's Taobao shop. It is also available from AliExpr
 
 ## gnss.store USB dongles
 
-[gnss.store](https://gnss.store/) sell USB-A dongles with SMA female antenna input and SMA female PPS output.
+![gnss.store USB dongle](/assets/images/f9t-dongle.jpg)
+
+[gnss.store](https://gnss.store/) sell USB-A dongles with SMA female antenna input (on the left) and SMA female PPS output (on the right).
 They are available with a range of different u-blox modules:
 
 * [ZED-F9T-00B](https://gnss.store/zed-f9t-timing-gnss-modules/108-elt0095.html), the original L1/L2 version
@@ -42,6 +61,8 @@ The dongles are quite big and can obstruct adjacent ports. I usually use a short
 Overall, I find this a very convenient form factor.
 
 ## u-blox Evaluation Kits
+
+{% include gallery id="evk_gallery" %}
 
 u-blox make evaluation kits for most of their modules, which are available through distributors like DigiKey and Mouser.
 
