@@ -67,9 +67,15 @@ Antenna connectors: U.FL and SMA
 Dimensions: 17mm x 23mm (excluding connectors); 17mm x 40mm (including connectors)  
 Battery: yes  
 
-[Star River](http://sragps.com/) make the SR1723 range of boards, which are an ideal form factor for use with the Compute Module 4/5.
+[Star River](http://sragps.com/) make the SR1723 range of boards, which are very inexpensive and an ideal form factor for use with the Compute Module 4/5.
 Most models are available in their AliExpress store; all of them are available in the Taobao store.
 
+The particular model I would recommend is the SR1723U10 which uses a module with the u-blox M10050-KB chip.
+On [AliExpress](https://aliexpress.com/item/1005006634227170.html), it's about $7. Note that SR1723U10 is the board name; the module is the SR1612U10.
+
+They also have U7, U8 and U9 models using 7th, 8th and 9th generation u-blox chips.
+The U7 model is $2 cheaper, but I would recommend spending the extra $2.
+They also have models using the Zhongke Micro chip and the MTK3333, which I wouldn't recommend.
 
 ## RCB board type
 
@@ -77,11 +83,34 @@ Dimensions: 67mm x 32mm
 Mounting holes: 4 x M2.5  
 Mounting hole pitch: 60.5mm x 26mm  
 Pin connector: 2.00mm Dupont 8-pin (4x2)  
-Antenna connector: SMB  
+Antenna connector: SMB male jack  
 USB: no  
 Battery: no  
 
 I recommend two boards with this type:
 
-* u-blox RCB-F9T
-* Huawei boards using LEA-M8T
+* u-blox [RCB-F9T](https://www.u-blox.com/en/product/rcb-f9t-timing-board); this is available from DigiKey or Mouser; current version ias of September 2025 is the L1/L5 RCB-F9T-1, but there should be a L1/L2/L5 RCB-F9T-2 soon
+* Huawei boards using LEA-M8T on [eBay](https://www.ebay.com/itm/134243322249); I have bought several from [xihu88](https://www.ebay.com/str/xihu888) store
+
+A board in this form factor needs two cables to connect it:
+
+* a cable that plugs into the antenna connector on the board and attaches to the antenna hold in the case: this needs a SMB female (plug) to SMA female bulkhead pigtail; ideal length is about 15cm
+* a cable to connect from the pins on the board to the pins on the IO board: you can buy a 20cm cable consisting of a strip of 40 wires, with one end having 2.54mm Dupont 1-pin female connectors and the other end having 2.0mm 2-pin female Dupont connectors [AliExpress](https://www.aliexpress.com/item/32872192805.html), [AdaFruit](https://www.adafruit.com/product/1919), [eBay](https://www.ebay.com/itm/253963096627)
+
+The pins need to be connected as follows:
+
+| GPS pin no | u-blox pin name | IO header | header pin no | header pin name | description |
+| --- | --- | --- | --- | --- | --- |
+| 1 | VCC_ANT | HAT | 2 | 5V | Antenna power |
+| 2 | VCC | HAT | 1 | 3V3 | Operating power for GPS |
+| 3 | TXD | HAT | 10 | UART0_RXD | GNSS to CM4/5 |
+| 4 | RST | HAT |  | | Reset - not connected |
+| 5 | RXD | HAT | 8 | UART0_TXD | CM4/5 to GNSS |
+| 6 | TP1 | J2 | 9 | SYNC_OUT | Time pulse |
+| 7 | TP2 | HAT | 12 | GPIO18 | Time pulse 2 - only on RCB-F9T |
+| 8 | GND | HAT | 6 or 14 | GND | Ground |
+
+If you orient the board so that SMB connector is on the left, then pin 1 is the pin at the bottom right.
+
+Pin 1 supplies power to the antenna; the precise range of allowed voltages depends on the board. All boards appear to accept a range of 3.3-5V.
+
