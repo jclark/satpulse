@@ -9,21 +9,21 @@ types:
     image_path: /assets/images/timecard-essential.webp
     alt: "CMS board type"
     title: "CMS board type"
-  - url: /assets/images/lea-m8t.jpeg
-    image_path: /assets/images/lea-m8t.jpeg
+  - url: /assets/images/lea-m8t.jpg
+    image_path: /assets/images/lea-m8t.jpg
     alt: "RCB board type"
     title: "RCB board type"
-  - url: /assets/images/sr1723-u10-top.jpeg
-    image_path: /assets/images/sr1723-u10-top.jpeg
+  - url: /assets/images/sr1723-u10-top.jpg
+    image_path: /assets/images/sr1723-u10-top.jpg
     alt: "SR1 board type"
     title: "SR1 board type"
 sr1723:
-  - url: /assets/images/sr1723-u10-top.jpeg
-    image_path: /assets/images/sr1723-u10-top.jpeg
+  - url: /assets/images/sr1723-u10-top.jpg
+    image_path: /assets/images/sr1723-u10-top.jpg
     alt: "Star River SR1723U10 top view"
     title: "SR1723U10 with u-blox M10050-KB chip"
-  - url: /assets/images/sr1723-bottom.jpeg
-    image_path: /assets/images/sr1723-bottom.jpeg
+  - url: /assets/images/sr1723-bottom.jpg
+    image_path: /assets/images/sr1723-bottom.jpg
     alt: "Star River SR1723 bottom view"
     title: "SR1723 bottom view showing horizontal pins"
   - url: /assets/images/sr1723-u8-top.jpg
@@ -31,12 +31,12 @@ sr1723:
     alt: "Star River SR1723U8 top view"
     title: "SR1723U8 with 8th gen u-blox chip"
 rcb:
-  - url: /assets/images/lea-m8t.jpeg
-    image_path: /assets/images/lea-m8t.jpeg
+  - url: /assets/images/lea-m8t.jpg
+    image_path: /assets/images/lea-m8t.jpg
     alt: "Huawei LEA-M8T timing board"
     title: "Huawei board with u-blox LEA-M8T"
-  - url: /assets/images/lea-5t.jpeg
-    image_path: /assets/images/lea-5t.jpeg
+  - url: /assets/images/lea-5t.jpg
+    image_path: /assets/images/lea-5t.jpg
     alt: "LEA-5T timing board"
     title: "Board with u-blox LEA-5T"
   - url: /assets/images/rcb-connector.jpg
