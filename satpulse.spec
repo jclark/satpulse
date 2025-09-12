@@ -24,7 +24,6 @@ install -D -m 644 configs/satpulse@.service %{buildroot}/usr/lib/systemd/system/
 install -D -m 644 configs/chrony.conf %{buildroot}/usr/share/doc/satpulse/chrony.conf
 install -D -m 644 configs/config-schema.json %{buildroot}/usr/share/doc/satpulse/config-schema.json
 install -D -m 644 docs/config.md %{buildroot}/usr/share/doc/satpulse/config.md
-install -D -m 644 docs/quickstart.md %{buildroot}/usr/share/doc/satpulse/quickstart.md
 install -D -m 644 LICENSE %{buildroot}/usr/share/doc/satpulse/copyright
 install -D -m 644 selinux/satpulse.pp.bz2 %{buildroot}/usr/share/selinux/packages/%{selinuxtype}/satpulse.pp.bz2
 install -D -m 644 out/satpulsetool.1.gz %{buildroot}/usr/share/man/man1/satpulsetool.1.gz
@@ -48,7 +47,6 @@ fi
 /usr/share/doc/satpulse/chrony.conf
 /usr/share/doc/satpulse/config-schema.json
 /usr/share/doc/satpulse/config.md
-/usr/share/doc/satpulse/quickstart.md
 /usr/share/doc/satpulse/copyright
 /usr/share/selinux/packages/%{selinuxtype}/satpulse.pp.bz2
 /usr/share/man/man1/satpulsetool.1.gz
