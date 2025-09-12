@@ -205,7 +205,9 @@ a 3.3V pin on the IO board. The pin for antenna power should be connected to a 5
 ### Mounting
 
 A bit of ingenuity and improvisation is needed to mount the GPS board in the case.
-The approaches that can be used depend on the size of the GPS board and the number and size of its holes.
+The approaches that can be used depend on the size of the GPS board and the number and size of its mounting holes.
+The first two approaches are cheap and easy, but don't work if the board has holes that are M2 or smaller.
+The third approach, with an adapter plate, takes a bit more effort, but can work with all sizes of mounting holes.
 
 #### Using mounting holes in IO board
 
@@ -234,12 +236,26 @@ you can screw the board directly to these stands.
 If the holes in the board are too small for M3 screws, then you can instead use magnets that have countersunk holes designed to accept screws.
 For example, if the board takes M2.5 screws: an M2.5 screw goes through the GPS board into one end of an M2.5 female-female standoff, and an M2.5 countersunk screw goes through the magnet into the other end of the standoff. The countersunk screw doesn't protrude from the magnet, allowing the magnet to sit flat against the case.
 
-#### Custom adapter plate
+#### Acrylic adapter plate
 
 {% include gallery id="adapter_plate" %}
 
-It is quite easy to get a custom laser-cut acrylic plate made.
-(To be expanded.)
+The concept here is to get laser-cut acrylic plate custom made.
+The IO board has holes in it that fit standard Pi HAT dimensions.
+The adapter plate has a set of 4 outer M2.5 holes that matches with these IO board holes,
+plus a cutout to provide access to the 40-pin header.
+It then has a set of 4 inner holes to fit the GNSS board.
+The plate is attached to the IO board with 10mm standoffs.
+The GNSS board is attached to the adapter plate using short standoffs or washers,
+just tall enough so the underside of the GNSS board does not touch the adapter plate.
+
+It is surprisingly inexpensive to get a custom laser-cut acrylic plate made
+(at least where I live). I got the above plate made for about USD6.
+The laser cutting service were able to work with an SVG produced using Inkscape;
+you can modify the one above to fit your board.
+You need the precise mounting hole pitch (center to center distance) of the mounting holes.
+The hole size needs to be 0.2mm bigger than the screw size (e.g. 2.7mm for M2.5).
+I specified a thickness of 2mm.
 
 ## Using a sandwich board
 
