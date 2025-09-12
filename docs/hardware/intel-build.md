@@ -1,5 +1,14 @@
 ---
 title: Building a system using an Intel Ethernet controller
+gnss_board:
+  - url: /assets/images/pc-usb-ttl-i210-open.jpg
+    image_path: /assets/images/pc-usb-ttl-i210-open.jpg
+    alt: "GNSS board with USB-TTL converter connected to i210"
+    title: "GNSS board connected to i210 NIC and USB-TTL converter"
+  - url: /assets/images/pc-usb-ttl-closed.jpg
+    image_path: /assets/images/pc-usb-ttl-closed.jpg
+    alt: "Complete assembled GNSS board setup"
+    title: "Assembled GNSS board attached to PC case"
 ---
 There are several affordable Intel Ethernet controllers that support PPS input and have Linux drivers: i210, i225 and i226.
 The i226 has replaced the i225. These controllers are available in a number of different cards.
@@ -85,7 +94,10 @@ which are connected to SDP0 and SDP1.
 
 It also has a TCXO, which should improve the stability of the PHC.
 
-### Connecting an external GNSS receiver to a PC
+### Connecting a GNSS receiver
+
+This section deals with connecting an external GNSS receiver with its own enclosure.
+It also applies to GNSSDOs.
 
 #### PPS connection
 
@@ -162,27 +174,27 @@ These are connected as follows:
 - one of the SMA to U.FL pigtails goes from one of the holes on the PCI bracket to the antenna input on the M.2 card
 - the remaining two SMA to U.FL pigtails go from the remaining two holes on the PCI bracket to the remaining two U.FL connectors on the breakout board.
 
-### Connecting a GNSS board to a PC
+### Connecting a GNSS board
 
-This is the cheapest option. It combines 
+{% include gallery id="gnss_board" %}
 
-- a GPS module, with the following properties
-   - very cheap
-   - very small
-   - not a fake
-   - no case
-   - TTL-level pins
-   - 0.1" (2.54mm) pins compatible with Dupont connectors
-   - PPS pin
-   - SMA female antenna connector
-   - default speed of 9600 baud (ts2phc in LinuxPTP 3.x only supports 9600 baud)
-- a USB to TTL converter
+It is also possible to connect a GNSS board to a PC.
+In this case, the board will live outside the PC, which means it is not very elegant or robust,
+but it does work.
 
-Suitable boards are available very cheaply, so this is the cheapest option.
+For this, you should choose a GNSS board with
+* M3 mounting holes
+* Dupont pin connectors
+* SMA antenna connector (not essential but convenient)
+
+Suitable boards are available very cheaply, so this is a cheaper option than
+using a GNSS receiver.
+
+This is combined with a USB-to-TTL converter that also has Dupont pins.
 
 These need to be wired up as follows:
 
-| Color | GPS pin | USB to TTL pin | i210 pin  |
+| Color | GNSS pin | USB to TTL pin | NIC pin  |
 | --- | --- | --- | --- |
 | black | GND | GND | - |
 | red | VCC | VCC | - |
@@ -191,22 +203,15 @@ These need to be wired up as follows:
 | yellow | PPS | - | SDP0 | 
 | grey | - | GND | GND |
 
-![image](https://github.com/jclark/pc-ptp-ntp-guide/assets/499966/57ca2181-8ed0-42aa-9729-a9ba714faef8)
-
-In the photo, I'm using
-
-* [Waveshare USB to TTL converter with CH343G](https://www.waveshare.com/product/usb-to-ttl-b.htm) (about $10 w/ shipping from AliExpress); there's also a [version using the FT232RL](https://www.waveshare.com/usb-to-ttl.htm)
-* [WAVGAT ATGM332D 5N1 GPS module](https://www.aliexpress.com/item/1005004402839841.html) (about $10 w/ shipping); you can get a GPS antenna at the same time for another $4
-
-Note that two GND connections are needed to the USB-to-TTL converter, and the Waveshare converter has two GND pins, which makes it the convenient choice here.
-
+Note that two GND connections are needed to the USB-to-TTL converter.
+Most converters only have one pin, which would require improvisation.
+But [Waveshare](https://www.waveshare.com/) make a converter with two GND pins;
+there are two versions, one with the [FT232RL](https://www.waveshare.com/usb-to-ttl.htm)
+and one with the [CH343G](https://www.waveshare.com/product/usb-to-ttl-b.htm).
+You can get these from AliExpress for about $10 or directly from Waveshare (but shipping is more expensive).
 The Waveshare converter comes with a cable with Dupont connectors, but it is likely to be too short. I'm using some separate Dupont female-female jumpers to wire things up.
 
-This shows the rear when it's fully assembled. The GPS antenna is attached directly to the SMA connector on the module.
-I've used a [M3 female magnetic screw](https://www.aliexpress.com/item/1005005091559659.html) to attach the module to the backplate.
-This setup is rather vulnerable to the antenna cable being yanked: I recommend clamping the antenna cable to the table.
-
-![image](https://github.com/jclark/pc-ptp-ntp-guide/assets/499966/c0b39851-f717-4587-b162-61d32517f4ba)
+To mount the board securely use [M3 female magnetic screws](https://www.aliexpress.com/item/1005005091559659.html) to attach the module to the backplate or to the case (if it's steel rather than aluminium). The GPS antenna is attached directly to the SMA connector on the module. This setup is rather vulnerable to the antenna cable being yanked: I recommend clamping the antenna cable to the table.
 
 ### Building a small form factor PC
 
