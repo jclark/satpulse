@@ -1,10 +1,7 @@
 ---
-title: PTP server setup
+title: Setup ptp4l as a PTP server
 ---
 
-## Install and configure ptp4l as a PTP server
-
-<!-- From quickstart.md lines 169-206 -->
 Install the linuxptp package:
    * On Debian: `sudo apt install linuxptp`
    * On Fedora: `sudo dnf install linuxptp`
@@ -40,4 +37,3 @@ Then start and enable the ptp4l service:
 
 ```
 sudo systemctl enable --now ptp4l
-```
