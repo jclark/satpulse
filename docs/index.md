@@ -13,6 +13,6 @@ There are only a few suitable ethernet controllers with a PPS input pin availabl
 
 SatPulse does not by itself provide a complete time server: rather it is designed to combine with the PTP (Precision Time Protocol) server provided by the [LinuxPTP](https://linuxptp.nwtime.org/) project, which is called ptp4l. It can also connect to the NTP server provided by the [chrony](https://chrony-project.org/) project. This enables a time server that supports both NTP and PTP.
 
-Once you have the necessary hardware see the [Setup section]({%link setup/index.md %}) of the documentation to get started.
+Once you have the necessary hardware see the [Setup guide]({%link setup/index.md %}) to get started.
 
 

@@ -1,52 +1,24 @@
 ---
-title: Setup introduction
+title: Setup guide
 ---
 
-This section provides step-by-step guidance for installing and configuring SatPulse to create a precision time server.
+This section describes how to set up all the software needed for a precision time server using SatPulse.
 
-## Stage 1: Install OS
+For a complete PTP/NTP time server on Linux, follow these steps.
 
-**Goal:** Get to the point where OS boots and you can login with SSH
-
-This stage is not described for Intel PCs (assumed already running Linux). For Raspberry Pi, choose one:
-
-* [Raspberry Pi OS installation]({% link setup/rpi-os.md %})
-* [Fedora on Raspberry Pi]({% link setup/fedora-rpi.md %})
-
-Network setup (optional but recommended):
-
-* [Network configuration]({% link setup/network.md %}) - Set up static IP address
-
-## Stage 2: Install SatPulse
-
-**Goal:** SatPulse installed; satpulsetool can run
-
-* [Installing SatPulse]({% link setup/satpulse-install.md %})
-
-## Stage 3: Identify and verify hardware
-
-**Goal:** Identify hardware devices needed for configuration, verify basic functionality
-
-Two substages (can be done in either order):
-
-* [Serial connection setup]({% link setup/gps-serial.md %}) - Correct serial device and baud found; GNSS confirmed via satpulsetool gps
-  * [Raspberry Pi serial specifics]({% link setup/rpi-serial.md %}) - Reference for Pi UART complexities
-* [PTP hardware clock]({% link setup/phc.md %}) - PPS network interface and pin identified; pulses confirmed via satpulsetool sdp
-
-## Stage 4: Configure SatPulse
-
-**Goal:** Edit satpulse.toml correctly; service enabled and running
-
-* [SatPulse configuration guide]({% link setup/satpulse-config.md %})
-
-## Stage 5: Get system clock synced and NTP running
-
-**Goal:** Chrony installed/configured; system clock synced with PHC; NTP client/server working
-
-* [Chrony setup]({% link setup/chrony.md %})
-
-## Stage 6: Get PTP running
-
-**Goal:** PTP server installed/configured; time distributed on the network
-
-* [PTP server setup]({% link setup/ptp4l.md %})
+1. Install Linux. The goal of this stage is to get Linux installed and set up to the point where you can login with SSH.
+   For Raspberry Pi, I recommend [installing Raspberry Pi OS]({% link setup/rpi-os.md %}).
+   It is also possible to use Fedora. I wrote a guide for [installing Fedora 41]({% link setup/fedora-rpi.md %}).
+   In either case you probably want to [set a static IP address]({% link setup/network.md %}).
+2. [Install SatPulse]({% link setup/satpulse-install.md %}).
+   After this, you can use [satpulsetool]({%link man/satpulsetool.1.md%}) without any additional configuration.
+3. Identify the devices connected to the GPS and verify that data is being received. This can most easily be done with satpulsetool.
+   There are two devices involved:
+   * a [serial]({% link setup/gps-serial.md %}) device; configuration also needs to know the baud-rate;
+   * a [network interface with PTP hardware clock]({% link setup/phc.md %}); configuration also needs to know what pin on the ethernet card is connected to the GPS PPS output.
+4. [Configure SatPulse]({% link setup/satpulse-config.md %}. This will install a service that runs the satpulsed daemon, which will synchronize the PHC with the GPS.
+5. [Setup chrony]({% link setup/chrony.md %}). This:
+   * synchronizes the system clock to the PHC;
+   * runs an NTP client; this provides an important check that the PHC time is correct; and
+   * runs an NTP server, if desired.
+6. [Setup a PTP server]({% link setup/ptp4l.md %}). This uses the ptp4l daemon, which is part of LinuxPTP.
