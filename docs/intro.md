@@ -16,7 +16,7 @@ few of those provide a suitable input pin, and even fewer of those are inexpensi
 since only Linux has [APIs](https://docs.kernel.org/driver-api/ptp.html) that provide the necessary access
 to the ethernet controller's PTP support. The ethernet controller must also have Linux drivers that support these APIs. 
 The main requirement for the GPS receiver is that it provide a PPS output signal that is electrically compatible with the PPS
-input pin on the ethernet controller. See the [Hardware]({%link hardware/hw-intro.md %}) section for more details.
+input pin on the ethernet controller. See the [Hardware]({%link hardware/index.md %}) section for more details.
 In a typical NTP setup, the PPS output of the GPS receiver is connected to either a serial port or a GPIO pin; SatPulse does
 not support this, since it cannot achieve the precision that SatPulse is intended to enable.
 
