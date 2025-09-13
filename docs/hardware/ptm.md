@@ -38,3 +38,5 @@ The only widely available NICs with support for PTM are the Intel i225/i226, whi
 support for PTM on the i225-V, which means that PTM works on the i225-LM, i226-V and i226-LM controllers. The i225-V is much more common than the more expensive i225-LM. The i225-T1 PCIe card uses the i225-LM controller.
 
 It is not straightforward to predict whether a motherboard has the necessary support. I have tried a variety of systems, and the rule that covers the systems I've tried is that if the motherboard uses an 11th gen or newer chipset, it is likely to work.  For motherboards with separate CPUs, I found the B660 and Z690 worked, but the Z490 didn't. (The Z490 had some PTM support but the bridge for the x16 slot didn't: I was using that slot since it was a ITX system.) For mini PCs with soldered on CPUs, I found that Jasper Lake (N5095/N6000) and Alder Lake-N (N100) work, but Gemini Lake (J4125) doesn't.
+
+The Open Compute Project maintains a [PTM Readiness](https://www.opencompute.org/wiki/PTM_Readiness) page with list of various hardware products and their status with respect to PTM support.

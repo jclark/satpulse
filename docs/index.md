@@ -9,7 +9,7 @@ SatPulse is designed to work with PTP (Precision Time Protocol) and requires a d
 The precision comes from taking advantage of the hardware support for PTP in the ethernet controllers on both the server and the client.
 For more details, please read the [Introduction]({% link intro.md %}).
 
-There are only a few suitable ethernet controllers with a PPS input pin available at low cost. One notable example is the ethernet controller included in the Raspberry Pi Compute Module 4 and 5, when combined with a IO board that exposes the SYNC_OUT pin. Note that the Raspberry Pi 4 and 5 do not have this capability. For more on supported hardware, please see the [Hardware]({%link hardware/hw-intro.md%}) section. It is possible to buy all the necessary hardware for less than $150.
+There are only a few suitable ethernet controllers with a PPS input pin available at low cost. One notable example is the ethernet controller included in the Raspberry Pi Compute Module 4 and 5, when combined with a IO board that exposes the SYNC_OUT pin. Note that the Raspberry Pi 4 and 5 do not have this capability. For more on supported hardware, please see the [Hardware]({%link hardware/index.md%}) section. It is possible to buy all the necessary hardware for less than $150.
 
 SatPulse does not by itself provide a complete time server: rather it is designed to combine with the PTP (Precision Time Protocol) server provided by the [LinuxPTP](https://linuxptp.nwtime.org/) project, which is called ptp4l. It can also connect to the NTP server provided by the [chrony](https://chrony-project.org/) project. This enables a time server that supports both NTP and PTP.
 
