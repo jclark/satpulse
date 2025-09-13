@@ -36,7 +36,7 @@ docs:
   - title: "Setup"
     children:
       - title: "Introduction"
-        url: "/setup/setup-intro.html"
+        url: "/setup/index.html"
       - title: "Raspberry Pi OS"
         url: "/setup/rpi-os.html"
       - title: "Fedora on RPi"
