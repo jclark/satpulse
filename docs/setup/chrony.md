@@ -2,9 +2,6 @@
 title: Chrony setup
 ---
 
-## chrony
-
-<!-- From quickstart.md lines 208-223 -->
 Make sure chrony is installed. The package is called `chrony` on both Fedora and Debian.
 
 Add this line to your chrony configuration:
