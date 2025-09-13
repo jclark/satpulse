@@ -3,6 +3,7 @@
 package phc
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -76,14 +77,35 @@ func (clk *Clock) Close() error {
 }
 
 const (
-	PinFuncNone   PinFunc = unix.PTP_PF_NONE
-	PinFuncExtts  PinFunc = unix.PTP_PF_EXTTS
-	PinFuncPerout PinFunc = unix.PTP_PF_PEROUT
+	PinFuncNone    PinFunc = unix.PTP_PF_NONE
+	PinFuncExtts   PinFunc = unix.PTP_PF_EXTTS
+	PinFuncPerout  PinFunc = unix.PTP_PF_PEROUT
+	PinFuncPhysync PinFunc = unix.PTP_PF_PHYSYNC
 )
 
 func (clk *Clock) PinSetFunc(pinIndex uint32, pinFunc PinFunc, chanIndex uint32) error {
 	pd := unix.PtpPinDesc{Index: pinIndex, Func: uint32(pinFunc), Chan: chanIndex}
 	return clk.wrapErr(unix.IoctlPtpPinSetfunc(clk.fd, &pd), "ioctl(PTP_PIN_SETFUNC)")
+}
+
+func (clk *Clock) PinGetFunc(pinIndex uint32) (*PinDesc, error) {
+	pd, err := unix.IoctlPtpPinGetfunc(clk.fd, uint(pinIndex))
+	if err != nil {
+		return nil, clk.wrapErr(err, "ioctl(PTP_PIN_GETFUNC)")
+	}
+
+	// Convert C-style zero-terminated string to Go string
+	name := pd.Name[:]
+	if i := bytes.IndexByte(name, 0); i >= 0 {
+		name = name[:i]
+	}
+
+	return &PinDesc{
+		Name:  string(name),
+		Index: pd.Index,
+		Func:  PinFunc(pd.Func),
+		Chan:  pd.Chan,
+	}, nil
 }
 
 func (clk *Clock) PinCount() int {
@@ -118,6 +140,52 @@ func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err er
 
 func (clk *Clock) ExttsChanCount() int {
 	return int(clk.caps.N_ext_ts)
+}
+
+func (clk *Clock) PeroutChanCount() int {
+	return int(clk.caps.N_per_out)
+}
+
+func (clk *Clock) GetTime() (ptime.Time, error) {
+	var ts unix.Timespec
+	err := unix.ClockGettime(clk.clockId(), &ts)
+	if err != nil {
+		return 0, clk.wrapErr(err, "clock_gettime")
+	}
+	return ptime.TimespecToTime(ts), nil
+}
+
+
+
+// PeroutEnable enables a periodic pulse on a channel.
+// chanIndex is the index of the channel.
+// period is the period of the pulse; 0 means disable the pulse
+// width is the width of the pulse; 0 means use what driver provides
+// startOffset is the offset from the top of the second to the start
+func (clk *Clock) PeroutEnable(chanIndex uint32, period, width, startOffset time.Duration) error {
+	req := unix.PtpPeroutRequest{
+		Index:  chanIndex,
+		Period: durationToPtpClockTime(period),
+	}
+
+	// Set duty cycle if width specified
+	if width > 0 {
+		req.Flags |= unix.PTP_PEROUT_DUTY_CYCLE
+		req.On = durationToPtpClockTime(width)
+	}
+
+	// If period > 0, set start time to now + 2 seconds
+	// Period of 0 disables the output
+	if period > 0 {
+		now, err := clk.GetTime()
+		if err != nil {
+			return err
+		}
+		startTime := now.Round(time.Second).Add(2*time.Second + startOffset)
+		req.StartOrPhase = timespecToPtpClockTime(startTime.Timespec())
+	}
+
+	return clk.wrapErr(unix.IoctlPtpPeroutRequest(clk.fd, &req), "ioctl(PTP_PEROUT_REQUEST2)")
 }
 
 func (clk *Clock) SysOffset(nSamples int) (MultiSample, error) {
@@ -158,7 +226,7 @@ func (clk *Clock) SysOffsetExtended(nSamples int) (MultiSample, error) {
 
 func (clk *Clock) SysOffsetPrecise(_ int) (MultiSample, error) {
 	ms := MultiSample{}
-	buf, err := unix.IoctlPtpSysOffsetPrecise(clk.fd) 
+	buf, err := unix.IoctlPtpSysOffsetPrecise(clk.fd)
 	if err != nil {
 		return ms, clk.wrapErr(err, "ioctl(PTP_SYS_OFFSET_PRECISE)")
 	}
@@ -277,4 +345,19 @@ func IfPhcIndex(ifname string) (phcIndex int, err error) {
 	}
 	phcIndex = int(tsInfo.Phc_index)
 	return
+}
+
+// durationToPtpClockTime converts a time.Duration to unix.PtpClockTime
+func durationToPtpClockTime(d time.Duration) unix.PtpClockTime {
+	sec := int64(d / time.Second)
+	nsec := uint32(d % time.Second)
+	return unix.PtpClockTime{Sec: sec, Nsec: nsec}
+}
+
+// timespecToPtpClockTime converts a unix.Timespec to unix.PtpClockTime
+func timespecToPtpClockTime(ts unix.Timespec) unix.PtpClockTime {
+	return unix.PtpClockTime{
+		Sec:  ts.Sec,
+		Nsec: uint32(ts.Nsec),
+	}
 }
