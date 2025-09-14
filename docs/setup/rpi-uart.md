@@ -7,12 +7,16 @@ the 40-pin HAT connector on the carrier board, then you need to configure the UA
 A UART (Universal Asynchronous Receiver-Transmitter) is a hardware device that transforms
 between digital data and a serial signal.
 The CM4/CM5 include several UART devices, which are numbered starting from 0.
+UART*n* will appear as the serial device `/dev/ttyAMA`*n*.
 
 Raspberry Pi's official documentation has a [section](https://www.raspberrypi.com/documentation/computers/configuration.html#configure-uarts) on this.
 
-## Simple configuration
+These instructions are for Raspberry Pi OS. There is a separate section for Fedora at the end.
 
-The normal configuration is where the GPS TX/RX pins are connected to the 40-pin HAT as follows.
+## Using UART0
+
+The normal configuration is to use UART0 for the connection to the GPS.
+With this configuration, the GPS TX/RX pins are connected to the 40-pin HAT as follows.
 
 | HAT Pin Name | HAT Pin # | GPS Board Pin |
 | --- | --- | --- |
@@ -20,8 +24,7 @@ The normal configuration is where the GPS TX/RX pins are connected to the 40-pin
 | RXD0 | 10 | TX |
 
 Note that the connection is crossed: GPS RX connects to HAT TXD0, and GPS TX connects to HAT RXD0.
-
-TXD0/RXD0 are the pins for UART0, which means the device will be `/dev/ttyAMA0`.
+This uses the TXD0/RXD0 pins, which are the pins for UART0.
 
 This requires that UART0 is not used for a serial console but is enabled.
 To configure this, run `raspi-config` and under Interface/Serial port, select enable serial port.
@@ -37,28 +40,56 @@ Also, for the CM4, but not the CM5, add the following at the end of `/boot/firmw
 dtoverlay=disable-bt
 ```
 
-Disable the system service that initialises the Bluetooth modem:
+and disable the system service that initialises the Bluetooth modem:
 ```
 sudo systemctl disable hciuart
 ```
 
-## UART configuration on Fedora
+## Using other UARTs
 
-<!-- From rpi-cm4-ptp-guide/fedora.md lines 293-340 -->
-### UART
+If you want to use a UART other than UART0, that is also possible.
 
-When using an GPS inside the IO board case, we will want to connect the GPS to one of the UARTs
-provided by the CM4.
+For example, if you want to use UART3 on the CM4, then add
 
-With Fedora, it is not convenient to use the UART that is connected to the TXD and RXD pins
-on the 40-pin header (pins 8 and 10). This is because U-Boot by default enables the serial console
-on that UART, which makes it try to interpret output from the GPS as keyboard input to U-boot.
-(Although in theory we could [make U-Boot not do this](https://fedoraproject.org/wiki/Architectures/ARM/Raspberry_Pi/HATs#Deactivate_Serial_Console_entirely), keyboard input to U-Boot appears
-not to be working at the moment, so this would require a custom version of U-Boot.)
+```
+dtoverlay=uart3
+```
 
-Fortunately, the hardware provides other UARTs (numbers 2 through 5) that we can enable on other pins.
-UART number *n* will appear as `/dev/ttyAMA`*n*. UART 2 is used for other functions (eeprom reading and poe fan).
-So a sensible choice is UART 3. This can be enabled by adding the following to the bottom of `/boot/efi/config.txt`.
+to the end of `/boot/firmware/config.txt`. On the CM5, use instead:
+
+```
+dtoverlay=uart3-pi5
+```
+
+Then reboot. After rebooting you can find which pins UART3 is on by using
+
+```
+pinctrl -p | grep '= [TR]XD3'
+```
+
+The pins will be different on the CM4 and CM5. On a CM5, it will print
+
+```
+21: a2    pu | hi // GPIO9 = RXD3
+24: a2    pn | hi // GPIO8 = TXD3
+```
+
+which means that TX for the UART3 is on pin 24 and RX is on pin 21.
+
+## Fedora
+
+Fedora has a number of differences relevant to UART configuration:
+
+* Fedora uses U-boot and U-boot by default enables the serial console on UART0.
+  If the GPS is connected to UART0, U-boot tries to interpret output from the GPS as keyboard input to U-boot,
+  which causes the boot process to halt.
+  (Although in theory we could [make U-Boot not do this](https://fedoraproject.org/wiki/Architectures/ARM/Raspberry_Pi/HATs#Deactivate_Serial_Console_entirely), keyboard input to U-Boot appears not to be working at the moment, so this would require a custom version of U-Boot.)
+* Fedora uses `/boot/efi/config.txt` rather than `/boot/firmware/config.txt`
+* Fedora doesn't have the `pinctrl` utility.
+* Fedora doesn't yet support the CM5
+
+You need to use UART3 or UART4 instead of UART0 for connecting the GPS.
+You can enable UART3 by adding this to the end of `/boot/efi/config.txt`.
 
 ```
 # UART configuration
@@ -67,17 +98,31 @@ So a sensible choice is UART 3. This can be enabled by adding the following to t
 dtoverlay=uart3
 ```
 
-You can use UART 4 instead with the following:
+You can use UART4 instead with the following:
 ```
 # Make UART4 TXD, RXD available on pins 24, 21 (GPIOs 8, 9) respectively
 # Device will be /dev/ttyAMA4
 dtoverlay=uart4
 ```
 
-This means an internal GPS needs to be wired up differently when using Fedora. Here's an example assuming we are
-using the `uart3` overlay.
+This table summarizes the UARTs, GPIOs and pins for UART0, UART3 and UART4 on CM4:
 
-![image](https://github.com/jclark/rpi-cm4-ptp-guide/assets/499966/cdef0aab-8628-43f4-baa5-4bc705612529)
+| UART# | TX GPIO | RX GPIO | TX pin | RX pin |
+| --- | --- | --- | --- | --- |
+| 0 | 14 | 15 | 8 | 10 |
+| 3 | 4 | 5 | 7 | 29 |
+| 4 | 8 | 9 | 24 | 21 |
+
+This means that the GPS would be wired as follows:
+
+| GPS pin name | HAT function | UART0 pin | UART3 pin | UART4 pin |
+| --- | --- | --- | --- | --- |
+| RX | TXD | 8 | 7 | 24 |
+| TX | RXD | 10 | 29 | 21 |
+
+Here's an example assuming we are using the `uart3` overlay.
+
+![image](/assets/images/fedora-ttyAMA3-wiring.jpg)
 
 The wiring is as follows
 
@@ -89,4 +134,3 @@ The wiring is as follows
 | black | GND | HAT | 6 | Ground |
 | red | VCC | HAT | 4 | 5V power |
 
-The GPS in the photo is a Quescan SR1612Z1, which costs about $10; it uses the ZongKhe Micro [AT6558](https://www.icofchina.com/d/file/xiazai/2016-12-05/b1be6f481cdf9d773b963ab30a2d11d8.pdf) chipset; the default speed is 38400. For other options, see the [GPS hardware](gps-hw.md) page.
