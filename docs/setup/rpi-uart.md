@@ -1,8 +1,46 @@
 ---
-title: Raspberry Pi serial specifics
+title: Configuring UARTs on Raspberry Pi CM4/CM5
 ---
 
-This page contains RPi-specific UART information referenced from the serial connection setup page.
+If you have a Raspberry Pi CM4/CM5 and you are connecting the TX/RX pins on the GPS board to
+the 40-pin HAT connector on the carrier board, then you need to configure the UARTs.
+A UART (Universal Asynchronous Receiver-Transmitter) is a hardware device that transforms
+between digital data and a serial signal.
+The CM4/CM5 include several UART devices, which are numbered starting from 0.
+
+Raspberry Pi's official documentation has a [section](https://www.raspberrypi.com/documentation/computers/configuration.html#configure-uarts) on this.
+
+## Simple configuration
+
+The normal configuration is where the GPS TX/RX pins are connected to the 40-pin HAT as follows.
+
+| HAT Pin Name | HAT Pin # | GPS Board Pin |
+| --- | --- | --- |
+| TXD0 | 8 | RX |
+| RXD0 | 10 | TX |
+
+Note that the connection is crossed: GPS RX connects to HAT TXD0, and GPS TX connects to HAT RXD0.
+
+TXD0/RXD0 are the pins for UART0, which means the device will be `/dev/ttyAMA0`.
+
+This requires that UART0 is not used for a serial console but is enabled.
+To configure this, run `raspi-config` and under Interface/Serial port, select enable serial port.
+Then answer:
+* No to login shell accessible over serial
+* Yes to enable serial port hardware
+
+Also, for the CM4, but not the CM5, add the following at the end of `/boot/firmware/config.txt`:
+
+```
+# Make /dev/ttyAMA0 be connected to GPIO header pins 8 and 10
+# This always disables Bluetooth
+dtoverlay=disable-bt
+```
+
+Disable the system service that initialises the Bluetooth modem:
+```
+sudo systemctl disable hciuart
+```
 
 ## UART configuration on Fedora
 
