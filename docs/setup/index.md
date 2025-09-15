@@ -19,7 +19,7 @@ For a complete PTP/NTP time server on Linux, follow these steps.
    There are two devices involved:
    * a [serial]({% link setup/gps-serial.md %}) device; configuration also needs to know the baud-rate;
    * a [network interface with PTP hardware clock]({% link setup/phc.md %}); configuration also needs to know what pin on the ethernet card is connected to the GPS PPS output.
-5. [Configure SatPulse]({% link setup/satpulse-config.md %}. This will install a service that runs the satpulsed daemon, which will synchronize the PHC with the GPS.
+5. [Configure the satpulse service]({% link setup/satpulse-service.md %}. This will install a service that runs the satpulsed daemon, which will synchronize the PHC with the GPS.
 6. [Setup chrony]({% link setup/chrony.md %}). This:
    * synchronizes the system clock to the PHC;
    * runs an NTP client; this provides an important check that the PHC time is correct; and

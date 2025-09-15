@@ -160,4 +160,4 @@ Check your receiver's documentation for specific capabilities.
 ## See also
 
 - [satpulsetool-gps(1)]({% link man/satpulsetool-gps.1.md %}) - Complete command reference
-- [SatPulse configuration guide]({% link setup/satpulse-config.md %}) - Configuring satpulse.toml
+- [SatPulse configuration guide]({% link setup/satpulse-service.md %}) - Configuring satpulse.toml

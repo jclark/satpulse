@@ -1,10 +1,11 @@
 ---
-title: SatPulse configuration guide
+title: satpulse service
 ---
+
+The satpulse service needs a configuration file and is run using systemd.
 
 ## Configuration file
 
-<!-- From quickstart.md lines 75-120 -->
 The configuration file will be at
 
 - `/etc/satpulse.toml` if you installed from a package
@@ -49,9 +50,8 @@ The above configuration file specifies that
 * timing samples should be sent to chrony using the SOCK protocol through a socket at `/var/run/chrony.satpulse.sock`
 
 
-## Systemd commands
+## Using systemd with the satpulse service
 
-<!-- From quickstart.md lines 122-167 -->
 The systemd service template name is `satpulse@.service` and the expected argument is the serial device name without `/dev/`.
 For example, if the serial device is `/dev/ttyAMA0`, then the instantiated service would be named `satpulse@ttyAMA0.service`.
 Systemd commands need to be given the instantiated service name (although typically the `.service` part can be left out).
