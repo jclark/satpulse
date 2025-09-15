@@ -23,12 +23,12 @@ install -D -m 644 out/%{goarch}/satpulse.toml %{buildroot}/etc/satpulse.toml
 install -D -m 644 configs/satpulse@.service %{buildroot}/usr/lib/systemd/system/satpulse@.service
 install -D -m 644 configs/chrony.conf %{buildroot}/usr/share/doc/satpulse/chrony.conf
 install -D -m 644 configs/config-schema.json %{buildroot}/usr/share/doc/satpulse/config-schema.json
-install -D -m 644 docs/config.md %{buildroot}/usr/share/doc/satpulse/config.md
 install -D -m 644 LICENSE %{buildroot}/usr/share/doc/satpulse/copyright
 install -D -m 644 selinux/satpulse.pp.bz2 %{buildroot}/usr/share/selinux/packages/%{selinuxtype}/satpulse.pp.bz2
 install -D -m 644 out/satpulsetool.1.gz %{buildroot}/usr/share/man/man1/satpulsetool.1.gz
 install -D -m 644 out/satpulsetool-gps.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-gps.1.gz
 install -D -m 644 out/satpulsetool-sdp.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-sdp.1.gz
+install -D -m 644 out/satpulse.toml.5.gz %{buildroot}/usr/share/man/man5/satpulse.toml.5.gz
 install -D -m 644 out/satpulsed.8.gz %{buildroot}/usr/share/man/man8/satpulsed.8.gz
 
 %post
@@ -47,9 +47,9 @@ fi
 /usr/lib/systemd/system/satpulse@.service
 /usr/share/doc/satpulse/chrony.conf
 /usr/share/doc/satpulse/config-schema.json
-/usr/share/doc/satpulse/config.md
 /usr/share/doc/satpulse/copyright
 /usr/share/selinux/packages/%{selinuxtype}/satpulse.pp.bz2
 /usr/share/man/man1/satpulsetool.1.gz
 /usr/share/man/man1/satpulsetool-gps.1.gz
+/usr/share/man/man5/satpulse.toml.5.gz
 /usr/share/man/man8/satpulsed.8.gz

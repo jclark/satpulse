@@ -20,7 +20,7 @@ In addition, it
 - can proxy the serial data to TCP (similarly to ser2net)
 - provides a graphical web interface for monitoring the GPS receiver
 
-**satpulsed** requires a configuration file in TOML.
+**satpulsed** requires a configuration file **satpulse.toml(5)**.
 
 The companion program **satpulsetool(1)** supports the use of **satpulsed**; in particular, it can be used to perform certain kinds of GPS configuration that are not done by **satpulsed**, such as configuration of baud rate and constellations/signals to be enabled.
 
@@ -71,4 +71,4 @@ Run in verbose mode with systemd logging:
 
 # SEE ALSO
 
-**satpulsetool(1)**, **satpulsetool-gps(1)**, **systemd(1)**, **ptp4l(8)**, **chronyd(8)**, **ser2net(8)**
+**satpulse.toml(5)**, **satpulsetool(1)**, **satpulsetool-gps(1)**, **systemd(1)**, **ptp4l(8)**, **chronyd(8)**, **ser2net(8)**

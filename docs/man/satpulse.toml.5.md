@@ -1,14 +1,13 @@
----
-title: SatPulse configuration file
----
-## Location
+# NAME
 
-The SatPulse configuration file will be at
+satpulse.toml - satpulsed configuration file
+
+# DESCRIPTION
+
+The SatPulse configuration file will be conventionally stored at
 
 - `/etc/satpulse.toml` if you installed from a package
 - `/usr/local/etc/satpulse.toml` if you installed from source
-
-## Syntax
 
 The configuration file is in [TOML](https://toml.io/en/) format, which is inspired by the INI file format
 and can be edited with a normal text editor (e.g. `nano`).
@@ -35,29 +34,6 @@ Note that
 * Order of key/value pairs within a table is not significant.
 * Case is significant.
 
-Example
-
-```
-# Configuration file for satpulse
-[phc]
-interface = "enp1s0"
-pin  = 0
-
-[serial]
-speed = 9600
-
-[gps]
-config = true
-
-[[http]]
-listen = "192.168.1.1:2006"
-
-[[http]]
-listen = "192.168.1.2:2006"
-```
-
-## Schema
-
 There is a JSON schema for the configuration file, which is installed in
 
 * `/usr/share/doc/satpulse/config-schema.json` when installed from a package and
@@ -71,6 +47,8 @@ extension supports schema-sensitive editing. The first line of the TOML file can
 ```
 
 to tell the extension which schema to use.
+
+# TABLES
 
 ## `phc` table
 
@@ -288,3 +266,24 @@ In addition, `proxy.tcp` and `proxy.sock` can both have the following keys:
 * `protocol` - a string saying that only packets with this protocol are to be forwarded; the value can be `"RTCM"`, `"NMEA"` or `"UBX"`
 * `readOnly` - a boolean saying whether access to the GPS receiver should be read-only; this means that serial packets will be forwarded from the GPS receiver to the network, but the network will not be able to send packets to the GPS receiver; this defaults to true if `protocol` is specified and false otherwise
 * `writeLockTimeout` - a number giving the time in seconds that a writer to the GPS receiver should have exclusive write access; if client writes to the GPS receiver (which is allowed only when readOnly is false), then no other client will be able to write to the GPS receiver for this period of time; the default is 2 seconds
+
+# EXAMPLES
+
+```
+[phc]
+interface = "enp1s0"
+pin = 0
+
+[serial]
+speed = 9600
+
+[gps]
+config = true
+
+[[http]]
+listen = ":2000"
+```
+
+# SEE ALSO
+
+**satpulsed(8)**
