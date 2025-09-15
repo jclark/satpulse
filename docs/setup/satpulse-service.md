@@ -49,6 +49,7 @@ The above configuration file specifies that
 * ptp4l should be updated using the Unix domain socket at `/var/run/ptp4l`
 * timing samples should be sent to chrony using the SOCK protocol through a socket at `/var/run/chrony.satpulse.sock`
 
+The configuration file is described in full in its man page [satpulse.toml(5)]({%link man/satpulse.toml.5.md %}).
 
 ## Using systemd with the satpulse service
 
