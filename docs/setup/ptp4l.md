@@ -87,6 +87,8 @@ The network interface in the last line should match the interface in `satpulse.t
 There are many, many other options that can be changed. These options are commonly changed to conform to a particular PTP profile.
 There are a number of example configuration files for various PTP profiles in `/usr/share/doc/linuxptp/configs`.
 
+There are reports of P2P mode (`delay_mechanism P2P`) not working on the CM4/CM5.
+
 Finally, start and enable the ptp4l service:
 
 ```
