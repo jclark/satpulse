@@ -1,163 +1,123 @@
 ---
-title: GPS receiver configuration
+title: GPS configuration
 ---
 
-This page explains how to configure your GPS receiver using the `satpulsetool gps` command. For complete reference documentation, see the [satpulsetool-gps(1)]({% link man/satpulsetool-gps.1.md %}) man page.
+Often satpulsed will be able to work with a GPS module without any changes to its factory default configuration.
+Specifically, a configuration that
+* emits NMEA RMC or ZDA messages, and
+* generates a time pulse once a second (with the rising edge aligned to the start of the second) 
+is sufficient for satpulsed to perform time synchronization.
 
-## When to configure the GPS
+However, improved accuracy and richer monitoring features can be achieved with additional configuration.
 
-Most modern GPS receivers work well for timing applications with their default settings. However, you may want to configure your GPS to:
+How to configure a GPS module depends on whether SatPulse has support for configuring that module.
+Currently SatPulse has support for configuring a wide range of u-blox modules and chips from 6th generation through 10th generation.
 
-- Optimise for stationary timing use
-- Select specific GNSS constellations
-- Adjust the PPS pulse width
-- Save power by disabling unnecessary outputs
-- Perform a survey-in for precise position determination
+## Supported GPS modules
 
-## Quick configuration for SatPulse
-
-For most users, the simplest approach is to let SatPulse configure the GPS automatically by enabling `config = true` in the `[gps]` section of satpulse.toml. This will configure the GPS optimally for timing use.
-
-If you prefer to configure manually or need specific settings, use satpulsetool gps as described below.
-
-## Basic usage
-
-First, identify your serial device and speed (see [Serial connection setup]({% link setup/gps-serial.md %})).
-
-Show the current GPS configuration:
+With a supported GPS module, the easiest approach is to enable configuration in satpulse.toml.
 ```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 -c
+[gps]
+configure=true
 ```
 
-## Common configuration scenarios
+This will make satpulsed configure the GPS on the fly each time it starts up.
+It will set things up to take full advantage of the capabilities of the module.
+This can be customized by specifying additional options in the `[gps]` section.
+See [satpulse.toml(5)]({%link man/satpulse.toml.5.md %}) man page for full details.
 
-### Configure for timing daemon use
+Note that the configuration changes made by satpulsed are never persistent.
 
-Enable the messages needed by satpulsed:
+However, satpulsed is conservative in the configuration changes that are enabled by `configure=true`.
+- it will never make persistent changes; you can also get rid of any changes done by satpulsed by power cycling the GPS.
+- it will not change the serial speed of the module
+- it will not reset the module
+- it will not make changes to the constellations and signals used by the GPS, since this typically needs a reset to be effective
+
+These kinds of changes are instead done using the `gps` subcommand of `satpulsetool`.
+See the [satpulsetool-gps(1)]({%link man/satpulsetool-gps.1.md %}) man page for full details.
+
+If the default speed of your GPS is below 38400, I recommend increasing it to at least 38400.
+This provides sufficient bandwidth that satpulsed will enable messages that provide information about satellites and signals in view,
+which will then be shown in the web interface.
+
+I also recommend choosing the constellations you want to enable (GPS, GAL, BDS, GLO, QZSS).
+
+For example:
+
 ```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --pvt-out daemon
-```
-
-This enables time pulse messages, leap second information, and other data required by the daemon.
-
-### Survey-in for stationary receivers
-
-If your antenna is stationary, you can improve accuracy by performing a survey-in:
-```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --survey --survey-time 3600 --survey-acc 2.0
-```
-
-This performs a 1-hour survey with 2-metre accuracy requirement. The GPS will determine its precise position and then use this fixed position for all subsequent timing calculations.
-
-### Select GNSS constellations
-
-Enable specific satellite systems:
-```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --gnss GPS,GAL,BDS
-```
-
-Common constellations:
-- **GPS** - US Global Positioning System (most compatible)
-- **GAL** - European Galileo (good accuracy)
-- **BDS** - Chinese BeiDou (good in Asia-Pacific)
-- **GLO** - Russian GLONASS (global coverage)
-
-Using multiple constellations improves availability but may slightly reduce timing precision due to inter-system biases.
-
-### Configure PPS output
-
-Set the pulse width (in seconds):
-```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --pps 0.1
+satpulsetool gps -d /dev/ttyAMA0 -s 9600 --speed 38400 --gnss GPS,GAL,BDS  --save
 ```
 
-Common values:
-- 0.1 (100ms) - Default for most receivers
-- 0.01 (10ms) - Shorter pulse to reduce power
-- 0.0001 (100µs) - Very short pulse for fast sampling
+Here
+* `-d /dev/ttyAMA0` specifies the serial device
+* `-s 9600` specifies the current speed
+* `-s 38400` specifies the new speed that the module should use
+* `--gnss GPS,GAL,BDS` specifies the constellations that you want enabled (other constellations will be disabled); GPS, GAL and BDS refer to the US, European and Chinese constellations respectively; you can change according to your geopolitical preferences
+* `--save` says to save the changes persistently.
 
-### Save configuration
+You can also choose the frequency bands that should be used. For example, `--band L1,L5` will enable the L1 and L5 bands.
+By default, it will enable all bands.
 
-Save your changes to the GPS receiver's non-volatile memory:
+u-blox L5 modules need [special configuration](https://content.u-blox.com/sites/default/files/documents/GPS-L5-configuration_AppNote_UBX-21038688.pdf) to make use of the GPS L5 signal while it is still pre-operational.
+If you use `--gnss`, satpulsetool will do this for you.
+
+## Unsupported GPS modules
+
+You will need to configure the module yourself.
+
+### Interactively configuring the module
+
+If the module can be configured with text commands, you can use a command like this to interactively type or copy/paste configuration commands for the module
+and see responses.
+
 ```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --save
-```
-
-Without saving, changes are lost when the GPS powers off.
-
-## Advanced configuration
-
-### Fixed position mode
-
-If you know your antenna's precise coordinates (e.g., from a professional survey):
-```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --fixed-pos-ecef 4033638.3,752670.5,4900818.0 --fixed-pos-acc 0.5
-```
-
-This uses Earth-Centred Earth-Fixed (ECEF) coordinates in metres.
-
-### Change serial speed
-
-Configure the GPS to use a different baud rate:
-```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --speed 115200 --save
+rlwrap -- socat - /dev/ttyAMA0,raw,b9600,crnl
 ```
 
-After this, you'll need to use `-s 115200` for future connections.
+Install rlwrap and socat first.
+This gives you a readline editing interface for typing commands,
+and ensures commands are terminated with CRLF (which is what most GPS modules need).
+It is also workable even when the GPS is generating output.
 
-### Enable specific frequency bands
+### Using manufacturer's Windows application
 
-For dual-frequency receivers:
+Most GPS manufacturers provide a Windows application for configuring their modules. For example, u-blox has u-center.
+
+So one way to do the configuration is to connect the module to a Windows machine, do the necessary configuration there and then save it.
+If your module has Dupont pins, then you can get an inexpensive USB-to-TTL converter with Dupont female connectors.
+
+Many of these Windows applications can work over a TCP connection.
+You can use satpulsed in GPS-only mode to proxy the serial connection to TCP.
+This allows you to use the Windows application to perform configuration without touching the hardware.
+To run in GPS-only mode, comment out the `interface` line in the `[phc]` section
+
 ```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --band L1,L5
-```
-
-### Antenna cable delay compensation
-
-Compensate for signal delay in long antenna cables:
-```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --ant-cable-delay 50
-```
-
-The delay is specified in nanoseconds (approximately 5ns per metre of cable).
-
-## Troubleshooting
-
-### Reset to defaults
-
-If configuration causes problems:
-```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --factory-reset
+[phc]
+#interface = "enp1s0"
 ```
 
-This restores all factory defaults.
+To make it proxy the serial connection to TCP port 2006, add:
 
-### Reload saved configuration
-
-Undo unsaved changes:
 ```
-satpulsetool gps -d /dev/ttyAMA0 -s 9600 --reload
+[[proxy.tcp]]
+listen = ":2006"
 ```
 
-### Connection via SatPulse proxy
+(there's nothing special about port 2006; use whatever you want).
 
-If SatPulse is running with a proxy socket configured:
-```
-satpulsetool gps --socket /var/run/satpulse.sock -c
-```
+### What to configure
 
-## Receiver-specific notes
-
-Different GPS receivers have varying capabilities:
-
-- **u-blox** - Full support for all features
-- **Quectel** - Most features supported
-- **SkyTraq** - Basic configuration only
-- **Generic NMEA** - Limited to standard NMEA commands
-
-Check your receiver's documentation for specific capabilities.
-
-## See also
-
-- [satpulsetool-gps(1)]({% link man/satpulsetool-gps.1.md %}) - Complete command reference
-- [SatPulse configuration guide]({% link setup/satpulse-service.md %}) - Configuring satpulse.toml
+* Enable at least the NMEA RMC message or the ZDA message
+* Enable a PPS signal
+	* avoid a pulse width that is extremely long (e.g. 50% duty cycle) or extremely short; 0.1s is the most common pulse width and works well
+	* the pulse period must be 1 second (so it is a PPS signal)
+	* the start of the second should be aligned with the rising edge of the pulse
+	* the pulse should be emitted only when the GPS module has a lock
+* To be able to view information about satellite positions and signals
+    * increase the serial speed to at least 38400
+    * enable NMEA GSV, GSA messages
+* With a timing receiver, either
+    * enable survey mode, or
+    * specify a fixed position
+* Disable SBAS
