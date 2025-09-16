@@ -94,3 +94,17 @@ Finally, start and enable the ptp4l service:
 ```
 sudo systemctl enable --now ptp4l
 ```
+
+## Connecting satpulsed to ptp4l
+
+For correct operation of ptp4l as a PTP server, satpulsed needs to update ptp4l
+with metadata about the PHC time.
+Enable this by adding the following to `satpulse.toml`
+
+```
+[ptp]
+ptp4l.udsAddress = "/var/run/ptp4l"
+```
+
+The value of `ptp4l.udsAddress` needs to match the ptp4l `uds_address` option,
+which defaults to `/var/run/ptp4l`.

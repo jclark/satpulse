@@ -2,40 +2,21 @@
 title: GPS configuration
 ---
 
-Often satpulsed will be able to work with a GPS module without any changes to its factory default configuration.
-Specifically, a configuration that
-* emits NMEA RMC or ZDA messages, and
-* generates a time pulse once a second (with the rising edge aligned to the start of the second) 
-is sufficient for satpulsed to perform time synchronization.
-
-However, improved accuracy and richer monitoring features can be achieved with additional configuration.
-
-How to configure a GPS module depends on whether SatPulse has support for configuring that module.
-Currently SatPulse has support for configuring a wide range of u-blox modules and chips from 6th generation through 10th generation.
+Although satpulsed can do GPS configuration automatically,
+there are a couple of cases where you may still want to do GPS configuration separately.
 
 ## Supported GPS modules
 
-With a supported GPS module, the easiest approach is to enable configuration in satpulse.toml.
-```
-[gps]
-config=true
-```
+SatPulse has a GPS configuration engine that currently supports
+only the UBX protocol, which is used by u-blox modules.
+This configuration engine is shared by `satpulsed` and `satpulsetool gps`.
+But satpulsed takes a conservative approach to GPS configuration and will not perform some kinds of configuration:
+- it will not make any persistent changes to the GPS configuration;
+- it will not reset the GPS or make changes that would cause a reset;
+- in particular, it will not change the GNSS constellations that are enabled, nor change the set of signals that are enabled for each constellation;
+- it will not change the GPS speed.
 
-This will make satpulsed configure the GPS on the fly each time it starts up.
-It will set things up to take full advantage of the capabilities of the module.
-This can be customized by specifying additional options in the `[gps]` section.
-See [satpulse.toml(5)]({%link man/satpulse.toml.5.md %}) man page for full details.
-
-Note that the configuration changes made by satpulsed are never persistent.
-
-However, satpulsed is conservative in the configuration changes that are enabled by `config=true`.
-- it will never make persistent changes; you can also get rid of any changes done by satpulsed by power cycling the GPS.
-- it will not change the serial speed of the module
-- it will not reset the module
-- it will not make changes to the constellations and signals used by the GPS, since this typically needs a reset to be effective
-
-These kinds of changes are instead done using the `gps` subcommand of `satpulsetool`.
-See the [satpulsetool-gps(1)]({%link man/satpulsetool-gps.1.md %}) man page for full details.
+These kinds of configuration must be done using `satpulsetool gps`.
 
 If the default speed of your GPS is below 38400, I recommend increasing it to at least 38400.
 This provides sufficient bandwidth that satpulsed will enable messages that provide information about satellites and signals in view,
@@ -43,7 +24,7 @@ which will then be shown in the web interface.
 
 I also recommend choosing the constellations you want to enable (GPS, GAL, BDS, GLO, QZSS).
 
-For example:
+The following command changes the speed and the enabled constellations, and makes the changes persistent.
 
 ```
 satpulsetool gps -d /dev/ttyAMA0 -s 9600 --speed 38400 --gnss GPS,GAL,BDS  --save
@@ -62,9 +43,23 @@ By default, it will enable all bands.
 u-blox L5 modules need [special configuration](https://content.u-blox.com/sites/default/files/documents/GPS-L5-configuration_AppNote_UBX-21038688.pdf) to make use of the GPS L5 signal while it is still pre-operational.
 If you use `--gnss`, satpulsetool will do this for you.
 
+See the [satpulsetool-gps(1)]({%link man/satpulsetool-gps.1.md %}) man page for full details.
+
+Note that you can, if you prefer, do all configuration using `satpulsetool gps`, and
+then tell satpulsed not to perform any configuration.
+
 ## Unsupported GPS modules
 
-You will need to configure the module yourself.
+If the factory default configuration of the module:
+* emits NMEA RMC or ZDA messages, and
+* generates a time pulse once a second (with the rising edge aligned to the start of the second),
+then you should be able to use the module with satpulsed without any further configuration.
+
+It is important to ensure that the module is not generating more information than
+can be transmitted at the speed it is using.
+If the module generates NMEA GSV messages for multiple constellations but uses a speed of 9600,
+this can lead to delays in messages being received in satpulsed, which can lead to satpulsed
+associating the incorrect second with a pulse.
 
 ### Interactively configuring the module
 

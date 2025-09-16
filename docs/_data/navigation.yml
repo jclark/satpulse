@@ -51,14 +51,15 @@ docs:
         url: "/setup/gps-serial.html"
       - title: "PPS connection"
         url: "/setup/phc.html"
-      - title: "Configure GPS"
+      - title: "Use satpulsed"
+        url: "/setup/satpulsed.html"
+      - title: "GPS configuration"
         url: "/setup/gps-config.html"
-      - title: "SatPulse service"
-        url: "/setup/satpulse-service.html"
       - title: "Setup chrony"
         url: "/setup/chrony.html"
       - title: "Setup ptp4l"
         url: "/setup/ptp4l.html"
+
   - title: "Man pages"
     children:
       - title: "satpulsetool(1)"
