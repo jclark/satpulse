@@ -7,7 +7,7 @@ synchronizes the PTP Hardware Clock from GPS.
 
 satpulsed usually runs as a service using systemd.
 It can also be run from the command line.
-See the [satpulsed]({%link man/satpulsed.1.md}) for details.
+See the [satpulsed]({%link man/satpulsed.8.md%}) for details.
 In either case a configuration is necessary to run satpulsed.
 
 ## Configuration file
@@ -103,7 +103,7 @@ documented in [satpulsetool-gps(1)]({%link man/satpulsetool-gps.1.md %}).
 Note that satpulsed will not configure the GPS receiver to output messages about satellite positions and signals,
 unless the serial speed is at least 38400.
 
-See [GPS configuration]({%link setup/gps-config.md}) for more information about using `satpulsetool gps`. 
+See [GPS configuration]({%link setup/gps-config.md %}) for more information about using `satpulsetool gps`. 
 
 ## Running satpulsed as a service
 
