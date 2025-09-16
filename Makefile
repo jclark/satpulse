@@ -28,7 +28,7 @@ TAGS=netgo,osusergo
 ALL_GOARCH=arm64 amd64
 TOMLS:=$(patsubst %,out/%/satpulse.toml,$(ALL_GOARCH))
 ARCH:=$(shell uname -m)
-MAN_PAGES=satpulsed.8 satpulsetool.1 satpulsetool-gps.1 satpulsetool-sdp.1
+MAN_PAGES=satpulsetool.1 satpulsetool-gps.1 satpulsetool-sdp.1 satpulse.toml.5 satpulsed.8
 MAN_TARGETS = $(addprefix out/, $(MAN_PAGES))
 MAN_GZ_TARGETS = $(addsuffix .gz, $(MAN_TARGETS))
 
@@ -73,11 +73,10 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	  configs/satpulse@.service >/etc/systemd/system/satpulse@.service
 	[ -f "$(CONFIG_FILE)" ] || sed -e '/^#:schema /s;/usr/;/usr/local/;' out/$(GOARCH)/satpulse.toml >"$(CONFIG_FILE)"
 	install -m 644 -D configs/config-schema.json /usr/local/share/doc/satpulse/config-schema.json
-	install -D -m 644 docs/config.md /usr/local/share/doc/satpulse/config.md
-	install -D -m 644 docs/quickstart.md /usr/local/share/doc/satpulse/quickstart.md
 	install -D -m 644 out/satpulsetool.1 /usr/local/share/man/man1/satpulsetool.1
 	install -D -m 644 out/satpulsetool-gps.1 /usr/local/share/man/man1/satpulsetool-gps.1
 	install -D -m 644 out/satpulsetool-sdp.1 /usr/local/share/man/man1/satpulsetool-sdp.1
+	install -D -m 644 out/satpulse.toml.5 /usr/local/share/man/man5/satpulse.toml.5
 	install -d /usr/local/share/man/man8
 	sed 's;/etc/satpulse.toml;$(CONFIG_FILE);g' out/satpulsed.8 > /usr/local/share/man/man8/satpulsed.8
 	systemctl daemon-reload
@@ -89,11 +88,10 @@ uninstall:
 	rm -f /usr/local/bin/satpulsetool
 	# we don't uninstall /usr/local/etc/satpulse.toml
 	rm -f /usr/local/share/doc/satpulse/config-schema.json
-	rm -f /usr/local/share/doc/satpulse/config.md
-	rm -f /usr/local/share/doc/satpulse/quickstart.md
 	rm -f /usr/local/share/man/man1/satpulsetool.1
 	rm -f /usr/local/share/man/man1/satpulsetool-gps.1
 	rm -f /usr/local/share/man/man1/satpulsetool-sdp.1
+	rm -f /usr/local/share/man/man5/satpulse.toml.5
 	rm -f /usr/local/share/man/man8/satpulsed.8
 	systemctl daemon-reload
 
@@ -125,13 +123,12 @@ $(DEB_PATTERN): % out/%/satpulse.toml $(MAN_GZ_TARGETS)
 	install -D -m 644 configs/ptp4l.service out/$*/deb/usr/share/doc/satpulse/ptp4l.service
 	install -D -m 644 configs/chrony.conf out/$*/deb/usr/share/doc/satpulse/chrony.conf
 	install -D -m 644 configs/config-schema.json out/$*/deb/usr/share/doc/satpulse/config-schema.json
-	install -D -m 644 docs/config.md out/$*/deb/usr/share/doc/satpulse/config.md
-	install -D -m 644 docs/quickstart.md out/$*/deb/usr/share/doc/satpulse/quickstart.md
 	install -D -m 644 LICENSE out/$*/deb/usr/share/doc/satpulse/copyright
 	install -D -m 644 configs/satpulse@.service out/$*/deb/lib/systemd/system/satpulse@.service
 	install -D -m 644 out/satpulsetool.1.gz out/$*/deb/usr/share/man/man1/satpulsetool.1.gz
 	install -D -m 644 out/satpulsetool-gps.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-gps.1.gz
 	install -D -m 644 out/satpulsetool-sdp.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-sdp.1.gz
+	install -D -m 644 out/satpulse.toml.5.gz out/$*/deb/usr/share/man/man5/satpulse.toml.5.gz
 	install -D -m 644 out/satpulsed.8.gz out/$*/deb/usr/share/man/man8/satpulsed.8.gz
 	installed_size=`du -s -k out/$*/deb | cut -f1`;\
 	sed -e '/^Architecture:/s/any/$*/' -e '/^Package:/a\

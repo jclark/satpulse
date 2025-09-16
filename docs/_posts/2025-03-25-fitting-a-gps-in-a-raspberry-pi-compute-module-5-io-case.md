@@ -54,4 +54,4 @@ The assembled result is on the right. The assembly process involves
 
 It is important to note here that silkscreen on the IO board labels pin 9 as the SYNC_OUT (as it was on the CM4 IO board), but this is incorrect: the SYNC_OUT pin is actually pin 6 (top row, third from the left, on the J2 14-pin jumper set). The VCC pin on the GPS accepts between 3.3V and 5V, so it could alternatively be connected to a 3.3V pin.
 
-See this [document](https://github.com/jclark/rpi-cm4-ptp-guide/blob/main/os.md) for how to install and set up the OS. The initial speed of the serial port is 38400. After that, you can proceed with the [quickstart guide](/quickstart.html).
+The [setup guide]({%link setup/index.md %}) explains how to install and configure the necessary software. The initial speed of the serial port is 38400.
