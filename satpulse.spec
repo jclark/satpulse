@@ -51,5 +51,6 @@ fi
 /usr/share/selinux/packages/%{selinuxtype}/satpulse.pp.bz2
 /usr/share/man/man1/satpulsetool.1.gz
 /usr/share/man/man1/satpulsetool-gps.1.gz
+/usr/share/man/man1/satpulsetool-sdp.1.gz
 /usr/share/man/man5/satpulse.toml.5.gz
 /usr/share/man/man8/satpulsed.8.gz
