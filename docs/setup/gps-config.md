@@ -18,7 +18,7 @@ Currently SatPulse has support for configuring a wide range of u-blox modules an
 With a supported GPS module, the easiest approach is to enable configuration in satpulse.toml.
 ```
 [gps]
-configure=true
+config=true
 ```
 
 This will make satpulsed configure the GPS on the fly each time it starts up.
@@ -28,7 +28,7 @@ See [satpulse.toml(5)]({%link man/satpulse.toml.5.md %}) man page for full detai
 
 Note that the configuration changes made by satpulsed are never persistent.
 
-However, satpulsed is conservative in the configuration changes that are enabled by `configure=true`.
+However, satpulsed is conservative in the configuration changes that are enabled by `config=true`.
 - it will never make persistent changes; you can also get rid of any changes done by satpulsed by power cycling the GPS.
 - it will not change the serial speed of the module
 - it will not reset the module
