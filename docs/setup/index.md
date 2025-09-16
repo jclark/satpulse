@@ -1,5 +1,6 @@
 ---
 title: Setup guide
+toc: false
 ---
 
 This section describes how to set up all the software needed for a precision time server using SatPulse.
