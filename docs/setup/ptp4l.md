@@ -43,9 +43,9 @@ You can also add `-l 7` to change the logging level to include debugging informa
 
 The following options also need to be added depending on the situation:
 
-* on the client machine, add `--clientOnly 1` on linuxptp 4, and `--slaveOnly 1` on linuxptp 3
-* on the server machine, add `--serverOnly 1` on linuxptp 4, and `--masterOnly 1` on linuxptp 3
-* if the server or client is a CM4 or CM5, add `--ptp_minor_version 0`
+* on the client machine, add `--clientOnly 1` for linuxptp 4, and `--slaveOnly 1` for linuxptp 3
+* on the server machine, add `--serverOnly 1` for linuxptp 4, and `--masterOnly 1` for linuxptp 3
+* for linuxptp 4, if the server or client is a CM4/CM5, add `--ptp_minor_version 0`
 * if the machine is a CM4 or CM5, add `--tx_timestamp_timeout 100`
 
 ## Running as a service
