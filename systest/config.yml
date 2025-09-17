@@ -29,7 +29,16 @@
         - { section: "serial", option: "device", value: '"{{ device }}"' }
         - { section: "serial", option: "speed", value: "{{ speed }}" }
         - { section: "gps", option: "config", value: "{{ config }}" }
-        - { section: "gps", option: "nmeaNumbering" }
         - { section: "log", option: "clock", value: "true" }
         - { section: "ntp", option: "sock.path", value: '"/var/run/chrony.satpulse.sock"'}
         - { section: "[http]", option: "listen", value: '":2000"' }
+
+    - name: Remove old options from SatPulse config file
+      ini_file:
+        path: "/etc/satpulse.toml"
+        section: "{{ item.section }}"
+        option: "{{ item.option }}"
+        state: "absent"
+        exclusive: "true"
+      loop:
+        - { section: "gps", option: "nmeaNumbering" }
