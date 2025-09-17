@@ -4,7 +4,7 @@ title: Installing and configuring Fedora on the CM4
 
 ## Fedora compared to Raspberry Pi OS
 
-Fedora added support for the Raspberry Pi 4 (including the CM4) with release 37. At the time of writing (January 2025) the current version is release 41. It's less mature on the CM4 than Raspberry Pi OS, which is the offical OS for the Raspberry Pi.
+Fedora added support for the Raspberry Pi 4 (including the CM4) with release 37. At the time of writing (September 2025) the current version is release 42. It's less mature on the CM4 than Raspberry Pi OS, which is the offical OS for the Raspberry Pi.
 
 Fedora has some advantages, which I think give it the potential in the long-term to be a better platform than Raspberry Pi OS.
 
@@ -24,8 +24,6 @@ Fedora always has the latest version of chrony and chrony can make use of the CM
 without needing SatPulse.
 Fedora is a good basis for experimenting with that.
 There is a separate page for configuring [chrony](https://github.com/jclark/rpi-cm4-ptp-guide/blob/main/chrony.md) without SatPulse. Unfortunately, chrony's PTP hardware support is not yet fully working on the CM4.
-
-Note that Fedora includes linuxptp version 4. This requires using the option `ptp_minor_version 0`, which can be specified in `/etc/ptp4l.conf`.
 
 ## RAM and storage requirements
 
@@ -54,16 +52,12 @@ The normal Fedora approach for step 4 requires using an HDMI monitor and keyboar
 
 ## Select and download the image
 
-Fedora has three editions that could potentially be used with the CM4: Workstation, Server and IoT. This guide focuses the Server edition.
+Fedora has a Server edition that can be used, but Fedora Server really needs an NVMe drive to work well,
+and most CM4 boards do not support NVMe and those that do don't have a SYNC_OUT pin.
+Accordingly, I recommend instead using [Fedora Minimal](https://fedoraproject.org/misc#minimal),
+which is comparable to Raspberry Pi OS Lite.
 
-To download, visit [getfedora.org](https://getfedora.org/) on the desktop. Then
-
-1. Follow the link to download Fedora Server
-2. Go to the section for `For ARM® aarch64 systems`
-3. Download the raw `raw.xz` image
-
-There is also a alternative version (Fedora calls it a *spin*) called [Fedora Minimal](https://fedoraproject.org/spins/minimal/download), which is comparable to Raspberry Pi OS Lite.
-This is not as much tested as Fedora Server, but is worth considering if you have a CM4 with an eMMC. This guide should mostly work with the Minimal spin also.
+This guide should mostly work for both Fedora Minimal and Fedora Server.
 
 ## Making CM4 storage accessible from desktop
 
@@ -172,7 +166,7 @@ sudo dnf install arm-image-installer
 Now, run it. The command looks something like this:
 
 ```
-sudo arm-image-installer --target=rpi4 --image=Fedora-Server-41-1.4.aarch64.raw.xz  --media=/dev/sdX --addkey=/home/jjc/.ssh/id_ecdsa.pub --resizefs
+sudo arm-image-installer --target=rpi4 --image=Fedora-Minimal-42-1.1.aarch64.raw.xz  --media=/dev/sdX --addkey=/home/jjc/.ssh/id_ecdsa.pub --resizefs
 ```
 You will need to adjust the command:
 * you will always need `--target=rpi4` for the CM4
@@ -181,7 +175,7 @@ You will need to adjust the command:
 * the `--addkey` option is only necessary if you want to be able to do initial setup using SSH rather than using a monitor and keyboard connected to the CM4; the argument for the `--addkey` option needs to point to your public SSH key (I generated mine with `ssh-keygen -t ecdsa -b 521`)
 * the `--resizefs` argument resizes the image to match the actual size of the disk 
 
-It takes about 25 minutes for arm-image-installer to write the Fedora Server image to internal eMMC. Writing to an SD card is much quicker.
+It takes about 15 minutes for arm-image-installer to write the Fedora Minimal image to internal eMMC. Writing to an SD card is much quicker.
 
 ### Windows desktop
 
@@ -219,10 +213,6 @@ passwd jjc
 Note that you shouldn't do the manual setup over ssh while the normal setup process is working. 
 
 ## CM4-specific setup
-
-Fedora has some [documentation on Raspberri Pi HATs](https://fedoraproject.org/wiki/Architectures/ARM/Raspberry_Pi/HATs) that is also applicable to the CM4 with an IO board (even without additional HATs).
-
-TODO: The serial port explanation didn't seem consistent with what I had understood about the serial ports from the official Raspberry Pi [documentation](https://www.raspberrypi.com/documentation/computers/configuration.html#configure-uarts).
 
 After making the changes in this section, I recommend shutting down (with `shutdown -h now`) and power cycling.
 
@@ -305,4 +295,4 @@ Update packages
 sudo dnf update
 ```
 
-You can make use of the Cockpit web administration interface by connecting to port 9090 on the CM4.
+If you are using Fedora Server, can make use of the Cockpit web administration interface by connecting to port 9090 on the CM4.
