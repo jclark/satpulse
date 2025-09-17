@@ -114,27 +114,42 @@ func (clk *Clock) PinCount() int {
 
 func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err error) {
 	rq := unix.PtpExttsRequest{Index: chanIndex}
-	// We want to know how many edges of the pulse are getting timestamped.
-	// We can do this by using the PTP_EXTTS_REQUEST2 ioctl with the PTP_STRICT_FLAGS set,
-	// which will give an EOPNOTSUPP error if it can't give the edges we request.
-	// Go's IoctlPtpExttsRequest in fact wraps PTP_EXTTS_REQUEST2, so we can use that.
-	// This is only supported since kernel 5.4.
-	const enableFlags = unix.PTP_ENABLE_FEATURE | unix.PTP_STRICT_FLAGS | unix.PTP_RISING_EDGE
 	if enabled {
-		rq.Flags = enableFlags
-		edges = 1
-	}
-	err = unix.IoctlPtpExttsRequest(clk.fd, &rq)
-	if err != nil && enabled && errors.Is(err, unix.EOPNOTSUPP) {
-		rq.Flags = enableFlags | unix.PTP_FALLING_EDGE
-		edges = 2
+		// We want to know if possible how many edges of the pulse are getting timestamped.
+		// We can do this by using the PTP_EXTTS_REQUEST2 ioctl with the PTP_STRICT_FLAGS set,
+		// which will give an EOPNOTSUPP error if it can't give the edges we request.
+		// This is only supported since kernel 5.4.
+		// unix.IoctlPtpExttsRequest wraps PTP_EXTTS_REQUEST
+		// There is an additional wrinkle caused by this
+		// https://lore.kernel.org/all/20250414-jk-supported-perout-flags-v2-1-f6b17d15475c@intel.com/
+		// which means that PTP_EXTTS_REQUEST2 will return EOPNOTSUPP even if the driver supports the requested edges,
+		// but hasn't implemented PTP_STRICT_FLAGS flag. Argh!
+		rq.Flags = unix.PTP_ENABLE_FEATURE | unix.PTP_RISING_EDGE | unix.PTP_STRICT_FLAGS
 		err = unix.IoctlPtpExttsRequest(clk.fd, &rq)
+		if err == nil {
+			edges = 1
+			return
+		}
+		if errors.Is(err, unix.EOPNOTSUPP) {
+			rq.Flags |= unix.PTP_FALLING_EDGE
+			err = unix.IoctlPtpExttsRequest(clk.fd, &rq)
+			if err == nil {
+				edges = 2
+				return
+			}
+		}
+		// If we get ENOTTY here, it means the ioctl isn't recognized.
+		// If we get EOPNOTSUPP here, it means the driver doesn't implement PTP_STRICT_FLAGS.
+		// If it isn't one of those, then something else has gone wrong, so report that.
+		if !errors.Is(err, unix.ENOTTY) && !errors.Is(err, unix.EOPNOTSUPP) {
+			err = clk.wrapErr(err, "ioctl(PTP_EXTTS_REQUEST2)")
+			return
+		}
+		// We get here if the kernel is older than 5.4 and does understand PTP_EXTTS_REQUEST2
+		// or if the driver doesn't implement PTP_STRICT_FLAGS.
+		rq.Flags = unix.PTP_ENABLE_FEATURE
 	}
-	if err != nil {
-		err = clk.wrapErr(err, "ioctl(PTP_EXTTS_REQUEST2)")
-		edges = 0
-		return
-	}
+	err = clk.wrapErr(ioctlPtpExttsRequest(clk.fd, &rq), "ioctl(PTP_EXTTS_REQUEST)")
 	return
 }
 
