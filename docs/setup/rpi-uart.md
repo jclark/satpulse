@@ -88,6 +88,8 @@ Fedora has a number of differences relevant to UART configuration:
 * Fedora doesn't have the `pinctrl` utility.
 * Fedora doesn't yet support the CM5
 
+Fedora has some [documentation on Raspberri Pi HATs](https://fedoraproject.org/wiki/Architectures/ARM/Raspberry_Pi/HATs) that is also applicable to the CM4 with an IO board (even without additional HATs).
+
 You need to use UART3 or UART4 instead of UART0 for connecting the GPS.
 You can enable UART3 by adding this to the end of `/boot/efi/config.txt`.
 
