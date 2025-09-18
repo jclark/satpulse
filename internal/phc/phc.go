@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/bits"
 	"os"
 	"strconv"
 	"time"
@@ -114,43 +115,60 @@ func (clk *Clock) PinCount() int {
 
 func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err error) {
 	rq := unix.PtpExttsRequest{Index: chanIndex}
-	if enabled {
-		// We want to know if possible how many edges of the pulse are getting timestamped.
-		// We can do this by using the PTP_EXTTS_REQUEST2 ioctl with the PTP_STRICT_FLAGS set,
-		// which will give an EOPNOTSUPP error if it can't give the edges we request.
-		// This is only supported since kernel 5.4.
-		// unix.IoctlPtpExttsRequest wraps PTP_EXTTS_REQUEST
-		// There is an additional wrinkle caused by this
-		// https://lore.kernel.org/all/20250414-jk-supported-perout-flags-v2-1-f6b17d15475c@intel.com/
-		// which means that PTP_EXTTS_REQUEST2 will return EOPNOTSUPP even if the driver supports the requested edges,
-		// but hasn't implemented PTP_STRICT_FLAGS flag. Argh!
-		rq.Flags = unix.PTP_ENABLE_FEATURE | unix.PTP_RISING_EDGE | unix.PTP_STRICT_FLAGS
-		err = unix.IoctlPtpExttsRequest(clk.fd, &rq)
-		if err == nil {
-			edges = 1
-			return
-		}
-		if errors.Is(err, unix.EOPNOTSUPP) {
-			rq.Flags |= unix.PTP_FALLING_EDGE
-			err = unix.IoctlPtpExttsRequest(clk.fd, &rq)
-			if err == nil {
-				edges = 2
-				return
-			}
-		}
-		// If we get ENOTTY here, it means the ioctl isn't recognized.
-		// If we get EOPNOTSUPP here, it means the driver doesn't implement PTP_STRICT_FLAGS.
-		// If it isn't one of those, then something else has gone wrong, so report that.
-		if !errors.Is(err, unix.ENOTTY) && !errors.Is(err, unix.EOPNOTSUPP) {
-			err = clk.wrapErr(err, "ioctl(PTP_EXTTS_REQUEST2)")
-			return
-		}
-		// We get here if the kernel is older than 5.4 and does understand PTP_EXTTS_REQUEST2
-		// or if the driver doesn't implement PTP_STRICT_FLAGS.
-		rq.Flags = unix.PTP_ENABLE_FEATURE
+	if !enabled {
+		err = clk.exttsRequest(clk.fd, &rq)
+		return
 	}
-	err = clk.wrapErr(ioctlPtpExttsRequest(clk.fd, &rq), "ioctl(PTP_EXTTS_REQUEST)")
+	// The list of flags to try to use when enabling external timestamping, in order of preference.
+	var tryFlagsList = []uint32{
+		// First preference is to timestamp just the rising edge
+		unix.PTP_RISING_EDGE,
+		// Next preference is to timestamp both edges
+		unix.PTP_RISING_EDGE | unix.PTP_FALLING_EDGE,
+		// Final preference is to not know what edges will be timestamped.
+		// It will make exttsRequest use the older PTP_EXTTS_REQUEST ioctl.
+		// It is only needed to deal with a kernel issue.
+		0,
+	}
+	for _, flags := range tryFlagsList {
+		rq.Flags = unix.PTP_ENABLE_FEATURE | flags
+		err = clk.exttsRequest(clk.fd, &rq)
+		if err == nil {
+			edges = bits.OnesCount32(flags)
+			break
+		}
+		if !errors.Is(err, unix.EOPNOTSUPP) {
+			break
+		}
+	}
 	return
+}
+
+// exttsRequest does either a PTP_EXTTS_REQUEST2 or a PTP_EXTTS_REQUEST ioctl, wrapping any error
+// We are not trying to deal with older kernels that do not support PTP_EXTTS_REQUEST2 properly,
+// (since that would require us not to use any of the unix.IoctlPtp functions).
+// We are just trying to fix an issue with CM4/CM5 on some kernel versions (e.g. 6.16.7).
+func (clk *Clock) exttsRequest(fd int, req *unix.PtpExttsRequest) error {
+	// PTP_EXTTS_REQUEST2 is always strict: meaning that if we specify the edges we want to timestamp,
+	// the driver will return EOPNOTSUPP if it cannot support that exactly.
+	// PTP_EXTTS_REQUEST is not strict: the edges are just a hint.
+	// Because of this:
+	// https://lore.kernel.org/all/20250414-jk-supported-perout-flags-v2-1-f6b17d15475c@intel.com/
+	// PTP_EXTTS_REQUEST2 will return EOPNOTSUPP on CM4/CM5 in some kernel versions e.g. 6.16.7
+	// So only use PTP_EXTTS_REQUEST2 when we really need it - when we are specifying the edges we want to timestamp.
+	otherFlags := req.Flags &^ unix.PTP_ENABLE_FEATURE
+	if otherFlags != 0 {
+		// In the latest kernel (6.16.7), PTP_EXTTS_REQUEST2 assumes PTP_STRICT_FLAGS,
+		// but I am not sure if this has always been the case,
+		// so add it in to be safe if we specify something other than just PTP_ENABLE_FLAGS
+		req2 := *req
+		req2.Flags |= unix.PTP_STRICT_FLAGS
+		// use PTP_EXTTS_REQUEST2 ioctl
+		return clk.wrapErr(unix.IoctlPtpExttsRequest(fd, &req2), "ioctl(PTP_EXTTS_REQUEST2)")
+	} else {
+		// use older PTP_EXTTS_REQUEST ioctl
+		return clk.wrapErr(ioctlPtpExttsRequest(fd, req), "ioctl(PTP_EXTTS_REQUEST)")
+	}
 }
 
 func (clk *Clock) ExttsChanCount() int {
@@ -169,8 +187,6 @@ func (clk *Clock) GetTime() (ptime.Time, error) {
 	}
 	return ptime.TimespecToTime(ts), nil
 }
-
-
 
 // PeroutEnable enables a periodic pulse on a channel.
 // chanIndex is the index of the channel.
