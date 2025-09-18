@@ -215,7 +215,10 @@ func (clk *Clock) PeroutEnable(chanIndex uint32, period, width, startOffset time
 		startTime := now.Round(time.Second).Add(2*time.Second + startOffset)
 		req.StartOrPhase = timespecToPtpClockTime(startTime.Timespec())
 	}
-
+	// Duty cycle won't work on the CM4/CM5 on a few kernels,
+	// (similar problem with exttsRequest above)
+	// but we cannot do anything about it in user space, since PTP_PEROUT_DUTY_CYCLE is
+	// a PTP_PEROUT_REQUEST2 feature.
 	return clk.wrapErr(unix.IoctlPtpPeroutRequest(clk.fd, &req), "ioctl(PTP_PEROUT_REQUEST2)")
 }
 
