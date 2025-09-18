@@ -10,7 +10,7 @@ For a complete PTP/NTP time server on Linux, follow these steps.
 1. Install Linux. The goal of this stage is to get Linux installed and set up to the point where you can login with SSH.
    For Raspberry Pi, I recommend [installing Raspberry Pi OS]({% link setup/rpi-os.md %})
    (note that kernel version 6.12.34 does not work for SatPulse or PTP).
-   It is also possible to use Fedora. I wrote a guide for [installing Fedora 41]({% link setup/fedora-rpi.md %}).
+   It is also possible to [install Fedora]({% link setup/fedora-rpi.md %}).
    In either case you probably want to [set a static IP address]({% link setup/network.md %}).
 2. On a Raspberry Pi, if you are connecting the TX/RX pins on the GPS board to the 40-pin HAT connector on the carrier board,
    then you need to [configure the UARTs]({%link setup/rpi-uart.md %}).

@@ -28,7 +28,7 @@ all:
       config: "false"
 
     # LEA-6T
-    burrata.lan:
+    pecorino.lan:
       interface: end0
       instance: ttyAMA3
 
