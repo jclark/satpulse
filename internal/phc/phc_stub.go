@@ -73,6 +73,10 @@ func (clk *Clock) PeroutChanCount() int {
 	panic(ErrNotSupported)
 }
 
+func (clk *Clock) PeroutEnable(chanIndex uint32, period, width, startOffset time.Duration) error {
+	panic(ErrNotSupported)
+}
+
 func (clk *Clock) SysOffset(nSamples int) (MultiSample, error) {
 	panic(ErrNotSupported)
 }
