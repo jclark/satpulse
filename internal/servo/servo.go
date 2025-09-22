@@ -65,8 +65,8 @@ func (s *Servo) FreqOffset() float64 {
 	return s.freqOff
 }
 
-func (s *Servo) setFreqOff(f float64) {
-	f = clamp(f, s.maxFreqOff)
+func (s *Servo) setFreqOff(f float64) (ok bool) {
+	f, ok = clamp(f, s.maxFreqOff)
 	if f == s.freqOff {
 		return
 	}
@@ -77,6 +77,7 @@ func (s *Servo) setFreqOff(f float64) {
 	}
 	s.lg.Debug("adjusted the PHC frequency", "oldFreq", s.freqOff, "newFreq", f, "diff", f-s.freqOff)
 	s.freqOff = f
+	return
 }
 
 func (s *Servo) adjTime(off time.Duration) ptime.Era {
@@ -102,9 +103,11 @@ func (s *Servo) piControlSampler(era ptime.Era, freq float64) {
 		}
 		off := local.T.Sub(ref)
 		fOff := float64(off)
-		offSum += fOff
-		out := kp*fOff + ki*offSum
-		s.setFreqOff(-out)
+		out := kp*fOff + ki*(offSum+fOff)
+		if s.setFreqOff(-out) {
+			// only update integral term if not clamped
+			offSum += fOff
+		}
 	}
 	s.piControlEra = era
 }
@@ -189,12 +192,15 @@ func (s *Servo) compensateSampler(era ptime.Era, freqOff float64) {
 	}
 }
 
-func clamp(v, max float64) float64 {
+// clamp clamps v to the range -max to +max.
+// It returns the clamped value, and a boolean which is true if
+// the value was ok without clamping.
+func clamp(v, max float64) (float64, bool) {
 	if math.Abs(v) <= max {
-		return v
+		return v, true
 	}
 	if v < 0 {
-		return -max
+		return -max, false
 	}
-	return max
+	return max, false
 }
