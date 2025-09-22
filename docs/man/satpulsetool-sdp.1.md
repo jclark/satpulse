@@ -10,7 +10,7 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-w**\|**\-\-width** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-period** *seconds*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pin** *index*\|*name*] [**\-\-chan** *index*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pin** *index*\|*name*] [**\-\-chan** *index*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-stale**] [**\-j**\|**\-\-jsonl**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[*interface*]
 
@@ -86,7 +86,7 @@ A period of 0 disables the output signal.
 Supports exponential notation (e.g., 1e-1 for 100ms, 1e-3 for 1ms).
 Applies only when **\-\-perout** option is specified.
 
-**\-\-pin** *index*\|*name*  
+**\-p**, **\-\-pin** *index*\|*name*
 : Select the pin to be used by **\-\-extts**, **\-\-perout**, or **\-\-disable**. The default is 0.
 
 **\-\-chan** *index*  
@@ -118,11 +118,11 @@ Output a PPS signal on eth0, with pin defaulting to pin 0:
 
 Check input on pin 1 of eth0, showing timestamp events received for 30 seconds in JSON lines format:
 
-    satpulsetool sdp -i -j --timeout 30 --pin 1 eth0
+    satpulsetool sdp -i -j --timeout 30 -p 1 eth0
 
 Output a PPS signal on pin 1 of eth0:
 
-    satpulsetool sdp -o --pin 1 eth0
+    satpulsetool sdp -o -p 1 eth0
 
 Disable periodic output on eth0:
 

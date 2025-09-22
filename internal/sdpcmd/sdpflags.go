@@ -46,7 +46,7 @@ type FlagConfig struct {
 const summary = `[-h|--help] [-j|--jsonl]
             [-i|--extts] [-o|--perout] [--disable] [--show]
             [-t|--timeout seconds] [-w|--width seconds] [--period seconds]
-            [--pin index|name] [--chan index] [--show-stale]
+            [-p|--pin index|name] [--chan index] [--show-stale]
             [interface]`
 
 const defaultTimeout = 2 * time.Second
@@ -83,7 +83,7 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	flags.BoolVar(&showFlag, "show", false, "show information about SDPs")
 
 	// Common pin selection
-	flags.StringVar(&cfg.Pin, "pin", "", "select the pin to be used (index or name)")
+	flags.StringVarP(&cfg.Pin, "pin", "p", "", "select the pin to be used (index or name)")
 	flags.IntVar(&cfg.Chan, "chan", 0, "select the channel to be used")
 
 	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
