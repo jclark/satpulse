@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/logfile"
@@ -42,7 +41,7 @@ func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (*PacketLog
 		ch:         ch,
 		pktFormats: gpsreg.PacketFormats,
 	}
-	cmd.WaitGroupGo(wg, func() {
+	wg.Go(func() {
 		doLogPackets(lg, lf, ch)
 	})
 	return pktLogger, lf, nil

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/bcast"
-	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/promobs"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/sseobs"
@@ -94,7 +93,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 				fileServer.ServeHTTP(w, r)
 			})
 		}
-		
+
 		// Only register metrics endpoint if enabled for this endpoint
 		if cfg[i].metrics() {
 			mux.Handle("/metrics", promObs.Handler())
@@ -103,7 +102,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		// XXX we should supply an error logger that wraps lg
 		server := &http.Server{Handler: mux}
 		servers[i] = server
-		cmd.WaitGroupGo(wg, func() {
+		wg.Go(func() {
 			lg.Debug("HTTP server listening", "addr", listener.Addr())
 			if err := server.Serve(listener); err != http.ErrServerClosed {
 				lg.Error("HTTP serve error", "err", err)
@@ -111,7 +110,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 			lg.Debug("HTTP server about to exit", "addr", listener.Addr())
 		})
 	}
-	cmd.WaitGroupGo(wg, func() {
+	wg.Go(func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
 		defer cancel()

@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -19,14 +18,6 @@ type ExitCoder interface {
 
 func ErrPrintln(progName string, arg any) {
 	fmt.Fprintln(os.Stderr, progName+":", arg)
-}
-
-func WaitGroupGo(wg *sync.WaitGroup, f func()) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		f()
-	}()
 }
 
 func CancelOnSignal(ctx context.Context, lg *slog.Logger) (context.Context, context.CancelFunc) {

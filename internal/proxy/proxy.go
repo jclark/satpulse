@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/bcast"
-	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
@@ -108,7 +107,7 @@ func Start(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg Config,
 	for i, listen := range listeners {
 		sc := svcConfigs[i]
 		listen := listen
-		cmd.WaitGroupGo(wg, func() {
+		wg.Go(func() {
 			handleListen(ctx, lg, wg, sc, listen, b, portLock)
 		})
 	}
@@ -136,7 +135,6 @@ func (s *svcConfig) setOptions(opts Options) error {
 	}
 	return nil
 }
-
 
 func setSocketPerms(lg *slog.Logger, sock SocketService, sc svcConfig) error {
 	mode := os.FileMode(0660)
@@ -198,11 +196,11 @@ func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg sv
 	lg.Info("accepted proxy connection", "remoteAddr", conn.RemoteAddr())
 	// XXX both the read and write workers are closing the connection.
 	// Not sure if it would better for just one of them to do so.
-	cmd.WaitGroupGo(wg, func() { connWriteWorker(ctx, lg, cfg, conn, b) })
+	wg.Go(func() { connWriteWorker(ctx, lg, cfg, conn, b) })
 	// The connReadWorker reads from the connection and writes to the serial port.
 	// The readOnly config option says not to write to the serial port.
 	if !cfg.readOnly {
-		cmd.WaitGroupGo(wg, func() { connReadWorker(ctx, lg, cfg, conn, portLock) })
+		wg.Go(func() { connReadWorker(ctx, lg, cfg, conn, portLock) })
 	}
 }
 

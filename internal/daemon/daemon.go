@@ -151,7 +151,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		eb = startBcast(ctx, lg, &wg, sseCh)
 	}
 	// Shut down the broadcast goroutines when the context is cancelled.
-	cmd.WaitGroupGo(&wg, func() {
+	wg.Go(func() {
 		<-ctx.Done()
 		pb.Close()
 		if eb != nil {
@@ -260,15 +260,15 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 
 	if pmcClient != nil {
-		cmd.WaitGroupGo(&wg, func() { mon.PTP4LWorker(pmcClient, gmUpdateCh, lg) })
+		wg.Go(func() { mon.PTP4LWorker(pmcClient, gmUpdateCh, lg) })
 	}
 	if rc != nil {
-		cmd.WaitGroupGo(&wg, func() { mon.RefClockWorker(rc, rcCh, lg) })
+		wg.Go(func() { mon.RefClockWorker(rc, rcCh, lg) })
 	}
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
 	ls := gcfg.LeapSecond
-	cmd.WaitGroupGo(&wg, func() {
+	wg.Go(func() {
 		if ls != nil {
 			d.LeapSecond(ls, time.Time{})
 		}
@@ -343,13 +343,13 @@ func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObs
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	cmd.WaitGroupGo(wg, func() { gpsio.Scan(ctx, lg, conn, msg, pLog) })
+	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog) })
 	return msg
 }
 
 func startBcast[T any](ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, msg <-chan T) *bcast.Bcast[T] {
 	b := bcast.New(msg)
-	cmd.WaitGroupGo(wg, func() { b.Run(ctx, lg) })
+	wg.Go(func() { b.Run(ctx, lg) })
 	return b
 }
 
