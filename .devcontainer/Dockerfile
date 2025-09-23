@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/go:1-1.23-bookworm
+FROM mcr.microsoft.com/devcontainers/go:2-1.25-trixie
 
 # Install gh (for doing releases) and rpm (for building rpms) and pandoc (for manpages)
 RUN apt-get update \
