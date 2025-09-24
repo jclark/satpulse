@@ -29,8 +29,8 @@ This uses the TXD0/RXD0 pins, which are the pins for UART0.
 This requires that UART0 is not used for a serial console but is enabled.
 To configure this, run `raspi-config` and under Interface/Serial port, select enable serial port.
 Then answer:
-* No to login shell accessible over serial
-* Yes to enable serial port hardware
+* No to login shell accessible over serial (this removes `console=serial0,115200` from `/boot/firmware/cmdline.txt`)
+* Yes to enable serial port hardware (this adds `dtparam=uart0=on` or `enable_uart=1` to `/boot/firmware/config.txt`, depending on whether it's a CM5 or CM4)
 
 Also, for the CM4, but not the CM5, add the following at the end of `/boot/firmware/config.txt`:
 
