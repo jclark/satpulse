@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/bits"
 	"os"
 	"strconv"
 	"time"
@@ -114,28 +115,60 @@ func (clk *Clock) PinCount() int {
 
 func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err error) {
 	rq := unix.PtpExttsRequest{Index: chanIndex}
-	// We want to know how many edges of the pulse are getting timestamped.
-	// We can do this by using the PTP_EXTTS_REQUEST2 ioctl with the PTP_STRICT_FLAGS set,
-	// which will give an EOPNOTSUPP error if it can't give the edges we request.
-	// Go's IoctlPtpExttsRequest in fact wraps PTP_EXTTS_REQUEST2, so we can use that.
-	// This is only supported since kernel 5.4.
-	const enableFlags = unix.PTP_ENABLE_FEATURE | unix.PTP_STRICT_FLAGS | unix.PTP_RISING_EDGE
-	if enabled {
-		rq.Flags = enableFlags
-		edges = 1
-	}
-	err = unix.IoctlPtpExttsRequest(clk.fd, &rq)
-	if err != nil && enabled && errors.Is(err, unix.EOPNOTSUPP) {
-		rq.Flags = enableFlags | unix.PTP_FALLING_EDGE
-		edges = 2
-		err = unix.IoctlPtpExttsRequest(clk.fd, &rq)
-	}
-	if err != nil {
-		err = clk.wrapErr(err, "ioctl(PTP_EXTTS_REQUEST2)")
-		edges = 0
+	if !enabled {
+		err = clk.exttsRequest(clk.fd, &rq)
 		return
 	}
+	// The list of flags to try to use when enabling external timestamping, in order of preference.
+	var tryFlagsList = []uint32{
+		// First preference is to timestamp just the rising edge
+		unix.PTP_RISING_EDGE,
+		// Next preference is to timestamp both edges
+		unix.PTP_RISING_EDGE | unix.PTP_FALLING_EDGE,
+		// Final preference is to not know what edges will be timestamped.
+		// It will make exttsRequest use the older PTP_EXTTS_REQUEST ioctl.
+		// It is only needed to deal with a kernel issue.
+		0,
+	}
+	for _, flags := range tryFlagsList {
+		rq.Flags = unix.PTP_ENABLE_FEATURE | flags
+		err = clk.exttsRequest(clk.fd, &rq)
+		if err == nil {
+			edges = bits.OnesCount32(flags)
+			break
+		}
+		if !errors.Is(err, unix.EOPNOTSUPP) {
+			break
+		}
+	}
 	return
+}
+
+// exttsRequest does either a PTP_EXTTS_REQUEST2 or a PTP_EXTTS_REQUEST ioctl, wrapping any error
+// We are not trying to deal with older kernels that do not support PTP_EXTTS_REQUEST2 properly,
+// (since that would require us not to use any of the unix.IoctlPtp functions).
+// We are just trying to fix an issue with CM4/CM5 on some kernel versions (e.g. 6.16.7).
+func (clk *Clock) exttsRequest(fd int, req *unix.PtpExttsRequest) error {
+	// PTP_EXTTS_REQUEST2 is always strict: meaning that if we specify the edges we want to timestamp,
+	// the driver will return EOPNOTSUPP if it cannot support that exactly.
+	// PTP_EXTTS_REQUEST is not strict: the edges are just a hint.
+	// Because of this:
+	// https://lore.kernel.org/all/20250414-jk-supported-perout-flags-v2-1-f6b17d15475c@intel.com/
+	// PTP_EXTTS_REQUEST2 will return EOPNOTSUPP on CM4/CM5 in some kernel versions e.g. 6.16.7
+	// So only use PTP_EXTTS_REQUEST2 when we really need it - when we are specifying the edges we want to timestamp.
+	otherFlags := req.Flags &^ unix.PTP_ENABLE_FEATURE
+	if otherFlags != 0 {
+		// In the latest kernel (6.16.7), PTP_EXTTS_REQUEST2 assumes PTP_STRICT_FLAGS,
+		// but I am not sure if this has always been the case,
+		// so add it in to be safe if we specify something other than just PTP_ENABLE_FLAGS
+		req2 := *req
+		req2.Flags |= unix.PTP_STRICT_FLAGS
+		// use PTP_EXTTS_REQUEST2 ioctl
+		return clk.wrapErr(unix.IoctlPtpExttsRequest(fd, &req2), "ioctl(PTP_EXTTS_REQUEST2)")
+	} else {
+		// use older PTP_EXTTS_REQUEST ioctl
+		return clk.wrapErr(ioctlPtpExttsRequest(fd, req), "ioctl(PTP_EXTTS_REQUEST)")
+	}
 }
 
 func (clk *Clock) ExttsChanCount() int {
@@ -154,8 +187,6 @@ func (clk *Clock) GetTime() (ptime.Time, error) {
 	}
 	return ptime.TimespecToTime(ts), nil
 }
-
-
 
 // PeroutEnable enables a periodic pulse on a channel.
 // chanIndex is the index of the channel.
@@ -184,7 +215,10 @@ func (clk *Clock) PeroutEnable(chanIndex uint32, period, width, startOffset time
 		startTime := now.Round(time.Second).Add(2*time.Second + startOffset)
 		req.StartOrPhase = timespecToPtpClockTime(startTime.Timespec())
 	}
-
+	// Duty cycle won't work on the CM4/CM5 on a few kernels,
+	// (similar problem with exttsRequest above)
+	// but we cannot do anything about it in user space, since PTP_PEROUT_DUTY_CYCLE is
+	// a PTP_PEROUT_REQUEST2 feature.
 	return clk.wrapErr(unix.IoctlPtpPeroutRequest(clk.fd, &req), "ioctl(PTP_PEROUT_REQUEST2)")
 }
 
