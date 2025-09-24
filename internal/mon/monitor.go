@@ -36,9 +36,10 @@ type Monitor struct {
 }
 
 type stats struct {
-	accumPhase accumPhase
-	accumFreq  accumFreq
-	interval   int
+	accumPhase     accumPhase
+	accumFreq      accumFreq
+	accumFreqDelta accumFreq
+	interval       int
 }
 
 type Servo interface {
@@ -117,13 +118,17 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 	mon.paused = false
 	off := local.T.Sub(ref)
 	kind := SampleOK
+	freq := mon.servo.FreqOffset()
+	freqDelta := 0.0
 	if !delayed && mon.isOutlier(off, local.Era) {
 		kind = SampleOutlier
 	} else {
 		mon.servo.Sample(ref, local, delayed)
+		f := mon.servo.FreqOffset()
+		freqDelta = f - freq
+		freq = f
 	}
-	freq := mon.servo.FreqOffset()
-	mon.recordSample(kind, off, local.Era, freq)
+	mon.recordSample(kind, off, local.Era, freq, freqDelta)
 	nextState := mon.nextSyncState()
 	mon.writeLogEntry(kind, ref, off, local.Era, freq, nextState)
 	mon.sampler.Sample(SampleData{
@@ -131,6 +136,7 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 		Ref:       ref,
 		Offset:    off,
 		Freq:      freq,
+		FreqDelta: freqDelta,
 		SyncState: nextState,
 		Era:       local.Era,
 	})
@@ -155,11 +161,11 @@ func (mon *Monitor) addMissingOffsets(ref ptime.Time) {
 	}
 	diff := int(ref.Sub(lastRef) / time.Second)
 	for i := 1; i < diff; i++ {
-		mon.recordSample(SampleMissing, 0, mon.samples.era, mon.servo.FreqOffset())
+		mon.recordSample(SampleMissing, 0, mon.samples.era, mon.servo.FreqOffset(), 0)
 	}
 }
 
-func (mon *Monitor) recordSample(kind SampleKind, off time.Duration, era ptime.Era, freq float64) {
+func (mon *Monitor) recordSample(kind SampleKind, off time.Duration, era ptime.Era, freq float64, freqDelta float64) {
 	offSecs := off.Seconds()
 	mon.samples.sample(kind, offSecs, era, mon.syncState, &mon.cfg)
 	interval := mon.stats.interval
@@ -169,7 +175,7 @@ func (mon *Monitor) recordSample(kind SampleKind, off time.Duration, era ptime.E
 	locked := mon.servo.Locked(era)
 	if locked {
 		if interval > 1 {
-			mon.stats.sample(mon.lg, kind, offSecs, freq)
+			mon.stats.sample(mon.lg, kind, offSecs, freq, freqDelta)
 			return
 		}
 		if kind == SampleOK {
@@ -222,7 +228,6 @@ func logDateTime(ref ptime.Time, ls ptime.LeapSecond) string {
 	return strings.Replace(s, "Z", "", 1)
 }
 
-
 func (mon *Monitor) SysSample(ref ptime.Time, sys time.Time) {
 	if mon.rc == nil || mon.syncState == NoSync {
 		return
@@ -255,7 +260,7 @@ func (mon *Monitor) Tick(now time.Time) {
 	mon.lastSampleTime = mon.lastSampleTime.Add(time.Second)
 	mon.lastRefTime = mon.lastRefTime.Add(time.Second)
 	freq := mon.servo.FreqOffset()
-	mon.recordSample(SampleMissing, 0, mon.samples.era, freq)
+	mon.recordSample(SampleMissing, 0, mon.samples.era, freq, 0)
 	nextState := mon.nextSyncState()
 	mon.sampler.Sample(SampleData{
 		Kind:      SampleMissing,
@@ -305,9 +310,10 @@ func (mon *Monitor) SetLeapSecond(leapSecond ptime.LeapSecond) {
 	mon.gmUpdate()
 }
 
-func (s *stats) sample(lg *slog.Logger, kind SampleKind, off float64, freq float64) {
+func (s *stats) sample(lg *slog.Logger, kind SampleKind, off float64, freq float64, freqDelta float64) {
 	s.accumPhase.add(kind, off)
 	s.accumFreq.add(freq)
+	s.accumFreqDelta.add(freqDelta)
 	if s.accumPhase.n == s.interval {
 		s.flush(lg)
 	}
@@ -320,6 +326,7 @@ func (s *stats) flush(lg *slog.Logger) {
 		"offRMS", fmt.Sprintf("%.1f", s.accumPhase.rms()*1e9),
 		"freqMean", fmt.Sprintf("%.0f", s.accumFreq.mean()),
 		"freqStdDev", fmt.Sprintf("%.0f", s.accumFreq.stddev()),
+		"freqDeltaStdDev", fmt.Sprintf("%.1f", s.accumFreqDelta.stddev()),
 		"nSecs", s.accumPhase.n,
 		"nMissing", s.accumPhase.nMissing,
 		"nOutliers", s.accumPhase.nOutliers)

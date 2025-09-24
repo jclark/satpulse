@@ -42,6 +42,7 @@ type SampleData struct {
 	Ref       ptime.Time    // GPS reference time (different from system time)
 	Offset    time.Duration // PHC/GPS offset (valid for SampleOK and SampleOutlier, 0 for SampleMissing)
 	Freq      float64       // Current frequency adjustment in PPB (always valid)
+	FreqDelta float64       // Change in frequency adjustment in PPB (valid for SampleOK, 0 for SampleOutlier)
 	SyncState SyncState     // Current synchronization state (always valid)
 	Era       ptime.Era     // For clock step tracking and logging (always valid)
 }

@@ -24,13 +24,16 @@ type PrometheusObserver struct {
 	activeSatellites map[gpsprot.SVID]map[gpsprot.SignalID]struct{}
 
 	// PHC metrics
-	inSyncGauge         prometheus.Gauge
-	offsetHistogram     prometheus.Histogram
-	offsetGauge         prometheus.Gauge
-	frequencyGauge      prometheus.Gauge
-	offsetAbsSumCounter prometheus.Counter
-	offsetSumSqCounter  prometheus.Counter
-	samplesCounter      *prometheus.CounterVec
+	inSyncGauge           prometheus.Gauge
+	offsetHistogram       prometheus.Histogram
+	offsetGauge           prometheus.Gauge
+	frequencyGauge        prometheus.Gauge
+	offsetAbsSumCounter   prometheus.Counter
+	offsetSumSqCounter    prometheus.Counter
+	samplesCounter        *prometheus.CounterVec
+	freqDeltaCountCounter prometheus.Counter
+	freqDeltaSumCounter   prometheus.Counter
+	freqDeltaSumSqCounter prometheus.Counter
 
 	// Satellites metrics
 	lookAngleGauge     *prometheus.GaugeVec
@@ -86,6 +89,20 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		Help: "Total number of PHC samples by status",
 	}, []string{"status"})
 
+	// Frequency delta statistics
+	freqDeltaCountCounter := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "satpulse_phc_frequency_delta_count_total",
+		Help: "Total number of frequency delta samples from OK samples",
+	})
+	freqDeltaSumCounter := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "satpulse_phc_frequency_delta_sum_ppb_total",
+		Help: "Sum of frequency delta values from OK samples (for mean calculation)",
+	})
+	freqDeltaSumSqCounter := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "satpulse_phc_frequency_delta_sum_squares_ppb_total",
+		Help: "Sum of squares of frequency delta values from OK samples (for stddev calculation)",
+	})
+
 	lookAngleGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "satpulse_satellite_look_angle_degrees",
 		Help: "Look angle (direction) of satellite in degrees",
@@ -109,23 +126,29 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 	reg.MustRegister(offsetAbsSumCounter)
 	reg.MustRegister(offsetSumSqCounter)
 	reg.MustRegister(samplesCounter)
+	reg.MustRegister(freqDeltaCountCounter)
+	reg.MustRegister(freqDeltaSumCounter)
+	reg.MustRegister(freqDeltaSumSqCounter)
 	reg.MustRegister(lookAngleGauge)
 	reg.MustRegister(satelliteUsedGauge)
 	reg.MustRegister(signalLevelGauge)
 
 	return &PrometheusObserver{
-		reg:                 reg,
-		activeSatellites:    make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
-		inSyncGauge:         inSyncGauge,
-		offsetHistogram:     offsetHistogram,
-		offsetGauge:         offsetGauge,
-		frequencyGauge:      frequencyGauge,
-		offsetAbsSumCounter: offsetAbsSumCounter,
-		offsetSumSqCounter:  offsetSumSqCounter,
-		samplesCounter:      samplesCounter,
-		lookAngleGauge:      lookAngleGauge,
-		satelliteUsedGauge:  satelliteUsedGauge,
-		signalLevelGauge:    signalLevelGauge,
+		reg:                   reg,
+		activeSatellites:      make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
+		inSyncGauge:           inSyncGauge,
+		offsetHistogram:       offsetHistogram,
+		offsetGauge:           offsetGauge,
+		frequencyGauge:        frequencyGauge,
+		offsetAbsSumCounter:   offsetAbsSumCounter,
+		offsetSumSqCounter:    offsetSumSqCounter,
+		samplesCounter:        samplesCounter,
+		freqDeltaCountCounter: freqDeltaCountCounter,
+		freqDeltaSumCounter:   freqDeltaSumCounter,
+		freqDeltaSumSqCounter: freqDeltaSumSqCounter,
+		lookAngleGauge:        lookAngleGauge,
+		satelliteUsedGauge:    satelliteUsedGauge,
+		signalLevelGauge:      signalLevelGauge,
 	}
 }
 
@@ -198,6 +221,9 @@ func (p *PrometheusObserver) Sample(data mon.SampleData) {
 		p.offsetHistogram.Observe(math.Abs(offsetSeconds))
 		p.offsetAbsSumCounter.Add(math.Abs(offsetSeconds))
 		p.offsetSumSqCounter.Add(offsetSeconds * offsetSeconds)
+		p.freqDeltaCountCounter.Inc()
+		p.freqDeltaSumCounter.Add(data.FreqDelta)
+		p.freqDeltaSumSqCounter.Add(data.FreqDelta * data.FreqDelta)
 	}
 }
 
