@@ -62,6 +62,10 @@ all:
     # MAX-F10S in Timebeat sandwich board
     valdeon.lan: # all default
 
+    # NEO-F10N on a CM5
+    valtellina.lan:
+      speed: 38400
+
     # LEA-F9T
     mascarpone.lan:
       speed: 115200
