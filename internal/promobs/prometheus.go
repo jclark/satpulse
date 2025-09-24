@@ -32,7 +32,7 @@ type PrometheusObserver struct {
 	offsetSumSqCounter    prometheus.Counter
 	samplesCounter        *prometheus.CounterVec
 	freqDeltaCountCounter prometheus.Counter
-	freqDeltaSumCounter   prometheus.Counter
+	freqDeltaSumGauge     prometheus.Counter
 	freqDeltaSumSqCounter prometheus.Counter
 
 	// Satellites metrics
@@ -94,7 +94,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		Name: "satpulse_phc_frequency_delta_count_total",
 		Help: "Total number of frequency delta samples from OK samples",
 	})
-	freqDeltaSumCounter := prometheus.NewCounter(prometheus.CounterOpts{
+	freqDeltaSumGauge := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "satpulse_phc_frequency_delta_sum_ppb_total",
 		Help: "Sum of frequency delta values from OK samples (for mean calculation)",
 	})
@@ -127,7 +127,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 	reg.MustRegister(offsetSumSqCounter)
 	reg.MustRegister(samplesCounter)
 	reg.MustRegister(freqDeltaCountCounter)
-	reg.MustRegister(freqDeltaSumCounter)
+	reg.MustRegister(freqDeltaSumGauge)
 	reg.MustRegister(freqDeltaSumSqCounter)
 	reg.MustRegister(lookAngleGauge)
 	reg.MustRegister(satelliteUsedGauge)
@@ -144,7 +144,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		offsetSumSqCounter:    offsetSumSqCounter,
 		samplesCounter:        samplesCounter,
 		freqDeltaCountCounter: freqDeltaCountCounter,
-		freqDeltaSumCounter:   freqDeltaSumCounter,
+		freqDeltaSumGauge:     freqDeltaSumGauge,
 		freqDeltaSumSqCounter: freqDeltaSumSqCounter,
 		lookAngleGauge:        lookAngleGauge,
 		satelliteUsedGauge:    satelliteUsedGauge,
@@ -222,7 +222,7 @@ func (p *PrometheusObserver) Sample(data mon.SampleData) {
 		p.offsetAbsSumCounter.Add(math.Abs(offsetSeconds))
 		p.offsetSumSqCounter.Add(offsetSeconds * offsetSeconds)
 		p.freqDeltaCountCounter.Inc()
-		p.freqDeltaSumCounter.Add(data.FreqDelta)
+		p.freqDeltaSumGauge.Add(data.FreqDelta)
 		p.freqDeltaSumSqCounter.Add(data.FreqDelta * data.FreqDelta)
 	}
 }
