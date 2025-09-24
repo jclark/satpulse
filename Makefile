@@ -156,6 +156,7 @@ $(RPM_PATTERN): $(ALL_GOARCH) $(TOMLS) $(MAN_GZ_TARGETS)
 	rpmbuild -bb --target $* --define "goarch $$goarch" \
 	--build-in-place \
 	--buildroot "$$cwd/out/$$goarch/rpm" \
+	--define "debug_package %{nil}" \
 	--define "version $(RPM_VERSION)" \
 	--define "_rpmdir $$cwd/out" \
 	satpulse.spec

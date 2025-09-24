@@ -4,7 +4,8 @@ FROM mcr.microsoft.com/devcontainers/go:2-1.25-trixie
 RUN apt-get update \
   && export DEBIAN_FRONTEND=noninteractive \
   && apt-get install -y --no-install-recommends gh rpm pandoc ripgrep \
-  && apt-get clean
+  && apt-get clean \
+  && rpm --initdb
 
 # Cache the go modules in the docker image
 WORKDIR /go-mod
