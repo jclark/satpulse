@@ -133,12 +133,6 @@ sudo apt upgrade
 
 and reboot.
 
-Run `raspi-config`:
-
-* enable serial port (under Interface/Serial Port); answer
-   * No to login shell accessible over serial
-   * Yes to enable serial port hardware
-
 For the CM4, but not the CM5, add the following at the end of `/boot/firmware/config.txt`.
 
 ```
@@ -146,14 +140,6 @@ For the CM4, but not the CM5, add the following at the end of `/boot/firmware/co
 dtoverlay=i2c-rtc,pcf85063a,i2c_csi_dsi
 # fan
 dtoverlay=i2c-fan,emc2301,i2c_csi_dsi
-# Make /dev/ttyAMA0 be connected to GPIO header pins 8 and 10
-# This always disables Bluetooth
-dtoverlay=disable-bt
-```
-
-Disable the system service that initialises the modem:
-```
-sudo systemctl disable hciuart
 ```
 
 Set the timezone:
