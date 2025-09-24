@@ -115,6 +115,7 @@ $(GH_DEB_PATTERN): $(DEB_PATTERN)
 	ln -sf $(notdir $<) $@
 
 $(DEB_PATTERN): % out/%/satpulse.toml $(MAN_GZ_TARGETS)
+	rm -fr out/$*/deb
 	install -D -m 644 debian/conffiles out/$*/deb/DEBIAN/conffiles
 	install -D debian/postinst out/$*/deb/DEBIAN/postinst
 	install -D out/$*/satpulsed out/$*/deb/usr/sbin/satpulsed
