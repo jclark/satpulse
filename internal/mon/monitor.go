@@ -332,6 +332,7 @@ func (s *stats) flush(lg *slog.Logger) {
 		"nOutliers", s.accumPhase.nOutliers)
 	s.accumPhase = accumPhase{}
 	s.accumFreq = accumFreq{}
+	s.accumFreqDelta = accumFreq{}
 }
 
 type accumPhase struct {
