@@ -10,7 +10,7 @@ docs:
   - title: "Hardware"
     children:
       - title: "Introduction"
-        url: "/hardware/hw-intro.html"
+        url: "/hardware/index.html"
       - title: "RPi CM4/5 builds"
         url: "/hardware/cm-build.html"
       - title: "Intel NIC builds"
