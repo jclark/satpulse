@@ -12,16 +12,16 @@ all:
     testing:
       hosts:
         abondance.lan:
-        burrata.lan:
         caciocavallo.lan:
-        chaource.lan:
         morbier.lan:
+        pecorino.lan:
+        taleggio.lan:
         toma.lan:
-        #vacherin.lan:
-        valdeon.lan:
+        vacherin.lan:
+        valtellina.lan:
   
   hosts:
-    # UM980 on USB
+    # K901 on USB
     vacherin.lan:
       speed: 115200
       instance: ttyUSB0
@@ -77,4 +77,9 @@ all:
     wensleydale.lan:
       speed: 115200
       config: "false"
-     
+    
+    # TimeHAT on Pi 5 with M.2 NEO-M9N
+    taleggio.lan:
+      speed: 38400
+      interface: eth1
+      pin: 2 
