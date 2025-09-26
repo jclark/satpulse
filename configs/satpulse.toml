@@ -2,7 +2,6 @@
 # Default config file for satpulse
 [phc]
 interface = "enp1s0"
-channel = 0
 pin = 0
 
 [serial]
