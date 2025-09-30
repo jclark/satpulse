@@ -19,7 +19,7 @@
 
     - name: Edit the SatPulse config file
       ini_file:
-        path: "/etc/satpulse.toml"
+        path: "{{ config_file }}"
         section: "{{ item.section }}"
         option: "{{ item.option }}"
         value: "{{ item.value }}"
@@ -31,11 +31,11 @@
         - { section: "gps", option: "config", value: "{{ config }}" }
         - { section: "log", option: "clock", value: "true" }
         - { section: "ntp", option: "sock.path", value: '"/var/run/chrony.satpulse.sock"'}
-        - { section: "[http]", option: "listen", value: '":2000"' }
+        - { section: "[http]", option: "listen", value: '":{{ http_port }}"' }
 
     - name: Remove old options from SatPulse config file
       ini_file:
-        path: "/etc/satpulse.toml"
+        path: "{{ config_file }}"
         section: "{{ item.section }}"
         option: "{{ item.option }}"
         state: "absent"

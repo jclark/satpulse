@@ -1,5 +1,6 @@
 - name: Reboot hosts if needed
   hosts: all
+  when: not virtual_host
   become: yes
 
   tasks:

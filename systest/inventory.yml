@@ -2,16 +2,20 @@ all:
   vars:
     ansible_user: jjc
     ansible_python_interpreter: auto_silent
+    virtual_host: false  # Set to true for virtual hosts (multiple instances on same machine)
     instance: ttyAMA0  # Instance for systemd service
     pin: 0             # PHC pin
     speed: 9600        # Baud rate
     interface: eth0    # Network interface
     config: "true"     # Enable GPS configuration
+    config_file: /etc/satpulse.toml  # SatPulse config file path
+    http_port: 2000    # HTTP monitoring port
 
   children:
     testing:
       hosts:
         abondance.lan:
+        abondance-ttyS0.lan:
         caciocavallo.lan:
         morbier.lan:
         pecorino.lan:
@@ -51,6 +55,17 @@ all:
       interface: enp4s0
       speed: 38400
       pin: 1
+
+    # BG7TBL CM55 (second GPS on same machine as abondance.lan)
+    abondance-ttyS0.lan:
+      ansible_host: abondance.lan
+      virtual_host: true
+      instance: ttyS0
+      interface: enp5s0
+      speed: 38400
+      config: "false"
+      config_file: /etc/satpulse.d/ttyS0.toml
+      http_port: 2001
   
     ricotta.lan: # all default
     
@@ -59,7 +74,7 @@ all:
       speed: 115200
       config: "false"
 
-    # BG7TBL CM55 over RS232
+    # LEA-M8T over RS232
     caciocavallo.lan:
       instance: ttyAMA3
 
