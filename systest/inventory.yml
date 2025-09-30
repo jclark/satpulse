@@ -23,13 +23,13 @@ all:
         valtellina.lan:
   
   hosts:
-    # K901 on USB
+    # SinoGNSS K901 on USB
     vacherin.lan:
       speed: 115200
       instance: ttyUSB0
       config: "false"
 
-    # F10T on USB
+    # NEO-F10T on USB
     roquefort.lan:
       speed: 38400
       instance: ttyUSB0
@@ -39,7 +39,7 @@ all:
       interface: end0
       instance: ttyAMA3
 
-    # F9T-20B in gnss.store dongle
+    # ZED-F9T-20B in gnss.store dongle
     toma.lan:
       instance: ttyACM0
       speed: 38400
@@ -59,7 +59,7 @@ all:
       speed: 115200
       config: "false"
 
-    # GG7TBL GNSSDO-CM55 over RS232
+    # BG7TBL CM55 over RS232
     caciocavallo.lan:
       instance: ttyAMA3
 
