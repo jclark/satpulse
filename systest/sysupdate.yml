@@ -1,0 +1,24 @@
+- name: Update OS packages
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Set update command for Debian
+      set_fact:
+        update_command: "apt update && apt upgrade -y"
+      when: ansible_os_family == "Debian"
+
+    - name: Set update command for RedHat
+      set_fact:
+        update_command: "dnf upgrade -y"
+      when: ansible_os_family == "RedHat"
+
+    - name: Run update command
+      shell: "{{ update_command }}"
+
+    - name: Check if reboot is needed
+      include_tasks: tasks/check-reboot-needed.yml
+
+    - name: Report reboot status
+      debug:
+        msg: "Reboot needed: {{ reboot_needed }}"

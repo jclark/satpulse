@@ -1,0 +1,17 @@
+- name: Reboot hosts if needed
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Check if reboot is needed
+      include_tasks: tasks/check-reboot-needed.yml
+
+    - name: Report reboot status
+      debug:
+        msg: "Reboot needed: {{ reboot_needed }}"
+
+    - name: Reboot host
+      reboot:
+        msg: "Rebooting to load new kernel"
+        reboot_timeout: 600
+      when: reboot_needed | bool

@@ -1,0 +1,20 @@
+- name: Get running kernel version
+  command: uname -r
+  register: running_kernel
+  changed_when: false
+
+- name: Get installed kernel version (Debian)
+  shell: dpkg -l | grep 'linux-image-[0-9]' | grep '^ii' | awk '{print $2}' | sed 's/linux-image-//' | sort -V | tail -1
+  register: installed_kernel_deb
+  changed_when: false
+  when: ansible_os_family == "Debian"
+
+- name: Get installed kernel version (RedHat)
+  shell: rpm -q kernel | sed 's/kernel-//' | sort -V | tail -1
+  register: installed_kernel_rpm
+  changed_when: false
+  when: ansible_os_family == "RedHat"
+
+- name: Check if reboot needed
+  set_fact:
+    reboot_needed: "{{ running_kernel.stdout != (installed_kernel_deb.stdout | default(installed_kernel_rpm.stdout)) }}"
