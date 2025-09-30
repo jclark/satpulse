@@ -61,7 +61,7 @@
           register: invocation_id
 
         - name: Collect logs for the completed service run
-          shell: "journalctl --priority=0..4 _SYSTEMD_INVOCATION_ID={{ invocation_id.stdout }} | grep -v '^-- Journal begins at'"
+          shell: "journalctl --priority=0..4 _SYSTEMD_INVOCATION_ID={{ invocation_id.stdout }} | egrep -v '^-- Journal begins at|satellites output will not be enabled'"
           register: service_logs
       
         - name: Check if 'in sync' is present
