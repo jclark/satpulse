@@ -4,7 +4,7 @@ title: Raspberry Pi OS installation
 
 These instructions are for the Raspberry Pi OS Lite. Raspberry Pi OS used to be called Raspbian.
 
-As of the time of writing (mid-September 2025), the current version of Raspberry Pi OS is based on Debian Bookworm.
+As of the time of writing (late September 2025), the current version of Raspberry Pi OS is based on Debian Bookworm.
 Debian Trixie, the next version of Debian, has been released; a release of Raspberry Pi OS based on Debian Trixie
 is expected in a few months.
 The CM5 requires at least Bookworm.
@@ -47,75 +47,24 @@ SatPulse and PTP use some relatively obscure parts of the kernel, which get brok
 You can check your kernel version with `uname -r`. On a CM4, you will see something like
 
 ```
-6.12.20+rpt-rpi-v8
+6.12.47+rpt-rpi-v8
 ```
 
 On a CM5, you will see something like
 
 ```
-6.12.20+rpt-rpi-2712
+6.12.47+rpt-rpi-2712
 ```
 
-The first part, `6.12.20`, is the upstream Linux kernel on which this is based.
+The first part, `6.12.47`, is the upstream Linux kernel on which this is based.
 The 'rpt' part indicates this is a kernel done by the Raspberry Pi Team.
 The `rpi-v8` part refers to the 64-bit kernel build for the Pi 4 and CM4, which use the ARMv8 architecture;
 the `rpi-2712` part refers to the build for the Pi 5 and CM5, which use the BCM2712 SoC.
 
-On the CM5, it is necessary to have at least kernel version 6.12 for PTP hardware timestamping to work.
+At the time of writing, the kernel version in Bookworm is 6.12.47.
+This version works well.
 
-At the time of writing, the current version of the kernel shipped by Raspberry Pi is 6.12.34;
-unfortunately PTP Hardware Clock support is completely broken in this version.
-You can install an apt preferences file that will prevent this from being used with the following command.
-
-```
-kver=6.12.34; outfile="/etc/apt/preferences.d/block-kernel-${kver}.pref"; \
-for rpi in v8 2712; do \
-  for pkg in image headers dtb; do \
-    printf "Package: linux-%s-%s+rpt-rpi-%s\nPin: version 1:%s-*\nPin-Priority: -1\n\n" \
-      "$pkg" "$kver" "$rpi" "$kver"; \
-    printf "Package: linux-%s-rpi-%s\nPin: version 1:%s-*\nPin-Priority: -1\n\n" \
-      "$pkg" "$rpi" "$kver"; \
-  done; \
-done | sudo tee "$outfile" >/dev/null
-```
-
-I have been using 6.12.20 for a while and I know that this works well.
-If you are running 6.12.34 and want to switch to 6.12.20,
-first install that using this command:
-
-```
-kver=6.12.20; pver="1:${kver}-1+rpt1"; \
-sudo apt-get install \
-  linux-image-${kver}+rpt-rpi-v8=${pver} linux-headers-${kver}+rpt-rpi-v8=${pver} \
-  linux-image-${kver}+rpt-rpi-2712=${pver} linux-headers-${kver}+rpt-rpi-2712=${pver} \
-  linux-headers-${kver}+rpt-common-rpi=${pver} linux-kbuild-${kver}+rpt=${pver}
-```
-
-If you have 6.12.34 already installed, you will need to force it to boot from the earlier version
-by using this command:
-
-```
-kver=6.12.20; \
-sudo cp /boot/vmlinuz-${kver}+rpt-rpi-v8    /boot/firmware/kernel8.img && \
-sudo cp /boot/initrd.img-${kver}+rpt-rpi-v8 /boot/firmware/initramfs8 && \
-sudo cp /boot/vmlinuz-${kver}+rpt-rpi-2712    /boot/firmware/kernel_2712.img && \
-sudo cp /boot/initrd.img-${kver}+rpt-rpi-2712 /boot/firmware/initramfs_2712
-```
-
-Then reboot
-
-```
-sudo reboot
-```
-
-and get rid of the 6.12.34 package:
-
-```
-kver=6.12.34; sudo apt-get purge -y linux-image-${kver}+rpt-rpi-v8 linux-image-${kver}+rpt-rpi-2712
-```
-
-There is also an [rpi-update](https://github.com/raspberrypi/rpi-update/blob/master/README.md) command
-that you can use to install a bleeding edge kernel.
+See the **Handling broken kernels** section below for tips on how to deal with the situation where there is a broken kernel version.
 
 ## OS configuration
 
@@ -132,6 +81,7 @@ sudo apt upgrade
 ```
 
 and reboot.
+
 
 For the CM4, but not the CM5, add the following at the end of `/boot/firmware/config.txt`.
 
@@ -179,3 +129,63 @@ You should see:
 ```
 cooling_device0  thermal_zone0
 ```
+
+## Managing broken kernels
+
+The Raspberry Pi kernel version before 6.12.47 was 6.12.34.
+The PTP Hardware clock support was broken in that version.
+The earlier version 6.12.20 was known to work.
+We can use these versions to illustrate how to manage broken OS versions.
+
+Note that these examples are illustrative: 6.12.47 is known to work, and you should use that rather than 6.12.20.
+
+The following command installs an APT preferences file that prevents 6.12.34 from being used. 
+
+```
+kver=6.12.34; outfile="/etc/apt/preferences.d/block-kernel-${kver}.pref"; \
+for rpi in v8 2712; do \
+  for pkg in image headers dtb; do \
+    printf "Package: linux-%s-%s+rpt-rpi-%s\nPin: version 1:%s-*\nPin-Priority: -1\n\n" \
+      "$pkg" "$kver" "$rpi" "$kver"; \
+    printf "Package: linux-%s-rpi-%s\nPin: version 1:%s-*\nPin-Priority: -1\n\n" \
+      "$pkg" "$rpi" "$kver"; \
+  done; \
+done | sudo tee "$outfile" >/dev/null
+```
+
+If you are running 6.12.34 and wanted to switch to 6.12.20,
+first install that 6.12.20 using this command:
+
+```
+kver=6.12.20; pver="1:${kver}-1+rpt1"; \
+sudo apt-get install \
+  linux-image-${kver}+rpt-rpi-v8=${pver} linux-headers-${kver}+rpt-rpi-v8=${pver} \
+  linux-image-${kver}+rpt-rpi-2712=${pver} linux-headers-${kver}+rpt-rpi-2712=${pver} \
+  linux-headers-${kver}+rpt-common-rpi=${pver} linux-kbuild-${kver}+rpt=${pver}
+```
+
+If you have 6.12.34 already installed, you will need to force it to boot from the earlier version
+by using this command:
+
+```
+kver=6.12.20; \
+sudo cp /boot/vmlinuz-${kver}+rpt-rpi-v8 /boot/firmware/kernel8.img && \
+sudo cp /boot/initrd.img-${kver}+rpt-rpi-v8 /boot/firmware/initramfs8 && \
+sudo cp /boot/vmlinuz-${kver}+rpt-rpi-2712 /boot/firmware/kernel_2712.img && \
+sudo cp /boot/initrd.img-${kver}+rpt-rpi-2712 /boot/firmware/initramfs_2712
+```
+
+Then reboot
+
+```
+sudo reboot
+```
+
+and get rid of the 6.12.34 package:
+
+```
+kver=6.12.34; sudo apt-get purge -y linux-image-${kver}+rpt-rpi-v8 linux-image-${kver}+rpt-rpi-2712
+```
+
+There is also an [rpi-update](https://github.com/raspberrypi/rpi-update/blob/master/README.md) command
+that you can use to install a bleeding edge kernel.
