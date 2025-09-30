@@ -8,6 +8,30 @@
         name: "satpulse@{{ instance }}"
         state: stopped
 
+    - name: Create temporary logrotate config
+      copy:
+        content: |
+          /var/log/satpulse/clock.{{ interface }}.log {
+              size 10M
+              rotate 5
+              compress
+              missingok
+              notifempty
+              create 0644 root root
+          }
+        dest: /tmp/satpulse-logrotate.conf
+        mode: '0644'
+
+    - name: Rotate log file if needed
+      command: logrotate -f /tmp/satpulse-logrotate.conf
+      register: logrotate_result
+      changed_when: logrotate_result.rc == 0
+
+    - name: Clean up temporary logrotate config
+      file:
+        path: /tmp/satpulse-logrotate.conf
+        state: absent
+
     - name: Initialize PHC
       command: "phc_ctl -q {{ interface }} set 0 freq 0"
 
