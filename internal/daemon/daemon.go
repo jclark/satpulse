@@ -92,7 +92,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		}
 	}
 	if clk == nil {
-		lg.Info("no interface specified, running in GPS only mode")
+		lg.Info("no interface specified, running without a PTP hardware clock")
 	}
 	var phcFlags phc.DriverFlags
 	if clk != nil {
