@@ -146,9 +146,3 @@ Enable the service:
 ```
 sudo systemctl enable satpulse@ttyAMA0.service
 ```
-
-Show the logs for the last 5 minutes:
-
-```
-sudo journalctl -u satpulse@ttyAMA0 -S -5m
-```

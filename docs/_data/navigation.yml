@@ -59,6 +59,8 @@ docs:
         url: "/setup/chrony.html"
       - title: "Setup ptp4l"
         url: "/setup/ptp4l.html"
+      - title: "Monitor satpulsed"
+        url: "/setup/monitor.html"
 
   - title: "Man pages"
     children:
