@@ -31,9 +31,13 @@ case $GOARCH in
     *) echo "Error: Unsupported architecture $GOARCH"; exit 1 ;;
 esac
 
-# Output directory
+# Commands and output directory
+cmds="satpulsed satpulsetool ubxanno pollpps"
+targets=""
+for cmd in $cmds; do
+    targets="$targets ./cmd/$cmd"
+done
 outdir="out/${GOOS}_${GOARCH}"
-targets="./cmd/satpulsed ./cmd/satpulsetool ./cmd/ubxanno ./cmd/pollpps"
 
 # Build info
 version=$(cat VERSION)
@@ -49,10 +53,9 @@ fi
 mkdir -p "$outdir"
 
 # Build
-echo "Building $targets for $GOOS/$GOARCH"
 go build -tags "netgo,osusergo" \
     -o "$outdir" \
     -ldflags "-X \"github.com/jclark/satpulse/internal/cmd.version=$cmd_version\" -X \"github.com/jclark/satpulse/internal/cmd.buildDate=$build_date\"" \
     $targets
 
-echo "Built: $targets"
+echo "Built $cmds in $outdir"
