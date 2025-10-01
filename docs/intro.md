@@ -35,12 +35,14 @@ accurate to within a few nanoseconds. When the controller has a PPS input pin, t
 detected by the pin. As with the packets, the timestamp of a pulse is with respect to the PHC.
 
 SatPulse provides two programs, written in the [Go](https://go.dev/) programming language: `satpulsed` and `satpulsetool`.
-The main one is `satpulsed`; it is a daemon, which
+`satpulsed` is a daemon, which
 
 - talks to a GPS receiver over a serial port
 - reads the timestamps of pulses from the GPS receiver
 - adjusts the time of the PHC to match the GPS: the pulse from the GPS receiver is precisely aligned with the start of a second;
   the messages received over the serial port are used to determine which second it is
+
+`satpulsetool` is a command-line utility, which provides a variety of subcommands that are designed to be useful both in conjunction with `satpulsed` and independently. In particular, `satpulsetool gps` is a sophisticated tool for configuration of GPS receivers.
 
 PTP does not concern itself with the system clock at all. The PTP server and client work together to transfer the
 time from the server's PHC to the client's PHC. A PTP server also provides time-related metadata to its clients:
