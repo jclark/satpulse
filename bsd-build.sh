@@ -3,19 +3,36 @@
 
 set -e
 
-# Detect OS and architecture
-os=$(uname -s | tr '[:upper:]' '[:lower:]')
-arch=$(uname -m)
+# Detect or use provided GOOS
+if [ -z "$GOOS" ]; then
+    GOOS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    export GOOS
+fi
 
-# Map architecture names to Go architecture names
-case $arch in
-    x86_64) goarch=amd64 ;;
-    aarch64|arm64) goarch=arm64 ;;
-    *) echo "Error: Unsupported architecture $arch"; exit 1 ;;
+# Validate GOOS
+case $GOOS in
+    darwin|freebsd) ;;
+    linux) echo Use Makefile on Linux 1>&2; exit 1;;
+    *) echo "Error: Unsupported OS $GOOS"; exit 1 ;;
+esac
+
+
+# Detect or use provided GOARCH
+if [ -z "$GOARCH" ]; then
+    GOARCH=$(uname -m)
+    export GOARCH
+fi
+
+# Validate GOARCH
+case $GOARCH in
+    amd64|arm64) ;;
+    x86_64) GOARCH=amd64 ;;
+    aarch64) GOARCH=arm64 ;;
+    *) echo "Error: Unsupported architecture $GOARCH"; exit 1 ;;
 esac
 
 # Output directory
-outdir="out/${os}_${goarch}"
+outdir="out/${GOOS}_${GOARCH}"
 targets="./cmd/satpulsed ./cmd/satpulsetool ./cmd/ubxanno ./cmd/pollpps"
 
 # Build info
@@ -32,8 +49,8 @@ fi
 mkdir -p "$outdir"
 
 # Build
-echo "Building $targets for $os/$goarch"
-env GOOS=$os GOARCH=$goarch go build -tags "netgo,osusergo" \
+echo "Building $targets for $GOOS/$GOARCH"
+go build -tags "netgo,osusergo" \
     -o "$outdir" \
     -ldflags "-X \"github.com/jclark/satpulse/internal/cmd.version=$cmd_version\" -X \"github.com/jclark/satpulse/internal/cmd.buildDate=$build_date\"" \
     $targets
