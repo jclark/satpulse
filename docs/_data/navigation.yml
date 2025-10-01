@@ -61,6 +61,8 @@ docs:
         url: "/setup/ptp4l.html"
       - title: "Monitor satpulsed"
         url: "/setup/monitor.html"
+      - title: "Use without a PHC"
+        url: "/setup/without-phc.html"
 
   - title: "Man pages"
     children:

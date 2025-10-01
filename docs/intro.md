@@ -10,10 +10,10 @@ and the NTP server provided by the [chrony](https://chrony-project.org/) project
 The role of SatPulse is to use the GPS receiver as a source of time for ptp4l and chrony.
 
 A time server based on SatPulse achieves its high precision by taking advantage of hardware support for PTP.
-The central piece of hardware required by SatPulse is an ethernet controller with a PPS (pulse-per-second)
+The central piece of hardware required is an ethernet controller with a PPS (pulse-per-second)
 input pin, sometimes called an SDP (software-defined pin). Although many ethernet controllers have PTP support,
-few of those provide a suitable input pin, and even fewer of those are inexpensive. SatPulse runs only on Linux,
-since only Linux has [APIs](https://docs.kernel.org/driver-api/ptp.html) that provide the necessary access
+few of those provide a suitable input pin, and even fewer of those are inexpensive. Linux is also required,
+because only Linux has [APIs](https://docs.kernel.org/driver-api/ptp.html) that provide the necessary access
 to the ethernet controller's PTP support. The ethernet controller must also have Linux drivers that support these APIs. 
 The main requirement for the GPS receiver is that it provide a PPS output signal that is electrically compatible with the PPS
 input pin on the ethernet controller. See the [Hardware]({%link hardware/index.md %}) section for more details.
@@ -34,15 +34,14 @@ Each packet is timestamped by the controller hardware, without going through the
 accurate to within a few nanoseconds. When the controller has a PPS input pin, the controller can also timestamp the pulses
 detected by the pin. As with the packets, the timestamp of a pulse is with respect to the PHC.
 
-SatPulse provides two programs, written in the [Go](https://go.dev/) programming language: `satpulsed` and `satpulsetool`.
-`satpulsed` is a daemon, which
+The core program in SatPulse is the `satpulsed` daemon,
+written in the [Go](https://go.dev/) programming language,
+which
 
 - talks to a GPS receiver over a serial port
 - reads the timestamps of pulses from the GPS receiver
 - adjusts the time of the PHC to match the GPS: the pulse from the GPS receiver is precisely aligned with the start of a second;
   the messages received over the serial port are used to determine which second it is
-
-`satpulsetool` is a command-line utility, which provides a variety of subcommands that are designed to be useful both in conjunction with `satpulsed` and independently. In particular, `satpulsetool gps` is a sophisticated tool for configuration of GPS receivers.
 
 PTP does not concern itself with the system clock at all. The PTP server and client work together to transfer the
 time from the server's PHC to the client's PHC. A PTP server also provides time-related metadata to its clients:
@@ -90,6 +89,10 @@ using a program like [u-center](https://www.u-blox.com/en/product/u-center) or [
 *at the same time as* it is being used for PTP. (This provides plenty of opportunity to break things, but is quite handy.)
 
 - It provides an HTTP interface for monitoring, including a graphical web interface and a Prometheus `/metrics` endpoint.
+
+- It provides `satpulsetool`, a command-line utility with a variety of subcommands that are useful both in conjunction with `satpulsed` and independently.
+In particular, `satpulsetool gps` is a sophisticated tool for GPS configuration;
+it works on macOS as well as Linux.
 
 
 ## Relationship to other software

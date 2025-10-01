@@ -83,14 +83,9 @@ So one way to do the configuration is to connect the module to a Windows machine
 If your module has Dupont pins, then you can get an inexpensive USB-to-TTL converter with Dupont female connectors.
 
 Many of these Windows applications can work over a TCP connection.
-You can use satpulsed in GPS-only mode to proxy the serial connection to TCP.
+You can use satpulsed to proxy the serial connection to TCP.
 This allows you to use the Windows application to perform configuration without touching the hardware.
-To run in GPS-only mode, comment out the `interface` line in the `[phc]` section
-
-```
-[phc]
-#interface = "enp1s0"
-```
+For this purpose, satpulsed can be run [without synchronizing the PHC]({%link setup/without-phc.md %}).
 
 To make it proxy the serial connection to TCP port 2006, add:
 

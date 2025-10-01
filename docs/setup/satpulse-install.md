@@ -2,14 +2,12 @@
 title: Installing SatPulse
 ---
 
-This assumes a Linux distribution that uses systemd. Instructions differ slightly between:
+Packages are available for:
 
-* Debian-based distributions using apt-based package management: Debian, Raspberry Pi OS, Ubuntu
-* Fedora-based distributions using rpm-based package management: Fedora, CentOS, RHEL
+* Debian-based Linux distributions using apt-based package management: Debian, Raspberry Pi OS, Ubuntu
+* Fedora-based Linux distributions using rpm-based package management: Fedora, CentOS, RHEL
 
-Installation will install a configuration file and a systemd service.
-
-You can either install from a package (`.deb` or `.rpm` file) or from source.
+Alternatively, you can install from source.
 
 ## Install from a package
 
@@ -51,3 +49,5 @@ After this, you will have:
 * the configuration file for the daemon installed as `/usr/local/etc/satpulse.toml`
 * the systemd service template unit file for the daemon installed as `/etc/systemd/system/satpulse@.service`
 * the SatPulse command line tool installed as `/usr/local/sbin/satpulsetool`
+
+On BSD (macOS or FreeBSD), build using the `bsd-build.sh` script, and copy the binaries into place manually.
