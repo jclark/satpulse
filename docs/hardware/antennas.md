@@ -1,5 +1,15 @@
 ---
 title: GNSS antennas
+survey_antennas:
+  - image_path: /assets/images/harxon-antenna-tree.jpg
+    alt: Harxon antenna mounted on tree
+  - image_path: /assets/images/beitian-antenna-tripod.jpg
+    alt: Beitian antenna on tripod
+antenna_splitters:
+  - image_path: /assets/images/bg7tbl-splitter.jpg
+    alt: BG7TBL antenna splitter
+  - image_path: /assets/images/gems-splitter.jpg
+    alt: GEMS antenna splitter
 ---
 
 ## Basics
@@ -61,7 +71,9 @@ but I have found them to make high-quality products at a reasonable price.
 
 ## Survey antennas
 
-If you need a longer cable, then the next step up is a survey antenna. 
+{% include gallery id="survey_antennas" %}
+
+If you need a longer cable, then the next step up is a survey antenna.
 Survey antennas are designed for the RTK market as well as survey applications;
 since RTK has become a large market, they offer good value.
 They work well for timing applications also.
@@ -89,6 +101,8 @@ I also have a Harxon antenna that is in the database, the HX-CSX627A, which I al
 
 ## Antenna splitters
 
+{% include gallery id="antenna_splitters" %}
+
 To feed one antenna into multiple receivers, you need a GNSS splitter. A simple T-connector is not safe: both receivers attempting to supply DC power will conflict, which can lead to receiver damage.
 A GNSS splitter passes DC power from one port and blocks DC power on the others.
 
@@ -107,3 +121,10 @@ BG7TBL make an inexpensive two-way, passive, all-band antenna splitter, PS-GNSS-
 which I own.
 
 Leo Bodnar make the LBE-2002, which is similar, but three-way and considerably more expensive.
+
+GEMS Navigation in China has a range of [splitters](https://en.gemsnav.com/Products/GPS_and_GNSS_Splitters/), which they sell on a [shop on Taobao](https://shop33329343.world.taobao.com/). I have the MGS14i and the MGS12i. They have a combination of features that is hard to find:
+
+- active (available with a range of amplification levels)
+- all band support
+- SMA connectors
+- reasonable price (about $70 ex-shipping for the 4-port model).
