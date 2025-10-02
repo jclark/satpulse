@@ -170,7 +170,8 @@ func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (mon.RefClock, error) {
 	if cfg.Sock == nil || cfg.Sock.Path == "" {
 		return nil, nil
 	}
-	rc, err := sockrefclock.New("", cfg.Sock.Path)
+	lPathFormat := localSocketPath(cfg.Sock.Path, "satpulse-chrony")
+	rc, err := sockrefclock.New(lPathFormat, cfg.Sock.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +185,7 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 	}
 	cc := pmc.NewClientConfig()
 	cc.RemoteSocketPath = ptp4l.UDSAddress
+	cc.LocalSocketPathFormat = localSocketPath(ptp4l.UDSAddress, "satpulse-pmc")
 	cl, err := pmc.NewClient(cc)
 	if err != nil {
 		return nil, err
@@ -192,6 +194,11 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 	cl.MajorSdoID = cfg.MajorSdoID
 	cl.MinorSdoID = cfg.MinorSdoID
 	return cl, nil
+}
+
+func localSocketPath(remotePath, prefix string) string {
+	dir := filepath.Dir(remotePath)
+	return filepath.Join(dir, prefix+"%d.sock")
 }
 
 // ClockPath returns the path for the clock log file.

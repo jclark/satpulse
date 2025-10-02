@@ -10,8 +10,6 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-const defaultLocalPathFormat = "/var/run/satpulse-chrony%d.sock"
-
 type SockRefClock struct {
 	cleanupMutex sync.Mutex
 	conn         net.PacketConn
@@ -22,14 +20,13 @@ type SockRefClock struct {
 // New creates a new SockRefClock.
 // lPathFormat is a format string for the local path;
 // it must contain a single format verb for the process ID.
-// If lPathFormat is empty, a default is used.
 // The local path is created with permissions 0660.
 func New(lPathFormat, rPath string) (*SockRefClock, error) {
-	if lPathFormat == "" {
-		lPathFormat = defaultLocalPathFormat
-	}
 	pid := os.Getpid()
 	lPath := fmt.Sprintf(lPathFormat, pid)
+	if lPath == lPathFormat {
+		panic("lPathFormat must contain a format verb")
+	}
 	_ = os.Remove(lPath)
 	conn, err := net.DialUnix("unixgram", &net.UnixAddr{
 		Name: lPath,

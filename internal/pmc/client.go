@@ -36,7 +36,11 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 		cfg.SetDefaults()
 	}
 	pid := os.Getpid()
-	t, err := NewUnixTransport(fmt.Sprintf(cfg.LocalSocketPathFormat, pid), cfg.RemoteSocketPath)
+	lPath := fmt.Sprintf(cfg.LocalSocketPathFormat, pid)
+	if lPath == cfg.LocalSocketPathFormat {
+		panic("LocalSocketPathFormat must contain a format verb")
+	}
+	t, err := NewUnixTransport(lPath, cfg.RemoteSocketPath)
 	if err != nil {
 		return nil, err
 	}
