@@ -296,3 +296,5 @@ and an M.2 card slot for a GNSS card.
 Like the TimeNIC, it also has a TCXO, which should improve the PHC stability.
 The PPS output of the GNSS module on the M.2 card has an internal connection to SDP2 on the controller.
 It also provides SMA connectors that expose SDP0 and SDP1 for PPS output and input respectively.
+
+![TimeHAT v6](/assets/images/timehat-v6-top.jpg)
