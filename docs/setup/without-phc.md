@@ -68,6 +68,9 @@ listen = ":2006"
 path = "/tmp/satpulse.sock"
 ```
 
+When running without a PHC, `satpulsed` does not need root privileges.
+It does, of course, need access to the GPS serial device,
+which typically any member of the `dialout` group has.
 
 ## satpulsetool
 
