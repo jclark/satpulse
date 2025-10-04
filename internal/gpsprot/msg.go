@@ -179,6 +179,17 @@ func (g GNSS) MarshalText() ([]byte, error) {
 	return []byte(g.String()), nil
 }
 
+// There are 24 operational GLONASS satellites with slot numbers 1 to 24.
+// But there can be others that are spares or in testing.
+// See https://glonass-iac.ru/en/sostavOG which is referenced by
+// https://files.igs.org/pub/resource/working_groups/multi_gnss/Metadata_SINEX_1.10.pdf
+// So it is possible to have satellite numbers for GLONASS > 24.
+// Maximum number of spares there has ever been is 3.
+// NMEA allows up to 8 which would imply a total of 32 slots.
+// This matches the use of 5 bits for slot number in the GLONASS ICD,
+// so it seems like a sensible upper limit.
+const MaxSpareGLONASS = 8
+
 // IsValidSVNum checks if the given SV number is valid for the GNSS type.
 // Numbers are as in RINEX 3.04.
 func (g GNSS) IsValidSVNum(num int) bool {
@@ -189,7 +200,7 @@ func (g GNSS) IsValidSVNum(num int) bool {
 	case GPS:
 		return num <= 32
 	case GLO:
-		return num <= 24
+		return num <= 24+MaxSpareGLONASS
 	case GAL:
 		return num <= 36
 	case BDS:

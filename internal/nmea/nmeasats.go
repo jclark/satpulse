@@ -99,7 +99,7 @@ func gnssConsistent(sen, found gpsprot.GNSS) bool {
 	if sen == found || sen == 0 {
 		return true
 	}
-	if sen == gpsprot.GPS && found == gpsprot.SBAS {
+	if sen == gpsprot.GPS && (found == gpsprot.SBAS || found == gpsprot.QZSS) {
 		return true
 	}
 	return false

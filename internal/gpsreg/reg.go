@@ -8,6 +8,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/rtcm"
+	"github.com/jclark/satpulse/internal/sino"
 	"github.com/jclark/satpulse/internal/ubx"
 )
 
@@ -136,6 +137,8 @@ func FindNMEASVNumbering(vendor Vendor) []gpsprot.NMEASVNumberingRange {
 	switch vendor {
 	case VendorAllystar:
 		return as.NewNMEASVNumbering()
+	case VendorSinoGNSS:
+		return sino.NewNMEASVNumbering()
 	case VendorUblox:
 		return ubx.NewNMEASVNumbering()
 	default:
