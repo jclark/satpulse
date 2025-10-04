@@ -201,6 +201,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoProbeResponse) {
 			lg.Info(err.Error())
+		} else if clk == nil && errors.Is(err, gpscfg.ErrNotDetected) {
+			lg.Warn(err.Error())
 		} else {
 			return err
 		}

@@ -44,6 +44,7 @@ type badCount struct {
 var _ gpsprot.NativeMsgHandler = &msgHandler{}
 
 var ErrNoProbeResponse = errors.New("no response to configuration probe message; not configuring GPS")
+var ErrNotDetected = errors.New("GPS detection failed")
 
 func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
@@ -200,7 +201,7 @@ func (mh *msgHandler) detect(ctx context.Context) error {
 			msg = "cannot parse GPS output"
 		}
 		lg.Debug("not receiving data from GPS correctly", "bad", mh.bad, "nativeOnlyTags", mh.nativeOnlyTags())
-		return errors.New(msg)
+		return fmt.Errorf("%w: %s", ErrNotDetected, msg)
 	}
 	lg.Info("detected a GPS")
 
