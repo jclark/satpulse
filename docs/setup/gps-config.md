@@ -107,6 +107,7 @@ listen = ":2006"
 * To be able to view information about satellite positions and signals
     * increase the serial speed to at least 38400
     * enable NMEA GSV, GSA messages
+	* output NMEA version 4.10 or 4.11 (this is needed for full multi-constellation support)
 * With a timing receiver, either
     * enable survey mode, or
     * specify a fixed position
