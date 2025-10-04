@@ -25,6 +25,9 @@ all:
         toma.lan:
         vacherin.lan:
         valtellina.lan:
+    virtual_hosts:
+      hosts:
+        abondance-ttyS0.lan:
   
   hosts:
     # SinoGNSS K901 on USB
@@ -59,7 +62,6 @@ all:
     # BG7TBL CM55 (second GPS on same machine as abondance.lan)
     abondance-ttyS0.lan:
       ansible_host: abondance.lan
-      virtual_host: true
       instance: ttyS0
       interface: enp5s0
       speed: 38400
