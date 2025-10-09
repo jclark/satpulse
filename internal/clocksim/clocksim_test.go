@@ -467,3 +467,35 @@ func TestNegativePPSJitter(t *testing.T) {
 		t.Errorf("timestamp = %v, want %v", ts, expected)
 	}
 }
+
+// TestAdjTimeDelayNonNegative verifies that ADJ_SETOFFSET delay is always non-negative.
+// This catches the bug where Gaussian tail could produce negative delays causing panic.
+func TestAdjTimeDelayNonNegative(t *testing.T) {
+	delayGen := defaultAdjTimeDelay()
+
+	// Sample many times to catch tail events
+	for i := 0; i < 10000; i++ {
+		delay := delayGen()
+		if delay < 0 {
+			t.Errorf("sample %d: delay = %v, must be non-negative", i, delay)
+		}
+	}
+}
+
+// TestAdjTimeDelayMean verifies that rejection sampling preserves the ~5µs mean.
+func TestAdjTimeDelayMean(t *testing.T) {
+	delayGen := defaultAdjTimeDelay()
+
+	// Sample to compute mean
+	sum := 0.0
+	n := 10000
+	for i := 0; i < n; i++ {
+		sum += delayGen()
+	}
+	mean := sum / float64(n)
+
+	// Should be close to 5µs (allow ±10% for statistical variation)
+	if mean < 4.5e-6 || mean > 5.5e-6 {
+		t.Errorf("mean delay = %v, expected ~5µs", mean)
+	}
+}

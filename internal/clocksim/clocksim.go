@@ -153,10 +153,17 @@ type VirtualClock struct {
 
 // defaultAdjTimeDelay returns a realistic ADJ_SETOFFSET delay with jitter.
 // Models kernel read-modify-write timing: ~5µs mean with ~1µs stddev.
+// Uses rejection sampling to ensure delay is always non-negative.
 func defaultAdjTimeDelay() func() float64 {
 	rng := rand.New(rand.NewSource(42))
 	return func() float64 {
-		return 5e-6 + rng.NormFloat64()*1e-6
+		for {
+			delay := 5e-6 + rng.NormFloat64()*1e-6
+			if delay >= 0 {
+				return delay
+			}
+			// Reject negative sample, resample to maintain distribution
+		}
 	}
 }
 
