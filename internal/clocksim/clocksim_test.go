@@ -387,6 +387,46 @@ func TestRawClockIntegration(t *testing.T) {
 	}
 }
 
+// TestIncrementalIntegration verifies that RawClock integration is truly incremental.
+// This catches the bug where WhiteFreqNoise was evaluated multiple times at the same t,
+// causing different random values and making the oscillator non-deterministic.
+func TestIncrementalIntegration(t *testing.T) {
+	// Use WhiteFreqNoise which would expose the bug if integration re-evaluates
+	osc := WhiteFreqNoise(1.0, 42)
+	raw := NewRawClock(osc, 0)
+
+	// Read at t=2.0 - this integrates from 0→2
+	phase1 := raw.ReadAt(2.0)
+
+	// Read at t=3.0 - with incremental integration, this only integrates 2→3
+	// With the old bug, this would re-integrate 0→3 with different random values
+	phase2 := raw.ReadAt(3.0)
+
+	// The phase difference should be ~1 second (with some noise)
+	deltaNs := phase2 - phase1
+	diffSeconds := float64(deltaNs) / 1e9
+
+	// Should be close to 1.0 second, allow ±1ms for noise
+	if diffSeconds < 0.999 || diffSeconds > 1.001 {
+		t.Errorf("phase delta = %.9f seconds, expected ~1.0", diffSeconds)
+	}
+
+	// More importantly: verify determinism by reading at same point again
+	// Create a new RawClock with same seed
+	raw2 := NewRawClock(WhiteFreqNoise(1.0, 42), 0)
+
+	// Should get exact same values
+	phase1b := raw2.ReadAt(2.0)
+	phase2b := raw2.ReadAt(3.0)
+
+	if phase1 != phase1b {
+		t.Errorf("non-deterministic at t=2: %v != %v", phase1, phase1b)
+	}
+	if phase2 != phase2b {
+		t.Errorf("non-deterministic at t=3: %v != %v", phase2, phase2b)
+	}
+}
+
 // TestNegativePPSJitter verifies that negative PPS jitter (early arrival) works.
 // This was a source of bugs in the lazy PPS generation logic.
 func TestNegativePPSJitter(t *testing.T) {

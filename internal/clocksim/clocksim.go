@@ -1,6 +1,7 @@
 package clocksim
 
 import (
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -70,28 +71,40 @@ func WhiteNoisePPS(stddev float64, seed int64) PPSSimulator {
 // RawClock wraps an OscillatorSimulator and integrates frequency error to produce phase.
 // It represents the unadjusted hardware oscillator with an initial phase offset.
 // Times are stored as int64 nanoseconds to match ptime.Time representation.
+// Integration is incremental: ReadAt must be called with monotonically increasing times.
 type RawClock struct {
-	oscillator   OscillatorSimulator
-	startPhaseNs int64
-	dt           float64 // Integration step size
+	oscillator     OscillatorSimulator
+	startPhaseNs   int64
+	dt             float64 // Integration step size
+	lastSimTime    float64 // Last time ReadAt was called
+	lastFreq       float64 // Frequency at lastSimTime
+	accumulatedSec float64 // Accumulated phase delta from t=0 to lastSimTime
 }
 
 // NewRawClock creates a RawClock with the given oscillator and initial phase in nanoseconds.
 func NewRawClock(oscillator OscillatorSimulator, startPhaseNs int64) *RawClock {
 	return &RawClock{
-		oscillator:   oscillator,
-		startPhaseNs: startPhaseNs,
-		dt:           0.001, // 1ms integration steps
+		oscillator:     oscillator,
+		startPhaseNs:   startPhaseNs,
+		dt:             0.001, // 1ms integration steps
+		lastSimTime:    0.0,
+		lastFreq:       oscillator(0.0),
+		accumulatedSec: 0.0,
 	}
 }
 
 // ReadAt returns the raw clock phase in nanoseconds at the given simulation time by integrating frequency error.
 // Integrates: phase(t) = startPhase + integral from 0 to t of (1 + freq(tau)) dtau
+// Must be called with monotonically increasing times (panics if time goes backwards).
 func (r *RawClock) ReadAt(simTime float64) int64 {
-	// Integrate frequency error to get phase delta from start
-	// Keep delta separate from large startPhase to avoid float64 precision loss
-	deltaSec := 0.0
-	t := 0.0
+	if simTime < r.lastSimTime {
+		panic(fmt.Sprintf("ReadAt: time went backwards: %.9f < %.9f", simTime, r.lastSimTime))
+	}
+
+	// Integrate from lastSimTime to simTime using incremental approach
+	// This ensures each time point is evaluated exactly once
+	t := r.lastSimTime
+	freq1 := r.lastFreq
 
 	// Use trapezoidal rule for integration
 	for t < simTime {
@@ -100,16 +113,21 @@ func (r *RawClock) ReadAt(simTime float64) int64 {
 			dt = simTime - t
 		}
 
-		freq1 := r.oscillator(t)
-		freq2 := r.oscillator(t + dt)
+		freq2 := r.oscillator(t + dt) // Only evaluate new endpoint
 		// Clock advances by dt * (1 + average frequency error)
-		deltaSec += dt * (1 + (freq1+freq2)/2)
+		r.accumulatedSec += dt * (1 + (freq1+freq2)/2)
+
 		t += dt
+		freq1 = freq2 // Next iteration's freq1 is this iteration's freq2
 	}
 
-	// Convert delta to nanoseconds and add to start phase
+	// Update state for next call
+	r.lastSimTime = simTime
+	r.lastFreq = freq1
+
+	// Convert accumulated delta to nanoseconds and add to start phase
 	// This avoids precision loss when startPhase is large (e.g., GPS epoch)
-	deltaNs := int64(deltaSec * 1e9)
+	deltaNs := int64(r.accumulatedSec * 1e9)
 	phaseNs := r.startPhaseNs + deltaNs
 	return phaseNs
 }
