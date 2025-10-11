@@ -405,6 +405,7 @@ Make this work end to end, but do not implement all features yet. Specifically, 
 * ignoring falling edges, when both edges timestamped
 * setting tuneable parameters via TOML file
 * lost state (make lost state do nothing - i.e. it stays unsynchronized)
+* sawtooth correction (pulse correction)
 
 Steps to implement.
 
@@ -438,6 +439,7 @@ It would be useful to be able to run new program and old program at the same tim
 * grandmaster settings
 * compensation step at beginning of recovery phase
 * implement recovery in lost mode
+* sawtooth correction
 
 ### Phase E - remove obsolete code
 
