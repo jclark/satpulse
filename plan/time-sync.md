@@ -387,22 +387,76 @@ This could be handled by the timemsg package, which is explicitly designed to be
 
 ## Staging
 
-Eventually combine, mon, phc will go away. But initially we will make new code run in parallel with old code. To handle this interfaces that will eventually be in phcsync will remain in their existing packages, with aliases in phcsync. At a later stage we will swap this round, and make the type definitions be in phcsync, with aliases in the other packages.
 
-1. Implement clock simulator. Done. This in `internal/clocksim` package.
-2. Factor out logging from mon into logobs package. Done.
-3. Implement timemsg. Call from dispatcher.go.
-4. Start on phcsync.Controller
+### Phase A - preparatory (done)
+
+1. Implement clock simulator. This in `internal/clocksim` package.
+2. Factor out logging from mon into logobs package.
+
+### Phase B - minimal end-to-end
+
+Eventually combine, mon, phc will go away. But initially we will make new code run in parallel with old code.
+To handle this interfaces that will eventually be in phcsync will remain in their existing packages, with aliases in phcsync.
+
+Make this work end to end, but do not implement all features yet. Specifically, do **not** implement:
+* Grandmaster settings
+* chrony samples
+* MAD-based outlier detection (for now, just have single value above which considered an outlier)
+* ignoring falling edges, when both edges timestamped
+* setting tuneable parameters via TOML file
+* lost state (make lost state do nothing - i.e. it stays unsynchronized)
+
+Steps to implement.
+
+1. Implement timemsg
+2. Start on phcsync.Controller
    * Design public method signatures
    * Empty bodies for now
    * Call from dispatcher.go
-   * Make Grandmaster, ProxyRefClock nil
-   * Make Sampler be a no-op
-5. Design internal interfaces for sampleGenerator, sampleProcessor and servo, including how phcsync.Controller calls these.
-6. Implement these interfaces for init state
-7. Factor out PI servo from servo.go and use as basis for servo implementation for converging and tracking state.
-8. Implement a test harness using clocksim to drive this.
-...
+   * Don't do anything with Grandmaster, ProxyRefClock
+3. Design internal interfaces for sampleGenerator, sampleProcessor and servo, including how phcsync.Controller calls these
+4. Implement these interfaces for init state
+5. Factor out PI servo from existing servo.go and use as basis for servo implementation for converging and tracking state; use same Kp/Ki for now
+6. Implement a test harness using clocksim to test this
+
+### Phase C - integrate into daemon
+
+* Integrate this into the daemon, so that it is used instead of combine/mon/servo.
+* Replace aliases in phcsync by definitions and change to combine/mon/servo to use aliases.
+
+It would be useful to be able to run new program and old program at the same time, seeing the same data
+- Add phcIndex property in config file for it to use a vclock (see issue #26)
+- How to distinguish system log entries? One would run under systemd, one would not.
+- How to have different clock path? Specify different logging directory for new one.
+- Both need access to the same serial port. We can do this by testing on a machine where GNSS receiver has two serial ports.
+
+### Phase D - bring to feature-parity with current version
+
+* MAD-based outlier detection
+* handle ignoring falling edges, when both edges timestamped (requires enhancements to clocksim)
+* chrony refclock
+* grandmaster settings
+* compensation step at beginning of recovery phase
+* implement recovery in lost mode
+
+### Phase E - remove obsolete code
+
+* Remove combine/mon/servo packages.
+
+### Phase F - tuneable parameters
+
+* Implement setting of tuneable parameters via new section in satpulse.toml.
+* Document in man page
+
+### Phase G - better default Kp/Ki choices
+
+* improve clock model to be more realistic
+* run some simulations to determine better Kp/Ki values for each state
+
+### Phase H - holdover
+
+TBD
+
 
 
  
