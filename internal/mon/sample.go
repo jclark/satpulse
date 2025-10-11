@@ -4,9 +4,9 @@ import (
 	"math"
 	"slices"
 
+	"github.com/jclark/satpulse/internal/circbuf"
 	"github.com/jclark/satpulse/internal/ptime"
 )
-
 
 type sampleData struct {
 	off  float64
@@ -17,13 +17,13 @@ type sampleState struct {
 	invalidWeight   float64 // Tracks recent invalid samples with decay
 	goodSampleCount int     // Tracks consecutive good samples when in noSync state
 	emaOffset       float64 // Exponential moving average of valid offsets
-	win             window[sampleData]
+	buf             *circbuf.Buffer[sampleData]
 	era             ptime.Era
 }
 
 func newSampleState(n int) *sampleState {
 	return &sampleState{
-		win: *newWindow[sampleData](n),
+		buf: circbuf.New[sampleData](n),
 	}
 }
 
@@ -50,10 +50,10 @@ var defaultSyncConfig = syncConfig{
 func (ss *sampleState) sample(kind SampleKind, offSecs float64, era ptime.Era, state SyncState, cfg *syncConfig) {
 	if era != ss.era {
 		ss.era = era
-		ss.win.clear()
+		ss.buf.Clear()
 		ss.emaOffset = 0
 	}
-	ss.win.append(sampleData{off: offSecs, kind: kind})
+	ss.buf.Append(sampleData{off: offSecs, kind: kind})
 
 	// Handle invalid samples (missing or outlier)
 	if kind == SampleMissing || kind == SampleOutlier {
@@ -104,7 +104,7 @@ func (ss *sampleState) emaGoodSamples() float64 {
 	}
 	// TODO Compute an EMA from all the good samples
 	// Using the last is good enough for now
-	return math.Abs(ss.win.last(0).off)
+	return math.Abs(ss.buf.Last(0).off)
 }
 
 func (ss *sampleState) madIsOutlier(offSecs float64, cfg *syncConfig) bool {
@@ -120,9 +120,9 @@ func (ss *sampleState) madIsOutlier(offSecs float64, cfg *syncConfig) bool {
 }
 
 func (ss *sampleState) mad(k float64) (n int, min, max float64) {
-	d := make([]float64, 0, ss.win.length())
+	d := make([]float64, 0, ss.buf.Len())
 	nMissing := 0
-	ss.win.iterate(func(i int, s sampleData) bool {
+	ss.buf.Iterate(func(i int, s sampleData) bool {
 		if s.kind == SampleMissing {
 			nMissing++
 		} else {

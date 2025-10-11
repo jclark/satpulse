@@ -389,8 +389,8 @@ This could be handled by the timemsg package, which is explicitly designed to be
 
 Eventually combine, mon, phc will go away. But initially we will make new code run in parallel with old code. To handle this interfaces that will eventually be in phcsync will remain in their existing packages, with aliases in phcsync. At a later stage we will swap this round, and make the type definitions be in phcsync, with aliases in the other packages.
 
-1. Implement clock simulator. Done. This in `internal/clocksim` on the `clocksim` branch.
-2. Factor out logging from mon into logobs package.
+1. Implement clock simulator. Done. This in `internal/clocksim` package.
+2. Factor out logging from mon into logobs package. Done.
 3. Implement timemsg. Call from dispatcher.go.
 4. Start on phcsync.Controller
    * Design public method signatures

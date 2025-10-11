@@ -9,7 +9,10 @@ import (
 type Observer interface {
 	mon.Sampler
 	gpsprot.MsgHandler
-	
+
+	// ReopenLog handles log rotation (e.g., on SIGHUP signal)
+	ReopenLog()
+
 	// Release releases any resources used by the observer
 	Release()
 }
@@ -40,6 +43,15 @@ func (m *MultiObserver) Sample(data mon.SampleData) {
 	}
 }
 
+// ReopenLog implements Observer by type-asserting handlers to Observer
+func (m *MultiObserver) ReopenLog() {
+	for h := range m.Handlers() {
+		if obs, ok := h.(Observer); ok {
+			obs.ReopenLog()
+		}
+	}
+}
+
 // Release implements Observer by type-asserting handlers to Observer
 func (m *MultiObserver) Release() {
 	for h := range m.Handlers() {
@@ -56,6 +68,9 @@ type DefaultObserver struct {
 
 // Sample implements mon.Sampler as a no-op
 func (o *DefaultObserver) Sample(data mon.SampleData) {}
+
+// ReopenLog implements Observer as a no-op
+func (o *DefaultObserver) ReopenLog() {}
 
 // Release implements Observer as a no-op
 func (o *DefaultObserver) Release() {}

@@ -10,13 +10,18 @@ import (
 
 type mockObserver struct {
 	gpsprot.DefaultHandler
-	sampleCount  int
-	releaseCount int
-	timeCount    int
+	sampleCount   int
+	releaseCount  int
+	reopenCount   int
+	timeCount     int
 }
 
 func (m *mockObserver) Sample(data mon.SampleData) {
 	m.sampleCount++
+}
+
+func (m *mockObserver) ReopenLog() {
+	m.reopenCount++
 }
 
 func (m *mockObserver) Release() {
@@ -69,5 +74,20 @@ func TestMultiObserver_Time(t *testing.T) {
 	}
 	if mock2.timeCount != 1 {
 		t.Errorf("Expected Time count 1 on mock2, got %d", mock2.timeCount)
+	}
+}
+
+func TestMultiObserver_ReopenLog(t *testing.T) {
+	mock1 := &mockObserver{}
+	mock2 := &mockObserver{}
+	multi := NewMultiObserver(mock1, mock2)
+
+	multi.ReopenLog()
+
+	if mock1.reopenCount != 1 {
+		t.Errorf("Expected ReopenLog count 1 on mock1, got %d", mock1.reopenCount)
+	}
+	if mock2.reopenCount != 1 {
+		t.Errorf("Expected ReopenLog count 1 on mock2, got %d", mock2.reopenCount)
 	}
 }

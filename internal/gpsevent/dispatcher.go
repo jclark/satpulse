@@ -169,9 +169,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
 		case <-sig:
-			if d.mon != nil {
-				d.mon.ReopenLog()
-			}
+			d.obs.ReopenLog()
 			d.lf.Reopen(d.lg)
 		}
 	}
@@ -247,7 +245,6 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	}
 }
 
-
 func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, Time: mt})
 	sec, ok := mt.ComputeTAITime(d.ls)
@@ -266,7 +263,6 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	}
 }
 
-
 func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, Survey: m})
 	if m.InProgress || !d.loggedSurveyComplete {
@@ -281,11 +277,9 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	}
 }
 
-
 func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, Satellites: msg})
 }
-
 
 func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, LeapSecond: msg})
