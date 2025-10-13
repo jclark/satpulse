@@ -42,34 +42,34 @@ Problems:
 * no support for holdover
 
 
-Rewrite will introduce a new `phcsync` package. Key idea is to maintain single cohesive state that covers
+Rewrite will introduce a new `phcsync` package. Key idea is to be modal. There will be a mode that applies through all stages:
 
-- sample generation  
-- PTP state changes  
-- servo state  
+- sample generation
+- PTP mode changes
+- servo mode
 - chrony sample generation
 
 There will also be a helper package `timemsg`.
 
 We will add support holdover in a second stage after getting everything else working.
 
-## States
+## Modes
 
-Starting set of states
+Starting set of modes
 
-* init  
-* converging  
-* track  
+* init
+* converging
+* track
 * lost
 
 These are in order, except that lost can go back to converging.
 
-### init state
+### init mode
 
-* initialization  
-* no knowledge of PHC time or GNSS time  
-* before transitioning out of this state, PHC is accurate to the nearest second  
-* performs a step at the end unless PHC is already close  
+* initialization
+* no knowledge of PHC time or GNSS time
+* before transitioning out of this mode, PHC is accurate to the nearest second
+* performs a step at the end unless PHC is already close
 * assume no modification in PHC frequency or phase
 
 Generate samples by gathering 3 - 5 seconds worth of pulses
@@ -115,57 +115,57 @@ Generate samples by gathering 3 - 5 seconds worth of pulses
 Array of samples is used to
 
 * generate step using median of sample offsets
-* estimate frequency to start PI for tracking state  
+* estimate frequency to start PI for tracking mode
 * preferred nav message for use in future
 * when both edges are being timestamped, estimate pulse width or validate configured estimate
 
-### converging state
+### converging mode
 
-* start with phase nearly accurate (far better than nearest second)  
-* Use alternation rising/falling to ignore falling edges using pulse width from init state 
-* Don’t bother with pulse correction  
-* Find right second using rounding  
-* Exit state when median absolute offset over last N (e.g. 5) samples hasn't decreased for some number of pulses (i.e., the offset reduction has plateaued)  
-* Use PI to converge (start with current Kp/Ki)  
-* PTP state is still not in sync    
+* start with phase nearly accurate (far better than nearest second)
+* Use alternation rising/falling to ignore falling edges using pulse width from init mode
+* Don't bother with pulse correction
+* Find right second using rounding
+* Exit mode when median absolute offset over last N (e.g. 5) samples hasn't decreased for some number of pulses (i.e., the offset reduction has plateaued)
+* Use PI to converge (start with current Kp/Ki)
+* PTP mode is still not in sync
 * Aggressive Kp/Ki with high Kp
-* Need to think about how we handle missing samples in converging state
+* Need to think about how we handle missing samples in converging mode
   * one missed sample can be ignored
-  * if PPS stops for multiple seconds (unlikely), go back to init state
+  * if PPS stops for multiple seconds (unlikely), go back to init mode
 
 #### Additional features
 
 **ADJ_SETOFFSET delay compensation**
 
-When stepping the PHC time using ADJ_SETOFFSET (done in init state), the kernel implementation in ethernet drivers performs a read-modify-write operation: it reads the current PHC time, adds the requested offset, and writes the new value back. This sequence takes time (typically a few microseconds with an i210 NIC), but the drivers don't compensate for this delay. As a result, the clock step is slightly inaccurate - the PHC ends up a few microseconds behind the target time.
+When stepping the PHC time using ADJ_SETOFFSET (done in init mode), the kernel implementation in ethernet drivers performs a read-modify-write operation: it reads the current PHC time, adds the requested offset, and writes the new value back. This sequence takes time (typically a few microseconds with an i210 NIC), but the drivers don't compensate for this delay. As a result, the clock step is slightly inaccurate - the PHC ends up a few microseconds behind the target time.
 
 Note: The assumption that the offset is primarily due to ADJ_SETOFFSET delay is not entirely accurate, since the observed offset could also include a small component due to frequency error. Although we correct the frequency just before stepping the clock, there is a brief interval between the PPS timestamp and the frequency correction during which the PHC was running at the wrong frequency. However, this secondary effect is small compared to the ADJ_SETOFFSET delay.
 
 
-The converging state can be initialized with a flag indicating whether it should compensate for a clock step that was just performed.
+The converging mode can be initialized with a flag indicating whether it should compensate for a clock step that was just performed.
 If the flag is set:
 - if the first pulse is received: measure the offset between the PHC and GPS time and perform a second clock step to correct for this delay;
 - if the first pulse is missed: skip the compensation entirely and proceed with normal PI control.
 
-### tracking state
+### tracking mode
 
-* PTP state is in sync
+* PTP mode is in sync
 * Initialize PI controller integral term with frequency estimate from init phase
-* Distinguish rising/falling using pulse width from init state
+* Distinguish rising/falling using pulse width from init mode
   * primarily by position relative to top of second
   * plus possibly distance from previous edge
-* Different Kp/Ki, lower, less aggressive  
-* Do outlier detection  
-  * MAD with configurable sigma  
+* Different Kp/Ki, lower, less aggressive
+* Do outlier detection
+  * MAD with configurable sigma
   * also maybe min absolute value to be considered outlier
-* sample rejected is not sent to servo  
-* keep track of missed pulses  
-* Do pulse correction  
-  * for M8F will need to wait for pulse correction following pulse  
-* Keep count of number of consecutive samples either because missing or outlier. Exit when:  
-  * number of consecutive misses samples greater than configurable value, or  
-  * proportion of missed samples in a configurable window is greater than configurable value  
-* Don’t try to estimate accuracy of PHC using PHC/GNSS offset
+* sample rejected is not sent to servo
+* keep track of missed pulses
+* Do pulse correction
+  * for M8F will need to wait for pulse correction following pulse
+* Keep count of number of consecutive samples either because missing or outlier. Exit when:
+  * number of consecutive misses samples greater than configurable value, or
+  * proportion of missed samples in a configurable window is greater than configurable value
+* Don't try to estimate accuracy of PHC using PHC/GNSS offset
 
 #### Additional features
 
@@ -175,15 +175,15 @@ If the flag is set:
   * when we miss a sample, set frequency back to average frequency  
   * but don’t change PI constants
 
-### lost state
+### lost mode
 
-* PTP state is out of sync  
-* very similar to init state, maybe the same  
-* try to generate a sample sequence using same method as init state  
-* should not need to reestimate pulse width  
-* when we have a set of samples,  
-  * step only if the offset is too much (different parameter here from init state)  
-  * enter converging state
+* PTP mode is out of sync
+* very similar to init mode, maybe the same
+* try to generate a sample sequence using same method as init mode
+* should not need to reestimate pulse width
+* when we have a set of samples,
+  * step only if the offset is too much (different parameter here from init mode)
+  * enter converging mode
 
 ## Implementation components
 
@@ -206,9 +206,9 @@ Constructed with
   * tuned to what phcsync needs  
 * Sampler - for observability, reports samples  
   * alias for mon.Sampler  
-* Grandmaster  
-  * alias for mon.Grandmaster for now  
-  * for reporting changes in state  
+* Grandmaster
+  * alias for mon.Grandmaster for now
+  * for reporting changes in mode
 * ProxyRecClock
   * for reporting samples to chrony
 * Config  
@@ -235,28 +235,28 @@ Delegate work as follows:
   * does not filter samples (e.g. for outliers)  
   * in tracking, converging, at most one sample per edge  
   *  handles pulse correction (sawtooth)  
-* sampleProcessor  
-  * Gets missing samples and actual samples  
-  * Decides whether to send sample to servo  
-  * Determines whether to change state  
-* servo  
+* sampleProcessor
+  * Gets missing samples and actual samples
+  * Decides whether to send sample to servo
+  * Determines whether to change mode
   * Tells controller what adjustment to make to the clock
 
 On time pulse event:
 
-* call sampleGenerator with pulse  
-* get sample/samples from sampleGenerator  
-* send to sampleProcessor  
-* Get state change  
-* Send to servo - make change to clock that servo asks for  
+* call sampleGenerator with pulse
+* get sample/samples from sampleGenerator
+* send to sampleProcessor
+* Get mode change and phc adjustment
+* Apply PHC adjustment
 * Send to sampler for observability
+* Apply mode change
 
 On tick event:
 * when not in init phase, generate missing sample if more than a second since last sample
 
-On state change, notify grandmaster of change of state.
+On mode change, notify grandmaster of change of mode.
 
-In tracking state, use ProxyRefClock to generate samples for chrony. Do this before sampleProcessor filters out samples. Chrony does it's own filtering.
+In tracking mode, use ProxyRefClock to generate samples for chrony. Do this before sampleProcessor filters out samples. Chrony does it's own filtering.
 
 Files:
 
@@ -339,9 +339,9 @@ This would be different for phcsync, but the servo implementation can serve as a
 The essence of holdover is that you have a local oscillator separate from the GNSS module's oscillator,
 which you can use to keep time when the GNSS module lost its lock.
 
-In terms of implementation, there would be two additional states: holdover and reconverge.
+In terms of implementation, there would be two additional modes: holdover and reconverge.
 
-The holdover state is when the GNSS module has lost its lock and is no longer aligned to GNSS time. This corresponds to the PTP grandmaster state with a clock class of holdover. The absence of PPS is one way to detect this. Another way is by time messages that say the time is invalid. We would stay in holdover state for a configurable length of time, but typically this would be short enough that the clock is guaranteed to be off by no more than microseconds. If this time is exceeded without GNSS regaining its lock, we would go into lost state. But if we get the lock back, then we go into reconverge state. This is similar to converging state. However, and important difference is that the grandmaster would be in a holdover state, and so still potentially serving clients. When the phase has reconverged, we would enter tracking phase again. If in reconverge, we lost PPS we would go back to holdover.
+The holdover mode is when the GNSS module has lost its lock and is no longer aligned to GNSS time. This corresponds to the PTP grandmaster state with a clock class of holdover. The absence of PPS is one way to detect this. Another way is by time messages that say the time is invalid. We would stay in holdover mode for a configurable length of time, but typically this would be short enough that the clock is guaranteed to be off by no more than microseconds. If this time is exceeded without GNSS regaining its lock, we would go into lost mode. But if we get the lock back, then we go into reconverge mode. This is similar to converging mode. However, and important difference is that the grandmaster would be in a holdover state, and so still potentially serving clients. When the phase has reconverged, we would enter tracking mode again. If in reconverge, we lost PPS we would go back to holdover.
 
 The details of the implementation depend on where the oscillator lives. I can see three approaches to this.
 
@@ -352,16 +352,16 @@ I can see three approaches to holdover based on where this oscillator lives.
 With this approach, the oscillator is part of the PHC. Examples of suitable hardware are the [TimeHAT](https://www.tindie.com/products/timeappliances/timehat-i226-nic-with-pps-inout-for-rpi5/) and [TimeNIC](https://www.tindie.com/products/timeappliances/timenic-i226-pcie-nic-with-pps-inout-and-tcxo/),
 which include a high-quality oscillator.
 
-During tracking state, we would extend the tracking of frequency to also estimate frequency over a longer time period. In holdover state, we would adjust the frequency to be a blend of the short and long-term frequency estimates appropriately blended. More generally, during tracking we build a model of how the frequency changes, and then apply that model during holdover.
+During tracking mode, we would extend the tracking of frequency to also estimate frequency over a longer time period. In holdover mode, we would adjust the frequency to be a blend of the short and long-term frequency estimates appropriately blended. More generally, during tracking we build a model of how the frequency changes, and then apply that model during holdover.
 
-During reconverge, we use a servo similar to converge in order to converge the phase again. But the Kp/Ki coefficients would be designed to keep the adjustment of frequency sufficiently gentle that it does not negatively affect clients. This is different from the situation with converging state, where the goal is to converge to the correct phase as rapidly as possible. 
+During reconverge, we use a servo similar to converge in order to converge the phase again. But the Kp/Ki coefficients would be designed to keep the adjustment of frequency sufficiently gentle that it does not negatively affect clients. This is different from the situation with converging mode, where the goal is to converge to the correct phase as rapidly as possible. 
 
 ### Holdover using GNSSDO
 
 With this approach, SatPulse gets pulses from the oscillator instead of from the GNSS directly.
 There is a GNSSDO that is using the GNSS to discipline the oscillator upstream of SatPulse. Suitable hardware would be the BG7TBL CM55.
 
-In this case, we would need to identify when the GNSS receiver as lost or regained tracking using time messages rather than pulses. The configurable length of time to stay in holdover would apply as usual. In reconverge state, we would probably want different Kp/Ki coefficients so we track the GNSSDO's reconvergence closely. (But not the same Kp/Ki as with holdover using PHC.)
+In this case, we would need to identify when the GNSS receiver as lost or regained tracking using time messages rather than pulses. The configurable length of time to stay in holdover would apply as usual. In reconverge mode, we would probably want different Kp/Ki coefficients so we track the GNSSDO's reconvergence closely. (But not the same Kp/Ki as with holdover using PHC.)
 
 ### Holdover using an independent oscillator
 
@@ -375,7 +375,7 @@ One can be configured to produce a PPS signal that is passed through from the GN
 The other can be configured to produce a 1Hz (or greater frequency ) 50% duty signal that is disciplined but not phase aligned.
 Both these signals would need to be fed into a card with two SDPs (e.g. an Intel card).
 
-During tracking, we would want to have a servo that uses both the GNSS PPS for phase correction and the frequency pulse for frequency correction. During holdover, we would do just frequency correction using the frequency pulse. We can detect state transition by absence of the GNSS PPS.
+During tracking, we would want to have a servo that uses both the GNSS PPS for phase correction and the frequency pulse for frequency correction. During holdover, we would do just frequency correction using the frequency pulse. We can detect mode transition by absence of the GNSS PPS.
 
 ## Generate chrony samples without a PHC
 
@@ -402,9 +402,9 @@ Make this work end to end, but do not implement all features yet. Specifically, 
 * Grandmaster settings
 * chrony samples
 * MAD-based outlier detection (for now, just have single value above which considered an outlier)
-* ignoring falling edges, when both edges timestamped
+* ignoring falling edges (when both edges are timestamped)
 * setting tuneable parameters via TOML file
-* lost state (make lost state do nothing - i.e. it stays unsynchronized)
+* lost mode (make lost mode do nothing - i.e. it stays unsynchronized)
 * sawtooth correction (pulse correction)
 
 Steps to implement.
@@ -415,9 +415,9 @@ Steps to implement.
    * Empty bodies for now
    * Call from dispatcher.go
    * Don't do anything with Grandmaster, ProxyRefClock
-3. Design internal interfaces for sampleGenerator, sampleProcessor and servo, including how phcsync.Controller calls these
-4. Implement these interfaces for init state
-5. Factor out PI servo from existing servo.go and use as basis for servo implementation for converging and tracking state; use same Kp/Ki for now
+3. Design internal interfaces for sampleGenerator, sampleProcessor, including how phcsync.Controller calls these
+4. Factor out PI servo from existing servo.go to use as basis for servo implementation for converging and tracking mode; use same Kp/Ki for now
+5. Implement these interfaces for each mode
 6. Implement a test harness using clocksim to test this
 
 ### Phase C - integrate into daemon
@@ -453,7 +453,7 @@ It would be useful to be able to run new program and old program at the same tim
 ### Phase G - better default Kp/Ki choices
 
 * improve clock model to be more realistic
-* run some simulations to determine better Kp/Ki values for each state
+* run some simulations to determine better Kp/Ki values for each mode
 
 ### Phase H - holdover
 
