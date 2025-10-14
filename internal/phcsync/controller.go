@@ -295,7 +295,7 @@ func (c *Controller) changeMode(mode controllerMode) {
 	// Initialize sampleGen and sampleProc for the new mode
 	switch mode {
 	case modeInit:
-		c.sampleGen = newInitSampleGenerator(c.timeMsgBuffer, c.cfg.Init, c.lg)
+		c.sampleGen = newInitSampleGenerator(c.timeMsgBuffer, c.cfg.Init, c.maxFreq, c.freq, c.lg)
 		c.sampleProc = newInitSampleProcessor(c.cfg.Init, c.lg)
 	case modeConverging:
 		c.sampleGen = newConvergingSampleGenerator()
