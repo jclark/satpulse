@@ -76,6 +76,13 @@ func (g *initSampleGenerator) timeMessageSample() *SampleData {
 	return g.genSample()
 }
 
+type loggableError interface {
+	error
+	log(lg *slog.Logger)
+}
+
+var errNotEnoughTimestamps = errors.New("not enough timestamps")
+
 func (g *initSampleGenerator) genSample() *SampleData {
 	// Need enough pulse edges
 	if g.edgeBuf.Len() < g.cfg.Window {
@@ -89,17 +96,29 @@ func (g *initSampleGenerator) genSample() *SampleData {
 		return nil
 	}
 
+	sample, err := g.genSampleForMessages(lastSec, tRead)
+	if err != nil {
+		if le, ok := err.(loggableError); ok {
+			le.log(g.lg)
+		} else if !errors.Is(err, errNotEnoughTimestamps) {
+			g.lg.Info(err.Error())
+		}
+		return nil
+	}
+
+	return sample
+}
+
+func (g *initSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []time.Time) (*SampleData, error) {
 	avgInterval, err := g.checkPulseIntervals()
 	if err != nil {
-		logError(g.lg, err)
-		return nil
+		return nil, err
 	}
 
 	pulseTimes := g.pulseTimes(avgInterval)
 	err = g.checkAlignment(pulseTimes, tRead)
 	if err != nil {
-		logError(g.lg, err)
-		return nil
+		return nil, err
 	}
 
 	lastPulseTimestamp := g.edgeBuf.Last(0).Timestamp
@@ -112,16 +131,11 @@ func (g *initSampleGenerator) genSample() *SampleData {
 		Offset: offset,
 		Freq:   0,
 		Era:    lastPulseTimestamp.Era,
-	}
-}
-
-type loggableError interface {
-	error
-	log(lg *slog.Logger)	
+	}, nil
 }
 
 type limitError struct {
-	msg string
+	msg      string
 	propName string
 	value    any
 	limit    any
@@ -139,7 +153,7 @@ func (e *limitError) log(lg *slog.Logger) {
 }
 
 type logMsgError struct {
-	msg string
+	msg  string
 	args []any
 }
 
@@ -150,19 +164,6 @@ func (e *logMsgError) Error() string {
 func (e *logMsgError) log(lg *slog.Logger) {
 	lg.Info(e.msg, e.args...)
 }
-
-func logError(lg *slog.Logger, err error) {
-	if err == nil {
-		return
-	}
-	if le, ok := err.(loggableError); ok {
-		le.log(lg)
-	} else if !errors.Is(err, errNotEnoughTimestamps) {
-		lg.Info(err.Error())
-	}
-}
-
-var errNotEnoughTimestamps = errors.New("not enough timestamps")
 
 // checkPulseIntervals validates that PHC pulse timestamps are stable and adjustable.
 // It checks that all intervals are close enough to 1 second to be corrected within the PHC's
