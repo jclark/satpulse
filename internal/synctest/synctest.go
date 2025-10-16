@@ -20,8 +20,8 @@ import (
 
 var (
 	duration     = flag.Float64("duration", 60.0, "simulation duration in seconds")
-	oscDrift     = flag.Float64("drift", 10.0, "oscillator drift in ppm")
-	oscNoise     = flag.Float64("noise", 0.001, "oscillator frequency noise stddev in ppm")
+	oscDrift     = flag.Float64("drift", 10000.0, "oscillator drift in ppb")
+	oscNoise     = flag.Float64("noise", 1.0, "oscillator frequency noise stddev in ppb")
 	ppsJitter    = flag.Float64("jitter", 10e-9, "PPS timing jitter in seconds")
 	minDelay     = flag.Float64("min-delay", 5e-6, "minimum pulse delivery delay in seconds")
 	maxDelay     = flag.Float64("max-delay", 250e-6, "maximum pulse delivery delay in seconds")

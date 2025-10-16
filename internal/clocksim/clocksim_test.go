@@ -6,8 +6,8 @@ import (
 )
 
 func TestVirtualClockBasic(t *testing.T) {
-	// Create oscillator running 10ppm fast
-	osc := ConstantDrift(10.0)
+	// Create oscillator running 10000ppb fast
+	osc := ConstantDrift(10000.0)
 	raw := NewRawClock(osc, 0)
 
 	// Perfect PPS (no jitter)
@@ -42,8 +42,8 @@ func TestVirtualClockBasic(t *testing.T) {
 }
 
 func TestVirtualClockFreqAdjustment(t *testing.T) {
-	// Create oscillator running 10ppm fast
-	osc := ConstantDrift(10.0)
+	// Create oscillator running 10000ppb fast
+	osc := ConstantDrift(10000.0)
 	raw := NewRawClock(osc, 0)
 	pps := PerfectPPS()
 
@@ -158,7 +158,7 @@ func TestVirtualClockPPSJitter(t *testing.T) {
 // variations were quantized to ±256ns steps at large time values.
 func TestPrecisionAtLargeTime(t *testing.T) {
 	// Use realistic oscillator with small frequency noise
-	osc := WhiteFreqNoise(0.1, 42) // 0.1 ppb stddev
+	osc := WhiteFreqNoise(100.0, 42) // 100 ppb stddev
 
 	// PHC starts at GPS epoch (1.4e9 seconds = large!)
 	gpsEpochNs := int64(1.4e9 * 1e9)
@@ -243,8 +243,8 @@ func TestPrecisionAtLargeTime(t *testing.T) {
 // TestServoConvergence simulates realistic servo behavior with large initial offset.
 // This catches issues with offset tracking, frequency adjustment, and time stepping.
 func TestServoConvergence(t *testing.T) {
-	// Create oscillator running 10ppm fast
-	osc := ConstantDrift(10.0)
+	// Create oscillator running 10000ppb fast
+	osc := ConstantDrift(10000.0)
 
 	// PHC starts at 0, GPS is at 1000 seconds (huge offset)
 	raw := NewRawClock(osc, 0)
@@ -283,8 +283,8 @@ func TestServoConvergence(t *testing.T) {
 		t.Errorf("offset after step = %v seconds, expected < 10µs", offset)
 	}
 
-	// Step 3: Apply frequency correction to compensate for 10ppm drift
-	tc.SetFreqOffset(-10e3) // -10ppm = -10e3 ppb
+	// Step 3: Apply frequency correction to compensate for 10000ppb drift
+	tc.SetFreqOffset(-10e3) // -10000ppb
 
 	// Record offset after freq correction is applied
 	offsetAfterFreqAdj := offset
@@ -359,8 +359,8 @@ func TestAdjTimeDelay(t *testing.T) {
 // TestRawClockIntegration verifies that RawClock correctly integrates
 // oscillator frequency error over time.
 func TestRawClockIntegration(t *testing.T) {
-	// Create oscillator running 10ppm fast
-	osc := ConstantDrift(10.0)
+	// Create oscillator running 10000ppb fast
+	osc := ConstantDrift(10000.0)
 	raw := NewRawClock(osc, 0)
 
 	// After 1 second, clock should read 1.00001 (10µs fast)
@@ -392,7 +392,7 @@ func TestRawClockIntegration(t *testing.T) {
 // causing different random values and making the oscillator non-deterministic.
 func TestIncrementalIntegration(t *testing.T) {
 	// Use WhiteFreqNoise which would expose the bug if integration re-evaluates
-	osc := WhiteFreqNoise(1.0, 42)
+	osc := WhiteFreqNoise(1000.0, 42)
 	raw := NewRawClock(osc, 0)
 
 	// Read at t=2.0 - this integrates from 0→2
@@ -413,7 +413,7 @@ func TestIncrementalIntegration(t *testing.T) {
 
 	// More importantly: verify determinism by reading at same point again
 	// Create a new RawClock with same seed
-	raw2 := NewRawClock(WhiteFreqNoise(1.0, 42), 0)
+	raw2 := NewRawClock(WhiteFreqNoise(1000.0, 42), 0)
 
 	// Should get exact same values
 	phase1b := raw2.ReadAt(2.0)

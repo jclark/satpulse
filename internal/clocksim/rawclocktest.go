@@ -9,10 +9,10 @@ import (
 )
 
 func main() {
-	// Create oscillator running 10ppm fast with white frequency noise
+	// Create oscillator running 10000ppb fast with white frequency noise
 	osc := clocksim.CombineOscillators(
-		clocksim.ConstantDrift(10.0),      // 10ppm drift
-		clocksim.WhiteFreqNoise(0.01, 42), // 0.01ppm RMS frequency noise
+		clocksim.ConstantDrift(10000.0), // 10000ppb drift
+		clocksim.WhiteFreqNoise(10.0, 42), // 10ppb RMS frequency noise
 	)
 	raw := clocksim.NewRawClock(osc, 0) // Start at epoch = 0 nanoseconds
 

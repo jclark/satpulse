@@ -9,10 +9,10 @@ import (
 )
 
 func main() {
-	// Oscillator with 10ppm drift + small frequency noise
+	// Oscillator with 10000ppb drift + small frequency noise
 	osc := clocksim.CombineOscillators(
-		clocksim.ConstantDrift(10.0),      // 10ppm fast
-		clocksim.WhiteFreqNoise(0.01, 42), // 0.01ppm RMS frequency noise
+		clocksim.ConstantDrift(10000.0), // 10000ppb fast
+		clocksim.WhiteFreqNoise(10.0, 42), // 10ppb RMS frequency noise
 	)
 
 	// PHC starts at ~198510.583 seconds (like in real data)

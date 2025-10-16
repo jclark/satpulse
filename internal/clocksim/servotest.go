@@ -27,10 +27,10 @@ func main() {
 	// GPS time starts near present (2024-10-08 is roughly GPS time ~1.4e9 seconds)
 	gpsStartTime := 1.4e9
 
-	// Create oscillator running 10ppm fast with some frequency noise
+	// Create oscillator running 10000ppb fast with some frequency noise
 	osc := clocksim.CombineOscillators(
-		clocksim.ConstantDrift(10.0),        // 10ppm fast
-		clocksim.WhiteFreqNoise(0.001, 42),  // 0.001ppm RMS frequency noise
+		clocksim.ConstantDrift(10000.0),   // 10000ppb fast
+		clocksim.WhiteFreqNoise(1.0, 42),  // 1ppb RMS frequency noise
 	)
 
 	// PHC starts near epoch (1970-01-01T00:00:00 TAI) - way off from GPS
@@ -56,7 +56,7 @@ func main() {
 	lg.Info("starting servo simulation",
 		"duration", simDuration,
 		"deliveryDelay", "5µs-250ms",
-		"oscDrift", "10ppm",
+		"oscDrift", "10000ppb",
 		"ppsJitter", "10ns",
 		"gpsStartTime", gpsStartTime,
 		"phcStartTime", 0.0)

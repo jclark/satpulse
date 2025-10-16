@@ -15,10 +15,10 @@ import (
 type OscillatorSimulator func(trueTime float64) float64
 
 // ConstantDrift creates an oscillator with constant frequency offset.
-// ppm is the frequency offset in parts per million (positive means runs fast).
-func ConstantDrift(ppm float64) OscillatorSimulator {
+// ppb is the frequency offset in parts per billion (positive means runs fast).
+func ConstantDrift(ppb float64) OscillatorSimulator {
 	return func(t float64) float64 {
-		return ppm / 1e6
+		return ppb / 1e9
 	}
 }
 
@@ -28,11 +28,11 @@ func Perfect() OscillatorSimulator {
 }
 
 // WhiteFreqNoise creates an oscillator with white frequency noise.
-// stddevPPM is the standard deviation of frequency noise in ppm.
-func WhiteFreqNoise(stddevPPM float64, seed int64) OscillatorSimulator {
+// stddevPPB is the standard deviation of frequency noise in ppb.
+func WhiteFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	return func(t float64) float64 {
-		return rng.NormFloat64() * stddevPPM / 1e6
+		return rng.NormFloat64() * stddevPPB / 1e9
 	}
 }
 
