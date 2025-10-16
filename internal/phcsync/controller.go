@@ -148,7 +148,6 @@ func NewController(
 		rc:            rc,
 		cfg:           cfg,
 		leapSecond:    leapSecond,
-		mode:          modeInit,
 		lg:            lg,
 	}
 	freq, err := clock.FreqOffset()
@@ -169,18 +168,12 @@ type PulseEdge struct {
 
 // PulseEdge handles edge timestamp events from the PHC.
 func (c *Controller) PulseEdge(edge PulseEdge) {
-	if c.sampleGen == nil {
-		return // Not ready yet (e.g., in init mode)
-	}
 	sample := c.sampleGen.pulseEdgeSample(edge)
 	c.processPresentSample(sample)
 }
 
 // TimeMessage handles notification that a time message occurred.
 func (c *Controller) TimeMessage() {
-	if c.sampleGen == nil {
-		return // Not ready yet (e.g., in init mode)
-	}
 	sample := c.sampleGen.timeMessageSample()
 	c.processPresentSample(sample)
 }
@@ -199,11 +192,11 @@ func (c *Controller) processPresentSample(sample *SampleData) {
 }
 
 func (c *Controller) processSample(sample *SampleData) {
-	if sample == nil {
-		return
-	}
 	action, mode := c.sampleProc.processSample(sample)
+	freq := c.freq
 	c.doPHCAction(action)
+	sample.Freq = c.freq
+	sample.FreqDelta = c.freq - freq
 	c.sampler.Sample(*sample)
 	if mode != c.mode {
 		c.changeMode(mode)
@@ -260,8 +253,8 @@ func (c *Controller) Tick() {
 		Kind:   mon.SampleMissing,
 		Ref:    c.lastRefTime,
 		Offset: 0,
-		Freq:   c.freq,
 		Era:    c.era,
+		// Freq will be filled in later
 	}
 
 	// Missing samples go directly to processSample
