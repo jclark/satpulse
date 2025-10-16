@@ -38,7 +38,7 @@ func main() {
 	raw := clocksim.NewRawClock(osc, 0)
 
 	// PPS with realistic 10ns jitter
-	pps := clocksim.WhiteNoisePPS(10e-9, 123)
+	pps := clocksim.WhiteNoisePPS(10*time.Nanosecond, 123)
 
 	// Virtual clock starts at t=0, max ±500ppm (like i210)
 	vclock := clocksim.NewVirtualClock(raw, pps, 0, 500000)

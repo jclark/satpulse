@@ -20,9 +20,9 @@ import (
 
 var (
 	duration     = flag.Float64("duration", 60.0, "simulation duration in seconds")
-	oscDrift     = flag.Float64("drift", 10000.0, "oscillator drift in ppb")
-	oscNoise     = flag.Float64("noise", 1.0, "oscillator frequency noise stddev in ppb")
-	ppsJitter    = flag.Float64("jitter", 10e-9, "PPS timing jitter in seconds")
+	oscDrift     = flag.Float64("drift", 2000.0, "oscillator drift in ppb")
+	oscNoise     = flag.Float64("noise", 20.0, "oscillator frequency noise stddev in ppb")
+	ppsJitter    = flag.Float64("jitter", 10.0, "PPS timing jitter in nanoseconds")
 	minDelay     = flag.Float64("min-delay", 5e-6, "minimum pulse delivery delay in seconds")
 	maxDelay     = flag.Float64("max-delay", 250e-6, "maximum pulse delivery delay in seconds")
 	msgDelay     = flag.Float64("msg-delay", 0.1, "GPS message delay after pulse in seconds")
@@ -62,7 +62,7 @@ func main() {
 	raw := clocksim.NewRawClock(osc, 0)
 
 	// PPS with jitter
-	pps := clocksim.WhiteNoisePPS(*ppsJitter, 123)
+	pps := clocksim.WhiteNoisePPS(time.Duration(*ppsJitter)*time.Nanosecond, 123)
 
 	// Virtual clock starts at t=0, max ±500ppm (like Intel i210)
 	vclock := clocksim.NewVirtualClock(raw, pps, 0, 500000)

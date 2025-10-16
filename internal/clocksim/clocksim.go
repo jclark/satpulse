@@ -60,11 +60,12 @@ func PerfectPPS() PPSSimulator {
 }
 
 // WhiteNoisePPS creates a PPS simulator with Gaussian timing jitter.
-// stddev is the standard deviation of the timing error in seconds.
-func WhiteNoisePPS(stddev float64, seed int64) PPSSimulator {
+// stddev is the standard deviation of the timing error.
+func WhiteNoisePPS(stddev time.Duration, seed int64) PPSSimulator {
 	rng := rand.New(rand.NewSource(seed))
+	stddevSec := stddev.Seconds()
 	return func(t float64) float64 {
-		return rng.NormFloat64() * stddev
+		return rng.NormFloat64() * stddevSec
 	}
 }
 
