@@ -326,3 +326,12 @@ func (c *TestClock) ReadTimestampWithEra() (ptime.ClockTime, bool) {
 		Era: c.Era(),
 	}, true
 }
+
+// Now returns the current PHC time.
+func (c *TestClock) Now() ptime.ClockTime {
+	virtPhaseNs := c.VirtualClock.computeVirtPhaseNs(c.VirtualClock.simTime)
+	return ptime.ClockTime{
+		T:   ptime.Time(virtPhaseNs),
+		Era: c.Era(),
+	}
+}
