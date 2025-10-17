@@ -393,7 +393,7 @@ This could be handled by the timemsg package, which is explicitly designed to be
 1. Implement clock simulator. This in `internal/clocksim` package.
 2. Factor out logging from mon into logobs package.
 
-### Phase B - minimal end-to-end
+### Phase B - minimal end-to-end (done)
 
 Eventually combine, mon, phc will go away. But initially we will make new code run in parallel with old code.
 To handle this interfaces that will eventually be in phcsync will remain in their existing packages, with aliases in phcsync.
@@ -433,6 +433,10 @@ It would be useful to be able to run new program and old program at the same tim
 
 ### Phase D - bring to feature-parity with current version
 
+Implementing each of these will involved enhancements to simulator to test properly.
+
+Order of these is TBD.
+
 * MAD-based outlier detection
 * handle ignoring falling edges, when both edges timestamped (requires enhancements to clocksim)
 * chrony refclock
@@ -440,20 +444,25 @@ It would be useful to be able to run new program and old program at the same tim
 * compensation step at beginning of recovery phase
 * implement recovery in lost mode
 * sawtooth correction
+* keep track of timing messages during tracking and have configurable behaviour if the timing from timing messages is mismatched (this could happen during cold start of old receiver with firmware with out of date leap second when using NMEA) 
 
 ### Phase E - remove obsolete code
 
 * Remove combine/mon/servo packages.
 
-### Phase F - tuneable parameters
-
-* Implement setting of tuneable parameters via new section in satpulse.toml.
-* Document in man page
-
-### Phase G - better default Kp/Ki choices
+### Phase F - tune synchronization performance
 
 * improve clock model to be more realistic
+  * simulate ionospheric disturbances
 * run some simulations to determine better Kp/Ki values for each mode
+* consider more robust transition between converging/tracking mode, by blending Kp/Ki parameters for initial period during tracking
+
+### Phase G - tuneable parameters
+
+* Implement setting of tuneable parameters via new section in satpulse.toml.
+* Implement validation of phcsync.Config
+* Document in man page
+
 
 ### Phase H - holdover
 
