@@ -19,9 +19,9 @@ func main() {
 	}))
 
 	// Simulation parameters
-	const simDuration = 60.0                // 60 seconds
-	const minDeliveryDelay = 5e-6           // 5µs minimum delivery delay
-	const maxDeliveryDelay = 0.25           // 250ms maximum delivery delay
+	const simDuration = 60.0      // 60 seconds
+	const minDeliveryDelay = 5e-6 // 5µs minimum delivery delay
+	const maxDeliveryDelay = 0.25 // 250ms maximum delivery delay
 	rng := rand.New(rand.NewSource(999))
 
 	// GPS time starts near present (2024-10-08 is roughly GPS time ~1.4e9 seconds)
@@ -29,8 +29,8 @@ func main() {
 
 	// Create oscillator running 10000ppb fast with some frequency noise
 	osc := clocksim.CombineOscillators(
-		clocksim.ConstantDrift(10000.0),   // 10000ppb fast
-		clocksim.WhiteFreqNoise(1.0, 42),  // 1ppb RMS frequency noise
+		clocksim.ConstantDrift(10000.0),  // 10000ppb fast
+		clocksim.WhiteFreqNoise(1.0, 42), // 1ppb RMS frequency noise
 	)
 
 	// PHC starts near epoch (1970-01-01T00:00:00 TAI) - way off from GPS
@@ -79,7 +79,7 @@ func main() {
 			break
 		}
 
-		ts, ok := testClock.ReadTimestampWithEra()
+		ts, _, ok := testClock.ReadTimestampWithEra()
 		if !ok {
 			lg.Error("failed to read timestamp")
 			break

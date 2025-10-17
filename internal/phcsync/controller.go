@@ -316,3 +316,8 @@ func modeSyncState(mode controllerMode) mon.SyncState {
 	}
 	return mon.NoSync
 }
+
+// Tracking reports whether the controller is currently operating in tracking mode.
+func (c *Controller) Tracking() bool {
+	return c.mode == modeTracking
+}

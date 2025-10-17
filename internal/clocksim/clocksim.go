@@ -137,19 +137,24 @@ func (r *RawClock) ReadAt(simTime float64) int64 {
 // It models the Linux PHC implementation where adjustments are tracked relative to the last change.
 // Timestamps are generated lazily as simulation time advances past PPS events.
 // Phase values are stored as int64 nanoseconds to match ptime.Time.
+type timestampEvent struct {
+	phase    time.Duration
+	trueTime float64
+}
+
 type VirtualClock struct {
-	raw                  *RawClock
-	ppsSimulator         PPSSimulator
+	raw                   *RawClock
+	ppsSimulator          PPSSimulator
 	adjTimeDelaySimulator func() float64
-	maxFreqOff           float64
-	simTime              float64
-	lastAdjTime          float64
-	lastRawPhaseNs       int64
-	lastVirtPhaseNs      int64
-	freqOffset           float64
-	nextPPSNominal       float64
-	nextPPSActual        float64
-	tsQueue              []time.Duration
+	maxFreqOff            float64
+	simTime               float64
+	lastAdjTime           float64
+	lastRawPhaseNs        int64
+	lastVirtPhaseNs       int64
+	freqOffset            float64
+	nextPPSNominal        float64
+	nextPPSActual         float64
+	tsQueue               []timestampEvent
 }
 
 // defaultAdjTimeDelay returns a realistic ADJ_SETOFFSET delay with jitter.
@@ -176,17 +181,17 @@ func NewVirtualClock(raw *RawClock, ppsSimulator PPSSimulator, startTime float64
 	rawPhaseNs := raw.ReadAt(startTime)
 
 	return &VirtualClock{
-		raw:                  raw,
-		ppsSimulator:         ppsSimulator,
+		raw:                   raw,
+		ppsSimulator:          ppsSimulator,
 		adjTimeDelaySimulator: defaultAdjTimeDelay(),
-		maxFreqOff:           maxFreqOff,
-		simTime:              startTime,
-		lastAdjTime:          startTime,
-		lastRawPhaseNs:       rawPhaseNs,
-		lastVirtPhaseNs:      rawPhaseNs,
-		freqOffset:           0,
-		nextPPSNominal:       firstPPSNominal,
-		nextPPSActual:        firstPPSNominal + phaseError,
+		maxFreqOff:            maxFreqOff,
+		simTime:               startTime,
+		lastAdjTime:           startTime,
+		lastRawPhaseNs:        rawPhaseNs,
+		lastVirtPhaseNs:       rawPhaseNs,
+		freqOffset:            0,
+		nextPPSNominal:        firstPPSNominal,
+		nextPPSActual:         firstPPSNominal + phaseError,
 	}
 }
 
@@ -200,7 +205,10 @@ func (c *VirtualClock) AdvanceTo(newTime float64) {
 
 	for newTime >= c.nextPPSActual {
 		virtPhaseNs := c.computeVirtPhaseNs(c.nextPPSActual)
-		c.tsQueue = append(c.tsQueue, time.Duration(virtPhaseNs))
+		c.tsQueue = append(c.tsQueue, timestampEvent{
+			phase:    time.Duration(virtPhaseNs),
+			trueTime: c.nextPPSActual,
+		})
 
 		c.nextPPSNominal += 1.0
 		phaseError := c.ppsSimulator(c.nextPPSNominal)
@@ -261,14 +269,14 @@ func (c *VirtualClock) AdjTime(d time.Duration) error {
 	return nil
 }
 
-// ReadTimestamp reads the next timestamp from the queue.
-func (c *VirtualClock) ReadTimestamp() (time.Duration, bool) {
+// ReadTimestamp reads the next timestamp from the queue along with the true time when it occurred.
+func (c *VirtualClock) ReadTimestamp() (time.Duration, float64, bool) {
 	if len(c.tsQueue) == 0 {
-		return 0, false
+		return 0, 0, false
 	}
 	ts := c.tsQueue[0]
 	c.tsQueue = c.tsQueue[1:]
-	return ts, true
+	return ts.phase, ts.trueTime, true
 }
 
 // TimestampAvailable returns true if there are timestamps in the queue.
@@ -317,15 +325,15 @@ func (c *TestClock) Era() ptime.Era {
 }
 
 // ReadTimestampWithEra reads a timestamp from the queue and attaches the current era.
-func (c *TestClock) ReadTimestampWithEra() (ptime.ClockTime, bool) {
-	ts, ok := c.VirtualClock.ReadTimestamp()
+func (c *TestClock) ReadTimestampWithEra() (ptime.ClockTime, float64, bool) {
+	ts, trueTime, ok := c.VirtualClock.ReadTimestamp()
 	if !ok {
-		return ptime.ClockTime{}, false
+		return ptime.ClockTime{}, 0, false
 	}
 	return ptime.ClockTime{
 		T:   ptime.Time(ts),
 		Era: c.Era(),
-	}, true
+	}, trueTime, true
 }
 
 // Now returns the current PHC time.

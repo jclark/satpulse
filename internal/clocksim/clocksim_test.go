@@ -28,7 +28,7 @@ func TestVirtualClockBasic(t *testing.T) {
 		t.Fatal("should have timestamp after PPS")
 	}
 
-	ts, ok := vc.ReadTimestamp()
+	ts, _, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
@@ -56,7 +56,7 @@ func TestVirtualClockFreqAdjustment(t *testing.T) {
 	// Advance past first PPS at t=1.0
 	vc.AdvanceTo(1.1)
 
-	ts, ok := vc.ReadTimestamp()
+	ts, _, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
@@ -85,7 +85,7 @@ func TestVirtualClockTimeStep(t *testing.T) {
 	// Advance past first PPS (AdjTime advanced simTime by ~5µs, so start from there)
 	vc.AdvanceTo(vc.simTime + 1.1)
 
-	ts, ok := vc.ReadTimestamp()
+	ts, _, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
@@ -113,7 +113,7 @@ func TestVirtualClockMultiplePPS(t *testing.T) {
 	// Should have 3 timestamps
 	count := 0
 	for vc.TimestampAvailable() {
-		_, ok := vc.ReadTimestamp()
+		_, _, ok := vc.ReadTimestamp()
 		if !ok {
 			break
 		}
@@ -139,7 +139,7 @@ func TestVirtualClockPPSJitter(t *testing.T) {
 	// Advance past first PPS
 	vc.AdvanceTo(1.1)
 
-	ts, ok := vc.ReadTimestamp()
+	ts, _, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
@@ -175,7 +175,7 @@ func TestPrecisionAtLargeTime(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		simTime := float64(i + 1)
 		vc.AdvanceTo(simTime + 0.1)
-		ts, ok := vc.ReadTimestamp()
+		ts, _, ok := vc.ReadTimestamp()
 		if !ok {
 			t.Fatalf("failed to read timestamp %d", i)
 		}
@@ -258,7 +258,7 @@ func TestServoConvergence(t *testing.T) {
 	// Step 1: Large time step to bring PHC close to GPS
 	// GPS is at 1000s, PHC is at 0s, so offset is ~1000s
 	vc.AdvanceTo(1.0)
-	ts1, _ := tc.ReadTimestampWithEra()
+	ts1, _, _ := tc.ReadTimestampWithEra()
 	phcTime := float64(ts1.T) / 1e9
 	gpsTime := gpsStartTime + 1.0
 	offset := phcTime - gpsTime
@@ -273,7 +273,7 @@ func TestServoConvergence(t *testing.T) {
 
 	// Step 2: After step, offset should be small (microseconds)
 	vc.AdvanceTo(2.0)
-	ts2, _ := tc.ReadTimestampWithEra()
+	ts2, _, _ := tc.ReadTimestampWithEra()
 	phcTime = float64(ts2.T) / 1e9
 	gpsTime = gpsStartTime + 2.0
 	offset = phcTime - gpsTime
@@ -292,12 +292,12 @@ func TestServoConvergence(t *testing.T) {
 	// Step 4: After several seconds with freq correction, offset should stay roughly constant
 	vc.AdvanceTo(10.0)
 	for vc.TimestampAvailable() {
-		tc.ReadTimestampWithEra()
+		_, _, _ = tc.ReadTimestampWithEra()
 	}
 
 	// Read timestamp at t=10
 	vc.AdvanceTo(11.0)
-	ts3, _ := tc.ReadTimestampWithEra()
+	ts3, _, _ := tc.ReadTimestampWithEra()
 	phcTime = float64(ts3.T) / 1e9
 	gpsTime = gpsStartTime + 11.0
 	offsetFinal := phcTime - gpsTime
@@ -337,7 +337,7 @@ func TestAdjTimeDelay(t *testing.T) {
 
 	// After the step, advance to get the first PPS timestamp
 	vc.AdvanceTo(1.1)
-	ts, ok := vc.ReadTimestamp()
+	ts, _, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
@@ -456,7 +456,7 @@ func TestNegativePPSJitter(t *testing.T) {
 		t.Fatal("should have timestamp after actual PPS time")
 	}
 
-	ts, ok := vc.ReadTimestamp()
+	ts, _, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}

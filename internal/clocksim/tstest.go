@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/jclark/satpulse/internal/clocksim"
 )
@@ -11,7 +12,7 @@ import (
 func main() {
 	// Oscillator with 10000ppb drift + small frequency noise
 	osc := clocksim.CombineOscillators(
-		clocksim.ConstantDrift(10000.0), // 10000ppb fast
+		clocksim.ConstantDrift(10000.0),   // 10000ppb fast
 		clocksim.WhiteFreqNoise(10.0, 42), // 10ppb RMS frequency noise
 	)
 
@@ -33,7 +34,7 @@ func main() {
 		vclock.AdvanceTo(simTime)
 
 		if vclock.TimestampAvailable() {
-			ts, _ := vclock.ReadTimestamp()
+			ts, _, _ := vclock.ReadTimestamp()
 			fmt.Printf("%.9f\n", ts.Seconds())
 		}
 	}

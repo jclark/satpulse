@@ -5,6 +5,7 @@ package main
 import (
 	"flag"
 	"log/slog"
+	"math"
 	"math/rand"
 	"os"
 	"time"
@@ -124,6 +125,7 @@ func main() {
 	rng := rand.New(rand.NewSource(999))
 	sampleCount := 0
 	nextPPS := 1.0 // First PPS at t=1.0
+	stats := &offsetStats{}
 
 	for nextPPS < *duration {
 		// Generate random pulse delivery delay (uniform between min and max)
@@ -139,7 +141,7 @@ func main() {
 			break
 		}
 
-		timestamp, ok := testClock.ReadTimestampWithEra()
+		timestamp, trueTime, ok := testClock.ReadTimestampWithEra()
 		if !ok {
 			lg.Error("failed to read timestamp")
 			break
@@ -159,11 +161,16 @@ func main() {
 			TReadPHC:  tReadPHC,
 		}
 
+		// Compute true TAI time when the PPS occurred in the simulation.
+		trueTAITime := ptime.Time((gpsStartTime + trueTime) * 1e9)
+		taiOffset := timestamp.T.Sub(trueTAITime)
+
 		// Feed pulse to controller
 		lg.Debug("delivering pulse",
 			"second", int(nextPPS),
 			"timestamp", timestamp.T,
-			"era", timestamp.Era)
+			"era", timestamp.Era,
+			"taiOffset", taiOffset)
 		ctrl.PulseEdge(edge)
 
 		// Now generate and deliver GPS time message
@@ -209,6 +216,10 @@ func main() {
 		// Here we just call it after each sample
 		ctrl.Tick()
 
+		if ctrl.Tracking() {
+			stats.add(taiOffset)
+		}
+
 		nextPPS += 1.0
 	}
 
@@ -220,7 +231,9 @@ func main() {
 
 	lg.Info("simulation complete",
 		"samples", sampleCount,
-		"finalFreq", finalFreq)
+		"finalFreq", finalFreq,
+		"trackingSamples", stats.count,
+		"trackingStdDev", time.Duration(stats.stdDevRounded()))
 }
 
 // multiSampler combines multiple samplers
@@ -232,4 +245,36 @@ func (m *multiSampler) Sample(data phcsync.SampleData) {
 	for _, s := range m.samplers {
 		s.Sample(data)
 	}
+}
+
+type offsetStats struct {
+	count      int64
+	sum        time.Duration
+	sumSquares int64
+}
+
+func (s *offsetStats) add(d time.Duration) {
+	ns := d.Nanoseconds()
+	s.count++
+	s.sum += d
+	s.sumSquares += ns * ns
+}
+
+func (s *offsetStats) stdDevRounded() int64 {
+	std := s.stdDev()
+	return int64(math.Round(std))
+}
+
+func (s *offsetStats) stdDev() float64 {
+	if s.count <= 1 {
+		return 0
+	}
+	n := float64(s.count)
+	sumSq := float64(s.sumSquares)
+	sum := float64(s.sum.Nanoseconds())
+	variance := (sumSq - (sum*sum)/n) / (n - 1)
+	if variance < 0 {
+		variance = 0
+	}
+	return math.Sqrt(variance)
 }
