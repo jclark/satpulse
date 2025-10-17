@@ -8,10 +8,10 @@ import (
 
 	"github.com/jclark/satpulse/internal/clocksim"
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/logobs"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/statsobs"
 	"github.com/jclark/satpulse/internal/timemsg"
 	"github.com/jclark/satpulse/internal/ubx"
 )
@@ -31,8 +31,8 @@ type Config struct {
 
 // Stats holds simulation results
 type Stats struct {
-	logobs.Stats                  // embedded - detailed tracking statistics from observer
-	SampleCount  int              // total samples fed to controller
+	statsobs.Stats                // embedded - detailed tracking statistics from observer
+	SampleCount    int            // total samples fed to controller
 	TrackingStdDev time.Duration  // stddev from true time (simulation-only)
 }
 
@@ -68,7 +68,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 	timeMsgBuf := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
 
 	// Create internal stats observer
-	statsObs := logobs.NewStatsObserver()
+	statsObs := statsobs.NewStatsObserver()
 
 	// Combine with user-provided observers
 	allObservers := append([]obs.Observer{statsObs}, observers...)

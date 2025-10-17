@@ -1,4 +1,4 @@
-package logobs
+package statsobs
 
 import (
 	"fmt"
@@ -59,6 +59,21 @@ func (o *StatsObserver) Sample(data mon.SampleData) {
 // Stats returns accumulated statistics
 func (o *StatsObserver) Stats() Stats {
 	return o.accum.stats()
+}
+
+// HasSamples returns true if any samples have been accumulated
+func (o *StatsObserver) HasSamples() bool {
+	return o.accum.phase.n > 0
+}
+
+// NSamples returns the number of samples accumulated
+func (o *StatsObserver) NSamples() int {
+	return o.accum.phase.n
+}
+
+// Reset clears all accumulated statistics
+func (o *StatsObserver) Reset() {
+	o.accum.reset()
 }
 
 // statsAccum wraps the three internal accumulators

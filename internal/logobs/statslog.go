@@ -6,15 +6,16 @@ import (
 
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
+	"github.com/jclark/satpulse/internal/statsobs"
 )
 
 // StatsLogObserver accumulates statistics over a configurable interval
 // and logs summaries via slog.
 type StatsLogObserver struct {
 	obs.DefaultObserver
+	statsobs.StatsObserver
 	lg       *slog.Logger
 	interval int
-	accum    statsAccum
 }
 
 // NewStatsLogObserver creates a new StatsLogObserver that logs statistics
@@ -35,7 +36,7 @@ func (o *StatsLogObserver) Sample(data mon.SampleData) {
 	// Only accumulate when servo is locked
 	if data.SyncState != mon.InSync {
 		// Flush any partial stats when losing sync
-		if o.accum.phase.n > 0 {
+		if o.StatsObserver.HasSamples() {
 			o.flush()
 		}
 		return
@@ -58,26 +59,26 @@ func (o *StatsLogObserver) Sample(data mon.SampleData) {
 		return
 	}
 
-	// Accumulate statistics
-	o.accum.add(data.Kind, data.Offset.Seconds(), data.Freq, data.FreqDelta)
+	// Accumulate statistics via embedded observer
+	o.StatsObserver.Sample(data)
 
 	// Flush when we reach the interval
-	if o.accum.phase.n == o.interval {
+	if o.StatsObserver.NSamples() == o.interval {
 		o.flush()
 	}
 }
 
 // flush logs the accumulated statistics and resets the accumulators
 func (o *StatsLogObserver) flush() {
-	s := o.accum.stats()
+	s := o.StatsObserver.Stats()
 	o.lg.Info("summary", s.LogArgs()...)
-	o.accum.reset()
+	o.StatsObserver.Reset()
 }
 
 // Release releases any resources and flushes pending stats
 func (o *StatsLogObserver) Release() {
 	// Flush any remaining accumulated stats
-	if o.accum.phase.n > 0 {
+	if o.StatsObserver.HasSamples() {
 		o.flush()
 	}
 }
