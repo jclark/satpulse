@@ -3,7 +3,7 @@
 package main
 
 import (
-	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -11,34 +11,34 @@ import (
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/syncsim"
+	"github.com/spf13/pflag"
 )
 
-var (
-	duration     = flag.Float64("duration", 60.0, "simulation duration in seconds")
-	oscDrift     = flag.Float64("drift", 2000.0, "oscillator drift in ppb")
-	oscNoise     = flag.Float64("noise", 20.0, "oscillator frequency noise stddev in ppb")
-	ppsJitter    = flag.Float64("jitter", 10.0, "PPS timing jitter in nanoseconds")
-	minDelay     = flag.Float64("min-delay", 5e-6, "minimum pulse delivery delay in seconds")
-	maxDelay     = flag.Float64("max-delay", 250e-6, "maximum pulse delivery delay in seconds")
-	msgDelay     = flag.Float64("msg-delay", 0.1, "GPS message delay after pulse in seconds")
-	msgJitter    = flag.Float64("msg-jitter", 0.01, "GPS message delay jitter in seconds")
-	statsInt     = flag.Int("stats", 10, "statistics interval in seconds (0 to disable)")
-	clockLogPath = flag.String("clock-log", "/tmp/synctest-clock.log", "path to clock log file")
-	logLevel     = flag.String("log-level", "INFO", "log level (DEBUG, INFO, WARN, ERROR)")
-)
+type flagVars struct {
+	duration     float64
+	oscDrift     float64
+	oscNoise     float64
+	ppsJitter    float64
+	minDelay     float64
+	maxDelay     float64
+	msgDelay     float64
+	msgJitter    float64
+	statsInt     int
+	clockLogPath string
+	debug        bool
+}
 
 func main() {
-	flag.Parse()
+	vars, err := parseFlags(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Configure logging
 	level := slog.LevelInfo
-	switch *logLevel {
-	case "DEBUG":
+	if vars.debug {
 		level = slog.LevelDebug
-	case "WARN":
-		level = slog.LevelWarn
-	case "ERROR":
-		level = slog.LevelError
 	}
 	lg := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: level,
@@ -50,8 +50,8 @@ func main() {
 	ls := ptime.LeapSecond2016()
 
 	// Create samplers
-	statsObs := logobs.NewStatsLogObserver(lg, *statsInt)
-	clockObs, err := logobs.NewClockLogObserver(lg, *clockLogPath, ls)
+	statsObs := logobs.NewStatsLogObserver(lg, vars.statsInt)
+	clockObs, err := logobs.NewClockLogObserver(lg, vars.clockLogPath, ls)
 	if err != nil {
 		lg.Error("failed to create clock log observer", "err", err)
 		os.Exit(1)
@@ -63,14 +63,14 @@ func main() {
 
 	// Create simulation config
 	simCfg := syncsim.Config{
-		Duration:     *duration,
-		OscDrift:     *oscDrift,
-		OscNoise:     *oscNoise,
-		PPSJitter:    *ppsJitter,
-		MinDelay:     *minDelay,
-		MaxDelay:     *maxDelay,
-		MsgDelay:     *msgDelay,
-		MsgJitter:    *msgJitter,
+		Duration:     vars.duration,
+		OscDrift:     vars.oscDrift,
+		OscNoise:     vars.oscNoise,
+		PPSJitter:    vars.ppsJitter,
+		MinDelay:     vars.minDelay,
+		MaxDelay:     vars.maxDelay,
+		MsgDelay:     vars.msgDelay,
+		MsgJitter:    vars.msgJitter,
 		GPSStartTime: gpsStartTime,
 	}
 
@@ -92,7 +92,31 @@ func main() {
 		"finalFreq", stats.FinalFreq,
 		"trackingSamples", stats.TrackingSamples,
 		"trackingStdDev", stats.TrackingStdDev,
-		"clockLog", *clockLogPath)
+		"clockLog", vars.clockLogPath)
+}
+
+func parseFlags(args []string) (*flagVars, error) {
+	vars := flagVars{}
+	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
+	flags.Float64Var(&vars.duration, "duration", 60.0, "simulation duration in seconds")
+	flags.Float64Var(&vars.oscDrift, "drift", 2000.0, "oscillator drift in ppb")
+	flags.Float64Var(&vars.oscNoise, "noise", 20.0, "oscillator frequency noise stddev in ppb")
+	flags.Float64Var(&vars.ppsJitter, "jitter", 10.0, "PPS timing jitter in nanoseconds")
+	flags.Float64Var(&vars.minDelay, "min-delay", 5e-6, "minimum pulse delivery delay in seconds")
+	flags.Float64Var(&vars.maxDelay, "max-delay", 250e-6, "maximum pulse delivery delay in seconds")
+	flags.Float64Var(&vars.msgDelay, "msg-delay", 0.1, "GPS message delay after pulse in seconds")
+	flags.Float64Var(&vars.msgJitter, "msg-jitter", 0.01, "GPS message delay jitter in seconds")
+	flags.IntVar(&vars.statsInt, "stats", 10, "statistics interval in seconds (0 to disable)")
+	flags.StringVar(&vars.clockLogPath, "clock-log", "/tmp/syncsim-clock.log", "path to clock log file")
+	flags.BoolVar(&vars.debug, "debug", false, "enable debug logging")
+	err := flags.Parse(args)
+	if err != nil {
+		return nil, err
+	}
+	if flags.NArg() != 0 {
+		return nil, fmt.Errorf("command must not have non-option arguments")
+	}
+	return &vars, nil
 }
 
 // multiSampler combines multiple samplers
