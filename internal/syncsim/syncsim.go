@@ -29,6 +29,21 @@ type Config struct {
 	GPSStartTime float64 // GPS time at start of simulation in seconds
 }
 
+// DefaultConfig returns a Config with sensible default values.
+func DefaultConfig() Config {
+	return Config{
+		Duration:     60.0,
+		OscDrift:     2000.0,
+		OscNoise:     20.0,
+		PPSJitter:    10.0,
+		MinDelay:     5e-6,
+		MaxDelay:     250e-6,
+		MsgDelay:     0.1,
+		MsgJitter:    0.01,
+		GPSStartTime: 0, // caller should set this
+	}
+}
+
 // Stats holds simulation results
 type Stats struct {
 	statsobs.Stats                // embedded - detailed tracking statistics from observer

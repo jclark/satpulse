@@ -82,20 +82,21 @@ func main() {
 func parseFlags(args []string) (*flagVars, error) {
 	vars := flagVars{
 		phcCfg: phcsync.DefaultConfig(),
+		simCfg: syncsim.DefaultConfig(),
 	}
 	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
-	flags.Float64Var(&vars.simCfg.Duration, "duration", 60.0, "simulation duration in seconds")
-	flags.Float64Var(&vars.simCfg.OscDrift, "drift", 2000.0, "oscillator drift in ppb")
-	flags.Float64Var(&vars.simCfg.OscNoise, "noise", 20.0, "oscillator frequency noise stddev in ppb")
-	flags.Float64Var(&vars.simCfg.PPSJitter, "jitter", 10.0, "PPS timing jitter in nanoseconds")
-	flags.Float64Var(&vars.simCfg.MinDelay, "min-delay", 5e-6, "minimum pulse delivery delay in seconds")
-	flags.Float64Var(&vars.simCfg.MaxDelay, "max-delay", 250e-6, "maximum pulse delivery delay in seconds")
-	flags.Float64Var(&vars.simCfg.MsgDelay, "msg-delay", 0.1, "GPS message delay after pulse in seconds")
-	flags.Float64Var(&vars.simCfg.MsgJitter, "msg-jitter", 0.01, "GPS message delay jitter in seconds")
+	flags.Float64Var(&vars.simCfg.Duration, "duration", vars.simCfg.Duration, "simulation duration in seconds")
+	flags.Float64Var(&vars.simCfg.OscDrift, "drift", vars.simCfg.OscDrift, "oscillator drift in ppb")
+	flags.Float64Var(&vars.simCfg.OscNoise, "noise", vars.simCfg.OscNoise, "oscillator frequency noise stddev in ppb")
+	flags.Float64Var(&vars.simCfg.PPSJitter, "jitter", vars.simCfg.PPSJitter, "PPS timing jitter in nanoseconds")
+	flags.Float64Var(&vars.simCfg.MinDelay, "min-delay", vars.simCfg.MinDelay, "minimum pulse delivery delay in seconds")
+	flags.Float64Var(&vars.simCfg.MaxDelay, "max-delay", vars.simCfg.MaxDelay, "maximum pulse delivery delay in seconds")
+	flags.Float64Var(&vars.simCfg.MsgDelay, "msg-delay", vars.simCfg.MsgDelay, "GPS message delay after pulse in seconds")
+	flags.Float64Var(&vars.simCfg.MsgJitter, "msg-jitter", vars.simCfg.MsgJitter, "GPS message delay jitter in seconds")
 	flags.IntVar(&vars.statsInterval, "stats", 0, "statistics interval in seconds (0 to disable)")
 	flags.StringVar(&vars.clockLogPath, "clock-log", "", "path to clock log file (empty to disable)")
-	flags.Float64Var(&vars.phcCfg.Tracking.KP, "tracking-kp", 0.7, "tracking mode proportional gain")
-	flags.Float64Var(&vars.phcCfg.Tracking.KI, "tracking-ki", 0.3, "tracking mode integral gain")
+	flags.Float64Var(&vars.phcCfg.Tracking.KP, "tracking-kp", vars.phcCfg.Tracking.KP, "tracking mode proportional gain")
+	flags.Float64Var(&vars.phcCfg.Tracking.KI, "tracking-ki", vars.phcCfg.Tracking.KI, "tracking mode integral gain")
 	flags.BoolVar(&vars.debug, "debug", false, "enable debug logging")
 	err := flags.Parse(args)
 	if err != nil {
