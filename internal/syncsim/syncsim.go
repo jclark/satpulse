@@ -1,69 +1,54 @@
-//go:build ignore
-
-package main
+package syncsim
 
 import (
-	"flag"
 	"log/slog"
 	"math"
 	"math/rand"
-	"os"
 	"time"
 
 	"github.com/jclark/satpulse/internal/clocksim"
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/logobs"
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/timemsg"
 	"github.com/jclark/satpulse/internal/ubx"
 )
 
-var (
-	duration     = flag.Float64("duration", 60.0, "simulation duration in seconds")
-	oscDrift     = flag.Float64("drift", 2000.0, "oscillator drift in ppb")
-	oscNoise     = flag.Float64("noise", 20.0, "oscillator frequency noise stddev in ppb")
-	ppsJitter    = flag.Float64("jitter", 10.0, "PPS timing jitter in nanoseconds")
-	minDelay     = flag.Float64("min-delay", 5e-6, "minimum pulse delivery delay in seconds")
-	maxDelay     = flag.Float64("max-delay", 250e-6, "maximum pulse delivery delay in seconds")
-	msgDelay     = flag.Float64("msg-delay", 0.1, "GPS message delay after pulse in seconds")
-	msgJitter    = flag.Float64("msg-jitter", 0.01, "GPS message delay jitter in seconds")
-	statsInt     = flag.Int("stats", 10, "statistics interval in seconds (0 to disable)")
-	clockLogPath = flag.String("clock-log", "/tmp/synctest-clock.log", "path to clock log file")
-	logLevel     = flag.String("log-level", "INFO", "log level (DEBUG, INFO, WARN, ERROR)")
-)
+// Config holds simulation parameters
+type Config struct {
+	Duration     float64 // simulation duration in seconds
+	OscDrift     float64 // oscillator drift in ppb
+	OscNoise     float64 // oscillator frequency noise stddev in ppb
+	PPSJitter    float64 // PPS timing jitter in nanoseconds
+	MinDelay     float64 // minimum pulse delivery delay in seconds
+	MaxDelay     float64 // maximum pulse delivery delay in seconds
+	MsgDelay     float64 // GPS message delay after pulse in seconds
+	MsgJitter    float64 // GPS message delay jitter in seconds
+	GPSStartTime float64 // GPS time at start of simulation in seconds
+}
 
-func main() {
-	flag.Parse()
+// Stats holds simulation results
+type Stats struct {
+	SampleCount     int           // total number of samples
+	FinalFreq       int64         // final frequency offset in ppb
+	TrackingSamples int64         // number of samples while tracking
+	TrackingStdDev  time.Duration // standard deviation of offset while tracking
+}
 
-	// Configure logging
-	level := slog.LevelInfo
-	switch *logLevel {
-	case "DEBUG":
-		level = slog.LevelDebug
-	case "WARN":
-		level = slog.LevelWarn
-	case "ERROR":
-		level = slog.LevelError
-	}
-	lg := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: level,
-	}))
-
-	// GPS time starts near present (2024-10-08 is roughly GPS time ~1.4e9 seconds)
-	const gpsStartTime = 1.4e9
-
+// Simulate runs a phcsync simulation with the given configuration.
+// It returns statistics about the simulation run.
+func Simulate(sampler phcsync.Sampler, phcCfg phcsync.Config, simCfg Config, lg *slog.Logger) (Stats, error) {
 	// Create oscillator with drift and noise
 	osc := clocksim.CombineOscillators(
-		clocksim.ConstantDrift(*oscDrift),
-		clocksim.WhiteFreqNoise(*oscNoise, 42),
+		clocksim.ConstantDrift(simCfg.OscDrift),
+		clocksim.WhiteFreqNoise(simCfg.OscNoise, 42),
 	)
 
 	// PHC starts at epoch (1970-01-01T00:00:00 TAI) - way off from GPS
 	raw := clocksim.NewRawClock(osc, 0)
 
 	// PPS with jitter
-	pps := clocksim.WhiteNoisePPS(time.Duration(*ppsJitter)*time.Nanosecond, 123)
+	pps := clocksim.WhiteNoisePPS(time.Duration(simCfg.PPSJitter)*time.Nanosecond, 123)
 
 	// Virtual clock starts at t=0, max ±500ppm (like Intel i210)
 	vclock := clocksim.NewVirtualClock(raw, pps, 0, 500000)
@@ -81,55 +66,40 @@ func main() {
 	// Create timemsg.Buffer
 	timeMsgBuf := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
 
-	// Create samplers
-	statsObs := logobs.NewStatsLogObserver(lg, *statsInt)
-	clockObs, err := logobs.NewClockLogObserver(lg, *clockLogPath, ls)
-	if err != nil {
-		lg.Error("failed to create clock log observer", "err", err)
-		os.Exit(1)
-	}
-	defer clockObs.Release()
-
-	// Create multi-sampler
-	sampler := &multiSampler{samplers: []phcsync.Sampler{statsObs, clockObs}}
-
 	// Create controller
-	cfg := phcsync.DefaultConfig()
 	ctrl, err := phcsync.NewController(
 		testClock,
 		timeMsgBuf,
 		sampler,
 		nil, // no grandmaster
 		nil, // no refclock
-		cfg,
+		phcCfg,
 		ls,
 		lg,
 	)
 	if err != nil {
-		lg.Error("failed to create controller", "err", err)
-		os.Exit(1)
+		return Stats{}, err
 	}
 	defer ctrl.Close()
 
 	lg.Info("starting phcsync simulation",
-		"duration", *duration,
+		"duration", simCfg.Duration,
 		"pulseDelay", "5µs-250µs",
-		"msgDelay", *msgDelay,
-		"oscDrift", *oscDrift,
-		"oscNoise", *oscNoise,
-		"ppsJitter", *ppsJitter,
-		"gpsStartTime", gpsStartTime,
-		"phcStartTime", 0.0,
-		"clockLog", *clockLogPath)
+		"msgDelay", simCfg.MsgDelay,
+		"oscDrift", simCfg.OscDrift,
+		"oscNoise", simCfg.OscNoise,
+		"ppsJitter", simCfg.PPSJitter,
+		"gpsStartTime", simCfg.GPSStartTime,
+		"phcStartTime", 0.0)
 
 	rng := rand.New(rand.NewSource(999))
 	sampleCount := 0
 	nextPPS := 1.0 // First PPS at t=1.0
 	stats := &offsetStats{}
 
-	for nextPPS < *duration {
+	for nextPPS < simCfg.Duration {
 		// Generate random pulse delivery delay (uniform between min and max)
-		pulseDelay := *minDelay + rng.Float64()*(*maxDelay-*minDelay)
+		pulseDelay := simCfg.MinDelay + rng.Float64()*(simCfg.MaxDelay-simCfg.MinDelay)
 
 		// Advance simulation time to when pulse timestamp is delivered to userspace
 		pulseDeliveryTime := nextPPS + pulseDelay
@@ -162,7 +132,7 @@ func main() {
 		}
 
 		// Compute true TAI time when the PPS occurred in the simulation.
-		trueTAITime := ptime.Time((gpsStartTime + trueTime) * 1e9)
+		trueTAITime := ptime.Time((simCfg.GPSStartTime + trueTime) * 1e9)
 		taiOffset := timestamp.T.Sub(trueTAITime)
 
 		// Feed pulse to controller
@@ -175,7 +145,7 @@ func main() {
 
 		// Now generate and deliver GPS time message
 		// GPS time for this second (TAI)
-		gpsTime := ptime.Time((gpsStartTime + nextPPS) * 1e9)
+		gpsTime := ptime.Time((simCfg.GPSStartTime + nextPPS) * 1e9)
 
 		// Create time message
 		timeMsg := &gpsprot.TimeMsg{
@@ -187,7 +157,7 @@ func main() {
 		}
 
 		// Message arrives some time after pulse
-		msgDelayTime := *msgDelay + rng.NormFloat64()*(*msgJitter)
+		msgDelayTime := simCfg.MsgDelay + rng.NormFloat64()*simCfg.MsgJitter
 		if msgDelayTime < 0 {
 			msgDelayTime = 0
 		}
@@ -223,17 +193,15 @@ func main() {
 		nextPPS += 1.0
 	}
 
-	// Final flush of stats
-	statsObs.Release()
-
 	// Get final frequency from clock
 	finalFreq, _ := testClock.FreqOffset()
 
-	lg.Info("simulation complete",
-		"samples", sampleCount,
-		"finalFreq", finalFreq,
-		"trackingSamples", stats.count,
-		"trackingStdDev", time.Duration(stats.stdDevRounded()))
+	return Stats{
+		SampleCount:     sampleCount,
+		FinalFreq:       int64(math.Round(finalFreq)),
+		TrackingSamples: stats.count,
+		TrackingStdDev:  time.Duration(stats.stdDevRounded()),
+	}, nil
 }
 
 // multiSampler combines multiple samplers
