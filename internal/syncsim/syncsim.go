@@ -8,6 +8,8 @@ import (
 
 	"github.com/jclark/satpulse/internal/clocksim"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/logobs"
+	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/timemsg"
@@ -29,15 +31,14 @@ type Config struct {
 
 // Stats holds simulation results
 type Stats struct {
-	SampleCount     int           // total number of samples
-	FinalFreq       int64         // final frequency offset in ppb
-	TrackingSamples int64         // number of samples while tracking
-	TrackingStdDev  time.Duration // standard deviation of offset while tracking
+	logobs.Stats                  // embedded - detailed tracking statistics from observer
+	SampleCount  int              // total samples fed to controller
+	TrackingStdDev time.Duration  // stddev from true time (simulation-only)
 }
 
 // Simulate runs a phcsync simulation with the given configuration.
 // It returns statistics about the simulation run.
-func Simulate(sampler phcsync.Sampler, phcCfg phcsync.Config, simCfg Config, lg *slog.Logger) (Stats, error) {
+func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg *slog.Logger) (Stats, error) {
 	// Create oscillator with drift and noise
 	osc := clocksim.CombineOscillators(
 		clocksim.ConstantDrift(simCfg.OscDrift),
@@ -66,11 +67,18 @@ func Simulate(sampler phcsync.Sampler, phcCfg phcsync.Config, simCfg Config, lg 
 	// Create timemsg.Buffer
 	timeMsgBuf := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
 
+	// Create internal stats observer
+	statsObs := logobs.NewStatsObserver()
+
+	// Combine with user-provided observers
+	allObservers := append([]obs.Observer{statsObs}, observers...)
+	multiObs := obs.NewMultiObserver(allObservers...)
+
 	// Create controller
 	ctrl, err := phcsync.NewController(
 		testClock,
 		timeMsgBuf,
-		sampler,
+		multiObs,
 		nil, // no grandmaster
 		nil, // no refclock
 		phcCfg,
@@ -193,26 +201,14 @@ func Simulate(sampler phcsync.Sampler, phcCfg phcsync.Config, simCfg Config, lg 
 		nextPPS += 1.0
 	}
 
-	// Get final frequency from clock
-	finalFreq, _ := testClock.FreqOffset()
+	// Get tracking stats from observer
+	trackingStats := statsObs.Stats()
 
 	return Stats{
-		SampleCount:     sampleCount,
-		FinalFreq:       int64(math.Round(finalFreq)),
-		TrackingSamples: stats.count,
-		TrackingStdDev:  time.Duration(stats.stdDevRounded()),
+		Stats:          trackingStats,
+		SampleCount:    sampleCount,
+		TrackingStdDev: time.Duration(stats.stdDevRounded()),
 	}, nil
-}
-
-// multiSampler combines multiple samplers
-type multiSampler struct {
-	samplers []phcsync.Sampler
-}
-
-func (m *multiSampler) Sample(data phcsync.SampleData) {
-	for _, s := range m.samplers {
-		s.Sample(data)
-	}
 }
 
 type offsetStats struct {

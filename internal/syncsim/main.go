@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/jclark/satpulse/internal/logobs"
+	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/syncsim"
@@ -43,10 +44,10 @@ func main() {
 
 	ls := ptime.LeapSecond2016()
 
-	// Create samplers
-	var samplers []phcsync.Sampler
+	// Create observers
+	var observers []obs.Observer
 	statsObs := logobs.NewStatsLogObserver(lg, vars.statsInterval)
-	samplers = append(samplers, statsObs)
+	observers = append(observers, statsObs)
 
 	if vars.clockLogPath != "" {
 		clockObs, err := logobs.NewClockLogObserver(lg, vars.clockLogPath, ls)
@@ -55,17 +56,14 @@ func main() {
 			os.Exit(1)
 		}
 		defer clockObs.Release()
-		samplers = append(samplers, clockObs)
+		observers = append(observers, clockObs)
 	}
-
-	// Create multi-sampler
-	sampler := &multiSampler{samplers: samplers}
 
 	// Set GPS start time
 	vars.simCfg.GPSStartTime = gpsStartTime
 
 	// Run simulation
-	stats, err := syncsim.Simulate(sampler, vars.phcCfg, vars.simCfg, lg)
+	stats, err := syncsim.Simulate(observers, vars.phcCfg, vars.simCfg, lg)
 	if err != nil {
 		lg.Error("simulation failed", "err", err)
 		os.Exit(1)
@@ -74,11 +72,11 @@ func main() {
 	// Final flush of stats
 	statsObs.Release()
 
-	lg.Info("simulation complete",
-		"samples", stats.SampleCount,
-		"finalFreq", stats.FinalFreq,
-		"trackingSamples", stats.TrackingSamples,
-		"trackingStdDev", stats.TrackingStdDev)
+	// Log final stats
+	args := stats.Stats.LogArgs()
+	args = append(args, "samples", stats.SampleCount)
+	args = append(args, "trackingStdDev", stats.TrackingStdDev)
+	lg.Info("simulation complete", args...)
 }
 
 func parseFlags(args []string) (*flagVars, error) {
@@ -107,15 +105,4 @@ func parseFlags(args []string) (*flagVars, error) {
 		return nil, fmt.Errorf("command must not have non-option arguments")
 	}
 	return &vars, nil
-}
-
-// multiSampler combines multiple samplers
-type multiSampler struct {
-	samplers []phcsync.Sampler
-}
-
-func (m *multiSampler) Sample(data phcsync.SampleData) {
-	for _, s := range m.samplers {
-		s.Sample(data)
-	}
 }
