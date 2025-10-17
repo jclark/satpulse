@@ -15,17 +15,11 @@ import (
 )
 
 type flagVars struct {
-	duration     float64
-	oscDrift     float64
-	oscNoise     float64
-	ppsJitter    float64
-	minDelay     float64
-	maxDelay     float64
-	msgDelay     float64
-	msgJitter    float64
-	statsInt     int
-	clockLogPath string
-	debug        bool
+	statsInterval int
+	clockLogPath  string
+	simCfg        syncsim.Config
+	phcCfg        phcsync.Config
+	debug         bool
 }
 
 func main() {
@@ -50,35 +44,28 @@ func main() {
 	ls := ptime.LeapSecond2016()
 
 	// Create samplers
-	statsObs := logobs.NewStatsLogObserver(lg, vars.statsInt)
-	clockObs, err := logobs.NewClockLogObserver(lg, vars.clockLogPath, ls)
-	if err != nil {
-		lg.Error("failed to create clock log observer", "err", err)
-		os.Exit(1)
+	var samplers []phcsync.Sampler
+	statsObs := logobs.NewStatsLogObserver(lg, vars.statsInterval)
+	samplers = append(samplers, statsObs)
+
+	if vars.clockLogPath != "" {
+		clockObs, err := logobs.NewClockLogObserver(lg, vars.clockLogPath, ls)
+		if err != nil {
+			lg.Error("failed to create clock log observer", "err", err)
+			os.Exit(1)
+		}
+		defer clockObs.Release()
+		samplers = append(samplers, clockObs)
 	}
-	defer clockObs.Release()
 
 	// Create multi-sampler
-	sampler := &multiSampler{samplers: []phcsync.Sampler{statsObs, clockObs}}
+	sampler := &multiSampler{samplers: samplers}
 
-	// Create simulation config
-	simCfg := syncsim.Config{
-		Duration:     vars.duration,
-		OscDrift:     vars.oscDrift,
-		OscNoise:     vars.oscNoise,
-		PPSJitter:    vars.ppsJitter,
-		MinDelay:     vars.minDelay,
-		MaxDelay:     vars.maxDelay,
-		MsgDelay:     vars.msgDelay,
-		MsgJitter:    vars.msgJitter,
-		GPSStartTime: gpsStartTime,
-	}
-
-	// Use default phcsync config
-	phcCfg := phcsync.DefaultConfig()
+	// Set GPS start time
+	vars.simCfg.GPSStartTime = gpsStartTime
 
 	// Run simulation
-	stats, err := syncsim.Simulate(sampler, phcCfg, simCfg, lg)
+	stats, err := syncsim.Simulate(sampler, vars.phcCfg, vars.simCfg, lg)
 	if err != nil {
 		lg.Error("simulation failed", "err", err)
 		os.Exit(1)
@@ -91,23 +78,26 @@ func main() {
 		"samples", stats.SampleCount,
 		"finalFreq", stats.FinalFreq,
 		"trackingSamples", stats.TrackingSamples,
-		"trackingStdDev", stats.TrackingStdDev,
-		"clockLog", vars.clockLogPath)
+		"trackingStdDev", stats.TrackingStdDev)
 }
 
 func parseFlags(args []string) (*flagVars, error) {
-	vars := flagVars{}
+	vars := flagVars{
+		phcCfg: phcsync.DefaultConfig(),
+	}
 	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
-	flags.Float64Var(&vars.duration, "duration", 60.0, "simulation duration in seconds")
-	flags.Float64Var(&vars.oscDrift, "drift", 2000.0, "oscillator drift in ppb")
-	flags.Float64Var(&vars.oscNoise, "noise", 20.0, "oscillator frequency noise stddev in ppb")
-	flags.Float64Var(&vars.ppsJitter, "jitter", 10.0, "PPS timing jitter in nanoseconds")
-	flags.Float64Var(&vars.minDelay, "min-delay", 5e-6, "minimum pulse delivery delay in seconds")
-	flags.Float64Var(&vars.maxDelay, "max-delay", 250e-6, "maximum pulse delivery delay in seconds")
-	flags.Float64Var(&vars.msgDelay, "msg-delay", 0.1, "GPS message delay after pulse in seconds")
-	flags.Float64Var(&vars.msgJitter, "msg-jitter", 0.01, "GPS message delay jitter in seconds")
-	flags.IntVar(&vars.statsInt, "stats", 10, "statistics interval in seconds (0 to disable)")
-	flags.StringVar(&vars.clockLogPath, "clock-log", "/tmp/syncsim-clock.log", "path to clock log file")
+	flags.Float64Var(&vars.simCfg.Duration, "duration", 60.0, "simulation duration in seconds")
+	flags.Float64Var(&vars.simCfg.OscDrift, "drift", 2000.0, "oscillator drift in ppb")
+	flags.Float64Var(&vars.simCfg.OscNoise, "noise", 20.0, "oscillator frequency noise stddev in ppb")
+	flags.Float64Var(&vars.simCfg.PPSJitter, "jitter", 10.0, "PPS timing jitter in nanoseconds")
+	flags.Float64Var(&vars.simCfg.MinDelay, "min-delay", 5e-6, "minimum pulse delivery delay in seconds")
+	flags.Float64Var(&vars.simCfg.MaxDelay, "max-delay", 250e-6, "maximum pulse delivery delay in seconds")
+	flags.Float64Var(&vars.simCfg.MsgDelay, "msg-delay", 0.1, "GPS message delay after pulse in seconds")
+	flags.Float64Var(&vars.simCfg.MsgJitter, "msg-jitter", 0.01, "GPS message delay jitter in seconds")
+	flags.IntVar(&vars.statsInterval, "stats", 0, "statistics interval in seconds (0 to disable)")
+	flags.StringVar(&vars.clockLogPath, "clock-log", "", "path to clock log file (empty to disable)")
+	flags.Float64Var(&vars.phcCfg.Tracking.KP, "tracking-kp", 0.7, "tracking mode proportional gain")
+	flags.Float64Var(&vars.phcCfg.Tracking.KI, "tracking-ki", 0.3, "tracking mode integral gain")
 	flags.BoolVar(&vars.debug, "debug", false, "enable debug logging")
 	err := flags.Parse(args)
 	if err != nil {
