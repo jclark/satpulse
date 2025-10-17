@@ -47,12 +47,7 @@ func main() {
 	// GPS time starts near present (2024-10-08 is roughly GPS time ~1.4e9 seconds)
 	const gpsStartTime = 1.4e9
 
-	// Leap second (current value as of 2017)
-	ls := ptime.LeapSecond{
-		UTCOffBefore:  37,
-		UTCOffAfter:   37,
-		OffChangeTime: 1483228800, // 2017-01-01
-	}
+	ls := ptime.LeapSecond2016()
 
 	// Create samplers
 	statsObs := logobs.NewStatsLogObserver(lg, *statsInt)
