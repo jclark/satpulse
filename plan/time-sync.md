@@ -420,56 +420,70 @@ Steps to implement.
 5. Implement these interfaces for each mode
 6. Implement a test harness using clocksim to test this
 
-### Phase C - integrate into daemon
+### Phase C - essential MVP features
+
+Implementing each of these will involved enhancements to simulator to test properly.
+
+1. implement recovery in lost mode
+2. handle ignoring falling edges, when both edges timestamped (requires enhancements to clocksim)
+
+Bugs:
+* at the beginning of converging stage, we need to make sure that the step has already taken effect by waiting for appropriate era
+
+### Phase D - integrate into daemon
 
 * Integrate this into the daemon, so that it is used instead of combine/mon/servo.
-* Replace aliases in phcsync by definitions and change to combine/mon/servo to use aliases.
+* Replace aliases in phcsync by definitions
+* Update Sampler.SyncState to use our new sync states
+* Implement chrony refclock
+* Implement grandmaster settings
+* Remove combine/mon/servo packages
 
 It would be useful to be able to run new program and old program at the same time, seeing the same data
-- Add phcIndex property in config file for it to use a vclock (see issue #26)
+- Add index property to phc section in config file for it to use a vclock (see issue #26)
 - How to distinguish system log entries? One would run under systemd, one would not.
 - How to have different clock path? Specify different logging directory for new one.
 - Both need access to the same serial port. We can do this by testing on a machine where GNSS receiver has two serial ports.
 
-### Phase D - bring to feature-parity with current version
-
-Implementing each of these will involved enhancements to simulator to test properly.
+### Phase E - refine synchronization algorithms
 
 Order of these is TBD.
 
 * MAD-based outlier detection
-* handle ignoring falling edges, when both edges timestamped (requires enhancements to clocksim)
-* chrony refclock
-* grandmaster settings
-* compensation step at beginning of recovery phase
-* implement recovery in lost mode
-* sawtooth correction
-* keep track of timing messages during tracking and have configurable behaviour if the timing from timing messages is mismatched (this could happen during cold start of old receiver with firmware with out of date leap second when using NMEA) 
-
-### Phase E - remove obsolete code
-
-* Remove combine/mon/servo packages.
-
-### Phase F - tune synchronization performance
-
 * improve clock model to be more realistic
   * simulate ionospheric disturbances
+  * simulate outliers
 * run some simulations to determine better Kp/Ki values for each mode
 * consider more robust transition between converging/tracking mode, by blending Kp/Ki parameters for initial period during tracking
+* compensation step at beginning of converging phase (already in old implementation)
+* sawtooth correction (already in old implementation)
 
-### Phase G - tuneable parameters
+Consider whether we still need era concept. Used currently:
+* at startup, to get rid of stale timestamps
+* after initial step
+* after compensate step
 
+### Phase F - tuneable parameters
+
+* Finalize naming and design of tuneable parameters
 * Implement setting of tuneable parameters via new section in satpulse.toml.
 * Implement validation of phcsync.Config
 * Document in man page
+
+### Phase G - track timing messages
+
+* keep track of timing messages during tracking
+  * we know is that at monotonic time m1 we received a message telling us the GNSS time solution said it was g1
+  * maintain a sequence of (m,g) pairs
+  * use this we can then make an estimate of the TAI time corresponding to a monotonic time
+  * use delay computed in init stage
+* this can be used as basis for generating samples without PHC
+* have configurable behaviour if our calculated PHC time is different from time messages time
+ * in tracking mode we can more straightforwardly calculate monotonic time of pulse, because we can assume PHC is accurate
+ * this could happen during cold start of old receiver with firmware with out of date leap second when using NMEA
+ * could also happen with buffer overflow
 
 
 ### Phase H - holdover
 
 TBD
-
-
-
- 
-
-
