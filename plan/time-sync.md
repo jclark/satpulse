@@ -438,6 +438,7 @@ Bugs:
 * Implement chrony refclock
 * Implement grandmaster settings
 * Remove combine/mon/servo packages
+* Post-read PHC/system time has wallclock time; compute separate monotonic time
 
 It would be useful to be able to run new program and old program at the same time, seeing the same data
 - Add index property to phc section in config file for it to use a vclock (see issue #26)
