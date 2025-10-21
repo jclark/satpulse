@@ -93,6 +93,7 @@ func parseFlags(args []string) (*flagVars, error) {
 	flags.Float64Var(&vars.simCfg.MaxDelay, "max-delay", vars.simCfg.MaxDelay, "maximum pulse delivery delay in seconds")
 	flags.Float64Var(&vars.simCfg.MsgDelay, "msg-delay", vars.simCfg.MsgDelay, "GPS message delay after pulse in seconds")
 	flags.Float64Var(&vars.simCfg.MsgJitter, "msg-jitter", vars.simCfg.MsgJitter, "GPS message delay jitter in seconds")
+	flags.Float64VarP(&vars.simCfg.PulseWidth, "pulse-width", "w", vars.simCfg.PulseWidth, "pulse width in seconds (0 for single-edge mode)")
 	flags.IntVar(&vars.statsInterval, "stats", 0, "statistics interval in seconds (0 to disable)")
 	flags.StringVar(&vars.clockLogPath, "clock-log", "", "path to clock log file (empty to disable)")
 	flags.Float64Var(&vars.phcCfg.Tracking.KP, "tracking-kp", vars.phcCfg.Tracking.KP, "tracking mode proportional gain")

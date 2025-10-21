@@ -25,26 +25,48 @@ func defaultConvergingConfig() ConvergingConfig {
 	}
 }
 
-type convergingSampleGenerator struct{}
-
-func newConvergingSampleGenerator() *convergingSampleGenerator {
-	return &convergingSampleGenerator{}
+type convergingSampleGenerator struct {
+	cfg              ConvergingConfig
+	pt               PulseType
+	leadingEdgeIndex uint64
+	freq             float64
+	maxFreq          float64
+	lg               *slog.Logger
 }
 
-func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge) *SampleData {
+func newConvergingSampleGenerator(cfg ConvergingConfig, pt PulseType, lastSample *Sample, freq, maxFreq float64, lg *slog.Logger) *convergingSampleGenerator {
+	return &convergingSampleGenerator{
+		cfg:              cfg,
+		pt:               pt,
+		leadingEdgeIndex: lastSample.edgeIndex,
+		freq:             freq,
+		maxFreq:          maxFreq,
+		lg:               lg,
+	}
+}
+
+func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64) *Sample {
+	// Filter out trailing edges when EdgesPerPulse == 2
+	if g.pt.EdgesPerPulse == 2 && (g.leadingEdgeIndex^edgeIndex)&1 != 0 {
+		return nil
+	}
+
 	// Round to nearest second
 	refTime := edge.Timestamp.T.Round(time.Second)
 	offset := edge.Timestamp.T.Sub(refTime)
 
-	return &SampleData{
-		Kind:   SampleOK,
-		Ref:    refTime,
-		Offset: offset,
-		Era:    edge.Timestamp.Era,
+	return &Sample{
+		SampleData: &SampleData{
+			Kind:   SampleOK,
+			Ref:    refTime,
+			Offset: offset,
+			Era:    edge.Timestamp.Era,
+		},
+		edgeIndex: edgeIndex,
 	}
 }
 
-func (g *convergingSampleGenerator) timeMessageSample() *SampleData {
+func (g *convergingSampleGenerator) timeMessageSample() *Sample {
 	// Converging mode only uses pulse edges
 	return nil
 }
@@ -68,7 +90,7 @@ func newConvergingSampleProcessor(cfg ConvergingConfig, currentFreq, maxFreq flo
 	}
 }
 
-func (p *convergingSampleProcessor) processSample(sample *SampleData) (phcAction, controllerMode) {
+func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, controllerMode) {
 	if sample.Kind == SampleMissing {
 		// Ignore single missing sample
 		return phcAction{actionType: phcNoAction}, modeConverging

@@ -424,8 +424,8 @@ Steps to implement.
 
 Implementing each of these will involved enhancements to simulator to test properly.
 
-1. implement recovery in lost mode
-2. handle ignoring falling edges, when both edges timestamped (requires enhancements to clocksim)
+1. handle ignoring falling edges, when both edges timestamped (requires enhancements to clocksim), but not 50% duty cycle (or close to it)
+2. implement recovery in lost mode
 
 Bugs:
 * at the beginning of converging stage, we need to make sure that the step has already taken effect by waiting for appropriate era
@@ -446,7 +446,7 @@ It would be useful to be able to run new program and old program at the same tim
 - How to have different clock path? Specify different logging directory for new one.
 - Both need access to the same serial port. We can do this by testing on a machine where GNSS receiver has two serial ports.
 
-### Phase E - refine synchronization algorithms
+### Phase E - refine
 
 Order of these is TBD.
 
@@ -458,6 +458,8 @@ Order of these is TBD.
 * consider more robust transition between converging/tracking mode, by blending Kp/Ki parameters for initial period during tracking
 * compensation step at beginning of converging phase (already in old implementation)
 * sawtooth correction (already in old implementation)
+* support 50% duty cycle with both edges
+* estimate error in system clock and also use that when we are estimating monotonic time of messages
 
 Consider whether we still need era concept. Used currently:
 * at startup, to get rid of stale timestamps

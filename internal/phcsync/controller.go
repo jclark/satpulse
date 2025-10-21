@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jclark/satpulse/internal/combine"
 	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/servo"
@@ -17,6 +18,7 @@ type SampleData = mon.SampleData
 type SampleKind = mon.SampleKind
 type Grandmaster = mon.Grandmaster
 type ProxyRefClock = mon.ProxyRefClock
+type PulseType = combine.PulseType
 
 // Sample kind constants
 const (
@@ -24,6 +26,13 @@ const (
 	SampleMissing = mon.SampleMissing
 	SampleOutlier = mon.SampleOutlier
 )
+
+// Sample represents a sample with associated edge index.
+// The edgeIndex tracks which edge produced this sample (odd/even).
+type Sample struct {
+	*SampleData
+	edgeIndex uint64
+}
 
 // TimeMsgBuffer is an interface for the Controller to access time messages from the receiver.
 type TimeMsgBuffer interface {
@@ -92,22 +101,25 @@ type Controller struct {
 	sampler        Sampler
 	gm             *Grandmaster
 	rc             *ProxyRefClock
-	cfg            Config
-	leapSecond     ptime.LeapSecond
-	mode           controllerMode
+	cfg        Config
+	leapSecond ptime.LeapSecond
+	pt         PulseType // contains EdgesPerPulse and PulseWidth
+	mode       controllerMode
 	lg             *slog.Logger
 	freq           float64 // current frequency adjustment in PPB
 	maxFreq        float64 // maximum frequency adjustment in PPB
+	edgeIndex      uint64  // increments on each PulseEdge call, tracks odd/even
 	sampleGen      sampleGenerator
 	sampleProc     sampleProcessor
 	lastRefTime    ptime.Time // last reference time from a real sample
 	lastSampleTime time.Time  // system time when last real sample was processed
+	lastSample     *Sample    // last real sample
 	era            ptime.Era  // current PHC era
 }
 
 type sampleGenerator interface {
-	pulseEdgeSample(PulseEdge) *SampleData
-	timeMessageSample() *SampleData
+	pulseEdgeSample(PulseEdge, uint64) *Sample
+	timeMessageSample() *Sample
 }
 
 type phcActionType int
@@ -126,7 +138,7 @@ type phcAction struct {
 
 type sampleProcessor interface {
 	// processSample processes a sample and returns the action to take on the PHC and the mode to be in.
-	processSample(*SampleData) (phcAction, controllerMode)
+	processSample(*Sample) (phcAction, controllerMode)
 }
 
 // NewController creates a new Controller instance.
@@ -138,6 +150,7 @@ func NewController(
 	rc *ProxyRefClock,
 	cfg Config,
 	leapSecond ptime.LeapSecond,
+	pt PulseType,
 	lg *slog.Logger,
 ) (*Controller, error) {
 	c := &Controller{
@@ -148,6 +161,7 @@ func NewController(
 		rc:            rc,
 		cfg:           cfg,
 		leapSecond:    leapSecond,
+		pt:            pt,
 		lg:            lg,
 	}
 	freq, err := clock.FreqOffset()
@@ -168,7 +182,8 @@ type PulseEdge struct {
 
 // PulseEdge handles edge timestamp events from the PHC.
 func (c *Controller) PulseEdge(edge PulseEdge) {
-	sample := c.sampleGen.pulseEdgeSample(edge)
+	sample := c.sampleGen.pulseEdgeSample(edge, c.edgeIndex)
+	c.edgeIndex++
 	c.processPresentSample(sample)
 }
 
@@ -179,25 +194,27 @@ func (c *Controller) TimeMessage() {
 }
 
 // processPresentSample handles samples from actual events (not missing).
-func (c *Controller) processPresentSample(sample *SampleData) {
+func (c *Controller) processPresentSample(sample *Sample) {
 	if sample == nil {
 		return
 	}
+	c.lg.Debug("processing sample", "mode", c.mode, "ref", sample.Ref, "offset", sample.Offset)
 	// Update time tracking for real samples
 	c.lastRefTime = sample.Ref
 	c.lastSampleTime = time.Now()
+	c.lastSample = sample
 
 	// Process through common path
 	c.processSample(sample)
 }
 
-func (c *Controller) processSample(sample *SampleData) {
+func (c *Controller) processSample(sample *Sample) {
 	action, mode := c.sampleProc.processSample(sample)
 	freq := c.freq
 	c.doPHCAction(action)
 	sample.Freq = c.freq
 	sample.FreqDelta = c.freq - freq
-	c.sampler.Sample(*sample)
+	c.sampler.Sample(*sample.SampleData)
 	if mode != c.mode {
 		c.changeMode(mode)
 	}
@@ -249,12 +266,15 @@ func (c *Controller) Tick() {
 	c.lastRefTime = c.lastRefTime.Add(time.Second)
 
 	// Create missing sample
-	sample := &SampleData{
-		Kind:   mon.SampleMissing,
-		Ref:    c.lastRefTime,
-		Offset: 0,
-		Era:    c.era,
-		// Freq will be filled in later
+	sample := &Sample{
+		SampleData: &SampleData{
+			Kind:   mon.SampleMissing,
+			Ref:    c.lastRefTime,
+			Offset: 0,
+			Era:    c.era,
+			// Freq will be filled in later
+		},
+		edgeIndex: 0, // Missing samples don't have an edge index
 	}
 
 	// Missing samples go directly to processSample
@@ -288,13 +308,13 @@ func (c *Controller) changeMode(mode controllerMode) {
 	// Initialize sampleGen and sampleProc for the new mode
 	switch mode {
 	case modeInit:
-		c.sampleGen = newInitSampleGenerator(c.timeMsgBuffer, c.cfg.Init, c.maxFreq, c.freq, c.lg)
+		c.sampleGen = newInitSampleGenerator(c.timeMsgBuffer, c.cfg.Init, &c.pt, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newInitSampleProcessor(c.cfg.Init, c.lg)
 	case modeConverging:
-		c.sampleGen = newConvergingSampleGenerator()
+		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converging, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converging, c.freq, c.maxFreq, c.lg)
 	case modeTracking:
-		c.sampleGen = newTrackingSampleGenerator()
+		c.sampleGen = newTrackingSampleGenerator(c.cfg.Tracking, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newTrackingSampleProcessor(c.cfg.Tracking, c.freq, c.maxFreq, c.lg)
 	case modeLost:
 		c.sampleGen = newLostSampleGenerator()

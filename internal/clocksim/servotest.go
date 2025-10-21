@@ -41,7 +41,7 @@ func main() {
 	pps := clocksim.WhiteNoisePPS(10*time.Nanosecond, 123)
 
 	// Virtual clock starts at t=0, max ±500ppm (like i210)
-	vclock := clocksim.NewVirtualClock(raw, pps, 0, 500000)
+	vclock := clocksim.NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 
 	// Test clock with era tracking
 	testClock := clocksim.NewTestClock(vclock)

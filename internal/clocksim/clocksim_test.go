@@ -14,7 +14,7 @@ func TestVirtualClockBasic(t *testing.T) {
 	pps := PerfectPPS()
 
 	// Create virtual clock starting at t=0
-	vc := NewVirtualClock(raw, pps, 0, 500000)
+	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 
 	// Advance to just before first PPS at t=1.0
 	vc.AdvanceTo(0.5)
@@ -47,7 +47,7 @@ func TestVirtualClockFreqAdjustment(t *testing.T) {
 	raw := NewRawClock(osc, 0)
 	pps := PerfectPPS()
 
-	vc := NewVirtualClock(raw, pps, 0, 500000)
+	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 
 	// Apply -10e3 PPB correction to compensate for 10ppm fast oscillator
 	// PPB = parts per billion, ppm = parts per million, so 10ppm = 10e3 PPB
@@ -77,7 +77,7 @@ func TestVirtualClockTimeStep(t *testing.T) {
 	raw := NewRawClock(osc, 1000*1e9) // Start at t=1000 seconds = 1000e9 nanoseconds
 	pps := PerfectPPS()
 
-	vc := NewVirtualClock(raw, pps, 0, 500000)
+	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 
 	// Step clock by -1000 seconds to sync it
 	vc.AdjTime(-1000 * time.Second)
@@ -105,7 +105,7 @@ func TestVirtualClockMultiplePPS(t *testing.T) {
 	raw := NewRawClock(osc, 0)
 	pps := PerfectPPS()
 
-	vc := NewVirtualClock(raw, pps, 0, 500000)
+	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 
 	// Advance past 3 PPS events
 	vc.AdvanceTo(3.5)
@@ -134,7 +134,7 @@ func TestVirtualClockPPSJitter(t *testing.T) {
 		return 1e-9
 	}
 
-	vc := NewVirtualClock(raw, pps, 0, 500000)
+	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 
 	// Advance past first PPS
 	vc.AdvanceTo(1.1)
@@ -168,7 +168,7 @@ func TestPrecisionAtLargeTime(t *testing.T) {
 	pps := WhiteNoisePPS(10*time.Nanosecond, 42)
 
 	// Simulation starts at t=0 (small!)
-	vc := NewVirtualClock(raw, pps, 0, 500000)
+	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 
 	// Collect timestamps from 20 PPS events over 20 simulation seconds
 	timestamps := make([]time.Duration, 0, 20)
@@ -250,7 +250,7 @@ func TestServoConvergence(t *testing.T) {
 	raw := NewRawClock(osc, 0)
 	pps := PerfectPPS()
 
-	vc := NewVirtualClock(raw, pps, 0, 500000)
+	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 	tc := NewTestClock(vc)
 
 	gpsStartTime := 1000.0
@@ -318,7 +318,7 @@ func TestAdjTimeDelay(t *testing.T) {
 	raw := NewRawClock(osc, 1000*1e9) // Start at 1000 seconds
 	pps := PerfectPPS()
 
-	vc := NewVirtualClock(raw, pps, 0, 500000)
+	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 
 	// Record time before AdjTime
 	timeBefore := vc.simTime
@@ -438,7 +438,7 @@ func TestNegativePPSJitter(t *testing.T) {
 		return -1e-3
 	}
 
-	vc := NewVirtualClock(raw, pps, 0, 500000)
+	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 
 	// Advance to t=0.995 (before nominal PPS at t=1.0, but after actual PPS at t=0.999)
 	vc.AdvanceTo(0.995)
@@ -497,5 +497,109 @@ func TestAdjTimeDelayMean(t *testing.T) {
 	// Should be close to 5µs (allow ±10% for statistical variation)
 	if mean < 4.5e-6 || mean > 5.5e-6 {
 		t.Errorf("mean delay = %v, expected ~5µs", mean)
+	}
+}
+
+// TestDualEdgeMode verifies that dual-edge mode generates two timestamps per second.
+func TestDualEdgeMode(t *testing.T) {
+	// Perfect oscillator for predictable behavior
+	osc := Perfect()
+	raw := NewRawClock(osc, 0)
+
+	// Perfect PPS (no jitter on rising edge)
+	pps := PerfectPPS()
+
+	// Perfect trailing edge (no noise)
+	trailingEdge := PerfectPPS()
+
+	// 200ms pulse width
+	pulseWidth := 200 * time.Millisecond
+
+	vc := NewVirtualClock(raw, pps, 0, 500000, pulseWidth, trailingEdge)
+
+	// Advance past 3 seconds
+	vc.AdvanceTo(3.5)
+
+	// Should have 6 timestamps (2 per second)
+	timestamps := []time.Duration{}
+	for vc.TimestampAvailable() {
+		ts, _, ok := vc.ReadTimestamp()
+		if !ok {
+			break
+		}
+		timestamps = append(timestamps, ts)
+	}
+
+	if len(timestamps) != 6 {
+		t.Fatalf("got %d timestamps, want 6", len(timestamps))
+	}
+
+	// Verify timestamps alternate: rising, trailing, rising, trailing, ...
+	for i := 0; i < 3; i++ {
+		risingIdx := i * 2
+		trailingIdx := i*2 + 1
+
+		rising := timestamps[risingIdx]
+		trailing := timestamps[trailingIdx]
+
+		// Rising edge should be at ~(i+1) seconds
+		expectedRising := time.Duration((i + 1) * 1e9)
+		if rising != expectedRising {
+			t.Errorf("rising edge %d = %v, want %v", i, rising, expectedRising)
+		}
+
+		// Trailing edge should be 200ms after rising edge
+		expectedTrailing := expectedRising + pulseWidth
+		if trailing != expectedTrailing {
+			t.Errorf("trailing edge %d = %v, want %v", i, trailing, expectedTrailing)
+		}
+
+		// Pulse width should be exactly 200ms (perfect oscillator)
+		actualPulseWidth := trailing - rising
+		if actualPulseWidth != pulseWidth {
+			t.Errorf("pulse width %d = %v, want %v", i, actualPulseWidth, pulseWidth)
+		}
+	}
+}
+
+// TestDualEdgeModeWithDrift verifies pulse width is affected by oscillator drift.
+func TestDualEdgeModeWithDrift(t *testing.T) {
+	// Oscillator running 10000ppb fast
+	osc := ConstantDrift(10000.0)
+	raw := NewRawClock(osc, 0)
+
+	pps := PerfectPPS()
+	trailingEdge := PerfectPPS()
+
+	// 200ms pulse width
+	pulseWidth := 200 * time.Millisecond
+
+	vc := NewVirtualClock(raw, pps, 0, 500000, pulseWidth, trailingEdge)
+
+	// Advance past first second
+	vc.AdvanceTo(1.5)
+
+	// Get rising and trailing edge
+	rising, _, ok1 := vc.ReadTimestamp()
+	if !ok1 {
+		t.Fatal("failed to read rising edge")
+	}
+	trailing, _, ok2 := vc.ReadTimestamp()
+	if !ok2 {
+		t.Fatal("failed to read trailing edge")
+	}
+
+	// Measured pulse width by the PHC
+	measuredWidth := trailing - rising
+
+	// With 10000ppb drift over 200ms: 200ms * 10ppm = 2µs extra
+	// So PHC measures: 200ms + 2µs = 200.002ms
+	expectedWidthNs := int64(200_002_000) // 200.002ms in nanoseconds
+	actualWidthNs := int64(measuredWidth)
+
+	// Allow 1ns tolerance for rounding
+	diff := actualWidthNs - expectedWidthNs
+	if diff < -1 || diff > 1 {
+		t.Errorf("measured pulse width = %v ns, want %v ns (±1ns)", actualWidthNs, expectedWidthNs)
 	}
 }

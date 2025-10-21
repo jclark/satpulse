@@ -6,11 +6,11 @@ func newLostSampleGenerator() *lostSampleGenerator {
 	return &lostSampleGenerator{}
 }
 
-func (g *lostSampleGenerator) pulseEdgeSample(edge PulseEdge) *SampleData {
+func (g *lostSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64) *Sample {
 	return nil
 }
 
-func (g *lostSampleGenerator) timeMessageSample() *SampleData {
+func (g *lostSampleGenerator) timeMessageSample() *Sample {
 	return nil
 }
 
@@ -20,6 +20,6 @@ func newLostSampleProcessor() *lostSampleProcessor {
 	return &lostSampleProcessor{}
 }
 
-func (p *lostSampleProcessor) processSample(sample *SampleData) (phcAction, controllerMode) {
+func (p *lostSampleProcessor) processSample(sample *Sample) (phcAction, controllerMode) {
 	return phcAction{actionType: phcNoAction}, modeLost
 }

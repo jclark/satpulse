@@ -27,6 +27,7 @@ type Config struct {
 	MsgDelay     float64 // GPS message delay after pulse in seconds
 	MsgJitter    float64 // GPS message delay jitter in seconds
 	GPSStartTime float64 // GPS time at start of simulation in seconds
+	PulseWidth   float64 // pulse width in seconds (0 for single-edge mode)
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -41,6 +42,7 @@ func DefaultConfig() Config {
 		MsgDelay:     0.1,
 		MsgJitter:    0.01,
 		GPSStartTime: 0, // caller should set this
+		PulseWidth:   0, // default to single-edge mode
 	}
 }
 
@@ -66,8 +68,27 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 	// PPS with jitter
 	pps := clocksim.WhiteNoisePPS(time.Duration(simCfg.PPSJitter)*time.Nanosecond, 123)
 
+	// Prepare dual-edge mode parameters
+	var pulseWidth time.Duration
+	var trailingEdgeSim clocksim.PPSSimulator
+	var pulseType phcsync.PulseType
+
+	if simCfg.PulseWidth > 0 {
+		pulseWidth = time.Duration(simCfg.PulseWidth * 1e9)
+		trailingEdgeSim = clocksim.WhiteNoisePPS(2*time.Nanosecond, 789)
+		pulseType = phcsync.PulseType{
+			EdgesPerPulse: 2,
+			PulseWidth:    pulseWidth,
+		}
+	} else {
+		pulseType = phcsync.PulseType{
+			EdgesPerPulse: 1,
+			PulseWidth:    0,
+		}
+	}
+
 	// Virtual clock starts at t=0, max ±500ppm (like Intel i210)
-	vclock := clocksim.NewVirtualClock(raw, pps, 0, 500000)
+	vclock := clocksim.NewVirtualClock(raw, pps, 0, 500000, pulseWidth, trailingEdgeSim)
 
 	// Test clock with era tracking
 	testClock := clocksim.NewTestClock(vclock)
@@ -98,6 +119,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 		nil, // no refclock
 		phcCfg,
 		ls,
+		pulseType,
 		lg,
 	)
 	if err != nil {
@@ -124,53 +146,135 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 		// Generate random pulse delivery delay (uniform between min and max)
 		pulseDelay := simCfg.MinDelay + rng.Float64()*(simCfg.MaxDelay-simCfg.MinDelay)
 
-		// Advance simulation time to when pulse timestamp is delivered to userspace
-		pulseDeliveryTime := nextPPS + pulseDelay
-		vclock.AdvanceTo(pulseDeliveryTime)
+		// Calculate when various events happen
+		risingEdgeTime := nextPPS + pulseDelay
+		msgDelayTime := simCfg.MsgDelay + rng.NormFloat64()*simCfg.MsgJitter
+		if msgDelayTime < 0 {
+			msgDelayTime = 0
+		}
+		msgArrivalTime := nextPPS + msgDelayTime
 
-		// Read the timestamp that was just delivered
-		if !vclock.TimestampAvailable() {
-			lg.Error("expected timestamp not available", "nextPPS", nextPPS, "simTime", pulseDeliveryTime)
-			break
+		// Track offset of first (rising) edge for statistics
+		var risingEdgeOffset time.Duration
+
+		// In dual-edge mode, handle both edges and message in chronological order
+		if pulseType.EdgesPerPulse == 2 {
+			trailingEdgeTime := nextPPS + simCfg.PulseWidth + pulseDelay
+
+			// Determine chronological order of events
+			// Rising edge always comes first (at risingEdgeTime)
+			// Then either trailing edge or message
+
+			// Step 1: Advance to rising edge and deliver it
+			vclock.AdvanceTo(risingEdgeTime)
+			if !vclock.TimestampAvailable() {
+				lg.Error("expected rising edge timestamp not available", "nextPPS", nextPPS)
+				break
+			}
+
+			timestamp, trueTime, ok := testClock.ReadTimestampWithEra()
+			if !ok {
+				lg.Error("failed to read rising edge timestamp")
+				break
+			}
+
+			tRead := time.Unix(0, 0).Add(time.Duration(risingEdgeTime * 1e9))
+			tReadPHC := testClock.Now()
+
+			edge := phcsync.PulseEdge{
+				Timestamp: timestamp,
+				TRead:     tRead,
+				TReadPHC:  tReadPHC,
+			}
+
+			trueTAITime := ptime.Time((simCfg.GPSStartTime + trueTime) * 1e9)
+			risingEdgeOffset = timestamp.T.Sub(trueTAITime)
+
+			lg.Debug("delivering pulse",
+				"second", int(nextPPS),
+				"edgeIdx", 0,
+				"timestamp", timestamp.T,
+				"era", timestamp.Era,
+				"taiOffset", risingEdgeOffset)
+			ctrl.PulseEdge(edge)
+
+			// Step 2: Advance to trailing edge and deliver it (message may come before or after)
+			vclock.AdvanceTo(trailingEdgeTime)
+			if !vclock.TimestampAvailable() {
+				lg.Error("expected trailing edge timestamp not available", "nextPPS", nextPPS)
+				break
+			}
+
+			timestamp, trueTime, ok = testClock.ReadTimestampWithEra()
+			if !ok {
+				lg.Error("failed to read trailing edge timestamp")
+				break
+			}
+
+			tRead = time.Unix(0, 0).Add(time.Duration(trailingEdgeTime * 1e9))
+			tReadPHC = testClock.Now()
+
+			edge = phcsync.PulseEdge{
+				Timestamp: timestamp,
+				TRead:     tRead,
+				TReadPHC:  tReadPHC,
+			}
+
+			trueTAITime = ptime.Time((simCfg.GPSStartTime + trueTime) * 1e9)
+			taiOffset := timestamp.T.Sub(trueTAITime)
+
+			lg.Debug("delivering pulse",
+				"second", int(nextPPS),
+				"edgeIdx", 1,
+				"timestamp", timestamp.T,
+				"era", timestamp.Era,
+				"taiOffset", taiOffset)
+			ctrl.PulseEdge(edge)
+
+			// Step 3: Advance to message arrival (if not already past it)
+			if msgArrivalTime > trailingEdgeTime {
+				vclock.AdvanceTo(msgArrivalTime)
+			}
+		} else {
+			// Single-edge mode: just advance to rising edge
+			vclock.AdvanceTo(risingEdgeTime)
+			if !vclock.TimestampAvailable() {
+				lg.Error("expected timestamp not available", "nextPPS", nextPPS)
+				break
+			}
+
+			timestamp, trueTime, ok := testClock.ReadTimestampWithEra()
+			if !ok {
+				lg.Error("failed to read timestamp")
+				break
+			}
+
+			tRead := time.Unix(0, 0).Add(time.Duration(risingEdgeTime * 1e9))
+			tReadPHC := testClock.Now()
+
+			edge := phcsync.PulseEdge{
+				Timestamp: timestamp,
+				TRead:     tRead,
+				TReadPHC:  tReadPHC,
+			}
+
+			trueTAITime := ptime.Time((simCfg.GPSStartTime + trueTime) * 1e9)
+			risingEdgeOffset = timestamp.T.Sub(trueTAITime)
+
+			lg.Debug("delivering pulse",
+				"second", int(nextPPS),
+				"timestamp", timestamp.T,
+				"era", timestamp.Era,
+				"taiOffset", risingEdgeOffset)
+			ctrl.PulseEdge(edge)
+
+			// Advance to message arrival
+			vclock.AdvanceTo(msgArrivalTime)
 		}
 
-		timestamp, trueTime, ok := testClock.ReadTimestampWithEra()
-		if !ok {
-			lg.Error("failed to read timestamp")
-			break
-		}
-
-		// Create TRead (monotonic time when read occurred)
-		// In real system this would be time.Now(), here we simulate it
-		tRead := time.Unix(0, 0).Add(time.Duration(pulseDeliveryTime * 1e9))
-
-		// Read current PHC time for TReadPHC
-		tReadPHC := testClock.Now()
-
-		// Create PulseEdge
-		edge := phcsync.PulseEdge{
-			Timestamp: timestamp,
-			TRead:     tRead,
-			TReadPHC:  tReadPHC,
-		}
-
-		// Compute true TAI time when the PPS occurred in the simulation.
-		trueTAITime := ptime.Time((simCfg.GPSStartTime + trueTime) * 1e9)
-		taiOffset := timestamp.T.Sub(trueTAITime)
-
-		// Feed pulse to controller
-		lg.Debug("delivering pulse",
-			"second", int(nextPPS),
-			"timestamp", timestamp.T,
-			"era", timestamp.Era,
-			"taiOffset", taiOffset)
-		ctrl.PulseEdge(edge)
-
-		// Now generate and deliver GPS time message
-		// GPS time for this second (TAI)
+		// Now deliver GPS time message
 		gpsTime := ptime.Time((simCfg.GPSStartTime + nextPPS) * 1e9)
 
-		// Create time message
 		timeMsg := &gpsprot.TimeMsg{
 			TAITime:     gpsTime,
 			GNSS:        gpsprot.GPS,
@@ -179,38 +283,22 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 			NativeMsgID: "NAV-PVT",
 		}
 
-		// Message arrives some time after pulse
-		msgDelayTime := simCfg.MsgDelay + rng.NormFloat64()*simCfg.MsgJitter
-		if msgDelayTime < 0 {
-			msgDelayTime = 0
-		}
-		msgArrivalTime := nextPPS + msgDelayTime
-
-		// Advance to message arrival
-		vclock.AdvanceTo(msgArrivalTime)
-
-		// Message read time (monotonic)
 		msgTRead := time.Unix(0, 0).Add(time.Duration(msgArrivalTime * 1e9))
 
-		// Deliver message to buffer
 		timeMsgBuf.Time(timeMsg, msgTRead)
 		lg.Debug("delivering time message",
 			"second", int(nextPPS),
 			"gpsTime", gpsTime,
 			"msgTRead", msgTRead)
 
-		// Notify controller
 		ctrl.TimeMessage()
 
 		sampleCount++
 
-		// Periodic tick (simulate 0.25s timer)
-		// In real system this would be called by a ticker
-		// Here we just call it after each sample
 		ctrl.Tick()
 
 		if ctrl.Tracking() {
-			stats.add(taiOffset)
+			stats.add(risingEdgeOffset)
 		}
 
 		nextPPS += 1.0

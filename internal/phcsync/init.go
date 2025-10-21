@@ -2,7 +2,9 @@ package phcsync
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
+	"math"
 	"slices"
 	"time"
 
@@ -34,6 +36,15 @@ type InitConfig struct {
 	// means (max delay - min delay) must be ≤ 0.1 seconds. This checks consistency: all
 	// delays should be similar. Should be significantly smaller than DelayTightness.
 	DelaySpread float64
+
+	// PulseEdgeAmbig is the minimum difference (in seconds) between the high and low periods
+	// of the pulse required to reliably determine which edge is leading. For a 1-second pulse
+	// period, this can equivalently be interpreted as a proportion. For example, 0.1 means that
+	// if |highPeriod - lowPeriod| < 0.1 seconds (i.e., pulse width between 0.45-0.55 seconds),
+	// the pulse is too close to 50% duty cycle to determine edge polarity from timing alone.
+	// This is measured with PHC timestamps, so can be quite accurate.
+	// In such cases, both edge lists are kept and alignment with time messages is used instead.
+	PulseEdgeAmbig float64
 }
 
 func defaultInitConfig() InitConfig {
@@ -44,6 +55,7 @@ func defaultInitConfig() InitConfig {
 		Delay:                  0.1,   // seconds
 		DelayTightness:         0.6,   // proportion of max window
 		DelaySpread:            0.2,   // proportion of max window
+		PulseEdgeAmbig:		 0.1,  // seconds
 	}
 }
 
@@ -52,27 +64,40 @@ type initSampleGenerator struct {
 	edgeBuf       *circbuf.Buffer[PulseEdge]
 	cfg           InitConfig
 	lg            *slog.Logger
+	pt            *PulseType
 	maxFreq       float64
 	freq          float64
+	lastEdgeIndex uint64 // stores edgeIndex from most recent pulseEdgeSample call
 }
 
-func newInitSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg InitConfig, maxFreq, freq float64, lg *slog.Logger) *initSampleGenerator {
+func newInitSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg InitConfig, pt *PulseType, freq, maxFreq float64, lg *slog.Logger) *initSampleGenerator {
+	// Buffer needs to hold Window * EdgesPerPulse edges
+	bufSize := cfg.Window * pt.EdgesPerPulse
 	return &initSampleGenerator{
 		timeMsgBuffer: timeMsgBuffer,
-		edgeBuf:       circbuf.New[PulseEdge](cfg.Window),
+		edgeBuf:       circbuf.New[PulseEdge](bufSize),
 		cfg:           cfg,
 		lg:            lg,
+		pt:            pt,
 		maxFreq:       maxFreq,
 		freq:          freq,
 	}
 }
 
-func (g *initSampleGenerator) pulseEdgeSample(edge PulseEdge) *SampleData {
-	g.edgeBuf.Append(edge)
+func (g *initSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64) *Sample {
+	g.storeEdge(edge, edgeIndex)
 	return g.genSample()
 }
 
-func (g *initSampleGenerator) timeMessageSample() *SampleData {
+// storeEdge appends an edge to the buffer and updates lastEdgeIndex.
+// This is used during init mode to collect edges for analysis.
+// Tests can call this directly to populate the edge buffer.
+func (g *initSampleGenerator) storeEdge(edge PulseEdge, edgeIndex uint64) {
+	g.edgeBuf.Append(edge)
+	g.lastEdgeIndex = edgeIndex
+}
+
+func (g *initSampleGenerator) timeMessageSample() *Sample {
 	return g.genSample()
 }
 
@@ -83,9 +108,11 @@ type loggableError interface {
 
 var errNotEnoughTimestamps = errors.New("not enough timestamps")
 
-func (g *initSampleGenerator) genSample() *SampleData {
+func (g *initSampleGenerator) genSample() *Sample {
 	// Need enough pulse edges
-	if g.edgeBuf.Len() < g.cfg.Window {
+	// In dual-edge mode, we need EdgesPerPulse * Window edges total
+	requiredEdges := g.cfg.Window * g.pt.EdgesPerPulse
+	if g.edgeBuf.Len() < requiredEdges {
 		return nil
 	}
 
@@ -96,7 +123,7 @@ func (g *initSampleGenerator) genSample() *SampleData {
 		return nil
 	}
 
-	sample, err := g.genSampleForMessages(lastSec, tRead)
+	data, err := g.genSampleForMessages(lastSec, tRead)
 	if err != nil {
 		if le, ok := err.(loggableError); ok {
 			le.log(g.lg)
@@ -106,22 +133,43 @@ func (g *initSampleGenerator) genSample() *SampleData {
 		return nil
 	}
 
-	return sample
+	// Wrap SampleData in Sample with edgeIndex
+	return &Sample{
+		SampleData: data,
+		edgeIndex:  g.lastEdgeIndex,
+	}
+}
+
+// pulseEdgeList is a slice of PulseEdge values with the edgeIndex of the last edge.
+type pulseEdgeList struct {
+	edges         []PulseEdge
+	lastEdgeIndex uint64
 }
 
 func (g *initSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []time.Time) (*SampleData, error) {
-	avgInterval, err := g.checkPulseIntervals()
+	edgeLists := g.pulseEdgeLists()
+	for _, edgeList := range edgeLists {
+		err := g.checkPulseIntervals(edgeList)
+		if err != nil {
+			return nil, err
+		}
+	}
+	
+	edgeLists = g.filterEdgeListsByPulseWidth(edgeLists)
+	if len(edgeLists) != 1 {
+		return nil, errors.New("cannot filter edges")
+	}
+	// TODO: with 50% duty cycle, we would try the alignement of both edgeLists with a smaller maxWindow, so that at most one succeeds
+	edges := edgeLists[0].edges
+	avgInterval := edgeLists[0].avgInterval()
+	pulseTimes := g.pulseTimes(edges, avgInterval)
+	err := g.checkAlignment(pulseTimes, tRead)
 	if err != nil {
 		return nil, err
 	}
+	g.lastEdgeIndex = edgeLists[0].lastEdgeIndex
 
-	pulseTimes := g.pulseTimes(avgInterval)
-	err = g.checkAlignment(pulseTimes, tRead)
-	if err != nil {
-		return nil, err
-	}
-
-	lastPulseTimestamp := g.edgeBuf.Last(0).Timestamp
+	lastPulseTimestamp := edges[len(edges)-1].Timestamp
 	// offset is local - ref
 	offset := lastPulseTimestamp.T.Sub(lastSec)
 
@@ -132,6 +180,35 @@ func (g *initSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []t
 		Freq:   0,
 		Era:    lastPulseTimestamp.Era,
 	}, nil
+}
+
+func (g *initSampleGenerator) filterEdgeListsByPulseWidth(edgeLists []pulseEdgeList) []pulseEdgeList {
+	if len(edgeLists) <= 1 {
+		return edgeLists
+	}
+	totalPulseWidth := time.Duration(0)
+	e0 := edgeLists[0].edges
+	e1 := edgeLists[1].edges
+	// the length of e1 can be up to 1 less than e0
+	for i := 0; i < len(e1); i++ {
+		totalPulseWidth += e1[i].Timestamp.T.Sub(e0[i].Timestamp.T)
+	}
+	avgPulseWidth := totalPulseWidth / time.Duration(len(e1))
+	avgInterval := (edgeLists[0].avgInterval() + edgeLists[1].avgInterval())/2
+	// on the PHC clock, one true second lasts a Duration of avgInterval,
+	// so we need to scale the avgPulseWidth (which is from the PHC) to get true time
+	truePulseWidth := time.Duration(float64(avgPulseWidth) * (float64(time.Second)/float64(avgInterval)))
+
+	if math.Abs(2*truePulseWidth.Seconds()-1) < g.cfg.PulseEdgeAmbig {
+		// Ambiguous pulse width, cannot determine alignment
+		return edgeLists
+	}
+	if truePulseWidth < time.Second/2 {
+		g.pt.PulseWidth = truePulseWidth
+		return edgeLists[:1]
+	}
+	g.pt.PulseWidth = time.Second - truePulseWidth
+	return edgeLists[1:]
 }
 
 type limitError struct {
@@ -168,42 +245,38 @@ func (e *logMsgError) log(lg *slog.Logger) {
 // checkPulseIntervals validates that PHC pulse timestamps are stable and adjustable.
 // It checks that all intervals are close enough to 1 second to be corrected within the PHC's
 // frequency adjustment range, and that the intervals are consistent with each other.
-func (g *initSampleGenerator) checkPulseIntervals() (avgInterval time.Duration, err error) {
-	timestamps := g.pulseTimestamps()
-	if len(timestamps) < 2 {
-		return 0, errNotEnoughTimestamps
+func (g *initSampleGenerator) checkPulseIntervals(edgeList pulseEdgeList) error {
+	if edgeList.length() < 2 {
+		return errNotEnoughTimestamps
 	}
-
+	timestamps := edgeList.timestamps()
 	intervals := g.pulseIntervals(timestamps)
-	avgInterval = timestamps[len(timestamps)-1].Sub(timestamps[0]) / time.Duration(len(timestamps)-1)
 
-	err = g.checkPulseIntervalsAdjustable(intervals)
+	err := g.checkPulseIntervalsAdjustable(intervals)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
 	err = g.checkPulseIntervalsConsistent(intervals)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
-	return avgInterval, nil
+	return nil
 }
 
 // pulseTimes estimates the real (monotonic) time when each pulse occurred.
 // It uses avgInterval to scale the delay between when the pulse timestamp was captured
 // and when it was read from the PHC, converting from PHC time domain to real time domain.
-func (g *initSampleGenerator) pulseTimes(avgInterval time.Duration) []time.Time {
-	times := make([]time.Time, g.edgeBuf.Len())
-	g.edgeBuf.Iterate(func(i int, edge PulseEdge) bool {
+func (g *initSampleGenerator) pulseTimes(edges []PulseEdge, avgInterval time.Duration) []time.Time {
+	times := make([]time.Time, len(edges))
+	for i, edge := range edges {
 		phcDelta := edge.TReadPHC.T.Sub(edge.Timestamp.T)
 		// Scale from PHC time domain to real time domain: avgInterval is how much PHC time equals 1 real second
 		// Note this is assuming system clock frequency is reasonably accurate
 		realDelta := time.Duration(float64(phcDelta) / avgInterval.Seconds())
 		times[i] = edge.TRead.Add(-realDelta)
-		return true
-	})
-	slices.Reverse(times)
+	}
 	return times
 }
 
@@ -288,6 +361,77 @@ func (g *initSampleGenerator) checkDelayRange(delays []time.Duration) error {
 	}
 
 	return nil
+}
+
+func (g *initSampleGenerator) pulseEdgeLists() []pulseEdgeList {
+	edgeList := g.pulseEdges()
+
+	switch g.pt.EdgesPerPulse {
+	case 0:
+		panic("unknown edges per pulse is not supported: fix your ethernet driver")
+	case 1:
+		return []pulseEdgeList{edgeList}
+	case 2:
+		arr := edgeList.split()
+		return arr[:]
+	default:
+		panic(fmt.Sprintf("unsupported edges per pulse: %d", g.pt.EdgesPerPulse))
+	}
+}
+
+// pulseEdges extracts all edges from edgeBuf into a pulseEdgeList.
+// Edges are ordered oldest to newest (same order as pulseTimestamps).
+func (g *initSampleGenerator) pulseEdges() pulseEdgeList {
+	n := g.edgeBuf.Len()
+	edges := make([]PulseEdge, n)
+	g.edgeBuf.Iterate(func(i int, edge PulseEdge) bool {
+		edges[i] = edge
+		return true
+	})
+	slices.Reverse(edges)
+	return pulseEdgeList{
+		edges:         edges,
+		lastEdgeIndex: g.lastEdgeIndex,
+	}
+}
+
+func (pel pulseEdgeList) length() int {
+	return len(pel.edges)
+}
+
+// split divides a pulseEdgeList into two lists with alternating edges.
+// First edge (index 0) goes to first returned list, second edge to second list, etc.
+// The lastEdgeIndex for each returned list is calculated based on which edges it contains.
+func (pel pulseEdgeList) split() [2]pulseEdgeList {
+	out := [2]pulseEdgeList{}
+	for i := range 2 {
+		for j := i; j < len(pel.edges); j += 2 {
+			out[i].edges = append(out[i].edges, pel.edges[j])
+		}
+	}
+	if len(pel.edges)%2 == 0 {
+		out[0].lastEdgeIndex = pel.lastEdgeIndex - 1
+		out[1].lastEdgeIndex = pel.lastEdgeIndex
+	} else {
+		out[0].lastEdgeIndex = pel.lastEdgeIndex
+		out[1].lastEdgeIndex = pel.lastEdgeIndex - 1
+	}
+	return out
+}
+
+// edgeTimestamps extracts timestamps from a slice of edges.
+func (pel pulseEdgeList) timestamps() []ptime.Time {
+	edges := pel.edges
+	timestamps := make([]ptime.Time, len(edges))
+	for i, edge := range edges {
+		timestamps[i] = edge.Timestamp.T
+	}
+	return timestamps
+}
+
+func (pel pulseEdgeList) avgInterval() time.Duration {
+	totalInterval := pel.edges[len(pel.edges)-1].Timestamp.T.Sub(pel.edges[0].Timestamp.T)
+	return totalInterval / time.Duration(len(pel.edges)-1)
 }
 
 func (g *initSampleGenerator) pulseTimestamps() []ptime.Time {
@@ -381,7 +525,7 @@ func newInitSampleProcessor(cfg InitConfig, lg *slog.Logger) *initSampleProcesso
 	}
 }
 
-func (p *initSampleProcessor) processSample(sample *SampleData) (phcAction, controllerMode) {
+func (p *initSampleProcessor) processSample(sample *Sample) (phcAction, controllerMode) {
 	if sample == nil || sample.Kind == SampleMissing {
 		// Keep waiting for a valid sample
 		return phcAction{actionType: phcNoAction}, modeInit

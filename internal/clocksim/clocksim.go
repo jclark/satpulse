@@ -143,18 +143,21 @@ type timestampEvent struct {
 }
 
 type VirtualClock struct {
-	raw                   *RawClock
-	ppsSimulator          PPSSimulator
-	adjTimeDelaySimulator func() float64
-	maxFreqOff            float64
-	simTime               float64
-	lastAdjTime           float64
-	lastRawPhaseNs        int64
-	lastVirtPhaseNs       int64
-	freqOffset            float64
-	nextPPSNominal        float64
-	nextPPSActual         float64
-	tsQueue               []timestampEvent
+	raw                    *RawClock
+	ppsSimulator           PPSSimulator
+	trailingEdgeSimulator  PPSSimulator
+	adjTimeDelaySimulator  func() float64
+	maxFreqOff             float64
+	simTime                float64
+	lastAdjTime            float64
+	lastRawPhaseNs         int64
+	lastVirtPhaseNs        int64
+	freqOffset             float64
+	nextPPSNominal         float64
+	nextEdgeActual         float64
+	nextTrailingEdgeActual float64 // next trailing edge when pulseWidth > 0; equals nextEdgeActual otherwise
+	pulseWidth             float64
+	tsQueue                []timestampEvent
 }
 
 // defaultAdjTimeDelay returns a realistic ADJ_SETOFFSET delay with jitter.
@@ -175,24 +178,28 @@ func defaultAdjTimeDelay() func() float64 {
 
 // NewVirtualClock creates a VirtualClock starting at the given simulation time.
 // The first PPS will be at the first integer second > startTime.
-func NewVirtualClock(raw *RawClock, ppsSimulator PPSSimulator, startTime float64, maxFreqOff float64) *VirtualClock {
+// For dual-edge mode, pulseWidth > 0 and trailingEdgeSimulator must be provided.
+// For single-edge mode, pulseWidth = 0 and trailingEdgeSimulator can be nil.
+func NewVirtualClock(raw *RawClock, ppsSimulator PPSSimulator, startTime float64, maxFreqOff float64, pulseWidth time.Duration, trailingEdgeSimulator PPSSimulator) *VirtualClock {
 	firstPPSNominal := float64(int(startTime) + 1)
-	phaseError := ppsSimulator(firstPPSNominal)
 	rawPhaseNs := raw.ReadAt(startTime)
 
-	return &VirtualClock{
-		raw:                   raw,
-		ppsSimulator:          ppsSimulator,
-		adjTimeDelaySimulator: defaultAdjTimeDelay(),
-		maxFreqOff:            maxFreqOff,
-		simTime:               startTime,
-		lastAdjTime:           startTime,
-		lastRawPhaseNs:        rawPhaseNs,
-		lastVirtPhaseNs:       rawPhaseNs,
-		freqOffset:            0,
-		nextPPSNominal:        firstPPSNominal,
-		nextPPSActual:         firstPPSNominal + phaseError,
+	c := &VirtualClock{
+		raw:                    raw,
+		ppsSimulator:           ppsSimulator,
+		trailingEdgeSimulator:  trailingEdgeSimulator,
+		adjTimeDelaySimulator:  defaultAdjTimeDelay(),
+		maxFreqOff:             maxFreqOff,
+		simTime:                startTime,
+		lastAdjTime:            startTime,
+		lastRawPhaseNs:         rawPhaseNs,
+		lastVirtPhaseNs:        rawPhaseNs,
+		freqOffset:             0,
+		nextPPSNominal:         firstPPSNominal,
+		pulseWidth:             pulseWidth.Seconds(),
 	}
+	c.generateNextEdges()
+	return c
 }
 
 // AdvanceTo advances simulation time to newTime.
@@ -203,19 +210,33 @@ func (c *VirtualClock) AdvanceTo(newTime float64) {
 		panic("AdvanceTo: time cannot go backwards")
 	}
 
-	for newTime >= c.nextPPSActual {
-		virtPhaseNs := c.computeVirtPhaseNs(c.nextPPSActual)
+	for newTime >= c.nextEdgeActual {
+		virtPhaseNs := c.computeVirtPhaseNs(c.nextEdgeActual)
 		c.tsQueue = append(c.tsQueue, timestampEvent{
 			phase:    time.Duration(virtPhaseNs),
-			trueTime: c.nextPPSActual,
+			trueTime: c.nextEdgeActual,
 		})
 
-		c.nextPPSNominal += 1.0
-		phaseError := c.ppsSimulator(c.nextPPSNominal)
-		c.nextPPSActual = c.nextPPSNominal + phaseError
+		if c.nextEdgeActual == c.nextTrailingEdgeActual {
+			c.nextPPSNominal += 1.0
+			c.generateNextEdges()
+		} else {
+			c.nextEdgeActual = c.nextTrailingEdgeActual
+		}
 	}
 
 	c.simTime = newTime
+}
+
+// generateNextEdges generates nextEdgeActual and nextTrailingEdgeActual based on nextPPSNominal.
+func (c *VirtualClock) generateNextEdges() {
+	phaseError := c.ppsSimulator(c.nextPPSNominal)
+	c.nextEdgeActual = c.nextPPSNominal + phaseError
+	if c.pulseWidth != 0 {
+		c.nextTrailingEdgeActual = c.nextEdgeActual + c.pulseWidth + c.trailingEdgeSimulator(c.nextPPSNominal + c.pulseWidth)
+	} else {
+		c.nextTrailingEdgeActual = c.nextEdgeActual
+	}
 }
 
 // SetFreqOffset sets the frequency offset adjustment in PPB.
