@@ -32,6 +32,7 @@ const (
 type Sample struct {
 	*SampleData
 	edgeIndex uint64
+	Sys       time.Time // estimated monotonic system time of pulse
 }
 
 // TimeMsgBuffer is an interface for the Controller to access time messages from the receiver.
@@ -64,30 +65,30 @@ func DefaultConfig() Config {
 	}
 }
 
-// controllerMode represents the mode in which the Controller is operating.
-type controllerMode int
+// Mode represents the mode in which the Controller is operating.
+type Mode int
 
 const (
-	modeInvalid controllerMode = iota
-	modeInit
-	modeConverging
-	modeTracking
-	modeLost
+	ModeInvalid Mode = iota
+	ModeInit
+	ModeConverging
+	ModeTracking
+	ModeLost
 )
 
 // sampleIntervalMax is the maximum time to wait for a sample before generating a missing sample.
 // Same as sampleIntervalMax in mon package.
 const sampleIntervalMax = (3 * time.Second) / 2
 
-func (m controllerMode) String() string {
+func (m Mode) String() string {
 	switch m {
-	case modeInit:
+	case ModeInit:
 		return "init"
-	case modeConverging:
+	case ModeConverging:
 		return "converging"
-	case modeTracking:
+	case ModeTracking:
 		return "tracking"
-	case modeLost:
+	case ModeLost:
 		return "lost"
 	default:
 		return fmt.Sprintf("unknown(%d)", m)
@@ -104,17 +105,16 @@ type Controller struct {
 	cfg        Config
 	leapSecond ptime.LeapSecond
 	pt         PulseType // contains EdgesPerPulse and PulseWidth
-	mode       controllerMode
+	mode       Mode
 	lg             *slog.Logger
-	freq           float64 // current frequency adjustment in PPB
-	maxFreq        float64 // maximum frequency adjustment in PPB
-	edgeIndex      uint64  // increments on each PulseEdge call, tracks odd/even
-	sampleGen      sampleGenerator
-	sampleProc     sampleProcessor
-	lastRefTime    ptime.Time // last reference time from a real sample
-	lastSampleTime time.Time  // system time when last real sample was processed
-	lastSample     *Sample    // last real sample
-	era            ptime.Era  // current PHC era
+	freq        float64 // current frequency adjustment in PPB
+	maxFreq     float64 // maximum frequency adjustment in PPB
+	edgeIndex   uint64  // increments on each PulseEdge call, tracks odd/even
+	sampleGen   sampleGenerator
+	sampleProc  sampleProcessor
+	lastRefTime ptime.Time // last reference time from a real sample
+	lastSample  *Sample    // last real sample
+	era         ptime.Era  // current PHC era
 }
 
 type sampleGenerator interface {
@@ -138,7 +138,7 @@ type phcAction struct {
 
 type sampleProcessor interface {
 	// processSample processes a sample and returns the action to take on the PHC and the mode to be in.
-	processSample(*Sample) (phcAction, controllerMode)
+	processSample(*Sample) (phcAction, Mode)
 }
 
 // NewController creates a new Controller instance.
@@ -170,7 +170,7 @@ func NewController(
 	}
 	c.freq = freq
 	c.maxFreq = clock.MaxFreqOffset()
-	c.changeMode(modeInit)
+	c.changeMode(ModeInit)
 	return c, nil
 }
 
@@ -198,10 +198,8 @@ func (c *Controller) processPresentSample(sample *Sample) {
 	if sample == nil {
 		return
 	}
-	c.lg.Debug("processing sample", "mode", c.mode, "ref", sample.Ref, "offset", sample.Offset)
 	// Update time tracking for real samples
 	c.lastRefTime = sample.Ref
-	c.lastSampleTime = time.Now()
 	c.lastSample = sample
 
 	// Process through common path
@@ -209,6 +207,7 @@ func (c *Controller) processPresentSample(sample *Sample) {
 }
 
 func (c *Controller) processSample(sample *Sample) {
+	c.lg.Debug("processing sample", "mode", c.mode, "kind", sample.Kind, "ref", sample.Ref, "offset", sample.Offset)
 	action, mode := c.sampleProc.processSample(sample)
 	freq := c.freq
 	c.doPHCAction(action)
@@ -250,19 +249,19 @@ func (c *Controller) LeapSecond(ls ptime.LeapSecond) {
 }
 
 // Tick handles regular tick events (0.25s intervals).
-func (c *Controller) Tick() {
+func (c *Controller) Tick(now time.Time) {
 	// Don't generate missing samples in init mode
-	if c.mode == modeInit {
+	if c.mode == ModeInit {
 		return
 	}
 
 	// Check if we're overdue for a sample
-	if time.Since(c.lastSampleTime) <= sampleIntervalMax {
+	if now.Sub(c.lastSample.Sys) <= sampleIntervalMax {
 		return
 	}
 
-	// Advance time by exactly one second
-	c.lastSampleTime = c.lastSampleTime.Add(time.Second)
+	// Advance time by exactly one second from last sample
+	sys := c.lastSample.Sys.Add(time.Second)
 	c.lastRefTime = c.lastRefTime.Add(time.Second)
 
 	// Create missing sample
@@ -275,7 +274,11 @@ func (c *Controller) Tick() {
 			// Freq will be filled in later
 		},
 		edgeIndex: 0, // Missing samples don't have an edge index
+		Sys:       sys,
 	}
+
+	// Update lastSample to the missing sample so we don't generate duplicates
+	c.lastSample = sample
 
 	// Missing samples go directly to processSample
 	c.processSample(sample)
@@ -295,11 +298,11 @@ func (c *Controller) Close() {
 	}
 }
 
-func (c *Controller) changeMode(mode controllerMode) {
+func (c *Controller) changeMode(mode Mode) {
 	if c.mode == mode {
 		return
 	}
-	if c.mode != modeInvalid {
+	if c.mode != ModeInvalid {
 		c.lg.Info("changing mode",
 			"from", c.mode.String(),
 			"to", mode.String(),
@@ -307,16 +310,16 @@ func (c *Controller) changeMode(mode controllerMode) {
 	}
 	// Initialize sampleGen and sampleProc for the new mode
 	switch mode {
-	case modeInit:
+	case ModeInit:
 		c.sampleGen = newInitSampleGenerator(c.timeMsgBuffer, c.cfg.Init, &c.pt, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newInitSampleProcessor(c.cfg.Init, c.lg)
-	case modeConverging:
+	case ModeConverging:
 		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converging, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converging, c.freq, c.maxFreq, c.lg)
-	case modeTracking:
+	case ModeTracking:
 		c.sampleGen = newTrackingSampleGenerator(c.cfg.Tracking, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newTrackingSampleProcessor(c.cfg.Tracking, c.freq, c.maxFreq, c.lg)
-	case modeLost:
+	case ModeLost:
 		c.sampleGen = newLostSampleGenerator()
 		c.sampleProc = newLostSampleProcessor()
 	default:
@@ -330,14 +333,14 @@ func (c *Controller) changeMode(mode controllerMode) {
 	}
 }
 
-func modeSyncState(mode controllerMode) mon.SyncState {
-	if mode == modeTracking {
+func modeSyncState(mode Mode) mon.SyncState {
+	if mode == ModeTracking {
 		return mon.InSync
 	}
 	return mon.NoSync
 }
 
-// Tracking reports whether the controller is currently operating in tracking mode.
-func (c *Controller) Tracking() bool {
-	return c.mode == modeTracking
+// Mode returns the current operating mode of the controller.
+func (c *Controller) Mode() Mode {
+	return c.mode
 }

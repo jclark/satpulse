@@ -162,9 +162,9 @@ If the flag is set:
 * keep track of missed pulses
 * Do pulse correction
   * for M8F will need to wait for pulse correction following pulse
-* Keep count of number of consecutive samples either because missing or outlier. Exit when:
-  * number of consecutive misses samples greater than configurable value, or
-  * proportion of missed samples in a configurable window is greater than configurable value
+* Keep count samples that are abnormal either because missing or outlier (abnormal means not sent to servo) Exit when:
+  * number of consecutive abnormal samples greater than configurable value, or
+  * proportion of abnormal samples in a configurable window is greater than configurable value
 * Don't try to estimate accuracy of PHC using PHC/GNSS offset
 
 #### Additional features
@@ -425,7 +425,8 @@ Steps to implement.
 Implementing each of these will involved enhancements to simulator to test properly.
 
 1. handle ignoring falling edges, when both edges timestamped (requires enhancements to clocksim), but not 50% duty cycle (or close to it)
-2. implement recovery in lost mode
+2. enter lost mode when pulses stop (transition from tracking to lost based on consecutive missing samples)
+3. implement recovery in lost mode (transition from lost back to converging when pulses return)
 
 Bugs:
 * at the beginning of converging stage, we need to make sure that the step has already taken effect by waiting for appropriate era

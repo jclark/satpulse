@@ -27,15 +27,20 @@ type TrackingConfig struct {
 	// and accepted without further checks. This is the primary discriminator for well-synchronized clocks.
 	// Example: 100 = 100ns tolerance means offsets between -100ns and +100ns are accepted.
 	TopOfSecondTolerance int64
+
+	// MaxConsecutiveBadSamples is the maximum number of consecutive bad samples (missing or outlier)
+	// before transitioning from tracking mode to lost mode.
+	MaxConsecutiveBadSamples int
 }
 
 func defaultTrackingConfig() TrackingConfig {
 	return TrackingConfig{
-		KP:                   0.7,
-		KI:                   0.3,
-		OutlierThreshold:     1000, // 1µs
-		PulseWidthTolerance:  200,  // 200ns
-		TopOfSecondTolerance: 100,  // 100ns
+		KP:                       0.7,
+		KI:                       0.3,
+		OutlierThreshold:         1000, // 1µs
+		PulseWidthTolerance:      200,  // 200ns
+		TopOfSecondTolerance:     100,  // 100ns
+		MaxConsecutiveBadSamples: 5,
 	}
 }
 
@@ -119,6 +124,10 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 	refTime := edge.Timestamp.T.Round(time.Second)
 	offset := edge.Timestamp.T.Sub(refTime)
 
+	// Estimate system time: TRead minus the time between reading and timestamp capture
+	phcDelta := edge.TReadPHC.T.Sub(edge.Timestamp.T)
+	sys := edge.TRead.Add(-phcDelta)
+
 	sample := &Sample{
 		SampleData: &SampleData{
 			Kind:      SampleOK,
@@ -128,6 +137,7 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 			SyncState: mon.InSync,
 		},
 		edgeIndex: edgeIndex,
+		Sys:       sys,
 	}
 
 	// Update lastSample for next edge comparison
@@ -142,31 +152,52 @@ func (g *trackingSampleGenerator) timeMessageSample() *Sample {
 }
 
 type trackingSampleProcessor struct {
-	servo            *piServo
-	outlierThreshold time.Duration
-	lg               *slog.Logger
+	servo                  *piServo
+	cfg                    TrackingConfig
+	consecutiveBadSamples  int
+	lg                     *slog.Logger
 }
 
 func newTrackingSampleProcessor(cfg TrackingConfig, currentFreq, maxFreq float64, lg *slog.Logger) *trackingSampleProcessor {
 	return &trackingSampleProcessor{
-		servo:            newPiServo(currentFreq, cfg.KP, cfg.KI, maxFreq),
-		outlierThreshold: time.Duration(cfg.OutlierThreshold),
-		lg:               lg,
+		servo: newPiServo(currentFreq, cfg.KP, cfg.KI, maxFreq),
+		cfg:   cfg,
+		lg:    lg,
 	}
 }
 
-func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, controllerMode) {
+func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
+	action := p.sampleAction(sample)
+
+	// Track consecutive bad samples (missing or outlier - i.e., not sent to servo)
+	if action.actionType == phcNoAction {
+		p.consecutiveBadSamples++
+	} else {
+		p.consecutiveBadSamples = 0
+	}
+
+	// Transition to lost mode if too many consecutive bad samples
+	if p.consecutiveBadSamples >= p.cfg.MaxConsecutiveBadSamples {
+		p.lg.Info("entering lost mode", "consecutiveBadSamples", p.consecutiveBadSamples)
+		return action, ModeLost
+	}
+
+	return action, ModeTracking
+}
+
+func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 	if sample.Kind == SampleMissing {
 		// Just continue tracking on missing samples
-		return phcAction{actionType: phcNoAction}, modeTracking
+		return phcAction{actionType: phcNoAction}
 	}
 
 	// Check for outlier
-	if sample.Offset.Abs() >= p.outlierThreshold {
+	outlierThreshold := time.Duration(p.cfg.OutlierThreshold)
+	if sample.Offset.Abs() >= outlierThreshold {
 		// Mark as outlier and don't adjust
 		sample.Kind = SampleOutlier
-		p.lg.Debug("outlier detected", "offset", sample.Offset, "threshold", p.outlierThreshold)
-		return phcAction{actionType: phcNoAction}, modeTracking
+		p.lg.Debug("outlier detected", "offset", sample.Offset, "threshold", outlierThreshold)
+		return phcAction{actionType: phcNoAction}
 	}
 
 	// Apply PI control for good samples
@@ -174,5 +205,5 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, cont
 	return phcAction{
 		actionType: phcAdjustFrequency,
 		freq:       freq,
-	}, modeTracking
+	}
 }

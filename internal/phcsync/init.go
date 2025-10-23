@@ -123,7 +123,7 @@ func (g *initSampleGenerator) genSample() *Sample {
 		return nil
 	}
 
-	data, err := g.genSampleForMessages(lastSec, tRead)
+	sample, err := g.genSampleForMessages(lastSec, tRead)
 	if err != nil {
 		if le, ok := err.(loggableError); ok {
 			le.log(g.lg)
@@ -133,11 +133,7 @@ func (g *initSampleGenerator) genSample() *Sample {
 		return nil
 	}
 
-	// Wrap SampleData in Sample with edgeIndex
-	return &Sample{
-		SampleData: data,
-		edgeIndex:  g.lastEdgeIndex,
-	}
+	return sample
 }
 
 // pulseEdgeList is a slice of PulseEdge values with the edgeIndex of the last edge.
@@ -146,7 +142,7 @@ type pulseEdgeList struct {
 	lastEdgeIndex uint64
 }
 
-func (g *initSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []time.Time) (*SampleData, error) {
+func (g *initSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []time.Time) (*Sample, error) {
 	edgeLists := g.pulseEdgeLists()
 	for _, edgeList := range edgeLists {
 		err := g.checkPulseIntervals(edgeList)
@@ -173,12 +169,16 @@ func (g *initSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []t
 	// offset is local - ref
 	offset := lastPulseTimestamp.T.Sub(lastSec)
 
-	return &SampleData{
-		Kind:   SampleOK,
-		Ref:    lastSec,
-		Offset: offset,
-		Freq:   0,
-		Era:    lastPulseTimestamp.Era,
+	return &Sample{
+		SampleData: &SampleData{
+			Kind:   SampleOK,
+			Ref:    lastSec,
+			Offset: offset,
+			Freq:   0,
+			Era:    lastPulseTimestamp.Era,
+		},
+		edgeIndex: g.lastEdgeIndex,
+		Sys:       pulseTimes[len(pulseTimes)-1],
 	}, nil
 }
 
@@ -525,10 +525,10 @@ func newInitSampleProcessor(cfg InitConfig, lg *slog.Logger) *initSampleProcesso
 	}
 }
 
-func (p *initSampleProcessor) processSample(sample *Sample) (phcAction, controllerMode) {
+func (p *initSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 	if sample == nil || sample.Kind == SampleMissing {
 		// Keep waiting for a valid sample
-		return phcAction{actionType: phcNoAction}, modeInit
+		return phcAction{actionType: phcNoAction}, ModeInit
 	}
 
 	// Check if offset is small enough to skip stepping
@@ -536,7 +536,7 @@ func (p *initSampleProcessor) processSample(sample *Sample) (phcAction, controll
 		p.lg.Info("clock already close, skipping step",
 			"offset", sample.Offset,
 			"minStep", p.minStep)
-		return phcAction{actionType: phcNoAction}, modeConverging
+		return phcAction{actionType: phcNoAction}, ModeConverging
 	}
 
 	// Need to step the clock
@@ -546,5 +546,5 @@ func (p *initSampleProcessor) processSample(sample *Sample) (phcAction, controll
 	return phcAction{
 		actionType: phcStepClock,
 		step:       -sample.Offset, // step by negative offset to correct
-	}, modeConverging
+	}, ModeConverging
 }

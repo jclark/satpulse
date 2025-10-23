@@ -55,6 +55,10 @@ func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex ui
 	refTime := edge.Timestamp.T.Round(time.Second)
 	offset := edge.Timestamp.T.Sub(refTime)
 
+	// Estimate system time
+	phcDelta := edge.TReadPHC.T.Sub(edge.Timestamp.T)
+	sys := edge.TRead.Add(-phcDelta)
+
 	return &Sample{
 		SampleData: &SampleData{
 			Kind:   SampleOK,
@@ -63,6 +67,7 @@ func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex ui
 			Era:    edge.Timestamp.Era,
 		},
 		edgeIndex: edgeIndex,
+		Sys:       sys,
 	}
 }
 
@@ -90,10 +95,10 @@ func newConvergingSampleProcessor(cfg ConvergingConfig, currentFreq, maxFreq flo
 	}
 }
 
-func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, controllerMode) {
+func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 	if sample.Kind == SampleMissing {
 		// Ignore single missing sample
-		return phcAction{actionType: phcNoAction}, modeConverging
+		return phcAction{actionType: phcNoAction}, ModeConverging
 	}
 
 	// Add offset to buffer
@@ -112,7 +117,7 @@ func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, co
 			return phcAction{
 				actionType: phcAdjustFrequency,
 				freq:       p.servo.sample(sample.Offset),
-			}, modeTracking
+			}, ModeTracking
 		}
 
 		// Update last median for next iteration
@@ -124,7 +129,7 @@ func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, co
 	return phcAction{
 		actionType: phcAdjustFrequency,
 		freq:       freq,
-	}, modeConverging
+	}, ModeConverging
 }
 
 func (p *convergingSampleProcessor) computeMedian() time.Duration {

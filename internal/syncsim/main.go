@@ -16,11 +16,12 @@ import (
 )
 
 type flagVars struct {
-	statsInterval int
-	clockLogPath  string
-	simCfg        syncsim.Config
-	phcCfg        phcsync.Config
-	debug         bool
+	statsInterval   int
+	clockLogPath    string
+	simCfg          syncsim.Config
+	phcCfg          phcsync.Config
+	debug           bool
+	toggleDurations []float64
 }
 
 func main() {
@@ -99,12 +100,25 @@ func parseFlags(args []string) (*flagVars, error) {
 	flags.Float64Var(&vars.phcCfg.Tracking.KP, "tracking-kp", vars.phcCfg.Tracking.KP, "tracking mode proportional gain")
 	flags.Float64Var(&vars.phcCfg.Tracking.KI, "tracking-ki", vars.phcCfg.Tracking.KI, "tracking mode integral gain")
 	flags.BoolVar(&vars.debug, "debug", false, "enable debug logging")
+	flags.Float64SliceVar(&vars.toggleDurations, "toggle", nil, "comma-separated relative durations to toggle pulse delivery (e.g., '10,5' = stop after 10s, restart after 5s more)")
 	err := flags.Parse(args)
 	if err != nil {
 		return nil, err
 	}
 	if flags.NArg() != 0 {
 		return nil, fmt.Errorf("command must not have non-option arguments")
+	}
+	// Validate and convert relative toggle durations to absolute times
+	if len(vars.toggleDurations) > 0 {
+		vars.simCfg.ToggleTimes = make([]float64, len(vars.toggleDurations))
+		t := 0.0
+		for i, dur := range vars.toggleDurations {
+			if dur <= 0 {
+				return nil, fmt.Errorf("toggle duration at index %d must be > 0, got %v", i, dur)
+			}
+			t += dur
+			vars.simCfg.ToggleTimes[i] = t
+		}
 	}
 	return &vars, nil
 }

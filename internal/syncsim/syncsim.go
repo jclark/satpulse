@@ -1,6 +1,39 @@
+// Package syncsim provides a discrete-event simulator for testing the phcsync controller.
+//
+// # Architecture
+//
+// The simulator uses an event-driven architecture built on Go 1.23 iterators:
+//
+//	generatePulseEvents()    ─┐
+//	generateMessageEvents()  ─┼─> mergeEvents() ──> for event := range events
+//	generateTickEvents()     ─┘
+//
+// Three event streams are generated independently and merged chronologically:
+//   - Pulse events: GPS PPS edges (rising, and trailing for dual-edge mode)
+//   - Message events: GPS time messages containing TAI time
+//   - Tick events: System ticks every 250ms (like real daemon)
+//
+// # Key Design Principles
+//
+// 1. Event generators are declarative - they describe WHAT events happen and WHEN,
+// but NOT which events are delivered. The main loop decides delivery based on outages.
+//
+// 2. Pulse timestamps are ALWAYS read (even during outages) to track PHC drift during
+// signal loss. The decision to deliver to the controller happens separately.
+//
+// 3. Ticks start immediately at t=0.25, modeling real system behavior. Early ticks are
+// safe because the controller returns early when in ModeInit.
+//
+// 4. Mode tracking uses the observer pattern, which sees samples BEFORE mode transitions.
+// This correctly attributes samples to the mode that processed them.
+//
+// 5. Single-edge and dual-edge modes are handled uniformly - the generator produces
+// 1 or 2 pulse events per PPS, and the event loop processes them identically.
 package syncsim
 
 import (
+	"fmt"
+	"iter"
 	"log/slog"
 	"math"
 	"math/rand"
@@ -8,6 +41,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/clocksim"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
@@ -18,16 +52,17 @@ import (
 
 // Config holds simulation parameters
 type Config struct {
-	Duration     float64 // simulation duration in seconds
-	OscDrift     float64 // oscillator drift in ppb
-	OscNoise     float64 // oscillator frequency noise stddev in ppb
-	PPSJitter    float64 // PPS timing jitter in nanoseconds
-	MinDelay     float64 // minimum pulse delivery delay in seconds
-	MaxDelay     float64 // maximum pulse delivery delay in seconds
-	MsgDelay     float64 // GPS message delay after pulse in seconds
-	MsgJitter    float64 // GPS message delay jitter in seconds
-	GPSStartTime float64 // GPS time at start of simulation in seconds
-	PulseWidth   float64 // pulse width in seconds (0 for single-edge mode)
+	Duration     float64   // simulation duration in seconds
+	OscDrift     float64   // oscillator drift in ppb
+	OscNoise     float64   // oscillator frequency noise stddev in ppb
+	PPSJitter    float64   // PPS timing jitter in nanoseconds
+	MinDelay     float64   // minimum pulse delivery delay in seconds
+	MaxDelay     float64   // maximum pulse delivery delay in seconds
+	MsgDelay     float64   // GPS message delay after pulse in seconds
+	MsgJitter    float64   // GPS message delay jitter in seconds
+	GPSStartTime float64   // GPS time at start of simulation in seconds
+	PulseWidth   float64   // pulse width in seconds (0 for single-edge mode)
+	ToggleTimes  []float64 // absolute simulation times to toggle pulse/message delivery on/off
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -46,11 +81,88 @@ func DefaultConfig() Config {
 	}
 }
 
+// inOutage returns true if time t falls within an outage period.
+// Odd-indexed intervals (1, 3, 5...) are outage periods.
+func inOutage(t float64, toggleTimes []float64) bool {
+	for i, toggle := range toggleTimes {
+		if t < toggle {
+			return i%2 == 1
+		}
+	}
+	return len(toggleTimes)%2 == 1
+}
+
+const (
+	tickInterval = 0.25
+)
+
+// Event represents a simulation event with a time
+type Event struct {
+	Time float64
+	Type EventType
+	Data any
+}
+
+type EventType int
+
+const (
+	EventPulse EventType = iota
+	EventMessage
+	EventTick
+)
+
+type PulseEventData struct {
+	EdgeIdx int
+	PPS     float64
+}
+
+type MessageEventData struct {
+	PPS float64
+}
+
+type TickEventData struct {
+}
+
+type pulseTimestamp struct {
+	timestamp ptime.ClockTime
+	trueTime  float64
+	tRead     time.Time
+	tReadPHC  ptime.ClockTime
+	offset    time.Duration
+}
+
+type modeObserver struct {
+	obs.DefaultObserver
+	ctrl              *phcsync.Controller
+	initSamples       int
+	convergingSamples int
+	trackingSamples   int
+	lostSamples       int
+}
+
+func (m *modeObserver) Sample(s mon.SampleData) {
+	mode := m.ctrl.Mode()
+	switch mode {
+	case phcsync.ModeInit:
+		m.initSamples++
+	case phcsync.ModeConverging:
+		m.convergingSamples++
+	case phcsync.ModeTracking:
+		m.trackingSamples++
+	case phcsync.ModeLost:
+		m.lostSamples++
+	}
+}
+
 // Stats holds simulation results
 type Stats struct {
 	statsobs.Stats                // embedded - detailed tracking statistics from observer
-	SampleCount    int            // total samples fed to controller
-	TrackingStdDev time.Duration  // stddev from true time (simulation-only)
+	SampleCount       int         // total samples fed to controller
+	TrackingStdDev    time.Duration // stddev from true time (simulation-only)
+	InitSamples       int         // samples processed in init mode
+	ConvergingSamples int         // samples processed in converging mode
+	TrackingSamples   int         // samples processed in tracking mode
+	LostSamples       int         // samples processed in lost mode
 }
 
 // Simulate runs a phcsync simulation with the given configuration.
@@ -103,11 +215,14 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 	// Create timemsg.Buffer
 	timeMsgBuf := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
 
+	// Create mode observer
+	modeObs := &modeObserver{}
+
 	// Create internal stats observer
 	statsObs := statsobs.NewStatsObserver()
 
-	// Combine with user-provided observers
-	allObservers := append([]obs.Observer{statsObs}, observers...)
+	// Combine all observers
+	allObservers := append([]obs.Observer{statsObs, modeObs}, observers...)
 	multiObs := obs.NewMultiObserver(allObservers...)
 
 	// Create controller
@@ -127,6 +242,9 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 	}
 	defer ctrl.Close()
 
+	// Set controller reference in mode observer
+	modeObs.ctrl = ctrl
+
 	lg.Info("starting phcsync simulation",
 		"duration", simCfg.Duration,
 		"pulseDelay", "5µs-250µs",
@@ -137,180 +255,71 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 		"gpsStartTime", simCfg.GPSStartTime,
 		"phcStartTime", 0.0)
 
-	rng := rand.New(rand.NewSource(999))
+	// Generate event streams
+	// Note: ticks start at t=0.25, modeling real system behavior where ticks
+	// run continuously from the start. Early ticks are safe - see generateTickEvents.
+	pulseGen := generatePulseEvents(simCfg, pulseType.EdgesPerPulse)
+	msgGen := generateMessageEvents(simCfg)
+	tickGen := generateTickEvents(simCfg)
+
+	// Merge and process events
+	events := mergeEvents(pulseGen, msgGen, tickGen)
+
 	sampleCount := 0
-	nextPPS := 1.0 // First PPS at t=1.0
 	stats := &offsetStats{}
 
-	for nextPPS < simCfg.Duration {
-		// Generate random pulse delivery delay (uniform between min and max)
-		pulseDelay := simCfg.MinDelay + rng.Float64()*(simCfg.MaxDelay-simCfg.MinDelay)
+	for event := range events {
+		// Advance virtual clock to event time
+		vclock.AdvanceTo(event.Time)
 
-		// Calculate when various events happen
-		risingEdgeTime := nextPPS + pulseDelay
-		msgDelayTime := simCfg.MsgDelay + rng.NormFloat64()*simCfg.MsgJitter
-		if msgDelayTime < 0 {
-			msgDelayTime = 0
+		// Dispatch based on event type
+		switch event.Type {
+		case EventPulse:
+			data := event.Data.(PulseEventData)
+
+			// ALWAYS read timestamp and calculate offset (even during outages)
+			// This tracks how PHC drifts when signal is lost
+			pts, err := readPulseTimestamp(event.Time, data, vclock, testClock, simCfg, lg)
+			if err != nil {
+				return Stats{}, err
+			}
+
+			// Track offset for rising edge in tracking mode
+			if data.EdgeIdx == 0 && ctrl.Mode() == phcsync.ModeTracking {
+				stats.add(pts.offset)
+			}
+
+			// Only deliver to controller if NOT in outage
+			if !inOutage(data.PPS, simCfg.ToggleTimes) {
+				deliverPulseToController(pts, data, ctrl, lg)
+			}
+
+		case EventMessage:
+			data := event.Data.(MessageEventData)
+
+			// Only deliver to controller if NOT in outage
+			if !inOutage(data.PPS, simCfg.ToggleTimes) {
+				handleMessageEvent(event.Time, data, timeMsgBuf, ctrl, simCfg, lg)
+				sampleCount++
+			}
+
+		case EventTick:
+			// Ticks ALWAYS delivered (no outage filtering)
+			handleTickEvent(event.Time, ctrl)
 		}
-		msgArrivalTime := nextPPS + msgDelayTime
-
-		// Track offset of first (rising) edge for statistics
-		var risingEdgeOffset time.Duration
-
-		// In dual-edge mode, handle both edges and message in chronological order
-		if pulseType.EdgesPerPulse == 2 {
-			trailingEdgeTime := nextPPS + simCfg.PulseWidth + pulseDelay
-
-			// Determine chronological order of events
-			// Rising edge always comes first (at risingEdgeTime)
-			// Then either trailing edge or message
-
-			// Step 1: Advance to rising edge and deliver it
-			vclock.AdvanceTo(risingEdgeTime)
-			if !vclock.TimestampAvailable() {
-				lg.Error("expected rising edge timestamp not available", "nextPPS", nextPPS)
-				break
-			}
-
-			timestamp, trueTime, ok := testClock.ReadTimestampWithEra()
-			if !ok {
-				lg.Error("failed to read rising edge timestamp")
-				break
-			}
-
-			tRead := time.Unix(0, 0).Add(time.Duration(risingEdgeTime * 1e9))
-			tReadPHC := testClock.Now()
-
-			edge := phcsync.PulseEdge{
-				Timestamp: timestamp,
-				TRead:     tRead,
-				TReadPHC:  tReadPHC,
-			}
-
-			trueTAITime := ptime.Time((simCfg.GPSStartTime + trueTime) * 1e9)
-			risingEdgeOffset = timestamp.T.Sub(trueTAITime)
-
-			lg.Debug("delivering pulse",
-				"second", int(nextPPS),
-				"edgeIdx", 0,
-				"timestamp", timestamp.T,
-				"era", timestamp.Era,
-				"taiOffset", risingEdgeOffset)
-			ctrl.PulseEdge(edge)
-
-			// Step 2: Advance to trailing edge and deliver it (message may come before or after)
-			vclock.AdvanceTo(trailingEdgeTime)
-			if !vclock.TimestampAvailable() {
-				lg.Error("expected trailing edge timestamp not available", "nextPPS", nextPPS)
-				break
-			}
-
-			timestamp, trueTime, ok = testClock.ReadTimestampWithEra()
-			if !ok {
-				lg.Error("failed to read trailing edge timestamp")
-				break
-			}
-
-			tRead = time.Unix(0, 0).Add(time.Duration(trailingEdgeTime * 1e9))
-			tReadPHC = testClock.Now()
-
-			edge = phcsync.PulseEdge{
-				Timestamp: timestamp,
-				TRead:     tRead,
-				TReadPHC:  tReadPHC,
-			}
-
-			trueTAITime = ptime.Time((simCfg.GPSStartTime + trueTime) * 1e9)
-			taiOffset := timestamp.T.Sub(trueTAITime)
-
-			lg.Debug("delivering pulse",
-				"second", int(nextPPS),
-				"edgeIdx", 1,
-				"timestamp", timestamp.T,
-				"era", timestamp.Era,
-				"taiOffset", taiOffset)
-			ctrl.PulseEdge(edge)
-
-			// Step 3: Advance to message arrival (if not already past it)
-			if msgArrivalTime > trailingEdgeTime {
-				vclock.AdvanceTo(msgArrivalTime)
-			}
-		} else {
-			// Single-edge mode: just advance to rising edge
-			vclock.AdvanceTo(risingEdgeTime)
-			if !vclock.TimestampAvailable() {
-				lg.Error("expected timestamp not available", "nextPPS", nextPPS)
-				break
-			}
-
-			timestamp, trueTime, ok := testClock.ReadTimestampWithEra()
-			if !ok {
-				lg.Error("failed to read timestamp")
-				break
-			}
-
-			tRead := time.Unix(0, 0).Add(time.Duration(risingEdgeTime * 1e9))
-			tReadPHC := testClock.Now()
-
-			edge := phcsync.PulseEdge{
-				Timestamp: timestamp,
-				TRead:     tRead,
-				TReadPHC:  tReadPHC,
-			}
-
-			trueTAITime := ptime.Time((simCfg.GPSStartTime + trueTime) * 1e9)
-			risingEdgeOffset = timestamp.T.Sub(trueTAITime)
-
-			lg.Debug("delivering pulse",
-				"second", int(nextPPS),
-				"timestamp", timestamp.T,
-				"era", timestamp.Era,
-				"taiOffset", risingEdgeOffset)
-			ctrl.PulseEdge(edge)
-
-			// Advance to message arrival
-			vclock.AdvanceTo(msgArrivalTime)
-		}
-
-		// Now deliver GPS time message
-		gpsTime := ptime.Time((simCfg.GPSStartTime + nextPPS) * 1e9)
-
-		timeMsg := &gpsprot.TimeMsg{
-			TAITime:     gpsTime,
-			GNSS:        gpsprot.GPS,
-			Ref:         gpsprot.PostPulse,
-			Tag:         ubx.Tag,
-			NativeMsgID: "NAV-PVT",
-		}
-
-		msgTRead := time.Unix(0, 0).Add(time.Duration(msgArrivalTime * 1e9))
-
-		timeMsgBuf.Time(timeMsg, msgTRead)
-		lg.Debug("delivering time message",
-			"second", int(nextPPS),
-			"gpsTime", gpsTime,
-			"msgTRead", msgTRead)
-
-		ctrl.TimeMessage()
-
-		sampleCount++
-
-		ctrl.Tick()
-
-		if ctrl.Tracking() {
-			stats.add(risingEdgeOffset)
-		}
-
-		nextPPS += 1.0
 	}
 
-	// Get tracking stats from observer
+	// Get stats from observers
 	trackingStats := statsObs.Stats()
 
 	return Stats{
-		Stats:          trackingStats,
-		SampleCount:    sampleCount,
-		TrackingStdDev: time.Duration(stats.stdDevRounded()),
+		Stats:             trackingStats,
+		SampleCount:       sampleCount,
+		TrackingStdDev:    time.Duration(stats.stdDevRounded()),
+		InitSamples:       modeObs.initSamples,
+		ConvergingSamples: modeObs.convergingSamples,
+		TrackingSamples:   modeObs.trackingSamples,
+		LostSamples:       modeObs.lostSamples,
 	}, nil
 }
 
@@ -344,4 +353,199 @@ func (s *offsetStats) stdDev() float64 {
 		variance = 0
 	}
 	return math.Sqrt(variance)
+}
+
+// generatePulseEvents creates a push-style iterator that yields pulse edge events.
+// Generates ALL pulses - does NOT filter by outages (filtering happens in main loop).
+func generatePulseEvents(cfg Config, edgesPerPulse int) iter.Seq[Event] {
+	return func(yield func(Event) bool) {
+		rng := rand.New(rand.NewSource(999))
+		for pps := 1.0; pps < cfg.Duration; pps += 1.0 {
+			pulseDelay := cfg.MinDelay + rng.Float64()*(cfg.MaxDelay-cfg.MinDelay)
+			risingTime := pps + pulseDelay
+			if !yield(Event{
+				Time: risingTime,
+				Type: EventPulse,
+				Data: PulseEventData{EdgeIdx: 0, PPS: pps},
+			}) {
+				return
+			}
+			if edgesPerPulse == 2 {
+				trailingTime := pps + cfg.PulseWidth + pulseDelay
+				if !yield(Event{
+					Time: trailingTime,
+					Type: EventPulse,
+					Data: PulseEventData{EdgeIdx: 1, PPS: pps},
+				}) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// generateMessageEvents creates a push-style iterator that yields GPS message events.
+// Generates ALL messages - does NOT filter by outages (filtering happens in main loop).
+func generateMessageEvents(cfg Config) iter.Seq[Event] {
+	return func(yield func(Event) bool) {
+		rng := rand.New(rand.NewSource(888))
+		for pps := 1.0; pps < cfg.Duration; pps += 1.0 {
+			msgDelayTime := cfg.MsgDelay + rng.NormFloat64()*cfg.MsgJitter
+			if msgDelayTime < 0 {
+				msgDelayTime = 0
+			}
+			msgTime := pps + msgDelayTime
+			if !yield(Event{
+				Time: msgTime,
+				Type: EventMessage,
+				Data: MessageEventData{PPS: pps},
+			}) {
+				return
+			}
+		}
+	}
+}
+
+// generateTickEvents creates a push-style iterator that yields tick events.
+// Ticks happen every 250ms regardless of outages, starting immediately at t=0.25.
+// Note: Early ticks (before first sample) are safe because controller.Tick()
+// returns early when in ModeInit, and mode only exits Init after first sample
+// sets lastSample (controller.go:203).
+func generateTickEvents(cfg Config) iter.Seq[Event] {
+	return func(yield func(Event) bool) {
+		for t := tickInterval; t < cfg.Duration; t += tickInterval {
+			if !yield(Event{
+				Time: t,
+				Type: EventTick,
+				Data: TickEventData{},
+			}) {
+				return
+			}
+		}
+	}
+}
+
+// mergeEvents takes three event generators and merges them chronologically
+// Returns events in time order until all generators are exhausted
+func mergeEvents(
+	pulseGen iter.Seq[Event],
+	msgGen iter.Seq[Event],
+	tickGen iter.Seq[Event],
+) iter.Seq[Event] {
+	return func(yield func(Event) bool) {
+		pulseNext, pulseStop := iter.Pull(pulseGen)
+		msgNext, msgStop := iter.Pull(msgGen)
+		tickNext, tickStop := iter.Pull(tickGen)
+		defer pulseStop()
+		defer msgStop()
+		defer tickStop()
+		pulseEvent, pulseOK := pulseNext()
+		msgEvent, msgOK := msgNext()
+		tickEvent, tickOK := tickNext()
+		for pulseOK || msgOK || tickOK {
+			var nextEvent Event
+			if pulseOK && (!msgOK || pulseEvent.Time <= msgEvent.Time) && (!tickOK || pulseEvent.Time <= tickEvent.Time) {
+				nextEvent = pulseEvent
+				pulseEvent, pulseOK = pulseNext()
+			} else if msgOK && (!tickOK || msgEvent.Time <= tickEvent.Time) {
+				nextEvent = msgEvent
+				msgEvent, msgOK = msgNext()
+			} else {
+				nextEvent = tickEvent
+				tickEvent, tickOK = tickNext()
+			}
+			if !yield(nextEvent) {
+				return
+			}
+		}
+	}
+}
+
+// readPulseTimestamp reads the timestamp from vclock and calculates offset.
+// Called for ALL pulse events (even during outages) to track PHC drift.
+// Returns timestamp data that can optionally be delivered to controller.
+func readPulseTimestamp(
+	eventTime float64,
+	data PulseEventData,
+	vclock *clocksim.VirtualClock,
+	testClock *clocksim.TestClock,
+	cfg Config,
+	lg *slog.Logger,
+) (*pulseTimestamp, error) {
+	if !vclock.TimestampAvailable() {
+		return nil, fmt.Errorf("expected timestamp not available at PPS %v", data.PPS)
+	}
+	timestamp, trueTime, ok := testClock.ReadTimestampWithEra()
+	if !ok {
+		return nil, fmt.Errorf("failed to read timestamp at PPS %v", data.PPS)
+	}
+	tRead := time.Unix(0, 0).Add(time.Duration(eventTime * 1e9))
+	tReadPHC := testClock.Now()
+	trueTAITime := ptime.Time((cfg.GPSStartTime + trueTime) * 1e9)
+	taiOffset := timestamp.T.Sub(trueTAITime)
+	lg.Debug("pulse timestamp read",
+		"second", int(data.PPS),
+		"edgeIdx", data.EdgeIdx,
+		"timestamp", timestamp.T,
+		"era", timestamp.Era,
+		"taiOffset", taiOffset)
+	return &pulseTimestamp{
+		timestamp: timestamp,
+		trueTime:  trueTime,
+		tRead:     tRead,
+		tReadPHC:  tReadPHC,
+		offset:    taiOffset,
+	}, nil
+}
+
+// deliverPulseToController delivers a pulse edge to the controller.
+// Only called for pulses outside outage periods.
+func deliverPulseToController(
+	pts *pulseTimestamp,
+	data PulseEventData,
+	ctrl *phcsync.Controller,
+	lg *slog.Logger,
+) {
+	edge := phcsync.PulseEdge{
+		Timestamp: pts.timestamp,
+		TRead:     pts.tRead,
+		TReadPHC:  pts.tReadPHC,
+	}
+	lg.Debug("delivering pulse to controller",
+		"second", int(data.PPS),
+		"edgeIdx", data.EdgeIdx,
+		"taiOffset", pts.offset)
+	ctrl.PulseEdge(edge)
+}
+
+// handleMessageEvent processes a GPS message event
+func handleMessageEvent(
+	eventTime float64,
+	data MessageEventData,
+	timeMsgBuf *timemsg.Buffer,
+	ctrl *phcsync.Controller,
+	cfg Config,
+	lg *slog.Logger,
+) {
+	gpsTime := ptime.Time((cfg.GPSStartTime + data.PPS) * 1e9)
+	timeMsg := &gpsprot.TimeMsg{
+		TAITime:     gpsTime,
+		GNSS:        gpsprot.GPS,
+		Ref:         gpsprot.PostPulse,
+		Tag:         ubx.Tag,
+		NativeMsgID: "NAV-PVT",
+	}
+	msgTRead := time.Unix(0, 0).Add(time.Duration(eventTime * 1e9))
+	timeMsgBuf.Time(timeMsg, msgTRead)
+	lg.Debug("delivering time message",
+		"second", int(data.PPS),
+		"gpsTime", gpsTime,
+		"msgTRead", msgTRead)
+	ctrl.TimeMessage()
+}
+
+// handleTickEvent processes a tick event
+func handleTickEvent(eventTime float64, ctrl *phcsync.Controller) {
+	sys := time.Unix(0, 0).Add(time.Duration(eventTime * 1e9))
+	ctrl.Tick(sys)
 }

@@ -20,6 +20,6 @@ func newLostSampleProcessor() *lostSampleProcessor {
 	return &lostSampleProcessor{}
 }
 
-func (p *lostSampleProcessor) processSample(sample *Sample) (phcAction, controllerMode) {
-	return phcAction{actionType: phcNoAction}, modeLost
+func (p *lostSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
+	return phcAction{actionType: phcNoAction}, ModeLost
 }
