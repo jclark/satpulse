@@ -12,8 +12,8 @@ import (
 
 type genSampleTestCase struct {
 	name string
-	// Config modifier: applied to defaultInitConfig(). Nil means use defaults.
-	cfgMod func(*InitConfig)
+	// Config modifier: applied to defaultResetConfig(). Nil means use defaults.
+	cfgMod func(*ResetConfig)
 	// Edge generation parameters
 	customIntervals []time.Duration // if non-nil, use these intervals instead of uniform
 	numEdges        int
@@ -153,7 +153,7 @@ func TestGenSampleForMessages(t *testing.T) {
 			interval:   time.Second,
 			msgDelay:   100 * time.Millisecond,
 			pulseWidth: 500 * time.Millisecond,
-			cfgMod: func(c *InitConfig) {
+			cfgMod: func(c *ResetConfig) {
 				c.PulseEdgeAmbig = 0.1 // 500ms is exactly 50%, should fail with default ambig threshold
 			},
 			startWithRising: true,
@@ -163,12 +163,12 @@ func TestGenSampleForMessages(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := defaultInitConfig()
+			cfg := defaultResetConfig()
 			if tc.cfgMod != nil {
 				tc.cfgMod(&cfg)
 			}
 
-			var gen *initSampleGenerator
+			var gen *resetSampleGenerator
 			var tRead []time.Time
 			var lastSec ptime.Time
 
@@ -236,12 +236,12 @@ func TestGenSampleForMessages(t *testing.T) {
 	}
 }
 
-// setupGenerator creates an initSampleGenerator with synthetic edge data.
+// setupGenerator creates an resetSampleGenerator with synthetic edge data.
 // It creates numEdges edges with the specified interval and message delay.
 // phcDrift specifies how much the PHC drifts from real time per second (e.g., 100e-9 for 100ns/s).
 // If pulseWidth > 0, generates dual edges (rising and falling) per pulse.
 // startWithRising determines whether first edge is rising (true) or falling (false).
-func setupGenerator(cfg InitConfig, numEdges int, interval, msgDelay time.Duration, phcDrift float64, pulseWidth time.Duration, startWithRising bool) *initSampleGenerator {
+func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Duration, phcDrift float64, pulseWidth time.Duration, startWithRising bool) *resetSampleGenerator {
 	edgesPerPulse := 1
 	if pulseWidth > 0 {
 		edgesPerPulse = 2
@@ -254,7 +254,7 @@ func setupGenerator(cfg InitConfig, numEdges int, interval, msgDelay time.Durati
 	}
 
 	pt := PulseType{EdgesPerPulse: edgesPerPulse, PulseWidth: pulseWidth}
-	gen := &initSampleGenerator{
+	gen := &resetSampleGenerator{
 		timeMsgBuffer: nil, // not needed when testing genSampleForMessages directly
 		edgeBuf:       circbuf.New[PulseEdge](bufSize),
 		cfg:           cfg,
@@ -338,11 +338,11 @@ func setupGenerator(cfg InitConfig, numEdges int, interval, msgDelay time.Durati
 	return gen
 }
 
-// setupGeneratorCustomIntervals creates an initSampleGenerator with custom intervals.
+// setupGeneratorCustomIntervals creates an resetSampleGenerator with custom intervals.
 // intervals[0] should be 0, intervals[i] is the duration from edge i-1 to edge i.
-func setupGeneratorCustomIntervals(cfg InitConfig, intervals []time.Duration) *initSampleGenerator {
+func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *resetSampleGenerator {
 	pt := PulseType{EdgesPerPulse: 1, PulseWidth: 0}
-	gen := &initSampleGenerator{
+	gen := &resetSampleGenerator{
 		timeMsgBuffer: nil,
 		edgeBuf:       circbuf.New[PulseEdge](cfg.Window),
 		cfg:           cfg,
@@ -375,7 +375,7 @@ func setupGeneratorCustomIntervals(cfg InitConfig, intervals []time.Duration) *i
 
 // TestPulseTimestamps verifies that pulseTimestamps extracts timestamps in correct order
 func TestPulseTimestamps(t *testing.T) {
-	cfg := defaultInitConfig()
+	cfg := defaultResetConfig()
 	gen := setupGenerator(cfg, 3, time.Second, 100*time.Millisecond, 0, 0, true)
 
 	timestamps := gen.pulseTimestamps()
@@ -394,7 +394,7 @@ func TestPulseTimestamps(t *testing.T) {
 
 // TestPulseIntervals verifies interval calculation
 func TestPulseIntervals(t *testing.T) {
-	gen := &initSampleGenerator{lg: slog.Default()}
+	gen := &resetSampleGenerator{lg: slog.Default()}
 
 	timestamps := []ptime.Time{
 		ptime.Time(0).Add(0),
@@ -445,7 +445,7 @@ func TestLastEdgeIndexUpdated(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := defaultInitConfig()
+			cfg := defaultResetConfig()
 			numEdges := 10
 			interval := time.Second
 			msgDelay := 100 * time.Millisecond

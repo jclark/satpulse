@@ -176,10 +176,10 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode
 		p.consecutiveBadSamples = 0
 	}
 
-	// Transition to lost mode if too many consecutive bad samples
+	// Transition to reset mode if too many consecutive bad samples
 	if p.consecutiveBadSamples >= p.cfg.MaxConsecutiveBadSamples {
-		p.lg.Info("entering lost mode", "consecutiveBadSamples", p.consecutiveBadSamples)
-		return action, ModeLost
+		p.lg.Info("entering reset mode", "consecutiveBadSamples", p.consecutiveBadSamples)
+		return action, ModeReset
 	}
 
 	return action, ModeTracking

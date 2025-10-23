@@ -22,7 +22,7 @@
 // signal loss. The decision to deliver to the controller happens separately.
 //
 // 3. Ticks start immediately at t=0.25, modeling real system behavior. Early ticks are
-// safe because the controller returns early when in ModeInit.
+// safe because the controller returns early when in ModeReset.
 //
 // 4. Mode tracking uses the observer pattern, which sees samples BEFORE mode transitions.
 // This correctly attributes samples to the mode that processed them.
@@ -137,20 +137,17 @@ type modeObserver struct {
 	initSamples       int
 	convergingSamples int
 	trackingSamples   int
-	lostSamples       int
 }
 
 func (m *modeObserver) Sample(s mon.SampleData) {
 	mode := m.ctrl.Mode()
 	switch mode {
-	case phcsync.ModeInit:
+	case phcsync.ModeReset:
 		m.initSamples++
 	case phcsync.ModeConverging:
 		m.convergingSamples++
 	case phcsync.ModeTracking:
 		m.trackingSamples++
-	case phcsync.ModeLost:
-		m.lostSamples++
 	}
 }
 
@@ -159,10 +156,9 @@ type Stats struct {
 	statsobs.Stats                // embedded - detailed tracking statistics from observer
 	SampleCount       int         // total samples fed to controller
 	TrackingStdDev    time.Duration // stddev from true time (simulation-only)
-	InitSamples       int         // samples processed in init mode
+	InitSamples       int         // samples processed in reset mode (includes initial sync and recovery)
 	ConvergingSamples int         // samples processed in converging mode
 	TrackingSamples   int         // samples processed in tracking mode
-	LostSamples       int         // samples processed in lost mode
 }
 
 // Simulate runs a phcsync simulation with the given configuration.
@@ -319,7 +315,6 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 		InitSamples:       modeObs.initSamples,
 		ConvergingSamples: modeObs.convergingSamples,
 		TrackingSamples:   modeObs.trackingSamples,
-		LostSamples:       modeObs.lostSamples,
 	}, nil
 }
 
@@ -409,7 +404,7 @@ func generateMessageEvents(cfg Config) iter.Seq[Event] {
 // generateTickEvents creates a push-style iterator that yields tick events.
 // Ticks happen every 250ms regardless of outages, starting immediately at t=0.25.
 // Note: Early ticks (before first sample) are safe because controller.Tick()
-// returns early when in ModeInit, and mode only exits Init after first sample
+// returns early when in ModeReset, and mode only exits Reset after first sample
 // sets lastSample (controller.go:203).
 func generateTickEvents(cfg Config) iter.Seq[Event] {
 	return func(yield func(Event) bool) {

@@ -36,7 +36,7 @@ func TestPHCSync(t *testing.T) {
 		toggleTimes          []float64     // absolute times to toggle pulse delivery
 		expectNotInSync      int           // expected number of not-in-sync samples after first sync
 		expectTrackingSamples int          // expected number of samples in tracking mode
-		expectLostSamples    int           // expected number of samples in lost mode
+		expectResetSamples   int           // expected number of samples in reset mode (includes initial sync and recovery)
 	}{
 		{
 			name:              "single-edge mode",
@@ -70,13 +70,22 @@ func TestPHCSync(t *testing.T) {
 			// Don't check maxTrackingStdDev since we lose sync
 		},
 		{
-			name:                  "enters lost mode on permanent outage",
+			name:                  "enters reset mode on permanent outage",
 			pulseWidth:            0,
 			duration:              80.0,
 			toggleTimes:           []float64{60.0}, // stop at t=60s, never restart
-			expectNotInSync:       20,              // 20s of outage = 20 missing samples that should be NoSync
+			expectNotInSync:       5,               // 5 missing samples in tracking mode before transition to reset
 			expectTrackingSamples: 46,              // 41 before outage + 5 missing samples in tracking before transition
-			expectLostSamples:     15,              // remaining 15 missing samples in lost mode
+			expectResetSamples:    1,               // 1 initial reset sample only (reset mode doesn't generate missing samples)
+		},
+		{
+			name:              "recovers from temporary outage",
+			pulseWidth:        0,
+			duration:          120.0,
+			toggleTimes:       []float64{60.0, 70.0}, // stop at t=60s, restart at t=70s
+			maxTrackingStdDev: 30 * time.Nanosecond,  // slightly higher tolerance due to recovery transient
+			expectNotInSync:   13,                    // 5 missing in tracking + ~8 in converging during recovery
+			// After recovery: reset→converging→tracking for remaining ~50 seconds
 		},
 	}
 
@@ -134,14 +143,14 @@ func TestPHCSync(t *testing.T) {
 					t.Errorf("TrackingSamples = %d, want %d", stats.TrackingSamples, tt.expectTrackingSamples)
 				}
 			}
-			if tt.expectLostSamples > 0 {
-				if stats.LostSamples != tt.expectLostSamples {
-					t.Errorf("LostSamples = %d, want %d", stats.LostSamples, tt.expectLostSamples)
+			if tt.expectResetSamples > 0 {
+				if stats.InitSamples != tt.expectResetSamples {
+					t.Errorf("InitSamples (reset mode) = %d, want %d", stats.InitSamples, tt.expectResetSamples)
 				}
 			}
 
-			t.Logf("Simulation completed: %d samples (init=%d, converging=%d, tracking=%d, lost=%d), tracking stddev = %v",
-				stats.SampleCount, stats.InitSamples, stats.ConvergingSamples, stats.TrackingSamples, stats.LostSamples, stats.TrackingStdDev)
+			t.Logf("Simulation completed: %d samples (reset=%d, converging=%d, tracking=%d), tracking stddev = %v",
+				stats.SampleCount, stats.InitSamples, stats.ConvergingSamples, stats.TrackingSamples, stats.TrackingStdDev)
 		})
 	}
 }

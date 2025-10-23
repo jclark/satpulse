@@ -12,8 +12,8 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-// InitConfig contains tunable parameters for init mode.
-type InitConfig struct {
+// ResetConfig contains tunable parameters for reset mode.
+type ResetConfig struct {
 	Window int // number of pulses to collect (e.g. 5)
 
 	MinStep int64 // minimum offset in nanoseconds to perform a step (e.g. 5000 = 5µs)
@@ -47,8 +47,8 @@ type InitConfig struct {
 	PulseEdgeAmbig float64
 }
 
-func defaultInitConfig() InitConfig {
-	return InitConfig{
+func defaultResetConfig() ResetConfig {
+	return ResetConfig{
 		Window:                 5,
 		MinStep:                5000,  // nanoseconds
 		PulseIntervalTolerance: 500.0, // PPB
@@ -59,10 +59,10 @@ func defaultInitConfig() InitConfig {
 	}
 }
 
-type initSampleGenerator struct {
+type resetSampleGenerator struct {
 	timeMsgBuffer TimeMsgBuffer
 	edgeBuf       *circbuf.Buffer[PulseEdge]
-	cfg           InitConfig
+	cfg           ResetConfig
 	lg            *slog.Logger
 	pt            *PulseType
 	maxFreq       float64
@@ -70,10 +70,10 @@ type initSampleGenerator struct {
 	lastEdgeIndex uint64 // stores edgeIndex from most recent pulseEdgeSample call
 }
 
-func newInitSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg InitConfig, pt *PulseType, freq, maxFreq float64, lg *slog.Logger) *initSampleGenerator {
+func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, pt *PulseType, freq, maxFreq float64, lg *slog.Logger) *resetSampleGenerator {
 	// Buffer needs to hold Window * EdgesPerPulse edges
 	bufSize := cfg.Window * pt.EdgesPerPulse
-	return &initSampleGenerator{
+	return &resetSampleGenerator{
 		timeMsgBuffer: timeMsgBuffer,
 		edgeBuf:       circbuf.New[PulseEdge](bufSize),
 		cfg:           cfg,
@@ -84,20 +84,20 @@ func newInitSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg InitConfig, pt *Pul
 	}
 }
 
-func (g *initSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64) *Sample {
+func (g *resetSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64) *Sample {
 	g.storeEdge(edge, edgeIndex)
 	return g.genSample()
 }
 
 // storeEdge appends an edge to the buffer and updates lastEdgeIndex.
-// This is used during init mode to collect edges for analysis.
+// This is used during reset mode to collect edges for analysis.
 // Tests can call this directly to populate the edge buffer.
-func (g *initSampleGenerator) storeEdge(edge PulseEdge, edgeIndex uint64) {
+func (g *resetSampleGenerator) storeEdge(edge PulseEdge, edgeIndex uint64) {
 	g.edgeBuf.Append(edge)
 	g.lastEdgeIndex = edgeIndex
 }
 
-func (g *initSampleGenerator) timeMessageSample() *Sample {
+func (g *resetSampleGenerator) timeMessageSample() *Sample {
 	return g.genSample()
 }
 
@@ -108,7 +108,7 @@ type loggableError interface {
 
 var errNotEnoughTimestamps = errors.New("not enough timestamps")
 
-func (g *initSampleGenerator) genSample() *Sample {
+func (g *resetSampleGenerator) genSample() *Sample {
 	// Need enough pulse edges
 	// In dual-edge mode, we need EdgesPerPulse * Window edges total
 	requiredEdges := g.cfg.Window * g.pt.EdgesPerPulse
@@ -142,7 +142,7 @@ type pulseEdgeList struct {
 	lastEdgeIndex uint64
 }
 
-func (g *initSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []time.Time) (*Sample, error) {
+func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []time.Time) (*Sample, error) {
 	edgeLists := g.pulseEdgeLists()
 	for _, edgeList := range edgeLists {
 		err := g.checkPulseIntervals(edgeList)
@@ -182,7 +182,7 @@ func (g *initSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []t
 	}, nil
 }
 
-func (g *initSampleGenerator) filterEdgeListsByPulseWidth(edgeLists []pulseEdgeList) []pulseEdgeList {
+func (g *resetSampleGenerator) filterEdgeListsByPulseWidth(edgeLists []pulseEdgeList) []pulseEdgeList {
 	if len(edgeLists) <= 1 {
 		return edgeLists
 	}
@@ -245,7 +245,7 @@ func (e *logMsgError) log(lg *slog.Logger) {
 // checkPulseIntervals validates that PHC pulse timestamps are stable and adjustable.
 // It checks that all intervals are close enough to 1 second to be corrected within the PHC's
 // frequency adjustment range, and that the intervals are consistent with each other.
-func (g *initSampleGenerator) checkPulseIntervals(edgeList pulseEdgeList) error {
+func (g *resetSampleGenerator) checkPulseIntervals(edgeList pulseEdgeList) error {
 	if edgeList.length() < 2 {
 		return errNotEnoughTimestamps
 	}
@@ -268,7 +268,7 @@ func (g *initSampleGenerator) checkPulseIntervals(edgeList pulseEdgeList) error 
 // pulseTimes estimates the real (monotonic) time when each pulse occurred.
 // It uses avgInterval to scale the delay between when the pulse timestamp was captured
 // and when it was read from the PHC, converting from PHC time domain to real time domain.
-func (g *initSampleGenerator) pulseTimes(edges []PulseEdge, avgInterval time.Duration) []time.Time {
+func (g *resetSampleGenerator) pulseTimes(edges []PulseEdge, avgInterval time.Duration) []time.Time {
 	times := make([]time.Time, len(edges))
 	for i, edge := range edges {
 		phcDelta := edge.TReadPHC.T.Sub(edge.Timestamp.T)
@@ -282,7 +282,7 @@ func (g *initSampleGenerator) pulseTimes(edges []PulseEdge, avgInterval time.Dur
 
 // checkAlignment verifies that the estimated pulse times align with time message read times.
 // It checks that delays between corresponding pulses and messages are consistent and within expected range.
-func (g *initSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTimes []time.Time) error {
+func (g *resetSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTimes []time.Time) error {
 	delays := g.pulseDelays(pulseTimes, msgReadTimes)
 
 	err := g.checkDelaySpread(delays)
@@ -298,7 +298,7 @@ func (g *initSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTime
 	return nil
 }
 
-func (g *initSampleGenerator) pulseDelays(pulseTimes []time.Time, msgReadTimes []time.Time) []time.Duration {
+func (g *resetSampleGenerator) pulseDelays(pulseTimes []time.Time, msgReadTimes []time.Time) []time.Duration {
 	if len(pulseTimes) != len(msgReadTimes) {
 		panic("pulseDelays: pulseTimes and msgReadTimes must have same length")
 	}
@@ -309,7 +309,7 @@ func (g *initSampleGenerator) pulseDelays(pulseTimes []time.Time, msgReadTimes [
 	return delays
 }
 
-func (g *initSampleGenerator) checkDelaySpread(delays []time.Duration) error {
+func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration) error {
 	if len(delays) == 0 {
 		panic("checkDelaySpread: need at least 1 delay")
 	}
@@ -339,7 +339,7 @@ func (g *initSampleGenerator) checkDelaySpread(delays []time.Duration) error {
 	return nil
 }
 
-func (g *initSampleGenerator) checkDelayRange(delays []time.Duration) error {
+func (g *resetSampleGenerator) checkDelayRange(delays []time.Duration) error {
 	maxWindow := 1.0
 	halfAcceptableWindow := g.cfg.DelayTightness * maxWindow / 2
 	minAcceptable := g.cfg.Delay - halfAcceptableWindow
@@ -363,7 +363,7 @@ func (g *initSampleGenerator) checkDelayRange(delays []time.Duration) error {
 	return nil
 }
 
-func (g *initSampleGenerator) pulseEdgeLists() []pulseEdgeList {
+func (g *resetSampleGenerator) pulseEdgeLists() []pulseEdgeList {
 	edgeList := g.pulseEdges()
 
 	switch g.pt.EdgesPerPulse {
@@ -381,7 +381,7 @@ func (g *initSampleGenerator) pulseEdgeLists() []pulseEdgeList {
 
 // pulseEdges extracts all edges from edgeBuf into a pulseEdgeList.
 // Edges are ordered oldest to newest (same order as pulseTimestamps).
-func (g *initSampleGenerator) pulseEdges() pulseEdgeList {
+func (g *resetSampleGenerator) pulseEdges() pulseEdgeList {
 	n := g.edgeBuf.Len()
 	edges := make([]PulseEdge, n)
 	g.edgeBuf.Iterate(func(i int, edge PulseEdge) bool {
@@ -434,7 +434,7 @@ func (pel pulseEdgeList) avgInterval() time.Duration {
 	return totalInterval / time.Duration(len(pel.edges)-1)
 }
 
-func (g *initSampleGenerator) pulseTimestamps() []ptime.Time {
+func (g *resetSampleGenerator) pulseTimestamps() []ptime.Time {
 	n := g.edgeBuf.Len()
 	timestamps := make([]ptime.Time, n)
 	for i := range n {
@@ -443,7 +443,7 @@ func (g *initSampleGenerator) pulseTimestamps() []ptime.Time {
 	return timestamps
 }
 
-func (g *initSampleGenerator) pulseIntervals(timestamps []ptime.Time) []time.Duration {
+func (g *resetSampleGenerator) pulseIntervals(timestamps []ptime.Time) []time.Duration {
 	if len(timestamps) < 2 {
 		panic("pulseIntervals: need at least 2 timestamps")
 	}
@@ -454,7 +454,7 @@ func (g *initSampleGenerator) pulseIntervals(timestamps []ptime.Time) []time.Dur
 	return intervals
 }
 
-func (g *initSampleGenerator) checkPulseIntervalsAdjustable(intervals []time.Duration) error {
+func (g *resetSampleGenerator) checkPulseIntervalsAdjustable(intervals []time.Duration) error {
 	for _, interval := range intervals {
 		err := g.checkIntervalAdjustable(interval)
 		if err != nil {
@@ -464,7 +464,7 @@ func (g *initSampleGenerator) checkPulseIntervalsAdjustable(intervals []time.Dur
 	return nil
 }
 
-func (g *initSampleGenerator) checkIntervalAdjustable(interval time.Duration) error {
+func (g *resetSampleGenerator) checkIntervalAdjustable(interval time.Duration) error {
 	deviationNanos := interval - time.Second
 	deviationPPB := float64(deviationNanos) * 1e9 / float64(time.Second)
 	neededFreq := g.freq - deviationPPB
@@ -482,7 +482,7 @@ func (g *initSampleGenerator) checkIntervalAdjustable(interval time.Duration) er
 	}
 }
 
-func (g *initSampleGenerator) checkPulseIntervalsConsistent(intervals []time.Duration) error {
+func (g *resetSampleGenerator) checkPulseIntervalsConsistent(intervals []time.Duration) error {
 	if len(intervals) == 0 {
 		panic("checkPulseIntervalsConsistent: need at least 1 interval")
 	}
@@ -513,22 +513,22 @@ func (g *initSampleGenerator) checkPulseIntervalsConsistent(intervals []time.Dur
 	return nil
 }
 
-type initSampleProcessor struct {
+type resetSampleProcessor struct {
 	minStep time.Duration
 	lg      *slog.Logger
 }
 
-func newInitSampleProcessor(cfg InitConfig, lg *slog.Logger) *initSampleProcessor {
-	return &initSampleProcessor{
+func newResetSampleProcessor(cfg ResetConfig, lg *slog.Logger) *resetSampleProcessor {
+	return &resetSampleProcessor{
 		minStep: time.Duration(cfg.MinStep),
 		lg:      lg,
 	}
 }
 
-func (p *initSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
+func (p *resetSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 	if sample == nil || sample.Kind == SampleMissing {
 		// Keep waiting for a valid sample
-		return phcAction{actionType: phcNoAction}, ModeInit
+		return phcAction{actionType: phcNoAction}, ModeReset
 	}
 
 	// Check if offset is small enough to skip stepping
@@ -540,7 +540,7 @@ func (p *initSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 	}
 
 	// Need to step the clock
-	p.lg.Info("stepping clock in init mode",
+	p.lg.Info("stepping clock in reset mode",
 		"offset", sample.Offset,
 		"minStep", p.minStep)
 	return phcAction{

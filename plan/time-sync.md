@@ -461,6 +461,7 @@ Order of these is TBD.
 * sawtooth correction (already in old implementation)
 * support 50% duty cycle with both edges
 * estimate error in system clock and also use that when we are estimating monotonic time of messages
+* exit tracking when proportion of abnormal samples in a configurable window is greater than configurable value 
 
 Consider whether we still need era concept. Used currently:
 * at startup, to get rid of stale timestamps

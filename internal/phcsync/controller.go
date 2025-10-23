@@ -51,7 +51,7 @@ type TimeMsgBuffer interface {
 
 // Config contains tunable parameters for the Controller.
 type Config struct {
-	Init       InitConfig
+	Reset      ResetConfig
 	Converging ConvergingConfig
 	Tracking   TrackingConfig
 }
@@ -59,7 +59,7 @@ type Config struct {
 // DefaultConfig returns a Config with sensible default values.
 func DefaultConfig() Config {
 	return Config{
-		Init:       defaultInitConfig(),
+		Reset:      defaultResetConfig(),
 		Converging: defaultConvergingConfig(),
 		Tracking:   defaultTrackingConfig(),
 	}
@@ -70,10 +70,9 @@ type Mode int
 
 const (
 	ModeInvalid Mode = iota
-	ModeInit
+	ModeReset
 	ModeConverging
 	ModeTracking
-	ModeLost
 )
 
 // sampleIntervalMax is the maximum time to wait for a sample before generating a missing sample.
@@ -82,14 +81,12 @@ const sampleIntervalMax = (3 * time.Second) / 2
 
 func (m Mode) String() string {
 	switch m {
-	case ModeInit:
-		return "init"
+	case ModeReset:
+		return "reset"
 	case ModeConverging:
 		return "converging"
 	case ModeTracking:
 		return "tracking"
-	case ModeLost:
-		return "lost"
 	default:
 		return fmt.Sprintf("unknown(%d)", m)
 	}
@@ -104,7 +101,8 @@ type Controller struct {
 	rc             *ProxyRefClock
 	cfg        Config
 	leapSecond ptime.LeapSecond
-	pt         PulseType // contains EdgesPerPulse and PulseWidth
+	ptSpec     PulseType // specified/configured, immutable
+	pt         PulseType // discovered/working, mutable
 	mode       Mode
 	lg             *slog.Logger
 	freq        float64 // current frequency adjustment in PPB
@@ -161,6 +159,7 @@ func NewController(
 		rc:            rc,
 		cfg:           cfg,
 		leapSecond:    leapSecond,
+		ptSpec:        pt,
 		pt:            pt,
 		lg:            lg,
 	}
@@ -170,7 +169,7 @@ func NewController(
 	}
 	c.freq = freq
 	c.maxFreq = clock.MaxFreqOffset()
-	c.changeMode(ModeInit)
+	c.changeMode(ModeReset)
 	return c, nil
 }
 
@@ -250,8 +249,8 @@ func (c *Controller) LeapSecond(ls ptime.LeapSecond) {
 
 // Tick handles regular tick events (0.25s intervals).
 func (c *Controller) Tick(now time.Time) {
-	// Don't generate missing samples in init mode
-	if c.mode == ModeInit {
+	// Don't generate missing samples in reset mode
+	if c.mode == ModeReset {
 		return
 	}
 
@@ -310,18 +309,17 @@ func (c *Controller) changeMode(mode Mode) {
 	}
 	// Initialize sampleGen and sampleProc for the new mode
 	switch mode {
-	case ModeInit:
-		c.sampleGen = newInitSampleGenerator(c.timeMsgBuffer, c.cfg.Init, &c.pt, c.freq, c.maxFreq, c.lg)
-		c.sampleProc = newInitSampleProcessor(c.cfg.Init, c.lg)
+	case ModeReset:
+		// Copy specified to actual when entering reset mode
+		c.pt = c.ptSpec
+		c.sampleGen = newResetSampleGenerator(c.timeMsgBuffer, c.cfg.Reset, &c.pt, c.freq, c.maxFreq, c.lg)
+		c.sampleProc = newResetSampleProcessor(c.cfg.Reset, c.lg)
 	case ModeConverging:
 		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converging, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converging, c.freq, c.maxFreq, c.lg)
 	case ModeTracking:
 		c.sampleGen = newTrackingSampleGenerator(c.cfg.Tracking, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newTrackingSampleProcessor(c.cfg.Tracking, c.freq, c.maxFreq, c.lg)
-	case ModeLost:
-		c.sampleGen = newLostSampleGenerator()
-		c.sampleProc = newLostSampleProcessor()
 	default:
 		panic("changing to invalid mode")
 	}
