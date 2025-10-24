@@ -99,20 +99,21 @@ type Controller struct {
 	sampler        Sampler
 	gm             *Grandmaster
 	rc             *ProxyRefClock
-	cfg        Config
-	leapSecond ptime.LeapSecond
-	ptSpec     PulseType // specified/configured, immutable
-	pt         PulseType // discovered/working, mutable
-	mode       Mode
+	cfg            Config
+	leapSecond     ptime.LeapSecond
+	pulseWidthSpec time.Duration // configured pulse width, immutable
+	pt             PulseType     // discovered/working, mutable
+	mode           Mode
 	lg             *slog.Logger
-	freq        float64 // current frequency adjustment in PPB
-	maxFreq     float64 // maximum frequency adjustment in PPB
-	edgeIndex   uint64  // increments on each PulseEdge call, tracks odd/even
-	sampleGen   sampleGenerator
-	sampleProc  sampleProcessor
-	lastRefTime ptime.Time // last reference time from a real sample
-	lastSample  *Sample    // last real sample
-	era         ptime.Era  // current PHC era
+	freq           float64 // current frequency adjustment in PPB
+	estimatedFreq  float64 // estimated correct frequency in PPB (from reset mode)
+	maxFreq        float64 // maximum frequency adjustment in PPB
+	edgeIndex      uint64  // increments on each PulseEdge call, tracks odd/even
+	sampleGen      sampleGenerator
+	sampleProc     sampleProcessor
+	lastRefTime    ptime.Time // last reference time from a real sample
+	lastSample     *Sample    // last real sample
+	era            ptime.Era  // current PHC era
 }
 
 type sampleGenerator interface {
@@ -152,16 +153,16 @@ func NewController(
 	lg *slog.Logger,
 ) (*Controller, error) {
 	c := &Controller{
-		clock:         clock,
-		timeMsgBuffer: timeMsgBuffer,
-		sampler:       sampler,
-		gm:            gm,
-		rc:            rc,
-		cfg:           cfg,
-		leapSecond:    leapSecond,
-		ptSpec:        pt,
-		pt:            pt,
-		lg:            lg,
+		clock:          clock,
+		timeMsgBuffer:  timeMsgBuffer,
+		sampler:        sampler,
+		gm:             gm,
+		rc:             rc,
+		cfg:            cfg,
+		leapSecond:     leapSecond,
+		pulseWidthSpec: pt.PulseWidth,
+		pt:             pt,
+		lg:             lg,
 	}
 	freq, err := clock.FreqOffset()
 	if err != nil {
@@ -307,19 +308,27 @@ func (c *Controller) changeMode(mode Mode) {
 			"to", mode.String(),
 		)
 	}
+
+	// Extract pulse info when leaving reset mode
+	if c.mode == ModeReset {
+		if rsg, ok := c.sampleGen.(*resetSampleGenerator); ok {
+			c.notePulseInfo(rsg.getPulseInfo())
+		}
+	}
+
 	// Initialize sampleGen and sampleProc for the new mode
 	switch mode {
 	case ModeReset:
-		// Copy specified to actual when entering reset mode
-		c.pt = c.ptSpec
-		c.sampleGen = newResetSampleGenerator(c.timeMsgBuffer, c.cfg.Reset, &c.pt, c.freq, c.maxFreq, c.lg)
+		// Reset pulse width to configured value when entering reset mode
+		c.pt.PulseWidth = c.pulseWidthSpec
+		c.sampleGen = newResetSampleGenerator(c.timeMsgBuffer, c.cfg.Reset, c.pt, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newResetSampleProcessor(c.cfg.Reset, c.lg)
 	case ModeConverging:
 		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converging, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converging, c.freq, c.maxFreq, c.lg)
 	case ModeTracking:
 		c.sampleGen = newTrackingSampleGenerator(c.cfg.Tracking, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
-		c.sampleProc = newTrackingSampleProcessor(c.cfg.Tracking, c.freq, c.maxFreq, c.lg)
+		c.sampleProc = newTrackingSampleProcessor(c.cfg.Tracking, c.estimatedFreq, c.maxFreq, c.lg)
 	default:
 		panic("changing to invalid mode")
 	}
@@ -329,6 +338,19 @@ func (c *Controller) changeMode(mode Mode) {
 	if c.gm != nil {
 		c.gm.SetClockSync(modeSyncState(mode))
 	}
+}
+
+func (c *Controller) notePulseInfo(pi pulseInfo) {
+	c.pt.PulseWidth = pi.pulseWidth
+	// Calculate corrected frequency using the formula from old servo:
+	// freqOff = (1e9 + freqOff) * (refPeriod / localPeriod) - 1e9
+	ratio := float64(time.Second) / float64(pi.avgInterval)
+	c.estimatedFreq = (1e9+c.freq)*ratio - 1e9
+	c.lg.Info("estimated correct frequency from reset mode",
+		"estimatedFreq", c.estimatedFreq,
+		"currentFreq", c.freq,
+		"avgInterval", pi.avgInterval,
+		"pulseWidth", pi.pulseWidth)
 }
 
 func modeSyncState(mode Mode) mon.SyncState {

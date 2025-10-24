@@ -259,7 +259,7 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 		edgeBuf:       circbuf.New[PulseEdge](bufSize),
 		cfg:           cfg,
 		lg:            slog.Default(),
-		pt:            &pt,
+		pt:            pt,
 		maxFreq:       500.0, // typical max frequency adjustment
 		freq:          0.0,
 	}
@@ -347,7 +347,7 @@ func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *
 		edgeBuf:       circbuf.New[PulseEdge](cfg.Window),
 		cfg:           cfg,
 		lg:            slog.Default(),
-		pt:            &pt,
+		pt:            pt,
 		maxFreq:       500.0,
 		freq:          0.0,
 	}

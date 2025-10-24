@@ -59,18 +59,24 @@ func defaultResetConfig() ResetConfig {
 	}
 }
 
+type pulseInfo struct {
+	pulseWidth  time.Duration // discovered pulse width
+	avgInterval time.Duration // average PHC interval between pulses
+}
+
 type resetSampleGenerator struct {
 	timeMsgBuffer TimeMsgBuffer
 	edgeBuf       *circbuf.Buffer[PulseEdge]
 	cfg           ResetConfig
 	lg            *slog.Logger
-	pt            *PulseType
+	pt            PulseType
 	maxFreq       float64
 	freq          float64
-	lastEdgeIndex uint64 // stores edgeIndex from most recent pulseEdgeSample call
+	lastEdgeIndex uint64        // stores edgeIndex from most recent pulseEdgeSample call
+	avgInterval   time.Duration // stored from last successful sample generation
 }
 
-func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, pt *PulseType, freq, maxFreq float64, lg *slog.Logger) *resetSampleGenerator {
+func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, pt PulseType, freq, maxFreq float64, lg *slog.Logger) *resetSampleGenerator {
 	// Buffer needs to hold Window * EdgesPerPulse edges
 	bufSize := cfg.Window * pt.EdgesPerPulse
 	return &resetSampleGenerator{
@@ -99,6 +105,13 @@ func (g *resetSampleGenerator) storeEdge(edge PulseEdge, edgeIndex uint64) {
 
 func (g *resetSampleGenerator) timeMessageSample() *Sample {
 	return g.genSample()
+}
+
+func (g *resetSampleGenerator) getPulseInfo() pulseInfo {
+	return pulseInfo{
+		pulseWidth:  g.pt.PulseWidth,
+		avgInterval: g.avgInterval,
+	}
 }
 
 type loggableError interface {
@@ -164,6 +177,7 @@ func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []
 		return nil, err
 	}
 	g.lastEdgeIndex = edgeLists[0].lastEdgeIndex
+	g.avgInterval = avgInterval
 
 	lastPulseTimestamp := edges[len(edges)-1].Timestamp
 	// offset is local - ref
