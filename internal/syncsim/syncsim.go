@@ -52,25 +52,25 @@ import (
 
 // Config holds simulation parameters
 type Config struct {
-	Duration     float64   // simulation duration in seconds
-	OscDrift     float64   // oscillator drift in ppb
-	OscNoise     float64   // oscillator frequency noise stddev in ppb
-	PPSJitter    float64   // PPS timing jitter in nanoseconds
-	MinDelay     float64   // minimum pulse delivery delay in seconds
-	MaxDelay     float64   // maximum pulse delivery delay in seconds
-	MsgDelay   float64 // GPS message delay after pulse in seconds
-	MsgJitter  float64 // GPS message delay jitter in seconds
-	PulseWidth float64 // pulse width in seconds (0 for single-edge mode)
-	ToggleTimes  []float64 // absolute simulation times to toggle pulse/message delivery on/off
+	Duration    float64   // simulation duration in seconds
+	OscDrift    float64   // oscillator drift in ppb
+	OscNoise    float64   // oscillator frequency noise stddev in ppb
+	PPSJitter   float64   // PPS timing jitter in nanoseconds
+	MinDelay    float64   // minimum pulse delivery delay in seconds
+	MaxDelay    float64   // maximum pulse delivery delay in seconds
+	MsgDelay    float64   // GPS message delay after pulse in seconds
+	MsgJitter   float64   // GPS message delay jitter in seconds
+	PulseWidth  float64   // pulse width in seconds (0 for single-edge mode)
+	ToggleTimes []float64 // absolute simulation times to toggle pulse/message delivery on/off
 }
 
 // DefaultConfig returns a Config with sensible default values.
 func DefaultConfig() Config {
 	return Config{
-		Duration:     60.0,
-		OscDrift:     2000.0,
-		OscNoise:     20.0,
-		PPSJitter:    10.0,
+		Duration:   60.0,
+		OscDrift:   2000.0,
+		OscNoise:   20.0,
+		PPSJitter:  10.0,
 		MinDelay:   5e-6,
 		MaxDelay:   250e-6,
 		MsgDelay:   0.1,
@@ -151,12 +151,14 @@ func (m *modeObserver) Sample(s mon.SampleData) {
 
 // Stats holds simulation results
 type Stats struct {
-	statsobs.Stats                // embedded - detailed tracking statistics from observer
-	SampleCount       int         // total samples fed to controller
+	statsobs.Stats                  // embedded - detailed tracking statistics from observer
+	SampleCount       int           // total samples fed to controller
 	TrackingStdDev    time.Duration // stddev from true time (simulation-only)
-	InitSamples       int         // samples processed in reset mode (includes initial sync and recovery)
-	ConvergingSamples int         // samples processed in converging mode
-	TrackingSamples   int         // samples processed in tracking mode
+	TrackingMean      time.Duration // mean offset from true time (simulation-only)
+	TrackingAbsMax    time.Duration // max absolute offset from true time (simulation-only)
+	InitSamples       int           // samples processed in reset mode (includes initial sync and recovery)
+	ConvergingSamples int           // samples processed in converging mode
+	TrackingSamples   int           // samples processed in tracking mode
 }
 
 // Simulate runs a phcsync simulation with the given configuration.
@@ -317,7 +319,9 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	return Stats{
 		Stats:             trackingStats,
 		SampleCount:       sampleCount,
-		TrackingStdDev:    time.Duration(stats.stdDevRounded()),
+		TrackingStdDev:    stats.stdDevRounded(),
+		TrackingAbsMax:    stats.absMax,
+		TrackingMean:      stats.mean(),
 		InitSamples:       modeObs.initSamples,
 		ConvergingSamples: modeObs.convergingSamples,
 		TrackingSamples:   modeObs.trackingSamples,
@@ -327,6 +331,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 type offsetStats struct {
 	count      int64
 	sum        time.Duration
+	absMax     time.Duration
 	sumSquares int64
 }
 
@@ -334,12 +339,20 @@ func (s *offsetStats) add(d time.Duration) {
 	ns := d.Nanoseconds()
 	s.count++
 	s.sum += d
+	s.absMax = max(d.Abs(), s.absMax)
 	s.sumSquares += ns * ns
 }
 
-func (s *offsetStats) stdDevRounded() int64 {
+func (s *offsetStats) stdDevRounded() time.Duration {
 	std := s.stdDev()
-	return int64(math.Round(std))
+	return time.Duration(math.Round(std))
+}
+
+func (s *offsetStats) mean() time.Duration {
+	if s.count == 0 {
+		return 0
+	}
+	return time.Duration(math.Round(float64(s.sum) / float64(s.count)))
 }
 
 func (s *offsetStats) stdDev() float64 {

@@ -83,6 +83,8 @@ func main() {
 	args := stats.Stats.LogArgs()
 	args = append(args, "samples", stats.SampleCount)
 	args = append(args, "trackingStdDev", stats.TrackingStdDev)
+	args = append(args, "trackingAbsMax", stats.TrackingAbsMax)
+	args = append(args, "trackingMean", stats.TrackingMean)
 	lg.Info("simulation complete", args...)
 }
 
