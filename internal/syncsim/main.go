@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/jclark/satpulse/internal/logobs"
 	"github.com/jclark/satpulse/internal/obs"
@@ -14,6 +15,8 @@ import (
 	"github.com/jclark/satpulse/internal/syncsim"
 	"github.com/spf13/pflag"
 )
+
+var startTime = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
 type flagVars struct {
 	statsInterval   int
@@ -31,17 +34,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Configure logging
+	// Current simulation time - updated by Simulate as it runs
+	curTime := startTime
+
+	// Configure logging with simulated time
 	level := slog.LevelInfo
 	if vars.debug {
 		level = slog.LevelDebug
 	}
 	lg := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: level,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				return slog.Time(slog.TimeKey, curTime)
+			}
+			return a
+		},
 	}))
-
-	// GPS time starts near present (2024-10-08 is roughly GPS time ~1.4e9 seconds)
-	const gpsStartTime = 1.4e9
 
 	ls := ptime.LeapSecond2016()
 
@@ -60,11 +69,8 @@ func main() {
 		observers = append(observers, clockObs)
 	}
 
-	// Set GPS start time
-	vars.simCfg.GPSStartTime = gpsStartTime
-
 	// Run simulation
-	stats, err := syncsim.Simulate(observers, vars.phcCfg, vars.simCfg, lg)
+	stats, err := syncsim.Simulate(observers, vars.phcCfg, vars.simCfg, &curTime, lg)
 	if err != nil {
 		lg.Error("simulation failed", "err", err)
 		os.Exit(1)

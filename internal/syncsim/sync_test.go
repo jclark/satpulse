@@ -100,9 +100,10 @@ func TestPHCSync(t *testing.T) {
 			simCfg.OscDrift = 0.0       // no drift
 			simCfg.OscNoise = 0.1       // 0.1 ppb frequency noise
 			simCfg.MsgDelay = 0.08      // 80ms message delay
-			simCfg.GPSStartTime = 1.3e9 // ~2017
 			simCfg.PulseWidth = tt.pulseWidth
 			simCfg.ToggleTimes = tt.toggleTimes
+
+			curTime := time.Date(2017, 1, 1, 0, 0, 0, 0, time.UTC)
 
 			// Discard logs during test
 			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -115,7 +116,7 @@ func TestPHCSync(t *testing.T) {
 				observers = []obs.Observer{tracker}
 			}
 
-			stats, err := Simulate(observers, phcCfg, simCfg, lg)
+			stats, err := Simulate(observers, phcCfg, simCfg, &curTime, lg)
 			if err != nil {
 				t.Fatalf("Simulate failed: %v", err)
 			}

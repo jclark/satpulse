@@ -58,10 +58,9 @@ type Config struct {
 	PPSJitter    float64   // PPS timing jitter in nanoseconds
 	MinDelay     float64   // minimum pulse delivery delay in seconds
 	MaxDelay     float64   // maximum pulse delivery delay in seconds
-	MsgDelay     float64   // GPS message delay after pulse in seconds
-	MsgJitter    float64   // GPS message delay jitter in seconds
-	GPSStartTime float64   // GPS time at start of simulation in seconds
-	PulseWidth   float64   // pulse width in seconds (0 for single-edge mode)
+	MsgDelay   float64 // GPS message delay after pulse in seconds
+	MsgJitter  float64 // GPS message delay jitter in seconds
+	PulseWidth float64 // pulse width in seconds (0 for single-edge mode)
 	ToggleTimes  []float64 // absolute simulation times to toggle pulse/message delivery on/off
 }
 
@@ -72,12 +71,11 @@ func DefaultConfig() Config {
 		OscDrift:     2000.0,
 		OscNoise:     20.0,
 		PPSJitter:    10.0,
-		MinDelay:     5e-6,
-		MaxDelay:     250e-6,
-		MsgDelay:     0.1,
-		MsgJitter:    0.01,
-		GPSStartTime: 0, // caller should set this
-		PulseWidth:   0, // default to single-edge mode
+		MinDelay:   5e-6,
+		MaxDelay:   250e-6,
+		MsgDelay:   0.1,
+		MsgJitter:  0.01,
+		PulseWidth: 0, // default to single-edge mode
 	}
 }
 
@@ -162,8 +160,9 @@ type Stats struct {
 }
 
 // Simulate runs a phcsync simulation with the given configuration.
+// curTime is updated as the simulation progresses, allowing callers to use it for logging.
 // It returns statistics about the simulation run.
-func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg *slog.Logger) (Stats, error) {
+func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 	// Create oscillator with drift and noise
 	osc := clocksim.CombineOscillators(
 		clocksim.ConstantDrift(simCfg.OscDrift),
@@ -208,6 +207,9 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 		OffChangeTime: 1483228800, // 2017-01-01
 	}
 
+	// Convert start time to TAI once
+	tStart, _ := ls.SysToTime(*curTime)
+
 	// Create timemsg.Buffer
 	timeMsgBuf := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
 
@@ -248,7 +250,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 		"oscDrift", simCfg.OscDrift,
 		"oscNoise", simCfg.OscNoise,
 		"ppsJitter", simCfg.PPSJitter,
-		"gpsStartTime", simCfg.GPSStartTime,
+		"startTime", curTime.Format(time.RFC3339),
 		"phcStartTime", 0.0)
 
 	// Generate event streams
@@ -265,6 +267,10 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 	stats := &offsetStats{}
 
 	for event := range events {
+		// Update current time for logging
+		tCur := tStart.Add(time.Duration(event.Time * 1e9))
+		*curTime = ls.TimeToSys(tCur)
+
 		// Advance virtual clock to event time
 		vclock.AdvanceTo(event.Time)
 
@@ -275,7 +281,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 
 			// ALWAYS read timestamp and calculate offset (even during outages)
 			// This tracks how PHC drifts when signal is lost
-			pts, err := readPulseTimestamp(event.Time, data, vclock, testClock, simCfg, lg)
+			pts, err := readPulseTimestamp(event.Time, data, vclock, testClock, tStart, lg)
 			if err != nil {
 				return Stats{}, err
 			}
@@ -295,7 +301,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, lg
 
 			// Only deliver to controller if NOT in outage
 			if !inOutage(data.PPS, simCfg.ToggleTimes) {
-				handleMessageEvent(event.Time, data, timeMsgBuf, ctrl, simCfg, lg)
+				handleMessageEvent(event.Time, data, timeMsgBuf, ctrl, tStart, lg)
 				sampleCount++
 			}
 
@@ -464,7 +470,7 @@ func readPulseTimestamp(
 	data PulseEventData,
 	vclock *clocksim.VirtualClock,
 	testClock *clocksim.TestClock,
-	cfg Config,
+	tStart ptime.Time,
 	lg *slog.Logger,
 ) (*pulseTimestamp, error) {
 	if !vclock.TimestampAvailable() {
@@ -476,8 +482,8 @@ func readPulseTimestamp(
 	}
 	tRead := time.Unix(0, 0).Add(time.Duration(eventTime * 1e9))
 	tReadPHC := testClock.Now()
-	trueTAITime := ptime.Time((cfg.GPSStartTime + trueTime) * 1e9)
-	taiOffset := timestamp.T.Sub(trueTAITime)
+	tTrue := tStart.Add(time.Duration(trueTime * 1e9))
+	taiOffset := timestamp.T.Sub(tTrue)
 	lg.Debug("pulse timestamp read",
 		"second", int(data.PPS),
 		"edgeIdx", data.EdgeIdx,
@@ -519,12 +525,12 @@ func handleMessageEvent(
 	data MessageEventData,
 	timeMsgBuf *timemsg.Buffer,
 	ctrl *phcsync.Controller,
-	cfg Config,
+	tStart ptime.Time,
 	lg *slog.Logger,
 ) {
-	gpsTime := ptime.Time((cfg.GPSStartTime + data.PPS) * 1e9)
+	tMsg := tStart.Add(time.Duration(data.PPS * 1e9))
 	timeMsg := &gpsprot.TimeMsg{
-		TAITime:     gpsTime,
+		TAITime:     tMsg,
 		GNSS:        gpsprot.GPS,
 		Ref:         gpsprot.PostPulse,
 		Tag:         ubx.Tag,
@@ -534,7 +540,7 @@ func handleMessageEvent(
 	timeMsgBuf.Time(timeMsg, msgTRead)
 	lg.Debug("delivering time message",
 		"second", int(data.PPS),
-		"gpsTime", gpsTime,
+		"taiTime", tMsg,
 		"msgTRead", msgTRead)
 	ctrl.TimeMessage()
 }
