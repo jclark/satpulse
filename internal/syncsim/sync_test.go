@@ -116,8 +116,9 @@ func TestPHCSync(t *testing.T) {
 
 			// Override for tighter test conditions
 			simCfg.Duration = tt.duration
-			simCfg.OscDrift = 0.0       // no drift
-			simCfg.OscNoise = 0.1       // 0.1 ppb frequency noise
+			simCfg.PHCFreqOffset = 0.0  // no offset
+			simCfg.PHCFreqDrift = 0.0   // no drift
+			simCfg.PHCNoise = 0.1       // 0.1 ppb frequency noise
 			simCfg.MsgDelay = 0.08      // 80ms message delay
 			simCfg.PulseWidth = tt.pulseWidth
 			simCfg.ToggleTimes = tt.toggleTimes

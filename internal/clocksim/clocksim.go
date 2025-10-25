@@ -2,6 +2,7 @@ package clocksim
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"time"
 
@@ -14,9 +15,9 @@ import (
 // Example: if output is +1e-6, the clock runs 1µs fast per second of true time
 type OscillatorSimulator func(trueTime float64) float64
 
-// ConstantDrift creates an oscillator with constant frequency offset.
+// FreqOffset creates an oscillator with constant frequency offset.
 // ppb is the frequency offset in parts per billion (positive means runs fast).
-func ConstantDrift(ppb float64) OscillatorSimulator {
+func FreqOffset(ppb float64) OscillatorSimulator {
 	return func(t float64) float64 {
 		return ppb / 1e9
 	}
@@ -24,7 +25,7 @@ func ConstantDrift(ppb float64) OscillatorSimulator {
 
 // Perfect creates an oscillator with no frequency error.
 func Perfect() OscillatorSimulator {
-	return ConstantDrift(0)
+	return FreqOffset(0)
 }
 
 // WhiteFreqNoise creates an oscillator with white frequency noise.
@@ -33,6 +34,41 @@ func WhiteFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	return func(t float64) float64 {
 		return rng.NormFloat64() * stddevPPB / 1e9
+	}
+}
+
+// FreqDrift creates linear frequency drift over time.
+// Models oscillator frequency changing at a constant rate (quadratic phase drift).
+//
+// Parameters:
+//
+//	ratePPBPerDay: frequency change rate in ppb/day
+//
+// Example: ratePPBPerDay=163 means frequency increases by 163 ppb per day
+// This would accumulate ~3.4 ns of phase error per minute, ~12 µs per hour
+func FreqDrift(ratePPBPerDay float64) OscillatorSimulator {
+	// Convert ppb/day to fractional_frequency/second
+	ratePerSec := ratePPBPerDay / 86400.0 / 1e9
+
+	return func(t float64) float64 {
+		return ratePerSec * t
+	}
+}
+
+// SineFM creates sinusoidal frequency modulation.
+// Models periodic effects like temperature cycles or crystal resonances.
+//
+// Parameters:
+//
+//	ampPPB: amplitude in ppb (peak deviation from nominal frequency)
+//	periodS: period in seconds (e.g., 86400 for daily thermal cycle)
+//	phaseRad: initial phase offset in radians (0 to 2π)
+func SineFM(ampPPB, periodS, phaseRad float64) OscillatorSimulator {
+	omega := 2 * math.Pi / periodS
+	scale := ampPPB / 1e9
+
+	return func(t float64) float64 {
+		return scale * math.Sin(omega*t+phaseRad)
 	}
 }
 
@@ -185,18 +221,18 @@ func NewVirtualClock(raw *RawClock, ppsSimulator PPSSimulator, startTime float64
 	rawPhaseNs := raw.ReadAt(startTime)
 
 	c := &VirtualClock{
-		raw:                    raw,
-		ppsSimulator:           ppsSimulator,
-		trailingEdgeSimulator:  trailingEdgeSimulator,
-		adjTimeDelaySimulator:  defaultAdjTimeDelay(),
-		maxFreqOff:             maxFreqOff,
-		simTime:                startTime,
-		lastAdjTime:            startTime,
-		lastRawPhaseNs:         rawPhaseNs,
-		lastVirtPhaseNs:        rawPhaseNs,
-		freqOffset:             0,
-		nextPPSNominal:         firstPPSNominal,
-		pulseWidth:             pulseWidth.Seconds(),
+		raw:                   raw,
+		ppsSimulator:          ppsSimulator,
+		trailingEdgeSimulator: trailingEdgeSimulator,
+		adjTimeDelaySimulator: defaultAdjTimeDelay(),
+		maxFreqOff:            maxFreqOff,
+		simTime:               startTime,
+		lastAdjTime:           startTime,
+		lastRawPhaseNs:        rawPhaseNs,
+		lastVirtPhaseNs:       rawPhaseNs,
+		freqOffset:            0,
+		nextPPSNominal:        firstPPSNominal,
+		pulseWidth:            pulseWidth.Seconds(),
 	}
 	c.generateNextEdges()
 	return c
@@ -233,7 +269,7 @@ func (c *VirtualClock) generateNextEdges() {
 	phaseError := c.ppsSimulator(c.nextPPSNominal)
 	c.nextEdgeActual = c.nextPPSNominal + phaseError
 	if c.pulseWidth != 0 {
-		c.nextTrailingEdgeActual = c.nextEdgeActual + c.pulseWidth + c.trailingEdgeSimulator(c.nextPPSNominal + c.pulseWidth)
+		c.nextTrailingEdgeActual = c.nextEdgeActual + c.pulseWidth + c.trailingEdgeSimulator(c.nextPPSNominal+c.pulseWidth)
 	} else {
 		c.nextTrailingEdgeActual = c.nextEdgeActual
 	}

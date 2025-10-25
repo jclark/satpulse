@@ -7,7 +7,7 @@ import (
 
 func TestVirtualClockBasic(t *testing.T) {
 	// Create oscillator running 10000ppb fast
-	osc := ConstantDrift(10000.0)
+	osc := FreqOffset(10000.0)
 	raw := NewRawClock(osc, 0)
 
 	// Perfect PPS (no jitter)
@@ -43,7 +43,7 @@ func TestVirtualClockBasic(t *testing.T) {
 
 func TestVirtualClockFreqAdjustment(t *testing.T) {
 	// Create oscillator running 10000ppb fast
-	osc := ConstantDrift(10000.0)
+	osc := FreqOffset(10000.0)
 	raw := NewRawClock(osc, 0)
 	pps := PerfectPPS()
 
@@ -244,7 +244,7 @@ func TestPrecisionAtLargeTime(t *testing.T) {
 // This catches issues with offset tracking, frequency adjustment, and time stepping.
 func TestServoConvergence(t *testing.T) {
 	// Create oscillator running 10000ppb fast
-	osc := ConstantDrift(10000.0)
+	osc := FreqOffset(10000.0)
 
 	// PHC starts at 0, GPS is at 1000 seconds (huge offset)
 	raw := NewRawClock(osc, 0)
@@ -360,7 +360,7 @@ func TestAdjTimeDelay(t *testing.T) {
 // oscillator frequency error over time.
 func TestRawClockIntegration(t *testing.T) {
 	// Create oscillator running 10000ppb fast
-	osc := ConstantDrift(10000.0)
+	osc := FreqOffset(10000.0)
 	raw := NewRawClock(osc, 0)
 
 	// After 1 second, clock should read 1.00001 (10µs fast)
@@ -565,7 +565,7 @@ func TestDualEdgeMode(t *testing.T) {
 // TestDualEdgeModeWithDrift verifies pulse width is affected by oscillator drift.
 func TestDualEdgeModeWithDrift(t *testing.T) {
 	// Oscillator running 10000ppb fast
-	osc := ConstantDrift(10000.0)
+	osc := FreqOffset(10000.0)
 	raw := NewRawClock(osc, 0)
 
 	pps := PerfectPPS()

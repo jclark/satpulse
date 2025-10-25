@@ -95,8 +95,9 @@ func parseFlags(args []string) (*flagVars, error) {
 	}
 	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
 	flags.Float64Var(&vars.simCfg.Duration, "duration", vars.simCfg.Duration, "simulation duration in seconds")
-	flags.Float64Var(&vars.simCfg.OscDrift, "drift", vars.simCfg.OscDrift, "oscillator drift in ppb")
-	flags.Float64Var(&vars.simCfg.OscNoise, "noise", vars.simCfg.OscNoise, "oscillator frequency noise stddev in ppb")
+	flags.Float64Var(&vars.simCfg.PHCFreqOffset, "phc-freq-offset", vars.simCfg.PHCFreqOffset, "PHC frequency offset in ppb")
+	flags.Float64Var(&vars.simCfg.PHCFreqDrift, "phc-freq-drift", vars.simCfg.PHCFreqDrift, "PHC frequency drift in ppb/day")
+	flags.Float64Var(&vars.simCfg.PHCNoise, "phc-noise", vars.simCfg.PHCNoise, "PHC frequency noise stddev in ppb")
 	flags.Float64Var(&vars.simCfg.PPSJitter, "jitter", vars.simCfg.PPSJitter, "PPS timing jitter in nanoseconds")
 	flags.Float64Var(&vars.simCfg.MinDelay, "min-delay", vars.simCfg.MinDelay, "minimum pulse delivery delay in seconds")
 	flags.Float64Var(&vars.simCfg.MaxDelay, "max-delay", vars.simCfg.MaxDelay, "maximum pulse delivery delay in seconds")

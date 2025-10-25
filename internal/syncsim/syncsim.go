@@ -52,30 +52,32 @@ import (
 
 // Config holds simulation parameters
 type Config struct {
-	Duration    float64   // simulation duration in seconds
-	OscDrift    float64   // oscillator drift in ppb
-	OscNoise    float64   // oscillator frequency noise stddev in ppb
-	PPSJitter   float64   // PPS timing jitter in nanoseconds
-	MinDelay    float64   // minimum pulse delivery delay in seconds
-	MaxDelay    float64   // maximum pulse delivery delay in seconds
-	MsgDelay    float64   // GPS message delay after pulse in seconds
-	MsgJitter   float64   // GPS message delay jitter in seconds
-	PulseWidth  float64   // pulse width in seconds (0 for single-edge mode)
-	ToggleTimes []float64 // absolute simulation times to toggle pulse/message delivery on/off
+	Duration      float64   // simulation duration in seconds
+	PHCFreqOffset float64   // PHC frequency offset in ppb
+	PHCFreqDrift  float64   // PHC frequency drift in ppb/day
+	PHCNoise      float64   // PHC frequency noise stddev in ppb
+	PPSJitter     float64   // PPS timing jitter in nanoseconds
+	MinDelay      float64   // minimum pulse delivery delay in seconds
+	MaxDelay      float64   // maximum pulse delivery delay in seconds
+	MsgDelay      float64   // GPS message delay after pulse in seconds
+	MsgJitter     float64   // GPS message delay jitter in seconds
+	PulseWidth    float64   // pulse width in seconds (0 for single-edge mode)
+	ToggleTimes   []float64 // absolute simulation times to toggle pulse/message delivery on/off
 }
 
 // DefaultConfig returns a Config with sensible default values.
 func DefaultConfig() Config {
 	return Config{
-		Duration:   60.0,
-		OscDrift:   2000.0,
-		OscNoise:   20.0,
-		PPSJitter:  10.0,
-		MinDelay:   5e-6,
-		MaxDelay:   250e-6,
-		MsgDelay:   0.1,
-		MsgJitter:  0.01,
-		PulseWidth: 0, // default to single-edge mode
+		Duration:      60.0,
+		PHCFreqOffset: 2000.0,
+		PHCFreqDrift:  -150.0,
+		PHCNoise:      20.0,
+		PPSJitter:     10.0,
+		MinDelay:      5e-6,
+		MaxDelay:      250e-6,
+		MsgDelay:      0.1,
+		MsgJitter:     0.01,
+		PulseWidth:    0, // default to single-edge mode
 	}
 }
 
@@ -165,11 +167,15 @@ type Stats struct {
 // curTime is updated as the simulation progresses, allowing callers to use it for logging.
 // It returns statistics about the simulation run.
 func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
-	// Create oscillator with drift and noise
-	osc := clocksim.CombineOscillators(
-		clocksim.ConstantDrift(simCfg.OscDrift),
-		clocksim.WhiteFreqNoise(simCfg.OscNoise, 42),
-	)
+	// Create oscillator with offset, drift, and noise
+	oscs := []clocksim.OscillatorSimulator{
+		clocksim.FreqOffset(simCfg.PHCFreqOffset),
+		clocksim.WhiteFreqNoise(simCfg.PHCNoise, 42),
+	}
+	if simCfg.PHCFreqDrift != 0 {
+		oscs = append(oscs, clocksim.FreqDrift(simCfg.PHCFreqDrift))
+	}
+	osc := clocksim.CombineOscillators(oscs...)
 
 	// PHC starts at epoch (1970-01-01T00:00:00 TAI) - way off from GPS
 	raw := clocksim.NewRawClock(osc, 0)
@@ -249,8 +255,9 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 		"duration", simCfg.Duration,
 		"pulseDelay", "5µs-250µs",
 		"msgDelay", simCfg.MsgDelay,
-		"oscDrift", simCfg.OscDrift,
-		"oscNoise", simCfg.OscNoise,
+		"phcFreqOffset", simCfg.PHCFreqOffset,
+		"phcFreqDrift", simCfg.PHCFreqDrift,
+		"phcNoise", simCfg.PHCNoise,
 		"ppsJitter", simCfg.PPSJitter,
 		"startTime", curTime.Format(time.RFC3339),
 		"phcStartTime", 0.0)
