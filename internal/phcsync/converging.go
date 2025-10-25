@@ -25,15 +25,18 @@ type ConvergingConfig struct {
 	// The minimum median is considered stable when it has not decreased.
 	// If any sample's absolute offset exceeds Threshold, the stability counter resets to 0.
 	StableSamples int
+	// MaxMissingSamples is the maximum number of missing samples before transitioning back to reset mode.
+	MaxMissingSamples int
 }
 
 func defaultConvergingConfig() ConvergingConfig {
 	return ConvergingConfig{
-		KP:            0.7,
-		KI:            0.3,
-		Window:        5,
-		Threshold:     1000, // 1µs
-		StableSamples: 3,
+		KP:                0.7,
+		KI:                0.3,
+		Window:            5,
+		Threshold:         1000, // 1µs
+		StableSamples:     3,
+		MaxMissingSamples: 3,
 	}
 }
 
@@ -98,6 +101,7 @@ type convergingSampleProcessor struct {
 	offsets                  *circbuf.Buffer[time.Duration]
 	minMedian                time.Duration
 	samplesSinceMinDecreased int
+	missingSamples           int
 	lg                       *slog.Logger
 }
 
@@ -112,7 +116,11 @@ func newConvergingSampleProcessor(cfg ConvergingConfig, currentFreq, maxFreq flo
 
 func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 	if sample.Kind == SampleMissing {
-		// Ignore single missing sample
+		p.missingSamples++
+		p.lg.Info("missing sample in converging mode", "missingSamples", p.missingSamples)
+		if p.missingSamples >= p.cfg.MaxMissingSamples {
+			return phcAction{actionType: phcNoAction}, ModeReset
+		}
 		return phcAction{actionType: phcNoAction}, ModeConverging
 	}
 	p.offsets.Append(sample.Offset)

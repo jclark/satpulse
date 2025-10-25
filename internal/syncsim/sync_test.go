@@ -29,14 +29,15 @@ func (m *modeTracker) Sample(s mon.SampleData) {
 
 func TestPHCSync(t *testing.T) {
 	tests := []struct {
-		name                 string
-		pulseWidth           float64       // 0 for single-edge mode
-		duration             float64       // simulation duration in seconds
-		maxTrackingStdDev    time.Duration // maximum acceptable tracking stddev
-		toggleTimes          []float64     // absolute times to toggle pulse delivery
-		expectNotInSync      int           // expected number of not-in-sync samples after first sync
-		expectTrackingSamples int          // expected number of samples in tracking mode
-		expectResetSamples   int           // expected number of samples in reset mode (includes initial sync and recovery)
+		name                   string
+		pulseWidth             float64       // 0 for single-edge mode
+		duration               float64       // simulation duration in seconds
+		maxTrackingStdDev      time.Duration // maximum acceptable tracking stddev
+		toggleTimes            []float64     // absolute times to toggle pulse delivery
+		expectNotInSync        int           // expected number of not-in-sync samples after first sync
+		expectTrackingSamples  int           // expected number of samples in tracking mode
+		expectResetSamples     int           // expected number of samples in reset mode (includes initial sync and recovery)
+		expectConvergingSamples int          // expected number of samples in converging mode (0 = don't check)
 	}{
 		{
 			name:              "single-edge mode",
@@ -75,7 +76,7 @@ func TestPHCSync(t *testing.T) {
 			duration:              80.0,
 			toggleTimes:           []float64{60.0}, // stop at t=60s, never restart
 			expectNotInSync:       5,               // 5 missing samples in tracking mode before transition to reset
-			expectTrackingSamples: 46,              // 41 before outage + 5 missing samples in tracking before transition
+			expectTrackingSamples: 40,              // 35 before outage + 5 missing samples in tracking before transition
 			expectResetSamples:    1,               // 1 initial reset sample only (reset mode doesn't generate missing samples)
 		},
 		{
@@ -84,8 +85,26 @@ func TestPHCSync(t *testing.T) {
 			duration:          120.0,
 			toggleTimes:       []float64{60.0, 70.0}, // stop at t=60s, restart at t=70s
 			maxTrackingStdDev: 30 * time.Nanosecond,  // slightly higher tolerance due to recovery transient
-			expectNotInSync:   13,                    // 5 missing in tracking + ~8 in converging during recovery
+			expectNotInSync:   21,                    // 5 missing in tracking + ~16 in converging/reset during recovery
 			// After recovery: reset→converging→tracking for remaining ~50 seconds
+		},
+		{
+			name:                   "signal loss during converging mode",
+			pulseWidth:             0,
+			duration:               40.0,
+			toggleTimes:            []float64{13.0, 23.0}, // stop at t=13s during converging, restart at t=23s
+			expectTrackingSamples:  0,                     // never reaches tracking
+			expectResetSamples:     2,                     // 1 initial + 1 after recovery from converging loss
+			expectConvergingSamples: 22,                    // 7 good + 3 missing + 12 good in second phase
+			// Expected flow:
+			// - Reset #1 at t=6s (1 sample)
+			// - Converging from t=6s to t=12s (7 good samples)
+			// - Missing samples at t=13.5s, 14.5s, 15.5s (3 missing samples in converging)
+			// - Transition to reset at t=15.5s after 3rd missing sample
+			// - Signal restarts at t=23s
+			// - Reset #2 at t=27s (1 sample)
+			// - Converging from t=28s to t=40s (12 good samples)
+			// Total converging: 7 + 3 + 12 = 22 samples
 		},
 	}
 
@@ -147,6 +166,11 @@ func TestPHCSync(t *testing.T) {
 			if tt.expectResetSamples > 0 {
 				if stats.InitSamples != tt.expectResetSamples {
 					t.Errorf("InitSamples (reset mode) = %d, want %d", stats.InitSamples, tt.expectResetSamples)
+				}
+			}
+			if tt.expectConvergingSamples > 0 {
+				if stats.ConvergingSamples != tt.expectConvergingSamples {
+					t.Errorf("ConvergingSamples = %d, want %d", stats.ConvergingSamples, tt.expectConvergingSamples)
 				}
 			}
 
