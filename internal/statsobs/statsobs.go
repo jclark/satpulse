@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/obs"
 )
 
@@ -48,9 +48,9 @@ func NewStatsObserver() *StatsObserver {
 }
 
 // Sample implements mon.Sampler
-func (o *StatsObserver) Sample(data mon.SampleData) {
+func (o *StatsObserver) Sample(data phcsync.SampleData) {
 	// Only accumulate when in sync
-	if data.SyncState != mon.InSync {
+	if data.SyncState != phcsync.InSync {
 		return
 	}
 	o.accum.add(data.Kind, data.Offset.Seconds(), data.Freq, data.FreqDelta)
@@ -83,7 +83,7 @@ type statsAccum struct {
 	freqDelta accumFreq
 }
 
-func (a *statsAccum) add(kind mon.SampleKind, offset float64, freq float64, freqDelta float64) {
+func (a *statsAccum) add(kind phcsync.SampleKind, offset float64, freq float64, freqDelta float64) {
 	a.phase.add(kind, offset)
 	a.freq.add(freq)
 	a.freqDelta.add(freqDelta)
@@ -119,17 +119,17 @@ type accumPhase struct {
 	nOutliers  int
 }
 
-func (a *accumPhase) add(kind mon.SampleKind, v float64) {
+func (a *accumPhase) add(kind phcsync.SampleKind, v float64) {
 	a.n++
 	switch kind {
-	case mon.SampleOK:
+	case phcsync.SampleOK:
 		av := math.Abs(v)
 		a.sumAbs += av
 		a.sumSquares += v * v
 		a.maxAbs = math.Max(a.maxAbs, av)
-	case mon.SampleMissing:
+	case phcsync.SampleMissing:
 		a.nMissing++
-	case mon.SampleOutlier:
+	case phcsync.SampleOutlier:
 		a.nOutliers++
 	}
 }

@@ -3,8 +3,6 @@ package phcsync
 import (
 	"log/slog"
 	"time"
-
-	"github.com/jclark/satpulse/internal/mon"
 )
 
 // TrackingConfig contains tunable parameters for tracking mode.
@@ -134,7 +132,7 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 			Ref:       refTime,
 			Offset:    offset,
 			Era:       edge.Timestamp.Era,
-			SyncState: mon.InSync,
+			SyncState: InSync,
 		},
 		edgeIndex: edgeIndex,
 		Sys:       sys,

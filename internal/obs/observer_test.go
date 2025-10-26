@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/phcsync"
 )
 
 type mockObserver struct {
@@ -16,7 +16,7 @@ type mockObserver struct {
 	timeCount     int
 }
 
-func (m *mockObserver) Sample(data mon.SampleData) {
+func (m *mockObserver) Sample(data phcsync.SampleData) {
 	m.sampleCount++
 }
 
@@ -37,7 +37,7 @@ func TestMultiObserver_Sample(t *testing.T) {
 	mock2 := &mockObserver{}
 	multi := NewMultiObserver(mock1, mock2)
 
-	multi.Sample(mon.SampleData{})
+	multi.Sample(phcsync.SampleData{})
 
 	if mock1.sampleCount != 1 {
 		t.Errorf("Expected Sample count 1 on mock1, got %d", mock1.sampleCount)

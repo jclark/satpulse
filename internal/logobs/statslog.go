@@ -4,7 +4,7 @@ package logobs
 import (
 	"log/slog"
 
-	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/statsobs"
 )
@@ -27,14 +27,14 @@ func NewStatsLogObserver(lg *slog.Logger, interval int) *StatsLogObserver {
 	}
 }
 
-// Sample implements mon.Sampler
-func (o *StatsLogObserver) Sample(data mon.SampleData) {
+// Sample implements phcsync.Sampler
+func (o *StatsLogObserver) Sample(data phcsync.SampleData) {
 	if o.interval <= 0 {
 		return
 	}
 
 	// Only accumulate when servo is locked
-	if data.SyncState != mon.InSync {
+	if data.SyncState != phcsync.InSync {
 		// Flush any partial stats when losing sync
 		if o.StatsObserver.HasSamples() {
 			o.flush()
@@ -45,13 +45,13 @@ func (o *StatsLogObserver) Sample(data mon.SampleData) {
 	// For interval == 1, log immediately instead of accumulating
 	if o.interval == 1 {
 		switch data.Kind {
-		case mon.SampleOK:
+		case phcsync.SampleOK:
 			o.lg.Info("adjusting clock frequency",
 				"off", data.Offset,
 				"freq", data.Freq)
-		case mon.SampleMissing:
+		case phcsync.SampleMissing:
 			o.lg.Info("missed 1PPS sample")
-		case mon.SampleOutlier:
+		case phcsync.SampleOutlier:
 			o.lg.Info("outlier sample",
 				"off", data.Offset,
 				"freq", data.Freq)

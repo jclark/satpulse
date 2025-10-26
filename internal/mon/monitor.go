@@ -4,7 +4,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/ptpgm"
+	"github.com/jclark/satpulse/internal/refclock"
 )
 
 const sampleWindowSize = 60
@@ -19,8 +22,8 @@ type Monitor struct {
 	leapSecond     ptime.LeapSecond
 	servo          Servo // never nil
 	lg             *slog.Logger
-	gm             *Grandmaster   // maybe nil
-	rc             *ProxyRefClock // maybe nil
+	gm             *ptpgm.Grandmaster   // maybe nil
+	rc             *refclock.ProxyRefClock // maybe nil
 	syncState      SyncState
 	paused         bool
 	lastRefTime    ptime.Time
@@ -28,6 +31,25 @@ type Monitor struct {
 	sampler        Sampler
 	cfg            syncConfig
 }
+
+// Type aliases for existing interfaces that will eventually move to phcsync
+type Sampler = phcsync.Sampler
+type SampleData = phcsync.SampleData
+type SampleKind = phcsync.SampleKind
+
+// Sample kind constants
+const (
+	SampleOK      = phcsync.SampleOK
+	SampleMissing = phcsync.SampleMissing
+	SampleOutlier = phcsync.SampleOutlier
+)
+
+type SyncState = phcsync.SyncState
+
+const (
+	InSync = phcsync.InSync
+	NoSync = phcsync.NoSync
+)
 
 type Servo interface {
 	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)
@@ -41,12 +63,10 @@ type MonitorConfig struct {
 	LogInterval   int
 	ClockLogPath  string
 	ClockAccuracy time.Duration
-	RefClock      *ProxyRefClock
-	Grandmaster   *Grandmaster
+	RefClock      *refclock.ProxyRefClock
+	Grandmaster   *ptpgm.Grandmaster
 	Sampler       Sampler // never nil, uses DefaultObserver when no observability needed
 }
-
-const ClockLogExtension = ".log"
 
 func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, error) {
 	mon := &Monitor{
@@ -210,8 +230,16 @@ func (mon *Monitor) updateSyncState(state SyncState) {
 
 func (mon *Monitor) gmUpdate() {
 	if mon.gm != nil && !mon.lastRefTime.IsZero() {
-		mon.gm.Update(mon.syncState, mon.leapSecond.StateAt(mon.lastRefTime))
+		mon.gm.Update(gmSyncState(mon.syncState), mon.leapSecond.StateAt(mon.lastRefTime))
 	}
+}
+
+func gmSyncState(ss SyncState) ptpgm.SyncState {
+	switch ss {
+	case InSync:
+		return ptpgm.InSync
+	}
+	return ptpgm.NoSync
 }
 
 func (mon *Monitor) SetLeapSecond(leapSecond ptime.LeapSecond) {

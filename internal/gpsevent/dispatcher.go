@@ -7,14 +7,15 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/jclark/satpulse/internal/combine"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/logfile"
-	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/refclock"
 	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/internal/timemsg"
 	"github.com/jclark/satpulse/internal/ts"
 	"golang.org/x/sys/unix"
 )
@@ -42,43 +43,35 @@ type Dispatcher struct {
 	gpsprot.DefaultHandler
 	pktProcs              map[gpsprot.Tag]gpsprot.PacketProcessor
 	obs                   obs.Observer // never nil
-	cb                    *combine.Combiner
-	mon                   *mon.Monitor
+	controller            *phcsync.Controller
+	rc                    *refclock.ProxyRefClock
+	timeMsgBuffer         *timemsg.Buffer
 	ls                    ptime.LeapSecond
 	lg                    *slog.Logger
 	lf                    logfile.LogFile
-	lastTime              ptime.Time
 	loggedUnknownProtocol bool
 	loggedSurveyComplete  bool
 	tStart                time.Time
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, m *mon.Monitor, ls ptime.LeapSecond, phcFlags phc.DriverFlags, pulseWidth time.Duration, obs obs.Observer, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
-	var combiner *combine.Combiner
-	if m != nil {
-		pt := combine.PulseType{
-			EdgesPerPulse: phcFlags.Edges(),
-			PulseWidth:    pulseWidth,
-		}
-		ccfg := combine.Config{}
-		ccfg.SetDefault(pt)
-		if phcFlags&phc.DriverPoll4Hz != 0 {
-			ccfg.PulsePollInterval = time.Second / 4
-		}
-		var err error
-		combiner, err = combine.NewCombiner(pt, m, lg, ccfg)
-		if err != nil {
-			return nil, err
-		}
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, controller *phcsync.Controller, rc *refclock.ProxyRefClock, ls ptime.LeapSecond, phcFlags phc.DriverFlags, pulseWidth time.Duration, obs obs.Observer, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
+	// Always create timeMsgBuffer (useful even without PHC)
+	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
+
+	// Inject buffer into controller if controller exists
+	if controller != nil {
+		controller.SetTimeMsgBuffer(timeMsgBuffer)
 	}
+
 	d := Dispatcher{
-		pktProcs: pktProcs,
-		cb:       combiner,
-		mon:      m,
-		ls:       ls,
-		lg:       lg,
-		obs:      obs,
-		tStart:   tStart,
+		pktProcs:      pktProcs,
+		controller:    controller,
+		rc:            rc,
+		timeMsgBuffer: timeMsgBuffer,
+		ls:            ls,
+		lg:            lg,
+		obs:           obs,
+		tStart:        tStart,
 	}
 	multiHandler := gpsprot.NewMultiHandler(&d, obs)
 	for _, pp := range pktProcs {
@@ -97,14 +90,17 @@ const tickPeriod = time.Second / 4
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 	// loop until both channels are closed
 	defer d.obs.Release()
-	// close the monitor before the observer, since the monitor uses the observer
-	if d.mon != nil {
-		defer d.mon.Close()
+	if d.rc != nil {
+		defer d.rc.Close()
+	}
+	// close the controller before the observer, since the controller uses the observer
+	if d.controller != nil {
+		defer d.controller.Close()
 	}
 	var ticker *time.Ticker
 	var tickerCh <-chan time.Time
 	var firstTsDeadline <-chan time.Time
-	if d.mon != nil {
+	if d.controller != nil {
 		ticker = time.NewTicker(tickPeriod)
 		defer ticker.Stop()
 		tickerCh = ticker.C
@@ -132,7 +128,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 				continue
 			}
 			if e.Kind == ts.PauseEvent {
-				d.mon.Pause()
+				d.controller.Pause()
 				continue
 			}
 			if e.Kind == ts.ResumeEvent {
@@ -164,7 +160,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 				pktCh = nil
 			}
 		case t := <-tickerCh:
-			d.mon.Tick(t)
+			d.controller.Tick(t)
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
@@ -226,7 +222,17 @@ type Timestamp struct {
 }
 
 func (d *Dispatcher) timestamp(e ts.Event) {
-	// timestamp events only occur when PHC is available, so d.mon and d.cb are non-nil
+	// timestamp events only occur when PHC is available, so d.controller is non-nil
+	d.controller.PulseEdge(phcsync.PulseEdge{
+		Timestamp: e.Ts,
+		TRead:     e.TRead,
+		TReadPHC:  e.TReadPHC,
+	})
+
+	d.sysSample(e.TReadPHC.T, e.TRead)
+
+	// Generate logEvent
+	// XXX this needs rethinking
 	var delay time.Duration
 	trp := e.TReadPHC.T
 	if !trp.IsZero() && !e.TReadPHC.Era.Uncertain() && e.TReadPHC.Era == e.Ts.Era {
@@ -238,28 +244,28 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 		d.lg.Info("timestamp delay cannot be determined", "ts", e.Ts, "tReadPHC", e.TReadPHC)
 	}
 	d.logEvent(LogEvent{T: e.TRead, Timestamp: &Timestamp{T: e.Ts.T, Era: e.Ts.Era, Delay: delay}})
-	// Call PulseEdge before SysSample, because the former might change the sync status
-	d.cb.PulseEdge(e.Ts, e.TRead, delay)
-	if !trp.IsZero() {
-		d.mon.SysSample(trp, e.TRead)
+}
+
+// sysSample generates a sample of system time vs true time (based on PHC)
+func (d *Dispatcher) sysSample(trp ptime.Time, tRead time.Time) {
+	// Send refclock sample if in tracking mode
+	if d.rc == nil || trp.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
+		return
+	}
+	err := d.rc.Sample(tRead, trp, d.ls)
+	if err != nil {
+		d.lg.Warn("refclock sample failed", "err", err)
 	}
 }
 
 func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, Time: mt})
-	sec, ok := mt.ComputeTAITime(d.ls)
-	if !ok {
-		return
-	}
-	if mt.UTCTime != nil && mt.TAITime.IsZero() {
-		d.lg.Debug("computed TAI time from UTC time", "tai", sec)
-	}
-	secRnd := sec.Round(time.Second)
-	if d.cb != nil {
-		d.cb.TimeMsg(secRnd, tRead, mt.PulseOffset, mt.Ref)
-	}
-	if mt.Ref != gpsprot.PrePulse && secRnd > d.lastTime {
-		d.lastTime = secRnd
+
+	d.timeMsgBuffer.Time(mt, tRead)
+
+	// Notify controller that a time message arrived
+	if d.controller != nil {
+		d.controller.TimeMessage()
 	}
 }
 
@@ -283,8 +289,14 @@ func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 
 func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, LeapSecond: msg})
-	if msg.UpdateLeapSecond(&d.ls) && d.mon != nil {
-		d.mon.SetLeapSecond(d.ls)
+	if msg.UpdateLeapSecond(&d.ls) {
+		// Update timemsg.Buffer (always exists)
+		d.timeMsgBuffer.LeapSecond(msg, tRead)
+
+		// Update controller if it exists
+		if d.controller != nil {
+			d.controller.LeapSecond(d.ls)
+		}
 	}
 }
 

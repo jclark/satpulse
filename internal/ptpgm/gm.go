@@ -1,4 +1,4 @@
-package mon
+package ptpgm
 
 import (
 	"fmt"
@@ -7,6 +7,10 @@ import (
 	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/jclark/satpulse/internal/ptime"
 )
+
+type Config struct {
+	ClockAccuracy time.Duration
+}
 
 type GrandmasterUpdateRequest struct {
 	props GrandmasterProps
@@ -27,11 +31,34 @@ type GrandmasterProps struct {
 	ClockAccuracy pmc.ClockAccuracy
 }
 
-func NewGrandmaster() (*Grandmaster, <-chan GrandmasterUpdateRequest) {
+// SyncState represents the current synchronization status
+type SyncState int
+
+const (
+	NoSync SyncState = iota // Clock is not synchronized
+	InSync                  // Clock is synchronized
+)
+
+// String returns a human-readable representation of the sync state
+func (s SyncState) String() string {
+	switch s {
+	case NoSync:
+		return "out of sync"
+	case InSync:
+		return "in sync"
+	default:
+		return "unknown"
+	}
+}
+
+func NewGrandmaster(cfg Config) (*Grandmaster, <-chan GrandmasterUpdateRequest, error) {
 	updateCh := make(chan GrandmasterUpdateRequest, 1)
 	gm := &Grandmaster{updateCh: updateCh}
 	gm.SetClockSync(NoSync)
-	return gm, updateCh
+	if err := gm.SetClockAccuracy(cfg.ClockAccuracy); err != nil {
+		return nil, nil, err
+	}
+	return gm, updateCh, nil
 }
 
 func (gm *Grandmaster) SetClockAccuracy(acc time.Duration) error {

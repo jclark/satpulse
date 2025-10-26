@@ -5,27 +5,23 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jclark/satpulse/internal/combine"
-	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/ptime"
-	"github.com/jclark/satpulse/internal/servo"
+	"github.com/jclark/satpulse/internal/ptpgm"
 )
 
-// Type aliases for existing interfaces that will eventually move to phcsync
-type Clock = servo.Clock
-type Sampler = mon.Sampler
-type SampleData = mon.SampleData
-type SampleKind = mon.SampleKind
-type Grandmaster = mon.Grandmaster
-type ProxyRefClock = mon.ProxyRefClock
-type PulseType = combine.PulseType
+// Clock interface represents a PHC (PTP Hardware Clock) that can be adjusted.
+type Clock interface {
+	SetFreqOffset(float64) error
+	FreqOffset() (float64, error)
+	MaxFreqOffset() float64
+	AdjTime(d time.Duration) (ptime.Era, error)
+}
 
-// Sample kind constants
-const (
-	SampleOK      = mon.SampleOK
-	SampleMissing = mon.SampleMissing
-	SampleOutlier = mon.SampleOutlier
-)
+// PulseType describes the pulse characteristics.
+type PulseType struct {
+	EdgesPerPulse int
+	PulseWidth    time.Duration
+}
 
 // Sample represents a sample with associated edge index.
 // The edgeIndex tracks which edge produced this sample (odd/even).
@@ -95,11 +91,10 @@ func (m Mode) String() string {
 // Controller coordinates PHC synchronization.
 type Controller struct {
 	clock          Clock
-	timeMsgBuffer  TimeMsgBuffer
-	sampler        Sampler
-	gm             *Grandmaster
-	rc             *ProxyRefClock
-	cfg            Config
+	timeMsgBuffer TimeMsgBuffer
+	sampler       Sampler
+	gm            *ptpgm.Grandmaster
+	cfg           Config
 	leapSecond     ptime.LeapSecond
 	pulseWidthSpec time.Duration // configured pulse width, immutable
 	pt             PulseType     // discovered/working, mutable
@@ -111,9 +106,8 @@ type Controller struct {
 	edgeIndex      uint64  // increments on each PulseEdge call, tracks odd/even
 	sampleGen      sampleGenerator
 	sampleProc     sampleProcessor
-	lastRefTime    ptime.Time // last reference time from a real sample
-	lastSample     *Sample    // last real sample
-	era            ptime.Era  // current PHC era
+	lastSample     *Sample   // last sample (real or missing)
+	era            ptime.Era // current PHC era
 }
 
 type sampleGenerator interface {
@@ -143,10 +137,8 @@ type sampleProcessor interface {
 // NewController creates a new Controller instance.
 func NewController(
 	clock Clock,
-	timeMsgBuffer TimeMsgBuffer,
 	sampler Sampler,
-	gm *Grandmaster,
-	rc *ProxyRefClock,
+	gm *ptpgm.Grandmaster,
 	cfg Config,
 	leapSecond ptime.LeapSecond,
 	pt PulseType,
@@ -154,10 +146,8 @@ func NewController(
 ) (*Controller, error) {
 	c := &Controller{
 		clock:          clock,
-		timeMsgBuffer:  timeMsgBuffer,
 		sampler:        sampler,
 		gm:             gm,
-		rc:             rc,
 		cfg:            cfg,
 		leapSecond:     leapSecond,
 		pulseWidthSpec: pt.PulseWidth,
@@ -170,7 +160,7 @@ func NewController(
 	}
 	c.freq = freq
 	c.maxFreq = clock.MaxFreqOffset()
-	c.changeMode(ModeReset)
+	// Mode will be set to ModeReset when SetTimeMsgBuffer is called
 	return c, nil
 }
 
@@ -178,6 +168,17 @@ type PulseEdge struct {
 	Timestamp ptime.ClockTime // PHC clock timestamp for the pulse edge
 	TRead     time.Time       // system time immediately after the timestamp event was read
 	TReadPHC  ptime.ClockTime // PHC time immediately after the timestamp event was read
+}
+
+// SetTimeMsgBuffer sets the time message buffer for the controller.
+// This must be called exactly once after construction, before any PulseEdge or TimeMessage calls.
+func (c *Controller) SetTimeMsgBuffer(buf TimeMsgBuffer) {
+	if c.mode != ModeInvalid {
+		panic("SetTimeMsgBuffer called after controller already initialized")
+	}
+	c.timeMsgBuffer = buf
+	// Initialize to Reset mode now that we have the timeMsgBuffer
+	c.changeMode(ModeReset)
 }
 
 // PulseEdge handles edge timestamp events from the PHC.
@@ -198,8 +199,7 @@ func (c *Controller) processPresentSample(sample *Sample) {
 	if sample == nil {
 		return
 	}
-	// Update time tracking for real samples
-	c.lastRefTime = sample.Ref
+
 	c.lastSample = sample
 
 	// Process through common path
@@ -246,6 +246,15 @@ func (c *Controller) doPHCAction(action phcAction) {
 func (c *Controller) LeapSecond(ls ptime.LeapSecond) {
 	c.leapSecond = ls
 	c.lg.Debug("leap second updated", "leapSecond", ls)
+	c.gmUpdate()
+}
+
+// Pause handles pause events from the timestamp worker.
+// This is called when the network interface loses carrier.
+// It resets sync state and transitions back to reset mode.
+func (c *Controller) Pause() {
+	c.lg.Info("controller paused (carrier lost), transitioning to reset mode")
+	c.changeMode(ModeReset)
 }
 
 // Tick handles regular tick events (0.25s intervals).
@@ -260,21 +269,18 @@ func (c *Controller) Tick(now time.Time) {
 		return
 	}
 
-	// Advance time by exactly one second from last sample
-	sys := c.lastSample.Sys.Add(time.Second)
-	c.lastRefTime = c.lastRefTime.Add(time.Second)
-
 	// Create missing sample
 	sample := &Sample{
 		SampleData: &SampleData{
-			Kind:   mon.SampleMissing,
-			Ref:    c.lastRefTime,
+			Kind:   SampleMissing,
+			Ref:    c.lastSample.Ref.Add(time.Second),
 			Offset: 0,
 			Era:    c.era,
 			// Freq will be filled in later
 		},
 		edgeIndex: 0, // Missing samples don't have an edge index
-		Sys:       sys,
+		// Advance system time by exactly one second from last sample
+		Sys: c.lastSample.Sys.Add(time.Second),
 	}
 
 	// Update lastSample to the missing sample so we don't generate duplicates
@@ -288,13 +294,12 @@ func (c *Controller) Tick(now time.Time) {
 func (c *Controller) Close() {
 	c.lg.Debug("closing phcsync controller")
 
-	if c.gm != nil {
-		c.gm.SetClockSync(mon.NoSync)
-		c.gm.Close()
-	}
+	// Set mode to reset first, then update grandmaster to NoSync
+	c.mode = ModeReset
+	c.gmUpdate()
 
-	if c.rc != nil {
-		c.rc.Close()
+	if c.gm != nil {
+		c.gm.Close()
 	}
 }
 
@@ -335,9 +340,7 @@ func (c *Controller) changeMode(mode Mode) {
 
 	c.mode = mode
 
-	if c.gm != nil {
-		c.gm.SetClockSync(modeSyncState(mode))
-	}
+	c.gmUpdate()
 }
 
 func (c *Controller) notePulseInfo(pi pulseInfo) {
@@ -353,11 +356,25 @@ func (c *Controller) notePulseInfo(pi pulseInfo) {
 		"pulseWidth", pi.pulseWidth)
 }
 
-func modeSyncState(mode Mode) mon.SyncState {
-	if mode == ModeTracking {
-		return mon.InSync
+func (c *Controller) gmUpdate() {
+	if c.gm == nil {
+		return
 	}
-	return mon.NoSync
+	if c.lastSample == nil {
+		return
+	}
+	ref := c.lastSample.Ref
+	if ref.IsZero() {
+		return
+	}
+	c.gm.Update(gmSyncState(c.mode), c.leapSecond.StateAt(ref))
+}
+
+func gmSyncState(mode Mode) ptpgm.SyncState {
+	if mode == ModeTracking {
+		return ptpgm.InSync
+	}
+	return ptpgm.NoSync
 }
 
 // Mode returns the current operating mode of the controller.

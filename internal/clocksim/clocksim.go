@@ -349,7 +349,7 @@ func (c *VirtualClock) computeVirtPhaseNs(atTime float64) int64 {
 	return c.lastVirtPhaseNs + correctedDeltaNs
 }
 
-// TestClock implements servo.Clock for testing.
+// TestClock implements phcsync.Clock for testing.
 // It wraps VirtualClock and adds era tracking, mirroring how ts.Clock wraps phc.Clock.
 // Since simulation is single-threaded, no atomics needed.
 type TestClock struct {

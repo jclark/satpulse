@@ -2,12 +2,12 @@ package obs
 
 import (
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/phcsync"
 )
 
 // Observer provides unified observability interface
 type Observer interface {
-	mon.Sampler
+	phcsync.Sampler
 	gpsprot.MsgHandler
 
 	// ReopenLog handles log rotation (e.g., on SIGHUP signal)
@@ -35,9 +35,9 @@ func NewMultiObserver(observers ...Observer) *MultiObserver {
 }
 
 // Sample implements mon.Sampler by type-asserting handlers to Sampler
-func (m *MultiObserver) Sample(data mon.SampleData) {
+func (m *MultiObserver) Sample(data phcsync.SampleData) {
 	for h := range m.Handlers() {
-		if sampler, ok := h.(mon.Sampler); ok {
+		if sampler, ok := h.(phcsync.Sampler); ok {
 			sampler.Sample(data)
 		}
 	}
@@ -67,7 +67,7 @@ type DefaultObserver struct {
 }
 
 // Sample implements mon.Sampler as a no-op
-func (o *DefaultObserver) Sample(data mon.SampleData) {}
+func (o *DefaultObserver) Sample(data phcsync.SampleData) {}
 
 // ReopenLog implements Observer as a no-op
 func (o *DefaultObserver) ReopenLog() {}

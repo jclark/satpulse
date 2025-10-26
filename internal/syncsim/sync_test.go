@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phcsync"
 )
@@ -18,8 +17,8 @@ type modeTracker struct {
 	notInSyncCount    int
 }
 
-func (m *modeTracker) Sample(s mon.SampleData) {
-	isInSync := s.SyncState == mon.InSync
+func (m *modeTracker) Sample(s phcsync.SampleData) {
+	isInSync := s.SyncState == phcsync.InSync
 	if isInSync {
 		m.sawInSync = true
 	} else if m.sawInSync {

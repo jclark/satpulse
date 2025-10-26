@@ -11,14 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/jclark/satpulse/internal/proxy"
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/refclock"
 	"github.com/jclark/satpulse/internal/sockrefclock"
 	"github.com/jclark/satpulse/internal/ts"
 	"github.com/pelletier/go-toml/v2"
-
-	"github.com/jclark/satpulse/internal/pmc"
 )
 
 const configFileEnvVar = "SATPULSE_CONFIG_FILE"
@@ -166,7 +165,7 @@ func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {
 	return ptime.LeapSecondOnDate(cfg.Date.AsTime((time.UTC)), int16(cfg.Before), int16(cfg.After))
 }
 
-func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (mon.RefClock, error) {
+func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (refclock.RefClock, error) {
 	if cfg.Sock == nil || cfg.Sock.Path == "" {
 		return nil, nil
 	}
@@ -175,7 +174,7 @@ func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (mon.RefClock, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mon.NewLoggingSockRefClock(lg, rc), nil
+	return refclock.NewLoggingSockRefClock(lg, rc), nil
 }
 
 func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {

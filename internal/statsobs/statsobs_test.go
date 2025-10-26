@@ -3,16 +3,16 @@ package statsobs
 import (
 	"testing"
 
-	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/phcsync"
 )
 
 func TestAccumPhase(t *testing.T) {
 	t.Run("BasicAccumulation", func(t *testing.T) {
 		a := accumPhase{}
 
-		a.add(mon.SampleOK, 0.1)
-		a.add(mon.SampleOK, -0.2)
-		a.add(mon.SampleOK, 0.15)
+		a.add(phcsync.SampleOK, 0.1)
+		a.add(phcsync.SampleOK, -0.2)
+		a.add(phcsync.SampleOK, 0.15)
 
 		if a.n != 3 {
 			t.Errorf("n: got %d, want 3", a.n)
@@ -33,10 +33,10 @@ func TestAccumPhase(t *testing.T) {
 	t.Run("CountsMissingAndOutliers", func(t *testing.T) {
 		a := accumPhase{}
 
-		a.add(mon.SampleOK, 0.1)
-		a.add(mon.SampleMissing, 0)
-		a.add(mon.SampleOutlier, 0)
-		a.add(mon.SampleMissing, 0)
+		a.add(phcsync.SampleOK, 0.1)
+		a.add(phcsync.SampleMissing, 0)
+		a.add(phcsync.SampleOutlier, 0)
+		a.add(phcsync.SampleMissing, 0)
 
 		if a.n != 4 {
 			t.Errorf("n: got %d, want 4", a.n)

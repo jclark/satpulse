@@ -9,10 +9,12 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/logfile"
-	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/ptime"
 )
+
+const ClockLogExtension = ".log"
 
 // ClockLogObserver writes per-sample clock data to a file
 type ClockLogObserver struct {
@@ -37,9 +39,9 @@ func NewClockLogObserver(lg *slog.Logger, path string, ls ptime.LeapSecond) (*Cl
 }
 
 // Sample implements mon.Sampler - logs clock data samples
-func (o *ClockLogObserver) Sample(data mon.SampleData) {
+func (o *ClockLogObserver) Sample(data phcsync.SampleData) {
 	// Don't log missing samples
-	if data.Kind == mon.SampleMissing {
+	if data.Kind == phcsync.SampleMissing {
 		return
 	}
 	o.writeLogEntry(data)
@@ -76,12 +78,12 @@ func (o *ClockLogObserver) writeLogHeader() {
 	o.lf.HandleWriteError(err, o.lg)
 }
 
-func (o *ClockLogObserver) writeLogEntry(data mon.SampleData) {
+func (o *ClockLogObserver) writeLogEntry(data phcsync.SampleData) {
 	if o.lf.File == nil {
 		return
 	}
 	outlierFlag := 0
-	if data.Kind == mon.SampleOutlier {
+	if data.Kind == phcsync.SampleOutlier {
 		outlierFlag = 1
 	}
 	// Format offset to width 3 for alignment

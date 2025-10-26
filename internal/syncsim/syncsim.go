@@ -41,7 +41,6 @@ import (
 
 	"github.com/jclark/satpulse/internal/clocksim"
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
@@ -139,7 +138,7 @@ type modeObserver struct {
 	trackingSamples   int
 }
 
-func (m *modeObserver) Sample(s mon.SampleData) {
+func (m *modeObserver) Sample(s phcsync.SampleData) {
 	mode := m.ctrl.Mode()
 	switch mode {
 	case phcsync.ModeReset:
@@ -234,10 +233,8 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	// Create controller
 	ctrl, err := phcsync.NewController(
 		testClock,
-		timeMsgBuf,
 		multiObs,
 		nil, // no grandmaster
-		nil, // no refclock
 		phcCfg,
 		ls,
 		pulseType,
@@ -246,6 +243,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	if err != nil {
 		return Stats{}, err
 	}
+	ctrl.SetTimeMsgBuffer(timeMsgBuf)
 	defer ctrl.Close()
 
 	// Set controller reference in mode observer
