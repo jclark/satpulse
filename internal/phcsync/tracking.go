@@ -33,8 +33,8 @@ type TrackingConfig struct {
 
 func defaultTrackingConfig() TrackingConfig {
 	return TrackingConfig{
-		KP:                       0.7,
-		KI:                       0.3,
+		KP:                       0.5,
+		KI:                       0.1,
 		OutlierThreshold:         1000, // 1µs
 		PulseWidthTolerance:      200,  // 200ns
 		TopOfSecondTolerance:     100,  // 100ns
@@ -79,7 +79,7 @@ func (g *trackingSampleGenerator) ignoreEdge(edge PulseEdge, edgeIndex uint64) b
 	offsetAbs := offset.Abs()
 
 	// if alignKeep is true, it indicates we should probably keep this edge
-	alignKeep := offsetAbs <= time.Duration(g.cfg.TopOfSecondTolerance) 
+	alignKeep := offsetAbs <= time.Duration(g.cfg.TopOfSecondTolerance)
 
 	// Check spacing relative to pulse width
 	// Note: PulseWidth is guaranteed to be > 0 when EdgesPerPulse == 2 (validated in constructor)
@@ -150,10 +150,10 @@ func (g *trackingSampleGenerator) timeMessageSample() *Sample {
 }
 
 type trackingSampleProcessor struct {
-	servo                  *piServo
-	cfg                    TrackingConfig
-	consecutiveBadSamples  int
-	lg                     *slog.Logger
+	servo                 *piServo
+	cfg                   TrackingConfig
+	consecutiveBadSamples int
+	lg                    *slog.Logger
 }
 
 func newTrackingSampleProcessor(cfg TrackingConfig, currentFreq, maxFreq float64, lg *slog.Logger) *trackingSampleProcessor {
