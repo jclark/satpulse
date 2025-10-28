@@ -154,7 +154,7 @@ func TestGenSampleForMessages(t *testing.T) {
 			msgDelay:   100 * time.Millisecond,
 			pulseWidth: 500 * time.Millisecond,
 			cfgMod: func(c *ResetConfig) {
-				c.PulseEdgeAmbig = 0.1 // 500ms is exactly 50%, should fail with default ambig threshold
+				c.PulseWidthDetectLimit = 0.45 // 500ms is exactly 50%, should fail with default detect limit
 			},
 			startWithRising: true,
 			wantError:       true,

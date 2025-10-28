@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"slices"
 	"time"
 
@@ -37,14 +36,14 @@ type ResetConfig struct {
 	// delays should be similar. Should be significantly smaller than DelayTightness.
 	DelaySpread float64
 
-	// PulseEdgeAmbig is the minimum difference (in seconds) between the high and low periods
-	// of the pulse required to reliably determine which edge is leading. For a 1-second pulse
-	// period, this can equivalently be interpreted as a proportion. For example, 0.1 means that
-	// if |highPeriod - lowPeriod| < 0.1 seconds (i.e., pulse width between 0.45-0.55 seconds),
-	// the pulse is too close to 50% duty cycle to determine edge polarity from timing alone.
-	// This is measured with PHC timestamps, so can be quite accurate.
-	// In such cases, both edge lists are kept and alignment with time messages is used instead.
-	PulseEdgeAmbig float64
+	// PulseWidthDetectLimit is the maximum pulse width (in seconds) that can be automatically
+	// detected to determine which edge is leading. Pulse widths greater than this value are
+	// too close to 50% duty cycle for reliable auto-detection from timing alone. For example,
+	// 0.45 means pulse widths greater than 0.45 seconds (and by symmetry, less than 0.55 seconds)
+	// cannot be auto-detected. When auto-detection fails, both edge lists are kept and alignment
+	// with time messages is used instead. Note: pulse widths greater than 0.5 seconds must be
+	// explicitly configured via gps.pulseWidth.
+	PulseWidthDetectLimit float64
 }
 
 func defaultResetConfig() ResetConfig {
@@ -55,7 +54,7 @@ func defaultResetConfig() ResetConfig {
 		Delay:                  0.1,   // seconds
 		DelayTightness:         0.6,   // proportion of max window
 		DelaySpread:            0.2,   // proportion of max window
-		PulseEdgeAmbig:		 0.1,  // seconds
+		PulseWidthDetectLimit:  0.45,  // seconds
 	}
 }
 
@@ -213,16 +212,19 @@ func (g *resetSampleGenerator) filterEdgeListsByPulseWidth(edgeLists []pulseEdge
 	// so we need to scale the avgPulseWidth (which is from the PHC) to get true time
 	truePulseWidth := time.Duration(float64(avgPulseWidth) * (float64(time.Second)/float64(avgInterval)))
 
-	if math.Abs(2*truePulseWidth.Seconds()-1) < g.cfg.PulseEdgeAmbig {
+	pulseWidthDetectLimit := time.Duration(g.cfg.PulseWidthDetectLimit * float64(time.Second))
+	if truePulseWidth <= pulseWidthDetectLimit {
+		// Short pulse width, use first edge list
+		g.pt.PulseWidth = truePulseWidth
+		return edgeLists[:1]
+	} else if pw := time.Second - truePulseWidth; pw <= pulseWidthDetectLimit {
+		// Long pulse width, use second edge list
+		g.pt.PulseWidth = pw
+		return edgeLists[1:]
+	} else {
 		// Ambiguous pulse width, cannot determine alignment
 		return edgeLists
 	}
-	if truePulseWidth < time.Second/2 {
-		g.pt.PulseWidth = truePulseWidth
-		return edgeLists[:1]
-	}
-	g.pt.PulseWidth = time.Second - truePulseWidth
-	return edgeLists[1:]
 }
 
 type limitError struct {
