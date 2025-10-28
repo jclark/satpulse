@@ -311,9 +311,9 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		var err error
 		controller, err = phcsync.NewController(
 			clk,
-			obs, // sampler
+			obs,
 			gm,
-			phcsync.DefaultConfig(),
+			cfg.Sync,
 			ls,
 			pt,
 			lg,

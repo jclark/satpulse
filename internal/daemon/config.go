@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/jclark/satpulse/internal/proxy"
 	"github.com/jclark/satpulse/internal/ptime"
@@ -26,6 +27,7 @@ type Config struct {
 	Serial     SerialConfig
 	GPS        GPSConfig
 	PHC        PHCConfig
+	Sync       phcsync.Config
 	Proxy      proxy.Config
 	HTTP       []HTTPConfig
 	LeapSecond LeapSecondConfig
@@ -125,6 +127,10 @@ func readConfig(r io.Reader) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	err = cfg.Sync.Validate()
+	if err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -135,6 +141,7 @@ func defaultConfig() *Config {
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
 	cfg.PTP.ClockAccuracy = 150
+	cfg.Sync = phcsync.DefaultConfig()
 	return cfg
 }
 
