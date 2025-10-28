@@ -249,8 +249,8 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 
 	// Buffer size needs to accommodate all edges
 	bufSize := numEdges
-	if bufSize < cfg.Window {
-		bufSize = cfg.Window
+	if bufSize < cfg.PulseWindow {
+		bufSize = cfg.PulseWindow
 	}
 
 	pt := PulseType{EdgesPerPulse: edgesPerPulse, PulseWidth: pulseWidth}
@@ -344,7 +344,7 @@ func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *
 	pt := PulseType{EdgesPerPulse: 1, PulseWidth: 0}
 	gen := &resetSampleGenerator{
 		timeMsgBuffer: nil,
-		edgeBuf:       circbuf.New[PulseEdge](cfg.Window),
+		edgeBuf:       circbuf.New[PulseEdge](cfg.PulseWindow),
 		cfg:           cfg,
 		lg:            slog.Default(),
 		pt:            pt,
@@ -482,4 +482,3 @@ func TestLastEdgeIndexUpdated(t *testing.T) {
 		})
 	}
 }
-

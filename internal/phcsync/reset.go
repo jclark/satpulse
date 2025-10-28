@@ -13,47 +13,62 @@ import (
 
 // ResetConfig contains tunable parameters for reset mode.
 type ResetConfig struct {
-	Window int // number of pulses to collect (e.g. 5)
+	// PulseWindow is the number of pulses to collect for alignment analysis during reset mode.
+	// A larger window provides more data for statistical checks but delays the initial clock step.
+	// Typical value: 5.
+	PulseWindow int `toml:"pulseWindow"`
 
-	MinStep int64 // minimum offset in nanoseconds to perform a step (e.g. 5000 = 5µs)
+	// StepThreshold is the minimum absolute offset in nanoseconds required to perform a clock step.
+	// If the measured offset is smaller than this threshold, reset mode transitions directly to
+	// converging mode without stepping the clock. Typical value: 5000 (5µs).
+	StepThreshold int64 `toml:"stepThreshold"`
 
-	PulseIntervalTolerance float64 // max variation between intervals in PPB (e.g. 500)
+	// PulseVariation is the maximum acceptable variation between consecutive pulse intervals,
+	// expressed in parts per billion (PPB). This checks clock stability: if the variation
+	// between the shortest and longest interval exceeds this limit, the pulses are rejected.
+	// The variation is computed as: (maxInterval/minInterval - 1.0) * 1e9.
+	// Typical value: 500 PPB.
+	PulseVariation float64 `toml:"pulseVariation"`
 
-	// Delay is the expected midpoint of the pulse-to-message delay window in seconds.
-	// Typical GPS receivers send time messages 50-250ms after the pulse, so 0.1 (100ms) is reasonable.
-	Delay float64
+	// ExpectedDelay is the expected midpoint of the pulse-to-message delay window in seconds.
+	// This represents the typical delay between when a PPS pulse occurs and when the GPS
+	// receiver sends the corresponding time message. Most GPS receivers send messages
+	// 50-250ms after the pulse. Typical value: 0.1 (100ms).
+	ExpectedDelay float64 `toml:"expectedDelay"`
 
-	// DelayTightness controls how much of the maximum possible delay window to accept (0.0 to 1.0).
-	// The maximum possible window is 1.0 second (time until next pulse) with edge timestamping,
-	// or 0.5 seconds with 50% duty cycle timestamping. This parameter specifies what fraction
-	// of that maximum to accept, centered around Delay. For example, 0.6 with maxWindow=1.0
-	// accepts delays from Delay-0.3 to Delay+0.3.
-	DelayTightness float64
+	// DelayConfidenceWindow specifies what fraction of the maximum possible delay window
+	// to accept, expressed as a proportion (0.0 to 1.0). The window is centered around
+	// ExpectedDelay. With edge timestamping, the maximum window is 1.0 second (until next
+	// pulse). For example, 0.6 means accept delays from (ExpectedDelay - 0.3) to
+	// (ExpectedDelay + 0.3), rejecting pulses where messages arrive too early or too late.
+	// Typical value: 0.6.
+	DelayConfidenceWindow float64 `toml:"delayConfidenceWindow"`
 
-	// DelaySpread is the maximum acceptable variation between pulse-to-message delays,
-	// expressed as a proportion of the maximum window. For example, 0.1 with maxWindow=1.0
-	// means (max delay - min delay) must be ≤ 0.1 seconds. This checks consistency: all
-	// delays should be similar. Should be significantly smaller than DelayTightness.
-	DelaySpread float64
+	// DelayVariation is the maximum acceptable spread between pulse-to-message delays,
+	// expressed as a proportion of the maximum window (1.0 second). This checks consistency:
+	// all delays should be similar. The spread is computed as: (maxDelay - minDelay) / 1.0.
+	// Should be significantly smaller than DelayConfidenceWindow to ensure tight clustering.
+	// Typical value: 0.2.
+	DelayVariation float64 `toml:"delayVariation"`
 
-	// PulseWidthDetectLimit is the maximum pulse width (in seconds) that can be automatically
-	// detected to determine which edge is leading. Pulse widths greater than this value are
-	// too close to 50% duty cycle for reliable auto-detection from timing alone. For example,
-	// 0.45 means pulse widths greater than 0.45 seconds (and by symmetry, less than 0.55 seconds)
-	// cannot be auto-detected. When auto-detection fails, both edge lists are kept and alignment
-	// with time messages is used instead. Note: pulse widths greater than 0.5 seconds must be
-	// explicitly configured via gps.pulseWidth.
-	PulseWidthDetectLimit float64
+	// PulseWidthDetectLimit is the maximum pulse width in seconds that can be automatically
+	// detected in dual-edge mode to determine which edge is leading. Pulse widths greater
+	// than this value (and by symmetry, less than 1.0 - this value) are too close to 50%
+	// duty cycle for reliable auto-detection from timing alone. When detection fails, both
+	// edge lists are kept and alignment with time messages is used. Note: pulse widths
+	// greater than 0.5 seconds must be explicitly configured via gps.pulseWidth.
+	// Typical value: 0.45.
+	PulseWidthDetectLimit float64 `toml:"pulseWidthDetectLimit"`
 }
 
 func defaultResetConfig() ResetConfig {
 	return ResetConfig{
-		Window:                 5,
-		MinStep:                5000,  // nanoseconds
-		PulseIntervalTolerance: 500.0, // PPB
-		Delay:                  0.1,   // seconds
-		DelayTightness:         0.6,   // proportion of max window
-		DelaySpread:            0.2,   // proportion of max window
+		PulseWindow:            5,
+		StepThreshold:                5000,  // nanoseconds
+		PulseVariation: 500.0, // PPB
+		ExpectedDelay:                  0.1,   // seconds
+		DelayConfidenceWindow:         0.6,   // proportion of max window
+		DelayVariation:            0.2,   // proportion of max window
 		PulseWidthDetectLimit:  0.45,  // seconds
 	}
 }
@@ -77,7 +92,7 @@ type resetSampleGenerator struct {
 
 func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, pt PulseType, freq, maxFreq float64, lg *slog.Logger) *resetSampleGenerator {
 	// Buffer needs to hold Window * EdgesPerPulse edges
-	bufSize := cfg.Window * pt.EdgesPerPulse
+	bufSize := cfg.PulseWindow * pt.EdgesPerPulse
 	return &resetSampleGenerator{
 		timeMsgBuffer: timeMsgBuffer,
 		edgeBuf:       circbuf.New[PulseEdge](bufSize),
@@ -123,13 +138,13 @@ var errNotEnoughTimestamps = errors.New("not enough timestamps")
 func (g *resetSampleGenerator) genSample() *Sample {
 	// Need enough pulse edges
 	// In dual-edge mode, we need EdgesPerPulse * Window edges total
-	requiredEdges := g.cfg.Window * g.pt.EdgesPerPulse
+	requiredEdges := g.cfg.PulseWindow * g.pt.EdgesPerPulse
 	if g.edgeBuf.Len() < requiredEdges {
 		return nil
 	}
 
 	// Get time messages from buffer
-	lastSec, tRead := g.timeMsgBuffer.GetPostTimeMessages(g.cfg.Window)
+	lastSec, tRead := g.timeMsgBuffer.GetPostTimeMessages(g.cfg.PulseWindow)
 	if lastSec.IsZero() {
 		// Not enough time messages yet
 		return nil
@@ -162,7 +177,7 @@ func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []
 			return nil, err
 		}
 	}
-	
+
 	edgeLists = g.filterEdgeListsByPulseWidth(edgeLists)
 	if len(edgeLists) != 1 {
 		return nil, errors.New("cannot filter edges")
@@ -207,10 +222,10 @@ func (g *resetSampleGenerator) filterEdgeListsByPulseWidth(edgeLists []pulseEdge
 		totalPulseWidth += e1[i].Timestamp.T.Sub(e0[i].Timestamp.T)
 	}
 	avgPulseWidth := totalPulseWidth / time.Duration(len(e1))
-	avgInterval := (edgeLists[0].avgInterval() + edgeLists[1].avgInterval())/2
+	avgInterval := (edgeLists[0].avgInterval() + edgeLists[1].avgInterval()) / 2
 	// on the PHC clock, one true second lasts a Duration of avgInterval,
 	// so we need to scale the avgPulseWidth (which is from the PHC) to get true time
-	truePulseWidth := time.Duration(float64(avgPulseWidth) * (float64(time.Second)/float64(avgInterval)))
+	truePulseWidth := time.Duration(float64(avgPulseWidth) * (float64(time.Second) / float64(avgInterval)))
 
 	pulseWidthDetectLimit := time.Duration(g.cfg.PulseWidthDetectLimit * float64(time.Second))
 	if truePulseWidth <= pulseWidthDetectLimit {
@@ -344,12 +359,12 @@ func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration) error {
 	spread := maxDelay - minDelay
 	spreadProportion := spread.Seconds() / maxWindow
 
-	if spreadProportion > g.cfg.DelaySpread {
+	if spreadProportion > g.cfg.DelayVariation {
 		return &limitError{
 			msg:      "spread in delays between pulse and message too large",
 			propName: "DelaySpread",
 			value:    spreadProportion,
-			limit:    g.cfg.DelaySpread,
+			limit:    g.cfg.DelayVariation,
 		}
 	}
 	return nil
@@ -357,9 +372,9 @@ func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration) error {
 
 func (g *resetSampleGenerator) checkDelayRange(delays []time.Duration) error {
 	maxWindow := 1.0
-	halfAcceptableWindow := g.cfg.DelayTightness * maxWindow / 2
-	minAcceptable := g.cfg.Delay - halfAcceptableWindow
-	maxAcceptable := g.cfg.Delay + halfAcceptableWindow
+	halfAcceptableWindow := g.cfg.DelayConfidenceWindow * maxWindow / 2
+	minAcceptable := g.cfg.ExpectedDelay - halfAcceptableWindow
+	maxAcceptable := g.cfg.ExpectedDelay + halfAcceptableWindow
 
 	for _, delay := range delays {
 		delaySec := delay.Seconds()
@@ -518,12 +533,12 @@ func (g *resetSampleGenerator) checkPulseIntervalsConsistent(intervals []time.Du
 		variationPPB = -variationPPB
 	}
 
-	if variationPPB > g.cfg.PulseIntervalTolerance {
+	if variationPPB > g.cfg.PulseVariation {
 		return &limitError{
 			msg:      "pulse intervals not consistent",
 			propName: "PulseIntervalTolerance",
 			value:    variationPPB,
-			limit:    g.cfg.PulseIntervalTolerance,
+			limit:    g.cfg.PulseVariation,
 		}
 	}
 	return nil
@@ -536,7 +551,7 @@ type resetSampleProcessor struct {
 
 func newResetSampleProcessor(cfg ResetConfig, lg *slog.Logger) *resetSampleProcessor {
 	return &resetSampleProcessor{
-		minStep: time.Duration(cfg.MinStep),
+		minStep: time.Duration(cfg.StepThreshold),
 		lg:      lg,
 	}
 }

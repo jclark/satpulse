@@ -7,38 +7,50 @@ import (
 
 // TrackingConfig contains tunable parameters for tracking mode.
 type TrackingConfig struct {
-	KP float64 // proportional gain
-	KI float64 // integral gain
+	// Kp is the proportional gain for the PI servo used during tracking mode.
+	// Lower than converging mode for stability during normal operation.
+	// Typical value: 0.5.
+	Kp float64 `toml:"kp"`
 
-	// OutlierThreshold is the minimum absolute offset in nanoseconds for a sample to be considered an outlier.
-	// Samples with offsets exceeding this threshold are marked as outliers and not used for frequency adjustment.
-	OutlierThreshold int64
+	// Ki is the integral gain for the PI servo used during tracking mode.
+	// Lower than converging mode to prevent overcorrection during stable tracking.
+	// Typical value: 0.1.
+	Ki float64 `toml:"ki"`
 
-	// PulseWidthTolerance is the tolerance in nanoseconds for edge spacing when filtering by pulse width in dual-edge mode.
-	// When an edge arrives approximately PulseWidth after the last accepted edge (within this tolerance),
-	// it is considered a trailing edge and filtered out. This helps distinguish leading from trailing edges
-	// based on temporal spacing. Example: 200 = 200ns tolerance.
-	PulseWidthTolerance int64
+	// OutlierThreshold is the minimum absolute offset in nanoseconds for classifying a sample
+	// as an outlier. Samples with |offset| >= OutlierThreshold are marked as outliers and
+	// excluded from frequency adjustment. This prevents transient disturbances from affecting
+	// the servo. Typical value: 1000 (1µs).
+	OutlierThreshold int64 `toml:"outlierThreshold"`
 
-	// TopOfSecondTolerance is the tolerance in nanoseconds for offset from top of second to immediately accept an edge.
-	// Edges with offsets (rounded to nearest second) within this tolerance of zero are assumed to be leading edges
-	// and accepted without further checks. This is the primary discriminator for well-synchronized clocks.
-	// Example: 100 = 100ns tolerance means offsets between -100ns and +100ns are accepted.
-	TopOfSecondTolerance int64
+	// PulseWidthTolerance is the tolerance in nanoseconds for filtering trailing edges in
+	// dual-edge mode based on temporal spacing. An edge is considered a trailing edge (and
+	// ignored) if it arrives within PulseWidthTolerance of the expected trailing edge time
+	// (lastEdgeTime + PulseWidth). This helps distinguish leading from trailing edges when
+	// alignment alone is ambiguous. Typical value: 200 ns.
+	PulseWidthTolerance int64 `toml:"pulseWidthTolerance"`
 
-	// MaxConsecutiveBadSamples is the maximum number of consecutive bad samples (missing or outlier)
-	// before transitioning from tracking mode to lost mode.
-	MaxConsecutiveBadSamples int
+	// AlignTolerance is the tolerance in nanoseconds for offset from top of second to
+	// immediately accept an edge as a leading edge. Edges with |offset| <= AlignTolerance
+	// (where offset is timestamp rounded to nearest second) are assumed to be leading edges
+	// and accepted without further checks. This is the primary discriminator for
+	// well-synchronized clocks. Typical value: 100 ns.
+	AlignTolerance int64 `toml:"alignTolerance"`
+
+	// BadSampleLimit is the maximum number of consecutive bad samples (missing or outlier)
+	// before transitioning back to reset mode. Bad samples do not contribute to frequency
+	// adjustment. Typical value: 5.
+	BadSampleLimit int `toml:"badSampleLimit"`
 }
 
 func defaultTrackingConfig() TrackingConfig {
 	return TrackingConfig{
-		KP:                       0.5,
-		KI:                       0.1,
+		Kp:                       0.5,
+		Ki:                       0.1,
 		OutlierThreshold:         1000, // 1µs
 		PulseWidthTolerance:      200,  // 200ns
-		TopOfSecondTolerance:     100,  // 100ns
-		MaxConsecutiveBadSamples: 5,
+		AlignTolerance:     100,  // 100ns
+		BadSampleLimit: 5,
 	}
 }
 
@@ -79,7 +91,7 @@ func (g *trackingSampleGenerator) ignoreEdge(edge PulseEdge, edgeIndex uint64) b
 	offsetAbs := offset.Abs()
 
 	// if alignKeep is true, it indicates we should probably keep this edge
-	alignKeep := offsetAbs <= time.Duration(g.cfg.TopOfSecondTolerance)
+	alignKeep := offsetAbs <= time.Duration(g.cfg.AlignTolerance)
 
 	// Check spacing relative to pulse width
 	// Note: PulseWidth is guaranteed to be > 0 when EdgesPerPulse == 2 (validated in constructor)
@@ -158,7 +170,7 @@ type trackingSampleProcessor struct {
 
 func newTrackingSampleProcessor(cfg TrackingConfig, currentFreq, maxFreq float64, lg *slog.Logger) *trackingSampleProcessor {
 	return &trackingSampleProcessor{
-		servo: newPiServo(currentFreq, cfg.KP, cfg.KI, maxFreq),
+		servo: newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
 		cfg:   cfg,
 		lg:    lg,
 	}
@@ -175,7 +187,7 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode
 	}
 
 	// Transition to reset mode if too many consecutive bad samples
-	if p.consecutiveBadSamples >= p.cfg.MaxConsecutiveBadSamples {
+	if p.consecutiveBadSamples >= p.cfg.BadSampleLimit {
 		p.lg.Info("entering reset mode", "consecutiveBadSamples", p.consecutiveBadSamples)
 		return action, ModeReset
 	}

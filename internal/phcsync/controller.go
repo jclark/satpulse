@@ -47,17 +47,17 @@ type TimeMsgBuffer interface {
 
 // Config contains tunable parameters for the Controller.
 type Config struct {
-	Reset      ResetConfig
-	Converging ConvergingConfig
-	Tracking   TrackingConfig
+	Reset    ResetConfig       `toml:"reset"`
+	Converge ConvergingConfig  `toml:"converge"`
+	Track    TrackingConfig    `toml:"track"`
 }
 
 // DefaultConfig returns a Config with sensible default values.
 func DefaultConfig() Config {
 	return Config{
-		Reset:      defaultResetConfig(),
-		Converging: defaultConvergingConfig(),
-		Tracking:   defaultTrackingConfig(),
+		Reset:    defaultResetConfig(),
+		Converge: defaultConvergingConfig(),
+		Track:    defaultTrackingConfig(),
 	}
 }
 
@@ -91,10 +91,10 @@ func (m Mode) String() string {
 // Controller coordinates PHC synchronization.
 type Controller struct {
 	clock          Clock
-	timeMsgBuffer TimeMsgBuffer
-	sampler       Sampler
-	gm            *ptpgm.Grandmaster
-	cfg           Config
+	timeMsgBuffer  TimeMsgBuffer
+	sampler        Sampler
+	gm             *ptpgm.Grandmaster
+	cfg            Config
 	leapSecond     ptime.LeapSecond
 	pulseWidthSpec time.Duration // configured pulse width, immutable
 	pt             PulseType     // discovered/working, mutable
@@ -329,11 +329,11 @@ func (c *Controller) changeMode(mode Mode) {
 		c.sampleGen = newResetSampleGenerator(c.timeMsgBuffer, c.cfg.Reset, c.pt, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newResetSampleProcessor(c.cfg.Reset, c.lg)
 	case ModeConverging:
-		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converging, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
-		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converging, c.freq, c.maxFreq, c.lg)
+		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converge, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
+		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converge, c.freq, c.maxFreq, c.lg)
 	case ModeTracking:
-		c.sampleGen = newTrackingSampleGenerator(c.cfg.Tracking, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
-		c.sampleProc = newTrackingSampleProcessor(c.cfg.Tracking, c.estimatedFreq, c.maxFreq, c.lg)
+		c.sampleGen = newTrackingSampleGenerator(c.cfg.Track, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
+		c.sampleProc = newTrackingSampleProcessor(c.cfg.Track, c.estimatedFreq, c.maxFreq, c.lg)
 	default:
 		panic("changing to invalid mode")
 	}

@@ -10,33 +10,49 @@ import (
 
 // ConvergingConfig contains tunable parameters for converging mode.
 type ConvergingConfig struct {
-	// KP is the proportional gain for the PI servo.
-	KP float64
-	// KI is the integral gain for the PI servo.
-	KI float64
-	// Window is the number of samples in the sliding window for computing median of absolute offsets.
-	Window int
-	// Threshold is the maximum acceptable absolute offset in nanoseconds (e.g. 1000 = 1µs).
-	// Converging mode exits to tracking when all of the following conditions hold:
-	// - the median of absolute offsets in the window has not decreased for StableSamples consecutive samples
-	// - the absolute offset of every sample since the minimum median was observed is <= Threshold
-	Threshold int64
-	// StableSamples is the number of consecutive samples for which the minimum median must remain stable before exiting.
-	// The minimum median is considered stable when it has not decreased.
-	// If any sample's absolute offset exceeds Threshold, the stability counter resets to 0.
-	StableSamples int
-	// MaxMissingSamples is the maximum number of missing samples before transitioning back to reset mode.
-	MaxMissingSamples int
+	// Kp is the proportional gain for the PI servo used during converging mode.
+	// Higher values make the servo more responsive but may cause oscillation.
+	// Typical value: 0.7.
+	Kp float64 `toml:"kp"`
+
+	// Ki is the integral gain for the PI servo used during converging mode.
+	// This accumulates error over time to eliminate steady-state offset.
+	// Typical value: 0.3.
+	Ki float64 `toml:"ki"`
+
+	// MedianWindow is the number of samples in the sliding window for computing the median
+	// of absolute offsets. The median is used to track convergence progress: when it stops
+	// decreasing and stabilizes below OffsetLimit, converging mode exits to tracking mode.
+	// Typical value: 5.
+	MedianWindow int `toml:"medianWindow"`
+
+	// OffsetLimit is the maximum acceptable absolute offset in nanoseconds for declaring
+	// convergence complete. Converging mode exits to tracking when both conditions hold:
+	// (1) the median of absolute offsets has not decreased for StableWindow consecutive samples,
+	// and (2) every sample since the minimum median was observed has absolute offset <= OffsetLimit.
+	// If any sample exceeds this limit, the stability counter resets. Typical value: 1000 (1µs).
+	OffsetLimit int64 `toml:"offsetLimit"`
+
+	// StableWindow is the number of consecutive samples for which the minimum median must
+	// remain stable (not decrease) before exiting converging mode. This ensures the offset
+	// has truly stabilized rather than just momentarily dipping below the threshold.
+	// Typical value: 3.
+	StableWindow int `toml:"stableWindow"`
+
+	// BadSampleLimit is the maximum number of consecutive missing samples before transitioning
+	// back to reset mode. Missing samples indicate loss of PPS signal or time messages.
+	// Typical value: 3.
+	BadSampleLimit int `toml:"badSampleLimit"`
 }
 
 func defaultConvergingConfig() ConvergingConfig {
 	return ConvergingConfig{
-		KP:                0.7,
-		KI:                0.3,
-		Window:            5,
-		Threshold:         1000, // 1µs
-		StableSamples:     3,
-		MaxMissingSamples: 3,
+		Kp:                0.7,
+		Ki:                0.3,
+		MedianWindow:            5,
+		OffsetLimit:         1000, // 1µs
+		StableWindow:     3,
+		BadSampleLimit: 3,
 	}
 }
 
@@ -108,8 +124,8 @@ type convergingSampleProcessor struct {
 func newConvergingSampleProcessor(cfg ConvergingConfig, currentFreq, maxFreq float64, lg *slog.Logger) *convergingSampleProcessor {
 	return &convergingSampleProcessor{
 		cfg:     cfg,
-		servo:   newPiServo(currentFreq, cfg.KP, cfg.KI, maxFreq),
-		offsets: circbuf.New[time.Duration](cfg.Window),
+		servo:   newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
+		offsets: circbuf.New[time.Duration](cfg.MedianWindow),
 		lg:      lg,
 	}
 }
@@ -118,7 +134,7 @@ func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, Mo
 	if sample.Kind == SampleMissing {
 		p.missingSamples++
 		p.lg.Info("missing sample in converging mode", "missingSamples", p.missingSamples)
-		if p.missingSamples >= p.cfg.MaxMissingSamples {
+		if p.missingSamples >= p.cfg.BadSampleLimit {
 			return phcAction{actionType: phcNoAction}, ModeReset
 		}
 		return phcAction{actionType: phcNoAction}, ModeConverging
@@ -129,7 +145,7 @@ func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, Mo
 		p.lg.Info("converging complete",
 			"median", median,
 			"minMedian", p.minMedian,
-			"threshold", time.Duration(p.cfg.Threshold),
+			"threshold", time.Duration(p.cfg.OffsetLimit),
 			"stableSamples", p.samplesSinceMinDecreased)
 		return phcAction{
 			actionType: phcAdjustFrequency,
@@ -144,10 +160,10 @@ func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, Mo
 }
 
 func (p *convergingSampleProcessor) converged() bool {
-	if p.offsets.Len() < p.cfg.Window {
+	if p.offsets.Len() < p.cfg.MedianWindow {
 		return false
 	}
-	if p.offsets.Last(0).Abs() > time.Duration(p.cfg.Threshold) {
+	if p.offsets.Last(0).Abs() > time.Duration(p.cfg.OffsetLimit) {
 		p.samplesSinceMinDecreased = 0
 		return false
 	}
@@ -162,7 +178,7 @@ func (p *convergingSampleProcessor) converged() bool {
 	} else {
 		p.samplesSinceMinDecreased++
 	}
-	return p.samplesSinceMinDecreased >= p.cfg.StableSamples
+	return p.samplesSinceMinDecreased >= p.cfg.StableWindow
 }
 
 func (p *convergingSampleProcessor) computeMedian() time.Duration {
