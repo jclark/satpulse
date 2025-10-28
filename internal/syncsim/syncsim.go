@@ -166,6 +166,10 @@ type Stats struct {
 // curTime is updated as the simulation progresses, allowing callers to use it for logging.
 // It returns statistics about the simulation run.
 func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
+	// Validate phcsync configuration
+	if err := phcCfg.Validate(); err != nil {
+		return Stats{}, err
+	}
 	// Create oscillator with offset, drift, and noise
 	oscs := []clocksim.OscillatorSimulator{
 		clocksim.FreqOffset(simCfg.PHCFreqOffset),

@@ -86,7 +86,7 @@ func checkRule(val reflect.Value, op, limit string) bool {
 	switch val.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		v := val.Int()
-		l, err := strconv.ParseInt(limit, 10, 64)
+		l, err := strconv.ParseInt(limit, 0, 64)
 		if err != nil {
 			panic(fmt.Sprintf("invalid limit %q: %v", limit, err))
 		}
@@ -102,7 +102,7 @@ func checkRule(val reflect.Value, op, limit string) bool {
 		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		v := val.Uint()
-		l, err := strconv.ParseUint(limit, 10, 64)
+		l, err := strconv.ParseUint(limit, 0, 64)
 		if err != nil {
 			panic(fmt.Sprintf("invalid limit %q: %v", limit, err))
 		}

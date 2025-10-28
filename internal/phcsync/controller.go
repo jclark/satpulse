@@ -1,10 +1,13 @@
 package phcsync
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/internal/check"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/ptpgm"
 )
@@ -135,6 +138,7 @@ type sampleProcessor interface {
 }
 
 // NewController creates a new Controller instance.
+// The Config must be valiudated before calling this function.
 func NewController(
 	clock Clock,
 	sampler Sampler,
@@ -380,4 +384,17 @@ func gmSyncState(mode Mode) ptpgm.SyncState {
 // Mode returns the current operating mode of the controller.
 func (c *Controller) Mode() Mode {
 	return c.mode
+}
+
+func (cfg *Config) Validate() error {
+	msgs := check.Validate(cfg)
+	switch len(msgs) {
+	case 0:
+		return nil
+	case 1:
+		return fmt.Errorf("in sync table: %s", msgs[0])
+	default:
+		msgs = append([]string{"errors in sync table:"}, msgs...)
+		return errors.New(strings.Join(msgs, "\n\t"))
+	}
 }
