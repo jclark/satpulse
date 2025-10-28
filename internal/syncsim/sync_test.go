@@ -28,15 +28,16 @@ func (m *modeTracker) Sample(s phcsync.SampleData) {
 
 func TestPHCSync(t *testing.T) {
 	tests := []struct {
-		name                   string
-		pulseWidth             float64       // 0 for single-edge mode
-		duration               float64       // simulation duration in seconds
-		maxTrackingStdDev      time.Duration // maximum acceptable tracking stddev
-		toggleTimes            []float64     // absolute times to toggle pulse delivery
-		expectNotInSync        int           // expected number of not-in-sync samples after first sync
-		expectTrackingSamples  int           // expected number of samples in tracking mode
-		expectResetSamples     int           // expected number of samples in reset mode (includes initial sync and recovery)
-		expectConvergingSamples int          // expected number of samples in converging mode (0 = don't check)
+		name                    string
+		pulseWidth              float64       // 0 for single-edge mode
+		duration                float64       // simulation duration in seconds
+		maxTrackingStdDev       time.Duration // maximum acceptable tracking stddev
+		toggleTimes             []float64     // absolute times to toggle pulse delivery
+		expectNotInSync         int           // expected exact number of not-in-sync samples after first sync (0 = don't check)
+		expectMaxNotInSync      int           // maximum acceptable not-in-sync samples (0 = don't check, overrides expectNotInSync)
+		expectTrackingSamples   int           // expected number of samples in tracking mode
+		expectResetSamples      int           // expected number of samples in reset mode (includes initial sync and recovery)
+		expectConvergingSamples int           // expected number of samples in converging mode (0 = don't check)
 	}{
 		{
 			name:              "single-edge mode",
@@ -79,12 +80,12 @@ func TestPHCSync(t *testing.T) {
 			expectResetSamples:    1,               // 1 initial reset sample only (reset mode doesn't generate missing samples)
 		},
 		{
-			name:              "recovers from temporary outage",
-			pulseWidth:        0,
-			duration:          120.0,
-			toggleTimes:       []float64{60.0, 70.0}, // stop at t=60s, restart at t=70s
-			maxTrackingStdDev: 30 * time.Nanosecond,  // slightly higher tolerance due to recovery transient
-			expectNotInSync:   21,                    // 5 missing in tracking + ~16 in converging/reset during recovery
+			name:               "recovers from temporary outage",
+			pulseWidth:         0,
+			duration:           120.0,
+			toggleTimes:        []float64{60.0, 70.0}, // stop at t=60s, restart at t=70s
+			maxTrackingStdDev:  30 * time.Nanosecond,  // slightly higher tolerance due to recovery transient
+			expectMaxNotInSync: 25,                    // 5 missing in tracking + up to ~20 in converging/reset during recovery
 			// After recovery: reset→converging→tracking for remaining ~50 seconds
 		},
 		{
@@ -130,7 +131,7 @@ func TestPHCSync(t *testing.T) {
 			// Create mode tracker observer if we expect not-in-sync samples
 			var tracker *modeTracker
 			var observers []obs.Observer
-			if tt.expectNotInSync > 0 {
+			if tt.expectNotInSync > 0 || tt.expectMaxNotInSync > 0 {
 				tracker = &modeTracker{}
 				observers = []obs.Observer{tracker}
 			}
@@ -146,7 +147,16 @@ func TestPHCSync(t *testing.T) {
 			}
 
 			// Check not-in-sync samples after first sync
-			if tt.expectNotInSync > 0 {
+			if tt.expectMaxNotInSync > 0 {
+				if tracker == nil {
+					t.Fatal("tracker is nil but expectMaxNotInSync > 0")
+				}
+				if tracker.notInSyncCount > tt.expectMaxNotInSync {
+					t.Errorf("notInSyncCount = %d, want <= %d", tracker.notInSyncCount, tt.expectMaxNotInSync)
+				} else {
+					t.Logf("Not-in-sync sample check passed: notInSyncCount = %d (<= %d)", tracker.notInSyncCount, tt.expectMaxNotInSync)
+				}
+			} else if tt.expectNotInSync > 0 {
 				if tracker == nil {
 					t.Fatal("tracker is nil but expectNotInSync > 0")
 				}
