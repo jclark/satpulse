@@ -239,6 +239,21 @@ func TestWindow_MaxInt64Overflow(t *testing.T) {
 	}
 }
 
+func TestWindow_MinMaxInt64Overflow(t *testing.T) {
+	// Test that we handle opposite extremes (MinInt64 and MaxInt64) correctly
+	// This is the critical case where b-a would overflow
+	w := New[int64](2)
+
+	w.Add(-9223372036854775808) // MinInt64
+	w.Add(9223372036854775807)  // MaxInt64
+
+	// Sum is -1, so average is -1/2 = 0 (integer division truncates towards zero)
+	want := int64(0)
+	if got := w.Median(); got != want {
+		t.Errorf("median of MinInt64 and MaxInt64 = %d, want %d", got, want)
+	}
+}
+
 func TestWindow_DurationPrecision(t *testing.T) {
 	// Test that large time.Duration values maintain precision
 	w := New[time.Duration](2)

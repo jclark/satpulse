@@ -68,9 +68,15 @@ func (w *Window[T]) Median() T {
 		return w.values[w.indices[mid]]
 	}
 	// Even count: average of two middle values
-	// Use a+(b-a)/2 formula to avoid overflow for integer types
+	// Since indices are sorted, a <= b always holds
 	a := w.values[w.indices[mid-1]]
 	b := w.values[w.indices[mid]]
+	// For signed integers: when a and b have opposite signs, (a+b)/2 is safe
+	// because the sum stays between a and b (no overflow).
+	// When same sign, use a+(b-a)/2 to avoid overflow in the subtraction.
+	if a < 0 && b >= 0 {
+		return (a + b) / 2
+	}
 	return a + (b-a)/2
 }
 
