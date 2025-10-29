@@ -439,7 +439,7 @@ Implementing each of these will involved enhancements to simulator to test prope
 * Implement chrony refclock in phcsync.Controller
 
 #### Phase D.2 refinements
-* Update Sampler.SyncState to use our new modes
+* Update SampleData.SyncState to use our new modes (done)
 * Post-read PHC/system time has wallclock time; compute separate monotonic time
 * Port event log replay architecture (internal/gpsevent/replay.go) to use phcsync.Controller instead of combine.Combiner
 * Remove combine/mon/servo packages
@@ -499,3 +499,18 @@ Consider whether we still need era concept. Used currently:
 ### Phase H - holdover
 
 TBD
+
+### Phase I - Upgrade observability to expose full sync mode
+
+After completing the migration to phcsync.Controller, we have follow-up tasks to upgrade from binary sync state (in sync / out of sync) to richer sync mode. This could be done before holdover, while we have modes (reset / converging / tracking), but is probably best postponed to after holdover, when we have complete set of modes (reset / converging / tracking / holdover / recovering).
+
+1. **Upgrade clock log format** - Change the sync field in the clock log from 0/1 to either:
+   - Mode name string ("reset", "converging", "tracking")
+   - Numeric mode value (0, 1, 2)
+   - This requires updating any scripts that parse the clock log format
+
+2. **Upgrade Prometheus metrics** - Add richer mode information:
+   - Consider adding a new `satpulse_phc_mode` gauge with labels for each mode
+   - Or add mode as a label to existing metrics
+   - Keep the existing `satpulse_phc_sync_status` gauge for backward compatibility
+   - This allows monitoring systems to distinguish between converging and tracking states

@@ -47,10 +47,10 @@ func NewStatsObserver() *StatsObserver {
 	return &StatsObserver{}
 }
 
-// Sample implements mon.Sampler
-func (o *StatsObserver) Sample(data phcsync.SampleData) {
+// Sample implements phcsync.Sampler
+func (o *StatsObserver) Sample(data phcsync.Sample) {
 	// Only accumulate when in sync
-	if data.SyncState != phcsync.InSync {
+	if !data.Mode.InSync() {
 		return
 	}
 	o.accum.add(data.Kind, data.Offset.Seconds(), data.Freq, data.FreqDelta)

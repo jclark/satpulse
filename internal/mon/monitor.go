@@ -32,24 +32,38 @@ type Monitor struct {
 	cfg            syncConfig
 }
 
-// Type aliases for existing interfaces that will eventually move to phcsync
-type Sampler = phcsync.Sampler
-type SampleData = phcsync.SampleData
+// SampleKind indicates the kind of sample
 type SampleKind = phcsync.SampleKind
 
-// Sample kind constants
 const (
-	SampleOK      = phcsync.SampleOK
 	SampleMissing = phcsync.SampleMissing
+	SampleOK      = phcsync.SampleOK
 	SampleOutlier = phcsync.SampleOutlier
 )
 
-type SyncState = phcsync.SyncState
+// SyncState indicates whether the clock is synchronized
+type SyncState = ptpgm.SyncState
 
 const (
-	InSync = phcsync.InSync
-	NoSync = phcsync.NoSync
+	NoSync = ptpgm.NoSync
+	InSync = ptpgm.InSync
 )
+
+// SampleData contains all the information about a sample
+type SampleData struct {
+	Kind      SampleKind
+	Ref       ptime.Time
+	Offset    time.Duration
+	Freq      float64
+	FreqDelta float64
+	SyncState SyncState
+	Era       ptime.Era
+}
+
+// Sampler is the interface for receiving samples
+type Sampler interface {
+	Sample(data SampleData)
+}
 
 type Servo interface {
 	Sample(ref ptime.Time, local ptime.ClockTime, delayed bool)

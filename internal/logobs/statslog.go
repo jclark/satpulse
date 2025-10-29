@@ -28,13 +28,13 @@ func NewStatsLogObserver(lg *slog.Logger, interval int) *StatsLogObserver {
 }
 
 // Sample implements phcsync.Sampler
-func (o *StatsLogObserver) Sample(data phcsync.SampleData) {
+func (o *StatsLogObserver) Sample(data phcsync.Sample) {
 	if o.interval <= 0 {
 		return
 	}
 
-	// Only accumulate when servo is locked
-	if data.SyncState != phcsync.InSync {
+	// Only accumulate when in sync
+	if !data.Mode.InSync() {
 		// Flush any partial stats when losing sync
 		if o.StatsObserver.HasSamples() {
 			o.flush()

@@ -132,15 +132,13 @@ type pulseTimestamp struct {
 
 type modeObserver struct {
 	obs.DefaultObserver
-	ctrl              *phcsync.Controller
 	initSamples       int
 	convergingSamples int
 	trackingSamples   int
 }
 
-func (m *modeObserver) Sample(s phcsync.SampleData) {
-	mode := m.ctrl.Mode()
-	switch mode {
+func (m *modeObserver) Sample(s phcsync.Sample) {
+	switch s.Mode {
 	case phcsync.ModeReset:
 		m.initSamples++
 	case phcsync.ModeConverging:
@@ -249,9 +247,6 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	}
 	ctrl.SetTimeMsgBuffer(timeMsgBuf)
 	defer ctrl.Close()
-
-	// Set controller reference in mode observer
-	modeObs.ctrl = ctrl
 
 	lg.Info("starting phcsync simulation",
 		"duration", simCfg.Duration,

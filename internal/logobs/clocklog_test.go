@@ -41,34 +41,34 @@ func TestClockLogObserver(t *testing.T) {
 	// Use SysToTime to convert from time.Time to ptime.Time
 	sysTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 	ref, _ := ls.SysToTime(sysTime)
-	obs.Sample(phcsync.SampleData{
-		Kind:      phcsync.SampleOK,
-		Ref:       ref,
-		Offset:    42 * time.Nanosecond,
-		Freq:      1234.5,
-		Era:       ptime.Era(1),
-		SyncState: phcsync.InSync,
+	obs.Sample(phcsync.Sample{
+		Kind:   phcsync.SampleOK,
+		Ref:    ref,
+		Offset: 42 * time.Nanosecond,
+		Freq:   1234.5,
+		Era:    ptime.Era(1),
+		Mode:   phcsync.ModeTracking,
 	})
 
 	// Test outlier sample
-	obs.Sample(phcsync.SampleData{
-		Kind:      phcsync.SampleOutlier,
-		Ref:       ref.Add(time.Second),
-		Offset:    -100 * time.Nanosecond,
-		Freq:      1234.5,
-		Era:       ptime.Era(1),
-		SyncState: phcsync.NoSync,
+	obs.Sample(phcsync.Sample{
+		Kind:   phcsync.SampleOutlier,
+		Ref:    ref.Add(time.Second),
+		Offset: -100 * time.Nanosecond,
+		Freq:   1234.5,
+		Era:    ptime.Era(1),
+		Mode:   phcsync.ModeReset,
 	})
 
 	// Test that missing samples are not logged
 	lenBefore := getFileSize(t, logPath)
-	obs.Sample(phcsync.SampleData{
-		Kind:      phcsync.SampleMissing,
-		Ref:       ref.Add(2 * time.Second),
-		Offset:    0,
-		Freq:      0,
-		Era:       ptime.Era(1),
-		SyncState: phcsync.NoSync,
+	obs.Sample(phcsync.Sample{
+		Kind:   phcsync.SampleMissing,
+		Ref:    ref.Add(2 * time.Second),
+		Offset: 0,
+		Freq:   0,
+		Era:    ptime.Era(1),
+		Mode:   phcsync.ModeReset,
 	})
 	lenAfter := getFileSize(t, logPath)
 	if lenAfter != lenBefore {
@@ -132,13 +132,13 @@ func TestClockLogObserverReopenLog(t *testing.T) {
 	// Write a sample
 	sysTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 	ref, _ := ls.SysToTime(sysTime)
-	obs.Sample(phcsync.SampleData{
-		Kind:      phcsync.SampleOK,
-		Ref:       ref,
-		Offset:    10 * time.Nanosecond,
-		Freq:      100,
-		Era:       ptime.Era(1),
-		SyncState: phcsync.InSync,
+	obs.Sample(phcsync.Sample{
+		Kind:   phcsync.SampleOK,
+		Ref:    ref,
+		Offset: 10 * time.Nanosecond,
+		Freq:   100,
+		Era:    ptime.Era(1),
+		Mode:   phcsync.ModeTracking,
 	})
 
 	// Simulate log rotation by renaming the file
@@ -152,13 +152,13 @@ func TestClockLogObserverReopenLog(t *testing.T) {
 	obs.ReopenLog()
 
 	// Write another sample
-	obs.Sample(phcsync.SampleData{
-		Kind:      phcsync.SampleOK,
-		Ref:       ref.Add(time.Second),
-		Offset:    20 * time.Nanosecond,
-		Freq:      200,
-		Era:       ptime.Era(1),
-		SyncState: phcsync.InSync,
+	obs.Sample(phcsync.Sample{
+		Kind:   phcsync.SampleOK,
+		Ref:    ref.Add(time.Second),
+		Offset: 20 * time.Nanosecond,
+		Freq:   200,
+		Era:    ptime.Era(1),
+		Mode:   phcsync.ModeTracking,
 	})
 
 	// Check that new file exists and has header + sample
@@ -200,13 +200,13 @@ func TestClockLogObserverNoPath(t *testing.T) {
 	// Should not panic when sampling with no file
 	sysTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 	ref, _ := ls.SysToTime(sysTime)
-	obs.Sample(phcsync.SampleData{
-		Kind:      phcsync.SampleOK,
-		Ref:       ref,
-		Offset:    42 * time.Nanosecond,
-		Freq:      1234.5,
-		Era:       ptime.Era(1),
-		SyncState: phcsync.InSync,
+	obs.Sample(phcsync.Sample{
+		Kind:   phcsync.SampleOK,
+		Ref:    ref,
+		Offset: 42 * time.Nanosecond,
+		Freq:   1234.5,
+		Era:    ptime.Era(1),
+		Mode:   phcsync.ModeTracking,
 	})
 
 	// Should not panic when reopening with no file
@@ -234,13 +234,13 @@ func TestClockLogObserverLeapSecond(t *testing.T) {
 	// Time before a potential leap second (June 30, 2024)
 	sysTime1 := time.Date(2024, 6, 30, 23, 59, 59, 0, time.UTC)
 	ref1, _ := initialLS.SysToTime(sysTime1)
-	obs.Sample(phcsync.SampleData{
-		Kind:      phcsync.SampleOK,
-		Ref:       ref1,
-		Offset:    10 * time.Nanosecond,
-		Freq:      100,
-		Era:       ptime.Era(1),
-		SyncState: phcsync.InSync,
+	obs.Sample(phcsync.Sample{
+		Kind:   phcsync.SampleOK,
+		Ref:    ref1,
+		Offset: 10 * time.Nanosecond,
+		Freq:   100,
+		Era:    ptime.Era(1),
+		Mode:   phcsync.ModeTracking,
 	})
 
 	// Simulate a leap second announcement from GPS
@@ -265,13 +265,13 @@ func TestClockLogObserverLeapSecond(t *testing.T) {
 	sysTime2 := time.Date(2024, 7, 1, 0, 0, 1, 0, time.UTC)
 	// Use the updated leap second in the observer to calculate ref2
 	ref2, _ := obs.ls.SysToTime(sysTime2)
-	obs.Sample(phcsync.SampleData{
-		Kind:      phcsync.SampleOK,
-		Ref:       ref2,
-		Offset:    20 * time.Nanosecond,
-		Freq:      200,
-		Era:       ptime.Era(1),
-		SyncState: phcsync.InSync,
+	obs.Sample(phcsync.Sample{
+		Kind:   phcsync.SampleOK,
+		Ref:    ref2,
+		Offset: 20 * time.Nanosecond,
+		Freq:   200,
+		Era:    ptime.Era(1),
+		Mode:   phcsync.ModeTracking,
 	})
 
 	// Read and verify log content

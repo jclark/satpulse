@@ -34,8 +34,8 @@ func NewMultiObserver(observers ...Observer) *MultiObserver {
 	}
 }
 
-// Sample implements mon.Sampler by type-asserting handlers to Sampler
-func (m *MultiObserver) Sample(data phcsync.SampleData) {
+// Sample implements phcsync.Sampler by type-asserting handlers to Sampler
+func (m *MultiObserver) Sample(data phcsync.Sample) {
 	for h := range m.Handlers() {
 		if sampler, ok := h.(phcsync.Sampler); ok {
 			sampler.Sample(data)
@@ -66,8 +66,8 @@ type DefaultObserver struct {
 	gpsprot.DefaultHandler
 }
 
-// Sample implements mon.Sampler as a no-op
-func (o *DefaultObserver) Sample(data phcsync.SampleData) {}
+// Sample implements phcsync.Sampler as a no-op
+func (o *DefaultObserver) Sample(data phcsync.Sample) {}
 
 // ReopenLog implements Observer as a no-op
 func (o *DefaultObserver) ReopenLog() {}

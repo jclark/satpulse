@@ -198,15 +198,14 @@ func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []
 	offset := lastPulseTimestamp.T.Sub(lastSec)
 
 	return &Sample{
-		SampleData: &SampleData{
-			Kind:   SampleOK,
-			Ref:    lastSec,
-			Offset: offset,
-			Freq:   0,
-			Era:    lastPulseTimestamp.Era,
-		},
-		edgeIndex: g.lastEdgeIndex,
+		Kind:      SampleOK,
+		Ref:       lastSec,
+		Offset:    offset,
+		Freq:      0,
+		Era:       lastPulseTimestamp.Era,
+		EdgeIndex: g.lastEdgeIndex,
 		Sys:       pulseTimes[len(pulseTimes)-1],
+		// Mode will be filled in by processSample
 	}, nil
 }
 

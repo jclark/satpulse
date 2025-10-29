@@ -69,7 +69,7 @@ func newConvergingSampleGenerator(cfg ConvergingConfig, pt PulseType, lastSample
 	return &convergingSampleGenerator{
 		cfg:              cfg,
 		pt:               pt,
-		leadingEdgeIndex: lastSample.edgeIndex,
+		leadingEdgeIndex: lastSample.EdgeIndex,
 		freq:             freq,
 		maxFreq:          maxFreq,
 		lg:               lg,
@@ -95,14 +95,13 @@ func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex ui
 	sys := edge.TRead.Add(-phcDelta)
 
 	return &Sample{
-		SampleData: &SampleData{
-			Kind:   SampleOK,
-			Ref:    refTime,
-			Offset: offset,
-			Era:    edge.Timestamp.Era,
-		},
-		edgeIndex: edgeIndex,
+		Kind:      SampleOK,
+		Ref:       refTime,
+		Offset:    offset,
+		Era:       edge.Timestamp.Era,
+		EdgeIndex: edgeIndex,
 		Sys:       sys,
+		// Freq and Mode will be filled in by processSample
 	}
 }
 

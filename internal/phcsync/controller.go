@@ -26,14 +26,6 @@ type PulseType struct {
 	PulseWidth    time.Duration
 }
 
-// Sample represents a sample with associated edge index.
-// The edgeIndex tracks which edge produced this sample (odd/even).
-type Sample struct {
-	*SampleData
-	edgeIndex uint64
-	Sys       time.Time // estimated monotonic system time of pulse
-}
-
 // TimeMsgBuffer is an interface for the Controller to access time messages from the receiver.
 type TimeMsgBuffer interface {
 	// GetPostTimeMessages retrieves n time messages.
@@ -89,6 +81,11 @@ func (m Mode) String() string {
 	default:
 		return fmt.Sprintf("unknown(%d)", m)
 	}
+}
+
+// InSync returns true if the mode represents a synchronized state
+func (m Mode) InSync() bool {
+	return m == ModeTracking
 }
 
 // Controller coordinates PHC synchronization.
@@ -217,7 +214,15 @@ func (c *Controller) processSample(sample *Sample) {
 	c.doPHCAction(action)
 	sample.Freq = c.freq
 	sample.FreqDelta = c.freq - freq
-	c.sampler.Sample(*sample.SampleData)
+	// Set sample mode to current mode (c.mode), not the next mode (mode).
+	// Rationale: The sample represents the state of synchronization at the time it occurred.
+	// Even if this sample triggers a mode transition, it should be attributed to the mode
+	// that was active when it occurred. This is important for tracking metrics: when we're
+	// in tracking mode serving synchronized time to clients, any samples (including missing
+	// or outlier samples that cause us to leave tracking) represent the quality of time
+	// that clients were receiving while we were still in tracking mode.
+	sample.Mode = c.mode
+	c.sampler.Sample(*sample)
 	if mode != c.mode {
 		c.changeMode(mode)
 	}
@@ -275,16 +280,14 @@ func (c *Controller) Tick(now time.Time) {
 
 	// Create missing sample
 	sample := &Sample{
-		SampleData: &SampleData{
-			Kind:   SampleMissing,
-			Ref:    c.lastSample.Ref.Add(time.Second),
-			Offset: 0,
-			Era:    c.era,
-			// Freq will be filled in later
-		},
-		edgeIndex: 0, // Missing samples don't have an edge index
+		Kind:      SampleMissing,
+		Ref:       c.lastSample.Ref.Add(time.Second),
+		Offset:    0,
+		Era:       c.era,
+		EdgeIndex: 0, // Missing samples don't have an edge index
 		// Advance system time by exactly one second from last sample
 		Sys: c.lastSample.Sys.Add(time.Second),
+		// Freq and Mode will be filled in later by processSample
 	}
 
 	// Update lastSample to the missing sample so we don't generate duplicates

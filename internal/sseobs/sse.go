@@ -99,8 +99,8 @@ func (o *SSEObserver) Release() {
 	close(o.sseCh)
 }
 
-// Sample implements mon.Sampler - generates PHC sample SSE events (copied exactly from monitor.go)
-func (o *SSEObserver) Sample(data phcsync.SampleData) {
+// Sample implements phcsync.Sampler - generates PHC sample SSE events
+func (o *SSEObserver) Sample(data phcsync.Sample) {
 	stepCount, changing := data.Era.StepCount()
 	event := SampleSSE{
 		Offset:            float64(data.Offset),
@@ -108,7 +108,7 @@ func (o *SSEObserver) Sample(data phcsync.SampleData) {
 		StepCountChanging: changing,
 		Freq:              data.Freq,
 		Outlier:           data.Kind == phcsync.SampleOutlier,
-		SyncState:         data.SyncState.String(),
+		SyncState:         data.Mode.String(),
 	}
 	o.sendSSE("phc", event)
 }

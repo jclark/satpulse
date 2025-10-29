@@ -16,7 +16,7 @@ type mockObserver struct {
 	timeCount     int
 }
 
-func (m *mockObserver) Sample(data phcsync.SampleData) {
+func (m *mockObserver) Sample(data phcsync.Sample) {
 	m.sampleCount++
 }
 
@@ -37,7 +37,7 @@ func TestMultiObserver_Sample(t *testing.T) {
 	mock2 := &mockObserver{}
 	multi := NewMultiObserver(mock1, mock2)
 
-	multi.Sample(phcsync.SampleData{})
+	multi.Sample(phcsync.Sample{})
 
 	if mock1.sampleCount != 1 {
 		t.Errorf("Expected Sample count 1 on mock1, got %d", mock1.sampleCount)

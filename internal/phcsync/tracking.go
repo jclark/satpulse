@@ -113,7 +113,7 @@ func (g *trackingSampleGenerator) ignoreEdge(edge PulseEdge, edgeIndex uint64) b
 	widthIgnore := (edge.Timestamp.T.Sub(lastEdgeTime) - g.pt.PulseWidth).Abs() <= time.Duration(g.cfg.PulseWidthTolerance)
 
 	// parityIgnore is true suggests ignoring this edge, and !parityIgnore suggests keeping it
-	parityIgnore := (g.lastSample.edgeIndex^edgeIndex)&1 != 0
+	parityIgnore := (g.lastSample.EdgeIndex^edgeIndex)&1 != 0
 
 	if alignKeep && !parityIgnore {
 		return false
@@ -150,15 +150,13 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 	sys := edge.TRead.Add(-phcDelta)
 
 	sample := &Sample{
-		SampleData: &SampleData{
-			Kind:      SampleOK,
-			Ref:       refTime,
-			Offset:    offset,
-			Era:       edge.Timestamp.Era,
-			SyncState: InSync,
-		},
-		edgeIndex: edgeIndex,
+		Kind:      SampleOK,
+		Ref:       refTime,
+		Offset:    offset,
+		Era:       edge.Timestamp.Era,
+		EdgeIndex: edgeIndex,
 		Sys:       sys,
+		// Freq and Mode will be filled in by processSample
 	}
 
 	// Update lastSample for next edge comparison

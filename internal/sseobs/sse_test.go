@@ -37,30 +37,30 @@ func TestSSEObserver_Events(t *testing.T) {
 		{
 			name: "sample_ok",
 			action: func(obs *SSEObserver) {
-				obs.Sample(phcsync.SampleData{
+				obs.Sample(phcsync.Sample{
 					Kind:      phcsync.SampleOK,
 					Offset:    123 * time.Nanosecond,
 					Freq:      1.5,
-					SyncState: phcsync.InSync,
+					Mode: phcsync.ModeTracking,
 					Era:       ptime.Era(0),
 				})
 			},
 			eventType:    "phc",
-			expectedJSON: `{"offset":123,"freq":1.5,"stepCount":0,"stepCountChanging":true,"syncState":"in sync"}`,
+			expectedJSON: `{"offset":123,"freq":1.5,"stepCount":0,"stepCountChanging":true,"syncState":"tracking"}`,
 		},
 		{
 			name: "sample_outlier",
 			action: func(obs *SSEObserver) {
-				obs.Sample(phcsync.SampleData{
+				obs.Sample(phcsync.Sample{
 					Kind:      phcsync.SampleOutlier,
 					Offset:    -456 * time.Nanosecond,
 					Freq:      -2.3,
-					SyncState: phcsync.NoSync,
+					Mode: phcsync.ModeReset,
 					Era:       ptime.Era(0),
 				})
 			},
 			eventType:    "phc",
-			expectedJSON: `{"offset":-456,"freq":-2.3,"stepCount":0,"stepCountChanging":true,"outlier":true,"syncState":"out of sync"}`,
+			expectedJSON: `{"offset":-456,"freq":-2.3,"stepCount":0,"stepCountChanging":true,"outlier":true,"syncState":"reset"}`,
 		},
 		{
 			name: "time",

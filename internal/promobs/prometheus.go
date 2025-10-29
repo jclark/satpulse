@@ -187,18 +187,17 @@ func (p *PrometheusObserver) Handler() http.Handler {
 	return promhttp.HandlerFor(p.reg, promhttp.HandlerOpts{})
 }
 
-// Sample implements mon.Sampler interface
-func (p *PrometheusObserver) Sample(data phcsync.SampleData) {
+// Sample implements phcsync.Sampler interface
+func (p *PrometheusObserver) Sample(data phcsync.Sample) {
 	// Always update frequency gauge (convert ppb to dimensionless)
 	p.frequencyGauge.Set(data.Freq / 1e9)
 
-	switch data.SyncState {
-	case phcsync.InSync:
+	if data.Mode.InSync() {
 		p.inSyncGauge.Set(1)
 		if !p.everInSync {
 			p.everInSync = true
 		}
-	case phcsync.NoSync:
+	} else {
 		p.inSyncGauge.Set(0)
 		if p.everInSync {
 			p.samplesCounter.WithLabelValues("out_of_sync").Inc()

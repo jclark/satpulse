@@ -38,8 +38,8 @@ func NewClockLogObserver(lg *slog.Logger, path string, ls ptime.LeapSecond) (*Cl
 	return o, nil
 }
 
-// Sample implements mon.Sampler - logs clock data samples
-func (o *ClockLogObserver) Sample(data phcsync.SampleData) {
+// Sample implements phcsync.Sampler - logs clock data samples
+func (o *ClockLogObserver) Sample(data phcsync.Sample) {
 	// Don't log missing samples
 	if data.Kind == phcsync.SampleMissing {
 		return
@@ -78,13 +78,17 @@ func (o *ClockLogObserver) writeLogHeader() {
 	o.lf.HandleWriteError(err, o.lg)
 }
 
-func (o *ClockLogObserver) writeLogEntry(data phcsync.SampleData) {
+func (o *ClockLogObserver) writeLogEntry(data phcsync.Sample) {
 	if o.lf.File == nil {
 		return
 	}
 	outlierFlag := 0
 	if data.Kind == phcsync.SampleOutlier {
 		outlierFlag = 1
+	}
+	syncFlag := 0
+	if data.Mode.InSync() {
+		syncFlag = 1
 	}
 	// Format offset to width 3 for alignment
 	// Almost all the time, the absolute value of offset will be < 100,
@@ -95,7 +99,7 @@ func (o *ClockLogObserver) writeLogEntry(data phcsync.SampleData) {
 		data.Freq,
 		outlierFlag,
 		uint64(data.Era),
-		int(data.SyncState))
+		syncFlag)
 	o.lf.HandleWriteError(err, o.lg)
 }
 
