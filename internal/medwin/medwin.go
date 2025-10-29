@@ -45,10 +45,11 @@ func New[T Value](capacity int) *Window[T] {
 // the oldest value is automatically removed.
 func (w *Window[T]) Add(v T) {
 	if len(w.indices) >= len(w.values) {
-		w.removeIndex(uint8(w.head))
+		w.replaceIndex(uint8(w.head), v)
+	} else {
+		w.values[w.head] = v
+		w.insertIndex(uint8(w.head))
 	}
-	w.values[w.head] = v
-	w.insertIndex(uint8(w.head))
 	w.head = (w.head + 1) % len(w.values)
 }
 
@@ -92,6 +93,61 @@ func (w *Window[T]) insertIndex(idx uint8) {
 	})
 	// Insert idx at position pos
 	w.indices = slices.Insert(w.indices, pos, idx)
+}
+
+// replaceIndex removes oldIdx and inserts newIdx with value newVal in a single pass.
+// This is an optimized version that combines remove and insert operations.
+// Scan from high to low until we find either the deletion or insertion position,
+// then shift elements in one direction to accomplish both operations.
+func (w *Window[T]) replaceIndex(oldIdx uint8, newVal T) {
+	w.values[oldIdx] = newVal
+	n := len(w.indices)
+
+	// Scan from high to low looking for either oldIdx or insertion position
+	for i := n - 1; i >= 0; i-- {
+		if w.indices[i] == oldIdx {
+			// Found oldIdx first - newVal belongs at or before this position
+			// Shift elements right while searching backward for insertion position
+			// Use >= to insert BEFORE equal values (matching BinarySearchFunc behavior)
+			pos := i
+			for pos > 0 && w.values[w.indices[pos-1]] >= newVal {
+				w.indices[pos] = w.indices[pos-1]
+				pos--
+			}
+			w.indices[pos] = oldIdx
+			return
+		}
+
+		if w.values[w.indices[i]] < newVal {
+			// Found insertion position first (at i+1) - oldIdx must be at or before i
+			// Search backward for oldIdx while shifting left
+			for j := i; j >= 0; j-- {
+				if w.indices[j] == oldIdx {
+					// Shift elements from j+1 to i left by one (deletes oldIdx)
+					for k := j; k < i; k++ {
+						w.indices[k] = w.indices[k+1]
+					}
+					// Insert oldIdx at position i (which is where i+1 was after the shift)
+					w.indices[i] = oldIdx
+					return
+				}
+			}
+			panic("medwin: oldIdx not found before insertion position")
+		}
+	}
+
+	// newVal is smaller than all values - should go at position 0
+	// Search forward for oldIdx and shift
+	for i := 0; i < n; i++ {
+		if w.indices[i] == oldIdx {
+			for j := i; j > 0; j-- {
+				w.indices[j] = w.indices[j-1]
+			}
+			w.indices[0] = oldIdx
+			return
+		}
+	}
+	panic("medwin: oldIdx not found in indices")
 }
 
 // removeIndex removes idx from indices
