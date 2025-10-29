@@ -130,17 +130,19 @@ func (w *Window[T]) replaceIndex(idx uint8, newVal T) {
 
 		if w.values[w.indices[i]] < newVal {
 			// Found insertion position first (at i+1) - this means idx must be at or before i
-			// Search backward for idx while shifting elements left
-			for j := i; j >= 0; j-- {
+			// Shift elements left as we search backward for idx (single pass)
+			saved := w.indices[i]  // Save the value that will be overwritten
+			for j := i - 1; j >= 0; j-- {
 				if w.indices[j] == idx {
-					// Shift elements from j+1 to i left by one (removes idx from position j)
-					for k := j; k < i; k++ {
-						w.indices[k] = w.indices[k+1]
-					}
-					// Insert idx at position i (which is now one position left after the shift)
+					// Found idx! Place saved value at j, idx at i
+					w.indices[j] = saved
 					w.indices[i] = idx
 					return
 				}
+				// Haven't found idx yet. Shift: save current, write previous saved
+				temp := w.indices[j]
+				w.indices[j] = saved
+				saved = temp
 			}
 			panic("medwin: idx not found before insertion position - internal error")
 		}
