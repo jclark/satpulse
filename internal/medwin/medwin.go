@@ -4,10 +4,7 @@
 // This avoids duplicating large values while keeping median queries O(1).
 package medwin
 
-import (
-	"cmp"
-	"time"
-)
+import "cmp"
 
 // Window maintains a fixed-size moving window of ordered values and efficiently
 // computes their median. Values are stored in a circular buffer in arrival order,
@@ -20,10 +17,15 @@ type Window[T cmp.Ordered] struct {
 }
 
 // New creates a Window with the specified capacity.
-// Capacity must be positive and cannot exceed 255.
+// Capacity must be positive, odd, and cannot exceed 255.
+// Odd capacity is required to ensure median is always a single value
+// from the dataset (no averaging needed).
 func New[T cmp.Ordered](capacity int) *Window[T] {
 	if capacity <= 0 {
 		panic("medwin: capacity must be positive")
+	}
+	if capacity%2 == 0 {
+		panic("medwin: capacity must be odd")
 	}
 	if capacity > 255 {
 		panic("medwin: capacity cannot exceed 255")
@@ -53,7 +55,7 @@ func (w *Window[T]) Add(v T) {
 }
 
 // Median returns the median of values in the window.
-// For an even number of values, returns the average of the two middle values.
+// With odd-sized windows, this is always the middle value.
 // Returns the zero value if the window is empty.
 func (w *Window[T]) Median() T {
 	n := len(w.indices)
@@ -62,38 +64,7 @@ func (w *Window[T]) Median() T {
 		return zero
 	}
 	mid := n / 2
-	if n%2 != 0 {
-		return w.values[w.indices[mid]]
-	}
-	// For even count, return average of two middle values
-	// We use interface{} to work around Go's limitation with generic arithmetic
-	a := w.values[w.indices[mid-1]]
-	b := w.values[w.indices[mid]]
-	return average(a, b)
-}
-
-// average computes (a+b)/2 for ordered types
-// Uses any to work around generic arithmetic limitations
-func average[T cmp.Ordered](a, b T) T {
-	aAny, bAny := any(a), any(b)
-
-	// Handle different numeric types
-	switch aVal := aAny.(type) {
-	case int:
-		return any((aVal + bAny.(int)) / 2).(T)
-	case int64:
-		return any((aVal + bAny.(int64)) / 2).(T)
-	case float64:
-		return any((aVal + bAny.(float64)) / 2.0).(T)
-	case float32:
-		return any((aVal + bAny.(float32)) / 2.0).(T)
-	case time.Duration:
-		return any((aVal + bAny.(time.Duration)) / 2).(T)
-	default:
-		// For other types, just return the first value
-		// This shouldn't happen with cmp.Ordered types we care about
-		return a
-	}
+	return w.values[w.indices[mid]]
 }
 
 // Len returns the current number of values in the window.

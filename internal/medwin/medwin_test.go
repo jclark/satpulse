@@ -21,14 +21,10 @@ func TestWindow_BasicInt(t *testing.T) {
 		t.Errorf("median([10]) = %d, want 10", got)
 	}
 
-	// Add second value
+	// Add second and third values
 	w.Add(5)
-	if got := w.Median(); got != 7 {
-		t.Errorf("median([10,5]) = %d, want 7", got)
-	}
-
-	// Add third value (odd count)
 	w.Add(15)
+	// Sorted: [5, 10, 15], median is 10
 	if got := w.Median(); got != 10 {
 		t.Errorf("median([10,5,15]) = %d, want 10", got)
 	}
@@ -98,18 +94,14 @@ func TestWindow_Duration(t *testing.T) {
 	}
 }
 
-func TestWindow_EvenSize(t *testing.T) {
-	w := New[int](4)
-
-	w.Add(10)
-	w.Add(20)
-	w.Add(30)
-	w.Add(40)
-
-	// Even count: average of middle two (20, 30) = 25
-	if got := w.Median(); got != 25 {
-		t.Errorf("median([10,20,30,40]) = %d, want 25", got)
-	}
+func TestWindow_OddSizeRequired(t *testing.T) {
+	// Ensure even capacity panics
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic with even capacity, got none")
+		}
+	}()
+	_ = New[int](4)
 }
 
 func TestWindow_DuplicateValues(t *testing.T) {
@@ -220,7 +212,7 @@ func TestWindow_NegativeValues(t *testing.T) {
 }
 
 func BenchmarkWindow_Add(b *testing.B) {
-	w := New[int](100)
+	w := New[int](99)
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -229,8 +221,8 @@ func BenchmarkWindow_Add(b *testing.B) {
 }
 
 func BenchmarkWindow_Median(b *testing.B) {
-	w := New[int](100)
-	for i := 0; i < 100; i++ {
+	w := New[int](99)
+	for i := 0; i < 99; i++ {
 		w.Add(i)
 	}
 	b.ResetTimer()
@@ -241,7 +233,7 @@ func BenchmarkWindow_Median(b *testing.B) {
 }
 
 func BenchmarkWindow_AddAndMedian(b *testing.B) {
-	w := New[int](100)
+	w := New[int](99)
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
