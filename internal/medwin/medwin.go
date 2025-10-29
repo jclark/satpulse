@@ -76,16 +76,14 @@ func average[T Value](a, b T) T {
 	if _, ok := any(a).(float64); ok {
 		return a/2 + b/2
 	}
-	// For integer types (int64, time.Duration): convert to int64 for modulo
-	aInt := int64(a)
-	bInt := int64(b)
+	// For integer types (int64, time.Duration):
 	// When opposite signs: (a+b)/2 is safe (no overflow)
-	if aInt < 0 && bInt >= 0 {
+	if a < 0 && b >= 0 {
 		return (a + b) / 2
 	}
 	// When same sign: use a/2 + b/2 + (a%2 + b%2)/2 to avoid overflow
 	// and match (a+b)/2 rounding exactly
-	return T(aInt/2 + bInt/2 + (aInt%2+bInt%2)/2)
+	return a/2 + b/2 + T((int64(a)%2+int64(b)%2)/2)
 }
 
 // Len returns the current number of values in the window.
