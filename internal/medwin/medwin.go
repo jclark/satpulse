@@ -67,9 +67,11 @@ func (w *Window[T]) Median() T {
 	if n%2 != 0 {
 		return w.values[w.indices[mid]]
 	}
-	// Even count: average of two middle values
-	a := w.values[w.indices[mid-1]]
-	b := w.values[w.indices[mid]]
+	return average(w.values[w.indices[mid-1]], w.values[w.indices[mid]])
+}
+
+// average returns the average of two values without overflow.
+func average[T Value](a, b T) T {
 	// For float64, direct average is fine (no overflow concerns)
 	if _, ok := any(a).(float64); ok {
 		return (a + b) / 2

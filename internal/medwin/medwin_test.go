@@ -279,6 +279,84 @@ func TestWindow_NegativeOddDifference(t *testing.T) {
 	}
 }
 
+func TestAverage_Float64(t *testing.T) {
+	tests := []struct {
+		a, b, want float64
+	}{
+		{1.0, 2.0, 1.5},
+		{-1.0, 1.0, 0.0},
+		{-3.5, -2.5, -3.0},
+		{1e100, 1e100, 1e100},
+	}
+	for _, tt := range tests {
+		got := average(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("average(%v, %v) = %v, want %v", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
+func TestAverage_Int64_OppositeSigns(t *testing.T) {
+	tests := []struct {
+		name       string
+		a, b, want int64
+	}{
+		{"MinInt64 and MaxInt64", -9223372036854775808, 9223372036854775807, 0},
+		{"negative and positive", -10, 10, 0},
+		{"negative and zero", -5, 0, -2},
+		{"zero and positive", 0, 5, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := average(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("average(%d, %d) = %d, want %d", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAverage_Int64_SameSign(t *testing.T) {
+	tests := []struct {
+		name       string
+		a, b, want int64
+	}{
+		{"negative odd difference", -3, -2, -2},
+		{"negative even difference", -4, -2, -3},
+		{"positive odd difference", 2, 3, 2},
+		{"positive even difference", 2, 4, 3},
+		{"large negative", -100, -97, -98},
+		{"near MaxInt64", 9223372036854775806, 9223372036854775807, 9223372036854775806},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := average(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("average(%d, %d) = %d, want %d", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAverage_Duration(t *testing.T) {
+	tests := []struct {
+		name       string
+		a, b, want time.Duration
+	}{
+		{"opposite signs", -5 * time.Second, 3 * time.Second, -1 * time.Second},
+		{"same sign odd", -3 * time.Nanosecond, -2 * time.Nanosecond, -2 * time.Nanosecond},
+		{"large precision", 9000000000000000000, 9000000000000000002, 9000000000000000001},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := average(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("average(%v, %v) = %v, want %v", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWindow_DurationPrecision(t *testing.T) {
 	// Test that large time.Duration values maintain precision
 	w := New[time.Duration](2)
