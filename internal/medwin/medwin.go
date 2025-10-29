@@ -136,18 +136,8 @@ func (w *Window[T]) replaceIndex(oldIdx uint8, newVal T) {
 		}
 	}
 
-	// newVal is smaller than all values - should go at position 0
-	// Search forward for oldIdx and shift
-	for i := 0; i < n; i++ {
-		if w.indices[i] == oldIdx {
-			for j := i; j > 0; j-- {
-				w.indices[j] = w.indices[j-1]
-			}
-			w.indices[0] = oldIdx
-			return
-		}
-	}
-	panic("medwin: oldIdx not found in indices")
+	// Should never reach here - oldIdx must be in the array
+	panic("medwin: replaceIndex failed to find oldIdx - internal error")
 }
 
 // removeIndex removes idx from indices
