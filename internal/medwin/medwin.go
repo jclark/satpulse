@@ -95,50 +95,59 @@ func (w *Window[T]) insertIndex(idx uint8) {
 	w.indices = slices.Insert(w.indices, pos, idx)
 }
 
-// replaceIndex removes oldIdx and inserts it at the position for newVal in a single pass.
-// This is an optimized version that combines remove and insert operations.
-// Scan from high to low until we find either the deletion or insertion position,
-// then shift elements in one direction to accomplish both operations.
-func (w *Window[T]) replaceIndex(oldIdx uint8, newVal T) {
+// replaceIndex repositions idx in the sorted indices array after updating its value.
+// This is called when replacing the oldest value in a full window.
+//
+// idx: the circular buffer slot being updated (e.g., values[3])
+// newVal: the new value being stored at values[idx]
+//
+// The index idx is currently somewhere in the sorted indices array. We need to:
+// 1. Remove idx from its current position
+// 2. Insert idx at the new position where values[idx]=newVal belongs
+//
+// This is done in a single pass for efficiency:
+// - Scan from high to low looking for either idx or the insertion position
+// - Shift elements in one direction to accomplish both remove and insert
+func (w *Window[T]) replaceIndex(idx uint8, newVal T) {
+	// Update the value first so subsequent comparisons use the new value
+	w.values[idx] = newVal
 	n := len(w.indices)
 
-	// Scan from high to low looking for either oldIdx or insertion position
+	// Scan from high to low looking for either idx or the insertion position for newVal
 	for i := n - 1; i >= 0; i-- {
-		if w.indices[i] == oldIdx {
-			// Found oldIdx first - newVal belongs at or before this position
-			// Shift elements right while searching backward for insertion position
+		if w.indices[i] == idx {
+			// Found idx first - this means newVal belongs at or before position i
+			// Shift elements right while searching backward for the insertion position
 			// Use >= to insert BEFORE equal values (matching BinarySearchFunc behavior)
 			pos := i
 			for pos > 0 && w.values[w.indices[pos-1]] >= newVal {
 				w.indices[pos] = w.indices[pos-1]
 				pos--
 			}
-			w.indices[pos] = oldIdx
-			w.values[oldIdx] = newVal
+			w.indices[pos] = idx
 			return
 		}
 
 		if w.values[w.indices[i]] < newVal {
-			// Found insertion position first (at i+1) - oldIdx must be at or before i
-			// Search backward for oldIdx while shifting left
+			// Found insertion position first (at i+1) - this means idx must be at or before i
+			// Search backward for idx while shifting elements left
 			for j := i; j >= 0; j-- {
-				if w.indices[j] == oldIdx {
-					// Shift elements from j+1 to i left by one (deletes oldIdx)
+				if w.indices[j] == idx {
+					// Shift elements from j+1 to i left by one (removes idx from position j)
 					for k := j; k < i; k++ {
 						w.indices[k] = w.indices[k+1]
 					}
-					// Insert oldIdx at position i (which is where i+1 was after the shift)
-					w.indices[i] = oldIdx
-					w.values[oldIdx] = newVal
+					// Insert idx at position i (which is now one position left after the shift)
+					w.indices[i] = idx
 					return
 				}
 			}
-			panic("medwin: oldIdx not found before insertion position")
+			panic("medwin: idx not found before insertion position - internal error")
 		}
 	}
 
-	// Should never reach here - oldIdx must be in the array
-	panic("medwin: replaceIndex failed to find oldIdx - internal error")
+	// Should never reach here - idx must be in the indices array
+	panic("medwin: replaceIndex failed to find idx - internal error")
 }
 
 // removeIndex removes idx from indices
