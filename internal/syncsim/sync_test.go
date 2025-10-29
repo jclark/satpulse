@@ -29,15 +29,18 @@ func (m *modeTracker) Sample(s phcsync.SampleData) {
 func TestPHCSync(t *testing.T) {
 	tests := []struct {
 		name                    string
-		pulseWidth              float64       // 0 for single-edge mode
-		duration                float64       // simulation duration in seconds
-		maxTrackingStdDev       time.Duration // maximum acceptable tracking stddev
-		toggleTimes             []float64     // absolute times to toggle pulse delivery
-		expectNotInSync         int           // expected exact number of not-in-sync samples after first sync (0 = don't check)
-		expectMaxNotInSync      int           // maximum acceptable not-in-sync samples (0 = don't check, overrides expectNotInSync)
-		expectTrackingSamples   int           // expected number of samples in tracking mode
-		expectResetSamples      int           // expected number of samples in reset mode (includes initial sync and recovery)
-		expectConvergingSamples int           // expected number of samples in converging mode (0 = don't check)
+		pulseWidth              float64                  // 0 for single-edge mode
+		duration                float64                  // simulation duration in seconds
+		maxTrackingStdDev       time.Duration            // maximum acceptable tracking stddev
+		maxTrackingAbsMax       time.Duration            // maximum acceptable tracking absolute max (0 = don't check)
+		toggleTimes             []float64                // absolute times to toggle pulse delivery
+		expectNotInSync         int                      // expected exact number of not-in-sync samples after first sync (0 = don't check)
+		expectMaxNotInSync      int                      // maximum acceptable not-in-sync samples (0 = don't check, overrides expectNotInSync)
+		expectTrackingSamples   int                      // expected number of samples in tracking mode
+		expectResetSamples      int                      // expected number of samples in reset mode (includes initial sync and recovery)
+		expectConvergingSamples int                      // expected number of samples in converging mode (0 = don't check)
+		modifySimCfg            func(*Config)            // optional function to modify simCfg (nil = use defaults)
+		modifyPHCCfg            func(*phcsync.Config)    // optional function to modify phcCfg (nil = use defaults)
 	}{
 		{
 			name:              "single-edge mode",
@@ -106,6 +109,56 @@ func TestPHCSync(t *testing.T) {
 			// - Converging from t=28s to t=40s (12 good samples)
 			// Total converging: 7 + 3 + 12 = 22 samples
 		},
+		{
+			name:               "EMA feature reduces drift during brief outages",
+			pulseWidth:         0,
+			duration:           120.0,
+			toggleTimes:        []float64{60.0, 63.0}, // 3 second outage (< badSampleLimit of 5)
+			maxTrackingStdDev:  15 * time.Nanosecond,
+			maxTrackingAbsMax:  40 * time.Nanosecond, // With EMA enabled, absmax ~24ns (vs 58ns without)
+			expectMaxNotInSync: 20,                   // 3 missing in tracking (stays in tracking mode)
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.AvgFreqTimeConstant = 30 // Enable EMA with 30s time constant
+			},
+		},
+		{
+			name:               "Without EMA drift is worse during brief outages",
+			pulseWidth:         0,
+			duration:           120.0,
+			toggleTimes:        []float64{60.0, 63.0}, // 3 second outage (< badSampleLimit of 5)
+			maxTrackingStdDev:  18 * time.Nanosecond,
+			maxTrackingAbsMax:  80 * time.Nanosecond, // Without EMA, absmax ~58ns (2x worse than with EMA)
+			expectMaxNotInSync: 20,                   // 3 missing in tracking (stays in tracking mode)
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.AvgFreqTimeConstant = 0 // Disable EMA feature
+			},
+		},
+		{
+			name:               "EMA feature with longer outage (increased badSampleLimit)",
+			pulseWidth:         0,
+			duration:           180.0,
+			toggleTimes:        []float64{90.0, 99.0}, // 9 second outage (< badSampleLimit of 15)
+			maxTrackingStdDev:  12 * time.Nanosecond,
+			maxTrackingAbsMax:  35 * time.Nanosecond, // With EMA, absmax ~23ns even with 9s outage
+			expectMaxNotInSync: 20,                   // 9 missing in tracking (stays in tracking mode)
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.AvgFreqTimeConstant = 30 // Enable EMA with 30s time constant
+				cfg.Track.BadSampleLimit = 15      // Increase limit to allow longer outage
+			},
+		},
+		{
+			name:               "Without EMA longer outage shows severe drift (increased badSampleLimit)",
+			pulseWidth:         0,
+			duration:           180.0,
+			toggleTimes:        []float64{90.0, 99.0}, // 9 second outage (< badSampleLimit of 15)
+			maxTrackingStdDev:  30 * time.Nanosecond,
+			maxTrackingAbsMax:  180 * time.Nanosecond, // Without EMA, absmax ~139ns (5-6x worse than with EMA)
+			expectMaxNotInSync: 20,                    // 9 missing in tracking (stays in tracking mode)
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.AvgFreqTimeConstant = 0  // Disable EMA feature
+				cfg.Track.BadSampleLimit = 15      // Increase limit to allow longer outage
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -114,14 +167,18 @@ func TestPHCSync(t *testing.T) {
 			phcCfg := phcsync.DefaultConfig()
 			simCfg := DefaultConfig()
 
-			// Override for tighter test conditions
+			// Apply test-specific overrides
 			simCfg.Duration = tt.duration
-			simCfg.PHCFreqOffset = 0.0  // no offset
-			simCfg.PHCFreqDrift = 0.0   // no drift
-			simCfg.PHCNoise = 0.1       // 0.1 ppb frequency noise
-			simCfg.MsgDelay = 0.08      // 80ms message delay
 			simCfg.PulseWidth = tt.pulseWidth
 			simCfg.ToggleTimes = tt.toggleTimes
+
+			// Apply modifier functions if provided
+			if tt.modifySimCfg != nil {
+				tt.modifySimCfg(&simCfg)
+			}
+			if tt.modifyPHCCfg != nil {
+				tt.modifyPHCCfg(&phcCfg)
+			}
 
 			curTime := time.Date(2017, 1, 1, 0, 0, 0, 0, time.UTC)
 
@@ -141,9 +198,14 @@ func TestPHCSync(t *testing.T) {
 				t.Fatalf("Simulate failed: %v", err)
 			}
 
-			// Check that tracking standard deviation is acceptable (skip if toggleTimes is set)
+			// Check that tracking standard deviation is acceptable
 			if tt.maxTrackingStdDev > 0 && stats.TrackingStdDev >= tt.maxTrackingStdDev {
 				t.Errorf("tracking stddev = %v, want < %v", stats.TrackingStdDev, tt.maxTrackingStdDev)
+			}
+
+			// Check that tracking absolute max is acceptable
+			if tt.maxTrackingAbsMax > 0 && stats.TrackingAbsMax >= tt.maxTrackingAbsMax {
+				t.Errorf("tracking absmax = %v, want < %v", stats.TrackingAbsMax, tt.maxTrackingAbsMax)
 			}
 
 			// Check not-in-sync samples after first sync
@@ -184,8 +246,8 @@ func TestPHCSync(t *testing.T) {
 				}
 			}
 
-			t.Logf("Simulation completed: %d samples (reset=%d, converging=%d, tracking=%d), tracking stddev = %v",
-				stats.SampleCount, stats.InitSamples, stats.ConvergingSamples, stats.TrackingSamples, stats.TrackingStdDev)
+			t.Logf("Simulation completed: %d samples (reset=%d, converging=%d, tracking=%d), tracking stddev = %v, tracking absmax = %v",
+				stats.SampleCount, stats.InitSamples, stats.ConvergingSamples, stats.TrackingSamples, stats.TrackingStdDev, stats.TrackingAbsMax)
 		})
 	}
 }

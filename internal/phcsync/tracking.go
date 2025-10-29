@@ -2,6 +2,7 @@ package phcsync
 
 import (
 	"log/slog"
+	"math"
 	"time"
 )
 
@@ -41,16 +42,26 @@ type TrackingConfig struct {
 	// before transitioning back to reset mode. Bad samples do not contribute to frequency
 	// adjustment. Typical value: 5.
 	BadSampleLimit int `toml:"badSampleLimit" check:">=1,<100"`
+
+	// AvgFreqTimeConstant is the time constant in seconds for the exponential moving
+	// average of frequency adjustments. This average represents the baseline frequency
+	// correction (without phase correction) and is used when samples are missing.
+	// Larger values track baseline frequency more smoothly but respond more slowly to
+	// oscillator drift. The EMA is updated as: avgFreq = alpha*freq + (1-alpha)*avgFreq
+	// where alpha = 1 - exp(-sampleInterval/timeConstant). Set to 0 to disable this
+	// feature (no frequency adjustment on missing samples). Typical value: 120.
+	AvgFreqTimeConstant float64 `toml:"avgFreqTimeConstant" check:">=0.0,<1000.0"`
 }
 
 func defaultTrackingConfig() TrackingConfig {
 	return TrackingConfig{
-		Kp:                       0.5,
-		Ki:                       0.1,
-		OutlierThreshold:         1000, // 1µs
-		PulseWidthTolerance:      200,  // 200ns
-		AlignTolerance:     100,  // 100ns
-		BadSampleLimit: 5,
+		Kp:                  0.5,
+		Ki:                  0.1,
+		OutlierThreshold:    1000, // 1µs
+		PulseWidthTolerance: 200,  // 200ns
+		AlignTolerance:      100,  // 100ns
+		BadSampleLimit:      5,
+		AvgFreqTimeConstant: 30, // 30 seconds
 	}
 }
 
@@ -165,14 +176,25 @@ type trackingSampleProcessor struct {
 	servo                 *piServo
 	cfg                   TrackingConfig
 	consecutiveBadSamples int
+	avgFreq               float64 // exponential moving average of frequency
+	emaAlpha              float64 // EMA coefficient (1 - exp(-1/timeConstant))
 	lg                    *slog.Logger
 }
 
 func newTrackingSampleProcessor(cfg TrackingConfig, currentFreq, maxFreq float64, lg *slog.Logger) *trackingSampleProcessor {
+	// Calculate EMA alpha from time constant
+	// With 1 second sample interval: alpha = 1 - exp(-1/timeConstant)
+	// If timeConstant is 0, EMA feature is disabled
+	var emaAlpha float64
+	if cfg.AvgFreqTimeConstant > 0 {
+		emaAlpha = 1.0 - math.Exp(-1.0/cfg.AvgFreqTimeConstant)
+	}
 	return &trackingSampleProcessor{
-		servo: newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
-		cfg:   cfg,
-		lg:    lg,
+		servo:    newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
+		cfg:      cfg,
+		avgFreq:  currentFreq, // initialize with current frequency
+		emaAlpha: emaAlpha,
+		lg:       lg,
 	}
 }
 
@@ -182,25 +204,27 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode
 	// Track consecutive bad samples (missing or outlier - i.e., not sent to servo)
 	if action.actionType == phcNoAction {
 		p.consecutiveBadSamples++
+		// Use EMA feature (adjusting on bad samples), if not disabled by AvgFreqTimeConstant = 0
+		if p.consecutiveBadSamples == 1 && p.cfg.AvgFreqTimeConstant > 0 {
+			action.actionType = phcAdjustFrequency
+			action.freq = p.avgFreq
+			p.lg.Debug("first bad sample; switching to average frequency", "avgFreq", p.avgFreq)
+		}
 	} else {
 		p.consecutiveBadSamples = 0
 	}
-
 	// Transition to reset mode if too many consecutive bad samples
 	if p.consecutiveBadSamples >= p.cfg.BadSampleLimit {
 		p.lg.Info("entering reset mode", "consecutiveBadSamples", p.consecutiveBadSamples)
 		return action, ModeReset
 	}
-
 	return action, ModeTracking
 }
 
 func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 	if sample.Kind == SampleMissing {
-		// Just continue tracking on missing samples
 		return phcAction{actionType: phcNoAction}
 	}
-
 	// Check for outlier
 	outlierThreshold := time.Duration(p.cfg.OutlierThreshold)
 	if sample.Offset.Abs() >= outlierThreshold {
@@ -212,6 +236,11 @@ func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 
 	// Apply PI control for good samples
 	freq := p.servo.sample(sample.Offset)
+
+	// Update exponential moving average of frequency
+	// avgFreq = alpha * freq + (1-alpha) * avgFreq
+	p.avgFreq = p.emaAlpha*freq + (1.0-p.emaAlpha)*p.avgFreq
+
 	return phcAction{
 		actionType: phcAdjustFrequency,
 		freq:       freq,
