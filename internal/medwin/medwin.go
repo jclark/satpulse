@@ -77,15 +77,8 @@ func average[T Value](a, b T) T {
 		return a/2 + b/2
 	}
 	// For integer types (int64, time.Duration): convert to int64 for modulo
-	var aInt, bInt int64
-	switch v := any(a).(type) {
-	case int64:
-		aInt = v
-		bInt = any(b).(int64)
-	case time.Duration:
-		aInt = int64(v)
-		bInt = int64(any(b).(time.Duration))
-	}
+	aInt := int64(a)
+	bInt := int64(b)
 	// When opposite signs: (a+b)/2 is safe (no overflow)
 	if aInt < 0 && bInt >= 0 {
 		return (a + b) / 2
