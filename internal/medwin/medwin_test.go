@@ -287,6 +287,7 @@ func TestAverage_Float64(t *testing.T) {
 		{-1.0, 1.0, 0.0},
 		{-3.5, -2.5, -3.0},
 		{1e100, 1e100, 1e100},
+		{1e308, 1e308, 1e308}, // Would overflow with (a+b)/2
 	}
 	for _, tt := range tests {
 		got := average(tt.a, tt.b)
