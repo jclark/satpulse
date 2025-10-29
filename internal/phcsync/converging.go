@@ -13,36 +13,36 @@ type ConvergingConfig struct {
 	// Kp is the proportional gain for the PI servo used during converging mode.
 	// Higher values make the servo more responsive but may cause oscillation.
 	// Typical value: 0.7.
-	Kp float64 `toml:"kp"`
+	Kp float64 `toml:"kp" check:">0.0,<10.0"`
 
 	// Ki is the integral gain for the PI servo used during converging mode.
 	// This accumulates error over time to eliminate steady-state offset.
 	// Typical value: 0.3.
-	Ki float64 `toml:"ki"`
+	Ki float64 `toml:"ki" check:">=0.0,<10.0"`
 
 	// MedianWindow is the number of samples in the sliding window for computing the median
 	// of absolute offsets. The median is used to track convergence progress: when it stops
 	// decreasing and stabilizes below OffsetLimit, converging mode exits to tracking mode.
 	// Typical value: 5.
-	MedianWindow int `toml:"medianWindow"`
+	MedianWindow int `toml:"medianWindow" check:">=3,<100"`
 
 	// OffsetLimit is the maximum acceptable absolute offset in nanoseconds for declaring
 	// convergence complete. Converging mode exits to tracking when both conditions hold:
 	// (1) the median of absolute offsets has not decreased for StableWindow consecutive samples,
 	// and (2) every sample since the minimum median was observed has absolute offset <= OffsetLimit.
 	// If any sample exceeds this limit, the stability counter resets. Typical value: 1000 (1µs).
-	OffsetLimit int64 `toml:"offsetLimit"`
+	OffsetLimit int64 `toml:"offsetLimit" check:">0,<1_000_000_000"`
 
 	// StableWindow is the number of consecutive samples for which the minimum median must
 	// remain stable (not decrease) before exiting converging mode. This ensures the offset
 	// has truly stabilized rather than just momentarily dipping below the threshold.
 	// Typical value: 3.
-	StableWindow int `toml:"stableWindow"`
+	StableWindow int `toml:"stableWindow" check:">=1,<100"`
 
 	// BadSampleLimit is the maximum number of consecutive missing samples before transitioning
 	// back to reset mode. Missing samples indicate loss of PPS signal or time messages.
 	// Typical value: 3.
-	BadSampleLimit int `toml:"badSampleLimit"`
+	BadSampleLimit int `toml:"badSampleLimit" check:">=1,<100"`
 }
 
 func defaultConvergingConfig() ConvergingConfig {

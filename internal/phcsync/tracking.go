@@ -10,37 +10,37 @@ type TrackingConfig struct {
 	// Kp is the proportional gain for the PI servo used during tracking mode.
 	// Lower than converging mode for stability during normal operation.
 	// Typical value: 0.5.
-	Kp float64 `toml:"kp"`
+	Kp float64 `toml:"kp" check:">0.0,<10.0"`
 
 	// Ki is the integral gain for the PI servo used during tracking mode.
 	// Lower than converging mode to prevent overcorrection during stable tracking.
 	// Typical value: 0.1.
-	Ki float64 `toml:"ki"`
+	Ki float64 `toml:"ki" check:">0.0,<10.0"`
 
 	// OutlierThreshold is the minimum absolute offset in nanoseconds for classifying a sample
 	// as an outlier. Samples with |offset| >= OutlierThreshold are marked as outliers and
 	// excluded from frequency adjustment. This prevents transient disturbances from affecting
 	// the servo. Typical value: 1000 (1µs).
-	OutlierThreshold int64 `toml:"outlierThreshold"`
+	OutlierThreshold int64 `toml:"outlierThreshold" check:">0,<1_000_000_000"`
 
 	// PulseWidthTolerance is the tolerance in nanoseconds for filtering trailing edges in
 	// dual-edge mode based on temporal spacing. An edge is considered a trailing edge (and
 	// ignored) if it arrives within PulseWidthTolerance of the expected trailing edge time
 	// (lastEdgeTime + PulseWidth). This helps distinguish leading from trailing edges when
 	// alignment alone is ambiguous. Typical value: 200 ns.
-	PulseWidthTolerance int64 `toml:"pulseWidthTolerance"`
+	PulseWidthTolerance int64 `toml:"pulseWidthTolerance" check:">0,<1_000_000_000"`
 
 	// AlignTolerance is the tolerance in nanoseconds for offset from top of second to
 	// immediately accept an edge as a leading edge. Edges with |offset| <= AlignTolerance
 	// (where offset is timestamp rounded to nearest second) are assumed to be leading edges
 	// and accepted without further checks. This is the primary discriminator for
 	// well-synchronized clocks. Typical value: 100 ns.
-	AlignTolerance int64 `toml:"alignTolerance"`
+	AlignTolerance int64 `toml:"alignTolerance" check:">0,<1_000_000_000"`
 
 	// BadSampleLimit is the maximum number of consecutive bad samples (missing or outlier)
 	// before transitioning back to reset mode. Bad samples do not contribute to frequency
 	// adjustment. Typical value: 5.
-	BadSampleLimit int `toml:"badSampleLimit"`
+	BadSampleLimit int `toml:"badSampleLimit" check:">=1,<100"`
 }
 
 func defaultTrackingConfig() TrackingConfig {
