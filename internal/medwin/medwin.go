@@ -68,16 +68,29 @@ func (w *Window[T]) Median() T {
 		return w.values[w.indices[mid]]
 	}
 	// Even count: average of two middle values
-	// Since indices are sorted, a <= b always holds
 	a := w.values[w.indices[mid-1]]
 	b := w.values[w.indices[mid]]
-	// For signed integers: when a and b have opposite signs, (a+b)/2 is safe
-	// because the sum stays between a and b (no overflow).
-	// When same sign, use a+(b-a)/2 to avoid overflow in the subtraction.
-	if a < 0 && b >= 0 {
+	// For float64, direct average is fine (no overflow concerns)
+	if _, ok := any(a).(float64); ok {
 		return (a + b) / 2
 	}
-	return a + (b-a)/2
+	// For integer types (int64, time.Duration): convert to int64 for modulo
+	var aInt, bInt int64
+	switch v := any(a).(type) {
+	case int64:
+		aInt = v
+		bInt = any(b).(int64)
+	case time.Duration:
+		aInt = int64(v)
+		bInt = int64(any(b).(time.Duration))
+	}
+	// When opposite signs: (a+b)/2 is safe (no overflow)
+	if aInt < 0 && bInt >= 0 {
+		return (a + b) / 2
+	}
+	// When same sign: use a/2 + b/2 + (a%2 + b%2)/2 to avoid overflow
+	// and match (a+b)/2 rounding exactly
+	return T(aInt/2 + bInt/2 + (aInt%2+bInt%2)/2)
 }
 
 // Len returns the current number of values in the window.

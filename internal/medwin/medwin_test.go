@@ -254,6 +254,31 @@ func TestWindow_MinMaxInt64Overflow(t *testing.T) {
 	}
 }
 
+func TestWindow_NegativeOddDifference(t *testing.T) {
+	// Test that negative values with odd difference are averaged correctly
+	// This case broke with a+(b-a)/2 formula
+	w := New[int64](2)
+
+	w.Add(-3)
+	w.Add(-2)
+
+	// (-3 + -2)/2 = -5/2 = -2 (truncate towards zero)
+	want := int64(-2)
+	if got := w.Median(); got != want {
+		t.Errorf("median of -3 and -2 = %d, want %d", got, want)
+	}
+
+	// Test with a larger odd difference
+	w2 := New[int64](2)
+	w2.Add(-100)
+	w2.Add(-97)
+
+	want2 := int64(-98)
+	if got := w2.Median(); got != want2 {
+		t.Errorf("median of -100 and -97 = %d, want %d", got, want2)
+	}
+}
+
 func TestWindow_DurationPrecision(t *testing.T) {
 	// Test that large time.Duration values maintain precision
 	w := New[time.Duration](2)
