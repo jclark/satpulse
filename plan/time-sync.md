@@ -420,7 +420,7 @@ Steps to implement.
 5. Implement these interfaces for each mode
 6. Implement a test harness using clocksim to test this
 
-### Phase C - essential MVP features
+### Phase C - essential MVP features (done)
 
 Implementing each of these will involved enhancements to simulator to test properly.
 
@@ -430,7 +430,7 @@ Implementing each of these will involved enhancements to simulator to test prope
 
 ### Phase D - integrate into daemon
 
-#### Phase D.1 - essentials
+#### Phase D.1 - essentials (done)
 * Integrate this into the daemon, so that it is used instead of combine/mon/servo. (done)
 * Factor out mon/gm.go into its own package and fix all references; remove aliases in phcsync
 * Factor out mon/refclock.go into its own package and fix all references; remove aliases in phcsync
@@ -440,9 +440,9 @@ Implementing each of these will involved enhancements to simulator to test prope
 
 #### Phase D.2 refinements
 * Update Sampler.SyncState to use our new modes
-* Remove combine/mon/servo packages
 * Post-read PHC/system time has wallclock time; compute separate monotonic time
 * Port event log replay architecture (internal/gpsevent/replay.go) to use phcsync.Controller instead of combine.Combiner
+* Remove combine/mon/servo packages
 
 It would be useful to be able to run new program and old program at the same time, seeing the same data
 - Add index property to phc section in config file for it to use a vclock (see issue #26)
@@ -450,10 +450,20 @@ It would be useful to be able to run new program and old program at the same tim
 - How to have different clock path? Specify different logging directory for new one.
 - Both need access to the same serial port. We can do this by testing on a machine where GNSS receiver has two serial ports.
 
-### Phase E - refine
+### Phase E - tuneable parameters (partially done)
+
+* Improve naming and design of tuneable parameters (done one pass on this)
+* Implement validation of phcsync.Config (partially done)
+  * some tracking/converging limits need tightening
+  * validate relative values between limits
+* Implement setting of tuneable parameters via new section in satpulse.toml (done)
+* Document in man page (still todo)
+
+### Phase F - refine
 
 Order of these is TBD.
 
+* more logging during initialization of what we discovered
 * support 50% duty cycle with both edges
 * compensation step at beginning of converging phase (already in old implementation)
 * MAD-based outlier detection
@@ -469,15 +479,8 @@ Order of these is TBD.
 
 Consider whether we still need era concept. Used currently:
 * at startup, to get rid of stale timestamps
-* after initial step
+* after initial step (in converging mode)
 * after compensate step
-
-### Phase F - tuneable parameters
-
-* Finalize naming and design of tuneable parameters
-* Implement setting of tuneable parameters via new section in satpulse.toml.
-* Implement validation of phcsync.Config
-* Document in man page
 
 ### Phase G - track timing messages
 
