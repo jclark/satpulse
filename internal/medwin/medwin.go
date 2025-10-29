@@ -68,9 +68,33 @@ func (w *Window[T]) Median() T {
 		return w.values[w.indices[mid]]
 	}
 	// Even count: average of two middle values
+	// Use native arithmetic to avoid float64 overflow/precision loss
 	a := w.values[w.indices[mid-1]]
 	b := w.values[w.indices[mid]]
-	return T((float64(a) + float64(b)) / 2)
+	return average(a, b)
+}
+
+// average computes (a+b)/2 in the native type to avoid overflow and precision loss
+func average[T Value](a, b T) T {
+	// Use type switch on concrete types to use native arithmetic
+	switch any(a).(type) {
+	case int64:
+		// Use a + (b-a)/2 to avoid overflow in a+b
+		aVal := any(a).(int64)
+		bVal := any(b).(int64)
+		return any(aVal + (bVal-aVal)/2).(T)
+	case time.Duration:
+		// time.Duration is int64 underneath, same formula
+		aVal := any(a).(time.Duration)
+		bVal := any(b).(time.Duration)
+		return any(aVal + (bVal-aVal)/2).(T)
+	case float64:
+		// float64 can use float arithmetic safely
+		return any((any(a).(float64) + any(b).(float64)) / 2.0).(T)
+	default:
+		// Should never reach here with our Value constraint
+		panic("medwin: unsupported type for average")
+	}
 }
 
 // Len returns the current number of values in the window.

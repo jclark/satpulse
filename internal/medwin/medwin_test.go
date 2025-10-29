@@ -215,6 +215,48 @@ func TestWindow_NegativeValues(t *testing.T) {
 	}
 }
 
+func TestWindow_MaxInt64Overflow(t *testing.T) {
+	// Test that we don't overflow when averaging values near MaxInt64
+	w := New[int64](2)
+
+	w.Add(9223372036854775806) // MaxInt64 - 1
+	w.Add(9223372036854775807) // MaxInt64
+
+	// Average should be MaxInt64 - 0.5, which rounds down to MaxInt64 - 1
+	want := int64(9223372036854775806)
+	if got := w.Median(); got != want {
+		t.Errorf("median of two MaxInt64-adjacent values = %d, want %d", got, want)
+	}
+
+	// Test with two MaxInt64 values
+	w2 := New[int64](2)
+	w2.Add(9223372036854775807)
+	w2.Add(9223372036854775807)
+
+	want2 := int64(9223372036854775807)
+	if got := w2.Median(); got != want2 {
+		t.Errorf("median of two MaxInt64 values = %d, want %d", got, want2)
+	}
+}
+
+func TestWindow_DurationPrecision(t *testing.T) {
+	// Test that large time.Duration values maintain precision
+	w := New[time.Duration](2)
+
+	// Large durations near int64 max (roughly 290 years in nanoseconds)
+	d1 := time.Duration(9000000000000000000) // 9e18 ns
+	d2 := time.Duration(9000000000000000002) // 9e18 + 2 ns
+
+	w.Add(d1)
+	w.Add(d2)
+
+	// Average should be d1 + 1ns, not lose precision
+	want := time.Duration(9000000000000000001)
+	if got := w.Median(); got != want {
+		t.Errorf("median of large durations = %v, want %v (diff: %v)", got, want, got-want)
+	}
+}
+
 func BenchmarkWindow_Add(b *testing.B) {
 	w := New[int64](99)
 	b.ResetTimer()
