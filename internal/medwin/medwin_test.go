@@ -6,7 +6,7 @@ import (
 )
 
 func TestWindow_BasicInt(t *testing.T) {
-	w := New[int](5)
+	w := New[int64](5)
 
 	if w.Len() != 0 {
 		t.Errorf("new window should have len 0, got %d", w.Len())
@@ -35,7 +35,7 @@ func TestWindow_BasicInt(t *testing.T) {
 }
 
 func TestWindow_FillAndWrap(t *testing.T) {
-	w := New[int](3)
+	w := New[int64](3)
 
 	// Fill window: [1, 2, 3]
 	w.Add(1)
@@ -94,18 +94,22 @@ func TestWindow_Duration(t *testing.T) {
 	}
 }
 
-func TestWindow_OddSizeRequired(t *testing.T) {
-	// Ensure even capacity panics
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic with even capacity, got none")
-		}
-	}()
-	_ = New[int](4)
+func TestWindow_EvenSize(t *testing.T) {
+	w := New[int64](4)
+
+	w.Add(10)
+	w.Add(20)
+	w.Add(30)
+	w.Add(40)
+
+	// Even count: average of middle two (20, 30) = 25
+	if got := w.Median(); got != 25 {
+		t.Errorf("median([10,20,30,40]) = %d, want 25", got)
+	}
 }
 
 func TestWindow_DuplicateValues(t *testing.T) {
-	w := New[int](5)
+	w := New[int64](5)
 
 	w.Add(5)
 	w.Add(5)
@@ -131,7 +135,7 @@ func TestWindow_DuplicateValues(t *testing.T) {
 }
 
 func TestWindow_UnsortedInput(t *testing.T) {
-	w := New[int](5)
+	w := New[int64](5)
 
 	// Add values in random order
 	w.Add(50)
@@ -147,7 +151,7 @@ func TestWindow_UnsortedInput(t *testing.T) {
 }
 
 func TestWindow_Empty(t *testing.T) {
-	w := New[int](5)
+	w := New[int64](5)
 
 	// Median of empty window should be zero value
 	if got := w.Median(); got != 0 {
@@ -156,7 +160,7 @@ func TestWindow_Empty(t *testing.T) {
 }
 
 func TestWindow_SingleElement(t *testing.T) {
-	w := New[int](1)
+	w := New[int64](1)
 
 	w.Add(42)
 	if got := w.Median(); got != 42 {
@@ -171,7 +175,7 @@ func TestWindow_SingleElement(t *testing.T) {
 }
 
 func TestWindow_LongSequence(t *testing.T) {
-	w := New[int](5)
+	w := New[int64](5)
 
 	// Add sequence 0..19, checking median at each step after window is full
 	// Window contents → median
@@ -186,9 +190,9 @@ func TestWindow_LongSequence(t *testing.T) {
 	// etc.
 
 	for i := 0; i < 20; i++ {
-		w.Add(i)
+		w.Add(int64(i))
 		if i >= 4 {
-			want := i - 2 // median of [i-4, i-3, i-2, i-1, i]
+			want := int64(i - 2) // median of [i-4, i-3, i-2, i-1, i]
 			if got := w.Median(); got != want {
 				t.Errorf("after adding %d: median = %d, want %d", i, got, want)
 			}
@@ -197,7 +201,7 @@ func TestWindow_LongSequence(t *testing.T) {
 }
 
 func TestWindow_NegativeValues(t *testing.T) {
-	w := New[int](5)
+	w := New[int64](5)
 
 	w.Add(-10)
 	w.Add(-5)
@@ -212,18 +216,18 @@ func TestWindow_NegativeValues(t *testing.T) {
 }
 
 func BenchmarkWindow_Add(b *testing.B) {
-	w := New[int](99)
+	w := New[int64](99)
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		w.Add(i)
+		w.Add(int64(i))
 	}
 }
 
 func BenchmarkWindow_Median(b *testing.B) {
-	w := New[int](99)
+	w := New[int64](99)
 	for i := 0; i < 99; i++ {
-		w.Add(i)
+		w.Add(int64(i))
 	}
 	b.ResetTimer()
 
@@ -233,11 +237,11 @@ func BenchmarkWindow_Median(b *testing.B) {
 }
 
 func BenchmarkWindow_AddAndMedian(b *testing.B) {
-	w := New[int](99)
+	w := New[int64](99)
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		w.Add(i)
+		w.Add(int64(i))
 		_ = w.Median()
 	}
 }

@@ -4,28 +4,29 @@
 // This avoids duplicating large values while keeping median queries O(1).
 package medwin
 
-import "cmp"
+import "time"
 
-// Window maintains a fixed-size moving window of ordered values and efficiently
+// Value is a constraint for types that can be used in median calculations.
+// Supports 64-bit integers, 64-bit floats, and time.Duration (which is int64).
+type Value interface {
+	int64 | float64 | time.Duration
+}
+
+// Window maintains a fixed-size moving window of numeric values and efficiently
 // computes their median. Values are stored in a circular buffer in arrival order,
 // with a separate array of indices kept sorted by value for O(1) median access.
 // The capacity is fixed at creation time and cannot be changed.
-type Window[T cmp.Ordered] struct {
+type Window[T Value] struct {
 	values  []T     // circular buffer: values in arrival order, len(values) is capacity
 	indices []uint8 // indices into values[], kept sorted by values[i], len(indices) is current count
 	head    int     // index of next insertion in values
 }
 
 // New creates a Window with the specified capacity.
-// Capacity must be positive, odd, and cannot exceed 255.
-// Odd capacity is required to ensure median is always a single value
-// from the dataset (no averaging needed).
-func New[T cmp.Ordered](capacity int) *Window[T] {
+// Capacity must be positive and cannot exceed 255.
+func New[T Value](capacity int) *Window[T] {
 	if capacity <= 0 {
 		panic("medwin: capacity must be positive")
-	}
-	if capacity%2 == 0 {
-		panic("medwin: capacity must be odd")
 	}
 	if capacity > 255 {
 		panic("medwin: capacity cannot exceed 255")
@@ -55,7 +56,8 @@ func (w *Window[T]) Add(v T) {
 }
 
 // Median returns the median of values in the window.
-// With odd-sized windows, this is always the middle value.
+// For odd-sized windows, returns the middle value.
+// For even-sized windows, returns the average of the two middle values.
 // Returns the zero value if the window is empty.
 func (w *Window[T]) Median() T {
 	n := len(w.indices)
@@ -64,7 +66,13 @@ func (w *Window[T]) Median() T {
 		return zero
 	}
 	mid := n / 2
-	return w.values[w.indices[mid]]
+	if n%2 != 0 {
+		return w.values[w.indices[mid]]
+	}
+	// Even count: average of two middle values
+	a := w.values[w.indices[mid-1]]
+	b := w.values[w.indices[mid]]
+	return T((float64(a) + float64(b)) / 2)
 }
 
 // Len returns the current number of values in the window.
