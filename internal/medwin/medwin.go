@@ -74,18 +74,9 @@ func (w *Window[T]) Median() T {
 	return average(a, b)
 }
 
-// average computes (a+b)/2 in the native type to avoid overflow and precision loss
+// average computes (a+b)/2 using a+(b-a)/2 to avoid overflow for integer types
 func average[T Value](a, b T) T {
-	// For int64 and time.Duration (which is int64), use a+(b-a)/2 to avoid overflow
-	// For float64, use normal averaging
-	switch any(a).(type) {
-	case float64:
-		return any((any(a).(float64) + any(b).(float64)) / 2.0).(T)
-	default:
-		// int64 and time.Duration both use the same arithmetic (Duration is int64)
-		// This avoids overflow: a+(b-a)/2 never exceeds max(a,b)
-		return a + (b-a)/2
-	}
+	return a + (b-a)/2
 }
 
 // Len returns the current number of values in the window.
