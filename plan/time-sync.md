@@ -466,13 +466,13 @@ Order of these is TBD.
 * more logging during initialization of what we discovered
 * support 50% duty cycle with both edges
 * compensation step at beginning of converging phase (already in old implementation)
-* MAD-based outlier detection
+* MAD-based outlier detection (already in old implementation)
 * improve clock model to be more realistic
   * simulate ionospheric disturbances
   * simulate outliers
 * run some simulations to determine better Kp/Ki values for each mode
 * consider more robust transition between converging/tracking mode, by blending Kp/Ki parameters for initial period during tracking (may not be necessary - have implemented more stringent test for end of convergence)
-* sawtooth correction (already in old implementation)
+* sawtooth correction (already in old implementation); need to check direction and see if difference is measurable
 * estimate error in system clock and also use that when we are estimating monotonic time of messages
 * exit tracking when proportion of abnormal samples in a configurable window is greater than configurable value
 * better error messages when timemsg buffered messages are too old
