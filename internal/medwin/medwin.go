@@ -4,7 +4,11 @@
 // This avoids duplicating large values while keeping median queries O(1).
 package medwin
 
-import "time"
+import (
+	"cmp"
+	"slices"
+	"time"
+)
 
 // Value is a constraint for types that can be used in median calculations.
 // Supports 64-bit integers, 64-bit floats, and time.Duration (which is int64).
@@ -90,16 +94,18 @@ func (w *Window[T]) Cap() int {
 func (w *Window[T]) insertIndex(idx uint8) {
 	v := w.values[idx]
 	// Binary search for insertion position
-	pos := w.searchIndex(v, func(a, b T) bool { return a <= b })
+	pos, _ := slices.BinarySearchFunc(w.indices, v, func(i uint8, target T) int {
+		return cmp.Compare(w.values[i], target)
+	})
 	// Insert idx at position pos
-	w.indices = append(w.indices, 0)
-	copy(w.indices[pos+1:], w.indices[pos:])
-	w.indices[pos] = idx
+	w.indices = slices.Insert(w.indices, pos, idx)
 }
 
 // removeIndex removes idx from indices
 func (w *Window[T]) removeIndex(idx uint8) {
 	// Linear search to find idx in indices array
+	// Note: We can't use binary search here because indices are sorted by VALUES,
+	// not by the index numbers themselves. This is O(n) but n ≤ 255.
 	pos := -1
 	for i, v := range w.indices {
 		if v == idx {
@@ -111,20 +117,5 @@ func (w *Window[T]) removeIndex(idx uint8) {
 		panic("medwin: removeIndex called on index not in window")
 	}
 	// Remove from indices
-	copy(w.indices[pos:], w.indices[pos+1:])
-	w.indices = w.indices[:len(w.indices)-1]
-}
-
-// searchIndex performs binary search to find insertion position for value v
-func (w *Window[T]) searchIndex(v T, cmp func(T, T) bool) int {
-	left, right := 0, len(w.indices)
-	for left < right {
-		mid := (left + right) / 2
-		if cmp(w.values[w.indices[mid]], v) {
-			left = mid + 1
-		} else {
-			right = mid
-		}
-	}
-	return left
+	w.indices = slices.Delete(w.indices, pos, pos+1)
 }
