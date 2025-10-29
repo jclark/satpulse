@@ -73,9 +73,9 @@ func (w *Window[T]) Median() T {
 // average returns the average of two values without overflow.
 // Assumes a <= b.
 func average[T Value](a, b T) T {
-	// For float64, use a/2 + b/2 to avoid overflow when both values are large
+	// For float64, use standard formula (precise for common small values)
 	if _, ok := any(a).(float64); ok {
-		return a/2 + b/2
+		return (a + b) / 2
 	}
 	// For integer types (int64, time.Duration):
 	// When opposite signs: (a+b)/2 is safe (no overflow)
