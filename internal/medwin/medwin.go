@@ -95,12 +95,11 @@ func (w *Window[T]) insertIndex(idx uint8) {
 	w.indices = slices.Insert(w.indices, pos, idx)
 }
 
-// replaceIndex removes oldIdx and inserts newIdx with value newVal in a single pass.
+// replaceIndex removes oldIdx and inserts it at the position for newVal in a single pass.
 // This is an optimized version that combines remove and insert operations.
 // Scan from high to low until we find either the deletion or insertion position,
 // then shift elements in one direction to accomplish both operations.
 func (w *Window[T]) replaceIndex(oldIdx uint8, newVal T) {
-	w.values[oldIdx] = newVal
 	n := len(w.indices)
 
 	// Scan from high to low looking for either oldIdx or insertion position
@@ -115,6 +114,7 @@ func (w *Window[T]) replaceIndex(oldIdx uint8, newVal T) {
 				pos--
 			}
 			w.indices[pos] = oldIdx
+			w.values[oldIdx] = newVal
 			return
 		}
 
@@ -129,6 +129,7 @@ func (w *Window[T]) replaceIndex(oldIdx uint8, newVal T) {
 					}
 					// Insert oldIdx at position i (which is where i+1 was after the shift)
 					w.indices[i] = oldIdx
+					w.values[oldIdx] = newVal
 					return
 				}
 			}
