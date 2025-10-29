@@ -44,19 +44,12 @@ func New[T Value](capacity int) *Window[T] {
 // Add inserts a value into the window. If the window is at capacity,
 // the oldest value is automatically removed.
 func (w *Window[T]) Add(v T) {
-	cap := len(w.values)
-	if len(w.indices) < cap {
-		// Window not yet full
-		w.values[w.head] = v
-		w.insertIndex(uint8(w.head))
-		w.head = (w.head + 1) % cap
-	} else {
-		// Window full, replace oldest
+	if len(w.indices) >= len(w.values) {
 		w.removeIndex(uint8(w.head))
-		w.values[w.head] = v
-		w.insertIndex(uint8(w.head))
-		w.head = (w.head + 1) % cap
 	}
+	w.values[w.head] = v
+	w.insertIndex(uint8(w.head))
+	w.head = (w.head + 1) % len(w.values)
 }
 
 // Median returns the median of values in the window.
