@@ -2,10 +2,9 @@ package phcsync
 
 import (
 	"log/slog"
-	"slices"
 	"time"
 
-	"github.com/jclark/satpulse/internal/circbuf"
+	"github.com/jclark/satpulse/internal/median"
 )
 
 // ConvergingConfig contains tunable parameters for converging mode.
@@ -113,7 +112,7 @@ func (g *convergingSampleGenerator) timeMessageSample() *Sample {
 type convergingSampleProcessor struct {
 	cfg                      ConvergingConfig
 	servo                    *piServo
-	offsets                  *circbuf.Buffer[time.Duration]
+	offsets                  *median.Window[time.Duration]
 	minMedian                time.Duration
 	samplesSinceMinDecreased int
 	missingSamples           int
@@ -124,7 +123,7 @@ func newConvergingSampleProcessor(cfg ConvergingConfig, currentFreq, maxFreq flo
 	return &convergingSampleProcessor{
 		cfg:     cfg,
 		servo:   newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
-		offsets: circbuf.New[time.Duration](cfg.MedianWindow),
+		offsets: median.New[time.Duration](cfg.MedianWindow),
 		lg:      lg,
 	}
 }
@@ -138,9 +137,9 @@ func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, Mo
 		}
 		return phcAction{actionType: phcNoAction}, ModeConverging
 	}
-	p.offsets.Append(sample.Offset)
+	p.offsets.Add(sample.Offset.Abs())
 	if p.converged() {
-		median := p.computeMedian()
+		median := p.offsets.Median()
 		p.lg.Info("converging complete",
 			"median", median,
 			"minMedian", p.minMedian,
@@ -162,11 +161,12 @@ func (p *convergingSampleProcessor) converged() bool {
 	if p.offsets.Len() < p.cfg.MedianWindow {
 		return false
 	}
-	if p.offsets.Last(0).Abs() > time.Duration(p.cfg.OffsetLimit) {
+	// Check if the most recent absolute offset exceeds the limit
+	if p.offsets.Last() > time.Duration(p.cfg.OffsetLimit) {
 		p.samplesSinceMinDecreased = 0
 		return false
 	}
-	median := p.computeMedian()
+	median := p.offsets.Median()
 	if p.samplesSinceMinDecreased == 0 {
 		p.minMedian = median
 		p.samplesSinceMinDecreased = 1
@@ -178,26 +178,4 @@ func (p *convergingSampleProcessor) converged() bool {
 		p.samplesSinceMinDecreased++
 	}
 	return p.samplesSinceMinDecreased >= p.cfg.StableWindow
-}
-
-func (p *convergingSampleProcessor) computeMedian() time.Duration {
-	n := p.offsets.Len()
-	if n == 0 {
-		return 0
-	}
-
-	// Collect absolute values of offsets
-	values := make([]time.Duration, 0, n)
-	p.offsets.Iterate(func(i int, d time.Duration) bool {
-		values = append(values, d.Abs())
-		return true
-	})
-
-	slices.Sort(values)
-
-	mid := n / 2
-	if n%2 != 0 {
-		return values[mid]
-	}
-	return (values[mid-1] + values[mid]) / 2
 }
