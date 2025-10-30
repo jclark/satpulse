@@ -110,6 +110,8 @@ func parseFlags(args []string) (*flagVars, error) {
 	flags.Float64Var(&vars.phcCfg.Track.Ki, "tracking-ki", vars.phcCfg.Track.Ki, "tracking mode integral gain")
 	flags.Float64Var(&vars.phcCfg.Track.AvgFreqTimeConstant, "avg-freq-time-constant", vars.phcCfg.Track.AvgFreqTimeConstant, "tracking mode average frequency time constant in seconds")
 	flags.IntVar(&vars.phcCfg.Track.BadSampleLimit, "tracking-bad-sample-limit", vars.phcCfg.Track.BadSampleLimit, "tracking mode bad sample limit before reset")
+	flags.Float64SliceVar(&vars.simCfg.OutlierTimes, "outlier-times", vars.simCfg.OutlierTimes, "comma-separated list of seconds at which to inject PPS outliers")
+	flags.DurationVar(&vars.simCfg.OutlierOffset, "outlier-offset", vars.simCfg.OutlierOffset, "magnitude of outlier phase offset")
 	flags.BoolVar(&vars.debug, "debug", false, "enable debug logging")
 	flags.Float64SliceVar(&vars.toggleDurations, "toggle", nil, "comma-separated relative durations to toggle pulse delivery (e.g., '10,5' = stop after 10s, restart after 5s more)")
 	err := flags.Parse(args)

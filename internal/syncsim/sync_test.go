@@ -142,6 +142,71 @@ func TestPHCSync(t *testing.T) {
 				cfg.Track.BadSampleLimit = 15     // Increase limit to allow longer outage
 			},
 		},
+		{
+			name:              "MAD detects scheduled outliers",
+			pulseWidth:        0,
+			duration:          90.0, // Longer duration to ensure we're in tracking mode
+			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite outliers
+			modifySimCfg: func(cfg *Config) {
+				cfg.OutlierTimes = []float64{40, 50, 60}     // Inject outliers after MAD window fills (>35s)
+				cfg.OutlierOffset = 2000 * time.Nanosecond // 2µs outliers
+			},
+		},
+		{
+			name:              "MAD gate behavior before window fills",
+			pulseWidth:        0,
+			duration:          20.0,
+			maxTrackingStdDev: 20 * time.Nanosecond,
+			modifySimCfg: func(cfg *Config) {
+				cfg.OutlierTimes = []float64{8} // Outlier during early tracking (MAD window not full)
+				cfg.OutlierOffset = 150 * time.Nanosecond
+			},
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.OutlierThreshold = 200 // 200ns gate - 150ns outlier should pass through
+			},
+		},
+		{
+			name:              "Large outliers rejected despite MAD window",
+			pulseWidth:        0,
+			duration:          60.0,
+			maxTrackingStdDev: 20 * time.Nanosecond,
+			modifySimCfg: func(cfg *Config) {
+				cfg.OutlierTimes = []float64{20, 30, 40}    // Multiple large outliers
+				cfg.OutlierOffset = 5000 * time.Nanosecond // 5µs outliers - well above MAD threshold
+			},
+		},
+		{
+			name:              "Tracking stability with periodic outliers",
+			pulseWidth:        0,
+			duration:          150.0,
+			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite many outliers
+			modifySimCfg: func(cfg *Config) {
+				// Outliers every 10 seconds starting after MAD window fills (40s)
+				cfg.OutlierTimes = []float64{40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140}
+				cfg.OutlierOffset = 1500 * time.Nanosecond
+			},
+		},
+		{
+			name:              "MAD rejects spikes during sustained shift",
+			pulseWidth:        0,
+			duration:          70.0,
+			maxTrackingStdDev: 50 * time.Nanosecond, // Higher tolerance due to shift transient
+			maxTrackingAbsMax: 150 * time.Nanosecond, // Should be ~100ns from shift, NOT ~2us from spikes
+			modifySimCfg: func(cfg *Config) {
+				// Apply sustained 100ns shift after tracking stabilizes
+				cfg.Shift = ShiftConfig{
+					StartTime: 35.0, // Start after tracking is stable
+					Ramp:      2 * time.Second,
+					Duration:  10 * time.Second, // 2s up + 6s hold + 2s down (ends at t=45s)
+					Shift:     100 * time.Nanosecond,
+				}
+				// Inject 2us spikes: during hold, right after shift, and later
+				// If MAD rejects spikes: absmax ~100ns (from shift only)
+				// If MAD fails: absmax ~2us (spikes get through)
+				cfg.OutlierTimes = []float64{40, 46, 55}
+				cfg.OutlierOffset = 2000 * time.Nanosecond
+			},
+		},
 	}
 
 	for _, tt := range tests {

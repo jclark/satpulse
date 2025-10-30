@@ -105,6 +105,65 @@ func WhiteNoisePPS(stddev time.Duration, seed int64) PPSSimulator {
 	}
 }
 
+// ShiftPPS creates a PPS simulator that applies a temporary phase shift with smooth transitions.
+// The shift rises with a half-sine profile, holds at the specified shift, then falls symmetrically.
+// Useful for simulating ionospheric disturbances or other gradual timing biases.
+func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) PPSSimulator {
+	startSec := startTime
+	rampSec := ramp.Seconds()
+	durationSec := duration.Seconds()
+	shiftSec := shift.Seconds()
+	// Hold period is total duration minus two ramps
+	holdSec := durationSec - 2*rampSec
+	if holdSec < 0 {
+		holdSec = 0
+	}
+	return func(trueTime float64) float64 {
+		t := trueTime - startSec
+		switch {
+		case t <= 0:
+			return 0
+		case t < rampSec:
+			// Smooth half-sine rise: 0 to shift
+			prog := t / rampSec
+			return shiftSec * 0.5 * (1 - math.Cos(math.Pi*prog))
+		case t < rampSec+holdSec:
+			// Hold at shift
+			return shiftSec
+		case t < durationSec:
+			// Symmetric fall: shift to 0
+			prog := (t - rampSec - holdSec) / rampSec
+			return shiftSec * 0.5 * (1 + math.Cos(math.Pi*prog))
+		default:
+			return 0
+		}
+	}
+}
+
+// SingleOutlierPPS creates a PPS simulator that adds a phase offset at a specific second.
+// Both second and trueTime are rounded to the nearest integer for comparison.
+// Useful for testing outlier detection by injecting controlled timing errors.
+func SingleOutlierPPS(second float64, offset time.Duration) PPSSimulator {
+	targetSecond := math.Round(second)
+	return func(trueTime float64) float64 {
+		if math.Round(trueTime) == targetSecond {
+			return offset.Seconds()
+		}
+		return 0
+	}
+}
+
+// CombinePPS combines multiple PPS phase error sources additively.
+func CombinePPS(funcs ...PPSSimulator) PPSSimulator {
+	return func(t float64) float64 {
+		sum := 0.0
+		for _, f := range funcs {
+			sum += f(t)
+		}
+		return sum
+	}
+}
+
 // RawClock wraps an OscillatorSimulator and integrates frequency error to produce phase.
 // It represents the unadjusted hardware oscillator with an initial phase offset.
 // Times are stored as int64 nanoseconds to match ptime.Time representation.

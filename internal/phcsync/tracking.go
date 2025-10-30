@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"math"
 	"time"
+
+	"github.com/jclark/satpulse/internal/median"
 )
 
 // TrackingConfig contains tunable parameters for tracking mode.
@@ -18,11 +20,30 @@ type TrackingConfig struct {
 	// Typical value: 0.1.
 	Ki float64 `toml:"ki" check:">0.0,<10.0"`
 
-	// OutlierThreshold is the minimum absolute offset in nanoseconds for classifying a sample
-	// as an outlier. Samples with |offset| >= OutlierThreshold are marked as outliers and
-	// excluded from frequency adjustment. This prevents transient disturbances from affecting
-	// the servo. Typical value: 1000 (1µs).
+	// OutlierThreshold is the minimum absolute offset in nanoseconds for a sample to be
+	// considered for MAD-based outlier detection. Samples with |offset| < OutlierThreshold
+	// are always accepted (quick accept gate). Samples with |offset| >= OutlierThreshold
+	// are evaluated using MAD statistics to determine if they are outliers. This ensures
+	// samples within the normal range of tracking jitter are not treated as outliers.
+	// Typical value: 50 ns.
 	OutlierThreshold int64 `toml:"outlierThreshold" check:">0,<1_000_000_000"`
+
+	// MADWindow is the number of samples in the sliding window for MAD-based outlier detection.
+	// The window stores offset history used to compute the median and median absolute deviation.
+	// Larger windows provide more robust outlier detection but respond more slowly to changing
+	// conditions. Typical value: 10.
+	MADWindow int `toml:"madWindow" check:">=3,<100"`
+
+	// MADMultiple is the multiple of MAD (Median Absolute Deviation) used as the outlier threshold.
+	// A sample is classified as an outlier if its offset is more than MADMultiple * MAD away from
+	// the median offset. Higher values make outlier detection more conservative (fewer rejections).
+	// Typical value: 25.0.
+	MADMultiple float64 `toml:"madMultiple" check:">0.0,<1000.0"`
+
+	// MADMinSamples is the minimum number of samples required in the MAD window before MAD-based
+	// outlier detection is active. Until this threshold is reached, only the OutlierThreshold
+	// gate is used. This ensures MAD statistics are based on sufficient data. Typical value: 10.
+	MADMinSamples int `toml:"madMinSamples" check:">=1,<100"`
 
 	// PulseWidthTolerance is the tolerance in nanoseconds for filtering trailing edges in
 	// dual-edge mode based on temporal spacing. An edge is considered a trailing edge (and
@@ -57,7 +78,10 @@ func defaultTrackingConfig() TrackingConfig {
 	return TrackingConfig{
 		Kp:                  0.5,
 		Ki:                  0.1,
-		OutlierThreshold:    1000, // 1µs
+		OutlierThreshold:    50,   // 50ns
+		MADWindow:           10,   // 10 samples
+		MADMultiple:         25.0, // 25 * MAD
+		MADMinSamples:       10,   // 10 samples minimum
 		PulseWidthTolerance: 200,  // 200ns
 		AlignTolerance:      100,  // 100ns
 		BadSampleLimit:      5,
@@ -176,6 +200,7 @@ type trackingSampleProcessor struct {
 	consecutiveBadSamples int
 	avgFreq               float64 // exponential moving average of frequency
 	emaAlpha              float64 // EMA coefficient (1 - exp(-1/timeConstant))
+	offsetWindow          *median.Window[time.Duration]
 	lg                    *slog.Logger
 }
 
@@ -188,11 +213,12 @@ func newTrackingSampleProcessor(cfg TrackingConfig, currentFreq, maxFreq float64
 		emaAlpha = 1.0 - math.Exp(-1.0/cfg.AvgFreqTimeConstant)
 	}
 	return &trackingSampleProcessor{
-		servo:    newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
-		cfg:      cfg,
-		avgFreq:  currentFreq, // initialize with current frequency
-		emaAlpha: emaAlpha,
-		lg:       lg,
+		servo:        newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
+		cfg:          cfg,
+		avgFreq:      currentFreq, // initialize with current frequency
+		emaAlpha:     emaAlpha,
+		offsetWindow: median.New[time.Duration](cfg.MADWindow),
+		lg:           lg,
 	}
 }
 
@@ -223,12 +249,17 @@ func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 	if sample.Kind == SampleMissing {
 		return phcAction{actionType: phcNoAction}
 	}
-	// Check for outlier
-	outlierThreshold := time.Duration(p.cfg.OutlierThreshold)
-	if sample.Offset.Abs() >= outlierThreshold {
-		// Mark as outlier and don't adjust
+
+	// Add signed offset to window (including outliers)
+	// Median is robust to outliers, so including them doesn't corrupt the statistics
+	p.offsetWindow.Add(sample.Offset)
+
+	// Only apply outlier detection to samples exceeding the outlier threshold.
+	if sample.Offset.Abs() >= time.Duration(p.cfg.OutlierThreshold) && p.madIsOutlier(sample.Offset) {
+		// MAD-based detection identified this as an outlier
 		sample.Kind = SampleOutlier
-		p.lg.Debug("outlier detected", "offset", sample.Offset, "threshold", outlierThreshold)
+		p.lg.Debug("outlier detected by MAD",
+			"offset", sample.Offset)
 		return phcAction{actionType: phcNoAction}
 	}
 
@@ -243,4 +274,33 @@ func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 		actionType: phcAdjustFrequency,
 		freq:       freq,
 	}
+}
+
+// madIsOutlier determines if an offset is an outlier using MAD detection.
+// Computes the median of offsets (center), then the median of absolute deviations
+// from that center (MAD). An offset is an outlier if its deviation from center
+// exceeds k * MAD. This correctly handles sustained DC bias (e.g., ionospheric
+// delays) while rejecting transient spikes (e.g., multipath errors).
+func (p *trackingSampleProcessor) madIsOutlier(offset time.Duration) bool {
+	// Need minimum samples for MAD to be meaningful
+	if p.offsetWindow.Len() < p.cfg.MADMinSamples {
+		return false
+	}
+
+	// Compute median of offsets (the center, can be non-zero during transients)
+	center := p.offsetWindow.Median()
+
+	// Compute MAD: median of absolute deviations from center
+	// Use iterator to avoid materializing intermediate slice unnecessarily
+	mad := median.Median(func(yield func(time.Duration) bool) {
+		p.offsetWindow.Iterate(func(i int, v time.Duration) bool {
+			return yield((v - center).Abs())
+		})
+	})
+
+	// Check if offset deviates too much from center
+	threshold := time.Duration(float64(mad) * p.cfg.MADMultiple)
+	deviation := (offset - center).Abs()
+
+	return deviation > threshold
 }

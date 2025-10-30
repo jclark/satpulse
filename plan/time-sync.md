@@ -466,10 +466,10 @@ Order of these is TBD.
 * more logging during initialization of what we discovered
 * support 50% duty cycle with both edges
 * compensation step at beginning of converging phase (already in old implementation)
-* MAD-based outlier detection (already in old implementation)
+* MAD-based outlier detection (done)
 * improve clock model to be more realistic
-  * simulate ionospheric disturbances
-  * simulate outliers
+  * simulate ionospheric disturbances (done)
+  * simulate outliers (done)
 * run some simulations to determine better Kp/Ki values for each mode
 * consider more robust transition between converging/tracking mode, by blending Kp/Ki parameters for initial period during tracking (may not be necessary - have implemented more stringent test for end of convergence)
 * sawtooth correction (already in old implementation); need to check direction and see if difference is measurable

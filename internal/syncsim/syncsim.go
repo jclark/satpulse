@@ -49,19 +49,32 @@ import (
 	"github.com/jclark/satpulse/internal/ubx"
 )
 
+
 // Config holds simulation parameters
 type Config struct {
-	Duration      float64   // simulation duration in seconds
-	PHCFreqOffset float64   // PHC frequency offset in ppb
-	PHCFreqDrift  float64   // PHC frequency drift in ppb/day
-	PHCNoise      float64   // PHC frequency noise stddev in ppb
-	PPSJitter     float64   // PPS timing jitter in nanoseconds
-	MinDelay      float64   // minimum pulse delivery delay in seconds
-	MaxDelay      float64   // maximum pulse delivery delay in seconds
-	MsgDelay      float64   // GPS message delay after pulse in seconds
-	MsgJitter     float64   // GPS message delay jitter in seconds
-	PulseWidth    float64   // pulse width in seconds (0 for single-edge mode)
-	ToggleTimes   []float64 // absolute simulation times to toggle pulse/message delivery on/off
+	Duration      float64       // simulation duration in seconds
+	PHCFreqOffset float64       // PHC frequency offset in ppb
+	PHCFreqDrift  float64       // PHC frequency drift in ppb/day
+	PHCNoise      float64       // PHC frequency noise stddev in ppb
+	PPSJitter     float64       // PPS timing jitter in nanoseconds
+	MinDelay      float64       // minimum pulse delivery delay in seconds
+	MaxDelay      float64       // maximum pulse delivery delay in seconds
+	MsgDelay      float64       // GPS message delay after pulse in seconds
+	MsgJitter     float64       // GPS message delay jitter in seconds
+	PulseWidth    float64       // pulse width in seconds (0 for single-edge mode)
+	ToggleTimes   []float64     // absolute simulation times to toggle pulse/message delivery on/off
+	OutlierTimes  []float64     // seconds at which to inject PPS outliers (rounded to nearest integer)
+	OutlierOffset time.Duration // magnitude of outlier phase offset
+	Shift         ShiftConfig   // PPS phase shift configuration
+}
+
+// ShiftConfig configures a temporary PPS phase shift for testing.
+// Used to simulate ionospheric disturbances or other gradual timing biases.
+type ShiftConfig struct {
+	StartTime float64       // start time in seconds
+	Ramp      time.Duration // ramp up/down duration (symmetric)
+	Duration  time.Duration // total duration (includes ramp up + hold + ramp down)
+	Shift     time.Duration // phase shift amount
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -76,7 +89,8 @@ func DefaultConfig() Config {
 		MaxDelay:      250e-6,
 		MsgDelay:      0.1,
 		MsgJitter:     0.01,
-		PulseWidth:    0, // default to single-edge mode
+		PulseWidth:    0,                        // default to single-edge mode
+		OutlierOffset: 2000 * time.Nanosecond, // 2µs default outlier magnitude
 	}
 }
 
@@ -181,8 +195,27 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	// PHC starts at epoch (1970-01-01T00:00:00 TAI) - way off from GPS
 	raw := clocksim.NewRawClock(osc, 0)
 
-	// PPS with jitter
-	pps := clocksim.WhiteNoisePPS(time.Duration(simCfg.PPSJitter)*time.Nanosecond, 123)
+	// Build PPS simulator: start with jitter
+	ppsSims := []clocksim.PPSSimulator{
+		clocksim.WhiteNoisePPS(time.Duration(simCfg.PPSJitter)*time.Nanosecond, 123),
+	}
+
+	// Add shift if configured
+	if simCfg.Shift.Shift != 0 {
+		ppsSims = append(ppsSims, clocksim.ShiftPPS(
+			simCfg.Shift.StartTime,
+			simCfg.Shift.Ramp,
+			simCfg.Shift.Duration,
+			simCfg.Shift.Shift,
+		))
+	}
+
+	// Add outliers if configured
+	for _, second := range simCfg.OutlierTimes {
+		ppsSims = append(ppsSims, clocksim.SingleOutlierPPS(second, simCfg.OutlierOffset))
+	}
+
+	pps := clocksim.CombinePPS(ppsSims...)
 
 	// Prepare dual-edge mode parameters
 	var pulseWidth time.Duration

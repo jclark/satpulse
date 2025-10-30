@@ -6,6 +6,7 @@ package median
 
 import (
 	"cmp"
+	"iter"
 	"slices"
 	"time"
 )
@@ -97,6 +98,28 @@ func average[T Value](a, b T) T {
 	// When same sign: use a/2 + b/2 + (a%2 + b%2)/2 to avoid overflow
 	// and match (a+b)/2 rounding exactly
 	return a/2 + b/2 + T((int64(a)%2+int64(b)%2)/2)
+}
+
+// Median computes the median of values from an iterator by collecting and sorting them.
+// For odd-length sequences, returns the middle value.
+// For even-length sequences, returns the average of the two middle values.
+// Returns the zero value if the sequence is empty.
+func Median[T Value](seq iter.Seq[T]) T {
+	values := make([]T, 0, 16) // reasonable initial capacity
+	for v := range seq {
+		values = append(values, v)
+	}
+	n := len(values)
+	if n == 0 {
+		var zero T
+		return zero
+	}
+	slices.Sort(values)
+	mid := n / 2
+	if n%2 != 0 {
+		return values[mid]
+	}
+	return average(values[mid-1], values[mid])
 }
 
 // Len returns the current number of values in the window.
