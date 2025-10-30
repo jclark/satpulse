@@ -49,7 +49,6 @@ import (
 	"github.com/jclark/satpulse/internal/ubx"
 )
 
-
 // Config holds simulation parameters
 type Config struct {
 	Duration      float64       // simulation duration in seconds
@@ -63,9 +62,15 @@ type Config struct {
 	MsgJitter     float64       // GPS message delay jitter in seconds
 	PulseWidth    float64       // pulse width in seconds (0 for single-edge mode)
 	ToggleTimes   []float64     // absolute simulation times to toggle pulse/message delivery on/off
-	OutlierTimes  []float64     // seconds at which to inject PPS outliers (rounded to nearest integer)
-	OutlierOffset time.Duration // magnitude of outlier phase offset
+	Outlier       OutlierConfig // PPS outlier injection configuration
 	Shift         ShiftConfig   // PPS phase shift configuration
+}
+
+// OutlierConfig configures PPS outlier injection for testing.
+// Used to test outlier detection algorithms.
+type OutlierConfig struct {
+	Times  []float64     // seconds at which to inject outliers (rounded to nearest integer)
+	Offset time.Duration // magnitude of outlier phase offset
 }
 
 // ShiftConfig configures a temporary PPS phase shift for testing.
@@ -89,8 +94,10 @@ func DefaultConfig() Config {
 		MaxDelay:      250e-6,
 		MsgDelay:      0.1,
 		MsgJitter:     0.01,
-		PulseWidth:    0,                        // default to single-edge mode
-		OutlierOffset: 2000 * time.Nanosecond, // 2µs default outlier magnitude
+		PulseWidth:    0, // default to single-edge mode
+		Outlier: OutlierConfig{
+			Offset: 2000 * time.Nanosecond, // 2µs default outlier magnitude
+		},
 	}
 }
 
@@ -211,8 +218,8 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	}
 
 	// Add outliers if configured
-	for _, second := range simCfg.OutlierTimes {
-		ppsSims = append(ppsSims, clocksim.SingleOutlierPPS(second, simCfg.OutlierOffset))
+	for _, second := range simCfg.Outlier.Times {
+		ppsSims = append(ppsSims, clocksim.SingleOutlierPPS(second, simCfg.Outlier.Offset))
 	}
 
 	pps := clocksim.CombinePPS(ppsSims...)

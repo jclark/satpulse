@@ -148,8 +148,10 @@ func TestPHCSync(t *testing.T) {
 			duration:          90.0, // Longer duration to ensure we're in tracking mode
 			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite outliers
 			modifySimCfg: func(cfg *Config) {
-				cfg.OutlierTimes = []float64{40, 50, 60}     // Inject outliers after MAD window fills (>35s)
-				cfg.OutlierOffset = 2000 * time.Nanosecond // 2µs outliers
+				cfg.Outlier = OutlierConfig{
+					Times:  []float64{40, 50, 60},
+					Offset: 2000 * time.Nanosecond,
+				}
 			},
 		},
 		{
@@ -158,8 +160,10 @@ func TestPHCSync(t *testing.T) {
 			duration:          20.0,
 			maxTrackingStdDev: 20 * time.Nanosecond,
 			modifySimCfg: func(cfg *Config) {
-				cfg.OutlierTimes = []float64{8} // Outlier during early tracking (MAD window not full)
-				cfg.OutlierOffset = 150 * time.Nanosecond
+				cfg.Outlier = OutlierConfig{
+					Times:  []float64{8}, // Outlier during early tracking (MAD window not full)
+					Offset: 150 * time.Nanosecond,
+				}
 			},
 			modifyPHCCfg: func(cfg *phcsync.Config) {
 				cfg.Track.OutlierThreshold = 200 // 200ns gate - 150ns outlier should pass through
@@ -171,8 +175,10 @@ func TestPHCSync(t *testing.T) {
 			duration:          60.0,
 			maxTrackingStdDev: 20 * time.Nanosecond,
 			modifySimCfg: func(cfg *Config) {
-				cfg.OutlierTimes = []float64{20, 30, 40}    // Multiple large outliers
-				cfg.OutlierOffset = 5000 * time.Nanosecond // 5µs outliers - well above MAD threshold
+				cfg.Outlier = OutlierConfig{
+					Times:  []float64{20, 30, 40},
+					Offset: 5000 * time.Nanosecond, // 5us outliers - well above MAD threshold
+				}
 			},
 		},
 		{
@@ -181,9 +187,10 @@ func TestPHCSync(t *testing.T) {
 			duration:          150.0,
 			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite many outliers
 			modifySimCfg: func(cfg *Config) {
-				// Outliers every 10 seconds starting after MAD window fills (40s)
-				cfg.OutlierTimes = []float64{40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140}
-				cfg.OutlierOffset = 1500 * time.Nanosecond
+				cfg.Outlier = OutlierConfig{
+					Times:  []float64{40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140},
+					Offset: 1500 * time.Nanosecond,
+				}
 			},
 		},
 		{
@@ -203,8 +210,10 @@ func TestPHCSync(t *testing.T) {
 				// Inject 2us spikes: during hold, right after shift, and later
 				// If MAD rejects spikes: absmax ~100ns (from shift only)
 				// If MAD fails: absmax ~2us (spikes get through)
-				cfg.OutlierTimes = []float64{40, 46, 55}
-				cfg.OutlierOffset = 2000 * time.Nanosecond
+				cfg.Outlier = OutlierConfig{
+					Times:  []float64{40, 46, 55},
+					Offset: 2000 * time.Nanosecond,
+				}
 			},
 		},
 	}
