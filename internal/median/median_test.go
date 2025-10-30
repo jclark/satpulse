@@ -376,6 +376,121 @@ func TestWindow_DurationPrecision(t *testing.T) {
 	}
 }
 
+func TestWindow_Last(t *testing.T) {
+	w := New[int64](5)
+
+	// Empty window should panic
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Last() on empty window should panic")
+		}
+	}()
+	_ = w.Last()
+}
+
+func TestWindow_Last_Values(t *testing.T) {
+	w := New[int64](5)
+
+	// Add values and check Last() returns the most recent
+	w.Add(10)
+	if got := w.Last(); got != 10 {
+		t.Errorf("Last() = %d, want 10", got)
+	}
+
+	w.Add(20)
+	if got := w.Last(); got != 20 {
+		t.Errorf("Last() = %d, want 20", got)
+	}
+
+	w.Add(30)
+	if got := w.Last(); got != 30 {
+		t.Errorf("Last() = %d, want 30", got)
+	}
+
+	// Fill window and wrap around
+	w.Add(40)
+	w.Add(50)
+	if got := w.Last(); got != 50 {
+		t.Errorf("Last() = %d, want 50", got)
+	}
+
+	// Add more to test wraparound
+	w.Add(60)
+	if got := w.Last(); got != 60 {
+		t.Errorf("Last() after wraparound = %d, want 60", got)
+	}
+}
+
+func TestWindow_Iterate(t *testing.T) {
+	w := New[int64](5)
+
+	// Empty window should iterate zero times
+	count := 0
+	w.Iterate(func(i int, v int64) bool {
+		count++
+		return true
+	})
+	if count != 0 {
+		t.Errorf("Iterate on empty window called yield %d times, want 0", count)
+	}
+
+	// Add some values: 10, 20, 30
+	w.Add(10)
+	w.Add(20)
+	w.Add(30)
+
+	// Should iterate newest to oldest: 30, 20, 10
+	expected := []int64{30, 20, 10}
+	i := 0
+	w.Iterate(func(idx int, v int64) bool {
+		if idx != i {
+			t.Errorf("index = %d, want %d", idx, i)
+		}
+		if v != expected[i] {
+			t.Errorf("value[%d] = %d, want %d", i, v, expected[i])
+		}
+		i++
+		return true
+	})
+	if i != 3 {
+		t.Errorf("Iterate called yield %d times, want 3", i)
+	}
+
+	// Fill window and wraparound: 10, 20, 30, 40, 50
+	w.Add(40)
+	w.Add(50)
+	// Then add 60, 70 which replaces 10, 20
+	// Window now: 30, 40, 50, 60, 70
+	w.Add(60)
+	w.Add(70)
+
+	expected = []int64{70, 60, 50, 40, 30}
+	i = 0
+	w.Iterate(func(idx int, v int64) bool {
+		if v != expected[i] {
+			t.Errorf("value[%d] = %d, want %d (after wraparound)", i, v, expected[i])
+		}
+		i++
+		return true
+	})
+	if i != 5 {
+		t.Errorf("Iterate called yield %d times, want 5", i)
+	}
+
+	// Test early termination
+	i = 0
+	result := w.Iterate(func(idx int, v int64) bool {
+		i++
+		return i < 3 // Stop after 3 iterations
+	})
+	if result {
+		t.Error("Iterate should return false when yield returns false")
+	}
+	if i != 3 {
+		t.Errorf("Early termination: visited %d values, want 3", i)
+	}
+}
+
 func TestWindow_MaxCapacity(t *testing.T) {
 	// Test that we can create a window at MaxCapacity
 	w := New[int64](MaxCapacity)

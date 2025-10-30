@@ -109,6 +109,31 @@ func (w *Window[T]) Cap() int {
 	return len(w.values)
 }
 
+// Last returns the most recently added value.
+// Panics if the window is empty.
+func (w *Window[T]) Last() T {
+	if len(w.indices) == 0 {
+		panic("median: Last() called on empty window")
+	}
+	// head points to the next insertion position, so the last inserted value
+	// is at (head - 1) mod capacity
+	lastIdx := (w.head - 1 + len(w.values)) % len(w.values)
+	return w.values[lastIdx]
+}
+
+// Iterate calls yield for each value in the window, from newest to oldest.
+// If yield returns false, iteration stops and Iterate returns false.
+// Otherwise, Iterate returns true after visiting all values.
+func (w *Window[T]) Iterate(yield func(int, T) bool) bool {
+	for i := range len(w.indices) {
+		idx := (w.head - 1 - i + len(w.values)) % len(w.values)
+		if !yield(i, w.values[idx]) {
+			return false
+		}
+	}
+	return true
+}
+
 // insertIndex inserts idx into indices at the position where values[idx]
 // would maintain sorted order
 func (w *Window[T]) insertIndex(idx winIndex) {
