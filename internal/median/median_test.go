@@ -1,6 +1,7 @@
 package median
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -375,34 +376,79 @@ func TestWindow_DurationPrecision(t *testing.T) {
 	}
 }
 
-func BenchmarkWindow_Add(b *testing.B) {
-	w := New[int64](99)
-	b.ResetTimer()
+func TestWindow_MaxCapacity(t *testing.T) {
+	// Test that we can create a window at MaxCapacity
+	w := New[int64](MaxCapacity)
+	if w.Cap() != MaxCapacity {
+		t.Errorf("window capacity = %d, want %d", w.Cap(), MaxCapacity)
+	}
 
-	for i := 0; i < b.N; i++ {
+	// Add values and verify it works
+	for i := 0; i < MaxCapacity+100; i++ {
 		w.Add(int64(i))
+	}
+
+	// Should have exactly MaxCapacity elements
+	if w.Len() != MaxCapacity {
+		t.Errorf("window length = %d, want %d", w.Len(), MaxCapacity)
+	}
+
+	// Median should be reasonable
+	median := w.Median()
+	expected := int64(MaxCapacity/2 + 100) // Middle of the window after 100 extra adds
+	if median < expected-1 || median > expected+1 {
+		t.Errorf("median = %d, expected around %d", median, expected)
+	}
+}
+
+func TestWindow_CapacityBoundary(t *testing.T) {
+	// Test creating window at MaxCapacity (should work)
+	w := New[int64](MaxCapacity)
+	if w.Cap() != MaxCapacity {
+		t.Errorf("failed to create window at MaxCapacity")
+	}
+
+	// Test that exceeding MaxCapacity panics
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("creating window > MaxCapacity should panic")
+		}
+	}()
+	_ = New[int64](MaxCapacity + 1)
+}
+
+func BenchmarkWindow_Add(b *testing.B) {
+	sizes := []int{5, 50, 250, 1250, 6250, 31250, 65535}
+	for _, size := range sizes {
+		if size > MaxCapacity {
+			continue
+		}
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			w := New[int64](size)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				w.Add(int64(i))
+			}
+		})
 	}
 }
 
 func BenchmarkWindow_Median(b *testing.B) {
-	w := New[int64](99)
-	for i := 0; i < 99; i++ {
-		w.Add(int64(i))
-	}
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		_ = w.Median()
-	}
-}
-
-func BenchmarkWindow_AddAndMedian(b *testing.B) {
-	w := New[int64](99)
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		w.Add(int64(i))
-		_ = w.Median()
+	sizes := []int{5, 50, 250, 1250, 6250, 31250, 65535}
+	for _, size := range sizes {
+		if size > MaxCapacity {
+			continue
+		}
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			w := New[int64](size)
+			for i := 0; i < size; i++ {
+				w.Add(int64(i))
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = w.Median()
+			}
+		})
 	}
 }
 

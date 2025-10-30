@@ -16,28 +16,40 @@ type Value interface {
 	int64 | float64 | time.Duration
 }
 
+// winIndex is the type used for indexing into the window.
+// Change this type alias to switch between different capacity limits:
+//   - uint8:  max capacity 256,   smaller memory footprint
+//   - uint16: max capacity 65536, larger windows supported
+//
+// Update MaxCapacity to match.
+type winIndex = uint16
+
+// MaxCapacity is the maximum allowed window capacity based on winIndex type.
+// Set to 256 for uint8, or 65536 for uint16.
+const MaxCapacity = 65536
+
 // Window maintains a fixed-size moving window of numeric values and efficiently
 // computes their median. Values are stored in a circular buffer in arrival order,
 // with a separate array of indices kept sorted by value for O(1) median access.
 // The capacity is fixed at creation time and cannot be changed.
 type Window[T Value] struct {
-	values  []T     // circular buffer: values in arrival order, len(values) is capacity
-	indices []uint8 // indices into values[], kept sorted by values[i], len(indices) is current count
-	head    int     // index of next insertion in values
+	values  []T        // circular buffer: values in arrival order, len(values) is capacity
+	indices []winIndex // indices into values[], kept sorted by values[i], len(indices) is current count
+	head    int        // index of next insertion in values
 }
 
 // New creates a Window with the specified capacity.
-// Capacity must be positive and cannot exceed 255.
+// Capacity must be positive and cannot exceed MaxCapacity.
 func New[T Value](capacity int) *Window[T] {
 	if capacity <= 0 {
-		panic("medwin: capacity must be positive")
+		panic("median: capacity must be positive")
 	}
-	if capacity > 255 {
-		panic("medwin: capacity cannot exceed 255")
+	if capacity > MaxCapacity {
+		panic("median: capacity cannot exceed MaxCapacity")
 	}
 	return &Window[T]{
 		values:  make([]T, capacity),
-		indices: make([]uint8, 0, capacity),
+		indices: make([]winIndex, 0, capacity),
 	}
 }
 
@@ -45,10 +57,10 @@ func New[T Value](capacity int) *Window[T] {
 // the oldest value is automatically removed.
 func (w *Window[T]) Add(v T) {
 	if len(w.indices) >= len(w.values) {
-		w.replaceIndex(uint8(w.head), v)
+		w.replaceIndex(winIndex(w.head), v)
 	} else {
 		w.values[w.head] = v
-		w.insertIndex(uint8(w.head))
+		w.insertIndex(winIndex(w.head))
 	}
 	w.head = (w.head + 1) % len(w.values)
 }
@@ -99,10 +111,10 @@ func (w *Window[T]) Cap() int {
 
 // insertIndex inserts idx into indices at the position where values[idx]
 // would maintain sorted order
-func (w *Window[T]) insertIndex(idx uint8) {
+func (w *Window[T]) insertIndex(idx winIndex) {
 	v := w.values[idx]
 	// Binary search for insertion position
-	pos, _ := slices.BinarySearchFunc(w.indices, v, func(i uint8, target T) int {
+	pos, _ := slices.BinarySearchFunc(w.indices, v, func(i winIndex, target T) int {
 		return cmp.Compare(w.values[i], target)
 	})
 	// Insert idx at position pos
@@ -111,7 +123,7 @@ func (w *Window[T]) insertIndex(idx uint8) {
 
 // replaceIndex repositions idx in the sorted indices array after updating its value.
 // This is called when replacing the oldest value in a full window.
-func (w *Window[T]) replaceIndex(idx uint8, newVal T) {
+func (w *Window[T]) replaceIndex(idx winIndex, newVal T) {
 	w.values[idx] = newVal
 	// Remove idx from its current position
 	pos := slices.Index(w.indices, idx)
@@ -120,7 +132,7 @@ func (w *Window[T]) replaceIndex(idx uint8, newVal T) {
 	}
 	w.indices = slices.Delete(w.indices, pos, pos+1)
 	// Insert idx at new position
-	insertPos, _ := slices.BinarySearchFunc(w.indices, newVal, func(i uint8, target T) int {
+	insertPos, _ := slices.BinarySearchFunc(w.indices, newVal, func(i winIndex, target T) int {
 		return cmp.Compare(w.values[i], target)
 	})
 	w.indices = slices.Insert(w.indices, insertPos, idx)
