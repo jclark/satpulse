@@ -111,57 +111,17 @@ func (w *Window[T]) insertIndex(idx uint8) {
 
 // replaceIndex repositions idx in the sorted indices array after updating its value.
 // This is called when replacing the oldest value in a full window.
-//
-// idx: the circular buffer slot being updated (e.g., values[3])
-// newVal: the new value being stored at values[idx]
-//
-// The index idx is currently somewhere in the sorted indices array. We need to:
-// 1. Remove idx from its current position
-// 2. Insert idx at the new position where values[idx]=newVal belongs
-//
-// This is done in a single pass for efficiency:
-// - Scan from high to low looking for either idx or the insertion position
-// - Shift elements in one direction to accomplish both remove and insert
 func (w *Window[T]) replaceIndex(idx uint8, newVal T) {
-	// Update the value first so subsequent comparisons use the new value
 	w.values[idx] = newVal
-	n := len(w.indices)
-
-	// Scan from high to low looking for either idx or the insertion position for newVal
-	for i := n - 1; i >= 0; i-- {
-		if w.indices[i] == idx {
-			// Found idx first - this means newVal belongs at or before position i
-			// Shift elements right while searching backward for the insertion position
-			// Use >= to insert BEFORE equal values (matching BinarySearchFunc behavior)
-			pos := i
-			for pos > 0 && w.values[w.indices[pos-1]] >= newVal {
-				w.indices[pos] = w.indices[pos-1]
-				pos--
-			}
-			w.indices[pos] = idx
-			return
-		}
-
-		if w.values[w.indices[i]] < newVal {
-			// Found insertion position first (at i+1) - this means idx must be at or before i
-			// Shift elements left as we search backward for idx (single pass)
-			saved := w.indices[i]  // Save the value that will be overwritten
-			for j := i - 1; j >= 0; j-- {
-				if w.indices[j] == idx {
-					// Found idx! Place saved value at j, idx at i
-					w.indices[j] = saved
-					w.indices[i] = idx
-					return
-				}
-				// Haven't found idx yet. Shift: save current, write previous saved
-				temp := w.indices[j]
-				w.indices[j] = saved
-				saved = temp
-			}
-			panic("medwin: idx not found before insertion position - internal error")
-		}
+	// Remove idx from its current position
+	pos := slices.Index(w.indices, idx)
+	if pos < 0 {
+		panic("median: index not found in replaceIndex")
 	}
-
-	// Should never reach here - idx must be in the indices array
-	panic("medwin: replaceIndex failed to find idx - internal error")
+	w.indices = slices.Delete(w.indices, pos, pos+1)
+	// Insert idx at new position
+	insertPos, _ := slices.BinarySearchFunc(w.indices, newVal, func(i uint8, target T) int {
+		return cmp.Compare(w.values[i], target)
+	})
+	w.indices = slices.Insert(w.indices, insertPos, idx)
 }
