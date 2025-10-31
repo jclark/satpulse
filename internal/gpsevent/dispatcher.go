@@ -223,27 +223,28 @@ type Timestamp struct {
 
 func (d *Dispatcher) timestamp(e ts.Event) {
 	// timestamp events only occur when PHC is available, so d.controller is non-nil
+	// Pass monotonic sample to controller (for PHC sync logic)
 	d.controller.PulseEdge(phcsync.PulseEdge{
 		Timestamp: e.Ts,
-		TRead:     e.TRead,
-		TReadPHC:  e.TReadPHC,
+		TRead:     e.TReadMono,
 	})
 
-	d.sysSample(e.TReadPHC.T, e.TRead)
+	// Pass wallclock sample to sysSample (for chrony)
+	d.sysSample(e.TReadWall.Clock.T, e.TReadWall.Sys)
 
 	// Generate logEvent
 	// XXX this needs rethinking
 	var delay time.Duration
-	trp := e.TReadPHC.T
-	if !trp.IsZero() && !e.TReadPHC.Era.Uncertain() && e.TReadPHC.Era == e.Ts.Era {
+	trp := e.TReadWall.Clock.T
+	if !trp.IsZero() && !e.TReadWall.Clock.Era.Uncertain() && e.TReadWall.Clock.Era == e.Ts.Era {
 		delay = trp.Sub(e.Ts.T)
 		if delay == 0 {
 			d.lg.Info("unexpected zero timestamp delay", "ts", e.Ts)
 		}
 	} else {
-		d.lg.Info("timestamp delay cannot be determined", "ts", e.Ts, "tReadPHC", e.TReadPHC)
+		d.lg.Info("timestamp delay cannot be determined", "ts", e.Ts, "tReadPHC", e.TReadWall.Clock)
 	}
-	d.logEvent(LogEvent{T: e.TRead, Timestamp: &Timestamp{T: e.Ts.T, Era: e.Ts.Era, Delay: delay}})
+	d.logEvent(LogEvent{T: e.TReadWall.Sys, Timestamp: &Timestamp{T: e.Ts.T, Era: e.Ts.Era, Delay: delay}})
 }
 
 // sysSample generates a sample of system time vs true time (based on PHC)

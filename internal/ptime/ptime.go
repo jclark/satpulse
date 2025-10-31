@@ -14,6 +14,14 @@ type ClockTime struct {
 	Era Era
 }
 
+// Sample represents a paired reading of a PHC clock and system clock.
+// The Clock field represents the PHC time, and Sys represents the
+// corresponding system time (either monotonic or wallclock).
+type Sample struct {
+	Clock ClockTime
+	Sys   time.Time
+}
+
 // Time in TAI timescale represented as nanoseconds since 1970-01-01T00:00:00 TAI
 type Time int64
 

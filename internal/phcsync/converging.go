@@ -100,8 +100,8 @@ func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex ui
 	offset := edge.Timestamp.T.Sub(refTime)
 
 	// Estimate system time
-	phcDelta := edge.TReadPHC.T.Sub(edge.Timestamp.T)
-	sys := edge.TRead.Add(-phcDelta)
+	phcDelta := edge.TRead.Clock.T.Sub(edge.Timestamp.T)
+	sys := edge.TRead.Sys.Add(-phcDelta)
 
 	return &Sample{
 		Kind:      SampleOK,

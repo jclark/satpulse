@@ -146,8 +146,7 @@ type TickEventData struct {
 type pulseTimestamp struct {
 	timestamp ptime.ClockTime
 	trueTime  float64
-	tRead     time.Time
-	tReadPHC  ptime.ClockTime
+	tRead     ptime.Sample
 	offset    time.Duration
 }
 
@@ -537,7 +536,7 @@ func readPulseTimestamp(
 	if !ok {
 		return nil, fmt.Errorf("failed to read timestamp at PPS %v", data.PPS)
 	}
-	tRead := time.Unix(0, 0).Add(time.Duration(eventTime * 1e9))
+	tSys := time.Unix(0, 0).Add(time.Duration(eventTime * 1e9))
 	tReadPHC := testClock.Now()
 	tTrue := tStart.Add(time.Duration(trueTime * 1e9))
 	taiOffset := timestamp.T.Sub(tTrue)
@@ -550,9 +549,11 @@ func readPulseTimestamp(
 	return &pulseTimestamp{
 		timestamp: timestamp,
 		trueTime:  trueTime,
-		tRead:     tRead,
-		tReadPHC:  tReadPHC,
-		offset:    taiOffset,
+		tRead: ptime.Sample{
+			Clock: tReadPHC,
+			Sys:   tSys,
+		},
+		offset: taiOffset,
 	}, nil
 }
 
@@ -567,7 +568,6 @@ func deliverPulseToController(
 	edge := phcsync.PulseEdge{
 		Timestamp: pts.timestamp,
 		TRead:     pts.tRead,
-		TReadPHC:  pts.tReadPHC,
 	}
 	lg.Debug("delivering pulse to controller",
 		"second", int(data.PPS),

@@ -312,8 +312,10 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 
 			gen.storeEdge(PulseEdge{
 				Timestamp: ptime.ClockTime{T: phcTime, Era: 0},
-				TRead:     tRead,
-				TReadPHC:  ptime.ClockTime{T: tReadPHC, Era: 0},
+				TRead: ptime.Sample{
+					Clock: ptime.ClockTime{T: tReadPHC, Era: 0},
+					Sys:   tRead,
+				},
 			}, uint64(i))
 		}
 	} else {
@@ -360,8 +362,10 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 				}
 				gen.storeEdge(PulseEdge{
 					Timestamp: ptime.ClockTime{T: edge.phcTime, Era: 0},
-					TRead:     edge.realTime.Add(readDelay),
-					TReadPHC:  ptime.ClockTime{T: edge.phcTime.Add(readDelay), Era: 0},
+					TRead: ptime.Sample{
+						Clock: ptime.ClockTime{T: edge.phcTime.Add(readDelay), Era: 0},
+						Sys:   edge.realTime.Add(readDelay),
+					},
 				}, uint64(edgeIndex))
 			}
 		}
@@ -397,8 +401,10 @@ func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *
 		readDelay := 1 * time.Millisecond
 		gen.storeEdge(PulseEdge{
 			Timestamp: ptime.ClockTime{T: phcTime, Era: 0},
-			TRead:     realTime.Add(readDelay),
-			TReadPHC:  ptime.ClockTime{T: phcTime.Add(readDelay), Era: 0},
+			TRead: ptime.Sample{
+				Clock: ptime.ClockTime{T: phcTime.Add(readDelay), Era: 0},
+				Sys:   realTime.Add(readDelay),
+			},
 		}, uint64(i))
 	}
 

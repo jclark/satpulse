@@ -178,8 +178,8 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 	offset := edge.Timestamp.T.Sub(refTime)
 
 	// Estimate system time: TRead minus the time between reading and timestamp capture
-	phcDelta := edge.TReadPHC.T.Sub(edge.Timestamp.T)
-	sys := edge.TRead.Add(-phcDelta)
+	phcDelta := edge.TRead.Clock.T.Sub(edge.Timestamp.T)
+	sys := edge.TRead.Sys.Add(-phcDelta)
 
 	sample := &Sample{
 		Kind:      SampleOK,

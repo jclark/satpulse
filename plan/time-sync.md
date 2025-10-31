@@ -440,7 +440,7 @@ Implementing each of these will involved enhancements to simulator to test prope
 
 #### Phase D.2 refinements
 * Update SampleData.SyncState to use our new modes (done)
-* Post-read PHC/system time has wallclock time; compute separate monotonic time
+* Post-read PHC/system time has wallclock time; compute separate monotonic time (done)
 * Port event log replay architecture (internal/gpsevent/replay.go) to use phcsync.Controller instead of combine.Combiner
 * Remove combine/mon/servo packages
 
