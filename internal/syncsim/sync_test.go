@@ -216,6 +216,20 @@ func TestPHCSync(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:              "Outlier gate during MAD warmup",
+			pulseWidth:        0,
+			duration:          30.0,
+			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite early outlier
+			modifySimCfg: func(cfg *Config) {
+				cfg.Outlier = OutlierConfig{
+					Times:  []float64{20}, // Inject outlier early in tracking (MAD window not full)
+					Offset: 1000 * time.Nanosecond, // Well above warmup threshold (OutlierThreshold + PreMADOutlierRange = 550ns)
+				}
+			},
+			// PreMADOutlierRange protects servo: warmup threshold = 50ns + 500ns = 550ns
+			// The 1µs outlier should be rejected, maintaining low stddev.
+		},
 	}
 
 	for _, tt := range tests {

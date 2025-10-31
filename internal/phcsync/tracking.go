@@ -45,6 +45,13 @@ type TrackingConfig struct {
 	// gate is used. This ensures MAD statistics are based on sufficient data. Typical value: 10.
 	MADMinSamples int `toml:"madMinSamples" check:">=1,<100"`
 
+	// PreMADOutlierRange is the additional range in nanoseconds added to OutlierThreshold
+	// to reject outliers before MAD-based detection is ready. During the warmup period
+	// (offsetWindow.Len() < MADMinSamples), samples with |offset| >= OutlierThreshold + PreMADOutlierRange
+	// are rejected to protect the servo from obviously bad outliers. Once MAD is ready, full
+	// statistical detection is used. Typical value: 500 ns.
+	PreMADOutlierRange int64 `toml:"preMADOutlierRange" check:">=0,<10_000_000"`
+
 	// PulseWidthTolerance is the tolerance in nanoseconds for filtering trailing edges in
 	// dual-edge mode based on temporal spacing. An edge is considered a trailing edge (and
 	// ignored) if it arrives within PulseWidthTolerance of the expected trailing edge time
@@ -82,6 +89,7 @@ func defaultTrackingConfig() TrackingConfig {
 		MADWindow:           10,   // 10 samples
 		MADMultiple:         25.0, // 25 * MAD
 		MADMinSamples:       10,   // 10 samples minimum
+		PreMADOutlierRange:  500,  // 500ns additional range during warmup
 		PulseWidthTolerance: 200,  // 200ns
 		AlignTolerance:      100,  // 100ns
 		BadSampleLimit:      5,
@@ -254,13 +262,24 @@ func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 	// Median is robust to outliers, so including them doesn't corrupt the statistics
 	p.offsetWindow.Add(sample.Offset)
 
-	// Only apply outlier detection to samples exceeding the outlier threshold.
-	if sample.Offset.Abs() >= time.Duration(p.cfg.OutlierThreshold) && p.madIsOutlier(sample.Offset) {
-		// MAD-based detection identified this as an outlier
-		sample.Kind = SampleOutlier
-		p.lg.Debug("outlier detected by MAD",
-			"offset", sample.Offset)
-		return phcAction{actionType: phcNoAction}
+	// During MAD warmup, use simple threshold to protect servo
+	if p.offsetWindow.Len() < p.cfg.MADMinSamples {
+		warmupThreshold := time.Duration(p.cfg.OutlierThreshold + p.cfg.PreMADOutlierRange)
+		if sample.Offset.Abs() >= warmupThreshold {
+			sample.Kind = SampleOutlier
+			p.lg.Debug("outlier rejected during MAD warmup",
+				"offset", sample.Offset,
+				"warmupThreshold", warmupThreshold)
+			return phcAction{actionType: phcNoAction}
+		}
+	} else {
+		// MAD is ready, use full MAD-based detection
+		if sample.Offset.Abs() >= time.Duration(p.cfg.OutlierThreshold) && p.madIsOutlier(sample.Offset) {
+			sample.Kind = SampleOutlier
+			p.lg.Debug("outlier detected by MAD",
+				"offset", sample.Offset)
+			return phcAction{actionType: phcNoAction}
+		}
 	}
 
 	// Apply PI control for good samples
