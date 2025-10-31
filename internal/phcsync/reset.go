@@ -78,6 +78,12 @@ type pulseInfo struct {
 	avgInterval time.Duration // average PHC interval between pulses
 }
 
+type resetStats struct {
+	pulseVariation float64 // actual pulse interval variation in PPB (compare to cfg.PulseVariation)
+	delay          float64 // mean pulse-to-message delay in seconds (compare to cfg.ExpectedDelay)
+	delayVariation float64 // delay spread as proportion of 1s (compare to cfg.DelayVariation)
+}
+
 type resetSampleGenerator struct {
 	timeMsgBuffer TimeMsgBuffer
 	edgeBuf       *circbuf.Buffer[PulseEdge]
@@ -150,7 +156,7 @@ func (g *resetSampleGenerator) genSample() *Sample {
 		return nil
 	}
 
-	sample, err := g.genSampleForMessages(lastSec, tRead)
+	sample, stats, err := g.genSampleForMessages(lastSec, tRead)
 	if err != nil {
 		if le, ok := err.(loggableError); ok {
 			le.log(g.lg)
@@ -158,6 +164,13 @@ func (g *resetSampleGenerator) genSample() *Sample {
 			g.lg.Info(err.Error())
 		}
 		return nil
+	}
+
+	if sample != nil {
+		g.lg.Info("reset mode succeeded",
+			"pulseVariation", stats.pulseVariation,
+			"delay", stats.delay,
+			"delayVariation", stats.delayVariation)
 	}
 
 	return sample
@@ -169,26 +182,30 @@ type pulseEdgeList struct {
 	lastEdgeIndex uint64
 }
 
-func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []time.Time) (*Sample, error) {
+// genSampleForMessages generates a sample from pulse edges and time messages.
+// This function must remain pure (no logging, no side effects) for unit testability.
+// It returns the sample, statistics about the measurements, and any error encountered.
+func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []time.Time) (*Sample, *resetStats, error) {
+	stats := &resetStats{}
 	edgeLists := g.pulseEdgeLists()
 	for _, edgeList := range edgeLists {
-		err := g.checkPulseIntervals(edgeList)
+		err := g.checkPulseIntervals(edgeList, stats)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	edgeLists = g.filterEdgeListsByPulseWidth(edgeLists)
 	if len(edgeLists) != 1 {
-		return nil, errors.New("cannot filter edges")
+		return nil, nil, errors.New("cannot filter edges")
 	}
 	// TODO: with 50% duty cycle, we would try the alignement of both edgeLists with a smaller maxWindow, so that at most one succeeds
 	edges := edgeLists[0].edges
 	avgInterval := edgeLists[0].avgInterval()
 	pulseTimes := g.pulseTimes(edges, avgInterval)
-	err := g.checkAlignment(pulseTimes, tRead)
+	err := g.checkAlignment(pulseTimes, tRead, stats)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	g.lastEdgeIndex = edgeLists[0].lastEdgeIndex
 	g.avgInterval = avgInterval
@@ -206,7 +223,7 @@ func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []
 		EdgeIndex: g.lastEdgeIndex,
 		Sys:       pulseTimes[len(pulseTimes)-1],
 		// Mode will be filled in by processSample
-	}, nil
+	}, stats, nil
 }
 
 func (g *resetSampleGenerator) filterEdgeListsByPulseWidth(edgeLists []pulseEdgeList) []pulseEdgeList {
@@ -275,7 +292,7 @@ func (e *logMsgError) log(lg *slog.Logger) {
 // checkPulseIntervals validates that PHC pulse timestamps are stable and adjustable.
 // It checks that all intervals are close enough to 1 second to be corrected within the PHC's
 // frequency adjustment range, and that the intervals are consistent with each other.
-func (g *resetSampleGenerator) checkPulseIntervals(edgeList pulseEdgeList) error {
+func (g *resetSampleGenerator) checkPulseIntervals(edgeList pulseEdgeList, stats *resetStats) error {
 	if edgeList.length() < 2 {
 		return errNotEnoughTimestamps
 	}
@@ -287,7 +304,7 @@ func (g *resetSampleGenerator) checkPulseIntervals(edgeList pulseEdgeList) error
 		return err
 	}
 
-	err = g.checkPulseIntervalsConsistent(intervals)
+	err = g.checkPulseIntervalsConsistent(intervals, stats)
 	if err != nil {
 		return err
 	}
@@ -312,10 +329,10 @@ func (g *resetSampleGenerator) pulseTimes(edges []PulseEdge, avgInterval time.Du
 
 // checkAlignment verifies that the estimated pulse times align with time message read times.
 // It checks that delays between corresponding pulses and messages are consistent and within expected range.
-func (g *resetSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTimes []time.Time) error {
+func (g *resetSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTimes []time.Time, stats *resetStats) error {
 	delays := g.pulseDelays(pulseTimes, msgReadTimes)
 
-	err := g.checkDelaySpread(delays)
+	err := g.checkDelaySpread(delays, stats)
 	if err != nil {
 		return err
 	}
@@ -339,13 +356,15 @@ func (g *resetSampleGenerator) pulseDelays(pulseTimes []time.Time, msgReadTimes 
 	return delays
 }
 
-func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration) error {
+func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration, stats *resetStats) error {
 	if len(delays) == 0 {
 		panic("checkDelaySpread: need at least 1 delay")
 	}
 
 	minDelay, maxDelay := delays[0], delays[0]
+	sum := time.Duration(0)
 	for _, d := range delays {
+		sum += d
 		if d < minDelay {
 			minDelay = d
 		}
@@ -354,9 +373,13 @@ func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration) error {
 		}
 	}
 
+	mean := sum / time.Duration(len(delays))
+	stats.delay = mean.Seconds()
+
 	maxWindow := 1.0
 	spread := maxDelay - minDelay
 	spreadProportion := spread.Seconds() / maxWindow
+	stats.delayVariation = spreadProportion
 
 	if spreadProportion > g.cfg.DelayVariation {
 		return &limitError{
@@ -512,7 +535,7 @@ func (g *resetSampleGenerator) checkIntervalAdjustable(interval time.Duration) e
 	}
 }
 
-func (g *resetSampleGenerator) checkPulseIntervalsConsistent(intervals []time.Duration) error {
+func (g *resetSampleGenerator) checkPulseIntervalsConsistent(intervals []time.Duration, stats *resetStats) error {
 	if len(intervals) == 0 {
 		panic("checkPulseIntervalsConsistent: need at least 1 interval")
 	}
@@ -531,6 +554,8 @@ func (g *resetSampleGenerator) checkPulseIntervalsConsistent(intervals []time.Du
 	if variationPPB < 0 {
 		variationPPB = -variationPPB
 	}
+
+	stats.pulseVariation = variationPPB
 
 	if variationPPB > g.cfg.PulseVariation {
 		return &limitError{

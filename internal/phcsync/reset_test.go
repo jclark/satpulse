@@ -26,6 +26,7 @@ type genSampleTestCase struct {
 	msgDelay     time.Duration   // uniform delay for all messages
 	// Expected outcome
 	wantError bool
+	wantStats *resetStats // expected stats when test succeeds
 }
 
 func TestGenSampleForMessages(t *testing.T) {
@@ -36,6 +37,11 @@ func TestGenSampleForMessages(t *testing.T) {
 			numEdges: 5,
 			interval: time.Second,
 			msgDelay: 100 * time.Millisecond,
+			wantStats: &resetStats{
+				pulseVariation: 0.0,   // perfect 1s intervals
+				delay:          0.1,   // 100ms delay
+				delayVariation: 0.0,   // uniform delay
+			},
 		},
 		{
 			name:      "IntervalTooLarge",
@@ -79,6 +85,7 @@ func TestGenSampleForMessages(t *testing.T) {
 			msgDelay:        100 * time.Millisecond,
 			pulseWidth:      1 * time.Microsecond,
 			startWithRising: true,
+			// Note: dual-edge tests add ~20ns noise to pulse width, so pulseVariation won't be exactly 0
 		},
 		{
 			name:            "DualEdge_1ms_Rising",
@@ -209,7 +216,7 @@ func TestGenSampleForMessages(t *testing.T) {
 				lastSec = ptime.Time(0).Add(time.Duration(numPulses-1) * time.Second)
 			}
 
-			sample, err := gen.genSampleForMessages(lastSec, tRead)
+			sample, stats, err := gen.genSampleForMessages(lastSec, tRead)
 
 			if tc.wantError {
 				if err == nil {
@@ -218,6 +225,9 @@ func TestGenSampleForMessages(t *testing.T) {
 				if sample != nil {
 					t.Errorf("expected nil sample on error, got %v", sample)
 				}
+				if stats != nil {
+					t.Errorf("expected nil stats on error, got %v", stats)
+				}
 			} else {
 				if err != nil {
 					t.Fatalf("expected no error, got: %v", err)
@@ -225,15 +235,37 @@ func TestGenSampleForMessages(t *testing.T) {
 				if sample == nil {
 					t.Fatal("expected sample, got nil")
 				}
+				if stats == nil {
+					t.Fatal("expected stats, got nil")
+				}
 				if sample.Kind != SampleOK {
 					t.Errorf("expected SampleOK, got %v", sample.Kind)
 				}
 				if sample.Ref != lastSec {
 					t.Errorf("expected Ref=%v, got %v", lastSec, sample.Ref)
 				}
+				if tc.wantStats != nil {
+					tolerance := 0.001
+					if abs(stats.pulseVariation-tc.wantStats.pulseVariation) > tolerance {
+						t.Errorf("pulseVariation: want %v, got %v", tc.wantStats.pulseVariation, stats.pulseVariation)
+					}
+					if abs(stats.delay-tc.wantStats.delay) > tolerance {
+						t.Errorf("delay: want %v, got %v", tc.wantStats.delay, stats.delay)
+					}
+					if abs(stats.delayVariation-tc.wantStats.delayVariation) > tolerance {
+						t.Errorf("delayVariation: want %v, got %v", tc.wantStats.delayVariation, stats.delayVariation)
+					}
+				}
 			}
 		})
 	}
+}
+
+func abs(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // setupGenerator creates an resetSampleGenerator with synthetic edge data.
@@ -465,7 +497,7 @@ func TestLastEdgeIndexUpdated(t *testing.T) {
 			}
 			lastSec := ptime.Time(0).Add(time.Duration(numPulses-1) * time.Second)
 
-			sample, err := gen.genSampleForMessages(lastSec, tRead)
+			sample, _, err := gen.genSampleForMessages(lastSec, tRead)
 			if err != nil {
 				t.Fatalf("genSampleForMessages failed: %v", err)
 			}

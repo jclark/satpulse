@@ -463,7 +463,7 @@ It would be useful to be able to run new program and old program at the same tim
 
 Order of these is TBD.
 
-* more logging during initialization of what we discovered
+* more logging during initialization of what we discovered (done)
 * support 50% duty cycle with both edges
 * compensation step at beginning of converging phase (done)
 * MAD-based outlier detection (done)
