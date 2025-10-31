@@ -337,7 +337,7 @@ func (c *Controller) changeMode(mode Mode) {
 		c.sampleProc = newResetSampleProcessor(c.cfg.Reset, c.lg)
 	case ModeConverging:
 		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converge, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
-		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converge, c.freq, c.maxFreq, c.lg)
+		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converge, c.lastSample, c.freq, c.maxFreq, c.lg)
 	case ModeTracking:
 		c.sampleGen = newTrackingSampleGenerator(c.cfg.Track, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newTrackingSampleProcessor(c.cfg.Track, c.estimatedFreq, c.maxFreq, c.lg)

@@ -61,7 +61,8 @@ func TestPHCSync(t *testing.T) {
 			pulseWidth:               0,
 			duration:                 80.0,
 			toggleTimes:              []float64{60.0}, // stop at t=60s, never restart
-			expectMaxTrackingSamples: 40,              // 35 before outage + up to 5 missing samples in tracking before transition
+			expectMinTrackingSamples: 35,              // at least 35 tracking samples before outage
+			expectMaxTrackingSamples: 50,              // allow flexibility with faster convergence
 			expectResetSamples:       1,               // 1 initial reset sample only (reset mode doesn't generate missing samples)
 		},
 		{
@@ -176,7 +177,7 @@ func TestPHCSync(t *testing.T) {
 			maxTrackingStdDev: 20 * time.Nanosecond,
 			modifySimCfg: func(cfg *Config) {
 				cfg.Outlier = OutlierConfig{
-					Times:  []float64{20, 30, 40},
+					Times:  []float64{32, 40, 48}, // delayed to allow MAD window to warm up after entering tracking
 					Offset: 5000 * time.Nanosecond, // 5us outliers - well above MAD threshold
 				}
 			},
@@ -229,6 +230,17 @@ func TestPHCSync(t *testing.T) {
 			},
 			// PreMADOutlierRange protects servo: warmup threshold = 50ns + 500ns = 550ns
 			// The 1µs outlier should be rejected, maintaining low stddev.
+		},
+		{
+			name:                    "ADJ_SETOFFSET compensation",
+			pulseWidth:              0,
+			duration:                30.0,
+			maxTrackingStdDev:       20 * time.Nanosecond,
+			expectConvergingSamples: 14, // 1 measure + 1 compensate + ~12 to converge residual
+			// After reset step with delay d1 (~5µs), first pulse in converging measures offset ~d1
+			// Compensation steps by 2×d1 (~10µs) with delay d2 (~5µs), net advance = d1 + (d1 - d2)
+			// Residual error is |d1 - d2| which is ~1-2µs typical with 1µs stddev in delays
+			// PI then converges residual in ~12 samples vs ~19 without compensation
 		},
 	}
 

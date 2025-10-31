@@ -465,7 +465,7 @@ Order of these is TBD.
 
 * more logging during initialization of what we discovered
 * support 50% duty cycle with both edges
-* compensation step at beginning of converging phase (already in old implementation)
+* compensation step at beginning of converging phase (done)
 * MAD-based outlier detection (done)
 * improve clock model to be more realistic
   * simulate ionospheric disturbances (done)

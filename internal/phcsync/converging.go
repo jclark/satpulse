@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/median"
+	"github.com/jclark/satpulse/internal/ptime"
 )
 
 // ConvergingConfig contains tunable parameters for converging mode.
@@ -42,16 +43,25 @@ type ConvergingConfig struct {
 	// back to reset mode. Missing samples indicate loss of PPS signal or time messages.
 	// Typical value: 3.
 	BadSampleLimit int `toml:"badSampleLimit" check:">=1,<100"`
+
+	// StepCompensate enables compensation for ADJ_SETOFFSET delay at the beginning of
+	// converging mode. ADJ_SETOFFSET is implemented in the kernel by calling the driver
+	// to read the current PHC time, adding the offset, then calling the driver again to
+	// write back the adjusted time. This read-modify-write sequence takes a few microseconds,
+	// causing the clock to lag behind by that amount. If enabled, the offset from the first
+	// pulse in converging mode is used to apply a compensation step. Typical value: true.
+	StepCompensate bool `toml:"stepCompensate"`
 }
 
 func defaultConvergingConfig() ConvergingConfig {
 	return ConvergingConfig{
-		Kp:                0.7,
-		Ki:                0.3,
-		MedianWindow:            5,
-		OffsetLimit:         1000, // 1µs
-		StableWindow:     3,
+		Kp:             0.7,
+		Ki:             0.3,
+		MedianWindow:   5,
+		OffsetLimit:    1000, // 1µs
+		StableWindow:   3,
 		BadSampleLimit: 3,
+		StepCompensate: true,
 	}
 }
 
@@ -113,22 +123,30 @@ type convergingSampleProcessor struct {
 	cfg                      ConvergingConfig
 	servo                    *piServo
 	offsets                  *median.Window[time.Duration]
+	lastSampleEra            ptime.Era
+	stepCompensate           bool
 	minMedian                time.Duration
 	samplesSinceMinDecreased int
 	missingSamples           int
 	lg                       *slog.Logger
 }
 
-func newConvergingSampleProcessor(cfg ConvergingConfig, currentFreq, maxFreq float64, lg *slog.Logger) *convergingSampleProcessor {
+func newConvergingSampleProcessor(cfg ConvergingConfig, lastSample *Sample, currentFreq, maxFreq float64, lg *slog.Logger) *convergingSampleProcessor {
 	return &convergingSampleProcessor{
-		cfg:     cfg,
-		servo:   newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
-		offsets: median.New[time.Duration](cfg.MedianWindow),
-		lg:      lg,
+		cfg:            cfg,
+		servo:          newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
+		offsets:        median.New[time.Duration](cfg.MedianWindow),
+		lastSampleEra:  lastSample.Era,
+		stepCompensate: cfg.StepCompensate,
+		lg:             lg,
 	}
 }
 
 func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
+	if action := p.handleCompensation(sample); action.actionType != phcNoAction {
+		return action, ModeConverging
+	}
+
 	if sample.Kind == SampleMissing {
 		p.missingSamples++
 		p.lg.Info("missing sample in converging mode", "missingSamples", p.missingSamples)
@@ -155,6 +173,37 @@ func (p *convergingSampleProcessor) processSample(sample *Sample) (phcAction, Mo
 		actionType: phcAdjustFrequency,
 		freq:       freq,
 	}, ModeConverging
+}
+
+func (p *convergingSampleProcessor) handleCompensation(sample *Sample) phcAction {
+	if !p.stepCompensate {
+		return phcAction{}
+	}
+
+	// Only try the step compensation on the first sample in converging mode.
+	// If that sample is missing, skip the compensation entirely,
+	// since the estimate would become increasingly unreliable with more missing samples.
+	p.stepCompensate = false
+
+	if sample.Kind == SampleMissing {
+		p.lg.Info("skipping ADJ_SETOFFSET compensation due to missing first pulse")
+		return phcAction{}
+	}
+
+	if sample.Era > p.lastSampleEra {
+		// We stepped! Compensate by 2× the measured offset.
+		// 2x because one covers error in first adjustment and the other covers expected error in this adjustment.
+		compensationStep := -2 * sample.Offset
+		p.lg.Info("compensating for ADJ_SETOFFSET delay",
+			"measuredOffset", sample.Offset,
+			"compensationStep", compensationStep)
+		return phcAction{
+			actionType: phcStepClock,
+			step:       compensationStep,
+		}
+	}
+
+	return phcAction{}
 }
 
 func (p *convergingSampleProcessor) converged() bool {
