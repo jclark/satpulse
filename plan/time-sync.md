@@ -428,9 +428,9 @@ Implementing each of these will involved enhancements to simulator to test prope
 2. enter lost mode when pulses stop (transition from tracking to lost based on consecutive missing samples)
 3. implement recovery in lost mode (transition from lost back to converging when pulses return)
 
-### Phase D - integrate into daemon
+### Phase D - integrate into daemon (done)
 
-#### Phase D.1 - essentials (done)
+#### Phase D.1 - essentials
 * Integrate this into the daemon, so that it is used instead of combine/mon/servo. (done)
 * Factor out mon/gm.go into its own package and fix all references; remove aliases in phcsync
 * Factor out mon/refclock.go into its own package and fix all references; remove aliases in phcsync
@@ -438,63 +438,92 @@ Implementing each of these will involved enhancements to simulator to test prope
 * Implement grandmaster settings in phcsync.Controller
 * Implement chrony refclock in phcsync.Controller
 
-#### Phase D.2 refinements
-* Update SampleData.SyncState to use our new modes (done)
-* Post-read PHC/system time has wallclock time; compute separate monotonic time (done)
+#### Phase D.2 - decouple from old packages
+* Update SampleData.SyncState to use our new mode
+* Post-read PHC/system time has wallclock time; compute separate monotonic time
 * Port event log replay architecture (internal/gpsevent/replay.go) to use phcsync.Controller instead of combine.Combiner
-* Remove combine/mon/servo packages
+* Check for no dependencies on combine/mon/servo packages
+
+### Phase E - refinements
+
+Done:
+
+* compensation step at beginning of converging phase 
+* MAD-based outlier detection
+  * simulate ionospheric disturbances 
+  * simulate outliers*
+* First pass on improving naming and design of tuneable parameters
+* Implement setting of tuneable parameters via new section in satpulse.toml
+* Validation pf phcsync.Config
+* more logging during initialization of what we discovered
+
+Still to do:
+* Add phcsync Config parameters to schema based on code plus comments 
+* Tighten validation of phcsync.Config parameters
+  * some tracking/converging limits need tightening
+  * validate relative values between limits
+* support 50% duty cycle with both edges
+* exit tracking when proportion of abnormal samples in a configurable window is greater than configurable value
+* better error messages when timemsg buffered messages are too old
+* estimate error in system clock and also use that when we are estimating monotonic time of messages
+
+Things to consider
+* Consider whether we still need era concept. Used currently:
+  * at startup, to get rid of stale timestamps
+  * after initial step (in converging mode)
+  * after compensate step
+  * think we still need this
+* more robust transition between converging/tracking mode, by blending Kp/Ki parameters for initial period during tracking
+  * may not be necessary - have already implemented more stringent test for end of convergence
+* Do we need a MAD upper gate?
+* Are we simulating 0.25s variation in timestamp delivery on CM4/5?
+
+### Phase F - gather better data
+
+Wait for Rubidium oscillator to arrive.
+
+Sawtooth correction
+- need to check direction of correction
+- see if difference is measurable
+- test M8T and ZED-F9T-OO
+- can we model it?
+
+Use that to gather better data for clock model.
+
+Run some simulations to determine better Kp/Ki values for converging/tracking
+
+Better data about kinds of GNSS anomaly
+
+### Phase G - finish up
+
+#### G.1 Document
+
+* Finalize and document phcsync tuneable parameters in man page
+* Blog on design
+
+#### G.2 Monitor time messages during tracking
+
+* we know is that at monotonic time m1 we received a message telling us the GNSS time solution said it was g1
+* maintain a sequence of (m,g) pairs
+* use this we can then make an estimate of the TAI time corresponding to a monotonic time
+* use delay computed in init stage
+* this can be used as basis for generating samples without PHC
+* have configurable behaviour if our calculated PHC time is different from time messages time
+  * in tracking mode we can more straightforwardly calculate monotonic time of pulse, because we can assume PHC is accurate
+  * this could happen during cold start of old receiver with firmware with out of date leap second when using NMEA
+  * could also happen with buffer overflow
+
+#### G.3 Compare side-by-side
 
 It would be useful to be able to run new program and old program at the same time, seeing the same data
-- Add index property to phc section in config file for it to use a vclock (see issue #26)
+- Add index property to phc section in config file for it to use a vclock (see issue #26) - implement this on master branch
 - How to distinguish system log entries? One would run under systemd, one would not.
 - How to have different clock path? Specify different logging directory for new one.
 - Both need access to the same serial port. We can do this by testing on a machine where GNSS receiver has two serial ports.
 
-### Phase E - tuneable parameters (partially done)
+#### G.4 Real-life testing
 
-* Improve naming and design of tuneable parameters (done one pass on this)
-* Implement validation of phcsync.Config (partially done)
-  * some tracking/converging limits need tightening
-  * validate relative values between limits
-* Implement setting of tuneable parameters via new section in satpulse.toml (done)
-* Document in man page (still todo)
-
-### Phase F - refine
-
-Order of these is TBD.
-
-* more logging during initialization of what we discovered (done)
-* support 50% duty cycle with both edges
-* compensation step at beginning of converging phase (done)
-* MAD-based outlier detection (done)
-* improve clock model to be more realistic
-  * simulate ionospheric disturbances (done)
-  * simulate outliers (done)
-* run some simulations to determine better Kp/Ki values for each mode
-* consider more robust transition between converging/tracking mode, by blending Kp/Ki parameters for initial period during tracking (may not be necessary - have implemented more stringent test for end of convergence)
-* sawtooth correction (already in old implementation); need to check direction and see if difference is measurable
-* estimate error in system clock and also use that when we are estimating monotonic time of messages
-* exit tracking when proportion of abnormal samples in a configurable window is greater than configurable value
-* better error messages when timemsg buffered messages are too old
-
-Consider whether we still need era concept. Used currently:
-* at startup, to get rid of stale timestamps
-* after initial step (in converging mode)
-* after compensate step
-
-### Phase G - track timing messages
-
-* keep track of timing messages during tracking
-  * we know is that at monotonic time m1 we received a message telling us the GNSS time solution said it was g1
-  * maintain a sequence of (m,g) pairs
-  * use this we can then make an estimate of the TAI time corresponding to a monotonic time
-  * use delay computed in init stage
-* this can be used as basis for generating samples without PHC
-* have configurable behaviour if our calculated PHC time is different from time messages time
- * in tracking mode we can more straightforwardly calculate monotonic time of pulse, because we can assume PHC is accurate
- * this could happen during cold start of old receiver with firmware with out of date leap second when using NMEA
- * could also happen with buffer overflow
-
+Run on multiple machines for at least a week.
 
 ### Phase H - holdover
 
