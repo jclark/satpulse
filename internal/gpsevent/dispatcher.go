@@ -208,17 +208,17 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 type LogEvent struct {
 	T          time.Time              `json:"t"`
 	Nanos      time.Duration          `json:"nanos"`
-	Timestamp  *Timestamp             `json:"timestamp,omitempty"`
+	PulseEdge  *PulseEdge             `json:"pulseEdge,omitempty"`
 	Time       *gpsprot.TimeMsg       `json:"time,omitempty"`
 	Survey     *gpsprot.SurveyMsg     `json:"survey,omitempty"`
 	LeapSecond *gpsprot.LeapSecondMsg `json:"leapSecond,omitempty"`
 	Satellites *gpsprot.SatellitesMsg `json:"satellites,omitempty"`
 }
 
-type Timestamp struct {
-	T     ptime.Time    `json:"t"`
-	Era   ptime.Era     `json:"era"`
-	Delay time.Duration `json:"delay,omitempty"`
+type PulseEdge struct {
+	T     ptime.Time `json:"t"`
+	Era   ptime.Era  `json:"era"`
+	TRead ptime.Time `json:"tRead"`
 }
 
 func (d *Dispatcher) timestamp(e ts.Event) {
@@ -232,19 +232,15 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	// Pass wallclock sample to sysSample (for chrony)
 	d.sysSample(e.TReadWall.Clock.T, e.TReadWall.Sys)
 
-	// Generate logEvent
-	// XXX this needs rethinking
-	var delay time.Duration
-	trp := e.TReadWall.Clock.T
-	if !trp.IsZero() && !e.TReadWall.Clock.Era.Uncertain() && e.TReadWall.Clock.Era == e.Ts.Era {
-		delay = trp.Sub(e.Ts.T)
-		if delay == 0 {
-			d.lg.Info("unexpected zero timestamp delay", "ts", e.Ts)
-		}
-	} else {
-		d.lg.Info("timestamp delay cannot be determined", "ts", e.Ts, "tReadPHC", e.TReadWall.Clock)
-	}
-	d.logEvent(LogEvent{T: e.TReadWall.Sys, Timestamp: &Timestamp{T: e.Ts.T, Era: e.Ts.Era, Delay: delay}})
+	// Log event with monotonic time and full sample info
+	d.logEvent(LogEvent{
+		T: e.TReadMono.Sys,
+		PulseEdge: &PulseEdge{
+			T:     e.Ts.T,
+			Era:   e.Ts.Era,
+			TRead: e.TReadMono.Clock.T,
+		},
+	})
 }
 
 // sysSample generates a sample of system time vs true time (based on PHC)
