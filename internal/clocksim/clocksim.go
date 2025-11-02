@@ -105,6 +105,29 @@ func WhiteNoisePPS(stddev time.Duration, seed int64) PPSSimulator {
 	}
 }
 
+// SawtoothPPS creates a PPS simulator that models GPS receiver sawtooth error.
+// Sawtooth error is a characteristic ramp-and-reset pattern caused by the receiver's
+// timing quantisation, typically with 2-4 second periods and amplitudes of 5-20 ns.
+//
+// Parameters:
+//
+//	periodS: median time between sawtooth resets in seconds (e.g., 2.0 for LEA-M8T, 4.0 for ZED-F9T)
+//	amplitudeNs: median peak-to-peak amplitude in nanoseconds (e.g., 13.8 for M8T, 6.0 for F9T)
+//
+// The sawtooth rises linearly from 0 to amplitude over the period, then resets.
+// Reset times are deterministic at integer multiples of the period.
+func SawtoothPPS(periodS, amplitudeNs float64) PPSSimulator {
+	amplitude := amplitudeNs * 1e-9 // Convert ns to seconds
+
+	return func(trueTime float64) float64 {
+		// Position within current sawtooth period [0, periodS)
+		t := math.Mod(trueTime, periodS)
+
+		// Linear ramp from 0 to amplitude
+		return amplitude * (t / periodS)
+	}
+}
+
 // ShiftPPS creates a PPS simulator that applies a temporary phase shift with smooth transitions.
 // The shift rises with a half-sine profile, holds at the specified shift, then falls symmetrically.
 // Useful for simulating ionospheric disturbances or other gradual timing biases.
