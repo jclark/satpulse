@@ -13,6 +13,11 @@ import (
 // Input: true simulation time (seconds since start)
 // Output: fractional frequency error at that time
 // Example: if output is +1e-6, the clock runs 1µs fast per second of true time
+//
+// IMPORTANT: When used with RawClock, the simulator will be called with
+// monotonically increasing time values. This allows stateful simulators
+// (like WhiteFreqNoise, FlickerFreqNoise) to use incremental random number
+// generation without needing random access to arbitrary time points.
 type OscillatorSimulator func(trueTime float64) float64
 
 // FreqOffset creates an oscillator with constant frequency offset.
@@ -30,6 +35,8 @@ func Perfect() OscillatorSimulator {
 
 // WhiteFreqNoise creates an oscillator with white frequency noise.
 // stddevPPB is the standard deviation of frequency noise in ppb.
+// Relies on RawClock's monotonic time guarantee: each call advances the RNG state
+// incrementally without needing to seek to arbitrary time points.
 func WhiteFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	return func(t float64) float64 {
@@ -46,6 +53,10 @@ func WhiteFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
 // frequency errors that drift slowly over time rather than changing instantly.
 //
 // stddevPPB is the noise level in parts per billion.
+//
+// IMPORTANT: This implementation maintains state (currentValue, lastTime) and requires
+// monotonically increasing time values. RawClock guarantees this, making the random
+// walk implementation simple and efficient without needing random access to arbitrary times.
 func FlickerFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	var currentValue float64
@@ -240,6 +251,8 @@ func NewRawClock(oscillator OscillatorSimulator, startPhaseNs int64) *RawClock {
 // ReadAt returns the raw clock phase in nanoseconds at the given simulation time by integrating frequency error.
 // Integrates: phase(t) = startPhase + integral from 0 to t of (1 + freq(tau)) dtau
 // Must be called with monotonically increasing times (panics if time goes backwards).
+// The underlying oscillator is called only with monotonically increasing time values, enabling
+// stateful simulators to use incremental updates without supporting random access.
 func (r *RawClock) ReadAt(simTime float64) int64 {
 	if simTime < r.lastSimTime {
 		panic(fmt.Sprintf("ReadAt: time went backwards: %.9f < %.9f", simTime, r.lastSimTime))
