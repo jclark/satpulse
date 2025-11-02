@@ -203,7 +203,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 
 	// Build PPS simulator: start with jitter
 	ppsSims := []clocksim.PPSSimulator{
-		clocksim.WhiteNoisePPS(time.Duration(simCfg.PPSJitter)*time.Nanosecond, 123),
+		clocksim.JitterPPS(time.Duration(simCfg.PPSJitter)*time.Nanosecond, 123),
 	}
 
 	// Add shift if configured
@@ -230,7 +230,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 
 	if simCfg.PulseWidth > 0 {
 		pulseWidth = time.Duration(simCfg.PulseWidth * 1e9)
-		trailingEdgeSim = clocksim.WhiteNoisePPS(2*time.Nanosecond, 789)
+		trailingEdgeSim = clocksim.JitterPPS(2*time.Nanosecond, 789)
 		pulseType = phcsync.PulseType{
 			EdgesPerPulse: 2,
 			PulseWidth:    pulseWidth,

@@ -38,9 +38,9 @@ func TestGenSampleForMessages(t *testing.T) {
 			interval: time.Second,
 			msgDelay: 100 * time.Millisecond,
 			wantStats: &resetStats{
-				pulseVariation: 0.0,   // perfect 1s intervals
-				delay:          0.1,   // 100ms delay
-				delayVariation: 0.0,   // uniform delay
+				pulseVariation: 0.0, // perfect 1s intervals
+				delay:          0.1, // 100ms delay
+				delayVariation: 0.0, // uniform delay
 			},
 		},
 		{
@@ -326,7 +326,7 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 		}
 
 		// Add white noise to pulse width for realism (~20ns stddev)
-		noiseGen := clocksim.WhiteNoisePPS(20*time.Nanosecond, 12345)
+		noiseGen := clocksim.JitterPPS(20*time.Nanosecond, 12345)
 
 		for i := 0; i < numPulses; i++ {
 			// Calculate pulse start time (rising edge)
