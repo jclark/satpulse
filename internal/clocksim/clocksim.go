@@ -122,6 +122,13 @@ func CombineOscillators(funcs ...OscillatorSimulator) OscillatorSimulator {
 // PPSSimulator models GNSS PPS timing errors.
 // Input: true time (typically integer seconds)
 // Output: phase error in seconds (added to true time to get actual PPS time)
+//
+// IMPORTANT: When used with VirtualClock, the simulator will be called with
+// monotonically increasing time values. For leading edge simulators (ppsSimulator),
+// values are always integers increasing by 1 (1.0, 2.0, 3.0, ...). For trailing
+// edge simulators (trailingEdgeSimulator), values are integers plus pulseWidth
+// (e.g., 1.1, 2.1, 3.1, ... for 0.1s pulse width). This allows stateful simulators
+// to use incremental updates without needing random access to arbitrary time points.
 type PPSSimulator func(trueTime float64) float64
 
 // PerfectPPS creates a PPS simulator with no timing error.
@@ -161,6 +168,38 @@ func SawtoothPPS(periodS, amplitudeNs float64) PPSSimulator {
 
 		// Linear ramp from 0 to amplitude
 		return amplitude * (t / periodS)
+	}
+}
+
+// AR1ColoredNoisePPS creates a PPS simulator with AR(1) colored noise.
+// Models tropospheric delay and multipath effects as slowly varying correlated drift.
+//
+// The process evolves as: Y_t = alpha * Y_{t-1} + epsilon_t
+// where epsilon_t is Gaussian white noise with standard deviation noiseStddev.
+//
+// Parameters:
+//
+//	alpha: autocorrelation coefficient (e.g., 0.998671 from GPS measurements)
+//	noiseStddevNs: standard deviation of driving noise in nanoseconds (e.g., 0.49)
+//	seed: random seed for reproducibility
+//
+// Assumes calls at unit time steps (t = 1.0, 2.0, 3.0, ...).
+// This means it is suitable for leading edge (ppsSimulator) but not trailing edge (trailingEdgeSimulator).
+// Correlation time constant: tau_c = -1 / ln(alpha) seconds (e.g., ~750s for alpha=0.9987)
+func AR1ColoredNoisePPS(alpha float64, noiseStddevNs float64, seed int64) PPSSimulator {
+	rng := rand.New(rand.NewSource(seed))
+	noiseStddevSec := noiseStddevNs * 1e-9 // Convert ns to seconds
+
+	// Initialize from stationary distribution
+	// For AR(1), stationary variance = sigma_epsilon^2 / (1 - alpha^2)
+	stationaryStddev := noiseStddevSec / math.Sqrt(1-alpha*alpha)
+	state := rng.NormFloat64() * stationaryStddev
+
+	return func(trueTime float64) float64 {
+		// AR(1) evolution: Y_t = alpha * Y_{t-1} + epsilon_t
+		epsilon := rng.NormFloat64() * noiseStddevSec
+		state = alpha*state + epsilon
+		return state
 	}
 }
 
