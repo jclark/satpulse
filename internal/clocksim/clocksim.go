@@ -37,6 +37,31 @@ func WhiteFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
 	}
 }
 
+// FlickerFreqNoise creates an oscillator with flicker-like frequency noise.
+// This is a simplified approximation using a random walk to generate slowly-varying
+// correlated noise, suitable for testing disciplining algorithms.
+//
+// The actual flicker FM (1/f noise) would have flat Allan deviation at stddevPPB,
+// but this random walk approximation produces qualitatively similar behavior:
+// frequency errors that drift slowly over time rather than changing instantly.
+//
+// stddevPPB is the noise level in parts per billion.
+func FlickerFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
+	rng := rand.New(rand.NewSource(seed))
+	var currentValue float64
+	var lastTime float64
+
+	return func(t float64) float64 {
+		if lastTime > 0 {
+			dt := t - lastTime
+			// Random walk: frequency drifts slowly over time
+			currentValue += rng.NormFloat64() * stddevPPB / 1e9 * math.Sqrt(dt)
+		}
+		lastTime = t
+		return currentValue
+	}
+}
+
 // FreqDrift creates linear frequency drift over time.
 // Models oscillator frequency changing at a constant rate (quadratic phase drift).
 //
