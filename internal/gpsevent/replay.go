@@ -64,7 +64,12 @@ func (r *LogReplayer) replayTime(mt *gpsprot.TimeMsg, tRead time.Time) {
 		sec = r.ls.UTCtoTime(*u)
 	}
 	secRnd := sec.Round(time.Second)
-	r.cb.TimeMsg(secRnd, tRead, mt.PulseOffset, mt.Ref)
+	var pulseOff *time.Duration
+	if mt.PulseOffset != nil {
+		dur := time.Duration(*mt.PulseOffset)
+		pulseOff = &dur
+	}
+	r.cb.TimeMsg(secRnd, tRead, pulseOff, mt.Ref)
 }
 
 func (r *LogReplayer) replayTimestamp(ts *Timestamp, tRead time.Time) {

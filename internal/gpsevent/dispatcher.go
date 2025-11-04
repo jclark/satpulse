@@ -259,7 +259,12 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	}
 	secRnd := sec.Round(time.Second)
 	if d.cb != nil {
-		d.cb.TimeMsg(secRnd, tRead, mt.PulseOffset, mt.Ref)
+		var pulseOff *time.Duration
+		if mt.PulseOffset != nil {
+			dur := time.Duration(*mt.PulseOffset)
+			pulseOff = &dur
+		}
+		d.cb.TimeMsg(secRnd, tRead, pulseOff, mt.Ref)
 	}
 	if mt.Ref != gpsprot.PrePulse && secRnd > d.lastTime {
 		d.lastTime = secRnd
