@@ -102,7 +102,7 @@ func utcStandardToGNSS(u bin.UTCStandard) gpsprot.GNSS {
 func timeTimTP(m *bin.TimTP) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, NativeMsgID: "UBX-TIM-TP"}
 	if (m.Flags & bin.TimTPQErrInvalid) == 0 {
-		off := ptime.Picoseconds(m.QErr)
+		off := float64(m.QErr) / 1000.0
 		t.PulseOffset = &off
 	}
 	tow := msTOW(m.TOWMS) + msScaledTOW(m.TOWSubMS)
@@ -150,7 +150,7 @@ func timeTimTos(m *bin.TimTos) *gpsprot.TimeMsg {
 			t.TAITime = toTAI(int16(m.Week), sTOW(m.TOW))
 			t.GNSS = g
 			t.Accuracy = time.Duration(m.GNSSUncertainty)
-			pulseOff := time.Duration(m.GNSSOffset)
+			pulseOff := float64(m.GNSSOffset)
 			t.PulseOffset = &pulseOff
 		}
 	}
