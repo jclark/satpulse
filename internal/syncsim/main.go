@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"time"
 
@@ -93,12 +94,27 @@ func parseFlags(args []string) (*flagVars, error) {
 		phcCfg: phcsync.DefaultConfig(),
 		simCfg: syncsim.DefaultConfig(),
 	}
+
+	// Local variables for HW override flags (NaN = not set)
+	var hwPath string
+	phcFreqOffset := math.NaN()
+	phcFreqDrift := math.NaN()
+	phcNoise := math.NaN()
+	jitter := math.NaN()
+
 	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
+
+	// HW config file flag
+	flags.StringVarP(&hwPath, "hw", "h", "", "hardware config TOML file")
+
+	// Non-HW flags (bind directly to struct)
 	flags.Float64Var(&vars.simCfg.Duration, "duration", vars.simCfg.Duration, "simulation duration in seconds")
-	flags.Float64Var(&vars.simCfg.PHCFreqOffset, "phc-freq-offset", vars.simCfg.PHCFreqOffset, "PHC frequency offset in ppb")
-	flags.Float64Var(&vars.simCfg.PHCFreqDrift, "phc-freq-drift", vars.simCfg.PHCFreqDrift, "PHC frequency drift in ppb/day")
-	flags.Float64Var(&vars.simCfg.PHCNoise, "phc-noise", vars.simCfg.PHCNoise, "PHC frequency noise stddev in ppb")
-	flags.Float64Var(&vars.simCfg.PPSJitter, "jitter", vars.simCfg.PPSJitter, "PPS timing jitter in nanoseconds")
+
+	// HW-related override flags (local variables with NaN default)
+	flags.Float64Var(&phcFreqOffset, "phc-freq-offset", phcFreqOffset, "PHC frequency offset in ppb")
+	flags.Float64Var(&phcFreqDrift, "phc-freq-drift", phcFreqDrift, "PHC frequency drift in ppb/day")
+	flags.Float64Var(&phcNoise, "phc-noise", phcNoise, "PHC frequency noise stddev in ppb")
+	flags.Float64Var(&jitter, "jitter", jitter, "PPS timing jitter in nanoseconds")
 	flags.Float64Var(&vars.simCfg.MinDelay, "min-delay", vars.simCfg.MinDelay, "minimum pulse delivery delay in seconds")
 	flags.Float64Var(&vars.simCfg.MaxDelay, "max-delay", vars.simCfg.MaxDelay, "maximum pulse delivery delay in seconds")
 	flags.Float64Var(&vars.simCfg.MsgDelay, "msg-delay", vars.simCfg.MsgDelay, "GPS message delay after pulse in seconds")
@@ -121,6 +137,31 @@ func parseFlags(args []string) (*flagVars, error) {
 	if flags.NArg() != 0 {
 		return nil, fmt.Errorf("command must not have non-option arguments")
 	}
+
+	// Load HW config if specified (replaces PHC and GPS configs)
+	if hwPath != "" {
+		hw, err := syncsim.LoadHWConfig(hwPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load hardware config: %v", err)
+		}
+		vars.simCfg.PHC = hw.PHC
+		vars.simCfg.GPS = hw.GPS
+	}
+
+	// Apply explicit flag overrides (if not NaN)
+	if !math.IsNaN(phcFreqOffset) {
+		vars.simCfg.PHC.FreqOffset = phcFreqOffset
+	}
+	if !math.IsNaN(phcFreqDrift) {
+		vars.simCfg.PHC.FreqDrift = phcFreqDrift
+	}
+	if !math.IsNaN(phcNoise) {
+		vars.simCfg.PHC.WhiteFreqNoise = phcNoise
+	}
+	if !math.IsNaN(jitter) {
+		vars.simCfg.GPS.Jitter = jitter
+	}
+
 	// Validate and convert relative toggle durations to absolute times
 	if len(vars.toggleDurations) > 0 {
 		vars.simCfg.ToggleTimes = make([]float64, len(vars.toggleDurations))

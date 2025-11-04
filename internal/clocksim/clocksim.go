@@ -171,6 +171,21 @@ func SawtoothPPS(periodS, amplitudeNs float64) PPSSimulator {
 	}
 }
 
+// PeriodicPPS creates a PPS simulator with sinusoidal phase modulation.
+// Models periodic GPS errors like multipath or atmospheric effects.
+//
+// Parameters:
+//
+//	ampNs: amplitude in nanoseconds (peak deviation)
+//	periodS: period in seconds (e.g., 3000 for thermal cycle)
+func PeriodicPPS(ampNs, periodS float64) PPSSimulator {
+	omega := 2 * math.Pi / periodS
+	ampSec := ampNs * 1e-9
+	return func(t float64) float64 {
+		return ampSec * math.Sin(omega*t)
+	}
+}
+
 // AR1ColoredNoisePPS creates a PPS simulator with AR(1) colored noise.
 // Models tropospheric delay and multipath effects as slowly varying correlated drift.
 //

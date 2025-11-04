@@ -37,6 +37,7 @@ import (
 	"log/slog"
 	"math"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/jclark/satpulse/internal/clocksim"
@@ -47,23 +48,125 @@ import (
 	"github.com/jclark/satpulse/internal/statsobs"
 	"github.com/jclark/satpulse/internal/timemsg"
 	"github.com/jclark/satpulse/internal/ubx"
+	"github.com/pelletier/go-toml/v2"
 )
 
 // Config holds simulation parameters
 type Config struct {
-	Duration      float64       // simulation duration in seconds
-	PHCFreqOffset float64       // PHC frequency offset in ppb
-	PHCFreqDrift  float64       // PHC frequency drift in ppb/day
-	PHCNoise      float64       // PHC frequency noise stddev in ppb
-	PPSJitter     float64       // PPS timing jitter in nanoseconds
-	MinDelay      float64       // minimum pulse delivery delay in seconds
-	MaxDelay      float64       // maximum pulse delivery delay in seconds
-	MsgDelay      float64       // GPS message delay after pulse in seconds
-	MsgJitter     float64       // GPS message delay jitter in seconds
-	PulseWidth    float64       // pulse width in seconds (0 for single-edge mode)
-	ToggleTimes   []float64     // absolute simulation times to toggle pulse/message delivery on/off
-	Outlier       OutlierConfig // PPS outlier injection configuration
-	Shift         ShiftConfig   // PPS phase shift configuration
+	Duration    float64       // simulation duration in seconds
+	PHC         PHCConfig     // PHC oscillator parameters
+	GPS         GPSConfig     // GPS PPS parameters
+	MinDelay    float64       // minimum pulse delivery delay in seconds
+	MaxDelay    float64       // maximum pulse delivery delay in seconds
+	MsgDelay    float64       // GPS message delay after pulse in seconds
+	MsgJitter   float64       // GPS message delay jitter in seconds
+	PulseWidth  float64       // pulse width in seconds (0 for single-edge mode)
+	ToggleTimes []float64     // absolute simulation times to toggle pulse/message delivery on/off
+	Outlier     OutlierConfig // PPS outlier injection configuration
+	Shift       ShiftConfig   // PPS phase shift configuration
+}
+
+// PHCConfig holds PHC oscillator parameters (matches ticc-model TOML format)
+type PHCConfig struct {
+	FreqOffset       float64      `toml:"freqOffset"`       // ppb
+	FreqDrift        float64      `toml:"freqDrift"`        // ppb/day
+	WhiteFreqNoise   float64      `toml:"whiteFreqNoise"`   // ppb
+	FlickerFreqNoise float64      `toml:"flickerFreqNoise"` // ppb
+	SineFM           SineFMConfig `toml:"sineFM"`           // sinusoidal FM parameters
+}
+
+// SineFMConfig holds sinusoidal frequency modulation parameters
+type SineFMConfig struct {
+	Amp    float64 `toml:"amp"`    // ppb
+	Period float64 `toml:"period"` // seconds
+}
+
+// CreateSimulator returns an OscillatorSimulator combining all PHC error sources.
+// Applies components in order: offset, white noise, flicker noise, drift, sine FM.
+func (c PHCConfig) CreateSimulator() clocksim.OscillatorSimulator {
+	oscs := []clocksim.OscillatorSimulator{
+		clocksim.FreqOffset(c.FreqOffset),
+	}
+	if c.WhiteFreqNoise > 0 {
+		oscs = append(oscs, clocksim.WhiteFreqNoise(c.WhiteFreqNoise, 42))
+	}
+	if c.FlickerFreqNoise > 0 {
+		oscs = append(oscs, clocksim.FlickerFreqNoise(c.FlickerFreqNoise, 43))
+	}
+	if c.FreqDrift != 0 {
+		oscs = append(oscs, clocksim.FreqDrift(c.FreqDrift))
+	}
+	if c.SineFM.Amp > 0 {
+		oscs = append(oscs, clocksim.SineFM(c.SineFM.Amp, c.SineFM.Period, 0))
+	}
+	return clocksim.CombineOscillators(oscs...)
+}
+
+// GPSConfig holds GPS PPS error parameters (matches ticc-model TOML format)
+type GPSConfig struct {
+	Jitter   float64             `toml:"jitter"`   // nanoseconds (white noise stddev)
+	Sawtooth SawtoothConfig      `toml:"sawtooth"` // sawtooth error parameters
+	AR1      AR1Config           `toml:"ar1"`      // AR(1) colored noise parameters
+	Periodic []PeriodicComponent `toml:"periodic"` // periodic components (up to 3)
+}
+
+// SawtoothConfig holds GPS sawtooth error parameters
+type SawtoothConfig struct {
+	Period float64 `toml:"period"` // seconds
+	Amp    float64 `toml:"amp"`    // nanoseconds
+}
+
+// AR1Config holds AR(1) colored noise parameters
+type AR1Config struct {
+	Alpha float64 `toml:"alpha"` // dimensionless (autocorrelation coefficient)
+	Noise float64 `toml:"noise"` // nanoseconds (stddev)
+}
+
+// PeriodicComponent represents a single periodic GPS error component
+type PeriodicComponent struct {
+	Period float64 `toml:"period"` // seconds
+	Amp    float64 `toml:"amp"`    // nanoseconds
+}
+
+// HWConfig holds hardware characteristics for PHC and GPS (TOML-loadable)
+type HWConfig struct {
+	PHC PHCConfig `toml:"phc"`
+	GPS GPSConfig `toml:"gps"`
+}
+
+// LoadHWConfig loads hardware configuration from a TOML file
+func LoadHWConfig(path string) (*HWConfig, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var hw HWConfig
+	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(&hw)
+	if err != nil {
+		return nil, err
+	}
+	return &hw, nil
+}
+
+// CreateSimulator returns a PPSSimulator combining all GPS error sources.
+// Applies components in order: jitter, sawtooth, AR(1), periodic components.
+// Does NOT include Shift or Outlier - those are added separately in Simulate().
+func (c GPSConfig) CreateSimulator() clocksim.PPSSimulator {
+	sims := []clocksim.PPSSimulator{}
+	if c.Jitter > 0 {
+		sims = append(sims, clocksim.JitterPPS(time.Duration(c.Jitter)*time.Nanosecond, 123))
+	}
+	if c.Sawtooth.Period > 0 {
+		sims = append(sims, clocksim.SawtoothPPS(c.Sawtooth.Period, c.Sawtooth.Amp))
+	}
+	if c.AR1.Alpha > 0 {
+		sims = append(sims, clocksim.AR1ColoredNoisePPS(c.AR1.Alpha, c.AR1.Noise, 124))
+	}
+	for _, p := range c.Periodic {
+		sims = append(sims, clocksim.PeriodicPPS(p.Amp, p.Period))
+	}
+	return clocksim.CombinePPS(sims...)
 }
 
 // OutlierConfig configures PPS outlier injection for testing.
@@ -85,16 +188,20 @@ type ShiftConfig struct {
 // DefaultConfig returns a Config with sensible default values.
 func DefaultConfig() Config {
 	return Config{
-		Duration:      60.0,
-		PHCFreqOffset: 2000.0,
-		PHCFreqDrift:  -150.0,
-		PHCNoise:      20.0,
-		PPSJitter:     10.0,
-		MinDelay:      5e-6,
-		MaxDelay:      250e-6,
-		MsgDelay:      0.1,
-		MsgJitter:     0.01,
-		PulseWidth:    0, // default to single-edge mode
+		Duration: 60.0,
+		PHC: PHCConfig{
+			FreqOffset:     2000.0,
+			FreqDrift:      -150.0,
+			WhiteFreqNoise: 20.0,
+		},
+		GPS: GPSConfig{
+			Jitter: 10.0,
+		},
+		MinDelay:   5e-6,
+		MaxDelay:   250e-6,
+		MsgDelay:   0.1,
+		MsgJitter:  0.01,
+		PulseWidth: 0, // default to single-edge mode
 		Outlier: OutlierConfig{
 			Offset: 2000 * time.Nanosecond, // 2µs default outlier magnitude
 		},
@@ -188,23 +295,14 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	if err := phcCfg.Validate(); err != nil {
 		return Stats{}, err
 	}
-	// Create oscillator with offset, drift, and noise
-	oscs := []clocksim.OscillatorSimulator{
-		clocksim.FreqOffset(simCfg.PHCFreqOffset),
-		clocksim.WhiteFreqNoise(simCfg.PHCNoise, 42),
-	}
-	if simCfg.PHCFreqDrift != 0 {
-		oscs = append(oscs, clocksim.FreqDrift(simCfg.PHCFreqDrift))
-	}
-	osc := clocksim.CombineOscillators(oscs...)
+	// Create oscillator from PHC config
+	osc := simCfg.PHC.CreateSimulator()
 
 	// PHC starts at epoch (1970-01-01T00:00:00 TAI) - way off from GPS
 	raw := clocksim.NewRawClock(osc, 0)
 
-	// Build PPS simulator: start with jitter
-	ppsSims := []clocksim.PPSSimulator{
-		clocksim.JitterPPS(time.Duration(simCfg.PPSJitter)*time.Nanosecond, 123),
-	}
+	// Build PPS simulator from GPS config
+	ppsSims := []clocksim.PPSSimulator{simCfg.GPS.CreateSimulator()}
 
 	// Add shift if configured
 	if simCfg.Shift.Shift != 0 {
@@ -291,10 +389,10 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 		"duration", simCfg.Duration,
 		"pulseDelay", "5µs-250µs",
 		"msgDelay", simCfg.MsgDelay,
-		"phcFreqOffset", simCfg.PHCFreqOffset,
-		"phcFreqDrift", simCfg.PHCFreqDrift,
-		"phcNoise", simCfg.PHCNoise,
-		"ppsJitter", simCfg.PPSJitter,
+		"phcFreqOffset", simCfg.PHC.FreqOffset,
+		"phcFreqDrift", simCfg.PHC.FreqDrift,
+		"phcWhiteNoise", simCfg.PHC.WhiteFreqNoise,
+		"ppsJitter", simCfg.GPS.Jitter,
 		"startTime", curTime.Format(time.RFC3339),
 		"phcStartTime", 0.0)
 
