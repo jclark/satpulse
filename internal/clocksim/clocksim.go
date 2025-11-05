@@ -1,3 +1,16 @@
+// Package clocksim provides discrete-time simulation of PTP hardware clocks and GNSS PPS signals.
+//
+// # Time Representation
+//
+// The simulator uses simulation time (seconds since simulation start) rather than absolute
+// TAI time. Simulation time 0 is aligned with a TAI second boundary, allowing PPS events to
+// occur at integer simulation seconds (1.0, 2.0, 3.0, ...). This design:
+//   - Simplifies the simulator implementation
+//   - Makes test cases easier to understand
+//   - Allows simulators to work with any TAI epoch
+//
+// If a caller needs to generate GPS time messages with absolute TAI time, they should add
+// the simulation start TAI time to the simulation time values.
 package clocksim
 
 import (
@@ -10,15 +23,16 @@ import (
 )
 
 // OscillatorSimulator models the behavior of a hardware oscillator.
-// Input: true simulation time (seconds since start)
+//
+// Input: t - simulation time in seconds since simulation start
 // Output: fractional frequency error at that time
 // Example: if output is +1e-6, the clock runs 1µs fast per second of true time
 //
-// IMPORTANT: When used with RawClock, the simulator will be called with
-// monotonically increasing time values. This allows stateful simulators
+// IMPORTANT: When used with RawClock or SawtoothPPS, the simulator will be called with
+// monotonically increasing simulation time values. This allows stateful simulators
 // (like WhiteFreqNoise, FlickerFreqNoise) to use incremental random number
 // generation without needing random access to arbitrary time points.
-type OscillatorSimulator func(trueTime float64) float64
+type OscillatorSimulator func(t float64) float64
 
 // FreqOffset creates an oscillator with constant frequency offset.
 // ppb is the frequency offset in parts per billion (positive means runs fast).
@@ -120,16 +134,22 @@ func CombineOscillators(funcs ...OscillatorSimulator) OscillatorSimulator {
 }
 
 // PPSSimulator models GNSS PPS timing errors.
-// Input: true time (typically integer seconds)
-// Output: phase error in seconds (added to true time to get actual PPS time)
 //
-// IMPORTANT: When used with VirtualClock, the simulator will be called with
-// monotonically increasing time values. For leading edge simulators (ppsSimulator),
-// values are always integers increasing by 1 (1.0, 2.0, 3.0, ...). For trailing
-// edge simulators (trailingEdgeSimulator), values are integers plus pulseWidth
-// (e.g., 1.1, 2.1, 3.1, ... for 0.1s pulse width). This allows stateful simulators
-// to use incremental updates without needing random access to arbitrary time points.
-type PPSSimulator func(trueTime float64) float64
+// Input: t - simulation time in seconds since simulation start. The simulation is
+// assumed to start aligned with a TAI second boundary. This is NOT TAI time itself,
+// but rather an offset from the simulation start (which could be at any TAI epoch).
+//
+// Output: phase error in seconds (added to nominal PPS time to get actual PPS time)
+//
+// Contract when used with VirtualClock:
+//   - Leading edge simulators: called with consecutive integers 1.0, 2.0, 3.0, ...
+//     (first PPS is at simulation second 1)
+//   - Trailing edge simulators: called with integers plus pulseWidth
+//     (e.g., 1.1, 2.1, 3.1, ... for 0.1s pulse width)
+//
+// This monotonic calling pattern allows stateful simulators to use incremental
+// updates without needing random access to arbitrary time points.
+type PPSSimulator func(t float64) float64
 
 // PerfectPPS creates a PPS simulator with no timing error.
 func PerfectPPS() PPSSimulator {
@@ -148,26 +168,36 @@ func JitterPPS(stddev time.Duration, seed int64) PPSSimulator {
 	}
 }
 
-// SawtoothPPS creates a PPS simulator that models GPS receiver sawtooth error.
-// Sawtooth error is a characteristic ramp-and-reset pattern caused by the receiver's
-// timing quantisation, typically with 2-4 second periods and amplitudes of 5-20 ns.
+// SawtoothPPS creates a stateful PPS simulator that models GPS receiver sawtooth error.
+// Sawtooth error is quantization caused by aligning PPS edges to internal ticks.
+// The phase advances based on the oscillator's frequency error, coupling sawtooth
+// behavior to the PHC oscillator.
 //
 // Parameters:
 //
-//	periodS: median time between sawtooth resets in seconds (e.g., 2.0 for LEA-M8T, 4.0 for ZED-F9T)
-//	amplitudeNs: median peak-to-peak amplitude in nanoseconds (e.g., 13.8 for M8T, 6.0 for F9T)
+//	osc: OscillatorSimulator returning fractional frequency error (dimensionless)
+//	ampPPS: peak-to-peak amplitude in seconds (typically 8ns = 8e-9)
+//	phaseInit: initial phase in [0,1) (0.5 = middle of cycle)
 //
-// The sawtooth rises linearly from 0 to amplitude over the period, then resets.
-// Reset times are deterministic at integer multiples of the period.
-func SawtoothPPS(periodS, amplitudeNs float64) PPSSimulator {
-	amplitude := amplitudeNs * 1e-9 // Convert ns to seconds
-
-	return func(trueTime float64) float64 {
-		// Position within current sawtooth period [0, periodS)
-		t := math.Mod(trueTime, periodS)
-
-		// Linear ramp from 0 to amplitude
-		return amplitude * (t / periodS)
+// The sawtooth period varies with oscillator frequency error: Ts = ampPPS / |y|
+// where y is the fractional frequency offset. Returns nearest-tick zero-mean error.
+//
+// Assumes consecutive calls with unit time increments (dt = 1.0 second).
+// This is satisfied when used as a leading edge simulator with VirtualClock,
+// which calls with 1.0, 2.0, 3.0, ... The absolute value of t is passed to the
+// coupled oscillator, but phase advancement only depends on the unit increment.
+func SawtoothPPS(osc OscillatorSimulator, ampPPS, phaseInit float64) PPSSimulator {
+	phase := phaseInit
+	return func(t float64) float64 {
+		// Get fractional frequency error from oscillator at simulation time t
+		y := osc(t)
+		// Advance phase by one tick (dt = 1.0 second by assumption)
+		deltaTicks := y * 1.0 / ampPPS
+		phase = phase + deltaTicks
+		phase = phase - math.Floor(phase)
+		// Map to quantization error (nearest-tick, zero-mean)
+		rawSaw := (phase - 0.5) * ampPPS
+		return rawSaw
 	}
 }
 
@@ -210,7 +240,7 @@ func AR1ColoredNoisePPS(alpha float64, noiseStddevNs float64, seed int64) PPSSim
 	stationaryStddev := noiseStddevSec / math.Sqrt(1-alpha*alpha)
 	state := rng.NormFloat64() * stationaryStddev
 
-	return func(trueTime float64) float64 {
+	return func(t float64) float64 {
 		// AR(1) evolution: Y_t = alpha * Y_{t-1} + epsilon_t
 		epsilon := rng.NormFloat64() * noiseStddevSec
 		state = alpha*state + epsilon
@@ -231,21 +261,21 @@ func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) PPSSimulat
 	if holdSec < 0 {
 		holdSec = 0
 	}
-	return func(trueTime float64) float64 {
-		t := trueTime - startSec
+	return func(t float64) float64 {
+		relTime := t - startSec
 		switch {
-		case t <= 0:
+		case relTime <= 0:
 			return 0
-		case t < rampSec:
+		case relTime < rampSec:
 			// Smooth half-sine rise: 0 to shift
-			prog := t / rampSec
+			prog := relTime / rampSec
 			return shiftSec * 0.5 * (1 - math.Cos(math.Pi*prog))
-		case t < rampSec+holdSec:
+		case relTime < rampSec+holdSec:
 			// Hold at shift
 			return shiftSec
-		case t < durationSec:
+		case relTime < durationSec:
 			// Symmetric fall: shift to 0
-			prog := (t - rampSec - holdSec) / rampSec
+			prog := (relTime - rampSec - holdSec) / rampSec
 			return shiftSec * 0.5 * (1 + math.Cos(math.Pi*prog))
 		default:
 			return 0
@@ -254,12 +284,12 @@ func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) PPSSimulat
 }
 
 // SingleOutlierPPS creates a PPS simulator that adds a phase offset at a specific second.
-// Both second and trueTime are rounded to the nearest integer for comparison.
+// Both second and t are rounded to the nearest integer for comparison.
 // Useful for testing outlier detection by injecting controlled timing errors.
 func SingleOutlierPPS(second float64, offset time.Duration) PPSSimulator {
 	targetSecond := math.Round(second)
-	return func(trueTime float64) float64 {
-		if math.Round(trueTime) == targetSecond {
+	return func(t float64) float64 {
+		if math.Round(t) == targetSecond {
 			return offset.Seconds()
 		}
 		return 0
@@ -343,18 +373,33 @@ func (r *RawClock) ReadAt(simTime float64) int64 {
 	return phaseNs
 }
 
+// SawtoothCorrections holds sawtooth error corrections for current and next pulse.
+type SawtoothCorrections struct {
+	Current float64 // correction applied to this timestamp
+	Next    float64 // correction for next pulse (for PrePulse messages)
+}
+
+// TimestampReading groups all information from a timestamp read.
+type TimestampReading struct {
+	Timestamp ptime.ClockTime
+	TrueTime  float64
+	Sawtooth  *SawtoothCorrections // nil if no sawtooth configured
+}
+
 // VirtualClock simulates a disciplined PHC that can be adjusted via frequency offset and time steps.
 // It models the Linux PHC implementation where adjustments are tracked relative to the last change.
 // Timestamps are generated lazily as simulation time advances past PPS events.
 // Phase values are stored as int64 nanoseconds to match ptime.Time.
 type timestampEvent struct {
-	phase    time.Duration
-	trueTime float64
+	phase               time.Duration
+	trueTime            float64
+	sawtoothCorrections SawtoothCorrections
 }
 
 type VirtualClock struct {
 	raw                    *RawClock
-	ppsSimulator           PPSSimulator
+	sawtoothPPSSimulator   PPSSimulator        // separate sawtooth simulator (can be nil)
+	otherPPSSimulator      PPSSimulator        // all non-sawtooth errors combined
 	trailingEdgeSimulator  PPSSimulator
 	adjTimeDelaySimulator  func() float64
 	maxFreqOff             float64
@@ -368,6 +413,7 @@ type VirtualClock struct {
 	nextTrailingEdgeActual float64 // next trailing edge when pulseWidth > 0; equals nextEdgeActual otherwise
 	pulseWidth             float64
 	tsQueue                []timestampEvent
+	sawtoothCorrections    SawtoothCorrections // current and next sawtooth corrections
 }
 
 // defaultAdjTimeDelay returns a realistic ADJ_SETOFFSET delay with jitter.
@@ -387,16 +433,21 @@ func defaultAdjTimeDelay() func() float64 {
 }
 
 // NewVirtualClock creates a VirtualClock starting at the given simulation time.
-// The first PPS will be at the first integer second > startTime.
+//
+// The startTime parameter is in simulation seconds since simulation start (typically 0).
+// Simulation time 0 is aligned with a TAI second boundary. The first PPS will be at
+// the first integer second > startTime.
+//
 // For dual-edge mode, pulseWidth > 0 and trailingEdgeSimulator must be provided.
 // For single-edge mode, pulseWidth = 0 and trailingEdgeSimulator can be nil.
-func NewVirtualClock(raw *RawClock, ppsSimulator PPSSimulator, startTime float64, maxFreqOff float64, pulseWidth time.Duration, trailingEdgeSimulator PPSSimulator) *VirtualClock {
+func NewVirtualClock(raw *RawClock, sawtoothPPS PPSSimulator, otherPPS PPSSimulator, startTime float64, maxFreqOff float64, pulseWidth time.Duration, trailingEdgeSimulator PPSSimulator) *VirtualClock {
 	firstPPSNominal := float64(int(startTime) + 1)
 	rawPhaseNs := raw.ReadAt(startTime)
 
 	c := &VirtualClock{
 		raw:                   raw,
-		ppsSimulator:          ppsSimulator,
+		sawtoothPPSSimulator:  sawtoothPPS,
+		otherPPSSimulator:     otherPPS,
 		trailingEdgeSimulator: trailingEdgeSimulator,
 		adjTimeDelaySimulator: defaultAdjTimeDelay(),
 		maxFreqOff:            maxFreqOff,
@@ -408,6 +459,12 @@ func NewVirtualClock(raw *RawClock, ppsSimulator PPSSimulator, startTime float64
 		nextPPSNominal:        firstPPSNominal,
 		pulseWidth:            pulseWidth.Seconds(),
 	}
+
+	// Initialize Next for first pulse using actual PPS epoch
+	if sawtoothPPS != nil {
+		c.sawtoothCorrections.Next = sawtoothPPS(firstPPSNominal)
+	}
+
 	c.generateNextEdges()
 	return c
 }
@@ -423,8 +480,9 @@ func (c *VirtualClock) AdvanceTo(newTime float64) {
 	for newTime >= c.nextEdgeActual {
 		virtPhaseNs := c.computeVirtPhaseNs(c.nextEdgeActual)
 		c.tsQueue = append(c.tsQueue, timestampEvent{
-			phase:    time.Duration(virtPhaseNs),
-			trueTime: c.nextEdgeActual,
+			phase:               time.Duration(virtPhaseNs),
+			trueTime:            c.nextEdgeActual,
+			sawtoothCorrections: c.sawtoothCorrections,
 		})
 
 		if c.nextEdgeActual == c.nextTrailingEdgeActual {
@@ -439,9 +497,30 @@ func (c *VirtualClock) AdvanceTo(newTime float64) {
 }
 
 // generateNextEdges generates nextEdgeActual and nextTrailingEdgeActual based on nextPPSNominal.
+//
+// Invariant: On return, sawtoothCorrections.Current must contain the correction value
+// that was used to compute nextEdgeActual. This ensures that when AdvanceTo() enqueues
+// the timestamp, the captured sawtoothCorrections accurately reflects the edge timing.
 func (c *VirtualClock) generateNextEdges() {
-	phaseError := c.ppsSimulator(c.nextPPSNominal)
+	// Rotate sawtooth: advance Current to the value for THIS pulse
+	c.sawtoothCorrections.Current = c.sawtoothCorrections.Next
+
+	// Get error from non-sawtooth sources
+	otherError := 0.0
+	if c.otherPPSSimulator != nil {
+		otherError = c.otherPPSSimulator(c.nextPPSNominal)
+	}
+
+	// Combine with current sawtooth correction to compute edge timing
+	phaseError := otherError + c.sawtoothCorrections.Current
 	c.nextEdgeActual = c.nextPPSNominal + phaseError
+
+	// Pre-compute sawtooth for the NEXT pulse (N+1)
+	if c.sawtoothPPSSimulator != nil {
+		c.sawtoothCorrections.Next = c.sawtoothPPSSimulator(c.nextPPSNominal + 1.0)
+	}
+
+	// Trailing edge computation
 	if c.pulseWidth != 0 {
 		c.nextTrailingEdgeActual = c.nextEdgeActual + c.pulseWidth + c.trailingEdgeSimulator(c.nextPPSNominal+c.pulseWidth)
 	} else {
@@ -501,13 +580,25 @@ func (c *VirtualClock) AdjTime(d time.Duration) error {
 }
 
 // ReadTimestamp reads the next timestamp from the queue along with the true time when it occurred.
-func (c *VirtualClock) ReadTimestamp() (time.Duration, float64, bool) {
+// Note: VirtualClock returns era=0; TestClock.ReadTimestamp() sets the proper era.
+func (c *VirtualClock) ReadTimestamp() (TimestampReading, bool) {
 	if len(c.tsQueue) == 0 {
-		return 0, 0, false
+		return TimestampReading{}, false
 	}
 	ts := c.tsQueue[0]
 	c.tsQueue = c.tsQueue[1:]
-	return ts.phase, ts.trueTime, true
+
+	var sawtooth *SawtoothCorrections
+	if c.sawtoothPPSSimulator != nil {
+		sc := ts.sawtoothCorrections
+		sawtooth = &sc
+	}
+
+	return TimestampReading{
+		Timestamp: ptime.ClockTime{T: ptime.Time(ts.phase), Era: 0},
+		TrueTime:  ts.trueTime,
+		Sawtooth:  sawtooth,
+	}, true
 }
 
 // TimestampAvailable returns true if there are timestamps in the queue.
@@ -555,16 +646,14 @@ func (c *TestClock) Era() ptime.Era {
 	return c.era
 }
 
-// ReadTimestampWithEra reads a timestamp from the queue and attaches the current era.
-func (c *TestClock) ReadTimestampWithEra() (ptime.ClockTime, float64, bool) {
-	ts, trueTime, ok := c.VirtualClock.ReadTimestamp()
+// ReadTimestamp reads a timestamp from the queue and attaches the current era.
+func (c *TestClock) ReadTimestamp() (TimestampReading, bool) {
+	reading, ok := c.VirtualClock.ReadTimestamp()
 	if !ok {
-		return ptime.ClockTime{}, 0, false
+		return TimestampReading{}, false
 	}
-	return ptime.ClockTime{
-		T:   ptime.Time(ts),
-		Era: c.Era(),
-	}, trueTime, true
+	reading.Timestamp.Era = c.Era()
+	return reading, true
 }
 
 // Now returns the current PHC time.

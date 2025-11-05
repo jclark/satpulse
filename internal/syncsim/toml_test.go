@@ -1,6 +1,7 @@
 package syncsim
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -25,7 +26,6 @@ sineFM.period = 2986.500
 
 [gps]
 jitter = 6.087
-sawtooth.period = 1.999
 sawtooth.amp = 13.778
 
 [[gps.periodic]]
@@ -54,8 +54,13 @@ amp = 4.488
 				GPS: GPSConfig{
 					Jitter: 6.087,
 					Sawtooth: SawtoothConfig{
-						Period: 1.999,
-						Amp:    13.778,
+						Amp:       13.778, // from TOML
+						PhaseInit: 0.5,    // from DefaultConfig
+						InternalClock: SineFMConfig{
+							Amp:    2.0,    // from DefaultConfig
+							Period: 600.0,  // from DefaultConfig
+							Phase:  1.0472, // from DefaultConfig (π/3)
+						},
 					},
 					Periodic: []PeriodicComponent{
 						{Period: 2986.000, Amp: 24.547},
@@ -77,7 +82,6 @@ sineFM.period = 26904.000
 
 [gps]
 jitter = 2.276
-sawtooth.period = 3.998
 sawtooth.amp = 5.951
 
 [[gps.periodic]]
@@ -106,8 +110,11 @@ amp = 16.005
 				GPS: GPSConfig{
 					Jitter: 2.276,
 					Sawtooth: SawtoothConfig{
-						Period: 3.998,
-						Amp:    5.951,
+						Amp: 5.951,
+						InternalClock: SineFMConfig{
+							Amp:    2.0,
+							Period: 600.0,
+						},
 					},
 					Periodic: []PeriodicComponent{
 						{Period: 2989.333, Amp: 20.463},
@@ -152,9 +159,6 @@ amp = 16.005
 			if config.GPS.Jitter != tt.expected.GPS.Jitter {
 				t.Errorf("GPS.Jitter = %v, want %v", config.GPS.Jitter, tt.expected.GPS.Jitter)
 			}
-			if config.GPS.Sawtooth.Period != tt.expected.GPS.Sawtooth.Period {
-				t.Errorf("GPS.Sawtooth.Period = %v, want %v", config.GPS.Sawtooth.Period, tt.expected.GPS.Sawtooth.Period)
-			}
 			if config.GPS.Sawtooth.Amp != tt.expected.GPS.Sawtooth.Amp {
 				t.Errorf("GPS.Sawtooth.Amp = %v, want %v", config.GPS.Sawtooth.Amp, tt.expected.GPS.Sawtooth.Amp)
 			}
@@ -198,4 +202,77 @@ jitter = 10.0`
 		t.Fatal("expected error for unknown field 'offset', got nil")
 	}
 	t.Logf("correctly rejected unknown field: %v", err)
+}
+
+func TestLoadHWConfigMergesDefaults(t *testing.T) {
+	// Test that LoadHWConfig() merges TOML values with DefaultConfig()
+	// User specifies only sawtooth.amp, should get defaults for other fields
+
+	tomlContent := `[phc]
+freqOffset = 100.0
+
+[gps]
+jitter = 5.0
+sawtooth.amp = 8.0
+`
+
+	// Write to temp file
+	tmpfile, err := os.CreateTemp("", "hwconfig-*.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(tomlContent)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load config
+	hw, err := LoadHWConfig(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("LoadHWConfig failed: %v", err)
+	}
+
+	// Verify user-specified values
+	if hw.PHC.FreqOffset != 100.0 {
+		t.Errorf("PHC.FreqOffset = %v, want 100.0", hw.PHC.FreqOffset)
+	}
+	if hw.GPS.Jitter != 5.0 {
+		t.Errorf("GPS.Jitter = %v, want 5.0", hw.GPS.Jitter)
+	}
+	if hw.GPS.Sawtooth.Amp != 8.0 {
+		t.Errorf("GPS.Sawtooth.Amp = %v, want 8.0", hw.GPS.Sawtooth.Amp)
+	}
+
+	// Verify defaults were merged for unspecified fields
+	defaults := DefaultConfig()
+
+	// PHC defaults for unspecified fields
+	if hw.PHC.FreqDrift != defaults.PHC.FreqDrift {
+		t.Errorf("PHC.FreqDrift = %v, want %v (from defaults)", hw.PHC.FreqDrift, defaults.PHC.FreqDrift)
+	}
+	if hw.PHC.WhiteFreqNoise != defaults.PHC.WhiteFreqNoise {
+		t.Errorf("PHC.WhiteFreqNoise = %v, want %v (from defaults)", hw.PHC.WhiteFreqNoise, defaults.PHC.WhiteFreqNoise)
+	}
+
+	// Sawtooth defaults for unspecified fields
+	if hw.GPS.Sawtooth.PhaseInit != defaults.GPS.Sawtooth.PhaseInit {
+		t.Errorf("GPS.Sawtooth.PhaseInit = %v, want %v (from defaults)",
+			hw.GPS.Sawtooth.PhaseInit, defaults.GPS.Sawtooth.PhaseInit)
+	}
+	if hw.GPS.Sawtooth.InternalClock.Amp != defaults.GPS.Sawtooth.InternalClock.Amp {
+		t.Errorf("GPS.Sawtooth.InternalClock.Amp = %v, want %v (from defaults)",
+			hw.GPS.Sawtooth.InternalClock.Amp, defaults.GPS.Sawtooth.InternalClock.Amp)
+	}
+	if hw.GPS.Sawtooth.InternalClock.Period != defaults.GPS.Sawtooth.InternalClock.Period {
+		t.Errorf("GPS.Sawtooth.InternalClock.Period = %v, want %v (from defaults)",
+			hw.GPS.Sawtooth.InternalClock.Period, defaults.GPS.Sawtooth.InternalClock.Period)
+	}
+	if hw.GPS.Sawtooth.InternalClock.Phase != defaults.GPS.Sawtooth.InternalClock.Phase {
+		t.Errorf("GPS.Sawtooth.InternalClock.Phase = %v, want %v (from defaults)",
+			hw.GPS.Sawtooth.InternalClock.Phase, defaults.GPS.Sawtooth.InternalClock.Phase)
+	}
 }

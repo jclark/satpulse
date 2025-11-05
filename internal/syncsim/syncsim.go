@@ -32,7 +32,6 @@
 package syncsim
 
 import (
-	"fmt"
 	"iter"
 	"log/slog"
 	"math"
@@ -79,6 +78,7 @@ type PHCConfig struct {
 type SineFMConfig struct {
 	Amp    float64 `toml:"amp"`    // ppb
 	Period float64 `toml:"period"` // seconds
+	Phase  float64 `toml:"phase"`  // radians
 }
 
 // CreateSimulator returns an OscillatorSimulator combining all PHC error sources.
@@ -104,16 +104,18 @@ func (c PHCConfig) CreateSimulator() clocksim.OscillatorSimulator {
 
 // GPSConfig holds GPS PPS error parameters (matches ticc-model TOML format)
 type GPSConfig struct {
-	Jitter   float64             `toml:"jitter"`   // nanoseconds (white noise stddev)
-	Sawtooth SawtoothConfig      `toml:"sawtooth"` // sawtooth error parameters
-	AR1      AR1Config           `toml:"ar1"`      // AR(1) colored noise parameters
-	Periodic []PeriodicComponent `toml:"periodic"` // periodic components (up to 3)
+	Jitter       float64             `toml:"jitter"`       // nanoseconds (white noise stddev)
+	Sawtooth     SawtoothConfig      `toml:"sawtooth"`     // sawtooth error parameters
+	AR1          AR1Config           `toml:"ar1"`          // AR(1) colored noise parameters
+	Periodic     []PeriodicComponent `toml:"periodic"`     // periodic components (up to 3)
+	PrePulseTime float64             `toml:"prePulseTime"` // seconds before pulse to send UBX-TIM-TP, defaults to 0.95
 }
 
 // SawtoothConfig holds GPS sawtooth error parameters
 type SawtoothConfig struct {
-	Period float64 `toml:"period"` // seconds
-	Amp    float64 `toml:"amp"`    // nanoseconds
+	Amp           float64      `toml:"amp"`           // nanoseconds (tick size)
+	PhaseInit     float64      `toml:"phaseInit"`     // initial phase [0,1), defaults to 0.5
+	InternalClock SineFMConfig `toml:"internalClock"` // GPS receiver's internal oscillator
 }
 
 // AR1Config holds AR(1) colored noise parameters
@@ -134,31 +136,38 @@ type HWConfig struct {
 	GPS GPSConfig `toml:"gps"`
 }
 
-// LoadHWConfig loads hardware configuration from a TOML file
+// LoadHWConfig loads hardware configuration from a TOML file.
+// Starts with DefaultConfig() values and merges TOML values on top,
+// so users can specify only the fields they want to override.
 func LoadHWConfig(path string) (*HWConfig, error) {
+	// Start with defaults
+	defaults := DefaultConfig()
+	hw := &HWConfig{
+		PHC: defaults.PHC,
+		GPS: defaults.GPS,
+	}
+
+	// Parse TOML and overlay user values
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	var hw HWConfig
-	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(&hw)
+	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(hw)
 	if err != nil {
 		return nil, err
 	}
-	return &hw, nil
+	return hw, nil
 }
 
 // CreateSimulator returns a PPSSimulator combining all GPS error sources.
 // Applies components in order: jitter, sawtooth, AR(1), periodic components.
-// Does NOT include Shift or Outlier - those are added separately in Simulate().
+// Does NOT include Shift, Outlier, or Sawtooth - those are added separately in Simulate().
+// Sawtooth is created separately with oscillator coupling.
 func (c GPSConfig) CreateSimulator() clocksim.PPSSimulator {
 	sims := []clocksim.PPSSimulator{}
 	if c.Jitter > 0 {
 		sims = append(sims, clocksim.JitterPPS(time.Duration(c.Jitter)*time.Nanosecond, 123))
-	}
-	if c.Sawtooth.Period > 0 {
-		sims = append(sims, clocksim.SawtoothPPS(c.Sawtooth.Period, c.Sawtooth.Amp))
 	}
 	if c.AR1.Alpha > 0 {
 		sims = append(sims, clocksim.AR1ColoredNoisePPS(c.AR1.Alpha, c.AR1.Noise, 124))
@@ -196,6 +205,14 @@ func DefaultConfig() Config {
 		},
 		GPS: GPSConfig{
 			Jitter: 10.0,
+			Sawtooth: SawtoothConfig{
+				PhaseInit: 0.5,
+				InternalClock: SineFMConfig{
+					Amp:    2.0,             // 2 ppb amplitude
+					Period: 600.0,           // 10 minute period
+					Phase:  math.Pi / 3,     // π/3 radians - typical mid-range value
+				},
+			},
 		},
 		MinDelay:   5e-6,
 		MaxDelay:   250e-6,
@@ -234,8 +251,9 @@ type EventType int
 
 const (
 	EventPulse EventType = iota
-	EventMessage
+	EventNavSolutionMsg
 	EventTick
+	EventPrePulseMsg
 )
 
 type PulseEventData struct {
@@ -243,18 +261,16 @@ type PulseEventData struct {
 	PPS     float64
 }
 
-type MessageEventData struct {
+type NavSolutionMsgEventData struct {
 	PPS float64
 }
 
-type TickEventData struct {
+type PrePulseMsgEventData struct {
+	PPS      float64
+	Sawtooth float64
 }
 
-type pulseTimestamp struct {
-	timestamp ptime.ClockTime
-	trueTime  float64
-	tRead     ptime.Sample
-	offset    time.Duration
+type TickEventData struct {
 }
 
 type modeObserver struct {
@@ -301,12 +317,12 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	// PHC starts at epoch (1970-01-01T00:00:00 TAI) - way off from GPS
 	raw := clocksim.NewRawClock(osc, 0)
 
-	// Build PPS simulator from GPS config
-	ppsSims := []clocksim.PPSSimulator{simCfg.GPS.CreateSimulator()}
+	// Build other PPS simulators (without sawtooth)
+	otherPPSSims := []clocksim.PPSSimulator{simCfg.GPS.CreateSimulator()}
 
 	// Add shift if configured
 	if simCfg.Shift.Shift != 0 {
-		ppsSims = append(ppsSims, clocksim.ShiftPPS(
+		otherPPSSims = append(otherPPSSims, clocksim.ShiftPPS(
 			simCfg.Shift.StartTime,
 			simCfg.Shift.Ramp,
 			simCfg.Shift.Duration,
@@ -316,10 +332,24 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 
 	// Add outliers if configured
 	for _, second := range simCfg.Outlier.Times {
-		ppsSims = append(ppsSims, clocksim.SingleOutlierPPS(second, simCfg.Outlier.Offset))
+		otherPPSSims = append(otherPPSSims, clocksim.SingleOutlierPPS(second, simCfg.Outlier.Offset))
 	}
 
-	pps := clocksim.CombinePPS(ppsSims...)
+	otherPPS := clocksim.CombinePPS(otherPPSSims...)
+
+	// Create sawtooth separately with GPS receiver's internal oscillator
+	var sawtoothPPS clocksim.PPSSimulator
+	if simCfg.GPS.Sawtooth.Amp > 0 {
+		ampSec := simCfg.GPS.Sawtooth.Amp * 1e-9 // Convert ns to seconds
+		// Create GPS receiver's internal oscillator (independent from PHC)
+		// Uses Phase field from config (defaults applied by LoadHWConfig)
+		gpsOsc := clocksim.SineFM(
+			simCfg.GPS.Sawtooth.InternalClock.Amp,
+			simCfg.GPS.Sawtooth.InternalClock.Period,
+			simCfg.GPS.Sawtooth.InternalClock.Phase,
+		)
+		sawtoothPPS = clocksim.SawtoothPPS(gpsOsc, ampSec, simCfg.GPS.Sawtooth.PhaseInit)
+	}
 
 	// Prepare dual-edge mode parameters
 	var pulseWidth time.Duration
@@ -341,7 +371,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	}
 
 	// Virtual clock starts at t=0, max ±500ppm (like Intel i210)
-	vclock := clocksim.NewVirtualClock(raw, pps, 0, 500000, pulseWidth, trailingEdgeSim)
+	vclock := clocksim.NewVirtualClock(raw, sawtoothPPS, otherPPS, 0, 500000, pulseWidth, trailingEdgeSim)
 
 	// Test clock with era tracking
 	testClock := clocksim.NewTestClock(vclock)
@@ -400,7 +430,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	// Note: ticks start at t=0.25, modeling real system behavior where ticks
 	// run continuously from the start. Early ticks are safe - see generateTickEvents.
 	pulseGen := generatePulseEvents(simCfg, pulseType.EdgesPerPulse)
-	msgGen := generateMessageEvents(simCfg)
+	msgGen := generateNavSolutionMsgEvents(simCfg)
 	tickGen := generateTickEvents(simCfg)
 
 	// Merge and process events
@@ -408,49 +438,89 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 
 	sampleCount := 0
 	stats := &offsetStats{}
+	var lastReading clocksim.TimestampReading
 
 	for event := range events {
 		// Update current time for logging
 		tCur := tStart.Add(time.Duration(event.Time * 1e9))
 		*curTime = ls.TimeToSys(tCur)
 
-		// Advance virtual clock to event time
+		// Main loop is responsible for ALL vclock advancement
 		vclock.AdvanceTo(event.Time)
+
+		// Read timestamp if available (after vclock advancement)
+		if vclock.TimestampAvailable() {
+			lastReading, _ = testClock.ReadTimestamp()
+		}
 
 		// Dispatch based on event type
 		switch event.Type {
+		case EventTick:
+			handleTickEvent(event.Time, ctrl)
+
+		case EventPrePulseMsg:
+			data := event.Data.(PrePulseMsgEventData)
+			if !inOutage(data.PPS, simCfg.ToggleTimes) {
+				// Only create PrePulse message if sawtooth configured
+				if lastReading.Sawtooth != nil {
+					sawtoothNs := lastReading.Sawtooth.Next * 1e9
+					tMsg := tStart.Add(time.Duration(data.PPS * 1e9))
+					timeMsg := &gpsprot.TimeMsg{
+						TAITime:     tMsg,
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         ubx.Tag,
+						NativeMsgID: "UBX-TIM-TP",
+						PulseOffset: &sawtoothNs,
+					}
+					msgTRead := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
+					timeMsgBuf.Time(timeMsg, msgTRead)
+					lg.Debug("delivering PrePulse message",
+						"second", int(data.PPS),
+						"taiTime", tMsg,
+						"pulseOffset", sawtoothNs)
+				}
+			}
+
 		case EventPulse:
 			data := event.Data.(PulseEventData)
 
-			// ALWAYS read timestamp and calculate offset (even during outages)
-			// This tracks how PHC drifts when signal is lost
-			pts, err := readPulseTimestamp(event.Time, data, vclock, testClock, tStart, lg)
-			if err != nil {
-				return Stats{}, err
-			}
+			// Use stored timestamp reading from tick
+			tTrue := tStart.Add(time.Duration(lastReading.TrueTime * 1e9))
+			offset := lastReading.Timestamp.T.Sub(tTrue)
 
-			// Track offset for rising edge in tracking mode
+			// Track offset for leading edge in tracking mode
 			if data.EdgeIdx == 0 && ctrl.Mode() == phcsync.ModeTracking {
-				stats.add(pts.offset)
+				stats.add(offset)
 			}
 
-			// Only deliver to controller if NOT in outage
+			// Deliver to controller if not in outage
 			if !inOutage(data.PPS, simCfg.ToggleTimes) {
-				deliverPulseToController(pts, data, ctrl, lg)
+				tSys := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
+				tReadPHC := testClock.Now()
+
+				edge := phcsync.PulseEdge{
+					Timestamp: lastReading.Timestamp,
+					TRead: ptime.Sample{
+						Clock: tReadPHC,
+						Sys:   tSys,
+					},
+				}
+				lg.Debug("delivering pulse to controller",
+					"second", int(data.PPS),
+					"edgeIdx", data.EdgeIdx,
+					"timestamp", lastReading.Timestamp.T,
+					"era", lastReading.Timestamp.Era,
+					"offset", offset)
+				ctrl.PulseEdge(edge)
 			}
 
-		case EventMessage:
-			data := event.Data.(MessageEventData)
-
-			// Only deliver to controller if NOT in outage
+		case EventNavSolutionMsg:
+			data := event.Data.(NavSolutionMsgEventData)
 			if !inOutage(data.PPS, simCfg.ToggleTimes) {
-				handleMessageEvent(event.Time, data, timeMsgBuf, ctrl, tStart, lg)
+				handleNavSolutionMsgEvent(event.Time, data, timeMsgBuf, ctrl, tStart, lg)
 				sampleCount++
 			}
-
-		case EventTick:
-			// Ticks ALWAYS delivered (no outage filtering)
-			handleTickEvent(event.Time, ctrl)
 		}
 	}
 
@@ -515,22 +585,47 @@ func (s *offsetStats) stdDev() float64 {
 func generatePulseEvents(cfg Config, edgesPerPulse int) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
 		rng := rand.New(rand.NewSource(999))
+		prePulseTime := cfg.GPS.PrePulseTime
+		if prePulseTime == 0 {
+			prePulseTime = 0.95
+		}
 		for pps := 1.0; pps < cfg.Duration; pps += 1.0 {
 			pulseDelay := cfg.MinDelay + rng.Float64()*(cfg.MaxDelay-cfg.MinDelay)
 			risingTime := pps + pulseDelay
+
+			// Emit PrePulse event only if sawtooth is configured
+			if cfg.GPS.Sawtooth.Amp > 0 {
+				prePulseEventTime := risingTime - prePulseTime
+				if !yield(Event{
+					Time: prePulseEventTime,
+					Type: EventPrePulseMsg,
+					Data: PrePulseMsgEventData{PPS: pps, Sawtooth: 0}, // filled by main loop
+				}) {
+					return
+				}
+			}
+
+			// Emit rising edge pulse event
 			if !yield(Event{
 				Time: risingTime,
 				Type: EventPulse,
-				Data: PulseEventData{EdgeIdx: 0, PPS: pps},
+				Data: PulseEventData{
+					EdgeIdx: 0,
+					PPS:     pps,
+				},
 			}) {
 				return
 			}
+
 			if edgesPerPulse == 2 {
 				trailingTime := pps + cfg.PulseWidth + pulseDelay
 				if !yield(Event{
 					Time: trailingTime,
 					Type: EventPulse,
-					Data: PulseEventData{EdgeIdx: 1, PPS: pps},
+					Data: PulseEventData{
+						EdgeIdx: 1,
+						PPS:     pps,
+					},
 				}) {
 					return
 				}
@@ -541,7 +636,7 @@ func generatePulseEvents(cfg Config, edgesPerPulse int) iter.Seq[Event] {
 
 // generateMessageEvents creates a push-style iterator that yields GPS message events.
 // Generates ALL messages - does NOT filter by outages (filtering happens in main loop).
-func generateMessageEvents(cfg Config) iter.Seq[Event] {
+func generateNavSolutionMsgEvents(cfg Config) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
 		rng := rand.New(rand.NewSource(888))
 		for pps := 1.0; pps < cfg.Duration; pps += 1.0 {
@@ -552,8 +647,8 @@ func generateMessageEvents(cfg Config) iter.Seq[Event] {
 			msgTime := pps + msgDelayTime
 			if !yield(Event{
 				Time: msgTime,
-				Type: EventMessage,
-				Data: MessageEventData{PPS: pps},
+				Type: EventNavSolutionMsg,
+				Data: NavSolutionMsgEventData{PPS: pps},
 			}) {
 				return
 			}
@@ -619,65 +714,9 @@ func mergeEvents(
 // readPulseTimestamp reads the timestamp from vclock and calculates offset.
 // Called for ALL pulse events (even during outages) to track PHC drift.
 // Returns timestamp data that can optionally be delivered to controller.
-func readPulseTimestamp(
+func handleNavSolutionMsgEvent(
 	eventTime float64,
-	data PulseEventData,
-	vclock *clocksim.VirtualClock,
-	testClock *clocksim.TestClock,
-	tStart ptime.Time,
-	lg *slog.Logger,
-) (*pulseTimestamp, error) {
-	if !vclock.TimestampAvailable() {
-		return nil, fmt.Errorf("expected timestamp not available at PPS %v", data.PPS)
-	}
-	timestamp, trueTime, ok := testClock.ReadTimestampWithEra()
-	if !ok {
-		return nil, fmt.Errorf("failed to read timestamp at PPS %v", data.PPS)
-	}
-	tSys := time.Unix(0, 0).Add(time.Duration(eventTime * 1e9))
-	tReadPHC := testClock.Now()
-	tTrue := tStart.Add(time.Duration(trueTime * 1e9))
-	taiOffset := timestamp.T.Sub(tTrue)
-	lg.Debug("pulse timestamp read",
-		"second", int(data.PPS),
-		"edgeIdx", data.EdgeIdx,
-		"timestamp", timestamp.T,
-		"era", timestamp.Era,
-		"taiOffset", taiOffset)
-	return &pulseTimestamp{
-		timestamp: timestamp,
-		trueTime:  trueTime,
-		tRead: ptime.Sample{
-			Clock: tReadPHC,
-			Sys:   tSys,
-		},
-		offset: taiOffset,
-	}, nil
-}
-
-// deliverPulseToController delivers a pulse edge to the controller.
-// Only called for pulses outside outage periods.
-func deliverPulseToController(
-	pts *pulseTimestamp,
-	data PulseEventData,
-	ctrl *phcsync.Controller,
-	lg *slog.Logger,
-) {
-	edge := phcsync.PulseEdge{
-		Timestamp: pts.timestamp,
-		TRead:     pts.tRead,
-	}
-	lg.Debug("delivering pulse to controller",
-		"second", int(data.PPS),
-		"edgeIdx", data.EdgeIdx,
-		"taiOffset", pts.offset)
-	ctrl.PulseEdge(edge)
-}
-
-// handleMessageEvent processes a GPS message event
-func handleMessageEvent(
-	eventTime float64,
-	data MessageEventData,
+	data NavSolutionMsgEventData,
 	timeMsgBuf *timemsg.Buffer,
 	ctrl *phcsync.Controller,
 	tStart ptime.Time,

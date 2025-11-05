@@ -3,6 +3,8 @@ package clocksim
 import (
 	"testing"
 	"time"
+
+	"github.com/jclark/satpulse/internal/ptime"
 )
 
 func TestVirtualClockBasic(t *testing.T) {
@@ -14,7 +16,7 @@ func TestVirtualClockBasic(t *testing.T) {
 	pps := PerfectPPS()
 
 	// Create virtual clock starting at t=0
-	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
 	// Advance to just before first PPS at t=1.0
 	vc.AdvanceTo(0.5)
@@ -28,7 +30,7 @@ func TestVirtualClockBasic(t *testing.T) {
 		t.Fatal("should have timestamp after PPS")
 	}
 
-	ts, _, ok := vc.ReadTimestamp()
+	reading, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
@@ -36,8 +38,8 @@ func TestVirtualClockBasic(t *testing.T) {
 	// At t=1.0, raw clock reads 1.00001 (10ppm fast after 1 second)
 	// With no freq adjustment, virtual clock should match raw clock
 	expected := time.Duration(1.00001 * 1e9)
-	if ts != expected {
-		t.Errorf("timestamp = %v, want %v", ts, expected)
+	if reading.Timestamp.T != ptime.Time(expected) {
+		t.Errorf("timestamp = %v, want %v", reading.Timestamp.T, ptime.Time(expected))
 	}
 }
 
@@ -47,7 +49,7 @@ func TestVirtualClockFreqAdjustment(t *testing.T) {
 	raw := NewRawClock(osc, 0)
 	pps := PerfectPPS()
 
-	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
 	// Apply -10e3 PPB correction to compensate for 10ppm fast oscillator
 	// PPB = parts per billion, ppm = parts per million, so 10ppm = 10e3 PPB
@@ -56,7 +58,7 @@ func TestVirtualClockFreqAdjustment(t *testing.T) {
 	// Advance past first PPS at t=1.0
 	vc.AdvanceTo(1.1)
 
-	ts, _, ok := vc.ReadTimestamp()
+	reading, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
@@ -65,7 +67,7 @@ func TestVirtualClockFreqAdjustment(t *testing.T) {
 	// With -10e3 PPB = -10ppm adjustment: correctedDelta = 1.00001 * (1 + (-10e3/1e9))
 	// Should be very close to 1.0 (perfect)
 	expectedSeconds := 1.0
-	actualSeconds := ts.Seconds()
+	actualSeconds := float64(reading.Timestamp.T) / 1e9
 	diff := actualSeconds - expectedSeconds
 	if diff > 1e-8 || diff < -1e-8 {
 		t.Errorf("timestamp = %v seconds, want ~%v, diff = %v", actualSeconds, expectedSeconds, diff)
@@ -77,7 +79,7 @@ func TestVirtualClockTimeStep(t *testing.T) {
 	raw := NewRawClock(osc, 1000*1e9) // Start at t=1000 seconds = 1000e9 nanoseconds
 	pps := PerfectPPS()
 
-	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
 	// Step clock by -1000 seconds to sync it
 	vc.AdjTime(-1000 * time.Second)
@@ -85,7 +87,7 @@ func TestVirtualClockTimeStep(t *testing.T) {
 	// Advance past first PPS (AdjTime advanced simTime by ~5µs, so start from there)
 	vc.AdvanceTo(vc.simTime + 1.1)
 
-	ts, _, ok := vc.ReadTimestamp()
+	reading, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
@@ -93,7 +95,7 @@ func TestVirtualClockTimeStep(t *testing.T) {
 	// After step, virtual clock should read ~1.0 instead of ~1001.0
 	// Allow for ADJ_SETOFFSET delay error (~5µs)
 	expectedSeconds := 1.0
-	actualSeconds := ts.Seconds()
+	actualSeconds := float64(reading.Timestamp.T) / 1e9
 	diff := actualSeconds - expectedSeconds
 	if diff > 1e-5 || diff < -1e-5 {
 		t.Errorf("timestamp after step = %v seconds, want ~%v, diff = %v", actualSeconds, expectedSeconds, diff)
@@ -105,7 +107,7 @@ func TestVirtualClockMultiplePPS(t *testing.T) {
 	raw := NewRawClock(osc, 0)
 	pps := PerfectPPS()
 
-	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
 	// Advance past 3 PPS events
 	vc.AdvanceTo(3.5)
@@ -113,7 +115,7 @@ func TestVirtualClockMultiplePPS(t *testing.T) {
 	// Should have 3 timestamps
 	count := 0
 	for vc.TimestampAvailable() {
-		_, _, ok := vc.ReadTimestamp()
+		_, ok := vc.ReadTimestamp()
 		if !ok {
 			break
 		}
@@ -134,21 +136,21 @@ func TestVirtualClockPPSJitter(t *testing.T) {
 		return 1e-9
 	}
 
-	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
 	// Advance past first PPS
 	vc.AdvanceTo(1.1)
 
-	ts, _, ok := vc.ReadTimestamp()
+	reading, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
 
 	// PPS occurs at 1.0 + 1e-9 (true time), virtual clock reads that value
 	// Since oscillator is perfect and no freq adjustment, virtual time = true time
-	expected := time.Duration(1000000001) // 1 second + 1 nanosecond
-	if ts != expected {
-		t.Errorf("timestamp = %v, want %v", ts, expected)
+	expected := ptime.Time(1000000001) // 1 second + 1 nanosecond
+	if reading.Timestamp.T != expected {
+		t.Errorf("timestamp = %v, want %v", reading.Timestamp.T, expected)
 	}
 }
 
@@ -168,23 +170,23 @@ func TestPrecisionAtLargeTime(t *testing.T) {
 	pps := JitterPPS(10*time.Nanosecond, 42)
 
 	// Simulation starts at t=0 (small!)
-	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
 	// Collect timestamps from 20 PPS events over 20 simulation seconds
-	timestamps := make([]time.Duration, 0, 20)
+	timestamps := make([]ptime.Time, 0, 20)
 	for i := 0; i < 20; i++ {
 		simTime := float64(i + 1)
 		vc.AdvanceTo(simTime + 0.1)
-		ts, _, ok := vc.ReadTimestamp()
+		reading, ok := vc.ReadTimestamp()
 		if !ok {
 			t.Fatalf("failed to read timestamp %d", i)
 		}
-		timestamps = append(timestamps, ts)
+		timestamps = append(timestamps, reading.Timestamp.T)
 	}
 
 	// Verify timestamps are in the GPS epoch range (large values!)
 	for i, ts := range timestamps {
-		tsSeconds := ts.Seconds()
+		tsSeconds := float64(ts) / 1e9
 		// Should be near 1.4e9 + i+1 seconds
 		expected := 1.4e9 + float64(i+1)
 		diff := tsSeconds - expected
@@ -250,7 +252,7 @@ func TestServoConvergence(t *testing.T) {
 	raw := NewRawClock(osc, 0)
 	pps := PerfectPPS()
 
-	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 	tc := NewTestClock(vc)
 
 	gpsStartTime := 1000.0
@@ -258,8 +260,8 @@ func TestServoConvergence(t *testing.T) {
 	// Step 1: Large time step to bring PHC close to GPS
 	// GPS is at 1000s, PHC is at 0s, so offset is ~1000s
 	vc.AdvanceTo(1.0)
-	ts1, _, _ := tc.ReadTimestampWithEra()
-	phcTime := float64(ts1.T) / 1e9
+	reading1, _ := tc.ReadTimestamp()
+	phcTime := float64(reading1.Timestamp.T) / 1e9
 	gpsTime := gpsStartTime + 1.0
 	offset := phcTime - gpsTime
 
@@ -273,8 +275,8 @@ func TestServoConvergence(t *testing.T) {
 
 	// Step 2: After step, offset should be small (microseconds)
 	vc.AdvanceTo(2.0)
-	ts2, _, _ := tc.ReadTimestampWithEra()
-	phcTime = float64(ts2.T) / 1e9
+	reading2, _ := tc.ReadTimestamp()
+	phcTime = float64(reading2.Timestamp.T) / 1e9
 	gpsTime = gpsStartTime + 2.0
 	offset = phcTime - gpsTime
 
@@ -292,13 +294,13 @@ func TestServoConvergence(t *testing.T) {
 	// Step 4: After several seconds with freq correction, offset should stay roughly constant
 	vc.AdvanceTo(10.0)
 	for vc.TimestampAvailable() {
-		_, _, _ = tc.ReadTimestampWithEra()
+		_, _ = tc.ReadTimestamp()
 	}
 
 	// Read timestamp at t=10
 	vc.AdvanceTo(11.0)
-	ts3, _, _ := tc.ReadTimestampWithEra()
-	phcTime = float64(ts3.T) / 1e9
+	reading3, _ := tc.ReadTimestamp()
+	phcTime = float64(reading3.Timestamp.T) / 1e9
 	gpsTime = gpsStartTime + 11.0
 	offsetFinal := phcTime - gpsTime
 
@@ -318,7 +320,7 @@ func TestAdjTimeDelay(t *testing.T) {
 	raw := NewRawClock(osc, 1000*1e9) // Start at 1000 seconds
 	pps := PerfectPPS()
 
-	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
 	// Record time before AdjTime
 	timeBefore := vc.simTime
@@ -337,7 +339,7 @@ func TestAdjTimeDelay(t *testing.T) {
 
 	// After the step, advance to get the first PPS timestamp
 	vc.AdvanceTo(1.1)
-	ts, _, ok := vc.ReadTimestamp()
+	reading, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
@@ -346,7 +348,7 @@ func TestAdjTimeDelay(t *testing.T) {
 	// Because: clock was set to target=(1000-1000)=0 at time=delay, then advanced to t=1
 	// So virtual clock = 0 + (1.0 - delay) = 1.0 - delay ≈ 0.999995
 	expectedSeconds := 1.0
-	actualSeconds := ts.Seconds()
+	actualSeconds := float64(reading.Timestamp.T) / 1e9
 	diff := actualSeconds - expectedSeconds
 
 	// Should be within ~10µs of 1 second (clock lags due to ADJ_SETOFFSET delay)
@@ -438,7 +440,7 @@ func TestNegativePPSJitter(t *testing.T) {
 		return -1e-3
 	}
 
-	vc := NewVirtualClock(raw, pps, 0, 500000, 0, nil)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
 	// Advance to t=0.995 (before nominal PPS at t=1.0, but after actual PPS at t=0.999)
 	vc.AdvanceTo(0.995)
@@ -456,15 +458,15 @@ func TestNegativePPSJitter(t *testing.T) {
 		t.Fatal("should have timestamp after actual PPS time")
 	}
 
-	ts, _, ok := vc.ReadTimestamp()
+	reading, ok := vc.ReadTimestamp()
 	if !ok {
 		t.Fatal("failed to read timestamp")
 	}
 
 	// Timestamp should be 0.999 seconds (1ms early)
-	expected := time.Duration(0.999 * 1e9)
-	if ts != expected {
-		t.Errorf("timestamp = %v, want %v", ts, expected)
+	expected := ptime.Time(0.999 * 1e9)
+	if reading.Timestamp.T != expected {
+		t.Errorf("timestamp = %v, want %v", reading.Timestamp.T, expected)
 	}
 }
 
@@ -515,19 +517,19 @@ func TestDualEdgeMode(t *testing.T) {
 	// 200ms pulse width
 	pulseWidth := 200 * time.Millisecond
 
-	vc := NewVirtualClock(raw, pps, 0, 500000, pulseWidth, trailingEdge)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, pulseWidth, trailingEdge)
 
 	// Advance past 3 seconds
 	vc.AdvanceTo(3.5)
 
 	// Should have 6 timestamps (2 per second)
-	timestamps := []time.Duration{}
+	timestamps := []ptime.Time{}
 	for vc.TimestampAvailable() {
-		ts, _, ok := vc.ReadTimestamp()
+		reading, ok := vc.ReadTimestamp()
 		if !ok {
 			break
 		}
-		timestamps = append(timestamps, ts)
+		timestamps = append(timestamps, reading.Timestamp.T)
 	}
 
 	if len(timestamps) != 6 {
@@ -543,20 +545,20 @@ func TestDualEdgeMode(t *testing.T) {
 		trailing := timestamps[trailingIdx]
 
 		// Rising edge should be at ~(i+1) seconds
-		expectedRising := time.Duration((i + 1) * 1e9)
+		expectedRising := ptime.Time((i + 1) * 1e9)
 		if rising != expectedRising {
 			t.Errorf("rising edge %d = %v, want %v", i, rising, expectedRising)
 		}
 
 		// Trailing edge should be 200ms after rising edge
-		expectedTrailing := expectedRising + pulseWidth
+		expectedTrailing := expectedRising + ptime.Time(pulseWidth)
 		if trailing != expectedTrailing {
 			t.Errorf("trailing edge %d = %v, want %v", i, trailing, expectedTrailing)
 		}
 
 		// Pulse width should be exactly 200ms (perfect oscillator)
 		actualPulseWidth := trailing - rising
-		if actualPulseWidth != pulseWidth {
+		if actualPulseWidth != ptime.Time(pulseWidth) {
 			t.Errorf("pulse width %d = %v, want %v", i, actualPulseWidth, pulseWidth)
 		}
 	}
@@ -574,23 +576,23 @@ func TestDualEdgeModeWithDrift(t *testing.T) {
 	// 200ms pulse width
 	pulseWidth := 200 * time.Millisecond
 
-	vc := NewVirtualClock(raw, pps, 0, 500000, pulseWidth, trailingEdge)
+	vc := NewVirtualClock(raw, nil, pps, 0, 500000, pulseWidth, trailingEdge)
 
 	// Advance past first second
 	vc.AdvanceTo(1.5)
 
 	// Get rising and trailing edge
-	rising, _, ok1 := vc.ReadTimestamp()
+	risingReading, ok1 := vc.ReadTimestamp()
 	if !ok1 {
 		t.Fatal("failed to read rising edge")
 	}
-	trailing, _, ok2 := vc.ReadTimestamp()
+	trailingReading, ok2 := vc.ReadTimestamp()
 	if !ok2 {
 		t.Fatal("failed to read trailing edge")
 	}
 
 	// Measured pulse width by the PHC
-	measuredWidth := trailing - rising
+	measuredWidth := trailingReading.Timestamp.T - risingReading.Timestamp.T
 
 	// With 10000ppb drift over 200ms: 200ms * 10ppm = 2µs extra
 	// So PHC measures: 200ms + 2µs = 200.002ms
@@ -601,5 +603,157 @@ func TestDualEdgeModeWithDrift(t *testing.T) {
 	diff := actualWidthNs - expectedWidthNs
 	if diff < -1 || diff > 1 {
 		t.Errorf("measured pulse width = %v ns, want %v ns (±1ns)", actualWidthNs, expectedWidthNs)
+	}
+}
+
+// TestSawtoothMetadataConsistency verifies that sawtooth metadata matches actual edge timing.
+// This tests the fix for the invariant violation where sawtoothCorrections.Current
+// was rotated before computing edge timing, causing metadata mismatch.
+func TestSawtoothMetadataConsistency(t *testing.T) {
+	// Create oscillator with small drift
+	osc := FreqOffset(100.0) // 100ppb
+	raw := NewRawClock(osc, 0)
+
+	// Create sawtooth PPS with 8ns amplitude
+	sawtoothPPS := SawtoothPPS(osc, 8e-9, 0.5)
+	otherPPS := PerfectPPS()
+
+	vc := NewVirtualClock(raw, sawtoothPPS, otherPPS, 0, 500000, 0, nil)
+
+	// Advance through several PPS events
+	for i := 1; i <= 5; i++ {
+		vc.AdvanceTo(float64(i) + 0.1)
+
+		reading, ok := vc.ReadTimestamp()
+		if !ok {
+			t.Fatalf("failed to read timestamp at second %d", i)
+		}
+
+		if reading.Sawtooth == nil {
+			t.Fatalf("sawtooth metadata missing at second %d", i)
+		}
+
+		// The sawtooth correction should have been applied to the edge timing
+		// Verify that Current is what was actually used
+		actualTime := reading.TrueTime
+		nominalTime := float64(i)
+		actualCorrection := actualTime - nominalTime
+
+		// The reported Current should match what was actually applied (within tolerance)
+		reportedCurrent := reading.Sawtooth.Current
+		diff := actualCorrection - reportedCurrent
+
+		// Allow small difference for other noise sources, but should be very close
+		if diff > 1e-9 || diff < -1e-9 {
+			t.Errorf("second %d: actual correction = %.12f, reported Current = %.12f, diff = %.12f",
+				i, actualCorrection, reportedCurrent, diff)
+		}
+	}
+}
+
+// TestSawtoothArbitraryStartTime verifies sawtooth works correctly when simulation
+// starts at arbitrary times (not t=0). This tests the fix where NewVirtualClock
+// was initializing sawtooth with epoch 1.0 instead of firstPPSNominal.
+func TestSawtoothArbitraryStartTime(t *testing.T) {
+	// Start simulation at a large time (e.g., 124.5 seconds)
+	startTime := 124.5
+
+	osc := FreqOffset(1000.0) // 1000ppb = 1ppm
+	raw := NewRawClock(osc, int64(startTime*1e9))
+
+	// Create sawtooth PPS with 8ns amplitude
+	sawtoothPPS := SawtoothPPS(osc, 8e-9, 0.5)
+	otherPPS := PerfectPPS()
+
+	vc := NewVirtualClock(raw, sawtoothPPS, otherPPS, startTime, 500000, 0, nil)
+
+	// Collect sawtooth corrections over several seconds
+	corrections := []float64{}
+	for i := 0; i < 5; i++ {
+		targetTime := startTime + float64(i) + 1.0
+		vc.AdvanceTo(targetTime + 0.1)
+
+		reading, ok := vc.ReadTimestamp()
+		if !ok {
+			t.Fatalf("failed to read timestamp at second %d", i)
+		}
+
+		if reading.Sawtooth == nil {
+			t.Fatalf("sawtooth metadata missing at second %d", i)
+		}
+
+		corrections = append(corrections, reading.Sawtooth.Current)
+	}
+
+	// Verify sawtooth corrections are reasonable (within amplitude bounds)
+	// With 8ns amplitude and zero-mean, corrections should be in [-4ns, +4ns]
+	for i, corr := range corrections {
+		if corr > 4e-9 || corr < -4e-9 {
+			t.Errorf("second %d: sawtooth correction = %.12f, exceeds amplitude bounds ±4ns", i, corr)
+		}
+	}
+
+	// Verify sawtooth shows proper phase evolution (not stuck at one value)
+	// With 1000ppb frequency offset over 8ns amplitude, period is 8ns/1e-6 = 8000s
+	// Over 5 seconds, phase should advance by 5/8000 = 0.000625 cycles
+	// That's tiny, so we mainly check corrections aren't all identical
+	allSame := true
+	for i := 1; i < len(corrections); i++ {
+		if corrections[i] != corrections[0] {
+			allSame = false
+			break
+		}
+	}
+
+	// With numerical integration and RNG, values should vary
+	if allSame {
+		t.Errorf("all sawtooth corrections are identical: %.12f (expected variation)", corrections[0])
+	}
+}
+
+// TestSawtoothPhaseAlignment verifies that sawtooth phase advances correctly
+// based on oscillator frequency error without artificial jumps.
+func TestSawtoothPhaseAlignment(t *testing.T) {
+	// Frequency offset chosen to give non-integer phase advancement
+	// With 8ns amplitude: deltaTicks = 750 * 1e-9 * 1.0 / 8e-9 = 93.75 ticks per second
+	// After 8 seconds: 750 ticks accumulated, phase wraps multiple times
+	osc := FreqOffset(750) // 750 ppb
+	raw := NewRawClock(osc, 0)
+
+	sawtoothPPS := SawtoothPPS(osc, 8e-9, 0.25) // Start at phase 0.25
+	otherPPS := PerfectPPS()
+
+	vc := NewVirtualClock(raw, sawtoothPPS, otherPPS, 0, 5e6, 0, nil)
+
+	// Collect corrections over 10 seconds
+	// Phase advances by 93.75 ticks/sec * 10 sec = 937.5 ticks = 937 full cycles + 0.5 tick
+	corrections := []float64{}
+	for i := 1; i <= 10; i++ {
+		vc.AdvanceTo(float64(i) + 0.1)
+		reading, _ := vc.ReadTimestamp()
+		if reading.Sawtooth != nil {
+			corrections = append(corrections, reading.Sawtooth.Current)
+		}
+	}
+
+	if len(corrections) != 10 {
+		t.Fatalf("expected 10 corrections, got %d", len(corrections))
+	}
+
+	// Verify corrections wrap through the full range
+	// Should see both positive and negative values as phase cycles
+	hasPositive := false
+	hasNegative := false
+	for _, corr := range corrections {
+		if corr > 1e-9 {
+			hasPositive = true
+		}
+		if corr < -1e-9 {
+			hasNegative = true
+		}
+	}
+
+	if !hasPositive || !hasNegative {
+		t.Errorf("sawtooth should cycle through positive and negative, got: %v", corrections)
 	}
 }

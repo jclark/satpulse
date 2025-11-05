@@ -242,6 +242,20 @@ func TestPHCSync(t *testing.T) {
 			// Residual error is |d1 - d2| which is ~1-2µs typical with 1µs stddev in delays
 			// PI then converges residual in ~12 samples vs ~19 without compensation
 		},
+		{
+			name:              "sawtooth correction with PrePulse messages",
+			pulseWidth:        0,
+			duration:          300.0, // 5 minutes
+			maxTrackingStdDev: 25 * time.Nanosecond, // slightly higher tolerance due to sawtooth
+			modifySimCfg: func(cfg *Config) {
+				cfg.GPS.Sawtooth.Amp = 8.0 // 8ns peak-to-peak sawtooth (other fields use defaults)
+			},
+			// This test exercises:
+			// - SawtoothPPS simulator with oscillator coupling
+			// - PrePulse event generation in generatePulseEvents
+			// - handlePrePulseMsgEvent using Sawtooth.Next from lastReading
+			// - TimestampReading with SawtoothCorrections in VirtualClock
+		},
 	}
 
 	for _, tt := range tests {
