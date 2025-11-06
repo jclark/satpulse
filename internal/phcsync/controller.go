@@ -38,6 +38,10 @@ type TimeMsgBuffer interface {
 	// The messages must be the same GNSS message type, which must be of a type that follows the time pulse.
 	// If n such messages are not available, the slice will be empty and lastSec will be zero.
 	GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.Time)
+	// GetPrePulseCorrection retrieves the pulse offset correction (PulseOffset) for a given reference time.
+	// The returned correction satisfies: true_time_of_second = pulse_time + correction
+	// Returns (correction, true) if available, (0, false) otherwise.
+	GetPrePulseCorrection(refTime ptime.Time) (time.Duration, bool)
 }
 
 // Config contains tunable parameters for the Controller.
@@ -338,7 +342,7 @@ func (c *Controller) changeMode(mode Mode) {
 		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converge, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converge, c.lastSample, c.freq, c.maxFreq, c.lg)
 	case ModeTracking:
-		c.sampleGen = newTrackingSampleGenerator(c.cfg.Track, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
+		c.sampleGen = newTrackingSampleGenerator(c.cfg.Track, c.pt, c.lastSample, c.freq, c.maxFreq, c.timeMsgBuffer, c.lg)
 		c.sampleProc = newTrackingSampleProcessor(c.cfg.Track, c.estimatedFreq, c.maxFreq, c.lg)
 	default:
 		panic("changing to invalid mode")

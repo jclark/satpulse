@@ -14,12 +14,13 @@ import (
 // provides methods to retrieve sequences of messages for time synchronization.
 type Buffer struct {
 	gpsprot.DefaultHandler
-	entries    []entry
-	startIndex int
-	readWindow time.Duration
-	ls         ptime.LeapSecond
-	lg         *slog.Logger
-	timeGNSS   gpsprot.GNSS // GNSS system used for time messages; can be zero if unknown
+	entries                 []entry
+	startIndex              int
+	readWindow              time.Duration
+	ls                      ptime.LeapSecond
+	lg                      *slog.Logger
+	timeGNSS                gpsprot.GNSS // GNSS system used for time messages; can be zero if unknown
+	havePrePulseCorrections bool
 }
 
 type entry struct {
@@ -41,7 +42,9 @@ func NewBuffer(lg *slog.Logger, readWindow time.Duration, ls ptime.LeapSecond, t
 // Time implements gpsprot.MsgHandler.
 func (buf *Buffer) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	cutoff := tRead.Add(-buf.readWindow)
-
+	if msg.Ref == gpsprot.PrePulse && msg.PulseOffset != nil {
+		buf.havePrePulseCorrections = true
+	}
 	// Find where we will need to start after adding this entry
 	for buf.startIndex < len(buf.entries) && buf.entries[buf.startIndex].tRead.Before(cutoff) {
 		buf.startIndex++
@@ -222,7 +225,7 @@ func epochStartMsg(entries []entry) *gpsprot.TimeMsg {
 func entriesSameType(entries []entry, msg *gpsprot.TimeMsg) []entry {
 	result := make([]entry, 0, len(entries))
 	for _, e := range entries {
-		if e.msg.Tag == msg.Tag && e.msg.NativeMsgID == msg.NativeMsgID	{
+		if e.msg.Tag == msg.Tag && e.msg.NativeMsgID == msg.NativeMsgID {
 			result = append(result, e)
 		}
 	}
@@ -237,4 +240,36 @@ func (e *entry) eligible() bool {
 		return false
 	}
 	return true
+}
+
+// GetPrePulseCorrection retrieves the pulse offset correction for a given reference time.
+// Returns the PulseOffset value if a PrePulse message is found for the given refTime,
+// or (0, false) if no correction is available.
+// The returned correction satisfies: true_time_of_second = pulse_time + correction
+func (buf *Buffer) GetPrePulseCorrection(refTime ptime.Time) (time.Duration, bool) {
+	if !buf.havePrePulseCorrections {
+		return 0, false
+	}
+	entries := buf.validEntries()
+	// Search backwards through entries for PrePulse messages with matching TAI time
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		if e.msg.Ref != gpsprot.PrePulse {
+			continue
+		}
+		// Pre-pulse messages always have TAI time
+		t := e.msg.TAITime
+		if t == refTime {
+			if e.msg.PulseOffset == nil {
+				break
+			}
+			// Convert from nanoseconds (float64) to time.Duration
+			return time.Duration(*e.msg.PulseOffset), true
+		}
+		// Since pulse offsets are in order, stop if we've gone past the time we're looking for
+		if t < refTime {
+			break
+		}
+	}
+	return 0, false
 }

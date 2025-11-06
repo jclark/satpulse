@@ -16,6 +16,8 @@ func TestPHCSync(t *testing.T) {
 		duration                 float64                  // simulation duration in seconds
 		maxTrackingStdDev        time.Duration            // maximum acceptable tracking stddev
 		maxTrackingAbsMax        time.Duration            // maximum acceptable tracking absolute max (0 = don't check)
+		minTrackingStdDev        time.Duration            // minimum acceptable tracking stddev - for testing degradation (0 = don't check)
+		minTrackingAbsMax        time.Duration            // minimum acceptable tracking absolute max - for testing degradation (0 = don't check)
 		toggleTimes              []float64                // absolute times to toggle pulse delivery
 		expectMinTrackingSamples int                      // minimum acceptable tracking samples (0 = don't check)
 		expectMaxTrackingSamples int                      // maximum acceptable tracking samples (0 = don't check)
@@ -256,6 +258,34 @@ func TestPHCSync(t *testing.T) {
 			// - handlePrePulseMsgEvent using Sawtooth.Next from lastReading
 			// - TimestampReading with SawtoothCorrections in VirtualClock
 		},
+		{
+			name:              "sawtooth correction improves accuracy - correction enabled",
+			pulseWidth:        0,
+			duration:          300.0, // 5 minutes
+			maxTrackingStdDev: 8 * time.Nanosecond,  // Should stay near baseline ~7ns
+			maxTrackingAbsMax: 25 * time.Nanosecond, // Should stay near baseline ~23ns
+			modifySimCfg: func(cfg *Config) {
+				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
+			},
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.IgnoreSawtoothCorrection = false // Use correction (default)
+			},
+		},
+		{
+			name:              "sawtooth correction improves accuracy - correction disabled",
+			pulseWidth:        0,
+			duration:          300.0, // 5 minutes
+			minTrackingStdDev: 8 * time.Nanosecond,  // Must be worse than corrected (~9ns)
+			minTrackingAbsMax: 26 * time.Nanosecond, // Must be worse than corrected (~28ns)
+			maxTrackingStdDev: 11 * time.Nanosecond, // But not too degraded
+			maxTrackingAbsMax: 32 * time.Nanosecond, // But not too degraded
+			modifySimCfg: func(cfg *Config) {
+				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
+			},
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.IgnoreSawtoothCorrection = true // Ignore correction
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -295,6 +325,15 @@ func TestPHCSync(t *testing.T) {
 			// Check that tracking absolute max is acceptable
 			if tt.maxTrackingAbsMax > 0 && stats.TrackingAbsMax >= tt.maxTrackingAbsMax {
 				t.Errorf("tracking absmax = %v, want < %v", stats.TrackingAbsMax, tt.maxTrackingAbsMax)
+			}
+
+			// Check minimum thresholds (for tests that verify degraded performance)
+			if tt.minTrackingStdDev > 0 && stats.TrackingStdDev <= tt.minTrackingStdDev {
+				t.Errorf("tracking stddev = %v, want > %v (should be degraded)", stats.TrackingStdDev, tt.minTrackingStdDev)
+			}
+
+			if tt.minTrackingAbsMax > 0 && stats.TrackingAbsMax <= tt.minTrackingAbsMax {
+				t.Errorf("tracking absmax = %v, want > %v (should be degraded)", stats.TrackingAbsMax, tt.minTrackingAbsMax)
 			}
 
 			// Check mode-based sample counts

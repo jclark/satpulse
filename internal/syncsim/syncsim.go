@@ -208,9 +208,9 @@ func DefaultConfig() Config {
 			Sawtooth: SawtoothConfig{
 				PhaseInit: 0.5,
 				InternalClock: SineFMConfig{
-					Amp:    2.0,             // 2 ppb amplitude
-					Period: 600.0,           // 10 minute period
-					Phase:  math.Pi / 3,     // π/3 radians - typical mid-range value
+					Amp:    2.0,         // 2 ppb amplitude
+					Period: 600.0,       // 10 minute period
+					Phase:  math.Pi / 3, // π/3 radians - typical mid-range value
 				},
 			},
 		},
@@ -463,7 +463,10 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 			if !inOutage(data.PPS, simCfg.ToggleTimes) {
 				// Only create PrePulse message if sawtooth configured
 				if lastReading.Sawtooth != nil {
-					sawtoothNs := lastReading.Sawtooth.Next * 1e9
+					// Sawtooth.Next is rawSaw where pulse_time = true_second + rawSaw.
+					// PulseOffset is defined as: true_second = pulse_time + PulseOffset.
+					// Therefore: PulseOffset = -rawSaw
+					pulseOffset := -lastReading.Sawtooth.Next * 1e9
 					tMsg := tStart.Add(time.Duration(data.PPS * 1e9))
 					timeMsg := &gpsprot.TimeMsg{
 						TAITime:     tMsg,
@@ -471,14 +474,14 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 						Ref:         gpsprot.PrePulse,
 						Tag:         ubx.Tag,
 						NativeMsgID: "UBX-TIM-TP",
-						PulseOffset: &sawtoothNs,
+						PulseOffset: &pulseOffset,
 					}
 					msgTRead := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
 					timeMsgBuf.Time(timeMsg, msgTRead)
 					lg.Debug("delivering PrePulse message",
 						"second", int(data.PPS),
 						"taiTime", tMsg,
-						"pulseOffset", sawtoothNs)
+						"pulseOffset", pulseOffset)
 				}
 			}
 

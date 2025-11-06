@@ -78,6 +78,11 @@ type TrackingConfig struct {
 	// where alpha = 1 - exp(-sampleInterval/timeConstant). Set to 0 to disable this
 	// feature (no frequency adjustment on missing samples). Typical value: 120.
 	AvgFreqTimeConstant float64 `toml:"avgFreqTimeConstant" check:">=0.0,<1000.0"`
+
+	// IgnoreSawtoothCorrection, when true, disables the use of pulse offset corrections
+	// from PrePulse messages. This is primarily for testing to verify that sawtooth
+	// correction improves synchronization accuracy. Default: false (use corrections).
+	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection"`
 }
 
 func defaultTrackingConfig() TrackingConfig {
@@ -103,9 +108,10 @@ type trackingSampleGenerator struct {
 	maxFreq    float64
 	lg         *slog.Logger
 	lastSample *Sample // last accepted sample, used for edge filtering
+	timeMsgBuf TimeMsgBuffer
 }
 
-func newTrackingSampleGenerator(cfg TrackingConfig, pt PulseType, lastSample *Sample, freq, maxFreq float64, lg *slog.Logger) *trackingSampleGenerator {
+func newTrackingSampleGenerator(cfg TrackingConfig, pt PulseType, lastSample *Sample, freq, maxFreq float64, timeMsgBuf TimeMsgBuffer, lg *slog.Logger) *trackingSampleGenerator {
 	if pt.EdgesPerPulse == 2 && pt.PulseWidth <= 0 {
 		panic("tracking mode: PulseWidth must be > 0 when EdgesPerPulse == 2")
 	}
@@ -116,6 +122,7 @@ func newTrackingSampleGenerator(cfg TrackingConfig, pt PulseType, lastSample *Sa
 		maxFreq:    maxFreq,
 		lg:         lg,
 		lastSample: lastSample,
+		timeMsgBuf: timeMsgBuf,
 	}
 }
 
@@ -173,7 +180,23 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 	}
 
 	// Round to nearest second
-	refTime := edge.Timestamp.T.Round(time.Second)
+	sec := edge.Timestamp.T.Round(time.Second)
+
+	// Apply pulse offset correction if available (unless disabled by config)
+	refTime := sec
+	if !g.cfg.IgnoreSawtoothCorrection {
+		pulseOffset, ok := g.timeMsgBuf.GetPrePulseCorrection(sec)
+		if ok {
+			// PulseOffset satisfies: true_second = pulse + PulseOffset
+			// We want GPS time of pulse: pulse = true_second - PulseOffset
+			// sec approximates true_second, so: pulse_GPS_time = sec - PulseOffset
+			refTime = sec.Add(-pulseOffset)
+			g.lg.Debug("applied pulse offset correction",
+				"sec", sec,
+				"pulseOffset_ns", pulseOffset.Nanoseconds(),
+				"refTime", refTime)
+		}
+	}
 	offset := edge.Timestamp.T.Sub(refTime)
 
 	// Estimate system time: TRead minus the time between reading and timestamp capture

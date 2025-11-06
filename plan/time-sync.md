@@ -451,11 +451,13 @@ Done:
 * compensation step at beginning of converging phase 
 * MAD-based outlier detection
   * simulate ionospheric disturbances 
-  * simulate outliers*
+  * simulate outliers
 * First pass on improving naming and design of tuneable parameters
 * Implement setting of tuneable parameters via new section in satpulse.toml
 * Validation pf phcsync.Config
 * more logging during initialization of what we discovered
+* sawtooth correction from PrePulse events (i.e. UBX-TIM-TP)
+  * requires difficult changes to clocksim and syncsim
 
 Still to do:
 * Add phcsync Config parameters to schema based on code plus comments 
@@ -466,6 +468,7 @@ Still to do:
 * exit tracking when proportion of abnormal samples in a configurable window is greater than configurable value
 * better error messages when timemsg buffered messages are too old
 * estimate error in system clock and also use that when we are estimating monotonic time of messages
+* sawtooth correction from PostPulse events i.e. UBX-TIM-TOS on M8F)
 
 Things to consider
 * Consider whether we still need era concept. Used currently:
@@ -478,17 +481,9 @@ Things to consider
 * Do we need a MAD upper gate?
 * Are we simulating 0.25s variation in timestamp delivery on CM4/5?
 
-### Phase F - gather better data
+### Phase F - gather better data (in progress)
 
-Wait for Rubidium oscillator to arrive.
-
-Sawtooth correction
-- need to check direction of correction
-- see if difference is measurable
-- test M8T and ZED-F9T-OO
-- can we model it?
-
-Use that to gather better data for clock model.
+Use Rubidium oscillator with TAPT TICC to gather better data for clock model. 
 
 Run some simulations to determine better Kp/Ki values for converging/tracking
 
