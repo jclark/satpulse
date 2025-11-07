@@ -98,7 +98,7 @@ func parseFlags(args []string) (*flagVars, error) {
 	// Local variables for HW override flags (NaN = not set)
 	var hwPath string
 	phcFreqOffset := math.NaN()
-	phcFreqDrift := math.NaN()
+	phcDrift := math.NaN()
 	phcNoise := math.NaN()
 	jitter := math.NaN()
 
@@ -112,7 +112,7 @@ func parseFlags(args []string) (*flagVars, error) {
 
 	// HW-related override flags (local variables with NaN default)
 	flags.Float64Var(&phcFreqOffset, "phc-freq-offset", phcFreqOffset, "PHC frequency offset in ppb")
-	flags.Float64Var(&phcFreqDrift, "phc-freq-drift", phcFreqDrift, "PHC frequency drift in ppb/day")
+	flags.Float64Var(&phcDrift, "phc-drift", phcDrift, "PHC frequency drift in ppb/day")
 	flags.Float64Var(&phcNoise, "phc-noise", phcNoise, "PHC frequency noise stddev in ppb")
 	flags.Float64Var(&jitter, "jitter", jitter, "PPS timing jitter in nanoseconds")
 	flags.Float64Var(&vars.simCfg.MinDelay, "min-delay", vars.simCfg.MinDelay, "minimum pulse delivery delay in seconds")
@@ -152,11 +152,11 @@ func parseFlags(args []string) (*flagVars, error) {
 	if !math.IsNaN(phcFreqOffset) {
 		vars.simCfg.PHC.FreqOffset = phcFreqOffset
 	}
-	if !math.IsNaN(phcFreqDrift) {
-		vars.simCfg.PHC.FreqDrift = phcFreqDrift
+	if !math.IsNaN(phcDrift) {
+		vars.simCfg.PHC.Drift = phcDrift
 	}
 	if !math.IsNaN(phcNoise) {
-		vars.simCfg.PHC.WhiteFreqNoise = phcNoise
+		vars.simCfg.PHC.WhiteNoise = phcNoise
 	}
 	if !math.IsNaN(jitter) {
 		vars.simCfg.GPS.Jitter = jitter

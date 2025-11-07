@@ -9,11 +9,11 @@ import (
 
 func TestVirtualClockBasic(t *testing.T) {
 	// Create oscillator running 10000ppb fast
-	osc := FreqOffset(10000.0)
+	osc := FreqOffsetOsc(10000.0)
 	raw := NewRawClock(osc, 0)
 
 	// Perfect PPS (no jitter)
-	pps := PerfectPPS()
+	pps := PerfectGPS()
 
 	// Create virtual clock starting at t=0
 	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
@@ -45,9 +45,9 @@ func TestVirtualClockBasic(t *testing.T) {
 
 func TestVirtualClockFreqAdjustment(t *testing.T) {
 	// Create oscillator running 10000ppb fast
-	osc := FreqOffset(10000.0)
+	osc := FreqOffsetOsc(10000.0)
 	raw := NewRawClock(osc, 0)
-	pps := PerfectPPS()
+	pps := PerfectGPS()
 
 	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
@@ -75,9 +75,9 @@ func TestVirtualClockFreqAdjustment(t *testing.T) {
 }
 
 func TestVirtualClockTimeStep(t *testing.T) {
-	osc := Perfect()
+	osc := PerfectOsc()
 	raw := NewRawClock(osc, 1000*1e9) // Start at t=1000 seconds = 1000e9 nanoseconds
-	pps := PerfectPPS()
+	pps := PerfectGPS()
 
 	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
@@ -103,9 +103,9 @@ func TestVirtualClockTimeStep(t *testing.T) {
 }
 
 func TestVirtualClockMultiplePPS(t *testing.T) {
-	osc := Perfect()
+	osc := PerfectOsc()
 	raw := NewRawClock(osc, 0)
-	pps := PerfectPPS()
+	pps := PerfectGPS()
 
 	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
@@ -128,7 +128,7 @@ func TestVirtualClockMultiplePPS(t *testing.T) {
 }
 
 func TestVirtualClockPPSJitter(t *testing.T) {
-	osc := Perfect()
+	osc := PerfectOsc()
 	raw := NewRawClock(osc, 0)
 
 	// PPS with +1ns jitter (avoids floating point precision issues)
@@ -160,14 +160,14 @@ func TestVirtualClockPPSJitter(t *testing.T) {
 // variations were quantized to ±256ns steps at large time values.
 func TestPrecisionAtLargeTime(t *testing.T) {
 	// Use realistic oscillator with small frequency noise
-	osc := WhiteFreqNoise(100.0, 42) // 100 ppb stddev
+	osc := WhiteNoiseOsc(100.0, 42) // 100 ppb stddev
 
 	// PHC starts at GPS epoch (1.4e9 seconds = large!)
 	gpsEpochNs := int64(1.4e9 * 1e9)
 	raw := NewRawClock(osc, gpsEpochNs)
 
 	// PPS with 10ns jitter (realistic GNSS)
-	pps := JitterPPS(10*time.Nanosecond, 42)
+	pps := JitterGPS(10*time.Nanosecond, 42)
 
 	// Simulation starts at t=0 (small!)
 	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
@@ -246,11 +246,11 @@ func TestPrecisionAtLargeTime(t *testing.T) {
 // This catches issues with offset tracking, frequency adjustment, and time stepping.
 func TestServoConvergence(t *testing.T) {
 	// Create oscillator running 10000ppb fast
-	osc := FreqOffset(10000.0)
+	osc := FreqOffsetOsc(10000.0)
 
 	// PHC starts at 0, GPS is at 1000 seconds (huge offset)
 	raw := NewRawClock(osc, 0)
-	pps := PerfectPPS()
+	pps := PerfectGPS()
 
 	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 	tc := NewTestClock(vc)
@@ -316,9 +316,9 @@ func TestServoConvergence(t *testing.T) {
 // TestAdjTimeDelay verifies that AdjTime() simulates realistic kernel delay.
 // This catches issues with ADJ_SETOFFSET implementation.
 func TestAdjTimeDelay(t *testing.T) {
-	osc := Perfect()
+	osc := PerfectOsc()
 	raw := NewRawClock(osc, 1000*1e9) // Start at 1000 seconds
-	pps := PerfectPPS()
+	pps := PerfectGPS()
 
 	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)
 
@@ -362,7 +362,7 @@ func TestAdjTimeDelay(t *testing.T) {
 // oscillator frequency error over time.
 func TestRawClockIntegration(t *testing.T) {
 	// Create oscillator running 10000ppb fast
-	osc := FreqOffset(10000.0)
+	osc := FreqOffsetOsc(10000.0)
 	raw := NewRawClock(osc, 0)
 
 	// After 1 second, clock should read 1.00001 (10µs fast)
@@ -390,11 +390,11 @@ func TestRawClockIntegration(t *testing.T) {
 }
 
 // TestIncrementalIntegration verifies that RawClock integration is truly incremental.
-// This catches the bug where WhiteFreqNoise was evaluated multiple times at the same t,
+// This catches the bug where WhiteNoiseOsc was evaluated multiple times at the same t,
 // causing different random values and making the oscillator non-deterministic.
 func TestIncrementalIntegration(t *testing.T) {
-	// Use WhiteFreqNoise which would expose the bug if integration re-evaluates
-	osc := WhiteFreqNoise(1000.0, 42)
+	// Use WhiteNoiseOsc which would expose the bug if integration re-evaluates
+	osc := WhiteNoiseOsc(1000.0, 42)
 	raw := NewRawClock(osc, 0)
 
 	// Read at t=2.0 - this integrates from 0→2
@@ -415,7 +415,7 @@ func TestIncrementalIntegration(t *testing.T) {
 
 	// More importantly: verify determinism by reading at same point again
 	// Create a new RawClock with same seed
-	raw2 := NewRawClock(WhiteFreqNoise(1000.0, 42), 0)
+	raw2 := NewRawClock(WhiteNoiseOsc(1000.0, 42), 0)
 
 	// Should get exact same values
 	phase1b := raw2.ReadAt(2.0)
@@ -432,7 +432,7 @@ func TestIncrementalIntegration(t *testing.T) {
 // TestNegativePPSJitter verifies that negative PPS jitter (early arrival) works.
 // This was a source of bugs in the lazy PPS generation logic.
 func TestNegativePPSJitter(t *testing.T) {
-	osc := Perfect()
+	osc := PerfectOsc()
 	raw := NewRawClock(osc, 0)
 
 	// PPS arrives 1ms early (negative jitter)
@@ -505,14 +505,14 @@ func TestAdjTimeDelayMean(t *testing.T) {
 // TestDualEdgeMode verifies that dual-edge mode generates two timestamps per second.
 func TestDualEdgeMode(t *testing.T) {
 	// Perfect oscillator for predictable behavior
-	osc := Perfect()
+	osc := PerfectOsc()
 	raw := NewRawClock(osc, 0)
 
 	// Perfect PPS (no jitter on rising edge)
-	pps := PerfectPPS()
+	pps := PerfectGPS()
 
 	// Perfect trailing edge (no noise)
-	trailingEdge := PerfectPPS()
+	trailingEdge := PerfectGPS()
 
 	// 200ms pulse width
 	pulseWidth := 200 * time.Millisecond
@@ -567,11 +567,11 @@ func TestDualEdgeMode(t *testing.T) {
 // TestDualEdgeModeWithDrift verifies pulse width is affected by oscillator drift.
 func TestDualEdgeModeWithDrift(t *testing.T) {
 	// Oscillator running 10000ppb fast
-	osc := FreqOffset(10000.0)
+	osc := FreqOffsetOsc(10000.0)
 	raw := NewRawClock(osc, 0)
 
-	pps := PerfectPPS()
-	trailingEdge := PerfectPPS()
+	pps := PerfectGPS()
+	trailingEdge := PerfectGPS()
 
 	// 200ms pulse width
 	pulseWidth := 200 * time.Millisecond
@@ -611,12 +611,12 @@ func TestDualEdgeModeWithDrift(t *testing.T) {
 // was rotated before computing edge timing, causing metadata mismatch.
 func TestSawtoothMetadataConsistency(t *testing.T) {
 	// Create oscillator with small drift
-	osc := FreqOffset(100.0) // 100ppb
+	osc := FreqOffsetOsc(100.0) // 100ppb
 	raw := NewRawClock(osc, 0)
 
 	// Create sawtooth PPS with 8ns amplitude
-	sawtoothPPS := SawtoothPPS(osc, 8e-9, 0.5)
-	otherPPS := PerfectPPS()
+	sawtoothPPS := SawtoothGPS(osc, 8e-9, 0.5)
+	otherPPS := PerfectGPS()
 
 	vc := NewVirtualClock(raw, sawtoothPPS, otherPPS, 0, 500000, 0, nil)
 
@@ -658,12 +658,12 @@ func TestSawtoothArbitraryStartTime(t *testing.T) {
 	// Start simulation at a large time (e.g., 124.5 seconds)
 	startTime := 124.5
 
-	osc := FreqOffset(1000.0) // 1000ppb = 1ppm
+	osc := FreqOffsetOsc(1000.0) // 1000ppb = 1ppm
 	raw := NewRawClock(osc, int64(startTime*1e9))
 
 	// Create sawtooth PPS with 8ns amplitude
-	sawtoothPPS := SawtoothPPS(osc, 8e-9, 0.5)
-	otherPPS := PerfectPPS()
+	sawtoothPPS := SawtoothGPS(osc, 8e-9, 0.5)
+	otherPPS := PerfectGPS()
 
 	vc := NewVirtualClock(raw, sawtoothPPS, otherPPS, startTime, 500000, 0, nil)
 
@@ -717,11 +717,11 @@ func TestSawtoothPhaseAlignment(t *testing.T) {
 	// Frequency offset chosen to give non-integer phase advancement
 	// With 8ns amplitude: deltaTicks = 750 * 1e-9 * 1.0 / 8e-9 = 93.75 ticks per second
 	// After 8 seconds: 750 ticks accumulated, phase wraps multiple times
-	osc := FreqOffset(750) // 750 ppb
+	osc := FreqOffsetOsc(750) // 750 ppb
 	raw := NewRawClock(osc, 0)
 
-	sawtoothPPS := SawtoothPPS(osc, 8e-9, 0.25) // Start at phase 0.25
-	otherPPS := PerfectPPS()
+	sawtoothPPS := SawtoothGPS(osc, 8e-9, 0.25) // Start at phase 0.25
+	otherPPS := PerfectGPS()
 
 	vc := NewVirtualClock(raw, sawtoothPPS, otherPPS, 0, 5e6, 0, nil)
 

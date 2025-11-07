@@ -22,43 +22,43 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-// OscillatorSimulator models the behavior of a hardware oscillator.
+// OscSimulator models the behavior of a hardware oscillator.
 //
 // Input: t - simulation time in seconds since simulation start
 // Output: fractional frequency error at that time
 // Example: if output is +1e-6, the clock runs 1µs fast per second of true time
 //
-// IMPORTANT: When used with RawClock or SawtoothPPS, the simulator will be called with
+// IMPORTANT: When used with RawClock or SawtoothGPS, the simulator will be called with
 // monotonically increasing simulation time values. This allows stateful simulators
-// (like WhiteFreqNoise, FlickerFreqNoise) to use incremental random number
+// (like WhiteNoiseOsc, FlickerNoiseOsc) to use incremental random number
 // generation without needing random access to arbitrary time points.
-type OscillatorSimulator func(t float64) float64
+type OscSimulator func(t float64) float64
 
-// FreqOffset creates an oscillator with constant frequency offset.
+// FreqOffsetOsc creates an oscillator with constant frequency offset.
 // ppb is the frequency offset in parts per billion (positive means runs fast).
-func FreqOffset(ppb float64) OscillatorSimulator {
+func FreqOffsetOsc(ppb float64) OscSimulator {
 	return func(t float64) float64 {
 		return ppb / 1e9
 	}
 }
 
-// Perfect creates an oscillator with no frequency error.
-func Perfect() OscillatorSimulator {
-	return FreqOffset(0)
+// PerfectOsc creates an oscillator with no frequency error.
+func PerfectOsc() OscSimulator {
+	return FreqOffsetOsc(0)
 }
 
-// WhiteFreqNoise creates an oscillator with white frequency noise.
+// WhiteNoiseOsc creates an oscillator with white frequency noise.
 // stddevPPB is the standard deviation of frequency noise in ppb.
 // Relies on RawClock's monotonic time guarantee: each call advances the RNG state
 // incrementally without needing to seek to arbitrary time points.
-func WhiteFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
+func WhiteNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	return func(t float64) float64 {
 		return rng.NormFloat64() * stddevPPB / 1e9
 	}
 }
 
-// FlickerFreqNoise creates an oscillator with flicker-like frequency noise.
+// FlickerNoiseOsc creates an oscillator with flicker-like frequency noise.
 // This is a simplified approximation using a random walk to generate slowly-varying
 // correlated noise, suitable for testing disciplining algorithms.
 //
@@ -71,7 +71,7 @@ func WhiteFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
 // IMPORTANT: This implementation maintains state (currentValue, lastTime) and requires
 // monotonically increasing time values. RawClock guarantees this, making the random
 // walk implementation simple and efficient without needing random access to arbitrary times.
-func FlickerFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
+func FlickerNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	var currentValue float64
 	var lastTime float64
@@ -87,7 +87,7 @@ func FlickerFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
 	}
 }
 
-// FreqDrift creates linear frequency drift over time.
+// DriftOsc creates linear frequency drift over time.
 // Models oscillator frequency changing at a constant rate (quadratic phase drift).
 //
 // Parameters:
@@ -96,7 +96,7 @@ func FlickerFreqNoise(stddevPPB float64, seed int64) OscillatorSimulator {
 //
 // Example: ratePPBPerDay=163 means frequency increases by 163 ppb per day
 // This would accumulate ~3.4 ns of phase error per minute, ~12 µs per hour
-func FreqDrift(ratePPBPerDay float64) OscillatorSimulator {
+func DriftOsc(ratePPBPerDay float64) OscSimulator {
 	// Convert ppb/day to fractional_frequency/second
 	ratePerSec := ratePPBPerDay / 86400.0 / 1e9
 
@@ -105,7 +105,7 @@ func FreqDrift(ratePPBPerDay float64) OscillatorSimulator {
 	}
 }
 
-// SineFM creates sinusoidal frequency modulation.
+// SinusoidOsc creates sinusoidal frequency modulation.
 // Models periodic effects like temperature cycles or crystal resonances.
 //
 // Parameters:
@@ -113,7 +113,7 @@ func FreqDrift(ratePPBPerDay float64) OscillatorSimulator {
 //	ampPPB: amplitude in ppb (peak deviation from nominal frequency)
 //	periodS: period in seconds (e.g., 86400 for daily thermal cycle)
 //	phaseRad: initial phase offset in radians (0 to 2π)
-func SineFM(ampPPB, periodS, phaseRad float64) OscillatorSimulator {
+func SinusoidOsc(ampPPB, periodS, phaseRad float64) OscSimulator {
 	omega := 2 * math.Pi / periodS
 	scale := ampPPB / 1e9
 
@@ -122,8 +122,8 @@ func SineFM(ampPPB, periodS, phaseRad float64) OscillatorSimulator {
 	}
 }
 
-// CombineOscillators combines multiple oscillator frequency error sources.
-func CombineOscillators(funcs ...OscillatorSimulator) OscillatorSimulator {
+// CombineOsc combines multiple oscillator frequency error sources.
+func CombineOsc(funcs ...OscSimulator) OscSimulator {
 	return func(t float64) float64 {
 		sum := 0.0
 		for _, f := range funcs {
@@ -133,7 +133,7 @@ func CombineOscillators(funcs ...OscillatorSimulator) OscillatorSimulator {
 	}
 }
 
-// PPSSimulator models GNSS PPS timing errors.
+// GPSSimulator models GNSS PPS timing errors.
 //
 // Input: t - simulation time in seconds since simulation start. The simulation is
 // assumed to start aligned with a TAI second boundary. This is NOT TAI time itself,
@@ -149,18 +149,18 @@ func CombineOscillators(funcs ...OscillatorSimulator) OscillatorSimulator {
 //
 // This monotonic calling pattern allows stateful simulators to use incremental
 // updates without needing random access to arbitrary time points.
-type PPSSimulator func(t float64) float64
+type GPSSimulator func(t float64) float64
 
-// PerfectPPS creates a PPS simulator with no timing error.
-func PerfectPPS() PPSSimulator {
+// PerfectGPS creates a PPS simulator with no timing error.
+func PerfectGPS() GPSSimulator {
 	return func(t float64) float64 {
 		return 0
 	}
 }
 
-// JitterPPS creates a PPS simulator with Gaussian timing jitter.
+// JitterGPS creates a PPS simulator with Gaussian timing jitter.
 // stddev is the standard deviation of the timing error.
-func JitterPPS(stddev time.Duration, seed int64) PPSSimulator {
+func JitterGPS(stddev time.Duration, seed int64) GPSSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	stddevSec := stddev.Seconds()
 	return func(t float64) float64 {
@@ -168,14 +168,14 @@ func JitterPPS(stddev time.Duration, seed int64) PPSSimulator {
 	}
 }
 
-// SawtoothPPS creates a stateful PPS simulator that models GPS receiver sawtooth error.
+// SawtoothGPS creates a stateful PPS simulator that models GPS receiver sawtooth error.
 // Sawtooth error is quantization caused by aligning PPS edges to internal ticks.
 // The phase advances based on the oscillator's frequency error, coupling sawtooth
 // behavior to the PHC oscillator.
 //
 // Parameters:
 //
-//	osc: OscillatorSimulator returning fractional frequency error (dimensionless)
+//	osc: OscSimulator returning fractional frequency error (dimensionless)
 //	ampPPS: peak-to-peak amplitude in seconds (typically 8ns = 8e-9)
 //	phaseInit: initial phase in [0,1) (0.5 = middle of cycle)
 //
@@ -186,7 +186,7 @@ func JitterPPS(stddev time.Duration, seed int64) PPSSimulator {
 // This is satisfied when used as a leading edge simulator with VirtualClock,
 // which calls with 1.0, 2.0, 3.0, ... The absolute value of t is passed to the
 // coupled oscillator, but phase advancement only depends on the unit increment.
-func SawtoothPPS(osc OscillatorSimulator, ampPPS, phaseInit float64) PPSSimulator {
+func SawtoothGPS(osc OscSimulator, ampPPS, phaseInit float64) GPSSimulator {
 	phase := phaseInit
 	return func(t float64) float64 {
 		// Get fractional frequency error from oscillator at simulation time t
@@ -201,14 +201,14 @@ func SawtoothPPS(osc OscillatorSimulator, ampPPS, phaseInit float64) PPSSimulato
 	}
 }
 
-// PeriodicPPS creates a PPS simulator with sinusoidal phase modulation.
+// SinusoidGPS creates a PPS simulator with sinusoidal phase modulation.
 // Models periodic GPS errors like multipath or atmospheric effects.
 //
 // Parameters:
 //
 //	ampNs: amplitude in nanoseconds (peak deviation)
 //	periodS: period in seconds (e.g., 3000 for thermal cycle)
-func PeriodicPPS(ampNs, periodS float64) PPSSimulator {
+func SinusoidGPS(ampNs, periodS float64) GPSSimulator {
 	omega := 2 * math.Pi / periodS
 	ampSec := ampNs * 1e-9
 	return func(t float64) float64 {
@@ -216,7 +216,7 @@ func PeriodicPPS(ampNs, periodS float64) PPSSimulator {
 	}
 }
 
-// AR1ColoredNoisePPS creates a PPS simulator with AR(1) colored noise.
+// AR1ColoredNoiseGPS creates a PPS simulator with AR(1) colored noise.
 // Models tropospheric delay and multipath effects as slowly varying correlated drift.
 //
 // The process evolves as: Y_t = alpha * Y_{t-1} + epsilon_t
@@ -231,7 +231,7 @@ func PeriodicPPS(ampNs, periodS float64) PPSSimulator {
 // Assumes calls at unit time steps (t = 1.0, 2.0, 3.0, ...).
 // This means it is suitable for leading edge (ppsSimulator) but not trailing edge (trailingEdgeSimulator).
 // Correlation time constant: tau_c = -1 / ln(alpha) seconds (e.g., ~750s for alpha=0.9987)
-func AR1ColoredNoisePPS(alpha float64, noiseStddevNs float64, seed int64) PPSSimulator {
+func AR1ColoredNoiseGPS(alpha float64, noiseStddevNs float64, seed int64) GPSSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	noiseStddevSec := noiseStddevNs * 1e-9 // Convert ns to seconds
 
@@ -251,7 +251,7 @@ func AR1ColoredNoisePPS(alpha float64, noiseStddevNs float64, seed int64) PPSSim
 // ShiftPPS creates a PPS simulator that applies a temporary phase shift with smooth transitions.
 // The shift rises with a half-sine profile, holds at the specified shift, then falls symmetrically.
 // Useful for simulating ionospheric disturbances or other gradual timing biases.
-func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) PPSSimulator {
+func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) GPSSimulator {
 	startSec := startTime
 	rampSec := ramp.Seconds()
 	durationSec := duration.Seconds()
@@ -286,7 +286,7 @@ func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) PPSSimulat
 // SingleOutlierPPS creates a PPS simulator that adds a phase offset at a specific second.
 // Both second and t are rounded to the nearest integer for comparison.
 // Useful for testing outlier detection by injecting controlled timing errors.
-func SingleOutlierPPS(second float64, offset time.Duration) PPSSimulator {
+func SingleOutlierPPS(second float64, offset time.Duration) GPSSimulator {
 	targetSecond := math.Round(second)
 	return func(t float64) float64 {
 		if math.Round(t) == targetSecond {
@@ -296,8 +296,8 @@ func SingleOutlierPPS(second float64, offset time.Duration) PPSSimulator {
 	}
 }
 
-// CombinePPS combines multiple PPS phase error sources additively.
-func CombinePPS(funcs ...PPSSimulator) PPSSimulator {
+// CombineGPS combines multiple PPS phase error sources additively.
+func CombineGPS(funcs ...GPSSimulator) GPSSimulator {
 	return func(t float64) float64 {
 		sum := 0.0
 		for _, f := range funcs {
@@ -307,12 +307,12 @@ func CombinePPS(funcs ...PPSSimulator) PPSSimulator {
 	}
 }
 
-// RawClock wraps an OscillatorSimulator and integrates frequency error to produce phase.
+// RawClock wraps an OscSimulator and integrates frequency error to produce phase.
 // It represents the unadjusted hardware oscillator with an initial phase offset.
 // Times are stored as int64 nanoseconds to match ptime.Time representation.
 // Integration is incremental: ReadAt must be called with monotonically increasing times.
 type RawClock struct {
-	oscillator     OscillatorSimulator
+	oscillator     OscSimulator
 	startPhaseNs   int64
 	dt             float64 // Integration step size
 	lastSimTime    float64 // Last time ReadAt was called
@@ -321,7 +321,7 @@ type RawClock struct {
 }
 
 // NewRawClock creates a RawClock with the given oscillator and initial phase in nanoseconds.
-func NewRawClock(oscillator OscillatorSimulator, startPhaseNs int64) *RawClock {
+func NewRawClock(oscillator OscSimulator, startPhaseNs int64) *RawClock {
 	return &RawClock{
 		oscillator:     oscillator,
 		startPhaseNs:   startPhaseNs,
@@ -398,9 +398,9 @@ type timestampEvent struct {
 
 type VirtualClock struct {
 	raw                    *RawClock
-	sawtoothPPSSimulator   PPSSimulator        // separate sawtooth simulator (can be nil)
-	otherPPSSimulator      PPSSimulator        // all non-sawtooth errors combined
-	trailingEdgeSimulator  PPSSimulator
+	sawtoothGPSSimulator   GPSSimulator        // separate sawtooth simulator (can be nil)
+	otherGPSSimulator      GPSSimulator        // all non-sawtooth errors combined
+	trailingEdgeSimulator  GPSSimulator
 	adjTimeDelaySimulator  func() float64
 	maxFreqOff             float64
 	simTime                float64
@@ -440,14 +440,14 @@ func defaultAdjTimeDelay() func() float64 {
 //
 // For dual-edge mode, pulseWidth > 0 and trailingEdgeSimulator must be provided.
 // For single-edge mode, pulseWidth = 0 and trailingEdgeSimulator can be nil.
-func NewVirtualClock(raw *RawClock, sawtoothPPS PPSSimulator, otherPPS PPSSimulator, startTime float64, maxFreqOff float64, pulseWidth time.Duration, trailingEdgeSimulator PPSSimulator) *VirtualClock {
+func NewVirtualClock(raw *RawClock, sawtoothPPS GPSSimulator, otherPPS GPSSimulator, startTime float64, maxFreqOff float64, pulseWidth time.Duration, trailingEdgeSimulator GPSSimulator) *VirtualClock {
 	firstPPSNominal := float64(int(startTime) + 1)
 	rawPhaseNs := raw.ReadAt(startTime)
 
 	c := &VirtualClock{
 		raw:                   raw,
-		sawtoothPPSSimulator:  sawtoothPPS,
-		otherPPSSimulator:     otherPPS,
+		sawtoothGPSSimulator:  sawtoothPPS,
+		otherGPSSimulator:     otherPPS,
 		trailingEdgeSimulator: trailingEdgeSimulator,
 		adjTimeDelaySimulator: defaultAdjTimeDelay(),
 		maxFreqOff:            maxFreqOff,
@@ -507,8 +507,8 @@ func (c *VirtualClock) generateNextEdges() {
 
 	// Get error from non-sawtooth sources
 	otherError := 0.0
-	if c.otherPPSSimulator != nil {
-		otherError = c.otherPPSSimulator(c.nextPPSNominal)
+	if c.otherGPSSimulator != nil {
+		otherError = c.otherGPSSimulator(c.nextPPSNominal)
 	}
 
 	// Combine with current sawtooth correction to compute edge timing
@@ -516,8 +516,8 @@ func (c *VirtualClock) generateNextEdges() {
 	c.nextEdgeActual = c.nextPPSNominal + phaseError
 
 	// Pre-compute sawtooth for the NEXT pulse (N+1)
-	if c.sawtoothPPSSimulator != nil {
-		c.sawtoothCorrections.Next = c.sawtoothPPSSimulator(c.nextPPSNominal + 1.0)
+	if c.sawtoothGPSSimulator != nil {
+		c.sawtoothCorrections.Next = c.sawtoothGPSSimulator(c.nextPPSNominal + 1.0)
 	}
 
 	// Trailing edge computation
@@ -589,7 +589,7 @@ func (c *VirtualClock) ReadTimestamp() (TimestampReading, bool) {
 	c.tsQueue = c.tsQueue[1:]
 
 	var sawtooth *SawtoothCorrections
-	if c.sawtoothPPSSimulator != nil {
+	if c.sawtoothGPSSimulator != nil {
 		sc := ts.sawtoothCorrections
 		sawtooth = &sc
 	}
