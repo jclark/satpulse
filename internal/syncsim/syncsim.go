@@ -52,17 +52,18 @@ import (
 
 // Config holds simulation parameters
 type Config struct {
-	Duration    float64       // simulation duration in seconds
-	PHC         PHCConfig     // PHC oscillator parameters
-	GPS         GPSConfig     // GPS PPS parameters
-	MinDelay    float64       // minimum pulse delivery delay in seconds
-	MaxDelay    float64       // maximum pulse delivery delay in seconds
-	MsgDelay    float64       // GPS message delay after pulse in seconds
-	MsgJitter   float64       // GPS message delay jitter in seconds
-	PulseWidth  float64       // pulse width in seconds (0 for single-edge mode)
-	ToggleTimes []float64     // absolute simulation times to toggle pulse/message delivery on/off
-	Outlier     OutlierConfig // PPS outlier injection configuration
-	Shift       ShiftConfig   // PPS phase shift configuration
+	Duration     float64       // simulation duration in seconds
+	PHC          PHCConfig     // PHC oscillator parameters
+	GPS          GPSConfig     // GPS PPS parameters
+	MinDelay     float64       // minimum pulse delivery delay in seconds
+	MaxDelay     float64       // maximum pulse delivery delay in seconds
+	MsgDelay     float64       // GPS message delay after pulse in seconds
+	MsgJitter    float64       // GPS message delay jitter in seconds
+	PulseWidth   float64       // pulse width in seconds (0 for single-edge mode)
+	PrePulseTime float64       // seconds before pulse to send UBX-TIM-TP PrePulse message
+	ToggleTimes  []float64     // absolute simulation times to toggle pulse/message delivery on/off
+	Outlier      OutlierConfig // PPS outlier injection configuration
+	Shift        ShiftConfig   // PPS phase shift configuration
 }
 
 // PHCConfig holds PHC oscillator parameters (matches ticc-model TOML format)
@@ -104,11 +105,10 @@ func (c PHCConfig) CreateSimulator() clocksim.OscillatorSimulator {
 
 // GPSConfig holds GPS PPS error parameters (matches ticc-model TOML format)
 type GPSConfig struct {
-	Jitter       float64             `toml:"jitter"`       // nanoseconds (white noise stddev)
-	Sawtooth     SawtoothConfig      `toml:"sawtooth"`     // sawtooth error parameters
-	AR1          AR1Config           `toml:"ar1"`          // AR(1) colored noise parameters
-	Periodic     []PeriodicComponent `toml:"periodic"`     // periodic components (up to 3)
-	PrePulseTime float64             `toml:"prePulseTime"` // seconds before pulse to send UBX-TIM-TP, defaults to 0.95
+	Jitter   float64             `toml:"jitter"`   // nanoseconds (white noise stddev)
+	Sawtooth SawtoothConfig      `toml:"sawtooth"` // sawtooth error parameters
+	AR1      AR1Config           `toml:"ar1"`      // AR(1) colored noise parameters
+	Periodic []PeriodicComponent `toml:"periodic"` // periodic components (up to 3)
 }
 
 // SawtoothConfig holds GPS sawtooth error parameters
@@ -214,11 +214,12 @@ func DefaultConfig() Config {
 				},
 			},
 		},
-		MinDelay:   5e-6,
-		MaxDelay:   250e-6,
-		MsgDelay:   0.1,
-		MsgJitter:  0.01,
-		PulseWidth: 0, // default to single-edge mode
+		MinDelay:     5e-6,
+		MaxDelay:     250e-6,
+		MsgDelay:     0.1,
+		MsgJitter:    0.01,
+		PulseWidth:   0,    // default to single-edge mode
+		PrePulseTime: 0.95, // send PrePulse message 0.95s before PPS edge
 		Outlier: OutlierConfig{
 			Offset: 2000 * time.Nanosecond, // 2µs default outlier magnitude
 		},
@@ -588,7 +589,7 @@ func (s *offsetStats) stdDev() float64 {
 func generatePulseEvents(cfg Config, edgesPerPulse int) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
 		rng := rand.New(rand.NewSource(999))
-		prePulseTime := cfg.GPS.PrePulseTime
+		prePulseTime := cfg.PrePulseTime
 		if prePulseTime == 0 {
 			prePulseTime = 0.95
 		}
