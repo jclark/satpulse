@@ -15,25 +15,23 @@ import (
 type ResetConfig struct {
 	// PulseWindow is the number of pulses to collect for alignment analysis during reset mode.
 	// A larger window provides more data for statistical checks but delays the initial clock step.
-	// Typical value: 5.
 	PulseWindow int `toml:"pulseWindow" check:">=3,<100"`
 
 	// StepThreshold is the minimum absolute offset in nanoseconds required to perform a clock step.
 	// If the measured offset is smaller than this threshold, reset mode transitions directly to
-	// converging mode without stepping the clock. Typical value: 5000 (5µs).
+	// converging mode without stepping the clock.
 	StepThreshold int64 `toml:"stepThreshold" check:">=0,<1_000_000"`
 
 	// PulseVariation is the maximum acceptable variation between consecutive pulse intervals,
 	// expressed in parts per billion (PPB). This checks clock stability: if the variation
 	// between the shortest and longest interval exceeds this limit, the pulses are rejected.
 	// The variation is computed as: (maxInterval/minInterval - 1.0) * 1e9.
-	// Typical value: 500 PPB.
 	PulseVariation float64 `toml:"pulseVariation" check:">=5,<1_000_000"`
 
 	// ExpectedDelay is the expected midpoint of the pulse-to-message delay window in seconds.
 	// This represents the typical delay between when a PPS pulse occurs and when the GPS
 	// receiver sends the corresponding time message. Most GPS receivers send messages
-	// 50-250ms after the pulse. Typical value: 0.1 (100ms).
+	// 50-250ms after the pulse.
 	ExpectedDelay float64 `toml:"expectedDelay" check:">=0.0,<1.0"`
 
 	// DelayConfidenceWindow specifies what fraction of the maximum possible delay window
@@ -41,14 +39,12 @@ type ResetConfig struct {
 	// ExpectedDelay. With edge timestamping, the maximum window is 1.0 second (until next
 	// pulse). For example, 0.6 means accept delays from (ExpectedDelay - 0.3) to
 	// (ExpectedDelay + 0.3), rejecting pulses where messages arrive too early or too late.
-	// Typical value: 0.6.
 	DelayConfidenceWindow float64 `toml:"delayConfidenceWindow" check:">0.0,<=1.0"`
 
 	// DelayVariation is the maximum acceptable spread between pulse-to-message delays,
 	// expressed as a proportion of the maximum window (1.0 second). This checks consistency:
 	// all delays should be similar. The spread is computed as: (maxDelay - minDelay) / 1.0.
 	// Should be significantly smaller than DelayConfidenceWindow to ensure tight clustering.
-	// Typical value: 0.2.
 	DelayVariation float64 `toml:"delayVariation" check:">0.0,<1.0"`
 
 	// PulseWidthDetectLimit is the maximum pulse width in seconds that can be automatically
@@ -57,7 +53,6 @@ type ResetConfig struct {
 	// duty cycle for reliable auto-detection from timing alone. When detection fails, both
 	// edge lists are kept and alignment with time messages is used. Note: pulse widths
 	// greater than 0.5 seconds must be explicitly configured via gps.pulseWidth.
-	// Typical value: 0.45.
 	PulseWidthDetectLimit float64 `toml:"pulseWidthDetectLimit" check:">=0.1,<0.5"`
 }
 
