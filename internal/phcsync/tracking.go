@@ -25,7 +25,7 @@ type TrackingConfig struct {
 	// are always accepted. Samples with |offset| >= OutlierThreshold are evaluated using
 	// MAD statistics to determine if they are outliers. This ensures samples within the
 	// normal range of tracking jitter are not treated as outliers. Typical value: 50 ns.
-	OutlierThreshold int64 `toml:"outlierThreshold" check:">0,<1_000_000_000"`
+	OutlierThreshold int64 `toml:"outlierThreshold" check:">0,<=1000"`
 
 	// MADWindow is the number of samples in the sliding window for MAD-based outlier detection.
 	// The window stores offset history used to compute the median and median absolute deviation.
@@ -42,28 +42,28 @@ type TrackingConfig struct {
 	// MADMinSamples is the minimum number of samples required in the MAD window before MAD-based
 	// outlier detection is active. Until this threshold is reached, only the OutlierThreshold
 	// is checked. This ensures MAD statistics are based on sufficient data. Typical value: 10.
-	MADMinSamples int `toml:"madMinSamples" check:">=1,<100"`
+	MADMinSamples int `toml:"madMinSamples" check:">=3,<100"`
 
 	// PreMADOutlierThreshold is the outlier threshold in nanoseconds used before MAD-based
 	// detection is ready. During the warmup period (offsetWindow.Len() < MADMinSamples),
 	// a sample is rejected if |offset| >= OutlierThreshold AND |offset| >= PreMADOutlierThreshold.
 	// This protects the servo from obviously bad outliers during warmup. Once MAD is ready,
 	// full statistical detection is used. Typical value: 500 ns.
-	PreMADOutlierThreshold int64 `toml:"preMADOutlierThreshold" check:">=0,<10_000_000"`
+	PreMADOutlierThreshold int64 `toml:"preMADOutlierThreshold" check:">0,<=10000"`
 
 	// PulseWidthTolerance is the tolerance in nanoseconds for filtering trailing edges in
 	// dual-edge mode based on temporal spacing. An edge is considered a trailing edge (and
 	// ignored) if it arrives within PulseWidthTolerance of the expected trailing edge time
 	// (lastEdgeTime + PulseWidth). This helps distinguish leading from trailing edges when
 	// alignment alone is ambiguous. Typical value: 200 ns.
-	PulseWidthTolerance int64 `toml:"pulseWidthTolerance" check:">0,<1_000_000_000"`
+	PulseWidthTolerance int64 `toml:"pulseWidthTolerance" check:">0,<=10000"`
 
 	// AlignTolerance is the tolerance in nanoseconds for offset from top of second to
 	// immediately accept an edge as a leading edge. Edges with |offset| <= AlignTolerance
 	// (where offset is timestamp rounded to nearest second) are assumed to be leading edges
 	// and accepted without further checks. This is the primary discriminator for
 	// well-synchronized clocks. Typical value: 100 ns.
-	AlignTolerance int64 `toml:"alignTolerance" check:">0,<1_000_000_000"`
+	AlignTolerance int64 `toml:"alignTolerance" check:">0,<=10000"`
 
 	// BadSampleLimit is the maximum number of consecutive bad samples (missing or outlier)
 	// before transitioning back to reset mode. Bad samples do not contribute to frequency
@@ -76,7 +76,7 @@ type TrackingConfig struct {
 	// Larger values track baseline frequency more smoothly but respond more slowly to
 	// oscillator drift. The EMA is updated as: avgFreq = alpha*freq + (1-alpha)*avgFreq
 	// where alpha = 1 - exp(-sampleInterval/timeConstant). Set to 0 to disable this
-	// feature (no frequency adjustment on missing samples). Typical value: 120.
+	// feature (no frequency adjustment on missing samples). Typical value: 30.
 	AvgFreqTimeConstant float64 `toml:"avgFreqTimeConstant" check:">=0.0,<1000.0"`
 
 	// IgnoreSawtoothCorrection, when true, disables the use of pulse offset corrections

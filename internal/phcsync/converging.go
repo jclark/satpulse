@@ -31,7 +31,7 @@ type ConvergingConfig struct {
 	// (1) the median of absolute offsets has not decreased for StableWindow consecutive samples,
 	// and (2) every sample since the minimum median was observed has absolute offset <= OffsetLimit.
 	// If any sample exceeds this limit, the stability counter resets. Typical value: 1000 (1µs).
-	OffsetLimit int64 `toml:"offsetLimit" check:">0,<1_000_000_000"`
+	OffsetLimit int64 `toml:"offsetLimit" check:">0,<=10000"`
 
 	// StableWindow is the number of consecutive samples for which the minimum median must
 	// remain stable (not decrease) before exiting converging mode. This ensures the offset
