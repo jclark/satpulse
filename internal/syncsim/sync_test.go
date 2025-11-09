@@ -53,6 +53,14 @@ func TestPHCSync(t *testing.T) {
 			maxTrackingStdDev: 20 * time.Nanosecond,
 		},
 		{
+			name:              "dual-edge 50% duty cycle (500ms pulse)",
+			pulseWidth:        0.5,
+			duration:          300.0, // 5 minutes
+			maxTrackingStdDev: 20 * time.Nanosecond,
+			// Tests complete flow: reset mode discovers leading edge via alignment,
+			// then converging/tracking modes work with discovered pulse width
+		},
+		{
 			name:        "signal loss - no recovery",
 			pulseWidth:  0,
 			duration:    90.0,

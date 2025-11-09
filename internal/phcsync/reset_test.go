@@ -2,6 +2,7 @@ package phcsync
 
 import (
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -153,18 +154,59 @@ func TestGenSampleForMessages(t *testing.T) {
 			startWithRising: false,
 			wantError:       true, // Falling edge first with large pulse width causes delay check to fail
 		},
-		// Dual-edge test near 50% duty cycle (ambiguous)
+		// Dual-edge tests at exactly 50% duty cycle (uses alignment to determine leading edge)
 		{
-			name:       "DualEdge_500ms_Ambiguous",
-			numEdges:   10,
-			interval:   time.Second,
-			msgDelay:   100 * time.Millisecond,
-			pulseWidth: 500 * time.Millisecond,
-			cfgMod: func(c *ResetConfig) {
-				c.PulseWidthDetectLimit = 0.45 // 500ms is exactly 50%, should fail with default detect limit
-			},
+			name:            "DualEdge_500ms_Rising",
+			numEdges:        10,
+			interval:        time.Second,
+			msgDelay:        100 * time.Millisecond,
+			pulseWidth:      500 * time.Millisecond,
+			startWithRising: true,
+			// Should succeed by aligning rising edges with messages
+		},
+		{
+			name:     "DualEdge_500ms_Falling",
+			interval: time.Second,
+			msgDelay: 100 * time.Millisecond,
+			// With falling-first and 10 edges, timeline is shifted by -500ms:
+			// Edges: falling@0s, rising@0.5s, falling@1s, rising@1.5s, ..., falling@4s, rising@4.5s
+			// After split: list 0 (even indices) = falling@{0,1,2,3,4}, list 1 (odd indices) = rising@{0.5,1.5,2.5,3.5,4.5}
+			// Messages at 0.1, 1.1, 2.1, 3.1, 4.1 align with falling edges (delays of 0.1s)
+			numEdges:        10,
+			pulseWidth:      500 * time.Millisecond,
+			startWithRising: false,
+		},
+		{
+			name:     "DualEdge_500ms_BothAlignmentsFail",
+			interval: time.Second,
+			msgDelay: 350 * time.Millisecond,
+			// With 50% duty cycle and msgDelay=350ms, neither edge list aligns:
+			// Rising edges at 0, 1, 2, 3, 4s with messages at 0.35, 1.35, 2.35, 3.35, 4.35s -> delays of 0.35s
+			// Falling edges at 0.5, 1.5, 2.5, 3.5, 4.5s with messages at 0.35, 1.35, 2.35, 3.35, 4.35s -> delays of -0.15s
+			// Both are outside acceptable range (-0.2 to 0.4 with maxWindow=0.5 for 50% duty cycle)
+			numEdges:        10,
+			pulseWidth:      500 * time.Millisecond,
 			startWithRising: true,
 			wantError:       true,
+		},
+		// Test near-50% cases to verify alignment works in ambiguous range
+		{
+			name:            "DualEdge_480ms_Rising",
+			numEdges:        10,
+			interval:        time.Second,
+			msgDelay:        100 * time.Millisecond,
+			pulseWidth:      480 * time.Millisecond,
+			startWithRising: true,
+			// 480ms is in ambiguous range (between 450ms and 550ms), should use alignment
+		},
+		{
+			name:            "DualEdge_460ms_Rising",
+			numEdges:        10,
+			interval:        time.Second,
+			msgDelay:        100 * time.Millisecond,
+			pulseWidth:      460 * time.Millisecond,
+			startWithRising: true,
+			// 460ms is in ambiguous range, should use alignment
 		},
 	}
 
@@ -320,54 +362,69 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 		}
 	} else {
 		// Dual-edge mode: generate both rising and falling edges
-		numPulses := numEdges / 2
-		if numEdges%2 == 1 {
-			numPulses++
+		// numEdges should be even for dual-edge mode
+		if numEdges%2 != 0 {
+			panic("numEdges must be even for dual-edge mode")
 		}
 
 		// Add white noise to pulse width for realism (~20ns stddev)
 		noiseGen := clocksim.JitterGPS(20*time.Nanosecond, 12345)
 
-		for i := 0; i < numPulses; i++ {
-			// Calculate pulse start time (rising edge)
-			risingRealTime := baseTime.Add(time.Duration(i) * interval)
-			risingPHCTime := basePHC.Add(time.Duration(float64(i*int(interval)) * (1.0 + phcDrift)))
+		// When startWithRising=false, shift timeline so falling edge is at t=0
+		timeOffset := time.Duration(0)
+		if !startWithRising {
+			timeOffset = -pulseWidth
+		}
 
-			// Calculate falling edge time with noise added to pulse width
-			// Noise is added in real time domain, then scaled by PHC drift
-			noiseSeconds := noiseGen(float64(i))
-			noisyPulseWidth := pulseWidth + time.Duration(noiseSeconds*1e9)
-			fallingRealTime := risingRealTime.Add(noisyPulseWidth)
-			fallingPHCTime := risingPHCTime.Add(time.Duration(float64(noisyPulseWidth) * (1.0 + phcDrift)))
+		readDelay := 1 * time.Millisecond
 
-			readDelay := 1 * time.Millisecond
+		// Generate edges in chronological order
+		type edgeInfo struct {
+			time     time.Time
+			phcTime  ptime.Time
+			isRising bool
+		}
+		edges := make([]edgeInfo, 0, numEdges)
 
-			// Add edges in the requested order
-			edges := []struct {
-				phcTime  ptime.Time
-				realTime time.Time
-			}{
-				{risingPHCTime, risingRealTime},
-				{fallingPHCTime, fallingRealTime},
+		for edgeIndex := 0; edgeIndex < numEdges; edgeIndex++ {
+			pulseNum := edgeIndex / 2
+			// When startWithRising=true, even indices are rising; when false, even indices are falling
+			isRising := (edgeIndex%2 == 0) == startWithRising
+
+			// Calculate edge time
+			edgeOffset := time.Duration(0)
+			if !isRising {
+				// Add noise to pulse width for falling edge
+				noiseSeconds := noiseGen(float64(pulseNum))
+				edgeOffset = pulseWidth + time.Duration(noiseSeconds*1e9)
 			}
 
-			if !startWithRising {
-				edges[0], edges[1] = edges[1], edges[0]
-			}
+			realTime := baseTime.Add(time.Duration(pulseNum)*interval + timeOffset + edgeOffset)
+			phcTime := basePHC.Add(time.Duration(float64(time.Duration(pulseNum)*interval+timeOffset+edgeOffset) * (1.0 + phcDrift)))
 
-			for j, edge := range edges {
-				edgeIndex := i*2 + j
-				if edgeIndex >= numEdges {
-					break
-				}
-				gen.storeEdge(PulseEdge{
-					Timestamp: ptime.ClockTime{T: edge.phcTime, Era: 0},
-					TRead: ptime.Sample{
-						Clock: ptime.ClockTime{T: edge.phcTime.Add(readDelay), Era: 0},
-						Sys:   edge.realTime.Add(readDelay),
-					},
-				}, uint64(edgeIndex))
+			edges = append(edges, edgeInfo{realTime, phcTime, isRising})
+		}
+
+		// Sort edges by time to ensure chronological order
+		slices.SortFunc(edges, func(a, b edgeInfo) int {
+			if a.time.Before(b.time) {
+				return -1
 			}
+			if a.time.After(b.time) {
+				return 1
+			}
+			return 0
+		})
+
+		// Store edges in chronological order
+		for i, edge := range edges {
+			gen.storeEdge(PulseEdge{
+				Timestamp: ptime.ClockTime{T: edge.phcTime, Era: 0},
+				TRead: ptime.Sample{
+					Clock: ptime.ClockTime{T: edge.phcTime.Add(readDelay), Era: 0},
+					Sys:   edge.time.Add(readDelay),
+				},
+			}, uint64(i))
 		}
 	}
 

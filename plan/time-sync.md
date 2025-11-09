@@ -459,9 +459,9 @@ Done:
   * PrePulse messages
   * Needs difficult changes to clocksim and syncsim
   * PostPulse events (may require waiting)
+* support 50% duty cycle with both edges
 
 Still to do:
-* support 50% duty cycle with both edges
 * exit tracking when proportion of abnormal samples in a configurable window is greater than configurable value
 * Add phcsync Config parameters to schema based on code plus comments
 * better error messages when timemsg buffered messages are too old

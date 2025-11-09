@@ -175,6 +175,7 @@ func (g *resetSampleGenerator) genSample() *Sample {
 type pulseEdgeList struct {
 	edges         []PulseEdge
 	lastEdgeIndex uint64
+	pulseWidth    time.Duration // discovered pulse width (0 if single-edge mode or unknown)
 }
 
 // genSampleForMessages generates a sample from pulse edges and time messages.
@@ -191,18 +192,55 @@ func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []
 	}
 
 	edgeLists = g.filterEdgeListsByPulseWidth(edgeLists)
-	if len(edgeLists) != 1 {
-		return nil, nil, errors.New("cannot filter edges")
+
+	// Choose maxWindow based on number of edge lists
+	// With 2 lists (ambiguous ~50% duty cycle), use smaller window to disambiguate
+	maxWindow := 1.0
+	if len(edgeLists) > 1 {
+		maxWindow = 0.5
 	}
-	// TODO: with 50% duty cycle, we would try the alignement of both edgeLists with a smaller maxWindow, so that at most one succeeds
-	edges := edgeLists[0].edges
-	avgInterval := edgeLists[0].avgInterval()
+
+	// Try aligning each edge list; exactly one should succeed
+	var sample *Sample
+	var alignErrs []error
+	for _, edgeList := range edgeLists {
+		tryStats := *stats // copy base stats for this try
+		trySample, err := g.tryAlignment(edgeList, lastSec, tRead, maxWindow, &tryStats)
+		if err != nil {
+			alignErrs = append(alignErrs, err)
+			continue
+		}
+		if sample != nil {
+			return nil, nil, errors.New("failed to disambiguate pulse edges")
+		}
+		sample = trySample
+		*stats = tryStats
+		g.pt.PulseWidth = edgeList.pulseWidth		
+	}
+
+	if sample == nil {
+		if len(alignErrs) == 1 {
+			return nil, nil, alignErrs[0]
+		}
+		return nil, nil, fmt.Errorf("both possible pulse edge alignments failed: %v; %v", alignErrs[0], alignErrs[1])
+	}
+	return sample, stats, nil
+	
+}
+
+// tryAlignment attempts to align a single edge list with time messages.
+// Returns a sample if alignment succeeds, or an error if alignment fails.
+// The maxWindow parameter (in seconds) controls the acceptable delay range.
+// This function has side effects: it updates g.lastEdgeIndex and g.avgInterval on success.
+func (g *resetSampleGenerator) tryAlignment(edgeList pulseEdgeList, lastSec ptime.Time, tRead []time.Time, maxWindow float64, stats *resetStats) (*Sample, error) {
+	edges := edgeList.edges
+	avgInterval := edgeList.avgInterval()
 	pulseTimes := g.pulseTimes(edges, avgInterval)
-	err := g.checkAlignment(pulseTimes, tRead, stats)
+	err := g.checkAlignment(pulseTimes, tRead, maxWindow, stats)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	g.lastEdgeIndex = edgeLists[0].lastEdgeIndex
+	g.lastEdgeIndex = edgeList.lastEdgeIndex
 	g.avgInterval = avgInterval
 
 	lastPulseTimestamp := edges[len(edges)-1].Timestamp
@@ -218,21 +256,27 @@ func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []
 		EdgeIndex: g.lastEdgeIndex,
 		Sys:       pulseTimes[len(pulseTimes)-1],
 		// Mode will be filled in by processSample
-	}, stats, nil
+	}, nil
 }
 
 func (g *resetSampleGenerator) filterEdgeListsByPulseWidth(edgeLists []pulseEdgeList) []pulseEdgeList {
 	if len(edgeLists) <= 1 {
 		return edgeLists
 	}
+
+	// Calculate the true pulse width from the two edge lists
 	totalPulseWidth := time.Duration(0)
 	e0 := edgeLists[0].edges
 	e1 := edgeLists[1].edges
 	// the length of e1 can be up to 1 less than e0
-	for i := 0; i < len(e1); i++ {
+	n := len(e1)
+	if len(e0) < n {
+		n = len(e0)
+	}
+	for i := 0; i < n; i++ {
 		totalPulseWidth += e1[i].Timestamp.T.Sub(e0[i].Timestamp.T)
 	}
-	avgPulseWidth := totalPulseWidth / time.Duration(len(e1))
+	avgPulseWidth := totalPulseWidth / time.Duration(n)
 	avgInterval := (edgeLists[0].avgInterval() + edgeLists[1].avgInterval()) / 2
 	// on the PHC clock, one true second lasts a Duration of avgInterval,
 	// so we need to scale the avgPulseWidth (which is from the PHC) to get true time
@@ -241,14 +285,16 @@ func (g *resetSampleGenerator) filterEdgeListsByPulseWidth(edgeLists []pulseEdge
 	pulseWidthDetectLimit := time.Duration(g.cfg.PulseWidthDetectLimit * float64(time.Second))
 	if truePulseWidth <= pulseWidthDetectLimit {
 		// Short pulse width, use first edge list
-		g.pt.PulseWidth = truePulseWidth
+		edgeLists[0].pulseWidth = truePulseWidth
 		return edgeLists[:1]
 	} else if pw := time.Second - truePulseWidth; pw <= pulseWidthDetectLimit {
 		// Long pulse width, use second edge list
-		g.pt.PulseWidth = pw
+		edgeLists[1].pulseWidth = pw
 		return edgeLists[1:]
 	} else {
-		// Ambiguous pulse width, cannot determine alignment
+		// Ambiguous pulse width (close to 50% duty cycle), return both with pulse widths set
+		edgeLists[0].pulseWidth = truePulseWidth
+		edgeLists[1].pulseWidth = time.Second - truePulseWidth
 		return edgeLists
 	}
 }
@@ -324,15 +370,16 @@ func (g *resetSampleGenerator) pulseTimes(edges []PulseEdge, avgInterval time.Du
 
 // checkAlignment verifies that the estimated pulse times align with time message read times.
 // It checks that delays between corresponding pulses and messages are consistent and within expected range.
-func (g *resetSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTimes []time.Time, stats *resetStats) error {
+// The maxWindow parameter specifies the maximum delay window in seconds (typically 1.0, or 0.5 for 50% duty cycle disambiguation).
+func (g *resetSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTimes []time.Time, maxWindow float64, stats *resetStats) error {
 	delays := g.pulseDelays(pulseTimes, msgReadTimes)
 
-	err := g.checkDelaySpread(delays, stats)
+	err := g.checkDelaySpread(delays, maxWindow, stats)
 	if err != nil {
 		return err
 	}
 
-	err = g.checkDelayRange(delays)
+	err = g.checkDelayRange(delays, maxWindow)
 	if err != nil {
 		return err
 	}
@@ -351,7 +398,7 @@ func (g *resetSampleGenerator) pulseDelays(pulseTimes []time.Time, msgReadTimes 
 	return delays
 }
 
-func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration, stats *resetStats) error {
+func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration, maxWindow float64, stats *resetStats) error {
 	if len(delays) == 0 {
 		panic("checkDelaySpread: need at least 1 delay")
 	}
@@ -371,7 +418,6 @@ func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration, stats *r
 	mean := sum / time.Duration(len(delays))
 	stats.delay = mean.Seconds()
 
-	maxWindow := 1.0
 	spread := maxDelay - minDelay
 	spreadProportion := spread.Seconds() / maxWindow
 	stats.delayVariation = spreadProportion
@@ -387,8 +433,7 @@ func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration, stats *r
 	return nil
 }
 
-func (g *resetSampleGenerator) checkDelayRange(delays []time.Duration) error {
-	maxWindow := 1.0
+func (g *resetSampleGenerator) checkDelayRange(delays []time.Duration, maxWindow float64) error {
 	halfAcceptableWindow := g.cfg.DelayConfidenceWindow * maxWindow / 2
 	minAcceptable := g.cfg.ExpectedDelay - halfAcceptableWindow
 	maxAcceptable := g.cfg.ExpectedDelay + halfAcceptableWindow
