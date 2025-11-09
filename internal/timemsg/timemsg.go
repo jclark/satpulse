@@ -14,13 +14,15 @@ import (
 // provides methods to retrieve sequences of messages for time synchronization.
 type Buffer struct {
 	gpsprot.DefaultHandler
-	entries                 []entry
-	startIndex              int
-	readWindow              time.Duration
-	ls                      ptime.LeapSecond
-	lg                      *slog.Logger
-	timeGNSS                gpsprot.GNSS // GNSS system used for time messages; can be zero if unknown
-	havePrePulseCorrections bool
+	entries          []entry
+	startIndex       int
+	readWindow       time.Duration
+	ls               ptime.LeapSecond
+	lg               *slog.Logger
+	timeGNSS         gpsprot.GNSS     // GNSS system used for time messages; can be zero if unknown
+	lastPreCorrMsg   *gpsprot.TimeMsg  // last PrePulse msg with a correction
+	lastPostCorrMsg *gpsprot.TimeMsg // PostPulse msg with PulseOffset with the greatest TAI time
+
 }
 
 type entry struct {
@@ -42,8 +44,13 @@ func NewBuffer(lg *slog.Logger, readWindow time.Duration, ls ptime.LeapSecond, t
 // Time implements gpsprot.MsgHandler.
 func (buf *Buffer) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	cutoff := tRead.Add(-buf.readWindow)
-	if msg.Ref == gpsprot.PrePulse && msg.PulseOffset != nil {
-		buf.havePrePulseCorrections = true
+	if msg.PulseOffset != nil {
+		switch msg.Ref {
+		case gpsprot.PrePulse:
+			buf.lastPreCorrMsg = msg
+		case gpsprot.PostPulse:
+			buf.lastPostCorrMsg = msg
+		}
 	}
 	// Find where we will need to start after adding this entry
 	for buf.startIndex < len(buf.entries) && buf.entries[buf.startIndex].tRead.Before(cutoff) {
@@ -242,34 +249,46 @@ func (e *entry) eligible() bool {
 	return true
 }
 
-// GetPrePulseCorrection retrieves the pulse offset correction for a given reference time.
+// GetPulseCorrection retrieves the pulse offset correction for a given reference time.
 // Returns the PulseOffset value if a PrePulse message is found for the given refTime,
 // or (0, false) if no correction is available.
 // The returned correction satisfies: true_time_of_second = pulse_time + correction
-func (buf *Buffer) GetPrePulseCorrection(refTime ptime.Time) (time.Duration, bool) {
-	if !buf.havePrePulseCorrections {
+func (buf *Buffer) GetPulseCorrection(refTime ptime.Time) (time.Duration, bool) {
+	corr, ok := buf.getPulseCorrectionLast(buf.lastPreCorrMsg, refTime)
+	if ok {
+		return corr, true
+	}
+	return buf.getPulseCorrectionLast(buf.lastPostCorrMsg, refTime)
+}
+
+func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime ptime.Time) (time.Duration, bool) {
+	if lastCorr == nil || refTime > lastCorr.TAITime {
 		return 0, false
 	}
+	// we assume that a message with a PulseOffset has a TAI time that is equal to the pulse ref time
+	if refTime == lastCorr.TAITime {
+		return time.Duration(*lastCorr.PulseOffset), true
+	}
 	entries := buf.validEntries()
-	// Search backwards through entries for PrePulse messages with matching TAI time
+	// Search backwards through entries for messages with the same TimeRef with matching TAI time
 	for i := len(entries) - 1; i >= 0; i-- {
-		e := entries[i]
-		if e.msg.Ref != gpsprot.PrePulse {
-			continue
+		m := entries[i].msg
+		t := m.TAITime
+		if m.PulseOffset != nil && t == refTime {
+			return time.Duration(*m.PulseOffset), true
 		}
-		// Pre-pulse messages always have TAI time
-		t := e.msg.TAITime
-		if t == refTime {
-			if e.msg.PulseOffset == nil {
-				break
-			}
-			// Convert from nanoseconds (float64) to time.Duration
-			return time.Duration(*e.msg.PulseOffset), true
-		}
-		// Since pulse offsets are in order, stop if we've gone past the time we're looking for
-		if t < refTime {
+		// Since pulse offsets of each Ref type are in order, stop if we've gone past the time we're looking for
+		if t < refTime && m.Ref == lastCorr.Ref {
 			break
 		}
 	}
 	return 0, false
+}
+
+// WaitForPulseCorrection indicates whether we should wait for a pulse correction.
+// It assumes that no pulse correction is currently available for refTime (i.e. GetPulseCorrection returned false).
+// It should be called after the pulse has been received.
+func (buf *Buffer) WaitForPulseCorrection(refTime ptime.Time) bool {
+	lpcm := buf.lastPostCorrMsg
+	return lpcm != nil && refTime.Sub(lpcm.TAITime) == time.Second
 }

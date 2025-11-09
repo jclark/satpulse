@@ -80,6 +80,11 @@ type TrackingConfig struct {
 	// from PrePulse messages. This is primarily for testing to verify that sawtooth
 	// correction improves synchronization accuracy. Default: false (use corrections).
 	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection"`
+
+	// PulseCorrectionTimeout is maximum time in seconds to wait for a PostPulse correction
+	// message after the pulse occurs.
+	// The upper limit is set the 1 second minus the tick interval, which is 0.25s.
+	PulseCorrectionTimeout float64 `toml:"pulseCorrectionTimeout" check:">0,<0.75"`
 }
 
 func defaultTrackingConfig() TrackingConfig {
@@ -94,18 +99,23 @@ func defaultTrackingConfig() TrackingConfig {
 		PulseWidthTolerance:    200,  // 200ns
 		AlignTolerance:         100,  // 100ns
 		BadSampleLimit:         5,
-		AvgFreqTimeConstant:    30, // 30 seconds
+		AvgFreqTimeConstant:    30,  // 30 seconds
+		PulseCorrectionTimeout: 0.3, // 300ms
 	}
 }
 
 type trackingSampleGenerator struct {
-	cfg        TrackingConfig
-	pt         PulseType
-	freq       float64
-	maxFreq    float64
-	lg         *slog.Logger
-	lastSample *Sample // last accepted sample, used for edge filtering
-	timeMsgBuf TimeMsgBuffer
+	cfg          TrackingConfig
+	pt           PulseType
+	freq         float64
+	maxFreq      float64
+	lg           *slog.Logger
+	lastSample   *Sample // last accepted sample, used for edge filtering
+	timeMsgBuf   TimeMsgBuffer
+	pendingPulse *struct {
+		PulseEdge
+		edgeIndex uint64
+	}
 }
 
 func newTrackingSampleGenerator(cfg TrackingConfig, pt PulseType, lastSample *Sample, freq, maxFreq float64, timeMsgBuf TimeMsgBuffer, lg *slog.Logger) *trackingSampleGenerator {
@@ -175,14 +185,34 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 	if g.ignoreEdge(edge, edgeIndex) {
 		return nil
 	}
+	if g.pendingPulse != nil {
+		// this shouldn't ever happen, because we have clamped PulseCorrectionTimeout to < 0.75s
+		// (1s minus tick interval of 0.25s)
+		g.lg.Warn("new pulse arrived while waiting for post-pulse correction")
+		g.pendingPulse = nil
+	}
+	sample := g.pulseSample(edge, edgeIndex, g.cfg.IgnoreSawtoothCorrection)
+	if sample == nil {
+		pendingPulse := &struct {
+			PulseEdge
+			edgeIndex uint64
+		}{
+			PulseEdge: edge,
+			edgeIndex: edgeIndex,
+		}
+		g.pendingPulse = pendingPulse
+	}
+	return sample
+}
 
+func (g *trackingSampleGenerator) pulseSample(edge PulseEdge, edgeIndex uint64, ignoreCorr bool) *Sample {
 	// Round to nearest second
 	sec := edge.Timestamp.T.Round(time.Second)
 
 	// Apply pulse offset correction if available (unless disabled by config)
 	refTime := sec
-	if !g.cfg.IgnoreSawtoothCorrection {
-		pulseOffset, ok := g.timeMsgBuf.GetPrePulseCorrection(sec)
+	if !ignoreCorr {
+		pulseOffset, ok := g.timeMsgBuf.GetPulseCorrection(sec)
 		if ok {
 			// PulseOffset satisfies: true_second = pulse + PulseOffset
 			// We want GPS time of pulse: pulse = true_second - PulseOffset
@@ -192,6 +222,8 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 				"sec", sec,
 				"pulseOffset_ns", pulseOffset.Nanoseconds(),
 				"refTime", refTime)
+		} else if g.timeMsgBuf.WaitForPulseCorrection(sec) {
+			return nil
 		}
 	}
 	offset := edge.Timestamp.T.Sub(refTime)
@@ -217,8 +249,41 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 }
 
 func (g *trackingSampleGenerator) timeMessageSample() *Sample {
-	// Tracking mode only uses pulse edges for now
-	return nil
+	if g.pendingPulse == nil {
+		return nil
+	}
+	sample := g.pulseSample(g.pendingPulse.PulseEdge, g.pendingPulse.edgeIndex, g.cfg.IgnoreSawtoothCorrection)
+	if sample != nil {
+		g.pendingPulse = nil
+	}
+	return sample
+}
+
+func (g *trackingSampleGenerator) tickSample(now time.Time) *Sample {
+	if g.pendingPulse == nil {
+		return nil
+	}
+	// if we haven't yet reached the deadline, keep waiting
+	if !now.After(g.pendingPulseDeadline()) {
+		return nil
+	}
+	// we have passed the deadline
+	sample := g.pulseSample(g.pendingPulse.PulseEdge, g.pendingPulse.edgeIndex, true)
+	g.pendingPulse = nil
+	return sample
+}
+
+// pendingPulseDeadline returns the system time deadline for processing a pending pulse.
+// Returns zero time if no pulse is pending.
+// The deadline is computed as the estimated system time of the pulse plus PulseCorrectionTimeout.
+func (g *trackingSampleGenerator) pendingPulseDeadline() time.Time {
+	if g.pendingPulse == nil {
+		return time.Time{}
+	}
+	// Estimate system time when pulse occurred
+	phcDelta := g.pendingPulse.TRead.Clock.T.Sub(g.pendingPulse.Timestamp.T)
+	pulseSysTime := g.pendingPulse.TRead.Sys.Add(-phcDelta)
+	return pulseSysTime.Add(time.Duration(g.cfg.PulseCorrectionTimeout * float64(time.Second)))
 }
 
 type trackingSampleProcessor struct {

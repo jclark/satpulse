@@ -57,13 +57,15 @@ type Config struct {
 	GPS          GPSConfig     // GPS PPS parameters
 	MinDelay     float64       // minimum pulse delivery delay in seconds
 	MaxDelay     float64       // maximum pulse delivery delay in seconds
-	MsgDelay     float64       // GPS message delay after pulse in seconds
-	MsgJitter    float64       // GPS message delay jitter in seconds
-	PulseWidth   float64       // pulse width in seconds (0 for single-edge mode)
-	PrePulseTime float64       // seconds before pulse to send UBX-TIM-TP PrePulse message
-	ToggleTimes  []float64     // absolute simulation times to toggle pulse/message delivery on/off
-	Outlier      OutlierConfig // PPS outlier injection configuration
-	Shift        ShiftConfig   // PPS phase shift configuration
+	MsgDelay         float64          // GPS message delay after pulse in seconds
+	MsgJitter        float64          // GPS message delay jitter in seconds
+	PulseWidth       float64          // pulse width in seconds (0 for single-edge mode)
+	PrePulseTime     float64          // seconds before pulse to send UBX-TIM-TP PrePulse message
+	PostPulseMsgDelay float64         // seconds after pulse to send PostPulse sawtooth message
+	SawtoothMsgType  gpsprot.TimeRef  // type of sawtooth message: PrePulse, PostPulse, or NoPulse
+	ToggleTimes      []float64        // absolute simulation times to toggle pulse/message delivery on/off
+	Outlier          OutlierConfig    // PPS outlier injection configuration
+	Shift            ShiftConfig      // PPS phase shift configuration
 }
 
 // Sinusoid represents a sinusoidal error component
@@ -216,12 +218,14 @@ func DefaultConfig() Config {
 				},
 			},
 		},
-		MinDelay:     5e-6,
-		MaxDelay:     250e-6,
-		MsgDelay:     0.1,
-		MsgJitter:    0.01,
-		PulseWidth:   0,    // default to single-edge mode
-		PrePulseTime: 0.95, // send PrePulse message 0.95s before PPS edge
+		MinDelay:          5e-6,
+		MaxDelay:          250e-6,
+		MsgDelay:          0.1,
+		MsgJitter:         0.01,
+		PulseWidth:        0,    // default to single-edge mode
+		PrePulseTime:      0.95, // send PrePulse message 0.95s before PPS edge
+		PostPulseMsgDelay: 0.1,  // send PostPulse message 0.1s after PPS edge
+		SawtoothMsgType:   gpsprot.PrePulse, // default to PrePulse (current behavior)
 		Outlier: OutlierConfig{
 			Offset: 2000 * time.Nanosecond, // 2µs default outlier magnitude
 		},
@@ -241,6 +245,7 @@ func inOutage(t float64, toggleTimes []float64) bool {
 
 const (
 	tickInterval = 0.25
+	NoPulse = gpsprot.NavSolution // use NavSolution value to indicate no sawtooth messages
 )
 
 // Event represents a simulation event with a time
@@ -257,6 +262,7 @@ const (
 	EventNavSolutionMsg
 	EventTick
 	EventPrePulseMsg
+	EventPostPulseMsg
 )
 
 type PulseEventData struct {
@@ -271,6 +277,10 @@ type NavSolutionMsgEventData struct {
 type PrePulseMsgEventData struct {
 	PPS      float64
 	Sawtooth float64
+}
+
+type PostPulseMsgEventData struct {
+	PPS float64
 }
 
 type TickEventData struct {
@@ -481,7 +491,38 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 					}
 					msgTRead := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
 					timeMsgBuf.Time(timeMsg, msgTRead)
+					ctrl.TimeMessage()
 					lg.Debug("delivering PrePulse message",
+						"second", int(data.PPS),
+						"taiTime", tMsg,
+						"pulseOffset", pulseOffset)
+				}
+			}
+
+		case EventPostPulseMsg:
+			data := event.Data.(PostPulseMsgEventData)
+			if !inOutage(data.PPS, simCfg.ToggleTimes) {
+				// Only create PostPulse message if sawtooth configured
+				if lastReading.Sawtooth != nil {
+					// KEY DIFFERENCE: PostPulse uses Sawtooth.Current (not Next)
+					// because the message arrives AFTER the pulse has occurred
+					// Sawtooth.Current is rawSaw where pulse_time = true_second + rawSaw.
+					// PulseOffset is defined as: true_second = pulse_time + PulseOffset.
+					// Therefore: PulseOffset = -rawSaw
+					pulseOffset := -lastReading.Sawtooth.Current * 1e9
+					tMsg := tStart.Add(time.Duration(data.PPS * 1e9))
+					timeMsg := &gpsprot.TimeMsg{
+						TAITime:     tMsg,
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PostPulse,
+						Tag:         ubx.Tag,
+						NativeMsgID: "UBX-TIM-TOS",
+						PulseOffset: &pulseOffset,
+					}
+					msgTRead := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
+					timeMsgBuf.Time(timeMsg, msgTRead)
+					ctrl.TimeMessage()
+					lg.Debug("delivering PostPulse message",
 						"second", int(data.PPS),
 						"taiTime", tMsg,
 						"pulseOffset", pulseOffset)
@@ -599,8 +640,8 @@ func generatePulseEvents(cfg Config, edgesPerPulse int) iter.Seq[Event] {
 			pulseDelay := cfg.MinDelay + rng.Float64()*(cfg.MaxDelay-cfg.MinDelay)
 			risingTime := pps + pulseDelay
 
-			// Emit PrePulse event only if sawtooth is configured
-			if cfg.GPS.Sawtooth.Amp > 0 {
+			// Emit PrePulse event only if sawtooth is configured and PrePulse mode
+			if cfg.GPS.Sawtooth.Amp > 0 && cfg.SawtoothMsgType == gpsprot.PrePulse {
 				prePulseEventTime := risingTime - prePulseTime
 				if !yield(Event{
 					Time: prePulseEventTime,
@@ -621,6 +662,18 @@ func generatePulseEvents(cfg Config, edgesPerPulse int) iter.Seq[Event] {
 				},
 			}) {
 				return
+			}
+
+			// Emit PostPulse event only if sawtooth is configured and PostPulse mode
+			if cfg.GPS.Sawtooth.Amp > 0 && cfg.SawtoothMsgType == gpsprot.PostPulse {
+				postPulseEventTime := risingTime + cfg.PostPulseMsgDelay
+				if !yield(Event{
+					Time: postPulseEventTime,
+					Type: EventPostPulseMsg,
+					Data: PostPulseMsgEventData{PPS: pps},
+				}) {
+					return
+				}
 			}
 
 			if edgesPerPulse == 2 {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/logobs"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phcsync"
@@ -101,6 +102,7 @@ func parseFlags(args []string) (*flagVars, error) {
 	phcDrift := math.NaN()
 	phcNoise := math.NaN()
 	jitter := math.NaN()
+	sawtooth := math.NaN()
 
 	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
 
@@ -115,6 +117,9 @@ func parseFlags(args []string) (*flagVars, error) {
 	flags.Float64Var(&phcDrift, "phc-drift", phcDrift, "PHC frequency drift in ppb/day")
 	flags.Float64Var(&phcNoise, "phc-noise", phcNoise, "PHC frequency noise stddev in ppb")
 	flags.Float64Var(&jitter, "jitter", jitter, "PPS timing jitter in nanoseconds")
+	flags.Float64Var(&sawtooth, "sawtooth", sawtooth, "sawtooth amplitude in nanoseconds (0 to disable)")
+	var sawtoothMsgType string
+	flags.StringVar(&sawtoothMsgType, "sawtooth-msgtype", "", "sawtooth message type: prepulse, postpulse, or none")
 	flags.Float64Var(&vars.simCfg.MinDelay, "min-delay", vars.simCfg.MinDelay, "minimum pulse delivery delay in seconds")
 	flags.Float64Var(&vars.simCfg.MaxDelay, "max-delay", vars.simCfg.MaxDelay, "maximum pulse delivery delay in seconds")
 	flags.Float64Var(&vars.simCfg.MsgDelay, "msg-delay", vars.simCfg.MsgDelay, "GPS message delay after pulse in seconds")
@@ -160,6 +165,21 @@ func parseFlags(args []string) (*flagVars, error) {
 	}
 	if !math.IsNaN(jitter) {
 		vars.simCfg.GPS.Jitter = jitter
+	}
+	if !math.IsNaN(sawtooth) {
+		vars.simCfg.GPS.Sawtooth.Amp = sawtooth
+	}
+	if sawtoothMsgType != "" {
+		switch sawtoothMsgType {
+		case "prepulse":
+			vars.simCfg.SawtoothMsgType = gpsprot.PrePulse
+		case "postpulse":
+			vars.simCfg.SawtoothMsgType = gpsprot.PostPulse
+		case "none":
+			vars.simCfg.SawtoothMsgType = syncsim.NoPulse
+		default:
+			return nil, fmt.Errorf("invalid sawtooth-msgtype: %s (must be prepulse, postpulse, or none)", sawtoothMsgType)
+		}
 	}
 
 	// Validate and convert relative toggle durations to absolute times

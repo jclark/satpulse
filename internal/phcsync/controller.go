@@ -38,10 +38,11 @@ type TimeMsgBuffer interface {
 	// The messages must be the same GNSS message type, which must be of a type that follows the time pulse.
 	// If n such messages are not available, the slice will be empty and lastSec will be zero.
 	GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.Time)
-	// GetPrePulseCorrection retrieves the pulse offset correction (PulseOffset) for a given reference time.
+	// GetPulseCorrection retrieves the pulse offset correction (PulseOffset) for a given reference time.
 	// The returned correction satisfies: true_time_of_second = pulse_time + correction
 	// Returns (correction, true) if available, (0, false) otherwise.
-	GetPrePulseCorrection(refTime ptime.Time) (time.Duration, bool)
+	GetPulseCorrection(refTime ptime.Time) (time.Duration, bool)
+	WaitForPulseCorrection(refTime ptime.Time) bool
 }
 
 // Config contains tunable parameters for the Controller.
@@ -274,6 +275,17 @@ func (c *Controller) Tick(now time.Time) {
 	// Don't generate missing samples in reset mode
 	if c.mode == ModeReset {
 		return
+	}
+
+	// Check for pending pulse timeout in tracking mode
+	if c.mode == ModeTracking {
+		if tsg, ok := c.sampleGen.(*trackingSampleGenerator); ok {
+			sample := tsg.tickSample(now)
+			if sample != nil {
+				c.processPresentSample(sample)
+				return
+			}
+		}
 	}
 
 	// Check if we're overdue for a sample

@@ -218,3 +218,228 @@ func TestGetPostTimeMessages(t *testing.T) {
 		})
 	}
 }
+
+func TestPostPulseMessagePreference(t *testing.T) {
+	startTime := time.Now()
+
+	timeAt := func(nanos int64) time.Time {
+		return startTime.Add(time.Duration(nanos))
+	}
+
+	tai := func(sec int64) ptime.Time {
+		return ptime.Time(sec * 1e9)
+	}
+
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	buf := NewBuffer(lg, 10*time.Second, ptime.LeapSecond{UTCOffAfter: 37}, gpsprot.GPS)
+
+	// Add NavSolution messages for seconds 100, 101, 102
+	for i := int64(100); i <= 102; i++ {
+		buf.Time(&gpsprot.TimeMsg{
+			TAITime:     tai(i),
+			GNSS:        gpsprot.GPS,
+			Ref:         gpsprot.NavSolution,
+			Tag:         ubx.Tag,
+			NativeMsgID: "UBX-NAV-PVT",
+		}, timeAt(i*1e9+150e6)) // 150ms after second
+	}
+
+	// Add PostPulse messages for the same seconds 100, 101, 102
+	for i := int64(100); i <= 102; i++ {
+		buf.Time(&gpsprot.TimeMsg{
+			TAITime:     tai(i),
+			GNSS:        gpsprot.GPS,
+			Ref:         gpsprot.PostPulse,
+			Tag:         ubx.Tag,
+			NativeMsgID: "UBX-TIM-TOS",
+		}, timeAt(i*1e9+100e6)) // 100ms after second (arrives before NavSolution)
+	}
+
+	// Request 3 messages - should get PostPulse messages, not NavSolution
+	gotLast, gotTRead := buf.GetPostTimeMessages(3)
+
+	if gotLast != tai(102) {
+		t.Errorf("GetPostTimeMessages() lastSec = %v, want %v", gotLast, tai(102))
+	}
+
+	if len(gotTRead) != 3 {
+		t.Fatalf("GetPostTimeMessages() returned %d times, want 3", len(gotTRead))
+	}
+
+	// Verify the tRead values match PostPulse messages (at 100ms), not NavSolution (at 150ms)
+	expectedTimes := []int64{100e9 + 100e6, 101e9 + 100e6, 102e9 + 100e6}
+	for i, tr := range gotTRead {
+		expectedTime := timeAt(expectedTimes[i])
+		if !tr.Equal(expectedTime) {
+			t.Errorf("tRead[%d] = %v, want %v (PostPulse at 100ms, not NavSolution at 150ms)",
+				i, tr, expectedTime)
+		}
+	}
+}
+
+func TestGetPulseCorrectionPostPulse(t *testing.T) {
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	buf := NewBuffer(lg, 10*time.Second, ptime.LeapSecond{UTCOffAfter: 37}, gpsprot.GPS)
+
+	tai := func(sec int64) ptime.Time {
+		return ptime.Time(sec * 1e9)
+	}
+
+	// Add PostPulse messages with sawtooth corrections
+	pulseOffset1 := -5.5 // -5.5ns correction
+	pulseOffset2 := -3.2 // -3.2ns correction
+
+	buf.Time(&gpsprot.TimeMsg{
+		TAITime:     tai(100),
+		GNSS:        gpsprot.GPS,
+		Ref:         gpsprot.PostPulse,
+		Tag:         ubx.Tag,
+		NativeMsgID: "UBX-TIM-TOS",
+		PulseOffset: &pulseOffset1,
+	}, time.Now())
+
+	buf.Time(&gpsprot.TimeMsg{
+		TAITime:     tai(101),
+		GNSS:        gpsprot.GPS,
+		Ref:         gpsprot.PostPulse,
+		Tag:         ubx.Tag,
+		NativeMsgID: "UBX-TIM-TOS",
+		PulseOffset: &pulseOffset2,
+	}, time.Now())
+
+	// Test retrieval of PostPulse corrections
+	corr, ok := buf.GetPulseCorrection(tai(100))
+	if !ok {
+		t.Error("GetPulseCorrection(100) returned false, want true")
+	}
+	if corr != time.Duration(pulseOffset1) {
+		t.Errorf("GetPulseCorrection(100) = %v, want %v", corr, time.Duration(pulseOffset1))
+	}
+
+	corr, ok = buf.GetPulseCorrection(tai(101))
+	if !ok {
+		t.Error("GetPulseCorrection(101) returned false, want true")
+	}
+	if corr != time.Duration(pulseOffset2) {
+		t.Errorf("GetPulseCorrection(101) = %v, want %v", corr, time.Duration(pulseOffset2))
+	}
+
+	// Test that correction not available for future time
+	_, ok = buf.GetPulseCorrection(tai(102))
+	if ok {
+		t.Error("GetPulseCorrection(102) returned true, want false (not yet available)")
+	}
+}
+
+func TestWaitForPulseCorrectionPostPulse(t *testing.T) {
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	buf := NewBuffer(lg, 10*time.Second, ptime.LeapSecond{UTCOffAfter: 37}, gpsprot.GPS)
+
+	tai := func(sec int64) ptime.Time {
+		return ptime.Time(sec * 1e9)
+	}
+
+	pulseOffset := -4.0
+	buf.Time(&gpsprot.TimeMsg{
+		TAITime:     tai(100),
+		GNSS:        gpsprot.GPS,
+		Ref:         gpsprot.PostPulse,
+		Tag:         ubx.Tag,
+		NativeMsgID: "UBX-TIM-TOS",
+		PulseOffset: &pulseOffset,
+	}, time.Now())
+
+	// WaitForPulseCorrection should return true for the next second (101)
+	// when we have a PostPulse message (not PrePulse)
+	if !buf.WaitForPulseCorrection(tai(101)) {
+		t.Error("WaitForPulseCorrection(101) = false, want true (PostPulse message expected)")
+	}
+
+	// Should return false for seconds other than the next one
+	if buf.WaitForPulseCorrection(tai(102)) {
+		t.Error("WaitForPulseCorrection(102) = true, want false (too far in future)")
+	}
+
+	if buf.WaitForPulseCorrection(tai(100)) {
+		t.Error("WaitForPulseCorrection(100) = true, want false (already have correction)")
+	}
+}
+
+func TestMixedPrePulseAndPostPulse(t *testing.T) {
+	startTime := time.Now()
+
+	timeAt := func(nanos int64) time.Time {
+		return startTime.Add(time.Duration(nanos))
+	}
+
+	tai := func(sec int64) ptime.Time {
+		return ptime.Time(sec * 1e9)
+	}
+
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	buf := NewBuffer(lg, 10*time.Second, ptime.LeapSecond{UTCOffAfter: 37}, gpsprot.GPS)
+
+	// Mix of PrePulse and PostPulse messages
+	prePulseOffset := -6.0
+	postPulseOffset := -4.5
+
+	// PrePulse for second 100 (arrives before pulse)
+	buf.Time(&gpsprot.TimeMsg{
+		TAITime:     tai(100),
+		GNSS:        gpsprot.GPS,
+		Ref:         gpsprot.PrePulse,
+		Tag:         ubx.Tag,
+		NativeMsgID: "UBX-TIM-TP",
+		PulseOffset: &prePulseOffset,
+	}, timeAt(99e9+50e6)) // 50ms before second 100
+
+	// PostPulse for second 101 (arrives after pulse)
+	buf.Time(&gpsprot.TimeMsg{
+		TAITime:     tai(101),
+		GNSS:        gpsprot.GPS,
+		Ref:         gpsprot.PostPulse,
+		Tag:         ubx.Tag,
+		NativeMsgID: "UBX-TIM-TOS",
+		PulseOffset: &postPulseOffset,
+	}, timeAt(101e9+100e6)) // 100ms after second 101
+
+	// NavSolution messages for both seconds (should be ignored in favor of PrePulse/PostPulse)
+	buf.Time(&gpsprot.TimeMsg{
+		TAITime:     tai(100),
+		GNSS:        gpsprot.GPS,
+		Ref:         gpsprot.NavSolution,
+		Tag:         ubx.Tag,
+		NativeMsgID: "UBX-NAV-PVT",
+	}, timeAt(100e9+150e6))
+
+	buf.Time(&gpsprot.TimeMsg{
+		TAITime:     tai(101),
+		GNSS:        gpsprot.GPS,
+		Ref:         gpsprot.NavSolution,
+		Tag:         ubx.Tag,
+		NativeMsgID: "UBX-NAV-PVT",
+	}, timeAt(101e9+150e6))
+
+	// Verify GetPulseCorrection retrieves both types correctly
+	corr, ok := buf.GetPulseCorrection(tai(100))
+	if !ok || corr != time.Duration(prePulseOffset) {
+		t.Errorf("GetPulseCorrection(100) = (%v, %v), want (%v, true) from PrePulse",
+			corr, ok, time.Duration(prePulseOffset))
+	}
+
+	corr, ok = buf.GetPulseCorrection(tai(101))
+	if !ok || corr != time.Duration(postPulseOffset) {
+		t.Errorf("GetPulseCorrection(101) = (%v, %v), want (%v, true) from PostPulse",
+			corr, ok, time.Duration(postPulseOffset))
+	}
+
+	// GetPostTimeMessages should prefer PostPulse for 101 (but there's only one PostPulse message)
+	// So we can't get 2 consecutive messages - this verifies filtering works
+	gotLast, gotTRead := buf.GetPostTimeMessages(2)
+
+	// Should fail because we only have one PostPulse message (101) and PrePulse is not eligible
+	if gotLast != 0 || len(gotTRead) != 0 {
+		t.Errorf("GetPostTimeMessages(2) with mixed messages = (%v, len=%d), want (0, len=0) - not enough consecutive messages",
+			gotLast, len(gotTRead))
+	}
+}

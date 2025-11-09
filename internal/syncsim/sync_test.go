@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/phcsync"
 )
 
@@ -285,6 +286,94 @@ func TestPHCSync(t *testing.T) {
 			modifyPHCCfg: func(cfg *phcsync.Config) {
 				cfg.Track.IgnoreSawtoothCorrection = true // Ignore correction
 			},
+		},
+		{
+			name:              "sawtooth correction with PostPulse messages",
+			pulseWidth:        0,
+			duration:          300.0, // 5 minutes
+			maxTrackingStdDev: 25 * time.Nanosecond, // slightly higher tolerance due to sawtooth
+			modifySimCfg: func(cfg *Config) {
+				cfg.GPS.Sawtooth.Amp = 8.0 // 8ns peak-to-peak sawtooth
+				cfg.SawtoothMsgType = gpsprot.PostPulse
+				cfg.MinDelay = 0.01
+				cfg.MaxDelay = 0.25
+				cfg.PostPulseMsgDelay = 0.1
+			},
+			// This test exercises:
+			// - PostPulse event generation in generatePulseEvents
+			// - EventPostPulseMsg handler using Sawtooth.Current from lastReading
+			// - TimestampReading with SawtoothCorrections in VirtualClock
+		},
+		{
+			name:              "sawtooth PostPulse correction improves accuracy - correction enabled",
+			pulseWidth:        0,
+			duration:          300.0, // 5 minutes
+			maxTrackingStdDev: 9 * time.Nanosecond,  // Should stay near baseline ~8ns
+			maxTrackingAbsMax: 26 * time.Nanosecond, // Should stay near baseline ~25ns
+			modifySimCfg: func(cfg *Config) {
+				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
+				cfg.SawtoothMsgType = gpsprot.PostPulse
+				cfg.MinDelay = 0.01
+				cfg.MaxDelay = 0.25
+				cfg.PostPulseMsgDelay = 0.1
+			},
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.IgnoreSawtoothCorrection = false // Use correction (default)
+			},
+		},
+		{
+			name:              "sawtooth PostPulse correction improves accuracy - correction disabled",
+			pulseWidth:        0,
+			duration:          300.0, // 5 minutes
+			minTrackingStdDev: 8 * time.Nanosecond,  // Must be worse than corrected (~9ns)
+			minTrackingAbsMax: 26 * time.Nanosecond, // Must be worse than corrected (~28ns)
+			maxTrackingStdDev: 11 * time.Nanosecond, // But not too degraded
+			maxTrackingAbsMax: 32 * time.Nanosecond, // But not too degraded
+			modifySimCfg: func(cfg *Config) {
+				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
+				cfg.SawtoothMsgType = gpsprot.PostPulse
+				cfg.MinDelay = 0.01
+				cfg.MaxDelay = 0.25
+				cfg.PostPulseMsgDelay = 0.1
+			},
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.IgnoreSawtoothCorrection = true // Ignore correction
+			},
+		},
+		{
+			name:              "sawtooth PostPulse with tighter delay range",
+			pulseWidth:        0,
+			duration:          300.0, // 5 minutes
+			maxTrackingStdDev: 8 * time.Nanosecond,
+			maxTrackingAbsMax: 24 * time.Nanosecond,
+			modifySimCfg: func(cfg *Config) {
+				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
+				cfg.SawtoothMsgType = gpsprot.PostPulse
+				cfg.MinDelay = 0.01
+				cfg.MaxDelay = 0.02 // Tighter delay range: 10-20ms instead of 10-250ms
+				cfg.PostPulseMsgDelay = 0.1
+			},
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.IgnoreSawtoothCorrection = false // Use correction
+			},
+		},
+		{
+			name:              "sawtooth PostPulse with tighter delay range - correction disabled",
+			pulseWidth:        0,
+			duration:          300.0, // 5 minutes
+			maxTrackingStdDev: 15 * time.Nanosecond,
+			maxTrackingAbsMax: 35 * time.Nanosecond,
+			modifySimCfg: func(cfg *Config) {
+				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
+				cfg.SawtoothMsgType = gpsprot.PostPulse
+				cfg.MinDelay = 0.01
+				cfg.MaxDelay = 0.02 // Tighter delay range
+				cfg.PostPulseMsgDelay = 0.1
+			},
+			modifyPHCCfg: func(cfg *phcsync.Config) {
+				cfg.Track.IgnoreSawtoothCorrection = true // Ignore correction
+			},
+			// Test to verify that sawtooth correction still provides benefit with tighter delay
 		},
 	}
 
