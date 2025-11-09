@@ -447,7 +447,6 @@ Implementing each of these will involved enhancements to simulator to test prope
 ### Phase E - refinements
 
 Done:
-
 * compensation step at beginning of converging phase 
 * MAD-based outlier detection
   * simulate ionospheric disturbances 
@@ -456,21 +455,27 @@ Done:
 * Implement setting of tuneable parameters via new section in satpulse.toml
 * Validation pf phcsync.Config
 * more logging during initialization of what we discovered
-* sawtooth correction from PrePulse events (i.e. UBX-TIM-TP)
-  * requires difficult changes to clocksim and syncsim
+* sawtooth correction from PrePulse events (e.g. UBX-TIM-TP)
+  * PrePulse messages
+  * Needs difficult changes to clocksim and syncsim
+  * PostPulse events (may require waiting)
 
 Still to do:
-* Add phcsync Config parameters to schema based on code plus comments 
-* Tighten validation of phcsync.Config parameters
-  * some tracking/converging limits need tightening
-  * validate relative values between limits
 * support 50% duty cycle with both edges
 * exit tracking when proportion of abnormal samples in a configurable window is greater than configurable value
+* Add phcsync Config parameters to schema based on code plus comments
 * better error messages when timemsg buffered messages are too old
-* estimate error in system clock and also use that when we are estimating monotonic time of messages
-* sawtooth correction from PostPulse events i.e. UBX-TIM-TOS on M8F)
 
-Things to consider
+Nits/polish:
+* How should we make use of specified pulseWidth?
+  * Allow pulses > 0.5
+  * Validate expectations
+  * Round
+* Validation of limits in Config parameters relative to each other
+* PulseWidthTolerance won't work well with very short pulses (e.g. 100ns)
+* Estimate error in system clock and also use that when we are estimating monotonic time of messages
+
+Things to consider:
 * Consider whether we still need era concept. Used currently:
   * at startup, to get rid of stale timestamps
   * after initial step (in converging mode)
@@ -479,11 +484,10 @@ Things to consider
 * more robust transition between converging/tracking mode, by blending Kp/Ki parameters for initial period during tracking
   * may not be necessary - have already implemented more stringent test for end of convergence
 * Do we need a MAD upper gate?
-* Are we simulating 0.25s variation in timestamp delivery on CM4/5?
 
 ### Phase F - gather better data (in progress)
 
-Use Rubidium oscillator with TAPT TICC to gather better data for clock model. 
+Use Rubidium oscillator with TAPR TICC to gather better data for clock model. 
 
 Run some simulations to determine better Kp/Ki values for converging/tracking
 
