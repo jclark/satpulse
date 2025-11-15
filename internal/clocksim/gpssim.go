@@ -25,14 +25,14 @@ import (
 // updates without needing random access to arbitrary time points.
 type GPSSimulator func(t float64) float64
 
-// PerfectGPS creates a PPS simulator with no timing error.
+// PerfectGPS creates a GPS simulator with no timing error.
 func PerfectGPS() GPSSimulator {
 	return func(t float64) float64 {
 		return 0
 	}
 }
 
-// JitterGPS creates a PPS simulator with Gaussian timing jitter.
+// JitterGPS creates a GPS simulator with Gaussian timing jitter.
 // stddev is the standard deviation of the timing error.
 func JitterGPS(stddev time.Duration, seed int64) GPSSimulator {
 	rng := rand.New(rand.NewSource(seed))
@@ -42,7 +42,7 @@ func JitterGPS(stddev time.Duration, seed int64) GPSSimulator {
 	}
 }
 
-// SawtoothGPS creates a stateful PPS simulator that models GPS receiver sawtooth error.
+// SawtoothGPS creates a stateful GPS simulator that models GPS receiver sawtooth error.
 // Sawtooth error is quantization caused by aligning PPS edges to internal ticks.
 // The phase advances based on the oscillator's frequency error, coupling sawtooth
 // behavior to the PHC oscillator.
@@ -75,7 +75,7 @@ func SawtoothGPS(osc OscSimulator, ampPPS, phaseInit float64) GPSSimulator {
 	}
 }
 
-// SinusoidGPS creates a PPS simulator with sinusoidal phase modulation.
+// SinusoidGPS creates a GPS simulator with sinusoidal phase modulation.
 // Models periodic GPS errors like multipath or atmospheric effects.
 //
 // Parameters:
@@ -92,7 +92,7 @@ func SinusoidGPS(ampNs, periodS, phaseInit float64) GPSSimulator {
 	}
 }
 
-// AR1ColoredNoiseGPS creates a PPS simulator with AR(1) colored noise.
+// AR1ColoredNoiseGPS creates a GPS simulator with AR(1) colored noise.
 // Models tropospheric delay and multipath effects as slowly varying correlated drift.
 //
 // The process evolves as: Y_t = alpha * Y_{t-1} + epsilon_t
@@ -124,7 +124,7 @@ func AR1ColoredNoiseGPS(alpha float64, noiseStddevNs float64, seed int64) GPSSim
 	}
 }
 
-// ShiftPPS creates a PPS simulator that applies a temporary phase shift with smooth transitions.
+// ShiftPPS creates a GPS simulator that applies a temporary phase shift with smooth transitions.
 // The shift rises with a half-sine profile, holds at the specified shift, then falls symmetrically.
 // Useful for simulating ionospheric disturbances or other gradual timing biases.
 func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) GPSSimulator {
@@ -159,7 +159,7 @@ func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) GPSSimulat
 	}
 }
 
-// SingleOutlierPPS creates a PPS simulator that adds a phase offset at a specific second.
+// SingleOutlierPPS creates a GPS simulator that adds a phase offset at a specific second.
 // Both second and t are rounded to the nearest integer for comparison.
 // Useful for testing outlier detection by injecting controlled timing errors.
 func SingleOutlierPPS(second float64, offset time.Duration) GPSSimulator {
