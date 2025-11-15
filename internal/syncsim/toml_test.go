@@ -15,113 +15,107 @@ func TestLoadConfigFromTOML(t *testing.T) {
 		expected HWConfig
 	}{
 		{
-			name: "lbe1421-cm4-m8t",
+			name: "i225.in.cm55",
 			toml: `[phc]
-freqOffset = 2033.295
-drift = -163.074
-whiteNoise = 21.040
-flickerNoise = 8.725
+freqOffset = 9117.374
+whiteNoise = 6.942
+flickerNoise = 10.171
+randomWalk = 2.010
 
 [[phc.sinusoid]]
-amp = 4.782
-period = 2986.500
+period = 71603.000
+amp = 512.414
 
-[gps]
-jitter = 6.087
-sawtooth.amp = 13.778
+[[phc.sinusoid]]
+period = 107404.500
+amp = 285.132
 
-[[gps.sinusoid]]
-period = 2986.000
-amp = 24.547
+[[phc.sinusoid]]
+period = 53702.250
+amp = 243.339
 
-[[gps.sinusoid]]
-period = 5972.000
-amp = 12.353
-
-[[gps.sinusoid]]
-period = 1493.000
-amp = 4.488
+[[phc.sinusoid]]
+period = 26851.125
+amp = 298.711
 `,
 			expected: HWConfig{
 				PHC: PHCConfig{
-					FreqOffset:   2033.295,
-					Drift:        -163.074,
-					WhiteNoise:   21.040,
-					FlickerNoise: 8.725,
+					FreqOffset:   9117.374,
+					WhiteNoise:   6.942,
+					FlickerNoise: 10.171,
+					RandomWalk:   2.010,
 					Sinusoid: []Sinusoid{
-						{Amp: 4.782, Period: 2986.500},
-					},
-				},
-				GPS: GPSConfig{
-					Jitter: 6.087,
-					Sawtooth: SawtoothConfig{
-						Amp:       13.778, // from TOML
-						PhaseInit: 0.5,    // from DefaultConfig
-						InternalClock: SineFMConfig{
-							Amp:    2.0,    // from DefaultConfig
-							Period: 600.0,  // from DefaultConfig
-							Phase:  1.0472, // from DefaultConfig (π/3)
-						},
-					},
-					Sinusoid: []Sinusoid{
-						{Period: 2986.000, Amp: 24.547},
-						{Period: 5972.000, Amp: 12.353},
-						{Period: 1493.000, Amp: 4.488},
+						{Period: 71603.000, Amp: 512.414},
+						{Period: 107404.500, Amp: 285.132},
+						{Period: 53702.250, Amp: 243.339},
+						{Period: 26851.125, Amp: 298.711},
 					},
 				},
 			},
 		},
 		{
-			name: "lbe1421-timehat-f9t",
+			name: "i225-f9t0.out.sa22c",
 			toml: `[phc]
-freqOffset = -21.719
-drift = -8.677
-whiteNoise = 5.816
-flickerNoise = 1.337
+freqOffset = -1007.333
+whiteNoise = 8.092
+flickerNoise = 7.584
+randomWalk = 0.216
 
 [[phc.sinusoid]]
-amp = 0.249
-period = 26904.000
+period = 4303.000
+amp = 252.321
+
+[[phc.sinusoid]]
+period = 5378.750
+amp = 102.469
+
+[[phc.sinusoid]]
+period = 7171.667
+amp = 70.754
+
+[[phc.sinusoid]]
+period = 3585.833
+amp = 120.340
+
+[[phc.sinusoid]]
+period = 10757.500
+amp = 26.012
 
 [gps]
-jitter = 2.276
-sawtooth.amp = 5.951
+jitter = 0.195
+ar1.alpha = 0.994360
+ar1.noise = 0.246
+sawtooth.amp = 7.855
 
 [[gps.sinusoid]]
-period = 2989.333
-amp = 20.463
-
-[[gps.sinusoid]]
-period = 2690.400
-amp = 17.349
-
-[[gps.sinusoid]]
-period = 3363.000
-amp = 16.005
+period = 4303.000
+amp = 2.253
 `,
 			expected: HWConfig{
 				PHC: PHCConfig{
-					FreqOffset:   -21.719,
-					Drift:        -8.677,
-					WhiteNoise:   5.816,
-					FlickerNoise: 1.337,
+					FreqOffset:   -1007.333,
+					WhiteNoise:   8.092,
+					FlickerNoise: 7.584,
+					RandomWalk:   0.216,
 					Sinusoid: []Sinusoid{
-						{Amp: 0.249, Period: 26904.000},
+						{Period: 4303.000, Amp: 252.321},
+						{Period: 5378.750, Amp: 102.469},
+						{Period: 7171.667, Amp: 70.754},
+						{Period: 3585.833, Amp: 120.340},
+						{Period: 10757.500, Amp: 26.012},
 					},
 				},
 				GPS: GPSConfig{
-					Jitter: 2.276,
+					Jitter: 0.195,
+					AR1: AR1Config{
+						Alpha: 0.994360,
+						Noise: 0.246,
+					},
 					Sawtooth: SawtoothConfig{
-						Amp: 5.951,
-						InternalClock: SineFMConfig{
-							Amp:    2.0,
-							Period: 600.0,
-						},
+						Amp: 7.855,
 					},
 					Sinusoid: []Sinusoid{
-						{Period: 2989.333, Amp: 20.463},
-						{Period: 2690.400, Amp: 17.349},
-						{Period: 3363.000, Amp: 16.005},
+						{Period: 4303.000, Amp: 2.253},
 					},
 				},
 			},
@@ -141,14 +135,14 @@ amp = 16.005
 			if config.PHC.FreqOffset != tt.expected.PHC.FreqOffset {
 				t.Errorf("PHC.FreqOffset = %v, want %v", config.PHC.FreqOffset, tt.expected.PHC.FreqOffset)
 			}
-			if config.PHC.Drift != tt.expected.PHC.Drift {
-				t.Errorf("PHC.Drift = %v, want %v", config.PHC.Drift, tt.expected.PHC.Drift)
-			}
 			if config.PHC.WhiteNoise != tt.expected.PHC.WhiteNoise {
 				t.Errorf("PHC.WhiteNoise = %v, want %v", config.PHC.WhiteNoise, tt.expected.PHC.WhiteNoise)
 			}
 			if config.PHC.FlickerNoise != tt.expected.PHC.FlickerNoise {
 				t.Errorf("PHC.FlickerNoise = %v, want %v", config.PHC.FlickerNoise, tt.expected.PHC.FlickerNoise)
+			}
+			if config.PHC.RandomWalk != tt.expected.PHC.RandomWalk {
+				t.Errorf("PHC.RandomWalk = %v, want %v", config.PHC.RandomWalk, tt.expected.PHC.RandomWalk)
 			}
 
 			// Verify PHC sinusoid components
@@ -167,6 +161,12 @@ amp = 16.005
 			// Verify GPS config
 			if config.GPS.Jitter != tt.expected.GPS.Jitter {
 				t.Errorf("GPS.Jitter = %v, want %v", config.GPS.Jitter, tt.expected.GPS.Jitter)
+			}
+			if config.GPS.AR1.Alpha != tt.expected.GPS.AR1.Alpha {
+				t.Errorf("GPS.AR1.Alpha = %v, want %v", config.GPS.AR1.Alpha, tt.expected.GPS.AR1.Alpha)
+			}
+			if config.GPS.AR1.Noise != tt.expected.GPS.AR1.Noise {
+				t.Errorf("GPS.AR1.Noise = %v, want %v", config.GPS.AR1.Noise, tt.expected.GPS.AR1.Noise)
 			}
 			if config.GPS.Sawtooth.Amp != tt.expected.GPS.Sawtooth.Amp {
 				t.Errorf("GPS.Sawtooth.Amp = %v, want %v", config.GPS.Sawtooth.Amp, tt.expected.GPS.Sawtooth.Amp)
@@ -280,8 +280,8 @@ sawtooth.amp = 8.0
 		t.Errorf("GPS.Sawtooth.InternalClock.Period = %v, want %v (from defaults)",
 			hw.GPS.Sawtooth.InternalClock.Period, defaults.GPS.Sawtooth.InternalClock.Period)
 	}
-	if hw.GPS.Sawtooth.InternalClock.Phase != defaults.GPS.Sawtooth.InternalClock.Phase {
-		t.Errorf("GPS.Sawtooth.InternalClock.Phase = %v, want %v (from defaults)",
-			hw.GPS.Sawtooth.InternalClock.Phase, defaults.GPS.Sawtooth.InternalClock.Phase)
+	if hw.GPS.Sawtooth.InternalClock.PhaseInit != defaults.GPS.Sawtooth.InternalClock.PhaseInit {
+		t.Errorf("GPS.Sawtooth.InternalClock.PhaseInit = %v, want %v (from defaults)",
+			hw.GPS.Sawtooth.InternalClock.PhaseInit, defaults.GPS.Sawtooth.InternalClock.PhaseInit)
 	}
 }

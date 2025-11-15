@@ -383,6 +383,20 @@ func TestPHCSync(t *testing.T) {
 			},
 			// Test to verify that sawtooth correction still provides benefit with tighter delay
 		},
+		{
+			name:              "flicker noise order of magnitude",
+			pulseWidth:        0,
+			duration:          300.0, // 5 minutes
+			maxTrackingStdDev: 25 * time.Nanosecond,
+			maxTrackingAbsMax: 80 * time.Nanosecond,
+			modifySimCfg: func(cfg *Config) {
+				// Isolated flicker noise test - use defaults except flicker
+				cfg.PHC.FlickerNoise = 14.0 // Typical flicker value
+			},
+			// Test validates flicker implementation gives reasonable order of magnitude.
+			// Before fix (random walk): stddev=53ns, absMax=140ns (completely wrong - 3x too high)
+			// After fix (true flicker): stddev=18ns, absMax=51ns (realistic)
+		},
 	}
 
 	for _, tt := range tests {

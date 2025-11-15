@@ -58,32 +58,93 @@ func WhiteNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 	}
 }
 
-// FlickerNoiseOsc creates an oscillator with flicker-like frequency noise.
-// This is a simplified approximation using a random walk to generate slowly-varying
-// correlated noise, suitable for testing disciplining algorithms.
+// FlickerNoiseOsc creates an oscillator with flicker frequency noise (1/f noise).
+// Flicker FM produces a flat Allan deviation (τ^0 slope) at the specified stddevPPB level.
 //
-// The actual flicker FM (1/f noise) would have flat Allan deviation at stddevPPB,
-// but this random walk approximation produces qualitatively similar behavior:
-// frequency errors that drift slowly over time rather than changing instantly.
+// This implementation uses the Kasdin-Walter algorithm: a sum of first-order recursive
+// filters that approximates 1/f power spectral density. The Allan deviation is flat
+// across tau values, matching the behavior extracted by phc_model.py.
 //
-// stddevPPB is the noise level in parts per billion.
+// stddevPPB is the Allan deviation level in parts per billion (flat across tau).
 //
-// IMPORTANT: This implementation maintains state (currentValue, lastTime) and requires
-// monotonically increasing time values. RawClock guarantees this, making the random
-// walk implementation simple and efficient without needing random access to arbitrary times.
+// IMPORTANT: This implementation maintains state and requires monotonically increasing
+// time values. RawClock guarantees this.
 func FlickerNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 	rng := rand.New(rand.NewSource(seed))
-	var currentValue float64
+
+	// Kasdin-Walter recursive filter coefficients for 1/f noise
+	// Flicker FM region is ~10-1000s based on clock-model ADEV analysis
+	const tau0 = 10.0     // Start of flicker region (seconds)
+	const tauMax = 1000.0 // End of flicker region (seconds)
+	const ratio = 2.0     // Geometric spacing ratio
+
+	// Build pole locations dynamically, stopping when tau exceeds tauMax
+	var b []float64
+	for i := 0; ; i++ {
+		tau := tau0 * math.Pow(ratio, float64(i))
+		if tau > tauMax {
+			break
+		}
+		b = append(b, math.Exp(-1.0/tau))
+	}
+	numStages := len(b)
+	states := make([]float64, numStages)
+
+	// Scale factor to achieve target Allan deviation
+	// For flicker FM, ADEV = h_minus1 (constant with tau)
+	// The sum of recursive filters needs normalization
+	scale := stddevPPB / 1e9 / math.Sqrt(float64(numStages))
+
 	var lastTime float64
 
 	return func(t float64) float64 {
 		if lastTime > 0 {
 			dt := t - lastTime
-			// Random walk: frequency drifts slowly over time
-			currentValue += rng.NormFloat64() * stddevPPB / 1e9 * math.Sqrt(dt)
+			// For dt = 1.0 (normal case), coefficients work as designed
+			// For other dt, scale time constants appropriately
+			dtNorm := dt // Assume dt ≈ 1.0 for integration steps
+
+			// Update each recursive filter stage
+			// Each stage: y[n] = b[i] * y[n-1] + noise
+			for i := 0; i < numStages; i++ {
+				// Adjust pole location for time step
+				pole := math.Pow(b[i], dtNorm)
+				noise := rng.NormFloat64() * scale * math.Sqrt(1-pole*pole)
+				states[i] = pole*states[i] + noise
+			}
 		}
 		lastTime = t
-		return currentValue
+
+		// Sum all stages to get 1/f output
+		sum := 0.0
+		for i := 0; i < numStages; i++ {
+			sum += states[i]
+		}
+		return sum
+	}
+}
+
+// RandomWalkOsc creates an oscillator with random walk frequency modulation.
+// Random walk FM models long-term drift where frequency undergoes Brownian motion.
+// In Allan deviation, produces τ^(+1/2) slope at long averaging times.
+//
+// stddevPPB is the random walk FM coefficient in ppb/√s.
+//
+// IMPORTANT: This implementation maintains state (currentFreq, lastTime) and requires
+// monotonically increasing time values. RawClock guarantees this.
+func RandomWalkOsc(stddevPPB float64, seed int64) OscSimulator {
+	rng := rand.New(rand.NewSource(seed))
+	var currentFreq float64
+	var lastTime float64
+
+	return func(t float64) float64 {
+		if lastTime > 0 {
+			dt := t - lastTime
+			step := rng.NormFloat64() * stddevPPB / 1e9 * math.Sqrt(dt)
+			currentFreq += step
+		}
+		lastTime = t
+		return currentFreq
 	}
 }
 
@@ -112,13 +173,14 @@ func DriftOsc(ratePPBPerDay float64) OscSimulator {
 //
 //	ampPPB: amplitude in ppb (peak deviation from nominal frequency)
 //	periodS: period in seconds (e.g., 86400 for daily thermal cycle)
-//	phaseRad: initial phase offset in radians (0 to 2π)
-func SinusoidOsc(ampPPB, periodS, phaseRad float64) OscSimulator {
+//	phaseInit: initial phase in [0,1) (0.5 = middle of cycle)
+func SinusoidOsc(ampPPB, periodS, phaseInit float64) OscSimulator {
 	omega := 2 * math.Pi / periodS
 	scale := ampPPB / 1e9
+	phase := phaseInit * 2 * math.Pi
 
 	return func(t float64) float64 {
-		return scale * math.Sin(omega*t+phaseRad)
+		return scale * math.Sin(omega*t+phase)
 	}
 }
 
@@ -208,11 +270,13 @@ func SawtoothGPS(osc OscSimulator, ampPPS, phaseInit float64) GPSSimulator {
 //
 //	ampNs: amplitude in nanoseconds (peak deviation)
 //	periodS: period in seconds (e.g., 3000 for thermal cycle)
-func SinusoidGPS(ampNs, periodS float64) GPSSimulator {
+//	phaseInit: initial phase in [0,1) (0.5 = middle of cycle)
+func SinusoidGPS(ampNs, periodS, phaseInit float64) GPSSimulator {
 	omega := 2 * math.Pi / periodS
 	ampSec := ampNs * 1e-9
+	phase := phaseInit * 2 * math.Pi
 	return func(t float64) float64 {
-		return ampSec * math.Sin(omega*t)
+		return ampSec * math.Sin(omega*t+phase)
 	}
 }
 

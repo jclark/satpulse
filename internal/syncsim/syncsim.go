@@ -70,8 +70,9 @@ type Config struct {
 
 // Sinusoid represents a sinusoidal error component
 type Sinusoid struct {
-	Period float64 `toml:"period"` // seconds
-	Amp    float64 `toml:"amp"`    // ppb for PHC, nanoseconds for GPS
+	Period    float64 `toml:"period"`    // seconds
+	Amp       float64 `toml:"amp"`       // ppb for PHC, nanoseconds for GPS
+	PhaseInit float64 `toml:"phaseInit"` // initial phase [0,1), defaults to 0
 }
 
 // PHCConfig holds PHC oscillator parameters
@@ -80,18 +81,12 @@ type PHCConfig struct {
 	Drift        float64    `toml:"drift"`        // ppb/day
 	WhiteNoise   float64    `toml:"whiteNoise"`   // ppb
 	FlickerNoise float64    `toml:"flickerNoise"` // ppb
+	RandomWalk   float64    `toml:"randomWalk"`   // ppb/√s
 	Sinusoid     []Sinusoid `toml:"sinusoid"`     // sinusoidal components
 }
 
-// SineFMConfig holds sinusoidal frequency modulation parameters
-type SineFMConfig struct {
-	Amp    float64 `toml:"amp"`    // ppb
-	Period float64 `toml:"period"` // seconds
-	Phase  float64 `toml:"phase"`  // radians
-}
-
 // CreateSimulator returns an OscSimulator combining all PHC error sources.
-// Applies components in order: offset, white noise, flicker noise, drift, sinusoids.
+// Applies components in order: offset, white noise, flicker noise, random walk, drift, sinusoids.
 func (c PHCConfig) CreateSimulator() clocksim.OscSimulator {
 	oscs := []clocksim.OscSimulator{
 		clocksim.FreqOffsetOsc(c.FreqOffset),
@@ -102,12 +97,15 @@ func (c PHCConfig) CreateSimulator() clocksim.OscSimulator {
 	if c.FlickerNoise > 0 {
 		oscs = append(oscs, clocksim.FlickerNoiseOsc(c.FlickerNoise, 43))
 	}
+	if c.RandomWalk > 0 {
+		oscs = append(oscs, clocksim.RandomWalkOsc(c.RandomWalk, 44))
+	}
 	if c.Drift != 0 {
 		oscs = append(oscs, clocksim.DriftOsc(c.Drift))
 	}
 	for _, s := range c.Sinusoid {
 		if s.Amp > 0 {
-			oscs = append(oscs, clocksim.SinusoidOsc(s.Amp, s.Period, 0))
+			oscs = append(oscs, clocksim.SinusoidOsc(s.Amp, s.Period, s.PhaseInit))
 		}
 	}
 	return clocksim.CombineOsc(oscs...)
@@ -123,9 +121,9 @@ type GPSConfig struct {
 
 // SawtoothConfig holds GPS sawtooth error parameters
 type SawtoothConfig struct {
-	Amp           float64      `toml:"amp"`           // nanoseconds (tick size)
-	PhaseInit     float64      `toml:"phaseInit"`     // initial phase [0,1), defaults to 0.5
-	InternalClock SineFMConfig `toml:"internalClock"` // GPS receiver's internal oscillator
+	Amp           float64  `toml:"amp"`           // nanoseconds (tick size)
+	PhaseInit     float64  `toml:"phaseInit"`     // initial phase [0,1), defaults to 0.5
+	InternalClock Sinusoid `toml:"internalClock"` // GPS receiver's internal oscillator
 }
 
 // AR1Config holds AR(1) colored noise parameters
@@ -177,7 +175,7 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 		sims = append(sims, clocksim.AR1ColoredNoiseGPS(c.AR1.Alpha, c.AR1.Noise, 124))
 	}
 	for _, s := range c.Sinusoid {
-		sims = append(sims, clocksim.SinusoidGPS(s.Amp, s.Period))
+		sims = append(sims, clocksim.SinusoidGPS(s.Amp, s.Period, s.PhaseInit))
 	}
 	return clocksim.CombineGPS(sims...)
 }
@@ -211,10 +209,10 @@ func DefaultConfig() Config {
 			Jitter: 10.0,
 			Sawtooth: SawtoothConfig{
 				PhaseInit: 0.5,
-				InternalClock: SineFMConfig{
-					Amp:    2.0,         // 2 ppb amplitude
-					Period: 600.0,       // 10 minute period
-					Phase:  math.Pi / 3, // π/3 radians - typical mid-range value
+				InternalClock: Sinusoid{
+					Amp:       2.0,   // 2 ppb amplitude
+					Period:    600.0, // 10 minute period
+					PhaseInit: 1.0 / 6.0, // π/3 radians = 1/6 cycle in [0,1)
 				},
 			},
 		},
@@ -355,11 +353,11 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	if simCfg.GPS.Sawtooth.Amp > 0 {
 		ampSec := simCfg.GPS.Sawtooth.Amp * 1e-9 // Convert ns to seconds
 		// Create GPS receiver's internal oscillator (independent from PHC)
-		// Uses Phase field from config (defaults applied by LoadHWConfig)
+		// Uses PhaseInit field from config (defaults applied by LoadHWConfig)
 		gpsOsc := clocksim.SinusoidOsc(
 			simCfg.GPS.Sawtooth.InternalClock.Amp,
 			simCfg.GPS.Sawtooth.InternalClock.Period,
-			simCfg.GPS.Sawtooth.InternalClock.Phase,
+			simCfg.GPS.Sawtooth.InternalClock.PhaseInit,
 		)
 		sawtoothPPS = clocksim.SawtoothGPS(gpsOsc, ampSec, simCfg.GPS.Sawtooth.PhaseInit)
 	}
