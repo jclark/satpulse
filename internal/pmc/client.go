@@ -7,16 +7,13 @@ import (
 
 const PTP4LSocketPath = "/var/run/ptp4l"
 
-const localSocketPathFormat = "/var/run/satpulse-pmc%d.sock"
-
 type Client struct {
 	MsgPreparer
 	T *Transport
 }
 
 type ClientConfig struct {
-	RemoteSocketPath      string
-	LocalSocketPathFormat string
+	RemoteSocketPath string
 }
 
 func NewClientConfig() *ClientConfig {
@@ -27,7 +24,6 @@ func NewClientConfig() *ClientConfig {
 
 func (cfg *ClientConfig) SetDefaults() {
 	cfg.RemoteSocketPath = PTP4LSocketPath
-	cfg.LocalSocketPathFormat = localSocketPathFormat
 }
 
 func NewClient(cfg *ClientConfig) (*Client, error) {
@@ -36,11 +32,7 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 		cfg.SetDefaults()
 	}
 	pid := os.Getpid()
-	lPath := fmt.Sprintf(cfg.LocalSocketPathFormat, pid)
-	if lPath == cfg.LocalSocketPathFormat {
-		panic("LocalSocketPathFormat must contain a format verb")
-	}
-	t, err := NewUnixTransport(lPath, cfg.RemoteSocketPath)
+	t, err := NewUnixTransport(cfg.RemoteSocketPath)
 	if err != nil {
 		return nil, err
 	}
@@ -51,12 +43,7 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 }
 
 func (client *Client) Close() error {
-	closeErr := client.T.Conn.Close()
-	cleanErr := client.T.Cleanup()
-	if closeErr != nil {
-		return closeErr
-	}
-	return cleanErr
+	return client.T.Conn.Close()
 }
 
 func (client *Client) SendRecv(msg MgmtMsg) (MgmtMsg, error) {

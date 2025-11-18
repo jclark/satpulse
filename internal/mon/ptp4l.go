@@ -22,7 +22,7 @@ func PTP4LWorker(client *pmc.Client, reqCh <-chan GrandmasterUpdateRequest, lg *
 	// This doesn't take a context because a request is sent after the context is canceled,
 	// to set ptp4l to a non-synced state. 
 	lg.Debug("the PTP management goroutine has started")
-	sockExists := true
+	sockOK := true
 	for {
 		req, ok := <-reqCh
 		if !ok {
@@ -33,20 +33,20 @@ func PTP4LWorker(client *pmc.Client, reqCh <-chan GrandmasterUpdateRequest, lg *
 		client.T.Conn.SetDeadline(tStart.Add(ptp4lTimeout))
 		err := sendRecv(client, props)
 		if err != nil {
-			if errors.Is(err, unix.ENOENT) {
-				if sockExists {
-					lg.Info("the ptp4l management socket does not exist (ptp4l not running)", "path", client.T.RemoteAddr)
-					sockExists = false
+			if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ECONNREFUSED) {
+				if sockOK {
+					lg.Info("the ptp4l management socket is not ready", "path", client.T.RemoteAddr)
+					sockOK = false
 				}
-			} else if errors.Is(err, os.ErrDeadlineExceeded) && sockExists {
+			} else if errors.Is(err, os.ErrDeadlineExceeded) && sockOK {
 				lg.Info("timeout on ptp4l management socket", "path", client.T.RemoteAddr)
 			} else {
 				lg.Warn("error while updating the PTP grandmaster using PTP management protocol", "err", err)
 			}
 		} else {
-			if !sockExists {
-				lg.Info("the ptp4l management socket now exists", "path", client.T.RemoteAddr)
-				sockExists = true
+			if !sockOK {
+				lg.Info("the ptp4l management socket has become ready", "path", client.T.RemoteAddr)
+				sockOK = true
 			}
 			lg.Info("successfully updated the grandmaster using the PTP managment protocol", "clockClass", props.ClockClass, "clockAccuracy", props.ClockAccuracy,
 				"utcOffset", props.UTCOffset, "leapTonight", props.LeapTonight, "responseTime", time.Since(tStart))

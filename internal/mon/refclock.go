@@ -72,13 +72,13 @@ func RefClockWorker(rc RefClock, sampCh <-chan RefClockSample, lg *slog.Logger) 
 // LoggingSockRefClock does error handling for a refclock that sends to a socket that may not exist.
 // The error handling consists of logging changes in when the socket exists.
 type LoggingSockRefClock struct {
-	sockExists bool
-	sock       SockRefClock
-	lg         *slog.Logger
+	sockOK bool
+	sock   SockRefClock
+	lg     *slog.Logger
 }
 
 func NewLoggingSockRefClock(lg *slog.Logger, sock SockRefClock) *LoggingSockRefClock {
-	return &LoggingSockRefClock{lg: lg, sock: sock, sockExists: true}
+	return &LoggingSockRefClock{lg: lg, sock: sock, sockOK: true}
 }
 
 func (rc *LoggingSockRefClock) Close() error {
@@ -90,20 +90,20 @@ func (rc *LoggingSockRefClock) Sample(sys time.Time, ref ptime.Time, ls ptime.Le
 	lg := rc.lg
 	path := rc.sock.RemotePath()
 	if err != nil {
-		if errors.Is(err, unix.ENOENT) {
-			if rc.sockExists {
-				lg.Info("the refclock socket does not exist", "path", path)
-				rc.sockExists = false
+		if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ECONNREFUSED) {
+			if rc.sockOK {
+				lg.Info("the refclock socket is not ready", "path", path)
+				rc.sockOK = false
 			}
-		} else if errors.Is(err, os.ErrDeadlineExceeded) && rc.sockExists {
+		} else if errors.Is(err, os.ErrDeadlineExceeded) && rc.sockOK {
 			lg.Info("timeout sending to refclock socket", "path", path)
 		} else {
 			return err
 		}
 	} else {
-		if !rc.sockExists {
-			lg.Info("the refclock socket now exists", "path", path)
-			rc.sockExists = true
+		if !rc.sockOK {
+			lg.Info("the refclock socket has become ready", "path", path)
+			rc.sockOK = true
 		}
 		lg.Debug("successfully sent sample to refclock socket", "path", path, "sys", sys, "ref", ref)
 	}
