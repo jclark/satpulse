@@ -98,8 +98,11 @@ func parseFlags(args []string) (*flagVars, error) {
 	var hwPath string
 	phcFreqOffset := math.NaN()
 	phcDrift := math.NaN()
-	phcNoise := math.NaN()
+	phcWhite := math.NaN()
+	phcFlicker := math.NaN()
+	phcRandomWalk := math.NaN()
 	jitter := math.NaN()
+	gpsRandomWalk := math.NaN()
 	sawtooth := math.NaN()
 
 	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
@@ -113,8 +116,11 @@ func parseFlags(args []string) (*flagVars, error) {
 	// HW-related override flags (local variables with NaN default)
 	flags.Float64Var(&phcFreqOffset, "phc-freq-offset", phcFreqOffset, "PHC frequency offset in ppb")
 	flags.Float64Var(&phcDrift, "phc-drift", phcDrift, "PHC frequency drift in ppb/day")
-	flags.Float64Var(&phcNoise, "phc-noise", phcNoise, "PHC frequency noise stddev in ppb")
+	flags.Float64Var(&phcWhite, "phc-white", phcWhite, "PHC white noise stddev in ppb")
+	flags.Float64Var(&phcFlicker, "phc-flicker", phcFlicker, "PHC flicker noise stddev in ppb")
+	flags.Float64Var(&phcRandomWalk, "phc-random-walk", phcRandomWalk, "PHC random walk FM coefficient in ppb/√s")
 	flags.Float64Var(&jitter, "jitter", jitter, "PPS timing jitter in nanoseconds")
+	flags.Float64Var(&gpsRandomWalk, "gps-random-walk", gpsRandomWalk, "GPS random walk FM coefficient in ppb/√s")
 	flags.Float64Var(&sawtooth, "sawtooth", sawtooth, "sawtooth amplitude in nanoseconds (0 to disable)")
 	var sawtoothMsgType string
 	flags.StringVar(&sawtoothMsgType, "sawtooth-msgtype", "", "sawtooth message type: prepulse, postpulse, or none")
@@ -158,11 +164,20 @@ func parseFlags(args []string) (*flagVars, error) {
 	if !math.IsNaN(phcDrift) {
 		vars.simCfg.PHC.Drift = phcDrift
 	}
-	if !math.IsNaN(phcNoise) {
-		vars.simCfg.PHC.WhiteNoise = phcNoise
+	if !math.IsNaN(phcWhite) {
+		vars.simCfg.PHC.WhiteNoise = phcWhite
+	}
+	if !math.IsNaN(phcFlicker) {
+		vars.simCfg.PHC.FlickerNoise = phcFlicker
+	}
+	if !math.IsNaN(phcRandomWalk) {
+		vars.simCfg.PHC.RandomWalk = phcRandomWalk
 	}
 	if !math.IsNaN(jitter) {
 		vars.simCfg.GPS.Jitter = jitter
+	}
+	if !math.IsNaN(gpsRandomWalk) {
+		vars.simCfg.GPS.RandomWalk = gpsRandomWalk
 	}
 	if !math.IsNaN(sawtooth) {
 		vars.simCfg.GPS.Sawtooth.Amp = sawtooth
