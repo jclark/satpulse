@@ -113,9 +113,10 @@ func (c PHCConfig) IsZero() bool {
 
 func DefaultPHCConfig() PHCConfig {
 	return PHCConfig{
-		FreqOffset: 2000.0,
-		Drift:      -150.0,
-		WhiteNoise: 0.633,
+		FreqOffset:   2000.0,
+		FlickerNoise: 1,
+		WhiteNoise:   7.0,
+		RandomWalk:   1,
 	}
 }
 
@@ -162,8 +163,10 @@ func (c GPSConfig) IsZero() bool {
 
 func DefaultGPSConfig() GPSConfig {
 	return GPSConfig{
-		Jitter: 10.0,
+		Jitter:     0.25,
+		RandomWalk: 0.000143,
 		Sawtooth: SawtoothConfig{
+			Amp:       15,
 			PhaseInit: 0.5,
 			InternalClock: Sinusoid{
 				Amp:       2.0,       // 2 ppb amplitude
@@ -194,7 +197,7 @@ type HWConfig struct {
 }
 
 // DefaultHWConfig returns an HWConfig with sensible default hardware characteristics.
-func DefaultHWConfig() HWConfig { 
+func DefaultHWConfig() HWConfig {
 	return HWConfig{
 		PHC: DefaultPHCConfig(),
 		GPS: DefaultGPSConfig(),
