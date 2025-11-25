@@ -172,6 +172,39 @@ func SingleOutlierPPS(second float64, offset time.Duration) GPSSimulator {
 	}
 }
 
+// RandomWalkFMGPS creates a GPS simulator with random walk frequency modulation.
+// Uses IEEE Std 1139-2008 convention: σ_y(τ) = h₊₁ · √(τ/3).
+// Implements a discrete random walk on fractional frequency with step
+// variance σ_step = h₊₁ · √dt, integrated to phase at 1 Hz.
+//
+// Parameters:
+//
+//	hPlus1: random walk FM coefficient (dimensionless/√s)
+//	seed: random seed for reproducibility
+//
+// Returns GPS simulator function producing phase error in seconds.
+//
+// IMPORTANT: This implementation maintains state and requires monotonically
+// increasing time values with unit increments (1.0, 2.0, 3.0, ...).
+// VirtualClock guarantees this for leading edge simulators.
+func RandomWalkFMGPS(hPlus1 float64, seed int64) GPSSimulator {
+	rng := rand.New(rand.NewSource(seed))
+	var freqState float64  // fractional frequency offset (dimensionless)
+	var phaseState float64 // accumulated phase error (seconds)
+	var lastTime float64
+
+	return func(t float64) float64 {
+		if lastTime > 0 {
+			dt := t - lastTime
+			stepSigma := hPlus1 * math.Sqrt(dt)
+			freqState += rng.NormFloat64() * stepSigma
+			phaseState += freqState * dt
+		}
+		lastTime = t
+		return phaseState
+	}
+}
+
 // CombineGPS combines multiple PPS phase error sources additively.
 func CombineGPS(funcs ...GPSSimulator) GPSSimulator {
 	return func(t float64) float64 {

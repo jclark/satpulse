@@ -240,7 +240,8 @@ sawtooth.amp = 8.0
 	}
 
 	// Load config
-	hw, err := LoadHWConfig(tmpfile.Name())
+	hw := DefaultHWConfig()
+	err = LoadHWConfig(tmpfile.Name(), &hw)
 	if err != nil {
 		t.Fatalf("LoadHWConfig failed: %v", err)
 	}

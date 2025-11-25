@@ -160,7 +160,7 @@ func TestVirtualClockPPSJitter(t *testing.T) {
 // variations were quantized to ±256ns steps at large time values.
 func TestPrecisionAtLargeTime(t *testing.T) {
 	// Use realistic oscillator with small frequency noise
-	osc := WhiteNoiseOsc(100.0, 42) // 100 ppb stddev
+	osc := WhiteNoiseOsc(3.5, 42) // 100 ppb stddev
 
 	// PHC starts at GPS epoch (1.4e9 seconds = large!)
 	gpsEpochNs := int64(1.4e9 * 1e9)

@@ -52,27 +52,40 @@ import (
 
 // Config holds simulation parameters
 type Config struct {
-	Duration     float64       // simulation duration in seconds
-	PHC          PHCConfig     // PHC oscillator parameters
-	GPS          GPSConfig     // GPS PPS parameters
-	MinDelay     float64       // minimum pulse delivery delay in seconds
-	MaxDelay     float64       // maximum pulse delivery delay in seconds
-	MsgDelay         float64          // GPS message delay after pulse in seconds
-	MsgJitter        float64          // GPS message delay jitter in seconds
-	PulseWidth       float64          // pulse width in seconds (0 for single-edge mode)
-	PrePulseTime     float64          // seconds before pulse to send UBX-TIM-TP PrePulse message
+	Duration          float64         // simulation duration in seconds
+	PHC               PHCConfig       // PHC oscillator parameters
+	GPS               GPSConfig       // GPS PPS parameters
+	MinDelay          float64         // minimum pulse delivery delay in seconds
+	MaxDelay          float64         // maximum pulse delivery delay in seconds
+	MsgDelay          float64         // GPS message delay after pulse in seconds
+	MsgJitter         float64         // GPS message delay jitter in seconds
+	PulseWidth        float64         // pulse width in seconds (0 for single-edge mode)
+	PrePulseTime      float64         // seconds before pulse to send UBX-TIM-TP PrePulse message
 	PostPulseMsgDelay float64         // seconds after pulse to send PostPulse sawtooth message
-	SawtoothMsgType  gpsprot.TimeRef  // type of sawtooth message: PrePulse, PostPulse, or NoPulse
-	ToggleTimes      []float64        // absolute simulation times to toggle pulse/message delivery on/off
-	Outlier          OutlierConfig    // PPS outlier injection configuration
-	Shift            ShiftConfig      // PPS phase shift configuration
+	SawtoothMsgType   gpsprot.TimeRef // type of sawtooth message: PrePulse, PostPulse, or NoPulse
+	ToggleTimes       []float64       // absolute simulation times to toggle pulse/message delivery on/off
+	Outlier           OutlierConfig   // PPS outlier injection configuration
+	Shift             ShiftConfig     // PPS phase shift configuration
 }
 
-// Sinusoid represents a sinusoidal error component
-type Sinusoid struct {
-	Period    float64 `toml:"period"`    // seconds
-	Amp       float64 `toml:"amp"`       // ppb for PHC, nanoseconds for GPS
-	PhaseInit float64 `toml:"phaseInit"` // initial phase [0,1), defaults to 0
+// DefaultConfig returns a Config with sensible default values.
+func DefaultConfig() Config {
+	return Config{
+		Duration:          60.0,
+		PHC:               DefaultPHCConfig(),
+		GPS:               DefaultGPSConfig(),
+		MinDelay:          5e-6,
+		MaxDelay:          250e-6,
+		MsgDelay:          0.1,
+		MsgJitter:         0.01,
+		PulseWidth:        0,                // default to single-edge mode
+		PrePulseTime:      0.95,             // send PrePulse message 0.95s before PPS edge
+		PostPulseMsgDelay: 0.1,              // send PostPulse message 0.1s after PPS edge
+		SawtoothMsgType:   gpsprot.PrePulse, // default to PrePulse (current behavior)
+		Outlier: OutlierConfig{
+			Offset: 2000 * time.Nanosecond, // 2µs default outlier magnitude
+		},
+	}
 }
 
 // PHCConfig holds PHC oscillator parameters
@@ -83,6 +96,27 @@ type PHCConfig struct {
 	FlickerNoise float64    `toml:"flickerNoise"` // ppb
 	RandomWalk   float64    `toml:"randomWalk"`   // ppb/√s
 	Sinusoid     []Sinusoid `toml:"sinusoid"`     // sinusoidal components
+}
+
+// Sinusoid represents a sinusoidal error component
+type Sinusoid struct {
+	Period    float64 `toml:"period"`    // seconds
+	Amp       float64 `toml:"amp"`       // ppb for PHC, nanoseconds for GPS
+	PhaseInit float64 `toml:"phaseInit"` // initial phase [0,1), defaults to 0
+}
+
+// IsZero returns true if all PHC parameters are zero (no oscillator error configured).
+func (c PHCConfig) IsZero() bool {
+	return c.FreqOffset == 0 && c.Drift == 0 && c.WhiteNoise == 0 &&
+		c.FlickerNoise == 0 && c.RandomWalk == 0 && len(c.Sinusoid) == 0
+}
+
+func DefaultPHCConfig() PHCConfig {
+	return PHCConfig{
+		FreqOffset: 2000.0,
+		Drift:      -150.0,
+		WhiteNoise: 0.633,
+	}
 }
 
 // CreateSimulator returns an OscSimulator combining all PHC error sources.
@@ -113,10 +147,31 @@ func (c PHCConfig) CreateSimulator() clocksim.OscSimulator {
 
 // GPSConfig holds GPS PPS error parameters
 type GPSConfig struct {
-	Jitter   float64        `toml:"jitter"`   // nanoseconds (white noise stddev)
-	Sawtooth SawtoothConfig `toml:"sawtooth"` // sawtooth error parameters
-	AR1      AR1Config      `toml:"ar1"`      // AR(1) colored noise parameters
-	Sinusoid []Sinusoid     `toml:"sinusoid"` // sinusoidal components
+	Jitter     float64        `toml:"jitter"`     // nanoseconds (white noise stddev)
+	Sawtooth   SawtoothConfig `toml:"sawtooth"`   // sawtooth error parameters
+	AR1        AR1Config      `toml:"ar1"`        // AR(1) colored noise parameters
+	RandomWalk float64        `toml:"randomWalk"` // random walk FM coefficient in ppb/√s
+	Sinusoid   []Sinusoid     `toml:"sinusoid"`   // sinusoidal components
+}
+
+// IsZero returns true if all GPS parameters are zero (no PPS error configured).
+func (c GPSConfig) IsZero() bool {
+	return c.Jitter == 0 && c.Sawtooth.Amp == 0 && c.AR1.Alpha == 0 &&
+		c.RandomWalk == 0 && len(c.Sinusoid) == 0
+}
+
+func DefaultGPSConfig() GPSConfig {
+	return GPSConfig{
+		Jitter: 10.0,
+		Sawtooth: SawtoothConfig{
+			PhaseInit: 0.5,
+			InternalClock: Sinusoid{
+				Amp:       2.0,       // 2 ppb amplitude
+				Period:    600.0,     // 10 minute period
+				PhaseInit: 1.0 / 6.0, // π/3 radians = 1/6 cycle in [0,1)
+			},
+		},
+	}
 }
 
 // SawtoothConfig holds GPS sawtooth error parameters
@@ -138,32 +193,27 @@ type HWConfig struct {
 	GPS GPSConfig `toml:"gps"`
 }
 
-// LoadHWConfig loads hardware configuration from a TOML file.
-// Starts with DefaultConfig() values and merges TOML values on top,
-// so users can specify only the fields they want to override.
-func LoadHWConfig(path string) (*HWConfig, error) {
-	// Start with defaults
-	defaults := DefaultConfig()
-	hw := &HWConfig{
-		PHC: defaults.PHC,
-		GPS: defaults.GPS,
+// DefaultHWConfig returns an HWConfig with sensible default hardware characteristics.
+func DefaultHWConfig() HWConfig { 
+	return HWConfig{
+		PHC: DefaultPHCConfig(),
+		GPS: DefaultGPSConfig(),
 	}
+}
 
-	// Parse TOML and overlay user values
+// LoadHWConfig loads hardware configuration from a TOML file into hw.
+// The caller initializes hw (zero-valued or with defaults), and TOML values are merged on top.
+func LoadHWConfig(path string, hw *HWConfig) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
-	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(hw)
-	if err != nil {
-		return nil, err
-	}
-	return hw, nil
+	return toml.NewDecoder(f).DisallowUnknownFields().Decode(hw)
 }
 
 // CreateSimulator returns a GPSSimulator combining all GPS error sources.
-// Applies components in order: jitter, AR(1), sinusoids.
+// Applies components in order: jitter, AR(1), random walk, sinusoids.
 // Does NOT include Shift, Outlier, or Sawtooth - those are added separately in Simulate().
 // Sawtooth is created separately with oscillator coupling.
 func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
@@ -173,6 +223,11 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 	}
 	if c.AR1.Alpha > 0 {
 		sims = append(sims, clocksim.AR1ColoredNoiseGPS(c.AR1.Alpha, c.AR1.Noise, 124))
+	}
+	if c.RandomWalk > 0 {
+		// Convert from ppb/√s to dimensionless/√s
+		hPlus1 := c.RandomWalk * 1e-9
+		sims = append(sims, clocksim.RandomWalkFMGPS(hPlus1, 125))
 	}
 	for _, s := range c.Sinusoid {
 		sims = append(sims, clocksim.SinusoidGPS(s.Amp, s.Period, s.PhaseInit))
@@ -196,40 +251,6 @@ type ShiftConfig struct {
 	Shift     time.Duration // phase shift amount
 }
 
-// DefaultConfig returns a Config with sensible default values.
-func DefaultConfig() Config {
-	return Config{
-		Duration: 60.0,
-		PHC: PHCConfig{
-			FreqOffset: 2000.0,
-			Drift:      -150.0,
-			WhiteNoise: 20.0,
-		},
-		GPS: GPSConfig{
-			Jitter: 10.0,
-			Sawtooth: SawtoothConfig{
-				PhaseInit: 0.5,
-				InternalClock: Sinusoid{
-					Amp:       2.0,   // 2 ppb amplitude
-					Period:    600.0, // 10 minute period
-					PhaseInit: 1.0 / 6.0, // π/3 radians = 1/6 cycle in [0,1)
-				},
-			},
-		},
-		MinDelay:          5e-6,
-		MaxDelay:          250e-6,
-		MsgDelay:          0.1,
-		MsgJitter:         0.01,
-		PulseWidth:        0,    // default to single-edge mode
-		PrePulseTime:      0.95, // send PrePulse message 0.95s before PPS edge
-		PostPulseMsgDelay: 0.1,  // send PostPulse message 0.1s after PPS edge
-		SawtoothMsgType:   gpsprot.PrePulse, // default to PrePulse (current behavior)
-		Outlier: OutlierConfig{
-			Offset: 2000 * time.Nanosecond, // 2µs default outlier magnitude
-		},
-	}
-}
-
 // inOutage returns true if time t falls within an outage period.
 // Odd-indexed intervals (1, 3, 5...) are outage periods.
 func inOutage(t float64, toggleTimes []float64) bool {
@@ -243,7 +264,7 @@ func inOutage(t float64, toggleTimes []float64) bool {
 
 const (
 	tickInterval = 0.25
-	NoPulse = gpsprot.NavSolution // use NavSolution value to indicate no sawtooth messages
+	NoPulse      = gpsprot.NavSolution // use NavSolution value to indicate no sawtooth messages
 )
 
 // Event represents a simulation event with a time

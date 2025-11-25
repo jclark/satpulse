@@ -21,7 +21,6 @@ import (
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-
 // RawClock wraps an OscSimulator and integrates frequency error to produce phase.
 // It represents the unadjusted hardware oscillator with an initial phase offset.
 // Times are stored as int64 nanoseconds to match ptime.Time representation.
@@ -29,7 +28,6 @@ import (
 type RawClock struct {
 	oscillator     OscSimulator
 	startPhaseNs   int64
-	dt             float64 // Integration step size
 	lastSimTime    float64 // Last time ReadAt was called
 	lastFreq       float64 // Frequency at lastSimTime
 	accumulatedSec float64 // Accumulated phase delta from t=0 to lastSimTime
@@ -40,12 +38,14 @@ func NewRawClock(oscillator OscSimulator, startPhaseNs int64) *RawClock {
 	return &RawClock{
 		oscillator:     oscillator,
 		startPhaseNs:   startPhaseNs,
-		dt:             0.001, // 1ms integration steps
 		lastSimTime:    0.0,
 		lastFreq:       oscillator(0.0),
 		accumulatedSec: 0.0,
 	}
 }
+
+// Integration step size in seconds for RawClock trapezoidal integration.
+const rawClockDT = 0.001 // 1ms
 
 // ReadAt returns the raw clock phase in nanoseconds at the given simulation time by integrating frequency error.
 // Integrates: phase(t) = startPhase + integral from 0 to t of (1 + freq(tau)) dtau
@@ -64,7 +64,7 @@ func (r *RawClock) ReadAt(simTime float64) int64 {
 
 	// Use trapezoidal rule for integration
 	for t < simTime {
-		dt := r.dt
+		dt := rawClockDT
 		if t+dt > simTime {
 			dt = simTime - t
 		}
@@ -113,8 +113,8 @@ type timestampEvent struct {
 
 type VirtualClock struct {
 	raw                    *RawClock
-	sawtoothGPSSimulator   GPSSimulator        // separate sawtooth simulator (can be nil)
-	otherGPSSimulator      GPSSimulator        // all non-sawtooth errors combined
+	sawtoothGPSSimulator   GPSSimulator // separate sawtooth simulator (can be nil)
+	otherGPSSimulator      GPSSimulator // all non-sawtooth errors combined
 	trailingEdgeSimulator  GPSSimulator
 	adjTimeDelaySimulator  func() float64
 	maxFreqOff             float64
