@@ -403,12 +403,37 @@ func TestPHCSync(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Start with default configs
 			phcCfg := phcsync.DefaultConfig()
-			simCfg := DefaultConfig()
-
-			// Apply test-specific overrides
-			simCfg.Duration = tt.duration
-			simCfg.PulseWidth = tt.pulseWidth
-			simCfg.ToggleTimes = tt.toggleTimes
+			simCfg := Config{
+				Duration: tt.duration,
+				PHC: PHCConfig{
+					FreqOffset: 2000.0,
+					Drift:      -150.0,
+					WhiteNoise: 0.633,
+				},
+				GPS: GPSConfig{
+					Jitter: 10.0,
+					Sawtooth: SawtoothConfig{
+						PhaseInit: 0.5,
+						InternalClock: Sinusoid{
+							Amp:       2.0,
+							Period:    600.0,
+							PhaseInit: 1.0 / 6.0,
+						},
+					},
+				},
+				MinDelay:          5e-6,
+				MaxDelay:          250e-6,
+				MsgDelay:          0.1,
+				MsgJitter:         0.01,
+				PulseWidth:        tt.pulseWidth,
+				PrePulseTime:      0.95,
+				PostPulseMsgDelay: 0.1,
+				SawtoothMsgType:   gpsprot.PrePulse,
+				ToggleTimes:       tt.toggleTimes,
+				Outlier: OutlierConfig{
+					Offset: 2000 * time.Nanosecond,
+				},
+			}
 
 			// Apply modifier functions if provided
 			if tt.modifySimCfg != nil {
