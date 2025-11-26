@@ -83,8 +83,8 @@ amp = 26.012
 
 [gps]
 jitter = 0.195
-ar1.alpha = 0.994360
-ar1.noise = 0.246
+ar1.tau = 176.804
+ar1.sigma = 2.319
 sawtooth.amp = 7.855
 
 [[gps.sinusoid]]
@@ -108,8 +108,8 @@ amp = 2.253
 				GPS: GPSConfig{
 					Jitter: 0.195,
 					AR1: AR1Config{
-						Alpha: 0.994360,
-						Noise: 0.246,
+						Tau:   176.804,
+						Sigma: 2.319,
 					},
 					Sawtooth: SawtoothConfig{
 						Amp: 7.855,
@@ -162,11 +162,11 @@ amp = 2.253
 			if config.GPS.Jitter != tt.expected.GPS.Jitter {
 				t.Errorf("GPS.Jitter = %v, want %v", config.GPS.Jitter, tt.expected.GPS.Jitter)
 			}
-			if config.GPS.AR1.Alpha != tt.expected.GPS.AR1.Alpha {
-				t.Errorf("GPS.AR1.Alpha = %v, want %v", config.GPS.AR1.Alpha, tt.expected.GPS.AR1.Alpha)
+			if config.GPS.AR1.Tau != tt.expected.GPS.AR1.Tau {
+				t.Errorf("GPS.AR1.Tau = %v, want %v", config.GPS.AR1.Tau, tt.expected.GPS.AR1.Tau)
 			}
-			if config.GPS.AR1.Noise != tt.expected.GPS.AR1.Noise {
-				t.Errorf("GPS.AR1.Noise = %v, want %v", config.GPS.AR1.Noise, tt.expected.GPS.AR1.Noise)
+			if config.GPS.AR1.Sigma != tt.expected.GPS.AR1.Sigma {
+				t.Errorf("GPS.AR1.Sigma = %v, want %v", config.GPS.AR1.Sigma, tt.expected.GPS.AR1.Sigma)
 			}
 			if config.GPS.Sawtooth.Amp != tt.expected.GPS.Sawtooth.Amp {
 				t.Errorf("GPS.Sawtooth.Amp = %v, want %v", config.GPS.Sawtooth.Amp, tt.expected.GPS.Sawtooth.Amp)

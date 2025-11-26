@@ -157,7 +157,7 @@ type GPSConfig struct {
 
 // IsZero returns true if all GPS parameters are zero (no PPS error configured).
 func (c GPSConfig) IsZero() bool {
-	return c.Jitter == 0 && c.Sawtooth.Amp == 0 && c.AR1.Alpha == 0 &&
+	return c.Jitter == 0 && c.Sawtooth.Amp == 0 && c.AR1.Tau == 0 &&
 		c.RandomWalk == 0 && len(c.Sinusoid) == 0
 }
 
@@ -184,10 +184,25 @@ type SawtoothConfig struct {
 	InternalClock Sinusoid `toml:"internalClock"` // GPS receiver's internal oscillator
 }
 
-// AR1Config holds AR(1) colored noise parameters
+// AR1Config holds AR(1) colored noise parameters using tau/sigma parameterisation.
+// tau is the correlation time constant in seconds.
+// sigma is the steady-state RMS in nanoseconds.
 type AR1Config struct {
-	Alpha float64 `toml:"alpha"` // dimensionless (autocorrelation coefficient)
-	Noise float64 `toml:"noise"` // nanoseconds (stddev)
+	Tau   float64 `toml:"tau"`   // seconds (correlation time constant)
+	Sigma float64 `toml:"sigma"` // nanoseconds (steady-state RMS)
+}
+
+// AlphaNoise returns (alpha, noise_stddev_ns) for use with AR1ColoredNoiseGPS.
+// alpha is the autocorrelation coefficient, noise is the driving noise stddev.
+// Assumes 1-second sample interval.
+func (c AR1Config) AlphaNoise() (alpha, noise float64) {
+	if c.Tau <= 0 || c.Sigma <= 0 {
+		return 0, 0
+	}
+	alpha = math.Exp(-1.0 / c.Tau)
+	alpha = min(alpha, 1.0-1e-12)
+	noise = c.Sigma * math.Sqrt(max(0, 1-alpha*alpha))
+	return alpha, noise
 }
 
 // HWConfig holds hardware characteristics for PHC and GPS (TOML-loadable)
@@ -224,8 +239,8 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 	if c.Jitter > 0 {
 		sims = append(sims, clocksim.JitterGPS(time.Duration(c.Jitter)*time.Nanosecond, 123))
 	}
-	if c.AR1.Alpha > 0 {
-		sims = append(sims, clocksim.AR1ColoredNoiseGPS(c.AR1.Alpha, c.AR1.Noise, 124))
+	if alpha, noise := c.AR1.AlphaNoise(); alpha > 0 {
+		sims = append(sims, clocksim.AR1ColoredNoiseGPS(alpha, noise, 124))
 	}
 	if c.RandomWalk > 0 {
 		// Convert from ppb/√s to dimensionless/√s

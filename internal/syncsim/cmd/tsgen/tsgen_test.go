@@ -138,8 +138,9 @@ func TestPHCFlickerNoise(t *testing.T) { testTsgenOutput(t, "phc.flickerNoise") 
 func TestPHCRandomWalk(t *testing.T)   { testTsgenOutput(t, "phc.randomWalk") }
 func TestPHCSinusoid(t *testing.T)     { testTsgenOutput(t, "phc.sinusoid") }
 
-// GPS tests (4 types)
+// GPS tests (5 types)
 func TestGPSJitter(t *testing.T)     { testTsgenOutput(t, "gps.jitter") }
+func TestGPSAR1(t *testing.T)        { testTsgenOutput(t, "gps.ar1") }
 func TestGPSRandomWalk(t *testing.T) { testTsgenOutput(t, "gps.randomWalk") }
 func TestGPSSawtooth(t *testing.T)   { testTsgenOutput(t, "gps.sawtooth") }
 func TestGPSSinusoid(t *testing.T)   { testTsgenOutput(t, "gps.sinusoid") }

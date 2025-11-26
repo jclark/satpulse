@@ -1,0 +1,3 @@
+[gps]
+ar1.tau = 2000.0
+ar1.sigma = 5.0
