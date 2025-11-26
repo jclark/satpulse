@@ -165,15 +165,15 @@ func DefaultGPSConfig() GPSConfig {
 	return GPSConfig{
 		Jitter:     0.25,
 		RandomWalk: 0.000143,
-		Sawtooth: SawtoothConfig{
-			Amp:       15,
-			PhaseInit: 0.5,
-			InternalClock: Sinusoid{
-				Amp:       2.0,       // 2 ppb amplitude
-				Period:    600.0,     // 10 minute period
-				PhaseInit: 1.0 / 6.0, // π/3 radians = 1/6 cycle in [0,1)
-			},
-		},
+		Sawtooth:   DefaultSawtoothConfig(),
+	}
+}
+
+// DefaultZeroGPSConfig returns a default zero GPSConfig.
+// See DefaultZeroHWConfig for the definition of "default zero".
+func DefaultZeroGPSConfig() GPSConfig {
+	return GPSConfig{
+		Sawtooth: DefaultZeroSawtoothConfig(),
 	}
 }
 
@@ -183,6 +183,26 @@ type SawtoothConfig struct {
 	PhaseInit     float64  `toml:"phaseInit"`     // initial phase [0,1), defaults to 0.5
 	InternalClock Sinusoid `toml:"internalClock"` // GPS receiver's internal oscillator
 }
+
+func DefaultSawtoothConfig() SawtoothConfig {
+	cfg := DefaultZeroSawtoothConfig()
+	cfg.Amp = 15
+	return cfg
+}
+
+// DefaultZeroSawtoothConfig returns a default zero SawtoothConfig.
+// See DefaultZeroHWConfig for the definition of "default zero".
+func DefaultZeroSawtoothConfig() SawtoothConfig {
+	return SawtoothConfig{
+		PhaseInit: 0.5,
+		InternalClock: Sinusoid{
+			Amp:       2.0,       // 2 ppb amplitude
+			Period:    600.0,     // 10 minute period
+			PhaseInit: 1.0 / 6.0, // π/3 radians = 1/6 cycle in [0,1)
+		},
+	}
+}
+
 
 // AR1Config holds AR(1) colored noise parameters using tau/sigma parameterisation.
 // tau is the correlation time constant in seconds.
@@ -218,6 +238,18 @@ func DefaultHWConfig() HWConfig {
 		GPS: DefaultGPSConfig(),
 	}
 }
+
+// DefaultZeroHWConfig returns an HWConfig representing perfect hardware.
+// "Default zero" configs have all noise and offset parameters set to zero,
+// but include defaults that make it easy to specify valid non-zero configurations
+// for parameters. Specifically, a non-zero sawtooth.amp will work without needing
+// to specify sawtooth.internalClock parameters.
+func DefaultZeroHWConfig() HWConfig {
+	return HWConfig{
+		GPS: DefaultZeroGPSConfig(),
+	}
+}
+
 
 // LoadHWConfig loads hardware configuration from a TOML file into hw.
 // The caller initializes hw (zero-valued or with defaults), and TOML values are merged on top.

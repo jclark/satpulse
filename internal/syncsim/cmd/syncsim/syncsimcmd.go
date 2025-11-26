@@ -153,7 +153,7 @@ func parseFlags(args []string) (*flagVars, error) {
 
 	// Load HW config if specified (replaces PHC and GPS configs)
 	if hwPath != "" {
-		var hw syncsim.HWConfig
+		hw := syncsim.DefaultZeroHWConfig()
 		if err := syncsim.LoadHWConfig(hwPath, &hw); err != nil {
 			return nil, fmt.Errorf("failed to load hardware config: %v", err)
 		}
