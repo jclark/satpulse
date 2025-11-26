@@ -182,6 +182,9 @@ func DriftOsc(ratePPBPerDay float64) OscSimulator {
 //	periodS: period in seconds (e.g., 86400 for daily thermal cycle)
 //	phaseInit: initial phase in [0,1) (0.5 = middle of cycle)
 func SinusoidOsc(ampPPB, periodS, phaseInit float64) OscSimulator {
+	if periodS == 0 {
+		panic("SinusoidOsc: period cannot be zero")
+	}
 	omega := 2 * math.Pi / periodS
 	scale := ampPPB / 1e9
 	phase := phaseInit * 2 * math.Pi
