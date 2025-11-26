@@ -102,6 +102,8 @@ func parseFlags(args []string) (*flagVars, error) {
 	phcFlicker := math.NaN()
 	phcRandomWalk := math.NaN()
 	jitter := math.NaN()
+	ar1Tau := math.NaN()
+	ar1Sigma := math.NaN()
 	gpsRandomWalk := math.NaN()
 	sawtooth := math.NaN()
 
@@ -120,6 +122,8 @@ func parseFlags(args []string) (*flagVars, error) {
 	flags.Float64Var(&phcFlicker, "phc-flicker", phcFlicker, "PHC flicker noise stddev in ppb")
 	flags.Float64Var(&phcRandomWalk, "phc-random-walk", phcRandomWalk, "PHC random walk FM coefficient in ppb/√s")
 	flags.Float64Var(&jitter, "jitter", jitter, "PPS timing jitter in nanoseconds")
+	flags.Float64Var(&ar1Tau, "ar1-tau", ar1Tau, "AR(1) correlation time constant in seconds")
+	flags.Float64Var(&ar1Sigma, "ar1-sigma", ar1Sigma, "AR(1) steady-state RMS in nanoseconds")
 	flags.Float64Var(&gpsRandomWalk, "gps-random-walk", gpsRandomWalk, "GPS random walk FM coefficient in ppb/√s")
 	flags.Float64Var(&sawtooth, "sawtooth", sawtooth, "sawtooth amplitude in nanoseconds (0 to disable)")
 	var sawtoothMsgType string
@@ -175,6 +179,12 @@ func parseFlags(args []string) (*flagVars, error) {
 	}
 	if !math.IsNaN(jitter) {
 		vars.simCfg.GPS.Jitter = jitter
+	}
+	if !math.IsNaN(ar1Tau) {
+		vars.simCfg.GPS.AR1.Tau = ar1Tau
+	}
+	if !math.IsNaN(ar1Sigma) {
+		vars.simCfg.GPS.AR1.Sigma = ar1Sigma
 	}
 	if !math.IsNaN(gpsRandomWalk) {
 		vars.simCfg.GPS.RandomWalk = gpsRandomWalk
