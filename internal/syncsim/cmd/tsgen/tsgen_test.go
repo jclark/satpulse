@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -144,3 +146,64 @@ func TestGPSAR1(t *testing.T)        { testTsgenOutput(t, "gps.ar1") }
 func TestGPSRandomWalk(t *testing.T) { testTsgenOutput(t, "gps.randomWalk") }
 func TestGPSSawtooth(t *testing.T)   { testTsgenOutput(t, "gps.sawtooth") }
 func TestGPSSinusoid(t *testing.T)   { testTsgenOutput(t, "gps.sinusoid") }
+
+// For small sec, formatTimestamp should match simple sprintf
+func FuzzFormatTimestampSmall(f *testing.F) {
+	f.Add(int64(0), 0.0)
+	f.Add(int64(0), 0.5)
+	f.Add(int64(-1), 0.5)
+	f.Add(int64(-1), 0.999999999999)
+	f.Add(int64(100), -1.5)
+	f.Fuzz(func(t *testing.T, sec int64, frac float64) {
+		if sec < -1000 || sec > 1000 || math.IsNaN(frac) || math.IsInf(frac, 0) || math.Abs(frac) > 10 {
+			t.Skip()
+		}
+		got := formatTimestamp(sec, frac)
+		want := fmt.Sprintf("%.12f", float64(sec)+frac)
+		if got == want {
+			return
+		}
+		// Allow 1 ULP difference (different FP error paths at rounding boundaries)
+		gotVal, _ := strconv.ParseFloat(got, 64)
+		wantVal, _ := strconv.ParseFloat(want, 64)
+		if math.Abs(gotVal-wantVal) < 1.5e-12 {
+			return
+		}
+		t.Errorf("sec=%d frac=%v: got %q, want %q", sec, frac, got, want)
+	})
+}
+
+// Large t (up to 1,000,000) - verify formatTimestamp handles precision correctly
+func TestFormatTimestampLarge(t *testing.T) {
+	cases := []struct {
+		sec  int64
+		frac float64
+		want string
+	}{
+		{1000000, 0.000000000001, "1000000.000000000001"},
+		{1000000, 0.5, "1000000.500000000000"},
+		{999999, 0.999999999999, "999999.999999999999"},
+		// frac normalization (positive results)
+		{10, -0.5, "9.500000000000"},
+		{10, 1.5, "11.500000000000"},
+		{10, -1.5, "8.500000000000"},
+		// Negative results
+		{-1, 0.5, "-0.500000000000"},
+		{-2, 0.5, "-1.500000000000"},
+		{-1, 0.0, "-1.000000000000"},
+		{-10, 0.0, "-10.000000000000"},
+		{-10, 0.3, "-9.700000000000"},
+		{0, -0.5, "-0.500000000000"},
+		{-1, 0.999999999999, "-0.000000000001"},
+		// Large negative with precision
+		{-1000000, 0.000000000001, "-999999.999999999999"},
+		{-1000000, 0.5, "-999999.500000000000"},
+		{-1000000, 0.0, "-1000000.000000000000"},
+	}
+	for _, tc := range cases {
+		got := formatTimestamp(tc.sec, tc.frac)
+		if got != tc.want {
+			t.Errorf("sec=%d frac=%v: got %q, want %q", tc.sec, tc.frac, got, tc.want)
+		}
+	}
+}
