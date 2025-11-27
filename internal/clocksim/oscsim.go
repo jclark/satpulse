@@ -102,29 +102,40 @@ func FlickerNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 	// account for how the Allan variance filter weights different frequencies.
 	scale := stddevPPB / 1e9 / math.Sqrt(float64(numStages)) * flickerScaleFactor
 
+	// Precompute poles and noise scales for a given dt.
+	// This avoids expensive math.Pow calls in the hot path when dt is constant.
+	poles := make([]float64, numStages)
+	noiseScales := make([]float64, numStages)
+	computePoles := func(dt float64) {
+		for i := range poles {
+			poles[i] = math.Pow(b[i], dt)
+			noiseScales[i] = scale * math.Sqrt(1-poles[i]*poles[i])
+		}
+	}
+	computePoles(rawClockDT)
+
 	var lastTime float64
+	// Track last dt to detect when recomputation is needed. Floating point
+	// accumulation causes t-lastTime to drift by ~1 ULP occasionally, so we
+	// can't assume dt is always exactly rawClockDT.
+	lastDT := rawClockDT
 
 	return func(t float64) float64 {
 		if lastTime > 0 {
 			dt := t - lastTime
-			// For dt = 1.0 (normal case), coefficients work as designed
-			// For other dt, scale time constants appropriately
-			dtNorm := dt // Assume dt ≈ 1.0 for integration steps
-
-			// Update each recursive filter stage
-			// Each stage: y[n] = b[i] * y[n-1] + noise
-			for i := 0; i < numStages; i++ {
-				// Adjust pole location for time step
-				pole := math.Pow(b[i], dtNorm)
-				noise := rng.NormFloat64() * scale * math.Sqrt(1-pole*pole)
-				states[i] = pole*states[i] + noise
+			if dt != lastDT {
+				computePoles(dt)
+				lastDT = dt
+			}
+			for i := range numStages {
+				states[i] = poles[i]*states[i] + rng.NormFloat64()*noiseScales[i]
 			}
 		}
 		lastTime = t
 
 		// Sum all stages to get 1/f output
 		sum := 0.0
-		for i := 0; i < numStages; i++ {
+		for i := range numStages {
 			sum += states[i]
 		}
 		return sum
