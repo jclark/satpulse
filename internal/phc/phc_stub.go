@@ -104,3 +104,7 @@ func (clk *Clock) SetFreqOffset(fo float64) error {
 func (clk *Clock) MaxFreqOffset() float64 {
 	panic(ErrNotSupported)
 }
+
+func (clk *Clock) GetTime() (ptime.Time, error) {
+	panic(ErrNotSupported)
+}
