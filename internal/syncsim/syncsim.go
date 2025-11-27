@@ -32,6 +32,8 @@
 package syncsim
 
 import (
+	"fmt"
+	"io"
 	"iter"
 	"log/slog"
 	"math"
@@ -66,6 +68,7 @@ type Config struct {
 	ToggleTimes       []float64       // absolute simulation times to toggle pulse/message delivery on/off
 	Outlier           OutlierConfig   // PPS outlier injection configuration
 	Shift             ShiftConfig     // PPS phase shift configuration
+	TSWriter          io.Writer       // optional writer for PHC timestamp output (JSON Lines)
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -521,6 +524,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	sampleCount := 0
 	stats := &offsetStats{}
 	var lastReading clocksim.TimestampReading
+	trackingStarted := false
 
 	for event := range events {
 		// Update current time for logging
@@ -604,6 +608,17 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 			// Use stored timestamp reading from tick
 			tTrue := tStart.Add(time.Duration(lastReading.TrueTime * 1e9))
 			offset := lastReading.Timestamp.T.Sub(tTrue)
+
+			// Output PHC timestamp if writer configured (leading edge, after first tracking)
+			if data.EdgeIdx == 0 {
+				if !trackingStarted && ctrl.Mode() == phcsync.ModeTracking {
+					trackingStarted = true
+				}
+				if trackingStarted && simCfg.TSWriter != nil {
+					nsec := int64(lastReading.Timestamp.T - tStart)
+					fmt.Fprintf(simCfg.TSWriter, `{"chan":"A","timestamp":"%d.%09d"}`+"\n", nsec/1e9, nsec%1e9)
+				}
+			}
 
 			// Track offset for leading edge in tracking mode
 			if data.EdgeIdx == 0 && ctrl.Mode() == phcsync.ModeTracking {

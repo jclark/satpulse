@@ -21,6 +21,7 @@ var startTime = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 type flagVars struct {
 	statsInterval   int
 	clockLogPath    string
+	tsOutputPath    string
 	simCfg          syncsim.Config
 	phcCfg          phcsync.Config
 	debug           bool
@@ -67,6 +68,16 @@ func main() {
 		}
 		defer clockObs.Release()
 		observers = append(observers, clockObs)
+	}
+
+	if vars.tsOutputPath != "" {
+		f, err := os.Create(vars.tsOutputPath)
+		if err != nil {
+			lg.Error("failed to create ts output file", "err", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		vars.simCfg.TSWriter = f
 	}
 
 	// Run simulation
@@ -135,6 +146,7 @@ func parseFlags(args []string) (*flagVars, error) {
 	flags.Float64VarP(&vars.simCfg.PulseWidth, "pulse-width", "w", vars.simCfg.PulseWidth, "pulse width in seconds (0 for single-edge mode)")
 	flags.IntVar(&vars.statsInterval, "stats", 0, "statistics interval in seconds (0 to disable)")
 	flags.StringVar(&vars.clockLogPath, "clock-log", "", "path to clock log file (empty to disable)")
+	flags.StringVar(&vars.tsOutputPath, "ts-output", "", "path to write PHC timestamps (JSON Lines format)")
 	flags.Float64Var(&vars.phcCfg.Track.Kp, "tracking-kp", vars.phcCfg.Track.Kp, "tracking mode proportional gain")
 	flags.Float64Var(&vars.phcCfg.Track.Ki, "tracking-ki", vars.phcCfg.Track.Ki, "tracking mode integral gain")
 	flags.Float64Var(&vars.phcCfg.Track.AvgFreqTimeConstant, "avg-freq-time-constant", vars.phcCfg.Track.AvgFreqTimeConstant, "tracking mode average frequency time constant in seconds")
