@@ -32,10 +32,12 @@ case $GOARCH in
 esac
 
 # Commands and output directory
-cmds="satpulsed satpulsetool ubxanno pollpps"
+cmddirs="cmd/satpulsed cmd/satpulsetool cmd/ubxanno cmd/pollpps internal/syncsim/cmd/syncsim internal/syncsim/cmd/tsgen"
 targets=""
-for cmd in $cmds; do
-    targets="$targets ./cmd/$cmd"
+cmds=""
+for d in $cmddirs; do
+    targets="$targets ./$d"
+    cmds="$cmds $(basename $d)"
 done
 outdir="out/${GOOS}_${GOARCH}"
 
