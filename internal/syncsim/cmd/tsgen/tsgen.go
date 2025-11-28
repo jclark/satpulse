@@ -88,7 +88,8 @@ func run(args []string) error {
 		if hasGPS {
 			nonSawtoothErr := nonSawtoothGPS(t)
 			sawtoothErr := sawtoothGPS(t)
-			qErrNs := math.Round(sawtoothErr*1e9*1000) / 1000
+			// qErr is the correction to ADD to remove sawtooth, so negate it
+			qErrNs := math.Round(-sawtoothErr*1e9*1000) / 1000
 
 			if err := enc.Encode(struct {
 				Chan      string  `json:"chan"`
