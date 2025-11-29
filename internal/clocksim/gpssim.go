@@ -237,6 +237,53 @@ func RandomWalkFMGPS(hPlus1 float64, seed int64) GPSSimulator {
 	}
 }
 
+// DriftGPS creates a GPS simulator with Carpenter-Lee 2nd-order Gauss-Markov drift.
+// Implements a bounded drift process where the phase variance remains finite
+// over long simulations. The state vector is [x, v] where x is phase error
+// and v is the rate of change. The process is driven by white noise on v.
+//
+// Parameters:
+//
+//	omegaN: natural frequency (1/s)
+//	zeta: damping ratio (dimensionless, typically 0.7)
+//	sigmaDrift: continuous-time noise intensity driving v_drift (seconds)
+//	seed: random seed for reproducibility
+//
+// Returns GPS simulator function producing drift phase error in seconds.
+func DriftGPS(omegaN, zeta, sigmaDrift float64, seed int64) GPSSimulator {
+	rng := rand.New(rand.NewSource(seed))
+	// dt = 1.0 for 1 Hz sampling
+	dt := 1.0
+	// Compute discrete Phi matrix elements for underdamped case (zeta < 1)
+	// For critically/overdamped, clamp zeta
+	zetaClamped := min(zeta, 0.99)
+	omegaD := omegaN * math.Sqrt(1-zetaClamped*zetaClamped)
+	decay := math.Exp(-zetaClamped * omegaN * dt)
+	cosWd := math.Cos(omegaD * dt)
+	sinWd := math.Sin(omegaD * dt)
+	phi11 := decay * (cosWd + (zetaClamped*omegaN/omegaD)*sinWd)
+	phi12 := decay * (1.0 / omegaD) * sinWd
+	phi21 := decay * (-(omegaN * omegaN / omegaD) * sinWd)
+	phi22 := decay * (cosWd - (zetaClamped*omegaN/omegaD)*sinWd)
+	// Process noise covariance Q - first order approximation
+	// Q_c = [[0, 0], [0, sigma_drift^2]], Q ≈ Q_c * dt
+	// Cholesky factor L of Q: L[0,0] = 0, L[1,0] = 0, L[1,1] = sigma_drift * sqrt(dt)
+	noiseStddev := sigmaDrift * math.Sqrt(dt)
+	// State vector [x, v] - initialise from stationary distribution
+	// For simplicity, start at zero (could initialise from stationary variance)
+	var xState, vState float64
+	return func(t float64) float64 {
+		// Generate noise (only drives velocity)
+		w := rng.NormFloat64() * noiseStddev
+		// State transition: X_{k+1} = Phi * X_k + [0, w]
+		xNew := phi11*xState + phi12*vState
+		vNew := phi21*xState + phi22*vState + w
+		xState = xNew
+		vState = vNew
+		return xState
+	}
+}
+
 // CombineGPS combines multiple PPS phase error sources additively.
 func CombineGPS(funcs ...GPSSimulator) GPSSimulator {
 	return func(t float64) float64 {

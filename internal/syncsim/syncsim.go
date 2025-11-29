@@ -156,13 +156,14 @@ type GPSConfig struct {
 	AR1        AR1Config      `toml:"ar1"`        // AR(1) colored noise parameters (on phase)
 	AR1FM      AR1Config      `toml:"ar1fm"`      // AR(1) FM parameters (OU on frequency, sigma in ppb)
 	RandomWalk float64        `toml:"randomWalk"` // random walk FM coefficient in ppb/√s
+	Drift      DriftConfig    `toml:"drift"`      // Carpenter-Lee bounded drift parameters
 	Sinusoid   []Sinusoid     `toml:"sinusoid"`   // sinusoidal components
 }
 
 // IsZero returns true if all GPS parameters are zero (no PPS error configured).
 func (c GPSConfig) IsZero() bool {
 	return c.Jitter == 0 && c.Sawtooth.Amp == 0 && c.AR1.Tau == 0 &&
-		c.AR1FM.Tau == 0 && c.RandomWalk == 0 && len(c.Sinusoid) == 0
+		c.AR1FM.Tau == 0 && c.RandomWalk == 0 && c.Drift.Tau == 0 && len(c.Sinusoid) == 0
 }
 
 func DefaultGPSConfig() GPSConfig {
@@ -216,6 +217,38 @@ type AR1Config struct {
 	Sigma float64 `toml:"sigma"` // nanoseconds (steady-state RMS)
 }
 
+// DriftConfig holds Carpenter-Lee 2nd-order Gauss-Markov drift parameters.
+// User-facing parameters (tau, sigma, zeta) are converted to internal parameters
+// (omega_n, zeta, sigma_drift) for the simulator.
+type DriftConfig struct {
+	Tau   float64 `toml:"tau"`   // seconds - bounded drift timescale (1/omega_n)
+	Sigma float64 `toml:"sigma"` // nanoseconds - RMS of bounded drift phase
+	Zeta  float64 `toml:"zeta"`  // dimensionless - damping ratio (default 0.7)
+}
+
+// InternalParams converts user-facing (tau, sigma, zeta) to internal (omega_n, zeta, sigma_drift).
+// For a 2nd-order Gauss-Markov process, the stationary variance of phase is:
+//
+//	Var(x) = sigma_drift² / (4 * zeta * omega_n³)
+//
+// Inverting: sigma_drift = sqrt(Var(x) * 4 * zeta * omega_n³)
+//
+//	= drift_sigma * sqrt(4 * zeta) * omega_n^(3/2)
+func (c DriftConfig) InternalParams() (omegaN, zeta, sigmaDrift float64) {
+	if c.Tau <= 0 || c.Sigma <= 0 {
+		return 0, 0, 0
+	}
+	omegaN = 1.0 / c.Tau
+	zeta = c.Zeta
+	if zeta <= 0 {
+		zeta = 0.7 // default damping ratio
+	}
+	// Convert Sigma (RMS phase in ns) to sigmaDrift (driving noise intensity in seconds)
+	sigmaSec := c.Sigma * 1e-9
+	sigmaDrift = sigmaSec * math.Sqrt(4.0*zeta) * math.Pow(omegaN, 1.5)
+	return omegaN, zeta, sigmaDrift
+}
+
 // AlphaNoise returns (alpha, noise_stddev_ns) for use with AR1ColoredNoiseGPS.
 // alpha is the autocorrelation coefficient, noise is the driving noise stddev.
 // Assumes 1-second sample interval.
@@ -267,7 +300,7 @@ func LoadHWConfig(path string, hw *HWConfig) error {
 }
 
 // CreateSimulator returns a GPSSimulator combining all GPS error sources.
-// Applies components in order: jitter, AR(1), AR(1) FM, random walk, sinusoids.
+// Applies components in order: jitter, AR(1), AR(1) FM, random walk, drift, sinusoids.
 // Does NOT include Shift, Outlier, or Sawtooth - those are added separately in Simulate().
 // Sawtooth is created separately with oscillator coupling.
 func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
@@ -285,6 +318,9 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 		// Convert from ppb/√s to dimensionless/√s
 		hPlus1 := c.RandomWalk * 1e-9
 		sims = append(sims, clocksim.RandomWalkFMGPS(hPlus1, 125))
+	}
+	if omegaN, zeta, sigmaDrift := c.Drift.InternalParams(); omegaN > 0 {
+		sims = append(sims, clocksim.DriftGPS(omegaN, zeta, sigmaDrift, 127))
 	}
 	for _, s := range c.Sinusoid {
 		sims = append(sims, clocksim.SinusoidGPS(s.Amp, s.Period, s.PhaseInit))
