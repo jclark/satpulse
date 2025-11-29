@@ -172,6 +172,38 @@ func SingleOutlierPPS(second float64, offset time.Duration) GPSSimulator {
 	}
 }
 
+// AR1FMGPS creates a GPS simulator with AR(1) frequency modulation (OU on frequency).
+// Models mean-reverting coloured frequency bias integrated to phase.
+// The frequency state x_k evolves as AR(1): x_{k+1} = ρ x_k + ε_k
+// Phase is the cumulative sum: φ_k = Σ x_i · Δt
+//
+// Parameters:
+//
+//	tauS: correlation time T in seconds
+//	sigmaPPB: stationary RMS of frequency bias in ppb
+//	seed: random seed for reproducibility
+//
+// Returns GPS simulator function producing phase error in seconds.
+func AR1FMGPS(tauS, sigmaPPB float64, seed int64) GPSSimulator {
+	rng := rand.New(rand.NewSource(seed))
+	// Convert parameters (Δt = 1 s)
+	rho := math.Exp(-1.0 / tauS)
+	rho = min(rho, 1.0-1e-12) // numerical safety
+	sigmaX := sigmaPPB * 1e-9 // ppb to dimensionless
+	sigmaEps := sigmaX * math.Sqrt(1.0-rho*rho)
+	// Initial state from stationary distribution
+	xState := rng.NormFloat64() * sigmaX // frequency bias (dimensionless)
+	var phiState float64                 // accumulated phase (seconds)
+	return func(t float64) float64 {
+		// AR(1) update on frequency
+		eps := rng.NormFloat64() * sigmaEps
+		xState = rho*xState + eps
+		// Integrate to phase (Δt = 1 s)
+		phiState += xState * 1.0
+		return phiState
+	}
+}
+
 // RandomWalkFMGPS creates a GPS simulator with random walk frequency modulation.
 // Uses IEEE Std 1139-2008 convention: σ_y(τ) = h₊₁ · √(τ/3).
 // Implements a discrete random walk on fractional frequency with step

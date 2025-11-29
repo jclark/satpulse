@@ -153,7 +153,8 @@ func (c PHCConfig) CreateSimulator() clocksim.OscSimulator {
 type GPSConfig struct {
 	Jitter     float64        `toml:"jitter"`     // nanoseconds (white noise stddev)
 	Sawtooth   SawtoothConfig `toml:"sawtooth"`   // sawtooth error parameters
-	AR1        AR1Config      `toml:"ar1"`        // AR(1) colored noise parameters
+	AR1        AR1Config      `toml:"ar1"`        // AR(1) colored noise parameters (on phase)
+	AR1FM      AR1Config      `toml:"ar1fm"`      // AR(1) FM parameters (OU on frequency, sigma in ppb)
 	RandomWalk float64        `toml:"randomWalk"` // random walk FM coefficient in ppb/√s
 	Sinusoid   []Sinusoid     `toml:"sinusoid"`   // sinusoidal components
 }
@@ -161,7 +162,7 @@ type GPSConfig struct {
 // IsZero returns true if all GPS parameters are zero (no PPS error configured).
 func (c GPSConfig) IsZero() bool {
 	return c.Jitter == 0 && c.Sawtooth.Amp == 0 && c.AR1.Tau == 0 &&
-		c.RandomWalk == 0 && len(c.Sinusoid) == 0
+		c.AR1FM.Tau == 0 && c.RandomWalk == 0 && len(c.Sinusoid) == 0
 }
 
 func DefaultGPSConfig() GPSConfig {
@@ -266,7 +267,7 @@ func LoadHWConfig(path string, hw *HWConfig) error {
 }
 
 // CreateSimulator returns a GPSSimulator combining all GPS error sources.
-// Applies components in order: jitter, AR(1), random walk, sinusoids.
+// Applies components in order: jitter, AR(1), AR(1) FM, random walk, sinusoids.
 // Does NOT include Shift, Outlier, or Sawtooth - those are added separately in Simulate().
 // Sawtooth is created separately with oscillator coupling.
 func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
@@ -276,6 +277,9 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 	}
 	if alpha, noise := c.AR1.AlphaNoise(); alpha > 0 {
 		sims = append(sims, clocksim.AR1ColoredNoiseGPS(alpha, noise, 124))
+	}
+	if c.AR1FM.Tau > 0 && c.AR1FM.Sigma > 0 {
+		sims = append(sims, clocksim.AR1FMGPS(c.AR1FM.Tau, c.AR1FM.Sigma, 126))
 	}
 	if c.RandomWalk > 0 {
 		// Convert from ppb/√s to dimensionless/√s

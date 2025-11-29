@@ -14,8 +14,10 @@ Each `.toml` file specifies a single noise source for either PHC or GPS:
 - `phc.randomWalk.toml` - random walk frequency modulation
 - `phc.sinusoid.toml` - sinusoidal frequency component
 
-**GPS (4 types):**
+**GPS (6 types):**
 - `gps.jitter.toml` - white phase noise (jitter)
+- `gps.ar1.toml` - AR(1) colored noise on phase
+- `gps.ar1fm.toml` - AR(1) frequency modulation (OU on frequency)
 - `gps.randomWalk.toml` - random walk frequency modulation
 - `gps.sawtooth.toml` - quantization error sawtooth
 - `gps.sinusoid.toml` - sinusoidal phase component
