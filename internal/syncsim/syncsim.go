@@ -227,26 +227,10 @@ type DriftConfig struct {
 }
 
 // InternalParams converts user-facing (tau, sigma, zeta) to internal (omega_n, zeta, sigma_drift).
-// For a 2nd-order Gauss-Markov process, the stationary variance of phase is:
-//
-//	Var(x) = sigma_drift² / (4 * zeta * omega_n³)
-//
-// Inverting: sigma_drift = sqrt(Var(x) * 4 * zeta * omega_n³)
-//
-//	= drift_sigma * sqrt(4 * zeta) * omega_n^(3/2)
+// Uses discrete Lyapunov calibration so that Sigma matches the actual RMS of the
+// 1 Hz discrete drift simulator output.
 func (c DriftConfig) InternalParams() (omegaN, zeta, sigmaDrift float64) {
-	if c.Tau <= 0 || c.Sigma <= 0 {
-		return 0, 0, 0
-	}
-	omegaN = 1.0 / c.Tau
-	zeta = c.Zeta
-	if zeta <= 0 {
-		zeta = 0.7 // default damping ratio
-	}
-	// Convert Sigma (RMS phase in ns) to sigmaDrift (driving noise intensity in seconds)
-	sigmaSec := c.Sigma * 1e-9
-	sigmaDrift = sigmaSec * math.Sqrt(4.0*zeta) * math.Pow(omegaN, 1.5)
-	return omegaN, zeta, sigmaDrift
+	return clocksim.DriftUserToInternal(c.Tau, c.Sigma, c.Zeta)
 }
 
 // AlphaNoise returns (alpha, noise_stddev_ns) for use with AR1ColoredNoiseGPS.
