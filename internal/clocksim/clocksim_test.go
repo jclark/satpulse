@@ -1,6 +1,7 @@
 package clocksim
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -709,6 +710,88 @@ func TestSawtoothArbitraryStartTime(t *testing.T) {
 	if allSame {
 		t.Errorf("all sawtooth corrections are identical: %.12f (expected variation)", corrections[0])
 	}
+}
+
+// TestRawClockWhiteFMStatistics verifies that RawClock integration produces correct
+// statistics for white FM noise. This test catches the FP accumulation bug where
+// extra micro-steps create spurious lag-1 correlation and inflated variance.
+func TestRawClockWhiteFMStatistics(t *testing.T) {
+	// White FM with h0 = 4.5e-9 (4.5 ppb ADEV at τ=1s)
+	// Expected 1-second phase error stddev: 4.5 ns
+	// Expected lag-1 correlation: ~0
+	const (
+		h0PPB    = 4.5
+		nSeconds = 100000
+		seed     = 12345
+	)
+
+	osc := WhiteNoiseOsc(h0PPB, seed)
+	raw := NewRawClock(osc, 0)
+
+	// Collect 1-second phase deltas
+	var phases []float64
+	for sec := 0; sec <= nSeconds; sec++ {
+		phaseNs := raw.ReadAt(float64(sec))
+		phases = append(phases, float64(phaseNs))
+	}
+
+	// Compute deltas (phase change per second, minus nominal 1e9 ns)
+	deltas := make([]float64, nSeconds)
+	for i := 0; i < nSeconds; i++ {
+		deltas[i] = phases[i+1] - phases[i] - 1e9
+	}
+
+	// Statistics
+	mean, stddev := testStats(deltas)
+	lag1 := testLag1Corr(deltas)
+
+	// Check stddev: should be close to h0 * 1e9 = 4.5 ns
+	// Bug causes ~5.38 ns (+20%), so allow 10% tolerance for correct behavior
+	expectedStddev := h0PPB
+	if stddev < expectedStddev*0.9 || stddev > expectedStddev*1.1 {
+		t.Errorf("stddev = %.3f ns, want %.3f ± 10%%", stddev, expectedStddev)
+	}
+
+	// Check lag-1 correlation: should be near 0
+	// Bug causes ~0.30, so fail if |lag1| > 0.1
+	if math.Abs(lag1) > 0.1 {
+		t.Errorf("lag-1 correlation = %.4f, want |lag1| < 0.1", lag1)
+	}
+
+	// Mean should be near 0
+	if math.Abs(mean) > 1.0 {
+		t.Errorf("mean = %.3f ns, want near 0", mean)
+	}
+}
+
+func testStats(data []float64) (mean, stddev float64) {
+	n := float64(len(data))
+	for _, v := range data {
+		mean += v
+	}
+	mean /= n
+	for _, v := range data {
+		d := v - mean
+		stddev += d * d
+	}
+	stddev = math.Sqrt(stddev / n)
+	return
+}
+
+func testLag1Corr(data []float64) float64 {
+	n := len(data)
+	if n < 2 {
+		return 0
+	}
+	mean, _ := testStats(data)
+	var num, denom float64
+	for i := 0; i < n-1; i++ {
+		d1 := data[i] - mean
+		d2 := data[i+1] - mean
+		num += d1 * d2
+		denom += d1 * d1
+	}
+	return num / denom
 }
 
 // TestSawtoothPhaseAlignment verifies that sawtooth phase advances correctly

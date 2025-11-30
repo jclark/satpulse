@@ -15,6 +15,7 @@ package clocksim
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"time"
 
@@ -25,67 +26,86 @@ import (
 // It represents the unadjusted hardware oscillator with an initial phase offset.
 // Times are stored as int64 nanoseconds to match ptime.Time representation.
 // Integration is incremental: ReadAt must be called with monotonically increasing times.
+//
+// The clock phase at time t is: phase(t) = startPhase + integral of (1 + freq(tau)) dtau
+// which equals: startPhase + t + integral of freq(tau) dtau
+//
+// We split this into two accumulators:
+//   - Nominal time (accumNominalNs): tracked in integer nanoseconds for exact arithmetic
+//   - Frequency error (accumNoise): tracked in float64 seconds where sub-ns precision is adequate
+//
+// This separation is necessary because rawClockDT (0.001) cannot be represented exactly
+// in float64. Accumulating it directly would cause drift: 1200 * 0.001 ≠ 1.2 in float64.
+// Integer nanoseconds give exact results for nominal time.
+//
+// Integration uses absolute step indexing: lastStep tracks which 1ms grid steps have been
+// processed. Each step's time is computed as step*rawClockDT rather than accumulated
+// incrementally. This avoids floating-point error that could cause spurious micro-steps
+// at grid boundaries, which would corrupt stochastic oscillator statistics by drawing
+// extra samples that don't contribute meaningful phase.
 type RawClock struct {
-	oscillator     OscSimulator
-	startPhaseNs   int64
-	lastSimTime    float64 // Last time ReadAt was called
-	lastFreq       float64 // Frequency at lastSimTime
-	accumulatedSec float64 // Accumulated phase delta from t=0 to lastSimTime
+	oscillator      OscSimulator
+	startPhaseNs    int64
+	lastStep        int64   // Absolute step index (grid position)
+	lastTime        float64 // For monotonicity check
+	accumNominalNs  int64   // Accumulated nominal time in nanoseconds (exact)
+	accumNoise      float64 // Accumulated frequency error in seconds (float)
 }
+
+// Integration step size for RawClock discrete integration.
+const rawClockDT = 0.001   // 1ms in seconds
+const rawClockDTNs = 1_000_000 // 1ms in nanoseconds (exact integer)
 
 // NewRawClock creates a RawClock with the given oscillator and initial phase in nanoseconds.
 func NewRawClock(oscillator OscSimulator, startPhaseNs int64) *RawClock {
 	return &RawClock{
 		oscillator:     oscillator,
 		startPhaseNs:   startPhaseNs,
-		lastSimTime:    0.0,
-		lastFreq:       oscillator(0.0),
-		accumulatedSec: 0.0,
+		lastStep:       0,
+		lastTime:       0.0,
+		accumNominalNs: 0,
+		accumNoise:     0.0,
 	}
 }
 
-// Integration step size in seconds for RawClock trapezoidal integration.
-const rawClockDT = 0.001 // 1ms
-
-// ReadAt returns the raw clock phase in nanoseconds at the given simulation time by integrating frequency error.
+// ReadAt returns the raw clock phase in nanoseconds at the given simulation time.
 // Integrates: phase(t) = startPhase + integral from 0 to t of (1 + freq(tau)) dtau
 // Must be called with monotonically increasing times (panics if time goes backwards).
-// The underlying oscillator is called only with monotonically increasing time values, enabling
-// stateful simulators to use incremental updates without supporting random access.
+// The underlying oscillator is called only with monotonically increasing time values,
+// enabling stateful simulators to use incremental updates without random access.
 func (r *RawClock) ReadAt(simTime float64) int64 {
-	if simTime < r.lastSimTime {
-		panic(fmt.Sprintf("ReadAt: time went backwards: %.9f < %.9f", simTime, r.lastSimTime))
+	if simTime < r.lastTime {
+		panic(fmt.Sprintf("ReadAt: time went backwards: %.9f < %.9f", simTime, r.lastTime))
 	}
 
-	// Integrate from lastSimTime to simTime using incremental approach
-	// This ensures each time point is evaluated exactly once
-	t := r.lastSimTime
-	freq1 := r.lastFreq
+	// Compute target step index. Multiply by 1000 (exact in float64) rather than
+	// dividing by 0.001 (inexact), to avoid undercounting steps at grid boundaries.
+	targetStep := int64(simTime * 1000)
 
-	// Use trapezoidal rule for integration
-	for t < simTime {
-		dt := rawClockDT
-		if t+dt > simTime {
-			dt = simTime - t
-		}
-
-		freq2 := r.oscillator(t + dt) // Only evaluate new endpoint
-		// Clock advances by dt * (1 + average frequency error)
-		r.accumulatedSec += dt * (1 + (freq1+freq2)/2)
-
-		t += dt
-		freq1 = freq2 // Next iteration's freq1 is this iteration's freq2
+	// Process new full steps since lastStep.
+	// Each step samples the oscillator at the step's start time and accumulates:
+	//   - Nominal time: exactly rawClockDTNs nanoseconds (integer, no FP error)
+	//   - Noise: rawClockDT * freq (float, sub-ns precision adequate)
+	for step := r.lastStep; step < targetStep; step++ {
+		t := float64(step) * rawClockDT
+		freq := r.oscillator(t)
+		r.accumNominalNs += rawClockDTNs
+		r.accumNoise += rawClockDT * freq
 	}
+	r.lastStep = targetStep
+	r.lastTime = simTime
 
-	// Update state for next call
-	r.lastSimTime = simTime
-	r.lastFreq = freq1
+	// Compute remainder for sub-step precision.
+	// This is NOT persisted - it's only used for the return value.
+	// If we persisted it, consecutive calls like ReadAt(1.0004) then ReadAt(2.0008)
+	// would double-count the remainder.
+	gridTime := float64(targetStep) * rawClockDT
+	remNs := max(0, int64((simTime-gridTime)*1e9)) // Clamp to avoid negative from FP rounding
 
-	// Convert accumulated delta to nanoseconds and add to start phase
-	// This avoids precision loss when startPhase is large (e.g., GPS epoch)
-	deltaNs := int64(r.accumulatedSec * 1e9)
-	phaseNs := r.startPhaseNs + deltaNs
-	return phaseNs
+	// Combine: startPhase + nominal + noise + remainder.
+	// Use math.Round for noise because decimal frequencies (e.g., 10ppm = 1e-5) cannot be
+	// represented exactly in binary float64, causing sub-nanosecond accumulation errors.
+	return r.startPhaseNs + r.accumNominalNs + int64(math.Round(r.accumNoise*1e9)) + remNs
 }
 
 // SawtoothCorrections holds sawtooth error corrections for current and next pulse.
