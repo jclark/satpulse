@@ -284,6 +284,87 @@ func DriftGPS(omegaN, zeta, sigmaDrift float64, seed int64) GPSSimulator {
 	}
 }
 
+// ResonatorUserToInternal converts user-facing resonator parameters to internal simulator parameters.
+//
+// Uses discrete Lyapunov calibration so that sigmaNs matches the actual RMS
+// of the 1 Hz discrete resonator simulator output.
+//
+// Parameters:
+//
+//	period: Resonator period in seconds (ω₀ = 2π/period)
+//	sigmaNs: RMS phase in nanoseconds
+//	zeta: Damping ratio (dimensionless, typically 0.1-0.5)
+//
+// Returns (omegaN, zeta, sigmaNoise) where:
+//
+//	omegaN: Natural frequency (rad/s)
+//	zeta: Damping ratio (unchanged)
+//	sigmaNoise: Noise intensity for simulator (seconds)
+func ResonatorUserToInternal(period, sigmaNs, zeta float64) (omegaN, zetaOut, sigmaNoise float64) {
+	if period <= 0 || sigmaNs <= 0 {
+		return 0, 0, 0
+	}
+	omegaN = 2 * math.Pi / period
+	zetaOut = zeta
+	if zetaOut <= 0 {
+		zetaOut = 0.3 // default damping ratio for resonator
+	}
+	sigmaSec := sigmaNs * 1e-9
+	dt := 1.0
+	varXUnit := DriftUnitPhaseVariance(omegaN, zetaOut, dt)
+	// actual_variance = sigma_noise² * dt * var_x_unit = sigma_sec²
+	// sigma_noise = sigma_sec / sqrt(dt * var_x_unit)
+	if varXUnit > 0 {
+		sigmaNoise = sigmaSec / math.Sqrt(dt*varXUnit)
+	}
+	return omegaN, zetaOut, sigmaNoise
+}
+
+// ResonatorGPS creates a GPS simulator with a damped harmonic oscillator on phase.
+// Unlike resonator FM which integrates bounded frequency to unbounded phase, this
+// directly oscillates phase around zero, guaranteeing bounded phase.
+//
+// State: [x, ẋ] where x is phase error (seconds)
+// Dynamics: ẍ + 2ζω₀ẋ + ω₀²x = ξ(t)
+// Output: x (phase directly)
+//
+// Parameters:
+//
+//	omegaN: natural frequency (rad/s), related to period by ω₀ = 2π/T
+//	zeta: damping ratio (0.1-0.5 for pronounced resonance)
+//	sigmaNoise: process noise intensity (seconds), calibrated via Lyapunov equation
+//	seed: random seed for reproducibility
+//
+// Returns GPS simulator producing phase error in seconds.
+func ResonatorGPS(omegaN, zeta, sigmaNoise float64, seed int64) GPSSimulator {
+	rng := rand.New(rand.NewSource(seed))
+	dt := 1.0 // 1 Hz sampling
+	// Compute discrete Phi matrix elements for underdamped case
+	zetaClamped := min(zeta, 0.99)
+	omegaD := omegaN * math.Sqrt(1-zetaClamped*zetaClamped)
+	decay := math.Exp(-zetaClamped * omegaN * dt)
+	cosWd := math.Cos(omegaD * dt)
+	sinWd := math.Sin(omegaD * dt)
+	phi11 := decay * (cosWd + (zetaClamped*omegaN/omegaD)*sinWd)
+	phi12 := decay * (1.0 / omegaD) * sinWd
+	phi21 := decay * (-(omegaN * omegaN / omegaD) * sinWd)
+	phi22 := decay * (cosWd - (zetaClamped*omegaN/omegaD)*sinWd)
+	// Process noise stddev
+	noiseStddev := sigmaNoise * math.Sqrt(dt)
+	// State vector [x, ẋ] - phase and phase rate
+	var xState, xdotState float64
+	return func(t float64) float64 {
+		// Generate noise (only drives ẋ)
+		w := rng.NormFloat64() * noiseStddev
+		// State transition: X_{k+1} = Phi * X_k + [0, w]
+		xNew := phi11*xState + phi12*xdotState
+		xdotNew := phi21*xState + phi22*xdotState + w
+		xState = xNew
+		xdotState = xdotNew
+		return xState
+	}
+}
+
 // CombineGPS combines multiple PPS phase error sources additively.
 func CombineGPS(funcs ...GPSSimulator) GPSSimulator {
 	return func(t float64) float64 {

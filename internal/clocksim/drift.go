@@ -222,3 +222,4 @@ func DriftInternalToUser(omegaN, zeta, sigmaDrift float64) (driftTau, driftSigma
 	}
 	return driftTau, driftSigmaNs, driftZeta
 }
+

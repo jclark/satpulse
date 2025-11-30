@@ -151,19 +151,34 @@ func (c PHCConfig) CreateSimulator() clocksim.OscSimulator {
 
 // GPSConfig holds GPS PPS error parameters
 type GPSConfig struct {
-	Jitter     float64        `toml:"jitter"`     // nanoseconds (white noise stddev)
-	Sawtooth   SawtoothConfig `toml:"sawtooth"`   // sawtooth error parameters
-	AR1        AR1Config      `toml:"ar1"`        // AR(1) colored noise parameters (on phase)
-	AR1FM      AR1Config      `toml:"ar1fm"`      // AR(1) FM parameters (OU on frequency, sigma in ppb)
-	RandomWalk float64        `toml:"randomWalk"` // random walk FM coefficient in ppb/√s
-	Drift      DriftConfig    `toml:"drift"`      // Carpenter-Lee bounded drift parameters
-	Sinusoid   []Sinusoid     `toml:"sinusoid"`   // sinusoidal components
+	Jitter     float64          `toml:"jitter"`     // nanoseconds (white noise stddev)
+	Sawtooth   SawtoothConfig   `toml:"sawtooth"`   // sawtooth error parameters
+	AR1        AR1Config        `toml:"ar1"`        // AR(1) colored noise parameters (on phase)
+	AR1FM      AR1Config        `toml:"ar1fm"`      // AR(1) FM parameters (OU on frequency, sigma in ppb)
+	RandomWalk float64          `toml:"randomWalk"` // random walk FM coefficient in ppb/√s
+	Drift      DriftConfig      `toml:"drift"`      // Carpenter-Lee bounded drift parameters
+	Resonator  ResonatorConfig  `toml:"resonator"`  // damped oscillator on phase (bounded)
+	Sinusoid   []Sinusoid       `toml:"sinusoid"`   // sinusoidal components
 }
 
 // IsZero returns true if all GPS parameters are zero (no PPS error configured).
 func (c GPSConfig) IsZero() bool {
 	return c.Jitter == 0 && c.Sawtooth.Amp == 0 && c.AR1.Tau == 0 &&
-		c.AR1FM.Tau == 0 && c.RandomWalk == 0 && c.Drift.Tau == 0 && len(c.Sinusoid) == 0
+		c.AR1FM.Tau == 0 && c.RandomWalk == 0 && c.Drift.Tau == 0 &&
+		c.Resonator.Period == 0 && len(c.Sinusoid) == 0
+}
+
+// ResonatorConfig holds damped oscillator on phase parameters.
+// Implements a bounded phase process that oscillates around zero.
+type ResonatorConfig struct {
+	Period float64 `toml:"period"` // seconds - resonator period (ω₀ = 2π/period)
+	Sigma  float64 `toml:"sigma"`  // nanoseconds - RMS phase deviation
+	Zeta   float64 `toml:"zeta"`   // dimensionless - damping ratio (default 0.3)
+}
+
+// InternalParams converts user-facing (period, sigma, zeta) to internal (omegaN, zeta, sigmaNoise).
+func (c ResonatorConfig) InternalParams() (omegaN, zeta, sigmaNoise float64) {
+	return clocksim.ResonatorUserToInternal(c.Period, c.Sigma, c.Zeta)
 }
 
 func DefaultGPSConfig() GPSConfig {
@@ -305,6 +320,9 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 	}
 	if omegaN, zeta, sigmaDrift := c.Drift.InternalParams(); omegaN > 0 {
 		sims = append(sims, clocksim.DriftGPS(omegaN, zeta, sigmaDrift, 127))
+	}
+	if omegaN, zeta, sigmaNoise := c.Resonator.InternalParams(); omegaN > 0 {
+		sims = append(sims, clocksim.ResonatorGPS(omegaN, zeta, sigmaNoise, 128))
 	}
 	for _, s := range c.Sinusoid {
 		sims = append(sims, clocksim.SinusoidGPS(s.Amp, s.Period, s.PhaseInit))

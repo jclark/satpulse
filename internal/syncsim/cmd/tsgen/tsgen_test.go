@@ -148,6 +148,7 @@ func TestGPSRandomWalk(t *testing.T) { testTsgenOutput(t, "gps.randomWalk") }
 func TestGPSSawtooth(t *testing.T)   { testTsgenOutput(t, "gps.sawtooth") }
 func TestGPSSinusoid(t *testing.T)   { testTsgenOutput(t, "gps.sinusoid") }
 func TestGPSDrift(t *testing.T)      { testTsgenOutput(t, "gps.drift") }
+func TestGPSResonator(t *testing.T)  { testTsgenOutput(t, "gps.resonator") }
 
 // For small sec, formatTimestamp should match simple sprintf
 func FuzzFormatTimestampSmall(f *testing.F) {
