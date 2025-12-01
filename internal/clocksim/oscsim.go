@@ -102,33 +102,43 @@ func FlickerNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 	// account for how the Allan variance filter weights different frequencies.
 	scale := stddevPPB / 1e9 / math.Sqrt(float64(numStages)) * flickerScaleFactor
 
-	// Precompute poles and noise scales for a given dt.
-	// This avoids expensive math.Pow calls in the hot path when dt is constant.
-	poles := make([]float64, numStages)
-	noiseScales := make([]float64, numStages)
-	computePoles := func(dt float64) {
-		for i := range poles {
-			poles[i] = math.Pow(b[i], dt)
-			noiseScales[i] = scale * math.Sqrt(1-poles[i]*poles[i])
-		}
+	// Cache of precomputed poles and noise scales by dt value.
+	// FP rounding produces ~30 unique dt values over long simulations.
+	// Cache is cleared if it exceeds 64 entries to bound memory.
+	type poleData struct {
+		poles       []float64
+		noiseScales []float64
 	}
+	poleCache := make(map[float64]*poleData)
+	computePoles := func(dt float64) *poleData {
+		if pd, ok := poleCache[dt]; ok {
+			return pd
+		}
+		pd := &poleData{
+			poles:       make([]float64, numStages),
+			noiseScales: make([]float64, numStages),
+		}
+		for i := range pd.poles {
+			pd.poles[i] = math.Pow(b[i], dt)
+			pd.noiseScales[i] = scale * math.Sqrt(1-pd.poles[i]*pd.poles[i])
+		}
+		if len(poleCache) >= 64 {
+			clear(poleCache)
+		}
+		poleCache[dt] = pd
+		return pd
+	}
+	// Pre-populate cache with the expected dt
 	computePoles(rawClockDT)
 
 	var lastTime float64
-	// Track last dt to detect when recomputation is needed. Floating point
-	// accumulation causes t-lastTime to drift by ~1 ULP occasionally, so we
-	// can't assume dt is always exactly rawClockDT.
-	lastDT := rawClockDT
 
 	return func(t float64) float64 {
 		if lastTime > 0 {
 			dt := t - lastTime
-			if dt != lastDT {
-				computePoles(dt)
-				lastDT = dt
-			}
+			pd := computePoles(dt)
 			for i := range numStages {
-				states[i] = poles[i]*states[i] + rng.NormFloat64()*noiseScales[i]
+				states[i] = pd.poles[i]*states[i] + rng.NormFloat64()*pd.noiseScales[i]
 			}
 		}
 		lastTime = t
