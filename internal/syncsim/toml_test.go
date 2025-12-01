@@ -83,9 +83,11 @@ amp = 26.012
 
 [gps]
 jitter = 0.195
-ar1.tau = 176.804
-ar1.sigma = 2.319
 sawtooth.amp = 7.855
+
+[[gps.ar1]]
+tau = 176.804
+sigma = 2.319
 
 [[gps.sinusoid]]
 period = 4303.000
@@ -107,9 +109,8 @@ amp = 2.253
 				},
 				GPS: GPSConfig{
 					Jitter: 0.195,
-					AR1: AR1Config{
-						Tau:   176.804,
-						Sigma: 2.319,
+					AR1: []AR1Config{
+						{Tau: 176.804, Sigma: 2.319},
 					},
 					Sawtooth: SawtoothConfig{
 						Amp: 7.855,
@@ -162,11 +163,16 @@ amp = 2.253
 			if config.GPS.Jitter != tt.expected.GPS.Jitter {
 				t.Errorf("GPS.Jitter = %v, want %v", config.GPS.Jitter, tt.expected.GPS.Jitter)
 			}
-			if config.GPS.AR1.Tau != tt.expected.GPS.AR1.Tau {
-				t.Errorf("GPS.AR1.Tau = %v, want %v", config.GPS.AR1.Tau, tt.expected.GPS.AR1.Tau)
+			if len(config.GPS.AR1) != len(tt.expected.GPS.AR1) {
+				t.Fatalf("GPS.AR1 length = %d, want %d", len(config.GPS.AR1), len(tt.expected.GPS.AR1))
 			}
-			if config.GPS.AR1.Sigma != tt.expected.GPS.AR1.Sigma {
-				t.Errorf("GPS.AR1.Sigma = %v, want %v", config.GPS.AR1.Sigma, tt.expected.GPS.AR1.Sigma)
+			for i, ar1 := range config.GPS.AR1 {
+				if ar1.Tau != tt.expected.GPS.AR1[i].Tau {
+					t.Errorf("GPS.AR1[%d].Tau = %v, want %v", i, ar1.Tau, tt.expected.GPS.AR1[i].Tau)
+				}
+				if ar1.Sigma != tt.expected.GPS.AR1[i].Sigma {
+					t.Errorf("GPS.AR1[%d].Sigma = %v, want %v", i, ar1.Sigma, tt.expected.GPS.AR1[i].Sigma)
+				}
 			}
 			if config.GPS.Sawtooth.Amp != tt.expected.GPS.Sawtooth.Amp {
 				t.Errorf("GPS.Sawtooth.Amp = %v, want %v", config.GPS.Sawtooth.Amp, tt.expected.GPS.Sawtooth.Amp)

@@ -215,11 +215,17 @@ func parseFlags(args []string) (*flagVars, error) {
 	if !math.IsNaN(jitter) {
 		vars.simCfg.GPS.Jitter = jitter
 	}
-	if !math.IsNaN(ar1Tau) {
-		vars.simCfg.GPS.AR1.Tau = ar1Tau
-	}
-	if !math.IsNaN(ar1Sigma) {
-		vars.simCfg.GPS.AR1.Sigma = ar1Sigma
+	// CLI flags create/modify a single AR1 entry for backward compatibility
+	if !math.IsNaN(ar1Tau) || !math.IsNaN(ar1Sigma) {
+		if len(vars.simCfg.GPS.AR1) == 0 {
+			vars.simCfg.GPS.AR1 = []syncsim.AR1Config{{}}
+		}
+		if !math.IsNaN(ar1Tau) {
+			vars.simCfg.GPS.AR1[0].Tau = ar1Tau
+		}
+		if !math.IsNaN(ar1Sigma) {
+			vars.simCfg.GPS.AR1[0].Sigma = ar1Sigma
+		}
 	}
 	if !math.IsNaN(gpsRandomWalk) {
 		vars.simCfg.GPS.RandomWalk = gpsRandomWalk

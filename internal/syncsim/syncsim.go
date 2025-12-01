@@ -153,8 +153,8 @@ func (c PHCConfig) CreateSimulator() clocksim.OscSimulator {
 type GPSConfig struct {
 	Jitter     float64          `toml:"jitter"`     // nanoseconds (white noise stddev)
 	Sawtooth   SawtoothConfig   `toml:"sawtooth"`   // sawtooth error parameters
-	AR1        AR1Config        `toml:"ar1"`        // AR(1) colored noise parameters (on phase)
-	AR1FM      AR1Config        `toml:"ar1fm"`      // AR(1) FM parameters (OU on frequency, sigma in ppb)
+	AR1        []AR1Config      `toml:"ar1"`        // AR(1) colored noise parameters (on phase)
+	AR1FM      AR1Config        `toml:"ar1FM"`      // AR(1) FM parameters (OU on frequency, sigma in ppb)
 	RandomWalk float64          `toml:"randomWalk"` // random walk FM coefficient in ppb/√s
 	Drift      DriftConfig      `toml:"drift"`      // Carpenter-Lee bounded drift parameters
 	Resonator  ResonatorConfig  `toml:"resonator"`  // damped oscillator on phase (bounded)
@@ -163,7 +163,7 @@ type GPSConfig struct {
 
 // IsZero returns true if all GPS parameters are zero (no PPS error configured).
 func (c GPSConfig) IsZero() bool {
-	return c.Jitter == 0 && c.Sawtooth.Amp == 0 && c.AR1.Tau == 0 &&
+	return c.Jitter == 0 && c.Sawtooth.Amp == 0 && len(c.AR1) == 0 &&
 		c.AR1FM.Tau == 0 && c.RandomWalk == 0 && c.Drift.Tau == 0 &&
 		c.Resonator.Period == 0 && len(c.Sinusoid) == 0
 }
@@ -307,8 +307,10 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 	if c.Jitter > 0 {
 		sims = append(sims, clocksim.JitterGPS(time.Duration(c.Jitter)*time.Nanosecond, 123))
 	}
-	if alpha, noise := c.AR1.AlphaNoise(); alpha > 0 {
-		sims = append(sims, clocksim.AR1ColoredNoiseGPS(alpha, noise, 124))
+	for i, ar1 := range c.AR1 {
+		if alpha, noise := ar1.AlphaNoise(); alpha > 0 {
+			sims = append(sims, clocksim.AR1ColoredNoiseGPS(alpha, noise, int64(124+i)))
+		}
 	}
 	if c.AR1FM.Tau > 0 && c.AR1FM.Sigma > 0 {
 		sims = append(sims, clocksim.AR1FMGPS(c.AR1FM.Tau, c.AR1FM.Sigma, 126))
