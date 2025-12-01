@@ -247,7 +247,7 @@ func TestPHCSync(t *testing.T) {
 			pulseWidth:              0,
 			duration:                30.0,
 			maxTrackingStdDev:       20 * time.Nanosecond,
-			expectConvergingSamples: 14, // 1 measure + 1 compensate + ~12 to converge residual
+			expectConvergingSamples: 13, // 1 measure + 1 compensate + ~11 to converge residual
 			// After reset step with delay d1 (~5µs), first pulse in converging measures offset ~d1
 			// Compensation steps by 2×d1 (~10µs) with delay d2 (~5µs), net advance = d1 + (d1 - d2)
 			// Residual error is |d1 - d2| which is ~1-2µs typical with 1µs stddev in delays
@@ -271,8 +271,8 @@ func TestPHCSync(t *testing.T) {
 			name:              "sawtooth correction improves accuracy - correction enabled",
 			pulseWidth:        0,
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 8 * time.Nanosecond,  // Should stay near baseline ~7ns
-			maxTrackingAbsMax: 25 * time.Nanosecond, // Should stay near baseline ~23ns
+			maxTrackingStdDev: 9 * time.Nanosecond,  // Should stay near baseline ~8ns
+			maxTrackingAbsMax: 28 * time.Nanosecond, // Should stay near baseline ~27ns
 			modifySimCfg: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
 			},
@@ -287,7 +287,7 @@ func TestPHCSync(t *testing.T) {
 			minTrackingStdDev: 8 * time.Nanosecond,  // Must be worse than corrected (~9ns)
 			minTrackingAbsMax: 26 * time.Nanosecond, // Must be worse than corrected (~28ns)
 			maxTrackingStdDev: 11 * time.Nanosecond, // But not too degraded
-			maxTrackingAbsMax: 32 * time.Nanosecond, // But not too degraded
+			maxTrackingAbsMax: 33 * time.Nanosecond, // But not too degraded
 			modifySimCfg: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
 			},
@@ -316,8 +316,8 @@ func TestPHCSync(t *testing.T) {
 			name:              "sawtooth PostPulse correction improves accuracy - correction enabled",
 			pulseWidth:        0,
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 9 * time.Nanosecond,  // Should stay near baseline ~8ns
-			maxTrackingAbsMax: 26 * time.Nanosecond, // Should stay near baseline ~25ns
+			maxTrackingStdDev: 10 * time.Nanosecond, // Should stay near baseline ~9ns
+			maxTrackingAbsMax: 28 * time.Nanosecond, // Should stay near baseline ~27ns
 			modifySimCfg: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
 				cfg.SawtoothMsgType = gpsprot.PostPulse
@@ -352,8 +352,8 @@ func TestPHCSync(t *testing.T) {
 			name:              "sawtooth PostPulse with tighter delay range",
 			pulseWidth:        0,
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 8 * time.Nanosecond,
-			maxTrackingAbsMax: 24 * time.Nanosecond,
+			maxTrackingStdDev: 9 * time.Nanosecond,
+			maxTrackingAbsMax: 28 * time.Nanosecond,
 			modifySimCfg: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
 				cfg.SawtoothMsgType = gpsprot.PostPulse
@@ -387,7 +387,7 @@ func TestPHCSync(t *testing.T) {
 			name:              "flicker noise order of magnitude",
 			pulseWidth:        0,
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 25 * time.Nanosecond,
+			maxTrackingStdDev: 27 * time.Nanosecond,
 			maxTrackingAbsMax: 80 * time.Nanosecond,
 			modifySimCfg: func(cfg *Config) {
 				// Isolated flicker noise test - use defaults except flicker

@@ -53,8 +53,9 @@ type RawClock struct {
 }
 
 // Integration step size for RawClock discrete integration.
-const rawClockDT = 0.001   // 1ms in seconds
-const rawClockDTNs = 1_000_000 // 1ms in nanoseconds (exact integer)
+const rawClockStepsPerSec = 1000
+const rawClockDT = 1.0 / float64(rawClockStepsPerSec)          // 1ms in seconds
+const rawClockDTNs = int64(1_000_000_000 / rawClockStepsPerSec) // 1ms in nanoseconds (exact integer)
 
 // NewRawClock creates a RawClock with the given oscillator and initial phase in nanoseconds.
 func NewRawClock(oscillator OscSimulator, startPhaseNs int64) *RawClock {
@@ -78,9 +79,8 @@ func (r *RawClock) ReadAt(simTime float64) int64 {
 		panic(fmt.Sprintf("ReadAt: time went backwards: %.9f < %.9f", simTime, r.lastTime))
 	}
 
-	// Compute target step index. Multiply by 1000 (exact in float64) rather than
-	// dividing by 0.001 (inexact), to avoid undercounting steps at grid boundaries.
-	targetStep := int64(simTime * 1000)
+	// Compute target step index using the integer step rate to avoid undercounting at boundaries.
+	targetStep := int64(simTime * rawClockStepsPerSec)
 
 	// Process new full steps since lastStep.
 	// Each step samples the oscillator at the step's start time and accumulates:
@@ -100,7 +100,10 @@ func (r *RawClock) ReadAt(simTime float64) int64 {
 	// If we persisted it, consecutive calls like ReadAt(1.0004) then ReadAt(2.0008)
 	// would double-count the remainder.
 	gridTime := float64(targetStep) * rawClockDT
-	remNs := max(0, int64((simTime-gridTime)*1e9)) // Clamp to avoid negative from FP rounding
+	remNs := int64(math.Round((simTime - gridTime) * 1e9))
+	if remNs < 0 {
+		remNs = 0
+	}
 
 	// Combine: startPhase + nominal + noise + remainder.
 	// Use math.Round for noise because decimal frequencies (e.g., 10ppm = 1e-5) cannot be

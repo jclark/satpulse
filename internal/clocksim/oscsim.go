@@ -131,10 +131,10 @@ func FlickerNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 	// Pre-populate cache with the expected dt
 	computePoles(rawClockDT)
 
-	var lastTime float64
+	lastTime := math.NaN() // NaN sentinel so first call skips state update
 
 	return func(t float64) float64 {
-		if lastTime > 0 {
+		if !math.IsNaN(lastTime) {
 			dt := t - lastTime
 			pd := computePoles(dt)
 			for i := range numStages {
@@ -163,10 +163,10 @@ func FlickerNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 func RandomWalkOsc(stddevPPB float64, seed int64) OscSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	var currentFreq float64
-	var lastTime float64
+	lastTime := math.NaN() // NaN sentinel so first call skips state update
 
 	return func(t float64) float64 {
-		if lastTime > 0 {
+		if !math.IsNaN(lastTime) {
 			dt := t - lastTime
 			step := rng.NormFloat64() * stddevPPB / 1e9 * math.Sqrt(dt)
 			currentFreq += step
