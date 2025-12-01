@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/logobs"
 	"github.com/jclark/satpulse/internal/obs"
@@ -31,7 +32,7 @@ type flagVars struct {
 func main() {
 	vars, err := parseFlags(os.Args[1:])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		cmd.ErrPrintln("syncsim", err)
 		os.Exit(1)
 	}
 
@@ -118,10 +119,15 @@ func parseFlags(args []string) (*flagVars, error) {
 	gpsRandomWalk := math.NaN()
 	sawtooth := math.NaN()
 
+	help := false
+	showVersion := false
+
 	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
+	flags.BoolVarP(&help, "help", "h", false, "show help")
+	flags.BoolVarP(&showVersion, "version", "V", false, "show version information")
 
 	// HW config file flag
-	flags.StringVarP(&hwPath, "hw", "h", "", "hardware config TOML file")
+	flags.StringVar(&hwPath, "hw", "", "hardware config TOML file")
 
 	// Non-HW flags (bind directly to struct)
 	flags.Float64Var(&vars.simCfg.Duration, "duration", vars.simCfg.Duration, "simulation duration in seconds")
@@ -167,6 +173,14 @@ func parseFlags(args []string) (*flagVars, error) {
 	err := flags.Parse(args)
 	if err != nil {
 		return nil, err
+	}
+	if help {
+		fmt.Fprintf(os.Stderr, "Usage: syncsim [options]\nOptions:\n%s", flags.FlagUsages())
+		os.Exit(0)
+	}
+	if showVersion {
+		fmt.Println(cmd.VersionInfo())
+		os.Exit(0)
 	}
 	if flags.NArg() != 0 {
 		return nil, fmt.Errorf("command must not have non-option arguments")
