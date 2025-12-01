@@ -68,7 +68,7 @@ type Config struct {
 	ToggleTimes       []float64       // absolute simulation times to toggle pulse/message delivery on/off
 	Outlier           OutlierConfig   // PPS outlier injection configuration
 	Shift             ShiftConfig     // PPS phase shift configuration
-	TSWriter          io.Writer       // optional writer for PHC timestamp output (JSON Lines)
+	TSLog             io.Writer       // optional writer for PHC timestamp log (JSON Lines)
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -656,9 +656,9 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 				if !trackingStarted && ctrl.Mode() == phcsync.ModeTracking {
 					trackingStarted = true
 				}
-				if trackingStarted && simCfg.TSWriter != nil {
+				if trackingStarted && simCfg.TSLog != nil {
 					nsec := int64(lastReading.Timestamp.T - tStart)
-					fmt.Fprintf(simCfg.TSWriter, `{"chan":"A","timestamp":"%d.%09d"}`+"\n", nsec/1e9, nsec%1e9)
+					fmt.Fprintf(simCfg.TSLog, `{"chan":"A","timestamp":"%d.%09d"}`+"\n", nsec/1e9, nsec%1e9)
 				}
 			}
 
