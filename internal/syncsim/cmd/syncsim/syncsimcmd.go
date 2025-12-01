@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/logobs"
 	"github.com/jclark/satpulse/internal/obs"
@@ -21,7 +22,7 @@ var startTime = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 type flagVars struct {
 	statsInterval   int
 	clockLogPath    string
-	tsOutputPath    string
+	tsLogPath       string
 	simCfg          syncsim.Config
 	phcCfg          phcsync.Config
 	debug           bool
@@ -31,7 +32,7 @@ type flagVars struct {
 func main() {
 	vars, err := parseFlags(os.Args[1:])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		cmd.ErrPrintln("syncsim", err)
 		os.Exit(1)
 	}
 
@@ -70,14 +71,14 @@ func main() {
 		observers = append(observers, clockObs)
 	}
 
-	if vars.tsOutputPath != "" {
-		f, err := os.Create(vars.tsOutputPath)
+	if vars.tsLogPath != "" {
+		f, err := os.Create(vars.tsLogPath)
 		if err != nil {
-			lg.Error("failed to create ts output file", "err", err)
+			lg.Error("failed to create ts log file", "err", err)
 			os.Exit(1)
 		}
 		defer f.Close()
-		vars.simCfg.TSWriter = f
+		vars.simCfg.TSLog = f
 	}
 
 	// Run simulation
@@ -118,10 +119,15 @@ func parseFlags(args []string) (*flagVars, error) {
 	gpsRandomWalk := math.NaN()
 	sawtooth := math.NaN()
 
+	help := false
+	showVersion := false
+
 	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
+	flags.BoolVarP(&help, "help", "h", false, "show help")
+	flags.BoolVarP(&showVersion, "version", "V", false, "show version information")
 
 	// HW config file flag
-	flags.StringVarP(&hwPath, "hw", "h", "", "hardware config TOML file")
+	flags.StringVar(&hwPath, "hw", "", "hardware config TOML file")
 
 	// Non-HW flags (bind directly to struct)
 	flags.Float64Var(&vars.simCfg.Duration, "duration", vars.simCfg.Duration, "simulation duration in seconds")
@@ -146,7 +152,7 @@ func parseFlags(args []string) (*flagVars, error) {
 	flags.Float64VarP(&vars.simCfg.PulseWidth, "pulse-width", "w", vars.simCfg.PulseWidth, "pulse width in seconds (0 for single-edge mode)")
 	flags.IntVar(&vars.statsInterval, "stats", 0, "statistics interval in seconds (0 to disable)")
 	flags.StringVar(&vars.clockLogPath, "clock-log", "", "path to clock log file (empty to disable)")
-	flags.StringVar(&vars.tsOutputPath, "ts-output", "", "path to write PHC timestamps (JSON Lines format)")
+	flags.StringVar(&vars.tsLogPath, "ts-log", "", "path to write PHC timestamps (JSON Lines format)")
 	flags.Float64Var(&vars.phcCfg.Track.Kp, "tracking-kp", vars.phcCfg.Track.Kp, "tracking mode proportional gain")
 	flags.Float64Var(&vars.phcCfg.Track.Ki, "tracking-ki", vars.phcCfg.Track.Ki, "tracking mode integral gain")
 	flags.Float64Var(&vars.phcCfg.Track.AvgFreqTimeConstant, "avg-freq-time-constant", vars.phcCfg.Track.AvgFreqTimeConstant, "tracking mode average frequency time constant in seconds")
@@ -167,6 +173,14 @@ func parseFlags(args []string) (*flagVars, error) {
 	err := flags.Parse(args)
 	if err != nil {
 		return nil, err
+	}
+	if help {
+		fmt.Fprintf(os.Stderr, "Usage: syncsim [options]\nOptions:\n%s", flags.FlagUsages())
+		os.Exit(0)
+	}
+	if showVersion {
+		fmt.Println(cmd.VersionInfo())
+		os.Exit(0)
 	}
 	if flags.NArg() != 0 {
 		return nil, fmt.Errorf("command must not have non-option arguments")
