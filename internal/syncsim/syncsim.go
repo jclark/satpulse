@@ -143,18 +143,18 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 	otherPPSSims := []clocksim.GPSSimulator{cfg.GPS.CreateSimulator()}
 
 	// Add shift if configured
-	if cfg.Shift.Shift != 0 {
+	if cfg.Fault.Shift.Shift != 0 {
 		otherPPSSims = append(otherPPSSims, clocksim.ShiftPPS(
-			cfg.Shift.StartTime,
-			cfg.Shift.Ramp,
-			cfg.Shift.Duration,
-			cfg.Shift.Shift,
+			cfg.Fault.Shift.StartTime,
+			cfg.Fault.Shift.Ramp,
+			cfg.Fault.Shift.Duration,
+			cfg.Fault.Shift.Shift,
 		))
 	}
 
 	// Add outliers if configured
-	for _, second := range cfg.Outlier.Times {
-		otherPPSSims = append(otherPPSSims, clocksim.SingleOutlierPPS(second, cfg.Outlier.Offset))
+	for _, second := range cfg.Fault.Outlier.Times {
+		otherPPSSims = append(otherPPSSims, clocksim.SingleOutlierPPS(second, cfg.Fault.Outlier.Offset))
 	}
 
 	otherPPS := clocksim.CombineGPS(otherPPSSims...)
@@ -179,8 +179,8 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 	var trailingEdgeSim clocksim.GPSSimulator
 	var pulseType phcsync.PulseType
 
-	if cfg.PulseWidth > 0 {
-		pulseWidth = time.Duration(cfg.PulseWidth * 1e9)
+	if cfg.Pulse.Width > 0 {
+		pulseWidth = time.Duration(cfg.Pulse.Width * 1e9)
 		trailingEdgeSim = clocksim.JitterGPS(2, 789) // 2 nanoseconds
 		pulseType = phcsync.PulseType{
 			EdgesPerPulse: 2,
@@ -241,7 +241,7 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 	lg.Info("starting phcsync simulation",
 		"duration", duration,
 		"pulseDelay", "5µs-250µs",
-		"msgDelay", cfg.MsgDelay,
+		"msgDelay", cfg.Msg.Delay,
 		"phcFreqOffset", cfg.PHC.FreqOffset,
 		"phcDrift", cfg.PHC.Drift,
 		"phcWhiteNoise", cfg.PHC.WhiteNoise,
@@ -455,16 +455,16 @@ func (s *offsetStats) stdDev() float64 {
 func generatePulseEvents(cfg Config, duration float64, edgesPerPulse int) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
 		rng := rand.New(rand.NewSource(999))
-		prePulseTime := cfg.PrePulseTime
+		prePulseTime := cfg.Msg.PrePulseTime
 		if prePulseTime == 0 {
 			prePulseTime = 0.95
 		}
 		for pps := 1.0; pps < duration; pps += 1.0 {
-			pulseDelay := cfg.MinDelay + rng.Float64()*(cfg.MaxDelay-cfg.MinDelay)
+			pulseDelay := cfg.Pulse.MinDelay + rng.Float64()*(cfg.Pulse.MaxDelay-cfg.Pulse.MinDelay)
 			risingTime := pps + pulseDelay
 
 			// Emit PrePulse event only if sawtooth is configured and PrePulse mode
-			if cfg.GPS.Sawtooth.Amp > 0 && cfg.SawtoothMsgType == gpsprot.PrePulse {
+			if cfg.GPS.Sawtooth.Amp > 0 && cfg.Msg.SawtoothType == SawtoothPrePulse {
 				prePulseEventTime := risingTime - prePulseTime
 				if !yield(Event{
 					Time: prePulseEventTime,
@@ -488,8 +488,8 @@ func generatePulseEvents(cfg Config, duration float64, edgesPerPulse int) iter.S
 			}
 
 			// Emit PostPulse event only if sawtooth is configured and PostPulse mode
-			if cfg.GPS.Sawtooth.Amp > 0 && cfg.SawtoothMsgType == gpsprot.PostPulse {
-				postPulseEventTime := risingTime + cfg.PostPulseMsgDelay
+			if cfg.GPS.Sawtooth.Amp > 0 && cfg.Msg.SawtoothType == SawtoothPostPulse {
+				postPulseEventTime := risingTime + cfg.Msg.PostPulseDelay
 				if !yield(Event{
 					Time: postPulseEventTime,
 					Type: EventPostPulseMsg,
@@ -500,7 +500,7 @@ func generatePulseEvents(cfg Config, duration float64, edgesPerPulse int) iter.S
 			}
 
 			if edgesPerPulse == 2 {
-				trailingTime := pps + cfg.PulseWidth + pulseDelay
+				trailingTime := pps + cfg.Pulse.Width + pulseDelay
 				if !yield(Event{
 					Time: trailingTime,
 					Type: EventPulse,
@@ -522,7 +522,7 @@ func generateNavSolutionMsgEvents(cfg Config, duration float64) iter.Seq[Event] 
 	return func(yield func(Event) bool) {
 		rng := rand.New(rand.NewSource(888))
 		for pps := 1.0; pps < duration; pps += 1.0 {
-			msgDelayTime := cfg.MsgDelay + rng.NormFloat64()*cfg.MsgJitter
+			msgDelayTime := cfg.Msg.Delay + rng.NormFloat64()*cfg.Msg.Jitter
 			if msgDelayTime < 0 {
 				msgDelayTime = 0
 			}
