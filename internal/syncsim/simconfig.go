@@ -77,10 +77,10 @@ func DefaultConfig() Config {
 type PHCConfig struct {
 	// FreqOffset is the constant frequency offset in ppb.
 	// Typical values: ±1000-10000 ppb for factory-trimmed oscillators.
-	FreqOffset clocksim.PPB `toml:"freqOffset" check:">=-1000000,<=1000000"`
+	FreqOffset clocksim.PPB `toml:"freqOffset" check:">=-1_000_000,<=1_000_000"`
 
 	// Drift is the linear frequency drift rate in ppb per day.
-	Drift float64 `toml:"drift" check:">=-1000,<=1000"`
+	Drift float64 `toml:"drift" check:">=-1_000_000,<=1_000_000"`
 
 	// WhiteNoise is the standard deviation of white frequency noise in ppb.
 	// Typical values are 1-20 ppb for good crystals.
