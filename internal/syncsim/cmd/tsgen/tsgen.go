@@ -31,8 +31,8 @@ func run(args []string) error {
 		return fmt.Errorf("duration must be positive")
 	}
 
-	// Load config without defaults (only what's in TOML file)
-	cfg := syncsim.DefaultZeroConfig()
+	// Load config with defaults, then override from TOML
+	cfg := syncsim.DefaultConfig()
 	if err := syncsim.LoadConfig(cfgPath, &cfg); err != nil {
 		return fmt.Errorf("failed to load config: %v", err)
 	}
@@ -56,27 +56,17 @@ func run(args []string) error {
 
 		// Create sawtooth simulator (following VirtualClock pattern)
 		if cfg.GPS.Sawtooth.Amp > 0 {
-			// If internal clock not specified in TOML, use Python's default
-			internalClock := cfg.GPS.Sawtooth.InternalClock
-			if internalClock.Amp == 0 {
-				internalClock.Amp = 2.0
-				internalClock.Period = 600.0
-				internalClock.PhaseInit = 1.0 / 6.0
-			}
 			// Create oscillator for GPS internal clock (for sawtooth coupling)
-			// InternalClock.Amp is in PPB for the oscillator
+			// InternalClock defaults come from DefaultSawtoothConfig()
+			ic := cfg.GPS.Sawtooth.InternalClock
 			gpsOsc := clocksim.SinusoidOsc(
-				clocksim.PPB(internalClock.Amp),
-				internalClock.Period,
-				internalClock.PhaseInit,
+				clocksim.PPB(ic.Amp),
+				ic.Period,
+				ic.PhaseInit,
 			)
 			ampSec := cfg.GPS.Sawtooth.Amp * 1e-9
-			// Python hardcodes phase_init=0.5 for sawtooth (simulate.py:180)
-			phaseInit := cfg.GPS.Sawtooth.PhaseInit
-			if phaseInit == 0 {
-				phaseInit = 0.5
-			}
-			sawtoothGPS = clocksim.SawtoothGPS(gpsOsc, ampSec, phaseInit)
+			// PhaseInit defaults to 0.5 from DefaultSawtoothConfig()
+			sawtoothGPS = clocksim.SawtoothGPS(gpsOsc, ampSec, cfg.GPS.Sawtooth.PhaseInit)
 		} else {
 			sawtoothGPS = clocksim.PerfectGPS()
 		}

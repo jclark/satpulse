@@ -246,49 +246,55 @@ sawtooth.amp = 8.0
 	}
 
 	// Load config
-	hw := DefaultConfig()
-	err = LoadConfig(tmpfile.Name(), &hw)
+	cfg := DefaultConfig()
+	err = LoadConfig(tmpfile.Name(), &cfg)
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	// Verify user-specified values
-	if hw.PHC.FreqOffset != 100.0 {
-		t.Errorf("PHC.FreqOffset = %v, want 100.0", hw.PHC.FreqOffset)
+	if cfg.PHC.FreqOffset != 100.0 {
+		t.Errorf("PHC.FreqOffset = %v, want 100.0", cfg.PHC.FreqOffset)
 	}
-	if hw.GPS.Jitter != 5.0 {
-		t.Errorf("GPS.Jitter = %v, want 5.0", hw.GPS.Jitter)
+	if cfg.GPS.Jitter != 5.0 {
+		t.Errorf("GPS.Jitter = %v, want 5.0", cfg.GPS.Jitter)
 	}
-	if hw.GPS.Sawtooth.Amp != 8.0 {
-		t.Errorf("GPS.Sawtooth.Amp = %v, want 8.0", hw.GPS.Sawtooth.Amp)
+	if cfg.GPS.Sawtooth.Amp != 8.0 {
+		t.Errorf("GPS.Sawtooth.Amp = %v, want 8.0", cfg.GPS.Sawtooth.Amp)
 	}
 
-	// Verify defaults were merged for unspecified fields
+	// Verify defaults: PHC noise parameters are zero by default
+	if cfg.PHC.Drift != 0 {
+		t.Errorf("PHC.Drift = %v, want 0 (zero noise default)", cfg.PHC.Drift)
+	}
+	if cfg.PHC.WhiteNoise != 0 {
+		t.Errorf("PHC.WhiteNoise = %v, want 0 (zero noise default)", cfg.PHC.WhiteNoise)
+	}
+
+	// Sawtooth defaults for unspecified fields (sensible non-zero defaults)
 	defaults := DefaultConfig()
-
-	// PHC defaults for unspecified fields
-	if hw.PHC.Drift != defaults.PHC.Drift {
-		t.Errorf("PHC.Drift = %v, want %v (from defaults)", hw.PHC.Drift, defaults.PHC.Drift)
-	}
-	if hw.PHC.WhiteNoise != defaults.PHC.WhiteNoise {
-		t.Errorf("PHC.WhiteNoise = %v, want %v (from defaults)", hw.PHC.WhiteNoise, defaults.PHC.WhiteNoise)
-	}
-
-	// Sawtooth defaults for unspecified fields
-	if hw.GPS.Sawtooth.PhaseInit != defaults.GPS.Sawtooth.PhaseInit {
+	if cfg.GPS.Sawtooth.PhaseInit != defaults.GPS.Sawtooth.PhaseInit {
 		t.Errorf("GPS.Sawtooth.PhaseInit = %v, want %v (from defaults)",
-			hw.GPS.Sawtooth.PhaseInit, defaults.GPS.Sawtooth.PhaseInit)
+			cfg.GPS.Sawtooth.PhaseInit, defaults.GPS.Sawtooth.PhaseInit)
 	}
-	if hw.GPS.Sawtooth.InternalClock.Amp != defaults.GPS.Sawtooth.InternalClock.Amp {
+	if cfg.GPS.Sawtooth.InternalClock.Amp != defaults.GPS.Sawtooth.InternalClock.Amp {
 		t.Errorf("GPS.Sawtooth.InternalClock.Amp = %v, want %v (from defaults)",
-			hw.GPS.Sawtooth.InternalClock.Amp, defaults.GPS.Sawtooth.InternalClock.Amp)
+			cfg.GPS.Sawtooth.InternalClock.Amp, defaults.GPS.Sawtooth.InternalClock.Amp)
 	}
-	if hw.GPS.Sawtooth.InternalClock.Period != defaults.GPS.Sawtooth.InternalClock.Period {
+	if cfg.GPS.Sawtooth.InternalClock.Period != defaults.GPS.Sawtooth.InternalClock.Period {
 		t.Errorf("GPS.Sawtooth.InternalClock.Period = %v, want %v (from defaults)",
-			hw.GPS.Sawtooth.InternalClock.Period, defaults.GPS.Sawtooth.InternalClock.Period)
+			cfg.GPS.Sawtooth.InternalClock.Period, defaults.GPS.Sawtooth.InternalClock.Period)
 	}
-	if hw.GPS.Sawtooth.InternalClock.PhaseInit != defaults.GPS.Sawtooth.InternalClock.PhaseInit {
+	if cfg.GPS.Sawtooth.InternalClock.PhaseInit != defaults.GPS.Sawtooth.InternalClock.PhaseInit {
 		t.Errorf("GPS.Sawtooth.InternalClock.PhaseInit = %v, want %v (from defaults)",
-			hw.GPS.Sawtooth.InternalClock.PhaseInit, defaults.GPS.Sawtooth.InternalClock.PhaseInit)
+			cfg.GPS.Sawtooth.InternalClock.PhaseInit, defaults.GPS.Sawtooth.InternalClock.PhaseInit)
+	}
+
+	// Verify Fault defaults to empty (no faults)
+	if len(cfg.Fault.Outlier.Times) != 0 {
+		t.Errorf("Fault.Outlier.Times = %v, want empty", cfg.Fault.Outlier.Times)
+	}
+	if cfg.Fault.Outlier.Offset != 0 {
+		t.Errorf("Fault.Outlier.Offset = %v, want 0 (user must specify)", cfg.Fault.Outlier.Offset)
 	}
 }

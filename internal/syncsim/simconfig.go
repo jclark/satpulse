@@ -42,29 +42,17 @@ func (c *Config) Validate() error {
 	return errors.Join(errs...)
 }
 
-// DefaultConfig returns a Config with sensible default values.
+// DefaultConfig returns a Config with zero noise but sensible operational defaults.
+// PHC and GPS have zero noise parameters (user specifies exactly what noise they want).
+// Pulse and Msg have reasonable timing defaults. Fault has no faults configured.
 func DefaultConfig() Config {
 	return Config{
-		PHC:  DefaultPHCConfig(),
-		GPS:  DefaultGPSConfig(),
-		Sync: phcsync.DefaultConfig(),
-		Pulse: PulseConfig{
-			MinDelay: 5e-6,   // 5 µs
-			MaxDelay: 250e-6, // 250 µs
-			Width:    0,      // single-edge mode
-		},
-		Msg: MsgConfig{
-			Delay:          0.1,              // 100 ms
-			Jitter:         0.01,             // 10 ms stddev
-			SawtoothType:   SawtoothPrePulse, // default to PrePulse
-			PrePulseTime:   0.95,             // 950 ms before pulse
-			PostPulseDelay: 0.1,              // 100 ms after pulse
-		},
-		Fault: FaultConfig{
-			Outlier: OutlierConfig{
-				Offset: 2000, // 2µs default outlier magnitude (in nanoseconds)
-			},
-		},
+		PHC:   DefaultPHCConfig(),
+		GPS:   DefaultGPSConfig(),
+		Sync:  phcsync.DefaultConfig(),
+		Pulse: DefaultPulseConfig(),
+		Msg:   DefaultMsgConfig(),
+		Fault: DefaultFaultConfig(),
 	}
 }
 
@@ -117,13 +105,9 @@ func (c PHCConfig) IsZero() bool {
 		c.FlickerNoise == 0 && c.RandomWalk == 0 && len(c.Sinusoid) == 0
 }
 
+// DefaultPHCConfig returns a zero PHCConfig.
 func DefaultPHCConfig() PHCConfig {
-	return PHCConfig{
-		FreqOffset:   2000.0,
-		FlickerNoise: 1,
-		WhiteNoise:   7.0,
-		RandomWalk:   1,
-	}
+	return PHCConfig{}
 }
 
 // CreateSimulator returns an OscSimulator combining all PHC error sources.
@@ -207,19 +191,11 @@ func (c ResonatorConfig) InternalParams() (omegaN, zeta, sigmaNoise float64) {
 	return clocksim.ResonatorUserToInternal(c.Period, float64(c.Sigma), c.Zeta)
 }
 
+// DefaultGPSConfig returns a GPSConfig with zero noise but sensible sawtooth defaults.
+// Users specifying sawtooth.amp will get working InternalClock values automatically.
 func DefaultGPSConfig() GPSConfig {
 	return GPSConfig{
-		Jitter:     0.25,
-		RandomWalk: 0.000143,
-		Sawtooth:   DefaultSawtoothConfig(),
-	}
-}
-
-// DefaultZeroGPSConfig returns a default zero GPSConfig.
-// See DefaultZeroConfig for the definition of "default zero".
-func DefaultZeroGPSConfig() GPSConfig {
-	return GPSConfig{
-		Sawtooth: DefaultZeroSawtoothConfig(),
+		Sawtooth: DefaultSawtoothConfig(),
 	}
 }
 
@@ -235,17 +211,12 @@ type SawtoothConfig struct {
 	InternalClock Sinusoid `toml:"internalClock"`
 }
 
+// DefaultSawtoothConfig returns a SawtoothConfig with zero amplitude but sensible defaults
+// for PhaseInit and InternalClock. Users specifying sawtooth.amp will get working values.
 func DefaultSawtoothConfig() SawtoothConfig {
-	cfg := DefaultZeroSawtoothConfig()
-	cfg.Amp = 15
-	return cfg
-}
-
-// DefaultZeroSawtoothConfig returns a default zero SawtoothConfig.
-// See DefaultZeroConfig for the definition of "default zero".
-func DefaultZeroSawtoothConfig() SawtoothConfig {
 	return SawtoothConfig{
-		PhaseInit: 0.5,
+		Amp:       0,   // zero by default - user specifies if needed
+		PhaseInit: 0.5, // sensible default
 		InternalClock: Sinusoid{
 			Amp:       2.0,       // 2 ppb amplitude
 			Period:    600.0,     // 10 minute period
@@ -305,16 +276,29 @@ func (c AR1Config) AlphaNoise() (alpha float64, noise clocksim.Nanoseconds) {
 	return alpha, noise
 }
 
-// DefaultZeroConfig returns a Config representing perfect hardware with zero noise.
-// "Default zero" configs have all noise and offset parameters set to zero,
-// but include defaults that make it easy to specify valid non-zero configurations
-// for parameters. Specifically, a non-zero sawtooth.amp will work without needing
-// to specify sawtooth.internalClock parameters.
-func DefaultZeroConfig() Config {
-	return Config{
-		GPS:  DefaultZeroGPSConfig(),
-		Sync: phcsync.DefaultConfig(),
+// DefaultPulseConfig returns default pulse timing parameters.
+func DefaultPulseConfig() PulseConfig {
+	return PulseConfig{
+		MinDelay: 5e-6,   // 5 µs
+		MaxDelay: 250e-6, // 250 µs
+		Width:    0,      // single-edge mode
 	}
+}
+
+// DefaultMsgConfig returns default message timing parameters.
+func DefaultMsgConfig() MsgConfig {
+	return MsgConfig{
+		Delay:          0.1,              // 100 ms
+		Jitter:         0.01,             // 10 ms stddev
+		SawtoothType:   SawtoothPrePulse, // default to PrePulse
+		PrePulseTime:   0.95,             // 950 ms before pulse
+		PostPulseDelay: 0.1,              // 100 ms after pulse
+	}
+}
+
+// DefaultFaultConfig returns a FaultConfig with no faults configured.
+func DefaultFaultConfig() FaultConfig {
+	return FaultConfig{}
 }
 
 // LoadConfig loads configuration from a TOML file into cfg.

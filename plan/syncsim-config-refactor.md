@@ -561,7 +561,67 @@ type SawtoothConfig struct {
 
 ---
 
-## Phase 4: Generate JSON Schema
+## Phase 4: Cleanups
+
+### Phase 4.1: Unify Default Config
+
+Consolidate `DefaultConfig()` and `DefaultZeroConfig()` into a single `DefaultConfig()` that:
+- Produces zero noise/errors by default for PHC, GPS, and Fault sections
+- Includes reasonable defaults for non-noise parameters (like sawtooth.PhaseInit, sawtooth.InternalClock)
+- Provides sensible defaults for Pulse and Msg sections (operational parameters)
+
+**Changes:**
+
+1. Remove `DefaultZeroConfig()`, `DefaultZeroGPSConfig()`, `DefaultZeroSawtoothConfig()`
+2. Rename current `DefaultZeroConfig()` behavior to be the new `DefaultConfig()`
+3. Update `DefaultPHCConfig()` to return zero noise but keep FreqOffset=2000 default
+   (deterministic offset, not noise - doesn't affect ADEV shape)
+4. Update `DefaultGPSConfig()` to return zero noise but keep sawtooth defaults
+5. Add `DefaultPulseConfig()`:
+   ```go
+   func DefaultPulseConfig() PulseConfig {
+       return PulseConfig{
+           MinDelay: 5e-6,   // 5 µs
+           MaxDelay: 250e-6, // 250 µs
+           Width:    0,      // single-edge mode
+       }
+   }
+   ```
+6. Add `DefaultMsgConfig()`:
+   ```go
+   func DefaultMsgConfig() MsgConfig {
+       return MsgConfig{
+           Delay:          0.1,              // 100 ms
+           Jitter:         0.01,             // 10 ms stddev
+           SawtoothType:   SawtoothPrePulse,
+           PrePulseTime:   0.95,             // 950 ms before pulse
+           PostPulseDelay: 0.1,              // 100 ms after pulse
+       }
+   }
+   ```
+7. Add `DefaultFaultConfig()` returning zero struct (no faults by default)
+8. Remove default Offset from `OutlierConfig` - user must specify if using outliers
+9. Update `DefaultConfig()` to use all the above
+10. Update tsgen to use `DefaultConfig()` instead of `DefaultZeroConfig()`
+11. Remove redundant InternalClock defaulting logic from tsgen.go (lines 60-65)
+12. Update `TestLoadConfigMergesDefaults` to reflect new defaults
+
+**Rationale:**
+- Both commands use identical defaulting, making behavior predictable
+- Zero noise by default is explicit - user specifies exactly what noise they want
+- Non-noise defaults (pulse timing, message timing) are still convenient
+- tsgen's `IsZero()` checks continue to work for deciding what to output
+
+### Phase 4.2: Other Cleanups
+
+1. Should separate Sinusoid for PHC and GPS so that the types are right PPB vs Nanoseconds.
+2. Can we merge tsgen and syncsim commands?
+3. Need option to output default TOML file
+
+
+---
+
+## Phase 5: Generate JSON Schema
 
 ### Target Output
 
