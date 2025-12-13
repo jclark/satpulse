@@ -162,7 +162,7 @@ func TestPHCSync(t *testing.T) {
 			modifySimCfg: func(cfg *Config) {
 				cfg.Outlier = OutlierConfig{
 					Times:  []float64{40, 50, 60},
-					Offset: 2000 * time.Nanosecond,
+					Offset: 2000, // nanoseconds
 				}
 			},
 		},
@@ -174,7 +174,7 @@ func TestPHCSync(t *testing.T) {
 			modifySimCfg: func(cfg *Config) {
 				cfg.Outlier = OutlierConfig{
 					Times:  []float64{8}, // Outlier during early tracking (MAD window not full)
-					Offset: 150 * time.Nanosecond,
+					Offset: 150, // nanoseconds
 				}
 			},
 			modifyPHCCfg: func(cfg *phcsync.Config) {
@@ -189,7 +189,7 @@ func TestPHCSync(t *testing.T) {
 			modifySimCfg: func(cfg *Config) {
 				cfg.Outlier = OutlierConfig{
 					Times:  []float64{32, 40, 48}, // delayed to allow MAD window to warm up after entering tracking
-					Offset: 5000 * time.Nanosecond, // 5us outliers - well above MAD threshold
+					Offset: 5000, // nanoseconds - 5us outliers - well above MAD threshold
 				}
 			},
 		},
@@ -201,7 +201,7 @@ func TestPHCSync(t *testing.T) {
 			modifySimCfg: func(cfg *Config) {
 				cfg.Outlier = OutlierConfig{
 					Times:  []float64{40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140},
-					Offset: 1500 * time.Nanosecond,
+					Offset: 1500, // nanoseconds
 				}
 			},
 		},
@@ -214,17 +214,17 @@ func TestPHCSync(t *testing.T) {
 			modifySimCfg: func(cfg *Config) {
 				// Apply sustained 100ns shift after tracking stabilizes
 				cfg.Shift = ShiftConfig{
-					StartTime: 35.0, // Start after tracking is stable
-					Ramp:      2 * time.Second,
-					Duration:  10 * time.Second, // 2s up + 6s hold + 2s down (ends at t=45s)
-					Shift:     100 * time.Nanosecond,
+					StartTime: 35.0,  // Start after tracking is stable
+					Ramp:      2.0,   // seconds
+					Duration:  10.0,  // seconds - 2s up + 6s hold + 2s down (ends at t=45s)
+					Shift:     100,   // nanoseconds
 				}
 				// Inject 2us spikes: during hold, right after shift, and later
 				// If MAD rejects spikes: absmax ~100ns (from shift only)
 				// If MAD fails: absmax ~2us (spikes get through)
 				cfg.Outlier = OutlierConfig{
 					Times:  []float64{40, 46, 55},
-					Offset: 2000 * time.Nanosecond,
+					Offset: 2000, // nanoseconds
 				}
 			},
 		},
@@ -236,7 +236,7 @@ func TestPHCSync(t *testing.T) {
 			modifySimCfg: func(cfg *Config) {
 				cfg.Outlier = OutlierConfig{
 					Times:  []float64{20}, // Inject outlier early in tracking (MAD window not full)
-					Offset: 1000 * time.Nanosecond, // Well above warmup threshold (OutlierThreshold + PreMADOutlierRange = 550ns)
+					Offset: 1000, // nanoseconds - Well above warmup threshold (OutlierThreshold + PreMADOutlierRange = 550ns)
 				}
 			},
 			// PreMADOutlierRange protects servo: warmup threshold = 50ns + 500ns = 550ns
@@ -430,7 +430,7 @@ func TestPHCSync(t *testing.T) {
 				SawtoothMsgType:   gpsprot.PrePulse,
 				ToggleTimes:       tt.toggleTimes,
 				Outlier: OutlierConfig{
-					Offset: 2000 * time.Nanosecond,
+					Offset: 2000, // nanoseconds
 				},
 			}
 

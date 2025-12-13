@@ -3,7 +3,6 @@ package clocksim
 import (
 	"math"
 	"math/rand"
-	"time"
 )
 
 
@@ -33,8 +32,8 @@ func PerfectGPS() GPSSimulator {
 }
 
 // JitterGPS creates a GPS simulator with Gaussian timing jitter.
-// stddev is the standard deviation of the timing error.
-func JitterGPS(stddev time.Duration, seed int64) GPSSimulator {
+// stddev is the standard deviation of the timing error in nanoseconds.
+func JitterGPS(stddev Nanoseconds, seed int64) GPSSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	stddevSec := stddev.Seconds()
 	return func(t float64) float64 {
@@ -80,12 +79,12 @@ func SawtoothGPS(osc OscSimulator, ampPPS, phaseInit float64) GPSSimulator {
 //
 // Parameters:
 //
-//	ampNs: amplitude in nanoseconds (peak deviation)
+//	amp: amplitude in nanoseconds (peak deviation)
 //	periodS: period in seconds (e.g., 3000 for thermal cycle)
 //	phaseInit: initial phase in [0,1) (0.5 = middle of cycle)
-func SinusoidGPS(ampNs, periodS, phaseInit float64) GPSSimulator {
+func SinusoidGPS(amp Nanoseconds, periodS, phaseInit float64) GPSSimulator {
 	omega := 2 * math.Pi / periodS
-	ampSec := ampNs * 1e-9
+	ampSec := amp.Seconds()
 	phase := phaseInit * 2 * math.Pi
 	return func(t float64) float64 {
 		return ampSec * math.Sin(omega*t+phase)
@@ -101,15 +100,15 @@ func SinusoidGPS(ampNs, periodS, phaseInit float64) GPSSimulator {
 // Parameters:
 //
 //	alpha: autocorrelation coefficient (e.g., 0.998671 from GPS measurements)
-//	noiseStddevNs: standard deviation of driving noise in nanoseconds (e.g., 0.49)
+//	noiseStddev: standard deviation of driving noise in nanoseconds (e.g., 0.49)
 //	seed: random seed for reproducibility
 //
 // Assumes calls at unit time steps (t = 1.0, 2.0, 3.0, ...).
 // This means it is suitable for leading edge (ppsSimulator) but not trailing edge (trailingEdgeSimulator).
 // Correlation time constant: tau_c = -1 / ln(alpha) seconds (e.g., ~750s for alpha=0.9987)
-func AR1ColoredNoiseGPS(alpha float64, noiseStddevNs float64, seed int64) GPSSimulator {
+func AR1ColoredNoiseGPS(alpha float64, noiseStddev Nanoseconds, seed int64) GPSSimulator {
 	rng := rand.New(rand.NewSource(seed))
-	noiseStddevSec := noiseStddevNs * 1e-9 // Convert ns to seconds
+	noiseStddevSec := noiseStddev.Seconds()
 
 	// Initialize from stationary distribution
 	// For AR(1), stationary variance = sigma_epsilon^2 / (1 - alpha^2)
@@ -127,10 +126,7 @@ func AR1ColoredNoiseGPS(alpha float64, noiseStddevNs float64, seed int64) GPSSim
 // ShiftPPS creates a GPS simulator that applies a temporary phase shift with smooth transitions.
 // The shift rises with a half-sine profile, holds at the specified shift, then falls symmetrically.
 // Useful for simulating ionospheric disturbances or other gradual timing biases.
-func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) GPSSimulator {
-	startSec := startTime
-	rampSec := ramp.Seconds()
-	durationSec := duration.Seconds()
+func ShiftPPS(startTime, rampSec, durationSec float64, shift Nanoseconds) GPSSimulator {
 	shiftSec := shift.Seconds()
 	// Hold period is total duration minus two ramps
 	holdSec := durationSec - 2*rampSec
@@ -138,7 +134,7 @@ func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) GPSSimulat
 		holdSec = 0
 	}
 	return func(t float64) float64 {
-		relTime := t - startSec
+		relTime := t - startTime
 		switch {
 		case relTime <= 0:
 			return 0
@@ -162,11 +158,12 @@ func ShiftPPS(startTime float64, ramp, duration, shift time.Duration) GPSSimulat
 // SingleOutlierPPS creates a GPS simulator that adds a phase offset at a specific second.
 // Both second and t are rounded to the nearest integer for comparison.
 // Useful for testing outlier detection by injecting controlled timing errors.
-func SingleOutlierPPS(second float64, offset time.Duration) GPSSimulator {
+func SingleOutlierPPS(second float64, offset Nanoseconds) GPSSimulator {
 	targetSecond := math.Round(second)
+	offsetSec := offset.Seconds()
 	return func(t float64) float64 {
 		if math.Round(t) == targetSecond {
-			return offset.Seconds()
+			return offsetSec
 		}
 		return 0
 	}
@@ -180,16 +177,16 @@ func SingleOutlierPPS(second float64, offset time.Duration) GPSSimulator {
 // Parameters:
 //
 //	tauS: correlation time T in seconds
-//	sigmaPPB: stationary RMS of frequency bias in ppb
+//	sigma: stationary RMS of frequency bias in ppb
 //	seed: random seed for reproducibility
 //
 // Returns GPS simulator function producing phase error in seconds.
-func AR1FMGPS(tauS, sigmaPPB float64, seed int64) GPSSimulator {
+func AR1FMGPS(tauS float64, sigma PPB, seed int64) GPSSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	// Convert parameters (Δt = 1 s)
 	rho := math.Exp(-1.0 / tauS)
 	rho = min(rho, 1.0-1e-12) // numerical safety
-	sigmaX := sigmaPPB * 1e-9 // ppb to dimensionless
+	sigmaX := sigma.Fractional()
 	sigmaEps := sigmaX * math.Sqrt(1.0-rho*rho)
 	// Initial state from stationary distribution
 	xState := rng.NormFloat64() * sigmaX // frequency bias (dimensionless)

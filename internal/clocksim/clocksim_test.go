@@ -168,7 +168,7 @@ func TestPrecisionAtLargeTime(t *testing.T) {
 	raw := NewRawClock(osc, gpsEpochNs)
 
 	// PPS with 10ns jitter (realistic GNSS)
-	pps := JitterGPS(10*time.Nanosecond, 42)
+	pps := JitterGPS(10, 42) // 10 nanoseconds
 
 	// Simulation starts at t=0 (small!)
 	vc := NewVirtualClock(raw, nil, pps, 0, 500000, 0, nil)

@@ -368,7 +368,7 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 		}
 
 		// Add white noise to pulse width for realism (~20ns stddev)
-		noiseGen := clocksim.JitterGPS(20*time.Nanosecond, 12345)
+		noiseGen := clocksim.JitterGPS(20, 12345) // 20 nanoseconds
 
 		// When startWithRising=false, shift timeline so falling edge is at t=0
 		timeOffset := time.Duration(0)

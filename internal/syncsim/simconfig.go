@@ -3,7 +3,6 @@ package syncsim
 import (
 	"math"
 	"os"
-	"time"
 
 	"github.com/jclark/satpulse/internal/clocksim"
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -44,19 +43,19 @@ func DefaultConfig() Config {
 		PostPulseMsgDelay: 0.1,              // send PostPulse message 0.1s after PPS edge
 		SawtoothMsgType:   gpsprot.PrePulse, // default to PrePulse (current behavior)
 		Outlier: OutlierConfig{
-			Offset: 2000 * time.Nanosecond, // 2µs default outlier magnitude
+			Offset: 2000, // 2µs default outlier magnitude (in nanoseconds)
 		},
 	}
 }
 
 // PHCConfig holds PHC oscillator parameters
 type PHCConfig struct {
-	FreqOffset   float64    `toml:"freqOffset"`   // ppb
-	Drift        float64    `toml:"drift"`        // ppb/day
-	WhiteNoise   float64    `toml:"whiteNoise"`   // ppb
-	FlickerNoise float64    `toml:"flickerNoise"` // ppb
-	RandomWalk   float64    `toml:"randomWalk"`   // ppb/√s
-	Sinusoid     []Sinusoid `toml:"sinusoid"`     // sinusoidal components
+	FreqOffset   clocksim.PPB `toml:"freqOffset"`   // ppb
+	Drift        float64      `toml:"drift"`        // ppb/day
+	WhiteNoise   clocksim.PPB `toml:"whiteNoise"`   // ppb
+	FlickerNoise clocksim.PPB `toml:"flickerNoise"` // ppb
+	RandomWalk   clocksim.PPB `toml:"randomWalk"`   // ppb/√s
+	Sinusoid     []Sinusoid   `toml:"sinusoid"`     // sinusoidal components
 }
 
 // Sinusoid represents a sinusoidal error component
@@ -101,7 +100,8 @@ func (c PHCConfig) CreateSimulator() clocksim.OscSimulator {
 	}
 	for _, s := range c.Sinusoid {
 		if s.Amp > 0 {
-			oscs = append(oscs, clocksim.SinusoidOsc(s.Amp, s.Period, s.PhaseInit))
+			// For PHC, Amp is in PPB
+			oscs = append(oscs, clocksim.SinusoidOsc(clocksim.PPB(s.Amp), s.Period, s.PhaseInit))
 		}
 	}
 	return clocksim.CombineOsc(oscs...)
@@ -109,14 +109,14 @@ func (c PHCConfig) CreateSimulator() clocksim.OscSimulator {
 
 // GPSConfig holds GPS PPS error parameters
 type GPSConfig struct {
-	Jitter     float64          `toml:"jitter"`     // nanoseconds (white noise stddev)
-	Sawtooth   SawtoothConfig   `toml:"sawtooth"`   // sawtooth error parameters
-	AR1        []AR1Config      `toml:"ar1"`        // AR(1) colored noise parameters (on phase)
-	AR1FM      AR1Config        `toml:"ar1FM"`      // AR(1) FM parameters (OU on frequency, sigma in ppb)
-	RandomWalk float64          `toml:"randomWalk"` // random walk FM coefficient in ppb/√s
-	Drift      DriftConfig      `toml:"drift"`      // Carpenter-Lee bounded drift parameters
-	Resonator  ResonatorConfig  `toml:"resonator"`  // damped oscillator on phase (bounded)
-	Sinusoid   []Sinusoid       `toml:"sinusoid"`   // sinusoidal components
+	Jitter     clocksim.Nanoseconds `toml:"jitter"`     // nanoseconds (white noise stddev)
+	Sawtooth   SawtoothConfig       `toml:"sawtooth"`   // sawtooth error parameters
+	AR1        []AR1Config          `toml:"ar1"`        // AR(1) colored noise parameters (on phase)
+	AR1FM      AR1FMConfig          `toml:"ar1FM"`      // AR(1) FM parameters (OU on frequency, sigma in ppb)
+	RandomWalk float64              `toml:"randomWalk"` // random walk FM coefficient in ppb/√s
+	Drift      DriftConfig          `toml:"drift"`      // Carpenter-Lee bounded drift parameters
+	Resonator  ResonatorConfig      `toml:"resonator"`  // damped oscillator on phase (bounded)
+	Sinusoid   []Sinusoid           `toml:"sinusoid"`   // sinusoidal components
 }
 
 // IsZero returns true if all GPS parameters are zero (no PPS error configured).
@@ -129,14 +129,14 @@ func (c GPSConfig) IsZero() bool {
 // ResonatorConfig holds damped oscillator on phase parameters.
 // Implements a bounded phase process that oscillates around zero.
 type ResonatorConfig struct {
-	Period float64 `toml:"period"` // seconds - resonator period (ω₀ = 2π/period)
-	Sigma  float64 `toml:"sigma"`  // nanoseconds - RMS phase deviation
-	Zeta   float64 `toml:"zeta"`   // dimensionless - damping ratio (default 0.3)
+	Period float64              `toml:"period"` // seconds - resonator period (ω₀ = 2π/period)
+	Sigma  clocksim.Nanoseconds `toml:"sigma"`  // nanoseconds - RMS phase deviation
+	Zeta   float64              `toml:"zeta"`   // dimensionless - damping ratio (default 0.3)
 }
 
 // InternalParams converts user-facing (period, sigma, zeta) to internal (omegaN, zeta, sigmaNoise).
 func (c ResonatorConfig) InternalParams() (omegaN, zeta, sigmaNoise float64) {
-	return clocksim.ResonatorUserToInternal(c.Period, c.Sigma, c.Zeta)
+	return clocksim.ResonatorUserToInternal(c.Period, float64(c.Sigma), c.Zeta)
 }
 
 func DefaultGPSConfig() GPSConfig {
@@ -186,36 +186,44 @@ func DefaultZeroSawtoothConfig() SawtoothConfig {
 // tau is the correlation time constant in seconds.
 // sigma is the steady-state RMS in nanoseconds.
 type AR1Config struct {
-	Tau   float64 `toml:"tau"`   // seconds (correlation time constant)
-	Sigma float64 `toml:"sigma"` // nanoseconds (steady-state RMS)
+	Tau   float64              `toml:"tau"`   // seconds (correlation time constant)
+	Sigma clocksim.Nanoseconds `toml:"sigma"` // nanoseconds (steady-state RMS)
+}
+
+// AR1FMConfig holds AR(1) frequency modulation parameters.
+// tau is the correlation time constant in seconds.
+// sigma is the steady-state RMS in ppb (parts per billion).
+type AR1FMConfig struct {
+	Tau   float64      `toml:"tau"`   // seconds (correlation time constant)
+	Sigma clocksim.PPB `toml:"sigma"` // ppb (steady-state RMS of frequency bias)
 }
 
 // DriftConfig holds Carpenter-Lee 2nd-order Gauss-Markov drift parameters.
 // User-facing parameters (tau, sigma, zeta) are converted to internal parameters
 // (omega_n, zeta, sigma_drift) for the simulator.
 type DriftConfig struct {
-	Tau   float64 `toml:"tau"`   // seconds - bounded drift timescale (1/omega_n)
-	Sigma float64 `toml:"sigma"` // nanoseconds - RMS of bounded drift phase
-	Zeta  float64 `toml:"zeta"`  // dimensionless - damping ratio (default 0.7)
+	Tau   float64              `toml:"tau"`   // seconds - bounded drift timescale (1/omega_n)
+	Sigma clocksim.Nanoseconds `toml:"sigma"` // nanoseconds - RMS of bounded drift phase
+	Zeta  float64              `toml:"zeta"`  // dimensionless - damping ratio (default 0.7)
 }
 
 // InternalParams converts user-facing (tau, sigma, zeta) to internal (omega_n, zeta, sigma_drift).
 // Uses discrete Lyapunov calibration so that Sigma matches the actual RMS of the
 // 1 Hz discrete drift simulator output.
 func (c DriftConfig) InternalParams() (omegaN, zeta, sigmaDrift float64) {
-	return clocksim.DriftUserToInternal(c.Tau, c.Sigma, c.Zeta)
+	return clocksim.DriftUserToInternal(c.Tau, float64(c.Sigma), c.Zeta)
 }
 
-// AlphaNoise returns (alpha, noise_stddev_ns) for use with AR1ColoredNoiseGPS.
-// alpha is the autocorrelation coefficient, noise is the driving noise stddev.
+// AlphaNoise returns (alpha, noise_stddev) for use with AR1ColoredNoiseGPS.
+// alpha is the autocorrelation coefficient, noise is the driving noise stddev in nanoseconds.
 // Assumes 1-second sample interval.
-func (c AR1Config) AlphaNoise() (alpha, noise float64) {
+func (c AR1Config) AlphaNoise() (alpha float64, noise clocksim.Nanoseconds) {
 	if c.Tau <= 0 || c.Sigma <= 0 {
 		return 0, 0
 	}
 	alpha = math.Exp(-1.0 / c.Tau)
 	alpha = min(alpha, 1.0-1e-12)
-	noise = c.Sigma * math.Sqrt(max(0, 1-alpha*alpha))
+	noise = clocksim.Nanoseconds(float64(c.Sigma) * math.Sqrt(max(0, 1-alpha*alpha)))
 	return alpha, noise
 }
 
@@ -252,7 +260,7 @@ func LoadConfig(path string, cfg *Config) error {
 func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 	sims := []clocksim.GPSSimulator{}
 	if c.Jitter > 0 {
-		sims = append(sims, clocksim.JitterGPS(time.Duration(c.Jitter)*time.Nanosecond, 123))
+		sims = append(sims, clocksim.JitterGPS(c.Jitter, 123))
 	}
 	for i, ar1 := range c.AR1 {
 		if alpha, noise := ar1.AlphaNoise(); alpha > 0 {
@@ -274,7 +282,8 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 		sims = append(sims, clocksim.ResonatorGPS(omegaN, zeta, sigmaNoise, 128))
 	}
 	for _, s := range c.Sinusoid {
-		sims = append(sims, clocksim.SinusoidGPS(s.Amp, s.Period, s.PhaseInit))
+		// For GPS, Amp is in nanoseconds
+		sims = append(sims, clocksim.SinusoidGPS(clocksim.Nanoseconds(s.Amp), s.Period, s.PhaseInit))
 	}
 	return clocksim.CombineGPS(sims...)
 }
@@ -282,17 +291,17 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 // OutlierConfig configures PPS outlier injection for testing.
 // Used to test outlier detection algorithms.
 type OutlierConfig struct {
-	Times  []float64     // seconds at which to inject outliers (rounded to nearest integer)
-	Offset time.Duration // magnitude of outlier phase offset
+	Times  []float64            // seconds at which to inject outliers (rounded to nearest integer)
+	Offset clocksim.Nanoseconds // magnitude of outlier phase offset
 }
 
 // ShiftConfig configures a temporary PPS phase shift for testing.
 // Used to simulate ionospheric disturbances or other gradual timing biases.
 type ShiftConfig struct {
-	StartTime float64       // start time in seconds
-	Ramp      time.Duration // ramp up/down duration (symmetric)
-	Duration  time.Duration // total duration (includes ramp up + hold + ramp down)
-	Shift     time.Duration // phase shift amount
+	StartTime float64              // start time in seconds
+	Ramp      float64              // ramp up/down duration in seconds (symmetric)
+	Duration  float64              // total duration in seconds (includes ramp up + hold + ramp down)
+	Shift     clocksim.Nanoseconds // phase shift amount
 }
 
 // InOutage returns true if time t falls within an outage period.

@@ -18,10 +18,11 @@ import (
 type OscSimulator func(t float64) float64
 
 // FreqOffsetOsc creates an oscillator with constant frequency offset.
-// ppb is the frequency offset in parts per billion (positive means runs fast).
-func FreqOffsetOsc(ppb float64) OscSimulator {
+// offset is the frequency offset in parts per billion (positive means runs fast).
+func FreqOffsetOsc(offset PPB) OscSimulator {
+	frac := offset.Fractional()
 	return func(t float64) float64 {
-		return ppb / 1e9
+		return frac
 	}
 }
 
@@ -32,7 +33,7 @@ func PerfectOsc() OscSimulator {
 
 // WhiteNoiseOsc creates an oscillator with white frequency noise.
 //
-// The stddevPPB parameter represents the Allan deviation at τ=1s (IEEE standard h₀).
+// The stddev parameter represents the Allan deviation at τ=1s (IEEE standard h₀).
 // This function generates discrete white FM samples at integration step size dt that produce the
 // desired Allan deviation when integrated and sampled at 1-second intervals.
 //
@@ -53,16 +54,16 @@ func PerfectOsc() OscSimulator {
 //
 // Relies on RawClock's monotonic time guarantee: each call advances the RNG state
 // incrementally without needing to seek to arbitrary time points.
-func WhiteNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
+func WhiteNoiseOsc(stddev PPB, seed int64) OscSimulator {
 	rng := rand.New(rand.NewSource(seed))
 	// Convert ADEV at τ=1s to per-sample stddev at integration rate
 	// σ = h₀ · √(τ₀/dt) where τ₀ = 1s (matching Python's Integrator)
 	const tau0 = 1.0 // Reference averaging time in seconds
-	h0 := stddevPPB / 1e9
-	stddev := h0 * math.Sqrt(tau0/rawClockDT)
+	h0 := stddev.Fractional()
+	stddevPerSample := h0 * math.Sqrt(tau0/rawClockDT)
 
 	return func(t float64) float64 {
-		return rng.NormFloat64() * stddev
+		return rng.NormFloat64() * stddevPerSample
 	}
 }
 
@@ -70,17 +71,17 @@ func WhiteNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 //go:generate uv --directory flickerconsts run flicker_scale.py --tau0 10.0 --tau-max 1000.0 --ratio 2.0 --fudge-factor 0.774 --package clocksim --prefix flicker --go-const --output ../flickerconsts.go
 
 // FlickerNoiseOsc creates an oscillator with flicker frequency noise (1/f noise).
-// Flicker FM produces a flat Allan deviation (τ^0 slope) at the specified stddevPPB level.
+// Flicker FM produces a flat Allan deviation (τ^0 slope) at the specified stddev level.
 //
 // This implementation uses the Kasdin-Walter algorithm: a sum of first-order recursive
 // filters that approximates 1/f power spectral density. The Allan deviation is flat
 // across tau values, matching the behavior extracted by phc_model.py.
 //
-// stddevPPB is the Allan deviation level in parts per billion (flat across tau).
+// stddev is the Allan deviation level in parts per billion (flat across tau).
 //
 // IMPORTANT: This implementation maintains state and requires monotonically increasing
 // time values. RawClock guarantees this.
-func FlickerNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
+func FlickerNoiseOsc(stddev PPB, seed int64) OscSimulator {
 	rng := rand.New(rand.NewSource(seed))
 
 	// Kasdin-Walter recursive filter coefficients for 1/f noise
@@ -100,7 +101,7 @@ func FlickerNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 	// Apply Allan-weighted scaling factor correction.
 	// Naive 1/sqrt(N) scaling produces incorrect Allan deviation because it doesn't
 	// account for how the Allan variance filter weights different frequencies.
-	scale := stddevPPB / 1e9 / math.Sqrt(float64(numStages)) * flickerScaleFactor
+	scale := stddev.Fractional() / math.Sqrt(float64(numStages)) * flickerScaleFactor
 
 	// Cache of precomputed poles and noise scales by dt value.
 	// FP rounding produces ~30 unique dt values over long simulations.
@@ -156,19 +157,20 @@ func FlickerNoiseOsc(stddevPPB float64, seed int64) OscSimulator {
 // Random walk FM models long-term drift where frequency undergoes Brownian motion.
 // In Allan deviation, produces τ^(+1/2) slope at long averaging times.
 //
-// stddevPPB is the random walk FM coefficient in ppb/√s.
+// stddev is the random walk FM coefficient in ppb/√s.
 //
 // IMPORTANT: This implementation maintains state (currentFreq, lastTime) and requires
 // monotonically increasing time values. RawClock guarantees this.
-func RandomWalkOsc(stddevPPB float64, seed int64) OscSimulator {
+func RandomWalkOsc(stddev PPB, seed int64) OscSimulator {
 	rng := rand.New(rand.NewSource(seed))
+	stepScale := stddev.Fractional()
 	var currentFreq float64
 	lastTime := math.NaN() // NaN sentinel so first call skips state update
 
 	return func(t float64) float64 {
 		if !math.IsNaN(lastTime) {
 			dt := t - lastTime
-			step := rng.NormFloat64() * stddevPPB / 1e9 * math.Sqrt(dt)
+			step := rng.NormFloat64() * stepScale * math.Sqrt(dt)
 			currentFreq += step
 		}
 		lastTime = t
@@ -199,15 +201,15 @@ func DriftOsc(ratePPBPerDay float64) OscSimulator {
 //
 // Parameters:
 //
-//	ampPPB: amplitude in ppb (peak deviation from nominal frequency)
+//	amp: amplitude in ppb (peak deviation from nominal frequency)
 //	periodS: period in seconds (e.g., 86400 for daily thermal cycle)
 //	phaseInit: initial phase in [0,1) (0.5 = middle of cycle)
-func SinusoidOsc(ampPPB, periodS, phaseInit float64) OscSimulator {
+func SinusoidOsc(amp PPB, periodS, phaseInit float64) OscSimulator {
 	if periodS == 0 {
 		panic("SinusoidOsc: period cannot be zero")
 	}
 	omega := 2 * math.Pi / periodS
-	scale := ampPPB / 1e9
+	scale := amp.Fractional()
 	phase := phaseInit * 2 * math.Pi
 
 	return func(t float64) float64 {

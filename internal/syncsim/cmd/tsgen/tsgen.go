@@ -64,8 +64,9 @@ func run(args []string) error {
 				internalClock.PhaseInit = 1.0 / 6.0
 			}
 			// Create oscillator for GPS internal clock (for sawtooth coupling)
+			// InternalClock.Amp is in PPB for the oscillator
 			gpsOsc := clocksim.SinusoidOsc(
-				internalClock.Amp,
+				clocksim.PPB(internalClock.Amp),
 				internalClock.Period,
 				internalClock.PhaseInit,
 			)
