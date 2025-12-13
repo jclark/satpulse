@@ -401,10 +401,8 @@ func TestPHCSync(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Start with default configs
-			phcCfg := phcsync.DefaultConfig()
-			simCfg := Config{
-				Duration: tt.duration,
+			// Start with default config
+			cfg := Config{
 				PHC: PHCConfig{
 					FreqOffset: 2000.0,
 					Drift:      -150.0,
@@ -421,6 +419,7 @@ func TestPHCSync(t *testing.T) {
 						},
 					},
 				},
+				Sync:              phcsync.DefaultConfig(),
 				MinDelay:          5e-6,
 				MaxDelay:          250e-6,
 				MsgDelay:          0.1,
@@ -437,10 +436,10 @@ func TestPHCSync(t *testing.T) {
 
 			// Apply modifier functions if provided
 			if tt.modifySimCfg != nil {
-				tt.modifySimCfg(&simCfg)
+				tt.modifySimCfg(&cfg)
 			}
 			if tt.modifyPHCCfg != nil {
-				tt.modifyPHCCfg(&phcCfg)
+				tt.modifyPHCCfg(&cfg.Sync)
 			}
 
 			curTime := time.Date(2017, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -448,7 +447,8 @@ func TestPHCSync(t *testing.T) {
 			// Discard logs during test
 			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-			stats, err := Simulate(nil, phcCfg, simCfg, &curTime, lg)
+			duration := time.Duration(tt.duration * float64(time.Second))
+			stats, err := Simulate(nil, cfg, duration, nil, &curTime, lg)
 			if err != nil {
 				t.Fatalf("Simulate failed: %v", err)
 			}

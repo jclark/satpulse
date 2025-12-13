@@ -1,42 +1,40 @@
 package syncsim
 
-
 import (
-	"io"
 	"math"
 	"os"
 	"time"
 
 	"github.com/jclark/satpulse/internal/clocksim"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/pelletier/go-toml/v2"
 )
 
 // Config holds simulation parameters
 type Config struct {
-	Duration          float64         // simulation duration in seconds
-	PHC               PHCConfig       // PHC oscillator parameters
-	GPS               GPSConfig       // GPS PPS parameters
-	MinDelay          float64         // minimum pulse delivery delay in seconds
-	MaxDelay          float64         // maximum pulse delivery delay in seconds
-	MsgDelay          float64         // GPS message delay after pulse in seconds
-	MsgJitter         float64         // GPS message delay jitter in seconds
-	PulseWidth        float64         // pulse width in seconds (0 for single-edge mode)
-	PrePulseTime      float64         // seconds before pulse to send UBX-TIM-TP PrePulse message
-	PostPulseMsgDelay float64         // seconds after pulse to send PostPulse sawtooth message
-	SawtoothMsgType   gpsprot.TimeRef // type of sawtooth message: PrePulse, PostPulse, or NoPulse
-	ToggleTimes       []float64       // absolute simulation times to toggle pulse/message delivery on/off
-	Outlier           OutlierConfig   // PPS outlier injection configuration
-	Shift             ShiftConfig     // PPS phase shift configuration
-	TSLog             io.Writer       // optional writer for PHC timestamp log (JSON Lines)
+	PHC               PHCConfig       `toml:"phc"`   // PHC oscillator parameters
+	GPS               GPSConfig       `toml:"gps"`   // GPS PPS parameters
+	Sync              phcsync.Config  `toml:"sync"`  // controller config
+	MinDelay          float64         `toml:"minDelay"`          // minimum pulse delivery delay in seconds
+	MaxDelay          float64         `toml:"maxDelay"`          // maximum pulse delivery delay in seconds
+	MsgDelay          float64         `toml:"msgDelay"`          // GPS message delay after pulse in seconds
+	MsgJitter         float64         `toml:"msgJitter"`         // GPS message delay jitter in seconds
+	PulseWidth        float64         `toml:"pulseWidth"`        // pulse width in seconds (0 for single-edge mode)
+	PrePulseTime      float64         `toml:"prePulseTime"`      // seconds before pulse to send UBX-TIM-TP PrePulse message
+	PostPulseMsgDelay float64         `toml:"postPulseMsgDelay"` // seconds after pulse to send PostPulse sawtooth message
+	SawtoothMsgType   gpsprot.TimeRef `toml:"sawtoothMsgType"`   // type of sawtooth message: PrePulse, PostPulse, or NoPulse
+	ToggleTimes       []float64       `toml:"toggleTimes"`       // absolute simulation times to toggle pulse/message delivery on/off
+	Outlier           OutlierConfig   `toml:"outlier"`           // PPS outlier injection configuration
+	Shift             ShiftConfig     `toml:"shift"`             // PPS phase shift configuration
 }
 
 // DefaultConfig returns a Config with sensible default values.
 func DefaultConfig() Config {
 	return Config{
-		Duration:          60.0,
 		PHC:               DefaultPHCConfig(),
 		GPS:               DefaultGPSConfig(),
+		Sync:              phcsync.DefaultConfig(),
 		MinDelay:          5e-6,
 		MaxDelay:          250e-6,
 		MsgDelay:          0.1,
@@ -150,7 +148,7 @@ func DefaultGPSConfig() GPSConfig {
 }
 
 // DefaultZeroGPSConfig returns a default zero GPSConfig.
-// See DefaultZeroHWConfig for the definition of "default zero".
+// See DefaultZeroConfig for the definition of "default zero".
 func DefaultZeroGPSConfig() GPSConfig {
 	return GPSConfig{
 		Sawtooth: DefaultZeroSawtoothConfig(),
@@ -171,7 +169,7 @@ func DefaultSawtoothConfig() SawtoothConfig {
 }
 
 // DefaultZeroSawtoothConfig returns a default zero SawtoothConfig.
-// See DefaultZeroHWConfig for the definition of "default zero".
+// See DefaultZeroConfig for the definition of "default zero".
 func DefaultZeroSawtoothConfig() SawtoothConfig {
 	return SawtoothConfig{
 		PhaseInit: 0.5,
@@ -221,41 +219,30 @@ func (c AR1Config) AlphaNoise() (alpha, noise float64) {
 	return alpha, noise
 }
 
-// HWConfig holds hardware characteristics for PHC and GPS (TOML-loadable)
-type HWConfig struct {
-	PHC PHCConfig `toml:"phc"`
-	GPS GPSConfig `toml:"gps"`
-}
-
-// DefaultHWConfig returns an HWConfig with sensible default hardware characteristics.
-func DefaultHWConfig() HWConfig {
-	return HWConfig{
-		PHC: DefaultPHCConfig(),
-		GPS: DefaultGPSConfig(),
-	}
-}
-
-// DefaultZeroHWConfig returns an HWConfig representing perfect hardware.
+// DefaultZeroConfig returns a Config representing perfect hardware with zero noise.
 // "Default zero" configs have all noise and offset parameters set to zero,
 // but include defaults that make it easy to specify valid non-zero configurations
 // for parameters. Specifically, a non-zero sawtooth.amp will work without needing
 // to specify sawtooth.internalClock parameters.
-func DefaultZeroHWConfig() HWConfig {
-	return HWConfig{
-		GPS: DefaultZeroGPSConfig(),
+func DefaultZeroConfig() Config {
+	return Config{
+		GPS:  DefaultZeroGPSConfig(),
+		Sync: phcsync.DefaultConfig(),
 	}
 }
 
-
-// LoadHWConfig loads hardware configuration from a TOML file into hw.
-// The caller initializes hw (zero-valued or with defaults), and TOML values are merged on top.
-func LoadHWConfig(path string, hw *HWConfig) error {
+// LoadConfig loads configuration from a TOML file into cfg.
+// The caller initializes cfg (zero-valued or with defaults), and TOML values are merged on top.
+func LoadConfig(path string, cfg *Config) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return toml.NewDecoder(f).DisallowUnknownFields().Decode(hw)
+	if err := toml.NewDecoder(f).DisallowUnknownFields().Decode(cfg); err != nil {
+		return err
+	}
+	return cfg.Sync.Validate()
 }
 
 // CreateSimulator returns a GPSSimulator combining all GPS error sources.

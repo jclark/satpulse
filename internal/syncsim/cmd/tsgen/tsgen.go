@@ -20,9 +20,9 @@ func main() {
 
 func run(args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: tsgen <hw-config.toml> <duration-seconds>")
+		return fmt.Errorf("usage: tsgen <config.toml> <duration-seconds>")
 	}
-	hwPath := args[0]
+	cfgPath := args[0]
 	duration, err := strconv.ParseFloat(args[1], 64)
 	if err != nil {
 		return fmt.Errorf("invalid duration: %v", err)
@@ -31,20 +31,20 @@ func run(args []string) error {
 		return fmt.Errorf("duration must be positive")
 	}
 
-	// Load hardware config without defaults (only what's in TOML file)
-	var hw syncsim.HWConfig
-	if err := syncsim.LoadHWConfig(hwPath, &hw); err != nil {
+	// Load config without defaults (only what's in TOML file)
+	cfg := syncsim.DefaultZeroConfig()
+	if err := syncsim.LoadConfig(cfgPath, &cfg); err != nil {
 		return fmt.Errorf("failed to load config: %v", err)
 	}
 
 	// Check which channels to generate
-	hasPHC := !hw.PHC.IsZero()
-	hasGPS := !hw.GPS.IsZero()
+	hasPHC := !cfg.PHC.IsZero()
+	hasGPS := !cfg.GPS.IsZero()
 
 	// Create PHC oscillator and RawClock if needed
 	var phcClock *clocksim.RawClock
 	if hasPHC {
-		phcOsc := hw.PHC.CreateSimulator()
+		phcOsc := cfg.PHC.CreateSimulator()
 		startPhaseNs := int64(500_000_000) // 0.5 seconds
 		phcClock = clocksim.NewRawClock(phcOsc, startPhaseNs)
 	}
@@ -52,12 +52,12 @@ func run(args []string) error {
 	// Create GPS simulators if needed
 	var nonSawtoothGPS, sawtoothGPS clocksim.GPSSimulator
 	if hasGPS {
-		nonSawtoothGPS = hw.GPS.CreateSimulator()
+		nonSawtoothGPS = cfg.GPS.CreateSimulator()
 
 		// Create sawtooth simulator (following VirtualClock pattern)
-		if hw.GPS.Sawtooth.Amp > 0 {
+		if cfg.GPS.Sawtooth.Amp > 0 {
 			// If internal clock not specified in TOML, use Python's default
-			internalClock := hw.GPS.Sawtooth.InternalClock
+			internalClock := cfg.GPS.Sawtooth.InternalClock
 			if internalClock.Amp == 0 {
 				internalClock.Amp = 2.0
 				internalClock.Period = 600.0
@@ -69,9 +69,9 @@ func run(args []string) error {
 				internalClock.Period,
 				internalClock.PhaseInit,
 			)
-			ampSec := hw.GPS.Sawtooth.Amp * 1e-9
+			ampSec := cfg.GPS.Sawtooth.Amp * 1e-9
 			// Python hardcodes phase_init=0.5 for sawtooth (simulate.py:180)
-			phaseInit := hw.GPS.Sawtooth.PhaseInit
+			phaseInit := cfg.GPS.Sawtooth.PhaseInit
 			if phaseInit == 0 {
 				phaseInit = 0.5
 			}

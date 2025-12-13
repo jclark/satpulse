@@ -2,16 +2,15 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
-	"math"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/jclark/satpulse/internal/cmd"
-	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/logobs"
 	"github.com/jclark/satpulse/internal/obs"
-	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/syncsim"
 	"github.com/spf13/pflag"
@@ -19,18 +18,15 @@ import (
 
 var startTime = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
-type flagVars struct {
-	statsInterval   int
-	clockLogPath    string
-	tsLogPath       string
-	simCfg          syncsim.Config
-	phcCfg          phcsync.Config
-	debug           bool
-	toggleDurations []float64
+type options struct {
+	statsInterval int
+	clockLogPath  string
+	tsLogPath     string
+	debug         bool
 }
 
 func main() {
-	vars, err := parseFlags(os.Args[1:])
+	opts, cfg, duration, err := parseArgs(os.Args[1:])
 	if err != nil {
 		cmd.ErrPrintln("syncsim", err)
 		os.Exit(1)
@@ -41,7 +37,7 @@ func main() {
 
 	// Configure logging with simulated time
 	level := slog.LevelInfo
-	if vars.debug {
+	if opts.debug {
 		level = slog.LevelDebug
 	}
 	lg := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -58,11 +54,11 @@ func main() {
 
 	// Create observers
 	var observers []obs.Observer
-	statsObs := logobs.NewStatsLogObserver(lg, vars.statsInterval)
+	statsObs := logobs.NewStatsLogObserver(lg, opts.statsInterval)
 	observers = append(observers, statsObs)
 
-	if vars.clockLogPath != "" {
-		clockObs, err := logobs.NewClockLogObserver(lg, vars.clockLogPath, ls)
+	if opts.clockLogPath != "" {
+		clockObs, err := logobs.NewClockLogObserver(lg, opts.clockLogPath, ls)
 		if err != nil {
 			lg.Error("failed to create clock log observer", "err", err)
 			os.Exit(1)
@@ -71,18 +67,19 @@ func main() {
 		observers = append(observers, clockObs)
 	}
 
-	if vars.tsLogPath != "" {
-		f, err := os.Create(vars.tsLogPath)
+	var tsLog io.Writer
+	if opts.tsLogPath != "" {
+		f, err := os.Create(opts.tsLogPath)
 		if err != nil {
 			lg.Error("failed to create ts log file", "err", err)
 			os.Exit(1)
 		}
 		defer f.Close()
-		vars.simCfg.TSLog = f
+		tsLog = f
 	}
 
 	// Run simulation
-	stats, err := syncsim.Simulate(observers, vars.phcCfg, vars.simCfg, &curTime, lg)
+	stats, err := syncsim.Simulate(observers, cfg, duration, tsLog, &curTime, lg)
 	if err != nil {
 		lg.Error("simulation failed", "err", err)
 		os.Exit(1)
@@ -100,163 +97,50 @@ func main() {
 	lg.Info("simulation complete", args...)
 }
 
-func parseFlags(args []string) (*flagVars, error) {
-	vars := flagVars{
-		phcCfg: phcsync.DefaultConfig(),
-		simCfg: syncsim.DefaultConfig(),
-	}
-
-	// Local variables for HW override flags (NaN = not set)
-	var hwPath string
-	phcFreqOffset := math.NaN()
-	phcDrift := math.NaN()
-	phcWhite := math.NaN()
-	phcFlicker := math.NaN()
-	phcRandomWalk := math.NaN()
-	jitter := math.NaN()
-	ar1Tau := math.NaN()
-	ar1Sigma := math.NaN()
-	gpsRandomWalk := math.NaN()
-	sawtooth := math.NaN()
-
+func parseArgs(args []string) (*options, syncsim.Config, time.Duration, error) {
+	opts := &options{}
 	help := false
 	showVersion := false
 
 	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&showVersion, "version", "V", false, "show version information")
+	flags.BoolVar(&opts.debug, "debug", false, "enable debug logging")
+	flags.IntVar(&opts.statsInterval, "stats", 0, "log stats every N seconds (0 to disable)")
+	flags.StringVar(&opts.clockLogPath, "clock-log", "", "write clock offsets to PATH")
+	flags.StringVar(&opts.tsLogPath, "ts-log", "", "write PHC timestamps to PATH (JSON Lines)")
 
-	// HW config file flag
-	flags.StringVar(&hwPath, "hw", "", "hardware config TOML file")
-
-	// Non-HW flags (bind directly to struct)
-	flags.Float64Var(&vars.simCfg.Duration, "duration", vars.simCfg.Duration, "simulation duration in seconds")
-
-	// HW-related override flags (local variables with NaN default)
-	flags.Float64Var(&phcFreqOffset, "phc-freq-offset", phcFreqOffset, "PHC frequency offset in ppb")
-	flags.Float64Var(&phcDrift, "phc-drift", phcDrift, "PHC frequency drift in ppb/day")
-	flags.Float64Var(&phcWhite, "phc-white", phcWhite, "PHC white noise stddev in ppb")
-	flags.Float64Var(&phcFlicker, "phc-flicker", phcFlicker, "PHC flicker noise stddev in ppb")
-	flags.Float64Var(&phcRandomWalk, "phc-random-walk", phcRandomWalk, "PHC random walk FM coefficient in ppb/√s")
-	flags.Float64Var(&jitter, "jitter", jitter, "PPS timing jitter in nanoseconds")
-	flags.Float64Var(&ar1Tau, "ar1-tau", ar1Tau, "AR(1) correlation time constant in seconds")
-	flags.Float64Var(&ar1Sigma, "ar1-sigma", ar1Sigma, "AR(1) steady-state RMS in nanoseconds")
-	flags.Float64Var(&gpsRandomWalk, "gps-random-walk", gpsRandomWalk, "GPS random walk FM coefficient in ppb/√s")
-	flags.Float64Var(&sawtooth, "sawtooth", sawtooth, "sawtooth amplitude in nanoseconds (0 to disable)")
-	var sawtoothMsgType string
-	flags.StringVar(&sawtoothMsgType, "sawtooth-msgtype", "", "sawtooth message type: prepulse, postpulse, or none")
-	flags.Float64Var(&vars.simCfg.MinDelay, "min-delay", vars.simCfg.MinDelay, "minimum pulse delivery delay in seconds")
-	flags.Float64Var(&vars.simCfg.MaxDelay, "max-delay", vars.simCfg.MaxDelay, "maximum pulse delivery delay in seconds")
-	flags.Float64Var(&vars.simCfg.MsgDelay, "msg-delay", vars.simCfg.MsgDelay, "GPS message delay after pulse in seconds")
-	flags.Float64Var(&vars.simCfg.MsgJitter, "msg-jitter", vars.simCfg.MsgJitter, "GPS message delay jitter in seconds")
-	flags.Float64VarP(&vars.simCfg.PulseWidth, "pulse-width", "w", vars.simCfg.PulseWidth, "pulse width in seconds (0 for single-edge mode)")
-	flags.IntVar(&vars.statsInterval, "stats", 0, "statistics interval in seconds (0 to disable)")
-	flags.StringVar(&vars.clockLogPath, "clock-log", "", "path to clock log file (empty to disable)")
-	flags.StringVar(&vars.tsLogPath, "ts-log", "", "path to write PHC timestamps (JSON Lines format)")
-	flags.Float64Var(&vars.phcCfg.Track.Kp, "tracking-kp", vars.phcCfg.Track.Kp, "tracking mode proportional gain")
-	flags.Float64Var(&vars.phcCfg.Track.Ki, "tracking-ki", vars.phcCfg.Track.Ki, "tracking mode integral gain")
-	flags.Float64Var(&vars.phcCfg.Track.AvgFreqTimeConstant, "avg-freq-time-constant", vars.phcCfg.Track.AvgFreqTimeConstant, "tracking mode average frequency time constant in seconds")
-	flags.IntVar(&vars.phcCfg.Track.BadSampleLimit, "tracking-bad-sample-limit", vars.phcCfg.Track.BadSampleLimit, "tracking mode bad sample limit before reset")
-	flags.Int64Var(&vars.phcCfg.Track.OutlierThreshold, "tracking-outlier-threshold", vars.phcCfg.Track.OutlierThreshold, "minimum |offset| in ns before MAD outlier detection is applied")
-	flags.IntVar(&vars.phcCfg.Track.MADWindow, "tracking-mad-window", vars.phcCfg.Track.MADWindow, "MAD window size (number of recent samples)")
-	flags.Float64Var(&vars.phcCfg.Track.MADMultiple, "tracking-mad-multiple", vars.phcCfg.Track.MADMultiple, "MAD multiple for outlier detection (smaller = more aggressive)")
-	flags.IntVar(&vars.phcCfg.Track.MADMinSamples, "tracking-mad-min-samples", vars.phcCfg.Track.MADMinSamples, "minimum samples before MAD-based outlier detection is enabled")
-	flags.Int64Var(&vars.phcCfg.Track.PreMADOutlierThreshold, "tracking-premad-outlier-threshold", vars.phcCfg.Track.PreMADOutlierThreshold, "pre-MAD warmup outlier threshold in ns")
-	flags.Int64Var(&vars.phcCfg.Track.AlignTolerance, "tracking-align-tolerance", vars.phcCfg.Track.AlignTolerance, "alignment tolerance in ns for accepting leading edges")
-	flags.Int64Var(&vars.phcCfg.Track.PulseWidthTolerance, "tracking-pulse-width-tolerance", vars.phcCfg.Track.PulseWidthTolerance, "pulse-width tolerance in ns for dual-edge filtering")
-	flags.BoolVar(&vars.phcCfg.Track.IgnoreSawtoothCorrection, "tracking-ignore-sawtooth", vars.phcCfg.Track.IgnoreSawtoothCorrection, "ignore sawtooth pulse corrections in tracking mode")
-	flags.Float64Var(&vars.phcCfg.Track.PulseCorrectionTimeout, "tracking-pulse-correction-timeout", vars.phcCfg.Track.PulseCorrectionTimeout, "max seconds to wait for a PostPulse correction after the pulse")
-	flags.Float64SliceVar(&vars.simCfg.Outlier.Times, "outlier-times", vars.simCfg.Outlier.Times, "comma-separated list of seconds at which to inject PPS outliers")
-	flags.DurationVar(&vars.simCfg.Outlier.Offset, "outlier-offset", vars.simCfg.Outlier.Offset, "magnitude of outlier phase offset")
-	flags.BoolVar(&vars.debug, "debug", false, "enable debug logging")
-	flags.Float64SliceVar(&vars.toggleDurations, "toggle", nil, "comma-separated relative durations to toggle pulse delivery (e.g., '10,5' = stop after 10s, restart after 5s more)")
 	err := flags.Parse(args)
 	if err != nil {
-		return nil, err
+		return nil, syncsim.Config{}, 0, err
 	}
 	if help {
-		fmt.Fprintf(os.Stderr, "Usage: syncsim [options]\nOptions:\n%s", flags.FlagUsages())
+		fmt.Fprintf(os.Stderr, "Usage: syncsim [options] <config.toml> <duration>\n\nOptions:\n%s", flags.FlagUsages())
 		os.Exit(0)
 	}
 	if showVersion {
 		fmt.Println(cmd.VersionInfo())
 		os.Exit(0)
 	}
-	if flags.NArg() != 0 {
-		return nil, fmt.Errorf("command must not have non-option arguments")
+	if flags.NArg() != 2 {
+		return nil, syncsim.Config{}, 0, fmt.Errorf("usage: syncsim [options] <config.toml> <duration>")
 	}
 
-	// Load HW config if specified (replaces PHC and GPS configs)
-	if hwPath != "" {
-		hw := syncsim.DefaultZeroHWConfig()
-		if err := syncsim.LoadHWConfig(hwPath, &hw); err != nil {
-			return nil, fmt.Errorf("failed to load hardware config: %v", err)
-		}
-		vars.simCfg.PHC = hw.PHC
-		vars.simCfg.GPS = hw.GPS
+	configPath := flags.Arg(0)
+	durSec, err := strconv.ParseFloat(flags.Arg(1), 64)
+	if err != nil {
+		return nil, syncsim.Config{}, 0, fmt.Errorf("invalid duration: %v", err)
+	}
+	if durSec <= 0 {
+		return nil, syncsim.Config{}, 0, fmt.Errorf("duration must be positive")
+	}
+	duration := time.Duration(durSec * float64(time.Second))
+
+	// Load config from TOML file
+	cfg := syncsim.DefaultConfig()
+	if err := syncsim.LoadConfig(configPath, &cfg); err != nil {
+		return nil, syncsim.Config{}, 0, fmt.Errorf("failed to load config: %v", err)
 	}
 
-	// Apply explicit flag overrides (if not NaN)
-	if !math.IsNaN(phcFreqOffset) {
-		vars.simCfg.PHC.FreqOffset = phcFreqOffset
-	}
-	if !math.IsNaN(phcDrift) {
-		vars.simCfg.PHC.Drift = phcDrift
-	}
-	if !math.IsNaN(phcWhite) {
-		vars.simCfg.PHC.WhiteNoise = phcWhite
-	}
-	if !math.IsNaN(phcFlicker) {
-		vars.simCfg.PHC.FlickerNoise = phcFlicker
-	}
-	if !math.IsNaN(phcRandomWalk) {
-		vars.simCfg.PHC.RandomWalk = phcRandomWalk
-	}
-	if !math.IsNaN(jitter) {
-		vars.simCfg.GPS.Jitter = jitter
-	}
-	// CLI flags create/modify a single AR1 entry for backward compatibility
-	if !math.IsNaN(ar1Tau) || !math.IsNaN(ar1Sigma) {
-		if len(vars.simCfg.GPS.AR1) == 0 {
-			vars.simCfg.GPS.AR1 = []syncsim.AR1Config{{}}
-		}
-		if !math.IsNaN(ar1Tau) {
-			vars.simCfg.GPS.AR1[0].Tau = ar1Tau
-		}
-		if !math.IsNaN(ar1Sigma) {
-			vars.simCfg.GPS.AR1[0].Sigma = ar1Sigma
-		}
-	}
-	if !math.IsNaN(gpsRandomWalk) {
-		vars.simCfg.GPS.RandomWalk = gpsRandomWalk
-	}
-	if !math.IsNaN(sawtooth) {
-		vars.simCfg.GPS.Sawtooth.Amp = sawtooth
-	}
-	if sawtoothMsgType != "" {
-		switch sawtoothMsgType {
-		case "prepulse":
-			vars.simCfg.SawtoothMsgType = gpsprot.PrePulse
-		case "postpulse":
-			vars.simCfg.SawtoothMsgType = gpsprot.PostPulse
-		case "none":
-			vars.simCfg.SawtoothMsgType = syncsim.NoPulse
-		default:
-			return nil, fmt.Errorf("invalid sawtooth-msgtype: %s (must be prepulse, postpulse, or none)", sawtoothMsgType)
-		}
-	}
-
-	// Validate and convert relative toggle durations to absolute times
-	if len(vars.toggleDurations) > 0 {
-		vars.simCfg.ToggleTimes = make([]float64, len(vars.toggleDurations))
-		t := 0.0
-		for i, dur := range vars.toggleDurations {
-			if dur <= 0 {
-				return nil, fmt.Errorf("toggle duration at index %d must be > 0, got %v", i, dur)
-			}
-			t += dur
-			vars.simCfg.ToggleTimes[i] = t
-		}
-	}
-	return &vars, nil
+	return opts, cfg, duration, nil
 }

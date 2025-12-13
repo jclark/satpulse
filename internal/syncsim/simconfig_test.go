@@ -12,7 +12,7 @@ func TestLoadConfigFromTOML(t *testing.T) {
 	tests := []struct {
 		name     string
 		toml     string
-		expected HWConfig
+		expected Config
 	}{
 		{
 			name: "i225.in.cm55",
@@ -38,7 +38,7 @@ amp = 243.339
 period = 26851.125
 amp = 298.711
 `,
-			expected: HWConfig{
+			expected: Config{
 				PHC: PHCConfig{
 					FreqOffset:   9117.374,
 					WhiteNoise:   6.942,
@@ -93,7 +93,7 @@ sigma = 2.319
 period = 4303.000
 amp = 2.253
 `,
-			expected: HWConfig{
+			expected: Config{
 				PHC: PHCConfig{
 					FreqOffset:   -1007.333,
 					WhiteNoise:   8.092,
@@ -125,7 +125,7 @@ amp = 2.253
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var config HWConfig
+			var config Config
 			r := strings.NewReader(tt.toml)
 			err := toml.NewDecoder(r).DisallowUnknownFields().Decode(&config)
 			if err != nil {
@@ -210,7 +210,7 @@ func TestInvalidFieldsRejected(t *testing.T) {
 offset = 123.456
 jitter = 10.0`
 
-	var config HWConfig
+	var config Config
 	r := strings.NewReader(tomlStr)
 	err := toml.NewDecoder(r).DisallowUnknownFields().Decode(&config)
 	if err == nil {
@@ -219,8 +219,8 @@ jitter = 10.0`
 	t.Logf("correctly rejected unknown field: %v", err)
 }
 
-func TestLoadHWConfigMergesDefaults(t *testing.T) {
-	// Test that LoadHWConfig() merges TOML values with DefaultConfig()
+func TestLoadConfigMergesDefaults(t *testing.T) {
+	// Test that LoadConfig() merges TOML values with DefaultConfig()
 	// User specifies only sawtooth.amp, should get defaults for other fields
 
 	tomlContent := `[phc]
@@ -246,10 +246,10 @@ sawtooth.amp = 8.0
 	}
 
 	// Load config
-	hw := DefaultHWConfig()
-	err = LoadHWConfig(tmpfile.Name(), &hw)
+	hw := DefaultConfig()
+	err = LoadConfig(tmpfile.Name(), &hw)
 	if err != nil {
-		t.Fatalf("LoadHWConfig failed: %v", err)
+		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	// Verify user-specified values

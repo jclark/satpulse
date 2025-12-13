@@ -33,6 +33,7 @@ package syncsim
 
 import (
 	"fmt"
+	"io"
 	"iter"
 	"log/slog"
 	"math"
@@ -123,51 +124,53 @@ type Stats struct {
 }
 
 // Simulate runs a phcsync simulation with the given configuration.
+// duration is the simulation duration.
+// tsLog is an optional writer for PHC timestamp log (JSON Lines format).
 // curTime is updated as the simulation progresses, allowing callers to use it for logging.
 // It returns statistics about the simulation run.
-func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
+func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLog io.Writer, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 	// Validate phcsync configuration
-	if err := phcCfg.Validate(); err != nil {
+	if err := cfg.Sync.Validate(); err != nil {
 		return Stats{}, err
 	}
 	// Create oscillator from PHC config
-	osc := simCfg.PHC.CreateSimulator()
+	osc := cfg.PHC.CreateSimulator()
 
 	// PHC starts at epoch (1970-01-01T00:00:00 TAI) - way off from GPS
 	raw := clocksim.NewRawClock(osc, 0)
 
 	// Build other PPS simulators (without sawtooth)
-	otherPPSSims := []clocksim.GPSSimulator{simCfg.GPS.CreateSimulator()}
+	otherPPSSims := []clocksim.GPSSimulator{cfg.GPS.CreateSimulator()}
 
 	// Add shift if configured
-	if simCfg.Shift.Shift != 0 {
+	if cfg.Shift.Shift != 0 {
 		otherPPSSims = append(otherPPSSims, clocksim.ShiftPPS(
-			simCfg.Shift.StartTime,
-			simCfg.Shift.Ramp,
-			simCfg.Shift.Duration,
-			simCfg.Shift.Shift,
+			cfg.Shift.StartTime,
+			cfg.Shift.Ramp,
+			cfg.Shift.Duration,
+			cfg.Shift.Shift,
 		))
 	}
 
 	// Add outliers if configured
-	for _, second := range simCfg.Outlier.Times {
-		otherPPSSims = append(otherPPSSims, clocksim.SingleOutlierPPS(second, simCfg.Outlier.Offset))
+	for _, second := range cfg.Outlier.Times {
+		otherPPSSims = append(otherPPSSims, clocksim.SingleOutlierPPS(second, cfg.Outlier.Offset))
 	}
 
 	otherPPS := clocksim.CombineGPS(otherPPSSims...)
 
 	// Create sawtooth separately with GPS receiver's internal oscillator
 	var sawtoothPPS clocksim.GPSSimulator
-	if simCfg.GPS.Sawtooth.Amp > 0 {
-		ampSec := simCfg.GPS.Sawtooth.Amp * 1e-9 // Convert ns to seconds
+	if cfg.GPS.Sawtooth.Amp > 0 {
+		ampSec := cfg.GPS.Sawtooth.Amp * 1e-9 // Convert ns to seconds
 		// Create GPS receiver's internal oscillator (independent from PHC)
 		// Uses PhaseInit field from config (defaults applied by LoadHWConfig)
 		gpsOsc := clocksim.SinusoidOsc(
-			simCfg.GPS.Sawtooth.InternalClock.Amp,
-			simCfg.GPS.Sawtooth.InternalClock.Period,
-			simCfg.GPS.Sawtooth.InternalClock.PhaseInit,
+			cfg.GPS.Sawtooth.InternalClock.Amp,
+			cfg.GPS.Sawtooth.InternalClock.Period,
+			cfg.GPS.Sawtooth.InternalClock.PhaseInit,
 		)
-		sawtoothPPS = clocksim.SawtoothGPS(gpsOsc, ampSec, simCfg.GPS.Sawtooth.PhaseInit)
+		sawtoothPPS = clocksim.SawtoothGPS(gpsOsc, ampSec, cfg.GPS.Sawtooth.PhaseInit)
 	}
 
 	// Prepare dual-edge mode parameters
@@ -175,8 +178,8 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	var trailingEdgeSim clocksim.GPSSimulator
 	var pulseType phcsync.PulseType
 
-	if simCfg.PulseWidth > 0 {
-		pulseWidth = time.Duration(simCfg.PulseWidth * 1e9)
+	if cfg.PulseWidth > 0 {
+		pulseWidth = time.Duration(cfg.PulseWidth * 1e9)
 		trailingEdgeSim = clocksim.JitterGPS(2*time.Nanosecond, 789)
 		pulseType = phcsync.PulseType{
 			EdgesPerPulse: 2,
@@ -223,7 +226,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 		testClock,
 		multiObs,
 		nil, // no grandmaster
-		phcCfg,
+		cfg.Sync,
 		ls,
 		pulseType,
 		lg,
@@ -235,22 +238,23 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 	defer ctrl.Close()
 
 	lg.Info("starting phcsync simulation",
-		"duration", simCfg.Duration,
+		"duration", duration,
 		"pulseDelay", "5µs-250µs",
-		"msgDelay", simCfg.MsgDelay,
-		"phcFreqOffset", simCfg.PHC.FreqOffset,
-		"phcDrift", simCfg.PHC.Drift,
-		"phcWhiteNoise", simCfg.PHC.WhiteNoise,
-		"ppsJitter", simCfg.GPS.Jitter,
+		"msgDelay", cfg.MsgDelay,
+		"phcFreqOffset", cfg.PHC.FreqOffset,
+		"phcDrift", cfg.PHC.Drift,
+		"phcWhiteNoise", cfg.PHC.WhiteNoise,
+		"ppsJitter", cfg.GPS.Jitter,
 		"startTime", curTime.Format(time.RFC3339),
 		"phcStartTime", 0.0)
 
 	// Generate event streams
 	// Note: ticks start at t=0.25, modeling real system behavior where ticks
 	// run continuously from the start. Early ticks are safe - see generateTickEvents.
-	pulseGen := generatePulseEvents(simCfg, pulseType.EdgesPerPulse)
-	msgGen := generateNavSolutionMsgEvents(simCfg)
-	tickGen := generateTickEvents(simCfg)
+	durSec := duration.Seconds()
+	pulseGen := generatePulseEvents(cfg, durSec, pulseType.EdgesPerPulse)
+	msgGen := generateNavSolutionMsgEvents(cfg, durSec)
+	tickGen := generateTickEvents(durSec)
 
 	// Merge and process events
 	events := mergeEvents(pulseGen, msgGen, tickGen)
@@ -280,7 +284,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 
 		case EventPrePulseMsg:
 			data := event.Data.(PrePulseMsgEventData)
-			if !simCfg.InOutage(data.PPS) {
+			if !cfg.InOutage(data.PPS) {
 				// Only create PrePulse message if sawtooth configured
 				if lastReading.Sawtooth != nil {
 					// Sawtooth.Next is rawSaw where pulse_time = true_second + rawSaw.
@@ -308,7 +312,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 
 		case EventPostPulseMsg:
 			data := event.Data.(PostPulseMsgEventData)
-			if !simCfg.InOutage(data.PPS) {
+			if !cfg.InOutage(data.PPS) {
 				// Only create PostPulse message if sawtooth configured
 				if lastReading.Sawtooth != nil {
 					// KEY DIFFERENCE: PostPulse uses Sawtooth.Current (not Next)
@@ -348,9 +352,9 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 				if !trackingStarted && ctrl.Mode() == phcsync.ModeTracking {
 					trackingStarted = true
 				}
-				if trackingStarted && simCfg.TSLog != nil {
+				if trackingStarted && tsLog != nil {
 					nsec := int64(lastReading.Timestamp.T - tStart)
-					fmt.Fprintf(simCfg.TSLog, `{"chan":"A","timestamp":"%d.%09d"}`+"\n", nsec/1e9, nsec%1e9)
+					fmt.Fprintf(tsLog, `{"chan":"A","timestamp":"%d.%09d"}`+"\n", nsec/1e9, nsec%1e9)
 				}
 			}
 
@@ -360,7 +364,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 			}
 
 			// Deliver to controller if not in outage
-			if !simCfg.InOutage(data.PPS) {
+			if !cfg.InOutage(data.PPS) {
 				tSys := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
 				tReadPHC := testClock.Now()
 
@@ -382,7 +386,7 @@ func Simulate(observers []obs.Observer, phcCfg phcsync.Config, simCfg Config, cu
 
 		case EventNavSolutionMsg:
 			data := event.Data.(NavSolutionMsgEventData)
-			if !simCfg.InOutage(data.PPS) {
+			if !cfg.InOutage(data.PPS) {
 				handleNavSolutionMsgEvent(event.Time, data, timeMsgBuf, ctrl, tStart, lg)
 				sampleCount++
 			}
@@ -447,14 +451,14 @@ func (s *offsetStats) stdDev() float64 {
 
 // generatePulseEvents creates a push-style iterator that yields pulse edge events.
 // Generates ALL pulses - does NOT filter by outages (filtering happens in main loop).
-func generatePulseEvents(cfg Config, edgesPerPulse int) iter.Seq[Event] {
+func generatePulseEvents(cfg Config, duration float64, edgesPerPulse int) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
 		rng := rand.New(rand.NewSource(999))
 		prePulseTime := cfg.PrePulseTime
 		if prePulseTime == 0 {
 			prePulseTime = 0.95
 		}
-		for pps := 1.0; pps < cfg.Duration; pps += 1.0 {
+		for pps := 1.0; pps < duration; pps += 1.0 {
 			pulseDelay := cfg.MinDelay + rng.Float64()*(cfg.MaxDelay-cfg.MinDelay)
 			risingTime := pps + pulseDelay
 
@@ -513,10 +517,10 @@ func generatePulseEvents(cfg Config, edgesPerPulse int) iter.Seq[Event] {
 
 // generateMessageEvents creates a push-style iterator that yields GPS message events.
 // Generates ALL messages - does NOT filter by outages (filtering happens in main loop).
-func generateNavSolutionMsgEvents(cfg Config) iter.Seq[Event] {
+func generateNavSolutionMsgEvents(cfg Config, duration float64) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
 		rng := rand.New(rand.NewSource(888))
-		for pps := 1.0; pps < cfg.Duration; pps += 1.0 {
+		for pps := 1.0; pps < duration; pps += 1.0 {
 			msgDelayTime := cfg.MsgDelay + rng.NormFloat64()*cfg.MsgJitter
 			if msgDelayTime < 0 {
 				msgDelayTime = 0
@@ -538,9 +542,9 @@ func generateNavSolutionMsgEvents(cfg Config) iter.Seq[Event] {
 // Note: Early ticks (before first sample) are safe because controller.Tick()
 // returns early when in ModeReset, and mode only exits Reset after first sample
 // sets lastSample (controller.go:203).
-func generateTickEvents(cfg Config) iter.Seq[Event] {
+func generateTickEvents(duration float64) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
-		for t := tickInterval; t < cfg.Duration; t += tickInterval {
+		for t := tickInterval; t < duration; t += tickInterval {
 			if !yield(Event{
 				Time: t,
 				Type: EventTick,
