@@ -1,11 +1,10 @@
-package main
+package syncsim
 
 import (
 	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -13,17 +12,17 @@ import (
 	"testing"
 )
 
-type Record struct {
+type tsgenRecord struct {
 	Chan      string      `json:"chan"`
 	Timestamp json.Number `json:"timestamp"`
 	QErr      json.Number `json:"qErr,omitempty"`
 }
 
-func (r *Record) timestampFloat() (float64, error) {
+func (r *tsgenRecord) timestampFloat() (float64, error) {
 	return r.Timestamp.Float64()
 }
 
-func (r *Record) qerrFloat() (float64, error) {
+func (r *tsgenRecord) qerrFloat() (float64, error) {
 	if r.QErr == "" {
 		return 0, nil
 	}
@@ -44,19 +43,14 @@ func testTsgenOutput(t *testing.T, name string) {
 	}
 	defer expectedFile.Close()
 
-	// Run tsgen and capture output
+	// Load config and run Generate
+	cfg := DefaultConfig()
+	if err := LoadConfig(tomlPath, &cfg); err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
 	var gotBuf bytes.Buffer
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err = run([]string{tomlPath, "600"})
-	w.Close()
-	os.Stdout = oldStdout
-	io.Copy(&gotBuf, r)
-
-	if err != nil {
-		t.Fatalf("tsgen failed: %v", err)
+	if err := Generate(cfg, 600, &gotBuf); err != nil {
+		t.Fatalf("Generate failed: %v", err)
 	}
 
 	// Compare line by line
@@ -69,7 +63,7 @@ func testTsgenOutput(t *testing.T, name string) {
 	for expectedScanner.Scan() && gotScanner.Scan() {
 		lineNum++
 
-		var expected, got Record
+		var expected, got tsgenRecord
 
 		// Use decoder with UseNumber() to handle both string and numeric JSON
 		expectedDec := json.NewDecoder(bytes.NewReader(expectedScanner.Bytes()))

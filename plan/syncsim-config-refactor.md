@@ -680,9 +680,34 @@ Also fixed zeta defaults:
 - Added `DefaultResonatorConfig()` returning `ResonatorConfig{Zeta: 0.3}`
 - Removed "(default X)" from zeta comment tags
 
-### Phase 4.4: Other Cleanups
+### Phase 4.4: Merge tsgen into syncsim
 
-Can we merge tsgen and syncsim commands?
+Add `--generate` / `-g` flag to syncsim that outputs timestamps (JSON Lines) to stdout
+instead of running the full simulation. This eliminates the separate tsgen binary.
+
+The tsgen tests are really testing clocksim noise generators, so they move into syncsim.
+
+**Steps:**
+
+1. Move files into syncsim package:
+   - `internal/syncsim/cmd/tsgen/tsgen.go` → `internal/syncsim/tsgen.go`
+   - `internal/syncsim/cmd/tsgen/tsgen_test.go` → `internal/syncsim/tsgen_test.go`
+   - `internal/syncsim/cmd/tsgen/testdata/` → `internal/syncsim/testdata/`
+2. Edit `tsgen.go`:
+   - Change `package main` → `package syncsim`
+   - Remove `main()` function
+   - Change `run(args []string) error` → `Generate(cfg Config, duration float64, w io.Writer) error`
+   - Remove arg parsing and config loading (caller provides these)
+   - Keep `formatTimestamp` helper (unexported)
+3. Edit `tsgen_test.go`:
+   - Change `package main` → `package syncsim`
+   - Update to call `Generate()` instead of `run()`
+4. Edit `syncsimcmd.go`:
+   - Add `flags.BoolVarP(&generate, "generate", "g", false, "generate timestamps to stdout (JSON Lines)")`
+   - After flag parsing, check mutual exclusion: if `-g` and any of `--stats`, `--clock-log`, `--ts-log`, `--debug` are set, return error
+   - If `-g`, call `syncsim.Generate(cfg, duration.Seconds(), os.Stdout)` and exit
+5. Delete `internal/syncsim/cmd/tsgen/` directory
+6. Update Makefile to remove tsgen from CMDS
 
 ---
 

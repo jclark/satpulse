@@ -23,6 +23,7 @@ type options struct {
 	clockLogPath  string
 	tsLogPath     string
 	debug         bool
+	generate      bool
 }
 
 func main() {
@@ -30,6 +31,15 @@ func main() {
 	if err != nil {
 		cmd.ErrPrintln("syncsim", err)
 		os.Exit(1)
+	}
+
+	// Handle --generate mode
+	if opts.generate {
+		if err := syncsim.Generate(cfg, duration.Seconds(), os.Stdout); err != nil {
+			cmd.ErrPrintln("syncsim", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Current simulation time - updated by Simulate as it runs
@@ -111,6 +121,7 @@ func parseArgs(args []string) (*options, syncsim.Config, time.Duration, error) {
 	flags.IntVar(&opts.statsInterval, "stats", 0, "log stats every N seconds (0 to disable)")
 	flags.StringVar(&opts.clockLogPath, "clock-log", "", "write clock offsets to PATH")
 	flags.StringVar(&opts.tsLogPath, "ts-log", "", "write PHC timestamps to PATH (JSON Lines)")
+	flags.BoolVarP(&opts.generate, "generate", "g", false, "generate timestamps to stdout (JSON Lines)")
 
 	err := flags.Parse(args)
 	if err != nil {
@@ -150,6 +161,11 @@ func parseArgs(args []string) (*options, syncsim.Config, time.Duration, error) {
 	cfg := syncsim.DefaultConfig()
 	if err := syncsim.LoadConfig(configPath, &cfg); err != nil {
 		return nil, syncsim.Config{}, 0, fmt.Errorf("failed to load config: %v", err)
+	}
+
+	// Check mutual exclusion for --generate
+	if opts.generate && (opts.statsInterval != 0 || opts.clockLogPath != "" || opts.tsLogPath != "" || opts.debug) {
+		return nil, syncsim.Config{}, 0, fmt.Errorf("--generate cannot be used with --stats, --clock-log, --ts-log, or --debug")
 	}
 
 	return opts, cfg, duration, nil

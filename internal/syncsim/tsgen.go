@@ -1,42 +1,17 @@
-package main
+package syncsim
 
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
-	"os"
-	"strconv"
 
 	"github.com/jclark/satpulse/internal/clocksim"
-	"github.com/jclark/satpulse/internal/syncsim"
 )
 
-func main() {
-	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func run(args []string) error {
-	if len(args) != 2 {
-		return fmt.Errorf("usage: tsgen <config.toml> <duration-seconds>")
-	}
-	cfgPath := args[0]
-	duration, err := strconv.ParseFloat(args[1], 64)
-	if err != nil {
-		return fmt.Errorf("invalid duration: %v", err)
-	}
-	if duration <= 0 {
-		return fmt.Errorf("duration must be positive")
-	}
-
-	// Load config with defaults, then override from TOML
-	cfg := syncsim.DefaultConfig()
-	if err := syncsim.LoadConfig(cfgPath, &cfg); err != nil {
-		return fmt.Errorf("failed to load config: %v", err)
-	}
-
+// Generate outputs timestamps as JSON Lines to w for the given duration.
+// It generates PHC and/or GPS timestamps based on which config sections are non-zero.
+func Generate(cfg Config, duration float64, w io.Writer) error {
 	// Check which channels to generate
 	hasPHC := !cfg.PHC.IsZero()
 	hasGPS := !cfg.GPS.IsZero()
@@ -66,7 +41,7 @@ func run(args []string) error {
 	}
 
 	// Generate timestamps
-	enc := json.NewEncoder(os.Stdout)
+	enc := json.NewEncoder(w)
 	for t := 1.0; t <= duration; t += 1.0 {
 		// Chan B (GPS) - only if GPS parameters configured
 		if hasGPS {
