@@ -12,60 +12,60 @@ import (
 type TrackingConfig struct {
 	// Kp is the proportional gain for the PI servo used during tracking mode.
 	// Lower than converging mode for stability during normal operation.
-	Kp float64 `toml:"kp" check:">0.0,<10.0"`
+	Kp float64 `toml:"kp" check:">0.0,<10.0" comment:"PI servo proportional gain"`
 
 	// Ki is the integral gain for the PI servo used during tracking mode.
 	// Lower than converging mode to prevent overcorrection during stable tracking.
-	Ki float64 `toml:"ki" check:">0.0,<10.0"`
+	Ki float64 `toml:"ki" check:">0.0,<10.0" comment:"PI servo integral gain"`
 
 	// OutlierThreshold is the minimum absolute offset in nanoseconds for a sample to be
 	// considered for MAD-based outlier detection. Samples with |offset| < OutlierThreshold
 	// are always accepted. Samples with |offset| >= OutlierThreshold are evaluated using
 	// MAD statistics to determine if they are outliers. This ensures samples within the
 	// normal range of tracking jitter are not treated as outliers.
-	OutlierThreshold int64 `toml:"outlierThreshold" check:">0,<=1000"`
+	OutlierThreshold int64 `toml:"outlierThreshold" check:">0,<=1000" comment:"Min offset to check for outliers (ns)"`
 
 	// MADWindow is the number of samples in the sliding window for MAD-based outlier detection.
 	// The window stores offset history used to compute the median and median absolute deviation.
 	// Larger windows provide more robust outlier detection but respond more slowly to changing
 	// conditions.
-	MADWindow int `toml:"madWindow" check:">=3,<100"`
+	MADWindow int `toml:"madWindow" check:">=3,<100" comment:"Number of samples for MAD window"`
 
 	// MADMultiple is the multiple of MAD (Median Absolute Deviation) used as the outlier threshold.
 	// A sample is classified as an outlier if its offset is more than MADMultiple * MAD away from
 	// the median offset. Higher values make outlier detection more conservative (fewer rejections).
-	MADMultiple float64 `toml:"madMultiple" check:">0.0,<1000.0"`
+	MADMultiple float64 `toml:"madMultiple" check:">0.0,<1000.0" comment:"MAD multiple for outlier threshold"`
 
 	// MADMinSamples is the minimum number of samples required in the MAD window before MAD-based
 	// outlier detection is active. Until this threshold is reached, only the OutlierThreshold
 	// is checked. This ensures MAD statistics are based on sufficient data.
-	MADMinSamples int `toml:"madMinSamples" check:">=3,<100"`
+	MADMinSamples int `toml:"madMinSamples" check:">=3,<100" comment:"Min samples before MAD detection active"`
 
 	// PreMADOutlierThreshold is the outlier threshold in nanoseconds used before MAD-based
 	// detection is ready. During the warmup period (offsetWindow.Len() < MADMinSamples),
 	// a sample is rejected if |offset| >= OutlierThreshold AND |offset| >= PreMADOutlierThreshold.
 	// This protects the servo from obviously bad outliers during warmup. Once MAD is ready,
 	// full statistical detection is used.
-	PreMADOutlierThreshold int64 `toml:"preMADOutlierThreshold" check:">0,<=10000"`
+	PreMADOutlierThreshold int64 `toml:"preMADOutlierThreshold" check:">0,<=10000" comment:"Outlier threshold during warmup (ns)"`
 
 	// PulseWidthTolerance is the tolerance in nanoseconds for filtering trailing edges in
 	// dual-edge mode based on temporal spacing. An edge is considered a trailing edge (and
 	// ignored) if it arrives within PulseWidthTolerance of the expected trailing edge time
 	// (lastEdgeTime + PulseWidth). This helps distinguish leading from trailing edges when
 	// alignment alone is ambiguous.
-	PulseWidthTolerance int64 `toml:"pulseWidthTolerance" check:">0,<=10000"`
+	PulseWidthTolerance int64 `toml:"pulseWidthTolerance" check:">0,<=10000" comment:"Tolerance for trailing edge filter (ns)"`
 
 	// AlignTolerance is the tolerance in nanoseconds for offset from top of second to
 	// immediately accept an edge as a leading edge. Edges with |offset| <= AlignTolerance
 	// (where offset is timestamp rounded to nearest second) are assumed to be leading edges
 	// and accepted without further checks. This is the primary discriminator for
 	// well-synchronized clocks.
-	AlignTolerance int64 `toml:"alignTolerance" check:">0,<=10000"`
+	AlignTolerance int64 `toml:"alignTolerance" check:">0,<=10000" comment:"Tolerance for leading edge detection (ns)"`
 
 	// BadSampleLimit is the maximum number of consecutive bad samples (missing or outlier)
 	// before transitioning back to reset mode. Bad samples do not contribute to frequency
 	// adjustment.
-	BadSampleLimit int `toml:"badSampleLimit" check:">=1,<100"`
+	BadSampleLimit int `toml:"badSampleLimit" check:">=1,<100" comment:"Max consecutive bad samples before reset"`
 
 	// AvgFreqTimeConstant is the time constant in seconds for the exponential moving
 	// average of frequency adjustments. This average represents the baseline frequency
@@ -74,17 +74,17 @@ type TrackingConfig struct {
 	// oscillator drift. The EMA is updated as: avgFreq = alpha*freq + (1-alpha)*avgFreq
 	// where alpha = 1 - exp(-sampleInterval/timeConstant). Set to 0 to disable this
 	// feature (no frequency adjustment on missing samples).
-	AvgFreqTimeConstant float64 `toml:"avgFreqTimeConstant" check:">=0.0,<1000.0"`
+	AvgFreqTimeConstant float64 `toml:"avgFreqTimeConstant" check:">=0.0,<1000.0" comment:"EMA time constant for avg frequency (s)"`
 
 	// IgnoreSawtoothCorrection, when true, disables the use of pulse offset corrections
 	// from PrePulse messages. This is primarily for testing to verify that sawtooth
 	// correction improves synchronization accuracy. Default: false (use corrections).
-	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection"`
+	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection" comment:"Ignore sawtooth corrections (for testing)"`
 
 	// PulseCorrectionTimeout is maximum time in seconds to wait for a PostPulse correction
 	// message after the pulse occurs.
 	// The upper limit is set the 1 second minus the tick interval, which is 0.25s.
-	PulseCorrectionTimeout float64 `toml:"pulseCorrectionTimeout" check:">0,<0.75"`
+	PulseCorrectionTimeout float64 `toml:"pulseCorrectionTimeout" check:">0,<0.75" comment:"Max wait for pulse correction msg (s)"`
 }
 
 func defaultTrackingConfig() TrackingConfig {

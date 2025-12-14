@@ -12,32 +12,32 @@ import (
 type ConvergingConfig struct {
 	// Kp is the proportional gain for the PI servo used during converging mode.
 	// Higher values make the servo more responsive but may cause oscillation.
-	Kp float64 `toml:"kp" check:">0.0,<10.0"`
+	Kp float64 `toml:"kp" check:">0.0,<10.0" comment:"PI servo proportional gain"`
 
 	// Ki is the integral gain for the PI servo used during converging mode.
 	// This accumulates error over time to eliminate steady-state offset.
-	Ki float64 `toml:"ki" check:">=0.0,<10.0"`
+	Ki float64 `toml:"ki" check:">=0.0,<10.0" comment:"PI servo integral gain"`
 
 	// MedianWindow is the number of samples in the sliding window for computing the median
 	// of absolute offsets. The median is used to track convergence progress: when it stops
 	// decreasing and stabilizes below OffsetLimit, converging mode exits to tracking mode.
-	MedianWindow int `toml:"medianWindow" check:">=3,<100"`
+	MedianWindow int `toml:"medianWindow" check:">=3,<100" comment:"Number of samples for median window"`
 
 	// OffsetLimit is the maximum acceptable absolute offset in nanoseconds for declaring
 	// convergence complete. Converging mode exits to tracking when both conditions hold:
 	// (1) the median of absolute offsets has not decreased for StableWindow consecutive samples,
 	// and (2) every sample since the minimum median was observed has absolute offset <= OffsetLimit.
 	// If any sample exceeds this limit, the stability counter resets.
-	OffsetLimit int64 `toml:"offsetLimit" check:">0,<=10000"`
+	OffsetLimit int64 `toml:"offsetLimit" check:">0,<=10000" comment:"Max offset to declare converged (ns)"`
 
 	// StableWindow is the number of consecutive samples for which the minimum median must
 	// remain stable (not decrease) before exiting converging mode. This ensures the offset
 	// has truly stabilized rather than just momentarily dipping below the threshold.
-	StableWindow int `toml:"stableWindow" check:">=1,<100"`
+	StableWindow int `toml:"stableWindow" check:">=1,<100" comment:"Number of stable samples before exit"`
 
 	// BadSampleLimit is the maximum number of consecutive missing samples before transitioning
 	// back to reset mode. Missing samples indicate loss of PPS signal or time messages.
-	BadSampleLimit int `toml:"badSampleLimit" check:">=1,<100"`
+	BadSampleLimit int `toml:"badSampleLimit" check:">=1,<100" comment:"Max consecutive bad samples before reset"`
 
 	// StepCompensate enables compensation for ADJ_SETOFFSET delay at the beginning of
 	// converging mode. ADJ_SETOFFSET is implemented in the kernel by calling the driver
@@ -45,7 +45,7 @@ type ConvergingConfig struct {
 	// write back the adjusted time. This read-modify-write sequence takes a few microseconds,
 	// causing the clock to lag behind by that amount. If enabled, the offset from the first
 	// pulse in converging mode is used to apply a compensation step.
-	StepCompensate bool `toml:"stepCompensate"`
+	StepCompensate bool `toml:"stepCompensate" comment:"Compensate for ADJ_SETOFFSET delay"`
 }
 
 func defaultConvergingConfig() ConvergingConfig {

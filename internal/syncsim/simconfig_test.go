@@ -1,6 +1,7 @@
 package syncsim
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -44,7 +45,7 @@ amp = 298.711
 					WhiteNoise:   6.942,
 					FlickerNoise: 10.171,
 					RandomWalk:   2.010,
-					Sinusoid: []Sinusoid{
+					Sinusoid: []FreqSinusoid{
 						{Period: 71603.000, Amp: 512.414},
 						{Period: 107404.500, Amp: 285.132},
 						{Period: 53702.250, Amp: 243.339},
@@ -99,7 +100,7 @@ amp = 2.253
 					WhiteNoise:   8.092,
 					FlickerNoise: 7.584,
 					RandomWalk:   0.216,
-					Sinusoid: []Sinusoid{
+					Sinusoid: []FreqSinusoid{
 						{Period: 4303.000, Amp: 252.321},
 						{Period: 5378.750, Amp: 102.469},
 						{Period: 7171.667, Amp: 70.754},
@@ -115,7 +116,7 @@ amp = 2.253
 					Sawtooth: SawtoothConfig{
 						Amp: 7.855,
 					},
-					Sinusoid: []Sinusoid{
+					Sinusoid: []PhaseSinusoid{
 						{Period: 4303.000, Amp: 2.253},
 					},
 				},
@@ -296,5 +297,111 @@ sawtooth.amp = 8.0
 	}
 	if cfg.Fault.Outlier.Offset != 0 {
 		t.Errorf("Fault.Outlier.Offset = %v, want 0 (user must specify)", cfg.Fault.Outlier.Offset)
+	}
+}
+
+func TestWriteDefaultConfig(t *testing.T) {
+	// Test that WriteDefaultConfig produces valid TOML
+	var buf bytes.Buffer
+	err := WriteDefaultConfig(&buf)
+	if err != nil {
+		t.Fatalf("WriteDefaultConfig failed: %v", err)
+	}
+
+	output := buf.String()
+	if len(output) == 0 {
+		t.Fatal("WriteDefaultConfig produced empty output")
+	}
+
+	// Verify the output can be parsed back as valid TOML
+	var parsed Config
+	err = toml.NewDecoder(&buf).Decode(&parsed)
+	if err != nil {
+		// buf was consumed, re-create it
+		buf.Reset()
+		WriteDefaultConfig(&buf)
+		t.Logf("TOML output:\n%s", buf.String())
+		t.Fatalf("WriteDefaultConfig output is not valid TOML: %v", err)
+	}
+}
+
+func TestWriteDefaultConfigRoundTrip(t *testing.T) {
+	// Test that WriteDefaultConfig output can be re-parsed to match DefaultConfig
+	var buf bytes.Buffer
+	err := WriteDefaultConfig(&buf)
+	if err != nil {
+		t.Fatalf("WriteDefaultConfig failed: %v", err)
+	}
+
+	// Parse the output
+	var parsed Config
+	err = toml.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&parsed)
+	if err != nil {
+		t.Fatalf("failed to parse WriteDefaultConfig output: %v", err)
+	}
+
+	// Compare with DefaultConfig
+	expected := DefaultConfig()
+
+	// Check key fields match
+	if parsed.PHC.FreqOffset != expected.PHC.FreqOffset {
+		t.Errorf("PHC.FreqOffset = %v, want %v", parsed.PHC.FreqOffset, expected.PHC.FreqOffset)
+	}
+	if parsed.GPS.Sawtooth.PhaseInit != expected.GPS.Sawtooth.PhaseInit {
+		t.Errorf("GPS.Sawtooth.PhaseInit = %v, want %v", parsed.GPS.Sawtooth.PhaseInit, expected.GPS.Sawtooth.PhaseInit)
+	}
+	if parsed.Pulse.MinDelay != expected.Pulse.MinDelay {
+		t.Errorf("Pulse.MinDelay = %v, want %v", parsed.Pulse.MinDelay, expected.Pulse.MinDelay)
+	}
+	if parsed.Msg.Delay != expected.Msg.Delay {
+		t.Errorf("Msg.Delay = %v, want %v", parsed.Msg.Delay, expected.Msg.Delay)
+	}
+	if parsed.Msg.SawtoothType != expected.Msg.SawtoothType {
+		t.Errorf("Msg.SawtoothType = %v, want %v", parsed.Msg.SawtoothType, expected.Msg.SawtoothType)
+	}
+
+	// Check sync config fields
+	if parsed.Sync.Reset.PulseWindow != expected.Sync.Reset.PulseWindow {
+		t.Errorf("Sync.Reset.PulseWindow = %v, want %v", parsed.Sync.Reset.PulseWindow, expected.Sync.Reset.PulseWindow)
+	}
+	if parsed.Sync.Track.Kp != expected.Sync.Track.Kp {
+		t.Errorf("Sync.Track.Kp = %v, want %v", parsed.Sync.Track.Kp, expected.Sync.Track.Kp)
+	}
+}
+
+func TestDefaultConfigArrayEntries(t *testing.T) {
+	// Test that default config has zero-valued array entries for documentation
+	cfg := DefaultConfig()
+
+	// PHC.Sinusoid should have one zero entry
+	if len(cfg.PHC.Sinusoid) != 1 {
+		t.Errorf("PHC.Sinusoid length = %d, want 1", len(cfg.PHC.Sinusoid))
+	}
+	if !cfg.PHC.Sinusoid[0].IsZero() {
+		t.Errorf("PHC.Sinusoid[0] should be zero")
+	}
+
+	// GPS.AR1 should have one zero entry
+	if len(cfg.GPS.AR1) != 1 {
+		t.Errorf("GPS.AR1 length = %d, want 1", len(cfg.GPS.AR1))
+	}
+	if !cfg.GPS.AR1[0].IsZero() {
+		t.Errorf("GPS.AR1[0] should be zero")
+	}
+
+	// GPS.Sinusoid should have one zero entry
+	if len(cfg.GPS.Sinusoid) != 1 {
+		t.Errorf("GPS.Sinusoid length = %d, want 1", len(cfg.GPS.Sinusoid))
+	}
+	if !cfg.GPS.Sinusoid[0].IsZero() {
+		t.Errorf("GPS.Sinusoid[0] should be zero")
+	}
+
+	// Despite having array entries, IsZero() should still return true
+	if !cfg.PHC.IsZero() {
+		t.Errorf("PHC.IsZero() = false, want true (zero entries don't count)")
+	}
+	if !cfg.GPS.IsZero() {
+		t.Errorf("GPS.IsZero() = false, want true (zero entries don't count)")
 	}
 }

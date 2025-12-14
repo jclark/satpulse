@@ -411,7 +411,7 @@ func TestPHCSync(t *testing.T) {
 					Jitter: 10.0,
 					Sawtooth: SawtoothConfig{
 						PhaseInit: 0.5,
-						InternalClock: Sinusoid{
+						InternalClock: FreqSinusoid{
 							Amp:       2.0,
 							Period:    600.0,
 							PhaseInit: 1.0 / 6.0,

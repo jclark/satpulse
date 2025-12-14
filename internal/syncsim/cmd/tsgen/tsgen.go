@@ -56,16 +56,9 @@ func run(args []string) error {
 
 		// Create sawtooth simulator (following VirtualClock pattern)
 		if cfg.GPS.Sawtooth.Amp > 0 {
-			// Create oscillator for GPS internal clock (for sawtooth coupling)
-			// InternalClock defaults come from DefaultSawtoothConfig()
 			ic := cfg.GPS.Sawtooth.InternalClock
-			gpsOsc := clocksim.SinusoidOsc(
-				clocksim.PPB(ic.Amp),
-				ic.Period,
-				ic.PhaseInit,
-			)
+			gpsOsc := clocksim.SinusoidOsc(ic.Amp, ic.Period, ic.PhaseInit)
 			ampSec := cfg.GPS.Sawtooth.Amp * 1e-9
-			// PhaseInit defaults to 0.5 from DefaultSawtoothConfig()
 			sawtoothGPS = clocksim.SawtoothGPS(gpsOsc, ampSec, cfg.GPS.Sawtooth.PhaseInit)
 		} else {
 			sawtoothGPS = clocksim.PerfectGPS()

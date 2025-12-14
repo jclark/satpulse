@@ -163,14 +163,8 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 	var sawtoothPPS clocksim.GPSSimulator
 	if cfg.GPS.Sawtooth.Amp > 0 {
 		ampSec := cfg.GPS.Sawtooth.Amp * 1e-9 // Convert ns to seconds
-		// Create GPS receiver's internal oscillator (independent from PHC)
-		// Uses PhaseInit field from config (defaults applied by LoadHWConfig)
-		// InternalClock.Amp is in PPB for the oscillator
-		gpsOsc := clocksim.SinusoidOsc(
-			clocksim.PPB(cfg.GPS.Sawtooth.InternalClock.Amp),
-			cfg.GPS.Sawtooth.InternalClock.Period,
-			cfg.GPS.Sawtooth.InternalClock.PhaseInit,
-		)
+		ic := cfg.GPS.Sawtooth.InternalClock
+		gpsOsc := clocksim.SinusoidOsc(ic.Amp, ic.Period, ic.PhaseInit)
 		sawtoothPPS = clocksim.SawtoothGPS(gpsOsc, ampSec, cfg.GPS.Sawtooth.PhaseInit)
 	}
 

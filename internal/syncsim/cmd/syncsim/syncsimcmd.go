@@ -101,10 +101,12 @@ func parseArgs(args []string) (*options, syncsim.Config, time.Duration, error) {
 	opts := &options{}
 	help := false
 	showVersion := false
+	showDefaultConfig := false
 
 	flags := pflag.NewFlagSet("syncsim", pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&showVersion, "version", "V", false, "show version information")
+	flags.BoolVarP(&showDefaultConfig, "show-default-config", "C", false, "print default config as TOML and exit")
 	flags.BoolVar(&opts.debug, "debug", false, "enable debug logging")
 	flags.IntVar(&opts.statsInterval, "stats", 0, "log stats every N seconds (0 to disable)")
 	flags.StringVar(&opts.clockLogPath, "clock-log", "", "write clock offsets to PATH")
@@ -115,11 +117,19 @@ func parseArgs(args []string) (*options, syncsim.Config, time.Duration, error) {
 		return nil, syncsim.Config{}, 0, err
 	}
 	if help {
-		fmt.Fprintf(os.Stderr, "Usage: syncsim [options] <config.toml> <duration>\n\nOptions:\n%s", flags.FlagUsages())
+		fmt.Fprintf(os.Stderr, "Usage: syncsim [options] <config.toml> <duration>\n\n"+
+			"Use -C/--show-default-config to see the default configuration.\n\nOptions:\n%s", flags.FlagUsages())
 		os.Exit(0)
 	}
 	if showVersion {
 		fmt.Println(cmd.VersionInfo())
+		os.Exit(0)
+	}
+	if showDefaultConfig {
+		if err := syncsim.WriteDefaultConfig(os.Stdout); err != nil {
+			cmd.ErrPrintln("syncsim", err)
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 	if flags.NArg() != 2 {

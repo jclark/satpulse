@@ -47,9 +47,9 @@ type TimeMsgBuffer interface {
 
 // Config contains tunable parameters for the Controller.
 type Config struct {
-	Reset    ResetConfig       `toml:"reset"`
-	Converge ConvergingConfig  `toml:"converge"`
-	Track    TrackingConfig    `toml:"track"`
+	Reset    ResetConfig      `toml:"reset" comment:"Reset mode parameters"`
+	Converge ConvergingConfig `toml:"converge" comment:"Converging mode parameters"`
+	Track    TrackingConfig   `toml:"track" comment:"Tracking mode parameters"`
 }
 
 // DefaultConfig returns a Config with sensible default values.

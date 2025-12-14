@@ -612,12 +612,77 @@ Consolidate `DefaultConfig()` and `DefaultZeroConfig()` into a single `DefaultCo
 - Non-noise defaults (pulse timing, message timing) are still convenient
 - tsgen's `IsZero()` checks continue to work for deciding what to output
 
-### Phase 4.2: Other Cleanups
+### Phase 4.2: Add --show-default-config Option
 
-1. Should separate Sinusoid for PHC and GPS so that the types are right PPB vs Nanoseconds.
-2. Can we merge tsgen and syncsim commands?
-3. Need option to output default TOML file
+Add a command-line option to output the default TOML configuration with comments,
+helping users understand the expected config structure since CLI flags were removed.
 
+**Naming convention:** Following satpulsetool pattern (`--show-config` / `-c`), use:
+- `--show-default-config` / `-C`
+
+Short option `-C` is available in both syncsim and daemon (daemon uses: -h, -v, -s, -w, -V, -d).
+
+**Files to modify:**
+1. [syncsimcmd.go](internal/syncsim/cmd/syncsim/syncsimcmd.go) - Add flag and handler
+2. [simconfig.go](internal/syncsim/simconfig.go) - Add `comment:"..."` tags to struct fields
+
+**Changes to syncsimcmd.go:**
+
+1. Add flag:
+   ```go
+   flags.BoolVarP(&showDefaultConfig, "show-default-config", "C", false, "print default config as TOML and exit")
+   ```
+
+2. Handle the flag (after version check, before positional arg check):
+   ```go
+   if showDefaultConfig {
+       cfg := syncsim.DefaultConfig()
+       if err := toml.NewEncoder(os.Stdout).Encode(cfg); err != nil {
+           cmd.ErrPrintln("syncsim", err)
+           os.Exit(1)
+       }
+       os.Exit(0)
+   }
+   ```
+
+3. Add TOML import:
+   ```go
+   toml "github.com/pelletier/go-toml/v2"
+   ```
+
+4. Update help text to mention the option:
+   ```go
+   fmt.Fprintf(os.Stderr, "Usage: syncsim [options] <config.toml> <duration>\n\n"+
+       "Use -C/--show-default-config to see the default configuration.\n\nOptions:\n%s", flags.FlagUsages())
+   ```
+
+**Changes to simconfig.go:**
+
+Add `comment:"..."` tags to struct fields. The go-toml/v2 library includes
+these as comments above each field in the generated TOML. Derive short
+comment text from the existing doc comments.
+
+Example:
+```go
+FreqOffset clocksim.PPB `toml:"freqOffset" check:"..." comment:"Constant frequency offset (ppb)"`
+```
+
+Note: phcsync.Config (in internal/phcsync/) may also need comment tags.
+
+### Phase 4.3: Separate Sinusoid Types (DONE)
+
+Split the shared `Sinusoid` struct into type-safe variants:
+- `FreqSinusoid` with `Amp clocksim.PPB` for frequency modulation (PHC sinusoids, GPS internal clock)
+- `PhaseSinusoid` with `Amp clocksim.Nanoseconds` for phase modulation (GPS sinusoids)
+
+Also fixed zeta defaults:
+- Added `DefaultDriftConfig()` returning `DriftConfig{Zeta: 0.7}`
+- Added `DefaultResonatorConfig()` returning `ResonatorConfig{Zeta: 0.3}`
+- Removed "(default X)" from zeta comment tags
+
+### Phase 4.4: Other Cleanups
+
+Can we merge tsgen and syncsim commands?
 
 ---
 

@@ -15,37 +15,37 @@ import (
 type ResetConfig struct {
 	// PulseWindow is the number of pulses to collect for alignment analysis during reset mode.
 	// A larger window provides more data for statistical checks but delays the initial clock step.
-	PulseWindow int `toml:"pulseWindow" check:">=3,<100"`
+	PulseWindow int `toml:"pulseWindow" check:">=3,<100" comment:"Number of pulses for alignment analysis"`
 
 	// StepThreshold is the minimum absolute offset in nanoseconds required to perform a clock step.
 	// If the measured offset is smaller than this threshold, reset mode transitions directly to
 	// converging mode without stepping the clock.
-	StepThreshold int64 `toml:"stepThreshold" check:">=0,<1_000_000"`
+	StepThreshold int64 `toml:"stepThreshold" check:">=0,<1_000_000" comment:"Min offset to trigger clock step (ns)"`
 
 	// PulseVariation is the maximum acceptable variation between consecutive pulse intervals,
 	// expressed in parts per billion (PPB). This checks clock stability: if the variation
 	// between the shortest and longest interval exceeds this limit, the pulses are rejected.
 	// The variation is computed as: (maxInterval/minInterval - 1.0) * 1e9.
-	PulseVariation float64 `toml:"pulseVariation" check:">=5,<1_000_000"`
+	PulseVariation float64 `toml:"pulseVariation" check:">=5,<1_000_000" comment:"Max pulse interval variation (ppb)"`
 
 	// ExpectedDelay is the expected midpoint of the pulse-to-message delay window in seconds.
 	// This represents the typical delay between when a PPS pulse occurs and when the GPS
 	// receiver sends the corresponding time message. Most GPS receivers send messages
 	// 50-250ms after the pulse.
-	ExpectedDelay float64 `toml:"expectedDelay" check:">=0.0,<1.0"`
+	ExpectedDelay float64 `toml:"expectedDelay" check:">=0.0,<1.0" comment:"Expected pulse-to-message delay (s)"`
 
 	// DelayConfidenceWindow specifies what fraction of the maximum possible delay window
 	// to accept, expressed as a proportion (0.0 to 1.0). The window is centered around
 	// ExpectedDelay. With edge timestamping, the maximum window is 1.0 second (until next
 	// pulse). For example, 0.6 means accept delays from (ExpectedDelay - 0.3) to
 	// (ExpectedDelay + 0.3), rejecting pulses where messages arrive too early or too late.
-	DelayConfidenceWindow float64 `toml:"delayConfidenceWindow" check:">0.0,<=1.0"`
+	DelayConfidenceWindow float64 `toml:"delayConfidenceWindow" check:">0.0,<=1.0" comment:"Fraction of delay window to accept [0,1]"`
 
 	// DelayVariation is the maximum acceptable spread between pulse-to-message delays,
 	// expressed as a proportion of the maximum window (1.0 second). This checks consistency:
 	// all delays should be similar. The spread is computed as: (maxDelay - minDelay) / 1.0.
 	// Should be significantly smaller than DelayConfidenceWindow to ensure tight clustering.
-	DelayVariation float64 `toml:"delayVariation" check:">0.0,<1.0"`
+	DelayVariation float64 `toml:"delayVariation" check:">0.0,<1.0" comment:"Max delay spread as fraction of window"`
 
 	// PulseWidthDetectLimit is the maximum pulse width in seconds that can be automatically
 	// detected in dual-edge mode to determine which edge is leading. Pulse widths greater
@@ -53,7 +53,7 @@ type ResetConfig struct {
 	// duty cycle for reliable auto-detection from timing alone. When detection fails, both
 	// edge lists are kept and alignment with time messages is used. Note: pulse widths
 	// greater than 0.5 seconds must be explicitly configured via gps.pulseWidth.
-	PulseWidthDetectLimit float64 `toml:"pulseWidthDetectLimit" check:">=0.1,<0.5"`
+	PulseWidthDetectLimit float64 `toml:"pulseWidthDetectLimit" check:">=0.1,<0.5" comment:"Max auto-detectable pulse width (s)"`
 }
 
 func defaultResetConfig() ResetConfig {

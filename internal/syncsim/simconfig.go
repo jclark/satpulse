@@ -3,6 +3,7 @@ package syncsim
 import (
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 
@@ -19,12 +20,12 @@ type Seconds = float64
 
 // Config holds simulation parameters
 type Config struct {
-	PHC   PHCConfig      `toml:"phc"`   // PHC oscillator parameters
-	GPS   GPSConfig      `toml:"gps"`   // GPS PPS parameters
-	Sync  phcsync.Config `toml:"sync"`  // controller config
-	Pulse PulseConfig    `toml:"pulse"` // pulse timing parameters
-	Msg   MsgConfig      `toml:"msg"`   // message timing parameters
-	Fault FaultConfig    `toml:"fault"` // fault injection configuration
+	PHC   PHCConfig      `toml:"phc" comment:"PHC oscillator error model"`
+	GPS   GPSConfig      `toml:"gps" comment:"GPS time pulse error model"`
+	Sync  phcsync.Config `toml:"sync" comment:"PHC sync controller parameters"`
+	Pulse PulseConfig    `toml:"pulse" comment:"Pulse delivery timing"`
+	Msg   MsgConfig      `toml:"msg" comment:"GPS message delivery timing"`
+	Fault FaultConfig    `toml:"fault" comment:"Fault injection parameters"`
 }
 
 // Validate checks that all config fields are within valid ranges.
@@ -65,49 +66,77 @@ func DefaultConfig() Config {
 type PHCConfig struct {
 	// FreqOffset is the constant frequency offset in ppb.
 	// Typical values: ±1000-10000 ppb for factory-trimmed oscillators.
-	FreqOffset clocksim.PPB `toml:"freqOffset" check:">=-1_000_000,<=1_000_000"`
+	FreqOffset clocksim.PPB `toml:"freqOffset" check:">=-1_000_000,<=1_000_000" comment:"Constant frequency offset (ppb)"`
 
 	// Drift is the linear frequency drift rate in ppb per day.
-	Drift float64 `toml:"drift" check:">=-1_000_000,<=1_000_000"`
+	Drift float64 `toml:"drift" check:">=-1_000_000,<=1_000_000" comment:"Linear frequency drift (ppb/day)"`
 
 	// WhiteNoise is the standard deviation of white frequency noise in ppb.
 	// Typical values are 1-20 ppb for good crystals.
-	WhiteNoise clocksim.PPB `toml:"whiteNoise" check:">=0,<=10000"`
+	WhiteNoise clocksim.PPB `toml:"whiteNoise" check:">=0,<=10000" comment:"White frequency noise stddev (ppb)"`
 
 	// FlickerNoise is the standard deviation of flicker (1/f) frequency noise in ppb.
 	// Typical values are 0.1-5 ppb for crystals.
-	FlickerNoise clocksim.PPB `toml:"flickerNoise" check:">=0,<=10000"`
+	FlickerNoise clocksim.PPB `toml:"flickerNoise" check:">=0,<=10000" comment:"Flicker (1/f) frequency noise stddev (ppb)"`
 
 	// RandomWalk is the random walk FM coefficient in ppb/√s.
 	// Typical values are 0.01-1 ppb/√s.
-	RandomWalk clocksim.PPB `toml:"randomWalk" check:">=0,<=10000"`
+	RandomWalk clocksim.PPB `toml:"randomWalk" check:">=0,<=10000" comment:"Random walk FM coefficient (ppb/√s)"`
 
 	// Sinusoid is a list of sinusoidal frequency modulation components.
-	Sinusoid []Sinusoid `toml:"sinusoid"`
+	Sinusoid []FreqSinusoid `toml:"sinusoid" comment:"Sinusoidal frequency modulation components"`
 }
 
-// Sinusoid configures a sinusoidal modulation component.
-// Contribution: Amp * sin(2π * (t/Period + PhaseInit))
-type Sinusoid struct {
+// FreqSinusoid configures a sinusoidal frequency modulation component.
+// Contribution to frequency: Amp * sin(2π * (t/Period + PhaseInit))
+type FreqSinusoid struct {
 	// Period is the oscillation period in seconds.
-	Period Seconds `toml:"period" check:">0,<=1000000"`
+	Period Seconds `toml:"period" check:">0,<=1000000" comment:"Oscillation period (s)"`
 
-	// Amp is the amplitude (ppb for PHC frequency, ns for GPS phase).
-	Amp float64 `toml:"amp" check:">=0,<=10000"`
+	// Amp is the frequency amplitude in parts-per-billion.
+	Amp clocksim.PPB `toml:"amp" check:">=0,<=10000" comment:"Frequency amplitude (ppb)"`
 
 	// PhaseInit is the initial phase as a fraction of cycle [0,1).
-	PhaseInit float64 `toml:"phaseInit" check:">=0,<1"`
+	PhaseInit float64 `toml:"phaseInit" check:">=0,<1" comment:"Initial phase [0,1)"`
 }
+
+func (s FreqSinusoid) IsZero() bool { return s.Amp == 0 }
+
+// PhaseSinusoid configures a sinusoidal phase modulation component.
+// Contribution to phase: Amp * sin(2π * (t/Period + PhaseInit))
+type PhaseSinusoid struct {
+	// Period is the oscillation period in seconds.
+	Period Seconds `toml:"period" check:">0,<=1000000" comment:"Oscillation period (s)"`
+
+	// Amp is the phase amplitude in nanoseconds.
+	Amp clocksim.Nanoseconds `toml:"amp" check:">=0,<=10000" comment:"Phase amplitude (ns)"`
+
+	// PhaseInit is the initial phase as a fraction of cycle [0,1).
+	PhaseInit float64 `toml:"phaseInit" check:">=0,<1" comment:"Initial phase [0,1)"`
+}
+
+func (s PhaseSinusoid) IsZero() bool { return s.Amp == 0 }
 
 // IsZero returns true if all PHC parameters are zero (no oscillator error configured).
 func (c PHCConfig) IsZero() bool {
-	return c.FreqOffset == 0 && c.Drift == 0 && c.WhiteNoise == 0 &&
-		c.FlickerNoise == 0 && c.RandomWalk == 0 && len(c.Sinusoid) == 0
+	if c.FreqOffset != 0 || c.Drift != 0 || c.WhiteNoise != 0 ||
+		c.FlickerNoise != 0 || c.RandomWalk != 0 {
+		return false
+	}
+	for _, s := range c.Sinusoid {
+		if !s.IsZero() {
+			return false
+		}
+	}
+	return true
 }
 
-// DefaultPHCConfig returns a zero PHCConfig.
+// DefaultPHCConfig returns a PHCConfig with zero noise.
+// Includes a zero sinusoid entry so users can see the expected structure.
 func DefaultPHCConfig() PHCConfig {
-	return PHCConfig{}
+	return PHCConfig{
+		Sinusoid: []FreqSinusoid{{}},
+	}
 }
 
 // CreateSimulator returns an OscSimulator combining all PHC error sources.
@@ -130,8 +159,7 @@ func (c PHCConfig) CreateSimulator() clocksim.OscSimulator {
 	}
 	for _, s := range c.Sinusoid {
 		if s.Amp > 0 {
-			// For PHC, Amp is in PPB
-			oscs = append(oscs, clocksim.SinusoidOsc(clocksim.PPB(s.Amp), s.Period, s.PhaseInit))
+			oscs = append(oscs, clocksim.SinusoidOsc(s.Amp, s.Period, s.PhaseInit))
 		}
 	}
 	return clocksim.CombineOsc(oscs...)
@@ -142,48 +170,65 @@ func (c PHCConfig) CreateSimulator() clocksim.OscSimulator {
 type GPSConfig struct {
 	// Jitter is white phase noise stddev in nanoseconds.
 	// Typical: 0.1-5 ns survey-grade, 5-50 ns consumer-grade.
-	Jitter clocksim.Nanoseconds `toml:"jitter" check:">=0,<=1000"`
+	Jitter clocksim.Nanoseconds `toml:"jitter" check:">=0,<=1000" comment:"White phase noise stddev (ns)"`
 
 	// Sawtooth configures GPS receiver quantization sawtooth error.
-	Sawtooth SawtoothConfig `toml:"sawtooth"`
+	Sawtooth SawtoothConfig `toml:"sawtooth" comment:"GPS receiver quantization sawtooth error"`
 
 	// AR1 is a list of AR(1) colored phase noise processes.
-	AR1 []AR1Config `toml:"ar1"`
+	AR1 []AR1Config `toml:"ar1" comment:"AR(1) colored phase noise processes"`
 
 	// AR1FM is an AR(1) frequency modulation process (sigma in ppb).
-	AR1FM AR1FMConfig `toml:"ar1FM"`
+	AR1FM AR1FMConfig `toml:"ar1FM" comment:"AR(1) frequency modulation process"`
 
 	// RandomWalk is the random walk FM coefficient in ppb/√s.
-	RandomWalk float64 `toml:"randomWalk" check:">=0,<=1000"`
+	RandomWalk float64 `toml:"randomWalk" check:">=0,<=1000" comment:"Random walk FM coefficient (ppb/√s)"`
 
 	// Drift configures bounded drift (2nd-order Gauss-Markov).
-	Drift DriftConfig `toml:"drift"`
+	Drift DriftConfig `toml:"drift" comment:"Bounded drift (2nd-order Gauss-Markov)"`
 
 	// Resonator configures a damped oscillator on phase.
-	Resonator ResonatorConfig `toml:"resonator"`
+	Resonator ResonatorConfig `toml:"resonator" comment:"Damped oscillator on phase"`
 
 	// Sinusoid is a list of sinusoidal phase modulation components.
-	Sinusoid []Sinusoid `toml:"sinusoid"`
+	Sinusoid []PhaseSinusoid `toml:"sinusoid" comment:"Sinusoidal phase modulation components"`
 }
 
 // IsZero returns true if all GPS parameters are zero (no PPS error configured).
 func (c GPSConfig) IsZero() bool {
-	return c.Jitter == 0 && c.Sawtooth.Amp == 0 && len(c.AR1) == 0 &&
-		c.AR1FM.Tau == 0 && c.RandomWalk == 0 && c.Drift.Tau == 0 &&
-		c.Resonator.Period == 0 && len(c.Sinusoid) == 0
+	if c.Jitter != 0 || c.Sawtooth.Amp != 0 || c.AR1FM.Tau != 0 ||
+		c.RandomWalk != 0 || c.Drift.Tau != 0 || c.Resonator.Period != 0 {
+		return false
+	}
+	for _, a := range c.AR1 {
+		if !a.IsZero() {
+			return false
+		}
+	}
+	for _, s := range c.Sinusoid {
+		if !s.IsZero() {
+			return false
+		}
+	}
+	return true
 }
 
 // ResonatorConfig configures a damped harmonic oscillator on phase.
 // Implements a bounded phase process that oscillates around zero.
 type ResonatorConfig struct {
 	// Period is the natural oscillation period in seconds.
-	Period Seconds `toml:"period" check:">=0,<=1000000"`
+	Period Seconds `toml:"period" check:">=0,<=1000000" comment:"Natural oscillation period (s)"`
 
 	// Sigma is the RMS phase deviation in nanoseconds.
-	Sigma clocksim.Nanoseconds `toml:"sigma" check:">=0,<=10000"`
+	Sigma clocksim.Nanoseconds `toml:"sigma" check:">=0,<=10000" comment:"RMS phase deviation (ns)"`
 
-	// Zeta is the damping ratio (default 0.3).
-	Zeta float64 `toml:"zeta" check:">=0,<=10"`
+	// Zeta is the damping ratio.
+	Zeta float64 `toml:"zeta" check:">=0,<=10" comment:"Damping ratio"`
+}
+
+// DefaultResonatorConfig returns a ResonatorConfig with sensible zeta default.
+func DefaultResonatorConfig() ResonatorConfig {
+	return ResonatorConfig{Zeta: 0.3}
 }
 
 // InternalParams converts user-facing (period, sigma, zeta) to internal (omegaN, zeta, sigmaNoise).
@@ -191,24 +236,30 @@ func (c ResonatorConfig) InternalParams() (omegaN, zeta, sigmaNoise float64) {
 	return clocksim.ResonatorUserToInternal(c.Period, float64(c.Sigma), c.Zeta)
 }
 
-// DefaultGPSConfig returns a GPSConfig with zero noise but sensible sawtooth defaults.
+// DefaultGPSConfig returns a GPSConfig with zero noise but sensible defaults.
 // Users specifying sawtooth.amp will get working InternalClock values automatically.
+// Drift and Resonator have sensible zeta defaults for when user specifies tau/sigma.
+// Includes zero AR1 and Sinusoid entries so users can see the expected structure.
 func DefaultGPSConfig() GPSConfig {
 	return GPSConfig{
-		Sawtooth: DefaultSawtoothConfig(),
+		Sawtooth:  DefaultSawtoothConfig(),
+		Drift:     DefaultDriftConfig(),
+		Resonator: DefaultResonatorConfig(),
+		AR1:       []AR1Config{{}},
+		Sinusoid:  []PhaseSinusoid{{}},
 	}
 }
 
 // SawtoothConfig configures GPS receiver quantization sawtooth error.
 type SawtoothConfig struct {
 	// Amp is the sawtooth amplitude in nanoseconds (≈ 0.5e9/f_osc).
-	Amp float64 `toml:"amp" check:">=0,<=1000"`
+	Amp float64 `toml:"amp" check:">=0,<=1000" comment:"Sawtooth amplitude (ns, ≈ 0.5e9/f_osc)"`
 
 	// PhaseInit is the initial phase [0,1), default 0.5.
-	PhaseInit float64 `toml:"phaseInit" check:">=0,<1"`
+	PhaseInit float64 `toml:"phaseInit" check:">=0,<1" comment:"Initial phase [0,1)"`
 
 	// InternalClock models the GPS receiver's internal oscillator error.
-	InternalClock Sinusoid `toml:"internalClock"`
+	InternalClock FreqSinusoid `toml:"internalClock" comment:"GPS internal oscillator error model"`
 }
 
 // DefaultSawtoothConfig returns a SawtoothConfig with zero amplitude but sensible defaults
@@ -217,7 +268,7 @@ func DefaultSawtoothConfig() SawtoothConfig {
 	return SawtoothConfig{
 		Amp:       0,   // zero by default - user specifies if needed
 		PhaseInit: 0.5, // sensible default
-		InternalClock: Sinusoid{
+		InternalClock: FreqSinusoid{
 			Amp:       2.0,       // 2 ppb amplitude
 			Period:    600.0,     // 10 minute period
 			PhaseInit: 1.0 / 6.0, // π/3 radians = 1/6 cycle in [0,1)
@@ -225,35 +276,41 @@ func DefaultSawtoothConfig() SawtoothConfig {
 	}
 }
 
-
 // AR1Config configures an AR(1) phase noise process.
 type AR1Config struct {
 	// Tau is the correlation time constant in seconds.
-	Tau Seconds `toml:"tau" check:">=0,<=1000000"`
+	Tau Seconds `toml:"tau" check:">=0,<=1000000" comment:"Correlation time constant (s)"`
 
 	// Sigma is the steady-state RMS in nanoseconds.
-	Sigma clocksim.Nanoseconds `toml:"sigma" check:">=0,<=10000"`
+	Sigma clocksim.Nanoseconds `toml:"sigma" check:">=0,<=10000" comment:"Steady-state RMS (ns)"`
 }
+
+func (c AR1Config) IsZero() bool { return c.Tau == 0 || c.Sigma == 0 }
 
 // AR1FMConfig configures an AR(1) frequency modulation process.
 type AR1FMConfig struct {
 	// Tau is the correlation time constant in seconds.
-	Tau Seconds `toml:"tau" check:">=0,<=1000000"`
+	Tau Seconds `toml:"tau" check:">=0,<=1000000" comment:"Correlation time constant (s)"`
 
 	// Sigma is the steady-state RMS of frequency bias in ppb.
-	Sigma clocksim.PPB `toml:"sigma" check:">=0,<=10000"`
+	Sigma clocksim.PPB `toml:"sigma" check:">=0,<=10000" comment:"Steady-state RMS of frequency bias (ppb)"`
 }
 
 // DriftConfig configures bounded drift (Carpenter-Lee 2nd-order Gauss-Markov).
 type DriftConfig struct {
 	// Tau is the characteristic timescale in seconds.
-	Tau Seconds `toml:"tau" check:">=0,<=1000000"`
+	Tau Seconds `toml:"tau" check:">=0,<=1000000" comment:"Characteristic timescale (s)"`
 
 	// Sigma is the RMS phase deviation in nanoseconds.
-	Sigma clocksim.Nanoseconds `toml:"sigma" check:">=0,<=10000"`
+	Sigma clocksim.Nanoseconds `toml:"sigma" check:">=0,<=10000" comment:"RMS phase deviation (ns)"`
 
-	// Zeta is the damping ratio (default 0.7).
-	Zeta float64 `toml:"zeta" check:">=0,<=10"`
+	// Zeta is the damping ratio.
+	Zeta float64 `toml:"zeta" check:">=0,<=10" comment:"Damping ratio"`
+}
+
+// DefaultDriftConfig returns a DriftConfig with sensible zeta default.
+func DefaultDriftConfig() DriftConfig {
+	return DriftConfig{Zeta: 0.7}
 }
 
 // InternalParams converts user-facing (tau, sigma, zeta) to internal (omega_n, zeta, sigma_drift).
@@ -315,6 +372,13 @@ func LoadConfig(path string, cfg *Config) error {
 	return cfg.Validate()
 }
 
+// WriteDefaultConfig writes the default configuration as TOML to w.
+// The output includes comments derived from struct field comment tags.
+func WriteDefaultConfig(w io.Writer) error {
+	cfg := DefaultConfig()
+	return toml.NewEncoder(w).Encode(cfg)
+}
+
 // CreateSimulator returns a GPSSimulator combining all GPS error sources.
 // Applies components in order: jitter, AR(1), AR(1) FM, random walk, drift, sinusoids.
 // Does NOT include Shift, Outlier, or Sawtooth - those are added separately in Simulate().
@@ -344,12 +408,12 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 		sims = append(sims, clocksim.ResonatorGPS(omegaN, zeta, sigmaNoise, 128))
 	}
 	for _, s := range c.Sinusoid {
-		// For GPS, Amp is in nanoseconds
-		sims = append(sims, clocksim.SinusoidGPS(clocksim.Nanoseconds(s.Amp), s.Period, s.PhaseInit))
+		if s.Amp > 0 {
+			sims = append(sims, clocksim.SinusoidGPS(s.Amp, s.Period, s.PhaseInit))
+		}
 	}
 	return clocksim.CombineGPS(sims...)
 }
-
 
 // PulseConfig configures PPS pulse timing characteristics.
 type PulseConfig struct {
@@ -359,17 +423,17 @@ type PulseConfig struct {
 	// exactly at the second boundary. The actual delay for each pulse is
 	// uniformly distributed between MinDelay and MaxDelay.
 	// Typical values are 5-50 microseconds (0.000005 to 0.00005).
-	MinDelay Seconds `toml:"minDelay" check:">=0,<1"`
+	MinDelay Seconds `toml:"minDelay" check:">=0,<1" comment:"Min pulse delay from GPS second (s)"`
 
 	// MaxDelay is the maximum delay from the true GPS second to when the
 	// PPS pulse edge is delivered to the PHC timestamper. Must be >= MinDelay.
-	MaxDelay Seconds `toml:"maxDelay" check:">=0,<1"`
+	MaxDelay Seconds `toml:"maxDelay" check:">=0,<1" comment:"Max pulse delay from GPS second (s)"`
 
 	// Width is the pulse width for dual-edge timestamping mode.
 	// When Width > 0, the simulator generates both rising and falling edges.
 	// When Width = 0, only rising edges are generated (single-edge mode).
 	// Typical GPS receivers use 100ms (0.1) pulse width.
-	Width Seconds `toml:"width" check:">=0,<1"`
+	Width Seconds `toml:"width" check:">=0,<1" comment:"Pulse width (0=single-edge mode)"`
 }
 
 // MsgConfig configures GPS message delivery timing.
@@ -377,24 +441,24 @@ type PulseConfig struct {
 type MsgConfig struct {
 	// Delay is the mean delay from the PPS pulse to when the GPS time message
 	// is received. Real GPS receivers take 50-250ms to transmit after the pulse.
-	Delay Seconds `toml:"delay" check:">=0,<1"`
+	Delay Seconds `toml:"delay" check:">=0,<1" comment:"Mean message delay after pulse (s)"`
 
 	// Jitter is the standard deviation of the message arrival time.
-	Jitter Seconds `toml:"jitter" check:">=0,<1"`
+	Jitter Seconds `toml:"jitter" check:">=0,<1" comment:"Message delay stddev (s)"`
 
 	// SawtoothType specifies how sawtooth correction messages are delivered:
 	//   - SawtoothPrePulse ("prepulse"): Correction arrives before the pulse (UBX-TIM-TP)
 	//   - SawtoothPostPulse ("postpulse"): Correction arrives after the pulse (UBX-TIM-TOS)
 	//   - SawtoothNone ("none"): No correction messages
-	SawtoothType SawtoothType `toml:"sawtoothType"`
+	SawtoothType SawtoothType `toml:"sawtoothType" comment:"How sawtooth correction is delivered (prepulse/postpulse/none)"`
 
 	// PrePulseTime is the time before the PPS edge when a PrePulse correction
 	// message is delivered. Only used when SawtoothType is SawtoothPrePulse.
-	PrePulseTime Seconds `toml:"prePulseTime" check:">=0,<1"`
+	PrePulseTime Seconds `toml:"prePulseTime" check:">=0,<1" comment:"Time before pulse for prepulse message (s)"`
 
 	// PostPulseDelay is the delay after the PPS edge when a PostPulse correction
 	// message is delivered. Only used when SawtoothType is SawtoothPostPulse.
-	PostPulseDelay Seconds `toml:"postPulseDelay" check:">=0,<1"`
+	PostPulseDelay Seconds `toml:"postPulseDelay" check:">=0,<1" comment:"Delay after pulse for postpulse message (s)"`
 }
 
 // SawtoothType specifies how sawtooth correction messages are delivered.
@@ -453,9 +517,9 @@ func (s SawtoothType) TimeRef() gpsprot.TimeRef {
 
 // FaultConfig configures fault injection for testing controller resilience.
 type FaultConfig struct {
-	Toggle  ToggleConfig  `toml:"toggle"`  // signal outages
-	Outlier OutlierConfig `toml:"outlier"` // phase outliers
-	Shift   ShiftConfig   `toml:"shift"`   // gradual phase shifts
+	Toggle  ToggleConfig  `toml:"toggle" comment:"Signal outage simulation"`
+	Outlier OutlierConfig `toml:"outlier" comment:"Discrete phase outlier injection"`
+	Shift   ShiftConfig   `toml:"shift" comment:"Gradual phase shift injection"`
 }
 
 // ToggleConfig configures signal outage simulation.
@@ -464,32 +528,32 @@ type ToggleConfig struct {
 	// The simulation alternates between signal-on and signal-off states.
 	// First duration is signal-on, second is signal-off, etc.
 	// Example: [60, 10, 60] means: 60s on, 10s off, 60s on.
-	Durations []Seconds `toml:"durations"`
+	Durations []Seconds `toml:"durations" comment:"Alternating on/off durations (s)"`
 }
 
 // OutlierConfig configures discrete phase outlier injection.
 type OutlierConfig struct {
 	// Times is a list of simulation times at which to inject an outlier.
-	Times []Seconds `toml:"times"`
+	Times []Seconds `toml:"times" comment:"Simulation times to inject outliers"`
 
 	// Offset is the magnitude of the phase offset to inject in nanoseconds.
 	// Typical multipath outliers are 1000-10000 ns (1-10 µs).
-	Offset clocksim.Nanoseconds `toml:"offset" check:">=0"`
+	Offset clocksim.Nanoseconds `toml:"offset" check:">=0" comment:"Outlier offset magnitude (ns)"`
 }
 
 // ShiftConfig configures gradual phase shift injection.
 type ShiftConfig struct {
 	// StartTime is the simulation time when the shift begins.
-	StartTime Seconds `toml:"startTime" check:">=0"`
+	StartTime Seconds `toml:"startTime" check:">=0" comment:"When shift begins (s)"`
 
 	// Ramp is the ramp-up/ramp-down duration in seconds.
-	Ramp Seconds `toml:"ramp" check:">=0"`
+	Ramp Seconds `toml:"ramp" check:">=0" comment:"Ramp up/down duration (s)"`
 
 	// Duration is the total duration including both ramp periods in seconds.
-	Duration Seconds `toml:"duration" check:">=0"`
+	Duration Seconds `toml:"duration" check:">=0" comment:"Total shift duration (s)"`
 
 	// Shift is the maximum phase shift magnitude at the plateau in nanoseconds.
-	Shift clocksim.Nanoseconds `toml:"shift"`
+	Shift clocksim.Nanoseconds `toml:"shift" comment:"Max phase shift at plateau (ns)"`
 }
 
 // InOutage returns true if time t falls within an outage period.
@@ -510,4 +574,3 @@ func (c Config) InOutage(t float64) bool {
 	// Past all durations: if we ended on odd count, signal is off
 	return len(c.Fault.Toggle.Durations)%2 == 1
 }
-
