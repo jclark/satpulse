@@ -12,6 +12,7 @@ import (
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/syncsim"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/pflag"
 )
 
@@ -49,7 +50,7 @@ func main() {
 	if opts.debug {
 		level = slog.LevelDebug
 	}
-	lg := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: level,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.TimeKey {
@@ -97,13 +98,11 @@ func main() {
 	// Final flush of stats
 	statsObs.Release()
 
-	// Log final stats
-	args := stats.Stats.LogArgs()
-	args = append(args, "samples", stats.SampleCount)
-	args = append(args, "trackingStdDev", stats.TrackingStdDev)
-	args = append(args, "trackingAbsMax", stats.TrackingAbsMax)
-	args = append(args, "trackingMean", stats.TrackingMean)
-	lg.Info("simulation complete", args...)
+	// Output stats as TOML
+	if err := toml.NewEncoder(os.Stdout).Encode(stats); err != nil {
+		lg.Error("failed to encode stats", "err", err)
+		os.Exit(1)
+	}
 }
 
 func parseArgs(args []string) (*options, syncsim.Config, error) {
