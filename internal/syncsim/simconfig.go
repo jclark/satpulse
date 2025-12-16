@@ -354,8 +354,11 @@ func DefaultMsgConfig() MsgConfig {
 }
 
 // DefaultFaultConfig returns a FaultConfig with no faults configured.
+// Includes a zero-amplitude excursion so users can see the expected structure.
 func DefaultFaultConfig() FaultConfig {
-	return FaultConfig{}
+	return FaultConfig{
+		Excursion: []ExcursionConfig{DefaultExcursionConfig()},
+	}
 }
 
 // LoadConfig loads configuration from a TOML file into cfg.
@@ -517,9 +520,9 @@ func (s SawtoothType) TimeRef() gpsprot.TimeRef {
 
 // FaultConfig configures fault injection for testing controller resilience.
 type FaultConfig struct {
-	Toggle  ToggleConfig  `toml:"toggle" comment:"Signal outage simulation"`
-	Outlier OutlierConfig `toml:"outlier" comment:"Discrete phase outlier injection"`
-	Shift   ShiftConfig   `toml:"shift" comment:"Gradual phase shift injection"`
+	Toggle    ToggleConfig      `toml:"toggle" comment:"Signal outage simulation"`
+	Outlier   OutlierConfig     `toml:"outlier" comment:"Discrete phase outlier injection"`
+	Excursion []ExcursionConfig `toml:"excursion" comment:"Temporary phase excursions"`
 }
 
 // ToggleConfig configures signal outage simulation.
@@ -541,19 +544,55 @@ type OutlierConfig struct {
 	Offset clocksim.Nanoseconds `toml:"offset" check:">=0" comment:"Outlier offset magnitude (ns)"`
 }
 
-// ShiftConfig configures gradual phase shift injection.
-type ShiftConfig struct {
-	// StartTime is the simulation time when the shift begins.
-	StartTime Seconds `toml:"startTime" check:">=0" comment:"When shift begins (s)"`
+// RampConfig configures a smooth ramp transition.
+type RampConfig struct {
+	// Duration is the ramp duration in seconds. 0 means instant transition.
+	Duration Seconds `toml:"duration" check:">=0" comment:"Ramp duration (s)"`
 
-	// Ramp is the ramp-up/ramp-down duration in seconds.
-	Ramp Seconds `toml:"ramp" check:">=0" comment:"Ramp up/down duration (s)"`
+	// Power controls the ramp shape. nil defaults to 2.0 (smooth S-curve).
+	// power > 1 gives smooth acceleration/deceleration at endpoints.
+	// power = 1 is linear.
+	Power *float64 `toml:"power" check:">0,<=10" comment:"Shape power (>1 for smooth S-curve)"`
+}
 
-	// Duration is the total duration including both ramp periods in seconds.
-	Duration Seconds `toml:"duration" check:">=0" comment:"Total shift duration (s)"`
+// EffectivePower returns the power value, defaulting to 2.0 if nil.
+func (c RampConfig) EffectivePower() float64 {
+	if c.Power == nil {
+		return 2.0
+	}
+	return *c.Power
+}
 
-	// Shift is the maximum phase shift magnitude at the plateau in nanoseconds.
-	Shift clocksim.Nanoseconds `toml:"shift" comment:"Max phase shift at plateau (ns)"`
+// ExcursionConfig configures a temporary phase excursion with smooth ramps.
+type ExcursionConfig struct {
+	// StartTime is when the excursion begins in seconds.
+	StartTime Seconds `toml:"startTime" check:">=0" comment:"When excursion begins (s)"`
+
+	// Duration is the total excursion duration including ramps in seconds.
+	Duration Seconds `toml:"duration" check:">=0" comment:"Total duration including ramps (s)"`
+
+	// Amplitude is the peak phase shift in nanoseconds.
+	Amplitude clocksim.Nanoseconds `toml:"amplitude" comment:"Peak phase shift (ns)"`
+
+	// Rise configures the rising edge ramp.
+	Rise RampConfig `toml:"rise" comment:"Rising edge ramp"`
+
+	// Fall configures the falling edge ramp.
+	Fall RampConfig `toml:"fall" comment:"Falling edge ramp"`
+}
+
+// IsZero returns true if the excursion has no effect (zero amplitude).
+func (c ExcursionConfig) IsZero() bool { return c.Amplitude == 0 }
+
+// ptr is a helper for creating *float64 values.
+func ptr(f float64) *float64 { return &f }
+
+// DefaultExcursionConfig returns an ExcursionConfig with sensible defaults.
+func DefaultExcursionConfig() ExcursionConfig {
+	return ExcursionConfig{
+		Rise: RampConfig{Power: ptr(2.0)},
+		Fall: RampConfig{Power: ptr(2.0)},
+	}
 }
 
 // InOutage returns true if time t falls within an outage period.

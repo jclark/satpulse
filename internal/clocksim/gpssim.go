@@ -123,32 +123,54 @@ func AR1ColoredNoiseGPS(alpha float64, noiseStddev Nanoseconds, seed int64) GPSS
 	}
 }
 
-// ShiftPPS creates a GPS simulator that applies a temporary phase shift with smooth transitions.
-// The shift rises with a half-sine profile, holds at the specified shift, then falls symmetrically.
-// Useful for simulating ionospheric disturbances or other gradual timing biases.
-func ShiftPPS(startTime, rampSec, durationSec float64, shift Nanoseconds) GPSSimulator {
-	shiftSec := shift.Seconds()
-	// Hold period is total duration minus two ramps
-	holdSec := durationSec - 2*rampSec
-	if holdSec < 0 {
-		holdSec = 0
+// easeInOutRamp computes a smooth S-curve ramp value for normalized progress u in [0, 1].
+// power > 1 gives smooth acceleration/deceleration at endpoints.
+// power = 1 gives a linear ramp.
+// Formula: u^p / (u^p + (1-u)^p)
+func easeInOutRamp(u, power float64) float64 {
+	if u <= 0 {
+		return 0
 	}
+	if u >= 1 {
+		return 1
+	}
+	up := math.Pow(u, power)
+	omp := math.Pow(1-u, power)
+	return up / (up + omp)
+}
+
+// ExcursionPPS creates a GPS simulator that applies a temporary phase excursion.
+// The excursion rises over riseDur seconds, holds at amplitude, then falls over fallDur seconds.
+// Rise and fall use ease-in-out S-curves controlled by risePower and fallPower.
+// power > 1 gives smooth transitions; power = 1 is linear.
+// If riseDur or fallDur is 0, that transition is instant (step).
+func ExcursionPPS(start, duration float64, amplitude Nanoseconds,
+	riseDur, risePower, fallDur, fallPower float64) GPSSimulator {
+	ampSec := amplitude.Seconds()
+	holdDur := duration - riseDur - fallDur
+	if holdDur < 0 {
+		holdDur = 0
+	}
+	riseEnd := start + riseDur
+	holdEnd := riseEnd + holdDur
 	return func(t float64) float64 {
-		relTime := t - startTime
 		switch {
-		case relTime <= 0:
+		case t <= start:
 			return 0
-		case relTime < rampSec:
-			// Smooth half-sine rise: 0 to shift
-			prog := relTime / rampSec
-			return shiftSec * 0.5 * (1 - math.Cos(math.Pi*prog))
-		case relTime < rampSec+holdSec:
-			// Hold at shift
-			return shiftSec
-		case relTime < durationSec:
-			// Symmetric fall: shift to 0
-			prog := (relTime - rampSec - holdSec) / rampSec
-			return shiftSec * 0.5 * (1 + math.Cos(math.Pi*prog))
+		case t < riseEnd:
+			if riseDur == 0 {
+				return ampSec
+			}
+			u := (t - start) / riseDur
+			return ampSec * easeInOutRamp(u, risePower)
+		case t < holdEnd:
+			return ampSec
+		case t < start+duration:
+			if fallDur == 0 {
+				return 0
+			}
+			u := (t - holdEnd) / fallDur
+			return ampSec * (1 - easeInOutRamp(u, fallPower))
 		default:
 			return 0
 		}

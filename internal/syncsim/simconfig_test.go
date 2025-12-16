@@ -405,3 +405,77 @@ func TestDefaultConfigArrayEntries(t *testing.T) {
 		t.Errorf("GPS.IsZero() = false, want true (zero entries don't count)")
 	}
 }
+
+func TestExcursionConfigDottedKeys(t *testing.T) {
+	// Test that dotted key format for excursion config parses correctly
+	tomlStr := `[[fault.excursion]]
+startTime = 100
+duration = 3600
+amplitude = 50
+rise.duration = 300
+rise.power = 2.5
+fall.duration = 600
+fall.power = 1.5
+`
+	var cfg Config
+	err := toml.NewDecoder(strings.NewReader(tomlStr)).Decode(&cfg)
+	if err != nil {
+		t.Fatalf("failed to parse dotted key format: %v", err)
+	}
+
+	if len(cfg.Fault.Excursion) != 1 {
+		t.Fatalf("Excursion length = %d, want 1", len(cfg.Fault.Excursion))
+	}
+	exc := cfg.Fault.Excursion[0]
+	if exc.StartTime != 100 {
+		t.Errorf("StartTime = %v, want 100", exc.StartTime)
+	}
+	if exc.Duration != 3600 {
+		t.Errorf("Duration = %v, want 3600", exc.Duration)
+	}
+	if exc.Amplitude != 50 {
+		t.Errorf("Amplitude = %v, want 50", exc.Amplitude)
+	}
+	if exc.Rise.Duration != 300 {
+		t.Errorf("Rise.Duration = %v, want 300", exc.Rise.Duration)
+	}
+	if exc.Rise.EffectivePower() != 2.5 {
+		t.Errorf("Rise.EffectivePower() = %v, want 2.5", exc.Rise.EffectivePower())
+	}
+	if exc.Fall.Duration != 600 {
+		t.Errorf("Fall.Duration = %v, want 600", exc.Fall.Duration)
+	}
+	if exc.Fall.EffectivePower() != 1.5 {
+		t.Errorf("Fall.EffectivePower() = %v, want 1.5", exc.Fall.EffectivePower())
+	}
+}
+
+func TestExcursionConfigPowerDefault(t *testing.T) {
+	// Test that omitted power defaults to 2.0
+	tomlStr := `[[fault.excursion]]
+startTime = 100
+duration = 3600
+amplitude = 50
+rise.duration = 300
+fall.duration = 600
+`
+	var cfg Config
+	err := toml.NewDecoder(strings.NewReader(tomlStr)).Decode(&cfg)
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+
+	exc := cfg.Fault.Excursion[0]
+	if exc.Rise.Power != nil {
+		t.Errorf("Rise.Power = %v, want nil (omitted)", *exc.Rise.Power)
+	}
+	if exc.Rise.EffectivePower() != 2.0 {
+		t.Errorf("Rise.EffectivePower() = %v, want 2.0 (default)", exc.Rise.EffectivePower())
+	}
+	if exc.Fall.Power != nil {
+		t.Errorf("Fall.Power = %v, want nil (omitted)", *exc.Fall.Power)
+	}
+	if exc.Fall.EffectivePower() != 2.0 {
+		t.Errorf("Fall.EffectivePower() = %v, want 2.0 (default)", exc.Fall.EffectivePower())
+	}
+}

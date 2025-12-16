@@ -142,14 +142,19 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 	// Build other PPS simulators (without sawtooth)
 	otherPPSSims := []clocksim.GPSSimulator{cfg.GPS.CreateSimulator()}
 
-	// Add shift if configured
-	if cfg.Fault.Shift.Shift != 0 {
-		otherPPSSims = append(otherPPSSims, clocksim.ShiftPPS(
-			cfg.Fault.Shift.StartTime,
-			cfg.Fault.Shift.Ramp,
-			cfg.Fault.Shift.Duration,
-			cfg.Fault.Shift.Shift,
-		))
+	// Add excursions if configured
+	for _, exc := range cfg.Fault.Excursion {
+		if !exc.IsZero() {
+			otherPPSSims = append(otherPPSSims, clocksim.ExcursionPPS(
+				exc.StartTime,
+				exc.Duration,
+				exc.Amplitude,
+				exc.Rise.Duration,
+				exc.Rise.EffectivePower(),
+				exc.Fall.Duration,
+				exc.Fall.EffectivePower(),
+			))
+		}
 	}
 
 	// Add outliers if configured

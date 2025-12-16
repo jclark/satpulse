@@ -212,12 +212,13 @@ func TestPHCSync(t *testing.T) {
 			maxTrackingAbsMax: 150 * time.Nanosecond, // Should be ~100ns from shift, NOT ~2us from spikes
 			modifySimCfg: func(cfg *Config) {
 				// Apply sustained 100ns shift after tracking stabilizes
-				cfg.Fault.Shift = ShiftConfig{
+				cfg.Fault.Excursion = []ExcursionConfig{{
 					StartTime: 35.0,  // Start after tracking is stable
-					Ramp:      2.0,   // seconds
 					Duration:  10.0,  // seconds - 2s up + 6s hold + 2s down (ends at t=45s)
-					Shift:     100,   // nanoseconds
-				}
+					Amplitude: 100,   // nanoseconds
+					Rise:      RampConfig{Duration: 2.0, Power: ptr(2.0)},
+					Fall:      RampConfig{Duration: 2.0, Power: ptr(2.0)},
+				}}
 				// Inject 2us spikes: during hold, right after shift, and later
 				// If MAD rejects spikes: absmax ~100ns (from shift only)
 				// If MAD fails: absmax ~2us (spikes get through)

@@ -424,3 +424,42 @@ func TestValidate_NestedWithoutTomlTag(t *testing.T) {
 		t.Errorf("expected 'MyInner.Value' in error, got %v", errs)
 	}
 }
+
+func TestValidate_PointerField(t *testing.T) {
+	type TestStruct struct {
+		Power *float64 `toml:"power" check:">0,<=10"`
+	}
+
+	// Nil pointer - should skip validation
+	s := TestStruct{Power: nil}
+	if errs := Validate(s); errs != nil {
+		t.Errorf("expected nil pointer to skip validation, got %v", errs)
+	}
+
+	// Valid non-nil pointer
+	v := 2.0
+	s = TestStruct{Power: &v}
+	if errs := Validate(s); errs != nil {
+		t.Errorf("expected valid pointer value to pass, got %v", errs)
+	}
+
+	// Invalid non-nil pointer (too low)
+	v = 0.0
+	s = TestStruct{Power: &v}
+	errs := Validate(s)
+	if errs == nil {
+		t.Fatal("expected error for power <= 0")
+	}
+	errMsg := strings.Join(errs, "\n")
+	if !strings.Contains(errMsg, "power") {
+		t.Errorf("expected 'power' in error, got %v", errs)
+	}
+
+	// Invalid non-nil pointer (too high)
+	v = 15.0
+	s = TestStruct{Power: &v}
+	errs = Validate(s)
+	if errs == nil {
+		t.Fatal("expected error for power > 10")
+	}
+}

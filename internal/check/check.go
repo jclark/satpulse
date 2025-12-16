@@ -59,6 +59,13 @@ func validateStruct(val reflect.Value, prefix string) []string {
 }
 
 func validateField(name string, val reflect.Value, tag string) []string {
+	// Skip nil pointers (optional fields)
+	if val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			return nil
+		}
+		val = val.Elem()
+	}
 	var errs []string
 	parts := strings.Split(tag, ",")
 	for _, part := range parts {
