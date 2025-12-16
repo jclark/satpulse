@@ -12,20 +12,20 @@ import (
 func TestPHCSync(t *testing.T) {
 	tests := []struct {
 		name                     string
-		pulseWidth               float64                  // 0 for single-edge mode
-		duration                 float64                  // simulation duration in seconds
-		maxTrackingStdDev        time.Duration            // maximum acceptable tracking stddev
-		maxTrackingAbsMax        time.Duration            // maximum acceptable tracking absolute max (0 = don't check)
-		minTrackingStdDev        time.Duration            // minimum acceptable tracking stddev - for testing degradation (0 = don't check)
-		minTrackingAbsMax        time.Duration            // minimum acceptable tracking absolute max - for testing degradation (0 = don't check)
-		toggleDurations          []float64                // relative durations: first is on, second is off, etc.
-		expectMinTrackingSamples int                      // minimum acceptable tracking samples (0 = don't check)
-		expectMaxTrackingSamples int                      // maximum acceptable tracking samples (0 = don't check)
-		expectTrackingSamples    int                      // expected exact number of samples in tracking mode (0 = don't check)
-		expectResetSamples       int                      // expected number of samples in reset mode (includes initial sync and recovery)
-		expectConvergingSamples  int                      // expected number of samples in converging mode (0 = don't check)
-		modifySimCfg             func(*Config)            // optional function to modify simCfg (nil = use defaults)
-		modifyPHCCfg             func(*phcsync.Config)    // optional function to modify phcCfg (nil = use defaults)
+		pulseWidth               float64               // 0 for single-edge mode
+		duration                 float64               // simulation duration in seconds
+		maxTrackingStdDev        time.Duration         // maximum acceptable tracking stddev
+		maxTrackingAbsMax        time.Duration         // maximum acceptable tracking absolute max (0 = don't check)
+		minTrackingStdDev        time.Duration         // minimum acceptable tracking stddev - for testing degradation (0 = don't check)
+		minTrackingAbsMax        time.Duration         // minimum acceptable tracking absolute max - for testing degradation (0 = don't check)
+		outages                  []OutageConfig        // signal outage periods
+		expectMinTrackingSamples int                   // minimum acceptable tracking samples (0 = don't check)
+		expectMaxTrackingSamples int                   // maximum acceptable tracking samples (0 = don't check)
+		expectTrackingSamples    int                   // expected exact number of samples in tracking mode (0 = don't check)
+		expectResetSamples       int                   // expected number of samples in reset mode (includes initial sync and recovery)
+		expectConvergingSamples  int                   // expected number of samples in converging mode (0 = don't check)
+		modifySimCfg             func(*Config)         // optional function to modify simCfg (nil = use defaults)
+		modifyPHCCfg             func(*phcsync.Config) // optional function to modify phcCfg (nil = use defaults)
 	}{
 		{
 			name:              "single-edge mode",
@@ -60,39 +60,39 @@ func TestPHCSync(t *testing.T) {
 			// then converging/tracking modes work with discovered pulse width
 		},
 		{
-			name:        "signal loss - no recovery",
-			pulseWidth:  0,
-			duration:    90.0,
-			toggleDurations: []float64{60.0}, // stop at t=60s, never restart
+			name:       "signal loss - no recovery",
+			pulseWidth: 0,
+			duration:   90.0,
+			outages:    []OutageConfig{{StartTime: 60.0, Duration: 30.0}}, // outage from t=60s to end
 			// Don't check maxTrackingStdDev since we lose sync
 		},
 		{
 			name:                     "enters reset mode on permanent outage",
 			pulseWidth:               0,
 			duration:                 80.0,
-			toggleDurations:              []float64{60.0}, // stop at t=60s, never restart
-			expectMinTrackingSamples: 35,              // at least 35 tracking samples before outage
-			expectMaxTrackingSamples: 50,              // allow flexibility with faster convergence
-			expectResetSamples:       1,               // 1 initial reset sample only (reset mode doesn't generate missing samples)
+			outages:                  []OutageConfig{{StartTime: 60.0, Duration: 20.0}}, // outage from t=60s to end
+			expectMinTrackingSamples: 35,                                                // at least 35 tracking samples before outage
+			expectMaxTrackingSamples: 50,                                                // allow flexibility with faster convergence
+			expectResetSamples:       1,                                                 // 1 initial reset sample only (reset mode doesn't generate missing samples)
 		},
 		{
 			name:                     "recovers from temporary outage",
 			pulseWidth:               0,
 			duration:                 120.0,
-			toggleDurations:              []float64{60.0, 10.0}, // 60s on, 10s off, then on (restart at t=70s)
-			maxTrackingStdDev:        30 * time.Nanosecond,  // slightly higher tolerance due to recovery transient
-			expectResetSamples:       2,                     // 1 initial + 1 after recovery
-			expectMinTrackingSamples: 35,                    // At least 35 before outage (plus time after recovery)
+			outages:                  []OutageConfig{{StartTime: 60.0, Duration: 10.0}}, // 10s outage starting at t=60s
+			maxTrackingStdDev:        30 * time.Nanosecond,                              // slightly higher tolerance due to recovery transient
+			expectResetSamples:       2,                                                 // 1 initial + 1 after recovery
+			expectMinTrackingSamples: 35,                                                // At least 35 before outage (plus time after recovery)
 			// After recovery: reset→converging→tracking for remaining ~50 seconds
 		},
 		{
-			name:                   "signal loss during converging mode",
-			pulseWidth:             0,
-			duration:               40.0,
-			toggleDurations:            []float64{13.0, 10.0}, // 13s on, 10s off (restart at t=23s)
-			expectTrackingSamples:  0,                     // never reaches tracking
-			expectResetSamples:     2,                     // 1 initial + 1 after recovery from converging loss
-			expectConvergingSamples: 22,                    // 7 good + 3 missing + 12 good in second phase
+			name:                    "signal loss during converging mode",
+			pulseWidth:              0,
+			duration:                40.0,
+			outages:                 []OutageConfig{{StartTime: 13.0, Duration: 10.0}}, // 10s outage starting at t=13s
+			expectTrackingSamples:   0,                                                 // never reaches tracking
+			expectResetSamples:      2,                                                 // 1 initial + 1 after recovery from converging loss
+			expectConvergingSamples: 22,                                                // 7 good + 3 missing + 12 good in second phase
 			// Expected flow:
 			// - Reset #1 at t=6s (1 sample)
 			// - Converging from t=6s to t=12s (7 good samples)
@@ -107,7 +107,7 @@ func TestPHCSync(t *testing.T) {
 			name:                     "EMA feature reduces drift during brief outages",
 			pulseWidth:               0,
 			duration:                 120.0,
-			toggleDurations:              []float64{60.0, 3.0}, // 60s on, 3s off (< badSampleLimit of 5)
+			outages:                  []OutageConfig{{StartTime: 60.0, Duration: 3.0}}, // 3s outage starting at t=60s
 			maxTrackingStdDev:        15 * time.Nanosecond,
 			maxTrackingAbsMax:        40 * time.Nanosecond, // With EMA enabled, absmax ~24ns (vs 58ns without)
 			expectMinTrackingSamples: 90,                   // At least 90 tracking samples despite outage
@@ -119,7 +119,7 @@ func TestPHCSync(t *testing.T) {
 			name:                     "Without EMA drift is worse during brief outages",
 			pulseWidth:               0,
 			duration:                 120.0,
-			toggleDurations:              []float64{60.0, 3.0}, // 60s on, 3s off (< badSampleLimit of 5)
+			outages:                  []OutageConfig{{StartTime: 60.0, Duration: 3.0}}, // 3s outage starting at t=60s
 			maxTrackingStdDev:        18 * time.Nanosecond,
 			maxTrackingAbsMax:        80 * time.Nanosecond, // Without EMA, absmax ~58ns (2x worse than with EMA)
 			expectMinTrackingSamples: 90,                   // At least 90 tracking samples despite outage
@@ -131,7 +131,7 @@ func TestPHCSync(t *testing.T) {
 			name:                     "EMA feature with longer outage (increased badSampleLimit)",
 			pulseWidth:               0,
 			duration:                 180.0,
-			toggleDurations:              []float64{90.0, 9.0}, // 90s on, 9s off (< badSampleLimit of 15)
+			outages:                  []OutageConfig{{StartTime: 90.0, Duration: 9.0}}, // 9s outage starting at t=90s
 			maxTrackingStdDev:        12 * time.Nanosecond,
 			maxTrackingAbsMax:        35 * time.Nanosecond, // With EMA, absmax ~23ns even with 9s outage
 			expectMinTrackingSamples: 150,                  // At least 150 tracking samples despite longer outage
@@ -144,7 +144,7 @@ func TestPHCSync(t *testing.T) {
 			name:                     "Without EMA longer outage shows severe drift (increased badSampleLimit)",
 			pulseWidth:               0,
 			duration:                 180.0,
-			toggleDurations:              []float64{90.0, 9.0}, // 90s on, 9s off (< badSampleLimit of 15)
+			outages:                  []OutageConfig{{StartTime: 90.0, Duration: 9.0}}, // 9s outage starting at t=90s
 			maxTrackingStdDev:        30 * time.Nanosecond,
 			maxTrackingAbsMax:        180 * time.Nanosecond, // Without EMA, absmax ~139ns (5-6x worse than with EMA)
 			expectMinTrackingSamples: 150,                   // At least 150 tracking samples despite longer outage
@@ -159,9 +159,10 @@ func TestPHCSync(t *testing.T) {
 			duration:          90.0, // Longer duration to ensure we're in tracking mode
 			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite outliers
 			modifySimCfg: func(cfg *Config) {
-				cfg.Fault.Outlier = OutlierConfig{
-					Times:  []float64{40, 50, 60},
-					Offset: 2000, // nanoseconds
+				cfg.Fault.Outlier = []OutlierConfig{
+					{Time: 40, Offset: 2000},
+					{Time: 50, Offset: 2000},
+					{Time: 60, Offset: 2000},
 				}
 			},
 		},
@@ -171,9 +172,8 @@ func TestPHCSync(t *testing.T) {
 			duration:          20.0,
 			maxTrackingStdDev: 20 * time.Nanosecond,
 			modifySimCfg: func(cfg *Config) {
-				cfg.Fault.Outlier = OutlierConfig{
-					Times:  []float64{8}, // Outlier during early tracking (MAD window not full)
-					Offset: 150, // nanoseconds
+				cfg.Fault.Outlier = []OutlierConfig{
+					{Time: 8, Offset: 150}, // Outlier during early tracking (MAD window not full)
 				}
 			},
 			modifyPHCCfg: func(cfg *phcsync.Config) {
@@ -186,9 +186,10 @@ func TestPHCSync(t *testing.T) {
 			duration:          60.0,
 			maxTrackingStdDev: 20 * time.Nanosecond,
 			modifySimCfg: func(cfg *Config) {
-				cfg.Fault.Outlier = OutlierConfig{
-					Times:  []float64{32, 40, 48}, // delayed to allow MAD window to warm up after entering tracking
-					Offset: 5000, // nanoseconds - 5us outliers - well above MAD threshold
+				cfg.Fault.Outlier = []OutlierConfig{
+					{Time: 32, Offset: 5000}, // delayed to allow MAD window to warm up after entering tracking
+					{Time: 40, Offset: 5000},
+					{Time: 48, Offset: 5000}, // 5us outliers - well above MAD threshold
 				}
 			},
 		},
@@ -198,9 +199,11 @@ func TestPHCSync(t *testing.T) {
 			duration:          150.0,
 			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite many outliers
 			modifySimCfg: func(cfg *Config) {
-				cfg.Fault.Outlier = OutlierConfig{
-					Times:  []float64{40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140},
-					Offset: 1500, // nanoseconds
+				cfg.Fault.Outlier = []OutlierConfig{
+					{Time: 40, Offset: 1500}, {Time: 50, Offset: 1500}, {Time: 60, Offset: 1500},
+					{Time: 70, Offset: 1500}, {Time: 80, Offset: 1500}, {Time: 90, Offset: 1500},
+					{Time: 100, Offset: 1500}, {Time: 110, Offset: 1500}, {Time: 120, Offset: 1500},
+					{Time: 130, Offset: 1500}, {Time: 140, Offset: 1500},
 				}
 			},
 		},
@@ -208,23 +211,24 @@ func TestPHCSync(t *testing.T) {
 			name:              "MAD rejects spikes during sustained shift",
 			pulseWidth:        0,
 			duration:          70.0,
-			maxTrackingStdDev: 50 * time.Nanosecond, // Higher tolerance due to shift transient
+			maxTrackingStdDev: 50 * time.Nanosecond,  // Higher tolerance due to shift transient
 			maxTrackingAbsMax: 150 * time.Nanosecond, // Should be ~100ns from shift, NOT ~2us from spikes
 			modifySimCfg: func(cfg *Config) {
 				// Apply sustained 100ns shift after tracking stabilizes
 				cfg.Fault.Excursion = []ExcursionConfig{{
-					StartTime: 35.0,  // Start after tracking is stable
-					Duration:  10.0,  // seconds - 2s up + 6s hold + 2s down (ends at t=45s)
-					Amplitude: 100,   // nanoseconds
+					StartTime: 35.0, // Start after tracking is stable
+					Duration:  10.0, // seconds - 2s up + 6s hold + 2s down (ends at t=45s)
+					Amplitude: 100,  // nanoseconds
 					Rise:      RampConfig{Duration: 2.0, Power: ptr(2.0)},
 					Fall:      RampConfig{Duration: 2.0, Power: ptr(2.0)},
 				}}
 				// Inject 2us spikes: during hold, right after shift, and later
 				// If MAD rejects spikes: absmax ~100ns (from shift only)
 				// If MAD fails: absmax ~2us (spikes get through)
-				cfg.Fault.Outlier = OutlierConfig{
-					Times:  []float64{40, 46, 55},
-					Offset: 2000, // nanoseconds
+				cfg.Fault.Outlier = []OutlierConfig{
+					{Time: 40, Offset: 2000},
+					{Time: 46, Offset: 2000},
+					{Time: 55, Offset: 2000},
 				}
 			},
 		},
@@ -234,9 +238,9 @@ func TestPHCSync(t *testing.T) {
 			duration:          30.0,
 			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite early outlier
 			modifySimCfg: func(cfg *Config) {
-				cfg.Fault.Outlier = OutlierConfig{
-					Times:  []float64{20}, // Inject outlier early in tracking (MAD window not full)
-					Offset: 1000, // nanoseconds - Well above warmup threshold (OutlierThreshold + PreMADOutlierRange = 550ns)
+				cfg.Fault.Outlier = []OutlierConfig{
+					{Time: 20, Offset: 1000}, // Inject outlier early in tracking (MAD window not full)
+					// 1000ns - Well above warmup threshold (OutlierThreshold + PreMADOutlierRange = 550ns)
 				}
 			},
 			// PreMADOutlierRange protects servo: warmup threshold = 50ns + 500ns = 550ns
@@ -433,12 +437,7 @@ func TestPHCSync(t *testing.T) {
 					PostPulseDelay: 0.1,
 				},
 				Fault: FaultConfig{
-					Toggle: ToggleConfig{
-						Durations: tt.toggleDurations,
-					},
-					Outlier: OutlierConfig{
-						Offset: 2000, // nanoseconds
-					},
+					Outage: tt.outages,
 				},
 			}
 

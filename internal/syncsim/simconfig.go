@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"sort"
 
 	"github.com/jclark/satpulse/internal/check"
 	"github.com/jclark/satpulse/internal/clocksim"
@@ -354,9 +355,11 @@ func DefaultMsgConfig() MsgConfig {
 }
 
 // DefaultFaultConfig returns a FaultConfig with no faults configured.
-// Includes a zero-amplitude excursion so users can see the expected structure.
+// Includes zero entries so users can see the expected TOML structure.
 func DefaultFaultConfig() FaultConfig {
 	return FaultConfig{
+		Outage:    []OutageConfig{{}},
+		Outlier:   []OutlierConfig{{}},
 		Excursion: []ExcursionConfig{DefaultExcursionConfig()},
 	}
 }
@@ -520,29 +523,31 @@ func (s SawtoothType) TimeRef() gpsprot.TimeRef {
 
 // FaultConfig configures fault injection for testing controller resilience.
 type FaultConfig struct {
-	Toggle    ToggleConfig      `toml:"toggle" comment:"Signal outage simulation"`
-	Outlier   OutlierConfig     `toml:"outlier" comment:"Discrete phase outlier injection"`
+	Outage    []OutageConfig    `toml:"outage" comment:"Signal outage periods"`
+	Outlier   []OutlierConfig   `toml:"outlier" comment:"Discrete phase outlier injection"`
 	Excursion []ExcursionConfig `toml:"excursion" comment:"Temporary phase excursions"`
 }
 
-// ToggleConfig configures signal outage simulation.
-type ToggleConfig struct {
-	// Durations is a sequence of relative durations in seconds.
-	// The simulation alternates between signal-on and signal-off states.
-	// First duration is signal-on, second is signal-off, etc.
-	// Example: [60, 10, 60] means: 60s on, 10s off, 60s on.
-	Durations []Seconds `toml:"durations" comment:"Alternating on/off durations (s)"`
+// OutageConfig configures a signal outage period.
+type OutageConfig struct {
+	// StartTime is when the outage begins in seconds.
+	StartTime Seconds `toml:"startTime" check:">=0" comment:"When outage begins (s)"`
+
+	// Duration is the outage duration in seconds.
+	Duration Seconds `toml:"duration" check:">=0" comment:"Outage duration (s)"`
 }
 
-// OutlierConfig configures discrete phase outlier injection.
+// OutlierConfig configures a discrete phase outlier injection.
 type OutlierConfig struct {
-	// Times is a list of simulation times at which to inject an outlier.
-	Times []Seconds `toml:"times" comment:"Simulation times to inject outliers"`
+	// Time is the simulation time at which to inject an outlier.
+	Time Seconds `toml:"time" check:">=0" comment:"When to inject outlier (s)"`
 
 	// Offset is the magnitude of the phase offset to inject in nanoseconds.
 	// Typical multipath outliers are 1000-10000 ns (1-10 µs).
-	Offset clocksim.Nanoseconds `toml:"offset" check:">=0" comment:"Outlier offset magnitude (ns)"`
+	Offset clocksim.Nanoseconds `toml:"offset" comment:"Outlier offset magnitude (ns)"`
 }
+
+func (c OutlierConfig) IsZero() bool { return c.Offset == 0 }
 
 // RampConfig configures a smooth ramp transition.
 type RampConfig struct {
@@ -595,21 +600,50 @@ func DefaultExcursionConfig() ExcursionConfig {
 	}
 }
 
-// InOutage returns true if time t falls within an outage period.
-// Uses cfg.Fault.Toggle.Durations to determine outage state.
-// Durations alternate: first is on, second is off, third is on, etc.
-// Example: [60, 10, 60] means 60s on, 10s off, 60s on.
-func (c Config) InOutage(t float64) bool {
-	elapsed := 0.0
-	for i, dur := range c.Fault.Toggle.Durations {
-		elapsed += dur
-		if t < elapsed {
-			// Currently in interval i (0-indexed)
-			// Even intervals (0, 2, 4...) are signal-on
-			// Odd intervals (1, 3, 5...) are signal-off (outage)
-			return i%2 == 1
+// NormalizeOutages returns a sorted, merged list of non-overlapping outages.
+// Zero-duration outages are removed. The result can be used with InOutage().
+func (c *FaultConfig) NormalizeOutages() []OutageConfig {
+	if len(c.Outage) == 0 {
+		return nil
+	}
+	sorted := make([]OutageConfig, len(c.Outage))
+	copy(sorted, c.Outage)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].StartTime < sorted[j].StartTime
+	})
+	var merged []OutageConfig
+	for _, o := range sorted {
+		if o.Duration <= 0 {
+			continue
+		}
+		if len(merged) == 0 {
+			merged = append(merged, o)
+			continue
+		}
+		last := &merged[len(merged)-1]
+		lastEnd := last.StartTime + last.Duration
+		if o.StartTime <= lastEnd {
+			newEnd := max(lastEnd, o.StartTime+o.Duration)
+			last.Duration = newEnd - last.StartTime
+		} else {
+			merged = append(merged, o)
 		}
 	}
-	// Past all durations: if we ended on odd count, signal is off
-	return len(c.Fault.Toggle.Durations)%2 == 1
+	return merged
+}
+
+// InOutage returns true if time t falls within any outage period.
+// outages must be pre-normalized (sorted, merged, no zero-duration).
+func InOutage(outages []OutageConfig, t float64) bool {
+	if len(outages) == 0 {
+		return false
+	}
+	i := sort.Search(len(outages), func(i int) bool {
+		return outages[i].StartTime > t
+	})
+	if i == 0 {
+		return false
+	}
+	o := outages[i-1]
+	return t < o.StartTime+o.Duration
 }

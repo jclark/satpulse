@@ -133,6 +133,9 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 	if err := cfg.Sync.Validate(); err != nil {
 		return Stats{}, err
 	}
+	// Normalize outages once for efficient InOutage checks
+	outages := cfg.Fault.NormalizeOutages()
+
 	// Create oscillator from PHC config
 	osc := cfg.PHC.CreateSimulator()
 
@@ -158,8 +161,10 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 	}
 
 	// Add outliers if configured
-	for _, second := range cfg.Fault.Outlier.Times {
-		otherPPSSims = append(otherPPSSims, clocksim.SingleOutlierPPS(second, cfg.Fault.Outlier.Offset))
+	for _, outlier := range cfg.Fault.Outlier {
+		if !outlier.IsZero() {
+			otherPPSSims = append(otherPPSSims, clocksim.SingleOutlierPPS(outlier.Time, outlier.Offset))
+		}
 	}
 
 	otherPPS := clocksim.CombineGPS(otherPPSSims...)
@@ -284,7 +289,7 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 
 		case EventPrePulseMsg:
 			data := event.Data.(PrePulseMsgEventData)
-			if !cfg.InOutage(data.PPS) {
+			if !InOutage(outages, data.PPS) {
 				// Only create PrePulse message if sawtooth configured
 				if lastReading.Sawtooth != nil {
 					// Sawtooth.Next is rawSaw where pulse_time = true_second + rawSaw.
@@ -312,7 +317,7 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 
 		case EventPostPulseMsg:
 			data := event.Data.(PostPulseMsgEventData)
-			if !cfg.InOutage(data.PPS) {
+			if !InOutage(outages, data.PPS) {
 				// Only create PostPulse message if sawtooth configured
 				if lastReading.Sawtooth != nil {
 					// KEY DIFFERENCE: PostPulse uses Sawtooth.Current (not Next)
@@ -364,7 +369,7 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 			}
 
 			// Deliver to controller if not in outage
-			if !cfg.InOutage(data.PPS) {
+			if !InOutage(outages, data.PPS) {
 				tSys := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
 				tReadPHC := testClock.Now()
 
@@ -386,7 +391,7 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 
 		case EventNavSolutionMsg:
 			data := event.Data.(NavSolutionMsgEventData)
-			if !cfg.InOutage(data.PPS) {
+			if !InOutage(outages, data.PPS) {
 				handleNavSolutionMsgEvent(event.Time, data, timeMsgBuf, ctrl, tStart, lg)
 				sampleCount++
 			}

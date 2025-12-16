@@ -291,12 +291,12 @@ sawtooth.amp = 8.0
 			cfg.GPS.Sawtooth.InternalClock.PhaseInit, defaults.GPS.Sawtooth.InternalClock.PhaseInit)
 	}
 
-	// Verify Fault defaults to empty (no faults)
-	if len(cfg.Fault.Outlier.Times) != 0 {
-		t.Errorf("Fault.Outlier.Times = %v, want empty", cfg.Fault.Outlier.Times)
+	// Verify Fault defaults contain zero entries (for TOML structure visibility)
+	if len(cfg.Fault.Outage) != 1 || cfg.Fault.Outage[0].Duration != 0 {
+		t.Errorf("Fault.Outage = %v, want single zero entry", cfg.Fault.Outage)
 	}
-	if cfg.Fault.Outlier.Offset != 0 {
-		t.Errorf("Fault.Outlier.Offset = %v, want 0 (user must specify)", cfg.Fault.Outlier.Offset)
+	if len(cfg.Fault.Outlier) != 1 || cfg.Fault.Outlier[0].Offset != 0 {
+		t.Errorf("Fault.Outlier = %v, want single zero entry", cfg.Fault.Outlier)
 	}
 }
 
