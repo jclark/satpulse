@@ -449,13 +449,14 @@ func TestPHCSync(t *testing.T) {
 				tt.modifyPHCCfg(&cfg.Sync)
 			}
 
+			cfg.Sim.Duration = tt.duration
+
 			curTime := time.Date(2017, 1, 1, 0, 0, 0, 0, time.UTC)
 
 			// Discard logs during test
 			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-			duration := time.Duration(tt.duration * float64(time.Second))
-			stats, err := Simulate(nil, cfg, duration, nil, &curTime, lg)
+			stats, err := Simulate(nil, cfg, nil, &curTime, lg)
 			if err != nil {
 				t.Fatalf("Simulate failed: %v", err)
 			}

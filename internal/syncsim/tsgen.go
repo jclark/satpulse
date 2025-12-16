@@ -9,9 +9,10 @@ import (
 	"github.com/jclark/satpulse/internal/clocksim"
 )
 
-// Generate outputs timestamps as JSON Lines to w for the given duration.
+// Generate outputs timestamps as JSON Lines to w.
 // It generates PHC and/or GPS timestamps based on which config sections are non-zero.
-func Generate(cfg Config, duration float64, w io.Writer) error {
+func Generate(cfg Config, w io.Writer) error {
+	duration := cfg.Sim.Duration
 	// Check which channels to generate
 	hasPHC := !cfg.PHC.IsZero()
 	hasGPS := !cfg.GPS.IsZero()

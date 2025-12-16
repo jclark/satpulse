@@ -124,11 +124,10 @@ type Stats struct {
 }
 
 // Simulate runs a phcsync simulation with the given configuration.
-// duration is the simulation duration.
 // tsLog is an optional writer for PHC timestamp log (JSON Lines format).
 // curTime is updated as the simulation progresses, allowing callers to use it for logging.
 // It returns statistics about the simulation run.
-func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLog io.Writer, curTime *time.Time, lg *slog.Logger) (Stats, error) {
+func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 	// Validate phcsync configuration
 	if err := cfg.Sync.Validate(); err != nil {
 		return Stats{}, err
@@ -242,8 +241,9 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 	ctrl.SetTimeMsgBuffer(timeMsgBuf)
 	defer ctrl.Close()
 
+	durSec := cfg.Sim.Duration
 	lg.Info("starting phcsync simulation",
-		"duration", duration,
+		"duration", durSec,
 		"pulseDelay", "5µs-250µs",
 		"msgDelay", cfg.Msg.Delay,
 		"phcFreqOffset", cfg.PHC.FreqOffset,
@@ -256,7 +256,6 @@ func Simulate(observers []obs.Observer, cfg Config, duration time.Duration, tsLo
 	// Generate event streams
 	// Note: ticks start at t=0.25, modeling real system behavior where ticks
 	// run continuously from the start. Early ticks are safe - see generateTickEvents.
-	durSec := duration.Seconds()
 	pulseGen := generatePulseEvents(cfg, durSec, pulseType.EdgesPerPulse)
 	msgGen := generateNavSolutionMsgEvents(cfg, durSec)
 	tickGen := generateTickEvents(durSec)

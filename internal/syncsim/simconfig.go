@@ -21,12 +21,24 @@ type Seconds = float64
 
 // Config holds simulation parameters
 type Config struct {
+	Sim   SimConfig      `toml:"sim" comment:"Simulation parameters"`
 	PHC   PHCConfig      `toml:"phc" comment:"PHC oscillator error model"`
 	GPS   GPSConfig      `toml:"gps" comment:"GPS time pulse error model"`
 	Sync  phcsync.Config `toml:"sync" comment:"PHC sync controller parameters"`
 	Pulse PulseConfig    `toml:"pulse" comment:"Pulse delivery timing"`
 	Msg   MsgConfig      `toml:"msg" comment:"GPS message delivery timing"`
 	Fault FaultConfig    `toml:"fault" comment:"Fault injection parameters"`
+}
+
+// SimConfig configures simulation parameters.
+type SimConfig struct {
+	// Duration is the simulation duration in seconds.
+	Duration Seconds `toml:"duration" check:">0" comment:"Simulation duration (s)"`
+}
+
+// DefaultSimConfig returns a SimConfig with a reasonable default duration.
+func DefaultSimConfig() SimConfig {
+	return SimConfig{Duration: 1000}
 }
 
 // Validate checks that all config fields are within valid ranges.
@@ -49,6 +61,7 @@ func (c *Config) Validate() error {
 // Pulse and Msg have reasonable timing defaults. Fault has no faults configured.
 func DefaultConfig() Config {
 	return Config{
+		Sim:   DefaultSimConfig(),
 		PHC:   DefaultPHCConfig(),
 		GPS:   DefaultGPSConfig(),
 		Sync:  phcsync.DefaultConfig(),

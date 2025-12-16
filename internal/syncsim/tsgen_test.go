@@ -48,8 +48,9 @@ func testTsgenOutput(t *testing.T, name string) {
 	if err := LoadConfig(tomlPath, &cfg); err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
+	cfg.Sim.Duration = 600 // Test uses 600 second duration
 	var gotBuf bytes.Buffer
-	if err := Generate(cfg, 600, &gotBuf); err != nil {
+	if err := Generate(cfg, &gotBuf); err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
 

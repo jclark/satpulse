@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/jclark/satpulse/internal/cmd"
@@ -27,7 +26,7 @@ type options struct {
 }
 
 func main() {
-	opts, cfg, duration, err := parseArgs(os.Args[1:])
+	opts, cfg, err := parseArgs(os.Args[1:])
 	if err != nil {
 		cmd.ErrPrintln("syncsim", err)
 		os.Exit(1)
@@ -35,7 +34,7 @@ func main() {
 
 	// Handle --generate mode
 	if opts.generate {
-		if err := syncsim.Generate(cfg, duration.Seconds(), os.Stdout); err != nil {
+		if err := syncsim.Generate(cfg, os.Stdout); err != nil {
 			cmd.ErrPrintln("syncsim", err)
 			os.Exit(1)
 		}
@@ -89,7 +88,7 @@ func main() {
 	}
 
 	// Run simulation
-	stats, err := syncsim.Simulate(observers, cfg, duration, tsLog, &curTime, lg)
+	stats, err := syncsim.Simulate(observers, cfg, tsLog, &curTime, lg)
 	if err != nil {
 		lg.Error("simulation failed", "err", err)
 		os.Exit(1)
@@ -107,7 +106,7 @@ func main() {
 	lg.Info("simulation complete", args...)
 }
 
-func parseArgs(args []string) (*options, syncsim.Config, time.Duration, error) {
+func parseArgs(args []string) (*options, syncsim.Config, error) {
 	opts := &options{}
 	help := false
 	showVersion := false
@@ -125,10 +124,10 @@ func parseArgs(args []string) (*options, syncsim.Config, time.Duration, error) {
 
 	err := flags.Parse(args)
 	if err != nil {
-		return nil, syncsim.Config{}, 0, err
+		return nil, syncsim.Config{}, err
 	}
 	if help {
-		fmt.Fprintf(os.Stderr, "Usage: syncsim [options] <config.toml> <duration>\n\n"+
+		fmt.Fprintf(os.Stderr, "Usage: syncsim [options] <config.toml>\n\n"+
 			"Use -C/--show-default-config to see the default configuration.\n\nOptions:\n%s", flags.FlagUsages())
 		os.Exit(0)
 	}
@@ -143,30 +142,22 @@ func parseArgs(args []string) (*options, syncsim.Config, time.Duration, error) {
 		}
 		os.Exit(0)
 	}
-	if flags.NArg() != 2 {
-		return nil, syncsim.Config{}, 0, fmt.Errorf("usage: syncsim [options] <config.toml> <duration>")
+	if flags.NArg() != 1 {
+		return nil, syncsim.Config{}, fmt.Errorf("usage: syncsim [options] <config.toml>")
 	}
 
 	configPath := flags.Arg(0)
-	durSec, err := strconv.ParseFloat(flags.Arg(1), 64)
-	if err != nil {
-		return nil, syncsim.Config{}, 0, fmt.Errorf("invalid duration: %v", err)
-	}
-	if durSec <= 0 {
-		return nil, syncsim.Config{}, 0, fmt.Errorf("duration must be positive")
-	}
-	duration := time.Duration(durSec * float64(time.Second))
 
 	// Load config from TOML file
 	cfg := syncsim.DefaultConfig()
 	if err := syncsim.LoadConfig(configPath, &cfg); err != nil {
-		return nil, syncsim.Config{}, 0, fmt.Errorf("failed to load config: %v", err)
+		return nil, syncsim.Config{}, fmt.Errorf("failed to load config: %v", err)
 	}
 
 	// Check mutual exclusion for --generate
 	if opts.generate && (opts.statsInterval != 0 || opts.clockLogPath != "" || opts.tsLogPath != "" || opts.debug) {
-		return nil, syncsim.Config{}, 0, fmt.Errorf("--generate cannot be used with --stats, --clock-log, --ts-log, or --debug")
+		return nil, syncsim.Config{}, fmt.Errorf("--generate cannot be used with --stats, --clock-log, --ts-log, or --debug")
 	}
 
-	return opts, cfg, duration, nil
+	return opts, cfg, nil
 }
