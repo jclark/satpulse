@@ -150,6 +150,9 @@ func parseArgs(args []string) (*options, syncsim.Config, error) {
 	// Load config from TOML file
 	cfg := syncsim.DefaultConfig()
 	if err := syncsim.LoadConfig(configPath, &cfg); err != nil {
+		if s, ok := err.(fmt.Stringer); ok {
+			return nil, syncsim.Config{}, fmt.Errorf("failed to load config: %v\n%s", err, s.String())
+		}
 		return nil, syncsim.Config{}, fmt.Errorf("failed to load config: %v", err)
 	}
 
