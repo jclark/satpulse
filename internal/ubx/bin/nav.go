@@ -1,6 +1,7 @@
 package bin
 
 const (
+	NavClockID       MsgID = clsNav | (0x22 << 8)
 	NavDOPID         MsgID = clsNav | (0x04 << 8)
 	NavPosECEFID     MsgID = clsNav | (0x01 << 8)
 	NavPosLLHID      MsgID = clsNav | (0x02 << 8)
@@ -33,6 +34,16 @@ type NavITOW struct {
 func (m *NavITOW) NavEpoch() uint32 {
 	return m.ITOW
 }
+
+type NavClock struct {
+	NavITOW
+	ClkB int32  // Clock bias in ns
+	ClkD int32  // Clock drift in ns/s
+	TAcc uint32 // Time accuracy estimate in ns
+	FAcc uint32 // Frequency accuracy estimate in ps/s
+}
+
+func (m *NavClock) ID() MsgID { return NavClockID }
 
 type NavDOP struct {
 	NavITOW
@@ -777,6 +788,7 @@ func (m *NavSvin) IsHandled() bool {
 }
 
 func init() {
+	regMsg[NavClock]("CLOCK")
 	regMsg[NavDOP]("DOP")
 	regMsg[NavPosECEF]("POSECEF")
 	regMsg[NavPosLLH]("POSLLH")
