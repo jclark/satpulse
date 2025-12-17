@@ -155,13 +155,13 @@ type ConfigRequest interface {
     GetPacket() []byte
     GetSpeedChangeAfter() int
     GetState() ConfigRequestState
-    GetDeadline() time.Time  // valid when state is ConfigRequestAwaitingResponse or ConfigRequestMaybeComplete
-    GetReadyTime() time.Time         // valid when state is ConfigRequestPausing
-    GetError() error                 // valid when state is ConfigRequestFailed
+    GetDeadline() time.Time  // valid when state is ConfigRequestAwaitingResponse, ConfigRequestMaybeComplete, or ConfigRequestPausing
+    GetError() error         // valid when state is ConfigRequestFailed
 
     SetSentTime(tSent time.Time)
     SetDeadlinePassed()
     SetWontResend()
+    MaybeSpeedChangeSucceeded(validPacketTime time.Time)  // for speed change requests
 }
 
 type Configurator interface {
@@ -205,6 +205,7 @@ ConfigRequestState values change in response to:
 - `SetDeadlinePassed()`: ConfigRequestAwaitingResponse → ConfigRequestMayResend
 - `SetDeadlinePassed()`: ConfigRequestMaybeComplete → ConfigRequestSucceeded
 - `SetWontResend()`: ConfigRequestMayResend → ConfigRequestFailed
+- `MaybeSpeedChangeSucceeded()`: ConfigRequestAwaitingResponse → ConfigRequestSucceeded (for speed change requests only)
 
 **Automatic transitions from packet processing:**
 - Positive ACK received + pause needed: ConfigRequestAwaitingResponse → ConfigRequestPausing
@@ -258,18 +259,12 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 
 **GetDeadline(index int) time.Time**:
 - Precondition: `index < GetRequestCount()`
-- Precondition: request state is ConfigRequestAwaitingResponse or ConfigRequestMaybeComplete
-- Returns the absolute time by which response packets are expected
+- Precondition: request state is ConfigRequestAwaitingResponse, ConfigRequestMaybeComplete, or ConfigRequestPausing
+- Returns the absolute time by which the current phase completes
 - The returned time is non-zero and includes monotonic time for accurate timeout comparisons
 - For ConfigRequestAwaitingResponse: deadline for receiving first/only response (based on SetSentTime timestamp)
 - For ConfigRequestMaybeComplete: deadline for receiving next response in burst (based on last response time + idle period)
-
-**GetReadyTime(index int) time.Time**:
-- Precondition: `index < GetRequestCount()`
-- Precondition: request state is ConfigRequestPausing
-- Returns the absolute time when the GPS receiver will be ready for the next configuration command
-- The returned time is non-zero and includes monotonic time for accurate comparisons
-- The time is calculated as ACK reception time + pause duration when the request transitions to ConfigRequestPausing state
+- For ConfigRequestPausing: time when the GPS receiver will be ready for the next configuration command (ACK reception time + pause duration)
 
 **GetError(index int) error**:
 - Precondition: `index < GetRequestCount()`
@@ -303,6 +298,13 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 - This should be called when the client decides not to retry a timed-out request, typically after reaching a maximum retry count
 - Failed requests trigger configuration abort and recovery procedures
 
+**MaybeSpeedChangeSucceeded(validPacketTime time.Time)**:
+- For speed change requests in ConfigRequestAwaitingResponse state
+- When a speed change is performed, the ACK may be lost due to the baud rate transition
+- Receiving any valid packet at the new speed confirms the change succeeded
+- State effect: ConfigRequestAwaitingResponse → ConfigRequestSucceeded (if this is a speed change request)
+- No effect if not a speed change request or not in AwaitingResponse state
+
 ### Key Design Principles
 
 1. **Clean Request Interface**: Each `ConfigRequest` provides a clean, stateful handle to a configuration request:
@@ -335,6 +337,7 @@ All precondition failures result in panics. All Get* methods are side-effect fre
 - `ConfigRequestNotReady` → `ConfigRequestReadyToSend` (when previous request succeeds)
 - `ConfigRequestReadyToSend` → `ConfigRequestAwaitingResponse` | `ConfigRequestSucceeded` (via SetSentTime)
 - `ConfigRequestAwaitingResponse` → `ConfigRequestPausing` | `ConfigRequestSucceeded` | `ConfigRequestFailed` (via packet processing)
+- `ConfigRequestAwaitingResponse` → `ConfigRequestSucceeded` (via MaybeSpeedChangeSucceeded - for speed change requests)
 - `ConfigRequestAwaitingResponse` → `ConfigRequestMaybeComplete` (via packet processing - first response for multi-response query)
 - `ConfigRequestAwaitingResponse` → `ConfigRequestMayResend` (via SetDeadlinePassed)
 - `ConfigRequestAwaitingResponse` → `ConfigRequestFailed` (via Configurator decision - no retry allowed)
@@ -366,18 +369,17 @@ The `ConfigDirector` uses an "active window" of requests (defined by start and e
 type ConfigActionType int
 const (
     ConfigActionSendRequest ConfigActionType = iota
-    ConfigActionCheckTimeout  // Client should check for timeouts
     ConfigActionWaitUntil
-    ConfigActionError        // Configuration error occurred
+    ConfigActionError  // Configuration error occurred
 )
 
 type ConfigAction struct {
     Type     ConfigActionType
-    Index    int           // For ConfigActionSend/CheckTimeout
-    Packet   []byte       // For ConfigActionSendRequest
-    Speed    int          // For ConfigActionSendRequest (0 if no change)
-    Deadline time.Time    // For ConfigActionWaitUntil, ConfigActionCheckTimeout
-    Error    error        // For ConfigActionError
+    Index    int           // For ConfigActionSendRequest
+    Packet   []byte        // For ConfigActionSendRequest
+    Speed    int           // For ConfigActionSendRequest (0 if no change)
+    Deadline time.Time     // For ConfigActionWaitUntil
+    Error    error         // For ConfigActionError
 }
 
 type ConfigDirector struct {
@@ -399,10 +401,19 @@ func NewConfigDirector(cfgtor Configurator, maxRetries int) *ConfigDirector {
     }
 }
 
-// Actions returns an iterator over configuration actions
+// Actions returns an iterator over configuration actions.
 func (cd *ConfigDirector) Actions() iter.Seq[ConfigAction] {
   // ...
 }
+
+// AdvanceTimeTo updates the director's view of time, triggering timeout
+// processing for any requests whose deadlines have passed.
+func (cd *ConfigDirector) AdvanceTimeTo(t time.Time) { ... }
+
+// ValidPacketReceived notifies the director that a valid packet was received.
+// This is used for speed change confirmation - if the request is awaiting
+// ACK after a speed change, receiving any valid packet confirms the change worked.
+func (cd *ConfigDirector) ValidPacketReceived(t time.Time) { ... }
 
 ```
 
@@ -424,33 +435,28 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.PacketExchange
         case gpsprot.ConfigActionSendRequest:
            // send the packet and call req.SetSentTime
            // ...
-        case gpsprot.ConfigActionCheckTimeout:
-            // Check if this specific request's deadline has passed
-            if time.Now().After(action.Deadline) {
-                req := cfgtor.Request(action.Index)
-                req.SetDeadlinePassed()
-            }
-            
+
         case gpsprot.ConfigActionWaitUntil:
             select {
             case <-ctx.Done():
                 return nil, nil, ctx.Err()
             case <-time.After(time.Until(action.Deadline)):
-                // Continue to next iteration to check for state changes
+                director.AdvanceTimeTo(time.Now())
             case packet, ok := <-mh.packetCh:
                 if !ok {
                     return nil, nil, mh.packetChClosed(ctx)
                 }
+                director.ValidPacketReceived(time.Now())
                 mh.packet(packet)
             }
-            
+
         case gpsprot.ConfigActionError:
             if knownErr == nil {
                 mh.lg.Warn("GPS configuration failed", "err", action.Error)
                 knownErr = action.Error
             }
             // Continue to allow recovery operations
-            
+
         }
     }
     
