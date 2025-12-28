@@ -49,8 +49,8 @@ func TestNovAtelPacketScanning(t *testing.T) {
 	
 	// Check message ID
 	msgID := nov.BinPacketFormat.MsgID([]byte(pkt.Data))
-	if msgID != "101" {
-		t.Errorf("Expected message ID 101, got %s", msgID)
+	if msgID != "TIME" {
+		t.Errorf("Expected message ID TIME, got %s", msgID)
 	}
 }
 

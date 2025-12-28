@@ -95,7 +95,7 @@ func TestNovAtelBinaryPackets(t *testing.T) {
 }
 
 func TestMsgID(t *testing.T) {
-	const expectedMsgID = "101"
+	const expectedMsgID = "TIME"
 	data, err := hex.DecodeString(testPacketsValid[0])
 	if err != nil {
 		t.Fatalf("Failed to decode hex: %v", err)
