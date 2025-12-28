@@ -217,8 +217,8 @@ func testUTCConversion(t *testing.T, ucp *utcConversionParams, hdr *uncmsg.MsgHd
 		t.Errorf("Correction should be valid")
 	}
 
-	if correction == 0 {
-		t.Errorf("Correction should be non-zero for this test case")
+	if fpCorrection == 0 {
+		t.Errorf("Floating-point correction should be non-zero for this test case")
 	}
 
 	// Verify the LeapSecond matches LeapSecond2016
