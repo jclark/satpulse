@@ -7,9 +7,11 @@ import (
 	"github.com/jclark/satpulse/internal/as"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/nov"
 	"github.com/jclark/satpulse/internal/rtcm"
 	"github.com/jclark/satpulse/internal/sino"
 	"github.com/jclark/satpulse/internal/ubx"
+	"github.com/jclark/satpulse/internal/unc"
 )
 
 // PacketFormats contains all known packet formats
@@ -17,12 +19,16 @@ var PacketFormats = []gpsprot.PacketFormat{
 	ubx.PacketFormat,
 	nmea.PacketFormat,
 	rtcm.PacketFormat,
+	unc.BinPacketFormat,
+	unc.AsciiPacketFormat,
+	nov.BinPacketFormat,
+	nov.AsciiPacketFormat,
 }
 
 type Vendor int
 
 const (
-	VendorUnknown     Vendor = iota
+	VendorUnknown Vendor = iota
 	VendorAllystar
 	VendorBynav
 	VendorFuruno
@@ -49,7 +55,7 @@ var vendorNames = []string{
 	"SkyTraq",
 	"Trimble",
 	"u-blox",
-	"Unicore",
+	unc.Vendor,
 }
 
 var vendorMap = func() map[string]Vendor {
@@ -89,9 +95,13 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 		nmeaPP.SetSVNumbering(nmeaNumbering)
 	}
 	return map[gpsprot.Tag]gpsprot.PacketProcessor{
-		ubx.Tag:  ubx.NewPacketProcessor(),
-		nmea.Tag: nmeaPP,
-		rtcm.Tag: rtcm.NewPacketProcessor(),
+		ubx.Tag:       ubx.NewPacketProcessor(),
+		nmea.Tag:      nmeaPP,
+		rtcm.Tag:      rtcm.NewPacketProcessor(),
+		unc.TagBinary: unc.NewBinPacketProcessor(),
+		unc.TagAscii:  unc.NewAsciiPacketProcessor(),
+		nov.TagBinary: nov.NewBinPacketProcessor(),
+		nov.TagAscii:  nov.NewAsciiPacketProcessor(),
 	}
 }
 
@@ -99,6 +109,7 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 func CreateConfigProtocols() []gpsprot.ConfigProtocol {
 	return []gpsprot.ConfigProtocol{
 		ubx.NewConfigProtocol(),
+		unc.NewConfigProtocol(),
 	}
 }
 

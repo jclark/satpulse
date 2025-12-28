@@ -116,6 +116,23 @@ func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
 	return []byte{Checksum(pkt[1:starIndex(pkt)])}
 }
 
+var _ gpsprot.AltChecksumPacketFormat = packetFormat{}
+
+// ComputeAltChecksum is designed to work around UM980 firmware quirk.
+// Precondition: the packet must be valid according to Next().
+func (f packetFormat) ComputeAltChecksum(pkt []byte) []byte {
+	// This won't get called often, so no need to be efficient.
+	flags := CheckSyntax(string(pkt))
+	// If it looks like an NMEA packet with 5-char address and GNSS talker ID, then do not allow alternate checksum.
+	if flags&SentenceAddressLength5 != 0 && flags&SentenceTalkerIsGNSS != 0 {
+		return nil
+	}
+	// Since manufacturers using NMEA-like packets are purposefully ignoring the NMEA proprietary extension mechanism,
+	// I think it's better no to do anything special for something that starts with P.
+	// Possibly Unicore NMEA-like packet - compute checksum including the $
+	return []byte{Checksum(pkt[0:starIndex(pkt)])}
+}
+
 func (f packetFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
 	// no point in rescanning because valid packet constraints are quite strict
 	return false

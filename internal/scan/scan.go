@@ -92,6 +92,7 @@ func (s *Scanner) Scan() (p Packet, err error) {
 	p = Packet{TRead: s.tRead}
 	// this is non-nil if state != stateSync
 	var curPktFormat gpsprot.PacketFormat
+	var curPktFormatIndex int
 Loop:
 	for {
 		if s.nextScanIndex >= len(s.buf) {
@@ -124,10 +125,11 @@ Loop:
 		if state != stateSync {
 			nextState = curPktFormat.Next(state, s.buf, s.nextScanIndex, packetLen)
 		} else {
-			for _, pf := range s.pktFormats {
+			for i, pf := range s.pktFormats {
 				nextState = pf.Next(state, s.buf, s.nextScanIndex, packetLen)
 				if nextState != stateSync {
 					curPktFormat = pf
+					curPktFormatIndex = i
 					break
 				}
 			}
@@ -140,9 +142,24 @@ Loop:
 		if state != stateSync && nextState == stateSync && packetLen > 0 {
 			// We had something that looked like the start of a packet,
 			// but turned out to be invalid.
-			// we need to start reprocessing it with the character that made it become invalid.
+
+			// Check if a subsequent packet format would also match the first byte
+			startIndex := s.nextScanIndex - packetLen
+			for i := curPktFormatIndex + 1; i < len(s.pktFormats); i++ {
+				pf := s.pktFormats[i]
+				nextState = pf.Next(stateSync, s.buf, startIndex, 0)
+				if nextState != stateSync {
+					// It did, so rescan using that packet format from the second byte
+					curPktFormat = pf
+					curPktFormatIndex = i
+					s.nextScanIndex = startIndex + 1
+					packetLen = 1
+					goto Loop
+				}
+			}
+			// No more formats match the first byte, rescan from second byte
 			// This is sufficient for UBX and NMEA, because the $ which starts an NMEA packet
-			// isn't allowed with an NMEA packet. For UBX, the only way it's invalid is if the
+			// isn't allowed within an NMEA packet. For UBX, the only way it's invalid is if the
 			// length is wrong or it didn't have the right second sync byte.
 			break Loop
 		}

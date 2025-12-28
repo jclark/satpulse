@@ -8,8 +8,8 @@ import (
 )
 
 type ConfigProtocol struct {
-	ver     *Version
-	cfg     *Configurator
+	ver *Version
+	cfg *Configurator
 }
 
 var _ gpsprot.ConfigProtocol = (*ConfigProtocol)(nil)
@@ -52,6 +52,7 @@ func (px *ConfigProtocol) ProbeOK() bool {
 	return px.ver != nil
 }
 
+// Configure creates a Configurator for the given configuration target.
 func (px *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (gpsprot.Configurator, error) {
 	if px.ver == nil {
 		panic("Configure called before probe OK")

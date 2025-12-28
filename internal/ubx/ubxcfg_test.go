@@ -98,7 +98,7 @@ func runConfiguration(rcvr *gpsReceiver, target *gpsprot.ConfigTarget) (*Configu
 	cp := NewConfigProtocol()
 	cp.ver = rcvr.version
 	var naks []string
-	
+
 	pp := NewPacketProcessor()
 	pp.SetNativeMsgHandler(cp)
 
@@ -106,43 +106,64 @@ func runConfiguration(rcvr *gpsReceiver, target *gpsprot.ConfigTarget) (*Configu
 	if err != nil {
 		return nil, nil, fmt.Errorf("unexpected error from Configure: %w", err)
 	}
+
+	// Use ConfigDirector to drive the configuration
+	director := gpsprot.NewConfigDirector(c, 3) // 3 max retries
 	tm := time.Now()
-	for {
-		tm = tm.Add(time.Second / 10)
-		req, err := c.NextRequest()
-		if err != nil {
-			return nil, nil, fmt.Errorf("unexpected error from NextRequest: %w", err)
-		}
-		if req == nil {
-			break
-		}
-		sendTm := tm
-		pkt := req.Packet()
-		msgID := ubxbin.PacketMsgId(pkt)
 
-		// Simulate abort scenario (timeout/corruption)
-		if msgID == rcvr.abortMsgID {
-			// This simulates what happens in gpscfg when there's a non-NACK error
-			c.Abort()
-			// Continue to allow the configurator to generate recovery requests
-			continue
-		}
+	for action := range director.Actions() {
+		switch action.Type {
+		case gpsprot.ConfigActionSendRequest:
+			req := c.Request(action.Index)
+			sendTm := tm
+			pkt := req.GetPacket()
+			msgID := ubxbin.PacketMsgId(pkt)
 
-		resps := rcvr.sendReceive(pkt)
-		for _, resp := range resps {
-			tm = tm.Add(time.Second / 10)
-			_, err = pp.ProcessPacket(string(resp), tm)
-			if err != nil {
-				return nil, nil, fmt.Errorf("unexpected error processing response packet: %w", err)
+			// Simulate abort scenario (timeout/corruption)
+			if msgID == rcvr.abortMsgID {
+				// Simulate timeout
+				req.SetSentTime(sendTm)
+				tm = tm.Add(2 * time.Second)
+				req.SetDeadlinePassed()
+				req.SetWontResend()
+				continue
 			}
-		}
-		ack := c.FindAck(pkt, sendTm)
-		if ack == nil {
-			return nil, nil, fmt.Errorf("no ack found for request %s", req.ID())
-		} else if ack.OK {
-			req.Done()
-		} else {
-			naks = append(naks, req.ID())
+
+			// Send the request
+			req.SetSentTime(sendTm)
+			resps := rcvr.sendReceive(pkt)
+
+			// Process responses
+			for _, resp := range resps {
+				tm = tm.Add(time.Second / 10)
+				_, err = pp.ProcessPacket(string(resp), tm)
+				if err != nil {
+					return nil, nil, fmt.Errorf("unexpected error processing response packet: %w", err)
+				}
+			}
+
+			// Check if this was a NACK
+			if len(resps) > 0 {
+				for _, resp := range resps {
+					msg, _ := ubxbin.ParseMsg(string(resp))
+					if nakMsg, ok := msg.(*ubxbin.AckNak); ok && nakMsg.MsgID == msgID {
+						naks = append(naks, msgID.String())
+					}
+				}
+			}
+
+		case gpsprot.ConfigActionWaitUntil:
+			// Simulate waiting
+			if action.Deadline.After(tm) {
+				tm = action.Deadline
+			}
+			// Advance time past deadline to trigger timeout processing
+			director.AdvanceTimeTo(action.Deadline.Add(time.Millisecond))
+
+		case gpsprot.ConfigActionError:
+			// Configuration error - record but continue to allow recovery
+			// Only fail if recovery also fails
+			continue
 		}
 	}
 	uc := c.(*Configurator)
@@ -189,7 +210,20 @@ func (r *gpsReceiver) sendReceive(pkt []byte) [][]byte {
 			respPkts = append(respPkts, respPkt)
 		}
 	}
-	// XXX if it's not a poll we should update the receiver's state
+	// If it's not a poll (i.e., a set command), update the receiver's state
+	if len(pkt) > pollMaxLen {
+		switch msgID {
+		case ubxbin.CfgPrtID:
+			// Parse and apply the CFG-PRT set command
+			if msg, err := ubxbin.ParseMsg(string(pkt)); err == nil {
+				if prtMsg, ok := msg.(*ubxbin.CfgPrt); ok {
+					r.raw.prt = prtMsg
+				}
+			}
+			// Add other message types here as needed
+		}
+	}
+
 	if msgID.Ackable() {
 		var ackMsg ubxbin.Msg
 		if nak {
