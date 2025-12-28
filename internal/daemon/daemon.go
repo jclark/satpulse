@@ -22,8 +22,8 @@ import (
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/promobs"
 	"github.com/jclark/satpulse/internal/proxy"
-	"github.com/jclark/satpulse/internal/ptpgm"
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/ptpgm"
 	"github.com/jclark/satpulse/internal/refclock"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/sse"
@@ -290,10 +290,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		if ls != nil {
 			d.LeapSecond(ls, time.Time{})
 		}
+		// Dispatcher is responsible for closing rcProxy via defer in Run()
 		d.Run(tsCh, pCh)
-		if rcProxy != nil {
-			rcProxy.Close()
-		}
 	})
 
 	return nil
