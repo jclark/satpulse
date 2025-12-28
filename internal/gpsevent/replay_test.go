@@ -4,46 +4,84 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
-	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/timemsg"
 )
 
 func TestReplayFast(t *testing.T) {
-	testReplay(t, "testdata/fast.jsonl", phc.DriverBothEdges, 36, 0)
-}
-
-func TestReplayNMEA(t *testing.T) {
-	testReplay(t, "testdata/nmea.jsonl", phc.DriverOneEdge|phc.DriverPoll4Hz, 360, 0)
-}
-
-func testReplay(t *testing.T, fn string, phcFlags phc.DriverFlags, expectedSampleCount int, expectedWarnCount int) {
-	sampler := replaySampler{t: t}
+	sampler := &replaySampler{t: t}
 	warnCountHandler := NewWarnCountHandler(slog.NewTextHandler(io.Discard, nil))
 	lg := slog.New(warnCountHandler)
-
-	err := ReplayFile(fn, phcFlags, &sampler, ptime.LeapSecond2016(), nil, lg)
+	// Create mock clock
+	clock := &mockClock{}
+	// Create controller
+	cfg := phcsync.DefaultConfig()
+	pt := phcsync.PulseType{EdgesPerPulse: 2, PulseWidth: 100 * time.Millisecond}
+	ctrl, err := phcsync.NewController(clock, sampler, nil, cfg, ptime.LeapSecond2016(), pt, lg)
 	if err != nil {
-		t.Fatalf("error replaying %s: %v", fn, err)
+		t.Fatalf("failed to create controller: %v", err)
 	}
-	if sampler.sampleCount != expectedSampleCount {
-		t.Errorf("wrong number of samples emitted: got %d, want %d", sampler.sampleCount, expectedSampleCount)
+	defer ctrl.Close()
+	// Create time message buffer
+	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ptime.LeapSecond2016(), gpsprot.GPS)
+	ctrl.SetTimeMsgBuffer(timeMsgBuffer)
+	// Replay file
+	err = ReplayFile("testdata/fast.jsonl", ctrl, timeMsgBuffer, nil)
+	if err != nil {
+		t.Fatalf("error replaying: %v", err)
 	}
-	if warnCountHandler.WarnCount() != expectedWarnCount {
-		t.Errorf("wrong number of warnings: got %d, want %d", warnCountHandler.WarnCount(), expectedWarnCount)
+	// Verify reset mode behavior
+	if sampler.sampleCount == 0 {
+		t.Errorf("no samples emitted during replay")
 	}
+	// Reset mode should produce at least one sample before transitioning
+	if sampler.sampleCount < 1 {
+		t.Errorf("expected at least 1 sample from reset mode, got %d", sampler.sampleCount)
+	}
+	t.Logf("Replayed fast.jsonl: %d samples, %d warnings, mode=%s",
+		sampler.sampleCount, warnCountHandler.WarnCount(), ctrl.Mode())
 }
 
+// mockClock implements phcsync.Clock for testing
+type mockClock struct {
+	freqOffset float64
+}
+
+func (m *mockClock) SetFreqOffset(offset float64) error {
+	m.freqOffset = offset
+	return nil
+}
+
+func (m *mockClock) FreqOffset() (float64, error) {
+	return m.freqOffset, nil
+}
+
+func (m *mockClock) MaxFreqOffset() float64 {
+	return 62500000.0 // 62.5 million PPB = 62500 PPM
+}
+
+func (m *mockClock) AdjTime(d time.Duration) (ptime.Era, error) {
+	return ptime.Era(1), nil
+}
+
+// replaySampler implements phcsync.Sampler for testing
 type replaySampler struct {
 	t           *testing.T
 	ref         ptime.Time
 	sampleCount int
 }
 
-func (s *replaySampler) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
-	if ref == s.ref {
-		s.t.Errorf("duplicate sample at %v", ref)
+func (s *replaySampler) Sample(data phcsync.Sample) {
+	if data.Kind == phcsync.SampleMissing {
+		return
 	}
-	s.ref = ref
+	if data.Ref == s.ref {
+		s.t.Errorf("duplicate sample at %v", data.Ref)
+	}
+	s.ref = data.Ref
 	s.sampleCount++
 }

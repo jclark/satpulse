@@ -1,0 +1,4 @@
+[gps]
+resonator.period = 100.0
+resonator.sigma = 5.0
+resonator.zeta = 0.3

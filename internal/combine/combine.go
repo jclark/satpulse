@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -49,10 +50,8 @@ type sampleData struct {
 	pulse       pulseEdge
 }
 
-type PulseType struct {
-	EdgesPerPulse int
-	PulseWidth    time.Duration
-}
+// PulseType is an alias for phcsync.PulseType
+type PulseType = phcsync.PulseType
 
 type Config struct {
 	PulsePollInterval  time.Duration // if the ethernet driver polls to detect a time pulse, then this is the interval between polls

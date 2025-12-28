@@ -1,4 +1,4 @@
-package mon
+package phcsync
 
 import (
 	"iter"
@@ -16,41 +16,23 @@ const (
 	SampleOutlier                   // Sample that is an outlier but still measured
 )
 
-// SyncState represents the current synchronization status
-type SyncState int
-
-const (
-	NoSync SyncState = iota // Clock is not synchronized
-	InSync                  // Clock is synchronized
-)
-
-// String returns a human-readable representation of the sync state
-func (s SyncState) String() string {
-	switch s {
-	case NoSync:
-		return "out of sync"
-	case InSync:
-		return "in sync"
-	default:
-		return "unknown"
-	}
-}
-
-// SampleData contains all information about a synchronization sample
-type SampleData struct {
+// Sample contains all information about a synchronization sample
+type Sample struct {
 	Kind      SampleKind    // Determines validity of other fields
 	Ref       ptime.Time    // GPS reference time (different from system time)
 	Offset    time.Duration // PHC/GPS offset (valid for SampleOK and SampleOutlier, 0 for SampleMissing)
 	Freq      float64       // Current frequency adjustment in PPB (always valid)
 	FreqDelta float64       // Change in frequency adjustment in PPB (valid for SampleOK, 0 for SampleOutlier)
-	SyncState SyncState     // Current synchronization state (always valid)
+	Mode      Mode          // Current synchronization mode (always valid)
 	Era       ptime.Era     // For clock step tracking and logging (always valid)
+	EdgeIndex uint64        // Tracks which edge produced this sample (odd/even)
+	Sys       time.Time     // Estimated monotonic system time of pulse
 }
 
 // Sampler handles clock synchronization samples of all types
 type Sampler interface {
 	// Sample reports a clock synchronization sample of any kind
-	Sample(data SampleData)
+	Sample(data Sample)
 }
 
 // MultiSampler fans out Sample calls to multiple samplers
@@ -64,7 +46,7 @@ func NewMultiSampler(samplers ...Sampler) *MultiSampler {
 }
 
 // Sample implements Sampler by calling Sample on all samplers
-func (m *MultiSampler) Sample(data SampleData) {
+func (m *MultiSampler) Sample(data Sample) {
 	for _, s := range m.samplers {
 		s.Sample(data)
 	}

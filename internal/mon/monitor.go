@@ -1,14 +1,13 @@
 package mon
 
 import (
-	"fmt"
 	"log/slog"
-	"math"
-	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/internal/logfile"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/ptpgm"
+	"github.com/jclark/satpulse/internal/refclock"
 )
 
 const sampleWindowSize = 60
@@ -23,23 +22,47 @@ type Monitor struct {
 	leapSecond     ptime.LeapSecond
 	servo          Servo // never nil
 	lg             *slog.Logger
-	gm             *Grandmaster   // maybe nil
-	rc             *ProxyRefClock // maybe nil
+	gm             *ptpgm.Grandmaster   // maybe nil
+	rc             *refclock.ProxyRefClock // maybe nil
 	syncState      SyncState
 	paused         bool
 	lastRefTime    ptime.Time
 	ppsStopped     int // number of missing samples recorded since 1PPS stopped
 	sampler        Sampler
-	stats          stats
-	lf             logfile.LogFile
 	cfg            syncConfig
 }
 
-type stats struct {
-	accumPhase     accumPhase
-	accumFreq      accumFreq
-	accumFreqDelta accumFreq
-	interval       int
+// SampleKind indicates the kind of sample
+type SampleKind = phcsync.SampleKind
+
+const (
+	SampleMissing = phcsync.SampleMissing
+	SampleOK      = phcsync.SampleOK
+	SampleOutlier = phcsync.SampleOutlier
+)
+
+// SyncState indicates whether the clock is synchronized
+type SyncState = ptpgm.SyncState
+
+const (
+	NoSync = ptpgm.NoSync
+	InSync = ptpgm.InSync
+)
+
+// SampleData contains all the information about a sample
+type SampleData struct {
+	Kind      SampleKind
+	Ref       ptime.Time
+	Offset    time.Duration
+	Freq      float64
+	FreqDelta float64
+	SyncState SyncState
+	Era       ptime.Era
+}
+
+// Sampler is the interface for receiving samples
+type Sampler interface {
+	Sample(data SampleData)
 }
 
 type Servo interface {
@@ -54,12 +77,10 @@ type MonitorConfig struct {
 	LogInterval   int
 	ClockLogPath  string
 	ClockAccuracy time.Duration
-	RefClock      *ProxyRefClock
-	Grandmaster   *Grandmaster
+	RefClock      *refclock.ProxyRefClock
+	Grandmaster   *ptpgm.Grandmaster
 	Sampler       Sampler // never nil, uses DefaultObserver when no observability needed
 }
-
-const ClockLogExtension = ".log"
 
 func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, error) {
 	mon := &Monitor{
@@ -70,23 +91,17 @@ func NewMonitor(servo Servo, lg *slog.Logger, cfg MonitorConfig) (*Monitor, erro
 		gm:         cfg.Grandmaster,
 		rc:         cfg.RefClock,
 		sampler:    cfg.Sampler,
-		stats:      stats{interval: cfg.LogInterval},
 		syncState:  NoSync,
 		cfg:        defaultSyncConfig,
 	}
 
-	err := mon.lf.Open(cfg.ClockLogPath)
-	if err != nil {
-		return nil, err
-	}
 	if mon.gm != nil {
-		err = mon.gm.SetClockAccuracy(cfg.ClockAccuracy)
-	}
-	if err != nil {
-		return nil, err
+		err := mon.gm.SetClockAccuracy(cfg.ClockAccuracy)
+		if err != nil {
+			return nil, err
+		}
 	}
 	mon.cfg.maxOffset = cfg.ClockAccuracy.Seconds()
-	mon.writeLogHeader()
 	return mon, nil
 }
 
@@ -96,15 +111,6 @@ func (mon *Monitor) Close() {
 	if mon.gm != nil {
 		mon.gm.Close()
 	}
-	if mon.stats.accumPhase.n > 0 {
-		mon.stats.flush(mon.lg)
-	}
-	mon.lf.Close(mon.lg)
-}
-
-func (mon *Monitor) ReopenLog() {
-	mon.lf.Reopen(mon.lg)
-	mon.writeLogHeader()
 }
 
 func (mon *Monitor) Pause() {
@@ -128,9 +134,8 @@ func (mon *Monitor) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) 
 		freqDelta = f - freq
 		freq = f
 	}
-	mon.recordSample(kind, off, local.Era, freq, freqDelta)
+	mon.recordSample(kind, off, local.Era)
 	nextState := mon.nextSyncState()
-	mon.writeLogEntry(kind, ref, off, local.Era, freq, nextState)
 	mon.sampler.Sample(SampleData{
 		Kind:      kind,
 		Ref:       ref,
@@ -161,71 +166,12 @@ func (mon *Monitor) addMissingOffsets(ref ptime.Time) {
 	}
 	diff := int(ref.Sub(lastRef) / time.Second)
 	for i := 1; i < diff; i++ {
-		mon.recordSample(SampleMissing, 0, mon.samples.era, mon.servo.FreqOffset(), 0)
+		mon.recordSample(SampleMissing, 0, mon.samples.era)
 	}
 }
 
-func (mon *Monitor) recordSample(kind SampleKind, off time.Duration, era ptime.Era, freq float64, freqDelta float64) {
-	offSecs := off.Seconds()
-	mon.samples.sample(kind, offSecs, era, mon.syncState, &mon.cfg)
-	interval := mon.stats.interval
-	if interval <= 0 {
-		return
-	}
-	locked := mon.servo.Locked(era)
-	if locked {
-		if interval > 1 {
-			mon.stats.sample(mon.lg, kind, offSecs, freq, freqDelta)
-			return
-		}
-		if kind == SampleOK {
-			mon.lg.Info("adjusting clock frequency", "off", off, "freq", freq)
-			return
-		}
-	}
-	// in case where sampleOK and not locked, the servo will log
-	if kind == SampleMissing {
-		if !mon.paused {
-			mon.lg.Info("missed 1PPS sample")
-		}
-		return
-	}
-	if kind == SampleOutlier {
-		mon.lg.Info("outlier sample", "off", off, "freq", freq)
-		return
-	}
-}
-
-const logHeader = "# date time offset freq outlier era sync\n"
-
-func (mon *Monitor) writeLogHeader() {
-	if mon.lf.File == nil {
-		return
-	}
-	_, err := mon.lf.File.WriteString(logHeader)
-	mon.lf.HandleWriteError(err, mon.lg)
-}
-
-func (mon *Monitor) writeLogEntry(kind SampleKind, ref ptime.Time, off time.Duration, era ptime.Era, freq float64, syncState SyncState) {
-	if mon.lf.File == nil || kind == SampleMissing {
-		return
-	}
-	outlierFlag := 0
-	if kind == SampleOutlier {
-		outlierFlag = 1
-	}
-	// Almost all the time, the absolute value of off will be < 100,
-	// so we format to a width of 3 so the values including the sign will align.
-	_, err := fmt.Fprintf(mon.lf.File, "%s %3d %.0f %d %d %d\n", logDateTime(ref, mon.leapSecond), off, freq, outlierFlag, uint64(era), int(syncState))
-	mon.lf.HandleWriteError(err, mon.lg)
-}
-
-func logDateTime(ref ptime.Time, ls ptime.LeapSecond) string {
-	// We need to round because the reference time (which will be a whole number of seconds)
-	// may have had a pulse offset (sawtooth correction) of a few nanoseconds applied.
-	s := ls.FormatTime(ref.Round(time.Second))
-	s = strings.Replace(s, "T", " ", 1)
-	return strings.Replace(s, "Z", "", 1)
+func (mon *Monitor) recordSample(kind SampleKind, off time.Duration, era ptime.Era) {
+	mon.samples.sample(kind, off.Seconds(), era, mon.syncState, &mon.cfg)
 }
 
 func (mon *Monitor) SysSample(ref ptime.Time, sys time.Time) {
@@ -260,7 +206,7 @@ func (mon *Monitor) Tick(now time.Time) {
 	mon.lastSampleTime = mon.lastSampleTime.Add(time.Second)
 	mon.lastRefTime = mon.lastRefTime.Add(time.Second)
 	freq := mon.servo.FreqOffset()
-	mon.recordSample(SampleMissing, 0, mon.samples.era, freq, 0)
+	mon.recordSample(SampleMissing, 0, mon.samples.era)
 	nextState := mon.nextSyncState()
 	mon.sampler.Sample(SampleData{
 		Kind:      SampleMissing,
@@ -298,8 +244,16 @@ func (mon *Monitor) updateSyncState(state SyncState) {
 
 func (mon *Monitor) gmUpdate() {
 	if mon.gm != nil && !mon.lastRefTime.IsZero() {
-		mon.gm.Update(mon.syncState, mon.leapSecond.StateAt(mon.lastRefTime))
+		mon.gm.Update(gmSyncState(mon.syncState), mon.leapSecond.StateAt(mon.lastRefTime))
 	}
+}
+
+func gmSyncState(ss SyncState) ptpgm.SyncState {
+	switch ss {
+	case InSync:
+		return ptpgm.InSync
+	}
+	return ptpgm.NoSync
 }
 
 func (mon *Monitor) SetLeapSecond(leapSecond ptime.LeapSecond) {
@@ -308,82 +262,4 @@ func (mon *Monitor) SetLeapSecond(leapSecond ptime.LeapSecond) {
 	}
 	mon.leapSecond = leapSecond
 	mon.gmUpdate()
-}
-
-func (s *stats) sample(lg *slog.Logger, kind SampleKind, off float64, freq float64, freqDelta float64) {
-	s.accumPhase.add(kind, off)
-	s.accumFreq.add(freq)
-	s.accumFreqDelta.add(freqDelta)
-	if s.accumPhase.n == s.interval {
-		s.flush(lg)
-	}
-}
-
-func (s *stats) flush(lg *slog.Logger) {
-	lg.Info("summary",
-		"absOffMax", fmt.Sprintf("%.0f", s.accumPhase.maxAbs*1e9),
-		"absOffMean", fmt.Sprintf("%.1f", s.accumPhase.meanAbs()*1e9),
-		"offRMS", fmt.Sprintf("%.1f", s.accumPhase.rms()*1e9),
-		"freqMean", fmt.Sprintf("%.0f", s.accumFreq.mean()),
-		"freqStdDev", fmt.Sprintf("%.0f", s.accumFreq.stddev()),
-		"freqDeltaStdDev", fmt.Sprintf("%.1f", s.accumFreqDelta.stddev()),
-		"nSecs", s.accumPhase.n,
-		"nMissing", s.accumPhase.nMissing,
-		"nOutliers", s.accumPhase.nOutliers)
-	s.accumPhase = accumPhase{}
-	s.accumFreq = accumFreq{}
-	s.accumFreqDelta = accumFreq{}
-}
-
-type accumPhase struct {
-	sumAbs     float64
-	sumSquares float64
-	maxAbs     float64
-	n          int
-	nMissing   int
-	nOutliers  int
-}
-
-type accumFreq struct {
-	sum                float64
-	sumMeanDiffSquares float64
-	n                  int
-}
-
-func (a *accumPhase) add(kind SampleKind, v float64) {
-	a.n++
-	switch kind {
-	case SampleOK:
-		av := math.Abs(v)
-		a.sumAbs += av
-		a.sumSquares += v * v
-		a.maxAbs = math.Max(a.maxAbs, av)
-	case SampleMissing:
-		a.nMissing++
-	case SampleOutlier:
-		a.nOutliers++
-	}
-}
-
-func (a *accumFreq) add(v float64) {
-	a.n++
-	a.sum += v
-	md := v - a.sum/float64(a.n)
-	a.sumMeanDiffSquares += md * md
-}
-
-func (a *accumPhase) meanAbs() float64 {
-	return a.sumAbs / float64(a.n)
-}
-
-func (a *accumPhase) rms() float64 {
-	return math.Sqrt(a.sumSquares / float64(a.n))
-}
-
-func (a *accumFreq) mean() float64 {
-	return a.sum / float64(a.n)
-}
-
-func (a *accumFreq) stddev() float64 {
-	return math.Sqrt(a.sumMeanDiffSquares / float64(a.n))
 }

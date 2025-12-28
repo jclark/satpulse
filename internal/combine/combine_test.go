@@ -24,7 +24,12 @@ type testMsgEvent struct {
 }
 
 func (e testMsgEvent) emit(c *Combiner) {
-	c.TimeMsg(e.TAITime, e.tRead, e.PulseOffset, e.Ref)
+	var pulseOff *time.Duration
+	if e.PulseOffset != nil {
+		dur := time.Duration(*e.PulseOffset)
+		pulseOff = &dur
+	}
+	c.TimeMsg(e.TAITime, e.tRead, pulseOff, e.Ref)
 }
 
 func (e testMsgEvent) t() time.Time { return e.tRead }
@@ -286,9 +291,10 @@ func phcScaleDuration(t time.Duration, flags uint) time.Duration {
 	return time.Duration((t * time.Duration(percent)) / 100)
 }
 
-func maybePulseOff(pulseOff time.Duration, flags uint) *time.Duration {
+func maybePulseOff(pulseOff time.Duration, flags uint) *float64 {
 	if flags&genPulseOff != 0 {
-		return &pulseOff
+		f := float64(pulseOff)
+		return &f
 	}
 	return nil
 }

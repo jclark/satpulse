@@ -19,18 +19,18 @@ func main() {
 	}))
 
 	// Simulation parameters
-	const simDuration = 60.0                // 60 seconds
-	const minDeliveryDelay = 5e-6           // 5µs minimum delivery delay
-	const maxDeliveryDelay = 0.25           // 250ms maximum delivery delay
+	const simDuration = 60.0      // 60 seconds
+	const minDeliveryDelay = 5e-6 // 5µs minimum delivery delay
+	const maxDeliveryDelay = 0.25 // 250ms maximum delivery delay
 	rng := rand.New(rand.NewSource(999))
 
 	// GPS time starts near present (2024-10-08 is roughly GPS time ~1.4e9 seconds)
 	gpsStartTime := 1.4e9
 
-	// Create oscillator running 10ppm fast with some frequency noise
+	// Create oscillator running 10000ppb fast with some frequency noise
 	osc := clocksim.CombineOscillators(
-		clocksim.ConstantDrift(10.0),        // 10ppm fast
-		clocksim.WhiteFreqNoise(0.001, 42),  // 0.001ppm RMS frequency noise
+		clocksim.ConstantDrift(10000.0),  // 10000ppb fast
+		clocksim.WhiteFreqNoise(1.0, 42), // 1ppb RMS frequency noise
 	)
 
 	// PHC starts near epoch (1970-01-01T00:00:00 TAI) - way off from GPS
@@ -38,10 +38,10 @@ func main() {
 	raw := clocksim.NewRawClock(osc, 0)
 
 	// PPS with realistic 10ns jitter
-	pps := clocksim.WhiteNoisePPS(10e-9, 123)
+	pps := clocksim.WhiteNoisePPS(10*time.Nanosecond, 123)
 
 	// Virtual clock starts at t=0, max ±500ppm (like i210)
-	vclock := clocksim.NewVirtualClock(raw, pps, 0, 500000)
+	vclock := clocksim.NewVirtualClock(raw, pps, 0, 500000, 0, nil)
 
 	// Test clock with era tracking
 	testClock := clocksim.NewTestClock(vclock)
@@ -56,7 +56,7 @@ func main() {
 	lg.Info("starting servo simulation",
 		"duration", simDuration,
 		"deliveryDelay", "5µs-250ms",
-		"oscDrift", "10ppm",
+		"oscDrift", "10000ppb",
 		"ppsJitter", "10ns",
 		"gpsStartTime", gpsStartTime,
 		"phcStartTime", 0.0)
@@ -79,7 +79,7 @@ func main() {
 			break
 		}
 
-		ts, ok := testClock.ReadTimestampWithEra()
+		ts, _, ok := testClock.ReadTimestampWithEra()
 		if !ok {
 			lg.Error("failed to read timestamp")
 			break

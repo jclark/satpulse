@@ -11,8 +11,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
+	"github.com/jclark/satpulse/internal/phcsync"
+
 )
 
 // PrometheusObserver implements obs.Observer for Prometheus metrics
@@ -186,18 +187,17 @@ func (p *PrometheusObserver) Handler() http.Handler {
 	return promhttp.HandlerFor(p.reg, promhttp.HandlerOpts{})
 }
 
-// Sample implements mon.Sampler interface
-func (p *PrometheusObserver) Sample(data mon.SampleData) {
+// Sample implements phcsync.Sampler interface
+func (p *PrometheusObserver) Sample(data phcsync.Sample) {
 	// Always update frequency gauge (convert ppb to dimensionless)
 	p.frequencyGauge.Set(data.Freq / 1e9)
 
-	switch data.SyncState {
-	case mon.InSync:
+	if data.Mode.InSync() {
 		p.inSyncGauge.Set(1)
 		if !p.everInSync {
 			p.everInSync = true
 		}
-	case mon.NoSync:
+	} else {
 		p.inSyncGauge.Set(0)
 		if p.everInSync {
 			p.samplesCounter.WithLabelValues("out_of_sync").Inc()
@@ -208,13 +208,13 @@ func (p *PrometheusObserver) Sample(data mon.SampleData) {
 	}
 
 	switch data.Kind {
-	case mon.SampleMissing:
+	case phcsync.SampleMissing:
 		p.samplesCounter.WithLabelValues("missing").Inc()
-	case mon.SampleOutlier:
+	case phcsync.SampleOutlier:
 		p.samplesCounter.WithLabelValues("outlier").Inc()
 		// Update offset gauge for outliers too (convert to seconds)
 		p.offsetGauge.Set(data.Offset.Seconds())
-	case mon.SampleOK:
+	case phcsync.SampleOK:
 		p.samplesCounter.WithLabelValues("ok").Inc()
 		offsetSeconds := data.Offset.Seconds()
 		p.offsetGauge.Set(offsetSeconds)

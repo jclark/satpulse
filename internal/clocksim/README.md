@@ -115,7 +115,7 @@ for simTime < 100.0 {
 
     // Read timestamp and pass to servo
     if vclock.TimestampAvailable() {
-        ts, _ := testClock.ReadTimestampWithEra()
+        ts, _, _ := testClock.ReadTimestampWithEra()
         gpsTime := ptime.Time(simTime * 1e9) // GPS time for this PPS
         s.Sample(gpsTime, ts, false)
     }

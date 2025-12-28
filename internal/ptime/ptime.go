@@ -1,6 +1,7 @@
 package ptime
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -12,6 +13,14 @@ import (
 type ClockTime struct {
 	T   Time
 	Era Era
+}
+
+// Sample represents a paired reading of a PHC clock and system clock.
+// The Clock field represents the PHC time, and Sys represents the
+// corresponding system time (either monotonic or wallclock).
+type Sample struct {
+	Clock ClockTime
+	Sys   time.Time
 }
 
 // Time in TAI timescale represented as nanoseconds since 1970-01-01T00:00:00 TAI
@@ -276,6 +285,61 @@ func (ls LeapSecond) StateAt(t Time) LeapSecondState {
 		}
 	}
 	return state
+}
+
+// MarshalJSON marshals UTCTime to ISO8601 format like "2025-03-24T06:19:00Z".
+// For leap seconds (TimeOfDay >= 24h), produces "2025-06-30T23:59:60Z" format.
+func (ut UTCTime) MarshalJSON() ([]byte, error) {
+	t := ut.Date.Add(ut.TimeOfDay)
+	// Check if TimeOfDay represents a leap second (>= 86400s = 24h)
+	if ut.TimeOfDay >= 24*time.Hour {
+		// Subtract 1 second to get :59, then replace with :60
+		t = t.Add(-time.Second)
+		s := t.Format(time.RFC3339Nano)
+		// Replace "59" with "60" in the seconds field
+		colonPos := strings.LastIndex(s, ":")
+		if colonPos >= 0 && len(s) >= colonPos+3 {
+			s = s[:colonPos+1] + "60" + s[colonPos+3:]
+		}
+		return json.Marshal(s)
+	}
+	// Normal case: use standard RFC3339Nano
+	return json.Marshal(t.Format(time.RFC3339Nano))
+}
+
+// UnmarshalJSON unmarshals from ISO8601 format.
+// Handles leap seconds (sec=60) correctly.
+func (ut *UTCTime) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	// Check for leap second (":60")
+	colonPos := strings.LastIndex(s, ":")
+	isLeapSecond := false
+	if colonPos >= 0 && len(s) >= colonPos+3 && s[colonPos+1:colonPos+3] == "60" {
+		// Replace ":60" with ":59" for Go's parser
+		s = s[:colonPos+1] + "59" + s[colonPos+3:]
+		isLeapSecond = true
+	}
+	// Parse the time
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		// Try without nanoseconds
+		t, err = time.Parse(time.RFC3339, s)
+		if err != nil {
+			return err
+		}
+	}
+	// Extract date (midnight UTC) and time-of-day BEFORE adding back leap second
+	year, month, day := t.Date()
+	ut.Date = time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	ut.TimeOfDay = t.Sub(ut.Date)
+	// If it was a leap second, add 1 second to TimeOfDay
+	if isLeapSecond {
+		ut.TimeOfDay += time.Second
+	}
+	return nil
 }
 
 func Unix(sec int64, nsec int64) Time {

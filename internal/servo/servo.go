@@ -5,15 +5,12 @@ import (
 	"math"
 	"time"
 
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
-type Clock interface {
-	SetFreqOffset(float64) error
-	FreqOffset() (float64, error)
-	MaxFreqOffset() float64
-	AdjTime(d time.Duration) (ptime.Era, error)
-}
+// Clock is an alias for phcsync.Clock
+type Clock = phcsync.Clock
 
 type Servo struct {
 	clk               Clock

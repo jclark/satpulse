@@ -171,7 +171,7 @@ func TestOutlierInit(t *testing.T) {
 				n, min, max := ss.mad(defaultSyncConfig.madMultiple)
 				t.Errorf("Test %d, sample %d, expected madIsOutlier == false (n = %d, min = %v, max = %v)", i, j, n, min, max)
 			}
-			ss.win.append(sampleData{off: off, kind: SampleOK})
+			ss.buf.Append(sampleData{off: off, kind: SampleOK})
 		}
 	}
 }
