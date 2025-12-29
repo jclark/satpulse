@@ -494,7 +494,7 @@ func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration, maxWindo
 	if spreadProportion > g.cfg.DelayVariation {
 		return &limitError{
 			msg:      "spread in delays between pulse and message too large",
-			propName: "DelaySpread",
+			propName: "delayVariation",
 			value:    spreadProportion,
 			limit:    g.cfg.DelayVariation,
 		}
@@ -514,7 +514,7 @@ func (g *resetSampleGenerator) checkDelayRange(delays []time.Duration, maxWindow
 					"value", delaySec,
 					"minAcceptable", minAcceptable,
 					"maxAcceptable", maxAcceptable,
-					"property", "Delay+DelayTightness",
+					"properties", "expectedDelay,delayConfidenceWindow",
 				},
 			}
 		}
@@ -631,7 +631,7 @@ func (g *resetSampleGenerator) checkPulseIntervalsConsistent(intervals []time.Du
 	if variationPPB > g.cfg.PulseVariation {
 		return &limitError{
 			msg:      "pulse intervals not consistent",
-			propName: "PulseIntervalTolerance",
+			propName: "pulseVariation",
 			value:    variationPPB,
 			limit:    g.cfg.PulseVariation,
 		}
