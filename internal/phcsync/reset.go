@@ -97,9 +97,10 @@ type pulseEdgeList struct {
 }
 
 type resetStats struct {
-	pulseVariation float64 // actual pulse interval variation in PPB (compare to cfg.PulseVariation)
-	delay          float64 // mean pulse-to-message delay in seconds (compare to cfg.ExpectedDelay)
-	delayVariation float64 // delay spread as proportion of 1s (compare to cfg.DelayVariation)
+	pulseVariation float64       // actual pulse interval variation in PPB (compare to cfg.PulseVariation)
+	delay          float64       // mean pulse-to-message delay in seconds (compare to cfg.ExpectedDelay)
+	delayVariation float64       // delay spread as proportion of 1s (compare to cfg.DelayVariation)
+	pulseSysOffset time.Duration // mean absolute deviation of pulse times from exact seconds
 }
 
 type resetSampleGenerator struct {
@@ -212,7 +213,8 @@ func (g *resetSampleGenerator) genSample() *Sample {
 		g.lg.Info("reset mode succeeded",
 			"pulseVariation", stats.pulseVariation,
 			"delay", stats.delay,
-			"delayVariation", stats.delayVariation)
+			"delayVariation", stats.delayVariation,
+			"pulseSysOffset", stats.pulseSysOffset)
 	}
 
 	return sample
@@ -437,6 +439,17 @@ func (g *resetSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTim
 	if err != nil {
 		return err
 	}
+
+	// Calculate mean absolute deviation from exact second boundaries
+	var totalOffset time.Duration
+	for _, pt := range pulseTimes {
+		offset := pt.Sub(pt.Round(time.Second))
+		if offset < 0 {
+			offset = -offset
+		}
+		totalOffset += offset
+	}
+	stats.pulseSysOffset = totalOffset / time.Duration(len(pulseTimes))
 
 	return nil
 }
