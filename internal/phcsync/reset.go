@@ -159,6 +159,30 @@ type loggableError interface {
 
 var errNotEnoughTimestamps = errors.New("not enough timestamps")
 
+// genSample attempts to generate a sample by aligning pulse edges with time messages.
+//
+// This function is called both when a pulse edge arrives (via pulseEdgeSample) and when
+// a time message arrives (via timeMessageSample). We try on both events because the
+// arrival order is unpredictable: on some hardware (e.g., Raspberry Pi CM4/CM5), the
+// kernel only delivers pulse timestamps every 0.25s, so a pulse that occurred before
+// a message was sent may be delivered after that message is received.
+//
+// The challenge is matching pulses to their corresponding time messages. Pulses are
+// timestamped in the PHC time domain; messages are read in the system clock domain.
+// To align them, we estimate when each pulse occurred in system clock time:
+//  1. Compute the delay from pulse occurrence to read time in PHC time
+//  2. Scale that delay to system clock time using avgInterval (how much PHC time
+//     equals one real second)
+//  3. Subtract from the system clock read time to get estimated pulse time
+//
+// We then check that the delays between estimated pulse times and message read times
+// are consistent and within the expected range. If they are, we have correctly matched
+// pulses to their GPS seconds. If not, we must wait for more data.
+//
+// In dual-edge mode (both rising and falling edges timestamped), we must also determine
+// which edge marks the top of the second. If the pulse width is not close to 0.5s, we
+// can tell from the time between pulse edges. Otherwise, we try both possibilities and
+// use message alignment to disambiguate.
 func (g *resetSampleGenerator) genSample() *Sample {
 	// Need enough pulse edges
 	// In dual-edge mode, we need EdgesPerPulse * Window edges total
@@ -194,9 +218,8 @@ func (g *resetSampleGenerator) genSample() *Sample {
 	return sample
 }
 
-// genSampleForMessages generates a sample from pulse edges and time messages.
-// This function must remain pure (no logging, no side effects) for unit testability.
-// It returns the sample, statistics about the measurements, and any error encountered.
+// genSampleForMessages is the core logic of genSample, factored out for unit testing.
+// It takes the collected pulse edges and time messages and attempts alignment.
 func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []time.Time) (*Sample, *resetStats, error) {
 	stats := &resetStats{}
 	edgeLists := g.pulseEdgeLists()
@@ -275,6 +298,21 @@ func (g *resetSampleGenerator) tryAlignment(edgeList pulseEdgeList, lastSec ptim
 	}, nil
 }
 
+// filterEdgeListsByPulseWidth tries to filter out an edge list by measuring the time
+// between alternating edges.
+//
+// In dual-edge mode, we receive both rising and falling edges interleaved. When split
+// into two edge lists, one contains all the rising edges and the other all the falling
+// edges, but we don't know which is which. Only one is aligned to the top of the GPS second.
+//
+// The time between consecutive edges is either the pulse width or its complement to 1s -
+// we don't know which without knowing which edge type came first.
+//
+// If this measured time is within PulseWidthDetectLimit, we know it's the pulse width
+// (since pulse widths > 0.5s must be explicitly configured). If it's greater than
+// (1s - PulseWidthDetectLimit), we know it's the complement. In either case, we can
+// determine which edge list to use. If the measured time is close to 0.5s, we cannot
+// distinguish, so we return both lists and rely on message alignment to disambiguate.
 func (g *resetSampleGenerator) filterEdgeListsByPulseWidth(edgeLists []pulseEdgeList) []pulseEdgeList {
 	if len(edgeLists) <= 1 {
 		return edgeLists
@@ -403,6 +441,8 @@ func (g *resetSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTim
 	return nil
 }
 
+// pulseDelays computes the time from each estimated pulse occurrence to its corresponding
+// message read time.
 func (g *resetSampleGenerator) pulseDelays(pulseTimes []time.Time, msgReadTimes []time.Time) []time.Duration {
 	if len(pulseTimes) != len(msgReadTimes) {
 		panic("pulseDelays: pulseTimes and msgReadTimes must have same length")
@@ -470,6 +510,9 @@ func (g *resetSampleGenerator) checkDelayRange(delays []time.Duration, maxWindow
 	return nil
 }
 
+// pulseEdgeLists returns edge lists to try for alignment. In single-edge mode, returns
+// one list. In dual-edge mode, returns two lists (one for each edge type) which are
+// then filtered by filterEdgeListsByPulseWidth.
 func (g *resetSampleGenerator) pulseEdgeLists() []pulseEdgeList {
 	edgeList := g.pulseEdges()
 
