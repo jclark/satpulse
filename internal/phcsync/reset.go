@@ -159,6 +159,7 @@ type loggableError interface {
 }
 
 var errNotEnoughTimestamps = errors.New("not enough timestamps")
+var errLastPulseNoMessage = errors.New("last pulse has no message")
 
 // genSample attempts to generate a sample by aligning pulse edges with time messages.
 //
@@ -203,6 +204,8 @@ func (g *resetSampleGenerator) genSample() *Sample {
 	if err != nil {
 		if le, ok := err.(loggableError); ok {
 			le.log(g.lg)
+		} else if errors.Is(err, errLastPulseNoMessage) {
+			g.lg.Debug(err.Error())
 		} else if !errors.Is(err, errNotEnoughTimestamps) {
 			g.lg.Info(err.Error())
 		}
@@ -428,6 +431,9 @@ func (g *resetSampleGenerator) pulseTimes(edges []PulseEdge, avgInterval time.Du
 // It checks that delays between corresponding pulses and messages are consistent and within expected range.
 // The maxWindow parameter specifies the maximum delay window in seconds (typically 1.0, or 0.5 for 50% duty cycle disambiguation).
 func (g *resetSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTimes []time.Time, maxWindow float64, stats *resetStats) error {
+	if !isMessageForLastPulse(pulseTimes, msgReadTimes) {
+		return errLastPulseNoMessage
+	}
 	delays := g.pulseDelays(pulseTimes, msgReadTimes)
 
 	err := g.checkDelaySpread(delays, maxWindow, stats)
@@ -452,6 +458,16 @@ func (g *resetSampleGenerator) checkAlignment(pulseTimes []time.Time, msgReadTim
 	stats.pulseSysOffset = totalOffset / time.Duration(len(pulseTimes))
 
 	return nil
+}
+
+// isMessageForLastPulse checks if the last message corresponds to the last pulse.
+// Returns true if the delay between the last pulse and last message read is in [0, 1s].
+// Outside this range indicates a transient mismatch: either the pulse arrived before
+// its message (delay < 0, common on x86) or the message buffer has advanced past the
+// pulse buffer (delay > 1s, common on Pi with batched pulse delivery).
+func isMessageForLastPulse(pulseTimes []time.Time, msgReadTimes []time.Time) bool {
+	lastDelay := msgReadTimes[len(msgReadTimes)-1].Sub(pulseTimes[len(pulseTimes)-1])
+	return lastDelay >= 0 && lastDelay <= time.Second
 }
 
 // pulseDelays computes the time from each estimated pulse occurrence to its corresponding
