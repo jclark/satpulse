@@ -211,7 +211,7 @@ func (g *resetSampleGenerator) genSample() *Sample {
 
 	if sample != nil {
 		g.lg.Info("reset mode succeeded",
-			"pulseVariation", stats.pulseVariation,
+			"pulseVariation", fmt.Sprintf("%.1f", stats.pulseVariation),
 			"delay", stats.delay,
 			"delayVariation", stats.delayVariation,
 			"pulseSysOffset", stats.pulseSysOffset)
@@ -256,7 +256,7 @@ func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []
 		}
 		sample = trySample
 		*stats = tryStats
-		g.pt.PulseWidth = edgeList.pulseWidth		
+		g.pt.PulseWidth = edgeList.pulseWidth
 	}
 
 	if sample == nil {
@@ -266,7 +266,7 @@ func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []
 		return nil, nil, fmt.Errorf("both possible pulse edge alignments failed: %v; %v", alignErrs[0], alignErrs[1])
 	}
 	return sample, stats, nil
-	
+
 }
 
 // tryAlignment attempts to align a single edge list with time messages.
@@ -713,4 +713,3 @@ func (p *resetSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 		step:       -sample.Offset, // step by negative offset to correct
 	}, ModeConverging
 }
-
