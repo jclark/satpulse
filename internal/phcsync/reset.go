@@ -28,17 +28,17 @@ type ResetConfig struct {
 	// The variation is computed as: (maxInterval/minInterval - 1.0) * 1e9.
 	PulseVariation float64 `toml:"pulseVariation" check:">=5,<1_000_000" comment:"Max pulse interval variation (ppb)"`
 
-	// ExpectedDelay is the expected midpoint of the pulse-to-message delay window in seconds.
+	// ExpectedDelay is the expected pulse-to-message delay in seconds.
 	// This represents the typical delay between when a PPS pulse occurs and when the GPS
 	// receiver sends the corresponding time message. Most GPS receivers send messages
 	// 50-250ms after the pulse.
 	ExpectedDelay float64 `toml:"expectedDelay" check:">=0.0,<1.0" comment:"Expected pulse-to-message delay (s)"`
 
 	// DelayConfidenceWindow specifies what fraction of the maximum possible delay window
-	// to accept, expressed as a proportion (0.0 to 1.0). The window is centered around
-	// ExpectedDelay. With edge timestamping, the maximum window is 1.0 second (until next
-	// pulse). For example, 0.6 means accept delays from (ExpectedDelay - 0.3) to
-	// (ExpectedDelay + 0.3), rejecting pulses where messages arrive too early or too late.
+	// to accept, expressed as a proportion (0.0 to 1.0). The accepted window has width
+	// DelayConfidenceWindow*maxWindow and includes ExpectedDelay. If centering that window
+	// on ExpectedDelay would make the lower bound negative, it is shifted up so the lower
+	// bound is 0 while keeping the window width the same.
 	DelayConfidenceWindow float64 `toml:"delayConfidenceWindow" check:">0.0,<=1.0" comment:"Fraction of delay window to accept [0,1]"`
 
 	// DelayVariation is the maximum acceptable spread between pulse-to-message delays,
@@ -66,6 +66,22 @@ func defaultResetConfig() ResetConfig {
 		DelayVariation:        0.2,   // proportion of max window
 		PulseWidthDetectLimit: 0.45,  // seconds
 	}
+}
+
+// DelayBounds returns the acceptable delay range in seconds for a given maxWindow.
+// The range has width DelayConfidenceWindow*maxWindow, includes ExpectedDelay, and never
+// extends below 0 seconds.
+func (cfg ResetConfig) DelayBounds(maxWindow float64) (minAcceptable, maxAcceptable float64) {
+	halfWindow := cfg.DelayConfidenceWindow * maxWindow / 2
+	minAcceptable = cfg.ExpectedDelay - halfWindow
+	if minAcceptable < 0 {
+		truncated := -minAcceptable
+		minAcceptable = 0
+		maxAcceptable = cfg.ExpectedDelay + halfWindow + truncated
+		return minAcceptable, maxAcceptable
+	}
+	maxAcceptable = cfg.ExpectedDelay + halfWindow
+	return minAcceptable, maxAcceptable
 }
 
 type pulseInfo struct {
@@ -434,9 +450,7 @@ func (g *resetSampleGenerator) checkDelaySpread(delays []time.Duration, maxWindo
 }
 
 func (g *resetSampleGenerator) checkDelayRange(delays []time.Duration, maxWindow float64) error {
-	halfAcceptableWindow := g.cfg.DelayConfidenceWindow * maxWindow / 2
-	minAcceptable := g.cfg.ExpectedDelay - halfAcceptableWindow
-	maxAcceptable := g.cfg.ExpectedDelay + halfAcceptableWindow
+	minAcceptable, maxAcceptable := g.cfg.DelayBounds(maxWindow)
 
 	for _, delay := range delays {
 		delaySec := delay.Seconds()

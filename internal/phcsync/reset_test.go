@@ -45,6 +45,17 @@ func TestGenSampleForMessages(t *testing.T) {
 			},
 		},
 		{
+			name:     "ShiftedDelayWindowAcceptsLateMessages",
+			numEdges: 5,
+			interval: time.Second,
+			msgDelay: 450 * time.Millisecond,
+			wantStats: &resetStats{
+				pulseVariation: 0.0,
+				delay:          0.45,
+				delayVariation: 0.0,
+			},
+		},
+		{
 			name:      "IntervalTooLarge",
 			numEdges:  5,
 			interval:  1001 * time.Millisecond,
@@ -68,7 +79,7 @@ func TestGenSampleForMessages(t *testing.T) {
 			name:      "DelayOutOfRange",
 			numEdges:  5,
 			interval:  time.Second,
-			msgDelay:  500 * time.Millisecond,
+			msgDelay:  650 * time.Millisecond,
 			wantError: true,
 		},
 		{
@@ -152,7 +163,7 @@ func TestGenSampleForMessages(t *testing.T) {
 			msgDelay:        100 * time.Millisecond,
 			pulseWidth:      400 * time.Millisecond,
 			startWithRising: false,
-			wantError:       true, // Falling edge first with large pulse width causes delay check to fail
+			// With the shifted delay window (clamped to start at 0), delays > 0.4s are permitted.
 		},
 		// Dual-edge tests at exactly 50% duty cycle (uses alignment to determine leading edge)
 		{
@@ -183,7 +194,7 @@ func TestGenSampleForMessages(t *testing.T) {
 			// With 50% duty cycle and msgDelay=350ms, neither edge list aligns:
 			// Rising edges at 0, 1, 2, 3, 4s with messages at 0.35, 1.35, 2.35, 3.35, 4.35s -> delays of 0.35s
 			// Falling edges at 0.5, 1.5, 2.5, 3.5, 4.5s with messages at 0.35, 1.35, 2.35, 3.35, 4.35s -> delays of -0.15s
-			// Both are outside acceptable range (-0.2 to 0.4 with maxWindow=0.5 for 50% duty cycle)
+			// Both are outside acceptable range (0 to 0.3 with maxWindow=0.5 for 50% duty cycle)
 			numEdges:        10,
 			pulseWidth:      500 * time.Millisecond,
 			startWithRising: true,
