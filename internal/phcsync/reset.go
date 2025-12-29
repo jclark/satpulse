@@ -89,6 +89,13 @@ type pulseInfo struct {
 	avgInterval time.Duration // average PHC interval between pulses
 }
 
+// pulseEdgeList is a slice of PulseEdge values with the edgeIndex of the last edge.
+type pulseEdgeList struct {
+	edges         []PulseEdge
+	lastEdgeIndex uint64
+	pulseWidth    time.Duration // discovered pulse width (0 if single-edge mode or unknown)
+}
+
 type resetStats struct {
 	pulseVariation float64 // actual pulse interval variation in PPB (compare to cfg.PulseVariation)
 	delay          float64 // mean pulse-to-message delay in seconds (compare to cfg.ExpectedDelay)
@@ -185,13 +192,6 @@ func (g *resetSampleGenerator) genSample() *Sample {
 	}
 
 	return sample
-}
-
-// pulseEdgeList is a slice of PulseEdge values with the edgeIndex of the last edge.
-type pulseEdgeList struct {
-	edges         []PulseEdge
-	lastEdgeIndex uint64
-	pulseWidth    time.Duration // discovered pulse width (0 if single-edge mode or unknown)
 }
 
 // genSampleForMessages generates a sample from pulse edges and time messages.
@@ -502,45 +502,6 @@ func (g *resetSampleGenerator) pulseEdges() pulseEdgeList {
 	}
 }
 
-func (pel pulseEdgeList) length() int {
-	return len(pel.edges)
-}
-
-// split divides a pulseEdgeList into two lists with alternating edges.
-// First edge (index 0) goes to first returned list, second edge to second list, etc.
-// The lastEdgeIndex for each returned list is calculated based on which edges it contains.
-func (pel pulseEdgeList) split() [2]pulseEdgeList {
-	out := [2]pulseEdgeList{}
-	for i := range 2 {
-		for j := i; j < len(pel.edges); j += 2 {
-			out[i].edges = append(out[i].edges, pel.edges[j])
-		}
-	}
-	if len(pel.edges)%2 == 0 {
-		out[0].lastEdgeIndex = pel.lastEdgeIndex - 1
-		out[1].lastEdgeIndex = pel.lastEdgeIndex
-	} else {
-		out[0].lastEdgeIndex = pel.lastEdgeIndex
-		out[1].lastEdgeIndex = pel.lastEdgeIndex - 1
-	}
-	return out
-}
-
-// edgeTimestamps extracts timestamps from a slice of edges.
-func (pel pulseEdgeList) timestamps() []ptime.Time {
-	edges := pel.edges
-	timestamps := make([]ptime.Time, len(edges))
-	for i, edge := range edges {
-		timestamps[i] = edge.Timestamp.T
-	}
-	return timestamps
-}
-
-func (pel pulseEdgeList) avgInterval() time.Duration {
-	totalInterval := pel.edges[len(pel.edges)-1].Timestamp.T.Sub(pel.edges[0].Timestamp.T)
-	return totalInterval / time.Duration(len(pel.edges)-1)
-}
-
 func (g *resetSampleGenerator) pulseTimestamps() []ptime.Time {
 	n := g.edgeBuf.Len()
 	timestamps := make([]ptime.Time, n)
@@ -622,6 +583,45 @@ func (g *resetSampleGenerator) checkPulseIntervalsConsistent(intervals []time.Du
 	return nil
 }
 
+func (pel pulseEdgeList) length() int {
+	return len(pel.edges)
+}
+
+// split divides a pulseEdgeList into two lists with alternating edges.
+// First edge (index 0) goes to first returned list, second edge to second list, etc.
+// The lastEdgeIndex for each returned list is calculated based on which edges it contains.
+func (pel pulseEdgeList) split() [2]pulseEdgeList {
+	out := [2]pulseEdgeList{}
+	for i := range 2 {
+		for j := i; j < len(pel.edges); j += 2 {
+			out[i].edges = append(out[i].edges, pel.edges[j])
+		}
+	}
+	if len(pel.edges)%2 == 0 {
+		out[0].lastEdgeIndex = pel.lastEdgeIndex - 1
+		out[1].lastEdgeIndex = pel.lastEdgeIndex
+	} else {
+		out[0].lastEdgeIndex = pel.lastEdgeIndex
+		out[1].lastEdgeIndex = pel.lastEdgeIndex - 1
+	}
+	return out
+}
+
+// edgeTimestamps extracts timestamps from a slice of edges.
+func (pel pulseEdgeList) timestamps() []ptime.Time {
+	edges := pel.edges
+	timestamps := make([]ptime.Time, len(edges))
+	for i, edge := range edges {
+		timestamps[i] = edge.Timestamp.T
+	}
+	return timestamps
+}
+
+func (pel pulseEdgeList) avgInterval() time.Duration {
+	totalInterval := pel.edges[len(pel.edges)-1].Timestamp.T.Sub(pel.edges[0].Timestamp.T)
+	return totalInterval / time.Duration(len(pel.edges)-1)
+}
+
 type resetSampleProcessor struct {
 	minStep time.Duration
 	lg      *slog.Logger
@@ -657,3 +657,4 @@ func (p *resetSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 		step:       -sample.Offset, // step by negative offset to correct
 	}, ModeConverging
 }
+
