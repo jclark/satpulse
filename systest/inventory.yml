@@ -48,6 +48,11 @@ all:
       instance: ttyAMA3
 
     # ZED-F9T-20B in gnss.store dongle
+    maasdam.lan:
+      instance: ttyACM0
+      speed: 38400
+      interface: eth0
+
     toma.lan:
       instance: ttyACM0
       speed: 38400
