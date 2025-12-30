@@ -104,16 +104,17 @@ type resetStats struct {
 }
 
 type resetSampleGenerator struct {
-	timeMsgBuffer TimeMsgBuffer
-	edgeBuf       *circbuf.Buffer[PulseEdge]
-	cfg           ResetConfig
-	lg            *slog.Logger
-	pt            PulseType
-	maxFreq       float64
-	freq          float64
-	lastEdgeIndex uint64        // stores edgeIndex from most recent pulseEdgeSample call
-	avgInterval   time.Duration // stored from last successful sample generation
-	tReadLastMsg  time.Time     // read time of last message processed by genSampleForMessages
+	timeMsgBuffer     TimeMsgBuffer
+	edgeBuf           *circbuf.Buffer[PulseEdge]
+	cfg               ResetConfig
+	lg                *slog.Logger
+	pt                PulseType
+	maxFreq           float64
+	freq              float64
+	lastEdgeIndex     uint64        // stores edgeIndex from most recent pulseEdgeSample call
+	avgInterval       time.Duration // stored from last successful sample generation
+	tReadLastMsg      time.Time     // read time of last message processed by genSampleForMessages
+	pulseIntervalsBad bool          // true if checkPulseIntervals failed; cleared on new edge
 }
 
 func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, pt PulseType, freq, maxFreq float64, lg *slog.Logger) *resetSampleGenerator {
@@ -141,7 +142,8 @@ func (g *resetSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64)
 func (g *resetSampleGenerator) storeEdge(edge PulseEdge, edgeIndex uint64) {
 	g.edgeBuf.Append(edge)
 	g.lastEdgeIndex = edgeIndex
-	g.tReadLastMsg = time.Time{} // reset so we reprocess with new edge
+	g.tReadLastMsg = time.Time{}  // reset so we reprocess with new edge
+	g.pulseIntervalsBad = false   // new edge, retry interval check
 }
 
 func (g *resetSampleGenerator) timeMessageSample() *Sample {
@@ -235,11 +237,16 @@ func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []
 	}
 	g.tReadLastMsg = lastTRead
 
+	// Skip if pulse intervals already failed; cleared when new edge arrives
+	if g.pulseIntervalsBad {
+		return nil, nil, nil
+	}
 	stats := &resetStats{}
 	edgeLists := g.pulseEdgeLists()
 	for _, edgeList := range edgeLists {
 		err := g.checkPulseIntervals(edgeList, stats)
 		if err != nil {
+			g.pulseIntervalsBad = true
 			return nil, nil, err
 		}
 	}
