@@ -10,6 +10,7 @@ all:
     config: "true"     # Enable GPS configuration
     config_file: /etc/satpulse.toml  # SatPulse config file path
     http_port: 2000    # HTTP monitoring port
+    ansible_ssh_common_args: '-o "SetEnv TERM=dumb"' # needed for Fedora 43
 
   children:
     testing:
