@@ -113,6 +113,7 @@ type resetSampleGenerator struct {
 	freq          float64
 	lastEdgeIndex uint64        // stores edgeIndex from most recent pulseEdgeSample call
 	avgInterval   time.Duration // stored from last successful sample generation
+	tReadLastMsg  time.Time     // read time of last message processed by genSampleForMessages
 }
 
 func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, pt PulseType, freq, maxFreq float64, lg *slog.Logger) *resetSampleGenerator {
@@ -140,6 +141,7 @@ func (g *resetSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64)
 func (g *resetSampleGenerator) storeEdge(edge PulseEdge, edgeIndex uint64) {
 	g.edgeBuf.Append(edge)
 	g.lastEdgeIndex = edgeIndex
+	g.tReadLastMsg = time.Time{} // reset so we reprocess with new edge
 }
 
 func (g *resetSampleGenerator) timeMessageSample() *Sample {
@@ -226,6 +228,13 @@ func (g *resetSampleGenerator) genSample() *Sample {
 // genSampleForMessages is the core logic of genSample, factored out for unit testing.
 // It takes the collected pulse edges and time messages and attempts alignment.
 func (g *resetSampleGenerator) genSampleForMessages(lastSec ptime.Time, tRead []time.Time) (*Sample, *resetStats, error) {
+	// Skip if we already processed this exact set of messages
+	lastTRead := tRead[len(tRead)-1]
+	if lastTRead.Equal(g.tReadLastMsg) {
+		return nil, nil, nil
+	}
+	g.tReadLastMsg = lastTRead
+
 	stats := &resetStats{}
 	edgeLists := g.pulseEdgeLists()
 	for _, edgeList := range edgeLists {
