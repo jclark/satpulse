@@ -57,35 +57,37 @@
     - name: Check system log warnings and errors
       block:
         - name: Get the current service invocation ID
-          command: "systemctl show --value -p InvocationID satpulse@{{ instance }}"  
+          command: "systemctl show --value -p InvocationID satpulse@{{ instance }}"
           register: invocation_id
 
-        - name: Collect logs for the completed service run
-          shell: "journalctl --priority=0..4 _SYSTEMD_INVOCATION_ID={{ invocation_id.stdout }} | egrep -v '^-- Journal begins at|satellites output will not be enabled'"
-          register: service_logs
-      
-        - name: Check if 'in sync' is present
-          set_fact:
-            in_sync_found: "{{ 'in sync' in service_logs.stdout }}"
-        
-        - name: Check if 'out of sync' is present
-          set_fact:
-            out_of_sync_found: "{{ 'out of sync' in service_logs.stdout }}"
-        
-        - name: Count log lines
-          set_fact:
-            line_count: "{{ service_logs.stdout_lines | length }}"
-        
-        - name: Display raw logs for inspection when wrong number of lines
-          debug:
-            var: service_logs.stdout_lines
-          when: (line_count|int) != 1
-        
-        - name: Fail if synchronization has gone wrong
-          ignore_errors: true
+        - name: Check for warnings or errors in logs
+          shell: "journalctl -q --priority=0..4 _SYSTEMD_INVOCATION_ID={{ invocation_id.stdout }} --no-pager"
+          register: warning_logs
+          failed_when: false
+
+        - name: Fail if any warnings or errors found
           fail:
-            msg: "Test failed: in_sync_found={{ in_sync_found }}, out_of_sync_found={{ out_of_sync_found }}"
-          when: not(in_sync_found|bool) or (out_of_sync_found|bool)
+            msg: "Unexpected warnings/errors in logs: {{ warning_logs.stdout }}"
+          when: warning_logs.stdout | length > 0
+
+        - name: Get all mode change logs
+          shell: "journalctl -q --priority=6 _SYSTEMD_INVOCATION_ID={{ invocation_id.stdout }} --no-pager | grep 'changing mode'"
+          register: mode_change_logs
+          failed_when: false
+
+        - name: Filter for converging to tracking transitions
+          set_fact:
+            tracking_transitions: "{{ mode_change_logs.stdout_lines | select('search', 'from=converging to=tracking') | list }}"
+
+        - name: Display all mode change logs on failure
+          debug:
+            var: mode_change_logs.stdout_lines
+          when: (tracking_transitions | length) != 1
+
+        - name: Fail if not exactly one converging to tracking transition
+          fail:
+            msg: "Expected exactly 1 'changing mode: from=converging to=tracking' log line, found {{ tracking_transitions | length }}"
+          when: (tracking_transitions | length) != 1
 
     - name: Analyze clock log
       block:
