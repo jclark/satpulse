@@ -119,3 +119,10 @@ all:
     serpa.lan:
       speed: 115200
       config: "false"
+
+    brie.lan:
+      speed: 38400
+      instance: ttyUSB0
+      interface: enp1s0f0np0
+      pin: 1
+      channel: 1
