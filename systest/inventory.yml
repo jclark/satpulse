@@ -5,6 +5,7 @@ all:
     virtual_host: false  # Set to true for virtual hosts (multiple instances on same machine)
     instance: ttyAMA0  # Instance for systemd service
     pin: 0             # PHC pin
+    channel: 0         # PHC channel
     speed: 9600        # Baud rate
     interface: eth0    # Network interface
     config: "true"     # Enable GPS configuration

@@ -26,6 +26,7 @@
       loop:
         - { section: "phc", option: "interface", value: '"{{ interface }}"' }
         - { section: "phc", option: "pin", value: "{{ pin }}" }
+        - { section: "phc", option: "channel", value: "{{ channel }}" }
         - { section: "serial", option: "device", value: '"{{ device }}"' }
         - { section: "serial", option: "speed", value: "{{ speed }}" }
         - { section: "gps", option: "config", value: "{{ config }}" }
