@@ -19,6 +19,7 @@ all:
         abondance.lan:
         abondance-ttyS0.lan:
         brie.lan:
+        gubbeen.lan:
         maasdam.lan:
         morbier.lan:
         pecorino.lan:
@@ -130,3 +131,9 @@ all:
     
     # LEA-M8T on UART
     valencay.lan: # all default
+
+    # M10050-KB on i210 on Raspberry Pi 5
+    gubbeen.lan:
+      interface: eth1
+      speed: 38400
+
