@@ -27,6 +27,7 @@ all:
         vacherin.lan:
         valencay.lan:
         valtellina.lan:
+        wensleydale.lan:
     virtual_hosts:
       hosts:
         abondance-ttyS0.lan:
