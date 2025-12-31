@@ -65,10 +65,25 @@
           register: warning_logs
           failed_when: false
 
-        - name: Fail if any warnings or errors found
+        - name: Filter out expected warnings
+          set_fact:
+            unexpected_warnings: "{{ warning_logs.stdout_lines | reject('search', 'satellites output will not be enabled') | list }}"
+            satellites_warning: "{{ warning_logs.stdout_lines | select('search', 'satellites output will not be enabled') | list }}"
+
+        - name: Fail if satellites warning missing at low baud rate
           fail:
-            msg: "Unexpected warnings/errors in logs: {{ warning_logs.stdout }}"
-          when: warning_logs.stdout | length > 0
+            msg: "Expected 'satellites output will not be enabled' warning at speed {{ speed }}"
+          when: (speed | int) < 38400 and (satellites_warning | length) == 0
+
+        - name: Fail if satellites warning present at high baud rate
+          fail:
+            msg: "Unexpected 'satellites output will not be enabled' warning at speed {{ speed }}"
+          when: (speed | int) >= 38400 and (satellites_warning | length) > 0
+
+        - name: Fail if any unexpected warnings or errors found
+          fail:
+            msg: "Unexpected warnings/errors in logs: {{ unexpected_warnings }}"
+          when: unexpected_warnings | length > 0
 
         - name: Get all mode change logs
           shell: "journalctl -q --priority=6 _SYSTEMD_INVOCATION_ID={{ invocation_id.stdout }} --no-pager | grep 'changing mode'"
