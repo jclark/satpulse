@@ -25,6 +25,7 @@ all:
         serpa.lan:
         taleggio.lan:
         vacherin.lan:
+        valencay.lan:
         valtellina.lan:
     virtual_hosts:
       hosts:
@@ -125,3 +126,6 @@ all:
       interface: enp1s0f0np0
       pin: 1
       channel: 1
+    
+    # LEA-M8T on UART
+    valencay.lan: # all default
