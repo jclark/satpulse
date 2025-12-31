@@ -18,13 +18,12 @@ all:
       hosts:
         abondance.lan:
         abondance-ttyS0.lan:
-        caciocavallo.lan:
+        brie.lan:
+        maasdam.lan:
         morbier.lan:
         pecorino.lan:
-        roquefort.lan:
         serpa.lan:
         taleggio.lan:
-        toma.lan:
         vacherin.lan:
         valtellina.lan:
     virtual_hosts:
