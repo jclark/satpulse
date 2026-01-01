@@ -132,6 +132,10 @@ func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, pt Pu
 }
 
 func (g *resetSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64) *Sample {
+	if edge.Timestamp.Era.Uncertain() {
+		// this should not happen, since eras only change when there is a step
+		return nil
+	}
 	g.storeEdge(edge, edgeIndex)
 	return g.genSample()
 }
@@ -140,10 +144,33 @@ func (g *resetSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64)
 // This is used during reset mode to collect edges for analysis.
 // Tests can call this directly to populate the edge buffer.
 func (g *resetSampleGenerator) storeEdge(edge PulseEdge, edgeIndex uint64) {
+	// Clear the edge buffer if there is obviously a missing pulse.
+	// We do this only in order to avoid getting multiple confusing log messages from
+	// checkPulseIntervals (while the gap ages out of the edgeBuf).
+	// This won't handle the case where we have a large pulse width (e.g. 0.5s) and only one missing edge,
+	// but that is an edge case of an edge case, so ignore for now.
+	if g.pulseEdgeMissing(edge) {
+		g.edgeBuf.Clear()
+	}
 	g.edgeBuf.Append(edge)
 	g.lastEdgeIndex = edgeIndex
 	g.tReadLastMsg = time.Time{}  // reset so we reprocess with new edge
 	g.pulseIntervalsBad = false   // new edge, retry interval check
+}
+
+const maxEdgeInterval = time.Second * 3 / 2
+
+func (g *resetSampleGenerator) pulseEdgeMissing(edge PulseEdge) bool {
+	if g.edgeBuf.Len() == 0 {
+		return false
+	}
+	last := g.edgeBuf.Last(0)
+	if edge.Timestamp.Era != last.Timestamp.Era {
+		// this should not happen, but treat it like a missing edge to be safe,
+		// so we do not compare timestamps across eras
+		return true
+	}
+	return edge.Timestamp.T.Sub(last.Timestamp.T) > maxEdgeInterval
 }
 
 func (g *resetSampleGenerator) timeMessageSample() *Sample {
