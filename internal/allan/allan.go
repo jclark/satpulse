@@ -36,3 +36,44 @@ func OverlapADev[T Numeric](phase []T, tau0 T, m int) float64 {
 	tau := float64(m) * float64(tau0)
 	return math.Sqrt(sum/(2*float64(nSamples))) / tau
 }
+
+// Accum is a specialized incremental ADEV calculator for m=1.
+type Accum[T Numeric] struct {
+	tau0     float64
+	prev     float64
+	prevPrev float64
+	samples  int64
+	sumSq    float64
+}
+
+// NewAccum creates a stream for consecutive samples (m=1).
+func NewAccum[T Numeric](tau0 T) *Accum[T] {
+	return &Accum[T]{
+		tau0: float64(tau0),
+	}
+}
+
+func (s *Accum[T]) Update(val T) {
+	current := float64(val)
+
+	// We need 2 prior samples (index 0 and 1) to form the first 2nd-difference
+	if s.samples >= 2 {
+		// D = x[i] - 2x[i-1] + x[i-2]
+		v := current - (2 * s.prev) + s.prevPrev
+		s.sumSq += v * v
+	}
+
+	// Shift history
+	s.prevPrev = s.prev
+	s.prev = current
+	s.samples++
+}
+
+func (s *Accum[T]) ADev() float64 {
+	count := s.samples - 2
+	if count <= 0 {
+		return math.NaN()
+	}
+	// ADEV formula for m=1
+	return math.Sqrt(s.sumSq/(2.0*float64(count))) / s.tau0
+}
