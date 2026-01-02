@@ -324,6 +324,7 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode
 		if p.consecutiveBadSamples == 1 && p.cfg.AvgFreqTimeConstant > 0 {
 			action.actionType = phcAdjustFrequency
 			action.freq = p.avgFreq
+			p.servo.reset(p.avgFreq)
 			p.lg.Debug("first bad sample; switching to average frequency", "avgFreq", p.avgFreq)
 		}
 	} else {

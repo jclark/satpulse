@@ -21,6 +21,12 @@ func newPiServo(freq, kp, ki, maxFreq float64) *piServo {
 	}
 }
 
+// reset sets the integral term so that when the offset is zero the servo output is freq.
+// This provides bumpless transfer when switching between average-frequency hold and normal PI control.
+func (s *piServo) reset(freq float64) {
+	s.offSum = -freq / s.ki
+}
+
 // sample processes a sample and returns frequency adjustment in PPB
 // off is local - ref
 func (s *piServo) sample(off time.Duration) float64 {
