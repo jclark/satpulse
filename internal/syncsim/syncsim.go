@@ -429,7 +429,7 @@ func (s *offsetStats) add(d time.Duration) {
 	s.sum += d
 	s.absMax = max(d.Abs(), s.absMax)
 	s.sumSquares += ns * ns
-	s.adev.Update(d)
+	s.adev.Add(d)
 }
 
 func (s *offsetStats) stdDevRounded() time.Duration {

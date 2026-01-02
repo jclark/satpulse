@@ -97,7 +97,7 @@ func TestAccum(t *testing.T) {
 	// Compare incremental Accum against batch OverlapADev for m=1
 	acc := NewAccum(1.0)
 	for _, v := range testPhaseData {
-		acc.Update(v)
+		acc.Add(v)
 	}
 	got := acc.ADev()
 	want := OverlapADev(testPhaseData, 1.0, 1)
@@ -110,12 +110,12 @@ func TestAccum(t *testing.T) {
 	if !math.IsNaN(acc2.ADev()) {
 		t.Error("Accum.ADev() with no samples should return NaN")
 	}
-	acc2.Update(1.0)
-	acc2.Update(2.0)
+	acc2.Add(1.0)
+	acc2.Add(2.0)
 	if !math.IsNaN(acc2.ADev()) {
 		t.Error("Accum.ADev() with only 2 samples should return NaN")
 	}
-	acc2.Update(3.0)
+	acc2.Add(3.0)
 	if math.IsNaN(acc2.ADev()) {
 		t.Error("Accum.ADev() with 3 samples should not return NaN")
 	}

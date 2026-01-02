@@ -53,7 +53,7 @@ func NewAccum[T Numeric](tau0 T) *Accum[T] {
 	}
 }
 
-func (s *Accum[T]) Update(val T) {
+func (s *Accum[T]) Add(val T) {
 	current := float64(val)
 
 	// We need 2 prior samples (index 0 and 1) to form the first 2nd-difference
