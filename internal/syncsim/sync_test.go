@@ -111,7 +111,9 @@ func TestPHCSync(t *testing.T) {
 			expectMinTrackingSamples: 90,                   // At least 90 tracking samples despite outage
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 3.0}} // 3s outage starting at t=60s
-				cfg.Sync.Track.AvgFreqTimeConstant = 30                             // Enable EMA with 30s time constant
+				cfg.Sync.Track.Kp = 0.5                                             // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Ki = 0.1
+				cfg.Sync.Track.AvgFreqTimeConstant = 30 // Enable EMA with 30s time constant
 			},
 		},
 		{
@@ -122,7 +124,9 @@ func TestPHCSync(t *testing.T) {
 			expectMinTrackingSamples: 90,                   // At least 90 tracking samples despite outage
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 3.0}} // 3s outage starting at t=60s
-				cfg.Sync.Track.AvgFreqTimeConstant = 0                              // Disable EMA feature
+				cfg.Sync.Track.Kp = 0.5                                             // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Ki = 0.1
+				cfg.Sync.Track.AvgFreqTimeConstant = 0 // Disable EMA feature
 			},
 		},
 		{
@@ -133,8 +137,10 @@ func TestPHCSync(t *testing.T) {
 			expectMinTrackingSamples: 150,                  // At least 150 tracking samples despite longer outage
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outage = []OutageConfig{{StartTime: 90.0, Duration: 9.0}} // 9s outage starting at t=90s
-				cfg.Sync.Track.AvgFreqTimeConstant = 30                             // Enable EMA with 30s time constant
-				cfg.Sync.Track.BadSampleLimit = 15                                  // Increase limit to allow longer outage
+				cfg.Sync.Track.Kp = 0.5                                             // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Ki = 0.1
+				cfg.Sync.Track.AvgFreqTimeConstant = 30 // Enable EMA with 30s time constant
+				cfg.Sync.Track.BadSampleLimit = 15      // Increase limit to allow longer outage
 			},
 		},
 		{
@@ -145,8 +151,10 @@ func TestPHCSync(t *testing.T) {
 			expectMinTrackingSamples: 150,                   // At least 150 tracking samples despite longer outage
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outage = []OutageConfig{{StartTime: 90.0, Duration: 9.0}} // 9s outage starting at t=90s
-				cfg.Sync.Track.AvgFreqTimeConstant = 0                              // Disable EMA feature
-				cfg.Sync.Track.BadSampleLimit = 15                                  // Increase limit to allow longer outage
+				cfg.Sync.Track.Kp = 0.5                                             // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Ki = 0.1
+				cfg.Sync.Track.AvgFreqTimeConstant = 0 // Disable EMA feature
+				cfg.Sync.Track.BadSampleLimit = 15     // Increase limit to allow longer outage
 			},
 		},
 		{
@@ -263,7 +271,9 @@ func TestPHCSync(t *testing.T) {
 			maxTrackingStdDev: 9 * time.Nanosecond,  // Should stay near baseline ~8ns
 			maxTrackingAbsMax: 28 * time.Nanosecond, // Should stay near baseline ~27ns
 			modifyConfig: func(cfg *Config) {
-				cfg.GPS.Sawtooth.Amp = 20.0                  // 20ns peak-to-peak sawtooth
+				cfg.GPS.Sawtooth.Amp = 20.0                     // 20ns peak-to-peak sawtooth
+				cfg.Sync.Track.Kp = 0.5                         // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = false // Use correction (default)
 			},
 		},
@@ -275,7 +285,9 @@ func TestPHCSync(t *testing.T) {
 			maxTrackingStdDev: 11 * time.Nanosecond, // But not too degraded
 			maxTrackingAbsMax: 33 * time.Nanosecond, // But not too degraded
 			modifyConfig: func(cfg *Config) {
-				cfg.GPS.Sawtooth.Amp = 20.0                 // 20ns peak-to-peak sawtooth
+				cfg.GPS.Sawtooth.Amp = 20.0                    // 20ns peak-to-peak sawtooth
+				cfg.Sync.Track.Kp = 0.5                        // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = true // Ignore correction
 			},
 		},
@@ -297,7 +309,7 @@ func TestPHCSync(t *testing.T) {
 		},
 		{
 			name:              "sawtooth PostPulse correction improves accuracy - correction enabled",
-			duration:          300.0,                 // 5 minutes
+			duration:          300.0,                // 5 minutes
 			maxTrackingStdDev: 10 * time.Nanosecond, // Should stay near baseline ~9ns
 			maxTrackingAbsMax: 28 * time.Nanosecond, // Should stay near baseline ~27ns
 			modifyConfig: func(cfg *Config) {
@@ -306,6 +318,8 @@ func TestPHCSync(t *testing.T) {
 				cfg.Pulse.MinDelay = 0.01
 				cfg.Pulse.MaxDelay = 0.25
 				cfg.Msg.PostPulseDelay = 0.1
+				cfg.Sync.Track.Kp = 0.5                         // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = false // Use correction (default)
 			},
 		},
@@ -322,6 +336,8 @@ func TestPHCSync(t *testing.T) {
 				cfg.Pulse.MinDelay = 0.01
 				cfg.Pulse.MaxDelay = 0.25
 				cfg.Msg.PostPulseDelay = 0.1
+				cfg.Sync.Track.Kp = 0.5                        // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = true // Ignore correction
 			},
 		},
@@ -336,6 +352,8 @@ func TestPHCSync(t *testing.T) {
 				cfg.Pulse.MinDelay = 0.01
 				cfg.Pulse.MaxDelay = 0.02 // Tighter delay range: 10-20ms instead of 10-250ms
 				cfg.Msg.PostPulseDelay = 0.1
+				cfg.Sync.Track.Kp = 0.5                         // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = false // Use correction
 			},
 		},
@@ -350,6 +368,8 @@ func TestPHCSync(t *testing.T) {
 				cfg.Pulse.MinDelay = 0.01
 				cfg.Pulse.MaxDelay = 0.02 // Tighter delay range
 				cfg.Msg.PostPulseDelay = 0.1
+				cfg.Sync.Track.Kp = 0.5                        // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = true // Ignore correction
 			},
 			// Test to verify that sawtooth correction still provides benefit with tighter delay
