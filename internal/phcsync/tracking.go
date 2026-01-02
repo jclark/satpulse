@@ -89,8 +89,8 @@ type TrackingConfig struct {
 
 func defaultTrackingConfig() TrackingConfig {
 	return TrackingConfig{
-		Kp:                     0.5,
-		Ki:                     0.1,
+		Kp:                     0.8,
+		Ki:                     0.3,
 		OutlierThreshold:       50,   // 50ns
 		MADWindow:              10,   // 10 samples
 		MADMultiple:            25.0, // 25 * MAD
