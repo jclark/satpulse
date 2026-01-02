@@ -40,6 +40,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/jclark/satpulse/internal/allan"
 	"github.com/jclark/satpulse/internal/clocksim"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/obs"
@@ -118,6 +119,7 @@ type Stats struct {
 	TrackingStdDev    time.Duration // stddev from true time (simulation-only)
 	TrackingMean      time.Duration // mean offset from true time (simulation-only)
 	TrackingAbsMax    time.Duration // max absolute offset from true time (simulation-only)
+	TrackingADev      float64       // Allan deviation of tracking offsets (simulation-only)
 	InitSamples       int           // samples processed in reset mode (includes initial sync and recovery)
 	ConvergingSamples int           // samples processed in converging mode
 	TrackingSamples   int           // samples processed in tracking mode
@@ -264,7 +266,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	events := mergeEvents(pulseGen, msgGen, tickGen)
 
 	sampleCount := 0
-	stats := &offsetStats{}
+	stats := &offsetStats{adev: *allan.NewAccum(time.Second)}
 	var lastReading clocksim.TimestampReading
 	trackingStarted := false
 
@@ -406,6 +408,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 		TrackingStdDev:    stats.stdDevRounded(),
 		TrackingAbsMax:    stats.absMax,
 		TrackingMean:      stats.mean(),
+		TrackingADev:      stats.adev.ADev(),
 		InitSamples:       modeObs.initSamples,
 		ConvergingSamples: modeObs.convergingSamples,
 		TrackingSamples:   modeObs.trackingSamples,
@@ -417,6 +420,7 @@ type offsetStats struct {
 	sum        time.Duration
 	absMax     time.Duration
 	sumSquares int64
+	adev       allan.Accum[time.Duration]
 }
 
 func (s *offsetStats) add(d time.Duration) {
@@ -425,6 +429,7 @@ func (s *offsetStats) add(d time.Duration) {
 	s.sum += d
 	s.absMax = max(d.Abs(), s.absMax)
 	s.sumSquares += ns * ns
+	s.adev.Update(d)
 }
 
 func (s *offsetStats) stdDevRounded() time.Duration {
