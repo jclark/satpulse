@@ -13,9 +13,9 @@ func TestPHCSync(t *testing.T) {
 	tests := []struct {
 		name                     string
 		duration                 float64       // simulation duration in seconds
-		maxTrackingStdDev        time.Duration // maximum acceptable tracking stddev
+		maxTrackingStdDev        float64       // maximum acceptable tracking stddev in nanoseconds
 		maxTrackingAbsMax        time.Duration // maximum acceptable tracking absolute max (0 = don't check)
-		minTrackingStdDev        time.Duration // minimum acceptable tracking stddev - for testing degradation (0 = don't check)
+		minTrackingStdDev        float64       // minimum acceptable tracking stddev in nanoseconds - for testing degradation (0 = don't check)
 		minTrackingAbsMax        time.Duration // minimum acceptable tracking absolute max - for testing degradation (0 = don't check)
 		expectMinTrackingSamples int           // minimum acceptable tracking samples (0 = don't check)
 		expectMaxTrackingSamples int           // maximum acceptable tracking samples (0 = don't check)
@@ -27,30 +27,30 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "single-edge mode",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 20 * time.Nanosecond,
+			maxTrackingStdDev: 20,
 		},
 		{
 			name:              "dual-edge 100ms pulse",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 20 * time.Nanosecond,
+			maxTrackingStdDev: 20,
 			modifyConfig:      func(cfg *Config) { cfg.Pulse.Width = 0.1 },
 		},
 		{
 			name:              "dual-edge 200ms pulse",
 			duration:          600.0, // 10 minutes (needs longer to converge)
-			maxTrackingStdDev: 20 * time.Nanosecond,
+			maxTrackingStdDev: 20,
 			modifyConfig:      func(cfg *Config) { cfg.Pulse.Width = 0.2 },
 		},
 		{
 			name:              "dual-edge 10ms pulse",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 20 * time.Nanosecond,
+			maxTrackingStdDev: 20,
 			modifyConfig:      func(cfg *Config) { cfg.Pulse.Width = 0.01 },
 		},
 		{
 			name:              "dual-edge 50% duty cycle (500ms pulse)",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 20 * time.Nanosecond,
+			maxTrackingStdDev: 20,
 			// Tests complete flow: reset mode discovers leading edge via alignment,
 			// then converging/tracking modes work with discovered pulse width
 			modifyConfig: func(cfg *Config) { cfg.Pulse.Width = 0.5 },
@@ -76,7 +76,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:                     "recovers from temporary outage",
 			duration:                 120.0,
-			maxTrackingStdDev:        30 * time.Nanosecond, // slightly higher tolerance due to recovery transient
+			maxTrackingStdDev:        30, // slightly higher tolerance due to recovery transient
 			expectResetSamples:       2,                    // 1 initial + 1 after recovery
 			expectMinTrackingSamples: 35,                   // At least 35 before outage (plus time after recovery)
 			// After recovery: reset→converging→tracking for remaining ~50 seconds
@@ -106,7 +106,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:                     "EMA feature reduces drift during brief outages",
 			duration:                 120.0,
-			maxTrackingStdDev:        15 * time.Nanosecond,
+			maxTrackingStdDev:        15,
 			maxTrackingAbsMax:        40 * time.Nanosecond, // With EMA enabled, absmax ~24ns (vs 58ns without)
 			expectMinTrackingSamples: 90,                   // At least 90 tracking samples despite outage
 			modifyConfig: func(cfg *Config) {
@@ -119,7 +119,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:                     "Without EMA drift is worse during brief outages",
 			duration:                 120.0,
-			maxTrackingStdDev:        18 * time.Nanosecond,
+			maxTrackingStdDev:        18,
 			maxTrackingAbsMax:        80 * time.Nanosecond, // Without EMA, absmax ~58ns (2x worse than with EMA)
 			expectMinTrackingSamples: 90,                   // At least 90 tracking samples despite outage
 			modifyConfig: func(cfg *Config) {
@@ -132,7 +132,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:                     "EMA feature with longer outage (increased badSampleLimit)",
 			duration:                 180.0,
-			maxTrackingStdDev:        12 * time.Nanosecond,
+			maxTrackingStdDev:        12,
 			maxTrackingAbsMax:        35 * time.Nanosecond, // With EMA, absmax ~23ns even with 9s outage
 			expectMinTrackingSamples: 150,                  // At least 150 tracking samples despite longer outage
 			modifyConfig: func(cfg *Config) {
@@ -146,7 +146,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:                     "Without EMA longer outage shows severe drift (increased badSampleLimit)",
 			duration:                 180.0,
-			maxTrackingStdDev:        30 * time.Nanosecond,
+			maxTrackingStdDev:        30,
 			maxTrackingAbsMax:        180 * time.Nanosecond, // Without EMA, absmax ~139ns (5-6x worse than with EMA)
 			expectMinTrackingSamples: 150,                   // At least 150 tracking samples despite longer outage
 			modifyConfig: func(cfg *Config) {
@@ -160,7 +160,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "MAD detects scheduled outliers",
 			duration:          90.0, // Longer duration to ensure we're in tracking mode
-			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite outliers
+			maxTrackingStdDev: 20, // Should maintain low stddev despite outliers
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outlier = []OutlierConfig{
 					{Time: 40, Offset: 2000},
@@ -172,7 +172,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "MAD gate behavior before window fills",
 			duration:          20.0,
-			maxTrackingStdDev: 20 * time.Nanosecond,
+			maxTrackingStdDev: 20,
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outlier = []OutlierConfig{
 					{Time: 8, Offset: 150}, // Outlier during early tracking (MAD window not full)
@@ -183,7 +183,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "Large outliers rejected despite MAD window",
 			duration:          60.0,
-			maxTrackingStdDev: 20 * time.Nanosecond,
+			maxTrackingStdDev: 20,
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outlier = []OutlierConfig{
 					{Time: 32, Offset: 5000}, // delayed to allow MAD window to warm up after entering tracking
@@ -195,7 +195,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "Tracking stability with periodic outliers",
 			duration:          150.0,
-			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite many outliers
+			maxTrackingStdDev: 20, // Should maintain low stddev despite many outliers
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outlier = []OutlierConfig{
 					{Time: 40, Offset: 1500}, {Time: 50, Offset: 1500}, {Time: 60, Offset: 1500},
@@ -208,7 +208,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "MAD rejects spikes during sustained shift",
 			duration:          70.0,
-			maxTrackingStdDev: 50 * time.Nanosecond,  // Higher tolerance due to shift transient
+			maxTrackingStdDev: 50,  // Higher tolerance due to shift transient
 			maxTrackingAbsMax: 150 * time.Nanosecond, // Should be ~100ns from shift, NOT ~2us from spikes
 			modifyConfig: func(cfg *Config) {
 				// Apply sustained 100ns shift after tracking stabilizes
@@ -232,7 +232,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "Outlier gate during MAD warmup",
 			duration:          30.0,
-			maxTrackingStdDev: 20 * time.Nanosecond, // Should maintain low stddev despite early outlier
+			maxTrackingStdDev: 20, // Should maintain low stddev despite early outlier
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outlier = []OutlierConfig{
 					{Time: 20, Offset: 1000}, // Inject outlier early in tracking (MAD window not full)
@@ -245,7 +245,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:                    "ADJ_SETOFFSET compensation",
 			duration:                30.0,
-			maxTrackingStdDev:       20 * time.Nanosecond,
+			maxTrackingStdDev:       20,
 			expectConvergingSamples: 13, // 1 measure + 1 compensate + ~11 to converge residual
 			// After reset step with delay d1 (~5µs), first pulse in converging measures offset ~d1
 			// Compensation steps by 2×d1 (~10µs) with delay d2 (~5µs), net advance = d1 + (d1 - d2)
@@ -255,7 +255,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth correction with PrePulse messages",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 25 * time.Nanosecond, // slightly higher tolerance due to sawtooth
+			maxTrackingStdDev: 25, // slightly higher tolerance due to sawtooth
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 8.0 // 8ns peak-to-peak sawtooth (other fields use defaults)
 			},
@@ -268,7 +268,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth correction improves accuracy - correction enabled",
 			duration:          300.0,                // 5 minutes
-			maxTrackingStdDev: 9 * time.Nanosecond,  // Should stay near baseline ~8ns
+			maxTrackingStdDev: 9,  // Should stay near baseline ~8ns
 			maxTrackingAbsMax: 28 * time.Nanosecond, // Should stay near baseline ~27ns
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0                     // 20ns peak-to-peak sawtooth
@@ -280,9 +280,9 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth correction improves accuracy - correction disabled",
 			duration:          300.0,                // 5 minutes
-			minTrackingStdDev: 8 * time.Nanosecond,  // Must be worse than corrected (~9ns)
+			minTrackingStdDev: 8,  // Must be worse than corrected (~9ns)
 			minTrackingAbsMax: 26 * time.Nanosecond, // Must be worse than corrected (~28ns)
-			maxTrackingStdDev: 11 * time.Nanosecond, // But not too degraded
+			maxTrackingStdDev: 11, // But not too degraded
 			maxTrackingAbsMax: 33 * time.Nanosecond, // But not too degraded
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0                    // 20ns peak-to-peak sawtooth
@@ -294,7 +294,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth correction with PostPulse messages",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 25 * time.Nanosecond, // slightly higher tolerance due to sawtooth
+			maxTrackingStdDev: 25, // slightly higher tolerance due to sawtooth
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 8.0 // 8ns peak-to-peak sawtooth
 				cfg.Msg.SawtoothType = SawtoothPostPulse
@@ -310,7 +310,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth PostPulse correction improves accuracy - correction enabled",
 			duration:          300.0,                // 5 minutes
-			maxTrackingStdDev: 10 * time.Nanosecond, // Should stay near baseline ~9ns
+			maxTrackingStdDev: 10, // Should stay near baseline ~9ns
 			maxTrackingAbsMax: 28 * time.Nanosecond, // Should stay near baseline ~27ns
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
@@ -326,9 +326,9 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth PostPulse correction improves accuracy - correction disabled",
 			duration:          300.0,                // 5 minutes
-			minTrackingStdDev: 8 * time.Nanosecond,  // Must be worse than corrected (~9ns)
+			minTrackingStdDev: 8,  // Must be worse than corrected (~9ns)
 			minTrackingAbsMax: 26 * time.Nanosecond, // Must be worse than corrected (~28ns)
-			maxTrackingStdDev: 11 * time.Nanosecond, // But not too degraded
+			maxTrackingStdDev: 11, // But not too degraded
 			maxTrackingAbsMax: 32 * time.Nanosecond, // But not too degraded
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
@@ -344,7 +344,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth PostPulse with tighter delay range",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 9 * time.Nanosecond,
+			maxTrackingStdDev: 9,
 			maxTrackingAbsMax: 28 * time.Nanosecond,
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
@@ -360,7 +360,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth PostPulse with tighter delay range - correction disabled",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 15 * time.Nanosecond,
+			maxTrackingStdDev: 15,
 			maxTrackingAbsMax: 35 * time.Nanosecond,
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
@@ -377,7 +377,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "flicker noise order of magnitude",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 27 * time.Nanosecond,
+			maxTrackingStdDev: 27,
 			maxTrackingAbsMax: 80 * time.Nanosecond,
 			modifyConfig: func(cfg *Config) {
 				// Isolated flicker noise test - use defaults except flicker
@@ -440,7 +440,7 @@ func TestPHCSync(t *testing.T) {
 
 			// Check that tracking standard deviation is acceptable
 			if tt.maxTrackingStdDev > 0 && stats.TrackingStdDev >= tt.maxTrackingStdDev {
-				t.Errorf("tracking stddev = %v, want < %v", stats.TrackingStdDev, tt.maxTrackingStdDev)
+				t.Errorf("tracking stddev = %.2f, want < %.0f", stats.TrackingStdDev, tt.maxTrackingStdDev)
 			}
 
 			// Check that tracking absolute max is acceptable
@@ -450,7 +450,7 @@ func TestPHCSync(t *testing.T) {
 
 			// Check minimum thresholds (for tests that verify degraded performance)
 			if tt.minTrackingStdDev > 0 && stats.TrackingStdDev <= tt.minTrackingStdDev {
-				t.Errorf("tracking stddev = %v, want > %v (should be degraded)", stats.TrackingStdDev, tt.minTrackingStdDev)
+				t.Errorf("tracking stddev = %.2f, want > %.0f (should be degraded)", stats.TrackingStdDev, tt.minTrackingStdDev)
 			}
 
 			if tt.minTrackingAbsMax > 0 && stats.TrackingAbsMax <= tt.minTrackingAbsMax {

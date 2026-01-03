@@ -115,10 +115,10 @@ func (m *modeObserver) Sample(s phcsync.Sample) {
 // Stats holds simulation results
 type Stats struct {
 	statsobs.Stats                  // embedded - detailed tracking statistics from observer
-	SampleCount       int           // total samples fed to controller
-	TrackingStdDev    time.Duration // stddev from true time (simulation-only)
-	TrackingMean      time.Duration // mean offset from true time (simulation-only)
-	TrackingAbsMax    time.Duration // max absolute offset from true time (simulation-only)
+	SampleCount    int           // total samples fed to controller
+	TrackingStdDev float64       // stddev from true time in nanoseconds (simulation-only)
+	TrackingMean   float64       // mean offset from true time in nanoseconds (simulation-only)
+	TrackingAbsMax time.Duration // max absolute offset from true time (simulation-only)
 	TrackingADev      float64       // Allan deviation of tracking offsets (simulation-only)
 	InitSamples       int           // samples processed in reset mode (includes initial sync and recovery)
 	ConvergingSamples int           // samples processed in converging mode
@@ -129,16 +129,16 @@ type Stats struct {
 func (s Stats) String() string {
 	return s.Stats.String() +
 		fmt.Sprintf("sampleCount = %d\n"+
-			"trackingStdDev = %d\n"+
-			"trackingMean = %d\n"+
+			"trackingStdDev = %.2f\n"+
+			"trackingMean = %.2f\n"+
 			"trackingAbsMax = %d\n"+
 			"trackingADev = %.6e\n"+
 			"initSamples = %d\n"+
 			"convergingSamples = %d\n"+
 			"trackingSamples = %d\n",
 			s.SampleCount,
-			s.TrackingStdDev.Nanoseconds(),
-			s.TrackingMean.Nanoseconds(),
+			s.TrackingStdDev,
+			s.TrackingMean,
 			s.TrackingAbsMax.Nanoseconds(),
 			s.TrackingADev,
 			s.InitSamples, s.ConvergingSamples, s.TrackingSamples)
@@ -424,9 +424,9 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	return Stats{
 		Stats:             trackingStats,
 		SampleCount:       sampleCount,
-		TrackingStdDev:    stats.stdDevRounded(),
-		TrackingAbsMax:    stats.absMax,
+		TrackingStdDev:    stats.stdDev(),
 		TrackingMean:      stats.mean(),
+		TrackingAbsMax:    stats.absMax,
 		TrackingADev:      stats.adev.ADev(),
 		InitSamples:       modeObs.initSamples,
 		ConvergingSamples: modeObs.convergingSamples,
@@ -451,16 +451,11 @@ func (s *offsetStats) add(d time.Duration) {
 	s.adev.Add(d.Seconds())
 }
 
-func (s *offsetStats) stdDevRounded() time.Duration {
-	std := s.stdDev()
-	return time.Duration(math.Round(std))
-}
-
-func (s *offsetStats) mean() time.Duration {
+func (s *offsetStats) mean() float64 {
 	if s.count == 0 {
 		return 0
 	}
-	return time.Duration(math.Round(float64(s.sum) / float64(s.count)))
+	return float64(s.sum) / float64(s.count)
 }
 
 func (s *offsetStats) stdDev() float64 {
