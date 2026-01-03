@@ -266,7 +266,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	events := mergeEvents(pulseGen, msgGen, tickGen)
 
 	sampleCount := 0
-	stats := &offsetStats{adev: *allan.NewAccum(time.Second)}
+	stats := &offsetStats{adev: *allan.NewAccum(1.0)}
 	var lastReading clocksim.TimestampReading
 	trackingStarted := false
 
@@ -420,7 +420,7 @@ type offsetStats struct {
 	sum        time.Duration
 	absMax     time.Duration
 	sumSquares int64
-	adev       allan.Accum[time.Duration]
+	adev       allan.Accum[float64]
 }
 
 func (s *offsetStats) add(d time.Duration) {
@@ -429,7 +429,7 @@ func (s *offsetStats) add(d time.Duration) {
 	s.sum += d
 	s.absMax = max(d.Abs(), s.absMax)
 	s.sumSquares += ns * ns
-	s.adev.Add(d)
+	s.adev.Add(d.Seconds())
 }
 
 func (s *offsetStats) stdDevRounded() time.Duration {
