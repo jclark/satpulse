@@ -36,6 +36,22 @@ func (s Stats) LogArgs() []any {
 	}
 }
 
+// String formats Stats for human-readable output.
+func (s Stats) String() string {
+	return fmt.Sprintf("absOffMax = %.0f\n"+
+		"absOffMean = %.1f\n"+
+		"offRMS = %.1f\n"+
+		"freqMean = %.1f\n"+
+		"freqStdDev = %.1f\n"+
+		"freqDeltaStdDev = %.2f\n"+
+		"nSamples = %d\n"+
+		"nMissing = %d\n"+
+		"nOutliers = %d\n",
+		s.AbsOffMax, s.AbsOffMean, s.OffRMS,
+		s.FreqMean, s.FreqStdDev, s.FreqDeltaStdDev,
+		s.NSamples, s.NMissing, s.NOutliers)
+}
+
 // StatsObserver accumulates statistics without logging
 type StatsObserver struct {
 	obs.DefaultObserver

@@ -125,6 +125,25 @@ type Stats struct {
 	TrackingSamples   int           // samples processed in tracking mode
 }
 
+// String formats Stats for human-readable output.
+func (s Stats) String() string {
+	return s.Stats.String() +
+		fmt.Sprintf("sampleCount = %d\n"+
+			"trackingStdDev = %d\n"+
+			"trackingMean = %d\n"+
+			"trackingAbsMax = %d\n"+
+			"trackingADev = %.6e\n"+
+			"initSamples = %d\n"+
+			"convergingSamples = %d\n"+
+			"trackingSamples = %d\n",
+			s.SampleCount,
+			s.TrackingStdDev.Nanoseconds(),
+			s.TrackingMean.Nanoseconds(),
+			s.TrackingAbsMax.Nanoseconds(),
+			s.TrackingADev,
+			s.InitSamples, s.ConvergingSamples, s.TrackingSamples)
+}
+
 // Simulate runs a phcsync simulation with the given configuration.
 // tsLog is an optional writer for PHC timestamp log (JSON Lines format).
 // curTime is updated as the simulation progresses, allowing callers to use it for logging.

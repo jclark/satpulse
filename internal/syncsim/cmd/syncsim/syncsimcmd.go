@@ -12,7 +12,6 @@ import (
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/syncsim"
-	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/pflag"
 )
 
@@ -98,11 +97,8 @@ func main() {
 	// Final flush of stats
 	statsObs.Release()
 
-	// Output stats as TOML
-	if err := toml.NewEncoder(os.Stdout).Encode(stats); err != nil {
-		lg.Error("failed to encode stats", "err", err)
-		os.Exit(1)
-	}
+	// Output stats
+	fmt.Print(stats.String())
 }
 
 func parseArgs(args []string) (*options, syncsim.Config, error) {
