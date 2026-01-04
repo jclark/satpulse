@@ -158,7 +158,10 @@ The `ptp` table controls this. It can have the following keys:
 * `domain` - the PTP domain number; this defaults to 0
 * `majorSdoId` - the PTP majorSdoId; this defaults to 0; in earlier versions of the PTP standard this is called `transportSpecific`
 * `minorSdoId` - the PTP minorSdoId; this defaults to 0
-* `clockAccuracy` - the accuracy in nanoseconds of the PTP grandmaster instance when synchronized to the GPS receiver; SatPulse will consider the PHC to be *in sync* when it has succeeded in adjusting the PHC so that the absolute values of the offsets between pulses from the GPS receiver and the PHC are consistently less than this; when SatPulse considers the PHC in sync, it will set the the clockClass attribute of the PTP grandmaster instance to 6, meaning that it is synchronized to a primary reference; when out of sync, it will set the clockCass to 52, meaning that it is degraded; when the clock class is 6, it will set the clockClass attribute to be the value specified by this key, rounded up to a value supported by PTP (e.g. 10, 25, 100, 250, 1000); the default is 150, which should be easily achievable with any GPS and which will result in a PTP clockAccuracy of 0x22, meaning accurate to within 250ns (thus allowing 150ns of error from the offset and 100ns from other source)
+* `clockAccuracy` - the accuracy in nanoseconds of the PTP grandmaster instance when synchronized to the GPS receiver.
+   This will be rounded up to a value allowed by the PTP clockAccuracy enumeration (e.g. 10, 25, 100, 250, 1000).
+   The value before being rounded up is used to choose buckets for Prometheus observability.
+   The default is 150, which will be rounded up to 250, corresponding to the 0x22 clockAccuracy enumerated constant.
 
 Example
 
