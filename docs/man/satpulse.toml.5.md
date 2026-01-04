@@ -162,6 +162,14 @@ The `ptp` table controls this. It can have the following keys:
    This will be rounded up to a value allowed by the PTP clockAccuracy enumeration (e.g. 10, 25, 100, 250, 1000).
    The value before being rounded up is used to choose buckets for Prometheus observability.
    The default is 150, which will be rounded up to 250, corresponding to the 0x22 clockAccuracy enumerated constant.
+* `offsetScaledLogVariance` - the offsetScaledLogVariance of the PTP grandmaster instance when synchronized to the GPS receiver.
+   This is a measure of the clock stability.
+   It is an integer in the range 0x0 to 0xFFFF, which provides an efficient, PTP-specific encoding of the Allan deviation.
+   The default is 0xFFFF, which means unknown.
+   It is usually more convenient to specify this using the `allanDeviation` key,
+   but some PTP profiles require specific integer values.
+* `allanDeviation` - the Allan Deviation at a tau of 1 second.
+   If specified, this is used to compute `offsetScaledLogVariance`.
 
 Example
 

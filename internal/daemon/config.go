@@ -55,11 +55,13 @@ type LeapSecondConfig struct {
 }
 
 type PTPConfig struct {
-	ClockAccuracy int          `toml:"clockAccuracy"`
-	DomainNumber  uint8        `toml:"domainNumber"`
-	MajorSdoID    uint8        `toml:"majorSdoId"`
-	MinorSdoID    uint8        `toml:"minorSdoId"`
-	PTP4L         *PTP4LConfig `toml:"ptp4l"`
+	ClockAccuracy           int          `toml:"clockAccuracy"`
+	OffsetScaledLogVariance uint16       `toml:"offsetScaledLogVariance"`
+	AllanDeviation          float64      `toml:"allanDeviation"`
+	DomainNumber            uint8        `toml:"domainNumber"`
+	MajorSdoID              uint8        `toml:"majorSdoId"`
+	MinorSdoID              uint8        `toml:"minorSdoId"`
+	PTP4L                   *PTP4LConfig `toml:"ptp4l"`
 }
 
 type PTP4LConfig struct {
@@ -141,6 +143,7 @@ func defaultConfig() *Config {
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
 	cfg.PTP.ClockAccuracy = 150
+	cfg.PTP.OffsetScaledLogVariance = pmc.OffsetScaledLogVarianceUnknown
 	cfg.Sync = phcsync.DefaultConfig()
 	return cfg
 }
@@ -206,10 +209,17 @@ func (cfg *PTPConfig) ClockQuality() (pmc.ClockQuality, error) {
 	if acc == 0 {
 		return pmc.ClockQuality{}, fmt.Errorf("ptp.clockAccuracy %d ns: out of range", cfg.ClockAccuracy)
 	}
+	oslv := cfg.OffsetScaledLogVariance
+	if cfg.AllanDeviation != 0 {
+		if cfg.OffsetScaledLogVariance != pmc.OffsetScaledLogVarianceUnknown {
+			return pmc.ClockQuality{}, errors.New("ptp: cannot specify both offsetScaledLogVariance and allanDeviation")
+		}
+		oslv = pmc.AdevToOffsetScaledLogVariance(cfg.AllanDeviation, 1.0)
+	}
 	return pmc.ClockQuality{
 		ClockClass:              pmc.ClockClassSyncPrimaryRef,
 		ClockAccuracy:           acc,
-		OffsetScaledLogVariance: pmc.OffsetScaledLogVarianceUnknown,
+		OffsetScaledLogVariance: oslv,
 	}, nil
 }
 
