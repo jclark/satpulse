@@ -1,15 +1,12 @@
 package ptpgm
 
 import (
-	"fmt"
-	"time"
-
 	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
 type Config struct {
-	ClockAccuracy time.Duration
+	InSyncClockQuality pmc.ClockQuality
 }
 
 type GrandmasterUpdateRequest struct {
@@ -18,17 +15,16 @@ type GrandmasterUpdateRequest struct {
 }
 
 type Grandmaster struct {
-	target   GrandmasterProps
-	actual   *GrandmasterProps
-	respCh   chan GrandmasterProps           // maybe nil
-	updateCh chan<- GrandmasterUpdateRequest // never nil
-	clockAcc pmc.ClockAccuracy
+	target    GrandmasterProps
+	actual    *GrandmasterProps
+	respCh    chan GrandmasterProps           // maybe nil
+	updateCh  chan<- GrandmasterUpdateRequest // never nil
+	clockQual pmc.ClockQuality
 }
 
 type GrandmasterProps struct {
 	ptime.LeapSecondState
-	ClockClass    uint8
-	ClockAccuracy pmc.ClockAccuracy
+	pmc.ClockQuality
 }
 
 // SyncState represents the current synchronization status
@@ -51,23 +47,15 @@ func (s SyncState) String() string {
 	}
 }
 
-func NewGrandmaster(cfg Config) (*Grandmaster, <-chan GrandmasterUpdateRequest, error) {
+// NewGrandmaster creates a new Grandmaster with the given configuration.
+func NewGrandmaster(cfg Config) (*Grandmaster, <-chan GrandmasterUpdateRequest) {
 	updateCh := make(chan GrandmasterUpdateRequest, 1)
-	gm := &Grandmaster{updateCh: updateCh}
+	gm := &Grandmaster{
+		updateCh:  updateCh,
+		clockQual: cfg.InSyncClockQuality,
+	}
 	gm.SetClockSync(NoSync)
-	if err := gm.SetClockAccuracy(cfg.ClockAccuracy); err != nil {
-		return nil, nil, err
-	}
-	return gm, updateCh, nil
-}
-
-func (gm *Grandmaster) SetClockAccuracy(acc time.Duration) error {
-	ca := pmc.DurationToClockAccuracy(acc)
-	if ca == 0 {
-		return fmt.Errorf("%v: out of range clock accuracy", acc)
-	}
-	gm.clockAcc = ca
-	return nil
+	return gm, updateCh
 }
 
 func (gm *Grandmaster) Close() {
@@ -117,38 +105,32 @@ func (gm *Grandmaster) handleResponse() {
 }
 
 func (gm *Grandmaster) SetClockSync(syncState SyncState) {
-	gm.target.SetClock(gm.clockAccuracy(syncState))
+	gm.target.SetClock(gm.clockQuality(syncState))
 }
 
-const noSyncAccuracy = pmc.ClockAccuracyUnknown
-
-func (gm *Grandmaster) clockAccuracy(syncState SyncState) pmc.ClockAccuracy {
-	switch syncState {
-	case InSync:
-		return gm.clockAcc
-	}
-	return noSyncAccuracy
+var noSyncClockQuality = pmc.ClockQuality{
+	ClockClass:              pmc.ClockClassDegradedA,
+	ClockAccuracy:           pmc.ClockAccuracyUnknown,
+	OffsetScaledLogVariance: pmc.OffsetScaledLogVarianceUnknown,
 }
 
-func (props *GrandmasterProps) SetClock(acc pmc.ClockAccuracy) {
-	props.ClockAccuracy = acc
-	if acc == pmc.ClockAccuracyUnknown {
-		props.ClockClass = pmc.ClockClassDegradedA
-	} else {
-		props.ClockClass = pmc.ClockClassSyncPrimaryRef
+func (gm *Grandmaster) clockQuality(syncState SyncState) pmc.ClockQuality {
+	if syncState == InSync {
+		return gm.clockQual
 	}
+	return noSyncClockQuality
+}
+
+func (props *GrandmasterProps) SetClock(cq pmc.ClockQuality) {
+	props.ClockQuality = cq
 }
 
 func (props *GrandmasterProps) Settings() pmc.GrandmasterSettings {
 	return pmc.GrandmasterSettings{
-		ClockQuality: pmc.ClockQuality{
-			ClockClass:              props.ClockClass,
-			ClockAccuracy:           props.ClockAccuracy,
-			OffsetScaledLogVariance: pmc.OffsetScaledLogVarianceUnknown,
-		},
-		UTCOffset:  props.UTCOffset,
-		TimeFlags:  pmc.CurrentUTCOffsetValid | pmc.PTPTimescale | pmc.TimeTraceable | pmcLeapFlags(props.LeapTonight),
-		TimeSource: pmc.TimeSourceGNSS,
+		ClockQuality: props.ClockQuality,
+		UTCOffset:    props.UTCOffset,
+		TimeFlags:    pmc.CurrentUTCOffsetValid | pmc.PTPTimescale | pmc.TimeTraceable | pmcLeapFlags(props.LeapTonight),
+		TimeSource:   pmc.TimeSourceGNSS,
 	}
 }
 

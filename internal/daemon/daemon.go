@@ -237,12 +237,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 	if pmcClient != nil {
-		gm, gmUpdateCh, err = ptpgm.NewGrandmaster(ptpgm.Config{
-			ClockAccuracy: time.Duration(cfg.PTP.ClockAccuracy) * time.Nanosecond,
-		})
+		cq, err := cfg.PTP.ClockQuality()
 		if err != nil {
 			return err
 		}
+		gm, gmUpdateCh = ptpgm.NewGrandmaster(ptpgm.Config{
+			InSyncClockQuality: cq,
+		})
 	}
 
 	rc, err := cfg.NTP.NewRefClock(lg)

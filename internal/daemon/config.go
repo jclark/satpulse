@@ -200,6 +200,19 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 	return cl, nil
 }
 
+// ClockQuality returns the PTP ClockQuality for when the clock is in sync.
+func (cfg *PTPConfig) ClockQuality() (pmc.ClockQuality, error) {
+	acc := pmc.DurationToClockAccuracy(time.Duration(cfg.ClockAccuracy) * time.Nanosecond)
+	if acc == 0 {
+		return pmc.ClockQuality{}, fmt.Errorf("ptp.clockAccuracy %d ns: out of range", cfg.ClockAccuracy)
+	}
+	return pmc.ClockQuality{
+		ClockClass:              pmc.ClockClassSyncPrimaryRef,
+		ClockAccuracy:           acc,
+		OffsetScaledLogVariance: pmc.OffsetScaledLogVarianceUnknown,
+	}, nil
+}
+
 // ClockPath returns the path for the clock log file.
 // phcPath is the path to the PHC device (e.g. /dev/ptp0)
 func (cfg *LogConfig) ClockPath(phcPath, ext string) string {
