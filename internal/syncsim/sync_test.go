@@ -387,6 +387,40 @@ func TestPHCSync(t *testing.T) {
 			// Before fix (random walk): stddev=53ns, absMax=140ns (completely wrong - 3x too high)
 			// After fix (true flicker): stddev=18ns, absMax=51ns (realistic)
 		},
+		{
+			name:              "phase step absorbed with MADWindow=10",
+			duration:          1000.0,
+			minTrackingAbsMax: 600 * time.Nanosecond, // Step is absorbed, high tracking error
+			modifyConfig: func(cfg *Config) {
+				cfg.Sync.Track.MADWindow = 10
+				cfg.Fault.Excursion = []ExcursionConfig{{
+					StartTime: 500.0,
+					Duration:  10.0,
+					Amplitude: 500,
+					Rise:      RampConfig{Duration: 0.01},
+					Fall:      RampConfig{Duration: 0.01},
+				}}
+			},
+			// Issue #174: With MADWindow=10, median recenters after ~4 outliers,
+			// so BadSampleLimit=5 is not reached and the step is absorbed.
+		},
+		{
+			name:              "phase step triggers reset with MADWindow=20",
+			duration:          1000.0,
+			maxTrackingAbsMax: 200 * time.Nanosecond, // Reset triggered, low tracking error
+			modifyConfig: func(cfg *Config) {
+				cfg.Sync.Track.MADWindow = 20
+				cfg.Fault.Excursion = []ExcursionConfig{{
+					StartTime: 500.0,
+					Duration:  10.0,
+					Amplitude: 500,
+					Rise:      RampConfig{Duration: 0.01},
+					Fall:      RampConfig{Duration: 0.01},
+				}}
+			},
+			// Issue #174: With MADWindow=20, enough consecutive outliers to hit
+			// BadSampleLimit=5, triggering reset and proper resync.
+		},
 	}
 
 	for _, tt := range tests {

@@ -92,7 +92,7 @@ func defaultTrackingConfig() TrackingConfig {
 		Kp:                     0.8,
 		Ki:                     0.3,
 		OutlierThreshold:       50,   // 50ns
-		MADWindow:              10,   // 10 samples
+		MADWindow:              20,   // should be > 2*BadSampleLimit so median doesn't recenter before limit is hit
 		MADMultiple:            25.0, // 25 * MAD
 		MADMinSamples:          10,   // 10 samples minimum
 		PreMADOutlierThreshold: 500,  // 500ns warmup threshold
