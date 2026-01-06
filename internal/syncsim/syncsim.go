@@ -96,52 +96,43 @@ type TickEventData struct {
 
 type modeObserver struct {
 	obs.DefaultObserver
-	initSamples       int
-	convergingSamples int
-	trackingSamples   int
+	samples [phcsync.NModes]int
 }
 
 func (m *modeObserver) Sample(s phcsync.Sample) {
-	switch s.Mode {
-	case phcsync.ModeReset:
-		m.initSamples++
-	case phcsync.ModeConverging:
-		m.convergingSamples++
-	case phcsync.ModeTracking:
-		m.trackingSamples++
-	}
+	m.samples[s.Mode]++
 }
 
 // Stats holds simulation results
 type Stats struct {
-	statsobs.Stats                  // embedded - detailed tracking statistics from observer
-	SampleCount    int           // total samples fed to controller
-	TrackingStdDev float64       // stddev from true time in nanoseconds (simulation-only)
-	TrackingMean   float64       // mean offset from true time in nanoseconds (simulation-only)
-	TrackingAbsMax time.Duration // max absolute offset from true time (simulation-only)
-	TrackingADev      float64       // Allan deviation of tracking offsets (simulation-only)
-	InitSamples       int           // samples processed in reset mode (includes initial sync and recovery)
-	ConvergingSamples int           // samples processed in converging mode
-	TrackingSamples   int           // samples processed in tracking mode
+	statsobs.Stats                        // embedded - detailed tracking statistics from observer
+	SampleCount    int                    // total samples fed to controller
+	TrackingStdDev float64                // stddev from true time in nanoseconds (simulation-only)
+	TrackingMean   float64                // mean offset from true time in nanoseconds (simulation-only)
+	TrackingAbsMax time.Duration          // max absolute offset from true time (simulation-only)
+	TrackingADev   float64                // Allan deviation of tracking offsets (simulation-only)
+	ModeSamples    map[phcsync.Mode]int   // samples per mode (non-zero only)
 }
 
 // String formats Stats for human-readable output.
 func (s Stats) String() string {
-	return s.Stats.String() +
+	str := s.Stats.String() +
 		fmt.Sprintf("sampleCount = %d\n"+
 			"trackingStdDev = %.2f\n"+
 			"trackingMean = %.2f\n"+
 			"trackingAbsMax = %d\n"+
-			"trackingADev = %.6e\n"+
-			"initSamples = %d\n"+
-			"convergingSamples = %d\n"+
-			"trackingSamples = %d\n",
+			"trackingADev = %.6e\n",
 			s.SampleCount,
 			s.TrackingStdDev,
 			s.TrackingMean,
 			s.TrackingAbsMax.Nanoseconds(),
-			s.TrackingADev,
-			s.InitSamples, s.ConvergingSamples, s.TrackingSamples)
+			s.TrackingADev)
+	for m := phcsync.Mode(0); m < phcsync.NModes; m++ {
+		if n := s.ModeSamples[m]; n > 0 {
+			str += fmt.Sprintf("%sSamples = %d\n", m, n)
+		}
+	}
+	return str
 }
 
 // Simulate runs a phcsync simulation with the given configuration.
@@ -421,16 +412,22 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	// Get stats from observers
 	trackingStats := statsObs.Stats()
 
+	// Convert mode samples array to map (non-zero only)
+	modeSamples := make(map[phcsync.Mode]int)
+	for m := phcsync.Mode(0); m < phcsync.NModes; m++ {
+		if n := modeObs.samples[m]; n > 0 {
+			modeSamples[m] = n
+		}
+	}
+
 	return Stats{
-		Stats:             trackingStats,
-		SampleCount:       sampleCount,
-		TrackingStdDev:    stats.stdDev(),
-		TrackingMean:      stats.mean(),
-		TrackingAbsMax:    stats.absMax,
-		TrackingADev:      stats.adev.ADev(),
-		InitSamples:       modeObs.initSamples,
-		ConvergingSamples: modeObs.convergingSamples,
-		TrackingSamples:   modeObs.trackingSamples,
+		Stats:          trackingStats,
+		SampleCount:    sampleCount,
+		TrackingStdDev: stats.stdDev(),
+		TrackingMean:   stats.mean(),
+		TrackingAbsMax: stats.absMax,
+		TrackingADev:   stats.adev.ADev(),
+		ModeSamples:    modeSamples,
 	}, nil
 }
 

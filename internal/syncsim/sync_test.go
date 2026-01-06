@@ -492,34 +492,37 @@ func TestPHCSync(t *testing.T) {
 			}
 
 			// Check mode-based sample counts
+			trackingSamples := stats.ModeSamples[phcsync.ModeTracking]
+			resetSamples := stats.ModeSamples[phcsync.ModeReset]
+			convergingSamples := stats.ModeSamples[phcsync.ModeConverging]
 			if tt.expectMinTrackingSamples > 0 {
-				if stats.TrackingSamples < tt.expectMinTrackingSamples {
-					t.Errorf("TrackingSamples = %d, want >= %d", stats.TrackingSamples, tt.expectMinTrackingSamples)
+				if trackingSamples < tt.expectMinTrackingSamples {
+					t.Errorf("TrackingSamples = %d, want >= %d", trackingSamples, tt.expectMinTrackingSamples)
 				}
 			}
 			if tt.expectMaxTrackingSamples > 0 {
-				if stats.TrackingSamples > tt.expectMaxTrackingSamples {
-					t.Errorf("TrackingSamples = %d, want <= %d", stats.TrackingSamples, tt.expectMaxTrackingSamples)
+				if trackingSamples > tt.expectMaxTrackingSamples {
+					t.Errorf("TrackingSamples = %d, want <= %d", trackingSamples, tt.expectMaxTrackingSamples)
 				}
 			}
 			if tt.expectTrackingSamples > 0 {
-				if stats.TrackingSamples != tt.expectTrackingSamples {
-					t.Errorf("TrackingSamples = %d, want %d", stats.TrackingSamples, tt.expectTrackingSamples)
+				if trackingSamples != tt.expectTrackingSamples {
+					t.Errorf("TrackingSamples = %d, want %d", trackingSamples, tt.expectTrackingSamples)
 				}
 			}
 			if tt.expectResetSamples > 0 {
-				if stats.InitSamples != tt.expectResetSamples {
-					t.Errorf("InitSamples (reset mode) = %d, want %d", stats.InitSamples, tt.expectResetSamples)
+				if resetSamples != tt.expectResetSamples {
+					t.Errorf("ResetSamples = %d, want %d", resetSamples, tt.expectResetSamples)
 				}
 			}
 			if tt.expectConvergingSamples > 0 {
-				if stats.ConvergingSamples != tt.expectConvergingSamples {
-					t.Errorf("ConvergingSamples = %d, want %d", stats.ConvergingSamples, tt.expectConvergingSamples)
+				if convergingSamples != tt.expectConvergingSamples {
+					t.Errorf("ConvergingSamples = %d, want %d", convergingSamples, tt.expectConvergingSamples)
 				}
 			}
 
 			t.Logf("Simulation completed: %d samples (reset=%d, converging=%d, tracking=%d), tracking stddev = %v, tracking absmax = %v",
-				stats.SampleCount, stats.InitSamples, stats.ConvergingSamples, stats.TrackingSamples, stats.TrackingStdDev, stats.TrackingAbsMax)
+				stats.SampleCount, resetSamples, convergingSamples, trackingSamples, stats.TrackingStdDev, stats.TrackingAbsMax)
 		})
 	}
 }

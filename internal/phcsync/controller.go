@@ -69,6 +69,7 @@ const (
 	ModeReset
 	ModeConverging
 	ModeTracking
+	NModes
 )
 
 // sampleIntervalMax is the maximum time to wait for a sample before generating a missing sample.
