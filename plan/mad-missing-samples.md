@@ -1,5 +1,7 @@
 # How Should MAD-Based Outlier Detection Handle Missing Samples?
 
+Fixes: #188
+
 ## Context
 
 We have a PI servo synchronizing a PHC (PTP Hardware Clock) to GPS PPS pulses. The servo operates in "tracking mode" once synchronized, receiving 1Hz samples showing the offset between PHC and GPS.
@@ -154,3 +156,136 @@ gapPostOffsets = nil  // exit recovery
 | `internal/phcsync/tracking.go` | Gap state, config, detection logic |
 | `configs/config-schema.json` | Add new parameters |
 | `internal/syncsim/sync_test.go` | Gap recovery test scenarios |
+
+## Test Plan
+
+### Simulation Configuration
+
+Use realistic parameters matching production hardware:
+
+```go
+cfg := Config{
+    PHC: PHCConfig{
+        WhiteNoise: 2.5,
+        RandomWalk: 2.9,
+    },
+    GPS: GPSConfig{
+        Jitter:   0.2,
+        Sawtooth: SawtoothConfig{Amp: 7.86},
+        AR1:      []AR1Config{{Tau: 3400, Sigma: 3}},
+    },
+    Sync: phcsync.Config{
+        Track: phcsync.TrackingConfig{
+            Kp: 0.8,  // current default
+            Ki: 0.3,  // current default
+        },
+    },
+}
+```
+
+### Parameter Tuning Required
+
+Before finalizing tests, experiment to determine appropriate values for:
+
+| Parameter | Default | Tuning Notes |
+|-----------|---------|--------------|
+| `GapMinSamples` | 5 | Min gap length to trigger recovery |
+| `GapDriftLimit` | 100ns | Must exceed max expected drift during gap |
+| `GapRecoverySamples` | 5 | Samples needed for reliable new median |
+
+### Test Cases
+
+#### Gap recovery accepts legitimate post-gap samples
+
+```go
+{
+    name:                     "gap recovery accepts post-gap drift",
+    duration:                 120.0,
+    maxTrackingStdDev:        15,
+    maxTrackingAbsMax:        60 * time.Nanosecond,
+    expectMinTrackingSamples: 90,
+    modifyConfig: func(cfg *Config) {
+        cfg.PHC.WhiteNoise = 2.5
+        cfg.PHC.RandomWalk = 2.9
+        cfg.GPS.Jitter = 0.2
+        cfg.GPS.Sawtooth.Amp = 7.86
+        cfg.GPS.AR1 = []AR1Config{{Tau: 3400, Sigma: 3}}
+        cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 4.0}}
+        cfg.Sync.Track.Kp = 0.8
+        cfg.Sync.Track.Ki = 0.3
+        cfg.Sync.Track.AvgFreqTimeConstant = 30
+    },
+    // Before fix: post-gap samples rejected as outliers
+    // After fix: gap recovery accepts samples, resumes tracking
+}
+```
+
+#### Gap recovery rejects real outliers during recovery
+
+```go
+{
+    name:                     "gap recovery still rejects outliers",
+    duration:                 120.0,
+    maxTrackingStdDev:        15,
+    maxTrackingAbsMax:        60 * time.Nanosecond,
+    expectMinTrackingSamples: 90,
+    modifyConfig: func(cfg *Config) {
+        cfg.PHC.WhiteNoise = 2.5
+        cfg.PHC.RandomWalk = 2.9
+        cfg.GPS.Jitter = 0.2
+        cfg.GPS.Sawtooth.Amp = 7.86
+        cfg.GPS.AR1 = []AR1Config{{Tau: 3400, Sigma: 3}}
+        cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 4.0}}
+        cfg.Fault.Outlier = []OutlierConfig{{Time: 64.5, Offset: 2000}}
+        cfg.Sync.Track.Kp = 0.8
+        cfg.Sync.Track.Ki = 0.3
+        cfg.Sync.Track.AvgFreqTimeConstant = 30
+    },
+    // Verifies relaxed threshold still rejects 2µs outlier during recovery
+}
+```
+
+#### Gap too short doesn't trigger recovery
+
+```go
+{
+    name:                     "short gap uses normal MAD detection",
+    duration:                 120.0,
+    maxTrackingStdDev:        15,
+    expectMinTrackingSamples: 100,
+    modifyConfig: func(cfg *Config) {
+        cfg.PHC.WhiteNoise = 2.5
+        cfg.PHC.RandomWalk = 2.9
+        cfg.GPS.Jitter = 0.2
+        cfg.GPS.Sawtooth.Amp = 7.86
+        cfg.GPS.AR1 = []AR1Config{{Tau: 3400, Sigma: 3}}
+        // 3s outage < GapMinSamples (5), uses normal path
+        cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 3.0}}
+        cfg.Sync.Track.Kp = 0.8
+        cfg.Sync.Track.Ki = 0.3
+        cfg.Sync.Track.AvgFreqTimeConstant = 30
+    },
+}
+```
+
+#### Drift exceeding GapDriftLimit triggers reset
+
+```go
+{
+    name:               "excessive gap drift triggers reset",
+    duration:           180.0,
+    expectResetSamples: 2, // 1 initial + 1 after gap recovery fails
+    modifyConfig: func(cfg *Config) {
+        cfg.PHC.WhiteNoise = 2.5
+        cfg.PHC.RandomWalk = 2.9
+        cfg.GPS.Jitter = 0.2
+        cfg.GPS.Sawtooth.Amp = 7.86
+        cfg.GPS.AR1 = []AR1Config{{Tau: 3400, Sigma: 3}}
+        // Long outage causes drift > GapDriftLimit
+        cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 15.0}}
+        cfg.Sync.Track.BadSampleLimit = 20
+        cfg.Sync.Track.Kp = 0.8
+        cfg.Sync.Track.Ki = 0.3
+    },
+    // Window shift exceeds GapDriftLimit → triggers reset mode
+}
