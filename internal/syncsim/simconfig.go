@@ -602,8 +602,8 @@ type ExcursionConfig struct {
 // IsZero returns true if the excursion has no effect (zero amplitude).
 func (c ExcursionConfig) IsZero() bool { return c.Amplitude == 0 }
 
-// ptr is a helper for creating *float64 values.
-func ptr(f float64) *float64 { return &f }
+// ptr is a helper for creating pointer values.
+func ptr[T any](v T) *T { return &v }
 
 // DefaultExcursionConfig returns an ExcursionConfig with sensible defaults.
 func DefaultExcursionConfig() ExcursionConfig {

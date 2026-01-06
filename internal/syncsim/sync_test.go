@@ -22,6 +22,9 @@ func TestPHCSync(t *testing.T) {
 		expectTrackingSamples    int           // expected exact number of samples in tracking mode (0 = don't check)
 		expectResetSamples       int           // expected number of samples in reset mode (includes initial sync and recovery)
 		expectConvergingSamples  int           // expected number of samples in converging mode (0 = don't check)
+		expectResetEntered       *int          // expected times reset mode entered (nil = don't check)
+		expectConvergingEntered  *int          // expected times converging mode entered (nil = don't check)
+		expectTrackingEntered    *int          // expected times tracking mode entered (nil = don't check)
 		modifyConfig             func(*Config) // optional function to modify config (nil = use defaults)
 	}{
 		{
@@ -76,9 +79,11 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:                     "recovers from temporary outage",
 			duration:                 120.0,
-			maxTrackingStdDev:        30, // slightly higher tolerance due to recovery transient
-			expectResetSamples:       2,                    // 1 initial + 1 after recovery
-			expectMinTrackingSamples: 35,                   // At least 35 before outage (plus time after recovery)
+			maxTrackingStdDev:        30,         // slightly higher tolerance due to recovery transient
+			expectResetSamples:       2,          // 1 initial + 1 after recovery
+			expectMinTrackingSamples: 35,         // At least 35 before outage (plus time after recovery)
+			expectResetEntered:       ptr(2),  // entered reset twice (initial + after outage)
+			expectTrackingEntered:    ptr(2),  // entered tracking twice (initial + after recovery)
 			// After recovery: reset→converging→tracking for remaining ~50 seconds
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 10.0}} // 10s outage starting at t=60s
@@ -87,9 +92,10 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:                    "signal loss during converging mode",
 			duration:                40.0,
-			expectTrackingSamples:   0,  // never reaches tracking
-			expectResetSamples:      2,  // 1 initial + 1 after recovery from converging loss
-			expectConvergingSamples: 22, // 7 good + 3 missing + 12 good in second phase
+			expectTrackingSamples:   0,          // never reaches tracking
+			expectResetSamples:      2,          // 1 initial + 1 after recovery from converging loss
+			expectConvergingSamples: 22,         // 7 good + 3 missing + 12 good in second phase
+			expectTrackingEntered:   ptr(0),  // tracking never entered
 			// Expected flow:
 			// - Reset #1 at t=6s (1 sample)
 			// - Converging from t=6s to t=12s (7 good samples)
@@ -521,8 +527,22 @@ func TestPHCSync(t *testing.T) {
 				}
 			}
 
-			t.Logf("Simulation completed: %d samples (reset=%d, converging=%d, tracking=%d), tracking stddev = %v, tracking absmax = %v",
-				stats.SampleCount, resetSamples, convergingSamples, trackingSamples, stats.TrackingStdDev, stats.TrackingAbsMax)
+			// Check mode entry counts
+			resetEntered := stats.ModeTransitions[phcsync.ModeReset]
+			convergingEntered := stats.ModeTransitions[phcsync.ModeConverging]
+			trackingEntered := stats.ModeTransitions[phcsync.ModeTracking]
+			if tt.expectResetEntered != nil && resetEntered != *tt.expectResetEntered {
+				t.Errorf("ResetEntered = %d, want %d", resetEntered, *tt.expectResetEntered)
+			}
+			if tt.expectConvergingEntered != nil && convergingEntered != *tt.expectConvergingEntered {
+				t.Errorf("ConvergingEntered = %d, want %d", convergingEntered, *tt.expectConvergingEntered)
+			}
+			if tt.expectTrackingEntered != nil && trackingEntered != *tt.expectTrackingEntered {
+				t.Errorf("TrackingEntered = %d, want %d", trackingEntered, *tt.expectTrackingEntered)
+			}
+
+			t.Logf("Simulation completed: %d samples (reset=%d, converging=%d, tracking=%d), entered (reset=%d, converging=%d, tracking=%d), tracking stddev = %v, tracking absmax = %v",
+				stats.SampleCount, resetSamples, convergingSamples, trackingSamples, resetEntered, convergingEntered, trackingEntered, stats.TrackingStdDev, stats.TrackingAbsMax)
 		})
 	}
 }
