@@ -34,6 +34,11 @@ type Config struct {
 type SimConfig struct {
 	// Duration is the simulation duration in seconds.
 	Duration Seconds `toml:"duration" check:">0" comment:"Simulation duration (s)"`
+
+	// StartTime is the wall-clock time of day for simulation t=0.
+	// Used with PhaseSinusoid.PeakAt to calculate initial phase.
+	// Defaults to 00:00:00 (midnight).
+	StartTime toml.LocalTime `toml:"startTime" comment:"Wall-clock time for t=0 (HH:MM:SS)"`
 }
 
 // DefaultSimConfig returns a SimConfig with a reasonable default duration.
@@ -117,7 +122,7 @@ type FreqSinusoid struct {
 func (s FreqSinusoid) IsZero() bool { return s.Amp == 0 }
 
 // PhaseSinusoid configures a sinusoidal phase modulation component.
-// Contribution to phase: Amp * sin(2π * (t/Period + PhaseInit))
+// Contribution to phase: Amp * sin(2π * (t/Period + PhaseInit()))
 type PhaseSinusoid struct {
 	// Period is the oscillation period in seconds.
 	Period Seconds `toml:"period" check:">0,<=1000000" comment:"Oscillation period (s)"`
@@ -125,11 +130,28 @@ type PhaseSinusoid struct {
 	// Amp is the phase amplitude in nanoseconds.
 	Amp clocksim.Nanoseconds `toml:"amp" check:">=0,<=10000" comment:"Phase amplitude (ns)"`
 
-	// PhaseInit is the initial phase as a fraction of cycle [0,1).
-	PhaseInit float64 `toml:"phaseInit" check:">=0,<1" comment:"Initial phase [0,1)"`
+	// PeakAt is the time of day when the sinusoid peaks.
+	// Used with SimConfig.StartTime to calculate initial phase.
+	// Defaults to 06:00:00, which gives phase 0 when StartTime is 00:00:00.
+	PeakAt toml.LocalTime `toml:"peakAt" comment:"Time of day when sinusoid peaks (HH:MM:SS)"`
 }
 
 func (s PhaseSinusoid) IsZero() bool { return s.Amp == 0 }
+
+// PhaseInit returns the initial phase [0,1) for this sinusoid.
+// Calculates phase so sinusoid peaks at PeakAt given startTimeSec.
+func (s PhaseSinusoid) PhaseInit(startTimeSec float64) float64 {
+	peakSec := localTimeToSeconds(s.PeakAt)
+	dtSec := math.Mod(startTimeSec-peakSec, s.Period)
+	if dtSec < 0 {
+		dtSec += s.Period
+	}
+	return math.Mod(0.25+dtSec/s.Period, 1.0)
+}
+
+func localTimeToSeconds(t toml.LocalTime) float64 {
+	return float64(t.Hour*3600+t.Minute*60+t.Second) + float64(t.Nanosecond)/1e9
+}
 
 // IsZero returns true if all PHC parameters are zero (no oscillator error configured).
 func (c PHCConfig) IsZero() bool {
@@ -260,7 +282,7 @@ func DefaultGPSConfig() GPSConfig {
 		Drift:     DefaultDriftConfig(),
 		Resonator: DefaultResonatorConfig(),
 		AR1:       []AR1Config{{}},
-		Sinusoid:  []PhaseSinusoid{{}},
+		Sinusoid:  []PhaseSinusoid{{PeakAt: toml.LocalTime{Hour: 6}}},
 	}
 }
 
@@ -402,7 +424,9 @@ func WriteDefaultConfig(w io.Writer) error {
 // Applies components in order: jitter, AR(1), AR(1) FM, random walk, drift, sinusoids.
 // Does NOT include Shift, Outlier, or Sawtooth - those are added separately in Simulate().
 // Sawtooth is created separately with oscillator coupling.
-func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
+// startTime is the wall-clock time for t=0, used with PeakAt to calculate sinusoid phase.
+func (c GPSConfig) CreateSimulator(startTime toml.LocalTime) clocksim.GPSSimulator {
+	startTimeSec := localTimeToSeconds(startTime)
 	sims := []clocksim.GPSSimulator{}
 	if c.Jitter > 0 {
 		sims = append(sims, clocksim.JitterGPS(c.Jitter, 123))
@@ -428,7 +452,7 @@ func (c GPSConfig) CreateSimulator() clocksim.GPSSimulator {
 	}
 	for _, s := range c.Sinusoid {
 		if s.Amp > 0 {
-			sims = append(sims, clocksim.SinusoidGPS(s.Amp, s.Period, s.PhaseInit))
+			sims = append(sims, clocksim.SinusoidGPS(s.Amp, s.Period, s.PhaseInit(startTimeSec)))
 		}
 	}
 	return clocksim.CombineGPS(sims...)

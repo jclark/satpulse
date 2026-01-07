@@ -28,7 +28,7 @@ func Generate(cfg Config, w io.Writer) error {
 	// Create GPS simulators if needed
 	var nonSawtoothGPS, sawtoothGPS clocksim.GPSSimulator
 	if hasGPS {
-		nonSawtoothGPS = cfg.GPS.CreateSimulator()
+		nonSawtoothGPS = cfg.GPS.CreateSimulator(cfg.Sim.StartTime)
 
 		// Create sawtooth simulator (following VirtualClock pattern)
 		if cfg.GPS.Sawtooth.Amp > 0 {

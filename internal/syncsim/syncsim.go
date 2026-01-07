@@ -166,7 +166,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	raw := clocksim.NewRawClock(osc, 0)
 
 	// Build other PPS simulators (without sawtooth)
-	otherPPSSims := []clocksim.GPSSimulator{cfg.GPS.CreateSimulator()}
+	otherPPSSims := []clocksim.GPSSimulator{cfg.GPS.CreateSimulator(cfg.Sim.StartTime)}
 
 	// Add excursions if configured
 	for _, exc := range cfg.Fault.Excursion {

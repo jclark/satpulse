@@ -30,4 +30,8 @@ for name in jitter ar1 ar1fm randomWalk drift sawtooth sinusoid resonator; do
     fi
 done
 
+# GPS startTime test (uses sinusoid.toml with --startAt to match gps.startTime.toml's [sim].startTime)
+echo "Generating gps.startTime.jsonl..."
+uv run simulate.py "$SCRIPT_DIR/gps.sinusoid.toml" 600 --norm-rng-path ./gonormrng --startAt 11:40 > "$SCRIPT_DIR/gps.startTime.jsonl"
+
 echo "Done."

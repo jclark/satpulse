@@ -1,3 +1,6 @@
+[sim]
+startTime = 11:40:00
+
 [[gps.sinusoid]]
 period = 86400.0
 amp = 7.0

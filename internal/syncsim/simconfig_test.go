@@ -198,7 +198,7 @@ amp = 2.253
 				t.Error("PHC.CreateSimulator() returned nil")
 			}
 
-			gpsSim := config.GPS.CreateSimulator()
+			gpsSim := config.GPS.CreateSimulator(toml.LocalTime{})
 			if gpsSim == nil {
 				t.Error("GPS.CreateSimulator() returned nil")
 			}
@@ -447,6 +447,72 @@ fall.power = 1.5
 	}
 	if exc.Fall.EffectivePower() != 1.5 {
 		t.Errorf("Fall.EffectivePower() = %v, want 1.5", exc.Fall.EffectivePower())
+	}
+}
+
+func TestStartTimeAndPeakAt(t *testing.T) {
+	tests := []struct {
+		name            string
+		toml            string
+		wantStartTime   toml.LocalTime
+		wantPeakAt      []toml.LocalTime
+	}{
+		{
+			name: "peakAt with seconds",
+			toml: `[[gps.sinusoid]]
+period = 86400.000
+amp = 7.395
+peakAt = 09:23:00
+
+[[gps.sinusoid]]
+period = 43200.000
+amp = 2.735
+peakAt = 17:33:00
+`,
+			wantStartTime: toml.LocalTime{}, // zero = 00:00:00
+			wantPeakAt: []toml.LocalTime{
+				{Hour: 9, Minute: 23, Second: 0},
+				{Hour: 17, Minute: 33, Second: 0},
+			},
+		},
+		{
+			name: "startTime with seconds",
+			toml: `[sim]
+startTime = 11:40:00
+
+[[gps.sinusoid]]
+period = 86400.0
+amp = 10.0
+peakAt = 09:23:00
+`,
+			wantStartTime: toml.LocalTime{Hour: 11, Minute: 40, Second: 0},
+			wantPeakAt: []toml.LocalTime{
+				{Hour: 9, Minute: 23, Second: 0},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg Config
+			err := toml.NewDecoder(strings.NewReader(tt.toml)).DisallowUnknownFields().Decode(&cfg)
+			if err != nil {
+				t.Fatalf("failed to decode: %v", err)
+			}
+
+			if cfg.Sim.StartTime != tt.wantStartTime {
+				t.Errorf("Sim.StartTime = %v, want %v", cfg.Sim.StartTime, tt.wantStartTime)
+			}
+
+			if len(cfg.GPS.Sinusoid) != len(tt.wantPeakAt) {
+				t.Fatalf("GPS.Sinusoid length = %d, want %d", len(cfg.GPS.Sinusoid), len(tt.wantPeakAt))
+			}
+			for i, s := range cfg.GPS.Sinusoid {
+				if s.PeakAt != tt.wantPeakAt[i] {
+					t.Errorf("GPS.Sinusoid[%d].PeakAt = %v, want %v", i, s.PeakAt, tt.wantPeakAt[i])
+				}
+			}
+		})
 	}
 }
 
