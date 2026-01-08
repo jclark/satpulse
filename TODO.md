@@ -4,14 +4,10 @@ These are things that have not yet been made into GitHub issues.
 
 ## General
 
-High priority
 
-* Control over logging in the non-sdlog case
-
-Others
 * More testing (include fuzzing)
 * Figure out how to run with reduced privileges (Linux capabilities I think)
-* Allow SIGHUP to reload config: useful for disabling TCP connections.
+* Reload config on signal: useful for disabling TCP connections.
 
 ## Documentation
 
@@ -20,70 +16,18 @@ Others
 
 ## Grandmaster management
 
-High priority
-
-* Estimate clock accuracy and dynamically update grandmaster settings. In particular, on startup, update with low accuracy and then improve it as we settle down.
-
-Others
 * Enable configuration of non-synced settings or read current settings at startup
 * Support ptp4u by creating dynamic config file
-* Take into account GPS reported accuracy in estimating clock accuracy
-* Should have proper concept of holdover period/accuracy (particularly with M8F and GPSDOs)
 
 ## TCP server
 
 * Control over IPv4/IPv6
 
-## Servo
+## Sync
 
-High priority
-* Better handle the case where we lose sync: may need to step clock
-* Make servo configurable from TOML
-   * kp, ki constants
-   * initial observe time
-   * when to step clock
-
-Others
-
-* Experiment with different ki/kp coefficients for PI controller
-* PI controller starts off with a large integral term, which I suspect is not optimal
-* Should the servo do something different if there is more than 1 second since last sample? Interpolate?
-* See what we can learn from NTP standard
-* Divide into two phases: initial sync, continuing sync; use different ki/kp values for each phase.
-
-## Combine
-
-* Implement auto-detection of number of edges per pulse
-* Add some package docs
-* Improve how we generate TAI from UTC time messages
-  * Should prefer a message in UBX that provides TAI directly to NMEA
-  * Should use GPS receiver's idea of what the leap second offset is
-* More tests
-  * upgrading sample
-  * waiting for pulse correction
-  * unit tests for secMsgList
-  * test that we are emitting the sample at the right time (i.e. immediately after pulse)
-  * test with missing, extra pulses/messages
-* Perform measurements to make sure we are applying the quantization error in the right direction
-  * Configurable option not to use pulse offset/correction
-* Sanity check first sample against system clock and log warning
-  * Can we figure out when system clock is supposed to be set?
-
-Lower priority
-* Bulletproof against invalid GPS message sequences
-* Investigate UBX-TIM-TP further
-    * Does it work (ie provide qErr) on non-timing receivers?
-    * Does it work on clones?
-* Currently we require both navigation message rate and pulse rate to be 1Hz? Is there any point in relaxing this?
 * Could we work with just UBX-TIM-TP?
-* Can we leverage UBX-NAV-EOE (for end of navigation era)?
 * Looks like ATGM332D may be using fTOW field of UBX-NAV-TIMEGPS to convey quantization error (rather than solution time)
-* More flexible approach to edge detection
-  * With 50% duty cycle could generate two samples
-  * Problem is that it makes it harder to align pulses
 * Mode where we use system clock rather than GPS messages for time of day (like `ts2phc -s generic`)
-  * Could just generate time messages from system clock.
-  * This should work reasonably well now we are mostly basing things on previous sample
 * Can we support idea of a UTC correction that would allow clients to align to UTC rather than GNSS time?
   * GPS/BeiDou/Galileo all have concept of steering their system time to a UTC variant.
   * But we align the pulse to GNSS system time (seems to work better)
@@ -112,15 +56,11 @@ Others
 * Deal with absence of CLOCAL potentially causing open to block
 * Cancelled write should complete UBX message but not drain
 * Can we be detect when baud rate is too low for information passed?
-* Should we support other styles of locking in addition to flock 
-  * UUCP-style serial-port locking
-  * TIOCEXCL - at least use TIOCGEXCL to check if it is already locked
 * Investigate kernel/HW [problem](https://github.com/raspberrypi/linux/issues/4453#issuecomment-1709315332) with framing errors on PL011. Possibly similar problem on M8T connnected to physical serial port.
 
 ## GPS configuration
 
 * Figure out how to make U-blox receivers start a new survey, when they have already done one
-* Finish mapping from CfgVals to from ConfigMap
 * Option for satpulsetool to get survey result
 * Pay attention to version in CFG-UBX-TP5
 * Might need to set CFG-NAVSPG-WKNROLLOVER
@@ -134,7 +74,6 @@ Others
 * Messages from receiver
   * NMEA TXT messages
   * UBX-INF-*
-* On CM4, logging should account for normality of lost pulses
 
 ## HTTP monitoring
 
@@ -146,8 +85,6 @@ Others
 * Time DoP from UBX-NAV-DOP
 * In current-time card, include GPS self-reported accuracy
 * In PHC card, having something showing how long ago the sync happened
-* Information about visible satellites
-   * Number of satellites
 * Prettier display of current time of day
 * Statistics about time-sync quality
     * Maybe query parameter on to give time period over which stats would be summarized
