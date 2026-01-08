@@ -205,6 +205,31 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 	return sample
 }
 
+func (g *trackingSampleGenerator) timeMessageSample() *Sample {
+	if g.pendingPulse == nil {
+		return nil
+	}
+	sample := g.pulseSample(g.pendingPulse.PulseEdge, g.pendingPulse.edgeIndex, g.cfg.IgnoreSawtoothCorrection)
+	if sample != nil {
+		g.pendingPulse = nil
+	}
+	return sample
+}
+
+func (g *trackingSampleGenerator) tickSample(now time.Time) *Sample {
+	if g.pendingPulse == nil {
+		return nil
+	}
+	// if we haven't yet reached the deadline, keep waiting
+	if !now.After(g.pendingPulseDeadline()) {
+		return nil
+	}
+	// we have passed the deadline
+	sample := g.pulseSample(g.pendingPulse.PulseEdge, g.pendingPulse.edgeIndex, true)
+	g.pendingPulse = nil
+	return sample
+}
+
 func (g *trackingSampleGenerator) pulseSample(edge PulseEdge, edgeIndex uint64, ignoreCorr bool) *Sample {
 	// Round to nearest second
 	sec := edge.Timestamp.T.Round(time.Second)
@@ -245,31 +270,6 @@ func (g *trackingSampleGenerator) pulseSample(edge PulseEdge, edgeIndex uint64, 
 	// Update lastSample for next edge comparison
 	g.lastSample = sample
 
-	return sample
-}
-
-func (g *trackingSampleGenerator) timeMessageSample() *Sample {
-	if g.pendingPulse == nil {
-		return nil
-	}
-	sample := g.pulseSample(g.pendingPulse.PulseEdge, g.pendingPulse.edgeIndex, g.cfg.IgnoreSawtoothCorrection)
-	if sample != nil {
-		g.pendingPulse = nil
-	}
-	return sample
-}
-
-func (g *trackingSampleGenerator) tickSample(now time.Time) *Sample {
-	if g.pendingPulse == nil {
-		return nil
-	}
-	// if we haven't yet reached the deadline, keep waiting
-	if !now.After(g.pendingPulseDeadline()) {
-		return nil
-	}
-	// we have passed the deadline
-	sample := g.pulseSample(g.pendingPulse.PulseEdge, g.pendingPulse.edgeIndex, true)
-	g.pendingPulse = nil
 	return sample
 }
 
