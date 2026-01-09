@@ -84,6 +84,9 @@ func Cmd(progName string, args []string) {
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config) error {
 	tStart := time.Now()
+	if err := cfg.Validate(lg); err != nil {
+		return err
+	}
 	clk, err := cfg.PHC.OpenClock(ctx, lg)
 	if err != nil {
 		// don't report an error if interrupted
@@ -189,14 +192,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	var tpFlags gpsTimePulseFlags
-	if clk != nil {
-		tpFlags |= gpsTimePulseEnable
-		if phcFlags.Edges() != 1 {
-			tpFlags |= gpsTimePulseGetWidth
-		}
-	}
-	gct, pulseWidth, err := createConfigTarget(lg, cfg, conn.Speed(), tpFlags)
+	timePulseEnabled := clk != nil
+	gct, err := createConfigTarget(lg, cfg, conn.Speed(), timePulseEnabled)
 	if err != nil {
 		return err
 	}
@@ -261,10 +258,6 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 			return err
 		}
 	}
-	if pw, ok := gcfg.ConfigProps.GetTimePulseWidth(); ok {
-		pulseWidth = pw
-	}
-
 	statsObs := newStatsLogObserver(cfg, lg)
 	clockObs, err := newClockLogObserver(cfg, lg, clk, cfg.LeapSecond.leapSecond())
 	if err != nil {
@@ -273,7 +266,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 
 	observer := combineObservers(promObs, sseObs, statsObs, clockObs)
 
-	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, observer, tStart)
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, observer, tStart)
 	if err != nil {
 		return err
 	}
@@ -298,15 +291,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *ptpgm.Grandmaster, rc *refclock.ProxyRefClock, obs obs.Observer, tStart time.Time) (*gpsevent.Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, cfg *Config, gm *ptpgm.Grandmaster, rc *refclock.ProxyRefClock, obs obs.Observer, tStart time.Time) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
 	var controller *phcsync.Controller
-	var driverFlags phc.DriverFlags
 	if clk != nil {
-		pt := phcsync.PulseType{
-			EdgesPerPulse: clk.DriverFlags.Edges(),
-			PulseWidth:    pulseWidth,
-		}
 		var err error
 		controller, err = phcsync.NewController(
 			clk,
@@ -314,16 +302,15 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 			gm,
 			cfg.Sync,
 			ls,
-			pt,
+			clk.DriverFlags.Edges(),
 			lg,
 		)
 		if err != nil {
 			return nil, err
 		}
-		driverFlags = clk.DriverFlags
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, ls, driverFlags, pulseWidth, obs, eventLogPath, tStart)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, ls, obs, eventLogPath, tStart)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
@@ -408,16 +395,16 @@ func startBcast[T any](ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	return b
 }
 
-func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, tpFlags gpsTimePulseFlags) (*gpsprot.ConfigTarget, time.Duration, error) {
+func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, timePulseEnabled bool) (*gpsprot.ConfigTarget, error) {
 	httpWantsSatellites := cfg.httpWantsSatellites()
-	gct, pulseWidth, err := cfg.GPS.target(speed, httpWantsSatellites, tpFlags)
+	gct, err := cfg.GPS.target(speed, httpWantsSatellites, timePulseEnabled)
 	lg.Debug("GPS configure input", "target", gct)
 	if err != nil {
 		if errors.Is(err, errSatsOutNotEnabled) {
 			lg.Warn(err.Error())
 		} else {
-			return nil, 0, err
+			return nil, err
 		}
 	}
-	return gct, pulseWidth, nil
+	return gct, nil
 }

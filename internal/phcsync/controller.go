@@ -96,24 +96,23 @@ func (m Mode) InSync() bool {
 
 // Controller coordinates PHC synchronization.
 type Controller struct {
-	clock          Clock
-	timeMsgBuffer  TimeMsgBuffer
-	sampler        Sampler
-	gm             *ptpgm.Grandmaster
-	cfg            Config
-	leapSecond     ptime.LeapSecond
-	pulseWidthSpec time.Duration // configured pulse width, immutable
-	pt             PulseType     // discovered/working, mutable
-	mode           Mode
-	lg             *slog.Logger
-	freq           float64 // current frequency adjustment in PPB
-	estimatedFreq  float64 // estimated correct frequency in PPB (from reset mode)
-	maxFreq        float64 // maximum frequency adjustment in PPB
-	edgeIndex      uint64  // increments on each PulseEdge call, tracks odd/even
-	sampleGen      sampleGenerator
-	sampleProc     sampleProcessor
-	lastSample     *Sample   // last sample (real or missing)
-	era            ptime.Era // current PHC era
+	clock         Clock
+	timeMsgBuffer TimeMsgBuffer
+	sampler       Sampler
+	gm            *ptpgm.Grandmaster
+	cfg           Config
+	leapSecond    ptime.LeapSecond
+	pt            PulseType // discovered/working, mutable
+	mode          Mode
+	lg            *slog.Logger
+	freq          float64 // current frequency adjustment in PPB
+	estimatedFreq float64 // estimated correct frequency in PPB (from reset mode)
+	maxFreq       float64 // maximum frequency adjustment in PPB
+	edgeIndex     uint64  // increments on each PulseEdge call, tracks odd/even
+	sampleGen     sampleGenerator
+	sampleProc    sampleProcessor
+	lastSample    *Sample   // last sample (real or missing)
+	era           ptime.Era // current PHC era
 }
 
 type sampleGenerator interface {
@@ -141,25 +140,24 @@ type sampleProcessor interface {
 }
 
 // NewController creates a new Controller instance.
-// The Config must be valiudated before calling this function.
+// The Config must be validated before calling this function.
 func NewController(
 	clock Clock,
 	sampler Sampler,
 	gm *ptpgm.Grandmaster,
 	cfg Config,
 	leapSecond ptime.LeapSecond,
-	pt PulseType,
+	edgesPerPulse int,
 	lg *slog.Logger,
 ) (*Controller, error) {
 	c := &Controller{
-		clock:          clock,
-		sampler:        sampler,
-		gm:             gm,
-		cfg:            cfg,
-		leapSecond:     leapSecond,
-		pulseWidthSpec: pt.PulseWidth,
-		pt:             pt,
-		lg:             lg,
+		clock:      clock,
+		sampler:    sampler,
+		gm:         gm,
+		cfg:        cfg,
+		leapSecond: leapSecond,
+		pt:         PulseType{EdgesPerPulse: edgesPerPulse},
+		lg:         lg,
 	}
 	freq, err := clock.FreqOffset()
 	if err != nil {
@@ -347,9 +345,9 @@ func (c *Controller) changeMode(mode Mode) {
 	// Initialize sampleGen and sampleProc for the new mode
 	switch mode {
 	case ModeReset:
-		// Reset pulse width to configured value when entering reset mode
-		c.pt.PulseWidth = c.pulseWidthSpec
-		c.sampleGen = newResetSampleGenerator(c.timeMsgBuffer, c.cfg.Reset, c.pt, c.freq, c.maxFreq, c.lg)
+		// Reset pulse width when entering reset mode; will be auto-detected
+		c.pt.PulseWidth = 0
+		c.sampleGen = newResetSampleGenerator(c.timeMsgBuffer, c.cfg.Reset, c.pt.EdgesPerPulse, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newResetSampleProcessor(c.cfg.Reset, c.lg)
 	case ModeConverging:
 		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converge, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)

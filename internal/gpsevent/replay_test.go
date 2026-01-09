@@ -20,8 +20,7 @@ func TestReplayFast(t *testing.T) {
 	clock := &mockClock{}
 	// Create controller
 	cfg := phcsync.DefaultConfig()
-	pt := phcsync.PulseType{EdgesPerPulse: 2, PulseWidth: 100 * time.Millisecond}
-	ctrl, err := phcsync.NewController(clock, sampler, nil, cfg, ptime.LeapSecond2016(), pt, lg)
+	ctrl, err := phcsync.NewController(clock, sampler, nil, cfg, ptime.LeapSecond2016(), 2, lg)
 	if err != nil {
 		t.Fatalf("failed to create controller: %v", err)
 	}

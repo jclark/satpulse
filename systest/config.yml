@@ -43,3 +43,4 @@
         exclusive: "true"
       loop:
         - { section: "gps", option: "nmeaNumbering" }
+        - { section: "gps", option: "pulseWidth" }

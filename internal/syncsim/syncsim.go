@@ -204,20 +204,14 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	// Prepare dual-edge mode parameters
 	var pulseWidth time.Duration
 	var trailingEdgeSim clocksim.GPSSimulator
-	var pulseType phcsync.PulseType
+	var edgesPerPulse int
 
 	if cfg.Pulse.Width > 0 {
 		pulseWidth = time.Duration(cfg.Pulse.Width * 1e9)
 		trailingEdgeSim = clocksim.JitterGPS(2, 789) // 2 nanoseconds
-		pulseType = phcsync.PulseType{
-			EdgesPerPulse: 2,
-			PulseWidth:    pulseWidth,
-		}
+		edgesPerPulse = 2
 	} else {
-		pulseType = phcsync.PulseType{
-			EdgesPerPulse: 1,
-			PulseWidth:    0,
-		}
+		edgesPerPulse = 1
 	}
 
 	// Virtual clock starts at t=0, max ±500ppm (like Intel i210)
@@ -256,7 +250,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 		nil, // no grandmaster
 		cfg.Sync,
 		ls,
-		pulseType,
+		edgesPerPulse,
 		lg,
 	)
 	if err != nil {
@@ -280,7 +274,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	// Generate event streams
 	// Note: ticks start at t=0.25, modeling real system behavior where ticks
 	// run continuously from the start. Early ticks are safe - see generateTickEvents.
-	pulseGen := generatePulseEvents(cfg, durSec, pulseType.EdgesPerPulse)
+	pulseGen := generatePulseEvents(cfg, durSec, edgesPerPulse)
 	msgGen := generateNavSolutionMsgEvents(cfg, durSec)
 	tickGen := generateTickEvents(durSec)
 

@@ -129,10 +129,6 @@ func readConfig(r io.Reader) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = cfg.Sync.Validate()
-	if err != nil {
-		return nil, err
-	}
 	return cfg, nil
 }
 
@@ -155,6 +151,13 @@ func (cfg *Config) httpWantsSatellites() bool {
 		}
 	}
 	return false
+}
+
+// Validate validates the configuration and logs warnings for deprecated options.
+// It is separate from LoadConfig because the config contains logging settings.
+func (cfg *Config) Validate(lg *slog.Logger) error {
+	cfg.GPS.validate(lg)
+	return cfg.Sync.Validate()
 }
 
 func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {

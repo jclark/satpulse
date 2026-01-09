@@ -10,7 +10,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/logfile"
 	"github.com/jclark/satpulse/internal/obs"
-	"github.com/jclark/satpulse/internal/phc"
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/refclock"
@@ -54,7 +53,7 @@ type Dispatcher struct {
 	tStart                time.Time
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, controller *phcsync.Controller, rc *refclock.ProxyRefClock, ls ptime.LeapSecond, phcFlags phc.DriverFlags, pulseWidth time.Duration, obs obs.Observer, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, controller *phcsync.Controller, rc *refclock.ProxyRefClock, ls ptime.LeapSecond, obs obs.Observer, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
 	// Always create timeMsgBuffer (useful even without PHC)
 	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
 

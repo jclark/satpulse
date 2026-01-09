@@ -117,15 +117,15 @@ type resetSampleGenerator struct {
 	pulseIntervalsBad bool          // true if checkPulseIntervals failed; cleared on new edge
 }
 
-func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, pt PulseType, freq, maxFreq float64, lg *slog.Logger) *resetSampleGenerator {
+func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, edgesPerPulse int, freq, maxFreq float64, lg *slog.Logger) *resetSampleGenerator {
 	// Buffer needs to hold Window * EdgesPerPulse edges
-	bufSize := cfg.PulseWindow * pt.EdgesPerPulse
+	bufSize := cfg.PulseWindow * edgesPerPulse
 	return &resetSampleGenerator{
 		timeMsgBuffer: timeMsgBuffer,
 		edgeBuf:       circbuf.New[PulseEdge](bufSize),
 		cfg:           cfg,
 		lg:            lg,
-		pt:            pt,
+		pt:            PulseType{EdgesPerPulse: edgesPerPulse},
 		maxFreq:       maxFreq,
 		freq:          freq,
 	}
