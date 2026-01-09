@@ -8,7 +8,13 @@ Assumes: tracking-limits.md is implemented
 
 Micro-holdover is a brief holdover period short enough that PTP clock quality does not need to change. It bridges the gap between normal tracking (where every sample is processed) and full holdover (where PTP quality is degraded).
 
-This document describes micro-holdover as a distinct mode (`ModeMicroHoldover`) rather than inline logic within tracking mode. This design achieves the same goals as the gap recovery feature described in `mad-missing-samples.md` but with cleaner separation of concerns and greater uniformity with full holdover mode.
+Micro-holdover consolidates two pieces of missing-sample handling:
+
+1. **Frequency adjustment**: When samples go missing, the servo switches to an averaged frequency estimate (`avgFreq`). This is currently implemented inline in tracking mode.
+
+2. **MAD recovery**: After a gap, post-gap samples may be incorrectly rejected as outliers. This requires relaxed MAD detection and window shifting, as described in `mad-missing-samples.md`.
+
+By handling both in a dedicated mode, tracking becomes simpler (it only handles present samples) and the design is more uniform with full holdover mode.
 
 ## Why is Micro-Holdover needed?
 
@@ -34,49 +40,48 @@ The post-gap samples are **not** outliers—they correctly reflect that the PHC 
 |--------|---------------|----------|
 | Purpose | Brief signal loss, maintain tracking quality | Extended signal loss, degrade gracefully |
 | PTP clock class | Unchanged (tracking quality) | ClockClassHoldover (7) |
-| Entry trigger | `consecutiveMissingSamples >= microHoldoverThreshold` | `consecutiveMissingSamples >= holdoverThreshold` |
+| Entry trigger | Any missing sample | `consecutiveMissingSamples >= holdoverThreshold` |
 | Frequency control | Use tracking's `avgFreq` | Blend short-term and long-term frequency estimates |
-| Recovery | Relaxed MAD detection, shift window | Drift check, reconvergence phase |
-| Exit to tracking | After window shift | After reconvergence criteria met |
+| Recovery | Relaxed MAD detection, shift window (if gap was long enough) | Drift check, reconvergence phase |
+| Exit to tracking | Directly (short gap) or after window shift (long gap) | After reconvergence criteria met |
 
 ## State Machine
 
 ```
-tracking ──[microHoldoverThreshold]──> microHoldover
-                                            │
-                    ┌───────────────────────┼───────────────────────┐
-                    │                       │                       │
-                    ▼                       ▼                       ▼
-              [holdoverThreshold]    [recovery success]      [drift > limit]
-                    │                       │                       │
-                    ▼                       ▼                       ▼
-               holdover                 tracking                  reset
+tracking ──[any missing sample]──> microHoldover
+                                        │
+                    ┌───────────────────┼───────────────────┐
+                    │                   │                   │
+                    ▼                   ▼                   ▼
+          [holdoverThreshold]   [recovery success]   [drift > limit]
+                    │                   │                   │
+                    ▼                   ▼                   ▼
+               holdover             tracking              reset
 ```
 
 **Transitions:**
 
-- **tracking -> microHoldover**: `consecutiveMissingSamples >= microHoldoverThreshold` while in tracking
+- **tracking -> microHoldover**: Any missing sample
 - **microHoldover -> holdover**: `consecutiveMissingSamples >= holdoverThreshold`
-- **microHoldover -> tracking**: Successful recovery (samples collected, drift acceptable)
+- **microHoldover -> tracking**: Successful recovery
 - **microHoldover -> reset**: Recovery drift exceeds `driftLimit`
 
 ## Configuration
 
 **Principle**: Parameters belong to the config section of the mode that uses them, not the mode they trigger transition to.
 
-New parameter in `[phcsync.tracking]`:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `microHoldoverThreshold` | int | 5 | Consecutive missing samples to enter micro-holdover |
-
 New config section `[phcsync.microHoldover]`:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `recoveryThreshold` | int | 5 | Consecutive missing samples before MAD recovery is needed |
 | `holdoverThreshold` | int | 10 | Consecutive missing samples to transition to full holdover |
 | `driftLimit` | int64 | 100 | Max median offset (ns) during recovery; if exceeded, exit to reset |
 | `recoverySamples` | int | 5 | Samples to collect before shifting window |
+
+**Parameter semantics:**
+
+- `recoveryThreshold`: Short gaps (fewer missing samples) don't cause enough drift to need MAD window adjustment. Longer gaps do. This threshold controls when the full recovery procedure (relaxed MAD detection, collect samples, shift window) is triggered.
 
 **Shared parameters from tracking**: Micro-holdover is in some ways a sub-mode of tracking and uses several tracking parameters directly:
 - `badSampleRunLimit`: exits to reset if too many consecutive bad samples during recovery
@@ -84,11 +89,11 @@ New config section `[phcsync.microHoldover]`:
 
 **Constraints:**
 
-- `microHoldoverThreshold < holdoverThreshold < badSampleRunLimit`
+- `recoveryThreshold < holdoverThreshold < badSampleRunLimit`
 
 This ensures:
-1. Micro-holdover triggers before holdover consideration
-2. Holdover is possible before the bad sample limit forces tracking exit
+1. MAD recovery triggers before holdover consideration
+2. Holdover is possible before the bad sample limit forces an exit
 
 ## Phases
 
@@ -96,21 +101,26 @@ This ensures:
 
 While samples are missing:
 
-- Apply `avgFreq` from tracking processor (same as current tracking behavior on first bad sample)
+- Apply `avgFreq` from tracking processor (moved from tracking mode)
 - Increment `consecutiveMissingSamples`
 - If `consecutiveMissingSamples >= holdoverThreshold`: transition to holdover
 
 ### Phase 2: Recovery
 
-When samples return:
+When samples return, behavior depends on gap length:
 
+**Short gap** (`consecutiveMissingSamples < recoveryThreshold`):
+- Return to tracking immediately
+- No MAD adjustment needed (drift too small to cause issues)
+
+**Long gap** (`consecutiveMissingSamples >= recoveryThreshold`):
 - Use relaxed MAD detection: add `driftLimit` to normal MAD threshold
 - If sample passes relaxed check: accept, feed to servo, collect for recovery
 - If sample fails relaxed check: reject as outlier, increment bad sample counter
 - If bad samples exceed `badSampleRunLimit`: exit to reset
 - After collecting `recoverySamples` accepted samples: proceed to window shift
 
-### Phase 3: Window Shift
+### Phase 3: Window Shift (long gaps only)
 
 After collecting enough recovery samples:
 
@@ -156,11 +166,12 @@ New `microHoldoverSampleProcessor`:
 
 ```go
 type microHoldoverSampleProcessor struct {
-    cfg           MicroHoldoverConfig
-    trackingCfg   TrackingConfig
-    trackingProc  *trackingSampleProcessor  // preserved from tracking mode
-    recoverySamples []time.Duration         // collected post-gap offsets
-    lg            *slog.Logger
+    cfg                      MicroHoldoverConfig
+    trackingCfg              TrackingConfig
+    trackingProc             *trackingSampleProcessor  // preserved from tracking mode
+    consecutiveMissingSamples int                      // count of missing samples in this micro-holdover
+    recoverySamples          []time.Duration          // collected post-gap offsets (long gaps only)
+    lg                       *slog.Logger
 }
 ```
 
@@ -168,6 +179,8 @@ The processor holds a pointer to the tracking processor, allowing it to:
 - Access `avgFreq` for frequency control during no-sample phase
 - Access the MAD window for relaxed outlier detection
 - Modify the MAD window on successful recovery
+
+The `consecutiveMissingSamples` counter determines whether MAD recovery is needed when samples return.
 
 ### Controller Changes
 
@@ -209,32 +222,23 @@ func (c *Controller) changeMode(mode Mode) {
 
 ### Triggering Micro-Holdover
 
-The tracking processor triggers micro-holdover instead of handling gaps inline:
+The tracking processor triggers micro-holdover on any missing sample:
 
 ```go
 func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
     // ... existing outlier detection ...
 
     if sample.Kind == SampleMissing {
-        p.consecutiveMissingSamples++
-        p.consecutiveBadSamples++
-
-        // Check micro-holdover threshold
-        if p.consecutiveMissingSamples >= p.cfg.MicroHoldoverThreshold {
-            return phcAction{actionType: phcNoAction}, ModeMicroHoldover
-        }
-
-        // Apply avgFreq on first bad sample (existing behavior)
-        if p.consecutiveBadSamples == 1 && p.cfg.AvgFreqTimeConstant > 0 {
-            // ... existing avgFreq logic ...
-        }
-    } else {
-        p.consecutiveMissingSamples = 0
+        // Any missing sample -> micro-holdover
+        // Micro-holdover will handle avgFreq and recovery
+        return phcAction{actionType: phcNoAction}, ModeMicroHoldover
     }
 
-    // ... rest of existing logic ...
+    // ... rest of existing logic (only handles present samples) ...
 }
 ```
+
+This simplifies tracking mode: it only processes present samples. The `avgFreq` logic moves to micro-holdover.
 
 ### MAD Window Shift
 
@@ -286,7 +290,7 @@ func (p *microHoldoverSampleProcessor) relaxedMADIsOutlier(offset time.Duration)
 |------|---------|
 | `internal/median/median.go` | Add `ShiftAll` method |
 | `internal/phcsync/controller.go` | Add `ModeMicroHoldover`, update `changeMode` |
-| `internal/phcsync/tracking.go` | Add `microHoldoverThreshold`, trigger micro-holdover |
+| `internal/phcsync/tracking.go` | Trigger micro-holdover on missing sample, remove `avgFreq` logic |
 | `internal/phcsync/microholdover.go` | New file: `MicroHoldoverConfig`, `microHoldoverSampleProcessor` |
 | `configs/config-schema.json` | Add new config section and parameters |
 | `internal/syncsim/sync_test.go` | Test scenarios |
@@ -353,16 +357,17 @@ cfg := Config{
 }
 ```
 
-#### Short gap doesn't trigger micro-holdover
+#### Short gap skips MAD recovery
 
 ```go
 {
-    name:                     "short gap uses normal tracking",
+    name:                     "short gap skips MAD recovery",
     duration:                 120.0,
     maxTrackingStdDev:        15,
     expectMinTrackingSamples: 100,
     modifyConfig: func(cfg *Config) {
-        // 3s outage < microHoldoverThreshold (5), stays in tracking
+        // 3s outage < recoveryThreshold (5): enters micro-holdover
+        // but returns to tracking without MAD window adjustment
         cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 3.0}}
     },
 }
@@ -413,46 +418,21 @@ The holdover plan will build on micro-holdover:
 - Some frequency model code may be shared
 - Recovery phases have similar structure (drift check, reconvergence)
 
-## Possible Refinement: Enter Micro-Holdover on Any Missing Sample
+## Design Rationale: Why Any Missing Sample Triggers Micro-Holdover
 
-The current design enters micro-holdover after `microHoldoverThreshold` consecutive missing samples. A possible refinement: enter micro-holdover on **any** missing sample.
+An alternative design would only enter micro-holdover after N consecutive missing samples. We chose to trigger on **any** missing sample because:
 
-**Rationale:**
+1. **Easier to understand**: The purpose of micro-holdover becomes obvious - you don't want to trigger full holdover for just one missing sample. Micro-holdover is the answer.
 
-1. **Easier to understand**: The purpose of micro-holdover becomes obvious - you don't want to trigger full holdover for just one missing sample. Micro-holdover is the answer: it handles brief signal loss without changing PTP quality.
+2. **Conceptual simplicity**: Any missing sample means we've lost the reference signal and are now holding over - just for a very short time.
 
-2. **Conceptual simplicity**: Micro-holdover is the first stage of holdover. Any missing sample means we've lost the reference signal and are now holding over - just for a very short time.
+3. **Uniform frequency handling**: Micro-holdover owns `avgFreq` application, which is more uniform with how holdover works (holdover also applies its own frequency model).
 
-3. **Uniform frequency handling**: Currently, tracking applies `avgFreq` on the first bad sample. With this change, micro-holdover would own that responsibility, which is more uniform with how holdover works (holdover also applies its own frequency model).
+4. **Cleaner tracking mode**: Tracking only handles present samples. Missing sample = leave tracking.
 
-4. **Cleaner tracking mode**: Tracking would only handle samples that are present. Missing sample = leave tracking.
+5. **Efficiency is not a concern**: Missing samples are rare (perhaps once a week). Mode transition overhead is negligible.
 
-5. **Efficiency is not a concern**: Missing samples are rare (perhaps once a week in a good installation). The overhead of mode transitions is negligible.
-
-**What changes:**
-
-- Tracking exits to micro-holdover on first missing sample
-- Micro-holdover applies `avgFreq` (moved from tracking)
-- Rename `microHoldoverThreshold` to `recoveryThreshold` (or similar): controls when to trigger the special MAD window recovery (relaxed detection, collect samples, shift window)
-- Short gaps (< `recoveryThreshold`): return to tracking normally, no MAD adjustment needed
-- Longer gaps (>= `recoveryThreshold`): do the full recovery procedure before returning to tracking
-- If missing samples continue past `holdoverThreshold`: transition to holdover
-
-**Simplified state machine:**
-
-```
-tracking ──[any missing sample]──> microHoldover
-                                        │
-                    ┌───────────────────┼───────────────────┐
-                    │                   │                   │
-                    ▼                   ▼                   ▼
-          [holdoverThreshold]   [recovery success]   [drift > limit]
-                    │                   │                   │
-                    ▼                   ▼                   ▼
-               holdover             tracking              reset
-```
-
-**Trade-off**: More mode transitions for single missing samples. But given the rarity and the conceptual clarity gained, this seems worthwhile.
+The `recoveryThreshold` parameter still exists but serves a different purpose: it controls whether MAD window adjustment is needed, not whether to enter micro-holdover.
 
 ## Future Considerations
 
