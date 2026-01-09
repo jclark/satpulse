@@ -1,98 +1,197 @@
 # Holdover
 
-## Flavours of holdover
+## Introduction
 
-The essence of holdover is that you have a local oscillator separate from the GNSS module's oscillator,
-which you can use to keep time when the GNSS module lost its lock.
+Holdover allows the system to maintain accurate time when the GNSS receiver loses its lock. This requires a local oscillator separate from the GNSS module's oscillator.
 
-In terms of implementation, there would be two additional modes: holdover and reconverge.
+The implementation depends on where the holdover oscillator lives:
 
-The holdover mode is when the GNSS module has lost its lock and is no longer aligned to GNSS time. This corresponds to the PTP grandmaster state with a clock class of holdover. The absence of PPS is one way to detect this. Another way is by time messages that say the time is invalid. We would stay in holdover mode for a configurable length of time, but typically this would be short enough that the clock is guaranteed to be off by no more than microseconds. If this time is exceeded without GNSS regaining its lock, we would go into lost mode. But if we get the lock back, then we go into reconverge mode. This is similar to converging mode. However, and important difference is that the grandmaster would be in a holdover state, and so still potentially serving clients. When the phase has reconverged, we would enter tracking mode again. If in reconverge, we lost PPS we would go back to holdover.
+**Internal holdover (PHC-based)**: The oscillator is part of the PHC hardware. Examples include the [TimeHAT](https://www.tindie.com/products/timeappliances/timehat-i226-nic-with-pps-inout-for-rpi5/) and [TimeNIC](https://www.tindie.com/products/timeappliances/timenic-i226-pcie-nic-with-pps-inout-and-tcxo/), which have high-quality TCXOs. During tracking, we build a frequency model. During holdover, we apply that model to maintain the PHC frequency.
 
-The details of the implementation depend on where the oscillator lives. I can see three approaches to this.
+**External holdover (GPSDO-based)**: A GNSS Disciplined Oscillator (e.g., BG7TBL CM55) disciplines the oscillator upstream of SatPulse. Pulses continue during holdover but are no longer GNSS-locked. We detect loss/restoration of lock via time messages rather than missing pulses.
 
-I can see three approaches to holdover based on where this oscillator lives.
+A third approach using an independent oscillator (e.g., Leo Bodnar LBE-1421) connected to a second SDP is possible but out of scope for this plan.
 
-### Holdover using PHC oscillator
+---
 
-With this approach, the oscillator is part of the PHC. Examples of suitable hardware are the [TimeHAT](https://www.tindie.com/products/timeappliances/timehat-i226-nic-with-pps-inout-for-rpi5/) and [TimeNIC](https://www.tindie.com/products/timeappliances/timenic-i226-pcie-nic-with-pps-inout-and-tcxo/),
-which include a high-quality oscillator.
+## Stage 1: PHC-based holdover
 
-During tracking mode, we would extend the tracking of frequency to also estimate frequency over a longer time period. In holdover mode, we would adjust the frequency to be a blend of the short and long-term frequency estimates appropriately blended. More generally, during tracking we build a model of how the frequency changes, and then apply that model during holdover.
+### State machine
 
-During reconverge, we use a servo similar to converge in order to converge the phase again. But the Kp/Ki coefficients would be designed to keep the adjustment of frequency sufficiently gentle that it does not negatively affect clients. This is different from the situation with converging mode, where the goal is to converge to the correct phase as rapidly as possible. 
+- tracking -> holdover: too many consecutive missing samples
+- holdover -> tracking: reconvergence criteria met
+- holdover -> reset: holdover timer expired OR median offset of initial samples exceeds drift limit
 
-### Holdover using GNSSDO
+Holdover is triggered by missing samples (lost reference), not by outliers (bad reference).
 
-With this approach, SatPulse gets pulses from the oscillator instead of from the GNSS directly.
-There is a GNSSDO that is using the GNSS to discipline the oscillator upstream of SatPulse. Suitable hardware would be the BG7TBL CM55.
+### Holdover timer
 
-In this case, we would need to identify when the GNSS receiver as lost or regained tracking using time messages rather than pulses. The configurable length of time to stay in holdover would apply as usual. In reconverge mode, we would probably want different Kp/Ki coefficients so we track the GNSSDO's reconvergence closely. (But not the same Kp/Ki as with holdover using PHC.)
+The holdover timer measures elapsed time since the last good tracking sample:
 
-The challenge here is that we don't know how long it will take after the signal is restored for it to reconverged.
+- Timer starts when entering holdover from tracking
+- If timer expires, transition to reset
+- Timer is cleared when transitioning back to tracking
 
-### Holdover using an independent oscillator
+### PTP clock quality
 
-In this approach, a PPS signal from an oscillator would be connected to an SDP on the PHC, which would be in addition to the PPS signal from the GNSS.
-This second PPS signal would have a stable frequency but would not be aligned to UTC seconds.
-This is what chrony does with its `local` directive.
+| Mode | Clock class |
+|------|-------------|
+| tracking | Configured in-sync quality |
+| holdover | ClockClassHoldover (7) |
+| reset/converging | ClockClassDegradedA (degraded) |
 
-Suitable hardware would be the Leo Bodnar LBE-1421.
-This has two SMA outputs.
-One can be configured to produce a PPS signal that is passed through from the GNSS.
-The other can be configured to produce a 1Hz (or greater frequency ) 50% duty signal that is disciplined but not phase aligned.
-Both these signals would need to be fed into a card with two SDPs (e.g. an Intel card).
+### Frequency model
 
-During tracking, we would want to have a servo that uses both the GNSS PPS for phase correction and the frequency pulse for frequency correction. During holdover, we would do just frequency correction using the frequency pulse. We can detect mode transition by absence of the GNSS PPS.
+During tracking, we maintain two frequency estimates:
 
-## Implementation
+- **Short-term EMA**: Existing `avgFreq` with `avgFreqTimeConstant` (default 30s)
+- **Long-term EMA**: New `longAvgFreq` with `longAvgFreqTimeConstant` (default 300s)
 
-### Modes and advertised PTP clock quality
+Both are updated on each good sample.
 
-Each PHC sync mode determines what the PTP grandmaster advertises:
+### Holdover processor behaviour
 
-- `tracking`: advertise the normal in-sync `ClockQuality` (configured today via `ptp.*`).
-- `holdover`: advertise a holdover `ClockQuality` (clock class `ClockClassHoldover`).
-- `reconverging`: advertise the same holdover `ClockQuality` as `holdover`.
-- `reset`/`converging`: advertise non-synced/degraded `ClockQuality` (current behavior).
+The holdover processor handles three phases:
 
-(`holdover` and `reconverging` differ only in servo behavior; they intentionally do not differ in advertised PTP quality.)
+**Phase 1: No sample (pulses missing)**
+- Blend short-term and long-term frequency estimates based on time in holdover
+- Apply blended frequency to PHC
 
-### State transitions (PHC holdover + GPSDO holdover)
+**Phase 2: Drift check (first samples returning)**
+- Collect `recoverySamples` samples (similar to gap recovery in mad-missing-samples.md)
+- Feed samples to PI servo while collecting
+- After collecting enough samples, compute median offset
+- If median offset exceeds `driftLimit`, exit to reset
+- Otherwise proceed to phase 3
 
-The intended state machine is:
+**Phase 3: Reconvergence**
+- Continue running PI servo
+- Track convergence (like converging mode)
+- Exit to tracking when converged
 
-- `tracking → holdover`: triggered by too many missing samples (a missing-signal problem, not an outlier problem).
-- `holdover → reconverging`: first present (non-missing) sample after a holdover period.
-- `reconverging → holdover`: any missing sample while reconverging (flapping is acceptable because PTP advertised quality does not change).
-- `reconverging → tracking`: reconvergence criteria satisfied (like `converging` but tuned to be gentle to clients; still advertising holdover while reconverging).
-- `holdover|reconverging → reset`: total time spent in `holdover + reconverging` exceeds the holdover timer.
+### Sample generation
 
-Outliers do not trigger entry into holdover. Holdover is specifically the response to missing reference, not “reference present but bad”.
+Holdover uses a simple sample generator similar to `convergingSampleGenerator`. When pulses arrive, it produces samples. No complex tracking state is needed.
 
-### Holdover timer semantics
+### Relationship to gap recovery in tracking mode
 
-The holdover timer starts from the last *good* tracking sample:
+There are two levels of missing-sample handling:
 
-- `holdoverStart` is the time of the last `tracking` sample that was accepted and fed to the tracking servo (i.e. a “good” sample, not missing/outlier).
-- The timer is not reset when moving between `holdover` and `reconverging`; it measures total elapsed time since the last good tracking sample.
-- If the timer expires while in either `holdover` or `reconverging`, transition to `reset`.
-- When transitioning back to `tracking`, clear the holdover timer state.
+1. **Gap recovery in tracking** (mad-missing-samples.md): Short gaps handled within tracking mode, PTP quality unchanged
+2. **Full holdover mode**: Longer gaps, transition to holdover, advertise holdover PTP quality
 
-### PHC-based holdover vs GPSDO-based holdover
+Parameters follow consistent naming: `gap*` in tracking section, unprefixed in holdover section.
 
-We will support two implementational variants selected by a `gps.disciplined` boolean:
+| Tracking | Holdover |
+|----------|----------|
+| `gapDriftLimit` | `driftLimit` |
+| `gapRecoverySamples` | `recoverySamples` |
 
-- **PHC-based holdover (`gps.disciplined=false`)**
-  - “Missing sample” is the usual PHC/PPS notion: we cannot form a sample because pulses/messages are absent (or otherwise missing).
-  - `holdover` servo behavior: run on the PHC holdover model (frequency estimate built during tracking) while missing.
-  - `reconverging` servo behavior: run a gentle phase-converging servo (distinct gains from `converging`) while still advertising holdover.
+### Triggering holdover
 
-- **GPSDO-based holdover (`gps.disciplined=true`)**
-  - The PPS may continue even when GNSS lock is lost, so “missing sample” is defined by *loss of time lock*, not by missing pulses.
-  - A `TimeMsg` signals loss of lock by having both `UTCTime == nil` and `TAITime == 0`.
-  - `TimeMsgBuffer` will expose a lock query API (separate from `GetPostTimeMessages`), implemented roughly as “does the most recent navigation-solution (`NavSolution`) `TimeMsg` indicate a valid time (and is it not stale)?”
-  - `holdover` servo behavior: continue tracking the disciplined PPS using holdover-appropriate `Kp/Ki`.
-  - `reconverging` servo behavior: use distinct `Kp/Ki` tuned to follow the GPSDO’s relock behavior while still advertising holdover.
+Modify tracking mode to distinguish between outliers and missing samples:
 
-The controller will create the appropriate `sampleGenerator` and `sampleProcessor` implementations for `holdover`/`reconverging` based on `gps.disciplined`.
+- **Outliers**: Increment `consecutiveBadSamples`, trigger reset when limit reached
+- **Missing samples**: Increment `consecutiveMissingSamples`, trigger holdover when limit reached
+
+New config parameter in `[phcsync.tracking]`:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `missingSampleLimit` | int | 10 | Consecutive missing samples before holdover |
+
+Note: `missingSampleLimit` must be >= `gapMinSamples` (default 5) so gap recovery runs before holdover.
+
+TODO: this is not OK; need to design plan that works well with tracking-limits.md.
+
+### Configuration
+
+New config section `[ptp.holdover]` for PTP clock quality during holdover:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `clockAccuracy` | string | TBD | Clock accuracy during holdover |
+| `offsetScaledLogVariance` | int | TBD | OSLV during holdover |
+
+New config section `[phcsync.holdover]`:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `duration` | float | 60 | Maximum seconds in holdover before reset |
+| `driftLimit` | int64 | TBD | Max median offset (ns) to attempt reconvergence |
+| `recoverySamples` | int | 5 | Samples to collect before checking drift |
+| `kp` | float | TBD | PI servo proportional gain |
+| `ki` | float | TBD | PI servo integral gain |
+| `medianWindow` | int | 5 | Samples for convergence median |
+| `offsetLimit` | int64 | 1000 | Max offset to declare converged (ns) |
+| `stableWindow` | int | 5 | Stable samples before exit to tracking |
+
+**Parameter semantics:**
+
+`duration`: How long we trust the frequency model. After this time without signal recovery, the accumulated drift is too uncertain, so we give up and reset (step the clock).
+
+`driftLimit`: When signal returns, we check how far we've drifted. If median offset of initial samples exceeds this, we've drifted too far to reconverge gracefully - reset instead. Should be slightly less than `ptp.holdover.clockAccuracy` since there's no point reconverging if we've exceeded our advertised accuracy.
+
+`recoverySamples`: How many samples to collect before checking drift. Using median of several samples is more robust than trusting a single sample (which could be an outlier).
+
+`kp`, `ki`: PI servo gains during reconvergence. May need different tuning than converging mode since we want to correct the drift without causing large frequency swings that would disturb PTP clients.
+
+`medianWindow`, `offsetLimit`, `stableWindow`: Convergence criteria - same semantics as converging mode. We track the median of recent offsets and exit to tracking when the median stabilizes below `offsetLimit` for `stableWindow` consecutive samples.
+
+### Implementation components
+
+1. Add `SyncState` value `Holdover` in `ptpgm` package
+2. Add `ModeHoldover` in `phcsync`
+3. Add `longAvgFreq` to `trackingSampleProcessor`
+4. New `holdoverSampleGenerator`: simple, like converging
+5. New `holdoverSampleProcessor`: handles both no-sample and sample cases
+6. Modify `trackingSampleProcessor`: separate missing vs outlier counting, transition to holdover
+7. Add holdover timer: track time since last good sample, enforce `maxDuration`
+
+---
+
+## Stage 2: GPSDO-based holdover
+
+This section describes modifications needed to support external holdover with a GPSDO.
+
+### Key difference: detecting lock loss
+
+With a GPSDO, PPS pulses continue even when GNSS lock is lost. We must detect loss of lock from time messages, not from missing pulses.
+
+A `TimeMsg` indicates loss of lock when:
+- `UTCTime == nil` AND `TAITime == 0`
+
+### Configuration
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `gps.disciplined` | bool | false | True if using external GPSDO |
+
+### TimeMsgBuffer lock query API
+
+Add method to `TimeMsgBuffer`:
+
+```go
+// IsLocked returns true if the most recent navigation-solution TimeMsg
+// indicates a valid time and is not stale.
+func (b *TimeMsgBuffer) IsLocked() bool
+```
+
+### Accommodating multiple holdover types
+
+The `gps.disciplined` setting selects different implementations:
+
+**Sample generation:**
+- PHC-based (`disciplined=false`): Missing sample = no PPS edge received
+- GPSDO-based (`disciplined=true`): Missing sample = `!timeMsgBuf.IsLocked()`
+
+**Holdover servo:**
+- PHC-based: Apply blended frequency model (free-running)
+- GPSDO-based: Continue tracking the disciplined PPS
+
+### Implementation components
+
+1. Add `IsLocked()` to `TimeMsgBuffer`
+2. New `gpsdoHoldoverSampleGenerator`: checks lock status instead of pulse presence
+3. New `gpsdoHoldoverSampleProcessor`: continues tracking with adjusted Kp/Ki
+4. Controller selects implementations based on `gps.disciplined`
