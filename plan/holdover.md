@@ -89,20 +89,42 @@ Parameters follow consistent naming: `gap*` in tracking section, unprefixed in h
 
 ### Triggering holdover
 
-Modify tracking mode to distinguish between outliers and missing samples:
+Holdover entry is a two-step decision that integrates with tracking-limits.md:
 
-- **Outliers**: Increment `consecutiveBadSamples`, trigger reset when limit reached
-- **Missing samples**: Increment `consecutiveMissingSamples`, trigger holdover when limit reached
+**Step 1: Should we exit tracking?**
+
+The servo tracks `consecutiveBadSamples` which increments on any bad sample (missing OR outlier) and resets on a good sample. When `consecutiveBadSamples >= badSampleRunLimit`, the servo has gone too long without usable input and must exit tracking mode.
+
+**Step 2: Holdover or reset?**
+
+At the moment we exit tracking, we check whether the reference has stopped (missing samples) or is present but bad (outliers):
+
+- If `consecutiveMissingSamples >= holdoverThreshold`: holdover
+- Otherwise: reset
+
+Where `consecutiveMissingSamples` increments on missing samples and resets on outliers or good samples.
+
+**Rationale**: Holdover makes sense when the reference has disappeared—we free-run using the frequency model. Reset makes sense when the reference is present but unreliable—we cannot trust it, so we start over.
+
+**Examples** with `badSampleRunLimit=30`, `holdoverThreshold=10`:
+
+| Sequence | consecutiveMissing at exit | Result |
+|----------|---------------------------|--------|
+| 30 missing | 30 (≥10) | holdover |
+| 30 outliers | 0 (<10) | reset |
+| 20 outliers, 10 missing | 10 (≥10) | holdover |
+| 22 outliers, 8 missing | 8 (<10) | reset |
+| 20 missing, 10 outliers | 0 (<10) | reset |
 
 New config parameter in `[phcsync.tracking]`:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `missingSampleLimit` | int | 10 | Consecutive missing samples before holdover |
+| `holdoverThreshold` | int | 10 | Min consecutive missing samples to choose holdover over reset |
 
-Note: `missingSampleLimit` must be >= `gapMinSamples` (default 5) so gap recovery runs before holdover.
+**Constraint**: `gapThreshold < holdoverThreshold < badSampleRunLimit`
 
-TODO: this is not OK; need to design plan that works well with tracking-limits.md.
+This ensures gap recovery (short interruptions within tracking) triggers before holdover consideration, and holdover is possible before the bad sample limit forces an exit.
 
 ### Configuration
 

@@ -34,12 +34,14 @@ Four separate limits:
 
 Config field names (TOML uses camelCase):
 
-1. `badSampleRunLimit` - max consecutive bad samples before reset
+1. `badSampleRunLimit` - max consecutive bad samples while remaining in tracking
 2. `outlierRatioLimit` - max ratio of MAD window that can be outliers (0.0-1.0)
 3. `badSampleWindow` - window size for tracking bad sample frequency
 4. `badSampleRatioLimit` - max ratio of bad sample window that can be bad (0.0-1.0)
 
 Replaces current `badSampleLimit`.
+
+**Limit semantics**: A limit of N means N is allowed. Current code uses `>=`; change to `>`.
 
 ## Default Values
 

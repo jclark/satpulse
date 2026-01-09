@@ -58,7 +58,7 @@ Builds on: tracking-limits.md
 
 ### Overview
 
-1. Detect significant gaps (>= GapMinSamples consecutive missing samples)
+1. Detect significant gaps (>= GapThreshold consecutive missing samples)
 2. Use relaxed MAD detection for post-gap samples (add GapDriftLimit to threshold)
 3. Accumulate GapRecoverySamples without adding to MAD window
 4. Shift window by (new_median - old_median), capped by GapDriftLimit (reset if exceeded)
@@ -70,7 +70,7 @@ Add to `TrackingConfig`:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `GapMinSamples` | 5 | Min consecutive missing samples to trigger gap handling |
+| `GapThreshold` | 5 | Min consecutive missing samples to trigger gap handling |
 | `GapDriftLimit` | 100ns | Added to MAD threshold during gap recovery |
 | `GapRecoverySamples` | 5 | Samples to collect before shifting window |
 
@@ -110,7 +110,7 @@ With GapDriftLimit=100ns, pre-gap median=5ns, pre-gap MAD=3ns, MADMultiple=25: t
 - Increment `consecutiveMissingSamples`
 
 **On good sample:**
-- If `consecutiveMissingSamples >= GapMinSamples` and not in recovery:
+- If `consecutiveMissingSamples >= GapThreshold` and not in recovery:
   - Only enter recovery if `offsetWindow.Len() >= MADMinSamples` (need meaningful stats)
   - If so, initialize `gapPostOffsets` slice (entering recovery)
   - Otherwise, stay on normal path (PreMAD detection handles it)
@@ -189,7 +189,7 @@ Before finalizing tests, experiment to determine appropriate values for:
 
 | Parameter | Default | Tuning Notes |
 |-----------|---------|--------------|
-| `GapMinSamples` | 5 | Min gap length to trigger recovery |
+| `GapThreshold` | 5 | Min gap length to trigger recovery |
 | `GapDriftLimit` | 100ns | Must exceed max expected drift during gap |
 | `GapRecoverySamples` | 5 | Samples needed for reliable new median |
 
@@ -259,7 +259,7 @@ Before finalizing tests, experiment to determine appropriate values for:
         cfg.GPS.Jitter = 0.2
         cfg.GPS.Sawtooth.Amp = 7.86
         cfg.GPS.AR1 = []AR1Config{{Tau: 3400, Sigma: 3}}
-        // 3s outage < GapMinSamples (5), uses normal path
+        // 3s outage < GapThreshold (5), uses normal path
         cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 3.0}}
         cfg.Sync.Track.Kp = 0.8
         cfg.Sync.Track.Ki = 0.3
