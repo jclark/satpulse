@@ -59,8 +59,8 @@ func TestPHCSync(t *testing.T) {
 			modifyConfig: func(cfg *Config) { cfg.Pulse.Width = 0.5 },
 		},
 		{
-			name:       "signal loss - no recovery",
-			duration:   90.0,
+			name:     "signal loss - no recovery",
+			duration: 90.0,
 			// Don't check maxTrackingStdDev since we lose sync
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 30.0}} // outage from t=60s to end
@@ -79,11 +79,11 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:                     "recovers from temporary outage",
 			duration:                 120.0,
-			maxTrackingStdDev:        30,         // slightly higher tolerance due to recovery transient
-			expectResetSamples:       2,          // 1 initial + 1 after recovery
-			expectMinTrackingSamples: 35,         // At least 35 before outage (plus time after recovery)
-			expectResetEntered:       ptr(2),  // entered reset twice (initial + after outage)
-			expectTrackingEntered:    ptr(2),  // entered tracking twice (initial + after recovery)
+			maxTrackingStdDev:        30,     // slightly higher tolerance due to recovery transient
+			expectResetSamples:       2,      // 1 initial + 1 after recovery
+			expectMinTrackingSamples: 35,     // At least 35 before outage (plus time after recovery)
+			expectResetEntered:       ptr(2), // entered reset twice (initial + after outage)
+			expectTrackingEntered:    ptr(2), // entered tracking twice (initial + after recovery)
 			// After recovery: reset→converging→tracking for remaining ~50 seconds
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 10.0}} // 10s outage starting at t=60s
@@ -92,10 +92,10 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:                    "signal loss during converging mode",
 			duration:                40.0,
-			expectTrackingSamples:   0,          // never reaches tracking
-			expectResetSamples:      2,          // 1 initial + 1 after recovery from converging loss
-			expectConvergingSamples: 22,         // 7 good + 3 missing + 12 good in second phase
-			expectTrackingEntered:   ptr(0),  // tracking never entered
+			expectTrackingSamples:   0,      // never reaches tracking
+			expectResetSamples:      2,      // 1 initial + 1 after recovery from converging loss
+			expectConvergingSamples: 22,     // 7 good + 3 missing + 12 good in second phase
+			expectTrackingEntered:   ptr(0), // tracking never entered
 			// Expected flow:
 			// - Reset #1 at t=6s (1 sample)
 			// - Converging from t=6s to t=12s (7 good samples)
@@ -166,7 +166,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "MAD detects scheduled outliers",
 			duration:          90.0, // Longer duration to ensure we're in tracking mode
-			maxTrackingStdDev: 20, // Should maintain low stddev despite outliers
+			maxTrackingStdDev: 20,   // Should maintain low stddev despite outliers
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outlier = []OutlierConfig{
 					{Time: 40, Offset: 2000},
@@ -183,7 +183,7 @@ func TestPHCSync(t *testing.T) {
 				cfg.Fault.Outlier = []OutlierConfig{
 					{Time: 8, Offset: 150}, // Outlier during early tracking (MAD window not full)
 				}
-				cfg.Sync.Track.OutlierThreshold = 200 // 200ns gate - 150ns outlier should pass through
+				cfg.Sync.Track.MADThreshold = 200 // 200ns gate - 150ns outlier should pass through
 			},
 		},
 		{
@@ -214,7 +214,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "MAD rejects spikes during sustained shift",
 			duration:          70.0,
-			maxTrackingStdDev: 50,  // Higher tolerance due to shift transient
+			maxTrackingStdDev: 50,                    // Higher tolerance due to shift transient
 			maxTrackingAbsMax: 150 * time.Nanosecond, // Should be ~100ns from shift, NOT ~2us from spikes
 			modifyConfig: func(cfg *Config) {
 				// Apply sustained 100ns shift after tracking stabilizes
@@ -261,7 +261,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth correction with PrePulse messages",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 25, // slightly higher tolerance due to sawtooth
+			maxTrackingStdDev: 25,    // slightly higher tolerance due to sawtooth
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 8.0 // 8ns peak-to-peak sawtooth (other fields use defaults)
 			},
@@ -274,11 +274,11 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth correction improves accuracy - correction enabled",
 			duration:          300.0,                // 5 minutes
-			maxTrackingStdDev: 9,  // Should stay near baseline ~8ns
+			maxTrackingStdDev: 9,                    // Should stay near baseline ~8ns
 			maxTrackingAbsMax: 28 * time.Nanosecond, // Should stay near baseline ~27ns
 			modifyConfig: func(cfg *Config) {
-				cfg.GPS.Sawtooth.Amp = 20.0                     // 20ns peak-to-peak sawtooth
-				cfg.Sync.Track.Kp = 0.5                         // Explicit Kp/Ki for high-jitter test config
+				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
+				cfg.Sync.Track.Kp = 0.5     // Explicit Kp/Ki for high-jitter test config
 				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = false // Use correction (default)
 			},
@@ -286,13 +286,13 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth correction improves accuracy - correction disabled",
 			duration:          300.0,                // 5 minutes
-			minTrackingStdDev: 8,  // Must be worse than corrected (~9ns)
+			minTrackingStdDev: 8,                    // Must be worse than corrected (~9ns)
 			minTrackingAbsMax: 26 * time.Nanosecond, // Must be worse than corrected (~28ns)
-			maxTrackingStdDev: 11, // But not too degraded
+			maxTrackingStdDev: 11,                   // But not too degraded
 			maxTrackingAbsMax: 33 * time.Nanosecond, // But not too degraded
 			modifyConfig: func(cfg *Config) {
-				cfg.GPS.Sawtooth.Amp = 20.0                    // 20ns peak-to-peak sawtooth
-				cfg.Sync.Track.Kp = 0.5                        // Explicit Kp/Ki for high-jitter test config
+				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
+				cfg.Sync.Track.Kp = 0.5     // Explicit Kp/Ki for high-jitter test config
 				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = true // Ignore correction
 			},
@@ -300,7 +300,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth correction with PostPulse messages",
 			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 25, // slightly higher tolerance due to sawtooth
+			maxTrackingStdDev: 25,    // slightly higher tolerance due to sawtooth
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 8.0 // 8ns peak-to-peak sawtooth
 				cfg.Msg.SawtoothType = SawtoothPostPulse
@@ -316,7 +316,7 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth PostPulse correction improves accuracy - correction enabled",
 			duration:          300.0,                // 5 minutes
-			maxTrackingStdDev: 10, // Should stay near baseline ~9ns
+			maxTrackingStdDev: 10,                   // Should stay near baseline ~9ns
 			maxTrackingAbsMax: 28 * time.Nanosecond, // Should stay near baseline ~27ns
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
@@ -324,7 +324,7 @@ func TestPHCSync(t *testing.T) {
 				cfg.Pulse.MinDelay = 0.01
 				cfg.Pulse.MaxDelay = 0.25
 				cfg.Msg.PostPulseDelay = 0.1
-				cfg.Sync.Track.Kp = 0.5                         // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Kp = 0.5 // Explicit Kp/Ki for high-jitter test config
 				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = false // Use correction (default)
 			},
@@ -332,9 +332,9 @@ func TestPHCSync(t *testing.T) {
 		{
 			name:              "sawtooth PostPulse correction improves accuracy - correction disabled",
 			duration:          300.0,                // 5 minutes
-			minTrackingStdDev: 8,  // Must be worse than corrected (~9ns)
+			minTrackingStdDev: 8,                    // Must be worse than corrected (~9ns)
 			minTrackingAbsMax: 26 * time.Nanosecond, // Must be worse than corrected (~28ns)
-			maxTrackingStdDev: 11, // But not too degraded
+			maxTrackingStdDev: 11,                   // But not too degraded
 			maxTrackingAbsMax: 32 * time.Nanosecond, // But not too degraded
 			modifyConfig: func(cfg *Config) {
 				cfg.GPS.Sawtooth.Amp = 20.0 // 20ns peak-to-peak sawtooth
@@ -342,7 +342,7 @@ func TestPHCSync(t *testing.T) {
 				cfg.Pulse.MinDelay = 0.01
 				cfg.Pulse.MaxDelay = 0.25
 				cfg.Msg.PostPulseDelay = 0.1
-				cfg.Sync.Track.Kp = 0.5                        // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Kp = 0.5 // Explicit Kp/Ki for high-jitter test config
 				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = true // Ignore correction
 			},
@@ -358,7 +358,7 @@ func TestPHCSync(t *testing.T) {
 				cfg.Pulse.MinDelay = 0.01
 				cfg.Pulse.MaxDelay = 0.02 // Tighter delay range: 10-20ms instead of 10-250ms
 				cfg.Msg.PostPulseDelay = 0.1
-				cfg.Sync.Track.Kp = 0.5                         // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Kp = 0.5 // Explicit Kp/Ki for high-jitter test config
 				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = false // Use correction
 			},
@@ -374,7 +374,7 @@ func TestPHCSync(t *testing.T) {
 				cfg.Pulse.MinDelay = 0.01
 				cfg.Pulse.MaxDelay = 0.02 // Tighter delay range
 				cfg.Msg.PostPulseDelay = 0.1
-				cfg.Sync.Track.Kp = 0.5                        // Explicit Kp/Ki for high-jitter test config
+				cfg.Sync.Track.Kp = 0.5 // Explicit Kp/Ki for high-jitter test config
 				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.IgnoreSawtoothCorrection = true // Ignore correction
 			},
@@ -399,6 +399,7 @@ func TestPHCSync(t *testing.T) {
 			minTrackingAbsMax: 600 * time.Nanosecond, // Step is absorbed, high tracking error
 			modifyConfig: func(cfg *Config) {
 				cfg.Sync.Track.MADWindow = 10
+				cfg.Sync.Track.OutlierThreshold = 600 // Above step amplitude so MAD window behavior is tested
 				cfg.Fault.Excursion = []ExcursionConfig{{
 					StartTime: 500.0,
 					Duration:  10.0,
@@ -416,6 +417,7 @@ func TestPHCSync(t *testing.T) {
 			maxTrackingAbsMax: 200 * time.Nanosecond, // Reset triggered, low tracking error
 			modifyConfig: func(cfg *Config) {
 				cfg.Sync.Track.MADWindow = 20
+				cfg.Sync.Track.OutlierThreshold = 600 // Above step amplitude so MAD window behavior is tested
 				cfg.Fault.Excursion = []ExcursionConfig{{
 					StartTime: 500.0,
 					Duration:  10.0,
@@ -426,6 +428,47 @@ func TestPHCSync(t *testing.T) {
 			},
 			// Issue #174: With MADWindow=20, enough consecutive outliers to hit
 			// BadSampleLimit=5, triggering reset and proper resync.
+		},
+		{
+			name:               "upper gate rejects extreme step",
+			duration:           1000.0,
+			maxTrackingAbsMax:  200 * time.Nanosecond, // Outliers rejected, low tracking error
+			expectResetEntered: ptr(1),                // Only initial reset, no reset from excursion
+			modifyConfig: func(cfg *Config) {
+				// 600ns step exceeds default OutlierThreshold (500ns)
+				// Upper gate rejects samples unconditionally, excursion < BadSampleLimit
+				cfg.Sync.Track.BadSampleLimit = 15
+				cfg.Fault.Excursion = []ExcursionConfig{{
+					StartTime: 500.0,
+					Duration:  12.0, // < BadSampleLimit, no reset
+					Amplitude: 600,
+					Rise:      RampConfig{Duration: 0.01},
+					Fall:      RampConfig{Duration: 0.01},
+				}}
+			},
+			// Issue #194: Upper gate (OutlierThreshold) rejects extreme samples without
+			// adding them to MAD window. Outliers discarded, tracking stays accurate.
+		},
+		{
+			name:               "without upper gate step is absorbed",
+			duration:           1000.0,
+			minTrackingAbsMax:  600 * time.Nanosecond, // Step absorbed, high tracking error
+			expectResetEntered: ptr(2),                // Initial + reset when step ends
+			modifyConfig: func(cfg *Config) {
+				// Same 600ns step, but OutlierThreshold raised above it
+				// Samples pass to MAD, get added to window, median shifts, step absorbed
+				cfg.Sync.Track.OutlierThreshold = 650
+				cfg.Sync.Track.BadSampleLimit = 15
+				cfg.Fault.Excursion = []ExcursionConfig{{
+					StartTime: 500.0,
+					Duration:  12.0,
+					Amplitude: 600,
+					Rise:      RampConfig{Duration: 0.01},
+					Fall:      RampConfig{Duration: 0.01},
+				}}
+			},
+			// Issue #194: Without upper gate, step passes to MAD, median shifts to ~600ns.
+			// When step ends, normal samples are outliers vs shifted median, triggering reset.
 		},
 	}
 
