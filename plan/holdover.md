@@ -28,9 +28,11 @@ Holdover is triggered by missing samples (lost reference), not by outliers (bad 
 
 The holdover timer measures elapsed time since the last good tracking sample:
 
-- Timer starts when entering holdover from tracking
-- If timer expires, transition to reset
-- Timer is cleared when transitioning back to tracking
+- Computed as current time minus timestamp of last good sample
+- If elapsed time exceeds `duration`, transition to reset
+- Timer is implicitly cleared when a good sample arrives
+
+**Constraint**: `duration > holdoverThreshold` (we need at least holdoverThreshold seconds of missing samples before entering holdover)
 
 ### PTP clock quality
 
@@ -58,9 +60,9 @@ The holdover processor handles three phases:
 - Apply blended frequency to PHC
 
 **Phase 2: Drift check (first samples returning)**
-- Collect `recoverySamples` samples (similar to gap recovery in mad-missing-samples.md)
-- Feed samples to PI servo while collecting
-- After collecting enough samples, compute median offset
+- If offset > `driftLimit`: reject sample, increment bad sample counter; if too many, exit to reset
+- Otherwise: feed to servo AND collect for drift check
+- After `recoverySamples` accepted samples: compute median offset
 - If median offset exceeds `driftLimit`, exit to reset
 - Otherwise proceed to phase 3
 
