@@ -2,6 +2,8 @@
 
 Fixes: #188
 
+Superseded by: micro-holdover.md
+
 ## Context
 
 We have a PI servo synchronizing a PHC (PTP Hardware Clock) to GPS PPS pulses. The servo operates in "tracking mode" once synchronized, receiving 1Hz samples showing the offset between PHC and GPS.
