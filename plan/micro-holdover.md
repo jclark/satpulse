@@ -2,8 +2,6 @@
 
 Fixes: #188
 
-Assumes: tracking-limits.md is implemented
-
 ## Introduction
 
 Micro-holdover is a brief holdover period short enough that PTP clock quality does not need to change. It bridges the gap between normal tracking (where every sample is processed) and full holdover (where PTP quality is degraded).
@@ -125,7 +123,7 @@ When samples return, behavior depends on gap length:
 After collecting enough recovery samples:
 
 ```go
-preMedian := trackingProc.madTracker.Median()
+preMedian := trackingProc.madWindow.Median()
 newMedian := computeMedian(p.recoveryOffsets)  // median of collected offsets
 shift := newMedian - preMedian
 
@@ -133,9 +131,9 @@ if shift.Abs() > driftLimit {
     return ModeReset
 }
 
-trackingProc.madTracker.ShiftAll(shift)
+trackingProc.madWindow.ShiftAll(shift)
 for _, offset := range p.recoveryOffsets {
-    trackingProc.madTracker.Add(offset, false)  // not outliers
+    trackingProc.madWindow.Add(offset)
 }
 return ModeTracking
 ```
@@ -245,7 +243,7 @@ This simplifies tracking mode: it only processes present samples. The `avgFreq` 
 
 ### MAD Window Shift
 
-Add `ShiftAll` method to `median.Window` (exposed through `madTracker` from tracking-limits.md):
+Add `ShiftAll` method to `median.Window` (exposed through `madWindow` from tracking-limits.md):
 
 ```go
 // ShiftAll adds delta to all values in the window.
@@ -271,7 +269,7 @@ func (p *microHoldoverSampleProcessor) relaxedMADIsOutlier(offset time.Duration)
     // - MADThreshold: optional secondary gate
     // This function only relaxes the adaptive MAD-based detection.
 
-    tw := p.trackingProc.madTracker
+    tw := p.trackingProc.madWindow
     if tw.Len() < p.trackingCfg.MADMinSamples {
         return false
     }
