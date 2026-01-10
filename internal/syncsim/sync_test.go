@@ -146,7 +146,7 @@ func TestPHCSync(t *testing.T) {
 				cfg.Sync.Track.Kp = 0.5                                             // Explicit Kp/Ki for high-jitter test config
 				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.AvgFreqTimeConstant = 30 // Enable EMA with 30s time constant
-				cfg.Sync.Track.BadSampleLimit = 15      // Increase limit to allow longer outage
+				cfg.Sync.Track.BadSampleRunLimit = 15   // Increase limit to allow longer outage
 			},
 		},
 		{
@@ -160,7 +160,7 @@ func TestPHCSync(t *testing.T) {
 				cfg.Sync.Track.Kp = 0.5                                             // Explicit Kp/Ki for high-jitter test config
 				cfg.Sync.Track.Ki = 0.1
 				cfg.Sync.Track.AvgFreqTimeConstant = 0 // Disable EMA feature
-				cfg.Sync.Track.BadSampleLimit = 15     // Increase limit to allow longer outage
+				cfg.Sync.Track.BadSampleRunLimit = 15  // Increase limit to allow longer outage
 			},
 		},
 		{
@@ -394,12 +394,13 @@ func TestPHCSync(t *testing.T) {
 			// After fix (true flicker): stddev=18ns, absMax=51ns (realistic)
 		},
 		{
-			name:              "phase step absorbed with MADWindow=10",
+			name:              "phase step absorbed with MADWindow=10 (outlierRatioLimit disabled)",
 			duration:          1000.0,
 			minTrackingAbsMax: 600 * time.Nanosecond, // Step is absorbed, high tracking error
 			modifyConfig: func(cfg *Config) {
 				cfg.Sync.Track.MADWindow = 10
-				cfg.Sync.Track.OutlierThreshold = 600 // Above step amplitude so MAD window behavior is tested
+				cfg.Sync.Track.OutlierThreshold = 600   // Above step amplitude so MAD window behavior is tested
+				cfg.Sync.Track.OutlierRatioLimit = 1.0  // Disable outlier ratio limit to test old behavior
 				cfg.Fault.Excursion = []ExcursionConfig{{
 					StartTime: 500.0,
 					Duration:  10.0,
@@ -408,8 +409,8 @@ func TestPHCSync(t *testing.T) {
 					Fall:      RampConfig{Duration: 0.01},
 				}}
 			},
-			// Issue #174: With MADWindow=10, median recenters after ~4 outliers,
-			// so BadSampleLimit=5 is not reached and the step is absorbed.
+			// Issue #174: With MADWindow=10 and outlierRatioLimit disabled, median recenters
+			// after ~4 outliers, so BadSampleRunLimit=5 is not reached and the step is absorbed.
 		},
 		{
 			name:              "phase step triggers reset with MADWindow=20",
@@ -427,7 +428,7 @@ func TestPHCSync(t *testing.T) {
 				}}
 			},
 			// Issue #174: With MADWindow=20, enough consecutive outliers to hit
-			// BadSampleLimit=5, triggering reset and proper resync.
+			// BadSampleRunLimit=5, triggering reset and proper resync.
 		},
 		{
 			name:               "upper gate rejects extreme step",
@@ -436,11 +437,11 @@ func TestPHCSync(t *testing.T) {
 			expectResetEntered: ptr(1),                // Only initial reset, no reset from excursion
 			modifyConfig: func(cfg *Config) {
 				// 600ns step exceeds default OutlierThreshold (500ns)
-				// Upper gate rejects samples unconditionally, excursion < BadSampleLimit
-				cfg.Sync.Track.BadSampleLimit = 15
+				// Upper gate rejects samples unconditionally, excursion < BadSampleRunLimit
+				cfg.Sync.Track.BadSampleRunLimit = 15
 				cfg.Fault.Excursion = []ExcursionConfig{{
 					StartTime: 500.0,
-					Duration:  12.0, // < BadSampleLimit, no reset
+					Duration:  12.0, // < BadSampleRunLimit, no reset
 					Amplitude: 600,
 					Rise:      RampConfig{Duration: 0.01},
 					Fall:      RampConfig{Duration: 0.01},
@@ -450,7 +451,7 @@ func TestPHCSync(t *testing.T) {
 			// adding them to MAD window. Outliers discarded, tracking stays accurate.
 		},
 		{
-			name:               "without upper gate step is absorbed",
+			name:               "without upper gate step is absorbed (outlierRatioLimit disabled)",
 			duration:           1000.0,
 			minTrackingAbsMax:  600 * time.Nanosecond, // Step absorbed, high tracking error
 			expectResetEntered: ptr(2),                // Initial + reset when step ends
@@ -458,7 +459,8 @@ func TestPHCSync(t *testing.T) {
 				// Same 600ns step, but OutlierThreshold raised above it
 				// Samples pass to MAD, get added to window, median shifts, step absorbed
 				cfg.Sync.Track.OutlierThreshold = 650
-				cfg.Sync.Track.BadSampleLimit = 15
+				cfg.Sync.Track.BadSampleRunLimit = 15
+				cfg.Sync.Track.OutlierRatioLimit = 1.0 // Disable outlier ratio limit to test old behavior
 				cfg.Fault.Excursion = []ExcursionConfig{{
 					StartTime: 500.0,
 					Duration:  12.0,
@@ -467,8 +469,71 @@ func TestPHCSync(t *testing.T) {
 					Fall:      RampConfig{Duration: 0.01},
 				}}
 			},
-			// Issue #194: Without upper gate, step passes to MAD, median shifts to ~600ns.
-			// When step ends, normal samples are outliers vs shifted median, triggering reset.
+			// Issue #194: Without upper gate and outlierRatioLimit disabled, step passes to MAD,
+			// median shifts to ~600ns. When step ends, normal samples are outliers vs shifted median.
+		},
+		{
+			name:               "outlierRatioLimit prevents step absorption with MADWindow=10",
+			duration:           1000.0,
+			maxTrackingAbsMax:  200 * time.Nanosecond, // Reset triggered early, low tracking error
+			expectResetEntered: ptr(2),                // Initial + reset from outlier ratio
+			modifyConfig: func(cfg *Config) {
+				cfg.Sync.Track.MADWindow = 10
+				cfg.Sync.Track.OutlierThreshold = 600  // Above step amplitude so MAD window behavior is tested
+				cfg.Sync.Track.OutlierRatioLimit = 0.3 // Default: triggers reset before median recenters
+				cfg.Fault.Excursion = []ExcursionConfig{{
+					StartTime: 500.0,
+					Duration:  10.0,
+					Amplitude: 500,
+					Rise:      RampConfig{Duration: 0.01},
+					Fall:      RampConfig{Duration: 0.01},
+				}}
+			},
+			// Fix for #174: OutlierRatioLimit (0.3) triggers reset after >3 outliers in window of 10,
+			// before median can recenter. Step is not absorbed.
+		},
+		{
+			name:               "outlierRatioLimit prevents step absorption without upper gate",
+			duration:           1000.0,
+			maxTrackingAbsMax:  200 * time.Nanosecond, // Reset triggered early, low tracking error
+			expectResetEntered: ptr(2),                // Initial + reset from outlier ratio
+			modifyConfig: func(cfg *Config) {
+				cfg.Sync.Track.OutlierThreshold = 650  // Above step amplitude
+				cfg.Sync.Track.OutlierRatioLimit = 0.3 // Default: triggers reset before median shifts
+				cfg.Fault.Excursion = []ExcursionConfig{{
+					StartTime: 500.0,
+					Duration:  12.0,
+					Amplitude: 600,
+					Rise:      RampConfig{Duration: 0.01},
+					Fall:      RampConfig{Duration: 0.01},
+				}}
+			},
+			// Fix for #187/#194: OutlierRatioLimit triggers reset before median can shift,
+			// preventing step absorption even without upper gate protection.
+		},
+		{
+			name:               "badSampleRatioLimit detects intermittent failures",
+			duration:           120.0,
+			expectResetEntered: ptr(2), // Initial + reset from bad sample ratio
+			modifyConfig: func(cfg *Config) {
+				// Use small window for faster test (10 seconds)
+				cfg.Sync.Track.BadSampleWindow = 10
+				cfg.Sync.Track.BadSampleRatioLimit = 0.5 // >50% bad triggers reset
+				cfg.Sync.Track.BadSampleRunLimit = 100   // Disable consecutive limit
+				cfg.Sync.Track.OutlierRatioLimit = 1.0   // Disable outlier ratio limit
+				// Pattern: 2 outliers, 1 good (repeating) = 66% bad
+				// Starts at t=30 after tracking is established and window can fill
+				var outliers []OutlierConfig
+				for t := 30.0; t < 100.0; t += 3 {
+					outliers = append(outliers, OutlierConfig{Time: t, Offset: 2000})
+					outliers = append(outliers, OutlierConfig{Time: t + 1, Offset: 2000})
+					// t+2 is a good sample
+				}
+				cfg.Fault.Outlier = outliers
+			},
+			// Issue #178: Detects intermittent failures even when not consecutive.
+			// With 66% bad samples (2 bad, 1 good pattern) and 50% limit, reset triggers
+			// once the 10-sample window fills with >50% bad samples.
 		},
 	}
 

@@ -48,10 +48,10 @@ Replaces current `badSampleLimit`.
 | Parameter | Current | Proposed | Rationale |
 |-----------|---------|----------|-----------|
 | `madWindow` | 10 | 20 | Larger window, more outliers before median shifts |
-| `badSampleRunLimit` | 5 | 30 | Can be generous now that outlier ratio protects us |
-| `outlierRatioLimit` | N/A | 0.3 | 6 outliers in window of 20 triggers reset |
+| `badSampleRunLimit` | 5 | 5 | Leave as is for now; increase default when tests show this does not cause too much drift |
+| `outlierRatioLimit` | N/A | 0.3 | >6 outliers in window of 20 triggers reset |
 | `badSampleWindow` | N/A | 60 | 1 minute window |
-| `badSampleRatioLimit` | N/A | 0.5 | 50% bad in window triggers reset |
+| `badSampleRatioLimit` | N/A | 0.5 | >50% bad in window triggers reset |
 
 ## Implementation
 

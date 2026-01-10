@@ -65,6 +65,19 @@ func (b *Buffer[T]) Last(i int) T {
 	return b.buf[j]
 }
 
+// SetLast sets the ith most recently added value (0 = most recent).
+// Does nothing if i is out of range.
+func (b *Buffer[T]) SetLast(i int, v T) {
+	if i < 0 || i >= b.Len() {
+		return
+	}
+	j := b.end - 1 - i
+	if j < 0 {
+		j += len(b.buf)
+	}
+	b.buf[j] = v
+}
+
 // Iterate iterates over the buffer, most recently added first.
 // The yield function receives the index (0 = most recent) and value.
 // If yield returns false, iteration stops early and Iterate returns false.

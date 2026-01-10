@@ -118,7 +118,7 @@ With GapDriftLimit=100ns, pre-gap median=5ns, pre-gap MAD=3ns, MADMultiple=25: t
   - Use `madIsOutlier(offset, true)` (adds GapDriftLimit to threshold)
   - Don't add to MAD window (keep it reflecting pre-gap state)
   - If accepted: append to `gapPostOffsets`, feed to servo, reset `consecutiveBadSamples`
-  - If rejected: increment `consecutiveBadSamples`; if >= BadSampleRunLimit, reset mode
+  - If rejected: increment `consecutiveBadSamples`; if > BadSampleRunLimit, reset mode
   - If `len(gapPostOffsets) >= GapRecoverySamples`: shift window, clear slice
 - If not in recovery:
   - Use `madIsOutlier(offset, false)`, add to window as usual

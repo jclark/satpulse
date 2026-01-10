@@ -192,4 +192,60 @@ func TestBuffer(t *testing.T) {
 			t.Errorf("Last(0) for float: got %v, want 3.14", b.Last(0))
 		}
 	})
+
+	t.Run("SetLast", func(t *testing.T) {
+		b := New[int](3)
+		b.Append(1)
+		b.Append(2)
+		b.Append(3)
+
+		b.SetLast(0, 30)
+		if b.Last(0) != 30 {
+			t.Errorf("Last(0) after SetLast(0, 30): got %d, want 30", b.Last(0))
+		}
+
+		b.SetLast(2, 10)
+		if b.Last(2) != 10 {
+			t.Errorf("Last(2) after SetLast(2, 10): got %d, want 10", b.Last(2))
+		}
+
+		// Middle element
+		b.SetLast(1, 20)
+		if b.Last(1) != 20 {
+			t.Errorf("Last(1) after SetLast(1, 20): got %d, want 20", b.Last(1))
+		}
+	})
+
+	t.Run("SetLastOutOfRange", func(t *testing.T) {
+		b := New[int](3)
+		b.Append(1)
+		b.Append(2)
+
+		// Should be no-op for out of range
+		b.SetLast(-1, 99)
+		b.SetLast(2, 99)
+		b.SetLast(100, 99)
+
+		if b.Last(0) != 2 || b.Last(1) != 1 {
+			t.Error("SetLast should be no-op for out of range indices")
+		}
+	})
+
+	t.Run("SetLastAfterOverflow", func(t *testing.T) {
+		b := New[int](3)
+		for i := 1; i <= 5; i++ {
+			b.Append(i)
+		}
+		// Buffer now contains [5, 4, 3] (most recent first)
+
+		b.SetLast(0, 50)
+		b.SetLast(2, 30)
+
+		if b.Last(0) != 50 {
+			t.Errorf("Last(0) after overflow SetLast: got %d, want 50", b.Last(0))
+		}
+		if b.Last(2) != 30 {
+			t.Errorf("Last(2) after overflow SetLast: got %d, want 30", b.Last(2))
+		}
+	})
 }

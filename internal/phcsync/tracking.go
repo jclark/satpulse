@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/jclark/satpulse/internal/circbuf"
 	"github.com/jclark/satpulse/internal/median"
 )
 
@@ -60,10 +61,23 @@ type TrackingConfig struct {
 	// well-synchronized clocks.
 	AlignTolerance int64 `toml:"alignTolerance" check:">0,<=10000" comment:"Tolerance for leading edge detection (ns)"`
 
-	// BadSampleLimit is the maximum number of consecutive bad samples (missing or outlier)
-	// before transitioning back to reset mode. Bad samples do not contribute to frequency
-	// adjustment.
-	BadSampleLimit int `toml:"badSampleLimit" check:">=1,<100" comment:"Max consecutive bad samples before reset"`
+	// BadSampleRunLimit is the maximum number of consecutive bad samples (missing or outlier)
+	// allowed while remaining in tracking mode. Exceeding this limit triggers a reset.
+	BadSampleRunLimit int `toml:"badSampleRunLimit" check:">=1,<1000" comment:"Max consecutive bad samples before reset"`
+
+	// OutlierRatioLimit is the maximum ratio of MAD window samples that can be outliers
+	// before triggering a reset. Only counts samples admitted to the MAD window and later
+	// classified as outliers by MAD detection; extreme outliers rejected by OutlierThreshold
+	// are not counted. This prevents the median from being corrupted by accumulated outliers.
+	OutlierRatioLimit float64 `toml:"outlierRatioLimit" check:">0.0,<=1.0" comment:"Max outlier ratio in MAD window"`
+
+	// BadSampleWindow is the size of the sliding window for tracking bad sample frequency.
+	// Used with BadSampleRatioLimit to detect intermittent failures.
+	BadSampleWindow int `toml:"badSampleWindow" check:">=1,<1000" comment:"Window size for bad sample frequency"`
+
+	// BadSampleRatioLimit is the maximum ratio of bad samples allowed in the bad sample
+	// window before triggering a reset. Detects intermittent failures even when not consecutive.
+	BadSampleRatioLimit float64 `toml:"badSampleRatioLimit" check:">0.0,<=1.0" comment:"Max bad sample ratio in window"`
 
 	// AvgFreqTimeConstant is the time constant in seconds for the exponential moving
 	// average of frequency adjustments. This average represents the baseline frequency
@@ -90,15 +104,18 @@ func defaultTrackingConfig() TrackingConfig {
 		Kp:                     0.8,
 		Ki:                     0.3,
 		MADThreshold:           50,   // 50ns
-		MADWindow:              20,   // should be > 2*BadSampleLimit so median doesn't recenter before limit is hit
+		MADWindow:              20,   // larger window for more robust outlier detection
 		MADMultiple:            25.0, // 25 * MAD
 		MADMinSamples:          10,   // 10 samples minimum
 		OutlierThreshold:       500,  // 500ns
 		PulseWidthTolerance:    200,  // 200ns
 		AlignTolerance:         100,  // 100ns
-		BadSampleLimit:         5,
-		AvgFreqTimeConstant:    30,  // 30 seconds
-		PulseCorrectionTimeout: 0.3, // 300ms
+		BadSampleRunLimit:      5,    // consider increasing in the future, when tests show it is safe
+		OutlierRatioLimit:      0.3,  // >30% outliers triggers reset
+		BadSampleWindow:        60,   // 1 minute window
+		BadSampleRatioLimit:    0.5,  // >50% bad in window triggers reset
+		AvgFreqTimeConstant:    30,   // 30 seconds
+		PulseCorrectionTimeout: 0.3,  // 300ms
 	}
 }
 
@@ -290,7 +307,9 @@ type trackingSampleProcessor struct {
 	consecutiveBadSamples int
 	avgFreq               float64 // exponential moving average of frequency
 	emaAlpha              float64 // EMA coefficient (1 - exp(-1/timeConstant))
-	offsetWindow          *median.Window[time.Duration]
+	madWindow             *madWindow
+	badSamples            *circbuf.Buffer[bool]
+	badSampleCount        int
 	lg                    *slog.Logger
 }
 
@@ -303,20 +322,22 @@ func newTrackingSampleProcessor(cfg TrackingConfig, currentFreq, maxFreq float64
 		emaAlpha = 1.0 - math.Exp(-1.0/cfg.AvgFreqTimeConstant)
 	}
 	return &trackingSampleProcessor{
-		servo:        newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
-		cfg:          cfg,
-		avgFreq:      currentFreq, // initialize with current frequency
-		emaAlpha:     emaAlpha,
-		offsetWindow: median.New[time.Duration](cfg.MADWindow),
-		lg:           lg,
+		servo:      newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
+		cfg:        cfg,
+		avgFreq:    currentFreq, // initialize with current frequency
+		emaAlpha:   emaAlpha,
+		madWindow:  newMADWindow(cfg.MADWindow),
+		badSamples: circbuf.New[bool](cfg.BadSampleWindow),
+		lg:         lg,
 	}
 }
 
 func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 	action := p.sampleAction(sample)
 
-	// Track consecutive bad samples (missing or outlier - i.e., not sent to servo)
-	if action.actionType == phcNoAction {
+	// Track bad samples (missing or outlier - i.e., not sent to servo)
+	isBad := action.actionType == phcNoAction
+	if isBad {
 		p.consecutiveBadSamples++
 		// Use EMA feature (adjusting on bad samples), if not disabled by AvgFreqTimeConstant = 0
 		if p.consecutiveBadSamples == 1 && p.cfg.AvgFreqTimeConstant > 0 {
@@ -328,11 +349,47 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode
 	} else {
 		p.consecutiveBadSamples = 0
 	}
-	// Transition to reset mode if too many consecutive bad samples
-	if p.consecutiveBadSamples >= p.cfg.BadSampleLimit {
-		p.lg.Info("entering reset mode", "consecutiveBadSamples", p.consecutiveBadSamples)
+
+	// Track bad sample frequency in sliding window
+	if p.badSamples.Len() == p.badSamples.Cap() {
+		if p.badSamples.Last(p.badSamples.Len() - 1) {
+			p.badSampleCount--
+		}
+	}
+	p.badSamples.Append(isBad)
+	if isBad {
+		p.badSampleCount++
+	}
+
+	// Check all four limits for transition to reset mode
+	// Limit semantics: a limit of N means N is allowed (use > not >=)
+
+	// Limit 1: consecutive bad samples
+	if p.consecutiveBadSamples > p.cfg.BadSampleRunLimit {
+		p.lg.Info("entering reset mode", "reason", "consecutiveBadSamples", "count", p.consecutiveBadSamples)
 		return action, ModeReset
 	}
+
+	// Limit 2: outlier ratio in MAD window
+	// Only check when MAD detection is active (after warmup)
+	if p.madWindow.Len() >= p.cfg.MADMinSamples {
+		outlierRatio := float64(p.madWindow.OutlierCount()) / float64(p.madWindow.Len())
+		if outlierRatio > p.cfg.OutlierRatioLimit {
+			p.lg.Info("entering reset mode", "reason", "outlierRatio", "ratio", outlierRatio)
+			return action, ModeReset
+		}
+	}
+
+	// Limit 3: bad sample ratio in bad sample window
+	// Only check when window is full - this limit detects persistent intermittent failures
+	if p.badSamples.Len() == p.badSamples.Cap() {
+		badRatio := float64(p.badSampleCount) / float64(p.badSamples.Len())
+		if badRatio > p.cfg.BadSampleRatioLimit {
+			p.lg.Info("entering reset mode", "reason", "badSampleRatio", "ratio", badRatio)
+			return action, ModeReset
+		}
+	}
+
 	return action, ModeTracking
 }
 
@@ -353,12 +410,13 @@ func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 	}
 
 	// Add to MAD window (only samples below OutlierThreshold)
-	p.offsetWindow.Add(sample.Offset)
+	p.madWindow.Add(sample.Offset)
 
 	// After MAD warmup, use MAD-based detection for samples above MADThreshold
-	if p.offsetWindow.Len() >= p.cfg.MADMinSamples &&
+	if p.madWindow.Len() >= p.cfg.MADMinSamples &&
 		absOffset >= time.Duration(p.cfg.MADThreshold) &&
 		p.madIsOutlier(sample.Offset) {
+		p.madWindow.SetLastOutlier()
 		sample.Kind = SampleOutlier
 		p.lg.Debug("outlier detected by MAD",
 			"offset", sample.Offset)
@@ -385,17 +443,17 @@ func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 // delays) while rejecting transient spikes (e.g., multipath errors).
 func (p *trackingSampleProcessor) madIsOutlier(offset time.Duration) bool {
 	// Need minimum samples for MAD to be meaningful
-	if p.offsetWindow.Len() < p.cfg.MADMinSamples {
+	if p.madWindow.Len() < p.cfg.MADMinSamples {
 		return false
 	}
 
 	// Compute median of offsets (the center, can be non-zero during transients)
-	center := p.offsetWindow.Median()
+	center := p.madWindow.Median()
 
 	// Compute MAD: median of absolute deviations from center
 	// Use iterator to avoid materializing intermediate slice unnecessarily
 	mad := median.Median(func(yield func(time.Duration) bool) {
-		p.offsetWindow.Iterate(func(i int, v time.Duration) bool {
+		p.madWindow.Iterate(func(i int, v time.Duration) bool {
 			return yield((v - center).Abs())
 		})
 	})
@@ -405,4 +463,46 @@ func (p *trackingSampleProcessor) madIsOutlier(offset time.Duration) bool {
 	deviation := (offset - center).Abs()
 
 	return deviation > threshold
+}
+
+// madWindow tracks offsets for MAD-based outlier detection and counts
+// how many samples in the window are outliers.
+type madWindow struct {
+	*median.Window[time.Duration]
+	outliers     *circbuf.Buffer[bool]
+	outlierCount int
+}
+
+func newMADWindow(capacity int) *madWindow {
+	return &madWindow{
+		Window:   median.New[time.Duration](capacity),
+		outliers: circbuf.New[bool](capacity),
+	}
+}
+
+// Add adds an offset to the window. The sample is initially marked as not an outlier.
+// Call SetLastOutlier after MAD detection to mark it as an outlier if needed.
+func (w *madWindow) Add(offset time.Duration) {
+	// Decrement count if evicting an outlier
+	if w.outliers.Len() == w.outliers.Cap() {
+		if w.outliers.Last(w.outliers.Len() - 1) {
+			w.outlierCount--
+		}
+	}
+	w.Window.Add(offset)
+	w.outliers.Append(false)
+}
+
+// SetLastOutlier marks the most recently added sample as an outlier.
+func (w *madWindow) SetLastOutlier() {
+	if w.outliers.Len() == 0 {
+		return
+	}
+	w.outliers.SetLast(0, true)
+	w.outlierCount++
+}
+
+// OutlierCount returns the number of outliers currently in the window.
+func (w *madWindow) OutlierCount() int {
+	return w.outlierCount
 }
