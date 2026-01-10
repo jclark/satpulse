@@ -292,16 +292,68 @@ func (p *microHoldoverSampleProcessor) relaxedMADIsOutlier(offset time.Duration)
 }
 ```
 
-## Files to Modify
+## Implementation Steps
+
+Implementation is divided into two steps to allow incremental testing.
+
+### Step 1: Frequency Adjustment Only
+
+Step 1 moves the existing `avgFreq` handling from tracking mode to micro-holdover. No new functionality—just reorganization into a distinct mode.
+
+**Behavior:**
+- Enter micro-holdover on any missing sample
+- Apply `avgFreq` on each missing sample (same as current tracking behavior)
+- Continue tracking's `consecutiveBadSamples` count (which may include outliers from before the missing sample); if `>= badSampleRunLimit`: exit to reset
+- On first present sample: delegate to tracking processor and return `ModeTracking`
+- No `holdoverThreshold` check (no transition to holdover yet)
+- No MAD recovery logic (no relaxed detection, no window shift, no drift check)
+
+**What changes:**
+- Add `ModeMicroHoldover` constant
+- Add minimal `microHoldoverSampleProcessor` (no `recoveryOffsets`, no `recoveryThreshold` logic)
+- Modify `trackingSampleProcessor`: trigger micro-holdover on missing sample, remove inline `avgFreq` logic
+- Update `changeMode`: preserve/restore tracking processor across transitions
+- Update PTP quality mapping: treat `ModeMicroHoldover` as in-sync
+
+**Test adjustments:**
+- Existing tests may see `ModeMicroHoldover` in mode sequences where they previously saw only tracking
+- Tests with outages should expect: tracking -> microHoldover -> tracking (not direct tracking recovery)
+- No behavioral change to sync quality—just an additional mode in the sequence
+
+**Files to modify (Step 1):**
+
+| File | Changes |
+|------|---------|
+| `internal/phcsync/controller.go` | Add `ModeMicroHoldover`, update `changeMode` |
+| `internal/phcsync/tracking.go` | Trigger micro-holdover on missing sample, remove `avgFreq` logic |
+| `internal/phcsync/microholdover.go` | New file: minimal `microHoldoverSampleProcessor` |
+| `internal/syncsim/sync_test.go` | Adjust expected mode sequences |
+
+### Step 2: MAD Window Adjustment
+
+Step 2 adds the MAD recovery logic described in the Phases section above.
+
+**New behavior:**
+- Track `consecutiveMissingSamples` during micro-holdover
+- If `consecutiveMissingSamples >= holdoverThreshold`: transition to holdover
+- On sample return with long gap (`>= recoveryThreshold`): relaxed MAD detection, collect samples, window shift
+- If drift exceeds `driftLimit`: exit to reset
+
+**What changes:**
+- Add `MicroHoldoverConfig` with `recoveryThreshold`, `holdoverThreshold`, `driftLimit`, `recoverySamples`
+- Add `recoveryOffsets` slice to processor
+- Add `relaxedMADIsOutlier` function
+- Add `ShiftAll` method to `median.Window`
+- Add recovery and window-shift logic
+
+**Files to modify (Step 2):**
 
 | File | Changes |
 |------|---------|
 | `internal/median/median.go` | Add `ShiftAll` method |
-| `internal/phcsync/controller.go` | Add `ModeMicroHoldover`, update `changeMode` |
-| `internal/phcsync/tracking.go` | Trigger micro-holdover on missing sample, remove `avgFreq` logic |
-| `internal/phcsync/microholdover.go` | New file: `MicroHoldoverConfig`, `microHoldoverSampleProcessor` |
+| `internal/phcsync/microholdover.go` | Add config, recovery logic, window shift |
 | `configs/config-schema.json` | Add new config section and parameters |
-| `internal/syncsim/sync_test.go` | Test scenarios |
+| `internal/syncsim/sync_test.go` | Add MAD recovery test scenarios |
 
 ## Test Plan
 
