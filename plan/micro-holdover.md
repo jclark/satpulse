@@ -76,7 +76,7 @@ New config section `[phcsync.microHoldover]`:
 |-----------|------|---------|-------------|
 | `recoveryThreshold` | int | 5 | Consecutive missing samples before MAD recovery is needed |
 | `holdoverThreshold` | int | 10 | Consecutive missing samples to transition to full holdover |
-| `driftLimit` | int64 | 100 | Max median offset (ns) during recovery; if exceeded, exit to reset |
+| `driftLimit` | int64 | 100 | Max allowed median shift (ns) from pre-gap baseline; if exceeded, exit to reset |
 | `recoverySamples` | int | 5 | Samples to collect before shifting window |
 
 **Parameter semantics:**
@@ -110,8 +110,8 @@ While samples are missing:
 When samples return, behavior depends on gap length:
 
 **Short gap** (`consecutiveMissingSamples < recoveryThreshold`):
-- Return to tracking immediately
-- No MAD adjustment needed (drift too small to cause issues)
+- On the first present sample: process it normally via the tracking processor (servo update, MAD update) and return `ModeTracking`
+- No MAD window adjustment needed (drift too small to cause issues)
 
 **Long gap** (`consecutiveMissingSamples >= recoveryThreshold`):
 - Use relaxed MAD detection: add `driftLimit` to normal MAD threshold
@@ -125,17 +125,17 @@ When samples return, behavior depends on gap length:
 After collecting enough recovery samples:
 
 ```go
-preMedian := trackingProc.offsetWindow.Median()
-newMedian := median.Median(recoverySamples)
+preMedian := trackingProc.madTracker.Median()
+newMedian := computeMedian(p.recoveryOffsets)  // median of collected offsets
 shift := newMedian - preMedian
 
 if shift.Abs() > driftLimit {
     return ModeReset
 }
 
-trackingProc.offsetWindow.ShiftAll(shift)
-for _, offset := range recoverySamples {
-    trackingProc.offsetWindow.Add(offset)
+trackingProc.madTracker.ShiftAll(shift)
+for _, offset := range p.recoveryOffsets {
+    trackingProc.madTracker.Add(offset, false)  // not outliers
 }
 return ModeTracking
 ```
@@ -156,6 +156,8 @@ const (
 )
 ```
 
+**PTP quality**: `ModeMicroHoldover` must be treated as in-sync for PTP clock quality reporting. Any code that maps modes to PTP clock class or state should treat `ModeMicroHoldover` identically to `ModeTracking` (i.e., no degradation of clock quality).
+
 ### Sample Generator
 
 Micro-holdover reuses the tracking sample generator. The controller preserves it during the tracking -> microHoldover transition.
@@ -170,7 +172,7 @@ type microHoldoverSampleProcessor struct {
     trackingCfg              TrackingConfig
     trackingProc             *trackingSampleProcessor  // preserved from tracking mode
     consecutiveMissingSamples int                      // count of missing samples in this micro-holdover
-    recoverySamples          []time.Duration          // collected post-gap offsets (long gaps only)
+    recoveryOffsets          []time.Duration          // collected post-gap offsets (long gaps only)
     lg                       *slog.Logger
 }
 ```
@@ -180,7 +182,7 @@ The processor holds a pointer to the tracking processor, allowing it to:
 - Access the MAD window for relaxed outlier detection
 - Modify the MAD window on successful recovery
 
-The `consecutiveMissingSamples` counter determines whether MAD recovery is needed when samples return.
+The `consecutiveMissingSamples` counter determines whether MAD recovery is needed when samples return. The `recoveryOffsets` slice collects post-gap offsets (distinct from the config field `recoverySamples` which specifies the count).
 
 ### Controller Changes
 
@@ -230,40 +232,46 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode
 
     if sample.Kind == SampleMissing {
         // Any missing sample -> micro-holdover
-        // Micro-holdover will handle avgFreq and recovery
-        return phcAction{actionType: phcNoAction}, ModeMicroHoldover
+        // Return avgFreq action immediately so PHC uses holdover frequency
+        // starting from this sample (not the next one)
+        return phcAction{actionType: phcAdjustFrequency, freq: p.avgFreq}, ModeMicroHoldover
     }
 
     // ... rest of existing logic (only handles present samples) ...
 }
 ```
 
-This simplifies tracking mode: it only processes present samples. The `avgFreq` logic moves to micro-holdover.
+This simplifies tracking mode: it only processes present samples. The `avgFreq` action on the triggering sample ensures the PHC switches to holdover frequency immediately, maintaining parity with current behavior. Subsequent missing samples in micro-holdover continue using `avgFreq`.
 
 ### MAD Window Shift
 
-Add `ShiftAll` method to `median.Window`:
+Add `ShiftAll` method to `median.Window` (exposed through `madTracker` from tracking-limits.md):
 
 ```go
 // ShiftAll adds delta to all values in the window.
 // This adjusts the window's baseline while preserving relative positions.
 func (w *Window[T]) ShiftAll(delta T) {
-    for i := range w.values[:len(w.indices)] {
+    for i := range w.values {
         w.values[i] += delta
     }
     // indices array remains valid (relative ordering unchanged)
 }
 ```
 
-Note: This simple implementation works because shifting all values by a constant preserves their relative order, so the sorted indices remain valid.
+Note: We shift all capacity entries rather than trying to identify active circular-buffer slots. This works because shifting all values by a constant preserves their relative order, so the sorted indices remain valid, and unused slots don't affect behavior.
 
 ### Relaxed MAD Detection
 
-The micro-holdover processor uses a modified MAD check:
+The micro-holdover processor uses a modified MAD check. This is additive to the tracking gates—samples must still pass the unconditional `OutlierThreshold` (and `MADThreshold` if configured). The relaxed check only adjusts the adaptive MAD-based detection:
 
 ```go
 func (p *microHoldoverSampleProcessor) relaxedMADIsOutlier(offset time.Duration) bool {
-    tw := p.trackingProc.offsetWindow
+    // Unconditional gates still apply (checked before this function):
+    // - OutlierThreshold: absolute hard limit
+    // - MADThreshold: optional secondary gate
+    // This function only relaxes the adaptive MAD-based detection.
+
+    tw := p.trackingProc.madTracker
     if tw.Len() < p.trackingCfg.MADMinSamples {
         return false
     }
@@ -448,6 +456,7 @@ When implementing holdover.md:
 
    type MicroHoldoverConfig struct {
        RecoveryConfig
+       RecoveryThreshold int `toml:"recoveryThreshold"`
        HoldoverThreshold int `toml:"holdoverThreshold"`
    }
 
