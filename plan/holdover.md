@@ -18,29 +18,34 @@ A third approach using an independent oscillator (e.g., Leo Bodnar LBE-1421) con
 
 ### State machine
 
-- tracking -> holdover: too many consecutive missing samples
+- tracking -> microHoldover: any missing sample (see micro-holdover.md)
+- microHoldover -> holdover: `consecutiveMissingSamples >= holdoverThreshold`
 - holdover -> tracking: reconvergence criteria met
-- holdover -> reset: holdover timer expired OR median offset of initial samples exceeds drift limit
+- holdover -> reset: holdover timer expired OR median shift from pre-holdover baseline exceeds drift limit
 
-Holdover is triggered by missing samples (lost reference), not by outliers (bad reference).
+Holdover is never entered directly from tracking. Missing samples first enter micro-holdover, which handles brief gaps without PTP quality degradation. Only persistent missing samples (reaching `holdoverThreshold`) trigger transition to full holdover.
 
 ### Holdover timer
 
 The holdover timer measures elapsed time since the last good tracking sample:
 
 - Computed as current time minus timestamp of last good sample
+- Includes time spent in micro-holdover before entering holdover (since micro-holdover also lacks good samples)
 - If elapsed time exceeds `duration`, transition to reset
 - Timer is implicitly cleared when a good sample arrives
 
-**Constraint**: `duration > holdoverThreshold` (we need at least holdoverThreshold seconds of missing samples before entering holdover)
+**Constraint**: `duration > holdoverThreshold` (since samples are 1Hz, holdoverThreshold samples ≈ holdoverThreshold seconds; we need the timer to allow at least that long before expiring)
 
 ### PTP clock quality
 
 | Mode | Clock class |
 |------|-------------|
 | tracking | Configured in-sync quality |
+| microHoldover | Configured in-sync quality (same as tracking) |
 | holdover | ClockClassHoldover (7) |
 | reset/converging | ClockClassDegradedA (degraded) |
+
+**Note**: Micro-holdover maintains tracking-level PTP quality because gaps are brief enough that drift remains within tracking accuracy. Only holdover degrades clock quality. Any mode→quality mapping must treat `ModeMicroHoldover` identically to `ModeTracking`.
 
 ### Frequency model
 
@@ -51,6 +56,8 @@ During tracking, we maintain two frequency estimates:
 
 Both are updated on each good sample.
 
+**State handoff**: Holdover receives these frequency estimates (and the preserved tracking processor reference) from micro-holdover. Micro-holdover uses only `avgFreq`; holdover blends both estimates for longer free-running periods.
+
 ### Holdover processor behaviour
 
 The holdover processor handles three phases:
@@ -59,12 +66,20 @@ The holdover processor handles three phases:
 - Blend short-term and long-term frequency estimates based on time in holdover
 - Apply blended frequency to PHC
 
-**Phase 2: Drift check (first samples returning)**
-- If offset > `driftLimit`: reject sample, increment bad sample counter; if too many, exit to reset
-- Otherwise: feed to servo AND collect for drift check
-- After `recoverySamples` accepted samples: compute median offset
-- If median offset exceeds `driftLimit`, exit to reset
-- Otherwise proceed to phase 3
+**Phase 2: Recovery (first samples returning)**
+
+Recovery uses the same relaxed-MAD + window-shift approach as micro-holdover for consistency:
+
+- Record the MAD window's median at holdover entry as the pre-holdover baseline
+- Use relaxed MAD detection: add `driftLimit` to normal MAD threshold
+- If sample passes relaxed check: accept, feed to servo, collect for recovery
+- If sample fails relaxed check: reject as outlier, increment bad sample counter; if too many, exit to reset
+- After `recoverySamples` accepted samples: compute median of collected offsets
+- Compute shift = (new median) - (pre-holdover baseline median)
+- If shift exceeds `driftLimit`, exit to reset
+- Otherwise: shift the MAD window, add recovery samples, proceed to phase 3
+
+This mirrors micro-holdover's window-shift logic (see micro-holdover.md Phase 3), ensuring uniform recovery behavior regardless of gap length.
 
 **Phase 3: Reconvergence**
 - Continue running PI servo
@@ -73,60 +88,42 @@ The holdover processor handles three phases:
 
 ### Sample generation
 
-Holdover uses a simple sample generator similar to `convergingSampleGenerator`. When pulses arrive, it produces samples. No complex tracking state is needed.
+Holdover uses a simple sample generator similar to `convergingSampleGenerator`. When pulses arrive, it produces samples.
 
-### Relationship to gap recovery in tracking mode
+However, the holdover processor needs access to the preserved tracking processor (passed through from micro-holdover) for:
+- Reading `avgFreq` and `longAvgFreq` for frequency blending
+- Accessing the MAD window for relaxed outlier detection during recovery
+- Shifting the MAD window on successful recovery
+
+### Relationship to micro-holdover
 
 There are two levels of missing-sample handling:
 
-1. **Gap recovery in tracking** (mad-missing-samples.md): Short gaps handled within tracking mode, PTP quality unchanged
-2. **Full holdover mode**: Longer gaps, transition to holdover, advertise holdover PTP quality
+1. **Micro-holdover** (micro-holdover.md): Brief gaps, uses `avgFreq`, relaxed MAD recovery, PTP quality unchanged
+2. **Full holdover**: Extended gaps (≥`holdoverThreshold`), blends frequency estimates, reconvergence phase, PTP quality degraded
 
-Parameters follow consistent naming: `gap*` in tracking section, unprefixed in holdover section.
-
-| Tracking | Holdover |
-|----------|----------|
-| `gapDriftLimit` | `driftLimit` |
-| `gapRecoverySamples` | `recoverySamples` |
+Both modes share recovery behavior (relaxed-MAD detection, window shift) for uniform handling of post-gap samples. The key differences are:
+- Micro-holdover uses only short-term `avgFreq`; holdover blends short-term and long-term estimates
+- Micro-holdover returns directly to tracking after window shift; holdover requires reconvergence
+- Micro-holdover maintains in-sync PTP quality; holdover advertises holdover quality
 
 ### Triggering holdover
 
-Holdover entry is a two-step decision that integrates with tracking-limits.md:
+Holdover is triggered from micro-holdover, not directly from tracking:
 
-**Step 1: Should we exit tracking?**
+1. **tracking -> microHoldover**: Any missing sample leaves tracking immediately
+2. **microHoldover -> holdover**: When `consecutiveMissingSamples >= holdoverThreshold`
 
-The servo tracks `consecutiveBadSamples` which increments on any bad sample (missing OR outlier) and resets on a good sample. When `consecutiveBadSamples >= badSampleRunLimit`, the servo has gone too long without usable input and must exit tracking mode.
+The micro-holdover processor increments `consecutiveMissingSamples` on each missing sample and checks against `holdoverThreshold` (configured in `[phcsync.microHoldover]`).
 
-**Step 2: Holdover or reset?**
+**What about outliers?** With the micro-holdover design, the "reference present but bad" case is handled differently:
 
-At the moment we exit tracking, we check whether the reference has stopped (missing samples) or is present but bad (outliers):
+- Missing sample → enter micro-holdover immediately
+- If samples return during micro-holdover → relaxed-MAD recovery attempts to accept them
+- If recovery fails (bad-run-limit exceeded, or drift-limit exceeded) → exit to reset
+- Only persistent missing samples (no samples returning) → transition to holdover
 
-- If `consecutiveMissingSamples >= holdoverThreshold`: holdover
-- Otherwise: reset
-
-Where `consecutiveMissingSamples` increments on missing samples and resets on outliers or good samples.
-
-**Rationale**: Holdover makes sense when the reference has disappeared—we free-run using the frequency model. Reset makes sense when the reference is present but unreliable—we cannot trust it, so we start over.
-
-**Examples** with `badSampleRunLimit=30`, `holdoverThreshold=10`:
-
-| Sequence | consecutiveMissing at exit | Result |
-|----------|---------------------------|--------|
-| 30 missing | 30 (≥10) | holdover |
-| 30 outliers | 0 (<10) | reset |
-| 20 outliers, 10 missing | 10 (≥10) | holdover |
-| 22 outliers, 8 missing | 8 (<10) | reset |
-| 20 missing, 10 outliers | 0 (<10) | reset |
-
-New config parameter in `[phcsync.tracking]`:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `holdoverThreshold` | int | 10 | Min consecutive missing samples to choose holdover over reset |
-
-**Constraint**: `gapThreshold < holdoverThreshold < badSampleRunLimit`
-
-This ensures gap recovery (short interruptions within tracking) triggers before holdover consideration, and holdover is possible before the bad sample limit forces an exit.
+This simplifies the decision logic: holdover is purely about "reference disappeared for too long", not a choice between holdover-vs-reset at tracking exit.
 
 ### Configuration
 
@@ -142,7 +139,7 @@ New config section `[phcsync.holdover]`:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `duration` | float | 60 | Maximum seconds in holdover before reset |
-| `driftLimit` | int64 | TBD | Max median offset (ns) to attempt reconvergence |
+| `driftLimit` | int64 | TBD | Max allowed median shift (ns) from pre-holdover baseline; if exceeded, exit to reset |
 | `recoverySamples` | int | 5 | Samples to collect before checking drift |
 | `kp` | float | TBD | PI servo proportional gain |
 | `ki` | float | TBD | PI servo integral gain |
@@ -150,11 +147,19 @@ New config section `[phcsync.holdover]`:
 | `offsetLimit` | int64 | 1000 | Max offset to declare converged (ns) |
 | `stableWindow` | int | 5 | Stable samples before exit to tracking |
 
+**Note**: `holdoverThreshold` is configured in `[phcsync.microHoldover]`, not here, since micro-holdover owns the transition decision.
+
+**Constraint** (from micro-holdover.md): `recoveryThreshold < holdoverThreshold < badSampleRunLimit`
+
+This ensures:
+1. Short gaps trigger MAD recovery (not holdover)
+2. Holdover is reachable before bad-sample-run-limit forces reset
+
 **Parameter semantics:**
 
 `duration`: How long we trust the frequency model. After this time without signal recovery, the accumulated drift is too uncertain, so we give up and reset (step the clock).
 
-`driftLimit`: When signal returns, we check how far we've drifted. If median offset of initial samples exceeds this, we've drifted too far to reconverge gracefully - reset instead. Should be slightly less than `ptp.holdover.clockAccuracy` since there's no point reconverging if we've exceeded our advertised accuracy.
+`driftLimit`: Maximum allowed shift between pre-holdover baseline median and post-holdover recovery median. Uses the same semantics as micro-holdover's `driftLimit` for consistency. Should be slightly less than `ptp.holdover.clockAccuracy` since there's no point reconverging if we've exceeded our advertised accuracy.
 
 `recoverySamples`: How many samples to collect before checking drift. Using median of several samples is more robust than trusting a single sample (which could be an outlier).
 
@@ -168,9 +173,10 @@ New config section `[phcsync.holdover]`:
 2. Add `ModeHoldover` in `phcsync`
 3. Add `longAvgFreq` to `trackingSampleProcessor`
 4. New `holdoverSampleGenerator`: simple, like converging
-5. New `holdoverSampleProcessor`: handles both no-sample and sample cases
-6. Modify `trackingSampleProcessor`: separate missing vs outlier counting, transition to holdover
-7. Add holdover timer: track time since last good sample, enforce `maxDuration`
+5. New `holdoverSampleProcessor`: handles no-sample, recovery, and reconvergence phases
+6. Modify `microHoldoverSampleProcessor`: transition to holdover when `consecutiveMissingSamples >= holdoverThreshold`
+7. Controller `changeMode`: pass tracking processor reference from micro-holdover to holdover
+8. Add holdover timer: track time since last good sample, enforce `duration`
 
 ---
 
