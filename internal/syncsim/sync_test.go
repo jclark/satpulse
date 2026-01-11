@@ -535,6 +535,29 @@ func TestPHCSync(t *testing.T) {
 			// With 66% bad samples (2 bad, 1 good pattern) and 50% limit, reset triggers
 			// once the 10-sample window fills with >50% bad samples.
 		},
+		{
+			name:                     "rejects impossible phase shift (issue #193)",
+			duration:                 600.0, // 10 minutes
+			maxTrackingAbsMax:        100 * time.Nanosecond,
+			expectTrackingEntered:    ptr(2), // initial + after shift ends
+			expectResetEntered:       ptr(2), // initial + after excursion triggers exit
+			expectMinTrackingSamples: 500,    // ~8+ minutes of tracking out of 10
+			modifyConfig: func(cfg *Config) {
+				cfg.Sync.Track.PersistThreshold = 300.0   // 5 minutes
+				cfg.Sync.Track.BadSampleRunLimit = 5      // exit tracking after 5 consecutive bad samples
+				cfg.Sync.Reset.DriftRateLimit = 100_000   // 100 ppm
+				// 5ms phase shift for 30 seconds
+				cfg.Fault.Excursion = []ExcursionConfig{{
+					StartTime: 330.0,                       // after 5 min persist threshold + margin
+					Duration:  30.0,                        // 30 seconds
+					Amplitude: 5_000_000,                   // 5ms in nanoseconds
+					Rise:      RampConfig{Duration: 0.01},  // instant rise
+					Fall:      RampConfig{Duration: 0.01},  // instant fall
+				}}
+			},
+			// Issue #193: Reset mode rejects phase shifts implying impossible drift rates.
+			// 5ms over 30s = 166,667 PPB, exceeds 100,000 PPB limit → rejected.
+		},
 	}
 
 	for _, tt := range tests {

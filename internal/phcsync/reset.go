@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"slices"
 	"time"
 
@@ -54,17 +55,25 @@ type ResetConfig struct {
 	// edge lists are kept and alignment with time messages is used. Note: pulse widths
 	// greater than 0.5 seconds must be explicitly configured via gps.pulseWidth.
 	PulseWidthDetectLimit float64 `toml:"pulseWidthDetectLimit" check:">=0.1,<0.5" comment:"Max auto-detectable pulse width (s)"`
+
+	// DriftRateLimit is the maximum drift rate in PPB that reset mode will accept when
+	// validating a candidate step against the persisted sample from tracking mode.
+	// If the implied drift rate exceeds this limit, the step is rejected and the system
+	// remains in reset mode. This prevents re-locking to a bad phase after GPS issues.
+	// Set to 0 to disable drift rate checking.
+	DriftRateLimit float64 `toml:"driftRateLimit" check:">=0,<1_000_000_000" comment:"Max drift rate to accept step (PPB)"`
 }
 
 func defaultResetConfig() ResetConfig {
 	return ResetConfig{
 		PulseWindow:           5,
-		StepThreshold:         5000,  // nanoseconds
-		PulseVariation:        500.0, // PPB
-		ExpectedDelay:         0.1,   // seconds
-		DelayConfidenceWindow: 0.6,   // proportion of max window
-		DelayVariation:        0.2,   // proportion of max window
-		PulseWidthDetectLimit: 0.45,  // seconds
+		StepThreshold:         5000,   // nanoseconds
+		PulseVariation:        500.0,  // PPB
+		ExpectedDelay:         0.1,    // seconds
+		DelayConfidenceWindow: 0.6,    // proportion of max window
+		DelayVariation:        0.2,    // proportion of max window
+		PulseWidthDetectLimit: 0.45,   // seconds
+		DriftRateLimit:        100000, // 100 ppm
 	}
 }
 
@@ -738,14 +747,18 @@ func (pel pulseEdgeList) avgInterval() time.Duration {
 }
 
 type resetSampleProcessor struct {
-	minStep time.Duration
-	lg      *slog.Logger
+	minStep        time.Duration
+	driftRateLimit float64
+	persistSample  *ptime.Sample
+	lg             *slog.Logger
 }
 
-func newResetSampleProcessor(cfg ResetConfig, lg *slog.Logger) *resetSampleProcessor {
+func newResetSampleProcessor(cfg ResetConfig, persistSample *ptime.Sample, lg *slog.Logger) *resetSampleProcessor {
 	return &resetSampleProcessor{
-		minStep: time.Duration(cfg.StepThreshold),
-		lg:      lg,
+		minStep:        time.Duration(cfg.StepThreshold),
+		driftRateLimit: cfg.DriftRateLimit,
+		persistSample:  persistSample,
+		lg:             lg,
 	}
 }
 
@@ -753,6 +766,20 @@ func (p *resetSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 	if sample == nil || sample.Kind == SampleMissing {
 		// Keep waiting for a valid sample
 		return phcAction{actionType: phcNoAction}, ModeReset
+	}
+
+	// Check drift rate against persist sample from tracking
+	if p.persistSample != nil && p.driftRateLimit > 0 {
+		current := sample.SysSample()
+		driftPPB, ok := computeDriftRate(current, *p.persistSample)
+		if ok && math.Abs(driftPPB) > p.driftRateLimit {
+			p.lg.Info("reset sample rejected: drift rate exceeds limit",
+				"driftPPB", driftPPB,
+				"limit", p.driftRateLimit,
+				"elapsedSys", current.Sys.Sub(p.persistSample.Sys),
+				"elapsedRef", current.Clock.T.Sub(p.persistSample.Clock.T))
+			return phcAction{actionType: phcNoAction}, ModeReset
+		}
 	}
 
 	// Check if offset is small enough to skip stepping
@@ -771,4 +798,19 @@ func (p *resetSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 		actionType: phcStepClock,
 		step:       -sample.Offset, // step by negative offset to correct
 	}, ModeConverging
+}
+
+// computeDriftRate calculates the drift rate in PPB between two samples.
+// It compares elapsed system time vs elapsed reference time.
+// Returns (driftPPB, true) if calculation is valid, (0, false) if insufficient elapsed time.
+func computeDriftRate(current, persist ptime.Sample) (float64, bool) {
+	sysDelta := current.Sys.Sub(persist.Sys)
+	refDelta := current.Clock.T.Sub(persist.Clock.T)
+	// Need sufficient elapsed time (1 second minimum)
+	if refDelta < time.Second {
+		return 0, false
+	}
+	// Drift = (sysDelta - refDelta) / refDelta, converted to PPB
+	driftNanos := float64(sysDelta - refDelta)
+	return driftNanos * 1e9 / float64(refDelta), true
 }

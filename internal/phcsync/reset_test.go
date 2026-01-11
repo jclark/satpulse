@@ -2,6 +2,7 @@ package phcsync
 
 import (
 	"log/slog"
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -299,26 +300,19 @@ func TestGenSampleForMessages(t *testing.T) {
 				}
 				if tc.wantStats != nil {
 					tolerance := 0.001
-					if abs(stats.pulseVariation-tc.wantStats.pulseVariation) > tolerance {
+					if math.Abs(stats.pulseVariation-tc.wantStats.pulseVariation) > tolerance {
 						t.Errorf("pulseVariation: want %v, got %v", tc.wantStats.pulseVariation, stats.pulseVariation)
 					}
-					if abs(stats.delay-tc.wantStats.delay) > tolerance {
+					if math.Abs(stats.delay-tc.wantStats.delay) > tolerance {
 						t.Errorf("delay: want %v, got %v", tc.wantStats.delay, stats.delay)
 					}
-					if abs(stats.delayVariation-tc.wantStats.delayVariation) > tolerance {
+					if math.Abs(stats.delayVariation-tc.wantStats.delayVariation) > tolerance {
 						t.Errorf("delayVariation: want %v, got %v", tc.wantStats.delayVariation, stats.delayVariation)
 					}
 				}
 			}
 		})
 	}
-}
-
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
 
 // setupGenerator creates an resetSampleGenerator with synthetic edge data.
@@ -517,6 +511,200 @@ func TestPulseIntervals(t *testing.T) {
 		if interval != time.Second {
 			t.Errorf("intervals[%d] = %v, want %v", i, interval, time.Second)
 		}
+	}
+}
+
+// TestDriftRateCheck verifies the drift rate validation in reset mode.
+func TestDriftRateCheck(t *testing.T) {
+	baseTime := time.Now()
+	baseRef := ptime.Time(0)
+	basePersist := &ptime.Sample{
+		Clock: ptime.ClockTime{T: baseRef, Era: 0},
+		Sys:   baseTime,
+	}
+
+	tests := []struct {
+		name           string
+		persistSample  *ptime.Sample
+		driftRateLimit float64
+		sampleSysDelta time.Duration
+		sampleRefDelta time.Duration
+		wantReject     bool
+	}{
+		{
+			name:           "no persist sample accepts",
+			persistSample:  nil,
+			driftRateLimit: 100000,
+			sampleSysDelta: 10 * time.Second,
+			sampleRefDelta: 10 * time.Second,
+			wantReject:     false,
+		},
+		{
+			name:           "zero drift accepts",
+			persistSample:  basePersist,
+			driftRateLimit: 100000,
+			sampleSysDelta: 60 * time.Second,
+			sampleRefDelta: 60 * time.Second,
+			wantReject:     false,
+		},
+		{
+			name:           "small drift within limit accepts",
+			persistSample:  basePersist,
+			driftRateLimit: 100000, // 100 ppm
+			sampleSysDelta: 60*time.Second + 1*time.Millisecond, // ~17 ppm
+			sampleRefDelta: 60 * time.Second,
+			wantReject:     false,
+		},
+		{
+			name:           "large drift exceeding limit rejects",
+			persistSample:  basePersist,
+			driftRateLimit: 100000, // 100 ppm
+			sampleSysDelta: 60*time.Second + 500*time.Millisecond, // ~8333 ppm (way over 100 ppm)
+			sampleRefDelta: 60 * time.Second,
+			wantReject:     true,
+		},
+		{
+			name:           "disabled limit accepts all",
+			persistSample:  basePersist,
+			driftRateLimit: 0, // disabled
+			sampleSysDelta: 60*time.Second + 500*time.Millisecond, // would fail if limit was enabled
+			sampleRefDelta: 60 * time.Second,
+			wantReject:     false,
+		},
+		{
+			name:           "short elapsed time skips check",
+			persistSample:  basePersist,
+			driftRateLimit: 100000,
+			sampleSysDelta: 500*time.Millisecond + 100*time.Millisecond, // < 1s elapsed
+			sampleRefDelta: 500 * time.Millisecond,
+			wantReject:     false, // insufficient time, check skipped
+		},
+		{
+			name:           "negative drift within limit accepts",
+			persistSample:  basePersist,
+			driftRateLimit: 100000, // 100 ppm
+			sampleSysDelta: 60*time.Second - 1*time.Millisecond, // ~-17 ppm
+			sampleRefDelta: 60 * time.Second,
+			wantReject:     false,
+		},
+		{
+			name:           "negative drift exceeding limit rejects",
+			persistSample:  basePersist,
+			driftRateLimit: 100000, // 100 ppm
+			sampleSysDelta: 60*time.Second - 500*time.Millisecond, // ~-8333 ppm
+			sampleRefDelta: 60 * time.Second,
+			wantReject:     true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := defaultResetConfig()
+			cfg.DriftRateLimit = tc.driftRateLimit
+			cfg.StepThreshold = 0 // ensure offset check doesn't interfere
+
+			proc := newResetSampleProcessor(cfg, tc.persistSample, slog.Default())
+
+			sample := &Sample{
+				Kind:   SampleOK,
+				Sys:    baseTime.Add(tc.sampleSysDelta),
+				Ref:    baseRef.Add(tc.sampleRefDelta),
+				Offset: 0, // below step threshold
+				Era:    0,
+			}
+
+			_, mode := proc.processSample(sample)
+
+			if tc.wantReject {
+				if mode != ModeReset {
+					t.Errorf("expected sample to be rejected (stay in ModeReset), got mode=%v", mode)
+				}
+			} else {
+				if mode == ModeReset {
+					t.Errorf("expected sample to be accepted (proceed to ModeConverging), got mode=%v", mode)
+				}
+			}
+		})
+	}
+}
+
+// TestComputeDriftRate verifies the drift rate calculation.
+func TestComputeDriftRate(t *testing.T) {
+	baseTime := time.Now()
+	baseRef := ptime.Time(0)
+
+	tests := []struct {
+		name       string
+		sysDelta   time.Duration
+		refDelta   time.Duration
+		wantPPB    float64
+		wantOK     bool
+		tolerance  float64
+	}{
+		{
+			name:      "zero drift",
+			sysDelta:  60 * time.Second,
+			refDelta:  60 * time.Second,
+			wantPPB:   0,
+			wantOK:    true,
+			tolerance: 1,
+		},
+		{
+			name:      "1ms drift over 60s = ~16667 ppb",
+			sysDelta:  60*time.Second + 1*time.Millisecond,
+			refDelta:  60 * time.Second,
+			wantPPB:   16666.67, // 1ms/60s * 1e9 = 16666.67 PPB
+			wantOK:    true,
+			tolerance: 1,
+		},
+		{
+			name:      "insufficient elapsed time",
+			sysDelta:  500 * time.Millisecond,
+			refDelta:  500 * time.Millisecond,
+			wantPPB:   0,
+			wantOK:    false,
+			tolerance: 0,
+		},
+		{
+			name:      "100 ppm drift",
+			sysDelta:  10*time.Second + 1*time.Millisecond,
+			refDelta:  10 * time.Second,
+			wantPPB:   100000,
+			wantOK:    true,
+			tolerance: 100,
+		},
+		{
+			name:      "negative drift",
+			sysDelta:  60*time.Second - 1*time.Millisecond,
+			refDelta:  60 * time.Second,
+			wantPPB:   -16666.67, // -1ms/60s * 1e9 = -16666.67 PPB
+			wantOK:    true,
+			tolerance: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			persist := ptime.Sample{
+				Clock: ptime.ClockTime{T: baseRef, Era: 0},
+				Sys:   baseTime,
+			}
+			current := ptime.Sample{
+				Clock: ptime.ClockTime{T: baseRef.Add(tc.refDelta), Era: 0},
+				Sys:   baseTime.Add(tc.sysDelta),
+			}
+
+			driftPPB, ok := computeDriftRate(current, persist)
+
+			if ok != tc.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if ok && tc.wantOK {
+				if math.Abs(driftPPB-tc.wantPPB) > tc.tolerance {
+					t.Errorf("driftPPB = %v, want %v (tolerance %v)", driftPPB, tc.wantPPB, tc.tolerance)
+				}
+			}
+		})
 	}
 }
 

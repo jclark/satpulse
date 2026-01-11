@@ -29,6 +29,15 @@ type Sample struct {
 	Sys       time.Time     // Estimated monotonic system time of pulse
 }
 
+// SysSample returns a ptime.Sample pairing the GPS reference time with
+// the estimated system time of the pulse.
+func (s *Sample) SysSample() ptime.Sample {
+	return ptime.Sample{
+		Clock: ptime.ClockTime{T: s.Ref, Era: s.Era},
+		Sys:   s.Sys,
+	}
+}
+
 // Sampler handles clock synchronization samples of all types
 type Sampler interface {
 	// Sample reports a clock synchronization sample of any kind

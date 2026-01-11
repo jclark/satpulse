@@ -342,13 +342,21 @@ func (c *Controller) changeMode(mode Mode) {
 		}
 	}
 
+	// Extract persist sample when leaving tracking mode
+	var persistSample *ptime.Sample
+	if c.mode == ModeTracking {
+		if tsp, ok := c.sampleProc.(*trackingSampleProcessor); ok {
+			persistSample = tsp.getPersistSample()
+		}
+	}
+
 	// Initialize sampleGen and sampleProc for the new mode
 	switch mode {
 	case ModeReset:
 		// Reset pulse width when entering reset mode; will be auto-detected
 		c.pt.PulseWidth = 0
 		c.sampleGen = newResetSampleGenerator(c.timeMsgBuffer, c.cfg.Reset, c.pt.EdgesPerPulse, c.freq, c.maxFreq, c.lg)
-		c.sampleProc = newResetSampleProcessor(c.cfg.Reset, c.lg)
+		c.sampleProc = newResetSampleProcessor(c.cfg.Reset, persistSample, c.lg)
 	case ModeConverging:
 		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converge, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converge, c.lastSample, c.freq, c.maxFreq, c.lg)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/circbuf"
 	"github.com/jclark/satpulse/internal/median"
+	"github.com/jclark/satpulse/internal/ptime"
 )
 
 // TrackingConfig contains tunable parameters for tracking mode.
@@ -97,6 +98,11 @@ type TrackingConfig struct {
 	// message after the pulse occurs.
 	// The upper limit is set the 1 second minus the tick interval, which is 0.25s.
 	PulseCorrectionTimeout float64 `toml:"pulseCorrectionTimeout" check:">0,<0.75" comment:"Max wait for pulse correction msg (s)"`
+
+	// PersistThreshold is the minimum time in seconds that must be spent in tracking mode
+	// before the current sample is persisted for drift rate validation in reset mode.
+	// This ensures we only trust the reference sample after being synchronized for a while.
+	PersistThreshold float64 `toml:"persistThreshold" check:">=0,<86400" comment:"Min time in tracking before sample persists (s)"`
 }
 
 func defaultTrackingConfig() TrackingConfig {
@@ -116,6 +122,7 @@ func defaultTrackingConfig() TrackingConfig {
 		BadSampleRatioLimit:    0.5,  // >50% bad in window triggers reset
 		AvgFreqTimeConstant:    30,   // 30 seconds
 		PulseCorrectionTimeout: 0.3,  // 300ms
+		PersistThreshold:       900,  // 15 minutes
 	}
 }
 
@@ -310,6 +317,9 @@ type trackingSampleProcessor struct {
 	madWindow             *madWindow
 	badSamples            *circbuf.Buffer[bool]
 	badSampleCount        int
+	persistThreshold      time.Duration   // min time in tracking before sample persists
+	trackingStartTime     time.Time       // system time when tracking started
+	persistSample         *ptime.Sample   // persisted sample for drift validation
 	lg                    *slog.Logger
 }
 
@@ -322,13 +332,14 @@ func newTrackingSampleProcessor(cfg TrackingConfig, currentFreq, maxFreq float64
 		emaAlpha = 1.0 - math.Exp(-1.0/cfg.AvgFreqTimeConstant)
 	}
 	return &trackingSampleProcessor{
-		servo:      newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
-		cfg:        cfg,
-		avgFreq:    currentFreq, // initialize with current frequency
-		emaAlpha:   emaAlpha,
-		madWindow:  newMADWindow(cfg.MADWindow),
-		badSamples: circbuf.New[bool](cfg.BadSampleWindow),
-		lg:         lg,
+		servo:            newPiServo(currentFreq, cfg.Kp, cfg.Ki, maxFreq),
+		cfg:              cfg,
+		avgFreq:          currentFreq, // initialize with current frequency
+		emaAlpha:         emaAlpha,
+		madWindow:        newMADWindow(cfg.MADWindow),
+		badSamples:       circbuf.New[bool](cfg.BadSampleWindow),
+		persistThreshold: time.Duration(cfg.PersistThreshold * float64(time.Second)),
+		lg:               lg,
 	}
 }
 
@@ -348,6 +359,15 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode
 		}
 	} else {
 		p.consecutiveBadSamples = 0
+		// Track start time on first good sample
+		if p.trackingStartTime.IsZero() {
+			p.trackingStartTime = sample.Sys
+		}
+		// Only persist after sufficient time in tracking mode
+		if sample.Sys.Sub(p.trackingStartTime) >= p.persistThreshold {
+			ps := sample.SysSample()
+			p.persistSample = &ps
+		}
 	}
 
 	// Track bad sample frequency in sliding window
@@ -434,6 +454,10 @@ func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 		actionType: phcAdjustFrequency,
 		freq:       freq,
 	}
+}
+
+func (p *trackingSampleProcessor) getPersistSample() *ptime.Sample {
+	return p.persistSample
 }
 
 // madIsOutlier determines if an offset is an outlier using MAD detection.
