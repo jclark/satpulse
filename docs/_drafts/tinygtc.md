@@ -12,7 +12,7 @@ A tinyGTC connected to a PHC can be used in two different ways:
 
 There are two suitable inexpensive ethernet controllers: the Intel i210-T1 and the one on-board the Raspberry Pi CM4/CM5. (The one on-board the Raspberry Pi 5 is not suitable.) The Intel i210-T1 can be used in a PC; the Raspberry Pi CM4/CM5 require a separate IO board. In both cases, this works only with Linux.
 
-Fortuitously, the 3.3V PPS signal level used by the tinyGTC is exactly what the SDPs on these ethernet controllers expect. To connect them up, you need a special cable which has a SMA connector on one end and a pair of Dupont female leads on the other. You can buy these for a few dollars on eBay or AliExpress: search for “SMA Dupont test cable”. The SMA end can be male for direct connection to the tinyGTC, but for a more robust setup it’s better for the SMA end to be a female bulkhead connector: this bulkhead connector attaches to a hole in the case or wifi bracket, then the SMA male-male cable that comes with the tinyGTC is used to connect from the bulkhead connector to the tinyGTC.
+Fortuitously, the 3.3V PPS signal level used by the tinyGTC is exactly what the SDPs on these ethernet controllers expect. To connect them up, you need a special cable which has an SMA connector on one end and a pair of Dupont female leads on the other. You can buy these for a few dollars on eBay or AliExpress: search for “SMA Dupont test cable”. The SMA end can be male for direct connection to the tinyGTC, but for a more robust setup it’s better for the SMA end to be a female bulkhead connector: this bulkhead connector attaches to a hole in the case or a wifi bracket, then the SMA male-male cable that comes with the tinyGTC is used to connect from the bulkhead connector to the tinyGTC.
 
 My [SatPulse](https://satpulse.net) project provides software and documentation to make it easy to take advantage of the capabilities of PHCs for precision network timing. 
 It includes detailed guides on hardware setup both with the [CM4/CM5](https://satpulse.net/hardware/cm-build.html) and with the [i210](https://satpulse.net/hardware/intel-build.html).
@@ -32,7 +32,7 @@ Two physical connections are needed:
 
 The SatPulse [setup guide](https://satpulse.net/setup/) explains how to set up the software side of things.
 When editing the satpulse.toml configuration file, you will need to specify the serial speed and the serial device.
-A tinyGTC exposes several serial ports. In my tests, the one that passes through the GPS output is `/dev/ttyACM1`.
+A tinyGTC exposes several USB serial devices. In my tests, the one that passes through the GPS output is `/dev/ttyACM1`.
 You can check this by using `satpulsetool gps -d /dev/ttyACM1 -s 115200`.
 
 So how does a tinyGTC compare to using a GPS module directly? On the positive side, being a GPSDO rather than just a GPS means that much of the short-term jitter is smoothed out, and also gives some holdover capability. There are very few GPSDOs available that tick the same boxes as tinyGTC: relatively inexpensive, 3.3V PPS, aligned PPS, and access to GPS output (the BG7TBL CM55 is the only other one I know of).
@@ -55,7 +55,7 @@ In order to do measurements, the tinyGTC needs to be set up as follows:
 
 You also need to physically connect the SDP on the PHC of the PTP client to the A connector on the tinyGTC (in the same way as was described for the OUT connector above).
 
-On PTP client you need to do two things:
+On the PTP client you need to do two things:
 
 * use [ptp4l](https://satpulse.net/setup/ptp4l.html) to synchronize the client to the server  
 * configure the PHC to output a PPS signal; you can use [satpulsetool sdp](https://satpulse.net/man/satpulsetool-sdp.1.html) to do this; on a Raspberry Pi CM4/CM5, the command would be simply `satpulsetool sdp -o eth0`
