@@ -32,8 +32,11 @@ Two physical connections are needed:
 
 The SatPulse [setup guide](https://satpulse.net/setup/) explains how to set up the software side of things.
 When editing the satpulse.toml configuration file, you will need to specify the serial speed and the serial device.
-A tinyGTC exposes several USB serial devices. In my tests, the one that passes through the GPS output is `/dev/ttyACM1`.
-You can check this by using `satpulsetool gps -d /dev/ttyACM1 -s 115200`.
+A tinyGTC exposes three USB serial devices, usually `/dev/ttyACM0`, `/dev/ttyACM1` and `/dev/ttyACM2`.
+In my tests, the one that passes through the GPS output is `/dev/ttyACM1`.
+You need the one with interface number 02, i.e. `cat /sys/class/tty/ttyACM1/device/bInterfaceNumber` should show `02`.
+You can check if you have the right one by using `satpulsetool gps -d /dev/ttyACM1 -s 115200`;
+it should say `Packet formats detected: NMEA`.
 
 So how does a tinyGTC compare to using a GPS module directly? On the positive side, being a GPSDO rather than just a GPS means that much of the short-term jitter is smoothed out, and also gives some holdover capability. There are very few GPSDOs available that tick the same boxes as tinyGTC: relatively inexpensive, 3.3V PPS, aligned PPS, and access to GPS output (the BG7TBL CM55 is the only other one I know of).
 
