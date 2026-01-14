@@ -366,6 +366,53 @@ func TestWaitForPulseCorrectionPostPulse(t *testing.T) {
 	}
 }
 
+func TestValidatePulseOffset(t *testing.T) {
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	buf := NewBuffer(lg, 10*time.Second, ptime.LeapSecond{UTCOffAfter: 37}, gpsprot.GPS)
+
+	tai := func(sec int64) ptime.Time {
+		return ptime.Time(sec * 1e9)
+	}
+
+	tests := []struct {
+		name       string
+		offset     float64
+		wantOK     bool
+		wantCorr   time.Duration
+	}{
+		{"valid_small_positive", 5.5, true, 6},
+		{"valid_small_negative", -5.5, true, -6},
+		{"valid_at_limit", 100.0, true, 100},
+		{"valid_at_negative_limit", -100.0, true, -100},
+		{"invalid_exceeds_limit", 100.1, false, 0},
+		{"invalid_exceeds_negative_limit", -100.1, false, 0},
+		{"invalid_bogus_microseconds", 100000.0, false, 0}, // 100µs bogus value from issue #166
+		{"valid_zero", 0.0, true, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			offset := tt.offset
+			buf.Time(&gpsprot.TimeMsg{
+				TAITime:     tai(200),
+				GNSS:        gpsprot.GPS,
+				Ref:         gpsprot.PostPulse,
+				Tag:         ubx.Tag,
+				NativeMsgID: "UBX-TIM-TOS",
+				PulseOffset: &offset,
+			}, time.Now())
+
+			corr, ok := buf.GetPulseCorrection(tai(200))
+			if ok != tt.wantOK {
+				t.Errorf("GetPulseCorrection() ok = %v, want %v", ok, tt.wantOK)
+			}
+			if ok && corr != tt.wantCorr {
+				t.Errorf("GetPulseCorrection() corr = %v, want %v", corr, tt.wantCorr)
+			}
+		})
+	}
+}
+
 func TestMixedPrePulseAndPostPulse(t *testing.T) {
 	startTime := time.Now()
 

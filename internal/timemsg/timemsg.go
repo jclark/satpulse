@@ -2,6 +2,7 @@ package timemsg
 
 import (
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -14,13 +15,13 @@ import (
 // provides methods to retrieve sequences of messages for time synchronization.
 type Buffer struct {
 	gpsprot.DefaultHandler
-	entries          []entry
-	startIndex       int
-	readWindow       time.Duration
-	ls               ptime.LeapSecond
-	lg               *slog.Logger
-	timeGNSS         gpsprot.GNSS     // GNSS system used for time messages; can be zero if unknown
-	lastPreCorrMsg   *gpsprot.TimeMsg  // last PrePulse msg with a correction
+	entries         []entry
+	startIndex      int
+	readWindow      time.Duration
+	ls              ptime.LeapSecond
+	lg              *slog.Logger
+	timeGNSS        gpsprot.GNSS     // GNSS system used for time messages; can be zero if unknown
+	lastPreCorrMsg  *gpsprot.TimeMsg // last PrePulse msg with a correction
 	lastPostCorrMsg *gpsprot.TimeMsg // PostPulse msg with PulseOffset with the greatest TAI time
 
 }
@@ -267,7 +268,7 @@ func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime pti
 	}
 	// we assume that a message with a PulseOffset has a TAI time that is equal to the pulse ref time
 	if refTime == lastCorr.TAITime {
-		return lastCorr.PulseOffsetDuration()
+		return buf.validatePulseOffset(lastCorr)
 	}
 	entries := buf.validEntries()
 	// Search backwards through entries for messages with the same TimeRef with matching TAI time
@@ -275,7 +276,7 @@ func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime pti
 		m := entries[i].msg
 		t := m.TAITime
 		if m.PulseOffset != nil && t == refTime {
-			return m.PulseOffsetDuration()
+			return buf.validatePulseOffset(m)
 		}
 		// Since pulse offsets of each Ref type are in order, stop if we've gone past the time we're looking for
 		if t < refTime && m.Ref == lastCorr.Ref {
@@ -283,6 +284,23 @@ func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime pti
 		}
 	}
 	return 0, false
+}
+
+// maxPulseOffset is the maximum acceptable pulse offset in nanoseconds.
+const maxPulseOffset = 100
+
+// validatePulseOffset checks that the PulseOffset in the message is within acceptable limits.
+// It returns the PulseOffset as a time.Duration and true if valid, or (0, false) if invalid.
+func (buf *Buffer) validatePulseOffset(msg *gpsprot.TimeMsg) (time.Duration, bool) {
+	if msg.PulseOffset == nil {
+		return 0, false
+	}
+	off := *msg.PulseOffset
+	if math.Abs(off) > maxPulseOffset {
+		buf.lg.Warn("pulse offset exceeds acceptable limit", "pulseOffset", off, "limit", maxPulseOffset, "tag", msg.Tag, "msgID", msg.NativeMsgID, "tai", msg.TAITime)
+		return 0, false
+	}
+	return time.Duration(math.Round(off)), true
 }
 
 // WaitForPulseCorrection indicates whether we should wait for a pulse correction.
