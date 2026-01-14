@@ -23,9 +23,9 @@ all:
         maasdam.lan:
         morbier.lan:
         pecorino.lan:
+        roquefort.lan:
         serpa.lan:
         taleggio.lan:
-        vacherin.lan:
         valencay.lan:
         valtellina.lan:
         wensleydale.lan:
@@ -122,12 +122,14 @@ all:
       speed: 115200
       config: "false"
 
+    # LBE-1421 PPS out attached to E810-XXVDA4T
     brie.lan:
       speed: 38400
-      instance: ttyUSB0
+      instance: ttyACM0
       interface: enp1s0f0np0
       pin: 1
       channel: 1
+      config: "false"
     
     # LEA-M8T on UART
     valencay.lan: # all default
