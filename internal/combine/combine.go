@@ -605,8 +605,9 @@ func (s *sampleData) phcMatch(pulse pulseEdge, cfg *Config) secMatch {
 
 // The time according to the GPS at which the pulse occurred.
 func (s *sampleData) refTime() ptime.Time {
-	// the pulse offset is the time of the pulse minus the top of the second
-	return s.sec.Add(s.pulseOffset)
+	// The pulse time plus the pulseOffset is the true time.
+	// So the true time minus the pulseOffset is the time of the pulse.
+	return s.sec.Add(-s.pulseOffset)
 }
 
 func (s *secMsgState) pulseOffset() time.Duration {
