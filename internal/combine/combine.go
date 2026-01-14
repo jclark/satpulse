@@ -143,7 +143,11 @@ func (c *Combiner) TimeMsg(sec ptime.Time, tRead time.Time, pulseOff *time.Durat
 	}
 	secState := c.secMsgList[i]
 	if pulseOff != nil {
-		secState.pulseOff = pulseOff
+		if pulseOff.Abs() <= maxPulseOffset {
+			secState.pulseOff = pulseOff
+		} else {
+			c.lg.Warn("pulse offset exceeds acceptable limit", "pulseOffset", *pulseOff, "limit", maxPulseOffset, "sec", sec)
+		}
 	}
 	c.lg.Debug("combiner received time message",
 		"sec", sec,
@@ -177,6 +181,9 @@ func (c *Combiner) TimeMsg(sec ptime.Time, tRead time.Time, pulseOff *time.Durat
 }
 
 const maxInitPulses = 5
+
+// maxPulseOffset is the maximum acceptable pulse offset.
+const maxPulseOffset = 100 * time.Nanosecond
 
 // PulseEdge provides information about a pulse edge received by the PHC.
 // tClock gives the PHC time when the pulse edge was timestamped by the PHC hardware.
