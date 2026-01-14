@@ -267,7 +267,7 @@ func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime pti
 	}
 	// we assume that a message with a PulseOffset has a TAI time that is equal to the pulse ref time
 	if refTime == lastCorr.TAITime {
-		return time.Duration(*lastCorr.PulseOffset), true
+		return lastCorr.PulseOffsetDuration()
 	}
 	entries := buf.validEntries()
 	// Search backwards through entries for messages with the same TimeRef with matching TAI time
@@ -275,7 +275,7 @@ func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime pti
 		m := entries[i].msg
 		t := m.TAITime
 		if m.PulseOffset != nil && t == refTime {
-			return time.Duration(*m.PulseOffset), true
+			return m.PulseOffsetDuration()
 		}
 		// Since pulse offsets of each Ref type are in order, stop if we've gone past the time we're looking for
 		if t < refTime && m.Ref == lastCorr.Ref {

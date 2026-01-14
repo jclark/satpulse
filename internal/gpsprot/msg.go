@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"math"
 	"strings"
 	"time"
 
@@ -375,6 +376,14 @@ func (msg *TimeMsg) ComputeTAITime(ls ptime.LeapSecond) (ptime.Time, bool) {
 		return 0, false
 	}
 	return ls.UTCtoTime(*msg.UTCTime), true
+}
+
+// PulseOffsetDuration returns the pulse offset as a time.Duration.
+func (msg *TimeMsg) PulseOffsetDuration() (time.Duration, bool) {
+	if msg.PulseOffset == nil {
+		return 0, false
+	}
+	return time.Duration(math.Round(*msg.PulseOffset)), true
 }
 
 type LeapSecondMsg struct {

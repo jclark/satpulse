@@ -3,6 +3,7 @@ package timemsg
 import (
 	"io"
 	"log/slog"
+	"math"
 	"testing"
 	"time"
 
@@ -312,16 +313,16 @@ func TestGetPulseCorrectionPostPulse(t *testing.T) {
 	if !ok {
 		t.Error("GetPulseCorrection(100) returned false, want true")
 	}
-	if corr != time.Duration(pulseOffset1) {
-		t.Errorf("GetPulseCorrection(100) = %v, want %v", corr, time.Duration(pulseOffset1))
+	if corr != time.Duration(math.Round(pulseOffset1)) {
+		t.Errorf("GetPulseCorrection(100) = %v, want %v", corr, time.Duration(math.Round(pulseOffset1)))
 	}
 
 	corr, ok = buf.GetPulseCorrection(tai(101))
 	if !ok {
 		t.Error("GetPulseCorrection(101) returned false, want true")
 	}
-	if corr != time.Duration(pulseOffset2) {
-		t.Errorf("GetPulseCorrection(101) = %v, want %v", corr, time.Duration(pulseOffset2))
+	if corr != time.Duration(math.Round(pulseOffset2)) {
+		t.Errorf("GetPulseCorrection(101) = %v, want %v", corr, time.Duration(math.Round(pulseOffset2)))
 	}
 
 	// Test that correction not available for future time
@@ -422,15 +423,15 @@ func TestMixedPrePulseAndPostPulse(t *testing.T) {
 
 	// Verify GetPulseCorrection retrieves both types correctly
 	corr, ok := buf.GetPulseCorrection(tai(100))
-	if !ok || corr != time.Duration(prePulseOffset) {
+	if !ok || corr != time.Duration(math.Round(prePulseOffset)) {
 		t.Errorf("GetPulseCorrection(100) = (%v, %v), want (%v, true) from PrePulse",
-			corr, ok, time.Duration(prePulseOffset))
+			corr, ok, time.Duration(math.Round(prePulseOffset)))
 	}
 
 	corr, ok = buf.GetPulseCorrection(tai(101))
-	if !ok || corr != time.Duration(postPulseOffset) {
+	if !ok || corr != time.Duration(math.Round(postPulseOffset)) {
 		t.Errorf("GetPulseCorrection(101) = (%v, %v), want (%v, true) from PostPulse",
-			corr, ok, time.Duration(postPulseOffset))
+			corr, ok, time.Duration(math.Round(postPulseOffset)))
 	}
 
 	// GetPostTimeMessages should prefer PostPulse for 101 (but there's only one PostPulse message)
