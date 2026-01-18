@@ -66,16 +66,22 @@ Ones we should support for implementing various messages:
 - MSG-BDSUTC - gives leap seconds for BDS
 - NAV-CLOCK - gives UTC delta for each GNSS
 
+Note: ATGM332D-5N31 does not emit MSG-GPSUTC or MSG-BDSUTC, although it ACKs the request to enable it.
 
 ### Information needed
 
 - What does runTime field do? Do messages in same epoch have same runTime?
+
+Messages in the same navigation epoch do have the same runTime value.
+A TIM-TP message for second N is emitted before second N together with NAV messages for second N - 1. It has the same runTime value as the NAV messages for second N - 1.
+
 - Is qErr in TIM-TP implemented?
 
+In ATGM332D-5N31 it is not implemented.
 
 ## Implementation Stages
 
-### Stage 1: Packet Framing and Registration ✓ COMPLETE
+### Stage 1: Packet Framing and Registration - done
 
 **Files Created:**
 - `internal/casic/casicpacket.go` - PacketFormat with state machine, checksum
@@ -88,7 +94,7 @@ Ones we should support for implementing various messages:
 
 ---
 
-### Stage 2: Binary Message Parsing (casic/bin)
+### Stage 2: Binary Message Parsing (casic/bin) - done
 
 Create `internal/casic/bin/` with message type system and all periodic messages.
 
