@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/jclark/satpulse/internal/as"
+	"github.com/jclark/satpulse/internal/casic"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/nov"
@@ -17,6 +18,7 @@ import (
 // PacketFormats contains all known packet formats
 var PacketFormats = []gpsprot.PacketFormat{
 	ubx.PacketFormat,
+	casic.PacketFormat,
 	nmea.PacketFormat,
 	rtcm.PacketFormat,
 	unc.BinPacketFormat,
@@ -41,6 +43,7 @@ const (
 	VendorTrimble
 	VendorUblox
 	VendorUnicore
+	VendorZhongke
 )
 
 var vendorNames = []string{
@@ -56,6 +59,7 @@ var vendorNames = []string{
 	"Trimble",
 	"u-blox",
 	unc.Vendor,
+	"Zhongke",
 }
 
 var vendorMap = func() map[string]Vendor {
@@ -139,6 +143,8 @@ func MakeVendor(vendor string) Vendor {
 		return VendorUblox
 	case "unicore":
 		return VendorUnicore
+	case "zhongke":
+		return VendorZhongke
 	default:
 		return VendorUnknown
 	}
