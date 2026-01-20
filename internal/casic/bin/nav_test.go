@@ -28,8 +28,8 @@ func TestNavSolParse(t *testing.T) {
 	if sol.VelValid != NavVel3D {
 		t.Errorf("VelValid = %d, want %d", sol.VelValid, NavVel3D)
 	}
-	if sol.TimeSrc != NavTimeSrcGPS {
-		t.Errorf("TimeSrc = %d, want %d", sol.TimeSrc, NavTimeSrcGPS)
+	if sol.TimeSrc != GPS {
+		t.Errorf("TimeSrc = %d, want %d", sol.TimeSrc, GPS)
 	}
 	if sol.System != (NavSystemGPS | NavSystemBDS) {
 		t.Errorf("System = 0x%x, want 0x%x", sol.System, NavSystemGPS|NavSystemBDS)
@@ -60,7 +60,7 @@ func TestNavSolRoundtrip(t *testing.T) {
 		NavRunTime: NavRunTime{RunTime: 12345},
 		PosValid:   NavPos3D,
 		VelValid:   NavVel3D,
-		TimeSrc:    NavTimeSrcGPS,
+		TimeSrc:    GPS,
 		System:     NavSystemGPS | NavSystemBDS,
 		NumSV:      10,
 		NumSVGPS:   6,
@@ -118,8 +118,8 @@ func TestNavTimeUTCParse(t *testing.T) {
 	if utc.Valid != 7 { // all valid bits set
 		t.Errorf("Valid = %d, want 7", utc.Valid)
 	}
-	if utc.TimeSrc != NavTimeSrcGPS {
-		t.Errorf("TimeSrc = %d, want %d", utc.TimeSrc, NavTimeSrcGPS)
+	if utc.TimeSrc != GPS {
+		t.Errorf("TimeSrc = %d, want %d", utc.TimeSrc, GPS)
 	}
 	if utc.DateValid != NavDateMultipleSats {
 		t.Errorf("DateValid = %d, want %d", utc.DateValid, NavDateMultipleSats)
@@ -138,7 +138,7 @@ func TestNavTimeUTCRoundtrip(t *testing.T) {
 		Min:        30,
 		Sec:        45,
 		Valid:      NavTimeUTCTOWValid | NavTimeUTCWeekValid | NavTimeUTCLeapValid,
-		TimeSrc:    NavTimeSrcGPS,
+		TimeSrc:    GPS,
 		DateValid:  NavDateMultipleSats,
 	}
 	testMsgType(t, m)
@@ -202,8 +202,8 @@ func TestNavGPSInfoParse(t *testing.T) {
 	if info.NumFixSV != 9 {
 		t.Errorf("NumFixSV = %d, want 9", info.NumFixSV)
 	}
-	if info.System != NavInfoSysGPS {
-		t.Errorf("System = %d, want %d", info.System, NavInfoSysGPS)
+	if info.System != GPS {
+		t.Errorf("System = %d, want %d", info.System, GPS)
 	}
 	if len(info.SVs) != 13 {
 		t.Fatalf("len(SVs) = %d, want 13", len(info.SVs))
@@ -224,7 +224,7 @@ func TestNavGPSInfoRoundtrip(t *testing.T) {
 			NavRunTime: NavRunTime{RunTime: 12345},
 			NumViewSV:  3,
 			NumFixSV:   2,
-			System:     NavInfoSysGPS,
+			System:     GPS,
 		},
 		SVs: []NavSVInfo{
 			{Chn: 1, SVID: 5, Flags: NavSVUsed, Quality: NavSVQualityPRValid, CNO: 45, Elev: 30, Azim: 120, PRRes: 1.5},
@@ -264,8 +264,8 @@ func TestNavBDSInfoParse(t *testing.T) {
 	if info.NumFixSV != 16 {
 		t.Errorf("NumFixSV = %d, want 16", info.NumFixSV)
 	}
-	if info.System != NavInfoSysBDS {
-		t.Errorf("System = %d, want %d", info.System, NavInfoSysBDS)
+	if info.System != BDS {
+		t.Errorf("System = %d, want %d", info.System, BDS)
 	}
 	if len(info.SVs) != 23 {
 		t.Fatalf("len(SVs) = %d, want 23", len(info.SVs))
@@ -289,8 +289,8 @@ func TestNavGLNInfoParse(t *testing.T) {
 	if info.NumFixSV != 0 {
 		t.Errorf("NumFixSV = %d, want 0", info.NumFixSV)
 	}
-	if info.System != NavInfoSysGLN {
-		t.Errorf("System = %d, want %d", info.System, NavInfoSysGLN)
+	if info.System != GLN {
+		t.Errorf("System = %d, want %d", info.System, GLN)
 	}
 	if len(info.SVs) != 0 {
 		t.Fatalf("len(SVs) = %d, want 0", len(info.SVs))

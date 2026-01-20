@@ -29,7 +29,7 @@ type NavSol struct {
 	NavRunTime
 	PosValid  NavPosValid
 	VelValid  NavVelValid
-	TimeSrc   NavTimeSrc
+	TimeSrc   GNSSID
 	System    NavSystem
 	NumSV     uint8
 	NumSVGPS  uint8
@@ -79,13 +79,6 @@ const (
 	NavVelGNSSDR // GNSS+DR integrated navigation
 )
 
-type NavTimeSrc uint8
-
-const (
-	NavTimeSrcGPS NavTimeSrc = iota
-	NavTimeSrcBDS
-	NavTimeSrcGLN
-)
 
 type NavSystem uint8
 
@@ -108,7 +101,7 @@ type NavTimeUTC struct {
 	Min       uint8   // 0-59
 	Sec       uint8   // 0-59
 	Valid     NavTimeUTCValid
-	TimeSrc   NavTimeSrc
+	TimeSrc   GNSSID
 	DateValid NavDateValid
 }
 
@@ -207,17 +200,10 @@ type NavGPSInfoFixed struct {
 	NavRunTime
 	NumViewSV uint8       // number of visible satellites
 	NumFixSV  uint8       // number of satellites used for fix
-	System    NavInfoSys  // system type
+	System    GNSSID  // system type
 	_         uint8       // reserved
 }
 
-type NavInfoSys uint8
-
-const (
-	NavInfoSysGPS NavInfoSys = iota
-	NavInfoSysBDS
-	NavInfoSysGLN
-)
 
 func (m *NavGPSInfo) ID() MsgID { return NavGPSInfoID }
 
@@ -244,7 +230,7 @@ type NavBDSInfoFixed struct {
 	NavRunTime
 	NumViewSV uint8
 	NumFixSV  uint8
-	System    NavInfoSys
+	System    GNSSID
 	_         uint8
 }
 
@@ -273,7 +259,7 @@ type NavGLNInfoFixed struct {
 	NavRunTime
 	NumViewSV uint8
 	NumFixSV  uint8
-	System    NavInfoSys
+	System    GNSSID
 	_         uint8
 }
 

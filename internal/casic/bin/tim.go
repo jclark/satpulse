@@ -15,19 +15,21 @@ type TimTP struct {
 	_        uint32 // reserved
 }
 
-func (m *TimTP) ID() MsgID { return TimTPID }
+func (m *TimTP) ID() MsgID                    { return TimTPID }
+func (m *TimTP) RefTimeGNSS() GNSSID          { return GNSSID(m.RefTime & 0x0F) }
+func (m *TimTP) RefTimeBase() TimTPTimeBase   { return TimTPTimeBase(m.RefTime >> 4) }
+func (m *TimTP) SetRefTime(gnss GNSSID, base TimTPTimeBase) {
+	m.RefTime = TimTPRefTime(gnss) | TimTPRefTime(base<<4)
+}
 
 type TimTPRefTime uint8
 
-// TimeRef returns the GNSS time reference (0=GPS, 1=BDS, 2=GLN)
-func (r TimTPRefTime) TimeRef() NavTimeSrc {
-	return NavTimeSrc(r & 0x0F)
-}
+type TimTPTimeBase uint8
 
-// TimeBase returns true if the time base is GNSS, false if UTC
-func (r TimTPRefTime) IsGNSSBase() bool {
-	return (r >> 4) != 0
-}
+const (
+	TimTPTimeBaseUTC  TimTPTimeBase = 0
+	TimTPTimeBaseGNSS TimTPTimeBase = 1
+)
 
 type TimTPUTCValid uint8
 

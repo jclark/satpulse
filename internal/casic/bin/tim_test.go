@@ -28,12 +28,12 @@ func TestTimTPParse(t *testing.T) {
 	if tp.TOW < 13900 || tp.TOW > 14000 {
 		t.Errorf("TOW = %f, expected ~13943", tp.TOW)
 	}
-	// RefTime: low nibble is time ref (0=GPS), high nibble is time base (1=GNSS)
-	if tp.RefTime.TimeRef() != NavTimeSrcGPS {
-		t.Errorf("RefTime.TimeRef() = %d, want %d", tp.RefTime.TimeRef(), NavTimeSrcGPS)
+	// RefTime: low nibble is GNSS (0=GPS), high nibble is time base (1=GNSS)
+	if tp.RefTimeGNSS() != GPS {
+		t.Errorf("RefTimeGNSS() = %d, want %d", tp.RefTimeGNSS(), GPS)
 	}
-	if !tp.RefTime.IsGNSSBase() {
-		t.Errorf("RefTime.IsGNSSBase() = false, want true")
+	if tp.RefTimeBase() != TimTPTimeBaseGNSS {
+		t.Errorf("RefTimeBase() = %d, want %d", tp.RefTimeBase(), TimTPTimeBaseGNSS)
 	}
 	if tp.UTCValid != TimTPUTCValidParams {
 		t.Errorf("UTCValid = %d, want %d", tp.UTCValid, TimTPUTCValidParams)

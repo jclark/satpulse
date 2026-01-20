@@ -28,6 +28,14 @@ const (
 	clsNmea = 0x4E
 )
 
+type GNSSID uint8
+
+const (
+	GPS GNSSID = iota
+	BDS
+	GLN
+)
+
 var clsMap = map[byte]string{
 	clsNav:  "NAV",
 	clsTim:  "TIM",
