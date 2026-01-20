@@ -133,7 +133,7 @@ Create `internal/casic/casic.go` implementing `gpsprot.PacketProcessor`.
 
 **Implement:**
 - `ProcessPacket()` that parses CASIC packets via `bin.ParseMsg()`
-- Convert `NavSol` or `NavTimeUTC` → `gpsprot.TimeMsg`
+- Convert `NavSol`, `TimTP`, `NavTimeUTC` in `gpsprot.TimeMsg`
 - Basic epoch tracking via `runTime` field
 
 **Files to Modify:**
@@ -156,6 +156,8 @@ Extend PacketProcessor to produce `gpsprot.SatellitesMsg`.
 ---
 
 ### Stage 5: LeapSecondMsg
+
+**Note**: deferred until we find a receiver that implements it
 
 Extend PacketProcessor to produce `gpsprot.LeapSecondMsg`.
 
@@ -214,7 +216,7 @@ Implement `gpsprot.ConfigProtocol` and `gpsprot.Configurator` with receiver dete
 Extend Configurator for time pulse settings.
 
 **Implement:**
-- `ConfigProps.TimePulse` support via `CfgTP` message
+- `ConfigProps.TimePulse` and `ConfigProps.TimeGNSS` support via `CfgTP` message
 - Width, period, polarity, alignment settings
 
 **Functionality:** `satpulsetool gps --pps --time-gnss` works.
@@ -249,7 +251,13 @@ Extend Configurator for GNSS signal selection.
 
 ---
 
-### Stage 11: Raw Observation Configuration
+### Stage 11: Speed Change
+
+Extend Configurator to handle change in speec.
+
+---
+
+### Stage 12: Raw Observation Configuration
 
 Extend Configurator for raw observation output.
 
