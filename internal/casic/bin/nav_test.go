@@ -220,7 +220,7 @@ func TestNavGPSInfoParse(t *testing.T) {
 
 func TestNavGPSInfoRoundtrip(t *testing.T) {
 	m := NavGPSInfo{
-		NavGPSInfoFixed: NavGPSInfoFixed{
+		NavSatInfoFixed: NavSatInfoFixed{
 			NavRunTime: NavRunTime{RunTime: 12345},
 			NumViewSV:  3,
 			NumFixSV:   2,

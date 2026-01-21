@@ -144,6 +144,15 @@ type NavClockSys struct {
 	Valid uint8   // time validity flag
 }
 
+// NavSatInfoFixed is the common fixed part for NAV-GPSINFO, NAV-BDSINFO, NAV-GLNINFO
+type NavSatInfoFixed struct {
+	NavRunTime
+	NumViewSV uint8  // number of visible satellites
+	NumFixSV  uint8  // number of satellites used for fix
+	System    GNSSID // system type
+	_         uint8  // reserved
+}
+
 // NavSVInfo is common satellite info structure used by NAV-GPSINFO, NAV-BDSINFO, NAV-GLNINFO
 type NavSVInfo struct {
 	Chn     uint8   // channel number
@@ -192,18 +201,9 @@ const (
 
 // NavGPSInfo is NAV-GPSINFO (0x01 0x20) - GPS satellite information
 type NavGPSInfo struct {
-	NavGPSInfoFixed
+	NavSatInfoFixed
 	SVs []NavSVInfo
 }
-
-type NavGPSInfoFixed struct {
-	NavRunTime
-	NumViewSV uint8       // number of visible satellites
-	NumFixSV  uint8       // number of satellites used for fix
-	System    GNSSID  // system type
-	_         uint8       // reserved
-}
-
 
 func (m *NavGPSInfo) ID() MsgID { return NavGPSInfoID }
 
@@ -215,23 +215,15 @@ func (m *NavGPSInfo) InitVaryingPart(payloadLen int) (err error) {
 	return
 }
 
-func (m *NavGPSInfo) FixedPart() any  { return &m.NavGPSInfoFixed }
+func (m *NavGPSInfo) FixedPart() any   { return &m.NavSatInfoFixed }
 func (m *NavGPSInfo) VaryingPart() any { return &m.SVs }
 
 var _ VaryingMsg = (*NavGPSInfo)(nil)
 
 // NavBDSInfo is NAV-BDSINFO (0x01 0x21) - BDS satellite information
 type NavBDSInfo struct {
-	NavBDSInfoFixed
+	NavSatInfoFixed
 	SVs []NavSVInfo
-}
-
-type NavBDSInfoFixed struct {
-	NavRunTime
-	NumViewSV uint8
-	NumFixSV  uint8
-	System    GNSSID
-	_         uint8
 }
 
 func (m *NavBDSInfo) ID() MsgID { return NavBDSInfoID }
@@ -244,23 +236,15 @@ func (m *NavBDSInfo) InitVaryingPart(payloadLen int) (err error) {
 	return
 }
 
-func (m *NavBDSInfo) FixedPart() any  { return &m.NavBDSInfoFixed }
+func (m *NavBDSInfo) FixedPart() any   { return &m.NavSatInfoFixed }
 func (m *NavBDSInfo) VaryingPart() any { return &m.SVs }
 
 var _ VaryingMsg = (*NavBDSInfo)(nil)
 
 // NavGLNInfo is NAV-GLNINFO (0x01 0x22) - GLONASS satellite information
 type NavGLNInfo struct {
-	NavGLNInfoFixed
+	NavSatInfoFixed
 	SVs []NavSVInfo
-}
-
-type NavGLNInfoFixed struct {
-	NavRunTime
-	NumViewSV uint8
-	NumFixSV  uint8
-	System    GNSSID
-	_         uint8
 }
 
 func (m *NavGLNInfo) ID() MsgID { return NavGLNInfoID }
@@ -273,7 +257,7 @@ func (m *NavGLNInfo) InitVaryingPart(payloadLen int) (err error) {
 	return
 }
 
-func (m *NavGLNInfo) FixedPart() any  { return &m.NavGLNInfoFixed }
+func (m *NavGLNInfo) FixedPart() any   { return &m.NavSatInfoFixed }
 func (m *NavGLNInfo) VaryingPart() any { return &m.SVs }
 
 var _ VaryingMsg = (*NavGLNInfo)(nil)
