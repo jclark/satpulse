@@ -8,7 +8,7 @@ import (
 )
 
 // Tag is the identifier for CASIC protocol packets
-const Tag gpsprot.Tag = "CASBIN"
+const Tag gpsprot.Tag = "CAS"
 
 const (
 	sync1Byte = bin.Sync1

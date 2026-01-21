@@ -56,7 +56,11 @@ var epochUnix = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
 // GPS epoch for week numbers
 var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 
-var epochGlonass = time.Date(1996, time.January, 1, 0, 0, 0, 0, time.UTC)
+var epochGLONASS = time.Date(1996, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+// epochGLONASSWeek is the Sunday before epochGLONASS.
+// This is used for non-standard GPS-style week/TOW representation of GLONASS time.
+var epochGLONASSWeek = time.Date(1995, time.December, 31, 0, 0, 0, 0, time.UTC)
 
 // Galileo epoch
 // Leap seconds are handled by TAIMinusGalileo constant
@@ -101,6 +105,15 @@ func BeiDou(week int16, tow time.Duration) Time {
 	return gnss(week, tow, epochBeiDou, TAIMinusBeiDou)
 }
 
+// GLONASSWeek creates a Time from a GLONASS week number and time of week.
+// This is used by CASIC receivers which represent GLONASS time using GPS-style
+// week/TOW format with epoch December 31, 1995 (the Sunday before Jan 1, 1996).
+// GLONASS time is aligned with UTC (except for leap seconds), and CASIC uses
+// the same TAI offset as GPS.
+func GLONASSWeek(week int16, tow time.Duration) Time {
+	return gnss(week, tow, epochGLONASSWeek, TAIMinusGPS)
+}
+
 func gnss(week int16, tow time.Duration, epoch time.Time, epochTAIOffset int64) Time {
 	// The Unix method in Go doesn't consider leap seconds
 	// GNSS time also doesn't consider leap seconds since that GNSS's epoch
@@ -116,7 +129,7 @@ func GLONASS(intervalNumber byte, dayNumber uint16, tod time.Duration) UTCTime {
 	// GLONASS time appears to be Moscow time (UTC+3)
 	// Our UTCTime representations allow negative time-of-days, so we can use that here
 	// I don't understand how GLONASS works around leap seconds: I suspect we are not right in the vicinity of a leap second
-	return UTCTime{epochGlonass.AddDate(int(intervalNumber-1)*4, 0, int(dayNumber)-1), tod - 3*time.Hour}
+	return UTCTime{epochGLONASS.AddDate(int(intervalNumber-1)*4, 0, int(dayNumber)-1), tod - 3*time.Hour}
 }
 
 func UTC(year uint16, month, day, hour, min, sec uint8, nanos int32) UTCTime {
@@ -438,6 +451,11 @@ func Picoseconds(ps int32) time.Duration {
 		return -Picoseconds(-ps)
 	}
 	return time.Duration(((ps + 500) / 1000))
+}
+
+// Seconds converts float64 seconds to time.Duration with rounding.
+func Seconds(s float64) time.Duration {
+	return time.Duration(math.Round(s * 1e9))
 }
 
 // GNSSLeapSecond is information about a future leap second in a form similar to what is broadcast by GNSS systems.

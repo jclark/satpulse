@@ -79,6 +79,10 @@ A TIM-TP message for second N is emitted before second N together with NAV messa
 
 In ATGM332D-5N31 it is not implemented.
 
+- When TimeSrc is GLONASS, does NavSol use GPS-style week numbers?
+
+Traditional GLONASS uses 4-year intervals + day numbers, not week/TOW. Since NavSol has a unified Week/TOW format, we assume CASIC outputs GPS-style week numbers even for GLONASS. Needs verification with a GLONASS-only time source configuration.
+
 ## Implementation Stages
 
 ### Stage 1: Packet Framing and Registration - done
@@ -129,15 +133,38 @@ Create `internal/casic/bin/` with message type system and all periodic messages.
 
 ### Stage 3: PacketProcessor with TimeMsg
 
-Create `internal/casic/casic.go` implementing `gpsprot.PacketProcessor`.
-
-**Implement:**
-- `ProcessPacket()` that parses CASIC packets via `bin.ParseMsg()`
-- Convert `NavSol`, `TimTP`, `NavTimeUTC` in `gpsprot.TimeMsg`
-- Basic epoch tracking via `runTime` field
+Create `internal/casic/casic.go` implementing `gpsprot.PacketProcessor`, and `internal/casic/castime.go` for TimeMsg conversions.
 
 **Files to Modify:**
-- `internal/gpsreg/reg.go` - Add to `CreatePacketProcessors()`
+- `internal/gpsreg/reg.go` - Add CASIC to `CreatePacketProcessors()`
+
+#### PacketProcessor
+
+- Embed `gpsprot.DefaultPacketProcessor`
+- `ProcessPacket()` parses via `bin.ParseMsg()` and dispatches to time conversion functions
+- Convert NAV-SOL, NAV-TIMEUTC, TIM-TP to `gpsprot.TimeMsg`
+- Set `NavEpoch` from `RunTime` field on all messages
+- Pass unhandled messages to `NativeMsgHandler`
+
+#### TimeMsg Conversions
+
+All conversions set `NavEpoch` from the message's `RunTime` field.
+
+**NAV-SOL → TimeMsg (NavSolution):**
+- Validity: `PosValid < NavPos3D` means invalid - return TimeMsg with zero TAITime
+- Convert `Week`/`TOW` to TAI using `ptime.GPS()`, `ptime.BeiDou()`, or `ptime.GLONASSWeek()` based on `TimeSrc`
+- GLONASS uses week epoch of December 31, 1995 (Sunday before N₄ epoch)
+
+**NAV-TIMEUTC → TimeMsg (NavSolution):**
+- Validity: `DateValid < NavDateFromSatellite` or `(Valid & NavTimeUTCTOWValid) == 0` means invalid - return TimeMsg with nil UTCTime
+- Sub-second time: `nanos = round(MsErr * 1e6)` (MsErr is residual in ms)
+- TAcc is variance scaled by 1/c²; convert to duration: `sqrt(TAcc) * c`
+- Set GNSS from `TimeSrc`
+
+**TIM-TP → TimeMsg (PrePulse):**
+- No validity check - message only emitted when pulse is generated
+- Always convert to TAI using `ptime.GPS()`, `ptime.BeiDou()`, or `ptime.GLONASSWeek()` based on `RefTimeGNSS()`
+- Ignore `RefTimeBase` (UTC vs GNSS) distinction - always produce TAITime
 
 **Functionality:** satpulsed can receive time from CASIC receivers (basic time sync works).
 
