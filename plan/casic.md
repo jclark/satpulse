@@ -170,13 +170,329 @@ All conversions set `NavEpoch` from the message's `RunTime` field.
 
 ---
 
-### Stage 4: SatellitesMsg
+### Stage 4: SatellitesMsg - done
 
 Extend PacketProcessor to produce `gpsprot.SatellitesMsg`.
 
-**Implement:**
-- Convert `NavGPSInfo`, `NavBDSInfo`, `NavGLNInfo` → `gpsprot.SatellitesMsg`
-- Combine satellite messages from same epoch
+**Files to Create:**
+- `internal/casic/cassats.go` - Satellite message conversion and accumulator
+
+**Files to Modify:**
+- `internal/casic/casproc.go` - Add epoch tracking and satAccum field, dispatch satellite messages
+
+---
+
+#### Epoch Tracking in PacketProcessor
+
+Following the UBX pattern, epoch tracking lives in `PacketProcessor` and is used to coordinate flushing of accumulated data (satellites now, potentially other things later).
+
+```go
+type PacketProcessor struct {
+    gpsprot.DefaultPacketProcessor
+    mh          gpsprot.MsgHandler
+    curNavEpoch uint32  // current RunTime (0 means no epoch seen yet)
+    satAccum    satAccum
+}
+```
+
+The `handleNavEpoch()` method is called for every NavMsg:
+
+```go
+func (p *PacketProcessor) handleNavEpoch(nm bin.NavMsg, tRead time.Time) {
+    e := nm.NavEpoch()
+    if e != p.curNavEpoch {
+        if p.curNavEpoch != 0 {
+            p.flushNavEpoch(tRead)
+        }
+        p.curNavEpoch = e
+    }
+}
+
+func (p *PacketProcessor) flushNavEpoch(tRead time.Time) {
+    p.satAccum.epochChange(p.mh, tRead)
+}
+```
+
+---
+
+#### Satellite Accumulator
+
+The `satAccum` struct accumulates satellite info within an epoch. It does not track the epoch itself—that's `PacketProcessor`'s job.
+
+```go
+type satAccum struct {
+    nEpochs   int              // number of complete epochs seen (for early-flush gating)
+    received  uint8            // bit vector of bin.GNSSID received this epoch (1<<GPS | 1<<BDS | 1<<GLN)
+    predicted uint8            // bit vector of GNSS expected (from previous epoch)
+    svs       []gpsprot.SVInfo
+}
+```
+
+---
+
+#### Epoch Combining Logic
+
+Track which GNSSs we've seen in current epoch. Flush (emit SatellitesMsg) when:
+1. Epoch changes (handled by `PacketProcessor.flushNavEpoch()`), OR
+2. All predicted GNSSs received (`received == predicted && predicted != 0`), OR
+3. All 3 GNSSs received (`received == 0x07`)
+
+**Early-flush gating**: Conditions 2 and 3 are only checked after `nEpochs >= 2`. If we started listening mid-epoch, the first epoch's `received` bitmap is incomplete, and using it as `predicted` could cause premature flushes. After two complete epoch changes, we know `predicted` reflects a full epoch.
+
+On flush:
+- Emit accumulated `SatellitesMsg` if `len(svs) > 0`
+- Update `predicted = received` (for next epoch prediction)
+- Reset `received = 0` and `svs = nil`
+
+---
+
+#### Shared Conversion Function
+
+```go
+// convertNavSatInfo converts CASIC satellite info to gpsprot format.
+// Uses fixed.System to determine GNSS type.
+func convertNavSatInfo(fixed *bin.NavSatInfoFixed, svs []bin.NavSVInfo) []gpsprot.SVInfo
+```
+
+Dispatch in `casproc.go`:
+```go
+case *bin.NavGPSInfo:
+    p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
+case *bin.NavBDSInfo:
+    p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
+case *bin.NavGLNInfo:
+    p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
+```
+
+---
+
+#### SVID Conversion
+
+CASIC binary uses raw PRN numbers in the `svid` field. For GPS, BDS, and GLONASS this maps directly to `gpsprot.SVID.Num`. However, SBAS and QZSS satellites are reported in NAV-GPSINFO (system=GPS) using their raw PRN numbers, which must be converted to RINEX numbering.
+
+| System | Raw SVID | gpsprot.GNSS | gpsprot.SVID.Num |
+|--------|----------|--------------|------------------|
+| GPS | 1-32 | GPS | svid |
+| BDS | 1-63 | BDS | svid |
+| GLN | 1-32 | GLO | svid (slot number) |
+| GPS | 120-158 | SBAS | svid - 100 |
+| GPS | 193-199 | QZSS | svid - 192 |
+
+```go
+func casicSVID(gnss gpsprot.GNSS, svid uint8) gpsprot.SVID {
+    if gnss == gpsprot.GPS {
+        if svid >= 120 && svid <= 158 {
+            return gpsprot.SVID{GNSS: gpsprot.SBAS, Num: svid - 100}
+        }
+        if svid >= 193 && svid <= 199 {
+            return gpsprot.SVID{GNSS: gpsprot.QZSS, Num: svid - 192}
+        }
+    }
+    return gpsprot.SVID{GNSS: gnss, Num: svid}
+}
+```
+
+GNSS mapping (`bin.GNSSID` → `gpsprot.GNSS`):
+- `bin.GPS` (0) → `gpsprot.GPS`
+- `bin.BDS` (1) → `gpsprot.BDS`
+- `bin.GLN` (2) → `gpsprot.GLO`
+
+Use existing `gnssIDToGNSS()` from `castime.go`.
+
+---
+
+#### Signal ID Mapping
+
+CASIC reports one CN0 per satellite (L1 legacy signal). Map to:
+- GPS → `gpsprot.SigIDGPSL1CA` ("L1 C/A")
+- BDS → `gpsprot.SigIDBDSB1I` ("B1I")
+- GLONASS → `gpsprot.SigIDGLOL1` ("L1")
+
+```go
+var casicSignalID = map[bin.GNSSID]gpsprot.SignalID{
+    bin.GPS: gpsprot.SigIDGPSL1CA,
+    bin.BDS: gpsprot.SigIDBDSB1I,
+    bin.GLN: gpsprot.SigIDGLOL1,
+}
+```
+
+---
+
+#### Quality Filtering
+
+Filter satellites with `CNO == 0` (no signal lock). Include all others.
+
+```go
+if sv.CNO == 0 {
+    continue
+}
+```
+
+---
+
+#### SVInfo Construction
+
+For each `bin.NavSVInfo` with CNO > 0:
+
+```go
+used := sv.Flags&bin.NavSVUsed != 0
+gpsprot.SVInfo{
+    ID: casicSVID(gnss, sv.SVID),
+    LookAngles: &gpsprot.LookAngles{
+        Azimuth:   sv.Azim,   // int16, 0-360
+        Elevation: sv.Elev,   // int8, -90 to 90
+    },
+    Signals: []gpsprot.SignalInfo{{
+        ID:   casicSignalID[fixed.System],
+        CN0:  sv.CNO,
+        Used: used,
+    }},
+    Used: used,
+}
+```
+
+---
+
+#### SatellitesMsg Construction
+
+On flush, emit:
+
+```go
+&gpsprot.SatellitesMsg{
+    SVs:          accumulated,
+    Tag:          Tag,
+    NativeMsgID:  "NAV-SATINFO", // combined from GPS/BDS/GLN
+    UsedValidity: gpsprot.SatelliteUsedSignal,
+}
+```
+
+Like UBX-NAV-SAT: the message reports satellite-level "used", but since there's one signal per satellite, that signal is used iff the satellite is used—so we can use `SatelliteUsedSignal` and set `SignalInfo.Used`.
+
+This differs from NMEA, where GSA reports satellite-level "used" but GSV reports multiple signals per satellite (e.g., L1 and L5). In that case we must use `SatelliteUsedSV` because we know the satellite is used but not which specific signal.
+
+---
+
+#### satAccum.accum Method
+
+```go
+func (a *satAccum) accum(fixed *bin.NavSatInfoFixed, svs []bin.NavSVInfo, mh gpsprot.MsgHandler, tRead time.Time) {
+    // Convert and append
+    converted := convertNavSatInfo(fixed, svs)
+    a.svs = append(a.svs, converted...)
+
+    // Mark this GNSS as received
+    a.received |= uint8(1) << fixed.System
+
+    // Check early-flush conditions (only after seeing 2 complete epochs)
+    if a.nEpochs >= 2 &&
+       (a.received == 0x07 || (a.predicted != 0 && a.received == a.predicted)) {
+        a.flush(mh, tRead)
+    }
+}
+```
+
+---
+
+#### satAccum.epochChange Method
+
+Called by `PacketProcessor.flushNavEpoch()` on epoch change. Increments `nEpochs` then flushes.
+
+```go
+func (a *satAccum) epochChange(mh gpsprot.MsgHandler, tRead time.Time) {
+    a.nEpochs++
+    a.flush(mh, tRead)
+}
+```
+
+---
+
+#### satAccum.flush Method
+
+Called by `epochChange()` on epoch change, or by `accum()` for early flush.
+
+```go
+func (a *satAccum) flush(mh gpsprot.MsgHandler, tRead time.Time) {
+    if len(a.svs) == 0 {
+        a.predicted = a.received
+        a.received = 0
+        return
+    }
+
+    msg := &gpsprot.SatellitesMsg{
+        SVs:          a.svs,
+        Tag:          Tag,
+        NativeMsgID:  "NAV-SATINFO",
+        UsedValidity: gpsprot.SatelliteUsedSignal,
+    }
+
+    if mh != nil {
+        mh.Satellites(msg, tRead)
+    }
+
+    a.predicted = a.received
+    a.received = 0
+    a.svs = nil
+}
+```
+
+---
+
+#### Updated ProcessPacket and dispatch() Flow
+
+`ProcessPacket` calls `handleNavEpoch` for every NavMsg before dispatching:
+
+```go
+func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
+    m, err := bin.ParseMsg(data)
+    if err != nil {
+        return PacketFormat.MsgID([]byte(data)), err
+    }
+    msgID := m.ID().String()
+    if nm, ok := m.(bin.NavMsg); ok {
+        p.handleNavEpoch(nm, tRead)
+    }
+    if p.dispatch(m, tRead) {
+        return msgID, nil
+    }
+    // ... NativeMsgHandler handling ...
+}
+```
+
+The `dispatch` method handles message-specific logic:
+
+```go
+func (p *PacketProcessor) dispatch(m bin.Msg, tRead time.Time) bool {
+    switch mt := m.(type) {
+    case *bin.NavSol:
+        // ... existing time handling ...
+    case *bin.NavTimeUTC:
+        // ... existing time handling ...
+    case *bin.TimTP:
+        // ... existing time handling ...
+    case *bin.NavGPSInfo:
+        p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
+        return true
+    case *bin.NavBDSInfo:
+        p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
+        return true
+    case *bin.NavGLNInfo:
+        p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
+        return true
+    default:
+        return false
+    }
+    // ... rest of time message handling ...
+}
+```
+
+---
+
+#### Edge Cases
+
+1. **First epoch**: `curNavEpoch == 0` initially; `handleNavEpoch` doesn't flush on first message
+2. **Missing GNSS**: If receiver doesn't emit a GNSS (e.g., no GLONASS satellites visible), that message won't arrive. Rely on epoch change to flush.
+3. **Empty messages**: A GNSS info message with 0 satellites still counts as received (marks bit in `received`)
+4. **Order independence**: Messages within an epoch can arrive in any order
 
 **Functionality:** Satellite display in satpulsed web dashboard.
 
