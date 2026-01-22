@@ -7,6 +7,8 @@ BindsTo=dev-%i.device
 [Service]
 Type=simple
 ExecStart=/usr/sbin/satpulsed --wait --systemd-log --serial-device "/dev/%I" -f "/etc/satpulse.d/%I.toml" -f /etc/satpulse.toml
+Restart=on-failure
+RestartPreventExitStatus=64 77 78
 # If it doesn't shutdown gracefully in 5 seconds, something's gone wrong.
 TimeoutStopSec=5
 # Sending a SIGQUIT makes the Go runtime dump goroutines,

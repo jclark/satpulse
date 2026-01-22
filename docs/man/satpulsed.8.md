@@ -69,6 +69,25 @@ Run in verbose mode with systemd logging:
 
     satpulsed --systemd-log --wait -f /etc/satpulse.toml
 
+# EXIT STATUS
+
+**0**
+: Successful termination or help/version requested.
+
+**1**
+: Runtime error.
+
+**64** (EX_USAGE)
+: Command line usage error.
+
+**77** (EX_NOPERM)
+: Permission denied.
+
+**78** (EX_CONFIG)
+: Configuration file error.
+
+Normally, the systemd unit file for **satpulsed** should specify that the daemon should not be automatically restarted with exit codes 64, 77, and 78.
+
 # SEE ALSO
 
 **satpulse.toml(5)**, **satpulsetool(1)**, **satpulsetool-gps(1)**, **systemd(1)**, **ptp4l(8)**, **chronyd(8)**, **ser2net(8)**
