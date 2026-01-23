@@ -12,7 +12,7 @@ import (
 // timeNavTimeUTC converts NavTimeUTC to TimeMsg.
 // Always returns a TimeMsg, but with nil UTCTime when the solution is invalid.
 func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsprot.TimeMsg {
-	t := gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEUTC", NavEpoch: m.RunTime}
+	t := gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEUTC"}
 	if m.DateValid < bin.NavDateFromSatellite || (m.Valid&bin.NavTimeUTCTOWValid) == 0 {
 		return &t
 	}
@@ -33,7 +33,7 @@ func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsprot.TimeMsg {
 // timeNavSol converts NavSol to TimeMsg.
 // Always returns a TimeMsg, but with zero TAITime when the solution is invalid.
 func timeNavSol(m *bin.NavSol) *gpsprot.TimeMsg {
-	t := gpsprot.TimeMsg{NativeMsgID: "NAV-SOL", NavEpoch: m.RunTime}
+	t := gpsprot.TimeMsg{NativeMsgID: "NAV-SOL"}
 	if m.PosValid < bin.NavPos3D {
 		return &t
 	}
@@ -44,7 +44,7 @@ func timeNavSol(m *bin.NavSol) *gpsprot.TimeMsg {
 // timeTimTP converts TimTP to TimeMsg.
 // The TimTP message gives the time of the next pulse, emitted before the pulse.
 func timeTimTP(m *bin.TimTP) *gpsprot.TimeMsg {
-	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, NativeMsgID: "TIM-TP", NavEpoch: m.RunTime}
+	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, NativeMsgID: "TIM-TP"}
 	t.GNSS, t.TAITime = gnssTime(m.RefTimeGNSS(), m.Wn, m.TOW)
 	return &t
 }
