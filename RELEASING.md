@@ -138,14 +138,14 @@ git checkout -b v${current_version} v${current_version}
 echo "${current_version}.1" > VERSION
 git add VERSION
 git commit -m "Prepare for $(cat VERSION) patch release"
+# Push the maintenance branch (use refs/heads/ to disambiguate from tag)
+git push -u origin refs/heads/v${current_version}
 # Switch back to master and bump minor version
 git checkout master
 next_version=$(awk -F. '{print $1"."$2+1}' VERSION)
 echo "${next_version}" > VERSION
 git add VERSION
 git commit -m "Bump version to ${next_version} for next development cycle"
-# Push everything
-git push -u origin v${current_version}
 git push origin master
 ```
 
