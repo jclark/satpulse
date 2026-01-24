@@ -205,8 +205,8 @@ func randomInvalidPacket() string {
 
 	for len(packet) < length {
 		b := byte(rand.Intn(256))
-		// Exclude valid start bytes for NMEA, UBX, and RTCM packets
-		if b != '$' && b != 0xB5 && b != 0xD3 {
+		// Exclude valid start bytes for NMEA, UBX, RTCM, and CASIC packets
+		if b != '$' && b != 0xB5 && b != 0xD3 && b != 0xBA {
 			packet = append(packet, b)
 		}
 	}
