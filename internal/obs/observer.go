@@ -2,14 +2,17 @@ package obs
 
 import (
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/phcsync"
 )
 
 // Observer provides unified observability interface
 type Observer interface {
-	mon.Sampler
+	phcsync.Sampler
 	gpsprot.MsgHandler
-	
+
+	// ReopenLog handles log rotation (e.g., on SIGHUP signal)
+	ReopenLog()
+
 	// Release releases any resources used by the observer
 	Release()
 }
@@ -31,11 +34,20 @@ func NewMultiObserver(observers ...Observer) *MultiObserver {
 	}
 }
 
-// Sample implements mon.Sampler by type-asserting handlers to Sampler
-func (m *MultiObserver) Sample(data mon.SampleData) {
+// Sample implements phcsync.Sampler by type-asserting handlers to Sampler
+func (m *MultiObserver) Sample(data phcsync.Sample) {
 	for h := range m.Handlers() {
-		if sampler, ok := h.(mon.Sampler); ok {
+		if sampler, ok := h.(phcsync.Sampler); ok {
 			sampler.Sample(data)
+		}
+	}
+}
+
+// ReopenLog implements Observer by type-asserting handlers to Observer
+func (m *MultiObserver) ReopenLog() {
+	for h := range m.Handlers() {
+		if obs, ok := h.(Observer); ok {
+			obs.ReopenLog()
 		}
 	}
 }
@@ -54,8 +66,11 @@ type DefaultObserver struct {
 	gpsprot.DefaultHandler
 }
 
-// Sample implements mon.Sampler as a no-op
-func (o *DefaultObserver) Sample(data mon.SampleData) {}
+// Sample implements phcsync.Sampler as a no-op
+func (o *DefaultObserver) Sample(data phcsync.Sample) {}
+
+// ReopenLog implements Observer as a no-op
+func (o *DefaultObserver) ReopenLog() {}
 
 // Release implements Observer as a no-op
 func (o *DefaultObserver) Release() {}

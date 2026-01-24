@@ -1,6 +1,7 @@
 package ptime
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -339,3 +340,94 @@ func runLeapSecondTests(t *testing.T, testCases []leapSecondTestCase, testFunc f
 		})
 	}
 }
+
+func TestUTCTimeJSONLeapSeconds(t *testing.T) {
+	testCases := []struct {
+		name string
+		utc  UTCTime
+		json string
+	}{
+		{
+			name: "leap second exact second 60",
+			utc:  UTC(2025, 6, 30, 23, 59, 60, 0),
+			json: `"2025-06-30T23:59:60Z"`,
+		},
+		{
+			name: "leap second with nanoseconds",
+			utc:  UTC(2025, 6, 30, 23, 59, 60, 500000000),
+			json: `"2025-06-30T23:59:60.5Z"`,
+		},
+		{
+			name: "leap second end (max nanos)",
+			utc:  UTC(2025, 6, 30, 23, 59, 60, 999999999),
+			json: `"2025-06-30T23:59:60.999999999Z"`,
+		},
+		{
+			name: "second before leap second",
+			utc:  UTC(2025, 6, 30, 23, 59, 59, 999999999),
+			json: `"2025-06-30T23:59:59.999999999Z"`,
+		},
+		{
+			name: "second after leap second",
+			utc:  UTC(2025, 7, 1, 0, 0, 0, 0),
+			json: `"2025-07-01T00:00:00Z"`,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name+" marshal", func(t *testing.T) {
+			data, err := json.Marshal(tc.utc)
+			if err != nil {
+				t.Fatalf("Marshal error: %v", err)
+			}
+			if string(data) != tc.json {
+				t.Errorf("got %s, want %s", string(data), tc.json)
+			}
+		})
+		t.Run(tc.name+" unmarshal", func(t *testing.T) {
+			var utc UTCTime
+			err := json.Unmarshal([]byte(tc.json), &utc)
+			if err != nil {
+				t.Fatalf("Unmarshal error: %v", err)
+			}
+			if utc != tc.utc {
+				t.Errorf("got Date=%v TimeOfDay=%v, want Date=%v TimeOfDay=%v",
+					utc.Date, utc.TimeOfDay, tc.utc.Date, tc.utc.TimeOfDay)
+			}
+		})
+		t.Run(tc.name+" round-trip", func(t *testing.T) {
+			data, err := json.Marshal(tc.utc)
+			if err != nil {
+				t.Fatalf("Marshal error: %v", err)
+			}
+			var utc UTCTime
+			err = json.Unmarshal(data, &utc)
+			if err != nil {
+				t.Fatalf("Unmarshal error: %v", err)
+			}
+			if utc != tc.utc {
+				t.Errorf("round-trip failed:\ngot  Date=%v TimeOfDay=%v\nwant Date=%v TimeOfDay=%v",
+					utc.Date, utc.TimeOfDay, tc.utc.Date, tc.utc.TimeOfDay)
+			}
+		})
+	}
+}
+
+func TestUTCTimeJSONInvalidLeapSeconds(t *testing.T) {
+	invalidCases := []struct {
+		name string
+		json string
+	}{
+		{"second 61 (invalid)", `"2025-06-30T23:59:61Z"`},
+		{"second 62 (invalid)", `"2025-06-30T23:59:62Z"`},
+	}
+	for _, tc := range invalidCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var utc UTCTime
+			err := json.Unmarshal([]byte(tc.json), &utc)
+			if err == nil {
+				t.Errorf("expected error for %s, got none", tc.json)
+			}
+		})
+	}
+}
+

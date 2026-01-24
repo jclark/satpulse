@@ -1,0 +1,3 @@
+[gps]
+drift.tau = 500.0
+drift.sigma = 10.0

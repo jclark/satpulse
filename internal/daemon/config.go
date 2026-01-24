@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/phcsync"
+	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/jclark/satpulse/internal/proxy"
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/refclock"
 	"github.com/jclark/satpulse/internal/sockrefclock"
 	"github.com/jclark/satpulse/internal/ts"
 	"github.com/pelletier/go-toml/v2"
-
-	"github.com/jclark/satpulse/internal/pmc"
 )
 
 const configFileEnvVar = "SATPULSE_CONFIG_FILE"
@@ -27,6 +27,7 @@ type Config struct {
 	Serial     SerialConfig
 	GPS        GPSConfig
 	PHC        PHCConfig
+	Sync       phcsync.Config
 	Proxy      proxy.Config
 	HTTP       []HTTPConfig
 	LeapSecond LeapSecondConfig
@@ -54,11 +55,13 @@ type LeapSecondConfig struct {
 }
 
 type PTPConfig struct {
-	ClockAccuracy int          `toml:"clockAccuracy"`
-	DomainNumber  uint8        `toml:"domainNumber"`
-	MajorSdoID    uint8        `toml:"majorSdoId"`
-	MinorSdoID    uint8        `toml:"minorSdoId"`
-	PTP4L         *PTP4LConfig `toml:"ptp4l"`
+	ClockAccuracy           int          `toml:"clockAccuracy"`
+	OffsetScaledLogVariance uint16       `toml:"offsetScaledLogVariance"`
+	AllanDeviation          float64      `toml:"allanDeviation"`
+	DomainNumber            uint8        `toml:"domainNumber"`
+	MajorSdoID              uint8        `toml:"majorSdoId"`
+	MinorSdoID              uint8        `toml:"minorSdoId"`
+	PTP4L                   *PTP4LConfig `toml:"ptp4l"`
 }
 
 type PTP4LConfig struct {
@@ -136,6 +139,8 @@ func defaultConfig() *Config {
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
 	cfg.PTP.ClockAccuracy = 150
+	cfg.PTP.OffsetScaledLogVariance = pmc.OffsetScaledLogVarianceUnknown
+	cfg.Sync = phcsync.DefaultConfig()
 	return cfg
 }
 
@@ -146,6 +151,13 @@ func (cfg *Config) httpWantsSatellites() bool {
 		}
 	}
 	return false
+}
+
+// Validate validates the configuration and logs warnings for deprecated options.
+// It is separate from LoadConfig because the config contains logging settings.
+func (cfg *Config) Validate(lg *slog.Logger) error {
+	cfg.GPS.validate(lg)
+	return cfg.Sync.Validate()
 }
 
 func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {
@@ -166,7 +178,7 @@ func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {
 	return ptime.LeapSecondOnDate(cfg.Date.AsTime((time.UTC)), int16(cfg.Before), int16(cfg.After))
 }
 
-func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (mon.RefClock, error) {
+func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (refclock.RefClock, error) {
 	if cfg.Sock == nil || cfg.Sock.Path == "" {
 		return nil, nil
 	}
@@ -174,7 +186,7 @@ func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (mon.RefClock, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mon.NewLoggingSockRefClock(lg, rc), nil
+	return refclock.NewLoggingSockRefClock(lg, rc), nil
 }
 
 func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
@@ -192,6 +204,26 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 	cl.MajorSdoID = cfg.MajorSdoID
 	cl.MinorSdoID = cfg.MinorSdoID
 	return cl, nil
+}
+
+// ClockQuality returns the PTP ClockQuality for when the clock is in sync.
+func (cfg *PTPConfig) ClockQuality() (pmc.ClockQuality, error) {
+	acc := pmc.DurationToClockAccuracy(time.Duration(cfg.ClockAccuracy) * time.Nanosecond)
+	if acc == 0 {
+		return pmc.ClockQuality{}, fmt.Errorf("ptp.clockAccuracy %d ns: out of range", cfg.ClockAccuracy)
+	}
+	oslv := cfg.OffsetScaledLogVariance
+	if cfg.AllanDeviation != 0 {
+		if cfg.OffsetScaledLogVariance != pmc.OffsetScaledLogVarianceUnknown {
+			return pmc.ClockQuality{}, errors.New("ptp: cannot specify both offsetScaledLogVariance and allanDeviation")
+		}
+		oslv = pmc.AdevToOffsetScaledLogVariance(cfg.AllanDeviation, 1.0)
+	}
+	return pmc.ClockQuality{
+		ClockClass:              pmc.ClockClassSyncPrimaryRef,
+		ClockAccuracy:           acc,
+		OffsetScaledLogVariance: oslv,
+	}, nil
 }
 
 // ClockPath returns the path for the clock log file.

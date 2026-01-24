@@ -26,8 +26,8 @@ type Clock struct {
 type Event struct {
 	Kind       EventKind
 	Ts         ptime.ClockTime
-	TRead      time.Time
-	TReadPHC   ptime.ClockTime
+	TReadMono  ptime.Sample // TReadMono.Sys includes a monotonic time
+	TReadWall  ptime.Sample // TReadWall.Sys does not have a monotonic time, but PHC-system offset is more precise
 	ResumeFunc func() ptime.Era
 }
 
@@ -307,33 +307,76 @@ func (clk *Clock) readWorker(ctx context.Context, lg *slog.Logger, tsCh chan<- E
 			}
 		}
 		event := Event{Ts: tClock}
-		event.TReadPHC, event.TRead, err = clk.sample()
+		// Collect monotonic sample first
+		event.TReadMono, err = clk.monoSample()
+		if err != nil {
+			lg.Warn("error reading PHC time", "err", err)
+			event.TReadMono.Sys = time.Now()
+		}
+		// Collect wallclock sample
+		event.TReadWall, err = clk.wallSample()
 		if err != nil {
 			lg.Warn("error from PTP_SYS_OFFSET", "err", err)
-			event.TRead = time.Now()
+			event.TReadWall.Sys = time.Now()
 		}
 		event.Ts = tClock
 		tsCh <- event
 	}
 }
 
-// sample reads the PHC and system clocks and returns the results.
+// computeEra determines the era for a sample based on pre/post era values.
+// If eraPre == eraPost or eraPre is uncertain, use eraPre.
+// Else if eraPost is uncertain, use eraPost.
+// Else the clock was stepped during sampling, so use eraPre + 1.
+func computeEra(eraPre, eraPost ptime.Era) ptime.Era {
+	if eraPre == eraPost || eraPre.Uncertain() {
+		return eraPre
+	}
+	if eraPost.Uncertain() {
+		return eraPost
+	}
+	return eraPre + 1
+}
+
+// monoSample reads a PHC/system time pair with monotonic system time.
+// Uses a time.Now() sandwich around PHC read, which gives less precise
+// correspondence but includes monotonic time in the result.
 // This can be called only from readWorker.
-func (clk *Clock) sample() (tClock ptime.ClockTime, tSys time.Time, err error) {
+func (clk *Clock) monoSample() (sample ptime.Sample, err error) {
 	eraPre := clk.eraCounter.load()
+
+	tSysPre := time.Now()
+	tPHC, err := clk.GetTime()
+	if err != nil {
+		return
+	}
+	tSysPost := time.Now()
+
+	eraPost := clk.eraCounter.load()
+	sample.Clock.Era = computeEra(eraPre, eraPost)
+
+	// Average the two time.Now() calls to estimate when PHC was read
+	sample.Sys = tSysPre.Add(tSysPost.Sub(tSysPre) / 2)
+	sample.Clock.T = tPHC
+	return
+}
+
+// wallSample reads a PHC/system time pair with wallclock system time.
+// Uses PTP_SYS_OFFSET which gives precise correspondence between
+// PHC and system time, but result has only wallclock time (no monotonic).
+// This can be called only from readWorker.
+func (clk *Clock) wallSample() (sample ptime.Sample, err error) {
+	eraPre := clk.eraCounter.load()
+
 	ms, err := clk.SysOffset(6)
 	if err != nil {
 		return
 	}
+
 	eraPost := clk.eraCounter.load()
-	if eraPre == eraPost || eraPre.Uncertain() {
-		tClock.Era = eraPre
-	} else if eraPost.Uncertain() {
-		tClock.Era = eraPost
-	} else {
-		tClock.Era = eraPre + 1
-	}
-	tClock.T, tSys = ms.Reduce()
+	sample.Clock.Era = computeEra(eraPre, eraPost)
+
+	sample.Clock.T, sample.Sys = ms.Reduce()
 	return
 }
 

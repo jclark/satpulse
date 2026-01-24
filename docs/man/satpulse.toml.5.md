@@ -85,12 +85,8 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
 * `config` - a boolean saying whether to perform configuration of the GPS receiver; `true` means to perform configuration;
   currently this works only with GPS receivers that support the UBX protocol (like those from u-blox)
   this won't make any persistent changes to the GPS receiver, which means you can turn the receiver off and on again to undo any changes made by SatPulse;
-  if you use `false` here, then all the other keys in the table other than `pulseWidth` and `vendor` will be ignored
+  if you use `false` here, then all the other keys in the table other than `vendor` will be ignored
   and it is your responsibility to configure the GPS receiver appropriately
-* `pulseWidth` - a number giving the time pulse width in seconds that this GPS receiver has been configured with; this is not relevant
-   unless the ethernet controller is one that timestamps both edges (e.g. Intel i210); it is also not relevant if SatPulse
-   is performing configuration of the GPS receiver (in which case the pulse width will be set to a known value); if this is not
-   specified, then SatPulse will attempt to retrieve the configured time pulse width using the UBX protocol
 * `timeGNSS` - a string giving the GNSS system to which the time pulse should be aligned; the GNSS specified here must be already be enabled on the receiver
   (SatPulse will not change the enabled GNSS systems since that is a rather disruptive operation); possible values are
    * `"GPS"` for the GNSS system operated by the USA
@@ -161,7 +157,18 @@ The `ptp` table controls this. It can have the following keys:
 * `domain` - the PTP domain number; this defaults to 0
 * `majorSdoId` - the PTP majorSdoId; this defaults to 0; in earlier versions of the PTP standard this is called `transportSpecific`
 * `minorSdoId` - the PTP minorSdoId; this defaults to 0
-* `clockAccuracy` - the accuracy in nanoseconds of the PTP grandmaster instance when synchronized to the GPS receiver; SatPulse will consider the PHC to be *in sync* when it has succeeded in adjusting the PHC so that the absolute values of the offsets between pulses from the GPS receiver and the PHC are consistently less than this; when SatPulse considers the PHC in sync, it will set the the clockClass attribute of the PTP grandmaster instance to 6, meaning that it is synchronized to a primary reference; when out of sync, it will set the clockCass to 52, meaning that it is degraded; when the clock class is 6, it will set the clockClass attribute to be the value specified by this key, rounded up to a value supported by PTP (e.g. 10, 25, 100, 250, 1000); the default is 150, which should be easily achievable with any GPS and which will result in a PTP clockAccuracy of 0x22, meaning accurate to within 250ns (thus allowing 150ns of error from the offset and 100ns from other source)
+* `clockAccuracy` - the accuracy in nanoseconds of the PTP grandmaster instance when synchronized to the GPS receiver.
+   This will be rounded up to a value allowed by the PTP clockAccuracy enumeration (e.g. 10, 25, 100, 250, 1000).
+   The value before being rounded up is used to choose buckets for Prometheus observability.
+   The default is 150, which will be rounded up to 250, corresponding to the 0x22 clockAccuracy enumerated constant.
+* `offsetScaledLogVariance` - the offsetScaledLogVariance of the PTP grandmaster instance when synchronized to the GPS receiver.
+   This is a measure of the clock stability.
+   It is an integer in the range 0x0 to 0xFFFF, which provides an efficient, PTP-specific encoding of the Allan deviation.
+   The default is 0xFFFF, which means unknown.
+   It is usually more convenient to specify this using the `allanDeviation` key,
+   but some PTP profiles require specific integer values.
+* `allanDeviation` - the Allan Deviation at a tau of 1 second.
+   If specified, this is used to compute `offsetScaledLogVariance`.
 
 Example
 

@@ -1,0 +1,9 @@
+[[gps.sinusoid]]
+period = 86400.0
+amp = 7.0
+peakAt = 09:23:00
+
+[[gps.sinusoid]]
+period = 43200.0
+amp = 3.0
+peakAt = 17:33:00

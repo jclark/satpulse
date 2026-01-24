@@ -1,0 +1,3 @@
+[gps]
+ar1FM.tau = 1000.0
+ar1FM.sigma = 0.013

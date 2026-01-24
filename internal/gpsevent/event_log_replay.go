@@ -13,10 +13,35 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsevent"
-	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/timemsg"
 )
 
+// mockClock implements phcsync.Clock interface for replay (no actual PHC adjustment)
+type mockClock struct {
+	freqOffset float64
+}
+
+func (m *mockClock) SetFreqOffset(offset float64) error {
+	m.freqOffset = offset
+	return nil
+}
+
+func (m *mockClock) FreqOffset() (float64, error) {
+	return m.freqOffset, nil
+}
+
+func (m *mockClock) MaxFreqOffset() float64 {
+	return 62500000.0 // 62.5 million PPB = 62500 PPM
+}
+
+func (m *mockClock) AdjTime(d time.Duration) (ptime.Era, error) {
+	return ptime.Era(1), nil
+}
+
+// replaySampler implements phcsync.Sampler to collect samples during replay
 type replaySampler struct {
 	ref    ptime.Time
 	ls     ptime.LeapSecond
@@ -25,26 +50,24 @@ type replaySampler struct {
 	output *os.File // nil if no output file is specified
 }
 
-func (rs *replaySampler) Sample(ref ptime.Time, local ptime.ClockTime, delayed bool) {
-	// Format the reference time and calculate the offset
-	offset := local.T.Sub(ref)
-
+func (rs *replaySampler) Sample(data phcsync.Sample) {
+	// Only process valid samples
+	if data.Kind == phcsync.SampleMissing {
+		return
+	}
 	if rs.output != nil {
-		fmt.Fprintf(rs.output, "%s %3d\n", rs.logDateTime(ref), offset.Nanoseconds())
+		fmt.Fprintf(rs.output, "%s %3d\n", rs.logDateTime(data.Ref), data.Offset.Nanoseconds())
 	}
-
-	// Check for duplicate samples and log using slog.Logger
-	if ref == rs.ref {
-		rs.lg.Warn("duplicate sample detected", "ref", ref)
+	// Check for duplicate samples
+	if data.Ref == rs.ref {
+		rs.lg.Warn("duplicate sample detected", "ref", data.Ref)
 	}
-	rs.ref = ref
+	rs.ref = data.Ref
 	rs.count++
 }
 
-// Copied from monitor.go
 func (rs *replaySampler) logDateTime(ref ptime.Time) string {
-	// We need to round because the reference time (which will be a whole number of seconds)
-	// may have had a pulse offset (sawtooth correction) of a few nanoseconds applied.
+	// Round because the reference time may have had a pulse offset applied
 	s := rs.ls.FormatTime(ref.Round(time.Second))
 	s = strings.Replace(s, "T", " ", 1)
 	return strings.Replace(s, "Z", "", 1)
@@ -52,10 +75,12 @@ func (rs *replaySampler) logDateTime(ref ptime.Time) string {
 
 func main() {
 	// Command-line flags
-	driverBothEdges := flag.Bool("2", false, "Use DriverBothEdges")
-	driverOneEdgePoll4Hz := flag.Bool("cm", false, "Use DriverOneEdge|DriverPoll4Hz")
-	verbose := flag.Bool("v", false, "Enable verbose (debug) logging")
-	outputFile := flag.String("o", "", "File to output samples to")
+	var verbose bool
+	var outputFile string
+	var twoEdges bool
+	flag.BoolVar(&verbose, "v", false, "Enable verbose (debug) logging")
+	flag.StringVar(&outputFile, "o", "", "File to output samples to")
+	flag.BoolVar(&twoEdges, "2", false, "Use 2 edges per pulse (rising and falling)")
 	flag.Parse()
 
 	// Ensure a log file is provided
@@ -65,7 +90,7 @@ func main() {
 	fn := flag.Arg(0)
 
 	var logLevel slog.Level
-	if *verbose {
+	if verbose {
 		logLevel = slog.LevelDebug
 	} else {
 		logLevel = slog.LevelInfo
@@ -86,19 +111,12 @@ func main() {
 	warnCountHandler := gpsevent.NewWarnCountHandler(slog.NewTextHandler(os.Stderr, opts))
 	lg := slog.New(warnCountHandler)
 
-	var phcFlags phc.DriverFlags
-	if *driverBothEdges {
-		phcFlags = phc.DriverBothEdges
-	} else if *driverOneEdgePoll4Hz {
-		phcFlags = phc.DriverOneEdge | phc.DriverPoll4Hz
-	}
-
 	ls := ptime.LeapSecond2016()
 
 	var output *os.File
-	if *outputFile != "" {
+	if outputFile != "" {
 		var err error
-		output, err = os.Create(*outputFile)
+		output, err = os.Create(outputFile)
 		if err != nil {
 			log.Fatalf("Failed to open output file: %v", err)
 		}
@@ -111,9 +129,43 @@ func main() {
 		output: output,
 	}
 
-	err := gpsevent.ReplayFile(fn, phcFlags, rs, ls, &curTime, lg)
+	// Create mock clock
+	clock := &mockClock{}
+
+	// Create controller config
+	cfg := phcsync.DefaultConfig()
+
+	// Create pulse type
+	edgesPerPulse := 1
+	if twoEdges {
+		edgesPerPulse = 2
+	}
+	pt := phcsync.PulseType{
+		EdgesPerPulse: edgesPerPulse,
+		PulseWidth:    100 * time.Millisecond,
+	}
+
+	// Create controller
+	ctrl, err := phcsync.NewController(clock, rs, nil, cfg, ls, pt, lg)
+	if err != nil {
+		log.Fatalf("Failed to create controller: %v", err)
+	}
+	defer ctrl.Close()
+
+	// Create time message buffer
+	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
+
+	// Inject buffer into controller
+	ctrl.SetTimeMsgBuffer(timeMsgBuffer)
+
+	// Replay the file
+	err = gpsevent.ReplayFile(fn, ctrl, timeMsgBuffer, &curTime)
 	if err != nil {
 		log.Fatalf("Error replaying file: %v", err)
 	}
-	lg.Info("Replay complete", "samples", rs.count, "warnings", warnCountHandler.WarnCount())
+
+	lg.Info("Replay complete",
+		"samples", rs.count,
+		"warnings", warnCountHandler.WarnCount(),
+		"mode", ctrl.Mode())
 }

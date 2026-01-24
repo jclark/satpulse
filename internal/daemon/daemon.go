@@ -16,13 +16,16 @@ import (
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
-	"github.com/jclark/satpulse/internal/mon"
+	"github.com/jclark/satpulse/internal/logobs"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/promobs"
 	"github.com/jclark/satpulse/internal/proxy"
+	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/ptpgm"
+	"github.com/jclark/satpulse/internal/refclock"
 	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/internal/servo"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/sseobs"
 	"github.com/jclark/satpulse/internal/ts"
@@ -81,6 +84,9 @@ func Cmd(progName string, args []string) {
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config) error {
 	tStart := time.Now()
+	if err := cfg.Validate(lg); err != nil {
+		return err
+	}
 	clk, err := cfg.PHC.OpenClock(ctx, lg)
 	if err != nil {
 		// don't report an error if interrupted
@@ -186,14 +192,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	var tpFlags gpsTimePulseFlags
-	if clk != nil {
-		tpFlags |= gpsTimePulseEnable
-		if phcFlags.Edges() != 1 {
-			tpFlags |= gpsTimePulseGetWidth
-		}
-	}
-	gct, pulseWidth, err := createConfigTarget(lg, cfg, conn.Speed(), tpFlags)
+	timePulseEnabled := clk != nil
+	gct, err := createConfigTarget(lg, cfg, conn.Speed(), timePulseEnabled)
 	if err != nil {
 		return err
 	}
@@ -226,24 +226,30 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 
 	var (
-		gm         *mon.Grandmaster
-		gmUpdateCh <-chan mon.GrandmasterUpdateRequest
+		gm         *ptpgm.Grandmaster
+		gmUpdateCh <-chan ptpgm.GrandmasterUpdateRequest
 	)
 	pmcClient, err := cfg.PTP.NewClient()
 	if err != nil {
 		return err
 	}
 	if pmcClient != nil {
-		gm, gmUpdateCh = mon.NewGrandmaster()
+		cq, err := cfg.PTP.ClockQuality()
+		if err != nil {
+			return err
+		}
+		gm, gmUpdateCh = ptpgm.NewGrandmaster(ptpgm.Config{
+			InSyncClockQuality: cq,
+		})
 	}
 
 	rc, err := cfg.NTP.NewRefClock(lg)
 	var (
-		rcProxy *mon.ProxyRefClock
-		rcCh    <-chan mon.RefClockSample
+		rcProxy *refclock.ProxyRefClock
+		rcCh    <-chan refclock.RefClockSample
 	)
 	if rc != nil {
-		rcProxy, rcCh = mon.NewProxyRefClock()
+		rcProxy, rcCh = refclock.NewProxyRefClock()
 	}
 	var tsCh <-chan ts.Event
 	if clk != nil {
@@ -252,20 +258,24 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 			return err
 		}
 	}
-	if pw, ok := gcfg.ConfigProps.GetTimePulseWidth(); ok {
-		pulseWidth = pw
+	statsObs := newStatsLogObserver(cfg, lg)
+	clockObs, err := newClockLogObserver(cfg, lg, clk, cfg.LeapSecond.leapSecond())
+	if err != nil {
+		return err
 	}
 
-	d, err := NewDispatcher(lg, pktProcs, clk, pulseWidth, cfg, gm, rcProxy, combineObservers(promObs, sseObs), tStart)
+	observer := combineObservers(promObs, sseObs, statsObs, clockObs)
+
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, observer, tStart)
 	if err != nil {
 		return err
 	}
 
 	if pmcClient != nil {
-		wg.Go(func() { mon.PTP4LWorker(pmcClient, gmUpdateCh, lg) })
+		wg.Go(func() { ptpgm.PTP4LWorker(pmcClient, gmUpdateCh, lg) })
 	}
 	if rc != nil {
-		wg.Go(func() { mon.RefClockWorker(rc, rcCh, lg) })
+		wg.Go(func() { refclock.RefClockWorker(rc, rcCh, lg) })
 	}
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
@@ -274,40 +284,33 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		if ls != nil {
 			d.LeapSecond(ls, time.Time{})
 		}
+		// Dispatcher is responsible for closing rcProxy via defer in Run()
 		d.Run(tsCh, pCh)
-		if rcProxy != nil {
-			rcProxy.Close()
-		}
 	})
 
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, pulseWidth time.Duration, cfg *Config, gm *mon.Grandmaster, rc *mon.ProxyRefClock, obs obs.Observer, tStart time.Time) (*gpsevent.Dispatcher, error) {
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, cfg *Config, gm *ptpgm.Grandmaster, rc *refclock.ProxyRefClock, obs obs.Observer, tStart time.Time) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
-	var m *mon.Monitor
-	var driverFlags phc.DriverFlags
+	var controller *phcsync.Controller
 	if clk != nil {
-		servo, err := servo.New(clk, lg)
+		var err error
+		controller, err = phcsync.NewController(
+			clk,
+			obs,
+			gm,
+			cfg.Sync,
+			ls,
+			clk.DriverFlags.Edges(),
+			lg,
+		)
 		if err != nil {
 			return nil, err
 		}
-		m, err = mon.NewMonitor(servo, lg, mon.MonitorConfig{
-			LeapSecond:    ls,
-			Sampler:       obs,
-			RefClock:      rc,
-			Grandmaster:   gm,
-			LogInterval:   cfg.Log.Interval,
-			ClockLogPath:  cfg.Log.ClockPath(clk.IfName(), mon.ClockLogExtension),
-			ClockAccuracy: time.Duration(cfg.PTP.ClockAccuracy),
-		})
-		if err != nil {
-			return nil, err
-		}
-		driverFlags = clk.DriverFlags
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, m, ls, driverFlags, pulseWidth, obs, eventLogPath, tStart)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, ls, obs, eventLogPath, tStart)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
@@ -330,16 +333,53 @@ func newPrometheusObserver(cfg *Config) *promobs.PrometheusObserver {
 	return nil
 }
 
+// newStatsLogObserver creates StatsLogObserver if log interval is configured
+func newStatsLogObserver(cfg *Config, lg *slog.Logger) *logobs.StatsLogObserver {
+	if cfg.Log.Interval > 0 {
+		return logobs.NewStatsLogObserver(lg, cfg.Log.Interval)
+	}
+	return nil
+}
+
+// newClockLogObserver creates ClockLogObserver if clock log path is configured
+func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.LeapSecond) (*logobs.ClockLogObserver, error) {
+	if clk == nil {
+		return nil, nil
+	}
+	clockLogPath := cfg.Log.ClockPath(clk.IfName(), logobs.ClockLogExtension)
+	if clockLogPath == "" {
+		return nil, nil
+	}
+	return logobs.NewClockLogObserver(lg, clockLogPath, ls)
+}
+
 // combineObservers combines individual observers into appropriate single observer
-func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver) obs.Observer {
-	if promObs != nil && sseObs != nil {
-		return obs.NewMultiObserver(promObs, sseObs)
-	} else if promObs != nil {
-		return promObs
-	} else if sseObs != nil {
-		return sseObs
-	} else {
+func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver,
+	statsObs *logobs.StatsLogObserver, clockObs *logobs.ClockLogObserver) obs.Observer {
+
+	var observers []obs.Observer
+
+	// Add observers if they exist (typed nils will be properly handled)
+	if statsObs != nil {
+		observers = append(observers, statsObs)
+	}
+	if clockObs != nil {
+		observers = append(observers, clockObs)
+	}
+	if promObs != nil {
+		observers = append(observers, promObs)
+	}
+	if sseObs != nil {
+		observers = append(observers, sseObs)
+	}
+
+	// Return combined observer or default
+	if len(observers) == 0 {
 		return &obs.DefaultObserver{}
+	} else if len(observers) == 1 {
+		return observers[0]
+	} else {
+		return obs.NewMultiObserver(observers...)
 	}
 }
 
@@ -355,16 +395,16 @@ func startBcast[T any](ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	return b
 }
 
-func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, tpFlags gpsTimePulseFlags) (*gpsprot.ConfigTarget, time.Duration, error) {
+func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, timePulseEnabled bool) (*gpsprot.ConfigTarget, error) {
 	httpWantsSatellites := cfg.httpWantsSatellites()
-	gct, pulseWidth, err := cfg.GPS.target(speed, httpWantsSatellites, tpFlags)
+	gct, err := cfg.GPS.target(speed, httpWantsSatellites, timePulseEnabled)
 	lg.Debug("GPS configure input", "target", gct)
 	if err != nil {
 		if errors.Is(err, errSatsOutNotEnabled) {
 			lg.Warn(err.Error())
 		} else {
-			return nil, 0, err
+			return nil, err
 		}
 	}
-	return gct, pulseWidth, nil
+	return gct, nil
 }

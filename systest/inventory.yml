@@ -5,26 +5,30 @@ all:
     virtual_host: false  # Set to true for virtual hosts (multiple instances on same machine)
     instance: ttyAMA0  # Instance for systemd service
     pin: 0             # PHC pin
+    channel: 0         # PHC channel
     speed: 9600        # Baud rate
     interface: eth0    # Network interface
     config: "true"     # Enable GPS configuration
     config_file: /etc/satpulse.toml  # SatPulse config file path
     http_port: 2000    # HTTP monitoring port
+    ansible_ssh_common_args: '-o "SetEnv TERM=dumb"' # needed for Fedora 43
 
   children:
     testing:
       hosts:
         abondance.lan:
         abondance-ttyS0.lan:
-        caciocavallo.lan:
+        brie.lan:
+        gubbeen.lan:
+        maasdam.lan:
         morbier.lan:
         pecorino.lan:
         roquefort.lan:
         serpa.lan:
         taleggio.lan:
-        toma.lan:
-        vacherin.lan:
+        valencay.lan:
         valtellina.lan:
+        wensleydale.lan:
     virtual_hosts:
       hosts:
         abondance-ttyS0.lan:
@@ -47,6 +51,11 @@ all:
       instance: ttyAMA3
 
     # ZED-F9T-20B in gnss.store dongle
+    maasdam.lan:
+      instance: ttyACM0
+      speed: 38400
+      interface: eth0
+
     toma.lan:
       instance: ttyACM0
       speed: 38400
@@ -112,3 +121,21 @@ all:
     serpa.lan:
       speed: 115200
       config: "false"
+
+    # LBE-1421 PPS out attached to E810-XXVDA4T
+    brie.lan:
+      speed: 38400
+      instance: ttyACM0
+      interface: enp1s0f0np0
+      pin: 1
+      channel: 1
+      config: "false"
+    
+    # LEA-M8T on UART
+    valencay.lan: # all default
+
+    # M10050-KB on i210 on Raspberry Pi 5
+    gubbeen.lan:
+      interface: eth1
+      speed: 38400
+

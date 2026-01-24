@@ -171,3 +171,53 @@ func (ti TimeInterval) Nanos() float64 {
 func (ti TimeInterval) String() string {
 	return fmt.Sprintf("%0.1f", ti.Nanos())
 }
+
+// AdevToOffsetScaledLogVariance converts Allan Deviation (dimensionless) to the
+// IEEE 1588-2019 "offsetScaledLogVariance" (uint16).
+//
+// tau is the averaging time in seconds (standard PTP default is 1.0 second);
+// it must be finite and positive.
+// Allan deviaton is numerically in seconds when tau=1.0 (e.g. of the order of 1e-9 for nanosecond-level stability).
+// This if for a non-dynamic estimate of offsetScaledLogVariance,
+// so no hysteresis requirement is applied.
+func AdevToOffsetScaledLogVariance(adev, tau float64) uint16 {
+	if adev <= 0 || math.IsNaN(adev) || math.IsInf(adev, 0) {
+		return OffsetScaledLogVarianceUnknown
+	}
+	if tau <= 0 || math.IsNaN(tau) || math.IsInf(tau, 0) {
+		panic("invalid tau value")
+	}
+	// Calculate PTP Variance from adev and tau
+	//    sigma_ptp^2 = (tau^2 / 3) * sigma_adev^2
+	ptpVariance := (adev * adev) * (tau * tau) / 3.0
+
+	// Handle Zero/Underflow (Log2(0) is -Inf)
+	//    Spec Note 2 says min representable is ~2^-128.
+	minVar := math.Pow(2, -128)
+	if ptpVariance <= minVar {
+		return 0x0000 // Minimum representable (Best possible quality)
+	}
+
+	// Log Base 2
+	logVar := math.Log2(ptpVariance)
+
+	// Scale by 2^8 (256)
+	scaled := logVar * 256.0
+
+	// Convert to an integer
+	scaled = math.Round(scaled)
+
+	// Apply 0x8000 offset
+	offsetScaled := scaled + 0x8000
+
+	// Clamp to range of uint16
+	//    0xFFFF is use for both unknown and values too large to be represented.
+	if offsetScaled >= 0xFFFF {
+		return 0xFFFF
+	}
+	if offsetScaled < 0 {
+		return 0x0000
+	}
+
+	return uint16(offsetScaled)
+}

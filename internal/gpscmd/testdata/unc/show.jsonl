@@ -1,0 +1,31 @@
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","115200","--force-probe","--show-config","--test-log","internal/gpscmd/testdata/unc/show.jsonl"],"version":"satpulse git version 20250820.adcfdff, build date 2025-08-20 08:12:49+00:00","hostname":"vacherin"}
+{"t":"2025-08-20T08:22:43.614694Z","ascii":"VERSIONB\r\n","out":true}
+{"t":"2025-08-20T08:22:43.652279Z","tag":"NMEA","msg":"comma","ascii":"$command,VERSIONB,response: OK*46\r\n","out":false}
+{"t":"2025-08-20T08:22:43.655317Z","tag":"UNCB","msg":"VERSION","bin":"aa44b5612500340100a04c09889a3f110000000000126b02120000003133353034000000000000000000000000000000000000000000000000000000004852505430302d533130432d500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000323331303431353030303030312d4d443232413632323435313839383200000000000000000000000000000000000000000000000000000000000000000000000000666633626164393933393561396166630000000000000000000000000000000000323032342f30342f3033000000000000000000000000000000000000000000000000000000000000000000dd4e735f","out":false}
+{"t":"2025-08-20T08:22:43.686726Z","ascii":"CONFIG\r\n","out":true}
+{"t":"2025-08-20T08:22:43.686733Z","ascii":"MASK\r\n","out":true}
+{"t":"2025-08-20T08:22:43.686736Z","ascii":"MODE\r\n","out":true}
+{"t":"2025-08-20T08:22:43.752125Z","tag":"NMEA","msg":"comma","ascii":"$command,CONFIG,response: OK*54\r\n","out":false}
+{"t":"2025-08-20T08:22:43.755135Z","tag":"NMEA","msg":"comma","ascii":"$command,MASK,response: OK*4A\r\n","out":false}
+{"t":"2025-08-20T08:22:43.758208Z","tag":"NMEA","msg":"comma","ascii":"$command,MODE,response: OK*5D\r\n","out":false}
+{"t":"2025-08-20T08:22:43.758208Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,ANTENNA,CONFIG ANTENNA POWERON*7A\r\n","out":false}
+{"t":"2025-08-20T08:22:43.764294Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,NMEAVERSION,CONFIG NMEAVERSION V410*47\r\n","out":false}
+{"t":"2025-08-20T08:22:43.767353Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,RTK,CONFIG RTK TIMEOUT 120*6C\r\n","out":false}
+{"t":"2025-08-20T08:22:43.773529Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,RTK,CONFIG RTK RELIABILITY 3 1*76\r\n","out":false}
+{"t":"2025-08-20T08:22:43.776532Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,PPP,CONFIG PPP TIMEOUT 120*6C\r\n","out":false}
+{"t":"2025-08-20T08:22:43.779576Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,DGPS,CONFIG DGPS TIMEOUT 300*6C\r\n","out":false}
+{"t":"2025-08-20T08:22:43.782654Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,RTCMB1CB2A,CONFIG RTCMB1CB2A ENABLE*25\r\n","out":false}
+{"t":"2025-08-20T08:22:43.788751Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,ANTENNADELTAHEN,CONFIG ANTENNADELTAHEN 0.0000 0.0000 0.0000*3A\r\n","out":false}
+{"t":"2025-08-20T08:22:43.79485Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,PPS,CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0*6A\r\n","out":false}
+{"t":"2025-08-20T08:22:43.800966Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,SIGNALGROUP,CONFIG SIGNALGROUP 1*15\r\n","out":false}
+{"t":"2025-08-20T08:22:43.80709Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,ANTIJAM,CONFIG ANTIJAM AUTO*2B\r\n","out":false}
+{"t":"2025-08-20T08:22:43.810127Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,AGNSS,CONFIG AGNSS DISABLE*70\r\n","out":false}
+{"t":"2025-08-20T08:22:43.813199Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,BASEOBSFILTER,CONFIG BASEOBSFILTER DISABLE*70\r\n","out":false}
+{"t":"2025-08-20T08:22:43.819319Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,LOGSEQ,CONFIG LOGSEQ 1*15\r\n","out":false}
+{"t":"2025-08-20T08:22:43.822376Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,COM1,CONFIG COM1 115200*23\r\n","out":false}
+{"t":"2025-08-20T08:22:43.825435Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,COM2,CONFIG COM2 115200*23\r\n","out":false}
+{"t":"2025-08-20T08:22:43.828549Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,COM3,CONFIG COM3 115200*23\r\n","out":false}
+{"t":"2025-08-20T08:22:43.831537Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,MASK,MASK 5.0*25\r\n","out":false}
+{"t":"2025-08-20T08:22:43.834583Z","tag":"UNCA","msg":"MODE","ascii":"#MODE,97,GPS,FINE,2380,289381000,0,0,18,720;MODE BASE TIME 40 0 0,*7E\r\n","out":false}
+{"type":"receiver","vendor":"Unicore","hardware":"UM980","firmware":"Build13504"}
+{"type":"config","signalsEnabled":[["GPS","L1","L2P","L2C","L5"],["GAL","E1","E5a","E5b"],["BDS","B1I","B1C","B2a","B2I","B2b","B3I"],["GLO","L1","L2"],["QZSS","L1","L2C","L5"]],"timeGNSS":"GPS","antennaCableDelay":0,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":true}

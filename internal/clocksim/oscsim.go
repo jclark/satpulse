@@ -1,0 +1,229 @@
+package clocksim
+
+import (
+	"math"
+	"math/rand"
+)
+
+// OscSimulator models the behavior of a hardware oscillator.
+//
+// Input: t - simulation time in seconds since simulation start
+// Output: fractional frequency error at that time
+// Example: if output is +1e-6, the clock runs 1µs fast per second of true time
+//
+// IMPORTANT: When used with RawClock or SawtoothGPS, the simulator will be called with
+// monotonically increasing simulation time values. This allows stateful simulators
+// (like WhiteNoiseOsc, FlickerNoiseOsc) to use incremental random number
+// generation without needing random access to arbitrary time points.
+type OscSimulator func(t float64) float64
+
+// FreqOffsetOsc creates an oscillator with constant frequency offset.
+// offset is the frequency offset in parts per billion (positive means runs fast).
+func FreqOffsetOsc(offset PPB) OscSimulator {
+	frac := offset.Fractional()
+	return func(t float64) float64 {
+		return frac
+	}
+}
+
+// PerfectOsc creates an oscillator with no frequency error.
+func PerfectOsc() OscSimulator {
+	return FreqOffsetOsc(0)
+}
+
+// WhiteNoiseOsc creates an oscillator with white frequency noise.
+//
+// The stddev parameter represents the Allan deviation at τ=1s (IEEE standard h₀).
+// This function generates discrete white FM samples at integration step size dt that produce the
+// desired Allan deviation when integrated and sampled at 1-second intervals.
+//
+// Theory:
+//
+//	White FM has constant one-sided PSD: S_y(f) = 2h₀²
+//	Allan deviation: σ_y(τ) = h₀/√τ (IEEE 1139-2008)
+//
+//	For discrete samples y_k ~ N(0, σ²) at interval dt:
+//	  - Discrete Allan variance at τ: σ_y²(τ) = σ² · (dt/τ)
+//	  - To match continuous-time: σ² · (dt/τ) = h₀²/τ
+//	  - Therefore: σ = h₀/√dt
+//
+// The dt dependence is correct and necessary: it ensures that the observable
+// Allan deviation σ_y(τ) remains independent of the integration step size.
+// Smaller dt increases bandwidth and total power, requiring proportionally
+// smaller per-sample variance to maintain the same PSD level.
+//
+// Relies on RawClock's monotonic time guarantee: each call advances the RNG state
+// incrementally without needing to seek to arbitrary time points.
+func WhiteNoiseOsc(stddev PPB, seed int64) OscSimulator {
+	rng := rand.New(rand.NewSource(seed))
+	// Convert ADEV at τ=1s to per-sample stddev at integration rate
+	// σ = h₀ · √(τ₀/dt) where τ₀ = 1s (matching Python's Integrator)
+	const tau0 = 1.0 // Reference averaging time in seconds
+	h0 := stddev.Fractional()
+	stddevPerSample := h0 * math.Sqrt(tau0/rawClockDT)
+
+	return func(t float64) float64 {
+		return rng.NormFloat64() * stddevPerSample
+	}
+}
+
+// Generate flicker noise constants (tau parameters and Allan-weighted scale factor).
+//go:generate uv --directory flickerconsts run flicker_scale.py --tau0 10.0 --tau-max 1000.0 --ratio 2.0 --fudge-factor 0.774 --package clocksim --prefix flicker --go-const --output ../flickerconsts.go
+
+// FlickerNoiseOsc creates an oscillator with flicker frequency noise (1/f noise).
+// Flicker FM produces a flat Allan deviation (τ^0 slope) at the specified stddev level.
+//
+// This implementation uses the Kasdin-Walter algorithm: a sum of first-order recursive
+// filters that approximates 1/f power spectral density. The Allan deviation is flat
+// across tau values, matching the behavior extracted by phc_model.py.
+//
+// stddev is the Allan deviation level in parts per billion (flat across tau).
+//
+// IMPORTANT: This implementation maintains state and requires monotonically increasing
+// time values. RawClock guarantees this.
+func FlickerNoiseOsc(stddev PPB, seed int64) OscSimulator {
+	rng := rand.New(rand.NewSource(seed))
+
+	// Kasdin-Walter recursive filter coefficients for 1/f noise
+	// Flicker FM region is ~10-1000s based on clock-model ADEV analysis
+	// Build pole locations dynamically, stopping when tau exceeds flickerTauMax
+	var b []float64
+	for i := 0; ; i++ {
+		tau := flickerTau0 * math.Pow(flickerRatio, float64(i))
+		if tau > flickerTauMax {
+			break
+		}
+		b = append(b, math.Exp(-1.0/tau))
+	}
+	numStages := len(b)
+	states := make([]float64, numStages)
+
+	// Apply Allan-weighted scaling factor correction.
+	// Naive 1/sqrt(N) scaling produces incorrect Allan deviation because it doesn't
+	// account for how the Allan variance filter weights different frequencies.
+	scale := stddev.Fractional() / math.Sqrt(float64(numStages)) * flickerScaleFactor
+
+	// Cache of precomputed poles and noise scales by dt value.
+	// FP rounding produces ~30 unique dt values over long simulations.
+	// Cache is cleared if it exceeds 64 entries to bound memory.
+	type poleData struct {
+		poles       []float64
+		noiseScales []float64
+	}
+	poleCache := make(map[float64]*poleData)
+	computePoles := func(dt float64) *poleData {
+		if pd, ok := poleCache[dt]; ok {
+			return pd
+		}
+		pd := &poleData{
+			poles:       make([]float64, numStages),
+			noiseScales: make([]float64, numStages),
+		}
+		for i := range pd.poles {
+			pd.poles[i] = math.Pow(b[i], dt)
+			pd.noiseScales[i] = scale * math.Sqrt(1-pd.poles[i]*pd.poles[i])
+		}
+		if len(poleCache) >= 64 {
+			clear(poleCache)
+		}
+		poleCache[dt] = pd
+		return pd
+	}
+	// Pre-populate cache with the expected dt
+	computePoles(rawClockDT)
+
+	lastTime := math.NaN() // NaN sentinel so first call skips state update
+
+	return func(t float64) float64 {
+		if !math.IsNaN(lastTime) {
+			dt := t - lastTime
+			pd := computePoles(dt)
+			for i := range numStages {
+				states[i] = pd.poles[i]*states[i] + rng.NormFloat64()*pd.noiseScales[i]
+			}
+		}
+		lastTime = t
+
+		// Sum all stages to get 1/f output
+		sum := 0.0
+		for i := range numStages {
+			sum += states[i]
+		}
+		return sum
+	}
+}
+
+// RandomWalkOsc creates an oscillator with random walk frequency modulation.
+// Random walk FM models long-term drift where frequency undergoes Brownian motion.
+// In Allan deviation, produces τ^(+1/2) slope at long averaging times.
+//
+// stddev is the random walk FM coefficient in ppb/√s.
+//
+// IMPORTANT: This implementation maintains state (currentFreq, lastTime) and requires
+// monotonically increasing time values. RawClock guarantees this.
+func RandomWalkOsc(stddev PPB, seed int64) OscSimulator {
+	rng := rand.New(rand.NewSource(seed))
+	stepScale := stddev.Fractional()
+	var currentFreq float64
+	lastTime := math.NaN() // NaN sentinel so first call skips state update
+
+	return func(t float64) float64 {
+		if !math.IsNaN(lastTime) {
+			dt := t - lastTime
+			step := rng.NormFloat64() * stepScale * math.Sqrt(dt)
+			currentFreq += step
+		}
+		lastTime = t
+		return currentFreq
+	}
+}
+
+// DriftOsc creates linear frequency drift over time.
+// Models oscillator frequency changing at a constant rate (quadratic phase drift).
+//
+// Parameters:
+//
+//	ratePPBPerDay: frequency change rate in ppb/day
+//
+// Example: ratePPBPerDay=163 means frequency increases by 163 ppb per day
+// This would accumulate ~3.4 ns of phase error per minute, ~12 µs per hour
+func DriftOsc(ratePPBPerDay float64) OscSimulator {
+	// Convert ppb/day to fractional_frequency/second
+	ratePerSec := ratePPBPerDay / 86400.0 / 1e9
+
+	return func(t float64) float64 {
+		return ratePerSec * t
+	}
+}
+
+// SinusoidOsc creates sinusoidal frequency modulation.
+// Models periodic effects like temperature cycles or crystal resonances.
+//
+// Parameters:
+//
+//	amp: amplitude in ppb (peak deviation from nominal frequency)
+//	periodS: period in seconds (e.g., 86400 for daily thermal cycle)
+//	phaseInit: initial phase in [0,1) (0.5 = middle of cycle)
+func SinusoidOsc(amp PPB, periodS, phaseInit float64) OscSimulator {
+	if periodS == 0 {
+		panic("SinusoidOsc: period cannot be zero")
+	}
+	omega := 2 * math.Pi / periodS
+	scale := amp.Fractional()
+	phase := phaseInit * 2 * math.Pi
+
+	return func(t float64) float64 {
+		return scale * math.Sin(omega*t+phase)
+	}
+}
+
+// CombineOsc combines multiple oscillator frequency error sources.
+func CombineOsc(funcs ...OscSimulator) OscSimulator {
+	return func(t float64) float64 {
+		sum := 0.0
+		for _, f := range funcs {
+			sum += f(t)
+		}
+		return sum
+	}
+}

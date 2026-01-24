@@ -124,6 +124,9 @@ func testConfigurator(t *testing.T, rcvr *gpsReceiver, target *gpsprot.ConfigTar
 
 func TestConfiguratorRecover1(t *testing.T) {
 	c := testConfiguratorRecover(t, ubxbin.CfgMsgID)
+	if c == nil {
+		t.Fatal("configurator is nil")
+	}
 	if c.raw.prt.OutProtoMask&ubxbin.CfgPrtProtoNMEA == 0 {
 		t.Errorf("expected NMEA to be enabled, but it wasn't")
 	}
@@ -131,6 +134,9 @@ func TestConfiguratorRecover1(t *testing.T) {
 
 func TestConfiguratorRecover2(t *testing.T) {
 	c := testConfiguratorRecover(t, ubxbin.CfgRateID)
+	if c == nil {
+		t.Fatal("configurator is nil")
+	}
 	// in this case we got far enough to enable the time message, so we don't need to disable NMEA
 	if c.raw.prt.OutProtoMask&ubxbin.CfgPrtProtoNMEA != 0 {
 		t.Errorf("expected NMEA not to be enabled, but it was")

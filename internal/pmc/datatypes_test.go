@@ -1,6 +1,7 @@
 package pmc
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -111,4 +112,71 @@ func TestClockAccuracyDescription(t *testing.T) {
 		}
 	}
 
+}
+
+func TestAdevToOffsetScaledLogVariance(t *testing.T) {
+	specVariance := 1.414 * math.Pow(2, -73)
+
+	tests := []struct {
+		name      string
+		adev      float64
+		tau       float64
+		want      uint16
+		wantPanic bool
+	}{
+		{
+			name: "SpecExample",
+			adev: math.Sqrt(3 * specVariance),
+			tau:  1,
+			want: 0x3780,
+		},
+		{
+			name: "MinimumRepresentable",
+			adev: math.Pow(2, -80),
+			tau:  1,
+			want: 0x0000,
+		},
+		{
+			name: "UnknownForNonPositiveAdev",
+			adev: 0,
+			tau:  1,
+			want: OffsetScaledLogVarianceUnknown,
+		},
+		{
+			name: "OverflowReturnsFFFF",
+			adev: math.Pow(2, 90),
+			tau:  1,
+			want: 0xFFFF,
+		},
+		{
+			name:      "InvalidTauPanics",
+			adev:      1e-9,
+			tau:       0,
+			wantPanic: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					if !tt.wantPanic {
+						t.Fatalf("unexpected panic: %v", r)
+					}
+				} else if tt.wantPanic {
+					t.Fatal("expected panic but function returned")
+				}
+			}()
+
+			if tt.wantPanic {
+				AdevToOffsetScaledLogVariance(tt.adev, tt.tau)
+				return
+			}
+
+			got := AdevToOffsetScaledLogVariance(tt.adev, tt.tau)
+			if got != tt.want {
+				t.Fatalf("AdevToOffsetScaledLogVariance(%g, %g) = 0x%04X, want 0x%04X", tt.adev, tt.tau, got, tt.want)
+			}
+		})
+	}
 }

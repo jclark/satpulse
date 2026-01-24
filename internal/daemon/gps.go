@@ -3,6 +3,7 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 
@@ -12,15 +13,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsreg"
 )
 
-// gpsTimePulseFlags contains flags for GPS time pulse configuration
-type gpsTimePulseFlags int
-
-const (
-	// gpsTimePulseEnable enables time pulse output
-	gpsTimePulseEnable gpsTimePulseFlags = 1 << iota
-	// gpsTimePulseGetWidth queries the time pulse width
-	gpsTimePulseGetWidth
-)
 
 type GPSConfig struct {
 	Config             bool         `toml:"config"`
@@ -58,40 +50,32 @@ var gpsDefault = GPSConfig{
 }
 
 // target creates a GPS configuration target based on the current GPSConfig.
-// If the returned error is errSatsOutNotEnabled, and the caller should log it as a warning and continue.
-func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, tpFlags gpsTimePulseFlags) (*gpsprot.ConfigTarget, time.Duration, error) {
+// If the returned error is errSatsOutNotEnabled, the caller should log it as a warning and continue.
+func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, timePulseEnabled bool) (*gpsprot.ConfigTarget, error) {
 	target := gpsprot.NewConfigTarget()
-	pulseWidth, err := c.pulseWidth()
-	if err != nil {
-		return nil, 0, err
-	}
 	if !c.Config {
-		return target, pulseWidth, nil
+		return target, nil
 	}
-	timePulseEnabled := tpFlags&gpsTimePulseEnable != 0
 	if timePulseEnabled {
 		target.Props.SetPPS(defaultPPSWidth)
 	}
 	gpsevent.SetMsgOptions(target, timePulseEnabled)
-	if tpFlags&gpsTimePulseGetWidth != 0 && pulseWidth == 0 {
-		target.Get |= gpsprot.PropIDTimePulseWidth
-	}
-	err = c.getMode(target)
+	err := c.getMode(target)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	cp := &target.Props
 	err = c.getTimeGNSS(cp)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	err = c.getDelay(cp)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	target.Opts.RTCMMsg = c.rtcmMsg()
 	target.Opts.SatsMsg, err = c.satsMsg(speed, wantSatellitesOutput)
-	return target, pulseWidth, err
+	return target, err
 }
 
 func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProcessor, error) {
@@ -190,17 +174,6 @@ func (c *GPSConfig) getDelay(cp *gpsprot.ConfigProps) error {
 	return nil
 }
 
-func (c *GPSConfig) pulseWidth() (time.Duration, error) {
-	if math.IsNaN(c.PulseWidth) {
-		return 0, nil
-	}
-	d := time.Duration(c.PulseWidth * float64(time.Second))
-	if d <= 0 || d >= time.Second {
-		return 0, fmt.Errorf("GPS pulse width must be > 0 and < 1.0: %v", c.PulseWidth)
-	}
-	return d, nil
-}
-
 var errSatsOutNotEnabled = errors.New("satellites output will not be enabled")
 
 const minSpeedSatellitesOutput = 38400
@@ -242,4 +215,10 @@ func (c *GPSConfig) rtcmMsg() (opt gpsprot.Option[gpsprot.RTCMMsgFlags]) {
 		opt.Set(gpsprot.RTCMMsgNone)
 	}
 	return
+}
+
+func (c *GPSConfig) validate(lg *slog.Logger) {
+	if !math.IsNaN(c.PulseWidth) {
+		lg.Warn("gps.pulseWidth is deprecated and will be ignored; pulse width is now auto-detected")
+	}
 }

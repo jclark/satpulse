@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jclark/satpulse/internal/pmc"
 )
 
 const configsDir = "../../configs"
@@ -39,7 +41,8 @@ func TestPTPConfig(t *testing.T) {
 	domainNumber = 1
 	clockAccuracy = 20
 	majorSdoId = 2
-	minorSdoId = 12`
+	minorSdoId = 12
+	offsetScaledLogVariance = 0x8000`
 	r := strings.NewReader(cfgStr)
 	cfg, err := readConfig(r)
 	if err != nil {
@@ -47,5 +50,90 @@ func TestPTPConfig(t *testing.T) {
 	}
 	if cfg.PTP.PTP4L.UDSAddress != "/tmp/ptp4l" || cfg.PTP.DomainNumber != 1 || cfg.PTP.MajorSdoID != 2 || cfg.PTP.MinorSdoID != 12 || cfg.PTP.ClockAccuracy != 20 {
 		t.Fatal("PTP config not parsed correctly")
+	}
+	if cfg.PTP.OffsetScaledLogVariance != 0x8000 {
+		t.Fatalf("OffsetScaledLogVariance = %d, expect %d", cfg.PTP.OffsetScaledLogVariance, 0x8000)
+	}
+}
+
+func TestPTPConfigClockQuality(t *testing.T) {
+	tests := []struct {
+		name      string
+		modify    func(*PTPConfig)
+		expect    pmc.ClockQuality
+		expectErr bool
+	}{
+		{
+			name:   "defaults",
+			modify: func(cfg *PTPConfig) {},
+			expect: pmc.ClockQuality{
+				ClockClass:              pmc.ClockClassSyncPrimaryRef,
+				ClockAccuracy:           pmc.ClockAccuracyWithin250ns,
+				OffsetScaledLogVariance: pmc.OffsetScaledLogVarianceUnknown,
+			},
+		},
+		{
+			name:   "100ns accuracy",
+			modify: func(cfg *PTPConfig) { cfg.ClockAccuracy = 100 },
+			expect: pmc.ClockQuality{
+				ClockClass:              pmc.ClockClassSyncPrimaryRef,
+				ClockAccuracy:           pmc.ClockAccuracyWithin100ns,
+				OffsetScaledLogVariance: pmc.OffsetScaledLogVarianceUnknown,
+			},
+		},
+		{
+			name:      "zero accuracy",
+			modify:    func(cfg *PTPConfig) { cfg.ClockAccuracy = 0 },
+			expectErr: true,
+		},
+		{
+			name:      "negative accuracy",
+			modify:    func(cfg *PTPConfig) { cfg.ClockAccuracy = -1 },
+			expectErr: true,
+		},
+		{
+			name:      "too large accuracy",
+			modify:    func(cfg *PTPConfig) { cfg.ClockAccuracy = 20_000_000_000 },
+			expectErr: true,
+		},
+		{
+			name:   "explicit offsetScaledLogVariance",
+			modify: func(cfg *PTPConfig) { cfg.OffsetScaledLogVariance = 0x8000 },
+			expect: pmc.ClockQuality{
+				ClockClass:              pmc.ClockClassSyncPrimaryRef,
+				ClockAccuracy:           pmc.ClockAccuracyWithin250ns,
+				OffsetScaledLogVariance: 0x8000,
+			},
+		},
+		{
+			name:   "allanDeviation",
+			modify: func(cfg *PTPConfig) { cfg.AllanDeviation = 1e-9 },
+			expect: pmc.ClockQuality{
+				ClockClass:              pmc.ClockClassSyncPrimaryRef,
+				ClockAccuracy:           pmc.ClockAccuracyWithin250ns,
+				OffsetScaledLogVariance: pmc.AdevToOffsetScaledLogVariance(1e-9, 1.0),
+			},
+		},
+		{
+			name: "both offsetScaledLogVariance and allanDeviation",
+			modify: func(cfg *PTPConfig) {
+				cfg.OffsetScaledLogVariance = 0x8000
+				cfg.AllanDeviation = 1e-9
+			},
+			expectErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := defaultConfig().PTP
+			tt.modify(&cfg)
+			got, err := cfg.ClockQuality()
+			if (err != nil) != tt.expectErr {
+				t.Fatalf("ClockQuality() error = %v, expectErr %v", err, tt.expectErr)
+			}
+			if !tt.expectErr && got != tt.expect {
+				t.Errorf("ClockQuality() = %+v, expect %+v", got, tt.expect)
+			}
+		})
 	}
 }

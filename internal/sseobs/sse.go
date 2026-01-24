@@ -7,8 +7,8 @@ import (
 	"github.com/jclark/satpulse/internal/geopos"
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/mon"
 	"github.com/jclark/satpulse/internal/obs"
+	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/sse"
 )
@@ -99,16 +99,16 @@ func (o *SSEObserver) Release() {
 	close(o.sseCh)
 }
 
-// Sample implements mon.Sampler - generates PHC sample SSE events (copied exactly from monitor.go)
-func (o *SSEObserver) Sample(data mon.SampleData) {
+// Sample implements phcsync.Sampler - generates PHC sample SSE events
+func (o *SSEObserver) Sample(data phcsync.Sample) {
 	stepCount, changing := data.Era.StepCount()
 	event := SampleSSE{
 		Offset:            float64(data.Offset),
 		StepCount:         uint32(stepCount),
 		StepCountChanging: changing,
 		Freq:              data.Freq,
-		Outlier:           data.Kind == mon.SampleOutlier,
-		SyncState:         data.SyncState.String(),
+		Outlier:           data.Kind == phcsync.SampleOutlier,
+		SyncState:         data.Mode.String(),
 	}
 	o.sendSSE("phc", event)
 }
