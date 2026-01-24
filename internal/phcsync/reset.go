@@ -596,18 +596,12 @@ func (g *resetSampleGenerator) checkDelayRange(delays []time.Duration, maxWindow
 // then filtered by filterEdgeListsByPulseWidth.
 func (g *resetSampleGenerator) pulseEdgeLists() []pulseEdgeList {
 	edgeList := g.pulseEdges()
-
-	switch g.pt.EdgesPerPulse {
-	case 0:
-		panic("unknown edges per pulse is not supported: fix your ethernet driver")
-	case 1:
-		return []pulseEdgeList{edgeList}
-	case 2:
+	if g.pt.EdgesPerPulse == 2 {
 		arr := edgeList.split()
 		return arr[:]
-	default:
-		panic(fmt.Sprintf("unsupported edges per pulse: %d", g.pt.EdgesPerPulse))
 	}
+	// EdgesPerPulse is validated in NewController() as 1 or 2
+	return []pulseEdgeList{edgeList}
 }
 
 // pulseEdges extracts all edges from edgeBuf into a pulseEdgeList.

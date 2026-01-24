@@ -150,6 +150,13 @@ func NewController(
 	edgesPerPulse int,
 	lg *slog.Logger,
 ) (*Controller, error) {
+	switch edgesPerPulse {
+	case 0:
+		return nil, errors.New("ethernet driver does not properly support PTP_EXTTS_REQUEST2; report to driver maintainer")
+	case 1, 2:
+	default:
+		panic(fmt.Sprintf("unexpected edges per pulse: %d", edgesPerPulse))
+	}
 	c := &Controller{
 		clock:      clock,
 		sampler:    sampler,
