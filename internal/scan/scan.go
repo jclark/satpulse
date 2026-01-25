@@ -81,6 +81,8 @@ func New(r io.Reader, bufSize int) *Scanner {
 
 const stateSync = gpsprot.ScanStateSync
 
+const minInvalidPacketLen = 32
+
 // Scan reads a packet from the underlying Reader.
 // A transient error, such as a timeout, will be returned in the ReadError field of the packet
 // with a Tag of Invalid, and err will be nil.
@@ -96,7 +98,7 @@ func (s *Scanner) Scan() (p Packet, err error) {
 Loop:
 	for {
 		if s.nextScanIndex >= len(s.buf) {
-			if state == stateSync && packetLen > 0 {
+			if state == stateSync && packetLen >= minInvalidPacketLen {
 				break Loop
 			}
 			e := s.fill(packetLen)
@@ -108,6 +110,9 @@ Loop:
 					if packetLen == 0 && len(s.buf) == 0 {
 						// don't wrap it, so it can be tested by Packet.IsInterPacketTimeout
 						p.ReadError = e
+					} else if packetLen > 0 && state == stateSync {
+						// timeout in middle of invalid packet - not an error
+						e = nil
 					} else {
 						p.ReadError = fmt.Errorf("error in the middle of a packet: %w", e)
 					}

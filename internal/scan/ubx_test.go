@@ -160,11 +160,12 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 	for {
 		pkt, err := s.Scan()
 		if err == io.EOF {
-			break
-		}
-		if err != nil {
+			if pkt.Data == "" {
+				break
+			}
+		} else if err != nil {
 			t.Fatalf("Error scanning packet: %v", err)
-		}
+		}		
 
 		if packetIndex%2 == 0 {
 			// UBX packet
