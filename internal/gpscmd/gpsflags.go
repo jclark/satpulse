@@ -9,6 +9,7 @@ import (
 	"github.com/jclark/satpulse/internal/geopos"
 	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/term"
 	"github.com/spf13/pflag"
 )
@@ -28,6 +29,7 @@ type flagVars struct {
 	socketPath     string
 	packetLogPath  string
 	packetLogMode  packetLogMode
+	capture        gpsprot.Option[time.Duration]
 	timeGNSS       gpsprot.GNSS
 	navMsgAuth     gpsprot.Option[gpsprot.NavMsgAuth]
 	enabledSignals gpsprot.SignalSet
@@ -39,7 +41,7 @@ type flagVars struct {
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
-       	    [--socket path] [--packet-log path] [--save] [--speed bps] [--nmea] [--binary]
+       	    [--socket path] [--packet-log path] [--capture seconds] [--save] [--speed bps] [--nmea] [--binary]
             [-c|--show-config] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
@@ -85,6 +87,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	pps := 0.0
 	antCableDelay := int64(0)
 	mobile := false
+	capture := 0.0
 
 	var rawOut rawOutOpt
 	var pvtOut pvtOutOpt
@@ -107,6 +110,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
+	flags.Float64Var(&capture, "capture", 0, "capture packets for `seconds` after config (0 = forever)")
 	flags.StringVar(&testLogPath, "test-log", "", "log test data to `path`")
 	flags.MarkHidden("test-log")
 	flags.IntVarP(&vars.localSpeed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
@@ -153,6 +157,15 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 		vars.packetLogPath = testLogPath
 		vars.packetLogMode = testLogMode
+	}
+	if flags.Lookup("capture").Changed {
+		if capture < 0 {
+			return nil, usage, fmt.Errorf("--capture duration must not be negative")
+		}
+		if vars.packetLogPath == "" {
+			return nil, usage, fmt.Errorf("--capture requires --packet-log")
+		}
+		vars.capture.Set(ptime.Seconds(capture))
 	}
 
 	for _, s := range []string{"device-speed", "speed"} {

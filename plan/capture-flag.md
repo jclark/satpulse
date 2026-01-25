@@ -10,7 +10,7 @@ Usage: `satpulsetool gps --packet-log foo.jsonl --capture 5s`
 
 ## Requirements
 
-- `--capture` takes a duration (e.g., `5s`, `1m`)
+- `--capture` takes a duration (e.g., `5s`, `1m`); `0` means capture forever
 - `--capture` requires `--packet-log` (error if used without it)
 - Configuration output prints immediately before capture begins
 - Capture can be interrupted with Ctrl+C
@@ -21,18 +21,25 @@ Usage: `satpulsetool gps --packet-log foo.jsonl --capture 5s`
 
 1. Add field to `flagVars` struct:
    ```go
-   captureDuration time.Duration
+   capture gpsprot.Option[time.Duration]
    ```
 
-2. Add flag parsing (after line 136):
+2. Add local variable and flag parsing:
    ```go
-   flags.DurationVar(&vars.captureDuration, "capture", 0, "capture packets for `duration` after config")
+   var capture time.Duration
+   flags.DurationVar(&capture, "capture", 0, "capture packets for `duration` after config (0 = forever)")
    ```
 
-3. Add validation (after line 156):
+3. Add validation (check if flag was explicitly set):
    ```go
-   if vars.captureDuration > 0 && vars.packetLogPath == "" {
-       return nil, usage, fmt.Errorf("--capture requires --packet-log")
+   if flags.Lookup("capture").Changed {
+       if capture < 0 {
+           return nil, usage, fmt.Errorf("--capture duration must not be negative")
+       }
+       if vars.packetLogPath == "" {
+           return nil, usage, fmt.Errorf("--capture requires --packet-log")
+       }
+       vars.capture.Set(capture)
    }
    ```
 
@@ -40,22 +47,30 @@ Usage: `satpulsetool gps --packet-log foo.jsonl --capture 5s`
 
 ### internal/gpscmd/gpscmd.go
 
-1. Update `run()` signature to accept `captureDuration time.Duration`
+1. Update `run()` signature to accept `capture gpsprot.Option[time.Duration]`
 
-2. Update call site in `Cmd()` (line 44) to pass `v.captureDuration`
+2. Update call site in `Cmd()` to pass `v.capture`
 
-3. Add `keepReading()` helper function:
+3. Add `keepReading()` helper function (handles dur == 0 as "forever"):
    ```go
    func keepReading(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, dur time.Duration) {
-       lg.Info("capturing packets", "duration", dur)
-       timer := time.NewTimer(dur)
-       defer timer.Stop()
+       if dur == 0 {
+           lg.Info("capturing packets until interrupted")
+       } else {
+           lg.Debug("capturing packets", "duration", dur)
+       }
+       var timerC <-chan time.Time
+       if dur > 0 {
+           timer := time.NewTimer(dur)
+           defer timer.Stop()
+           timerC = timer.C
+       }
        for {
            select {
            case <-ctx.Done():
                lg.Debug("capture interrupted")
                return
-           case <-timer.C:
+           case <-timerC:
                lg.Debug("capture complete")
                return
            case _, ok := <-pCh:
@@ -67,10 +82,10 @@ Usage: `satpulsetool gps --packet-log foo.jsonl --capture 5s`
    }
    ```
 
-4. Call `keepReading()` between line 143 (after printing config) and line 148 (before `conn.Stop()`):
+4. Call `keepReading()` after printing config and before `conn.Stop()`:
    ```go
-   if captureDuration > 0 {
-       keepReading(ctx, lg, pCh, captureDuration)
+   if capture.IsSet() {
+       keepReading(ctx, lg, pCh, capture.Get())
    }
    ```
 

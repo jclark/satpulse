@@ -7,7 +7,7 @@ satpulsetool-gps - configure a GPS receiver
 **satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-socket** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-force\-probe**] [**\-\-packet\-log** *path*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-force\-probe**] [**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-c**\|**\-\-show\-config**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
@@ -49,8 +49,11 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
 **\-\-speed** *bps*  
 : Configure the GPS receiver's serial speed in bits per second.
 
-**\-\-packet\-log** *path*  
+**\-\-packet\-log** *path*
 : Log to *path* a description of the packets sent to and received from the GPS receiver. The log is in `.jsonl` (JSON lines) format.
+
+**\-\-capture** *seconds*
+: After configuration completes, continue capturing packets for the specified number of seconds. Use `0` to capture indefinitely until interrupted. Requires **\-\-packet\-log**.
 
 **\-g**, **\-\-gnss** *list*  
 : List of GNSS constellations that should be enabled. The *list* parameter is a comma-separated list of:
@@ -271,6 +274,10 @@ Enable RTCM MSM4 output for base station use:
 Enable only NMEA RMC messages:
 
     satpulsetool gps -d /dev/ttyACM0 -s 19200 -nmea --nmea-out RMC
+
+Capture packets for 10 seconds after configuring:
+
+    satpulsetool gps -d /dev/ttyACM0 -s 9600 --packet-log capture.jsonl --capture 10
 
 # SEE ALSO
 

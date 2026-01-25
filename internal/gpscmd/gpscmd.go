@@ -41,7 +41,7 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, conn, v.packetLogPath, v.packetLogMode, args)
+	err = run(ctx, lg, target, conn, v.packetLogPath, v.packetLogMode, v.capture, args)
 	return
 }
 
@@ -89,7 +89,7 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 	return copy.NoOp()
 }
 
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn, logPath string, logMode packetLogMode, args []string) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn, logPath string, logMode packetLogMode, capture gpsprot.Option[time.Duration], args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -140,6 +140,9 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 		}
 		// print out props that we know about (either requested or set)
 		printProps(os.Stdout, rslt.ConfigProps)
+	}
+	if capture.IsSet() {
+		keepReading(ctx, lg, pCh, capture.Get())
 	}
 
 	lg.Debug("about to wait")
@@ -283,4 +286,32 @@ func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gp
 	msg := make(chan scan.Packet, 1)
 	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog) })
 	return msg
+}
+
+func keepReading(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, dur time.Duration) {
+	if dur == 0 {
+		lg.Info("capturing packets until interrupted")
+	} else {
+		lg.Debug("capturing packets", "duration", dur)
+	}
+	var timerC <-chan time.Time
+	if dur > 0 {
+		timer := time.NewTimer(dur)
+		defer timer.Stop()
+		timerC = timer.C
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			lg.Debug("capture interrupted")
+			return
+		case <-timerC:
+			lg.Debug("capture complete")
+			return
+		case _, ok := <-pCh:
+			if !ok {
+				return
+			}
+		}
+	}
 }
