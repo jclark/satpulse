@@ -30,7 +30,7 @@ The `.rpm` file can be installed using e.g.
 sudo rpm -i satpulse-20250310.x86_64.rpm
 ```
 
-Use `-U` instead of `-i` if you are upgrading from an earlier version.
+With rpm, use `-U` instead of `-i` if you are upgrading from an earlier version.
 
 ## Install from source
 
