@@ -361,7 +361,6 @@ type TimeMsg struct {
 	PulseOffset *float64       `json:"pulseOffset,omitempty"` // the true time of the top of second is the time of the pulse plus the PulseOffset
 	GNSS        GNSS           `json:"gnss,omitempty"`
 	Ref         TimeRef        `json:"ref,omitempty"`
-	NavEpoch    uint32         `json:"navEpoch,omitempty"`
 	Tag         Tag            `json:"tag,omitempty"`
 	NativeMsgID string         `json:"nativeMsgID,omitempty"`
 }
