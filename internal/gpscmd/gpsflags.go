@@ -168,7 +168,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		if capture < 0 {
 			return nil, usage, fmt.Errorf("--capture duration must not be negative")
 		}
-		if vars.packetLogPath == "" {
+		if vars.packetLogPath == "" && vars.msgFilePath == "" {
 			return nil, usage, fmt.Errorf("--capture requires --packet-log")
 		}
 		vars.capture.Set(ptime.Seconds(capture))
