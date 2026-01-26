@@ -33,12 +33,29 @@ satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980.toml -t setup
 |------|-------------|
 | `-m`, `--msg-file PATH` | Path to TOML file containing message definitions |
 | `-t`, `--tag NAME,...` | Comma-separated list of tags to send (in order); default is empty string |
+| `--show-tags` | List all tags in the message file with their descriptions, then exit |
 
 **Constraints:**
 
 The `-m` flag cannot be combined with config flags like `--gnss`, `--pps`, `--save`, etc. This avoids ambiguity about ordering of manual messages versus higher-level configuration.
 
 When `-m` is used without `--capture`, the tool defaults to `--capture 2` to show receiver responses.
+
+`--show-tags` requires `-m` but does not require `--serial-device` or `--socket` (no connection needed). It prints to stderr (like `--help`) and exits after printing. Example output:
+
+```
+No tag: Configure PPP settings
+Tags:
+  version - Query firmware version
+  query-pps
+  set-pps - Configure PPS output
+  save - Save configuration to NVM
+```
+
+Format mimics `--help` style:
+- `No tag:` line appears only if there are messages with empty tag (omit line entirely if none)
+- `Tags:` section lists named tags with two-space indent (omit section entirely if no named tags)
+- Tags without descriptions show just the tag name
 
 ## TOML message file
 
@@ -48,9 +65,9 @@ Following is user-facing explanation of how TOML message file works.
 
 | Type | Keys | Framing |
 |------|------|---------|
-| `[[line]]` | `text`, `eol`, `delay`, `tag` | appends eol (default `\r\n`) |
-| `[[binary]]` | `hex`, `delay`, `tag` | none |
-| `[[nmea]]` | `text`, `delay`, `tag` | prepends `$`, appends `*XX\r\n` checksum |
+| `[[line]]` | `text`, `eol`, `delay`, `tag`, `description` | appends eol (default `\r\n`) |
+| `[[binary]]` | `hex`, `delay`, `tag`, `description` | none |
+| `[[nmea]]` | `text`, `delay`, `tag`, `description` | prepends `$`, appends `*XX\r\n` checksum |
 
 ### Simplest case
 
@@ -200,6 +217,52 @@ The default value for `-t` option is the empty string `""`.
 
 All messages with the same tag must have the same type. All messages selected by a single `-t` option must also have the same type. This is because response display differs by type: line/nmea messages show text responses; binary messages don't display responses.
 
+### Description key
+
+`description` is an optional string that documents what a tag does. It is displayed by `--show-tags`.
+
+```toml
+[[nmea]]
+text = "PQTMVERNO"
+tag = "version"
+description = "Query firmware version"
+
+[[nmea]]
+text = "PQTMCFGPPS,R,1"
+tag = "query-pps"
+description = "Query PPS configuration"
+```
+
+When multiple messages share the same tag, each can have a `description`. The rule is: **all non-empty descriptions for a tag must be identical**. This allows flexibility:
+
+```toml
+# Option 1: description on first message only
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RMC,1"
+tag = "nmea-satpulse"
+description = "Enable NMEA messages for satpulse"
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GGA,1"
+tag = "nmea-satpulse"
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSV,1"
+tag = "nmea-satpulse"
+
+# Option 2: repeat for clarity (must match)
+[[nmea]]
+text = "PQTMRESTOREPAR"
+tag = "factory-reset"
+description = "Restore factory defaults and reboot"
+
+[[nmea]]
+text = "PQTMSRR"
+tag = "factory-reset"
+description = "Restore factory defaults and reboot"
+```
+
+Default is empty string `""`. Not allowed in `[default.line]` etc - validation error if specified there.
 
 ### Protocol specific message types
 
@@ -221,17 +284,20 @@ Optional fields use pointer types so we can distinguish "not specified" from "em
 ```go
 // LineMsg represents a [[line]] entry or [default.line].
 type LineMsg struct {
-	Text  string   `toml:"text"`
-	EOL   *string  `toml:"eol"`
-	Delay *float64 `toml:"delay"`
-	Tag   *string  `toml:"tag"`
+	Text        string   `toml:"text"`
+	EOL         *string  `toml:"eol"`
+	Delay       *float64 `toml:"delay"`
+	Tag         *string  `toml:"tag"`
+	Description string   `toml:"description"`
 }
 ```
 
 Key points:
 - Same type for default and messages; default is single, messages are slice
 - Pointer fields allow distinguishing unset from zero/empty values
+- `Description` is plain string (not pointer) - no default mechanism, validation error if set in `[default.*]`
 - Validation: `Default.Line.Text` must be empty; each `Line[i].Text` must be non-empty
+- Validation: all non-empty descriptions for the same tag must be identical
 
 ### Loading and defaulting
 
@@ -337,7 +403,23 @@ Implemented in Step 1.
 - Validate with `internal/nmea`
 - Update `responsePrinter` for NMEA: use `nmea.CheckSyntax()` to get `SentenceSyntaxFlags`, display unless `IsValidGNSSTalkerNMEA()` is true
 
-### Step 7: UBX/CASIC messages (fire-and-forget)
+### Step 7: Show tags and descriptions
+
+**Files:**
+- `internal/gpscmd/msgfile.go` - add `Description` field to `MsgCommon`
+- `internal/gpscmd/gpsflags.go` - add `--show-tags` flag
+- `internal/gpscmd/gpscmd.go` - handle `--show-tags` in `Cmd()`
+
+**Details:**
+- Add `Description string` to `MsgCommon` with `toml:"description"` (not a pointer - no default mechanism)
+- Add `showTags bool` to `flagVars`
+- Add validation: for each tag, collect non-empty descriptions; error if not all equal
+- Add validation: error if `description` is non-empty in any `[default.*]` section
+- Add `(mf *MsgFile) TagDescriptions() []TagDesc` returning tag/description pairs in order of first occurrence
+- `--show-tags` loads file, validates, prints tags, exits
+- `--show-tags` requires `-m` but not `-d`/`--socket`
+
+### Step 8: UBX/CASIC messages (fire-and-forget)
 
 **Files:**
 - `internal/ubx/bin/common.go` - add `const Endian = binary.LittleEndian`
@@ -354,7 +436,7 @@ Implemented in Step 1.
 - Build packet using `bin.PackMsg(mid, payload)` (already exists in both ubx/bin and casic/bin)
 - Fire-and-forget (no ACK/NAK handling)
 
-### Step 8: UBX Configurator integration
+### Step 9: UBX Configurator integration
 
 **Details:**
 - Add method to `ConfigProtocol` for pre-built packets

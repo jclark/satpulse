@@ -498,6 +498,58 @@ unknown = "bad"
 	}
 }
 
+func TestDescriptionAllowedAndIgnored(t *testing.T) {
+	toml := `[[line]]
+text = "LINE1"
+tag = "setup"
+description = "Configure the device"
+
+[[line]]
+text = "LINE2"
+tag = "setup"
+
+[[nmea]]
+text = "PCAS04,3"
+tag = "nmea-setup"
+description = "Set NMEA mode"
+
+[[binary]]
+hex = "DEADBEEF"
+tag = "bin-setup"
+description = "Send binary command"
+`
+	mf := loadMsgFileFromString(t, toml)
+	// Check description is parsed
+	if mf.Line[0].Description != "Configure the device" {
+		t.Errorf("expected line description, got %q", mf.Line[0].Description)
+	}
+	if mf.Line[1].Description != "" {
+		t.Errorf("expected empty description, got %q", mf.Line[1].Description)
+	}
+	if mf.NMEA[0].Description != "Set NMEA mode" {
+		t.Errorf("expected nmea description, got %q", mf.NMEA[0].Description)
+	}
+	if mf.Binary[0].Description != "Send binary command" {
+		t.Errorf("expected binary description, got %q", mf.Binary[0].Description)
+	}
+	// Check that messages still work (description is ignored for sending)
+	msgs, err := mf.TaggedMsgs([]string{"setup"})
+	if err != nil {
+		t.Fatalf("TaggedMsgs error: %v", err)
+	}
+	lineMsgs, ok := msgs.([]LineMsg)
+	if !ok {
+		t.Fatalf("expected []LineMsg, got %T", msgs)
+	}
+	raw, err := toRawMsgs(lineMsgs)
+	if err != nil {
+		t.Fatalf("toRawMsgs error: %v", err)
+	}
+	if len(raw) != 2 {
+		t.Errorf("expected 2 raw messages, got %d", len(raw))
+	}
+}
+
 func TestTaggedMsgs(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -15,8 +15,9 @@ import (
 
 // MsgCommon contains fields shared by all message types.
 type MsgCommon struct {
-	Delay *float64 `toml:"delay"`
-	Tag   *string  `toml:"tag"`
+	Delay       *float64 `toml:"delay"`
+	Tag         *string  `toml:"tag"`
+	Description string   `toml:"description"`
 }
 
 // LineMsg represents a [[line]] entry or [default.line].
