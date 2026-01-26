@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/pelletier/go-toml/v2"
 )
@@ -76,14 +77,62 @@ func (bm *BinaryMsg) toRaw() (rawMsg, error) {
 
 func (bm *BinaryMsg) getTag() string { return *bm.Tag }
 
+// NMEAMsg represents a [[nmea]] entry or [default.nmea].
+type NMEAMsg struct {
+	Text string `toml:"text"`
+	MsgCommon
+}
+
+func (nm *NMEAMsg) toRaw() (rawMsg, error) {
+	if nm.Text == "" {
+		return rawMsg{}, errors.New("text must not be empty")
+	}
+	delay, err := nm.MsgCommon.delay()
+	if err != nil {
+		return rawMsg{}, err
+	}
+	built, err := buildNMEA(nm.Text)
+	if err != nil {
+		return rawMsg{}, err
+	}
+	return rawMsg{
+		bytes: []byte(built),
+		delay: delay,
+		tag:   *nm.Tag,
+	}, nil
+}
+
+func (nm *NMEAMsg) getTag() string { return *nm.Tag }
+
+// buildNMEA builds a complete NMEA sentence from user text.
+// Prepends $ if missing, appends *XX checksum if missing, appends CRLF.
+// Validates the result using nmea.CheckSyntax.
+func buildNMEA(text string) (string, error) {
+	if !strings.HasPrefix(text, "$") {
+		text = "$" + text
+	}
+	if !strings.Contains(text, "*") {
+		checksum := nmea.Checksum([]byte(text[1:]))
+		text = fmt.Sprintf("%s*%02X", text, checksum)
+	}
+	text += "\r\n"
+	flags := nmea.CheckSyntax(text)
+	if flags&nmea.SentenceIsPacket == 0 {
+		return "", errors.New("invalid NMEA packet")
+	}
+	return text, nil
+}
+
 // MsgFile represents a parsed message file.
 type MsgFile struct {
 	Default struct {
 		Line   LineMsg   `toml:"line"`
 		Binary BinaryMsg `toml:"binary"`
+		NMEA   NMEAMsg   `toml:"nmea"`
 	} `toml:"default"`
 	Line   []LineMsg   `toml:"line"`
 	Binary []BinaryMsg `toml:"binary"`
+	NMEA   []NMEAMsg   `toml:"nmea"`
 }
 
 // rawMsg is an internal type for sending messages.
@@ -111,6 +160,7 @@ func defaultMsgFile() *MsgFile {
 	mf.Default.Line.EOL = ptr("\r\n")
 	mf.Default.Line.MsgCommon = defaultMsgCommon()
 	mf.Default.Binary.MsgCommon = defaultMsgCommon()
+	mf.Default.NMEA.MsgCommon = defaultMsgCommon()
 	return mf
 }
 
@@ -156,6 +206,10 @@ func (mf *MsgFile) applyBinaryDefaults(bm *BinaryMsg) {
 	applyCommonDefaults(&bm.MsgCommon, &mf.Default.Binary.MsgCommon)
 }
 
+func (mf *MsgFile) applyNMEADefaults(nm *NMEAMsg) {
+	applyCommonDefaults(&nm.MsgCommon, &mf.Default.NMEA.MsgCommon)
+}
+
 func (mf *MsgFile) validateDefaults() error {
 	if mf.Default.Line.Text != "" {
 		return errors.New("default.line.text must be empty")
@@ -169,11 +223,17 @@ func (mf *MsgFile) validateDefaults() error {
 	if _, err := mf.Default.Binary.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.binary: %w", err)
 	}
+	if mf.Default.NMEA.Text != "" {
+		return errors.New("default.nmea.text must be empty")
+	}
+	if _, err := mf.Default.NMEA.MsgCommon.delay(); err != nil {
+		return fmt.Errorf("default.nmea: %w", err)
+	}
 	return nil
 }
 
 // TaggedMsgs returns messages for the given tags with defaults applied.
-// Returns ([]LineMsg, nil) or ([]BinaryMsg, nil) depending on message type.
+// Returns ([]LineMsg, nil), ([]BinaryMsg, nil), or ([]NMEAMsg, nil) depending on message type.
 // Returns error if tags select messages of mixed types or if there are no messages with the tags.
 func (mf *MsgFile) TaggedMsgs(tags []string) (any, error) {
 	if err := mf.validateDefaults(); err != nil {
@@ -181,6 +241,7 @@ func (mf *MsgFile) TaggedMsgs(tags []string) (any, error) {
 	}
 	applyDefaults(mf.Line, mf.applyLineDefaults)
 	applyDefaults(mf.Binary, mf.applyBinaryDefaults)
+	applyDefaults(mf.NMEA, mf.applyNMEADefaults)
 	var rslt any
 	lineMsgs := filterMsgs(mf.Line, tags)
 	if len(lineMsgs) > 0 {
@@ -189,9 +250,16 @@ func (mf *MsgFile) TaggedMsgs(tags []string) (any, error) {
 	binaryMsgs := filterMsgs(mf.Binary, tags)
 	if len(binaryMsgs) > 0 {
 		if rslt != nil {
-			return nil, fmt.Errorf("selected tags have mixed message types (line and binary)")
+			return nil, fmt.Errorf("selected tags have mixed message types")
 		}
 		rslt = binaryMsgs
+	}
+	nmeaMsgs := filterMsgs(mf.NMEA, tags)
+	if len(nmeaMsgs) > 0 {
+		if rslt != nil {
+			return nil, fmt.Errorf("selected tags have mixed message types")
+		}
+		rslt = nmeaMsgs
 	}
 	if rslt == nil {
 		return nil, fmt.Errorf("no messages found for tags: %v", tags)

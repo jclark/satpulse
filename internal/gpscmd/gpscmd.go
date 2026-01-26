@@ -17,6 +17,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
+	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"
 )
 
@@ -206,6 +207,12 @@ func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 		if err != nil {
 			return err
 		}
+	case []NMEAMsg:
+		raw, err = toRawMsgs(m)
+		if err != nil {
+			return err
+		}
+		rp = newResponsePrinter(os.Stdout)
 	default:
 		panic(fmt.Sprintf("unexpected message type: %T", msgs))
 	}
@@ -423,7 +430,7 @@ func (rp *responsePrinter) handlePacket(pkt scan.Packet) {
 	if pkt.Format == nil {
 		rp.handleUnrecognized([]byte(pkt.Data))
 	} else {
-		rp.handleRecognized([]byte(pkt.Data))
+		rp.handleRecognized(pkt)
 	}
 }
 
@@ -442,9 +449,14 @@ func (rp *responsePrinter) handleUnrecognized(data []byte) {
 	}
 }
 
-func (rp *responsePrinter) handleRecognized(data []byte) {
+func (rp *responsePrinter) handleRecognized(pkt scan.Packet) {
 	rp.flushLine()
+	// Skip standard GNSS talker sentences (like $GPGGA, $GPRMC, etc.)
+	if pkt.HasTag(nmea.Tag) && nmea.CheckSyntax(pkt.Data).IsValidGNSSTalkerNMEA() {
+		return
+	}
 	// Strip trailing EOL (LF or CRLF), then check all chars are printable
+	data := []byte(pkt.Data)
 	data = bytes.TrimSuffix(data, []byte{'\n'})
 	data = bytes.TrimSuffix(data, []byte{'\r'})
 	for _, b := range data {

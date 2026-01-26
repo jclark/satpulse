@@ -130,6 +130,8 @@ func validateMsgs(mf *MsgFile, tags []string) error {
 		_, err = toRawMsgs(m)
 	case []BinaryMsg:
 		_, err = toRawMsgs(m)
+	case []NMEAMsg:
+		_, err = toRawMsgs(m)
 	}
 	return err
 }
@@ -755,6 +757,343 @@ tag = "setup"
 `,
 			tags:    []string{"other"},
 			wantErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := loadMsgFileFromString(t, tc.toml)
+			_, err := mf.TaggedMsgs(tc.tags)
+			if tc.wantErr && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadNMEAMsgSimple(t *testing.T) {
+	toml := `[[nmea]]
+text = "PCAS04,3"
+
+[[nmea]]
+text = "PUBX,40,GGA,0,0,0,0"
+`
+	mf := loadMsgFileFromString(t, toml)
+	if len(mf.NMEA) != 2 {
+		t.Fatalf("expected 2 nmea messages, got %d", len(mf.NMEA))
+	}
+	if mf.NMEA[0].Text != "PCAS04,3" {
+		t.Errorf("expected first nmea text, got %q", mf.NMEA[0].Text)
+	}
+	if mf.NMEA[1].Text != "PUBX,40,GGA,0,0,0,0" {
+		t.Errorf("expected second nmea text, got %q", mf.NMEA[1].Text)
+	}
+}
+
+func TestNMEAMsgsToRaw(t *testing.T) {
+	tests := []struct {
+		name     string
+		toml     string
+		tags     []string
+		expected []rawMsg
+	}{
+		{
+			name: "simple text without $ or checksum",
+			toml: `[[nmea]]
+text = "PCAS04,3"
+`,
+			tags: []string{""},
+			expected: []rawMsg{
+				{bytes: []byte("$PCAS04,3*1A\r\n"), delay: 0, tag: "", index: 0},
+			},
+		},
+		{
+			name: "text with $ prefix",
+			toml: `[[nmea]]
+text = "$PCAS04,3"
+`,
+			tags: []string{""},
+			expected: []rawMsg{
+				{bytes: []byte("$PCAS04,3*1A\r\n"), delay: 0, tag: "", index: 0},
+			},
+		},
+		{
+			name: "text with $ and checksum",
+			toml: `[[nmea]]
+text = "$PCAS04,3*1A"
+`,
+			tags: []string{""},
+			expected: []rawMsg{
+				{bytes: []byte("$PCAS04,3*1A\r\n"), delay: 0, tag: "", index: 0},
+			},
+		},
+		{
+			name: "with delay",
+			toml: `[[nmea]]
+text = "PCAS04,3"
+delay = 0.5
+`,
+			tags: []string{""},
+			expected: []rawMsg{
+				{bytes: []byte("$PCAS04,3*1A\r\n"), delay: 500 * time.Millisecond, tag: "", index: 0},
+			},
+		},
+		{
+			name: "default delay",
+			toml: `[default.nmea]
+delay = 0.1
+
+[[nmea]]
+text = "PCAS04,3"
+
+[[nmea]]
+text = "PCAS04,7"
+`,
+			tags: []string{""},
+			expected: []rawMsg{
+				{bytes: []byte("$PCAS04,3*1A\r\n"), delay: 100 * time.Millisecond, tag: "", index: 0},
+				{bytes: []byte("$PCAS04,7*1E\r\n"), delay: 100 * time.Millisecond, tag: "", index: 1},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := loadMsgFileFromString(t, tc.toml)
+			msgs, err := mf.TaggedMsgs(tc.tags)
+			if err != nil {
+				t.Fatalf("TaggedMsgs error: %v", err)
+			}
+			nmeaMsgs, ok := msgs.([]NMEAMsg)
+			if !ok {
+				t.Fatalf("expected []NMEAMsg, got %T", msgs)
+			}
+			raw, err := toRawMsgs(nmeaMsgs)
+			if err != nil {
+				t.Fatalf("toRawMsgs error: %v", err)
+			}
+			if !reflect.DeepEqual(raw, tc.expected) {
+				t.Errorf("got %+v, expected %+v", raw, tc.expected)
+			}
+		})
+	}
+}
+
+func TestValidateNMEA(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		tags    []string
+		wantErr bool
+	}{
+		{
+			name: "valid nmea",
+			toml: `[[nmea]]
+text = "PCAS04,3"
+`,
+			tags:    []string{""},
+			wantErr: false,
+		},
+		{
+			name: "empty text",
+			toml: `[[nmea]]
+text = ""
+`,
+			tags:    []string{""},
+			wantErr: true,
+		},
+		{
+			name: "default text not empty",
+			toml: `[default.nmea]
+text = "BAD"
+
+[[nmea]]
+text = "PCAS04,3"
+`,
+			tags:    []string{""},
+			wantErr: true,
+		},
+		{
+			name: "negative delay",
+			toml: `[[nmea]]
+text = "PCAS04,3"
+delay = -1.0
+`,
+			tags:    []string{""},
+			wantErr: true,
+		},
+		{
+			name: "negative delay in default",
+			toml: `[default.nmea]
+delay = -0.5
+
+[[nmea]]
+text = "PCAS04,3"
+`,
+			tags:    []string{""},
+			wantErr: true,
+		},
+		{
+			name: "invalid nmea syntax",
+			toml: `[[nmea]]
+text = "BAD*ZZ"
+`,
+			tags:    []string{""},
+			wantErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := loadMsgFileFromString(t, tc.toml)
+			err := validateMsgs(mf, tc.tags)
+			if tc.wantErr && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestTaggedNMEAMsgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		toml     string
+		tags     []string
+		expected []rawMsg
+	}{
+		{
+			name: "filter by tag",
+			toml: `[[nmea]]
+text = "PCAS04,3"
+tag = "setup"
+
+[[nmea]]
+text = "PCAS04,7"
+tag = "other"
+`,
+			tags: []string{"setup"},
+			expected: []rawMsg{
+				{bytes: []byte("$PCAS04,3*1A\r\n"), delay: 0, tag: "setup", index: 0},
+			},
+		},
+		{
+			name: "default tag",
+			toml: `[default.nmea]
+tag = "init"
+
+[[nmea]]
+text = "PCAS04,3"
+
+[[nmea]]
+text = "PCAS04,7"
+tag = "other"
+`,
+			tags: []string{"init"},
+			expected: []rawMsg{
+				{bytes: []byte("$PCAS04,3*1A\r\n"), delay: 0, tag: "init", index: 0},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := loadMsgFileFromString(t, tc.toml)
+			msgs, err := mf.TaggedMsgs(tc.tags)
+			if err != nil {
+				t.Fatalf("TaggedMsgs error: %v", err)
+			}
+			nmeaMsgs, ok := msgs.([]NMEAMsg)
+			if !ok {
+				t.Fatalf("expected []NMEAMsg, got %T", msgs)
+			}
+			raw, err := toRawMsgs(nmeaMsgs)
+			if err != nil {
+				t.Fatalf("toRawMsgs error: %v", err)
+			}
+			if !reflect.DeepEqual(raw, tc.expected) {
+				t.Errorf("got %+v, expected %+v", raw, tc.expected)
+			}
+		})
+	}
+}
+
+func TestTaggedMsgsMixedWithNMEA(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		tags    []string
+		wantErr bool
+	}{
+		{
+			name: "line and nmea with separate tags is valid",
+			toml: `[[line]]
+text = "TEST"
+tag = "lines"
+
+[[nmea]]
+text = "PCAS04,3"
+tag = "nmeas"
+`,
+			tags:    []string{"lines"},
+			wantErr: false,
+		},
+		{
+			name: "selecting nmea tag only is valid",
+			toml: `[[line]]
+text = "TEST"
+tag = "lines"
+
+[[nmea]]
+text = "PCAS04,3"
+tag = "nmeas"
+`,
+			tags:    []string{"nmeas"},
+			wantErr: false,
+		},
+		{
+			name: "selecting both line and nmea fails",
+			toml: `[[line]]
+text = "TEST"
+tag = "mixed"
+
+[[nmea]]
+text = "PCAS04,3"
+tag = "mixed"
+`,
+			tags:    []string{"mixed"},
+			wantErr: true,
+		},
+		{
+			name: "binary and nmea with same tag fails",
+			toml: `[[binary]]
+hex = "AA"
+tag = "mixed"
+
+[[nmea]]
+text = "PCAS04,3"
+tag = "mixed"
+`,
+			tags:    []string{"mixed"},
+			wantErr: true,
+		},
+		{
+			name: "all three types with separate tags selecting nmea",
+			toml: `[[line]]
+text = "TEST"
+tag = "lines"
+
+[[binary]]
+hex = "AA"
+tag = "bins"
+
+[[nmea]]
+text = "PCAS04,3"
+tag = "nmeas"
+`,
+			tags:    []string{"nmeas"},
+			wantErr: false,
 		},
 	}
 	for _, tc := range tests {
