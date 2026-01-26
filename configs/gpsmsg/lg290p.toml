@@ -6,36 +6,43 @@
 [[nmea]]
 text = "PQTMVERNO"
 tag = "version"
+description = "Query firmware version"
 
 # Query PPS configuration
 [[nmea]]
 text = "PQTMCFGPPS,R,1"
 tag = "query-pps"
+description = "Query PPS configuration"
 
 # Query constellation configuration
 [[nmea]]
 text = "PQTMCFGCNST,R"
 tag = "query-gnss"
+description = "Query constellation configuration"
 
 # Query fix rate
 [[nmea]]
 text = "PQTMCFGFIXRATE,R"
 tag = "query-fixrate"
+description = "Query fix interval"
 
 # Query receiver mode (rover/base)
 [[nmea]]
 text = "PQTMCFGRCVRMODE,R"
 tag = "query-mode"
+description = "Query receiver mode (rover/base)"
 
 # Query current UART config (response includes port index)
 [[nmea]]
 text = "PQTMCFGUART,R"
 tag = "query-uart"
+description = "Query UART configuration"
 
 # Query protocol configuration for UART1/2/3
 [[nmea]]
 text = "PQTMCFGPROT,R,1,1"
 tag = "query-prot"
+description = "Query input/output protocol for UART1/2/3"
 [[nmea]]
 text = "PQTMCFGPROT,R,1,2"
 tag = "query-prot"
@@ -48,27 +55,32 @@ tag = "query-prot"
 [[nmea]]
 text = "PQTMCFGPPS,W,1,1,100,2,1,0"
 tag = "set-pps"
+description = "Set PPS: 100ms pulse, output only when fixed"
 
 # Query survey-in config
 [[nmea]]
 text = "PQTMCFGSVIN,R"
 tag = "query-survey"
+description = "Query survey-in configuration"
 
 # Survey-in: 2000 seconds, 20m accuracy
 # Mode=1 (survey-in), CFG_CNT=2000, 3D_AccLimit=20.0, ECEF_X/Y/Z=0
 [[nmea]]
 text = "PQTMCFGSVIN,W,1,2000,20.0,0,0,0"
 tag = "survey"
+description = "Start survey-in (2000s, 20m accuracy limit)"
 
 # Save configuration to NVM
 [[nmea]]
 text = "PQTMSAVEPAR"
 tag = "save"
+description = "Save configuration to NVM"
 
 # Factory reset: restore defaults then reboot
 [[nmea]]
 text = "PQTMRESTOREPAR"
 tag = "factory-reset"
+description = "Restore factory defaults and reboot"
 [[nmea]]
 text = "PQTMSRR"
 tag = "factory-reset"
@@ -77,40 +89,47 @@ tag = "factory-reset"
 [[nmea]]
 text = "PQTMSRR"
 tag = "reset"
+description = "Reboot receiver"
 
 # Use only GPS
 # GPS=1, GLONASS=0, Galileo=0, BDS=0, QZSS=0, NavIC=0
 [[nmea]]
 text = "PQTMCFGCNST,W,1,0,0,0,0,0"
 tag = "gnss-gps"
+description = "Enable GPS only"
 
 # Use only Galileo
 # GPS=0, GLONASS=0, Galileo=1, BDS=0, QZSS=0, NavIC=0
 [[nmea]]
 text = "PQTMCFGCNST,W,0,0,1,0,0,0"
 tag = "gnss-gal"
+description = "Enable Galileo only"
 
 # Use GPS and Galileo
 # GPS=1, GLONASS=0, Galileo=1, BDS=0, QZSS=0, NavIC=0
 [[nmea]]
 text = "PQTMCFGCNST,W,1,0,1,0,0,0"
 tag = "gnss-gps-gal"
+description = "Enable GPS and Galileo"
 
 # Use all constellations
 # GPS=1, GLONASS=1, Galileo=1, BDS=1, QZSS=1, NavIC=1
 [[nmea]]
 text = "PQTMCFGCNST,W,1,1,1,1,1,1"
 tag = "gnss-all"
+description = "Enable all constellations"
 
 # Set baud rate to 115200 on current port
 [[nmea]]
 text = "PQTMCFGUART,W,115200"
 tag = "speed-115200"
+description = "Set baud rate to 115200"
 
 # Enable NMEA messages for satpulse (RMC, GGA, GSV at rate 1)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RMC,1"
 tag = "nmea-satpulse"
+description = "Enable NMEA messages for satpulse (RMC, GGA, GSV)"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,GGA,1"
 tag = "nmea-satpulse"
@@ -122,16 +141,19 @@ tag = "nmea-satpulse"
 [[nmea]]
 text = "PQTMCFGRCVRMODE,W,2"
 tag = "base-station"
+description = "Set base station mode"
 
 # Rover mode (default NMEA output)
 [[nmea]]
 text = "PQTMCFGRCVRMODE,W,1"
 tag = "rover"
+description = "Set rover mode"
 
 # Query RTCM message rates
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-1005"
 tag = "query-rtcm"
+description = "Query RTCM message rates"
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-107X"
 tag = "query-rtcm"
@@ -149,6 +171,7 @@ tag = "query-rtcm"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-1005,0"
 tag = "rtcm-off"
+description = "Disable all RTCM messages"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-107X,0,0"
 tag = "rtcm-off"
@@ -166,18 +189,23 @@ tag = "rtcm-off"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-1005,1"
 tag = "rtcm-arp"
+description = "Enable RTCM ARP message (1005)"
 
 # Enable RTCM MSM messages per constellation (107X = GPS, 108X = GLO, etc.)
 # Rate=1 (every fix), Offset=0 (no time offset)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-107X,1,0"
 tag = "rtcm-msm-gps"
+description = "Enable RTCM GPS MSM messages"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-108X,1,0"
 tag = "rtcm-msm-glo"
+description = "Enable RTCM GLONASS MSM messages"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-109X,1,0"
 tag = "rtcm-msm-gal"
+description = "Enable RTCM Galileo MSM messages"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-112X,1,0"
 tag = "rtcm-msm-bds"
+description = "Enable RTCM BDS MSM messages"
