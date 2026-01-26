@@ -44,11 +44,7 @@ func Cmd(progName string, args []string) {
 	}
 	cfg, err := LoadConfig(vars.configFiles...)
 	if err != nil {
-		cmd.ErrPrintln(progName, err)
-		s := configErrorDetail(err)
-		if s != "" {
-			fmt.Fprintln(os.Stderr, s)
-		}
+		cmd.ErrPrintlnWithDetail(progName, err)
 		os.Exit(cmd.ExitConfig)
 	}
 	if vars.wait {

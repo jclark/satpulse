@@ -1,9 +1,11 @@
 package gpscmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -30,6 +32,10 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	if err != nil {
 		return
 	}
+	mf, err := loadMsgFile(v.msgFilePath)
+	if err != nil {
+		return
+	}
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
 		conn, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
@@ -41,16 +47,18 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, conn, v.packetLogPath, v.packetLogMode, v.capture, args)
+	err = run(ctx, lg, target, mf, v.msgTags, conn, v.packetLogPath, v.packetLogMode, v.capture, args)
 	return
 }
 
+// createConfigTarget returns nil if msgFilePath is set (message file mode).
 func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
+	if v.msgFilePath != "" {
+		return nil, nil
+	}
 	target := gpsprot.NewConfigTarget()
-
 	target.Opts = v.configOpts
 	target.Get = v.configGet
-
 	cp := &target.Props
 	if v.pps.IsSet() {
 		cp.SetPPS(v.pps.Get())
@@ -79,6 +87,20 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	return target, nil
 }
 
+func loadMsgFile(path string) (*MsgFile, error) {
+	if path == "" {
+		return nil, nil
+	}
+	mf, err := LoadMsgFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if err = mf.Validate(); err != nil {
+		return nil, err
+	}
+	return mf, nil
+}
+
 func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 	if target.NoOp() {
 		return false
@@ -89,7 +111,16 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 	return copy.NoOp()
 }
 
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, conn gpsio.Conn, logPath string, logMode packetLogMode, capture gpsprot.Option[time.Duration], args []string) error {
+// run executes the GPS command.
+//
+// Exactly one of target and mf is non-nil:
+//   - target non-nil: config mode (runs GPS configuration)
+//   - mf non-nil: message file mode (sends user-defined messages)
+//
+// Parameter dependencies:
+//   - logMode: must not be testLogMode when mf is non-nil
+//   - args: only used for test log header when logMode is testLogMode
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, mf *MsgFile, tags []string, conn gpsio.Conn, logPath string, logMode packetLogMode, capture gpsprot.Option[time.Duration], args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -123,26 +154,11 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 	}
 	pCh := startScan(ctx, lg, &wg, conn, pktLog)
 
-	// Let the compiler check that TermError implements the SerialError interface
-	// gpscfg relies on this
-	var _ gpscfg.SerialError = gpsio.TermError{}
-	rslt, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), gpsreg.CreateConfigProtocols(), target, pCh, conn)
-	if errors.Is(err, gpscfg.ErrNoProbeResponse) && configTargetIsProbeOnly(target) {
-		err = nil
-	}
-	if err == nil && rslt != nil {
-		if configTargetIsProbeOnly(target) {
-			// print out the version only if we did not specify anything else
-			printReceiverInfo(os.Stdout, rslt.ReceiverInfo)
-			printPacketFormats(os.Stdout, rslt.PacketFormatsDetected)
-		} else {
-			logFailedProps(lg, &target.Props, rslt.ConfigProps)
-		}
-		// print out props that we know about (either requested or set)
-		printProps(os.Stdout, rslt.ConfigProps)
-	}
-	if capture.IsSet() {
-		keepReading(ctx, lg, pCh, capture.Get())
+	var rslt *gpscfg.Result
+	if mf != nil {
+		err = runMsgs(ctx, lg, conn, pCh, mf, tags, capture)
+	} else {
+		rslt, err = runConfig(ctx, lg, target, pCh, conn, capture)
 	}
 
 	lg.Debug("about to wait")
@@ -157,6 +173,113 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, con
 		writeTestLogTail(lf, lg, rslt, err)
 	}
 	return err
+}
+
+func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, capture gpsprot.Option[time.Duration]) (*gpscfg.Result, error) {
+	// Let the compiler check that TermError implements the SerialError interface
+	// gpscfg relies on this
+	var _ gpscfg.SerialError = gpsio.TermError{}
+	rslt, err := gpscfg.Configure(ctx, lg, gpsreg.CreatePacketProcessors(nil), gpsreg.CreateConfigProtocols(), target, pCh, conn)
+	if errors.Is(err, gpscfg.ErrNoProbeResponse) && configTargetIsProbeOnly(target) {
+		err = nil
+	}
+	if err == nil && rslt != nil {
+		if configTargetIsProbeOnly(target) {
+			printReceiverInfo(os.Stdout, rslt.ReceiverInfo)
+			printPacketFormats(os.Stdout, rslt.PacketFormatsDetected)
+		} else {
+			logFailedProps(lg, &target.Props, rslt.ConfigProps)
+		}
+		printProps(os.Stdout, rslt.ConfigProps)
+	}
+	if capture.IsSet() {
+		keepReading(ctx, lg, pCh, capture.Get(), nil)
+	}
+	return rslt, err
+}
+
+func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, mf *MsgFile, tags []string, capture gpsprot.Option[time.Duration]) error {
+	msgs, err := mf.TaggedMsgs(tags)
+	if err != nil {
+		return err
+	}
+	var rp *responsePrinter
+	var raw []rawMsg
+	switch m := msgs.(type) {
+	case []LineMsg:
+		raw = toRawMsgs(m)
+		rp = newResponsePrinter(os.Stdout)
+	case []BinaryMsg:
+		raw = toRawMsgs(m)
+	default:
+		panic(fmt.Sprintf("unexpected message type: %T", msgs))
+	}
+	err = runRawMsgs(ctx, lg, conn, pCh, raw, rp)
+	if capture.IsSet() {
+		keepReading(ctx, lg, pCh, capture.Get(), rp)
+	}
+	if rp != nil {
+		rp.Flush()
+	}
+	return err
+}
+
+func runRawMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs []rawMsg, rp *responsePrinter) error {
+	for _, m := range msgs {
+		if err := sendMsg(ctx, lg, conn, pCh, m, rp); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sendMsg(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, m rawMsg, rp *responsePrinter) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	_, err := conn.Write(m.bytes)
+	if err != nil {
+		return err
+	}
+	lg.Info("sent message", "index", m.index+1, "tag", m.tag)
+	var timerCh <-chan time.Time
+	if m.delay > 0 {
+		timer := time.NewTimer(m.delay)
+		defer timer.Stop()
+		timerCh = timer.C
+	}
+	for timerCh != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timerCh:
+			timerCh = nil
+		case pkt, ok := <-pCh:
+			if !ok {
+				return nil
+			}
+			if rp != nil {
+				rp.handlePacket(pkt)
+			}
+		}
+	}
+
+	// Drain any immediately available packets (including when delay is zero).
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case pkt, ok := <-pCh:
+			if !ok {
+				return nil
+			}
+			if rp != nil {
+				rp.handlePacket(pkt)
+			}
+		default:
+			return nil
+		}
+	}
 }
 
 func logFailedProps(lg *slog.Logger, reqProps *gpsprot.ConfigProps, rsltProps *gpsprot.ConfigProps) {
@@ -288,7 +411,75 @@ func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gp
 	return msg
 }
 
-func keepReading(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, dur time.Duration) {
+// responsePrinter handles displaying text responses from the receiver.
+type responsePrinter struct {
+	w       io.Writer
+	lineBuf []byte
+}
+
+func newResponsePrinter(w io.Writer) *responsePrinter {
+	return &responsePrinter{w: w}
+}
+
+// handlePacket processes a packet for display.
+// For unrecognized packets, it accumulates printable chars and prints on EOL.
+// For recognized packets, it prints if all chars are printable.
+func (rp *responsePrinter) handlePacket(pkt scan.Packet) {
+	if pkt.Format == nil {
+		rp.handleUnrecognized([]byte(pkt.Data))
+	} else {
+		rp.handleRecognized([]byte(pkt.Data))
+	}
+}
+
+func (rp *responsePrinter) handleUnrecognized(data []byte) {
+	for _, b := range data {
+		if b == '\n' {
+			rp.flushLine()
+		} else if b == '\r' {
+			// skip CR, will print on LF
+		} else if isPrintable(b) {
+			rp.lineBuf = append(rp.lineBuf, b)
+		} else {
+			// non-printable char, clear buffer
+			rp.lineBuf = rp.lineBuf[:0]
+		}
+	}
+}
+
+func (rp *responsePrinter) handleRecognized(data []byte) {
+	rp.flushLine()
+	// Strip trailing EOL (LF or CRLF), then check all chars are printable
+	data = bytes.TrimSuffix(data, []byte{'\n'})
+	data = bytes.TrimSuffix(data, []byte{'\r'})
+	for _, b := range data {
+		if !isPrintable(b) {
+			return
+		}
+	}
+	if len(data) > 0 {
+		fmt.Fprintf(rp.w, "%s\n", data)
+	}
+}
+
+func (rp *responsePrinter) flushLine() {
+	if len(rp.lineBuf) > 0 {
+		fmt.Fprintf(rp.w, "%s\n", rp.lineBuf)
+		rp.lineBuf = rp.lineBuf[:0]
+	}
+}
+
+// Flush outputs any buffered data.
+func (rp *responsePrinter) Flush() {
+	rp.flushLine()
+}
+
+// isPrintable returns true if b is a printable ASCII char (0x20-0x7E) or tab.
+func isPrintable(b byte) bool {
+	return (b >= 0x20 && b <= 0x7E) || b == '\t'
+}
+
+func keepReading(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, dur time.Duration, rp *responsePrinter) {
 	if dur == 0 {
 		lg.Info("capturing packets until interrupted")
 	} else {
@@ -308,9 +499,12 @@ func keepReading(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, d
 		case <-timerC:
 			lg.Debug("capture complete")
 			return
-		case _, ok := <-pCh:
+		case pkt, ok := <-pCh:
 			if !ok {
 				return
+			}
+			if rp != nil {
+				rp.handlePacket(pkt)
 			}
 		}
 	}

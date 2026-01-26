@@ -1,6 +1,7 @@
 package gpscmd
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -274,6 +275,13 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"-c"}, flagVars{configGet: showProps}},
 	{"", []string{"--socket", "/tmp/socket", "--show-config"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
 	{"", []string{"--socket", "/tmp/socket", "-c"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
+	// Test --msg-file with --tag flag
+	{"ttyS0", []string{"--msg-file", "test.toml"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, capture: gpsprot.MakeOption(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, capture: gpsprot.MakeOption(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "-t", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, capture: gpsprot.MakeOption(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup,ppp"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup", "ppp"}, capture: gpsprot.MakeOption(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "foo,,bar"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"foo", "", "bar"}, capture: gpsprot.MakeOption(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", ""}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, capture: gpsprot.MakeOption(2 * time.Second)}},
 }
 
 func TestParseFlagsValid(t *testing.T) {
@@ -290,8 +298,8 @@ func TestParseFlagsValid(t *testing.T) {
 				t.Errorf("parseFlags returned error: %v", err)
 			} else if vars == nil {
 				t.Errorf("parseFlags returned nil vars")
-			} else if *vars != expect {
-				t.Errorf("parseFlags returned %v, expected %v", *vars, expect)
+			} else if !reflect.DeepEqual(*vars, expect) {
+				t.Errorf("parseFlags returned %+v, expected %+v", *vars, expect)
 			}
 		})
 	}
@@ -398,6 +406,32 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--reset", "-c"},                                     // can't use reset with short form
 	{"--serial-device", "ttyS0", "--reload", "-c"},                                    // can't use reload with short form
 	{"--serial-device", "ttyS0", "--show-config", "--factory-reset", "--gnss", "GPS"}, // multiple incompatible options
+	// Test --msg-file mutual exclusivity with config flags
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--gnss", "GPS"},                                      // can't use with --gnss
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--pps", "0.1"},                                       // can't use with --pps
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--save"},                                             // can't use with --save
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--save-all"},                                         // can't use with --save-all
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--reset"},                                            // can't use with --reset
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--reload"},                                           // can't use with --reload
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--factory-reset"},                                    // can't use with --factory-reset
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-config"},                                      // can't use with --show-config
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--nmea"},                                             // can't use with --nmea
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--binary"},                                           // can't use with --binary
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--mobile"},                                           // can't use with --mobile
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--survey"},                                           // can't use with --survey
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--time-gnss", "GPS"},                                 // can't use with --time-gnss
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--pvt-out", "pos"},                                   // can't use with --pvt-out
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--raw-out", "obs"},                                   // can't use with --raw-out
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--rtcm-out", "MSM4"},                                 // can't use with --rtcm-out
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--nmea-out", "RMC"},                                  // can't use with --nmea-out
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--sats-out", "sat"},                                  // can't use with --sats-out
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--ant-cable-delay", "100"},                           // can't use with --ant-cable-delay
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--speed", "9600"},                                    // can't use with --speed
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, // can't use with --fixed-pos-ecef
+	// Test --msg-file cannot be combined with --test-log
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--test-log", "test.log", "--packet-log", "pkt.log"}, // can't use with --test-log
+	// Test --tag requires --msg-file
+	{"--serial-device", "ttyS0", "--tag", "setup"}, // --tag without --msg-file
 }
 
 func TestParseFlagsInvalid(t *testing.T) {

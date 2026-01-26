@@ -70,7 +70,7 @@ func main() {
 	if exec != nil {
 		usage, err := exec(lg, progName, cmdName, cmdArgs)
 		if err != nil {
-			cmd.ErrPrintln(progName, err)
+			cmd.ErrPrintlnWithDetail(progName, err)
 			// Check if error specifies its own exit code
 			var exitCoder cmd.ExitCoder
 			if errors.As(err, &exitCoder) {

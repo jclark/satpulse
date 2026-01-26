@@ -214,132 +214,43 @@ payload=[0, 1, 0, 0x10320001, 1]
 
 ### Go types
 
+Optional fields use pointer types so we can distinguish "not specified" from "empty/zero":
+
 ```go
 // LineMsg represents a [[line]] entry or [default.line].
 type LineMsg struct {
-	Text  string  `toml:"text"`
-	EOL   string  `toml:"eol"`
-	Delay float64 `toml:"delay"`
-	Tag   string  `toml:"tag"`
-}
-
-// BinaryMsg represents a [[binary]] entry or [default.binary].
-type BinaryMsg struct {
-	Hex   string  `toml:"hex"`
-	Delay float64 `toml:"delay"`
-	Tag   string  `toml:"tag"`
-}
-
-// NMEAMsg represents an [[nmea]] entry or [default.nmea].
-type NMEAMsg struct {
-	Text  string  `toml:"text"`
-	Delay float64 `toml:"delay"`
-	Tag   string  `toml:"tag"`
-}
-
-// MsgFile represents a parsed message file.
-type MsgFile struct {
-	Default struct {
-		Line   LineMsg
-		Binary BinaryMsg
-		NMEA   NMEAMsg
-	}
-	Line   []LineMsg
-	Binary []BinaryMsg
-	NMEA   []NMEAMsg
+	Text  string   `toml:"text"`
+	EOL   *string  `toml:"eol"`
+	Delay *float64 `toml:"delay"`
+	Tag   *string  `toml:"tag"`
 }
 ```
 
 Key points:
-- Per-protocol packages (like ubx) define their own message types added to MsgFile
 - Same type for default and messages; default is single, messages are slice
+- Pointer fields allow distinguishing unset from zero/empty values
 - Validation: `Default.Line.Text` must be empty; each `Line[i].Text` must be non-empty
-- The ubx package does not import gpscmd; we rely on structural typing
 
 ### Loading and defaulting
 
-Follow the pattern from `internal/daemon/config.go` and `internal/daemon/daemon.go`:
+Uses `defaultMsgFile()` to pre-fill defaults, then TOML decoder overwrites only fields present in file.
 
-```go
-func defaultMsgFile() *MsgFile {
-	mf := new(MsgFile)
-	mf.Default.Line.EOL = "\r\n"
-	return mf
-}
-
-func LoadMsgFile(path string) (*MsgFile, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	mf := defaultMsgFile()
-	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(mf)
-	if err != nil {
-		return nil, err
-	}
-	return mf, nil
-}
-
-// msgFileErrorDetail extracts detailed error info from TOML parsing errors.
-func msgFileErrorDetail(err error) string {
-	if s, ok := err.(fmt.Stringer); ok {
-		return s.String()
-	}
-	return ""
-}
-```
-
-In `gpscmd.go`, report errors with detail like daemon does:
-
-```go
-mf, err := LoadMsgFile(path)
-if err != nil {
-	s := msgFileErrorDetail(err)
-	if s != "" {
-		fmt.Fprintln(os.Stderr, s)
-	}
-	return err
-}
-```
-
-Pre-fill `Default.Line.EOL = "\r\n"` before decoding. TOML only overwrites fields present in the file.
-
-For each message, apply defaults from `Default` field-by-field:
-- For `string` fields: use default if message field is empty (`""`)
-- For `float64` fields: use default if message field is zero (`0`)
-
-### rawMsg and UserMsg interface
-
-```go
-// rawMsg is an internal type for sending messages.
-type rawMsg struct {
-	bytes []byte
-	delay time.Duration
-}
-
-// UserMsg is implemented by LineMsg, BinaryMsg, NMEAMsg to convert to rawMsg.
-type UserMsg interface {
-	GetBytes() ([]byte, error)
-	GetTag() string
-	GetDelay() float64
-}
-```
+For each message, `applyLineDefaults()` copies default pointer if message field is nil.
 
 ### Core functions
 
-```go
-// LoadMsgFile reads and parses a TOML message file.
-func LoadMsgFile(path string) (*MsgFile, error)
+In `msgfile.go`:
+- `LoadMsgFile(path string) (*MsgFile, error)` - parse TOML file
+- `(mf *MsgFile) Validate() error` - validate structure
+- `(mf *MsgFile) TaggedLineMsgs(tags []string) []LineMsg` - filter and apply defaults
+- `LineMsgsToRaw(msgs []LineMsg) []rawMsg` - convert for sending
 
-// Validate checks that the message file is valid.
-func (f *MsgFile) Validate() error
+### gpscmd.go structure
 
-// TaggedMsgs returns messages for the given tags.
-// The returned any is a typed slice: []LineMsg, []BinaryMsg, or []NMEAMsg.
-// All selected messages must have the same type.
-func (f *MsgFile) TaggedMsgs(tags []string) (any, error)
-```
+The `run()` function handles both config mode and message file mode:
+- Load message file in `Cmd()` before opening connection
+- Branch after `startScan()`: call `runMsgs()` if message file provided, else `runConfig()`
+- Shared cleanup: capture phase, stop scanner, wait for goroutines
 
 ### Response display
 
@@ -364,45 +275,36 @@ Binary messages do not display responses (pass nil responsePrinter).
 
 ## Implementation steps
 
-### Step 1: Basic line messages
+### Step 1: Basic line messages (done)
 
 **Files:**
-- `internal/gpscmd/msgfile.go` - new file with `LineMsg`, `MsgFile` (Line only), `LoadMsgFile`, `TaggedMsgs`
+- `internal/gpscmd/msgfile.go` - `LineMsg`, `MsgFile`, `LoadMsgFile`, `Validate`, `TaggedLineMsgs`, `LineMsgsToRaw`
 - `internal/gpscmd/msgfile_test.go` - parsing tests
-- `internal/gpscmd/gpsflags.go` - add `-m`/`--msg-file` flag
-- `internal/gpscmd/gpscmd.go` - add `runLineMsgs()`, `runRawMsgs()`, branch on `-m`
+- `internal/gpscmd/gpsflags.go` - `-m`/`--msg-file` flag
+- `internal/gpscmd/gpscmd.go` - `runMsgs()`, `runRawMsgs()`, `runConfig()`
 
-**Details:**
-- `MsgFile` initially has only `Line []LineMsg`
-- `TaggedMsgs(tags)` ignores tags for now, returns `[]LineMsg`
-- Line framing: append `"\r\n"` (hardcoded initially)
-- `runLineMsgs([]LineMsg)` converts to `[]rawMsg` and calls `runRawMsgs()`
+**Done:**
+- `LineMsg` with pointer fields for optional values
+- `Default.Line` with built-in default EOL `"\r\n"`
+- `TaggedLineMsgs(tags)` filters by tag and applies defaults
+- `run()` branches after `startScan()` based on whether message file provided
+- Message file loaded and validated in `Cmd()` before opening connection
 
-**Tests:**
-- Table-driven tests in `msgfile_test.go`
-- Each test case: TOML input string, expected `[]rawMsg` output
-- Compare using `reflect.DeepEqual`
-
-### Step 2: Response display
+### Step 2: Response display (done)
 
 **Files:**
-- `internal/gpscmd/response.go` - new file with `responsePrinter`
-- `internal/gpscmd/response_test.go` - tests
+- `internal/gpscmd/gpscmd.go` - `responsePrinter` type and methods
 
 **Details:**
-- Update `runMsgs()` to read packets from pCh during delays
-- Pass `responsePrinter` to `keepReading` for capture phase
+- `responsePrinter` handles displaying text responses from the receiver
+- `runMsgs()` reads packets from pCh during delays via `sendMsg()`
+- `responsePrinter` passed to `keepReading` for capture phase
 
-### Step 3: Defaults and EOL
+### Step 3: Defaults and EOL (done)
 
-**Details:**
-- Add `Default.Line` to `MsgFile`
-- Implement field-by-field defaulting in `TaggedMsgs()`
-- Add `EOL` field to `LineMsg`
-- Built-in default for EOL is `"\r\n"`
-- Validate `Default.Line.Text` is empty
+Implemented in Step 1.
 
-### Step 4: Binary messages
+### Step 4: Binary messages (done)
 
 **Details:**
 - Add `BinaryMsg` type with `Hex`, `Delay`, `Tag`
@@ -412,7 +314,7 @@ Binary messages do not display responses (pass nil responsePrinter).
 - Make `LineMsg` and `BinaryMsg` implement `UserMsg` interface
 - At this stage: file must contain only one type (all line or all binary)
 
-### Step 5: Tags
+### Step 5: Tags (done)
 
 **Files:**
 - `internal/gpscmd/gpsflags.go` - add `-t`/`--tag` flag
@@ -422,6 +324,7 @@ Binary messages do not display responses (pass nil responsePrinter).
 - `TaggedMsgs(tags)` filters by tags, preserving order from tags argument
 - Validate: all messages for each tag have same type
 - Return typed slice (`[]LineMsg` or `[]BinaryMsg`) to control response display
+- Add tests to msgfile_test.go
 
 ### Step 6: NMEA messages
 
@@ -458,15 +361,14 @@ Binary messages do not display responses (pass nil responsePrinter).
 
 ## File changes summary
 
-| File | Change |
-|------|--------|
-| `internal/gpscmd/msgfile.go` | New: types, parsing, TaggedMsgs, validation |
-| `internal/gpscmd/msgfile_test.go` | New: unit tests |
-| `internal/gpscmd/response.go` | New: response display |
-| `internal/gpscmd/response_test.go` | New: tests |
-| `internal/gpscmd/gpsflags.go` | Add `-m` and `-t` flags |
-| `internal/gpscmd/gpscmd.go` | Add `runMsgs()`, branch on `-m` |
-| `internal/gpscmd/pack.go` | New: pack format encoding (Step 7) |
+| File | Change | Status |
+|------|--------|--------|
+| `internal/gpscmd/msgfile.go` | Types, parsing, TaggedLineMsgs, validation | done |
+| `internal/gpscmd/msgfile_test.go` | Unit tests | done |
+| `internal/gpscmd/gpsflags.go` | `-m` flag | done |
+| `internal/gpscmd/gpscmd.go` | `runMsgs()`, `runConfig()`, `runRawMsgs()`, `responsePrinter` | done |
+| `internal/gpscmd/gpsflags.go` | `-t` flag | done |
+| `internal/gpscmd/pack.go` | Pack format encoding (Step 7) | |
 
 ## Dependencies
 

@@ -58,6 +58,18 @@ func ErrPrintln(progName string, arg any) {
 	fmt.Fprintln(os.Stderr, progName+":", arg)
 }
 
+// ErrPrintlnWithDetail prints an error and any additional detail from fmt.Stringer.
+// Some libraries (like go-toml) provide more detail via String() than Error().
+func ErrPrintlnWithDetail(progName string, err error) {
+	ErrPrintln(progName, err)
+	if s, ok := err.(fmt.Stringer); ok {
+		detail := s.String()
+		if detail != "" && detail != err.Error() {
+			fmt.Fprintln(os.Stderr, detail)
+		}
+	}
+}
+
 func CancelOnSignal(ctx context.Context, lg *slog.Logger) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(ctx)
 	sig := make(chan os.Signal, 1)

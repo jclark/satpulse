@@ -117,13 +117,6 @@ func openConfig(paths []string) (*os.File, error) {
 	return nil, fmt.Errorf("cannot open any of the configuration files: %s", strings.Join(paths, ", "))
 }
 
-func configErrorDetail(err error) string {
-	if s, ok := err.(fmt.Stringer); ok {
-		return s.String()
-	}
-	return ""
-}
-
 func readConfig(r io.Reader) (*Config, error) {
 	cfg := defaultConfig()
 	err := toml.NewDecoder(r).DisallowUnknownFields().Decode(cfg)
