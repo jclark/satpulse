@@ -1,5 +1,7 @@
 # GPS message extensibility using TOML
 
+Part of #200.
+
 We want to use TOML because our config file is in TOML format.
 YAML will be too complex for our user base.
 Challenge is to find a way to express things in TOML that is
