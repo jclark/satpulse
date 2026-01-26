@@ -121,6 +121,11 @@ SatPulse has a layered Go architecture:
 - Supports arm64 and amd64 architectures
 - Separate build system for
 
+## Git Usage
+
+- Never use `git add -A` or `git add .` - these add untracked files which may include test data or local files
+- Use `git add -u` to stage modified/deleted tracked files, then add new files explicitly by name
+
 ## Development Environment
 
 System testing uses Ansible playbooks in `systest/`.
