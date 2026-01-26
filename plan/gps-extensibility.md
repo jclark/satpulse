@@ -1,8 +1,15 @@
-# GPS configuration extensibility
+# GPS message extensibility using TOML
 
-This is issue #200.
+We want to use TOML because our config file is in TOML format.
+YAML will be too complex for our user base.
+Challenge is to find a way to express things in TOML that is
+- simple to understand
+- reasonably convenient to write
+- can be typed properly
 
-Allow users to extend GPS configuration beyond what satpulsetool natively supports.
+Key ideas:
+- use tag key to name things, rather than naming things using TOML table names
+- instead using TOML table names for type of message (thus ensuring things are well typed)
 
 ## Motivation
 
@@ -12,370 +19,457 @@ Allow users to extend GPS configuration beyond what satpulsetool natively suppor
 - only UBX and Unicore protocols are currently supported; adding new protocols requires significant work
 - technical users are comfortable reading their receiver's manual and constructing exact commands
 
-## Stage 1: Fire-and-forget message types
-
-Stage 1 provides simple message sending without response validation. Users can send raw bytes or line-based commands with automatic framing. The tool displays any responses received but doesn't programmatically verify success.
-
-### Design
-
-#### Message file format
-
-Messages are defined in a TOML file with named sections. Each section defines a named message; the section name becomes the message identifier used with `-m`.
-
-Each message has a `type` key that determines the valid keys in the section and the framing applied:
-
-```toml
-[has]
-type = "crlf"
-line = "CONFIG PPP ENABLE E6-HAS"
-```
-
-**Types:**
-
-| Type | Keys | Framing |
-|----------|------|---------|
-| `"raw"` | `bin` or `ascii` | none |
-| `"crlf"` | `line` | adds `\r\n` |
-| `"cr"` | `line` | adds `\r` |
-| `"lf"` | `line` | adds `\n` |
-| `"nmea"` | `data` | prepends `$` if missing; computes checksum (`*XX`); appends `\r\n` |
-| `"multi"` | `msgs` | n/a (expands to referenced messages) |
-
-**Content keys by type:**
-
-| Key | Description |
-|-----|-------------|
-| `line` | ASCII string (for `crlf`, `cr`, `lf` types) |
-| `data` | NMEA sentence content after `$` (for `nmea` type) |
-| `ascii` | Exact byte sequence as ASCII string (for `raw` type) |
-| `bin` | Exact byte sequence as hex string (for `raw` type) |
-| `msgs` | Array of message names (for `multi` type) |
-
-**Common options:**
-
-| Key | Description |
-|-----|-------------|
-| `delay` | Delay in seconds after sending this message before sending the next (default: 0) |
-
-**Defaults:**
-
-The special `[default]` section sets default values for all messages:
-
-```toml
-[default]
-type = "nmea"
-
-[gps-bds]
-data = "PCAS04,3"
-```
-
-Per-message options override the defaults. Only `type` and `delay` are allowed in `[default]`.
-
-#### CLI interface
+## CLI interface
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 \
-    -f um980.toml \
-    -m has,rtk-base
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980.toml -t setup
 ```
 
 **New flags:**
 
 | Flag | Description |
 |------|-------------|
-| `-f`, `--msg-file PATH` | Path to TOML file containing message definitions |
-| `-m`, `--msg NAME,...` | Comma-separated list of messages to send (in order) |
+| `-m`, `--msg-file PATH` | Path to TOML file containing message definitions |
+| `-t`, `--tag NAME,...` | Comma-separated list of tags to send (in order); default is empty string |
 
 **Constraints:**
 
-The `-m` flag cannot be combined with other config flags like `--gnss`, `--pps`, etc. This avoids issues with `--save` semantics and ambiguity about the relative ordering of manual messages versus higher-level configuration.
+The `-m` flag cannot be combined with config flags like `--gnss`, `--pps`, `--save`, etc. This avoids ambiguity about ordering of manual messages versus higher-level configuration.
 
 When `-m` is used without `--capture`, the tool defaults to `--capture 2` to show receiver responses.
 
-### Examples
+## TOML message file
 
-**UM980 message file:**
+Following is user-facing explanation of how TOML message file works.
 
-```toml
-# um980.toml
-[default]
-type = "crlf"
+### Message types
 
-[has]
-line = "CONFIG PPP ENABLE E6-HAS"
+| Type | Keys | Framing |
+|------|------|---------|
+| `[[line]]` | `text`, `eol`, `delay`, `tag` | appends eol (default `\r\n`) |
+| `[[binary]]` | `hex`, `delay`, `tag` | none |
+| `[[nmea]]` | `text`, `delay`, `tag` | prepends `$`, appends `*XX\r\n` checksum |
 
-[signalgroup2]
-line = "CONFIG SIGNALGROUP 2"
-```
+### Simplest case
 
-**Enable Galileo HAS:**
-
-```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -f um980.toml -m has
-```
-
-**Multiple messages in sequence:**
-
-```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 \
-    -f um980.toml \
-    -m has,signalgroup2
-```
-
-**CASIC receiver with NMEA-style commands:**
-
-This example enables GPS and BeiDou on a CASIC-based receiver using the NMEA-style command format with automatic checksum computation.
+Example file called um980-ppp.toml
 
 ```toml
-# casic.toml
-[default]
-type = "nmea"
+[[line]]
+text = "CONFIG PPP CONVERGE 10 20"
 
-[gps-bds]
-data = "PCAS04,3"
+[[line]]
+text = "CONFIG PPP ENABLE E6-HAS"
 ```
 
-```
-satpulsetool gps -d /dev/ttyUSB0 -s 9600 -f casic.toml -m gps-bds
-```
+This specifies two messages each of which are lines.
+Using `-m um980-ppp.toml` will send all the messages (since all have empty tag, which is the default for `-t`).
+Each line will be terminated with CR/LF.
 
-**Raw binary message:**
+### Delay key
 
 ```toml
-# raw-example.toml
-[wake]
-type = "raw"
-bin = "B562060001"
+[[line]]
+text = "CONFIG PPP CONVERGE 10 20"
+delay = 0.1
 
-[text-cmd]
-type = "raw"
-ascii = "HELLO"
+[[line]]
+text = "CONFIG PPP ENABLE E6-HAS"
 ```
 
-**Multi-message grouping:**
+This will add delay 0.1 seconds after sending the first line.
+
+### Defaults
 
 ```toml
-# multi-example.toml
-[default]
-type = "crlf"
+[default.line]
+delay = 0.1
 
-[enable-has]
-line = "CONFIG PPP ENABLE E6-HAS"
+[[line]]
+text = "CONFIG PPP CONVERGE 10 20"
 
-[enable-sg2]
-line = "CONFIG SIGNALGROUP 2"
-
-[full-setup]
-type = "multi"
-msgs = ["enable-has", "enable-sg2"]
+[[line]]
+text = "CONFIG PPP ENABLE E6-HAS"
 ```
 
+This will add a delay of 0.1 seconds after every line.
+
+### Line terminator
+
+`eol` key is a string specifying the line terminator.
+
+```toml
+[[line]]
+text = "CONFIG PPP CONVERGE 10 20"
+eol = "\n"
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -f multi-example.toml -m full-setup
+
+This is usually specified in default.line table:
+
+```toml
+[default.line]
+eol = "\n"
+
+[[line]]
+text = "CONFIG PPP CONVERGE 10 20"
+
+[[line]]
+text = "CONFIG PPP ENABLE E6-HAS"
 ```
 
-### Implementation
+You can use `eol = ""` to send plain text with no line terminator.
 
-These types don't require protocol-specific response handling. There is no ACK/NAK, retries, or programmatic success/failure determination. `satpulsetool gps` parses the TOML file, constructs the framed bytes for each message, writes them to the serial port with appropriate delays, and displays any responses received.
+### Binary
 
-Response display uses the existing `gpsio.Scan` infrastructure to read packets. Recognized packets (NMEA, etc.) are displayed in their native format; unrecognized data is shown as ASCII lines. This gives users some visibility into receiver responses.
+```toml
+[[binary]]
+hex = "B562068A0900000100000100321001DEED"
+```
 
-This stage is self-contained within `satpulsetool gps` and doesn't require changes to the `ConfigProtocol` or `Configurator` interfaces.
+Hex string must have even length. Whitespace within the hex string is ignored.
 
-#### Implementation steps
+### NMEA
 
-**1. Add `internal/gpscmd/msgfile.go`**
+```toml
+[[nmea]]
+text = "PCAS04,3"
+```
 
-New file for TOML message file parsing and message construction. Keeps parsing/building separate from execution.
+This is like `line`, except:
+- leading `$` is prepended if missing
+- trailing `*XX` checksum is computed and appended if missing
+- CRLF is always appended
+
+Validates result using `internal/nmea` and returns error if invalid.
+
+### Tags
+
+Call the file `um980.toml`:
+
+```toml
+[[line]]
+text = "CONFIG PPP CONVERGE 10 20"
+tag = "ppp"
+
+[[line]]
+text = "CONFIG PPP ENABLE E6-HAS"
+tag = "ppp"
+
+[[line]]
+text = "SIGNALGROUP 1"
+tag = "signalgroup1"
+
+[[line]]
+text = "SIGNALGROUP 2"
+tag = "signalgroup2"
+```
+
+Use `-m um980.toml -t ppp` to send messages with tag ppp.
+
+Use `-m um980.toml -t signalgroup1,ppp` to send messages with tag signalgroup1 and then messages with tag ppp.
+
+Default tag can be set:
+
+```toml
+[default.line]
+tag = "setup"
+
+[[line]]
+text = "CONFIG PPP CONVERGE 10 20"
+
+[[line]]
+text = "CONFIG PPP ENABLE E6-HAS"
+
+[[line]]
+text = "SIGNALGROUP 1"
+
+[[line]]
+text = "SIGNALGROUP 2"
+tag = "signalgroup2"
+```
+
+If there is no default tag, messages have the empty tag `""` by default.
+
+`-t foo,,bar` will send messages with foo tag, then empty tag, then bar tag.
+
+The default value for `-t` option is the empty string `""`.
+
+**Type homogeneity requirement:**
+
+All messages with the same tag must have the same type. All messages selected by a single `-t` option must also have the same type. This is because response display differs by type: line/nmea messages show text responses; binary messages don't display responses.
+
+
+### Protocol specific message types
+
+```toml
+[[ubx]]
+tag=gps-l5-health
+class= 0x06
+id = 0x8A
+pack=U1U1U2U4U1
+payload=[0, 1, 0, 0x10320001, 1]
+```
+
+## Implementation
+
+### Go types
 
 ```go
-package gpscmd
-
-type msgType string
-
-const (
-    msgTypeRaw   msgType = "raw"
-    msgTypeCRLF  msgType = "crlf"
-    msgTypeCR    msgType = "cr"
-    msgTypeLF    msgType = "lf"
-    msgTypeNMEA  msgType = "nmea"
-    msgTypeMulti msgType = "multi"
-)
-
-type msgDef struct {
-    Type     msgType
-    Line     string
-    Data     string
-    ASCII    string   `toml:"ascii"`
-    Bin      string   `toml:"bin"`
-    Msgs     []string `toml:"msgs"`
-    Delay    float64
+// LineMsg represents a [[line]] entry or [default.line].
+type LineMsg struct {
+	Text  string  `toml:"text"`
+	EOL   string  `toml:"eol"`
+	Delay float64 `toml:"delay"`
+	Tag   string  `toml:"tag"`
 }
 
-type msgFile struct {
-    defs map[string]*msgDef
+// BinaryMsg represents a [[binary]] entry or [default.binary].
+type BinaryMsg struct {
+	Hex   string  `toml:"hex"`
+	Delay float64 `toml:"delay"`
+	Tag   string  `toml:"tag"`
 }
 
-type BuiltMsg struct {
-    Name  string
-    Data  []byte
-    Delay time.Duration
+// NMEAMsg represents an [[nmea]] entry or [default.nmea].
+type NMEAMsg struct {
+	Text  string  `toml:"text"`
+	Delay float64 `toml:"delay"`
+	Tag   string  `toml:"tag"`
 }
 
-func loadMsgFile(path string) (*msgFile, error)
-func (m *msgDef) build() ([]byte, error)
-func (f *msgFile) BuildSequence(names []string) ([]BuiltMsg, error)
+// MsgFile represents a parsed message file.
+type MsgFile struct {
+	Default struct {
+		Line   LineMsg
+		Binary BinaryMsg
+		NMEA   NMEAMsg
+	}
+	Line   []LineMsg
+	Binary []BinaryMsg
+	NMEA   []NMEAMsg
+}
 ```
 
-**2. TOML parsing**
+Key points:
+- Per-protocol packages (like ubx) define their own message types added to MsgFile
+- Same type for default and messages; default is single, messages are slice
+- Validation: `Default.Line.Text` must be empty; each `Line[i].Text` must be non-empty
+- The ubx package does not import gpscmd; we rely on structural typing
 
-Use `github.com/pelletier/go-toml/v2`. Parse into `map[string]msgDef`, extract the special `[default]` section, and apply defaults to each definition. Pragmatic constraint: only `type` and `delay` are allowed in `[default]`. Merge rule: defaults only fill unset fields; per-message values always take precedence. Validate required keys per type.
+### Loading and defaulting
 
-**3. Message building**
-
-- `raw`: require exactly one of `bin` or `ascii`; `bin` is an even-length hex string (no spaces, no `0x` prefixes) to decode, and `ascii` is used as-is
-- `crlf`/`cr`/`lf`: append appropriate line ending to `line`
-- `nmea`: prepend `$` if missing, compute checksum via `nmea.Checksum`, format as `$data*XX\r\n`
-- `multi`: expand recursively with cycle detection
-
-**4. Add CLI flags to `gpsflags.go`**
-
-Add `msgFilePath` and `msgNames` to `flagVars`. Add `--msg-file`/`-f` and `--msg`/`-m` flags. When `-m` is used without `--capture`, default to `--capture 2`.
-
-In message mode (`-m` specified), only connection and logging flags are allowed:
-- Allowed: `-d`/`--serial-device`, `-s`/`--device-speed`, `--socket`, `--packet-log`, `--capture`
-- Rejected: any flag that mutates receiver config (`configChanged`) or triggers actions (`--save`, `--save-all`, `--reset`, `--reload`, `--factory-reset`, `--show-config`)
-
-Use `flags.Changed()` to detect if any disallowed flag was explicitly set. The existing `configChanged` variable already tracks config-mutating flags.
-
-**5. Update `gpscmd.go`**
-
-Add `runMsgs()` to handle the `-m` branch:
+Follow the pattern from `internal/daemon/config.go` and `internal/daemon/daemon.go`:
 
 ```go
-func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, msgs []BuiltMsg) error
+func defaultMsgFile() *MsgFile {
+	mf := new(MsgFile)
+	mf.Default.Line.EOL = "\r\n"
+	return mf
+}
+
+func LoadMsgFile(path string) (*MsgFile, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	mf := defaultMsgFile()
+	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(mf)
+	if err != nil {
+		return nil, err
+	}
+	return mf, nil
+}
+
+// msgFileErrorDetail extracts detailed error info from TOML parsing errors.
+func msgFileErrorDetail(err error) string {
+	if s, ok := err.(fmt.Stringer); ok {
+		return s.String()
+	}
+	return ""
+}
 ```
 
-For each message: log the name, write to port, sleep for delay. Response display is handled by `--capture` (issue #197).
+In `gpscmd.go`, report errors with detail like daemon does:
 
-**6. Tests**
+```go
+mf, err := LoadMsgFile(path)
+if err != nil {
+	s := msgFileErrorDetail(err)
+	if s != "" {
+		fmt.Fprintln(os.Stderr, s)
+	}
+	return err
+}
+```
 
-Add `msgfile_test.go` with tests for parsing, building, multi expansion, and cycle detection.
+Pre-fill `Default.Line.EOL = "\r\n"` before decoding. TOML only overwrites fields present in the file.
 
-#### File changes
+For each message, apply defaults from `Default` field-by-field:
+- For `string` fields: use default if message field is empty (`""`)
+- For `float64` fields: use default if message field is zero (`0`)
+
+### rawMsg and UserMsg interface
+
+```go
+// rawMsg is an internal type for sending messages.
+type rawMsg struct {
+	bytes []byte
+	delay time.Duration
+}
+
+// UserMsg is implemented by LineMsg, BinaryMsg, NMEAMsg to convert to rawMsg.
+type UserMsg interface {
+	GetBytes() ([]byte, error)
+	GetTag() string
+	GetDelay() float64
+}
+```
+
+### Core functions
+
+```go
+// LoadMsgFile reads and parses a TOML message file.
+func LoadMsgFile(path string) (*MsgFile, error)
+
+// Validate checks that the message file is valid.
+func (f *MsgFile) Validate() error
+
+// TaggedMsgs returns messages for the given tags.
+// The returned any is a typed slice: []LineMsg, []BinaryMsg, or []NMEAMsg.
+// All selected messages must have the same type.
+func (f *MsgFile) TaggedMsgs(tags []string) (any, error)
+```
+
+### Response display
+
+For line and nmea messages, display text responses from the receiver.
+
+```go
+type responsePrinter struct {
+	w       io.Writer
+	lineBuf []byte
+}
+
+func (rp *responsePrinter) HandlePacket(pkt scan.Packet)
+func (rp *responsePrinter) Flush()
+```
+
+Packet handling:
+- **Unrecognized packets:** Accumulate in line buffer. Print on EOL (LF or CRLF). Clear buffer on non-printable chars (outside 0x20-0x7E, tab, CR, LF).
+- **Recognized packets:** Print if all printable, otherwise skip.
+- **NMEA (when MsgTypeNMEA):** Skip normal GNSS talker sentences; show proprietary responses.
+
+Binary messages do not display responses (pass nil responsePrinter).
+
+## Implementation steps
+
+### Step 1: Basic line messages
+
+**Files:**
+- `internal/gpscmd/msgfile.go` - new file with `LineMsg`, `MsgFile` (Line only), `LoadMsgFile`, `TaggedMsgs`
+- `internal/gpscmd/msgfile_test.go` - parsing tests
+- `internal/gpscmd/gpsflags.go` - add `-m`/`--msg-file` flag
+- `internal/gpscmd/gpscmd.go` - add `runLineMsgs()`, `runRawMsgs()`, branch on `-m`
+
+**Details:**
+- `MsgFile` initially has only `Line []LineMsg`
+- `TaggedMsgs(tags)` ignores tags for now, returns `[]LineMsg`
+- Line framing: append `"\r\n"` (hardcoded initially)
+- `runLineMsgs([]LineMsg)` converts to `[]rawMsg` and calls `runRawMsgs()`
+
+**Tests:**
+- Table-driven tests in `msgfile_test.go`
+- Each test case: TOML input string, expected `[]rawMsg` output
+- Compare using `reflect.DeepEqual`
+
+### Step 2: Response display
+
+**Files:**
+- `internal/gpscmd/response.go` - new file with `responsePrinter`
+- `internal/gpscmd/response_test.go` - tests
+
+**Details:**
+- Update `runMsgs()` to read packets from pCh during delays
+- Pass `responsePrinter` to `keepReading` for capture phase
+
+### Step 3: Defaults and EOL
+
+**Details:**
+- Add `Default.Line` to `MsgFile`
+- Implement field-by-field defaulting in `TaggedMsgs()`
+- Add `EOL` field to `LineMsg`
+- Built-in default for EOL is `"\r\n"`
+- Validate `Default.Line.Text` is empty
+
+### Step 4: Binary messages
+
+**Details:**
+- Add `BinaryMsg` type with `Hex`, `Delay`, `Tag`
+- Add `Binary []BinaryMsg` and `Default.Binary` to `MsgFile`
+- Hex decoding: strip whitespace, validate even length and hex chars
+- `runBinaryMsgs([]BinaryMsg)` converts to `[]rawMsg` and calls `runRawMsgs()` with nil responsePrinter
+- Make `LineMsg` and `BinaryMsg` implement `UserMsg` interface
+- At this stage: file must contain only one type (all line or all binary)
+
+### Step 5: Tags
+
+**Files:**
+- `internal/gpscmd/gpsflags.go` - add `-t`/`--tag` flag
+
+**Details:**
+- Add `Tag` field defaulting
+- `TaggedMsgs(tags)` filters by tags, preserving order from tags argument
+- Validate: all messages for each tag have same type
+- Return typed slice (`[]LineMsg` or `[]BinaryMsg`) to control response display
+
+### Step 6: NMEA messages
+
+**Details:**
+- Add `NMEAMsg` type with `Text`, `Delay`, `Tag`
+- Add `NMEA []NMEAMsg` and `Default.NMEA` to `MsgFile`
+- Build: prepend `$` if missing, compute/append `*XX` checksum if missing, append `\r\n`
+- Validate with `internal/nmea`
+- Update `responsePrinter` for NMEA: use `nmea.CheckSyntax()` to get `SentenceSyntaxFlags`, display unless `IsValidGNSSTalkerNMEA()` is true
+
+### Step 7: UBX/CASIC messages (fire-and-forget)
+
+**Files:**
+- `internal/ubx/bin/common.go` - add `const Endian = binary.LittleEndian`
+- `internal/casic/bin/common.go` - add `const Endian = binary.LittleEndian`
+- `internal/gpscmd/pack.go` - new file
+- `internal/gpscmd/pack_test.go` - tests
+
+**Details:**
+- `ubx/bin` and `casic/bin` own endianness; gpscmd uses `bin.Endian` for encoding
+- `Pack(format string, values []any) ([]byte, error)` in gpscmd
+- Specifiers: U1, U2, U4, I1, I2, I4, X1, X2, X4, R4, R8
+- `UBXLikeMsg` struct in gpscmd with fields: `Class`, `ID`, `Pack`, `Payload`, `Delay`, `Tag`
+- `UBXMsg` and `CASMsg` embed `UBXLikeMsg`; each implements `GetBytes()` calling its `bin.PackMsg()`
+- Build packet using `bin.PackMsg(mid, payload)` (already exists in both ubx/bin and casic/bin)
+- Fire-and-forget (no ACK/NAK handling)
+
+### Step 8: UBX Configurator integration
+
+**Details:**
+- Add method to `ConfigProtocol` for pre-built packets
+- Use existing `Configurator` for ACK/NAK, retries, timeouts
+- Update `runMsgs()` to use Configurator for protocol-specific messages
+
+## File changes summary
 
 | File | Change |
 |------|--------|
-| `internal/gpscmd/msgfile.go` | New: parsing and building |
+| `internal/gpscmd/msgfile.go` | New: types, parsing, TaggedMsgs, validation |
 | `internal/gpscmd/msgfile_test.go` | New: unit tests |
-| `internal/gpscmd/gpsflags.go` | Add `-f` and `-m` flags |
-| `internal/gpscmd/gpscmd.go` | Add `runMsgs()`, branch on `-m` flag |
+| `internal/gpscmd/response.go` | New: response display |
+| `internal/gpscmd/response_test.go` | New: tests |
+| `internal/gpscmd/gpsflags.go` | Add `-m` and `-t` flags |
+| `internal/gpscmd/gpscmd.go` | Add `runMsgs()`, branch on `-m` |
+| `internal/gpscmd/pack.go` | New: pack format encoding (Step 7) |
 
-#### Dependencies
+## Dependencies
 
-- Issue #197 (`--capture` flag) must be implemented first
-- `github.com/pelletier/go-toml/v2` (already in go.mod)
-- `internal/nmea.Checksum` for NMEA checksum
-
-## Stage 2: Protocol-specific types with ACK/NAK
-
-Stage 2 extends the message file format with types that require response validation: UBX, CASIC, and Quectel PQTM protocols. These types leverage the existing `Configurator` infrastructure for ACK/NAK processing, retries, and timeouts.
-
-### Design
-
-Stage 2 adds three new message types to the format defined in Stage 1:
-
-| Type | Keys | Framing | Response |
-|----------|------|---------|----------|
-| `"ubx"` | `class`, `id`, `pack`, `payload` | UBX framing (sync bytes, length, checksums); little-endian | expects ACK/NAK |
-| `"cas"` | `class`, `id`, `pack`, `payload` | CASIC framing; payload must be multiple of 4 bytes | expects ACK/NAK |
-| `"pqtm"` | `data` | prepends `$PQTM`; computes checksum; appends `\r\n` | expects `$PQTM{cmd},OK*XX` |
-
-**Additional content keys:**
-
-| Key | Description |
-|-----|-------------|
-| `class` | Message class (for `ubx`, `cas` types) |
-| `id` | Message ID (for `ubx`, `cas` types) |
-| `pack` | Pack format string, e.g. `"U1U2U4"` (for `ubx`, `cas` types) |
-| `payload` | Array of values to pack (for `ubx`, `cas` types) |
-| `data` | Content after `$PQTM` (for `pqtm` type) |
-
-**Pack specifiers** (following u-blox notation):
-- `U1`, `U2`, `U4` - unsigned integer (1, 2, 4 bytes)
-- `I1`, `I2`, `I4` - signed integer
-- `X1`, `X2`, `X4` - bitfield (same encoding as unsigned)
-- `R4`, `R8` - IEEE 754 float (4 bytes) and double (8 bytes)
-
-### Examples
-
-**u-blox UBX message file:**
-
-This example sends a UBX-CFG-VALSET message to use GPS L5 signals regardless of health status. (Note: satpulsetool already does this automatically when configuring bands with `--band`, but it illustrates the UBX format.)
-
-```toml
-# ublox.toml
-[default]
-type = "ubx"
-
-[gps-l5-health-override]
-class = 0x06
-id = 0x8A
-pack = "U1U1U2U4U1"
-payload = [0, 1, 0, 0x10320001, 1]
-```
-
-```
-satpulsetool gps -d /dev/ttyACM0 -s 9600 -f ublox.toml -m gps-l5-health-override
-```
-
-**Quectel PQTM message file:**
-
-This example configures PPS output on a Quectel LC29H. The tool expects a `$PQTMCFGPPS,OK*XX` response.
-
-```toml
-# quectel.toml
-[default]
-type = "pqtm"
-
-[pps]
-data = "CFGPPS,W,1,1,100,1,1,0"
-```
-
-```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -f quectel.toml -m pps
-```
-
-**Mixed message file:**
-
-A single file can contain both fire-and-forget and ACK/NAK message types:
-
-```toml
-# mixed.toml
-[nmea-reset]
-type = "nmea"
-data = "PMTK104"
-
-[ubx-config]
-type = "ubx"
-class = 0x06
-id = 0x8A
-pack = "U1U1U2U4U1"
-payload = [0, 1, 0, 0x10320001, 1]
-```
-
-### Implementation
-
-These types need the existing `Configurator` infrastructure for ACK/NAK processing, retries, and timeouts. A new method on `ConfigProtocol` accepts pre-built packets and returns a `Configurator` that manages them. The UBX implementation determines response expectations (ackable or not) by inspecting the packet's class/id.
-
-This stage requires:
-
-1. **Pack format parser**: Convert format strings like `"U1U2U4"` and value arrays into binary payloads
-2. **Protocol framing**: Wrap payloads with sync bytes, length, and checksums
-3. **Configurator integration**: Use existing retry/timeout logic for ACK/NAK handling
-
-#### Open design issues
-
-##### Customizable response handling for line types
-
-For line-based types (`crlf`, `cr`, `lf`, `nmea`), consider adding optional keys to expect a response, e.g., a line matching a regexp. Currently these are fire-and-forget.
+- `github.com/pelletier/go-toml/v2` (already in go.mod, used by daemon)
+- `internal/nmea` for NMEA checksum and validation
+- Issue #197 (`--capture` flag) for response display
