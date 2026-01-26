@@ -603,15 +603,6 @@ tag = "bar"
 				{bytes: []byte("LINE3\r\n"), delay: 0, tag: "bar", index: 0},
 			},
 		},
-		{
-			name: "no matching tag",
-			toml: `[[line]]
-text = "LINE1"
-tag = "setup"
-`,
-			tags:     []string{"other"},
-			expected: nil,
-		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -624,12 +615,9 @@ tag = "setup"
 			if !ok {
 				t.Fatalf("expected []LineMsg, got %T", msgs)
 			}
-			var raw []rawMsg
-			if len(lineMsgs) > 0 {
-				raw, err = toRawMsgs(lineMsgs)
-				if err != nil {
-					t.Fatalf("toRawMsgs error: %v", err)
-				}
+			raw, err := toRawMsgs(lineMsgs)
+			if err != nil {
+				t.Fatalf("toRawMsgs error: %v", err)
 			}
 			if !reflect.DeepEqual(raw, tc.expected) {
 				t.Errorf("got %+v, expected %+v", raw, tc.expected)
@@ -757,6 +745,15 @@ hex = "AA"
 tag = "bins"
 `,
 			tags:    []string{"lines", "bins"},
+			wantErr: true,
+		},
+		{
+			name: "no matching tag fails",
+			toml: `[[line]]
+text = "LINE1"
+tag = "setup"
+`,
+			tags:    []string{"other"},
 			wantErr: true,
 		},
 	}

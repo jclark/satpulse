@@ -174,22 +174,29 @@ func (mf *MsgFile) validateDefaults() error {
 
 // TaggedMsgs returns messages for the given tags with defaults applied.
 // Returns ([]LineMsg, nil) or ([]BinaryMsg, nil) depending on message type.
-// Returns error if tags select messages of mixed types.
+// Returns error if tags select messages of mixed types or if there are no messages with the tags.
 func (mf *MsgFile) TaggedMsgs(tags []string) (any, error) {
 	if err := mf.validateDefaults(); err != nil {
 		return nil, err
 	}
 	applyDefaults(mf.Line, mf.applyLineDefaults)
 	applyDefaults(mf.Binary, mf.applyBinaryDefaults)
+	var rslt any
 	lineMsgs := filterMsgs(mf.Line, tags)
+	if len(lineMsgs) > 0 {
+		rslt = lineMsgs
+	}
 	binaryMsgs := filterMsgs(mf.Binary, tags)
-	if len(lineMsgs) > 0 && len(binaryMsgs) > 0 {
-		return nil, fmt.Errorf("selected tags have mixed message types (line and binary)")
-	}
 	if len(binaryMsgs) > 0 {
-		return binaryMsgs, nil
+		if rslt != nil {
+			return nil, fmt.Errorf("selected tags have mixed message types (line and binary)")
+		}
+		rslt = binaryMsgs
 	}
-	return lineMsgs, nil
+	if rslt == nil {
+		return nil, fmt.Errorf("no messages found for tags: %v", tags)
+	}
+	return rslt, nil
 }
 
 func applyDefaults[T any, PT *T](msgs []T, apply func(PT)) {
