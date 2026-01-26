@@ -1,0 +1,183 @@
+# LG290P configuration messages
+# Quectel LG290P GNSS receiver
+# Default baud rate: 460800
+
+# Query firmware version
+[[nmea]]
+text = "PQTMVERNO"
+tag = "version"
+
+# Query PPS configuration
+[[nmea]]
+text = "PQTMCFGPPS,R,1"
+tag = "query-pps"
+
+# Query constellation configuration
+[[nmea]]
+text = "PQTMCFGCNST,R"
+tag = "query-gnss"
+
+# Query fix rate
+[[nmea]]
+text = "PQTMCFGFIXRATE,R"
+tag = "query-fixrate"
+
+# Query receiver mode (rover/base)
+[[nmea]]
+text = "PQTMCFGRCVRMODE,R"
+tag = "query-mode"
+
+# Query current UART config (response includes port index)
+[[nmea]]
+text = "PQTMCFGUART,R"
+tag = "query-uart"
+
+# Query protocol configuration for UART1/2/3
+[[nmea]]
+text = "PQTMCFGPROT,R,1,1"
+tag = "query-prot"
+[[nmea]]
+text = "PQTMCFGPROT,R,1,2"
+tag = "query-prot"
+[[nmea]]
+text = "PQTMCFGPROT,R,1,3"
+tag = "query-prot"
+
+# Set PPS: 100ms pulse, only when fixed, rising edge
+# Index=1, Enable=1, Duration=100, Mode=2 (fix only), Polarity=1 (high), Reserved=0
+[[nmea]]
+text = "PQTMCFGPPS,W,1,1,100,2,1,0"
+tag = "set-pps"
+
+# Query survey-in config
+[[nmea]]
+text = "PQTMCFGSVIN,R"
+tag = "query-survey"
+
+# Survey-in: 2000 seconds, 20m accuracy
+# Mode=1 (survey-in), CFG_CNT=2000, 3D_AccLimit=20.0, ECEF_X/Y/Z=0
+[[nmea]]
+text = "PQTMCFGSVIN,W,1,2000,20.0,0,0,0"
+tag = "survey"
+
+# Save configuration to NVM
+[[nmea]]
+text = "PQTMSAVEPAR"
+tag = "save"
+
+# Factory reset: restore defaults then reboot
+[[nmea]]
+text = "PQTMRESTOREPAR"
+tag = "factory-reset"
+[[nmea]]
+text = "PQTMSRR"
+tag = "factory-reset"
+
+# Reset (reboot receiver)
+[[nmea]]
+text = "PQTMSRR"
+tag = "reset"
+
+# Use only GPS
+# GPS=1, GLONASS=0, Galileo=0, BDS=0, QZSS=0, NavIC=0
+[[nmea]]
+text = "PQTMCFGCNST,W,1,0,0,0,0,0"
+tag = "gnss-gps"
+
+# Use only Galileo
+# GPS=0, GLONASS=0, Galileo=1, BDS=0, QZSS=0, NavIC=0
+[[nmea]]
+text = "PQTMCFGCNST,W,0,0,1,0,0,0"
+tag = "gnss-gal"
+
+# Use GPS and Galileo
+# GPS=1, GLONASS=0, Galileo=1, BDS=0, QZSS=0, NavIC=0
+[[nmea]]
+text = "PQTMCFGCNST,W,1,0,1,0,0,0"
+tag = "gnss-gps-gal"
+
+# Use all constellations
+# GPS=1, GLONASS=1, Galileo=1, BDS=1, QZSS=1, NavIC=1
+[[nmea]]
+text = "PQTMCFGCNST,W,1,1,1,1,1,1"
+tag = "gnss-all"
+
+# Set baud rate to 115200 on current port
+[[nmea]]
+text = "PQTMCFGUART,W,115200"
+tag = "speed-115200"
+
+# Enable NMEA messages for satpulse (RMC, GGA, GSV at rate 1)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RMC,1"
+tag = "nmea-satpulse"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GGA,1"
+tag = "nmea-satpulse"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSV,1"
+tag = "nmea-satpulse"
+
+# Base station mode (disables NMEA, enables RTCM MSM4/1005)
+[[nmea]]
+text = "PQTMCFGRCVRMODE,W,2"
+tag = "base-station"
+
+# Rover mode (default NMEA output)
+[[nmea]]
+text = "PQTMCFGRCVRMODE,W,1"
+tag = "rover"
+
+# Query RTCM message rates
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1005"
+tag = "query-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-107X"
+tag = "query-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-108X"
+tag = "query-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-109X"
+tag = "query-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-112X"
+tag = "query-rtcm"
+
+# Disable all RTCM messages
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1005,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-107X,0,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-108X,0,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-109X,0,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-112X,0,0"
+tag = "rtcm-off"
+
+# Enable RTCM ARP message (1005)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1005,1"
+tag = "rtcm-arp"
+
+# Enable RTCM MSM messages per constellation (107X = GPS, 108X = GLO, etc.)
+# Rate=1 (every fix), Offset=0 (no time offset)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-107X,1,0"
+tag = "rtcm-msm-gps"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-108X,1,0"
+tag = "rtcm-msm-glo"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-109X,1,0"
+tag = "rtcm-msm-gal"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-112X,1,0"
+tag = "rtcm-msm-bds"
