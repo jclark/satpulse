@@ -2,6 +2,7 @@ package gpscmd
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -24,12 +25,26 @@ type LineMsg struct {
 	MsgCommon
 }
 
-func (lm *LineMsg) toRaw() rawMsg {
+func (mc *MsgCommon) delay() (time.Duration, error) {
+	if *mc.Delay < 0 {
+		return 0, errors.New("delay must not be negative")
+	}
+	return ptime.Seconds(*mc.Delay), nil
+}
+
+func (lm *LineMsg) toRaw() (rawMsg, error) {
+	if lm.Text == "" {
+		return rawMsg{}, errors.New("text must not be empty")
+	}
+	delay, err := lm.MsgCommon.delay()
+	if err != nil {
+		return rawMsg{}, err
+	}
 	return rawMsg{
 		bytes: []byte(lm.Text + *lm.EOL),
-		delay: ptime.Seconds(*lm.Delay),
+		delay: delay,
 		tag:   *lm.Tag,
-	}
+	}, nil
 }
 
 func (lm *LineMsg) getTag() string { return *lm.Tag }
@@ -40,13 +55,23 @@ type BinaryMsg struct {
 	MsgCommon
 }
 
-func (bm *BinaryMsg) toRaw() rawMsg {
-	b, _ := decodeHex(bm.Hex)
+func (bm *BinaryMsg) toRaw() (rawMsg, error) {
+	if bm.Hex == "" {
+		return rawMsg{}, errors.New("hex must not be empty")
+	}
+	b, err := decodeHex(bm.Hex)
+	if err != nil {
+		return rawMsg{}, fmt.Errorf("hex: %w", err)
+	}
+	delay, err := bm.MsgCommon.delay()
+	if err != nil {
+		return rawMsg{}, err
+	}
 	return rawMsg{
 		bytes: b,
-		delay: ptime.Seconds(*bm.Delay),
+		delay: delay,
 		tag:   *bm.Tag,
-	}
+	}, nil
 }
 
 func (bm *BinaryMsg) getTag() string { return *bm.Tag }
@@ -71,7 +96,7 @@ type rawMsg struct {
 
 // UserMsg is the interface for message types that can be converted to rawMsg.
 type UserMsg interface {
-	toRaw() rawMsg
+	toRaw() (rawMsg, error)
 	getTag() string
 }
 
@@ -104,42 +129,6 @@ func LoadMsgFile(path string) (*MsgFile, error) {
 	return mf, nil
 }
 
-// Validate checks that the message file is valid.
-func (mf *MsgFile) Validate() error {
-	if mf.Default.Line.Text != "" {
-		return fmt.Errorf("default.line.text must be empty")
-	}
-	for i, lm := range mf.Line {
-		if lm.Text == "" {
-			return fmt.Errorf("line[%d].text must not be empty", i)
-		}
-		if lm.Delay != nil && *lm.Delay < 0 {
-			return fmt.Errorf("line[%d].delay must not be negative", i)
-		}
-	}
-	if mf.Default.Line.Delay != nil && *mf.Default.Line.Delay < 0 {
-		return fmt.Errorf("default.line.delay must not be negative")
-	}
-	if mf.Default.Binary.Hex != "" {
-		return fmt.Errorf("default.binary.hex must be empty")
-	}
-	for i, bm := range mf.Binary {
-		if bm.Hex == "" {
-			return fmt.Errorf("binary[%d].hex must not be empty", i)
-		}
-		if _, err := decodeHex(bm.Hex); err != nil {
-			return fmt.Errorf("binary[%d].hex: %w", i, err)
-		}
-		if bm.Delay != nil && *bm.Delay < 0 {
-			return fmt.Errorf("binary[%d].delay must not be negative", i)
-		}
-	}
-	if mf.Default.Binary.Delay != nil && *mf.Default.Binary.Delay < 0 {
-		return fmt.Errorf("default.binary.delay must not be negative")
-	}
-	return nil
-}
-
 // decodeHex decodes a hex string, ignoring whitespace.
 func decodeHex(s string) ([]byte, error) {
 	s = strings.ReplaceAll(s, " ", "")
@@ -167,10 +156,29 @@ func (mf *MsgFile) applyBinaryDefaults(bm *BinaryMsg) {
 	applyCommonDefaults(&bm.MsgCommon, &mf.Default.Binary.MsgCommon)
 }
 
+func (mf *MsgFile) validateDefaults() error {
+	if mf.Default.Line.Text != "" {
+		return errors.New("default.line.text must be empty")
+	}
+	if _, err := mf.Default.Line.MsgCommon.delay(); err != nil {
+		return fmt.Errorf("default.line: %w", err)
+	}
+	if mf.Default.Binary.Hex != "" {
+		return errors.New("default.binary.hex must be empty")
+	}
+	if _, err := mf.Default.Binary.MsgCommon.delay(); err != nil {
+		return fmt.Errorf("default.binary: %w", err)
+	}
+	return nil
+}
+
 // TaggedMsgs returns messages for the given tags with defaults applied.
 // Returns ([]LineMsg, nil) or ([]BinaryMsg, nil) depending on message type.
 // Returns error if tags select messages of mixed types.
 func (mf *MsgFile) TaggedMsgs(tags []string) (any, error) {
+	if err := mf.validateDefaults(); err != nil {
+		return nil, err
+	}
 	applyDefaults(mf.Line, mf.applyLineDefaults)
 	applyDefaults(mf.Binary, mf.applyBinaryDefaults)
 	lineMsgs := filterMsgs(mf.Line, tags)
@@ -212,13 +220,21 @@ func filterMsgs[T any, PT interface {
 func toRawMsgs[T any, PT interface {
 	*T
 	UserMsg
-}](msgs []T) []rawMsg {
+}](msgs []T) ([]rawMsg, error) {
 	result := make([]rawMsg, len(msgs))
+	tagCount := make(map[string]int)
 	for i := range msgs {
 		p := PT(&msgs[i])
-		rm := p.toRaw()
-		rm.index = i
+		tag := p.getTag()
+		idx := tagCount[tag]
+		tagCount[tag]++
+		rm, err := p.toRaw()
+		if err != nil {
+			return nil, fmt.Errorf("message %d with tag %q: %w", idx+1, tag, err)
+		}
+		rm.index = idx
+		rm.tag = tag
 		result[i] = rm
 	}
-	return result
+	return result, nil
 }

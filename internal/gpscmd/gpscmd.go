@@ -32,9 +32,12 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	if err != nil {
 		return
 	}
-	mf, err := loadMsgFile(v.msgFilePath)
-	if err != nil {
-		return
+	var mf *MsgFile
+	if v.msgFilePath != "" {
+		mf, err = LoadMsgFile(v.msgFilePath)
+		if err != nil {
+			return
+		}
 	}
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
@@ -85,20 +88,6 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		target.Opts.ForceProbe |= gpsprot.ForceProbeWhenNoConfig
 	}
 	return target, nil
-}
-
-func loadMsgFile(path string) (*MsgFile, error) {
-	if path == "" {
-		return nil, nil
-	}
-	mf, err := LoadMsgFile(path)
-	if err != nil {
-		return nil, err
-	}
-	if err = mf.Validate(); err != nil {
-		return nil, err
-	}
-	return mf, nil
 }
 
 func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
@@ -207,10 +196,16 @@ func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 	var raw []rawMsg
 	switch m := msgs.(type) {
 	case []LineMsg:
-		raw = toRawMsgs(m)
+		raw, err = toRawMsgs(m)
+		if err != nil {
+			return err
+		}
 		rp = newResponsePrinter(os.Stdout)
 	case []BinaryMsg:
-		raw = toRawMsgs(m)
+		raw, err = toRawMsgs(m)
+		if err != nil {
+			return err
+		}
 	default:
 		panic(fmt.Sprintf("unexpected message type: %T", msgs))
 	}

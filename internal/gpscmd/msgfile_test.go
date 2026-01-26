@@ -57,7 +57,7 @@ text = "TEST"
 	}
 }
 
-func TestValidate(t *testing.T) {
+func TestValidateLineMsg(t *testing.T) {
 	tests := []struct {
 		name    string
 		toml    string
@@ -109,7 +109,7 @@ text = "TEST"
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mf := loadMsgFileFromString(t, tc.toml)
-			err := mf.Validate()
+			err := validateMsgs(mf, []string{""})
 			if tc.wantErr && err == nil {
 				t.Error("expected error, got nil")
 			}
@@ -118,6 +118,20 @@ text = "TEST"
 			}
 		})
 	}
+}
+
+func validateMsgs(mf *MsgFile, tags []string) error {
+	msgs, err := mf.TaggedMsgs(tags)
+	if err != nil {
+		return err
+	}
+	switch m := msgs.(type) {
+	case []LineMsg:
+		_, err = toRawMsgs(m)
+	case []BinaryMsg:
+		_, err = toRawMsgs(m)
+	}
+	return err
 }
 
 func TestLineMsgsToRaw(t *testing.T) {
@@ -252,9 +266,6 @@ text = "LINE2"
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mf := loadMsgFileFromString(t, tc.toml)
-			if err := mf.Validate(); err != nil {
-				t.Fatalf("validate error: %v", err)
-			}
 			msgs, err := mf.TaggedMsgs(tc.tags)
 			if err != nil {
 				t.Fatalf("TaggedMsgs error: %v", err)
@@ -263,7 +274,10 @@ text = "LINE2"
 			if !ok {
 				t.Fatalf("expected []LineMsg, got %T", msgs)
 			}
-			raw := toRawMsgs(lineMsgs)
+			raw, err := toRawMsgs(lineMsgs)
+			if err != nil {
+				t.Fatalf("toRawMsgs error: %v", err)
+			}
 			if !reflect.DeepEqual(raw, tc.expected) {
 				t.Errorf("got %+v, expected %+v", raw, tc.expected)
 			}
@@ -349,9 +363,6 @@ hex = "BB"
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mf := loadMsgFileFromString(t, tc.toml)
-			if err := mf.Validate(); err != nil {
-				t.Fatalf("validate error: %v", err)
-			}
 			msgs, err := mf.TaggedMsgs(tc.tags)
 			if err != nil {
 				t.Fatalf("TaggedMsgs error: %v", err)
@@ -360,7 +371,10 @@ hex = "BB"
 			if !ok {
 				t.Fatalf("expected []BinaryMsg, got %T", msgs)
 			}
-			raw := toRawMsgs(binaryMsgs)
+			raw, err := toRawMsgs(binaryMsgs)
+			if err != nil {
+				t.Fatalf("toRawMsgs error: %v", err)
+			}
 			if !reflect.DeepEqual(raw, tc.expected) {
 				t.Errorf("got %+v, expected %+v", raw, tc.expected)
 			}
@@ -372,6 +386,7 @@ func TestValidateBinary(t *testing.T) {
 	tests := []struct {
 		name    string
 		toml    string
+		tags    []string
 		wantErr bool
 	}{
 		{
@@ -379,6 +394,7 @@ func TestValidateBinary(t *testing.T) {
 			toml: `[[binary]]
 hex = "DEADBEEF"
 `,
+			tags:    []string{""},
 			wantErr: false,
 		},
 		{
@@ -386,6 +402,7 @@ hex = "DEADBEEF"
 			toml: `[[binary]]
 hex = ""
 `,
+			tags:    []string{""},
 			wantErr: true,
 		},
 		{
@@ -393,6 +410,7 @@ hex = ""
 			toml: `[[binary]]
 hex = "GHIJ"
 `,
+			tags:    []string{""},
 			wantErr: true,
 		},
 		{
@@ -400,6 +418,7 @@ hex = "GHIJ"
 			toml: `[[binary]]
 hex = "ABC"
 `,
+			tags:    []string{""},
 			wantErr: true,
 		},
 		{
@@ -410,6 +429,7 @@ hex = "AA"
 [[binary]]
 hex = "BB"
 `,
+			tags:    []string{""},
 			wantErr: true,
 		},
 		{
@@ -418,6 +438,7 @@ hex = "BB"
 hex = "AA"
 delay = -1.0
 `,
+			tags:    []string{""},
 			wantErr: true,
 		},
 		{
@@ -428,6 +449,7 @@ delay = -0.5
 [[binary]]
 hex = "AA"
 `,
+			tags:    []string{""},
 			wantErr: true,
 		},
 		{
@@ -440,13 +462,14 @@ tag = "lines"
 hex = "AA"
 tag = "bins"
 `,
+			tags:    []string{"lines"},
 			wantErr: false,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mf := loadMsgFileFromString(t, tc.toml)
-			err := mf.Validate()
+			err := validateMsgs(mf, tc.tags)
 			if tc.wantErr && err == nil {
 				t.Error("expected error, got nil")
 			}
@@ -517,8 +540,8 @@ tag = "setup"
 			tags: []string{"ppp", "setup"},
 			expected: []rawMsg{
 				{bytes: []byte("LINE2\r\n"), delay: 0, tag: "ppp", index: 0},
-				{bytes: []byte("LINE1\r\n"), delay: 0, tag: "setup", index: 1},
-				{bytes: []byte("LINE3\r\n"), delay: 0, tag: "setup", index: 2},
+				{bytes: []byte("LINE1\r\n"), delay: 0, tag: "setup", index: 0},
+				{bytes: []byte("LINE3\r\n"), delay: 0, tag: "setup", index: 1},
 			},
 		},
 		{
@@ -576,8 +599,8 @@ tag = "bar"
 			tags: []string{"foo", "", "bar"},
 			expected: []rawMsg{
 				{bytes: []byte("LINE1\r\n"), delay: 0, tag: "foo", index: 0},
-				{bytes: []byte("LINE2\r\n"), delay: 0, tag: "", index: 1},
-				{bytes: []byte("LINE3\r\n"), delay: 0, tag: "bar", index: 2},
+				{bytes: []byte("LINE2\r\n"), delay: 0, tag: "", index: 0},
+				{bytes: []byte("LINE3\r\n"), delay: 0, tag: "bar", index: 0},
 			},
 		},
 		{
@@ -593,9 +616,6 @@ tag = "setup"
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mf := loadMsgFileFromString(t, tc.toml)
-			if err := mf.Validate(); err != nil {
-				t.Fatalf("validate error: %v", err)
-			}
 			msgs, err := mf.TaggedMsgs(tc.tags)
 			if err != nil {
 				t.Fatalf("TaggedMsgs error: %v", err)
@@ -606,7 +626,10 @@ tag = "setup"
 			}
 			var raw []rawMsg
 			if len(lineMsgs) > 0 {
-				raw = toRawMsgs(lineMsgs)
+				raw, err = toRawMsgs(lineMsgs)
+				if err != nil {
+					t.Fatalf("toRawMsgs error: %v", err)
+				}
 			}
 			if !reflect.DeepEqual(raw, tc.expected) {
 				t.Errorf("got %+v, expected %+v", raw, tc.expected)
@@ -658,9 +681,6 @@ tag = "other"
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mf := loadMsgFileFromString(t, tc.toml)
-			if err := mf.Validate(); err != nil {
-				t.Fatalf("validate error: %v", err)
-			}
 			msgs, err := mf.TaggedMsgs(tc.tags)
 			if err != nil {
 				t.Fatalf("TaggedMsgs error: %v", err)
@@ -669,7 +689,10 @@ tag = "other"
 			if !ok {
 				t.Fatalf("expected []BinaryMsg, got %T", msgs)
 			}
-			raw := toRawMsgs(binaryMsgs)
+			raw, err := toRawMsgs(binaryMsgs)
+			if err != nil {
+				t.Fatalf("toRawMsgs error: %v", err)
+			}
 			if !reflect.DeepEqual(raw, tc.expected) {
 				t.Errorf("got %+v, expected %+v", raw, tc.expected)
 			}
@@ -740,9 +763,6 @@ tag = "bins"
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mf := loadMsgFileFromString(t, tc.toml)
-			if err := mf.Validate(); err != nil {
-				t.Fatalf("validate error: %v", err)
-			}
 			_, err := mf.TaggedMsgs(tc.tags)
 			if tc.wantErr && err == nil {
 				t.Error("expected error, got nil")
