@@ -40,6 +40,7 @@ type flagVars struct {
 	configGet      gpsprot.PropIDs
 	msgFilePath    string
 	msgTags        []string
+	showReceiver   bool
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
@@ -111,6 +112,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&nmea, "nmea", false, "enable NMEA output and disable binary output from the GPS receiver")
 	flags.BoolVar(&binary, "binary", false, "enable binary output and disable NMEA output from the GPS receiver")
 	flags.BoolVar(&forceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
+	flags.BoolVar(&vars.showReceiver, "show-receiver", false, "detect and display GPS receiver information")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
@@ -333,10 +335,13 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	} else if saveAll {
 		vars.configOpts.Save = gpsprot.SaveAll
 	}
+	// tests whether configurator needs to run
+	doConfigure := save || saveAll || reset || reload || showConfig || configChanged
 	if factoryReset {
-		if save || saveAll || reset || reload || showConfig || configChanged {
+		if doConfigure {
 			return nil, nil, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config or configuration changes", cmdName)
 		}
+		doConfigure = true
 		vars.configOpts.Reset = gpsprot.ResetFactory
 	} else if reset || reload {
 		if configChanged && !save && !saveAll {
@@ -353,9 +358,12 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		} else {
 			vars.configOpts.Reset = gpsprot.ResetCold
 		}
+		doConfigure = true
+	} else if vars.showReceiver {
+		doConfigure = true
 	}
 	if vars.msgFilePath != "" {
-		if configChanged || showConfig || save || saveAll || reset || reload || factoryReset {
+		if doConfigure {
 			return nil, nil, fmt.Errorf("--msg-file cannot be combined with configuration flags")
 		}
 		if vars.packetLogMode == testLogMode {
@@ -369,6 +377,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		vars.msgTags = strings.Split(msgTags, ",")
 	} else if msgTags != "" {
 		return nil, nil, fmt.Errorf("--tag requires --msg-file")
+	} else if !doConfigure && !vars.capture.IsSet() {
+		vars.showReceiver = true
 	}
 	return &vars, nil, nil
 }

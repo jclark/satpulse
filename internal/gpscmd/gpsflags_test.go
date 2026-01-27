@@ -17,7 +17,7 @@ type validFlagsTestCase struct {
 }
 
 var validFlagsTestCases = []validFlagsTestCase{
-	{"ttyS0", []string{}, flagVars{}},
+	{"ttyS0", []string{}, flagVars{showReceiver: true}},
 	{"ttyS0", []string{"--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Reset: gpsprot.ResetCold}}},
 	{"ttyS0", []string{"--nmea"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC),
@@ -42,7 +42,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--survey"}, flagVars{mode: gpsprot.MakeOption(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: defaultSurveyTime * time.Second, AccLimit: gpsprot.Meters(defaultSurveyAcc)}}}},
 	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{mode: gpsprot.MakeOption(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: 300 * time.Second, AccLimit: gpsprot.Meters(5.5)}}}},
 	{"ttyS0", []string{"--speed", "9600"}, flagVars{configOpts: gpsprot.ConfigOptions{BaudRate: 9600}}},
-	{"ttyS0", []string{"--device-speed", "9600"}, flagVars{localSpeed: 9600}},
+	{"ttyS0", []string{"--device-speed", "9600"}, flagVars{localSpeed: 9600, showReceiver: true}},
 	{"ttyS0", []string{"--save-all", "--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveAll, Reset: gpsprot.ResetCold}}},
 	{"ttyS0", []string{"--gnss", "GPS,GLO,GAL,BDS"}, flagVars{
 		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GLO, gpsprot.GAL, gpsprot.BDS),
@@ -50,7 +50,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--gnss", "beidou,gps,glonass,galileo"}, flagVars{
 		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GLO, gpsprot.GAL, gpsprot.BDS),
 	}},
-	{"", []string{"--socket", "/tmp/socket"}, flagVars{socketPath: "/tmp/socket"}},
+	{"", []string{"--socket", "/tmp/socket"}, flagVars{socketPath: "/tmp/socket", showReceiver: true}},
 	{"ttyS0", []string{"-g", "GPS", "--band", "L1"}, flagVars{
 		enabledSignals: gpsprot.BandL1.SignalSet(gpsprot.GPS),
 	}},
@@ -432,6 +432,8 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--test-log", "test.log", "--packet-log", "pkt.log"}, // can't use with --test-log
 	// Test --tag requires --msg-file
 	{"--serial-device", "ttyS0", "--tag", "setup"}, // --tag without --msg-file
+	// Test --msg-file cannot be combined with --show-receiver
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-receiver"}, // can't use with --show-receiver
 }
 
 func TestParseFlagsInvalid(t *testing.T) {

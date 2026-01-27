@@ -50,11 +50,12 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, mf, v.msgTags, conn, v.packetLogPath, v.packetLogMode, v.capture, args)
+	err = run(ctx, lg, target, mf, v.msgTags, conn, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, args)
 	return
 }
 
-// createConfigTarget returns nil if msgFilePath is set (message file mode).
+// createConfigTarget returns nil if msgFilePath is set (message file mode)
+// or if nothing requires the configurator (passive capture mode).
 func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.msgFilePath != "" {
 		return nil, nil
@@ -81,6 +82,10 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.navMsgAuth.IsSet() {
 		cp.SetNavMsgAuth(v.navMsgAuth.Get())
 	}
+	// If nothing requires the configurator, return nil (passive capture mode)
+	if !v.showReceiver && target.NoOp() {
+		return nil, nil
+	}
 	if v.socketPath != "" {
 		target.Opts.Detected = true
 	}
@@ -102,14 +107,15 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 
 // run executes the GPS command.
 //
-// Exactly one of target and mf is non-nil:
+// Modes based on target and mf:
 //   - target non-nil: config mode (runs GPS configuration)
 //   - mf non-nil: message file mode (sends user-defined messages)
+//   - both nil: passive capture mode (just logs packets, no interaction)
 //
 // Parameter dependencies:
 //   - logMode: must not be testLogMode when mf is non-nil
 //   - args: only used for test log header when logMode is testLogMode
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, mf *MsgFile, tags []string, conn gpsio.Conn, logPath string, logMode packetLogMode, capture gpsprot.Option[time.Duration], args []string) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, mf *MsgFile, tags []string, conn gpsio.Conn, logPath string, logMode packetLogMode, capture gpsprot.Option[time.Duration], showReceiver bool, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -146,8 +152,13 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, mf 
 	var rslt *gpscfg.Result
 	if mf != nil {
 		err = runMsgs(ctx, lg, conn, pCh, mf, tags, capture)
+	} else if target != nil {
+		rslt, err = runConfig(ctx, lg, target, pCh, conn, capture, showReceiver)
 	} else {
-		rslt, err = runConfig(ctx, lg, target, pCh, conn, capture)
+		// Passive capture mode: just read and log packets
+		if capture.IsSet() {
+			keepReading(ctx, lg, pCh, capture.Get(), nil)
+		}
 	}
 
 	lg.Debug("about to wait")
@@ -164,7 +175,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, mf 
 	return err
 }
 
-func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, capture gpsprot.Option[time.Duration]) (*gpscfg.Result, error) {
+func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, capture gpsprot.Option[time.Duration], showReceiver bool) (*gpscfg.Result, error) {
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
@@ -173,10 +184,11 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 		err = nil
 	}
 	if err == nil && rslt != nil {
-		if configTargetIsProbeOnly(target) {
+		if showReceiver {
 			printReceiverInfo(os.Stdout, rslt.ReceiverInfo)
 			printPacketFormats(os.Stdout, rslt.PacketFormatsDetected)
-		} else {
+		}
+		if !configTargetIsProbeOnly(target) {
 			logFailedProps(lg, &target.Props, rslt.ConfigProps)
 		}
 		printProps(os.Stdout, rslt.ConfigProps)
