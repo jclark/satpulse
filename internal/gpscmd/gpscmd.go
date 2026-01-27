@@ -1,7 +1,6 @@
 package gpscmd
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -451,22 +450,35 @@ func (rp *responsePrinter) handleUnrecognized(data []byte) {
 
 func (rp *responsePrinter) handleRecognized(pkt scan.Packet) {
 	rp.flushLine()
+	if s := packetPrintString(pkt); s != "" {
+		io.WriteString(rp.w, s)
+	}
+}
+
+// packetPrintString returns the string to print for a recognized packet,
+// including trailing newline. Returns empty string if packet should not be printed.
+func packetPrintString(pkt scan.Packet) string {
 	// Skip standard GNSS talker sentences (like $GPGGA, $GPRMC, etc.)
 	if pkt.HasTag(nmea.Tag) && nmea.CheckSyntax(pkt.Data).IsValidGNSSTalkerNMEA() {
-		return
+		return ""
 	}
 	// Strip trailing EOL (LF or CRLF), then check all chars are printable
-	data := []byte(pkt.Data)
-	data = bytes.TrimSuffix(data, []byte{'\n'})
-	data = bytes.TrimSuffix(data, []byte{'\r'})
-	for _, b := range data {
-		if !isPrintable(b) {
-			return
+	s := pkt.Data
+	if len(s) > 0 && s[len(s)-1] == '\n' {
+		s = s[:len(s)-1]
+	}
+	if len(s) > 0 && s[len(s)-1] == '\r' {
+		s = s[:len(s)-1]
+	}
+	if len(s) == 0 {
+		return ""
+	}
+	for i := range len(s) {
+		if !isPrintable(s[i]) {
+			return ""
 		}
 	}
-	if len(data) > 0 {
-		fmt.Fprintf(rp.w, "%s\n", data)
-	}
+	return s + "\n"
 }
 
 func (rp *responsePrinter) flushLine() {
