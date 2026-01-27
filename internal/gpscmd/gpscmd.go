@@ -458,8 +458,8 @@ func (rp *responsePrinter) handleRecognized(pkt scan.Packet) {
 // packetPrintString returns the string to print for a recognized packet,
 // including trailing newline. Returns empty string if packet should not be printed.
 func packetPrintString(pkt scan.Packet) string {
-	// Skip standard GNSS talker sentences (like $GPGGA, $GPRMC, etc.)
-	if pkt.HasTag(nmea.Tag) && nmea.CheckSyntax(pkt.Data).IsValidGNSSTalkerNMEA() {
+	// Skip standard GNSS talker sentences (like $GPGGA, $GPRMC, etc.) but not TXT
+	if pkt.HasTag(nmea.Tag) && nmea.CheckSyntax(pkt.Data).IsValidGNSSTalkerNMEA() && pkt.Data[3:6] != "TXT" {
 		return ""
 	}
 	// Strip trailing EOL (LF or CRLF), then check all chars are printable

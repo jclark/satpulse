@@ -48,6 +48,8 @@ func TestPacketPrintString(t *testing.T) {
 		{"GPGGA skipped", nmeaPkt("$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,47.0,M,,*47\r\n"), ""},
 		{"GPRMC skipped", nmeaPkt("$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A\r\n"), ""},
 		{"GNGGA skipped", nmeaPkt("$GNGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,47.0,M,,*55\r\n"), ""},
+		{"GPTXT printed", nmeaPkt("$GPTXT,01,01,02,ROM CORE 3.01 (107888)*2B\r\n"), "$GPTXT,01,01,02,ROM CORE 3.01 (107888)*2B\n"},
+		{"GNTXT printed", nmeaPkt("$GNTXT,01,01,02,some message*00\r\n"), "$GNTXT,01,01,02,some message*00\n"},
 		{"proprietary printed", nmeaPkt("$PTEST,hello*00\r\n"), "$PTEST,hello*00\n"},
 		{"strips CRLF", nmeaPkt("$PTEST,data*00\r\n"), "$PTEST,data*00\n"},
 		{"strips LF only", nmeaPkt("$PTEST,data*00\n"), "$PTEST,data*00\n"},
