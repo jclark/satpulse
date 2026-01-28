@@ -36,6 +36,12 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage
 		if err != nil {
 			return
 		}
+		// Check for inconsistent tag descriptions regardless of showTags.
+		tds := mf.CheckTagDescriptions(lg)
+		if v.showTags {
+			printTagDescs(os.Stderr, tds)
+			return
+		}
 	}
 	var conn gpsio.Conn
 	if v.serialDevice != "" {

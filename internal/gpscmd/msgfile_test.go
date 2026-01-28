@@ -1614,3 +1614,224 @@ func loadMsgFileFromString(t *testing.T, content string) *MsgFile {
 	}
 	return mf
 }
+
+func TestDescriptionInDefaultsNotAllowed(t *testing.T) {
+	tests := []struct {
+		name string
+		toml string
+	}{
+		{
+			name: "default.line.description",
+			toml: `[default.line]
+description = "not allowed"
+
+[[line]]
+text = "TEST"
+`,
+		},
+		{
+			name: "default.binary.description",
+			toml: `[default.binary]
+description = "not allowed"
+
+[[binary]]
+hex = "AA"
+`,
+		},
+		{
+			name: "default.nmea.description",
+			toml: `[default.nmea]
+description = "not allowed"
+
+[[nmea]]
+text = "PCAS04,3"
+`,
+		},
+		{
+			name: "default.casbin.description",
+			toml: `[default.casbin]
+description = "not allowed"
+
+[[casbin]]
+class = 0x06
+id = 0x03
+payload.types = "U1"
+payload.values = [1]
+`,
+		},
+		{
+			name: "default.ubx.description",
+			toml: `[default.ubx]
+description = "not allowed"
+
+[[ubx]]
+class = 0x06
+id = 0x8A
+payload.types = "U1"
+payload.values = [1]
+`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := loadMsgFileFromString(t, tc.toml)
+			_, err := mf.TaggedMsgs([]string{""})
+			if err == nil {
+				t.Error("expected error for description in default section")
+			}
+		})
+	}
+}
+
+func TestTagDescriptionsConflict(t *testing.T) {
+	toml := `[[line]]
+text = "LINE1"
+tag = "setup"
+description = "First description"
+
+[[line]]
+text = "LINE2"
+tag = "setup"
+description = "Different description"
+`
+	mf := loadMsgFileFromString(t, toml)
+	descs, inconsistent := mf.collectTagDescs()
+	if len(descs) != 1 {
+		t.Errorf("expected 1 desc, got %d", len(descs))
+	}
+	if len(inconsistent) != 1 {
+		t.Errorf("expected 1 inconsistent, got %d", len(inconsistent))
+	}
+	if len(inconsistent) > 0 && inconsistent[0].tag != "setup" {
+		t.Errorf("expected inconsistent tag 'setup', got %q", inconsistent[0].tag)
+	}
+}
+
+func TestTagDescriptionsConsistent(t *testing.T) {
+	tests := []struct {
+		name     string
+		toml     string
+		expected []tagDesc
+	}{
+		{
+			name: "description on first only",
+			toml: `[[line]]
+text = "LINE1"
+tag = "setup"
+description = "Setup the device"
+
+[[line]]
+text = "LINE2"
+tag = "setup"
+`,
+			expected: []tagDesc{{tag: "setup", desc: "Setup the device"}},
+		},
+		{
+			name: "description on second only",
+			toml: `[[line]]
+text = "LINE1"
+tag = "setup"
+
+[[line]]
+text = "LINE2"
+tag = "setup"
+description = "Setup the device"
+`,
+			expected: []tagDesc{{tag: "setup", desc: "Setup the device"}},
+		},
+		{
+			name: "same description on both",
+			toml: `[[line]]
+text = "LINE1"
+tag = "setup"
+description = "Setup the device"
+
+[[line]]
+text = "LINE2"
+tag = "setup"
+description = "Setup the device"
+`,
+			expected: []tagDesc{{tag: "setup", desc: "Setup the device"}},
+		},
+		{
+			name: "multiple tags with descriptions",
+			toml: `[[nmea]]
+text = "PQTMVERNO"
+tag = "version"
+description = "Query firmware version"
+
+[[nmea]]
+text = "PQTMCFGPPS,R,1"
+tag = "query-pps"
+description = "Query PPS configuration"
+`,
+			expected: []tagDesc{
+				{tag: "version", desc: "Query firmware version"},
+				{tag: "query-pps", desc: "Query PPS configuration"},
+			},
+		},
+		{
+			name: "empty tag with description",
+			toml: `[[line]]
+text = "LINE1"
+tag = "setup"
+description = "Setup commands"
+
+[[line]]
+text = "LINE2"
+description = "Default commands"
+`,
+			expected: []tagDesc{
+				{tag: "", desc: "Default commands"},
+				{tag: "setup", desc: "Setup commands"},
+			},
+		},
+		{
+			name: "tags without descriptions",
+			toml: `[[line]]
+text = "LINE1"
+tag = "foo"
+
+[[line]]
+text = "LINE2"
+tag = "bar"
+`,
+			expected: []tagDesc{
+				{tag: "foo", desc: ""},
+				{tag: "bar", desc: ""},
+			},
+		},
+		{
+			name: "order preserved across types",
+			toml: `[[line]]
+text = "LINE1"
+tag = "first"
+
+[[binary]]
+hex = "AA"
+tag = "second"
+
+[[nmea]]
+text = "PCAS04,3"
+tag = "third"
+`,
+			expected: []tagDesc{
+				{tag: "first", desc: ""},
+				{tag: "second", desc: ""},
+				{tag: "third", desc: ""},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := loadMsgFileFromString(t, tc.toml)
+			tds, inconsistent := mf.collectTagDescs()
+			if len(inconsistent) > 0 {
+				t.Errorf("unexpected inconsistent tags: %+v", inconsistent)
+			}
+			if !reflect.DeepEqual(tds, tc.expected) {
+				t.Errorf("got %+v, expected %+v", tds, tc.expected)
+			}
+		})
+	}
+}

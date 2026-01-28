@@ -41,6 +41,7 @@ type flagVars struct {
 	msgFilePath    string
 	msgTags        []string
 	showReceiver   bool
+	showTags       bool
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
@@ -53,7 +54,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
             [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
             [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|none,...]
-            [-m|--msg-file path] [-t|--tag name,...]`
+            [-m|--msg-file path] [-t|--tag name,...] [--show-tags]`
 
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20.0
@@ -118,6 +119,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
 	flags.StringVarP(&vars.msgFilePath, "msg-file", "m", "", "`path` to TOML file containing message definitions")
 	flags.StringVarP(&msgTags, "tag", "t", "", "comma-separated `list` of tags to send (in order)")
+	flags.BoolVar(&vars.showTags, "show-tags", false, "list all tags in the message file with descriptions, then exit")
 	flags.Float64Var(&capture, "capture", 0, "capture packets for `seconds` after config (0 = forever)")
 	flags.StringVar(&testLogPath, "test-log", "", "log test data to `path`")
 	flags.MarkHidden("test-log")
@@ -155,6 +157,13 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if flags.NArg() != 0 {
 		return nil, usage, fmt.Errorf("%s command must not have non-option arguments", cmdName)
+	}
+	if vars.showTags {
+		if vars.msgFilePath == "" {
+			return nil, usage, fmt.Errorf("--show-tags requires --msg-file")
+		}
+		// --show-tags doesn't require --socket or --serial-device
+		return &vars, nil, nil
 	}
 	if (vars.socketPath == "") == (vars.serialDevice == "") {
 		return nil, usage, fmt.Errorf("%s command must specify either --socket or --serial-device", cmdName)

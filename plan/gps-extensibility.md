@@ -403,7 +403,7 @@ Implemented in Step 1.
 - Validate with `internal/nmea`
 - Update `responsePrinter` for NMEA: use `nmea.CheckSyntax()` to get `SentenceSyntaxFlags`, display unless `IsValidGNSSTalkerNMEA()` is true
 
-### Step 7: Show tags and descriptions
+### Step 7: Show tags and descriptions (done)
 
 **Files:**
 - `internal/gpscmd/msgfile.go` - add `Description` field to `MsgCommon`

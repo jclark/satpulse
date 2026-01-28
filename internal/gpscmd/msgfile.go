@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -20,6 +22,23 @@ type MsgCommon struct {
 	Delay       *float64 `toml:"delay"`
 	Tag         *string  `toml:"tag"`
 	Description string   `toml:"description"`
+}
+
+type tagDesc struct {
+	tag  string
+	desc string
+}
+
+type tagDescGetter interface {
+	tagDesc() tagDesc
+}
+
+func (mc *MsgCommon) tagDesc() tagDesc {
+	tag := ""
+	if mc.Tag != nil {
+		tag = *mc.Tag
+	}
+	return tagDesc{tag: tag, desc: mc.Description}
 }
 
 // LineMsg represents a [[line]] entry or [default.line].
@@ -287,11 +306,17 @@ func (mf *MsgFile) validateDefaults() error {
 	if mf.Default.Line.Text != "" {
 		return errors.New("default.line.text must be empty")
 	}
+	if mf.Default.Line.Description != "" {
+		return errors.New("default.line.description must be empty")
+	}
 	if _, err := mf.Default.Line.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.line: %w", err)
 	}
 	if mf.Default.Binary.Hex != "" {
 		return errors.New("default.binary.hex must be empty")
+	}
+	if mf.Default.Binary.Description != "" {
+		return errors.New("default.binary.description must be empty")
 	}
 	if _, err := mf.Default.Binary.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.binary: %w", err)
@@ -299,17 +324,26 @@ func (mf *MsgFile) validateDefaults() error {
 	if mf.Default.NMEA.Text != "" {
 		return errors.New("default.nmea.text must be empty")
 	}
+	if mf.Default.NMEA.Description != "" {
+		return errors.New("default.nmea.description must be empty")
+	}
 	if _, err := mf.Default.NMEA.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.nmea: %w", err)
 	}
 	if mf.Default.CASBIN.Class != 0 || mf.Default.CASBIN.ID != 0 {
 		return errors.New("default.casbin.class and default.casbin.id must be zero")
 	}
+	if mf.Default.CASBIN.Description != "" {
+		return errors.New("default.casbin.description must be empty")
+	}
 	if _, err := mf.Default.CASBIN.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.casbin: %w", err)
 	}
 	if mf.Default.UBX.Class != 0 || mf.Default.UBX.ID != 0 {
 		return errors.New("default.ubx.class and default.ubx.id must be zero")
+	}
+	if mf.Default.UBX.Description != "" {
+		return errors.New("default.ubx.description must be empty")
 	}
 	if _, err := mf.Default.UBX.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.ubx: %w", err)
@@ -413,4 +447,83 @@ func toRawMsgs[T any, PT interface {
 		result[i] = rm
 	}
 	return result, nil
+}
+
+type tagDescBuilder struct {
+	descs        []tagDesc
+	inconsistent []tagDesc
+	index        map[string]int
+}
+
+func collectDescs[T any, PT interface {
+	*T
+	tagDescGetter
+}](msgs []T, b *tagDescBuilder) {
+	for i := range msgs {
+		td := PT(&msgs[i]).tagDesc()
+		if j, ok := b.index[td.tag]; ok {
+			if td.desc != "" {
+				if b.descs[j].desc == "" {
+					b.descs[j].desc = td.desc
+				} else if b.descs[j].desc != td.desc {
+					b.inconsistent = append(b.inconsistent, td)
+				}
+			}
+		} else {
+			b.index[td.tag] = len(b.descs)
+			b.descs = append(b.descs, td)
+		}
+	}
+}
+
+func (mf *MsgFile) collectTagDescs() (descs, inconsistent []tagDesc) {
+	b := &tagDescBuilder{index: make(map[string]int)}
+	collectDescs(mf.Line, b)
+	collectDescs(mf.Binary, b)
+	collectDescs(mf.NMEA, b)
+	collectDescs(mf.CASBIN, b)
+	collectDescs(mf.UBX, b)
+	// Move empty tag to front if present
+	for i, td := range b.descs {
+		if td.tag == "" && i > 0 {
+			b.descs = append([]tagDesc{td}, append(b.descs[:i], b.descs[i+1:]...)...)
+			break
+		}
+	}
+	return b.descs, b.inconsistent
+}
+
+// CheckTagDescriptions returns tag/description pairs in order of first occurrence.
+// Logs warnings for any tags with inconsistent descriptions.
+func (mf *MsgFile) CheckTagDescriptions(lg *slog.Logger) []tagDesc {
+	descs, inconsistent := mf.collectTagDescs()
+	for _, td := range inconsistent {
+		lg.Warn("tag has inconsistent descriptions", "tag", td.tag, "desc", td.desc)
+	}
+	return descs
+}
+
+func printTagDescs(w io.Writer, tds []tagDesc) {
+	if len(tds) == 0 {
+		return
+	}
+	// Handle empty tag if present (guaranteed to be first if exists)
+	if tds[0].tag == "" {
+		if tds[0].desc != "" {
+			fmt.Fprintf(w, "No tag: %s\n", tds[0].desc)
+		}
+		tds = tds[1:]
+	}
+	if len(tds) == 0 {
+		return
+	}
+	// Print named tags
+	fmt.Fprintln(w, "Tags:")
+	for _, td := range tds {
+		if td.desc != "" {
+			fmt.Fprintf(w, "  %s - %s\n", td.tag, td.desc)
+		} else {
+			fmt.Fprintf(w, "  %s\n", td.tag)
+		}
+	}
 }
