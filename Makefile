@@ -96,7 +96,7 @@ uninstall:
 	systemctl daemon-reload
 
 test:
-	go test -v ./...
+	go test ./...
 
 clean:
 	-rm -rf out
