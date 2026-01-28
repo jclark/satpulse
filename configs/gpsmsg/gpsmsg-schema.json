@@ -1,0 +1,111 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"definitions": {
+		"common": {
+			"type": "object",
+			"properties": {
+				"delay": { "type": "number", "minimum": 0 },
+				"tag": { "type": "string" }
+			}
+		},
+		"ubxLikeMsg": {
+			"type": "object",
+			"properties": {
+				"class": { "type": "integer", "minimum": 0, "maximum": 255 },
+				"id": { "type": "integer", "minimum": 0, "maximum": 255 },
+				"payload": {
+					"type": "object",
+					"properties": {
+						"types": { "type": "string", "pattern": "^([UI][124]|R[48])*$" },
+						"values": { "type": "array", "items": { "type": "number" } }
+					},
+					"additionalProperties": false
+				},
+				"description": { "type": "string" }
+			},
+			"required": ["class", "id"],
+			"allOf": [
+				{ "$ref": "#/definitions/common" }
+			],
+			"additionalProperties": false
+		}
+	},
+	"type": "object",
+	"properties": {
+		"default": {
+			"type": "object",
+			"properties": {
+				"line": {
+					"type": "object",
+					"properties": {
+						"eol": { "type": "string" }
+					},
+					"allOf": [
+						{ "$ref": "#/definitions/common" }
+					],
+					"additionalProperties": false
+				},
+				"binary": { "$ref": "#/definitions/common" },
+				"nmea": { "$ref": "#/definitions/common" },
+				"casbin": { "$ref": "#/definitions/common" },
+				"ubx": { "$ref": "#/definitions/common" }
+			},
+			"additionalProperties": false
+		},
+		"line": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"text": { "type": "string" },
+					"eol": { "type": "string" },
+					"description": { "type": "string" }
+				},
+				"required": ["text"],
+				"allOf": [
+					{ "$ref": "#/definitions/common" }
+				],
+				"additionalProperties": false
+			}
+		},
+		"binary": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"hex": { "type": "string", "pattern": "^[0-9A-Fa-f \\t]*$" },
+					"description": { "type": "string" }
+				},
+				"required": ["hex"],
+				"allOf": [
+					{ "$ref": "#/definitions/common" }
+				],
+				"additionalProperties": false
+			}
+		},
+		"nmea": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"text": { "type": "string" },
+					"description": { "type": "string" }
+				},
+				"required": ["text"],
+				"allOf": [
+					{ "$ref": "#/definitions/common" }
+				],
+				"additionalProperties": false
+			}
+		},
+		"casbin": {
+			"type": "array",
+			"items": { "$ref": "#/definitions/ubxLikeMsg" }
+		},
+		"ubx": {
+			"type": "array",
+			"items": { "$ref": "#/definitions/ubxLikeMsg" }
+		}
+	},
+	"additionalProperties": false
+}

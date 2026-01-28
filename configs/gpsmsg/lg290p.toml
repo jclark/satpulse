@@ -1,3 +1,4 @@
+#:schema ./gpsmsg-schema.json
 # LG290P configuration messages
 # Quectel LG290P GNSS receiver
 # Default baud rate: 460800
