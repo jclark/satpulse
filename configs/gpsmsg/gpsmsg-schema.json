@@ -1,5 +1,5 @@
 {
-	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$schema": "https://json-schema.org/draft/2019-09/schema",
 	"definitions": {
 		"common": {
 			"type": "object",
@@ -27,7 +27,7 @@
 			"allOf": [
 				{ "$ref": "#/definitions/common" }
 			],
-			"additionalProperties": false
+			"unevaluatedProperties": false
 		}
 	},
 	"type": "object",
@@ -43,7 +43,7 @@
 					"allOf": [
 						{ "$ref": "#/definitions/common" }
 					],
-					"additionalProperties": false
+					"unevaluatedProperties": false
 				},
 				"binary": { "$ref": "#/definitions/common" },
 				"nmea": { "$ref": "#/definitions/common" },
@@ -65,7 +65,7 @@
 				"allOf": [
 					{ "$ref": "#/definitions/common" }
 				],
-				"additionalProperties": false
+				"unevaluatedProperties": false
 			}
 		},
 		"binary": {
@@ -80,7 +80,7 @@
 				"allOf": [
 					{ "$ref": "#/definitions/common" }
 				],
-				"additionalProperties": false
+				"unevaluatedProperties": false
 			}
 		},
 		"nmea": {
@@ -95,7 +95,7 @@
 				"allOf": [
 					{ "$ref": "#/definitions/common" }
 				],
-				"additionalProperties": false
+				"unevaluatedProperties": false
 			}
 		},
 		"casbin": {
