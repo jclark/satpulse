@@ -13,6 +13,9 @@ const (
 	Sync2 = 0xCE
 )
 
+// Endian is the byte order used for CASIC messages.
+var Endian = binary.LittleEndian
+
 // MsgID encodes class in low byte, id in high byte
 type MsgID uint16
 
@@ -54,7 +57,8 @@ var clsMap = map[byte]string{
 	clsNmea: "NMEA",
 }
 
-func makeMsgID(cls byte, id byte) MsgID {
+// MakeMsgID creates a MsgID from class and id bytes.
+func MakeMsgID(cls, id byte) MsgID {
 	return MsgID(uint16(cls) | (uint16(id) << 8))
 }
 
@@ -131,7 +135,7 @@ func ParseMsg(packet string) (Msg, error) {
 	// Header: sync(2) + len(2) + class(1) + id(1)
 	cls := packet[4]
 	id := packet[5]
-	mid := makeMsgID(cls, id)
+	mid := MakeMsgID(cls, id)
 	ctor := msgMap[mid]
 	payload := packet[6:checksumIndex]
 	if ctor == nil {
@@ -225,7 +229,7 @@ func PackMsg(mid MsgID, payload []byte) ([]byte, error) {
 
 // PacketMsgID returns the MsgID of a packet.
 func PacketMsgID[B ~string | ~[]byte](packet B) MsgID {
-	return makeMsgID(packet[4], packet[5])
+	return MakeMsgID(packet[4], packet[5])
 }
 
 // Checksum computes the CASIC checksum for a complete packet (without the checksum field).

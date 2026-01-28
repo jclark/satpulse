@@ -83,7 +83,7 @@ func TestMsgIDString(t *testing.T) {
 		{NavTimeUTCID, "NAV-TIMEUTC"},
 		{TimTPID, "TIM-TP"},
 		{MsgGPSUTCID, "MSG-GPSUTC"},
-		{makeMsgID(0xFF, 0x42), "0xFF-0x42"},
+		{MakeMsgID(0xFF, 0x42), "0xFF-0x42"},
 	}
 	for _, tc := range tests {
 		got := tc.mid.String()

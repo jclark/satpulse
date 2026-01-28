@@ -494,7 +494,145 @@ func init() {
 
 This ensures `MsgID.String()` returns e.g. "CFG-TP" instead of "CFG-0x03" when printing ACK/NAK responses.
 
-#### 8c: Refactor responsePrinter for per-protocol handling
+#### 8c: Payload encoding
+
+**Files:**
+- `internal/casic/bin/common.go` - add `const Endian = binary.LittleEndian`
+- `internal/ubx/bin/common.go` - add `const Endian = binary.LittleEndian` (for later UBX support)
+- `internal/gpscmd/payload.go` - new file with `Payload` type and `Encode` method
+- `internal/gpscmd/payload_test.go` - tests for payload encoding
+- `internal/gpscmd/msgfile.go` - add `UBXLikeMsg`, `CASBINMsg` types
+
+**Details:**
+
+Each protocol package exports its endianness:
+```go
+// in casic/bin/common.go and ubx/bin/common.go
+const Endian = binary.LittleEndian
+```
+
+New `Payload` type in `payload.go`:
+```go
+// Payload specifies how to encode a binary payload.
+type Payload struct {
+	Types  string `toml:"types"`
+	Values []any  `toml:"values"`
+}
+
+// Encode encodes the payload using the given byte order.
+// Type specifiers: U1, U2, U4, I1, I2, I4, R4, R8
+func (p *Payload) Encode(endian binary.ByteOrder) ([]byte, error)
+```
+
+Type specifier parsing: each specifier is 2 characters (e.g. `"U1U2U4"`). Values from TOML are `int64` for integers and `float64` for floats; `Encode` handles conversion and range checking.
+
+New message types in `msgfile.go`:
+```go
+// UBXLikeMsg contains fields shared by UBX and CASBIN message types.
+type UBXLikeMsg struct {
+	Class   uint8   `toml:"class"`
+	ID      uint8   `toml:"id"`
+	Payload Payload `toml:"payload"`
+	MsgCommon
+}
+
+// CASBINMsg represents a [[casbin]] entry.
+type CASBINMsg struct {
+	UBXLikeMsg
+}
+
+func (cm *CASBINMsg) toRaw() (rawMsg, error) {
+	payload, err := cm.Payload.Encode(casbin.Endian)
+	if err != nil {
+		return rawMsg{}, err
+	}
+	mid := casbin.MakeMsgID(cm.Class, cm.ID)
+	pkt, err := casbin.PackMsg(mid, payload)
+	if err != nil {
+		return rawMsg{}, err
+	}
+	delay, err := cm.MsgCommon.delay()
+	if err != nil {
+		return rawMsg{}, err
+	}
+	return rawMsg{bytes: pkt, delay: delay, tag: *cm.Tag}, nil
+}
+
+func (cm *CASBINMsg) getTag() string { return *cm.Tag }
+```
+
+Add to `MsgFile`:
+```go
+CASBIN  []CASBINMsg `toml:"casbin"`
+// and in Default:
+CASBIN  CASBINMsg   `toml:"casbin"`
+```
+
+TOML syntax for users:
+```toml
+[[casbin]]
+tag = "cfg-tp"
+class = 0x06
+id = 0x03
+payload.types = "U1U2U4"
+payload.values = [1, 100, 0x12345678]
+```
+
+Fire-and-forget: response display handled by refactored `responsePrinter` in step 8e.
+
+#### 8d: UBX messages
+
+**Files:**
+- `internal/gpscmd/msgfile.go` - add `UBXMsg` type
+
+**Details:**
+
+Add `UBXMsg` which embeds `UBXLikeMsg` and uses `ubxbin.Endian` and `ubxbin.PackMsg`:
+
+```go
+// UBXMsg represents a [[ubx]] entry.
+type UBXMsg struct {
+	UBXLikeMsg
+}
+
+func (um *UBXMsg) toRaw() (rawMsg, error) {
+	payload, err := um.Payload.Encode(ubxbin.Endian)
+	if err != nil {
+		return rawMsg{}, err
+	}
+	mid := ubxbin.MakeMsgID(um.Class, um.ID)
+	pkt, err := ubxbin.PackMsg(mid, payload)
+	if err != nil {
+		return rawMsg{}, err
+	}
+	delay, err := um.MsgCommon.delay()
+	if err != nil {
+		return rawMsg{}, err
+	}
+	return rawMsg{bytes: pkt, delay: delay, tag: *um.Tag}, nil
+}
+
+func (um *UBXMsg) getTag() string { return *um.Tag }
+```
+
+Add to `MsgFile`:
+```go
+UBX  []UBXMsg `toml:"ubx"`
+// and in Default:
+UBX  UBXMsg   `toml:"ubx"`
+```
+
+TOML syntax for users:
+```toml
+[[ubx]]
+tag = "gps-l5-health"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x10320001, 1]
+```
+
+#### 8e: Refactor responsePrinter for per-protocol handling
 
 Current `responsePrinter` mixes concerns. Refactor to clearly separate protocol-specific logic:
 
@@ -588,17 +726,6 @@ This structure:
 - Keeps ACK/NAK formatting close to where it's used
 - Each `format*` method returns empty string to skip printing
 
-#### 8d: Payload encoding
-
-**Details:**
-- `ubx/bin` and `casic/bin` own endianness; gpscmd uses `bin.Endian` for encoding
-- `EncodePayload(types string, values []any) ([]byte, error)` in gpscmd
-- Type specifiers: U1, U2, U4, I1, I2, I4, R4, R8
-- `UBXLikeMsg` struct in gpscmd with fields: `Class`, `ID`, `Payload` (with `Types` and `Values`), `Delay`, `Tag`
-- `UBXMsg` and `CASBINMsg` embed `UBXLikeMsg`; each implements `GetBytes()` calling its `bin.PackMsg()`
-- Build packet using `bin.PackMsg(mid, payload)` (already exists in both ubx/bin and casic/bin)
-- Fire-and-forget (response display handled by refactored responsePrinter)
-
 ### Step 9: UBX Configurator integration
 
 **Details:**
@@ -615,10 +742,15 @@ This structure:
 | `internal/gpscmd/gpsflags.go` | `-m` flag | done |
 | `internal/gpscmd/gpscmd.go` | `runMsgs()`, `runConfig()`, `runRawMsgs()`, `responsePrinter` | done |
 | `internal/gpscmd/gpsflags.go` | `-t` flag | done |
-| `internal/casic/bin/ack.go` | CASIC ACK/NAK types (Step 8a) | |
-| `internal/casic/bin/msg.go` | CASIC message ID name registry (Step 8b) | |
-| `internal/gpscmd/gpscmd.go` | Refactor responsePrinter for per-protocol handling (Step 8c) | |
-| `internal/gpscmd/payload.go` | Payload encoding (Step 8d) | |
+| `internal/casic/bin/ack.go` | CASIC ACK/NAK types (Step 8a) | done |
+| `internal/casic/bin/msg.go` | CASIC message ID name registry (Step 8b) | done |
+| `internal/casic/bin/common.go` | Add `Endian` constant (Step 8c) | done |
+| `internal/ubx/bin/common.go` | Add `Endian` constant (Step 8c) | done |
+| `internal/gpscmd/payload.go` | `Payload` type and `Encode` method (Step 8c) | done |
+| `internal/gpscmd/payload_test.go` | Payload encoding tests (Step 8c) | done |
+| `internal/gpscmd/msgfile.go` | `UBXLikeMsg`, `CASBINMsg` types (Step 8c) | done |
+| `internal/gpscmd/msgfile.go` | `UBXMsg` type (Step 8d) | |
+| `internal/gpscmd/gpscmd.go` | Refactor responsePrinter for per-protocol handling (Step 8e) | |
 
 ## Dependencies
 

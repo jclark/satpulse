@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
-	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"
 )
 
@@ -224,6 +222,18 @@ func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 			return err
 		}
 		rp = newResponsePrinter(os.Stdout)
+	case []CASBINMsg:
+		raw, err = toRawMsgs(m)
+		if err != nil {
+			return err
+		}
+		rp = newResponsePrinter(os.Stdout)
+	case []UBXMsg:
+		raw, err = toRawMsgs(m)
+		if err != nil {
+			return err
+		}
+		rp = newResponsePrinter(os.Stdout)
 	default:
 		panic(fmt.Sprintf("unexpected message type: %T", msgs))
 	}
@@ -422,92 +432,6 @@ func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gp
 	msg := make(chan scan.Packet, 1)
 	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog) })
 	return msg
-}
-
-// responsePrinter handles displaying text responses from the receiver.
-type responsePrinter struct {
-	w       io.Writer
-	lineBuf []byte
-}
-
-func newResponsePrinter(w io.Writer) *responsePrinter {
-	return &responsePrinter{w: w}
-}
-
-// handlePacket processes a packet for display.
-// For unrecognized packets, it accumulates printable chars and prints on EOL.
-// For recognized packets, it prints if all chars are printable.
-func (rp *responsePrinter) handlePacket(pkt scan.Packet) {
-	if pkt.Format == nil {
-		rp.handleUnrecognized([]byte(pkt.Data))
-	} else {
-		rp.handleRecognized(pkt)
-	}
-}
-
-func (rp *responsePrinter) handleUnrecognized(data []byte) {
-	for _, b := range data {
-		if b == '\n' {
-			rp.flushLine()
-		} else if b == '\r' {
-			// skip CR, will print on LF
-		} else if isPrintable(b) {
-			rp.lineBuf = append(rp.lineBuf, b)
-		} else {
-			// non-printable char, clear buffer
-			rp.lineBuf = rp.lineBuf[:0]
-		}
-	}
-}
-
-func (rp *responsePrinter) handleRecognized(pkt scan.Packet) {
-	rp.flushLine()
-	if s := packetPrintString(pkt); s != "" {
-		io.WriteString(rp.w, s)
-	}
-}
-
-// packetPrintString returns the string to print for a recognized packet,
-// including trailing newline. Returns empty string if packet should not be printed.
-func packetPrintString(pkt scan.Packet) string {
-	// Skip standard GNSS talker sentences (like $GPGGA, $GPRMC, etc.) but not TXT
-	if pkt.HasTag(nmea.Tag) && nmea.CheckSyntax(pkt.Data).IsValidGNSSTalkerNMEA() && pkt.Data[3:6] != "TXT" {
-		return ""
-	}
-	// Strip trailing EOL (LF or CRLF), then check all chars are printable
-	s := pkt.Data
-	if len(s) > 0 && s[len(s)-1] == '\n' {
-		s = s[:len(s)-1]
-	}
-	if len(s) > 0 && s[len(s)-1] == '\r' {
-		s = s[:len(s)-1]
-	}
-	if len(s) == 0 {
-		return ""
-	}
-	for i := range len(s) {
-		if !isPrintable(s[i]) {
-			return ""
-		}
-	}
-	return s + "\n"
-}
-
-func (rp *responsePrinter) flushLine() {
-	if len(rp.lineBuf) > 0 {
-		fmt.Fprintf(rp.w, "%s\n", rp.lineBuf)
-		rp.lineBuf = rp.lineBuf[:0]
-	}
-}
-
-// Flush outputs any buffered data.
-func (rp *responsePrinter) Flush() {
-	rp.flushLine()
-}
-
-// isPrintable returns true if b is a printable ASCII char (0x20-0x7E) or tab.
-func isPrintable(b byte) bool {
-	return (b >= 0x20 && b <= 0x7E) || b == '\t'
 }
 
 func keepReading(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, dur time.Duration, rp *responsePrinter) {

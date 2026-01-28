@@ -13,6 +13,9 @@ const (
 	Sync2 = 0x62
 )
 
+// Endian is the byte order used for UBX messages.
+var Endian = binary.LittleEndian
+
 type MsgID uint16
 
 type GNSSID byte
@@ -73,6 +76,9 @@ var clsMap = map[byte]string{
 func makeMsgID(cls byte, id byte) MsgID {
 	return MsgID(uint16(cls) | (uint16(id) << 8))
 }
+
+// MakeMsgID creates a MsgID from class and id bytes.
+func MakeMsgID(cls byte, id byte) MsgID { return makeMsgID(cls, id) }
 
 func (mid MsgID) Unpack() (byte, byte) {
 	return byte(mid & 0xFF), byte((mid >> 8) & 0xFF)

@@ -6,6 +6,9 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	casbin "github.com/jclark/satpulse/internal/casic/bin"
+	"github.com/pelletier/go-toml/v2"
 )
 
 func TestLoadMsgFileSimple(t *testing.T) {
@@ -131,6 +134,10 @@ func validateMsgs(mf *MsgFile, tags []string) error {
 	case []BinaryMsg:
 		_, err = toRawMsgs(m)
 	case []NMEAMsg:
+		_, err = toRawMsgs(m)
+	case []CASBINMsg:
+		_, err = toRawMsgs(m)
+	case []UBXMsg:
 		_, err = toRawMsgs(m)
 	}
 	return err
@@ -1159,6 +1166,438 @@ tag = "nmeas"
 				t.Errorf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestPayloadFromTOML(t *testing.T) {
+	tests := []struct {
+		name     string
+		toml     string
+		expected []byte
+		wantErr  bool
+	}{
+		{
+			name: "single U1",
+			toml: `types = "U1"
+values = [42]
+`,
+			expected: []byte{0x2A},
+		},
+		{
+			name: "single U2",
+			toml: `types = "U2"
+values = [0x1234]
+`,
+			expected: []byte{0x34, 0x12},
+		},
+		{
+			name: "single U4",
+			toml: `types = "U4"
+values = [0x12345678]
+`,
+			expected: []byte{0x78, 0x56, 0x34, 0x12},
+		},
+		{
+			name: "multiple values U1U2U4",
+			toml: `types = "U1U2U4"
+values = [1, 100, 0x12345678]
+`,
+			expected: []byte{0x01, 0x64, 0x00, 0x78, 0x56, 0x34, 0x12},
+		},
+		{
+			name: "signed I1 negative",
+			toml: `types = "I1"
+values = [-1]
+`,
+			expected: []byte{0xFF},
+		},
+		{
+			name: "signed I2 negative",
+			toml: `types = "I2"
+values = [-256]
+`,
+			expected: []byte{0x00, 0xFF},
+		},
+		{
+			name: "empty payload",
+			toml: `types = ""
+values = []
+`,
+			expected: nil,
+		},
+		{
+			name: "mixed signed and unsigned",
+			toml: `types = "U1I1U2I2"
+values = [255, -1, 0x1234, -1000]
+`,
+			expected: []byte{0xFF, 0xFF, 0x34, 0x12, 0x18, 0xFC},
+		},
+		{
+			name:    "type count mismatch",
+			toml:    `types = "U1U2"` + "\n" + `values = [1]` + "\n",
+			wantErr: true,
+		},
+		{
+			name:    "unknown type",
+			toml:    `types = "U3"` + "\n" + `values = [1]` + "\n",
+			wantErr: true,
+		},
+		{
+			name:    "value out of range",
+			toml:    `types = "U1"` + "\n" + `values = [256]` + "\n",
+			wantErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := loadPayloadFromString(t, tc.toml)
+			got, err := p.Encode(casbin.Endian)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tc.expected) {
+				t.Errorf("got %x, expected %x", got, tc.expected)
+			}
+		})
+	}
+}
+
+func loadPayloadFromString(t *testing.T, content string) Payload {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "payload.toml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read error: %v", err)
+	}
+	var p Payload
+	if err := toml.Unmarshal(data, &p); err != nil {
+		t.Fatalf("TOML parse error: %v", err)
+	}
+	return p
+}
+
+func TestCASBINMsgsToRaw(t *testing.T) {
+	tests := []struct {
+		name        string
+		toml        string
+		tags        []string
+		wantPacket  []byte
+		wantDelay   time.Duration
+		wantPayload []byte // payload portion only (for easier verification)
+		wantErr     bool
+	}{
+		{
+			name: "simple U1 payload",
+			toml: `[[casbin]]
+class = 0x06
+id = 0x03
+payload.types = "U1"
+payload.values = [42]
+`,
+			tags:        []string{""},
+			wantPayload: []byte{0x2A},
+		},
+		{
+			name: "U1U2U4 payload",
+			toml: `[[casbin]]
+class = 0x06
+id = 0x03
+payload.types = "U1U2U4"
+payload.values = [1, 100, 0x12345678]
+`,
+			tags:        []string{""},
+			wantPayload: []byte{0x01, 0x64, 0x00, 0x78, 0x56, 0x34, 0x12},
+		},
+		{
+			name: "with delay",
+			toml: `[[casbin]]
+class = 0x06
+id = 0x03
+payload.types = "U1"
+payload.values = [1]
+delay = 0.5
+`,
+			tags:        []string{""},
+			wantPayload: []byte{0x01},
+			wantDelay:   500 * time.Millisecond,
+		},
+		{
+			name: "default delay",
+			toml: `[default.casbin]
+delay = 0.2
+
+[[casbin]]
+class = 0x06
+id = 0x03
+payload.types = "U1"
+payload.values = [1]
+`,
+			tags:        []string{""},
+			wantPayload: []byte{0x01},
+			wantDelay:   200 * time.Millisecond,
+		},
+		{
+			name: "override default delay",
+			toml: `[default.casbin]
+delay = 0.2
+
+[[casbin]]
+class = 0x06
+id = 0x03
+payload.types = "U1"
+payload.values = [1]
+delay = 0.5
+`,
+			tags:        []string{""},
+			wantPayload: []byte{0x01},
+			wantDelay:   500 * time.Millisecond,
+		},
+		{
+			name: "tag filtering",
+			toml: `[[casbin]]
+class = 0x06
+id = 0x03
+payload.types = "U1"
+payload.values = [1]
+tag = "cfg"
+
+[[casbin]]
+class = 0x06
+id = 0x04
+payload.types = "U1"
+payload.values = [2]
+tag = "other"
+`,
+			tags:        []string{"cfg"},
+			wantPayload: []byte{0x01},
+		},
+		{
+			name: "empty payload",
+			toml: `[[casbin]]
+class = 0x05
+id = 0x01
+payload.types = ""
+payload.values = []
+`,
+			tags:        []string{""},
+			wantPayload: []byte{},
+		},
+		{
+			name: "signed values",
+			toml: `[[casbin]]
+class = 0x06
+id = 0x03
+payload.types = "I1I2I4"
+payload.values = [-1, -256, -65536]
+`,
+			tags:        []string{""},
+			wantPayload: []byte{0xFF, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0xFF},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := loadMsgFileFromString(t, tc.toml)
+			msgs, err := mf.TaggedMsgs(tc.tags)
+			if err != nil {
+				t.Fatalf("TaggedMsgs error: %v", err)
+			}
+			casbinMsgs, ok := msgs.([]CASBINMsg)
+			if !ok {
+				t.Fatalf("expected []CASBINMsg, got %T", msgs)
+			}
+			raw, err := toRawMsgs(casbinMsgs)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("toRawMsgs error: %v", err)
+			}
+			if len(raw) != 1 {
+				t.Fatalf("expected 1 raw message, got %d", len(raw))
+			}
+			// Verify packet structure: sync(2) + len(2) + class(1) + id(1) + payload + checksum(4)
+			pkt := raw[0].bytes
+			expLen := 10 + len(tc.wantPayload)
+			if len(pkt) != expLen {
+				t.Errorf("packet length: got %d, expected %d", len(pkt), expLen)
+			}
+			if pkt[0] != 0xBA || pkt[1] != 0xCE {
+				t.Errorf("sync bytes: got %02X %02X, expected BA CE", pkt[0], pkt[1])
+			}
+			// Extract and verify payload
+			payloadLen := int(pkt[2]) | int(pkt[3])<<8
+			if payloadLen != len(tc.wantPayload) {
+				t.Errorf("payload length field: got %d, expected %d", payloadLen, len(tc.wantPayload))
+			}
+			gotPayload := pkt[6 : 6+payloadLen]
+			if !reflect.DeepEqual(gotPayload, tc.wantPayload) {
+				t.Errorf("payload: got %x, expected %x", gotPayload, tc.wantPayload)
+			}
+			// Verify delay
+			if raw[0].delay != tc.wantDelay {
+				t.Errorf("delay: got %v, expected %v", raw[0].delay, tc.wantDelay)
+			}
+		})
+	}
+}
+
+func TestUBXMsgsToRaw(t *testing.T) {
+	tests := []struct {
+		name        string
+		toml        string
+		tags        []string
+		wantPayload []byte
+		wantDelay   time.Duration
+		wantErr     bool
+	}{
+		{
+			name: "simple U1 payload",
+			toml: `[[ubx]]
+class = 0x06
+id = 0x8A
+payload.types = "U1"
+payload.values = [42]
+`,
+			tags:        []string{""},
+			wantPayload: []byte{0x2A},
+		},
+		{
+			name: "CFG-VALSET example",
+			toml: `[[ubx]]
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x10320001, 1]
+`,
+			tags:        []string{""},
+			wantPayload: []byte{0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x32, 0x10, 0x01},
+		},
+		{
+			name: "with delay",
+			toml: `[[ubx]]
+class = 0x06
+id = 0x8A
+payload.types = "U1"
+payload.values = [1]
+delay = 0.5
+`,
+			tags:        []string{""},
+			wantPayload: []byte{0x01},
+			wantDelay:   500 * time.Millisecond,
+		},
+		{
+			name: "tag filtering",
+			toml: `[[ubx]]
+class = 0x06
+id = 0x8A
+payload.types = "U1"
+payload.values = [1]
+tag = "valset"
+
+[[ubx]]
+class = 0x06
+id = 0x8B
+payload.types = "U1"
+payload.values = [2]
+tag = "other"
+`,
+			tags:        []string{"valset"},
+			wantPayload: []byte{0x01},
+		},
+		{
+			name: "empty payload (poll)",
+			toml: `[[ubx]]
+class = 0x06
+id = 0x8A
+payload.types = ""
+payload.values = []
+`,
+			tags:        []string{""},
+			wantPayload: []byte{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := loadMsgFileFromString(t, tc.toml)
+			msgs, err := mf.TaggedMsgs(tc.tags)
+			if err != nil {
+				t.Fatalf("TaggedMsgs error: %v", err)
+			}
+			ubxMsgs, ok := msgs.([]UBXMsg)
+			if !ok {
+				t.Fatalf("expected []UBXMsg, got %T", msgs)
+			}
+			raw, err := toRawMsgs(ubxMsgs)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("toRawMsgs error: %v", err)
+			}
+			if len(raw) != 1 {
+				t.Fatalf("expected 1 raw message, got %d", len(raw))
+			}
+			// Verify packet structure: sync(2) + class(1) + id(1) + len(2) + payload + checksum(2)
+			pkt := raw[0].bytes
+			expLen := 8 + len(tc.wantPayload)
+			if len(pkt) != expLen {
+				t.Errorf("packet length: got %d, expected %d", len(pkt), expLen)
+			}
+			if pkt[0] != 0xB5 || pkt[1] != 0x62 {
+				t.Errorf("sync bytes: got %02X %02X, expected B5 62", pkt[0], pkt[1])
+			}
+			// Extract and verify payload
+			payloadLen := int(pkt[4]) | int(pkt[5])<<8
+			if payloadLen != len(tc.wantPayload) {
+				t.Errorf("payload length field: got %d, expected %d", payloadLen, len(tc.wantPayload))
+			}
+			gotPayload := pkt[6 : 6+payloadLen]
+			if !reflect.DeepEqual(gotPayload, tc.wantPayload) {
+				t.Errorf("payload: got %x, expected %x", gotPayload, tc.wantPayload)
+			}
+			// Verify delay
+			if raw[0].delay != tc.wantDelay {
+				t.Errorf("delay: got %v, expected %v", raw[0].delay, tc.wantDelay)
+			}
+		})
+	}
+}
+
+func TestMixedCASBINAndUBXFails(t *testing.T) {
+	toml := `[[casbin]]
+class = 0x06
+id = 0x03
+payload.types = "U1"
+payload.values = [1]
+tag = "mixed"
+
+[[ubx]]
+class = 0x06
+id = 0x8A
+payload.types = "U1"
+payload.values = [1]
+tag = "mixed"
+`
+	mf := loadMsgFileFromString(t, toml)
+	_, err := mf.TaggedMsgs([]string{"mixed"})
+	if err == nil {
+		t.Error("expected error for mixed CASBIN and UBX types")
 	}
 }
 
