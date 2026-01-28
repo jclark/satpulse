@@ -394,7 +394,7 @@ Implemented in Step 1.
 - Return typed slice (`[]LineMsg` or `[]BinaryMsg`) to control response display
 - Add tests to msgfile_test.go
 
-### Step 6: NMEA messages
+### Step 6: NMEA messages (done)
 
 **Details:**
 - Add `NMEAMsg` type with `Text`, `Delay`, `Tag`
@@ -580,7 +580,7 @@ payload.values = [1, 100, 0x12345678]
 
 Fire-and-forget: response display handled by refactored `responsePrinter` in step 8e.
 
-#### 8d: UBX messages
+#### 8d: UBX messages (done)
 
 **Files:**
 - `internal/gpscmd/msgfile.go` - add `UBXMsg` type
@@ -632,7 +632,7 @@ payload.types = "U1U1U2U4U1"
 payload.values = [0, 1, 0, 0x10320001, 1]
 ```
 
-#### 8e: Refactor responsePrinter for per-protocol handling
+#### 8e: Refactor responsePrinter for per-protocol handling (done)
 
 Current `responsePrinter` mixes concerns. Refactor to clearly separate protocol-specific logic:
 
@@ -749,8 +749,8 @@ This structure:
 | `internal/gpscmd/payload.go` | `Payload` type and `Encode` method (Step 8c) | done |
 | `internal/gpscmd/payload_test.go` | Payload encoding tests (Step 8c) | done |
 | `internal/gpscmd/msgfile.go` | `UBXLikeMsg`, `CASBINMsg` types (Step 8c) | done |
-| `internal/gpscmd/msgfile.go` | `UBXMsg` type (Step 8d) | |
-| `internal/gpscmd/gpscmd.go` | Refactor responsePrinter for per-protocol handling (Step 8e) | |
+| `internal/gpscmd/msgfile.go` | `UBXMsg` type (Step 8d) | done |
+| `internal/gpscmd/response.go` | Refactor responsePrinter for per-protocol handling (Step 8e) | done |
 
 ## Dependencies
 
