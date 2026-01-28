@@ -2,66 +2,66 @@
 # Quectel LG290P GNSS receiver
 # Default baud rate: 460800
 
-# Query firmware version
+# Get firmware version
 [[nmea]]
 text = "PQTMVERNO"
-tag = "version"
-description = "Query firmware version"
+tag = "get-version"
+description = "Get firmware version"
 
-# Query PPS configuration
+# Get PPS configuration
 [[nmea]]
 text = "PQTMCFGPPS,R,1"
-tag = "query-pps"
-description = "Query PPS configuration"
+tag = "get-pps"
+description = "Get PPS configuration"
 
-# Query constellation configuration
+# Get constellation configuration
 [[nmea]]
 text = "PQTMCFGCNST,R"
-tag = "query-gnss"
-description = "Query constellation configuration"
+tag = "get-gnss"
+description = "Get constellation configuration"
 
-# Query fix rate
+# Get fix rate
 [[nmea]]
 text = "PQTMCFGFIXRATE,R"
-tag = "query-fixrate"
-description = "Query fix interval"
+tag = "get-fixrate"
+description = "Get fix interval"
 
-# Query receiver mode (rover/base)
+# Get receiver mode (rover/base)
 [[nmea]]
 text = "PQTMCFGRCVRMODE,R"
-tag = "query-mode"
-description = "Query receiver mode (rover/base)"
+tag = "get-mode"
+description = "Get receiver mode (rover/base)"
 
-# Query current UART config (response includes port index)
+# Get current UART config (response includes port index)
 [[nmea]]
 text = "PQTMCFGUART,R"
-tag = "query-uart"
-description = "Query UART configuration"
+tag = "get-uart"
+description = "Get UART configuration"
 
-# Query protocol configuration for UART1/2/3
+# Get protocol configuration for UART1/2/3
 [[nmea]]
 text = "PQTMCFGPROT,R,1,1"
-tag = "query-prot"
-description = "Query input/output protocol for UART1/2/3"
+tag = "get-prot"
+description = "Get input/output protocol for UART1/2/3"
 [[nmea]]
 text = "PQTMCFGPROT,R,1,2"
-tag = "query-prot"
+tag = "get-prot"
 [[nmea]]
 text = "PQTMCFGPROT,R,1,3"
-tag = "query-prot"
+tag = "get-prot"
 
-# Set PPS: 100ms pulse, only when fixed, rising edge
+# Enable PPS: 100ms pulse, only when locked, rising edge
 # Index=1, Enable=1, Duration=100, Mode=2 (fix only), Polarity=1 (high), Reserved=0
 [[nmea]]
 text = "PQTMCFGPPS,W,1,1,100,2,1,0"
-tag = "set-pps"
-description = "Set PPS: 100ms pulse, output only when fixed"
+tag = "pps"
+description = "Enable PPS output (0.1s pulse, only when locked)"
 
-# Query survey-in config
+# Get survey-in config
 [[nmea]]
 text = "PQTMCFGSVIN,R"
-tag = "query-survey"
-description = "Query survey-in configuration"
+tag = "get-survey"
+description = "Get survey-in configuration"
 
 # Survey-in: 2000 seconds, 20m accuracy
 # Mode=1 (survey-in), CFG_CNT=2000, 3D_AccLimit=20.0, ECEF_X/Y/Z=0
@@ -125,47 +125,47 @@ text = "PQTMCFGUART,W,115200"
 tag = "speed-115200"
 description = "Set baud rate to 115200"
 
-# Enable NMEA messages for satpulse (RMC, GGA, GSV at rate 1)
+# Enable NMEA messages understood by satpulse daemon (RMC, GGA, GSV at rate 1)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RMC,1"
-tag = "nmea-satpulse"
-description = "Enable NMEA messages for satpulse (RMC, GGA, GSV)"
+tag = "nmea-daemon"
+description = "Enable NMEA messages understood by satpulse daemon"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,GGA,1"
-tag = "nmea-satpulse"
+tag = "nmea-daemon"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,GSV,1"
-tag = "nmea-satpulse"
+tag = "nmea-daemon"
 
 # Base station mode (disables NMEA, enables RTCM MSM4/1005)
 [[nmea]]
 text = "PQTMCFGRCVRMODE,W,2"
-tag = "base-station"
+tag = "mode-base"
 description = "Set base station mode"
 
 # Rover mode (default NMEA output)
 [[nmea]]
 text = "PQTMCFGRCVRMODE,W,1"
-tag = "rover"
+tag = "mode-rover"
 description = "Set rover mode"
 
-# Query RTCM message rates
+# Get RTCM message rates
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-1005"
-tag = "query-rtcm"
-description = "Query RTCM message rates"
+tag = "get-rtcm"
+description = "Get RTCM message rates"
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-107X"
-tag = "query-rtcm"
+tag = "get-rtcm"
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-108X"
-tag = "query-rtcm"
+tag = "get-rtcm"
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-109X"
-tag = "query-rtcm"
+tag = "get-rtcm"
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-112X"
-tag = "query-rtcm"
+tag = "get-rtcm"
 
 # Disable all RTCM messages
 [[nmea]]
