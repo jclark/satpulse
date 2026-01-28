@@ -7,7 +7,7 @@ satpulsetool-gps - configure a GPS receiver
 **satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-socket** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-force\-probe**] [**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-\-force\-probe**] [**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-c**\|**\-\-show\-config**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
@@ -36,6 +36,9 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **\-c**, **\-\-show\-config**  
 : Show the current configuration of the GPS receiver.
 
+**\-\-show\-receiver**
+: Detect the GPS receiver and show information about it. This is the default behavior when no other operation is specified.
+
 **\-d**, **\-\-serial\-device** *path*  
 : Path to the serial device to communicate with the GPS receiver.
 
@@ -53,7 +56,7 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
 : Log to *path* a description of the packets sent to and received from the GPS receiver. The log is in `.jsonl` (JSON lines) format.
 
 **\-\-capture** *seconds*
-: After configuration completes, continue capturing packets for the specified number of seconds. Use `0` to capture indefinitely until interrupted. Requires **\-\-packet\-log**.
+: Continue capturing packets for the specified number of seconds after configuration is complete. Use `0` to capture indefinitely until interrupted. Requires **\-\-packet\-log** or **\-\-msg\-file**.
 
 **\-g**, **\-\-gnss** *list*  
 : List of GNSS constellations that should be enabled. The *list* parameter is a comma-separated list of:
@@ -124,7 +127,7 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
 **\-\-binary**
 : Enable binary messages from the GPS receiver instead of NMEA.
 
-**\-\-force\-probe**  
+**\-\-force\-probe**
 : Force writing probe to serial device even when there is no output from the GPS receiver
 
 **\-p**, **\-\-pps** *width*  
@@ -275,9 +278,13 @@ Enable only NMEA RMC messages:
 
     satpulsetool gps -d /dev/ttyACM0 -s 19200 -nmea --nmea-out RMC
 
-Capture packets for 10 seconds after configuring:
+Passively capture packets for 30 seconds without probing:
 
-    satpulsetool gps -d /dev/ttyACM0 -s 9600 --packet-log capture.jsonl --capture 10
+    satpulsetool gps -d /dev/ttyUSB0 -s 9600 --packet-log capture.jsonl --capture 30
+
+Probe the receiver, then capture packets for 10 seconds:
+
+    satpulsetool gps -d /dev/ttyACM0 -s 9600 --show-receiver --packet-log capture.jsonl --capture 10
 
 # SEE ALSO
 
