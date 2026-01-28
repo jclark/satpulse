@@ -17,15 +17,21 @@ const (
 type MsgID uint16
 
 const (
-	clsNav  = 0x01
-	clsTim  = 0x02
-	clsRxm  = 0x03
-	clsAck  = 0x05
-	clsCfg  = 0x06
-	clsMsg  = 0x08
-	clsMon  = 0x0A
-	clsAid  = 0x0B
-	clsNmea = 0x4E
+	clsNav   = 0x01
+	clsTim   = 0x02
+	clsRxm   = 0x03
+	clsAck   = 0x05
+	clsCfg   = 0x06
+	clsMsg   = 0x08
+	clsMon   = 0x0A
+	clsAid   = 0x0B
+	// these are in ZKW F8 dual-band receivers
+	clsNav2  = 0x11
+	clsTim2  = 0x12
+	clsRxm2  = 0x13
+	clsIns2  = 0x14
+	clsRtcm2 = 0x15
+	clsNmea  = 0x4E
 )
 
 type GNSSID uint8

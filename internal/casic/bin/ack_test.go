@@ -7,35 +7,35 @@ import (
 
 func TestAckParse(t *testing.T) {
 	tests := []struct {
-		name  string
-		hex   string
-		wantID MsgID
+		name      string
+		hex       string
+		wantID    MsgID
 		wantClsID uint8
 		wantMsgID uint8
 	}{
 		{
-			name:      "ACK-NAK for MON-0x04",
+			name:      "ACK-NAK for MON-VER",
 			hex:       "bace040005000a0400000e040500",
 			wantID:    AckNakID,
 			wantClsID: 0x0A,
 			wantMsgID: 0x04,
 		},
 		{
-			name:      "ACK-ACK for CFG-0x04",
+			name:      "ACK-ACK for CFG-RATE",
 			hex:       "bace04000501060400000a040501",
 			wantID:    AckAckID,
 			wantClsID: 0x06,
 			wantMsgID: 0x04,
 		},
 		{
-			name:      "ACK-ACK for CFG-0x03",
+			name:      "ACK-ACK for CFG-TP",
 			hex:       "bace04000501060300000a030501",
 			wantID:    AckAckID,
 			wantClsID: 0x06,
 			wantMsgID: 0x03,
 		},
 		{
-			name:      "ACK-ACK for CFG-0x07",
+			name:      "ACK-ACK for CFG-NAVX",
 			hex:       "bace04000501060700000a070501",
 			wantID:    AckAckID,
 			wantClsID: 0x06,
