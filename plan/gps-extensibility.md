@@ -268,11 +268,11 @@ Default is empty string `""`. Not allowed in `[default.line]` etc - validation e
 
 ```toml
 [[ubx]]
-tag=gps-l5-health
-class= 0x06
+tag = "gps-l5-health"
+class = 0x06
 id = 0x8A
-pack=U1U1U2U4U1
-payload=[0, 1, 0, 0x10320001, 1]
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x10320001, 1]
 ```
 
 ## Implementation
@@ -423,18 +423,181 @@ Implemented in Step 1.
 
 **Files:**
 - `internal/ubx/bin/common.go` - add `const Endian = binary.LittleEndian`
-- `internal/casic/bin/common.go` - add `const Endian = binary.LittleEndian`
-- `internal/gpscmd/pack.go` - new file
-- `internal/gpscmd/pack_test.go` - tests
+- `internal/casic/bin/common.go` - add `const Endian = binary.LittleEndian`, add ACK/NAK types
+- `internal/gpscmd/payload.go` - new file
+- `internal/gpscmd/payload_test.go` - tests
+- `internal/gpscmd/gpscmd.go` - refactor `responsePrinter`
+
+#### 8a: Add CASIC ACK/NAK types
+
+Add `internal/casic/bin/ack.go`.
+
+Per CASIC spec section 2.10, ACK/NAK payloads are 4 bytes: `clsID` (U1), `msgID` (U1), `res` (U2 reserved).
+This differs from UBX where MsgID is a single uint16 field.
+
+```go
+package bin
+
+const (
+	AckNakID MsgID = clsAck | (0x00 << 8)
+	AckAckID MsgID = clsAck | (0x01 << 8)
+)
+
+// AckNak is sent when a CFG message was not processed correctly.
+// Payload: clsID (U1), msgID (U1), res (U2).
+type AckNak struct {
+	ClsID uint8
+	MsgID uint8
+	_     uint16 // reserved
+}
+
+func (m *AckNak) ID() MsgID { return AckNakID }
+
+// AckedMsgID returns the MsgID of the message being NAK'd.
+func (m *AckNak) AckedMsgID() MsgID { return makeMsgID(m.ClsID, m.MsgID) }
+
+// AckAck is sent when a CFG message was processed correctly.
+// Payload: clsID (U1), msgID (U1), res (U2).
+type AckAck struct {
+	ClsID uint8
+	MsgID uint8
+	_     uint16 // reserved
+}
+
+func (m *AckAck) ID() MsgID { return AckAckID }
+
+// AckedMsgID returns the MsgID of the message being ACK'd.
+func (m *AckAck) AckedMsgID() MsgID { return makeMsgID(m.ClsID, m.MsgID) }
+
+func init() {
+	regMsg[AckNak]("NAK")
+	regMsg[AckAck]("ACK")
+}
+```
+
+#### 8b: Register CASIC message ID names
+
+Add `internal/casic/bin/msg.go` to register known message IDs without full implementations. Follow the pattern from `ubx/bin/msg.go` and `uncmsg/other.go`:
+
+```go
+package bin
+
+const (
+	CfgTPID MsgID = clsCfg | (0x03 << 8)
+)
+
+func init() {
+	idNameMap[CfgTPID] = "TP"
+	// ...
+}
+```
+
+This ensures `MsgID.String()` returns e.g. "CFG-TP" instead of "CFG-0x03" when printing ACK/NAK responses.
+
+#### 8c: Refactor responsePrinter for per-protocol handling
+
+Current `responsePrinter` mixes concerns. Refactor to clearly separate protocol-specific logic:
+
+```go
+// responsePrinter handles displaying responses from the receiver.
+type responsePrinter struct {
+	w       io.Writer
+	lineBuf []byte
+}
+
+func (rp *responsePrinter) handlePacket(pkt scan.Packet) {
+	if pkt.Format == nil {
+		rp.handleUnrecognized([]byte(pkt.Data))
+		return
+	}
+	rp.flushLine()
+	if s := rp.formatPacket(pkt); s != "" {
+		io.WriteString(rp.w, s)
+	}
+}
+
+// formatPacket returns the string to print for a recognized packet.
+// Dispatches to protocol-specific formatters.
+func (rp *responsePrinter) formatPacket(pkt scan.Packet) string {
+	switch {
+	case pkt.HasTag(ubx.Tag):
+		return rp.formatUBX(pkt)
+	case pkt.HasTag(casic.Tag):
+		return rp.formatCASBIN(pkt)
+	case pkt.HasTag(nmea.Tag):
+		return rp.formatNMEA(pkt)
+	default:
+		return rp.formatText(pkt)
+	}
+}
+
+func (rp *responsePrinter) formatUBX(pkt scan.Packet) string {
+	msg, err := ubxbin.ParseMsg(pkt.Data)
+	if err != nil {
+		return ""
+	}
+	switch m := msg.(type) {
+	case *ubxbin.AckAck:
+		return fmt.Sprintf("UBX-ACK-ACK: %s\n", m.MsgID)
+	case *ubxbin.AckNak:
+		return fmt.Sprintf("UBX-ACK-NAK: %s\n", m.MsgID)
+	}
+	return ""
+}
+
+func (rp *responsePrinter) formatCASBIN(pkt scan.Packet) string {
+	msg, err := casbin.ParseMsg(pkt.Data)
+	if err != nil {
+		return ""
+	}
+	switch m := msg.(type) {
+	case *casbin.AckAck:
+		return fmt.Sprintf("CASBIN-ACK-ACK: %s\n", m.AckedMsgID())
+	case *casbin.AckNak:
+		return fmt.Sprintf("CASBIN-ACK-NAK: %s\n", m.AckedMsgID())
+	}
+	return ""
+}
+
+func (rp *responsePrinter) formatNMEA(pkt scan.Packet) string {
+	// Skip standard GNSS talker sentences but show TXT and proprietary
+	if nmea.CheckSyntax(pkt.Data).IsValidGNSSTalkerNMEA() && pkt.Data[3:6] != "TXT" {
+		return ""
+	}
+	return rp.formatText(pkt)
+}
+
+func (rp *responsePrinter) formatText(pkt scan.Packet) string {
+	// Strip trailing EOL, check all chars printable
+	s := strings.TrimRight(pkt.Data, "\r\n")
+	if s == "" {
+		return ""
+	}
+	for i := range len(s) {
+		if !isPrintable(s[i]) {
+			return ""
+		}
+	}
+	return s + "\n"
+}
+```
+
+This structure:
+- Separates protocol detection from formatting logic
+- Makes it easy to add new protocol handlers
+- Keeps ACK/NAK formatting close to where it's used
+- Each `format*` method returns empty string to skip printing
+
+#### 8d: Payload encoding
 
 **Details:**
 - `ubx/bin` and `casic/bin` own endianness; gpscmd uses `bin.Endian` for encoding
-- `Pack(format string, values []any) ([]byte, error)` in gpscmd
-- Specifiers: U1, U2, U4, I1, I2, I4, X1, X2, X4, R4, R8
-- `UBXLikeMsg` struct in gpscmd with fields: `Class`, `ID`, `Pack`, `Payload`, `Delay`, `Tag`
+- `EncodePayload(types string, values []any) ([]byte, error)` in gpscmd
+- Type specifiers: U1, U2, U4, I1, I2, I4, R4, R8
+- `UBXLikeMsg` struct in gpscmd with fields: `Class`, `ID`, `Payload` (with `Types` and `Values`), `Delay`, `Tag`
 - `UBXMsg` and `CASBINMsg` embed `UBXLikeMsg`; each implements `GetBytes()` calling its `bin.PackMsg()`
 - Build packet using `bin.PackMsg(mid, payload)` (already exists in both ubx/bin and casic/bin)
-- Fire-and-forget (no ACK/NAK handling)
+- Fire-and-forget (response display handled by refactored responsePrinter)
 
 ### Step 9: UBX Configurator integration
 
@@ -452,7 +615,10 @@ Implemented in Step 1.
 | `internal/gpscmd/gpsflags.go` | `-m` flag | done |
 | `internal/gpscmd/gpscmd.go` | `runMsgs()`, `runConfig()`, `runRawMsgs()`, `responsePrinter` | done |
 | `internal/gpscmd/gpsflags.go` | `-t` flag | done |
-| `internal/gpscmd/pack.go` | Pack format encoding (Step 7) | |
+| `internal/casic/bin/ack.go` | CASIC ACK/NAK types (Step 8a) | |
+| `internal/casic/bin/msg.go` | CASIC message ID name registry (Step 8b) | |
+| `internal/gpscmd/gpscmd.go` | Refactor responsePrinter for per-protocol handling (Step 8c) | |
+| `internal/gpscmd/payload.go` | Payload encoding (Step 8d) | |
 
 ## Dependencies
 
