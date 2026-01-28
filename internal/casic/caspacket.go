@@ -7,15 +7,15 @@ import (
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
-// Tag is the identifier for CASIC protocol packets
-const Tag gpsprot.Tag = "CAS"
+// Tag is the identifier for CASIC binary protocol packets
+const Tag gpsprot.Tag = "CASBIN"
 
 const (
 	sync1Byte = bin.Sync1
 	sync2Byte = bin.Sync2
 )
 
-// PacketFormat is the CASIC packet format
+// PacketFormat is the CASIC binary packet format
 var PacketFormat gpsprot.PacketFormat = packetFormat{}
 
 type packetFormat struct{}
@@ -67,13 +67,13 @@ func (f packetFormat) MsgID(pkt []byte) string {
 	return bin.PacketMsgID(pkt).String()
 }
 
-// ExtractChecksum extracts the checksum from the CASIC packet.
+// ExtractChecksum extracts the checksum from the CASIC binary packet.
 // Precondition: the packet must be valid according to Next().
 func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
 	return pkt[len(pkt)-4:]
 }
 
-// ComputeChecksum computes the checksum for the CASIC packet.
+// ComputeChecksum computes the checksum for the CASIC binary packet.
 // Precondition: the packet must be valid according to Next().
 func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
 	ck := bin.Checksum(pkt[:len(pkt)-4])

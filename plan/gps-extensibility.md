@@ -419,7 +419,7 @@ Implemented in Step 1.
 - `--show-tags` loads file, validates, prints tags, exits
 - `--show-tags` requires `-m` but not `-d`/`--socket`
 
-### Step 8: UBX/CASIC messages (fire-and-forget)
+### Step 8: UBX/CASBIN messages (fire-and-forget)
 
 **Files:**
 - `internal/ubx/bin/common.go` - add `const Endian = binary.LittleEndian`
@@ -432,7 +432,7 @@ Implemented in Step 1.
 - `Pack(format string, values []any) ([]byte, error)` in gpscmd
 - Specifiers: U1, U2, U4, I1, I2, I4, X1, X2, X4, R4, R8
 - `UBXLikeMsg` struct in gpscmd with fields: `Class`, `ID`, `Pack`, `Payload`, `Delay`, `Tag`
-- `UBXMsg` and `CASMsg` embed `UBXLikeMsg`; each implements `GetBytes()` calling its `bin.PackMsg()`
+- `UBXMsg` and `CASBINMsg` embed `UBXLikeMsg`; each implements `GetBytes()` calling its `bin.PackMsg()`
 - Build packet using `bin.PackMsg(mid, payload)` (already exists in both ubx/bin and casic/bin)
 - Fire-and-forget (no ACK/NAK handling)
 

@@ -84,8 +84,8 @@ func TestTag(t *testing.T) {
 	if PacketFormat.Tag() != Tag {
 		t.Errorf("Tag() = %q, want %q", PacketFormat.Tag(), Tag)
 	}
-	if Tag != "CAS" {
-		t.Errorf("Tag = %q, want CAS", Tag)
+	if Tag != "CASBIN" {
+		t.Errorf("Tag = %q, want CASBIN", Tag)
 	}
 }
 

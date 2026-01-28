@@ -10,7 +10,7 @@ import (
 // Ensure PacketProcessor implements gpsprot.PacketProcessor
 var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 
-// PacketProcessor implements the gpsprot.PacketProcessor interface for CASIC packets
+// PacketProcessor implements the gpsprot.PacketProcessor interface for CASIC binary packets
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
 	mh          gpsprot.MsgHandler
@@ -18,12 +18,12 @@ type PacketProcessor struct {
 	satAccum    satAccum // satellite info accumulator
 }
 
-// NewPacketProcessor creates a new CASIC packet processor
+// NewPacketProcessor creates a new CASIC binary packet processor
 func NewPacketProcessor() *PacketProcessor {
 	return &PacketProcessor{}
 }
 
-// ProcessPacket processes a CASIC packet's data and returns the message ID and any error
+// ProcessPacket processes a CASIC binary packet's data and returns the message ID and any error
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
 	m, err := bin.ParseMsg(data)
 	if err != nil {
