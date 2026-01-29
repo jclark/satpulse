@@ -134,7 +134,7 @@ description = "Save configuration to NVM"
 Run specific tags with `-t`:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -m quectel.toml -t nmea-daemon,save
+satpulsetool gps -d /dev/ttyUSB0 -s 460800 -m quectel.toml -t nmea-daemon,save
 ```
 
 The `--show-tags` flag lists available tags with descriptions.
@@ -210,3 +210,6 @@ I have had good success using AI to create message libraries. The workflow is:
 	- try a message in the message library and see whether the receiver ACKs it
 	- capture output from the receiver before and after to see whether the configuration message has had the expected effect on the output (use `--capture N` with `--packet-log` to capture packets for N seconds)
 
+### Examples
+
+The [configs/gpsmsg](https://github.com/jclark/satpulse/tree/master/configs/gpsmsg) directory in the repository has some example message libraries.
