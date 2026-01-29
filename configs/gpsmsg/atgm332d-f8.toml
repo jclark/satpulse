@@ -86,7 +86,7 @@ payload.types = "U1U1U2U4U4"
 payload.values = [1, 0, 0, 0, 0]
 
 # CFG-TP: Time pulse (PPS) configuration
-# Payload: U4 interval_us, U4 width_us, I1 enable, I1 polarity, I1 time_ref,
+# Payload: U4 interval_us, U4 width_us, U1 enable, I1 polarity, U1 time_ref,
 #          U1 time_source, R4 user_delay
 # enable: 0=off, 1=on, 2=maintain, 3=fix only
 # polarity: 0=rising edge, 1=falling edge
@@ -99,7 +99,7 @@ tag = "pps"
 description = "Enable PPS output (0.1s pulse, only when locked)"
 class = 0x06
 id = 0x03
-payload.types = "U4U4I1I1I1U1R4"
+payload.types = "U4U4U1I1U1U1R4"
 payload.values = [1000000, 100000, 3, 0, 0, 0, 0.0]
 
 # PPS aligned to GPS time (not UTC)
@@ -108,7 +108,7 @@ tag = "pps-gps"
 description = "Enable PPS aligned to GPS time"
 class = 0x06
 id = 0x03
-payload.types = "U4U4I1I1I1U1R4"
+payload.types = "U4U4U1I1U1U1R4"
 payload.values = [1000000, 100000, 3, 0, 1, 0, 0.0]
 
 # PPS aligned to BDS time
@@ -117,7 +117,7 @@ tag = "pps-bds"
 description = "Enable PPS aligned to BDS time"
 class = 0x06
 id = 0x03
-payload.types = "U4U4I1I1I1U1R4"
+payload.types = "U4U4U1I1U1U1R4"
 payload.values = [1000000, 100000, 3, 0, 1, 1, 0.0]
 
 # Disable PPS
@@ -126,7 +126,7 @@ tag = "pps-off"
 description = "Disable PPS output"
 class = 0x06
 id = 0x03
-payload.types = "U4U4I1I1I1U1R4"
+payload.types = "U4U4U1I1U1U1R4"
 payload.values = [1000000, 0, 0, 0, 0, 0, 0.0]
 
 # CFG-CFG: Save/load configuration
