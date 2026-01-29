@@ -89,8 +89,9 @@ satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980-has.toml
 This will send each line, terminated with CR/LF by default.
 When used in this simple way, the main problem that this solves is enabling the user to see how the GPS receiver responded to the message.
 Since SatPulse knows about packet formats, it can intelligently identify which packets might be responses to the message and display only those.
-If use `cat` and `stty`, you have no idea how the receiver responded.
-If you try to use a terminal emulator, the periodic messsages being continually output by the receiver (which may include binary) makes it difficult to see the responses.
+If you use `cat` and `stty`, you have no idea how the receiver responded.
+If you try to use a terminal emulator, the periodic messages being continually output by the receiver (which may include binary) makes it difficult to see the responses.
+There is also a `--packet-log` option that allows you to capture all packets sent and received.
 
 ### NMEA message type
 
@@ -197,3 +198,15 @@ SatPulse doesn't know about the CFG-TP message but it does know how CASIC binary
 to produce the right packet from this higher-level description (the packet has two sync bytes, the payload length, the class, the message id, the payload with values in little-endian byte-order and then a checksum).
 
 ### Using AI to create message libraries
+
+I have had good success using AI to create message libraries. The workflow is:
+
+1. convert the protocol spec from PDF into a more AI-friendly format such as Markdown
+2. prompt a coding agent (e.g., Claude Code) to generate a message library, giving it:
+	- the protocol spec
+	- description of the message file format
+	- a few examples of a message library
+3. allow the agent to use satpulsetool to access the GPS receiver:
+	- try a message in the message library and see whether the receiver ACKs it
+	- capture output from the receiver before and after to see whether the configuration message has had the expected effect on the output (use `--capture N` with `--packet-log` to capture packets for N seconds)
+
