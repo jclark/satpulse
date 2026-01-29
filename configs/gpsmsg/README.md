@@ -10,14 +10,13 @@ The message file format uses [TOML](https://toml.io/en/), the same format as the
 
 ## Simplest case
 
-Example file called `um980-ppp.toml`:
+Example file called `um980-has.toml`:
 
 ```toml
 [[line]]
-text = "CONFIG PPP CONVERGE 10 20"
-
-[[line]]
 text = "CONFIG PPP ENABLE E6-HAS"
+[[line]]
+text = "CONFIG PPP CONVERGE 10 20"
 ```
 
 This specifies two messages each of which are lines.
@@ -27,7 +26,7 @@ The word inside the double brackets is the message type; `line` means a text lin
 Send these messages with:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980-ppp.toml
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980-has.toml
 ```
 
 The `-m` flag specifies the message file.
@@ -91,22 +90,26 @@ You can use `eol = ""` to send plain text with no line terminator.
 
 ## Binary messages
 
-The `binary` message type sends raw bytes specified as a hex string:
+The `binary` message type sends raw bytes specified as a hex string.
+For example, with u-blox L5 receivers, there is a special command you need to send to get GPS L5 signal to work:
 
 ```toml
 [[binary]]
 hex = "B562068A0900000100000100321001DEED"
+tag = "gps-l5-health"
+description = "Use GPS L5 signal regardless of health status"
 ```
 
 Hex string must have even length. Whitespace within the hex string is ignored.
 
 ## NMEA messages
 
-The `nmea` message type handles NMEA sentence framing automatically:
+The `nmea` message type handles NMEA sentence framing automatically.
+For example, this is how to configure PPS on a Quectel LG290P:
 
 ```toml
 [[nmea]]
-text = "PCAS04,3"
+text = "PQTMCFGPPS,W,1,1,100,2,1,0"
 ```
 
 This is like `line`, except:
@@ -118,35 +121,39 @@ This is like `line`, except:
 
 Tags let you group messages and select which groups to send.
 
-Call the file `um980.toml`:
-
 ```toml
-[[line]]
-text = "CONFIG PPP CONVERGE 10 20"
-tag = "ppp"
-
-[[line]]
-text = "CONFIG PPP ENABLE E6-HAS"
-tag = "ppp"
-
-[[line]]
-text = "SIGNALGROUP 1"
-tag = "signalgroup1"
-
-[[line]]
-text = "SIGNALGROUP 2"
-tag = "signalgroup2"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RMC,1"
+tag = "nmea-daemon"
+description = "Enable NMEA messages understood by satpulse daemon"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GGA,1"
+tag = "nmea-daemon"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSA,1"
+tag = "nmea-daemon"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSV,1"
+tag = "nmea-daemon"
+[[nmea]]
+text = "PQTMSAVEPAR"
+tag = "save"
+description = "Save configuration to NVM"
 ```
 
 Use `-t` to select which tags to send:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980.toml -t ppp
+satpulsetool gps -d /dev/ttyUSB0 -s 460800 -m quectel.toml -t nmea-daemon,save
 ```
 
-This sends only the messages with tag `ppp`.
+This sends messages with tag `nmea-daemon`, then messages with tag `save`.
 
-Use `-t signalgroup1,ppp` to send messages with tag signalgroup1 and then messages with tag ppp.
+The `--show-tags` flag lists available tags with descriptions:
+
+```
+satpulsetool gps -m quectel.toml --show-tags
+```
 
 If there is no `-t` flag, messages with the empty tag `""` are sent.
 Since none of the messages in this file have an empty tag, nothing would be sent without `-t`.
@@ -179,28 +186,9 @@ The first three messages have tag `setup` (from the default); the last has tag `
 
 `description` is an optional string that documents what a tag does. It is displayed by `--show-tags`.
 
-```toml
-[[nmea]]
-text = "PQTMVERNO"
-tag = "version"
-description = "Query firmware version"
-
-[[nmea]]
-text = "PQTMCFGPPS,R,1"
-tag = "query-pps"
-description = "Query PPS configuration"
-```
-
-Use `--show-tags` to list all tags in a message file:
-
-```
-satpulsetool gps -m lg290p.toml --show-tags
-```
-
-When multiple messages share the same tag, each can have a `description`. The rule is: all non-empty descriptions for a tag must be identical. This allows flexibility:
+When multiple messages share the same tag, each can have a `description`. The rule is: all non-empty descriptions for a tag must be identical.
 
 ```toml
-# Option 1: description on first message only
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RMC,1"
 tag = "nmea-satpulse"
@@ -230,23 +218,23 @@ Default is empty string `""`. Not allowed in `[default.line]` etc.
 
 ## Protocol-specific message types
 
-For u-blox UBX and CASIC binary protocols, use structured payload encoding:
+For u-blox UBX and CASIC binary protocols, use structured payload encoding.
+
+For example, the CASIC CFG-TP message (0x06 0x03) controls the time pulse:
 
 ```toml
-[[ubx]]
-tag = "gps-l5-health"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x10320001, 1]
-
 [[casbin]]
-tag = "cfg-tp"
+tag = "pps-gps"
+description = "Enable PPS aligned to GPS time"
 class = 0x06
 id = 0x03
-payload.types = "U1U2U4"
-payload.values = [1, 100, 0x12345678]
+payload.types = "U4U4U1I1U1U1R4"
+payload.values = [1000000, 100000, 3, 0, 1, 0, 0.0]
 ```
+
+Each type descriptor in the `payload.types` string specifies how to encode the corresponding entry in `payload.values`.
+SatPulse doesn't need to know about the specific message, just the protocol packet format.
+It uses this to produce the correct packet (with sync bytes, payload length, class, message id, little-endian encoded payload, and checksum).
 
 | Key | Type | Description |
 |-----|------|-------------|
