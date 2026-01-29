@@ -49,7 +49,7 @@ An intermediate protocol-independent orchestation layer does IO and manages retr
 
 The documented UM98x packet formats and logs are similar but distinct from the NovAtel OEM6/7 ones. But it turns out that UM98x can also be configured to generate packet formats and logs that are exactly as define in the NovAtel documentation. These packet formats and logs are also implemented by a couple of other recent Chinese GNSS receivers (Bynav M20 and SinoGNSS K901), so I also implemented support for these.
 
-## Extensibility
+## GPS message files
 
 The approach to configuration in 0.1 has some fundamental limitations:
 
@@ -68,6 +68,7 @@ In the last week, I have implemented an alternative, more pragmatic approach to 
 The approach is a simple one: have a file that defines messages that can be sent to the GPS receiver.
 There is a new `-m`/`--msg-file` option for `satpulsetool gps` that specifies the message definition file.
 This does not use the configuration abstraction at all and allows arbitrary messages to be sent to the receiver.
+Since the main SatPulse configuration file is TOML, I also chose TOML for the format of this definition file.
 
 Here's a simple example. The Unicore UM980 supports Galileo HAS, but SatPulse configuration abstraction does not yet have anything for this.
 To enable Galileo HAS, create a file `um980-has.toml`.
@@ -86,90 +87,113 @@ satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980-has.toml
 ```
 
 This will send each line, terminated with CR/LF by default.
-Most importantly, it will intelligently display responses from the GPS receiver.
+When used in this simple way, the main problem that this solves is enabling the user to see how the GPS receiver responded to the message.
+Since SatPulse knows about packet formats, it can intelligently identify which packets might be responses to the message and display only those.
+If use `cat` and `stty`, you have no idea how the receiver responded.
+If you try to use a terminal emulator, the periodic messsages being continually output by the receiver (which may include binary) makes it difficult to see the responses.
 
+### NMEA message type
 
-### Message types
-
-The file supports several message types:
-
-| Type | Description |
-|------|-------------|
-| `[[line]]` | Plain text with configurable line ending |
-| `[[nmea]]` | NMEA format with automatic checksum |
-| `[[binary]]` | Raw hex bytes |
-| `[[ubx]]` | u-blox UBX binary messages |
-| `[[casbin]]` | CASIC binary messages |
-
-NMEA messages are convenient when you don't want to compute checksums:
+The `nmea` message type is similar to `line`, but it knows about NMEA checksums.
+For example, this is how to configure PPS on a Quectel LG290P.
 
 ```toml
 [[nmea]]
-text = "PQTMCFGPPS,W,1,1,100000"
+text = "PQTMCFGPPS,W,1,1,100,2,1,0"
 ```
 
 The tool prepends `$` if missing and appends the checksum automatically.
 
-### Tags for organization
+### Message libraries
 
-Larger files can use tags to group related commands:
+The message file can also be used to create a library of messages.
+Each message can be given a tag and a description.
+
 
 ```toml
 [[nmea]]
-text = "PQTMVERNO"
-tag = "version"
-description = "Query firmware version"
-
+text = "PQTMCFGMSGRATE,W,RMC,1"
+tag = "nmea-daemon"
+description = "Enable NMEA messages understood by satpulse daemon"
 [[nmea]]
-text = "PQTMCFGPPS,W,1,1,100000"
-tag = "pps"
-description = "Configure PPS output"
-
+text = "PQTMCFGMSGRATE,W,GGA,1"
+tag = "nmea-daemon"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSA,1"
+tag = "nmea-daemon"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSV,1"
+tag = "nmea-daemon"
 [[nmea]]
 text = "PQTMSAVEPAR"
 tag = "save"
-description = "Save to flash"
+description = "Save configuration to NVM"
 ```
 
 Run specific tags with `-t`:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -m quectel.toml -t pps,save
+satpulsetool gps -d /dev/ttyUSB0 -m quectel.toml -t nmea-daemon,save
 ```
 
-The `--show-tags` flag lists available tags without connecting to the receiver:
+The `--show-tags` flag lists available tags with descriptions.
 
 ```
 satpulsetool gps -m quectel.toml --show-tags
 ```
 
-### Binary protocol support
+### Binary messages
 
-For u-blox receivers, you can construct UBX messages directly:
+Sending binary messages is a less straightforward.
+
+You can specify the exact bytes to send. For example, with u-blox L5 receivers,
+there is a special command you need to send get GPS L5 signal to work.
+The u-blox docs give it as a hex string.
 
 ```toml
-[[ubx]]
+[[binary]]
+hex = "B562068A0900000100000100321001DEED"
 tag = "gps-l5-health"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x10320001, 1]
+description = "Use GPS L5 signal regardless of health status"
 ```
 
-The `payload.types` string specifies how to encode the values: `U1` is an unsigned byte, `U2` is an unsigned 16-bit integer, `U4` is unsigned 32-bit, and so on. This matches the type notation in u-blox interface descriptions.
+But usually it is not convenient to specify the full byte sequence directly.
 
-## When to use this
+When SatPulse has support for a binary packet format, you can use this to specify things in a more readable way.
+For example, let's take the CASIC binary protocol, which is similar to UBX.
+SatPulse has support for the packet format layer, but does not have configuration support.
+There's a CFG-TP message for controlling the time pulse.
+The CASIC specification describes it like this.
 
-The message file feature is designed for specific scenarios:
+**CFG-TP (0x06 0x03)**
 
-- **Protocol-specific commands** that SatPulse doesn't abstract, like PPP configuration or receiver-specific NMEA extensions
-- **Debugging and testing**, especially when bringing up a new receiver
-- **Receivers SatPulse doesn't fully support**, where you can still send commands manually
+**Payload Content**
 
-For routine configuration of supported receivers, the built-in flags like `--gnss` and `--pps` remain the better choice since they handle protocol differences automatically.
+| Offset | Type | Name | Unit | Description |
+| :---- | :---- | :---- | :---- | :---- |
+| 0 | U4 | interval | us | Pulse Interval |
+| 4 | U4 | width | us | Pulse Width |
+| 8 | U1 | enable |  | Enable Flag (0=Off, 1=On, 2=Auto Maintain, 3=Fix Only) |
+| 9 | I1 | polar |  | Polarity (0=Rising, 1=Falling) |
+| 10 | U1 | timeRef |  | 0=UTC, 1=Satellite Time |
+| 11 | U1 | timeSource |  | 0=GPS, 1=BDS, 2=GLN, 4=BDS(Main), 5=GPS(Main), 6=GLN(Main) |
+| 12 | R4 | userDelay | s | User Delay |
 
-The message file cannot be combined with configuration flags. This is intentional: mixing manual commands with automatic configuration would create ambiguity about ordering and could leave the receiver in an inconsistent state.
 
-## Looking ahead
+We can use this to define a message as follows:
 
-This feature is part of a broader goal to make SatPulse more useful even when it doesn't fully support a particular receiver. The message file gives technical users a way to configure any receiver, provided they're willing to read the manual and construct the commands themselves. Over time, lessons learned from message files may inform which features to add to SatPulse's automatic configuration.
+```toml
+[[casbin]]
+tag = "pps-gps"
+description = "Enable PPS aligned to GPS time"
+class = 0x06
+id = 0x03
+payload.types = "U4U4I1I1I1U1R4"
+payload.values = [1000000, 100000, 3, 0, 1, 0, 0.0]
+```
+
+Each type descriptor in the `payload.types` string specifies how to encode corresponding entry in `payload.values`.
+SatPulse doesn't know about the CFG-TP message but it does not how CASIC binary packets work, and it can use this
+to produce the right packet from this higher-level description (the packet has two sync bytes, the payload length, the class, the message id, the payload with values in little-endian byte-order and then a checksum).
+
+### Using AI to create message libraries
