@@ -4,11 +4,21 @@ title: SatPulse internals
 
 ## Go packages
 
-The Go packages can be divided up into layers, where packages in each layer depend on only packages in the same and lower layers.
+The Go packages can be divided up into layers where each layer depends only on packages in the same or lower layers.
+Each layer can also be divided into time sync, GPS and base groups, where time sync can depend on GPS, and time sync and GPS can depend on base.
+
+|              | Time sync | GPS | Base |
+|--------------|-----------|-----|--------|
+| **Command**  | daemon, pmccmd, sdpcmd, syncsimcmd, cmd/ifwait | gpscmd | cmd |
+| **Application** | ts, gpsevent, phcsync, timemsg, ptpgm, refclock, obs, obs/sseobs, obs/promobs, logobs, statsobs, syncsim, proxy, bcast | gpsio, gpscfg | logfile |
+| **Domain** | phc, sockrefclock, clocksim | gpsprot, scan, scantest, ubx, nmea, rtcm, gpsreg, casic, unc, nov, sino, as, ptime | |
+| **Library** | pmc, circbuf, median, check, sse, ifwait, fuser, devnotify, allan | ubx/bin, ubxcfgval, casic/bin, novmsg, uncmsg, geopos, fieldenc | ntptime |
 
 ### Command-line layer
 
 Provides the user interface to the programs, including the command-line interface and the configuration file.
+
+#### Time sync
 
 `cmd/satpulsetool` provides main for satpulsetool.
 
@@ -18,23 +28,25 @@ Provides the user interface to the programs, including the command-line interfac
 
 `internal/pmccmd` implements `pmc` subcommand of satpulsetool.
 
-`internal/gpscmd` implements `gps` command of satpulsetool.
-
-`cmd/ifwait` provides a program that waits for a network interface to become ready. It exercises the functionality of the internal/ifwait package.
-
-`internal/cmd` provides some common functionality used for command-line interfaces.
-
 `internal/syncsimcmd` implements the `syncsim` subcommand of satpulsetool. It parses configuration and command-line arguments, then orchestrates a discrete-event simulation of the synchronization system using `internal/syncsim`.
 
 `internal/sdpcmd` implements the `sdp` subcommand of satpulsetool. It provides interfaces to manage software-defined pins (SDPs) on PTP hardware clocks, including listing available interfaces and pins, capturing external timestamps, configuring periodic output, and disabling pins.
+
+`cmd/ifwait` provides a program that waits for a network interface to become ready. It exercises the functionality of the internal/ifwait package.
+
+#### GPS
+
+`internal/gpscmd` implements `gps` command of satpulsetool.
+
+#### Base
+
+`internal/cmd` provides some common functionality used for command-line interfaces.
 
 ### Application layer
 
 Provides the main blocks of the applications.
 
-`internal/gpsio` implements a goroutine that reads input from the GPS, splits it into packets and sends those packets to a channel. It provides an abstraction for performing IO on a GPS, which can work either over a serial connection (using `term`) or over a network connection. The input is split into packets using the `internal/scan` package.
-
-`internal/gpscfg` drives the GPS configuration process. It combines `internal/gpsio` and `internal/gpsprot`.
+#### Time sync
 
 `internal/ts` implements a goroutine that reads external timestamps from the PTP hardware clock and sends those to a channel. These external timestamps are the time pulses emitted by the GPS receiver.
 
@@ -66,11 +78,29 @@ Provides the main blocks of the applications.
 
 `internal/bcast` concurrency abstraction broadcasts a channel to multiple other channels.
 
+#### GPS
+
+`internal/gpsio` implements a goroutine that reads input from the GPS, splits it into packets and sends those packets to a channel. It provides an abstraction for performing IO on a GPS, which can work either over a serial connection (using `term`) or over a network connection. The input is split into packets using the `internal/scan` package.
+
+`internal/gpscfg` drives the GPS configuration process. It combines `internal/gpsio` and `internal/gpsprot`.
+
+#### Base
+
 `internal/logfile` provides utility functions for opening and reopening log files.
 
 ### Domain layer
 
 Provides packages using domain-specific abstractions that are used by the application layer. These packages have mutual dependencies. They do not make use of goroutines nor do they perform logging.
+
+#### Time sync
+
+`internal/phc` provides low level abstractions to access the PTP hardware clock. It is highly Linux dependent. It uses `internal/ptime`.
+
+`internal/sockrefclock` implements the chrony refclock protocol. It uses `internal/ptime`.
+
+`internal/clocksim` provides discrete-time simulation of PTP hardware clocks and GNSS PPS signals. It includes simulator functions for oscillators (modeling frequency errors like white noise, flicker noise, random walk, drift) and for GPS/PPS timing errors (jitter, sawtooth, sinusoids, colored noise).
+
+#### GPS
 
 `internal/ptime` provides a Time type that represents time in the PTP timescale (nanoseconds in TAI timescale since 1970-01-01T00:00:00 TAI). This is used throught the domain layer and higher level layers.
 
@@ -86,10 +116,6 @@ Provides packages using domain-specific abstractions that are used by the applic
 
 `internal/gpsreg` provides a registry for the various implementations of the `internal/gpsprot` layer. Higher layers avoid interacting with the implementations for specific protocols as much as possible. Generally the command-line layer interacts with `internal/gpsreg`, and passes the appropriate implementations into lower layers.
 
-`internal/phc` provides low level abstractions to access the PTP hardware clock. It is highly Linux dependent. It uses `internal/ptime`.
-
-`internal/sockrefclock` implements the chrony refclock protocol. It uses `internal/ptime`.
-
 `internal/casic` implements `internal/gpsprot` abstractions for the CASIC binary protocol. It uses `internal/casic/bin` to do this.
 
 `internal/unc` implements `internal/gpsprot` abstractions for the Unicore protocol. It uses `internal/uncmsg` to parse Unicore binary and ASCII message formats.
@@ -102,11 +128,31 @@ Provides packages using domain-specific abstractions that are used by the applic
 
 `internal/scantest` provides utility functions for testing GPS packet format implementations. It includes functions to find packets within buffers and insert random data prefixes for robustness testing.
 
-`internal/clocksim` provides discrete-time simulation of PTP hardware clocks and GNSS PPS signals. It includes simulator functions for oscillators (modeling frequency errors like white noise, flicker noise, random walk, drift) and for GPS/PPS timing errors (jitter, sawtooth, sinusoids, colored noise).
-
 ### Library layer
 
 Provides a library of packages, which are potentially useful outside satpulse. There are few mutual dependencies. These packages do not make use of goroutines nor do they perform no logging.
+
+#### Time sync
+
+`internal/pmc` implements a PTP management client.
+
+`internal/ifwait` use the Linux kernel's netlink subsystem to wait for changes in a network interface's status.
+
+`internal/devnotify` uses the Linux kernel's netlink subsystem to listen for creation of new devices by udev. (This is not used currently.)
+
+`internal/sse` marshals data into the format of HTML SSE (server-sent events).
+
+`internal/allan` computes Allan deviations. (This is not used currently.)
+
+`internal/check` validates struct fields against constraints specified in struct tags using reflection. It supports numeric types with comparison operators (`>`, `>=`, `<`, `<=`) and recursively validates nested structs.
+
+`internal/circbuf` provides a generic circular buffer that maintains a sliding window of recent samples. It supports appending with automatic overflow handling and reverse chronological iteration.
+
+`internal/fuser` finds processes that have a specific file or directory open by examining the Linux /proc filesystem. It provides functionality similar to the Unix fuser utility.
+
+`internal/median` provides efficient median computation for a fixed-size moving window using a circular buffer with a sorted index array. It supports 64-bit integers, floats, and time.Duration.
+
+#### GPS
 
 `internal/ubx/bin` translates binary packets in the UBX protocol to and from Go structs.
 
@@ -114,37 +160,21 @@ Provides a library of packages, which are potentially useful outside satpulse. T
 
 `internal/ubxcfgval/cfgschema` contains a YAML schema for configuration data handled by `internal/ubxcfgval`. This is used to generate code in the `internal/ubxcfgval` package.
 
-`internal/ifwait` use the Linux kernel's netlink subsystem to wait for changes in a network interface's status.
-
-`internal/devnotify` uses the Linux kernel's netlink subsystem to listen for creation of new devices by udev. (This is not used currently.)
-
-`internal/pmc` implements a PTP management client.
-
-`internal/sse` marshals data into the format of HTML SSE (server-sent events).
-
-`internal/allan` computes Allan deviations. (This is not used currently.)
-
-`internal/geopos` converts between positions in the ECEF and LLH geodetic coordinate systems. This is used by the web interface to link to Google maps.
-
-`term` provides access to the Linux terminal interface, which provides access to serial devices. This is similar to [github.com/pkg/term](https://github.com/pkg/term), but provides additional Linux-specific functionality.
-
 `internal/casic/bin` translates binary packets in the CASIC protocol to and from Go structs.
 
 `internal/novmsg` provides parsing and serialization of NovAtel GPS receiver messages in binary and ASCII formats. It defines message header and body types and implements CRC32 validation.
 
 `internal/uncmsg` parses Unicore protocol messages in binary and ASCII formats. It defines message structures and provides parsing/serialization using `internal/novmsg`.
 
-`internal/ntptime` reads the Linux kernel's NTP synchronization state via the `adjtimex` syscall and exposes it as platform-independent types. It provides information about system clock synchronization and leap second status.
-
-`internal/check` validates struct fields against constraints specified in struct tags using reflection. It supports numeric types with comparison operators (`>`, `>=`, `<`, `<=`) and recursively validates nested structs.
-
-`internal/circbuf` provides a generic circular buffer that maintains a sliding window of recent samples. It supports appending with automatic overflow handling and reverse chronological iteration.
+`internal/geopos` converts between positions in the ECEF and LLH geodetic coordinate systems. This is used by the web interface to link to Google maps.
 
 `internal/fieldenc` provides reflection-based encoding and decoding of Go structs to and from ordered string field arrays. It supports standard types and custom TextMarshaler/TextUnmarshaler implementations.
 
-`internal/fuser` finds processes that have a specific file or directory open by examining the Linux /proc filesystem. It provides functionality similar to the Unix fuser utility.
+`term` provides access to the Linux terminal interface, which provides access to serial devices. This is similar to [github.com/pkg/term](https://github.com/pkg/term), but provides additional Linux-specific functionality.
 
-`internal/median` provides efficient median computation for a fixed-size moving window using a circular buffer with a sorted index array. It supports 64-bit integers, floats, and time.Duration.
+#### Base
+
+`internal/ntptime` reads the Linux kernel's NTP synchronization state via the `adjtimex` syscall and exposes it as platform-independent types. It provides information about system clock synchronization and leap second status.
 
 
 
