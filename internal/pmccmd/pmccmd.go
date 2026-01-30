@@ -3,6 +3,7 @@ package pmccmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strconv"
@@ -38,7 +39,7 @@ func hexUint8Flag(flags *pflag.FlagSet, name string, value hexUint8, usage strin
 	return &value
 }
 
-func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage string, err error) {
+func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []string) (usage string, err error) {
 	msg, usageFunc, err := createMsg(cmdName, args)
 	if msg == nil {
 		if usageFunc != nil {

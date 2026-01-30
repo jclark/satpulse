@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -18,7 +19,8 @@ import (
 	"github.com/jclark/satpulse/internal/scan"
 )
 
-func Cmd(lg *slog.Logger, progName string, cmdName string, args []string) (usage string, err error) {
+func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName string, args []string) (usage string, err error) {
+	lg := cmd.NewDefaultLogger(logWriter, logLevel)
 	v, usageFunc, err := parseFlags(cmdName, args)
 	if v == nil {
 		if usageFunc != nil {

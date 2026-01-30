@@ -3,9 +3,12 @@ package sdpcmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"iter"
 	"log/slog"
 	"os"
+
+	"github.com/jclark/satpulse/internal/cmd"
 )
 
 // NoDataError represents a condition where no data was found (exit code 2)
@@ -39,7 +42,8 @@ func sliceToIter(items []Printer) iter.Seq[Printer] {
 }
 
 // Cmd executes the sdp subcommand with the given arguments
-func Cmd(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (usage string, err error) {
+func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName string, cmdArgs []string) (usage string, err error) {
+	lg := cmd.NewDefaultLogger(logWriter, logLevel)
 	cfg, help, usageFunc, err := parseFlags(cmdName, cmdArgs)
 	if err != nil {
 		if usageFunc != nil {
@@ -102,6 +106,5 @@ func Cmd(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (us
 
 	return
 }
-
 
 

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpscmd"
 	"github.com/jclark/satpulse/internal/pmccmd"
 	"github.com/jclark/satpulse/internal/sdpcmd"
+	"github.com/jclark/satpulse/internal/syncsimcmd"
 	"github.com/spf13/pflag"
 )
 
@@ -47,18 +49,16 @@ func main() {
 	cmdName := flags.Arg(0)
 	cmdArgs := flags.Args()[1:]
 
-	level := slog.LevelWarn
+	logLevel := slog.LevelWarn
 	if verboseLevel == 1 {
-		level = slog.LevelInfo
+		logLevel = slog.LevelInfo
 	} else if verboseLevel > 1 {
-		level = slog.LevelDebug
+		logLevel = slog.LevelDebug
 	}
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
-	lg := slog.New(handler)
-	slog.SetDefault(lg)
+	logWriter := os.Stderr
 
 	exitCode := 0
-	var exec func(lg *slog.Logger, progName string, cmdName string, cmdArgs []string) (usage string, err error)
+	var exec func(logWriter io.Writer, logLevel slog.Level, progName string, cmdName string, cmdArgs []string) (usage string, err error)
 	switch cmdName {
 	case "gps":
 		exec = gpscmd.Cmd
@@ -66,9 +66,11 @@ func main() {
 		exec = pmccmd.Cmd
 	case "sdp":
 		exec = sdpcmd.Cmd
+	case "syncsim":
+		exec = syncsimcmd.Cmd
 	}
 	if exec != nil {
-		usage, err := exec(lg, progName, cmdName, cmdArgs)
+		usage, err := exec(logWriter, logLevel, progName, cmdName, cmdArgs)
 		if err != nil {
 			cmd.ErrPrintlnWithDetail(progName, err)
 			// Check if error specifies its own exit code
@@ -98,6 +100,7 @@ func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "  gps - configure a GPS device")
 	fmt.Fprintln(os.Stderr, "  pmc - send a PTP management message to ptp4l process")
 	fmt.Fprintln(os.Stderr, "  sdp - control software-defined pins on PTP hardware clocks")
+	fmt.Fprintln(os.Stderr, "  syncsim - run clock synchronization simulation")
 	fmt.Fprintln(os.Stderr, "Global options:")
 	flags.PrintDefaults()
 }

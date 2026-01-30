@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -80,4 +81,17 @@ func CancelOnSignal(ctx context.Context, lg *slog.Logger) (context.Context, cont
 		cancel()
 	}()
 	return ctx, cancel
+}
+
+// NewLogger creates a standard text logger with the given writer and level.
+func NewLogger(w io.Writer, level slog.Level) *slog.Logger {
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level}))
+}
+
+// NewDefaultLogger creates a standard text logger with the given writer and level,
+// and sets it as the process-wide default logger.
+func NewDefaultLogger(w io.Writer, level slog.Level) *slog.Logger {
+	lg := NewLogger(w, level)
+	slog.SetDefault(lg)
+	return lg
 }
