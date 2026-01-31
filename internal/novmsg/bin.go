@@ -10,9 +10,9 @@ import (
 
 // First three bytes of a NovAtel binary packet
 const (
-	sync1 byte = 0xAA
-	sync2 byte = 0x44
-	sync3 byte = 0x12
+	Sync1 byte = 0xAA
+	Sync2 byte = 0x44
+	Sync3 byte = 0x12
 )
 
 const standardHeaderLength = 28 // Standard header length for creating new messages
@@ -191,9 +191,9 @@ func SerializeBinMsg(msg *Msg) ([]byte, error) {
 
 	// Create binary header
 	binHdr := BinaryHdr{
-		Sync1:         sync1,
-		Sync2:         sync2,
-		Sync3:         sync3,
+		Sync1:         Sync1,
+		Sync2:         Sync2,
+		Sync3:         Sync3,
 		HeaderLength:  standardHeaderLength,
 		MessageID:     msgID,
 		MessageType:   0, // Default message type

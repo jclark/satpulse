@@ -218,7 +218,7 @@ Default is empty string `""`. Not allowed in `[default.line]` etc.
 
 ## Protocol-specific message types
 
-For u-blox UBX and CASIC binary protocols, use structured payload encoding.
+For u-blox UBX, CASIC, and Allystar binary protocols, use structured payload encoding.
 
 For example, the CASIC CFG-TP message (0x06 0x03) controls the time pulse:
 
@@ -230,6 +230,18 @@ class = 0x06
 id = 0x03
 payload.types = "U4U4U1I1U1U1R4"
 payload.values = [1000000, 100000, 3, 0, 1, 0, 0.0]
+```
+
+For Allystar receivers (TAU1201, etc.), use `asbin`:
+
+```toml
+[[asbin]]
+tag = "pps"
+description = "Configure 1PPS with 100us pulse width, rising edge"
+class = 0x06
+id = 0x07
+payload.types = "U4I4U4U1U1U1"
+payload.values = [1000000, 0, 100000, 1, 13, 1]
 ```
 
 Each type descriptor in the `payload.types` string specifies how to encode the corresponding entry in `payload.values`.
@@ -257,6 +269,7 @@ Type specifiers are two characters each:
 | `[[nmea]]` | `text`, `delay`, `tag`, `description` | prepends `$`, appends `*XX\r\n` checksum |
 | `[[ubx]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | UBX framing with header and checksum |
 | `[[casbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | CASIC binary framing with header and checksum |
+| `[[asbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | Allystar binary framing with header and checksum |
 
 ## Schema
 

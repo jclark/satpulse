@@ -19,6 +19,7 @@ import (
 var PacketFormats = []gpsprot.PacketFormat{
 	ubx.PacketFormat,
 	casic.PacketFormat,
+	as.PacketFormat,
 	nmea.PacketFormat,
 	rtcm.PacketFormat,
 	unc.BinPacketFormat,
@@ -101,6 +102,7 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 	return map[gpsprot.Tag]gpsprot.PacketProcessor{
 		ubx.Tag:       ubx.NewPacketProcessor(),
 		casic.Tag:     casic.NewPacketProcessor(),
+		as.Tag:        as.NewPacketProcessor(),
 		nmea.Tag:      nmeaPP,
 		rtcm.Tag:      rtcm.NewPacketProcessor(),
 		unc.TagBinary: unc.NewBinPacketProcessor(),

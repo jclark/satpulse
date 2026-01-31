@@ -23,9 +23,9 @@ func (f binPacketFormat) Tag() gpsprot.Tag {
 
 // First three bytes of a NovAtel binary packet
 const (
-	sync1 byte = 0xAA
-	sync2 byte = 0x44
-	sync3 byte = 0x12
+	sync1 = novmsg.Sync1
+	sync2 = novmsg.Sync2
+	sync3 = novmsg.Sync3
 )
 
 const (
@@ -38,9 +38,9 @@ const (
 )
 
 const (
-	crcLength = 4
-	headerLengthOffset = 3
-	msgIDOffset = 4
+	crcLength           = 4
+	headerLengthOffset  = 3
+	msgIDOffset         = 4
 	payloadLengthOffset = 8
 )
 

@@ -1,0 +1,315 @@
+# Allystar TAU1201 GPS message file
+# Protocol: Allystar binary (similar to UBX)
+# Tested on: TAU1201 with firmware 3.018.aab95e7
+
+# Version / Probe
+
+# Poll MON-VER to get firmware/hardware version
+[[asbin]]
+tag = "get-version"
+description = "Query firmware and hardware version"
+class = 0x0A
+id = 0x04
+
+# PPS Configuration (CFG-PPS 0x06 0x07)
+
+# Configure 1PPS: 100us pulse, rising edge, always output
+# period=1000000us, offset=0ns, dutycycle=100000 (10%), polarity=1, gpio=13, sync=1
+[[asbin]]
+tag = "pps"
+description = "Configure 1PPS with 100us pulse width, rising edge"
+class = 0x06
+id = 0x07
+payload.types = "U4I4U4U1U1U1"
+payload.values = [1000000, 0, 100000, 1, 13, 1]
+
+# PPS off - set duty cycle to 0
+[[asbin]]
+tag = "pps-off"
+description = "Disable PPS output"
+class = 0x06
+id = 0x07
+payload.types = "U4I4U4U1U1U1"
+payload.values = [1000000, 0, 0, 1, 13, 0]
+
+# Poll current PPS configuration
+[[asbin]]
+tag = "get-pps"
+description = "Query current PPS configuration"
+class = 0x06
+id = 0x07
+
+# GNSS Constellation Selection (CFG-NAVSAT 0x06 0x0C)
+
+# GPS all bands (L1 + L1C + L5 + L2C)
+[[asbin]]
+tag = "gnss-gps"
+description = "Enable GPS all bands (L1/L1C/L5/L2C)"
+class = 0x06
+id = 0x0C
+payload.types = "U4"
+payload.values = [0x00000701]
+
+# Galileo all bands (E1 + E5A + E5B + E6)
+[[asbin]]
+tag = "gnss-gal"
+description = "Enable Galileo all bands (E1/E5A/E5B/E6)"
+class = 0x06
+id = 0x0C
+payload.types = "U4"
+payload.values = [0x00700010]
+
+# GLONASS all bands (G1 + G2)
+[[asbin]]
+tag = "gnss-glo"
+description = "Enable GLONASS all bands (G1/G2)"
+class = 0x06
+id = 0x0C
+payload.types = "U4"
+payload.values = [0x00002002]
+
+# BeiDou all bands (B1 + B1C + B2A + B3I + B5 + B2)
+[[asbin]]
+tag = "gnss-bds"
+description = "Enable BeiDou all bands (B1/B1C/B2A/B3I/B5/B2)"
+class = 0x06
+id = 0x0C
+payload.types = "U4"
+payload.values = [0x0007C004]
+
+# Poll current GNSS configuration
+[[asbin]]
+tag = "get-gnss"
+description = "Query current GNSS constellation settings"
+class = 0x06
+id = 0x0C
+
+# Survey-in Mode (CFG-SURVEY 0x06 0x12)
+
+# Poll current survey configuration
+[[asbin]]
+tag = "get-survey"
+description = "Query current survey configuration"
+class = 0x06
+id = 0x12
+
+# Start survey-in: 2000s, 20m accuracy
+[[asbin]]
+tag = "survey"
+description = "Start survey-in (2000s, 20m accuracy)"
+class = 0x06
+id = 0x12
+payload.types = "U4U4"
+payload.values = [2000, 20000]
+
+# Fixed Position Mode (CFG-FIXEDECEF 0x06 0x14)
+
+# Poll current fixed ECEF position
+[[asbin]]
+tag = "get-fixed"
+description = "Query current fixed ECEF position"
+class = 0x06
+id = 0x14
+
+# Configuration Management (CFG-CFG 0x06 0x09)
+
+# Save all current settings to NVM
+[[asbin]]
+tag = "save"
+description = "Save all settings to non-volatile memory"
+class = 0x06
+id = 0x09
+payload.types = "U4U4"
+payload.values = [0, 0x07]
+
+# Load settings from NVM
+# Verified ACK received on TAU1201
+# Verified reload restores saved configuration on TAU1201
+[[asbin]]
+tag = "reload"
+description = "Reload settings from non-volatile memory"
+class = 0x06
+id = 0x09
+payload.types = "U4U4"
+payload.values = [1, 0x07]
+delay = 3
+
+# Factory reset
+[[asbin]]
+tag = "factory-reset"
+description = "Factory reset - clears all settings"
+class = 0x06
+id = 0x09
+payload.types = "U4U4"
+payload.values = [2, 0xFFFFFFFF]
+
+# Restart Commands (CFG-SIMPLERST 0x06 0x40)
+
+# Hot start (fastest, keeps ephemeris)
+[[asbin]]
+tag = "hot-start"
+description = "Hot start - keeps ephemeris data"
+class = 0x06
+id = 0x40
+payload.types = "U1"
+payload.values = [3]
+
+# Warm start (clears ephemeris, keeps almanac)
+[[asbin]]
+tag = "warm-start"
+description = "Warm start - clears ephemeris"
+class = 0x06
+id = 0x40
+payload.types = "U1"
+payload.values = [2]
+
+# Cold start (clears all satellite data)
+[[asbin]]
+tag = "cold-start"
+description = "Cold start - clears all satellite data"
+class = 0x06
+id = 0x40
+payload.types = "U1"
+payload.values = [1]
+
+# Message Rate Control (CFG-MSG 0x06 0x01)
+
+# Enable NAV-TIME at 1Hz (for satpulsed)
+[[asbin]]
+tag = "asbin-navtime"
+description = "Enable NAV-TIME binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x05, 1]
+
+# Disable NAV-TIME
+[[asbin]]
+tag = "asbin-navtime-off"
+description = "Disable NAV-TIME binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x05, 0]
+
+# NMEA messages use class 0xF0
+
+# Verified ACK received on TAU1201
+# Verified BDGGA messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "nmea-gga"
+description = "Enable NMEA GGA message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x00, 1]
+
+# Verified ACK received on TAU1201
+# Verified BDGGA messages stop after disable on TAU1201
+[[asbin]]
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x00, 0]
+
+# Verified ACK received on TAU1201
+# Verified BDGSA messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "nmea-gsa"
+description = "Enable NMEA GSA message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x02, 1]
+
+# Verified ACK received on TAU1201
+# Verified BDGSA messages stop after disable on TAU1201
+[[asbin]]
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x02, 0]
+
+# Verified ACK received on TAU1201
+# Verified BDGSV messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "nmea-gsv"
+description = "Enable NMEA GSV message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x04, 1]
+
+# Verified ACK received on TAU1201
+# Verified BDGSV messages stop after disable on TAU1201
+[[asbin]]
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x04, 0]
+
+# Verified ACK received on TAU1201
+# Verified BDRMC messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "nmea-rmc"
+description = "Enable NMEA RMC message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x05, 1]
+
+# Verified ACK received on TAU1201
+# Verified BDRMC messages stop after disable on TAU1201
+[[asbin]]
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x05, 0]
+
+# Verified ACK received on TAU1201
+# Verified BDZDA messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "nmea-zda"
+description = "Enable NMEA ZDA message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x07, 1]
+
+# Verified ACK received on TAU1201
+# Verified BDZDA messages stop after disable on TAU1201
+[[asbin]]
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x07, 0]
+
+# Port Configuration (CFG-PRT 0x06 0x00)
+
+# Poll UART0 configuration
+[[asbin]]
+tag = "get-uart0"
+description = "Query UART0 configuration"
+class = 0x06
+id = 0x00
+payload.types = "U1"
+payload.values = [0]
+
+# Poll UART1 configuration
+[[asbin]]
+tag = "get-uart1"
+description = "Query UART1 configuration"
+class = 0x06
+id = 0x00
+payload.types = "U1"
+payload.values = [1]

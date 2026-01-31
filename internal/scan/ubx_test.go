@@ -6,9 +6,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/internal/asbin"
+	casicbin "github.com/jclark/satpulse/internal/casic/bin"
+	"github.com/jclark/satpulse/internal/novmsg"
+	"github.com/jclark/satpulse/internal/rtcm"
 	"github.com/jclark/satpulse/internal/ubx"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/uncmsg"
 )
+
+// packetSyncBytes contains the first sync byte of each binary packet format.
+// Used to generate invalid packets that won't be mistaken for valid ones.
+var packetSyncBytes = []byte{
+	'$',               // NMEA
+	ubxbin.Sync1,      // UBX
+	rtcm.PreambleByte, // RTCM
+	casicbin.Sync1,    // CASIC
+	uncmsg.Sync1,      // Unicore
+	novmsg.Sync1,      // NovAtel
+	asbin.Sync1,       // Allystar
+}
 
 // randomUBXPacket generates a random UBX packet for testing purposes.
 // It returns a string representation of the packet.
@@ -206,11 +223,19 @@ func randomInvalidPacket() string {
 
 	for len(packet) < length {
 		b := byte(rand.Intn(256))
-		// Exclude valid start bytes for NMEA, UBX, RTCM, UNC and CASIC packets
-		if b != '$' && b != 0xB5 && b != 0xD3 && b != 0xBA && b != 0xAA {
+		if !isSyncByte(b) {
 			packet = append(packet, b)
 		}
 	}
 
 	return string(packet)
+}
+
+func isSyncByte(b byte) bool {
+	for _, sync := range packetSyncBytes {
+		if b == sync {
+			return true
+		}
+	}
+	return false
 }

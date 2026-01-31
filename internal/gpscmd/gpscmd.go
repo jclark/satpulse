@@ -236,6 +236,12 @@ func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 			return err
 		}
 		rp = newResponsePrinter(os.Stdout)
+	case []ASBINMsg:
+		raw, err = toRawMsgs(m)
+		if err != nil {
+			return err
+		}
+		rp = newResponsePrinter(os.Stdout)
 	case []UBXMsg:
 		raw, err = toRawMsgs(m)
 		if err != nil {

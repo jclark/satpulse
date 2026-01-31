@@ -48,7 +48,8 @@
 				"binary": { "$ref": "#/definitions/common" },
 				"nmea": { "$ref": "#/definitions/common" },
 				"casbin": { "$ref": "#/definitions/common" },
-				"ubx": { "$ref": "#/definitions/common" }
+				"ubx": { "$ref": "#/definitions/common" },
+				"asbin": { "$ref": "#/definitions/common" }
 			},
 			"additionalProperties": false
 		},
@@ -103,6 +104,10 @@
 			"items": { "$ref": "#/definitions/ubxLikeMsg" }
 		},
 		"ubx": {
+			"type": "array",
+			"items": { "$ref": "#/definitions/ubxLikeMsg" }
+		},
+		"asbin": {
 			"type": "array",
 			"items": { "$ref": "#/definitions/ubxLikeMsg" }
 		}

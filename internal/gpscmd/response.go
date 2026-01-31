@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/jclark/satpulse/internal/as"
+	"github.com/jclark/satpulse/internal/asbin"
 	"github.com/jclark/satpulse/internal/casic"
 	casbin "github.com/jclark/satpulse/internal/casic/bin"
 	"github.com/jclark/satpulse/internal/nmea"
@@ -60,6 +62,8 @@ func (rp *responsePrinter) formatPacket(pkt scan.Packet) string {
 		return rp.formatUBX(pkt)
 	case casic.Tag:
 		return rp.formatCASBIN(pkt)
+	case as.Tag:
+		return rp.formatASBIN(pkt)
 	case nmea.Tag:
 		return rp.formatNMEA(pkt)
 	default:
@@ -91,6 +95,20 @@ func (rp *responsePrinter) formatCASBIN(pkt scan.Packet) string {
 		return fmt.Sprintf("CASBIN-ACK-ACK: %s\n", casbin.MakeMsgID(m.ClsID, m.MsgID))
 	case *casbin.AckNak:
 		return fmt.Sprintf("CASBIN-ACK-NAK: %s\n", casbin.MakeMsgID(m.ClsID, m.MsgID))
+	}
+	return ""
+}
+
+func (rp *responsePrinter) formatASBIN(pkt scan.Packet) string {
+	msg, err := asbin.ParseMsg(pkt.Data)
+	if err != nil {
+		return ""
+	}
+	switch m := msg.(type) {
+	case *asbin.AckAck:
+		return fmt.Sprintf("ASBIN-ACK-ACK: %s\n", asbin.MakeMsgID(m.MsgClass, m.MsgID))
+	case *asbin.AckNak:
+		return fmt.Sprintf("ASBIN-ACK-NAK: %s\n", asbin.MakeMsgID(m.MsgClass, m.MsgID))
 	}
 	return ""
 }

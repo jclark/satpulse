@@ -8,6 +8,9 @@ import (
 	"strings"
 )
 
+// Endian returns the byte order used by Allystar binary protocol.
+func Endian() binary.ByteOrder { return binary.LittleEndian }
+
 const (
 	Sync1 = 0xF1
 	Sync2 = 0xD9
@@ -35,6 +38,9 @@ func makeMsgID(cls byte, id byte) MsgID {
 	return MsgID(uint16(cls) | (uint16(id) << 8))
 }
 
+// MakeMsgID creates a MsgID from class and id bytes.
+func MakeMsgID(cls byte, id byte) MsgID { return makeMsgID(cls, id) }
+
 func (mid MsgID) unpack() (byte, byte) {
 	return byte(mid & 0xFF), byte((mid >> 8) & 0xFF)
 }
@@ -59,7 +65,7 @@ func (mid MsgID) String() string {
 	} else {
 		s += fmt.Sprintf("0x%02X", id)
 	}
-	return "AS-" + s
+	return s
 }
 
 const (
@@ -368,7 +374,7 @@ func ParseMsg(packet string) (Msg, error) {
 	}
 	checksumIndex := n - 2
 	trimmed := packet[2:checksumIndex]
-	ckA, ckB := checksum(trimmed)
+	ckA, ckB := Checksum(trimmed)
 	if ckA != packet[checksumIndex] || ckB != packet[checksumIndex+1] {
 		return nil, fmt.Errorf("AS message: checksum failed: checksum in message 0x%02x%02x; computed checksum 0x%02x%02x; data %x", packet[checksumIndex], packet[checksumIndex+1], ckA, ckB, []byte(trimmed))
 	}
@@ -475,10 +481,13 @@ func packMsg(mid MsgID, payload []byte) ([]byte, error) {
 		byte((len(payload) >> 8) & 0xFF),
 	}
 	packet = append(packet, payload...)
-	ckA, ckB := checksum(packet[2:])
+	ckA, ckB := Checksum(packet[2:])
 	packet = append(packet, ckA, ckB)
 	return packet, nil
 }
+
+// PackMsg creates a complete Allystar binary packet from a MsgID and payload.
+func PackMsg(mid MsgID, payload []byte) ([]byte, error) { return packMsg(mid, payload) }
 
 type Bytes interface {
 	string | []byte
@@ -489,7 +498,8 @@ type Bytes interface {
 func PacketMsgId[B Bytes](packet B) MsgID {
 	return makeMsgID(packet[2], packet[3])
 }
-func checksum[B Bytes](bytes B) (ckA, ckB byte) {
+// Checksum computes the Fletcher-8 checksum used in Allystar binary protocol.
+func Checksum[B Bytes](bytes B) (ckA, ckB byte) {
 	for i := 0; i < len(bytes); i++ {
 		ckA += bytes[i]
 		ckB += ckA

@@ -24,9 +24,9 @@ func (f binPacketFormat) Tag() gpsprot.Tag {
 
 // First three bytes of a Unicore binary packet
 const (
-	sync1 byte = 0xAA
-	sync2 byte = 0x44
-	sync3 byte = 0xB5
+	sync1 = uncmsg.Sync1
+	sync2 = uncmsg.Sync2
+	sync3 = uncmsg.Sync3
 )
 
 const (

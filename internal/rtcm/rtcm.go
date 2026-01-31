@@ -95,13 +95,14 @@ const (
 	stateExpectN
 )
 
-const preambleByte = 0xD3
+// PreambleByte is the RTCM preamble byte
+const PreambleByte = 0xD3
 
 func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, packetLen int) gpsprot.ScanState {
 	b := buf[nextScanIndex]
 	switch state {
 	case stateSync:
-		if b == preambleByte {
+		if b == PreambleByte {
 			return stateStarted
 		}
 	case stateStarted:

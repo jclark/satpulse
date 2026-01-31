@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/internal/asbin"
 	casbin "github.com/jclark/satpulse/internal/casic/bin"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/ptime"
@@ -158,6 +159,30 @@ func (cm *CASBINMsg) toRaw() (rawMsg, error) {
 
 func (cm *CASBINMsg) getTag() string { return *cm.Tag }
 
+// ASBINMsg represents a [[asbin]] entry.
+type ASBINMsg struct {
+	UBXLikeMsg
+}
+
+func (am *ASBINMsg) toRaw() (rawMsg, error) {
+	payload, err := am.Payload.Encode(asbin.Endian())
+	if err != nil {
+		return rawMsg{}, err
+	}
+	mid := asbin.MakeMsgID(am.Class, am.ID)
+	pkt, err := asbin.PackMsg(mid, payload)
+	if err != nil {
+		return rawMsg{}, err
+	}
+	delay, err := am.MsgCommon.delay()
+	if err != nil {
+		return rawMsg{}, err
+	}
+	return rawMsg{bytes: pkt, delay: delay, tag: *am.Tag}, nil
+}
+
+func (am *ASBINMsg) getTag() string { return *am.Tag }
+
 // UBXMsg represents a [[ubx]] entry.
 type UBXMsg struct {
 	UBXLikeMsg
@@ -208,12 +233,14 @@ type MsgFile struct {
 		Binary BinaryMsg `toml:"binary"`
 		NMEA   NMEAMsg   `toml:"nmea"`
 		CASBIN CASBINMsg `toml:"casbin"`
+		ASBIN  ASBINMsg  `toml:"asbin"`
 		UBX    UBXMsg    `toml:"ubx"`
 	} `toml:"default"`
 	Line   []LineMsg   `toml:"line"`
 	Binary []BinaryMsg `toml:"binary"`
 	NMEA   []NMEAMsg   `toml:"nmea"`
 	CASBIN []CASBINMsg `toml:"casbin"`
+	ASBIN  []ASBINMsg  `toml:"asbin"`
 	UBX    []UBXMsg    `toml:"ubx"`
 }
 
@@ -244,6 +271,7 @@ func defaultMsgFile() *MsgFile {
 	mf.Default.Binary.MsgCommon = defaultMsgCommon()
 	mf.Default.NMEA.MsgCommon = defaultMsgCommon()
 	mf.Default.CASBIN.MsgCommon = defaultMsgCommon()
+	mf.Default.ASBIN.MsgCommon = defaultMsgCommon()
 	mf.Default.UBX.MsgCommon = defaultMsgCommon()
 	return mf
 }
@@ -298,6 +326,10 @@ func (mf *MsgFile) applyCASBINDefaults(cm *CASBINMsg) {
 	applyCommonDefaults(&cm.MsgCommon, &mf.Default.CASBIN.MsgCommon)
 }
 
+func (mf *MsgFile) applyASBINDefaults(am *ASBINMsg) {
+	applyCommonDefaults(&am.MsgCommon, &mf.Default.ASBIN.MsgCommon)
+}
+
 func (mf *MsgFile) applyUBXDefaults(um *UBXMsg) {
 	applyCommonDefaults(&um.MsgCommon, &mf.Default.UBX.MsgCommon)
 }
@@ -339,6 +371,15 @@ func (mf *MsgFile) validateDefaults() error {
 	if _, err := mf.Default.CASBIN.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.casbin: %w", err)
 	}
+	if mf.Default.ASBIN.Class != 0 || mf.Default.ASBIN.ID != 0 {
+		return errors.New("default.asbin.class and default.asbin.id must be zero")
+	}
+	if mf.Default.ASBIN.Description != "" {
+		return errors.New("default.asbin.description must be empty")
+	}
+	if _, err := mf.Default.ASBIN.MsgCommon.delay(); err != nil {
+		return fmt.Errorf("default.asbin: %w", err)
+	}
 	if mf.Default.UBX.Class != 0 || mf.Default.UBX.ID != 0 {
 		return errors.New("default.ubx.class and default.ubx.id must be zero")
 	}
@@ -352,7 +393,7 @@ func (mf *MsgFile) validateDefaults() error {
 }
 
 // TaggedMsgs returns messages for the given tags with defaults applied.
-// Returns a typed slice ([]LineMsg, []BinaryMsg, []NMEAMsg, []CASBINMsg, or []UBXMsg).
+// Returns a typed slice ([]LineMsg, []BinaryMsg, []NMEAMsg, []CASBINMsg, []ASBINMsg, or []UBXMsg).
 // Returns error if tags select messages of mixed types or if there are no messages with the tags.
 func (mf *MsgFile) TaggedMsgs(tags []string) (any, error) {
 	if err := mf.validateDefaults(); err != nil {
@@ -362,6 +403,7 @@ func (mf *MsgFile) TaggedMsgs(tags []string) (any, error) {
 	applyDefaults(mf.Binary, mf.applyBinaryDefaults)
 	applyDefaults(mf.NMEA, mf.applyNMEADefaults)
 	applyDefaults(mf.CASBIN, mf.applyCASBINDefaults)
+	applyDefaults(mf.ASBIN, mf.applyASBINDefaults)
 	applyDefaults(mf.UBX, mf.applyUBXDefaults)
 	var rslt any
 	lineMsgs := filterMsgs(mf.Line, tags)
@@ -388,6 +430,13 @@ func (mf *MsgFile) TaggedMsgs(tags []string) (any, error) {
 			return nil, fmt.Errorf("selected tags have mixed message types")
 		}
 		rslt = casbinMsgs
+	}
+	asbinMsgs := filterMsgs(mf.ASBIN, tags)
+	if len(asbinMsgs) > 0 {
+		if rslt != nil {
+			return nil, fmt.Errorf("selected tags have mixed message types")
+		}
+		rslt = asbinMsgs
 	}
 	ubxMsgs := filterMsgs(mf.UBX, tags)
 	if len(ubxMsgs) > 0 {
@@ -482,6 +531,7 @@ func (mf *MsgFile) collectTagDescs() (descs, inconsistent []tagDesc) {
 	collectDescs(mf.Binary, b)
 	collectDescs(mf.NMEA, b)
 	collectDescs(mf.CASBIN, b)
+	collectDescs(mf.ASBIN, b)
 	collectDescs(mf.UBX, b)
 	// Move empty tag to front if present
 	for i, td := range b.descs {
