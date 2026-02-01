@@ -5,6 +5,8 @@
 # Version / Probe
 
 # Poll MON-VER to get firmware/hardware version
+# Verified MON-VER response received on TAU1201
+# Verified MON-VER response received on TAU951M-P200
 [[asbin]]
 tag = "get-version"
 description = "Query firmware and hardware version"
@@ -15,6 +17,8 @@ id = 0x04
 
 # Configure 1PPS: 100us pulse, rising edge, always output
 # period=1000000us, offset=0ns, dutycycle=100000 (10%), polarity=1, gpio=13, sync=1
+# Verified ACK received on TAU1201
+# Verified PPS output resumes after pps on TAU1201
 [[asbin]]
 tag = "pps"
 description = "Configure 1PPS with 100us pulse width, rising edge"
@@ -24,6 +28,8 @@ payload.types = "U4I4U4U1U1U1"
 payload.values = [1000000, 0, 100000, 1, 13, 1]
 
 # PPS off - set duty cycle to 0
+# Verified ACK received on TAU1201
+# Verified PPS output stops after pps-off on TAU1201
 [[asbin]]
 tag = "pps-off"
 description = "Disable PPS output"
@@ -33,6 +39,7 @@ payload.types = "U4I4U4U1U1U1"
 payload.values = [1000000, 0, 0, 1, 13, 0]
 
 # Poll current PPS configuration
+# Verified CFG-PPS response received on TAU1201
 [[asbin]]
 tag = "get-pps"
 description = "Query current PPS configuration"
@@ -42,6 +49,8 @@ id = 0x07
 # GNSS Constellation Selection (CFG-NAVSAT 0x06 0x0C)
 
 # GPS all bands (L1 + L1C + L5 + L2C)
+# Verified ACK received on TAU1201
+# Verified GSV shows only GPS satellites after gnss-gps on TAU1201
 [[asbin]]
 tag = "gnss-gps"
 description = "Enable GPS all bands (L1/L1C/L5/L2C)"
@@ -51,6 +60,8 @@ payload.types = "U4"
 payload.values = [0x00000701]
 
 # Galileo all bands (E1 + E5A + E5B + E6)
+# Verified ACK received on TAU1201
+# Verified GSV shows only Galileo satellites after gnss-gal on TAU1201
 [[asbin]]
 tag = "gnss-gal"
 description = "Enable Galileo all bands (E1/E5A/E5B/E6)"
@@ -60,6 +71,8 @@ payload.types = "U4"
 payload.values = [0x00700010]
 
 # GLONASS all bands (G1 + G2)
+# Verified ACK received on TAU1201
+# Verified GSV shows only GLONASS satellites after gnss-glo on TAU1201
 [[asbin]]
 tag = "gnss-glo"
 description = "Enable GLONASS all bands (G1/G2)"
@@ -69,6 +82,8 @@ payload.types = "U4"
 payload.values = [0x00002002]
 
 # BeiDou all bands (B1 + B1C + B2A + B3I + B5 + B2)
+# Verified ACK received on TAU1201
+# Verified GSV shows only BeiDou satellites after gnss-bds on TAU1201
 [[asbin]]
 tag = "gnss-bds"
 description = "Enable BeiDou all bands (B1/B1C/B2A/B3I/B5/B2)"
@@ -78,6 +93,7 @@ payload.types = "U4"
 payload.values = [0x0007C004]
 
 # Poll current GNSS configuration
+# Verified CFG-NAVSAT response received on TAU1201
 [[asbin]]
 tag = "get-gnss"
 description = "Query current GNSS constellation settings"
@@ -87,6 +103,7 @@ id = 0x0C
 # Survey-in Mode (CFG-SURVEY 0x06 0x12)
 
 # Poll current survey configuration
+# Verified CFG-SURVEY response received on TAU1201
 [[asbin]]
 tag = "get-survey"
 description = "Query current survey configuration"
@@ -102,14 +119,49 @@ id = 0x12
 payload.types = "U4U4"
 payload.values = [2000, 20000]
 
+# Stop survey / return to mobile mode
+# Verified ACK received on TAU951M-P200
+# Verified get-survey returns zeros after survey-off on TAU951M-P200
+[[asbin]]
+tag = "survey-off"
+description = "Stop survey (mobile mode)"
+class = 0x06
+id = 0x12
+payload.types = "U4U4"
+payload.values = [0, 0]
+
 # Fixed Position Mode (CFG-FIXEDECEF 0x06 0x14)
 
 # Poll current fixed ECEF position
+# Verified CFG-FIXEDECEF response received on TAU1201
 [[asbin]]
 tag = "get-fixed"
 description = "Query current fixed ECEF position"
 class = 0x06
 id = 0x14
+
+# Set fixed ECEF position (coordinates in cm as S4)
+# X=-1144698.0455m, Y=6090335.4099m, Z=1504171.3914m
+# Verified ACK received on TAU1201
+# Verified get-fixed returns expected values on TAU1201
+[[asbin]]
+tag = "fixed"
+description = "Set fixed ECEF position"
+class = 0x06
+id = 0x14
+payload.types = "I4I4I4"
+payload.values = [-114469805, 609033541, 150417139]
+
+# Clear fixed position (return to mobile mode)
+# Verified ACK received on TAU951M-P200
+# Verified get-fixed returns zeros after fixed-off on TAU951M-P200
+[[asbin]]
+tag = "fixed-off"
+description = "Clear fixed position (mobile mode)"
+class = 0x06
+id = 0x14
+payload.types = "I4I4I4"
+payload.values = [0, 0, 0]
 
 # Configuration Management (CFG-CFG 0x06 0x09)
 
@@ -175,6 +227,8 @@ payload.values = [1]
 # Message Rate Control (CFG-MSG 0x06 0x01)
 
 # Enable NAV-TIME at 1Hz (for satpulsed)
+# Verified ACK received on TAU1201
+# Verified NAV-TIME messages appear at 1Hz after enable on TAU1201
 [[asbin]]
 tag = "asbin-navtime"
 description = "Enable NAV-TIME binary message at 1Hz"
@@ -184,6 +238,8 @@ payload.types = "U1U1U1"
 payload.values = [0x01, 0x05, 1]
 
 # Disable NAV-TIME
+# Verified ACK received on TAU1201
+# Verified NAV-TIME messages stop after disable on TAU1201
 [[asbin]]
 tag = "asbin-navtime-off"
 description = "Disable NAV-TIME binary message"
@@ -191,6 +247,72 @@ class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x05, 0]
+
+# Enable NAV-TIMEUTC at 1Hz (UTC time with validity flags)
+# Verified ACK received on TAU1201
+# Verified NAV-TIMEUTC messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "asbin-timeutc"
+description = "Enable NAV-TIMEUTC binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x21, 1]
+
+# Disable NAV-TIMEUTC
+# Verified ACK received on TAU1201
+# Verified NAV-TIMEUTC messages stop after disable on TAU1201
+[[asbin]]
+tag = "asbin-timeutc-off"
+description = "Disable NAV-TIMEUTC binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x21, 0]
+
+# Enable NAV-SVINFO at 1Hz (satellite visibility info)
+# Verified ACK received on TAU1201
+# Verified NAV-SVINFO messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "asbin-svinfo"
+description = "Enable NAV-SVINFO binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x30, 1]
+
+# Disable NAV-SVINFO
+# Verified ACK received on TAU1201
+# Verified NAV-SVINFO messages stop after disable on TAU1201
+[[asbin]]
+tag = "asbin-svinfo-off"
+description = "Disable NAV-SVINFO binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x30, 0]
+
+# Enable NAV-SVIN at 1Hz (survey-in status)
+# Verified ACK received on TAU1201
+# Verified NAV-SVIN messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "asbin-svin"
+description = "Enable NAV-SVIN binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x31, 1]
+
+# Disable NAV-SVIN
+# Verified ACK received on TAU1201
+# Verified NAV-SVIN messages stop after disable on TAU1201
+[[asbin]]
+tag = "asbin-svin-off"
+description = "Disable NAV-SVIN binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x31, 0]
 
 # NMEA messages use class 0xF0
 
@@ -255,7 +377,7 @@ payload.types = "U1U1U1"
 payload.values = [0xF0, 0x04, 0]
 
 # Verified ACK received on TAU1201
-# Verified BDRMC messages appear at 1Hz after enable on TAU1201
+# Verified RMC messages (GNRMC/BDRMC) appear at 1Hz after enable on TAU1201
 [[asbin]]
 tag = "nmea-rmc"
 description = "Enable NMEA RMC message at 1Hz"
@@ -294,9 +416,177 @@ id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0xF0, 0x07, 0]
 
+# RTCM Message Control (CFG-MSG 0x06 0x01 with group 0xF8)
+
+# Enable RTCM base station output: 1005 (ARP) + MSM7 for all constellations
+# Rate 1 = output every position fix
+# Verified ACK received for all 5 commands on TAU951M-P200
+# Verified RTCM 1005, 1077, 1087, 1097, 1127 messages appear in capture after enable on TAU951M-P200
+# 1005 ARP
+[[asbin]]
+tag = "rtcm-msm7"
+description = "Enable RTCM base station messages (1005 + MSM7)"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x05, 1]
+
+# 1077 GPS MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4D, 1]
+
+# 1087 GLONASS MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x57, 1]
+
+# 1097 Galileo MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x61, 1]
+
+# 1127 BeiDou MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7F, 1]
+
+# Enable RTCM base station output: 1005 (ARP) + MSM4 for all constellations
+# Verified ACK received for all 5 commands on TAU951M-P200
+# Verified RTCM 1005, 1074, 1084, 1094, 1124 messages appear in capture after enable on TAU951M-P200
+# 1005 ARP
+[[asbin]]
+tag = "rtcm-msm4"
+description = "Enable RTCM base station messages (1005 + MSM4)"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x05, 1]
+
+# 1074 GPS MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4A, 1]
+
+# 1084 GLONASS MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x54, 1]
+
+# 1094 Galileo MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x5E, 1]
+
+# 1124 BeiDou MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7C, 1]
+
+# Disable all RTCM messages (MSM4 + MSM7 + 1005)
+# Verified ACK received for all 9 commands on TAU951M-P200
+# Verified RTCM messages no longer appear after disable on TAU951M-P200
+# 1005 ARP
+[[asbin]]
+tag = "rtcm-off"
+description = "Disable all RTCM messages"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x05, 0]
+
+# 1074 GPS MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4A, 0]
+
+# 1077 GPS MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4D, 0]
+
+# 1084 GLONASS MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x54, 0]
+
+# 1087 GLONASS MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x57, 0]
+
+# 1094 Galileo MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x5E, 0]
+
+# 1097 Galileo MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x61, 0]
+
+# 1124 BeiDou MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7C, 0]
+
+# 1127 BeiDou MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7F, 0]
+
 # Port Configuration (CFG-PRT 0x06 0x00)
 
 # Poll UART0 configuration
+# Verified CFG-PRT response received on TAU1201
 [[asbin]]
 tag = "get-uart0"
 description = "Query UART0 configuration"
@@ -306,6 +596,7 @@ payload.types = "U1"
 payload.values = [0]
 
 # Poll UART1 configuration
+# Verified CFG-PRT response received on TAU1201
 [[asbin]]
 tag = "get-uart1"
 description = "Query UART1 configuration"
