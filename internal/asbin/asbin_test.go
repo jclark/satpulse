@@ -640,6 +640,76 @@ func TestCfgSimpleRstWarmStart(t *testing.T) {
 
 }
 
+func TestNavSvin(t *testing.T) {
+	// Real packet from Windows app:
+	// iTow=545444000ms, PosUsed=75, MeanStdDev=5146.3mm, Valid=1, Status=1
+	// F1 D9 01 31 0E 00 A0 D0 82 20 4B 00 00 00 07 C9 00 00 01 01 6F 03
+	packet := "\xF1\xD9\x01\x31\x0E\x00\xA0\xD0\x82\x20\x4B\x00\x00\x00\x07\xC9\x00\x00\x01\x01\x6F\x03"
+
+	msg, err := ParseMsg(packet)
+	if err != nil {
+		t.Fatalf("Failed to parse NavSvin: %v", err)
+	}
+	if msg.ID() != NavSvinID {
+		t.Errorf("Expected message ID %v, got %v", NavSvinID, msg.ID())
+	}
+	svin, ok := msg.(*NavSvin)
+	if !ok {
+		t.Fatalf("Expected *NavSvin, got %T", msg)
+	}
+	// A0 D0 82 20 = 545444000 ms (matches Windows app display)
+	if svin.ITow != 545444000 {
+		t.Errorf("Expected ITow = 545444000, got %d", svin.ITow)
+	}
+	// 4B 00 00 00 = 75
+	if svin.PosUsed != 75 {
+		t.Errorf("Expected PosUsed = 75, got %d", svin.PosUsed)
+	}
+	// 07 C9 00 00 = 51463 -> 5146.3mm
+	if svin.MeanStdDev != 51463 {
+		t.Errorf("Expected MeanStdDev = 51463 (5146.3mm), got %d", svin.MeanStdDev)
+	}
+	if svin.Valid != 1 {
+		t.Errorf("Expected Valid = 1, got %d", svin.Valid)
+	}
+	if svin.Status != 1 {
+		t.Errorf("Expected Status = 1 (finish), got %d", svin.Status)
+	}
+}
+
+func TestNavSvinFromLog(t *testing.T) {
+	// Sample from packet.ttyUSB0.jsonl
+	// f1d901310e0090dcb8208009000062fb000001016cc6
+	packet := "\xF1\xD9\x01\x31\x0E\x00\x90\xDC\xB8\x20\x80\x09\x00\x00\x62\xFB\x00\x00\x01\x01\x6C\xC6"
+
+	msg, err := ParseMsg(packet)
+	if err != nil {
+		t.Fatalf("Failed to parse NavSvin: %v", err)
+	}
+	svin, ok := msg.(*NavSvin)
+	if !ok {
+		t.Fatalf("Expected *NavSvin, got %T", msg)
+	}
+	// 90 DC B8 20 = 548986000 ms
+	if svin.ITow != 548986000 {
+		t.Errorf("Expected ITow = 548986000, got %d", svin.ITow)
+	}
+	// 80 09 00 00 = 2432
+	if svin.PosUsed != 2432 {
+		t.Errorf("Expected PosUsed = 2432, got %d", svin.PosUsed)
+	}
+	// 62 FB 00 00 = 64354 -> 6435.4mm
+	if svin.MeanStdDev != 64354 {
+		t.Errorf("Expected MeanStdDev = 64354, got %d", svin.MeanStdDev)
+	}
+	if svin.Valid != 1 {
+		t.Errorf("Expected Valid = 1, got %d", svin.Valid)
+	}
+	if svin.Status != 1 {
+		t.Errorf("Expected Status = 1, got %d", svin.Status)
+	}
+}
+
 func TestMsgIDString(t *testing.T) {
 	tests := []struct {
 		mid  MsgID
@@ -648,6 +718,7 @@ func TestMsgIDString(t *testing.T) {
 		// Messages with decoders
 		{NavTimeID, "NAV-TIME"},
 		{NavClockID, "NAV-CLOCK"},
+		{NavSvinID, "NAV-SVIN"},
 		{AckNakID, "ACK-NAK"},
 		{AckAckID, "ACK-ACK"},
 		{CfgPrtID, "CFG-PRT"},

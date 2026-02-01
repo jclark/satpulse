@@ -74,6 +74,7 @@ const (
 	NavTimeID      MsgID = clsNav | (0x05 << 8)
 	NavClockID     MsgID = clsNav | (0x22 << 8)
 	NavClock2ID    MsgID = clsNav | (0x23 << 8)
+	NavSvinID      MsgID = clsNav | (0x31 << 8)
 	AckNakID       MsgID = clsAck | (0x00 << 8)
 	AckAckID       MsgID = clsAck | (0x01 << 8)
 	CfgCfgID       MsgID = clsCfg | (0x09 << 8)
@@ -114,6 +115,7 @@ func init() {
 	regMsg[CfgSimpleRst]("SIMPLERST")
 	regMsg[MonVer]("VER")
 	regMsg[NavClock]("CLOCK")
+	regMsg[NavSvin]("SVIN")
 }
 
 // NavTimeSys defines the GNSS system values for NavTime.NavSys
@@ -333,6 +335,18 @@ type NavClock struct {
 }
 
 func (m *NavClock) ID() MsgID { return NavClockID }
+
+// NAV-SVIN (0x01 0x31) - Survey-in status
+// This is not in 2.3.6 protocol spec, but is in satrack 1.31 app
+type NavSvin struct {
+	ITow       uint32 // ms, GNSS time of week
+	PosUsed    uint32 // Number of position samples used
+	MeanStdDev uint32 // 0.1mm, Mean standard deviation
+	Valid      uint8  // 0=not valid, 1=valid
+	Status     uint8  // 0=not finish, 1=finish (survey complete)
+}
+
+func (m *NavSvin) ID() MsgID { return NavSvinID }
 
 type VarLengthMsg interface {
 	Msg
