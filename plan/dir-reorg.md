@@ -43,14 +43,14 @@ Affected packages:
 - `syncsim` - uses `ubx.Tag`
 - `daemon` (tests) - uses `nmea.Tag`, `rtcm.Tag`
 
-### Split ptime: create era package
+### Split ptime: create phctime package
 
 The `ptime` package contains both GPS time concepts and PHC clock-tracking concepts. These should be separated so GPS code doesn't depend on time-sync code.
 
-**Create new `era` package** with PHC clock-tracking types:
+**Create new `phctime` package** with PHC clock-tracking types:
 - `Era` - represents a period without PHC clock steps
-- `ClockTime` - combines `ptime.Time` with `Era`
-- `Sample` - pairs PHC clock reading with system clock
+- `Time` - `ptime.Time` combined with `Era` (was `ptime.ClockTime`)
+- `Sample` - `phctime.Time` paired with `time.Time` (system clock)
 
 **Keep in `ptime`** (GPS time concepts):
 - `Time` - TAI nanoseconds timestamp
@@ -61,7 +61,7 @@ The `ptime` package contains both GPS time concepts and PHC clock-tracking conce
 - `CorrectionParams`
 - `Picoseconds()`, `Seconds()` utilities
 
-The `era` package imports `ptime` (for `Time`), but `ptime` has no dependency on `era`. This maintains the fundamental principle: GPS produces time, time-sync consumes it.
+The `phctime` package imports `ptime` (for `Time`), but `ptime` has no dependency on `phctime`. This maintains the fundamental principle: GPS produces time, time-sync consumes it.
 
 ## New Directory Structure
 
@@ -90,7 +90,7 @@ The `era` package imports `ptime` (for `Time`), but `ptime` has no dependency on
 | `gps/internal/ubx/` | `internal/ubx` |
 | `gps/internal/unc/` | `internal/unc` |
 | **time/** | |
-| `time/era/` | new (split from `internal/ptime`) |
+| `time/phctime/` | new (split from `internal/ptime`) |
 | `time/phc/` | `internal/phc` |
 | `time/sockrefclock/` | `internal/sockrefclock` |
 | `time/clocksim/` | `internal/clocksim` |
@@ -148,7 +148,7 @@ The structure uses Go's `internal/` visibility to enforce layer boundaries:
 - **time/** - Public API of the time sync module.
 - **time/internal/** - Application layer implementation. Can only be imported by packages under `time/`.
 - **time/daemon/**, **time/syncsimcmd/** - Public interfaces to `time/internal/`. These expose the internal functionality to command-line programs.
-- **time/era/**, **time/phc/**, **time/sockrefclock/**, **time/clocksim/** - Domain layer. Low-level abstractions usable independently of the application layer.
+- **time/phctime/**, **time/phc/**, **time/sockrefclock/**, **time/clocksim/** - Domain layer. Low-level abstractions usable independently of the application layer.
 - **internal/** - Command layer packages that only use public APIs (`time/`, `gps/`, `lib/`).
 
 Similarly for `gps/`:
