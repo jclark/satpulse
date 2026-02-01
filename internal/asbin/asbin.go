@@ -23,6 +23,7 @@ const (
 	clsAck  = 0x05
 	clsCfg  = 0x06
 	clsMon  = 0x0A
+	clsAid  = 0x0B
 	clsNmea = 0xF0
 )
 
@@ -31,6 +32,7 @@ var clsMap = map[byte]string{
 	clsAck:  "ACK",
 	clsCfg:  "CFG",
 	clsMon:  "MON",
+	clsAid:  "AID",
 	clsNmea: "NMEA",
 }
 
