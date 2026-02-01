@@ -23,13 +23,32 @@ func timeNavTime(m *asbin.NavTime) *gpsprot.TimeMsg {
 		return &t
 	}
 	week := int16(m.Week)
-	// Ignore NavSys field: testing with TAU1201 firmware 3.018 shows it always
-	// reports GPS time (week and LeapSec) regardless of which constellation is
-	// enabled, and NavSys is always 24 (0x18) instead of the documented 0/1/2/3.
-	t.TAITime = ptime.GPS(week, tow)
-	t.GNSS = gpsprot.GPS
+	taiMinusGNSS := ptime.TAIMinusGPS
+	// Treat NavSys fields other than Galileo and BeiDou as GPS.
+	// Testing with TAU1201 firmware 3.018 shows that periodic
+	// NAV-TIME messages report NavSys as 24 (0x18) instead of the documented 0/1/2/3,
+	// though polled responses return the correct value (0 for GPS).
+	// I have not found any circumstances in which the NavSys is 1, 2 or 3.
+	// But if it is 1 or 2, then the most plausible interpretation of week/tow/leapsec
+	// fields is that they are in the indicated GNSS time system.
+	// GLONASS doesn't natively use week/tow/leapsec, so when NavSys is 3, it is most
+	// plausible that the week/tow/leapsec would be in GPS time.
+	// these use GPS time when NavSys is 3.
+	switch m.NavSys {
+	case asbin.NavTimeSysGalileo:
+		taiMinusGNSS = ptime.TAIMinusGalileo
+		t.TAITime = ptime.Galileo(week, tow)
+		t.GNSS = gpsprot.GAL
+	case asbin.NavTimeSysBeiDou:
+		taiMinusGNSS = ptime.TAIMinusBeiDou
+		t.TAITime = ptime.BeiDou(week, tow)
+		t.GNSS = gpsprot.BDS
+	default:
+		t.TAITime = ptime.GPS(week, tow)
+		t.GNSS = gpsprot.GPS
+	}
 	if (m.Flags & asbin.NavTimeFlagLeapSecValid) != 0 {
-		off := int32(m.LeapSec) + ptime.TAIMinusGPS
+		off := int(m.LeapSec) + taiMinusGNSS
 		if off >= 0 && off <= math.MaxUint8 {
 			t.UTCOffset = uint8(off)
 		}
