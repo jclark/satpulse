@@ -12,7 +12,7 @@ Each layer can also be divided into time sync, GPS and base groups, where time s
 | **Command**  | daemon, pmccmd, sdpcmd, syncsimcmd, cmd/ifwait | gpscmd | cmd |
 | **Application** | ts, gpsevent, phcsync, timemsg, ptpgm, refclock, obs, obs/sseobs, obs/promobs, logobs, statsobs, syncsim, proxy, bcast | gpsio, gpscfg | logfile |
 | **Domain** | phc, sockrefclock, clocksim | gpsprot, scan, scantest, ubx, nmea, rtcm, gpsreg, casic, unc, nov, sino, as, ptime | |
-| **Library** | pmc, circbuf, median, check, sse, ifwait, fuser, devnotify, allan | ubx/bin, ubxcfgval, casic/bin, novmsg, uncmsg, geopos, fieldenc | ntptime |
+| **Library** | pmc, circbuf, median, check, sse, ifwait, fuser, devnotify, allan | ubx/bin, ubxcfgval, casic/bin, asbin, novmsg, uncmsg, geopos, fieldenc | ntptime |
 
 ### Command-line layer
 
@@ -161,6 +161,8 @@ Provides a library of packages, which are potentially useful outside satpulse. T
 `internal/ubxcfgval/cfgschema` contains a YAML schema for configuration data handled by `internal/ubxcfgval`. This is used to generate code in the `internal/ubxcfgval` package.
 
 `internal/casic/bin` translates binary packets in the CASIC protocol to and from Go structs.
+
+`internal/asbin` translates binary packets in the Allystar binary protocol to and from Go structs.
 
 `internal/novmsg` provides parsing and serialization of NovAtel GPS receiver messages in binary and ASCII formats. It defines message header and body types and implements CRC32 validation.
 
