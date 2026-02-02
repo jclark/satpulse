@@ -15,16 +15,18 @@ id = 0x04
 
 # PPS Configuration (CFG-PPS 0x06 0x07)
 
-# Configure 1PPS: 100us pulse, rising edge, always output
-# period=1000000us, offset=0ns, dutycycle=100000 (10%), polarity=1, gpio=13, sync=1
+# Configure 1PPS: 0.1s pulse, rising edge, always output
 # Verified ACK received on TAU1201
 # Verified PPS output resumes after pps on TAU1201
 [[asbin]]
 tag = "pps"
-description = "Configure 1PPS with 100us pulse width, rising edge"
+description = "Configure 1PPS with 0.1s pulse width, rising edge"
 class = 0x06
 id = 0x07
 payload.types = "U4I4U4U1U1U1"
+# [period_us, offset_ns, dutycycle_ppm, polarity, gpio, sync]
+# period 1000000 us = 1s
+# dutycycle in ppm: 100000 ppm = 10%, so pulse = 10% of 1s = 0.1s
 payload.values = [1000000, 0, 100000, 1, 13, 1]
 
 # PPS off - set duty cycle to 0
@@ -172,7 +174,7 @@ payload.values = [0, 0, 0]
 # Save all current settings to NVM
 [[asbin]]
 tag = "save"
-description = "Save all settings to non-volatile memory"
+description = "Save configuration to non-volatile memory"
 class = 0x06
 id = 0x09
 payload.types = "U4U4"
@@ -196,7 +198,7 @@ delay = 3
 # Verified RMC shows 'V' (void) status after factory-reset on TAU1201
 [[asbin]]
 tag = "factory-reset"
-description = "Factory reset - clears all settings"
+description = "Restore factory defaults and reboot"
 class = 0x06
 id = 0x09
 payload.types = "U4U4"
@@ -452,22 +454,24 @@ payload.values = [0xF0, 0x07, 0]
 
 # RTCM Message Control (CFG-MSG 0x06 0x01 with group 0xF8)
 
-# Enable RTCM base station output: 1005 (ARP) + MSM7 for all constellations
-# Rate 1 = output every position fix
-# Verified ACK received for all 5 commands on TAU951M-P200
-# Verified RTCM 1005, 1077, 1087, 1097, 1127 messages appear in capture after enable on TAU951M-P200
-# 1005 ARP
+# Enable RTCM ARP (1005) message
+# Verified ACK received on TAU951M-P200
 [[asbin]]
-tag = "rtcm-msm7"
-description = "Enable RTCM base station messages (1005 + MSM7)"
+tag = "rtcm-arp"
+description = "Enable RTCM ARP message (1005)"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0xF8, 0x05, 1]
 
+# Enable RTCM MSM7 messages for all constellations
+# Rate 1 = output every position fix
+# Verified ACK received for all 4 commands on TAU951M-P200
+# Verified RTCM 1077, 1087, 1097, 1127 messages appear in capture after enable on TAU951M-P200
 # 1077 GPS MSM7
 [[asbin]]
 tag = "rtcm-msm7"
+description = "Enable RTCM MSM7 messages for all constellations"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
@@ -497,21 +501,13 @@ id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0xF8, 0x7F, 1]
 
-# Enable RTCM base station output: 1005 (ARP) + MSM4 for all constellations
-# Verified ACK received for all 5 commands on TAU951M-P200
-# Verified RTCM 1005, 1074, 1084, 1094, 1124 messages appear in capture after enable on TAU951M-P200
-# 1005 ARP
-[[asbin]]
-tag = "rtcm-msm4"
-description = "Enable RTCM base station messages (1005 + MSM4)"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U1"
-payload.values = [0xF8, 0x05, 1]
-
+# Enable RTCM MSM4 messages for all constellations
+# Verified ACK received for all 4 commands on TAU951M-P200
+# Verified RTCM 1074, 1084, 1094, 1124 messages appear in capture after enable on TAU951M-P200
 # 1074 GPS MSM4
 [[asbin]]
 tag = "rtcm-msm4"
+description = "Enable RTCM MSM4 messages for all constellations"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
@@ -783,21 +779,18 @@ payload.values = [0.785398, 0.785398]
 
 # Port Configuration (CFG-PRT 0x06 0x00)
 
-# Poll UART0 configuration
+# Poll UART0 and UART1 configuration
 # Verified CFG-PRT response received on TAU1201
 [[asbin]]
-tag = "get-uart0"
-description = "Query UART0 configuration"
+tag = "get-uart"
+description = "Query UART configuration"
 class = 0x06
 id = 0x00
 payload.types = "U1"
 payload.values = [0]
 
-# Poll UART1 configuration
-# Verified CFG-PRT response received on TAU1201
 [[asbin]]
-tag = "get-uart1"
-description = "Query UART1 configuration"
+tag = "get-uart"
 class = 0x06
 id = 0x00
 payload.types = "U1"
