@@ -36,6 +36,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - NO comments inside functions unless explaining non-obvious behavior
 - Comments should explain WHY, not WHAT
 
+### Character encoding
+- Use ASCII only - avoid non-ASCII characters (no fancy quotes, checkmarks, emojis, etc.)
+- Exception: math symbols where truly needed (e.g., μs for microseconds)
+
 ### Function ordering
 - Order code for top-to-bottom readability: readers should understand what's happening without jumping around
 - Type definitions come before the functions that use them
@@ -49,14 +53,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Commands
 
+**CRITICAL: Always use `make` to build. NEVER use `go build` directly - it creates binaries in the wrong location and clutters the repository.**
+
 Build system uses GNU Make:
-- `make` - Build for current architecture 
+- `make` - Build for current architecture
 - `make test` - Run all tests (`go test -v ./...`)
 - `make install` - Install binaries and configs to `/usr/local/`
 - `make pkg` - Build both deb and rpm packages
 - `make clean` - Remove build artifacts
 
-It builds on Linux only. If the host is not Linux, then you need to run in Docker via a devcontainer.
+It builds on Linux only. On macOS, use `bsd-build.sh` instead.
 
 Web interface is build using npm in `web/` directory.
 - `npm run build` - Rebuilds .js and .css files that are embedded.
