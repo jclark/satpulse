@@ -9,9 +9,9 @@ Each layer can also be divided into time sync, GPS and base groups, where time s
 
 |              | Time sync | GPS | Base |
 |--------------|-----------|-----|--------|
-| **Command**  | daemon, pmccmd, sdpcmd, syncsimcmd, cmd/ifwait | gpscmd | cmd |
+| **Command**  | daemon, pmccmd, sdpcmd, syncsimcmd, cmd/ifwait | gpscmd, decodecmd | cmd |
 | **Application** | ts, gpsevent, phcsync, timemsg, ptpgm, refclock, obs, obs/sseobs, obs/promobs, logobs, statsobs, syncsim, proxy, bcast | gpsio, gpscfg | logfile |
-| **Domain** | phc, sockrefclock, clocksim | gpsprot, scan, scantest, ubx, nmea, rtcm, gpsreg, casic, unc, nov, sino, as, ptime | |
+| **Domain** | phc, sockrefclock, clocksim | gpsprot, scan, scantest, ubx, nmea, rtcm, gpsreg, casic, unc, nov, sino, as, ptime, gpsdecode | |
 | **Library** | pmc, circbuf, median, check, sse, ifwait, fuser, devnotify, allan | ubx/bin, ubxcfgval, casic/bin, asbin, novmsg, uncmsg, geopos, fieldenc | ntptime |
 
 ### Command-line layer
@@ -36,7 +36,9 @@ Provides the user interface to the programs, including the command-line interfac
 
 #### GPS
 
-`internal/gpscmd` implements `gps` command of satpulsetool.
+`internal/gpscmd` implements `gps` subcommand of satpulsetool.
+
+`internal/decodecmd` implements `decode` subcommand of satpulsetool. It decodes binary GPS packets from hex strings or annotates JSONL packet logs with decoded payload fields.
 
 #### Base
 
@@ -127,6 +129,8 @@ Provides packages using domain-specific abstractions that are used by the applic
 `internal/as` provides NMEA satellite numbering configuration for Allystar GPS receivers.
 
 `internal/scantest` provides utility functions for testing GPS packet format implementations. It includes functions to find packets within buffers and insert random data prefixes for robustness testing.
+
+`internal/gpsdecode` decodes binary GPS packets into JSON-serializable maps derived from the Go structs defined in the library layer packages.
 
 ### Library layer
 

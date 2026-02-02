@@ -20,6 +20,9 @@ The *command* must be one of the following.
 **sdp**
 : Manage Software Defined Pins (SDPs) of PTP Hardware Clocks (PHCs)
 
+**decode**
+: Decode binary GPS packets from hex strings or annotate JSONL packet logs.
+
 **pmc**
 : PTP management client
 

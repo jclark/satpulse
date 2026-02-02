@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/internal/decodecmd"
 	"github.com/jclark/satpulse/internal/gpscmd"
 	"github.com/jclark/satpulse/internal/pmccmd"
 	"github.com/jclark/satpulse/internal/sdpcmd"
@@ -60,6 +61,8 @@ func main() {
 	exitCode := 0
 	var exec func(logWriter io.Writer, logLevel slog.Level, progName string, cmdName string, cmdArgs []string) (usage string, err error)
 	switch cmdName {
+	case "decode":
+		exec = decodecmd.Cmd
 	case "gps":
 		exec = gpscmd.Cmd
 	case "pmc":
@@ -98,9 +101,10 @@ func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "Usage:", progName, "[global-options] command [options] arg...")
 	fmt.Fprintln(os.Stderr, "Commands:")
 	fmt.Fprintln(os.Stderr, "  gps - configure a GPS device")
-	fmt.Fprintln(os.Stderr, "  pmc - send a PTP management message to ptp4l process")
 	fmt.Fprintln(os.Stderr, "  sdp - control software-defined pins on PTP hardware clocks")
 	fmt.Fprintln(os.Stderr, "  syncsim - run clock synchronization simulation")
+	fmt.Fprintln(os.Stderr, "  decode - decode a GPS packet")
+	fmt.Fprintln(os.Stderr, "  pmc - send a PTP management message to ptp4l process")
 	fmt.Fprintln(os.Stderr, "Global options:")
 	flags.PrintDefaults()
 }
