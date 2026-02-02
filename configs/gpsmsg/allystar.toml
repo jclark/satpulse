@@ -138,29 +138,30 @@ payload.values = [0, 0]
 # Poll current fixed ECEF position
 # Verified CFG-FIXEDECEF response received on TAU1201
 [[asbin]]
-tag = "get-fixed"
+tag = "get-fixed-pos"
 description = "Query current fixed ECEF position"
 class = 0x06
 id = 0x14
 
-# Set fixed ECEF position (coordinates in cm as S4)
-# X=-1144698.0455m, Y=6090335.4099m, Z=1504171.3914m
+# Set fixed ECEF position
 # Verified ACK received on TAU1201
-# Verified get-fixed returns expected values on TAU1201
+# Verified get-fixed-pos returns expected values on TAU1201
 [[asbin]]
-tag = "fixed"
-description = "Set fixed ECEF position"
+tag = "fixed-pos-example"
+description = "Set fixed ECEF position (example coordinates - replace with yours)"
 class = 0x06
 id = 0x14
 payload.types = "I4I4I4"
+# Values are in centimeters. These are for:
+# X=-1144698.0455m, Y=6090335.4099m, Z=1504171.3914m
 payload.values = [-114469805, 609033541, 150417139]
 
-# Clear fixed position (return to mobile mode)
+# Clear fixed position
 # Verified ACK received on TAU951M-P200
-# Verified get-fixed returns zeros after fixed-off on TAU951M-P200
+# Verified get-fixed-pos returns zeros after fixed-pos-off on TAU951M-P200
 [[asbin]]
-tag = "fixed-off"
-description = "Clear fixed position (mobile mode)"
+tag = "fixed-pos-off"
+description = "Clear fixed position"
 class = 0x06
 id = 0x14
 payload.types = "I4I4I4"
