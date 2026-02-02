@@ -1057,6 +1057,30 @@ func TestPacketProcessorSatellites(t *testing.T) {
 				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 297, Elevation: 40}, Signals: []gpsprot.SignalInfo{{ID: "L5", CN0: 44}}, Used: false},
 			},
 		},
+		{
+			name: "GSV mixed signal IDs in single series (Allystar style)",
+			nmeaMessages: []string{
+				// Allystar TAU1201 mixes signal IDs within a series: msgs 1-2 have sigID=1, msgs 3-4 have sigID=8
+				// msgNum continues (1,2,3,4) instead of restarting at 1 for each sigID
+				"$GNRMC,082450.000,A,1343.90828,N,10038.68398,E,0.001,189.06,310126,,,A,S*3C\r\n",
+				"$GNGSA,A,3,06,199,30,195,19,03,07,,,,,,1.15,0.60,0.98,1*06\r\n",
+				"$GPGSV,4,1,13,14,61,23,29,6,57,238,51,199,55,115,39,30,49,198,49,1*5F\r\n",
+				"$GPGSV,4,2,13,195,46,54,22,19,34,315,42,3,26,74,18,7,26,169,44,1*50\r\n",
+				"$GPGSV,4,3,13,6,57,238,47,199,55,115,47,30,49,198,50,195,46,54,17,8*62\r\n",
+				"$GPGSV,4,4,13,194,44,74,16,8*57\r\n",
+				"$GNGLL,1343.90828,N,10038.68398,E,082450.000,A,A*65\r\n",
+			},
+			expectedSVs: []gpsprot.SVInfo{
+				// Satellites parsed from all 4 GSV messages with combined signals
+				// SVIDs 199, 195, 194 are beyond valid GPS range and get filtered out
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 14}, LookAngles: &gpsprot.LookAngles{Azimuth: 23, Elevation: 61}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 29}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 238, Elevation: 57}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}, {ID: "L5-Q", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 30}, LookAngles: &gpsprot.LookAngles{Azimuth: 198, Elevation: 49}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 49}, {ID: "L5-Q", CN0: 50}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 315, Elevation: 34}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 3}, LookAngles: &gpsprot.LookAngles{Azimuth: 74, Elevation: 26}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 18}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 169, Elevation: 26}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}}, Used: true},
+			},
+		},
 	}
 
 	for _, test := range tests {

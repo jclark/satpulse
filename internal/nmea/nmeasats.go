@@ -32,13 +32,14 @@ import (
 // For approach 2, we try to establish a reasonable boundary between bursts:
 // this is the first idle() call or sentence format change (e.g. RMC to GSV).
 type satellitesBuffer struct {
-	numbering    []gpsprot.NMEASVNumberingRange
-	gsvs         []gsvSentence
-	gsvKeys      map[gsvKey]struct{} // the set of gnss and signal IDs occurring in gsvs
-	tRead        time.Time           // read time of the first buffered GSV sentence
-	lastFormat   string              // format of last sentence received
-	gsas         []gsaSentence
+	numbering           []gpsprot.NMEASVNumberingRange
+	gsvs                []gsvSentence
+	gsvKeys             map[gsvKey]struct{} // the set of gnss and signal IDs occurring in gsvs
+	tRead               time.Time           // read time of the first buffered GSV sentence
+	lastFormat          string              // format of last sentence received
+	gsas                []gsaSentence
 	haveBoundary bool // have we established a plausible boundary between bursts
+	mixedSigIDs  bool // true if signal IDs are mixed within a single GSV series
 }
 
 type gsvKey struct {
@@ -189,6 +190,9 @@ func (sb *satellitesBuffer) clear() {
 	sb.gsvKeys = make(map[gsvKey]struct{}) // reset the keys
 	sb.gsas = nil
 	sb.tRead = time.Time{}
+	// Reset mixedSigIDs detection. Must be re-detected for each batch of GSV
+	// sentences. This prevents bad data from permanently flipping the mode.
+	sb.mixedSigIDs = false
 }
 
 func (sb *satellitesBuffer) talkerID() string {
@@ -234,6 +238,9 @@ func (sb *satellitesBuffer) gsvProcess(sen *ApprovedSentence, tRead time.Time, h
 	}
 	// Here we have a complete series of GSV sentences.
 	k := gsvKey{gnss: gsv.gnss, sigID: gsv.sigID}
+	if sb.mixedSigIDs {
+		k.sigID = 0 // ignore signal ID for flush detection
+	}
 	if _, exists := sb.gsvKeys[k]; exists {
 		sb.flush(h)
 	}
@@ -254,12 +261,31 @@ func (sb *satellitesBuffer) checkMsgNum(gsv gsvSentence) error {
 		if gsv.msgNum != lastGSV.msgNum+1 {
 			return fmt.Errorf("invalid GSV message number: expected %d, got %d", lastGSV.msgNum+1, gsv.msgNum)
 		}
+	} else if lastGSV.gnss == gsv.gnss {
+		// Same GNSS, different signal ID: allow either restart (1) or continuation
+		if gsv.msgNum == lastGSV.msgNum+1 {
+			sb.setMixedSigIDs()
+		} else if gsv.msgNum != 1 {
+			return fmt.Errorf("invalid GSV message number: expected 1 or %d, got %d", lastGSV.msgNum+1, gsv.msgNum)
+		}
 	} else if gsv.msgNum != 1 {
 		return fmt.Errorf("invalid GSV message number: expected 1, got %d", gsv.msgNum)
-	} else if lastGSV.msgNum != lastGSV.numMsg {
-		// Don't give an error here, because errors apply to current sentence
 	}
 	return nil
+}
+
+// setMixedSigIDs switches to mixed signal ID mode (e.g. Allystar receivers).
+// Rebuilds gsvKeys to use GNSS-only keys (sigID=0).
+func (sb *satellitesBuffer) setMixedSigIDs() {
+	if sb.mixedSigIDs {
+		return
+	}
+	sb.mixedSigIDs = true
+	newKeys := make(map[gsvKey]struct{})
+	for k := range sb.gsvKeys {
+		newKeys[gsvKey{gnss: k.gnss, sigID: 0}] = struct{}{}
+	}
+	sb.gsvKeys = newKeys
 }
 
 type ggaSentence struct {
