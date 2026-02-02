@@ -111,6 +111,8 @@ class = 0x06
 id = 0x12
 
 # Start survey-in: 2000s, 20m accuracy
+# Verified ACK received on TAU1201
+# Verified survey starts and NAV-SVIN shows Status=1 (in progress) on TAU1201
 [[asbin]]
 tag = "survey"
 description = "Start survey-in (2000s, 20m accuracy)"
@@ -122,6 +124,7 @@ payload.values = [2000, 20000]
 # Stop survey / return to mobile mode
 # Verified ACK received on TAU951M-P200
 # Verified get-survey returns zeros after survey-off on TAU951M-P200
+# Note: Does not stop a survey in progress on TAU1201
 [[asbin]]
 tag = "survey-off"
 description = "Stop survey (mobile mode)"
@@ -187,6 +190,9 @@ payload.values = [1, 0x07]
 delay = 3
 
 # Factory reset
+# Verified receiver restarts after factory-reset on TAU1201
+# Verified GSV shows satellites without elevation/azimuth after factory-reset on TAU1201
+# Verified RMC shows 'V' (void) status after factory-reset on TAU1201
 [[asbin]]
 tag = "factory-reset"
 description = "Factory reset - clears all settings"
@@ -194,6 +200,14 @@ class = 0x06
 id = 0x09
 payload.types = "U4U4"
 payload.values = [2, 0xFFFFFFFF]
+
+# Then reset to apply
+[[asbin]]
+tag = "factory-reset"
+class = 0x06
+id = 0x40
+payload.types = "U1"
+payload.values = [0]
 
 # Restart Commands (CFG-SIMPLERST 0x06 0x40)
 
@@ -219,6 +233,25 @@ payload.values = [2]
 [[asbin]]
 tag = "cold-start"
 description = "Cold start - clears all satellite data"
+class = 0x06
+id = 0x40
+payload.types = "U1"
+payload.values = [1]
+
+# Reset: reload config from NVM + cold start (clears satellite data)
+# Verified config restored from NVM and GSV shows no el/az after reset on TAU1201
+# First load config from NVM
+[[asbin]]
+tag = "reset"
+description = "Reset - reload config and clear satellite data"
+class = 0x06
+id = 0x09
+payload.types = "U4U4"
+payload.values = [1, 0x07]
+
+# Then cold start (mode 1 clears satellite data; mode 0 does not)
+[[asbin]]
+tag = "reset"
 class = 0x06
 id = 0x40
 payload.types = "U1"
