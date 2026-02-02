@@ -768,3 +768,138 @@ class = 0x06
 id = 0x00
 payload.types = "U1"
 payload.values = [1]
+
+# Serial Speed Configuration (CFG-PRT 0x06 0x00)
+# Each speed-N tag sets both UART0 and UART1 to the same baud rate
+
+# Set baud rate to 9600
+# Set UART0
+[[asbin]]
+tag = "speed-9600"
+description = "Set serial speed to 9600 baud"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [0, 0, 0, 0, 9600]
+
+# Set UART1
+[[asbin]]
+tag = "speed-9600"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [1, 0, 0, 0, 9600]
+
+# Set baud rate to 19200
+# Set UART0
+[[asbin]]
+tag = "speed-19200"
+description = "Set serial speed to 19200 baud"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [0, 0, 0, 0, 19200]
+
+# Set UART1
+[[asbin]]
+tag = "speed-19200"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [1, 0, 0, 0, 19200]
+
+# Set baud rate to 38400
+# Set UART0
+[[asbin]]
+tag = "speed-38400"
+description = "Set serial speed to 38400 baud"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [0, 0, 0, 0, 38400]
+
+# Set UART1
+[[asbin]]
+tag = "speed-38400"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [1, 0, 0, 0, 38400]
+
+# Set baud rate to 57600
+# Verified ACK received for both UART0 and UART1 on TAU1201
+# Verified communication works at new baud rate on TAU1201
+# Set UART0
+[[asbin]]
+tag = "speed-57600"
+description = "Set serial speed to 57600 baud"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [0, 0, 0, 0, 57600]
+
+# Set UART1
+[[asbin]]
+tag = "speed-57600"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [1, 0, 0, 0, 57600]
+
+# Set baud rate to 115200
+# Verified ACK received for both UART0 and UART1 on TAU1201
+# Verified get-uart0 and get-uart1 return expected baud rate on TAU1201
+# Set UART0
+[[asbin]]
+tag = "speed-115200"
+description = "Set serial speed to 115200 baud"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [0, 0, 0, 0, 115200]
+
+# Set UART1
+[[asbin]]
+tag = "speed-115200"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [1, 0, 0, 0, 115200]
+
+# Set baud rate to 230400
+# Set UART0
+[[asbin]]
+tag = "speed-230400"
+description = "Set serial speed to 230400 baud"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [0, 0, 0, 0, 230400]
+
+# Set UART1
+[[asbin]]
+tag = "speed-230400"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [1, 0, 0, 0, 230400]
+
+# Set baud rate to 460800
+# Verified ACK received for both UART0 and UART1 on TAU1201
+# Verified communication works at new baud rate on TAU1201
+# Set UART0
+[[asbin]]
+tag = "speed-460800"
+description = "Set serial speed to 460800 baud"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [0, 0, 0, 0, 460800]
+
+# Set UART1
+[[asbin]]
+tag = "speed-460800"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U1U1U4"
+payload.values = [1, 0, 0, 0, 460800]
