@@ -32,8 +32,9 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	if err != nil {
 		return
 	}
-	var mf *MsgFile
+	var msgs any
 	if v.msgFilePath != "" {
+		var mf *MsgFile
 		mf, err = LoadMsgFile(v.msgFilePath)
 		if err != nil {
 			return
@@ -42,6 +43,10 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 		tds := mf.CheckTagDescriptions(lg)
 		if v.showTags {
 			printTagDescs(os.Stderr, tds)
+			return
+		}
+		msgs, err = mf.TaggedMsgs(v.msgTags)
+		if err != nil {
 			return
 		}
 	}
@@ -56,7 +61,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, mf, v.msgTags, conn, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, args)
+	err = run(ctx, lg, target, msgs, conn, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, args)
 	return
 }
 
@@ -113,15 +118,15 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 
 // run executes the GPS command.
 //
-// Modes based on target and mf:
+// Modes based on target and msgs:
 //   - target non-nil: config mode (runs GPS configuration)
-//   - mf non-nil: message file mode (sends user-defined messages)
+//   - msgs non-nil: message file mode (sends user-defined messages)
 //   - both nil: passive capture mode (just logs packets, no interaction)
 //
 // Parameter dependencies:
-//   - logMode: must not be testLogMode when mf is non-nil
+//   - logMode: must not be testLogMode when msgs is non-nil
 //   - args: only used for test log header when logMode is testLogMode
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, mf *MsgFile, tags []string, conn gpsio.Conn, logPath string, logMode packetLogMode, capture gpsprot.Option[time.Duration], showReceiver bool, args []string) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msgs any, conn gpsio.Conn, logPath string, logMode packetLogMode, capture gpsprot.Option[time.Duration], showReceiver bool, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -156,8 +161,8 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, mf 
 	pCh := startScan(ctx, lg, &wg, conn, pktLog)
 
 	var rslt *gpscfg.Result
-	if mf != nil {
-		err = runMsgs(ctx, lg, conn, pCh, mf, tags, capture)
+	if msgs != nil {
+		err = runMsgs(ctx, lg, conn, pCh, msgs, capture)
 	} else if target != nil {
 		rslt, err = runConfig(ctx, lg, target, pCh, conn, capture, showReceiver)
 	} else {
@@ -205,12 +210,9 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	return rslt, err
 }
 
-func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, mf *MsgFile, tags []string, capture gpsprot.Option[time.Duration]) error {
-	msgs, err := mf.TaggedMsgs(tags)
-	if err != nil {
-		return err
-	}
+func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs any, capture gpsprot.Option[time.Duration]) error {
 	var rp *responsePrinter
+	var err error
 	var raw []rawMsg
 	switch m := msgs.(type) {
 	case []LineMsg:

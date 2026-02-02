@@ -446,9 +446,19 @@ func (mf *MsgFile) TaggedMsgs(tags []string) (any, error) {
 		rslt = ubxMsgs
 	}
 	if rslt == nil {
-		return nil, fmt.Errorf("no messages found for tags: %v", tags)
+		return nil, noMessagesError(tags)
 	}
 	return rslt, nil
+}
+
+func noMessagesError(tags []string) error {
+	if len(tags) == 1 {
+		if tags[0] == "" {
+			return errors.New("no messages without a tag; use -t to specify a tag")
+		}
+		return fmt.Errorf("no messages found for tag %q", tags[0])
+	}
+	return fmt.Errorf("no messages found for tags: %s", strings.Join(tags, ", "))
 }
 
 func applyDefaults[T any, PT *T](msgs []T, apply func(PT)) {
