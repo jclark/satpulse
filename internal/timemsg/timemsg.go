@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -178,8 +178,8 @@ func (buf *Buffer) compareTimeMsg(a, b *gpsprot.TimeMsg) int {
 		}
 	}
 	// Prefer native messages over NMEA
-	if (a.Tag == nmea.Tag) != (b.Tag == nmea.Tag) {
-		if a.Tag == nmea.Tag {
+	if (a.Tag == gpsreg.TagNMEA) != (b.Tag == gpsreg.TagNMEA) {
+		if a.Tag == gpsreg.TagNMEA {
 			return 1
 		} else {
 			return -1

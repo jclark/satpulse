@@ -47,6 +47,19 @@ const (
 	VendorZhongke
 )
 
+// Protocol tags for external use
+const (
+	TagUBX          = ubx.Tag
+	TagNMEA         = nmea.Tag
+	TagRTCM         = rtcm.Tag
+	TagCASICBin     = casic.Tag
+	TagAllystarBin  = as.Tag
+	TagUnicoreBin   = unc.TagBinary
+	TagUnicoreAscii = unc.TagAscii
+	TagNovAtelBin   = nov.TagBinary
+	TagNovAtelAscii = nov.TagAscii
+)
+
 var vendorNames = []string{
 	"Allystar",
 	"Bynav",

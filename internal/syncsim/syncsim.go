@@ -43,12 +43,12 @@ import (
 	"github.com/jclark/satpulse/internal/allan"
 	"github.com/jclark/satpulse/internal/clocksim"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/statsobs"
 	"github.com/jclark/satpulse/internal/timemsg"
-	"github.com/jclark/satpulse/internal/ubx"
 )
 
 const (
@@ -318,7 +318,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 						TAITime:     tMsg,
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PrePulse,
-						Tag:         ubx.Tag,
+						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "UBX-TIM-TP",
 						PulseOffset: &pulseOffset,
 					}
@@ -348,7 +348,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 						TAITime:     tMsg,
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PostPulse,
-						Tag:         ubx.Tag,
+						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "UBX-TIM-TOS",
 						PulseOffset: &pulseOffset,
 					}
@@ -639,7 +639,7 @@ func handleNavSolutionMsgEvent(
 		TAITime:     tMsg,
 		GNSS:        gpsprot.GPS,
 		Ref:         gpsprot.PostPulse,
-		Tag:         ubx.Tag,
+		Tag:         gpsreg.TagUBX,
 		NativeMsgID: "NAV-PVT",
 	}
 	msgTRead := time.Unix(0, 0).Add(time.Duration(eventTime * 1e9))

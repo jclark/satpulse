@@ -17,31 +17,28 @@ Rename nested `bin` packages so that the reorganization doesn't change package n
 
 (`internal/asbin` is already flat.)
 
-### Tag enum in gpsreg
+### Tag enum in gpsreg (done)
 
-The `gpsreg` package needs to export protocol Tag constants for use by packages outside the GPS group. Currently, packages like `timemsg` and `syncsim` import protocol-specific packages (`nmea`, `ubx`) solely to access their `Tag` constants.
-
-Add to `gpsreg`:
+Done. Added to `gpsreg`:
 
 ```go
-// Protocol tags for external use
-var (
-    UBXTag   = ubx.Tag
-    NMEATag  = nmea.Tag
-    RTCMTag  = rtcm.Tag
-    CASICTag = casic.Tag
-    UNCTag   = unc.Tag
-    NOVTag   = nov.Tag
-    ASTag    = as.Tag
+const (
+	TagUBX          = ubx.Tag
+	TagNMEA         = nmea.Tag
+	TagRTCM         = rtcm.Tag
+	TagCASICBin     = casic.Tag
+	TagAllystarBin  = as.Tag
+	TagUnicoreBin   = unc.TagBinary
+	TagUnicoreAscii = unc.TagAscii
+	TagNovAtelBin   = nov.TagBinary
+	TagNovAtelAscii = nov.TagAscii
 )
 ```
 
-This allows packages outside `gps/` to reference protocol tags via `gpsreg.UBXTag` etc., without importing `gps/internal/` packages directly.
-
-Affected packages:
-- `timemsg` - uses `nmea.Tag`, `ubx.Tag`
-- `syncsim` - uses `ubx.Tag`
-- `daemon` (tests) - uses `nmea.Tag`, `rtcm.Tag`
+Updated packages to use `gpsreg.TagXxx` instead of importing protocol packages:
+- `timemsg` - now uses `gpsreg.TagNMEA`, `gpsreg.TagUBX`
+- `syncsim` - now uses `gpsreg.TagUBX`
+- `daemon` (tests) - now uses `gpsreg.TagNMEA`, `gpsreg.TagRTCM`
 
 ### Split ptime: create phctime package
 
