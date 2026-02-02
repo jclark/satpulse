@@ -583,6 +583,64 @@ id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0xF8, 0x7F, 0]
 
+# NMEA Version Configuration (CFG-NMEAVER 0x06 0x43)
+
+# Poll current NMEA version
+# Verified CFG-NMEAVER response received on TAU1201
+[[asbin]]
+tag = "get-nmea-ver"
+description = "Query current NMEA version setting"
+class = 0x06
+id = 0x43
+
+# Set NMEA version to V3.01
+# Verified ACK received on TAU1201
+# Verified get-nmea-ver returns expected value (01) on TAU1201
+# Verified BD talker ID appears for BeiDou after nmea-ver-3 on TAU1201
+[[asbin]]
+tag = "nmea-ver-3"
+description = "Set NMEA version to V3.01"
+class = 0x06
+id = 0x43
+payload.types = "U1"
+payload.values = [1]
+
+# Set NMEA version to V4.00
+# Verified ACK received on TAU1201
+# Verified get-nmea-ver returns expected value (02) on TAU1201
+[[asbin]]
+tag = "nmea-ver-400"
+description = "Set NMEA version to V4.00"
+class = 0x06
+id = 0x43
+payload.types = "U1"
+payload.values = [2]
+
+# Set NMEA version to V4.10 (adds System ID and Signal ID to GSA/GRS/GSV)
+# Verified ACK received on TAU1201
+# Verified get-nmea-ver returns expected value (03) on TAU1201
+# Verified GSV sentences include signal ID after nmea-ver-410 on TAU1201
+[[asbin]]
+tag = "nmea-ver-410"
+description = "Set NMEA version to V4.10"
+class = 0x06
+id = 0x43
+payload.types = "U1"
+payload.values = [3]
+
+# Set NMEA version to V4.11 (value 4 from Satrack app)
+# Verified ACK received on TAU1201
+# Verified get-nmea-ver returns expected value (04) on TAU1201
+# Verified GB/GQ talker IDs appear after nmea-ver-411 on TAU1201
+# Verified GSV sentences include signal ID after nmea-ver-411 on TAU1201
+[[asbin]]
+tag = "nmea-ver-411"
+description = "Set NMEA version to V4.11"
+class = 0x06
+id = 0x43
+payload.types = "U1"
+payload.values = [4]
+
 # Port Configuration (CFG-PRT 0x06 0x00)
 
 # Poll UART0 configuration
