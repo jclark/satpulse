@@ -46,8 +46,12 @@ Factor out protocol-aware code from `gpscmd` into a new `gps/gpsmsg/` package:
 - `msgfile.go` - message file handling
 - `response.go` - response formatting
 
+To keep `gpsmsg` as a Domain layer package (no logging), refactor `msgfile.go`:
+- Export `CollectTagDescs()` (returns both `descs` and `inconsistent` slices)
+- Move `CheckTagDescriptions()` (which takes a logger and logs warnings) to `gpscmd`
+
 After this refactoring:
-- `gps/gpsmsg/` - protocol-aware code that needs access to `gps/internal/`
+- `gps/gpsmsg/` - protocol-aware Domain code that needs access to `gps/internal/`
 - `internal/gpscmd/` - CLI orchestration, imports `gps/gpsmsg/`
 
 This allows `gpscmd` to stay in `internal/` (command layer) while protocol-specific code moves to `gps/`.
@@ -60,7 +64,13 @@ Move daemon-specific error handling from `cmd` to `daemon`:
 - `ExitConfig` constant
 - `ExitCode()` function (depends on `ConfigError`)
 
-This leaves `cmd` with general CLI utilities (`ErrPrintln`, `CancelOnSignal`, `NewLogger`, `VersionInfo`, `UsageFunc`) that are appropriate for `gps/lib/cmd`.
+This leaves `cmd` with general CLI utilities (`ErrPrintln`, `CancelOnSignal`, `NewLogger`, `VersionInfo`, `UsageFunc`) that are appropriate for `gps/app/cmd`.
+
+### Move TimePulsePVTMsgFlags to daemon
+
+Move `TimePulsePVTMsgFlags` from `gpsevent` to `daemon`.
+
+This constant defines which PVT messages the daemon requires from GPS. It's used by `gpscmd` for `--pvt-out daemon`. After the reorganization, `gpsevent` will be in `time/internal/gpsevent/` (not importable by `internal/gpscmd/`), but `daemon` will be in `time/app/daemon/` (public, importable).
 
 ### Split ptime: create phctime package
 
@@ -91,14 +101,17 @@ The `phctime` package imports `ptime` (for `Time`), but `ptime` has no dependenc
 | `cmd/satpulsetool/` | `cmd/satpulsetool` |
 | `cmd/ifwait/` | `cmd/ifwait` |
 | **gps/** | |
-| `gps/gpscfg/` | `internal/gpscfg` |
 | `gps/gpsdecode/` | `internal/gpsdecode` |
-| `gps/gpsio/` | `internal/gpsio` |
 | `gps/gpsmsg/` | new (factored from `internal/gpscmd`) |
 | `gps/gpsprot/` | `internal/gpsprot` |
 | `gps/gpsreg/` | `internal/gpsreg` |
 | `gps/ptime/` | `internal/ptime` |
 | `gps/scan/` | `internal/scan` |
+| **gps/app/** | |
+| `gps/app/gpscfg/` | `internal/gpscfg` |
+| `gps/app/gpsio/` | `internal/gpsio` |
+| `gps/app/cmd/` | `internal/cmd` |
+| `gps/app/logfile/` | `internal/logfile` |
 | **gps/internal/** | |
 | `gps/internal/as/` | `internal/as` |
 | `gps/internal/casic/` | `internal/casic` |
@@ -112,10 +125,8 @@ The `phctime` package imports `ptime` (for `Time`), but `ptime` has no dependenc
 | **gps/lib/** | |
 | `gps/lib/asbin/` | `internal/asbin` |
 | `gps/lib/casbin/` | `internal/casic/bin` |
-| `gps/lib/cmd/` | `internal/cmd` |
 | `gps/lib/fieldenc/` | `internal/fieldenc` |
 | `gps/lib/geopos/` | `internal/geopos` |
-| `gps/lib/logfile/` | `internal/logfile` |
 | `gps/lib/novmsg/` | `internal/novmsg` |
 | `gps/lib/ntptime/` | `internal/ntptime` |
 | `gps/lib/term/` | `term` |
@@ -128,7 +139,9 @@ The `phctime` package imports `ptime` (for `Time`), but `ptime` has no dependenc
 | `time/phc/` | `internal/phc` |
 | `time/sockrefclock/` | `internal/sockrefclock` |
 | `time/clocksim/` | `internal/clocksim` |
-| `time/daemon/` | `internal/daemon` |
+| **time/app/** | |
+| `time/app/daemon/` | `internal/daemon` |
+| `time/app/syncsimcmd/` | `internal/syncsimcmd` |
 | **time/internal/** | |
 | `time/internal/ts/` | `internal/ts` |
 | `time/internal/gpsevent/` | `internal/gpsevent` |
@@ -159,21 +172,67 @@ The `phctime` package imports `ptime` (for `Time`), but `ptime` has no dependenc
 | `internal/decodecmd/` | `internal/decodecmd` |
 | `internal/sdpcmd/` | `internal/sdpcmd` |
 | `internal/pmccmd/` | `internal/pmccmd` |
-| `internal/syncsimcmd/` | `internal/syncsimcmd` |
 | **web/** | |
 | `web/` | `web` |
+
+## Directory to Layer Mapping
+
+This section maps the new directory structure to the layers defined in `docs/internals.md`. After reorganization, the directory structure itself will document these distinctions, making the layer abstraction less necessary.
+
+| Directory | Layer(s) | Description |
+|-----------|----------|-------------|
+| `cmd/` | Command | Program entry points (`main` packages) |
+| `gps/` | Domain | GPS types, abstractions, protocol-independent interfaces. No goroutines, no logging. |
+| `gps/app/` | Application | GPS orchestration and CLI infrastructure. Uses goroutines and/or logging. |
+| `gps/internal/` | Domain | Protocol-specific implementations (private). No goroutines, no logging. |
+| `gps/lib/` | Library | General-purpose reusable packages |
+| `time/` | Domain | Time-sync types and abstractions. No goroutines, no logging. |
+| `time/app/` | Command | Daemon orchestration and CLI. Uses goroutines and logging. |
+| `time/internal/` | Application | Time-sync workers and event processing (private). Uses goroutines and logging. |
+| `time/lib/` | Library | General-purpose reusable packages |
+| `internal/` | Command | satpulsetool subcommand implementations |
+| `web/` | Application | Web interface (embedded HTML/JS) |
+
+Note: The `cmd` package (in `gps/app/cmd`) is reclassified from Command to Application layer. It provides infrastructure services (logger creation, signal handling) to Command layer packages rather than being a command itself.
+
+**Layer rules by directory type:**
+- **Base directories** (`gps/`, `time/`): Domain layer - no goroutines, no logging
+- **`app/` directories**: May use goroutines and logging
+- **`internal/` directories**: Private to parent. Each subtree uses `internal/` consistently for what it needs to hide: `gps/internal/` hides Domain (protocol implementations), `time/internal/` hides Application (workers, event handling).
+- **`lib/` directories**: General-purpose libraries - no goroutines, no logging
 
 ## Layer Visibility
 
 The structure uses Go's `internal/` visibility to enforce layer boundaries:
 
-- **gps/** - GPS library. Public API packages with no external dependencies. Can be split into a separate module.
-- **gps/internal/** - Protocol-specific implementations. Only importable by packages under `gps/`.
-- **gps/lib/** - Reusable libraries that can be imported by packages outside `gps/`.
-- **time/** - Time sync library. Depends on `gps/`.
-- **time/internal/** - Application layer implementation. Only importable by packages under `time/`.
-- **time/lib/** - Reusable libraries that can be imported by packages outside `time/`.
-- **internal/** - Command layer for satpulsetool subcommands. Can import from `gps/`, `time/`, and their libs. Not exposed for external use.
+- **gps/** - GPS Domain API. No external dependencies. Can be split into a separate module.
+- **gps/app/** - GPS orchestration (uses goroutines/logging). Importable by packages outside `gps/`.
+- **gps/internal/** - Protocol-specific Domain implementations. Only importable by packages under `gps/`.
+- **gps/lib/** - Reusable libraries. Importable by packages outside `gps/`.
+- **time/** - Time-sync Domain API. Depends on `gps/`.
+- **time/app/** - Time-sync orchestration, daemon. Importable by packages outside `time/`.
+- **time/internal/** - Time-sync Application implementation. Only importable by packages under `time/`.
+- **time/lib/** - Reusable libraries. Importable by packages outside `time/`.
+- **internal/** - satpulsetool subcommands. Can import from `gps/`, `time/`, and their subdirs. Not exposed for external use.
+
+## Dependency Rules
+
+The dependency graph is strictly layered (no cycles):
+
+```
+internal/ → time/ → gps/
+```
+
+**Rules:**
+1. `gps/` has no dependencies on `time/` or `internal/`
+2. `time/` may depend on `gps/` but not `internal/`
+3. `internal/` may depend on both `gps/` and `time/`
+
+These rules ensure `gps/` can be extracted as a separate Go module without modification.
+
+## Notes
+
+- `syncsimcmd` is in `time/app/` rather than `internal/` because it simulates the daemon's time-sync behavior and needs access to `time/internal/` packages.
 
 ## Rejected Alternative: *cmd packages in gps/ and time/
 
@@ -181,8 +240,10 @@ An alternative structure would place `gpscmd` and `decodecmd` in `gps/`, and `sd
 
 **Why this was rejected:**
 
-`satpulsetool gps --pvt-out daemon` configures the GPS to output the PVT messages that the daemon needs. This is a logical dependency of the gps tool on the daemon's requirements, expressed via the `TimePulsePVTMsgFlags` constant in `gpsevent`.
+`satpulsetool gps --pvt-out daemon` configures the GPS to output the PVT messages that the daemon needs. This is a logical dependency of the gps tool on the daemon's requirements, expressed via the `TimePulsePVTMsgFlags` constant (moved to `daemon` as a prerequisite refactoring).
 
-With `gpscmd` in `gps/` and `gpsevent` in `time/internal/`, this creates a dependency from `gps/` to `time/`, breaking the goal that `gps/` has no external dependencies.
+With `gpscmd` in `gps/` and `daemon` in `time/app/`, this creates a dependency from `gps/` to `time/`, breaking the goal that `gps/` has no external dependencies.
 
-The chosen structure (all `*cmd` packages in `internal/`) solves this: `internal/gpscmd/` can import `time/internal/gpsevent/` since the command layer can depend on both `gps/` and `time/`.
+The chosen structure (all `*cmd` packages in `internal/`) solves this: `internal/gpscmd/` can import `time/daemon/` since the command layer can depend on both `gps/` and `time/`.
+
+Note: Go's `internal/` visibility means `internal/` packages cannot import from `gps/internal/` or `time/internal/`. The prerequisite refactorings ensure `*cmd` packages only need public APIs from `gps/` and `time/`.
