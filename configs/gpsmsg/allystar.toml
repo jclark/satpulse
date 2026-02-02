@@ -641,6 +641,112 @@ id = 0x43
 payload.types = "U1"
 payload.values = [4]
 
+# Elevation Mask Configuration (CFG-ELEV 0x06 0x0B)
+
+# Poll current elevation mask
+# Verified CFG-ELEV response received on TAU1201
+[[asbin]]
+tag = "get-min-elev"
+description = "Query current elevation mask configuration"
+class = 0x06
+id = 0x0B
+
+# Set minimum elevation to 0 degrees (no mask)
+# Verified ACK received on TAU1201
+# Verified get-min-elev returns expected values (0, 0) on TAU1201
+[[asbin]]
+tag = "min-elev-0"
+description = "Set minimum elevation to 0 degrees"
+class = 0x06
+id = 0x0B
+payload.types = "R4R4"
+payload.values = [0.0, 0.0]
+
+# Set minimum elevation to 5 degrees
+[[asbin]]
+tag = "min-elev-5"
+description = "Set minimum elevation to 5 degrees"
+class = 0x06
+id = 0x0B
+payload.types = "R4R4"
+payload.values = [0.087266, 0.087266]
+
+# Set minimum elevation to 10 degrees
+[[asbin]]
+tag = "min-elev-10"
+description = "Set minimum elevation to 10 degrees"
+class = 0x06
+id = 0x0B
+payload.types = "R4R4"
+payload.values = [0.174533, 0.174533]
+
+# Set minimum elevation to 15 degrees
+# Verified ACK received on TAU1201
+# Verified get-min-elev returns expected value (15 deg) on TAU1201
+[[asbin]]
+tag = "min-elev-15"
+description = "Set minimum elevation to 15 degrees"
+class = 0x06
+id = 0x0B
+payload.types = "R4R4"
+payload.values = [0.261799, 0.261799]
+
+# Set minimum elevation to 20 degrees
+[[asbin]]
+tag = "min-elev-20"
+description = "Set minimum elevation to 20 degrees"
+class = 0x06
+id = 0x0B
+payload.types = "R4R4"
+payload.values = [0.349066, 0.349066]
+
+# Set minimum elevation to 25 degrees
+[[asbin]]
+tag = "min-elev-25"
+description = "Set minimum elevation to 25 degrees"
+class = 0x06
+id = 0x0B
+payload.types = "R4R4"
+payload.values = [0.436332, 0.436332]
+
+# Set minimum elevation to 30 degrees
+[[asbin]]
+tag = "min-elev-30"
+description = "Set minimum elevation to 30 degrees"
+class = 0x06
+id = 0x0B
+payload.types = "R4R4"
+payload.values = [0.523599, 0.523599]
+
+# Set minimum elevation to 35 degrees
+[[asbin]]
+tag = "min-elev-35"
+description = "Set minimum elevation to 35 degrees"
+class = 0x06
+id = 0x0B
+payload.types = "R4R4"
+payload.values = [0.610865, 0.610865]
+
+# Set minimum elevation to 40 degrees
+[[asbin]]
+tag = "min-elev-40"
+description = "Set minimum elevation to 40 degrees"
+class = 0x06
+id = 0x0B
+payload.types = "R4R4"
+payload.values = [0.698132, 0.698132]
+
+# Set minimum elevation to 45 degrees
+# Verified ACK received on TAU1201
+# Verified get-min-elev returns expected value (45 deg) on TAU1201
+[[asbin]]
+tag = "min-elev-45"
+description = "Set minimum elevation to 45 degrees"
+class = 0x06
+id = 0x0B
+payload.types = "R4R4"
+payload.values = [0.785398, 0.785398]
+
 # Port Configuration (CFG-PRT 0x06 0x00)
 
 # Poll UART0 configuration
