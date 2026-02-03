@@ -12,7 +12,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/asbin"
 	"github.com/jclark/satpulse/internal/casbin"
-	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/nmeamsg"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/ubxbin"
 	"github.com/pelletier/go-toml/v2"
@@ -209,18 +209,18 @@ func (um *UBXMsg) getTag() string { return *um.Tag }
 
 // buildNMEA builds a complete NMEA sentence from user text.
 // Prepends $ if missing, appends *XX checksum if missing, appends CRLF.
-// Validates the result using nmea.CheckSyntax.
+// Validates the result using nmeamsg.CheckSyntax.
 func buildNMEA(text string) (string, error) {
 	if !strings.HasPrefix(text, "$") {
 		text = "$" + text
 	}
 	if !strings.Contains(text, "*") {
-		checksum := nmea.Checksum([]byte(text[1:]))
+		checksum := nmeamsg.Checksum([]byte(text[1:]))
 		text = fmt.Sprintf("%s*%02X", text, checksum)
 	}
 	text += "\r\n"
-	flags := nmea.CheckSyntax(text)
-	if flags&nmea.SentenceIsPacket == 0 {
+	flags := nmeamsg.CheckSyntax(text)
+	if flags&nmeamsg.SentenceIsPacket == 0 {
 		return "", errors.New("invalid NMEA packet")
 	}
 	return text, nil

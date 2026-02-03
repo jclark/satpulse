@@ -1,4 +1,4 @@
-package nmea
+package nmeamsg
 
 // SentenceSyntaxFlags represents syntactic properties of an NMEA-like packet.
 type SentenceSyntaxFlags uint32
@@ -183,4 +183,12 @@ func isUpperHexDigit(b byte) bool {
 		return true
 	}
 	return false
+}
+
+func Checksum(data []byte) byte {
+	var c byte
+	for i := 0; i < len(data); i++ {
+		c ^= data[i]
+	}
+	return c
 }

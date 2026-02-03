@@ -8,6 +8,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/as"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/nmeamsg"
 	"github.com/jclark/satpulse/internal/sino"
 )
 
@@ -378,7 +379,7 @@ func TestGSVParse(t *testing.T) {
 
 func addTrailer(s string) string {
 	if !strings.Contains(s, "*") {
-		s += fmt.Sprintf("*%02X\r\n", Checksum(([]byte)(s[1:])))
+		s += fmt.Sprintf("*%02X\r\n", nmeamsg.Checksum(([]byte)(s[1:])))
 	}
 	if !strings.HasSuffix(s, "\r\n") {
 		s += "\r\n"

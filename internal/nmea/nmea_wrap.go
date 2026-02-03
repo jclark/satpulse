@@ -6,8 +6,6 @@ package main
 import (
 	"fmt"
 	"os"
-
-	"github.com/jclark/satpulse/internal/nmea"
 )
 
 func main() {
@@ -17,5 +15,5 @@ func main() {
 }
 
 func wrap(data string) string {
-	return fmt.Sprintf("$%s*%02X\r\n", data, nmea.Checksum(data))
+	return fmt.Sprintf("$%s*%02X\r\n", data, nmeamsg.Checksum(data))
 }

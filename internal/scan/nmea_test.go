@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/nmeamsg"
 	"github.com/jclark/satpulse/internal/scantest"
 )
 
@@ -63,7 +64,7 @@ func TestNMEA(t *testing.T) {
 			if pkt.Tag() != nmea.Tag {
 				actual = notAPacket
 			} else {
-				flags := nmea.CheckSyntax(pkt.Data)
+				flags := nmeamsg.CheckSyntax(pkt.Data)
 				if flags.IsValidGNSSTalkerNMEA() {
 					actual = validGNSSNMEA
 				} else if flags.IsValidApprovedNMEA() {

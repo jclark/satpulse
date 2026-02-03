@@ -8,7 +8,7 @@ import (
 	"github.com/jclark/satpulse/internal/asbin"
 	"github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/gpsreg"
-	"github.com/jclark/satpulse/internal/nmea"
+	"github.com/jclark/satpulse/internal/nmeamsg"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/ubxbin"
 )
@@ -113,7 +113,7 @@ func (rp *responsePrinter) formatASBIN(pkt scan.Packet) string {
 
 func (rp *responsePrinter) formatNMEA(pkt scan.Packet) string {
 	// Skip standard GNSS talker sentences but show TXT and proprietary
-	if nmea.CheckSyntax(pkt.Data).IsValidGNSSTalkerNMEA() && pkt.Data[3:6] != "TXT" {
+	if nmeamsg.CheckSyntax(pkt.Data).IsValidGNSSTalkerNMEA() && pkt.Data[3:6] != "TXT" {
 		return ""
 	}
 	return rp.formatText(pkt)

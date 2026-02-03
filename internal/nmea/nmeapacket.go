@@ -2,6 +2,7 @@ package nmea
 
 import (
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/nmeamsg"
 )
 
 // PacketFormat returns the NMEA packet format
@@ -113,7 +114,7 @@ func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
 // ComputeChecksum computes the checksum for the NMEA packet.
 // Precondition: the packet must be valid according to Next().
 func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
-	return []byte{Checksum(pkt[1:starIndex(pkt)])}
+	return []byte{nmeamsg.Checksum(pkt[1:starIndex(pkt)])}
 }
 
 var _ gpsprot.AltChecksumPacketFormat = packetFormat{}
@@ -122,28 +123,20 @@ var _ gpsprot.AltChecksumPacketFormat = packetFormat{}
 // Precondition: the packet must be valid according to Next().
 func (f packetFormat) ComputeAltChecksum(pkt []byte) []byte {
 	// This won't get called often, so no need to be efficient.
-	flags := CheckSyntax(string(pkt))
+	flags := nmeamsg.CheckSyntax(string(pkt))
 	// If it looks like an NMEA packet with 5-char address and GNSS talker ID, then do not allow alternate checksum.
-	if flags&SentenceAddressLength5 != 0 && flags&SentenceTalkerIsGNSS != 0 {
+	if flags&nmeamsg.SentenceAddressLength5 != 0 && flags&nmeamsg.SentenceTalkerIsGNSS != 0 {
 		return nil
 	}
 	// Since manufacturers using NMEA-like packets are purposefully ignoring the NMEA proprietary extension mechanism,
 	// I think it's better no to do anything special for something that starts with P.
 	// Possibly Unicore NMEA-like packet - compute checksum including the $
-	return []byte{Checksum(pkt[0:starIndex(pkt)])}
+	return []byte{nmeamsg.Checksum(pkt[0:starIndex(pkt)])}
 }
 
 func (f packetFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
 	// no point in rescanning because valid packet constraints are quite strict
 	return false
-}
-
-func Checksum(data []byte) byte {
-	var c byte
-	for i := 0; i < len(data); i++ {
-		c ^= data[i]
-	}
-	return c
 }
 
 func starIndex(pkt []byte) int {
@@ -155,4 +148,15 @@ func starIndex(pkt []byte) int {
 		}
 	}
 	return starOffset
+}
+
+func isUpperHexDigit(b byte) bool {
+	if '0' <= b && b <= '9' {
+		return true
+	}
+	// NMEA requires checksum to use upper-case hex digits
+	if 'A' <= b && b <= 'F' {
+		return true
+	}
+	return false
 }

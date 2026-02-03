@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/nmeamsg"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -16,7 +17,7 @@ const Tag gpsprot.Tag = "NMEA"
 var _ gpsprot.NMEAPacketProcessor = (*PacketProcessor)(nil)
 
 type Sentence struct {
-	SyntaxFlags SentenceSyntaxFlags
+	SyntaxFlags nmeamsg.SentenceSyntaxFlags
 	Payload     string
 }
 
@@ -27,12 +28,12 @@ type ApprovedSentence struct {
 }
 
 func NewSentence(data string) *Sentence {
-	flags := CheckSyntax(data)
-	if flags&SentenceIsPacket == 0 {
+	flags := nmeamsg.CheckSyntax(data)
+	if flags&nmeamsg.SentenceIsPacket == 0 {
 		return nil
 	}
 	asteriskIndex := len(data) - 4 // 3 for *XX and 1 for \n
-	if flags&SentenceEndsWithCRLF != 0 {
+	if flags&nmeamsg.SentenceEndsWithCRLF != 0 {
 		asteriskIndex -= 1
 	}
 	return &Sentence{
@@ -48,7 +49,7 @@ func (s *Sentence) ApprovedSentence() *ApprovedSentence {
 	fields := strings.Split(s.Payload, ",")
 	addr := fields[0]
 	fields = fields[1:] // Skip the address field
-	if s.SyntaxFlags&SentenceNoCarets == 0 {
+	if s.SyntaxFlags&nmeamsg.SentenceNoCarets == 0 {
 		for i := range fields {
 			fields[i] = unescape(fields[i])
 		}
@@ -76,7 +77,7 @@ func unescape(s string) string {
 }
 
 func (s *Sentence) AddressField() string {
-	if s.SyntaxFlags&SentenceAddressLength5 != 0 {
+	if s.SyntaxFlags&nmeamsg.SentenceAddressLength5 != 0 {
 		return s.Payload[:5] // e.g. GPRMC
 	}
 	addr, _, _ := strings.Cut(s.Payload, ",")
