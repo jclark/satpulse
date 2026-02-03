@@ -11,6 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/logfile"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phcsync"
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/refclock"
 	"github.com/jclark/satpulse/internal/scan"
@@ -215,9 +216,9 @@ type LogEvent struct {
 }
 
 type PulseEdge struct {
-	T     ptime.Time `json:"t"`
-	Era   ptime.Era  `json:"era"`
-	TRead ptime.Time `json:"tRead"`
+	T     ptime.Time  `json:"t"`
+	Era   phctime.Era `json:"era"`
+	TRead ptime.Time  `json:"tRead"`
 }
 
 func (d *Dispatcher) timestamp(e ts.Event) {
@@ -229,7 +230,7 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	})
 
 	// Pass wallclock sample to sysSample (for chrony)
-	d.sysSample(e.TReadWall.Clock.T, e.TReadWall.Sys)
+	d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys)
 
 	// Log event with monotonic time and full sample info
 	d.logEvent(LogEvent{
@@ -237,7 +238,7 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 		PulseEdge: &PulseEdge{
 			T:     e.Ts.T,
 			Era:   e.Ts.Era,
-			TRead: e.TReadMono.Clock.T,
+			TRead: e.TReadMono.PHC.T,
 		},
 	})
 }

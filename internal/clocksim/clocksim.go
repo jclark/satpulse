@@ -19,6 +19,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -44,17 +45,17 @@ import (
 // at grid boundaries, which would corrupt stochastic oscillator statistics by drawing
 // extra samples that don't contribute meaningful phase.
 type RawClock struct {
-	oscillator      OscSimulator
-	startPhaseNs    int64
-	lastStep        int64   // Absolute step index (grid position)
-	lastTime        float64 // For monotonicity check
-	accumNominalNs  int64   // Accumulated nominal time in nanoseconds (exact)
-	accumNoise      float64 // Accumulated frequency error in seconds (float)
+	oscillator     OscSimulator
+	startPhaseNs   int64
+	lastStep       int64   // Absolute step index (grid position)
+	lastTime       float64 // For monotonicity check
+	accumNominalNs int64   // Accumulated nominal time in nanoseconds (exact)
+	accumNoise     float64 // Accumulated frequency error in seconds (float)
 }
 
 // Integration step size for RawClock discrete integration.
 const rawClockStepsPerSec = 1000
-const rawClockDT = 1.0 / float64(rawClockStepsPerSec)          // 1ms in seconds
+const rawClockDT = 1.0 / float64(rawClockStepsPerSec)           // 1ms in seconds
 const rawClockDTNs = int64(1_000_000_000 / rawClockStepsPerSec) // 1ms in nanoseconds (exact integer)
 
 // NewRawClock creates a RawClock with the given oscillator and initial phase in nanoseconds.
@@ -119,7 +120,7 @@ type SawtoothCorrections struct {
 
 // TimestampReading groups all information from a timestamp read.
 type TimestampReading struct {
-	Timestamp ptime.ClockTime
+	Timestamp phctime.Time
 	TrueTime  float64
 	Sawtooth  *SawtoothCorrections // nil if no sawtooth configured
 }
@@ -333,7 +334,7 @@ func (c *VirtualClock) ReadTimestamp() (TimestampReading, bool) {
 	}
 
 	return TimestampReading{
-		Timestamp: ptime.ClockTime{T: ptime.Time(ts.phase), Era: 0},
+		Timestamp: phctime.Time{T: ptime.Time(ts.phase), Era: 0},
 		TrueTime:  ts.trueTime,
 		Sawtooth:  sawtooth,
 	}, true
@@ -357,7 +358,7 @@ func (c *VirtualClock) computeVirtPhaseNs(atTime float64) int64 {
 // Since simulation is single-threaded, no atomics needed.
 type TestClock struct {
 	*VirtualClock
-	era ptime.Era
+	era phctime.Era
 }
 
 // NewTestClock creates a TestClock for testing.
@@ -369,18 +370,18 @@ func NewTestClock(vclock *VirtualClock) *TestClock {
 }
 
 // AdjTime steps the clock and updates the era.
-func (c *TestClock) AdjTime(d time.Duration) (ptime.Era, error) {
+func (c *TestClock) AdjTime(d time.Duration) (phctime.Era, error) {
 	c.era++ // Era N+1 (uncertain)
 	err := c.VirtualClock.AdjTime(d)
 	c.era++ // Era N+2 (certain)
 	if err != nil {
-		return ptime.Era(0), err
+		return phctime.Era(0), err
 	}
 	return c.era, nil
 }
 
 // Era returns the current era value.
-func (c *TestClock) Era() ptime.Era {
+func (c *TestClock) Era() phctime.Era {
 	return c.era
 }
 
@@ -395,9 +396,9 @@ func (c *TestClock) ReadTimestamp() (TimestampReading, bool) {
 }
 
 // Now returns the current PHC time.
-func (c *TestClock) Now() ptime.ClockTime {
+func (c *TestClock) Now() phctime.Time {
 	virtPhaseNs := c.VirtualClock.computeVirtPhaseNs(c.VirtualClock.simTime)
-	return ptime.ClockTime{
+	return phctime.Time{
 		T:   ptime.Time(virtPhaseNs),
 		Era: c.Era(),
 	}

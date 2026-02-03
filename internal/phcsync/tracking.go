@@ -7,7 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/circbuf"
 	"github.com/jclark/satpulse/internal/median"
-	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/phctime"
 )
 
 // TrackingConfig contains tunable parameters for tracking mode.
@@ -276,7 +276,7 @@ func (g *trackingSampleGenerator) pulseSample(edge PulseEdge, edgeIndex uint64, 
 	offset := edge.Timestamp.T.Sub(refTime)
 
 	// Estimate system time: TRead minus the time between reading and timestamp capture
-	phcDelta := edge.TRead.Clock.T.Sub(edge.Timestamp.T)
+	phcDelta := edge.TRead.PHC.T.Sub(edge.Timestamp.T)
 	sys := edge.TRead.Sys.Add(-phcDelta)
 
 	sample := &Sample{
@@ -303,7 +303,7 @@ func (g *trackingSampleGenerator) pendingPulseDeadline() time.Time {
 		return time.Time{}
 	}
 	// Estimate system time when pulse occurred
-	phcDelta := g.pendingPulse.TRead.Clock.T.Sub(g.pendingPulse.Timestamp.T)
+	phcDelta := g.pendingPulse.TRead.PHC.T.Sub(g.pendingPulse.Timestamp.T)
 	pulseSysTime := g.pendingPulse.TRead.Sys.Add(-phcDelta)
 	return pulseSysTime.Add(time.Duration(g.cfg.PulseCorrectionTimeout * float64(time.Second)))
 }
@@ -319,7 +319,7 @@ type trackingSampleProcessor struct {
 	badSampleCount        int
 	persistThreshold      time.Duration   // min time in tracking before sample persists
 	trackingStartTime     time.Time       // system time when tracking started
-	persistSample         *ptime.Sample   // persisted sample for drift validation
+	persistSample         *phctime.Sample // persisted sample for drift validation
 	lg                    *slog.Logger
 }
 
@@ -456,7 +456,7 @@ func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 	}
 }
 
-func (p *trackingSampleProcessor) getPersistSample() *ptime.Sample {
+func (p *trackingSampleProcessor) getPersistSample() *phctime.Sample {
 	return p.persistSample
 }
 

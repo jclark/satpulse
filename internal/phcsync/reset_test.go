@@ -9,6 +9,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/circbuf"
 	"github.com/jclark/satpulse/internal/clocksim"
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -358,10 +359,10 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 			tReadPHC := phcTime.Add(readDelay)
 
 			gen.storeEdge(PulseEdge{
-				Timestamp: ptime.ClockTime{T: phcTime, Era: 0},
-				TRead: ptime.Sample{
-					Clock: ptime.ClockTime{T: tReadPHC, Era: 0},
-					Sys:   tRead,
+				Timestamp: phctime.Time{T: phcTime, Era: 0},
+				TRead: phctime.Sample{
+					PHC: phctime.Time{T: tReadPHC, Era: 0},
+					Sys: tRead,
 				},
 			}, uint64(i))
 		}
@@ -424,10 +425,10 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 		// Store edges in chronological order
 		for i, edge := range edges {
 			gen.storeEdge(PulseEdge{
-				Timestamp: ptime.ClockTime{T: edge.phcTime, Era: 0},
-				TRead: ptime.Sample{
-					Clock: ptime.ClockTime{T: edge.phcTime.Add(readDelay), Era: 0},
-					Sys:   edge.time.Add(readDelay),
+				Timestamp: phctime.Time{T: edge.phcTime, Era: 0},
+				TRead: phctime.Sample{
+					PHC: phctime.Time{T: edge.phcTime.Add(readDelay), Era: 0},
+					Sys: edge.time.Add(readDelay),
 				},
 			}, uint64(i))
 		}
@@ -462,10 +463,10 @@ func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *
 		}
 		readDelay := 1 * time.Millisecond
 		gen.storeEdge(PulseEdge{
-			Timestamp: ptime.ClockTime{T: phcTime, Era: 0},
-			TRead: ptime.Sample{
-				Clock: ptime.ClockTime{T: phcTime.Add(readDelay), Era: 0},
-				Sys:   realTime.Add(readDelay),
+			Timestamp: phctime.Time{T: phcTime, Era: 0},
+			TRead: phctime.Sample{
+				PHC: phctime.Time{T: phcTime.Add(readDelay), Era: 0},
+				Sys: realTime.Add(readDelay),
 			},
 		}, uint64(i))
 	}
@@ -518,14 +519,14 @@ func TestPulseIntervals(t *testing.T) {
 func TestDriftRateCheck(t *testing.T) {
 	baseTime := time.Now()
 	baseRef := ptime.Time(0)
-	basePersist := &ptime.Sample{
-		Clock: ptime.ClockTime{T: baseRef, Era: 0},
-		Sys:   baseTime,
+	basePersist := &phctime.Sample{
+		PHC: phctime.Time{T: baseRef, Era: 0},
+		Sys: baseTime,
 	}
 
 	tests := []struct {
 		name           string
-		persistSample  *ptime.Sample
+		persistSample  *phctime.Sample
 		driftRateLimit float64
 		sampleSysDelta time.Duration
 		sampleRefDelta time.Duration
@@ -550,7 +551,7 @@ func TestDriftRateCheck(t *testing.T) {
 		{
 			name:           "small drift within limit accepts",
 			persistSample:  basePersist,
-			driftRateLimit: 100000, // 100 ppm
+			driftRateLimit: 100000,                              // 100 ppm
 			sampleSysDelta: 60*time.Second + 1*time.Millisecond, // ~17 ppm
 			sampleRefDelta: 60 * time.Second,
 			wantReject:     false,
@@ -558,7 +559,7 @@ func TestDriftRateCheck(t *testing.T) {
 		{
 			name:           "large drift exceeding limit rejects",
 			persistSample:  basePersist,
-			driftRateLimit: 100000, // 100 ppm
+			driftRateLimit: 100000,                                // 100 ppm
 			sampleSysDelta: 60*time.Second + 500*time.Millisecond, // ~8333 ppm (way over 100 ppm)
 			sampleRefDelta: 60 * time.Second,
 			wantReject:     true,
@@ -566,7 +567,7 @@ func TestDriftRateCheck(t *testing.T) {
 		{
 			name:           "disabled limit accepts all",
 			persistSample:  basePersist,
-			driftRateLimit: 0, // disabled
+			driftRateLimit: 0,                                     // disabled
 			sampleSysDelta: 60*time.Second + 500*time.Millisecond, // would fail if limit was enabled
 			sampleRefDelta: 60 * time.Second,
 			wantReject:     false,
@@ -582,7 +583,7 @@ func TestDriftRateCheck(t *testing.T) {
 		{
 			name:           "negative drift within limit accepts",
 			persistSample:  basePersist,
-			driftRateLimit: 100000, // 100 ppm
+			driftRateLimit: 100000,                              // 100 ppm
 			sampleSysDelta: 60*time.Second - 1*time.Millisecond, // ~-17 ppm
 			sampleRefDelta: 60 * time.Second,
 			wantReject:     false,
@@ -590,7 +591,7 @@ func TestDriftRateCheck(t *testing.T) {
 		{
 			name:           "negative drift exceeding limit rejects",
 			persistSample:  basePersist,
-			driftRateLimit: 100000, // 100 ppm
+			driftRateLimit: 100000,                                // 100 ppm
 			sampleSysDelta: 60*time.Second - 500*time.Millisecond, // ~-8333 ppm
 			sampleRefDelta: 60 * time.Second,
 			wantReject:     true,
@@ -634,12 +635,12 @@ func TestComputeDriftRate(t *testing.T) {
 	baseRef := ptime.Time(0)
 
 	tests := []struct {
-		name       string
-		sysDelta   time.Duration
-		refDelta   time.Duration
-		wantPPB    float64
-		wantOK     bool
-		tolerance  float64
+		name      string
+		sysDelta  time.Duration
+		refDelta  time.Duration
+		wantPPB   float64
+		wantOK    bool
+		tolerance float64
 	}{
 		{
 			name:      "zero drift",
@@ -685,13 +686,13 @@ func TestComputeDriftRate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			persist := ptime.Sample{
-				Clock: ptime.ClockTime{T: baseRef, Era: 0},
-				Sys:   baseTime,
+			persist := phctime.Sample{
+				PHC: phctime.Time{T: baseRef, Era: 0},
+				Sys: baseTime,
 			}
-			current := ptime.Sample{
-				Clock: ptime.ClockTime{T: baseRef.Add(tc.refDelta), Era: 0},
-				Sys:   baseTime.Add(tc.sysDelta),
+			current := phctime.Sample{
+				PHC: phctime.Time{T: baseRef.Add(tc.refDelta), Era: 0},
+				Sys: baseTime.Add(tc.sysDelta),
 			}
 
 			driftPPB, ok := computeDriftRate(current, persist)

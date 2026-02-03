@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/median"
-	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/phctime"
 )
 
 // ConvergingConfig contains tunable parameters for converging mode.
@@ -95,7 +95,7 @@ func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex ui
 	offset := edge.Timestamp.T.Sub(refTime)
 
 	// Estimate system time
-	phcDelta := edge.TRead.Clock.T.Sub(edge.Timestamp.T)
+	phcDelta := edge.TRead.PHC.T.Sub(edge.Timestamp.T)
 	sys := edge.TRead.Sys.Add(-phcDelta)
 
 	return &Sample{
@@ -118,7 +118,7 @@ type convergingSampleProcessor struct {
 	cfg                      ConvergingConfig
 	servo                    *piServo
 	offsets                  *median.Window[time.Duration]
-	lastSampleEra            ptime.Era
+	lastSampleEra            phctime.Era
 	stepCompensate           bool
 	minMedian                time.Duration
 	samplesSinceMinDecreased int

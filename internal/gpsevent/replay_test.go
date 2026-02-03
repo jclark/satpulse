@@ -8,6 +8,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/phcsync"
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/timemsg"
 )
@@ -63,8 +64,8 @@ func (m *mockClock) MaxFreqOffset() float64 {
 	return 62500000.0 // 62.5 million PPB = 62500 PPM
 }
 
-func (m *mockClock) AdjTime(d time.Duration) (ptime.Era, error) {
-	return ptime.Era(1), nil
+func (m *mockClock) AdjTime(d time.Duration) (phctime.Era, error) {
+	return phctime.Era(1), nil
 }
 
 // replaySampler implements phcsync.Sampler for testing

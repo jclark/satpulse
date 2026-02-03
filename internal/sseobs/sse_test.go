@@ -12,6 +12,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpscfg"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/phcsync"
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/sse"
 )
@@ -38,11 +39,11 @@ func TestSSEObserver_Events(t *testing.T) {
 			name: "sample_ok",
 			action: func(obs *SSEObserver) {
 				obs.Sample(phcsync.Sample{
-					Kind:      phcsync.SampleOK,
-					Offset:    123 * time.Nanosecond,
-					Freq:      1.5,
-					Mode: phcsync.ModeTracking,
-					Era:       ptime.Era(0),
+					Kind:   phcsync.SampleOK,
+					Offset: 123 * time.Nanosecond,
+					Freq:   1.5,
+					Mode:   phcsync.ModeTracking,
+					Era:    phctime.Era(0),
 				})
 			},
 			eventType:    "phc",
@@ -52,11 +53,11 @@ func TestSSEObserver_Events(t *testing.T) {
 			name: "sample_outlier",
 			action: func(obs *SSEObserver) {
 				obs.Sample(phcsync.Sample{
-					Kind:      phcsync.SampleOutlier,
-					Offset:    -456 * time.Nanosecond,
-					Freq:      -2.3,
-					Mode: phcsync.ModeReset,
-					Era:       ptime.Era(0),
+					Kind:   phcsync.SampleOutlier,
+					Offset: -456 * time.Nanosecond,
+					Freq:   -2.3,
+					Mode:   phcsync.ModeReset,
+					Era:    phctime.Era(0),
 				})
 			},
 			eventType:    "phc",

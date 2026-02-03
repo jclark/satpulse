@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/circbuf"
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -163,8 +164,8 @@ func (g *resetSampleGenerator) storeEdge(edge PulseEdge, edgeIndex uint64) {
 	}
 	g.edgeBuf.Append(edge)
 	g.lastEdgeIndex = edgeIndex
-	g.tReadLastMsg = time.Time{}  // reset so we reprocess with new edge
-	g.pulseIntervalsBad = false   // new edge, retry interval check
+	g.tReadLastMsg = time.Time{} // reset so we reprocess with new edge
+	g.pulseIntervalsBad = false  // new edge, retry interval check
 }
 
 const maxEdgeInterval = time.Second * 3 / 2
@@ -470,7 +471,7 @@ func (g *resetSampleGenerator) checkPulseIntervals(edgeList pulseEdgeList, stats
 func (g *resetSampleGenerator) pulseTimes(edges []PulseEdge, avgInterval time.Duration) []time.Time {
 	times := make([]time.Time, len(edges))
 	for i, edge := range edges {
-		phcDelta := edge.TRead.Clock.T.Sub(edge.Timestamp.T)
+		phcDelta := edge.TRead.PHC.T.Sub(edge.Timestamp.T)
 		// Scale from PHC time domain to real time domain: avgInterval is how much PHC time equals 1 real second
 		// Note this is assuming system clock frequency is reasonably accurate
 		realDelta := time.Duration(float64(phcDelta) / avgInterval.Seconds())
@@ -743,11 +744,11 @@ func (pel pulseEdgeList) avgInterval() time.Duration {
 type resetSampleProcessor struct {
 	minStep        time.Duration
 	driftRateLimit float64
-	persistSample  *ptime.Sample
+	persistSample  *phctime.Sample
 	lg             *slog.Logger
 }
 
-func newResetSampleProcessor(cfg ResetConfig, persistSample *ptime.Sample, lg *slog.Logger) *resetSampleProcessor {
+func newResetSampleProcessor(cfg ResetConfig, persistSample *phctime.Sample, lg *slog.Logger) *resetSampleProcessor {
 	return &resetSampleProcessor{
 		minStep:        time.Duration(cfg.StepThreshold),
 		driftRateLimit: cfg.DriftRateLimit,
@@ -771,7 +772,7 @@ func (p *resetSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 				"driftPPB", driftPPB,
 				"limit", p.driftRateLimit,
 				"elapsedSys", current.Sys.Sub(p.persistSample.Sys),
-				"elapsedRef", current.Clock.T.Sub(p.persistSample.Clock.T))
+				"elapsedRef", current.PHC.T.Sub(p.persistSample.PHC.T))
 			return phcAction{actionType: phcNoAction}, ModeReset
 		}
 	}
@@ -797,9 +798,9 @@ func (p *resetSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
 // computeDriftRate calculates the drift rate in PPB between two samples.
 // It compares elapsed system time vs elapsed reference time.
 // Returns (driftPPB, true) if calculation is valid, (0, false) if insufficient elapsed time.
-func computeDriftRate(current, persist ptime.Sample) (float64, bool) {
+func computeDriftRate(current, persist phctime.Sample) (float64, bool) {
 	sysDelta := current.Sys.Sub(persist.Sys)
-	refDelta := current.Clock.T.Sub(persist.Clock.T)
+	refDelta := current.PHC.T.Sub(persist.PHC.T)
 	// Need sufficient elapsed time (1 second minimum)
 	if refDelta < time.Second {
 		return 0, false

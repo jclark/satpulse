@@ -14,6 +14,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -30,7 +31,7 @@ type OldLogEvent struct {
 
 type OldTimestamp struct {
 	T     ptime.Time    `json:"t"`
-	Era   ptime.Era     `json:"era"`
+	Era   phctime.Era   `json:"era"`
 	Delay time.Duration `json:"delay,omitempty"`
 }
 

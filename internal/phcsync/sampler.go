@@ -4,6 +4,7 @@ import (
 	"iter"
 	"time"
 
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -24,17 +25,17 @@ type Sample struct {
 	Freq      float64       // Current frequency adjustment in PPB (always valid)
 	FreqDelta float64       // Change in frequency adjustment in PPB (valid for SampleOK, 0 for SampleOutlier)
 	Mode      Mode          // Current synchronization mode (always valid)
-	Era       ptime.Era     // For clock step tracking and logging (always valid)
+	Era       phctime.Era   // For clock step tracking and logging (always valid)
 	EdgeIndex uint64        // Tracks which edge produced this sample (odd/even)
 	Sys       time.Time     // Estimated monotonic system time of pulse
 }
 
-// SysSample returns a ptime.Sample pairing the GPS reference time with
+// SysSample returns a phctime.Sample pairing the GPS reference time with
 // the estimated system time of the pulse.
-func (s *Sample) SysSample() ptime.Sample {
-	return ptime.Sample{
-		Clock: ptime.ClockTime{T: s.Ref, Era: s.Era},
-		Sys:   s.Sys,
+func (s *Sample) SysSample() phctime.Sample {
+	return phctime.Sample{
+		PHC: phctime.Time{T: s.Ref, Era: s.Era},
+		Sys: s.Sys,
 	}
 }
 

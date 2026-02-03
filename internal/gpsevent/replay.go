@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/phcsync"
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/timemsg"
 )
@@ -41,12 +42,12 @@ func (r *Replayer) replayEvent(bytes []byte) error {
 	// Replay pulse edges
 	if event.PulseEdge != nil {
 		r.ctrl.PulseEdge(phcsync.PulseEdge{
-			Timestamp: ptime.ClockTime{
+			Timestamp: phctime.Time{
 				T:   event.PulseEdge.T,
 				Era: event.PulseEdge.Era,
 			},
-			TRead: ptime.Sample{
-				Clock: ptime.ClockTime{
+			TRead: phctime.Sample{
+				PHC: phctime.Time{
 					T:   event.PulseEdge.TRead,
 					Era: event.PulseEdge.Era,
 				},

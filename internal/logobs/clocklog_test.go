@@ -10,6 +10,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/phcsync"
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
@@ -46,7 +47,7 @@ func TestClockLogObserver(t *testing.T) {
 		Ref:    ref,
 		Offset: 42 * time.Nanosecond,
 		Freq:   1234.5,
-		Era:    ptime.Era(1),
+		Era:    phctime.Era(1),
 		Mode:   phcsync.ModeTracking,
 	})
 
@@ -56,7 +57,7 @@ func TestClockLogObserver(t *testing.T) {
 		Ref:    ref.Add(time.Second),
 		Offset: -100 * time.Nanosecond,
 		Freq:   1234.5,
-		Era:    ptime.Era(1),
+		Era:    phctime.Era(1),
 		Mode:   phcsync.ModeReset,
 	})
 
@@ -67,7 +68,7 @@ func TestClockLogObserver(t *testing.T) {
 		Ref:    ref.Add(2 * time.Second),
 		Offset: 0,
 		Freq:   0,
-		Era:    ptime.Era(1),
+		Era:    phctime.Era(1),
 		Mode:   phcsync.ModeReset,
 	})
 	lenAfter := getFileSize(t, logPath)
@@ -137,7 +138,7 @@ func TestClockLogObserverReopenLog(t *testing.T) {
 		Ref:    ref,
 		Offset: 10 * time.Nanosecond,
 		Freq:   100,
-		Era:    ptime.Era(1),
+		Era:    phctime.Era(1),
 		Mode:   phcsync.ModeTracking,
 	})
 
@@ -157,7 +158,7 @@ func TestClockLogObserverReopenLog(t *testing.T) {
 		Ref:    ref.Add(time.Second),
 		Offset: 20 * time.Nanosecond,
 		Freq:   200,
-		Era:    ptime.Era(1),
+		Era:    phctime.Era(1),
 		Mode:   phcsync.ModeTracking,
 	})
 
@@ -205,7 +206,7 @@ func TestClockLogObserverNoPath(t *testing.T) {
 		Ref:    ref,
 		Offset: 42 * time.Nanosecond,
 		Freq:   1234.5,
-		Era:    ptime.Era(1),
+		Era:    phctime.Era(1),
 		Mode:   phcsync.ModeTracking,
 	})
 
@@ -239,7 +240,7 @@ func TestClockLogObserverLeapSecond(t *testing.T) {
 		Ref:    ref1,
 		Offset: 10 * time.Nanosecond,
 		Freq:   100,
-		Era:    ptime.Era(1),
+		Era:    phctime.Era(1),
 		Mode:   phcsync.ModeTracking,
 	})
 
@@ -270,7 +271,7 @@ func TestClockLogObserverLeapSecond(t *testing.T) {
 		Ref:    ref2,
 		Offset: 20 * time.Nanosecond,
 		Freq:   200,
-		Era:    ptime.Era(1),
+		Era:    phctime.Era(1),
 		Mode:   phcsync.ModeTracking,
 	})
 

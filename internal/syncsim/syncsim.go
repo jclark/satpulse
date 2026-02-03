@@ -46,6 +46,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/obs"
 	"github.com/jclark/satpulse/internal/phcsync"
+	"github.com/jclark/satpulse/internal/phctime"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/internal/statsobs"
 	"github.com/jclark/satpulse/internal/timemsg"
@@ -111,14 +112,14 @@ func (m *modeObserver) Sample(s phcsync.Sample) {
 
 // Stats holds simulation results
 type Stats struct {
-	statsobs.Stats                           // embedded - detailed tracking statistics from observer
-	SampleCount     int                      // total samples fed to controller
-	TrackingStdDev  float64                  // stddev from true time in nanoseconds (simulation-only)
-	TrackingMean    float64                  // mean offset from true time in nanoseconds (simulation-only)
-	TrackingAbsMax  time.Duration            // max absolute offset from true time (simulation-only)
-	TrackingADev    float64                  // Allan deviation of tracking offsets (simulation-only)
-	ModeSamples     map[phcsync.Mode]int     // samples per mode (non-zero only)
-	ModeTransitions map[phcsync.Mode]int     // transitions into each mode (non-zero only)
+	statsobs.Stats                       // embedded - detailed tracking statistics from observer
+	SampleCount     int                  // total samples fed to controller
+	TrackingStdDev  float64              // stddev from true time in nanoseconds (simulation-only)
+	TrackingMean    float64              // mean offset from true time in nanoseconds (simulation-only)
+	TrackingAbsMax  time.Duration        // max absolute offset from true time (simulation-only)
+	TrackingADev    float64              // Allan deviation of tracking offsets (simulation-only)
+	ModeSamples     map[phcsync.Mode]int // samples per mode (non-zero only)
+	ModeTransitions map[phcsync.Mode]int // transitions into each mode (non-zero only)
 }
 
 // String formats Stats for human-readable output.
@@ -392,9 +393,9 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 
 				edge := phcsync.PulseEdge{
 					Timestamp: lastReading.Timestamp,
-					TRead: ptime.Sample{
-						Clock: tReadPHC,
-						Sys:   tSys,
+					TRead: phctime.Sample{
+						PHC: tReadPHC,
+						Sys: tSys,
 					},
 				}
 				lg.Debug("delivering pulse to controller",

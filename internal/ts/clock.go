@@ -10,7 +10,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/ifwait"
 	"github.com/jclark/satpulse/internal/phc"
-	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/internal/phctime"
 )
 
 type Clock struct {
@@ -25,10 +25,10 @@ type Clock struct {
 
 type Event struct {
 	Kind       EventKind
-	Ts         ptime.ClockTime
-	TReadMono  ptime.Sample // TReadMono.Sys includes a monotonic time
-	TReadWall  ptime.Sample // TReadWall.Sys does not have a monotonic time, but PHC-system offset is more precise
-	ResumeFunc func() ptime.Era
+	Ts         phctime.Time
+	TReadMono  phctime.Sample // TReadMono.Sys includes a monotonic time
+	TReadWall  phctime.Sample // TReadWall.Sys does not have a monotonic time, but PHC-system offset is more precise
+	ResumeFunc func() phctime.Era
 }
 
 type EventKind int
@@ -204,7 +204,7 @@ func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event
 	return ch, nil
 }
 
-const StaleEra ptime.Era = ptime.Era(0)
+const StaleEra phctime.Era = phctime.Era(0)
 
 func hasCarrier(flags net.Flags) bool {
 	return flags&net.FlagRunning != 0
@@ -232,7 +232,7 @@ func (clk *Clock) handleNoCarrier(ctx context.Context, lg *slog.Logger, tsCh cha
 	}
 	tsCh <- Event{
 		Kind: ResumeEvent,
-		ResumeFunc: func() ptime.Era {
+		ResumeFunc: func() phctime.Era {
 			era := clk.eraCounter.load()
 			clk.eraCounter.add(2)
 			return era
@@ -292,7 +292,7 @@ func (clk *Clock) readWorker(ctx context.Context, lg *slog.Logger, tsCh chan<- E
 			// not for us
 			continue
 		}
-		tClock := ptime.ClockTime{
+		tClock := phctime.Time{
 			T:   t,
 			Era: clk.eraCounter.load(),
 		}
@@ -328,7 +328,7 @@ func (clk *Clock) readWorker(ctx context.Context, lg *slog.Logger, tsCh chan<- E
 // If eraPre == eraPost or eraPre is uncertain, use eraPre.
 // Else if eraPost is uncertain, use eraPost.
 // Else the clock was stepped during sampling, so use eraPre + 1.
-func computeEra(eraPre, eraPost ptime.Era) ptime.Era {
+func computeEra(eraPre, eraPost phctime.Era) phctime.Era {
 	if eraPre == eraPost || eraPre.Uncertain() {
 		return eraPre
 	}
@@ -342,7 +342,7 @@ func computeEra(eraPre, eraPost ptime.Era) ptime.Era {
 // Uses a time.Now() sandwich around PHC read, which gives less precise
 // correspondence but includes monotonic time in the result.
 // This can be called only from readWorker.
-func (clk *Clock) monoSample() (sample ptime.Sample, err error) {
+func (clk *Clock) monoSample() (sample phctime.Sample, err error) {
 	eraPre := clk.eraCounter.load()
 
 	tSysPre := time.Now()
@@ -353,11 +353,11 @@ func (clk *Clock) monoSample() (sample ptime.Sample, err error) {
 	tSysPost := time.Now()
 
 	eraPost := clk.eraCounter.load()
-	sample.Clock.Era = computeEra(eraPre, eraPost)
+	sample.PHC.Era = computeEra(eraPre, eraPost)
 
 	// Average the two time.Now() calls to estimate when PHC was read
 	sample.Sys = tSysPre.Add(tSysPost.Sub(tSysPre) / 2)
-	sample.Clock.T = tPHC
+	sample.PHC.T = tPHC
 	return
 }
 
@@ -365,7 +365,7 @@ func (clk *Clock) monoSample() (sample ptime.Sample, err error) {
 // Uses PTP_SYS_OFFSET which gives precise correspondence between
 // PHC and system time, but result has only wallclock time (no monotonic).
 // This can be called only from readWorker.
-func (clk *Clock) wallSample() (sample ptime.Sample, err error) {
+func (clk *Clock) wallSample() (sample phctime.Sample, err error) {
 	eraPre := clk.eraCounter.load()
 
 	ms, err := clk.SysOffset(6)
@@ -374,13 +374,13 @@ func (clk *Clock) wallSample() (sample ptime.Sample, err error) {
 	}
 
 	eraPost := clk.eraCounter.load()
-	sample.Clock.Era = computeEra(eraPre, eraPost)
+	sample.PHC.Era = computeEra(eraPre, eraPost)
 
-	sample.Clock.T, sample.Sys = ms.Reduce()
+	sample.PHC.T, sample.Sys = ms.Reduce()
 	return
 }
 
-func (clk *Clock) AdjTime(d time.Duration) (ptime.Era, error) {
+func (clk *Clock) AdjTime(d time.Duration) (phctime.Era, error) {
 	clk.eraCounter.inc()
 	err := clk.Clock.AdjTime(d)
 	era := clk.eraCounter.inc()
