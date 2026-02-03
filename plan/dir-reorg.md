@@ -153,8 +153,8 @@ The `phctime` package imports `ptime` (for `Time`), but `ptime` has no dependenc
 | `time/internal/ptpgm/` | `internal/ptpgm` |
 | `time/internal/refclock/` | `internal/refclock` |
 | `time/internal/obs/` | `internal/obs` |
-| `time/internal/obs/promobs/` | `internal/obs/promobs` |
-| `time/internal/obs/sseobs/` | `internal/obs/sseobs` |
+| `time/internal/promobs/` | `internal/promobs` |
+| `time/internal/sseobs/` | `internal/sseobs` |
 | `time/internal/logobs/` | `internal/logobs` |
 | `time/internal/statsobs/` | `internal/statsobs` |
 | `time/internal/syncsim/` | `internal/syncsim` |

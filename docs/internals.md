@@ -10,7 +10,7 @@ Each layer can also be divided into time sync, GPS and base groups, where time s
 |              | Time sync | GPS | Base |
 |--------------|-----------|-----|--------|
 | **Command**  | daemon, pmccmd, sdpcmd, syncsimcmd, cmd/ifwait | gpscmd, decodecmd | cmd |
-| **Application** | ts, gpsevent, phcsync, timemsg, ptpgm, refclock, obs, obs/sseobs, obs/promobs, logobs, statsobs, syncsim, proxy, bcast | gpsio, gpscfg | logfile |
+| **Application** | ts, gpsevent, phcsync, timemsg, ptpgm, refclock, obs, sseobs, promobs, logobs, statsobs, syncsim, proxy, bcast | gpsio, gpscfg | logfile |
 | **Domain** | phc, sockrefclock, clocksim, phctime | gpsprot, scan, scantest, ubx, nmea, rtcm, gpsreg, casic, unc, nov, sino, as, ptime, gpsdecode | |
 | **Library** | pmc, circbuf, median, check, sse, ifwait, fuser, devnotify, allan | ubxbin, ubxcfgval, casbin, asbin, novmsg, uncmsg, nmeamsg, geopos, fieldenc | ntptime |
 
@@ -70,9 +70,9 @@ Provides the main blocks of the applications.
 
 `internal/obs` provides unified observability interfaces including `Observer` (which extends `phcsync.Sampler` and `gpsprot.Handler`) for receiving both clock synchronization samples and GPS protocol messages.
 
-`internal/obs/sseobs` implements the `Observer` interface to generate Server-Sent Events data that the daemon uses for the web interface.
+`internal/sseobs` implements the `Observer` interface to generate Server-Sent Events data that the daemon uses for the web interface.
 
-`internal/obs/promobs` implements the `Observer` interface to collect Prometheus metrics that the daemon exposes via HTTP handlers.
+`internal/promobs` implements the `Observer` interface to collect Prometheus metrics that the daemon exposes via HTTP handlers.
 
 `internal/logobs` implements the `Observer` interface to record clock synchronization samples to log files and emit statistical summaries via structured logging. It provides `ClockLogObserver` for per-sample clock data and `StatsLogObserver` for interval-based summaries.
 
