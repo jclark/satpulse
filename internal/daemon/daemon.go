@@ -37,7 +37,7 @@ func Cmd(progName string, args []string) {
 		exitCode := 0
 		if err != nil {
 			cmd.ErrPrintln(progName, err)
-			exitCode = cmd.ExitUsage
+			exitCode = exitUsage
 		}
 		fmt.Fprint(os.Stderr, msg)
 		os.Exit(exitCode)
@@ -45,7 +45,7 @@ func Cmd(progName string, args []string) {
 	cfg, err := LoadConfig(vars.configFiles...)
 	if err != nil {
 		cmd.ErrPrintlnWithDetail(progName, err)
-		os.Exit(cmd.ExitConfig)
+		os.Exit(exitConfig)
 	}
 	if vars.wait {
 		cfg.PHC.Wait = true
@@ -70,7 +70,7 @@ func Cmd(progName string, args []string) {
 	err = run(ctx, lg, cancel, cfg)
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
-		os.Exit(cmd.ExitCode(err))
+		os.Exit(exitCode(err))
 	}
 }
 

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/bcast"
-	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/promobs"
 	"github.com/jclark/satpulse/internal/sse"
 	"github.com/jclark/satpulse/internal/sseobs"
@@ -57,11 +56,11 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	}
 	for _, c := range cfg {
 		if c.Listen == "" {
-			return cmd.ConfigErrorf("must specify listen option for each HTTP element")
+			return configErrorf("must specify listen option for each HTTP element")
 		}
 		// Validate that at least one endpoint is enabled
 		if !c.PProf && !c.gui() && !c.metrics() {
-			return cmd.ConfigErrorf("HTTP endpoint %s must enable at least one of: pprof, gui, metrics", c.Listen)
+			return configErrorf("HTTP endpoint %s must enable at least one of: pprof, gui, metrics", c.Listen)
 		}
 	}
 

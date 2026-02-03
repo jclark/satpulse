@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/phcsync"
 	"github.com/jclark/satpulse/internal/pmc"
 	"github.com/jclark/satpulse/internal/proxy"
@@ -152,7 +151,7 @@ func (cfg *Config) httpWantsSatellites() bool {
 func (cfg *Config) Validate(lg *slog.Logger) error {
 	cfg.GPS.validate(lg)
 	if err := cfg.Sync.Validate(); err != nil {
-		return &cmd.ConfigError{Err: err}
+		return &configError{err: err}
 	}
 	return nil
 }
@@ -207,12 +206,12 @@ func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {
 func (cfg *PTPConfig) ClockQuality() (pmc.ClockQuality, error) {
 	acc := pmc.DurationToClockAccuracy(time.Duration(cfg.ClockAccuracy) * time.Nanosecond)
 	if acc == 0 {
-		return pmc.ClockQuality{}, cmd.ConfigErrorf("ptp.clockAccuracy %d ns: out of range", cfg.ClockAccuracy)
+		return pmc.ClockQuality{}, configErrorf("ptp.clockAccuracy %d ns: out of range", cfg.ClockAccuracy)
 	}
 	oslv := cfg.OffsetScaledLogVariance
 	if cfg.AllanDeviation != 0 {
 		if cfg.OffsetScaledLogVariance != pmc.OffsetScaledLogVarianceUnknown {
-			return pmc.ClockQuality{}, cmd.ConfigErrorf("ptp: cannot specify both offsetScaledLogVariance and allanDeviation")
+			return pmc.ClockQuality{}, configErrorf("ptp: cannot specify both offsetScaledLogVariance and allanDeviation")
 		}
 		oslv = pmc.AdevToOffsetScaledLogVariance(cfg.AllanDeviation, 1.0)
 	}

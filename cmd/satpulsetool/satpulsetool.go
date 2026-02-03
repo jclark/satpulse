@@ -16,6 +16,12 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// exitCoder interface for errors that specify their own exit code
+type exitCoder interface {
+	error
+	ExitCode() int
+}
+
 func main() {
 	var verboseLevel int
 	var help bool
@@ -77,9 +83,9 @@ func main() {
 		if err != nil {
 			cmd.ErrPrintlnWithDetail(progName, err)
 			// Check if error specifies its own exit code
-			var exitCoder cmd.ExitCoder
-			if errors.As(err, &exitCoder) {
-				exitCode = exitCoder.ExitCode()
+			var ec exitCoder
+			if errors.As(err, &ec) {
+				exitCode = ec.ExitCode()
 			} else if usage != "" {
 				exitCode = 2
 			} else {

@@ -7,7 +7,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/satpulse/internal/cmd"
 	"github.com/jclark/satpulse/internal/geopos"
 	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
@@ -84,7 +83,7 @@ func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProc
 	if c.Vendor != "" {
 		vendor := gpsreg.ParseVendor(c.Vendor)
 		if vendor == gpsreg.VendorUnknown {
-			return nil, cmd.ConfigErrorf("unknown vendor: %s", c.Vendor)
+			return nil, configErrorf("unknown vendor: %s", c.Vendor)
 		}
 		nmeaNumbering = gpsreg.FindNMEASVNumbering(vendor)
 	}
@@ -96,7 +95,7 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 	opts.Survey.MinDur = time.Second * time.Duration(c.SurveyTime)
 	opts.Survey.AccLimit = gpsprot.Meters(c.SurveyAcc)
 	if opts.Survey.AccLimit < gpsprot.Millimeter {
-		return cmd.ConfigErrorf("survey accuracy %v is too small", opts.Survey.AccLimit)
+		return configErrorf("survey accuracy %v is too small", opts.Survey.AccLimit)
 	}
 	if c.Resurvey {
 		opts.Survey.Flags |= gpsprot.SurveyAgain
@@ -114,7 +113,7 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 	}
 	err := c.FixedPosECEF.CheckOnEarth()
 	if err != nil {
-		return cmd.ConfigErrorf("%v: invalid fixed position: %w", c.FixedPosECEF, err)
+		return configErrorf("%v: invalid fixed position: %w", c.FixedPosECEF, err)
 	}
 	var fixedPos gpsprot.Point3D
 	for i := 0; i < 3; i++ {
@@ -122,10 +121,10 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 	}
 	acc := gpsprot.Meters(c.FixedPosAcc)
 	if acc < gpsprot.Millimeter {
-		return cmd.ConfigErrorf("fixed position accuracy %v is too small", c.FixedPosAcc)
+		return configErrorf("fixed position accuracy %v is too small", c.FixedPosAcc)
 	}
 	if acc > gpsprot.Meter*1000 {
-		return cmd.ConfigErrorf("fixed position accuracy %v is too large", c.FixedPosAcc)
+		return configErrorf("fixed position accuracy %v is too large", c.FixedPosAcc)
 	}
 	cp.SetMode(gpsprot.Mode{
 		Static:       true,
@@ -141,7 +140,7 @@ func (c *GPSConfig) getTimeGNSS(cp *gpsprot.ConfigProps) error {
 		return nil
 	}
 	if !c.TimeGNSS.IsMajor() {
-		return cmd.ConfigErrorf("time GNSS must be a major GNSS (%v is not)", c.TimeGNSS)
+		return configErrorf("time GNSS must be a major GNSS (%v is not)", c.TimeGNSS)
 	}
 	cp.SetTimeGNSS(c.TimeGNSS)
 	return nil
@@ -157,7 +156,7 @@ func (c *GPSConfig) getDelay(cp *gpsprot.ConfigProps) error {
 	if !math.IsNaN(c.AntennaCableLength) {
 		specified = true
 		if c.AntennaCableVF <= 0.0 || c.AntennaCableVF > 1.0 {
-			return cmd.ConfigErrorf("invalid GPS antenna cable velocity factor %v", c.AntennaCableVF)
+			return configErrorf("invalid GPS antenna cable velocity factor %v", c.AntennaCableVF)
 		}
 		delay = c.AntennaCableLength / (speedOfLight * c.AntennaCableVF)
 	}
@@ -169,7 +168,7 @@ func (c *GPSConfig) getDelay(cp *gpsprot.ConfigProps) error {
 		return nil
 	}
 	if !(math.Abs(delay) <= maxAntennaCableDelay) {
-		return cmd.ConfigErrorf("invalid cable delay %v (cable delay is in nanoseconds)", c.AntennaCableDelay)
+		return configErrorf("invalid cable delay %v (cable delay is in nanoseconds)", c.AntennaCableDelay)
 	}
 	cp.SetAntennaCableDelay(time.Duration(delay))
 	return nil
