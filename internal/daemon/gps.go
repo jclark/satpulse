@@ -13,6 +13,8 @@ import (
 	"github.com/jclark/satpulse/internal/gpsreg"
 )
 
+// PVTMsgFlags are the PVT message flags required by the daemon.
+const PVTMsgFlags = gpsevent.TimePulsePVTMsgFlags
 
 type GPSConfig struct {
 	Config             bool         `toml:"config"`

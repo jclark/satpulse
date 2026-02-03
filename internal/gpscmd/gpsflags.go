@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/internal/daemon"
 	"github.com/jclark/satpulse/internal/geopos"
-	"github.com/jclark/satpulse/internal/gpsevent"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ptime"
 	"github.com/jclark/satpulse/term"
@@ -637,7 +637,7 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 		case "off":
 			flags |= gpsprot.PVTMsgOff
 		case "daemon":
-			flags |= gpsevent.TimePulsePVTMsgFlags | gpsprot.PVTMsgOff
+			flags |= daemon.PVTMsgFlags | gpsprot.PVTMsgOff
 		default:
 			return fmt.Errorf("unknown pvt output flag: %s", w)
 		}
