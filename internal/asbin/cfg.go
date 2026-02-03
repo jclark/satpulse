@@ -116,6 +116,19 @@ type CfgMsg struct {
 
 func (m *CfgMsg) ID() MsgID { return CfgMsgID }
 
+// NMEA sentence IDs for use with CfgMsg
+const (
+	NmeaGgaID MsgID = clsNmea | (iota << 8)
+	NmeaGllID
+	NmeaGsaID
+	NmeaGrsID
+	NmeaGsvID
+	NmeaRmcID
+	NmeaVtgID
+	NmeaZdaID
+	NmeaTxtID MsgID = clsNmea | (0x20 << 8)
+)
+
 // CfgPpsPolarity defines values for CfgPps.Polarity
 type CfgPpsPolarity uint8
 
