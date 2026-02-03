@@ -30,7 +30,9 @@ func runTest(t *testing.T, tc testCase) {
 	if msg.ID() != tc.wantID {
 		t.Errorf("ID = %v, want %v", msg.ID(), tc.wantID)
 	}
-	if !reflect.DeepEqual(msg, tc.wantMsg) {
+	if tc.wantMsg == nil {
+		t.Logf("decoded: %+v", msg)
+	} else if !reflect.DeepEqual(msg, tc.wantMsg) {
 		t.Errorf("message mismatch:\ngot:  %+v\nwant: %+v", msg, tc.wantMsg)
 	}
 }

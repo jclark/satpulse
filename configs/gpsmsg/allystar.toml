@@ -350,6 +350,96 @@ id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x31, 0]
 
+# Enable NAV-POSECEF at 1Hz (ECEF position)
+[[asbin]]
+tag = "asbin-posecef"
+description = "Enable NAV-POSECEF binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x01, 1]
+
+# Disable NAV-POSECEF
+[[asbin]]
+tag = "asbin-posecef-off"
+description = "Disable NAV-POSECEF binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x01, 0]
+
+# Enable NAV-POSLLH at 1Hz (LLH position)
+[[asbin]]
+tag = "asbin-posllh"
+description = "Enable NAV-POSLLH binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x02, 1]
+
+# Disable NAV-POSLLH
+[[asbin]]
+tag = "asbin-posllh-off"
+description = "Disable NAV-POSLLH binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x02, 0]
+
+# Enable NAV-DOP at 1Hz (dilution of precision)
+[[asbin]]
+tag = "asbin-dop"
+description = "Enable NAV-DOP binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x04, 1]
+
+# Disable NAV-DOP
+[[asbin]]
+tag = "asbin-dop-off"
+description = "Disable NAV-DOP binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x04, 0]
+
+# Enable NAV-VELECEF at 1Hz (ECEF velocity)
+[[asbin]]
+tag = "asbin-velecef"
+description = "Enable NAV-VELECEF binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x11, 1]
+
+# Disable NAV-VELECEF
+[[asbin]]
+tag = "asbin-velecef-off"
+description = "Disable NAV-VELECEF binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x11, 0]
+
+# Enable NAV-VELNED at 1Hz (NED velocity)
+[[asbin]]
+tag = "asbin-velned"
+description = "Enable NAV-VELNED binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x12, 1]
+
+# Disable NAV-VELNED
+[[asbin]]
+tag = "asbin-velned-off"
+description = "Disable NAV-VELNED binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x12, 0]
+
 # NMEA messages use class 0xF0
 
 # Verified ACK received on TAU1201

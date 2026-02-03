@@ -1,13 +1,56 @@
 package asbin
 
 const (
+	NavPosEcefID MsgID = clsNav | (0x01 << 8)
+	NavPosLlhID  MsgID = clsNav | (0x02 << 8)
+	NavDopID     MsgID = clsNav | (0x04 << 8)
 	NavTimeID    MsgID = clsNav | (0x05 << 8)
+	NavVelEcefID MsgID = clsNav | (0x11 << 8)
+	NavVelNedID  MsgID = clsNav | (0x12 << 8)
 	NavTimeUtcID MsgID = clsNav | (0x21 << 8)
 	NavClockID   MsgID = clsNav | (0x22 << 8)
 	NavClock2ID  MsgID = clsNav | (0x23 << 8)
 	NavSvInfoID  MsgID = clsNav | (0x30 << 8)
 	NavSvinID    MsgID = clsNav | (0x31 << 8)
 )
+
+// NAV-POSECEF (0x01 0x01)
+type NavPosEcef struct {
+	ITow  uint32 // ms, GNSS time of week
+	EcefX int32  // cm, ECEF X coordinate
+	EcefY int32  // cm, ECEF Y coordinate
+	EcefZ int32  // cm, ECEF Z coordinate
+	PAcc  uint32 // cm, Position accuracy estimate
+}
+
+func (m *NavPosEcef) ID() MsgID { return NavPosEcefID }
+
+// NAV-POSLLH (0x01 0x02)
+type NavPosLlh struct {
+	ITow   uint32 // ms, GNSS time of week
+	Lon    int32  // 1e-7 deg, Longitude
+	Lat    int32  // 1e-7 deg, Latitude
+	Height int32  // mm, Height above ellipsoid
+	HMSL   int32  // mm, Height above mean sea level
+	HAcc   uint32 // mm, Horizontal accuracy estimate
+	VAcc   uint32 // mm, Vertical accuracy estimate
+}
+
+func (m *NavPosLlh) ID() MsgID { return NavPosLlhID }
+
+// NAV-DOP (0x01 0x04)
+type NavDop struct {
+	ITow uint32 // ms, GNSS time of week
+	GDOP uint16 // 0.01, Geometric DOP
+	PDOP uint16 // 0.01, Position DOP
+	TDOP uint16 // 0.01, Time DOP
+	VDOP uint16 // 0.01, Vertical DOP
+	HDOP uint16 // 0.01, Horizontal DOP
+	NDOP uint16 // 0.01, Northing DOP
+	EDOP uint16 // 0.01, Easting DOP
+}
+
+func (m *NavDop) ID() MsgID { return NavDopID }
 
 // NavTimeSys defines the GNSS system values for NavTime.NavSys
 type NavTimeSys byte
@@ -40,6 +83,32 @@ type NavTime struct {
 }
 
 func (m *NavTime) ID() MsgID { return NavTimeID }
+
+// NAV-VELECEF (0x01 0x11)
+type NavVelEcef struct {
+	ITow   uint32 // ms, GNSS time of week
+	EcefVX int32  // cm/s, ECEF X velocity
+	EcefVY int32  // cm/s, ECEF Y velocity
+	EcefVZ int32  // cm/s, ECEF Z velocity
+	SAcc   uint32 // cm/s, Speed accuracy estimate
+}
+
+func (m *NavVelEcef) ID() MsgID { return NavVelEcefID }
+
+// NAV-VELNED (0x01 0x12)
+type NavVelNed struct {
+	ITow    uint32 // ms, GNSS time of week
+	VelN    int32  // cm/s, North velocity
+	VelE    int32  // cm/s, East velocity
+	VelD    int32  // cm/s, Down velocity
+	Speed   uint32 // cm/s, Speed (3D)
+	GSpeed  uint32 // cm/s, Ground speed (2D)
+	Heading int32  // 1e-5 deg, Heading of motion (2D)
+	SAcc    uint32 // cm/s, Speed accuracy estimate
+	CAcc    uint32 // 1e-5 deg, Course/heading accuracy estimate
+}
+
+func (m *NavVelNed) ID() MsgID { return NavVelNedID }
 
 // NAV-CLOCK (0x01 0x22)
 type NavClock struct {
@@ -154,7 +223,12 @@ func (m *NavSVInfo) Parts() (fixed any, slice any) {
 }
 
 func init() {
+	regMsg[NavPosEcef]("POSECEF")
+	regMsg[NavPosLlh]("POSLLH")
+	regMsg[NavDop]("DOP")
 	regMsg[NavTime]("TIME")
+	regMsg[NavVelEcef]("VELECEF")
+	regMsg[NavVelNed]("VELNED")
 	regMsg[NavTimeUTC]("TIMEUTC")
 	regMsg[NavClock]("CLOCK")
 	regMsg[NavSVInfo]("SVINFO")
