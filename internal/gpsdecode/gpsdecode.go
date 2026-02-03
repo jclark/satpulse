@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jclark/satpulse/internal/asbin"
-	casicbin "github.com/jclark/satpulse/internal/casic/bin"
+	casicbin "github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/novmsg"

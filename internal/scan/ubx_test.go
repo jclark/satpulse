@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/internal/asbin"
-	casicbin "github.com/jclark/satpulse/internal/casic/bin"
+	casicbin "github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/novmsg"
 	"github.com/jclark/satpulse/internal/rtcm"
 	"github.com/jclark/satpulse/internal/ubx"
@@ -182,7 +182,7 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 			}
 		} else if err != nil {
 			t.Fatalf("Error scanning packet: %v", err)
-		}		
+		}
 
 		if packetIndex%2 == 0 {
 			// UBX packet

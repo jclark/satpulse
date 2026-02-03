@@ -4,16 +4,16 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/satpulse/internal/casic/bin"
+	"github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ptime"
 )
 
 // timeNavTimeUTC converts NavTimeUTC to TimeMsg.
 // Always returns a TimeMsg, but with nil UTCTime when the solution is invalid.
-func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsprot.TimeMsg {
+func timeNavTimeUTC(m *casbin.NavTimeUTC) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEUTC"}
-	if m.DateValid < bin.NavDateFromSatellite || (m.Valid&bin.NavTimeUTCTOWValid) == 0 {
+	if m.DateValid < casbin.NavDateFromSatellite || (m.Valid&casbin.NavTimeUTCTOWValid) == 0 {
 		return &t
 	}
 	// MsErr is residual error in ms after rounding to whole milliseconds
@@ -32,9 +32,9 @@ func timeNavTimeUTC(m *bin.NavTimeUTC) *gpsprot.TimeMsg {
 
 // timeNavSol converts NavSol to TimeMsg.
 // Always returns a TimeMsg, but with zero TAITime when the solution is invalid.
-func timeNavSol(m *bin.NavSol) *gpsprot.TimeMsg {
+func timeNavSol(m *casbin.NavSol) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV-SOL"}
-	if m.PosValid < bin.NavPos3D {
+	if m.PosValid < casbin.NavPos3D {
 		return &t
 	}
 	t.GNSS, t.TAITime = gnssTime(m.TimeSrc, m.Week, m.TOW)
@@ -43,7 +43,7 @@ func timeNavSol(m *bin.NavSol) *gpsprot.TimeMsg {
 
 // timeTimTP converts TimTP to TimeMsg.
 // The TimTP message gives the time of the next pulse, emitted before the pulse.
-func timeTimTP(m *bin.TimTP) *gpsprot.TimeMsg {
+func timeTimTP(m *casbin.TimTP) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, NativeMsgID: "TIM-TP"}
 	t.GNSS, t.TAITime = gnssTime(m.RefTimeGNSS(), m.Wn, m.TOW)
 	return &t
@@ -51,26 +51,26 @@ func timeTimTP(m *bin.TimTP) *gpsprot.TimeMsg {
 
 // gnssTime converts CASIC GNSS ID, week number, and TOW to gpsprot.GNSS and TAI time.
 // Returns zero GNSS and Time for unsupported GNSS IDs.
-func gnssTime(id bin.GNSSID, week uint16, towSec float64) (gpsprot.GNSS, ptime.Time) {
+func gnssTime(id casbin.GNSSID, week uint16, towSec float64) (gpsprot.GNSS, ptime.Time) {
 	tow := ptime.Seconds(towSec)
 	switch id {
-	case bin.GPS:
+	case casbin.GPS:
 		return gpsprot.GPS, ptime.GPS(int16(week), tow)
-	case bin.BDS:
+	case casbin.BDS:
 		return gpsprot.BDS, ptime.BeiDou(int16(week), tow)
-	case bin.GLN:
+	case casbin.GLN:
 		return gpsprot.GLO, ptime.GLONASSWeek(int16(week), tow)
 	}
 	return 0, 0
 }
 
-func gnssIDToGNSS(id bin.GNSSID) gpsprot.GNSS {
+func gnssIDToGNSS(id casbin.GNSSID) gpsprot.GNSS {
 	switch id {
-	case bin.GPS:
+	case casbin.GPS:
 		return gpsprot.GPS
-	case bin.BDS:
+	case casbin.BDS:
 		return gpsprot.BDS
-	case bin.GLN:
+	case casbin.GLN:
 		return gpsprot.GLO
 	}
 	return 0

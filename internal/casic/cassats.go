@@ -3,16 +3,16 @@ package casic
 import (
 	"time"
 
-	"github.com/jclark/satpulse/internal/casic/bin"
+	"github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
 // casicSignalID maps CASIC GNSSID to the SignalID for the L1 legacy signal.
 // CASIC reports only one CN0 per satellite (L1 legacy signal).
-var casicSignalID = map[bin.GNSSID]gpsprot.SignalID{
-	bin.GPS: gpsprot.SigIDGPSL1CA,
-	bin.BDS: gpsprot.SigIDBDSB1I,
-	bin.GLN: gpsprot.SigIDGLOL1,
+var casicSignalID = map[casbin.GNSSID]gpsprot.SignalID{
+	casbin.GPS: gpsprot.SigIDGPSL1CA,
+	casbin.BDS: gpsprot.SigIDBDSB1I,
+	casbin.GLN: gpsprot.SigIDGLOL1,
 }
 
 // casicSVID converts CASIC GNSS ID and SVID to gpsprot.SVID.
@@ -32,7 +32,7 @@ func casicSVID(gnss gpsprot.GNSS, svid uint8) gpsprot.SVID {
 
 // convertNavSatInfo converts CASIC satellite info to gpsprot format.
 // Filters out satellites with CNO == 0 (no signal lock).
-func convertNavSatInfo(fixed *bin.NavSatInfoFixed, svs []bin.NavSVInfo) []gpsprot.SVInfo {
+func convertNavSatInfo(fixed *casbin.NavSatInfoFixed, svs []casbin.NavSVInfo) []gpsprot.SVInfo {
 	gnss := gnssIDToGNSS(fixed.System)
 	sigID := casicSignalID[fixed.System]
 	result := make([]gpsprot.SVInfo, 0, len(svs))
@@ -41,7 +41,7 @@ func convertNavSatInfo(fixed *bin.NavSatInfoFixed, svs []bin.NavSVInfo) []gpspro
 		if sv.CNO == 0 {
 			continue
 		}
-		used := sv.Flags&bin.NavSVUsed != 0
+		used := sv.Flags&casbin.NavSVUsed != 0
 		result = append(result, gpsprot.SVInfo{
 			ID: casicSVID(gnss, sv.SVID),
 			LookAngles: &gpsprot.LookAngles{
@@ -70,7 +70,7 @@ type satAccum struct {
 
 // accum adds satellite info from a NAV-xxxINFO message.
 // May trigger early flush if all expected GNSS types received.
-func (a *satAccum) accum(fixed *bin.NavSatInfoFixed, svs []bin.NavSVInfo, mh gpsprot.MsgHandler, tRead time.Time) {
+func (a *satAccum) accum(fixed *casbin.NavSatInfoFixed, svs []casbin.NavSVInfo, mh gpsprot.MsgHandler, tRead time.Time) {
 	converted := convertNavSatInfo(fixed, svs)
 	a.svs = append(a.svs, converted...)
 	a.received |= 1 << fixed.System

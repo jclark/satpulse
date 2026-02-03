@@ -1,4 +1,4 @@
-package bin
+package casbin
 
 const (
 	AckNakID MsgID = clsAck | (0x00 << 8)

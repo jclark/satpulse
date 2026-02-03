@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/internal/casic/bin"
+	"github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
@@ -21,37 +21,37 @@ func (m *mockMsgHandler) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
 }
 
 // makeSVInfo creates a bin.NavSVInfo for testing.
-func makeSVInfo(svid, cno uint8, used bool, elev int8, azim int16) bin.NavSVInfo {
-	var flags bin.NavSVFlags
+func makeSVInfo(svid, cno uint8, used bool, elev int8, azim int16) casbin.NavSVInfo {
+	var flags casbin.NavSVFlags
 	if used {
-		flags = bin.NavSVUsed
+		flags = casbin.NavSVUsed
 	}
-	return bin.NavSVInfo{SVID: svid, CNO: cno, Flags: flags, Elev: elev, Azim: azim}
+	return casbin.NavSVInfo{SVID: svid, CNO: cno, Flags: flags, Elev: elev, Azim: azim}
 }
 
 // makeFixed creates a bin.NavSatInfoFixed for testing.
-func makeFixed(system bin.GNSSID) bin.NavSatInfoFixed {
-	return bin.NavSatInfoFixed{System: system}
+func makeFixed(system casbin.GNSSID) casbin.NavSatInfoFixed {
+	return casbin.NavSatInfoFixed{System: system}
 }
 
 func TestConvertNavSatInfo(t *testing.T) {
 	tests := []struct {
 		name    string
-		system  bin.GNSSID
-		svs     []bin.NavSVInfo
+		system  casbin.GNSSID
+		svs     []casbin.NavSVInfo
 		wantLen int
 		check   func(t *testing.T, result []gpsprot.SVInfo)
 	}{
 		{
 			name:    "empty",
-			system:  bin.GPS,
+			system:  casbin.GPS,
 			svs:     nil,
 			wantLen: 0,
 		},
 		{
 			name:    "single GPS",
-			system:  bin.GPS,
-			svs:     []bin.NavSVInfo{makeSVInfo(5, 40, true, 45, 180)},
+			system:  casbin.GPS,
+			svs:     []casbin.NavSVInfo{makeSVInfo(5, 40, true, 45, 180)},
 			wantLen: 1,
 			check: func(t *testing.T, result []gpsprot.SVInfo) {
 				sv := result[0]
@@ -74,8 +74,8 @@ func TestConvertNavSatInfo(t *testing.T) {
 		},
 		{
 			name:    "single BDS",
-			system:  bin.BDS,
-			svs:     []bin.NavSVInfo{makeSVInfo(10, 35, false, 30, 90)},
+			system:  casbin.BDS,
+			svs:     []casbin.NavSVInfo{makeSVInfo(10, 35, false, 30, 90)},
 			wantLen: 1,
 			check: func(t *testing.T, result []gpsprot.SVInfo) {
 				sv := result[0]
@@ -92,8 +92,8 @@ func TestConvertNavSatInfo(t *testing.T) {
 		},
 		{
 			name:    "single GLN",
-			system:  bin.GLN,
-			svs:     []bin.NavSVInfo{makeSVInfo(3, 30, true, 60, 270)},
+			system:  casbin.GLN,
+			svs:     []casbin.NavSVInfo{makeSVInfo(3, 30, true, 60, 270)},
 			wantLen: 1,
 			check: func(t *testing.T, result []gpsprot.SVInfo) {
 				sv := result[0]
@@ -107,8 +107,8 @@ func TestConvertNavSatInfo(t *testing.T) {
 		},
 		{
 			name:   "filter CNO zero",
-			system: bin.GPS,
-			svs: []bin.NavSVInfo{
+			system: casbin.GPS,
+			svs: []casbin.NavSVInfo{
 				makeSVInfo(1, 0, false, 10, 100),
 				makeSVInfo(2, 40, true, 20, 200),
 				makeSVInfo(3, 0, false, 30, 300),
@@ -122,8 +122,8 @@ func TestConvertNavSatInfo(t *testing.T) {
 		},
 		{
 			name:    "look angles",
-			system:  bin.GPS,
-			svs:     []bin.NavSVInfo{makeSVInfo(7, 25, false, -5, 359)},
+			system:  casbin.GPS,
+			svs:     []casbin.NavSVInfo{makeSVInfo(7, 25, false, -5, 359)},
 			wantLen: 1,
 			check: func(t *testing.T, result []gpsprot.SVInfo) {
 				la := result[0].LookAngles
@@ -134,8 +134,8 @@ func TestConvertNavSatInfo(t *testing.T) {
 		},
 		{
 			name:    "SBAS in GPS message",
-			system:  bin.GPS,
-			svs:     []bin.NavSVInfo{makeSVInfo(120, 35, true, 40, 200)}, // PRN 120 = SBAS
+			system:  casbin.GPS,
+			svs:     []casbin.NavSVInfo{makeSVInfo(120, 35, true, 40, 200)}, // PRN 120 = SBAS
 			wantLen: 1,
 			check: func(t *testing.T, result []gpsprot.SVInfo) {
 				sv := result[0]
@@ -146,8 +146,8 @@ func TestConvertNavSatInfo(t *testing.T) {
 		},
 		{
 			name:    "QZSS in GPS message",
-			system:  bin.GPS,
-			svs:     []bin.NavSVInfo{makeSVInfo(193, 42, true, 70, 150)}, // PRN 193 = QZSS
+			system:  casbin.GPS,
+			svs:     []casbin.NavSVInfo{makeSVInfo(193, 42, true, 70, 150)}, // PRN 193 = QZSS
 			wantLen: 1,
 			check: func(t *testing.T, result []gpsprot.SVInfo) {
 				sv := result[0]
@@ -177,8 +177,8 @@ func TestSatAccumEpochMerging(t *testing.T) {
 
 	// Message types for test sequences.
 	type msg struct {
-		system bin.GNSSID
-		svs    []bin.NavSVInfo
+		system casbin.GNSSID
+		svs    []casbin.NavSVInfo
 	}
 
 	// Action in a test step: either a message or an epoch change.
@@ -194,16 +194,16 @@ func TestSatAccumEpochMerging(t *testing.T) {
 		{
 			name: "single epoch GPS only",
 			steps: []step{
-				{msg: &msg{bin.GPS, []bin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}}, expectFlush: -1},
+				{msg: &msg{casbin.GPS, []casbin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}}, expectFlush: -1},
 				{msg: nil, expectFlush: 1}, // epoch change flushes
 			},
 		},
 		{
 			name: "single epoch multi-GNSS",
 			steps: []step{
-				{msg: &msg{bin.GPS, []bin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}}, expectFlush: -1},
-				{msg: &msg{bin.BDS, []bin.NavSVInfo{makeSVInfo(5, 35, false, 30, 90)}}, expectFlush: -1},
-				{msg: &msg{bin.GLN, []bin.NavSVInfo{makeSVInfo(3, 30, true, 60, 270)}}, expectFlush: -1},
+				{msg: &msg{casbin.GPS, []casbin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}}, expectFlush: -1},
+				{msg: &msg{casbin.BDS, []casbin.NavSVInfo{makeSVInfo(5, 35, false, 30, 90)}}, expectFlush: -1},
+				{msg: &msg{casbin.GLN, []casbin.NavSVInfo{makeSVInfo(3, 30, true, 60, 270)}}, expectFlush: -1},
 				{msg: nil, expectFlush: 3}, // epoch change flushes all 3
 			},
 		},
@@ -211,9 +211,9 @@ func TestSatAccumEpochMerging(t *testing.T) {
 			name: "no early flush during first epoch",
 			steps: []step{
 				// First epoch with all 3 GNSS - should NOT early flush (nEpochs < 2)
-				{msg: &msg{bin.GPS, []bin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}}, expectFlush: -1},
-				{msg: &msg{bin.BDS, []bin.NavSVInfo{makeSVInfo(5, 35, false, 30, 90)}}, expectFlush: -1},
-				{msg: &msg{bin.GLN, []bin.NavSVInfo{makeSVInfo(3, 30, true, 60, 270)}}, expectFlush: -1},
+				{msg: &msg{casbin.GPS, []casbin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}}, expectFlush: -1},
+				{msg: &msg{casbin.BDS, []casbin.NavSVInfo{makeSVInfo(5, 35, false, 30, 90)}}, expectFlush: -1},
+				{msg: &msg{casbin.GLN, []casbin.NavSVInfo{makeSVInfo(3, 30, true, 60, 270)}}, expectFlush: -1},
 				{msg: nil, expectFlush: 3}, // epoch change
 			},
 		},
@@ -221,41 +221,41 @@ func TestSatAccumEpochMerging(t *testing.T) {
 			name: "early flush after warmup all three GNSS",
 			steps: []step{
 				// Epoch 1: warmup
-				{msg: &msg{bin.GPS, []bin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}}, expectFlush: -1},
-				{msg: &msg{bin.BDS, []bin.NavSVInfo{makeSVInfo(5, 35, false, 30, 90)}}, expectFlush: -1},
-				{msg: &msg{bin.GLN, []bin.NavSVInfo{makeSVInfo(3, 30, true, 60, 270)}}, expectFlush: -1},
+				{msg: &msg{casbin.GPS, []casbin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}}, expectFlush: -1},
+				{msg: &msg{casbin.BDS, []casbin.NavSVInfo{makeSVInfo(5, 35, false, 30, 90)}}, expectFlush: -1},
+				{msg: &msg{casbin.GLN, []casbin.NavSVInfo{makeSVInfo(3, 30, true, 60, 270)}}, expectFlush: -1},
 				{msg: nil, expectFlush: 3},
 				// Epoch 2: warmup complete
-				{msg: &msg{bin.GPS, []bin.NavSVInfo{makeSVInfo(2, 42, true, 50, 120)}}, expectFlush: -1},
-				{msg: &msg{bin.BDS, []bin.NavSVInfo{makeSVInfo(6, 38, true, 35, 95)}}, expectFlush: -1},
-				{msg: &msg{bin.GLN, []bin.NavSVInfo{makeSVInfo(4, 32, false, 65, 275)}}, expectFlush: -1},
+				{msg: &msg{casbin.GPS, []casbin.NavSVInfo{makeSVInfo(2, 42, true, 50, 120)}}, expectFlush: -1},
+				{msg: &msg{casbin.BDS, []casbin.NavSVInfo{makeSVInfo(6, 38, true, 35, 95)}}, expectFlush: -1},
+				{msg: &msg{casbin.GLN, []casbin.NavSVInfo{makeSVInfo(4, 32, false, 65, 275)}}, expectFlush: -1},
 				{msg: nil, expectFlush: 3},
 				// Epoch 3: should early flush when GLN arrives (all 3 GNSS)
-				{msg: &msg{bin.GPS, []bin.NavSVInfo{makeSVInfo(1, 41, true, 46, 181)}}, expectFlush: -1},
-				{msg: &msg{bin.BDS, []bin.NavSVInfo{makeSVInfo(5, 36, false, 31, 91)}}, expectFlush: -1},
-				{msg: &msg{bin.GLN, []bin.NavSVInfo{makeSVInfo(3, 31, true, 61, 271)}}, expectFlush: 3}, // early flush!
+				{msg: &msg{casbin.GPS, []casbin.NavSVInfo{makeSVInfo(1, 41, true, 46, 181)}}, expectFlush: -1},
+				{msg: &msg{casbin.BDS, []casbin.NavSVInfo{makeSVInfo(5, 36, false, 31, 91)}}, expectFlush: -1},
+				{msg: &msg{casbin.GLN, []casbin.NavSVInfo{makeSVInfo(3, 31, true, 61, 271)}}, expectFlush: 3}, // early flush!
 			},
 		},
 		{
 			name: "early flush on predicted GNSS subset",
 			steps: []step{
 				// Epoch 1: GPS + BDS only
-				{msg: &msg{bin.GPS, []bin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}}, expectFlush: -1},
-				{msg: &msg{bin.BDS, []bin.NavSVInfo{makeSVInfo(5, 35, false, 30, 90)}}, expectFlush: -1},
+				{msg: &msg{casbin.GPS, []casbin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}}, expectFlush: -1},
+				{msg: &msg{casbin.BDS, []casbin.NavSVInfo{makeSVInfo(5, 35, false, 30, 90)}}, expectFlush: -1},
 				{msg: nil, expectFlush: 2},
 				// Epoch 2: warmup complete, predicted = GPS|BDS
-				{msg: &msg{bin.GPS, []bin.NavSVInfo{makeSVInfo(2, 42, true, 50, 120)}}, expectFlush: -1},
-				{msg: &msg{bin.BDS, []bin.NavSVInfo{makeSVInfo(6, 38, true, 35, 95)}}, expectFlush: -1},
+				{msg: &msg{casbin.GPS, []casbin.NavSVInfo{makeSVInfo(2, 42, true, 50, 120)}}, expectFlush: -1},
+				{msg: &msg{casbin.BDS, []casbin.NavSVInfo{makeSVInfo(6, 38, true, 35, 95)}}, expectFlush: -1},
 				{msg: nil, expectFlush: 2},
 				// Epoch 3: should early flush when BDS arrives (matches predicted)
-				{msg: &msg{bin.GPS, []bin.NavSVInfo{makeSVInfo(1, 41, true, 46, 181)}}, expectFlush: -1},
-				{msg: &msg{bin.BDS, []bin.NavSVInfo{makeSVInfo(5, 36, false, 31, 91)}}, expectFlush: 2}, // early flush!
+				{msg: &msg{casbin.GPS, []casbin.NavSVInfo{makeSVInfo(1, 41, true, 46, 181)}}, expectFlush: -1},
+				{msg: &msg{casbin.BDS, []casbin.NavSVInfo{makeSVInfo(5, 36, false, 31, 91)}}, expectFlush: 2}, // early flush!
 			},
 		},
 		{
 			name: "accumulate multiple SVs per GNSS",
 			steps: []step{
-				{msg: &msg{bin.GPS, []bin.NavSVInfo{
+				{msg: &msg{casbin.GPS, []casbin.NavSVInfo{
 					makeSVInfo(1, 40, true, 45, 180),
 					makeSVInfo(2, 38, true, 30, 90),
 					makeSVInfo(3, 0, false, 10, 50), // filtered (CNO=0)
@@ -318,17 +318,17 @@ func TestSatAccumBitmasks(t *testing.T) {
 	}
 
 	// Add GPS
-	fixed := makeFixed(bin.GPS)
-	a.accum(&fixed, []bin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}, h, tRead)
-	if a.received != 1<<bin.GPS {
-		t.Errorf("after GPS: received=%d, want %d", a.received, 1<<bin.GPS)
+	fixed := makeFixed(casbin.GPS)
+	a.accum(&fixed, []casbin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}, h, tRead)
+	if a.received != 1<<casbin.GPS {
+		t.Errorf("after GPS: received=%d, want %d", a.received, 1<<casbin.GPS)
 	}
 
 	// Add BDS
-	fixed = makeFixed(bin.BDS)
-	a.accum(&fixed, []bin.NavSVInfo{makeSVInfo(5, 35, false, 30, 90)}, h, tRead)
-	if a.received != (1<<bin.GPS | 1<<bin.BDS) {
-		t.Errorf("after BDS: received=%d, want %d", a.received, 1<<bin.GPS|1<<bin.BDS)
+	fixed = makeFixed(casbin.BDS)
+	a.accum(&fixed, []casbin.NavSVInfo{makeSVInfo(5, 35, false, 30, 90)}, h, tRead)
+	if a.received != (1<<casbin.GPS | 1<<casbin.BDS) {
+		t.Errorf("after BDS: received=%d, want %d", a.received, 1<<casbin.GPS|1<<casbin.BDS)
 	}
 
 	// Epoch change - predicted should capture received, received should reset
@@ -336,8 +336,8 @@ func TestSatAccumBitmasks(t *testing.T) {
 	if a.received != 0 {
 		t.Errorf("after epoch: received=%d, want 0", a.received)
 	}
-	if a.predicted != (1<<bin.GPS | 1<<bin.BDS) {
-		t.Errorf("after epoch: predicted=%d, want %d", a.predicted, 1<<bin.GPS|1<<bin.BDS)
+	if a.predicted != (1<<casbin.GPS | 1<<casbin.BDS) {
+		t.Errorf("after epoch: predicted=%d, want %d", a.predicted, 1<<casbin.GPS|1<<casbin.BDS)
 	}
 }
 
@@ -376,12 +376,12 @@ func TestSatAccumEmptyFlush(t *testing.T) {
 	var a satAccum
 
 	// Add message with only CNO=0 satellites (all filtered)
-	fixed := makeFixed(bin.GPS)
-	a.accum(&fixed, []bin.NavSVInfo{makeSVInfo(1, 0, false, 45, 180)}, h, tRead)
+	fixed := makeFixed(casbin.GPS)
+	a.accum(&fixed, []casbin.NavSVInfo{makeSVInfo(1, 0, false, 45, 180)}, h, tRead)
 
 	// Verify received is still set even though no SVs accumulated
-	if a.received != 1<<bin.GPS {
-		t.Errorf("received=%d, want %d", a.received, 1<<bin.GPS)
+	if a.received != 1<<casbin.GPS {
+		t.Errorf("received=%d, want %d", a.received, 1<<casbin.GPS)
 	}
 	if len(a.svs) != 0 {
 		t.Errorf("svs len=%d, want 0", len(a.svs))
@@ -392,8 +392,8 @@ func TestSatAccumEmptyFlush(t *testing.T) {
 	if len(h.msgs) != 0 {
 		t.Errorf("unexpected flush with empty SVs")
 	}
-	if a.predicted != 1<<bin.GPS {
-		t.Errorf("predicted=%d, want %d", a.predicted, 1<<bin.GPS)
+	if a.predicted != 1<<casbin.GPS {
+		t.Errorf("predicted=%d, want %d", a.predicted, 1<<casbin.GPS)
 	}
 }
 
@@ -402,8 +402,8 @@ func TestSatAccumNilHandler(t *testing.T) {
 	var a satAccum
 
 	// Should not panic with nil handler
-	fixed := makeFixed(bin.GPS)
-	a.accum(&fixed, []bin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}, nil, tRead)
+	fixed := makeFixed(casbin.GPS)
+	a.accum(&fixed, []casbin.NavSVInfo{makeSVInfo(1, 40, true, 45, 180)}, nil, tRead)
 	a.epochChange(nil, tRead)
 
 	// State should still be updated

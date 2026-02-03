@@ -7,8 +7,8 @@ import (
 
 	"github.com/jclark/satpulse/internal/as"
 	"github.com/jclark/satpulse/internal/asbin"
+	casbin "github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/casic"
-	casbin "github.com/jclark/satpulse/internal/casic/bin"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/ubx"

@@ -3,7 +3,7 @@ package casic
 import (
 	"time"
 
-	"github.com/jclark/satpulse/internal/casic/bin"
+	"github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
@@ -25,12 +25,12 @@ func NewPacketProcessor() *PacketProcessor {
 
 // ProcessPacket processes a CASIC binary packet's data and returns the message ID and any error
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
-	m, err := bin.ParseMsg(data)
+	m, err := casbin.ParseMsg(data)
 	if err != nil {
 		return PacketFormat.MsgID([]byte(data)), err
 	}
 	msgID := m.ID().String()
-	if nm, ok := m.(bin.NavMsg); ok {
+	if nm, ok := m.(casbin.NavMsg); ok {
 		p.handleNavEpoch(nm, tRead)
 	}
 	if p.dispatch(m, tRead) {
@@ -45,7 +45,7 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 
 // handleNavEpoch tracks navigation epochs via the RunTime field.
 // When a new epoch is detected, it flushes any accumulated satellite data.
-func (p *PacketProcessor) handleNavEpoch(nm bin.NavMsg, tRead time.Time) {
+func (p *PacketProcessor) handleNavEpoch(nm casbin.NavMsg, tRead time.Time) {
 	e := nm.NavEpoch()
 	if e != p.curNavEpoch {
 		if p.curNavEpoch != 0 {
@@ -64,9 +64,9 @@ func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 	p.mh = handler
 }
 
-func (p *PacketProcessor) dispatch(m bin.Msg, tRead time.Time) bool {
+func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 	switch mt := m.(type) {
-	case *bin.NavSol:
+	case *casbin.NavSol:
 		tm := timeNavSol(mt)
 		if tm == nil {
 			return false
@@ -76,7 +76,7 @@ func (p *PacketProcessor) dispatch(m bin.Msg, tRead time.Time) bool {
 			p.mh.Time(tm, tRead)
 		}
 		return true
-	case *bin.NavTimeUTC:
+	case *casbin.NavTimeUTC:
 		tm := timeNavTimeUTC(mt)
 		if tm == nil {
 			return false
@@ -86,7 +86,7 @@ func (p *PacketProcessor) dispatch(m bin.Msg, tRead time.Time) bool {
 			p.mh.Time(tm, tRead)
 		}
 		return true
-	case *bin.TimTP:
+	case *casbin.TimTP:
 		tm := timeTimTP(mt)
 		if tm == nil {
 			return false
@@ -96,13 +96,13 @@ func (p *PacketProcessor) dispatch(m bin.Msg, tRead time.Time) bool {
 			p.mh.Time(tm, tRead)
 		}
 		return true
-	case *bin.NavGPSInfo:
+	case *casbin.NavGPSInfo:
 		p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
 		return true
-	case *bin.NavBDSInfo:
+	case *casbin.NavBDSInfo:
 		p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
 		return true
-	case *bin.NavGLNInfo:
+	case *casbin.NavGLNInfo:
 		p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
 		return true
 	default:

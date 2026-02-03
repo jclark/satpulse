@@ -1,4 +1,4 @@
-package bin
+package casbin
 
 const (
 	// CFG message IDs

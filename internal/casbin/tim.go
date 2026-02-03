@@ -1,4 +1,4 @@
-package bin
+package casbin
 
 const (
 	TimTPID MsgID = clsTim | (0x00 << 8)

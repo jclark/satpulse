@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/asbin"
-	casbin "github.com/jclark/satpulse/internal/casic/bin"
+	casbin "github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/ptime"
 	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"

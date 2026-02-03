@@ -3,7 +3,7 @@ package casic
 import (
 	"encoding/binary"
 
-	"github.com/jclark/satpulse/internal/casic/bin"
+	"github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/gpsprot"
 )
 
@@ -11,8 +11,8 @@ import (
 const Tag gpsprot.Tag = "CASBIN"
 
 const (
-	sync1Byte = bin.Sync1
-	sync2Byte = bin.Sync2
+	sync1Byte = casbin.Sync1
+	sync2Byte = casbin.Sync2
 )
 
 // PacketFormat is the CASIC binary packet format
@@ -64,7 +64,7 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 }
 
 func (f packetFormat) MsgID(pkt []byte) string {
-	return bin.PacketMsgID(pkt).String()
+	return casbin.PacketMsgID(pkt).String()
 }
 
 // ExtractChecksum extracts the checksum from the CASIC binary packet.
@@ -76,7 +76,7 @@ func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
 // ComputeChecksum computes the checksum for the CASIC binary packet.
 // Precondition: the packet must be valid according to Next().
 func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
-	ck := bin.Checksum(pkt[:len(pkt)-4])
+	ck := casbin.Checksum(pkt[:len(pkt)-4])
 	return binary.LittleEndian.AppendUint32(nil, ck)
 }
 

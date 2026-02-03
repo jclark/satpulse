@@ -1,4 +1,4 @@
-package bin
+package casbin
 
 const (
 	MsgBDSUTCID MsgID = clsMsg | (0x00 << 8)

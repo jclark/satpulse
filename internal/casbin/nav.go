@@ -1,4 +1,4 @@
-package bin
+package casbin
 
 const (
 	NavSolID     MsgID = clsNav | (0x02 << 8)
