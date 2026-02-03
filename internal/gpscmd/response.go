@@ -7,7 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/as"
 	"github.com/jclark/satpulse/internal/asbin"
-	casbin "github.com/jclark/satpulse/internal/casbin"
+	"github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/casic"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"

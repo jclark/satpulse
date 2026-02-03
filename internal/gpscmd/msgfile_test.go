@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	casbin "github.com/jclark/satpulse/internal/casbin"
+	"github.com/jclark/satpulse/internal/casbin"
 	"github.com/pelletier/go-toml/v2"
 )
 

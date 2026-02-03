@@ -3,7 +3,7 @@ package gpscmd
 import (
 	"testing"
 
-	casbin "github.com/jclark/satpulse/internal/casbin"
+	"github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/casic"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"
