@@ -13,6 +13,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"
 	"golang.org/x/exp/maps"
@@ -398,7 +399,7 @@ func altChecksumValid(pkt scan.Packet) bool {
 
 func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
 	mh.lg.Debug("received an unused message during configuration stage", "protocol", tag, "msgID", msgID, "msg", msg)
-	if tag == nmea.Tag {
+	if tag == gpsreg.TagNMEA {
 		nmeaLog(mh.lg, msg.(*nmea.Sentence))
 	}
 	return nil

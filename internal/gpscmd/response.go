@@ -5,13 +5,11 @@ import (
 	"io"
 	"strings"
 
-	"github.com/jclark/satpulse/internal/as"
 	"github.com/jclark/satpulse/internal/asbin"
 	"github.com/jclark/satpulse/internal/casbin"
-	"github.com/jclark/satpulse/internal/casic"
+	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/internal/ubx"
 	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
@@ -58,13 +56,13 @@ func (rp *responsePrinter) handleUnrecognized(data []byte) {
 // Dispatches to protocol-specific formatters.
 func (rp *responsePrinter) formatPacket(pkt scan.Packet) string {
 	switch pkt.Tag() {
-	case ubx.Tag:
+	case gpsreg.TagUBX:
 		return rp.formatUBX(pkt)
-	case casic.Tag:
+	case gpsreg.TagCASICBin:
 		return rp.formatCASBIN(pkt)
-	case as.Tag:
+	case gpsreg.TagAllystarBin:
 		return rp.formatASBIN(pkt)
-	case nmea.Tag:
+	case gpsreg.TagNMEA:
 		return rp.formatNMEA(pkt)
 	default:
 		return rp.formatText(pkt)

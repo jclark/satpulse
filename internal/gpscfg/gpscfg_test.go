@@ -6,9 +6,6 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
-	"github.com/jclark/satpulse/internal/nmea"
-	"github.com/jclark/satpulse/internal/rtcm"
-	"github.com/jclark/satpulse/internal/ubx"
 )
 
 func TestNativeOnlyDetection(t *testing.T) {
@@ -20,9 +17,9 @@ func TestNativeOnlyDetection(t *testing.T) {
 	}
 
 	// Simulate receiving messages from different protocols
-	mh.msgCount[ubx.Tag] = 5
-	mh.msgCount[nmea.Tag] = 3
-	mh.msgCount[rtcm.Tag] = 7
+	mh.msgCount[gpsreg.TagUBX] = 5
+	mh.msgCount[gpsreg.TagNMEA] = 3
+	mh.msgCount[gpsreg.TagRTCM] = 7
 
 	// Test suitableMessageCount - should only count non-native-only protocols
 	suitable := mh.suitableMessageCount()
