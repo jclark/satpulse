@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/internal/cmd"
-	"github.com/jclark/satpulse/internal/daemon"
-	"github.com/jclark/satpulse/internal/geopos"
-	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ptime"
-	"github.com/jclark/satpulse/term"
+	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/time/app/daemon"
+	"github.com/jclark/satpulse/gps/lib/geopos"
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/spf13/pflag"
 )
 

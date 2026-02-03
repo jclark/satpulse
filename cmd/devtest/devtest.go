@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jclark/satpulse/internal/devnotify"
+	"github.com/jclark/satpulse/time/lib/devnotify"
 )
 
 var runTime = 600 * time.Second

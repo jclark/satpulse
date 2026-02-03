@@ -3,7 +3,7 @@ package gpscmd
 import (
 	"testing"
 
-	"github.com/jclark/satpulse/internal/gpsio"
+	"github.com/jclark/satpulse/gps/app/gpsio"
 )
 
 var uncReplayFiles = []string{

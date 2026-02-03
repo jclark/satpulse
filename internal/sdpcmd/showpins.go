@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/time/phc"
 )
 
 // PinDesc represents a single pin's configuration (for show with interface)

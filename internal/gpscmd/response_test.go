@@ -1,27 +1,31 @@
 package gpscmd
 
 import (
+	"bytes"
 	"testing"
 
-	"github.com/jclark/satpulse/internal/casbin"
-	"github.com/jclark/satpulse/internal/casic"
-	"github.com/jclark/satpulse/internal/nmea"
-	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/internal/ubx"
-	"github.com/jclark/satpulse/internal/ubxbin"
+	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/scan"
+	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
 func TestFormatPacket(t *testing.T) {
+	// scanPkt uses scan.Scanner to parse bytes into a Packet with correct Format
+	scanPkt := func(data []byte) scan.Packet {
+		s := scan.New(bytes.NewReader(data), 1024)
+		pkt, _ := s.Scan()
+		return pkt
+	}
 	nmeaPkt := func(data string) scan.Packet {
-		return scan.Packet{Data: data, Format: nmea.PacketFormat}
+		return scanPkt([]byte(data))
 	}
 	ubxPkt := func(msg ubxbin.Msg) scan.Packet {
 		data, _ := ubxbin.Serialize(msg)
-		return scan.Packet{Data: string(data), Format: ubx.PacketFormat}
+		return scanPkt(data)
 	}
 	casbinPkt := func(msg casbin.Msg) scan.Packet {
 		data, _ := casbin.Serialize(msg)
-		return scan.Packet{Data: string(data), Format: casic.PacketFormat}
+		return scanPkt(data)
 	}
 	rp := &responsePrinter{}
 	tests := []struct {

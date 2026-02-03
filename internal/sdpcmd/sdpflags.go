@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/spf13/pflag"
 )
 

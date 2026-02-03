@@ -5,12 +5,12 @@ import (
 	"io"
 	"strings"
 
-	"github.com/jclark/satpulse/internal/asbin"
-	"github.com/jclark/satpulse/internal/casbin"
-	"github.com/jclark/satpulse/internal/gpsreg"
-	"github.com/jclark/satpulse/internal/nmeamsg"
-	"github.com/jclark/satpulse/internal/scan"
-	"github.com/jclark/satpulse/internal/ubxbin"
+	"github.com/jclark/satpulse/gps/lib/asbin"
+	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/scan"
+	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
 // responsePrinter handles displaying responses from the receiver.

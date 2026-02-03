@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/gps/app/cmd"
 )
 
 // NoDataError represents a condition where no data was found (exit code 2)

@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/time/phc"
 )
 
 // perout implements --perout/-o mode

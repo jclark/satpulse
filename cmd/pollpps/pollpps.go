@@ -10,7 +10,7 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/jclark/satpulse/term"
+	"github.com/jclark/satpulse/gps/lib/term"
 )
 
 func main() {

@@ -4,9 +4,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ntptime"
-	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ntptime"
+	"github.com/jclark/satpulse/gps/ptime"
 )
 
 func EstimateSystemTime() (*gpsprot.TimeEstimate, error) {

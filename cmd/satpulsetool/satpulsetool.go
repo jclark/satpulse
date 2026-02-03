@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/jclark/satpulse/internal/cmd"
+	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/internal/decodecmd"
 	"github.com/jclark/satpulse/internal/gpscmd"
 	"github.com/jclark/satpulse/internal/pmccmd"
 	"github.com/jclark/satpulse/internal/sdpcmd"
-	"github.com/jclark/satpulse/internal/syncsimcmd"
+	"github.com/jclark/satpulse/time/app/syncsimcmd"
 	"github.com/spf13/pflag"
 )
 

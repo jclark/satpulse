@@ -3,9 +3,9 @@ package gpscmd
 import (
 	"testing"
 
-	"github.com/jclark/satpulse/internal/gpsio"
-	"github.com/jclark/satpulse/internal/ubxbin"
-	"github.com/jclark/satpulse/internal/ubxcfgval"
+	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/lib/ubxbin"
+	"github.com/jclark/satpulse/gps/lib/ubxcfgval"
 )
 
 var ubxSchema = ubxcfgval.NewSchemaWithMsgout(ubxcfgval.GetDfltSchema())

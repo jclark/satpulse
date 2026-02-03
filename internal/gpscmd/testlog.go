@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/jclark/satpulse/internal/cmd"
-	"github.com/jclark/satpulse/internal/gpscfg"
-	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/logfile"
+	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/gps/app/gpscfg"
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/app/logfile"
 )
 
 type TestLogEnvEntry struct {

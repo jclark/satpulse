@@ -3,7 +3,7 @@ package gpscmd
 import (
 	"testing"
 
-	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsprot"
 )
 
 func TestGnssListSet(t *testing.T) {

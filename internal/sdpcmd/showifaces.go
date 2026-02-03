@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/jaypipes/pcidb"
-	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/time/phc"
 )
 
 // InterfaceInfo represents a network interface with PHC (for list mode)

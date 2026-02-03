@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/internal/asbin"
-	"github.com/jclark/satpulse/internal/casbin"
-	"github.com/jclark/satpulse/internal/nmeamsg"
-	"github.com/jclark/satpulse/internal/ptime"
-	"github.com/jclark/satpulse/internal/ubxbin"
+	"github.com/jclark/satpulse/gps/lib/asbin"
+	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/pelletier/go-toml/v2"
 )
 

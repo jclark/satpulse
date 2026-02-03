@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/internal/daemon"
-	"github.com/jclark/satpulse/internal/gpsprot"
+	"github.com/jclark/satpulse/time/app/daemon"
+	"github.com/jclark/satpulse/gps/gpsprot"
 )
 
 type validFlagsTestCase struct {

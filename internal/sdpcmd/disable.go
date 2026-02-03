@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/time/phc"
 )
 
 func disable(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {

@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/jclark/satpulse/internal/cmd"
-	"github.com/jclark/satpulse/internal/ifwait"
+	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/time/lib/ifwait"
 	"github.com/spf13/pflag"
 )
 

@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/internal/gpsio"
-	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/gpsreg"
-	"github.com/jclark/satpulse/internal/ubxbin"
+	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
 // packetCmpFunc compares actual and expected packets for a specific protocol

@@ -8,8 +8,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/jclark/satpulse/internal/cmd"
-	"github.com/jclark/satpulse/internal/pmc"
+	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/time/lib/pmc"
 	"github.com/spf13/pflag"
 )
 

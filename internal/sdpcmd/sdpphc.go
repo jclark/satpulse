@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/jclark/satpulse/internal/phc"
+	"github.com/jclark/satpulse/time/phc"
 )
 
 // phcOpen opens a PHC device for the given interface and resolves the pin

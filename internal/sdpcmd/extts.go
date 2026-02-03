@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/jclark/satpulse/internal/phc"
-	"github.com/jclark/satpulse/internal/ptime"
+	"github.com/jclark/satpulse/time/phc"
+	"github.com/jclark/satpulse/gps/ptime"
 )
 
 // ExttsEvent represents a timestamp event (for -i mode)

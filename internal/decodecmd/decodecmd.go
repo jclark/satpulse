@@ -11,11 +11,11 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/jclark/satpulse/internal/cmd"
-	"github.com/jclark/satpulse/internal/gpsdecode"
-	"github.com/jclark/satpulse/internal/gpsio"
-	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/gpsreg"
+	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/gps/gpsdecode"
+	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/spf13/pflag"
 )
 

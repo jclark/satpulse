@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/jclark/satpulse/internal/daemon"
+	"github.com/jclark/satpulse/time/app/daemon"
 )
 
 func main() {

@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jclark/satpulse/internal/cmd"
-	"github.com/jclark/satpulse/internal/gpscfg"
-	"github.com/jclark/satpulse/internal/gpsio"
-	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/gpsreg"
-	"github.com/jclark/satpulse/internal/scan"
+	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/gps/app/gpscfg"
+	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/scan"
 )
 
 func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName string, args []string) (usage string, err error) {
