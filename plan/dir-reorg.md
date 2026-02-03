@@ -17,7 +17,7 @@ Rename nested `bin` packages so that the reorganization doesn't change package n
 
 (`internal/asbin` is already flat.)
 
-### Tag enum in gpsreg (done)
+### Tag enum in gpsreg (partially done)
 
 Done. Added to `gpsreg`:
 
@@ -40,21 +40,25 @@ Updated packages to use `gpsreg.TagXxx` instead of importing protocol packages:
 - `syncsim` - now uses `gpsreg.TagUBX`
 - `daemon` (tests) - now uses `gpsreg.TagNMEA`, `gpsreg.TagRTCM`
 
-### Factor gpsmsg from gpscmd
+Packages that need updating:
+- `gpscmd` (response.go) - uses `ubx.Tag`, `casic.Tag`, `as.Tag`, `nmea.Tag`
+- `gpscfg` - uses `nmea.Tag`, and tests use `ubx.Tag`, `nmea.Tag`, `rtcm.Tag`
 
-Factor out protocol-aware code from `gpscmd` into a new `gps/gpsmsg/` package:
-- `msgfile.go` - message file handling
-- `response.go` - response formatting
+### Split nmea: create nmeamsg package
 
-To keep `gpsmsg` as a Domain layer package (no logging), refactor `msgfile.go`:
-- Export `CollectTagDescs()` (returns both `descs` and `inconsistent` slices)
-- Move `CheckTagDescriptions()` (which takes a logger and logs warnings) to `gpscmd`
+The `nmea` package mixes library-level code (like `Checksum`, `CheckSyntax`) with domain-level protocol implementation. Other protocols have this split (e.g., `ubx`/`ubxbin`, `casic`/`casbin`).
 
-After this refactoring:
-- `gps/gpsmsg/` - protocol-aware Domain code that needs access to `gps/internal/`
-- `internal/gpscmd/` - CLI orchestration, imports `gps/gpsmsg/`
+**Create new `nmeamsg` package** (in `gps/lib/nmeamsg/`) with library-level functions:
+- `Checksum()` - computes NMEA checksum
+- `CheckSyntax()` - validates NMEA sentence syntax
+- `SyntaxFlags` type and constants
 
-This allows `gpscmd` to stay in `internal/` (command layer) while protocol-specific code moves to `gps/`.
+**Keep in `nmea`** (in `gps/internal/nmea/`) the domain layer code:
+- Parser implementation
+- Format detection
+- Sentence type handling
+
+This allows `internal/gpscmd/` to use `gps/lib/nmeamsg/` without needing access to `gps/internal/nmea/`.
 
 ### Factor daemon-specific code from cmd
 
@@ -102,7 +106,6 @@ The `phctime` package imports `ptime` (for `Time`), but `ptime` has no dependenc
 | `cmd/ifwait/` | `cmd/ifwait` |
 | **gps/** | |
 | `gps/gpsdecode/` | `internal/gpsdecode` |
-| `gps/gpsmsg/` | new (factored from `internal/gpscmd`) |
 | `gps/gpsprot/` | `internal/gpsprot` |
 | `gps/gpsreg/` | `internal/gpsreg` |
 | `gps/ptime/` | `internal/ptime` |
@@ -127,6 +130,7 @@ The `phctime` package imports `ptime` (for `Time`), but `ptime` has no dependenc
 | `gps/lib/casbin/` | `internal/casic/bin` |
 | `gps/lib/fieldenc/` | `internal/fieldenc` |
 | `gps/lib/geopos/` | `internal/geopos` |
+| `gps/lib/nmeamsg/` | new (split from `internal/nmea`) |
 | `gps/lib/novmsg/` | `internal/novmsg` |
 | `gps/lib/ntptime/` | `internal/ntptime` |
 | `gps/lib/term/` | `term` |
