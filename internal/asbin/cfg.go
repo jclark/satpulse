@@ -1,14 +1,16 @@
 package asbin
 
 const (
-	CfgCfgID       MsgID = clsCfg | (0x09 << 8)
-	CfgNavSatID    MsgID = clsCfg | (0x0C << 8)
-	CfgSurveyID    MsgID = clsCfg | (0x12 << 8)
-	CfgFixedECEFID MsgID = clsCfg | (0x14 << 8)
 	CfgPrtID       MsgID = clsCfg | (0x00 << 8)
 	CfgMsgID       MsgID = clsCfg | (0x01 << 8)
 	CfgPpsID       MsgID = clsCfg | (0x07 << 8)
+	CfgCfgID       MsgID = clsCfg | (0x09 << 8)
+	CfgElevID      MsgID = clsCfg | (0x0B << 8)
+	CfgNavSatID    MsgID = clsCfg | (0x0C << 8)
+	CfgSurveyID    MsgID = clsCfg | (0x12 << 8)
+	CfgFixedECEFID MsgID = clsCfg | (0x14 << 8)
 	CfgSimpleRstID MsgID = clsCfg | (0x40 << 8)
+	CfgNmeaVerID   MsgID = clsCfg | (0x43 << 8)
 )
 
 // CfgCfgAction defines the action values for CfgCfg.Action
@@ -162,6 +164,32 @@ type CfgSimpleRst struct {
 
 func (m *CfgSimpleRst) ID() MsgID { return CfgSimpleRstID }
 
+// CFG-ELEV (0x06 0x0B)
+type CfgElev struct {
+	TrkMask  float32 // radian, Track elevation angle mask
+	NaviMask float32 // radian, Navigation elevation angle mask
+}
+
+func (m *CfgElev) ID() MsgID { return CfgElevID }
+
+// CfgNmeaVerVersion defines values for CfgNmeaVer.Version
+type CfgNmeaVerVersion uint8
+
+const (
+	CfgNmeaVerNotSupported CfgNmeaVerVersion = 0 // Not supported
+	CfgNmeaVerV301         CfgNmeaVerVersion = 1 // NMEA V3.01
+	CfgNmeaVerV400         CfgNmeaVerVersion = 2 // NMEA V4.00
+	CfgNmeaVerV410         CfgNmeaVerVersion = 3 // NMEA V4.10
+	CfgNmeaVerV411         CfgNmeaVerVersion = 4 // NMEA V4.11
+)
+
+// CFG-NMEAVER (0x06 0x43)
+type CfgNmeaVer struct {
+	Version CfgNmeaVerVersion // NMEA version
+}
+
+func (m *CfgNmeaVer) ID() MsgID { return CfgNmeaVerID }
+
 func PollNavTime(navSys NavTimeSys) []byte {
 	packet, _ := packMsg(NavTimeID, []byte{byte(navSys)})
 	return packet
@@ -193,4 +221,6 @@ func init() {
 	regMsg[CfgMsg]("MSG")
 	regMsg[CfgPps]("PPS")
 	regMsg[CfgSimpleRst]("SIMPLERST")
+	regMsg[CfgElev]("ELEV")
+	regMsg[CfgNmeaVer]("NMEAVER")
 }

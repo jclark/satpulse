@@ -3,20 +3,17 @@ package asbin
 // Message IDs for messages not implemented elsewhere
 const (
 	// NAV
-	NavPosEcefID  MsgID = clsNav | (0x01 << 8)
-	NavPosLlhID   MsgID = clsNav | (0x02 << 8)
-	NavDopID      MsgID = clsNav | (0x04 << 8)
-	NavVelEcefID  MsgID = clsNav | (0x11 << 8)
-	NavVelNedID   MsgID = clsNav | (0x12 << 8)
-	NavTimeUtcID  MsgID = clsNav | (0x21 << 8)
-	NavPvErrID    MsgID = clsNav | (0x26 << 8)
-	NavSvInfoID   MsgID = clsNav | (0x30 << 8)
-	NavSvStateID  MsgID = clsNav | (0x32 << 8)
-	NavAutoID     MsgID = clsNav | (0xC0 << 8)
-	NavNavPvtID   MsgID = clsNav | (0xC1 << 8)
+	NavPosEcefID MsgID = clsNav | (0x01 << 8)
+	NavPosLlhID  MsgID = clsNav | (0x02 << 8)
+	NavDopID     MsgID = clsNav | (0x04 << 8)
+	NavVelEcefID MsgID = clsNav | (0x11 << 8)
+	NavVelNedID  MsgID = clsNav | (0x12 << 8)
+	NavPvErrID   MsgID = clsNav | (0x26 << 8)
+	NavSvStateID MsgID = clsNav | (0x32 << 8)
+	NavAutoID    MsgID = clsNav | (0xC0 << 8)
+	NavNavPvtID  MsgID = clsNav | (0xC1 << 8)
 	// CFG
 	CfgDopID      MsgID = clsCfg | (0x0A << 8)
-	CfgElevID     MsgID = clsCfg | (0x0B << 8)
 	CfgHeightID   MsgID = clsCfg | (0x0D << 8)
 	CfgSbasID     MsgID = clsCfg | (0x0E << 8)
 	CfgSpdHoldID  MsgID = clsCfg | (0x0F << 8)
@@ -29,7 +26,6 @@ const (
 	CfgGeoFenceID MsgID = clsCfg | (0x18 << 8)
 	CfgSleepID    MsgID = clsCfg | (0x41 << 8)
 	CfgPwrCtlID   MsgID = clsCfg | (0x42 << 8)
-	CfgNmeaVerID  MsgID = clsCfg | (0x43 << 8)
 	CfgPwr2CtlID  MsgID = clsCfg | (0x44 << 8)
 	CfgFwUpID     MsgID = clsCfg | (0x50 << 8)
 	CfgPvtLogID   MsgID = clsCfg | (0xB0 << 8) // removed in 2.3.2 spec
@@ -58,15 +54,12 @@ func init() {
 	idNameMap[NavDopID] = "DOP"
 	idNameMap[NavVelEcefID] = "VELECEF"
 	idNameMap[NavVelNedID] = "VELNED"
-	idNameMap[NavTimeUtcID] = "TIMEUTC"
 	idNameMap[NavPvErrID] = "PVERR"
-	idNameMap[NavSvInfoID] = "SVINFO"
 	idNameMap[NavSvStateID] = "SVSTATE"
 	idNameMap[NavAutoID] = "AUTO"
 	idNameMap[NavNavPvtID] = "NAVPVT"
 	// CFG messages
 	idNameMap[CfgDopID] = "DOP"
-	idNameMap[CfgElevID] = "ELEV"
 	idNameMap[CfgHeightID] = "HEIGHT"
 	idNameMap[CfgSbasID] = "SBAS"
 	idNameMap[CfgSpdHoldID] = "SPDHOLD"
@@ -79,7 +72,6 @@ func init() {
 	idNameMap[CfgBdGeoID] = "BDGEO"
 	idNameMap[CfgFwUpID] = "FWUP"
 	idNameMap[CfgPvtLogID] = "PVTLOG"
-	idNameMap[CfgNmeaVerID] = "NMEAVER"
 	idNameMap[CfgPwrCtlID] = "PWRCTL"
 	idNameMap[CfgSleepID] = "SLEEP"
 	// MON messages
