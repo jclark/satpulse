@@ -11,8 +11,8 @@ Each layer can also be divided into time sync, GPS and base groups, where time s
 |--------------|-----------|-----|--------|
 | **Command**  | daemon, pmccmd, sdpcmd, syncsimcmd, cmd/ifwait | gpscmd, decodecmd | cmd |
 | **Application** | ts, gpsevent, phcsync, timemsg, ptpgm, refclock, obs, obs/sseobs, obs/promobs, logobs, statsobs, syncsim, proxy, bcast | gpsio, gpscfg | logfile |
-| **Domain** | phc, sockrefclock, clocksim | gpsprot, scan, scantest, ubx, nmea, rtcm, gpsreg, casic, unc, nov, sino, as, ptime, gpsdecode | |
-| **Library** | pmc, circbuf, median, check, sse, ifwait, fuser, devnotify, allan | ubx/bin, ubxcfgval, casic/bin, asbin, novmsg, uncmsg, geopos, fieldenc | ntptime |
+| **Domain** | phc, sockrefclock, clocksim, phctime | gpsprot, scan, scantest, ubx, nmea, rtcm, gpsreg, casic, unc, nov, sino, as, ptime, gpsdecode | |
+| **Library** | pmc, circbuf, median, check, sse, ifwait, fuser, devnotify, allan | ubxbin, ubxcfgval, casbin, asbin, novmsg, uncmsg, nmeamsg, geopos, fieldenc | ntptime |
 
 ### Command-line layer
 
@@ -102,6 +102,8 @@ Provides packages using domain-specific abstractions that are used by the applic
 
 `internal/clocksim` provides discrete-time simulation of PTP hardware clocks and GNSS PPS signals. It includes simulator functions for oscillators (modeling frequency errors like white noise, flicker noise, random walk, drift) and for GPS/PPS timing errors (jitter, sawtooth, sinusoids, colored noise).
 
+`internal/phctime` provides an `Era` type used for managing stepping of a PHC and types that combine `Era` with `ptime.Time`.
+
 #### GPS
 
 `internal/ptime` provides a Time type that represents time in the PTP timescale (nanoseconds in TAI timescale since 1970-01-01T00:00:00 TAI). This is used throught the domain layer and higher level layers.
@@ -158,13 +160,13 @@ Provides a library of packages, which are potentially useful outside satpulse. T
 
 #### GPS
 
-`internal/ubx/bin` translates binary packets in the UBX protocol to and from Go structs.
+`internal/ubxbin` translates binary packets in the UBX protocol to and from Go structs.
 
 `internal/ubxcfgval` handles the 9th generation UBX format for configuration data that is payload for UBX-CFG-VALGET/VALSET messages
 
 `internal/ubxcfgval/cfgschema` contains a YAML schema for configuration data handled by `internal/ubxcfgval`. This is used to generate code in the `internal/ubxcfgval` package.
 
-`internal/casic/bin` translates binary packets in the CASIC protocol to and from Go structs.
+`internal/casbin` translates binary packets in the CASIC protocol to and from Go structs.
 
 `internal/asbin` translates binary packets in the Allystar binary protocol to and from Go structs.
 
@@ -175,6 +177,8 @@ Provides a library of packages, which are potentially useful outside satpulse. T
 `internal/geopos` converts between positions in the ECEF and LLH geodetic coordinate systems. This is used by the web interface to link to Google maps.
 
 `internal/fieldenc` provides reflection-based encoding and decoding of Go structs to and from ordered string field arrays. It supports standard types and custom TextMarshaler/TextUnmarshaler implementations.
+
+`internal/nmeamsg` analyzes NMEA sentence syntax and computes checksums.
 
 `term` provides access to the Linux terminal interface, which provides access to serial devices. This is similar to [github.com/pkg/term](https://github.com/pkg/term), but provides additional Linux-specific functionality.
 

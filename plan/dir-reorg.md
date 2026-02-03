@@ -8,7 +8,7 @@ Goals:
 
 These changes should be made before the directory reorganization to ensure clean separation between GPS and time-sync code, and to simplify the reorganization itself.
 
-### Flatten nested bin packages
+### Flatten nested bin packages (done)
 
 Rename nested `bin` packages so that the reorganization doesn't change package names:
 
@@ -17,9 +17,9 @@ Rename nested `bin` packages so that the reorganization doesn't change package n
 
 (`internal/asbin` is already flat.)
 
-### Tag enum in gpsreg (partially done)
+### Tag enum in gpsreg (done)
 
-Done. Added to `gpsreg`:
+Added to `gpsreg`:
 
 ```go
 const (
@@ -39,16 +39,14 @@ Updated packages to use `gpsreg.TagXxx` instead of importing protocol packages:
 - `timemsg` - now uses `gpsreg.TagNMEA`, `gpsreg.TagUBX`
 - `syncsim` - now uses `gpsreg.TagUBX`
 - `daemon` (tests) - now uses `gpsreg.TagNMEA`, `gpsreg.TagRTCM`
+- `gpscmd` (response.go) - now uses `gpsreg.TagUBX`, `gpsreg.TagCASICBin`, `gpsreg.TagAllystarBin`, `gpsreg.TagNMEA`
+- `gpscfg` - now uses `gpsreg.TagNMEA`, tests use `gpsreg.TagUBX`, `gpsreg.TagNMEA`, `gpsreg.TagRTCM`
 
-Packages that need updating:
-- `gpscmd` (response.go) - uses `ubx.Tag`, `casic.Tag`, `as.Tag`, `nmea.Tag`
-- `gpscfg` - uses `nmea.Tag`, and tests use `ubx.Tag`, `nmea.Tag`, `rtcm.Tag`
-
-### Split nmea: create nmeamsg package
+### Split nmea: create nmeamsg package (done)
 
 The `nmea` package mixes library-level code (like `Checksum`, `CheckSyntax`) with domain-level protocol implementation. Other protocols have this split (e.g., `ubx`/`ubxbin`, `casic`/`casbin`).
 
-**Create new `nmeamsg` package** (in `gps/lib/nmeamsg/`) with library-level functions:
+**Create new `nmeamsg` package** (in `gps/lib/nmeamsg/`) with library-level functions (done):
 - `Checksum()` - computes NMEA checksum
 - `CheckSyntax()` - validates NMEA sentence syntax
 - `SyntaxFlags` type and constants
@@ -60,7 +58,7 @@ The `nmea` package mixes library-level code (like `Checksum`, `CheckSyntax`) wit
 
 This allows `internal/gpscmd/` to use `gps/lib/nmeamsg/` without needing access to `gps/internal/nmea/`.
 
-### Factor daemon-specific code from cmd
+### Factor daemon-specific code from cmd (done)
 
 Move daemon-specific error handling from `cmd` to `daemon`:
 - `ConfigError` type
@@ -70,13 +68,13 @@ Move daemon-specific error handling from `cmd` to `daemon`:
 
 This leaves `cmd` with general CLI utilities (`ErrPrintln`, `CancelOnSignal`, `NewLogger`, `VersionInfo`, `UsageFunc`) that are appropriate for `gps/app/cmd`.
 
-### Move TimePulsePVTMsgFlags to daemon
+### Move TimePulsePVTMsgFlags to daemon (done)
 
 Move `TimePulsePVTMsgFlags` from `gpsevent` to `daemon`.
 
 This constant defines which PVT messages the daemon requires from GPS. It's used by `gpscmd` for `--pvt-out daemon`. After the reorganization, `gpsevent` will be in `time/internal/gpsevent/` (not importable by `internal/gpscmd/`), but `daemon` will be in `time/app/daemon/` (public, importable).
 
-### Split ptime: create phctime package
+### Split ptime: create phctime package (done)
 
 The `ptime` package contains both GPS time concepts and PHC clock-tracking concepts. These should be separated so GPS code doesn't depend on time-sync code.
 
@@ -130,7 +128,8 @@ The `phctime` package imports `ptime` (for `Time`), but `ptime` has no dependenc
 | `gps/lib/casbin/` | `internal/casic/bin` |
 | `gps/lib/fieldenc/` | `internal/fieldenc` |
 | `gps/lib/geopos/` | `internal/geopos` |
-| `gps/lib/nmeamsg/` | new (split from `internal/nmea`) |
+| `gps/lib/nmeamsg/` | `internal/nmeamsg` |
+| `gps/lib/nmeamsg/testdata/` | `internal/nmeamsg/testdata` |
 | `gps/lib/novmsg/` | `internal/novmsg` |
 | `gps/lib/ntptime/` | `internal/ntptime` |
 | `gps/lib/term/` | `term` |
