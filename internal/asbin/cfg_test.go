@@ -31,3 +31,177 @@ func TestCfgNmeaVer(t *testing.T) {
 		},
 	}})
 }
+
+func TestCfgPps(t *testing.T) {
+	// Example from spec: 1PPS with 500us pulse, positive polarity on GPIO13
+	runTests(t, []testCase{{
+		name:   "spec_example",
+		packet: "F1D906070F00 40420F00 00000000 10270000 010D01 F386",
+		wantID: CfgPpsID,
+		wantMsg: &CfgPps{
+			Period:    1000000, // 1s in µs
+			Offset:    0,
+			DutyCycle: 10000, // 10%
+			Polarity:  CfgPpsPolarityRisingEdge,
+			GPIO:      13,
+			Sync:      CfgPpsSyncAlways,
+		},
+	}})
+}
+
+func TestCfgCfg(t *testing.T) {
+	runTests(t, []testCase{
+		{
+			name:   "baudrate_nmea",
+			packet: "F1D9060908000000000003000000 1A07",
+			wantID: CfgCfgID,
+			wantMsg: &CfgCfg{
+				Action: CfgCfgActionSave,
+				Mask:   CfgCfgMaskBaudrate | CfgCfgMaskNmeaMsgRate,
+			},
+		},
+		{
+			name:   "nav_settings",
+			packet: "F1D9060908000000000004000000 1B0B",
+			wantID: CfgCfgID,
+			wantMsg: &CfgCfg{
+				Action: CfgCfgActionSave,
+				Mask:   CfgCfgMaskNavSettings,
+			},
+		},
+		{
+			name:   "factory_reset",
+			packet: "F1D906090800 02000000 FFFFFFFF 1501",
+			wantID: CfgCfgID,
+			wantMsg: &CfgCfg{
+				Action: CfgCfgActionClear,
+				Mask:   CfgCfgMaskFactoryReset,
+			},
+		},
+	})
+}
+
+func TestCfgPrt(t *testing.T) {
+	runTests(t, []testCase{
+		{
+			name:   "uart1_9600",
+			packet: "F1D9060008000100000080250000 B40F",
+			wantID: CfgPrtID,
+			wantMsg: &CfgPrt{
+				PortID:   1,
+				Res:      [3]byte{0, 0, 0},
+				Baudrate: 9600,
+			},
+		},
+		{
+			name:   "uart0_115200",
+			packet: "F1D90600080000000000 00C20100 D1E0",
+			wantID: CfgPrtID,
+			wantMsg: &CfgPrt{
+				PortID:   0,
+				Res:      [3]byte{0, 0, 0},
+				Baudrate: 115200,
+			},
+		},
+	})
+}
+
+func TestCfgMsg(t *testing.T) {
+	runTests(t, []testCase{
+		{
+			name:   "gsv_rate_2",
+			packet: "F1D9060103 00F00402 0019",
+			wantID: CfgMsgID,
+			wantMsg: &CfgMsg{
+				MsgClass: 0xF0,
+				MsgID:    0x04, // NmeaGsvID
+				Rate:     2,
+			},
+		},
+		{
+			name:   "gll_rate_5",
+			packet: "F1D9060103 00F00105 0016",
+			wantID: CfgMsgID,
+			wantMsg: &CfgMsg{
+				MsgClass: 0xF0,
+				MsgID:    0x01, // NmeaGllID
+				Rate:     5,
+			},
+		},
+		{
+			name:   "vtg_disabled",
+			packet: "F1D9060103 00F00600 001B",
+			wantID: CfgMsgID,
+			wantMsg: &CfgMsg{
+				MsgClass: 0xF0,
+				MsgID:    0x06, // NmeaVtgID
+				Rate:     0,
+			},
+		},
+	})
+}
+
+func TestCfgNavSat(t *testing.T) {
+	// Example from spec: GPS L1, BEIDOU B1, GPS L5, BEIDOU B2A
+	runTests(t, []testCase{{
+		name:   "spec_example",
+		packet: "F1D9060C0400 05820000 9D36",
+		wantID: CfgNavSatID,
+		wantMsg: &CfgNavSat{
+			EnableMask: CfgNavSatMaskGPSL1 | CfgNavSatMaskBEIDOUB1 | CfgNavSatMaskGPSL5 | CfgNavSatMaskBEIDOUB2A,
+		},
+	}})
+}
+
+func TestCfgSurvey(t *testing.T) {
+	// Example from spec: survey time 5s, accuracy 100mm
+	runTests(t, []testCase{{
+		name:   "spec_example",
+		packet: "F1D9061208 0005000000 64000000 8916",
+		wantID: CfgSurveyID,
+		wantMsg: &CfgSurvey{
+			MinDur:   5,
+			AccLimit: 100,
+		},
+	}})
+}
+
+func TestCfgSimpleRst(t *testing.T) {
+	// Example from spec: warm start
+	runTests(t, []testCase{{
+		name:   "warm_start",
+		packet: "F1D9064001 0002 4923",
+		wantID: CfgSimpleRstID,
+		wantMsg: &CfgSimpleRst{
+			Mode: CfgSimpleRstModeWarmStart,
+		},
+	}})
+}
+
+func TestPollPrt(t *testing.T) {
+	// Poll UART0 configuration
+	expected := "F1D9060001000007 21"
+	pollMsg := PollPrt(0)
+	got := string(pollMsg)
+	want := hexToBytes(t, expected)
+	if got != string(want) {
+		t.Errorf("PollPrt(0):\ngot:  %X\nwant: %X", pollMsg, want)
+	}
+	if PacketMsgId(pollMsg) != CfgPrtID {
+		t.Errorf("message ID = %v, want %v", PacketMsgId(pollMsg), CfgPrtID)
+	}
+}
+
+func TestPollCfgMsg(t *testing.T) {
+	// Poll NMEA GGA message rate
+	expected := "F1D9060102 00F000 F911"
+	pollMsg := PollCfgMsg(NmeaGgaID)
+	got := string(pollMsg)
+	want := hexToBytes(t, expected)
+	if got != string(want) {
+		t.Errorf("PollCfgMsg(NmeaGgaID):\ngot:  %X\nwant: %X", pollMsg, want)
+	}
+	if PacketMsgId(pollMsg) != CfgMsgID {
+		t.Errorf("message ID = %v, want %v", PacketMsgId(pollMsg), CfgMsgID)
+	}
+}

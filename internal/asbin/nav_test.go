@@ -2,6 +2,67 @@ package asbin
 
 import "testing"
 
+func TestNavTime(t *testing.T) {
+	// Example from spec: Get the GPS time
+	runTests(t, []testCase{{
+		name:   "spec_example",
+		packet: "F1D9010510000007 2C79 FF553E16 1000 1200 0600 0000 925A",
+		wantID: NavTimeID,
+		wantMsg: &NavTime{
+			NavSys:  NavTimeSysGPS,
+			Flags:   NavTimeFlagWeekValid | NavTimeFlagSecondValid | NavTimeFlagLeapSecValid,
+			Fractow: 31020,
+			RefTow:  373183999,
+			Week:    16,
+			LeapSec: 18,
+			TimeErr: 6,
+		},
+	}})
+}
+
+func TestNavSvin(t *testing.T) {
+	runTests(t, []testCase{
+		{
+			name:   "windows_app",
+			packet: "F1D901310E00 A0D08220 4B000000 07C90000 0101 6F03",
+			wantID: NavSvinID,
+			wantMsg: &NavSvin{
+				ITow:       545444000,
+				PosUsed:    75,
+				MeanStdDev: 51463,
+				Valid:      1,
+				Status:     1,
+			},
+		},
+		{
+			name:   "from_log",
+			packet: "F1D901310E00 90DCB820 80090000 62FB0000 0101 6CC6",
+			wantID: NavSvinID,
+			wantMsg: &NavSvin{
+				ITow:       548986000,
+				PosUsed:    2432,
+				MeanStdDev: 64354,
+				Valid:      1,
+				Status:     1,
+			},
+		},
+	})
+}
+
+func TestPollNavTime(t *testing.T) {
+	// Test creating a poll message for NAV-TIME
+	expected := "F1D9010501000007 1C"
+	pollMsg := PollNavTime(NavTimeSysGPS)
+	got := string(pollMsg)
+	want := hexToBytes(t, expected)
+	if got != string(want) {
+		t.Errorf("PollNavTime(GPS):\ngot:  %X\nwant: %X", pollMsg, want)
+	}
+	if PacketMsgId(pollMsg) != NavTimeID {
+		t.Errorf("message ID = %v, want %v", PacketMsgId(pollMsg), NavTimeID)
+	}
+}
+
 func TestNavTimeUTC(t *testing.T) {
 	// Captured from TAU1201: 2026-02-03 00:22:13 UTC
 	runTests(t, []testCase{{
