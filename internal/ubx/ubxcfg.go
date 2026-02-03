@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
@@ -49,9 +49,9 @@ type configRequest struct {
 
 type Configurator struct {
 	ver       *Version // never nil
-	tRead     map[bin.MsgID]time.Time
+	tRead     map[ubxbin.MsgID]time.Time
 	raw       RawConfig
-	origPrt   *bin.CfgPrt
+	origPrt   *ubxbin.CfgPrt
 	monGNSS   *monGNSS
 	steps     []func(*Configurator) error
 	stepIndex int
@@ -302,7 +302,7 @@ func newConfigurator(target *gpsprot.ConfigTarget, ver *Version) *Configurator {
 		ver:    ver,
 		target: target,
 		steps:  steps,
-		tRead:  make(map[bin.MsgID]time.Time),
+		tRead:  make(map[ubxbin.MsgID]time.Time),
 	}
 }
 
@@ -461,14 +461,14 @@ func (c *Configurator) addRequest(ops requestOps) error {
 }
 
 // processAckNak handles both positive and negative acknowledgments
-func (c *Configurator) processAckNak(msgID bin.MsgID, ok bool, t time.Time) {
+func (c *Configurator) processAckNak(msgID ubxbin.MsgID, ok bool, t time.Time) {
 	// Find the request that matches this ACK/NACK
 	for i := 0; i < len(c.reqs); i++ {
 		cr := c.reqs[i]
 		// Check if this request is awaiting an ACK
 		if cr.state == stateAwaitingAck || cr.state == stateAwaitingAckAndResponse {
 			packet := cr.ops.Packet()
-			if bin.PacketMsgId(packet) == msgID && !t.Before(cr.sentTime) {
+			if ubxbin.PacketMsgId(packet) == msgID && !t.Before(cr.sentTime) {
 				if ok {
 					// ACK received
 					if cr.state == stateAwaitingAckAndResponse {
@@ -497,15 +497,15 @@ func (c *Configurator) checkPollResponses(t time.Time) {
 	}
 }
 
-func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
+func (c *Configurator) processMsg(msg ubxbin.Msg, t time.Time) (bool, error) {
 	switch mt := msg.(type) {
-	case *bin.AckAck:
+	case *ubxbin.AckAck:
 		c.processAckNak(mt.MsgID, true, t)
 		return true, nil
-	case *bin.AckNak:
+	case *ubxbin.AckNak:
 		c.processAckNak(mt.MsgID, false, t)
 		return true, nil
-	case *bin.MonGnss:
+	case *ubxbin.MonGnss:
 		c.tRead[mt.ID()] = t
 		c.monGNSS = c.newMonGNSS(mt)
 		c.checkPollResponses(t)
@@ -521,7 +521,7 @@ func (c *Configurator) processMsg(msg bin.Msg, t time.Time) (bool, error) {
 	return false, nil
 }
 
-func (c *Configurator) newMonGNSS(mt *bin.MonGnss) *monGNSS {
+func (c *Configurator) newMonGNSS(mt *ubxbin.MonGnss) *monGNSS {
 	mg := monGNSS{
 		maxSimultaneousMajorGNSS: int(mt.Simultaneous),
 		supportedGNSS:            monGNSSSet(mt.Supported),
@@ -534,61 +534,61 @@ func (c *Configurator) newMonGNSS(mt *bin.MonGnss) *monGNSS {
 func (c *Configurator) saveMinimal() error {
 	// This is just for legacy configuration.
 	// For new configuration, we use CFG-VALSET to save to the right layer.
-	var saveMask bin.CfgCfgSectionMask
+	var saveMask ubxbin.CfgCfgSectionMask
 	if c.target.Opts.Save != gpsprot.SaveMinimal {
 		return nil
 	}
 	// Port has bits for wther NMEA/RTCM output is enabled at all on the port.
 	if c.target.Opts.BaudRate != 0 || c.target.Opts.NMEAMsg.IsSet() || c.target.Opts.RTCMMsg.IsSet() {
-		saveMask |= bin.CfgCfgIOPort
+		saveMask |= ubxbin.CfgCfgIOPort
 	}
 	if c.target.Opts.SetsMsgs() {
-		saveMask |= bin.CfgCfgMsgConf
+		saveMask |= ubxbin.CfgCfgMsgConf
 	}
 	if c.target.Props.SetsAny(gpsprot.PropIDSignalsEnabled) || c.target.Props.SetsAny(cfgOldProps.tp5...) {
-		saveMask |= bin.CfgCfgRXMConf
+		saveMask |= ubxbin.CfgCfgRXMConf
 	}
 	// If any messages are enabled, then the rate is set, which is part of the Nav configuration section.
 	// c.survey case handles where SetStatic resulted in a survey
 	if c.target.Props.SetsAny(cfgOldProps.nav5...) || c.target.Props.SetsAny(cfgOldProps.tmode...) || c.survey || c.target.Opts.EnablesMsgs() {
-		saveMask |= bin.CfgCfgNavConf
+		saveMask |= ubxbin.CfgCfgNavConf
 	}
 	if saveMask == 0 {
 		return nil
 	}
-	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, saveMask, 0, bin.CfgCfgDevFlash|bin.CfgCfgDevBBR)})
+	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, saveMask, 0, ubxbin.CfgCfgDevFlash|ubxbin.CfgCfgDevBBR)})
 }
 
 func (c *Configurator) setCfg() error {
-	var saveMask, clearMask bin.CfgCfgSectionMask
+	var saveMask, clearMask ubxbin.CfgCfgSectionMask
 
 	if c.target.Opts.Save == gpsprot.SaveAll {
-		saveMask = bin.CfgCfgSectionMaskAll
+		saveMask = ubxbin.CfgCfgSectionMaskAll
 	}
 	if c.target.Opts.Reset == gpsprot.ResetFactory {
-		clearMask = bin.CfgCfgSectionMaskAll
+		clearMask = ubxbin.CfgCfgSectionMaskAll
 	}
 	if clearMask == 0 && saveMask == 0 {
 		return nil
 	}
-	return c.addRequest(msgRequest{c.newCfgCfgRequest(clearMask, saveMask, 0, bin.CfgCfgDevFlash|bin.CfgCfgDevBBR)})
+	return c.addRequest(msgRequest{c.newCfgCfgRequest(clearMask, saveMask, 0, ubxbin.CfgCfgDevFlash|ubxbin.CfgCfgDevBBR)})
 }
 
 func (c *Configurator) reloadCfg() error {
 	if c.target.Opts.Reset != gpsprot.ResetReload {
 		return nil
 	}
-	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, 0, bin.CfgCfgSectionMaskAll, 0)})
+	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, 0, ubxbin.CfgCfgSectionMaskAll, 0)})
 }
 
-func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask bin.CfgCfgSectionMask, deviceMask bin.CfgCfgDeviceMask) *bin.CfgCfg {
-	return &bin.CfgCfg{
-		CfgCfgFixed: bin.CfgCfgFixed{
+func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask ubxbin.CfgCfgSectionMask, deviceMask ubxbin.CfgCfgDeviceMask) *ubxbin.CfgCfg {
+	return &ubxbin.CfgCfg{
+		CfgCfgFixed: ubxbin.CfgCfgFixed{
 			ClearMask: clearMask,
 			SaveMask:  saveMask,
 			LoadMask:  loadMask,
 		},
-		DeviceMask: []bin.CfgCfgDeviceMask{deviceMask},
+		DeviceMask: []ubxbin.CfgCfgDeviceMask{deviceMask},
 	}
 }
 
@@ -596,9 +596,9 @@ func (c *Configurator) reset() error {
 	if c.target.Opts.Reset <= gpsprot.ResetReload {
 		return nil
 	}
-	return c.addRequest(msgRequest{&bin.CfgRst{
-		NavBbrMask: bin.CfgRstNavBbrColdStart,
-		ResetMode:  bin.CfgRstResetModeHardwareResetImmediately,
+	return c.addRequest(msgRequest{&ubxbin.CfgRst{
+		NavBbrMask: ubxbin.CfgRstNavBbrColdStart,
+		ResetMode:  ubxbin.CfgRstResetModeHardwareResetImmediately,
 	}})
 }
 
@@ -623,7 +623,7 @@ func (c *Configurator) valPollMonGNSS() error {
 	if !c.valNeedsMonGNSS() {
 		return nil
 	}
-	return c.addPollRequest(bin.MonGnssID)
+	return c.addPollRequest(ubxbin.MonGnssID)
 }
 
 func (c *Configurator) valNeedsMonGNSS() bool {
@@ -713,17 +713,17 @@ func (c *Configurator) valSet() error {
 	return c.addMsgSetRequest(val)
 }
 
-func (c *Configurator) valGetLayer() bin.CfgValgetLayer {
-	return bin.CfgValgetLayerRAM
+func (c *Configurator) valGetLayer() ubxbin.CfgValgetLayer {
+	return ubxbin.CfgValgetLayerRAM
 }
 
-func (c *Configurator) valSetLayer() bin.CfgValsetLayer {
+func (c *Configurator) valSetLayer() ubxbin.CfgValsetLayer {
 	if c.target.Opts.Save == gpsprot.SaveMinimal {
 		// SaveMinimal is implemented by writing to non-volatile layers.
 		// SaveAll is implemented using UBX-CFG-CFG to save everything
-		return bin.CfgValsetLayerFlash | bin.CfgValsetLayerBBR | bin.CfgValsetLayerRAM
+		return ubxbin.CfgValsetLayerFlash | ubxbin.CfgValsetLayerBBR | ubxbin.CfgValsetLayerRAM
 	}
-	return bin.CfgValsetLayerRAM
+	return ubxbin.CfgValsetLayerRAM
 }
 
 func (c *Configurator) monEnabledGNSS() gpsprot.GNSSSet {
@@ -753,25 +753,25 @@ func (raw *RawConfig) valPort() ucv.Port {
 	return ucv.Port(ucv.UART1)
 }
 
-func newCfgValgetRequest(keys []ucv.Key, layer bin.CfgValgetLayer) *bin.CfgValget {
-	return &bin.CfgValget{
-		CfgValgetFixed: bin.CfgValgetFixed{
+func newCfgValgetRequest(keys []ucv.Key, layer ubxbin.CfgValgetLayer) *ubxbin.CfgValget {
+	return &ubxbin.CfgValget{
+		CfgValgetFixed: ubxbin.CfgValgetFixed{
 			Layer:   layer,
-			Version: bin.CfgValgetVersionRequest,
+			Version: ubxbin.CfgValgetVersionRequest,
 		},
 		CfgData: ucv.MarshalKeys(keys),
 	}
 }
 
-func newCfgValsetRequest(items []ucv.Item, layers bin.CfgValsetLayer) (*bin.CfgValset, error) {
+func newCfgValsetRequest(items []ucv.Item, layers ubxbin.CfgValsetLayer) (*ubxbin.CfgValset, error) {
 	cfgData, err := ucv.MarshalItems(items)
 	if err != nil {
 		return nil, err
 	}
-	return &bin.CfgValset{
-		CfgValsetFixed: bin.CfgValsetFixed{
+	return &ubxbin.CfgValset{
+		CfgValsetFixed: ubxbin.CfgValsetFixed{
 			Layers:  layers,
-			Version: bin.CfgValsetVersionNoTransaction,
+			Version: ubxbin.CfgValsetVersionNoTransaction,
 		},
 		CfgData: cfgData,
 	}, nil
@@ -782,7 +782,7 @@ func (c *Configurator) pollPrt() error {
 	if c.target.Opts.BaudRate == 0 && !c.target.Opts.SetsMsgs() {
 		return nil
 	}
-	return c.addPollRequest(bin.CfgPrtID)
+	return c.addPollRequest(ubxbin.CfgPrtID)
 }
 
 func (c *Configurator) pollGNSS() error {
@@ -790,7 +790,7 @@ func (c *Configurator) pollGNSS() error {
 	if !c.target.UsesAny(cfgOldProps.gnss...) || !c.ver.protVerAtLeast(14, 0) {
 		return nil
 	}
-	return c.addPollRequest(bin.CfgGNSSID)
+	return c.addPollRequest(ubxbin.CfgGNSSID)
 }
 
 // This is just for legacy configuration.
@@ -803,7 +803,7 @@ func (c *Configurator) pollMonGNSS() error {
 	if !c.needsMonGNSS() {
 		return nil
 	}
-	return c.addPollRequest(bin.MonGnssID)
+	return c.addPollRequest(ubxbin.MonGnssID)
 }
 
 func (c *Configurator) needsMonGNSS() bool {
@@ -824,7 +824,7 @@ func (c *Configurator) pollRate() error {
 	if _, ok := c.target.Props.GetTimeGNSS(); !ok && !c.target.Opts.EnablesMsgs() {
 		return nil
 	}
-	return c.addPollRequest(bin.CfgRateID)
+	return c.addPollRequest(ubxbin.CfgRateID)
 }
 
 func (c *Configurator) pollNav5() error {
@@ -833,7 +833,7 @@ func (c *Configurator) pollNav5() error {
 		!(dynModelStatic(c.target) != nil && c.ver.tmodeLevel() == 0) {
 		return nil
 	}
-	return c.addPollRequest(bin.CfgNav5ID)
+	return c.addPollRequest(ubxbin.CfgNav5ID)
 }
 
 func (c *Configurator) pollTmode() error {
@@ -842,11 +842,11 @@ func (c *Configurator) pollTmode() error {
 	}
 	switch c.ver.tmodeLevel() {
 	case 1:
-		return c.addPollRequest(bin.CfgTmodeID)
+		return c.addPollRequest(ubxbin.CfgTmodeID)
 	case 2:
-		return c.addPollRequest(bin.CfgTmode2ID)
+		return c.addPollRequest(ubxbin.CfgTmode2ID)
 	case 3:
-		return c.addPollRequest(bin.CfgTmode3ID)
+		return c.addPollRequest(ubxbin.CfgTmode3ID)
 	}
 	return nil
 }
@@ -866,7 +866,7 @@ func (c *Configurator) setMsg1() error {
 	if c.raw.prt != nil {
 		// save the original port configuration
 		// so we can restore during recovery
-		c.origPrt = new(bin.CfgPrt)
+		c.origPrt = new(ubxbin.CfgPrt)
 		*c.origPrt = *c.raw.prt
 	}
 	mc := newMsgChanges()
@@ -995,41 +995,41 @@ func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigProps {
 	return cm
 }
 
-func (raw *RawConfig) AddMsg(m bin.Msg) (bool, error) {
+func (raw *RawConfig) AddMsg(m ubxbin.Msg) (bool, error) {
 	if raw == nil {
 		return false, nil
 	}
 	switch mt := m.(type) {
-	case *bin.CfgTmode:
+	case *ubxbin.CfgTmode:
 		raw.tmode = mt
-	case *bin.CfgTmode2:
+	case *ubxbin.CfgTmode2:
 		raw.tmode2 = mt
-	case *bin.CfgTmode3:
+	case *ubxbin.CfgTmode3:
 		raw.tmode3 = mt
-	case *bin.CfgTp5:
+	case *ubxbin.CfgTp5:
 		raw.tp5 = mt
-	case *bin.CfgGNSS:
+	case *ubxbin.CfgGNSS:
 		raw.gnss = mt
 		raw.gnssChangeCount++
-	case *bin.CfgRate:
+	case *ubxbin.CfgRate:
 		raw.rate = mt
-	case *bin.CfgNav5:
+	case *ubxbin.CfgNav5:
 		raw.nav5 = mt
-	case *bin.CfgPrt:
+	case *ubxbin.CfgPrt:
 		raw.prt = mt
-	case *bin.CfgMsg:
+	case *ubxbin.CfgMsg:
 		raw.addMsgRate(mt.MsgID, mt.Rate)
-	case *bin.CfgValget:
+	case *ubxbin.CfgValget:
 		// this is a response to a poll
-		if mt.Layer == bin.CfgValgetLayerRAM {
+		if mt.Layer == ubxbin.CfgValgetLayerRAM {
 			_, err := raw.valsPtr().AddData(mt.CfgData)
 			if err != nil {
 				return false, err
 			}
 		}
-	case *bin.CfgValset:
+	case *ubxbin.CfgValset:
 		// this is an acknowledgement of a set
-		if mt.Layers&bin.CfgValsetLayerRAM != 0 {
+		if mt.Layers&ubxbin.CfgValsetLayerRAM != 0 {
 			groups, err := raw.valsPtr().AddData(mt.CfgData)
 			if err != nil {
 				return false, err
@@ -1045,13 +1045,13 @@ func (raw *RawConfig) AddMsg(m bin.Msg) (bool, error) {
 }
 
 type msgRequest struct {
-	msg bin.Msg
+	msg ubxbin.Msg
 }
 
 var _ requestOps = (*msgRequest)(nil)
 
 func (r msgRequest) Packet() []byte {
-	pkt, err := bin.Serialize(r.msg)
+	pkt, err := ubxbin.Serialize(r.msg)
 	if err != nil {
 		panic(err)
 	}
@@ -1070,36 +1070,36 @@ func (r msgRequest) AwaitingResponse(time.Time) bool { return false }
 
 func (r msgRequest) Done() {}
 
-func (c *Configurator) addMsgSetRequest(msg bin.Msg) error {
+func (c *Configurator) addMsgSetRequest(msg ubxbin.Msg) error {
 	return c.addRequest(msgSetRequest{msgRequest{msg}, &c.raw})
 }
 
-func (c *Configurator) addMsgSetSpeedRequest(msg bin.Msg, speed int) error {
+func (c *Configurator) addMsgSetSpeedRequest(msg ubxbin.Msg, speed int) error {
 	return c.addRequest(msgSetSpeedRequest{msgSetRequest{msgRequest{msg}, &c.raw}, speed})
 }
 
-func (c *Configurator) addMsgSetPauseRequest(msg bin.Msg, pause time.Duration) error {
+func (c *Configurator) addMsgSetPauseRequest(msg ubxbin.Msg, pause time.Duration) error {
 	return c.addRequest(msgSetPauseRequest{msgSetRequest{msgRequest{msg}, &c.raw}, pause})
 }
 
-func (c *Configurator) addMsgPollRequest(msg bin.Msg) error {
+func (c *Configurator) addMsgPollRequest(msg ubxbin.Msg) error {
 	return c.addRequest(msgPollRequest{msgRequest: msgRequest{msg}, tRead: c.tRead})
 }
 
-func (c *Configurator) addPollRequest(mid bin.MsgID) error {
+func (c *Configurator) addPollRequest(mid ubxbin.MsgID) error {
 	return c.addRequest(pollRequest{c.tRead, mid})
 }
 
 func (c *Configurator) addPollTp5Request(tpIdx int) error {
 	return c.addRequest(pollTp5Request{
-		pollRequest: pollRequest{c.tRead, bin.CfgTp5ID},
+		pollRequest: pollRequest{c.tRead, ubxbin.CfgTp5ID},
 		tpIdx:       tpIdx,
 	})
 }
 
 type msgPollRequest struct {
 	msgRequest
-	tRead map[bin.MsgID]time.Time
+	tRead map[ubxbin.MsgID]time.Time
 }
 
 func (r msgPollRequest) AwaitingResponse(tSent time.Time) bool {
@@ -1152,12 +1152,12 @@ func (r msgSetPauseRequest) Pause() time.Duration {
 var _ requestOps = (*msgSetPauseRequest)(nil)
 
 type pollRequest struct {
-	tRead map[bin.MsgID]time.Time
-	msgID bin.MsgID
+	tRead map[ubxbin.MsgID]time.Time
+	msgID ubxbin.MsgID
 }
 
 func (r pollRequest) Packet() []byte {
-	return bin.Poll(r.msgID)
+	return ubxbin.Poll(r.msgID)
 }
 
 func (r pollRequest) ChangeSpeed() int { return 0 }
@@ -1182,21 +1182,21 @@ type pollTp5Request struct {
 }
 
 func (r pollTp5Request) Packet() []byte {
-	return bin.PollCfgTp5(r.tpIdx)
+	return ubxbin.PollCfgTp5(r.tpIdx)
 }
 
-func (c *Configurator) addMsgRateRequest(msgID bin.MsgID, rate MsgRate) error {
+func (c *Configurator) addMsgRateRequest(msgID ubxbin.MsgID, rate MsgRate) error {
 	return c.addRequest(msgRateRequest{&c.raw, msgID, uint8(rate)})
 }
 
 type msgRateRequest struct {
 	raw   *RawConfig
-	msgID bin.MsgID
+	msgID ubxbin.MsgID
 	rate  byte
 }
 
 func (r msgRateRequest) Packet() []byte {
-	return bin.SetCfgMsg(r.msgID, r.rate)
+	return ubxbin.SetCfgMsg(r.msgID, r.rate)
 }
 
 func (r msgRateRequest) ChangeSpeed() int { return 0 }
@@ -1211,7 +1211,7 @@ func (r msgRateRequest) Ackable() bool { return true }
 
 func (r msgRateRequest) AwaitingResponse(time.Time) bool { return false }
 
-func (r msgRateRequest) ID() string { return bin.CfgMsgID.String() }
+func (r msgRateRequest) ID() string { return ubxbin.CfgMsgID.String() }
 
 func lengthHP(l int32, h int8) gpsprot.Length {
 	return gpsprot.Length(l)*gpsprot.Centimeter + gpsprot.Length(h)*(gpsprot.Millimeter/10)

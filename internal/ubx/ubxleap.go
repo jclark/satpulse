@@ -5,10 +5,10 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ptime"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
-func leapSecond(u *bin.NavTimeLS) *gpsprot.LeapSecondMsg {
+func leapSecond(u *ubxbin.NavTimeLS) *gpsprot.LeapSecondMsg {
 	ls := gpsprot.LeapSecondMsg{}
 	var date time.Time
 	if !leapSecondUTCOffset(u, &ls) || !leapSecondDate(u, &date) {
@@ -19,19 +19,19 @@ func leapSecond(u *bin.NavTimeLS) *gpsprot.LeapSecondMsg {
 	return &ls
 }
 
-func leapSecondUTCOffset(u *bin.NavTimeLS, ls *gpsprot.LeapSecondMsg) bool {
-	if (u.Valid & bin.NavTimeLSValidCurrLS) == 0 {
+func leapSecondUTCOffset(u *ubxbin.NavTimeLS, ls *gpsprot.LeapSecondMsg) bool {
+	if (u.Valid & ubxbin.NavTimeLSValidCurrLS) == 0 {
 		return false
 	}
 	cur := int16(u.CurrLS) + ptime.TAIMinusGPS
 	ls.UTCOffBefore = cur
 	ls.UTCOffAfter = cur
 	switch u.LSChange {
-	case bin.NavTimeLSChangePositive:
+	case ubxbin.NavTimeLSChangePositive:
 		ls.UTCOffAfter++
-	case bin.NavTimeLSChangeNegative:
+	case ubxbin.NavTimeLSChangeNegative:
 		ls.UTCOffAfter--
-	case bin.NavTimeLSChangeNone:
+	case ubxbin.NavTimeLSChangeNone:
 		ls.UTCOffBefore-- // assume all past leap seconds are positive
 	default:
 		return false
@@ -39,16 +39,16 @@ func leapSecondUTCOffset(u *bin.NavTimeLS, ls *gpsprot.LeapSecondMsg) bool {
 	return true
 }
 
-func leapSecondDate(tls *bin.NavTimeLS, lsDate *time.Time) bool {
-	if (tls.Valid & bin.NavTimeLSValidTimeToLSEvent) == 0 {
+func leapSecondDate(tls *ubxbin.NavTimeLS, lsDate *time.Time) bool {
+	if (tls.Valid & ubxbin.NavTimeLSValidTimeToLSEvent) == 0 {
 		return false
 	}
 	wd := tls.DateOfLSGPSDN
 	switch tls.SrcOfLSChange {
-	case bin.NavTimeLSSrcOfLSChangeBeiDou:
+	case ubxbin.NavTimeLSSrcOfLSChangeBeiDou:
 		// BeiDou DN is 0-based
 		// see https://www.gpsworld.com/beidou-numbering-presents-leap-second-issue/
-	case bin.NavTimeLSSrcOfLSChangeGPS, bin.NavTimeLSSrcOfLSChangeGalileo:
+	case ubxbin.NavTimeLSSrcOfLSChangeGPS, ubxbin.NavTimeLSSrcOfLSChangeGalileo:
 		// GPS and Galileo DN is 1-based
 		wd--
 	default:
@@ -81,19 +81,19 @@ func isLastDayOfQuarter(t time.Time) bool {
 	return t.AddDate(0, 0, 1).Day() == 1 && t.Month()%3 == 0
 }
 
-func leapSecondGNSS(src bin.NavTimeLSSrcOfLSChange) gpsprot.GNSS {
+func leapSecondGNSS(src ubxbin.NavTimeLSSrcOfLSChange) gpsprot.GNSS {
 	switch src {
-	case bin.NavTimeLSSrcOfLSChangeGPS:
+	case ubxbin.NavTimeLSSrcOfLSChangeGPS:
 		return gpsprot.GPS
-	case bin.NavTimeLSSrcOfLSChangeGalileo:
+	case ubxbin.NavTimeLSSrcOfLSChangeGalileo:
 		return gpsprot.GAL
-	case bin.NavTimeLSSrcOfLSChangeBeiDou:
+	case ubxbin.NavTimeLSSrcOfLSChangeBeiDou:
 		return gpsprot.BDS
-	case bin.NavTimeLSSrcOfLSChangeGLONASS:
+	case ubxbin.NavTimeLSSrcOfLSChangeGLONASS:
 		return gpsprot.GLO
-	case bin.NavTimeLSSrcOfLSChangeSBAS:
+	case ubxbin.NavTimeLSSrcOfLSChangeSBAS:
 		return gpsprot.SBAS
-	case bin.NavTimeLSSrcOfLSChangeNavIC:
+	case ubxbin.NavTimeLSSrcOfLSChangeNavIC:
 		return gpsprot.NAVIC
 	default:
 		return 0

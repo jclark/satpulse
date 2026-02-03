@@ -1,4 +1,4 @@
-package bin
+package ubxbin
 
 const (
 	AckNakID MsgID = clsAck | (0x00 << 8)

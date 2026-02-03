@@ -12,7 +12,7 @@ import (
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/scan"
 	"github.com/jclark/satpulse/internal/ubx"
-	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 // responsePrinter handles displaying responses from the receiver.

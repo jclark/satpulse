@@ -14,7 +14,7 @@ import (
 	casbin "github.com/jclark/satpulse/internal/casbin"
 	"github.com/jclark/satpulse/internal/nmea"
 	"github.com/jclark/satpulse/internal/ptime"
-	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 	"github.com/pelletier/go-toml/v2"
 )
 

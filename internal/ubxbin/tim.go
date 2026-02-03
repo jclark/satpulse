@@ -1,4 +1,4 @@
-package bin
+package ubxbin
 
 const (
 	TimSvinID MsgID = clsTim | (0x04 << 8)

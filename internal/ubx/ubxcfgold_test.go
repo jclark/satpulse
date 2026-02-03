@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 func TestTp5(t *testing.T) {
@@ -194,4 +194,3 @@ func TestConfiguratorAbort2(t *testing.T) {
 		t.Errorf("expected NMEA not to be enabled after abort during rate config, but it was")
 	}
 }
-

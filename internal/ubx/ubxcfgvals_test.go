@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
@@ -413,7 +413,7 @@ func TestTimeModeBuild_MissingKeys(t *testing.T) {
 				target.Props.SetMode(gpsprot.Mode{Static: true})
 				return target
 			}(),
-			known: newCfgVals(),
+			known:     newCfgVals(),
 			expectErr: false,
 			wantKeys:  nil,
 		},
@@ -424,7 +424,7 @@ func TestTimeModeBuild_MissingKeys(t *testing.T) {
 				target.Props.SetMode(gpsprot.Mode{Static: true})
 				return target
 			}(),
-			known: newCfgVals(),
+			known:     newCfgVals(),
 			expectErr: false,
 			wantKeys:  nil,
 		},
@@ -438,7 +438,7 @@ func TestTimeModeBuild_MissingKeys(t *testing.T) {
 				}
 				return target
 			}(),
-			known: newCfgVals(),
+			known:     newCfgVals(),
 			expectErr: false,
 			wantKeys:  []ucv.Key{ucv.KTmodeSvinMinDur.Key(), ucv.KTmodeSvinAccLimit.Key()},
 		},
@@ -478,12 +478,12 @@ func TestTimeModeBuild_MissingKeys(t *testing.T) {
 // Test timeModeBuild function - case where configuration items are generated
 func TestTimeModeBuild_GenerateItems(t *testing.T) {
 	tests := []struct {
-		name        string
-		target      *gpsprot.ConfigTarget
-		known       *CfgVals
-		expectErr   bool
-		wantItems   []ucv.Item
-		wantSurvey  bool
+		name       string
+		target     *gpsprot.ConfigTarget
+		known      *CfgVals
+		expectErr  bool
+		wantItems  []ucv.Item
+		wantSurvey bool
 	}{
 		{
 			name: "disable mode",
@@ -585,42 +585,42 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 			target: func() *gpsprot.ConfigTarget {
 				target := gpsprot.NewConfigTarget()
 				target.Props.SetMode(gpsprot.Mode{
-					Static:       true,
-					PosType:      gpsprot.PosTypeECEF,
+					Static:  true,
+					PosType: gpsprot.PosTypeECEF,
 					FixedPosECEF: [3]gpsprot.Length{
-						4194304 * gpsprot.Meter,  // X: 4194304m
-						837860 * gpsprot.Meter,   // Y: 837860m  
-						4581200 * gpsprot.Meter,  // Z: 4581200m
+						4194304 * gpsprot.Meter, // X: 4194304m
+						837860 * gpsprot.Meter,  // Y: 837860m
+						4581200 * gpsprot.Meter, // Z: 4581200m
 					},
 					FixedPosAcc: 10 * gpsprot.Millimeter, // 1cm accuracy
 				})
 				return target
 			}(),
-			known: newCfgVals(),
+			known:     newCfgVals(),
 			expectErr: false,
 			wantItems: []ucv.Item{
 				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeFixed),
 				ucv.MakeItem(ucv.KTmodePosType, ucv.ETmodePosTypeEcef),
-				ucv.MakeItem(ucv.KTmodeEcefX, int64(419430400)),    // 4194304m in cm
-				ucv.MakeItem(ucv.KTmodeEcefY, int64(83786000)),     // 837860m in cm
-				ucv.MakeItem(ucv.KTmodeEcefZ, int64(458120000)),    // 4581200m in cm
-				ucv.MakeItem(ucv.KTmodeEcefXHp, int64(0)),          // No fractional part
-				ucv.MakeItem(ucv.KTmodeEcefYHp, int64(0)),          // No fractional part
-				ucv.MakeItem(ucv.KTmodeEcefZHp, int64(0)),          // No fractional part
-				ucv.MakeItem(ucv.KTmodeFixedPosAcc, uint64(100)),   // 10mm in 0.1mm units
+				ucv.MakeItem(ucv.KTmodeEcefX, int64(419430400)),  // 4194304m in cm
+				ucv.MakeItem(ucv.KTmodeEcefY, int64(83786000)),   // 837860m in cm
+				ucv.MakeItem(ucv.KTmodeEcefZ, int64(458120000)),  // 4581200m in cm
+				ucv.MakeItem(ucv.KTmodeEcefXHp, int64(0)),        // No fractional part
+				ucv.MakeItem(ucv.KTmodeEcefYHp, int64(0)),        // No fractional part
+				ucv.MakeItem(ucv.KTmodeEcefZHp, int64(0)),        // No fractional part
+				ucv.MakeItem(ucv.KTmodeFixedPosAcc, uint64(100)), // 10mm in 0.1mm units
 			},
 			wantSurvey: false,
 		},
 		{
-			name: "no mode specified, no changes needed",
+			name:   "no mode specified, no changes needed",
 			target: gpsprot.NewConfigTarget(),
 			known: func() *CfgVals {
 				cv := newCfgVals()
 				cfgValSet(cv, ucv.KTmodeMode, ucv.ETmodeModeSurveyIn)
 				return cv
 			}(),
-			expectErr: false,
-			wantItems: nil,
+			expectErr:  false,
+			wantItems:  nil,
 			wantSurvey: false,
 		},
 	}
@@ -665,12 +665,11 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 	}
 }
 
-
 // Test dynModelBuild function - SPG receiver dynamic model handling
 func TestDynModelBuild(t *testing.T) {
 	expectStat := ucv.ENavspgDynmodelStat
 	expectPort := ucv.ENavspgDynmodelPort
-	
+
 	tests := []struct {
 		name           string
 		mode           gpsprot.Option[gpsprot.Mode]
@@ -723,7 +722,7 @@ func TestDynModelBuild(t *testing.T) {
 			if tt.mode.IsSet() {
 				target.Props.SetMode(tt.mode.Get())
 			}
-			
+
 			tb := &txnBuilder{
 				target: target,
 				known:  newCfgVals(),

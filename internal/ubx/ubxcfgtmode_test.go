@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
@@ -124,7 +124,7 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 					t.Fatalf("newTmodeConfig failed: %v", err)
 				}
 
-				var tmode3 bin.CfgTmode3
+				var tmode3 ubxbin.CfgTmode3
 				tc.toTmode3(&tmode3, true)
 
 				var tc2 tmodeConfig
@@ -142,7 +142,7 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 					t.Fatalf("newTmodeConfig failed: %v", err)
 				}
 
-				var tmode2 bin.CfgTmode2
+				var tmode2 ubxbin.CfgTmode2
 				tc.toTmode2(&tmode2, true)
 
 				var tc2 tmodeConfig
@@ -170,7 +170,7 @@ func TestTmodeConfigRoundTrip(t *testing.T) {
 					t.Fatalf("newTmodeConfig failed: %v", err)
 				}
 
-				var tmode bin.CfgTmode
+				var tmode ubxbin.CfgTmode
 				err = tc.toTmode(&tmode, true)
 				if tt.mode.PosType == gpsprot.PosTypeLLH {
 					// TMODE doesn't support LLH

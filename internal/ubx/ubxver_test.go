@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 func TestFindGNSS(t *testing.T) {
@@ -31,7 +31,7 @@ func TestOldSWVer(t *testing.T) {
 }
 
 func testOldSwVerString(t *testing.T, swVer string, major, minor byte, tmodeLevel int) {
-	mv := bin.MonVer{}
+	mv := ubxbin.MonVer{}
 
 	copy(mv.SwVersion[:], swVer)
 	ver := monVer(&mv)

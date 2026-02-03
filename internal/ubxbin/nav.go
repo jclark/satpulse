@@ -1,4 +1,4 @@
-package bin
+package ubxbin
 
 const (
 	NavClockID       MsgID = clsNav | (0x22 << 8)

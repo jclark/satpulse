@@ -4,20 +4,20 @@ import (
 	"fmt"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
-func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
+func satellitesNavSat(u *ubxbin.NavSat) *gpsprot.SatellitesMsg {
 	// This is the minimum quality signal we require to include in the SatellitesMsg.
 	// With CodeLocked, we have a CN0 of > 0 and it's reasonably stable.
-	const minQuality = bin.NavSatQualityCodeLocked
+	const minQuality = ubxbin.NavSatQualityCodeLocked
 	svs := make([]gpsprot.SVInfo, 0, u.NumSVs)
 	for _, usv := range u.SVs {
-		if usv.Flags&bin.NavSatQuality < minQuality {
+		if usv.Flags&ubxbin.NavSatQuality < minQuality {
 			continue
 		}
 		svid := gnssSVID(usv.GNSSID, usv.SVID)
-		used := usv.Flags&bin.NavSatSVUsed != 0
+		used := usv.Flags&ubxbin.NavSatSVUsed != 0
 		svs = append(svs, gpsprot.SVInfo{
 			ID: svid,
 			Signals: []gpsprot.SignalInfo{
@@ -51,26 +51,26 @@ func satellitesNavSat(u *bin.NavSat) *gpsprot.SatellitesMsg {
 // Not entirely clear which L1 signal we should report, but we opt for the legacy one.
 // We try to be not too specific here, so we use E1 rather than E1-C (the pilot signal, which is what UBX-NAV-SIG reports),
 // and B1I rather than B1I D1 (since there's a chance that it is D2).
-var navSatSigIDMap = map[bin.GNSSID]gpsprot.SignalID{
-	bin.GPS:  gpsprot.SigIDGPSL1CA,
-	bin.SBAS: gpsprot.SigIDGPSL1CA,
-	bin.GAL:  gpsprot.SigIDGALE1,
-	bin.BDS:  gpsprot.SigIDBDSB1I,
-	bin.QZSS: gpsprot.SigIDQZSSL1CA,
-	bin.GLO:  gpsprot.SigIDGLOL1,
+var navSatSigIDMap = map[ubxbin.GNSSID]gpsprot.SignalID{
+	ubxbin.GPS:  gpsprot.SigIDGPSL1CA,
+	ubxbin.SBAS: gpsprot.SigIDGPSL1CA,
+	ubxbin.GAL:  gpsprot.SigIDGALE1,
+	ubxbin.BDS:  gpsprot.SigIDBDSB1I,
+	ubxbin.QZSS: gpsprot.SigIDQZSSL1CA,
+	ubxbin.GLO:  gpsprot.SigIDGLOL1,
 }
 
 // navSatSignalId returns the SignalID for the signal level reported in a UBX-NAV-SAT message.
-func navSatSignalId(gnssID bin.GNSSID) gpsprot.SignalID {
+func navSatSignalId(gnssID ubxbin.GNSSID) gpsprot.SignalID {
 	if sigID, ok := navSatSigIDMap[gnssID]; ok {
 		return sigID
 	}
 	return gpsprot.SigIDInvalid
 }
 
-func satellitesNavSig(u *bin.NavSig) *gpsprot.SatellitesMsg {
+func satellitesNavSig(u *ubxbin.NavSig) *gpsprot.SatellitesMsg {
 	sigIndex := make(map[gpsprot.SVID]int)
-	const minQuality = bin.NavSigQualityCodeLocked
+	const minQuality = ubxbin.NavSigQualityCodeLocked
 	svs := make([]gpsprot.SVInfo, 0)
 	for _, usig := range u.Signals {
 		if usig.QualityInd < minQuality {
@@ -87,7 +87,7 @@ func satellitesNavSig(u *bin.NavSig) *gpsprot.SatellitesMsg {
 		*sigs = append(*sigs, gpsprot.SignalInfo{
 			ID:   signalID(usig.GNSSID, usig.SigID),
 			CN0:  usig.CNO,
-			Used: usig.SigFlags&bin.NavSigPrUsed != 0,
+			Used: usig.SigFlags&ubxbin.NavSigPrUsed != 0,
 		})
 	}
 	for i := range svs {
@@ -152,18 +152,18 @@ func satellitesCopy(sats *gpsprot.SatellitesMsg) *gpsprot.SatellitesMsg {
 }
 
 // sigIDMap maps GNSSID and SigID to a SignalID.
-var sigIDMap = map[bin.GNSSID]map[byte]gpsprot.SignalID{
-	bin.GPS: {
+var sigIDMap = map[ubxbin.GNSSID]map[byte]gpsprot.SignalID{
+	ubxbin.GPS: {
 		0: gpsprot.SigIDGPSL1CA, // L1 C/A
 		3: gpsprot.SigIDGPSL2CL, // L2 CL
 		4: gpsprot.SigIDGPSL2CM, // L2 CM
 		6: gpsprot.SigIDGPSL5I,  // L5 I
 		7: gpsprot.SigIDGPSL5Q,  // L5 Q
 	},
-	bin.SBAS: {
+	ubxbin.SBAS: {
 		0: gpsprot.SigIDGPSL1CA, // L1 C/A (uses GPS L1 C/A)
 	},
-	bin.GAL: {
+	ubxbin.GAL: {
 		0:  gpsprot.SigIDGALE1C,  // E1 C
 		1:  gpsprot.SigIDGALE1B,  // E1 B
 		3:  gpsprot.SigIDGALE5aI, // E5a I
@@ -174,7 +174,7 @@ var sigIDMap = map[bin.GNSSID]map[byte]gpsprot.SignalID{
 		9:  gpsprot.SigIDGALE6C,  // E6 C
 		10: gpsprot.SigIDGALE6A,  // E6 A
 	},
-	bin.BDS: {
+	ubxbin.BDS: {
 		0:  gpsprot.SigIDBDSB1ID1, // B1I D1
 		1:  gpsprot.SigIDBDSB1ID2, // B1I D2
 		2:  gpsprot.SigIDBDSB2ID1, // B2I D1
@@ -186,7 +186,7 @@ var sigIDMap = map[bin.GNSSID]map[byte]gpsprot.SignalID{
 		8:  gpsprot.SigIDBDSB2aD,  // B2a data
 		10: gpsprot.SigIDBDSB3ID2, // B3I D2
 	},
-	bin.QZSS: {
+	ubxbin.QZSS: {
 		0:  gpsprot.SigIDQZSSL1CA, // L1 C/A
 		1:  gpsprot.SigIDQZSSL1S,  // L1S
 		4:  gpsprot.SigIDQZSSL2CM, // L2 CM
@@ -195,16 +195,16 @@ var sigIDMap = map[bin.GNSSID]map[byte]gpsprot.SignalID{
 		9:  gpsprot.SigIDQZSSL5Q,  // L5 Q
 		12: gpsprot.SigIDQZSSL1CB, // L1C B
 	},
-	bin.GLO: {
+	ubxbin.GLO: {
 		0: gpsprot.SigIDGLOL1, // L1 OF
 		2: gpsprot.SigIDGLOL2, // L2 OF
 	},
-	bin.NavIC: {
+	ubxbin.NavIC: {
 		0: gpsprot.SigIDNAVICL5, // L5 A
 	},
 }
 
-func signalID(gnssID bin.GNSSID, sigID byte) gpsprot.SignalID {
+func signalID(gnssID ubxbin.GNSSID, sigID byte) gpsprot.SignalID {
 	if sigMap, ok := sigIDMap[gnssID]; ok {
 		if signalID, ok := sigMap[sigID]; ok {
 			return signalID
@@ -214,11 +214,11 @@ func signalID(gnssID bin.GNSSID, sigID byte) gpsprot.SignalID {
 	return gpsprot.SignalID(fmt.Sprintf("UBX%d", sigID))
 }
 
-func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
-	const minQuality = bin.NavSVInfoQualityCodeLockOnSignal
+func satellitesNavSVInfo(u *ubxbin.NavSVInfo) *gpsprot.SatellitesMsg {
+	const minQuality = ubxbin.NavSVInfoQualityCodeLockOnSignal
 	svs := make([]gpsprot.SVInfo, 0, u.NumCh)
 	for _, usv := range u.SVs {
-		if usv.Quality&bin.NavSVInfoQualityInd < minQuality {
+		if usv.Quality&ubxbin.NavSVInfoQualityInd < minQuality {
 			continue
 		}
 		svs = append(svs, gpsprot.SVInfo{
@@ -230,7 +230,7 @@ func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
 				Azimuth:   usv.Azim,
 				Elevation: usv.Elev,
 			},
-			Used: usv.Flags&bin.NavSVInfoSVUsed != 0,
+			Used: usv.Flags&ubxbin.NavSVInfoSVUsed != 0,
 		})
 	}
 	return &gpsprot.SatellitesMsg{
@@ -241,15 +241,15 @@ func satellitesNavSVInfo(u *bin.NavSVInfo) *gpsprot.SatellitesMsg {
 	}
 }
 
-func gnssSVID(gnss bin.GNSSID, uSVID byte) gpsprot.SVID {
+func gnssSVID(gnss ubxbin.GNSSID, uSVID byte) gpsprot.SVID {
 	switch gnss {
-	case bin.SBAS:
+	case ubxbin.SBAS:
 		// UBX SVIDs for SBAS are the PRN, which start at 120.
 		if uSVID >= 120 {
 			// RINEX (which we follow) uses PRN - 100 for SBAS (to keep numbers to two digits)
 			uSVID -= 100
 		}
-	case bin.GLO:
+	case ubxbin.GLO:
 		if uSVID == 255 {
 			// UBX uses 255 for unknown GLONASS SVID (NMEA uses null)
 			uSVID = gpsprot.GLOUnknown

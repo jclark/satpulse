@@ -1,4 +1,4 @@
-package bin
+package ubxbin
 
 const (
 	InfDebugID   MsgID = clsInf | (0x04 << 8)

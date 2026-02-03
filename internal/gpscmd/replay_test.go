@@ -14,7 +14,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpsio"
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/gpsreg"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 // packetCmpFunc compares actual and expected packets for a specific protocol
@@ -315,7 +315,7 @@ func (r *replayer) run() {
 			expected := r.test.outPackets[r.outIdx]
 			// Extract message ID from packet for proper comparison
 			msgID := ""
-			if msg, err := bin.ParseMsg(string(action.Packet)); err == nil {
+			if msg, err := ubxbin.ParseMsg(string(action.Packet)); err == nil {
 				msgID = msg.ID().String()
 			}
 			if !r.packetCmp(r.t, msgID, action.Packet, expected) {

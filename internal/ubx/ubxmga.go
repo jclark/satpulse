@@ -7,11 +7,11 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ptime"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 // mgaTime creates an UBX-MGA-INI-TIMEUTC message from a gpsprot.TimeEstimate.
-func mgaTime(ta *gpsprot.TimeEstimate, now time.Time) (*bin.MgaIni, error) {
+func mgaTime(ta *gpsprot.TimeEstimate, now time.Time) (*ubxbin.MgaIni, error) {
 	initialEst := ta.EstimatedTime.UTC()
 	if initialEst.IsZero() {
 		return nil, nil
@@ -34,7 +34,7 @@ func mgaTime(ta *gpsprot.TimeEstimate, now time.Time) (*bin.MgaIni, error) {
 	tAccS := acc / time.Second
 	tAccNs := uint32(acc - tAccS*time.Second)
 
-	leapSecs := bin.MgaIniTimeUTCLeapSecsUnknown
+	leapSecs := ubxbin.MgaIniTimeUTCLeapSecsUnknown
 	if ta.LeapSecond.UTCOffset > 0 {
 		off := int(ta.LeapSecond.UTCOffset) - ptime.TAIMinusGPS
 		// If in adjusting the time estimate we crossed a day boundary at which a leap second would have been applied,
@@ -48,7 +48,7 @@ func mgaTime(ta *gpsprot.TimeEstimate, now time.Time) (*bin.MgaIni, error) {
 				// too difficult; give up
 				// XXX better approach would be to use MgaIniTimeGNSS when we know the leap seconds
 				// but this is so vanishingly unlikely that it doesn't seem worth it
-				off = int(bin.MgaIniTimeUTCLeapSecsUnknown)
+				off = int(ubxbin.MgaIniTimeUTCLeapSecsUnknown)
 				tAccS += 1
 			}
 		}
@@ -59,8 +59,8 @@ func mgaTime(ta *gpsprot.TimeEstimate, now time.Time) (*bin.MgaIni, error) {
 	if tAccS > math.MaxUint16 {
 		return nil, fmt.Errorf("time accuracy %v is too large for UBX-MGA-INI-TIME-UTC", acc)
 	}
-	utc := bin.MgaIniTimeUTC{
-		Ref:      bin.MgaIniTimeRefSourceNone,
+	utc := ubxbin.MgaIniTimeUTC{
+		Ref:      ubxbin.MgaIniTimeRefSourceNone,
 		LeapSecs: leapSecs,
 		Year:     uint16(t.Year()),
 		Month:    uint8(t.Month()),
@@ -73,38 +73,37 @@ func mgaTime(ta *gpsprot.TimeEstimate, now time.Time) (*bin.MgaIni, error) {
 		TAccNs:   tAccNs,
 	}
 	if ta.Trusted {
-		utc.Bitfield0 |= bin.MgaIniTimeTrustedSource
+		utc.Bitfield0 |= ubxbin.MgaIniTimeTrustedSource
 	}
-	return &bin.MgaIni{
-		MgaIniFixed: bin.MgaIniFixed{
-			Type:    bin.MgaIniTypeTimeUTC,
-			Version: bin.MgaIniVersion,
+	return &ubxbin.MgaIni{
+		MgaIniFixed: ubxbin.MgaIniFixed{
+			Type:    ubxbin.MgaIniTypeTimeUTC,
+			Version: ubxbin.MgaIniVersion,
 		},
 		Payload: &utc,
 	}, nil
 }
 
 // mgaOSNMAMerkleTree creates an UBX-MGA-GAL-OSNMA_MERKLE message with the given Merkle tree root.
-func mgaOSNMAMerkle(rootNode [32]byte, future bool) *bin.MgaGal {
-	if rootNode == [32]byte{} {	
+func mgaOSNMAMerkle(rootNode [32]byte, future bool) *ubxbin.MgaGal {
+	if rootNode == [32]byte{} {
 		return nil
 	}
-	var bitfield0 bin.MgaGalOSNMAMerkleBitfield0
+	var bitfield0 ubxbin.MgaGalOSNMAMerkleBitfield0
 	if future {
-		bitfield0 |= bin.MgaGalOSNMAMerkleApplicabilityTimeFuture
+		bitfield0 |= ubxbin.MgaGalOSNMAMerkleApplicabilityTimeFuture
 	} else {
-		bitfield0 |= bin.MgaGalOSNMAMerkleApplicabilityTimeCurrent
+		bitfield0 |= ubxbin.MgaGalOSNMAMerkleApplicabilityTimeCurrent
 	}
-	merkle := bin.MgaGalOSNMAMerkle{
-		TreeNode: rootNode,
+	merkle := ubxbin.MgaGalOSNMAMerkle{
+		TreeNode:  rootNode,
 		Bitfield0: bitfield0,
 	}
-	return &bin.MgaGal{
-		MgaGalFixed: bin.MgaGalFixed{
-			Type:    bin.MgaGalTypeOSNMAMerkle,
-			Version: bin.MgaGalVersion,
+	return &ubxbin.MgaGal{
+		MgaGalFixed: ubxbin.MgaGalFixed{
+			Type:    ubxbin.MgaGalTypeOSNMAMerkle,
+			Version: ubxbin.MgaGalVersion,
 		},
 		Payload: &merkle,
 	}
 }
-	

@@ -7,31 +7,31 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/rtcm"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
 type MsgRate byte
 
 type msgChanges struct {
-	rate         map[bin.MsgID]MsgRate
-	protoEnable  bin.CfgPrtProtoMask
-	protoDisable bin.CfgPrtProtoMask
+	rate         map[ubxbin.MsgID]MsgRate
+	protoEnable  ubxbin.CfgPrtProtoMask
+	protoDisable ubxbin.CfgPrtProtoMask
 }
 
 func newMsgChanges() *msgChanges {
 	return &msgChanges{
-		rate: make(map[bin.MsgID]MsgRate),
+		rate: make(map[ubxbin.MsgID]MsgRate),
 	}
 }
 
-func (m *msgChanges) rates() iter.Seq2[bin.MsgID, MsgRate] {
-	return func(yield func(bin.MsgID, MsgRate) bool) {
-		keys := make([]bin.MsgID, 0, len(m.rate))
+func (m *msgChanges) rates() iter.Seq2[ubxbin.MsgID, MsgRate] {
+	return func(yield func(ubxbin.MsgID, MsgRate) bool) {
+		keys := make([]ubxbin.MsgID, 0, len(m.rate))
 		for k := range m.rate {
 			keys = append(keys, k)
 		}
-		slices.SortFunc(keys, func(a, b bin.MsgID) int {
+		slices.SortFunc(keys, func(a, b ubxbin.MsgID) int {
 			return int(a) - int(b)
 		})
 		for _, k := range keys {
@@ -42,7 +42,7 @@ func (m *msgChanges) rates() iter.Seq2[bin.MsgID, MsgRate] {
 	}
 }
 
-func (mc *msgChanges) changeOutProtoMask(mask bin.CfgPrtProtoMask) bin.CfgPrtProtoMask {
+func (mc *msgChanges) changeOutProtoMask(mask ubxbin.CfgPrtProtoMask) ubxbin.CfgPrtProtoMask {
 	return (mask &^ mc.protoDisable) | mc.protoEnable
 }
 
@@ -96,11 +96,11 @@ func (mc *msgChanges) options2(opts *gpsprot.ConfigOptions, ver *Version, enable
 
 func (mc *msgChanges) items(port ucv.Port) []ucv.Item {
 	items := []ucv.Item{}
-	if (mc.protoEnable|mc.protoDisable)&bin.CfgPrtProtoNMEA != 0 {
-		ucv.AddItem(&items, portOutprotNmeaKey(port), mc.protoEnable&bin.CfgPrtProtoNMEA != 0)
+	if (mc.protoEnable|mc.protoDisable)&ubxbin.CfgPrtProtoNMEA != 0 {
+		ucv.AddItem(&items, portOutprotNmeaKey(port), mc.protoEnable&ubxbin.CfgPrtProtoNMEA != 0)
 	}
-	if (mc.protoEnable|mc.protoDisable)&bin.CfgPrtProtoRTCM3 != 0 {
-		ucv.AddItem(&items, portOutprotRtcm3xKey(port), mc.protoEnable&bin.CfgPrtProtoRTCM3 != 0)
+	if (mc.protoEnable|mc.protoDisable)&ubxbin.CfgPrtProtoRTCM3 != 0 {
+		ucv.AddItem(&items, portOutprotRtcm3xKey(port), mc.protoEnable&ubxbin.CfgPrtProtoRTCM3 != 0)
 	}
 	for mid, rate := range mc.rate {
 		km, ok := msgIDKey[mid]
@@ -181,21 +181,21 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 		flags &^= gpsprot.PVTMsgVel
 	}
 	if fts {
-		mc.pvtMsg(bin.TimTosID, timTOS, off)
+		mc.pvtMsg(ubxbin.TimTosID, timTOS, off)
 	} else {
-		mc.pvtMsg(bin.TimTPID, timTP, off)
+		mc.pvtMsg(ubxbin.TimTPID, timTP, off)
 	}
 	if navPVTSupported {
-		mc.pvtMsg(bin.NavPVTID, navPVT, off)
+		mc.pvtMsg(ubxbin.NavPVTID, navPVT, off)
 	}
-	mc.pvtMsg(bin.NavTimeGPSID, navTimeGPS, off)
-	mc.pvtMsg(bin.NavTimeUTCID, navTimeUTC, off)
-	mc.pvtMsg(bin.NavPosECEFID, navPosECEF, off)
-	mc.pvtMsg(bin.NavPosLLHID, navPosLLH, off)
-	mc.pvtMsg(bin.NavVelECEFID, navVelECEF, off)
-	mc.pvtMsg(bin.NavVelNEDID, navVelNED, off)
+	mc.pvtMsg(ubxbin.NavTimeGPSID, navTimeGPS, off)
+	mc.pvtMsg(ubxbin.NavTimeUTCID, navTimeUTC, off)
+	mc.pvtMsg(ubxbin.NavPosECEFID, navPosECEF, off)
+	mc.pvtMsg(ubxbin.NavPosLLHID, navPosLLH, off)
+	mc.pvtMsg(ubxbin.NavVelECEFID, navVelECEF, off)
+	mc.pvtMsg(ubxbin.NavVelNEDID, navVelNED, off)
 	if ver.protVerAtLeast(18, 0) {
-		mc.pvtMsg(bin.NavTimeLSID, navTimeLS, off)
+		mc.pvtMsg(ubxbin.NavTimeLSID, navTimeLS, off)
 	}
 }
 
@@ -204,12 +204,12 @@ func (mc *msgChanges) survey(flags gpsprot.PVTMsgFlags, ver *Version, surveyRequ
 	if !ver.protVerAtLeast(15, 0) {
 		return
 	}
-	var msgID bin.MsgID
+	var msgID ubxbin.MsgID
 	switch ver.tmodeLevel() {
 	case 2:
-		msgID = bin.TimSvinID
+		msgID = ubxbin.TimSvinID
 	case 3:
-		msgID = bin.NavSvinID
+		msgID = ubxbin.NavSvinID
 	default:
 		return
 	}
@@ -220,7 +220,7 @@ func (mc *msgChanges) survey(flags gpsprot.PVTMsgFlags, ver *Version, surveyRequ
 	mc.pvtMsg(msgID, enable, flags&gpsprot.PVTMsgOff != 0)
 }
 
-func (mc *msgChanges) pvtMsg(msgID bin.MsgID, enable, off bool) {
+func (mc *msgChanges) pvtMsg(msgID ubxbin.MsgID, enable, off bool) {
 	rate := MsgRate(0)
 	if enable {
 		rate = 1
@@ -231,10 +231,10 @@ func (mc *msgChanges) pvtMsg(msgID bin.MsgID, enable, off bool) {
 }
 
 func (m *msgChanges) sats(flags gpsprot.SatsMsgFlags, ver *Version) {
-	msgID := bin.NavSVInfoID
+	msgID := ubxbin.NavSVInfoID
 	// UBX-NAV-SAT first appeared in protocol version 15.00
 	if ver.protVerAtLeast(15, 0) {
-		msgID = bin.NavSatID
+		msgID = ubxbin.NavSatID
 	}
 	rate := MsgRate(0)
 	if flags&gpsprot.SatsMsgSat != 0 {
@@ -248,22 +248,22 @@ func (m *msgChanges) sats(flags gpsprot.SatsMsgFlags, ver *Version) {
 		} else {
 			rate = 0
 		}
-		m.rate[bin.NavSigID] = rate
+		m.rate[ubxbin.NavSigID] = rate
 	}
 }
 
 func (m *msgChanges) nmea(flags gpsprot.NMEAMsgFlags, _ *Version) {
 	if flags&gpsprot.NMEAMsgAny == 0 {
-		m.protoDisable |= bin.CfgPrtProtoNMEA
+		m.protoDisable |= ubxbin.CfgPrtProtoNMEA
 		return
 	}
-	m.protoEnable |= bin.CfgPrtProtoNMEA
-	m.rate[bin.NmeaRmcID] = nmeaRate(flags & gpsprot.NMEAMsgRMC)
-	m.rate[bin.NmeaGgaID] = nmeaRate(flags & gpsprot.NMEAMsgGGA)
-	m.rate[bin.NmeaGsaID] = nmeaRate(flags & gpsprot.NMEAMsgGSA)
-	m.rate[bin.NmeaGsvID] = nmeaRate(flags & gpsprot.NMEAMsgGSV)
-	m.rate[bin.NmeaZdaID] = nmeaRate(flags & gpsprot.NMEAMsgZDA)
-	m.rate[bin.NmeaVtgID] = nmeaRate(flags & gpsprot.NMEAMsgVTG)
+	m.protoEnable |= ubxbin.CfgPrtProtoNMEA
+	m.rate[ubxbin.NmeaRmcID] = nmeaRate(flags & gpsprot.NMEAMsgRMC)
+	m.rate[ubxbin.NmeaGgaID] = nmeaRate(flags & gpsprot.NMEAMsgGGA)
+	m.rate[ubxbin.NmeaGsaID] = nmeaRate(flags & gpsprot.NMEAMsgGSA)
+	m.rate[ubxbin.NmeaGsvID] = nmeaRate(flags & gpsprot.NMEAMsgGSV)
+	m.rate[ubxbin.NmeaZdaID] = nmeaRate(flags & gpsprot.NMEAMsgZDA)
+	m.rate[ubxbin.NmeaVtgID] = nmeaRate(flags & gpsprot.NMEAMsgVTG)
 }
 
 func nmeaRate(flags gpsprot.NMEAMsgFlags) MsgRate {
@@ -282,11 +282,11 @@ func (m *msgChanges) raw(flags gpsprot.RawMsgFlags, ver *Version) error {
 		return nil
 	}
 	var obsRate, navRate MsgRate
-	obsMsgID := bin.RxmRawxID
-	navMsgID := bin.RxmSfrbxID
+	obsMsgID := ubxbin.RxmRawxID
+	navMsgID := ubxbin.RxmSfrbxID
 	if rawLevel == 1 {
-		obsMsgID = bin.RxmRawID
-		navMsgID = bin.RxmSfrbID
+		obsMsgID = ubxbin.RxmRawID
+		navMsgID = ubxbin.RxmSfrbID
 	}
 	if flags&gpsprot.RawMsgObs != 0 {
 		obsRate = 1
@@ -300,7 +300,7 @@ func (m *msgChanges) raw(flags gpsprot.RawMsgFlags, ver *Version) error {
 }
 
 func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS gpsprot.GNSSSet) error {
-	disabledMsgIDs := []bin.MsgID{}
+	disabledMsgIDs := []ubxbin.MsgID{}
 	anyEnabled := false
 	supGNSS, supMSM := ver.rtcmSupport()
 	if supGNSS == 0 {
@@ -340,7 +340,7 @@ func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS
 			if msgType == 0 {
 				continue
 			}
-			msgID, ok := bin.RTCMMsgID(int(msgType))
+			msgID, ok := ubxbin.RTCMMsgID(int(msgType))
 			if !ok {
 				continue
 			}
@@ -359,16 +359,16 @@ func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS
 		return errors.New("specified MSM messages not supported with specified GNSS")
 	}
 	if flags&gpsprot.RTCMMsgARP != 0 {
-		mc.rate[bin.Rtcm1005ID] = 1
+		mc.rate[ubxbin.Rtcm1005ID] = 1
 		anyEnabled = true
 	}
 	if !anyEnabled {
-		mc.protoDisable |= bin.CfgPrtProtoRTCM3
+		mc.protoDisable |= ubxbin.CfgPrtProtoRTCM3
 		return nil
 	}
-	mc.protoEnable |= bin.CfgPrtProtoRTCM3
+	mc.protoEnable |= ubxbin.CfgPrtProtoRTCM3
 	if gloEnabled {
-		msgID, ok := bin.RTCMMsgID(int(rtcm.GLONASSBiasMsgType))
+		msgID, ok := ubxbin.RTCMMsgID(int(rtcm.GLONASSBiasMsgType))
 		if ok {
 			mc.rate[msgID] = 1
 		}
@@ -379,40 +379,40 @@ func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS
 	return nil
 }
 
-var msgIDKey = map[bin.MsgID]ucv.KeyM{
-	bin.NavSvinID:    ucv.KUbxNavSvin,
-	bin.NavTimeGPSID: ucv.KUbxNavTimegps,
-	bin.NavTimeUTCID: ucv.KUbxNavTimeutc,
-	bin.NavTimeLSID:  ucv.KUbxNavTimels,
-	bin.NavPVTID:     ucv.KUbxNavPvt,
-	bin.NavPosECEFID: ucv.KUbxNavPosecef,
-	bin.NavPosLLHID:  ucv.KUbxNavPosllh,
-	bin.NavVelECEFID: ucv.KUbxNavVelecef,
-	bin.NavVelNEDID:  ucv.KUbxNavVelned,
-	bin.NavSatID:     ucv.KUbxNavSat,
-	bin.NavSigID:     ucv.KUbxNavSig,
-	bin.RxmRawxID:    ucv.KUbxRxmRawx,
-	bin.RxmSfrbxID:   ucv.KUbxRxmSfrbx,
-	bin.TimSvinID:    ucv.KUbxTimSvin,
-	bin.TimTPID:      ucv.KUbxTimTp,
+var msgIDKey = map[ubxbin.MsgID]ucv.KeyM{
+	ubxbin.NavSvinID:    ucv.KUbxNavSvin,
+	ubxbin.NavTimeGPSID: ucv.KUbxNavTimegps,
+	ubxbin.NavTimeUTCID: ucv.KUbxNavTimeutc,
+	ubxbin.NavTimeLSID:  ucv.KUbxNavTimels,
+	ubxbin.NavPVTID:     ucv.KUbxNavPvt,
+	ubxbin.NavPosECEFID: ucv.KUbxNavPosecef,
+	ubxbin.NavPosLLHID:  ucv.KUbxNavPosllh,
+	ubxbin.NavVelECEFID: ucv.KUbxNavVelecef,
+	ubxbin.NavVelNEDID:  ucv.KUbxNavVelned,
+	ubxbin.NavSatID:     ucv.KUbxNavSat,
+	ubxbin.NavSigID:     ucv.KUbxNavSig,
+	ubxbin.RxmRawxID:    ucv.KUbxRxmRawx,
+	ubxbin.RxmSfrbxID:   ucv.KUbxRxmSfrbx,
+	ubxbin.TimSvinID:    ucv.KUbxTimSvin,
+	ubxbin.TimTPID:      ucv.KUbxTimTp,
 	// NMEA messages
-	bin.NmeaGgaID: ucv.KNmeaIdGga,
-	bin.NmeaGllID: ucv.KNmeaIdGll,
-	bin.NmeaGsaID: ucv.KNmeaIdGsa,
-	bin.NmeaGsvID: ucv.KNmeaIdGsv,
-	bin.NmeaRmcID: ucv.KNmeaIdRmc,
-	bin.NmeaVtgID: ucv.KNmeaIdVtg,
-	bin.NmeaZdaID: ucv.KNmeaIdZda,
-	bin.NmeaGnsID: ucv.KNmeaIdGns,
+	ubxbin.NmeaGgaID: ucv.KNmeaIdGga,
+	ubxbin.NmeaGllID: ucv.KNmeaIdGll,
+	ubxbin.NmeaGsaID: ucv.KNmeaIdGsa,
+	ubxbin.NmeaGsvID: ucv.KNmeaIdGsv,
+	ubxbin.NmeaRmcID: ucv.KNmeaIdRmc,
+	ubxbin.NmeaVtgID: ucv.KNmeaIdVtg,
+	ubxbin.NmeaZdaID: ucv.KNmeaIdZda,
+	ubxbin.NmeaGnsID: ucv.KNmeaIdGns,
 	// RTCM messages
-	bin.Rtcm1005ID: ucv.KRtcm3xType1005,
-	bin.Rtcm1074ID: ucv.KRtcm3xType1074,
-	bin.Rtcm1077ID: ucv.KRtcm3xType1077,
-	bin.Rtcm1084ID: ucv.KRtcm3xType1084,
-	bin.Rtcm1087ID: ucv.KRtcm3xType1087,
-	bin.Rtcm1094ID: ucv.KRtcm3xType1094,
-	bin.Rtcm1097ID: ucv.KRtcm3xType1097,
-	bin.Rtcm1124ID: ucv.KRtcm3xType1124,
-	bin.Rtcm1127ID: ucv.KRtcm3xType1127,
-	bin.Rtcm1230ID: ucv.KRtcm3xType1230,
+	ubxbin.Rtcm1005ID: ucv.KRtcm3xType1005,
+	ubxbin.Rtcm1074ID: ucv.KRtcm3xType1074,
+	ubxbin.Rtcm1077ID: ucv.KRtcm3xType1077,
+	ubxbin.Rtcm1084ID: ucv.KRtcm3xType1084,
+	ubxbin.Rtcm1087ID: ucv.KRtcm3xType1087,
+	ubxbin.Rtcm1094ID: ucv.KRtcm3xType1094,
+	ubxbin.Rtcm1097ID: ucv.KRtcm3xType1097,
+	ubxbin.Rtcm1124ID: ucv.KRtcm3xType1124,
+	ubxbin.Rtcm1127ID: ucv.KRtcm3xType1127,
+	ubxbin.Rtcm1230ID: ucv.KRtcm3xType1230,
 }

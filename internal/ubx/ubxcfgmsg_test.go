@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 var testVers = struct {
@@ -60,225 +60,225 @@ func TestMsgChangesPVT(t *testing.T) {
 		name     string
 		flags    gpsprot.PVTMsgFlags
 		version  Version
-		expected []bin.MsgID
+		expected []ubxbin.MsgID
 	}{
 		{
 			name:     "Time",
 			flags:    gpsprot.PVTMsgTime,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavTimeUTCID},
+			expected: []ubxbin.MsgID{ubxbin.NavTimeUTCID},
 		},
 		{
 			name:     "Pos",
 			flags:    gpsprot.PVTMsgPos,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavPosLLHID},
+			expected: []ubxbin.MsgID{ubxbin.NavPosLLHID},
 		},
 		{
 			name:     "Vel",
 			flags:    gpsprot.PVTMsgVel,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavVelNEDID},
+			expected: []ubxbin.MsgID{ubxbin.NavVelNEDID},
 		},
 		{
 			name:     "Pos,ECEF",
 			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavPosECEFID},
+			expected: []ubxbin.MsgID{ubxbin.NavPosECEFID},
 		},
 		{
 			name:     "Vel,ECEF",
 			flags:    gpsprot.PVTMsgVel | gpsprot.PVTMsgECEF,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavVelECEFID},
+			expected: []ubxbin.MsgID{ubxbin.NavVelECEFID},
 		},
 		{
 			name:     "Time,Pos (NAV-PVT supported)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgPos,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavPVTID},
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID},
 		},
 		{
 			name:     "Time,Vel (NAV-PVT supported)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgVel,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavPVTID},
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID},
 		},
 		{
 			name:     "Pos,Vel (NAV-PVT supported)",
 			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgVel,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavPVTID},
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID},
 		},
 		{
 			name:     "Time,Pos,Vel (NAV-PVT supported)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgPos | gpsprot.PVTMsgVel,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavPVTID},
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID},
 		},
 		{
 			name:     "TimePulse",
 			flags:    gpsprot.PVTMsgTimePulse,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID},
 		},
 		{
 			name:     "Time,TAI",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgTAI,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavTimeGPSID},
+			expected: []ubxbin.MsgID{ubxbin.NavTimeGPSID},
 		},
 		{
 			name:     "TimePulse,TAI",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID},
 		},
 		{
 			name:     "LeapSecond",
 			flags:    gpsprot.PVTMsgLeapSecond,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.NavTimeLSID},
+			expected: []ubxbin.MsgID{ubxbin.NavTimeLSID},
 		},
 		{
 			name:     "TimePulse,Pos",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavPosLLHID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavPosLLHID},
 		},
 		{
 			name:     "TimePulse,Vel",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgVel,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavVelNEDID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavVelNEDID},
 		},
 		{
 			name:     "TimePulse,TAI,Pos",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI | gpsprot.PVTMsgPos,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavPosLLHID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavPosLLHID},
 		},
 		{
 			name:     "TimePulse,TAI,LeapSecond",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeLSID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavTimeLSID},
 		},
 		{
 			name:     "TimePulse,After",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeUTCID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavTimeUTCID},
 		},
 		{
 			name:     "TimePulse,After,TAI",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI,
 			version:  testVers.f9p,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavTimeGPSID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavTimeGPSID},
 		},
 		// FTS (M8F) specific tests - uses TIM-TOS instead of TIM-TP
 		{
 			name:     "TimePulse (FTS)",
 			flags:    gpsprot.PVTMsgTimePulse,
 			version:  testVers.m8f,
-			expected: []bin.MsgID{bin.TimTosID},
+			expected: []ubxbin.MsgID{ubxbin.TimTosID},
 		},
 		{
 			name:     "Time (FTS)",
 			flags:    gpsprot.PVTMsgTime,
 			version:  testVers.m8f,
-			expected: []bin.MsgID{bin.NavTimeUTCID},
+			expected: []ubxbin.MsgID{ubxbin.NavTimeUTCID},
 		},
 		{
 			name:     "TimePulse,TAI (FTS)",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI,
 			version:  testVers.m8f,
-			expected: []bin.MsgID{bin.TimTosID},
+			expected: []ubxbin.MsgID{ubxbin.TimTosID},
 		},
 		{
 			name:     "Time,TAI (FTS)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgTAI,
 			version:  testVers.m8f,
-			expected: []bin.MsgID{bin.NavTimeGPSID},
+			expected: []ubxbin.MsgID{ubxbin.NavTimeGPSID},
 		},
 		{
 			name:     "TimePulse,Time (FTS)",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTime,
 			version:  testVers.m8f,
-			expected: []bin.MsgID{bin.TimTosID},
+			expected: []ubxbin.MsgID{ubxbin.TimTosID},
 		},
 		{
 			name:     "TimePulse,After (FTS)",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter,
 			version:  testVers.m8f,
-			expected: []bin.MsgID{bin.TimTosID},
+			expected: []ubxbin.MsgID{ubxbin.TimTosID},
 		},
 		// LEA-6T specific tests - no NAV-PVT support
 		{
 			name:     "Time,Pos (no NAV-PVT)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgPos,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.NavTimeUTCID, bin.NavPosLLHID},
+			expected: []ubxbin.MsgID{ubxbin.NavTimeUTCID, ubxbin.NavPosLLHID},
 		},
 		{
 			name:     "Vel (no NAV-PVT)",
 			flags:    gpsprot.PVTMsgVel,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.NavVelNEDID},
+			expected: []ubxbin.MsgID{ubxbin.NavVelNEDID},
 		},
 		{
 			name:     "Time,Vel (no NAV-PVT)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgVel,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.NavTimeUTCID, bin.NavVelNEDID},
+			expected: []ubxbin.MsgID{ubxbin.NavTimeUTCID, ubxbin.NavVelNEDID},
 		},
 		{
 			name:     "Pos,Vel (no NAV-PVT)",
 			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgVel,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.NavPosLLHID, bin.NavVelNEDID},
+			expected: []ubxbin.MsgID{ubxbin.NavPosLLHID, ubxbin.NavVelNEDID},
 		},
 		{
 			name:     "TimePulse,Pos (no NAV-PVT)",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavPosLLHID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavPosLLHID},
 		},
 		{
 			name:     "Time,TAI (LEA-6T)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgTAI,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.NavTimeGPSID},
+			expected: []ubxbin.MsgID{ubxbin.NavTimeGPSID},
 		},
 		{
 			name:     "TimePulse,TAI (LEA-6T)",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.TimTPID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID},
 		},
 		{
 			name:     "Pos,ECEF (LEA-6T)",
 			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.NavPosECEFID},
+			expected: []ubxbin.MsgID{ubxbin.NavPosECEFID},
 		},
 		{
 			name:     "Vel,ECEF (LEA-6T)",
 			flags:    gpsprot.PVTMsgVel | gpsprot.PVTMsgECEF,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.NavVelECEFID},
+			expected: []ubxbin.MsgID{ubxbin.NavVelECEFID},
 		},
 		{
 			name:     "Time,Pos,TAI (no NAV-PVT)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgPos | gpsprot.PVTMsgTAI,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.NavTimeGPSID, bin.NavPosLLHID},
+			expected: []ubxbin.MsgID{ubxbin.NavTimeGPSID, ubxbin.NavPosLLHID},
 		},
 		{
 			name:     "TimePulse,Pos,ECEF (no NAV-PVT)",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
 			version:  testVers.lea6t,
-			expected: []bin.MsgID{bin.TimTPID, bin.NavPosECEFID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavPosECEFID},
 		},
 	}
 
@@ -288,7 +288,7 @@ func TestMsgChangesPVT(t *testing.T) {
 			mc.pvt(tt.flags, &tt.version)
 
 			// Collect enabled messages (rate > 0)
-			var enabled []bin.MsgID
+			var enabled []ubxbin.MsgID
 			for msgID, rate := range mc.rate {
 				if rate > 0 {
 					enabled = append(enabled, msgID)
@@ -314,7 +314,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 		flags           gpsprot.PVTMsgFlags
 		version         Version
 		surveyRequested bool
-		expectedMsgID   bin.MsgID
+		expectedMsgID   ubxbin.MsgID
 		expectedRate    MsgRate
 	}{
 		// Early models that don't support survey (protocol < 18)
@@ -330,7 +330,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 			flags:           gpsprot.PVTMsgSurvey,
 			version:         testVers.m8f,
 			surveyRequested: true,
-			expectedMsgID:   bin.TimSvinID,
+			expectedMsgID:   ubxbin.TimSvinID,
 			expectedRate:    1,
 		},
 		{
@@ -350,7 +350,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 			flags:           gpsprot.PVTMsgSurvey | gpsprot.PVTMsgOff,
 			version:         testVers.m8f,
 			surveyRequested: true,
-			expectedMsgID:   bin.TimSvinID,
+			expectedMsgID:   ubxbin.TimSvinID,
 			expectedRate:    1,
 		},
 		{
@@ -358,7 +358,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 			flags:           gpsprot.PVTMsgSurvey,
 			version:         testVers.m8p,
 			surveyRequested: true,
-			expectedMsgID:   bin.NavSvinID,
+			expectedMsgID:   ubxbin.NavSvinID,
 			expectedRate:    1,
 		},
 		// Models with tmode3 (protocol >= 20)
@@ -367,7 +367,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 			flags:           gpsprot.PVTMsgSurvey,
 			version:         testVers.f9p,
 			surveyRequested: true,
-			expectedMsgID:   bin.NavSvinID,
+			expectedMsgID:   ubxbin.NavSvinID,
 			expectedRate:    1,
 		},
 		{
@@ -387,7 +387,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 			flags:           gpsprot.PVTMsgSurvey | gpsprot.PVTMsgOff,
 			version:         testVers.f9p,
 			surveyRequested: true,
-			expectedMsgID:   bin.NavSvinID,
+			expectedMsgID:   ubxbin.NavSvinID,
 			expectedRate:    1,
 		},
 		{
@@ -395,7 +395,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 			flags:           gpsprot.PVTMsgSurvey,
 			version:         testVers.f9t,
 			surveyRequested: true,
-			expectedMsgID:   bin.TimSvinID,
+			expectedMsgID:   ubxbin.TimSvinID,
 			expectedRate:    1,
 		},
 		{
@@ -403,7 +403,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 			flags:           gpsprot.PVTMsgSurvey,
 			version:         testVers.f9t20,
 			surveyRequested: true,
-			expectedMsgID:   bin.TimSvinID,
+			expectedMsgID:   ubxbin.TimSvinID,
 			expectedRate:    1,
 		},
 		// Model that doesn't support tmode
@@ -419,7 +419,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 			flags:           gpsprot.PVTMsgSurvey | gpsprot.PVTMsgTime | gpsprot.PVTMsgPos,
 			version:         testVers.f9p,
 			surveyRequested: true,
-			expectedMsgID:   bin.NavSvinID,
+			expectedMsgID:   ubxbin.NavSvinID,
 			expectedRate:    1,
 		},
 		// Off flag without survey flag
@@ -428,7 +428,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 			flags:           gpsprot.PVTMsgOff,
 			version:         testVers.f9p,
 			surveyRequested: true,
-			expectedMsgID:   bin.NavSvinID,
+			expectedMsgID:   ubxbin.NavSvinID,
 			expectedRate:    0,
 		},
 	}
@@ -467,56 +467,56 @@ func TestMsgChangesRaw(t *testing.T) {
 		name     string
 		flags    gpsprot.RawMsgFlags
 		version  Version
-		expected map[bin.MsgID]MsgRate
+		expected map[ubxbin.MsgID]MsgRate
 		wantErr  bool
 	}{
 		{
 			name:     "Obs (LEA-6T)",
 			flags:    gpsprot.RawMsgObs,
 			version:  testVers.lea6t,
-			expected: map[bin.MsgID]MsgRate{bin.RxmRawID: 1, bin.RxmSfrbID: 0},
+			expected: map[ubxbin.MsgID]MsgRate{ubxbin.RxmRawID: 1, ubxbin.RxmSfrbID: 0},
 		},
 		{
 			name:     "NavData (LEA-6T)",
 			flags:    gpsprot.RawMsgNavData,
 			version:  testVers.lea6t,
-			expected: map[bin.MsgID]MsgRate{bin.RxmRawID: 0, bin.RxmSfrbID: 1},
+			expected: map[ubxbin.MsgID]MsgRate{ubxbin.RxmRawID: 0, ubxbin.RxmSfrbID: 1},
 		},
 		{
 			name:     "Obs,NavData (LEA-6T)",
 			flags:    gpsprot.RawMsgObs | gpsprot.RawMsgNavData,
 			version:  testVers.lea6t,
-			expected: map[bin.MsgID]MsgRate{bin.RxmRawID: 1, bin.RxmSfrbID: 1},
+			expected: map[ubxbin.MsgID]MsgRate{ubxbin.RxmRawID: 1, ubxbin.RxmSfrbID: 1},
 		},
 		{
 			name:     "None (LEA-6T)",
 			flags:    gpsprot.RawMsgNone,
 			version:  testVers.lea6t,
-			expected: map[bin.MsgID]MsgRate{bin.RxmRawID: 0, bin.RxmSfrbID: 0},
+			expected: map[ubxbin.MsgID]MsgRate{ubxbin.RxmRawID: 0, ubxbin.RxmSfrbID: 0},
 		},
 		{
 			name:     "Obs (F9P)",
 			flags:    gpsprot.RawMsgObs,
 			version:  testVers.f9p,
-			expected: map[bin.MsgID]MsgRate{bin.RxmRawxID: 1, bin.RxmSfrbxID: 0},
+			expected: map[ubxbin.MsgID]MsgRate{ubxbin.RxmRawxID: 1, ubxbin.RxmSfrbxID: 0},
 		},
 		{
 			name:     "NavData (F9P)",
 			flags:    gpsprot.RawMsgNavData,
 			version:  testVers.f9p,
-			expected: map[bin.MsgID]MsgRate{bin.RxmRawxID: 0, bin.RxmSfrbxID: 1},
+			expected: map[ubxbin.MsgID]MsgRate{ubxbin.RxmRawxID: 0, ubxbin.RxmSfrbxID: 1},
 		},
 		{
 			name:     "Obs,NavData (F9P)",
 			flags:    gpsprot.RawMsgObs | gpsprot.RawMsgNavData,
 			version:  testVers.f9p,
-			expected: map[bin.MsgID]MsgRate{bin.RxmRawxID: 1, bin.RxmSfrbxID: 1},
+			expected: map[ubxbin.MsgID]MsgRate{ubxbin.RxmRawxID: 1, ubxbin.RxmSfrbxID: 1},
 		},
 		{
 			name:     "None (F9P)",
 			flags:    gpsprot.RawMsgNone,
 			version:  testVers.f9p,
-			expected: map[bin.MsgID]MsgRate{bin.RxmRawxID: 0, bin.RxmSfrbxID: 0},
+			expected: map[ubxbin.MsgID]MsgRate{ubxbin.RxmRawxID: 0, ubxbin.RxmSfrbxID: 0},
 		},
 		{
 			name:    "Obs (F10S - not supported)",
@@ -528,7 +528,7 @@ func TestMsgChangesRaw(t *testing.T) {
 			name:     "None (F10S - not supported)",
 			flags:    gpsprot.RawMsgNone,
 			version:  testVers.f10s,
-			expected: map[bin.MsgID]MsgRate{},
+			expected: map[ubxbin.MsgID]MsgRate{},
 			wantErr:  false, // not an error to disable raw messages for something that doesn't support them
 		},
 	}
@@ -638,9 +638,9 @@ func TestMsgChangesRtcm(t *testing.T) {
 		flags           gpsprot.RTCMMsgFlags
 		version         Version
 		enabledGNSS     gpsprot.GNSSSet
-		expectedRates   map[bin.MsgID]MsgRate
-		expectedEnable  bin.CfgPrtProtoMask
-		expectedDisable bin.CfgPrtProtoMask
+		expectedRates   map[ubxbin.MsgID]MsgRate
+		expectedEnable  ubxbin.CfgPrtProtoMask
+		expectedDisable ubxbin.CfgPrtProtoMask
 		wantErr         bool
 	}{
 		{
@@ -648,77 +648,77 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM4,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 1, // GPS MSM4
-				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
-				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
-				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
-				bin.Rtcm1094ID: 0, // GAL MSM4 disabled
-				bin.Rtcm1097ID: 0, // GAL MSM7 disabled
-				bin.Rtcm1124ID: 0, // BDS MSM4 disabled
-				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 1, // GPS MSM4
+				ubxbin.Rtcm1077ID: 0, // GPS MSM7 disabled
+				ubxbin.Rtcm1084ID: 0, // GLO MSM4 disabled
+				ubxbin.Rtcm1087ID: 0, // GLO MSM7 disabled
+				ubxbin.Rtcm1094ID: 0, // GAL MSM4 disabled
+				ubxbin.Rtcm1097ID: 0, // GAL MSM7 disabled
+				ubxbin.Rtcm1124ID: 0, // BDS MSM4 disabled
+				ubxbin.Rtcm1127ID: 0, // BDS MSM7 disabled
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM7 GPS,GLO (F9P)",
 			flags:       gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GLO),
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 0, // GPS MSM4 disabled
-				bin.Rtcm1077ID: 1, // GPS MSM7
-				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
-				bin.Rtcm1087ID: 1, // GLO MSM7
-				bin.Rtcm1094ID: 0, // GAL MSM4 disabled
-				bin.Rtcm1097ID: 0, // GAL MSM7 disabled
-				bin.Rtcm1124ID: 0, // BDS MSM4 disabled
-				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
-				bin.Rtcm1230ID: 1, // GLO bias
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 0, // GPS MSM4 disabled
+				ubxbin.Rtcm1077ID: 1, // GPS MSM7
+				ubxbin.Rtcm1084ID: 0, // GLO MSM4 disabled
+				ubxbin.Rtcm1087ID: 1, // GLO MSM7
+				ubxbin.Rtcm1094ID: 0, // GAL MSM4 disabled
+				ubxbin.Rtcm1097ID: 0, // GAL MSM7 disabled
+				ubxbin.Rtcm1124ID: 0, // BDS MSM4 disabled
+				ubxbin.Rtcm1127ID: 0, // BDS MSM7 disabled
+				ubxbin.Rtcm1230ID: 1, // GLO bias
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM4+MSM7 GPS (F9P)",
 			flags:       gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 1,
-				bin.Rtcm1077ID: 1,
-				bin.Rtcm1084ID: 0, // GLO disabled
-				bin.Rtcm1087ID: 0, // GLO disabled
-				bin.Rtcm1094ID: 0, // GAL disabled
-				bin.Rtcm1097ID: 0, // GAL disabled
-				bin.Rtcm1124ID: 0, // BDS disabled
-				bin.Rtcm1127ID: 0, // BDS disabled
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 1,
+				ubxbin.Rtcm1077ID: 1,
+				ubxbin.Rtcm1084ID: 0, // GLO disabled
+				ubxbin.Rtcm1087ID: 0, // GLO disabled
+				ubxbin.Rtcm1094ID: 0, // GAL disabled
+				ubxbin.Rtcm1097ID: 0, // GAL disabled
+				ubxbin.Rtcm1124ID: 0, // BDS disabled
+				ubxbin.Rtcm1127ID: 0, // BDS disabled
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "ARP (F9P)",
 			flags:       gpsprot.RTCMMsgARP,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1005ID: 1, // ARP
-				bin.Rtcm1074ID: 0, // GPS MSM4 disabled
-				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
-				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
-				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
-				bin.Rtcm1094ID: 0, // GAL MSM4 disabled
-				bin.Rtcm1097ID: 0, // GAL MSM7 disabled
-				bin.Rtcm1124ID: 0, // BDS MSM4 disabled
-				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1005ID: 1, // ARP
+				ubxbin.Rtcm1074ID: 0, // GPS MSM4 disabled
+				ubxbin.Rtcm1077ID: 0, // GPS MSM7 disabled
+				ubxbin.Rtcm1084ID: 0, // GLO MSM4 disabled
+				ubxbin.Rtcm1087ID: 0, // GLO MSM7 disabled
+				ubxbin.Rtcm1094ID: 0, // GAL MSM4 disabled
+				ubxbin.Rtcm1097ID: 0, // GAL MSM7 disabled
+				ubxbin.Rtcm1124ID: 0, // BDS MSM4 disabled
+				ubxbin.Rtcm1127ID: 0, // BDS MSM7 disabled
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:            "None (F9P)",
 			flags:           gpsprot.RTCMMsgNone,
 			version:         testVers.f9p,
 			enabledGNSS:     gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedDisable: bin.CfgPrtProtoRTCM3,
+			expectedDisable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM4 no GNSS enabled (F9P)",
@@ -732,15 +732,15 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM4,
 			version:     testVers.m8p,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 1, // GPS MSM4
-				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
-				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
-				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
-				bin.Rtcm1124ID: 0, // BDS MSM4 disabled
-				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 1, // GPS MSM4
+				ubxbin.Rtcm1077ID: 0, // GPS MSM7 disabled
+				ubxbin.Rtcm1084ID: 0, // GLO MSM4 disabled
+				ubxbin.Rtcm1087ID: 0, // GLO MSM7 disabled
+				ubxbin.Rtcm1124ID: 0, // BDS MSM4 disabled
+				ubxbin.Rtcm1127ID: 0, // BDS MSM7 disabled
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM4 GAL (M8P - not supported)",
@@ -754,13 +754,13 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9t,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1077ID: 1, // GPS MSM7
-				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
-				bin.Rtcm1097ID: 0, // GAL MSM7 disabled
-				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1077ID: 1, // GPS MSM7
+				ubxbin.Rtcm1087ID: 0, // GLO MSM7 disabled
+				ubxbin.Rtcm1097ID: 0, // GAL MSM7 disabled
+				ubxbin.Rtcm1127ID: 0, // BDS MSM7 disabled
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM4 GPS (F9T - not supported)",
@@ -781,88 +781,88 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM4,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 1, // GPS MSM4
-				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
-				bin.Rtcm1084ID: 1, // GLO MSM4
-				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
-				bin.Rtcm1094ID: 1, // GAL MSM4
-				bin.Rtcm1097ID: 0, // GAL MSM7 disabled
-				bin.Rtcm1124ID: 1, // BDS MSM4
-				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
-				bin.Rtcm1230ID: 1, // GLO bias
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 1, // GPS MSM4
+				ubxbin.Rtcm1077ID: 0, // GPS MSM7 disabled
+				ubxbin.Rtcm1084ID: 1, // GLO MSM4
+				ubxbin.Rtcm1087ID: 0, // GLO MSM7 disabled
+				ubxbin.Rtcm1094ID: 1, // GAL MSM4
+				ubxbin.Rtcm1097ID: 0, // GAL MSM7 disabled
+				ubxbin.Rtcm1124ID: 1, // BDS MSM4
+				ubxbin.Rtcm1127ID: 0, // BDS MSM7 disabled
+				ubxbin.Rtcm1230ID: 1, // GLO bias
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM7 all major GNSS (F9P)",
 			flags:       gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 0, // GPS MSM4 disabled
-				bin.Rtcm1077ID: 1, // GPS MSM7
-				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
-				bin.Rtcm1087ID: 1, // GLO MSM7
-				bin.Rtcm1094ID: 0, // GAL MSM4 disabled
-				bin.Rtcm1097ID: 1, // GAL MSM7
-				bin.Rtcm1124ID: 0, // BDS MSM4 disabled
-				bin.Rtcm1127ID: 1, // BDS MSM7
-				bin.Rtcm1230ID: 1, // GLO bias
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 0, // GPS MSM4 disabled
+				ubxbin.Rtcm1077ID: 1, // GPS MSM7
+				ubxbin.Rtcm1084ID: 0, // GLO MSM4 disabled
+				ubxbin.Rtcm1087ID: 1, // GLO MSM7
+				ubxbin.Rtcm1094ID: 0, // GAL MSM4 disabled
+				ubxbin.Rtcm1097ID: 1, // GAL MSM7
+				ubxbin.Rtcm1124ID: 0, // BDS MSM4 disabled
+				ubxbin.Rtcm1127ID: 1, // BDS MSM7
+				ubxbin.Rtcm1230ID: 1, // GLO bias
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM4+MSM7 all major GNSS (F9P)",
 			flags:       gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 1, // GPS MSM4
-				bin.Rtcm1077ID: 1, // GPS MSM7
-				bin.Rtcm1084ID: 1, // GLO MSM4
-				bin.Rtcm1087ID: 1, // GLO MSM7
-				bin.Rtcm1094ID: 1, // GAL MSM4
-				bin.Rtcm1097ID: 1, // GAL MSM7
-				bin.Rtcm1124ID: 1, // BDS MSM4
-				bin.Rtcm1127ID: 1, // BDS MSM7
-				bin.Rtcm1230ID: 1, // GLO bias
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 1, // GPS MSM4
+				ubxbin.Rtcm1077ID: 1, // GPS MSM7
+				ubxbin.Rtcm1084ID: 1, // GLO MSM4
+				ubxbin.Rtcm1087ID: 1, // GLO MSM7
+				ubxbin.Rtcm1094ID: 1, // GAL MSM4
+				ubxbin.Rtcm1097ID: 1, // GAL MSM7
+				ubxbin.Rtcm1124ID: 1, // BDS MSM4
+				ubxbin.Rtcm1127ID: 1, // BDS MSM7
+				ubxbin.Rtcm1230ID: 1, // GLO bias
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM4 all major GNSS (M8P - no GAL)",
 			flags:       gpsprot.RTCMMsgMSM4,
 			version:     testVers.m8p,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 1, // GPS MSM4
-				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
-				bin.Rtcm1084ID: 1, // GLO MSM4
-				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
-				bin.Rtcm1124ID: 1, // BDS MSM4
-				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
-				bin.Rtcm1230ID: 1, // GLO bias
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 1, // GPS MSM4
+				ubxbin.Rtcm1077ID: 0, // GPS MSM7 disabled
+				ubxbin.Rtcm1084ID: 1, // GLO MSM4
+				ubxbin.Rtcm1087ID: 0, // GLO MSM7 disabled
+				ubxbin.Rtcm1124ID: 1, // BDS MSM4
+				ubxbin.Rtcm1127ID: 0, // BDS MSM7 disabled
+				ubxbin.Rtcm1230ID: 1, // GLO bias
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM7 all major GNSS (F9T20)",
 			flags:       gpsprot.RTCMMsgMSM7,
 			version:     testVers.f9t20,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 0, // GPS MSM4 disabled
-				bin.Rtcm1077ID: 1, // GPS MSM7
-				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
-				bin.Rtcm1087ID: 1, // GLO MSM7
-				bin.Rtcm1094ID: 0, // GAL MSM4 disabled
-				bin.Rtcm1097ID: 1, // GAL MSM7
-				bin.Rtcm1124ID: 0, // BDS MSM4 disabled
-				bin.Rtcm1127ID: 1, // BDS MSM7
-				bin.Rtcm1230ID: 1, // GLO bias
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 0, // GPS MSM4 disabled
+				ubxbin.Rtcm1077ID: 1, // GPS MSM7
+				ubxbin.Rtcm1084ID: 0, // GLO MSM4 disabled
+				ubxbin.Rtcm1087ID: 1, // GLO MSM7
+				ubxbin.Rtcm1094ID: 0, // GAL MSM4 disabled
+				ubxbin.Rtcm1097ID: 1, // GAL MSM7
+				ubxbin.Rtcm1124ID: 0, // BDS MSM4 disabled
+				ubxbin.Rtcm1127ID: 1, // BDS MSM7
+				ubxbin.Rtcm1230ID: 1, // GLO bias
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "None (M8F - no RTCM support)",
@@ -886,49 +886,49 @@ func TestMsgChangesRtcm(t *testing.T) {
 			flags:       gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgLax,
 			version:     testVers.f9p,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 1, // GPS MSM4
-				bin.Rtcm1077ID: 0, // GPS MSM7 disabled
-				bin.Rtcm1084ID: 1, // GLO MSM4
-				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
-				bin.Rtcm1094ID: 1, // GAL MSM4
-				bin.Rtcm1097ID: 0, // GAL MSM7 disabled
-				bin.Rtcm1124ID: 1, // BDS MSM4
-				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
-				bin.Rtcm1230ID: 1, // GLO bias
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 1, // GPS MSM4
+				ubxbin.Rtcm1077ID: 0, // GPS MSM7 disabled
+				ubxbin.Rtcm1084ID: 1, // GLO MSM4
+				ubxbin.Rtcm1087ID: 0, // GLO MSM7 disabled
+				ubxbin.Rtcm1094ID: 1, // GAL MSM4
+				ubxbin.Rtcm1097ID: 0, // GAL MSM7 disabled
+				ubxbin.Rtcm1124ID: 1, // BDS MSM4
+				ubxbin.Rtcm1127ID: 0, // BDS MSM7 disabled
+				ubxbin.Rtcm1230ID: 1, // GLO bias
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM4+Lax all major GNSS (F9T - fallback to MSM7)",
 			flags:       gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgLax,
 			version:     testVers.f9t,
 			enabledGNSS: gpsprot.MajorGNSSSet,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1077ID: 1, // GPS MSM7 (fallback from MSM4)
-				bin.Rtcm1087ID: 1, // GLO MSM7 (fallback from MSM4)
-				bin.Rtcm1097ID: 1, // GAL MSM7 (fallback from MSM4)
-				bin.Rtcm1127ID: 1, // BDS MSM7 (fallback from MSM4)
-				bin.Rtcm1230ID: 1, // GLO bias
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1077ID: 1, // GPS MSM7 (fallback from MSM4)
+				ubxbin.Rtcm1087ID: 1, // GLO MSM7 (fallback from MSM4)
+				ubxbin.Rtcm1097ID: 1, // GAL MSM7 (fallback from MSM4)
+				ubxbin.Rtcm1127ID: 1, // BDS MSM7 (fallback from MSM4)
+				ubxbin.Rtcm1230ID: 1, // GLO bias
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM7+Lax GPS (F9T20 - no fallback needed)",
 			flags:       gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgLax,
 			version:     testVers.f9t20,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.Rtcm1074ID: 0, // GPS MSM4 disabled
-				bin.Rtcm1077ID: 1, // GPS MSM7
-				bin.Rtcm1084ID: 0, // GLO MSM4 disabled
-				bin.Rtcm1087ID: 0, // GLO MSM7 disabled
-				bin.Rtcm1094ID: 0, // GAL MSM4 disabled
-				bin.Rtcm1097ID: 0, // GAL MSM7 disabled
-				bin.Rtcm1124ID: 0, // BDS MSM4 disabled
-				bin.Rtcm1127ID: 0, // BDS MSM7 disabled
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.Rtcm1074ID: 0, // GPS MSM4 disabled
+				ubxbin.Rtcm1077ID: 1, // GPS MSM7
+				ubxbin.Rtcm1084ID: 0, // GLO MSM4 disabled
+				ubxbin.Rtcm1087ID: 0, // GLO MSM7 disabled
+				ubxbin.Rtcm1094ID: 0, // GAL MSM4 disabled
+				ubxbin.Rtcm1097ID: 0, // GAL MSM7 disabled
+				ubxbin.Rtcm1124ID: 0, // BDS MSM4 disabled
+				ubxbin.Rtcm1127ID: 0, // BDS MSM7 disabled
 			},
-			expectedEnable: bin.CfgPrtProtoRTCM3,
+			expectedEnable: ubxbin.CfgPrtProtoRTCM3,
 		},
 		{
 			name:        "MSM4+Lax without Lax (F9T - should fail)",
@@ -987,66 +987,66 @@ func TestMsgChangesSats(t *testing.T) {
 		name          string
 		flags         gpsprot.SatsMsgFlags
 		version       Version
-		expectedRates map[bin.MsgID]MsgRate
+		expectedRates map[ubxbin.MsgID]MsgRate
 	}{
 		{
 			name:    "SV (F9P - uses NAV-SAT)",
 			flags:   gpsprot.SatsMsgSat,
 			version: testVers.f9p,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NavSatID: 1,
-				bin.NavSigID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NavSatID: 1,
+				ubxbin.NavSigID: 0,
 			},
 		},
 		{
 			name:    "None (F9P)",
 			flags:   gpsprot.SatsMsgNone,
 			version: testVers.f9p,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NavSatID: 0,
-				bin.NavSigID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NavSatID: 0,
+				ubxbin.NavSigID: 0,
 			},
 		},
 		{
 			name:    "SV (LEA-6T - uses NAV-SVINFO)",
 			flags:   gpsprot.SatsMsgSat,
 			version: testVers.lea6t,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NavSVInfoID: 1,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NavSVInfoID: 1,
 			},
 		},
 		{
 			name:    "None (LEA-6T)",
 			flags:   gpsprot.SatsMsgNone,
 			version: testVers.lea6t,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NavSVInfoID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NavSVInfoID: 0,
 			},
 		},
 		{
 			name:    "Signal (F9P - uses NAV-SIG)",
 			flags:   gpsprot.SatsMsgSignal,
 			version: testVers.f9p,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NavSatID: 0,
-				bin.NavSigID: 1,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NavSatID: 0,
+				ubxbin.NavSigID: 1,
 			},
 		},
 		{
 			name:    "SV+Signal (F9P - uses both NAV-SAT and NAV-SIG)",
 			flags:   gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal,
 			version: testVers.f9p,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NavSatID: 1,
-				bin.NavSigID: 1,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NavSatID: 1,
+				ubxbin.NavSigID: 1,
 			},
 		},
 		{
 			name:    "Signal (LEA-6T - NAV-SIG not supported)",
 			flags:   gpsprot.SatsMsgSignal,
 			version: testVers.lea6t,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NavSVInfoID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NavSVInfoID: 0,
 			},
 		},
 	}
@@ -1078,183 +1078,183 @@ func TestMsgChangesNMEA(t *testing.T) {
 	tests := []struct {
 		name            string
 		flags           gpsprot.NMEAMsgFlags
-		expectedRates   map[bin.MsgID]MsgRate
-		expectedEnable  bin.CfgPrtProtoMask
-		expectedDisable bin.CfgPrtProtoMask
+		expectedRates   map[ubxbin.MsgID]MsgRate
+		expectedEnable  ubxbin.CfgPrtProtoMask
+		expectedDisable ubxbin.CfgPrtProtoMask
 	}{
 		{
 			name:            "None - disable protocol",
 			flags:           gpsprot.NMEAMsgNone,
-			expectedRates:   map[bin.MsgID]MsgRate{},
+			expectedRates:   map[ubxbin.MsgID]MsgRate{},
 			expectedEnable:  0,
-			expectedDisable: bin.CfgPrtProtoNMEA,
+			expectedDisable: ubxbin.CfgPrtProtoNMEA,
 		},
 		{
 			name:            "RMC only",
 			flags:           gpsprot.NMEAMsgRMC,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 1,
-				bin.NmeaGgaID: 0,
-				bin.NmeaGsaID: 0,
-				bin.NmeaGsvID: 0,
-				bin.NmeaZdaID: 0,
-				bin.NmeaVtgID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 1,
+				ubxbin.NmeaGgaID: 0,
+				ubxbin.NmeaGsaID: 0,
+				ubxbin.NmeaGsvID: 0,
+				ubxbin.NmeaZdaID: 0,
+				ubxbin.NmeaVtgID: 0,
 			},
 		},
 		{
 			name:            "GGA only",
 			flags:           gpsprot.NMEAMsgGGA,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 0,
-				bin.NmeaGgaID: 1,
-				bin.NmeaGsaID: 0,
-				bin.NmeaGsvID: 0,
-				bin.NmeaZdaID: 0,
-				bin.NmeaVtgID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 0,
+				ubxbin.NmeaGgaID: 1,
+				ubxbin.NmeaGsaID: 0,
+				ubxbin.NmeaGsvID: 0,
+				ubxbin.NmeaZdaID: 0,
+				ubxbin.NmeaVtgID: 0,
 			},
 		},
 		{
 			name:            "GSA only",
 			flags:           gpsprot.NMEAMsgGSA,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 0,
-				bin.NmeaGgaID: 0,
-				bin.NmeaGsaID: 1,
-				bin.NmeaGsvID: 0,
-				bin.NmeaZdaID: 0,
-				bin.NmeaVtgID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 0,
+				ubxbin.NmeaGgaID: 0,
+				ubxbin.NmeaGsaID: 1,
+				ubxbin.NmeaGsvID: 0,
+				ubxbin.NmeaZdaID: 0,
+				ubxbin.NmeaVtgID: 0,
 			},
 		},
 		{
 			name:            "GSV only",
 			flags:           gpsprot.NMEAMsgGSV,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 0,
-				bin.NmeaGgaID: 0,
-				bin.NmeaGsaID: 0,
-				bin.NmeaGsvID: 1,
-				bin.NmeaZdaID: 0,
-				bin.NmeaVtgID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 0,
+				ubxbin.NmeaGgaID: 0,
+				ubxbin.NmeaGsaID: 0,
+				ubxbin.NmeaGsvID: 1,
+				ubxbin.NmeaZdaID: 0,
+				ubxbin.NmeaVtgID: 0,
 			},
 		},
 		{
 			name:            "ZDA only",
 			flags:           gpsprot.NMEAMsgZDA,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 0,
-				bin.NmeaGgaID: 0,
-				bin.NmeaGsaID: 0,
-				bin.NmeaGsvID: 0,
-				bin.NmeaZdaID: 1,
-				bin.NmeaVtgID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 0,
+				ubxbin.NmeaGgaID: 0,
+				ubxbin.NmeaGsaID: 0,
+				ubxbin.NmeaGsvID: 0,
+				ubxbin.NmeaZdaID: 1,
+				ubxbin.NmeaVtgID: 0,
 			},
 		},
 		{
 			name:            "VTG only",
 			flags:           gpsprot.NMEAMsgVTG,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 0,
-				bin.NmeaGgaID: 0,
-				bin.NmeaGsaID: 0,
-				bin.NmeaGsvID: 0,
-				bin.NmeaZdaID: 0,
-				bin.NmeaVtgID: 1,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 0,
+				ubxbin.NmeaGgaID: 0,
+				ubxbin.NmeaGsaID: 0,
+				ubxbin.NmeaGsvID: 0,
+				ubxbin.NmeaZdaID: 0,
+				ubxbin.NmeaVtgID: 1,
 			},
 		},
 		{
 			name:            "Multiple messages",
 			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSV,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 1,
-				bin.NmeaGgaID: 1,
-				bin.NmeaGsaID: 0,
-				bin.NmeaGsvID: 1,
-				bin.NmeaZdaID: 0,
-				bin.NmeaVtgID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 1,
+				ubxbin.NmeaGgaID: 1,
+				ubxbin.NmeaGsaID: 0,
+				ubxbin.NmeaGsvID: 1,
+				ubxbin.NmeaZdaID: 0,
+				ubxbin.NmeaVtgID: 0,
 			},
 		},
 		{
 			name:            "All standard messages",
 			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgVTG,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 1,
-				bin.NmeaGgaID: 1,
-				bin.NmeaGsaID: 1,
-				bin.NmeaGsvID: 1,
-				bin.NmeaZdaID: 1,
-				bin.NmeaVtgID: 1,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 1,
+				ubxbin.NmeaGgaID: 1,
+				ubxbin.NmeaGsaID: 1,
+				ubxbin.NmeaGsvID: 1,
+				ubxbin.NmeaZdaID: 1,
+				ubxbin.NmeaVtgID: 1,
 			},
 		},
 		{
 			name:            "Other flag only - enables protocol but no specific messages",
 			flags:           gpsprot.NMEAMsgOther,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 0,
-				bin.NmeaGgaID: 0,
-				bin.NmeaGsaID: 0,
-				bin.NmeaGsvID: 0,
-				bin.NmeaZdaID: 0,
-				bin.NmeaVtgID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 0,
+				ubxbin.NmeaGgaID: 0,
+				ubxbin.NmeaGsaID: 0,
+				ubxbin.NmeaGsvID: 0,
+				ubxbin.NmeaZdaID: 0,
+				ubxbin.NmeaVtgID: 0,
 			},
 		},
 		{
 			name:            "RMC with Other flag",
 			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgOther,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 1,
-				bin.NmeaGgaID: 0,
-				bin.NmeaGsaID: 0,
-				bin.NmeaGsvID: 0,
-				bin.NmeaZdaID: 0,
-				bin.NmeaVtgID: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 1,
+				ubxbin.NmeaGgaID: 0,
+				ubxbin.NmeaGsaID: 0,
+				ubxbin.NmeaGsvID: 0,
+				ubxbin.NmeaZdaID: 0,
+				ubxbin.NmeaVtgID: 0,
 			},
 		},
 		{
 			name:            "RMC with VTG",
 			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgVTG,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 1,
-				bin.NmeaGgaID: 0,
-				bin.NmeaGsaID: 0,
-				bin.NmeaGsvID: 0,
-				bin.NmeaZdaID: 0,
-				bin.NmeaVtgID: 1,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 1,
+				ubxbin.NmeaGgaID: 0,
+				ubxbin.NmeaGsaID: 0,
+				ubxbin.NmeaGsvID: 0,
+				ubxbin.NmeaZdaID: 0,
+				ubxbin.NmeaVtgID: 1,
 			},
 		},
 		{
 			name:            "All messages with Other flag",
 			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgVTG | gpsprot.NMEAMsgOther,
-			expectedEnable:  bin.CfgPrtProtoNMEA,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
-			expectedRates: map[bin.MsgID]MsgRate{
-				bin.NmeaRmcID: 1,
-				bin.NmeaGgaID: 1,
-				bin.NmeaGsaID: 1,
-				bin.NmeaGsvID: 1,
-				bin.NmeaZdaID: 1,
-				bin.NmeaVtgID: 1,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 1,
+				ubxbin.NmeaGgaID: 1,
+				ubxbin.NmeaGsaID: 1,
+				ubxbin.NmeaGsvID: 1,
+				ubxbin.NmeaZdaID: 1,
+				ubxbin.NmeaVtgID: 1,
 			},
 		},
 	}

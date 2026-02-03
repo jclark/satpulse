@@ -6,7 +6,7 @@ import (
 
 	"github.com/jclark/satpulse/internal/gpsprot"
 	"github.com/jclark/satpulse/internal/ptime"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 func TestMgaTime(t *testing.T) {
@@ -16,7 +16,7 @@ func TestMgaTime(t *testing.T) {
 		now      time.Time
 		wantNil  bool
 		wantErr  bool
-		validate func(*testing.T, *bin.MgaIni)
+		validate func(*testing.T, *ubxbin.MgaIni)
 	}{
 		{
 			name: "nil time estimate",
@@ -38,14 +38,14 @@ func TestMgaTime(t *testing.T) {
 				},
 			},
 			now: time.Date(2024, 12, 15, 10, 30, 45, 0, time.UTC),
-			validate: func(t *testing.T, msg *bin.MgaIni) {
-				if msg.Type != bin.MgaIniTypeTimeUTC {
-					t.Errorf("expected Type=%d, got %d", bin.MgaIniTypeTimeUTC, msg.Type)
+			validate: func(t *testing.T, msg *ubxbin.MgaIni) {
+				if msg.Type != ubxbin.MgaIniTypeTimeUTC {
+					t.Errorf("expected Type=%d, got %d", ubxbin.MgaIniTypeTimeUTC, msg.Type)
 				}
-				if msg.Version != bin.MgaIniVersion {
-					t.Errorf("expected Version=%d, got %d", bin.MgaIniVersion, msg.Version)
+				if msg.Version != ubxbin.MgaIniVersion {
+					t.Errorf("expected Version=%d, got %d", ubxbin.MgaIniVersion, msg.Version)
 				}
-				utc, ok := msg.Payload.(*bin.MgaIniTimeUTC)
+				utc, ok := msg.Payload.(*ubxbin.MgaIniTimeUTC)
 				if !ok {
 					t.Fatalf("expected *MgaIniTimeUTC, got %T", msg.Payload)
 				}
@@ -80,11 +80,11 @@ func TestMgaTime(t *testing.T) {
 				if utc.LeapSecs != expectedLeapSecs {
 					t.Errorf("expected LeapSecs=%d, got %d", expectedLeapSecs, utc.LeapSecs)
 				}
-				if utc.Bitfield0&bin.MgaIniTimeTrustedSource == 0 {
+				if utc.Bitfield0&ubxbin.MgaIniTimeTrustedSource == 0 {
 					t.Error("expected TrustedSource bit to be set")
 				}
-				if utc.Ref != bin.MgaIniTimeRefSourceNone {
-					t.Errorf("expected Ref=%d, got %d", bin.MgaIniTimeRefSourceNone, utc.Ref)
+				if utc.Ref != ubxbin.MgaIniTimeRefSourceNone {
+					t.Errorf("expected Ref=%d, got %d", ubxbin.MgaIniTimeRefSourceNone, utc.Ref)
 				}
 			},
 		},
@@ -95,8 +95,8 @@ func TestMgaTime(t *testing.T) {
 				Accuracy:      0, // use default accuracy
 			},
 			now: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			validate: func(t *testing.T, msg *bin.MgaIni) {
-				utc := msg.Payload.(*bin.MgaIniTimeUTC)
+			validate: func(t *testing.T, msg *ubxbin.MgaIni) {
+				utc := msg.Payload.(*ubxbin.MgaIniTimeUTC)
 				if utc.TAccS != 10 { // default 10 seconds
 					t.Errorf("expected TAccS=10, got %d", utc.TAccS)
 				}
@@ -113,8 +113,8 @@ func TestMgaTime(t *testing.T) {
 				Accuracy:       time.Second * 2,
 			},
 			now: time.Date(2024, 1, 1, 12, 1, 0, 0, time.UTC), // 2 minutes after estimate time
-			validate: func(t *testing.T, msg *bin.MgaIni) {
-				utc := msg.Payload.(*bin.MgaIniTimeUTC)
+			validate: func(t *testing.T, msg *ubxbin.MgaIni) {
+				utc := msg.Payload.(*ubxbin.MgaIniTimeUTC)
 				// Should be adjusted by 2 minutes forward from original estimate
 				if utc.Hour != 12 || utc.Minute != 2 {
 					t.Errorf("expected time 12:02, got %02d:%02d", utc.Hour, utc.Minute)
@@ -131,10 +131,10 @@ func TestMgaTime(t *testing.T) {
 				},
 			},
 			now: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			validate: func(t *testing.T, msg *bin.MgaIni) {
-				utc := msg.Payload.(*bin.MgaIniTimeUTC)
-				if utc.LeapSecs != bin.MgaIniTimeUTCLeapSecsUnknown {
-					t.Errorf("expected LeapSecs=%d, got %d", bin.MgaIniTimeUTCLeapSecsUnknown, utc.LeapSecs)
+			validate: func(t *testing.T, msg *ubxbin.MgaIni) {
+				utc := msg.Payload.(*ubxbin.MgaIniTimeUTC)
+				if utc.LeapSecs != ubxbin.MgaIniTimeUTCLeapSecsUnknown {
+					t.Errorf("expected LeapSecs=%d, got %d", ubxbin.MgaIniTimeUTCLeapSecsUnknown, utc.LeapSecs)
 				}
 			},
 		},
@@ -145,9 +145,9 @@ func TestMgaTime(t *testing.T) {
 				Trusted:       false,
 			},
 			now: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			validate: func(t *testing.T, msg *bin.MgaIni) {
-				utc := msg.Payload.(*bin.MgaIniTimeUTC)
-				if utc.Bitfield0&bin.MgaIniTimeTrustedSource != 0 {
+			validate: func(t *testing.T, msg *ubxbin.MgaIni) {
+				utc := msg.Payload.(*ubxbin.MgaIniTimeUTC)
+				if utc.Bitfield0&ubxbin.MgaIniTimeTrustedSource != 0 {
 					t.Error("expected TrustedSource bit to be unset")
 				}
 			},
@@ -172,11 +172,11 @@ func TestMgaTime(t *testing.T) {
 				},
 			},
 			now: time.Date(2024, 7, 1, 0, 0, 10, 0, time.UTC), // 10 seconds after midnight (crossed leap)
-			validate: func(t *testing.T, msg *bin.MgaIni) {
-				utc := msg.Payload.(*bin.MgaIniTimeUTC)
+			validate: func(t *testing.T, msg *ubxbin.MgaIni) {
+				utc := msg.Payload.(*ubxbin.MgaIniTimeUTC)
 				// Should give up on leap second calculation and set unknown
-				if utc.LeapSecs != bin.MgaIniTimeUTCLeapSecsUnknown {
-					t.Errorf("expected LeapSecs=%d for leap crossing, got %d", bin.MgaIniTimeUTCLeapSecsUnknown, utc.LeapSecs)
+				if utc.LeapSecs != ubxbin.MgaIniTimeUTCLeapSecsUnknown {
+					t.Errorf("expected LeapSecs=%d for leap crossing, got %d", ubxbin.MgaIniTimeUTCLeapSecsUnknown, utc.LeapSecs)
 				}
 				// Accuracy should be increased by 1 second
 				if utc.TAccS < 11 { // default 10 + 1 for uncertainty
@@ -189,29 +189,29 @@ func TestMgaTime(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := mgaTime(tt.ta, tt.now)
-			
+
 			if tt.wantErr {
 				if err == nil {
 					t.Error("expected error, got nil")
 				}
 				return
 			}
-			
+
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			
+
 			if tt.wantNil {
 				if result != nil {
 					t.Error("expected nil result, got non-nil")
 				}
 				return
 			}
-			
+
 			if result == nil {
 				t.Fatal("expected non-nil result, got nil")
 			}
-			
+
 			if tt.validate != nil {
 				tt.validate(t, result)
 			}

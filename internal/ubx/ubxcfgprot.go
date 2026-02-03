@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 type ConfigProtocol struct {
@@ -23,7 +23,7 @@ func (px *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 	if tag != Tag {
 		return nil
 	}
-	m, ok := msg.(bin.Msg)
+	m, ok := msg.(ubxbin.Msg)
 	if !ok {
 		return nil
 	}
@@ -34,7 +34,7 @@ func (px *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 		}
 	}
 	switch mt := m.(type) {
-	case *bin.MonVer:
+	case *ubxbin.MonVer:
 		px.ver = monVer(mt)
 	}
 	return nil
@@ -45,7 +45,7 @@ func (px *ConfigProtocol) Version() *Version {
 }
 
 func (px *ConfigProtocol) ProbePacket() []byte {
-	return bin.Poll(bin.MonVerID)
+	return ubxbin.Poll(ubxbin.MonVerID)
 }
 
 func (px *ConfigProtocol) ProbeOK() bool {

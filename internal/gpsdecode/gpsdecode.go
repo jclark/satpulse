@@ -11,7 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/gpsreg"
 	"github.com/jclark/satpulse/internal/novmsg"
 	"github.com/jclark/satpulse/internal/scan"
-	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 	"github.com/jclark/satpulse/internal/ubxcfgval"
 	"github.com/jclark/satpulse/internal/uncmsg"
 )

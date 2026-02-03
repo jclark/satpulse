@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 type Version struct {
@@ -112,7 +112,7 @@ func (v *Version) rtcmSupport() (gpsprot.GNSSSet, gpsprot.RTCMMsgFlags) {
 		}
 		// 29.25 added support for MSM4
 		if v.protVerAtLeast(29, 25) {
-			return g,  gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7
+			return g, gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7
 		}
 		return g, gpsprot.RTCMMsgMSM7
 	}
@@ -134,14 +134,14 @@ func (v *Version) protVerGreater(major, minor byte) bool {
 	return v.Prot.Major > major || (v.Prot.Major == major && v.Prot.Minor > minor)
 }
 
-func monVer(parsed *bin.MonVer) *Version {
+func monVer(parsed *ubxbin.MonVer) *Version {
 	x := make([]string, len(parsed.Extension))
 	for i := range parsed.Extension {
-		x[i] = bin.Latin1ZToString(parsed.Extension[i][:])
+		x[i] = ubxbin.Latin1ZToString(parsed.Extension[i][:])
 	}
 	v := &Version{
-		HW:         bin.Latin1ZToString(parsed.HwVersion[:]),
-		SW:         bin.Latin1ZToString(parsed.SwVersion[:]),
+		HW:         ubxbin.Latin1ZToString(parsed.HwVersion[:]),
+		SW:         ubxbin.Latin1ZToString(parsed.SwVersion[:]),
 		Extensions: x,
 		FW:         findFWVer(x),
 		Prot:       findProtVer(x),

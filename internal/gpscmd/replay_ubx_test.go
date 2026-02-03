@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/internal/gpsio"
-	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 	"github.com/jclark/satpulse/internal/ubxcfgval"
 )
 

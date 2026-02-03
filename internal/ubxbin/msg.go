@@ -1,4 +1,4 @@
-package bin
+package ubxbin
 
 const (
 	// following are used for enabling/disabling messages

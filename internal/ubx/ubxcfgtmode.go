@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 	ucv "github.com/jclark/satpulse/internal/ubxcfgval"
 )
 
@@ -245,17 +245,17 @@ func (tc *tmodeConfig) getMode() gpsprot.Mode {
 // toTmodeMsg converts tmodeConfig to a tmode msg using another tmode msg as the basis.
 // The basis says what kind of tmode message to produce.
 // The basis is used for fields that are not relevant to what is specified in tmodeConfig.
-func (tc *tmodeConfig) toTmodeMsg(msg bin.Msg) (bin.Msg, error) {
+func (tc *tmodeConfig) toTmodeMsg(msg ubxbin.Msg) (ubxbin.Msg, error) {
 	switch tm := msg.(type) {
-	case *bin.CfgTmode3:
+	case *ubxbin.CfgTmode3:
 		cpy := *tm
 		tc.toTmode3(&cpy, false)
 		return &cpy, nil
-	case *bin.CfgTmode2:
+	case *ubxbin.CfgTmode2:
 		cpy := *tm
 		tc.toTmode2(&cpy, false)
 		return &cpy, nil
-	case *bin.CfgTmode:
+	case *ubxbin.CfgTmode:
 		cpy := *tm
 		err := tc.toTmode(&cpy, false)
 		if err != nil {
@@ -266,16 +266,16 @@ func (tc *tmodeConfig) toTmodeMsg(msg bin.Msg) (bin.Msg, error) {
 	panic("unexpected message type for toTmodeMsg")
 }
 
-func (tc *tmodeConfig) fromTmodeMsg(msg bin.Msg) {
+func (tc *tmodeConfig) fromTmodeMsg(msg ubxbin.Msg) {
 	if msg == nil {
 		return
 	}
 	switch tm := msg.(type) {
-	case *bin.CfgTmode3:
+	case *ubxbin.CfgTmode3:
 		tc.fromTmode3(tm)
-	case *bin.CfgTmode2:
+	case *ubxbin.CfgTmode2:
 		tc.fromTmode2(tm)
-	case *bin.CfgTmode:
+	case *ubxbin.CfgTmode:
 		tc.fromTmode(tm)
 	default:
 		// tmode not supported, do nothing
@@ -285,25 +285,25 @@ func (tc *tmodeConfig) fromTmodeMsg(msg bin.Msg) {
 // toTmode3 converts the tmodeConfig to CfgTmode3.
 // If all is true, it sets all fields regardless of mode.
 // If all is false, it only sets fields relevant to the current mode.
-func (tc *tmodeConfig) toTmode3(tm *bin.CfgTmode3, all bool) {
+func (tc *tmodeConfig) toTmode3(tm *ubxbin.CfgTmode3, all bool) {
 	tm.Version = 0
 	tm.Flags = 0
 
 	// Set mode in flags
 	switch tc.mode {
 	case tmodeDisabled:
-		tm.Flags |= bin.CfgTmode3Disabled
+		tm.Flags |= ubxbin.CfgTmode3Disabled
 	case tmodeSurveyIn:
-		tm.Flags |= bin.CfgTmode3SurveyIn
+		tm.Flags |= ubxbin.CfgTmode3SurveyIn
 	case tmodeFixed:
-		tm.Flags |= bin.CfgTmode3FixedMode
+		tm.Flags |= ubxbin.CfgTmode3FixedMode
 	}
 
 	// Set coordinate system flag and values for fixed mode
 	if tc.mode == tmodeFixed || all {
 		if tc.useLLH {
 			// LLH coordinates
-			tm.Flags |= bin.CfgTmode3LLA
+			tm.Flags |= ubxbin.CfgTmode3LLA
 			tm.EcefXOrLat = tc.latLon[0]     // degrees * 1e-7
 			tm.EcefYOrLon = tc.latLon[1]     // degrees * 1e-7
 			tm.EcefZOrAlt = tc.height        // cm
@@ -331,19 +331,19 @@ func (tc *tmodeConfig) toTmode3(tm *bin.CfgTmode3, all bool) {
 }
 
 // fromTmode3 converts CfgTmode3 to tmodeConfig.
-func (tc *tmodeConfig) fromTmode3(tm *bin.CfgTmode3) {
+func (tc *tmodeConfig) fromTmode3(tm *ubxbin.CfgTmode3) {
 	// Extract mode from flags
-	switch tm.Flags & bin.CfgTmode3Mode {
-	case bin.CfgTmode3Disabled:
+	switch tm.Flags & ubxbin.CfgTmode3Mode {
+	case ubxbin.CfgTmode3Disabled:
 		tc.mode = tmodeDisabled
-	case bin.CfgTmode3SurveyIn:
+	case ubxbin.CfgTmode3SurveyIn:
 		tc.mode = tmodeSurveyIn
-	case bin.CfgTmode3FixedMode:
+	case ubxbin.CfgTmode3FixedMode:
 		tc.mode = tmodeFixed
 	}
 
 	// Check coordinate system and extract values
-	if tm.Flags&bin.CfgTmode3LLA != 0 {
+	if tm.Flags&ubxbin.CfgTmode3LLA != 0 {
 		// LLH coordinates
 		tc.useLLH = true
 		tc.latLon[0] = tm.EcefXOrLat     // degrees * 1e-7
@@ -374,23 +374,23 @@ func (tc *tmodeConfig) fromTmode3(tm *bin.CfgTmode3) {
 // toTmode2 converts the tmodeConfig to CfgTmode2.
 // If all is true, it sets all fields regardless of mode.
 // If all is false, it only sets fields relevant to the current mode.
-func (tc *tmodeConfig) toTmode2(tm *bin.CfgTmode2, all bool) {
+func (tc *tmodeConfig) toTmode2(tm *ubxbin.CfgTmode2, all bool) {
 	tm.Flags = 0
 
 	// Set mode in separate field
 	switch tc.mode {
 	case tmodeDisabled:
-		tm.TimeMode = bin.CfgTmode2Disabled
+		tm.TimeMode = ubxbin.CfgTmode2Disabled
 	case tmodeSurveyIn:
-		tm.TimeMode = bin.CfgTmode2SurveyIn
+		tm.TimeMode = ubxbin.CfgTmode2SurveyIn
 	case tmodeFixed:
-		tm.TimeMode = bin.CfgTmode2FixedMode
+		tm.TimeMode = ubxbin.CfgTmode2FixedMode
 	}
 
 	// Set coordinate system flag and values for fixed mode
 	if tc.mode == tmodeFixed || all {
 		if tc.useLLH {
-			tm.Flags |= bin.CfgTmode2LLA
+			tm.Flags |= ubxbin.CfgTmode2LLA
 			// LLH coordinates (no HP fields in TMODE2)
 			tm.EcefXOrLat = tc.latLon[0] // degrees * 1e-7
 			tm.EcefYOrLon = tc.latLon[1] // degrees * 1e-7
@@ -415,19 +415,19 @@ func (tc *tmodeConfig) toTmode2(tm *bin.CfgTmode2, all bool) {
 }
 
 // fromTmode2 converts CfgTmode2 to tmodeConfig.
-func (tc *tmodeConfig) fromTmode2(tm *bin.CfgTmode2) {
+func (tc *tmodeConfig) fromTmode2(tm *ubxbin.CfgTmode2) {
 	// Extract mode from separate field
 	switch tm.TimeMode {
-	case bin.CfgTmode2Disabled:
+	case ubxbin.CfgTmode2Disabled:
 		tc.mode = tmodeDisabled
-	case bin.CfgTmode2SurveyIn:
+	case ubxbin.CfgTmode2SurveyIn:
 		tc.mode = tmodeSurveyIn
-	case bin.CfgTmode2FixedMode:
+	case ubxbin.CfgTmode2FixedMode:
 		tc.mode = tmodeFixed
 	}
 
 	// Check coordinate system and extract values
-	if tm.Flags&bin.CfgTmode2LLA != 0 {
+	if tm.Flags&ubxbin.CfgTmode2LLA != 0 {
 		// LLH coordinates
 		tc.useLLH = true
 		tc.latLon[0] = tm.EcefXOrLat // degrees * 1e-7
@@ -461,7 +461,7 @@ func (tc *tmodeConfig) fromTmode2(tm *bin.CfgTmode2) {
 // If all is true, it sets all fields regardless of mode.
 // If all is false, it only sets fields relevant to the current mode.
 // Returns error if accuracy values would cause overflow in variance calculations.
-func (tc *tmodeConfig) toTmode(tm *bin.CfgTmode, all bool) error {
+func (tc *tmodeConfig) toTmode(tm *ubxbin.CfgTmode, all bool) error {
 	// TMODE only supports ECEF coordinates, not LLH
 	if tc.useLLH && (tc.mode == tmodeFixed || all) {
 		return ErrTmodeLLHNotSupported
@@ -470,11 +470,11 @@ func (tc *tmodeConfig) toTmode(tm *bin.CfgTmode, all bool) error {
 	// Set mode in separate field
 	switch tc.mode {
 	case tmodeDisabled:
-		tm.TimeMode = bin.CfgTmodeDisabled
+		tm.TimeMode = ubxbin.CfgTmodeDisabled
 	case tmodeSurveyIn:
-		tm.TimeMode = bin.CfgTmodeSurveyIn
+		tm.TimeMode = ubxbin.CfgTmodeSurveyIn
 	case tmodeFixed:
-		tm.TimeMode = bin.CfgTmodeFixedMode
+		tm.TimeMode = ubxbin.CfgTmodeFixedMode
 	}
 
 	// ECEF coordinates and fixed position accuracy for fixed mode
@@ -506,14 +506,14 @@ func (tc *tmodeConfig) toTmode(tm *bin.CfgTmode, all bool) error {
 }
 
 // fromTmode converts CfgTmode to tmodeConfig.
-func (tc *tmodeConfig) fromTmode(tm *bin.CfgTmode) {
+func (tc *tmodeConfig) fromTmode(tm *ubxbin.CfgTmode) {
 	// Extract mode from separate field
 	switch tm.TimeMode {
-	case bin.CfgTmodeDisabled:
+	case ubxbin.CfgTmodeDisabled:
 		tc.mode = tmodeDisabled
-	case bin.CfgTmodeSurveyIn:
+	case ubxbin.CfgTmodeSurveyIn:
 		tc.mode = tmodeSurveyIn
-	case bin.CfgTmodeFixedMode:
+	case ubxbin.CfgTmodeFixedMode:
 		tc.mode = tmodeFixed
 	}
 

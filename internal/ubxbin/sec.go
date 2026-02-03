@@ -1,4 +1,4 @@
-package bin
+package ubxbin
 
 const (
 	SecOsnmaID MsgID = clsSec | (0x0a << 8)

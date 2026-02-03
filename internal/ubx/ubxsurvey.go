@@ -5,10 +5,10 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
-func surveyNavSvin(m *bin.NavSvin) *gpsprot.SurveyMsg {
+func surveyNavSvin(m *ubxbin.NavSvin) *gpsprot.SurveyMsg {
 	return &gpsprot.SurveyMsg{
 		Position: gpsprot.Point3D{
 			lengthHP(m.MeanX, m.MeanXHP),
@@ -23,7 +23,7 @@ func surveyNavSvin(m *bin.NavSvin) *gpsprot.SurveyMsg {
 	}
 }
 
-func surveyTimSvin(m *bin.TimSvin) *gpsprot.SurveyMsg {
+func surveyTimSvin(m *ubxbin.TimSvin) *gpsprot.SurveyMsg {
 	return &gpsprot.SurveyMsg{
 		Position: gpsprot.Point3D{
 			gpsprot.Length(m.MeanX) * gpsprot.Centimeter,

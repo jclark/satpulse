@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 // Tag is the identifier for UBX protocol packets
@@ -39,12 +39,12 @@ func NewPacketProcessor() *PacketProcessor {
 
 // ProcessPacket processes a UBX packet's data and returns the message ID and any error
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
-	m, err := bin.ParseMsg(data)
+	m, err := ubxbin.ParseMsg(data)
 	if err != nil {
 		return PacketFormat.MsgID([]byte(data)), err
 	}
 	msgID := m.ID().String()
-	if nm, ok := m.(bin.NavMsg); ok {
+	if nm, ok := m.(ubxbin.NavMsg); ok {
 		p.handleNavEpoch(nm, tRead)
 	}
 	if p.Dispatch(m, tRead) {
@@ -65,7 +65,7 @@ func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 // handleNavEpoch tracks which messages we receive for each navigation epoch.
 // This allows us to know whether we should wait for additional messages
 // (e.g., wait for NAV-SIG if we saw it in the previous epoch).
-func (p *PacketProcessor) handleNavEpoch(nm bin.NavMsg, tRead time.Time) {
+func (p *PacketProcessor) handleNavEpoch(nm ubxbin.NavMsg, tRead time.Time) {
 	e := nm.NavEpoch()
 	e++ // use zero to represent invalid epoch
 	if e != p.curNavEpoch {
@@ -89,14 +89,14 @@ func (p *PacketProcessor) flushNavEpoch() {
 // If we have one but not both of NAV-SAT and NAV-SIG, we decide whether to wait
 // for the other based on whether the missing message was seen in the previous epoch.
 func (p *PacketProcessor) maybeFlushSats() {
-	var missing bin.MsgID
+	var missing ubxbin.MsgID
 	if p.satMsg == nil {
 		if p.sigMsg == nil {
 			return
 		}
-		missing = bin.NavSatID
+		missing = ubxbin.NavSatID
 	} else if p.sigMsg == nil {
-		missing = bin.NavSigID
+		missing = ubxbin.NavSigID
 	} else {
 		p.flushSats()
 	}
@@ -130,13 +130,13 @@ func (p *PacketProcessor) flushSats() {
 	p.satSigTRead = time.Time{}
 }
 
-func (p *PacketProcessor) Dispatch(m bin.Msg, tRead time.Time) bool {
+func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 	var time *gpsprot.TimeMsg
 	var sv *gpsprot.SurveyMsg
 	var sats *gpsprot.SatellitesMsg
 	h := p.mh
 	switch mt := m.(type) {
-	case *bin.NavTimeLS:
+	case *ubxbin.NavTimeLS:
 		ls := leapSecond(mt)
 		if ls == nil {
 			return false
@@ -145,41 +145,41 @@ func (p *PacketProcessor) Dispatch(m bin.Msg, tRead time.Time) bool {
 			h.LeapSecond(ls, tRead)
 		}
 		return true
-	case *bin.NavSat:
+	case *ubxbin.NavSat:
 		p.satMsg = satellitesNavSat(mt)
 		if p.satSigTRead.IsZero() {
 			p.satSigTRead = tRead
 		}
 		p.maybeFlushSats()
 		return true
-	case *bin.NavSig:
+	case *ubxbin.NavSig:
 		p.sigMsg = satellitesNavSig(mt)
 		if p.satSigTRead.IsZero() {
 			p.satSigTRead = tRead
 		}
 		p.maybeFlushSats()
 		return true
-	case *bin.NavSVInfo:
+	case *ubxbin.NavSVInfo:
 		sats = satellitesNavSVInfo(mt)
-	case *bin.NavTimeGPS:
+	case *ubxbin.NavTimeGPS:
 		time = timeNavTimeGPS(mt)
-	case *bin.NavTimeBDS:
+	case *ubxbin.NavTimeBDS:
 		time = timeNavTimeBDS(mt)
-	case *bin.NavTimeGal:
+	case *ubxbin.NavTimeGal:
 		time = timeNavTimeGal(mt)
-	case *bin.NavTimeGLO:
+	case *ubxbin.NavTimeGLO:
 		time = timeNavTimeGLO(mt)
-	case *bin.NavTimeUTC:
+	case *ubxbin.NavTimeUTC:
 		time = timeNavTimeUTC(mt)
-	case *bin.NavPVT:
+	case *ubxbin.NavPVT:
 		time = timeNavPVT(mt)
-	case *bin.TimTP:
+	case *ubxbin.TimTP:
 		time = timeTimTP(mt)
-	case *bin.TimTos:
+	case *ubxbin.TimTos:
 		time = timeTimTos(mt)
-	case *bin.NavSvin:
+	case *ubxbin.NavSvin:
 		sv = surveyNavSvin(mt)
-	case *bin.TimSvin:
+	case *ubxbin.TimSvin:
 		sv = surveyTimSvin(mt)
 	default:
 		return false

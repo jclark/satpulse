@@ -1,4 +1,4 @@
-package bin
+package ubxbin
 
 const (
 	MonGnssID  MsgID = clsMon | (0x28 << 8)

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/internal/gpsprot"
-	"github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 func TestSatellitesCopy(t *testing.T) {
@@ -391,18 +391,18 @@ func TestSatellitesCombine(t *testing.T) {
 func TestSatellitesNavSat(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    bin.NavSat
+		input    ubxbin.NavSat
 		expected gpsprot.SatellitesMsg
 	}{
 		{
 			name: "empty satellites",
-			input: bin.NavSat{
-				NavSatFixed: bin.NavSatFixed{
-					NavITOW: bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSat{
+				NavSatFixed: ubxbin.NavSatFixed{
+					NavITOW: ubxbin.NavITOW{ITOW: 12345},
 					Version: 1,
 					NumSVs:  0,
 				},
-				SVs: []bin.NavSatSV{},
+				SVs: []ubxbin.NavSatSV{},
 			},
 			expected: gpsprot.SatellitesMsg{
 				SVs:          []gpsprot.SVInfo{},
@@ -413,21 +413,21 @@ func TestSatellitesNavSat(t *testing.T) {
 		},
 		{
 			name: "single satellite with good quality",
-			input: bin.NavSat{
-				NavSatFixed: bin.NavSatFixed{
-					NavITOW: bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSat{
+				NavSatFixed: ubxbin.NavSatFixed{
+					NavITOW: ubxbin.NavITOW{ITOW: 12345},
 					Version: 1,
 					NumSVs:  1,
 				},
-				SVs: []bin.NavSatSV{
+				SVs: []ubxbin.NavSatSV{
 					{
-						GNSSID: bin.GPS,
+						GNSSID: ubxbin.GPS,
 						SVID:   1,
 						CNO:    45,
 						Elev:   30,
 						Azim:   90,
 						PRRes:  100,
-						Flags:  bin.NavSatQualityCodeLocked | bin.NavSatSVUsed,
+						Flags:  ubxbin.NavSatQualityCodeLocked | ubxbin.NavSatSVUsed,
 					},
 				},
 			},
@@ -449,21 +449,21 @@ func TestSatellitesNavSat(t *testing.T) {
 		},
 		{
 			name: "satellite with poor quality (filtered out)",
-			input: bin.NavSat{
-				NavSatFixed: bin.NavSatFixed{
-					NavITOW: bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSat{
+				NavSatFixed: ubxbin.NavSatFixed{
+					NavITOW: ubxbin.NavITOW{ITOW: 12345},
 					Version: 1,
 					NumSVs:  1,
 				},
-				SVs: []bin.NavSatSV{
+				SVs: []ubxbin.NavSatSV{
 					{
-						GNSSID: bin.GPS,
+						GNSSID: ubxbin.GPS,
 						SVID:   1,
 						CNO:    20,
 						Elev:   30,
 						Azim:   90,
 						PRRes:  100,
-						Flags:  bin.NavSatQualitySearchingSignal,
+						Flags:  ubxbin.NavSatQualitySearchingSignal,
 					},
 				},
 			},
@@ -476,57 +476,57 @@ func TestSatellitesNavSat(t *testing.T) {
 		},
 		{
 			name: "multiple satellites mixed quality",
-			input: bin.NavSat{
-				NavSatFixed: bin.NavSatFixed{
-					NavITOW: bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSat{
+				NavSatFixed: ubxbin.NavSatFixed{
+					NavITOW: ubxbin.NavITOW{ITOW: 12345},
 					Version: 1,
 					NumSVs:  5,
 				},
-				SVs: []bin.NavSatSV{
+				SVs: []ubxbin.NavSatSV{
 					{
-						GNSSID: bin.GPS,
+						GNSSID: ubxbin.GPS,
 						SVID:   1,
 						CNO:    45,
 						Elev:   30,
 						Azim:   90,
 						PRRes:  100,
-						Flags:  bin.NavSatQualityCodeLocked | bin.NavSatSVUsed,
+						Flags:  ubxbin.NavSatQualityCodeLocked | ubxbin.NavSatSVUsed,
 					},
 					{
-						GNSSID: bin.GAL,
+						GNSSID: ubxbin.GAL,
 						SVID:   5,
 						CNO:    25,
 						Elev:   45,
 						Azim:   180,
 						PRRes:  -50,
-						Flags:  bin.NavSatQualitySignalAcquired,
+						Flags:  ubxbin.NavSatQualitySignalAcquired,
 					},
 					{
-						GNSSID: bin.BDS,
+						GNSSID: ubxbin.BDS,
 						SVID:   10,
 						CNO:    40,
 						Elev:   60,
 						Azim:   270,
 						PRRes:  200,
-						Flags:  bin.NavSatQualityCodeAndCarrierLocked1,
+						Flags:  ubxbin.NavSatQualityCodeAndCarrierLocked1,
 					},
 					{
-						GNSSID: bin.SBAS,
+						GNSSID: ubxbin.SBAS,
 						SVID:   130, // SBAS satellite (130 - 100 = 30)
 						CNO:    35,
 						Elev:   70,
 						Azim:   0,
 						PRRes:  -75,
-						Flags:  bin.NavSatQualityCodeLocked | bin.NavSatSVUsed,
+						Flags:  ubxbin.NavSatQualityCodeLocked | ubxbin.NavSatSVUsed,
 					},
 					{
-						GNSSID: bin.GLO,
+						GNSSID: ubxbin.GLO,
 						SVID:   255, // GLONASS unknown SVID
 						CNO:    30,
 						Elev:   20,
 						Azim:   315,
 						PRRes:  150,
-						Flags:  bin.NavSatQualityCodeAndCarrierLocked2,
+						Flags:  ubxbin.NavSatQualityCodeAndCarrierLocked2,
 					},
 				},
 			},
@@ -586,18 +586,18 @@ func TestSatellitesNavSat(t *testing.T) {
 func TestSatellitesNavSig(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    bin.NavSig
+		input    ubxbin.NavSig
 		expected gpsprot.SatellitesMsg
 	}{
 		{
 			name: "empty signals",
-			input: bin.NavSig{
-				NavSigFixed: bin.NavSigFixed{
-					NavITOW: bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSig{
+				NavSigFixed: ubxbin.NavSigFixed{
+					NavITOW: ubxbin.NavITOW{ITOW: 12345},
 					Version: 0,
 					NumSigs: 0,
 				},
-				Signals: []bin.NavSigSignal{},
+				Signals: []ubxbin.NavSigSignal{},
 			},
 			expected: gpsprot.SatellitesMsg{
 				SVs:          []gpsprot.SVInfo{},
@@ -608,24 +608,24 @@ func TestSatellitesNavSig(t *testing.T) {
 		},
 		{
 			name: "single signal with good quality",
-			input: bin.NavSig{
-				NavSigFixed: bin.NavSigFixed{
-					NavITOW: bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSig{
+				NavSigFixed: ubxbin.NavSigFixed{
+					NavITOW: ubxbin.NavITOW{ITOW: 12345},
 					Version: 0,
 					NumSigs: 1,
 				},
-				Signals: []bin.NavSigSignal{
+				Signals: []ubxbin.NavSigSignal{
 					{
-						GNSSID:     bin.GPS,
+						GNSSID:     ubxbin.GPS,
 						SVID:       1,
 						SigID:      0, // L1 C/A
 						FreqID:     0,
 						PRRes:      100,
 						CNO:        45,
-						QualityInd: bin.NavSigQualityCodeLocked,
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
-						SigFlags:   bin.NavSigPrUsed,
+						QualityInd: ubxbin.NavSigQualityCodeLocked,
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
+						SigFlags:   ubxbin.NavSigPrUsed,
 					},
 				},
 			},
@@ -646,23 +646,23 @@ func TestSatellitesNavSig(t *testing.T) {
 		},
 		{
 			name: "signal with poor quality (filtered out)",
-			input: bin.NavSig{
-				NavSigFixed: bin.NavSigFixed{
-					NavITOW: bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSig{
+				NavSigFixed: ubxbin.NavSigFixed{
+					NavITOW: ubxbin.NavITOW{ITOW: 12345},
 					Version: 0,
 					NumSigs: 1,
 				},
-				Signals: []bin.NavSigSignal{
+				Signals: []ubxbin.NavSigSignal{
 					{
-						GNSSID:     bin.GPS,
+						GNSSID:     ubxbin.GPS,
 						SVID:       1,
 						SigID:      0,
 						FreqID:     0,
 						PRRes:      100,
 						CNO:        20,
-						QualityInd: bin.NavSigQualitySearching, // Below minimum quality
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
+						QualityInd: ubxbin.NavSigQualitySearching, // Below minimum quality
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
 						SigFlags:   0,
 					},
 				},
@@ -676,35 +676,35 @@ func TestSatellitesNavSig(t *testing.T) {
 		},
 		{
 			name: "multiple signals same satellite",
-			input: bin.NavSig{
-				NavSigFixed: bin.NavSigFixed{
-					NavITOW: bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSig{
+				NavSigFixed: ubxbin.NavSigFixed{
+					NavITOW: ubxbin.NavITOW{ITOW: 12345},
 					Version: 0,
 					NumSigs: 2,
 				},
-				Signals: []bin.NavSigSignal{
+				Signals: []ubxbin.NavSigSignal{
 					{
-						GNSSID:     bin.GPS,
+						GNSSID:     ubxbin.GPS,
 						SVID:       1,
 						SigID:      0, // L1 C/A
 						FreqID:     0,
 						PRRes:      100,
 						CNO:        45,
-						QualityInd: bin.NavSigQualityCodeLocked,
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
-						SigFlags:   bin.NavSigPrUsed,
+						QualityInd: ubxbin.NavSigQualityCodeLocked,
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
+						SigFlags:   ubxbin.NavSigPrUsed,
 					},
 					{
-						GNSSID:     bin.GPS,
+						GNSSID:     ubxbin.GPS,
 						SVID:       1,
 						SigID:      6, // L5 I
 						FreqID:     0,
 						PRRes:      150,
 						CNO:        42,
-						QualityInd: bin.NavSigQualityCodeLocked,
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
+						QualityInd: ubxbin.NavSigQualityCodeLocked,
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
 						SigFlags:   0, // Not used
 					},
 				},
@@ -727,47 +727,47 @@ func TestSatellitesNavSig(t *testing.T) {
 		},
 		{
 			name: "multiple satellites mixed quality",
-			input: bin.NavSig{
-				NavSigFixed: bin.NavSigFixed{
-					NavITOW: bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSig{
+				NavSigFixed: ubxbin.NavSigFixed{
+					NavITOW: ubxbin.NavITOW{ITOW: 12345},
 					Version: 0,
 					NumSigs: 3,
 				},
-				Signals: []bin.NavSigSignal{
+				Signals: []ubxbin.NavSigSignal{
 					{
-						GNSSID:     bin.GPS,
+						GNSSID:     ubxbin.GPS,
 						SVID:       1,
 						SigID:      0,
 						FreqID:     0,
 						PRRes:      100,
 						CNO:        45,
-						QualityInd: bin.NavSigQualityCodeLocked,
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
-						SigFlags:   bin.NavSigPrUsed,
+						QualityInd: ubxbin.NavSigQualityCodeLocked,
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
+						SigFlags:   ubxbin.NavSigPrUsed,
 					},
 					{
-						GNSSID:     bin.GAL,
+						GNSSID:     ubxbin.GAL,
 						SVID:       5,
 						SigID:      0, // E1 C
 						FreqID:     0,
 						PRRes:      -50,
 						CNO:        25,
-						QualityInd: bin.NavSigQualityAcquired, // Below minimum quality
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
+						QualityInd: ubxbin.NavSigQualityAcquired, // Below minimum quality
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
 						SigFlags:   0,
 					},
 					{
-						GNSSID:     bin.BDS,
+						GNSSID:     ubxbin.BDS,
 						SVID:       10,
 						SigID:      0, // B1I D1
 						FreqID:     0,
 						PRRes:      200,
 						CNO:        40,
-						QualityInd: bin.NavSigQualityCodeCarrierLocked5,
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
+						QualityInd: ubxbin.NavSigQualityCodeCarrierLocked5,
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
 						SigFlags:   0,
 					},
 				},
@@ -796,59 +796,59 @@ func TestSatellitesNavSig(t *testing.T) {
 		},
 		{
 			name: "multiple satellites each with multiple signals",
-			input: bin.NavSig{
-				NavSigFixed: bin.NavSigFixed{
-					NavITOW: bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSig{
+				NavSigFixed: ubxbin.NavSigFixed{
+					NavITOW: ubxbin.NavITOW{ITOW: 12345},
 					Version: 0,
 					NumSigs: 4,
 				},
-				Signals: []bin.NavSigSignal{
+				Signals: []ubxbin.NavSigSignal{
 					{
-						GNSSID:     bin.GPS,
+						GNSSID:     ubxbin.GPS,
 						SVID:       1,
 						SigID:      0, // L1 C/A
 						FreqID:     0,
 						PRRes:      100,
 						CNO:        45,
-						QualityInd: bin.NavSigQualityCodeLocked,
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
-						SigFlags:   bin.NavSigPrUsed,
+						QualityInd: ubxbin.NavSigQualityCodeLocked,
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
+						SigFlags:   ubxbin.NavSigPrUsed,
 					},
 					{
-						GNSSID:     bin.GPS,
+						GNSSID:     ubxbin.GPS,
 						SVID:       1,
 						SigID:      6, // L5 I
 						FreqID:     0,
 						PRRes:      150,
 						CNO:        42,
-						QualityInd: bin.NavSigQualityCodeLocked,
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
+						QualityInd: ubxbin.NavSigQualityCodeLocked,
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
 						SigFlags:   0, // Not used
 					},
 					{
-						GNSSID:     bin.GAL,
+						GNSSID:     ubxbin.GAL,
 						SVID:       5,
 						SigID:      0, // E1 C
 						FreqID:     0,
 						PRRes:      -50,
 						CNO:        38,
-						QualityInd: bin.NavSigQualityCodeLocked,
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
-						SigFlags:   bin.NavSigPrUsed,
+						QualityInd: ubxbin.NavSigQualityCodeLocked,
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
+						SigFlags:   ubxbin.NavSigPrUsed,
 					},
 					{
-						GNSSID:     bin.GAL,
+						GNSSID:     ubxbin.GAL,
 						SVID:       5,
 						SigID:      3, // E5a I
 						FreqID:     0,
 						PRRes:      75,
 						CNO:        35,
-						QualityInd: bin.NavSigQualityCodeLocked,
-						CorrSource: bin.NavSigCorrSourceNone,
-						IonoModel:  bin.NavSigIonoModelNone,
+						QualityInd: ubxbin.NavSigQualityCodeLocked,
+						CorrSource: ubxbin.NavSigCorrSourceNone,
+						IonoModel:  ubxbin.NavSigIonoModelNone,
 						SigFlags:   0, // Not used
 					},
 				},
@@ -894,18 +894,18 @@ func TestSatellitesNavSig(t *testing.T) {
 func TestSatellitesNavSVInfo(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    bin.NavSVInfo
+		input    ubxbin.NavSVInfo
 		expected gpsprot.SatellitesMsg
 	}{
 		{
 			name: "empty satellites",
-			input: bin.NavSVInfo{
-				NavSVInfoFixed: bin.NavSVInfoFixed{
-					NavITOW:     bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSVInfo{
+				NavSVInfoFixed: ubxbin.NavSVInfoFixed{
+					NavITOW:     ubxbin.NavITOW{ITOW: 12345},
 					NumCh:       0,
-					GlobalFlags: bin.NavSVInfoUblox6,
+					GlobalFlags: ubxbin.NavSVInfoUblox6,
 				},
-				SVs: []bin.NavSVInfoSV{},
+				SVs: []ubxbin.NavSVInfoSV{},
 			},
 			expected: gpsprot.SatellitesMsg{
 				SVs:          []gpsprot.SVInfo{},
@@ -916,18 +916,18 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 		},
 		{
 			name: "single satellite with good quality",
-			input: bin.NavSVInfo{
-				NavSVInfoFixed: bin.NavSVInfoFixed{
-					NavITOW:     bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSVInfo{
+				NavSVInfoFixed: ubxbin.NavSVInfoFixed{
+					NavITOW:     ubxbin.NavITOW{ITOW: 12345},
 					NumCh:       1,
-					GlobalFlags: bin.NavSVInfoUblox6,
+					GlobalFlags: ubxbin.NavSVInfoUblox6,
 				},
-				SVs: []bin.NavSVInfoSV{
+				SVs: []ubxbin.NavSVInfoSV{
 					{
 						ChN:     1,
 						SVID:    1, // GPS satellite 1
-						Flags:   bin.NavSVInfoSVUsed,
-						Quality: bin.NavSVInfoQualityCodeLockOnSignal,
+						Flags:   ubxbin.NavSVInfoSVUsed,
+						Quality: ubxbin.NavSVInfoQualityCodeLockOnSignal,
 						CNO:     45,
 						Elev:    30,
 						Azim:    90,
@@ -953,18 +953,18 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 		},
 		{
 			name: "satellite with poor quality (filtered out)",
-			input: bin.NavSVInfo{
-				NavSVInfoFixed: bin.NavSVInfoFixed{
-					NavITOW:     bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSVInfo{
+				NavSVInfoFixed: ubxbin.NavSVInfoFixed{
+					NavITOW:     ubxbin.NavITOW{ITOW: 12345},
 					NumCh:       1,
-					GlobalFlags: bin.NavSVInfoUblox6,
+					GlobalFlags: ubxbin.NavSVInfoUblox6,
 				},
-				SVs: []bin.NavSVInfoSV{
+				SVs: []ubxbin.NavSVInfoSV{
 					{
 						ChN:     1,
 						SVID:    1,
 						Flags:   0,
-						Quality: bin.NavSVInfoQualitySignalAcquired, // Below minimum quality
+						Quality: ubxbin.NavSVInfoQualitySignalAcquired, // Below minimum quality
 						CNO:     25,
 						Elev:    30,
 						Azim:    90,
@@ -981,18 +981,18 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 		},
 		{
 			name: "multiple satellites mixed quality and usage",
-			input: bin.NavSVInfo{
-				NavSVInfoFixed: bin.NavSVInfoFixed{
-					NavITOW:     bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSVInfo{
+				NavSVInfoFixed: ubxbin.NavSVInfoFixed{
+					NavITOW:     ubxbin.NavITOW{ITOW: 12345},
 					NumCh:       4,
-					GlobalFlags: bin.NavSVInfoUblox6,
+					GlobalFlags: ubxbin.NavSVInfoUblox6,
 				},
-				SVs: []bin.NavSVInfoSV{
+				SVs: []ubxbin.NavSVInfoSV{
 					{
 						ChN:     1,
 						SVID:    1, // GPS satellite 1
-						Flags:   bin.NavSVInfoSVUsed,
-						Quality: bin.NavSVInfoQualityCodeLockOnSignal,
+						Flags:   ubxbin.NavSVInfoSVUsed,
+						Quality: ubxbin.NavSVInfoQualityCodeLockOnSignal,
 						CNO:     45,
 						Elev:    30,
 						Azim:    90,
@@ -1002,7 +1002,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						ChN:     2,
 						SVID:    5, // GPS satellite 5
 						Flags:   0, // Not used
-						Quality: bin.NavSVInfoCodeAndCarrierLocked1,
+						Quality: ubxbin.NavSVInfoCodeAndCarrierLocked1,
 						CNO:     40,
 						Elev:    45,
 						Azim:    180,
@@ -1011,8 +1011,8 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ChN:     3,
 						SVID:    130, // SBAS satellite (130 - 100 = 30)
-						Flags:   bin.NavSVInfoSVUsed,
-						Quality: bin.NavSVInfoCodeAndCarrierLocked2,
+						Flags:   ubxbin.NavSVInfoSVUsed,
+						Quality: ubxbin.NavSVInfoCodeAndCarrierLocked2,
 						CNO:     35,
 						Elev:    60,
 						Azim:    270,
@@ -1022,7 +1022,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						ChN:     4,
 						SVID:    193, // QZSS satellite (193 - 192 = 1)
 						Flags:   0,   // Not used, poor quality
-						Quality: bin.NavSVInfoQualitySearching,
+						Quality: ubxbin.NavSVInfoQualitySearching,
 						CNO:     20,
 						Elev:    15,
 						Azim:    45,
@@ -1064,18 +1064,18 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 		},
 		{
 			name: "comprehensive SVID ranges coverage",
-			input: bin.NavSVInfo{
-				NavSVInfoFixed: bin.NavSVInfoFixed{
-					NavITOW:     bin.NavITOW{ITOW: 12345},
+			input: ubxbin.NavSVInfo{
+				NavSVInfoFixed: ubxbin.NavSVInfoFixed{
+					NavITOW:     ubxbin.NavITOW{ITOW: 12345},
 					NumCh:       7,
-					GlobalFlags: bin.NavSVInfoUblox6,
+					GlobalFlags: ubxbin.NavSVInfoUblox6,
 				},
-				SVs: []bin.NavSVInfoSV{
+				SVs: []ubxbin.NavSVInfoSV{
 					{
 						ChN:     1,
 						SVID:    32, // GPS satellite 32 (max typical GPS)
-						Flags:   bin.NavSVInfoSVUsed,
-						Quality: bin.NavSVInfoQualityCodeLockOnSignal,
+						Flags:   ubxbin.NavSVInfoSVUsed,
+						Quality: ubxbin.NavSVInfoQualityCodeLockOnSignal,
 						CNO:     42,
 						Elev:    25,
 						Azim:    45,
@@ -1084,8 +1084,8 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ChN:     2,
 						SVID:    65, // GLONASS satellite 1 (65 - 64 = 1)
-						Flags:   bin.NavSVInfoSVUsed,
-						Quality: bin.NavSVInfoCodeAndCarrierLocked1,
+						Flags:   ubxbin.NavSVInfoSVUsed,
+						Quality: ubxbin.NavSVInfoCodeAndCarrierLocked1,
 						CNO:     38,
 						Elev:    35,
 						Azim:    135,
@@ -1095,7 +1095,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						ChN:     3,
 						SVID:    96, // GLONASS satellite 32 (96 - 64 = 32, max)
 						Flags:   0,
-						Quality: bin.NavSVInfoCodeAndCarrierLocked2,
+						Quality: ubxbin.NavSVInfoCodeAndCarrierLocked2,
 						CNO:     33,
 						Elev:    55,
 						Azim:    225,
@@ -1104,8 +1104,8 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ChN:     4,
 						SVID:    120, // SBAS satellite 20 (120 - 100 = 20, min)
-						Flags:   bin.NavSVInfoSVUsed,
-						Quality: bin.NavSVInfoQualityCodeLockOnSignal,
+						Flags:   ubxbin.NavSVInfoSVUsed,
+						Quality: ubxbin.NavSVInfoQualityCodeLockOnSignal,
 						CNO:     30,
 						Elev:    65,
 						Azim:    315,
@@ -1115,7 +1115,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						ChN:     5,
 						SVID:    158, // SBAS satellite 58 (158 - 100 = 58, max)
 						Flags:   0,
-						Quality: bin.NavSVInfoCodeAndCarrierLocked3,
+						Quality: ubxbin.NavSVInfoCodeAndCarrierLocked3,
 						CNO:     28,
 						Elev:    70,
 						Azim:    0,
@@ -1124,8 +1124,8 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ChN:     6,
 						SVID:    197, // QZSS satellite 5 (197 - 192 = 5, max)
-						Flags:   bin.NavSVInfoSVUsed,
-						Quality: bin.NavSVInfoQualityCodeLockOnSignal,
+						Flags:   ubxbin.NavSVInfoSVUsed,
+						Quality: ubxbin.NavSVInfoQualityCodeLockOnSignal,
 						CNO:     40,
 						Elev:    40,
 						Azim:    180,
@@ -1135,7 +1135,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						ChN:     7,
 						SVID:    255, // GLONASS unknown
 						Flags:   0,
-						Quality: bin.NavSVInfoCodeAndCarrierLocked1,
+						Quality: ubxbin.NavSVInfoCodeAndCarrierLocked1,
 						CNO:     20,
 						Elev:    10,
 						Azim:    90,

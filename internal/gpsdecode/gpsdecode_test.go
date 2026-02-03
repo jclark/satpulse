@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/internal/gpsreg"
-	ubxbin "github.com/jclark/satpulse/internal/ubx/bin"
+	"github.com/jclark/satpulse/internal/ubxbin"
 )
 
 func mustHexDecode(s string) []byte {
