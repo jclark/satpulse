@@ -44,21 +44,28 @@ func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 }
 
 func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {
-	var tm *gpsprot.TimeMsg
 	switch mt := m.(type) {
 	case *asbin.NavTime:
-		tm = timeNavTime(mt)
+		tm := timeNavTime(mt)
+		if tm != nil && p.mh != nil {
+			tm.Tag = Tag
+			p.mh.Time(tm, tRead)
+		}
+		return true
 	case *asbin.NavTimeUTC:
-		tm = timeNavTimeUTC(mt)
+		tm := timeNavTimeUTC(mt)
+		if tm != nil && p.mh != nil {
+			tm.Tag = Tag
+			p.mh.Time(tm, tRead)
+		}
+		return true
+	case *asbin.NavSVInfo:
+		sats := satellitesNavSVInfo(mt)
+		if sats != nil && p.mh != nil {
+			p.mh.Satellites(sats, tRead)
+		}
+		return true
 	default:
 		return false
 	}
-	if tm == nil {
-		return false
-	}
-	if p.mh != nil {
-		tm.Tag = Tag
-		p.mh.Time(tm, tRead)
-	}
-	return true
 }
