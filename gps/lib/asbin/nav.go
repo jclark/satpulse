@@ -133,6 +133,18 @@ type NavSvin struct {
 
 func (m *NavSvin) ID() MsgID { return NavSvinID }
 
+// UTCStandard identifies the UTC standard used for time.
+type UTCStandard uint8
+
+const (
+	UTCStandardNotAvailable UTCStandard = 0
+	UTCStandardNTSC         UTCStandard = 1 // National Time Service Center, China (BeiDou)
+	UTCStandardUSNO         UTCStandard = 2 // U.S. Naval Observatory (GPS)
+	UTCStandardEU           UTCStandard = 4 // European Laboratory (Galileo)
+	UTCStandardSU           UTCStandard = 5 // Former Soviet Union (GLONASS)
+	UTCStandardIndia        UTCStandard = 6
+)
+
 // NavTimeUTCFlags defines validity flag bits for NavTimeUTC.ValidFlag
 type NavTimeUTCFlags uint8
 
@@ -142,8 +154,7 @@ const (
 	NavTimeUTCFlagUtcValid                             // Bit 2: Valid UTC time
 )
 
-// NavTimeUTCStandard extracts UTC standard from ValidFlag (bits 4-7)
-func (f NavTimeUTCFlags) UTCStandard() uint8 { return uint8(f >> 4) }
+func (f NavTimeUTCFlags) UTCStandard() UTCStandard { return UTCStandard(f >> 4) }
 
 // NAV-TIMEUTC (0x01 0x21)
 type NavTimeUTC struct {

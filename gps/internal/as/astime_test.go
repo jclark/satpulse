@@ -189,3 +189,146 @@ func TestTimeNavTime(t *testing.T) {
 		})
 	}
 }
+
+func TestTimeNavTimeUTC(t *testing.T) {
+	allValid := asbin.NavTimeUTCFlagTowValid | asbin.NavTimeUTCFlagWknValid | asbin.NavTimeUTCFlagUtcValid
+	tests := []struct {
+		name   string
+		input  asbin.NavTimeUTC
+		expect gpsprot.TimeMsg
+	}{
+		{
+			name: "invalid missing UTC flag",
+			input: asbin.NavTimeUTC{
+				ValidFlag: asbin.NavTimeUTCFlagTowValid | asbin.NavTimeUTCFlagWknValid,
+			},
+			expect: gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEUTC"},
+		},
+		{
+			name: "invalid missing TOW flag",
+			input: asbin.NavTimeUTC{
+				ValidFlag: asbin.NavTimeUTCFlagWknValid | asbin.NavTimeUTCFlagUtcValid,
+			},
+			expect: gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEUTC"},
+		},
+		{
+			name: "invalid missing WKN flag",
+			input: asbin.NavTimeUTC{
+				ValidFlag: asbin.NavTimeUTCFlagTowValid | asbin.NavTimeUTCFlagUtcValid,
+			},
+			expect: gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEUTC"},
+		},
+		{
+			name: "valid with USNO",
+			input: asbin.NavTimeUTC{
+				Year:      2024,
+				Month:     3,
+				Day:       15,
+				Hour:      12,
+				Min:       30,
+				Sec:       45,
+				Nano:      123456789,
+				TAcc:      50,
+				ValidFlag: allValid | asbin.NavTimeUTCFlags(asbin.UTCStandardUSNO<<4),
+			},
+			expect: gpsprot.TimeMsg{
+				NativeMsgID: "NAV-TIMEUTC",
+				UTCTime:     utcTimePtr(ptime.UTC(2024, 3, 15, 12, 30, 45, 123456789)),
+				Accuracy:    50 * time.Nanosecond,
+				GNSS:        gpsprot.GPS,
+			},
+		},
+		{
+			name: "valid with NTSC",
+			input: asbin.NavTimeUTC{
+				Year:      2024,
+				Month:     1,
+				Day:       1,
+				Hour:      0,
+				Min:       0,
+				Sec:       0,
+				Nano:      0,
+				TAcc:      100,
+				ValidFlag: allValid | asbin.NavTimeUTCFlags(asbin.UTCStandardNTSC<<4),
+			},
+			expect: gpsprot.TimeMsg{
+				NativeMsgID: "NAV-TIMEUTC",
+				UTCTime:     utcTimePtr(ptime.UTC(2024, 1, 1, 0, 0, 0, 0)),
+				Accuracy:    100 * time.Nanosecond,
+				GNSS:        gpsprot.BDS,
+			},
+		},
+		{
+			name: "valid with EUL",
+			input: asbin.NavTimeUTC{
+				Year:      2024,
+				Month:     6,
+				Day:       15,
+				Hour:      18,
+				Min:       45,
+				Sec:       30,
+				Nano:      500000000,
+				TAcc:      200,
+				ValidFlag: allValid | asbin.NavTimeUTCFlags(asbin.UTCStandardEU<<4),
+			},
+			expect: gpsprot.TimeMsg{
+				NativeMsgID: "NAV-TIMEUTC",
+				UTCTime:     utcTimePtr(ptime.UTC(2024, 6, 15, 18, 45, 30, 500000000)),
+				Accuracy:    200 * time.Nanosecond,
+				GNSS:        gpsprot.GAL,
+			},
+		},
+		{
+			name: "valid with SU",
+			input: asbin.NavTimeUTC{
+				Year:      2024,
+				Month:     12,
+				Day:       31,
+				Hour:      23,
+				Min:       59,
+				Sec:       59,
+				Nano:      999999999,
+				TAcc:      300,
+				ValidFlag: allValid | asbin.NavTimeUTCFlags(asbin.UTCStandardSU<<4),
+			},
+			expect: gpsprot.TimeMsg{
+				NativeMsgID: "NAV-TIMEUTC",
+				UTCTime:     utcTimePtr(ptime.UTC(2024, 12, 31, 23, 59, 59, 999999999)),
+				Accuracy:    300 * time.Nanosecond,
+				GNSS:        gpsprot.GLO,
+			},
+		},
+		{
+			name: "valid with unknown standard",
+			input: asbin.NavTimeUTC{
+				Year:      2024,
+				Month:     1,
+				Day:       1,
+				Hour:      0,
+				Min:       0,
+				Sec:       0,
+				Nano:      0,
+				TAcc:      50,
+				ValidFlag: allValid, // 0 = not available
+			},
+			expect: gpsprot.TimeMsg{
+				NativeMsgID: "NAV-TIMEUTC",
+				UTCTime:     utcTimePtr(ptime.UTC(2024, 1, 1, 0, 0, 0, 0)),
+				Accuracy:    50 * time.Nanosecond,
+				GNSS:        0,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := timeNavTimeUTC(&tc.input)
+			if !reflect.DeepEqual(*got, tc.expect) {
+				t.Errorf("timeNavTimeUTC() = %+v, want %+v", *got, tc.expect)
+			}
+		})
+	}
+}
+
+func utcTimePtr(u ptime.UTCTime) *ptime.UTCTime {
+	return &u
+}

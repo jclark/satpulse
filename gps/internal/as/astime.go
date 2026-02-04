@@ -9,6 +9,21 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
+// timeNavTimeUTC converts asbin.NavTimeUTC to gpsprot.TimeMsg.
+// Always returns a TimeMsg, but with nil UTCTime when the time is invalid.
+func timeNavTimeUTC(m *asbin.NavTimeUTC) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEUTC"}
+	const fullyValid = asbin.NavTimeUTCFlagTowValid | asbin.NavTimeUTCFlagWknValid | asbin.NavTimeUTCFlagUtcValid
+	if m.ValidFlag&fullyValid != fullyValid {
+		return &t
+	}
+	u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
+	t.UTCTime = &u
+	t.Accuracy = time.Duration(m.TAcc) * time.Nanosecond
+	t.GNSS = utcStandardToGNSS(m.ValidFlag.UTCStandard())
+	return &t
+}
+
 // timeNavTime converts asbin.NavTime to gpsprot.TimeMsg.
 // Always returns a TimeMsg, but with zero TAITime when the time is invalid.
 func timeNavTime(m *asbin.NavTime) *gpsprot.TimeMsg {
@@ -55,4 +70,19 @@ func timeNavTime(m *asbin.NavTime) *gpsprot.TimeMsg {
 	}
 	t.Accuracy = time.Duration(m.TimeErr) * time.Nanosecond
 	return &t
+}
+
+func utcStandardToGNSS(std asbin.UTCStandard) gpsprot.GNSS {
+	switch std {
+	case asbin.UTCStandardNTSC:
+		return gpsprot.BDS
+	case asbin.UTCStandardUSNO:
+		return gpsprot.GPS
+	case asbin.UTCStandardEU:
+		return gpsprot.GAL
+	case asbin.UTCStandardSU:
+		return gpsprot.GLO
+	default:
+		return 0
+	}
 }
