@@ -94,6 +94,15 @@ id = 0x0C
 payload.types = "U4"
 payload.values = [0x0007C004]
 
+# All GNSS constellations and bands (GPS+GLO+BDS+GAL+QZSS+SBAS+IRNSS)
+[[asbin]]
+tag = "gnss-all"
+description = "Enable all GNSS constellations and bands"
+class = 0x06
+id = 0x0C
+payload.types = "U4"
+payload.values = [0x0F77E7F7]
+
 # Poll current GNSS configuration
 # Verified CFG-NAVSAT response received on TAU1201
 [[asbin]]
@@ -266,7 +275,7 @@ payload.values = [1]
 # Verified ACK received on TAU1201
 # Verified NAV-TIME messages appear at 1Hz after enable on TAU1201
 [[asbin]]
-tag = "asbin-navtime"
+tag = "asbin-nav-time"
 description = "Enable NAV-TIME binary message at 1Hz"
 class = 0x06
 id = 0x01
@@ -277,7 +286,7 @@ payload.values = [0x01, 0x05, 1]
 # Verified ACK received on TAU1201
 # Verified NAV-TIME messages stop after disable on TAU1201
 [[asbin]]
-tag = "asbin-navtime-off"
+tag = "asbin-nav-time-off"
 description = "Disable NAV-TIME binary message"
 class = 0x06
 id = 0x01
@@ -288,7 +297,7 @@ payload.values = [0x01, 0x05, 0]
 # Verified ACK received on TAU1201
 # Verified NAV-TIMEUTC messages appear at 1Hz after enable on TAU1201
 [[asbin]]
-tag = "asbin-timeutc"
+tag = "asbin-nav-timeutc"
 description = "Enable NAV-TIMEUTC binary message at 1Hz"
 class = 0x06
 id = 0x01
@@ -299,7 +308,7 @@ payload.values = [0x01, 0x21, 1]
 # Verified ACK received on TAU1201
 # Verified NAV-TIMEUTC messages stop after disable on TAU1201
 [[asbin]]
-tag = "asbin-timeutc-off"
+tag = "asbin-nav-timeutc-off"
 description = "Disable NAV-TIMEUTC binary message"
 class = 0x06
 id = 0x01
@@ -310,7 +319,7 @@ payload.values = [0x01, 0x21, 0]
 # Verified ACK received on TAU1201
 # Verified NAV-SVINFO messages appear at 1Hz after enable on TAU1201
 [[asbin]]
-tag = "asbin-svinfo"
+tag = "asbin-nav-svinfo"
 description = "Enable NAV-SVINFO binary message at 1Hz"
 class = 0x06
 id = 0x01
@@ -321,7 +330,7 @@ payload.values = [0x01, 0x30, 1]
 # Verified ACK received on TAU1201
 # Verified NAV-SVINFO messages stop after disable on TAU1201
 [[asbin]]
-tag = "asbin-svinfo-off"
+tag = "asbin-nav-svinfo-off"
 description = "Disable NAV-SVINFO binary message"
 class = 0x06
 id = 0x01
@@ -332,7 +341,7 @@ payload.values = [0x01, 0x30, 0]
 # Verified ACK received on TAU1201
 # Verified NAV-SVIN messages appear at 1Hz after enable on TAU1201
 [[asbin]]
-tag = "asbin-svin"
+tag = "asbin-nav-svin"
 description = "Enable NAV-SVIN binary message at 1Hz"
 class = 0x06
 id = 0x01
@@ -343,7 +352,7 @@ payload.values = [0x01, 0x31, 1]
 # Verified ACK received on TAU1201
 # Verified NAV-SVIN messages stop after disable on TAU1201
 [[asbin]]
-tag = "asbin-svin-off"
+tag = "asbin-nav-svin-off"
 description = "Disable NAV-SVIN binary message"
 class = 0x06
 id = 0x01
@@ -352,7 +361,7 @@ payload.values = [0x01, 0x31, 0]
 
 # Enable NAV-POSECEF at 1Hz (ECEF position)
 [[asbin]]
-tag = "asbin-posecef"
+tag = "asbin-nav-posecef"
 description = "Enable NAV-POSECEF binary message at 1Hz"
 class = 0x06
 id = 0x01
@@ -361,7 +370,7 @@ payload.values = [0x01, 0x01, 1]
 
 # Disable NAV-POSECEF
 [[asbin]]
-tag = "asbin-posecef-off"
+tag = "asbin-nav-posecef-off"
 description = "Disable NAV-POSECEF binary message"
 class = 0x06
 id = 0x01
@@ -370,7 +379,7 @@ payload.values = [0x01, 0x01, 0]
 
 # Enable NAV-POSLLH at 1Hz (LLH position)
 [[asbin]]
-tag = "asbin-posllh"
+tag = "asbin-nav-posllh"
 description = "Enable NAV-POSLLH binary message at 1Hz"
 class = 0x06
 id = 0x01
@@ -379,7 +388,7 @@ payload.values = [0x01, 0x02, 1]
 
 # Disable NAV-POSLLH
 [[asbin]]
-tag = "asbin-posllh-off"
+tag = "asbin-nav-posllh-off"
 description = "Disable NAV-POSLLH binary message"
 class = 0x06
 id = 0x01
@@ -388,7 +397,7 @@ payload.values = [0x01, 0x02, 0]
 
 # Enable NAV-DOP at 1Hz (dilution of precision)
 [[asbin]]
-tag = "asbin-dop"
+tag = "asbin-nav-dop"
 description = "Enable NAV-DOP binary message at 1Hz"
 class = 0x06
 id = 0x01
@@ -397,7 +406,7 @@ payload.values = [0x01, 0x04, 1]
 
 # Disable NAV-DOP
 [[asbin]]
-tag = "asbin-dop-off"
+tag = "asbin-nav-dop-off"
 description = "Disable NAV-DOP binary message"
 class = 0x06
 id = 0x01
@@ -406,7 +415,7 @@ payload.values = [0x01, 0x04, 0]
 
 # Enable NAV-VELECEF at 1Hz (ECEF velocity)
 [[asbin]]
-tag = "asbin-velecef"
+tag = "asbin-nav-velecef"
 description = "Enable NAV-VELECEF binary message at 1Hz"
 class = 0x06
 id = 0x01
@@ -415,7 +424,7 @@ payload.values = [0x01, 0x11, 1]
 
 # Disable NAV-VELECEF
 [[asbin]]
-tag = "asbin-velecef-off"
+tag = "asbin-nav-velecef-off"
 description = "Disable NAV-VELECEF binary message"
 class = 0x06
 id = 0x01
@@ -424,7 +433,7 @@ payload.values = [0x01, 0x11, 0]
 
 # Enable NAV-VELNED at 1Hz (NED velocity)
 [[asbin]]
-tag = "asbin-velned"
+tag = "asbin-nav-velned"
 description = "Enable NAV-VELNED binary message at 1Hz"
 class = 0x06
 id = 0x01
@@ -433,7 +442,7 @@ payload.values = [0x01, 0x12, 1]
 
 # Disable NAV-VELNED
 [[asbin]]
-tag = "asbin-velned-off"
+tag = "asbin-nav-velned-off"
 description = "Disable NAV-VELNED binary message"
 class = 0x06
 id = 0x01
