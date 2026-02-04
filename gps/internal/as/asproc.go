@@ -65,6 +65,12 @@ func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {
 			p.mh.Satellites(sats, tRead)
 		}
 		return true
+	case *asbin.NavSvin:
+		sv := surveyNavSvin(mt)
+		if sv != nil && p.mh != nil {
+			p.mh.Survey(sv, tRead)
+		}
+		return true
 	default:
 		return false
 	}

@@ -28,9 +28,9 @@ type TimeSSE struct {
 
 // SurveySSE is the type of the SSE for survey progress
 type SurveySSE struct {
-	X          float64     `json:"x"`
-	Y          float64     `json:"y"`
-	Z          float64     `json:"z"`
+	X          float64     `json:"x,omitzero"`
+	Y          float64     `json:"y,omitzero"`
+	Z          float64     `json:"z,omitzero"`
 	Accuracy   float64     `json:"accuracy"`
 	Alt        *float64    `json:"alt,omitempty"`
 	LatLon     *[2]float64 `json:"latLon,omitempty"`
@@ -135,26 +135,28 @@ func (o *SSEObserver) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 
 // Survey implements gpsprot.MsgHandler - generates survey SSE events (copied exactly from dispatcher.go)
 func (o *SSEObserver) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
-	ecef := geopos.ECEF{}
-	for i := range ecef {
-		ecef[i] = m.Position[i].Meters()
-	}
 	event := SurveySSE{
-		X:          ecef[0],
-		Y:          ecef[1],
-		Z:          ecef[2],
 		Accuracy:   m.Accuracy.Meters(),
 		ObsTime:    uint32(m.ObsTime / time.Second),
 		ObsCount:   m.ObsCount,
 		InProgress: m.InProgress,
 		Valid:      m.Valid,
 	}
-	llh, err := geopos.WGS84.ECEFtoLLH(ecef)
-	if err == nil {
-		latLon := [2]float64{llh.Lat, llh.Lon}
-		event.LatLon = &latLon
-		h := llh.Height
-		event.Alt = &h
+	if !m.Position.IsZero() {
+		ecef := geopos.ECEF{}
+		for i := range ecef {
+			ecef[i] = m.Position[i].Meters()
+		}
+		event.X = ecef[0]
+		event.Y = ecef[1]
+		event.Z = ecef[2]
+		llh, err := geopos.WGS84.ECEFtoLLH(ecef)
+		if err == nil {
+			latLon := [2]float64{llh.Lat, llh.Lon}
+			event.LatLon = &latLon
+			h := llh.Height
+			event.Alt = &h
+		}
 	}
 	o.sendSSE("survey", event)
 }

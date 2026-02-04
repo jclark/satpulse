@@ -90,6 +90,20 @@ func TestSSEObserver_Events(t *testing.T) {
 			expectedJSON: `{"x":1000,"y":2000,"z":3000,"accuracy":5.5,"obsTime":30,"obsCount":150,"inProgress":true,"valid":true}`,
 		},
 		{
+			name: "survey_no_position",
+			action: func(obs *SSEObserver) {
+				obs.Survey(&gpsprot.SurveyMsg{
+					Accuracy:   gpsprot.Meters(5.5),
+					ObsTime:    60 * time.Second,
+					ObsCount:   60,
+					InProgress: true,
+					Valid:      false,
+				}, time.Now())
+			},
+			eventType:    "survey",
+			expectedJSON: `{"accuracy":5.5,"obsTime":60,"obsCount":60,"inProgress":true,"valid":false}`,
+		},
+		{
 			name: "satellites",
 			action: func(obs *SSEObserver) {
 				obs.Satellites(&gpsprot.SatellitesMsg{

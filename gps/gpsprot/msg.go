@@ -392,7 +392,7 @@ func (msg *LeapSecondMsg) UpdateLeapSecond(target *ptime.LeapSecond) bool {
 }
 
 type SurveyMsg struct {
-	Position   Point3D       `json:"position"`
+	Position   Point3D       `json:"position,omitzero"`
 	Accuracy   Length        `json:"accuracy"`
 	ObsCount   uint32        `json:"obsCount"`
 	ObsTime    time.Duration `json:"obsTime"`
