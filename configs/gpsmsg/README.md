@@ -1,284 +1,44 @@
 # GPS Message Files
 
-`satpulsetool gps` provides protocol-agnostic configuration, but:
+This directory contains message files for configuring GPS receivers using the `-m` and `-t` options of `satpulsetool gps`.
 
-- there will always be protocol-specific details that cannot be abstracted
-- technical users are comfortable reading their receiver's manual and constructing exact commands
+`satpulsetool gps` provides options that allow convenient, high-level configuration of GPS receivers in a protocol-independent way.
+But these options only work when `satpulsetool` includes the necessary code for the protocol used by the specific receiver.
+Message files are less convenient but can work with any GPS receiver.
+Message files can also be used to configure receiver-specific features that satpulsetool does not support in a high-level way.
 
-GPS message files let you send protocol-specific commands to a GPS receiver without modifying satpulsetool.
-The message file format uses [TOML](https://toml.io/en/), the same format as the main SatPulse configuration file.
+## Usage
 
-## Simplest case
-
-Example file called `um980-has.toml`:
-
-```toml
-[[line]]
-text = "CONFIG PPP ENABLE E6-HAS"
-[[line]]
-text = "CONFIG PPP CONVERGE 10 20"
-```
-
-This specifies two messages each of which are lines.
-The `[[line]]` is a TOML array of tables; each `[[line]]` entry defines one message.
-The word inside the double brackets is the message type; `line` means a text line.
-
-Send these messages with:
+Send messages from a file:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980-has.toml
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar.toml -t pps
 ```
 
-The `-m` flag specifies the message file.
-Each line will be terminated with CR/LF and sent to the receiver.
+The `-m` flag specifies the message file. The `-t` flag selects which tags to send.
 
-The `-m` flag cannot be combined with config flags like `--gnss`, `--pps`, `--save`, etc.
-This avoids ambiguity about ordering of manual messages versus higher-level configuration.
-
-## Delay key
-
-```toml
-[[line]]
-text = "CONFIG PPP CONVERGE 10 20"
-delay = 0.1
-
-[[line]]
-text = "CONFIG PPP ENABLE E6-HAS"
-```
-
-This will add delay 0.1 seconds after sending the first line.
-
-## Defaults
-
-```toml
-[default.line]
-delay = 0.1
-
-[[line]]
-text = "CONFIG PPP CONVERGE 10 20"
-
-[[line]]
-text = "CONFIG PPP ENABLE E6-HAS"
-```
-
-This will add a delay of 0.1 seconds after every line.
-
-## Line terminator
-
-The `eol` key is a string specifying the line terminator.
-
-```toml
-[[line]]
-text = "CONFIG PPP CONVERGE 10 20"
-eol = "\n"
-```
-
-This is usually specified in the `default.line` table:
-
-```toml
-[default.line]
-eol = "\n"
-
-[[line]]
-text = "CONFIG PPP CONVERGE 10 20"
-
-[[line]]
-text = "CONFIG PPP ENABLE E6-HAS"
-```
-
-You can use `eol = ""` to send plain text with no line terminator.
-
-## Binary messages
-
-The `binary` message type sends raw bytes specified as a hex string.
-For example, with u-blox L5 receivers, there is a special command you need to send to get GPS L5 signal to work:
-
-```toml
-[[binary]]
-hex = "B562068A0900000100000100321001DEED"
-tag = "gps-l5-health"
-description = "Use GPS L5 signal regardless of health status"
-```
-
-Hex string must have even length. Whitespace within the hex string is ignored.
-
-## NMEA messages
-
-The `nmea` message type handles NMEA sentence framing automatically.
-For example, this is how to configure PPS on a Quectel LG290P:
-
-```toml
-[[nmea]]
-text = "PQTMCFGPPS,W,1,1,100,2,1,0"
-```
-
-This is like `line`, except:
-- leading `$` is prepended if missing
-- trailing `*XX` checksum is computed and appended if missing
-- CRLF is always appended
-
-## Tags
-
-Tags let you group messages and select which groups to send.
-
-```toml
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,RMC,1"
-tag = "nmea-daemon"
-description = "Enable NMEA messages understood by satpulse daemon"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GGA,1"
-tag = "nmea-daemon"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSA,1"
-tag = "nmea-daemon"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSV,1"
-tag = "nmea-daemon"
-[[nmea]]
-text = "PQTMSAVEPAR"
-tag = "save"
-description = "Save configuration to NVM"
-```
-
-Use `-t` to select which tags to send:
+List available tags:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 460800 -m quectel.toml -t nmea-daemon,save
+satpulsetool gps -m allystar.toml --show-tags
 ```
 
-This sends messages with tag `nmea-daemon`, then messages with tag `save`.
+The `-m` flag cannot be combined with config flags like `--gnss`, `--pps`, `--save`.
 
-The `--show-tags` flag lists available tags with descriptions:
+You can use `--packet-log file.json --capture 3` options to capture packets for 3 seconds and save them to `file.jsonl`.
+You can then use `satpulsetool decode --packet-log file.json` to decode the binary packets: pipe through `jq` to pretty-print the JSONL.
+This can help with seeing whether your receiver is handling the commands correctly.
 
-```
-satpulsetool gps -m quectel.toml --show-tags
-```
+## Available Message Files
 
-If there is no `-t` flag, messages with the empty tag `""` are sent.
-Since none of the messages in this file have an empty tag, nothing would be sent without `-t`.
+| File | Receiver | Protocol |
+|------|----------|----------|
+| [allystar.toml](allystar.toml) | Allystar TAU1201, TAU951M | Allystar binary |
+| [lg290p.toml](lg290p.toml) | Quectel LG290P | NMEA (PQTM) |
+| [atgm332d-f8.toml](atgm332d-f8.toml) | Zhongke Micro ATGM332D-F8 | CASIC binary |
 
-`-t foo,,bar` will send messages with foo tag, then empty tag, then bar tag.
+## Documentation
 
-Default tag can be set:
-
-```toml
-[default.line]
-tag = "setup"
-
-[[line]]
-text = "CONFIG PPP CONVERGE 10 20"
-
-[[line]]
-text = "CONFIG PPP ENABLE E6-HAS"
-
-[[line]]
-text = "SIGNALGROUP 1"
-
-[[line]]
-text = "SIGNALGROUP 2"
-tag = "signalgroup2"
-```
-
-The first three messages have tag `setup` (from the default); the last has tag `signalgroup2`.
-
-## Description key
-
-`description` is an optional string that documents what a tag does. It is displayed by `--show-tags`.
-
-When multiple messages share the same tag, each can have a `description`. The rule is: all non-empty descriptions for a tag must be identical.
-
-```toml
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,RMC,1"
-tag = "nmea-satpulse"
-description = "Enable NMEA messages for satpulse"
-
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GGA,1"
-tag = "nmea-satpulse"
-
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSV,1"
-tag = "nmea-satpulse"
-
-# Option 2: repeat for clarity (must match)
-[[nmea]]
-text = "PQTMRESTOREPAR"
-tag = "factory-reset"
-description = "Restore factory defaults and reboot"
-
-[[nmea]]
-text = "PQTMSRR"
-tag = "factory-reset"
-description = "Restore factory defaults and reboot"
-```
-
-Default is empty string `""`. Not allowed in `[default.line]` etc.
-
-## Protocol-specific message types
-
-For u-blox UBX, CASIC, and Allystar binary protocols, use structured payload encoding.
-
-For example, the CASIC CFG-TP message (0x06 0x03) controls the time pulse:
-
-```toml
-[[casbin]]
-tag = "pps-gps"
-description = "Enable PPS aligned to GPS time"
-class = 0x06
-id = 0x03
-payload.types = "U4U4U1I1U1U1R4"
-payload.values = [1000000, 100000, 3, 0, 1, 0, 0.0]
-```
-
-For Allystar receivers (TAU1201, etc.), use `asbin`:
-
-```toml
-[[asbin]]
-tag = "pps"
-description = "Configure 1PPS with 100us pulse width, rising edge"
-class = 0x06
-id = 0x07
-payload.types = "U4I4U4U1U1U1"
-payload.values = [1000000, 0, 100000, 1, 13, 1]
-```
-
-Each type descriptor in the `payload.types` string specifies how to encode the corresponding entry in `payload.values`.
-SatPulse doesn't need to know about the specific message, just the protocol packet format.
-It uses this to produce the correct packet (with sync bytes, payload length, class, message id, little-endian encoded payload, and checksum).
-
-| Key | Type | Description |
-|-----|------|-------------|
-| `class` | integer | Message class (0-255) |
-| `id` | integer | Message ID (0-255) |
-| `payload.types` | string | Type specifiers for payload encoding |
-| `payload.values` | array | Values to encode into payload |
-
-Type specifiers are two characters each:
-- `U1`, `U2`, `U4` - unsigned integers (1, 2, or 4 bytes)
-- `I1`, `I2`, `I4` - signed integers (1, 2, or 4 bytes)
-- `R4`, `R8` - floating point (4 or 8 bytes)
-
-## Message types summary
-
-| Type | Keys | Framing |
-|------|------|---------|
-| `[[line]]` | `text`, `eol`, `delay`, `tag`, `description` | appends eol (default `\r\n`) |
-| `[[binary]]` | `hex`, `delay`, `tag`, `description` | none |
-| `[[nmea]]` | `text`, `delay`, `tag`, `description` | prepends `$`, appends `*XX\r\n` checksum |
-| `[[ubx]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | UBX framing with header and checksum |
-| `[[casbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | CASIC binary framing with header and checksum |
-| `[[asbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | Allystar binary framing with header and checksum |
-
-## Schema
-
-There is a JSON schema for message files at `gpsmsg-schema.json` in this directory.
-With Visual Studio Code, the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
-extension supports schema-sensitive editing. The first line of the TOML file can have a line like this:
-
-```
-#:schema ./gpsmsg-schema.json
-```
-
-to tell the extension which schema to use.
+- [format.md](format.md) - Message file format
+- [tags.md](tags.md) - Tag naming conventions
+- [gpsmsg-schema.json](gpsmsg-schema.json) - JSON schema for editor support
