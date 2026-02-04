@@ -7,7 +7,7 @@
 [[nmea]]
 text = "PQTMVERNO"
 tag = "get-version"
-description = "Get firmware version"
+description = "Get firmware and hardware version"
 
 # Get PPS configuration
 [[nmea]]
@@ -51,12 +51,80 @@ tag = "get-prot"
 text = "PQTMCFGPROT,R,1,3"
 tag = "get-prot"
 
+# Get elevation threshold
+# Added in protocol spec v1.1 (2025-07-25) - requires newer firmware
+[[nmea]]
+text = "PQTMCFGELETHD,R"
+tag = "get-min-elev"
+description = "Get elevation threshold"
+
+# Elevation threshold (min-elev) configuration
+# Range: -90.0 to 90.0 degrees, default 5.0
+# Added in protocol spec v1.1 (2025-07-25) - requires newer firmware
+[[nmea]]
+text = "PQTMCFGELETHD,W,0.0"
+tag = "min-elev-0"
+description = "Set elevation threshold to 0 degrees"
+
+[[nmea]]
+text = "PQTMCFGELETHD,W,5.0"
+tag = "min-elev-5"
+description = "Set elevation threshold to 5 degrees (default)"
+
+[[nmea]]
+text = "PQTMCFGELETHD,W,10.0"
+tag = "min-elev-10"
+description = "Set elevation threshold to 10 degrees"
+
+[[nmea]]
+text = "PQTMCFGELETHD,W,15.0"
+tag = "min-elev-15"
+description = "Set elevation threshold to 15 degrees"
+
+[[nmea]]
+text = "PQTMCFGELETHD,W,20.0"
+tag = "min-elev-20"
+description = "Set elevation threshold to 20 degrees"
+
+[[nmea]]
+text = "PQTMCFGELETHD,W,25.0"
+tag = "min-elev-25"
+description = "Set elevation threshold to 25 degrees"
+
+[[nmea]]
+text = "PQTMCFGELETHD,W,30.0"
+tag = "min-elev-30"
+description = "Set elevation threshold to 30 degrees"
+
+[[nmea]]
+text = "PQTMCFGELETHD,W,35.0"
+tag = "min-elev-35"
+description = "Set elevation threshold to 35 degrees"
+
+[[nmea]]
+text = "PQTMCFGELETHD,W,40.0"
+tag = "min-elev-40"
+description = "Set elevation threshold to 40 degrees"
+
+[[nmea]]
+text = "PQTMCFGELETHD,W,45.0"
+tag = "min-elev-45"
+description = "Set elevation threshold to 45 degrees"
+
 # Enable PPS: 100ms pulse, only when locked, rising edge
 # Index=1, Enable=1, Duration=100, Mode=2 (fix only), Polarity=1 (high), Reserved=0
 [[nmea]]
 text = "PQTMCFGPPS,W,1,1,100,2,1,0"
 tag = "pps"
 description = "Enable PPS output (0.1s pulse, only when locked)"
+
+# Disable PPS output
+# Index=1, Enable=0
+# Verified OK response and get-pps returns Enable=0 on LG290P
+[[nmea]]
+text = "PQTMCFGPPS,W,1,0"
+tag = "pps-off"
+description = "Disable PPS output"
 
 # Get survey-in config
 [[nmea]]
@@ -71,11 +139,34 @@ text = "PQTMCFGSVIN,W,1,2000,20.0,0,0,0"
 tag = "survey"
 description = "Start survey-in (2000s, 20m accuracy limit)"
 
+# Mobile mode (disable survey-in or fixed position)
+# Mode=0 (disable)
+# Verified OK response and get-survey returns Mode=0 on LG290P
+[[nmea]]
+text = "PQTMCFGSVIN,W,0,0,0,0,0,0"
+tag = "mobile"
+description = "Return to mobile mode (disable survey-in or fixed position)"
+
+# Fixed position mode (Mode=2)
+# ECEF coordinates in meters - example from protocol doc
+# X=-2519265.0514, Y=4849534.9045, Z=3277834.6432
+# Verified OK response and get-survey returns Mode=2 with coordinates on LG290P
+[[nmea]]
+text = "PQTMCFGSVIN,W,2,0,0,-2519265.0514,4849534.9045,3277834.6432"
+tag = "fixed-pos-example"
+description = "Set fixed ECEF position (example coordinates - replace with yours)"
+
 # Save configuration to NVM
 [[nmea]]
 text = "PQTMSAVEPAR"
 tag = "save"
 description = "Save configuration to NVM"
+
+# Reload configuration from NVM (reboot receiver)
+[[nmea]]
+text = "PQTMSRR"
+tag = "reload"
+description = "Reload configuration from NVM (reboot)"
 
 # Factory reset: restore defaults then reboot
 [[nmea]]
@@ -92,26 +183,44 @@ text = "PQTMSRR"
 tag = "reset"
 description = "Reboot receiver"
 
+# Hot start (keep ephemeris, almanac, position, time)
+[[nmea]]
+text = "PQTMHOT"
+tag = "hot-start"
+description = "Perform hot start"
+
+# Warm start (keep almanac, clear ephemeris)
+[[nmea]]
+text = "PQTMWARM"
+tag = "warm-start"
+description = "Perform warm start"
+
+# Cold start (clear all data)
+[[nmea]]
+text = "PQTMCOLD"
+tag = "cold-start"
+description = "Perform cold start"
+
 # Use only GPS
 # GPS=1, GLONASS=0, Galileo=0, BDS=0, QZSS=0, NavIC=0
 [[nmea]]
 text = "PQTMCFGCNST,W,1,0,0,0,0,0"
 tag = "gnss-gps"
-description = "Enable GPS only"
+description = "Enable GPS all bands"
 
 # Use only Galileo
 # GPS=0, GLONASS=0, Galileo=1, BDS=0, QZSS=0, NavIC=0
 [[nmea]]
 text = "PQTMCFGCNST,W,0,0,1,0,0,0"
 tag = "gnss-gal"
-description = "Enable Galileo only"
+description = "Enable Galileo all bands"
 
 # Use GPS and Galileo
 # GPS=1, GLONASS=0, Galileo=1, BDS=0, QZSS=0, NavIC=0
 [[nmea]]
 text = "PQTMCFGCNST,W,1,0,1,0,0,0"
 tag = "gnss-gps-gal"
-description = "Enable GPS and Galileo"
+description = "Enable GPS and Galileo all bands"
 
 # Use all constellations
 # GPS=1, GLONASS=1, Galileo=1, BDS=1, QZSS=1, NavIC=1
@@ -120,23 +229,193 @@ text = "PQTMCFGCNST,W,1,1,1,1,1,1"
 tag = "gnss-all"
 description = "Enable all constellations"
 
-# Set baud rate to 115200 on current port
+# Baud rate configuration
+# Supported: 9600, 115200, 230400, 460800, 921600
+[[nmea]]
+text = "PQTMCFGUART,W,9600"
+tag = "speed-9600"
+description = "Set baud rate to 9600"
+
 [[nmea]]
 text = "PQTMCFGUART,W,115200"
 tag = "speed-115200"
 description = "Set baud rate to 115200"
 
-# Enable NMEA messages understood by satpulse daemon (RMC, GGA, GSV at rate 1)
+[[nmea]]
+text = "PQTMCFGUART,W,230400"
+tag = "speed-230400"
+description = "Set baud rate to 230400"
+
+[[nmea]]
+text = "PQTMCFGUART,W,460800"
+tag = "speed-460800"
+description = "Set baud rate to 460800"
+
+[[nmea]]
+text = "PQTMCFGUART,W,921600"
+tag = "speed-921600"
+description = "Set baud rate to 921600"
+
+# NMEA Message Control
+
+# Enable NMEA RMC message at rate 1
+# Verified GNRMC messages appear in capture after enable on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RMC,1"
+tag = "nmea-rmc"
+description = "Enable NMEA RMC message"
+
+# Disable NMEA RMC message
+# Verified GNRMC messages no longer appear after disable on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RMC,0"
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC message"
+
+# Enable NMEA GGA message at rate 1
+# Verified GNGGA messages appear in capture after enable on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GGA,1"
+tag = "nmea-gga"
+description = "Enable NMEA GGA message"
+
+# Disable NMEA GGA message
+# Verified GNGGA messages no longer appear after disable on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GGA,0"
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA message"
+
+# Enable NMEA GSV message at rate 1
+# Verified GSV messages appear in capture after enable on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSV,1"
+tag = "nmea-gsv"
+description = "Enable NMEA GSV message"
+
+# Disable NMEA GSV message
+# Verified GSV messages no longer appear after disable on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSV,0"
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV message"
+
+# Enable NMEA GSA message at rate 1
+# Verified GNGSA messages appear in capture after enable on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSA,1"
+tag = "nmea-gsa"
+description = "Enable NMEA GSA message"
+
+# Disable NMEA GSA message
+# Verified GNGSA messages no longer appear after disable on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSA,0"
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA message"
+
+# Enable NMEA ZDA message at rate 1
+# Added in protocol spec v1.1 (2025-07-25) - requires newer firmware
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,ZDA,1"
+tag = "nmea-zda"
+description = "Enable NMEA ZDA message"
+
+# Disable NMEA ZDA message
+# Added in protocol spec v1.1 (2025-07-25) - requires newer firmware
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,ZDA,0"
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA message"
+
+# Enable NMEA messages for satpulse daemon (RMC, GGA, GSV, GSA)
+# Verified RMC, GGA, GSV, GSA messages all appear in capture after enable on LG290P
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RMC,1"
 tag = "nmea-daemon"
-description = "Enable NMEA messages understood by satpulse daemon"
+description = "Enable NMEA messages for satpulse daemon"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,GGA,1"
 tag = "nmea-daemon"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,GSV,1"
 tag = "nmea-daemon"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSA,1"
+tag = "nmea-daemon"
+
+# PQTM Proprietary Message Control
+# Note: PQTM messages require message version parameter
+
+# Enable PQTMEPE message (estimated position error)
+# Verified OK and PQTMEPE messages appear on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMEPE,1,2"
+tag = "pqtm-epe"
+description = "Enable PQTMEPE message"
+
+# Disable PQTMEPE message
+# Verified OK on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMEPE,0,2"
+tag = "pqtm-epe-off"
+description = "Disable PQTMEPE message"
+
+# Enable PQTMVEL message (velocity info)
+# Verified OK and PQTMVEL messages appear on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMVEL,1,1"
+tag = "pqtm-vel"
+description = "Enable PQTMVEL message"
+
+# Disable PQTMVEL message
+# Verified OK on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMVEL,0,1"
+tag = "pqtm-vel-off"
+description = "Disable PQTMVEL message"
+
+# Enable PQTMPVT message (position/velocity/time)
+# Verified OK and PQTMPVT messages appear on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPVT,1,1"
+tag = "pqtm-pvt"
+description = "Enable PQTMPVT message"
+
+# Disable PQTMPVT message
+# Verified OK on LG290P
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPVT,0,1"
+tag = "pqtm-pvt-off"
+description = "Disable PQTMPVT message"
+
+# Enable PQTMNAV message (comprehensive navigation info)
+# Added in protocol spec v1.1 (2025-07-25) - requires newer firmware
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMNAV,1,1"
+tag = "pqtm-nav"
+description = "Enable PQTMNAV message"
+
+# Disable PQTMNAV message
+# Added in protocol spec v1.1 (2025-07-25) - requires newer firmware
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMNAV,0,1"
+tag = "pqtm-nav-off"
+description = "Disable PQTMNAV message"
+
+# Enable PQTMEOE message (end of epoch)
+# Added in protocol spec v1.1 (2025-07-25) - requires newer firmware
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMEOE,1,1"
+tag = "pqtm-eoe"
+description = "Enable PQTMEOE message (end of epoch)"
+
+# Disable PQTMEOE message
+# Added in protocol spec v1.1 (2025-07-25) - requires newer firmware
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMEOE,0,1"
+tag = "pqtm-eoe-off"
+description = "Disable PQTMEOE message"
 
 # Base station mode (disables NMEA, enables RTCM MSM4/1005)
 [[nmea]]
@@ -192,21 +471,41 @@ text = "PQTMCFGMSGRATE,W,RTCM3-1005,1"
 tag = "rtcm-arp"
 description = "Enable RTCM ARP message (1005)"
 
-# Enable RTCM MSM messages per constellation (107X = GPS, 108X = GLO, etc.)
-# Rate=1 (every fix), Offset=0 (no time offset)
+# Enable RTCM MSM4 messages for all constellations
+# First set MSM type to 4, then enable all constellation outputs
+# 107X = GPS, 108X = GLO, 109X = GAL, 112X = BDS
+[[nmea]]
+text = "PQTMCFGRTCM,W,4,0,-90.0,07,06,0,0"
+tag = "rtcm-msm4"
+description = "Enable RTCM MSM4 messages for all constellations"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-107X,1,0"
-tag = "rtcm-msm-gps"
-description = "Enable RTCM GPS MSM messages"
+tag = "rtcm-msm4"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-108X,1,0"
-tag = "rtcm-msm-glo"
-description = "Enable RTCM GLONASS MSM messages"
+tag = "rtcm-msm4"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-109X,1,0"
-tag = "rtcm-msm-gal"
-description = "Enable RTCM Galileo MSM messages"
+tag = "rtcm-msm4"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-112X,1,0"
-tag = "rtcm-msm-bds"
-description = "Enable RTCM BDS MSM messages"
+tag = "rtcm-msm4"
+
+# Enable RTCM MSM7 messages for all constellations
+# First set MSM type to 7, then enable all constellation outputs
+[[nmea]]
+text = "PQTMCFGRTCM,W,7,0,-90.0,07,06,0,0"
+tag = "rtcm-msm7"
+description = "Enable RTCM MSM7 messages for all constellations"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-107X,1,0"
+tag = "rtcm-msm7"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-108X,1,0"
+tag = "rtcm-msm7"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-109X,1,0"
+tag = "rtcm-msm7"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-112X,1,0"
+tag = "rtcm-msm7"
