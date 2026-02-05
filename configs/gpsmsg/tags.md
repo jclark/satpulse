@@ -1,23 +1,23 @@
-# Tag Naming Conventions
+# Tag naming conventions
 
 Tags group related messages and are selected with the `-t` flag when running `satpulsetool gps`.
 
-## General Rules
+## General rules
 
 - Tags use lowercase with hyphens as separators
 - Enable/disable pairs use `-off` suffix: `nmea-rmc` / `nmea-rmc-off`
 - Query commands use `get-` prefix: `get-pps`, `get-gnss`
 - Parametric commands include the value: `min-elev-15`, `speed-115200`
 
-## Standard Tags
+## Standard tags
 
-### Version Query
+## Version query
 
 | Tag | Description |
 |-----|-------------|
 | `get-version` | Query firmware and hardware version |
 
-### NMEA Message Control
+## NMEA message control
 
 Individual tags for each NMEA sentence type:
 
@@ -35,7 +35,7 @@ Individual tags for each NMEA sentence type:
 | `nmea-zda-off` | Disable ZDA |
 | `nmea-daemon` | Enable RMC, GGA, GSV, GSA (messages used by satpulse daemon) |
 
-### Binary Message Control
+## Binary message control
 
 Protocol-prefixed tags for proprietary binary messages:
 
@@ -48,7 +48,7 @@ Protocol-prefixed tags for proprietary binary messages:
 
 Each gets an `-off` variant for disabling.
 
-### NMEA Version
+## NMEA version
 
 | Tag | Description |
 |-----|-------------|
@@ -58,7 +58,7 @@ Each gets an `-off` variant for disabling.
 | `nmea-ver-410` | Set NMEA version 4.10 (adds signal ID to GSV) |
 | `nmea-ver-411` | Set NMEA version 4.11 (changes talker IDs: GB for BeiDou, GQ for QZSS) |
 
-### Elevation Mask
+## Elevation mask
 
 | Tag | Description |
 |-----|-------------|
@@ -74,7 +74,7 @@ Each gets an `-off` variant for disabling.
 | `min-elev-40` | Set minimum elevation to 40 degrees |
 | `min-elev-45` | Set minimum elevation to 45 degrees |
 
-### Constellation Selection
+## Constellation selection
 
 | Tag | Description |
 |-----|-------------|
@@ -86,15 +86,15 @@ Each gets an `-off` variant for disabling.
 | `gnss-gps-gal` | Enable GPS and Galileo |
 | `gnss-all` | Enable all constellations |
 
-### PPS Configuration
+## PPS configuration
 
 | Tag | Description |
 |-----|-------------|
 | `get-pps` | Query current PPS configuration |
-| `pps` | Enable PPS with sensible defaults |
+| `pps` | Enable PPS with 0.1s pulse width, only when locked |
 | `pps-off` | Disable PPS output |
 
-### Port Configuration
+## Port configuration
 
 | Tag | Description |
 |-----|-------------|
@@ -108,7 +108,7 @@ Each gets an `-off` variant for disabling.
 | `speed-460800` | Set baud rate to 460800 |
 | `speed-921600` | Set baud rate to 921600 |
 
-### Restart Commands
+## Restart commands
 
 | Tag | Description |
 |-----|-------------|
@@ -116,7 +116,7 @@ Each gets an `-off` variant for disabling.
 | `warm-start` | Clear ephemeris, keep almanac |
 | `cold-start` | Clear all satellite data |
 
-### Configuration Management
+## Configuration management
 
 | Tag | Description |
 |-----|-------------|
@@ -125,7 +125,7 @@ Each gets an `-off` variant for disabling.
 | `reset` | Reload from NVM AND clear satellite data |
 | `factory-reset` | Restore factory defaults and reboot |
 
-### Survey-in (Base Station)
+## Survey-in (base station)
 
 | Tag | Description |
 |-----|-------------|
@@ -134,7 +134,7 @@ Each gets an `-off` variant for disabling.
 | `survey-off` | Stop survey / return to mobile mode |
 | `mobile` | Alias for survey-off (some receivers) |
 
-### Fixed Position (Base Station)
+## Fixed position (base station)
 
 | Tag | Description |
 |-----|-------------|
@@ -142,7 +142,7 @@ Each gets an `-off` variant for disabling.
 | `fixed-pos-example` | Set fixed ECEF position (example coordinates - replace with yours) |
 | `fixed-pos-off` | Clear fixed position |
 
-### RTCM Output (Base Station)
+## RTCM output (base station)
 
 | Tag | Description |
 |-----|-------------|
@@ -151,35 +151,10 @@ Each gets an `-off` variant for disabling.
 | `rtcm-msm7` | Enable MSM7 for all constellations (1077/1087/1097/1127) |
 | `rtcm-off` | Disable all RTCM messages |
 
-### Receiver Mode (if applicable)
+## RTK mode (if applicable)
 
 | Tag | Description |
 |-----|-------------|
 | `mode-base` | Set base station mode |
 | `mode-rover` | Set rover mode |
 
-## Grouping Messages Under Tags
-
-Multiple messages can share the same tag - they will be sent together in order when that tag is selected.
-
-Example: `rtcm-msm7` might include four messages enabling MSM7 for GPS, GLONASS, Galileo, and BeiDou.
-
-Example: `factory-reset` might include two messages - one to clear settings, one to trigger reboot.
-
-When messages share a tag, only the first needs a `description`. If multiple messages have descriptions for the same tag, they must be identical.
-
-## Verification Comments
-
-When testing messages on real hardware, add verification comments above the message entry:
-
-```toml
-# Verified ACK received on TAU1201
-# Verified RMC messages appear at 1Hz after enable on TAU1201
-[[asbin]]
-tag = "nmea-rmc"
-description = "Enable NMEA RMC message at 1Hz"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U1"
-payload.values = [0xF0, 0x05, 1]
-```

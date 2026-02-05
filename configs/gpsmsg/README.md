@@ -1,4 +1,4 @@
-# GPS Message Files
+# GPS message files
 
 This directory contains message files for configuring GPS receivers using the `-m` and `-t` options of `satpulsetool gps`.
 
@@ -29,13 +29,46 @@ You can use `--packet-log file.json --capture 3` options to capture packets for 
 You can then use `satpulsetool decode --packet-log file.json` to decode the binary packets: pipe through `jq` to pretty-print the JSONL.
 This can help with seeing whether your receiver is handling the commands correctly.
 
-## Available Message Files
+## Available message files
 
 | File | Receiver | Protocol |
 |------|----------|----------|
-| [allystar.toml](allystar.toml) | Allystar TAU1201, TAU951M | Allystar binary |
+| [allystar.toml](allystar.toml) | Allystar (e.g. TAU1201, TAU951M) | Allystar binary |
 | [lg290p.toml](lg290p.toml) | Quectel LG290P | NMEA (PQTM) |
 | [atgm332d-f8.toml](atgm332d-f8.toml) | Zhongke Micro ATGM332D-F8 | CASIC binary |
+
+## Configuring for satpulsed
+
+### Allystar
+
+Configure an Allystar receiver, such as the TAU1201, for use with satpulsed:
+
+```
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar.toml -t pps,asbin-nav-time,asbin-nav-svinfo,nmea-off,gnss-all
+```
+
+This configures:
+- `pps` - 1PPS output with 0.1s pulse width, only when the receiver has a lock
+- `asbin-nav-time` - NAV-TIME binary messages at 1Hz (required by satpulsed)
+- `asbin-nav-svinfo` - Satellite visibility info at 1Hz
+- `nmea-off` - Disable all NMEA messages
+- `gnss-all` - Enable all GNSS constellations
+
+If you prefer to use a single constellation, you can use e.g. `gnss-gps` instead of `gnss-all`.
+
+You can verify the configuration by querying current settings:
+
+```
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar.toml \
+  -t get-pps,get-gnss --packet-log verify.jsonl --capture 2
+satpulsetool decode --packet-log verify.jsonl | jq
+```
+
+If the configuration seems to be working, you can save it to non-volatile memory:
+
+```
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar.toml -t save
+```
 
 ## Documentation
 

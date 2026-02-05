@@ -1,4 +1,4 @@
-# GPS Message File Format
+# GPS message file format
 
 GPS message files let you send protocol-specific commands to a GPS receiver without modifying satpulsetool.
 The message file format uses [TOML](https://toml.io/en/), the same format as the main SatPulse configuration file.
