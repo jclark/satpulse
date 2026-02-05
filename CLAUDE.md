@@ -53,7 +53,7 @@ For detailed documentation of the package structure, dependencies, and layering,
   4. Helper functions used by the methods
 - The goal: reading from top to bottom tells a story - what the types are, what the main operations are, then how they're implemented
 
-## Development Commands
+## Development commands
 
 **CRITICAL: Always use `make` to build. NEVER use `go build` directly - it creates binaries in the wrong location and clutters the repository.**
 
@@ -83,57 +83,15 @@ Host abondance.lan is Debian Linux and can run without Docker.
 It has a u-blox ZED-F9P connected to /dev/ttyACM0.
 The PPS out is connected to pin 1 on the PHC clock of network interface enp4s0.
 
-## Project Architecture
-
-SatPulse has a layered Go architecture:
-
-### Main Binaries
-- `cmd/satpulsed/` - Main daemon that orchestrates GPS/PTP synchronization
-- `cmd/satpulsetool/` - CLI tool with `gps` and `pmc` subcommands
-
-### Core Data Flow
-1. `internal/gpsio` - Reads GPS packets from serial/network
-2. `internal/gpscfg` - Runs the GPS configuration phase
-3. `internal/gpsevent` - Main event loop processing GPS packets and timestamps 
-4. `internal/combine` - Combines GPS time messages with PPS timestamps
-5. `internal/mon` - Removes outliers, monitors sync status
-6. `internal/servo` - PI controller adjusting PHC frequency
-
-### GPS Protocol Support
-- `internal/ubx/` - U-blox UBX protocol (primary)
-- `internal/nmea/` - NMEA protocol 
-- `internal/rtcm/` - RTCM protocol
-- `internal/gpsprot/` - Protocol-agnostic abstractions
-- `internal/gpsreg/` - Protocol registry
-
-### Time and Hardware
-- `internal/ptime/` - PTP timescale representation (TAI nanoseconds since 1970)
-- `internal/phc/` - Linux PTP hardware clock interface
-- `internal/ts/` - External timestamp capture from PHC
-
-### PTP Integration
-- `internal/pmc/` - PTP management client
-- `internal/sockrefclock/` - Chrony refclock protocol
-
-### Configuration
-- Main config: `configs/satpulse.toml`
-- Schema: `configs/config-schema.json` 
-- `internal/daemon/config.go` handles TOML parsing
-
-### Web Interface
-- `web/` - TypeScript/Preact dashboard (transpiled to JavaScript)
-- Embedded in Go binary via `web/embed.go`
-
-## Key Technical Notes
-
-- Supports arm64 and amd64 architectures
-- Separate build system for
-
-## Git Usage
+## Git usage
 
 - Never use `git add -A` or `git add .` - these add untracked files which may include test data or local files
 - Use `git add -u` to stage modified/deleted tracked files, then add new files explicitly by name
 
-## Development Environment
+## Development environment
 
 System testing uses Ansible playbooks in `systest/`.
+
+## Documentation style
+
+- Headings use sentence case (capitalise only the first word and proper nouns)
