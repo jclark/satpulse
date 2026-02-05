@@ -80,11 +80,11 @@ Each gets an `-off` variant for disabling.
 |-----|-------------|
 | `get-gnss` | Query current constellation settings |
 | `gnss-gps` | Enable GPS only (all available bands) |
-| `gnss-gal` | Enable Galileo only |
-| `gnss-glo` | Enable GLONASS only |
-| `gnss-bds` | Enable BeiDou only |
-| `gnss-gps-gal` | Enable GPS and Galileo |
-| `gnss-all` | Enable all constellations |
+| `gnss-gal` | Enable Galileo only (all available bands) |
+| `gnss-glo` | Enable GLONASS only (all available bands) |
+| `gnss-bds` | Enable BeiDou only (all available bands) |
+| `gnss-gps-gal` | Enable GPS and Galileo (all available bands) |
+| `gnss-all` | Enable all constellations (all available bands) |
 
 ## PPS configuration
 
