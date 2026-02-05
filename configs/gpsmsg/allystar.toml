@@ -2,6 +2,10 @@
 # Protocol: Allystar binary (similar to UBX)
 # Tested on: TAU1201 with firmware 3.018.aab95e7
 
+# Default delay: protocol says to wait for ACK before sending next command
+[default.asbin]
+delay = 0.1
+
 # Version / Probe
 
 # Poll MON-VER to get firmware/hardware version
@@ -15,19 +19,20 @@ id = 0x04
 
 # PPS Configuration (CFG-PPS 0x06 0x07)
 
-# Configure 1PPS: 0.1s pulse, rising edge, always output
+# Configure 1PPS: 0.1s pulse, rising edge, only with fix
 # Verified ACK received on TAU1201
 # Verified PPS output resumes after pps on TAU1201
 [[asbin]]
 tag = "pps"
-description = "Configure 1PPS with 0.1s pulse width, rising edge"
+description = "Configure 1PPS with 0.1s pulse width, rising edge, only with fix"
 class = 0x06
 id = 0x07
 payload.types = "U4I4U4U1U1U1"
 # [period_us, offset_ns, dutycycle_ppm, polarity, gpio, sync]
 # period 1000000 us = 1s
 # dutycycle in ppm: 100000 ppm = 10%, so pulse = 10% of 1s = 0.1s
-payload.values = [1000000, 0, 100000, 1, 13, 1]
+# sync: 0 = only with fix, 1 = always
+payload.values = [1000000, 0, 100000, 1, 13, 0]
 
 # PPS off - set duty cycle to 0
 # Verified ACK received on TAU1201
@@ -546,6 +551,49 @@ payload.values = [0xF0, 0x07, 1]
 [[asbin]]
 tag = "nmea-zda-off"
 description = "Disable NMEA ZDA message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x07, 0]
+
+# Disable all NMEA messages (GGA, GSA, GSV, RMC, ZDA)
+# Note: TXT cannot be disabled
+# GGA
+[[asbin]]
+tag = "nmea-off"
+description = "Disable all NMEA messages"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x00, 0]
+
+# GSA
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x02, 0]
+
+# GSV
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x04, 0]
+
+# RMC
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x05, 0]
+
+# ZDA
+[[asbin]]
+tag = "nmea-off"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
