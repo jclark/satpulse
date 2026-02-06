@@ -36,6 +36,17 @@ desktop package itself using platform-specific APIs:
 - Windows: registry or SetupDi API
 - Linux: `/dev/ttyACM*`, `/dev/ttyUSB*`, or udev
 
+## Receiver capabilities
+
+### Supported signals
+
+`ReceiverInfo` has `SupportedGNSS` (which constellations) but no supported
+signals. The desktop signal picker currently shows all signals defined in
+gpsprot for every constellation. It should show only signals the receiver
+actually supports. Need a `SupportedSignals SignalSet` field in
+`ReceiverInfo` so the GUI can filter the picker and prevent users from
+selecting signals the hardware cannot track.
+
 ## API ergonomics
 
 ### Configure/scan boilerplate
