@@ -1,6 +1,7 @@
 package gpscmd
 
 import (
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -434,6 +435,84 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--tag", "setup"}, // --tag without --msg-file
 	// Test --msg-file cannot be combined with --show-receiver
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-receiver"}, // can't use with --show-receiver
+	// Test --config-file mutual exclusivity with --serial-device and --device-speed
+	{"--config-file", "test.toml", "--serial-device", "ttyS0"},  // can't use with --serial-device
+	{"--config-file", "test.toml", "--device-speed", "9600"},    // can't use with --device-speed
+	{"-f", "test.toml", "-d", "ttyS0"},                         // short forms
+	{"-f", "test.toml", "-s", "9600"},                           // short forms
+	{"--config-file", "/nonexistent/path/satpulse.toml"},        // file does not exist
+}
+
+func writeTestConfig(t *testing.T, content string) string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "satpulse-*.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	return f.Name()
+}
+
+func TestParseFlagsConfigFile(t *testing.T) {
+	t.Run("device and speed", func(t *testing.T) {
+		path := writeTestConfig(t, "[serial]\ndevice = \"/dev/ttyUSB0\"\nspeed = 9600\n")
+		vars, _, err := parseFlags("config", []string{"-f", path})
+		if err != nil {
+			t.Fatalf("parseFlags returned error: %v", err)
+		}
+		if vars.serialDevice != "/dev/ttyUSB0" {
+			t.Errorf("serialDevice = %q, want %q", vars.serialDevice, "/dev/ttyUSB0")
+		}
+		if vars.localSpeed != 9600 {
+			t.Errorf("localSpeed = %d, want %d", vars.localSpeed, 9600)
+		}
+	})
+	t.Run("ignores other keys", func(t *testing.T) {
+		path := writeTestConfig(t, "[serial]\ndevice = \"/dev/ttyACM0\"\nspeed = 38400\n[phc]\ninterface = \"enp1s0\"\n[gps]\nconfig = true\n")
+		vars, _, err := parseFlags("config", []string{"-f", path})
+		if err != nil {
+			t.Fatalf("parseFlags returned error: %v", err)
+		}
+		if vars.serialDevice != "/dev/ttyACM0" {
+			t.Errorf("serialDevice = %q, want %q", vars.serialDevice, "/dev/ttyACM0")
+		}
+		if vars.localSpeed != 38400 {
+			t.Errorf("localSpeed = %d, want %d", vars.localSpeed, 38400)
+		}
+	})
+	t.Run("missing speed", func(t *testing.T) {
+		path := writeTestConfig(t, "[serial]\ndevice = \"/dev/ttyUSB0\"\n")
+		vars, _, err := parseFlags("config", []string{"-f", path})
+		if err == nil {
+			t.Errorf("parseFlags returned nil error")
+		}
+		if vars != nil {
+			t.Errorf("parseFlags returned non-nil vars")
+		}
+	})
+	t.Run("missing device", func(t *testing.T) {
+		path := writeTestConfig(t, "[serial]\nspeed = 9600\n")
+		vars, _, err := parseFlags("config", []string{"-f", path})
+		if err == nil {
+			t.Errorf("parseFlags returned nil error")
+		}
+		if vars != nil {
+			t.Errorf("parseFlags returned non-nil vars")
+		}
+	})
+	t.Run("empty file", func(t *testing.T) {
+		path := writeTestConfig(t, "")
+		vars, _, err := parseFlags("config", []string{"-f", path})
+		if err == nil {
+			t.Errorf("parseFlags returned nil error")
+		}
+		if vars != nil {
+			t.Errorf("parseFlags returned non-nil vars")
+		}
+	})
 }
 
 func TestParseFlagsInvalid(t *testing.T) {

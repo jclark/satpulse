@@ -2,6 +2,7 @@ package gpscmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/lib/term"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/pflag"
 )
 
@@ -27,6 +29,7 @@ type flagVars struct {
 	localSpeed     int
 	serialDevice   string
 	socketPath     string
+	configFile     string
 	packetLogPath  string
 	packetLogMode  packetLogMode
 	capture        gpsprot.Option[time.Duration]
@@ -44,8 +47,8 @@ type flagVars struct {
 	showTags       bool
 }
 
-const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [--force-probe]
-       	    [--socket path] [--packet-log path] [--capture seconds] [--save] [--speed bps] [--nmea] [--binary]
+const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [-f|--config-file path]
+       	    [--force-probe] [--socket path] [--packet-log path] [--capture seconds] [--save] [--speed bps] [--nmea] [--binary]
             [-c|--show-config] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
@@ -116,6 +119,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&vars.showReceiver, "show-receiver", false, "detect and display GPS receiver information")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
+	flags.StringVarP(&vars.configFile, "config-file", "f", "", "`path` to satpulse TOML configuration file")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
 	flags.StringVarP(&vars.msgFilePath, "msg-file", "m", "", "`path` to TOML file containing message definitions")
 	flags.StringVarP(&msgTags, "tag", "t", "", "comma-separated `list` of tags to send (in order)")
@@ -165,8 +169,16 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		// --show-tags doesn't require --socket or --serial-device
 		return &vars, nil, nil
 	}
+	if vars.configFile != "" {
+		if vars.serialDevice != "" || vars.localSpeed != 0 {
+			return nil, usage, fmt.Errorf("--config-file cannot be combined with --serial-device or --device-speed")
+		}
+		if err := loadConfigFile(&vars); err != nil {
+			return nil, nil, err
+		}
+	}
 	if (vars.socketPath == "") == (vars.serialDevice == "") {
-		return nil, usage, fmt.Errorf("%s command must specify either --socket or --serial-device", cmdName)
+		return nil, usage, fmt.Errorf("%s command must specify either --socket or --serial-device or --config-file", cmdName)
 	}
 	if testLogPath != "" {
 		if vars.packetLogPath != "" {
@@ -390,6 +402,33 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		vars.showReceiver = true
 	}
 	return &vars, nil, nil
+}
+
+// loadConfigFile reads serial device and speed from a satpulse TOML config file.
+func loadConfigFile(v *flagVars) error {
+	var cfg struct {
+		Serial struct {
+			Device string `toml:"device"`
+			Speed  *int   `toml:"speed"`
+		} `toml:"serial"`
+	}
+	f, err := os.Open(v.configFile)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := toml.NewDecoder(f).Decode(&cfg); err != nil {
+		return fmt.Errorf("%s: %w", v.configFile, err)
+	}
+	if cfg.Serial.Device == "" {
+		return fmt.Errorf("%s: serial.device is not set", v.configFile)
+	}
+	if cfg.Serial.Speed == nil {
+		return fmt.Errorf("%s: serial.speed is not set", v.configFile)
+	}
+	v.serialDevice = cfg.Serial.Device
+	v.localSpeed = *cfg.Serial.Speed
+	return nil
 }
 
 type majorGNSS gpsprot.GNSS

@@ -6,6 +6,7 @@ satpulsetool-gps - configure a GPS receiver
 
 **satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-f**\|**\-\-config\-file** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-socket** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-\-force\-probe**] [**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-c**\|**\-\-show\-config**]\
@@ -45,7 +46,12 @@ The **satpulsetool** **gps** command is used to configure a GPS receiver for use
 **\-s**, **\-\-device\-speed** *bps*  
 : Set the speed of the host serial port (as specified by **\-d**) in bits per second.
 
-**\-\-socket** *path*  
+**\-f**, **\-\-config\-file** *path*
+: Read the serial device path and speed from a TOML configuration file.
+The file format is compatible with **satpulse.toml(5)**, but only the `device` and `speed` keys in the `[serial]` table are used; all other keys are ignored.
+This option cannot be combined with **\-d** or **\-s**.
+
+**\-\-socket** *path*
 : Path to a Unix-domain socket to connect to the GPS receiver instead of a serial device.
 This is for use with the `proxy.sock` table array in the TOML config file for **satpulsed**.
 
@@ -258,6 +264,10 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
 
 # EXAMPLES
 
+Show receiver information using device and speed from the satpulse configuration file:
+
+    satpulsetool gps -f /etc/satpulse.toml
+
 Enable GPS and GALILEO on `/dev/ttyACM0` at 9600 baud:
 
     satpulsetool gps -d /dev/ttyACM0 -s 9600 -g GPS,GAL
@@ -285,6 +295,17 @@ Passively capture packets for 30 seconds without probing:
 Probe the receiver, then capture packets for 10 seconds:
 
     satpulsetool gps -d /dev/ttyACM0 -s 9600 --show-receiver --packet-log capture.jsonl --capture 10
+
+Show the current GPS receiver configuration:
+
+    satpulsetool gps -f serial.toml --show-config
+
+where `serial.toml` contains:
+
+    [serial]
+    device = "/dev/ttyUSB0"
+    speed = 9600
+
 
 # SEE ALSO
 
