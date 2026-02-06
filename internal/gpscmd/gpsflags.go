@@ -48,7 +48,7 @@ type flagVars struct {
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [-f|--config-file path]
-       	    [--force-probe] [--socket path] [--packet-log path] [--capture seconds] [--save] [--speed bps] [--nmea] [--binary]
+       	    [--socket path] [--packet-log path] [--capture seconds] [--save] [--speed bps] [--nmea] [--binary]
             [-c|--show-config] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
@@ -89,7 +89,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	surveyAcc := defaultSurveyAcc
 	sysTimeTrusted := false
 	osnma := false
-	forceProbe := false
 	var fixedPosECEF ecef
 	fixedPosAcc := defaultFixedPosAcc
 	pps := 0.0
@@ -115,7 +114,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&factoryReset, "factory-reset", false, "reset the GPS receiver to factory defaults")
 	flags.BoolVar(&nmea, "nmea", false, "enable NMEA output and disable binary output from the GPS receiver")
 	flags.BoolVar(&binary, "binary", false, "enable binary output and disable NMEA output from the GPS receiver")
-	flags.BoolVar(&forceProbe, "force-probe", false, "force writing probe to serial device even if when no output from GPS receiver")
 	flags.BoolVar(&vars.showReceiver, "show-receiver", false, "detect and display GPS receiver information")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
@@ -341,9 +339,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if showConfig {
 		vars.configGet = showProps
-	}
-	if forceProbe {
-		vars.configOpts.ForceProbe = gpsprot.ForceProbeWhenNoOutput
 	}
 	if save {
 		if !configChanged {

@@ -211,18 +211,12 @@ const (
 	RawMsgAny     RawMsgFlags = RawMsgObs | RawMsgNavData // any message (not flag)
 )
 
-type ForceProbe uint8
-
-const (
-	ForceProbeWhenNoOutput ForceProbe = 1 << iota // force probe even if no input has been detected
-	ForceProbeWhenNoConfig                        // force probe even when no config changes needed
-)
 
 type ConfigOptions struct {
-	Detected   bool        // has already been detected, no need to detect it again
-	ForceProbe ForceProbe  // control when to force probing
-	Save       SaveType    // what to save to non-volatile memory
-	Reset      ResetType   // what kind of reset to perform
+	Socket     bool       // connected via socket, skip serial detection
+	ForceProbe bool       // force probe even when no config changes needed
+	Save       SaveType   // what to save to non-volatile memory
+	Reset      ResetType  // what kind of reset to perform
 	PVTMsg     PVTMsgFlags // messages relating to Position, Velocity, and Time
 	NMEAMsg    Option[NMEAMsgFlags]
 	RTCMMsg    Option[RTCMMsgFlags] // RTCM 3.x messages

@@ -50,47 +50,36 @@ var ErrNotDetected = errors.New("GPS detection failed")
 func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	mh := msgHandler{}
 	mh.init(lg, packetProcs, configProts, packetCh)
-	var err error
-	if !target.Opts.Detected {
-		err = mh.detect(ctx)
-	}
+
 	noop := target.NoOp()
-	if err != nil {
-		// even with NoOp, we want to run detect in order to deal with framing errors
-		if noop {
-			// there's no point in giving up with NoOp, maybe we can bring it back to life using satpulsetool
-			lg.Warn(err.Error())
-		} else if target.Opts.ForceProbe&gpsprot.ForceProbeWhenNoOutput != 0 {
-			lg.Info("no output detected from GPS, but trying to probe GPS anyway")
-		} else {
-			return nil, err
-		}
+	probeEnabled := !noop && len(mh.configProts) > 0
+	socket := target.Opts.Socket
+
+	// Install native message handlers before detection if probing is enabled
+	var mnmh *gpsprot.MultiNativeMsgHandler
+	if probeEnabled {
+		var restore func()
+		mnmh, restore = mh.installNativeMsgHandlers()
+		defer restore()
 	}
-	if noop {
-		// no need to probe
-		return mh.noProbeResult(), nil
-	}
-	// After we have done detection, bad stuff is a cause for concern.
-	badStart := mh.bad
-	// Set up a MultiNativeMsgHandler to fan out to all protocols during probing
-	mnmh, restore := mh.installNativeMsgHandlers()
-	defer restore()
-	configProt, err := mh.probe(ctx, port)
+
+	configProt, err := mh.detect(ctx, port, probeEnabled, socket)
 	if err != nil {
 		return nil, err
 	}
-	badNew := mh.bad.Sub(badStart)
-	if badNew.framingErrs > 0 {
-		return nil, errors.New("ongoing framing errors reading GPS output (hardware problems?)")
+
+	if !probeEnabled {
+		return mh.noProbeResult(), nil
 	}
-	if badNew.corruptMsgs > 0 {
-		return nil, errors.New("ongoing corrupted GPS output (multiple processes reading from serial port?)")
-	}
+
 	if configProt == nil {
-		// XXX if msgCount for UBX > 0, but probe failed, then probably we cannot send to the GPS
 		return mh.noProbeResult(), ErrNoProbeResponse
 	}
+
+	// During probing, MultiNativeMsgHandler fans out native messages to mh + all config protocols.
+	// Now that we know which protocol succeeded, reset to just mh + that one protocol.
 	mnmh.Reset(&mh, configProt)
+
 	cfgProps, rcvrInfo, err := mh.configure(ctx, configProt, target, port)
 	// We have no ConfigProps and no ReceiverInfo, so return a nil result.
 	if err != nil && cfgProps == nil {
@@ -160,35 +149,63 @@ func (mh *msgHandler) packetFormatsDetected() []gpsprot.Tag {
 	return tags
 }
 
-func (mh *msgHandler) detect(ctx context.Context) error {
-	// Validate that we are receiving data correctly from a GPS.
-	// The criteria for this is that we get a NMEA or UBX message with a valid checksum
-	// (not necessarily a message that we understand).
-	// This stage finishes as soon as we get such a message.
-	// I have found that when starting to read from a GPS, there can be invalid bytes to start with:
-	// one possible cause of this if that we start reading in the middle of the message;
-	// I think there may also be UART issues that cause framing errors when starting to read.
-	// We allow 2 seconds if there is no framing error.
-	// We allow 15 seconds if we get a framing error.
-	timer1Ch := time.After(time.Second * 2)
-	timer2Ch := time.After(time.Second * 15)
-	for mh.packetCh != nil {
-		select {
-		case packet, ok := <-mh.packetCh:
-			if !ok {
-				return mh.packetChClosed(ctx)
-			}
-			mh.packet(packet)
-		case <-timer1Ch:
-			timer1Ch = nil
-		case <-timer2Ch:
-			timer2Ch = nil
+// detect detects the GPS receiver, optionally sending probe packets.
+// When probeEnabled is true, probe packets are sent during detection.
+// When socket is true, the connection is via socket (daemon already validated it).
+// Returns the ConfigProtocol that responded to probing (nil if probing disabled or timed out),
+// and an error if detection failed.
+func (mh *msgHandler) detect(ctx context.Context, port gpsio.OutPort, probeEnabled bool, socket bool) (gpsprot.ConfigProtocol, error) {
+	if socket && !probeEnabled {
+		return nil, nil
+	}
+	base := detector{
+		mh:            mh,
+		deadlineTimer: time.After(listenTimeout),
+		maxDeadline:   time.Now().Add(listenMaxTimeout),
+	}
+	var configProt gpsprot.ConfigProtocol
+	var bd *detector
+	var err error
+	if probeEnabled {
+		pd := &probingDetector{
+			detector:     base,
+			port:         port,
+			silenceTimer: time.After(silentWaitTimeout),
 		}
-		if mh.suitableMessageCount() > 0 || timer2Ch == nil || (timer1Ch == nil && mh.bad.framingErrs == 0) {
-			break
+		if socket {
+			if err := pd.maybeSendProbe(0); err != nil {
+				return nil, err
+			}
+			pd.validPacketReceived = true
+			pd.silenceTimer = nil
+			pd.deadlineTimer = nil
+		}
+		configProt, err = pd.run(ctx)
+		bd = &pd.detector
+	} else {
+		ld := &listeningDetector{detector: base}
+		err = ld.run(ctx)
+		bd = &ld.detector
+	}
+	if err != nil {
+		return nil, err
+	}
+	if socket {
+		return configProt, nil
+	}
+	// Check ongoing errors (warn, not fatal)
+	if bd.validPacketReceived {
+		badNew := mh.bad.Sub(bd.badStart)
+		if badNew.framingErrs > 0 {
+			mh.lg.Warn("ongoing framing errors reading GPS output (hardware problems?)")
+		}
+		if badNew.corruptMsgs > 0 {
+			mh.lg.Warn("ongoing corrupted GPS output (multiple processes reading from serial port?)")
 		}
 	}
-	lg := mh.lg
+	if configProt != nil {
+		return configProt, nil
+	}
 	if mh.suitableMessageCount() == 0 {
 		var msg string
 		if mh.bad.framingErrs > 0 {
@@ -202,13 +219,12 @@ func (mh *msgHandler) detect(ctx context.Context) error {
 		} else {
 			msg = "cannot parse GPS output"
 		}
-		lg.Debug("not receiving data from GPS correctly", "bad", mh.bad, "nativeOnlyTags", mh.nativeOnlyTags())
-		return fmt.Errorf("%w: %s", ErrNotDetected, msg)
+		mh.lg.Debug("not receiving data from GPS correctly", "bad", mh.bad, "nativeOnlyTags", mh.nativeOnlyTags())
+		return nil, fmt.Errorf("%w: %s", ErrNotDetected, msg)
 	}
-	lg.Info("detected a GPS")
-
-	lg.Debug("received suitable output message from GPS", "msgCount", mh.msgCount, "bad", mh.bad)
-	return nil
+	mh.lg.Info("detected a GPS")
+	mh.lg.Debug("received suitable output message from GPS", "msgCount", mh.msgCount, "bad", mh.bad)
+	return configProt, nil
 }
 
 func (mh *msgHandler) packetChClosed(ctx context.Context) error {
@@ -220,37 +236,189 @@ func (mh *msgHandler) packetChClosed(ctx context.Context) error {
 	return io.ErrUnexpectedEOF
 }
 
-func (mh *msgHandler) probe(ctx context.Context, port gpsio.OutPort) (gpsprot.ConfigProtocol, error) {
-	if len(mh.configProts) == 0 {
-		return nil, nil
-	}
-	// Send probe packets for all protocols
-	for _, prot := range mh.configProts {
-		msg := prot.ProbePacket()
-		_, err := port.Write(msg)
-		if err != nil {
-			return nil, err
+const (
+	// listenTimeout is the initial deadline for detection (both modes)
+	listenTimeout = 2 * time.Second
+	// listenMaxTimeout is the absolute cap for deadline extensions on framing errors
+	listenMaxTimeout = 10 * time.Second
+	// silentWaitTimeout is how long to wait with no input before sending the first probe
+	silentWaitTimeout = 1 * time.Second
+	// probeRetryDelay is how long to wait after sending a probe before retrying
+	probeRetryDelay = 1500 * time.Millisecond
+	// probeResponseTimeout is how long to wait after the final probe before giving up
+	probeResponseTimeout = 3 * time.Second
+)
+
+// listeningDetector detects by listening for a suitable packet.
+type listeningDetector struct {
+	detector
+}
+
+// probingDetector detects by sending probe packets and listening for responses.
+type probingDetector struct {
+	detector
+	port         gpsio.OutPort
+	silenceTimer <-chan time.Time
+	probeTimer   <-chan time.Time
+	nProbesSent  int
+}
+
+// detector holds shared state for both detection modes.
+type detector struct {
+	mh                  *msgHandler
+	deadlineTimer       <-chan time.Time
+	maxDeadline         time.Time
+	validPacketReceived bool
+	badStart            badCount
+	totalMsgCount       int
+}
+
+// run listens for packets until a suitable one arrives or the deadline fires.
+func (d *listeningDetector) run(ctx context.Context) error {
+	mh := d.mh
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case packet, ok := <-mh.packetCh:
+			if !ok {
+				return mh.packetChClosed(ctx)
+			}
+			d.processPacket(packet)
+			if mh.suitableMessageCount() > 0 {
+				return nil
+			}
+		case <-d.deadlineTimer:
+			d.deadlineTimer = nil
+			return nil
 		}
 	}
-	timerCh := time.After(time.Millisecond * 1500)
-	for timerCh != nil {
+}
+
+// run listens for packets while managing probe sending and timeouts.
+func (d *probingDetector) run(ctx context.Context) (gpsprot.ConfigProtocol, error) {
+	mh := d.mh
+	for {
 		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		case packet, ok := <-mh.packetCh:
 			if !ok {
 				return nil, mh.packetChClosed(ctx)
 			}
-			mh.packet(packet)
-			// Check if any protocol has succeeded
-			for _, prot := range mh.configProts {
-				if prot.ProbeOK() {
-					return prot, nil
-				}
+			if err := d.processPacket(packet); err != nil {
+				return nil, err
 			}
-		case <-timerCh:
-			timerCh = nil
+			if prot := mh.probeSucceeded(); prot != nil {
+				mh.lg.Debug("probe succeeded")
+				return prot, nil
+			}
+		case <-d.silenceTimer:
+			d.silenceTimer = nil
+			mh.lg.Debug("silence timer fired")
+			if err := d.maybeSendProbe(0); err != nil {
+				return nil, err
+			}
+		case <-d.deadlineTimer:
+			d.deadlineTimer = nil
+			mh.lg.Debug("deadline timer fired")
+			if err := d.maybeSendProbe(0); err != nil {
+				return nil, err
+			}
+		case <-d.probeTimer:
+			d.probeTimer = nil
+			if d.nProbesSent >= 2 {
+				mh.lg.Debug("no response to probes, giving up")
+				return nil, nil
+			}
+			if err := d.maybeSendProbe(d.nProbesSent); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return nil, nil
+}
+
+// processPacket extends the base to cancel the silence timer on input
+// and trigger the first probe when a valid packet arrives.
+func (d *probingDetector) processPacket(packet scan.Packet) error {
+	d.detector.processPacket(packet)
+	if d.silenceTimer != nil && (len(packet.Data) > 0 || isFramingError(packet.ReadError)) {
+		d.mh.lg.Debug("first input received, cancelling silence timer")
+		d.silenceTimer = nil
+	}
+	if d.validPacketReceived {
+		if err := d.maybeSendProbe(0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// maybeSendProbe sends probes if nProbesSent equals probeIndex.
+// It increments nProbesSent, nils deadline, and sets probeTimer for the next step.
+func (d *probingDetector) maybeSendProbe(probeIndex int) error {
+	if d.nProbesSent != probeIndex {
+		return nil
+	}
+	for _, prot := range d.mh.configProts {
+		if _, err := d.port.Write(prot.ProbePacket()); err != nil {
+			return err
+		}
+	}
+	d.nProbesSent++
+	d.mh.lg.Debug("sent probe packets", "probeNum", d.nProbesSent)
+	d.deadlineTimer = nil
+	if d.nProbesSent == 1 {
+		d.probeTimer = time.After(probeRetryDelay)
+	} else {
+		d.probeTimer = time.After(probeResponseTimeout)
+	}
+	return nil
+}
+
+// processPacket processes a packet, tracks valid packet receipt,
+// and extends the deadline on framing errors.
+func (d *detector) processPacket(packet scan.Packet) {
+	mh := d.mh
+	countBefore := d.totalMsgCount
+	mh.packet(packet)
+	d.totalMsgCount = mh.totalMsgCount()
+	if d.totalMsgCount > countBefore && !d.validPacketReceived {
+		d.validPacketReceived = true
+		d.badStart = mh.bad
+		mh.lg.Debug("first valid packet received", "tag", packet.Format.Tag())
+	}
+	if isFramingError(packet.ReadError) && d.deadlineTimer != nil {
+		remaining := time.Until(d.maxDeadline)
+		if remaining > 0 {
+			mh.lg.Debug("extending detection deadline due to framing errors")
+			d.deadlineTimer = time.After(min(listenTimeout, remaining))
+		}
+	}
+}
+
+// isFramingError reports whether err is a serial error with framing errors.
+func isFramingError(err error) bool {
+	se, ok := err.(SerialError)
+	return ok && se.FramingErrs() > 0
+}
+
+// probeSucceeded returns the first ConfigProtocol that has responded to probing, or nil.
+func (mh *msgHandler) probeSucceeded() gpsprot.ConfigProtocol {
+	for _, prot := range mh.configProts {
+		if prot.ProbeOK() {
+			return prot
+		}
+	}
+	return nil
+}
+
+func (mh *msgHandler) totalMsgCount() int {
+	count := 0
+	for _, c := range mh.msgCount {
+		count += c
+	}
+	return count
 }
 
 // installNativeMsgHandlers creates a NativeMsgHandler than fans out to all config protocols.

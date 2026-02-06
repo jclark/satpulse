@@ -8,7 +8,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-f**\|**\-\-config\-file** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-socket** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-\-force\-probe**] [**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-c**\|**\-\-show\-config**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
@@ -133,10 +133,7 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
 **\-\-binary**
 : Enable binary messages from the GPS receiver instead of NMEA.
 
-**\-\-force\-probe**
-: Force writing probe to serial device even when there is no output from the GPS receiver
-
-**\-p**, **\-\-pps** *width*  
+**\-p**, **\-\-pps** *width*
 : Configure the GPS receiver to enable a pulse-per-second (PPS) signal with the specified pulse width in seconds. The *width* must be >= 0 and < 1.0. A width of 0 disables the PPS signal.
 
 **\-\-ant\-cable\-delay** *nanos*  

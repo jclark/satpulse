@@ -78,7 +78,7 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 				t.Logf("target.Get = %v", target.Get)
 				t.Logf("target.Props.IsEmpty() = %v", target.Props.IsEmpty())
 				t.Logf("target.Opts.NoOp() = %v", target.Opts.NoOp())
-				t.Logf("target.Opts.Detected = %v", target.Opts.Detected)
+				t.Logf("target.Opts.Socket = %v", target.Opts.Socket)
 				t.Logf("target.Opts.ForceProbe = %v", target.Opts.ForceProbe)
 			}
 		})

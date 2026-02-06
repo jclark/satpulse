@@ -98,10 +98,10 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		return nil, nil
 	}
 	if v.socketPath != "" {
-		target.Opts.Detected = true
+		target.Opts.Socket = true
 	}
 	if target.NoOp() {
-		target.Opts.ForceProbe |= gpsprot.ForceProbeWhenNoConfig
+		target.Opts.ForceProbe = true
 	}
 	return target, nil
 }
@@ -111,8 +111,8 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 		return false
 	}
 	copy := *target
-	copy.Opts.ForceProbe &^= gpsprot.ForceProbeWhenNoConfig
-	copy.Opts.Detected = false
+	copy.Opts.ForceProbe = false
+	copy.Opts.Socket = false
 	return copy.NoOp()
 }
 
