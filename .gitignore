@@ -4,3 +4,5 @@ tmp/
 .codanna*
 .fastembed*
 .claude/settings.local.json
+go.work
+go.work.sum
