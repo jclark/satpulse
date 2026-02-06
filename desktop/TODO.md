@@ -56,10 +56,3 @@ property with its getter and converts to a `map[string]any`. This duplicates
 logic in `ConfigProps.serializableMap()` which is unexported. Either export
 `serializableMap` or provide a public `ConfigProps.Map() map[string]any`.
 
-### Signal set construction from indices
-
-`gpsprot.SignalSetOf` takes `Signal` values but there is no way to parse
-signal names back into signals. The desktop app works around this by passing
-integer signal indices from the frontend and constructing the set with bit
-shifts. A `ParseSignalSet` or `ParseSignal` function would be useful for any
-text-based interface.
