@@ -6,3 +6,4 @@ tmp/
 .claude/settings.local.json
 go.work
 go.work.sum
+.playwright-mcp/

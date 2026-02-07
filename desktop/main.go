@@ -8,13 +8,13 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
 
-//go:embed frontend
+//go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
 	app := NewApp()
 	err := wails.Run(&options.App{
-		Title:     "SatPulse GPS",
+		Title:     "SatPulse",
 		Width:     1024,
 		Height:    700,
 		MinWidth:  800,
