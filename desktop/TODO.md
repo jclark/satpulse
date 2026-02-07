@@ -2,7 +2,13 @@
 
 Issues discovered while building the Wails GUI prototype against the `gps/` public API.
 
-## Factor out from gpscmd
+## Refactoring
+
+### Move bcast to gps/app/
+
+`time/internal/bcast` is a general-purpose channel multiplexer with no
+time-specific dependencies. Move it to `gps/app/bcast` so it can be used by
+both `time/app/daemon` and the desktop app.
 
 ### Message file support (msgfile.go)
 
@@ -18,6 +24,13 @@ packets into human-readable text (protocol-aware formatting for UBX, CASBIN,
 ASBIN, NMEA, with hex dump fallback). The desktop packet monitor currently
 shows raw `pkt.Data` strings; it would benefit from this formatting. Factor
 into a package under `gps/`.
+
+### ConfigProps serialization to map
+
+The desktop app has a `configPropsToMap` function that manually extracts each
+property with its getter and converts to a `map[string]any`. This duplicates
+logic in `ConfigProps.serializableMap()` which is unexported. Either export
+`serializableMap` or provide a public `ConfigProps.Map() map[string]any`.
 
 ## Platform support
 
@@ -47,23 +60,32 @@ actually supports. Need a `SupportedSignals SignalSet` field in
 `ReceiverInfo` so the GUI can filter the picker and prevent users from
 selecting signals the hardware cannot track.
 
-## API ergonomics
+## Architecture
 
-### Configure/scan boilerplate
+### Continuous scanning with broadcast
 
-Every operation (detect, configure, save, reset, capture) requires the same
-boilerplate: create channel, spawn `gpsio.Scan` in a goroutine, call
-`gpscfg.Configure`, call `conn.Stop()`, drain channel, wait. The desktop app
-has this pattern in `runConfig`, `DetectReceiver`, and `StartCapture`.
-Consider a higher-level helper in `gps/app/` that wraps this into a single
-call, e.g.:
+The current architecture starts and stops scanning for each operation (detect,
+configure, capture), which causes problems:
 
-    gpscfg.Run(ctx, lg, conn, target) (*Result, error)
+- `DetectReceiver`, `ApplyConfig`, etc. call `conn.Stop()` when done
+- Once stopped, `SerialConn.Read()` returns EOF permanently
+- Subsequent operations (like packet capture) fail silently
 
-### ConfigProps serialization to map
+The daemon (`time/app/daemon`) has the right pattern:
 
-The desktop app has a `configPropsToMap` function that manually extracts each
-property with its getter and converts to a `map[string]any`. This duplicates
-logic in `ConfigProps.serializableMap()` which is unexported. Either export
-`serializableMap` or provide a public `ConfigProps.Map() map[string]any`.
+1. Start `gpsio.Scan` once on connect, producing packets to a channel
+2. Wrap channel in `bcast.Bcast` to multiplex to subscribers
+3. Each consumer (configurator, packet monitor, proxy) calls `Subscribe()`
+4. On disconnect, cancel context and everything shuts down
+
+The desktop app should follow this:
+
+- **Connect**: start scan goroutine, create broadcast, start emitting
+  `"gps:packet"` events from a dedicated subscriber
+- **Packet Monitor tab**: just displays events (no Start/Stop button needed)
+- **DetectReceiver/ApplyConfig**: get a `Subscribe()` channel, pass to
+  `gpscfg.Configure()`, then `Unsubscribe()` when done
+- **Disconnect**: cancel context, broadcast closes all subscribers
+
+This eliminates the `conn.Stop()` problem and matches how the daemon works.
 

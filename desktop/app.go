@@ -491,6 +491,9 @@ func (a *App) StartCapture() Result {
 				if !ok {
 					return
 				}
+				if len(pkt.Data) == 0 {
+					continue
+				}
 				runtime.EventsEmit(a.ctx, "gps:packet", PacketEvent{
 					Tag:       string(pkt.Tag()),
 					Data:      pkt.Data,
