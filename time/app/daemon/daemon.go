@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jclark/satpulse/time/internal/bcast"
+	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/time/internal/gpsevent"

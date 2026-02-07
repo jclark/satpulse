@@ -54,6 +54,8 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/logfile` provides utility functions for opening and reopening log files.
 
+`gps/app/bcast` provides a concurrency abstraction that broadcasts a channel to multiple other channels. This is used for routing packets inside the application. At the moment it is used by `satpulsed` rather than `satpulsetool`, but it is useful for applications dealing with GPS packets.
+
 ### gps/internal/
 
 These packages implement the `gpsprot` interface for specific protocols. They are in the domain layer and are not importable outside `gps/`.
@@ -153,8 +155,6 @@ These packages are the main building blocks for satpulsed; they are in the appli
 `time/internal/statsobs` accumulates clock synchronization statistics including phase offset (maximum, mean, RMS), frequency deviation (mean, standard deviation), and frequency delta characteristics. It implements `phcsync.Sampler` for data collection.
 
 `time/internal/proxy` implements proxying of GPS packets to TCP and Unix domain sockets.
-
-`time/internal/bcast` concurrency abstraction broadcasts a channel to multiple other channels.
 
 ### time/lib/
 
