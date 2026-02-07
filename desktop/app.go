@@ -11,6 +11,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -21,11 +22,13 @@ import (
 // App is the Wails application struct.
 // Its exported methods are bound to the frontend.
 type App struct {
-	ctx context.Context
-	lg  *slog.Logger
-	mu  sync.Mutex
-	conn          gpsio.Conn
-	captureCancel context.CancelFunc
+	ctx        context.Context
+	lg         *slog.Logger
+	mu         sync.Mutex
+	conn       gpsio.Conn
+	connCancel context.CancelFunc
+	connWg     sync.WaitGroup
+	pb         *bcast.Bcast[scan.Packet]
 }
 
 // NewApp creates a new App.
@@ -44,10 +47,18 @@ func (a *App) shutdown(_ context.Context) {
 }
 
 func (a *App) closeLocked() {
-	if a.captureCancel != nil {
-		a.captureCancel()
-		a.captureCancel = nil
+	if a.connCancel != nil {
+		a.connCancel()
+		a.connCancel = nil
 	}
+	if a.pb != nil {
+		a.pb.Close()
+		a.pb = nil
+	}
+	// Must unlock while waiting: goroutines may need the lock during shutdown.
+	a.mu.Unlock()
+	a.connWg.Wait()
+	a.mu.Lock()
 	if a.conn != nil {
 		a.conn.Close()
 		a.conn = nil
@@ -69,7 +80,16 @@ func (a *App) Connect(device string, speed int) Result {
 	if err != nil {
 		return Result{Error: err.Error()}
 	}
+	connCtx, connCancel := context.WithCancel(a.ctx)
+	pCh := make(chan scan.Packet, 1)
+	a.connWg.Go(func() { gpsio.Scan(connCtx, a.lg, conn, pCh, nil) })
+	pb := bcast.New(pCh)
+	a.connWg.Go(func() { pb.Run(connCtx, a.lg) })
+	sub := pb.Subscribe()
+	a.connWg.Go(func() { a.packetEventWorker(sub) })
 	a.conn = conn
+	a.connCancel = connCancel
+	a.pb = pb
 	return Result{OK: true}
 }
 
@@ -146,7 +166,7 @@ const getProps = gpsprot.PropIDSignalsEnabled |
 // DetectReceiver probes the GPS receiver and returns its identity and current configuration.
 func (a *App) DetectReceiver() ReceiverInfo {
 	a.mu.Lock()
-	conn := a.conn
+	conn, pb := a.conn, a.pb
 	a.mu.Unlock()
 	if conn == nil {
 		return ReceiverInfo{Error: "not connected"}
@@ -154,20 +174,15 @@ func (a *App) DetectReceiver() ReceiverInfo {
 	target := gpsprot.NewConfigTarget()
 	target.Get = getProps
 	target.Opts.ForceProbe = true
+	sub := pb.Subscribe()
+	defer pb.Unsubscribe(sub)
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 	defer cancel()
 	lg := a.eventLogger()
-	var wg sync.WaitGroup
-	pCh := make(chan scan.Packet, 1)
-	wg.Go(func() { gpsio.Scan(ctx, lg, conn, pCh, nil) })
 	rslt, err := gpscfg.Configure(ctx, lg,
 		gpsreg.CreatePacketProcessors(nil),
 		gpsreg.CreateConfigProtocols(),
-		target, pCh, conn)
-	conn.Stop()
-	for range pCh {
-	}
-	wg.Wait()
+		target, sub, conn)
 	if err != nil {
 		return ReceiverInfo{Error: err.Error()}
 	}
@@ -364,22 +379,17 @@ func (a *App) ResetConfig(resetType string) Result {
 // runConfig sends a configuration to the connected receiver.
 func (a *App) runConfig(target *gpsprot.ConfigTarget) Result {
 	a.mu.Lock()
-	conn := a.conn
+	conn, pb := a.conn, a.pb
 	a.mu.Unlock()
+	sub := pb.Subscribe()
+	defer pb.Unsubscribe(sub)
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 	defer cancel()
 	lg := a.eventLogger()
-	var wg sync.WaitGroup
-	pCh := make(chan scan.Packet, 1)
-	wg.Go(func() { gpsio.Scan(ctx, lg, conn, pCh, nil) })
 	_, err := gpscfg.Configure(ctx, lg,
 		gpsreg.CreatePacketProcessors(nil),
 		gpsreg.CreateConfigProtocols(),
-		target, pCh, conn)
-	conn.Stop()
-	for range pCh {
-	}
-	wg.Wait()
+		target, sub, conn)
 	if err != nil {
 		return Result{Error: err.Error()}
 	}
@@ -458,60 +468,46 @@ func (h *eventHandler) WithGroup(name string) slog.Handler {
 // PacketEvent is emitted to the frontend for each received GPS packet.
 type PacketEvent struct {
 	Tag       string `json:"tag"`
-	Data      string `json:"data"`
+	Msg       string `json:"msg,omitempty"`
+	Bin       string `json:"bin,omitempty"`
+	Ascii     string `json:"ascii,omitempty"`
 	Timestamp string `json:"timestamp"`
 }
 
-// StartCapture begins streaming GPS packets as "gps:packet" events.
-func (a *App) StartCapture() Result {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.conn == nil {
-		return Result{Error: "not connected"}
-	}
-	if a.captureCancel != nil {
-		return Result{Error: "capture already running"}
-	}
-	ctx, cancel := context.WithCancel(a.ctx)
-	a.captureCancel = cancel
-	conn := a.conn
-	go func() {
-		pCh := make(chan scan.Packet, 4)
-		var wg sync.WaitGroup
-		wg.Go(func() { gpsio.Scan(ctx, a.lg, conn, pCh, nil) })
-		for {
-			select {
-			case <-ctx.Done():
-				conn.Stop()
-				for range pCh {
-				}
-				wg.Wait()
-				return
-			case pkt, ok := <-pCh:
-				if !ok {
-					return
-				}
-				if len(pkt.Data) == 0 {
-					continue
-				}
-				runtime.EventsEmit(a.ctx, "gps:packet", PacketEvent{
-					Tag:       string(pkt.Tag()),
-					Data:      pkt.Data,
-					Timestamp: time.Now().Format(time.TimeOnly),
-				})
-			}
+func (a *App) packetEventWorker(sub <-chan scan.Packet) {
+	for pkt := range sub {
+		if len(pkt.Data) == 0 {
+			continue
 		}
-	}()
-	return Result{OK: true}
+		b := []byte(pkt.Data)
+		ev := PacketEvent{
+			Tag:       string(pkt.Tag()),
+			Timestamp: time.Now().Format(time.TimeOnly),
+		}
+		if pkt.Format != nil {
+			ev.Msg = pkt.Format.MsgID(b)
+		}
+		if useBinary(pkt.Format, b) {
+			ev.Bin = fmt.Sprintf("%x", b)
+		} else {
+			ev.Ascii = pkt.Data
+		}
+		runtime.EventsEmit(a.ctx, "gps:packet", ev)
+	}
 }
 
-// StopCapture stops the packet capture.
-func (a *App) StopCapture() Result {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.captureCancel != nil {
-		a.captureCancel()
-		a.captureCancel = nil
+func useBinary(pf gpsprot.PacketFormat, data []byte) bool {
+	if pf == nil {
+		return containsBinary(data)
 	}
-	return Result{OK: true}
+	return data[0] < 0x20 || data[0] >= 0x7F
+}
+
+func containsBinary(data []byte) bool {
+	for _, b := range data {
+		if (b < 0x20 && b != '\t' && b != '\r' && b != '\n') || b >= 0x7F {
+			return true
+		}
+	}
+	return false
 }

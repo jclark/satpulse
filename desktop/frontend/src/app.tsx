@@ -1,7 +1,7 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
-import {Connect, Disconnect, GetAllSignals, StartCapture, StopCapture} from '../wailsjs/go/main/App';
+import {Connect, Disconnect, GetAllSignals} from '../wailsjs/go/main/App';
 import {main} from '../wailsjs/go/models';
 import {ReceiverPanel} from './receiver-panel';
 import {ConfigPanel} from './config-panel';
@@ -23,7 +23,9 @@ export interface LogEntry {
 
 export interface PacketEntry {
     tag: string;
-    data: string;
+    msg?: string;
+    bin?: string;
+    ascii?: string;
     timestamp: string;
 }
 
@@ -39,7 +41,6 @@ export function App() {
     const [receiverInfo, setReceiverInfo] = useState<main.ReceiverInfo | null>(null);
     const [signalCatalog, setSignalCatalog] = useState<main.GNSSInfo[]>([]);
     const [selectedSignals, setSelectedSignals] = useState<Set<number>>(new Set());
-    const [capturing, setCapturing] = useState(false);
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
     const [packetEntries, setPacketEntries] = useState<PacketEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
@@ -56,7 +57,7 @@ export function App() {
             setLogEntries(prev => [...prev.slice(-199), evt]);
         });
         const offPkt = EventsOn('gps:packet', (pkt: PacketEntry) => {
-            setPacketEntries(prev => [...prev.slice(-999), pkt]);
+            setPacketEntries(prev => [...prev.slice(-199), pkt]);
         });
         return () => {
             if (typeof offLog === 'function') offLog(); else EventsOff('gps:log');
@@ -68,7 +69,6 @@ export function App() {
         if (connected) {
             await Disconnect();
             setConnected(false);
-            setCapturing(false);
             setStatusText('Disconnected');
             return;
         }
@@ -87,22 +87,6 @@ export function App() {
             addToast(r.error || 'Connection failed', 'error');
         }
     }, [connected, device, speed, addToast]);
-
-    const handleToggleCapture = useCallback(async () => {
-        if (capturing) {
-            await StopCapture();
-            setCapturing(false);
-            setStatusText('Capture stopped');
-            return;
-        }
-        const r = await StartCapture();
-        if (r.ok) {
-            setCapturing(true);
-            setStatusText('Capturing packets...');
-        } else {
-            addToast(r.error || 'Capture failed', 'error');
-        }
-    }, [capturing, addToast]);
 
     const tabs: {id: TabID; label: string}[] = [
         {id: 'receiver', label: 'Receiver'},
@@ -190,9 +174,6 @@ export function App() {
                 )}
                 {activeTab === 'monitor' && (
                     <MonitorPanel
-                        connected={connected}
-                        capturing={capturing}
-                        onToggleCapture={handleToggleCapture}
                         packetEntries={packetEntries}
                         setPacketEntries={setPacketEntries}
                     />
