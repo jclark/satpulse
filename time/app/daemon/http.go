@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jclark/satpulse/time/internal/bcast"
+	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/time/internal/promobs"
 	"github.com/jclark/satpulse/time/lib/sse"
 	"github.com/jclark/satpulse/time/internal/sseobs"

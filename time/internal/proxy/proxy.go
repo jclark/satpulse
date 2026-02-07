@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jclark/satpulse/time/internal/bcast"
+	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
