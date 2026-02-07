@@ -37,16 +37,7 @@ frontend/
 
 ## Go backend bindings
 
-Exported methods on the `App` struct in `app.go` are callable from the frontend. Wails auto-generates TypeScript bindings in `frontend/wailsjs/go/`. Import them as:
-
-```typescript
-import {Connect, DetectReceiver} from '../wailsjs/go/main/App';
-import {main} from '../wailsjs/go/models';
-```
-
-Available methods: `Connect`, `Disconnect`, `IsConnected`, `DetectReceiver`, `GetAllSignals`, `ApplyConfig`, `SaveConfig`, `ResetConfig`, `StartCapture`, `StopCapture`.
-
-The Go backend also emits events (`gps:log`, `gps:packet`) that the frontend can listen to via `window.runtime.EventsOn()` from `wailsjs/runtime`.
+Exported methods on the `App` struct in `app.go` are callable from the frontend. Wails auto-generates TypeScript bindings in `frontend/wailsjs/go/`. See `App.d.ts` for available methods and `models.ts` for Go struct types.
 
 ## Tailwind CSS
 
@@ -60,7 +51,3 @@ cd desktop && wails build               # full app (produces SatPulse.app on mac
 ```
 
 The Go embed directive in `main.go` embeds `all:frontend/dist`.
-
-## Reference UI
-
-The original vanilla JS frontend is saved at `plan/old-frontend.html` for porting reference. It shows the complete UI: connection bar, tabbed panels (receiver info, configuration, packet monitor), signal picker dialog, and activity log.
