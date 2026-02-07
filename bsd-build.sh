@@ -32,7 +32,7 @@ case $GOARCH in
 esac
 
 # Commands and output directory
-cmddirs="cmd/satpulsed cmd/satpulsetool cmd/ubxanno cmd/pollpps"
+cmddirs="cmd/satpulsed cmd/satpulsetool cmd/pollpps"
 targets=""
 cmds=""
 for d in $cmddirs; do
