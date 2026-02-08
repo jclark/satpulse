@@ -1,16 +1,4 @@
-import {h, Fragment} from 'preact';
-import {useState, useRef, useEffect} from 'preact/hooks';
-
-interface PanelVisibility {
-    receiver: boolean;
-    config: boolean;
-    time: boolean;
-    survey: boolean;
-    monitor: boolean;
-    logging: boolean;
-}
-
-type PanelID = keyof PanelVisibility;
+import {h} from 'preact';
 
 interface Props {
     connected: boolean;
@@ -19,60 +7,18 @@ interface Props {
     speed: number;
     setSpeed: (s: number) => void;
     onConnect: () => void;
-    panelVisibility: PanelVisibility;
-    onTogglePanel: (id: PanelID) => void;
+    receiverIdent: string;
 }
 
 const speeds = [9600, 38400, 57600, 115200, 230400, 460800, 921600];
 
-const panelLabels: {id: PanelID; label: string}[] = [
-    {id: 'receiver', label: 'Receiver'},
-    {id: 'config', label: 'Configure'},
-    {id: 'time', label: 'Time'},
-    {id: 'survey', label: 'Survey'},
-    {id: 'monitor', label: 'Packet monitor'},
-    {id: 'logging', label: 'Activity log'},
-];
-
-export function ConnectionPanel({connected, device, setDevice, speed, setSpeed, onConnect, panelVisibility, onTogglePanel}: Props) {
-    const [menuOpen, setMenuOpen] = useState(false);
-    const menuRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (!menuOpen) return;
-        const handler = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-        };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, [menuOpen]);
-
+export function ConnectionPanel({connected, device, setDevice, speed, setSpeed, onConnect, receiverIdent}: Props) {
     return (
         <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 py-3 flex items-center gap-4 shrink-0">
-            <h1 class="text-base font-semibold whitespace-nowrap">SatPulse GPS</h1>
-            <div class="relative" ref={menuRef}>
-                <button
-                    class="px-3 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-600"
-                    onClick={() => setMenuOpen(v => !v)}
-                >
-                    Panels
-                </button>
-                {menuOpen && (
-                    <div class="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-lg z-50 min-w-40 py-1">
-                        {panelLabels.map(p => (
-                            <label key={p.id} class="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700">
-                                <input
-                                    type="checkbox"
-                                    class="accent-blue-600"
-                                    checked={panelVisibility[p.id]}
-                                    onChange={() => onTogglePanel(p.id)}
-                                />
-                                {p.label}
-                            </label>
-                        ))}
-                    </div>
-                )}
-            </div>
+            <h1 class="text-base font-semibold whitespace-nowrap">SatPulse</h1>
+            {receiverIdent && (
+                <span class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{receiverIdent}</span>
+            )}
             <div class="flex items-center gap-2 ml-auto">
                 <div class={`w-2.5 h-2.5 rounded-full shrink-0 ${connected ? 'bg-green-400' : 'bg-gray-400'}`} />
                 <label class="text-xs text-gray-500 dark:text-gray-400">Device</label>

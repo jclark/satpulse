@@ -20,81 +20,61 @@ function taiToUTC(taiSecs: number, utcOff: number): string {
     return new Date(utcSecs * 1000).toISOString();
 }
 
+const blank = '\u2014';
+
 export function TimePanel({msg, leapSecond}: Props) {
-    if (!msg) {
-        return (
-            <div class="p-4 overflow-y-auto h-full">
-                <h2 class="text-base font-semibold mb-4">Time</h2>
-                <p class="text-gray-500 dark:text-gray-400 italic text-sm">
-                    Waiting for time data...
-                </p>
-            </div>
-        );
-    }
+    let localTime = blank, localDate = blank, utc = blank, utcFromTAI = '', tai = '', leapSecs = '', source = '';
 
-    const rows: [string, string | preact.ComponentChildren][] = [];
-
-    // UTC from the message (direct from receiver)
-    if (msg.utcTime) {
+    if (msg?.utcTime) {
         const local = formatUTCLocal(msg.utcTime);
         if (local) {
-            rows.push(['Local time', local.time]);
-            rows.push(['Local date', local.date]);
+            localTime = local.time;
+            localDate = local.date;
         }
-        rows.push(['UTC', formatDateTime(msg.utcTime)]);
+        utc = formatDateTime(msg.utcTime);
     }
 
-    // TAI-derived UTC (using leap second offset)
-    if (msg.taiTime && leapSecond) {
+    if (msg?.taiTime && leapSecond) {
         const taiSecs = parseTAITime(msg.taiTime);
         if (taiSecs > 0) {
             const utcStr = taiToUTC(taiSecs, leapSecond.utcOff);
             if (!msg.utcTime) {
                 const local = formatUTCLocal(utcStr);
                 if (local) {
-                    rows.push(['Local time', local.time]);
-                    rows.push(['Local date', local.date]);
+                    localTime = local.time;
+                    localDate = local.date;
                 }
             }
-            rows.push(['UTC (from TAI)', formatDateTime(utcStr)]);
+            utcFromTAI = formatDateTime(utcStr);
         }
     }
 
-    // TAI time
-    if (msg.taiTime) {
+    if (msg?.taiTime) {
         const taiSecs = parseTAITime(msg.taiTime);
-        if (taiSecs > 0) {
-            rows.push(['TAI', formatTAI(taiSecs)]);
-        }
+        if (taiSecs > 0) tai = formatTAI(taiSecs);
     }
 
-    // Leap seconds
-    if (leapSecond) {
-        rows.push(['Leap seconds', String(leapSecond.utcOff)]);
-    }
+    if (leapSecond) leapSecs = String(leapSecond.utcOff);
+    if (msg?.gnss) source = msg.gnss;
 
-    // GNSS source
-    if (msg.gnss) {
-        rows.push(['Time source', msg.gnss]);
-    }
+    const rows: [string, string][] = [
+        ['Local time', localTime],
+        ['Local date', localDate],
+        ['UTC', utc],
+    ];
+    if (utcFromTAI) rows.push(['UTC (from TAI)', utcFromTAI]);
+    if (tai) rows.push(['TAI', tai]);
+    rows.push(['Leap seconds', leapSecs || blank]);
+    rows.push(['Time source', source || blank]);
 
     return (
-        <div class="p-4 overflow-y-auto h-full">
-            <h2 class="text-base font-semibold mb-4">Time</h2>
-            {rows.length > 0 ? (
-                <dl class="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 max-w-xl">
-                    {rows.map(([label, value]) => (
-                        <>
-                            <dt class="text-gray-500 dark:text-gray-400 text-xs">{label}</dt>
-                            <dd class="text-sm tabular-nums">{value}</dd>
-                        </>
-                    ))}
-                </dl>
-            ) : (
-                <p class="text-gray-500 dark:text-gray-400 italic text-sm">
-                    Waiting for time data...
-                </p>
-            )}
-        </div>
+        <dl class="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 max-w-xl">
+            {rows.map(([label, value]) => (
+                <>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs">{label}</dt>
+                    <dd class="text-sm tabular-nums">{value}</dd>
+                </>
+            ))}
+        </dl>
     );
 }

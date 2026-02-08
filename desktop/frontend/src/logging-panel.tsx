@@ -1,11 +1,10 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useRef, useMemo, useCallback} from 'preact/hooks';
-import type {LogEntry, OperationState} from './app';
+import type {LogEntry} from './app';
 
 interface Props {
     logEntries: LogEntry[];
     setLogEntries: (fn: (prev: LogEntry[]) => LogEntry[]) => void;
-    operation: OperationState;
 }
 
 const levels = ['DEBUG', 'INFO', 'WARN', 'ERROR'] as const;
@@ -25,18 +24,6 @@ const levelTextClass: Record<string, string> = {
     INFO: 'text-blue-400',
     WARN: 'text-amber-400',
     ERROR: 'text-red-400',
-};
-
-const opStatusClass: Record<string, string> = {
-    running: 'bg-blue-600 text-white',
-    success: 'bg-green-600 text-white',
-    failed: 'bg-red-600 text-white',
-};
-
-const opStatusIcon: Record<string, string> = {
-    running: '...',
-    success: 'OK',
-    failed: '!!',
 };
 
 function formatAttrValue(v: any): string {
@@ -60,7 +47,7 @@ function matchesSearch(entry: LogEntry, q: string): boolean {
     return false;
 }
 
-export function LoggingPanel({logEntries, setLogEntries, operation}: Props) {
+export function LoggingPanel({logEntries, setLogEntries}: Props) {
     const logRef = useRef<HTMLDivElement>(null);
     const autoScrollRef = useRef(true);
     const [minLevel, setMinLevel] = useState<Level>('DEBUG');
@@ -108,14 +95,6 @@ export function LoggingPanel({logEntries, setLogEntries, operation}: Props) {
 
     return (
         <div class="flex flex-col h-full">
-            {/* Operation status line */}
-            {operation.status !== 'idle' && (
-                <div class={`flex items-center gap-2 px-3 py-1 text-xs font-medium shrink-0 ${opStatusClass[operation.status] || ''}`}>
-                    <span class="font-bold">[{opStatusIcon[operation.status]}]</span>
-                    <span>{operation.label}</span>
-                    {operation.error && <span class="opacity-80">-- {operation.error}</span>}
-                </div>
-            )}
             {/* Toolbar */}
             <div class="flex items-center gap-2 px-3 py-1.5 shrink-0 flex-wrap">
                 <h3 class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Activity log</h3>

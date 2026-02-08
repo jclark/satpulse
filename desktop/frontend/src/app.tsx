@@ -1,16 +1,21 @@
 import {h, Fragment} from 'preact';
-import {useState, useEffect, useCallback} from 'preact/hooks';
-import {Group, Panel, Separator} from 'react-resizable-panels';
+import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
-import {Connect, Disconnect, GetAllSignals} from '../wailsjs/go/main/App';
+import {Connect, Disconnect, GetAllSignals, GetReceiverState, IsConnected} from '../wailsjs/go/main/App';
 import {main} from '../wailsjs/go/models';
 import {ConnectionPanel} from './connection-panel';
-import {ReceiverPanel, ReceiverState} from './receiver-panel';
+import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
 import {MonitorPanel} from './monitor-panel';
 import {LoggingPanel} from './logging-panel';
 import {TimePanel} from './time-panel';
 import {SurveyPanel} from './survey-panel';
+
+export type ReceiverState =
+    | {status: 'disconnected'}
+    | {status: 'probing'}
+    | {status: 'identified'; vendor: string; hardware: string; firmware: string; supportedGNSS: string[]; packetFormats: string[]}
+    | {status: 'error'; error: string};
 
 interface Toast {
     id: number;
@@ -69,19 +74,12 @@ interface MsgEvent {
     time: string;
 }
 
-export interface PanelVisibility {
-    receiver: boolean;
-    config: boolean;
-    time: boolean;
-    survey: boolean;
-    monitor: boolean;
-    logging: boolean;
-}
+type TabID = 'monitor' | 'packets' | 'config';
 
-export type PanelID = keyof PanelVisibility;
-
-const separatorH = 'group relative flex items-center justify-center bg-gray-200 dark:bg-gray-700 hover:bg-blue-500/30 active:bg-blue-500/40 transition-colors w-1 cursor-col-resize';
-const separatorV = 'group relative flex items-center justify-center bg-gray-200 dark:bg-gray-700 hover:bg-blue-500/30 active:bg-blue-500/40 transition-colors h-1 cursor-row-resize';
+const tabBtnBase = 'px-5 py-2 text-sm font-medium border-b-2 cursor-pointer bg-transparent';
+const tabBtnActive = tabBtnBase + ' border-blue-600 text-blue-600 bg-gray-50 dark:bg-gray-900';
+const tabBtnInactive = tabBtnBase + ' border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900';
+const tabBtnDisabled = tabBtnBase + ' border-transparent text-gray-300 dark:text-gray-600 cursor-not-allowed';
 
 let toastId = 0;
 
@@ -101,9 +99,18 @@ export function App() {
     const [timeMsg, setTimeMsg] = useState<TimeMsg | null>(null);
     const [surveyMsg, setSurveyMsg] = useState<SurveyMsg | null>(null);
     const [leapSecond, setLeapSecond] = useState<LeapSecondState | null>(null);
-    const [panels, setPanels] = useState<PanelVisibility>({
-        receiver: true, config: true, time: true, survey: true, monitor: true, logging: true,
-    });
+    const [activeTab, setActiveTab] = useState<TabID>('monitor');
+    const [timeOpen, setTimeOpen] = useState(true);
+    const [surveyOpen, setSurveyOpen] = useState(false);
+    const surveyAutoExpanded = useRef(false);
+
+    // Auto-expand survey section on first survey data
+    useEffect(() => {
+        if (surveyMsg && !surveyAutoExpanded.current) {
+            surveyAutoExpanded.current = true;
+            setSurveyOpen(true);
+        }
+    }, [surveyMsg]);
 
     const addToast = useCallback((message: string, type: 'success' | 'error') => {
         const id = ++toastId;
@@ -144,7 +151,6 @@ export function App() {
                     break;
                 case 'leapSecond': {
                     const ls = evt.msg;
-                    // LeapSecond embeds ptime.LeapSecond with UTCOffAfter as current offset
                     if (ls && typeof ls.UTCOffAfter === 'number') {
                         setLeapSecond({utcOff: ls.UTCOffAfter});
                     }
@@ -158,6 +164,28 @@ export function App() {
             if (typeof offRcv === 'function') offRcv(); else EventsOff('gps:receiver');
             if (typeof offMsg === 'function') offMsg(); else EventsOff('gps:msg');
         };
+    }, []);
+
+    // Sync connection state with Go backend on mount (after HMR reload)
+    useEffect(() => {
+        IsConnected().then(async c => {
+            if (!c) return;
+            setConnected(true);
+            setStatusText('Connected');
+            const r = await GetReceiverState();
+            if (r.ok) {
+                setReceiver({
+                    status: 'identified',
+                    vendor: r.vendor || '',
+                    hardware: r.hardware || '',
+                    firmware: r.firmware || '',
+                    supportedGNSS: r.supportedGNSS || [],
+                    packetFormats: r.packetFormats || [],
+                });
+            }
+            const catalog = await GetAllSignals();
+            if (catalog) setSignalCatalog(catalog);
+        }).catch(() => {});
     }, []);
 
     const handleConfigReadback = useCallback((info: main.ReceiverInfo) => {
@@ -190,23 +218,16 @@ export function App() {
         }
     }, [connected, device, speed, addToast]);
 
-    const togglePanel = useCallback((id: PanelID) => {
-        setPanels(prev => ({...prev, [id]: !prev[id]}));
-    }, []);
+    // Receiver identity string for connection bar
+    const receiverIdent = receiver.status === 'identified'
+        ? `${receiver.hardware} (FW ${receiver.firmware})`
+        : receiver.status === 'probing' ? 'Identifying...' : '';
 
-    const showLeft = panels.receiver || panels.config;
-    const showCenter = panels.time || panels.survey;
-    const showRight = panels.monitor;
-    const showMiddle = showLeft || showCenter || showRight;
-
-    // Collect visible center panels for dynamic sub-splitting
-    const centerPanels: preact.ComponentChildren[] = [];
-    if (panels.time) centerPanels.push(<TimePanel msg={timeMsg} leapSecond={leapSecond} />);
-    if (panels.survey) centerPanels.push(<SurveyPanel msg={surveyMsg} />);
+    const configDisabled = receiver.status !== 'identified';
 
     return (
         <>
-            {/* Connection strip (fixed height, outside panel groups) */}
+            {/* Connection bar */}
             <ConnectionPanel
                 connected={connected}
                 device={device}
@@ -214,89 +235,74 @@ export function App() {
                 speed={speed}
                 setSpeed={setSpeed}
                 onConnect={handleConnect}
-                panelVisibility={panels}
-                onTogglePanel={togglePanel}
+                receiverIdent={receiverIdent}
             />
 
-            {/* Main resizable area */}
-            <Group orientation="vertical" className="flex-1">
-                {showMiddle && (
-                    <Panel id="middle" minSize="20%">
-                        <Group orientation="horizontal" className="h-full">
-                            {showLeft && (
-                                <Panel id="left" defaultSize="35%" minSize="15%">
-                                    {panels.receiver && panels.config ? (
-                                        <Group orientation="vertical" className="h-full">
-                                            <Panel id="receiver" defaultSize="40%" minSize="10%">
-                                                <ReceiverPanel receiver={receiver} />
-                                            </Panel>
-                                            <Separator className={separatorV} />
-                                            <Panel id="config" minSize="10%">
-                                                <ConfigPanel
-                                                    connected={connected}
-                                                    receiverInfo={receiverInfo}
-                                                    signalCatalog={signalCatalog}
-                                                    selectedSignals={selectedSignals}
-                                                    setSelectedSignals={setSelectedSignals}
-                                                    setStatusText={setStatusText}
-                                                    setOperation={setOperation}
-                                                    addToast={addToast}
-                                                    onConfigReadback={handleConfigReadback}
-                                                />
-                                            </Panel>
-                                        </Group>
-                                    ) : panels.receiver ? (
-                                        <ReceiverPanel receiver={receiver} />
-                                    ) : (
-                                        <ConfigPanel
-                                            connected={connected}
-                                            receiverInfo={receiverInfo}
-                                            signalCatalog={signalCatalog}
-                                            selectedSignals={selectedSignals}
-                                            setSelectedSignals={setSelectedSignals}
-                                            setStatusText={setStatusText}
-                                            setOperation={setOperation}
-                                            addToast={addToast}
-                                            onConfigReadback={handleConfigReadback}
-                                        />
-                                    )}
-                                </Panel>
-                            )}
-                            {showLeft && showCenter && <Separator className={separatorH} />}
-                            {showCenter && (
-                                <Panel id="center" defaultSize="30%" minSize="15%">
-                                    {centerPanels.length > 1 ? (
-                                        <Group orientation="vertical" className="h-full">
-                                            <Panel id="time" defaultSize="50%" minSize="10%">
-                                                {centerPanels[0]}
-                                            </Panel>
-                                            <Separator className={separatorV} />
-                                            <Panel id="survey" minSize="10%">
-                                                {centerPanels[1]}
-                                            </Panel>
-                                        </Group>
-                                    ) : centerPanels[0]}
-                                </Panel>
-                            )}
-                            {(showLeft || showCenter) && showRight && <Separator className={separatorH} />}
-                            {showRight && (
-                                <Panel id="right" minSize="20%">
-                                    <MonitorPanel
-                                        packetEntries={packetEntries}
-                                        setPacketEntries={setPacketEntries}
-                                    />
-                                </Panel>
-                            )}
-                        </Group>
-                    </Panel>
-                )}
-                {showMiddle && panels.logging && <Separator className={separatorV} />}
-                {panels.logging && (
-                    <Panel id="logging" defaultSize="25%" minSize="10%">
-                        <LoggingPanel logEntries={logEntries} setLogEntries={setLogEntries} operation={operation} />
-                    </Panel>
-                )}
-            </Group>
+            {/* Tab bar */}
+            <div class="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
+                <button
+                    class={activeTab === 'monitor' ? tabBtnActive : tabBtnInactive}
+                    onClick={() => setActiveTab('monitor')}
+                >
+                    Monitor
+                </button>
+                <button
+                    class={activeTab === 'packets' ? tabBtnActive : tabBtnInactive}
+                    onClick={() => setActiveTab('packets')}
+                >
+                    Packets
+                </button>
+                <button
+                    class={configDisabled ? tabBtnDisabled : (activeTab === 'config' ? tabBtnActive : tabBtnInactive)}
+                    onClick={() => { if (!configDisabled) setActiveTab('config'); }}
+                >
+                    Configuration
+                </button>
+            </div>
+
+            {/* Tab content area (flex-1 fills available space) */}
+            <div class="flex-1 overflow-hidden">
+                {/* Monitor tab */}
+                <div class={`h-full overflow-y-auto ${activeTab === 'monitor' ? '' : 'hidden'}`}>
+                    <CollapsibleSection title="Time" variant="panel" open={timeOpen} onToggle={setTimeOpen}>
+                        <TimePanel msg={timeMsg} leapSecond={leapSecond} />
+                    </CollapsibleSection>
+                    <CollapsibleSection title="Survey" variant="panel" open={surveyOpen} onToggle={setSurveyOpen}>
+                        <SurveyPanel msg={surveyMsg} />
+                    </CollapsibleSection>
+                </div>
+
+                {/* Packets tab */}
+                <div class={`h-full ${activeTab === 'packets' ? '' : 'hidden'}`}>
+                    <MonitorPanel
+                        packetEntries={packetEntries}
+                        setPacketEntries={setPacketEntries}
+                    />
+                </div>
+
+                {/* Configuration tab */}
+                <div class={`h-full ${activeTab === 'config' ? '' : 'hidden'}`}>
+                    <ConfigPanel
+                        connected={connected}
+                        visible={activeTab === 'config'}
+                        receiverInfo={receiverInfo}
+                        signalCatalog={signalCatalog}
+                        selectedSignals={selectedSignals}
+                        setSelectedSignals={setSelectedSignals}
+                        setStatusText={setStatusText}
+                        setOperation={setOperation}
+                        addToast={addToast}
+                        onConfigReadback={handleConfigReadback}
+                    />
+                </div>
+            </div>
+
+            {/* Activity log (always visible, CSS-resizable) */}
+            <div class="shrink-0 overflow-hidden border-t border-gray-200 dark:border-gray-700" style="height: 150px; min-height: 60px; max-height: 50vh; resize: vertical;">
+                <div class="h-full overflow-hidden">
+                    <LoggingPanel logEntries={logEntries} setLogEntries={setLogEntries} />
+                </div>
+            </div>
 
             {/* Status bar */}
             <div class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-5 py-1 text-xs text-gray-500 dark:text-gray-400 shrink-0">

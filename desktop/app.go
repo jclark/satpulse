@@ -30,6 +30,7 @@ type App struct {
 	connCancel context.CancelFunc
 	connWg     sync.WaitGroup
 	pb         *bcast.Bcast[scan.Packet]
+	probe      ProbeResult
 }
 
 // NewApp creates a new App.
@@ -146,7 +147,17 @@ func (a *App) probeWorker(sub <-chan scan.Packet) {
 	for _, tag := range rslt.PacketFormatsDetected {
 		r.PacketFormats = append(r.PacketFormats, string(tag))
 	}
+	a.mu.Lock()
+	a.probe = r
+	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:receiver", r)
+}
+
+// GetReceiverState returns the cached receiver identification result.
+func (a *App) GetReceiverState() ProbeResult {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.probe
 }
 
 // Disconnect closes the GPS connection.
@@ -154,6 +165,7 @@ func (a *App) Disconnect() Result {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.closeLocked()
+	a.probe = ProbeResult{}
 	return Result{OK: true}
 }
 

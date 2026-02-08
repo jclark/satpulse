@@ -8,6 +8,7 @@ import type {OperationState} from './app';
 
 interface Props {
     connected: boolean;
+    visible: boolean;
     receiverInfo: main.ReceiverInfo | null;
     signalCatalog: main.GNSSInfo[];
     selectedSignals: Set<number>;
@@ -83,7 +84,7 @@ const btnClass = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border
 const btnPrimary = 'px-3.5 py-1 rounded text-xs border border-blue-600 bg-blue-600 text-white cursor-pointer hover:bg-blue-700 disabled:opacity-50 disabled:cursor-default';
 const btnDanger = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-red-400 cursor-pointer hover:bg-red-400 hover:border-red-400 hover:text-black disabled:opacity-50 disabled:cursor-default disabled:hover:bg-gray-200 dark:disabled:hover:bg-gray-700 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:text-red-400';
 
-export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, setOperation, addToast, onConfigReadback}: Props) {
+export function ConfigPanel({connected, visible, receiverInfo, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, setOperation, addToast, onConfigReadback}: Props) {
     const [mode, setMode] = useState('');
     const [ppsPeriod, setPpsPeriod] = useState('');
     const [ppsWidth, setPpsWidth] = useState('');
@@ -96,7 +97,6 @@ export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSig
     const [showPicker, setShowPicker] = useState(false);
 
     // Readback state
-    const [readbackTime, setReadbackTime] = useState<string | null>(null);
     const [reading, setReading] = useState(false);
     const [originalSignals, setOriginalSignals] = useState<Set<number>>(new Set());
     const hasReadback = useRef(false);
@@ -133,14 +133,14 @@ export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSig
         populateFromConfig(receiverInfo.config, receiverInfo.signalIndices);
     }, [receiverInfo, populateFromConfig]);
 
-    // Trigger readback when panel first becomes visible and connected
+    // Trigger readback on first switch to the config tab while connected
     useEffect(() => {
-        if (connected && !hasReadback.current) {
+        if (visible && connected && !hasReadback.current) {
             hasReadback.current = true;
             doReadback();
         }
         if (!connected) hasReadback.current = false;
-    }, [connected]);
+    }, [visible, connected]);
 
     const doReadback = async () => {
         if (!connected || reading) return;
@@ -152,7 +152,6 @@ export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSig
             if (info.ok) {
                 populateFromConfig(info.config, info.signalIndices);
                 onConfigReadback(info);
-                setReadbackTime(new Date().toLocaleTimeString());
                 setStatusText('Configuration read');
                 setOperation({status: 'success', label: 'Reading configuration'});
             } else {
@@ -254,23 +253,6 @@ export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSig
 
     return (
         <div class="flex flex-col h-full">
-            {/* Sticky action bar */}
-            <div class="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-                <h2 class="text-sm font-semibold mr-auto">Configuration</h2>
-                {readbackTime && (
-                    <span class="text-[10px] text-gray-400">Read {readbackTime}</span>
-                )}
-                {pendingCount > 0 && (
-                    <span class="text-[10px] text-amber-500 font-medium">{pendingCount} pending</span>
-                )}
-                <button class={btnClass} disabled={!connected || reading} onClick={doReadback}>
-                    {reading ? 'Reading...' : 'Refresh'}
-                </button>
-                <button class={btnPrimary} disabled={!connected || hasErrors || applying} onClick={handleApply}>
-                    {applying ? 'Applying...' : 'Apply'}
-                </button>
-            </div>
-
             {/* Scrollable content */}
             <div class="flex-1 overflow-y-auto p-4">
 
@@ -376,6 +358,20 @@ export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSig
                     </div>
                 </CollapsibleSection>
 
+            </div>
+
+            {/* Bottom action bar */}
+            <div class="shrink-0 flex items-center gap-2 px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                {pendingCount > 0 && (
+                    <span class="text-[10px] text-amber-500 font-medium">{pendingCount} pending</span>
+                )}
+                <span class="ml-auto" />
+                <button class={btnClass} disabled={!connected || reading} onClick={doReadback}>
+                    {reading ? 'Reading...' : 'Refresh'}
+                </button>
+                <button class={btnPrimary} disabled={!connected || hasErrors || applying} onClick={handleApply}>
+                    {applying ? 'Applying...' : 'Apply'}
+                </button>
             </div>
 
             {/* Signal picker dialog */}

@@ -9,8 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "preact": "^10.25.0",
-    "react-resizable-panels": "^4.6.2"
+    "preact": "^10.25.0"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.0",

@@ -36,6 +36,8 @@ function formatDuration(ns: number): string {
     return `${s}s`;
 }
 
+const blank = '\u2014';
+
 export function SurveyPanel({msg}: Props) {
     const [llh, setLLH] = useState<LLH | null>(null);
 
@@ -54,76 +56,59 @@ export function SurveyPanel({msg}: Props) {
         }).catch(() => setLLH(null));
     }, [msg?.position?.[0], msg?.position?.[1], msg?.position?.[2]]);
 
-    if (!msg) {
-        return (
-            <div class="p-4 overflow-y-auto h-full">
-                <h2 class="text-base font-semibold mb-4">Survey</h2>
-                <p class="text-gray-500 dark:text-gray-400 italic text-sm">
-                    Waiting for survey data...
-                </p>
-            </div>
-        );
-    }
+    let status = blank, accuracy = blank;
+    let ecefX = blank, ecefY = blank, ecefZ = blank;
+    let coords: string | preact.ComponentChildren = blank;
+    let altitude = blank, observations = blank, obsTime = blank;
 
-    const rows: [string, string | preact.ComponentChildren][] = [];
+    if (msg) {
+        if (msg.valid) status = 'Valid';
+        else if (msg.inProgress) status = 'In progress';
 
-    // Status
-    if (msg.valid) {
-        rows.push(['Status', 'Valid']);
-    } else if (msg.inProgress) {
-        rows.push(['Status', 'In progress']);
-    }
+        if (msg.accuracy) accuracy = `${umToM(msg.accuracy).toFixed(4)} m`;
 
-    // Accuracy (micrometers to meters)
-    if (msg.accuracy) {
-        rows.push(['Accuracy', `${umToM(msg.accuracy).toFixed(4)} m`]);
-    }
-
-    // ECEF position
-    if (msg.position) {
-        const [px, py, pz] = msg.position;
-        if (px !== 0 || py !== 0 || pz !== 0) {
-            rows.push(['ECEF X', umToM(px).toFixed(4)]);
-            rows.push(['ECEF Y', umToM(py).toFixed(4)]);
-            rows.push(['ECEF Z', umToM(pz).toFixed(4)]);
+        if (msg.position) {
+            const [px, py, pz] = msg.position;
+            if (px !== 0 || py !== 0 || pz !== 0) {
+                ecefX = umToM(px).toFixed(4);
+                ecefY = umToM(py).toFixed(4);
+                ecefZ = umToM(pz).toFixed(4);
+            }
         }
+
+        if (msg.obsCount) observations = String(msg.obsCount);
+        if (msg.obsTime) obsTime = formatDuration(msg.obsTime);
     }
 
-    // Lat/lon from ECEFtoLLH
     if (llh) {
-        rows.push(['Coordinates', (
+        coords = (
             <a href={mapsURL(llh.lat, llh.lon)} target="_blank" class="underline hover:text-blue-500">
                 {formatCoord(llh.lat, llh.lon, 5)}
             </a>
-        )]);
-        rows.push(['Altitude', `${llh.height.toFixed(2)} m`]);
+        );
+        altitude = `${llh.height.toFixed(2)} m`;
     }
 
-    // Observation count and time
-    if (msg.obsCount) {
-        rows.push(['Observations', String(msg.obsCount)]);
-    }
-    if (msg.obsTime) {
-        rows.push(['Observation time', formatDuration(msg.obsTime)]);
-    }
+    const rows: [string, string | preact.ComponentChildren][] = [
+        ['Status', status],
+        ['Accuracy', accuracy],
+        ['ECEF X', ecefX],
+        ['ECEF Y', ecefY],
+        ['ECEF Z', ecefZ],
+        ['Coordinates', coords],
+        ['Altitude', altitude],
+        ['Observations', observations],
+        ['Observation time', obsTime],
+    ];
 
     return (
-        <div class="p-4 overflow-y-auto h-full">
-            <h2 class="text-base font-semibold mb-4">Survey</h2>
-            {rows.length > 0 ? (
-                <dl class="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2 max-w-xl">
-                    {rows.map(([label, value]) => (
-                        <>
-                            <dt class="text-gray-500 dark:text-gray-400 text-xs">{label}</dt>
-                            <dd class="text-sm tabular-nums">{value}</dd>
-                        </>
-                    ))}
-                </dl>
-            ) : (
-                <p class="text-gray-500 dark:text-gray-400 italic text-sm">
-                    Waiting for survey data...
-                </p>
-            )}
-        </div>
+        <dl class="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2 max-w-xl">
+            {rows.map(([label, value]) => (
+                <>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs">{label}</dt>
+                    <dd class="text-sm tabular-nums">{value}</dd>
+                </>
+            ))}
+        </dl>
     );
 }
