@@ -1,6 +1,7 @@
 import {h, Fragment} from 'preact';
 import {DetectReceiver} from '../wailsjs/go/main/App';
 import {main} from '../wailsjs/go/models';
+import type {OperationState} from './app';
 
 interface Props {
     connected: boolean;
@@ -9,6 +10,7 @@ interface Props {
     setSelectedSignals: (fn: (prev: Set<number>) => Set<number>) => void;
     setStatusText: (s: string) => void;
     setLogEntries: (fn: (prev: any[]) => any[]) => void;
+    setOperation: (op: OperationState) => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
@@ -16,14 +18,16 @@ function formatSignalGroups(signals: string[][]): string {
     return signals.map(g => g[0] + '[' + g.slice(1).join(', ') + ']').join(', ');
 }
 
-export function ReceiverPanel({connected, receiverInfo, setReceiverInfo, setSelectedSignals, setStatusText, setLogEntries, addToast}: Props) {
+export function ReceiverPanel({connected, receiverInfo, setReceiverInfo, setSelectedSignals, setStatusText, setLogEntries, setOperation, addToast}: Props) {
     const handleDetect = async () => {
         setLogEntries(() => []);
         setStatusText('Probing receiver...');
+        setOperation({status: 'running', label: 'Detecting receiver'});
         const r = await DetectReceiver();
         if (!r.ok) {
             setReceiverInfo(null);
             setStatusText('Detection failed');
+            setOperation({status: 'failed', label: 'Detecting receiver', error: r.error || 'Detection failed'});
             addToast(r.error || 'Detection failed', 'error');
             return;
         }
@@ -32,6 +36,7 @@ export function ReceiverPanel({connected, receiverInfo, setReceiverInfo, setSele
             setSelectedSignals(() => new Set(r.signalIndices));
         }
         setStatusText('Receiver detected: ' + (r.vendor || 'unknown'));
+        setOperation({status: 'success', label: 'Detecting receiver'});
     };
 
     const info = receiverInfo;

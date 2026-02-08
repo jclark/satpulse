@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -33,12 +32,14 @@ type App struct {
 
 // NewApp creates a new App.
 func NewApp() *App {
-	return &App{
-		lg: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})),
-	}
+	return &App{}
 }
 
-func (a *App) startup(ctx context.Context) { a.ctx = ctx }
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	base := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
+	a.lg = slog.New(&eventHandler{ctx: ctx, base: base})
+}
 
 func (a *App) shutdown(_ context.Context) {
 	a.mu.Lock()
@@ -178,8 +179,7 @@ func (a *App) DetectReceiver() ReceiverInfo {
 	defer pb.Unsubscribe(sub)
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 	defer cancel()
-	lg := a.eventLogger()
-	rslt, err := gpscfg.Configure(ctx, lg,
+	rslt, err := gpscfg.Configure(ctx, a.lg,
 		gpsreg.CreatePacketProcessors(nil),
 		gpsreg.CreateConfigProtocols(),
 		target, sub, conn)
@@ -385,8 +385,7 @@ func (a *App) runConfig(target *gpsprot.ConfigTarget) Result {
 	defer pb.Unsubscribe(sub)
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 	defer cancel()
-	lg := a.eventLogger()
-	_, err := gpscfg.Configure(ctx, lg,
+	_, err := gpscfg.Configure(ctx, a.lg,
 		gpsreg.CreatePacketProcessors(nil),
 		gpsreg.CreateConfigProtocols(),
 		target, sub, conn)
@@ -396,16 +395,8 @@ func (a *App) runConfig(target *gpsprot.ConfigTarget) Result {
 	return Result{OK: true}
 }
 
-// eventLogger returns a logger that emits log messages as Wails events
-// so the frontend can display progress, and also logs to stderr.
-func (a *App) eventLogger() *slog.Logger {
-	base := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
-	eh := &eventHandler{ctx: a.ctx, base: base}
-	return slog.New(eh)
-}
-
 // eventHandler is an slog.Handler that emits "gps:log" events to the frontend
-// for INFO and above, while forwarding all messages to a base handler.
+// and forwards all messages to a base handler (stderr).
 type eventHandler struct {
 	ctx   context.Context
 	base  slog.Handler
@@ -415,9 +406,11 @@ type eventHandler struct {
 
 // LogEvent is emitted to the frontend for progress messages.
 type LogEvent struct {
-	Level   string `json:"level"`
-	Message string `json:"message"`
-	Time    string `json:"time"`
+	Level     string         `json:"level"`
+	Message   string         `json:"message"`
+	Time      string         `json:"time"`
+	Component string         `json:"component,omitempty"`
+	Attrs     map[string]any `json:"attrs,omitempty"`
 }
 
 func (h *eventHandler) Enabled(_ context.Context, level slog.Level) bool {
@@ -425,25 +418,24 @@ func (h *eventHandler) Enabled(_ context.Context, level slog.Level) bool {
 }
 
 func (h *eventHandler) Handle(ctx context.Context, r slog.Record) error {
-	if r.Level >= slog.LevelInfo {
-		msg := r.Message
-		var parts []string
-		r.Attrs(func(a slog.Attr) bool {
-			parts = append(parts, fmt.Sprintf("%s=%v", a.Key, a.Value))
-			return true
-		})
-		for _, a := range h.attrs {
-			parts = append(parts, fmt.Sprintf("%s=%v", a.Key, a.Value))
-		}
-		if len(parts) > 0 {
-			msg += " " + strings.Join(parts, " ")
-		}
-		runtime.EventsEmit(h.ctx, "gps:log", LogEvent{
-			Level:   r.Level.String(),
-			Message: msg,
-			Time:    r.Time.Format(time.TimeOnly),
-		})
+	ev := LogEvent{
+		Level:     r.Level.String(),
+		Message:   r.Message,
+		Time:      r.Time.Format(time.TimeOnly),
+		Component: h.group,
 	}
+	attrs := make(map[string]any)
+	for _, a := range h.attrs {
+		attrs[a.Key] = a.Value.Any()
+	}
+	r.Attrs(func(a slog.Attr) bool {
+		attrs[a.Key] = a.Value.Any()
+		return true
+	})
+	if len(attrs) > 0 {
+		ev.Attrs = attrs
+	}
+	runtime.EventsEmit(h.ctx, "gps:log", ev)
 	return h.base.Handle(ctx, r)
 }
 

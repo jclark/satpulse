@@ -3,6 +3,7 @@ import {useState, useEffect} from 'preact/hooks';
 import {ApplyConfig, SaveConfig, ResetConfig} from '../wailsjs/go/main/App';
 import {main} from '../wailsjs/go/models';
 import {SignalPicker} from './signal-picker';
+import type {OperationState} from './app';
 
 interface Props {
     connected: boolean;
@@ -11,6 +12,7 @@ interface Props {
     selectedSignals: Set<number>;
     setSelectedSignals: (fn: (prev: Set<number>) => Set<number>) => void;
     setStatusText: (s: string) => void;
+    setOperation: (op: OperationState) => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
@@ -29,7 +31,7 @@ const btnClass = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border
 const btnPrimary = 'px-3.5 py-1 rounded text-xs border border-blue-600 bg-blue-600 text-white cursor-pointer hover:bg-blue-700 disabled:opacity-50 disabled:cursor-default';
 const btnDanger = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-red-400 cursor-pointer hover:bg-red-400 hover:border-red-400 hover:text-black disabled:opacity-50 disabled:cursor-default disabled:hover:bg-gray-200 dark:disabled:hover:bg-gray-700 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:text-red-400';
 
-export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, addToast}: Props) {
+export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, setOperation, addToast}: Props) {
     const [mode, setMode] = useState('');
     const [ppsWidth, setPpsWidth] = useState('');
     const [ppsPeriod, setPpsPeriod] = useState('');
@@ -78,37 +80,47 @@ export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSig
         if (cableDelay !== '') { cfg.setCableDelay = true; cfg.cableDelay = parseFloat(cableDelay) || 0; }
         if (minElev !== '') { cfg.setMinElevation = true; cfg.minElevation = parseFloat(minElev) || 0; }
         setStatusText('Applying configuration...');
+        setOperation({status: 'running', label: 'Applying configuration'});
         const r = await ApplyConfig(new main.ConfigUpdate(cfg));
         if (r.ok) {
             addToast('Configuration applied', 'success');
             setStatusText('Configuration applied');
+            setOperation({status: 'success', label: 'Applying configuration'});
         } else {
             addToast(r.error || 'Apply failed', 'error');
             setStatusText('Configuration failed');
+            setOperation({status: 'failed', label: 'Applying configuration', error: r.error || 'Apply failed'});
         }
     };
 
     const handleSave = async () => {
         setStatusText('Saving to NVM...');
+        setOperation({status: 'running', label: 'Saving to NVM'});
         const r = await SaveConfig();
         if (r.ok) {
             addToast('Configuration saved to NVM', 'success');
             setStatusText('Saved to NVM');
+            setOperation({status: 'success', label: 'Saving to NVM'});
         } else {
             addToast(r.error || 'Save failed', 'error');
             setStatusText('Save failed');
+            setOperation({status: 'failed', label: 'Saving to NVM', error: r.error || 'Save failed'});
         }
     };
 
     const handleReset = async (type: string) => {
-        setStatusText('Resetting receiver (' + type + ')...');
+        const label = 'Resetting receiver (' + type + ')';
+        setStatusText(label + '...');
+        setOperation({status: 'running', label});
         const r = await ResetConfig(type);
         if (r.ok) {
             addToast('Receiver reset: ' + type, 'success');
             setStatusText('Reset complete: ' + type);
+            setOperation({status: 'success', label});
         } else {
             addToast(r.error || 'Reset failed', 'error');
             setStatusText('Reset failed');
+            setOperation({status: 'failed', label, error: r.error || 'Reset failed'});
         }
     };
 

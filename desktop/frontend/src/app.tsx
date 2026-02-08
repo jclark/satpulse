@@ -20,6 +20,17 @@ export interface LogEntry {
     level: string;
     message: string;
     time: string;
+    component?: string;
+    attrs?: Record<string, any>;
+}
+
+export type OperationStatus = 'idle' | 'running' | 'success' | 'failed';
+
+export interface OperationState {
+    status: OperationStatus;
+    label: string;
+    error?: string;
+    startTime?: string;
 }
 
 export interface PacketEntry {
@@ -55,6 +66,7 @@ export function App() {
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
     const [packetEntries, setPacketEntries] = useState<PacketEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
+    const [operation, setOperation] = useState<OperationState>({status: 'idle', label: ''});
     const [panels, setPanels] = useState<PanelVisibility>({
         receiver: true, config: true, monitor: true, logging: true,
     });
@@ -140,6 +152,7 @@ export function App() {
                                                     setSelectedSignals={setSelectedSignals}
                                                     setStatusText={setStatusText}
                                                     setLogEntries={setLogEntries}
+                                                    setOperation={setOperation}
                                                     addToast={addToast}
                                                 />
                                             </Panel>
@@ -152,6 +165,7 @@ export function App() {
                                                     selectedSignals={selectedSignals}
                                                     setSelectedSignals={setSelectedSignals}
                                                     setStatusText={setStatusText}
+                                                    setOperation={setOperation}
                                                     addToast={addToast}
                                                 />
                                             </Panel>
@@ -164,6 +178,7 @@ export function App() {
                                             setSelectedSignals={setSelectedSignals}
                                             setStatusText={setStatusText}
                                             setLogEntries={setLogEntries}
+                                            setOperation={setOperation}
                                             addToast={addToast}
                                         />
                                     ) : (
@@ -174,6 +189,7 @@ export function App() {
                                             selectedSignals={selectedSignals}
                                             setSelectedSignals={setSelectedSignals}
                                             setStatusText={setStatusText}
+                                            setOperation={setOperation}
                                             addToast={addToast}
                                         />
                                     )}
@@ -194,7 +210,7 @@ export function App() {
                 {showMiddle && panels.logging && <Separator className={separatorV} />}
                 {panels.logging && (
                     <Panel id="logging" defaultSize="25%" minSize="10%">
-                        <LoggingPanel logEntries={logEntries} setLogEntries={setLogEntries} />
+                        <LoggingPanel logEntries={logEntries} setLogEntries={setLogEntries} operation={operation} />
                     </Panel>
                 )}
             </Group>
