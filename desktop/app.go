@@ -310,6 +310,40 @@ func configPropsToMap(cp *gpsprot.ConfigProps) map[string]any {
 	return m
 }
 
+// ReadConfig reads back the current configuration from the receiver without changing anything.
+func (a *App) ReadConfig() ReceiverInfo {
+	a.mu.Lock()
+	conn, pb := a.conn, a.pb
+	a.mu.Unlock()
+	if conn == nil {
+		return ReceiverInfo{Error: "not connected"}
+	}
+	target := gpsprot.NewConfigTarget()
+	target.Get = getProps
+	sub := pb.Subscribe()
+	defer pb.Unsubscribe(sub)
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
+	defer cancel()
+	rslt, err := gpscfg.Configure(ctx, a.lg,
+		gpsreg.CreatePacketProcessors(nil),
+		gpsreg.CreateConfigProtocols(),
+		target, sub, conn)
+	if err != nil {
+		return ReceiverInfo{Error: err.Error()}
+	}
+	r := ReceiverInfo{OK: true}
+	if rslt.ConfigProps != nil {
+		r.Config = configPropsToMap(rslt.ConfigProps)
+		if sigs, ok := rslt.ConfigProps.GetSignalsEnabled(); ok {
+			r.Signals = sigs.GNSSStringGroups()
+			for sig := range sigs.Signals() {
+				r.SignalIndices = append(r.SignalIndices, int(sig))
+			}
+		}
+	}
+	return r
+}
+
 // ConfigUpdate holds all configuration changes to apply at once.
 type ConfigUpdate struct {
 	SignalIndices    []int    `json:"signalIndices"`

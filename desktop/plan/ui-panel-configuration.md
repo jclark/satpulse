@@ -193,4 +193,4 @@ Local component state tracks edits. On Apply, diff against last-known values to 
 A single `Configure(map)` method handles all configuration operations. The frontend builds a plain object describing the desired `ConfigTarget` — probe, readback, property changes, save, reset — and the backend maps it to `gpsprot.ConfigTarget` and calls `gpscfg.Configure`. One method, one DTO shape.
 
 ### Backend gaps
-The current backend has no API for message configuration (NMEA/RTCM/binary output control). This needs the `Configure` DTO to support message fields backed by `gpsprot.ConfigTarget`. Defer Messages section implementation until backend support is added.
+The `gpsprot` package already defines all message flag types (`NMEAMsgFlags`, `RTCMMsgFlags`, `PVTMsgFlags`, `SatsMsgFlags`, `RawMsgFlags`) and `ConfigOptions` has fields for them. The only gap is the Wails adapter: the `ConfigUpdate` DTO in `app.go` needs message fields added and mapped to `ConfigOptions`. No `gps/` package changes needed.

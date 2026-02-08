@@ -29,22 +29,24 @@ The backend is a thin wrapper: map -> `ConfigTarget` -> `gpscfg.Configure` -> re
 ### When to read config
 Config readback should be triggered by opening the configuration panel (or clicking Refresh within it). It should not run automatically on connect — that would add unnecessary delay and the user may not even open the config panel.
 
-## Steps
+---
 
-### 1. Config readback via Configure
-The frontend calls the single `Configure` method with `get` set to the desired properties list. The backend maps this to a `ConfigTarget` with the corresponding `Get` bitmask, calls `gpscfg.Configure`, and returns the readback values.
+## Phase 5a: Panel restructure, readback, and validation
 
-### 2. Collapsible sections
+Restructure the existing config panel into collapsible sections, add config readback, and improve the editing experience. This phase uses the existing backend API (`ApplyConfig`, `SaveConfig`, `ResetConfig`) — no backend changes needed.
+
+### Steps
+
+#### 1. Collapsible sections
 Create a reusable `CollapsibleSection` component (heading + chevron toggle + animated content). Use Tailwind for styling, no external library.
 
-Restructure `config-panel.tsx` into three top-level collapsible sections:
+Restructure `config-panel.tsx` into two top-level collapsible sections:
 1. Properties (existing fields: time pulse, mode, GNSS/signals, cable delay, etc.)
-2. Messages (new, initially empty placeholder)
-3. Persistent Operations (existing: save, reload, reset, factory reset)
+2. Persistent Operations (existing: save, reload, reset, factory reset)
 
-Section collapse/expand state is remembered (local storage or component state).
+Section collapse/expand state is remembered (component state).
 
-### 3. Config readback on panel open
+#### 2. Config readback on panel open
 When the configuration panel is first opened (or becomes visible):
 - Call `Configure` with `get` to fetch current property values
 - Populate property controls with the returned values
@@ -53,28 +55,107 @@ When the configuration panel is first opened (or becomes visible):
 
 A Refresh button in the panel triggers the same readback.
 
-### 4. Sticky action bar
+This requires a new backend method or extending the existing API to support readback-only calls. The current `DetectReceiver` already reads config as a side effect of probing, but a dedicated readback path via `Configure` with just `get` is cleaner.
+
+#### 3. Sticky action bar
 Add a sticky action bar at the top (or bottom) of the config panel with:
-- `Refresh` button (calls `Configure` with `get`)
-- `Apply` button (calls `Configure` with `props`)
+- `Refresh` button (triggers config readback)
+- `Apply` button (calls `ApplyConfig` with changed properties)
 - Operation status indicator (idle / applying / success / error)
 - Pending changes summary (count of edited fields)
 
-### 5. Message configuration support
-Extend the `Configure` method's input map to support output message configuration fields:
-- NMEA message enables (RMC, GGA, GSA, GSV, ZDA, VTG, etc.)
-- RTCM message enables (MSM4, MSM7, ARP, etc.)
-- Binary information-content outputs (position, velocity, time, satellites, raw obs, etc.)
+#### 4. Simple/advanced signal editing
+Add a simple mode to the GNSS/signals subgroup:
+- Simple: per-constellation enable/disable toggles
+- Advanced: full signal-level picker (existing `signal-picker.tsx`)
+- Toggle between modes with a switch
+- Switching modes preserves intent where possible
 
-These map to `gpsprot.ConfigTarget` fields. The backend just maps the input to the `ConfigTarget` — no new methods needed. The exact fields depend on what `gpsprot` exposes — may require additions to the `gps/` packages.
+#### 5. Validation and interlocks
+- Mode-specific fields enabled only when their mode is selected
+- Inline validation for numeric fields (range checks)
+- Conflicting inputs blocked before Apply with inline reasons
 
-### 6. Frontend: messages section
-Build the Messages section UI as specified in `ui-panel-configuration.md`:
-- Standard protocol messages (NMEA with master toggle, RTCM with master toggle)
-- Information-content outputs (PVT, satellite, raw measurement controls)
-- Master toggles gate child checkboxes
+#### 6. Confirmation dialog for destructive operations
+- Factory reset requires a confirmation dialog before executing
+- Cancel returns to normal state without action
 
-### 7. Frontend: presets
+### Result (5a)
+Configuration panel is restructured with collapsible sections, config readback on open, sticky action bar, simple/advanced signal modes, inline validation, and confirmation for destructive operations. All existing property configuration continues to work.
+
+### Files changed (5a)
+- `desktop/app.go` (readback-only Configure method)
+- `desktop/frontend/src/config-panel.tsx` (major restructure)
+- `desktop/frontend/src/collapsible-section.tsx` (new reusable component)
+- `desktop/frontend/src/signal-picker.tsx` (simple mode added)
+- `desktop/frontend/src/app.tsx` (config readback integration)
+
+### Testing — Playwright (5a)
+
+#### Collapsible sections
+- Verify Properties and Persistent Operations sections are visible.
+- Click a section header to collapse it; verify content is hidden.
+- Click again to expand; verify content is shown.
+
+#### Sticky action bar
+- Scroll down in a long config panel; verify Refresh and Apply buttons remain visible.
+- Verify pending changes count updates when a field is edited.
+
+#### Config readback
+- Connect to a receiver.
+- Open the config panel; verify config readback runs and property fields are populated.
+- Click Refresh; verify properties are re-read.
+- Verify readback timestamp is shown.
+
+#### Simple/advanced signal editing
+- Verify simple mode shows per-constellation toggles.
+- Switch to advanced mode; verify full signal picker appears.
+- Switch back to simple mode; verify constellation toggles reflect the selection.
+
+#### Validation
+- Enter an out-of-range value in a numeric field; verify inline error appears.
+- Verify Apply button is disabled (or shows warning) when validation errors exist.
+
+#### Destructive operations
+- Click Factory Reset; verify a confirmation dialog appears.
+- Cancel the dialog; verify nothing happens.
+
+---
+
+## Phase 5b: Message configuration
+
+Add a Messages section to the configuration panel with output message controls, master toggles, and presets. The `gpsprot` package already defines all the message flag types (`NMEAMsgFlags`, `RTCMMsgFlags`, `PVTMsgFlags`, `SatsMsgFlags`, `RawMsgFlags`) and `ConfigOptions` already has fields for them — this phase just needs to expose them through the Wails adapter and build the UI.
+
+### Steps
+
+#### 1. Extend ConfigUpdate DTO for message fields
+Add message configuration fields to the `ConfigUpdate` struct in `app.go` so the frontend can pass message flags through to `ConfigOptions`:
+- NMEA message enables (RMC, GGA, GSA, GSV, ZDA, VTG, Other)
+- RTCM message enables (MSM4, MSM7, ARP, Other, Lax)
+- PVT message enables (position, velocity, time, time pulse, leap second, survey, TAI, ECEF, time pulse after, off)
+- Satellite message enables (satellite positions, signal strengths)
+- Raw message enables (observations, navigation data)
+
+Map each field to the corresponding `gpsprot` flag in `ApplyConfig`.
+
+#### 2. Add Messages collapsible section
+Add a third top-level collapsible section between Properties and Persistent Operations. Build the Messages section UI as specified in `ui-panel-configuration.md`:
+
+**Standard protocol messages:**
+- NMEA with master toggle gating child checkboxes (RMC, GGA, GSA, GSV, ZDA, VTG, Other)
+- RTCM with master toggle gating child checkboxes (MSM4, MSM7, ARP, Other)
+
+**Information-content outputs:**
+- PVT information (position, velocity, navigation time, time-pulse time, leap-second, survey progress) with modifiers (TAI, ECEF, time message after pulse)
+- Satellite information (satellite positions, signal strengths)
+- Raw measurement information (raw observations, raw navigation data)
+
+#### 3. Master toggles
+- Master toggle gates child controls (greyed/disabled when off)
+- Toggling master on enables child checkboxes
+- Toggling master off disables child checkboxes but preserves their state
+
+#### 4. Presets
 Add preset buttons inside the Messages section:
 - `NMEA preset` - ticks standard NMEA set
 - `Binary preset` - ticks standard binary set
@@ -82,66 +163,22 @@ Add preset buttons inside the Messages section:
 
 Clicking a preset updates the relevant checkboxes. User can still adjust after applying a preset.
 
-### 8. Simple/advanced signal editing
-Add a simple mode to the GNSS/signals subgroup:
-- Simple: per-constellation enable/disable toggles
-- Advanced: full signal-level picker (existing `signal-picker.tsx`)
-- Toggle between modes with a switch
-- Switching modes preserves intent where possible
+### Result (5b)
+Configuration panel has a full Messages section with NMEA/RTCM/binary output controls, master toggles, and presets. Combined with 5a, this completes the configuration panel.
 
-### 9. Validation and interlocks
-- Mode-specific fields enabled only when their mode is selected
-- Master message toggles gate child controls
-- Inline validation for numeric fields (range checks)
-- Conflicting inputs blocked before Apply with inline reasons
+### Files changed (5b)
+- `desktop/app.go` (ConfigUpdate extended with message fields, mapping to ConfigOptions)
+- `desktop/frontend/src/config-panel.tsx` (Messages section added)
 
-## Result
-Configuration panel is fully featured: collapsible sections, config readback on open, message configuration with presets, simple/advanced signal modes, inline validation. This is the core workflow of the desktop app.
+### Testing — Playwright (5b)
 
-## Files changed
-- `desktop/app.go` (Configure method extended for message config fields)
-- `desktop/frontend/src/config-panel.tsx` (major rewrite)
-- `desktop/frontend/src/collapsible-section.tsx` (new reusable component)
-- `desktop/frontend/src/signal-picker.tsx` (simple mode added)
-- `desktop/frontend/src/app.tsx` (config readback integration)
-
-## Testing (Playwright)
-
-### Collapsible sections
-- Verify Properties, Messages, and Persistent Operations sections are visible.
-- Click a section header to collapse it; verify content is hidden.
-- Click again to expand; verify content is shown.
-- Verify collapse state survives navigating away and back (if applicable).
-
-### Sticky action bar
-- Scroll down in a long config panel; verify Refresh and Apply buttons remain visible.
-- Verify pending changes count updates when a field is edited.
-
-### Config readback
-- Connect to a receiver.
-- Open the config panel; verify config readback runs and property fields are populated.
-- Click Refresh; verify properties are re-read.
-- Verify readback timestamp is shown.
-
-### Messages section
+#### Messages section
 - Verify NMEA master toggle exists; toggle it off and verify child checkboxes are disabled/greyed.
 - Toggle it on; verify child checkboxes become interactive.
 - Same for RTCM master toggle.
 - Click a preset button; verify relevant checkboxes change state.
 - Modify a checkbox after preset; verify it stays modified.
 
-### Simple/advanced signal editing
-- Verify simple mode shows per-constellation toggles.
-- Switch to advanced mode; verify full signal picker appears.
-- Switch back to simple mode; verify constellation toggles reflect the selection.
-
-### Validation
-- Enter an out-of-range value in a numeric field; verify inline error appears.
-- Verify Apply button is disabled (or shows warning) when validation errors exist.
-
-### Destructive operations
-- Click Factory Reset; verify a confirmation dialog appears.
-- Cancel the dialog; verify nothing happens.
-
-## Backend gaps
-Message configuration depends on `gpsprot.ConfigTarget` supporting message fields. If the `gps/` packages don't yet expose this, those packages need extension first. This may be the largest backend effort in the entire plan.
+#### Apply with messages
+- Select some message checkboxes and click Apply; verify the operation succeeds.
+- Verify message selections are included in the configuration request.

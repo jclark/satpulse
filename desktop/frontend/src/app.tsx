@@ -160,6 +160,13 @@ export function App() {
         };
     }, []);
 
+    const handleConfigReadback = useCallback((info: main.ReceiverInfo) => {
+        setReceiverInfo(prev => {
+            if (!prev) return info;
+            return {...prev, config: info.config, signals: info.signals, signalIndices: info.signalIndices};
+        });
+    }, []);
+
     const handleConnect = useCallback(async () => {
         if (connected) {
             await Disconnect();
@@ -234,6 +241,7 @@ export function App() {
                                                     setStatusText={setStatusText}
                                                     setOperation={setOperation}
                                                     addToast={addToast}
+                                                    onConfigReadback={handleConfigReadback}
                                                 />
                                             </Panel>
                                         </Group>
@@ -249,6 +257,7 @@ export function App() {
                                             setStatusText={setStatusText}
                                             setOperation={setOperation}
                                             addToast={addToast}
+                                            onConfigReadback={handleConfigReadback}
                                         />
                                     )}
                                 </Panel>
