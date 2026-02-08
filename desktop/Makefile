@@ -1,10 +1,13 @@
-.PHONY: build dev clean realclean setup
+.PHONY: build dev lint clean realclean setup
 
 build:
 	wails build
 
 setup:
 	cd .. && go work init . ./desktop
+
+lint:
+	cd frontend && npm run lint
 
 dev:
 	wails dev
