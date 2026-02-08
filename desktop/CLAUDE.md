@@ -2,7 +2,9 @@
 
 Wails v2 app with a Preact + TypeScript + Vite frontend and Go backend.
 
-## Running the dev server
+## Dev server
+
+The user starts `wails dev` in a terminal:
 
 ```
 cd desktop && wails dev
@@ -12,11 +14,17 @@ This starts two servers:
 - **Vite dev server** (typically `localhost:5173`) -- serves frontend assets with HMR
 - **Wails dev server** (`localhost:34115`) -- proxies frontend and provides Go backend bindings
 
-Use the Wails dev server URL (`localhost:34115`) to test the full app in a browser, including Go method calls. The Vite URL only serves the frontend without backend bindings.
+**NEVER start or stop `wails dev` yourself.** The user manages it. If a task will require browser testing, check that `localhost:34115` is reachable at the **start** of the task (before writing code). If it is not running, ask the user to start it in a terminal before proceeding.
+
+**NEVER run Vite directly** (`npm run dev`, `npx vite`, etc.). Wails manages the Vite dev server internally. Running Vite separately creates a standalone frontend at `localhost:5173` with no Go backend -- all Go calls will fail.
+
+**NEVER use `localhost:5173` for testing.** Always use `localhost:34115`.
+
+Vite supports Hot Module Reload and picks up file changes instantly -- there is no need to restart after editing frontend code.
 
 ## Verifying UI changes
 
-A Playwright MCP server is configured in `/.mcp.json`. After starting `wails dev`, use Playwright to navigate to `http://localhost:34115` and take screenshots to verify the rendered page.
+A Playwright MCP server is configured in `/.mcp.json`. Use Playwright to navigate to `http://localhost:34115` and take screenshots to verify the rendered page.
 
 ## Frontend structure
 
