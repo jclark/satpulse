@@ -95,7 +95,7 @@ export function App() {
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
     const [packetEntries, setPacketEntries] = useState<PacketEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
-    const [operation, setOperation] = useState<OperationState>({status: 'idle', label: ''});
+    const [, setOperation] = useState<OperationState>({status: 'idle', label: ''});
     const [timeMsg, setTimeMsg] = useState<TimeMsg | null>(null);
     const [surveyMsg, setSurveyMsg] = useState<SurveyMsg | null>(null);
     const [leapSecond, setLeapSecond] = useState<LeapSecondState | null>(null);
