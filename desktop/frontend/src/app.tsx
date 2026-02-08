@@ -103,6 +103,26 @@ export function App() {
     const [timeOpen, setTimeOpen] = useState(true);
     const [surveyOpen, setSurveyOpen] = useState(false);
     const surveyAutoExpanded = useRef(false);
+    const [logHeight, setLogHeight] = useState(150);
+    const dragging = useRef(false);
+
+    const onSplitterMouseDown = useCallback((e: MouseEvent) => {
+        e.preventDefault();
+        dragging.current = true;
+        const startY = e.clientY;
+        const startH = logHeight;
+        const onMove = (e: MouseEvent) => {
+            if (!dragging.current) return;
+            setLogHeight(Math.max(60, startH - (e.clientY - startY)));
+        };
+        const onUp = () => {
+            dragging.current = false;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }, [logHeight]);
 
     // Auto-expand survey section on first survey data
     useEffect(() => {
@@ -260,8 +280,8 @@ export function App() {
                 </button>
             </div>
 
-            {/* Tab content area (flex-1 fills available space) */}
-            <div class="flex-1 overflow-hidden">
+            {/* Tab content area */}
+            <div class="flex-1 overflow-hidden" style="min-height: 80px;">
                 {/* Monitor tab */}
                 <div class={`h-full overflow-y-auto ${activeTab === 'monitor' ? '' : 'hidden'}`}>
                     <CollapsibleSection title="Time" variant="panel" open={timeOpen} onToggle={setTimeOpen}>
@@ -297,11 +317,15 @@ export function App() {
                 </div>
             </div>
 
-            {/* Activity log (always visible, CSS-resizable) */}
-            <div class="shrink-0 overflow-hidden border-t border-gray-200 dark:border-gray-700" style="height: 150px; min-height: 60px; max-height: 50vh; resize: vertical;">
-                <div class="h-full overflow-hidden">
-                    <LoggingPanel logEntries={logEntries} setLogEntries={setLogEntries} />
-                </div>
+            {/* Drag splitter */}
+            <div
+                class="shrink-0 h-1 cursor-row-resize border-y border-gray-200 dark:border-gray-700"
+                onMouseDown={onSplitterMouseDown}
+            />
+
+            {/* Activity log (always visible) */}
+            <div class="shrink-0 overflow-hidden" style={{height: logHeight + 'px'}}>
+                <LoggingPanel logEntries={logEntries} setLogEntries={setLogEntries} />
             </div>
 
             {/* Status bar */}
