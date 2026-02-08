@@ -4,7 +4,7 @@
 Enhance serial port support: automatic port discovery with a dropdown selector, cross-platform serial port compatibility (macOS and Windows), and Windows build support.
 
 ## Prerequisite
-Phase 1 (panel layout with connection strip). All earlier phases should be stable on macOS/Linux first.
+Phase 5b (tab-based layout with connection bar). All earlier phases should be stable on macOS/Linux first.
 
 ## Reference documents
 - [ui-panel-connection.md](ui-panel-connection.md) - connection strip design (device input replaced with dropdown)
@@ -77,7 +77,7 @@ Review all file path handling for Windows compatibility:
 - Disconnect the USB device; click refresh; verify the port disappears from the list.
 
 ### Windows
-- Verify the app launches and shows the panel layout.
+- Verify the app launches and shows the tab-based layout.
 - Verify serial port enumeration lists COM ports.
 - Connect to a receiver via COM port; verify connection succeeds.
 - Verify packet monitor shows incoming packets.

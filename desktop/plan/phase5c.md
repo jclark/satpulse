@@ -4,7 +4,7 @@
 Add a Messages section to the configuration overlay with output message controls, master toggles, and presets. This controls *what the receiver sends*.
 
 ## Prerequisite
-Phase 5b (layout rework -- configuration is now a slide-down overlay). Phase 5a (config panel has collapsible sections and Apply flow).
+Phase 5b (layout rework -- configuration is now a tab). Phase 5a (config panel has collapsible sections and Apply flow).
 
 ## Context
 The `gpsprot` package already defines all the message flag types (`NMEAMsgFlags`, `RTCMMsgFlags`, `PVTMsgFlags`, `SatsMsgFlags`, `RawMsgFlags`) and `ConfigOptions` already has fields for them -- this phase just needs to expose them through the Wails adapter and build the UI.
@@ -49,7 +49,7 @@ Add preset buttons inside the Messages section:
 Clicking a preset updates the relevant checkboxes. User can still adjust after applying a preset.
 
 ## Result
-Configuration overlay has a full Messages section with NMEA/RTCM/binary output controls, master toggles, and presets.
+Configuration tab has a full Messages section with NMEA/RTCM/binary output controls, master toggles, and presets.
 
 ## Files changed
 - `desktop/app.go` (ConfigUpdate extended with message fields, mapping to ConfigOptions)
