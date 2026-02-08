@@ -28,7 +28,8 @@ Each phase is self-contained with goal, steps, testing plan, and files changed.
 | [phase5d.md](phase5d.md) | Live messages panel (packet stats tree + inspector) | Phase 5b |
 | [phase6.md](phase6.md) | Sky View + Signal View (SVG satellite visualization) | Phase 3 |
 | [phase7.md](phase7.md) | Message file support (TOML message send, response formatting) | Phase 1 |
-| [phase8.md](phase8.md) | Serial port improvements (discovery, macOS/Windows support) | Phase 1 |
+| [phase8.md](phase8.md) | Serial port enumeration (dropdown selector) | Phase 5b |
+| [phase9.md](phase9.md) | Windows support (Win32 serial I/O, Wails build) | Phase 8 |
 
 ## Dependency graph
 ```
@@ -42,7 +43,8 @@ Phase 1 (layout shell)
 │           ├── Phase 5c (message configuration)
 │           └── Phase 5d (live messages panel)
 ├── Phase 7 (message file support)
-└── Phase 8 (serial port improvements + Windows)
+├── Phase 8 (serial port enumeration)
+│   └── Phase 9 (Windows support)
 ```
 
 ## Current state
