@@ -22,7 +22,10 @@ Each phase is self-contained with goal, steps, testing plan, and files changed.
 | [phase2.md](phase2.md) | Structured logging | Phase 1 |
 | [phase3.md](phase3.md) | Semantic data stream + text panels (time, survey) | Phase 1 |
 | [phase4.md](phase4.md) | Receiver panel (auto-identify on connect) | Phase 1 |
-| [phase5.md](phase5.md) | Configuration panel (readback, messages, presets) | Phase 1, Phase 4 |
+| [phase5a.md](phase5a.md) | Config panel restructure, readback, validation (done) | Phase 1, Phase 4 |
+| [phase5b.md](phase5b.md) | Layout rework (slide-down config, collapsible panels) | Phase 5a |
+| [phase5c.md](phase5c.md) | Message configuration (NMEA/RTCM/binary output control) | Phase 5a, Phase 5b |
+| [phase5d.md](phase5d.md) | Live messages panel (packet stats tree + inspector) | Phase 5b |
 | [phase6.md](phase6.md) | Sky View + Signal View (SVG satellite visualization) | Phase 3 |
 | [phase7.md](phase7.md) | Message file support (TOML message send, response formatting) | Phase 1 |
 | [phase8.md](phase8.md) | Serial port improvements (discovery, macOS/Windows support) | Phase 1 |
@@ -34,7 +37,10 @@ Phase 1 (layout shell)
 ├── Phase 3 (semantic stream + text panels)
 │   └── Phase 6 (sky view + signal view)
 ├── Phase 4 (receiver panel)
-│   └── Phase 5 (configuration panel)
+│   └── Phase 5a (config panel restructure) ✓
+│       └── Phase 5b (layout rework)
+│           ├── Phase 5c (message configuration)
+│           └── Phase 5d (live messages panel)
 ├── Phase 7 (message file support)
 └── Phase 8 (serial port improvements + Windows)
 ```
