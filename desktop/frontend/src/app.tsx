@@ -5,7 +5,7 @@ import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
 import {Connect, Disconnect, GetAllSignals} from '../wailsjs/go/main/App';
 import {main} from '../wailsjs/go/models';
 import {ConnectionPanel} from './connection-panel';
-import {ReceiverPanel} from './receiver-panel';
+import {ReceiverPanel, ReceiverState} from './receiver-panel';
 import {ConfigPanel} from './config-panel';
 import {MonitorPanel} from './monitor-panel';
 import {LoggingPanel} from './logging-panel';
@@ -90,6 +90,7 @@ export function App() {
     const [device, setDevice] = useState('/dev/cu.usbmodem312301');
     const [speed, setSpeed] = useState(9600);
     const [statusText, setStatusText] = useState('Disconnected');
+    const [receiver, setReceiver] = useState<ReceiverState>({status: 'disconnected'});
     const [receiverInfo, setReceiverInfo] = useState<main.ReceiverInfo | null>(null);
     const [signalCatalog, setSignalCatalog] = useState<main.GNSSInfo[]>([]);
     const [selectedSignals, setSelectedSignals] = useState<Set<number>>(new Set());
@@ -117,6 +118,22 @@ export function App() {
         const offPkt = EventsOn('gps:packet', (pkt: PacketEntry) => {
             setPacketEntries(prev => [...prev.slice(-199), pkt]);
         });
+        const offRcv = EventsOn('gps:receiver', (evt: any) => {
+            if (!evt.ok && !evt.error) {
+                setReceiver({status: 'probing'});
+            } else if (evt.error) {
+                setReceiver({status: 'error', error: evt.error});
+            } else {
+                setReceiver({
+                    status: 'identified',
+                    vendor: evt.vendor || '',
+                    hardware: evt.hardware || '',
+                    firmware: evt.firmware || '',
+                    supportedGNSS: evt.supportedGNSS || [],
+                    packetFormats: evt.packetFormats || [],
+                });
+            }
+        });
         const offMsg = EventsOn('gps:msg', (evt: MsgEvent) => {
             switch (evt.kind) {
                 case 'time':
@@ -138,6 +155,7 @@ export function App() {
         return () => {
             if (typeof offLog === 'function') offLog(); else EventsOff('gps:log');
             if (typeof offPkt === 'function') offPkt(); else EventsOff('gps:packet');
+            if (typeof offRcv === 'function') offRcv(); else EventsOff('gps:receiver');
             if (typeof offMsg === 'function') offMsg(); else EventsOff('gps:msg');
         };
     }, []);
@@ -203,16 +221,7 @@ export function App() {
                                     {panels.receiver && panels.config ? (
                                         <Group orientation="vertical" className="h-full">
                                             <Panel id="receiver" defaultSize="40%" minSize="10%">
-                                                <ReceiverPanel
-                                                    connected={connected}
-                                                    receiverInfo={receiverInfo}
-                                                    setReceiverInfo={setReceiverInfo}
-                                                    setSelectedSignals={setSelectedSignals}
-                                                    setStatusText={setStatusText}
-                                                    setLogEntries={setLogEntries}
-                                                    setOperation={setOperation}
-                                                    addToast={addToast}
-                                                />
+                                                <ReceiverPanel receiver={receiver} />
                                             </Panel>
                                             <Separator className={separatorV} />
                                             <Panel id="config" minSize="10%">
@@ -229,16 +238,7 @@ export function App() {
                                             </Panel>
                                         </Group>
                                     ) : panels.receiver ? (
-                                        <ReceiverPanel
-                                            connected={connected}
-                                            receiverInfo={receiverInfo}
-                                            setReceiverInfo={setReceiverInfo}
-                                            setSelectedSignals={setSelectedSignals}
-                                            setStatusText={setStatusText}
-                                            setLogEntries={setLogEntries}
-                                            setOperation={setOperation}
-                                            addToast={addToast}
-                                        />
+                                        <ReceiverPanel receiver={receiver} />
                                     ) : (
                                         <ConfigPanel
                                             connected={connected}

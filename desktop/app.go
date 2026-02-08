@@ -95,7 +95,58 @@ func (a *App) Connect(device string, speed int) Result {
 	a.conn = conn
 	a.connCancel = connCancel
 	a.pb = pb
+	probeSub := pb.Subscribe()
+	a.connWg.Go(func() { a.probeWorker(probeSub) })
 	return Result{OK: true}
+}
+
+// ProbeResult is emitted as the "gps:receiver" event payload.
+type ProbeResult struct {
+	OK            bool     `json:"ok"`
+	Error         string   `json:"error,omitempty"`
+	Vendor        string   `json:"vendor,omitempty"`
+	Hardware      string   `json:"hardware,omitempty"`
+	Firmware      string   `json:"firmware,omitempty"`
+	SupportedGNSS []string `json:"supportedGNSS,omitempty"`
+	PacketFormats []string `json:"packetFormats,omitempty"`
+}
+
+// probeWorker runs receiver identification automatically after connect.
+func (a *App) probeWorker(sub <-chan scan.Packet) {
+	runtime.EventsEmit(a.ctx, "gps:receiver", ProbeResult{})
+	a.mu.Lock()
+	conn, pb := a.conn, a.pb
+	a.mu.Unlock()
+	if conn == nil || pb == nil {
+		return
+	}
+	defer pb.Unsubscribe(sub)
+	target := gpsprot.NewConfigTarget()
+	target.Opts.ForceProbe = true
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
+	defer cancel()
+	rslt, err := gpscfg.Configure(ctx, a.lg,
+		gpsreg.CreatePacketProcessors(nil),
+		gpsreg.CreateConfigProtocols(),
+		target, sub, conn)
+	if err != nil {
+		runtime.EventsEmit(a.ctx, "gps:receiver", ProbeResult{Error: err.Error()})
+		return
+	}
+	r := ProbeResult{OK: true}
+	if rslt.ReceiverInfo != nil {
+		ri := rslt.ReceiverInfo
+		r.Vendor = ri.Vendor
+		r.Hardware = ri.Hardware
+		r.Firmware = ri.Firmware
+		for _, g := range ri.SupportedGNSS.Items() {
+			r.SupportedGNSS = append(r.SupportedGNSS, g.String())
+		}
+	}
+	for _, tag := range rslt.PacketFormatsDetected {
+		r.PacketFormats = append(r.PacketFormats, string(tag))
+	}
+	runtime.EventsEmit(a.ctx, "gps:receiver", r)
 }
 
 // Disconnect closes the GPS connection.
