@@ -15,6 +15,8 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/geopos"
+	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -88,6 +90,8 @@ func (a *App) Connect(device string, speed int) Result {
 	a.connWg.Go(func() { pb.Run(connCtx, a.lg) })
 	sub := pb.Subscribe()
 	a.connWg.Go(func() { a.packetEventWorker(sub) })
+	msgSub := pb.Subscribe()
+	a.connWg.Go(func() { a.msgDecoderWorker(msgSub) })
 	a.conn = conn
 	a.connCancel = connCancel
 	a.pb = pb
@@ -502,4 +506,108 @@ func containsBinary(data []byte) bool {
 		}
 	}
 	return false
+}
+
+// MsgEvent is the envelope emitted as "gps:msg" to the frontend.
+type MsgEvent struct {
+	Kind string `json:"kind"`
+	Msg  any    `json:"msg"`
+	Time string `json:"time"`
+}
+
+// LLH holds latitude, longitude (degrees) and height (meters) above the WGS84 ellipsoid.
+type LLH struct {
+	Lat    float64 `json:"lat"`
+	Lon    float64 `json:"lon"`
+	Height float64 `json:"height"`
+}
+
+// ECEFtoLLH converts Earth-Centered Earth-Fixed coordinates (meters) to latitude,
+// longitude (degrees), and height above the WGS84 ellipsoid (meters).
+func (a *App) ECEFtoLLH(x, y, z float64) (*LLH, error) {
+	llh, err := geopos.WGS84.ECEFtoLLH(geopos.ECEF{x, y, z})
+	if err != nil {
+		return nil, err
+	}
+	return &LLH{Lat: llh.Lat, Lon: llh.Lon, Height: llh.Height}, nil
+}
+
+// msgHandler implements gpsprot.MsgHandler and emits "gps:msg" events.
+type msgHandler struct {
+	ctx      context.Context
+	ls       ptime.LeapSecond
+	lastTime ptime.Time
+}
+
+func (h *msgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
+	if msg.Ref == gpsprot.PrePulse {
+		return
+	}
+	sec, ok := msg.ComputeTAITime(h.ls)
+	if !ok {
+		return
+	}
+	secRnd := sec.Round(time.Second)
+	if secRnd <= h.lastTime {
+		return
+	}
+	h.lastTime = secRnd
+	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+		Kind: "time",
+		Msg:  msg,
+		Time: tRead.Format(time.TimeOnly),
+	})
+}
+
+func (h *msgHandler) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
+	msg.UpdateLeapSecond(&h.ls)
+	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+		Kind: "leapSecond",
+		Msg:  msg,
+		Time: tRead.Format(time.TimeOnly),
+	})
+}
+
+func (h *msgHandler) Survey(msg *gpsprot.SurveyMsg, tRead time.Time) {
+	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+		Kind: "survey",
+		Msg:  msg,
+		Time: tRead.Format(time.TimeOnly),
+	})
+}
+
+func (h *msgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
+	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+		Kind: "satellites",
+		Msg:  msg,
+		Time: tRead.Format(time.TimeOnly),
+	})
+}
+
+// msgDecoderWorker subscribes to the packet broadcast and decodes packets
+// into semantic messages, emitting them as "gps:msg" events.
+func (a *App) msgDecoderWorker(sub <-chan scan.Packet) {
+	procs := gpsreg.CreatePacketProcessors(nil)
+	mh := &msgHandler{
+		ctx: a.ctx,
+		ls:  ptime.LeapSecond2016(),
+	}
+	for _, pp := range procs {
+		pp.SetMsgHandler(mh)
+	}
+	for pkt := range sub {
+		if len(pkt.Data) == 0 {
+			continue
+		}
+		tag := pkt.Tag()
+		pp := procs[tag]
+		if pp == nil {
+			continue
+		}
+		if pkt.IsInterPacketTimeout() {
+			pp.Idle(pkt.TRead)
+		} else {
+			pp.ProcessPacket(pkt.Data, pkt.TRead)
+		}
+	}
 }

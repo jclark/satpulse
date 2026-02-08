@@ -9,6 +9,8 @@ import {ReceiverPanel} from './receiver-panel';
 import {ConfigPanel} from './config-panel';
 import {MonitorPanel} from './monitor-panel';
 import {LoggingPanel} from './logging-panel';
+import {TimePanel} from './time-panel';
+import {SurveyPanel} from './survey-panel';
 
 interface Toast {
     id: number;
@@ -41,9 +43,37 @@ export interface PacketEntry {
     timestamp: string;
 }
 
+export interface TimeMsg {
+    taiTime?: string;
+    utcTime?: string;
+    accuracy?: number;
+    gnss?: string;
+}
+
+export interface SurveyMsg {
+    position?: [number, number, number];
+    accuracy: number;
+    obsCount: number;
+    obsTime: number;
+    valid: boolean;
+    inProgress: boolean;
+}
+
+export interface LeapSecondState {
+    utcOff: number;
+}
+
+interface MsgEvent {
+    kind: string;
+    msg: any;
+    time: string;
+}
+
 export interface PanelVisibility {
     receiver: boolean;
     config: boolean;
+    time: boolean;
+    survey: boolean;
     monitor: boolean;
     logging: boolean;
 }
@@ -67,8 +97,11 @@ export function App() {
     const [packetEntries, setPacketEntries] = useState<PacketEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [operation, setOperation] = useState<OperationState>({status: 'idle', label: ''});
+    const [timeMsg, setTimeMsg] = useState<TimeMsg | null>(null);
+    const [surveyMsg, setSurveyMsg] = useState<SurveyMsg | null>(null);
+    const [leapSecond, setLeapSecond] = useState<LeapSecondState | null>(null);
     const [panels, setPanels] = useState<PanelVisibility>({
-        receiver: true, config: true, monitor: true, logging: true,
+        receiver: true, config: true, time: true, survey: true, monitor: true, logging: true,
     });
 
     const addToast = useCallback((message: string, type: 'success' | 'error') => {
@@ -84,9 +117,28 @@ export function App() {
         const offPkt = EventsOn('gps:packet', (pkt: PacketEntry) => {
             setPacketEntries(prev => [...prev.slice(-199), pkt]);
         });
+        const offMsg = EventsOn('gps:msg', (evt: MsgEvent) => {
+            switch (evt.kind) {
+                case 'time':
+                    setTimeMsg(evt.msg as TimeMsg);
+                    break;
+                case 'survey':
+                    setSurveyMsg(evt.msg as SurveyMsg);
+                    break;
+                case 'leapSecond': {
+                    const ls = evt.msg;
+                    // LeapSecond embeds ptime.LeapSecond with UTCOffAfter as current offset
+                    if (ls && typeof ls.UTCOffAfter === 'number') {
+                        setLeapSecond({utcOff: ls.UTCOffAfter});
+                    }
+                    break;
+                }
+            }
+        });
         return () => {
             if (typeof offLog === 'function') offLog(); else EventsOff('gps:log');
             if (typeof offPkt === 'function') offPkt(); else EventsOff('gps:packet');
+            if (typeof offMsg === 'function') offMsg(); else EventsOff('gps:msg');
         };
     }, []);
 
@@ -118,8 +170,14 @@ export function App() {
     }, []);
 
     const showLeft = panels.receiver || panels.config;
+    const showCenter = panels.time || panels.survey;
     const showRight = panels.monitor;
-    const showMiddle = showLeft || showRight;
+    const showMiddle = showLeft || showCenter || showRight;
+
+    // Collect visible center panels for dynamic sub-splitting
+    const centerPanels: preact.ComponentChildren[] = [];
+    if (panels.time) centerPanels.push(<TimePanel msg={timeMsg} leapSecond={leapSecond} />);
+    if (panels.survey) centerPanels.push(<SurveyPanel msg={surveyMsg} />);
 
     return (
         <>
@@ -141,7 +199,7 @@ export function App() {
                     <Panel id="middle" minSize="20%">
                         <Group orientation="horizontal" className="h-full">
                             {showLeft && (
-                                <Panel id="left" defaultSize="40%" minSize="15%">
+                                <Panel id="left" defaultSize="35%" minSize="15%">
                                     {panels.receiver && panels.config ? (
                                         <Group orientation="vertical" className="h-full">
                                             <Panel id="receiver" defaultSize="40%" minSize="10%">
@@ -195,7 +253,23 @@ export function App() {
                                     )}
                                 </Panel>
                             )}
-                            {showLeft && showRight && <Separator className={separatorH} />}
+                            {showLeft && showCenter && <Separator className={separatorH} />}
+                            {showCenter && (
+                                <Panel id="center" defaultSize="30%" minSize="15%">
+                                    {centerPanels.length > 1 ? (
+                                        <Group orientation="vertical" className="h-full">
+                                            <Panel id="time" defaultSize="50%" minSize="10%">
+                                                {centerPanels[0]}
+                                            </Panel>
+                                            <Separator className={separatorV} />
+                                            <Panel id="survey" minSize="10%">
+                                                {centerPanels[1]}
+                                            </Panel>
+                                        </Group>
+                                    ) : centerPanels[0]}
+                                </Panel>
+                            )}
+                            {(showLeft || showCenter) && showRight && <Separator className={separatorH} />}
                             {showRight && (
                                 <Panel id="right" minSize="20%">
                                     <MonitorPanel

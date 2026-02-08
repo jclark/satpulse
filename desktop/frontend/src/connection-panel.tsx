@@ -4,6 +4,8 @@ import {useState, useRef, useEffect} from 'preact/hooks';
 interface PanelVisibility {
     receiver: boolean;
     config: boolean;
+    time: boolean;
+    survey: boolean;
     monitor: boolean;
     logging: boolean;
 }
@@ -26,6 +28,8 @@ const speeds = [9600, 38400, 57600, 115200, 230400, 460800, 921600];
 const panelLabels: {id: PanelID; label: string}[] = [
     {id: 'receiver', label: 'Receiver'},
     {id: 'config', label: 'Configure'},
+    {id: 'time', label: 'Time'},
+    {id: 'survey', label: 'Survey'},
     {id: 'monitor', label: 'Packet monitor'},
     {id: 'logging', label: 'Activity log'},
 ];
