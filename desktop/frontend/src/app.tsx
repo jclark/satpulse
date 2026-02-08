@@ -1,13 +1,14 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback} from 'preact/hooks';
+import {Group, Panel, Separator} from 'react-resizable-panels';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
 import {Connect, Disconnect, GetAllSignals} from '../wailsjs/go/main/App';
 import {main} from '../wailsjs/go/models';
+import {ConnectionPanel} from './connection-panel';
 import {ReceiverPanel} from './receiver-panel';
 import {ConfigPanel} from './config-panel';
 import {MonitorPanel} from './monitor-panel';
-
-type TabID = 'receiver' | 'config' | 'monitor';
+import {LoggingPanel} from './logging-panel';
 
 interface Toast {
     id: number;
@@ -29,7 +30,18 @@ export interface PacketEntry {
     timestamp: string;
 }
 
-const speeds = [9600, 38400, 57600, 115200, 230400, 460800, 921600];
+export interface PanelVisibility {
+    receiver: boolean;
+    config: boolean;
+    monitor: boolean;
+    logging: boolean;
+}
+
+export type PanelID = keyof PanelVisibility;
+
+const separatorH = 'group relative flex items-center justify-center bg-gray-200 dark:bg-gray-700 hover:bg-blue-500/30 active:bg-blue-500/40 transition-colors w-1 cursor-col-resize';
+const separatorV = 'group relative flex items-center justify-center bg-gray-200 dark:bg-gray-700 hover:bg-blue-500/30 active:bg-blue-500/40 transition-colors h-1 cursor-row-resize';
+
 let toastId = 0;
 
 export function App() {
@@ -37,13 +49,15 @@ export function App() {
     const [device, setDevice] = useState('/dev/cu.usbmodem312301');
     const [speed, setSpeed] = useState(9600);
     const [statusText, setStatusText] = useState('Disconnected');
-    const [activeTab, setActiveTab] = useState<TabID>('receiver');
     const [receiverInfo, setReceiverInfo] = useState<main.ReceiverInfo | null>(null);
     const [signalCatalog, setSignalCatalog] = useState<main.GNSSInfo[]>([]);
     const [selectedSignals, setSelectedSignals] = useState<Set<number>>(new Set());
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
     const [packetEntries, setPacketEntries] = useState<PacketEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
+    const [panels, setPanels] = useState<PanelVisibility>({
+        receiver: true, config: true, monitor: true, logging: true,
+    });
 
     const addToast = useCallback((message: string, type: 'success' | 'error') => {
         const id = ++toastId;
@@ -51,7 +65,6 @@ export function App() {
         setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
     }, []);
 
-    // Wails event subscriptions
     useEffect(() => {
         const offLog = EventsOn('gps:log', (evt: LogEntry) => {
             setLogEntries(prev => [...prev.slice(-199), evt]);
@@ -88,97 +101,103 @@ export function App() {
         }
     }, [connected, device, speed, addToast]);
 
-    const tabs: {id: TabID; label: string}[] = [
-        {id: 'receiver', label: 'Receiver'},
-        {id: 'config', label: 'Configure'},
-        {id: 'monitor', label: 'Packet monitor'},
-    ];
+    const togglePanel = useCallback((id: PanelID) => {
+        setPanels(prev => ({...prev, [id]: !prev[id]}));
+    }, []);
+
+    const showLeft = panels.receiver || panels.config;
+    const showRight = panels.monitor;
+    const showMiddle = showLeft || showRight;
 
     return (
         <>
-            {/* Header */}
-            <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 py-3 flex items-center gap-4 shrink-0">
-                <h1 class="text-base font-semibold whitespace-nowrap">SatPulse GPS</h1>
-                <div class="flex items-center gap-2 ml-auto">
-                    <div class={`w-2.5 h-2.5 rounded-full shrink-0 ${connected ? 'bg-green-400' : 'bg-gray-400'}`} />
-                    <label class="text-xs text-gray-500 dark:text-gray-400">Device</label>
-                    <input
-                        type="text"
-                        class="bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1 rounded text-xs w-44"
-                        value={device}
-                        onInput={(e) => setDevice((e.target as HTMLInputElement).value)}
-                    />
-                    <label class="text-xs text-gray-500 dark:text-gray-400">Speed</label>
-                    <select
-                        class="bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1 rounded text-xs w-24"
-                        value={speed}
-                        onChange={(e) => setSpeed(parseInt((e.target as HTMLSelectElement).value))}
-                    >
-                        {speeds.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <button
-                        class={`px-3.5 py-1 rounded text-xs font-medium border cursor-pointer whitespace-nowrap ${
-                            connected
-                                ? 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-600'
-                                : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
-                        }`}
-                        onClick={handleConnect}
-                    >
-                        {connected ? 'Disconnect' : 'Connect'}
-                    </button>
-                </div>
-            </header>
+            {/* Connection strip (fixed height, outside panel groups) */}
+            <ConnectionPanel
+                connected={connected}
+                device={device}
+                setDevice={setDevice}
+                speed={speed}
+                setSpeed={setSpeed}
+                onConnect={handleConnect}
+                panelVisibility={panels}
+                onTogglePanel={togglePanel}
+            />
 
-            {/* Tab bar */}
-            <div class="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
-                {tabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        class={`px-5 py-2 text-xs cursor-pointer border-b-2 bg-transparent ${
-                            activeTab === tab.id
-                                ? 'text-gray-900 dark:text-gray-100 border-blue-600 dark:border-blue-500'
-                                : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-gray-100'
-                        }`}
-                        onClick={() => setActiveTab(tab.id)}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* Main content */}
-            <main class="flex-1 overflow-y-auto p-5">
-                {activeTab === 'receiver' && (
-                    <ReceiverPanel
-                        connected={connected}
-                        receiverInfo={receiverInfo}
-                        setReceiverInfo={setReceiverInfo}
-                        setSelectedSignals={setSelectedSignals}
-                        setStatusText={setStatusText}
-                        logEntries={logEntries}
-                        setLogEntries={setLogEntries}
-                        addToast={addToast}
-                    />
+            {/* Main resizable area */}
+            <Group orientation="vertical" className="flex-1">
+                {showMiddle && (
+                    <Panel id="middle" minSize="20%">
+                        <Group orientation="horizontal" className="h-full">
+                            {showLeft && (
+                                <Panel id="left" defaultSize="40%" minSize="15%">
+                                    {panels.receiver && panels.config ? (
+                                        <Group orientation="vertical" className="h-full">
+                                            <Panel id="receiver" defaultSize="40%" minSize="10%">
+                                                <ReceiverPanel
+                                                    connected={connected}
+                                                    receiverInfo={receiverInfo}
+                                                    setReceiverInfo={setReceiverInfo}
+                                                    setSelectedSignals={setSelectedSignals}
+                                                    setStatusText={setStatusText}
+                                                    setLogEntries={setLogEntries}
+                                                    addToast={addToast}
+                                                />
+                                            </Panel>
+                                            <Separator className={separatorV} />
+                                            <Panel id="config" minSize="10%">
+                                                <ConfigPanel
+                                                    connected={connected}
+                                                    receiverInfo={receiverInfo}
+                                                    signalCatalog={signalCatalog}
+                                                    selectedSignals={selectedSignals}
+                                                    setSelectedSignals={setSelectedSignals}
+                                                    setStatusText={setStatusText}
+                                                    addToast={addToast}
+                                                />
+                                            </Panel>
+                                        </Group>
+                                    ) : panels.receiver ? (
+                                        <ReceiverPanel
+                                            connected={connected}
+                                            receiverInfo={receiverInfo}
+                                            setReceiverInfo={setReceiverInfo}
+                                            setSelectedSignals={setSelectedSignals}
+                                            setStatusText={setStatusText}
+                                            setLogEntries={setLogEntries}
+                                            addToast={addToast}
+                                        />
+                                    ) : (
+                                        <ConfigPanel
+                                            connected={connected}
+                                            receiverInfo={receiverInfo}
+                                            signalCatalog={signalCatalog}
+                                            selectedSignals={selectedSignals}
+                                            setSelectedSignals={setSelectedSignals}
+                                            setStatusText={setStatusText}
+                                            addToast={addToast}
+                                        />
+                                    )}
+                                </Panel>
+                            )}
+                            {showLeft && showRight && <Separator className={separatorH} />}
+                            {showRight && (
+                                <Panel id="right" minSize="20%">
+                                    <MonitorPanel
+                                        packetEntries={packetEntries}
+                                        setPacketEntries={setPacketEntries}
+                                    />
+                                </Panel>
+                            )}
+                        </Group>
+                    </Panel>
                 )}
-                {activeTab === 'config' && (
-                    <ConfigPanel
-                        connected={connected}
-                        receiverInfo={receiverInfo}
-                        signalCatalog={signalCatalog}
-                        selectedSignals={selectedSignals}
-                        setSelectedSignals={setSelectedSignals}
-                        setStatusText={setStatusText}
-                        logEntries={logEntries}
-                        addToast={addToast}
-                    />
+                {showMiddle && panels.logging && <Separator className={separatorV} />}
+                {panels.logging && (
+                    <Panel id="logging" defaultSize="25%" minSize="10%">
+                        <LoggingPanel logEntries={logEntries} setLogEntries={setLogEntries} />
+                    </Panel>
                 )}
-                {activeTab === 'monitor' && (
-                    <MonitorPanel
-                        packetEntries={packetEntries}
-                        setPacketEntries={setPacketEntries}
-                    />
-                )}
-            </main>
+            </Group>
 
             {/* Status bar */}
             <div class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-5 py-1 text-xs text-gray-500 dark:text-gray-400 shrink-0">

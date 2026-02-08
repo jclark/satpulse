@@ -43,10 +43,10 @@ export function MonitorPanel({packetEntries, setPacketEntries}: Props) {
     }, [packetEntries]);
 
     return (
-        <div>
-            <div class="flex gap-2 mb-3">
+        <div class="flex flex-col h-full">
+            <div class="flex gap-2 px-3 py-1.5 shrink-0">
                 <button
-                    class="px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-blue-600 hover:border-blue-600 hover:text-white"
+                    class="px-2.5 py-0.5 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-blue-600 hover:border-blue-600 hover:text-white"
                     onClick={() => setPacketEntries(() => [])}
                 >
                     Clear
@@ -54,8 +54,7 @@ export function MonitorPanel({packetEntries, setPacketEntries}: Props) {
             </div>
             <div
                 ref={logRef}
-                class="font-mono text-xs leading-relaxed bg-gray-900 dark:bg-black border border-gray-200 dark:border-gray-700 rounded p-2.5 overflow-y-auto whitespace-pre-wrap break-all"
-                style="height: calc(100vh - 200px)"
+                class="flex-1 font-mono text-xs leading-relaxed bg-gray-900 dark:bg-black border-t border-gray-200 dark:border-gray-700 px-2.5 py-1.5 overflow-y-auto whitespace-pre-wrap break-all"
             >
                 {packetEntries.map((pkt, i) => (
                     <div key={i}>

@@ -1,8 +1,6 @@
 import {h, Fragment} from 'preact';
-import {useEffect, useRef} from 'preact/hooks';
 import {DetectReceiver} from '../wailsjs/go/main/App';
 import {main} from '../wailsjs/go/models';
-import type {LogEntry} from './app';
 
 interface Props {
     connected: boolean;
@@ -10,8 +8,7 @@ interface Props {
     setReceiverInfo: (info: main.ReceiverInfo | null) => void;
     setSelectedSignals: (fn: (prev: Set<number>) => Set<number>) => void;
     setStatusText: (s: string) => void;
-    logEntries: LogEntry[];
-    setLogEntries: (fn: (prev: LogEntry[]) => LogEntry[]) => void;
+    setLogEntries: (fn: (prev: any[]) => any[]) => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
@@ -19,16 +16,7 @@ function formatSignalGroups(signals: string[][]): string {
     return signals.map(g => g[0] + '[' + g.slice(1).join(', ') + ']').join(', ');
 }
 
-export function ReceiverPanel({connected, receiverInfo, setReceiverInfo, setSelectedSignals, setStatusText, logEntries, setLogEntries, addToast}: Props) {
-    const logRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const el = logRef.current;
-        if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
-            el.scrollTop = el.scrollHeight;
-        }
-    }, [logEntries]);
-
+export function ReceiverPanel({connected, receiverInfo, setReceiverInfo, setSelectedSignals, setStatusText, setLogEntries, addToast}: Props) {
     const handleDetect = async () => {
         setLogEntries(() => []);
         setStatusText('Probing receiver...');
@@ -73,7 +61,7 @@ export function ReceiverPanel({connected, receiverInfo, setReceiverInfo, setSele
     }
 
     return (
-        <div>
+        <div class="p-4 overflow-y-auto h-full">
             <div class="flex items-center gap-3 mb-4">
                 <h2 class="text-base font-semibold">Receiver information</h2>
                 <button
@@ -102,26 +90,6 @@ export function ReceiverPanel({connected, receiverInfo, setReceiverInfo, setSele
                 </dl>
             )}
 
-            {logEntries.length > 0 && (
-                <div class="max-w-xl mt-5">
-                    <h3 class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Activity</h3>
-                    <div
-                        ref={logRef}
-                        class="font-mono text-xs leading-relaxed bg-gray-900 dark:bg-black border border-gray-200 dark:border-gray-700 rounded p-2 h-38 overflow-y-auto whitespace-pre-wrap break-all"
-                    >
-                        {logEntries.map((entry, i) => (
-                            <div key={i}>
-                                <span class="text-gray-500 dark:text-gray-400">{entry.time}</span>{' '}
-                                <span class={
-                                    entry.level === 'WARN' ? 'text-amber-400' :
-                                    entry.level === 'ERROR' ? 'text-red-400' :
-                                    'text-green-400'
-                                }>{entry.message}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

@@ -1,9 +1,8 @@
 import {h, Fragment} from 'preact';
-import {useState, useEffect, useRef} from 'preact/hooks';
+import {useState, useEffect} from 'preact/hooks';
 import {ApplyConfig, SaveConfig, ResetConfig} from '../wailsjs/go/main/App';
 import {main} from '../wailsjs/go/models';
 import {SignalPicker} from './signal-picker';
-import type {LogEntry} from './app';
 
 interface Props {
     connected: boolean;
@@ -12,7 +11,6 @@ interface Props {
     selectedSignals: Set<number>;
     setSelectedSignals: (fn: (prev: Set<number>) => Set<number>) => void;
     setStatusText: (s: string) => void;
-    logEntries: LogEntry[];
     addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
@@ -31,7 +29,7 @@ const btnClass = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border
 const btnPrimary = 'px-3.5 py-1 rounded text-xs border border-blue-600 bg-blue-600 text-white cursor-pointer hover:bg-blue-700 disabled:opacity-50 disabled:cursor-default';
 const btnDanger = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-red-400 cursor-pointer hover:bg-red-400 hover:border-red-400 hover:text-black disabled:opacity-50 disabled:cursor-default disabled:hover:bg-gray-200 dark:disabled:hover:bg-gray-700 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:text-red-400';
 
-export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, logEntries, addToast}: Props) {
+export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, addToast}: Props) {
     const [mode, setMode] = useState('');
     const [ppsWidth, setPpsWidth] = useState('');
     const [ppsPeriod, setPpsPeriod] = useState('');
@@ -42,7 +40,6 @@ export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSig
     const [cableDelay, setCableDelay] = useState('');
     const [minElev, setMinElev] = useState('');
     const [showPicker, setShowPicker] = useState(false);
-    const logRef = useRef<HTMLDivElement>(null);
 
     // Pre-fill form from detected config
     useEffect(() => {
@@ -61,14 +58,6 @@ export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSig
         if (cfg.antennaCableDelay !== undefined) setCableDelay(String(cfg.antennaCableDelay));
         if (cfg.minElevation !== undefined) setMinElev(String(cfg.minElevation));
     }, [receiverInfo]);
-
-    // Auto-scroll config log
-    useEffect(() => {
-        const el = logRef.current;
-        if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
-            el.scrollTop = el.scrollHeight;
-        }
-    }, [logEntries]);
 
     const handleApply = async () => {
         const cfg: Record<string, any> = {};
@@ -127,7 +116,7 @@ export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSig
     const tp = cfg?.timePulse as Record<string, any> | undefined;
 
     return (
-        <div>
+        <div class="p-4 overflow-y-auto h-full">
             <h2 class="text-base font-semibold mb-4">GPS configuration</h2>
 
             {/* Current config (read-only, shown after detection) */}
@@ -246,26 +235,6 @@ export function ConfigPanel({connected, receiverInfo, signalCatalog, selectedSig
                 <button class={btnClass} disabled={!connected} onClick={() => handleReset('reload')}>Reload</button>
                 <button class={btnDanger} disabled={!connected} onClick={() => handleReset('cold')}>Cold restart</button>
                 <button class={btnDanger} disabled={!connected} onClick={() => handleReset('factory')}>Factory reset</button>
-            </div>
-
-            {/* Config activity log */}
-            <div class="max-w-2xl mt-5">
-                <h3 class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Activity</h3>
-                <div
-                    ref={logRef}
-                    class="font-mono text-xs leading-relaxed bg-gray-900 dark:bg-black border border-gray-200 dark:border-gray-700 rounded p-2 h-30 overflow-y-auto whitespace-pre-wrap break-all"
-                >
-                    {logEntries.map((entry, i) => (
-                        <div key={i}>
-                            <span class="text-gray-500 dark:text-gray-400">{entry.time}</span>{' '}
-                            <span class={
-                                entry.level === 'WARN' ? 'text-amber-400' :
-                                entry.level === 'ERROR' ? 'text-red-400' :
-                                'text-green-400'
-                            }>{entry.message}</span>
-                        </div>
-                    ))}
-                </div>
             </div>
 
             {/* Signal picker dialog */}
