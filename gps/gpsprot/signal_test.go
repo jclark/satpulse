@@ -1,6 +1,7 @@
 package gpsprot
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -132,5 +133,66 @@ func TestSignalSetString(t *testing.T) {
 				t.Errorf("SignalSet.String() = %q, want %q", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestSignalSetMapRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		ss   SignalSet
+	}{
+		{"GPS L1+L2C", SignalSetOf(SigGPSL1CA, SigGPSL2C)},
+		{"GPS+GAL", SignalSetOf(SigGPSL1CA, SigGPSL5, SigGALE1, SigGALE5b)},
+		{"all major", SigSetGPS | SigSetGAL | SigSetBDS | SigSetGLO},
+		{"QZSS", SigSetQZSS},
+		{"NavIC", SigSetNAVIC},
+		{"SBAS", SigSetSBAS},
+		{"GPS+SBAS", SignalSetOf(SigGPSL1CA, SigGPSL5, SigSBASL1CA, SigSBASL5)},
+		{"single signal", SignalSetOf(SigBDSB1I)},
+		{"everything", SigSetAll},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := tt.ss.GNSSSignalMap()
+			got, err := ParseSignalMap(m)
+			if err != nil {
+				t.Fatalf("ParseSignalMap(%v): %v", m, err)
+			}
+			if got != tt.ss {
+				t.Errorf("round-trip mismatch: got %s, want %s", got, tt.ss)
+			}
+		})
+	}
+}
+
+func TestParseSignalMapErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		m    map[string][]string
+	}{
+		{"bad GNSS", map[string][]string{"BOGUS": {"L1"}}},
+		{"bad signal", map[string][]string{"GPS": {"X99"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseSignalMap(tt.m)
+			if err == nil {
+				t.Error("expected error, got nil")
+			}
+		})
+	}
+}
+
+func TestGNSSSignalMapOrder(t *testing.T) {
+	// Verify that the signal names within each GNSS are in the expected order
+	ss := SigSetGPS | SigSetGAL
+	m := ss.GNSSSignalMap()
+	wantGPS := []string{"L1", "L1C", "L2P", "L2C", "L5"}
+	wantGAL := []string{"E1", "E5a", "E5b", "E6"}
+	if !slices.Equal(m["GPS"], wantGPS) {
+		t.Errorf("GPS signals = %v, want %v", m["GPS"], wantGPS)
+	}
+	if !slices.Equal(m["GAL"], wantGAL) {
+		t.Errorf("GAL signals = %v, want %v", m["GAL"], wantGAL)
 	}
 }

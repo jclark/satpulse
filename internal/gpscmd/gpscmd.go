@@ -386,17 +386,21 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 }
 
 func printSignals(f *os.File, sigs gpsprot.SignalSet) {
-	groups := sigs.GNSSStringGroups()
-	if len(groups) == 0 {
+	m := sigs.GNSSSignalMap()
+	if len(m) == 0 {
 		return
 	}
-	constellations := make([]string, len(groups))
-	for i, group := range groups {
-		constellations[i] = group[0]
+	var constellations []string
+	for g := gpsprot.GNSS(1); g <= gpsprot.GNSSLast; g++ {
+		if _, ok := m[g.String()]; ok {
+			constellations = append(constellations, g.String())
+		}
 	}
 	fmt.Fprintf(f, "Constellations enabled: %s\n", strings.Join(constellations, ", "))
-	for _, group := range groups {
-		fmt.Fprintf(f, "%s signals enabled: %s\n", group[0], strings.Join(group[1:], ", "))
+	for g := gpsprot.GNSS(1); g <= gpsprot.GNSSLast; g++ {
+		if sigNames, ok := m[g.String()]; ok {
+			fmt.Fprintf(f, "%s signals enabled: %s\n", g.String(), strings.Join(sigNames, ", "))
+		}
 	}
 }
 

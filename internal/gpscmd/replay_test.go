@@ -476,9 +476,9 @@ func (r *replayer) verify() {
 		if !ok {
 			r.t.Error("signals not set")
 		} else {
-			actualGroups := actual.GNSSStringGroups()
-			if !equalStringSlices(actualGroups, cfg.SignalsEnabled) {
-				r.t.Errorf("signals mismatch: got %v, want %v", actualGroups, cfg.SignalsEnabled)
+			actualMap := actual.GNSSSignalMap()
+			if !equalSignalMaps(actualMap, cfg.SignalsEnabled) {
+				r.t.Errorf("signals mismatch: got %v, want %v", actualMap, cfg.SignalsEnabled)
 			}
 		}
 	}
@@ -560,18 +560,14 @@ func (r *replayer) verify() {
 
 }
 
-func equalStringSlices(a, b [][]string) bool {
+func equalSignalMaps(a, b map[string][]string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
-		if len(a[i]) != len(b[i]) {
+	for k, av := range a {
+		bv, ok := b[k]
+		if !ok || !slices.Equal(av, bv) {
 			return false
-		}
-		for j := range a[i] {
-			if a[i][j] != b[i][j] {
-				return false
-			}
 		}
 	}
 	return true

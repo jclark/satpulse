@@ -98,6 +98,245 @@ func TestPropIDOperations(t *testing.T) {
 	}
 }
 
+func TestConfigPropsJSONRoundTrip(t *testing.T) {
+	tests := []struct {
+		name  string
+		build func() ConfigProps
+	}{
+		{
+			"signals only",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetSignalsEnabled(SignalSetOf(SigGPSL1CA, SigGPSL2C, SigGALE1, SigGALE5b))
+				return cp
+			},
+		},
+		{
+			"timeGNSS",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetTimeGNSS(GAL)
+				return cp
+			},
+		},
+		{
+			"timePulse all fields",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetTimePulse(TimePulse{
+					Width:          100 * time.Microsecond,
+					Period:         1 * time.Second,
+					AlignToGNSS:    true,
+					OnlyWhenLocked: true,
+					PolarityRising: true,
+				})
+				return cp
+			},
+		},
+		{
+			"timePulse partial",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetTimePulsePeriod(1 * time.Second)
+				return cp
+			},
+		},
+		{
+			"mode ECEF",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetMode(Mode{
+					Static:       true,
+					PosType:      PosTypeECEF,
+					FixedPosECEF: Point3D{Meters(4000000), Meters(500000), Meters(4800000)},
+					FixedPosAcc:  Meters(0.1),
+				})
+				return cp
+			},
+		},
+		{
+			"mode LLH",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetMode(Mode{
+					Static:      true,
+					PosType:     PosTypeLLH,
+					FixedPosLLH: [2]Angle{DegreesFromFloat(47.5), DegreesFromFloat(8.75)},
+					Height:      Meters(450),
+					FixedPosAcc: Meters(0.05),
+				})
+				return cp
+			},
+		},
+		{
+			"mode static no position",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetMode(Mode{Static: true})
+				return cp
+			},
+		},
+		{
+			"antennaCableDelay",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetAntennaCableDelay(50 * time.Nanosecond)
+				return cp
+			},
+		},
+		{
+			"navMsgAuth OSNMA",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetNavMsgAuth(NavMsgAuthOSNMA)
+				return cp
+			},
+		},
+		{
+			"navMsgAuth none",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetNavMsgAuth(NavMsgAuthNone)
+				return cp
+			},
+		},
+		{
+			"rtcmBaseID",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetRTCMBaseID(1)
+				return cp
+			},
+		},
+		{
+			"minElevation",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetMinElevation(DegreesFromFloat(10))
+				return cp
+			},
+		},
+		{
+			"all properties",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetSignalsEnabled(SignalSetOf(SigGPSL1CA, SigGPSL5, SigGALE1, SigGALE5b))
+				cp.SetTimeGNSS(GPS)
+				cp.SetTimePulse(TimePulse{
+					Width:          100 * time.Microsecond,
+					Period:         1 * time.Second,
+					AlignToGNSS:    true,
+					OnlyWhenLocked: true,
+					PolarityRising: true,
+				})
+				cp.SetMode(Mode{
+					Static:       true,
+					PosType:      PosTypeECEF,
+					FixedPosECEF: Point3D{Meters(4000000), Meters(500000), Meters(4800000)},
+					FixedPosAcc:  Meters(0.1),
+				})
+				cp.SetAntennaCableDelay(50 * time.Nanosecond)
+				cp.SetNavMsgAuth(NavMsgAuthOSNMA)
+				cp.SetRTCMBaseID(1)
+				cp.SetMinElevation(DegreesFromFloat(10))
+				return cp
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := tc.build()
+			data, err := json.Marshal(&orig)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			var got ConfigProps
+			if err := json.Unmarshal(data, &got); err != nil {
+				t.Fatalf("Unmarshal(%s): %v", data, err)
+			}
+			if got.valid != orig.valid {
+				t.Errorf("valid mismatch: got %s, want %s", got.valid, orig.valid)
+			}
+			if got != orig {
+				t.Errorf("round-trip mismatch:\n  json: %s\n  got:  %+v\n  want: %+v", data, got, orig)
+			}
+		})
+	}
+}
+
+func TestConfigPropsUnmarshalErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+	}{
+		{"unknown key", `{"bogus": 1}`},
+		{"bad timeGNSS", `{"timeGNSS": "BOGUS"}`},
+		{"bad navMsgAuth", `{"navMsgAuth": "BOGUS"}`},
+		{"bad signal GNSS", `{"signalsEnabled": {"BOGUS": ["L1"]}}`},
+		{"bad signal name", `{"signalsEnabled": {"GPS": ["X99"]}}`},
+		{"bad timePulse field", `{"timePulse": {"bogus": 1}}`},
+		{"bad mode field", `{"mode": {"bogus": 1}}`},
+		{"bad minElevation type", `{"minElevation": "ten"}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var cp ConfigProps
+			if err := json.Unmarshal([]byte(tc.json), &cp); err == nil {
+				t.Error("expected error, got nil")
+			}
+		})
+	}
+}
+
+func TestPropIDsJSONRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		ids  PropIDs
+	}{
+		{"empty", 0},
+		{"single", PropIDSignalsEnabled},
+		{"timePulse combined", PropIDTimePulse},
+		{"timePulse single", PropIDTimePulseWidth},
+		{"timePulse partial", PropIDTimePulseWidth | PropIDTimePulsePeriod},
+		{"multiple", PropIDSignalsEnabled | PropIDMode | PropIDMinElevation},
+		{"all", PropIDSignalsEnabled | PropIDTimeGNSS | PropIDTimePulse | PropIDMode |
+			PropIDAntennaCableDelay | PropIDNavMsgAuth | PropIDRTCMBaseID | PropIDMinElevation},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.ids)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			var got PropIDs
+			if err := json.Unmarshal(data, &got); err != nil {
+				t.Fatalf("Unmarshal(%s): %v", data, err)
+			}
+			if got != tc.ids {
+				t.Errorf("round-trip mismatch: got %s, want %s (json: %s)", got, tc.ids, data)
+			}
+		})
+	}
+}
+
+func TestPropIDsUnmarshalErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+	}{
+		{"unknown name", `["bogus"]`},
+		{"not array", `"signalsEnabled"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var ids PropIDs
+			if err := json.Unmarshal([]byte(tc.json), &ids); err == nil {
+				t.Error("expected error, got nil")
+			}
+		})
+	}
+}
+
 func TestConfigOptionsJSONRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string

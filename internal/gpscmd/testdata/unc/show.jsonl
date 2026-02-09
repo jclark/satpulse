@@ -28,4 +28,4 @@
 {"t":"2025-08-20T08:22:43.831537Z","tag":"NMEA","msg":"CONFI","ascii":"$CONFIG,MASK,MASK 5.0*25\r\n","out":false}
 {"t":"2025-08-20T08:22:43.834583Z","tag":"UNCA","msg":"MODE","ascii":"#MODE,97,GPS,FINE,2380,289381000,0,0,18,720;MODE BASE TIME 40 0 0,*7E\r\n","out":false}
 {"type":"receiver","vendor":"Unicore","hardware":"UM980","firmware":"Build13504"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2P","L2C","L5"],["GAL","E1","E5a","E5b"],["BDS","B1I","B1C","B2a","B2I","B2b","B3I"],["GLO","L1","L2"],["QZSS","L1","L2C","L5"]],"timeGNSS":"GPS","antennaCableDelay":0,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":true}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2P","L2C","L5"],"GAL":["E1","E5a","E5b"],"BDS":["B1I","B1C","B2a","B2I","B2b","B3I"],"GLO":["L1","L2"],"QZSS":["L1","L2C","L5"]},"timeGNSS":"GPS","antennaCableDelay":0,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":true}

@@ -1,6 +1,7 @@
 package gpsprot
 
 import (
+	"fmt"
 	"math/bits"
 	"strings"
 )
@@ -207,31 +208,46 @@ func (ss SignalSet) String() string {
 	if ss == 0 {
 		return "None"
 	}
-	groups := ss.GNSSStringGroups()
-	parts := make([]string, len(groups))
-	for i, group := range groups {
-		parts[i] = group[0] + "[" + strings.Join(group[1:], ",") + "]"
+	m := ss.GNSSSignalMap()
+	var parts []string
+	for g := GNSS(1); g <= GNSSLast; g++ {
+		sigs := m[g.String()]
+		if len(sigs) == 0 {
+			continue
+		}
+		parts = append(parts, g.String()+"["+strings.Join(sigs, ",")+"]")
 	}
 	return strings.Join(parts, ",")
 }
 
-// GNSSStringGroups returns the signal set as [][]string where each []string starts with the GNSS name
-// followed by the signal names for that GNSS.
-func (ss SignalSet) GNSSStringGroups() [][]string {
-	gnssSignals := make([][]string, GNSSLast+1)
+// GNSSSignalMap returns the signal set as a map from GNSS constellation name to signal name list.
+func (ss SignalSet) GNSSSignalMap() map[string][]string {
+	m := make(map[string][]string)
 	for sig := range ss.Signals() {
 		g := sig.GNSS()
-		gnssSignals[g] = append(gnssSignals[g], sig.String())
+		name := g.String()
+		m[name] = append(m[name], sig.String())
 	}
-	result := [][]string{}
-	for g := GNSS(1); g <= GNSSLast; g++ {
-		if len(gnssSignals[g]) == 0 {
-			continue
+	return m
+}
+
+// ParseSignalMap parses a map from GNSS constellation name to signal name list into a SignalSet.
+func ParseSignalMap(m map[string][]string) (SignalSet, error) {
+	var ss SignalSet
+	for gnssName, sigNames := range m {
+		g, err := ParseGNSS(gnssName)
+		if err != nil {
+			return 0, err
 		}
-		slice := append([]string{g.String()}, gnssSignals[g]...)
-		result = append(result, slice)
+		for _, sn := range sigNames {
+			sig, ok := sigNameMap[g][sn]
+			if !ok {
+				return 0, fmt.Errorf("unknown signal %q for %s", sn, gnssName)
+			}
+			ss |= 1 << sig
+		}
 	}
-	return result
+	return ss, nil
 }
 
 // GNSSSet returns the set of GNSS constellations that have at least one enabled signal.
@@ -338,6 +354,9 @@ const (
 // sigName provides human-readable names for each signal
 var sigName [64]string
 
+// sigNameMap maps GNSS -> short name -> Signal for reverse lookup, built in init()
+var sigNameMap map[GNSS]map[string]Signal
+
 func init() {
 	// GPS signals
 	sigName[SigGPSL1CA] = "L1 C/A"
@@ -383,4 +402,15 @@ func init() {
 	// SBAS signals
 	sigName[SigSBASL1CA] = "L1 C/A"
 	sigName[SigSBASL5] = "L5"
+
+	// Build reverse lookup map
+	sigNameMap = make(map[GNSS]map[string]Signal)
+	for sig := range SigSetAll.Signals() {
+		g := sig.GNSS()
+		if sigNameMap[g] == nil {
+			sigNameMap[g] = make(map[string]Signal)
+		}
+		n, _, _ := strings.Cut(sigName[sig], " ")
+		sigNameMap[g][n] = sig
+	}
 }

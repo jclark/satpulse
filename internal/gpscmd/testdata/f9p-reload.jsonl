@@ -11,7 +11,7 @@
 {"t":"2025-07-09T06:06:17.628913Z","tag":"UBX","msg":"CFG-VALSET","bin":"b562068a5c000001000009000510010a0005100108000510010200054040420f000300054040420f00230005200005000540102700000400054000000000070005100130000520010100053064000b000510010c000520011c001120030300212001020e","out":true}
 {"t":"2025-07-09T06:06:17.629465Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.51","protocol":"27.50"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"]],"timeGNSS":"GPS","antennaCableDelay":100,"timePulse":{"enabled":true,"width":0.01,"period":1,"polarityRising":true,"onlyWhenLocked":true}}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"]},"timeGNSS":"GPS","antennaCableDelay":100,"timePulse":{"enabled":true,"width":0.01,"period":1,"polarityRising":true,"onlyWhenLocked":true}}
 {"type":"env","args":["-d","/dev/ttyACM0","-s","9600","--test-log","f9p-reload.jsonl","--show-config"],"version":"satpulse git version 20250708.3821a62.dirty, build date 2025-07-09 05:41:34+00:00","hostname":"abondance"}
 {"t":"2025-07-09T06:06:18.05034Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00e0b5c210e90707090606123750050000ec550400030026076342fd3b61602f0859f6fbff8e61fcff5bf90500480c08009b050000d0fcffff9116000073060000000000004b350000e3704900c40000002c2e4c330000000000000000ead7","out":false}
 {"t":"2025-07-09T06:06:18.050589Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -23,7 +23,7 @@
 {"t":"2025-07-09T06:06:18.057899Z","tag":"UBX","msg":"CFG-VALGET","bin":"b562068bce00010000000700051001080005100109000510010a000510010b00051001010003200002000320000600032000070003200008000320000c000320000d000320000e000320000c000520012300052000300005200101000530640003000340000000000400034000000000050003400000000009000340000000000a000340000000000b000340000000000f00034000000000100003400000000011000340000000000200054040420f000300054040420f00040005400000000005000540102700002a00055000000000000000006bee","out":false}
 {"t":"2025-07-09T06:06:18.057899Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068b99c2","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.51","protocol":"27.50"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"]],"timeGNSS":"GPS","antennaCableDelay":100,"timePulse":{"enabled":true,"width":0.01,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"]},"timeGNSS":"GPS","antennaCableDelay":100,"timePulse":{"enabled":true,"width":0.01,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}
 {"type":"env","args":["-d","/dev/ttyACM0","-s","9600","--test-log","f9p-reload.jsonl","--reload"],"version":"satpulse git version 20250708.3821a62.dirty, build date 2025-07-09 05:41:34+00:00","hostname":"abondance"}
 {"t":"2025-07-09T06:06:19.03526Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00c8b9c210e907070906061337530100001852040003002606df2afd3b2e4f2f0845caffff7a35000014280100efc0010004000000cbffffff8900000036000000000000004f05000080a81201e30000002c2e4c33000000000000000072e1","out":false}
 {"t":"2025-07-09T06:06:19.03551Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -58,4 +58,4 @@
 {"t":"2025-07-09T06:06:19.123308Z","tag":"UBX","msg":"CFG-VALGET","bin":"b562068bce00010000000700051001080005100109000510010a000510010b00051001010003200002000320000600032000070003200008000320000c000320000d000320000e000320000c000520002300052000300005200101000530320003000340000000000400034000000000050003400000000009000340000000000a000340000000000b000340000000000f00034000000000100003400000000011000340000000000200054040420f000300054040420f00040005400000000005000540a08601002a000550000000000000000028fc","out":false}
 {"t":"2025-07-09T06:06:19.123455Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068b99c2","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.51","protocol":"27.50"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"],["GAL","E1","E5b"],["BDS","B1I","B2I"],["GLO","L1","L2"],["QZSS","L1","L2C"],["SBAS","L1"]],"antennaCableDelay":50,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"],"GAL":["E1","E5b"],"BDS":["B1I","B2I"],"GLO":["L1","L2"],"QZSS":["L1","L2C"],"SBAS":["L1"]},"antennaCableDelay":50,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}
