@@ -326,11 +326,18 @@ func (h *eventHandler) Handle(ctx context.Context, r slog.Record) error {
 		Component: h.group,
 	}
 	attrs := make(map[string]any)
+	put := func(a slog.Attr) {
+		v := a.Value.Any()
+		if e, ok := v.(error); ok {
+			v = e.Error()
+		}
+		attrs[a.Key] = v
+	}
 	for _, a := range h.attrs {
-		attrs[a.Key] = a.Value.Any()
+		put(a)
 	}
 	r.Attrs(func(a slog.Attr) bool {
-		attrs[a.Key] = a.Value.Any()
+		put(a)
 		return true
 	})
 	if len(attrs) > 0 {
