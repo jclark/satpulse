@@ -210,16 +210,16 @@ func (a *App) GetAllSignals() []GNSSInfo {
 
 // ReceiverInfo holds detected GPS receiver information and current configuration.
 type ReceiverInfo struct {
-	OK            bool              `json:"ok"`
-	Error         string            `json:"error,omitempty"`
-	Vendor        string            `json:"vendor,omitempty"`
-	Hardware      string            `json:"hardware,omitempty"`
-	Firmware      string            `json:"firmware,omitempty"`
-	SupportedGNSS []string          `json:"supportedGNSS,omitempty"`
-	PacketFormats []string          `json:"packetFormats,omitempty"`
-	Config        map[string]any    `json:"config,omitempty"`
-	Signals       [][]string        `json:"signals,omitempty"`
-	SignalIndices []int             `json:"signalIndices,omitempty"`
+	OK            bool                `json:"ok"`
+	Error         string              `json:"error,omitempty"`
+	Vendor        string              `json:"vendor,omitempty"`
+	Hardware      string              `json:"hardware,omitempty"`
+	Firmware      string              `json:"firmware,omitempty"`
+	SupportedGNSS []string            `json:"supportedGNSS,omitempty"`
+	PacketFormats []string            `json:"packetFormats,omitempty"`
+	Config        map[string]any      `json:"config,omitempty"`
+	Signals       map[string][]string `json:"signals,omitempty"`
+	SignalIndices []int               `json:"signalIndices,omitempty"`
 }
 
 // getProps lists the configuration properties to retrieve on detect.
@@ -269,7 +269,7 @@ func (a *App) DetectReceiver() ReceiverInfo {
 	if rslt.ConfigProps != nil {
 		r.Config = configPropsToMap(rslt.ConfigProps)
 		if sigs, ok := rslt.ConfigProps.GetSignalsEnabled(); ok {
-			r.Signals = sigs.GNSSStringGroups()
+			r.Signals = sigs.GNSSSignalMap()
 			for sig := range sigs.Signals() {
 				r.SignalIndices = append(r.SignalIndices, int(sig))
 			}
@@ -347,7 +347,7 @@ func (a *App) ReadConfig() ReceiverInfo {
 	if rslt.ConfigProps != nil {
 		r.Config = configPropsToMap(rslt.ConfigProps)
 		if sigs, ok := rslt.ConfigProps.GetSignalsEnabled(); ok {
-			r.Signals = sigs.GNSSStringGroups()
+			r.Signals = sigs.GNSSSignalMap()
 			for sig := range sigs.Signals() {
 				r.SignalIndices = append(r.SignalIndices, int(sig))
 			}
@@ -358,22 +358,22 @@ func (a *App) ReadConfig() ReceiverInfo {
 
 // ConfigUpdate holds all configuration changes to apply at once.
 type ConfigUpdate struct {
-	SignalIndices    []int    `json:"signalIndices"`
-	SetSignals      bool     `json:"setSignals"`
-	Mode            string   `json:"mode"`
-	SetMode         bool     `json:"setMode"`
-	PPSWidth        float64  `json:"ppsWidth"`
-	PPSPeriod       float64  `json:"ppsPeriod"`
-	PPSAlignToGNSS  bool     `json:"ppsAlignToGNSS"`
-	PPSOnlyLocked   bool     `json:"ppsOnlyLocked"`
-	PPSRising       bool     `json:"ppsRising"`
-	SetPPS          bool     `json:"setPPS"`
-	TimeGNSS        string   `json:"timeGNSS"`
-	SetTimeGNSS     bool     `json:"setTimeGNSS"`
-	CableDelay      float64  `json:"cableDelay"`
-	SetCableDelay   bool     `json:"setCableDelay"`
-	MinElevation    float64  `json:"minElevation"`
-	SetMinElevation bool     `json:"setMinElevation"`
+	SignalIndices   []int   `json:"signalIndices"`
+	SetSignals      bool    `json:"setSignals"`
+	Mode            string  `json:"mode"`
+	SetMode         bool    `json:"setMode"`
+	PPSWidth        float64 `json:"ppsWidth"`
+	PPSPeriod       float64 `json:"ppsPeriod"`
+	PPSAlignToGNSS  bool    `json:"ppsAlignToGNSS"`
+	PPSOnlyLocked   bool    `json:"ppsOnlyLocked"`
+	PPSRising       bool    `json:"ppsRising"`
+	SetPPS          bool    `json:"setPPS"`
+	TimeGNSS        string  `json:"timeGNSS"`
+	SetTimeGNSS     bool    `json:"setTimeGNSS"`
+	CableDelay      float64 `json:"cableDelay"`
+	SetCableDelay   bool    `json:"setCableDelay"`
+	MinElevation    float64 `json:"minElevation"`
+	SetMinElevation bool    `json:"setMinElevation"`
 }
 
 // ApplyConfig sends all configuration changes to the receiver at once.
