@@ -9,7 +9,7 @@
 {"t":"2025-06-10T06:21:52.08803Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-10T06:21:52.150992Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00de9aaa0be907060a06153437af00000058477b0800002600f22afd3bca4f2f0872abffffa81600002d480000093300000000000000000000000000000000000000000000204e000080a812010f270000ba65432c0000000000000000a902","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.12","protocol":"27.11"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"]}}
 {"type":"env","args":["-d","/dev/ttyACM0","-s","9600","--test-log","f9p-signal.jsonl","--gnss","GPS,GAL"],"version":"satpulse git version 20250609.1a3bc07.dirty, build date 2025-06-10 04:18:06+00:00","hostname":"abondance"}
 {"t":"2025-06-10T06:21:53.031584Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00389eaa0be907060a06153537680000006f860400020126068c2bfd3bbc4e2f08caabffff001700004fff0000da7c0000c0ffffffa800000046020000b400000000000000a00400002a6e9900a4000000ba65432c0000000000000000cc97","out":false}
 {"t":"2025-06-10T06:21:53.031847Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -21,7 +21,7 @@
 {"t":"2025-06-10T06:21:53.035542Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-10T06:21:53.086568Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00869eaa0be907060a061535374e00000023b6aa04000026008c2bfd3bbc4e2f08c7abfffffd1600000aed00009da700000000000000000000000000000000000000000000204e000080a812010f270000ba65432c00000000000000001aca","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.12","protocol":"27.11"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"],["GAL","E1","E5b"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"],"GAL":["E1","E5b"]}}
 {"type":"env","args":["-d","/dev/ttyACM0","-s","9600","--test-log","f9p-signal.jsonl","--gnss","GPS,GAL,GLO"],"version":"satpulse git version 20250609.1a3bc07.dirty, build date 2025-06-10 04:18:06+00:00","hostname":"abondance"}
 {"t":"2025-06-10T06:21:54.050537Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0020a2aa0be907060a06153637f6010000b58504000300260ae42afd3bf7512f08e5b4ffff1b200000c66d010007160300b4ffffff12000000cbffffff4e00000000000000cc01000080a812015d010000ba65432c00000000000000008331","out":false}
 {"t":"2025-06-10T06:21:54.050862Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -33,7 +33,7 @@
 {"t":"2025-06-10T06:21:54.054983Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-10T06:21:54.107703Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0083a2aa0be907060a06153637630000009e24eb05000026008c2bfd3bbc4e2f08c7abfffffd1600002b2e0100aad500000000000000000000000000000000000000000000204e000080a812010f270000ba65432c0000000000000000fa90","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.12","protocol":"27.11"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"],["GAL","E1","E5b"],["GLO","L1","L2"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"],"GAL":["E1","E5b"],"GLO":["L1","L2"]}}
 {"type":"env","args":["-d","/dev/ttyACM0","-s","9600","--test-log","f9p-signal.jsonl","--gnss","BDS"],"version":"satpulse git version 20250609.1a3bc07.dirty, build date 2025-06-10 04:18:06+00:00","hostname":"abondance"}
 {"t":"2025-06-10T06:21:55.059257Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0008a6aa0be907060a061537375401000029850400020026096b2bfd3b05502f08d6acffff0c180000857201006c3f0200a0000000d30000002c02000009010000d9d25000ec0200007727430099000000ba65432c0000000000000000c793","out":false}
 {"t":"2025-06-10T06:21:55.059513Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -45,7 +45,7 @@
 {"t":"2025-06-10T06:21:55.064245Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-10T06:21:55.117843Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0075a6aa0be907060a061537778e00000089ba8306000026008c2bfd3bbc4e2f08c7abfffffd160000986e0100390301000000000000000000000000000000000000000000204e000080a812010f270000ba65432c0000000000000000e139","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.12","protocol":"27.11"}
-{"type":"config","signalsEnabled":[["BDS","B1I","B2I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I","B2I"]}}
 {"type":"env","args":["-d","/dev/ttyACM0","-s","9600","--test-log","f9p-signal.jsonl","--gnss","BDS","--band","L1,L2"],"version":"satpulse git version 20250609.1a3bc07.dirty, build date 2025-06-10 04:18:06+00:00","hostname":"abondance"}
 {"t":"2025-06-10T06:21:56.050864Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00f0a9aa0be907060a06153877a30000004084040003012608bb2bfd3b7f502f0815a1ffff4b0c000049b700008ec40000e8fffffffaffffff35ffffff1900000081c776018201000080a8120112010000ba65432c0000000000000000df70","out":false}
 {"t":"2025-06-10T06:21:56.051084Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -57,7 +57,7 @@
 {"t":"2025-06-10T06:21:56.055555Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-10T06:21:56.106083Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0051aaaa0be907060a0615387761000000b39ecc0500002600bb2bfd3b7e502f0815a1ffff4b0c00009fe100008a9f00000000000000000000000000000000000000000000204e000080a812010f270000ba65432c0000000000000000cb33","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.12","protocol":"27.11"}
-{"type":"config","signalsEnabled":[["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyACM0","-s","9600","--test-log","f9p-signal.jsonl","--gnss","GPS,GAL","--band","L1"],"version":"satpulse git version 20250609.1a3bc07.dirty, build date 2025-06-10 04:18:06+00:00","hostname":"abondance"}
 {"t":"2025-06-10T06:21:57.045187Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00d8adaa0be907060a06153977960000007983040003012608d92afd3b58502f08e7a7ffff1d130000d7a90000c6b00000e3ffffffdfffffff42ffffff2c000000000000005601000080a8120112010000ba65432c000000000000000057d3","out":false}
 {"t":"2025-06-10T06:21:57.045471Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -79,7 +79,7 @@
 {"t":"2025-06-10T06:21:58.030387Z","tag":"UBX","msg":"CFG-VALSET","bin":"b562068a2700000100001f00311000210031100022003110010d003110010e00311000250031100024003110004727","out":true}
 {"t":"2025-06-10T06:21:58.030851Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.12","protocol":"27.11"}
-{"type":"config","signalsEnabled":[["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyACM0","-s","9600","--test-log","f9p-signal.jsonl","--gnss","GLO"],"version":"satpulse git version 20250609.1a3bc07.dirty, build date 2025-06-10 04:18:06+00:00","hostname":"abondance"}
 {"t":"2025-06-10T06:21:59.027069Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00a8b5aa0be907060a06153b7724000000f381040003012e0cf02afd3b02502f084aacffff8017000036350000f9390000f8ffffff05000000e1ffffff09000000000000001d01000080a81201b5000000ba65432c00000000000000009d7a","out":false}
 {"t":"2025-06-10T06:21:59.027349Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -90,7 +90,7 @@
 {"t":"2025-06-10T06:21:59.030889Z","tag":"UBX","msg":"CFG-VALSET","bin":"b562068a2700000100001f0031100021003110002200311000250031100118003110011a0031100124003110005f2b","out":true}
 {"t":"2025-06-10T06:21:59.031213Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.12","protocol":"27.11"}
-{"type":"config","signalsEnabled":[["GLO","L1","L2"]]}
+{"type":"config","signalsEnabled":{"GLO":["L1","L2"]}}
 {"type":"env","args":["-d","/dev/ttyACM0","-s","9600","--test-log","f9p-signal.jsonl","--gnss","GLO,GPS,BDS,GAL,QZSS"],"version":"satpulse git version 20250609.1a3bc07.dirty, build date 2025-06-10 04:18:06+00:00","hostname":"abondance"}
 {"t":"2025-06-10T06:22:00.171095Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0090b9aa0be907060a06160067f50000004481040000002600ef2afd3b02502f084cacffff821700006f7b0000485700000000000000000000000000000000000000000000204e000080a812010f270000ba65432c000000000000000028c4","out":false}
 {"t":"2025-06-10T06:22:00.171365Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -102,4 +102,4 @@
 {"t":"2025-06-10T06:22:00.175236Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-10T06:22:00.22648Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0069baaa0be907060a06160037e2040000b6acf30c00002600ef2afd3b02502f084cacffff82170000de8d0000516400000000000000000000000000000000000000000000204e000080a812010f270000ba65432c0000000000000000f25f","out":false}
 {"type":"receiver","model":"ZED-F9P","firmware":"HPG 1.12","protocol":"27.11"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"],["GAL","E1","E5b"],["BDS","B1I","B2I"],["GLO","L1","L2"],["QZSS","L1","L2C"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"],"GAL":["E1","E5b"],"BDS":["B1I","B2I"],"GLO":["L1","L2"],"QZSS":["L1","L2C"]}}

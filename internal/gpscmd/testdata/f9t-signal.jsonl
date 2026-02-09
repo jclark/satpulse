@@ -9,7 +9,7 @@
 {"t":"2025-06-19T03:41:14.048247Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-19T03:41:14.11089Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0051426415e907061303290e379b0000001585be060000260048c7c2067480851a1e54020045a201005a3900008d28000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e000000000000000032bb","out":false}
 {"type":"receiver","model":"ZED-F9T","firmware":"TIM 2.01","protocol":"29.0"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"]}}
 {"type":"env","args":["-d","/dev/cu.usbmodem1201","-s","9600","--test-log","f9t-signal.jsonl","--gnss","GPS,GAL"],"version":"satpulse git version 20250616.e3a71a3.dirty, build date 2025-06-19 03:20:45+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-19T03:41:14.993394Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00c8456415e907061303290f379b000000a34502000000260048c7c2067480851a1e54020045a201005a3900008d28000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e0000000000000000393c","out":false}
 {"t":"2025-06-19T03:41:14.993724Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -20,7 +20,7 @@
 {"t":"2025-06-19T03:41:14.997202Z","tag":"UBX","msg":"CFG-VALSET","bin":"b562068a3600000100001f0031100101003110010300311001210031100107003110010a00311001220031100025003110002400311000200031100037e0","out":true}
 {"t":"2025-06-19T03:41:14.997625Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"type":"receiver","model":"ZED-F9T","firmware":"TIM 2.01","protocol":"29.0"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"],["GAL","E1","E5b"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"],"GAL":["E1","E5b"]}}
 {"type":"env","args":["-d","/dev/cu.usbmodem1201","-s","9600","--test-log","f9t-signal.jsonl","--gnss","GPS,GAL,GLO"],"version":"satpulse git version 20250616.e3a71a3.dirty, build date 2025-06-19 03:20:45+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-19T03:41:15.997751Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00b0496415e9070613032910371f010000894302000000260048c7c2067480851a1e54020045a20100613900009328000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e00000000000000009c27","out":false}
 {"t":"2025-06-19T03:41:15.998086Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -31,7 +31,7 @@
 {"t":"2025-06-19T03:41:16.00161Z","tag":"UBX","msg":"CFG-VALSET","bin":"b562068a4000000100001f0031100101003110010300311001210031100107003110010a003110012200311000250031100118003110011a0031100124003110002000311000f833","out":true}
 {"t":"2025-06-19T03:41:16.002284Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"type":"receiver","model":"ZED-F9T","firmware":"TIM 2.01","protocol":"29.0"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"],["GAL","E1","E5b"],["GLO","L1","L2"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"],"GAL":["E1","E5b"],"GLO":["L1","L2"]}}
 {"type":"env","args":["-d","/dev/cu.usbmodem1201","-s","9600","--test-log","f9t-signal.jsonl","--gnss","BDS"],"version":"satpulse git version 20250616.e3a71a3.dirty, build date 2025-06-19 03:20:45+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-19T03:41:17.003058Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00984d6415e907061303291137310100003a4202000000260048c7c2067480851a1e54020045a201006a3900009928000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e00000000000000005a1a","out":false}
 {"t":"2025-06-19T03:41:17.003347Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -44,7 +44,7 @@
 {"t":"2025-06-19T03:41:17.062854Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00e34d6415e907061303291177120c000024b27a040000260048c7c2067480851a1e54020045a20100723900009f28000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e0000000000000000b5df","out":false}
 {"t":"2025-06-19T03:41:17.116635Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c001e4e6415e907061303291177120c0000cff6fe070000260048c7c2067480851a1e54020045a20100723900009f28000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e00000000000000006721","out":false}
 {"type":"receiver","model":"ZED-F9T","firmware":"TIM 2.01","protocol":"29.0"}
-{"type":"config","signalsEnabled":[["BDS","B1I","B2I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I","B2I"]}}
 {"type":"env","args":["-d","/dev/cu.usbmodem1201","-s","9600","--test-log","f9t-signal.jsonl","--gnss","BDS","--band","L1,L2"],"version":"satpulse git version 20250616.e3a71a3.dirty, build date 2025-06-19 03:20:45+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-19T03:41:18.142804Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0080516415e907061303291277120c0000254802000000260048c7c2067480851a1e54020045a20100723900009f28000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e00000000000000007273","out":false}
 {"t":"2025-06-19T03:41:18.143269Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -56,7 +56,7 @@
 {"t":"2025-06-19T03:41:18.147467Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-19T03:41:18.202993Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0057526415e9070613032912778610000022eed20c0000260048c7c2067480851a1e54020045a201007b390000a528000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e000000000000000050cc","out":false}
 {"type":"receiver","model":"ZED-F9T","firmware":"TIM 2.01","protocol":"29.0"}
-{"type":"config","signalsEnabled":[["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/cu.usbmodem1201","-s","9600","--test-log","f9t-signal.jsonl","--gnss","GPS,GAL","--band","L1"],"version":"satpulse git version 20250616.e3a71a3.dirty, build date 2025-06-19 03:20:45+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-19T03:41:19.139711Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0068556415e90706130329137786100000534902000000260048c7c2067480851a1e54020045a201007b390000a528000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e000000000000000015f4","out":false}
 {"t":"2025-06-19T03:41:19.140035Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -68,7 +68,7 @@
 {"t":"2025-06-19T03:41:19.143668Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-19T03:41:19.221579Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c003a566415e90706130329133784140000b1a3860c0000260048c7c2067480851a1e54020045a2010083390000ab28000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e000000000000000000bd","out":false}
 {"type":"receiver","model":"ZED-F9T","firmware":"TIM 2.01","protocol":"29.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GAL","E1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GAL":["E1"]}}
 {"type":"env","args":["-d","/dev/cu.usbmodem1201","-s","9600","--test-log","f9t-signal.jsonl","--gnss","BDS","--band","L1"],"version":"satpulse git version 20250616.e3a71a3.dirty, build date 2025-06-19 03:20:45+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-19T03:41:20.150947Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0050596415e90706130329143784140000204a02000000260048c7c2067480851a1e54020045a2010083390000ab28000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e0000000000000000a055","out":false}
 {"t":"2025-06-19T03:41:20.151225Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -80,7 +80,7 @@
 {"t":"2025-06-19T03:41:20.154636Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-19T03:41:20.209813Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c002e5a6415e9070613032914775d1800004dbf3d0d0000260048c7c2067480851a1e54020045a201008b390000b128000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e000000000000000094ea","out":false}
 {"type":"receiver","model":"ZED-F9T","firmware":"TIM 2.01","protocol":"29.0"}
-{"type":"config","signalsEnabled":[["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/cu.usbmodem1201","-s","9600","--test-log","f9t-signal.jsonl","--gnss","GLO"],"version":"satpulse git version 20250616.e3a71a3.dirty, build date 2025-06-19 03:20:45+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-19T03:41:21.138739Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00385d6415e9070613032915775d180000c14a02000000260048c7c2067480851a1e54020045a201008b390000b128000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e0000000000000000594b","out":false}
 {"t":"2025-06-19T03:41:21.138967Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -92,7 +92,7 @@
 {"t":"2025-06-19T03:41:21.142563Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-19T03:41:21.212685Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c000a5e6415e907061303291567571c0000c2a4860c0000260048c7c2067480851a1e54020045a2010093390000b628000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e00000000000000001238","out":false}
 {"type":"receiver","model":"ZED-F9T","firmware":"TIM 2.01","protocol":"29.0"}
-{"type":"config","signalsEnabled":[["GLO","L1","L2"]]}
+{"type":"config","signalsEnabled":{"GLO":["L1","L2"]}}
 {"type":"env","args":["-d","/dev/cu.usbmodem1201","-s","9600","--test-log","f9t-signal.jsonl","--gnss","GLO,GPS,BDS,GAL,QZSS"],"version":"satpulse git version 20250616.e3a71a3.dirty, build date 2025-06-19 03:20:45+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-19T03:41:22.161164Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0020616415e907061303291667571c0000314b02000000260048c7c2067480851a1e54020045a2010093390000b628000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e0000000000000000b2d0","out":false}
 {"t":"2025-06-19T03:41:22.161364Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -104,4 +104,4 @@
 {"t":"2025-06-19T03:41:22.165291Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200068a98c1","out":false}
 {"t":"2025-06-19T03:41:22.280146Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0008626415e907061303291637522000006157d60d0000260048c7c2067480851a1e54020045a201009c390000bc28000000000000000000000000000000000000000000000a0000002a6d57000f2700001864432e000000000000000096bc","out":false}
 {"type":"receiver","model":"ZED-F9T","firmware":"TIM 2.01","protocol":"29.0"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2C"],["GAL","E1","E5b"],["BDS","B1I","B2I"],["GLO","L1","L2"],["QZSS","L1","L1S","L2C"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2C"],"GAL":["E1","E5b"],"BDS":["B1I","B2I"],"GLO":["L1","L2"],"QZSS":["L1","L1S","L2C"]}}

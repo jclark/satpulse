@@ -36,4 +36,4 @@
 {"t":"2025-08-20T08:36:21.358335Z","tag":"NMEA","msg":"comma","ascii":"$command,MASK GAL,response: OK*20\r\n","out":false}
 {"t":"2025-08-20T08:36:21.361332Z","tag":"NMEA","msg":"comma","ascii":"$command,MASK QZSS,response: OK*61\r\n","out":false}
 {"type":"receiver","vendor":"Unicore","hardware":"UM980","firmware":"Build13504"}
-{"type":"config","signalsEnabled":[["GPS","L1","L2P","L2C","L5"]],"timeGNSS":"GPS","antennaCableDelay":0,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":true}
+{"type":"config","signalsEnabled":{"GPS":["L1","L2P","L2C","L5"]},"timeGNSS":"GPS","antennaCableDelay":0,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":true}

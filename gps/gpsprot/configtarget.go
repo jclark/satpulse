@@ -260,6 +260,65 @@ func (p PropIDs) String() string {
 	return "PropIDs(" + strings.Join(names, "|") + ")"
 }
 
+// propIDJSON maps JSON property names to PropIDs bitmasks.
+// These match the keys used in serializableMap.
+var propIDJSON = map[string]PropIDs{
+	"signalsEnabled":          PropIDSignalsEnabled,
+	"timeGNSS":                PropIDTimeGNSS,
+	"timePulse":               PropIDTimePulse,
+	"timePulse.width":         PropIDTimePulseWidth,
+	"timePulse.period":        PropIDTimePulsePeriod,
+	"timePulse.alignToGNSS":   PropIDTimePulseAlignToGNSS,
+	"timePulse.onlyWhenLocked": PropIDTimePulseOnlyWhenLocked,
+	"timePulse.polarityRising": PropIDTimePulsePolarityRising,
+	"mode":                    PropIDMode,
+	"antennaCableDelay":       PropIDAntennaCableDelay,
+	"navMsgAuth":              PropIDNavMsgAuth,
+	"rtcmBaseID":              PropIDRTCMBaseID,
+	"minElevation":            PropIDMinElevation,
+}
+
+// propIDJSONNames lists the JSON names in a stable order for marshaling.
+// "timePulse" must come before the sub-properties so it takes priority.
+var propIDJSONNames = []string{
+	"signalsEnabled", "timeGNSS",
+	"timePulse", "timePulse.width", "timePulse.period",
+	"timePulse.alignToGNSS", "timePulse.onlyWhenLocked", "timePulse.polarityRising",
+	"mode", "antennaCableDelay", "navMsgAuth", "rtcmBaseID", "minElevation",
+}
+
+// MarshalJSON marshals PropIDs as a JSON array of property name strings.
+func (p PropIDs) MarshalJSON() ([]byte, error) {
+	names := make([]string, 0)
+	var emitted PropIDs
+	for _, name := range propIDJSONNames {
+		mask := propIDJSON[name]
+		if p&mask == mask && emitted&mask == 0 {
+			names = append(names, name)
+			emitted |= mask
+		}
+	}
+	return json.Marshal(names)
+}
+
+// UnmarshalJSON unmarshals PropIDs from a JSON array of property name strings.
+func (p *PropIDs) UnmarshalJSON(data []byte) error {
+	var names []string
+	if err := json.Unmarshal(data, &names); err != nil {
+		return err
+	}
+	var bits PropIDs
+	for _, name := range names {
+		b, ok := propIDJSON[name]
+		if !ok {
+			return fmt.Errorf("unknown property name %q", name)
+		}
+		bits |= b
+	}
+	*p = bits
+	return nil
+}
+
 // GetSignalsEnabled returns the signalsEnabled value and whether it's set
 func (cp *ConfigProps) GetSignalsEnabled() (SignalSet, bool) {
 	if cp.valid&PropIDSignalsEnabled != 0 {
@@ -463,6 +522,185 @@ func (cp *ConfigProps) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
+// UnmarshalJSON deserializes a JSON map into ConfigProps.
+// Each key present in the map calls the corresponding setter.
+// Keys absent from the map leave properties unchanged.
+func (cp *ConfigProps) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var tmp ConfigProps
+	for key, val := range raw {
+		switch key {
+		case "signalsEnabled":
+			var m map[string][]string
+			if err := json.Unmarshal(val, &m); err != nil {
+				return fmt.Errorf("signalsEnabled: %w", err)
+			}
+			ss, err := ParseSignalMap(m)
+			if err != nil {
+				return fmt.Errorf("signalsEnabled: %w", err)
+			}
+			tmp.SetSignalsEnabled(ss)
+		case "timeGNSS":
+			var s string
+			if err := json.Unmarshal(val, &s); err != nil {
+				return fmt.Errorf("timeGNSS: %w", err)
+			}
+			g, err := ParseGNSS(s)
+			if err != nil {
+				return fmt.Errorf("timeGNSS: %w", err)
+			}
+			tmp.SetTimeGNSS(g)
+		case "timePulse":
+			var tpRaw map[string]json.RawMessage
+			if err := json.Unmarshal(val, &tpRaw); err != nil {
+				return fmt.Errorf("timePulse: %w", err)
+			}
+			if err := tmp.unmarshalTimePulse(tpRaw); err != nil {
+				return fmt.Errorf("timePulse: %w", err)
+			}
+		case "mode":
+			var mRaw map[string]json.RawMessage
+			if err := json.Unmarshal(val, &mRaw); err != nil {
+				return fmt.Errorf("mode: %w", err)
+			}
+			if err := tmp.unmarshalMode(mRaw); err != nil {
+				return fmt.Errorf("mode: %w", err)
+			}
+		case "antennaCableDelay":
+			var secs float64
+			if err := json.Unmarshal(val, &secs); err != nil {
+				return fmt.Errorf("antennaCableDelay: %w", err)
+			}
+			tmp.SetAntennaCableDelay(time.Duration(secs * float64(time.Second)))
+		case "navMsgAuth":
+			var s string
+			if err := json.Unmarshal(val, &s); err != nil {
+				return fmt.Errorf("navMsgAuth: %w", err)
+			}
+			switch s {
+			case "none":
+				tmp.SetNavMsgAuth(NavMsgAuthNone)
+			case "OSNMA":
+				tmp.SetNavMsgAuth(NavMsgAuthOSNMA)
+			default:
+				return fmt.Errorf("navMsgAuth: unknown value %q", s)
+			}
+		case "rtcmBaseID":
+			var id uint16
+			if err := json.Unmarshal(val, &id); err != nil {
+				return fmt.Errorf("rtcmBaseID: %w", err)
+			}
+			tmp.SetRTCMBaseID(id)
+		case "minElevation":
+			var deg float64
+			if err := json.Unmarshal(val, &deg); err != nil {
+				return fmt.Errorf("minElevation: %w", err)
+			}
+			tmp.SetMinElevation(DegreesFromFloat(deg))
+		default:
+			return fmt.Errorf("unknown property %q", key)
+		}
+	}
+	cp.CopyFrom(&tmp)
+	return nil
+}
+
+func (cp *ConfigProps) unmarshalTimePulse(raw map[string]json.RawMessage) error {
+	for key, val := range raw {
+		switch key {
+		case "width":
+			var secs float64
+			if err := json.Unmarshal(val, &secs); err != nil {
+				return fmt.Errorf("width: %w", err)
+			}
+			cp.SetTimePulseWidth(time.Duration(secs * float64(time.Second)))
+		case "period":
+			var secs float64
+			if err := json.Unmarshal(val, &secs); err != nil {
+				return fmt.Errorf("period: %w", err)
+			}
+			cp.SetTimePulsePeriod(time.Duration(secs * float64(time.Second)))
+		case "alignToGNSS":
+			var b bool
+			if err := json.Unmarshal(val, &b); err != nil {
+				return fmt.Errorf("alignToGNSS: %w", err)
+			}
+			cp.SetTimePulseAlignToGNSS(b)
+		case "onlyWhenLocked":
+			var b bool
+			if err := json.Unmarshal(val, &b); err != nil {
+				return fmt.Errorf("onlyWhenLocked: %w", err)
+			}
+			cp.SetTimePulseOnlyWhenLocked(b)
+		case "polarityRising":
+			var b bool
+			if err := json.Unmarshal(val, &b); err != nil {
+				return fmt.Errorf("polarityRising: %w", err)
+			}
+			cp.SetTimePulsePolarityRising(b)
+		default:
+			return fmt.Errorf("unknown field %q", key)
+		}
+	}
+	return nil
+}
+
+func (cp *ConfigProps) unmarshalMode(raw map[string]json.RawMessage) error {
+	var m Mode
+	hasECEF := false
+	hasLLH := false
+	for key, val := range raw {
+		switch key {
+		case "static":
+			if err := json.Unmarshal(val, &m.Static); err != nil {
+				return fmt.Errorf("static: %w", err)
+			}
+		case "fixedPosECEF":
+			var coords [3]float64
+			if err := json.Unmarshal(val, &coords); err != nil {
+				return fmt.Errorf("fixedPosECEF: %w", err)
+			}
+			for i := range 3 {
+				m.FixedPosECEF[i] = Meters(coords[i])
+			}
+			hasECEF = true
+		case "fixedPosLLH":
+			var coords [2]float64
+			if err := json.Unmarshal(val, &coords); err != nil {
+				return fmt.Errorf("fixedPosLLH: %w", err)
+			}
+			m.FixedPosLLH[0] = DegreesFromFloat(coords[0])
+			m.FixedPosLLH[1] = DegreesFromFloat(coords[1])
+			hasLLH = true
+		case "height":
+			var meters float64
+			if err := json.Unmarshal(val, &meters); err != nil {
+				return fmt.Errorf("height: %w", err)
+			}
+			m.Height = Meters(meters)
+		case "fixedPosAcc":
+			var meters float64
+			if err := json.Unmarshal(val, &meters); err != nil {
+				return fmt.Errorf("fixedPosAcc: %w", err)
+			}
+			m.FixedPosAcc = Meters(meters)
+		default:
+			return fmt.Errorf("unknown field %q", key)
+		}
+	}
+	switch {
+	case hasECEF:
+		m.PosType = PosTypeECEF
+	case hasLLH:
+		m.PosType = PosTypeLLH
+	}
+	cp.SetMode(m)
+	return nil
+}
+
 // MarshalText marshals the config properties to text
 func (cp *ConfigProps) MarshalText() ([]byte, error) {
 	return []byte(cp.String()), nil
@@ -586,7 +824,7 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	m := make(map[string]interface{})
 
 	if cp.valid&PropIDSignalsEnabled != 0 {
-		m["signalsEnabled"] = cp.signalsEnabled.GNSSStringGroups()
+		m["signalsEnabled"] = cp.signalsEnabled.GNSSSignalMap()
 	}
 	if cp.valid&PropIDTimeGNSS != 0 {
 		m["timeGNSS"] = cp.timeGNSS

@@ -11,7 +11,7 @@
 {"t":"2025-06-24T08:35:24.78657Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:24.893519Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c006cde240ce907061808231837e8100000f9ee5c3100002600632cfd3b194f2f08e8afffff1e1b00008da000008771000000000000000000000000000000000000000000000a0000002a6d57000f2700004a642300000000000000000050d9","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GAL"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:25.558923Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c000ce1240ce907061808231937970000001410d01d02002603392efd3bf54f2f08e8afffff1e1b00007123010015160100d000000099feffff000000009f010000000000007b10000080a81201eb0000004a64230000000000000000000d98","out":false}
 {"t":"2025-06-24T08:35:25.659041Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -26,7 +26,7 @@
 {"t":"2025-06-24T08:35:26.289223Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:26.394335Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c004ae4240ce907061808231a373e030000fb11ae1300002600632cfd3b194f2f08e8afffff1e1b000099a000008f71000000000000000000000000000000000000000000000a0000002a6d57000f2700004a6423000000000000000000ec33","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GAL","E1"]]}
+{"type":"config","signalsEnabled":{"GAL":["E1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","BDS"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:27.054224Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00e8e6240ce907061808231b3793000000ceab020002012604632bfd3b7d502f0807aeffff3d190000c70e010088140100e2ffffffddffffff80feffff2e000000000000002243000080a81201cf0000004a642300000000000000000011c1","out":false}
 {"t":"2025-06-24T08:35:27.15435Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -40,7 +40,7 @@
 {"t":"2025-06-24T08:35:27.709416Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:27.823459Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00d7e9240ce907061808231b37f1020000c805c62c00002600632bfd3b7d502f0804aeffff39190000093c010078df000000000000000000000000000000000000000000000a0000002a6d57000f2700004a64230000000000000000001fb5","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GLO"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:28.604935Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00c4ec240ce907061808231c37b60000007411d01d0301260b8c2afd3b11502f08faa0ffff300c0000c5a0000055f40000a300000088000000f5030000d400000000000000b618000080a81201440100004a64230000000000000000004b4d","out":false}
 {"t":"2025-06-24T08:35:28.705051Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -55,7 +55,7 @@
 {"t":"2025-06-24T08:35:29.334713Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:29.424409Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0030f0240ce907061808231d376e030000d6fa6b1600002600092afd3bed4f2f08ee9affff240600004b6c0000934c000000000000000000000000000000000000000000000a0000002a6d57000f2700004a64230000000000000000004c8a","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GLO","L1"]]}
+{"type":"config","signalsEnabled":{"GLO":["L1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GPS,GAL"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:30.243872Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00a0f2240ce907061808231e371608000070a60200000026009b8cfe3b10bf2f087399ffff900400003b7d1e0090bb00000000000000000000000000000000000000000000544b000080a812010f2700004a64230000000000000000001649","out":false}
 {"t":"2025-06-24T08:35:30.344086Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -68,7 +68,7 @@
 {"t":"2025-06-24T08:35:30.807036Z","tag":"UBX","msg":"CFG-GNSS","bin":"b562063e3c000020200700081000010001000101030000000000020408000100010003081000000000000400080000000100050003000000000006080e000000000042d2","out":true}
 {"t":"2025-06-24T08:35:30.899015Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GAL","E1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GAL":["E1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GPS,GLO"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:32.160387Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0070fa240ce9070618082320372201000045ae020003002607142bfd3b514f2f08a68dffffdcf8ffff5fb4000089a20100f9ffffff21feffffda010000df01000000000000d60d0000e28f0d01d60100004a64230000000000000000003e09","out":false}
 {"t":"2025-06-24T08:35:32.260524Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -82,7 +82,7 @@
 {"t":"2025-06-24T08:35:32.81738Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:32.957102Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00cbfd240ce9070618082320375d030000b5fb3533000026006c2cfd3b21502f08998effffcff9ffffa79a00005b6d000000000000000000000000000000000000000000000a0000002a6d57000f2700004a6423000000000000000000f5a7","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GLO","L1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GLO":["L1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GPS,BDS"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:33.654243Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c004c00250ce90706180823213791000000f013d01d02002603be30fd3b354e2f08998effffcef9ffffb61f0100dd0b0100ae0100003effffff00000000d8010000000000007c0b000080a81201eb0000004a6423000000000000000000e8d5","out":false}
 {"t":"2025-06-24T08:35:33.754473Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -97,7 +97,7 @@
 {"t":"2025-06-24T08:35:34.408015Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:34.570879Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c000104250ce907061808232237b503000052e1c51a000026006c2cfd3b21502f08998effffcff9ffffb49a0000646d000000000000000000000000000000000000000000000a0000002a6d57000f2700004a64230000000000000000009ddb","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GLO,GAL"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:35.256221Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c002806250ce90706180823233726010000a8af02000300260ef42afd3b584f2f08f28affff27f6ffff23cf0000b59d0100c40000009e000000ebfefffffb00000000000000f61d000080a81201180100004a642300000000000000000097e4","out":false}
 {"t":"2025-06-24T08:35:35.35638Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -110,7 +110,7 @@
 {"t":"2025-06-24T08:35:35.820839Z","tag":"UBX","msg":"CFG-GNSS","bin":"b562063e3c000020200700081000000000000101030000000000020408000100010003081000000000000400080000000100050003000000000006080e00010001004272","out":true}
 {"t":"2025-06-24T08:35:35.913292Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GAL","E1"],["GLO","L1"]]}
+{"type":"config","signalsEnabled":{"GAL":["E1"],"GLO":["L1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GLO,BDS"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:37.158205Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00f80d250ce907061808232537ad0200009ab0020003002604512bfd3bb54e2f082cb4ffff621f00001318020013ef03004afeffff7affffff13feffffca010000000000001036000080a81201360400004a6423000000000000000000f976","out":false}
 {"t":"2025-06-24T08:35:37.258373Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -124,7 +124,7 @@
 {"t":"2025-06-24T08:35:37.814214Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:37.957575Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c004f11250ce90706180823253759030000aef4f832000026004f2bfd3bf94f2f082499ffff5a040000f78f0000cd65000000000000000000000000000000000000000000000a0000002a6d57000f2700004a6423000000000000000000d9e9","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["BDS","B1I"],["GLO","L1"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"],"GLO":["L1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GAL,BDS"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:38.328022Z","bin":"08","out":false}
 {"t":"2025-06-24T08:35:38.328769Z","bin":"08","out":false}
@@ -149,7 +149,7 @@
 {"t":"2025-06-24T08:35:39.432258Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:39.59335Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00a217250ce907061808232737d0030000695c431c00002600892bfd3b344f2f08d499ffff0a0500009a840000c35d000000000000000000000000000000000000000000000a0000002a6d57000f2700004a64230000000000000000005fc9","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GAL","E1"],["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"GAL":["E1"],"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GPS,BDS,GAL"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:40.259521Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00b019250ce907061808232837ff0000000db202000300260fca2bfd3b69502f089d9cffffd307000064be00004a6201005cfeffffd7feffff85fdffff0202000000000000ae23000080a81201ee0000004a642300000000000000000065b8","out":false}
 {"t":"2025-06-24T08:35:40.359626Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -162,7 +162,7 @@
 {"t":"2025-06-24T08:35:40.822759Z","tag":"UBX","msg":"CFG-GNSS","bin":"b562063e3c000020200700081000010001000101030000000000020408000100010003081000010001000400080000000100050003000000000006080e00000000004408","out":true}
 {"t":"2025-06-24T08:35:40.915389Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GAL","E1"],["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GAL":["E1"],"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GPS,BDS,GLO"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:42.286495Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c008021250ce907061808232a3793000000fab20200030126129c2bfd3b45502f0888a3ffffbe0e000001660000f5cc0000dffdffffe4ffffff95f1ffff2202000000000000a60c0000dea1ae00e20000004a64230000000000000000002a09","out":false}
 {"t":"2025-06-24T08:35:42.386631Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -175,7 +175,7 @@
 {"t":"2025-06-24T08:35:42.853484Z","tag":"UBX","msg":"CFG-GNSS","bin":"b562063e3c000020200700081000010001000101030000000000020408000000000003081000010001000400080000000100050003000000000006080e000000000042c2","out":true}
 {"t":"2025-06-24T08:35:42.946548Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GAL,BDS,GLO"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:44.231252Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c005029250ce907061808232c37cc000000dcb302000301260eae29fd3b3c4e2f081caeffff52190000bd9400009e100100bc05000070020000601a00003c060000000000006412000059126100180100004a64230000000000000000005d5d","out":false}
 {"t":"2025-06-24T08:35:44.331423Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -188,7 +188,7 @@
 {"t":"2025-06-24T08:35:44.79507Z","tag":"UBX","msg":"CFG-GNSS","bin":"b562063e3c000020200700081000000000000101030000000000020408000100010003081000010001000400080000000100050003000000000006080e000000000042a2","out":true}
 {"t":"2025-06-24T08:35:44.888217Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GAL","E1"],["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"GAL":["E1"],"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GPS,GAL,GLO"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:46.208697Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c002031250ce907061808232e37a4030000a3b4020000002600cc29fd3b0c4e2f08d7c5ffff0d3100006a7100003250000000000000000000000000000000000000000000000a0000002a6d57000f2700004a64230000000000000000009ce6","out":false}
 {"t":"2025-06-24T08:35:46.308799Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -202,7 +202,7 @@
 {"t":"2025-06-24T08:35:46.86458Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:47.049361Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00ab34250ce907061808232e375d0b00002d6d123600002600cc29fd3b0c4e2f08d7c5ffff0d3100007a7100003e50000000000000000000000000000000000000000000000a0000002a6d57000f2700004a642300000000000000000090e4","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GAL","E1"],["GLO","L1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GAL":["E1"],"GLO":["L1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GLO,GPS,BDS,GAL"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:47.747757Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00fc36250ce907061808232f37360200006b1ad01d03002607ea2bfd3bf04b2f08a1e9ffffd754000099770100ad2a03001d000000f8ffffffff0000001e000000000000003741000080a81201d70100004a64230000000000000000002863","out":false}
 {"t":"2025-06-24T08:35:47.847856Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -217,7 +217,7 @@
 {"t":"2025-06-24T08:35:48.473922Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:48.670365Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00f33a250ce907061808233037f90300009ffcb41e00002600ef2afd3b724a2f08a90f0000df7a00009a170100b6c5000000000000000000000000000000000000000000000a0000002a6d57000f2700004a642300000000000000000072b5","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GAL","E1"],["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GAL":["E1"],"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GLO,GPS,BDS,GAL,QZSS"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:49.290243Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00d83c250ce90706180823313705010000f5b50200020026087928fd3bd04b2f084a0b000080760000aa450100d9df010060020000c00a0000fb0e0000020b00000000000075dd000080a81201a40000004a64230000000000000000008ff8","out":false}
 {"t":"2025-06-24T08:35:49.390995Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -230,7 +230,7 @@
 {"t":"2025-06-24T08:35:49.856034Z","tag":"UBX","msg":"CFG-GNSS","bin":"b562063e3c000020200700081000010001000101030000000000020408000100010003081000010001000400080000000100050003000100050006080e00000000004a46","out":true}
 {"t":"2025-06-24T08:35:49.949285Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GAL","E1"],["BDS","B1I"],["QZSS","L1","L1S"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GAL":["E1"],"BDS":["B1I"],"QZSS":["L1","L1S"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GAL,GLO,GPS","--band","L1"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:51.271331Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00a844250ce907061808233337970000002cb7020003012612702afd3b404f2f085eb7ffff942200000a680000fcd400004101000012000000f50600004201000000000000f40c000080a81201e20000004a6423000000000000000000ff4d","out":false}
 {"t":"2025-06-24T08:35:51.371227Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -243,7 +243,7 @@
 {"t":"2025-06-24T08:35:51.834999Z","tag":"UBX","msg":"CFG-GNSS","bin":"b562063e3c000020200700081000010001000101030000000000020408000100010003081000000000000400080000000100050003000000000006080e000100010044d8","out":true}
 {"t":"2025-06-24T08:35:51.930428Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GAL","E1"],["GLO","L1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GAL":["E1"],"GLO":["L1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","BDS","--band","L1,L2"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:53.269414Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00784c250ce90706180823353755010000f8b7020003002607d42afd3b634b2f0880fcffffb56700008fcf0000baed0100030100007effffff6501000022010000000000006114000080a81201d80100004a64230000000000000000004eec","out":false}
 {"t":"2025-06-24T08:35:53.369642Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -256,7 +256,7 @@
 {"t":"2025-06-24T08:35:53.833395Z","tag":"UBX","msg":"CFG-GNSS","bin":"b562063e3c000020200700081000000000000101030000000000020408000000000003081000010001000400080000000100050003000000000006080e0000000000405c","out":true}
 {"t":"2025-06-24T08:35:53.925416Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GPS,GAL","--band","L1"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:54.62008Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c005452250ce9070618082336377a120000161ed01d02002603812cfd3bdc8c2f08b7f8ffffef6300004ae55f002f5d01006653010088140000000000000454010046480500cc410e002ae90e000f2700004a6423000000000000000000dc45","out":false}
 {"t":"2025-06-24T08:35:54.720339Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -271,7 +271,7 @@
 {"t":"2025-06-24T08:35:55.350228Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:55.500349Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00d055250ce9070618082337375a090000f42c601700002600362afd3b594e2f081bbcffff5127000037d900009899000000000000000000000000000000000000000000000a0000002a6d57000f2700004a642300000000000000000084a2","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GAL","E1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GAL":["E1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","BDS","--band","L1"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:56.12914Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c003058250ce907061808233837b000000090b9020002002607672bfd3b024f2f0863beffff9929000031c70000b06a01001d0200006a000000730600002702000000000000fd2c000080a81201a00000004a6423000000000000000000354f","out":false}
 {"t":"2025-06-24T08:35:56.229262Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -285,7 +285,7 @@
 {"t":"2025-06-24T08:35:56.78438Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:56.898142Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c006a5b250ce9070618082338373c0300003d7c3e3100002600492bfd3bd14d2f08a5e2ffffda4d0000e13501001edb000000000000000000000000000000000000000000000a0000002a6d57000f2700004a64230000000000000000004b7e","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","GPS,GAL","--band","L1,L5"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:57.305307Z","bin":"e8e80908488a6b09","out":false}
 {"t":"2025-06-24T08:35:57.306212Z","bin":"08","out":false}
@@ -310,7 +310,7 @@
 {"t":"2025-06-24T08:35:58.332369Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:58.483447Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c007661250ce907061808233a376c030000c0834d1600002600f729fd3bc64d2f080db9ffff43240000407e00004659000000000000000000000000000000000000000000000a0000002a6d57000f2700004a64230000000000000000007a77","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GAL","E1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GAL":["E1"]}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-signal.jsonl","--gnss","BDS,GAL","--band","L1,L5"],"version":"satpulse git version 20250624.a39d0e5.dirty, build date 2025-06-24 08:34:40+00:00","hostname":"abondance"}
 {"t":"2025-06-24T08:35:59.144969Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00e863250ce907061808233b3778000000f5ba020002012607c72afd3bc04e2f08bbb5fffff120000020c00000d1d70000bc00000012010000740000004c010000000000007a16000080a81201a00000004a642300000000000000000025da","out":false}
 {"t":"2025-06-24T08:35:59.245116Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -324,4 +324,4 @@
 {"t":"2025-06-24T08:35:59.801392Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-24T08:35:59.962323Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c003367250ce907061808233b374d030000f7e34132000026004d2bfd3ba64d2f085f9affff950500005a310100ebd7000000000000000000000000000000000000000000000a0000002a6d57000f2700004a6423000000000000000000550c","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GAL","E1"],["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"GAL":["E1"],"BDS":["B1I"]}}
