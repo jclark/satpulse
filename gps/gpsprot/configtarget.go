@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -100,23 +101,6 @@ const (
 	ResetFactory           // restore non-volatile memory to factory defaults and then ResetCold
 )
 
-type Option[T any] struct {
-	val T
-	set bool
-}
-
-func (o *Option[T]) Set(v T)      { o.set, o.val = true, v }
-func (o *Option[T]) Get() T       { return o.val }
-func (o *Option[T]) Clear()       { var zero T; o.set, o.val = false, zero }
-func (o *Option[T]) IsSet() bool  { return o.set }
-func (o *Option[T]) IsZero() bool { return !o.set }
-
-// MakeOption creates an Option with the given value set
-func MakeOption[T any](v T) Option[T] {
-	var opt Option[T]
-	opt.Set(v)
-	return opt
-}
 
 // PVTMsgFlags says what messages relating to Position, Velocity, and Time are wanted.
 // The PVTMsgOff option says to turn off PVT messages that are not enabled.
@@ -218,10 +202,10 @@ type ConfigOptions struct {
 	Save       SaveType   // what to save to non-volatile memory
 	Reset      ResetType  // what kind of reset to perform
 	PVTMsg     PVTMsgFlags // messages relating to Position, Velocity, and Time
-	NMEAMsg    Option[NMEAMsgFlags]
-	RTCMMsg    Option[RTCMMsgFlags] // RTCM 3.x messages
-	SatsMsg    Option[SatsMsgFlags]
-	RawMsg     Option[RawMsgFlags]
+	NMEAMsg opt.Val[NMEAMsgFlags] `json:",omitzero"`
+	RTCMMsg opt.Val[RTCMMsgFlags] `json:",omitzero"` // RTCM 3.x messages
+	SatsMsg opt.Val[SatsMsgFlags] `json:",omitzero"`
+	RawMsg  opt.Val[RawMsgFlags]  `json:",omitzero"`
 	Survey     Survey
 	SetStatic  bool         // ensure receiver is in static mode without changing existing fixed position
 	BaudRate   uint32       // serial port baud rate, 0 means do not change

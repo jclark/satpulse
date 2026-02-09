@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
-	"github.com/jclark/satpulse/time/app/daemon"
-	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/gps/lib/geopos"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/term"
+	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/app/daemon"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/pflag"
 )
@@ -32,13 +33,13 @@ type flagVars struct {
 	configFile     string
 	packetLogPath  string
 	packetLogMode  packetLogMode
-	capture        gpsprot.Option[time.Duration]
+	capture        opt.Val[time.Duration]
 	timeGNSS       gpsprot.GNSS
-	navMsgAuth     gpsprot.Option[gpsprot.NavMsgAuth]
+	navMsgAuth     opt.Val[gpsprot.NavMsgAuth]
 	enabledSignals gpsprot.SignalSet
-	pps            gpsprot.Option[time.Duration]
-	antCableDelay  gpsprot.Option[time.Duration]
-	mode           gpsprot.Option[gpsprot.Mode]
+	pps            opt.Val[time.Duration]
+	antCableDelay  opt.Val[time.Duration]
+	mode           opt.Val[gpsprot.Mode]
 	configOpts     gpsprot.ConfigOptions
 	configGet      gpsprot.PropIDs
 	msgFilePath    string
@@ -220,10 +221,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		return nil, nil, fmt.Errorf("%s command must specify --gnss when --band is specified", cmdName)
 	}
 	pvtMsg := gpsprot.PVTMsgFlags(pvtOut)
-	rawMsg := (gpsprot.Option[gpsprot.RawMsgFlags])(rawOut)
-	rtcmMsg := (gpsprot.Option[gpsprot.RTCMMsgFlags])(rtcmOut)
-	nmeaMsg := (gpsprot.Option[gpsprot.NMEAMsgFlags])(nmeaOut)
-	satsMsg := (gpsprot.Option[gpsprot.SatsMsgFlags])(satsOut)
+	rawMsg := (opt.Val[gpsprot.RawMsgFlags])(rawOut)
+	rtcmMsg := (opt.Val[gpsprot.RTCMMsgFlags])(rtcmOut)
+	nmeaMsg := (opt.Val[gpsprot.NMEAMsgFlags])(nmeaOut)
+	satsMsg := (opt.Val[gpsprot.SatsMsgFlags])(satsOut)
 
 	if rawMsg.IsSet() || pvtMsg.IsSet() || rtcmMsg.IsSet() || nmeaMsg.IsSet() || satsMsg.IsSet() {
 		configChanged = true
@@ -547,12 +548,12 @@ func (bp *bands) Set(s string) error {
 	return nil
 }
 
-type rawOutOpt gpsprot.Option[gpsprot.RawMsgFlags]
+type rawOutOpt opt.Val[gpsprot.RawMsgFlags]
 
 var _ pflag.Value = (*rawOutOpt)(nil)
 
 func (rawOut *rawOutOpt) String() string {
-	msg := (*gpsprot.Option[gpsprot.RawMsgFlags])(rawOut)
+	msg := (*opt.Val[gpsprot.RawMsgFlags])(rawOut)
 	if !msg.IsSet() {
 		return ""
 	}
@@ -578,7 +579,7 @@ func (rawOut *rawOutOpt) Set(s string) error {
 	if s == "" {
 		return fmt.Errorf("empty value for --raw-out")
 	}
-	msg := (*gpsprot.Option[gpsprot.RawMsgFlags])(rawOut)
+	msg := (*opt.Val[gpsprot.RawMsgFlags])(rawOut)
 	flags := gpsprot.RawMsgFlags(0)
 	for _, w := range strings.Split(s, ",") {
 		switch strings.ToLower(strings.TrimSpace(w)) {
@@ -693,12 +694,12 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 	return nil
 }
 
-type rtcmOutOpt gpsprot.Option[gpsprot.RTCMMsgFlags]
+type rtcmOutOpt opt.Val[gpsprot.RTCMMsgFlags]
 
 var _ pflag.Value = (*rtcmOutOpt)(nil)
 
 func (rtcmOut *rtcmOutOpt) String() string {
-	msg := (*gpsprot.Option[gpsprot.RTCMMsgFlags])(rtcmOut)
+	msg := (*opt.Val[gpsprot.RTCMMsgFlags])(rtcmOut)
 	if !msg.IsSet() {
 		return ""
 	}
@@ -732,7 +733,7 @@ func (rtcmOut *rtcmOutOpt) Set(s string) error {
 	if s == "" {
 		return fmt.Errorf("empty value for --rtcm-out")
 	}
-	msg := (*gpsprot.Option[gpsprot.RTCMMsgFlags])(rtcmOut)
+	msg := (*opt.Val[gpsprot.RTCMMsgFlags])(rtcmOut)
 	flags := gpsprot.RTCMMsgFlags(0)
 	auto := false
 	for _, w := range strings.Split(s, ",") {
@@ -764,12 +765,12 @@ func (rtcmOut *rtcmOutOpt) Set(s string) error {
 	return nil
 }
 
-type nmeaOutOpt gpsprot.Option[gpsprot.NMEAMsgFlags]
+type nmeaOutOpt opt.Val[gpsprot.NMEAMsgFlags]
 
 var _ pflag.Value = (*nmeaOutOpt)(nil)
 
 func (nmeaOut *nmeaOutOpt) String() string {
-	msg := (*gpsprot.Option[gpsprot.NMEAMsgFlags])(nmeaOut)
+	msg := (*opt.Val[gpsprot.NMEAMsgFlags])(nmeaOut)
 	if !msg.IsSet() {
 		return ""
 	}
@@ -808,7 +809,7 @@ func (nmeaOut *nmeaOutOpt) Set(s string) error {
 	if s == "" {
 		return fmt.Errorf("empty value for --nmea-out")
 	}
-	msg := (*gpsprot.Option[gpsprot.NMEAMsgFlags])(nmeaOut)
+	msg := (*opt.Val[gpsprot.NMEAMsgFlags])(nmeaOut)
 	flags := gpsprot.NMEAMsgFlags(0)
 	for _, w := range strings.Split(s, ",") {
 		switch strings.ToUpper(strings.TrimSpace(w)) {
@@ -834,12 +835,12 @@ func (nmeaOut *nmeaOutOpt) Set(s string) error {
 	return nil
 }
 
-type satsOutOpt gpsprot.Option[gpsprot.SatsMsgFlags]
+type satsOutOpt opt.Val[gpsprot.SatsMsgFlags]
 
 var _ pflag.Value = (*satsOutOpt)(nil)
 
 func (satsOut *satsOutOpt) String() string {
-	msg := (*gpsprot.Option[gpsprot.SatsMsgFlags])(satsOut)
+	msg := (*opt.Val[gpsprot.SatsMsgFlags])(satsOut)
 	if !msg.IsSet() {
 		return ""
 	}
@@ -865,7 +866,7 @@ func (satsOut *satsOutOpt) Set(s string) error {
 	if s == "" {
 		return fmt.Errorf("empty value for --sats-out")
 	}
-	msg := (*gpsprot.Option[gpsprot.SatsMsgFlags])(satsOut)
+	msg := (*opt.Val[gpsprot.SatsMsgFlags])(satsOut)
 	flags := gpsprot.SatsMsgFlags(0)
 	for _, w := range strings.Split(s, ",") {
 		switch strings.ToLower(strings.TrimSpace(w)) {
