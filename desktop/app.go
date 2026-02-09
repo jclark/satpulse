@@ -500,18 +500,31 @@ func (a *App) msgDecoderWorker(sub <-chan scan.Packet) {
 		pp.SetMsgHandler(mh)
 	}
 	for pkt := range sub {
-		if len(pkt.Data) == 0 {
-			continue
-		}
-		tag := pkt.Tag()
-		pp := procs[tag]
-		if pp == nil {
-			continue
-		}
-		if pkt.IsInterPacketTimeout() {
+		a.handleMsgPacket(procs, pkt)
+	}
+}
+
+func (a *App) handleMsgPacket(procs map[gpsprot.Tag]gpsprot.PacketProcessor, pkt scan.Packet) {
+	if pkt.IsInterPacketTimeout() {
+		for _, pp := range procs {
 			pp.Idle(pkt.TRead)
-		} else {
-			pp.ProcessPacket(pkt.Data, pkt.TRead)
 		}
+		return
+	}
+	if pkt.Format == nil {
+		return
+	}
+	tag := pkt.Format.Tag()
+	pp := procs[tag]
+	if pp == nil {
+		return
+	}
+	err := pkt.ChecksumError()
+	if err != nil {
+		a.lg.Warn(err.Error(), "tag", tag, "len", len(pkt.Data))
+	}
+	_, err = pp.ProcessPacket(pkt.Data, pkt.TRead)
+	if err != nil {
+		a.lg.Error("error processing packet", "err", err, "tag", tag, "data", pkt.Data)
 	}
 }
