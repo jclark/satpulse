@@ -21,6 +21,18 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
+// configRequest is sent to packetWorker to run gpscfg.Configure.
+type configRequest struct {
+	target   *gpsprot.ConfigTarget
+	resultCh chan<- configResult
+}
+
+// configResult is the response from a configRequest.
+type configResult struct {
+	result *gpscfg.Result
+	err    error
+}
+
 // App is the Wails application struct.
 // Its exported methods are bound to the frontend.
 type App struct {
@@ -28,9 +40,11 @@ type App struct {
 	lg         *slog.Logger
 	mu         sync.Mutex
 	conn       gpsio.Conn
+	connCtx    context.Context
 	connCancel context.CancelFunc
 	connWg     sync.WaitGroup
 	pb         *bcast.Bcast[scan.Packet]
+	configCh   chan configRequest
 	probe      ReceiverEvent
 }
 
@@ -60,6 +74,7 @@ func (a *App) closeLocked() {
 		a.pb.Close()
 		a.pb = nil
 	}
+	a.configCh = nil
 	// Must unlock while waiting: goroutines may need the lock during shutdown.
 	a.mu.Unlock()
 	a.connWg.Wait()
@@ -92,13 +107,15 @@ func (a *App) Connect(device string, speed int) Result {
 	a.connWg.Go(func() { pb.Run(connCtx, a.lg) })
 	sub := pb.Subscribe()
 	a.connWg.Go(func() { a.packetEventWorker(sub) })
-	msgSub := pb.Subscribe()
-	a.connWg.Go(func() { a.msgDecoderWorker(msgSub) })
+	pktSub := pb.Subscribe()
+	procs := gpsreg.CreatePacketProcessors(nil)
+	configCh := make(chan configRequest)
 	a.conn = conn
+	a.connCtx = connCtx
 	a.connCancel = connCancel
 	a.pb = pb
-	probeSub := pb.Subscribe()
-	a.connWg.Go(func() { a.probeWorker(probeSub) })
+	a.configCh = configCh
+	a.connWg.Go(func() { a.packetWorker(procs, pktSub, configCh) })
 	return Result{OK: true}
 }
 
@@ -110,39 +127,79 @@ type ReceiverEvent struct {
 	PacketFormats []string                           `json:"packetFormats,omitempty"`
 }
 
-// probeWorker runs receiver identification automatically after connect.
-func (a *App) probeWorker(sub <-chan scan.Packet) {
+// packetWorker is the single goroutine that owns packet processing.
+// It runs an initial probe, then loops processing packets for message decoding.
+// Configuration requests arrive via configCh and are executed inline.
+func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-chan scan.Packet, configCh <-chan configRequest) {
+	mh := &msgHandler{
+		ctx: a.ctx,
+		ls:  ptime.LeapSecond2016(),
+	}
+	a.mu.Lock()
+	a.probe = ReceiverEvent{}
+	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{})
 	a.mu.Lock()
-	conn, pb := a.conn, a.pb
+	conn := a.conn
 	a.mu.Unlock()
-	if conn == nil || pb == nil {
+	if conn == nil {
 		return
 	}
-	defer pb.Unsubscribe(sub)
+	// Run initial probe, matching the daemon's pattern of Configure before dispatch.
 	target := gpsprot.NewConfigTarget()
 	target.Opts.ForceProbe = true
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
-	defer cancel()
-	rslt, err := gpscfg.Configure(ctx, a.lg,
-		gpsreg.CreatePacketProcessors(nil),
-		gpsreg.CreateConfigProtocols(),
-		target, sub, conn)
+	rslt, err := gpscfg.Configure(ctx, a.lg, procs,
+		gpsreg.CreateConfigProtocols(), target, sub, conn)
+	cancel()
 	if err != nil {
 		runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{Error: err.Error()})
-		return
+	} else {
+		r := ReceiverEvent{OK: true}
+		if rslt.ReceiverInfo != nil {
+			r.Info.Set(*rslt.ReceiverInfo)
+		}
+		for _, tag := range rslt.PacketFormatsDetected {
+			r.PacketFormats = append(r.PacketFormats, string(tag))
+		}
+		if rslt.LeapSecond != nil {
+			rslt.LeapSecond.UpdateLeapSecond(&mh.ls)
+		}
+		a.mu.Lock()
+		a.probe = r
+		a.mu.Unlock()
+		runtime.EventsEmit(a.ctx, "gps:receiver", r)
 	}
-	r := ReceiverEvent{OK: true}
-	if rslt.ReceiverInfo != nil {
-		r.Info.Set(*rslt.ReceiverInfo)
+	// Re-install our message handler after Configure overwrote it.
+	for _, pp := range procs {
+		pp.SetMsgHandler(mh)
 	}
-	for _, tag := range rslt.PacketFormatsDetected {
-		r.PacketFormats = append(r.PacketFormats, string(tag))
+	// Main packet processing loop with inline config handling.
+	for {
+		select {
+		case pkt, ok := <-sub:
+			if !ok {
+				return
+			}
+			a.handleMsgPacket(procs, pkt)
+		case req, ok := <-configCh:
+			if !ok {
+				return
+			}
+			a.mu.Lock()
+			conn = a.conn
+			a.mu.Unlock()
+			ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
+			rslt, err := gpscfg.Configure(ctx, a.lg, procs,
+				gpsreg.CreateConfigProtocols(), req.target, sub, conn)
+			cancel()
+			// Re-install our message handler.
+			for _, pp := range procs {
+				pp.SetMsgHandler(mh)
+			}
+			req.resultCh <- configResult{result: rslt, err: err}
+		}
 	}
-	a.mu.Lock()
-	a.probe = r
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:receiver", r)
 }
 
 // GetReceiverState returns the cached receiver identification result.
@@ -205,25 +262,18 @@ const readProps = gpsprot.PropIDSignalsEnabled |
 // ReadConfig reads back the current configuration from the receiver.
 func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
 	a.mu.Lock()
-	conn, pb := a.conn, a.pb
+	conn := a.conn
 	a.mu.Unlock()
 	if conn == nil {
 		return nil, fmt.Errorf("not connected")
 	}
 	target := gpsprot.NewConfigTarget()
 	target.Get = readProps
-	sub := pb.Subscribe()
-	defer pb.Unsubscribe(sub)
-	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
-	defer cancel()
-	rslt, err := gpscfg.Configure(ctx, a.lg,
-		gpsreg.CreatePacketProcessors(nil),
-		gpsreg.CreateConfigProtocols(),
-		target, sub, conn)
-	if err != nil {
-		return nil, err
+	cr := a.sendConfigRequest(target)
+	if cr.err != nil {
+		return nil, cr.err
 	}
-	return rslt.ConfigProps, nil
+	return cr.result.ConfigProps, nil
 }
 
 // ApplyConfig sends configuration changes to the receiver.
@@ -277,21 +327,33 @@ func (a *App) ResetConfig(resetType string) Result {
 	return a.runConfig(target)
 }
 
+// sendConfigRequest sends a config request to packetWorker and waits for the result.
+func (a *App) sendConfigRequest(target *gpsprot.ConfigTarget) configResult {
+	a.mu.Lock()
+	configCh, connCtx := a.configCh, a.connCtx
+	a.mu.Unlock()
+	if configCh == nil {
+		return configResult{err: fmt.Errorf("not connected")}
+	}
+	resultCh := make(chan configResult, 1)
+	select {
+	case configCh <- configRequest{target: target, resultCh: resultCh}:
+	case <-connCtx.Done():
+		return configResult{err: connCtx.Err()}
+	}
+	select {
+	case cr := <-resultCh:
+		return cr
+	case <-connCtx.Done():
+		return configResult{err: connCtx.Err()}
+	}
+}
+
 // runConfig sends a configuration to the connected receiver.
 func (a *App) runConfig(target *gpsprot.ConfigTarget) Result {
-	a.mu.Lock()
-	conn, pb := a.conn, a.pb
-	a.mu.Unlock()
-	sub := pb.Subscribe()
-	defer pb.Unsubscribe(sub)
-	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
-	defer cancel()
-	_, err := gpscfg.Configure(ctx, a.lg,
-		gpsreg.CreatePacketProcessors(nil),
-		gpsreg.CreateConfigProtocols(),
-		target, sub, conn)
-	if err != nil {
-		return Result{Error: err.Error()}
+	cr := a.sendConfigRequest(target)
+	if cr.err != nil {
+		return Result{Error: cr.err.Error()}
 	}
 	return Result{OK: true}
 }
@@ -486,22 +548,6 @@ func (h *msgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
 	})
-}
-
-// msgDecoderWorker subscribes to the packet broadcast and decodes packets
-// into semantic messages, emitting them as "gps:msg" events.
-func (a *App) msgDecoderWorker(sub <-chan scan.Packet) {
-	procs := gpsreg.CreatePacketProcessors(nil)
-	mh := &msgHandler{
-		ctx: a.ctx,
-		ls:  ptime.LeapSecond2016(),
-	}
-	for _, pp := range procs {
-		pp.SetMsgHandler(mh)
-	}
-	for pkt := range sub {
-		a.handleMsgPacket(procs, pkt)
-	}
 }
 
 func (a *App) handleMsgPacket(procs map[gpsprot.Tag]gpsprot.PacketProcessor, pkt scan.Packet) {
