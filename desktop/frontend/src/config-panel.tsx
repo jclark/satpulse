@@ -319,42 +319,52 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
             <div class="flex-1 overflow-y-auto p-4">
 
                     <CollapsibleSection title="Time pulse" defaultOpen={true}>
-                        <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 items-center">
-                            <label class="text-xs text-gray-500 dark:text-gray-400">Period (s)</label>
-                            <div class="flex items-center gap-2">
-                                <input type="number" class={(errorMap.has('ppsPeriod') ? inputErrorClass : inputClass) + ' w-25'} value={ppsPeriod} step="0.1" min="0" placeholder="e.g. 1.0"
-                                    disabled={!connected} onInput={e => setPpsPeriod((e.target as HTMLInputElement).value)} />
-                                {errorMap.has('ppsPeriod') && <span class="text-[10px] text-red-500">{errorMap.get('ppsPeriod')}</span>}
+                        <div class="flex gap-x-6 items-start">
+                            <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center">
+                                <label class="text-xs text-gray-500 dark:text-gray-400">Period (s)</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="number" class={(errorMap.has('ppsPeriod') ? inputErrorClass : inputClass) + ' w-20'} value={ppsPeriod} step="0.1" min="0" placeholder="e.g. 1.0"
+                                        disabled={!connected} onInput={e => setPpsPeriod((e.target as HTMLInputElement).value)} />
+                                    {errorMap.has('ppsPeriod') && <span class="text-[10px] text-red-500">{errorMap.get('ppsPeriod')}</span>}
+                                </div>
+                                <label class="text-xs text-gray-500 dark:text-gray-400">Pulse width (s)</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="number" class={(errorMap.has('ppsWidth') ? inputErrorClass : inputClass) + ' w-20'} value={ppsWidth} step="0.01" min="0" max="1" placeholder="e.g. 0.1"
+                                        disabled={!connected} onInput={e => setPpsWidth((e.target as HTMLInputElement).value)} />
+                                    {errorMap.has('ppsWidth') && <span class="text-[10px] text-red-500">{errorMap.get('ppsWidth')}</span>}
+                                </div>
+                                <label class="text-xs text-gray-500 dark:text-gray-400">Time GNSS</label>
+                                <select class={inputClass + ' w-24'} value={timeGNSS} disabled={!connected}
+                                    onChange={e => setTimeGNSS((e.target as HTMLSelectElement).value)}>
+                                    <option value="">--</option>
+                                    <option value="GPS">GPS</option>
+                                    <option value="GAL">Galileo</option>
+                                    <option value="BDS">BeiDou</option>
+                                    <option value="GLO">GLONASS</option>
+                                </select>
+                                <label class="text-xs text-gray-500 dark:text-gray-400">Cable delay (ns)</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="number" class={(errorMap.has('cableDelay') ? inputErrorClass : inputClass) + ' w-20'} value={cableDelay} step="1" placeholder="e.g. 50"
+                                        disabled={!connected} onInput={e => setCableDelay((e.target as HTMLInputElement).value)} />
+                                    {errorMap.has('cableDelay') && <span class="text-[10px] text-red-500">{errorMap.get('cableDelay')}</span>}
+                                </div>
                             </div>
-                            <label class="text-xs text-gray-500 dark:text-gray-400">Pulse width (s)</label>
-                            <div class="flex items-center gap-2">
-                                <input type="number" class={(errorMap.has('ppsWidth') ? inputErrorClass : inputClass) + ' w-25'} value={ppsWidth} step="0.01" min="0" max="1" placeholder="e.g. 0.1"
-                                    disabled={!connected} onInput={e => setPpsWidth((e.target as HTMLInputElement).value)} />
-                                {errorMap.has('ppsWidth') && <span class="text-[10px] text-red-500">{errorMap.get('ppsWidth')}</span>}
-                            </div>
-                            <label class="text-xs text-gray-500 dark:text-gray-400">Align to GNSS</label>
-                            <input type="checkbox" class="accent-blue-600 justify-self-start" checked={ppsAlign} disabled={!connected}
-                                onChange={e => setPpsAlign((e.target as HTMLInputElement).checked)} />
-                            <label class="text-xs text-gray-500 dark:text-gray-400">Only when locked</label>
-                            <input type="checkbox" class="accent-blue-600 justify-self-start" checked={ppsLocked} disabled={!connected}
-                                onChange={e => setPpsLocked((e.target as HTMLInputElement).checked)} />
-                            <label class="text-xs text-gray-500 dark:text-gray-400">Rising edge</label>
-                            <input type="checkbox" class="accent-blue-600 justify-self-start" checked={ppsRising} disabled={!connected}
-                                onChange={e => setPpsRising((e.target as HTMLInputElement).checked)} />
-                            <label class="text-xs text-gray-500 dark:text-gray-400">Time GNSS</label>
-                            <select class={inputClass + ' w-30'} value={timeGNSS} disabled={!connected}
-                                onChange={e => setTimeGNSS((e.target as HTMLSelectElement).value)}>
-                                <option value="">--</option>
-                                <option value="GPS">GPS</option>
-                                <option value="GAL">Galileo</option>
-                                <option value="BDS">BeiDou</option>
-                                <option value="GLO">GLONASS</option>
-                            </select>
-                            <label class="text-xs text-gray-500 dark:text-gray-400">Cable delay (ns)</label>
-                            <div class="flex items-center gap-2">
-                                <input type="number" class={(errorMap.has('cableDelay') ? inputErrorClass : inputClass) + ' w-25'} value={cableDelay} step="1" placeholder="e.g. 50"
-                                    disabled={!connected} onInput={e => setCableDelay((e.target as HTMLInputElement).value)} />
-                                {errorMap.has('cableDelay') && <span class="text-[10px] text-red-500">{errorMap.get('cableDelay')}</span>}
+                            <div class="flex flex-col gap-1.5 pt-0.5">
+                                <label class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
+                                    <input type="checkbox" class="accent-blue-600" checked={ppsAlign} disabled={!connected}
+                                        onChange={e => setPpsAlign((e.target as HTMLInputElement).checked)} />
+                                    Align to GNSS
+                                </label>
+                                <label class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
+                                    <input type="checkbox" class="accent-blue-600" checked={ppsLocked} disabled={!connected}
+                                        onChange={e => setPpsLocked((e.target as HTMLInputElement).checked)} />
+                                    Only when locked
+                                </label>
+                                <label class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
+                                    <input type="checkbox" class="accent-blue-600" checked={ppsRising} disabled={!connected}
+                                        onChange={e => setPpsRising((e.target as HTMLInputElement).checked)} />
+                                    Rising edge
+                                </label>
                             </div>
                         </div>
                     </CollapsibleSection>
@@ -372,8 +382,8 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                         </div>
                     </CollapsibleSection>
 
-                    {/* Constellations subgroup */}
-                    <CollapsibleSection title="Constellations" defaultOpen={true}>
+                    {/* Signals subgroup */}
+                    <CollapsibleSection title="Signals" defaultOpen={true}>
                         <div class="flex flex-wrap gap-x-4 gap-y-1">
                             {gnssNames.map(gnssName => {
                                 const sigs = signalCatalog[gnssName];
@@ -401,10 +411,10 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
 
                     {/* Other properties */}
                     <CollapsibleSection title="Other" defaultOpen={true}>
-                        <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 items-center">
+                        <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center w-fit">
                             <label class="text-xs text-gray-500 dark:text-gray-400">Min elevation (deg)</label>
                             <div class="flex items-center gap-2">
-                                <input type="number" class={(errorMap.has('minElev') ? inputErrorClass : inputClass) + ' w-25'} value={minElev} step="1" min="0" max="90" placeholder="e.g. 10"
+                                <input type="number" class={(errorMap.has('minElev') ? inputErrorClass : inputClass) + ' w-20'} value={minElev} step="1" min="0" max="90" placeholder="e.g. 10"
                                     disabled={!connected} onInput={e => setMinElev((e.target as HTMLInputElement).value)} />
                                 {errorMap.has('minElev') && <span class="text-[10px] text-red-500">{errorMap.get('minElev')}</span>}
                             </div>
@@ -474,8 +484,8 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                     </div>
                 </CollapsibleSection>
 
-                {/* Persistent operations */}
-                <CollapsibleSection title="Persistent operations" defaultOpen={false}>
+                {/* Persistence */}
+                <CollapsibleSection title="Persistence" defaultOpen={false}>
                     <div class="flex gap-2 flex-wrap">
                         <button class={btnClass} disabled={!connected} onClick={handleSave}>Save to NVM</button>
                         <button class={btnClass} disabled={!connected} onClick={() => handleReset('reload')}>Reload</button>
