@@ -21,4 +21,4 @@
 {"t":"2025-07-09T05:36:48.893704Z","tag":"UBX","msg":"CFG-NAV5","bin":"b56206242400ffff020300000000102700000500fa00fa0064005e01003c0000000000000300000000008392","out":false}
 {"t":"2025-07-09T05:36:48.935364Z","tag":"UBX","msg":"ACK-ACK","bin":"b562050102000624325b","out":false}
 {"type":"receiver","model":"LEA-M8T-0","firmware":"TIM 1.10","protocol":"22.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GLO","L1"],["QZSS","L1"]],"timeGNSS":"GPS","antennaCableDelay":50,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GLO":["L1"],"QZSS":["L1"]},"timeGNSS":"GPS","antennaCableDelay":50,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}

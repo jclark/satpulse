@@ -16,6 +16,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -126,7 +127,7 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 // Parameter dependencies:
 //   - logMode: must not be testLogMode when msgs is non-nil
 //   - args: only used for test log header when logMode is testLogMode
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msgs any, conn gpsio.Conn, logPath string, logMode packetLogMode, capture gpsprot.Option[time.Duration], showReceiver bool, args []string) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msgs any, conn gpsio.Conn, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -186,7 +187,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msg
 	return err
 }
 
-func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, capture gpsprot.Option[time.Duration], showReceiver bool) (*gpscfg.Result, error) {
+func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, capture opt.Val[time.Duration], showReceiver bool) (*gpscfg.Result, error) {
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
@@ -210,7 +211,7 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	return rslt, err
 }
 
-func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs any, capture gpsprot.Option[time.Duration]) error {
+func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs any, capture opt.Val[time.Duration]) error {
 	var rp *responsePrinter
 	var err error
 	var raw []rawMsg
@@ -385,17 +386,21 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 }
 
 func printSignals(f *os.File, sigs gpsprot.SignalSet) {
-	groups := sigs.GNSSStringGroups()
-	if len(groups) == 0 {
+	m := sigs.GNSSSignalMap()
+	if len(m) == 0 {
 		return
 	}
-	constellations := make([]string, len(groups))
-	for i, group := range groups {
-		constellations[i] = group[0]
+	var constellations []string
+	for g := gpsprot.GNSS(1); g <= gpsprot.GNSSLast; g++ {
+		if _, ok := m[g.String()]; ok {
+			constellations = append(constellations, g.String())
+		}
 	}
 	fmt.Fprintf(f, "Constellations enabled: %s\n", strings.Join(constellations, ", "))
-	for _, group := range groups {
-		fmt.Fprintf(f, "%s signals enabled: %s\n", group[0], strings.Join(group[1:], ", "))
+	for g := gpsprot.GNSS(1); g <= gpsprot.GNSSLast; g++ {
+		if sigNames, ok := m[g.String()]; ok {
+			fmt.Fprintf(f, "%s signals enabled: %s\n", g.String(), strings.Join(sigNames, ", "))
+		}
 	}
 }
 

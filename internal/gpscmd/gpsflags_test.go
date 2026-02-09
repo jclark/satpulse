@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/time/app/daemon"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/time/app/daemon"
 )
 
 type validFlagsTestCase struct {
@@ -21,27 +22,27 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{}, flagVars{showReceiver: true}},
 	{"ttyS0", []string{"--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Reset: gpsprot.ResetCold}}},
 	{"ttyS0", []string{"--nmea"}, flagVars{configOpts: gpsprot.ConfigOptions{
-		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC),
-		RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgNone),
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC),
+		RTCMMsg: opt.Make(gpsprot.RTCMMsgNone),
 		PVTMsg:  gpsprot.PVTMsgOff,
-		RawMsg:  gpsprot.MakeOption(gpsprot.RawMsgNone),
-		SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgNone),
+		RawMsg:  opt.Make(gpsprot.RawMsgNone),
+		SatsMsg: opt.Make(gpsprot.SatsMsgNone),
 	}}},
 	{"ttyS0", []string{"--nmea", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{
-		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC),
-		RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgNone),
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC),
+		RTCMMsg: opt.Make(gpsprot.RTCMMsgNone),
 		PVTMsg:  gpsprot.PVTMsgOff,
-		RawMsg:  gpsprot.MakeOption(gpsprot.RawMsgNone),
-		SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgNone),
+		RawMsg:  opt.Make(gpsprot.RawMsgNone),
+		SatsMsg: opt.Make(gpsprot.SatsMsgNone),
 		Save:    gpsprot.SaveMinimal,
 	}}},
-	{"ttyS0", []string{"--pps", "0.1"}, flagVars{pps: gpsprot.MakeOption(100 * time.Millisecond)}},
-	{"ttyS0", []string{"--pps", "0.1", "--save"}, flagVars{pps: gpsprot.MakeOption(100 * time.Millisecond), configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveMinimal}}},
-	{"ttyS0", []string{"--pps", "0"}, flagVars{pps: gpsprot.MakeOption(time.Duration(0))}},
-	{"ttyS0", []string{"-p", "0.1"}, flagVars{pps: gpsprot.MakeOption(100 * time.Millisecond)}},
-	{"ttyS0", []string{"--mobile"}, flagVars{mode: gpsprot.MakeOption(gpsprot.Mode{Static: false})}},
-	{"ttyS0", []string{"--survey"}, flagVars{mode: gpsprot.MakeOption(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: defaultSurveyTime * time.Second, AccLimit: gpsprot.Meters(defaultSurveyAcc)}}}},
-	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{mode: gpsprot.MakeOption(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: 300 * time.Second, AccLimit: gpsprot.Meters(5.5)}}}},
+	{"ttyS0", []string{"--pps", "0.1"}, flagVars{pps: opt.Make(100 * time.Millisecond)}},
+	{"ttyS0", []string{"--pps", "0.1", "--save"}, flagVars{pps: opt.Make(100 * time.Millisecond), configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveMinimal}}},
+	{"ttyS0", []string{"--pps", "0"}, flagVars{pps: opt.Make(time.Duration(0))}},
+	{"ttyS0", []string{"-p", "0.1"}, flagVars{pps: opt.Make(100 * time.Millisecond)}},
+	{"ttyS0", []string{"--mobile"}, flagVars{mode: opt.Make(gpsprot.Mode{Static: false})}},
+	{"ttyS0", []string{"--survey"}, flagVars{mode: opt.Make(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: defaultSurveyTime * time.Second, AccLimit: gpsprot.Meters(defaultSurveyAcc)}}}},
+	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{mode: opt.Make(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: 300 * time.Second, AccLimit: gpsprot.Meters(5.5)}}}},
 	{"ttyS0", []string{"--speed", "9600"}, flagVars{configOpts: gpsprot.ConfigOptions{BaudRate: 9600}}},
 	{"ttyS0", []string{"--device-speed", "9600"}, flagVars{localSpeed: 9600, showReceiver: true}},
 	{"ttyS0", []string{"--save-all", "--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveAll, Reset: gpsprot.ResetCold}}},
@@ -91,20 +92,20 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--reset", "--save", "--nmea"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		Reset:   gpsprot.ResetCold,
 		Save:    gpsprot.SaveMinimal,
-		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC),
-		RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgNone),
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC),
+		RTCMMsg: opt.Make(gpsprot.RTCMMsgNone),
 		PVTMsg:  gpsprot.PVTMsgOff,
-		RawMsg:  gpsprot.MakeOption(gpsprot.RawMsgNone),
-		SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgNone),
+		RawMsg:  opt.Make(gpsprot.RawMsgNone),
+		SatsMsg: opt.Make(gpsprot.SatsMsgNone),
 	}}},
 	{"ttyS0", []string{"--reset", "--save-all"}, flagVars{configOpts: gpsprot.ConfigOptions{Reset: gpsprot.ResetCold, Save: gpsprot.SaveAll}}},
 	// Test --raw-out flag
-	{"ttyS0", []string{"--raw-out", "obs"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgObs)}}},
-	{"ttyS0", []string{"--raw-out", "nav"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgNavData)}}},
-	{"ttyS0", []string{"--raw-out", "obs,nav"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgObs | gpsprot.RawMsgNavData)}}},
-	{"ttyS0", []string{"--raw-out", "nav,obs"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgObs | gpsprot.RawMsgNavData)}}},
-	{"ttyS0", []string{"--raw-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgFlags(0))}}},
-	{"ttyS0", []string{"--raw-out", "obs", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgObs), Save: gpsprot.SaveMinimal}}},
+	{"ttyS0", []string{"--raw-out", "obs"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: opt.Make(gpsprot.RawMsgObs)}}},
+	{"ttyS0", []string{"--raw-out", "nav"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: opt.Make(gpsprot.RawMsgNavData)}}},
+	{"ttyS0", []string{"--raw-out", "obs,nav"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: opt.Make(gpsprot.RawMsgObs | gpsprot.RawMsgNavData)}}},
+	{"ttyS0", []string{"--raw-out", "nav,obs"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: opt.Make(gpsprot.RawMsgObs | gpsprot.RawMsgNavData)}}},
+	{"ttyS0", []string{"--raw-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: opt.Make(gpsprot.RawMsgFlags(0))}}},
+	{"ttyS0", []string{"--raw-out", "obs", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: opt.Make(gpsprot.RawMsgObs), Save: gpsprot.SaveMinimal}}},
 	// Test --pvt-out flag
 	{"ttyS0", []string{"--pvt-out", "daemon"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: daemon.PVTMsgFlags | gpsprot.PVTMsgOff}}},
 	{"ttyS0", []string{"--pvt-out", "pos"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgPos}}},
@@ -119,88 +120,88 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--pvt-out", "off"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgOff}}},
 	{"ttyS0", []string{"--pvt-out", "pos", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgPos, Save: gpsprot.SaveMinimal}}},
 	// Test combining --raw-out and --pvt-out
-	{"ttyS0", []string{"--raw-out", "obs", "--pvt-out", "pos"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: gpsprot.MakeOption(gpsprot.RawMsgObs), PVTMsg: gpsprot.PVTMsgPos}}},
+	{"ttyS0", []string{"--raw-out", "obs", "--pvt-out", "pos"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: opt.Make(gpsprot.RawMsgObs), PVTMsg: gpsprot.PVTMsgPos}}},
 	// Test --rtcm-out flag
-	{"ttyS0", []string{"--rtcm-out", "MSM4"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4)}}},
-	{"ttyS0", []string{"--rtcm-out", "MSM7"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM7)}}},
-	{"ttyS0", []string{"--rtcm-out", "ARP"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgARP)}}},
-	{"ttyS0", []string{"--rtcm-out", "MSM4,ARP"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)}}},
-	{"ttyS0", []string{"--rtcm-out", "MSM7,ARP"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP)}}},
-	{"ttyS0", []string{"--rtcm-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgFlags(0))}}},
-	{"ttyS0", []string{"--rtcm-out", "MSM4", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4), Save: gpsprot.SaveMinimal}}},
+	{"ttyS0", []string{"--rtcm-out", "MSM4"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM4)}}},
+	{"ttyS0", []string{"--rtcm-out", "MSM7"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM7)}}},
+	{"ttyS0", []string{"--rtcm-out", "ARP"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgARP)}}},
+	{"ttyS0", []string{"--rtcm-out", "MSM4,ARP"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)}}},
+	{"ttyS0", []string{"--rtcm-out", "MSM7,ARP"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP)}}},
+	{"ttyS0", []string{"--rtcm-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgFlags(0))}}},
+	{"ttyS0", []string{"--rtcm-out", "MSM4", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM4), Save: gpsprot.SaveMinimal}}},
 	// Test case-insensitive RTCM flags
-	{"ttyS0", []string{"--rtcm-out", "msm4"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4)}}},
-	{"ttyS0", []string{"--rtcm-out", "Msm4,Arp"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)}}},
+	{"ttyS0", []string{"--rtcm-out", "msm4"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM4)}}},
+	{"ttyS0", []string{"--rtcm-out", "Msm4,Arp"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)}}},
 	// Test auto flag functionality
-	{"ttyS0", []string{"--rtcm-out", "auto"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax)}}},
-	{"ttyS0", []string{"--rtcm-out", "auto,msm7"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax)}}},
-	{"ttyS0", []string{"--rtcm-out", "msm7,auto"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax)}}},
+	{"ttyS0", []string{"--rtcm-out", "auto"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax)}}},
+	{"ttyS0", []string{"--rtcm-out", "auto,msm7"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax)}}},
+	{"ttyS0", []string{"--rtcm-out", "msm7,auto"}, flagVars{configOpts: gpsprot.ConfigOptions{RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax)}}},
 	// Test combining multiple output flags
 	{"ttyS0", []string{"--raw-out", "obs", "--pvt-out", "pos", "--rtcm-out", "MSM4"}, flagVars{configOpts: gpsprot.ConfigOptions{
-		RawMsg:  gpsprot.MakeOption(gpsprot.RawMsgObs),
+		RawMsg:  opt.Make(gpsprot.RawMsgObs),
 		PVTMsg:  gpsprot.PVTMsgPos,
-		RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4),
+		RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM4),
 	}}},
 	// Test --nmea-out flag
-	{"ttyS0", []string{"--nmea-out", "RMC"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC)}}},
-	{"ttyS0", []string{"--nmea-out", "GGA"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgGGA)}}},
-	{"ttyS0", []string{"--nmea-out", "GSA"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgGSA)}}},
-	{"ttyS0", []string{"--nmea-out", "GSV"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgGSV)}}},
-	{"ttyS0", []string{"--nmea-out", "ZDA"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgZDA)}}},
-	{"ttyS0", []string{"--nmea-out", "RMC,GGA"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)}}},
-	{"ttyS0", []string{"--nmea-out", "RMC,GSA,GSV"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV)}}},
-	{"ttyS0", []string{"--nmea-out", "RMC,GGA,GSA,GSV"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV)}}},
-	{"ttyS0", []string{"--nmea-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgFlags(0))}}},
-	{"ttyS0", []string{"--nmea-out", "RMC", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC), Save: gpsprot.SaveMinimal}}},
+	{"ttyS0", []string{"--nmea-out", "RMC"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC)}}},
+	{"ttyS0", []string{"--nmea-out", "GGA"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgGGA)}}},
+	{"ttyS0", []string{"--nmea-out", "GSA"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgGSA)}}},
+	{"ttyS0", []string{"--nmea-out", "GSV"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgGSV)}}},
+	{"ttyS0", []string{"--nmea-out", "ZDA"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgZDA)}}},
+	{"ttyS0", []string{"--nmea-out", "RMC,GGA"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)}}},
+	{"ttyS0", []string{"--nmea-out", "RMC,GSA,GSV"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV)}}},
+	{"ttyS0", []string{"--nmea-out", "RMC,GGA,GSA,GSV"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV)}}},
+	{"ttyS0", []string{"--nmea-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgFlags(0))}}},
+	{"ttyS0", []string{"--nmea-out", "RMC", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC), Save: gpsprot.SaveMinimal}}},
 	// Test case-insensitive NMEA flags
-	{"ttyS0", []string{"--nmea-out", "rmc"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC)}}},
-	{"ttyS0", []string{"--nmea-out", "Rmc,Gga"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)}}},
+	{"ttyS0", []string{"--nmea-out", "rmc"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC)}}},
+	{"ttyS0", []string{"--nmea-out", "Rmc,Gga"}, flagVars{configOpts: gpsprot.ConfigOptions{NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)}}},
 	// Test --sats-out flag
-	{"ttyS0", []string{"--sats-out", "sat"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat)}}},
-	{"ttyS0", []string{"--sats-out", "sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSignal)}}},
-	{"ttyS0", []string{"--sats-out", "sat,sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal)}}},
-	{"ttyS0", []string{"--sats-out", "sig,sat"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal)}}},
-	{"ttyS0", []string{"--sats-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgFlags(0))}}},
-	{"ttyS0", []string{"--sats-out", "sat", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat), Save: gpsprot.SaveMinimal}}},
+	{"ttyS0", []string{"--sats-out", "sat"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: opt.Make(gpsprot.SatsMsgSat)}}},
+	{"ttyS0", []string{"--sats-out", "sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: opt.Make(gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "sat,sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: opt.Make(gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "sig,sat"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: opt.Make(gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: opt.Make(gpsprot.SatsMsgFlags(0))}}},
+	{"ttyS0", []string{"--sats-out", "sat", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: opt.Make(gpsprot.SatsMsgSat), Save: gpsprot.SaveMinimal}}},
 	// Test case-insensitive sats flags
-	{"ttyS0", []string{"--sats-out", "SAT"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat)}}},
-	{"ttyS0", []string{"--sats-out", "Sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSignal)}}},
-	{"ttyS0", []string{"--sats-out", "Sat,Sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "SAT"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: opt.Make(gpsprot.SatsMsgSat)}}},
+	{"ttyS0", []string{"--sats-out", "Sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: opt.Make(gpsprot.SatsMsgSignal)}}},
+	{"ttyS0", []string{"--sats-out", "Sat,Sig"}, flagVars{configOpts: gpsprot.ConfigOptions{SatsMsg: opt.Make(gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal)}}},
 	// Test combining all output flags
 	{"ttyS0", []string{"--raw-out", "obs", "--pvt-out", "pos", "--rtcm-out", "MSM4", "--nmea-out", "RMC", "--sats-out", "sat"}, flagVars{configOpts: gpsprot.ConfigOptions{
-		RawMsg:  gpsprot.MakeOption(gpsprot.RawMsgObs),
+		RawMsg:  opt.Make(gpsprot.RawMsgObs),
 		PVTMsg:  gpsprot.PVTMsgPos,
-		RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4),
-		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgRMC),
-		SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgSat),
+		RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM4),
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC),
+		SatsMsg: opt.Make(gpsprot.SatsMsgSat),
 	}}},
 	// Test --binary flag
 	{"ttyS0", []string{"--binary"}, flagVars{configOpts: gpsprot.ConfigOptions{
-		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgNone),
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),
 		PVTMsg:  gpsprot.PVTMsgPos | gpsprot.PVTMsgTime,
 	}}},
 	{"ttyS0", []string{"--binary", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{
-		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgNone),
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),
 		PVTMsg:  gpsprot.PVTMsgPos | gpsprot.PVTMsgTime,
 		Save:    gpsprot.SaveMinimal,
 	}}},
 	// Test --binary with explicit --pvt-out (should use the explicit value)
 	{"ttyS0", []string{"--binary", "--pvt-out", "tp,leap"}, flagVars{configOpts: gpsprot.ConfigOptions{
-		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgNone),
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),
 		PVTMsg:  gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgLeapSecond,
 	}}},
 	// Test --binary with --rtcm-out (should not set default pvt)
 	{"ttyS0", []string{"--binary", "--rtcm-out", "MSM4"}, flagVars{configOpts: gpsprot.ConfigOptions{
-		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgNone),
-		RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgMSM4),
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),
+		RTCMMsg: opt.Make(gpsprot.RTCMMsgMSM4),
 	}}},
 	// Test --nmea with explicit --nmea-out
 	{"ttyS0", []string{"--nmea", "--nmea-out", "GGA,GSA"}, flagVars{configOpts: gpsprot.ConfigOptions{
-		NMEAMsg: gpsprot.MakeOption(gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA),
-		RTCMMsg: gpsprot.MakeOption(gpsprot.RTCMMsgNone),
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA),
+		RTCMMsg: opt.Make(gpsprot.RTCMMsgNone),
 		PVTMsg:  gpsprot.PVTMsgOff,
-		RawMsg:  gpsprot.MakeOption(gpsprot.RawMsgNone),
-		SatsMsg: gpsprot.MakeOption(gpsprot.SatsMsgNone),
+		RawMsg:  opt.Make(gpsprot.RawMsgNone),
+		SatsMsg: opt.Make(gpsprot.SatsMsgNone),
 	}}},
 	// Test --time-gnss flag
 	{"ttyS0", []string{"--time-gnss", "GPS"}, flagVars{timeGNSS: gpsprot.GPS}},
@@ -222,7 +223,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	}},
 	// Test --fixed-pos-ecef flag with Big Ben coordinates
 	{"ttyS0", []string{"--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, flagVars{
-		mode: gpsprot.MakeOption(gpsprot.Mode{
+		mode: opt.Make(gpsprot.Mode{
 			Static:       true,
 			PosType:      gpsprot.PosTypeECEF,
 			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(3978578.17), gpsprot.Meters(-8652.15), gpsprot.Meters(4968410.94)},
@@ -231,7 +232,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	}},
 	// Test --fixed-pos-ecef with custom accuracy (Eiffel Tower)
 	{"ttyS0", []string{"--fixed-pos-ecef", "4200935.82,168323.10,4780213.04", "--fixed-pos-acc", "5.0"}, flagVars{
-		mode: gpsprot.MakeOption(gpsprot.Mode{
+		mode: opt.Make(gpsprot.Mode{
 			Static:       true,
 			PosType:      gpsprot.PosTypeECEF,
 			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(4200935.82), gpsprot.Meters(168323.10), gpsprot.Meters(4780213.04)},
@@ -240,7 +241,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	}},
 	// Test --fixed-pos-ecef with save (Statue of Liberty)
 	{"ttyS0", []string{"--fixed-pos-ecef", "1331340.65,-4656583.35,4136313.40", "--save"}, flagVars{
-		mode: gpsprot.MakeOption(gpsprot.Mode{
+		mode: opt.Make(gpsprot.Mode{
 			Static:       true,
 			PosType:      gpsprot.PosTypeECEF,
 			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(1331340.65), gpsprot.Meters(-4656583.35), gpsprot.Meters(4136313.40)},
@@ -250,7 +251,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	}},
 	// Test --fixed-pos-ecef with spaces around commas (Mount Everest)
 	{"ttyS0", []string{"--fixed-pos-ecef", "302769.89, 5636025.47, 2979493.09"}, flagVars{
-		mode: gpsprot.MakeOption(gpsprot.Mode{
+		mode: opt.Make(gpsprot.Mode{
 			Static:       true,
 			PosType:      gpsprot.PosTypeECEF,
 			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(302769.89), gpsprot.Meters(5636025.47), gpsprot.Meters(2979493.09)},
@@ -259,7 +260,7 @@ var validFlagsTestCases = []validFlagsTestCase{
 	}},
 	// Test --fixed-pos-ecef with minimum accuracy
 	{"ttyS0", []string{"--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.001"}, flagVars{
-		mode: gpsprot.MakeOption(gpsprot.Mode{
+		mode: opt.Make(gpsprot.Mode{
 			Static:       true,
 			PosType:      gpsprot.PosTypeECEF,
 			FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(3978578.17), gpsprot.Meters(-8652.15), gpsprot.Meters(4968410.94)},
@@ -267,22 +268,22 @@ var validFlagsTestCases = []validFlagsTestCase{
 		}),
 	}},
 	// Test --ant-cable-delay flag
-	{"ttyS0", []string{"--ant-cable-delay", "100"}, flagVars{antCableDelay: gpsprot.MakeOption(100 * time.Nanosecond)}},
-	{"ttyS0", []string{"--ant-cable-delay", "0"}, flagVars{antCableDelay: gpsprot.MakeOption(time.Duration(0))}},
-	{"ttyS0", []string{"--ant-cable-delay", "1000000"}, flagVars{antCableDelay: gpsprot.MakeOption(1000000 * time.Nanosecond)}},
-	{"ttyS0", []string{"--ant-cable-delay", "-50"}, flagVars{antCableDelay: gpsprot.MakeOption(-50 * time.Nanosecond)}},
+	{"ttyS0", []string{"--ant-cable-delay", "100"}, flagVars{antCableDelay: opt.Make(100 * time.Nanosecond)}},
+	{"ttyS0", []string{"--ant-cable-delay", "0"}, flagVars{antCableDelay: opt.Make(time.Duration(0))}},
+	{"ttyS0", []string{"--ant-cable-delay", "1000000"}, flagVars{antCableDelay: opt.Make(1000000 * time.Nanosecond)}},
+	{"ttyS0", []string{"--ant-cable-delay", "-50"}, flagVars{antCableDelay: opt.Make(-50 * time.Nanosecond)}},
 	// Test --show-config flag
 	{"ttyS0", []string{"--show-config"}, flagVars{configGet: showProps}},
 	{"ttyS0", []string{"-c"}, flagVars{configGet: showProps}},
 	{"", []string{"--socket", "/tmp/socket", "--show-config"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
 	{"", []string{"--socket", "/tmp/socket", "-c"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
 	// Test --msg-file with --tag flag
-	{"ttyS0", []string{"--msg-file", "test.toml"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, capture: gpsprot.MakeOption(2 * time.Second)}},
-	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, capture: gpsprot.MakeOption(2 * time.Second)}},
-	{"ttyS0", []string{"--msg-file", "test.toml", "-t", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, capture: gpsprot.MakeOption(2 * time.Second)}},
-	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup,ppp"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup", "ppp"}, capture: gpsprot.MakeOption(2 * time.Second)}},
-	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "foo,,bar"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"foo", "", "bar"}, capture: gpsprot.MakeOption(2 * time.Second)}},
-	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", ""}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, capture: gpsprot.MakeOption(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, capture: opt.Make(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, capture: opt.Make(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "-t", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, capture: opt.Make(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup,ppp"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup", "ppp"}, capture: opt.Make(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "foo,,bar"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"foo", "", "bar"}, capture: opt.Make(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", ""}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, capture: opt.Make(2 * time.Second)}},
 }
 
 func TestParseFlagsValid(t *testing.T) {

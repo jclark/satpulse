@@ -18,4 +18,4 @@
 {"t":"2025-07-10T01:39:04.316683Z","tag":"UBX","msg":"CFG-NAV5","bin":"b56206242400ffff000300000000102700000500fa00fa0064005e01003c0000000000000000000000007e3c","out":false}
 {"t":"2025-07-10T01:39:04.364737Z","tag":"UBX","msg":"ACK-ACK","bin":"b562050102000624325b","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["BDS","B1I"],["QZSS","L1"]],"antennaCableDelay":50,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"BDS":["B1I"],"QZSS":["L1"]},"antennaCableDelay":50,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}

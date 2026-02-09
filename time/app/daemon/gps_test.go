@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/time/internal/gpsevent"
 )
 
 func TestGPSConfig(t *testing.T) {
@@ -14,7 +15,7 @@ func TestGPSConfig(t *testing.T) {
 	var baseline gpsprot.ConfigTarget
 	baseline.Props.SetPPS(defaultPPSWidth)
 	baseline.Opts.PVTMsg = gpsevent.TimePulsePVTMsgFlags
-	baseline.Opts.NMEAMsg = gpsprot.MakeOption(gpsprot.NMEAMsgNone)
+	baseline.Opts.NMEAMsg = opt.Make(gpsprot.NMEAMsgNone)
 
 	tests := []struct {
 		name                 string

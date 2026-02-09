@@ -5,16 +5,14 @@ Define the user-facing design and behavior of the Configuration panel.
 
 This document is the main specification for how configuration works in the UI.
 
-## Design
-
-### User mental model
+## User mental model
 The panel combines two different kinds of controls:
 - **Properties**: receiver state values that can be read back and shown as current values.
 - **Options/operations**: one-shot instructions for the configuration run (not persistent current state).
 
 The UI must make this distinction obvious while still allowing a single Apply action.
 
-### Top-level layout
+## Top-level layout
 Use a single Configuration panel with three collapsible top-level sections:
 1. Properties
 2. Messages
@@ -27,7 +25,7 @@ Panel-level behavior:
 - section collapse/expand state is remembered.
 - panel stays usable on smaller screens (single-column collapse behavior).
 
-### Load and refresh behavior
+## Load and refresh behavior
 When the panel opens (or `Refresh` is clicked):
 - fetch current property values and populate property controls.
 - do not infer "current" value for one-shot options.
@@ -37,13 +35,13 @@ If readback is partial:
 - populate available properties,
 - mark unavailable fields as `Not reported by receiver`.
 
-### Section 1: Properties
+## Properties
 Properties are stateful and readback-backed.
 
-#### Property groups
+### Property groups
 Use collapsible subgroups:
 
-##### Time pulse
+#### Time pulse
 - Time reference GNSS (`time-gnss`)
 - Pulse period
 - Pulse width
@@ -52,17 +50,17 @@ Use collapsible subgroups:
 - Polarity
 - Antenna cable delay
 
-##### Time mode
+#### Time mode
 Single mode selector with mode-specific fields:
 - Mobile
 - Survey-in
 - Fixed position
 
 Mode-specific controls:
-- Survey-in: survey time, survey accuracy.
+- Survey-in: survey time, survey accuracy, report survey progress (maps to `PVTMsgSurvey`).
 - Fixed position: fixed position (ECEF), fixed position accuracy.
 
-##### GNSS / bands / signals
+#### GNSS / bands / signals
 Two editing modes in the same subgroup:
 - **Simple**: enable/disable per GNSS constellation.
 - **Advanced**: explicit signal-level selection (bands/signals model aligned with `gpsprot/signal.go` and satpulsetool GPS model).
@@ -72,104 +70,130 @@ Behavior:
 - advanced mode is optional and discoverable.
 - switching modes preserves user intent where possible and shows conflicts when exact mapping is not possible.
 
-#### Save behavior in Properties
-Include checkbox:
-- `Save changed settings on apply` (maps to minimal save behavior; optional per apply run).
+### Save behavior
+See Persistent Operations section below.
 
-### Section 2: Messages
-This section controls output-message configuration and is unified into one area with sub-subsections.
+## Messages
+This section controls output-message configuration. For detailed flag semantics, see [message-semantics.md](message-semantics.md).
 
-#### Messages section structure
+All five message groups are rendered directly inside the Messages section. NMEA and RTCM use a three-way selector; PVT, Satellites, and Raw use a configure checkbox. Each is rendered as a labelled bordered group box.
 
-##### A) Standard protocol messages
-Controls are protocol-message centric.
+### Standard protocol messages
+NMEA and RTCM are rendered as a labelled bordered group box with a three-way selector at the top:
+- **Don't configure** (default) -- child controls greyed out but selections preserved
+- **Configure** -- child controls enabled and interactive
+- **Disable** -- child controls greyed out but selections preserved
 
-###### NMEA
-- master checkbox: `Control NMEA messages`
-- when off: all child NMEA message checkboxes are disabled/greyed out.
-- when on: child checkboxes enabled (for example RMC/GGA/GSA/GSV/ZDA/VTG/Other).
+The three-way selector is a set of radio buttons or a segmented control. Switching between states preserves child selections so the user can toggle back to Configure without losing their choices.
 
-###### RTCM
-- master checkbox: `Control RTCM messages`
-- when off: RTCM child controls disabled/greyed out.
-- when on: child checkboxes enabled (for example MSM4/MSM7/ARP/Other/lax option as applicable).
+#### NMEA
+- Three-way selector: Don't configure / Configure / Disable
+- Child checkboxes (enabled only in Configure state): RMC, GGA, GSA, GSV, ZDA, VTG
 
-##### B) Information-content outputs
-Controls are information-intent centric (not protocol packet names):
+#### RTCM
+- Three-way selector: Don't configure / Configure / Disable
+- Children (enabled only in Configure state):
+  - MSM type: three-way radio -- None / MSM4 / MSM7
+  - Fallback checkbox (enabled only when MSM4 or MSM7 is selected): "Use other MSM type if preferred isn't available" -- maps to `RTCMMsgLax`
+  - ARP checkbox (independent)
 
-###### PVT information
-Use noun-phrase labels for primary information:
-- Position
-- Velocity
-- Navigation solution time
-- Time-pulse time
-- Leap-second announcement
-- Survey progress
+### Proprietary messages
+PVT, Satellites, and Raw are information-intent centric (not protocol packet names). Each is rendered as a labelled bordered group box with a configure checkbox in the border. When unchecked, child controls are greyed out but selections preserved ("don't configure" -- leave as-is). When checked, child controls are enabled.
 
-PVT modifiers are shown as modifiers (not primary information items):
-- Output time as TAI
-- Output position in ECEF
-- Ensure a time message after time pulse
+#### PVT
+- Configure checkbox in border
+- Children organised into two domain subgroups, laid out as bordered group boxes within the PVT box.
 
-###### Satellite information
-- Satellite positions
-- Signal strengths per satellite signal
+**Time** subgroup (left column: information flags; right-aligned: modifier):
+- Navigation time -- maps to `PVTMsgTime`
+- Time-pulse time -- maps to `PVTMsgTimePulse`
+  - Ensure message after pulse -- maps to `PVTMsgTimePulseAfter` (indented under Time-pulse time; greyed unless Time-pulse time is checked)
+- Leap second -- maps to `PVTMsgLeapSecond`
+- Right-aligned modifier: Prefer TAI -- maps to `PVTMsgTAI` (greyed unless Navigation time or Time-pulse time is checked)
 
-###### Raw measurement information
-- Raw observations
-- Raw navigation data
+**Position & velocity** subgroup (left column: information flags; right-aligned: modifier):
+- Position -- maps to `PVTMsgPos`
+- Velocity -- maps to `PVTMsgVel`
+- Right-aligned modifier: Prefer ECEF -- maps to `PVTMsgECEF` (greyed unless Position or Velocity is checked)
 
-##### C) Presets
+After the subgroups, a standalone checkbox:
+- Turn off unselected PVT messages -- maps to `PVTMsgOff`
+
+Note: survey progress (`PVTMsgSurvey`) is not in this section. It belongs in Properties > Time mode > Survey-in, where it is contextually relevant. See the Time mode property group.
+
+#### Satellites
+- Configure checkbox in border
+- Children (enabled only when checked):
+  - Satellite positions -- maps to `SatsMsgSat`
+  - Signals -- maps to `SatsMsgSignal`
+
+#### Raw
+- Configure checkbox in border
+- Children (enabled only when checked):
+  - Observations (RINEX .obs) -- maps to `RawMsgObs`
+  - Navigation data (RINEX .nav) -- maps to `RawMsgNavData`
+
+### Presets
 Preset controls live inside Messages:
 - `NMEA preset`
 - `Binary preset`
 - `Daemon preset`
 
 Preset behavior:
-- clicking a preset updates relevant message checkboxes.
+- clicking a preset updates relevant message controls.
 - `Daemon preset` is a convenience button that ticks/unticks its mapped selection set.
 - users can still manually adjust individual selections after applying a preset.
 
-### Section 3: Persistent operations
-One-shot operations that affect persistent memory or restart behavior.
+## Persistent operations
+One-shot operations that affect persistent memory or restart behavior. These are selections queued for the next Apply, not immediate actions.
 
-Controls:
-- Save all current settings (`save-all`)
-- Reload configuration
-- Reset (cold)
-- Factory reset
+All controls in this section are radio-button groups. Each group defaults to its "do nothing" option. After Apply completes (success or failure), all groups reset to their defaults.
 
-Behavior:
-- these are explicit run directives, not readback state.
-- destructive operations require confirmation.
-- controls auto-clear after apply completes (whether success or failure), with result summary retained.
+### Save
+Label "Save" with radio buttons (maps to `SaveType`):
+- **Nothing** (default) -- `SaveNone`
+- **Changes** -- save the minimum needed to persist settings changed by this apply run (`SaveMinimal`)
+- **All** -- save the entire current running configuration to non-volatile memory (`SaveAll`)
 
-### Apply flow
+### Reset
+Label "Reset" with radio buttons (maps to `ResetType`):
+- **Nothing** (default) -- `ResetNone`
+- **Reload** -- reload configuration from non-volatile memory; unsaved changes are lost (`ResetReload`)
+- **Cold** -- reload configuration from non-volatile memory and discard position/time/satellite data (`ResetCold`)
+- **Factory** -- restore non-volatile memory to factory defaults, then cold reset (`ResetFactory`)
+
+### Behavior
+- These are explicit run directives, not readback state.
+- Destructive options (Cold reset, Factory reset) show an inline warning when selected.
+- Apply confirms destructive operations before executing.
+- All radio groups reset to their defaults after Apply completes.
+
+## Apply flow
 Single Apply executes all selected changes in one run.
 
-#### On Apply
+### On Apply
 - collect edited Properties,
 - collect Messages selections,
 - collect Persistent Operations,
 - submit one configuration request.
 
-#### During Apply (may take ~15s)
+### During Apply (may take ~15s)
 - disable duplicate Apply.
 - show progress state in action bar.
 - surface step/progress information in Logging panel and inline status summary.
 
-#### On result
+### On result
 - refresh/populate property controls from returned actual configured values.
 - show per-group outcomes for messages/operations (`applied`, `partial`, `failed`, with details).
 - keep changed selections visible long enough for user review.
 
-### Validation and interlocks
-- master message control toggles gate child controls (greyed when disabled).
+## Validation and interlocks
+- three-way and two-way controls gate child controls (greyed when disabled).
 - mode-specific property fields are enabled only when their mode is selected.
 - conflicting inputs are blocked before Apply with clear inline reasons.
 - numeric/range validation is shown inline at field level.
 
-### UX for large configuration surface
+## UX for large configuration surface
 - all major groups are collapsible.
 - default expanded groups: most frequently used (Properties summary + Messages summary).
 - advanced groups (signal-level tuning, destructive persistent operations) default collapsed.
@@ -187,10 +211,10 @@ The current `config-panel.tsx` handles properties and signal selection. Receiver
 Use a reusable `CollapsibleSection` component (heading + toggle + animated content). Tailwind for styling. No external accordion library needed.
 
 ### Form state
-Local component state tracks edits. On Apply, diff against last-known values to build the `ConfigUpdate` DTO. On result, update last-known values from the response.
+Local component state tracks edits. On Apply, diff against last-known values to build a `ConfigTarget`-shaped JSON object. On result, update last-known values from the response.
 
 ### Wails binding
-A single `Configure(map)` method handles all configuration operations. The frontend builds a plain object describing the desired `ConfigTarget` — probe, readback, property changes, save, reset — and the backend maps it to `gpsprot.ConfigTarget` and calls `gpscfg.Configure`. One method, one DTO shape.
+`ApplyConfig` accepts `gpsprot.ConfigTarget` directly. The frontend builds a JSON object matching `ConfigTarget`'s shape -- `Props` (ConfigProps JSON), `Get` (PropIDs as string array), `Opts` (ConfigOptions) -- and Wails deserializes it using the existing `UnmarshalJSON` methods. No DTO or translation layer.
 
-### Backend gaps
-The `gpsprot` package already defines all message flag types (`NMEAMsgFlags`, `RTCMMsgFlags`, `PVTMsgFlags`, `SatsMsgFlags`, `RawMsgFlags`) and `ConfigOptions` has fields for them. The only gap is the Wails adapter: the `ConfigUpdate` DTO in `app.go` needs message fields added and mapped to `ConfigOptions`. No `gps/` package changes needed.
+### Backend
+`ConfigTarget` is fully JSON round-trippable (`ConfigProps`, `PropIDs`, and `ConfigOptions` all have JSON support). The Wails adapter passes `ConfigTarget` straight through to `gpscfg.Configure`. No `gps/` package changes needed.

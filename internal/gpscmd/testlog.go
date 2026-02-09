@@ -29,7 +29,7 @@ type TestLogReceiverEntry struct {
 type TestLogConfigEntry struct {
 	Type              string           `json:"type"`
 	Error             string           `json:"error,omitempty"`
-	SignalsEnabled    [][]string       `json:"signalsEnabled,omitempty"`
+	SignalsEnabled    map[string][]string `json:"signalsEnabled,omitempty"`
 	TimeGNSS          string           `json:"timeGNSS,omitempty"`
 	AntennaCableDelay *int64           `json:"antennaCableDelay,omitempty"`
 	TimePulse         *TimePulseConfig `json:"timePulse,omitempty"`
@@ -92,7 +92,7 @@ func writeTestLogConfigProps(lf *logfile.LogFile, lg *slog.Logger, props *gpspro
 		entry.Error = err.Error()
 	} else if props != nil {
 		if sigs, ok := props.GetSignalsEnabled(); ok {
-			entry.SignalsEnabled = sigs.GNSSStringGroups()
+			entry.SignalsEnabled = sigs.GNSSSignalMap()
 		}
 		if timeGNSS, ok := props.GetTimeGNSS(); ok {
 			entry.TimeGNSS = timeGNSS.String()

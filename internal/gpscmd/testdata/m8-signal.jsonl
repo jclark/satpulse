@@ -12,7 +12,7 @@
 {"t":"2025-06-22T03:00:36.122444Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-22T03:00:36.170548Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00fc9ea500e907061603002437fc170000090b55080000060042b7c206c27c851a40e50100663301007dd20100db4901000000000000000000000000000000000000000000204e000080a812010f270000e04a230000000000000000009673","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"]}}
 {"type":"env","args":["-d","/dev/cu.usbserial-AB0MHJAU","-s","9600","--test-log","m8-signal.jsonl","--gnss","GAL"],"version":"satpulse git version 20250622.4e759f0.dirty, build date 2025-06-22 02:59:32+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-22T03:00:37.162677Z","bin":"6201","out":false}
 {"t":"2025-06-22T03:00:37.178711Z","bin":"075c0058a2a500e907061603002537fc","out":false}
@@ -41,7 +41,7 @@
 {"t":"2025-06-22T03:00:40.587493Z","tag":"UBX","msg":"MON-GNSS","bin":"b5620a28000032a0","out":true}
 {"t":"2025-06-22T03:00:40.619302Z","tag":"UBX","msg":"MON-GNSS","bin":"b5620a280800000705010200000049dc","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"]}}
 {"type":"env","args":["-d","/dev/cu.usbserial-AB0MHJAU","-s","9600","--test-log","m8-signal.jsonl","--gnss","GPS,GAL,GLO"],"version":"satpulse git version 20250622.4e759f0.dirty, build date 2025-06-22 02:59:32+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-22T03:00:42.171747Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00e0b5a500e907061603002a370904000036c3fcff0000060042b7c206c27c851a40e5010066330100ff1d0300443402000000000000000000000000000000000000000000204e000080a812010f270000e04a230000000000000000003868","out":false}
 {"t":"2025-06-22T03:00:42.267897Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -55,7 +55,7 @@
 {"t":"2025-06-22T03:00:42.731655Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-22T03:00:42.843688Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00eeb8a500e907061603002a37ee310000761d992e0000060042b7c206c27c851a40e50100663301002c7a0300727502000000000000000000000000000000000000000000204e000080a812010f270000e04a23000000000000000000ba55","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["GLO","L1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"GLO":["L1"]}}
 {"type":"env","args":["-d","/dev/cu.usbserial-AB0MHJAU","-s","9600","--test-log","m8-signal.jsonl","--gnss","BDS"],"version":"satpulse git version 20250622.4e759f0.dirty, build date 2025-06-22 02:59:32+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-22T03:00:44.172272Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00b0bda500e907061603002c37ee310000efbafcff0000060042b7c206c27c851a40e501006633010049840300997c02000000000000000000000000000000000000000000204e000080a812010f270000e04a230000000000000000002215","out":false}
 {"t":"2025-06-22T03:00:44.284199Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -69,7 +69,7 @@
 {"t":"2025-06-22T03:00:44.748305Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-22T03:00:44.812257Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00cfc0a500e907061603002c77d0390000007e9c2f0000060042b7c206c27c851a40e5010066330100d6fa03006dd002000000000000000000000000000000000000000000204e000080a812010f270000e04a230000000000000000003e5c","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/cu.usbserial-AB0MHJAU","-s","9600","--test-log","m8-signal.jsonl","--gnss","BDS","--band","L1,L2"],"version":"satpulse git version 20250622.4e759f0.dirty, build date 2025-06-22 02:59:32+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-22T03:00:46.172661Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0080c5a500e907061603002e77d039000044b5fcff0000060042b7c206c27c851a40e50100663301007003040082d602000000000000000000000000000000000000000000204e000080a812010f270000e04a23000000000000000000600f","out":false}
 {"t":"2025-06-22T03:00:46.268722Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -80,7 +80,7 @@
 {"t":"2025-06-22T03:00:46.588815Z","tag":"UBX","msg":"MON-GNSS","bin":"b5620a28000032a0","out":true}
 {"t":"2025-06-22T03:00:46.62061Z","tag":"UBX","msg":"MON-GNSS","bin":"b5620a28080000070504020000004ceb","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/cu.usbserial-AB0MHJAU","-s","9600","--test-log","m8-signal.jsonl","--gnss","GPS,GAL","--band","L1"],"version":"satpulse git version 20250622.4e759f0.dirty, build date 2025-06-22 02:59:32+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-22T03:00:48.157075Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0050cda500e907061603003077c60400002fb4fcff0000060042b7c206c27c851a40e50100663301007936040098fa02000000000000000000000000000000000000000000204e000080a812010f270000e04a230000000000000000005b02","out":false}
 {"t":"2025-06-22T03:00:48.26905Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -94,7 +94,7 @@
 {"t":"2025-06-22T03:00:48.73306Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-22T03:00:48.813078Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c005fd0a500e9070616030030375f490000ee4fa82e0000060042b7c206c27c851a40e5010066330100f8f80400208403000000000000000000000000000000000000000000204e000080a812010f270000e04a230000000000000000009404","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"]}}
 {"type":"env","args":["-d","/dev/cu.usbserial-AB0MHJAU","-s","9600","--test-log","m8-signal.jsonl","--gnss","BDS","--band","L1"],"version":"satpulse git version 20250622.4e759f0.dirty, build date 2025-06-22 02:59:32+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-22T03:00:50.173502Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0020d5a500e9070616030032375f49000028abfcff0000060042b7c206c27c851a40e50100663301000d000500228903000000000000000000000000000000000000000000204e000080a812010f270000e04a230000000000000000003c31","out":false}
 {"t":"2025-06-22T03:00:50.269723Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -108,7 +108,7 @@
 {"t":"2025-06-22T03:00:50.733489Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-22T03:00:50.797501Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0030d8a500e90706160300327731510000548cb72e0000060042b7c206c27c851a40e50100663301009c78050062de03000000000000000000000000000000000000000000204e000080a812010f270000e04a23000000000000000000fc59","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/cu.usbserial-AB0MHJAU","-s","9600","--test-log","m8-signal.jsonl","--gnss","GLO"],"version":"satpulse git version 20250622.4e759f0.dirty, build date 2025-06-22 02:59:32+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-22T03:00:52.157789Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00f0dca500e907061603003477325100004ea5fcff0000060042b7c206c27c851a40e50100663301000a7f0500ede203000000000000000000000000000000000000000000204e000080a812010f270000e04a23000000000000000000f058","out":false}
 {"t":"2025-06-22T03:00:52.269901Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -122,7 +122,7 @@
 {"t":"2025-06-22T03:00:52.733792Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-22T03:00:52.830031Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0000e0a500e9070616030034671f590000a287b72e0000060042b7c206c27c851a40e501006633010030f80500983804000000000000000000000000000000000000000000204e000080a812010f270000e04a23000000000000000000aa72","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["GLO","L1"]]}
+{"type":"config","signalsEnabled":{"GLO":["L1"]}}
 {"type":"env","args":["-d","/dev/cu.usbserial-AB0MHJAU","-s","9600","--test-log","m8-signal.jsonl","--gnss","GPS,BDS,GLO"],"version":"satpulse git version 20250622.4e759f0.dirty, build date 2025-06-22 02:59:32+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-22T03:00:54.174084Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00c0e4a500e9070616030036671f5900009da0fcff0000060042b7c206c27c851a40e501006633010015fe0500c33c04000000000000000000000000000000000000000000204e000080a812010f270000e04a23000000000000000000b466","out":false}
 {"t":"2025-06-22T03:00:54.270409Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -136,7 +136,7 @@
 {"t":"2025-06-22T03:00:54.734181Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-22T03:00:54.830203Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00d0e7a500e907061603003637d06000008382b72e0000060042b7c206c27c851a40e5010066330100c4770600ce9204000000000000000000000000000000000000000000204e000080a812010f270000e04a230000000000000000008b26","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["BDS","B1I"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"BDS":["B1I"]}}
 {"type":"env","args":["-d","/dev/cu.usbserial-AB0MHJAU","-s","9600","--test-log","m8-signal.jsonl","--gnss","GLO,GPS,BDS,GAL,QZSS"],"version":"satpulse git version 20250622.4e759f0.dirty, build date 2025-06-22 02:59:32+00:00","hostname":"cheshire.local"}
 {"t":"2025-06-22T03:00:56.174561Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c0090eca500e907061603003837d06000007d9bfcff0000060042b7c206c27c851a40e5010066330100357d0600a79604000000000000000000000000000000000000000000204e000080a812010f270000e04a23000000000000000000cf39","out":false}
 {"t":"2025-06-22T03:00:56.270763Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -150,4 +150,4 @@
 {"t":"2025-06-22T03:00:56.734617Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75","out":false}
 {"t":"2025-06-22T03:00:56.830656Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00a1efa500e907061603003837a16800009fbfc62e0000060042b7c206c27c851a40e501006633010068f706000fed04000000000000000000000000000000000000000000204e000080a812010f270000e04a2300000000000000000067c0","out":false}
 {"type":"receiver","firmware":"SPG 3.01","protocol":"18.0"}
-{"type":"config","signalsEnabled":[["GPS","L1"],["BDS","B1I"],["QZSS","L1"]]}
+{"type":"config","signalsEnabled":{"GPS":["L1"],"BDS":["B1I"],"QZSS":["L1"]}}
