@@ -7,10 +7,11 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/geopos"
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/geopos"
+	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/time/internal/gpsevent"
 )
 
 // PVTMsgFlags are the PVT message flags required by the daemon.
@@ -182,7 +183,7 @@ const minSpeedSatellitesOutput = 38400
 
 // satsMsg returns the satellites message option based on the configuration and speed.
 // If the error is errSatsOutNotEnabled, and the caller should log it as a warning and continue.
-func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.Option[gpsprot.SatsMsgFlags], err error) {
+func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (v opt.Val[gpsprot.SatsMsgFlags], err error) {
 	const full = gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal
 	if c.SatellitesOutput == nil {
 		if speed < minSpeedSatellitesOutput {
@@ -195,26 +196,26 @@ func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (opt gpsprot.O
 			return
 		}
 		if wantSatellitesOutput {
-			opt.Set(full)
+			v.Set(full)
 		} else {
-			opt.Set(gpsprot.SatsMsgNone)
+			v.Set(gpsprot.SatsMsgNone)
 		}
 	} else if *c.SatellitesOutput {
-		opt.Set(full)
+		v.Set(full)
 	} else {
-		opt.Set(gpsprot.SatsMsgNone)
+		v.Set(gpsprot.SatsMsgNone)
 	}
 	return
 }
 
-func (c *GPSConfig) rtcmMsg() (opt gpsprot.Option[gpsprot.RTCMMsgFlags]) {
+func (c *GPSConfig) rtcmMsg() (v opt.Val[gpsprot.RTCMMsgFlags]) {
 	if c.RTCMOutput == nil {
 		return
 	}
 	if *c.RTCMOutput {
-		opt.Set(gpsprot.RTCMMsgAuto)
+		v.Set(gpsprot.RTCMMsgAuto)
 	} else {
-		opt.Set(gpsprot.RTCMMsgNone)
+		v.Set(gpsprot.RTCMMsgNone)
 	}
 	return
 }

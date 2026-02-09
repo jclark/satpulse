@@ -1,8 +1,11 @@
 package gpsprot
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
 func TestConfigProps(t *testing.T) {
@@ -92,5 +95,43 @@ func TestPropIDOperations(t *testing.T) {
 
 	if props&PropIDTimePulseWidth != 0 {
 		t.Errorf("expected PropIDTimePulseWidth not to be in the bitfield")
+	}
+}
+
+func TestConfigOptionsJSONRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		opts ConfigOptions
+	}{
+		{"empty", ConfigOptions{}},
+		{"with NMEAMsg", ConfigOptions{NMEAMsg: opt.Make(NMEAMsgRMC)}},
+		{"with RTCMMsg", ConfigOptions{RTCMMsg: opt.Make(RTCMMsgMSM4 | RTCMMsgARP)}},
+		{"with SatsMsg", ConfigOptions{SatsMsg: opt.Make(SatsMsgSat | SatsMsgSignal)}},
+		{"with RawMsg", ConfigOptions{RawMsg: opt.Make(RawMsgObs)}},
+		{"with all msg flags", ConfigOptions{
+			NMEAMsg: opt.Make(NMEAMsgRMC | NMEAMsgGGA),
+			RTCMMsg: opt.Make(RTCMMsgMSM7),
+			SatsMsg: opt.Make(SatsMsgSat),
+			RawMsg:  opt.Make(RawMsgObs | RawMsgNavData),
+		}},
+		{"with zero values set", ConfigOptions{
+			NMEAMsg: opt.Make(NMEAMsgNone),
+			RTCMMsg: opt.Make(RTCMMsgNone),
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.opts)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			var got ConfigOptions
+			if err := json.Unmarshal(data, &got); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			if got != tc.opts {
+				t.Errorf("round-trip mismatch:\n  got:  %+v\n  want: %+v", got, tc.opts)
+			}
+		})
 	}
 }

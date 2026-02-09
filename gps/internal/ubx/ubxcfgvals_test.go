@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	ucv "github.com/jclark/satpulse/gps/lib/ubxcfgval"
 )
@@ -672,7 +673,7 @@ func TestDynModelBuild(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		mode           gpsprot.Option[gpsprot.Mode]
+		mode           opt.Val[gpsprot.Mode]
 		setStatic      bool
 		expectDynModel *ucv.EnumNavspgDynmodel // nil means no item expected
 	}{
@@ -683,8 +684,8 @@ func TestDynModelBuild(t *testing.T) {
 		},
 		{
 			name: "Mode.Static true - should set stationary",
-			mode: func() gpsprot.Option[gpsprot.Mode] {
-				var m gpsprot.Option[gpsprot.Mode]
+			mode: func() opt.Val[gpsprot.Mode] {
+				var m opt.Val[gpsprot.Mode]
 				m.Set(gpsprot.Mode{Static: true})
 				return m
 			}(),
@@ -692,8 +693,8 @@ func TestDynModelBuild(t *testing.T) {
 		},
 		{
 			name: "Mode.Static false - should set portable",
-			mode: func() gpsprot.Option[gpsprot.Mode] {
-				var m gpsprot.Option[gpsprot.Mode]
+			mode: func() opt.Val[gpsprot.Mode] {
+				var m opt.Val[gpsprot.Mode]
 				m.Set(gpsprot.Mode{Static: false})
 				return m
 			}(),
@@ -705,8 +706,8 @@ func TestDynModelBuild(t *testing.T) {
 		},
 		{
 			name: "SetStatic true overrides Mode.Static false",
-			mode: func() gpsprot.Option[gpsprot.Mode] {
-				var m gpsprot.Option[gpsprot.Mode]
+			mode: func() opt.Val[gpsprot.Mode] {
+				var m opt.Val[gpsprot.Mode]
 				m.Set(gpsprot.Mode{Static: false})
 				return m
 			}(),

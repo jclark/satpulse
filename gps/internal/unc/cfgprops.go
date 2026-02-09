@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
 const (
@@ -380,7 +381,7 @@ func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 
 type signalGroupProp struct {
 	master uint8                 // 0 if not set
-	slave  gpsprot.Option[uint8]
+	slave  opt.Val[uint8]
 }
 
 var signalGroupRegexp = regexp.MustCompile(`^CONFIG SIGNALGROUP ([1-9]\d?)(?: (\d\d?))?$`)
@@ -523,7 +524,7 @@ func (p *sbasProp) updateFromProps(props *gpsprot.ConfigProps) error {
 var maskRegexp = regexp.MustCompile(`^(?:MASK (-?\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Z0-9]*)|[A-Z]+ PRN \d+)))$`)
 
 type maskProp struct {
-	elevationMask gpsprot.Option[float64] // elevation angle in degrees
+	elevationMask opt.Val[float64] // elevation angle in degrees
 	signalMask    gpsprot.SignalSet
 }
 
