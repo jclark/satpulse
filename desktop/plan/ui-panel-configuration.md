@@ -70,9 +70,8 @@ Behavior:
 - advanced mode is optional and discoverable.
 - switching modes preserves user intent where possible and shows conflicts when exact mapping is not possible.
 
-### Save behavior in Properties
-Include checkbox:
-- `Save changed settings on apply` (maps to minimal save behavior; optional per apply run).
+### Save behavior
+See Persistent Operations section below.
 
 ## Messages
 This section controls output-message configuration. For detailed flag semantics, see [message-semantics.md](message-semantics.md).
@@ -146,18 +145,28 @@ Preset behavior:
 - users can still manually adjust individual selections after applying a preset.
 
 ## Persistent operations
-One-shot operations that affect persistent memory or restart behavior.
+One-shot operations that affect persistent memory or restart behavior. These are selections queued for the next Apply, not immediate actions.
 
-Controls:
-- Save all current settings (`save-all`)
-- Reload configuration
-- Reset (cold)
-- Factory reset
+All controls in this section are radio-button groups. Each group defaults to its "do nothing" option. After Apply completes (success or failure), all groups reset to their defaults.
 
-Behavior:
-- these are explicit run directives, not readback state.
-- destructive operations require confirmation.
-- controls auto-clear after apply completes (whether success or failure), with result summary retained.
+### Save
+Label "Save" with radio buttons (maps to `SaveType`):
+- **Nothing** (default) -- `SaveNone`
+- **Changes** -- save the minimum needed to persist settings changed by this apply run (`SaveMinimal`)
+- **All** -- save the entire current running configuration to non-volatile memory (`SaveAll`)
+
+### Reset
+Label "Reset" with radio buttons (maps to `ResetType`):
+- **Nothing** (default) -- `ResetNone`
+- **Reload** -- reload configuration from non-volatile memory; unsaved changes are lost (`ResetReload`)
+- **Cold** -- reload configuration from non-volatile memory and discard position/time/satellite data (`ResetCold`)
+- **Factory** -- restore non-volatile memory to factory defaults, then cold reset (`ResetFactory`)
+
+### Behavior
+- These are explicit run directives, not readback state.
+- Destructive options (Cold reset, Factory reset) show an inline warning when selected.
+- Apply confirms destructive operations before executing.
+- All radio groups reset to their defaults after Apply completes.
 
 ## Apply flow
 Single Apply executes all selected changes in one run.

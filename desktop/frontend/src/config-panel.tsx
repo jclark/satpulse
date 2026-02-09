@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
-import {ApplyConfig, SaveConfig, ResetConfig, ReadConfig} from '../wailsjs/go/main/App';
+import {ApplyConfig, ReadConfig} from '../wailsjs/go/main/App';
 import {SignalPicker} from './signal-picker';
 import {CollapsibleSection} from './collapsible-section';
 import {NMEAGroup, nmeaWireValue} from './nmea-group';
@@ -118,7 +118,6 @@ const inputClass = 'bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:bor
 const inputErrorClass = 'bg-gray-100 dark:bg-gray-900 border border-red-500 text-gray-900 dark:text-gray-100 px-2 py-1 rounded text-xs';
 const btnClass = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-blue-600 hover:border-blue-600 hover:text-white disabled:opacity-50 disabled:cursor-default disabled:hover:bg-gray-200 dark:disabled:hover:bg-gray-700 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:text-gray-900 dark:disabled:hover:text-gray-100';
 const btnPrimary = 'px-3.5 py-1 rounded text-xs border border-blue-600 bg-blue-600 text-white cursor-pointer hover:bg-blue-700 disabled:opacity-50 disabled:cursor-default';
-const btnDanger = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-red-400 cursor-pointer hover:bg-red-400 hover:border-red-400 hover:text-black disabled:opacity-50 disabled:cursor-default disabled:hover:bg-gray-200 dark:disabled:hover:bg-gray-700 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:text-red-400';
 
 export function ConfigPanel({connected, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, setOperation, addToast, onConfigReadback, speed}: Props) {
     const [mode, setMode] = useState('');
@@ -148,13 +147,14 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
     const [rawChange, setRawChange] = useState(false);
     const [rawFlags, setRawFlags] = useState(0);
 
+    // Persistent operations state
+    const [saveType, setSaveType] = useState(0); // 0=none, 1=minimal, 2=all
+    const [resetType, setResetType] = useState(0); // 0=none, 1=reload, 2=cold, 3=factory
+
     // Readback state
     const [reading, setReading] = useState(false);
     const [originalSignals, setOriginalSignals] = useState<Set<string>>(new Set());
     const hasReadback = useRef(false);
-
-    // Confirmation dialog
-    const [confirmAction, setConfirmAction] = useState<string | null>(null);
 
     // Applying state
     const [applying, setApplying] = useState(false);
@@ -245,12 +245,16 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
         if (satsWire !== undefined) opts.SatsMsg = satsWire;
         const rawWire = rawWireValue(rawChange, rawFlags);
         if (rawWire !== undefined) opts.RawMsg = rawWire;
+        if (saveType) opts.Save = saveType;
+        if (resetType) opts.Reset = resetType;
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
         setStatusText('Applying configuration...');
         setOperation({status: 'running', label: 'Applying configuration'});
         const r = await ApplyConfig(cfg as any);
         setApplying(false);
+        setSaveType(0);
+        setResetType(0);
         if (r.ok) {
             addToast('Configuration applied', 'success');
             setStatusText('Configuration applied');
@@ -263,37 +267,7 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
         }
     };
 
-    const handleSave = async () => {
-        setStatusText('Saving to NVM...');
-        setOperation({status: 'running', label: 'Saving to NVM'});
-        const r = await SaveConfig();
-        if (r.ok) {
-            addToast('Configuration saved to NVM', 'success');
-            setStatusText('Saved to NVM');
-            setOperation({status: 'success', label: 'Saving to NVM'});
-        } else {
-            addToast(r.error || 'Save failed', 'error');
-            setStatusText('Save failed');
-            setOperation({status: 'failed', label: 'Saving to NVM', error: r.error || 'Save failed'});
-        }
-    };
 
-    const handleReset = async (type: string) => {
-        setConfirmAction(null);
-        const label = 'Resetting receiver (' + type + ')';
-        setStatusText(label + '...');
-        setOperation({status: 'running', label});
-        const r = await ResetConfig(type);
-        if (r.ok) {
-            addToast('Receiver reset: ' + type, 'success');
-            setStatusText('Reset complete: ' + type);
-            setOperation({status: 'success', label});
-        } else {
-            addToast(r.error || 'Reset failed', 'error');
-            setStatusText('Reset failed');
-            setOperation({status: 'failed', label, error: r.error || 'Reset failed'});
-        }
-    };
 
     const toggleConstellation = (gnssName: string, sigs: string[], enable: boolean) => {
         setSelectedSignals(prev => {
@@ -484,13 +458,42 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                     </div>
                 </CollapsibleSection>
 
-                {/* Persistence */}
-                <CollapsibleSection title="Persistence" defaultOpen={false}>
-                    <div class="flex gap-2 flex-wrap">
-                        <button class={btnClass} disabled={!connected} onClick={handleSave}>Save to NVM</button>
-                        <button class={btnClass} disabled={!connected} onClick={() => handleReset('reload')}>Reload</button>
-                        <button class={btnDanger} disabled={!connected} onClick={() => handleReset('cold')}>Cold restart</button>
-                        <button class={btnDanger} disabled={!connected} onClick={() => setConfirmAction('factory')}>Factory reset</button>
+                {/* Persistent operations */}
+                <CollapsibleSection title="Persistent operations" defaultOpen={true}>
+                    <div class="flex flex-col gap-3">
+                        <div>
+                            <div class="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Save</div>
+                            <div class="flex flex-wrap gap-x-4 gap-y-1 ml-0.5">
+                                {([
+                                    [0, 'Nothing'],
+                                    [1, 'Changes'],
+                                    [2, 'All'],
+                                ] as [number, string][]).map(([v, label]) => (
+                                    <label key={v} class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
+                                        <input type="radio" name="saveType" class="accent-blue-600" value={v} checked={saveType === v}
+                                            disabled={!connected} onChange={() => setSaveType(v)} />
+                                        {label}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Reset</div>
+                            <div class="flex flex-wrap gap-x-4 gap-y-1 ml-0.5">
+                                {([
+                                    [0, 'None'],
+                                    [1, 'Reload'],
+                                    [2, 'Cold start'],
+                                    [3, 'Factory reset'],
+                                ] as [number, string][]).map(([v, label]) => (
+                                    <label key={v} class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
+                                        <input type="radio" name="resetType" class="accent-blue-600" value={v} checked={resetType === v}
+                                            disabled={!connected} onChange={() => setResetType(v)} />
+                                        {label}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 </CollapsibleSection>
 
@@ -520,21 +523,6 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                 />
             )}
 
-            {/* Confirmation dialog */}
-            {confirmAction && (
-                <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setConfirmAction(null)}>
-                    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 max-w-sm" onClick={e => e.stopPropagation()}>
-                        <h3 class="text-sm font-semibold mb-3">Confirm factory reset</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                            This will erase all saved configuration and restore factory defaults. This cannot be undone.
-                        </p>
-                        <div class="flex justify-end gap-2">
-                            <button class={btnClass} onClick={() => setConfirmAction(null)}>Cancel</button>
-                            <button class={btnDanger} onClick={() => handleReset('factory')}>Factory reset</button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

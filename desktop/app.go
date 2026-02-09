@@ -291,41 +291,7 @@ func (a *App) ApplyConfig(cfg gpsprot.ConfigTarget) Result {
 	return a.runConfig(&cfg)
 }
 
-// SaveConfig saves the current configuration to non-volatile memory.
-func (a *App) SaveConfig() Result {
-	a.mu.Lock()
-	conn := a.conn
-	a.mu.Unlock()
-	if conn == nil {
-		return Result{Error: "not connected"}
-	}
-	target := gpsprot.NewConfigTarget()
-	target.Opts.Save = gpsprot.SaveAll
-	return a.runConfig(target)
-}
 
-// ResetConfig resets the receiver configuration.
-// resetType is "reload", "cold", or "factory".
-func (a *App) ResetConfig(resetType string) Result {
-	a.mu.Lock()
-	conn := a.conn
-	a.mu.Unlock()
-	if conn == nil {
-		return Result{Error: "not connected"}
-	}
-	target := gpsprot.NewConfigTarget()
-	switch resetType {
-	case "reload":
-		target.Opts.Reset = gpsprot.ResetReload
-	case "cold":
-		target.Opts.Reset = gpsprot.ResetCold
-	case "factory":
-		target.Opts.Reset = gpsprot.ResetFactory
-	default:
-		return Result{Error: fmt.Sprintf("unknown reset type: %q", resetType)}
-	}
-	return a.runConfig(target)
-}
 
 // sendConfigRequest sends a config request to packetWorker and waits for the result.
 func (a *App) sendConfigRequest(target *gpsprot.ConfigTarget) configResult {
