@@ -6,6 +6,8 @@ import {CollapsibleSection} from './collapsible-section';
 import {NMEAGroup, nmeaWireValue} from './nmea-group';
 import {RTCMGroup, rtcmWireValue} from './rtcm-group';
 import {PVTGroup, pvtWireValue} from './pvt-group';
+import {SatsGroup, satsWireValue} from './sats-group';
+import {RawGroup, rawWireValue} from './raw-group';
 import type {OperationState} from './app';
 
 interface Props {
@@ -135,6 +137,10 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
     const [rtcmARP, setRtcmARP] = useState(false);
     const [pvtChange, setPvtChange] = useState(false);
     const [pvtFlags, setPvtFlags] = useState(0);
+    const [satsChange, setSatsChange] = useState(false);
+    const [satsFlags, setSatsFlags] = useState(0);
+    const [rawChange, setRawChange] = useState(false);
+    const [rawFlags, setRawFlags] = useState(0);
 
     // Readback state
     const [reading, setReading] = useState(false);
@@ -229,6 +235,10 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
         if (rtcmWire !== undefined) opts.RTCMMsg = rtcmWire;
         const pvtWire = pvtWireValue(pvtChange, pvtFlags);
         if (pvtWire !== undefined) opts.PVTMsg = pvtWire;
+        const satsWire = satsWireValue(satsChange, satsFlags);
+        if (satsWire !== undefined) opts.SatsMsg = satsWire;
+        const rawWire = rawWireValue(rawChange, rawFlags);
+        if (rawWire !== undefined) opts.RawMsg = rawWire;
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
         setStatusText('Applying configuration...');
@@ -425,6 +435,20 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                             flags={pvtFlags}
                             onChangeChange={setPvtChange}
                             onFlagsChange={setPvtFlags}
+                            disabled={!connected}
+                        />
+                        <SatsGroup
+                            change={satsChange}
+                            flags={satsFlags}
+                            onChangeChange={setSatsChange}
+                            onFlagsChange={setSatsFlags}
+                            disabled={!connected}
+                        />
+                        <RawGroup
+                            change={rawChange}
+                            flags={rawFlags}
+                            onChangeChange={setRawChange}
+                            onFlagsChange={setRawFlags}
                             disabled={!connected}
                         />
                     </div>
