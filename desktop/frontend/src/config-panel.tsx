@@ -5,7 +5,7 @@ import {SignalPicker} from './signal-picker';
 import {CollapsibleSection} from './collapsible-section';
 import {NMEAGroup, nmeaWireValue} from './nmea-group';
 import {RTCMGroup, rtcmWireValue} from './rtcm-group';
-import type {ThreeWayState} from './three-way-selector';
+import {PVTGroup, pvtWireValue} from './pvt-group';
 import type {OperationState} from './app';
 
 interface Props {
@@ -125,12 +125,16 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
     const [showPicker, setShowPicker] = useState(false);
 
     // Message state
-    const [nmeaState, setNmeaState] = useState<ThreeWayState>('skip');
+    const [nmeaChange, setNmeaChange] = useState(false);
+    const [nmeaDisable, setNmeaDisable] = useState(false);
     const [nmeaFlags, setNmeaFlags] = useState(0);
-    const [rtcmState, setRtcmState] = useState<ThreeWayState>('skip');
+    const [rtcmChange, setRtcmChange] = useState(false);
+    const [rtcmDisable, setRtcmDisable] = useState(false);
     const [rtcmMSM, setRtcmMSM] = useState<'none' | 'msm4' | 'msm7'>('none');
     const [rtcmFallback, setRtcmFallback] = useState(true);
     const [rtcmARP, setRtcmARP] = useState(false);
+    const [pvtChange, setPvtChange] = useState(false);
+    const [pvtFlags, setPvtFlags] = useState(0);
 
     // Readback state
     const [reading, setReading] = useState(false);
@@ -219,10 +223,12 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
         if (cableDelay !== '') props.antennaCableDelay = (parseFloat(cableDelay) || 0) * 1e-9;
         if (minElev !== '') props.minElevation = parseFloat(minElev) || 0;
         const opts: Record<string, any> = {};
-        const nmeaWire = nmeaWireValue(nmeaState, nmeaFlags);
+        const nmeaWire = nmeaWireValue(nmeaChange, nmeaDisable, nmeaFlags);
         if (nmeaWire !== undefined) opts.NMEAMsg = nmeaWire;
-        const rtcmWire = rtcmWireValue(rtcmState, rtcmMSM, rtcmFallback, rtcmARP);
+        const rtcmWire = rtcmWireValue(rtcmChange, rtcmDisable, rtcmMSM, rtcmFallback, rtcmARP);
         if (rtcmWire !== undefined) opts.RTCMMsg = rtcmWire;
+        const pvtWire = pvtWireValue(pvtChange, pvtFlags);
+        if (pvtWire !== undefined) opts.PVTMsg = pvtWire;
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
         setStatusText('Applying configuration...');
@@ -393,21 +399,32 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                 <CollapsibleSection title="Messages" defaultOpen={true}>
                     <div class="flex flex-col gap-3">
                         <NMEAGroup
-                            state={nmeaState}
+                            change={nmeaChange}
+                            disableProtocol={nmeaDisable}
                             flags={nmeaFlags}
-                            onStateChange={setNmeaState}
+                            onChangeChange={setNmeaChange}
+                            onDisableChange={setNmeaDisable}
                             onFlagsChange={setNmeaFlags}
                             disabled={!connected}
                         />
                         <RTCMGroup
-                            state={rtcmState}
+                            change={rtcmChange}
+                            disableProtocol={rtcmDisable}
                             msm={rtcmMSM}
                             fallback={rtcmFallback}
                             arp={rtcmARP}
-                            onStateChange={setRtcmState}
+                            onChangeChange={setRtcmChange}
+                            onDisableChange={setRtcmDisable}
                             onMSMChange={setRtcmMSM}
                             onFallbackChange={setRtcmFallback}
                             onARPChange={setRtcmARP}
+                            disabled={!connected}
+                        />
+                        <PVTGroup
+                            change={pvtChange}
+                            flags={pvtFlags}
+                            onChangeChange={setPvtChange}
+                            onFlagsChange={setPvtFlags}
                             disabled={!connected}
                         />
                     </div>
