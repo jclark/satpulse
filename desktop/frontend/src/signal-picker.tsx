@@ -1,36 +1,38 @@
 import {h} from 'preact';
 import {useState} from 'preact/hooks';
-import {main} from '../wailsjs/go/models';
 
 interface Props {
-    signalCatalog: main.GNSSInfo[];
-    selectedSignals: Set<number>;
-    onConfirm: (signals: Set<number>) => void;
+    signalCatalog: Record<string, string[]>;
+    selectedSignals: Set<string>;
+    onConfirm: (signals: Set<string>) => void;
     onCancel: () => void;
 }
 
 export function SignalPicker({signalCatalog, selectedSignals, onConfirm, onCancel}: Props) {
-    const [working, setWorking] = useState<Set<number>>(() => new Set(selectedSignals));
+    const [working, setWorking] = useState<Set<string>>(() => new Set(selectedSignals));
 
-    const toggle = (index: number) => {
+    const toggle = (key: string) => {
         setWorking(prev => {
             const next = new Set(prev);
-            if (next.has(index)) next.delete(index);
-            else next.add(index);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
             return next;
         });
     };
 
-    const toggleGNSS = (gnss: main.GNSSInfo, checked: boolean) => {
+    const toggleGNSS = (gnssName: string, sigs: string[], checked: boolean) => {
         setWorking(prev => {
             const next = new Set(prev);
-            for (const sig of gnss.signals) {
-                if (checked) next.add(sig.index);
-                else next.delete(sig.index);
+            for (const sig of sigs) {
+                const key = `${gnssName}:${sig}`;
+                if (checked) next.add(key);
+                else next.delete(key);
             }
             return next;
         });
     };
+
+    const gnssNames = Object.keys(signalCatalog);
 
     return (
         <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={onCancel}>
@@ -45,11 +47,12 @@ export function SignalPicker({signalCatalog, selectedSignals, onConfirm, onCance
 
                 {/* Body */}
                 <div class="p-4 overflow-y-auto flex-1">
-                    {signalCatalog.map((gnss, gi) => {
-                        const allSelected = gnss.signals.every(s => working.has(s.index));
-                        const someSelected = gnss.signals.some(s => working.has(s.index));
+                    {gnssNames.map(gnssName => {
+                        const sigs = signalCatalog[gnssName];
+                        const allSelected = sigs.every(sig => working.has(`${gnssName}:${sig}`));
+                        const someSelected = sigs.some(sig => working.has(`${gnssName}:${sig}`));
                         return (
-                            <div key={gi} class="mb-4">
+                            <div key={gnssName} class="mb-4">
                                 <h4 class="text-sm mb-1.5 flex items-center gap-2">
                                     <label class="cursor-pointer flex items-center gap-1.5">
                                         <input
@@ -57,17 +60,18 @@ export function SignalPicker({signalCatalog, selectedSignals, onConfirm, onCance
                                             class="accent-blue-600"
                                             checked={allSelected}
                                             ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
-                                            onChange={(e) => toggleGNSS(gnss, (e.target as HTMLInputElement).checked)}
+                                            onChange={(e) => toggleGNSS(gnssName, sigs, (e.target as HTMLInputElement).checked)}
                                         />
-                                        {gnss.name}
+                                        {gnssName}
                                     </label>
                                 </h4>
                                 <div class="flex gap-2 flex-wrap pl-6">
-                                    {gnss.signals.map(sig => {
-                                        const checked = working.has(sig.index);
+                                    {sigs.map(sig => {
+                                        const key = `${gnssName}:${sig}`;
+                                        const checked = working.has(key);
                                         return (
                                             <label
-                                                key={sig.index}
+                                                key={key}
                                                 class={`flex items-center gap-1 text-xs cursor-pointer px-2 py-0.5 rounded border ${
                                                     checked
                                                         ? 'border-blue-600 dark:border-blue-500 bg-blue-600/15'
@@ -78,9 +82,9 @@ export function SignalPicker({signalCatalog, selectedSignals, onConfirm, onCance
                                                     type="checkbox"
                                                     class="accent-blue-600"
                                                     checked={checked}
-                                                    onChange={() => toggle(sig.index)}
+                                                    onChange={() => toggle(key)}
                                                 />
-                                                {sig.name}
+                                                {sig}
                                             </label>
                                         );
                                     })}

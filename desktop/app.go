@@ -16,6 +16,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/geopos"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 )
@@ -30,7 +31,7 @@ type App struct {
 	connCancel context.CancelFunc
 	connWg     sync.WaitGroup
 	pb         *bcast.Bcast[scan.Packet]
-	probe      ProbeResult
+	probe      ReceiverEvent
 }
 
 // NewApp creates a new App.
@@ -101,20 +102,17 @@ func (a *App) Connect(device string, speed int) Result {
 	return Result{OK: true}
 }
 
-// ProbeResult is emitted as the "gps:receiver" event payload.
-type ProbeResult struct {
-	OK            bool     `json:"ok"`
-	Error         string   `json:"error,omitempty"`
-	Vendor        string   `json:"vendor,omitempty"`
-	Hardware      string   `json:"hardware,omitempty"`
-	Firmware      string   `json:"firmware,omitempty"`
-	SupportedGNSS []string `json:"supportedGNSS,omitempty"`
-	PacketFormats []string `json:"packetFormats,omitempty"`
+// ReceiverEvent is emitted as the "gps:receiver" event payload.
+type ReceiverEvent struct {
+	OK            bool                              `json:"ok"`
+	Error         string                            `json:"error,omitempty"`
+	Info          opt.Val[gpsprot.ReceiverInfo]      `json:",omitzero"`
+	PacketFormats []string                           `json:"packetFormats,omitempty"`
 }
 
 // probeWorker runs receiver identification automatically after connect.
 func (a *App) probeWorker(sub <-chan scan.Packet) {
-	runtime.EventsEmit(a.ctx, "gps:receiver", ProbeResult{})
+	runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{})
 	a.mu.Lock()
 	conn, pb := a.conn, a.pb
 	a.mu.Unlock()
@@ -131,18 +129,12 @@ func (a *App) probeWorker(sub <-chan scan.Packet) {
 		gpsreg.CreateConfigProtocols(),
 		target, sub, conn)
 	if err != nil {
-		runtime.EventsEmit(a.ctx, "gps:receiver", ProbeResult{Error: err.Error()})
+		runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{Error: err.Error()})
 		return
 	}
-	r := ProbeResult{OK: true}
+	r := ReceiverEvent{OK: true}
 	if rslt.ReceiverInfo != nil {
-		ri := rslt.ReceiverInfo
-		r.Vendor = ri.Vendor
-		r.Hardware = ri.Hardware
-		r.Firmware = ri.Firmware
-		for _, g := range ri.SupportedGNSS.Items() {
-			r.SupportedGNSS = append(r.SupportedGNSS, g.String())
-		}
+		r.Info.Set(*rslt.ReceiverInfo)
 	}
 	for _, tag := range rslt.PacketFormatsDetected {
 		r.PacketFormats = append(r.PacketFormats, string(tag))
@@ -154,7 +146,7 @@ func (a *App) probeWorker(sub <-chan scan.Packet) {
 }
 
 // GetReceiverState returns the cached receiver identification result.
-func (a *App) GetReceiverState() ProbeResult {
+func (a *App) GetReceiverState() ReceiverEvent {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.probe
@@ -165,7 +157,7 @@ func (a *App) Disconnect() Result {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.closeLocked()
-	a.probe = ProbeResult{}
+	a.probe = ReceiverEvent{}
 	return Result{OK: true}
 }
 
@@ -176,54 +168,33 @@ func (a *App) IsConnected() bool {
 	return a.conn != nil
 }
 
-// SignalInfo describes one signal within a GNSS constellation.
-type SignalInfo struct {
-	Index int    `json:"index"`
-	Name  string `json:"name"`
-}
-
-// GNSSInfo describes a GNSS constellation and its signals.
-type GNSSInfo struct {
-	Name    string       `json:"name"`
-	Signals []SignalInfo `json:"signals"`
-}
-
-// GetAllSignals returns the full signal catalog grouped by GNSS constellation.
-func (a *App) GetAllSignals() []GNSSInfo {
-	var result []GNSSInfo
-	for g := gpsprot.GNSS(1); g <= gpsprot.GNSSLast; g++ {
-		allSigs := gpsprot.BandAll.SignalSet(g)
-		if allSigs == 0 {
+// GetAllSignals returns the full signal catalog for the given GNSS constellations.
+func (a *App) GetAllSignals(gnss []string) map[string][]string {
+	m := make(map[string][]string)
+	for _, name := range gnss {
+		g, err := gpsprot.ParseGNSS(name)
+		if err != nil {
 			continue
 		}
-		gi := GNSSInfo{Name: g.String()}
-		for sig := range allSigs.Signals() {
-			gi.Signals = append(gi.Signals, SignalInfo{
-				Index: int(sig),
-				Name:  sig.String(),
-			})
+		sigs := gpsprot.BandAll.SignalSet(g)
+		if sigs == 0 {
+			continue
 		}
-		result = append(result, gi)
+		var names []string
+		for sig := range sigs.Signals() {
+			if sig.GNSS() == g {
+				names = append(names, sig.String())
+			}
+		}
+		if len(names) > 0 {
+			m[name] = names
+		}
 	}
-	return result
+	return m
 }
 
-// ReceiverInfo holds detected GPS receiver information and current configuration.
-type ReceiverInfo struct {
-	OK            bool                `json:"ok"`
-	Error         string              `json:"error,omitempty"`
-	Vendor        string              `json:"vendor,omitempty"`
-	Hardware      string              `json:"hardware,omitempty"`
-	Firmware      string              `json:"firmware,omitempty"`
-	SupportedGNSS []string            `json:"supportedGNSS,omitempty"`
-	PacketFormats []string            `json:"packetFormats,omitempty"`
-	Config        map[string]any      `json:"config,omitempty"`
-	Signals       map[string][]string `json:"signals,omitempty"`
-	SignalIndices []int               `json:"signalIndices,omitempty"`
-}
-
-// getProps lists the configuration properties to retrieve on detect.
-const getProps = gpsprot.PropIDSignalsEnabled |
+// readProps lists the configuration properties to retrieve on readback.
+const readProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDMode |
 	gpsprot.PropIDTimePulse |
 	gpsprot.PropIDTimeGNSS |
@@ -231,17 +202,16 @@ const getProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDMinElevation |
 	gpsprot.PropIDNavMsgAuth
 
-// DetectReceiver probes the GPS receiver and returns its identity and current configuration.
-func (a *App) DetectReceiver() ReceiverInfo {
+// ReadConfig reads back the current configuration from the receiver.
+func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
 	a.mu.Lock()
 	conn, pb := a.conn, a.pb
 	a.mu.Unlock()
 	if conn == nil {
-		return ReceiverInfo{Error: "not connected"}
+		return nil, fmt.Errorf("not connected")
 	}
 	target := gpsprot.NewConfigTarget()
-	target.Get = getProps
-	target.Opts.ForceProbe = true
+	target.Get = readProps
 	sub := pb.Subscribe()
 	defer pb.Unsubscribe(sub)
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
@@ -251,194 +221,24 @@ func (a *App) DetectReceiver() ReceiverInfo {
 		gpsreg.CreateConfigProtocols(),
 		target, sub, conn)
 	if err != nil {
-		return ReceiverInfo{Error: err.Error()}
+		return nil, err
 	}
-	r := ReceiverInfo{OK: true}
-	if rslt.ReceiverInfo != nil {
-		ri := rslt.ReceiverInfo
-		r.Vendor = ri.Vendor
-		r.Hardware = ri.Hardware
-		r.Firmware = ri.Firmware
-		for _, g := range ri.SupportedGNSS.Items() {
-			r.SupportedGNSS = append(r.SupportedGNSS, g.String())
-		}
-	}
-	for _, tag := range rslt.PacketFormatsDetected {
-		r.PacketFormats = append(r.PacketFormats, string(tag))
-	}
-	if rslt.ConfigProps != nil {
-		r.Config = configPropsToMap(rslt.ConfigProps)
-		if sigs, ok := rslt.ConfigProps.GetSignalsEnabled(); ok {
-			r.Signals = sigs.GNSSSignalMap()
-			for sig := range sigs.Signals() {
-				r.SignalIndices = append(r.SignalIndices, int(sig))
-			}
-		}
-	}
-	return r
+	return rslt.ConfigProps, nil
 }
 
-// configPropsToMap extracts config properties into a flat map for display.
-func configPropsToMap(cp *gpsprot.ConfigProps) map[string]any {
-	m := make(map[string]any)
-	if sigs, ok := cp.GetSignalsEnabled(); ok {
-		m["signalsEnabled"] = sigs.String()
-	}
-	if mode, ok := cp.GetMode(); ok {
-		if mode.Static {
-			m["mode"] = "static"
-		} else {
-			m["mode"] = "mobile"
-		}
-	}
-	if tp, ok := cp.GetTimePulse(); ok {
-		tpm := map[string]any{
-			"width":          float64(tp.Width) / float64(time.Second),
-			"period":         float64(tp.Period) / float64(time.Second),
-			"alignToGNSS":    tp.AlignToGNSS,
-			"onlyWhenLocked": tp.OnlyWhenLocked,
-			"polarityRising": tp.PolarityRising,
-		}
-		m["timePulse"] = tpm
-		m["ppsEnabled"] = tp.Width > 0
-	}
-	if tg, ok := cp.GetTimeGNSS(); ok {
-		m["timeGNSS"] = tg.String()
-	}
-	if cd, ok := cp.GetAntennaCableDelay(); ok {
-		m["antennaCableDelay"] = float64(cd) / float64(time.Nanosecond)
-	}
-	if nma, ok := cp.GetNavMsgAuth(); ok {
-		switch nma {
-		case gpsprot.NavMsgAuthNone:
-			m["navMsgAuth"] = "none"
-		case gpsprot.NavMsgAuthOSNMA:
-			m["navMsgAuth"] = "OSNMA"
-		}
-	}
-	if el, ok := cp.GetMinElevation(); ok {
-		m["minElevation"] = el.Degrees()
-	}
-	return m
-}
-
-// ReadConfig reads back the current configuration from the receiver without changing anything.
-func (a *App) ReadConfig() ReceiverInfo {
-	a.mu.Lock()
-	conn, pb := a.conn, a.pb
-	a.mu.Unlock()
-	if conn == nil {
-		return ReceiverInfo{Error: "not connected"}
-	}
-	target := gpsprot.NewConfigTarget()
-	target.Get = getProps
-	sub := pb.Subscribe()
-	defer pb.Unsubscribe(sub)
-	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
-	defer cancel()
-	rslt, err := gpscfg.Configure(ctx, a.lg,
-		gpsreg.CreatePacketProcessors(nil),
-		gpsreg.CreateConfigProtocols(),
-		target, sub, conn)
-	if err != nil {
-		return ReceiverInfo{Error: err.Error()}
-	}
-	r := ReceiverInfo{OK: true}
-	if rslt.ConfigProps != nil {
-		r.Config = configPropsToMap(rslt.ConfigProps)
-		if sigs, ok := rslt.ConfigProps.GetSignalsEnabled(); ok {
-			r.Signals = sigs.GNSSSignalMap()
-			for sig := range sigs.Signals() {
-				r.SignalIndices = append(r.SignalIndices, int(sig))
-			}
-		}
-	}
-	return r
-}
-
-// ConfigUpdate holds all configuration changes to apply at once.
-type ConfigUpdate struct {
-	SignalIndices   []int   `json:"signalIndices"`
-	SetSignals      bool    `json:"setSignals"`
-	Mode            string  `json:"mode"`
-	SetMode         bool    `json:"setMode"`
-	PPSWidth        float64 `json:"ppsWidth"`
-	PPSPeriod       float64 `json:"ppsPeriod"`
-	PPSAlignToGNSS  bool    `json:"ppsAlignToGNSS"`
-	PPSOnlyLocked   bool    `json:"ppsOnlyLocked"`
-	PPSRising       bool    `json:"ppsRising"`
-	SetPPS          bool    `json:"setPPS"`
-	TimeGNSS        string  `json:"timeGNSS"`
-	SetTimeGNSS     bool    `json:"setTimeGNSS"`
-	CableDelay      float64 `json:"cableDelay"`
-	SetCableDelay   bool    `json:"setCableDelay"`
-	MinElevation    float64 `json:"minElevation"`
-	SetMinElevation bool    `json:"setMinElevation"`
-}
-
-// ApplyConfig sends all configuration changes to the receiver at once.
-func (a *App) ApplyConfig(cfg ConfigUpdate) Result {
+// ApplyConfig sends configuration changes to the receiver.
+// The frontend sends JSON matching gpsprot.ConfigTarget's shape.
+func (a *App) ApplyConfig(cfg gpsprot.ConfigTarget) Result {
 	a.mu.Lock()
 	conn := a.conn
 	a.mu.Unlock()
 	if conn == nil {
 		return Result{Error: "not connected"}
 	}
-	target := gpsprot.NewConfigTarget()
-	if cfg.SetSignals {
-		sigs := buildSignalSet(cfg.SignalIndices)
-		if sigs == 0 {
-			return Result{Error: "no signals selected"}
-		}
-		target.Props.SetSignalsEnabled(sigs)
-	}
-	if cfg.SetMode {
-		switch cfg.Mode {
-		case "static":
-			target.Props.SetMode(gpsprot.Mode{Static: true})
-		case "mobile":
-			target.Props.SetMode(gpsprot.Mode{Static: false})
-		default:
-			return Result{Error: fmt.Sprintf("unknown mode: %q", cfg.Mode)}
-		}
-	}
-	if cfg.SetPPS {
-		tp := gpsprot.TimePulse{
-			Width:          time.Duration(cfg.PPSWidth * float64(time.Second)),
-			Period:         time.Duration(cfg.PPSPeriod * float64(time.Second)),
-			AlignToGNSS:    cfg.PPSAlignToGNSS,
-			OnlyWhenLocked: cfg.PPSOnlyLocked,
-			PolarityRising: cfg.PPSRising,
-		}
-		target.Props.SetTimePulse(tp)
-	}
-	if cfg.SetTimeGNSS {
-		g, err := gpsprot.ParseGNSS(cfg.TimeGNSS)
-		if err != nil {
-			return Result{Error: err.Error()}
-		}
-		target.Props.SetTimeGNSS(g)
-	}
-	if cfg.SetCableDelay {
-		target.Props.SetAntennaCableDelay(time.Duration(cfg.CableDelay * float64(time.Nanosecond)))
-	}
-	if cfg.SetMinElevation {
-		target.Props.SetMinElevation(gpsprot.DegreesFromFloat(cfg.MinElevation))
-	}
-	if target.Props.IsEmpty() {
+	if cfg.NoOp() {
 		return Result{Error: "no configuration changes specified"}
 	}
-	return a.runConfig(target)
-}
-
-func buildSignalSet(indices []int) gpsprot.SignalSet {
-	var ss gpsprot.SignalSet
-	for _, idx := range indices {
-		if idx >= 0 && idx < 64 {
-			ss |= 1 << gpsprot.Signal(idx)
-		}
-	}
-	return ss
+	return a.runConfig(&cfg)
 }
 
 // SaveConfig saves the current configuration to non-volatile memory.

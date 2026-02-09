@@ -1,7 +1,6 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {ApplyConfig, SaveConfig, ResetConfig, ReadConfig} from '../wailsjs/go/main/App';
-import {main} from '../wailsjs/go/models';
 import {SignalPicker} from './signal-picker';
 import {CollapsibleSection} from './collapsible-section';
 import type {OperationState} from './app';
@@ -9,39 +8,65 @@ import type {OperationState} from './app';
 interface Props {
     connected: boolean;
     visible: boolean;
-    receiverInfo: main.ReceiverInfo | null;
-    signalCatalog: main.GNSSInfo[];
-    selectedSignals: Set<number>;
-    setSelectedSignals: (fn: (prev: Set<number>) => Set<number>) => void;
+    configProps: Record<string, any> | null;
+    signalCatalog: Record<string, string[]>;
+    selectedSignals: Set<string>;
+    setSelectedSignals: (fn: (prev: Set<string>) => Set<string>) => void;
     setStatusText: (s: string) => void;
     setOperation: (op: OperationState) => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
-    onConfigReadback: (info: main.ReceiverInfo) => void;
+    onConfigReadback: (props: Record<string, any>) => void;
 }
 
-function setsEqual(a: Set<number>, b: Set<number>): boolean {
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
     if (a.size !== b.size) return false;
     for (const v of a) if (!b.has(v)) return false;
     return true;
 }
 
+// Convert a signalsEnabled map {GPS: ["L1","L5"]} to Set<string> {"GPS:L1","GPS:L5"}
+function signalMapToSet(m: Record<string, string[]> | undefined): Set<string> {
+    const s = new Set<string>();
+    if (!m) return s;
+    for (const [gnss, sigs] of Object.entries(m)) {
+        for (const sig of sigs) s.add(`${gnss}:${sig}`);
+    }
+    return s;
+}
+
+// Convert Set<string> {"GPS:L1","GPS:L5"} back to map {GPS: ["L1","L5"]}
+function signalSetToMap(s: Set<string>): Record<string, string[]> {
+    const m: Record<string, string[]> = {};
+    for (const entry of s) {
+        const i = entry.indexOf(':');
+        if (i < 0) continue;
+        const gnss = entry.slice(0, i), sig = entry.slice(i + 1);
+        (m[gnss] ??= []).push(sig);
+    }
+    return m;
+}
+
 function countPendingChanges(
-    cfg: Record<string, any> | undefined,
+    cfg: Record<string, any> | null,
     mode: string, ppsPeriod: string, ppsWidth: string, ppsAlign: boolean, ppsLocked: boolean, ppsRising: boolean,
     timeGNSS: string, cableDelay: string, minElev: string,
-    selectedSignals: Set<number>, originalSignals: Set<number>,
+    selectedSignals: Set<string>, originalSignals: Set<string>,
 ): number {
     let n = 0;
     if (!setsEqual(selectedSignals, originalSignals)) n++;
     const tp = cfg?.timePulse as Record<string, any> | undefined;
-    if (mode && cfg?.mode && mode !== cfg.mode) n++;
+    const cfgMode = cfg?.mode as Record<string, any> | undefined;
+    if (mode && cfgMode) {
+        const curMode = cfgMode.static ? 'static' : 'mobile';
+        if (mode !== curMode) n++;
+    }
     if (ppsPeriod !== '' && tp?.period !== undefined && parseFloat(ppsPeriod) !== tp.period) n++;
     if (ppsWidth !== '' && tp?.width !== undefined && parseFloat(ppsWidth) !== tp.width) n++;
     if (tp && ppsAlign !== tp.alignToGNSS) n++;
     if (tp && ppsLocked !== tp.onlyWhenLocked) n++;
     if (tp && ppsRising !== tp.polarityRising) n++;
     if (timeGNSS && cfg?.timeGNSS && timeGNSS !== String(cfg.timeGNSS)) n++;
-    if (cableDelay !== '' && cfg?.antennaCableDelay !== undefined && parseFloat(cableDelay) !== cfg.antennaCableDelay) n++;
+    if (cableDelay !== '' && cfg?.antennaCableDelay !== undefined && parseFloat(cableDelay) !== cfg.antennaCableDelay * 1e9) n++;
     if (minElev !== '' && cfg?.minElevation !== undefined && parseFloat(minElev) !== cfg.minElevation) n++;
     return n;
 }
@@ -84,7 +109,7 @@ const btnClass = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border
 const btnPrimary = 'px-3.5 py-1 rounded text-xs border border-blue-600 bg-blue-600 text-white cursor-pointer hover:bg-blue-700 disabled:opacity-50 disabled:cursor-default';
 const btnDanger = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-red-400 cursor-pointer hover:bg-red-400 hover:border-red-400 hover:text-black disabled:opacity-50 disabled:cursor-default disabled:hover:bg-gray-200 dark:disabled:hover:bg-gray-700 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:text-red-400';
 
-export function ConfigPanel({connected, visible, receiverInfo, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, setOperation, addToast, onConfigReadback}: Props) {
+export function ConfigPanel({connected, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, setOperation, addToast, onConfigReadback}: Props) {
     const [mode, setMode] = useState('');
     const [ppsPeriod, setPpsPeriod] = useState('');
     const [ppsWidth, setPpsWidth] = useState('');
@@ -98,7 +123,7 @@ export function ConfigPanel({connected, visible, receiverInfo, signalCatalog, se
 
     // Readback state
     const [reading, setReading] = useState(false);
-    const [originalSignals, setOriginalSignals] = useState<Set<number>>(new Set());
+    const [originalSignals, setOriginalSignals] = useState<Set<string>>(new Set());
     const hasReadback = useRef(false);
 
     // Confirmation dialog
@@ -107,9 +132,10 @@ export function ConfigPanel({connected, visible, receiverInfo, signalCatalog, se
     // Applying state
     const [applying, setApplying] = useState(false);
 
-    const populateFromConfig = useCallback((cfg: Record<string, any> | undefined, signalIndices?: number[]) => {
-        if (!cfg) return;
-        if (cfg.mode) setMode(cfg.mode);
+    // Populate form fields from ConfigProps JSON
+    const populateFromConfig = useCallback((cfg: Record<string, any>) => {
+        const m = cfg.mode as Record<string, any> | undefined;
+        if (m) setMode(m.static ? 'static' : 'mobile');
         const tp = cfg.timePulse as Record<string, any> | undefined;
         if (tp) {
             if (tp.period !== undefined) setPpsPeriod(String(tp.period));
@@ -119,19 +145,18 @@ export function ConfigPanel({connected, visible, receiverInfo, signalCatalog, se
             if (tp.polarityRising !== undefined) setPpsRising(tp.polarityRising);
         }
         if (cfg.timeGNSS) setTimeGNSS(String(cfg.timeGNSS));
-        if (cfg.antennaCableDelay !== undefined) setCableDelay(String(cfg.antennaCableDelay));
+        if (cfg.antennaCableDelay !== undefined) setCableDelay(String(cfg.antennaCableDelay * 1e9));
         if (cfg.minElevation !== undefined) setMinElev(String(cfg.minElevation));
-        if (signalIndices && signalIndices.length > 0) {
-            const s = new Set(signalIndices);
+        if (cfg.signalsEnabled) {
+            const s = signalMapToSet(cfg.signalsEnabled);
             setSelectedSignals(() => s);
             setOriginalSignals(s);
         }
     }, [setSelectedSignals]);
 
     useEffect(() => {
-        if (!receiverInfo?.config) return;
-        populateFromConfig(receiverInfo.config, receiverInfo.signalIndices);
-    }, [receiverInfo, populateFromConfig]);
+        if (configProps) populateFromConfig(configProps);
+    }, [configProps, populateFromConfig]);
 
     // Trigger readback on first switch to the config tab while connected
     useEffect(() => {
@@ -148,19 +173,14 @@ export function ConfigPanel({connected, visible, receiverInfo, signalCatalog, se
         setStatusText('Reading configuration...');
         setOperation({status: 'running', label: 'Reading configuration'});
         try {
-            const info = await ReadConfig();
-            if (info.ok) {
-                populateFromConfig(info.config, info.signalIndices);
-                onConfigReadback(info);
-                setStatusText('Configuration read');
-                setOperation({status: 'success', label: 'Reading configuration'});
-            } else {
-                addToast(info.error || 'Readback failed', 'error');
-                setStatusText('Readback failed');
-                setOperation({status: 'failed', label: 'Reading configuration', error: info.error || 'Readback failed'});
-            }
+            const props = await ReadConfig();
+            populateFromConfig(props as any);
+            onConfigReadback(props as any);
+            setStatusText('Configuration read');
+            setOperation({status: 'success', label: 'Reading configuration'});
         } catch (e: any) {
             addToast('Readback error: ' + e.message, 'error');
+            setStatusText('Readback failed');
             setOperation({status: 'failed', label: 'Reading configuration', error: e.message});
         } finally {
             setReading(false);
@@ -168,27 +188,30 @@ export function ConfigPanel({connected, visible, receiverInfo, signalCatalog, se
     };
 
     const handleApply = async () => {
-        const cfg: Record<string, any> = {};
+        const props: Record<string, any> = {};
         if (selectedSignals.size > 0) {
-            cfg.setSignals = true;
-            cfg.signalIndices = Array.from(selectedSignals);
+            props.signalsEnabled = signalSetToMap(selectedSignals);
         }
-        if (mode) { cfg.setMode = true; cfg.mode = mode; }
+        if (mode) {
+            props.mode = {static: mode === 'static'};
+        }
         if (ppsPeriod !== '' || ppsWidth !== '') {
-            cfg.setPPS = true;
-            cfg.ppsPeriod = parseFloat(ppsPeriod) || 0;
-            cfg.ppsWidth = parseFloat(ppsWidth) || 0;
-            cfg.ppsAlignToGNSS = ppsAlign;
-            cfg.ppsOnlyLocked = ppsLocked;
-            cfg.ppsRising = ppsRising;
+            props.timePulse = {
+                period: parseFloat(ppsPeriod) || 0,
+                width: parseFloat(ppsWidth) || 0,
+                alignToGNSS: ppsAlign,
+                onlyWhenLocked: ppsLocked,
+                polarityRising: ppsRising,
+            };
         }
-        if (timeGNSS) { cfg.setTimeGNSS = true; cfg.timeGNSS = timeGNSS; }
-        if (cableDelay !== '') { cfg.setCableDelay = true; cfg.cableDelay = parseFloat(cableDelay) || 0; }
-        if (minElev !== '') { cfg.setMinElevation = true; cfg.minElevation = parseFloat(minElev) || 0; }
+        if (timeGNSS) props.timeGNSS = timeGNSS;
+        if (cableDelay !== '') props.antennaCableDelay = (parseFloat(cableDelay) || 0) * 1e-9;
+        if (minElev !== '') props.minElevation = parseFloat(minElev) || 0;
+        const cfg: Record<string, any> = {Props: props};
         setApplying(true);
         setStatusText('Applying configuration...');
         setOperation({status: 'running', label: 'Applying configuration'});
-        const r = await ApplyConfig(new main.ConfigUpdate(cfg));
+        const r = await ApplyConfig(cfg as any);
         setApplying(false);
         if (r.ok) {
             addToast('Configuration applied', 'success');
@@ -234,22 +257,23 @@ export function ConfigPanel({connected, visible, receiverInfo, signalCatalog, se
         }
     };
 
-    const toggleConstellation = (gnss: main.GNSSInfo, enable: boolean) => {
+    const toggleConstellation = (gnssName: string, sigs: string[], enable: boolean) => {
         setSelectedSignals(prev => {
             const next = new Set(prev);
-            for (const sig of gnss.signals) {
-                if (enable) next.add(sig.index);
-                else next.delete(sig.index);
+            for (const sig of sigs) {
+                const key = `${gnssName}:${sig}`;
+                if (enable) next.add(key);
+                else next.delete(key);
             }
             return next;
         });
     };
 
-    const cfg = receiverInfo?.config;
+    const gnssNames = Object.keys(signalCatalog);
     const errors = validateFields(ppsPeriod, ppsWidth, cableDelay, minElev);
     const errorMap = new Map(errors.map(e => [e.field, e.message]));
     const hasErrors = errors.length > 0;
-    const pendingCount = countPendingChanges(cfg, mode, ppsPeriod, ppsWidth, ppsAlign, ppsLocked, ppsRising, timeGNSS, cableDelay, minElev, selectedSignals, originalSignals);
+    const pendingCount = countPendingChanges(configProps, mode, ppsPeriod, ppsWidth, ppsAlign, ppsLocked, ppsRising, timeGNSS, cableDelay, minElev, selectedSignals, originalSignals);
 
     return (
         <div class="flex flex-col h-full">
@@ -313,23 +337,24 @@ export function ConfigPanel({connected, visible, receiverInfo, signalCatalog, se
                     {/* Constellations subgroup */}
                     <CollapsibleSection title="Constellations" defaultOpen={true}>
                         <div class="flex flex-wrap gap-x-4 gap-y-1">
-                            {signalCatalog.map(gnss => {
-                                const anySelected = gnss.signals.some(s => selectedSignals.has(s.index));
+                            {gnssNames.map(gnssName => {
+                                const sigs = signalCatalog[gnssName];
+                                const anySelected = sigs.some(sig => selectedSignals.has(`${gnssName}:${sig}`));
                                 return (
-                                    <label key={gnss.name} class="flex items-center gap-1.5 text-xs cursor-pointer">
+                                    <label key={gnssName} class="flex items-center gap-1.5 text-xs cursor-pointer">
                                         <input
                                             type="checkbox"
                                             class="accent-blue-600"
                                             checked={anySelected}
                                             disabled={!connected}
-                                            onChange={e => toggleConstellation(gnss, (e.target as HTMLInputElement).checked)}
+                                            onChange={e => toggleConstellation(gnssName, sigs, (e.target as HTMLInputElement).checked)}
                                         />
-                                        {gnss.name}
+                                        {gnssName}
                                     </label>
                                 );
                             })}
                         </div>
-                        {signalCatalog.length > 0 && (
+                        {gnssNames.length > 0 && (
                             <button class={btnClass + ' mt-2'} disabled={!connected} onClick={() => setShowPicker(true)}>
                                 Edit signals...
                             </button>

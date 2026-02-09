@@ -2,7 +2,6 @@ import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
 import {Connect, Disconnect, GetAllSignals, GetReceiverState, IsConnected} from '../wailsjs/go/main/App';
-import {main} from '../wailsjs/go/models';
 import {ConnectionPanel} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
@@ -89,9 +88,9 @@ export function App() {
     const [speed, setSpeed] = useState(9600);
     const [statusText, setStatusText] = useState('Disconnected');
     const [receiver, setReceiver] = useState<ReceiverState>({status: 'disconnected'});
-    const [receiverInfo, setReceiverInfo] = useState<main.ReceiverInfo | null>(null);
-    const [signalCatalog, setSignalCatalog] = useState<main.GNSSInfo[]>([]);
-    const [selectedSignals, setSelectedSignals] = useState<Set<number>>(new Set());
+    const [configProps, setConfigProps] = useState<Record<string, any> | null>(null);
+    const [signalCatalog, setSignalCatalog] = useState<Record<string, string[]>>({});
+    const [selectedSignals, setSelectedSignals] = useState<Set<string>>(new Set());
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
     const [packetEntries, setPacketEntries] = useState<PacketEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
@@ -151,14 +150,19 @@ export function App() {
             } else if (evt.error) {
                 setReceiver({status: 'error', error: evt.error});
             } else {
+                const info = evt.Info;
+                const gnss: string[] = info?.supportedGNSS || [];
                 setReceiver({
                     status: 'identified',
-                    vendor: evt.vendor || '',
-                    hardware: evt.hardware || '',
-                    firmware: evt.firmware || '',
-                    supportedGNSS: evt.supportedGNSS || [],
+                    vendor: info?.vendor || '',
+                    hardware: info?.hardware || '',
+                    firmware: info?.firmware || '',
+                    supportedGNSS: gnss,
                     packetFormats: evt.packetFormats || [],
                 });
+                GetAllSignals(gnss).then(cat => {
+                    if (cat) setSignalCatalog(cat);
+                }).catch(() => {});
             }
         });
         const offMsg = EventsOn('gps:msg', (evt: MsgEvent) => {
@@ -194,25 +198,24 @@ export function App() {
             setStatusText('Connected');
             const r = await GetReceiverState();
             if (r.ok) {
+                const info = (r as any).Info;
+                const gnss: string[] = info?.supportedGNSS || [];
                 setReceiver({
                     status: 'identified',
-                    vendor: r.vendor || '',
-                    hardware: r.hardware || '',
-                    firmware: r.firmware || '',
-                    supportedGNSS: r.supportedGNSS || [],
+                    vendor: info?.vendor || '',
+                    hardware: info?.hardware || '',
+                    firmware: info?.firmware || '',
+                    supportedGNSS: gnss,
                     packetFormats: r.packetFormats || [],
                 });
+                const catalog = await GetAllSignals(gnss);
+                if (catalog) setSignalCatalog(catalog);
             }
-            const catalog = await GetAllSignals();
-            if (catalog) setSignalCatalog(catalog);
         }).catch(() => {});
     }, []);
 
-    const handleConfigReadback = useCallback((info: main.ReceiverInfo) => {
-        setReceiverInfo(prev => {
-            if (!prev) return info;
-            return {...prev, config: info.config, signals: info.signals, signalIndices: info.signalIndices};
-        });
+    const handleConfigReadback = useCallback((props: Record<string, any>) => {
+        setConfigProps(props);
     }, []);
 
     const handleConnect = useCallback(async () => {
@@ -228,10 +231,6 @@ export function App() {
             setConnected(true);
             setStatusText('Connected');
             addToast('Connected to ' + device, 'success');
-            try {
-                const catalog = await GetAllSignals();
-                setSignalCatalog(catalog);
-            } catch (e) { /* ignore */ }
         } else {
             setStatusText('Connection failed');
             addToast(r.error || 'Connection failed', 'error');
@@ -305,7 +304,7 @@ export function App() {
                     <ConfigPanel
                         connected={connected}
                         visible={activeTab === 'config'}
-                        receiverInfo={receiverInfo}
+                        configProps={configProps}
                         signalCatalog={signalCatalog}
                         selectedSignals={selectedSignals}
                         setSelectedSignals={setSelectedSignals}
