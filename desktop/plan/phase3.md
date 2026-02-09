@@ -68,7 +68,7 @@ Add new panels to the `PanelGroup` layout. Likely arrangement:
 - Adjust default panel sizes to accommodate
 
 ## Result
-The desktop app shows live GPS time and survey progress alongside the existing config and packet monitor panels. The semantic `*Msg` stream infrastructure is in place for Sky View and Signal View in phase 6.
+The desktop app shows live GPS time and survey progress alongside the existing config and packet monitor panels. The semantic `*Msg` stream infrastructure is in place for signal graph (phase 6a) and sky view (phase 6b).
 
 ## Testing (Playwright)
 

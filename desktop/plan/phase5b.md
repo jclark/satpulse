@@ -49,7 +49,7 @@ Vertically stacked collapsible sections, NOT resizable panels. Each section size
 - **Time** -- key-value data, always expanded by default
 - **Survey** -- key-value data, collapsed by default, auto-expands on first survey data
 
-Future phases will add more sections here: Messages (phase 5d), Sky view and Signal levels (phase 6).
+Future phases will add more sections here: Messages (phase 5d), Signal graph (phase 6a), Sky view (phase 6b).
 
 The key insight: Time and Survey have small fixed content, so they should be fixed-height when expanded (sized to content). This is just CSS flexbox, not a panel library.
 

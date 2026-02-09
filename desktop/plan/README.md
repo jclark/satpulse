@@ -25,8 +25,10 @@ Each phase is self-contained with goal, steps, testing plan, and files changed.
 | [phase5a.md](phase5a.md) | Config panel restructure, readback, validation (done) | Phase 1, Phase 4 |
 | [phase5b.md](phase5b.md) | Layout rework (slide-down config, collapsible panels) | Phase 5a |
 | [phase5c.md](phase5c.md) | Message configuration (NMEA/RTCM/binary output control) | Phase 5a, Phase 5b |
-| [phase5d.md](phase5d.md) | Live messages panel (packet stats tree + inspector) | Phase 5b |
-| [phase6.md](phase6.md) | Sky View + Signal View (SVG satellite visualization) | Phase 3 |
+| [phase5d.md](phase5d.md) | Live messages panel (packet stats tree + decode modal) | Phase 5b |
+| [phase6a.md](phase6a.md) | Signal graph (per-constellation, per-signal vertical bars) | Phase 3, Phase 5b |
+| [phase6b.md](phase6b.md) | Sky view (polar satellite plot) | Phase 6a |
+| [phase6c.md](phase6c.md) | Monitor tab layout rework (compact time/survey, flex layout) | Phase 6a, Phase 6b, Phase 5d |
 | [phase7.md](phase7.md) | Message file support (TOML message send, response formatting) | Phase 1 |
 | [phase8.md](phase8.md) | Serial port enumeration (dropdown selector) | Phase 5b |
 | [phase9.md](phase9.md) | Windows support (Win32 serial I/O, Wails build) | Phase 8 |
@@ -36,7 +38,9 @@ Each phase is self-contained with goal, steps, testing plan, and files changed.
 Phase 1 (layout shell)
 ├── Phase 2 (structured logging)
 ├── Phase 3 (semantic stream + text panels)
-│   └── Phase 6 (sky view + signal view)
+│   └── Phase 6a (signal graph)
+│       └── Phase 6b (sky view)
+│           └── Phase 6c (monitor layout rework) ← also depends on Phase 5d
 ├── Phase 4 (receiver panel)
 │   └── Phase 5a (config panel restructure) ✓
 │       └── Phase 5b (layout rework)
