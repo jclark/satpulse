@@ -94,12 +94,23 @@ Raw group with configure checkbox. Children (enabled only when checked):
 
 Wire into Apply (`Opts.RawMsg`) and add to Messages section. Test.
 
-### 10. Presets
+### 10. Presets [done]
 
-Add preset buttons inside the Messages section, below the message groups:
-- `NMEA preset` -- sets NMEA to Select with a standard set of messages (RMC, GGA, GSA, GSV, ZDA)
-- `Binary preset` -- sets proprietary message groups to a standard selection
-- `Daemon preset` -- sets the message selection matching the daemon's startup configuration (from `time/app/daemon/gps.go`)
+Add two preset buttons at the top of the Messages section (above the NMEA group). The `speed` prop is threaded from `app.tsx` to `ConfigPanel` so presets can check serial speed.
+
+**Daemon** -- matches `--pvt-out daemon` from `satpulsetool gps`:
+- NMEA: change + disable
+- RTCM: unchanged
+- PVT: change, flags = TimePulse | TimePulseAfter | TAI | LeapSecond | Off
+- Sats: change with Sat + Signal if speed >= 19200; otherwise unchanged
+- Raw: unchanged
+
+**Minimum** -- only NMEA RMC, everything else off:
+- NMEA: change, flags = RMC only
+- RTCM: change + disable
+- PVT: change, flags = Off (turn off all PVT messages)
+- Sats: change, flags = 0 (disable)
+- Raw: change, flags = 0 (disable)
 
 Preset behavior:
 - clicking a preset updates the relevant message controls in the form

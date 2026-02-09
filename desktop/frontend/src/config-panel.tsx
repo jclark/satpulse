@@ -8,6 +8,11 @@ import {RTCMGroup, rtcmWireValue} from './rtcm-group';
 import {PVTGroup, pvtWireValue} from './pvt-group';
 import {SatsGroup, satsWireValue} from './sats-group';
 import {RawGroup, rawWireValue} from './raw-group';
+import {
+    NMEAMsgRMC,
+    PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff,
+    SatsMsgSat, SatsMsgSignal,
+} from './msg-flags';
 import type {OperationState} from './app';
 
 interface Props {
@@ -21,6 +26,7 @@ interface Props {
     setOperation: (op: OperationState) => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
     onConfigReadback: (props: Record<string, any>) => void;
+    speed: number;
 }
 
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
@@ -114,7 +120,7 @@ const btnClass = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border
 const btnPrimary = 'px-3.5 py-1 rounded text-xs border border-blue-600 bg-blue-600 text-white cursor-pointer hover:bg-blue-700 disabled:opacity-50 disabled:cursor-default';
 const btnDanger = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-red-400 cursor-pointer hover:bg-red-400 hover:border-red-400 hover:text-black disabled:opacity-50 disabled:cursor-default disabled:hover:bg-gray-200 dark:disabled:hover:bg-gray-700 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:text-red-400';
 
-export function ConfigPanel({connected, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, setOperation, addToast, onConfigReadback}: Props) {
+export function ConfigPanel({connected, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, setOperation, addToast, onConfigReadback, speed}: Props) {
     const [mode, setMode] = useState('');
     const [ppsPeriod, setPpsPeriod] = useState('');
     const [ppsWidth, setPpsWidth] = useState('');
@@ -408,6 +414,20 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                 {/* Messages */}
                 <CollapsibleSection title="Messages" defaultOpen={true}>
                     <div class="flex flex-col gap-3">
+                        <div class="flex gap-2">
+                            <button class={btnClass} disabled={!connected} onClick={() => {
+                                setNmeaChange(true); setNmeaDisable(false); setNmeaFlags(NMEAMsgRMC);
+                                setRtcmChange(true); setRtcmDisable(true);
+                                setPvtChange(true); setPvtFlags(PVTMsgOff);
+                                setSatsChange(true); setSatsFlags(0);
+                                setRawChange(true); setRawFlags(0);
+                            }}>Minimum</button>
+                            <button class={btnClass} disabled={!connected} onClick={() => {
+                                setNmeaChange(true); setNmeaDisable(true);
+                                setPvtChange(true); setPvtFlags(PVTMsgTimePulse | PVTMsgTimePulseAfter | PVTMsgTAI | PVTMsgLeapSecond | PVTMsgOff);
+                                if (speed >= 19200) { setSatsChange(true); setSatsFlags(SatsMsgSat | SatsMsgSignal); }
+                            }}>Daemon</button>
+                        </div>
                         <NMEAGroup
                             change={nmeaChange}
                             disableProtocol={nmeaDisable}

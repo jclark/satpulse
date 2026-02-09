@@ -312,6 +312,7 @@ export function App() {
                         setOperation={setOperation}
                         addToast={addToast}
                         onConfigReadback={handleConfigReadback}
+                        speed={speed}
                     />
                 </div>
             </div>
