@@ -1,8 +1,10 @@
-import {h, Fragment} from 'preact';
+import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {ApplyConfig, SaveConfig, ResetConfig, ReadConfig} from '../wailsjs/go/main/App';
 import {SignalPicker} from './signal-picker';
 import {CollapsibleSection} from './collapsible-section';
+import {NMEAGroup, nmeaWireValue} from './nmea-group';
+import type {ThreeWayState} from './three-way-selector';
 import type {OperationState} from './app';
 
 interface Props {
@@ -121,6 +123,10 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
     const [minElev, setMinElev] = useState('');
     const [showPicker, setShowPicker] = useState(false);
 
+    // Message state
+    const [nmeaState, setNmeaState] = useState<ThreeWayState>('skip');
+    const [nmeaFlags, setNmeaFlags] = useState(0);
+
     // Readback state
     const [reading, setReading] = useState(false);
     const [originalSignals, setOriginalSignals] = useState<Set<string>>(new Set());
@@ -207,7 +213,10 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
         if (timeGNSS) props.timeGNSS = timeGNSS;
         if (cableDelay !== '') props.antennaCableDelay = (parseFloat(cableDelay) || 0) * 1e-9;
         if (minElev !== '') props.minElevation = parseFloat(minElev) || 0;
-        const cfg: Record<string, any> = {Props: props};
+        const opts: Record<string, any> = {};
+        const nmeaWire = nmeaWireValue(nmeaState, nmeaFlags);
+        if (nmeaWire !== undefined) opts.NMEAMsg = nmeaWire;
+        const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
         setStatusText('Applying configuration...');
         setOperation({status: 'running', label: 'Applying configuration'});
@@ -372,6 +381,19 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                             </div>
                         </div>
                     </CollapsibleSection>
+
+                {/* Messages */}
+                <CollapsibleSection title="Messages" defaultOpen={true}>
+                    <div class="flex flex-col gap-3">
+                        <NMEAGroup
+                            state={nmeaState}
+                            flags={nmeaFlags}
+                            onStateChange={setNmeaState}
+                            onFlagsChange={setNmeaFlags}
+                            disabled={!connected}
+                        />
+                    </div>
+                </CollapsibleSection>
 
                 {/* Persistent operations */}
                 <CollapsibleSection title="Persistent operations" defaultOpen={false}>

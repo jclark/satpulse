@@ -22,211 +22,82 @@ The current `app.go` has two problems:
 
 ## Steps
 
-### 1. Separate ReceiverInfo from config readback
+### 1. Separate ReceiverInfo from config readback [done]
 
-`ReceiverInfo` and config readback are two different operations that happen at different times:
-- **Receiver identity** (`probeWorker`) -- runs on connect, emits `ReceiverInfo` via `gps:receiver` event.
-- **Config readback** (`ReadConfig`) -- runs when the config tab opens, returns current property values.
+Use GPS subsystem types directly instead of hand-rolled DTOs. `ReceiverEvent` envelope struct for `gps:receiver` event. `ReadConfig` returns `*gpsprot.ConfigProps` directly. `GetReceiverState` returns cached `ReceiverEvent`.
 
-Currently `app.go` defines its own `ReceiverInfo` and `ProbeResult` DTOs that repack fields from `gpsprot.ReceiverInfo` and `gpsprot.ConfigProps`. The `DetectReceiver` method duplicates `probeWorker` and is unused by the frontend. The thin-layer approach: use the GPS subsystem types directly.
+### 2. Replace ConfigUpdate with ConfigTarget [done]
 
-**Delete** the desktop-local `ReceiverInfo`, `ProbeResult`, `DetectReceiver`, `configPropsToMap`, `SignalInfo`, `GNSSInfo`, and `GetAllSignals`. These are all hand-rolled DTOs or translations that the GPS subsystem types already handle.
+`ApplyConfig` accepts `gpsprot.ConfigTarget` directly. Frontend builds `ConfigTarget`-shaped JSON with `Props` and `Opts`. Signal selection uses `Set<string>` with `"GNSS:Signal"` keys.
 
-**`probeWorker`** -- emit `gpsprot.ReceiverInfo` directly as the `gps:receiver` event payload (plus `PacketFormatsDetected`). Use a small envelope struct for the event since we need ok/error/packetFormats:
-```go
-type ReceiverEvent struct {
-    OK            bool                          `json:"ok"`
-    Error         string                        `json:"error,omitempty"`
-    Info          opt.Val[gpsprot.ReceiverInfo]  `json:",omitzero"`
-    PacketFormats []string                      `json:"packetFormats,omitempty"`
-}
-```
+### 3. Export flag constants for the frontend [done]
 
-**`GetReceiverState`** -- return `ReceiverEvent` (cached from probeWorker).
+`desktop/frontend/src/msg-flags.ts` with integer constants matching Go iota definitions.
 
-**`ReadConfig`** -- return `(*gpsprot.ConfigProps, error)`. Wails serializes `ConfigProps` using its `MarshalJSON`, so the frontend receives the same JSON shape it will send back. On error, Wails rejects the JS promise.
+### 4. Build three-way selector component [done]
 
-```go
-func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
-    ...
-    return rslt.ConfigProps, nil
-}
-```
+`ThreeWaySelector` component with radio buttons: Leave as-is / Disable / Select. Maps to backend values: skip -> field omitted, configure -> `selected flags | Other`, disable -> 0.
 
-Update the frontend `doReadback` to use try/catch (already has one) and consume `ConfigProps` JSON directly from `ReadConfig` (e.g. `signalsEnabled` is `{"GPS": ["L1", "L5"]}`, `timePulse` is `{period: 1.0, width: 0.0001, ...}`, `mode` is `{static: true}`).
+### 5. Build NMEA group UI + wire Apply + assemble Messages section [done]
 
-### 2. Replace ConfigUpdate with ConfigTarget
+NMEA group with three-way selector and checkboxes (RMC, GGA, GSA, GSV, ZDA, VTG). Messages collapsible section added to config panel. Apply handler extended with `Opts` for message fields. Each message group exports a wire-value function; `handleApply` collects all of them into `Opts`.
 
-Delete `ConfigUpdate` and `buildSignalSet` from `app.go`. Replace `ApplyConfig` with a method that accepts `gpsprot.ConfigTarget` directly:
-
-```go
-func (a *App) ApplyConfig(cfg gpsprot.ConfigTarget) Result {
-    a.mu.Lock()
-    conn := a.conn
-    a.mu.Unlock()
-    if conn == nil {
-        return Result{Error: "not connected"}
-    }
-    if cfg.NoOp() {
-        return Result{Error: "no configuration changes specified"}
-    }
-    return a.runConfig(&cfg)
-}
-```
-
-No translation, no DTO. The frontend sends JSON matching `ConfigTarget`'s shape. Wails deserializes it using the existing `UnmarshalJSON` methods.
-
-Update the frontend `handleApply` to build `ConfigTarget`-shaped JSON. Property fields go under `Props` using the `ConfigProps` JSON format (same shape as received from `ReadConfig`). Options go under `Opts`. Example:
-
-```typescript
-const cfg: Record<string, any> = {};
-// Properties
-const props: Record<string, any> = {};
-if (...) props.timePulse = { period: ..., width: ..., ... };
-if (...) props.mode = { static: true };
-if (...) props.signalsEnabled = {"GPS": ["L1", "L5"], ...};
-cfg.Props = props;
-// Options (messages, save, reset)
-const opts: Record<string, any> = {};
-if (...) opts.PVTMsg = pvtFlags;
-cfg.Opts = opts;
-```
-
-The `SaveConfig` and `ResetConfig` methods remain unchanged -- they build `ConfigTarget` directly in Go.
-
-Signal selection changes from index-based to name-based. The frontend tracks signals as `Set<string>` where each entry is `"GNSS:Signal"` (e.g. `"GPS:L1"`, `"GAL:E5a"`). This uniquely identifies a signal with no integer indices to keep in sync.
-
-Conversion to/from the `map[string][]string` wire format (`{"GPS": ["L1", "L5"], ...}`) used by `ConfigProps.signalsEnabled` is straightforward:
-- Readback: iterate map entries, add `"${gnss}:${sig}"` to set.
-- Apply: split each set entry on `:`, group into map.
-
-`GetAllSignals(gnss []string) map[string][]string` returns the full signal catalog for the given GNSS constellations (from `ReceiverEvent.Info.SupportedGNSS`). The frontend converts this to `Set<string>` to know what's available. `SignalInfo`, `GNSSInfo` types are deleted.
-
-### 3. Export flag constants for the frontend
-Create `desktop/frontend/src/msg-flags.ts` with integer constants matching the Go iota definitions in `gps/gpsprot/configtarget.go`:
-
-```typescript
-// Source: gps/gpsprot/configtarget.go -- keep in sync.
-
-// NMEA
-export const NMEAMsgRMC   = 1 << 0
-export const NMEAMsgGGA   = 1 << 1
-export const NMEAMsgGSA   = 1 << 2
-export const NMEAMsgGSV   = 1 << 3
-export const NMEAMsgZDA   = 1 << 4
-export const NMEAMsgVTG   = 1 << 5
-export const NMEAMsgOther = 1 << 15
-
-// RTCM
-export const RTCMMsgMSM4  = 1 << 0
-export const RTCMMsgMSM7  = 1 << 3
-export const RTCMMsgARP   = 1 << 4
-export const RTCMMsgLax   = 1 << 5
-export const RTCMMsgOther = 1 << 15
-
-// PVT
-export const PVTMsgPos            = 1 << 0
-export const PVTMsgVel            = 1 << 1
-export const PVTMsgTime           = 1 << 2
-export const PVTMsgTimePulse      = 1 << 3
-export const PVTMsgLeapSecond     = 1 << 4
-export const PVTMsgSurvey         = 1 << 5
-export const PVTMsgTAI            = 1 << 6
-export const PVTMsgECEF           = 1 << 7
-export const PVTMsgTimePulseAfter = 1 << 8
-export const PVTMsgOff            = 1 << 9
-
-// Sats
-export const SatsMsgSat    = 1 << 0
-export const SatsMsgSignal = 1 << 1
-
-// Raw
-export const RawMsgObs     = 1 << 0
-export const RawMsgNavData = 1 << 1
-```
-
-### 4. Build three-way selector component
-Create a reusable `ThreeWaySelector` component for NMEA and RTCM. Three states: Don't configure / Configure / Disable. Rendered as a segmented control or radio group. The component:
-- accepts current state and onChange callback
-- renders the three options with clear labels
-- is used in the group box border/header area
-
-The three-way state maps to the JSON value sent to the backend:
-- Don't configure -> `NMEAMsg`/`RTCMMsg` field omitted from JSON (`opt.Val` not set)
-- Configure -> field present with `selected flags | Other`
-- Disable -> field present with value 0
-
-### 5. Build NMEA group UI
-Bordered group box labelled "NMEA" with three-way selector in the header.
-
-Children (enabled only in Configure state, greyed but preserved in other states):
-- Checkboxes: RMC, GGA, GSA, GSV, ZDA, VTG
-
-On Apply in Configure state, the frontend computes: `selected | NMEAMsgOther`.
+Tested end-to-end on ZED-F9T hardware.
 
 ### 6. Build RTCM group UI
-Bordered group box labelled "RTCM" with three-way selector in the header.
 
-Children (enabled only in Configure state, greyed but preserved in other states):
+RTCM group with three-way selector (same as NMEA).
+
+Children (enabled only in Select state, greyed but preserved in other states):
 - MSM type: three-way radio -- None / MSM4 / MSM7
 - Fallback checkbox (enabled only when MSM4 or MSM7 selected): "Use other MSM type if preferred isn't available"
 - ARP checkbox (independent of MSM selection)
 
-On Apply in Configure state, the frontend computes: `selected | RTCMMsgLax (if checked) | RTCMMsgOther`.
+On Apply in Select state, the frontend computes: `selected | RTCMMsgLax (if fallback checked) | RTCMMsgOther`.
+
+Wire into Apply (`Opts.RTCMMsg`) and add to Messages section. Test.
 
 ### 7. Build PVT group UI
-Bordered group box labelled "PVT" with configure checkbox in the border.
 
-Children (enabled only when checked), organised into two domain subgroups rendered as inner bordered boxes:
+PVT group with configure checkbox. Children (enabled only when checked), organised into two domain subgroups:
 
-**Time** subgroup -- left column for information flags, right-aligned modifier:
+**Time** subgroup:
 - Navigation time checkbox
 - Time-pulse time checkbox
   - Indented: Ensure message after pulse checkbox (greyed unless Time-pulse time is checked)
 - Leap second checkbox
-- Right-aligned: Prefer TAI checkbox (greyed unless Navigation time or Time-pulse time is checked)
+- Prefer TAI checkbox (greyed unless Navigation time or Time-pulse time is checked)
 
-**Position & velocity** subgroup -- left column for information flags, right-aligned modifier:
+**Position & velocity** subgroup:
 - Position checkbox
 - Velocity checkbox
-- Right-aligned: Prefer ECEF checkbox (greyed unless Position or Velocity is checked)
+- Prefer ECEF checkbox (greyed unless Position or Velocity is checked)
 
-After the subgroups, standalone checkbox:
+Standalone checkbox:
 - Turn off unselected PVT messages
 
-On Apply when configured, the frontend OR's the selected flags and sends as `PVTMsg`. When not configured, omits the field (zero = don't configure).
+On Apply when configured, OR the selected flags and send as `Opts.PVTMsg`. When not configured, omit (zero = don't configure). Wire into Apply and add to Messages section. Test.
 
 ### 8. Build Satellites group UI
-Bordered group box labelled "Satellites" with configure checkbox in the border.
 
-Children (enabled only when checked):
+Satellites group with configure checkbox. Children (enabled only when checked):
 - Satellite positions checkbox
 - Signals checkbox
 
-Unchecked -> field omitted; checked -> `SatsMsg: selected flags`.
+Wire into Apply (`Opts.SatsMsg`) and add to Messages section. Test.
 
 ### 9. Build Raw group UI
-Bordered group box labelled "Raw" with configure checkbox in the border.
 
-Children (enabled only when checked):
+Raw group with configure checkbox. Children (enabled only when checked):
 - Observations (RINEX .obs) checkbox
 - Navigation data (RINEX .nav) checkbox
 
-Unchecked -> field omitted; checked -> `RawMsg: selected flags`.
+Wire into Apply (`Opts.RawMsg`) and add to Messages section. Test.
 
-### 10. Assemble Messages section
-Add a "Messages" collapsible section to the config panel between Properties and Persistent Operations. Inside, render all five message groups: NMEA, RTCM, PVT, Satellites, Raw.
+### 10. Presets
 
-### 11. Wire Apply
-Extend the Apply handler in `config-panel.tsx` to collect message state from the form. Each group computes its integer flag value based on UI state. The frontend builds a `ConfigTarget`-shaped object:
-- Message fields go under `Opts` (they are `ConfigOptions` fields).
-- Property fields go under `Props` (they are `ConfigProps` fields, using ConfigProps JSON format).
-
-Message controls are one-shot options, not readback-backed properties. They are NOT reset after apply (user can re-apply the same config).
-
-### 12. Presets
 Add preset buttons inside the Messages section, below the message groups:
-- `NMEA preset` -- sets NMEA to Configure with a standard set of messages (RMC, GGA, GSA, GSV, ZDA)
+- `NMEA preset` -- sets NMEA to Select with a standard set of messages (RMC, GGA, GSA, GSV, ZDA)
 - `Binary preset` -- sets proprietary message groups to a standard selection
 - `Daemon preset` -- sets the message selection matching the daemon's startup configuration (from `time/app/daemon/gps.go`)
 
