@@ -4,6 +4,7 @@ import {ApplyConfig, SaveConfig, ResetConfig, ReadConfig} from '../wailsjs/go/ma
 import {SignalPicker} from './signal-picker';
 import {CollapsibleSection} from './collapsible-section';
 import {NMEAGroup, nmeaWireValue} from './nmea-group';
+import {RTCMGroup, rtcmWireValue} from './rtcm-group';
 import type {ThreeWayState} from './three-way-selector';
 import type {OperationState} from './app';
 
@@ -126,6 +127,10 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
     // Message state
     const [nmeaState, setNmeaState] = useState<ThreeWayState>('skip');
     const [nmeaFlags, setNmeaFlags] = useState(0);
+    const [rtcmState, setRtcmState] = useState<ThreeWayState>('skip');
+    const [rtcmMSM, setRtcmMSM] = useState<'none' | 'msm4' | 'msm7'>('none');
+    const [rtcmFallback, setRtcmFallback] = useState(true);
+    const [rtcmARP, setRtcmARP] = useState(false);
 
     // Readback state
     const [reading, setReading] = useState(false);
@@ -216,6 +221,8 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
         const opts: Record<string, any> = {};
         const nmeaWire = nmeaWireValue(nmeaState, nmeaFlags);
         if (nmeaWire !== undefined) opts.NMEAMsg = nmeaWire;
+        const rtcmWire = rtcmWireValue(rtcmState, rtcmMSM, rtcmFallback, rtcmARP);
+        if (rtcmWire !== undefined) opts.RTCMMsg = rtcmWire;
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
         setStatusText('Applying configuration...');
@@ -390,6 +397,17 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                             flags={nmeaFlags}
                             onStateChange={setNmeaState}
                             onFlagsChange={setNmeaFlags}
+                            disabled={!connected}
+                        />
+                        <RTCMGroup
+                            state={rtcmState}
+                            msm={rtcmMSM}
+                            fallback={rtcmFallback}
+                            arp={rtcmARP}
+                            onStateChange={setRtcmState}
+                            onMSMChange={setRtcmMSM}
+                            onFallbackChange={setRtcmFallback}
+                            onARPChange={setRtcmARP}
                             disabled={!connected}
                         />
                     </div>
