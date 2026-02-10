@@ -454,6 +454,11 @@ type LLH struct {
 	Height float64 `json:"height"`
 }
 
+// CheckOnEarth returns true if the ECEF coordinates are roughly on Earth's surface.
+func (a *App) CheckOnEarth(x, y, z float64) bool {
+	return geopos.ECEF{x, y, z}.CheckOnEarth() == nil
+}
+
 // ECEFtoLLH converts Earth-Centered Earth-Fixed coordinates (meters) to latitude,
 // longitude (degrees), and height above the WGS84 ellipsoid (meters).
 func (a *App) ECEFtoLLH(x, y, z float64) (*LLH, error) {

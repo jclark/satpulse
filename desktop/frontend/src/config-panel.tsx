@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
-import {ApplyConfig, ReadConfig} from '../wailsjs/go/main/App';
+import {ApplyConfig, CheckOnEarth, ReadConfig} from '../wailsjs/go/main/App';
 import {SignalPicker} from './signal-picker';
 import {CollapsibleSection} from './collapsible-section';
 import {NMEAGroup, nmeaWireValue} from './nmea-group';
@@ -10,7 +10,7 @@ import {SatsGroup, satsWireValue} from './sats-group';
 import {RawGroup, rawWireValue} from './raw-group';
 import {
     NMEAMsgRMC,
-    PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff,
+    PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey,
     SatsMsgSat, SatsMsgSignal,
 } from './msg-flags';
 import type {OperationState} from './app';
@@ -57,9 +57,20 @@ function signalSetToMap(s: Set<string>): Record<string, string[]> {
     return m;
 }
 
+// Derive the timeMode value from a readback mode object.
+function deriveTimeMode(cfgMode: Record<string, any> | undefined): '' | 'mobile' | 'fixed' {
+    if (!cfgMode) return '';
+    if (!cfgMode.static) return 'mobile';
+    if (cfgMode.fixedPosECEF || cfgMode.fixedPosLLH) return 'fixed';
+    return ''; // static with no position
+}
+
 function countPendingChanges(
     cfg: Record<string, any> | null,
-    mode: string, ppsPeriod: string, ppsWidth: string, ppsAlign: boolean, ppsLocked: boolean, ppsRising: boolean,
+    timeMode: string,
+    fixedECEF: [string, string, string], fixedLLH: [string, string, string],
+    fixedPosAcc: string, coordSystem: string,
+    ppsPeriod: string, ppsWidth: string, ppsAlign: boolean, ppsLocked: boolean, ppsRising: boolean,
     timeGNSS: string, cableDelay: string, minElev: string,
     selectedSignals: Set<string>, originalSignals: Set<string>,
 ): number {
@@ -67,9 +78,24 @@ function countPendingChanges(
     if (!setsEqual(selectedSignals, originalSignals)) n++;
     const tp = cfg?.timePulse as Record<string, any> | undefined;
     const cfgMode = cfg?.mode as Record<string, any> | undefined;
-    if (mode && cfgMode) {
-        const curMode = cfgMode.static ? 'static' : 'mobile';
-        if (mode !== curMode) n++;
+    const readbackMode = deriveTimeMode(cfgMode);
+    // Survey always counts as pending (it's an action)
+    if (timeMode === 'survey') {
+        n++;
+    } else if (timeMode && timeMode !== readbackMode) {
+        n++;
+    } else if (timeMode === 'fixed' && readbackMode === 'fixed' && cfgMode) {
+        // Check if coordinates or accuracy changed
+        if (coordSystem === 'ecef' && cfgMode.fixedPosECEF) {
+            const ecef = cfgMode.fixedPosECEF as number[];
+            if (fixedECEF.some((v, i) => v !== '' && parseFloat(v) !== ecef[i])) n++;
+        } else if (coordSystem === 'llh' && cfgMode.fixedPosLLH) {
+            const llh = cfgMode.fixedPosLLH as number[];
+            if (fixedLLH[0] !== '' && parseFloat(fixedLLH[0]) !== llh[0]) n++;
+            else if (fixedLLH[1] !== '' && parseFloat(fixedLLH[1]) !== llh[1]) n++;
+            else if (fixedLLH[2] !== '' && cfgMode.height !== undefined && parseFloat(fixedLLH[2]) !== cfgMode.height) n++;
+        }
+        if (fixedPosAcc !== '' && cfgMode.fixedPosAcc !== undefined && parseFloat(fixedPosAcc) !== cfgMode.fixedPosAcc) n++;
     }
     if (ppsPeriod !== '' && tp?.period !== undefined && parseFloat(ppsPeriod) !== tp.period) n++;
     if (ppsWidth !== '' && tp?.width !== undefined && parseFloat(ppsWidth) !== tp.width) n++;
@@ -82,45 +108,57 @@ function countPendingChanges(
     return n;
 }
 
-interface FieldError {
-    field: string;
-    message: string;
-}
-
-function validateFields(ppsPeriod: string, ppsWidth: string, cableDelay: string, minElev: string): FieldError[] {
-    const errors: FieldError[] = [];
-    if (ppsPeriod !== '') {
-        const v = parseFloat(ppsPeriod);
-        if (isNaN(v) || v < 0) errors.push({field: 'ppsPeriod', message: 'Must be >= 0 s'});
+function validateFields(
+    timeMode: string, coordSystem: string,
+    surveyTime: string, surveyAcc: string,
+    fixedECEF: [string, string, string], fixedLLH: [string, string, string], fixedPosAcc: string,
+    ppsPeriod: string, ppsWidth: string, cableDelay: string, minElev: string,
+): Set<string> {
+    const bad = new Set<string>();
+    if (timeMode === 'survey') {
+        if (surveyTime !== '') { const v = Number(surveyTime); if (isNaN(v) || v <= 0) bad.add('surveyTime'); }
+        if (surveyAcc !== '') { const v = Number(surveyAcc); if (isNaN(v) || v < 0.001) bad.add('surveyAcc'); }
     }
-    if (ppsWidth !== '') {
-        const v = parseFloat(ppsWidth);
-        if (isNaN(v) || v < 0 || v > 1) errors.push({field: 'ppsWidth', message: 'Must be 0-1 s'});
-    }
-    if (ppsWidth !== '' && ppsPeriod !== '') {
-        const w = parseFloat(ppsWidth), p = parseFloat(ppsPeriod);
-        if (!isNaN(w) && !isNaN(p) && w > 0 && p > 0 && w >= p) {
-            errors.push({field: 'ppsWidth', message: 'Width must be less than period'});
+    if (timeMode === 'fixed') {
+        if (coordSystem === 'ecef') {
+            for (const [i, f] of (['ecefX', 'ecefY', 'ecefZ'] as const).entries()) {
+                if (fixedECEF[i] === '' || isNaN(Number(fixedECEF[i]))) bad.add(f);
+            }
+        } else {
+            if (fixedLLH[0] === '') bad.add('llhLat'); else { const v = Number(fixedLLH[0]); if (isNaN(v) || v < -90 || v > 90) bad.add('llhLat'); }
+            if (fixedLLH[1] === '') bad.add('llhLon'); else { const v = Number(fixedLLH[1]); if (isNaN(v) || v < -180 || v > 180) bad.add('llhLon'); }
+            if (fixedLLH[2] === '' || isNaN(Number(fixedLLH[2]))) bad.add('llhHeight');
         }
+        if (fixedPosAcc !== '') { const v = Number(fixedPosAcc); if (isNaN(v) || v < 0.001) bad.add('fixedPosAcc'); }
     }
-    if (cableDelay !== '') {
-        const v = parseFloat(cableDelay);
-        if (isNaN(v)) errors.push({field: 'cableDelay', message: 'Must be a number'});
+    if (ppsPeriod !== '') { const v = Number(ppsPeriod); if (isNaN(v) || v < 0) bad.add('ppsPeriod'); }
+    if (ppsWidth !== '') { const v = Number(ppsWidth); if (isNaN(v) || v < 0 || v > 1) bad.add('ppsWidth'); }
+    if (ppsWidth !== '' && ppsPeriod !== '') {
+        const w = Number(ppsWidth), p = Number(ppsPeriod);
+        if (!isNaN(w) && !isNaN(p) && w > 0 && p > 0 && w >= p) bad.add('ppsWidth');
     }
-    if (minElev !== '') {
-        const v = parseFloat(minElev);
-        if (isNaN(v) || v < 0 || v > 90) errors.push({field: 'minElev', message: 'Must be 0-90 deg'});
-    }
-    return errors;
+    if (cableDelay !== '' && isNaN(Number(cableDelay))) bad.add('cableDelay');
+    if (minElev !== '') { const v = Number(minElev); if (isNaN(v) || v < 0 || v > 90) bad.add('minElev'); }
+    return bad;
 }
 
 const inputClass = 'bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1 rounded text-xs';
-const inputErrorClass = 'bg-gray-100 dark:bg-gray-900 border border-red-500 text-gray-900 dark:text-gray-100 px-2 py-1 rounded text-xs';
+const inputErrorClass = 'bg-red-100 dark:bg-red-950 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1 rounded text-xs';
 const btnClass = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-blue-600 hover:border-blue-600 hover:text-white disabled:opacity-50 disabled:cursor-default disabled:hover:bg-gray-200 dark:disabled:hover:bg-gray-700 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:text-gray-900 dark:disabled:hover:text-gray-100';
 const btnPrimary = 'px-3.5 py-1 rounded text-xs border border-blue-600 bg-blue-600 text-white cursor-pointer hover:bg-blue-700 disabled:opacity-50 disabled:cursor-default';
 
 export function ConfigPanel({connected, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, setOperation, addToast, onConfigReadback, speed}: Props) {
-    const [mode, setMode] = useState('');
+    const [timeMode, setTimeMode] = useState<'' | 'mobile' | 'survey' | 'fixed'>('');
+    const [surveyTime, setSurveyTime] = useState('');
+    const [surveyAcc, setSurveyAcc] = useState('');
+    const [surveyAgain, setSurveyAgain] = useState(false);
+    const [surveyReport, setSurveyReport] = useState(true);
+    const [coordSystem, setCoordSystem] = useState<'ecef' | 'llh'>('ecef');
+    const [fixedECEF, setFixedECEF] = useState<[string, string, string]>(['', '', '']);
+    const [fixedLLH, setFixedLLH] = useState<[string, string, string]>(['', '', '']);
+    const [fixedPosAcc, setFixedPosAcc] = useState('');
+    // Track whether readback showed static:true with no position (stationary info)
+    const [readbackStationary, setReadbackStationary] = useState(false);
     const [ppsPeriod, setPpsPeriod] = useState('');
     const [ppsWidth, setPpsWidth] = useState('');
     const [ppsAlign, setPpsAlign] = useState(true);
@@ -130,6 +168,16 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
     const [cableDelay, setCableDelay] = useState('');
     const [minElev, setMinElev] = useState('');
     const [showPicker, setShowPicker] = useState(false);
+    const [ecefOnEarth, setEcefOnEarth] = useState(true);
+
+    // Check ECEF coordinates against Earth surface when all three are valid numbers
+    useEffect(() => {
+        const nums = fixedECEF.map(Number);
+        if (fixedECEF.some(s => s === '' || isNaN(Number(s)))) { setEcefOnEarth(true); return; }
+        let cancelled = false;
+        CheckOnEarth(nums[0], nums[1], nums[2]).then(ok => { if (!cancelled) setEcefOnEarth(ok); });
+        return () => { cancelled = true; };
+    }, [fixedECEF]);
 
     // Message state
     const [nmeaChange, setNmeaChange] = useState(false);
@@ -162,7 +210,29 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
     // Populate form fields from ConfigProps JSON
     const populateFromConfig = useCallback((cfg: Record<string, any>) => {
         const m = cfg.mode as Record<string, any> | undefined;
-        if (m) setMode(m.static ? 'static' : 'mobile');
+        if (m) {
+            if (!m.static) {
+                setTimeMode('mobile');
+                setReadbackStationary(false);
+            } else if (m.fixedPosECEF) {
+                setTimeMode('fixed');
+                setCoordSystem('ecef');
+                const ecef = m.fixedPosECEF as number[];
+                setFixedECEF([String(ecef[0]), String(ecef[1]), String(ecef[2])]);
+                setReadbackStationary(false);
+            } else if (m.fixedPosLLH) {
+                setTimeMode('fixed');
+                setCoordSystem('llh');
+                const llh = m.fixedPosLLH as number[];
+                setFixedLLH([String(llh[0]), String(llh[1]), String(m.height ?? 0)]);
+                setReadbackStationary(false);
+            } else {
+                // static with no position
+                setTimeMode('');
+                setReadbackStationary(true);
+            }
+            if (m.fixedPosAcc !== undefined) setFixedPosAcc(String(m.fixedPosAcc));
+        }
         const tp = cfg.timePulse as Record<string, any> | undefined;
         if (tp) {
             if (tp.period !== undefined) setPpsPeriod(String(tp.period));
@@ -216,11 +286,37 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
 
     const handleApply = async () => {
         const props: Record<string, any> = {};
+        const opts: Record<string, any> = {};
         if (selectedSignals.size > 0) {
             props.signalsEnabled = signalSetToMap(selectedSignals);
         }
-        if (mode) {
-            props.mode = {static: mode === 'static'};
+        if (timeMode === 'mobile') {
+            props.mode = {static: false};
+        } else if (timeMode === 'survey') {
+            props.mode = {static: true};
+            const dur = surveyTime !== '' ? parseFloat(surveyTime) : 2000;
+            const acc = surveyAcc !== '' ? parseFloat(surveyAcc) : 20;
+            opts.Survey = {
+                Flags: surveyAgain ? 1 : 0,
+                MinDur: dur * 1e9,       // seconds -> nanoseconds
+                AccLimit: acc * 1e6,     // meters -> micrometers
+            };
+            if (surveyReport) opts.PVTMsg = (opts.PVTMsg || 0) | PVTMsgSurvey;
+        } else if (timeMode === 'fixed') {
+            if (coordSystem === 'ecef') {
+                props.mode = {
+                    static: true,
+                    fixedPosECEF: fixedECEF.map(v => parseFloat(v) || 0),
+                    fixedPosAcc: fixedPosAcc !== '' ? parseFloat(fixedPosAcc) : 20,
+                };
+            } else {
+                props.mode = {
+                    static: true,
+                    fixedPosLLH: [parseFloat(fixedLLH[0]) || 0, parseFloat(fixedLLH[1]) || 0],
+                    height: parseFloat(fixedLLH[2]) || 0,
+                    fixedPosAcc: fixedPosAcc !== '' ? parseFloat(fixedPosAcc) : 20,
+                };
+            }
         }
         if (ppsPeriod !== '' || ppsWidth !== '') {
             props.timePulse = {
@@ -234,13 +330,12 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
         if (timeGNSS) props.timeGNSS = timeGNSS;
         if (cableDelay !== '') props.antennaCableDelay = (parseFloat(cableDelay) || 0) * 1e-9;
         if (minElev !== '') props.minElevation = parseFloat(minElev) || 0;
-        const opts: Record<string, any> = {};
         const nmeaWire = nmeaWireValue(nmeaChange, nmeaDisable, nmeaFlags);
         if (nmeaWire !== undefined) opts.NMEAMsg = nmeaWire;
         const rtcmWire = rtcmWireValue(rtcmChange, rtcmDisable, rtcmMSM, rtcmFallback, rtcmARP);
         if (rtcmWire !== undefined) opts.RTCMMsg = rtcmWire;
         const pvtWire = pvtWireValue(pvtChange, pvtFlags);
-        if (pvtWire !== undefined) opts.PVTMsg = pvtWire;
+        if (pvtWire !== undefined) opts.PVTMsg = (opts.PVTMsg || 0) | pvtWire;
         const satsWire = satsWireValue(satsChange, satsFlags);
         if (satsWire !== undefined) opts.SatsMsg = satsWire;
         const rawWire = rawWireValue(rawChange, rawFlags);
@@ -255,6 +350,11 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
         setApplying(false);
         setSaveType(0);
         setResetType(0);
+        // Reset survey one-shot fields
+        setSurveyTime('');
+        setSurveyAcc('');
+        setSurveyAgain(false);
+        setSurveyReport(true);
         if (r.ok) {
             addToast('Configuration applied', 'success');
             setStatusText('Configuration applied');
@@ -282,10 +382,16 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
     };
 
     const gnssNames = Object.keys(signalCatalog);
-    const errors = validateFields(ppsPeriod, ppsWidth, cableDelay, minElev);
-    const errorMap = new Map(errors.map(e => [e.field, e.message]));
-    const hasErrors = errors.length > 0;
-    const pendingCount = countPendingChanges(configProps, mode, ppsPeriod, ppsWidth, ppsAlign, ppsLocked, ppsRising, timeGNSS, cableDelay, minElev, selectedSignals, originalSignals);
+    const errorSet = validateFields(timeMode, coordSystem, surveyTime, surveyAcc, fixedECEF, fixedLLH, fixedPosAcc, ppsPeriod, ppsWidth, cableDelay, minElev);
+    const ecefBad = timeMode === 'fixed' && coordSystem === 'ecef' && !ecefOnEarth;
+    const hasErrors = errorSet.size > 0 || ecefBad;
+    const pendingCount = countPendingChanges(configProps, timeMode, fixedECEF, fixedLLH, fixedPosAcc, coordSystem, ppsPeriod, ppsWidth, ppsAlign, ppsLocked, ppsRising, timeGNSS, cableDelay, minElev, selectedSignals, originalSignals);
+    const surveyDisabled = !connected || timeMode !== 'survey';
+    const fixedDisabled = !connected || timeMode !== 'fixed';
+    const ecefDisabled = fixedDisabled || coordSystem !== 'ecef';
+    const llhDisabled = fixedDisabled || coordSystem !== 'llh';
+    const disabledText = 'text-gray-400 dark:text-gray-500';
+    const enabledText = 'text-gray-700 dark:text-gray-200 cursor-pointer';
 
     return (
         <div class="flex flex-col h-full">
@@ -296,17 +402,11 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                         <div class="flex gap-x-6 items-start">
                             <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center">
                                 <label class="text-xs text-gray-500 dark:text-gray-400">Period (s)</label>
-                                <div class="flex items-center gap-2">
-                                    <input type="number" class={(errorMap.has('ppsPeriod') ? inputErrorClass : inputClass) + ' w-20'} value={ppsPeriod} step="0.1" min="0" placeholder="e.g. 1.0"
-                                        disabled={!connected} onInput={e => setPpsPeriod((e.target as HTMLInputElement).value)} />
-                                    {errorMap.has('ppsPeriod') && <span class="text-[10px] text-red-500">{errorMap.get('ppsPeriod')}</span>}
-                                </div>
+                                <input type="text" inputMode="decimal" class={(errorSet.has('ppsPeriod') ? inputErrorClass : inputClass) + ' w-20'} value={ppsPeriod} placeholder="e.g. 1.0"
+                                    disabled={!connected} onInput={e => setPpsPeriod((e.target as HTMLInputElement).value)} />
                                 <label class="text-xs text-gray-500 dark:text-gray-400">Pulse width (s)</label>
-                                <div class="flex items-center gap-2">
-                                    <input type="number" class={(errorMap.has('ppsWidth') ? inputErrorClass : inputClass) + ' w-20'} value={ppsWidth} step="0.01" min="0" max="1" placeholder="e.g. 0.1"
-                                        disabled={!connected} onInput={e => setPpsWidth((e.target as HTMLInputElement).value)} />
-                                    {errorMap.has('ppsWidth') && <span class="text-[10px] text-red-500">{errorMap.get('ppsWidth')}</span>}
-                                </div>
+                                <input type="text" inputMode="decimal" class={(errorSet.has('ppsWidth') ? inputErrorClass : inputClass) + ' w-20'} value={ppsWidth} placeholder="e.g. 0.1"
+                                    disabled={!connected} onInput={e => setPpsWidth((e.target as HTMLInputElement).value)} />
                                 <label class="text-xs text-gray-500 dark:text-gray-400">Time GNSS</label>
                                 <select class={inputClass + ' w-24'} value={timeGNSS} disabled={!connected}
                                     onChange={e => setTimeGNSS((e.target as HTMLSelectElement).value)}>
@@ -317,11 +417,8 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                                     <option value="GLO">GLONASS</option>
                                 </select>
                                 <label class="text-xs text-gray-500 dark:text-gray-400">Cable delay (ns)</label>
-                                <div class="flex items-center gap-2">
-                                    <input type="number" class={(errorMap.has('cableDelay') ? inputErrorClass : inputClass) + ' w-20'} value={cableDelay} step="1" placeholder="e.g. 50"
-                                        disabled={!connected} onInput={e => setCableDelay((e.target as HTMLInputElement).value)} />
-                                    {errorMap.has('cableDelay') && <span class="text-[10px] text-red-500">{errorMap.get('cableDelay')}</span>}
-                                </div>
+                                <input type="text" inputMode="decimal" class={(errorSet.has('cableDelay') ? inputErrorClass : inputClass) + ' w-20'} value={cableDelay} placeholder="e.g. 50"
+                                    disabled={!connected} onInput={e => setCableDelay((e.target as HTMLInputElement).value)} />
                             </div>
                             <div class="flex flex-col gap-1.5 pt-0.5">
                                 <label class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
@@ -345,14 +442,94 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
 
                     {/* Time mode subgroup */}
                     <CollapsibleSection title="Time mode" defaultOpen={true}>
-                        <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 items-center">
-                            <label class="text-xs text-gray-500 dark:text-gray-400">Mode</label>
-                            <select class={inputClass + ' w-30'} value={mode} disabled={!connected}
-                                onChange={e => setMode((e.target as HTMLSelectElement).value)}>
-                                <option value="">--</option>
-                                <option value="static">Static</option>
-                                <option value="mobile">Mobile</option>
-                            </select>
+                        {/* Mode radio group */}
+                        <div class="flex flex-wrap gap-x-4 gap-y-1 mb-3">
+                            {([['mobile', 'Mobile'], ['survey', 'Survey-in'], ['fixed', 'Fixed position']] as const).map(([val, label]) => (
+                                <label key={val} class={`flex items-center gap-1.5 text-xs ${!connected ? disabledText : enabledText}`}>
+                                    <input type="radio" name="timeMode" class="accent-blue-600" checked={timeMode === val}
+                                        disabled={!connected} onChange={() => setTimeMode(val)} />
+                                    {label}
+                                </label>
+                            ))}
+                        </div>
+                        {readbackStationary && timeMode === '' && (
+                            <div class="text-[10px] text-blue-500 mb-2">Receiver is in stationary mode.</div>
+                        )}
+
+                        {/* Survey-in group */}
+                        <div class="mb-3">
+                            <div class={`text-xs font-semibold mb-1 ${surveyDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-600 dark:text-gray-300'}`}>Survey-in</div>
+                            <div class="flex gap-x-6 items-start">
+                                <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center">
+                                    <label class={`text-xs ${surveyDisabled ? disabledText : 'text-gray-500 dark:text-gray-400'}`}>Survey time (s)</label>
+                                    <input type="text" inputMode="decimal" class={(errorSet.has('surveyTime') ? inputErrorClass : inputClass) + ' w-24'} value={surveyTime} placeholder="2000"
+                                        disabled={surveyDisabled} onInput={e => setSurveyTime((e.target as HTMLInputElement).value)} />
+                                    <label class={`text-xs ${surveyDisabled ? disabledText : 'text-gray-500 dark:text-gray-400'}`}>Survey accuracy (m)</label>
+                                    <input type="text" inputMode="decimal" class={(errorSet.has('surveyAcc') ? inputErrorClass : inputClass) + ' w-24'} value={surveyAcc} placeholder="20"
+                                        disabled={surveyDisabled} onInput={e => setSurveyAcc((e.target as HTMLInputElement).value)} />
+                                </div>
+                                <div class="flex flex-col gap-1.5 pt-0.5">
+                                    <label class={`flex items-center gap-1.5 text-xs ${surveyDisabled ? disabledText : enabledText}`}>
+                                        <input type="checkbox" class="accent-blue-600" checked={surveyAgain}
+                                            disabled={surveyDisabled} onChange={e => setSurveyAgain((e.target as HTMLInputElement).checked)} />
+                                        Do a new survey
+                                    </label>
+                                </div>
+                            </div>
+                            <label class={`flex items-center gap-1.5 text-xs mt-1.5 ${surveyDisabled ? disabledText : enabledText}`}>
+                                <input type="checkbox" class="accent-blue-600" checked={surveyReport}
+                                    disabled={surveyDisabled} onChange={e => setSurveyReport((e.target as HTMLInputElement).checked)} />
+                                Report survey progress
+                            </label>
+                        </div>
+
+                        {/* Fixed position group */}
+                        <div>
+                            <div class={`text-xs font-semibold mb-1 ${fixedDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-600 dark:text-gray-300'}`}>Fixed position</div>
+                            <div class="flex flex-wrap gap-x-4 gap-y-1 mb-2">
+                                {([['ecef', 'ECEF'], ['llh', 'Lat/Lon/Height']] as const).map(([val, label]) => (
+                                    <label key={val} class={`flex items-center gap-1.5 text-xs ${fixedDisabled ? disabledText : enabledText}`}>
+                                        <input type="radio" name="coordSystem" class="accent-blue-600" checked={coordSystem === val}
+                                            disabled={fixedDisabled} onChange={() => setCoordSystem(val)} />
+                                        {label}
+                                    </label>
+                                ))}
+                            </div>
+                            <div class="flex gap-x-8 items-start">
+                                {/* ECEF column + on-Earth indicator */}
+                                <div class="flex items-stretch gap-1.5">
+                                    <div class="grid grid-cols-[auto_auto] gap-x-3 gap-y-1.5 items-center">
+                                        {(['X (m)', 'Y (m)', 'Z (m)'] as const).map((label, i) => {
+                                            const field = (['ecefX', 'ecefY', 'ecefZ'] as const)[i];
+                                            return [
+                                                <label key={`l${i}`} class={`text-xs ${ecefDisabled ? disabledText : 'text-gray-500 dark:text-gray-400'}`}>{label}</label>,
+                                                <input key={`v${i}`} type="text" inputMode="decimal" class={(errorSet.has(field) ? inputErrorClass : inputClass) + ' w-28'}
+                                                    value={fixedECEF[i]} disabled={ecefDisabled}
+                                                    title={ecefBad ? 'ECEF coordinates not on Earth' : undefined}
+                                                    onInput={e => { const v = [...fixedECEF] as [string, string, string]; v[i] = (e.target as HTMLInputElement).value; setFixedECEF(v); }} />,
+                                            ];
+                                        })}
+                                    </div>
+                                    {ecefBad && <div class="w-0.5 bg-red-400 rounded-full" title="ECEF coordinates not on Earth" />}
+                                </div>
+                                {/* LLH column */}
+                                <div class="grid grid-cols-[auto_auto] gap-x-3 gap-y-1.5 items-center">
+                                    {(['Latitude (deg)', 'Longitude (deg)', 'Height (m)'] as const).map((label, i) => {
+                                        const field = (['llhLat', 'llhLon', 'llhHeight'] as const)[i];
+                                        return [
+                                            <label key={`l${i}`} class={`text-xs ${llhDisabled ? disabledText : 'text-gray-500 dark:text-gray-400'}`}>{label}</label>,
+                                            <input key={`v${i}`} type="text" inputMode="decimal" class={(errorSet.has(field) ? inputErrorClass : inputClass) + ' w-28'}
+                                                value={fixedLLH[i]} disabled={llhDisabled}
+                                                onInput={e => { const v = [...fixedLLH] as [string, string, string]; v[i] = (e.target as HTMLInputElement).value; setFixedLLH(v); }} />,
+                                        ];
+                                    })}
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-[auto_auto] gap-x-3 gap-y-1.5 items-center mt-2 w-fit">
+                                <label class={`text-xs ${fixedDisabled ? disabledText : 'text-gray-500 dark:text-gray-400'}`}>Position accuracy (m)</label>
+                                <input type="text" inputMode="decimal" class={(errorSet.has('fixedPosAcc') ? inputErrorClass : inputClass) + ' w-24'} value={fixedPosAcc} placeholder="20"
+                                    disabled={fixedDisabled} onInput={e => setFixedPosAcc((e.target as HTMLInputElement).value)} />
+                            </div>
                         </div>
                     </CollapsibleSection>
 
@@ -387,11 +564,8 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
                     <CollapsibleSection title="Other" defaultOpen={true}>
                         <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center w-fit">
                             <label class="text-xs text-gray-500 dark:text-gray-400">Min elevation (deg)</label>
-                            <div class="flex items-center gap-2">
-                                <input type="number" class={(errorMap.has('minElev') ? inputErrorClass : inputClass) + ' w-20'} value={minElev} step="1" min="0" max="90" placeholder="e.g. 10"
-                                    disabled={!connected} onInput={e => setMinElev((e.target as HTMLInputElement).value)} />
-                                {errorMap.has('minElev') && <span class="text-[10px] text-red-500">{errorMap.get('minElev')}</span>}
-                            </div>
+                            <input type="text" inputMode="decimal" class={(errorSet.has('minElev') ? inputErrorClass : inputClass) + ' w-20'} value={minElev} placeholder="e.g. 10"
+                                disabled={!connected} onInput={e => setMinElev((e.target as HTMLInputElement).value)} />
                         </div>
                     </CollapsibleSection>
 

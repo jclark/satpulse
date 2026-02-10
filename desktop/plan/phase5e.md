@@ -68,7 +68,7 @@ All controls are always visible. Controls are greyed out when their parent mode 
 Mode:  ( ) Mobile  ( ) Survey-in  ( ) Fixed position
 
 Survey-in                                  [greyed unless Survey-in]
-  Survey time (s)      [         ]         placeholder "2000"
+  Survey time (s)      [         ]         placeholder "2000"       [ ] Do a new survey
   Survey accuracy (m)  [         ]         placeholder "20"
   [x] Report survey progress
 
@@ -119,6 +119,7 @@ In `config-panel.tsx`, replace the single `mode` string state with:
 - `timeMode`: `'' | 'mobile' | 'survey' | 'fixed'` -- three-way selector plus empty (no selection)
 - `surveyTime`: string (empty; placeholder shows `2000`)
 - `surveyAcc`: string (empty; placeholder shows `20`)
+- `surveyAgain`: boolean (default `false`) -- maps to `SurveyAgain` flag
 - `surveyReport`: boolean (default `true`)
 - `coordSystem`: `'ecef' | 'llh'` (default `'ecef'`)
 - `fixedECEF`: `[string, string, string]` (X, Y, Z in meters)
@@ -140,7 +141,7 @@ Replace the current Time mode `CollapsibleSection` content:
 
 **Mode radio group:** three radios in a row (Mobile, Survey-in, Fixed position).
 
-**Survey-in group:** labelled group with all controls disabled unless `timeMode === 'survey'`. Contains survey time input (placeholder "2000"), survey accuracy input (placeholder "20"), and report survey progress checkbox.
+**Survey-in group:** labelled group with all controls disabled unless `timeMode === 'survey'`. Contains survey time input (placeholder "2000") with "Do a new survey" checkbox aligned to its right, survey accuracy input (placeholder "20"), and report survey progress checkbox.
 
 **Fixed position group:** labelled group with all controls disabled unless `timeMode === 'fixed'`. Contains:
 - Coordinate system radio (ECEF / Lat/Lon/Height)
@@ -166,7 +167,7 @@ In `handleApply`, build the mode/survey portion of the config target based on `t
 
 **Survey-in:**
 - `props.mode = { static: true }`
-- `opts.Survey = { Flags: 1, MinDur: ..., AccLimit: ... }` using field values or placeholder defaults
+- `opts.Survey = { Flags: surveyAgain ? 1 : 0, MinDur: ..., AccLimit: ... }` using field values or placeholder defaults
 - If `surveyReport` is checked, OR `PVTMsgSurvey` into `opts.PVTMsg`
 
 **Fixed position (ECEF):**
@@ -189,6 +190,7 @@ Update `countPendingChanges` for the new time mode fields. Changes are pending w
 ### 7. Reset survey fields after Apply
 After Apply completes (success or failure):
 - Clear `surveyTime` and `surveyAcc` to empty (back to placeholder defaults)
+- Reset `surveyAgain` to `false`
 - Reset `surveyReport` to `true`
 - Do not reset `timeMode` -- the mode property persists and will be updated by any post-Apply readback
 
