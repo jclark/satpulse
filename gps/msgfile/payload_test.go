@@ -1,4 +1,4 @@
-package gpscmd
+package msgfile
 
 import (
 	"bytes"
@@ -231,7 +231,6 @@ func TestPayloadEncodeFloat(t *testing.T) {
 		})
 	}
 }
-
 
 func TestParseTypes(t *testing.T) {
 	tests := []struct {
