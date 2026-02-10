@@ -11,3 +11,9 @@ Currently the probe is initiated by the Go backend (`packetWorker`) and the read
 The CLI supports `--speed` to configure the GPS receiver's serial port speed (as opposed to `--device-speed` which sets the host serial port speed). The desktop GUI needs equivalent support so users can change the receiver's baud rate from the Config tab.
 
 This is more involved than a simple property write because after changing the receiver's serial speed, the host serial port must also be reopened at the new speed to maintain communication. The backend would need to coordinate the speed change on the receiver with reopening the serial connection at the matching baud rate.
+
+## TCP-CONNECT: Allow connecting to a GPS receiver via TCP
+
+The desktop app only supports serial connections (`gpsio.OpenSerial`). Adding TCP support would allow managing a receiver attached to a headless machine via satpulsed's TCP proxy.
+
+The `gpsio.Conn` interface is transport-agnostic, and `NetConn` already handles unix sockets, so adding TCP is straightforward at the connection level. The main complication is inter-packet idle detection: the scanner relies on serial read timeouts to generate `Idle()` calls, which the NMEA satellite buffer uses as its primary flush trigger. Over TCP, timing is unreliable due to network latency and TCP buffering, so `Idle()` cannot be generated reliably. The satellite buffer's fallback (repeated GNSS/signal key detection) would still work but lags one cycle behind.
