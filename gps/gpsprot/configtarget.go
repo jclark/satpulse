@@ -25,7 +25,7 @@ type PropIDs uint32
 
 // TimePulse represents the time pulse configuration settings
 type TimePulse struct {
-	Width          time.Duration
+	Width          time.Duration // width of 0 means disabled
 	Period         time.Duration
 	AlignToGNSS    bool
 	OnlyWhenLocked bool
@@ -100,7 +100,6 @@ const (
 	ResetCold              // restore configuration from non-volatile memory and perform a cold start
 	ResetFactory           // restore non-volatile memory to factory defaults and then ResetCold
 )
-
 
 // PVTMsgFlags says what messages relating to Position, Velocity, and Time are wanted.
 // The PVTMsgOff option says to turn off PVT messages that are not enabled.
@@ -195,17 +194,16 @@ const (
 	RawMsgAny     RawMsgFlags = RawMsgObs | RawMsgNavData // any message (not flag)
 )
 
-
 type ConfigOptions struct {
-	Socket     bool       // connected via socket, skip serial detection
-	ForceProbe bool       // force probe even when no config changes needed
-	Save       SaveType   // what to save to non-volatile memory
-	Reset      ResetType  // what kind of reset to perform
-	PVTMsg     PVTMsgFlags // messages relating to Position, Velocity, and Time
-	NMEAMsg opt.Val[NMEAMsgFlags] `json:",omitzero"`
-	RTCMMsg opt.Val[RTCMMsgFlags] `json:",omitzero"` // RTCM 3.x messages
-	SatsMsg opt.Val[SatsMsgFlags] `json:",omitzero"`
-	RawMsg  opt.Val[RawMsgFlags]  `json:",omitzero"`
+	Socket     bool                  // connected via socket, skip serial detection
+	ForceProbe bool                  // force probe even when no config changes needed
+	Save       SaveType              // what to save to non-volatile memory
+	Reset      ResetType             // what kind of reset to perform
+	PVTMsg     PVTMsgFlags           // messages relating to Position, Velocity, and Time
+	NMEAMsg    opt.Val[NMEAMsgFlags] `json:",omitzero"`
+	RTCMMsg    opt.Val[RTCMMsgFlags] `json:",omitzero"` // RTCM 3.x messages
+	SatsMsg    opt.Val[SatsMsgFlags] `json:",omitzero"`
+	RawMsg     opt.Val[RawMsgFlags]  `json:",omitzero"`
 	Survey     Survey
 	SetStatic  bool         // ensure receiver is in static mode without changing existing fixed position
 	BaudRate   uint32       // serial port baud rate, 0 means do not change
@@ -263,19 +261,19 @@ func (p PropIDs) String() string {
 // propIDJSON maps JSON property names to PropIDs bitmasks.
 // These match the keys used in serializableMap.
 var propIDJSON = map[string]PropIDs{
-	"signalsEnabled":          PropIDSignalsEnabled,
-	"timeGNSS":                PropIDTimeGNSS,
-	"timePulse":               PropIDTimePulse,
-	"timePulse.width":         PropIDTimePulseWidth,
-	"timePulse.period":        PropIDTimePulsePeriod,
-	"timePulse.alignToGNSS":   PropIDTimePulseAlignToGNSS,
+	"signalsEnabled":           PropIDSignalsEnabled,
+	"timeGNSS":                 PropIDTimeGNSS,
+	"timePulse":                PropIDTimePulse,
+	"timePulse.width":          PropIDTimePulseWidth,
+	"timePulse.period":         PropIDTimePulsePeriod,
+	"timePulse.alignToGNSS":    PropIDTimePulseAlignToGNSS,
 	"timePulse.onlyWhenLocked": PropIDTimePulseOnlyWhenLocked,
 	"timePulse.polarityRising": PropIDTimePulsePolarityRising,
-	"mode":                    PropIDMode,
-	"antennaCableDelay":       PropIDAntennaCableDelay,
-	"navMsgAuth":              PropIDNavMsgAuth,
-	"rtcmBaseID":              PropIDRTCMBaseID,
-	"minElevation":            PropIDMinElevation,
+	"mode":                     PropIDMode,
+	"antennaCableDelay":        PropIDAntennaCableDelay,
+	"navMsgAuth":               PropIDNavMsgAuth,
+	"rtcmBaseID":               PropIDRTCMBaseID,
+	"minElevation":             PropIDMinElevation,
 }
 
 // propIDJSONNames lists the JSON names in a stable order for marshaling.

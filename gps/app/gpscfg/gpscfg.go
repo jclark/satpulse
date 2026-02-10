@@ -547,7 +547,7 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 	mh.msgCount[tag]++
 	msgID, err := pp.ProcessPacket(data, pkt.TRead)
 	if err != nil {
-		mh.lg.Error("GPS packet cannot be parsed", "protocol", tag, "err", err)
+		mh.lg.Warn("GPS packet cannot be parsed", "protocol", tag, "msgID", msgID, "err", err)
 		return
 	}
 
