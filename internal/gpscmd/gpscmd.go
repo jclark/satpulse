@@ -17,6 +17,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/gps/msgfile"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -35,15 +36,17 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	}
 	var msgs any
 	if v.msgFilePath != "" {
-		var mf *MsgFile
-		mf, err = LoadMsgFile(v.msgFilePath)
+		var mf *msgfile.Parsed
+		mf, err = msgfile.Load(v.msgFilePath)
 		if err != nil {
 			return
 		}
-		// Check for inconsistent tag descriptions regardless of showTags.
-		tds := mf.CheckTagDescriptions(lg)
+		tds, inconsistent := mf.TagDescs()
+		for _, td := range inconsistent {
+			lg.Warn("tag has inconsistent descriptions", "tag", td.Tag, "desc", td.Desc)
+		}
 		if v.showTags {
-			printTagDescs(os.Stderr, tds)
+			msgfile.PrintTagDescs(os.Stderr, tds)
 			return
 		}
 		msgs, err = mf.TaggedMsgs(v.msgTags)
@@ -212,47 +215,13 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 }
 
 func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs any, capture opt.Val[time.Duration]) error {
+	raw, err := msgfile.ToRaw(msgs)
+	if err != nil {
+		return err
+	}
 	var rp *responsePrinter
-	var err error
-	var raw []rawMsg
-	switch m := msgs.(type) {
-	case []LineMsg:
-		raw, err = toRawMsgs(m)
-		if err != nil {
-			return err
-		}
+	if _, ok := msgs.([]msgfile.BinaryMsg); !ok {
 		rp = newResponsePrinter(os.Stdout)
-	case []BinaryMsg:
-		raw, err = toRawMsgs(m)
-		if err != nil {
-			return err
-		}
-	case []NMEAMsg:
-		raw, err = toRawMsgs(m)
-		if err != nil {
-			return err
-		}
-		rp = newResponsePrinter(os.Stdout)
-	case []CASBINMsg:
-		raw, err = toRawMsgs(m)
-		if err != nil {
-			return err
-		}
-		rp = newResponsePrinter(os.Stdout)
-	case []ASBINMsg:
-		raw, err = toRawMsgs(m)
-		if err != nil {
-			return err
-		}
-		rp = newResponsePrinter(os.Stdout)
-	case []UBXMsg:
-		raw, err = toRawMsgs(m)
-		if err != nil {
-			return err
-		}
-		rp = newResponsePrinter(os.Stdout)
-	default:
-		panic(fmt.Sprintf("unexpected message type: %T", msgs))
 	}
 	err = runRawMsgs(ctx, lg, conn, pCh, raw, rp)
 	if capture.IsSet() {
@@ -264,7 +233,7 @@ func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 	return err
 }
 
-func runRawMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs []rawMsg, rp *responsePrinter) error {
+func runRawMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs []msgfile.RawMsg, rp *responsePrinter) error {
 	for _, m := range msgs {
 		if err := sendMsg(ctx, lg, conn, pCh, m, rp); err != nil {
 			return err
@@ -273,18 +242,18 @@ func runRawMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-cha
 	return nil
 }
 
-func sendMsg(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, m rawMsg, rp *responsePrinter) error {
+func sendMsg(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, m msgfile.RawMsg, rp *responsePrinter) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	_, err := conn.Write(m.bytes)
+	_, err := conn.Write(m.Bytes)
 	if err != nil {
 		return err
 	}
-	lg.Info("sent message", "index", m.index+1, "tag", m.tag)
+	lg.Info("sent message", "index", m.Index+1, "tag", m.Tag)
 	var timerCh <-chan time.Time
-	if m.delay > 0 {
-		timer := time.NewTimer(m.delay)
+	if m.Delay > 0 {
+		timer := time.NewTimer(m.Delay)
 		defer timer.Stop()
 		timerCh = timer.C
 	}

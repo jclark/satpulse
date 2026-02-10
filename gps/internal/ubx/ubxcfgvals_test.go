@@ -103,11 +103,9 @@ func TestConfigItems_Empty(t *testing.T) {
 func TestConfigItems_Get(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	target.Get = gpsprot.PropIDTimePulseWidth
-
 	vals := newCfgVals()
 	ver := &Version{}
 	items, missing, err := vals.Transaction(target, ver, ucv.UART1, 0)
-
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -117,30 +115,23 @@ func TestConfigItems_Get(t *testing.T) {
 	if len(missing) == 0 {
 		t.Errorf("expected missing to be non-empty, but empty")
 	}
-	items = make([]ucv.Item, 0, len(missing))
+	// Verify addGetKeys requests all keys needed for time pulse cooking
+	missingSet := make(map[ucv.Key]bool, len(missing))
 	for _, k := range missing {
-		var item ucv.Item
-		switch k {
-		case ucv.KTpPulseLengthDef.Key():
-			item = ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength)
-		case ucv.KTpUseLockedTp1.Key():
-			item = ucv.MakeItem(ucv.KTpUseLockedTp1, true)
-		case ucv.KTpLenLockTp1.Key():
-			// it's in microseconds
-			item = ucv.MakeItem(ucv.KTpLenLockTp1, 1e5)
-		case ucv.KTpLenTp1.Key():
-			item = ucv.MakeItem(ucv.KTpLenTp1, 0)
-		default:
-			t.Errorf("unexpected missing key: %v", k)
-		}
-		items = append(items, item)
+		missingSet[k] = true
+		vals.Map[k] = 0
 	}
-	vals.AddItems(items)
+	for _, tk := range cfgValKeysByProp[gpsprot.PropIDTimePulse] {
+		if !missingSet[tk.Key()] {
+			t.Errorf("addGetKeys did not request key %v", tk.Key())
+		}
+	}
+	cfgValsInit(vals)
 	cp := new(gpsprot.ConfigProps)
 	vals.Cook(ver, ucv.UART1, cp)
 	val, ok := cp.GetTimePulseWidth()
 	if !ok || val != time.Duration(1e5*time.Microsecond) {
-		t.Errorf("expected pulse width to be 1us, got %v", val)
+		t.Errorf("expected pulse width to be 0.1s, got %v", val)
 	}
 }
 
@@ -242,6 +233,10 @@ func cfgValsInit(m *CfgVals) {
 	cfgValSet(m, ucv.KTpUseLockedTp1, true)
 	cfgValSet(m, ucv.KTpTp1Ena, true)
 	cfgValSet(m, ucv.KTpPolTp1, true)
+	cfgValSet(m, ucv.KTpFreqTp1, 1)
+	cfgValSet(m, ucv.KTpFreqLockTp1, 1)
+	cfgValSet(m, ucv.KTpDutyTp1, 0.0)
+	cfgValSet(m, ucv.KTpDutyLockTp1, 0.0)
 	cfgValSet(m, ucv.KRateMeas, 1e3)
 	cfgValSet(m, ucv.KRateNav, 1)
 	cfgValSet(m, ucv.KRateTimeref, ucv.ERateTimerefGps)
@@ -661,6 +656,365 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 
 			if tb.survey != tt.wantSurvey {
 				t.Errorf("expected survey flag %v, got %v", tt.wantSurvey, tb.survey)
+			}
+		})
+	}
+}
+
+func TestTimePulseRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		tp   gpsprot.TimePulse
+	}{
+		{
+			name: "not aligned to GNSS",
+			tp: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    false,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "aligned to GNSS",
+			tp: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    true,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "only when locked",
+			tp: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    true,
+				OnlyWhenLocked: true,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "disabled pulse",
+			tp: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          0,
+				AlignToGNSS:    false,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ver := &Version{GNSS: gpsprot.MajorGNSSSet}
+			target := gpsprot.NewConfigTarget()
+			target.Props.SetTimePulse(tt.tp)
+			// Build: convert abstract model to cfgvals items via Transaction.
+			// Transaction may need two passes: the first returns missing keys,
+			// the second uses those keys to produce items.
+			known := newCfgVals()
+			items, missing, err := known.Transaction(target, ver, ucv.UART1, 0)
+			if err != nil {
+				t.Fatalf("Transaction[1]: %v", err)
+			}
+			// Populate missing keys with defaults
+			for _, k := range missing {
+				known.Map[k] = 0
+			}
+			if len(missing) > 0 {
+				items, missing, err = known.Transaction(target, ver, ucv.UART1, 0)
+				if err != nil {
+					t.Fatalf("Transaction[2]: %v", err)
+				}
+				if len(missing) != 0 {
+					t.Fatalf("unexpected missing keys on second pass: %v", missing)
+				}
+			}
+			// Apply items to a fresh CfgVals and Cook back
+			cv := newCfgVals()
+			cv.AddItems(items)
+			cp := new(gpsprot.ConfigProps)
+			cv.Cook(ver, ucv.UART1, cp)
+			got, ok := cp.GetTimePulse()
+			if !ok {
+				t.Fatal("expected all TimePulse properties to be set")
+			}
+			if got != tt.tp {
+				t.Errorf("round trip mismatch:\n  want %+v\n  got  %+v", tt.tp, got)
+			}
+		})
+	}
+}
+
+func TestTimePulseCook(t *testing.T) {
+	tests := []struct {
+		name  string
+		items []ucv.Item
+		want  gpsprot.TimePulse
+	}{
+		{
+			name: "not enabled means width zero",
+			items: []ucv.Item{
+				ucv.MakeItem(ucv.KTpTp1Ena, false),
+				ucv.MakeItem(ucv.KTpPulseDef, ucv.ETpPulseDefPeriod),
+				ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength),
+				ucv.MakeItem(ucv.KTpPeriodTp1, 1e6),
+				ucv.MakeItem(ucv.KTpLenTp1, 1e5),
+				ucv.MakeItem(ucv.KTpAlignToTowTp1, false),
+				ucv.MakeItem(ucv.KTpSyncGnssTp1, false),
+				ucv.MakeItem(ucv.KTpUseLockedTp1, false),
+				ucv.MakeItem(ucv.KTpPolTp1, true),
+			},
+			want: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          0,
+				AlignToGNSS:    false,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "USE_LOCKED false reads unlocked keys",
+			items: []ucv.Item{
+				ucv.MakeItem(ucv.KTpTp1Ena, true),
+				ucv.MakeItem(ucv.KTpPulseDef, ucv.ETpPulseDefPeriod),
+				ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength),
+				ucv.MakeItem(ucv.KTpPeriodTp1, 1e6),
+				ucv.MakeItem(ucv.KTpLenTp1, 1e5),
+				ucv.MakeItem(ucv.KTpAlignToTowTp1, false),
+				ucv.MakeItem(ucv.KTpSyncGnssTp1, false),
+				ucv.MakeItem(ucv.KTpUseLockedTp1, false),
+				ucv.MakeItem(ucv.KTpPolTp1, true),
+			},
+			want: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    false,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "frequency mode",
+			items: []ucv.Item{
+				ucv.MakeItem(ucv.KTpTp1Ena, true),
+				ucv.MakeItem(ucv.KTpPulseDef, ucv.ETpPulseDefFreq),
+				ucv.MakeItem(ucv.KTpFreqTp1, 10),
+				ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength),
+				ucv.MakeItem(ucv.KTpLenTp1, 50000),
+				ucv.MakeItem(ucv.KTpAlignToTowTp1, false),
+				ucv.MakeItem(ucv.KTpSyncGnssTp1, false),
+				ucv.MakeItem(ucv.KTpUseLockedTp1, false),
+				ucv.MakeItem(ucv.KTpPolTp1, true),
+			},
+			want: gpsprot.TimePulse{
+				Period:         100 * time.Millisecond,
+				Width:          50 * time.Millisecond,
+				AlignToGNSS:    false,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "duty cycle mode",
+			items: []ucv.Item{
+				ucv.MakeItem(ucv.KTpTp1Ena, true),
+				ucv.MakeItem(ucv.KTpPulseDef, ucv.ETpPulseDefPeriod),
+				ucv.MakeItem(ucv.KTpPeriodTp1, 1e6),
+				ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefRatio),
+				ucv.MakeItem(ucv.KTpDutyTp1, 10.0),
+				ucv.MakeItem(ucv.KTpAlignToTowTp1, false),
+				ucv.MakeItem(ucv.KTpSyncGnssTp1, false),
+				ucv.MakeItem(ucv.KTpUseLockedTp1, false),
+				ucv.MakeItem(ucv.KTpPolTp1, true),
+			},
+			want: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    false,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "USE_LOCKED true reads locked keys",
+			items: []ucv.Item{
+				ucv.MakeItem(ucv.KTpTp1Ena, true),
+				ucv.MakeItem(ucv.KTpPulseDef, ucv.ETpPulseDefPeriod),
+				ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength),
+				ucv.MakeItem(ucv.KTpPeriodTp1, 500000),
+				ucv.MakeItem(ucv.KTpPeriodLockTp1, 1e6),
+				ucv.MakeItem(ucv.KTpLenTp1, 50000),
+				ucv.MakeItem(ucv.KTpLenLockTp1, 1e5),
+				ucv.MakeItem(ucv.KTpAlignToTowTp1, true),
+				ucv.MakeItem(ucv.KTpSyncGnssTp1, true),
+				ucv.MakeItem(ucv.KTpUseLockedTp1, true),
+				ucv.MakeItem(ucv.KTpPolTp1, true),
+			},
+			want: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    true,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "only when locked",
+			items: []ucv.Item{
+				ucv.MakeItem(ucv.KTpTp1Ena, true),
+				ucv.MakeItem(ucv.KTpPulseDef, ucv.ETpPulseDefPeriod),
+				ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength),
+				ucv.MakeItem(ucv.KTpPeriodLockTp1, 1e6),
+				ucv.MakeItem(ucv.KTpLenLockTp1, 1e5),
+				ucv.MakeItem(ucv.KTpLenTp1, 0),
+				ucv.MakeItem(ucv.KTpAlignToTowTp1, true),
+				ucv.MakeItem(ucv.KTpSyncGnssTp1, true),
+				ucv.MakeItem(ucv.KTpUseLockedTp1, true),
+				ucv.MakeItem(ucv.KTpPolTp1, true),
+			},
+			want: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    true,
+				OnlyWhenLocked: true,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "frequency mode locked",
+			items: []ucv.Item{
+				ucv.MakeItem(ucv.KTpTp1Ena, true),
+				ucv.MakeItem(ucv.KTpPulseDef, ucv.ETpPulseDefFreq),
+				ucv.MakeItem(ucv.KTpFreqTp1, 5),
+				ucv.MakeItem(ucv.KTpFreqLockTp1, 10),
+				ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength),
+				ucv.MakeItem(ucv.KTpLenLockTp1, 50000),
+				ucv.MakeItem(ucv.KTpLenTp1, 50000),
+				ucv.MakeItem(ucv.KTpAlignToTowTp1, true),
+				ucv.MakeItem(ucv.KTpSyncGnssTp1, true),
+				ucv.MakeItem(ucv.KTpUseLockedTp1, true),
+				ucv.MakeItem(ucv.KTpPolTp1, true),
+			},
+			want: gpsprot.TimePulse{
+				Period:         100 * time.Millisecond,
+				Width:          50 * time.Millisecond,
+				AlignToGNSS:    true,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "duty cycle mode locked",
+			items: []ucv.Item{
+				ucv.MakeItem(ucv.KTpTp1Ena, true),
+				ucv.MakeItem(ucv.KTpPulseDef, ucv.ETpPulseDefPeriod),
+				ucv.MakeItem(ucv.KTpPeriodLockTp1, 1e6),
+				ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefRatio),
+				ucv.MakeItem(ucv.KTpDutyTp1, 10.0),
+				ucv.MakeItem(ucv.KTpDutyLockTp1, 10.0),
+				ucv.MakeItem(ucv.KTpAlignToTowTp1, true),
+				ucv.MakeItem(ucv.KTpSyncGnssTp1, true),
+				ucv.MakeItem(ucv.KTpUseLockedTp1, true),
+				ucv.MakeItem(ucv.KTpPolTp1, true),
+			},
+			want: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    true,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "polarity falling",
+			items: []ucv.Item{
+				ucv.MakeItem(ucv.KTpTp1Ena, true),
+				ucv.MakeItem(ucv.KTpPulseDef, ucv.ETpPulseDefPeriod),
+				ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength),
+				ucv.MakeItem(ucv.KTpPeriodTp1, 1e6),
+				ucv.MakeItem(ucv.KTpLenTp1, 1e5),
+				ucv.MakeItem(ucv.KTpAlignToTowTp1, false),
+				ucv.MakeItem(ucv.KTpSyncGnssTp1, false),
+				ucv.MakeItem(ucv.KTpUseLockedTp1, false),
+				ucv.MakeItem(ucv.KTpPolTp1, false),
+			},
+			want: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    false,
+				OnlyWhenLocked: false,
+				PolarityRising: false,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ver := &Version{GNSS: gpsprot.MajorGNSSSet}
+			cv := newCfgVals()
+			cv.AddItems(tt.items)
+			cp := new(gpsprot.ConfigProps)
+			cv.Cook(ver, ucv.UART1, cp)
+			got, ok := cp.GetTimePulse()
+			if !ok {
+				t.Fatal("expected all TimePulse properties to be set")
+			}
+			if got != tt.want {
+				t.Errorf("Cook mismatch:\n  want %+v\n  got  %+v", tt.want, got)
+			}
+		})
+	}
+}
+
+// TestTimePulseCookMissing verifies that getTimePulse returns false
+// when required keys are absent.
+func TestTimePulseCookMissing(t *testing.T) {
+	// A complete set of items that produces a valid TimePulse.
+	full := []ucv.Item{
+		ucv.MakeItem(ucv.KTpTp1Ena, true),
+		ucv.MakeItem(ucv.KTpPulseDef, ucv.ETpPulseDefPeriod),
+		ucv.MakeItem(ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength),
+		ucv.MakeItem(ucv.KTpPeriodTp1, 1e6),
+		ucv.MakeItem(ucv.KTpLenTp1, 1e5),
+		ucv.MakeItem(ucv.KTpAlignToTowTp1, false),
+		ucv.MakeItem(ucv.KTpSyncGnssTp1, false),
+		ucv.MakeItem(ucv.KTpUseLockedTp1, false),
+		ucv.MakeItem(ucv.KTpPolTp1, true),
+	}
+	// Sanity: the full set should succeed.
+	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
+	cv := newCfgVals()
+	cv.AddItems(full)
+	cp := new(gpsprot.ConfigProps)
+	cv.Cook(ver, ucv.UART1, cp)
+	if _, ok := cp.GetTimePulse(); !ok {
+		t.Fatal("full set should produce a valid TimePulse")
+	}
+	// Each required key, when removed, should cause GetTimePulse to fail.
+	required := []ucv.Key{
+		ucv.KTpUseLockedTp1.Key(),
+		ucv.KTpPulseDef.Key(),
+		ucv.KTpPeriodTp1.Key(),
+		ucv.KTpTp1Ena.Key(),
+		ucv.KTpPulseLengthDef.Key(),
+		ucv.KTpLenTp1.Key(),
+		ucv.KTpPolTp1.Key(),
+	}
+	for _, drop := range required {
+		t.Run(drop.String(), func(t *testing.T) {
+			cv := newCfgVals()
+			for _, item := range full {
+				if item.Key != drop {
+					cv.Map[item.Key] = item.Value
+				}
+			}
+			cp := new(gpsprot.ConfigProps)
+			cv.Cook(ver, ucv.UART1, cp)
+			if _, ok := cp.GetTimePulse(); ok {
+				t.Errorf("expected GetTimePulse to fail without %v", drop)
 			}
 		})
 	}

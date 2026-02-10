@@ -1,4 +1,4 @@
-package gpscmd
+package msgfile
 
 import (
 	"encoding/binary"
@@ -133,7 +133,6 @@ func encodeIntValue(t typeSpec, v any, endian binary.ByteOrder) ([]byte, error) 
 	default:
 		panic(fmt.Sprintf("unexpected type specifier %v", t))
 	}
-	
 }
 
 func encodeFloatValue(t typeSpec, v any, endian binary.ByteOrder) ([]byte, error) {

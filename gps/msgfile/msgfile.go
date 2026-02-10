@@ -1,11 +1,10 @@
-package gpscmd
+package msgfile
 
 import (
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -13,8 +12,8 @@ import (
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
-	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
+	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -25,21 +24,22 @@ type MsgCommon struct {
 	Description string   `toml:"description"`
 }
 
-type tagDesc struct {
-	tag  string
-	desc string
+// TagDesc is a tag with an optional description.
+type TagDesc struct {
+	Tag  string
+	Desc string
 }
 
 type tagDescGetter interface {
-	tagDesc() tagDesc
+	tagDesc() TagDesc
 }
 
-func (mc *MsgCommon) tagDesc() tagDesc {
+func (mc *MsgCommon) tagDesc() TagDesc {
 	tag := ""
 	if mc.Tag != nil {
 		tag = *mc.Tag
 	}
-	return tagDesc{tag: tag, desc: mc.Description}
+	return TagDesc{Tag: tag, Desc: mc.Description}
 }
 
 // LineMsg represents a [[line]] entry or [default.line].
@@ -56,18 +56,18 @@ func (mc *MsgCommon) delay() (time.Duration, error) {
 	return ptime.Seconds(*mc.Delay), nil
 }
 
-func (lm *LineMsg) toRaw() (rawMsg, error) {
+func (lm *LineMsg) toRaw() (RawMsg, error) {
 	if lm.Text == "" {
-		return rawMsg{}, errors.New("text must not be empty")
+		return RawMsg{}, errors.New("text must not be empty")
 	}
 	delay, err := lm.MsgCommon.delay()
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
-	return rawMsg{
-		bytes: []byte(lm.Text + *lm.EOL),
-		delay: delay,
-		tag:   *lm.Tag,
+	return RawMsg{
+		Bytes: []byte(lm.Text + *lm.EOL),
+		Delay: delay,
+		Tag:   *lm.Tag,
 	}, nil
 }
 
@@ -79,22 +79,22 @@ type BinaryMsg struct {
 	MsgCommon
 }
 
-func (bm *BinaryMsg) toRaw() (rawMsg, error) {
+func (bm *BinaryMsg) toRaw() (RawMsg, error) {
 	if bm.Hex == "" {
-		return rawMsg{}, errors.New("hex must not be empty")
+		return RawMsg{}, errors.New("hex must not be empty")
 	}
 	b, err := decodeHex(bm.Hex)
 	if err != nil {
-		return rawMsg{}, fmt.Errorf("hex: %w", err)
+		return RawMsg{}, fmt.Errorf("hex: %w", err)
 	}
 	delay, err := bm.MsgCommon.delay()
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
-	return rawMsg{
-		bytes: b,
-		delay: delay,
-		tag:   *bm.Tag,
+	return RawMsg{
+		Bytes: b,
+		Delay: delay,
+		Tag:   *bm.Tag,
 	}, nil
 }
 
@@ -106,22 +106,22 @@ type NMEAMsg struct {
 	MsgCommon
 }
 
-func (nm *NMEAMsg) toRaw() (rawMsg, error) {
+func (nm *NMEAMsg) toRaw() (RawMsg, error) {
 	if nm.Text == "" {
-		return rawMsg{}, errors.New("text must not be empty")
+		return RawMsg{}, errors.New("text must not be empty")
 	}
 	delay, err := nm.MsgCommon.delay()
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
 	built, err := buildNMEA(nm.Text)
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
-	return rawMsg{
-		bytes: []byte(built),
-		delay: delay,
-		tag:   *nm.Tag,
+	return RawMsg{
+		Bytes: []byte(built),
+		Delay: delay,
+		Tag:   *nm.Tag,
 	}, nil
 }
 
@@ -140,21 +140,21 @@ type CASBINMsg struct {
 	UBXLikeMsg
 }
 
-func (cm *CASBINMsg) toRaw() (rawMsg, error) {
+func (cm *CASBINMsg) toRaw() (RawMsg, error) {
 	payload, err := cm.Payload.Encode(casbin.Endian)
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
 	mid := casbin.MakeMsgID(cm.Class, cm.ID)
 	pkt, err := casbin.PackMsg(mid, payload)
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
 	delay, err := cm.MsgCommon.delay()
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
-	return rawMsg{bytes: pkt, delay: delay, tag: *cm.Tag}, nil
+	return RawMsg{Bytes: pkt, Delay: delay, Tag: *cm.Tag}, nil
 }
 
 func (cm *CASBINMsg) getTag() string { return *cm.Tag }
@@ -164,21 +164,21 @@ type ASBINMsg struct {
 	UBXLikeMsg
 }
 
-func (am *ASBINMsg) toRaw() (rawMsg, error) {
+func (am *ASBINMsg) toRaw() (RawMsg, error) {
 	payload, err := am.Payload.Encode(asbin.Endian())
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
 	mid := asbin.MakeMsgID(am.Class, am.ID)
 	pkt, err := asbin.PackMsg(mid, payload)
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
 	delay, err := am.MsgCommon.delay()
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
-	return rawMsg{bytes: pkt, delay: delay, tag: *am.Tag}, nil
+	return RawMsg{Bytes: pkt, Delay: delay, Tag: *am.Tag}, nil
 }
 
 func (am *ASBINMsg) getTag() string { return *am.Tag }
@@ -188,21 +188,21 @@ type UBXMsg struct {
 	UBXLikeMsg
 }
 
-func (um *UBXMsg) toRaw() (rawMsg, error) {
+func (um *UBXMsg) toRaw() (RawMsg, error) {
 	payload, err := um.Payload.Encode(ubxbin.Endian)
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
 	mid := ubxbin.MakeMsgID(um.Class, um.ID)
 	pkt, err := ubxbin.PackMsg(mid, payload)
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
 	delay, err := um.MsgCommon.delay()
 	if err != nil {
-		return rawMsg{}, err
+		return RawMsg{}, err
 	}
-	return rawMsg{bytes: pkt, delay: delay, tag: *um.Tag}, nil
+	return RawMsg{Bytes: pkt, Delay: delay, Tag: *um.Tag}, nil
 }
 
 func (um *UBXMsg) getTag() string { return *um.Tag }
@@ -226,8 +226,8 @@ func buildNMEA(text string) (string, error) {
 	return text, nil
 }
 
-// MsgFile represents a parsed message file.
-type MsgFile struct {
+// Parsed represents a parsed message file.
+type Parsed struct {
 	Default struct {
 		Line   LineMsg   `toml:"line"`
 		Binary BinaryMsg `toml:"binary"`
@@ -244,17 +244,16 @@ type MsgFile struct {
 	UBX    []UBXMsg    `toml:"ubx"`
 }
 
-// rawMsg is an internal type for sending messages.
-type rawMsg struct {
-	bytes []byte
-	delay time.Duration
-	tag   string // for logging
-	index int    // 0-based index within tag
+// RawMsg is a message ready to send: raw bytes with metadata.
+type RawMsg struct {
+	Bytes []byte
+	Delay time.Duration
+	Tag   string // for logging
+	Index int    // 0-based index within tag
 }
 
-// UserMsg is the interface for message types that can be converted to rawMsg.
-type UserMsg interface {
-	toRaw() (rawMsg, error)
+type userMsg interface {
+	toRaw() (RawMsg, error)
 	getTag() string
 }
 
@@ -264,8 +263,8 @@ func defaultMsgCommon() MsgCommon {
 	return MsgCommon{Delay: ptr(0.0), Tag: ptr("")}
 }
 
-func defaultMsgFile() *MsgFile {
-	mf := new(MsgFile)
+func newDefault() *Parsed {
+	mf := new(Parsed)
 	mf.Default.Line.EOL = ptr("\r\n")
 	mf.Default.Line.MsgCommon = defaultMsgCommon()
 	mf.Default.Binary.MsgCommon = defaultMsgCommon()
@@ -276,14 +275,14 @@ func defaultMsgFile() *MsgFile {
 	return mf
 }
 
-// LoadMsgFile reads and parses a TOML message file.
-func LoadMsgFile(path string) (*MsgFile, error) {
+// Load reads and parses a TOML message file.
+func Load(path string) (*Parsed, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	mf := defaultMsgFile()
+	mf := newDefault()
 	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(mf)
 	if err != nil {
 		return nil, err
@@ -307,34 +306,34 @@ func applyCommonDefaults(dst, src *MsgCommon) {
 	}
 }
 
-func (mf *MsgFile) applyLineDefaults(lm *LineMsg) {
+func (mf *Parsed) applyLineDefaults(lm *LineMsg) {
 	if lm.EOL == nil {
 		lm.EOL = mf.Default.Line.EOL
 	}
 	applyCommonDefaults(&lm.MsgCommon, &mf.Default.Line.MsgCommon)
 }
 
-func (mf *MsgFile) applyBinaryDefaults(bm *BinaryMsg) {
+func (mf *Parsed) applyBinaryDefaults(bm *BinaryMsg) {
 	applyCommonDefaults(&bm.MsgCommon, &mf.Default.Binary.MsgCommon)
 }
 
-func (mf *MsgFile) applyNMEADefaults(nm *NMEAMsg) {
+func (mf *Parsed) applyNMEADefaults(nm *NMEAMsg) {
 	applyCommonDefaults(&nm.MsgCommon, &mf.Default.NMEA.MsgCommon)
 }
 
-func (mf *MsgFile) applyCASBINDefaults(cm *CASBINMsg) {
+func (mf *Parsed) applyCASBINDefaults(cm *CASBINMsg) {
 	applyCommonDefaults(&cm.MsgCommon, &mf.Default.CASBIN.MsgCommon)
 }
 
-func (mf *MsgFile) applyASBINDefaults(am *ASBINMsg) {
+func (mf *Parsed) applyASBINDefaults(am *ASBINMsg) {
 	applyCommonDefaults(&am.MsgCommon, &mf.Default.ASBIN.MsgCommon)
 }
 
-func (mf *MsgFile) applyUBXDefaults(um *UBXMsg) {
+func (mf *Parsed) applyUBXDefaults(um *UBXMsg) {
 	applyCommonDefaults(&um.MsgCommon, &mf.Default.UBX.MsgCommon)
 }
 
-func (mf *MsgFile) validateDefaults() error {
+func (mf *Parsed) validateDefaults() error {
 	if mf.Default.Line.Text != "" {
 		return errors.New("default.line.text must be empty")
 	}
@@ -395,7 +394,7 @@ func (mf *MsgFile) validateDefaults() error {
 // TaggedMsgs returns messages for the given tags with defaults applied.
 // Returns a typed slice ([]LineMsg, []BinaryMsg, []NMEAMsg, []CASBINMsg, []ASBINMsg, or []UBXMsg).
 // Returns error if tags select messages of mixed types or if there are no messages with the tags.
-func (mf *MsgFile) TaggedMsgs(tags []string) (any, error) {
+func (mf *Parsed) TaggedMsgs(tags []string) (any, error) {
 	if err := mf.validateDefaults(); err != nil {
 		return nil, err
 	}
@@ -469,7 +468,7 @@ func applyDefaults[T any, PT *T](msgs []T, apply func(PT)) {
 
 func filterMsgs[T any, PT interface {
 	*T
-	UserMsg
+	userMsg
 }](msgs []T, tags []string) []T {
 	tagIndex := make(map[string][]int)
 	for i := range msgs {
@@ -485,12 +484,12 @@ func filterMsgs[T any, PT interface {
 	return result
 }
 
-// toRawMsgs converts a slice of messages to rawMsg.
+// toRawMsgs converts a slice of messages to RawMsg.
 func toRawMsgs[T any, PT interface {
 	*T
-	UserMsg
-}](msgs []T) ([]rawMsg, error) {
-	result := make([]rawMsg, len(msgs))
+	userMsg
+}](msgs []T) ([]RawMsg, error) {
+	result := make([]RawMsg, len(msgs))
 	tagCount := make(map[string]int)
 	for i := range msgs {
 		p := PT(&msgs[i])
@@ -501,16 +500,37 @@ func toRawMsgs[T any, PT interface {
 		if err != nil {
 			return nil, fmt.Errorf("message %d with tag %q: %w", idx+1, tag, err)
 		}
-		rm.index = idx
-		rm.tag = tag
+		rm.Index = idx
+		rm.Tag = tag
 		result[i] = rm
 	}
 	return result, nil
 }
 
+// ToRaw converts a typed message slice to raw messages.
+// The msgs parameter must be a typed slice as returned by Parsed.TaggedMsgs.
+func ToRaw(msgs any) ([]RawMsg, error) {
+	switch m := msgs.(type) {
+	case []LineMsg:
+		return toRawMsgs(m)
+	case []BinaryMsg:
+		return toRawMsgs(m)
+	case []NMEAMsg:
+		return toRawMsgs(m)
+	case []CASBINMsg:
+		return toRawMsgs(m)
+	case []ASBINMsg:
+		return toRawMsgs(m)
+	case []UBXMsg:
+		return toRawMsgs(m)
+	default:
+		panic(fmt.Sprintf("unexpected message type: %T", msgs))
+	}
+}
+
 type tagDescBuilder struct {
-	descs        []tagDesc
-	inconsistent []tagDesc
+	descs        []TagDesc
+	inconsistent []TagDesc
 	index        map[string]int
 }
 
@@ -520,22 +540,24 @@ func collectDescs[T any, PT interface {
 }](msgs []T, b *tagDescBuilder) {
 	for i := range msgs {
 		td := PT(&msgs[i]).tagDesc()
-		if j, ok := b.index[td.tag]; ok {
-			if td.desc != "" {
-				if b.descs[j].desc == "" {
-					b.descs[j].desc = td.desc
-				} else if b.descs[j].desc != td.desc {
+		if j, ok := b.index[td.Tag]; ok {
+			if td.Desc != "" {
+				if b.descs[j].Desc == "" {
+					b.descs[j].Desc = td.Desc
+				} else if b.descs[j].Desc != td.Desc {
 					b.inconsistent = append(b.inconsistent, td)
 				}
 			}
 		} else {
-			b.index[td.tag] = len(b.descs)
+			b.index[td.Tag] = len(b.descs)
 			b.descs = append(b.descs, td)
 		}
 	}
 }
 
-func (mf *MsgFile) collectTagDescs() (descs, inconsistent []tagDesc) {
+// TagDescs returns tag/description pairs in order of first occurrence.
+// Inconsistent contains any tags where messages have conflicting descriptions.
+func (mf *Parsed) TagDescs() (descs, inconsistent []TagDesc) {
 	b := &tagDescBuilder{index: make(map[string]int)}
 	collectDescs(mf.Line, b)
 	collectDescs(mf.Binary, b)
@@ -545,32 +567,23 @@ func (mf *MsgFile) collectTagDescs() (descs, inconsistent []tagDesc) {
 	collectDescs(mf.UBX, b)
 	// Move empty tag to front if present
 	for i, td := range b.descs {
-		if td.tag == "" && i > 0 {
-			b.descs = append([]tagDesc{td}, append(b.descs[:i], b.descs[i+1:]...)...)
+		if td.Tag == "" && i > 0 {
+			b.descs = append([]TagDesc{td}, append(b.descs[:i], b.descs[i+1:]...)...)
 			break
 		}
 	}
 	return b.descs, b.inconsistent
 }
 
-// CheckTagDescriptions returns tag/description pairs in order of first occurrence.
-// Logs warnings for any tags with inconsistent descriptions.
-func (mf *MsgFile) CheckTagDescriptions(lg *slog.Logger) []tagDesc {
-	descs, inconsistent := mf.collectTagDescs()
-	for _, td := range inconsistent {
-		lg.Warn("tag has inconsistent descriptions", "tag", td.tag, "desc", td.desc)
-	}
-	return descs
-}
-
-func printTagDescs(w io.Writer, tds []tagDesc) {
+// PrintTagDescs writes tag descriptions to w.
+func PrintTagDescs(w io.Writer, tds []TagDesc) {
 	if len(tds) == 0 {
 		return
 	}
 	// Handle empty tag if present (guaranteed to be first if exists)
-	if tds[0].tag == "" {
-		if tds[0].desc != "" {
-			fmt.Fprintf(w, "No tag: %s\n", tds[0].desc)
+	if tds[0].Tag == "" {
+		if tds[0].Desc != "" {
+			fmt.Fprintf(w, "No tag: %s\n", tds[0].Desc)
 		}
 		tds = tds[1:]
 	}
@@ -580,10 +593,10 @@ func printTagDescs(w io.Writer, tds []tagDesc) {
 	// Print named tags
 	fmt.Fprintln(w, "Tags:")
 	for _, td := range tds {
-		if td.desc != "" {
-			fmt.Fprintf(w, "  %s - %s\n", td.tag, td.desc)
+		if td.Desc != "" {
+			fmt.Fprintf(w, "  %s - %s\n", td.Tag, td.Desc)
 		} else {
-			fmt.Fprintf(w, "  %s\n", td.tag)
+			fmt.Fprintf(w, "  %s\n", td.Tag)
 		}
 	}
 }
