@@ -39,6 +39,9 @@ var AllKeys = []ucv.AnyTypedKey{
 	ucv.KTpAlignToTowTp1,
 	ucv.KTpAntCabledelay,
 	ucv.KTpDutyTp1,
+	ucv.KTpDutyLockTp1,
+	ucv.KTpFreqTp1,
+	ucv.KTpFreqLockTp1,
 	ucv.KTpLenLockTp1,
 	ucv.KTpLenTp1,
 	ucv.KTpPeriodLockTp1,
@@ -72,19 +75,16 @@ var cfgValKeysByProp = map[gpsprot.PropIDs][]ucv.AnyTypedKey{
 	gpsprot.PropIDAntennaCableDelay: {
 		ucv.KTpAntCabledelay,
 	},
-	gpsprot.PropIDTimePulseWidth: {
-		ucv.KTpPulseLengthDef,
-		ucv.KTpUseLockedTp1,
-		ucv.KTpLenLockTp1,
-		ucv.KTpLenTp1,
-	},
 	gpsprot.PropIDTimePulsePolarityRising: {
 		ucv.KTpPolTp1,
 	},
 	gpsprot.PropIDTimePulse: {
 		ucv.KTpAlignToTowTp1,
 		ucv.KTpAntCabledelay,
+		ucv.KTpDutyLockTp1,
 		ucv.KTpDutyTp1,
+		ucv.KTpFreqLockTp1,
+		ucv.KTpFreqTp1,
 		ucv.KTpLenLockTp1,
 		ucv.KTpLenTp1,
 		ucv.KTpPeriodLockTp1,
@@ -139,20 +139,8 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 	if v, ok := raw.getTimeGNSS(); ok {
 		cp.SetTimeGNSS(v)
 	}
-	if v, ok := raw.getTimePulseAlignToGNSS(); ok {
-		cp.SetTimePulseAlignToGNSS(v)
-	}
-	if v, ok := raw.getTimePulsePeriod(); ok {
-		cp.SetTimePulsePeriod(v)
-	}
-	if v, ok := raw.getTimePulseWidth(); ok {
-		cp.SetTimePulseWidth(v)
-	}
-	if v, ok := raw.getTimePulseOnlyWhenLocked(); ok {
-		cp.SetTimePulseOnlyWhenLocked(v)
-	}
-	if v, ok := cfgValGet(raw, ucv.KTpPolTp1); ok {
-		cp.SetTimePulsePolarityRising(v)
+	if v, ok := raw.getTimePulse(); ok {
+		cp.SetTimePulse(v)
 	}
 	if v, ok := cfgValGet(raw, ucv.KTpAntCabledelay); ok {
 		cp.SetAntennaCableDelay(time.Duration(v))
@@ -184,7 +172,7 @@ func (known *CfgVals) addGetKeys(ids gpsprot.PropIDs, ver *Version, keys []ucv.K
 	tks := []ucv.AnyTypedKey{}
 	switch ids & gpsprot.PropIDTimePulse {
 	// we handle a few of these properties individually
-	case gpsprot.PropIDTimePulseWidth, gpsprot.PropIDAntennaCableDelay, 0:
+	case gpsprot.PropIDAntennaCableDelay, 0:
 		// we will handle these below uniformly
 	default:
 		// handle these as a group
@@ -440,52 +428,122 @@ func (raw *CfgVals) getMode() (gpsprot.Mode, bool) {
 	return mode, false
 }
 
-func (raw *CfgVals) getTimePulseOnlyWhenLocked() (v bool, ok bool) {
-	if v, ok := cfgValGet(raw, ucv.KTpUseLockedTp1); !ok || !v {
-		return false, false
+// getTimePulse reads raw u-blox CFG-TP keys and returns the abstract TimePulse.
+// Returns false if any required key is missing. This is the inverse of timePulseBuild.
+func (raw *CfgVals) getTimePulse() (gpsprot.TimePulse, bool) {
+	var tpZero gpsprot.TimePulse
+	locked, ok := cfgValGet(raw, ucv.KTpUseLockedTp1)
+	if !ok {
+		return tpZero, false
 	}
-	if v, ok := cfgValGet(raw, ucv.KTpPulseLengthDef); !ok || v != ucv.ETpPulseLengthDefLength {
-		return false, false
+	var tp gpsprot.TimePulse
+	// AlignToGNSS: only meaningful when USE_LOCKED is set
+	if locked {
+		v1, ok1 := cfgValGet(raw, ucv.KTpAlignToTowTp1)
+		v2, ok2 := cfgValGet(raw, ucv.KTpSyncGnssTp1)
+		if !ok1 || !ok2 {
+			return tpZero, false
+		}
+		tp.AlignToGNSS = v1 && v2
 	}
-	if v, ok := cfgValGet(raw, ucv.KTpLenTp1); ok {
-		return v == 0, true
+	// OnlyWhenLocked
+	if !locked {
+		tp.OnlyWhenLocked = false
+	} else {
+		def, ok := cfgValGet(raw, ucv.KTpPulseLengthDef)
+		if !ok {
+			return tpZero, false
+		}
+		switch def {
+		case ucv.ETpPulseLengthDefLength:
+			v, ok := cfgValGet(raw, ucv.KTpLenTp1)
+			if !ok {
+				return tpZero, false
+			}
+			tp.OnlyWhenLocked = v == 0
+		case ucv.ETpPulseLengthDefRatio:
+			v, ok := cfgValGet(raw, ucv.KTpDutyTp1)
+			if !ok {
+				return tpZero, false
+			}
+			tp.OnlyWhenLocked = v == 0
+		}
 	}
-	return false, false
+	// Period
+	def, ok := cfgValGet(raw, ucv.KTpPulseDef)
+	if !ok {
+		return tpZero, false
+	}
+	switch def {
+	case ucv.ETpPulseDefPeriod:
+		var v uint64
+		if locked {
+			v, ok = cfgValGet(raw, ucv.KTpPeriodLockTp1)
+		} else {
+			v, ok = cfgValGet(raw, ucv.KTpPeriodTp1)
+		}
+		if !ok {
+			return tpZero, false
+		}
+		tp.Period = time.Duration(v) * time.Microsecond
+	case ucv.ETpPulseDefFreq:
+		var v uint64
+		if locked {
+			v, ok = cfgValGet(raw, ucv.KTpFreqLockTp1)
+		} else {
+			v, ok = cfgValGet(raw, ucv.KTpFreqTp1)
+		}
+		if !ok || v == 0 {
+			return tpZero, false
+		}
+		tp.Period = time.Duration(1e6/v) * time.Microsecond
+	}
+	// Width
+	ena, ok := cfgValGet(raw, ucv.KTpTp1Ena)
+	if !ok {
+		return tpZero, false
+	}
+	if !ena {
+		tp.Width = 0
+	} else {
+		ldef, ok := cfgValGet(raw, ucv.KTpPulseLengthDef)
+		if !ok {
+			return tpZero, false
+		}
+		switch ldef {
+		case ucv.ETpPulseLengthDefLength:
+			var v uint64
+			if locked {
+				v, ok = cfgValGet(raw, ucv.KTpLenLockTp1)
+			} else {
+				v, ok = cfgValGet(raw, ucv.KTpLenTp1)
+			}
+			if !ok {
+				return tpZero, false
+			}
+			tp.Width = time.Duration(v) * time.Microsecond
+		case ucv.ETpPulseLengthDefRatio:
+			var duty float64
+			if locked {
+				duty, ok = cfgValGet(raw, ucv.KTpDutyLockTp1)
+			} else {
+				duty, ok = cfgValGet(raw, ucv.KTpDutyTp1)
+			}
+			if !ok {
+				return tpZero, false
+			}
+			tp.Width = time.Duration(float64(tp.Period) * duty / 100)
+		}
+	}
+	// Polarity
+	pol, ok := cfgValGet(raw, ucv.KTpPolTp1)
+	if !ok {
+		return tpZero, false
+	}
+	tp.PolarityRising = pol
+	return tp, true
 }
 
-func (raw *CfgVals) getTimePulseAlignToGNSS() (v bool, ok bool) {
-	v1, ok1 := cfgValGet(raw, ucv.KTpAlignToTowTp1)
-	v2, ok2 := cfgValGet(raw, ucv.KTpSyncGnssTp1)
-	ok = ok1 && ok2
-	v = v1 && v2
-	return
-}
-
-func (raw *CfgVals) getTimePulsePeriod() (time.Duration, bool) {
-	if v, ok := cfgValGet(raw, ucv.KTpPulseDef); !ok || v != ucv.ETpPulseDefPeriod {
-		return 0, false
-	}
-	if v, ok := cfgValGet(raw, ucv.KTpUseLockedTp1); !ok || !v {
-		return 0, false
-	}
-	if v, ok := cfgValGet(raw, ucv.KTpPeriodLockTp1); ok {
-		return time.Duration(v) * time.Microsecond, true
-	}
-	return 0, false
-}
-
-func (raw *CfgVals) getTimePulseWidth() (time.Duration, bool) {
-	if v, ok := cfgValGet(raw, ucv.KTpPulseLengthDef); !ok || v != ucv.ETpPulseLengthDefLength {
-		return 0, false
-	}
-	if v, ok := cfgValGet(raw, ucv.KTpUseLockedTp1); !ok || !v {
-		return 0, false
-	}
-	if v, ok := cfgValGet(raw, ucv.KTpLenLockTp1); ok {
-		return time.Duration(v) * time.Microsecond, true
-	}
-	return 0, false
-}
 
 func (raw *CfgVals) getTimeGNSS() (gpsprot.GNSS, bool) {
 	if tg, ok := cfgValGet(raw, ucv.KTpTimegridTp1); ok {
