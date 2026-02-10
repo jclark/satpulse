@@ -42,6 +42,8 @@ These packages provide the public API for GPS processing. They are in the domain
 
 `gps/gpsdecode` decodes binary GPS packets into JSON-serializable maps derived from the Go structs defined in the library layer packages.
 
+`gps/msgfile` parses TOML message files that describe GPS messages to send to a receiver. It handles multiple protocol types (UBX, CASBIN, ASBIN, NMEA, line, binary), applies per-type defaults, and converts typed messages into raw bytes ready to send. Messages are organized by tags for selective sending.
+
 ### gps/app/
 
 These packages provide GPS orchestration and CLI infrastructure. They are in the application layer.
