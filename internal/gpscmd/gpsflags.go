@@ -57,7 +57,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [--survey] [--survey-time seconds] [--survey-acc meters]
             [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
             [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
-            [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|none,...]
+            [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...]
             [-m|--msg-file path] [-t|--tag name,...] [--show-tags]`
 
 const defaultSurveyTime = 2000
@@ -134,7 +134,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
 	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|tai|ecef|after|daemon|off,...")
 	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|auto|none,...")
-	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|VTG|none,...")
+	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...")
 	flags.Var(&satsOut, "sats-out", "satellite data messages to output `flags`: sat|sig|none,...")
 	flags.Float64VarP(&pps, "pps", "p", 0, "configure the GPS receiver to enable a PPS signal with pulse `width` in seconds")
 	flags.Int64Var(&antCableDelay, "ant-cable-delay", 0, "antenna cable delay in nanoseconds")
@@ -797,6 +797,9 @@ func (nmeaOut *nmeaOutOpt) String() string {
 	if flags&gpsprot.NMEAMsgVTG != 0 {
 		parts = append(parts, "VTG")
 	}
+	if flags&gpsprot.NMEAMsgGLL != 0 {
+		parts = append(parts, "GLL")
+	}
 	// Don't expose NMEAMsgOther
 	return strings.Join(parts, ",")
 }
@@ -825,6 +828,8 @@ func (nmeaOut *nmeaOutOpt) Set(s string) error {
 			flags |= gpsprot.NMEAMsgZDA
 		case "VTG":
 			flags |= gpsprot.NMEAMsgVTG
+		case "GLL":
+			flags |= gpsprot.NMEAMsgGLL
 		case "NONE":
 			// do nothing
 		default:

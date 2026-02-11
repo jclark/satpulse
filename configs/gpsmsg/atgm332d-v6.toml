@@ -356,6 +356,24 @@ id = 0x01
 payload.types = "U1U1U2"
 payload.values = [0x4E, 0x02, 0]
 
+# Enable GLL at 1Hz
+[[casbin]]
+tag = "nmea-gll"
+description = "Enable NMEA GLL output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x01, 1]
+
+# Disable GLL
+[[casbin]]
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x01, 0]
+
 # CFG-NMEA: NMEA output configuration
 # Payload: U1 nmeaVer, U1 latLonReso, U1 heightReso, U1 gsaPlus,
 #          U1 nmeaValidOpen, U1 res, U2 res2

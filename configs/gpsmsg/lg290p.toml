@@ -328,6 +328,18 @@ text = "PQTMCFGMSGRATE,W,ZDA,0"
 tag = "nmea-zda-off"
 description = "Disable NMEA ZDA message"
 
+# Enable NMEA GLL message at rate 1
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GLL,1"
+tag = "nmea-gll"
+description = "Enable NMEA GLL message"
+
+# Disable NMEA GLL message
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GLL,0"
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL message"
+
 # Enable NMEA messages for satpulse daemon (RMC, GGA, GSV, GSA)
 # Verified RMC, GGA, GSV, GSA messages all appear in capture after enable on LG290P
 [[nmea]]

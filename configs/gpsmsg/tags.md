@@ -25,6 +25,8 @@ Individual tags for each NMEA sentence type:
 |-----|-------------|
 | `nmea-gga` | Enable GGA (position, quality, satellites) |
 | `nmea-gga-off` | Disable GGA |
+| `nmea-gll` | Enable GLL (geographic position - latitude/longitude) |
+| `nmea-gll-off` | Disable GLL |
 | `nmea-gsa` | Enable GSA (active satellites and DOP) |
 | `nmea-gsa-off` | Disable GSA |
 | `nmea-gsv` | Enable GSV (satellites in view) |
