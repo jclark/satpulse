@@ -10,6 +10,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/jclark/satpulse/desktop/serialenum"
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
@@ -438,6 +439,11 @@ func containsBinary(data []byte) bool {
 		}
 	}
 	return false
+}
+
+// ListPorts enumerates serial ports available on the system.
+func (a *App) ListPorts() ([]serialenum.Port, error) {
+	return serialenum.List()
 }
 
 // MsgEvent is the envelope emitted as "gps:msg" to the frontend.
