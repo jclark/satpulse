@@ -13,6 +13,7 @@ Each panel has a design section (what it does) and an implementation section (ho
 - [ui-panel-packet-monitor.md](ui-panel-packet-monitor.md) - Packet monitor (raw packet diagnostics)
 - [ui-panel-sky-view.md](ui-panel-sky-view.md) - Sky view (polar satellite plot)
 - [ui-panel-signal-view.md](ui-panel-signal-view.md) - Signal view (CN0 bar graph)
+- [ui-panel-message-file.md](ui-panel-message-file.md) - Message file panel (load, tag select, send, responses)
 
 ## Implementation phases
 Each phase is self-contained with goal, steps, testing plan, and files changed.
@@ -32,7 +33,8 @@ Each phase is self-contained with goal, steps, testing plan, and files changed.
 | [phase6a.md](phase6a.md) | Signal graph | Phase 3, Phase 5b |
 | [phase6b.md](phase6b.md) | Sky view | Phase 6a |
 | [phase6c.md](phase6c.md) | Monitor tab layout rework | Phase 6a, Phase 6b, Phase 5d |
-| [phase7.md](phase7.md) | Message file support | Phase 1 |
+| [phase7a.md](phase7a.md) | Message file send | Phase 5b, msgfile MsgCount |
+| [phase7b.md](phase7b.md) | Message file response handling | Phase 7a |
 | [phase8.md](phase8.md) | Serial port enumeration (done) | Phase 5b |
 
 ## Dependency graph
@@ -50,7 +52,8 @@ Phase 1 (layout shell) -- done
 │       │   │   └── Phase 5e (time mode rework) -- done ← also depends on Phase 5a
 │       │   └── Phase 5d (live messages panel)
 │       └── Phase 5f (dirty tracking and discard) -- done
-├── Phase 7 (message file support)
+├── Phase 7a (message file send) ← depends on Phase 5b
+│   └── Phase 7b (message file response handling)
 ├── Phase 8 (serial port enumeration) -- done
 ```
 
