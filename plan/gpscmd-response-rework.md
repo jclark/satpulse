@@ -57,13 +57,17 @@ When `NotifySent` is called, the analyzer type-switches on `rm.source`:
 - `*ASBINMsg`: records pending (class, ID) keyed for ASBIN ACK matching
 - `*NMEAMsg`, `*LineMsg`, `*BinaryMsg`: no ACK mechanism, nothing to record for matching
 
-In all cases, the `RawMsg` is stored so it can be returned via `AckFor`.
+In all cases, the `RawMsg` is stored so it can be returned via `ResponseTo`.
+
+### Pending entry tracking
+
+Each pending sent entry tracks two independent flags: got ACK/NAK, got PollResponse. A UBX CFG poll produces both an ACK and a PollResponse for the same sent message. Matching is a linear scan from the start: find the first entry with matching class/ID that doesn't already have the relevant flag set.
 
 ### Analyze
 
 Dispatches on packet protocol tag:
 
-- **UBX**: parses with `ubxbin.ParseMsg`. If ACK-ACK or ACK-NAK, extracts echoed class/ID, looks up in pending sent messages. Returns `Ack`/`Nak` with `AckFor` if matched, `UnmatchedAck`/`UnmatchedNak` if not. Other UBX messages return `Background`.
+- **UBX**: parses with `ubxbin.ParseMsg`. If ACK-ACK or ACK-NAK, extracts echoed class/ID, looks up in pending sent messages. Returns `Ack`/`Nak` with `ResponseTo` if matched, `UnmatchedAck`/`UnmatchedNak` if not. For CFG-class messages: if class/ID matches a pending sent message, returns `PollResponse` with `ResponseTo`. All other UBX messages return `Background`.
 - **CASBIN**: same pattern with `casbin.ParseMsg`.
 - **ASBIN**: same pattern with `asbin.ParseMsg`.
 - **NMEA**: checks syntax. Standard GNSS talker sentences (except TXT) return `Background`. TXT and proprietary sentences return `PossibleReply`.
@@ -77,6 +81,7 @@ type PacketKind int
 const (
     Ack          PacketKind = iota // matched ACK for a sent message
     Nak                            // matched NAK for a sent message
+    PollResponse                   // data packet matching a sent poll request
     UnmatchedAck                   // ACK but no matching sent message
     UnmatchedNak                   // NAK but no matching sent message
     PossibleReply                  // NMEA TXT/proprietary, might be a response
@@ -84,19 +89,13 @@ const (
 )
 
 type PacketAnalysis struct {
-    Kind   PacketKind
-    Binary bool     // is this a binary protocol packet
-    AckFor *RawMsg  // non-nil when Kind is Ack or Nak
-    Text   string   // formatted text for display
+    Kind       PacketKind
+    Binary     bool     // is this a binary protocol packet
+    ResponseTo *RawMsg  // sent message this is a response to, if matched
 }
 ```
 
-The `Text` field contains protocol-appropriate formatted output:
-
-- For `Ack`/`Nak`: `"disable-nmea/3: ACK"` or `"set-rate: NAK"`
-- For `PossibleReply`: the NMEA sentence text (stripped of EOL)
-- For `Background`: empty (caller decides whether to display)
-- For `UnmatchedAck`/`UnmatchedNak`: protocol-level detail like `"UBX-ACK-NAK: 06-01"`
+`ResponseTo` is non-nil when the analyzer successfully matches the packet to a sent message (for `Ack`, `Nak`, or `PollResponse`). It is nil for `UnmatchedAck`, `UnmatchedNak`, `PossibleReply`, and `Background`. Formatting the analysis for display is the caller's responsibility.
 
 ## Changes to internal/gpscmd
 
@@ -106,7 +105,7 @@ The `Text` field contains protocol-appropriate formatted output:
 2. Call `NotifySent` for each message as it's sent.
 3. For each received packet:
    - If `pkt.Format == nil`: handle with existing unrecognized-data line buffering (stays in gpscmd).
-   - Otherwise: call `Analyze`, print `Text` if non-empty.
+   - Otherwise: call `Analyze`, format and print based on the returned `Kind` and `ResponseTo`.
 
 The `runMsgs`/`sendMsg` functions pass the analyzer through instead of the `responsePrinter`. The decision of whether to create an analyzer no longer depends on message type -- always create one when sending messages.
 
@@ -114,4 +113,4 @@ The `runMsgs`/`sendMsg` functions pass the analyzer through instead of the `resp
 
 - **NMEA response correlation**: NMEA has no ACK mechanism. TXT and proprietary sentences are flagged as `PossibleReply` but not correlated to specific sent messages. Smarter NMEA matching (e.g. recognizing that a PUBX response matches a sent PUBX command) is future work.
 - **Desktop integration**: the desktop app will use `PacketAnalyzer` the same way, but the specifics of Wails event emission and UI display are out of scope here.
-- **Multiple outstanding messages**: the current design matches ACKs to the most recent sent message with that class/ID. If the same class/ID is sent multiple times, earlier ones may not match. This matches the existing serial send-wait-send pattern where only one message is in flight at a time.
+
