@@ -1,5 +1,5 @@
 import {h} from 'preact';
-import {NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgOther} from './msg-flags';
+import {NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgGLL, NMEAMsgOther} from './msg-flags';
 
 const nmeaMsgs: {flag: number; label: string}[] = [
     {flag: NMEAMsgRMC, label: 'RMC'},
@@ -8,6 +8,7 @@ const nmeaMsgs: {flag: number; label: string}[] = [
     {flag: NMEAMsgGSV, label: 'GSV'},
     {flag: NMEAMsgZDA, label: 'ZDA'},
     {flag: NMEAMsgVTG, label: 'VTG'},
+    {flag: NMEAMsgGLL, label: 'GLL'},
 ];
 
 interface Props {

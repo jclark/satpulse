@@ -7,6 +7,7 @@ export const NMEAMsgGSA   = 1 << 2
 export const NMEAMsgGSV   = 1 << 3
 export const NMEAMsgZDA   = 1 << 4
 export const NMEAMsgVTG   = 1 << 5
+export const NMEAMsgGLL   = 1 << 6
 export const NMEAMsgOther = 1 << 15
 
 // RTCM
