@@ -50,7 +50,7 @@ function matchesSearch(entry: LogEntry, q: string): boolean {
 export function LoggingPanel({logEntries, setLogEntries}: Props) {
     const logRef = useRef<HTMLDivElement>(null);
     const autoScrollRef = useRef(true);
-    const [minLevel, setMinLevel] = useState<Level>('DEBUG');
+    const [minLevel, setMinLevel] = useState<Level>('INFO');
     const [component, setComponent] = useState('');
     const [search, setSearch] = useState('');
 
@@ -97,14 +97,14 @@ export function LoggingPanel({logEntries, setLogEntries}: Props) {
         <div class="flex flex-col h-full">
             {/* Toolbar */}
             <div class="flex items-center gap-2 px-3 py-1.5 shrink-0 flex-wrap">
-                <h3 class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Activity log</h3>
+                <h3 class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider mr-2">Log</h3>
                 <label class="text-xs text-gray-500 dark:text-gray-400">Level</label>
                 <select
                     class={selectClass}
                     value={minLevel}
                     onChange={e => setMinLevel((e.target as HTMLSelectElement).value as Level)}
                 >
-                    {levels.map(l => <option key={l} value={l}>{l}+</option>)}
+                    {levels.map(l => <option key={l} value={l}>{l}</option>)}
                 </select>
                 {components.length > 0 && (
                     <>
@@ -129,9 +129,6 @@ export function LoggingPanel({logEntries, setLogEntries}: Props) {
                 <button class={btnClass} onClick={() => setLogEntries(() => [])}>
                     Clear
                 </button>
-                <span class="text-xs text-gray-500 dark:text-gray-400 ml-auto">
-                    {filtered.length}/{logEntries.length}
-                </span>
             </div>
             {/* Log entries */}
             <div

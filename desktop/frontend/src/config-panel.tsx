@@ -232,7 +232,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             setResetType(0);
             setOperation({status: 'success', label: 'Reading configuration'});
         } catch (e: any) {
-            addToast('Readback error: ' + e.message, 'error');
+            addToast('Configuration read failed: ' + e.message, 'error');
             setOperation({status: 'failed', label: 'Reading configuration', error: e.message});
         } finally {
             setReading(false);
@@ -314,7 +314,6 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setSurveyAgain(false);
         setSurveyReport(true);
         if (r.ok) {
-            addToast('Configuration applied', 'success');
             setOperation({status: 'success', label: 'Applying configuration'});
             setTimePulseTouched(false);
             setTimeModeTouched(false);

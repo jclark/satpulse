@@ -92,7 +92,7 @@ export function MsgFilePanel({connState, msgFilePath, setMsgFilePath, msgFileTag
             </div>
 
             {/* Tag selector (scrollable) */}
-            <div class="overflow-y-auto px-4 flex-2">
+            <div class="overflow-y-auto mx-4 flex-2 border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-900">
                 <table class="w-full text-xs border-collapse">
                     <thead>
                         <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800">
@@ -107,7 +107,7 @@ export function MsgFilePanel({connState, msgFilePath, setMsgFilePath, msgFileTag
                                 key={i}
                                 class={`cursor-pointer border-b border-gray-100 dark:border-gray-800 ${
                                     i === selectedTagIndex
-                                        ? 'bg-blue-50 dark:bg-blue-950'
+                                        ? 'bg-blue-100 dark:bg-blue-900'
                                         : 'hover:bg-gray-50 dark:hover:bg-gray-900'
                                 }`}
                                 onClick={() => setSelectedTagIndex(i)}

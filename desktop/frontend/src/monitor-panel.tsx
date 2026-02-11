@@ -5,6 +5,7 @@ import type {PacketEntry} from './app';
 interface Props {
     packetEntries: PacketEntry[];
     setPacketEntries: (fn: (prev: PacketEntry[]) => PacketEntry[]) => void;
+    visible: boolean;
 }
 
 function stripTrailingEOL(s: string): string {
@@ -30,7 +31,7 @@ function matchesFilter(pkt: PacketEntry, q: string): boolean {
 const btnClass = 'px-2.5 py-0.5 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-blue-600 hover:border-blue-600 hover:text-white';
 const selectClass = 'bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 px-1.5 py-0.5 rounded text-xs';
 
-export function MonitorPanel({packetEntries, setPacketEntries}: Props) {
+export function MonitorPanel({packetEntries, setPacketEntries, visible}: Props) {
     const logRef = useRef<HTMLDivElement>(null);
     const [frozen, setFrozen] = useState(false);
     const [filter, setFilter] = useState('');
@@ -45,6 +46,14 @@ export function MonitorPanel({packetEntries, setPacketEntries}: Props) {
             return !prev;
         });
     }, [packetEntries]);
+
+    // Scroll to bottom when tab becomes visible
+    useEffect(() => {
+        if (visible && !frozen) {
+            const el = logRef.current;
+            if (el) el.scrollTop = el.scrollHeight;
+        }
+    }, [visible]);
 
     // When resuming, scroll to bottom
     useEffect(() => {
@@ -107,9 +116,6 @@ export function MonitorPanel({packetEntries, setPacketEntries}: Props) {
                 >
                     Clear
                 </button>
-                <span class="text-xs text-gray-500 dark:text-gray-400 ml-auto">
-                    {filtered.length}/{displayEntries.length}
-                </span>
             </div>
         </div>
     );

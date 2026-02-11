@@ -353,7 +353,7 @@ export function App() {
         }
         const r = await Connect(device, speed);
         if (r.ok) {
-            addToast('Connected to ' + device, 'success');
+            // connection status visible via indicator dot
         } else {
             addToast(r.error || 'Connection failed', 'error');
         }
@@ -431,6 +431,7 @@ export function App() {
                     <MonitorPanel
                         packetEntries={packetEntries}
                         setPacketEntries={setPacketEntries}
+                        visible={activeTab === 'packets'}
                     />
                 </div>
 
