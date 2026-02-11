@@ -201,7 +201,7 @@ func TestNMEAMessages(t *testing.T) {
 		{
 			name: "enable all standard NMEA messages",
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
-				opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgVTG)
+				opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgVTG | gpsprot.NMEAMsgGLL)
 			},
 			expectedCmds: []string{
 				"GPRMC 1",
@@ -210,6 +210,7 @@ func TestNMEAMessages(t *testing.T) {
 				"GPGSV 1",
 				"GPZDA 1",
 				"GPVTG 1",
+				"GPGLL 1",
 			},
 		},
 		{
@@ -228,6 +229,7 @@ func TestNMEAMessages(t *testing.T) {
 				"UNLOG GPGSV",
 				"UNLOG GPZDA",
 				"UNLOG GPVTG",
+				"UNLOG GPGLL",
 			},
 		},
 	}

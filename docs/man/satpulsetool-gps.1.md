@@ -23,7 +23,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-sats\-out** **sat**\|**sig**\|**none**,...]
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-raw\-out** **obs**\|**nav**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**auto**\|**none**,...]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **RMC**\|**GGA**\|**GSA**\|**GSV**\|**ZDA**\|**VTG**\|**none**,...]
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **RMC**\|**GGA**\|**GSA**\|**GSV**\|**ZDA**\|**VTG**\|**GLL**\|**none**,...]
 
 # DESCRIPTION
 
@@ -225,7 +225,10 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
   
   **VTG**
   : Enable VTG (Vector Track Made Good) messages
-  
+
+  **GLL**
+  : Enable GLL (Geographic Position - Latitude/Longitude) messages
+
   **none**
   : Disable all NMEA messages
 

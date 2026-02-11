@@ -556,7 +556,23 @@ id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0xF0, 0x07, 0]
 
-# Disable all NMEA messages (GGA, GSA, GSV, RMC, ZDA)
+[[asbin]]
+tag = "nmea-gll"
+description = "Enable NMEA GLL message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x01, 1]
+
+[[asbin]]
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x01, 0]
+
+# Disable all NMEA messages (GGA, GLL, GSA, GSV, RMC, ZDA)
 # Note: TXT cannot be disabled
 # GGA
 [[asbin]]
@@ -598,6 +614,14 @@ class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0xF0, 0x07, 0]
+
+# GLL
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x01, 0]
 
 # RTCM Message Control (CFG-MSG 0x06 0x01 with group 0xF8)
 

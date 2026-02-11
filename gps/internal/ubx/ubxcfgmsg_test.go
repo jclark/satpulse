@@ -1101,6 +1101,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 0,
 				ubxbin.NmeaZdaID: 0,
 				ubxbin.NmeaVtgID: 0,
+				ubxbin.NmeaGllID: 0,
 			},
 		},
 		{
@@ -1115,6 +1116,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 0,
 				ubxbin.NmeaZdaID: 0,
 				ubxbin.NmeaVtgID: 0,
+				ubxbin.NmeaGllID: 0,
 			},
 		},
 		{
@@ -1129,6 +1131,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 0,
 				ubxbin.NmeaZdaID: 0,
 				ubxbin.NmeaVtgID: 0,
+				ubxbin.NmeaGllID: 0,
 			},
 		},
 		{
@@ -1143,6 +1146,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 1,
 				ubxbin.NmeaZdaID: 0,
 				ubxbin.NmeaVtgID: 0,
+				ubxbin.NmeaGllID: 0,
 			},
 		},
 		{
@@ -1157,6 +1161,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 0,
 				ubxbin.NmeaZdaID: 1,
 				ubxbin.NmeaVtgID: 0,
+				ubxbin.NmeaGllID: 0,
 			},
 		},
 		{
@@ -1171,6 +1176,22 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 0,
 				ubxbin.NmeaZdaID: 0,
 				ubxbin.NmeaVtgID: 1,
+				ubxbin.NmeaGllID: 0,
+			},
+		},
+		{
+			name:            "GLL only",
+			flags:           gpsprot.NMEAMsgGLL,
+			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
+			expectedDisable: 0,
+			expectedRates: map[ubxbin.MsgID]MsgRate{
+				ubxbin.NmeaRmcID: 0,
+				ubxbin.NmeaGgaID: 0,
+				ubxbin.NmeaGsaID: 0,
+				ubxbin.NmeaGsvID: 0,
+				ubxbin.NmeaZdaID: 0,
+				ubxbin.NmeaVtgID: 0,
+				ubxbin.NmeaGllID: 1,
 			},
 		},
 		{
@@ -1185,11 +1206,12 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 1,
 				ubxbin.NmeaZdaID: 0,
 				ubxbin.NmeaVtgID: 0,
+				ubxbin.NmeaGllID: 0,
 			},
 		},
 		{
 			name:            "All standard messages",
-			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgVTG,
+			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgVTG | gpsprot.NMEAMsgGLL,
 			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
 			expectedRates: map[ubxbin.MsgID]MsgRate{
@@ -1199,6 +1221,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 1,
 				ubxbin.NmeaZdaID: 1,
 				ubxbin.NmeaVtgID: 1,
+				ubxbin.NmeaGllID: 1,
 			},
 		},
 		{
@@ -1213,6 +1236,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 0,
 				ubxbin.NmeaZdaID: 0,
 				ubxbin.NmeaVtgID: 0,
+				ubxbin.NmeaGllID: 0,
 			},
 		},
 		{
@@ -1227,6 +1251,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 0,
 				ubxbin.NmeaZdaID: 0,
 				ubxbin.NmeaVtgID: 0,
+				ubxbin.NmeaGllID: 0,
 			},
 		},
 		{
@@ -1241,11 +1266,12 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 0,
 				ubxbin.NmeaZdaID: 0,
 				ubxbin.NmeaVtgID: 1,
+				ubxbin.NmeaGllID: 0,
 			},
 		},
 		{
 			name:            "All messages with Other flag",
-			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgVTG | gpsprot.NMEAMsgOther,
+			flags:           gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA | gpsprot.NMEAMsgGSA | gpsprot.NMEAMsgGSV | gpsprot.NMEAMsgZDA | gpsprot.NMEAMsgVTG | gpsprot.NMEAMsgGLL | gpsprot.NMEAMsgOther,
 			expectedEnable:  ubxbin.CfgPrtProtoNMEA,
 			expectedDisable: 0,
 			expectedRates: map[ubxbin.MsgID]MsgRate{
@@ -1255,6 +1281,7 @@ func TestMsgChangesNMEA(t *testing.T) {
 				ubxbin.NmeaGsvID: 1,
 				ubxbin.NmeaZdaID: 1,
 				ubxbin.NmeaVtgID: 1,
+				ubxbin.NmeaGllID: 1,
 			},
 		},
 	}

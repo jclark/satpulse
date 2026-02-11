@@ -95,6 +95,7 @@ func generateNMEAMsgCommands(flags gpsprot.NMEAMsgFlags) []string {
 		{gpsprot.NMEAMsgGSV, "GPGSV"},
 		{gpsprot.NMEAMsgZDA, "GPZDA"},
 		{gpsprot.NMEAMsgVTG, "GPVTG"},
+		{gpsprot.NMEAMsgGLL, "GPGLL"},
 	}
 	// If flags is 0, we want to disable all NMEA messages
 	if flags == 0 {
