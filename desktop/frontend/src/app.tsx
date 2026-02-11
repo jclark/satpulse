@@ -1,7 +1,7 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
-import {Connect, Disconnect, GetAllSignals, GetReceiverState, IsConnected, ListPorts} from '../wailsjs/go/main/App';
+import {Connect, Disconnect, GetAllSignals, GetConnState, GetReceiverState, ListPorts} from '../wailsjs/go/main/App';
 import {ConnectionPanel, PortInfo} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
@@ -9,11 +9,15 @@ import {MonitorPanel} from './monitor-panel';
 import {LoggingPanel} from './logging-panel';
 import {TimePanel} from './time-panel';
 import {SurveyPanel} from './survey-panel';
+import {MsgFilePanel} from './msgfile-panel';
+
+export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
 
 export type ReceiverState =
     | {status: 'disconnected'}
     | {status: 'probing'}
     | {status: 'identified'; vendor: string; hardware: string; firmware: string; supportedGNSS: string[]; packetFormats: string[]}
+    | {status: 'unidentified'; packetFormats: string[]; warning: string}
     | {status: 'error'; error: string};
 
 interface Toast {
@@ -73,21 +77,48 @@ interface MsgEvent {
     time: string;
 }
 
-type TabID = 'monitor' | 'packets' | 'config';
+export interface MsgFileTag {
+    tag: string;
+    desc?: string;
+    msgCount: number;
+}
+
+export interface MsgSendEvent {
+    status: 'sent' | 'delaying' | 'delayed' | 'done' | 'cancelled' | 'error';
+    current?: number;
+    total?: number;
+    error?: string;
+}
+
+export interface SendLine {
+    status: 'sending' | 'delaying' | 'done' | 'error';
+    index: number;
+    total: number;
+    error?: string;
+}
+
+type TabID = 'monitor' | 'packets' | 'config' | 'messages';
 
 const tabBtnBase = 'px-5 py-2 text-sm font-medium border-b-2 cursor-pointer bg-transparent';
 const tabBtnActive = tabBtnBase + ' border-blue-600 text-blue-600 bg-gray-50 dark:bg-gray-900';
 const tabBtnInactive = tabBtnBase + ' border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900';
 const tabBtnDisabled = tabBtnBase + ' border-transparent text-gray-300 dark:text-gray-600 cursor-not-allowed';
 
+const connStateLabel: Record<ConnState, string> = {
+    disconnected: 'Disconnected',
+    connecting: 'Connecting...',
+    connected: 'Connected',
+    configuring: 'Configuring...',
+    sending: 'Sending...',
+};
+
 let toastId = 0;
 
 export function App() {
-    const [connected, setConnected] = useState(false);
+    const [connState, setConnState] = useState<ConnState>('disconnected');
     const [device, setDevice] = useState('');
     const [speed, setSpeed] = useState(9600);
     const [ports, setPorts] = useState<PortInfo[]>([]);
-    const [statusText, setStatusText] = useState('Disconnected');
     const [receiver, setReceiver] = useState<ReceiverState>({status: 'disconnected'});
     const [configProps, setConfigProps] = useState<Record<string, any> | null>(null);
     const [signalCatalog, setSignalCatalog] = useState<Record<string, string[]>>({});
@@ -105,6 +136,13 @@ export function App() {
     const surveyAutoExpanded = useRef(false);
     const [logHeight, setLogHeight] = useState(150);
     const dragging = useRef(false);
+
+    // Message file state
+    const [msgFilePath, setMsgFilePath] = useState('');
+    const [msgFileTags, setMsgFileTags] = useState<MsgFileTag[]>([]);
+    const [selectedTagIndex, setSelectedTagIndex] = useState(-1);
+    const [sendLines, setSendLines] = useState<SendLine[]>([]);
+    const [sendState, setSendState] = useState<'idle' | 'sending' | 'done' | 'error'>('idle');
 
     const onSplitterMouseDown = useCallback((e: MouseEvent) => {
         e.preventDefault();
@@ -169,18 +207,27 @@ export function App() {
                 setReceiver({status: 'error', error: evt.error});
             } else {
                 const info = evt.Info;
-                const gnss: string[] = info?.supportedGNSS || [];
-                setReceiver({
-                    status: 'identified',
-                    vendor: info?.vendor || '',
-                    hardware: info?.hardware || '',
-                    firmware: info?.firmware || '',
-                    supportedGNSS: gnss,
-                    packetFormats: evt.packetFormats || [],
-                });
-                GetAllSignals(gnss).then(cat => {
-                    if (cat) setSignalCatalog(cat);
-                }).catch(() => {});
+                const vendor: string = info?.vendor || '';
+                if (vendor) {
+                    const gnss: string[] = info?.supportedGNSS || [];
+                    setReceiver({
+                        status: 'identified',
+                        vendor,
+                        hardware: info?.hardware || '',
+                        firmware: info?.firmware || '',
+                        supportedGNSS: gnss,
+                        packetFormats: evt.packetFormats || [],
+                    });
+                    GetAllSignals(gnss).then(cat => {
+                        if (cat) setSignalCatalog(cat);
+                    }).catch(() => {});
+                } else {
+                    setReceiver({
+                        status: 'unidentified',
+                        packetFormats: evt.packetFormats || [],
+                        warning: evt.warning || '',
+                    });
+                }
             }
         });
         const offMsg = EventsOn('gps:msg', (evt: MsgEvent) => {
@@ -200,34 +247,97 @@ export function App() {
                 }
             }
         });
+        const offState = EventsOn('gps:state', (state: ConnState) => {
+            setConnState(state);
+        });
+        const offMsgSend = EventsOn('gps:msgsend', (evt: MsgSendEvent) => {
+            const {status, current, total, error} = evt;
+            switch (status) {
+                case 'sent':
+                    setSendLines(prev => {
+                        const lines = [...prev];
+                        const idx = (current ?? 1) - 1;
+                        lines[idx] = {status: 'sending', index: current ?? 1, total: total ?? 1};
+                        return lines;
+                    });
+                    break;
+                case 'delaying':
+                    setSendLines(prev => {
+                        const lines = [...prev];
+                        const idx = (current ?? 1) - 1;
+                        if (lines[idx]) lines[idx] = {...lines[idx], status: 'delaying'};
+                        return lines;
+                    });
+                    break;
+                case 'delayed':
+                    setSendLines(prev => {
+                        const lines = [...prev];
+                        const idx = (current ?? 1) - 1;
+                        if (lines[idx]) lines[idx] = {...lines[idx], status: 'done'};
+                        return lines;
+                    });
+                    break;
+                case 'done':
+                    setSendLines(prev => {
+                        const lines = [...prev];
+                        const idx = (current ?? 1) - 1;
+                        if (lines[idx]) lines[idx] = {...lines[idx], status: 'done'};
+                        return lines;
+                    });
+                    setSendState('done');
+                    break;
+                case 'cancelled':
+                    setSendState('done');
+                    break;
+                case 'error':
+                    setSendLines(prev => {
+                        const lines = [...prev];
+                        const idx = (current ?? 1) - 1;
+                        lines[idx] = {status: 'error', index: current ?? 1, total: total ?? 1, error: error};
+                        return lines;
+                    });
+                    setSendState('error');
+                    break;
+            }
+        });
         return () => {
             if (typeof offLog === 'function') offLog(); else EventsOff('gps:log');
             if (typeof offPkt === 'function') offPkt(); else EventsOff('gps:packet');
             if (typeof offRcv === 'function') offRcv(); else EventsOff('gps:receiver');
             if (typeof offMsg === 'function') offMsg(); else EventsOff('gps:msg');
+            if (typeof offState === 'function') offState(); else EventsOff('gps:state');
+            if (typeof offMsgSend === 'function') offMsgSend(); else EventsOff('gps:msgsend');
         };
     }, []);
 
     // Sync connection state with Go backend on mount (after HMR reload)
     useEffect(() => {
-        IsConnected().then(async c => {
-            if (!c) return;
-            setConnected(true);
-            setStatusText('Connected');
+        GetConnState().then(async (s: string) => {
+            setConnState(s as ConnState);
+            if (s === 'disconnected') return;
             const r = await GetReceiverState();
             if (r.ok) {
                 const info = (r as any).Info;
-                const gnss: string[] = info?.supportedGNSS || [];
-                setReceiver({
-                    status: 'identified',
-                    vendor: info?.vendor || '',
-                    hardware: info?.hardware || '',
-                    firmware: info?.firmware || '',
-                    supportedGNSS: gnss,
-                    packetFormats: r.packetFormats || [],
-                });
-                const catalog = await GetAllSignals(gnss);
-                if (catalog) setSignalCatalog(catalog);
+                const vendor: string = info?.vendor || '';
+                if (vendor) {
+                    const gnss: string[] = info?.supportedGNSS || [];
+                    setReceiver({
+                        status: 'identified',
+                        vendor,
+                        hardware: info?.hardware || '',
+                        firmware: info?.firmware || '',
+                        supportedGNSS: gnss,
+                        packetFormats: r.packetFormats || [],
+                    });
+                    const catalog = await GetAllSignals(gnss);
+                    if (catalog) setSignalCatalog(catalog);
+                } else {
+                    setReceiver({
+                        status: 'unidentified',
+                        packetFormats: r.packetFormats || [],
+                        warning: (r as any).warning || '',
+                    });
+                }
             }
         }).catch(() => {});
     }, []);
@@ -237,30 +347,29 @@ export function App() {
     }, []);
 
     const handleConnect = useCallback(async () => {
-        if (connected) {
+        if (connState !== 'disconnected') {
             await Disconnect();
-            setConnected(false);
-            setStatusText('Disconnected');
             return;
         }
-        setStatusText('Connecting...');
         const r = await Connect(device, speed);
         if (r.ok) {
-            setConnected(true);
-            setStatusText('Connected');
             addToast('Connected to ' + device, 'success');
         } else {
-            setStatusText('Connection failed');
             addToast(r.error || 'Connection failed', 'error');
         }
-    }, [connected, device, speed, addToast]);
+    }, [connState, device, speed, addToast]);
 
     // Receiver identity string for connection bar
     const receiverIdent = receiver.status === 'identified'
         ? `${receiver.hardware} (FW ${receiver.firmware})`
-        : receiver.status === 'probing' ? 'Identifying...' : '';
+        : receiver.status === 'unidentified'
+            ? receiver.packetFormats.length > 0
+                ? `Unknown (${receiver.packetFormats.join(', ')})`
+                : 'Unknown'
+            : receiver.status === 'probing' ? 'Identifying...' : '';
 
     const configDisabled = receiver.status !== 'identified';
+    const connected = connState !== 'disconnected';
 
     return (
         <>
@@ -297,6 +406,12 @@ export function App() {
                 >
                     Configuration
                 </button>
+                <button
+                    class={activeTab === 'messages' ? tabBtnActive : tabBtnInactive}
+                    onClick={() => setActiveTab('messages')}
+                >
+                    Message file
+                </button>
             </div>
 
             {/* Tab content area */}
@@ -322,17 +437,34 @@ export function App() {
                 {/* Configuration tab */}
                 <div class={`h-full ${activeTab === 'config' ? '' : 'hidden'}`}>
                     <ConfigPanel
-                        connected={connected}
+                        connState={connState}
                         visible={activeTab === 'config'}
                         configProps={configProps}
                         signalCatalog={signalCatalog}
                         selectedSignals={selectedSignals}
                         setSelectedSignals={setSelectedSignals}
-                        setStatusText={setStatusText}
                         setOperation={setOperation}
                         addToast={addToast}
                         onConfigReadback={handleConfigReadback}
                         speed={speed}
+                    />
+                </div>
+
+                {/* Messages tab */}
+                <div class={`h-full ${activeTab === 'messages' ? '' : 'hidden'}`}>
+                    <MsgFilePanel
+                        connState={connState}
+                        msgFilePath={msgFilePath}
+                        setMsgFilePath={setMsgFilePath}
+                        msgFileTags={msgFileTags}
+                        setMsgFileTags={setMsgFileTags}
+                        selectedTagIndex={selectedTagIndex}
+                        setSelectedTagIndex={setSelectedTagIndex}
+                        sendLines={sendLines}
+                        setSendLines={setSendLines}
+                        sendState={sendState}
+                        setSendState={setSendState}
+                        addToast={addToast}
                     />
                 </div>
             </div>
@@ -350,7 +482,7 @@ export function App() {
 
             {/* Status bar */}
             <div class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-5 py-1 text-xs text-gray-500 dark:text-gray-400 shrink-0">
-                {statusText}
+                {connStateLabel[connState]}
             </div>
 
             {/* Toasts */}

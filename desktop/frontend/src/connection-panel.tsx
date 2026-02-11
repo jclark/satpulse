@@ -101,12 +101,15 @@ export function ConnectionPanel({connected, device, setDevice, speed, setSpeed, 
                     {speeds.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 <button
-                    class={`px-3.5 py-1 rounded text-xs font-medium border cursor-pointer whitespace-nowrap ${
+                    class={`px-3.5 py-1 rounded text-xs font-medium border whitespace-nowrap ${
                         connected
-                            ? 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-600'
-                            : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
+                            ? 'cursor-pointer bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-600'
+                            : !device
+                                ? 'cursor-not-allowed bg-blue-400 border-blue-400 text-white opacity-50'
+                                : 'cursor-pointer bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
                     }`}
                     onClick={onConnect}
+                    disabled={!connected && !device}
                 >
                     {connected ? 'Disconnect' : 'Connect'}
                 </button>

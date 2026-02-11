@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,8 +20,20 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/gps/msgfile"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
+)
+
+// ConnState represents the unified connection/activity state.
+type ConnState string
+
+const (
+	StateDisconnected ConnState = "disconnected"
+	StateConnecting   ConnState = "connecting"
+	StateConnected    ConnState = "connected"
+	StateConfiguring  ConnState = "configuring"
+	StateSending      ConnState = "sending"
 )
 
 // configRequest is sent to packetWorker to run gpscfg.Configure.
@@ -40,6 +54,7 @@ type App struct {
 	ctx        context.Context
 	lg         *slog.Logger
 	mu         sync.Mutex
+	state      ConnState
 	conn       gpsio.Conn
 	connCtx    context.Context
 	connCancel context.CancelFunc
@@ -47,11 +62,14 @@ type App struct {
 	pb         *bcast.Bcast[scan.Packet]
 	configCh   chan configRequest
 	probe      ReceiverEvent
+	msgFile     *msgfile.Parsed
+	msgFilePath string
+	sendCancel  context.CancelFunc
 }
 
 // NewApp creates a new App.
 func NewApp() *App {
-	return &App{}
+	return &App{state: StateDisconnected}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -66,7 +84,41 @@ func (a *App) shutdown(_ context.Context) {
 	a.closeLocked()
 }
 
+// setState transitions the connection state and emits a gps:state event.
+// Must NOT be called with a.mu held -- Wails event dispatch could re-enter App methods.
+func (a *App) setState(s ConnState) {
+	a.mu.Lock()
+	a.state = s
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:state", s)
+}
+
+// setEndState transitions to target if still connected, or to Disconnected
+// if the connection was lost. Returns the state actually set.
+// Used by send/config goroutines to avoid resurrecting state after disconnect.
+func (a *App) setEndState(target ConnState) ConnState {
+	a.mu.Lock()
+	if a.state == StateDisconnected {
+		a.mu.Unlock()
+		return StateDisconnected
+	}
+	if a.connCtx != nil && a.connCtx.Err() != nil {
+		a.state = StateDisconnected
+		a.mu.Unlock()
+		runtime.EventsEmit(a.ctx, "gps:state", StateDisconnected)
+		return StateDisconnected
+	}
+	a.state = target
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:state", target)
+	return target
+}
+
 func (a *App) closeLocked() {
+	if a.sendCancel != nil {
+		a.sendCancel()
+		a.sendCancel = nil
+	}
 	if a.connCancel != nil {
 		a.connCancel()
 		a.connCancel = nil
@@ -76,6 +128,7 @@ func (a *App) closeLocked() {
 		a.pb = nil
 	}
 	a.configCh = nil
+	a.state = StateDisconnected
 	// Must unlock while waiting: goroutines may need the lock during shutdown.
 	a.mu.Unlock()
 	a.connWg.Wait()
@@ -95,10 +148,13 @@ type Result struct {
 // Connect opens a serial connection to a GPS receiver.
 func (a *App) Connect(device string, speed int) Result {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.closeLocked()
+	a.state = StateConnecting
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:state", StateConnecting)
 	conn, err := gpsio.OpenSerial(device, speed)
 	if err != nil {
+		a.setState(StateDisconnected)
 		return Result{Error: err.Error()}
 	}
 	connCtx, connCancel := context.WithCancel(a.ctx)
@@ -111,11 +167,13 @@ func (a *App) Connect(device string, speed int) Result {
 	pktSub := pb.Subscribe()
 	procs := gpsreg.CreatePacketProcessors(nil)
 	configCh := make(chan configRequest)
+	a.mu.Lock()
 	a.conn = conn
 	a.connCtx = connCtx
 	a.connCancel = connCancel
 	a.pb = pb
 	a.configCh = configCh
+	a.mu.Unlock()
 	a.connWg.Go(func() { a.packetWorker(procs, pktSub, configCh) })
 	return Result{OK: true}
 }
@@ -124,6 +182,7 @@ func (a *App) Connect(device string, speed int) Result {
 type ReceiverEvent struct {
 	OK            bool                              `json:"ok"`
 	Error         string                            `json:"error,omitempty"`
+	Warning       string                            `json:"warning,omitempty"`
 	Info          opt.Val[gpsprot.ReceiverInfo]      `json:",omitzero"`
 	PacketFormats []string                           `json:"packetFormats,omitempty"`
 }
@@ -153,10 +212,13 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 	rslt, err := gpscfg.Configure(ctx, a.lg, procs,
 		gpsreg.CreateConfigProtocols(), target, sub, conn)
 	cancel()
-	if err != nil {
+	if err != nil && !errors.Is(err, gpscfg.ErrNoProbeResponse) && !errors.Is(err, gpscfg.ErrNotDetected) {
 		runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{Error: err.Error()})
-	} else {
-		r := ReceiverEvent{OK: true}
+		a.setEndState(StateDisconnected)
+		return
+	}
+	r := ReceiverEvent{OK: true}
+	if rslt != nil {
 		if rslt.ReceiverInfo != nil {
 			r.Info.Set(*rslt.ReceiverInfo)
 		}
@@ -166,11 +228,15 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 		if rslt.LeapSecond != nil {
 			rslt.LeapSecond.UpdateLeapSecond(&mh.ls)
 		}
-		a.mu.Lock()
-		a.probe = r
-		a.mu.Unlock()
-		runtime.EventsEmit(a.ctx, "gps:receiver", r)
 	}
+	if err != nil {
+		r.Warning = err.Error()
+	}
+	a.mu.Lock()
+	a.probe = r
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:receiver", r)
+	a.setEndState(StateConnected)
 	// Re-install our message handler after Configure overwrote it.
 	for _, pp := range procs {
 		pp.SetMsgHandler(mh)
@@ -213,9 +279,10 @@ func (a *App) GetReceiverState() ReceiverEvent {
 // Disconnect closes the GPS connection.
 func (a *App) Disconnect() Result {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.closeLocked()
 	a.probe = ReceiverEvent{}
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:state", StateDisconnected)
 	return Result{OK: true}
 }
 
@@ -223,7 +290,14 @@ func (a *App) Disconnect() Result {
 func (a *App) IsConnected() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.conn != nil
+	return a.state != StateDisconnected
+}
+
+// GetConnState returns the current connection state.
+func (a *App) GetConnState() ConnState {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.state
 }
 
 // GetAllSignals returns the full signal catalog for the given GNSS constellations.
@@ -263,14 +337,17 @@ const readProps = gpsprot.PropIDSignalsEnabled |
 // ReadConfig reads back the current configuration from the receiver.
 func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
 	a.mu.Lock()
-	conn := a.conn
-	a.mu.Unlock()
-	if conn == nil {
+	if a.state != StateConnected {
+		a.mu.Unlock()
 		return nil, fmt.Errorf("not connected")
 	}
+	a.state = StateConfiguring
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:state", StateConfiguring)
 	target := gpsprot.NewConfigTarget()
 	target.Get = readProps
 	cr := a.sendConfigRequest(target)
+	a.setEndState(StateConnected)
 	if cr.err != nil {
 		return nil, cr.err
 	}
@@ -281,18 +358,183 @@ func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
 // The frontend sends JSON matching gpsprot.ConfigTarget's shape.
 func (a *App) ApplyConfig(cfg gpsprot.ConfigTarget) Result {
 	a.mu.Lock()
-	conn := a.conn
-	a.mu.Unlock()
-	if conn == nil {
+	if a.state != StateConnected {
+		a.mu.Unlock()
 		return Result{Error: "not connected"}
 	}
+	a.state = StateConfiguring
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:state", StateConfiguring)
 	if cfg.NoOp() {
+		a.setEndState(StateConnected)
 		return Result{Error: "no configuration changes specified"}
 	}
-	return a.runConfig(&cfg)
+	r := a.runConfig(&cfg)
+	a.setEndState(StateConnected)
+	return r
 }
 
 
+
+// MsgFileTag is a tag from a loaded message file.
+type MsgFileTag struct {
+	Tag      string `json:"tag"`
+	Desc     string `json:"desc,omitempty"`
+	MsgCount int    `json:"msgCount"`
+}
+
+// MsgFileInfo is the result of loading a message file.
+type MsgFileInfo struct {
+	Path string       `json:"path"`
+	Tags []MsgFileTag `json:"tags"`
+}
+
+// LoadMsgFile opens a file dialog, loads the selected TOML message file,
+// and returns the available tags. Returns nil if the user cancels the dialog.
+func (a *App) LoadMsgFile() (*MsgFileInfo, error) {
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Open message file",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "TOML files", Pattern: "*.toml"},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if path == "" {
+		return nil, nil
+	}
+	mf, err := msgfile.Load(path)
+	if err != nil {
+		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.ErrorDialog,
+			Title:   "Error loading message file",
+			Message: err.Error(),
+		})
+		return nil, err
+	}
+	descs, _ := mf.TagDescs()
+	tags := make([]MsgFileTag, len(descs))
+	for i, td := range descs {
+		tags[i] = MsgFileTag{Tag: td.Tag, Desc: td.Desc, MsgCount: td.MsgCount}
+	}
+	a.mu.Lock()
+	a.msgFile = mf
+	a.msgFilePath = path
+	a.mu.Unlock()
+	return &MsgFileInfo{Path: filepath.Base(path), Tags: tags}, nil
+}
+
+// MsgSendEvent is emitted as "gps:msgsend" during SendMsgFile.
+type MsgSendEvent struct {
+	Status  string `json:"status"`
+	Current int    `json:"current,omitempty"`
+	Total   int    `json:"total,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// SendMsgFile sends messages for the given tag from the loaded message file.
+// Returns immediately after starting the send goroutine.
+func (a *App) SendMsgFile(tag string) error {
+	a.mu.Lock()
+	if a.state != StateConnected {
+		a.mu.Unlock()
+		return fmt.Errorf("not connected")
+	}
+	mf := a.msgFile
+	if mf == nil {
+		a.mu.Unlock()
+		return fmt.Errorf("no message file loaded")
+	}
+	conn := a.conn
+	a.mu.Unlock()
+	msgs, err := mf.TaggedMsgs([]string{tag})
+	if err != nil {
+		return err
+	}
+	rawMsgs, err := msgfile.ToRaw(msgs)
+	if err != nil {
+		return err
+	}
+	if len(rawMsgs) == 0 {
+		return fmt.Errorf("no messages for tag %q", tag)
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.mu.Lock()
+	if a.state != StateConnected {
+		a.mu.Unlock()
+		cancel()
+		return fmt.Errorf("not connected")
+	}
+	a.state = StateSending
+	a.sendCancel = cancel
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:state", StateSending)
+	total := len(rawMsgs)
+	a.connWg.Go(func() {
+		defer func() {
+			a.mu.Lock()
+			a.sendCancel = nil
+			a.mu.Unlock()
+		}()
+		for i, rm := range rawMsgs {
+			if ctx.Err() != nil {
+				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+					Status: "cancelled", Current: i + 1, Total: total,
+				})
+				a.setEndState(StateConnected)
+				return
+			}
+			_, err := conn.Write(rm.Bytes)
+			if err != nil {
+				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+					Status: "error", Current: i + 1, Total: total, Error: err.Error(),
+				})
+				a.setEndState(StateConnected)
+				return
+			}
+			a.lg.Info("sent message", "index", i+1, "total", total, "tag", rm.Tag, "bytes", len(rm.Bytes))
+			runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+				Status: "sent", Current: i + 1, Total: total,
+			})
+			if rm.Delay > 0 {
+				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+					Status: "delaying", Current: i + 1, Total: total,
+				})
+				select {
+				case <-time.After(rm.Delay):
+				case <-ctx.Done():
+					runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+						Status: "cancelled", Current: i + 1, Total: total,
+					})
+					a.setEndState(StateConnected)
+					return
+				}
+				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+					Status: "delayed", Current: i + 1, Total: total,
+				})
+			}
+		}
+		runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+			Status: "done", Current: total, Total: total,
+		})
+		a.setEndState(StateConnected)
+	})
+	return nil
+}
+
+// CancelMsgSend cancels an in-progress send operation.
+func (a *App) CancelMsgSend() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.state != StateSending {
+		return fmt.Errorf("not sending")
+	}
+	if a.sendCancel != nil {
+		a.sendCancel()
+	}
+	return nil
+}
 
 // sendConfigRequest sends a config request to packetWorker and waits for the result.
 func (a *App) sendConfigRequest(target *gpsprot.ConfigTarget) configResult {

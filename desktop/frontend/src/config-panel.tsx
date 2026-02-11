@@ -13,16 +13,15 @@ import {
     PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey,
     SatsMsgSat, SatsMsgSignal,
 } from './msg-flags';
-import type {OperationState} from './app';
+import type {ConnState, OperationState} from './app';
 
 interface Props {
-    connected: boolean;
+    connState: ConnState;
     visible: boolean;
     configProps: Record<string, any> | null;
     signalCatalog: Record<string, string[]>;
     selectedSignals: Set<string>;
     setSelectedSignals: (fn: (prev: Set<string>) => Set<string>) => void;
-    setStatusText: (s: string) => void;
     setOperation: (op: OperationState) => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
     onConfigReadback: (props: Record<string, any>) => void;
@@ -90,7 +89,8 @@ const inputErrorClass = 'bg-red-100 dark:bg-red-950 border border-gray-200 dark:
 const btnClass = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-blue-600 hover:border-blue-600 hover:text-white disabled:opacity-50 disabled:cursor-default disabled:hover:bg-gray-200 dark:disabled:hover:bg-gray-700 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:text-gray-900 dark:disabled:hover:text-gray-100';
 const btnPrimary = 'px-3.5 py-1 rounded text-xs border border-blue-600 bg-blue-600 text-white cursor-pointer hover:bg-blue-700 disabled:opacity-50 disabled:cursor-default';
 
-export function ConfigPanel({connected, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setStatusText, setOperation, addToast, onConfigReadback, speed}: Props) {
+export function ConfigPanel({connState, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, speed}: Props) {
+    const connected = connState === 'connected';
     const [timeMode, setTimeMode] = useState<'' | 'mobile' | 'survey' | 'fixed'>('');
     const [surveyTime, setSurveyTime] = useState('');
     const [surveyAcc, setSurveyAcc] = useState('');
@@ -214,7 +214,6 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
     const doReadback = async () => {
         if (!connected || reading) return;
         setReading(true);
-        setStatusText('Reading configuration...');
         setOperation({status: 'running', label: 'Reading configuration'});
         try {
             const props = await ReadConfig();
@@ -231,11 +230,9 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
             setRawChange(false);
             setSaveType(0);
             setResetType(0);
-            setStatusText('Configuration read');
             setOperation({status: 'success', label: 'Reading configuration'});
         } catch (e: any) {
             addToast('Readback error: ' + e.message, 'error');
-            setStatusText('Readback failed');
             setOperation({status: 'failed', label: 'Reading configuration', error: e.message});
         } finally {
             setReading(false);
@@ -306,7 +303,6 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
         if (resetType) opts.Reset = resetType;
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
-        setStatusText('Applying configuration...');
         setOperation({status: 'running', label: 'Applying configuration'});
         const r = await ApplyConfig(cfg as any);
         setApplying(false);
@@ -319,7 +315,6 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
         setSurveyReport(true);
         if (r.ok) {
             addToast('Configuration applied', 'success');
-            setStatusText('Configuration applied');
             setOperation({status: 'success', label: 'Applying configuration'});
             setTimePulseTouched(false);
             setTimeModeTouched(false);
@@ -327,7 +322,6 @@ export function ConfigPanel({connected, visible, configProps, signalCatalog, sel
             setOtherTouched(false);
         } else {
             addToast(r.error || 'Apply failed', 'error');
-            setStatusText('Configuration failed');
             setOperation({status: 'failed', label: 'Applying configuration', error: r.error || 'Apply failed'});
         }
     };
