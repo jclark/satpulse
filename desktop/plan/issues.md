@@ -1,18 +1,32 @@
 # Desktop GUI issues
 
-## PROBE-READBACK: Combine probe and config readback into one operation
+## probe-readback: Combine probe and config readback into one operation
 
 On connect, two separate `gpscfg.Configure` calls happen in sequence: the initial probe (to detect the receiver and get `ReceiverInfo`) and then the config readback (to get current property values for the Config tab). If the user is already on the Config tab when they reconnect, both could be combined into a single `Configure` call by adding `Get: readProps` to the initial probe target. This would halve the round-trip time for the reconnect case.
 
 Currently the probe is initiated by the Go backend (`packetWorker`) and the readback is initiated by the frontend (`doReadback` via `ReadConfig`). Combining them would require the backend to know whether properties should be read during the probe, or a way to piggyback the readback request onto the probe.
 
-## SPEED-CHANGE: Add configuration support for receiver serial speed change
+## config-speed-change: Handle receiver serial speed change in GUI
 
 The CLI supports `--speed` to configure the GPS receiver's serial port speed (as opposed to `--device-speed` which sets the host serial port speed). The desktop GUI needs equivalent support so users can change the receiver's baud rate from the Config tab.
 
-This is more involved than a simple property write because after changing the receiver's serial speed, the host serial port must also be reopened at the new speed to maintain communication. The backend would need to coordinate the speed change on the receiver with reopening the serial connection at the matching baud rate.
+The backend already handles this correctly: `gpscfg.configure()` detects `ConfigAction.Speed != 0` and calls `SerialConn.WriteThenChangeSpeed()`, which sends the command, waits for drain, then changes the host port speed. The `Scan` goroutine continues reading at the new speed. The missing piece is propagating the new speed back to the frontend so the connection bar reflects reality.
 
-## TCP-CONNECT: Allow connecting to a GPS receiver via TCP
+Outline:
+
+1. Add a `Speed int` field to `gpscfg.Result`. In `gpscfg.configure()`, record the speed from `ConfigActionSendRequest` when `action.Speed != 0`.
+2. In `app.go`, after `gpscfg.Configure` returns with a non-zero `Result.Speed`, emit a `gps:speed` event to the frontend with the new speed value.
+3. Frontend listens for `gps:speed` and updates the speed state in `App`, which flows down to the connection bar dropdown.
+
+## connected-speed-change: Allow changing host serial speed while connected
+
+When first connecting to a receiver at an unknown baud rate, or after a speed change via a message file command, the user may need to change the host serial port speed without disconnecting and reconnecting. The speed dropdown should remain enabled while connected and changing it should call `term.Change()` on the live `SerialConn` to switch the host port speed in place.
+
+## disable-inputs: Disable device and speed inputs while connected
+
+The device text input and speed dropdown in the connection bar remain editable while connected, but changing them has no effect on the live connection. They should be disabled when `connected` is true to avoid confusion.
+
+## tcp-connect: Allow connecting to a GPS receiver via TCP
 
 The desktop app only supports serial connections (`gpsio.OpenSerial`). Adding TCP support would allow managing a receiver attached to a headless machine via satpulsed's TCP proxy.
 
