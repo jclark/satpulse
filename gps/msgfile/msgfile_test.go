@@ -1669,7 +1669,7 @@ description = "Setup the device"
 text = "LINE2"
 tag = "setup"
 `,
-			expected: []TagDesc{{Tag: "setup", Desc: "Setup the device"}},
+			expected: []TagDesc{{Tag: "setup", Desc: "Setup the device", MsgCount: 2}},
 		},
 		{
 			name: "description on second only",
@@ -1682,7 +1682,7 @@ text = "LINE2"
 tag = "setup"
 description = "Setup the device"
 `,
-			expected: []TagDesc{{Tag: "setup", Desc: "Setup the device"}},
+			expected: []TagDesc{{Tag: "setup", Desc: "Setup the device", MsgCount: 2}},
 		},
 		{
 			name: "same description on both",
@@ -1696,7 +1696,7 @@ text = "LINE2"
 tag = "setup"
 description = "Setup the device"
 `,
-			expected: []TagDesc{{Tag: "setup", Desc: "Setup the device"}},
+			expected: []TagDesc{{Tag: "setup", Desc: "Setup the device", MsgCount: 2}},
 		},
 		{
 			name: "multiple tags with descriptions",
@@ -1711,8 +1711,8 @@ tag = "query-pps"
 description = "Query PPS configuration"
 `,
 			expected: []TagDesc{
-				{Tag: "version", Desc: "Query firmware version"},
-				{Tag: "query-pps", Desc: "Query PPS configuration"},
+				{Tag: "version", Desc: "Query firmware version", MsgCount: 1},
+				{Tag: "query-pps", Desc: "Query PPS configuration", MsgCount: 1},
 			},
 		},
 		{
@@ -1727,8 +1727,8 @@ text = "LINE2"
 description = "Default commands"
 `,
 			expected: []TagDesc{
-				{Tag: "", Desc: "Default commands"},
-				{Tag: "setup", Desc: "Setup commands"},
+				{Tag: "", Desc: "Default commands", MsgCount: 1},
+				{Tag: "setup", Desc: "Setup commands", MsgCount: 1},
 			},
 		},
 		{
@@ -1742,8 +1742,8 @@ text = "LINE2"
 tag = "bar"
 `,
 			expected: []TagDesc{
-				{Tag: "foo", Desc: ""},
-				{Tag: "bar", Desc: ""},
+				{Tag: "foo", Desc: "", MsgCount: 1},
+				{Tag: "bar", Desc: "", MsgCount: 1},
 			},
 		},
 		{
@@ -1761,9 +1761,9 @@ text = "PCAS04,3"
 tag = "third"
 `,
 			expected: []TagDesc{
-				{Tag: "first", Desc: ""},
-				{Tag: "second", Desc: ""},
-				{Tag: "third", Desc: ""},
+				{Tag: "first", Desc: "", MsgCount: 1},
+				{Tag: "second", Desc: "", MsgCount: 1},
+				{Tag: "third", Desc: "", MsgCount: 1},
 			},
 		},
 	}

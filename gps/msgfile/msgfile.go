@@ -24,10 +24,11 @@ type MsgCommon struct {
 	Description string   `toml:"description"`
 }
 
-// TagDesc is a tag with an optional description.
+// TagDesc is a tag with an optional description and message count.
 type TagDesc struct {
-	Tag  string
-	Desc string
+	Tag      string
+	Desc     string
+	MsgCount int
 }
 
 type tagDescGetter interface {
@@ -541,6 +542,7 @@ func collectDescs[T any, PT interface {
 	for i := range msgs {
 		td := PT(&msgs[i]).tagDesc()
 		if j, ok := b.index[td.Tag]; ok {
+			b.descs[j].MsgCount++
 			if td.Desc != "" {
 				if b.descs[j].Desc == "" {
 					b.descs[j].Desc = td.Desc
@@ -550,7 +552,7 @@ func collectDescs[T any, PT interface {
 			}
 		} else {
 			b.index[td.Tag] = len(b.descs)
-			b.descs = append(b.descs, td)
+			b.descs = append(b.descs, TagDesc{Tag: td.Tag, Desc: td.Desc, MsgCount: 1})
 		}
 	}
 }
@@ -594,9 +596,13 @@ func PrintTagDescs(w io.Writer, tds []TagDesc) {
 	fmt.Fprintln(w, "Tags:")
 	for _, td := range tds {
 		if td.Desc != "" {
-			fmt.Fprintf(w, "  %s - %s\n", td.Tag, td.Desc)
+			fmt.Fprintf(w, "  %s - %s", td.Tag, td.Desc)
 		} else {
-			fmt.Fprintf(w, "  %s\n", td.Tag)
+			fmt.Fprintf(w, "  %s", td.Tag)
 		}
+		if td.MsgCount > 1 {
+			fmt.Fprintf(w, " [%d messages]", td.MsgCount)
+		}
+		fmt.Fprintln(w)
 	}
 }
