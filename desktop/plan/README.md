@@ -33,7 +33,7 @@ Each phase is self-contained with goal, steps, testing plan, and files changed.
 | [phase6b.md](phase6b.md) | Sky view | Phase 6a |
 | [phase6c.md](phase6c.md) | Monitor tab layout rework | Phase 6a, Phase 6b, Phase 5d |
 | [phase7.md](phase7.md) | Message file support | Phase 1 |
-| [phase8.md](phase8.md) | Serial port enumeration | Phase 5b |
+| [phase8.md](phase8.md) | Serial port enumeration (done) | Phase 5b |
 
 ## Dependency graph
 ```
@@ -51,7 +51,7 @@ Phase 1 (layout shell) -- done
 │       │   └── Phase 5d (live messages panel)
 │       └── Phase 5f (dirty tracking and discard) -- done
 ├── Phase 7 (message file support)
-├── Phase 8 (serial port enumeration)
+├── Phase 8 (serial port enumeration) -- done
 ```
 
 ## Current state

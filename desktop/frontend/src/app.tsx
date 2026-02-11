@@ -1,8 +1,8 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
-import {Connect, Disconnect, GetAllSignals, GetReceiverState, IsConnected} from '../wailsjs/go/main/App';
-import {ConnectionPanel} from './connection-panel';
+import {Connect, Disconnect, GetAllSignals, GetReceiverState, IsConnected, ListPorts} from '../wailsjs/go/main/App';
+import {ConnectionPanel, PortInfo} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
 import {MonitorPanel} from './monitor-panel';
@@ -84,8 +84,9 @@ let toastId = 0;
 
 export function App() {
     const [connected, setConnected] = useState(false);
-    const [device, setDevice] = useState('/dev/cu.usbmodem312301');
+    const [device, setDevice] = useState('');
     const [speed, setSpeed] = useState(9600);
+    const [ports, setPorts] = useState<PortInfo[]>([]);
     const [statusText, setStatusText] = useState('Disconnected');
     const [receiver, setReceiver] = useState<ReceiverState>({status: 'disconnected'});
     const [configProps, setConfigProps] = useState<Record<string, any> | null>(null);
@@ -135,6 +136,23 @@ export function App() {
         const id = ++toastId;
         setToasts(prev => [...prev, {id, message, type}]);
         setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+    }, []);
+
+    const refreshPorts = useCallback(() => {
+        ListPorts().then(list => {
+            const ps: PortInfo[] = (list || []).map(p => ({device: p.device, display: p.display}));
+            setPorts(ps);
+            return ps;
+        }).catch(() => []);
+    }, []);
+
+    // Fetch ports on startup; auto-select if exactly one
+    useEffect(() => {
+        ListPorts().then(list => {
+            const ps: PortInfo[] = (list || []).map(p => ({device: p.device, display: p.display}));
+            setPorts(ps);
+            if (ps.length === 1) setDevice(ps[0].device);
+        }).catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -255,6 +273,8 @@ export function App() {
                 setSpeed={setSpeed}
                 onConnect={handleConnect}
                 receiverIdent={receiverIdent}
+                ports={ports}
+                onRefreshPorts={refreshPorts}
             />
 
             {/* Tab bar */}
