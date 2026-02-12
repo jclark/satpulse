@@ -180,6 +180,55 @@ func TestParseText(t *testing.T) {
 	})
 }
 
+func TestJSONArray(t *testing.T) {
+	type arrayStruct struct {
+		Vel Val[[3]int64] `json:"vel,omitzero"`
+	}
+	t.Run("marshal set", func(t *testing.T) {
+		s := arrayStruct{Vel: Make([3]int64{100, -200, 50})}
+		got, err := json.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `{"vel":[100,-200,50]}`
+		if string(got) != want {
+			t.Errorf("got %s, want %s", got, want)
+		}
+	})
+	t.Run("marshal unset", func(t *testing.T) {
+		s := arrayStruct{}
+		got, err := json.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `{}`
+		if string(got) != want {
+			t.Errorf("got %s, want %s", got, want)
+		}
+	})
+	t.Run("unmarshal", func(t *testing.T) {
+		var s arrayStruct
+		if err := json.Unmarshal([]byte(`{"vel":[100,-200,50]}`), &s); err != nil {
+			t.Fatal(err)
+		}
+		if !s.Vel.IsSet() {
+			t.Fatal("expected set")
+		}
+		if s.Vel.Get() != [3]int64{100, -200, 50} {
+			t.Errorf("got %v, want [100 -200 50]", s.Vel.Get())
+		}
+	})
+	t.Run("unmarshal missing", func(t *testing.T) {
+		var s arrayStruct
+		if err := json.Unmarshal([]byte(`{}`), &s); err != nil {
+			t.Fatal(err)
+		}
+		if s.Vel.IsSet() {
+			t.Error("expected unset")
+		}
+	})
+}
+
 func TestIsZero(t *testing.T) {
 	var unset Val[int]
 	if !unset.IsZero() {
