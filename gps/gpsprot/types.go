@@ -86,6 +86,30 @@ func ParseAngle(s string) (Angle, error) {
 	return Angle(n), nil
 }
 
+// Speed represents a speed in micrometers per second.
+type Speed int64
+
+const (
+	MicrometerPerSecond Speed = 1
+	MillimeterPerSecond Speed = 1000 * MicrometerPerSecond
+	CentimeterPerSecond Speed = 10 * MillimeterPerSecond
+	MeterPerSecond      Speed = 100 * CentimeterPerSecond
+)
+
+// MetersPerSecondFromFloat creates a Speed from a float64 value in meters per second.
+func MetersPerSecondFromFloat(f float64) Speed {
+	return Speed(math.Round(f * float64(MeterPerSecond)))
+}
+
+// MetersPerSecond returns the speed in meters per second as a float64.
+func (s Speed) MetersPerSecond() float64 {
+	return float64(s) / float64(MeterPerSecond)
+}
+
+func (s Speed) String() string {
+	return fmt.Sprintf("%v", s.MetersPerSecond())
+}
+
 // Point3D represents a 3D point with Length coordinates.
 type Point3D [3]Length
 

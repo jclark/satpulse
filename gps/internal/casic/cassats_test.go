@@ -10,12 +10,10 @@ import (
 
 // mockMsgHandler captures SatellitesMsg for test verification.
 type mockMsgHandler struct {
+	gpsprot.DefaultHandler
 	msgs []*gpsprot.SatellitesMsg
 }
 
-func (m *mockMsgHandler) Time(*gpsprot.TimeMsg, time.Time)             {}
-func (m *mockMsgHandler) LeapSecond(*gpsprot.LeapSecondMsg, time.Time) {}
-func (m *mockMsgHandler) Survey(*gpsprot.SurveyMsg, time.Time)         {}
 func (m *mockMsgHandler) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
 	m.msgs = append(m.msgs, msg)
 }

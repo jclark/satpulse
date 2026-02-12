@@ -57,6 +57,7 @@ type testNavEpochStep struct {
 }
 
 type testMsgHandler struct {
+	gpsprot.DefaultHandler
 	msgs []struct {
 		msgType string
 		msg     interface{}

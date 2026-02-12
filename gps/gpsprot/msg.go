@@ -7,11 +7,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
 type MsgHandler interface {
 	Time(msg *TimeMsg, tRead time.Time)
+	PosGeo(msg *PosGeoMsg, tRead time.Time)
+	PosECEF(msg *PosECEFMsg, tRead time.Time)
+	VelGeo(msg *VelGeoMsg, tRead time.Time)
+	VelECEF(msg *VelECEFMsg, tRead time.Time)
 	LeapSecond(msg *LeapSecondMsg, tRead time.Time)
 	Survey(msg *SurveyMsg, tRead time.Time)
 	Satellites(msg *SatellitesMsg, tRead time.Time)
@@ -30,6 +35,10 @@ type NativeMsgHandler interface {
 type DefaultHandler struct{}
 
 func (h *DefaultHandler) Time(msg *TimeMsg, tRead time.Time)             {}
+func (h *DefaultHandler) PosGeo(msg *PosGeoMsg, tRead time.Time)         {}
+func (h *DefaultHandler) PosECEF(msg *PosECEFMsg, tRead time.Time)       {}
+func (h *DefaultHandler) VelGeo(msg *VelGeoMsg, tRead time.Time)         {}
+func (h *DefaultHandler) VelECEF(msg *VelECEFMsg, tRead time.Time)       {}
 func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
 func (h *DefaultHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {}
@@ -59,6 +68,30 @@ func (h *MultiHandler) Survey(msg *SurveyMsg, tRead time.Time) {
 func (h *MultiHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {
 	for _, handler := range h.handlers {
 		handler.Satellites(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) PosGeo(msg *PosGeoMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.PosGeo(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) PosECEF(msg *PosECEFMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.PosECEF(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) VelGeo(msg *VelGeoMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.VelGeo(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) VelECEF(msg *VelECEFMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.VelECEF(msg, tRead)
 	}
 }
 
@@ -250,6 +283,45 @@ func (msg *TimeMsg) ComputeTAITime(ls ptime.LeapSecond) (ptime.Time, bool) {
 		return 0, false
 	}
 	return ls.UTCtoTime(*msg.UTCTime), true
+}
+
+// PosGeoMsg is a geodetic position (latitude, longitude, height above WGS-84 ellipsoid).
+type PosGeoMsg struct {
+	LatLon      [2]Angle        `json:"latLon"`             // [lat, lon]; lat positive north, lon positive east
+	Height      opt.Val[Length] `json:"height,omitzero"`    // above WGS-84 ellipsoid
+	HeightMSL   opt.Val[Length] `json:"heightMSL,omitzero"` // above mean sea level
+	HAcc        opt.Val[Length] `json:"hAcc,omitzero"`      // horizontal position accuracy
+	VAcc        opt.Val[Length] `json:"vAcc,omitzero"`      // vertical position accuracy
+	Tag         Tag             `json:"tag"`
+	NativeMsgID string          `json:"nativeMsgID"`
+}
+
+// PosECEFMsg is an Earth-Centered, Earth-Fixed position.
+type PosECEFMsg struct {
+	Pos         Point3D         `json:"pos"`           // ECEF X, Y, Z
+	PAcc        opt.Val[Length] `json:"pAcc,omitzero"` // 3D position accuracy
+	Tag         Tag             `json:"tag"`
+	NativeMsgID string          `json:"nativeMsgID"`
+}
+
+// VelGeoMsg is velocity in the local geodetic frame.
+type VelGeoMsg struct {
+	VelNED      opt.Val[[3]Speed] `json:"velNED,omitzero"`      // north, east, down
+	GroundSpeed opt.Val[Speed]    `json:"groundSpeed,omitzero"` // 2D ground speed
+	Speed       opt.Val[Speed]    `json:"speed,omitzero"`       // 3D speed
+	Heading     opt.Val[Angle]    `json:"heading,omitzero"`     // track over ground, true north
+	SAcc        opt.Val[Speed]    `json:"sAcc,omitzero"`        // speed accuracy
+	HeadAcc     opt.Val[Angle]    `json:"headAcc,omitzero"`     // heading accuracy
+	Tag         Tag               `json:"tag"`
+	NativeMsgID string            `json:"nativeMsgID"`
+}
+
+// VelECEFMsg is velocity in the ECEF frame.
+type VelECEFMsg struct {
+	Vel         [3]Speed       `json:"vel"`           // ECEF VX, VY, VZ
+	SAcc        opt.Val[Speed] `json:"sAcc,omitzero"` // speed accuracy
+	Tag         Tag            `json:"tag"`
+	NativeMsgID string         `json:"nativeMsgID"`
 }
 
 type LeapSecondMsg struct {
