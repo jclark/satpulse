@@ -12,7 +12,7 @@ GNSS protocols consistently separate geodetic (LLH position / NED velocity) from
 
 ### Coordinate frame pairing
 
-- **Geodetic**: position as latitude/longitude/height (LLH); velocity in the local tangent plane as north/east/down (NED) or equivalently as ground speed + course.
+- **Geodetic**: position as latitude/longitude/height (LLH); velocity in the local tangent plane as north/east/down (NED) or equivalently as ground speed + heading.
 - **ECEF**: position and velocity in the Earth-Centered, Earth-Fixed frame.
 
 No protocol mixes these frames in a single message. Each message type is only emitted when the receiver reports a valid result; there is no "invalid" state within these messages.
@@ -35,18 +35,18 @@ const (
 
 With conversion methods `MetersPerSecond() float64`, `String()`, and a constructor `MetersPerSecondFromFloat(float64) Speed`, following the pattern of `Length.Meters()` / `Meters(float64)` and `Angle.Degrees()` / `DegreesFromFloat(float64)`.
 
-Placed in `gps/gpsprot/configtarget.go` alongside `Length` and `Angle`.
+Placed in `gps/gpsprot/types.go` alongside `Length` and `Angle`.
 
 ### Accuracy fields
 
-Accuracy estimates (HAcc, VAcc, PAcc, SAcc, CAcc, TAcc) are NOT included in the position/velocity messages. They belong in `SolutionMetaMsg` alongside the DOP fields, because:
+Accuracy estimates are included in the position/velocity messages as `opt.Val` fields, because every protocol that provides accuracy bundles it with the value itself. NMEA provides no metric accuracy (only DOPs in GSA), so the fields simply stay unset.
 
-- Accuracy and DOPs are both "how good is this solution" metrics, just at different granularity. They share frame-dependence (HDOP/HAcc/VAcc are geodetic-frame; PDOP/PAcc are frame-independent). Putting DOPs in one place and accuracy in another is not justifiable.
-- Accuracy changes much more slowly than coordinates themselves (it reflects solution geometry and correction state, which evolve over seconds to minutes). The slight extra latency of epoch-boundary emission via `SolutionMetaMsg` is acceptable.
-- NMEA provides no metric accuracy estimates at all (only DOPs), so these fields would be unused for NMEA anyway.
-- `TimeMsg.Accuracy` would also move to `SolutionMetaMsg` (as TAcc) to maintain consistency.
+- `PosGeoMsg`: `HAcc`, `VAcc` (horizontal, vertical position accuracy)
+- `PosECEFMsg`: `PAcc` (3D position accuracy)
+- `VelGeoMsg`: `SAcc` (speed accuracy), `HeadAcc` (heading accuracy)
+- `VelECEFMsg`: `SAcc` (speed accuracy)
 
-This means `SolutionMetaMsg` gains these additional `opt.Val` fields: HAcc, VAcc (geodetic position), PAcc (ECEF position), SAcc (speed), CAcc (course), TAcc (time).
+DOPs remain in `SolutionMetaMsg` since they come from separate messages (e.g. NMEA GSA, UBX NavDOP).
 
 ### `SolutionEngine` (future enhancement)
 
@@ -81,6 +81,8 @@ Implementation is deferred until Unicore/NovAtel multi-solution support is neede
 
 All four message types include `Tag` and `NativeMsgID` fields for protocol identification, following the existing `TimeMsg` / `SatellitesMsg` pattern. They contain pure coordinates with no quality/accuracy metadata. When `SolutionEngine` is implemented, an `Engine` field will be added.
 
+Each protocol message independently emits position/velocity messages when it has valid data — no dedup between messages. This follows the `TimeMsg` precedent where multiple sources can emit time messages independently.
+
 #### `PosGeoMsg`
 
 Geodetic position (latitude, longitude, height above WGS-84 ellipsoid).
@@ -92,12 +94,12 @@ type PosGeoMsg struct {
 	LatLon    [2]Angle        `json:"latLon"`              // [lat, lon]; lat positive north, lon positive east
 	Height    opt.Val[Length]  `json:"height,omitzero"`    // above WGS-84 ellipsoid
 	HeightMSL opt.Val[Length]  `json:"heightMSL,omitzero"` // above mean sea level
-	Tag         Tag    `json:"tag,omitzero"`
-	NativeMsgID string `json:"nativeMsgID,omitempty"`
+	HAcc      opt.Val[Length]  `json:"hAcc,omitzero"`      // horizontal position accuracy
+	VAcc      opt.Val[Length]  `json:"vAcc,omitzero"`      // vertical position accuracy
+	Tag         Tag    `json:"tag"`
+	NativeMsgID string `json:"nativeMsgID"`
 }
 ```
-
-Sources: UBX `NavPosLLH` (all fields), UBX `NavPVT` (all fields), NMEA `GGA` (latLon, height, heightMSL), NMEA `RMC` (latLon only), Unicore `BESTNAV` (latLon, height).
 
 #### `PosECEFMsg`
 
@@ -105,34 +107,33 @@ Earth-Centered, Earth-Fixed position.
 
 ```go
 type PosECEFMsg struct {
-	Pos  Point3D `json:"pos"` // ECEF X, Y, Z
-	Tag         Tag    `json:"tag,omitzero"`
-	NativeMsgID string `json:"nativeMsgID,omitempty"`
+	Pos  Point3D        `json:"pos"`            // ECEF X, Y, Z
+	PAcc opt.Val[Length] `json:"pAcc,omitzero"` // 3D position accuracy
+	Tag         Tag    `json:"tag"`
+	NativeMsgID string `json:"nativeMsgID"`
 }
 ```
 
-Sources: UBX `NavPosECEF`.
-
 #### `VelGeoMsg`
 
-Velocity in the local geodetic frame (NED components and/or ground speed + course).
+Velocity in the local geodetic frame (NED components and/or ground speed + heading).
 
-Some fields are `opt.Val` because different protocols provide different subsets. NMEA gives only ground speed and course; UBX `NavVelNED` gives NED components, ground speed, 3D speed, and heading; UBX `NavPVT` gives NED components and ground speed. At least one velocity field will always be set.
+Some fields are `opt.Val` because different protocol messages provide different subsets. Some provide only ground speed and heading; others provide NED components, ground speed, 3D speed, and heading. At least one velocity field will always be set.
 
-NED components are grouped as `opt.Val[[3]Speed]` because they always come as a complete triple — no protocol provides only one or two components.
+NED components are grouped as `opt.Val[[3]Speed]` because they always come as a complete triple — no source provides only one or two components.
 
 ```go
 type VelGeoMsg struct {
 	VelNED      opt.Val[[3]Speed] `json:"velNED,omitzero"`      // north, east, down
 	GroundSpeed opt.Val[Speed]    `json:"groundSpeed,omitzero"` // 2D ground speed
-	Speed3D     opt.Val[Speed]    `json:"speed3D,omitzero"`     // 3D speed
-	Course      opt.Val[Angle]    `json:"course,omitzero"`      // track over ground, true north
-	Tag         Tag    `json:"tag,omitzero"`
-	NativeMsgID string `json:"nativeMsgID,omitempty"`
+	Speed       opt.Val[Speed]    `json:"speed,omitzero"`       // 3D speed
+	Heading     opt.Val[Angle]    `json:"heading,omitzero"`     // track over ground, true north
+	SAcc        opt.Val[Speed]    `json:"sAcc,omitzero"`        // speed accuracy
+	HeadAcc     opt.Val[Angle]    `json:"headAcc,omitzero"`     // heading accuracy
+	Tag         Tag    `json:"tag"`
+	NativeMsgID string `json:"nativeMsgID"`
 }
 ```
-
-Sources: UBX `NavVelNED` (all fields), UBX `NavPVT` (velNED, groundSpeed), NMEA `RMC` (groundSpeed, course), NMEA `VTG` (groundSpeed, course), Unicore `BESTNAV` (groundSpeed, course).
 
 #### `VelECEFMsg`
 
@@ -140,13 +141,12 @@ Velocity in the ECEF frame.
 
 ```go
 type VelECEFMsg struct {
-	Vel  [3]Speed `json:"vel"` // ECEF VX, VY, VZ
-	Tag         Tag    `json:"tag,omitzero"`
-	NativeMsgID string `json:"nativeMsgID,omitempty"`
+	Vel  [3]Speed       `json:"vel"`            // ECEF VX, VY, VZ
+	SAcc opt.Val[Speed]  `json:"sAcc,omitzero"` // speed accuracy
+	Tag         Tag    `json:"tag"`
+	NativeMsgID string `json:"nativeMsgID"`
 }
 ```
-
-Sources: UBX `NavVelECEF`.
 
 ### MsgHandler interface changes
 
@@ -181,9 +181,13 @@ The following test handler does NOT embed `DefaultHandler` and needs updating:
 
 ## Implementation steps
 
+### Step 0: Factor out shared types into `types.go`
+
+Create `gps/gpsprot/types.go` and move types shared between `configtarget.go` and `msg.go` into it. From `configtarget.go`: `Length`, `Point3D`, and `Angle` (used by the new message types). From `msg.go`: `GNSS` (used by `configtarget.go`).
+
 ### Step 1: Add `Speed` type
 
-In `gps/gpsprot/configtarget.go`, after the `Angle` type and before `Point3D`:
+In `gps/gpsprot/types.go`, after `Angle` and before `Point3D`:
 
 - `Speed` type with constants and methods following the `Length`/`Angle` pattern
 - No `ParseSpeed` needed initially (not used in configuration)
@@ -204,59 +208,48 @@ In `gps/internal/ubx/ubx_test.go`:
 
 - Add four empty methods to `testMsgHandler`
 
-### Protocol extraction (steps 4–7)
-
-Each sentence/message independently emits position/velocity messages when it has valid data — no dedup between sentences. This follows the `TimeMsg` precedent where multiple sources (RMC, ZDA) can emit time messages independently.
-
-Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
-
 ### Step 4: NMEA protocol extraction
 
-Added to existing `nmea/nmea.go`; tests in existing `nmea/nmea_test.go`.
+Added to existing `nmea/nmea.go`; tests in existing `nmea/nmea_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
 
-- **4a: RMC** — emit `PosGeoMsg` with latLon (height unset); emit `VelGeoMsg` with groundSpeed, course.
+- **4a: RMC** — emit `PosGeoMsg` with latLon (height unset); emit `VelGeoMsg` with groundSpeed, heading.
 - **4b: GGA** — emit `PosGeoMsg` with latLon, height, heightMSL.
-- **4c: VTG** — emit `VelGeoMsg` with groundSpeed, course.
+- **4c: VTG** — emit `VelGeoMsg` with groundSpeed, heading.
 
 ### Step 5: UBX protocol extraction
 
-New files: `ubx/ubxpv.go`, `ubx/ubxpv_test.go`. Dispatched from the existing `Dispatch` method.
+New files: `ubx/ubxpv.go`, `ubx/ubxpv_test.go`. Dispatched from the existing `Dispatch` method. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
 
 - **5a: NAV-POSECEF** — emit `PosECEFMsg`.
 - **5b: NAV-VELECEF** — emit `VelECEFMsg`.
 - **5c: NAV-PVT** — emit `PosGeoMsg` and `VelGeoMsg` (when valid).
 - **5d: NAV-POSLLH** — emit `PosGeoMsg` with all fields.
-- **5e: NAV-VELNED** — emit `VelGeoMsg` with velNED, groundSpeed, speed3D, course.
+- **5e: NAV-VELNED** — emit `VelGeoMsg` with velNED, groundSpeed, speed, heading.
 
 ### Step 6: Allystar protocol extraction
 
-New files: `as/aspv.go`, `as/aspv_test.go`.
+New files: `as/aspv.go`, `as/aspv_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
 
 - **6a: NavPosECEF** — emit `PosECEFMsg`.
 - **6b: NavPosLLH** — emit `PosGeoMsg` with all fields.
 - **6c: NavVelECEF** — emit `VelECEFMsg`.
-- **6d: NavVelNED** — emit `VelGeoMsg` with velNED, groundSpeed, speed3D, course.
+- **6d: NavVelNED** — emit `VelGeoMsg` with velNED, groundSpeed, speed, heading.
 
 ### Step 7: CASIC protocol extraction
 
-New files: `casic/caspv.go`, `casic/caspv_test.go`.
+New files: `casic/caspv.go`, `casic/caspv_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
 
 - **7a: NAV-SOL** — emit `PosECEFMsg` (when PosValid >= NavPos2D) and `VelECEFMsg` (when VelValid >= NavVel2D).
 - **7b: NAV-PV** — define `NavPv` struct in `casbin/nav.go`; emit `PosGeoMsg` and `VelGeoMsg`.
 
 ### Step 8: Unicore protocol extraction
 
-New files: `unc/nav.go`, `unc/nav_test.go`.
+New files: `unc/nav.go`, `unc/nav_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
 
-- **8a: BESTNAV** — emit `PosGeoMsg` (latLon, height) and `VelGeoMsg` (groundSpeed, course).
+- **8a: BESTNAV** — emit `PosGeoMsg` (latLon, height) and `VelGeoMsg` (groundSpeed, heading).
 - **8b: BESTNAVXYZ** — emit `PosECEFMsg` and `VelECEFMsg`.
 
 ### Step 9 (future): SSE monitoring event
 
 A `PosVelEvent` SSE event would combine all four position/velocity message types into a single event for the web UI / monitoring. It fires once per epoch, triggered by `SolutionMetaMsg` (which marks the epoch boundary). The handler would cache the most recent position/velocity messages and snapshot them when `SolutionMetaMsg` arrives. This naturally includes the solution metadata itself, giving consumers a complete per-epoch view: coordinates + quality.
 
-## Open questions
-
-1. **Naming**: `VelGeo` vs `VelNED` -- "Geo" is used here for consistency with the position message naming and the "geodetic vs earth-centered" framing. NED velocity is technically in the local tangent plane derived from the geodetic position, not "geodetic" per se. Alternative: `VelLocal`.
-
-2. **`Speed` placement**: Proposed in `configtarget.go` next to `Length`/`Angle` for consistency, even though the file name suggests configuration. An alternative would be a new `units.go` file, but that would orphan `Length`/`Angle` in `configtarget.go`.
