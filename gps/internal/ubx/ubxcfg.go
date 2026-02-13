@@ -52,6 +52,7 @@ type Configurator struct {
 	tRead     map[ubxbin.MsgID]time.Time
 	raw       RawConfig
 	origPrt   *ubxbin.CfgPrt
+	portID    *ubxbin.PortID
 	monGNSS   *monGNSS
 	steps     []func(*Configurator) error
 	stepIndex int
@@ -103,6 +104,7 @@ var legacyConfigSteps = []func(*Configurator) error{
 }
 
 var newConfigSteps = []func(*Configurator) error{
+	(*Configurator).pollMonComms,
 	(*Configurator).pollPrt,
 	(*Configurator).valPollMonGNSS,
 	(*Configurator).valGetSignals,
@@ -505,6 +507,13 @@ func (c *Configurator) processMsg(msg ubxbin.Msg, t time.Time) (bool, error) {
 	case *ubxbin.AckNak:
 		c.processAckNak(mt.MsgID, false, t)
 		return true, nil
+	case *ubxbin.MonComms:
+		c.tRead[mt.ID()] = t
+		if pid, ok := monCommsPort(mt); ok {
+			c.portID = &pid
+		}
+		c.checkPollResponses(t)
+		return true, nil
 	case *ubxbin.MonGnss:
 		c.tRead[mt.ID()] = t
 		c.monGNSS = c.newMonGNSS(mt)
@@ -529,6 +538,26 @@ func (c *Configurator) newMonGNSS(mt *ubxbin.MonGnss) *monGNSS {
 		gnssChangeCount:          c.raw.gnssChangeCount,
 	}
 	return &mg
+}
+
+// monCommsPort extracts the port ID from a MON-COMMS message.
+// It first tries the output port from TxErrors, then falls back to
+// a single-port device where only one port is reported.
+func monCommsPort(mc *ubxbin.MonComms) (ubxbin.PortID, bool) {
+	// The output port feature is documented for protocol version 40,
+	// but returns not available on F10N and F10T.
+	// It seems to work properly on protocol version 50 (X20 series).
+	if pid, ok := mc.TxErrors.OutputPort(); ok {
+		return pid, true
+	}
+	// This is a rather hacky fallback that works on F10N and F10T:
+	// they only report one port (the active port), and we can use the port ID of that.
+	// The point of this is to be able to test the MON-COMMS config path using F10N and F10T (which I have access to),
+	// by changing pollMonComms to poll MON-COMMS for protocol version 40 and above.
+	if len(mc.Ports) == 1 {
+		return mc.Ports[0].PortID.PortID()
+	}
+	return 0, false
 }
 
 func (c *Configurator) saveMinimal() error {
@@ -746,6 +775,9 @@ func (c *Configurator) valBaudRate() error {
 }
 
 func (c *Configurator) valPort() ucv.Port {
+	if c.portID != nil {
+		return ucv.Port(*c.portID)
+	}
 	if c.raw.prt != nil {
 		return ucv.Port(c.raw.prt.PortID)
 	}
@@ -777,8 +809,26 @@ func newCfgValsetRequest(items []ucv.Item, layers ubxbin.CfgValsetLayer) (*ubxbi
 	}, nil
 }
 
+func (c *Configurator) pollMonComms() error {
+	// UBX-MON-COMMS works on protocol version 40 (10th gen)
+	// However, CFG-PRT works on anything less than protocol version 50 (X20 series)
+	// Also, the current port feature of UBX-MON-COMMS that is documented for version 40,
+	// only actually seems to work fully in version 50.
+	// You can change this temporarile to 40 to test on F10N/F10T devices.
+	// But for normal operation, I think it is safer to use UBX-MON-COMMS on protocol version 50 and above.
+	if !c.ver.protVerAtLeast(50, 0) {
+		return nil
+	}
+	if c.target.Opts.BaudRate == 0 && !c.target.Opts.SetsMsgs() {
+		return nil
+	}
+	return c.addPollRequest(ubxbin.MonCommsID)
+}
+
 func (c *Configurator) pollPrt() error {
-	// This is used both by old and new.
+	if c.portID != nil {
+		return nil
+	}
 	if c.target.Opts.BaudRate == 0 && !c.target.Opts.SetsMsgs() {
 		return nil
 	}
