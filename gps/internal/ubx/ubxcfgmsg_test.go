@@ -9,7 +9,7 @@ import (
 )
 
 var testVers = struct {
-	f9p, m8f, m8p, lea6t, f10s, f9t, f9t20 Version
+	f9p, m8f, m8p, lea6t, f10s, f9t, f9t20, x20p Version
 }{
 	f9p: Version{
 		Mod:  "ZED-F9P",
@@ -50,6 +50,15 @@ var testVers = struct {
 		Prot: &ProtVer{Major: 29, Minor: 25},
 		FW:   &FWVer{ProductCategory: "TIM", Major: 2, Minor: 25},
 		GNSS: gpsprot.MajorGNSSSet | gpsprot.GNSSSetOf(gpsprot.QZSS),
+	},
+	x20p: Version{
+		SW:            "EXT HPG 2.00 (1e963fM)",
+		HW:            "000B0000",
+		Mod:           "ZED-X20P",
+		Prot:          &ProtVer{Major: 50, Minor: 2},
+		FW:            &FWVer{ProductCategory: "HPG", Major: 2, Minor: 0},
+		RunsFromFlash: true,
+		GNSS:          gpsprot.MajorGNSSSet | gpsprot.GNSSSetOf(gpsprot.QZSS, gpsprot.SBAS, gpsprot.NAVIC),
 	},
 }
 

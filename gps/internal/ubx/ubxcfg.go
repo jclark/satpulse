@@ -855,11 +855,7 @@ func (c *Configurator) pollTp5() error {
 	if !c.target.UsesAny(cfgOldProps.tp5...) {
 		return nil
 	}
-	tpIdx := 0
-	if c.ver.ProductCategory() == "FTS" {
-		tpIdx = 1
-	}
-	return c.addPollTp5Request(tpIdx)
+	return c.addPollTp5Request(c.ver.tpIndex())
 }
 
 func (c *Configurator) setMsg1() error {

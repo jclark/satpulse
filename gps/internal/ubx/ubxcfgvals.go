@@ -130,6 +130,9 @@ func (raw *CfgVals) AddData(cfgData []byte) (map[uint8]struct{}, error) {
 }
 
 func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
+	if ver.tpIndex() == 1 {
+		raw = &CfgVals{ucv.RemapMap(raw.Map, ucv.KeyRemap(ucv.TPKeyPairs, 1, 0))}
+	}
 	if v, ok := raw.getSignalsEnabled(); ok {
 		cp.SetSignalsEnabled(v)
 	}
@@ -155,6 +158,11 @@ func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
 func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port, monEnabledGNSS gpsprot.GNSSSet) ([]ucv.Item, []ucv.Key, error) {
+	var tp1to2 map[ucv.Key]ucv.Key
+	if ver.tpIndex() == 1 {
+		tp1to2 = ucv.KeyRemap(ucv.TPKeyPairs, 0, 1)
+		known = &CfgVals{ucv.RemapMap(known.Map, ucv.KeyRemap(ucv.TPKeyPairs, 1, 0))}
+	}
 	tb := newTxnBuilder(known, target, ver, port, monEnabledGNSS)
 	err := tb.build()
 	if err != nil {
@@ -163,6 +171,9 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 	keys := known.addGetKeys(target.Get, ver, tb.keys)
 	slices.Sort(keys)
 	keys = slices.Compact(keys)
+	if tp1to2 != nil {
+		return ucv.RemapItems(tb.items, tp1to2), ucv.RemapKeys(keys, tp1to2), nil
+	}
 	return tb.items, keys, nil
 }
 

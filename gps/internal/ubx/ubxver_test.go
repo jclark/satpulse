@@ -43,6 +43,28 @@ func testOldSwVerString(t *testing.T, swVer string, major, minor byte, tmodeLeve
 	}
 }
 
+func TestTPIndex(t *testing.T) {
+	tests := []struct {
+		name string
+		ver  Version
+		want int
+	}{
+		{"ZED-X20P", testVers.x20p, 1},
+		{"ZED-F9P", testVers.f9p, 0},
+		{"ZED-F9T", testVers.f9t, 0},
+		{"LEA-M8F", testVers.m8f, 1},
+		{"NEO-M8P", testVers.m8p, 0},
+		{"LEA-6T", testVers.lea6t, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.ver.tpIndex(); got != tt.want {
+				t.Errorf("tpIndex() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFWVerMAXF10S(t *testing.T) {
 	extensions := []string{"FWVER=SPGL1L5 6.00"}
 	ver := findFWVer(extensions)

@@ -120,6 +120,18 @@ func (v *Version) rtcmSupport() (gpsprot.GNSSSet, gpsprot.RTCMMsgFlags) {
 	return 0, 0
 }
 
+// tpIndex returns the time pulse index: 0 for TIMEPULSE, 1 for TIMEPULSE2.
+func (v *Version) tpIndex() int {
+	if v.genAtLeast9() {
+		if v.Mod == "ZED-X20P" {
+			return 1
+		}
+	} else if v.ProductCategory() == "FTS" {
+			return 1
+	}
+	return 0
+}
+
 func (v *Version) protVerAtLeast(major, minor byte) bool {
 	if v == nil || v.Prot == nil {
 		return false
