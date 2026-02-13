@@ -717,27 +717,21 @@ func (a *App) ECEFtoLLH(x, y, z float64) (*LLH, error) {
 	return &LLH{Lat: llh.Lat, Lon: llh.Lon, Height: llh.Height}, nil
 }
 
+// LLHtoECEF converts latitude, longitude (degrees) and height (meters) to
+// Earth-Centered Earth-Fixed coordinates (meters).
+func (a *App) LLHtoECEF(lat, lon, height float64) [3]float64 {
+	ecef := geopos.WGS84.LLHtoECEF(geopos.LLH{Lat: lat, Lon: lon, Height: height})
+	return [3]float64(ecef)
+}
+
 // msgHandler implements gpsprot.MsgHandler and emits "gps:msg" events.
 type msgHandler struct {
 	gpsprot.DefaultHandler
-	ctx      context.Context
-	ls       ptime.LeapSecond
-	lastTime ptime.Time
+	ctx context.Context
+	ls  ptime.LeapSecond
 }
 
 func (h *msgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
-	if msg.Ref == gpsprot.PrePulse {
-		return
-	}
-	sec, ok := msg.ComputeTAITime(h.ls)
-	if !ok {
-		return
-	}
-	secRnd := sec.Round(time.Second)
-	if secRnd <= h.lastTime {
-		return
-	}
-	h.lastTime = secRnd
 	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
 		Kind: "time",
 		Msg:  msg,
@@ -765,6 +759,38 @@ func (h *msgHandler) Survey(msg *gpsprot.SurveyMsg, tRead time.Time) {
 func (h *msgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
 		Kind: "satellites",
+		Msg:  msg,
+		Time: tRead.Format(time.TimeOnly),
+	})
+}
+
+func (h *msgHandler) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
+	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+		Kind: "posGeo",
+		Msg:  msg,
+		Time: tRead.Format(time.TimeOnly),
+	})
+}
+
+func (h *msgHandler) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
+	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+		Kind: "posECEF",
+		Msg:  msg,
+		Time: tRead.Format(time.TimeOnly),
+	})
+}
+
+func (h *msgHandler) VelGeo(msg *gpsprot.VelGeoMsg, tRead time.Time) {
+	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+		Kind: "velGeo",
+		Msg:  msg,
+		Time: tRead.Format(time.TimeOnly),
+	})
+}
+
+func (h *msgHandler) VelECEF(msg *gpsprot.VelECEFMsg, tRead time.Time) {
+	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+		Kind: "velECEF",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
 	})

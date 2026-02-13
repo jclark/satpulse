@@ -10,6 +10,8 @@ import {LoggingPanel} from './logging-panel';
 import {TimePanel} from './time-panel';
 import {SurveyPanel} from './survey-panel';
 import {MsgFilePanel} from './msgfile-panel';
+import {PVTPanel} from './pvt-panel';
+import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeRow} from './pvt-panel';
 
 export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
 
@@ -130,6 +132,13 @@ export function App() {
     const [timeMsg, setTimeMsg] = useState<TimeMsg | null>(null);
     const [surveyMsg, setSurveyMsg] = useState<SurveyMsg | null>(null);
     const [leapSecond, setLeapSecond] = useState<LeapSecondState | null>(null);
+    const [posRows, setPosRows] = useState<Map<string, PosRow>>(new Map());
+    const [velRows, setVelRows] = useState<Map<string, VelRow>>(new Map());
+    const [timeRows, setTimeRows] = useState<Map<string, TimeRow>>(new Map());
+    const [pvtOpen, setPvtOpen] = useState(false);
+    const pvtAutoExpanded = useRef(false);
+    // Time dedup state for TimePanel (moved from Go backend)
+    const lastTimeTAI = useRef(0);
     const [activeTab, setActiveTab] = useState<TabID>('monitor');
     const [timeOpen, setTimeOpen] = useState(true);
     const [surveyOpen, setSurveyOpen] = useState(false);
@@ -169,6 +178,14 @@ export function App() {
             setSurveyOpen(true);
         }
     }, [surveyMsg]);
+
+    // Auto-expand PVT section on first PVT data
+    useEffect(() => {
+        if ((posRows.size > 0 || velRows.size > 0 || timeRows.size > 0) && !pvtAutoExpanded.current) {
+            pvtAutoExpanded.current = true;
+            setPvtOpen(true);
+        }
+    }, [posRows.size, velRows.size, timeRows.size]);
 
     const addToast = useCallback((message: string, type: 'success' | 'error') => {
         const id = ++toastId;
@@ -232,9 +249,42 @@ export function App() {
         });
         const offMsg = EventsOn('gps:msg', (evt: MsgEvent) => {
             switch (evt.kind) {
-                case 'time':
-                    setTimeMsg(evt.msg as TimeMsg);
+                case 'time': {
+                    const msg = evt.msg;
+                    // Always update PVT time rows
+                    if (msg.nativeMsgID) {
+                        setTimeRows(prev => {
+                            const next = new Map(prev);
+                            next.set(msg.nativeMsgID, {
+                                tag: msg.tag || '',
+                                nativeMsgID: msg.nativeMsgID,
+                                ref: msg.ref ?? 0,
+                                taiTime: msg.taiTime,
+                                utcTime: msg.utcTime,
+                                accuracy: msg.accuracy,
+                                utcOffset: msg.utcOffset,
+                                gnss: msg.gnss,
+                            } as TimeRow);
+                            return next;
+                        });
+                    }
+                    // Dedup for TimePanel: skip PrePulse (ref=1), deduplicate by rounded TAI second
+                    if (msg.ref === 1) break;
+                    let taiSecs = 0;
+                    if (msg.taiTime) {
+                        const dot = (msg.taiTime as string).indexOf('.');
+                        taiSecs = parseInt(dot < 0 ? msg.taiTime : (msg.taiTime as string).substring(0, dot), 10);
+                    } else if (msg.utcTime) {
+                        // Approximate: can't compute TAI without leap seconds, but we just need dedup
+                        taiSecs = Math.floor(new Date(msg.utcTime).getTime() / 1000);
+                    }
+                    if (taiSecs > 0) {
+                        if (taiSecs <= lastTimeTAI.current) break;
+                        lastTimeTAI.current = taiSecs;
+                    }
+                    setTimeMsg(msg as TimeMsg);
                     break;
+                }
                 case 'survey':
                     setSurveyMsg(evt.msg as SurveyMsg);
                     break;
@@ -245,10 +295,84 @@ export function App() {
                     }
                     break;
                 }
+                case 'posGeo': {
+                    const msg = evt.msg;
+                    setPosRows(prev => {
+                        const next = new Map(prev);
+                        next.set(msg.nativeMsgID, {
+                            kind: 'posGeo',
+                            tag: msg.tag,
+                            nativeMsgID: msg.nativeMsgID,
+                            latLon: msg.latLon,
+                            height: msg.height,
+                            heightMSL: msg.heightMSL,
+                            hAcc: msg.hAcc,
+                            vAcc: msg.vAcc,
+                        } as PosGeoRow);
+                        return next;
+                    });
+                    break;
+                }
+                case 'posECEF': {
+                    const msg = evt.msg;
+                    setPosRows(prev => {
+                        const next = new Map(prev);
+                        next.set(msg.nativeMsgID, {
+                            kind: 'posECEF',
+                            tag: msg.tag,
+                            nativeMsgID: msg.nativeMsgID,
+                            pos: msg.pos,
+                            pAcc: msg.pAcc,
+                        } as PosECEFRow);
+                        return next;
+                    });
+                    break;
+                }
+                case 'velGeo': {
+                    const msg = evt.msg;
+                    setVelRows(prev => {
+                        const next = new Map(prev);
+                        next.set(msg.nativeMsgID, {
+                            kind: 'velGeo',
+                            tag: msg.tag,
+                            nativeMsgID: msg.nativeMsgID,
+                            velNED: msg.velNED,
+                            groundSpeed: msg.groundSpeed,
+                            speed: msg.speed,
+                            heading: msg.heading,
+                            sAcc: msg.sAcc,
+                            headAcc: msg.headAcc,
+                        } as VelGeoRow);
+                        return next;
+                    });
+                    break;
+                }
+                case 'velECEF': {
+                    const msg = evt.msg;
+                    setVelRows(prev => {
+                        const next = new Map(prev);
+                        next.set(msg.nativeMsgID, {
+                            kind: 'velECEF',
+                            tag: msg.tag,
+                            nativeMsgID: msg.nativeMsgID,
+                            vel: msg.vel,
+                            sAcc: msg.sAcc,
+                        } as VelECEFRow);
+                        return next;
+                    });
+                    break;
+                }
             }
         });
         const offState = EventsOn('gps:state', (state: ConnState) => {
             setConnState(state);
+            if (state === 'disconnected') {
+                setPosRows(new Map());
+                setVelRows(new Map());
+                setTimeRows(new Map());
+                lastTimeTAI.current = 0;
+                pvtAutoExpanded.current = false;
+            }
         });
         const offMsgSend = EventsOn('gps:msgsend', (evt: MsgSendEvent) => {
             const {status, current, total, error} = evt;
@@ -423,6 +547,9 @@ export function App() {
                     </CollapsibleSection>
                     <CollapsibleSection title="Survey" variant="panel" open={surveyOpen} onToggle={setSurveyOpen}>
                         <SurveyPanel msg={surveyMsg} />
+                    </CollapsibleSection>
+                    <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
+                        <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />
                     </CollapsibleSection>
                 </div>
 

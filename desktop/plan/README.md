@@ -35,6 +35,7 @@ Each phase is self-contained with goal, steps, testing plan, and files changed.
 | [phase6c.md](phase6c.md) | Monitor tab layout rework | Phase 6a, Phase 6b, Phase 5d |
 | [phase7a.md](phase7a.md) | Message file send | Phase 5b, msgfile MsgCount |
 | [phase7b.md](phase7b.md) | Message file response handling | Phase 7a |
+| [phase5g.md](phase5g.md) | PVT messages panel | Phase 5b |
 | [phase8.md](phase8.md) | Serial port enumeration (done) | Phase 5b |
 
 ## Dependency graph
@@ -51,6 +52,7 @@ Phase 1 (layout shell) -- done
 │       │   ├── Phase 5c (message configuration) -- done
 │       │   │   └── Phase 5e (time mode rework) -- done ← also depends on Phase 5a
 │       │   └── Phase 5d (live messages panel)
+│       │   └── Phase 5g (PVT messages panel)
 │       └── Phase 5f (dirty tracking and discard) -- done
 ├── Phase 7a (message file send) ← depends on Phase 5b
 │   └── Phase 7b (message file response handling)
