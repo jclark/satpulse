@@ -10,7 +10,7 @@ func posECEFNavPosECEF(m *ubxbin.NavPosECEF) *gpsprot.PosECEFMsg {
 	return &gpsprot.PosECEFMsg{
 		Pos:         point3DCm(m.ECEF),
 		PAcc:        opt.Make(lengthCm(m.PAcc)),
-		NativeMsgID: "UBX-NAV-POSECEF",
+		NativeMsgID: "NAV-POSECEF",
 	}
 }
 
@@ -18,7 +18,7 @@ func velECEFNavVelECEF(m *ubxbin.NavVelECEF) *gpsprot.VelECEFMsg {
 	return &gpsprot.VelECEFMsg{
 		Vel:         speed3CmS(m.ECEFV),
 		SAcc:        speedCmSOpt(m.SAcc),
-		NativeMsgID: "UBX-NAV-VELECEF",
+		NativeMsgID: "NAV-VELECEF",
 	}
 }
 
@@ -29,7 +29,7 @@ func posGeoNavPosLLH(m *ubxbin.NavPosLLH) *gpsprot.PosGeoMsg {
 		HeightMSL:   lengthMmOpt(m.HMSL),
 		HAcc:        lengthMmOpt(m.HAcc),
 		VAcc:        lengthMmOpt(m.VAcc),
-		NativeMsgID: "UBX-NAV-POSLLH",
+		NativeMsgID: "NAV-POSLLH",
 	}
 }
 
@@ -41,7 +41,7 @@ func velGeoNavVelNED(m *ubxbin.NavVelNED) *gpsprot.VelGeoMsg {
 		Heading:     angle1e5Opt(m.Heading),
 		SAcc:        speedCmSOpt(m.SAcc),
 		HeadAcc:     angle1e5Opt(m.CAcc),
-		NativeMsgID: "UBX-NAV-VELNED",
+		NativeMsgID: "NAV-VELNED",
 	}
 }
 
@@ -59,7 +59,7 @@ func posGeoNavPVT(m *ubxbin.NavPVT) *gpsprot.PosGeoMsg {
 		HeightMSL:   lengthMmOpt(m.HMSL),
 		HAcc:        lengthMmOpt(m.HAcc),
 		VAcc:        lengthMmOpt(m.VAcc),
-		NativeMsgID: "UBX-NAV-PVT",
+		NativeMsgID: "NAV-PVT",
 	}
 }
 
@@ -75,7 +75,7 @@ func velGeoNavPVT(m *ubxbin.NavPVT) *gpsprot.VelGeoMsg {
 		Heading:     angle1e5Opt(m.HeadMot),
 		SAcc:        opt.Make(speedMmS(m.SAcc)),
 		HeadAcc:     angle1e5Opt(m.HeadAcc),
-		NativeMsgID: "UBX-NAV-PVT",
+		NativeMsgID: "NAV-PVT",
 	}
 }
 

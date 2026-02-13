@@ -30,7 +30,7 @@ func TestSatellitesCopy(t *testing.T) {
 			name: "single satellite with signals",
 			input: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SAT",
+				NativeMsgID: "NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
@@ -49,7 +49,7 @@ func TestSatellitesCopy(t *testing.T) {
 			name: "multiple satellites",
 			input: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SAT",
+				NativeMsgID: "NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
@@ -171,14 +171,14 @@ func TestSatellitesCombine(t *testing.T) {
 			sats: nil,
 			sigs: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SIG",
+				NativeMsgID: "NAV-SIG",
 				SVs: []gpsprot.SVInfo{
 					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}},
 				},
 			},
 			expected: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SIG",
+				NativeMsgID: "NAV-SIG",
 				SVs: []gpsprot.SVInfo{
 					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}},
 				},
@@ -188,7 +188,7 @@ func TestSatellitesCombine(t *testing.T) {
 			name: "sats not nil, sigs nil",
 			sats: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SAT",
+				NativeMsgID: "NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}},
 				},
@@ -196,7 +196,7 @@ func TestSatellitesCombine(t *testing.T) {
 			sigs: nil,
 			expected: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SAT",
+				NativeMsgID: "NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}},
 				},
@@ -206,7 +206,7 @@ func TestSatellitesCombine(t *testing.T) {
 			name: "used flag should be copied from sigs when signals are replaced",
 			sats: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SAT",
+				NativeMsgID: "NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
@@ -220,7 +220,7 @@ func TestSatellitesCombine(t *testing.T) {
 			},
 			sigs: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SIG",
+				NativeMsgID: "NAV-SIG",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
@@ -234,7 +234,7 @@ func TestSatellitesCombine(t *testing.T) {
 			},
 			expected: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SAT",
+				NativeMsgID: "NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
@@ -252,7 +252,7 @@ func TestSatellitesCombine(t *testing.T) {
 			name: "combine overlapping satellites",
 			sats: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SAT",
+				NativeMsgID: "NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
@@ -274,7 +274,7 @@ func TestSatellitesCombine(t *testing.T) {
 			},
 			sigs: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SIG",
+				NativeMsgID: "NAV-SIG",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
@@ -295,7 +295,7 @@ func TestSatellitesCombine(t *testing.T) {
 			},
 			expected: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SAT",
+				NativeMsgID: "NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
@@ -328,7 +328,7 @@ func TestSatellitesCombine(t *testing.T) {
 			name: "combine non-overlapping satellites",
 			sats: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SAT",
+				NativeMsgID: "NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
@@ -342,7 +342,7 @@ func TestSatellitesCombine(t *testing.T) {
 			},
 			sigs: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SIG",
+				NativeMsgID: "NAV-SIG",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 2},
@@ -355,7 +355,7 @@ func TestSatellitesCombine(t *testing.T) {
 			},
 			expected: &gpsprot.SatellitesMsg{
 				Tag:         Tag,
-				NativeMsgID: "UBX-NAV-SAT",
+				NativeMsgID: "NAV-SAT",
 				SVs: []gpsprot.SVInfo{
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
@@ -407,7 +407,7 @@ func TestSatellitesNavSat(t *testing.T) {
 			expected: gpsprot.SatellitesMsg{
 				SVs:          []gpsprot.SVInfo{},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SAT",
+				NativeMsgID:  "NAV-SAT",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
@@ -443,7 +443,7 @@ func TestSatellitesNavSat(t *testing.T) {
 					},
 				},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SAT",
+				NativeMsgID:  "NAV-SAT",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
@@ -470,7 +470,7 @@ func TestSatellitesNavSat(t *testing.T) {
 			expected: gpsprot.SatellitesMsg{
 				SVs:          []gpsprot.SVInfo{},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SAT",
+				NativeMsgID:  "NAV-SAT",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
@@ -566,7 +566,7 @@ func TestSatellitesNavSat(t *testing.T) {
 					},
 				},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SAT",
+				NativeMsgID:  "NAV-SAT",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
@@ -602,7 +602,7 @@ func TestSatellitesNavSig(t *testing.T) {
 			expected: gpsprot.SatellitesMsg{
 				SVs:          []gpsprot.SVInfo{},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SIG",
+				NativeMsgID:  "NAV-SIG",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
@@ -640,7 +640,7 @@ func TestSatellitesNavSig(t *testing.T) {
 					},
 				},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SIG",
+				NativeMsgID:  "NAV-SIG",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
@@ -670,7 +670,7 @@ func TestSatellitesNavSig(t *testing.T) {
 			expected: gpsprot.SatellitesMsg{
 				SVs:          []gpsprot.SVInfo{},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SIG",
+				NativeMsgID:  "NAV-SIG",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
@@ -721,7 +721,7 @@ func TestSatellitesNavSig(t *testing.T) {
 					},
 				},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SIG",
+				NativeMsgID:  "NAV-SIG",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
@@ -790,7 +790,7 @@ func TestSatellitesNavSig(t *testing.T) {
 					},
 				},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SIG",
+				NativeMsgID:  "NAV-SIG",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
@@ -874,7 +874,7 @@ func TestSatellitesNavSig(t *testing.T) {
 					},
 				},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SIG",
+				NativeMsgID:  "NAV-SIG",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
@@ -910,7 +910,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 			expected: gpsprot.SatellitesMsg{
 				SVs:          []gpsprot.SVInfo{},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SVINFO",
+				NativeMsgID:  "NAV-SVINFO",
 				UsedValidity: gpsprot.SatelliteUsedSV,
 			},
 		},
@@ -947,7 +947,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					},
 				},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SVINFO",
+				NativeMsgID:  "NAV-SVINFO",
 				UsedValidity: gpsprot.SatelliteUsedSV,
 			},
 		},
@@ -975,7 +975,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 			expected: gpsprot.SatellitesMsg{
 				SVs:          []gpsprot.SVInfo{},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SVINFO",
+				NativeMsgID:  "NAV-SVINFO",
 				UsedValidity: gpsprot.SatelliteUsedSV,
 			},
 		},
@@ -1058,7 +1058,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					},
 				},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SVINFO",
+				NativeMsgID:  "NAV-SVINFO",
 				UsedValidity: gpsprot.SatelliteUsedSV,
 			},
 		},
@@ -1203,7 +1203,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					},
 				},
 				Tag:          Tag,
-				NativeMsgID:  "UBX-NAV-SVINFO",
+				NativeMsgID:  "NAV-SVINFO",
 				UsedValidity: gpsprot.SatelliteUsedSV,
 			},
 		},

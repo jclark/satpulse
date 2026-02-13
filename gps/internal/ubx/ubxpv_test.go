@@ -32,8 +32,8 @@ func TestPosECEF(t *testing.T) {
 	if got.PAcc != wantPAcc {
 		t.Errorf("PAcc = %v, want %v", got.PAcc, wantPAcc)
 	}
-	if got.NativeMsgID != "UBX-NAV-POSECEF" {
-		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "UBX-NAV-POSECEF")
+	if got.NativeMsgID != "NAV-POSECEF" {
+		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-POSECEF")
 	}
 }
 
@@ -58,8 +58,8 @@ func TestVelECEF(t *testing.T) {
 	if got.SAcc != wantSAcc {
 		t.Errorf("SAcc = %v, want %v", got.SAcc, wantSAcc)
 	}
-	if got.NativeMsgID != "UBX-NAV-VELECEF" {
-		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "UBX-NAV-VELECEF")
+	if got.NativeMsgID != "NAV-VELECEF" {
+		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-VELECEF")
 	}
 }
 
@@ -97,8 +97,8 @@ func TestPosLLH(t *testing.T) {
 	if got.VAcc != wantVAcc {
 		t.Errorf("VAcc = %v, want %v", got.VAcc, wantVAcc)
 	}
-	if got.NativeMsgID != "UBX-NAV-POSLLH" {
-		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "UBX-NAV-POSLLH")
+	if got.NativeMsgID != "NAV-POSLLH" {
+		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-POSLLH")
 	}
 }
 
@@ -143,8 +143,8 @@ func TestVelNED(t *testing.T) {
 	if got.HeadAcc != wantHeadAcc {
 		t.Errorf("HeadAcc = %v, want %v", got.HeadAcc, wantHeadAcc)
 	}
-	if got.NativeMsgID != "UBX-NAV-VELNED" {
-		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "UBX-NAV-VELNED")
+	if got.NativeMsgID != "NAV-VELNED" {
+		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-VELNED")
 	}
 }
 
@@ -173,8 +173,8 @@ func TestPosGeoNavPVT(t *testing.T) {
 		if got.Height != wantH {
 			t.Errorf("Height = %v, want %v", got.Height, wantH)
 		}
-		if got.NativeMsgID != "UBX-NAV-PVT" {
-			t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "UBX-NAV-PVT")
+		if got.NativeMsgID != "NAV-PVT" {
+			t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-PVT")
 		}
 	})
 	t.Run("no_fix", func(t *testing.T) {
@@ -260,8 +260,8 @@ func TestVelGeoNavPVT(t *testing.T) {
 		if got.HeadAcc != wantHeadAcc {
 			t.Errorf("HeadAcc = %v, want %v", got.HeadAcc, wantHeadAcc)
 		}
-		if got.NativeMsgID != "UBX-NAV-PVT" {
-			t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "UBX-NAV-PVT")
+		if got.NativeMsgID != "NAV-PVT" {
+			t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-PVT")
 		}
 	})
 	t.Run("no_fix", func(t *testing.T) {

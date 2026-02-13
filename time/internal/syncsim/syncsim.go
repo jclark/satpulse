@@ -320,7 +320,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PrePulse,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-TIM-TP",
+						NativeMsgID: "TIM-TP",
 						PulseOffset: &pulseOffset,
 					}
 					msgTRead := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
@@ -350,7 +350,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PostPulse,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-TIM-TOS",
+						NativeMsgID: "TIM-TOS",
 						PulseOffset: &pulseOffset,
 					}
 					msgTRead := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))

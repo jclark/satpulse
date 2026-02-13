@@ -37,7 +37,7 @@ func satellitesNavSat(u *ubxbin.NavSat) *gpsprot.SatellitesMsg {
 	return &gpsprot.SatellitesMsg{
 		SVs:         svs,
 		Tag:         Tag,
-		NativeMsgID: "UBX-NAV-SAT",
+		NativeMsgID: "NAV-SAT",
 		// Although we are told only that the satellite is used, we only have one signal,
 		// so that signal is used iff the satellite is used.
 		// This is different from the NMEA case, where we have multiple signals,
@@ -102,7 +102,7 @@ func satellitesNavSig(u *ubxbin.NavSig) *gpsprot.SatellitesMsg {
 	return &gpsprot.SatellitesMsg{
 		SVs:          svs,
 		Tag:          Tag,
-		NativeMsgID:  "UBX-NAV-SIG",
+		NativeMsgID:  "NAV-SIG",
 		UsedValidity: gpsprot.SatelliteUsedSignal,
 	}
 }
@@ -236,7 +236,7 @@ func satellitesNavSVInfo(u *ubxbin.NavSVInfo) *gpsprot.SatellitesMsg {
 	return &gpsprot.SatellitesMsg{
 		SVs:          svs,
 		Tag:          Tag,
-		NativeMsgID:  "UBX-NAV-SVINFO",
+		NativeMsgID:  "NAV-SVINFO",
 		UsedValidity: gpsprot.SatelliteUsedSV,
 	}
 }
