@@ -2,17 +2,21 @@ package gpsprot
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"iter"
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
 type MsgHandler interface {
 	Time(msg *TimeMsg, tRead time.Time)
+	PosGeo(msg *PosGeoMsg, tRead time.Time)
+	PosECEF(msg *PosECEFMsg, tRead time.Time)
+	VelGeo(msg *VelGeoMsg, tRead time.Time)
+	VelECEF(msg *VelECEFMsg, tRead time.Time)
 	LeapSecond(msg *LeapSecondMsg, tRead time.Time)
 	Survey(msg *SurveyMsg, tRead time.Time)
 	Satellites(msg *SatellitesMsg, tRead time.Time)
@@ -31,6 +35,10 @@ type NativeMsgHandler interface {
 type DefaultHandler struct{}
 
 func (h *DefaultHandler) Time(msg *TimeMsg, tRead time.Time)             {}
+func (h *DefaultHandler) PosGeo(msg *PosGeoMsg, tRead time.Time)         {}
+func (h *DefaultHandler) PosECEF(msg *PosECEFMsg, tRead time.Time)       {}
+func (h *DefaultHandler) VelGeo(msg *VelGeoMsg, tRead time.Time)         {}
+func (h *DefaultHandler) VelECEF(msg *VelECEFMsg, tRead time.Time)       {}
 func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
 func (h *DefaultHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {}
@@ -60,6 +68,30 @@ func (h *MultiHandler) Survey(msg *SurveyMsg, tRead time.Time) {
 func (h *MultiHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {
 	for _, handler := range h.handlers {
 		handler.Satellites(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) PosGeo(msg *PosGeoMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.PosGeo(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) PosECEF(msg *PosECEFMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.PosECEF(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) VelGeo(msg *VelGeoMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.VelGeo(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) VelECEF(msg *VelECEFMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.VelECEF(msg, tRead)
 	}
 }
 
@@ -99,129 +131,6 @@ func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead 
 		}
 	}
 	return firstErr
-}
-
-//go:generate stringer -type=GNSS
-type GNSS uint8
-
-// Constants for GNSS type.
-// Zero value means invalid/unknown/unspecified.
-// The major GNSS systems are first.
-// SBAS is an augmentation system, and not a standalone GNSS system.
-const (
-	GPS      GNSS = iota + 1 // GPS (USA)
-	GAL                      // Galileo (Europe)
-	BDS                      // BeiDou (China)
-	GLO                      // GLONASS (Russia)
-	QZSS                     // QZSS (Japan)
-	NAVIC                    // NavIC (India)
-	SBAS                     // Satellite-Based Augmentation System (e.g. WAAS, EGNOS, GAGAN, MSAS)
-	GNSSLast GNSS = SBAS
-)
-
-func ParseGNSS(s string) (GNSS, error) {
-	switch strings.ToUpper(s) {
-	case "GPS":
-		return GPS, nil
-	case "GAL", "GALILEO":
-		return GAL, nil
-	case "BDS", "BEIDOU":
-		return BDS, nil
-	case "GLO", "GLONASS":
-		return GLO, nil
-	case "NAVIC":
-		return NAVIC, nil
-	case "QZSS":
-		return QZSS, nil
-	case "SBAS":
-		return SBAS, nil
-	}
-	if s == "" {
-		return 0, errors.New("invalid GNSS name: empty string")
-	}
-	return 0, fmt.Errorf("%s: invalid GNSS name", s)
-}
-
-func (g GNSS) SVIDPrefix() string {
-	switch g {
-	case GPS:
-		return "G"
-	case GAL:
-		return "E"
-	case BDS:
-		return "C"
-	case GLO:
-		return "R"
-	case NAVIC:
-		return "I"
-	case QZSS:
-		return "J"
-	case SBAS:
-		return "S"
-	default:
-		return ""
-	}
-}
-
-func (g GNSS) IsValid() bool {
-	return g > 0 && g <= GNSSLast
-}
-
-func (g GNSS) IsMajor() bool {
-	return g >= GPS && g <= GLO
-}
-
-func (g GNSS) MarshalJSON() ([]byte, error) {
-	return json.Marshal(g.String())
-}
-
-func (g GNSS) MarshalText() ([]byte, error) {
-	return []byte(g.String()), nil
-}
-
-// There are 24 operational GLONASS satellites with slot numbers 1 to 24.
-// But there can be others that are spares or in testing.
-// See https://glonass-iac.ru/en/sostavOG which is referenced by
-// https://files.igs.org/pub/resource/working_groups/multi_gnss/Metadata_SINEX_1.10.pdf
-// So it is possible to have satellite numbers for GLONASS > 24.
-// Maximum number of spares there has ever been is 3.
-// NMEA allows up to 8 which would imply a total of 32 slots.
-// This matches the use of 5 bits for slot number in the GLONASS ICD,
-// so it seems like a sensible upper limit.
-const MaxSpareGLONASS = 8
-
-// IsValidSVNum checks if the given SV number is valid for the GNSS type.
-// Numbers are as in RINEX 3.04.
-func (g GNSS) IsValidSVNum(num int) bool {
-	if num < 1 {
-		return false
-	}
-	switch g {
-	case GPS:
-		return num <= 32
-	case GLO:
-		return num <= 24+MaxSpareGLONASS
-	case GAL:
-		return num <= 36
-	case BDS:
-		return num <= 63
-	case QZSS:
-		return num <= 10
-	case NAVIC:
-		return num <= 14
-	case SBAS:
-		return num >= 20 && num <= 58
-	default:
-		return false
-	}
-}
-
-func (gp *GNSS) UnmarshalText(text []byte) error {
-	g, err := ParseGNSS(string(text))
-	if err == nil {
-		*gp = g
-	}
-	return err
 }
 
 // GNSSSet is a set of GNSS values.
@@ -374,6 +283,45 @@ func (msg *TimeMsg) ComputeTAITime(ls ptime.LeapSecond) (ptime.Time, bool) {
 		return 0, false
 	}
 	return ls.UTCtoTime(*msg.UTCTime), true
+}
+
+// PosGeoMsg is a geodetic position (latitude, longitude, height above WGS-84 ellipsoid).
+type PosGeoMsg struct {
+	LatLon      [2]Angle        `json:"latLon"`             // [lat, lon]; lat positive north, lon positive east
+	Height      opt.Val[Length] `json:"height,omitzero"`    // above WGS-84 ellipsoid
+	HeightMSL   opt.Val[Length] `json:"heightMSL,omitzero"` // above mean sea level
+	HAcc        opt.Val[Length] `json:"hAcc,omitzero"`      // horizontal position accuracy
+	VAcc        opt.Val[Length] `json:"vAcc,omitzero"`      // vertical position accuracy
+	Tag         Tag             `json:"tag"`
+	NativeMsgID string          `json:"nativeMsgID"`
+}
+
+// PosECEFMsg is an Earth-Centered, Earth-Fixed position.
+type PosECEFMsg struct {
+	Pos         Point3D         `json:"pos"`           // ECEF X, Y, Z
+	PAcc        opt.Val[Length] `json:"pAcc,omitzero"` // 3D position accuracy
+	Tag         Tag             `json:"tag"`
+	NativeMsgID string          `json:"nativeMsgID"`
+}
+
+// VelGeoMsg is velocity in the local geodetic frame.
+type VelGeoMsg struct {
+	VelNED      opt.Val[[3]Speed] `json:"velNED,omitzero"`      // north, east, down
+	GroundSpeed opt.Val[Speed]    `json:"groundSpeed,omitzero"` // 2D ground speed
+	Speed       opt.Val[Speed]    `json:"speed,omitzero"`       // 3D speed
+	Heading     opt.Val[Angle]    `json:"heading,omitzero"`     // track over ground, true north
+	SAcc        opt.Val[Speed]    `json:"sAcc,omitzero"`        // speed accuracy
+	HeadAcc     opt.Val[Angle]    `json:"headAcc,omitzero"`     // heading accuracy
+	Tag         Tag               `json:"tag"`
+	NativeMsgID string            `json:"nativeMsgID"`
+}
+
+// VelECEFMsg is velocity in the ECEF frame.
+type VelECEFMsg struct {
+	Vel         [3]Speed       `json:"vel"`           // ECEF VX, VY, VZ
+	SAcc        opt.Val[Speed] `json:"sAcc,omitzero"` // speed accuracy
+	Tag         Tag            `json:"tag"`
+	NativeMsgID string         `json:"nativeMsgID"`
 }
 
 type LeapSecondMsg struct {

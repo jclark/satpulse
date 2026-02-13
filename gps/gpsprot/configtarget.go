@@ -3,9 +3,6 @@ package gpsprot
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -898,105 +895,6 @@ func (cp *ConfigProps) SetPPS(width time.Duration) {
 		AlignToGNSS:    true,
 		OnlyWhenLocked: true,
 	})
-}
-
-type Length int64
-
-const (
-	Micrometer Length = 1
-	Millimeter Length = 1000 * Micrometer
-	Centimeter Length = 10 * Millimeter
-	Meter      Length = 100 * Centimeter
-)
-
-func Meters(f float64) Length {
-	return Length(math.Round(f * float64(Meter)))
-}
-
-func (l Length) Meters() float64 {
-	return float64(l) / float64(Meter)
-}
-
-func (l Length) String() string {
-	return fmt.Sprintf("%v", l.Meters())
-}
-
-func ParseLength(s string) (Length, error) {
-	var f float64
-	var trailing string
-	if n, err := fmt.Sscanf(s, "%f%s", &f, &trailing); n != 1 || err != io.EOF {
-		return 0, fmt.Errorf("invalid length: %q", s)
-	}
-	n, err := float64ToInt64(math.Round(f * float64(Meter)))
-	if err != nil {
-		return 0, fmt.Errorf("invalid length %f: %w", f, err)
-	}
-	return Length(n), nil
-}
-
-type Angle int64
-
-const (
-	Nanodegrees  Angle = 1
-	Microdegrees Angle = 1000 * Nanodegrees
-	Millidegrees Angle = 1000 * Microdegrees
-	Degrees      Angle = 1000 * Millidegrees
-)
-
-func DegreesFromFloat(f float64) Angle {
-	return Angle(math.Round(f * float64(Degrees)))
-}
-
-func (a Angle) Degrees() float64 {
-	return float64(a) / float64(Degrees)
-}
-
-func (a Angle) String() string {
-	return fmt.Sprintf("%v", a.Degrees())
-}
-
-func ParseAngle(s string) (Angle, error) {
-	var f float64
-	var trailing string
-	if n, err := fmt.Sscanf(s, "%f%s", &f, &trailing); n != 1 || err != io.EOF {
-		return 0, fmt.Errorf("invalid angle: %q", s)
-	}
-	n, err := float64ToInt64(math.Round(f * float64(Degrees)))
-	if err != nil {
-		return 0, fmt.Errorf("invalid angle %f: %w", f, err)
-	}
-	return Angle(n), nil
-}
-
-type Point3D [3]Length
-
-func (p Point3D) String() string {
-	var s [3]string
-	for i := 0; i < 3; i++ {
-		s[i] = strconv.FormatFloat(p[i].Meters(), 'f', -1, 64)
-	}
-	return fmt.Sprintf("%s,%s,%s", s[0], s[1], s[2])
-}
-
-func (p Point3D) IsZero() bool {
-	return p[0] == 0 && p[1] == 0 && p[2] == 0
-}
-
-func ParsePoint3D(s string) (Point3D, error) {
-	var p Point3D
-	var trailing string
-	var f [3]float64
-	if n, err := fmt.Sscanf(s, "%f,%f,%f%s", &f[0], &f[1], &f[2], &trailing); n != 3 || err != io.EOF {
-		return p, fmt.Errorf("invalid 3D coordinates: %q", s)
-	}
-	for i := 0; i < 3; i++ {
-		n, err := float64ToInt64(math.Round(f[i] * float64(Meter)))
-		if err != nil {
-			return Point3D{}, fmt.Errorf("invalid coordinate %f: %w", f[i], err)
-		}
-		p[i] = Length(n)
-	}
-	return p, nil
 }
 
 type SurveyFlags int

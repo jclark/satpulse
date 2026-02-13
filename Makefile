@@ -1,7 +1,7 @@
 # Makefile for satpulse: requires GNU make
 # Where the config file will be installed by the install target.
 CONFIG_FILE=/usr/local/etc/satpulse.toml
-CMD=github.com/jclark/satpulse/internal/cmd
+CMD=github.com/jclark/satpulse/gps/app/cmd
 VERSION:=$(shell cat VERSION)
 VERSION_TAG:=v$(VERSION)
 BUILD_DATE:=$(shell date -u --rfc-3339=seconds)

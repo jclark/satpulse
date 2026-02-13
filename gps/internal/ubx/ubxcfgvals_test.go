@@ -128,7 +128,7 @@ func TestConfigItems_Get(t *testing.T) {
 	}
 	cfgValsInit(vals)
 	cp := new(gpsprot.ConfigProps)
-	vals.Cook(ver, ucv.UART1, cp)
+	vals.Cook(ver, cp)
 	val, ok := cp.GetTimePulseWidth()
 	if !ok || val != time.Duration(1e5*time.Microsecond) {
 		t.Errorf("expected pulse width to be 0.1s, got %v", val)
@@ -737,7 +737,7 @@ func TestTimePulseRoundTrip(t *testing.T) {
 			cv := newCfgVals()
 			cv.AddItems(items)
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, ucv.UART1, cp)
+			cv.Cook(ver, cp)
 			got, ok := cp.GetTimePulse()
 			if !ok {
 				t.Fatal("expected all TimePulse properties to be set")
@@ -957,7 +957,7 @@ func TestTimePulseCook(t *testing.T) {
 			cv := newCfgVals()
 			cv.AddItems(tt.items)
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, ucv.UART1, cp)
+			cv.Cook(ver, cp)
 			got, ok := cp.GetTimePulse()
 			if !ok {
 				t.Fatal("expected all TimePulse properties to be set")
@@ -989,7 +989,7 @@ func TestTimePulseCookMissing(t *testing.T) {
 	cv := newCfgVals()
 	cv.AddItems(full)
 	cp := new(gpsprot.ConfigProps)
-	cv.Cook(ver, ucv.UART1, cp)
+	cv.Cook(ver, cp)
 	if _, ok := cp.GetTimePulse(); !ok {
 		t.Fatal("full set should produce a valid TimePulse")
 	}
@@ -1012,11 +1012,148 @@ func TestTimePulseCookMissing(t *testing.T) {
 				}
 			}
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, ucv.UART1, cp)
+			cv.Cook(ver, cp)
 			if _, ok := cp.GetTimePulse(); ok {
 				t.Errorf("expected GetTimePulse to fail without %v", drop)
 			}
 		})
+	}
+}
+
+// TestTP2RoundTrip verifies that Transaction produces TP2 keys for a ZED-X20P
+// and that Cook can read them back correctly.
+func TestTP2RoundTrip(t *testing.T) {
+	ver := &testVers.x20p
+	tp1to2 := ucv.KeyRemap(ucv.TPKeyPairs, 0, 1)
+	tests := []struct {
+		name string
+		tp   gpsprot.TimePulse
+	}{
+		{
+			name: "aligned to GNSS",
+			tp: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    true,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "only when locked",
+			tp: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          100 * time.Millisecond,
+				AlignToGNSS:    true,
+				OnlyWhenLocked: true,
+				PolarityRising: true,
+			},
+		},
+		{
+			name: "disabled pulse",
+			tp: gpsprot.TimePulse{
+				Period:         1 * time.Second,
+				Width:          0,
+				AlignToGNSS:    false,
+				OnlyWhenLocked: false,
+				PolarityRising: true,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := gpsprot.NewConfigTarget()
+			target.Props.SetTimePulse(tt.tp)
+			known := newCfgVals()
+			items, missing, err := known.Transaction(target, ver, ucv.UART1, 0)
+			if err != nil {
+				t.Fatalf("Transaction[1]: %v", err)
+			}
+			// Populate missing keys with defaults (using TP2 keys)
+			for _, k := range missing {
+				known.Map[k] = 0
+			}
+			if len(missing) > 0 {
+				items, missing, err = known.Transaction(target, ver, ucv.UART1, 0)
+				if err != nil {
+					t.Fatalf("Transaction[2]: %v", err)
+				}
+				if len(missing) != 0 {
+					t.Fatalf("unexpected missing keys on second pass: %v", missing)
+				}
+			}
+			// Verify items use TP2 keys, not TP1
+			for _, item := range items {
+				if _, isTP1 := tp1to2[item.Key]; isTP1 {
+					t.Errorf("Transaction returned TP1 key %v, expected TP2", item.Key)
+				}
+			}
+			// Cook the TP2 items back
+			cv := newCfgVals()
+			cv.AddItems(items)
+			cp := new(gpsprot.ConfigProps)
+			cv.Cook(ver, cp)
+			got, ok := cp.GetTimePulse()
+			if !ok {
+				t.Fatal("expected all TimePulse properties to be set")
+			}
+			if got != tt.tp {
+				t.Errorf("round trip mismatch:\n  want %+v\n  got  %+v", tt.tp, got)
+			}
+		})
+	}
+}
+
+// TestTP2Cook verifies that Cook correctly reads TP2 keys for a ZED-X20P.
+func TestTP2Cook(t *testing.T) {
+	ver := &testVers.x20p
+	cv := newCfgVals()
+	cfgValSet(cv, ucv.KTpTp2Ena, true)
+	cfgValSet(cv, ucv.KTpPulseDef, ucv.ETpPulseDefPeriod)
+	cfgValSet(cv, ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength)
+	cfgValSet(cv, ucv.KTpPeriodLockTp2, 1e6)
+	cfgValSet(cv, ucv.KTpLenLockTp2, 1e5)
+	cfgValSet(cv, ucv.KTpLenTp2, 0)
+	cfgValSet(cv, ucv.KTpAlignToTowTp2, true)
+	cfgValSet(cv, ucv.KTpSyncGnssTp2, true)
+	cfgValSet(cv, ucv.KTpUseLockedTp2, true)
+	cfgValSet(cv, ucv.KTpPolTp2, true)
+	cp := new(gpsprot.ConfigProps)
+	cv.Cook(ver, cp)
+	got, ok := cp.GetTimePulse()
+	if !ok {
+		t.Fatal("expected all TimePulse properties to be set")
+	}
+	want := gpsprot.TimePulse{
+		Period:         1 * time.Second,
+		Width:          100 * time.Millisecond,
+		AlignToGNSS:    true,
+		OnlyWhenLocked: true,
+		PolarityRising: true,
+	}
+	if got != want {
+		t.Errorf("Cook mismatch:\n  want %+v\n  got  %+v", want, got)
+	}
+}
+
+// TestTP2TransactionMissingKeys verifies that Transaction returns TP2 keys
+// (not TP1) when it needs to fetch additional configuration.
+func TestTP2TransactionMissingKeys(t *testing.T) {
+	ver := &testVers.x20p
+	tp1to2 := ucv.KeyRemap(ucv.TPKeyPairs, 0, 1)
+	target := gpsprot.NewConfigTarget()
+	target.Get = gpsprot.PropIDTimePulse
+	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
+	if err != nil {
+		t.Fatalf("Transaction: %v", err)
+	}
+	if len(missing) == 0 {
+		t.Fatal("expected missing keys")
+	}
+	for _, k := range missing {
+		if _, isTP1 := tp1to2[k]; isTP1 {
+			t.Errorf("missing key %v is TP1, expected TP2", k)
+		}
 	}
 }
 

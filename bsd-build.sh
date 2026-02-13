@@ -57,7 +57,7 @@ mkdir -p "$outdir"
 # Build
 go build -tags "netgo,osusergo" \
     -o "$outdir" \
-    -ldflags "-X \"github.com/jclark/satpulse/internal/cmd.version=$cmd_version\" -X \"github.com/jclark/satpulse/internal/cmd.buildDate=$build_date\"" \
+    -ldflags "-X \"github.com/jclark/satpulse/gps/app/cmd.version=$cmd_version\" -X \"github.com/jclark/satpulse/gps/app/cmd.buildDate=$build_date\"" \
     $targets
 
 echo "Built $cmds in $outdir"

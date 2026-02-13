@@ -270,3 +270,69 @@ func newDefaultRawConfig() *RawConfig {
 	cfgValsInit(raw.valsPtr())
 	return &raw
 }
+
+func TestMonCommsPort(t *testing.T) {
+	tests := []struct {
+		name   string
+		mc     ubxbin.MonComms
+		want   ubxbin.PortID
+		wantOK bool
+	}{
+		{
+			name: "output port set",
+			mc: ubxbin.MonComms{
+				MonCommsFixed: ubxbin.MonCommsFixed{
+					TxErrors: ubxbin.MonCommsTxErrors(ubxbin.PortUART2+1) << 2,
+					NPorts:   4,
+				},
+				Ports: []ubxbin.MonCommsPort{
+					{PortID: ubxbin.MonCommsPortIDI2C},
+					{PortID: ubxbin.MonCommsPortIDUART1},
+					{PortID: ubxbin.MonCommsPortIDUART2},
+					{PortID: ubxbin.MonCommsPortIDUSB},
+				},
+			},
+			want:   ubxbin.PortUART2,
+			wantOK: true,
+		},
+		{
+			name: "single port",
+			mc: ubxbin.MonComms{
+				MonCommsFixed: ubxbin.MonCommsFixed{
+					NPorts: 1,
+				},
+				Ports: []ubxbin.MonCommsPort{
+					{PortID: ubxbin.MonCommsPortIDUART1},
+				},
+			},
+			want:   ubxbin.PortUART1,
+			wantOK: true,
+		},
+		{
+			name: "multiple ports no output port",
+			mc: ubxbin.MonComms{
+				MonCommsFixed: ubxbin.MonCommsFixed{
+					NPorts: 2,
+				},
+				Ports: []ubxbin.MonCommsPort{
+					{PortID: ubxbin.MonCommsPortIDUART1},
+					{PortID: ubxbin.MonCommsPortIDUSB},
+				},
+			},
+			wantOK: false,
+		},
+		{
+			name:   "no ports",
+			mc:     ubxbin.MonComms{},
+			wantOK: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := monCommsPort(&tt.mc)
+			if ok != tt.wantOK || got != tt.want {
+				t.Errorf("monCommsPort() = (%v, %v), want (%v, %v)", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
