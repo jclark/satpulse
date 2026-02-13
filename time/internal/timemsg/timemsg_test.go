@@ -45,7 +45,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.NavSolution,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-NAV-TIMEGPS",
+						NativeMsgID: "NAV-TIMEGPS",
 					},
 					tRead: timeAt(989951707),
 				},
@@ -55,7 +55,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PostPulse,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-TIM-TP",
+						NativeMsgID: "TIM-TP",
 					},
 					tRead: timeAt(1010185067),
 				},
@@ -65,7 +65,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.NavSolution,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-NAV-TIMEGPS",
+						NativeMsgID: "NAV-TIMEGPS",
 					},
 					tRead: timeAt(1992953605),
 				},
@@ -75,7 +75,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PostPulse,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-TIM-TP",
+						NativeMsgID: "TIM-TP",
 					},
 					tRead: timeAt(2016301635),
 				},
@@ -85,7 +85,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.NavSolution,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-NAV-TIMEGPS",
+						NativeMsgID: "NAV-TIMEGPS",
 					},
 					tRead: timeAt(2999948446),
 				},
@@ -95,7 +95,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PostPulse,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-TIM-TP",
+						NativeMsgID: "TIM-TP",
 					},
 					tRead: timeAt(3023123219),
 				},
@@ -105,7 +105,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.NavSolution,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-NAV-TIMEGPS",
+						NativeMsgID: "NAV-TIMEGPS",
 					},
 					tRead: timeAt(3992241034),
 				},
@@ -115,7 +115,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PostPulse,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-TIM-TP",
+						NativeMsgID: "TIM-TP",
 					},
 					tRead: timeAt(4011345185),
 				},
@@ -125,7 +125,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.NavSolution,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-NAV-TIMEGPS",
+						NativeMsgID: "NAV-TIMEGPS",
 					},
 					tRead: timeAt(4996451086),
 				},
@@ -135,7 +135,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PostPulse,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-TIM-TP",
+						NativeMsgID: "TIM-TP",
 					},
 					tRead: timeAt(5018143724),
 				},
@@ -156,7 +156,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PostPulse,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-TIM-TP",
+						NativeMsgID: "TIM-TP",
 					},
 					tRead: timeAt(100000000),
 				},
@@ -167,7 +167,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PostPulse,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-TIM-TP",
+						NativeMsgID: "TIM-TP",
 					},
 					tRead: timeAt(2100000000),
 				},
@@ -177,7 +177,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.PostPulse,
 						Tag:         gpsreg.TagUBX,
-						NativeMsgID: "UBX-TIM-TP",
+						NativeMsgID: "TIM-TP",
 					},
 					tRead: timeAt(3100000000),
 				},
@@ -241,7 +241,7 @@ func TestPostPulseMessagePreference(t *testing.T) {
 			GNSS:        gpsprot.GPS,
 			Ref:         gpsprot.NavSolution,
 			Tag:         gpsreg.TagUBX,
-			NativeMsgID: "UBX-NAV-PVT",
+			NativeMsgID: "NAV-PVT",
 		}, timeAt(i*1e9+150e6)) // 150ms after second
 	}
 
@@ -252,7 +252,7 @@ func TestPostPulseMessagePreference(t *testing.T) {
 			GNSS:        gpsprot.GPS,
 			Ref:         gpsprot.PostPulse,
 			Tag:         gpsreg.TagUBX,
-			NativeMsgID: "UBX-TIM-TOS",
+			NativeMsgID: "TIM-TOS",
 		}, timeAt(i*1e9+100e6)) // 100ms after second (arrives before NavSolution)
 	}
 
@@ -295,7 +295,7 @@ func TestGetPulseCorrectionPostPulse(t *testing.T) {
 		GNSS:        gpsprot.GPS,
 		Ref:         gpsprot.PostPulse,
 		Tag:         gpsreg.TagUBX,
-		NativeMsgID: "UBX-TIM-TOS",
+		NativeMsgID: "TIM-TOS",
 		PulseOffset: &pulseOffset1,
 	}, time.Now())
 
@@ -304,7 +304,7 @@ func TestGetPulseCorrectionPostPulse(t *testing.T) {
 		GNSS:        gpsprot.GPS,
 		Ref:         gpsprot.PostPulse,
 		Tag:         gpsreg.TagUBX,
-		NativeMsgID: "UBX-TIM-TOS",
+		NativeMsgID: "TIM-TOS",
 		PulseOffset: &pulseOffset2,
 	}, time.Now())
 
@@ -346,7 +346,7 @@ func TestWaitForPulseCorrectionPostPulse(t *testing.T) {
 		GNSS:        gpsprot.GPS,
 		Ref:         gpsprot.PostPulse,
 		Tag:         gpsreg.TagUBX,
-		NativeMsgID: "UBX-TIM-TOS",
+		NativeMsgID: "TIM-TOS",
 		PulseOffset: &pulseOffset,
 	}, time.Now())
 
@@ -398,7 +398,7 @@ func TestValidatePulseOffset(t *testing.T) {
 				GNSS:        gpsprot.GPS,
 				Ref:         gpsprot.PostPulse,
 				Tag:         gpsreg.TagUBX,
-				NativeMsgID: "UBX-TIM-TOS",
+				NativeMsgID: "TIM-TOS",
 				PulseOffset: &offset,
 			}, time.Now())
 
@@ -437,7 +437,7 @@ func TestMixedPrePulseAndPostPulse(t *testing.T) {
 		GNSS:        gpsprot.GPS,
 		Ref:         gpsprot.PrePulse,
 		Tag:         gpsreg.TagUBX,
-		NativeMsgID: "UBX-TIM-TP",
+		NativeMsgID: "TIM-TP",
 		PulseOffset: &prePulseOffset,
 	}, timeAt(99e9+50e6)) // 50ms before second 100
 
@@ -447,7 +447,7 @@ func TestMixedPrePulseAndPostPulse(t *testing.T) {
 		GNSS:        gpsprot.GPS,
 		Ref:         gpsprot.PostPulse,
 		Tag:         gpsreg.TagUBX,
-		NativeMsgID: "UBX-TIM-TOS",
+		NativeMsgID: "TIM-TOS",
 		PulseOffset: &postPulseOffset,
 	}, timeAt(101e9+100e6)) // 100ms after second 101
 
@@ -457,7 +457,7 @@ func TestMixedPrePulseAndPostPulse(t *testing.T) {
 		GNSS:        gpsprot.GPS,
 		Ref:         gpsprot.NavSolution,
 		Tag:         gpsreg.TagUBX,
-		NativeMsgID: "UBX-NAV-PVT",
+		NativeMsgID: "NAV-PVT",
 	}, timeAt(100e9+150e6))
 
 	buf.Time(&gpsprot.TimeMsg{
@@ -465,7 +465,7 @@ func TestMixedPrePulseAndPostPulse(t *testing.T) {
 		GNSS:        gpsprot.GPS,
 		Ref:         gpsprot.NavSolution,
 		Tag:         gpsreg.TagUBX,
-		NativeMsgID: "UBX-NAV-PVT",
+		NativeMsgID: "NAV-PVT",
 	}, timeAt(101e9+150e6))
 
 	// Verify GetPulseCorrection retrieves both types correctly
