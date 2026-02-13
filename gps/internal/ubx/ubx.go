@@ -134,6 +134,10 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 	var time *gpsprot.TimeMsg
 	var sv *gpsprot.SurveyMsg
 	var sats *gpsprot.SatellitesMsg
+	var posG *gpsprot.PosGeoMsg
+	var posE *gpsprot.PosECEFMsg
+	var velG *gpsprot.VelGeoMsg
+	var velE *gpsprot.VelECEFMsg
 	h := p.mh
 	switch mt := m.(type) {
 	case *ubxbin.NavTimeLS:
@@ -161,6 +165,14 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		return true
 	case *ubxbin.NavSVInfo:
 		sats = satellitesNavSVInfo(mt)
+	case *ubxbin.NavPosECEF:
+		posE = posECEFNavPosECEF(mt)
+	case *ubxbin.NavVelECEF:
+		velE = velECEFNavVelECEF(mt)
+	case *ubxbin.NavPosLLH:
+		posG = posGeoNavPosLLH(mt)
+	case *ubxbin.NavVelNED:
+		velG = velGeoNavVelNED(mt)
 	case *ubxbin.NavTimeGPS:
 		time = timeNavTimeGPS(mt)
 	case *ubxbin.NavTimeBDS:
@@ -173,6 +185,8 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		time = timeNavTimeUTC(mt)
 	case *ubxbin.NavPVT:
 		time = timeNavPVT(mt)
+		posG = posGeoNavPVT(mt)
+		velG = velGeoNavPVT(mt)
 	case *ubxbin.TimTP:
 		time = timeTimTP(mt)
 	case *ubxbin.TimTos:
@@ -184,7 +198,7 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 	default:
 		return false
 	}
-	if time == nil && sv == nil && sats == nil {
+	if time == nil && sv == nil && sats == nil && posG == nil && posE == nil && velG == nil && velE == nil {
 		return false
 	}
 	if h != nil {
@@ -192,9 +206,23 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 			h.Satellites(sats, tRead)
 		} else if sv != nil {
 			h.Survey(sv, tRead)
-		} else {
+		} else if time != nil {
 			time.Tag = Tag
 			h.Time(time, tRead)
+		}
+		if posG != nil {
+			posG.Tag = Tag
+			h.PosGeo(posG, tRead)
+		} else if posE != nil {
+			posE.Tag = Tag
+			h.PosECEF(posE, tRead)
+		}
+		if velG != nil {
+			velG.Tag = Tag
+			h.VelGeo(velG, tRead)
+		} else if velE != nil {
+			velE.Tag = Tag
+			h.VelECEF(velE, tRead)
 		}
 	}
 	return true

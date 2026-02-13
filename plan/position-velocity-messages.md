@@ -208,23 +208,153 @@ In `gps/internal/ubx/ubx_test.go`:
 
 - Add four empty methods to `testMsgHandler`
 
-### Step 4: NMEA protocol extraction
+### Step 4: UBX protocol extraction
+
+New files: `gps/internal/ubx/ubxpv.go`, `gps/internal/ubx/ubxpv_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
+
+#### Extraction function pattern
+
+Extraction functions take a `ubxbin` struct and return a `gpsprot` message pointer. They set `NativeMsgID` but not `Tag` (Dispatch sets `Tag`). They return `nil` when the message has no valid data. This matches the existing pattern in `ubxtime.go` (e.g. `timeNavTimeGPS(*ubxbin.NavTimeGPS) *gpsprot.TimeMsg`).
+
+For messages that produce multiple outputs (4c: NAV-PVT), use separate functions per output type, each returning a single message pointer.
+
+#### Unit conversions
+
+Units verified against u-blox F10 SPG 6.00 interface description.
+
+**Position** (POSECEF, POSLLH, PVT):
+
+| ubxbin field | ubxbin unit | gpsprot type | conversion |
+|---|---|---|---|
+| `ECEF [3]int32` | cm | `Point3D` (`[3]Length`) | `Length(v) * Centimeter` |
+| `PAcc uint32` | cm | `opt.Val[Length]` | `opt.Make(Length(v) * Centimeter)` |
+| `Lat/Lon int32` | 1e-7 deg | `Angle` | `Angle(v) * 100 * Nanodegrees` |
+| `Height/HMSL int32` | mm | `Length` | `Length(v) * Millimeter` |
+| `HAcc/VAcc uint32` | mm | `opt.Val[Length]` | `opt.Make(Length(v) * Millimeter)` |
+
+**Velocity -- VELECEF, VELNED** (cm/s):
+
+| ubxbin field | ubxbin unit | gpsprot type | conversion |
+|---|---|---|---|
+| `ECEFV [3]int32` | cm/s | `[3]Speed` | `Speed(v) * CentimeterPerSecond` |
+| `VelNED [3]int32` | cm/s | `opt.Val[[3]Speed]` | `Speed(v) * CentimeterPerSecond` |
+| `Speed uint32` | cm/s | `opt.Val[Speed]` | `Speed(v) * CentimeterPerSecond` |
+| `GSpeed uint32` | cm/s | `opt.Val[Speed]` | `Speed(v) * CentimeterPerSecond` |
+| `SAcc uint32` | cm/s | `opt.Val[Speed]` | `opt.Make(Speed(v) * CentimeterPerSecond)` |
+| `Heading int32` | 1e-5 deg | `opt.Val[Angle]` | `Angle(v) * 10000 * Nanodegrees` |
+| `CAcc uint32` | 1e-5 deg | `opt.Val[Angle]` | `opt.Make(Angle(v) * 10000 * Nanodegrees)` |
+
+**Velocity -- PVT** (mm/s, different from VELNED/VELECEF):
+
+| ubxbin field | ubxbin unit | gpsprot type | conversion |
+|---|---|---|---|
+| `VelN/VelE/VelD int32` | mm/s | `opt.Val[[3]Speed]` | `Speed(v) * MillimeterPerSecond` |
+| `GSpeed int32` | mm/s | `opt.Val[Speed]` | `Speed(v) * MillimeterPerSecond` |
+| `SAcc uint32` | mm/s | `opt.Val[Speed]` | `opt.Make(Speed(v) * MillimeterPerSecond)` |
+| `HeadMot int32` | 1e-5 deg | `opt.Val[Angle]` | `Angle(v) * 10000 * Nanodegrees` |
+| `HeadAcc uint32` | 1e-5 deg | `opt.Val[Angle]` | `opt.Make(Angle(v) * 10000 * Nanodegrees)` |
+
+#### Dispatch pattern
+
+Position/velocity cases use the early-return pattern (like `NavTimeLS`), calling the handler inline and returning `true`. This avoids modifying the existing `time`/`sv`/`sats` dispatch logic at the bottom of `Dispatch`.
+
+```go
+case *ubxbin.NavPosECEF:
+	msg := posECEF(mt)
+	if msg != nil && h != nil {
+		msg.Tag = Tag
+		h.PosECEF(msg, tRead)
+	}
+	return msg != nil
+```
+
+#### Testing pattern
+
+Tests in `ubxpv_test.go` test extraction functions directly: construct a `ubxbin` struct with known values, call the extraction function, verify the `gpsprot` message fields. This tests unit conversion logic without needing serialization or a mock handler.
+
+```go
+func TestPosECEF(t *testing.T) {
+	m := &ubxbin.NavPosECEF{
+		ECEF: [3]int32{-267173351, -402753274, 391919498}, // cm
+		PAcc: 1543, // cm
+	}
+	got := posECEF(m)
+	if got == nil {
+		t.Fatal("expected non-nil PosECEFMsg")
+	}
+	// Check ECEF coordinates (cm -> Length in micrometers)
+	want := gpsprot.Point3D{
+		gpsprot.Length(-267173351) * gpsprot.Centimeter,
+		gpsprot.Length(-402753274) * gpsprot.Centimeter,
+		gpsprot.Length(391919498) * gpsprot.Centimeter,
+	}
+	if got.Pos != want {
+		t.Errorf("Pos = %v, want %v", got.Pos, want)
+	}
+	// Check PAcc
+	wantPAcc := gpsprot.Length(1543) * gpsprot.Centimeter
+	if v, ok := got.PAcc.Get(); !ok || v != wantPAcc {
+		t.Errorf("PAcc = %v, want %v", got.PAcc, wantPAcc)
+	}
+	// Check NativeMsgID
+	if got.NativeMsgID != "UBX-NAV-POSECEF" {
+		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "UBX-NAV-POSECEF")
+	}
+}
+```
+
+The same pattern applies to all five substeps: construct input, call function, verify output fields.
+
+#### Substeps
+
+- **4a: NAV-POSECEF** — `posECEF(*ubxbin.NavPosECEF) *gpsprot.PosECEFMsg`. Fields: `ECEF` (cm) → `Pos`, `PAcc` (cm) → `PAcc`. Always returns non-nil (no validity flags).
+- **4b: NAV-VELECEF** — `velECEF(*ubxbin.NavVelECEF) *gpsprot.VelECEFMsg`. Fields: `ECEFV` (cm/s) → `Vel`, `SAcc` (cm/s) → `SAcc`. Always returns non-nil.
+- **4c: NAV-PVT** — two functions: `posGeoNavPVT(*ubxbin.NavPVT) *gpsprot.PosGeoMsg` and `velGeoNavPVT(*ubxbin.NavPVT) *gpsprot.VelGeoMsg`. Returns nil when fix is invalid (`FixType < NavPVT2DFix` or `Flags & NavPVTGNSSFixOK == 0`). Also returns nil for position when `Flags3 & NavPVTInvalidLlh != 0`. The existing `timeNavPVT` case in Dispatch must be extended to also call these two functions and dispatch PosGeo/VelGeo alongside the TimeMsg. Position fields: `Lat/Lon` (1e-7 deg), `Height/HMSL` (mm), `HAcc/VAcc` (mm). Velocity fields (all mm/s, not cm/s): `VelN/VelE/VelD` (mm/s) → `VelNED`, `GSpeed` (mm/s) → `GroundSpeed`, `HeadMot` (1e-5 deg) → `Heading`, `SAcc` (mm/s) → `SAcc`, `HeadAcc` (1e-5 deg) → `HeadAcc`.
+- **4d: NAV-POSLLH** — `posLLH(*ubxbin.NavPosLLH) *gpsprot.PosGeoMsg`. Fields: `Lat/Lon` (1e-7 deg), `Height/HMSL` (mm), `HAcc/VAcc` (mm). Always returns non-nil.
+- **4e: NAV-VELNED** — `velNED(*ubxbin.NavVelNED) *gpsprot.VelGeoMsg`. Fields: `VelNED` (cm/s) → `VelNED`, `Speed` (cm/s) → `Speed`, `GSpeed` (cm/s) → `GroundSpeed`, `Heading` (1e-5 deg) → `Heading`, `SAcc` (cm/s) → `SAcc`, `CAcc` (1e-5 deg) → `HeadAcc`. Always returns non-nil.
+
+#### Cross-message position consistency test
+
+After 4a, 4c, and 4d are implemented, add a test in `ubxpv_test.go` that verifies the three position message types (NAV-POSECEF, NAV-POSLLH, NAV-PVT) produce consistent ECEF positions when fed real captured data from a stationary antenna.
+
+**Capturing testdata** (three separate captures, since `--pvt-out` can only select one position message type at a time per the logic in `ubxcfgmsg.go`):
+
+```bash
+# NAV-POSECEF
+satpulsetool gps -d /dev/ttyACM0 -s 38400 --pvt-out pos,ecef,off --capture 5 --packet-log /tmp/posecef.jsonl
+
+# NAV-POSLLH
+satpulsetool gps -d /dev/ttyACM0 -s 38400 --pvt-out pos,off --capture 5 --packet-log /tmp/posllh.jsonl
+
+# NAV-PVT
+satpulsetool gps -d /dev/ttyACM0 -s 38400 --pvt-out pos,vel,off --capture 5 --packet-log /tmp/pvt.jsonl
+```
+
+**Extracting testdata with jq** (extract hex binary for the relevant message types):
+
+```bash
+jq -r 'select(.msg == "NAV-POSECEF" and .out == false) | .bin' /tmp/posecef.jsonl > testdata/posecef.hex
+jq -r 'select(.msg == "NAV-POSLLH" and .out == false) | .bin' /tmp/posllh.jsonl > testdata/posllh.hex
+jq -r 'select(.msg == "NAV-PVT" and .out == false) | .bin' /tmp/pvt.jsonl > testdata/pvt.hex
+```
+
+Each file has one hex-encoded UBX packet per line. Commit these in `gps/internal/ubx/testdata/`.
+
+**Test structure:**
+
+1. Read hex lines from each testdata file, decode to binary, parse with `ubxbin.ParseMsg`.
+2. Run the extraction functions: `posECEF()` on each NAV-POSECEF, `posLLH()` on each NAV-POSLLH, `posGeoNavPVT()` on each NAV-PVT.
+3. Collect all ECEF positions: NAV-POSECEF gives ECEF directly; for NAV-POSLLH and NAV-PVT, convert LLH to ECEF using `geopos.WGS84.LLHtoECEF()`.
+4. Compute the centroid of all ECEF positions.
+5. Verify every position is within `posConsistencyTolerance` (const, initially 1m) of the centroid. This checks that all three message types agree on where the antenna is.
+
+### Step 5: NMEA protocol extraction
 
 Added to existing `nmea/nmea.go`; tests in existing `nmea/nmea_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
 
-- **4a: RMC** — emit `PosGeoMsg` with latLon (height unset); emit `VelGeoMsg` with groundSpeed, heading.
-- **4b: GGA** — emit `PosGeoMsg` with latLon, height, heightMSL.
-- **4c: VTG** — emit `VelGeoMsg` with groundSpeed, heading.
-
-### Step 5: UBX protocol extraction
-
-New files: `ubx/ubxpv.go`, `ubx/ubxpv_test.go`. Dispatched from the existing `Dispatch` method. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
-
-- **5a: NAV-POSECEF** — emit `PosECEFMsg`.
-- **5b: NAV-VELECEF** — emit `VelECEFMsg`.
-- **5c: NAV-PVT** — emit `PosGeoMsg` and `VelGeoMsg` (when valid).
-- **5d: NAV-POSLLH** — emit `PosGeoMsg` with all fields.
-- **5e: NAV-VELNED** — emit `VelGeoMsg` with velNED, groundSpeed, speed, heading.
+- **5a: RMC** — emit `PosGeoMsg` with latLon (height unset); emit `VelGeoMsg` with groundSpeed, heading.
+- **5b: GGA** — emit `PosGeoMsg` with latLon, height, heightMSL.
+- **5c: VTG** — emit `VelGeoMsg` with groundSpeed, heading.
 
 ### Step 6: Allystar protocol extraction
 
