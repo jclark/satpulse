@@ -719,6 +719,7 @@ func (a *App) ECEFtoLLH(x, y, z float64) (*LLH, error) {
 
 // msgHandler implements gpsprot.MsgHandler and emits "gps:msg" events.
 type msgHandler struct {
+	gpsprot.DefaultHandler
 	ctx      context.Context
 	ls       ptime.LeapSecond
 	lastTime ptime.Time
