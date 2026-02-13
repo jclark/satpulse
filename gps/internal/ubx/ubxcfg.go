@@ -603,7 +603,7 @@ func (c *Configurator) reset() error {
 }
 
 func (c *Configurator) valGet() error {
-	_, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort(), c.monEnabledGNSS())
+	_, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.valPort(), c.monEnabledGNSS())
 	if err != nil {
 		return err
 	}
@@ -696,7 +696,7 @@ func (c *Configurator) valSetNMA() error {
 }
 
 func (c *Configurator) valSet() error {
-	items, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.raw.valPort(), c.monEnabledGNSS())
+	items, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.valPort(), c.monEnabledGNSS())
 	if err != nil {
 		return err
 	}
@@ -734,7 +734,7 @@ func (c *Configurator) monEnabledGNSS() gpsprot.GNSSSet {
 }
 
 func (c *Configurator) valBaudRate() error {
-	items := c.raw.valsPtr().BaudRate(c.target, c.raw.valPort())
+	items := c.raw.valsPtr().BaudRate(c.target, c.valPort())
 	if len(items) == 0 {
 		return nil
 	}
@@ -745,9 +745,9 @@ func (c *Configurator) valBaudRate() error {
 	return c.addMsgSetSpeedRequest(val, int(items[0].Value))
 }
 
-func (raw *RawConfig) valPort() ucv.Port {
-	if raw.prt != nil {
-		return ucv.Port(raw.prt.PortID)
+func (c *Configurator) valPort() ucv.Port {
+	if c.raw.prt != nil {
+		return ucv.Port(c.raw.prt.PortID)
 	}
 	// XXX what to do here
 	return ucv.Port(ucv.UART1)
@@ -979,7 +979,7 @@ func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigProps {
 	}
 	cm := &gpsprot.ConfigProps{}
 	if !raw.CfgVals.isNil() {
-		raw.CfgVals.Cook(ver, raw.valPort(), cm)
+		raw.CfgVals.Cook(ver, cm)
 	} else {
 
 		raw.cookTmode(cm)

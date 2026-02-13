@@ -129,7 +129,7 @@ func (raw *CfgVals) AddData(cfgData []byte) (map[uint8]struct{}, error) {
 	return groups, nil
 }
 
-func (raw *CfgVals) Cook(ver *Version, port ucv.Port, cp *gpsprot.ConfigProps) {
+func (raw *CfgVals) Cook(ver *Version, cp *gpsprot.ConfigProps) {
 	if ver.tpIndex() == 1 {
 		raw = &CfgVals{ucv.RemapMap(raw.Map, ucv.KeyRemap(ucv.TPKeyPairs, 1, 0))}
 	}

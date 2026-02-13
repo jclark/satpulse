@@ -128,7 +128,7 @@ func TestConfigItems_Get(t *testing.T) {
 	}
 	cfgValsInit(vals)
 	cp := new(gpsprot.ConfigProps)
-	vals.Cook(ver, ucv.UART1, cp)
+	vals.Cook(ver, cp)
 	val, ok := cp.GetTimePulseWidth()
 	if !ok || val != time.Duration(1e5*time.Microsecond) {
 		t.Errorf("expected pulse width to be 0.1s, got %v", val)
@@ -737,7 +737,7 @@ func TestTimePulseRoundTrip(t *testing.T) {
 			cv := newCfgVals()
 			cv.AddItems(items)
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, ucv.UART1, cp)
+			cv.Cook(ver, cp)
 			got, ok := cp.GetTimePulse()
 			if !ok {
 				t.Fatal("expected all TimePulse properties to be set")
@@ -957,7 +957,7 @@ func TestTimePulseCook(t *testing.T) {
 			cv := newCfgVals()
 			cv.AddItems(tt.items)
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, ucv.UART1, cp)
+			cv.Cook(ver, cp)
 			got, ok := cp.GetTimePulse()
 			if !ok {
 				t.Fatal("expected all TimePulse properties to be set")
@@ -989,7 +989,7 @@ func TestTimePulseCookMissing(t *testing.T) {
 	cv := newCfgVals()
 	cv.AddItems(full)
 	cp := new(gpsprot.ConfigProps)
-	cv.Cook(ver, ucv.UART1, cp)
+	cv.Cook(ver, cp)
 	if _, ok := cp.GetTimePulse(); !ok {
 		t.Fatal("full set should produce a valid TimePulse")
 	}
@@ -1012,7 +1012,7 @@ func TestTimePulseCookMissing(t *testing.T) {
 				}
 			}
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, ucv.UART1, cp)
+			cv.Cook(ver, cp)
 			if _, ok := cp.GetTimePulse(); ok {
 				t.Errorf("expected GetTimePulse to fail without %v", drop)
 			}
@@ -1092,7 +1092,7 @@ func TestTP2RoundTrip(t *testing.T) {
 			cv := newCfgVals()
 			cv.AddItems(items)
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, ucv.UART1, cp)
+			cv.Cook(ver, cp)
 			got, ok := cp.GetTimePulse()
 			if !ok {
 				t.Fatal("expected all TimePulse properties to be set")
@@ -1119,7 +1119,7 @@ func TestTP2Cook(t *testing.T) {
 	cfgValSet(cv, ucv.KTpUseLockedTp2, true)
 	cfgValSet(cv, ucv.KTpPolTp2, true)
 	cp := new(gpsprot.ConfigProps)
-	cv.Cook(ver, ucv.UART1, cp)
+	cv.Cook(ver, cp)
 	got, ok := cp.GetTimePulse()
 	if !ok {
 		t.Fatal("expected all TimePulse properties to be set")
