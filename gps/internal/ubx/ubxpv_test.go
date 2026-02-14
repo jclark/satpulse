@@ -40,7 +40,7 @@ func TestPosECEF(t *testing.T) {
 func TestVelECEF(t *testing.T) {
 	m := &ubxbin.NavVelECEF{
 		ECEFV: [3]int32{-15, 23, -8}, // cm/s
-		SAcc:  5,                      // cm/s
+		SAcc:  5,                     // cm/s
 	}
 	got := velECEFNavVelECEF(m)
 	if got == nil {
@@ -104,12 +104,12 @@ func TestPosLLH(t *testing.T) {
 
 func TestVelNED(t *testing.T) {
 	m := &ubxbin.NavVelNED{
-		VelNED:  [3]int32{10, -5, 3},  // cm/s
-		Speed:   12,                    // cm/s (3D)
-		GSpeed:  11,                    // cm/s (2D)
-		Heading: 18045000,              // 1e-5 deg (180.45 degrees)
-		SAcc:    4,                     // cm/s
-		CAcc:    500000,               // 1e-5 deg (5.0 degrees)
+		VelNED:  [3]int32{10, -5, 3}, // cm/s
+		Speed:   12,                  // cm/s (3D)
+		GSpeed:  11,                  // cm/s (2D)
+		Heading: 18045000,            // 1e-5 deg (180.45 degrees)
+		SAcc:    4,                   // cm/s
+		CAcc:    500000,              // 1e-5 deg (5.0 degrees)
 	}
 	got := velGeoNavVelNED(m)
 	if got == nil {
@@ -124,24 +124,24 @@ func TestVelNED(t *testing.T) {
 		t.Errorf("VelNED = %v, want %v", got.VelNED, wantNED)
 	}
 	wantSpeed := opt.Make(gpsprot.Speed(12) * gpsprot.CentimeterPerSecond)
-	if got.Speed != wantSpeed {
-		t.Errorf("Speed = %v, want %v", got.Speed, wantSpeed)
+	if got.Speed3D != wantSpeed {
+		t.Errorf("Speed = %v, want %v", got.Speed3D, wantSpeed)
 	}
 	wantGSpeed := opt.Make(gpsprot.Speed(11) * gpsprot.CentimeterPerSecond)
 	if got.GroundSpeed != wantGSpeed {
 		t.Errorf("GroundSpeed = %v, want %v", got.GroundSpeed, wantGSpeed)
 	}
 	wantHeading := opt.Make(gpsprot.Angle(18045000) * 10000)
-	if got.Heading != wantHeading {
-		t.Errorf("Heading = %v, want %v", got.Heading, wantHeading)
+	if got.Course != wantHeading {
+		t.Errorf("Heading = %v, want %v", got.Course, wantHeading)
 	}
 	wantSAcc := opt.Make(gpsprot.Speed(4) * gpsprot.CentimeterPerSecond)
 	if got.SAcc != wantSAcc {
 		t.Errorf("SAcc = %v, want %v", got.SAcc, wantSAcc)
 	}
-	wantHeadAcc := opt.Make(gpsprot.Angle(500000) * 10000)
-	if got.HeadAcc != wantHeadAcc {
-		t.Errorf("HeadAcc = %v, want %v", got.HeadAcc, wantHeadAcc)
+	wantCAcc := opt.Make(gpsprot.Angle(500000) * 10000)
+	if got.CAcc != wantCAcc {
+		t.Errorf("CAcc = %v, want %v", got.CAcc, wantCAcc)
 	}
 	if got.NativeMsgID != "NAV-VELNED" {
 		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-VELNED")
@@ -224,13 +224,13 @@ func TestVelGeoNavPVT(t *testing.T) {
 		m := &ubxbin.NavPVT{
 			FixType: ubxbin.NavPVT3DFix,
 			Flags:   ubxbin.NavPVTGNSSFixOK,
-			VelN:    1500,    // mm/s
-			VelE:    -800,    // mm/s
-			VelD:    200,     // mm/s
-			GSpeed:  1700,    // mm/s
+			VelN:    1500,     // mm/s
+			VelE:    -800,     // mm/s
+			VelD:    200,      // mm/s
+			GSpeed:  1700,     // mm/s
 			HeadMot: 18045000, // 1e-5 deg (180.45 degrees)
-			SAcc:    500,     // mm/s
-			HeadAcc: 100000,  // 1e-5 deg (1.0 degrees)
+			SAcc:    500,      // mm/s
+			HeadAcc: 100000,   // 1e-5 deg (1.0 degrees)
 		}
 		got := velGeoNavPVT(m)
 		if got == nil {
@@ -249,16 +249,16 @@ func TestVelGeoNavPVT(t *testing.T) {
 			t.Errorf("GroundSpeed = %v, want %v", got.GroundSpeed, wantGSpeed)
 		}
 		wantHeading := opt.Make(gpsprot.Angle(18045000) * 10000)
-		if got.Heading != wantHeading {
-			t.Errorf("Heading = %v, want %v", got.Heading, wantHeading)
+		if got.Course != wantHeading {
+			t.Errorf("Heading = %v, want %v", got.Course, wantHeading)
 		}
 		wantSAcc := opt.Make(gpsprot.Speed(500) * gpsprot.MillimeterPerSecond)
 		if got.SAcc != wantSAcc {
 			t.Errorf("SAcc = %v, want %v", got.SAcc, wantSAcc)
 		}
-		wantHeadAcc := opt.Make(gpsprot.Angle(100000) * 10000)
-		if got.HeadAcc != wantHeadAcc {
-			t.Errorf("HeadAcc = %v, want %v", got.HeadAcc, wantHeadAcc)
+		wantCAcc := opt.Make(gpsprot.Angle(100000) * 10000)
+		if got.CAcc != wantCAcc {
+			t.Errorf("CAcc = %v, want %v", got.CAcc, wantCAcc)
 		}
 		if got.NativeMsgID != "NAV-PVT" {
 			t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-PVT")

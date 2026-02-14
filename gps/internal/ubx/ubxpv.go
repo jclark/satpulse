@@ -36,11 +36,11 @@ func posGeoNavPosLLH(m *ubxbin.NavPosLLH) *gpsprot.PosGeoMsg {
 func velGeoNavVelNED(m *ubxbin.NavVelNED) *gpsprot.VelGeoMsg {
 	return &gpsprot.VelGeoMsg{
 		VelNED:      opt.Make(speed3CmS(m.VelNED)),
-		Speed:       speedCmSOpt(m.Speed),
+		Speed3D:     speedCmSOpt(m.Speed),
 		GroundSpeed: speedCmSOpt(m.GSpeed),
-		Heading:     angle1e5Opt(m.Heading),
+		Course:      angle1e5Opt(m.Heading),
 		SAcc:        speedCmSOpt(m.SAcc),
-		HeadAcc:     angle1e5Opt(m.CAcc),
+		CAcc:        angle1e5Opt(m.CAcc),
 		NativeMsgID: "NAV-VELNED",
 	}
 }
@@ -72,9 +72,9 @@ func velGeoNavPVT(m *ubxbin.NavPVT) *gpsprot.VelGeoMsg {
 			speedMmS(m.VelN), speedMmS(m.VelE), speedMmS(m.VelD),
 		}),
 		GroundSpeed: opt.Make(speedMmS(m.GSpeed)),
-		Heading:     angle1e5Opt(m.HeadMot),
+		Course:      angle1e5Opt(m.HeadMot),
 		SAcc:        opt.Make(speedMmS(m.SAcc)),
-		HeadAcc:     angle1e5Opt(m.HeadAcc),
+		CAcc:        angle1e5Opt(m.HeadAcc),
 		NativeMsgID: "NAV-PVT",
 	}
 }

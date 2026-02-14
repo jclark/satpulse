@@ -308,10 +308,10 @@ type PosECEFMsg struct {
 type VelGeoMsg struct {
 	VelNED      opt.Val[[3]Speed] `json:"velNED,omitzero"`      // north, east, down
 	GroundSpeed opt.Val[Speed]    `json:"groundSpeed,omitzero"` // 2D ground speed
-	Speed       opt.Val[Speed]    `json:"speed,omitzero"`       // 3D speed
-	Heading     opt.Val[Angle]    `json:"heading,omitzero"`     // track over ground, true north
+	Speed3D     opt.Val[Speed]    `json:"speed3D,omitzero"`     // 3D speed
+	Course      opt.Val[Angle]    `json:"course,omitzero"`      // course over ground, true north
 	SAcc        opt.Val[Speed]    `json:"sAcc,omitzero"`        // speed accuracy
-	HeadAcc     opt.Val[Angle]    `json:"headAcc,omitzero"`     // heading accuracy
+	CAcc        opt.Val[Angle]    `json:"cAcc,omitzero"`        // course accuracy
 	Tag         Tag               `json:"tag"`
 	NativeMsgID string            `json:"nativeMsgID"`
 }
