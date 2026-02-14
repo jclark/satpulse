@@ -12,7 +12,7 @@ GNSS protocols consistently separate geodetic (LLH position / NED velocity) from
 
 ### Coordinate frame pairing
 
-- **Geodetic**: position as latitude/longitude/height (LLH); velocity in the local tangent plane as north/east/down (NED) or equivalently as ground speed + heading.
+- **Geodetic**: position as latitude/longitude/height (LLH); velocity in the local tangent plane as north/east/down (NED) or equivalently as ground speed + course over ground.
 - **ECEF**: position and velocity in the Earth-Centered, Earth-Fixed frame.
 
 No protocol mixes these frames in a single message. Each message type is only emitted when the receiver reports a valid result; there is no "invalid" state within these messages.
@@ -43,7 +43,7 @@ Accuracy estimates are included in the position/velocity messages as `opt.Val` f
 
 - `PosGeoMsg`: `HAcc`, `VAcc` (horizontal, vertical position accuracy)
 - `PosECEFMsg`: `PAcc` (3D position accuracy)
-- `VelGeoMsg`: `SAcc` (speed accuracy), `HeadAcc` (heading accuracy)
+- `VelGeoMsg`: `SAcc` (speed accuracy), `CAcc` (course accuracy)
 - `VelECEFMsg`: `SAcc` (speed accuracy)
 
 DOPs remain in `SolutionMetaMsg` since they come from separate messages (e.g. NMEA GSA, UBX NavDOP).
@@ -116,9 +116,9 @@ type PosECEFMsg struct {
 
 #### `VelGeoMsg`
 
-Velocity in the local geodetic frame (NED components and/or ground speed + heading).
+Velocity in the local geodetic frame (NED components and/or ground speed + course over ground).
 
-Some fields are `opt.Val` because different protocol messages provide different subsets. Some provide only ground speed and heading; others provide NED components, ground speed, 3D speed, and heading. At least one velocity field will always be set.
+Some fields are `opt.Val` because different protocol messages provide different subsets. Some provide only ground speed and course; others provide NED components, ground speed, 3D speed, and course. At least one velocity field will always be set.
 
 NED components are grouped as `opt.Val[[3]Speed]` because they always come as a complete triple — no source provides only one or two components.
 
@@ -126,10 +126,10 @@ NED components are grouped as `opt.Val[[3]Speed]` because they always come as a 
 type VelGeoMsg struct {
 	VelNED      opt.Val[[3]Speed] `json:"velNED,omitzero"`      // north, east, down
 	GroundSpeed opt.Val[Speed]    `json:"groundSpeed,omitzero"` // 2D ground speed
-	Speed       opt.Val[Speed]    `json:"speed,omitzero"`       // 3D speed
-	Heading     opt.Val[Angle]    `json:"heading,omitzero"`     // track over ground, true north
+	Speed3D     opt.Val[Speed]    `json:"speed3D,omitzero"`     // 3D speed
+	Course      opt.Val[Angle]    `json:"course,omitzero"`      // course over ground, true north
 	SAcc        opt.Val[Speed]    `json:"sAcc,omitzero"`        // speed accuracy
-	HeadAcc     opt.Val[Angle]    `json:"headAcc,omitzero"`     // heading accuracy
+	CAcc        opt.Val[Angle]    `json:"cAcc,omitzero"`        // course accuracy
 	Tag         Tag    `json:"tag"`
 	NativeMsgID string `json:"nativeMsgID"`
 }
@@ -238,11 +238,11 @@ Units verified against u-blox F10 SPG 6.00 interface description.
 |---|---|---|---|
 | `ECEFV [3]int32` | cm/s | `[3]Speed` | `Speed(v) * CentimeterPerSecond` |
 | `VelNED [3]int32` | cm/s | `opt.Val[[3]Speed]` | `Speed(v) * CentimeterPerSecond` |
-| `Speed uint32` | cm/s | `opt.Val[Speed]` | `Speed(v) * CentimeterPerSecond` |
+| `Speed uint32` | cm/s | `opt.Val[Speed]` | `Speed(v) * CentimeterPerSecond` | → `Speed3D` |
 | `GSpeed uint32` | cm/s | `opt.Val[Speed]` | `Speed(v) * CentimeterPerSecond` |
 | `SAcc uint32` | cm/s | `opt.Val[Speed]` | `opt.Make(Speed(v) * CentimeterPerSecond)` |
-| `Heading int32` | 1e-5 deg | `opt.Val[Angle]` | `Angle(v) * 10000 * Nanodegrees` |
-| `CAcc uint32` | 1e-5 deg | `opt.Val[Angle]` | `opt.Make(Angle(v) * 10000 * Nanodegrees)` |
+| `Heading int32` | 1e-5 deg | `opt.Val[Angle]` | `Angle(v) * 10000 * Nanodegrees` | → `Course` |
+| `CAcc uint32` | 1e-5 deg | `opt.Val[Angle]` | `opt.Make(Angle(v) * 10000 * Nanodegrees)` | → `CAcc` |
 
 **Velocity -- PVT** (mm/s, different from VELNED/VELECEF):
 
@@ -251,8 +251,8 @@ Units verified against u-blox F10 SPG 6.00 interface description.
 | `VelN/VelE/VelD int32` | mm/s | `opt.Val[[3]Speed]` | `Speed(v) * MillimeterPerSecond` |
 | `GSpeed int32` | mm/s | `opt.Val[Speed]` | `Speed(v) * MillimeterPerSecond` |
 | `SAcc uint32` | mm/s | `opt.Val[Speed]` | `opt.Make(Speed(v) * MillimeterPerSecond)` |
-| `HeadMot int32` | 1e-5 deg | `opt.Val[Angle]` | `Angle(v) * 10000 * Nanodegrees` |
-| `HeadAcc uint32` | 1e-5 deg | `opt.Val[Angle]` | `opt.Make(Angle(v) * 10000 * Nanodegrees)` |
+| `HeadMot int32` | 1e-5 deg | `opt.Val[Angle]` | `Angle(v) * 10000 * Nanodegrees` | → `Course` |
+| `HeadAcc uint32` | 1e-5 deg | `opt.Val[Angle]` | `opt.Make(Angle(v) * 10000 * Nanodegrees)` | → `CAcc` |
 
 #### Dispatch pattern
 
@@ -309,9 +309,9 @@ The same pattern applies to all five substeps: construct input, call function, v
 
 - **4a: NAV-POSECEF** — `posECEF(*ubxbin.NavPosECEF) *gpsprot.PosECEFMsg`. Fields: `ECEF` (cm) → `Pos`, `PAcc` (cm) → `PAcc`. Always returns non-nil (no validity flags).
 - **4b: NAV-VELECEF** — `velECEF(*ubxbin.NavVelECEF) *gpsprot.VelECEFMsg`. Fields: `ECEFV` (cm/s) → `Vel`, `SAcc` (cm/s) → `SAcc`. Always returns non-nil.
-- **4c: NAV-PVT** — two functions: `posGeoNavPVT(*ubxbin.NavPVT) *gpsprot.PosGeoMsg` and `velGeoNavPVT(*ubxbin.NavPVT) *gpsprot.VelGeoMsg`. Returns nil when fix is invalid (`FixType < NavPVT2DFix` or `Flags & NavPVTGNSSFixOK == 0`). Also returns nil for position when `Flags3 & NavPVTInvalidLlh != 0`. The existing `timeNavPVT` case in Dispatch must be extended to also call these two functions and dispatch PosGeo/VelGeo alongside the TimeMsg. Position fields: `Lat/Lon` (1e-7 deg), `Height/HMSL` (mm), `HAcc/VAcc` (mm). Velocity fields (all mm/s, not cm/s): `VelN/VelE/VelD` (mm/s) → `VelNED`, `GSpeed` (mm/s) → `GroundSpeed`, `HeadMot` (1e-5 deg) → `Heading`, `SAcc` (mm/s) → `SAcc`, `HeadAcc` (1e-5 deg) → `HeadAcc`.
+- **4c: NAV-PVT** — two functions: `posGeoNavPVT(*ubxbin.NavPVT) *gpsprot.PosGeoMsg` and `velGeoNavPVT(*ubxbin.NavPVT) *gpsprot.VelGeoMsg`. Returns nil when fix is invalid (`FixType < NavPVT2DFix` or `Flags & NavPVTGNSSFixOK == 0`). Also returns nil for position when `Flags3 & NavPVTInvalidLlh != 0`. The existing `timeNavPVT` case in Dispatch must be extended to also call these two functions and dispatch PosGeo/VelGeo alongside the TimeMsg. Position fields: `Lat/Lon` (1e-7 deg), `Height/HMSL` (mm), `HAcc/VAcc` (mm). Velocity fields (all mm/s, not cm/s): `VelN/VelE/VelD` (mm/s) → `VelNED`, `GSpeed` (mm/s) → `GroundSpeed`, `HeadMot` (1e-5 deg) → `Course`, `SAcc` (mm/s) → `SAcc`, `HeadAcc` (1e-5 deg) → `CAcc`.
 - **4d: NAV-POSLLH** — `posLLH(*ubxbin.NavPosLLH) *gpsprot.PosGeoMsg`. Fields: `Lat/Lon` (1e-7 deg), `Height/HMSL` (mm), `HAcc/VAcc` (mm). Always returns non-nil.
-- **4e: NAV-VELNED** — `velNED(*ubxbin.NavVelNED) *gpsprot.VelGeoMsg`. Fields: `VelNED` (cm/s) → `VelNED`, `Speed` (cm/s) → `Speed`, `GSpeed` (cm/s) → `GroundSpeed`, `Heading` (1e-5 deg) → `Heading`, `SAcc` (cm/s) → `SAcc`, `CAcc` (1e-5 deg) → `HeadAcc`. Always returns non-nil.
+- **4e: NAV-VELNED** — `velNED(*ubxbin.NavVelNED) *gpsprot.VelGeoMsg`. Fields: `VelNED` (cm/s) → `VelNED`, `Speed` (cm/s) → `Speed3D`, `GSpeed` (cm/s) → `GroundSpeed`, `Heading` (1e-5 deg) → `Course`, `SAcc` (cm/s) → `SAcc`, `CAcc` (1e-5 deg) → `CAcc`. Always returns non-nil.
 
 #### Cross-message position consistency test
 
@@ -352,9 +352,9 @@ Each file has one hex-encoded UBX packet per line. Commit these in `gps/internal
 
 Added to existing `nmea/nmea.go`; tests in existing `nmea/nmea_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
 
-- **5a: RMC** — emit `PosGeoMsg` with latLon (height unset); emit `VelGeoMsg` with groundSpeed, heading.
+- **5a: RMC** — emit `PosGeoMsg` with latLon (height unset); emit `VelGeoMsg` with groundSpeed, course.
 - **5b: GGA** — emit `PosGeoMsg` with latLon, height, heightMSL.
-- **5c: VTG** — emit `VelGeoMsg` with groundSpeed, heading.
+- **5c: VTG** — emit `VelGeoMsg` with groundSpeed, course.
 
 ### Step 6: Allystar protocol extraction
 
@@ -363,7 +363,7 @@ New files: `as/aspv.go`, `as/aspv_test.go`. Each substep includes a unit test fo
 - **6a: NavPosECEF** — emit `PosECEFMsg`.
 - **6b: NavPosLLH** — emit `PosGeoMsg` with all fields.
 - **6c: NavVelECEF** — emit `VelECEFMsg`.
-- **6d: NavVelNED** — emit `VelGeoMsg` with velNED, groundSpeed, speed, heading.
+- **6d: NavVelNED** — emit `VelGeoMsg` with velNED, groundSpeed, speed3D, course.
 
 ### Step 7: CASIC protocol extraction
 
@@ -376,7 +376,7 @@ New files: `casic/caspv.go`, `casic/caspv_test.go`. Each substep includes a unit
 
 New files: `unc/nav.go`, `unc/nav_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
 
-- **8a: BESTNAV** — emit `PosGeoMsg` (latLon, height) and `VelGeoMsg` (groundSpeed, heading).
+- **8a: BESTNAV** — emit `PosGeoMsg` (latLon, height) and `VelGeoMsg` (groundSpeed, course).
 - **8b: BESTNAVXYZ** — emit `PosECEFMsg` and `VelECEFMsg`.
 
 ### Step 9 (future): SSE monitoring event

@@ -91,13 +91,19 @@ var leapSecondDefault = LeapSecondConfig{
 	After:  ptime.LeapSecond2016UTCOffAfter,
 }
 
-func LoadConfig(paths ...string) (*Config, error) {
+// LoadConfig loads the configuration from the first path that exists.
+// It returns the config and the path of the file that was used.
+func LoadConfig(paths ...string) (*Config, string, error) {
 	f, err := openConfig(paths)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer f.Close()
-	return readConfig(f)
+	cfg, err := readConfig(f)
+	if err != nil {
+		return nil, "", err
+	}
+	return cfg, f.Name(), nil
 }
 
 func openConfig(paths []string) (*os.File, error) {
