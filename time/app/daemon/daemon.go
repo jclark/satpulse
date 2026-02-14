@@ -42,7 +42,7 @@ func Cmd(progName string, args []string) {
 		fmt.Fprint(os.Stderr, msg)
 		os.Exit(exitCode)
 	}
-	cfg, err := LoadConfig(vars.configFiles...)
+	cfg, configPath, err := LoadConfig(vars.configFiles...)
 	if err != nil {
 		cmd.ErrPrintlnWithDetail(progName, err)
 		os.Exit(exitConfig)
@@ -65,6 +65,8 @@ func Cmd(progName string, args []string) {
 	}
 	lg := slog.New(handler)
 	slog.SetDefault(lg)
+	ver, buildDate := cmd.Version()
+	lg.Info("starting", "version", ver, "buildDate", buildDate, "configPath", configPath)
 	ctx := context.Background()
 	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
 	err = run(ctx, lg, cancel, cfg)

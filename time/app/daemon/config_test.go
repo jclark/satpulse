@@ -23,7 +23,7 @@ func TestLoadConfig(t *testing.T) {
 		}
 		path := filepath.Join(configsDir, f.Name())
 		count++
-		_, err := LoadConfig(path)
+		_, _, err := LoadConfig(path)
 		if err != nil {
 			t.Fatalf("error loading %s: %v", path, err)
 		}

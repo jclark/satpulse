@@ -3,6 +3,12 @@ package cmd
 var version string
 var buildDate string
 
+// Version returns the version and build date strings set at build time.
+func Version() (string, string) {
+	return version, buildDate
+}
+
+// VersionInfo returns a human-readable version string.
 func VersionInfo() string {
 	s := ""
 	if version != "" {
