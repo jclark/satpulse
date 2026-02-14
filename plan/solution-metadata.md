@@ -12,9 +12,11 @@ The core navigation outputs -- time, position, and velocity -- must be emitted w
 
 The `NavEpochMsg` is already emitted at the end of each navigation epoch (see nav-epoch.md). This plan populates it with synthesized metadata from one or more raw receiver messages. A receiver-specific adapter can combine information from GGA/GSA/GNS (or proprietary status blocks, PPP/RTK state messages, DOP reports, etc.) and populate the `NavEpochMsg` fields when the metadata for an epoch is sufficiently known. Because these properties typically change slowly (fix transitions, correction acquisition, ambiguity resolution, PPP convergence), the epoch-end emission is acceptable and avoids contaminating the timing-critical data path, while still giving applications a coherent, vendor-neutral description of the current navigation mode and quality.
 
+Position and velocity accuracy estimates also belong in `NavEpochMsg` rather than in the individual PVT messages. While many binary protocols (UBX, Allystar) bundle accuracy with position/velocity in the same message, this is not universal. The Quectel LG290P provides accuracy in a separate PQTMEPE message (estimated position error: north, east, down, 2D, 3D) with no position or velocity data. NMEA provides no metric accuracy at all (only DOPs). Since accuracy is not always available at the time position/velocity messages are emitted, it fits naturally into the epoch-end synthesis alongside DOPs and fix quality. For protocols that do bundle accuracy, the values are simply cached and included when the epoch flushes.
+
 ## Type definitions
 
-The existing `NavEpochMsg` (which currently contains only `Tag`) is extended with metadata fields. New supporting types (`FixQuality`, `FixDim`, `CorrKind`, `AuxSrc`) are added to `gps/gpsprot/`.
+The existing `NavEpochMsg` (which currently contains only `Tag`) is extended with metadata fields. New supporting types (`FixQuality`, `FixDim`, `CorrKind`, `AuxSrc`, `Accuracy`, `DOP`) are added to `gps/gpsprot/`.
 
 ```
 // NavEpochMsg fields added to the existing struct (Tag already present from nav-epoch.md):
@@ -29,17 +31,37 @@ type NavEpochMsg struct {
 	Dim         FixDim      `json:"dim,omitzero"`
 	Correction  CorrKind    `json:"correction,omitzero"` // meaningful when Quality >= FixQualityCodeCorrected
 	AuxSrc      AuxSrc      `json:"auxSrc,omitzero"`
+	Acc         Accuracy    `json:"acc,omitzero"`
+	DOP         DOP         `json:"dop,omitzero"`
 	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
 	SignalsUsed  SignalSet       `json:"signalsUsed,omitzero"`
-
-	GDOP opt.Val[float64] `json:"gdop,omitzero"`
-	PDOP opt.Val[float64] `json:"pdop,omitzero"`
-	HDOP opt.Val[float64] `json:"hdop,omitzero"`
-	VDOP opt.Val[float64] `json:"vdop,omitzero"`
-	TDOP opt.Val[float64] `json:"tdop,omitzero"`
-
 	Tag          Tag             `json:"tag,omitzero"` // already present
+}
+
+// Accuracy holds estimated accuracy of the navigation solution. Fields are
+// opt.Val because different protocols provide different subsets. Accuracy
+// may be synthesized from multiple messages within an epoch (e.g. Quectel
+// PQTMEPE provides position accuracy separately from PQTMPVT).
+type Accuracy struct {
+	Pos         opt.Val[Length] `json:"pos,omitzero"`         // 3D position accuracy
+	Hor         opt.Val[Length] `json:"hor,omitzero"`         // horizontal position accuracy
+	Vert        opt.Val[Length] `json:"vert,omitzero"`        // vertical position accuracy
+	Speed       opt.Val[Speed]  `json:"speed,omitzero"`       // 3D speed accuracy
+	GroundSpeed opt.Val[Speed]  `json:"groundSpeed,omitzero"` // 2D ground speed accuracy
+	Course      opt.Val[Angle]  `json:"course,omitzero"`      // course/heading accuracy
+}
+
+// DOP holds dilution of precision values for the navigation solution. Fields
+// are opt.Val because different protocols provide different subsets. DOP may
+// be synthesized from multiple messages within an epoch (e.g. UBX-NAV-DOP
+// provides all five, while NMEA GSA provides only PDOP/HDOP/VDOP).
+type DOP struct {
+	Geom opt.Val[float64] `json:"geom,omitzero"` // geometric DOP
+	Pos  opt.Val[float64] `json:"pos,omitzero"`  // position (3D) DOP
+	Hor  opt.Val[float64] `json:"hor,omitzero"`  // horizontal DOP
+	Vert opt.Val[float64] `json:"vert,omitzero"` // vertical DOP
+	Time opt.Val[float64] `json:"time,omitzero"` // time DOP
 }
 
 // AuxSrc is a bitmask of additional data sources that contributed to the
@@ -220,7 +242,7 @@ The relevant sentences and their fields are:
 |-------|---------|---------|
 | 5 | GPS quality indicator | AuxSrc, Quality, Correction |
 | 6 | Number of satellites in use | NumSVUsed |
-| 7 | HDOP | HDOP |
+| 7 | HDOP | DOP.Hor |
 
 GGA quality indicator mapping:
 
@@ -248,9 +270,9 @@ Notes:
 | 0 | Fix selection mode (M/A) | (not used) |
 | 1 | Fix type (1/2/3) | Dim |
 | 2-13 | Satellite IDs used | (already used for SatellitesMsg) |
-| 14 | PDOP | PDOP |
-| 15 | HDOP | HDOP |
-| 16 | VDOP | VDOP |
+| 14 | PDOP | DOP.Pos |
+| 15 | HDOP | DOP.Hor |
+| 16 | VDOP | DOP.Vert |
 | 17 | System ID (optional, NMEA 4.10+) | (already used) |
 
 GSA fix type mapping:
@@ -364,10 +386,18 @@ Correction (`Correction`) disambiguation:
   - if conflicting styles appear (both base-station and wide-area), leave style bits unset (but `CorrRTCM` may still be asserted if RTCM is known).
 - If NAV-SIG is unavailable but NAV-SAT is present, use the per-SV correction-used flags as a weaker fallback. NAV-SAT can identify wide-area sources (`NavSatSbasCorrUsed`, `NavSatSlasCorrUsed`, `NavSatSpartnCorrUsed`, `NavSatClasCorrUsed`), but `NavSatRtcmCorrUsed` does not distinguish base-station vs wide-area; if only RTCM is flagged, assert `CorrRTCM` without a style bit.
 
+Accuracy (`Acc`):
+- From **NAV-PVT**: `HAcc` (mm) → `Acc.Hor`, `VAcc` (mm) → `Acc.Vert`, `SAcc` (mm/s) → `Acc.Speed`, `HeadAcc` (1e-5 deg) → `Acc.Course`.
+- From **NAV-POSECEF**: `PAcc` (cm) → `Acc.Pos`.
+- From **NAV-POSLLH**: `HAcc` (mm) → `Acc.Hor`, `VAcc` (mm) → `Acc.Vert`.
+- From **NAV-VELECEF**: `SAcc` (cm/s) → `Acc.Speed`.
+- From **NAV-VELNED**: `SAcc` (cm/s) → `Acc.Speed`, `GSpeed` (cm/s) → `Acc.GroundSpeed`, `CAcc` (1e-5 deg) → `Acc.Course`.
+- When multiple sources provide the same field within an epoch, prefer NAV-PVT (highest resolution: mm/mm/s) over NAV-POSLLH/NAV-VELNED (cm/cm/s).
+
 Other fields:
 - `NumSVUsed`: from `NAV-PVT.NumSV`.
-- `PDOP`: from `NAV-PVT.PDOP` (scale 0.01) or from `NAV-DOP.PDOP` (preferred when present for consistency with the other DOPs).
-- `GDOP/HDOP/VDOP/TDOP`: from `NAV-DOP` (scale 0.01) when available.
+- `DOP.Pos`: from `NAV-PVT.PDOP` (scale 0.01) or from `NAV-DOP.PDOP` (preferred when present for consistency with the other DOPs).
+- `DOP.Geom/Hor/Vert/Time`: from `NAV-DOP` (scale 0.01) when available.
 - `NumSVTracked`, `SignalsUsed`: derive from the same per-epoch NAV-SAT/NAV-SIG accumulation used to emit `SatellitesMsg` (see `gps/internal/ubx/ubx.go` `satMsg`/`sigMsg` and `gps/internal/ubx/ubxsats.go` `satellitesCombine`), counting unique SVs and the union of signal IDs marked `Used`.
 
 ### Where this lives in code
@@ -439,6 +469,12 @@ Notes:
 - **PPP_CONVERGING (68)**: PPP solution that has not yet reached steady-state accuracy. Mapped to `FixQualityCarrierFloat` (ambiguities are float during convergence) with `CorrPPPConverging`.
 - **PPP (69)**: Converged PPP solution without ambiguity resolution. This is a carrier-phase float solution (PPP estimates ambiguities as real-valued parameters) that has reached steady-state. Mapped to `FixQualityCarrierFloat` with `CorrPPPConverged`.
 - **PPP_AR (70)** and **PPP_RTK (71)**: PPP with integer ambiguity resolution. Both achieve carrier-phase fixed precision via wide-area PPP corrections. PPP_AR uses traditional PPP-AR and maps to `CorrPPPConverged`. PPP_RTK uses additional information enabling rapid ambiguity resolution and asserts `CorrPPPRTK`.
+
+### Accuracy
+
+From **BESTNAV**: `lat sigma` (m) and `lon sigma` (m) can be combined into `Acc.Hor` (horizontal accuracy as sqrt(lat_sigma^2 + lon_sigma^2)), `hgt sigma` (m) → `Acc.Vert`, `Horspd std` (m/s) → `Acc.GroundSpeed`, `Verspd std` (m/s) contributes to `Acc.Speed` (3D speed accuracy as sqrt(horspd_std^2 + verspd_std^2)).
+
+From **BESTNAVXYZ**: `P-X/P-Y/P-Z sigma` (m) can be combined into `Acc.Pos` (3D position accuracy as sqrt(sx^2 + sy^2 + sz^2)), `V-X/V-Y/V-Z sigma` (m/s) can be combined into `Acc.Speed`.
 
 ### Other fields
 
