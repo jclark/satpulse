@@ -4,4 +4,4 @@ tmp/
 .codanna*
 .fastembed*
 .claude/settings.local.json
-.claude/CLAUDE.local.md
+CLAUDE.local.md
