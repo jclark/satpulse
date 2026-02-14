@@ -1,4 +1,4 @@
-# Phase 8: Serial port enumeration
+# Serial port enumeration
 
 ## Goal
 Add serial port discovery so users can select a port from a dropdown instead of typing device paths manually. Works on Linux, macOS, and Windows.
@@ -7,7 +7,7 @@ Add serial port discovery so users can select a port from a dropdown instead of 
 Serial port enumeration does not exist on any platform. Users must type the full device path (e.g. `/dev/ttyACM0`) into a text input.
 
 ## Prerequisite
-Phase 5b (tab-based layout with connection bar).
+layout-rework.
 
 ## Reference documents
 - [ui-panel-connection.md](ui-panel-connection.md) -- connection strip design (device input replaced with dropdown)
@@ -96,10 +96,10 @@ Replace the device path text input with a combo box (text input with a dropdown)
 - Disconnect the USB device; re-open the dropdown; verify the port disappears from the list.
 
 ### Cross-platform regression
-- Re-run earlier phase Playwright tests on macOS and Linux to verify nothing broke.
+- Re-run earlier Playwright tests on macOS and Linux to verify nothing broke.
 
 ## Result
-Users can select serial ports from a dropdown instead of typing device paths. Works on Linux, macOS, and (once phase 9 adds Windows serial I/O) Windows.
+Users can select serial ports from a dropdown instead of typing device paths. Works on Linux, macOS, and (once Windows serial I/O is added) Windows.
 
 ## Files changed
 - `desktop/go.mod` -- add `go.bug.st/serial` dependency

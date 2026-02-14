@@ -30,7 +30,7 @@ The empty tag (if present) appears first in the list.
 Send and Cancel buttons below the tag selector, side by side.
 
 **Send** button states:
-- **disabled** when not connected or sending or configuring, or no file loaded, or no tag selected. (Phase 7b adds `pausing` as an enabled state alongside `connected`.)
+- **disabled** when not connected or sending or configuring, or no file loaded, or no tag selected. (msgfile-response adds `pausing` as an enabled state alongside `connected`.)
 - **enabled** otherwise.
 
 **Cancel** button states:
@@ -76,10 +76,10 @@ A send-level error (e.g., connection lost) shows in the left side on the failing
 
 ### Interaction with other panels
 - Per-message send logs appear in the Logging panel via the normal `gps:log` event stream.
-- Poll response data can be decoded via the Messages section in the Monitor tab (phase 5d).
+- Poll response data can be decoded via the Messages section in the Monitor tab (live-messages).
 
 ### Future enhancement
-The panel could add inline decoding of poll responses, allowing the user to click a response line to see decoded packet contents without switching tabs. This would reuse the same `DecodePacket` backend call and modal from the Messages section (phase 5d).
+The panel could add inline decoding of poll responses, allowing the user to click a response line to see decoded packet contents without switching tabs. This would reuse the same `DecodePacket` backend call and modal from the Messages section (live-messages).
 
 ### Data dependencies
 - backend: load file, get tags, send messages, send progress events, response events
@@ -100,7 +100,7 @@ The panel could add inline decoding of poll responses, allowing the user to clic
 The Messages tab is always visible in the tab bar (not disabled when disconnected or unidentified). The Send button inside the panel handles the connection check.
 
 ### Wails bindings
-See phase 7a for the backend API design. The frontend calls:
+See msgfile-send for the backend API design. The frontend calls:
 - `LoadMsgFile()` -- opens dialog, returns tag list or error
 - `SendMsgFile(tag)` -- starts sending the selected tag's messages; progress via events
 - listens for `gps:msgsend` events for send progress (left side)
@@ -109,7 +109,7 @@ See phase 7a for the backend API design. The frontend calls:
 ### Events
 
 #### gps:msgsend
-Send progress events (see phase 7a). Used to update the left side:
+Send progress events (see msgfile-send). Used to update the left side:
 - `sent` -- append "Sending message N..." line (omit number for single-message tags)
 - `delaying` -- update current line to "Sending message N...delaying..."
 - `delayed` -- update current line to "Sending message N...delaying...done"
@@ -117,7 +117,7 @@ Send progress events (see phase 7a). Used to update the left side:
 - `error` -- show error on the current line
 
 #### gps:response
-Response events emitted by the backend during a send. The event payload is a `ResponsePacket` (see phase 7b) with structured fields -- no pre-formatted display text. Fields:
+Response events emitted by the backend during a send. The event payload is a `ResponsePacket` (see msgfile-response) with structured fields -- no pre-formatted display text. Fields:
 - `kind`: `"ack"`, `"nak"`, `"poll-response"`, `"unmatched-ack"`, `"unmatched-nak"`, `"possible-reply"`
 - `tag`: protocol tag from the received packet (e.g. `"UBX"`, `"NMEA"`)
 - `msgID`: message ID from the received packet (e.g. `"06-01"`)

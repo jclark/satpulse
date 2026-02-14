@@ -1,10 +1,10 @@
-# Phase 7b: Message file response handling
+# Message file response handling
 
 ## Goal
 Add response display to the Messages tab when sending messages. After sending, the user sees per-message ACK/NAK results and other receiver responses in the right side of the send/response display, as defined in [ui-panel-message-file.md](ui-panel-message-file.md).
 
 ## Prerequisites
-- Phase 7a (message file send).
+- msgfile-send.
 - Done on master since they are library changes:
   - `PacketAnalyzer` in `gps/msgfile` (see [gpscmd-response-rework.md](../../plan/gpscmd-response-rework.md)).
   - Add `PollResponse` kind to `PacketAnalyzer.Analyze` for UBX data responses that match the class/ID of a sent poll command. Without this, poll responses are classified as `Background` and not shown to the user.
@@ -20,7 +20,7 @@ Add response display to the Messages tab when sending messages. After sending, t
 
 ### 1. Integrate PacketAnalyzer into send flow
 
-Modify the send goroutine from phase 7a to use `msgfile.PacketAnalyzer`:
+Modify the send goroutine from msgfile-send to use `msgfile.PacketAnalyzer`:
 
 - Create a `PacketAnalyzer` before the send loop.
 - Subscribe to the packet broadcast (`a.pb`) so the send goroutine can read incoming packets.
@@ -29,7 +29,7 @@ Modify the send goroutine from phase 7a to use `msgfile.PacketAnalyzer`:
   - Recognized packets (`pkt.Format != nil`): call `Analyze`, emit `gps:response` for non-`Background` results.
   - Unrecognized packets (`pkt.Format == nil`): feed the raw data through a line buffer that accumulates printable ASCII chars and flushes on newline (same logic as `responsePrinter.handleUnrecognized` in `internal/gpscmd/response.go`). Each flushed line is emitted as a `gps:response` event with `kind: "possible-reply"`, `tag: ""`, and `data` set to the buffered line.
 
-Phase 7a's send goroutine only writes; this phase adds reading.
+msgfile-send's goroutine only writes; this plan adds reading.
 
 ### 2. gps:response event
 

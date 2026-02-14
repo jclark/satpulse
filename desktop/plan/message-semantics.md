@@ -1,6 +1,6 @@
 # Message configuration semantics
 
-This document defines the semantics of the message configuration flags. It covers what the flags mean and how they map to `ConfigOptions`. UI rendering is defined in [phase5c.md](phase5c.md) and [ui-panel-configuration.md](ui-panel-configuration.md).
+This document defines the semantics of the message configuration flags. It covers what the flags mean and how they map to `ConfigOptions`. UI rendering is defined in [message-config.md](message-config.md) and [ui-panel-configuration.md](ui-panel-configuration.md).
 
 ## Standardized protocols
 

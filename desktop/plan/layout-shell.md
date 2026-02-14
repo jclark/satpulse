@@ -1,4 +1,4 @@
-# Phase 1: Panel layout shell
+# Panel layout shell
 
 ## Goal
 Replace the tab-based UI with a resizable panel grid using `react-resizable-panels`. Same functionality as today, but all panels visible simultaneously and resizable.
@@ -9,7 +9,7 @@ None. This is the first phase.
 ## Reference documents
 - [ui-workspace-panels.md](ui-workspace-panels.md) - workspace layout model and `react-resizable-panels` usage
 - [ui-panel-connection.md](ui-panel-connection.md) - connection strip design and implementation
-- [ui-panel-logging.md](ui-panel-logging.md) - logging panel (extracted in this phase, improved in phase 2)
+- [ui-panel-logging.md](ui-panel-logging.md) - logging panel (extracted in this phase, improved in structured-logging)
 - [ui-panel-configuration.md](ui-panel-configuration.md) - config panel design
 - [ui-panel-packet-monitor.md](ui-panel-packet-monitor.md) - packet monitor design
 - [backend.md](backend.md) - backend event architecture
@@ -38,18 +38,18 @@ Target layout:
 
 The left/right split and bottom strip are all resizable. Connection strip is fixed height (not a resizable panel).
 
-Note: Sky View and Signal View panels don't exist yet. The left column starts with just the config panel. Layout will be adjusted in later phases as panels are added.
+Note: Sky View and Signal View panels don't exist yet. The left column starts with just the config panel. Layout will be adjusted in later plans as panels are added.
 
 ### 3. Extract ConnectionPanel component
 Move the header bar (device input, speed select, connect/disconnect button, status indicator) from `app.tsx` into `connection-panel.tsx`. Render it outside the `PanelGroup` as a fixed top strip.
 
 ### 4. Extract LoggingPanel component
-Move the log display currently inline in `receiver-panel.tsx` into `logging-panel.tsx`. For now it just renders the existing flat log entries in a scrollable list. Structured logging comes in phase 2.
+Move the log display currently inline in `receiver-panel.tsx` into `logging-panel.tsx`. For now it just renders the existing flat log entries in a scrollable list. Structured logging comes in structured-logging.
 
 ### 5. Refactor existing panels
 - `config-panel.tsx` - keep as-is, rendered in a `Panel`
 - `monitor-panel.tsx` - keep as-is, rendered in a `Panel`
-- `receiver-panel.tsx` - the detect/refresh functionality stays for now; it will be rewritten as auto-probe in phase 4
+- `receiver-panel.tsx` - the detect/refresh functionality stays for now; it will be rewritten as auto-probe in receiver-info
 
 ### 6. Panel show/hide
 Add a simple `Panels` menu (or toolbar toggles) to show/hide individual panels. When hidden, the panel is removed from the `PanelGroup` and remaining panels fill the space. Panel state is preserved when hidden.

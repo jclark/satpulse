@@ -1,10 +1,10 @@
-# Phase 3: Text panels for time and survey status
+# Text panels for time and survey status
 
 ## Goal
 Build text-based panels displaying time and survey status - equivalent to the cards in `web/dashboard.tsx`.
 
 ## Prerequisite
-Phase 1 (panel layout). Phase 2 (structured logging) is independent but ideally done first.
+layout-shell. structured-logging is independent but ideally done first.
 
 ## Reference documents
 - [ui-workspace-panels.md](ui-workspace-panels.md) - panel layout for new panels
@@ -60,7 +60,7 @@ New `survey-panel.tsx` displaying:
 Port formatting from `web/dashboard.tsx` (`surveyFormat`).
 
 ### 4. Receiver info display
-Deferred to phase 4 (receiver panel). The data source is the `DetectReceiver` method, not the `*Msg` stream.
+Deferred to receiver-info. The data source is the `DetectReceiver` method, not the `*Msg` stream.
 
 ### 5. Update panel layout
 Add new panels to the `PanelGroup` layout. Likely arrangement:
@@ -68,7 +68,7 @@ Add new panels to the `PanelGroup` layout. Likely arrangement:
 - Adjust default panel sizes to accommodate
 
 ## Result
-The desktop app shows live GPS time and survey progress alongside the existing config and packet monitor panels. The semantic `*Msg` stream infrastructure is in place for signal graph (phase 6a) and sky view (phase 6b).
+The desktop app shows live GPS time and survey progress alongside the existing config and packet monitor panels. The semantic `*Msg` stream infrastructure is in place for signal-strength and sky-view.
 
 ## Testing (Playwright)
 

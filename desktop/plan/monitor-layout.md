@@ -1,13 +1,13 @@
-# Phase 6c: Monitor tab layout rework
+# Monitor tab layout rework
 
 ## Goal
 Rework the Monitor tab from vertically stacked collapsible sections into an information-dense layout. Compact the Time and Survey displays into dense single-line summaries. Arrange visual elements (sky view, clock, messages tree) side by side to use horizontal space effectively.
 
 ## Prerequisite
-Phase 6a (signal graph), Phase 6b (sky view), Phase 5d (messages stats tree).
+signal-strength, sky-view, live-messages.
 
 ## Motivation
-After phases 5d, 6a, and 6b, the Monitor tab has many sections stacked vertically: Time, Survey, Messages, Sky View, and per-constellation signal graphs. The key-value panels (Time, Survey) waste horizontal space with their definition-list formatting. The sky view is square and sits awkwardly in a full-width row. The layout needs to use horizontal space efficiently while remaining scrollable vertically.
+After live-messages, signal-strength, and sky-view, the Monitor tab has many sections stacked vertically: Time, Survey, Messages, Sky View, and per-constellation signal graphs. The key-value panels (Time, Survey) waste horizontal space with their definition-list formatting. The sky view is square and sits awkwardly in a full-width row. The layout needs to use horizontal space efficiently while remaining scrollable vertically.
 
 ## Concept
 
@@ -38,7 +38,7 @@ Below the compact time/survey summaries, a flex row holds the square/narrow visu
 These elements have natural widths and sit comfortably side by side in a flex row. At narrow window widths, they stack vertically.
 
 ### Signal graphs at the bottom
-Per-constellation signal graphs (from phase 6a) sit below the middle row. Each is wide and short with vertical bars, fitting naturally as stacked full-width rows. They scroll vertically and can be individually collapsed.
+Per-constellation signal graphs (from signal-strength) sit below the middle row. Each is wide and short with vertical bars, fitting naturally as stacked full-width rows. They scroll vertically and can be individually collapsed.
 
 ### Overall structure
 ```

@@ -1,10 +1,10 @@
-# Phase 7a: Message file send
+# Message file send
 
 ## Goal
-Allow the desktop app to load TOML message files and send messages to the receiver. This phase covers loading, tag selection, sending, and send progress display. Response handling is deferred to phase 7b.
+Allow the desktop app to load TOML message files and send messages to the receiver. This plan covers loading, tag selection, sending, and send progress display. Response handling is deferred to msgfile-response.
 
 ## Prerequisites
-- Phase 5b (tab-based layout). The `gps/msgfile` package refactoring is already complete.
+- layout-rework. The `gps/msgfile` package refactoring is already complete.
 - Add `MsgCount int` field to `msgfile.TagDesc` and populate it in `collectDescs`. This gives the desktop app per-tag message counts without duplicating iteration logic. Done on master since it's a library change.
 
 ## Reference documents
@@ -27,7 +27,7 @@ const (
     StateConnected    ConnState = "connected"
     StateConfiguring  ConnState = "configuring"
     StateSending      ConnState = "sending"
-    StatePausing      ConnState = "pausing" // added in phase 7b
+    StatePausing      ConnState = "pausing" // added in msgfile-response
 )
 ```
 
@@ -44,14 +44,14 @@ const (
 - **Sending -> Disconnected**: connection lost during send.
 - **Configuring -> Disconnected**: connection lost during config.
 
-Phase 7b adds:
+msgfile-response adds:
 - **Sending -> Pausing**: last message written, tail read begins.
 - **Pausing -> Connected**: tail read timeout expires, or cancelled by a new operation.
 - **Pausing -> Disconnected**: connection lost during tail read.
 
 #### Write lock semantics
 
-`ApplyConfig`, `ReadConfig`, and `SendMsgFile` all check state under `a.mu`. If state is not `Connected` (or `Pausing`, added in phase 7b), they return an error. If `Pausing`, they cancel the tail reader before proceeding. On success they transition to `Configuring` or `Sending`. This prevents concurrent writes to the connection because only one caller can transition from `Connected`.
+`ApplyConfig`, `ReadConfig`, and `SendMsgFile` all check state under `a.mu`. If state is not `Connected` (or `Pausing`, added in msgfile-response), they return an error. If `Pausing`, they cancel the tail reader before proceeding. On success they transition to `Configuring` or `Sending`. This prevents concurrent writes to the connection because only one caller can transition from `Connected`.
 
 Wails dispatches each frontend call in its own goroutine, so concurrent calls are possible. The state check under the mutex handles this correctly.
 
@@ -70,7 +70,7 @@ Replace `connected` (boolean) and `statusText` (string) with `connState` (string
 - Connection dot: green when not `disconnected`.
 - Status text: derived from `connState` (e.g., `"Connected"`, `"Configuring..."`, `"Sending..."`).
 - Configure Apply button: disabled unless `connState === "connected"`.
-- Messages Send button: disabled unless `connState === "connected"` (plus the existing file/tag checks). Phase 7b widens this to also allow `"pausing"`.
+- Messages Send button: disabled unless `connState === "connected"` (plus the existing file/tag checks). msgfile-response widens this to also allow `"pausing"`.
 
 ### 2. Backend API
 
@@ -129,7 +129,7 @@ Send goroutine detail:
 - On write error: emit an error event, transition to `Connected` (or `Disconnected` if connection lost), return.
 - On context cancellation: emit a cancelled event, transition to `Connected`, return.
 - On completion: emit a done event, transition to `Connected`.
-- The send goroutine does not read packets or process responses (that is phase 7b).
+- The send goroutine does not read packets or process responses (that is msgfile-response).
 
 The send goroutine also logs each message via `a.lg.Info(...)` so the Logging panel shows per-message detail.
 
@@ -224,11 +224,11 @@ Wire up:
 - Open button calls `LoadMsgFile()`, updates path and tags on success. Selects index 0 if the file has a default (empty) tag or exactly one tag; otherwise no initial selection. Clears `sendLines`.
 - Clicking a tag row updates `selectedTagIndex`.
 - Send button calls `SendMsgFile(msgFileTags[selectedTagIndex].tag)`. Clears `sendLines` before calling.
-- Send button disabled when: `connState !== 'connected'` (phase 7b widens to also allow `'pausing'`), or no file loaded, or no tag selected.
+- Send button disabled when: `connState !== 'connected'` (msgfile-response widens to also allow `'pausing'`), or no file loaded, or no tag selected.
 - Cancel button alongside Send. Calls `CancelMsgSend()`. Enabled when `connState === 'sending'`.
 - Apply button in Configure panel: disabled when `connState !== 'connected'`.
 
-The send/response display shows the left side only (send progress lines) in this phase. The right side (receiver responses) is added in phase 7b.
+The send/response display shows the left side only (send progress lines) in this phase. The right side (receiver responses) is added in msgfile-response.
 
 ## Testing (Playwright)
 
@@ -256,7 +256,7 @@ The send/response display shows the left side only (send progress lines) in this
 - Disconnect; verify status shows "Disconnected".
 
 ## Result
-Users can load and send TOML message files from a dedicated tab, matching the `satpulsetool gps -m` workflow. The unified connection/activity state provides a write lock between the Configure and Messages panels. Responses are not yet displayed (see phase 7b).
+Users can load and send TOML message files from a dedicated tab, matching the `satpulsetool gps -m` workflow. The unified connection/activity state provides a write lock between the Configure and Messages panels. Responses are not yet displayed (see msgfile-response).
 
 ## Files changed
 - `desktop/app.go` (ConnState, state machine, LoadMsgFile, SendMsgFile, MsgSendEvent, refactor existing methods)

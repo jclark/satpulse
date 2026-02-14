@@ -1,10 +1,10 @@
-# Phase 4: Receiver panel
+# Receiver panel
 
 ## Goal
 Add a receiver information panel that automatically identifies the connected GPS receiver on connect and displays its identity. No manual detect button — identification runs automatically when the connection opens.
 
 ## Prerequisite
-Phase 1 (panel layout).
+layout-shell.
 
 ## Reference documents
 - [ui-panel-connection.md](ui-panel-connection.md) - connection strip (triggers auto-detect)
@@ -22,7 +22,7 @@ Phase 1 (panel layout).
 This is a lightweight operation (a few seconds) and is safe to run every time a connection opens.
 
 ### Separation from configuration
-Reading back configuration properties (`--show-config`) is a separate operation that sets `Get` on the `ConfigTarget` to request specific property values. That belongs in phase 5 (configuration panel), not here.
+Reading back configuration properties (`--show-config`) is a separate operation that sets `Get` on the `ConfigTarget` to request specific property values. That belongs in config-restructure, not here.
 
 ## Steps
 
@@ -51,7 +51,7 @@ No detect button — the panel is purely display.
 Place the receiver panel in the right column (or as a small info area near the connection strip). It should be visible by default but compact — this is reference information, not an interactive workflow.
 
 ## Result
-When the user connects to a receiver, the app automatically identifies it within a few seconds and shows receiver identity. No manual action needed. Configuration readback is deferred to the configuration panel (phase 5).
+When the user connects to a receiver, the app automatically identifies it within a few seconds and shows receiver identity. No manual action needed. Configuration readback is deferred to config-restructure.
 
 ## Files changed
 - `desktop/app.go` (auto-probe in connect flow, `gps:receiver` event emission)

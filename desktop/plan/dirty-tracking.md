@@ -1,10 +1,10 @@
-# Phase 5f: Section-based dirty tracking and discard
+# Section-based dirty tracking and discard
 
 ## Goal
 Track user interactions per UI section so that Apply only sends changed config properties. Show a descriptive pending-changes label listing dirty sections. Add a Discard button to revert the form to the last readback state. Remove the Refresh button (nothing external can change the receiver while the GUI holds the connection).
 
 ## Prerequisite
-Phase 5a (config panel restructure).
+config-restructure.
 
 ## Problem
 After a readback populates the form, `handleApply` sends every non-empty property to the backend, even if the user changed nothing. The `countPendingChanges` function does per-field dirty checking for a numeric badge, but `handleApply` ignores it. The count is also confusing -- it is not clear what counts as "one change" (e.g. unchecking a time pulse checkbox is one change, but the user thinks of it as part of editing time pulse settings).

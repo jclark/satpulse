@@ -1,4 +1,4 @@
-# Phase 5b: Layout rework -- tabs + collapsible panels
+# Layout rework -- tabs + collapsible panels
 
 ## Context
 
@@ -8,7 +8,7 @@ This replaces that with a tab-based layout inspired by GNSS receiver tools (u-ce
 
 ## Prerequisite
 
-Phase 5a (config panel restructure). The config panel already has collapsible sections -- this phase changes where it lives and how the overall layout works.
+config-restructure. The config panel already has collapsible sections -- this plan changes where it lives and how the overall layout works.
 
 ## New design
 
@@ -49,7 +49,7 @@ Vertically stacked collapsible sections, NOT resizable panels. Each section size
 - **Time** -- key-value data, always expanded by default
 - **Survey** -- key-value data, collapsed by default, auto-expands on first survey data
 
-Future phases will add more sections here: Messages (phase 5d), Signal graph (phase 6a), Sky view (phase 6b).
+Future plans will add more sections here: live-messages, signal-strength, sky-view.
 
 The key insight: Time and Survey have small fixed content, so they should be fixed-height when expanded (sized to content). This is just CSS flexbox, not a panel library.
 

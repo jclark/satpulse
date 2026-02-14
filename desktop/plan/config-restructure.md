@@ -1,4 +1,4 @@
-# Phase 5a: Config panel restructure, readback, and validation (done)
+# Config panel restructure, readback, and validation (done)
 
 **Status: complete**
 
@@ -6,7 +6,7 @@
 Restructure the existing config panel into collapsible sections, add config readback, and improve the editing experience.
 
 ## Prerequisite
-Phase 1 (panel layout). Phase 4 (receiver panel).
+layout-shell. receiver-info.
 
 ## Reference documents
 - [ui-panel-configuration.md](ui-panel-configuration.md) - full configuration panel design
@@ -17,7 +17,7 @@ Phase 1 (panel layout). Phase 4 (receiver panel).
 ### What --show-config does
 `satpulsetool gps --show-config` runs a `ConfigTarget` with `Get` set to the properties bitmask (signals, mode, time pulse, time GNSS, cable delay) but no `ForceProbe` and no configuration changes. This reads back the current receiver configuration so it can be displayed and edited.
 
-This is separate from the receiver probe (phase 4). The probe identifies the hardware; config readback retrieves current property values.
+This is separate from the receiver probe (receiver-info). The probe identifies the hardware; config readback retrieves current property values.
 
 ### Single Configure method
 All configuration operations use a single `Configure` Wails binding that takes a map and maps it to a `gpsprot.ConfigTarget`. The frontend builds a plain object with whatever fields are needed:

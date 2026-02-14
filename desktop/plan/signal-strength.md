@@ -1,10 +1,10 @@
-# Phase 6a: Signal graph
+# Signal graph
 
 ## Goal
 Add per-constellation signal strength graphs to the Monitor tab, showing CN0 for each individual signal (L1, L5, E1, E5a, etc.) as vertical bars. This is the primary multi-band visibility feature -- showing per-signal detail that older single-band tools don't provide.
 
 ## Prerequisite
-Phase 3 (semantic data stream providing satellite data). Phase 5b (tab-based layout).
+semantic-stream (satellite data). layout-rework.
 
 ## Motivation
 Dual/multi-band receivers are becoming affordable and widespread. The key advantage of multi-band is better accuracy and faster convergence, but users need visibility into per-signal health to understand what their receiver is actually doing. Existing tools typically show only one bar per satellite (max CN0 across signals). SatPulse shows each signal separately, making it easy to see at a glance whether L5/E5a signals are healthy, which satellites are providing multi-band coverage, and how signal quality varies across bands.

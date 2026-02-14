@@ -1,10 +1,10 @@
-# Phase 5g: PVT messages panel
+# PVT messages panel
 
 ## Goal
 Add a PVT Messages section to the Monitor tab that shows three tables (Position, Velocity, Time) with one row per source message. Each row shows native fields (bold) alongside computed/derived fields (not bold), enabling cross-checking that different messages give consistent results.
 
 ## Prerequisite
-Phase 5b (tab-based layout). Position/velocity message types in `gps/gpsprot/msg.go` (implemented for UBX).
+layout-rework. Position/velocity message types in `gps/gpsprot/msg.go` (implemented for UBX).
 
 ## Motivation
 The backend now emits `PosGeoMsg`, `PosECEFMsg`, `VelGeoMsg`, `VelECEFMsg` and multiple `TimeMsg` variants from different protocol messages. There is no way to see this data in the desktop UI. When developing and testing protocol extractors, you need to verify that NAV-PVT, NAV-POSLLH, NAV-POSECEF, etc. all report consistent positions. A cross-reference table with native vs computed fields makes inconsistencies immediately visible.
@@ -140,7 +140,7 @@ Create `desktop/frontend/src/pvt-panel.tsx`:
 - Clear PVT state on disconnect (when `gps:state` transitions to `"disconnected"`).
 
 ### 7. Update README.md
-Add phase5g to the phase table and dependency graph in `desktop/plan/README.md`.
+Add pvt-msgs-panel to the plan table and dependency graph in `desktop/plan/README.md`.
 
 ---
 
@@ -152,7 +152,7 @@ The Monitor tab gains a PVT Messages section with three tables showing live posi
 - `desktop/frontend/src/pvt-panel.tsx` — new component
 - `desktop/frontend/src/app.tsx` — add PVT state, wire up events, add PVT section to Monitor tab, add time dedup in JS
 - `desktop/frontend/src/time-panel.tsx` — may need minor adjustment if it currently relies on backend dedup behavior
-- `desktop/plan/README.md` — add phase5g entry
+- `desktop/plan/README.md` — add pvt-msgs-panel entry
 
 ## Testing -- Playwright
 

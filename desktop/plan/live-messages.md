@@ -1,10 +1,10 @@
-# Phase 5d: Live messages section
+# Live messages section
 
 ## Goal
 Add a Messages collapsible section to the Monitor tab that shows live packet statistics -- a count tree grouped by protocol and message type. Clicking a message type opens a modal with a decoded snapshot of the most recent packet.
 
 ## Prerequisite
-Phase 5b (tab-based layout rework). The Monitor tab from 5b provides the home for this section.
+layout-rework. The Monitor tab provides the home for this section.
 
 ## Motivation
 When configuring a GPS receiver, a key question is "what messages is it actually sending?" The Packets tab shows a raw firehose that scrolls too fast to be useful. The Messages section answers this question at a glance: protocol-level counts, per-message-type counts, and the ability to drill into any message type for a decoded view.
@@ -56,7 +56,7 @@ The frontend receives a plain object and is responsible for pretty-printing it (
 The section keeps a map of `tag:msg -> last PacketEntry` in component state. Each incoming packet updates the count and overwrites the stored last-packet for its type. Memory is bounded because there is at most one stored packet per message type.
 
 ### Relationship to Packets tab
-The Messages section does not replace the Packets tab. The Packets tab (phase 5b: with freeze/resume and search) shows raw packet ordering and timing for debugging. The Messages section shows what message types are flowing and lets you drill into decoded detail. They serve different purposes.
+The Messages section does not replace the Packets tab. The Packets tab (layout-rework: with freeze/resume and search) shows raw packet ordering and timing for debugging. The Messages section shows what message types are flowing and lets you drill into decoded detail. They serve different purposes.
 
 ---
 

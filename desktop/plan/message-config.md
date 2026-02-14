@@ -1,4 +1,4 @@
-# Phase 5c: Message configuration
+# Message configuration
 
 ## Goal
 Add a Messages section to the configuration tab with output message controls for standardized protocols (NMEA, RTCM) and proprietary messages (PVT, satellites, raw). This controls *what the receiver sends*.
@@ -7,7 +7,7 @@ UI design: [ui-panel-configuration.md](ui-panel-configuration.md) (Messages sect
 Flag semantics: [message-semantics.md](message-semantics.md).
 
 ## Prerequisite
-Phase 5b (layout rework -- configuration is now a tab). Phase 5a (config panel has collapsible sections and Apply flow). `ConfigOptions` uses `opt.Val[T]` with `omitzero`. `ConfigProps` and `PropIDs` have `UnmarshalJSON` (done in `configprops-json.md`). `ConfigTarget` is fully JSON round-trippable.
+layout-rework (configuration is now a tab). config-restructure (collapsible sections and Apply flow). `ConfigOptions` uses `opt.Val[T]` with `omitzero`. `ConfigProps` and `PropIDs` have `UnmarshalJSON` (done in `configprops-json.md`). `ConfigTarget` is fully JSON round-trippable.
 
 Steps 1-2 are prerequisites (refactor only, no new functionality). They replace hand-rolled DTOs with direct use of GPS subsystem types. Test after completing steps 1-2 to verify existing config panel still works before adding message controls in steps 3+.
 

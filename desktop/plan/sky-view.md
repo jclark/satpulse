@@ -1,10 +1,10 @@
-# Phase 6b: Sky view
+# Sky view
 
 ## Goal
 Add a polar sky plot to the Monitor tab showing satellite positions by azimuth and elevation. Port the SVG rendering from `web/svg.tsx`.
 
 ## Prerequisite
-Phase 6a (satellite state wiring in `app.tsx`). Phase 5b (tab-based layout).
+signal-strength (satellite state wiring in `app.tsx`). layout-rework.
 
 ## What already exists
 The web dashboard has a working `SkyView` function in `web/svg.tsx` that renders a polar plot with:
@@ -37,7 +37,7 @@ Opacity varies by CN0 (5 levels from weak to strong), matching the web version's
 When `UsedValidity` indicates the used flags are meaningful, unused satellites are visually marked (trailing "-" with invisible leading "-" for centering, matching the web version).
 
 ### Data source
-Same `SatellitesMsg` state from phase 6a. The sky view uses `simplifySignals()` to collapse multiple signals to a single CN0 per satellite (since the sky plot shows position, not per-signal detail).
+Same `SatellitesMsg` state from signal-strength. The sky view uses `simplifySignals()` to collapse multiple signals to a single CN0 per satellite (since the sky plot shows position, not per-signal detail).
 
 ## Steps
 
@@ -54,10 +54,10 @@ Port `simplifySignals()`, `colorClassFor()`, and `opacityClassFor()` from `web/s
 ### 3. Add to Monitor tab
 Add the sky view as a collapsible section in the Monitor tab, below Time/Survey and above the signal graph sections. Only appears when satellite data has been received.
 
-The sky view is inherently square. For now it is simply stacked vertically in the Monitor tab like everything else -- the layout rework in phase 6c will arrange it more efficiently.
+The sky view is inherently square. For now it is simply stacked vertically in the Monitor tab like everything else -- monitor-layout will arrange it more efficiently.
 
 ## Result
-The Monitor tab includes a polar sky plot showing satellite positions, colored by constellation with signal strength opacity. Combined with the per-signal bar graphs from phase 6a, users have full visibility into both satellite geometry and signal quality.
+The Monitor tab includes a polar sky plot showing satellite positions, colored by constellation with signal strength opacity. Combined with the per-signal bar graphs from signal-strength, users have full visibility into both satellite geometry and signal quality.
 
 ## Files changed
 - `desktop/frontend/src/sky-view-panel.tsx` (new component, ported from web/svg.tsx)

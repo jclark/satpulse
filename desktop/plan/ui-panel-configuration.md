@@ -205,7 +205,7 @@ Single Apply executes all selected changes in one run.
 `ConfigPanel` component, rendered inside a `Panel` in the right column.
 
 ### Existing code
-The current `config-panel.tsx` handles properties and signal selection. Receiver identification (detect/probe) is handled separately by the receiver panel (phase 4). The config panel focuses on property readback and editing.
+The current `config-panel.tsx` handles properties and signal selection. Receiver identification (detect/probe) is handled separately by the receiver panel (receiver-info). The config panel focuses on property readback and editing.
 
 ### Collapsible sections
 Use a reusable `CollapsibleSection` component (heading + toggle + animated content). Tailwind for styling. No external accordion library needed.

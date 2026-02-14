@@ -1,10 +1,10 @@
-# Phase 5e: Time mode section rework
+# Time mode section rework
 
 ## Goal
 Replace the minimal static/mobile selector in the Time mode section with a full three-mode selector (mobile, survey-in, fixed position) that handles mode properties, survey operations, survey message enablement, and fixed-position parameters in a single cohesive section.
 
 ## Prerequisite
-Phase 5a (config panel restructure). Phase 5c (message configuration -- for PVT survey message flag).
+config-restructure. message-config (for PVT survey message flag).
 
 ## Reference documents
 - [ui-panel-configuration.md](ui-panel-configuration.md) -- Time mode property group
@@ -55,7 +55,7 @@ The `Mode` struct supports two position types:
 The desktop UI supports both coordinate entry modes for fixed position.
 
 ### Survey progress
-Survey-in progress is monitored via `SurveyMsg` events (already displayed in the Monitor tab's Survey section from phase 5b). The time mode section does not display live survey progress -- it configures whether to *start* a survey and with what parameters.
+Survey-in progress is monitored via `SurveyMsg` events (already displayed in the Monitor tab's Survey section from layout-rework). The time mode section does not display live survey progress -- it configures whether to *start* a survey and with what parameters.
 
 Enabling `PVTMsgSurvey` tells the receiver to emit survey progress messages. The UI automatically includes this flag when the user selects survey mode, so the Monitor tab shows progress.
 

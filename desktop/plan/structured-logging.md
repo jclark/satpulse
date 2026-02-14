@@ -1,10 +1,10 @@
-# Phase 2: Structured logging
+# Structured logging
 
 ## Goal
 Replace flat text log events with structured JSON so the frontend can filter by level, component, and attributes. Build a proper logging panel with severity badges and filtering.
 
 ## Prerequisite
-Phase 1 (panel layout shell).
+layout-shell.
 
 ## Reference documents
 - [ui-panel-logging.md](ui-panel-logging.md) - logging panel design (structured fields, filtering, progress display)
@@ -41,7 +41,7 @@ Extract `component` from the slog logger name or a well-known attr. Pass remaini
 Update `LogEntry` in the frontend to match the new structured payload.
 
 ### 3. Frontend: build LoggingPanel
-Replace the simple log list from phase 1 with a proper panel:
+Replace the simple log list from layout-shell with a proper panel:
 - Severity badges (color-coded by level: DEBUG/INFO/WARN/ERROR)
 - Filter by level (dropdown or toggle buttons)
 - Filter by component (if present)
