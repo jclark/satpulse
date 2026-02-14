@@ -12,6 +12,7 @@ import {SurveyPanel} from './survey-panel';
 import {MsgFilePanel} from './msgfile-panel';
 import {PVTPanel} from './pvt-panel';
 import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeRow} from './pvt-panel';
+import {MapPanel} from './map-panel';
 
 export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
 
@@ -137,6 +138,8 @@ export function App() {
     const [timeRows, setTimeRows] = useState<Map<string, TimeRow>>(new Map());
     const [pvtOpen, setPvtOpen] = useState(false);
     const pvtAutoExpanded = useRef(false);
+    const [mapPos, setMapPos] = useState<{lat: number; lon: number} | null>(null);
+    const [noFixSecs, setNoFixSecs] = useState(0);
     // Time dedup state for TimePanel (moved from Go backend)
     const lastTimeTAI = useRef(0);
     const [activeTab, setActiveTab] = useState<TabID>('monitor');
@@ -366,6 +369,16 @@ export function App() {
                 setTimeRows(new Map());
                 lastTimeTAI.current = 0;
                 pvtAutoExpanded.current = false;
+                setMapPos(null);
+                setNoFixSecs(0);
+            }
+        });
+        const offEpochPVT = EventsOn('gps:epochPVT', (nav: any) => {
+            if (nav.pos) {
+                setMapPos({lat: nav.pos.lat, lon: nav.pos.lon});
+                setNoFixSecs(0);
+            } else {
+                setNoFixSecs(prev => prev + 1);
             }
         });
         const offMsgSend = EventsOn('gps:msgsend', (evt: MsgSendEvent) => {
@@ -424,6 +437,7 @@ export function App() {
             if (typeof offRcv === 'function') offRcv(); else EventsOff('gps:receiver');
             if (typeof offMsg === 'function') offMsg(); else EventsOff('gps:msg');
             if (typeof offState === 'function') offState(); else EventsOff('gps:state');
+            if (typeof offEpochPVT === 'function') offEpochPVT(); else EventsOff('gps:epochPVT');
             if (typeof offMsgSend === 'function') offMsgSend(); else EventsOff('gps:msgsend');
         };
     }, []);
@@ -536,6 +550,9 @@ export function App() {
             <div class="flex-1 overflow-hidden" style="min-height: 80px;">
                 {/* Monitor tab */}
                 <div class={`h-full overflow-y-auto ${activeTab === 'monitor' ? '' : 'hidden'}`}>
+                    <div class="flex flex-wrap gap-4 p-4">
+                        <MapPanel pos={mapPos} noFixSecs={noFixSecs} />
+                    </div>
                     <CollapsibleSection title="Time" variant="panel" open={timeOpen} onToggle={setTimeOpen}>
                         <TimePanel msg={timeMsg} leapSecond={leapSecond} />
                     </CollapsibleSection>
