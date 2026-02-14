@@ -20,6 +20,7 @@ type MsgHandler interface {
 	LeapSecond(msg *LeapSecondMsg, tRead time.Time)
 	Survey(msg *SurveyMsg, tRead time.Time)
 	Satellites(msg *SatellitesMsg, tRead time.Time)
+	NavEpoch(msg *NavEpochMsg, tRead time.Time)
 }
 
 // NativeMsgHandler handles protocol-specific messages that don't map to standard messages.
@@ -42,6 +43,7 @@ func (h *DefaultHandler) VelECEF(msg *VelECEFMsg, tRead time.Time)       {}
 func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
 func (h *DefaultHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {}
+func (h *DefaultHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time)     {}
 
 type MultiHandler struct {
 	handlers []MsgHandler
@@ -92,6 +94,12 @@ func (h *MultiHandler) VelGeo(msg *VelGeoMsg, tRead time.Time) {
 func (h *MultiHandler) VelECEF(msg *VelECEFMsg, tRead time.Time) {
 	for _, handler := range h.handlers {
 		handler.VelECEF(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.NavEpoch(msg, tRead)
 	}
 }
 
@@ -346,4 +354,12 @@ type SurveyMsg struct {
 	ObsTime    time.Duration `json:"obsTime"`
 	Valid      bool          `json:"valid"`
 	InProgress bool          `json:"inProgress"`
+}
+
+// NavEpochMsg is emitted once at the end of each navigation epoch, after
+// all time/position/velocity messages for that epoch have been dispatched.
+// Future fields will carry solution metadata (fix quality, corrections, DOPs).
+type NavEpochMsg struct {
+	Tag       Tag       `json:"tag,omitzero"`
+	StartTime time.Time `json:"startTime"` // when the first message in this epoch was read
 }

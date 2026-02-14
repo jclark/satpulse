@@ -39,6 +39,7 @@ const (
 	testExpectSatellites = 1 << 1 // SatellitesMsg expected
 	testExpectLeapSecond = 1 << 2 // LeapSecondMsg expected
 	testExpectSurvey     = 1 << 3 // SurveyMsg expected
+	testExpectNavEpoch   = 1 << 4 // NavEpochMsg expected
 )
 
 type testNavEpochTestCase struct {
@@ -97,6 +98,14 @@ func (h *testMsgHandler) Survey(msg *gpsprot.SurveyMsg, tRead time.Time) {
 	}{"survey", msg, tRead})
 }
 
+func (h *testMsgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
+	h.msgs = append(h.msgs, struct {
+		msgType string
+		msg     interface{}
+		tRead   time.Time
+	}{"navepoch", msg, tRead})
+}
+
 func TestNavEpochHandling(t *testing.T) {
 	tests := []testNavEpochTestCase{
 		{
@@ -105,11 +114,11 @@ func TestNavEpochHandling(t *testing.T) {
 				// We can always flush when we have both NAV-SAT and NAV-SIG
 				{msgID: ubxbin.NavSatID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: 0},
 				{msgID: ubxbin.NavSigID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites},
-				{msgID: ubxbin.NavSatID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: 0},
+				{msgID: ubxbin.NavSatID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectNavEpoch},
 				{msgID: ubxbin.NavSigID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: testExpectSatellites},
-				{msgID: ubxbin.NavSatID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: 0},
+				{msgID: ubxbin.NavSatID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectNavEpoch},
 				{msgID: ubxbin.NavSigID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
-				{msgID: ubxbin.NavSatID, navEpoch: 400, tRead: time.Unix(7, 0), expectMsgs: 0},
+				{msgID: ubxbin.NavSatID, navEpoch: 400, tRead: time.Unix(7, 0), expectMsgs: testExpectNavEpoch},
 				{msgID: ubxbin.NavSigID, navEpoch: 400, tRead: time.Unix(8, 0), expectMsgs: testExpectSatellites},
 			},
 		},
@@ -120,14 +129,14 @@ func TestNavEpochHandling(t *testing.T) {
 				{msgID: ubxbin.NavTimeGPSID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: testExpectTime},
 				{msgID: ubxbin.NavSatID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: 0},
 				// Epoch 2
-				{msgID: ubxbin.NavTimeGPSID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectTime | testExpectSatellites},
+				{msgID: ubxbin.NavTimeGPSID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectTime | testExpectSatellites | testExpectNavEpoch},
 				{msgID: ubxbin.NavSatID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: 0},
 				// Epoch  3
-				{msgID: ubxbin.NavTimeGPSID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectTime | testExpectSatellites},
+				{msgID: ubxbin.NavTimeGPSID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectTime | testExpectSatellites | testExpectNavEpoch},
 				// we have seen a complete epoch without NAV-SIG, so we can flush NAV-SAT without waiting for NAV-SIG
 				{msgID: ubxbin.NavSatID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
 				// Epoch  4 - everything is flushed right away
-				{msgID: ubxbin.NavTimeGPSID, navEpoch: 400, tRead: time.Unix(7, 0), expectMsgs: testExpectTime},
+				{msgID: ubxbin.NavTimeGPSID, navEpoch: 400, tRead: time.Unix(7, 0), expectMsgs: testExpectTime | testExpectNavEpoch},
 				{msgID: ubxbin.NavSatID, navEpoch: 400, tRead: time.Unix(8, 0), expectMsgs: testExpectSatellites},
 			},
 		},
@@ -138,14 +147,14 @@ func TestNavEpochHandling(t *testing.T) {
 				{msgID: ubxbin.NavTimeGPSID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: testExpectTime},
 				{msgID: ubxbin.NavSigID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: 0},
 				// Epoch 2
-				{msgID: ubxbin.NavTimeGPSID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectTime | testExpectSatellites},
+				{msgID: ubxbin.NavTimeGPSID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectTime | testExpectSatellites | testExpectNavEpoch},
 				{msgID: ubxbin.NavSigID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: 0},
 				// Epoch  3
-				{msgID: ubxbin.NavTimeGPSID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectTime | testExpectSatellites},
-				// we have seen a complete epoch without NAV-SIG, so we can flush NAV-SAT without waiting for NAV-SIG
+				{msgID: ubxbin.NavTimeGPSID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectTime | testExpectSatellites | testExpectNavEpoch},
+				// we have seen a complete epoch without NAV-SAT, so we can flush NAV-SIG without waiting for NAV-SAT
 				{msgID: ubxbin.NavSigID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
 				// Epoch  4 - everything is flushed right away
-				{msgID: ubxbin.NavTimeGPSID, navEpoch: 400, tRead: time.Unix(7, 0), expectMsgs: testExpectTime},
+				{msgID: ubxbin.NavTimeGPSID, navEpoch: 400, tRead: time.Unix(7, 0), expectMsgs: testExpectTime | testExpectNavEpoch},
 				{msgID: ubxbin.NavSigID, navEpoch: 400, tRead: time.Unix(8, 0), expectMsgs: testExpectSatellites},
 			},
 		},
@@ -155,9 +164,9 @@ func TestNavEpochHandling(t *testing.T) {
 				// Epoch 1 (potentially incomplete)
 				{msgID: ubxbin.NavSatID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: 0},
 				// Epoch 2 (first complete) - epoch 1 gets flushed when epoch 2 starts
-				{msgID: ubxbin.NavSigID, navEpoch: 200, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites},
+				{msgID: ubxbin.NavSigID, navEpoch: 200, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites | testExpectNavEpoch},
 				// Epoch 3 - epoch 2 gets flushed when epoch 3 starts
-				{msgID: ubxbin.NavSatID, navEpoch: 300, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
+				{msgID: ubxbin.NavSatID, navEpoch: 300, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites | testExpectNavEpoch},
 				{msgID: ubxbin.NavSigID, navEpoch: 300, tRead: time.Unix(4, 0), expectMsgs: testExpectSatellites},
 			},
 		},
@@ -167,9 +176,9 @@ func TestNavEpochHandling(t *testing.T) {
 				// Epoch 1 - NAV-SIG arrives before NAV-SAT
 				{msgID: ubxbin.NavSigID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: 0},
 				// Epoch 2 - other way round
-				{msgID: ubxbin.NavSatID, navEpoch: 200, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites},
+				{msgID: ubxbin.NavSatID, navEpoch: 200, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites | testExpectNavEpoch},
 				// Epoch 3 - epoch 2 gets flushed when epoch 3 starts, then completed
-				{msgID: ubxbin.NavSigID, navEpoch: 300, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
+				{msgID: ubxbin.NavSigID, navEpoch: 300, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites | testExpectNavEpoch},
 				{msgID: ubxbin.NavSatID, navEpoch: 300, tRead: time.Unix(4, 0), expectMsgs: testExpectSatellites},
 			},
 		},
@@ -180,10 +189,10 @@ func TestNavEpochHandling(t *testing.T) {
 				{msgID: ubxbin.NavTimeGPSID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: testExpectTime},
 				{msgID: ubxbin.NavSatID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: 0},
 				// Epoch 2 - epoch 1 gets flushed, more mixed messages
-				{msgID: ubxbin.NavSigID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
+				{msgID: ubxbin.NavSigID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites | testExpectNavEpoch},
 				{msgID: ubxbin.NavTimeGPSID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: testExpectTime},
 				// Epoch 3 - epoch 2 gets flushed when epoch 3 starts
-				{msgID: ubxbin.NavTimeGPSID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectTime | testExpectSatellites},
+				{msgID: ubxbin.NavTimeGPSID, navEpoch: 300, tRead: time.Unix(5, 0), expectMsgs: testExpectTime | testExpectSatellites | testExpectNavEpoch},
 				{msgID: ubxbin.NavSatID, navEpoch: 300, tRead: time.Unix(6, 0), expectMsgs: 0},
 				{msgID: ubxbin.NavSigID, navEpoch: 300, tRead: time.Unix(7, 0), expectMsgs: testExpectSatellites},
 			},
@@ -194,23 +203,23 @@ func TestNavEpochHandling(t *testing.T) {
 				// Epoch 1 - complete epoch
 				{msgID: ubxbin.NavSatID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: 0},
 				// Epoch 2 - complete epoch, epoch 1 flushed
-				{msgID: ubxbin.NavSigID, navEpoch: 200, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites},
+				{msgID: ubxbin.NavSigID, navEpoch: 200, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites | testExpectNavEpoch},
 				// Epoch 3 - complete epoch, epoch 2 flushed
-				{msgID: ubxbin.NavSatID, navEpoch: 300, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites},
+				{msgID: ubxbin.NavSatID, navEpoch: 300, tRead: time.Unix(3, 0), expectMsgs: testExpectSatellites | testExpectNavEpoch},
 				{msgID: ubxbin.NavSigID, navEpoch: 300, tRead: time.Unix(4, 0), expectMsgs: testExpectSatellites},
 				// Epoch 4 - complete with NAV-SIG, now prevNavMsgs logic applies
 				// Previous epoch (300) had NAV-SIG, so wait for NAV-SIG
-				{msgID: ubxbin.NavSatID, navEpoch: 400, tRead: time.Unix(5, 0), expectMsgs: 0},
+				{msgID: ubxbin.NavSatID, navEpoch: 400, tRead: time.Unix(5, 0), expectMsgs: testExpectNavEpoch},
 				{msgID: ubxbin.NavSigID, navEpoch: 400, tRead: time.Unix(6, 0), expectMsgs: testExpectSatellites},
 				// Epoch 5 - previous epoch (400) had NAV-SIG, so wait for NAV-SIG
-				{msgID: ubxbin.NavSatID, navEpoch: 500, tRead: time.Unix(7, 0), expectMsgs: 0},
+				{msgID: ubxbin.NavSatID, navEpoch: 500, tRead: time.Unix(7, 0), expectMsgs: testExpectNavEpoch},
 				{msgID: ubxbin.NavSigID, navEpoch: 500, tRead: time.Unix(8, 0), expectMsgs: testExpectSatellites},
 				// Epoch 6 - incomplete epoch (no NAV-SIG in previous epoch 500)
 				// Previous epoch had NAV-SIG, so still wait for NAV-SIG
-				{msgID: ubxbin.NavSatID, navEpoch: 600, tRead: time.Unix(9, 0), expectMsgs: 0},
+				{msgID: ubxbin.NavSatID, navEpoch: 600, tRead: time.Unix(9, 0), expectMsgs: testExpectNavEpoch},
 				// No NAV-SIG for epoch 600
 				// Epoch 7 - previous epoch (600) had NO NAV-SIG, so flush immediately with new epoch
-				{msgID: ubxbin.NavTimeGPSID, navEpoch: 700, tRead: time.Unix(10, 0), expectMsgs: testExpectSatellites | testExpectTime},
+				{msgID: ubxbin.NavTimeGPSID, navEpoch: 700, tRead: time.Unix(10, 0), expectMsgs: testExpectSatellites | testExpectNavEpoch | testExpectTime},
 				{msgID: ubxbin.NavSatID, navEpoch: 700, tRead: time.Unix(11, 0), expectMsgs: testExpectSatellites},
 				{msgID: ubxbin.NavSigID, navEpoch: 700, tRead: time.Unix(12, 0), expectMsgs: 0},
 			},
@@ -255,6 +264,8 @@ func TestNavEpochHandling(t *testing.T) {
 						actualMsgTypes |= testExpectLeapSecond
 					case "survey":
 						actualMsgTypes |= testExpectSurvey
+					case "navepoch":
+						actualMsgTypes |= testExpectNavEpoch
 					}
 				}
 
@@ -291,6 +302,60 @@ func TestNavEpochHandling(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNavEpochMsg(t *testing.T) {
+	pp := NewPacketProcessor()
+	handler := &testMsgHandler{}
+	pp.SetMsgHandler(handler)
+
+	// Send messages for epoch 1 - no NavEpochMsg should be emitted
+	for _, msgID := range []ubxbin.MsgID{ubxbin.NavTimeGPSID, ubxbin.NavSatID, ubxbin.NavSigID} {
+		msg := testCreateMessage(msgID, 100)
+		packet, err := ubxbin.Serialize(msg)
+		if err != nil {
+			t.Fatalf("failed to serialize: %v", err)
+		}
+		if _, err := pp.ProcessPacket(string(packet), time.Unix(1, 0)); err != nil {
+			t.Fatalf("failed to process: %v", err)
+		}
+	}
+	for _, m := range handler.msgs {
+		if m.msgType == "navepoch" {
+			t.Fatal("NavEpochMsg emitted before first epoch boundary")
+		}
+	}
+
+	// Send first message of epoch 2 - should trigger NavEpochMsg for epoch 1
+	msg := testCreateMessage(ubxbin.NavTimeGPSID, 200)
+	packet, err := ubxbin.Serialize(msg)
+	if err != nil {
+		t.Fatalf("failed to serialize: %v", err)
+	}
+	beforeCount := len(handler.msgs)
+	if _, err := pp.ProcessPacket(string(packet), time.Unix(2, 0)); err != nil {
+		t.Fatalf("failed to process: %v", err)
+	}
+	var epochMsg *gpsprot.NavEpochMsg
+	var epochTRead time.Time
+	for _, m := range handler.msgs[beforeCount:] {
+		if m.msgType == "navepoch" {
+			epochMsg = m.msg.(*gpsprot.NavEpochMsg)
+			epochTRead = m.tRead
+		}
+	}
+	if epochMsg == nil {
+		t.Fatal("no NavEpochMsg emitted at epoch boundary")
+	}
+	if epochMsg.Tag != Tag {
+		t.Fatalf("NavEpochMsg.Tag = %q, want %q", epochMsg.Tag, Tag)
+	}
+	if epochMsg.StartTime != time.Unix(1, 0) {
+		t.Fatalf("NavEpochMsg.StartTime = %v, want %v", epochMsg.StartTime, time.Unix(1, 0))
+	}
+	if epochTRead != time.Unix(2, 0) {
+		t.Fatalf("NavEpochMsg tRead = %v, want %v", epochTRead, time.Unix(2, 0))
 	}
 }
 

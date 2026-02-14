@@ -70,7 +70,7 @@ func (p *PacketProcessor) handleNavEpoch(nm ubxbin.NavMsg, tRead time.Time) {
 	e++ // use zero to represent invalid epoch
 	if e != p.curNavEpoch {
 		// New epoch starting - flush any pending messages from previous epoch
-		p.flushNavEpoch()
+		p.flushNavEpoch(tRead)
 		p.curNavEpoch = e
 		p.curNavEpochTStart = tRead
 		p.prevNavMsgs = p.curNavMsgs
@@ -81,8 +81,11 @@ func (p *PacketProcessor) handleNavEpoch(nm ubxbin.NavMsg, tRead time.Time) {
 	p.curNavMsgs.add(id)
 }
 
-func (p *PacketProcessor) flushNavEpoch() {
+func (p *PacketProcessor) flushNavEpoch(tRead time.Time) {
 	p.flushSats()
+	if p.curNavEpoch != 0 && p.mh != nil {
+		p.mh.NavEpoch(&gpsprot.NavEpochMsg{Tag: Tag, StartTime: p.curNavEpochTStart}, tRead)
+	}
 }
 
 // maybeFlushSats decides whether to emit a SatellitesMsg or wait for more data.
