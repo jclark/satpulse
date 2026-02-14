@@ -185,19 +185,14 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		navEpochNavVelNED(&p.curNavEpochMsg, mt)
 	case *ubxbin.NavTimeGPS:
 		time = timeNavTimeGPS(mt)
-		navEpochTimeAcc(&p.curNavEpochMsg, mt.TAcc)
 	case *ubxbin.NavTimeBDS:
 		time = timeNavTimeBDS(mt)
-		navEpochTimeAcc(&p.curNavEpochMsg, mt.TAcc)
 	case *ubxbin.NavTimeGal:
 		time = timeNavTimeGal(mt)
-		navEpochTimeAcc(&p.curNavEpochMsg, mt.TAcc)
 	case *ubxbin.NavTimeGLO:
 		time = timeNavTimeGLO(mt)
-		navEpochTimeAcc(&p.curNavEpochMsg, mt.TAcc)
 	case *ubxbin.NavTimeUTC:
 		time = timeNavTimeUTC(mt)
-		navEpochTimeAcc(&p.curNavEpochMsg, mt.TAcc)
 	case *ubxbin.NavPVT:
 		time = timeNavPVT(mt)
 		posG = posGeoNavPVT(mt)
