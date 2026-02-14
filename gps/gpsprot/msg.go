@@ -363,10 +363,11 @@ type NavEpochMsg struct {
 // opt.Val because different protocols provide different subsets. Accuracy
 // may be synthesized from multiple messages within an epoch.
 type Accuracy struct {
-	Pos         opt.Val[Length] `json:"pos,omitzero"`         // 3D position accuracy
-	Hor         opt.Val[Length] `json:"hor,omitzero"`         // horizontal position accuracy
-	Vert        opt.Val[Length] `json:"vert,omitzero"`        // vertical position accuracy
-	Speed       opt.Val[Speed]  `json:"speed,omitzero"`       // 3D speed accuracy
-	GroundSpeed opt.Val[Speed]  `json:"groundSpeed,omitzero"` // 2D ground speed accuracy
-	Course      opt.Val[Angle]  `json:"course,omitzero"`      // course/heading accuracy
+	Time        opt.Val[time.Duration] `json:"time,omitzero"`        // time accuracy
+	Pos         opt.Val[Length]        `json:"pos,omitzero"`         // 3D position accuracy
+	Hor         opt.Val[Length]        `json:"hor,omitzero"`         // horizontal position accuracy
+	Vert        opt.Val[Length]        `json:"vert,omitzero"`        // vertical position accuracy
+	Speed       opt.Val[Speed]         `json:"speed,omitzero"`       // 3D speed accuracy
+	GroundSpeed opt.Val[Speed]         `json:"groundSpeed,omitzero"` // 2D ground speed accuracy
+	Course      opt.Val[Angle]         `json:"course,omitzero"`      // course/heading accuracy
 }

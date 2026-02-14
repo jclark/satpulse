@@ -1,6 +1,8 @@
 package ubx
 
 import (
+	"time"
+
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
@@ -94,6 +96,11 @@ func navEpochNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) {
 	ne.Acc.Vert.Set(lengthMm(m.VAcc))
 	ne.Acc.Speed.Set(speedMmS(m.SAcc))
 	ne.Acc.Course.Set(angle1e5(m.HeadAcc))
+	navEpochTimeAcc(ne, m.TAcc)
+}
+
+func navEpochTimeAcc(ne *gpsprot.NavEpochMsg, tAcc uint32) {
+	ne.Acc.Time.Set(time.Duration(tAcc))
 }
 
 // Unit conversion helpers for UBX binary fields.

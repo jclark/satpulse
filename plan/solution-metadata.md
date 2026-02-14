@@ -44,12 +44,13 @@ type NavEpochMsg struct {
 // may be synthesized from multiple messages within an epoch (e.g. Quectel
 // PQTMEPE provides position accuracy separately from PQTMPVT).
 type Accuracy struct {
-	Pos         opt.Val[Length] `json:"pos,omitzero"`         // 3D position accuracy
-	Hor         opt.Val[Length] `json:"hor,omitzero"`         // horizontal position accuracy
-	Vert        opt.Val[Length] `json:"vert,omitzero"`        // vertical position accuracy
-	Speed       opt.Val[Speed]  `json:"speed,omitzero"`       // 3D speed accuracy
-	GroundSpeed opt.Val[Speed]  `json:"groundSpeed,omitzero"` // 2D ground speed accuracy
-	Course      opt.Val[Angle]  `json:"course,omitzero"`      // course/heading accuracy
+	Time        opt.Val[time.Duration] `json:"time,omitzero"`        // time accuracy
+	Pos         opt.Val[Length]        `json:"pos,omitzero"`         // 3D position accuracy
+	Hor         opt.Val[Length]        `json:"hor,omitzero"`         // horizontal position accuracy
+	Vert        opt.Val[Length]        `json:"vert,omitzero"`        // vertical position accuracy
+	Speed       opt.Val[Speed]         `json:"speed,omitzero"`       // 3D speed accuracy
+	GroundSpeed opt.Val[Speed]         `json:"groundSpeed,omitzero"` // 2D ground speed accuracy
+	Course      opt.Val[Angle]         `json:"course,omitzero"`      // course/heading accuracy
 }
 
 // DOP holds dilution of precision values for the navigation solution. Fields
@@ -387,7 +388,8 @@ Correction (`Correction`) disambiguation:
 - If NAV-SIG is unavailable but NAV-SAT is present, use the per-SV correction-used flags as a weaker fallback. NAV-SAT can identify wide-area sources (`NavSatSbasCorrUsed`, `NavSatSlasCorrUsed`, `NavSatSpartnCorrUsed`, `NavSatClasCorrUsed`), but `NavSatRtcmCorrUsed` does not distinguish base-station vs wide-area; if only RTCM is flagged, assert `CorrRTCM` without a style bit.
 
 Accuracy (`Acc`):
-- From **NAV-PVT**: `HAcc` (mm) → `Acc.Hor`, `VAcc` (mm) → `Acc.Vert`, `SAcc` (mm/s) → `Acc.Speed`, `HeadAcc` (1e-5 deg) → `Acc.Course`.
+- From **NAV-PVT**: `TAcc` (ns) → `Acc.Time`, `HAcc` (mm) → `Acc.Hor`, `VAcc` (mm) → `Acc.Vert`, `SAcc` (mm/s) → `Acc.Speed`, `HeadAcc` (1e-5 deg) → `Acc.Course`.
+- From **NAV-TIMEGPS/NAV-TIMEBDS/NAV-TIMEGAL/NAV-TIMEGLO/NAV-TIMEUTC**: `TAcc` (ns) → `Acc.Time`.
 - From **NAV-POSECEF**: `PAcc` (cm) → `Acc.Pos`.
 - From **NAV-POSLLH**: `HAcc` (mm) → `Acc.Hor`, `VAcc` (mm) → `Acc.Vert`.
 - From **NAV-VELECEF**: `SAcc` (cm/s) → `Acc.Speed`.
