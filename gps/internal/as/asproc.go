@@ -14,6 +14,11 @@ var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
 	mh gpsprot.MsgHandler
+	// Navigation epoch tracking: Allystar NAV messages contain an iTOW field
+	// that identifies which navigation solution they belong to.
+	// Invariant: curNavEpochMsg is non-nil iff curNavEpoch is non-zero.
+	curNavEpoch    uint32              // current navigation epoch (iTOW + 1 to reserve zero for "no epoch")
+	curNavEpochMsg *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
 }
 
 // NewPacketProcessor creates a new Allystar binary packet processor
@@ -28,6 +33,9 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 		return PacketFormat.MsgID([]byte(data)), err
 	}
 	msgID := m.ID().String()
+	if nm, ok := m.(asbin.NavMsg); ok {
+		p.handleNavEpoch(nm, tRead)
+	}
 	if p.dispatch(m, tRead) {
 		return msgID, nil
 	}
@@ -41,6 +49,24 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 // SetMsgHandler sets the handler for protocol-agnostic messages
 func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 	p.mh = handler
+}
+
+func (p *PacketProcessor) handleNavEpoch(nm asbin.NavMsg, tRead time.Time) {
+	e := nm.NavEpoch()
+	e++ // use zero to represent "no epoch seen"
+	if e != p.curNavEpoch {
+		p.flushNavEpoch(tRead)
+		p.curNavEpoch = e
+		p.curNavEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
+	}
+}
+
+func (p *PacketProcessor) flushNavEpoch(tRead time.Time) {
+	if p.curNavEpochMsg != nil && p.mh != nil {
+		p.curNavEpochMsg.Tag = Tag
+		p.mh.NavEpoch(p.curNavEpochMsg, tRead)
+	}
+	p.curNavEpochMsg = nil
 }
 
 func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {

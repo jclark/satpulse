@@ -27,7 +27,7 @@ func TestNavSvin(t *testing.T) {
 			packet: "F1D901310E00 A0D08220 4B000000 07C90000 0101 6F03",
 			wantID: NavSvinID,
 			wantMsg: &NavSvin{
-				ITow:       545444000,
+				NavITOW:    NavITOW{ITow: 545444000},
 				PosUsed:    75,
 				MeanStdDev: 51463,
 				Valid:      1,
@@ -39,7 +39,7 @@ func TestNavSvin(t *testing.T) {
 			packet: "F1D901310E00 90DCB820 80090000 62FB0000 0101 6CC6",
 			wantID: NavSvinID,
 			wantMsg: &NavSvin{
-				ITow:       548986000,
+				NavITOW:    NavITOW{ITow: 548986000},
 				PosUsed:    2432,
 				MeanStdDev: 64354,
 				Valid:      1,
@@ -70,7 +70,7 @@ func TestNavTimeUTC(t *testing.T) {
 		packet: "f1d9012114005755610a0000000051560b00ea07020300160d273f69",
 		wantID: NavTimeUtcID,
 		wantMsg: &NavTimeUTC{
-			ITow:      174150999,
+			NavITOW:   NavITOW{ITow: 174150999},
 			TAcc:      0,
 			Nano:      742993,
 			Year:      2026,
@@ -91,11 +91,11 @@ func TestNavPosEcef(t *testing.T) {
 		packet: "f1d90101140068d47c0ae2542df9ad1c4d24402ef7084d0200002a50",
 		wantID: NavPosEcefID,
 		wantMsg: &NavPosEcef{
-			ITow:  175953000,
-			EcefX: -114469662, // cm, approx -1145 km
-			EcefY: 609033389,  // cm, approx 6090 km
-			EcefZ: 150416960,  // cm, approx 1504 km
-			PAcc:  589,        // cm, 5.89 m
+			NavITOW: NavITOW{ITow: 175953000},
+			EcefX:   -114469662, // cm, approx -1145 km
+			EcefY:   609033389,  // cm, approx 6090 km
+			EcefZ:   150416960,  // cm, approx 1504 km
+			PAcc:    589,        // cm, 5.89 m
 		},
 	}})
 }
@@ -107,13 +107,13 @@ func TestNavPosLlh(t *testing.T) {
 		packet: "f1d901021c0068d47c0aac2afd3b7c4f2f08dc91ffff12f9ffff991200008f0d0000ac17",
 		wantID: NavPosLlhID,
 		wantMsg: &NavPosLlh{
-			ITow:   175953000,
-			Lon:    1006447276, // 1e-7 deg, 100.6447 E
-			Lat:    137318268,  // 1e-7 deg, 13.7318 N (Thailand)
-			Height: -28196,     // mm, -28.2 m (below ellipsoid, normal for SE Asia geoid)
-			HMSL:   -1774,      // mm, -1.77 m
-			HAcc:   4761,       // mm, 4.76 m
-			VAcc:   3471,       // mm, 3.47 m
+			NavITOW: NavITOW{ITow: 175953000},
+			Lon:     1006447276, // 1e-7 deg, 100.6447 E
+			Lat:     137318268,  // 1e-7 deg, 13.7318 N (Thailand)
+			Height:  -28196,     // mm, -28.2 m (below ellipsoid, normal for SE Asia geoid)
+			HMSL:    -1774,      // mm, -1.77 m
+			HAcc:    4761,       // mm, 4.76 m
+			VAcc:    3471,       // mm, 3.47 m
 		},
 	}})
 }
@@ -125,14 +125,14 @@ func TestNavDop(t *testing.T) {
 		packet: "f1d90104120068d47c0a95007e0050006700470037002d004ed2",
 		wantID: NavDopID,
 		wantMsg: &NavDop{
-			ITow: 175953000,
-			GDOP: 149, // 0.01, 1.49
-			PDOP: 126, // 0.01, 1.26
-			TDOP: 80,  // 0.01, 0.80
-			VDOP: 103, // 0.01, 1.03
-			HDOP: 71,  // 0.01, 0.71
-			NDOP: 55,  // 0.01, 0.55
-			EDOP: 45,  // 0.01, 0.45
+			NavITOW: NavITOW{ITow: 175953000},
+			GDOP:    149, // 0.01, 1.49
+			PDOP:    126, // 0.01, 1.26
+			TDOP:    80,  // 0.01, 0.80
+			VDOP:    103, // 0.01, 1.03
+			HDOP:    71,  // 0.01, 0.71
+			NDOP:    55,  // 0.01, 0.55
+			EDOP:    45,  // 0.01, 0.45
 		},
 	}})
 }
@@ -144,11 +144,11 @@ func TestNavVelEcef(t *testing.T) {
 		packet: "f1d90111140068d47c0a00000000000000000000000004000000eca5",
 		wantID: NavVelEcefID,
 		wantMsg: &NavVelEcef{
-			ITow:   175953000,
-			EcefVX: 0,
-			EcefVY: 0,
-			EcefVZ: 0,
-			SAcc:   4, // cm/s
+			NavITOW: NavITOW{ITow: 175953000},
+			EcefVX:  0,
+			EcefVY:  0,
+			EcefVZ:  0,
+			SAcc:    4, // cm/s
 		},
 	}})
 }
@@ -160,7 +160,7 @@ func TestNavVelNed(t *testing.T) {
 		packet: "f1d90112240068d47c0a0000000000000000000000000000000000000000653054000000000000000000e2b0",
 		wantID: NavVelNedID,
 		wantMsg: &NavVelNed{
-			ITow:    175953000,
+			NavITOW: NavITOW{ITow: 175953000},
 			VelN:    0,
 			VelE:    0,
 			VelD:    0,
@@ -181,8 +181,8 @@ func TestNavSVInfo(t *testing.T) {
 		wantID: NavSvInfoID,
 		wantMsg: &NavSVInfo{
 			NavSVInfoFixed: NavSVInfoFixed{
-				ITow:  174240000,
-				NumCh: 26,
+				NavITOW: NavITOW{ITow: 174240000},
+				NumCh:   26,
 			},
 			Sats: []NavSVInfoSat{
 				{Svid: 232, Flags: 14, Quality: 6, Cno: 49, Elev: 80, Azim: 158, PrRes: -27, PseudorangeRate: -218.59814, Pseudorange: 2.194486723419948e+07},
