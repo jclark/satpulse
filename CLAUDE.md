@@ -76,13 +76,6 @@ Testing:
 
 System testing on real hardware is doing using ansible in `systest/` directory.
 
-## Local environment
-
-Host abondance.lan is Debian Linux and can run without Docker.
-
-It has a u-blox ZED-F9P connected to /dev/ttyACM0.
-The PPS out is connected to pin 1 on the PHC clock of network interface enp4s0.
-
 ## Git usage
 
 - Never use `git add -A` or `git add .` - these add untracked files which may include test data or local files
@@ -95,3 +88,8 @@ System testing uses Ansible playbooks in `systest/`.
 ## Documentation style
 
 - Headings use sentence case (capitalise only the first word and proper nouns)
+
+## Connected GPS
+
+You can look at `/etc/satpulse.toml` if it exists to find device and speed of a connected GPS receiver.
+But before using it, check that `satpulsed` is not running `ps ax | grep satpulsed`.
