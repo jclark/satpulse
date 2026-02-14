@@ -339,12 +339,140 @@ Added to existing `nmea/nmea.go`; tests in existing `nmea/nmea_test.go`. Each su
 
 ### Step 6: Allystar protocol extraction
 
-New files: `as/aspv.go`, `as/aspv_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
+New files: `gps/internal/as/aspv.go`, `gps/internal/as/aspv_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
 
-- **6a: NavPosECEF** — emit `PosECEFMsg`.
-- **6b: NavPosLLH** — emit `PosGeoMsg` with all fields.
-- **6c: NavVelECEF** — emit `VelECEFMsg`.
-- **6d: NavVelNED** — emit `VelGeoMsg` with velNED, groundSpeed, speed3D, course.
+#### Extraction function pattern
+
+Extraction functions take a `*gpsprot.NavEpochMsg` pointer (for accumulating accuracy) and an `asbin` struct, and return a `gpsprot` message pointer. They set `NativeMsgID` but not `Tag` (dispatch sets `Tag`). They always return non-nil (Allystar has no validity flags on these messages — they are only emitted when the receiver has a fix). This matches the UBX pattern for simple messages (POSECEF, VELECEF, POSLLH, VELNED).
+
+Each function caches accuracy fields from the binary message into `NavEpochMsg.Acc`, following the UBX pattern where accuracy stays out of the position/velocity messages and is emitted with `NavEpochMsg` at the epoch boundary.
+
+#### Unit conversions
+
+Units verified against Allystar CYNOSURE 2.3.6 protocol specification. The units are identical to UBX for these four messages.
+
+**Position:**
+
+| asbin field | unit | gpsprot type | conversion |
+|---|---|---|---|
+| `EcefX/Y/Z int32` | cm | `Point3D` (`[3]Length`) | `Length(v) * Centimeter` |
+| `Lat/Lon int32` | 1e-7 deg | `Angle` | `Angle(v) * 100` (nanodegrees) |
+| `Height/HMSL int32` | mm | `Length` | `Length(v) * Millimeter` |
+
+**Velocity:**
+
+| asbin field | unit | gpsprot type | conversion |
+|---|---|---|---|
+| `EcefVX/VY/VZ int32` | cm/s | `[3]Speed` | `Speed(v) * CentimeterPerSecond` |
+| `VelN/VelE/VelD int32` | cm/s | `opt.Val[[3]Speed]` | `Speed(v) * CentimeterPerSecond` |
+| `Speed uint32` | cm/s | `opt.Val[Speed]` | `Speed(v) * CentimeterPerSecond` | -> `Speed3D` |
+| `GSpeed uint32` | cm/s | `opt.Val[Speed]` | `Speed(v) * CentimeterPerSecond` |
+| `Heading int32` | 1e-5 deg | `opt.Val[Angle]` | `Angle(v) * 10000` (nanodegrees) | -> `Course` |
+
+**Accuracy:**
+
+| asbin field | unit | NavEpochMsg.Acc field | conversion |
+|---|---|---|---|
+| `PAcc uint32` (POSECEF) | cm | `Pos` | `Length(v) * Centimeter` |
+| `HAcc uint32` (POSLLH) | mm | `Hor` | `Length(v) * Millimeter` |
+| `VAcc uint32` (POSLLH) | mm | `Vert` | `Length(v) * Millimeter` |
+| `SAcc uint32` (VELECEF, VELNED) | cm/s | `Speed` | `Speed(v) * CentimeterPerSecond` |
+| `CAcc uint32` (VELNED) | 1e-5 deg | `Course` | `Angle(v) * 10000` |
+
+#### Unit conversion helpers
+
+The same helper functions as UBX (`lengthCm`, `lengthMm`, `speedCmS`, `angle1e7`, `angle1e5`, etc.) are needed. These are duplicated in `aspv.go` rather than shared, since they are small, unexported, and the packages have no dependency relationship. The Allystar fields are individual `int32`/`uint32` rather than `[3]int32` arrays, so the `point3DCm` and `speed3CmS` array helpers are not needed.
+
+#### Dispatch integration
+
+The dispatch function in `asproc.go` is restructured to follow the UBX pattern: collect extracted messages into local variables, then dispatch them centrally at the bottom. This replaces the existing per-case early-return pattern. The four new cases pass `p.curNavEpochMsg` for accuracy accumulation.
+
+```go
+func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {
+	var tm *gpsprot.TimeMsg
+	var sv *gpsprot.SurveyMsg
+	var sats *gpsprot.SatellitesMsg
+	var posG *gpsprot.PosGeoMsg
+	var posE *gpsprot.PosECEFMsg
+	var velG *gpsprot.VelGeoMsg
+	var velE *gpsprot.VelECEFMsg
+	h := p.mh
+	switch mt := m.(type) {
+	case *asbin.NavPosEcef:
+		posE = posEcefNavPosEcef(p.curNavEpochMsg, mt)
+	case *asbin.NavVelEcef:
+		velE = velEcefNavVelEcef(p.curNavEpochMsg, mt)
+	case *asbin.NavPosLlh:
+		posG = posGeoNavPosLlh(p.curNavEpochMsg, mt)
+	case *asbin.NavVelNed:
+		velG = velGeoNavVelNed(p.curNavEpochMsg, mt)
+	case *asbin.NavTime:
+		tm = timeNavTime(mt)
+	case *asbin.NavTimeUTC:
+		tm = timeNavTimeUTC(mt)
+	case *asbin.NavSVInfo:
+		sats = satellitesNavSVInfo(mt)
+	case *asbin.NavSvin:
+		sv = surveyNavSvin(mt)
+	default:
+		return false
+	}
+	if tm == nil && sv == nil && sats == nil && posG == nil && posE == nil && velG == nil && velE == nil {
+		return false
+	}
+	if h != nil {
+		if sats != nil {
+			h.Satellites(sats, tRead)
+		} else if sv != nil {
+			h.Survey(sv, tRead)
+		} else if tm != nil {
+			tm.Tag = Tag
+			h.Time(tm, tRead)
+		}
+		if posG != nil {
+			posG.Tag = Tag
+			h.PosGeo(posG, tRead)
+		} else if posE != nil {
+			posE.Tag = Tag
+			h.PosECEF(posE, tRead)
+		}
+		if velG != nil {
+			velG.Tag = Tag
+			h.VelGeo(velG, tRead)
+		} else if velE != nil {
+			velE.Tag = Tag
+			h.VelECEF(velE, tRead)
+		}
+	}
+	return true
+}
+```
+
+#### Testing pattern
+
+Tests in `aspv_test.go` test extraction functions directly: construct an `asbin` struct with known values, call the extraction function, verify the `gpsprot` message fields and accuracy accumulation into `NavEpochMsg`. This matches the UBX test pattern.
+
+```go
+func TestPosEcef(t *testing.T) {
+	m := &asbin.NavPosEcef{
+		EcefX: -267173351, // cm
+		EcefY: -402753274,
+		EcefZ: 391919498,
+		PAcc:  1543,       // cm
+	}
+	var ne gpsprot.NavEpochMsg
+	got := posEcefNavPosEcef(&ne, m)
+	// Verify Pos fields and NativeMsgID
+	// Verify ne.Acc.Pos
+}
+```
+
+#### Substeps
+
+- **6a: NAV-POSECEF** — `posEcefNavPosEcef(ne *gpsprot.NavEpochMsg, m *asbin.NavPosEcef) *gpsprot.PosECEFMsg`. Fields: `EcefX/Y/Z` (cm) -> `Pos`. Accuracy: `PAcc` (cm) -> `ne.Acc.Pos`. Always returns non-nil.
+- **6b: NAV-POSLLH** — `posGeoNavPosLlh(ne *gpsprot.NavEpochMsg, m *asbin.NavPosLlh) *gpsprot.PosGeoMsg`. Fields: `Lat/Lon` (1e-7 deg) -> `LatLon`, `Height/HMSL` (mm) -> `Height/HeightMSL`. Accuracy: `HAcc` (mm) -> `ne.Acc.Hor`, `VAcc` (mm) -> `ne.Acc.Vert`. Always returns non-nil.
+- **6c: NAV-VELECEF** — `velEcefNavVelEcef(ne *gpsprot.NavEpochMsg, m *asbin.NavVelEcef) *gpsprot.VelECEFMsg`. Fields: `EcefVX/VY/VZ` (cm/s) -> `Vel`. Accuracy: `SAcc` (cm/s) -> `ne.Acc.Speed`. Always returns non-nil.
+- **6d: NAV-VELNED** — `velGeoNavVelNed(ne *gpsprot.NavEpochMsg, m *asbin.NavVelNed) *gpsprot.VelGeoMsg`. Fields: `VelN/VelE/VelD` (cm/s) -> `VelNED`, `Speed` (cm/s) -> `Speed3D`, `GSpeed` (cm/s) -> `GroundSpeed`, `Heading` (1e-5 deg) -> `Course`. Accuracy: `SAcc` (cm/s) -> `ne.Acc.Speed`, `CAcc` (1e-5 deg) -> `ne.Acc.Course`. Always returns non-nil.
 
 ### Step 7: CASIC protocol extraction
 

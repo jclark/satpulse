@@ -14,9 +14,25 @@ const (
 	NavSvinID    MsgID = clsNav | (0x31 << 8)
 )
 
+// NavMsg is implemented by NAV messages that have an iTOW field
+type NavMsg interface {
+	Msg
+	NavEpoch() uint32
+}
+
+// NavITOW is embedded in NAV messages to provide epoch tracking via iTOW
+type NavITOW struct {
+	ITow uint32 // ms, GNSS time of week
+}
+
+// NavEpoch returns the iTOW value as the epoch identifier
+func (m *NavITOW) NavEpoch() uint32 {
+	return m.ITow
+}
+
 // NAV-POSECEF (0x01 0x01)
 type NavPosEcef struct {
-	ITow  uint32 // ms, GNSS time of week
+	NavITOW
 	EcefX int32  // cm, ECEF X coordinate
 	EcefY int32  // cm, ECEF Y coordinate
 	EcefZ int32  // cm, ECEF Z coordinate
@@ -27,7 +43,7 @@ func (m *NavPosEcef) ID() MsgID { return NavPosEcefID }
 
 // NAV-POSLLH (0x01 0x02)
 type NavPosLlh struct {
-	ITow   uint32 // ms, GNSS time of week
+	NavITOW
 	Lon    int32  // 1e-7 deg, Longitude
 	Lat    int32  // 1e-7 deg, Latitude
 	Height int32  // mm, Height above ellipsoid
@@ -40,7 +56,7 @@ func (m *NavPosLlh) ID() MsgID { return NavPosLlhID }
 
 // NAV-DOP (0x01 0x04)
 type NavDop struct {
-	ITow uint32 // ms, GNSS time of week
+	NavITOW
 	GDOP uint16 // 0.01, Geometric DOP
 	PDOP uint16 // 0.01, Position DOP
 	TDOP uint16 // 0.01, Time DOP
@@ -82,11 +98,12 @@ type NavTime struct {
 	TimeErr uint32       // ns, Estimated time error
 }
 
-func (m *NavTime) ID() MsgID { return NavTimeID }
+func (m *NavTime) ID() MsgID        { return NavTimeID }
+func (m *NavTime) NavEpoch() uint32  { return m.RefTow }
 
 // NAV-VELECEF (0x01 0x11)
 type NavVelEcef struct {
-	ITow   uint32 // ms, GNSS time of week
+	NavITOW
 	EcefVX int32  // cm/s, ECEF X velocity
 	EcefVY int32  // cm/s, ECEF Y velocity
 	EcefVZ int32  // cm/s, ECEF Z velocity
@@ -97,7 +114,7 @@ func (m *NavVelEcef) ID() MsgID { return NavVelEcefID }
 
 // NAV-VELNED (0x01 0x12)
 type NavVelNed struct {
-	ITow    uint32 // ms, GNSS time of week
+	NavITOW
 	VelN    int32  // cm/s, North velocity
 	VelE    int32  // cm/s, East velocity
 	VelD    int32  // cm/s, Down velocity
@@ -112,7 +129,7 @@ func (m *NavVelNed) ID() MsgID { return NavVelNedID }
 
 // NAV-CLOCK (0x01 0x22)
 type NavClock struct {
-	ITow uint32 // ms, GNSS time of week
+	NavITOW
 	ClkB int32  // ns, Clock bias
 	ClkD int32  // ns/s, Clock drift
 	TAcc uint32 // ns, Time accuracy estimate
@@ -124,7 +141,7 @@ func (m *NavClock) ID() MsgID { return NavClockID }
 // NAV-SVIN (0x01 0x31) - Survey-in status
 // This is not in 2.3.6 protocol spec, but is in satrack 1.31 app
 type NavSvin struct {
-	ITow       uint32 // ms, GNSS time of week
+	NavITOW
 	PosUsed    uint32 // Number of position samples used
 	MeanStdDev uint32 // 0.1mm, Mean standard deviation
 	Valid      uint8  // 0=not valid, 1=valid
@@ -158,7 +175,7 @@ func (f NavTimeUTCFlags) UTCStandard() UTCStandard { return UTCStandard(f >> 4) 
 
 // NAV-TIMEUTC (0x01 0x21)
 type NavTimeUTC struct {
-	ITow      uint32          // ms, GNSS time of week
+	NavITOW
 	TAcc      uint32          // ns, Time accuracy estimate
 	Nano      int32           // ns, Nanoseconds of second (-500M to 500M)
 	Year      uint16          // Year (1999-2099)
@@ -208,7 +225,7 @@ type NavSVInfoSat struct {
 
 // NavSVInfoFixed contains the fixed header of NAV-SVINFO
 type NavSVInfoFixed struct {
-	ITow  uint32 // ms, GNSS time of week
+	NavITOW
 	NumCh uint32 // Number of channels
 }
 

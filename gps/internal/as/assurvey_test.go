@@ -18,7 +18,7 @@ func TestSurveyNavSvin(t *testing.T) {
 		{
 			name:  "in progress",
 			input: asbin.NavSvin{
-				ITow:       100000,
+				NavITOW:    asbin.NavITOW{ITow: 100000},
 				PosUsed:    60,
 				MeanStdDev: 50000, // 5000mm = 5m
 				Valid:      0,
@@ -35,7 +35,7 @@ func TestSurveyNavSvin(t *testing.T) {
 		{
 			name:  "completed valid",
 			input: asbin.NavSvin{
-				ITow:       200000,
+				NavITOW:    asbin.NavITOW{ITow: 200000},
 				PosUsed:    300,
 				MeanStdDev: 100, // 10mm
 				Valid:      1,
@@ -52,7 +52,7 @@ func TestSurveyNavSvin(t *testing.T) {
 		{
 			name:  "completed not valid",
 			input: asbin.NavSvin{
-				ITow:       300000,
+				NavITOW:    asbin.NavITOW{ITow: 300000},
 				PosUsed:    120,
 				MeanStdDev: 100000, // 10000mm = 10m (did not meet accuracy)
 				Valid:      0,
@@ -69,7 +69,7 @@ func TestSurveyNavSvin(t *testing.T) {
 		{
 			name:  "high precision accuracy",
 			input: asbin.NavSvin{
-				ITow:       400000,
+				NavITOW:    asbin.NavITOW{ITow: 400000},
 				PosUsed:    3600,
 				MeanStdDev: 25, // 2.5mm
 				Valid:      1,

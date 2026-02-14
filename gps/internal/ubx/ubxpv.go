@@ -6,21 +6,25 @@ import (
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
-func posECEFNavPosECEF(m *ubxbin.NavPosECEF) *gpsprot.PosECEFMsg {
+func posECEFNavPosECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPosECEF) *gpsprot.PosECEFMsg {
+	ne.Acc.Pos.Set(lengthCm(m.PAcc))
 	return &gpsprot.PosECEFMsg{
 		Pos:         point3DCm(m.ECEF),
 		NativeMsgID: "NAV-POSECEF",
 	}
 }
 
-func velECEFNavVelECEF(m *ubxbin.NavVelECEF) *gpsprot.VelECEFMsg {
+func velECEFNavVelECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavVelECEF) *gpsprot.VelECEFMsg {
+	ne.Acc.Speed.Set(speedCmS(m.SAcc))
 	return &gpsprot.VelECEFMsg{
 		Vel:         speed3CmS(m.ECEFV),
 		NativeMsgID: "NAV-VELECEF",
 	}
 }
 
-func posGeoNavPosLLH(m *ubxbin.NavPosLLH) *gpsprot.PosGeoMsg {
+func posGeoNavPosLLH(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPosLLH) *gpsprot.PosGeoMsg {
+	ne.Acc.Hor.Set(lengthMm(m.HAcc))
+	ne.Acc.Vert.Set(lengthMm(m.VAcc))
 	return &gpsprot.PosGeoMsg{
 		LatLon:      [2]gpsprot.Angle{angle1e7(m.Lat), angle1e7(m.Lon)},
 		Height:      lengthMmOpt(m.Height),
@@ -29,7 +33,9 @@ func posGeoNavPosLLH(m *ubxbin.NavPosLLH) *gpsprot.PosGeoMsg {
 	}
 }
 
-func velGeoNavVelNED(m *ubxbin.NavVelNED) *gpsprot.VelGeoMsg {
+func velGeoNavVelNED(ne *gpsprot.NavEpochMsg, m *ubxbin.NavVelNED) *gpsprot.VelGeoMsg {
+	ne.Acc.Speed.Set(speedCmS(m.SAcc))
+	ne.Acc.Course.Set(angle1e5(m.CAcc))
 	return &gpsprot.VelGeoMsg{
 		VelNED:      opt.Make(speed3CmS(m.VelNED)),
 		Speed3D:     speedCmSOpt(m.Speed),
@@ -43,10 +49,12 @@ func pvtFixValid(m *ubxbin.NavPVT) bool {
 	return m.FixType >= ubxbin.NavPVT2DFix && (m.Flags&ubxbin.NavPVTGNSSFixOK) != 0
 }
 
-func posGeoNavPVT(m *ubxbin.NavPVT) *gpsprot.PosGeoMsg {
+func posGeoNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) *gpsprot.PosGeoMsg {
 	if !pvtFixValid(m) || (m.Flags3&ubxbin.NavPVTInvalidLlh) != 0 {
 		return nil
 	}
+	ne.Acc.Hor.Set(lengthMm(m.HAcc))
+	ne.Acc.Vert.Set(lengthMm(m.VAcc))
 	return &gpsprot.PosGeoMsg{
 		LatLon:      [2]gpsprot.Angle{angle1e7(m.Lat), angle1e7(m.Lon)},
 		Height:      lengthMmOpt(m.Height),
@@ -55,10 +63,12 @@ func posGeoNavPVT(m *ubxbin.NavPVT) *gpsprot.PosGeoMsg {
 	}
 }
 
-func velGeoNavPVT(m *ubxbin.NavPVT) *gpsprot.VelGeoMsg {
+func velGeoNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) *gpsprot.VelGeoMsg {
 	if !pvtFixValid(m) {
 		return nil
 	}
+	ne.Acc.Speed.Set(speedMmS(m.SAcc))
+	ne.Acc.Course.Set(angle1e5(m.HeadAcc))
 	return &gpsprot.VelGeoMsg{
 		VelNED: opt.Make([3]gpsprot.Speed{
 			speedMmS(m.VelN), speedMmS(m.VelE), speedMmS(m.VelD),
@@ -67,33 +77,6 @@ func velGeoNavPVT(m *ubxbin.NavPVT) *gpsprot.VelGeoMsg {
 		Course:      angle1e5Opt(m.HeadMot),
 		NativeMsgID: "NAV-PVT",
 	}
-}
-
-// navEpoch* functions populate NavEpochMsg accuracy fields from UBX messages.
-
-func navEpochNavPosECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPosECEF) {
-	ne.Acc.Pos.Set(lengthCm(m.PAcc))
-}
-
-func navEpochNavVelECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavVelECEF) {
-	ne.Acc.Speed.Set(speedCmS(m.SAcc))
-}
-
-func navEpochNavPosLLH(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPosLLH) {
-	ne.Acc.Hor.Set(lengthMm(m.HAcc))
-	ne.Acc.Vert.Set(lengthMm(m.VAcc))
-}
-
-func navEpochNavVelNED(ne *gpsprot.NavEpochMsg, m *ubxbin.NavVelNED) {
-	ne.Acc.Speed.Set(speedCmS(m.SAcc))
-	ne.Acc.Course.Set(angle1e5(m.CAcc))
-}
-
-func navEpochNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) {
-	ne.Acc.Hor.Set(lengthMm(m.HAcc))
-	ne.Acc.Vert.Set(lengthMm(m.VAcc))
-	ne.Acc.Speed.Set(speedMmS(m.SAcc))
-	ne.Acc.Course.Set(angle1e5(m.HeadAcc))
 }
 
 // Unit conversion helpers for UBX binary fields.

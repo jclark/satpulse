@@ -87,7 +87,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 		{
 			name: "empty input",
 			input: asbin.NavSVInfo{
-				NavSVInfoFixed: asbin.NavSVInfoFixed{ITow: 1000, NumCh: 0},
+				NavSVInfoFixed: asbin.NavSVInfoFixed{NavITOW: asbin.NavITOW{ITow: 1000}, NumCh: 0},
 				Sats:           nil,
 			},
 			expect: &gpsprot.SatellitesMsg{
@@ -100,7 +100,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 		{
 			name: "filter low quality",
 			input: asbin.NavSVInfo{
-				NavSVInfoFixed: asbin.NavSVInfoFixed{ITow: 1000, NumCh: 2},
+				NavSVInfoFixed: asbin.NavSVInfoFixed{NavITOW: asbin.NavITOW{ITow: 1000}, NumCh: 2},
 				Sats: []asbin.NavSVInfoSat{
 					{Svid: 1, Quality: asbin.NavSVInfoQualitySearching, Cno: 30},
 					{Svid: 2, Quality: asbin.NavSVInfoQualityCodeLocked, Cno: 40},
@@ -123,7 +123,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 		{
 			name: "used flag",
 			input: asbin.NavSVInfo{
-				NavSVInfoFixed: asbin.NavSVInfoFixed{ITow: 1000, NumCh: 1},
+				NavSVInfoFixed: asbin.NavSVInfoFixed{NavITOW: asbin.NavITOW{ITow: 1000}, NumCh: 1},
 				Sats: []asbin.NavSVInfoSat{
 					{
 						Svid:    5,
@@ -153,7 +153,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 			name: "multi-constellation from packet capture",
 			// Real SVIDs from allystar.jsonl packet capture (2026-02-04T03:32:42Z)
 			input: asbin.NavSVInfo{
-				NavSVInfoFixed: asbin.NavSVInfoFixed{ITow: 271980000, NumCh: 4},
+				NavSVInfoFixed: asbin.NavSVInfoFixed{NavITOW: asbin.NavITOW{ITow: 271980000}, NumCh: 4},
 				Sats: []asbin.NavSVInfoSat{
 					{Svid: 8, Quality: asbin.NavSVInfoQualityCodeLocked, Cno: 36, Elev: 68, Azim: 24},    // GPS 8
 					{Svid: 309, Quality: asbin.NavSVInfoQualityCodeLocked, Cno: 50, Elev: 73, Azim: -82}, // Galileo E09
@@ -192,7 +192,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 		{
 			name: "filter invalid svid",
 			input: asbin.NavSVInfo{
-				NavSVInfoFixed: asbin.NavSVInfoFixed{ITow: 1000, NumCh: 2},
+				NavSVInfoFixed: asbin.NavSVInfoFixed{NavITOW: asbin.NavITOW{ITow: 1000}, NumCh: 2},
 				Sats: []asbin.NavSVInfoSat{
 					{Svid: 100, Quality: asbin.NavSVInfoQualityCodeLocked, Cno: 30}, // invalid range
 					{Svid: 5, Quality: asbin.NavSVInfoQualityCodeLocked, Cno: 40},   // valid GPS

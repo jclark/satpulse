@@ -16,7 +16,8 @@ func TestPosECEF(t *testing.T) {
 		ECEF: [3]int32{-267173351, -402753274, 391919498}, // cm
 		PAcc: 1543,                                        // cm
 	}
-	got := posECEFNavPosECEF(m)
+	var ne gpsprot.NavEpochMsg
+	got := posECEFNavPosECEF(&ne, m)
 	if got == nil {
 		t.Fatal("expected non-nil PosECEFMsg")
 	}
@@ -31,6 +32,10 @@ func TestPosECEF(t *testing.T) {
 	if got.NativeMsgID != "NAV-POSECEF" {
 		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-POSECEF")
 	}
+	wantPos := opt.Make(gpsprot.Length(1543) * gpsprot.Centimeter)
+	if ne.Acc.Pos != wantPos {
+		t.Errorf("Acc.Pos = %v, want %v", ne.Acc.Pos, wantPos)
+	}
 }
 
 func TestVelECEF(t *testing.T) {
@@ -38,7 +43,8 @@ func TestVelECEF(t *testing.T) {
 		ECEFV: [3]int32{-15, 23, -8}, // cm/s
 		SAcc:  5,                     // cm/s
 	}
-	got := velECEFNavVelECEF(m)
+	var ne gpsprot.NavEpochMsg
+	got := velECEFNavVelECEF(&ne, m)
 	if got == nil {
 		t.Fatal("expected non-nil VelECEFMsg")
 	}
@@ -53,6 +59,10 @@ func TestVelECEF(t *testing.T) {
 	if got.NativeMsgID != "NAV-VELECEF" {
 		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-VELECEF")
 	}
+	wantSpeed := opt.Make(gpsprot.Speed(5) * gpsprot.CentimeterPerSecond)
+	if ne.Acc.Speed != wantSpeed {
+		t.Errorf("Acc.Speed = %v, want %v", ne.Acc.Speed, wantSpeed)
+	}
 }
 
 func TestPosLLH(t *testing.T) {
@@ -64,7 +74,8 @@ func TestPosLLH(t *testing.T) {
 		HAcc:   1200,      // mm
 		VAcc:   1800,      // mm
 	}
-	got := posGeoNavPosLLH(m)
+	var ne gpsprot.NavEpochMsg
+	got := posGeoNavPosLLH(&ne, m)
 	if got == nil {
 		t.Fatal("expected non-nil PosGeoMsg")
 	}
@@ -84,6 +95,14 @@ func TestPosLLH(t *testing.T) {
 	if got.NativeMsgID != "NAV-POSLLH" {
 		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-POSLLH")
 	}
+	wantHor := opt.Make(gpsprot.Length(1200) * gpsprot.Millimeter)
+	wantVert := opt.Make(gpsprot.Length(1800) * gpsprot.Millimeter)
+	if ne.Acc.Hor != wantHor {
+		t.Errorf("Acc.Hor = %v, want %v", ne.Acc.Hor, wantHor)
+	}
+	if ne.Acc.Vert != wantVert {
+		t.Errorf("Acc.Vert = %v, want %v", ne.Acc.Vert, wantVert)
+	}
 }
 
 func TestVelNED(t *testing.T) {
@@ -95,7 +114,8 @@ func TestVelNED(t *testing.T) {
 		SAcc:    4,                   // cm/s
 		CAcc:    500000,              // 1e-5 deg (5.0 degrees)
 	}
-	got := velGeoNavVelNED(m)
+	var ne gpsprot.NavEpochMsg
+	got := velGeoNavVelNED(&ne, m)
 	if got == nil {
 		t.Fatal("expected non-nil VelGeoMsg")
 	}
@@ -122,6 +142,14 @@ func TestVelNED(t *testing.T) {
 	if got.NativeMsgID != "NAV-VELNED" {
 		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-VELNED")
 	}
+	wantSAcc := opt.Make(gpsprot.Speed(4) * gpsprot.CentimeterPerSecond)
+	wantCourse := opt.Make(gpsprot.Angle(500000) * 10000)
+	if ne.Acc.Speed != wantSAcc {
+		t.Errorf("Acc.Speed = %v, want %v", ne.Acc.Speed, wantSAcc)
+	}
+	if ne.Acc.Course != wantCourse {
+		t.Errorf("Acc.Course = %v, want %v", ne.Acc.Course, wantCourse)
+	}
 }
 
 func TestPosGeoNavPVT(t *testing.T) {
@@ -136,7 +164,8 @@ func TestPosGeoNavPVT(t *testing.T) {
 			HAcc:    1200, // mm
 			VAcc:    1800,
 		}
-		got := posGeoNavPVT(m)
+		var ne gpsprot.NavEpochMsg
+		got := posGeoNavPVT(&ne, m)
 		if got == nil {
 			t.Fatal("expected non-nil PosGeoMsg for valid 3D fix")
 		}
@@ -152,13 +181,22 @@ func TestPosGeoNavPVT(t *testing.T) {
 		if got.NativeMsgID != "NAV-PVT" {
 			t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-PVT")
 		}
+		wantHor := opt.Make(gpsprot.Length(1200) * gpsprot.Millimeter)
+		wantVert := opt.Make(gpsprot.Length(1800) * gpsprot.Millimeter)
+		if ne.Acc.Hor != wantHor {
+			t.Errorf("Acc.Hor = %v, want %v", ne.Acc.Hor, wantHor)
+		}
+		if ne.Acc.Vert != wantVert {
+			t.Errorf("Acc.Vert = %v, want %v", ne.Acc.Vert, wantVert)
+		}
 	})
 	t.Run("no_fix", func(t *testing.T) {
 		m := &ubxbin.NavPVT{
 			FixType: ubxbin.NavPVTNoFix,
 			Flags:   ubxbin.NavPVTGNSSFixOK,
 		}
-		if got := posGeoNavPVT(m); got != nil {
+		var ne gpsprot.NavEpochMsg
+		if got := posGeoNavPVT(&ne, m); got != nil {
 			t.Errorf("expected nil for no fix, got %v", got)
 		}
 	})
@@ -167,7 +205,8 @@ func TestPosGeoNavPVT(t *testing.T) {
 			FixType: ubxbin.NavPVT3DFix,
 			Flags:   0, // GNSSFixOK not set
 		}
-		if got := posGeoNavPVT(m); got != nil {
+		var ne gpsprot.NavEpochMsg
+		if got := posGeoNavPVT(&ne, m); got != nil {
 			t.Errorf("expected nil when GNSSFixOK not set, got %v", got)
 		}
 	})
@@ -177,7 +216,8 @@ func TestPosGeoNavPVT(t *testing.T) {
 			Flags:   ubxbin.NavPVTGNSSFixOK,
 			Flags3:  ubxbin.NavPVTInvalidLlh,
 		}
-		if got := posGeoNavPVT(m); got != nil {
+		var ne gpsprot.NavEpochMsg
+		if got := posGeoNavPVT(&ne, m); got != nil {
 			t.Errorf("expected nil when InvalidLlh set, got %v", got)
 		}
 	})
@@ -188,7 +228,8 @@ func TestPosGeoNavPVT(t *testing.T) {
 			Lat:     474900000,
 			Lon:     85600000,
 		}
-		got := posGeoNavPVT(m)
+		var ne gpsprot.NavEpochMsg
+		got := posGeoNavPVT(&ne, m)
 		if got == nil {
 			t.Fatal("expected non-nil PosGeoMsg for 2D fix")
 		}
@@ -208,7 +249,8 @@ func TestVelGeoNavPVT(t *testing.T) {
 			SAcc:    500,      // mm/s
 			HeadAcc: 100000,   // 1e-5 deg (1.0 degrees)
 		}
-		got := velGeoNavPVT(m)
+		var ne gpsprot.NavEpochMsg
+		got := velGeoNavPVT(&ne, m)
 		if got == nil {
 			t.Fatal("expected non-nil VelGeoMsg for valid fix")
 		}
@@ -231,13 +273,22 @@ func TestVelGeoNavPVT(t *testing.T) {
 		if got.NativeMsgID != "NAV-PVT" {
 			t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-PVT")
 		}
+		wantSpeed := opt.Make(gpsprot.Speed(500) * gpsprot.MillimeterPerSecond)
+		wantCourse := opt.Make(gpsprot.Angle(100000) * 10000)
+		if ne.Acc.Speed != wantSpeed {
+			t.Errorf("Acc.Speed = %v, want %v", ne.Acc.Speed, wantSpeed)
+		}
+		if ne.Acc.Course != wantCourse {
+			t.Errorf("Acc.Course = %v, want %v", ne.Acc.Course, wantCourse)
+		}
 	})
 	t.Run("no_fix", func(t *testing.T) {
 		m := &ubxbin.NavPVT{
 			FixType: ubxbin.NavPVTNoFix,
 			Flags:   ubxbin.NavPVTGNSSFixOK,
 		}
-		if got := velGeoNavPVT(m); got != nil {
+		var ne gpsprot.NavEpochMsg
+		if got := velGeoNavPVT(&ne, m); got != nil {
 			t.Errorf("expected nil for no fix, got %v", got)
 		}
 	})
@@ -246,102 +297,11 @@ func TestVelGeoNavPVT(t *testing.T) {
 			FixType: ubxbin.NavPVT3DFix,
 			Flags:   0,
 		}
-		if got := velGeoNavPVT(m); got != nil {
+		var ne gpsprot.NavEpochMsg
+		if got := velGeoNavPVT(&ne, m); got != nil {
 			t.Errorf("expected nil when GNSSFixOK not set, got %v", got)
 		}
 	})
-}
-
-func TestNavEpochNavPosECEF(t *testing.T) {
-	m := &ubxbin.NavPosECEF{
-		ECEF: [3]int32{-267173351, -402753274, 391919498},
-		PAcc: 1543, // cm
-	}
-	var ne gpsprot.NavEpochMsg
-	navEpochNavPosECEF(&ne, m)
-	wantPos := opt.Make(gpsprot.Length(1543) * gpsprot.Centimeter)
-	if ne.Acc.Pos != wantPos {
-		t.Errorf("Acc.Pos = %v, want %v", ne.Acc.Pos, wantPos)
-	}
-}
-
-func TestNavEpochNavVelECEF(t *testing.T) {
-	m := &ubxbin.NavVelECEF{
-		ECEFV: [3]int32{-15, 23, -8},
-		SAcc:  5, // cm/s
-	}
-	var ne gpsprot.NavEpochMsg
-	navEpochNavVelECEF(&ne, m)
-	wantSpeed := opt.Make(gpsprot.Speed(5) * gpsprot.CentimeterPerSecond)
-	if ne.Acc.Speed != wantSpeed {
-		t.Errorf("Acc.Speed = %v, want %v", ne.Acc.Speed, wantSpeed)
-	}
-}
-
-func TestNavEpochNavPosLLH(t *testing.T) {
-	m := &ubxbin.NavPosLLH{
-		Lat: 474900000, Lon: 85600000,
-		Height: 540123, HMSL: 489456,
-		HAcc: 1200, VAcc: 1800, // mm
-	}
-	var ne gpsprot.NavEpochMsg
-	navEpochNavPosLLH(&ne, m)
-	wantHor := opt.Make(gpsprot.Length(1200) * gpsprot.Millimeter)
-	wantVert := opt.Make(gpsprot.Length(1800) * gpsprot.Millimeter)
-	if ne.Acc.Hor != wantHor {
-		t.Errorf("Acc.Hor = %v, want %v", ne.Acc.Hor, wantHor)
-	}
-	if ne.Acc.Vert != wantVert {
-		t.Errorf("Acc.Vert = %v, want %v", ne.Acc.Vert, wantVert)
-	}
-}
-
-func TestNavEpochNavVelNED(t *testing.T) {
-	m := &ubxbin.NavVelNED{
-		VelNED: [3]int32{10, -5, 3}, Speed: 12, GSpeed: 11,
-		Heading: 18045000,
-		SAcc:    4,      // cm/s
-		CAcc:    500000, // 1e-5 deg
-	}
-	var ne gpsprot.NavEpochMsg
-	navEpochNavVelNED(&ne, m)
-	wantSpeed := opt.Make(gpsprot.Speed(4) * gpsprot.CentimeterPerSecond)
-	wantCourse := opt.Make(gpsprot.Angle(500000) * 10000)
-	if ne.Acc.Speed != wantSpeed {
-		t.Errorf("Acc.Speed = %v, want %v", ne.Acc.Speed, wantSpeed)
-	}
-	if ne.Acc.Course != wantCourse {
-		t.Errorf("Acc.Course = %v, want %v", ne.Acc.Course, wantCourse)
-	}
-}
-
-func TestNavEpochNavPVT(t *testing.T) {
-	m := &ubxbin.NavPVT{
-		FixType: ubxbin.NavPVT3DFix,
-		Flags:   ubxbin.NavPVTGNSSFixOK,
-		HAcc:    1200,   // mm
-		VAcc:    1800,   // mm
-		SAcc:    500,    // mm/s
-		HeadAcc: 100000, // 1e-5 deg
-	}
-	var ne gpsprot.NavEpochMsg
-	navEpochNavPVT(&ne, m)
-	wantHor := opt.Make(gpsprot.Length(1200) * gpsprot.Millimeter)
-	wantVert := opt.Make(gpsprot.Length(1800) * gpsprot.Millimeter)
-	wantSpeed := opt.Make(gpsprot.Speed(500) * gpsprot.MillimeterPerSecond)
-	wantCourse := opt.Make(gpsprot.Angle(100000) * 10000)
-	if ne.Acc.Hor != wantHor {
-		t.Errorf("Acc.Hor = %v, want %v", ne.Acc.Hor, wantHor)
-	}
-	if ne.Acc.Vert != wantVert {
-		t.Errorf("Acc.Vert = %v, want %v", ne.Acc.Vert, wantVert)
-	}
-	if ne.Acc.Speed != wantSpeed {
-		t.Errorf("Acc.Speed = %v, want %v", ne.Acc.Speed, wantSpeed)
-	}
-	if ne.Acc.Course != wantCourse {
-		t.Errorf("Acc.Course = %v, want %v", ne.Acc.Course, wantCourse)
-	}
 }
 
 const posConsistencyTolerance = 0.01 // meters
@@ -373,10 +333,11 @@ var testPVTHex = []string{
 // produce consistent ECEF positions when fed real captured data from a
 // stationary antenna.
 func TestPosConsistency(t *testing.T) {
+	var ne gpsprot.NavEpochMsg
 	var positions []geopos.ECEF
 	for _, h := range testPosECEFHex {
 		m := parseTestMsg(t, h).(*ubxbin.NavPosECEF)
-		p := posECEFNavPosECEF(m)
+		p := posECEFNavPosECEF(&ne, m)
 		positions = append(positions, geopos.ECEF{
 			float64(p.Pos[0]) / float64(gpsprot.Meter),
 			float64(p.Pos[1]) / float64(gpsprot.Meter),
@@ -385,11 +346,11 @@ func TestPosConsistency(t *testing.T) {
 	}
 	for _, h := range testPosLLHHex {
 		m := parseTestMsg(t, h).(*ubxbin.NavPosLLH)
-		positions = append(positions, llhToECEF(posGeoNavPosLLH(m)))
+		positions = append(positions, llhToECEF(posGeoNavPosLLH(&ne, m)))
 	}
 	for _, h := range testPVTHex {
 		m := parseTestMsg(t, h).(*ubxbin.NavPVT)
-		if p := posGeoNavPVT(m); p != nil {
+		if p := posGeoNavPVT(&ne, m); p != nil {
 			positions = append(positions, llhToECEF(p))
 		}
 	}
