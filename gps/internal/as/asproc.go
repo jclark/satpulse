@@ -70,34 +70,60 @@ func (p *PacketProcessor) flushNavEpoch(tRead time.Time) {
 }
 
 func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {
+	var tm *gpsprot.TimeMsg
+	var sv *gpsprot.SurveyMsg
+	var sats *gpsprot.SatellitesMsg
+	var posG *gpsprot.PosGeoMsg
+	var posE *gpsprot.PosECEFMsg
+	var velG *gpsprot.VelGeoMsg
+	var velE *gpsprot.VelECEFMsg
+	h := p.mh
 	switch mt := m.(type) {
+	case *asbin.NavPosEcef:
+		posE = posEcefNavPosEcef(p.curNavEpochMsg, mt)
+	case *asbin.NavVelEcef:
+		velE = velEcefNavVelEcef(p.curNavEpochMsg, mt)
+	case *asbin.NavPosLlh:
+		posG = posGeoNavPosLlh(p.curNavEpochMsg, mt)
+	case *asbin.NavVelNed:
+		velG = velGeoNavVelNed(p.curNavEpochMsg, mt)
 	case *asbin.NavTime:
-		tm := timeNavTime(mt)
-		if tm != nil && p.mh != nil {
-			tm.Tag = Tag
-			p.mh.Time(tm, tRead)
-		}
-		return true
+		tm = timeNavTime(mt)
 	case *asbin.NavTimeUTC:
-		tm := timeNavTimeUTC(mt)
-		if tm != nil && p.mh != nil {
-			tm.Tag = Tag
-			p.mh.Time(tm, tRead)
-		}
-		return true
+		tm = timeNavTimeUTC(mt)
 	case *asbin.NavSVInfo:
-		sats := satellitesNavSVInfo(mt)
-		if sats != nil && p.mh != nil {
-			p.mh.Satellites(sats, tRead)
-		}
-		return true
+		sats = satellitesNavSVInfo(mt)
 	case *asbin.NavSvin:
-		sv := surveyNavSvin(mt)
-		if sv != nil && p.mh != nil {
-			p.mh.Survey(sv, tRead)
-		}
-		return true
+		sv = surveyNavSvin(mt)
 	default:
 		return false
 	}
+	if tm == nil && sv == nil && sats == nil && posG == nil && posE == nil && velG == nil && velE == nil {
+		return false
+	}
+	if h != nil {
+		if sats != nil {
+			h.Satellites(sats, tRead)
+		} else if sv != nil {
+			h.Survey(sv, tRead)
+		} else if tm != nil {
+			tm.Tag = Tag
+			h.Time(tm, tRead)
+		}
+		if posG != nil {
+			posG.Tag = Tag
+			h.PosGeo(posG, tRead)
+		} else if posE != nil {
+			posE.Tag = Tag
+			h.PosECEF(posE, tRead)
+		}
+		if velG != nil {
+			velG.Tag = Tag
+			h.VelGeo(velG, tRead)
+		} else if velE != nil {
+			velE.Tag = Tag
+			h.VelECEF(velE, tRead)
+		}
+	}
+	return true
 }
