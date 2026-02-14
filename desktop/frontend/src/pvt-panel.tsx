@@ -66,10 +66,10 @@ export interface VelGeoRow {
     nativeMsgID: string;
     velNED?: [number, number, number];
     groundSpeed?: number;
-    speed?: number;
-    heading?: number;
+    speed3D?: number;
+    course?: number;
     sAcc?: number;
-    headAcc?: number;
+    cAcc?: number;
 }
 
 export interface VelECEFRow {
@@ -235,7 +235,7 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
 }
 
 // --- Velocity table ---
-// Columns: Tag | Message | NED | Ground spd | 3D spd | Spd acc | Heading | Head acc | ECEF vel
+// Columns: Tag | Message | Ground spd | 3D spd | Spd acc | Course | Course acc | NED | ECEF vel
 
 function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
     if (rows.size === 0) return <p class="text-xs text-gray-400">No velocity data</p>;
@@ -250,8 +250,8 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                     <th class={`${th}`}>Ground spd</th>
                     <th class={`${th}`}>3D spd</th>
                     <th class={`${th}`}>Spd acc</th>
-                    <th class={`${th}`}>Heading</th>
-                    <th class={`${th}`}>Head acc</th>
+                    <th class={`${th}`}>Course</th>
+                    <th class={`${th}`}>Course acc</th>
                     <th class={`${th}`}>NED</th>
                     <th class={`${th}`}>ECEF vel</th>
                 </tr>
@@ -267,10 +267,10 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                                 <td class={td}>{row.tag}</td>
                                 <td class={td}>{row.nativeMsgID}</td>
                                 <td class={td}>{row.groundSpeed != null ? <N>{fmtMs(umsToMs(row.groundSpeed), 4)}</N> : blank}</td>
-                                <td class={td}>{row.speed != null ? <N>{fmtMs(umsToMs(row.speed), 4)}</N> : blank}</td>
+                                <td class={td}>{row.speed3D != null ? <N>{fmtMs(umsToMs(row.speed3D), 4)}</N> : blank}</td>
                                 <td class={td}>{row.sAcc != null ? <N>{fmtMs(umsToMs(row.sAcc), 4)}</N> : blank}</td>
-                                <td class={td}>{row.heading != null ? <N>{fmtDeg(ndegToDeg(row.heading), 2)}</N> : blank}</td>
-                                <td class={td}>{row.headAcc != null ? <N>{fmtDeg(ndegToDeg(row.headAcc), 2)}</N> : blank}</td>
+                                <td class={td}>{row.course != null ? <N>{fmtDeg(ndegToDeg(row.course), 2)}</N> : blank}</td>
+                                <td class={td}>{row.cAcc != null ? <N>{fmtDeg(ndegToDeg(row.cAcc), 2)}</N> : blank}</td>
                                 <td class={td}>{ned}</td>
                                 <td class={td}>{blank}</td>
                             </tr>

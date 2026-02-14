@@ -338,10 +338,10 @@ export function App() {
                             nativeMsgID: msg.nativeMsgID,
                             velNED: msg.velNED,
                             groundSpeed: msg.groundSpeed,
-                            speed: msg.speed,
-                            heading: msg.heading,
+                            speed3D: msg.speed3D,
+                            course: msg.course,
                             sAcc: msg.sAcc,
-                            headAcc: msg.headAcc,
+                            cAcc: msg.cAcc,
                         } as VelGeoRow);
                         return next;
                     });
@@ -545,11 +545,11 @@ export function App() {
                     <CollapsibleSection title="Time" variant="panel" open={timeOpen} onToggle={setTimeOpen}>
                         <TimePanel msg={timeMsg} leapSecond={leapSecond} />
                     </CollapsibleSection>
-                    <CollapsibleSection title="Survey" variant="panel" open={surveyOpen} onToggle={setSurveyOpen}>
-                        <SurveyPanel msg={surveyMsg} />
-                    </CollapsibleSection>
                     <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />
+                    </CollapsibleSection>
+                    <CollapsibleSection title="Survey" variant="panel" open={surveyOpen} onToggle={setSurveyOpen}>
+                        <SurveyPanel msg={surveyMsg} />
                     </CollapsibleSection>
                 </div>
 
