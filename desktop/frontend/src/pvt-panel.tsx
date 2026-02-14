@@ -46,8 +46,6 @@ export interface PosGeoRow {
     latLon: [number, number];
     height?: number;
     heightMSL?: number;
-    hAcc?: number;
-    vAcc?: number;
 }
 
 export interface PosECEFRow {
@@ -55,7 +53,6 @@ export interface PosECEFRow {
     tag: string;
     nativeMsgID: string;
     pos: [number, number, number];
-    pAcc?: number;
 }
 
 export type PosRow = PosGeoRow | PosECEFRow;
@@ -68,8 +65,6 @@ export interface VelGeoRow {
     groundSpeed?: number;
     speed3D?: number;
     course?: number;
-    sAcc?: number;
-    cAcc?: number;
 }
 
 export interface VelECEFRow {
@@ -77,7 +72,6 @@ export interface VelECEFRow {
     tag: string;
     nativeMsgID: string;
     vel: [number, number, number];
-    sAcc?: number;
 }
 
 export type VelRow = VelGeoRow | VelECEFRow;
@@ -121,7 +115,7 @@ const td = 'pr-3 py-0.5';
 const th = 'pr-3 py-0.5 font-medium font-sans';
 
 // --- Position table ---
-// Columns: Tag | Message | Lat,Lon | H Acc | Height | Height MSL | V Acc | ECEF | P Acc
+// Columns: Tag | Message | Latitude,Longitude | Height | Height MSL | ECEF
 
 function PositionTable({rows}: {rows: Map<string, PosRow>}) {
     const [geoConv, setGeoConv] = useState<Map<string, PosGeoConverted>>(new Map());
@@ -178,13 +172,10 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
                 <tr class="text-left text-gray-500 dark:text-gray-400">
                     <th class={`${th}`}>Tag</th>
                     <th class={`${th}`}>Message</th>
-                    <th class={`${th}`}>Lat,Lon</th>
-                    <th class={`${th}`}>H Acc</th>
+                    <th class={`${th}`}>Latitude,Longitude</th>
                     <th class={`${th}`}>Height</th>
                     <th class={`${th}`}>Height MSL</th>
-                    <th class={`${th}`}>V Acc</th>
                     <th class={`${th}`}>ECEF</th>
-                    <th class={`${th}`}>P Acc</th>
                 </tr>
             </thead>
             <tbody>
@@ -200,12 +191,9 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
                                 <td class={td}>{row.tag}</td>
                                 <td class={td}>{row.nativeMsgID}</td>
                                 <td class={td}>{latLon}</td>
-                                <td class={td}>{row.hAcc != null ? <N>{fmtM(umToM(row.hAcc), 4)}</N> : blank}</td>
                                 <td class={td}>{row.height != null ? <N>{fmtM(umToM(row.height), 4)}</N> : blank}</td>
                                 <td class={td}>{row.heightMSL != null ? <N>{fmtM(umToM(row.heightMSL), 4)}</N> : blank}</td>
-                                <td class={td}>{row.vAcc != null ? <N>{fmtM(umToM(row.vAcc), 4)}</N> : blank}</td>
                                 <td class={td}>{ecef}</td>
-                                <td class={td}>{blank}</td>
                             </tr>
                         );
                     } else {
@@ -219,12 +207,9 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
                                 <td class={td}>{row.tag}</td>
                                 <td class={td}>{row.nativeMsgID}</td>
                                 <td class={td}>{latLon}</td>
-                                <td class={td}>{blank}</td>
                                 <td class={td}>{conv ? fmtM(conv.height, 4) : blank}</td>
                                 <td class={td}>{blank}</td>
-                                <td class={td}>{blank}</td>
                                 <td class={td}>{ecef}</td>
-                                <td class={td}>{row.pAcc != null ? <N>{fmtM(umToM(row.pAcc), 4)}</N> : blank}</td>
                             </tr>
                         );
                     }
@@ -235,7 +220,7 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
 }
 
 // --- Velocity table ---
-// Columns: Tag | Message | Ground spd | 3D spd | Spd acc | Course | Course acc | NED | ECEF vel
+// Columns: Tag | Message | Ground speed | Speed | Course | NED | ECEF
 
 function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
     if (rows.size === 0) return <p class="text-xs text-gray-400">No velocity data</p>;
@@ -247,13 +232,11 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                 <tr class="text-left text-gray-500 dark:text-gray-400">
                     <th class={`${th}`}>Tag</th>
                     <th class={`${th}`}>Message</th>
-                    <th class={`${th}`}>Ground spd</th>
-                    <th class={`${th}`}>3D spd</th>
-                    <th class={`${th}`}>Spd acc</th>
+                    <th class={`${th}`}>Ground speed</th>
+                    <th class={`${th}`}>Speed</th>
                     <th class={`${th}`}>Course</th>
-                    <th class={`${th}`}>Course acc</th>
                     <th class={`${th}`}>NED</th>
-                    <th class={`${th}`}>ECEF vel</th>
+                    <th class={`${th}`}>ECEF</th>
                 </tr>
             </thead>
             <tbody>
@@ -268,9 +251,7 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                                 <td class={td}>{row.nativeMsgID}</td>
                                 <td class={td}>{row.groundSpeed != null ? <N>{fmtMs(umsToMs(row.groundSpeed), 4)}</N> : blank}</td>
                                 <td class={td}>{row.speed3D != null ? <N>{fmtMs(umsToMs(row.speed3D), 4)}</N> : blank}</td>
-                                <td class={td}>{row.sAcc != null ? <N>{fmtMs(umsToMs(row.sAcc), 4)}</N> : blank}</td>
                                 <td class={td}>{row.course != null ? <N>{fmtDeg(ndegToDeg(row.course), 2)}</N> : blank}</td>
-                                <td class={td}>{row.cAcc != null ? <N>{fmtDeg(ndegToDeg(row.cAcc), 2)}</N> : blank}</td>
                                 <td class={td}>{ned}</td>
                                 <td class={td}>{blank}</td>
                             </tr>
@@ -282,8 +263,6 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                                 <td class={td}>{row.tag}</td>
                                 <td class={td}>{row.nativeMsgID}</td>
                                 <td class={td}>{blank}</td>
-                                <td class={td}>{blank}</td>
-                                <td class={td}>{row.sAcc != null ? <N>{fmtMs(umsToMs(row.sAcc), 4)}</N> : blank}</td>
                                 <td class={td}>{blank}</td>
                                 <td class={td}>{blank}</td>
                                 <td class={td}>{blank}</td>

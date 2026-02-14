@@ -306,8 +306,6 @@ export function App() {
                             latLon: msg.latLon,
                             height: msg.height,
                             heightMSL: msg.heightMSL,
-                            hAcc: msg.hAcc,
-                            vAcc: msg.vAcc,
                         } as PosGeoRow);
                         return next;
                     });
@@ -322,7 +320,6 @@ export function App() {
                             tag: msg.tag,
                             nativeMsgID: msg.nativeMsgID,
                             pos: msg.pos,
-                            pAcc: msg.pAcc,
                         } as PosECEFRow);
                         return next;
                     });
@@ -340,8 +337,6 @@ export function App() {
                             groundSpeed: msg.groundSpeed,
                             speed3D: msg.speed3D,
                             course: msg.course,
-                            sAcc: msg.sAcc,
-                            cAcc: msg.cAcc,
                         } as VelGeoRow);
                         return next;
                     });
@@ -356,7 +351,6 @@ export function App() {
                             tag: msg.tag,
                             nativeMsgID: msg.nativeMsgID,
                             vel: msg.vel,
-                            sAcc: msg.sAcc,
                         } as VelECEFRow);
                         return next;
                     });
