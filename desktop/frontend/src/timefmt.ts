@@ -49,6 +49,19 @@ function formatDateLocal(d: Date, second: string, locales?: string | string[]): 
     return {date, time};
 }
 
+// parseTAITime parses a ptime.Time string ("seconds.nanoseconds") to seconds.
+export function parseTAITime(t: string): number {
+    const dot = t.indexOf('.');
+    if (dot < 0) return parseInt(t, 10);
+    return parseInt(t.substring(0, dot), 10);
+}
+
+// taiToUTC computes a UTC ISO string from TAI seconds and a leap second offset.
+export function taiToUTC(taiSecs: number, utcOff: number): string {
+    const utcSecs = taiSecs - utcOff;
+    return new Date(utcSecs * 1000).toISOString();
+}
+
 export function formatTAI(secs: number): string {
     return formatDateTime(new Date(secs * 1000).toISOString());
 }

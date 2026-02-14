@@ -7,12 +7,12 @@ import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
 import {MonitorPanel} from './monitor-panel';
 import {LoggingPanel} from './logging-panel';
-import {TimePanel} from './time-panel';
 import {SurveyPanel} from './survey-panel';
 import {MsgFilePanel} from './msgfile-panel';
 import {PVTPanel} from './pvt-panel';
 import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeRow} from './pvt-panel';
 import {MapPanel} from './map-panel';
+import {ClockPanel} from './clock-panel';
 
 export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
 
@@ -140,10 +140,7 @@ export function App() {
     const pvtAutoExpanded = useRef(false);
     const [mapPos, setMapPos] = useState<{lat: number; lon: number} | null>(null);
     const [noFixSecs, setNoFixSecs] = useState(0);
-    // Time dedup state for TimePanel (moved from Go backend)
-    const lastTimeTAI = useRef(0);
     const [activeTab, setActiveTab] = useState<TabID>('monitor');
-    const [timeOpen, setTimeOpen] = useState(true);
     const [surveyOpen, setSurveyOpen] = useState(false);
     const surveyAutoExpanded = useRef(false);
     const [logHeight, setLogHeight] = useState(150);
@@ -271,20 +268,7 @@ export function App() {
                             return next;
                         });
                     }
-                    // Dedup for TimePanel: skip PrePulse (ref=1), deduplicate by rounded TAI second
-                    if (msg.ref === 1) break;
-                    let taiSecs = 0;
-                    if (msg.taiTime) {
-                        const dot = (msg.taiTime as string).indexOf('.');
-                        taiSecs = parseInt(dot < 0 ? msg.taiTime : (msg.taiTime as string).substring(0, dot), 10);
-                    } else if (msg.utcTime) {
-                        // Approximate: can't compute TAI without leap seconds, but we just need dedup
-                        taiSecs = Math.floor(new Date(msg.utcTime).getTime() / 1000);
-                    }
-                    if (taiSecs > 0) {
-                        if (taiSecs <= lastTimeTAI.current) break;
-                        lastTimeTAI.current = taiSecs;
-                    }
+                    if (msg.ref === 1) break; // skip PrePulse
                     setTimeMsg(msg as TimeMsg);
                     break;
                 }
@@ -367,7 +351,6 @@ export function App() {
                 setPosRows(new Map());
                 setVelRows(new Map());
                 setTimeRows(new Map());
-                lastTimeTAI.current = 0;
                 pvtAutoExpanded.current = false;
                 setMapPos(null);
                 setNoFixSecs(0);
@@ -551,11 +534,9 @@ export function App() {
                 {/* Monitor tab */}
                 <div class={`h-full overflow-y-auto ${activeTab === 'monitor' ? '' : 'hidden'}`}>
                     <div class="flex flex-wrap gap-4 p-4">
+                        <ClockPanel msg={timeMsg} leapSecond={leapSecond} />
                         <MapPanel pos={mapPos} noFixSecs={noFixSecs} />
                     </div>
-                    <CollapsibleSection title="Time" variant="panel" open={timeOpen} onToggle={setTimeOpen}>
-                        <TimePanel msg={timeMsg} leapSecond={leapSecond} />
-                    </CollapsibleSection>
                     <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />
                     </CollapsibleSection>

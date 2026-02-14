@@ -1,23 +1,10 @@
 import {h, Fragment} from 'preact';
-import {formatUTCLocal, formatTAI, formatDateTime} from './timefmt';
+import {formatUTCLocal, formatTAI, formatDateTime, parseTAITime, taiToUTC} from './timefmt';
 import type {TimeMsg, LeapSecondState} from './app';
 
 interface Props {
     msg: TimeMsg | null;
     leapSecond: LeapSecondState | null;
-}
-
-// parseTAITime parses a ptime.Time string ("seconds.nanoseconds") to seconds.
-function parseTAITime(t: string): number {
-    const dot = t.indexOf('.');
-    if (dot < 0) return parseInt(t, 10);
-    return parseInt(t.substring(0, dot), 10);
-}
-
-// taiToUTC computes a UTC ISO string from TAI seconds and a leap second offset.
-function taiToUTC(taiSecs: number, utcOff: number): string {
-    const utcSecs = taiSecs - utcOff;
-    return new Date(utcSecs * 1000).toISOString();
 }
 
 const blank = '\u2014';
