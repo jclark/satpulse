@@ -1,22 +1,25 @@
 # Enhanced metadata about navigation solution
 
+Prerequisite: [nav-epoch.md](nav-epoch.md) (adds the empty `NavEpochMsg` with `MsgHandler.NavEpoch`, emitted at UBX epoch boundaries).
+
 ## Motivation
 
 Modern GNSS receivers expose a wide variety of "fix type" and "quality" indicators across different proprietary protocols and NMEA sentences. Unfortunately, these indicators are inconsistent, overlapping, and often mix multiple conceptual dimensions into a single enum. For example, a single vendor code may conflate measurement type (code vs carrier), correction architecture (RTK vs SBAS vs PPP), ambiguity state (float vs fixed), convergence state (PPP converging vs converged), or even whether the solution is GNSS-based at all. This makes it difficult to build a clean, vendor-neutral abstraction layer that can represent solution quality consistently across devices.
 
-To address this, we introduce a structured NavEpochMsg type that models the navigation solution along a small number of orthogonal axes. Since this system is fundamentally about GNSS receivers, GNSS is the implicit baseline -- it is always present when a GNSS-based fix is available. The primary ordered axis FixQuality describes the precision class of the GNSS solution (NoFix -> Code -> CodeCorrected -> CarrierFloat -> CarrierFixed), with a special value FixQualityNotMeasured for positions not derived from any navigation solution (e.g. manual input or simulated). An AuxSrc bitmask captures additional sources that contributed to the solution (dead reckoning, INS). Additional independent enums describe correction metadata (CorrKind, a bitmask of correction assertions) and solution dimensionality (FixDim). This approach separates estimator state from raw measurement state (e.g. per-satellite tracking data) and from the low-latency time/position/velocity messages. The result is a normalized, future-proof solution metadata model that can be mapped conservatively from diverse vendor protocols while remaining semantically clean and extensible.
+This plan adds metadata fields to the existing `NavEpochMsg` to model the navigation solution along a small number of orthogonal axes. Since this system is fundamentally about GNSS receivers, GNSS is the implicit baseline -- it is always present when a GNSS-based fix is available. The primary ordered axis FixQuality describes the precision class of the GNSS solution (NoFix -> Code -> CodeCorrected -> CarrierFloat -> CarrierFixed), with a special value FixQualityNotMeasured for positions not derived from any navigation solution (e.g. manual input or simulated). An AuxSrc bitmask captures additional sources that contributed to the solution (dead reckoning, INS). Additional independent enums describe correction metadata (CorrKind, a bitmask of correction assertions) and solution dimensionality (FixDim). This approach separates estimator state from raw measurement state (e.g. per-satellite tracking data) and from the low-latency time/position/velocity messages. The result is a normalized, future-proof solution metadata model that can be mapped conservatively from diverse vendor protocols while remaining semantically clean and extensible.
 
-In addition to inconsistency, there is a practical streaming/latency constraint. The core navigation outputs -- time, position, and velocity -- must be emitted with essentially zero added latency, because downstream consumers (timing, logging, UI, control loops) often depend on them immediately when they appear. However, many receivers do not provide all "fix quality" metadata in the same message as the solution itself. Instead, the metadata is scattered across multiple protocol messages (or arrives in a different sentence within the same epoch), which means a normalized view of solution quality is inherently an aggregation problem and may only be complete once the remaining messages for that epoch have arrived (and in the worst case, not until the first message of the next epoch establishes the boundary).
+The core navigation outputs -- time, position, and velocity -- must be emitted with essentially zero added latency, because downstream consumers (timing, logging, UI, control loops) often depend on them immediately when they appear. However, many receivers do not provide all "fix quality" metadata in the same message as the solution itself. Instead, the metadata is scattered across multiple protocol messages (or arrives in a different sentence within the same epoch), which means a normalized view of solution quality is inherently an aggregation problem and may only be complete once the remaining messages for that epoch have arrived (and in the worst case, not until the first message of the next epoch establishes the boundary).
 
-NavEpochMsg is therefore designed as a synthesized message emitted at the end of a navigation epoch, summarizing the solution's classification and context without holding back the low-latency navigation results. A receiver-specific adapter can combine information from GGA/GSA/GNS (or proprietary status blocks, PPP/RTK state messages, DOP reports, etc.) and emit one NavEpochMsg when the metadata for an epoch is sufficiently known. Because these properties typically change slowly (fix transitions, correction acquisition, ambiguity resolution, PPP convergence), the epoch-end emission is acceptable and avoids contaminating the timing-critical data path, while still giving applications a coherent, vendor-neutral description of the current navigation mode and quality.
+The `NavEpochMsg` is already emitted at the end of each navigation epoch (see nav-epoch.md). This plan populates it with synthesized metadata from one or more raw receiver messages. A receiver-specific adapter can combine information from GGA/GSA/GNS (or proprietary status blocks, PPP/RTK state messages, DOP reports, etc.) and populate the `NavEpochMsg` fields when the metadata for an epoch is sufficiently known. Because these properties typically change slowly (fix transitions, correction acquisition, ambiguity resolution, PPP convergence), the epoch-end emission is acceptable and avoids contaminating the timing-critical data path, while still giving applications a coherent, vendor-neutral description of the current navigation mode and quality.
+
+Position and velocity accuracy estimates also belong in `NavEpochMsg` rather than in the individual PVT messages. While many binary protocols (UBX, Allystar) bundle accuracy with position/velocity in the same message, this is not universal. The Quectel LG290P provides accuracy in a separate PQTMEPE message (estimated position error: north, east, down, 2D, 3D) with no position or velocity data. NMEA provides no metric accuracy at all (only DOPs). Since accuracy is not always available at the time position/velocity messages are emitted, it fits naturally into the epoch-end synthesis alongside DOPs and fix quality. For protocols that do bundle accuracy, the values are simply cached and included when the epoch flushes.
 
 ## Type definitions
 
+The existing `NavEpochMsg` (which currently contains only `Tag`) is extended with metadata fields. New supporting types (`FixQuality`, `FixDim`, `CorrKind`, `AuxSrc`, `Accuracy`, `DOP`) are added to `gps/gpsprot/`.
+
 ```
-// NavEpochMsg is emitted once at the end of each navigation epoch, after
-// all time/position/velocity messages for that epoch have been dispatched.
-// It summarizes the classification and quality context of the epoch's
-// solution, synthesized from one or more raw receiver messages.
+// NavEpochMsg fields added to the existing struct (Tag already present from nav-epoch.md):
 //
 // GNSS is the implicit baseline source when FixQuality indicates a GNSS-based
 // fix. AuxSrc captures additional sources (e.g. DR/INS).
@@ -28,17 +31,37 @@ type NavEpochMsg struct {
 	Dim         FixDim      `json:"dim,omitzero"`
 	Correction  CorrKind    `json:"correction,omitzero"` // meaningful when Quality >= FixQualityCodeCorrected
 	AuxSrc      AuxSrc      `json:"auxSrc,omitzero"`
+	Acc         Accuracy    `json:"acc,omitzero"`
+	DOP         DOP         `json:"dop,omitzero"`
 	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
 	SignalsUsed  SignalSet       `json:"signalsUsed,omitzero"`
+	Tag          Tag             `json:"tag,omitzero"` // already present
+}
 
-	GDOP opt.Val[float64] `json:"gdop,omitzero"`
-	PDOP opt.Val[float64] `json:"pdop,omitzero"`
-	HDOP opt.Val[float64] `json:"hdop,omitzero"`
-	VDOP opt.Val[float64] `json:"vdop,omitzero"`
-	TDOP opt.Val[float64] `json:"tdop,omitzero"`
+// Accuracy holds estimated accuracy of the navigation solution. Fields are
+// opt.Val because different protocols provide different subsets. Accuracy
+// may be synthesized from multiple messages within an epoch (e.g. Quectel
+// PQTMEPE provides position accuracy separately from PQTMPVT).
+type Accuracy struct {
+	Pos         opt.Val[Length] `json:"pos,omitzero"`         // 3D position accuracy
+	Hor         opt.Val[Length] `json:"hor,omitzero"`         // horizontal position accuracy
+	Vert        opt.Val[Length] `json:"vert,omitzero"`        // vertical position accuracy
+	Speed       opt.Val[Speed]  `json:"speed,omitzero"`       // 3D speed accuracy
+	GroundSpeed opt.Val[Speed]  `json:"groundSpeed,omitzero"` // 2D ground speed accuracy
+	Course      opt.Val[Angle]  `json:"course,omitzero"`      // course/heading accuracy
+}
 
-	Tag          Tag             `json:"tag,omitzero"`
+// DOP holds dilution of precision values for the navigation solution. Fields
+// are opt.Val because different protocols provide different subsets. DOP may
+// be synthesized from multiple messages within an epoch (e.g. UBX-NAV-DOP
+// provides all five, while NMEA GSA provides only PDOP/HDOP/VDOP).
+type DOP struct {
+	Geom opt.Val[float64] `json:"geom,omitzero"` // geometric DOP
+	Pos  opt.Val[float64] `json:"pos,omitzero"`  // position (3D) DOP
+	Hor  opt.Val[float64] `json:"hor,omitzero"`  // horizontal DOP
+	Vert opt.Val[float64] `json:"vert,omitzero"` // vertical DOP
+	Time opt.Val[float64] `json:"time,omitzero"` // time DOP
 }
 
 // AuxSrc is a bitmask of additional data sources that contributed to the
@@ -207,6 +230,8 @@ For proprietary protocols (UBX, Unicore, etc.), the receiver must be told to out
 
 ## Protocol mapping: NMEA
 
+NMEA does not currently emit `NavEpochMsg` (nav-epoch.md only wired up UBX). This plan adds NMEA epoch detection and metadata population together.
+
 The NMEA sentences currently handled by the `nmea` package are RMC, ZDA, GSV and GSA. Of these, GGA and GSA carry solution metadata. GGA is not currently parsed for metadata (only `numSV` is extracted). GSA currently extracts only used SVIDs and GNSS; it ignores the fix mode and DOP fields.
 
 The relevant sentences and their fields are:
@@ -217,7 +242,7 @@ The relevant sentences and their fields are:
 |-------|---------|---------|
 | 5 | GPS quality indicator | AuxSrc, Quality, Correction |
 | 6 | Number of satellites in use | NumSVUsed |
-| 7 | HDOP | HDOP |
+| 7 | HDOP | DOP.Hor |
 
 GGA quality indicator mapping:
 
@@ -245,9 +270,9 @@ Notes:
 | 0 | Fix selection mode (M/A) | (not used) |
 | 1 | Fix type (1/2/3) | Dim |
 | 2-13 | Satellite IDs used | (already used for SatellitesMsg) |
-| 14 | PDOP | PDOP |
-| 15 | HDOP | HDOP |
-| 16 | VDOP | VDOP |
+| 14 | PDOP | DOP.Pos |
+| 15 | HDOP | DOP.Hor |
+| 16 | VDOP | DOP.Vert |
 | 17 | System ID (optional, NMEA 4.10+) | (already used) |
 
 GSA fix type mapping:
@@ -309,7 +334,7 @@ The changes needed are:
 
 ## UBX
 
-UBX has a clean notion of a navigation epoch via the NAV message `iTOW` field (“GPS time of week of the navigation epoch”). Most UBX NAV messages embed `iTOW`; the decoder already treats these as belonging to an epoch via `ubxbin.NavMsg` and `PacketProcessor.handleNavEpoch` in `gps/internal/ubx/ubx.go`. This makes UBX a good fit for emitting one synthesized `NavEpochMsg` per epoch in `flushNavEpoch`.
+The UBX `PacketProcessor` already emits an empty `NavEpochMsg` at each epoch boundary in `flushNavEpoch` (from nav-epoch.md). This plan populates its metadata fields.
 
 ### Inputs (epoch-keyed by `iTOW`)
 
@@ -324,7 +349,7 @@ Recommended additional input for higher fidelity:
 ### Mapping: `UBX-NAV-PVT` → `NavEpochMsg`
 
 Epoch association:
-- Use `NavMsg.NavEpoch()` (currently `NavITOW.ITOW`) to group per-epoch metadata; emit the synthesized `NavEpochMsg` when `PacketProcessor` observes the epoch change (same place it currently flushes accumulated NAV-SAT/NAV-SIG state).
+- The epoch grouping and `NavEpochMsg` emission point already exist (nav-epoch.md). Metadata is populated in `flushNavEpoch` before the existing emission call.
 
 Dimensionality (`Dim`) from `FixType`:
 
@@ -361,18 +386,26 @@ Correction (`Correction`) disambiguation:
   - if conflicting styles appear (both base-station and wide-area), leave style bits unset (but `CorrRTCM` may still be asserted if RTCM is known).
 - If NAV-SIG is unavailable but NAV-SAT is present, use the per-SV correction-used flags as a weaker fallback. NAV-SAT can identify wide-area sources (`NavSatSbasCorrUsed`, `NavSatSlasCorrUsed`, `NavSatSpartnCorrUsed`, `NavSatClasCorrUsed`), but `NavSatRtcmCorrUsed` does not distinguish base-station vs wide-area; if only RTCM is flagged, assert `CorrRTCM` without a style bit.
 
+Accuracy (`Acc`):
+- From **NAV-PVT**: `HAcc` (mm) → `Acc.Hor`, `VAcc` (mm) → `Acc.Vert`, `SAcc` (mm/s) → `Acc.Speed`, `HeadAcc` (1e-5 deg) → `Acc.Course`.
+- From **NAV-POSECEF**: `PAcc` (cm) → `Acc.Pos`.
+- From **NAV-POSLLH**: `HAcc` (mm) → `Acc.Hor`, `VAcc` (mm) → `Acc.Vert`.
+- From **NAV-VELECEF**: `SAcc` (cm/s) → `Acc.Speed`.
+- From **NAV-VELNED**: `SAcc` (cm/s) → `Acc.Speed`, `GSpeed` (cm/s) → `Acc.GroundSpeed`, `CAcc` (1e-5 deg) → `Acc.Course`.
+- When multiple sources provide the same field within an epoch, prefer NAV-PVT (highest resolution: mm/mm/s) over NAV-POSLLH/NAV-VELNED (cm/cm/s).
+
 Other fields:
 - `NumSVUsed`: from `NAV-PVT.NumSV`.
-- `PDOP`: from `NAV-PVT.PDOP` (scale 0.01) or from `NAV-DOP.PDOP` (preferred when present for consistency with the other DOPs).
-- `GDOP/HDOP/VDOP/TDOP`: from `NAV-DOP` (scale 0.01) when available.
+- `DOP.Pos`: from `NAV-PVT.PDOP` (scale 0.01) or from `NAV-DOP.PDOP` (preferred when present for consistency with the other DOPs).
+- `DOP.Geom/Hor/Vert/Time`: from `NAV-DOP` (scale 0.01) when available.
 - `NumSVTracked`, `SignalsUsed`: derive from the same per-epoch NAV-SAT/NAV-SIG accumulation used to emit `SatellitesMsg` (see `gps/internal/ubx/ubx.go` `satMsg`/`sigMsg` and `gps/internal/ubx/ubxsats.go` `satellitesCombine`), counting unique SVs and the union of signal IDs marked `Used`.
 
 ### Where this lives in code
 
-To implement the UBX mapping in the existing UBX pipeline:
+`flushNavEpoch` already emits an empty `NavEpochMsg` (nav-epoch.md). To populate it with metadata:
 1. Extend `PacketProcessor` in `gps/internal/ubx/ubx.go` with per-epoch cached pointers for `*ubxbin.NavPVT` and (optionally) `*ubxbin.NavDOP`.
 2. In `Dispatch`, cache those messages when seen (in addition to the existing `TimeMsg`/satellite handling).
-3. In `flushNavEpoch` (which currently only calls `flushSats()`), also synthesize and emit a `NavEpochMsg` using the cached messages and any accumulated NAV-SAT/NAV-SIG state, then clear the cached pointers for the next epoch.
+3. In `flushNavEpoch`, synthesize the metadata fields from the cached messages and any accumulated NAV-SAT/NAV-SIG state, populate the `NavEpochMsg`, then clear the cached pointers for the next epoch.
 
 This keeps the zero-latency time/position/velocity messages (e.g. `timeNavPVT` in `gps/internal/ubx/ubxtime.go`) separate from the epoch-end metadata synthesis, matching the design goals above.
 
@@ -381,6 +414,8 @@ This keeps the zero-latency time/position/velocity messages (e.g. `timeNavPVT` i
 When `PVTMsgMeta` is set, the UBX message configuration (`gps/internal/ubx/ubxcfgmsg.go`) enables `UBX-NAV-DOP` (GDOP/HDOP/VDOP/TDOP) and ensures `UBX-NAV-PVT` is enabled (the primary source for fix quality, carrSoln, diffSoln, numSV). NAV-SIG and NAV-SAT are already controlled by `SatsMsgFlags`.
 
 ## Unicore
+
+Unicore does not currently emit `NavEpochMsg` (nav-epoch.md only wired up UBX). This plan adds Unicore epoch detection and metadata population together.
 
 Unicore receivers expose solution metadata primarily through the BESTNAV message, which includes both position and velocity solution types as explicit enums. Unlike UBX, where fix quality must be inferred from multiple flag bits, Unicore's `pos type` field directly encodes the solution technique (code, carrier float, carrier fixed, PPP variants, INS fusion). This makes the mapping to `NavEpochMsg` straightforward from a single message. DOP values require a separate STADOP message.
 
@@ -434,6 +469,12 @@ Notes:
 - **PPP_CONVERGING (68)**: PPP solution that has not yet reached steady-state accuracy. Mapped to `FixQualityCarrierFloat` (ambiguities are float during convergence) with `CorrPPPConverging`.
 - **PPP (69)**: Converged PPP solution without ambiguity resolution. This is a carrier-phase float solution (PPP estimates ambiguities as real-valued parameters) that has reached steady-state. Mapped to `FixQualityCarrierFloat` with `CorrPPPConverged`.
 - **PPP_AR (70)** and **PPP_RTK (71)**: PPP with integer ambiguity resolution. Both achieve carrier-phase fixed precision via wide-area PPP corrections. PPP_AR uses traditional PPP-AR and maps to `CorrPPPConverged`. PPP_RTK uses additional information enabling rapid ambiguity resolution and asserts `CorrPPPRTK`.
+
+### Accuracy
+
+From **BESTNAV**: `lat sigma` (m) and `lon sigma` (m) can be combined into `Acc.Hor` (horizontal accuracy as sqrt(lat_sigma^2 + lon_sigma^2)), `hgt sigma` (m) → `Acc.Vert`, `Horspd std` (m/s) → `Acc.GroundSpeed`, `Verspd std` (m/s) contributes to `Acc.Speed` (3D speed accuracy as sqrt(horspd_std^2 + verspd_std^2)).
+
+From **BESTNAVXYZ**: `P-X/P-Y/P-Z sigma` (m) can be combined into `Acc.Pos` (3D position accuracy as sqrt(sx^2 + sy^2 + sz^2)), `V-X/V-Y/V-Z sigma` (m/s) can be combined into `Acc.Speed`.
 
 ### Other fields
 

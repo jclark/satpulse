@@ -20,11 +20,11 @@ type PacketProcessor struct {
 	// Navigation epoch tracking: UBX navigation messages (NAV-*) contain an iTOW field
 	// that identifies which navigation solution they belong to. Messages with the same
 	// iTOW are part of the same epoch and can be grouped together.
-	curNavEpoch       uint32    // Current navigation epoch (iTOW + 1 to handle zero)
-	curNavMsgs        byteSet   // NAV class message IDs seen in current epoch
-	prevNavMsgs       byteSet   // NAV class message IDs seen in previous epoch
-	curNavEpochTStart time.Time // When current epoch started
-	nEpochsSeen       int       // Number of distinct epochs seen
+	curNavEpoch    uint32              // Current navigation epoch (iTOW + 1 to handle zero)
+	curNavMsgs     byteSet             // NAV class message IDs seen in current epoch
+	prevNavMsgs    byteSet             // NAV class message IDs seen in previous epoch
+	nEpochsSeen    int                 // Number of distinct epochs seen
+	curNavEpochMsg gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
 	// Satellite message accumulation: NAV-SAT and NAV-SIG messages are combined
 	// into a single SatellitesMsg when both are available
 	satMsg      *gpsprot.SatellitesMsg
@@ -70,9 +70,9 @@ func (p *PacketProcessor) handleNavEpoch(nm ubxbin.NavMsg, tRead time.Time) {
 	e++ // use zero to represent invalid epoch
 	if e != p.curNavEpoch {
 		// New epoch starting - flush any pending messages from previous epoch
-		p.flushNavEpoch()
+		p.flushNavEpoch(tRead)
 		p.curNavEpoch = e
-		p.curNavEpochTStart = tRead
+		p.curNavEpochMsg.StartTime = tRead
 		p.prevNavMsgs = p.curNavMsgs
 		p.curNavMsgs.clear()
 		p.nEpochsSeen++
@@ -81,8 +81,14 @@ func (p *PacketProcessor) handleNavEpoch(nm ubxbin.NavMsg, tRead time.Time) {
 	p.curNavMsgs.add(id)
 }
 
-func (p *PacketProcessor) flushNavEpoch() {
+func (p *PacketProcessor) flushNavEpoch(tRead time.Time) {
 	p.flushSats()
+	if p.curNavEpoch != 0 && p.mh != nil {
+		ne := p.curNavEpochMsg
+		ne.Tag = Tag
+		p.mh.NavEpoch(&ne, tRead)
+	}
+	p.curNavEpochMsg = gpsprot.NavEpochMsg{}
 }
 
 // maybeFlushSats decides whether to emit a SatellitesMsg or wait for more data.
@@ -167,12 +173,16 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		sats = satellitesNavSVInfo(mt)
 	case *ubxbin.NavPosECEF:
 		posE = posECEFNavPosECEF(mt)
+		navEpochNavPosECEF(&p.curNavEpochMsg, mt)
 	case *ubxbin.NavVelECEF:
 		velE = velECEFNavVelECEF(mt)
+		navEpochNavVelECEF(&p.curNavEpochMsg, mt)
 	case *ubxbin.NavPosLLH:
 		posG = posGeoNavPosLLH(mt)
+		navEpochNavPosLLH(&p.curNavEpochMsg, mt)
 	case *ubxbin.NavVelNED:
 		velG = velGeoNavVelNED(mt)
+		navEpochNavVelNED(&p.curNavEpochMsg, mt)
 	case *ubxbin.NavTimeGPS:
 		time = timeNavTimeGPS(mt)
 	case *ubxbin.NavTimeBDS:
@@ -187,6 +197,7 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		time = timeNavPVT(mt)
 		posG = posGeoNavPVT(mt)
 		velG = velGeoNavPVT(mt)
+		navEpochNavPVT(&p.curNavEpochMsg, mt)
 	case *ubxbin.TimTP:
 		time = timeTimTP(mt)
 	case *ubxbin.TimTos:

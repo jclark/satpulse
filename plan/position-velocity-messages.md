@@ -39,14 +39,7 @@ Placed in `gps/gpsprot/types.go` alongside `Length` and `Angle`.
 
 ### Accuracy fields
 
-Accuracy estimates are included in the position/velocity messages as `opt.Val` fields, because every protocol that provides accuracy bundles it with the value itself. NMEA provides no metric accuracy (only DOPs in GSA), so the fields simply stay unset.
-
-- `PosGeoMsg`: `HAcc`, `VAcc` (horizontal, vertical position accuracy)
-- `PosECEFMsg`: `PAcc` (3D position accuracy)
-- `VelGeoMsg`: `SAcc` (speed accuracy), `CAcc` (course accuracy)
-- `VelECEFMsg`: `SAcc` (speed accuracy)
-
-DOPs remain in `SolutionMetaMsg` since they come from separate messages (e.g. NMEA GSA, UBX NavDOP).
+Accuracy estimates are **not** included in the position/velocity messages. They belong in `NavEpochMsg` (see `plan/solution-metadata.md`) alongside DOPs and fix quality, because not all protocols bundle accuracy with the position/velocity data. The Quectel LG290P provides accuracy in a separate PQTMEPE message, and NMEA provides no metric accuracy at all. For protocols that do bundle accuracy (UBX, Allystar), the values are cached and included when `NavEpochMsg` is emitted at the epoch boundary.
 
 ### `SolutionEngine` (future enhancement)
 
@@ -94,8 +87,6 @@ type PosGeoMsg struct {
 	LatLon    [2]Angle        `json:"latLon"`              // [lat, lon]; lat positive north, lon positive east
 	Height    opt.Val[Length]  `json:"height,omitzero"`    // above WGS-84 ellipsoid
 	HeightMSL opt.Val[Length]  `json:"heightMSL,omitzero"` // above mean sea level
-	HAcc      opt.Val[Length]  `json:"hAcc,omitzero"`      // horizontal position accuracy
-	VAcc      opt.Val[Length]  `json:"vAcc,omitzero"`      // vertical position accuracy
 	Tag         Tag    `json:"tag"`
 	NativeMsgID string `json:"nativeMsgID"`
 }
@@ -107,8 +98,7 @@ Earth-Centered, Earth-Fixed position.
 
 ```go
 type PosECEFMsg struct {
-	Pos  Point3D        `json:"pos"`            // ECEF X, Y, Z
-	PAcc opt.Val[Length] `json:"pAcc,omitzero"` // 3D position accuracy
+	Pos  Point3D `json:"pos"` // ECEF X, Y, Z
 	Tag         Tag    `json:"tag"`
 	NativeMsgID string `json:"nativeMsgID"`
 }
@@ -128,8 +118,6 @@ type VelGeoMsg struct {
 	GroundSpeed opt.Val[Speed]    `json:"groundSpeed,omitzero"` // 2D ground speed
 	Speed3D     opt.Val[Speed]    `json:"speed3D,omitzero"`     // 3D speed
 	Course      opt.Val[Angle]    `json:"course,omitzero"`      // course over ground, true north
-	SAcc        opt.Val[Speed]    `json:"sAcc,omitzero"`        // speed accuracy
-	CAcc        opt.Val[Angle]    `json:"cAcc,omitzero"`        // course accuracy
 	Tag         Tag    `json:"tag"`
 	NativeMsgID string `json:"nativeMsgID"`
 }
@@ -141,8 +129,7 @@ Velocity in the ECEF frame.
 
 ```go
 type VelECEFMsg struct {
-	Vel  [3]Speed       `json:"vel"`            // ECEF VX, VY, VZ
-	SAcc opt.Val[Speed]  `json:"sAcc,omitzero"` // speed accuracy
+	Vel  [3]Speed `json:"vel"` // ECEF VX, VY, VZ
 	Tag         Tag    `json:"tag"`
 	NativeMsgID string `json:"nativeMsgID"`
 }
@@ -227,10 +214,10 @@ Units verified against u-blox F10 SPG 6.00 interface description.
 | ubxbin field | ubxbin unit | gpsprot type | conversion |
 |---|---|---|---|
 | `ECEF [3]int32` | cm | `Point3D` (`[3]Length`) | `Length(v) * Centimeter` |
-| `PAcc uint32` | cm | `opt.Val[Length]` | `opt.Make(Length(v) * Centimeter)` |
 | `Lat/Lon int32` | 1e-7 deg | `Angle` | `Angle(v) * 100 * Nanodegrees` |
 | `Height/HMSL int32` | mm | `Length` | `Length(v) * Millimeter` |
-| `HAcc/VAcc uint32` | mm | `opt.Val[Length]` | `opt.Make(Length(v) * Millimeter)` |
+
+Accuracy fields (`PAcc`, `HAcc`, `VAcc`) are cached for `NavEpochMsg.Acc` (see `plan/solution-metadata.md`), not included in the position messages.
 
 **Velocity -- VELECEF, VELNED** (cm/s):
 
@@ -240,9 +227,9 @@ Units verified against u-blox F10 SPG 6.00 interface description.
 | `VelNED [3]int32` | cm/s | `opt.Val[[3]Speed]` | `Speed(v) * CentimeterPerSecond` |
 | `Speed uint32` | cm/s | `opt.Val[Speed]` | `Speed(v) * CentimeterPerSecond` | → `Speed3D` |
 | `GSpeed uint32` | cm/s | `opt.Val[Speed]` | `Speed(v) * CentimeterPerSecond` |
-| `SAcc uint32` | cm/s | `opt.Val[Speed]` | `opt.Make(Speed(v) * CentimeterPerSecond)` |
 | `Heading int32` | 1e-5 deg | `opt.Val[Angle]` | `Angle(v) * 10000 * Nanodegrees` | → `Course` |
-| `CAcc uint32` | 1e-5 deg | `opt.Val[Angle]` | `opt.Make(Angle(v) * 10000 * Nanodegrees)` | → `CAcc` |
+
+Accuracy fields (`SAcc`, `CAcc`) are cached for `NavEpochMsg.Acc`, not included in the velocity messages.
 
 **Velocity -- PVT** (mm/s, different from VELNED/VELECEF):
 
@@ -250,9 +237,9 @@ Units verified against u-blox F10 SPG 6.00 interface description.
 |---|---|---|---|
 | `VelN/VelE/VelD int32` | mm/s | `opt.Val[[3]Speed]` | `Speed(v) * MillimeterPerSecond` |
 | `GSpeed int32` | mm/s | `opt.Val[Speed]` | `Speed(v) * MillimeterPerSecond` |
-| `SAcc uint32` | mm/s | `opt.Val[Speed]` | `opt.Make(Speed(v) * MillimeterPerSecond)` |
 | `HeadMot int32` | 1e-5 deg | `opt.Val[Angle]` | `Angle(v) * 10000 * Nanodegrees` | → `Course` |
-| `HeadAcc uint32` | 1e-5 deg | `opt.Val[Angle]` | `opt.Make(Angle(v) * 10000 * Nanodegrees)` | → `CAcc` |
+
+Accuracy fields (`SAcc`, `HeadAcc`, `HAcc`, `VAcc`) are cached for `NavEpochMsg.Acc`.
 
 #### Dispatch pattern
 
@@ -276,7 +263,6 @@ Tests in `ubxpv_test.go` test extraction functions directly: construct a `ubxbin
 func TestPosECEF(t *testing.T) {
 	m := &ubxbin.NavPosECEF{
 		ECEF: [3]int32{-267173351, -402753274, 391919498}, // cm
-		PAcc: 1543, // cm
 	}
 	got := posECEF(m)
 	if got == nil {
@@ -291,11 +277,6 @@ func TestPosECEF(t *testing.T) {
 	if got.Pos != want {
 		t.Errorf("Pos = %v, want %v", got.Pos, want)
 	}
-	// Check PAcc
-	wantPAcc := gpsprot.Length(1543) * gpsprot.Centimeter
-	if v, ok := got.PAcc.Get(); !ok || v != wantPAcc {
-		t.Errorf("PAcc = %v, want %v", got.PAcc, wantPAcc)
-	}
 	// Check NativeMsgID
 	if got.NativeMsgID != "UBX-NAV-POSECEF" {
 		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "UBX-NAV-POSECEF")
@@ -307,11 +288,11 @@ The same pattern applies to all five substeps: construct input, call function, v
 
 #### Substeps
 
-- **4a: NAV-POSECEF** — `posECEF(*ubxbin.NavPosECEF) *gpsprot.PosECEFMsg`. Fields: `ECEF` (cm) → `Pos`, `PAcc` (cm) → `PAcc`. Always returns non-nil (no validity flags).
-- **4b: NAV-VELECEF** — `velECEF(*ubxbin.NavVelECEF) *gpsprot.VelECEFMsg`. Fields: `ECEFV` (cm/s) → `Vel`, `SAcc` (cm/s) → `SAcc`. Always returns non-nil.
-- **4c: NAV-PVT** — two functions: `posGeoNavPVT(*ubxbin.NavPVT) *gpsprot.PosGeoMsg` and `velGeoNavPVT(*ubxbin.NavPVT) *gpsprot.VelGeoMsg`. Returns nil when fix is invalid (`FixType < NavPVT2DFix` or `Flags & NavPVTGNSSFixOK == 0`). Also returns nil for position when `Flags3 & NavPVTInvalidLlh != 0`. The existing `timeNavPVT` case in Dispatch must be extended to also call these two functions and dispatch PosGeo/VelGeo alongside the TimeMsg. Position fields: `Lat/Lon` (1e-7 deg), `Height/HMSL` (mm), `HAcc/VAcc` (mm). Velocity fields (all mm/s, not cm/s): `VelN/VelE/VelD` (mm/s) → `VelNED`, `GSpeed` (mm/s) → `GroundSpeed`, `HeadMot` (1e-5 deg) → `Course`, `SAcc` (mm/s) → `SAcc`, `HeadAcc` (1e-5 deg) → `CAcc`.
-- **4d: NAV-POSLLH** — `posLLH(*ubxbin.NavPosLLH) *gpsprot.PosGeoMsg`. Fields: `Lat/Lon` (1e-7 deg), `Height/HMSL` (mm), `HAcc/VAcc` (mm). Always returns non-nil.
-- **4e: NAV-VELNED** — `velNED(*ubxbin.NavVelNED) *gpsprot.VelGeoMsg`. Fields: `VelNED` (cm/s) → `VelNED`, `Speed` (cm/s) → `Speed3D`, `GSpeed` (cm/s) → `GroundSpeed`, `Heading` (1e-5 deg) → `Course`, `SAcc` (cm/s) → `SAcc`, `CAcc` (1e-5 deg) → `CAcc`. Always returns non-nil.
+- **4a: NAV-POSECEF** — `posECEF(*ubxbin.NavPosECEF) *gpsprot.PosECEFMsg`. Fields: `ECEF` (cm) → `Pos`. Always returns non-nil (no validity flags).
+- **4b: NAV-VELECEF** — `velECEF(*ubxbin.NavVelECEF) *gpsprot.VelECEFMsg`. Fields: `ECEFV` (cm/s) → `Vel`. Always returns non-nil.
+- **4c: NAV-PVT** — two functions: `posGeoNavPVT(*ubxbin.NavPVT) *gpsprot.PosGeoMsg` and `velGeoNavPVT(*ubxbin.NavPVT) *gpsprot.VelGeoMsg`. Returns nil when fix is invalid (`FixType < NavPVT2DFix` or `Flags & NavPVTGNSSFixOK == 0`). Also returns nil for position when `Flags3 & NavPVTInvalidLlh != 0`. The existing `timeNavPVT` case in Dispatch must be extended to also call these two functions and dispatch PosGeo/VelGeo alongside the TimeMsg. Position fields: `Lat/Lon` (1e-7 deg), `Height/HMSL` (mm). Velocity fields (all mm/s, not cm/s): `VelN/VelE/VelD` (mm/s) → `VelNED`, `GSpeed` (mm/s) → `GroundSpeed`, `HeadMot` (1e-5 deg) → `Course`. Accuracy fields (`HAcc`, `VAcc`, `SAcc`, `HeadAcc`) are cached for `NavEpochMsg.Acc`.
+- **4d: NAV-POSLLH** — `posLLH(*ubxbin.NavPosLLH) *gpsprot.PosGeoMsg`. Fields: `Lat/Lon` (1e-7 deg), `Height/HMSL` (mm). Always returns non-nil. Accuracy fields (`HAcc`, `VAcc`) are cached for `NavEpochMsg.Acc`.
+- **4e: NAV-VELNED** — `velNED(*ubxbin.NavVelNED) *gpsprot.VelGeoMsg`. Fields: `VelNED` (cm/s) → `VelNED`, `Speed` (cm/s) → `Speed3D`, `GSpeed` (cm/s) → `GroundSpeed`, `Heading` (1e-5 deg) → `Course`. Always returns non-nil. Accuracy fields (`SAcc`, `CAcc`) are cached for `NavEpochMsg.Acc`.
 
 #### Cross-message position consistency test
 

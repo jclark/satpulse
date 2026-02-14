@@ -9,7 +9,6 @@ import (
 func posECEFNavPosECEF(m *ubxbin.NavPosECEF) *gpsprot.PosECEFMsg {
 	return &gpsprot.PosECEFMsg{
 		Pos:         point3DCm(m.ECEF),
-		PAcc:        opt.Make(lengthCm(m.PAcc)),
 		NativeMsgID: "NAV-POSECEF",
 	}
 }
@@ -17,7 +16,6 @@ func posECEFNavPosECEF(m *ubxbin.NavPosECEF) *gpsprot.PosECEFMsg {
 func velECEFNavVelECEF(m *ubxbin.NavVelECEF) *gpsprot.VelECEFMsg {
 	return &gpsprot.VelECEFMsg{
 		Vel:         speed3CmS(m.ECEFV),
-		SAcc:        speedCmSOpt(m.SAcc),
 		NativeMsgID: "NAV-VELECEF",
 	}
 }
@@ -27,8 +25,6 @@ func posGeoNavPosLLH(m *ubxbin.NavPosLLH) *gpsprot.PosGeoMsg {
 		LatLon:      [2]gpsprot.Angle{angle1e7(m.Lat), angle1e7(m.Lon)},
 		Height:      lengthMmOpt(m.Height),
 		HeightMSL:   lengthMmOpt(m.HMSL),
-		HAcc:        lengthMmOpt(m.HAcc),
-		VAcc:        lengthMmOpt(m.VAcc),
 		NativeMsgID: "NAV-POSLLH",
 	}
 }
@@ -39,8 +35,6 @@ func velGeoNavVelNED(m *ubxbin.NavVelNED) *gpsprot.VelGeoMsg {
 		Speed3D:     speedCmSOpt(m.Speed),
 		GroundSpeed: speedCmSOpt(m.GSpeed),
 		Course:      angle1e5Opt(m.Heading),
-		SAcc:        speedCmSOpt(m.SAcc),
-		CAcc:        angle1e5Opt(m.CAcc),
 		NativeMsgID: "NAV-VELNED",
 	}
 }
@@ -57,8 +51,6 @@ func posGeoNavPVT(m *ubxbin.NavPVT) *gpsprot.PosGeoMsg {
 		LatLon:      [2]gpsprot.Angle{angle1e7(m.Lat), angle1e7(m.Lon)},
 		Height:      lengthMmOpt(m.Height),
 		HeightMSL:   lengthMmOpt(m.HMSL),
-		HAcc:        lengthMmOpt(m.HAcc),
-		VAcc:        lengthMmOpt(m.VAcc),
 		NativeMsgID: "NAV-PVT",
 	}
 }
@@ -73,10 +65,35 @@ func velGeoNavPVT(m *ubxbin.NavPVT) *gpsprot.VelGeoMsg {
 		}),
 		GroundSpeed: opt.Make(speedMmS(m.GSpeed)),
 		Course:      angle1e5Opt(m.HeadMot),
-		SAcc:        opt.Make(speedMmS(m.SAcc)),
-		CAcc:        angle1e5Opt(m.HeadAcc),
 		NativeMsgID: "NAV-PVT",
 	}
+}
+
+// navEpoch* functions populate NavEpochMsg accuracy fields from UBX messages.
+
+func navEpochNavPosECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPosECEF) {
+	ne.Acc.Pos.Set(lengthCm(m.PAcc))
+}
+
+func navEpochNavVelECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavVelECEF) {
+	ne.Acc.Speed.Set(speedCmS(m.SAcc))
+}
+
+func navEpochNavPosLLH(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPosLLH) {
+	ne.Acc.Hor.Set(lengthMm(m.HAcc))
+	ne.Acc.Vert.Set(lengthMm(m.VAcc))
+}
+
+func navEpochNavVelNED(ne *gpsprot.NavEpochMsg, m *ubxbin.NavVelNED) {
+	ne.Acc.Speed.Set(speedCmS(m.SAcc))
+	ne.Acc.Course.Set(angle1e5(m.CAcc))
+}
+
+func navEpochNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) {
+	ne.Acc.Hor.Set(lengthMm(m.HAcc))
+	ne.Acc.Vert.Set(lengthMm(m.VAcc))
+	ne.Acc.Speed.Set(speedMmS(m.SAcc))
+	ne.Acc.Course.Set(angle1e5(m.HeadAcc))
 }
 
 // Unit conversion helpers for UBX binary fields.

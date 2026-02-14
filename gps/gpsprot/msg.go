@@ -20,6 +20,7 @@ type MsgHandler interface {
 	LeapSecond(msg *LeapSecondMsg, tRead time.Time)
 	Survey(msg *SurveyMsg, tRead time.Time)
 	Satellites(msg *SatellitesMsg, tRead time.Time)
+	NavEpoch(msg *NavEpochMsg, tRead time.Time)
 }
 
 // NativeMsgHandler handles protocol-specific messages that don't map to standard messages.
@@ -42,6 +43,7 @@ func (h *DefaultHandler) VelECEF(msg *VelECEFMsg, tRead time.Time)       {}
 func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
 func (h *DefaultHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {}
+func (h *DefaultHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time)     {}
 
 type MultiHandler struct {
 	handlers []MsgHandler
@@ -92,6 +94,12 @@ func (h *MultiHandler) VelGeo(msg *VelGeoMsg, tRead time.Time) {
 func (h *MultiHandler) VelECEF(msg *VelECEFMsg, tRead time.Time) {
 	for _, handler := range h.handlers {
 		handler.VelECEF(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.NavEpoch(msg, tRead)
 	}
 }
 
@@ -290,18 +298,15 @@ type PosGeoMsg struct {
 	LatLon      [2]Angle        `json:"latLon"`             // [lat, lon]; lat positive north, lon positive east
 	Height      opt.Val[Length] `json:"height,omitzero"`    // above WGS-84 ellipsoid
 	HeightMSL   opt.Val[Length] `json:"heightMSL,omitzero"` // above mean sea level
-	HAcc        opt.Val[Length] `json:"hAcc,omitzero"`      // horizontal position accuracy
-	VAcc        opt.Val[Length] `json:"vAcc,omitzero"`      // vertical position accuracy
 	Tag         Tag             `json:"tag"`
 	NativeMsgID string          `json:"nativeMsgID"`
 }
 
 // PosECEFMsg is an Earth-Centered, Earth-Fixed position.
 type PosECEFMsg struct {
-	Pos         Point3D         `json:"pos"`           // ECEF X, Y, Z
-	PAcc        opt.Val[Length] `json:"pAcc,omitzero"` // 3D position accuracy
-	Tag         Tag             `json:"tag"`
-	NativeMsgID string          `json:"nativeMsgID"`
+	Pos         Point3D `json:"pos"` // ECEF X, Y, Z
+	Tag         Tag     `json:"tag"`
+	NativeMsgID string  `json:"nativeMsgID"`
 }
 
 // VelGeoMsg is velocity in the local geodetic frame.
@@ -310,18 +315,15 @@ type VelGeoMsg struct {
 	GroundSpeed opt.Val[Speed]    `json:"groundSpeed,omitzero"` // 2D ground speed
 	Speed3D     opt.Val[Speed]    `json:"speed3D,omitzero"`     // 3D speed
 	Course      opt.Val[Angle]    `json:"course,omitzero"`      // course over ground, true north
-	SAcc        opt.Val[Speed]    `json:"sAcc,omitzero"`        // speed accuracy
-	CAcc        opt.Val[Angle]    `json:"cAcc,omitzero"`        // course accuracy
 	Tag         Tag               `json:"tag"`
 	NativeMsgID string            `json:"nativeMsgID"`
 }
 
 // VelECEFMsg is velocity in the ECEF frame.
 type VelECEFMsg struct {
-	Vel         [3]Speed       `json:"vel"`           // ECEF VX, VY, VZ
-	SAcc        opt.Val[Speed] `json:"sAcc,omitzero"` // speed accuracy
-	Tag         Tag            `json:"tag"`
-	NativeMsgID string         `json:"nativeMsgID"`
+	Vel         [3]Speed `json:"vel"` // ECEF VX, VY, VZ
+	Tag         Tag      `json:"tag"`
+	NativeMsgID string   `json:"nativeMsgID"`
 }
 
 type LeapSecondMsg struct {
@@ -346,4 +348,25 @@ type SurveyMsg struct {
 	ObsTime    time.Duration `json:"obsTime"`
 	Valid      bool          `json:"valid"`
 	InProgress bool          `json:"inProgress"`
+}
+
+// NavEpochMsg is emitted once at the end of each navigation epoch, after
+// all time/position/velocity messages for that epoch have been dispatched.
+// Future fields will carry solution metadata (fix quality, corrections, DOPs).
+type NavEpochMsg struct {
+	Acc       Accuracy  `json:"acc,omitzero"`
+	Tag       Tag       `json:"tag,omitzero"`
+	StartTime time.Time `json:"startTime"` // when the first message in this epoch was read
+}
+
+// Accuracy holds estimated accuracy of the navigation solution. Fields are
+// opt.Val because different protocols provide different subsets. Accuracy
+// may be synthesized from multiple messages within an epoch.
+type Accuracy struct {
+	Pos         opt.Val[Length] `json:"pos,omitzero"`         // 3D position accuracy
+	Hor         opt.Val[Length] `json:"hor,omitzero"`         // horizontal position accuracy
+	Vert        opt.Val[Length] `json:"vert,omitzero"`        // vertical position accuracy
+	Speed       opt.Val[Speed]  `json:"speed,omitzero"`       // 3D speed accuracy
+	GroundSpeed opt.Val[Speed]  `json:"groundSpeed,omitzero"` // 2D ground speed accuracy
+	Course      opt.Val[Angle]  `json:"course,omitzero"`      // course/heading accuracy
 }
