@@ -109,3 +109,39 @@ func (wgs84) ECEFtoLLH(ecef ECEF) (LLH, error) {
 func square(x float64) float64 {
 	return x * x
 }
+
+// VelNED represents velocity in the North, East, Down frame (m/s).
+type VelNED [3]float64
+
+// VelECEF represents velocity in the ECEF frame (m/s).
+type VelECEF [3]float64
+
+// NEDtoECEF converts a velocity vector from NED to ECEF frame.
+// lat and lon are the geodetic position in degrees.
+// At the poles, the NED frame orientation depends on lon;
+// callers must use the same lon for both NEDtoECEF and ECEFtoNED.
+func (wgs84) NEDtoECEF(vel VelNED, lat, lon float64) VelECEF {
+	sLat, cLat := math.Sincos(lat * radiansPerDegree)
+	sLon, cLon := math.Sincos(lon * radiansPerDegree)
+	n, e, d := vel[0], vel[1], vel[2]
+	return VelECEF{
+		-sLat*cLon*n - sLon*e - cLat*cLon*d,
+		-sLat*sLon*n + cLon*e - cLat*sLon*d,
+		cLat*n - sLat*d,
+	}
+}
+
+// ECEFtoNED converts a velocity vector from ECEF to NED frame.
+// lat and lon are the geodetic position in degrees.
+// At the poles, the NED frame orientation depends on lon;
+// callers must use the same lon for both NEDtoECEF and ECEFtoNED.
+func (wgs84) ECEFtoNED(vel VelECEF, lat, lon float64) VelNED {
+	sLat, cLat := math.Sincos(lat * radiansPerDegree)
+	sLon, cLon := math.Sincos(lon * radiansPerDegree)
+	x, y, z := vel[0], vel[1], vel[2]
+	return VelNED{
+		-sLat*cLon*x - sLat*sLon*y + cLat*z,
+		-sLon*x + cLon*y,
+		-cLat*cLon*x - cLat*sLon*y - sLat*z,
+	}
+}

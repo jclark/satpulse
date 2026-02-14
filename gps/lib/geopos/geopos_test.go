@@ -89,6 +89,110 @@ func TestCheckOnEarthInvalid(t *testing.T) {
 	}
 }
 
+// TestNEDtoECEFRoundtrip tests that NEDtoECEF and ECEFtoNED are inverses.
+func TestNEDtoECEFRoundtrip(t *testing.T) {
+	const tol = 1e-9
+	vels := []VelNED{
+		{1, 0, 0},
+		{0, 1, 0},
+		{0, 0, 1},
+		{3.5, -2.1, 0.7},
+	}
+	for _, llh := range landmarks {
+		for _, v := range vels {
+			ecef := WGS84.NEDtoECEF(v, llh.Lat, llh.Lon)
+			got := WGS84.ECEFtoNED(ecef, llh.Lat, llh.Lon)
+			for i := range 3 {
+				if math.Abs(got[i]-v[i]) > tol {
+					t.Errorf("roundtrip at %v vel %v: got %v", llh, v, got)
+					break
+				}
+			}
+		}
+	}
+}
+
+// TestNEDtoECEFKnown tests NEDtoECEF at positions where the rotation matrix simplifies.
+func TestNEDtoECEFKnown(t *testing.T) {
+	const tol = 1e-9
+	tests := []struct {
+		lat, lon float64
+		ned      VelNED
+		ecef     VelECEF
+	}{
+		// At lat=0, lon=0: N->-Z, E->+Y, D->-X
+		{0, 0, VelNED{1, 0, 0}, VelECEF{0, 0, 1}},
+		{0, 0, VelNED{0, 1, 0}, VelECEF{0, 1, 0}},
+		{0, 0, VelNED{0, 0, 1}, VelECEF{-1, 0, 0}},
+		// At lat=0, lon=90: N->-Z, E->-X, D->-Y
+		{0, 90, VelNED{1, 0, 0}, VelECEF{0, 0, 1}},
+		{0, 90, VelNED{0, 1, 0}, VelECEF{-1, 0, 0}},
+		{0, 90, VelNED{0, 0, 1}, VelECEF{0, -1, 0}},
+		// At north pole (lat=90, lon=0): N->-X, E->+Y, D->-Z
+		{90, 0, VelNED{1, 0, 0}, VelECEF{-1, 0, 0}},
+		{90, 0, VelNED{0, 1, 0}, VelECEF{0, 1, 0}},
+		{90, 0, VelNED{0, 0, 1}, VelECEF{0, 0, -1}},
+	}
+	for _, tc := range tests {
+		got := WGS84.NEDtoECEF(tc.ned, tc.lat, tc.lon)
+		for i := range 3 {
+			if math.Abs(got[i]-tc.ecef[i]) > tol {
+				t.Errorf("NEDtoECEF(%v, lat=%v, lon=%v) = %v, want %v",
+					tc.ned, tc.lat, tc.lon, got, tc.ecef)
+				break
+			}
+		}
+	}
+}
+
+// TestECEFtoNEDKnown tests ECEFtoNED at positions where the rotation matrix simplifies.
+func TestECEFtoNEDKnown(t *testing.T) {
+	const tol = 1e-9
+	tests := []struct {
+		lat, lon float64
+		ecef     VelECEF
+		ned      VelNED
+	}{
+		// At lat=0, lon=0: X->-D, Y->E, Z->N
+		{0, 0, VelECEF{1, 0, 0}, VelNED{0, 0, -1}},
+		{0, 0, VelECEF{0, 1, 0}, VelNED{0, 1, 0}},
+		{0, 0, VelECEF{0, 0, 1}, VelNED{1, 0, 0}},
+		// At north pole: X->-N, Y->E, Z->-D
+		{90, 0, VelECEF{1, 0, 0}, VelNED{-1, 0, 0}},
+		{90, 0, VelECEF{0, 1, 0}, VelNED{0, 1, 0}},
+		{90, 0, VelECEF{0, 0, 1}, VelNED{0, 0, -1}},
+	}
+	for _, tc := range tests {
+		got := WGS84.ECEFtoNED(tc.ecef, tc.lat, tc.lon)
+		for i := range 3 {
+			if math.Abs(got[i]-tc.ned[i]) > tol {
+				t.Errorf("ECEFtoNED(%v, lat=%v, lon=%v) = %v, want %v",
+					tc.ecef, tc.lat, tc.lon, got, tc.ned)
+				break
+			}
+		}
+	}
+}
+
+// TestVelPoleRoundtrip tests that round-trips work at the poles for any longitude.
+func TestVelPoleRoundtrip(t *testing.T) {
+	const tol = 1e-9
+	vel := VelNED{3.5, -2.1, 0.7}
+	for _, lat := range []float64{90, -90} {
+		for _, lon := range []float64{0, 45, 90, 180, -90} {
+			ecef := WGS84.NEDtoECEF(vel, lat, lon)
+			got := WGS84.ECEFtoNED(ecef, lat, lon)
+			for i := range 3 {
+				if math.Abs(got[i]-vel[i]) > tol {
+					t.Errorf("pole roundtrip lat=%v lon=%v: got %v, want %v",
+						lat, lon, got, vel)
+					break
+				}
+			}
+		}
+	}
+}
+
 // TestLLHtoECEF tests the LLHtoECEF function with known input and expected output.
 func TestLLHtoECEF(t *testing.T) {
 	// Test data
