@@ -3,6 +3,7 @@
 ## Architecture documents
 - [backend.md](backend.md) - Backend-frontend message architecture (event streams, API calls, responsibilities split)
 - [ui-workspace-panels.md](ui-workspace-panels.md) - Top-level workspace layout and panel model
+- [ui-monitor-tab.md](ui-monitor-tab.md) - Monitor tab layout and element overview
 - [message-semantics.md](message-semantics.md) - Message configuration flag semantics (what flags mean, how they map to ConfigOptions)
 
 ## Panel specifications
@@ -15,14 +16,20 @@ Each panel has a design section (what it does) and an implementation section (ho
 - [ui-panel-signal-view.md](ui-panel-signal-view.md) - Signal view (CN0 bar graph)
 - [ui-panel-message-file.md](ui-panel-message-file.md) - Message file panel (load, tag select, send, responses)
 
+## Planning -- to do
+Needs implementation design before work can begin:
+- [live-messages.md](live-messages.md) - Relocate to Packets tab (current plan targets Monitor tab; see [ui-monitor-tab.md](ui-monitor-tab.md))
+- [ui-monitor-tab.md](ui-monitor-tab.md) - Monitor tab layout wiring (arranging nav-summary, map, scatter, sky view, signals, survey, PVT into the tab)
+
 ## Implementation plans -- to do
 
 | Plan | Summary | Dependencies |
 |------|---------|-------------|
-| [live-messages.md](live-messages.md) | Live messages panel | layout-rework |
 | [signal-strength.md](signal-strength.md) | Signal graph | semantic-stream, layout-rework |
 | [sky-view.md](sky-view.md) | Sky view | signal-strength |
-| [monitor-layout.md](monitor-layout.md) | Monitor tab layout rework | signal-strength, sky-view, live-messages |
+| [nav-summary.md](nav-summary.md) | Navigation summary panel | position/velocity messages, NavEpochMsg |
+| [map.md](map.md) | Map panel | position/velocity messages, NavEpochMsg |
+| [position-scatter.md](position-scatter.md) | Position scatter panel | position/velocity messages, NavEpochMsg |
 | [msgfile-response.md](msgfile-response.md) | Message file response handling | msgfile-send |
 
 ## Implementation plans -- done
@@ -49,18 +56,19 @@ layout-shell -- done
 ├── semantic-stream -- done
 │   └── signal-strength
 │       └── sky-view
-│           └── monitor-layout ← also depends on live-messages
 ├── receiver-info -- done
 │   └── config-restructure -- done
 │       ├── layout-rework -- done
 │       │   ├── message-config -- done
 │       │   │   └── time-mode -- done ← also depends on config-restructure
-│       │   └── live-messages
 │       │   └── pvt-msgs-panel -- done
 │       └── dirty-tracking -- done
 ├── msgfile-send -- done ← depends on layout-rework
 │   └── msgfile-response
 ├── port-enumeration -- done
+nav-summary ← depends on position/velocity messages, NavEpochMsg
+map ← depends on position/velocity messages, NavEpochMsg
+position-scatter ← depends on position/velocity messages, NavEpochMsg
 ```
 
 ## Current state
