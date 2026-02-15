@@ -22,12 +22,10 @@ import (
 type Result struct {
 	ReceiverInfo          *gpsprot.ReceiverInfo
 	ConfigProps           *gpsprot.ConfigProps
-	LeapSecond            *gpsprot.LeapSecondMsg
 	PacketFormatsDetected []gpsprot.Tag
 }
 
 type msgHandler struct {
-	gpsprot.DefaultHandler
 	lg          *slog.Logger
 	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
 	configProts []gpsprot.ConfigProtocol
@@ -35,7 +33,6 @@ type msgHandler struct {
 	msgCount    map[gpsprot.Tag]int
 	bad         badCount
 	msgIDs      map[gpsprot.Tag]map[string]bool
-	leapSecond  *gpsprot.LeapSecondMsg
 }
 
 type badCount struct {
@@ -96,8 +93,7 @@ func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.
 	mh.configProts = configProts
 	mh.msgCount = map[gpsprot.Tag]int{}
 	mh.msgIDs = map[gpsprot.Tag]map[string]bool{}
-	for tag, pp := range packetProcs {
-		pp.SetMsgHandler(mh)
+	for tag := range packetProcs {
 		mh.msgCount[tag] = 0
 		mh.msgIDs[tag] = map[string]bool{}
 	}
@@ -107,10 +103,6 @@ func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.Re
 	lg := mh.lg
 	if cfgProps != nil {
 		lg.Info("GPS configuration", "cfg", cfgProps)
-	}
-	if mh.leapSecond != nil {
-		lsdStr := mh.leapSecond.Date().Format("2006-01-02")
-		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", mh.leapSecond.UTCOffBefore, "utcOffAfter", mh.leapSecond.UTCOffAfter)
 	}
 	if rcvrInfo != nil {
 		lg.Info("GPS receiver", "vendor", rcvrInfo.Vendor, "hardware", rcvrInfo.Hardware,
@@ -124,7 +116,6 @@ func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.Re
 	return &Result{
 		ReceiverInfo:          rcvrInfo,
 		ConfigProps:           cfgProps,
-		LeapSecond:            mh.leapSecond,
 		PacketFormatsDetected: mh.packetFormatsDetected(),
 	}
 }
@@ -133,7 +124,6 @@ func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.Re
 func (mh *msgHandler) noProbeResult() *Result {
 	return &Result{
 		ConfigProps:           new(gpsprot.ConfigProps),
-		LeapSecond:            mh.leapSecond,
 		PacketFormatsDetected: mh.packetFormatsDetected(),
 	}
 }
@@ -571,10 +561,6 @@ func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead ti
 		nmeaLog(mh.lg, msg.(*nmea.Sentence))
 	}
 	return nil
-}
-
-func (mh *msgHandler) LeapSecond(ls *gpsprot.LeapSecondMsg, _ time.Time) {
-	mh.leapSecond = ls
 }
 
 // Some number of unparseable bytes is normal.

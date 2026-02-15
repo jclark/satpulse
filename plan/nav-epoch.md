@@ -4,7 +4,7 @@
 
 Navigation solutions arrive as groups of messages sharing a common epoch (e.g. the same iTOW in UBX). Downstream consumers currently have no way to know when all messages for a given epoch have been dispatched. An explicit epoch-boundary marker enables consumers to batch per-epoch processing and, in a future step, will carry solution metadata (fix quality, corrections, DOPs) synthesized from multiple messages within the epoch.
 
-This plan adds an empty `NavEpochMsg` that marks the end of a navigation epoch. It contains only the `Tag` field (identifying the protocol). Metadata fields from the [solution-metadata plan](solution-metadata.md) will be added later.
+This plan adds an empty `NavEpochMsg` that marks the end of a navigation epoch. It contains only the `Tag` field (identifying the protocol). Metadata fields from the [solution-metadata plan](solution-metadata.md) will be added later. Cross-protocol epoch coordination (merging metadata from binary + NMEA protocols) is handled by the [multi-prot-nav-epoch plan](multi-prot-nav-epoch.md).
 
 ## Type definition
 

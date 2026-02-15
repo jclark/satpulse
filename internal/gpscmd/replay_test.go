@@ -230,9 +230,7 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 
 func (r *replayer) run() {
 	// Initialize packet processors like gpscfg does
-	for _, pp := range r.packetProcs {
-		pp.SetMsgHandler(r)
-	}
+	gpsprot.SetAllMsgHandlers(r.packetProcs, r)
 
 	// Set up MultiNativeMsgHandler to fan out to all protocols during probing
 	handlers := make([]gpsprot.NativeMsgHandler, len(r.configProts))
