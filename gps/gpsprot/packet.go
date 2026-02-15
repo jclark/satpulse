@@ -80,7 +80,10 @@ func IsValidPacket(pf PacketFormat, buf []byte) bool {
 	return pf.IsFinal(state)
 }
 
-// PacketProcessor processes packets of a specific protocol
+// PacketProcessor processes packets of a specific protocol.
+//
+// Callers must call SetMsgHandler with a non-nil handler before
+// calling ProcessPacket or Idle.
 type PacketProcessor interface {
 	// ProcessPacket processes a packet's data and returns a string with the type of the packet and an error
 	ProcessPacket(data string, tRead time.Time) (string, error)
@@ -121,9 +124,8 @@ func (p *DefaultPacketProcessor) Idle(tRead time.Time) {
 	// Intentionally empty
 }
 
-// SetMsgHandler does nothing in the default implementation
+// SetMsgHandler does nothing in the default implementation.
 func (p *DefaultPacketProcessor) SetMsgHandler(handler MsgHandler) {
-	// Intentionally empty
 }
 
 // SetNativeMsgHandler sets the native message handler
@@ -139,6 +141,13 @@ func (p *DefaultPacketProcessor) GetNativeMsgHandler() NativeMsgHandler {
 // NativeOnly returns false by default since most protocols provide timing/positioning
 func (p *DefaultPacketProcessor) NativeOnly() bool {
 	return false
+}
+
+// SetAllMsgHandlers sets handler on every PacketProcessor in the map.
+func SetAllMsgHandlers(pps map[Tag]PacketProcessor, handler MsgHandler) {
+	for _, pp := range pps {
+		pp.SetMsgHandler(handler)
+	}
 }
 
 type NMEAPacketProcessor interface {

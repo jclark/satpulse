@@ -183,6 +183,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if err != nil {
 		return err
 	}
+	// Install a MsgHandler to capture leap second during configuration
+	var lsc leapSecondCapture
+	gpsprot.SetAllMsgHandlers(pktProcs, &lsc)
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
@@ -192,6 +195,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(), gct, pCh, conn)
+	lsc.logLeapSecond(lg)
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoProbeResponse) {
 			lg.Info(err.Error())
@@ -273,7 +277,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
-	ls := gcfg.LeapSecond
+	ls := lsc.msg
 	wg.Go(func() {
 		if ls != nil {
 			d.LeapSecond(ls, time.Time{})
@@ -387,6 +391,24 @@ func startBcast[T any](ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	b := bcast.New(msg)
 	wg.Go(func() { b.Run(ctx, lg) })
 	return b
+}
+
+// leapSecondCapture is a MsgHandler that captures leap second messages
+// received during GPS configuration.
+type leapSecondCapture struct {
+	gpsprot.DefaultHandler
+	msg *gpsprot.LeapSecondMsg
+}
+
+func (h *leapSecondCapture) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
+	h.msg = msg
+}
+
+func (h *leapSecondCapture) logLeapSecond(lg *slog.Logger) {
+	if h.msg != nil {
+		lsdStr := h.msg.Date().Format("2006-01-02")
+		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", h.msg.UTCOffBefore, "utcOffAfter", h.msg.UTCOffAfter)
+	}
 }
 
 func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, timePulseEnabled bool) (*gpsprot.ConfigTarget, error) {
