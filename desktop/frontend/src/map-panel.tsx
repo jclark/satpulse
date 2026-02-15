@@ -29,11 +29,15 @@ export function MapPanel({pos, noFixSecs}: MapPanelProps) {
         if (!pos) return null;
         const {tileX, tileY, pixelX, pixelY} = latLonToTile(pos.lat, pos.lon, ZOOM);
         // 2x2 tile grid (512x512) cropped to 256x256 viewport centered on the dot.
-        // The dot's tile is always top-left; adjacent tiles fill the rest.
-        // Position the grid so the dot pixel (pixelX, pixelY) maps to viewport center.
-        const gridLeft = HALF - pixelX;
-        const gridTop = HALF - pixelY;
-        return {tileX, tileY, gridLeft, gridTop};
+        // Pick which 2x2 block to use based on which half of the tile the dot is in,
+        // so the viewport never extends beyond the grid edges.
+        const baseX = pixelX >= HALF ? tileX : tileX - 1;
+        const baseY = pixelY >= HALF ? tileY : tileY - 1;
+        const dotGridX = pixelX >= HALF ? pixelX : pixelX + 256;
+        const dotGridY = pixelY >= HALF ? pixelY : pixelY + 256;
+        const gridLeft = HALF - dotGridX;
+        const gridTop = HALF - dotGridY;
+        return {baseX, baseY, gridLeft, gridTop};
     }, [pos?.lat, pos?.lon]);
 
     const openGoogleMaps = () => {
@@ -76,8 +80,8 @@ export function MapPanel({pos, noFixSecs}: MapPanelProps) {
                     {[0, 1].map(dy =>
                         [0, 1].map(dx => (
                             <img
-                                key={`${tileInfo.tileX + dx},${tileInfo.tileY + dy}`}
-                                src={`https://tile.openstreetmap.org/${ZOOM}/${tileInfo.tileX + dx}/${tileInfo.tileY + dy}.png`}
+                                key={`${tileInfo.baseX + dx},${tileInfo.baseY + dy}`}
+                                src={`https://tile.openstreetmap.org/${ZOOM}/${tileInfo.baseX + dx}/${tileInfo.baseY + dy}.png`}
                                 style={{
                                     position: 'absolute',
                                     left: dx * 256 + 'px',
