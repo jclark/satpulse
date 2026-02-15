@@ -139,6 +139,7 @@ export function App() {
     const [pvtOpen, setPvtOpen] = useState(false);
     const pvtAutoExpanded = useRef(false);
     const [mapPos, setMapPos] = useState<{lat: number; lon: number} | null>(null);
+    const [mapCourse, setMapCourse] = useState<{course: number; groundSpeed: number} | null>(null);
     const [noFixSecs, setNoFixSecs] = useState(0);
     const [activeTab, setActiveTab] = useState<TabID>('monitor');
     const [surveyOpen, setSurveyOpen] = useState(false);
@@ -356,6 +357,7 @@ export function App() {
                 setTimeRows(new Map());
                 pvtAutoExpanded.current = false;
                 setMapPos(null);
+                setMapCourse(null);
                 setNoFixSecs(0);
             }
         });
@@ -368,6 +370,11 @@ export function App() {
                 setNoFixSecs(0);
             } else {
                 setNoFixSecs(prev => prev + 1);
+            }
+            if (nav.vel && nav.vel.groundSpeed != null && nav.vel.course != null) {
+                setMapCourse({course: nav.vel.course, groundSpeed: nav.vel.groundSpeed});
+            } else {
+                setMapCourse(null);
             }
         });
         const offMsgSend = EventsOn('gps:msgsend', (evt: MsgSendEvent) => {
@@ -542,7 +549,7 @@ export function App() {
                 <div class={`h-full overflow-y-auto ${activeTab === 'monitor' ? '' : 'hidden'}`}>
                     <div class="flex flex-wrap gap-4 p-4">
                         <ClockPanel msg={timeMsg} leapSecond={leapSecond} />
-                        <MapPanel pos={mapPos} noFixSecs={noFixSecs} />
+                        <MapPanel pos={mapPos} course={mapCourse} noFixSecs={noFixSecs} />
                     </div>
                     <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />

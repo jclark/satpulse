@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -950,6 +951,11 @@ func (h *msgHandler) buildEpochPVT() EpochPVT {
 		}
 		if g.Speed3D.IsSet() {
 			v := g.Speed3D.Get().MetersPerSecond()
+			vel.Speed3D = &v
+		} else if g.VelNED.IsSet() {
+			ned := g.VelNED.Get()
+			n, e, d := ned[0].MetersPerSecond(), ned[1].MetersPerSecond(), ned[2].MetersPerSecond()
+			v := math.Sqrt(n*n + e*e + d*d)
 			vel.Speed3D = &v
 		}
 		if g.Course.IsSet() {

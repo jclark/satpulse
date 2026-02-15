@@ -1,43 +1,58 @@
 import {h} from 'preact';
-import {useMemo} from 'preact/hooks';
+import {useMemo, useRef} from 'preact/hooks';
 import {BrowserOpenURL} from '../wailsjs/runtime/runtime';
 
 interface MapPanelProps {
     pos: {lat: number; lon: number} | null;
+    course: {course: number; groundSpeed: number} | null;
     noFixSecs: number;
 }
 
-// Standard OSM slippy map tile math.
-function latLonToTile(lat: number, lon: number, zoom: number) {
+// Convert lat/lon to global pixel coordinates at the given zoom level.
+function latLonToPixel(lat: number, lon: number, zoom: number): {x: number; y: number} {
     const n = 1 << zoom;
     const latRad = (lat * Math.PI) / 180;
-    const xFloat = ((lon + 180) / 360) * n;
-    const yFloat = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n;
-    const tileX = Math.floor(xFloat);
-    const tileY = Math.floor(yFloat);
-    const pixelX = Math.floor((xFloat - tileX) * 256);
-    const pixelY = Math.floor((yFloat - tileY) * 256);
-    return {tileX, tileY, pixelX, pixelY};
+    return {
+        x: ((lon + 180) / 360) * n * 256,
+        y: ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n * 256,
+    };
 }
 
 const ZOOM = 16;
 const SIZE = 256;
 const HALF = SIZE / 2; // 128
+const MARGIN = 40; // re-center when dot is this close to viewport edge
 
-export function MapPanel({pos, noFixSecs}: MapPanelProps) {
-    const tileInfo = useMemo(() => {
+export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
+    const anchorRef = useRef<{x: number; y: number} | null>(null);
+
+    const mapState = useMemo(() => {
         if (!pos) return null;
-        const {tileX, tileY, pixelX, pixelY} = latLonToTile(pos.lat, pos.lon, ZOOM);
-        // 2x2 tile grid (512x512) cropped to 256x256 viewport centered on the dot.
-        // Pick which 2x2 block to use based on which half of the tile the dot is in,
-        // so the viewport never extends beyond the grid edges.
-        const baseX = pixelX >= HALF ? tileX : tileX - 1;
-        const baseY = pixelY >= HALF ? tileY : tileY - 1;
-        const dotGridX = pixelX >= HALF ? pixelX : pixelX + 256;
-        const dotGridY = pixelY >= HALF ? pixelY : pixelY + 256;
-        const gridLeft = HALF - dotGridX;
-        const gridTop = HALF - dotGridY;
-        return {baseX, baseY, gridLeft, gridTop};
+        const dot = latLonToPixel(pos.lat, pos.lon, ZOOM);
+        let anchor = anchorRef.current;
+        if (!anchor) {
+            anchor = {x: dot.x, y: dot.y};
+            anchorRef.current = anchor;
+        } else {
+            // Re-center when dot approaches the viewport edge.
+            const dvx = HALF + dot.x - anchor.x;
+            const dvy = HALF + dot.y - anchor.y;
+            if (dvx < MARGIN || dvx > SIZE - MARGIN || dvy < MARGIN || dvy > SIZE - MARGIN) {
+                anchor = {x: dot.x, y: dot.y};
+                anchorRef.current = anchor;
+            }
+        }
+        // Dot position in viewport pixels.
+        const dotLeft = Math.round(HALF + dot.x - anchor.x);
+        const dotTop = Math.round(HALF + dot.y - anchor.y);
+        // Which 2x2 tiles cover the viewport.
+        const vpLeft = anchor.x - HALF;
+        const vpTop = anchor.y - HALF;
+        const baseTileX = Math.floor(vpLeft / 256);
+        const baseTileY = Math.floor(vpTop / 256);
+        const gridLeft = Math.round(baseTileX * 256 - vpLeft);
+        const gridTop = Math.round(baseTileY * 256 - vpTop);
+        return {baseTileX, baseTileY, gridLeft, gridTop, dotLeft, dotTop};
     }, [pos?.lat, pos?.lon]);
 
     const openGoogleMaps = () => {
@@ -67,12 +82,12 @@ export function MapPanel({pos, noFixSecs}: MapPanelProps) {
             title="Click to open in Google Maps"
         >
             {/* Tile grid */}
-            {tileInfo && (
+            {mapState && (
                 <div
                     style={{
                         position: 'absolute',
-                        left: tileInfo.gridLeft + 'px',
-                        top: tileInfo.gridTop + 'px',
+                        left: mapState.gridLeft + 'px',
+                        top: mapState.gridTop + 'px',
                         width: '512px',
                         height: '512px',
                     }}
@@ -80,8 +95,8 @@ export function MapPanel({pos, noFixSecs}: MapPanelProps) {
                     {[0, 1].map(dy =>
                         [0, 1].map(dx => (
                             <img
-                                key={`${tileInfo.baseX + dx},${tileInfo.baseY + dy}`}
-                                src={`https://tile.openstreetmap.org/${ZOOM}/${tileInfo.baseX + dx}/${tileInfo.baseY + dy}.png`}
+                                key={`${mapState.baseTileX + dx},${mapState.baseTileY + dy}`}
+                                src={`https://tile.openstreetmap.org/${ZOOM}/${mapState.baseTileX + dx}/${mapState.baseTileY + dy}.png`}
                                 style={{
                                     position: 'absolute',
                                     left: dx * 256 + 'px',
@@ -97,19 +112,27 @@ export function MapPanel({pos, noFixSecs}: MapPanelProps) {
                 </div>
             )}
 
-            {/* Crosshair marker at center */}
+            {/* Position marker */}
+            {mapState && (
             <div
                 class="absolute pointer-events-none"
-                style={{left: HALF + 'px', top: HALF + 'px', transform: 'translate(-50%, -50%)'}}
+                style={{left: mapState.dotLeft + 'px', top: mapState.dotTop + 'px', transform: 'translate(-50%, -50%)'}}
             >
-                <svg width="24" height="24" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="5" fill="rgba(59,130,246,0.8)" stroke="white" stroke-width="2" />
-                    <line x1="12" y1="0" x2="12" y2="8" stroke="white" stroke-width="1.5" opacity="0.8" />
-                    <line x1="12" y1="16" x2="12" y2="24" stroke="white" stroke-width="1.5" opacity="0.8" />
-                    <line x1="0" y1="12" x2="8" y2="12" stroke="white" stroke-width="1.5" opacity="0.8" />
-                    <line x1="16" y1="12" x2="24" y2="12" stroke="white" stroke-width="1.5" opacity="0.8" />
-                </svg>
+                {course && course.groundSpeed >= 0.1 ? (
+                    <svg width="24" height="24" viewBox="0 0 24 24" style={{transform: `rotate(${course.course}deg)`}}>
+                        <polygon points="12,2 4,20 12,16 20,20" fill="rgba(59,130,246,0.8)" stroke="white" stroke-width="1.5" stroke-linejoin="round" />
+                    </svg>
+                ) : (
+                    <svg width="24" height="24" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="5" fill="rgba(59,130,246,0.8)" stroke="white" stroke-width="2" />
+                        <line x1="12" y1="0" x2="12" y2="8" stroke="white" stroke-width="1.5" opacity="0.8" />
+                        <line x1="12" y1="16" x2="12" y2="24" stroke="white" stroke-width="1.5" opacity="0.8" />
+                        <line x1="0" y1="12" x2="8" y2="12" stroke="white" stroke-width="1.5" opacity="0.8" />
+                        <line x1="16" y1="12" x2="24" y2="12" stroke="white" stroke-width="1.5" opacity="0.8" />
+                    </svg>
+                )}
             </div>
+            )}
 
             {/* No fix overlay */}
             {noFixSecs > 0 && (

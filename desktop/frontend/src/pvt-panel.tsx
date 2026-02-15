@@ -271,11 +271,11 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                 <tr class="text-left text-gray-500 dark:text-gray-400">
                     <th class={`${th}`}>Tag</th>
                     <th class={`${th}`}>Message</th>
+                    <th class={`${th}`}>Speed (m/s)</th>
                     <th class={`${th}`}>Ground speed</th>
-                    <th class={`${th}`}>Speed</th>
-                    <th class={`${th}`}>Course</th>
-                    <th class={`${th}`}>NED</th>
-                    <th class={`${th}`}>ECEF</th>
+                    <th class={`${th}`}>Course (&deg;)</th>
+                    <th class={`${th}`}>North,East,Down</th>
+                    <th class={`${th}`}>ECEF (m/s)</th>
                 </tr>
             </thead>
             <tbody>
@@ -292,8 +292,12 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                             <tr key={row.nativeMsgID}>
                                 <td class={td}>{row.tag}</td>
                                 <td class={td}>{row.nativeMsgID}</td>
+                                <td class={td}>{row.speed3D != null
+                                    ? <N>{fmtMs(umsToMs(row.speed3D), 4)}</N>
+                                    : row.velNED != null
+                                        ? fmtMs(Math.sqrt(row.velNED[0]**2 + row.velNED[1]**2 + row.velNED[2]**2) / 1e6, 4)
+                                        : blank}</td>
                                 <td class={td}>{row.groundSpeed != null ? <N>{fmtMs(umsToMs(row.groundSpeed), 4)}</N> : blank}</td>
-                                <td class={td}>{row.speed3D != null ? <N>{fmtMs(umsToMs(row.speed3D), 4)}</N> : blank}</td>
                                 <td class={td}>{row.course != null ? <N>{fmtDeg(ndegToDeg(row.course), 2)}</N> : blank}</td>
                                 <td class={td}>{ned}</td>
                                 <td class={td}>{ecef}</td>
