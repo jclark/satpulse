@@ -6,6 +6,33 @@ On connect, two separate `gpscfg.Configure` calls happen in sequence: the initia
 
 Currently the probe is initiated by the Go backend (`packetWorker`) and the readback is initiated by the frontend (`doReadback` via `ReadConfig`). Combining them would require the backend to know whether properties should be read during the probe, or a way to piggyback the readback request onto the probe.
 
+## configure-msg-handler: Semantic messages dropped during Configure
+
+During `gpscfg.Configure`, `init()` calls `pp.SetMsgHandler(mh)` on every packet processor, replacing the caller's handler with gpscfg's internal `msgHandler`. This handler embeds `DefaultHandler`, so all semantic methods (Time, PosGeo, VelGeo, NavEpoch, etc.) are no-ops. Messages parsed during detection and probing are silently dropped.
+
+gpscfg's `msgHandler` uses `SetMsgHandler` for one reason only: to capture `LeapSecond` messages for `Result.LeapSecond`. The `NativeMsg` callback (line 568) just logs unused messages and is managed separately via `installNativeMsgHandlers`/`MultiNativeMsgHandler`. Detection counting (`msgCount`) happens directly from the scanner loop (line 547), before `ProcessPacket` is called, so it does not depend on `MsgHandler` at all.
+
+### Phase 1 on master: Configure stops overwriting MsgHandler
+
+Stop calling `SetMsgHandler` in `gpscfg.init()`. Whatever `MsgHandler` the caller installed on the packet processors stays in place throughout. Remove `Result.LeapSecond` and the `LeapSecond` method from gpscfg's `msgHandler`.
+
+Temporary contract (superseded by phase 2): callers must call `SetMsgHandler` with a non-nil handler before processing packets. `gpscfg.Configure` requires the packet processors it is passed to be in ready-to-process state. `SetMsgHandler` panics if called with nil. Document this in the `PacketProcessor` interface.
+
+- **daemon** (daemon.go:182-194): install a `MsgHandler` that captures `LeapSecond` on the packet processors before calling Configure. After Configure returns, pass the captured leap second to the Dispatcher, replacing the current `Result.LeapSecond` seeding (daemon.go:276-279).
+- **satpulsetool** (gpscmd.go:197): install a no-op `DefaultHandler` before calling Configure.
+
+Above is issue #210
+
+- **ubx**: add nil guard to `flushSats` (ubx.go:135) for consistency with the other dispatch paths. Not required by the contract but nice to have.
+
+### Phase 2 on master: PacketProcessor safe without prior SetMsgHandler
+
+This is issue #211.
+
+### Fix on desktop-gui: desktop (requires phase 1 only)
+
+In `packetWorker`, the desktop's `msgHandler` is created before Configure (app.go:194) but is not installed on the packet processors until after Configure returns (line 241). Its `LeapSecond` handler (line 788) already calls `UpdateLeapSecond` and emits a frontend event. With Configure no longer overwriting, install the handler on the packet processors before calling Configure. Remove the post-config `SetMsgHandler` loop (lines 240-243) and the `Result.LeapSecond` seeding (lines 228-230). Semantic messages (time, position, velocity) will flow to the frontend during the entire probe, eliminating the visible delay. The same applies to inline config requests (line 264).
+
 ## config-speed-change: Handle receiver serial speed change in GUI
 
 The CLI supports `--speed` to configure the GPS receiver's serial port speed (as opposed to `--device-speed` which sets the host serial port speed). The desktop GUI needs equivalent support so users can change the receiver's baud rate from the Config tab.
