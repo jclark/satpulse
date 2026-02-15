@@ -199,6 +199,7 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 	a.probe = ReceiverEvent{}
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{})
+	gpsprot.SetAllMsgHandlers(procs, mh)
 	a.mu.Lock()
 	conn := a.conn
 	a.mu.Unlock()
@@ -225,9 +226,6 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 		for _, tag := range rslt.PacketFormatsDetected {
 			r.PacketFormats = append(r.PacketFormats, string(tag))
 		}
-		if rslt.LeapSecond != nil {
-			rslt.LeapSecond.UpdateLeapSecond(&mh.ls)
-		}
 	}
 	if err != nil {
 		r.Warning = err.Error()
@@ -237,10 +235,6 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:receiver", r)
 	a.setEndState(StateConnected)
-	// Re-install our message handler after Configure overwrote it.
-	for _, pp := range procs {
-		pp.SetMsgHandler(mh)
-	}
 	// Main packet processing loop with inline config handling.
 	for {
 		select {
@@ -260,10 +254,6 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 			rslt, err := gpscfg.Configure(ctx, a.lg, procs,
 				gpsreg.CreateConfigProtocols(), req.target, sub, conn)
 			cancel()
-			// Re-install our message handler.
-			for _, pp := range procs {
-				pp.SetMsgHandler(mh)
-			}
 			req.resultCh <- configResult{result: rslt, err: err}
 		}
 	}
