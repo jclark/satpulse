@@ -201,7 +201,7 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	}
 	_, err = pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
-		lg.Error("error processing packet", "err", err, "tag", tag, "data", pkt.Data)
+		lg.Warn("error processing packet", "err", err, "tag", tag, "data", pkt.Data)
 	}
 }
 
