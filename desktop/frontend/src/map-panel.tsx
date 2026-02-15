@@ -38,7 +38,8 @@ export function MapPanel({pos, noFixSecs}: MapPanelProps) {
 
     const openGoogleMaps = () => {
         if (pos) {
-            BrowserOpenURL(`https://www.google.com/maps/@${pos.lat},${pos.lon},${ZOOM}z`);
+            const q = encodeURIComponent(`${pos.lat.toFixed(7)},${pos.lon.toFixed(7)}`);
+            BrowserOpenURL(`https://www.google.com/maps/search/?api=1&query=${q}`);
         }
     };
 
