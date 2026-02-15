@@ -44,3 +44,11 @@ Two possible approaches:
 
 A hybrid might work best: dim rows that missed the last epoch, remove rows that have been stale for several epochs.
 
+## read-error-disconnect: Disconnect on serial read error (related: #172)
+
+If a USB-connected GPS receiver is physically unplugged while connected, the app shows a read error in the log but remains in the connected state. The user has to manually click Disconnect to reset the UI. This is the desktop GUI counterpart of #172 (satpulsed should handle serial device disappearing); the daemon's approach is to exit and let systemd restart it, but the GUI needs to transition cleanly to disconnected state instead.
+
+The root cause is a gap between the backend and frontend: when `Scan()` in `gpsio/conn.go` encounters a read error, it logs the error and exits the loop, closing the packet channel. The goroutines in `app.go` (`packetEventWorker`, `packetWorker`) detect the closed channel and exit, but neither calls `setEndState()` to emit a `gps:state` event. The frontend never learns the connection is dead and stays visually connected.
+
+Fix: after the goroutines spawned by `Connect()` finish (detected via `connWg`), transition to the disconnected state and emit `gps:state` with `StateDisconnected`. This could be done with a cleanup goroutine that waits on `connWg` and calls `closeLocked()` if the connection wasn't already explicitly disconnected. The frontend already handles `gps:state` transitions and clears stale data on disconnect, so no frontend changes should be needed.
+
