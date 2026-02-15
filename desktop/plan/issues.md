@@ -43,3 +43,15 @@ Two possible approaches:
 2. **Remove on epoch boundary**: Use `NavEpochMsg` (the `gps:epochPVT` event) as a heartbeat. On each epoch, remove any PVT rows that were not updated during that epoch. This keeps the table clean automatically but means rows flicker in/out if a message arrives intermittently.
 
 A hybrid might work best: dim rows that missed the last epoch, remove rows that have been stale for several epochs.
+
+## pvt-vel-conversion: Cross-convert velocity frames in PVT Messages panel
+
+The PVT Messages velocity table shows blanks for the cross-converted frame. A `VelGeoMsg` row shows NED but blank ECEF; a `VelECEFMsg` row shows ECEF but blank NED. The epoch PVT construction in `buildEpochPVT` (`app.go`) performs this NED↔ECEF conversion using the current position, but individual `gps:msg` velocity events are emitted raw. The frontend needs to call back to the Go backend to convert between velocity frames, similar to how the position table calls `LLHtoECEF` for position conversion.
+
+## first-map-delay: Reduce delay before first map update on connect
+
+After connecting, the map does not render until the first `NavEpochMsg` arrives and triggers a `gps:epochPVT` event. Position messages flow within a few hundred milliseconds of opening the serial port, but the map waits for the epoch boundary to flush them, adding up to one second of unnecessary delay before the user sees a position.
+
+## disconnect-clear: Clear monitor panel consistently on disconnect
+
+On disconnect, the Monitor panel behaviour is inconsistent: the clock keeps displaying its last value (frozen, not updating), while other panels (satellites, PVT) go blank. The stale clock is confusing because it looks like a live value. The easiest fix is to blank the time display on disconnect, matching the other panels. All monitor sub-panels should clear their state when the connection drops.
