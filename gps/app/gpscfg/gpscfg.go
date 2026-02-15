@@ -556,7 +556,6 @@ func altChecksumValid(pkt scan.Packet) bool {
 }
 
 func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
-	mh.lg.Debug("received an unused message during configuration stage", "protocol", tag, "msgID", msgID, "msg", msg)
 	if tag == gpsreg.TagNMEA {
 		nmeaLog(mh.lg, msg.(*nmea.Sentence))
 	}
