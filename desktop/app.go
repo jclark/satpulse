@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -62,6 +63,7 @@ type App struct {
 	pb         *bcast.Bcast[scan.Packet]
 	configCh   chan configRequest
 	probe      ReceiverEvent
+	mh          *msgHandler
 	msgFile     *msgfile.Parsed
 	msgFilePath string
 	sendCancel  context.CancelFunc
@@ -133,6 +135,7 @@ func (a *App) closeLocked() {
 	a.mu.Unlock()
 	a.connWg.Wait()
 	a.mu.Lock()
+	a.mh = nil
 	if a.conn != nil {
 		a.conn.Close()
 		a.conn = nil
@@ -196,6 +199,7 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 		ls:  ptime.LeapSecond2016(),
 	}
 	a.mu.Lock()
+	a.mh = mh
 	a.probe = ReceiverEvent{}
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{})
@@ -714,6 +718,40 @@ func (a *App) LLHtoECEF(lat, lon, height float64) [3]float64 {
 	return [3]float64(ecef)
 }
 
+// VelNEDtoECEF converts a velocity from NED (m/s) to ECEF using the last known position.
+// Returns nil if no position is available.
+func (a *App) VelNEDtoECEF(n, e, d float64) *[3]float64 {
+	a.mu.Lock()
+	mh := a.mh
+	a.mu.Unlock()
+	if mh == nil {
+		return nil
+	}
+	ref := mh.refLatLon.Load()
+	if ref == nil {
+		return nil
+	}
+	v := [3]float64(geopos.WGS84.NEDtoECEF(geopos.VelNED{n, e, d}, ref[0], ref[1]))
+	return &v
+}
+
+// VelECEFtoNED converts a velocity from ECEF (m/s) to NED using the last known position.
+// Returns nil if no position is available.
+func (a *App) VelECEFtoNED(vx, vy, vz float64) *[3]float64 {
+	a.mu.Lock()
+	mh := a.mh
+	a.mu.Unlock()
+	if mh == nil {
+		return nil
+	}
+	ref := mh.refLatLon.Load()
+	if ref == nil {
+		return nil
+	}
+	v := [3]float64(geopos.WGS84.ECEFtoNED(geopos.VelECEF{vx, vy, vz}, ref[0], ref[1]))
+	return &v
+}
+
 // MsgBundle holds the most recent message of each type within a navigation epoch.
 // Cleared after each NavEpochMsg.
 type MsgBundle struct {
@@ -761,9 +799,10 @@ type EpochTime struct {
 // msgHandler implements gpsprot.MsgHandler and emits "gps:msg" events.
 type msgHandler struct {
 	gpsprot.DefaultHandler
-	ctx context.Context
-	ls  ptime.LeapSecond
-	cur MsgBundle
+	ctx       context.Context
+	ls        ptime.LeapSecond
+	cur       MsgBundle
+	refLatLon atomic.Pointer[[2]float64]
 }
 
 func (h *msgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
@@ -802,6 +841,10 @@ func (h *msgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 
 func (h *msgHandler) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
 	h.cur.PosGeo = msg
+	ll := [2]float64{msg.LatLon[0].Degrees(), msg.LatLon[1].Degrees()}
+	if h.refLatLon.Swap(&ll) == nil {
+		runtime.EventsEmit(h.ctx, "gps:initialPos", ll)
+	}
 	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
 		Kind: "posGeo",
 		Msg:  msg,
@@ -811,6 +854,15 @@ func (h *msgHandler) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
 
 func (h *msgHandler) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
 	h.cur.PosECEF = msg
+	if h.cur.PosGeo == nil {
+		ecef := geopos.ECEF{msg.Pos[0].Meters(), msg.Pos[1].Meters(), msg.Pos[2].Meters()}
+		if llh, err := geopos.WGS84.ECEFtoLLH(ecef); err == nil {
+			ll := [2]float64{llh.Lat, llh.Lon}
+			if h.refLatLon.Swap(&ll) == nil {
+				runtime.EventsEmit(h.ctx, "gps:initialPos", ll)
+			}
+		}
+	}
 	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
 		Kind: "posECEF",
 		Msg:  msg,
@@ -916,6 +968,17 @@ func (h *msgHandler) buildEpochPVT() EpochPVT {
 		}
 		v := [3]float64{e.Vel[0].MetersPerSecond(), e.Vel[1].MetersPerSecond(), e.Vel[2].MetersPerSecond()}
 		vel.VelECEF = &v
+	}
+	// Cross-convert velocity frames when position is available
+	if vel != nil && ev.Pos != nil {
+		lat, lon := ev.Pos.Lat, ev.Pos.Lon
+		if vel.VelNED != nil && vel.VelECEF == nil {
+			v := [3]float64(geopos.WGS84.NEDtoECEF(geopos.VelNED(*vel.VelNED), lat, lon))
+			vel.VelECEF = &v
+		} else if vel.VelECEF != nil && vel.VelNED == nil {
+			v := [3]float64(geopos.WGS84.ECEFtoNED(geopos.VelECEF(*vel.VelECEF), lat, lon))
+			vel.VelNED = &v
+		}
 	}
 	ev.Vel = vel
 	// Time

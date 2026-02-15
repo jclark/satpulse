@@ -348,6 +348,9 @@ export function App() {
         const offState = EventsOn('gps:state', (state: ConnState) => {
             setConnState(state);
             if (state === 'disconnected') {
+                setTimeMsg(null);
+                setSurveyMsg(null);
+                setLeapSecond(null);
                 setPosRows(new Map());
                 setVelRows(new Map());
                 setTimeRows(new Map());
@@ -355,6 +358,9 @@ export function App() {
                 setMapPos(null);
                 setNoFixSecs(0);
             }
+        });
+        const offInitialPos = EventsOn('gps:initialPos', (ll: [number, number]) => {
+            setMapPos({lat: ll[0], lon: ll[1]});
         });
         const offEpochPVT = EventsOn('gps:epochPVT', (nav: any) => {
             if (nav.pos) {
@@ -420,6 +426,7 @@ export function App() {
             if (typeof offRcv === 'function') offRcv(); else EventsOff('gps:receiver');
             if (typeof offMsg === 'function') offMsg(); else EventsOff('gps:msg');
             if (typeof offState === 'function') offState(); else EventsOff('gps:state');
+            if (typeof offInitialPos === 'function') offInitialPos(); else EventsOff('gps:initialPos');
             if (typeof offEpochPVT === 'function') offEpochPVT(); else EventsOff('gps:epochPVT');
             if (typeof offMsgSend === 'function') offMsgSend(); else EventsOff('gps:msgsend');
         };

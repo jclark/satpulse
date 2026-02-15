@@ -1,6 +1,6 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect} from 'preact/hooks';
-import {ECEFtoLLH, LLHtoECEF} from '../wailsjs/go/main/App';
+import {ECEFtoLLH, LLHtoECEF, VelNEDtoECEF, VelECEFtoNED} from '../wailsjs/go/main/App';
 import {formatDateTime, formatTAI, formatUTCLocal} from './timefmt';
 import type {LeapSecondState} from './app';
 
@@ -223,6 +223,45 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
 // Columns: Tag | Message | Ground speed | Speed | Course | NED | ECEF
 
 function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
+    const [nedToEcef, setNedToEcef] = useState<Map<string, [number, number, number]>>(new Map());
+    const [ecefToNed, setEcefToNed] = useState<Map<string, [number, number, number]>>(new Map());
+
+    // Convert VelGeo NED -> ECEF
+    useEffect(() => {
+        const geoRows = [...rows.values()].filter((r): r is VelGeoRow => r.kind === 'velGeo' && r.velNED != null);
+        if (geoRows.length === 0) { setNedToEcef(new Map()); return; }
+        let cancelled = false;
+        Promise.all(geoRows.map(async r => {
+            const ecef = await VelNEDtoECEF(umsToMs(r.velNED![0]), umsToMs(r.velNED![1]), umsToMs(r.velNED![2]));
+            if (!ecef) return null;
+            return [r.nativeMsgID, ecef as [number, number, number]] as const;
+        })).then(pairs => {
+            if (!cancelled) setNedToEcef(new Map(pairs.filter(Boolean) as [string, [number, number, number]][]));
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [...[...rows.values()].filter(r => r.kind === 'velGeo').flatMap(r => {
+        const g = r as VelGeoRow;
+        return g.velNED ?? [];
+    })]);
+
+    // Convert VelECEF -> NED
+    useEffect(() => {
+        const ecefRows = [...rows.values()].filter((r): r is VelECEFRow => r.kind === 'velECEF');
+        if (ecefRows.length === 0) { setEcefToNed(new Map()); return; }
+        let cancelled = false;
+        Promise.all(ecefRows.map(async r => {
+            const ned = await VelECEFtoNED(umsToMs(r.vel[0]), umsToMs(r.vel[1]), umsToMs(r.vel[2]));
+            if (!ned) return null;
+            return [r.nativeMsgID, ned as [number, number, number]] as const;
+        })).then(pairs => {
+            if (!cancelled) setEcefToNed(new Map(pairs.filter(Boolean) as [string, [number, number, number]][]));
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [...[...rows.values()].filter(r => r.kind === 'velECEF').flatMap(r => {
+        const e = r as VelECEFRow;
+        return e.vel;
+    })]);
+
     if (rows.size === 0) return <p class="text-xs text-gray-400">No velocity data</p>;
     const sorted = [...rows.values()].sort((a, b) => a.nativeMsgID.localeCompare(b.nativeMsgID));
 
@@ -245,6 +284,10 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                         const ned = row.velNED
                             ? <N>{fmtMs(umsToMs(row.velNED[0]), 4)},{fmtMs(umsToMs(row.velNED[1]), 4)},{fmtMs(umsToMs(row.velNED[2]), 4)}</N>
                             : blank;
+                        const conv = nedToEcef.get(row.nativeMsgID);
+                        const ecef = conv
+                            ? <>{fmtMs(conv[0], 4)},{fmtMs(conv[1], 4)},{fmtMs(conv[2], 4)}</>
+                            : blank;
                         return (
                             <tr key={row.nativeMsgID}>
                                 <td class={td}>{row.tag}</td>
@@ -253,11 +296,15 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                                 <td class={td}>{row.speed3D != null ? <N>{fmtMs(umsToMs(row.speed3D), 4)}</N> : blank}</td>
                                 <td class={td}>{row.course != null ? <N>{fmtDeg(ndegToDeg(row.course), 2)}</N> : blank}</td>
                                 <td class={td}>{ned}</td>
-                                <td class={td}>{blank}</td>
+                                <td class={td}>{ecef}</td>
                             </tr>
                         );
                     } else {
                         const ecefVel = <N>{fmtMs(umsToMs(row.vel[0]), 4)},{fmtMs(umsToMs(row.vel[1]), 4)},{fmtMs(umsToMs(row.vel[2]), 4)}</N>;
+                        const conv = ecefToNed.get(row.nativeMsgID);
+                        const ned = conv
+                            ? <>{fmtMs(conv[0], 4)},{fmtMs(conv[1], 4)},{fmtMs(conv[2], 4)}</>
+                            : blank;
                         return (
                             <tr key={row.nativeMsgID}>
                                 <td class={td}>{row.tag}</td>
@@ -265,7 +312,7 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                                 <td class={td}>{blank}</td>
                                 <td class={td}>{blank}</td>
                                 <td class={td}>{blank}</td>
-                                <td class={td}>{blank}</td>
+                                <td class={td}>{ned}</td>
                                 <td class={td}>{ecefVel}</td>
                             </tr>
                         );
