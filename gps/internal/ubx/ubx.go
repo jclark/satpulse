@@ -132,7 +132,9 @@ func (p *PacketProcessor) flushSats() {
 	}
 	p.satMsg = nil
 	p.sigMsg = nil
-	p.mh.Satellites(satellitesCombine(satMsg, sigMsg), p.satSigTRead)
+	if h := p.mh; h != nil {
+		h.Satellites(satellitesCombine(satMsg, sigMsg), p.satSigTRead)
+	}
 	p.satSigTRead = time.Time{}
 }
 
