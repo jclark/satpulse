@@ -429,6 +429,108 @@ text = "PQTMCFGMSGRATE,W,PQTMEOE,0,1"
 tag = "pqtm-eoe-off"
 description = "Disable PQTMEOE message"
 
+# Enable PQTMDOP message (dilution of precision)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMDOP,1,1"
+tag = "pqtm-dop"
+description = "Enable PQTMDOP message"
+
+# Disable PQTMDOP message
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMDOP,0,1"
+tag = "pqtm-dop-off"
+description = "Disable PQTMDOP message"
+
+# Enable PQTMSVINSTATUS message (survey-in status)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1"
+tag = "pqtm-svin"
+description = "Enable PQTMSVINSTATUS message"
+
+# Disable PQTMSVINSTATUS message
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,0,1"
+tag = "pqtm-svin-off"
+description = "Disable PQTMSVINSTATUS message"
+
+# Enable PQTM messages for R01A04S+ firmware (PVT + VEL + EPE + SVINSTATUS + DOP)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPVT,1,1"
+tag = "pqtm-r01a04"
+description = "Enable PQTM messages for R01A04S+ firmware"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMVEL,1,1"
+tag = "pqtm-r01a04"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMEPE,1,2"
+tag = "pqtm-r01a04"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1"
+tag = "pqtm-r01a04"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMDOP,1,1"
+tag = "pqtm-r01a04"
+
+# Disable PQTM messages for R01A04S+ firmware
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPVT,0,1"
+tag = "pqtm-r01a04-off"
+description = "Disable PQTM messages for R01A04S+ firmware"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMVEL,0,1"
+tag = "pqtm-r01a04-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMEPE,0,2"
+tag = "pqtm-r01a04-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,0,1"
+tag = "pqtm-r01a04-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMDOP,0,1"
+tag = "pqtm-r01a04-off"
+
+# Enable PQTM messages for R01A05S+ firmware (NAV + VEL + EPE + EOE + SVINSTATUS + DOP)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMNAV,1,1"
+tag = "pqtm-r01a05"
+description = "Enable PQTM messages for R01A05S+ firmware"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMVEL,1,1"
+tag = "pqtm-r01a05"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMEPE,1,2"
+tag = "pqtm-r01a05"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMEOE,1,1"
+tag = "pqtm-r01a05"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1"
+tag = "pqtm-r01a05"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMDOP,1,1"
+tag = "pqtm-r01a05"
+
+# Disable PQTM messages for R01A05S+ firmware
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMNAV,0,1"
+tag = "pqtm-r01a05-off"
+description = "Disable PQTM messages for R01A05S+ firmware"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMVEL,0,1"
+tag = "pqtm-r01a05-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMEPE,0,2"
+tag = "pqtm-r01a05-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMEOE,0,1"
+tag = "pqtm-r01a05-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,0,1"
+tag = "pqtm-r01a05-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMDOP,0,1"
+tag = "pqtm-r01a05-off"
+
 # Base station mode (disables NMEA, enables RTCM MSM4/1005)
 [[nmea]]
 text = "PQTMCFGRCVRMODE,W,2"
