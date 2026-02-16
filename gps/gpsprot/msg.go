@@ -141,6 +141,45 @@ func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead 
 	return firstErr
 }
 
+// MsgBundle holds a set of protocol-agnostic messages produced from a
+// single packet or sentence. Any combination of fields may be non-nil.
+// NavEpochMsg is excluded: it is accumulated across multiple messages
+// within an epoch and has a different lifecycle.
+type MsgBundle struct {
+	Time       *TimeMsg
+	PosGeo     *PosGeoMsg
+	PosECEF    *PosECEFMsg
+	VelGeo     *VelGeoMsg
+	VelECEF    *VelECEFMsg
+	LeapSecond *LeapSecondMsg
+	Survey     *SurveyMsg
+}
+
+// Dispatch calls the corresponding MsgHandler methods for each non-nil field.
+func (b *MsgBundle) Dispatch(h MsgHandler, tRead time.Time) {
+	if b.Time != nil {
+		h.Time(b.Time, tRead)
+	}
+	if b.PosGeo != nil {
+		h.PosGeo(b.PosGeo, tRead)
+	}
+	if b.PosECEF != nil {
+		h.PosECEF(b.PosECEF, tRead)
+	}
+	if b.VelGeo != nil {
+		h.VelGeo(b.VelGeo, tRead)
+	}
+	if b.VelECEF != nil {
+		h.VelECEF(b.VelECEF, tRead)
+	}
+	if b.LeapSecond != nil {
+		h.LeapSecond(b.LeapSecond, tRead)
+	}
+	if b.Survey != nil {
+		h.Survey(b.Survey, tRead)
+	}
+}
+
 // GNSSSet is a set of GNSS values.
 // It is comparable.
 type GNSSSet uint32
