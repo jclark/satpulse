@@ -44,6 +44,21 @@ func generatePVTMsgCommands(flags gpsprot.PVTMsgFlags, enabledGNSS gpsprot.GNSSS
 		cmds = append(cmds, "UNLOG RECTIMEB")
 	}
 	// Note: We only use RECTIMEB for time pulse, not PPSSTATUS
+	// BESTNAV / BESTNAVXYZ for position and velocity.
+	// Both carry position AND velocity in a single message.
+	// PVTMsgECEF selects BESTNAVXYZ (ECEF) vs BESTNAV (geodetic).
+	wantPos := flags&gpsprot.PVTMsgPos != 0
+	wantVel := flags&gpsprot.PVTMsgVel != 0
+	if wantPos || wantVel {
+		if flags&gpsprot.PVTMsgECEF != 0 {
+			cmds = append(cmds, "BESTNAVXYZB 1")
+		} else {
+			cmds = append(cmds, "BESTNAVB 1")
+		}
+	} else if off {
+		cmds = append(cmds, "UNLOG BESTNAVB")
+		cmds = append(cmds, "UNLOG BESTNAVXYZB")
+	}
 	// Enable/disable UTCB messages based on enabled GNSS systems
 	var enable bool
 	if flags&gpsprot.PVTMsgLeapSecond != 0 {
