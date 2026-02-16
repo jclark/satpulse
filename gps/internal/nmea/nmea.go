@@ -88,11 +88,28 @@ func (s *ApprovedSentence) msgID() string {
 	return s.TalkerID + s.Format
 }
 
+// ExtSentenceHandler handles non-standard NMEA sentences that are not
+// approved GNSS talker sentences (e.g. proprietary PQTM sentences).
+// Handlers are called for any sentence not handled by approved-sentence
+// processing. A handler returns a non-nil *MsgBundle if it handled the
+// sentence, or (nil, false) to pass.
+type ExtSentenceHandler interface {
+	// HandleSentence attempts to handle a non-standard NMEA sentence.
+	// flags contains the syntax flags from the packet scanner.
+	// payload is the NMEA payload between $ and *XX.
+	// epoch is the NavEpochMsg for the current epoch; the handler may
+	// contribute accuracy fields to it.
+	// Returns eoe=true if the sentence marks an end-of-epoch boundary.
+	HandleSentence(flags nmeamsg.SentenceSyntaxFlags, payload string, epoch *gpsprot.NavEpochMsg) (bundle *gpsprot.MsgBundle, eoe bool)
+}
+
 // PacketProcessor implements the gpsprot.PacketProcessor interface for NMEA packets
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
-	mh gpsprot.MsgHandler
-	sb satellitesBuffer
+	mh          gpsprot.MsgHandler
+	sb          satellitesBuffer
+	extHandlers []ExtSentenceHandler
+	navEpoch    gpsprot.NavEpochMsg
 }
 
 // NewPacketProcessor creates a new NMEA packet processor
@@ -116,11 +133,22 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 			return msgID, err
 		}
 	}
+	for _, eh := range p.extHandlers {
+		if result, _ := eh.HandleSentence(sen.SyntaxFlags, sen.Payload, &p.navEpoch); result != nil {
+			result.Dispatch(p.mh, tRead)
+			return msgID, nil
+		}
+	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
 		return msgID, nmh.NativeMsg(Tag, msgID, sen, tRead)
 	}
 	return msgID, nil
+}
+
+// AddExtHandler registers an extension handler for non-standard sentences.
+func (p *PacketProcessor) AddExtHandler(h ExtSentenceHandler) {
+	p.extHandlers = append(p.extHandlers, h)
 }
 
 func (p *PacketProcessor) SetSVNumbering(numbering []gpsprot.NMEASVNumberingRange) {

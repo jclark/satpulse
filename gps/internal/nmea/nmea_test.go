@@ -1,10 +1,13 @@
 package nmea
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -107,4 +110,98 @@ func parseApprovedSentence(data string) *ApprovedSentence {
 		return nil
 	}
 	return sen.ApprovedSentence()
+}
+
+// makeSentence wraps a payload in $ ... *XX\r\n with a correct checksum.
+func makeSentence(payload string) string {
+	cs := nmeamsg.Checksum([]byte(payload))
+	return fmt.Sprintf("$%s*%02X\r\n", payload, cs)
+}
+
+// mockExtHandler is a test ExtSentenceHandler that recognizes sentences
+// whose payload starts with a given prefix.
+type mockExtHandler struct {
+	prefix string
+	bundle *gpsprot.MsgBundle
+	eoe    bool
+}
+
+func (h *mockExtHandler) HandleSentence(flags nmeamsg.SentenceSyntaxFlags, payload string, epoch *gpsprot.NavEpochMsg) (*gpsprot.MsgBundle, bool) {
+	if strings.HasPrefix(payload, h.prefix) {
+		return h.bundle, h.eoe
+	}
+	return nil, false
+}
+
+type nativeMsgRecorder struct {
+	msgID string
+}
+
+func (r *nativeMsgRecorder) NativeMsg(_ gpsprot.Tag, msgID string, _ interface{}, _ time.Time) error {
+	r.msgID = msgID
+	return nil
+}
+
+func TestExtHandlerDispatch(t *testing.T) {
+	wantUTC := ptime.UTC(2024, 1, 1, 12, 0, 0, 0)
+	pp := NewPacketProcessor()
+	pp.AddExtHandler(&mockExtHandler{
+		prefix: "PTEST,",
+		bundle: &gpsprot.MsgBundle{
+			Time: &gpsprot.TimeMsg{Tag: Tag, NativeMsgID: "PTEST", UTCTime: &wantUTC},
+		},
+	})
+	var th timeHandler
+	pp.SetMsgHandler(&th)
+	msgID, err := pp.ProcessPacket(makeSentence("PTEST,hello"), time.Time{})
+	if err != nil {
+		t.Fatalf("ProcessPacket error: %v", err)
+	}
+	if msgID != "PTEST" {
+		t.Errorf("msgID = %q, want PTEST", msgID)
+	}
+	if th.utc == nil || *th.utc != wantUTC {
+		t.Errorf("TimeMsg not dispatched: utc = %v", th.utc)
+	}
+}
+
+func TestExtHandlerFallthrough(t *testing.T) {
+	pp := NewPacketProcessor()
+	pp.AddExtHandler(&mockExtHandler{
+		prefix: "PTEST,",
+		bundle: &gpsprot.MsgBundle{},
+	})
+	var nr nativeMsgRecorder
+	pp.SetNativeMsgHandler(&nr)
+	pp.SetMsgHandler(&gpsprot.DefaultHandler{})
+	// PFOO is not recognized by the mock handler; should fall through to NativeMsgHandler
+	msgID, err := pp.ProcessPacket(makeSentence("PFOO,data"), time.Time{})
+	if err != nil {
+		t.Fatalf("ProcessPacket error: %v", err)
+	}
+	if msgID != "PFOO" {
+		t.Errorf("msgID = %q, want PFOO", msgID)
+	}
+	if nr.msgID != "PFOO" {
+		t.Errorf("NativeMsgHandler not called: got %q, want PFOO", nr.msgID)
+	}
+}
+
+func TestExtHandlerBlocksNativeMsg(t *testing.T) {
+	pp := NewPacketProcessor()
+	pp.AddExtHandler(&mockExtHandler{
+		prefix: "PTEST,",
+		bundle: &gpsprot.MsgBundle{},
+	})
+	var nr nativeMsgRecorder
+	pp.SetNativeMsgHandler(&nr)
+	pp.SetMsgHandler(&gpsprot.DefaultHandler{})
+	// PTEST is claimed by the ext handler; NativeMsgHandler should not be called
+	_, err := pp.ProcessPacket(makeSentence("PTEST,data"), time.Time{})
+	if err != nil {
+		t.Fatalf("ProcessPacket error: %v", err)
+	}
+	if nr.msgID != "" {
+		t.Errorf("NativeMsgHandler should not be called when ext handler claims sentence, got %q", nr.msgID)
+	}
 }

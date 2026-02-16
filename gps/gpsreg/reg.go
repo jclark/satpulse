@@ -9,6 +9,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/internal/nov"
+	"github.com/jclark/satpulse/gps/internal/quectel"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/internal/sino"
 	"github.com/jclark/satpulse/gps/internal/ubx"
@@ -112,6 +113,7 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 	if nmeaNumbering != nil {
 		nmeaPP.SetSVNumbering(nmeaNumbering)
 	}
+	nmeaPP.AddExtHandler(quectel.NewHandler())
 	return map[gpsprot.Tag]gpsprot.PacketProcessor{
 		ubx.Tag:       ubx.NewPacketProcessor(),
 		casic.Tag:     casic.NewPacketProcessor(),
