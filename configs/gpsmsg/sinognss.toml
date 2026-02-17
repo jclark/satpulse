@@ -380,6 +380,159 @@ tag = "min-elev-45"
 description = "Set satellite cutoff elevation to 45 degrees"
 text = "ECUTOFF 45"
 
+# GNSS Constellation Selection (SET SIGNAL)
+# Systems: GPS, GLO, GAL, BD2, BD3, IRNSS
+# IRNSS is not documented as a SET SIGNAL value but works (used elsewhere in the docs as a system name)
+
+# GPS only
+# Verified OK response on K902
+# Verified GSV shows only GPS satellites after gnss-gps on K902
+[[line]]
+tag = "gnss-gps"
+description = "Enable GPS only"
+text = "SET SIGNAL GPS ON"
+[[line]]
+tag = "gnss-gps"
+text = "SET SIGNAL GLO OFF"
+[[line]]
+tag = "gnss-gps"
+text = "SET SIGNAL GAL OFF"
+[[line]]
+tag = "gnss-gps"
+text = "SET SIGNAL BD2 OFF"
+[[line]]
+tag = "gnss-gps"
+text = "SET SIGNAL BD3 OFF"
+[[line]]
+tag = "gnss-gps"
+text = "SET SIGNAL IRNSS OFF"
+
+# Galileo only
+# Verified OK response on K902
+# Verified GSV shows only Galileo satellites after gnss-gal on K902
+[[line]]
+tag = "gnss-gal"
+description = "Enable Galileo only"
+text = "SET SIGNAL GPS OFF"
+[[line]]
+tag = "gnss-gal"
+text = "SET SIGNAL GLO OFF"
+[[line]]
+tag = "gnss-gal"
+text = "SET SIGNAL GAL ON"
+[[line]]
+tag = "gnss-gal"
+text = "SET SIGNAL BD2 OFF"
+[[line]]
+tag = "gnss-gal"
+text = "SET SIGNAL BD3 OFF"
+[[line]]
+tag = "gnss-gal"
+text = "SET SIGNAL IRNSS OFF"
+
+# GLONASS only
+[[line]]
+tag = "gnss-glo"
+description = "Enable GLONASS only"
+text = "SET SIGNAL GPS OFF"
+[[line]]
+tag = "gnss-glo"
+text = "SET SIGNAL GLO ON"
+[[line]]
+tag = "gnss-glo"
+text = "SET SIGNAL GAL OFF"
+[[line]]
+tag = "gnss-glo"
+text = "SET SIGNAL BD2 OFF"
+[[line]]
+tag = "gnss-glo"
+text = "SET SIGNAL BD3 OFF"
+[[line]]
+tag = "gnss-glo"
+text = "SET SIGNAL IRNSS OFF"
+
+# BeiDou only (BD2 + BD3)
+[[line]]
+tag = "gnss-bds"
+description = "Enable BeiDou only (BD2 + BD3)"
+text = "SET SIGNAL GPS OFF"
+[[line]]
+tag = "gnss-bds"
+text = "SET SIGNAL GLO OFF"
+[[line]]
+tag = "gnss-bds"
+text = "SET SIGNAL GAL OFF"
+[[line]]
+tag = "gnss-bds"
+text = "SET SIGNAL BD2 ON"
+[[line]]
+tag = "gnss-bds"
+text = "SET SIGNAL BD3 ON"
+[[line]]
+tag = "gnss-bds"
+text = "SET SIGNAL IRNSS OFF"
+
+# GPS + Galileo
+[[line]]
+tag = "gnss-gps-gal"
+description = "Enable GPS and Galileo"
+text = "SET SIGNAL GPS ON"
+[[line]]
+tag = "gnss-gps-gal"
+text = "SET SIGNAL GLO OFF"
+[[line]]
+tag = "gnss-gps-gal"
+text = "SET SIGNAL GAL ON"
+[[line]]
+tag = "gnss-gps-gal"
+text = "SET SIGNAL BD2 OFF"
+[[line]]
+tag = "gnss-gps-gal"
+text = "SET SIGNAL BD3 OFF"
+[[line]]
+tag = "gnss-gps-gal"
+text = "SET SIGNAL IRNSS OFF"
+
+# All constellations
+# Verified OK response on K902
+# Verified GSV shows GPS, GLONASS, Galileo, BeiDou, NavIC satellites after gnss-all on K902
+[[line]]
+tag = "gnss-all"
+description = "Enable all constellations"
+text = "SET SIGNAL GPS ON"
+[[line]]
+tag = "gnss-all"
+text = "SET SIGNAL GLO ON"
+[[line]]
+tag = "gnss-all"
+text = "SET SIGNAL GAL ON"
+[[line]]
+tag = "gnss-all"
+text = "SET SIGNAL BD2 ON"
+[[line]]
+tag = "gnss-all"
+text = "SET SIGNAL BD3 ON"
+[[line]]
+tag = "gnss-all"
+text = "SET SIGNAL IRNSS ON"
+
+
+# NMEA Version
+
+# Verified OK response on K902
+# Verified GB/GQ talker IDs appear after nmea-ver-411 on K902
+# Verified GSV sentences include signal ID after nmea-ver-411 on K902
+[[line]]
+tag = "nmea-ver-411"
+description = "Set NMEA version to 4.11 (GB for BeiDou, GQ for QZSS)"
+text = "SET NMEAV41 ON"
+# Verified OK response on K902
+# Verified BD talker ID appears after nmea-ver-400 on K902
+[[line]]
+tag = "nmea-ver-400"
+description = "Set NMEA version to 4.00"
+text = "SET NMEAV41 OFF"
+
 # PPS Configuration
 
 # Verified OK response on K902
