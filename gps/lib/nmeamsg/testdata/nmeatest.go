@@ -77,10 +77,10 @@ var SyntaxTestCases = []struct {
 		Expected: 0,
 	},
 
-	// Constraint 4: Total length ≤ 128 characters
+	// Constraint 4: Total length ≤ 400 characters
 	{
-		Name:     "not a packet - 129 chars (constraint 4)",
-		Packet:   "$GPGGA," + strings.Repeat("X", 117) + "*5A\r\n", // Total = 129
+		Name:     "not a packet - 401 chars (constraint 4)",
+		Packet:   "$GPGGA," + strings.Repeat("X", 389) + "*5A\r\n", // Total = 401
 		Expected: 0,
 	},
 
@@ -442,15 +442,15 @@ var SyntaxTestCases = []struct {
 		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 
-	// Packet length boundary tests (128 char limit per comments)
+	// Packet length boundary tests (400 char limit)
 	{
-		Name:     "exactly 128 chars (packet format max)",
-		Packet:   "$GPGGA," + strings.Repeat("X", 115) + "*5A\r\n", // Total = 128
+		Name:     "exactly 400 chars (packet format max)",
+		Packet:   "$GPGGA," + strings.Repeat("X", 387) + "*5A\r\n", // Total = 400
 		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceEndsWithCRLF,
 	},
 	{
-		Name:     "129 chars (over packet format limit)",
-		Packet:   "$GPGGA," + strings.Repeat("X", 117) + "*5A\r\n", // Total = 129
+		Name:     "401 chars (over packet format limit)",
+		Packet:   "$GPGGA," + strings.Repeat("X", 389) + "*5A\r\n", // Total = 401
 		Expected: 0,                                                // Should fail packet detection due to length
 	},
 
