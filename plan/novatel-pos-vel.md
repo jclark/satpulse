@@ -167,13 +167,27 @@ SolStatus and PosType/VelType enums are the same as BESTPOS (Tables 4-1 and 4-2)
 
 ## Step 0: TOML message file (done)
 
-BESTPOS entries have been added to `configs/gpsmsg/um980.toml` and test capture verified. Binary (NOVB, msg ID 42) and ASCII (NOVA, #BESTPOSA) packet pairs captured successfully.
+BESTPOS and BESTXYZ entries have been added to `configs/gpsmsg/um980.toml` and test captures verified.
+
+### BESTPOS capture
+
+Binary (NOVB, msg ID 42) and ASCII (NOVA, #BESTPOSA) packet pairs captured successfully.
 
 ```bash
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m configs/gpsmsg/um980.toml -t nov-bestpos --capture 5 --packet-log /tmp/bestpos.jsonl
+out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m configs/gpsmsg/um980.toml -t nov-bestpos --capture 5 --packet-log /tmp/bestpos.jsonl
 ```
 
 Captured packets: `/tmp/bestpos.jsonl` (5 binary+ASCII pairs from UM980).
+
+### BESTXYZ capture
+
+Binary (NOVB, msg ID 241) and ASCII (NOVA, #BESTXYZA) packet pairs captured successfully.
+
+```bash
+out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m configs/gpsmsg/um980.toml -t nov-bestxyz --capture 5 --packet-log /tmp/bestxyz.jsonl
+```
+
+Captured packets: `/tmp/bestxyz.jsonl` (5 binary+ASCII pairs from UM980). Note: BESTPOS packets also appear in this capture since they were already enabled.
 
 ## Step 1: Shared types and generic Pos (done)
 
