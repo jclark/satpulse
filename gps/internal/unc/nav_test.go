@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
@@ -12,15 +13,17 @@ import (
 func TestBestNavPosVel(t *testing.T) {
 	t.Run("pos_and_vel_computed", func(t *testing.T) {
 		m := &uncmsg.BestNav{
-			PSolStatus:   uncmsg.SolComputed,
-			PosType:      uncmsg.PosVelSingle,
-			Lat:          47.49,
-			Lon:          8.56,
-			Hgt:          489.456,
-			Undulation:   50.667,
-			LatSigma:     1.2,
-			LonSigma:     0.9,
-			HgtSigma:     1.8,
+			Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+				PSolStatus: uncmsg.SolComputed,
+				PosType:    uncmsg.PosVelSingle,
+				Lat:        47.49,
+				Lon:        8.56,
+				Hgt:        489.456,
+				Undulation: 50.667,
+				LatSigma:   1.2,
+				LonSigma:   0.9,
+				HgtSigma:   1.8,
+			},
 			VSolStatus:   uncmsg.SolComputed,
 			VelType:      uncmsg.PosVelDopplerVelocity,
 			HorSpd:       1.5,
@@ -90,7 +93,9 @@ func TestBestNavPosVel(t *testing.T) {
 	})
 	t.Run("pos_not_computed", func(t *testing.T) {
 		m := &uncmsg.BestNav{
-			PSolStatus: uncmsg.InsufficientObs,
+			Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+				PSolStatus: uncmsg.InsufficientObs,
+			},
 			VSolStatus: uncmsg.SolComputed,
 			VelType:    uncmsg.PosVelDopplerVelocity,
 			HorSpd:     2.0,
@@ -113,15 +118,17 @@ func TestBestNavPosVel(t *testing.T) {
 	})
 	t.Run("vel_not_computed", func(t *testing.T) {
 		m := &uncmsg.BestNav{
-			PSolStatus: uncmsg.SolComputed,
-			PosType:    uncmsg.PosVelSingle,
-			Lat:        47.49,
-			Lon:        8.56,
-			Hgt:        489.456,
-			Undulation: 50.667,
-			LatSigma:   1.2,
-			LonSigma:   0.9,
-			HgtSigma:   1.8,
+			Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+				PSolStatus: uncmsg.SolComputed,
+				PosType:    uncmsg.PosVelSingle,
+				Lat:        47.49,
+				Lon:        8.56,
+				Hgt:        489.456,
+				Undulation: 50.667,
+				LatSigma:   1.2,
+				LonSigma:   0.9,
+				HgtSigma:   1.8,
+			},
 			VSolStatus: uncmsg.NoConvergence,
 		}
 		var ne gpsprot.NavEpochMsg
@@ -141,7 +148,9 @@ func TestBestNavPosVel(t *testing.T) {
 	})
 	t.Run("neither_computed", func(t *testing.T) {
 		m := &uncmsg.BestNav{
-			PSolStatus: uncmsg.InsufficientObs,
+			Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+				PSolStatus: uncmsg.InsufficientObs,
+			},
 			VSolStatus: uncmsg.NoConvergence,
 		}
 		var ne gpsprot.NavEpochMsg
@@ -157,7 +166,7 @@ func TestBestNavPosVel(t *testing.T) {
 
 func TestBestNavXYZPosVel(t *testing.T) {
 	t.Run("pos_and_vel_computed", func(t *testing.T) {
-		m := &uncmsg.BestNavXYZ{
+		m := &uncmsg.BestNavXYZ{XYZ: novmsg.XYZ[uncmsg.SolStatus, uncmsg.PosVelType]{
 			PSolStatus: uncmsg.SolComputed,
 			PosType:    uncmsg.PosVelSingle,
 			PX:         -2671733.51,
@@ -174,7 +183,7 @@ func TestBestNavXYZPosVel(t *testing.T) {
 			VXSigma:    0.05,
 			VYSigma:    0.04,
 			VZSigma:    0.06,
-		}
+		}}
 		var ne gpsprot.NavEpochMsg
 		posE, velE := bestNavXYZPosVel(&ne, m)
 		if posE == nil {
@@ -219,7 +228,7 @@ func TestBestNavXYZPosVel(t *testing.T) {
 		}
 	})
 	t.Run("pos_not_computed", func(t *testing.T) {
-		m := &uncmsg.BestNavXYZ{
+		m := &uncmsg.BestNavXYZ{XYZ: novmsg.XYZ[uncmsg.SolStatus, uncmsg.PosVelType]{
 			PSolStatus: uncmsg.InsufficientObs,
 			VSolStatus: uncmsg.SolComputed,
 			VelType:    uncmsg.PosVelDopplerVelocity,
@@ -229,7 +238,7 @@ func TestBestNavXYZPosVel(t *testing.T) {
 			VXSigma:    0.1,
 			VYSigma:    0.1,
 			VZSigma:    0.1,
-		}
+		}}
 		var ne gpsprot.NavEpochMsg
 		posE, velE := bestNavXYZPosVel(&ne, m)
 		if posE != nil {
@@ -246,7 +255,7 @@ func TestBestNavXYZPosVel(t *testing.T) {
 		}
 	})
 	t.Run("vel_not_computed", func(t *testing.T) {
-		m := &uncmsg.BestNavXYZ{
+		m := &uncmsg.BestNavXYZ{XYZ: novmsg.XYZ[uncmsg.SolStatus, uncmsg.PosVelType]{
 			PSolStatus: uncmsg.SolComputed,
 			PosType:    uncmsg.PosVelSingle,
 			PX:         -2671733.51,
@@ -256,7 +265,7 @@ func TestBestNavXYZPosVel(t *testing.T) {
 			PYSigma:    2.0,
 			PZSigma:    1.8,
 			VSolStatus: uncmsg.NoConvergence,
-		}
+		}}
 		var ne gpsprot.NavEpochMsg
 		posE, velE := bestNavXYZPosVel(&ne, m)
 		if posE == nil {
@@ -273,10 +282,10 @@ func TestBestNavXYZPosVel(t *testing.T) {
 		}
 	})
 	t.Run("neither_computed", func(t *testing.T) {
-		m := &uncmsg.BestNavXYZ{
+		m := &uncmsg.BestNavXYZ{XYZ: novmsg.XYZ[uncmsg.SolStatus, uncmsg.PosVelType]{
 			PSolStatus: uncmsg.InsufficientObs,
 			VSolStatus: uncmsg.NoConvergence,
-		}
+		}}
 		var ne gpsprot.NavEpochMsg
 		posE, velE := bestNavXYZPosVel(&ne, m)
 		if posE != nil {

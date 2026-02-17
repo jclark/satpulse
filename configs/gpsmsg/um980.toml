@@ -188,3 +188,38 @@ text = "BDSUTCA 1"
 tag = "unc-bdsutca-off"
 description = "Disable BDSUTC ASCII"
 text = "UNLOG BDSUTCA"
+
+# BESTPOS (NovAtel format geodetic position)
+[[line]]
+tag = "nov-bestposb"
+description = "Enable BESTPOS binary at 1Hz"
+text = "BESTPOSB 1"
+[[line]]
+tag = "nov-bestposb-off"
+description = "Disable BESTPOS binary"
+text = "UNLOG BESTPOSB"
+[[line]]
+tag = "nov-bestposa"
+description = "Enable BESTPOS ASCII at 1Hz"
+text = "BESTPOSA 1"
+[[line]]
+tag = "nov-bestposa-off"
+description = "Disable BESTPOS ASCII"
+text = "UNLOG BESTPOSA"
+
+# Combined BESTPOS binary+ASCII
+[[line]]
+tag = "nov-bestpos"
+description = "Enable BESTPOS binary+ASCII at 1Hz"
+text = "BESTPOSB 1"
+[[line]]
+tag = "nov-bestpos"
+text = "BESTPOSA 1"
+
+[[line]]
+tag = "nov-bestpos-off"
+description = "Disable BESTPOS binary+ASCII"
+text = "UNLOG BESTPOSB"
+[[line]]
+tag = "nov-bestpos-off"
+text = "UNLOG BESTPOSA"

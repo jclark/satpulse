@@ -1,6 +1,10 @@
 package uncmsg
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/jclark/satpulse/gps/lib/novmsg"
+)
 
 // SolStatus represents the solution status in Unicore BESTNAV/BESTNAVXYZ messages
 type SolStatus uint32
@@ -211,81 +215,9 @@ func (p PosVelType) MarshalText() ([]byte, error) {
 	return []byte(p.String()), nil
 }
 
-// DatumID represents a geodetic datum identifier.
-// Binary: uint32 (61 = WGS84). ASCII: symbolic name (e.g. "WGS84").
-type DatumID uint32
+// Shared types aliased from novmsg (used in both NovAtel and Unicore protocols).
+type DatumID = novmsg.DatumID
+type HexByte = novmsg.HexByte
+type StationID = novmsg.StationID
 
-const DatumWGS84 DatumID = 61
-
-// String returns the ASCII representation of DatumID
-func (d DatumID) String() string {
-	if d == DatumWGS84 {
-		return "WGS84"
-	}
-	return fmt.Sprintf("%d", d)
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler for fieldenc support
-func (d *DatumID) UnmarshalText(text []byte) error {
-	if string(text) == "WGS84" {
-		*d = DatumWGS84
-		return nil
-	}
-	return fmt.Errorf("unknown datum: %s", text)
-}
-
-// MarshalText implements encoding.TextMarshaler for fieldenc support
-func (d DatumID) MarshalText() ([]byte, error) {
-	return []byte(d.String()), nil
-}
-
-// HexByte is a uint8 that serializes as 2-digit lowercase hex in ASCII.
-// Used for bitmask fields like ExtSolStat, GalBDS3Sig, GPSGLOBDS2Sig.
-type HexByte uint8
-
-// UnmarshalText implements encoding.TextUnmarshaler for fieldenc support
-func (h *HexByte) UnmarshalText(text []byte) error {
-	var v uint64
-	_, err := fmt.Sscanf(string(text), "%x", &v)
-	if err != nil {
-		return fmt.Errorf("invalid hex byte: %s", text)
-	}
-	*h = HexByte(v)
-	return nil
-}
-
-// MarshalText implements encoding.TextMarshaler for fieldenc support
-func (h HexByte) MarshalText() ([]byte, error) {
-	return []byte(fmt.Sprintf("%02x", uint8(h))), nil
-}
-
-// StationID represents a base station ID, stored as [4]byte in binary
-// and as a quoted string (e.g. "") in ASCII.
-type StationID [4]byte
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-// Strips surrounding quotes: "" -> empty, "0" -> "0".
-func (s *StationID) UnmarshalText(text []byte) error {
-	t := string(text)
-	if len(t) >= 2 && t[0] == '"' && t[len(t)-1] == '"' {
-		t = t[1 : len(t)-1]
-	}
-	*s = StationID{}
-	copy(s[:], t)
-	return nil
-}
-
-// MarshalText implements encoding.TextMarshaler.
-// Returns the station ID as a quoted string.
-func (s StationID) MarshalText() ([]byte, error) {
-	// Find the length (exclude trailing zero bytes)
-	n := len(s)
-	for n > 0 && s[n-1] == 0 {
-		n--
-	}
-	out := make([]byte, 0, n+2)
-	out = append(out, '"')
-	out = append(out, s[:n]...)
-	out = append(out, '"')
-	return out, nil
-}
+const DatumWGS84 = novmsg.DatumWGS84

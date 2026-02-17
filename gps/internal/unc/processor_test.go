@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
 
@@ -62,15 +63,17 @@ func TestDispatchBestNav(t *testing.T) {
 	pp.mh = h
 
 	msg := makeMsg(2350, 100000, &uncmsg.BestNav{
-		PSolStatus: uncmsg.SolComputed,
-		PosType:    uncmsg.PosVelSingle,
-		Lat:        47.49,
-		Lon:        8.56,
-		Hgt:        489.0,
-		Undulation: 50.0,
-		LatSigma:   1.0,
-		LonSigma:   1.0,
-		HgtSigma:   2.0,
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.SolComputed,
+			PosType:    uncmsg.PosVelSingle,
+			Lat:        47.49,
+			Lon:        8.56,
+			Hgt:        489.0,
+			Undulation: 50.0,
+			LatSigma:   1.0,
+			LonSigma:   1.0,
+			HgtSigma:   2.0,
+		},
 		VSolStatus: uncmsg.SolComputed,
 		VelType:    uncmsg.PosVelDopplerVelocity,
 		HorSpd:     1.5,
@@ -116,7 +119,7 @@ func TestDispatchBestNavXYZ(t *testing.T) {
 	h := &testMsgHandler{}
 	pp.mh = h
 
-	msg := makeMsg(2350, 100000, &uncmsg.BestNavXYZ{
+	msg := makeMsg(2350, 100000, &uncmsg.BestNavXYZ{XYZ: novmsg.XYZ[uncmsg.SolStatus, uncmsg.PosVelType]{
 		PSolStatus: uncmsg.SolComputed,
 		PosType:    uncmsg.PosVelSingle,
 		PX:         -2671733.51,
@@ -133,7 +136,7 @@ func TestDispatchBestNavXYZ(t *testing.T) {
 		VXSigma:    0.05,
 		VYSigma:    0.04,
 		VZSigma:    0.06,
-	})
+	}})
 	handled, err := pp.dispatch(msg, time.Unix(1, 0), TagBinary)
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +178,9 @@ func TestDispatchBestNavNotComputed(t *testing.T) {
 	pp.mh = h
 
 	msg := makeMsg(2350, 100000, &uncmsg.BestNav{
-		PSolStatus: uncmsg.InsufficientObs,
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.InsufficientObs,
+		},
 		VSolStatus: uncmsg.NoConvergence,
 	})
 	handled, err := pp.dispatch(msg, time.Unix(1, 0), TagBinary)
@@ -199,14 +204,16 @@ func TestEpochTracking(t *testing.T) {
 
 	// Epoch 1: week=2350, ms=100000
 	msg1 := makeMsg(2350, 100000, &uncmsg.BestNav{
-		PSolStatus: uncmsg.SolComputed,
-		PosType:    uncmsg.PosVelSingle,
-		Lat:        47.0,
-		Lon:        8.0,
-		Hgt:        400.0,
-		LatSigma:   1.0,
-		LonSigma:   1.0,
-		HgtSigma:   2.0,
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.SolComputed,
+			PosType:    uncmsg.PosVelSingle,
+			Lat:        47.0,
+			Lon:        8.0,
+			Hgt:        400.0,
+			LatSigma:   1.0,
+			LonSigma:   1.0,
+			HgtSigma:   2.0,
+		},
 		VSolStatus: uncmsg.SolComputed,
 		VelType:    uncmsg.PosVelDopplerVelocity,
 		HorSpd:     1.0,
@@ -223,14 +230,16 @@ func TestEpochTracking(t *testing.T) {
 
 	// Epoch 2: week=2350, ms=101000 - triggers flush of epoch 1
 	msg2 := makeMsg(2350, 101000, &uncmsg.BestNav{
-		PSolStatus: uncmsg.SolComputed,
-		PosType:    uncmsg.PosVelSingle,
-		Lat:        47.1,
-		Lon:        8.1,
-		Hgt:        401.0,
-		LatSigma:   1.0,
-		LonSigma:   1.0,
-		HgtSigma:   2.0,
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.SolComputed,
+			PosType:    uncmsg.PosVelSingle,
+			Lat:        47.1,
+			Lon:        8.1,
+			Hgt:        401.0,
+			LatSigma:   1.0,
+			LonSigma:   1.0,
+			HgtSigma:   2.0,
+		},
 		VSolStatus: uncmsg.SolComputed,
 		VelType:    uncmsg.PosVelDopplerVelocity,
 		HorSpd:     1.1,
@@ -275,19 +284,21 @@ func TestEpochTagFromFirstMessage(t *testing.T) {
 
 	// First message in epoch uses TagAscii
 	msg1 := makeMsg(2350, 100000, &uncmsg.BestNav{
-		PSolStatus: uncmsg.SolComputed,
-		PosType:    uncmsg.PosVelSingle,
-		Lat:        47.0,
-		Lon:        8.0,
-		Hgt:        400.0,
-		LatSigma:   1.0,
-		LonSigma:   1.0,
-		HgtSigma:   2.0,
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.SolComputed,
+			PosType:    uncmsg.PosVelSingle,
+			Lat:        47.0,
+			Lon:        8.0,
+			Hgt:        400.0,
+			LatSigma:   1.0,
+			LonSigma:   1.0,
+			HgtSigma:   2.0,
+		},
 	})
 	pp.dispatch(msg1, time.Unix(1, 0), TagAscii)
 
 	// Second message in same epoch uses TagBinary - should not change epoch tag
-	msg2 := makeMsg(2350, 100000, &uncmsg.BestNavXYZ{
+	msg2 := makeMsg(2350, 100000, &uncmsg.BestNavXYZ{XYZ: novmsg.XYZ[uncmsg.SolStatus, uncmsg.PosVelType]{
 		PSolStatus: uncmsg.SolComputed,
 		PosType:    uncmsg.PosVelSingle,
 		PX:         1.0,
@@ -296,12 +307,14 @@ func TestEpochTagFromFirstMessage(t *testing.T) {
 		PXSigma:    1.0,
 		PYSigma:    1.0,
 		PZSigma:    1.0,
-	})
+	}})
 	pp.dispatch(msg2, time.Unix(1, 0), TagBinary)
 
 	// Trigger flush with new epoch
 	msg3 := makeMsg(2350, 101000, &uncmsg.BestNav{
-		PSolStatus: uncmsg.InsufficientObs,
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.InsufficientObs,
+		},
 		VSolStatus: uncmsg.NoConvergence,
 	})
 	pp.dispatch(msg3, time.Unix(2, 0), TagBinary)
@@ -325,18 +338,20 @@ func TestSameEpochNoFlush(t *testing.T) {
 
 	// Two messages in the same epoch
 	msg1 := makeMsg(2350, 100000, &uncmsg.BestNav{
-		PSolStatus: uncmsg.SolComputed,
-		PosType:    uncmsg.PosVelSingle,
-		Lat:        47.0,
-		Lon:        8.0,
-		Hgt:        400.0,
-		LatSigma:   1.0,
-		LonSigma:   1.0,
-		HgtSigma:   2.0,
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.SolComputed,
+			PosType:    uncmsg.PosVelSingle,
+			Lat:        47.0,
+			Lon:        8.0,
+			Hgt:        400.0,
+			LatSigma:   1.0,
+			LonSigma:   1.0,
+			HgtSigma:   2.0,
+		},
 	})
 	pp.dispatch(msg1, time.Unix(1, 0), TagBinary)
 
-	msg2 := makeMsg(2350, 100000, &uncmsg.BestNavXYZ{
+	msg2 := makeMsg(2350, 100000, &uncmsg.BestNavXYZ{XYZ: novmsg.XYZ[uncmsg.SolStatus, uncmsg.PosVelType]{
 		PSolStatus: uncmsg.SolComputed,
 		PosType:    uncmsg.PosVelSingle,
 		PX:         1.0,
@@ -345,7 +360,7 @@ func TestSameEpochNoFlush(t *testing.T) {
 		PXSigma:    1.0,
 		PYSigma:    1.0,
 		PZSigma:    1.0,
-	})
+	}})
 	pp.dispatch(msg2, time.Unix(1, 0), TagBinary)
 
 	for _, m := range h.msgs {
