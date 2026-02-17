@@ -45,6 +45,8 @@ func TestPVTMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"UNLOG RECTIMEB",
+				"UNLOG BESTNAVB",
+				"UNLOG BESTNAVXYZB",
 			},
 		},
 		{
@@ -57,6 +59,74 @@ func TestPVTMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"RECTIMEB 1",
+				"UNLOG BESTNAVB",
+				"UNLOG BESTNAVXYZB",
+			},
+		},
+		{
+			name: "enable BESTNAVB for PVTMsgPos",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgPos
+			},
+			expectedCmds: []string{
+				"BESTNAVB 1",
+			},
+		},
+		{
+			name: "enable BESTNAVB for PVTMsgVel",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgVel
+			},
+			expectedCmds: []string{
+				"BESTNAVB 1",
+			},
+		},
+		{
+			name: "enable BESTNAVB for pos+vel",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgVel
+			},
+			expectedCmds: []string{
+				"BESTNAVB 1",
+			},
+		},
+		{
+			name: "enable BESTNAVXYZB for pos+ecef",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF
+			},
+			expectedCmds: []string{
+				"BESTNAVXYZB 1",
+			},
+		},
+		{
+			name: "enable BESTNAVXYZB for vel+ecef",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgVel | gpsprot.PVTMsgECEF
+			},
+			expectedCmds: []string{
+				"BESTNAVXYZB 1",
+			},
+		},
+		{
+			name: "disable BESTNAV with PVTMsgOff",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgOff
+			},
+			expectedCmds: []string{
+				"UNLOG RECTIMEB",
+				"UNLOG BESTNAVB",
+				"UNLOG BESTNAVXYZB",
+			},
+		},
+		{
+			name: "pos+time enables both BESTNAVB and RECTIMEB",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgTime
+			},
+			expectedCmds: []string{
+				"RECTIMEB 1",
+				"BESTNAVB 1",
 			},
 		},
 		{
@@ -115,6 +185,8 @@ func TestPVTMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"UNLOG RECTIMEB",
+				"UNLOG BESTNAVB",
+				"UNLOG BESTNAVXYZB",
 				"UNLOG GPSUTCB",
 				"UNLOG BD3UTCB",
 				"UNLOG GALUTCB",
