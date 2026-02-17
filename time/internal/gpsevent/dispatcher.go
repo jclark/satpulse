@@ -210,9 +210,14 @@ type LogEvent struct {
 	Nanos      time.Duration          `json:"nanos"`
 	PulseEdge  *PulseEdge             `json:"pulseEdge,omitempty"`
 	Time       *gpsprot.TimeMsg       `json:"time,omitempty"`
+	PosGeo     *gpsprot.PosGeoMsg     `json:"posGeo,omitempty"`
+	PosECEF    *gpsprot.PosECEFMsg    `json:"posECEF,omitempty"`
+	VelGeo     *gpsprot.VelGeoMsg     `json:"velGeo,omitempty"`
+	VelECEF    *gpsprot.VelECEFMsg    `json:"velECEF,omitempty"`
 	Survey     *gpsprot.SurveyMsg     `json:"survey,omitempty"`
 	LeapSecond *gpsprot.LeapSecondMsg `json:"leapSecond,omitempty"`
 	Satellites *gpsprot.SatellitesMsg `json:"satellites,omitempty"`
+	NavEpoch   *gpsprot.NavEpochMsg   `json:"navEpoch,omitempty"`
 }
 
 type PulseEdge struct {
@@ -280,8 +285,28 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	}
 }
 
+func (d *Dispatcher) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
+	d.logEvent(LogEvent{T: tRead, PosGeo: msg})
+}
+
+func (d *Dispatcher) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
+	d.logEvent(LogEvent{T: tRead, PosECEF: msg})
+}
+
+func (d *Dispatcher) VelGeo(msg *gpsprot.VelGeoMsg, tRead time.Time) {
+	d.logEvent(LogEvent{T: tRead, VelGeo: msg})
+}
+
+func (d *Dispatcher) VelECEF(msg *gpsprot.VelECEFMsg, tRead time.Time) {
+	d.logEvent(LogEvent{T: tRead, VelECEF: msg})
+}
+
 func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, Satellites: msg})
+}
+
+func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
+	d.logEvent(LogEvent{T: tRead, NavEpoch: msg})
 }
 
 func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
