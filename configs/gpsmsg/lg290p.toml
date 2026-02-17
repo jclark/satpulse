@@ -24,8 +24,30 @@ description = "Get constellation configuration"
 # Get fix rate
 [[nmea]]
 text = "PQTMCFGFIXRATE,R"
-tag = "get-fixrate"
+tag = "get-fix-rate"
 description = "Get fix interval"
+
+# Set fix rate
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,1000"
+tag = "fix-rate-1"
+description = "Set fix rate to 1 Hz"
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,500"
+tag = "fix-rate-2"
+description = "Set fix rate to 2 Hz"
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,200"
+tag = "fix-rate-5"
+description = "Set fix rate to 5 Hz"
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,100"
+tag = "fix-rate-10"
+description = "Set fix rate to 10 Hz"
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,50"
+tag = "fix-rate-20"
+description = "Set fix rate to 20 Hz"
 
 # Get receiver mode (rover/base)
 [[nmea]]
@@ -357,14 +379,15 @@ text = "PQTMCFGMSGRATE,W,GSA,1"
 tag = "nmea-daemon"
 
 # PQTM Proprietary Message Control
-# Note: PQTM messages require message version parameter
+# Rate parameter is per fix (not per second): 1 = every fix, 2 = every 2nd fix.
+# PQTM messages require message version parameter.
 
 # Enable PQTMEPE message (estimated position error)
 # Verified OK and PQTMEPE messages appear on LG290P
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMEPE,1,2"
 tag = "pqtm-epe"
-description = "Enable PQTMEPE message"
+description = "Enable PQTMEPE message (rate of one per fix)"
 
 # Disable PQTMEPE message
 # Verified OK on LG290P
@@ -378,7 +401,7 @@ description = "Disable PQTMEPE message"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMVEL,1,1"
 tag = "pqtm-vel"
-description = "Enable PQTMVEL message"
+description = "Enable PQTMVEL message (rate of one per fix)"
 
 # Disable PQTMVEL message
 # Verified OK on LG290P
@@ -392,7 +415,7 @@ description = "Disable PQTMVEL message"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMPVT,1,1"
 tag = "pqtm-pvt"
-description = "Enable PQTMPVT message"
+description = "Enable PQTMPVT message (rate of one per fix)"
 
 # Disable PQTMPVT message
 # Verified OK on LG290P
@@ -406,7 +429,7 @@ description = "Disable PQTMPVT message"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMNAV,1,1"
 tag = "pqtm-nav"
-description = "Enable PQTMNAV message"
+description = "Enable PQTMNAV message (rate of one per fix)"
 
 # Disable PQTMNAV message
 # Added in protocol spec v1.1 (2025-07-25) - requires newer firmware
@@ -420,7 +443,7 @@ description = "Disable PQTMNAV message"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMEOE,1,1"
 tag = "pqtm-eoe"
-description = "Enable PQTMEOE message (end of epoch)"
+description = "Enable PQTMEOE message (rate of one per fix)"
 
 # Disable PQTMEOE message
 # Added in protocol spec v1.1 (2025-07-25) - requires newer firmware
@@ -433,7 +456,7 @@ description = "Disable PQTMEOE message"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMDOP,1,1"
 tag = "pqtm-dop"
-description = "Enable PQTMDOP message"
+description = "Enable PQTMDOP message (rate of one per fix)"
 
 # Disable PQTMDOP message
 [[nmea]]
@@ -445,7 +468,7 @@ description = "Disable PQTMDOP message"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1"
 tag = "pqtm-svin"
-description = "Enable PQTMSVINSTATUS message"
+description = "Enable PQTMSVINSTATUS message (rate of one per fix)"
 
 # Disable PQTMSVINSTATUS message
 [[nmea]]
@@ -454,10 +477,14 @@ tag = "pqtm-svin-off"
 description = "Disable PQTMSVINSTATUS message"
 
 # Enable PQTM messages for R01A04S+ firmware (PVT + VEL + EPE + SVINSTATUS + DOP)
+# Sets fix rate to 1 Hz; message rate is one per fix.
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,1000"
+tag = "pqtm-r01a04"
+description = "Enable PQTM messages for R01A04S+ firmware"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMPVT,1,1"
 tag = "pqtm-r01a04"
-description = "Enable PQTM messages for R01A04S+ firmware"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMVEL,1,1"
 tag = "pqtm-r01a04"
@@ -490,10 +517,14 @@ text = "PQTMCFGMSGRATE,W,PQTMDOP,0,1"
 tag = "pqtm-r01a04-off"
 
 # Enable PQTM messages for R01A05S+ firmware (NAV + VEL + EPE + EOE + SVINSTATUS + DOP)
+# Sets fix rate to 1 Hz; message rate is one per fix.
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,1000"
+tag = "pqtm-r01a05"
+description = "Enable PQTM messages for R01A05S+ firmware"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMNAV,1,1"
 tag = "pqtm-r01a05"
-description = "Enable PQTM messages for R01A05S+ firmware"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMVEL,1,1"
 tag = "pqtm-r01a05"

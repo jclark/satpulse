@@ -96,6 +96,22 @@ Each gets an `-off` variant for disabling.
 | `pps` | Enable PPS with 0.1s pulse width, only when locked |
 | `pps-off` | Disable PPS output |
 
+## Fix rate
+
+| Tag | Description |
+|-----|-------------|
+| `get-fix-rate` | Query current fix interval |
+| `fix-rate-1` | Set fix rate to 1 Hz |
+| `fix-rate-2` | Set fix rate to 2 Hz |
+| `fix-rate-5` | Set fix rate to 5 Hz |
+| `fix-rate-10` | Set fix rate to 10 Hz |
+| `fix-rate-20` | Set fix rate to 20 Hz |
+
+Fix rate is the number of navigation solutions computed per second.
+Message output rate is sometimes specified as a multiple of this:
+one message every N fixes. To get 1 Hz messages from a 10 Hz fix rate,
+set the message rate to 10.
+
 ## Port configuration
 
 | Tag | Description |
