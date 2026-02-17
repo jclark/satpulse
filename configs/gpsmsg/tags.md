@@ -153,6 +153,15 @@ Each gets an `-off` variant for disabling.
 | `rtcm-msm7` | Enable MSM7 for all constellations (1077/1087/1097/1127) |
 | `rtcm-off` | Disable all RTCM messages |
 
+## PPP (Precise Point Positioning)
+
+| Tag | Description |
+|-----|-------------|
+| `ppp-has` | Enable PPP with Galileo HAS source |
+| `ppp-b2b` | Enable PPP with BeiDou B2b source |
+| `ppp-has-b2b` | Enable PPP with fused HAS+B2b source |
+| `ppp-off` | Disable PPP |
+
 ## RTK mode (if applicable)
 
 | Tag | Description |
