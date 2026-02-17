@@ -139,21 +139,17 @@ func TestDecodeUNCB(t *testing.T) {
 	}
 }
 
-func TestDecodeErrUnknownFormat(t *testing.T) {
+func TestDecodeErrInvalidPacket(t *testing.T) {
 	// Random bytes that don't match any format
 	_, _, err := Decode(gpsreg.PacketFormats, []byte("random data"), false)
-	if err != ErrUnknownFormat {
-		t.Errorf("expected ErrUnknownFormat, got %v", err)
-	}
-}
-
-func TestDecodeErrInvalidPacket(t *testing.T) {
-	// Starts like UBX but too short / invalid structure
-	// This has the sync bytes but length field says more data needed
-	packet := []byte{0xB5, 0x62, 0x01, 0x20, 0x10, 0x00} // says 16 bytes payload but none present
-	_, _, err := Decode(gpsreg.PacketFormats, packet, false)
 	if err != ErrInvalidPacket {
-		t.Errorf("expected ErrInvalidPacket, got %v", err)
+		t.Errorf("expected ErrInvalidPacket for random data, got %v", err)
+	}
+	// Starts like UBX but too short / invalid structure
+	packet := []byte{0xB5, 0x62, 0x01, 0x20, 0x10, 0x00} // says 16 bytes payload but none present
+	_, _, err = Decode(gpsreg.PacketFormats, packet, false)
+	if err != ErrInvalidPacket {
+		t.Errorf("expected ErrInvalidPacket for truncated UBX, got %v", err)
 	}
 }
 

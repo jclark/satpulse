@@ -228,13 +228,3 @@ func (s *Scanner) fill(packetLen int) error {
 	}
 	return nil
 }
-
-// LooksLike returns the packet format that it looks like
-func LooksLike(pktFormats []gpsprot.PacketFormat, buf []byte) gpsprot.PacketFormat {
-	for i := 0; i < len(pktFormats); i++ {
-		if pktFormats[i].Next(stateSync, buf, 0, 0) != stateSync {
-			return pktFormats[i]
-		}
-	}
-	return nil
-}
