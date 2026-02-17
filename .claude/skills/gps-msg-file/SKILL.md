@@ -56,12 +56,21 @@ Easy to verify by capturing before/after. Individual tags allow granular control
 ### 3. Reload (`reload`)
 Reload configuration from NVM - restores saved settings. Safe to test (doesn't change persistent state) and useful for verifying other commands work. Should include `delay = 3` to wait for reload to complete.
 
-### 4. Binary Output Control (individual message tags)
+### 4. Fix Rate (`fix-rate-*`, `get-fix-rate`)
+Fix rate (navigation solutions per second) configuration:
+- `get-fix-rate` - Query current fix rate
+- `fix-rate-1` through `fix-rate-20` (1, 2, 5, 10, 20 Hz)
+
+Add if the receiver supports configuring the fix interval. Message output rate is often specified as a multiple of the fix rate (one message every N fixes), so the fix rate determines the actual message rate.
+
+**Skip if:** Receiver has no configurable fix rate
+
+### 5. Binary Output Control (individual message tags)
 Binary message output control with individual tags:
 - Protocol-specific message names (e.g., `asbin-navtime`, `asbin-timeutc`, `asbin-svinfo`, `asbin-svin`, `ubx-navpvt`)
 - Each message gets its own enable/disable tag pair
 
-### 5. NMEA Version (`nmea-ver-*`, `get-nmea-ver`)
+### 6. NMEA Version (`nmea-ver-*`, `get-nmea-ver`)
 NMEA protocol version configuration:
 - `get-nmea-ver` - Query current version
 - `nmea-ver-3` - Set to NMEA 3.01
@@ -71,14 +80,14 @@ NMEA protocol version configuration:
 
 Verifiable by observing talker ID changes (BD vs GB) and GSV signal ID field.
 
-### 6. Elevation Mask (`min-elev-*`, `get-min-elev`)
+### 7. Elevation Mask (`min-elev-*`, `get-min-elev`)
 Minimum satellite elevation configuration:
 - `get-min-elev` - Query current elevation mask
 - `min-elev-0` through `min-elev-45` in 5-degree increments
 
 Verifiable by cross-referencing GSA (satellites used) with GSV (satellite elevations).
 
-### 7. Constellation Selection (`gnss-*`, `get-gnss`)
+### 8. Constellation Selection (`gnss-*`, `get-gnss`)
 GNSS constellation configuration with per-constellation and combination tags:
 - `get-gnss` - Query current constellation settings
 - `gnss-gps` - Enable GPS only (with all available bands)
@@ -90,7 +99,7 @@ GNSS constellation configuration with per-constellation and combination tags:
 
 Verifiable via GSV message prefixes (GPGSV, GAGSV, GLGSV, GBGSV).
 
-### 8. PPS Configuration (`pps`, `pps-off`, `get-pps`)
+### 9. PPS Configuration (`pps`, `pps-off`, `get-pps`)
 PPS configuration:
 - `get-pps` - Query current PPS configuration
 - `pps` - Enable with sensible defaults (100us pulse width, rising edge, only when locked)
@@ -98,7 +107,7 @@ PPS configuration:
 
 Observable effect requires oscilloscope or PHC with external timestamp input.
 
-### 9. Reset Commands
+### 10. Reset Commands
 Restart commands with different levels of data clearing:
 - `hot-start` - Keeps ephemeris data (fastest restart)
 - `warm-start` - Clears ephemeris, keeps almanac
@@ -107,7 +116,7 @@ Restart commands with different levels of data clearing:
 
 Verifiable by checking RMC status (V=void after reset) and GSV (missing elevation/azimuth data after cold start).
 
-### 10. Survey-in (`survey`, `survey-off`, `get-survey`)
+### 11. Survey-in (`survey`, `survey-off`, `get-survey`)
 Survey-in configuration for base station positioning:
 - `get-survey` - Query current survey configuration
 - `survey` - Start survey with sensible defaults (2000 seconds, 20m accuracy)
@@ -118,7 +127,7 @@ If the protocol provides a periodic survey status message, add:
 
 **Skip if:** Receiver doesn't support survey-in mode
 
-### 11. Fixed Position (`fixed-pos-example`, `fixed-pos-off`, `get-fixed-pos`)
+### 12. Fixed Position (`fixed-pos-example`, `fixed-pos-off`, `get-fixed-pos`)
 Fixed ECEF position for base station:
 - `get-fixed-pos` - Query current fixed position
 - `fixed-pos-example` - Set fixed ECEF position (example coordinates - replace with yours)
@@ -126,7 +135,7 @@ Fixed ECEF position for base station:
 
 **Skip if:** Receiver doesn't support fixed position mode
 
-### 12. RTCM Output (`rtcm-arp`, `rtcm-msm4`, `rtcm-msm7`, `rtcm-off`)
+### 13. RTCM Output (`rtcm-arp`, `rtcm-msm4`, `rtcm-msm7`, `rtcm-off`)
 RTCM message output for base station:
 - `rtcm-arp` - Enable ARP message (1005)
 - `rtcm-msm4` - Enable MSM4 messages for all constellations (1074/1084/1094/1124)
@@ -135,7 +144,7 @@ RTCM message output for base station:
 
 **Skip if:** Receiver doesn't support RTCM output
 
-### 13. Port Configuration (`get-uart0`, `get-uart1`, `speed-*`)
+### 14. Port Configuration (`get-uart0`, `get-uart1`, `speed-*`)
 Serial port configuration:
 - `get-uart0`, `get-uart1` - Query port configuration
 - `speed-9600`, `speed-19200`, `speed-38400`, `speed-57600`, `speed-115200`, `speed-230400`, `speed-460800`
@@ -147,10 +156,10 @@ Verifiable on real UARTs (/dev/ttyUSBx) by reconnecting at new speed.
 - Test speeds at or above 38400 unless that is below the receiver's default
 - Place after survey-in since baud rate changes can lose communication
 
-### 14. Save (`save`) - requires user consent
+### 15. Save (`save`) - requires user consent
 Save current configuration to NVM. Only test if user consents - modifies persistent state.
 
-### 15. Factory Reset (`factory-reset`) - requires user consent
+### 16. Factory Reset (`factory-reset`) - requires user consent
 Reset receiver to factory defaults AND clear satellite data. Only test if user consents - loses all configuration.
 
 Verifiable by checking that config reverts to defaults and RMC shows void status.
