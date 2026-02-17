@@ -533,6 +533,48 @@ tag = "nmea-ver-400"
 description = "Set NMEA version to 4.00"
 text = "SET NMEAV41 OFF"
 
+# PPP (Precise Point Positioning)
+# Commands accepted on K902 fw 8.2.4 but PPP does not appear to work:
+# solution stays SINGLE with no corrections received.
+
+[[line]]
+tag = "ppp-has"
+description = "Enable PPP with Galileo HAS source at 1Hz"
+text = "SET PPP ON"
+[[line]]
+tag = "ppp-has"
+text = "SET PPPSOURCE HAS"
+[[line]]
+tag = "ppp-has"
+text = "SET PPPFREQ 1"
+
+[[line]]
+tag = "ppp-b2b"
+description = "Enable PPP with BeiDou B2b source at 1Hz"
+text = "SET PPP ON"
+[[line]]
+tag = "ppp-b2b"
+text = "SET PPPSOURCE B2B"
+[[line]]
+tag = "ppp-b2b"
+text = "SET PPPFREQ 1"
+
+[[line]]
+tag = "ppp-has-b2b"
+description = "Enable PPP with fused HAS+B2b source at 1Hz"
+text = "SET PPP ON"
+[[line]]
+tag = "ppp-has-b2b"
+text = "SET PPPSOURCE BHS"
+[[line]]
+tag = "ppp-has-b2b"
+text = "SET PPPFREQ 1"
+
+[[line]]
+tag = "ppp-off"
+description = "Disable PPP"
+text = "SET PPP OFF"
+
 # PPS Configuration
 
 # Verified OK response on K902
