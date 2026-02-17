@@ -17,7 +17,6 @@ import (
 )
 
 var (
-	ErrUnknownFormat = errors.New("unknown packet format")
 	ErrInvalidPacket = errors.New("invalid packet structure")
 	ErrUnknownMsg    = errors.New("unknown message type")
 )
@@ -42,23 +41,24 @@ type DecodeResult struct {
 var cfgSchema = ubxcfgval.NewSchemaWithMsgout(ubxcfgval.GetDfltSchema())
 
 // Decode parses a packet and returns the PacketFormat and decoded fields.
-// It uses scan.LooksLike to identify the format and gpsprot.IsValidPacket to validate.
+// It uses the scanner to identify the format and validate the checksum.
 // Returns PacketFormat so caller can get both Tag() and MsgID(data).
 func Decode(pktFormats []gpsprot.PacketFormat, data []byte, out bool) (gpsprot.PacketFormat, *DecodeResult, error) {
-	pf := scan.LooksLike(pktFormats, data)
-	if pf == nil {
-		return nil, nil, ErrUnknownFormat
-	}
-	if !gpsprot.IsValidPacket(pf, data) {
+	s := scan.New(bytes.NewReader(data), len(data))
+	pkt, err := s.Scan()
+	if err != nil {
 		return nil, nil, ErrInvalidPacket
 	}
-	// Validate checksum
-	inPacket := pf.ExtractChecksum(data)
-	computed := pf.ComputeChecksum(data)
-	if !bytes.Equal(inPacket, computed) {
+	pf := pkt.Format
+	if pf == nil {
+		return nil, nil, ErrInvalidPacket
+	}
+	if !pkt.ChecksumValid {
+		inPacket := pf.ExtractChecksum([]byte(pkt.Data))
+		computed := pf.ComputeChecksum([]byte(pkt.Data))
 		// Check alternate checksum for formats that support it
 		if alt, ok := pf.(gpsprot.AltChecksumPacketFormat); ok {
-			if bytes.Equal(inPacket, alt.ComputeAltChecksum(data)) {
+			if bytes.Equal(inPacket, alt.ComputeAltChecksum([]byte(pkt.Data))) {
 				goto checksumOK
 			}
 		}
@@ -82,7 +82,7 @@ checksumOK:
 		r, err := novbinDecode(data)
 		return pf, r, err
 	default:
-		return pf, nil, ErrUnknownFormat
+		return pf, nil, ErrInvalidPacket
 	}
 }
 
