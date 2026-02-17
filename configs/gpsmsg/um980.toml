@@ -223,3 +223,38 @@ text = "UNLOG BESTPOSB"
 [[line]]
 tag = "nov-bestpos-off"
 text = "UNLOG BESTPOSA"
+
+# BESTXYZ (NovAtel format ECEF position+velocity)
+[[line]]
+tag = "nov-bestxyzb"
+description = "Enable BESTXYZ binary at 1Hz"
+text = "BESTXYZB 1"
+[[line]]
+tag = "nov-bestxyzb-off"
+description = "Disable BESTXYZ binary"
+text = "UNLOG BESTXYZB"
+[[line]]
+tag = "nov-bestxyza"
+description = "Enable BESTXYZ ASCII at 1Hz"
+text = "BESTXYZA 1"
+[[line]]
+tag = "nov-bestxyza-off"
+description = "Disable BESTXYZ ASCII"
+text = "UNLOG BESTXYZA"
+
+# Combined BESTXYZ binary+ASCII
+[[line]]
+tag = "nov-bestxyz"
+description = "Enable BESTXYZ binary+ASCII at 1Hz"
+text = "BESTXYZB 1"
+[[line]]
+tag = "nov-bestxyz"
+text = "BESTXYZA 1"
+
+[[line]]
+tag = "nov-bestxyz-off"
+description = "Disable BESTXYZ binary+ASCII"
+text = "UNLOG BESTXYZB"
+[[line]]
+tag = "nov-bestxyz-off"
+text = "UNLOG BESTXYZA"
