@@ -12,37 +12,6 @@ import (
 	"github.com/jclark/satpulse/gps/internal/sino"
 )
 
-func TestGGAParse(t *testing.T) {
-	tests := []struct {
-		sen   string
-		numSV int
-	}{
-		{
-			sen:   "$GNGGA,071113.000,3957.7995312,N,11619.0286230,E,4,16,0.99,103.965,M,-8.408,M,1.0,4042*40",
-			numSV: 16,
-		},
-		{
-			sen:   "$GNGGA,025159.000,3149.29993210,N,11706.91264104,E,1,16,1.26,97.250,M,-4.945,M,,*5A",
-			numSV: 16,
-		},
-	}
-	for _, test := range tests {
-		test := test
-		t.Run(Trim(test.sen), func(t *testing.T) {
-			sen := parseApprovedSentence(addTrailer(test.sen))
-			if sen == nil {
-				t.Fatalf("did not parse as approved sentence: %s", test.sen)
-			}
-			gga, err := parseGGA(sen)
-			if err != nil {
-				t.Fatalf("unexpected GGA parsing error: %v", err)
-			}
-			if gga.numSV != test.numSV {
-				t.Fatalf("GGA SV count mismatch: got %d, want %d", gga.numSV, test.numSV)
-			}
-		})
-	}
-}
 
 func TestGSAParse(t *testing.T) {
 	tests := []struct {

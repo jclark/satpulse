@@ -32,7 +32,18 @@ const (
 
 )
 
-const SentenceMaxLength = 128 // Maximum length of a valid NMEA-like packet
+// SentenceMaxLength is the maximum length of a valid NMEA-like packet
+// (including checksum and CRLF).
+//
+// The NMEA 0183 standard specifies 82 characters, but modern receivers
+// exceed this because they need more precision in latitude/longitude fields.
+// U-blox has a Limit82 flag implying sentences exceed 82 without it.
+// Unicore documents a maximum of 128 characters.
+//
+// Quectel PQTMNAV sentences are much longer: ~190 characters with current
+// firmware fields, and up to ~340 if the 16 reserved fields are populated
+// in future firmware. We use 400 to allow headroom.
+const SentenceMaxLength = 400
 
 // Composite flags (defined after iota sequence)
 const (

@@ -2,7 +2,7 @@
 
 Prerequisite: [nav-epoch.md](nav-epoch.md) (adds `NavEpochMsg` and `MsgHandler.NavEpoch`).
 
-Related: [solution-metadata.md](solution-metadata.md) (populates `NavEpochMsg` fields), [nmea-extensibility.md](nmea-extensibility.md) (extended NMEA sentence handlers).
+Related: [solution-metadata.md](solution-metadata.md) (populates `NavEpochMsg` fields), [nmea-extensibility.md](nmea-extensibility.md) (extended NMEA sentence handlers), [nmea-ext-handler-epoch.md](nmea-ext-handler-epoch.md) (epoch lifecycle on NMEA `PacketProcessor`).
 
 ## Problem
 
@@ -115,8 +115,8 @@ Each `PacketProcessor` that currently emits `NavEpochMsg` directly (or will per 
 - Same pattern as UBX: `EpochStarted` on iTOW change, implements `FlushNavEpoch`.
 
 **NMEA** (`gps/internal/nmea/nmea.go`):
-- The `navEpochBuffer` (from solution-metadata plan) calls `manager.EpochStarted(p, tRead)` on time-of-day change in RMC/GGA.
-- Implements `FlushNavEpoch`: returns the accumulated `NavEpochMsg` from the `navEpochBuffer`, clears it.
+- Epoch boundaries are detected by `CheckEpoch` (from nmea-ext-handler-epoch.md). When `handleEpoch` detects a new epoch, it calls `manager.EpochStarted(p, tRead)` instead of flushing directly.
+- Implements `FlushNavEpoch`: returns the `NavEpochMsg` from `curNavEpoch`, clears it.
 - The `satellitesBuffer` is unaffected -- it continues to flush independently via idle timeout and repeated GSV keys.
 
 **CASIC** (`gps/internal/casic/casproc.go`):

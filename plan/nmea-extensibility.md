@@ -67,15 +67,18 @@ type ExtSentenceHandler interface {
     // payload is the NMEA payload between $ and *XX (e.g. "PQTMPVT,1,...")
     // epoch is the NavEpochMsg for the current epoch; the handler may
     // contribute fields to it.
-    // Returns a non-nil MsgBundle if the sentence was handled.
-    // Returns nil if the handler does not recognize the sentence.
-    HandleSentence(flags nmeamsg.SentenceSyntaxFlags, payload string, epoch *gpsprot.NavEpochMsg) *gpsprot.MsgBundle
+    // Returns a non-nil MsgBundle if the sentence was handled (the bundle
+    // may have no message fields set, e.g. for epoch-only contributions).
+    // Returns eoe=true if the sentence marks an end-of-epoch boundary
+    // (e.g. PQTMEOE).
+    // Returns (nil, false) if the handler does not recognize the sentence.
+    HandleSentence(flags nmeamsg.SentenceSyntaxFlags, payload string, epoch *gpsprot.NavEpochMsg) (bundle *gpsprot.MsgBundle, eoe bool)
 }
 ```
 
 Key design choices:
 
-- **Returns MsgBundle**: The handler returns a `*gpsprot.MsgBundle` rather than calling `MsgHandler` methods directly. This keeps the handler pure and testable -- it doesn't need to know about the downstream consumer. The NMEA `PacketProcessor` dispatches the results.
+- **Returns (MsgBundle, bool)**: The handler returns a `*gpsprot.MsgBundle` and an epoch-complete flag rather than calling `MsgHandler` methods directly. This keeps the handler pure and testable -- it doesn't need to know about the downstream consumer. The NMEA `PacketProcessor` dispatches the results and flushes the epoch when signalled. A non-nil bundle means the handler claimed the sentence; nil means it didn't recognize it.
 
 - **Payload string, not parsed fields**: The handler receives the raw payload string (everything between `$` and `*XX`), not pre-split fields. Different vendors have different conventions for field layout, and the handler knows best how to parse its own sentences. The payload includes the address field (e.g. `PQTMPVT,1,...`).
 
@@ -126,8 +129,11 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
     }
     // Try extension handlers for non-standard sentences
     for _, h := range p.extHandlers {
-        if result := h.HandleSentence(sen.SyntaxFlags, sen.Payload, &p.navEpoch); result != nil {
+        if result, eoe := h.HandleSentence(sen.SyntaxFlags, sen.Payload, &p.navEpoch); result != nil {
             result.Dispatch(p.mh, tRead)
+            if eoe {
+                p.flushNavEpoch(tRead)
+            }
             return msgID, nil
         }
     }
@@ -181,43 +187,17 @@ func (h *Handler) HandleSentence(
     flags nmeamsg.SentenceSyntaxFlags,
     payload string,
     epoch *gpsprot.NavEpochMsg,
-) *gpsprot.MsgBundle {
+) (*gpsprot.MsgBundle, bool) {
     // Must be a valid proprietary NMEA sentence (P + 3+ char manufacturer ID)
     if !flags.IsValidProprietaryNMEA() {
-        return nil
+        return nil, false
     }
-    // Check 3-letter manufacturer ID is QTM (bytes 1..4 of payload: "PQTM...")
-    if len(payload) < 4 || payload[1:4] != "QTM" {
-        return nil
+    msg, err := qtmmsg.ParsePeriodicMsg(payload)
+    if msg == nil {
+        return nil, false
     }
-    // Extract message type: everything from byte 4 up to the first comma
-    rest := payload[4:]
-    comma := strings.IndexByte(rest, ',')
-    if comma < 0 {
-        return nil
-    }
-    msgType := rest[:comma]
-    fields := strings.Split(rest[comma+1:], ",")
-    switch msgType {
-    // Periodic output messages only.
-    // Configuration responses (CFG*, VERNO, etc.) must NOT be listed
-    // here -- they fall through to NativeMsgHandler for the
-    // command/response pipeline.
-    case "PVT":
-        return parsePVT(fields)
-    case "VEL":
-        return parseVEL(fields)
-    case "EPE":
-        return parseEPE(fields)
-    case "SVINSTATUS":
-        return parseSVINSTATUS(fields)
-    case "NAV":
-        return parseNAV(fields)
-    case "DOP":
-        return parseDOP(fields)
-    default:
-        return nil
-    }
+    // ... type-switch on msg, return (bundle, false) for data messages,
+    // (&MsgBundle{}, true) for EOE
 }
 ```
 
@@ -240,7 +220,7 @@ The handler only claims periodic output messages. Quectel's PQTM messages fall i
 
 **Configuration/command responses** (not handled -- fall through to NativeMsgHandler):
 
-PQTMCFGPPS, PQTMCFGSVIN, PQTMCFGCNST, PQTMCFGMSGRATE, PQTMCFGUART, PQTMCFGRCVRMODE, PQTMCFGELETHD, PQTMCFGPROT, PQTMCFGFIXRATE, PQTMCFGRTCM, PQTMVERNO, PQTMSAVEPAR, PQTMRESTOREPAR, PQTMEOE, etc.
+PQTMCFGPPS, PQTMCFGSVIN, PQTMCFGCNST, PQTMCFGMSGRATE, PQTMCFGUART, PQTMCFGRCVRMODE, PQTMCFGELETHD, PQTMCFGPROT, PQTMCFGFIXRATE, PQTMCFGRTCM, PQTMVERNO, PQTMSAVEPAR, PQTMRESTOREPAR, etc.
 
 PQTMPVT is the most important since it provides time, position, and velocity in a single message and is available on all LG290P firmware versions. PQTMNAV is more comprehensive but was added in protocol spec v1.1 and requires newer firmware.
 
@@ -257,7 +237,7 @@ Unlike the messages in `MsgBundle`, `NavEpochMsg` is built up across multiple se
 - PQTMEPE contributes position accuracy
 - PQTMNAV sets Quality, Dim, NumSVUsed, NumSVTracked
 
-The `PacketProcessor` decides when to flush the accumulated `NavEpochMsg` and dispatch it via `MsgHandler.NavEpoch`. Epoch boundaries can be detected by PQTMEOE (end of epoch marker), by a time-of-day change in the next PVT sentence, or by an idle timeout. The exact flushing strategy follows the same pattern as `satellitesBuffer` for GSV/GSA.
+The `PacketProcessor` decides when to flush the accumulated `NavEpochMsg` and dispatch it via `MsgHandler.NavEpoch`. The handler signals end-of-epoch via the `eoe` return value (e.g. when it sees PQTMEOE). For receivers without an explicit EOE message, epoch boundaries are detected by time-of-day change when the next epoch's first message arrives.
 
 ## What this doesn't cover
 

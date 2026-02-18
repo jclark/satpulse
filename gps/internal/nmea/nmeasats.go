@@ -288,23 +288,6 @@ func (sb *satellitesBuffer) setMixedSigIDs() {
 	sb.gsvKeys = newKeys
 }
 
-type ggaSentence struct {
-	numSV int
-}
-
-func parseGGA(sen *ApprovedSentence) (ggaSentence, error) {
-	gga := ggaSentence{}
-	if len(sen.Fields) < 7 {
-		return gga, fmt.Errorf("GGA: too few fields")
-	}
-	numSV, err := parseIntField(sen.Fields, 6, 0, 99, "GGA")
-	if err != nil && sen.Fields[6] != "" {
-		return gga, err
-	}
-	gga.numSV = int(numSV)
-	return gga, nil
-}
-
 type gsaSentence struct {
 	gnss  gpsprot.GNSS
 	svids []int
