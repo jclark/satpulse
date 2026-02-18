@@ -258,3 +258,19 @@ text = "UNLOG BESTXYZB"
 [[line]]
 tag = "nov-bestxyz-off"
 text = "UNLOG BESTXYZA"
+
+# RANGECMP (NovAtel compressed range, ID 140)
+[[line]]
+tag = "nov-rangecmpb"
+description = "Enable RANGECMP binary every 30s"
+text = "RANGECMPB 30"
+[[line]]
+tag = "nov-rangecmpb-off"
+description = "Disable RANGECMP binary"
+text = "UNLOG RANGECMPB"
+
+# Disable all messages
+[[line]]
+tag = "msg-all-off"
+description = "Disable all logged messages"
+text = "UNLOGALL"
