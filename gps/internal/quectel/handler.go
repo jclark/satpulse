@@ -20,40 +20,48 @@ type Handler struct{}
 func NewHandler() *Handler { return &Handler{} }
 
 // HandleSentence parses a PQTM periodic message and returns gpsprot
-// messages. It returns (nil, false) for non-PQTM or unrecognized
-// sentences. The eoe return is true only for PQTMEOE.
+// messages. It returns (nil, nil, nil) for non-PQTM or unrecognized
+// sentences. EOE returns (bundle, nil, nil) to signal end-of-epoch.
 func (h *Handler) HandleSentence(
 	flags nmeamsg.SentenceSyntaxFlags,
 	payload string,
-	epoch *gpsprot.NavEpochMsg,
-) (*gpsprot.MsgBundle, bool) {
+	epoch *nmea.NavEpoch,
+) (*gpsprot.MsgBundle, *nmea.NavEpoch, error) {
 	if !flags.IsValidProprietaryNMEA() {
-		return nil, false
+		return nil, nil, nil
 	}
-	msg, _ := qtmmsg.ParsePeriodicMsg(payload)
+	msg, err := qtmmsg.ParsePeriodicMsg(payload)
+	if err != nil {
+		return nil, nil, err
+	}
 	if msg == nil {
-		return nil, false
+		return nil, nil, nil
 	}
 	switch m := msg.(type) {
 	case *qtmmsg.PVT:
-		return msgBundlePVT(m, epoch), false
+		epoch = nmea.CheckEpoch(epoch, m.Time)
+		return msgBundlePVT(m), epoch, nil
 	case *qtmmsg.NAV:
-		return msgBundleNAV(m, epoch), false
+		epoch = nmea.CheckEpoch(epoch, m.UTC)
+		return msgBundleNAV(m, epoch), epoch, nil
 	case *qtmmsg.VEL:
-		return msgBundleVEL(m, epoch), false
+		epoch = nmea.CheckEpoch(epoch, m.Time)
+		return msgBundleVEL(m, epoch), epoch, nil
 	case *qtmmsg.EPE:
+		epoch = nmea.CheckEpoch(epoch, "")
 		accEPE(m, epoch)
-		return &gpsprot.MsgBundle{}, false
+		return &gpsprot.MsgBundle{}, epoch, nil
 	case *qtmmsg.SVINStatus:
-		return msgBundleSVIN(m), false
+		epoch = nmea.CheckEpoch(epoch, "")
+		return msgBundleSVIN(m), epoch, nil
 	case *qtmmsg.EOE:
-		return &gpsprot.MsgBundle{}, true
+		return &gpsprot.MsgBundle{}, nil, nil
 	default:
-		return nil, false
+		return nil, nil, nil
 	}
 }
 
-func msgBundlePVT(m *qtmmsg.PVT, _ *gpsprot.NavEpochMsg) *gpsprot.MsgBundle {
+func msgBundlePVT(m *qtmmsg.PVT) *gpsprot.MsgBundle {
 	b := &gpsprot.MsgBundle{}
 	if m.FixType >= 2 {
 		if utc, ok := parseDateTime(m.Date, m.Time); ok {
@@ -106,7 +114,7 @@ func msgBundlePVT(m *qtmmsg.PVT, _ *gpsprot.NavEpochMsg) *gpsprot.MsgBundle {
 	return b
 }
 
-func msgBundleNAV(m *qtmmsg.NAV, epoch *gpsprot.NavEpochMsg) *gpsprot.MsgBundle {
+func msgBundleNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 	b := &gpsprot.MsgBundle{}
 	if m.TimeStatus == 1 {
 		if utc, ok := parseDateTime(m.Date, m.UTC); ok {
@@ -165,7 +173,7 @@ func msgBundleNAV(m *qtmmsg.NAV, epoch *gpsprot.NavEpochMsg) *gpsprot.MsgBundle 
 	return b
 }
 
-func msgBundleVEL(m *qtmmsg.VEL, epoch *gpsprot.NavEpochMsg) *gpsprot.MsgBundle {
+func msgBundleVEL(m *qtmmsg.VEL, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 	b := &gpsprot.MsgBundle{}
 	if m.VelN.IsSet() && m.VelE.IsSet() && m.VelD.IsSet() {
 		vel := &gpsprot.VelGeoMsg{
@@ -200,7 +208,7 @@ func msgBundleVEL(m *qtmmsg.VEL, epoch *gpsprot.NavEpochMsg) *gpsprot.MsgBundle 
 	return b
 }
 
-func accEPE(m *qtmmsg.EPE, epoch *gpsprot.NavEpochMsg) {
+func accEPE(m *qtmmsg.EPE, epoch *nmea.NavEpoch) {
 	if m.EPE2D.IsSet() {
 		epoch.Acc.Hor.Set(gpsprot.Meters(m.EPE2D.Get()))
 	}

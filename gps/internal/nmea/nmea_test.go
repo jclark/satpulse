@@ -126,11 +126,14 @@ type mockExtHandler struct {
 	eoe    bool
 }
 
-func (h *mockExtHandler) HandleSentence(flags nmeamsg.SentenceSyntaxFlags, payload string, epoch *gpsprot.NavEpochMsg) (*gpsprot.MsgBundle, bool) {
+func (h *mockExtHandler) HandleSentence(_ nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) (*gpsprot.MsgBundle, *NavEpoch, error) {
 	if strings.HasPrefix(payload, h.prefix) {
-		return h.bundle, h.eoe
+		if h.eoe {
+			return h.bundle, nil, nil
+		}
+		return h.bundle, epoch, nil
 	}
-	return nil, false
+	return nil, nil, nil
 }
 
 type nativeMsgRecorder struct {

@@ -24,10 +24,9 @@ const (
 
 func TestPVTBundle(t *testing.T) {
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, pvtPayload, &epoch)
-	if eoe {
-		t.Fatal("unexpected eoe")
+	b, _, err := h.HandleSentence(propFlags, pvtPayload, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if b == nil {
 		t.Fatal("expected non-nil bundle")
@@ -99,10 +98,9 @@ func TestPVTBundle(t *testing.T) {
 func TestPVTNoFix(t *testing.T) {
 	payload := "PQTMPVT,1,31075000,20221225,083737.000,,0,00,,,,,,,,,,,,"
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, payload, &epoch)
-	if eoe {
-		t.Fatal("unexpected eoe")
+	b, _, err := h.HandleSentence(propFlags, payload, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if b == nil {
 		t.Fatal("expected non-nil bundle")
@@ -120,10 +118,9 @@ func TestPVTNoFix(t *testing.T) {
 
 func TestNAVBundle(t *testing.T) {
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, navPayload, &epoch)
-	if eoe {
-		t.Fatal("unexpected eoe")
+	b, epoch, err := h.HandleSentence(propFlags, navPayload, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if b == nil {
 		t.Fatal("expected non-nil bundle")
@@ -189,8 +186,10 @@ func TestNAVTimeInvalid(t *testing.T) {
 	// TimeStatus=0 -> no TimeMsg
 	payload := "PQTMNAV,1,0,1,190423.000,20241224,212681000,2346,18,,,12,,31.45874521,117.41532415,45.1254,-6.1245,,,1.2451,2.1254,5.1242,,,290,1.0,,78,56,,,,,,,1.2101,1.2148,0.4578,1.1547,,,45.124,,"
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, _ := h.HandleSentence(propFlags, payload, &epoch)
+	b, _, err := h.HandleSentence(propFlags, payload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if b == nil {
 		t.Fatal("expected non-nil bundle")
 	}
@@ -204,10 +203,9 @@ func TestNAVTimeInvalid(t *testing.T) {
 
 func TestVELBundle(t *testing.T) {
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, velPayload, &epoch)
-	if eoe {
-		t.Fatal("unexpected eoe")
+	b, epoch, err := h.HandleSentence(propFlags, velPayload, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if b == nil {
 		t.Fatal("expected non-nil bundle")
@@ -248,10 +246,9 @@ func TestVELBundle(t *testing.T) {
 
 func TestEPEAccuracy(t *testing.T) {
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, epePayload, &epoch)
-	if eoe {
-		t.Fatal("unexpected eoe")
+	b, epoch, err := h.HandleSentence(propFlags, epePayload, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if b == nil {
 		t.Fatal("expected non-nil bundle")
@@ -273,10 +270,9 @@ func TestEPEAccuracy(t *testing.T) {
 
 func TestSVINStatusBundle(t *testing.T) {
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, svinPayload, &epoch)
-	if eoe {
-		t.Fatal("unexpected eoe")
+	b, _, err := h.HandleSentence(propFlags, svinPayload, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if b == nil {
 		t.Fatal("expected non-nil bundle")
@@ -310,10 +306,12 @@ func TestSVINStatusBundle(t *testing.T) {
 
 func TestEOE(t *testing.T) {
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, eoePayload, &epoch)
-	if !eoe {
-		t.Fatal("expected eoe=true for EOE")
+	b, epoch, err := h.HandleSentence(propFlags, eoePayload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch != nil {
+		t.Fatal("expected nil epoch for EOE")
 	}
 	if b == nil {
 		t.Fatal("expected non-nil bundle")
@@ -322,18 +320,16 @@ func TestEOE(t *testing.T) {
 
 func TestNonProprietaryFlags(t *testing.T) {
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(0, pvtPayload, &epoch)
-	if b != nil || eoe {
+	b, epoch, err := h.HandleSentence(0, pvtPayload, nil)
+	if b != nil || epoch != nil || err != nil {
 		t.Error("expected nil for non-proprietary flags")
 	}
 }
 
 func TestNonPQTMPayload(t *testing.T) {
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, "GPGGA,1,2,3", &epoch)
-	if b != nil || eoe {
+	b, epoch, err := h.HandleSentence(propFlags, "GPGGA,1,2,3", nil)
+	if b != nil || epoch != nil || err != nil {
 		t.Error("expected nil for non-PQTM payload")
 	}
 }
@@ -341,18 +337,16 @@ func TestNonPQTMPayload(t *testing.T) {
 func TestConfigResponse(t *testing.T) {
 	// PQTMCFGMSGRATE is not a periodic message; should return nil
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, "PQTMCFGMSGRATE,OK", &epoch)
-	if b != nil || eoe {
+	b, epoch, err := h.HandleSentence(propFlags, "PQTMCFGMSGRATE,OK", nil)
+	if b != nil || epoch != nil || err != nil {
 		t.Error("expected nil for config response")
 	}
 }
 
 func TestUnrecognizedPQTM(t *testing.T) {
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, "PQTMFOO,1,2,3", &epoch)
-	if b != nil || eoe {
+	b, epoch, err := h.HandleSentence(propFlags, "PQTMFOO,1,2,3", nil)
+	if b != nil || epoch != nil || err != nil {
 		t.Error("expected nil for unrecognized PQTM message")
 	}
 }
@@ -360,9 +354,8 @@ func TestUnrecognizedPQTM(t *testing.T) {
 func TestDOPNotConverted(t *testing.T) {
 	// DOP is a recognized periodic message but has no gpsprot mapping yet
 	h := NewHandler()
-	var epoch gpsprot.NavEpochMsg
-	b, eoe := h.HandleSentence(propFlags, "PQTMDOP,1,570643000,1.01,0.88,0.49,0.73,0.50,0.36,0.35", &epoch)
-	if b != nil || eoe {
+	b, epoch, err := h.HandleSentence(propFlags, "PQTMDOP,1,570643000,1.01,0.88,0.49,0.73,0.50,0.36,0.35", nil)
+	if b != nil || epoch != nil || err != nil {
 		t.Error("expected nil for DOP (no gpsprot mapping)")
 	}
 }

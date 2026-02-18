@@ -88,19 +88,51 @@ func (s *ApprovedSentence) msgID() string {
 	return s.TalkerID + s.Format
 }
 
+// NavEpoch tracks epoch state. It embeds the NavEpochMsg that will be
+// emitted at the end of the epoch, plus a TimeOfDay field for boundary
+// detection. Exported because ExtSentenceHandler implementations (in
+// other packages) receive and return it.
+type NavEpoch struct {
+	gpsprot.NavEpochMsg
+	TimeOfDay string // UTC time-of-day string from the sentence; "" means no time yet
+}
+
+// CheckEpoch is called by a message handler that participates in the
+// epoch. tod is the message's time-of-day, or "" if the message has
+// none. If the time-of-day matches the current epoch, it returns the
+// same epoch. If the epoch has no time-of-day yet, it sets it.
+// Otherwise (nil epoch or time-of-day mismatch), it allocates a new
+// epoch.
+func CheckEpoch(epoch *NavEpoch, tod string) *NavEpoch {
+	if epoch != nil {
+		if tod == "" || epoch.TimeOfDay == tod {
+			return epoch
+		}
+		if epoch.TimeOfDay == "" {
+			epoch.TimeOfDay = tod
+			return epoch
+		}
+	}
+	return &NavEpoch{TimeOfDay: tod}
+}
+
 // ExtSentenceHandler handles non-standard NMEA sentences that are not
 // approved GNSS talker sentences (e.g. proprietary PQTM sentences).
 // Handlers are called for any sentence not handled by approved-sentence
-// processing. A handler returns a non-nil *MsgBundle if it handled the
-// sentence, or (nil, false) to pass.
+// processing.
 type ExtSentenceHandler interface {
 	// HandleSentence attempts to handle a non-standard NMEA sentence.
 	// flags contains the syntax flags from the packet scanner.
 	// payload is the NMEA payload between $ and *XX.
-	// epoch is the NavEpochMsg for the current epoch; the handler may
-	// contribute accuracy fields to it.
-	// Returns eoe=true if the sentence marks an end-of-epoch boundary.
-	HandleSentence(flags nmeamsg.SentenceSyntaxFlags, payload string, epoch *gpsprot.NavEpochMsg) (bundle *gpsprot.MsgBundle, eoe bool)
+	// epoch is the current *NavEpoch, or nil if no epoch is in progress.
+	//
+	// Return values:
+	//   - (nil, nil, nil): not handled
+	//   - (nil, nil, err): recognized but parse failed.
+	//   - (bundle, sameEpoch, nil): handled; message belongs to the current epoch.
+	//   - (bundle, newEpoch, nil): handled; message starts a new epoch.
+	//   - (bundle, nil, nil): handled; end of epoch, flush.
+	HandleSentence(flags nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) (*gpsprot.MsgBundle, *NavEpoch, error)
 }
 
 // PacketProcessor implements the gpsprot.PacketProcessor interface for NMEA packets
@@ -109,7 +141,7 @@ type PacketProcessor struct {
 	mh          gpsprot.MsgHandler
 	sb          satellitesBuffer
 	extHandlers []ExtSentenceHandler
-	navEpoch    gpsprot.NavEpochMsg
+	curNavEpoch *NavEpoch
 }
 
 // NewPacketProcessor creates a new NMEA packet processor
@@ -134,8 +166,18 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 		}
 	}
 	for _, eh := range p.extHandlers {
-		if result, _ := eh.HandleSentence(sen.SyntaxFlags, sen.Payload, &p.navEpoch); result != nil {
-			result.Dispatch(p.mh, tRead)
+		bundle, epoch, err := eh.HandleSentence(sen.SyntaxFlags, sen.Payload, p.curNavEpoch)
+		// Handler returned nothing useful.
+		if bundle == nil && epoch == nil {
+			if err != nil {
+				return msgID, err
+			}
+			continue
+		}
+		// Handler participated in the epoch.
+		p.handleEpoch(epoch, tRead)
+		if bundle != nil {
+			bundle.Dispatch(p.mh, tRead)
 			return msgID, nil
 		}
 	}
@@ -144,6 +186,26 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 		return msgID, nmh.NativeMsg(Tag, msgID, sen, tRead)
 	}
 	return msgID, nil
+}
+
+func (p *PacketProcessor) handleEpoch(epoch *NavEpoch, tRead time.Time) {
+	if epoch == nil {
+		p.flushEpoch()
+		return
+	}
+	if epoch != p.curNavEpoch {
+		p.flushEpoch()
+		epoch.StartTime = tRead
+		p.curNavEpoch = epoch
+	}
+}
+
+func (p *PacketProcessor) flushEpoch() {
+	if p.curNavEpoch != nil && p.mh != nil {
+		p.curNavEpoch.Tag = Tag
+		p.mh.NavEpoch(&p.curNavEpoch.NavEpochMsg, p.curNavEpoch.StartTime)
+	}
+	p.curNavEpoch = nil
 }
 
 // AddExtHandler registers an extension handler for non-standard sentences.
