@@ -153,7 +153,26 @@ type AsciiPacketProcessor struct {
 }
 ```
 
-Constructor map building at creation time:
+Constructors take no variant (default is OEM7). `SetVariant` rebuilds the constructor maps:
+
+```go
+func NewBinPacketProcessor() *BinPacketProcessor {
+    return &BinPacketProcessor{
+        packetProcessor: packetProcessor{mh: &gpsprot.DefaultHandler{}},
+        ctors:           novmsg.BinRegistry(), // OEM7 default: use global registry directly
+    }
+}
+
+// SetVariant configures the processor for a specific NovAtel-compatible vendor.
+// Must be called before ProcessPacket.
+func (p *BinPacketProcessor) SetVariant(v Variant) {
+    p.ctors = binCtorsFor(v)
+}
+```
+
+(Same pattern for AsciiPacketProcessor with `asciiCtorsFor`.)
+
+Constructor map building:
 
 ```go
 func binCtorsFor(v Variant) map[novmsg.MsgID]func() novmsg.MsgBody {
@@ -226,21 +245,33 @@ case *novmsg.SinoBestXYZ:
     return dispatchBestXYZ(h, p.curEpochMsg, &m.XYZ, tag, tRead)
 ```
 
-## Step 4: Pass vendor through gpsreg
+## Step 4: SetVendor helper in gpsreg
 
 ### Modified: `gps/gpsreg/reg.go`
 
-Change `CreatePacketProcessors` to take `Vendor` instead of `nmeaNumbering`. Derives both NMEA numbering and nov variant from the vendor:
+`CreatePacketProcessors` signature is **unchanged** -- it keeps taking `nmeaNumbering`. Add a separate `SetVendor` function that configures vendor-specific behavior on existing processors:
 
 ```go
-func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcessor {
-    nmeaNumbering := FindNMEASVNumbering(vendor)
+type novVariantSetter interface {
+    SetVariant(nov.Variant)
+}
+
+// SetVendor configures vendor-specific behavior on packet processors.
+// This can be called after CreatePacketProcessors when the vendor
+// is determined later (e.g. after auto-detection).
+func SetVendor(procs map[gpsprot.Tag]gpsprot.PacketProcessor, vendor Vendor) {
+    // NMEA satellite numbering
+    if nmeaPP, ok := procs[nmea.Tag].(*nmea.PacketProcessor); ok {
+        if numbering := FindNMEASVNumbering(vendor); numbering != nil {
+            nmeaPP.SetSVNumbering(numbering)
+        }
+    }
+    // NovAtel variant
     novVar := novVariantFor(vendor)
-    // ...
-    return map[gpsprot.Tag]gpsprot.PacketProcessor{
-        // ...
-        nov.TagBinary: nov.NewBinPacketProcessor(novVar),
-        nov.TagAscii:  nov.NewAsciiPacketProcessor(novVar),
+    for _, pp := range procs {
+        if vs, ok := pp.(novVariantSetter); ok {
+            vs.SetVariant(novVar)
+        }
     }
 }
 
@@ -260,10 +291,8 @@ func novVariantFor(v Vendor) nov.Variant {
 
 ### Modified callers
 
-- `time/app/daemon/gps.go`: Simplify `CreatePacketProcessors()` to pass vendor directly
-- `internal/gpscmd/gpscmd.go`: Pass `gpsreg.VendorUnknown`
-- `internal/gpscmd/replay_test.go`: Pass `gpsreg.VendorUnknown`
-- `gps/app/gpscfg/gpscfg_test.go`: Pass `gpsreg.VendorUnknown`
+- `time/app/daemon/gps.go`: After `CreatePacketProcessors(nil)`, call `gpsreg.SetVendor(procs, vendor)` when vendor is known
+- No changes needed to `internal/gpscmd/gpscmd.go`, `replay_test.go`, or `gpscfg_test.go` -- they use default (OEM7) behavior
 
 ## Step 5: Enable IONUTC test
 
@@ -284,20 +313,17 @@ Remove the `XXX` comment from `novmsg/time.go:8` and replace with a clear note a
 | `gps/lib/novmsg/ascii.go` | Add ParseAsciiMsgUsing, refactor ParseAsciiMessage |
 | `gps/lib/novmsg/time.go` | Update IONUTC comment |
 | `gps/lib/novmsg/time_test.go` | Enable IONUTC test |
-| `gps/internal/nov/processor.go` | Variant type (4 variants), ctors maps, dispatch |
+| `gps/internal/nov/processor.go` | Variant type (4 variants), SetVariant, ctors maps, dispatch |
 | `gps/internal/nov/nav.go` | Generic dispatch helpers |
-| `gps/gpsreg/reg.go` | CreatePacketProcessors takes Vendor, novVariantFor |
-| `time/app/daemon/gps.go` | Simplify to pass vendor |
-| `internal/gpscmd/gpscmd.go` | Pass VendorUnknown |
-| `internal/gpscmd/replay_test.go` | Pass VendorUnknown |
-| `gps/app/gpscfg/gpscfg_test.go` | Pass VendorUnknown |
+| `gps/gpsreg/reg.go` | Add SetVendor helper, novVariantFor |
+| `time/app/daemon/gps.go` | Call SetVendor when vendor is known |
 
 ## Implementation order
 
 1. SinoPosType enum + SinoBestPos/SinoBestXYZ in novmsg (+ tests)
 2. BinRegistry/AsciiRegistry + ParseBinMsgUsing/ParseAsciiMsgUsing in novmsg
-3. Variant (all four) + constructor maps + dispatch in nov processor
-4. CreatePacketProcessors signature change in gpsreg + all callers
+3. Variant (all four) + SetVariant + constructor maps + dispatch in nov processor
+4. SetVendor helper in gpsreg + call from daemon
 5. Enable IONUTC test, update comments
 6. `make test`
 
