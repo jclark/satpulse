@@ -23,7 +23,7 @@ const (
 	SPPDOPHID    MsgID = 2120
 	SPPNavID     MsgID = 46
 	SPPNavHID    MsgID = 2116
-	StaDOPID     MsgID = 954
+	// StaDOPID   MsgID = 954 // implemented in dop.go
 	StaDOPHID    MsgID = 2122
 	UniHeadingID MsgID = 972
 	UniHeading2ID MsgID = 1331
@@ -130,7 +130,7 @@ func init() {
 	idNameMap[SPPDOPHID] = "SPPDOPH"
 	idNameMap[SPPNavID] = "SPPNAV"
 	idNameMap[SPPNavHID] = "SPPNAVH"
-	idNameMap[StaDOPID] = "STADOP"
+	// StaDOPID registered via regMsg in dop.go
 	idNameMap[StaDOPHID] = "STADOPH"
 	idNameMap[UniHeadingID] = "UNIHEADING"
 	idNameMap[UniHeading2ID] = "UNIHEADING2"
