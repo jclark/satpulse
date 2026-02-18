@@ -2,6 +2,7 @@ package nmea
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -206,5 +207,464 @@ func TestExtHandlerBlocksNativeMsg(t *testing.T) {
 	}
 	if nr.msgID != "" {
 		t.Errorf("NativeMsgHandler should not be called when ext handler claims sentence, got %q", nr.msgID)
+	}
+}
+
+// msgRecorder records dispatched messages for testing.
+type msgRecorder struct {
+	gpsprot.DefaultHandler
+	times  []*gpsprot.TimeMsg
+	pos    []*gpsprot.PosGeoMsg
+	vel    []*gpsprot.VelGeoMsg
+	epochs []*gpsprot.NavEpochMsg
+}
+
+func (r *msgRecorder) Time(msg *gpsprot.TimeMsg, _ time.Time)       { r.times = append(r.times, msg) }
+func (r *msgRecorder) PosGeo(msg *gpsprot.PosGeoMsg, _ time.Time)   { r.pos = append(r.pos, msg) }
+func (r *msgRecorder) VelGeo(msg *gpsprot.VelGeoMsg, _ time.Time)   { r.vel = append(r.vel, msg) }
+func (r *msgRecorder) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
+	cp := *msg
+	r.epochs = append(r.epochs, &cp)
+}
+
+func approxDeg(a gpsprot.Angle, deg float64) bool {
+	return math.Abs(a.Degrees()-deg) < 1e-6
+}
+
+func approxSpeed(s gpsprot.Speed, mps float64) bool {
+	return math.Abs(s.MetersPerSecond()-mps) < 1e-3
+}
+
+func approxLen(l gpsprot.Length, m float64) bool {
+	return math.Abs(l.Meters()-m) < 1e-3
+}
+
+func TestParseLatLon(t *testing.T) {
+	tests := []struct {
+		name    string
+		lat, ns string
+		lon, ew string
+		wantLat float64
+		wantLon float64
+		wantOK  bool
+		wantErr bool
+	}{
+		{"north east", "4717.11437", "N", "00833.91522", "E", 47.0 + 17.11437/60.0, 8.0 + 33.91522/60.0, true, false},
+		{"south west", "3855.4487", "S", "09446.0071", "W", -(38.0 + 55.4487/60.0), -(94.0 + 46.0071/60.0), true, false},
+		{"equator prime meridian", "0000.0000", "N", "00000.0000", "E", 0, 0, true, false},
+		{"empty lat", "", "N", "00833.91522", "E", 0, 0, false, false},
+		{"empty lon", "4717.11437", "N", "", "E", 0, 0, false, false},
+		{"both empty", "", "N", "", "E", 0, 0, false, false},
+		{"bad ns", "4717.11437", "X", "00833.91522", "E", 0, 0, false, true},
+		{"bad ew", "4717.11437", "N", "00833.91522", "Q", 0, 0, false, true},
+		{"empty ns", "4717.11437", "", "00833.91522", "E", 0, 0, false, true},
+		{"empty ew", "4717.11437", "N", "00833.91522", "", 0, 0, false, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ll, ok, err := parseLatLon(tc.lat, tc.ns, tc.lon, tc.ew)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if !approxDeg(ll[0], tc.wantLat) {
+				t.Errorf("lat = %v, want %v", ll[0].Degrees(), tc.wantLat)
+			}
+			if !approxDeg(ll[1], tc.wantLon) {
+				t.Errorf("lon = %v, want %v", ll[1].Degrees(), tc.wantLon)
+			}
+		})
+	}
+}
+
+func TestRMCPosVel(t *testing.T) {
+	// $GPRMC with active status, position and velocity
+	s := "$GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V*2D\r\n"
+	sen := parseApprovedSentence(s)
+	bundle, epoch, err := parseRMC(sen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch == nil {
+		t.Fatal("expected non-nil epoch")
+	}
+	if bundle.Time == nil {
+		t.Fatal("expected TimeMsg")
+	}
+	if bundle.Time.NativeMsgID != "GPRMC" {
+		t.Errorf("NativeMsgID = %q, want GPRMC", bundle.Time.NativeMsgID)
+	}
+	if bundle.Time.Tag != Tag {
+		t.Errorf("Tag = %q, want %q", bundle.Time.Tag, Tag)
+	}
+	if bundle.PosGeo == nil {
+		t.Fatal("expected PosGeoMsg")
+	}
+	wantLat := 47.0 + 17.11437/60.0
+	wantLon := 8.0 + 33.91522/60.0
+	if !approxDeg(bundle.PosGeo.LatLon[0], wantLat) {
+		t.Errorf("lat = %v, want %v", bundle.PosGeo.LatLon[0].Degrees(), wantLat)
+	}
+	if !approxDeg(bundle.PosGeo.LatLon[1], wantLon) {
+		t.Errorf("lon = %v, want %v", bundle.PosGeo.LatLon[1].Degrees(), wantLon)
+	}
+	if bundle.PosGeo.Height.IsSet() {
+		t.Error("RMC should not set Height")
+	}
+	if bundle.PosGeo.HeightMSL.IsSet() {
+		t.Error("RMC should not set HeightMSL")
+	}
+	if bundle.VelGeo == nil {
+		t.Fatal("expected VelGeoMsg")
+	}
+	wantSpd := 0.004 * 1852.0 / 3600.0
+	if !approxSpeed(bundle.VelGeo.GroundSpeed.Get(), wantSpd) {
+		t.Errorf("GroundSpeed = %v m/s, want %v", bundle.VelGeo.GroundSpeed.Get().MetersPerSecond(), wantSpd)
+	}
+	if !bundle.VelGeo.Course.IsSet() || !approxDeg(bundle.VelGeo.Course.Get(), 77.52) {
+		t.Errorf("Course = %v, want 77.52", bundle.VelGeo.Course.Get().Degrees())
+	}
+}
+
+func TestRMCVoid(t *testing.T) {
+	// Status "V" = void/warning: only TimeMsg with nil UTCTime, no pos/vel
+	s := "$GPRMC,083559.00,V,,,,,,,091202,,,N*73\r\n"
+	sen := parseApprovedSentence(s)
+	bundle, epoch, err := parseRMC(sen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch == nil {
+		t.Fatal("expected non-nil epoch")
+	}
+	if bundle.Time == nil {
+		t.Fatal("expected TimeMsg")
+	}
+	if bundle.Time.UTCTime != nil {
+		t.Error("expected nil UTCTime for void status")
+	}
+	if bundle.PosGeo != nil {
+		t.Error("expected nil PosGeo for void status")
+	}
+	if bundle.VelGeo != nil {
+		t.Error("expected nil VelGeo for void status")
+	}
+}
+
+func TestRMCCourseOnly(t *testing.T) {
+	// Speed field empty, course present: should still emit VelGeo
+	s := makeSentence("GPRMC,083559.00,A,4717.11437,N,00833.91522,E,,77.52,091202,,,A,V")
+	sen := parseApprovedSentence(s)
+	bundle, _, err := parseRMC(sen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.VelGeo == nil {
+		t.Fatal("expected VelGeoMsg for course-only RMC")
+	}
+	if bundle.VelGeo.GroundSpeed.IsSet() {
+		t.Error("GroundSpeed should not be set when speed field is empty")
+	}
+	if !bundle.VelGeo.Course.IsSet() || !approxDeg(bundle.VelGeo.Course.Get(), 77.52) {
+		t.Errorf("Course = %v, want 77.52", bundle.VelGeo.Course.Get().Degrees())
+	}
+}
+
+func TestGGAPos(t *testing.T) {
+	// GGA with position, MSL height and geoid separation
+	s := makeSentence("GNGGA,071113.000,3957.7995312,N,11619.0286230,E,4,16,0.99,103.965,M,-8.408,M,1.0,4042")
+	sen := parseApprovedSentence(s)
+	pos, epoch, err := parseGGA(sen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch == nil {
+		t.Fatal("expected non-nil epoch")
+	}
+	if pos == nil {
+		t.Fatal("expected non-nil PosGeoMsg")
+	}
+	if pos.Tag != Tag || pos.NativeMsgID != "GNGGA" {
+		t.Errorf("Tag=%q NativeMsgID=%q", pos.Tag, pos.NativeMsgID)
+	}
+	wantLat := 39.0 + 57.7995312/60.0
+	wantLon := 116.0 + 19.0286230/60.0
+	if !approxDeg(pos.LatLon[0], wantLat) {
+		t.Errorf("lat = %v, want %v", pos.LatLon[0].Degrees(), wantLat)
+	}
+	if !approxDeg(pos.LatLon[1], wantLon) {
+		t.Errorf("lon = %v, want %v", pos.LatLon[1].Degrees(), wantLon)
+	}
+	if !pos.HeightMSL.IsSet() || !approxLen(pos.HeightMSL.Get(), 103.965) {
+		t.Errorf("HeightMSL = %v, want 103.965", pos.HeightMSL.Get().Meters())
+	}
+	// Ellipsoidal = MSL + geoid sep = 103.965 + (-8.408) = 95.557
+	if !pos.Height.IsSet() || !approxLen(pos.Height.Get(), 103.965-8.408) {
+		t.Errorf("Height = %v, want %v", pos.Height.Get().Meters(), 103.965-8.408)
+	}
+}
+
+func TestGGANoFix(t *testing.T) {
+	// Quality 0 = no fix
+	s := makeSentence("GPGGA,071113.000,,,,,0,00,,,M,,M,,")
+	sen := parseApprovedSentence(s)
+	pos, epoch, err := parseGGA(sen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch == nil {
+		t.Fatal("expected non-nil epoch")
+	}
+	if pos != nil {
+		t.Error("expected nil PosGeoMsg for quality 0")
+	}
+}
+
+func TestGGANoGeoidSep(t *testing.T) {
+	// GGA with MSL but empty geoid separation
+	s := makeSentence("GNGGA,025159.000,3149.29993210,N,11706.91264104,E,1,16,1.26,97.250,M,,M,,")
+	sen := parseApprovedSentence(s)
+	pos, _, err := parseGGA(sen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pos == nil {
+		t.Fatal("expected non-nil PosGeoMsg")
+	}
+	if !pos.HeightMSL.IsSet() || !approxLen(pos.HeightMSL.Get(), 97.250) {
+		t.Errorf("HeightMSL = %v, want 97.250", pos.HeightMSL.Get().Meters())
+	}
+	if pos.Height.IsSet() {
+		t.Error("Height should not be set when geoid separation is empty")
+	}
+}
+
+func TestVTGVel(t *testing.T) {
+	// VTG with course and speed in km/h
+	s := makeSentence("GPVTG,77.52,T,,M,0.004,N,0.007,K,A")
+	sen := parseApprovedSentence(s)
+	vel, epoch, err := parseVTG(sen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch == nil {
+		t.Fatal("expected non-nil epoch")
+	}
+	if vel == nil {
+		t.Fatal("expected non-nil VelGeoMsg")
+	}
+	if vel.Tag != Tag || vel.NativeMsgID != "GPVTG" {
+		t.Errorf("Tag=%q NativeMsgID=%q", vel.Tag, vel.NativeMsgID)
+	}
+	wantSpd := 0.007 / 3.6
+	if !approxSpeed(vel.GroundSpeed.Get(), wantSpd) {
+		t.Errorf("GroundSpeed = %v m/s, want %v", vel.GroundSpeed.Get().MetersPerSecond(), wantSpd)
+	}
+	if !vel.Course.IsSet() || !approxDeg(vel.Course.Get(), 77.52) {
+		t.Errorf("Course = %v, want 77.52", vel.Course.Get().Degrees())
+	}
+}
+
+func TestVTGNoFix(t *testing.T) {
+	// Mode "N" = no fix
+	s := makeSentence("GPVTG,,T,,M,,N,,K,N")
+	sen := parseApprovedSentence(s)
+	vel, epoch, err := parseVTG(sen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch == nil {
+		t.Fatal("expected non-nil epoch")
+	}
+	if vel != nil {
+		t.Error("expected nil VelGeoMsg for mode N")
+	}
+}
+
+func TestVTGEmptyCourse(t *testing.T) {
+	s := makeSentence("GPVTG,,T,,M,,N,5.5,K,A")
+	sen := parseApprovedSentence(s)
+	vel, _, err := parseVTG(sen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vel == nil {
+		t.Fatal("expected non-nil VelGeoMsg")
+	}
+	if vel.Course.IsSet() {
+		t.Error("Course should not be set when field is empty")
+	}
+	wantSpd := 5.5 / 3.6
+	if !approxSpeed(vel.GroundSpeed.Get(), wantSpd) {
+		t.Errorf("GroundSpeed = %v m/s, want %v", vel.GroundSpeed.Get().MetersPerSecond(), wantSpd)
+	}
+}
+
+func TestVTGCourseOnly(t *testing.T) {
+	// Speed field empty, course present: should still emit VelGeo
+	s := makeSentence("GPVTG,123.4,T,,M,,N,,K,A")
+	sen := parseApprovedSentence(s)
+	vel, _, err := parseVTG(sen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vel == nil {
+		t.Fatal("expected non-nil VelGeoMsg for course-only VTG")
+	}
+	if vel.GroundSpeed.IsSet() {
+		t.Error("GroundSpeed should not be set when speed field is empty")
+	}
+	if !vel.Course.IsSet() || !approxDeg(vel.Course.Get(), 123.4) {
+		t.Errorf("Course = %v, want 123.4", vel.Course.Get().Degrees())
+	}
+}
+
+// processSentence is a helper that sends a raw NMEA sentence through
+// the full PacketProcessor pipeline.
+func processSentence(pp *PacketProcessor, payload string, tRead time.Time) error {
+	_, err := pp.ProcessPacket(makeSentence(payload), tRead)
+	return err
+}
+
+func TestEpochBoundary(t *testing.T) {
+	var rec msgRecorder
+	pp := NewPacketProcessor()
+	pp.SetMsgHandler(&rec)
+	t1 := time.Unix(1000, 0)
+	t2 := time.Unix(1001, 0)
+	t3 := time.Unix(1002, 0)
+	// First epoch: TOD 083559.00
+	if err := processSentence(pp, "GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V", t1); err != nil {
+		t.Fatal(err)
+	}
+	// No epoch emitted yet (first epoch, no boundary crossed)
+	if len(rec.epochs) != 0 {
+		t.Fatalf("expected 0 epochs before boundary, got %d", len(rec.epochs))
+	}
+	// Second epoch: TOD 083600.00 triggers flush of first epoch
+	if err := processSentence(pp, "GPRMC,083600.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V", t2); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after boundary, got %d", len(rec.epochs))
+	}
+	if rec.epochs[0].Tag != Tag {
+		t.Errorf("epoch Tag = %q, want %q", rec.epochs[0].Tag, Tag)
+	}
+	if rec.epochs[0].StartTime != t1 {
+		t.Errorf("epoch StartTime = %v, want %v", rec.epochs[0].StartTime, t1)
+	}
+	// Third epoch triggers flush of second
+	if err := processSentence(pp, "GPRMC,083601.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V", t3); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.epochs) != 2 {
+		t.Fatalf("expected 2 epochs, got %d", len(rec.epochs))
+	}
+	if rec.epochs[1].StartTime != t2 {
+		t.Errorf("second epoch StartTime = %v, want %v", rec.epochs[1].StartTime, t2)
+	}
+}
+
+func TestEpochGGAVTGSameEpoch(t *testing.T) {
+	// GGA and VTG within the same epoch should not trigger a flush.
+	var rec msgRecorder
+	pp := NewPacketProcessor()
+	pp.SetMsgHandler(&rec)
+	t1 := time.Unix(1000, 0)
+	if err := processSentence(pp, "GPRMC,120000.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V", t1); err != nil {
+		t.Fatal(err)
+	}
+	if err := processSentence(pp, "GNGGA,120000.00,4717.11437,N,00833.91522,E,1,08,0.9,545.4,M,47.0,M,,", t1); err != nil {
+		t.Fatal(err)
+	}
+	// VTG has no TOD but should stay in same epoch
+	if err := processSentence(pp, "GPVTG,77.52,T,,M,0.004,N,0.007,K,A", t1); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.epochs) != 0 {
+		t.Fatalf("expected 0 epochs within same epoch, got %d", len(rec.epochs))
+	}
+	// Verify messages were dispatched
+	if len(rec.times) != 1 {
+		t.Errorf("expected 1 TimeMsg, got %d", len(rec.times))
+	}
+	if len(rec.pos) != 2 { // RMC + GGA
+		t.Errorf("expected 2 PosGeoMsg, got %d", len(rec.pos))
+	}
+	if len(rec.vel) != 2 { // RMC + VTG
+		t.Errorf("expected 2 VelGeoMsg, got %d", len(rec.vel))
+	}
+}
+
+// epochMockExtHandler is a mock that participates in the epoch using
+// CheckEpoch, for testing ext handler epoch boundaries.
+type epochMockExtHandler struct {
+	prefix string
+	tod    string
+	eoe    bool
+}
+
+func (h *epochMockExtHandler) HandleSentence(_ nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) (*gpsprot.MsgBundle, *NavEpoch, error) {
+	if !strings.HasPrefix(payload, h.prefix) {
+		return nil, nil, nil
+	}
+	if h.eoe {
+		return &gpsprot.MsgBundle{}, nil, nil
+	}
+	epoch = CheckEpoch(epoch, h.tod)
+	return &gpsprot.MsgBundle{}, epoch, nil
+}
+
+func TestExtHandlerEpochBoundary(t *testing.T) {
+	var rec msgRecorder
+	pp := NewPacketProcessor()
+	pp.SetMsgHandler(&rec)
+	pp.AddExtHandler(&epochMockExtHandler{prefix: "PTEST,A", tod: "120000.00"})
+	pp.AddExtHandler(&epochMockExtHandler{prefix: "PTEST,B", tod: "120001.00"})
+	t1 := time.Unix(1000, 0)
+	t2 := time.Unix(1001, 0)
+	if err := processSentence(pp, "PTEST,A", t1); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.epochs) != 0 {
+		t.Fatalf("expected 0 epochs, got %d", len(rec.epochs))
+	}
+	// Different TOD triggers boundary
+	if err := processSentence(pp, "PTEST,B", t2); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch, got %d", len(rec.epochs))
+	}
+	if rec.epochs[0].StartTime != t1 {
+		t.Errorf("StartTime = %v, want %v", rec.epochs[0].StartTime, t1)
+	}
+}
+
+func TestExtHandlerEOE(t *testing.T) {
+	var rec msgRecorder
+	pp := NewPacketProcessor()
+	pp.SetMsgHandler(&rec)
+	pp.AddExtHandler(&epochMockExtHandler{prefix: "PTEST,MSG", tod: "120000.00"})
+	pp.AddExtHandler(&epochMockExtHandler{prefix: "PTEST,EOE", eoe: true})
+	t1 := time.Unix(1000, 0)
+	if err := processSentence(pp, "PTEST,MSG", t1); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.epochs) != 0 {
+		t.Fatalf("expected 0 epochs before EOE, got %d", len(rec.epochs))
+	}
+	// EOE returns (bundle, nil, nil) which triggers flush
+	if err := processSentence(pp, "PTEST,EOE", t1); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after EOE, got %d", len(rec.epochs))
 	}
 }

@@ -73,7 +73,7 @@ Always calls `CheckEpoch(epoch, sen.Fields[0])` to participate in epoch detectio
 
 - **TimeMsg**: always present. `UTCTime` populated from fields 0 (time) and 8 (date) when status is "A" and both fields are non-empty; nil otherwise.
 - **PosGeoMsg**: `LatLon` from fields 2-5. `Height` and `HeightMSL` unset. Nil when status is not "A" or lat/lon fields are empty.
-- **VelGeoMsg**: `GroundSpeed` from field 6 (knots). `Course` from field 7 (omitted when empty). Nil when status is not "A" or speed field is empty.
+- **VelGeoMsg**: `GroundSpeed` from field 6 (knots). `Course` from field 7. Each field is omitted when empty. Nil when status is not "A" or both speed and course are empty.
 
 Sets `Tag` and `NativeMsgID` (e.g. "GPRMC") on each message. The `epoch` parameter is unused for now (hook for solution-metadata.md).
 
@@ -101,16 +101,16 @@ func parseVTG(sen *ApprovedSentence, epoch *NavEpoch) (
 
 Calls `CheckEpoch(epoch, "")` — VTG has no time-of-day but participates in the epoch.
 
-- **VelGeoMsg**: `GroundSpeed` from field 6 (km/h). `Course` from field 0 (omitted when empty). Nil when mode (field 8, when present) is "N" or speed field is empty.
+- **VelGeoMsg**: `GroundSpeed` from field 6 (km/h). `Course` from field 0 (omitted when empty). Nil when mode (field 8, when present) is "N" or both speed and course are empty.
 
 ### Parsing helpers
 
 ```go
-func parseLatLon(latField, nsField, lonField, ewField string) ([2]gpsprot.Angle, bool)
+func parseLatLon(latField, nsField, lonField, ewField string) ([2]gpsprot.Angle, bool, error)
 func parseFloatField(s string) (float64, bool)
 ```
 
-`parseLatLon` finds the decimal point and splits 2 characters before it to separate degrees from minutes (minutes are always `MM.xxx`), converts minutes to degrees, applies N/S E/W sign.
+`parseLatLon` finds the decimal point and splits 2 characters before it to separate degrees from minutes (minutes are always `MM.xxx`), converts minutes to degrees, applies N/S E/W sign. Returns `ok=false` with no error when coordinate fields are empty; returns an error for invalid hemisphere fields.
 
 ### Dispatch integration
 
