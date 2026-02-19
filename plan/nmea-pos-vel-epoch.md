@@ -6,7 +6,7 @@ Prerequisite: [nav-epoch.md](nav-epoch.md) (defines `NavEpochMsg` and `MsgHandle
 
 Prerequisite: [nmea-ext-handler-epoch.md](nmea-ext-handler-epoch.md) (defines `NavEpoch` struct, `CheckEpoch` helper, revised `ExtSentenceHandler` interface, and `handleEpoch`/`flushEpoch` on `PacketProcessor`).
 
-Enables: [solution-metadata.md](solution-metadata.md) (populates `NavEpochMsg` with fix quality, DOPs, corrections from GGA/GSA/RMC metadata).
+Enables: [solution-quality.md](solution-quality.md) (populates `NavEpochMsg` with fix level, DOPs, corrections from GGA/GSA/RMC metadata).
 
 Enables: [multi-prot-nav-epoch.md](multi-prot-nav-epoch.md) (cross-protocol epoch coordination via `NavEpochManager`).
 
@@ -20,7 +20,7 @@ This plan adds:
 1. Position/velocity extraction from RMC, GGA, and VTG (Step 5 of [position-velocity-messages.md](position-velocity-messages.md)).
 2. Epoch boundary detection for standard NMEA sentences, using the `NavEpoch`/`CheckEpoch`/`handleEpoch` infrastructure from [nmea-ext-handler-epoch.md](nmea-ext-handler-epoch.md).
 
-Position and velocity messages are emitted immediately (low latency). `NavEpochMsg` is emitted at the end of each epoch, after all position/velocity messages for that epoch have been dispatched. The parsers receive a `*NavEpoch` parameter so that solution-metadata.md can later populate the embedded `NavEpochMsg` with fix quality, DOPs, and corrections — but this plan does not write any metadata fields.
+Position and velocity messages are emitted immediately (low latency). `NavEpochMsg` is emitted at the end of each epoch, after all position/velocity messages for that epoch have been dispatched. The parsers receive a `*NavEpoch` parameter so that solution-quality.md can later populate the embedded `NavEpochMsg` with fix level, DOPs, and corrections — but this plan does not write any metadata fields.
 
 ## NMEA field conventions
 
@@ -75,7 +75,7 @@ Always calls `CheckEpoch(epoch, sen.Fields[0])` to participate in epoch detectio
 - **PosGeoMsg**: `LatLon` from fields 2-5. `Height` and `HeightMSL` unset. Nil when status is not "A" or lat/lon fields are empty.
 - **VelGeoMsg**: `GroundSpeed` from field 6 (knots). `Course` from field 7. Each field is omitted when empty. Nil when status is not "A" or both speed and course are empty.
 
-Sets `Tag` and `NativeMsgID` (e.g. "GPRMC") on each message. The `epoch` parameter is unused for now (hook for solution-metadata.md).
+Sets `Tag` and `NativeMsgID` (e.g. "GPRMC") on each message. The `epoch` parameter is unused for now (hook for solution-quality.md).
 
 #### parseGGA
 

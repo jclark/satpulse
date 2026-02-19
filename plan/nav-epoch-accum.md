@@ -2,7 +2,7 @@
 
 Prerequisite: [nav-epoch.md](nav-epoch.md) (adds `NavEpochMsg` and `MsgHandler.NavEpoch`).
 
-Related: [solution-metadata.md](solution-metadata.md) (populates `NavEpochMsg` fields), [multi-prot-nav-epoch.md](multi-prot-nav-epoch.md) (cross-protocol epoch coordination).
+Related: [solution-quality.md](solution-quality.md) (populates `NavEpochMsg` fields), [multi-prot-nav-epoch.md](multi-prot-nav-epoch.md) (cross-protocol epoch coordination).
 
 ## Problem
 
@@ -113,11 +113,11 @@ Everything not in this table uses the default first-wins rule.
 
 ### NMEA
 
-**Dim, DOP, NumSVUsed**: each comes from a single sentence (Dim from GSA, DOPs from GSA, NumSVUsed from GGA, HDOP from GGA as fallback for GSA). No conflicts; first-wins is sufficient.
+**FixDim, DOP, NumSVUsed**: each comes from a single sentence (FixDim from GSA, DOPs from GSA, NumSVUsed from GGA, HDOP from GGA as fallback for GSA). No conflicts; first-wins is sufficient.
 
-**Quality, Correction, AuxSrc**: both GGA and RMC contribute these fields. GGA unconditionally overwrites (it distinguishes RTK fixed vs float via quality 4/5, and identifies dead reckoning via quality 6). RMC basic modes (A/D/N/E/M/S) use first-wins only. This works regardless of sentence arrival order.
+**FixLevel, Correction, AuxSrc**: both GGA and RMC contribute these fields. GGA unconditionally overwrites (it distinguishes RTK fixed vs float via quality 4/5, and identifies dead reckoning via quality 6). RMC basic modes (A/D/N/E/M/S) use first-wins only. This works regardless of sentence arrival order.
 
-Additionally, the NMEA handler buffers the RMC mode indicator. At flush time, if the mode is R, F, or P (NMEA 4.x extended modes), it overwrites Quality and Correction with the extended mode values, overriding even GGA. Mode P identifies wide-area corrections (CorrWideArea), which GGA cannot express. Modes R/F explicitly identify base-station carrier solutions. AuxSrc is not affected.
+Additionally, the NMEA handler buffers the RMC mode indicator. At flush time, if the mode is R, F, or P (NMEA 4.x extended modes), it overwrites FixLevel and Correction with the extended mode values, overriding even GGA. Mode P identifies wide-area corrections (CorrWideArea), which GGA cannot express. Modes R/F explicitly identify base-station carrier solutions. AuxSrc is not affected.
 
 ### PQTM
 

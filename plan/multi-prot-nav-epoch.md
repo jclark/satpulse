@@ -2,7 +2,7 @@
 
 Prerequisite: [nav-epoch.md](nav-epoch.md) (adds `NavEpochMsg` and `MsgHandler.NavEpoch`), [nav-epoch-accum.md](nav-epoch-accum.md) section 1 (defines `MsgPriority` and priority-based merge).
 
-Related: [solution-metadata.md](solution-metadata.md) (populates `NavEpochMsg` fields), [nmea-extensibility.md](nmea-extensibility.md) (extended NMEA sentence handlers), [nmea-ext-handler-epoch.md](nmea-ext-handler-epoch.md) (epoch lifecycle on NMEA `PacketProcessor`).
+Related: [solution-quality.md](solution-quality.md) (populates `NavEpochMsg` fields), [nmea-extensibility.md](nmea-extensibility.md) (extended NMEA sentence handlers), [nmea-ext-handler-epoch.md](nmea-ext-handler-epoch.md) (epoch lifecycle on NMEA `PacketProcessor`).
 
 ## Problem
 
@@ -250,7 +250,7 @@ There is a pre-existing inconsistency: NMEA's `flushEpoch` passes `p.curNavEpoch
 
 ## What this plan does NOT cover
 
-- **Protocol-specific metadata population**: that is covered by solution-metadata.md. This plan only addresses the cross-protocol coordination layer.
+- **Protocol-specific metadata population**: that is covered by solution-quality.md. This plan only addresses the cross-protocol coordination layer.
 - **CASIC NavEpochMsg population**: CASIC participates in epoch coordination but does not yet build a `NavEpochMsg`. Adding metadata population is a separate task.
 - **UBX NAV-EOE parsing**: `ubxbin` has no parser for this message yet. Adding the parser is a separate task; wiring it to `manager.EndOfEpoch` is trivial once the parser exists.
 - **Epoch timeout**: there is no timeout mechanism to flush an epoch that has been accumulating too long (e.g. because the receiver went silent or disconnected after producing one epoch's worth of messages). The last epoch before silence is never emitted. Note that `Idle` is not suitable for this -- it is a heuristic used for satellite flushing, not a reliable epoch mechanism. A proper epoch timeout would need to be added to the manager.

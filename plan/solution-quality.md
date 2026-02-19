@@ -1,4 +1,4 @@
-# Enhanced metadata about navigation solution
+# Solution quality
 
 Prerequisite: [nav-epoch.md](nav-epoch.md) (adds the empty `NavEpochMsg` with `MsgHandler.NavEpoch`, emitted at UBX epoch boundaries).
 
@@ -8,7 +8,7 @@ Related: [multi-prot-nav-epoch.md](multi-prot-nav-epoch.md) (cross-protocol epoc
 
 Modern GNSS receivers expose a wide variety of "fix type" and "quality" indicators across different proprietary protocols and NMEA sentences. Unfortunately, these indicators are inconsistent, overlapping, and often mix multiple conceptual dimensions into a single enum. For example, a single vendor code may conflate measurement type (code vs carrier), correction architecture (RTK vs SBAS vs PPP), ambiguity state (float vs fixed), convergence state (PPP converging vs converged), or even whether the solution is GNSS-based at all. This makes it difficult to build a clean, vendor-neutral abstraction layer that can represent solution quality consistently across devices.
 
-This plan adds metadata fields to the existing `NavEpochMsg` to model the navigation solution along a small number of orthogonal axes. Since this system is fundamentally about GNSS receivers, GNSS is the implicit baseline -- it is always present when a GNSS-based fix is available. The primary ordered axis FixQuality describes the precision class of the GNSS solution (NoFix -> Code -> CodeCorrected -> CarrierFloat -> CarrierFixed), with a special value FixQualityNotMeasured for positions not derived from any navigation solution (e.g. manual input or simulated). An AuxSrc bitmask captures additional sources that contributed to the solution (dead reckoning, INS). Additional independent enums describe correction metadata (CorrKind, a bitmask of correction assertions) and solution dimensionality (FixDim). This approach separates estimator state from raw measurement state (e.g. per-satellite tracking data) and from the low-latency time/position/velocity messages. The result is a normalized, future-proof solution metadata model that can be mapped conservatively from diverse vendor protocols while remaining semantically clean and extensible.
+This plan adds metadata fields to the existing `NavEpochMsg` to model the navigation solution along a small number of orthogonal axes. Since this system is fundamentally about GNSS receivers, GNSS is the implicit baseline -- it is always present when a GNSS-based fix is available. The primary ordered axis FixLevel describes the technique used to compute the GNSS solution, ordered by increasing quality (None -> Code -> CodeCorrected -> CarrierFloat -> CarrierFixed), with a special value FixLevelNotMeasured for positions not derived from any navigation solution (e.g. manual input or simulated). An AuxSrc bitmask captures additional sources that contributed to the solution (dead reckoning, INS). Additional independent enums describe correction metadata (CorrKind, a bitmask of correction assertions) and solution dimensionality (FixDim). This approach separates estimator state from raw measurement state (e.g. per-satellite tracking data) and from the low-latency time/position/velocity messages. The result is a normalized, future-proof solution metadata model that can be mapped conservatively from diverse vendor protocols while remaining semantically clean and extensible.
 
 The core navigation outputs -- time, position, and velocity -- must be emitted with essentially zero added latency, because downstream consumers (timing, logging, UI, control loops) often depend on them immediately when they appear. However, many receivers do not provide all "fix quality" metadata in the same message as the solution itself. Instead, the metadata is scattered across multiple protocol messages (or arrives in a different sentence within the same epoch), which means a normalized view of solution quality is inherently an aggregation problem and may only be complete once the remaining messages for that epoch have arrived (and in the worst case, not until the first message of the next epoch establishes the boundary).
 
@@ -20,20 +20,20 @@ Time accuracy, however, stays in `TimeMsg` rather than moving into `NavEpochMsg.
 
 ## Type definitions
 
-The existing `NavEpochMsg` (which currently contains only `Tag`) is extended with metadata fields. New supporting types (`FixQuality`, `FixDim`, `CorrKind`, `AuxSrc`, `Accuracy`, `DOP`) are added to `gps/gpsprot/`.
+The existing `NavEpochMsg` (which currently contains only `Tag`) is extended with metadata fields. New supporting types (`FixLevel`, `FixDim`, `CorrKind`, `AuxSrc`, `Accuracy`, `DOP`) are added to `gps/gpsprot/`.
 
 ```
 // NavEpochMsg fields added to the existing struct (Tag already present from nav-epoch.md):
 //
-// GNSS is the implicit baseline source when FixQuality indicates a GNSS-based
+// GNSS is the implicit baseline source when FixLevel indicates a GNSS-based
 // fix. AuxSrc captures additional sources (e.g. DR/INS).
 // The zero value of each field means "not provided" or "not applicable".
 // CorrKind is a bitmask (not an enum) and its bits are related by a partial
 // order (see CorrKind docs).
 type NavEpochMsg struct {
-	Quality     FixQuality  `json:"quality,omitzero"`
-	Dim         FixDim      `json:"dim,omitzero"`
-	Correction  CorrKind    `json:"correction,omitzero"` // meaningful when Quality >= FixQualityCodeCorrected
+	FixLevel    FixLevel    `json:"fixLevel,omitzero"`
+	FixDim      FixDim      `json:"fixDim,omitzero"`
+	Correction  CorrKind    `json:"correction,omitzero"` // meaningful when FixLevel >= FixLevelCodeCorrected
 	AuxSrc      AuxSrc      `json:"auxSrc,omitzero"`
 	Acc         Accuracy    `json:"acc,omitzero"`
 	DOP         DOP         `json:"dop,omitzero"`
@@ -69,7 +69,7 @@ type DOP struct {
 }
 
 // AuxSrc is a bitmask of additional data sources that contributed to the
-// navigation solution. GNSS contribution is implicit when FixQuality indicates
+// navigation solution. GNSS contribution is implicit when FixLevel indicates
 // a GNSS-based fix.
 type AuxSrc uint8
 
@@ -78,39 +78,40 @@ const (
 	AuxSrcINS                          // inertial navigation system
 )
 
-// FixQuality is the primary, ordered axis describing the precision class of
-// the GNSS navigation solution. Higher values represent higher intrinsic
-// precision. The zero value means "not provided" or "not applicable".
-type FixQuality uint8
+// FixLevel is the primary ordered axis describing the technique used to compute
+// the GNSS navigation solution, ordered by increasing quality. Higher values
+// represent higher intrinsic precision. The zero value means "not provided"
+// or "not applicable".
+type FixLevel uint8
 
 const (
-	// FixQualityNoFix indicates that no valid GNSS solution is available.
-	FixQualityNoFix FixQuality = iota + 1
+	// FixLevelNone indicates that no valid GNSS solution is available.
+	FixLevelNone FixLevel = iota + 1
 
-	// FixQualityNotMeasured indicates that the receiver reports a position that
+	// FixLevelNotMeasured indicates that the receiver reports a position that
 	// is not based on any measurement (e.g. manual input or simulated). No
 	// component of the PVT solution is being computed from observations.
-	// CorrKind and Dim do not apply.
-	FixQualityNotMeasured
+	// CorrKind and FixDim do not apply.
+	FixLevelNotMeasured
 
-	// FixQualityCode indicates an uncorrected code-based GNSS solution
+	// FixLevelCode indicates an uncorrected code-based GNSS solution
 	// (e.g. standalone SPS or single point positioning).
-	FixQualityCode
+	FixLevelCode
 
-	// FixQualityCodeCorrected indicates a code-based GNSS solution with
+	// FixLevelCodeCorrected indicates a code-based GNSS solution with
 	// corrections applied (e.g. DGPS or SBAS). This improves accuracy but
 	// remains limited by code measurement precision.
-	FixQualityCodeCorrected
+	FixLevelCodeCorrected
 
-	// FixQualityCarrierFloat indicates a carrier-phase-based solution with
+	// FixLevelCarrierFloat indicates a carrier-phase-based solution with
 	// ambiguities estimated as float (non-integer) values. This includes
 	// RTK float and classical PPP solutions prior to ambiguity fixing.
-	FixQualityCarrierFloat
+	FixLevelCarrierFloat
 
-	// FixQualityCarrierFixed indicates a carrier-phase-based solution with
+	// FixLevelCarrierFixed indicates a carrier-phase-based solution with
 	// integer ambiguities resolved and constrained. This includes RTK fixed
 	// and PPP-AR/PPP-RTK solutions.
-	FixQualityCarrierFixed
+	FixLevelCarrierFixed
 )
 
 // CorrKind is a bitmask of assertions about corrections applied in the navigation
@@ -230,7 +231,19 @@ const (
 
 For NMEA, users explicitly select which sentences to enable via `NMEAMsgFlags` (GGA, GSA, RMC, etc.), and metadata extraction piggybacks on whichever sentences are enabled. No additional flag is needed.
 
-For proprietary protocols (UBX, Unicore, etc.), the receiver must be told to output the underlying messages that feed the metadata synthesis. A new `PVTMsgMeta` flag in `PVTMsgFlags` (`gps/gpsprot/configtarget.go`) requests solution metadata messages. It is a message flag (not an option), included in `PVTMsgAny`, and parsed as `"meta"` on the CLI.
+For proprietary protocols (UBX, Unicore, etc.), the receiver must be told to output the underlying messages that feed the quality synthesis. A new `PVTMsgQuality` flag in `PVTMsgFlags` (`gps/gpsprot/configtarget.go`) requests solution quality messages. It is a message flag (not an option), included in `PVTMsgAny`, and parsed as `"qual"` on the CLI.
+
+### Design note: single quality flag vs separate DOP flag
+
+DOP values require a dedicated protocol message (UBX NAV-DOP, Unicore STADOP, Allystar NavDop) distinct from the messages that carry fix level, accuracy, and corrections (UBX NAV-PVT, Unicore BESTNAV). This raised the question of whether DOP should be a separate `--pvt-out dop` flag.
+
+We decided against a separate DOP flag for these reasons:
+
+- **DOP is part of solution quality.** Users asking "what is the quality of this fix?" intuitively expect DOPs alongside fix level, accuracy, and corrections. Splitting them requires naming the non-DOP subset, and no word cleanly covers "fix level + accuracy + corrections + SV counts but not DOP."
+- **They always go together.** No practical use case wants DOPs without fix quality information, or fix quality without DOPs.
+- **Negligible protocol cost.** DOP messages are small (~26 bytes for UBX NAV-DOP, ~84 bytes for Unicore STADOP), adding <1% bandwidth overhead at typical baud rates.
+
+A single `quality` flag enables all messages needed to populate every field in `NavEpochMsg`: fix level, dimensionality, corrections, accuracy, DOPs, and SV counts.
 
 ## Protocol mapping: NMEA
 
@@ -244,23 +257,23 @@ The relevant sentences and their fields are:
 
 | Field | Content | Maps to |
 |-------|---------|---------|
-| 5 | GPS quality indicator | AuxSrc, Quality, Correction |
+| 5 | GPS quality indicator | AuxSrc, FixLevel, Correction |
 | 6 | Number of satellites in use | NumSVUsed |
 | 7 | HDOP | DOP.Hor |
 
 GGA quality indicator mapping:
 
-| GGA | AuxSrc | Quality | Correction |
+| GGA | AuxSrc | FixLevel | Correction |
 |-----|--------|---------|------------|
-| 0 | 0 | FixQualityNoFix | 0 |
-| 1 | 0 | FixQualityCode | 0 |
-| 2 | 0 | FixQualityCodeCorrected | CorrUsed |
-| 3 | 0 | FixQualityCodeCorrected | CorrUsed |
-| 4 | 0 | FixQualityCarrierFixed | CorrBaseStation |
-| 5 | 0 | FixQualityCarrierFloat | CorrBaseStation |
-| 6 | AuxSrcDR | FixQualityNoFix | 0 |
-| 7 | 0 | FixQualityNotMeasured | 0 |
-| 8 | 0 | FixQualityNotMeasured | 0 |
+| 0 | 0 | FixLevelNone | 0 |
+| 1 | 0 | FixLevelCode | 0 |
+| 2 | 0 | FixLevelCodeCorrected | CorrUsed |
+| 3 | 0 | FixLevelCodeCorrected | CorrUsed |
+| 4 | 0 | FixLevelCarrierFixed | CorrBaseStation |
+| 5 | 0 | FixLevelCarrierFloat | CorrBaseStation |
+| 6 | AuxSrcDR | FixLevelNone | 0 |
+| 7 | 0 | FixLevelNotMeasured | 0 |
+| 8 | 0 | FixLevelNotMeasured | 0 |
 
 Notes:
 - GGA quality 2 is "Differential GPS fix" but many receivers report SBAS under quality 2 as well, so we cannot determine base-station vs wide-area. Use `CorrUsed` only.
@@ -272,7 +285,7 @@ Notes:
 | Field | Content | Maps to |
 |-------|---------|---------|
 | 0 | Fix selection mode (M/A) | (not used) |
-| 1 | Fix type (1/2/3) | Dim |
+| 1 | Fix type (1/2/3) | FixDim |
 | 2-13 | Satellite IDs used | (already used for SatellitesMsg) |
 | 14 | PDOP | DOP.Pos |
 | 15 | HDOP | DOP.Hor |
@@ -281,9 +294,9 @@ Notes:
 
 GSA fix type mapping:
 
-| GSA fix | Dim |
-|---------|-----|
-| 1 | no position fix (consistent with FixQualityNoFix) |
+| GSA fix | FixDim |
+|---------|------|
+| 1 | no position fix (consistent with FixLevelNone) |
 | 2 | FixDim2D |
 | 3 | FixDim3D |
 
@@ -291,21 +304,21 @@ GSA fix type mapping:
 
 | Field | Content | Maps to |
 |-------|---------|---------|
-| 11 | Mode indicator (NMEA 2.3+) | AuxSrc, Quality, Correction |
+| 11 | Mode indicator (NMEA 2.3+) | AuxSrc, FixLevel, Correction |
 
 RMC mode indicator mapping:
 
-| RMC mode | AuxSrc | Quality | Correction |
+| RMC mode | AuxSrc | FixLevel | Correction |
 |----------|--------|---------|------------|
-| N | 0 | FixQualityNoFix | 0 |
-| A | 0 | FixQualityCode | 0 |
-| D | 0 | FixQualityCodeCorrected | CorrUsed |
-| P | 0 | FixQualityCodeCorrected | CorrWideArea |
-| R | 0 | FixQualityCarrierFixed | CorrBaseStation |
-| F | 0 | FixQualityCarrierFloat | CorrBaseStation |
-| E | AuxSrcDR | FixQualityNoFix | 0 |
-| M | 0 | FixQualityNotMeasured | 0 |
-| S | 0 | FixQualityNotMeasured | 0 |
+| N | 0 | FixLevelNone | 0 |
+| A | 0 | FixLevelCode | 0 |
+| D | 0 | FixLevelCodeCorrected | CorrUsed |
+| P | 0 | FixLevelCodeCorrected | CorrWideArea |
+| R | 0 | FixLevelCarrierFixed | CorrBaseStation |
+| F | 0 | FixLevelCarrierFloat | CorrBaseStation |
+| E | AuxSrcDR | FixLevelNone | 0 |
+| M | 0 | FixLevelNotMeasured | 0 |
+| S | 0 | FixLevelNotMeasured | 0 |
 
 Notes:
 - RMC mode D (differential) is ambiguous: it could be either base-station or wide-area. Use `CorrUsed` only.
@@ -319,12 +332,12 @@ A single NavEpochMsg per epoch is assembled by merging the best available data f
 Neither GGA nor RMC is strictly superior. Each contributes distinct information:
 - **GGA** provides NumSVUsed, HDOP, and distinguishes RTK fixed (4) vs float (5).
 - **RMC** mode P indicates wide-area corrections, whereas GGA quality 2 vs 3 is unreliable for distinguishing base-station vs wide-area on some receivers.
-- **GSA** provides Dim and DOPs (PDOP, HDOP, VDOP) independently of the quality source.
+- **GSA** provides FixDim and DOPs (PDOP, HDOP, VDOP) independently of the quality source.
 
 Merge rules:
 - **AuxSrc**: only set when there is a positive claim of an additional contributing source (DR, INS). Pure GNSS fixes leave AuxSrc as zero since GNSS is implicit.
-- **AuxSrc, Quality, Correction**: if RMC carries an extended mode indicator (R, F, or P), it is authoritative for all three fields and takes precedence over GGA. R/F set `CorrBaseStation`; P sets `CorrWideArea`. Otherwise, prefer GGA when present (e.g. GGA quality 4/5 overrides RMC mode A/D for RTK fixed/float); fall back to RMC only if GGA is absent. For corrected-code solutions (GGA quality 2/3, RMC mode D), set `CorrUsed` only since the correction style is ambiguous.
-- **Dim**: from GSA fix type.
+- **AuxSrc, FixLevel, Correction**: if RMC carries an extended mode indicator (R, F, or P), it is authoritative for all three fields and takes precedence over GGA. R/F set `CorrBaseStation`; P sets `CorrWideArea`. Otherwise, prefer GGA when present (e.g. GGA quality 4/5 overrides RMC mode A/D for RTK fixed/float); fall back to RMC only if GGA is absent. For corrected-code solutions (GGA quality 2/3, RMC mode D), set `CorrUsed` only since the correction style is ambiguous.
+- **FixDim**: from GSA fix type.
 - **DOPs**: PDOP and VDOP from GSA; HDOP from GSA (preferred) or GGA.
 - **NumSVUsed**: from GGA.
 
@@ -355,9 +368,9 @@ Recommended additional input for higher fidelity:
 Epoch association:
 - The epoch grouping and `NavEpochMsg` emission point already exist (nav-epoch.md). Metadata is populated in `flushNavEpoch` before the existing emission call.
 
-Dimensionality (`Dim`) from `FixType`:
+Dimensionality (`FixDim`) from `FixType`:
 
-| NAV-PVT fixType | Meaning | Dim | AuxSrc |
+| NAV-PVT fixType | Meaning | FixDim | AuxSrc |
 |---|---|---|---|
 | 0 | no fix | 0 | 0 |
 | 1 | dead reckoning only | 0 | AuxSrcDR |
@@ -368,15 +381,15 @@ Dimensionality (`Dim`) from `FixType`:
 
 Additionally, if `Flags.headVehValid` is set, add `AuxSrcINS` to `AuxSrc`. This flag indicates the receiver is in sensor fusion mode with an IMU/gyro contributing to the navigation solution. It applies to ADR/UDR products (e.g. F9R) and is never set on pure GNSS or timing receivers.
 
-Quality (`Quality`) and correction presence:
-- If `Flags.gnssFixOK` is **not** set, treat the epoch as "no fix": set `Quality=FixQualityNoFix` and leave the rest unset.
-- If `FixType` indicates dead reckoning only (`fixType=1`), set `Quality=FixQualityNoFix` (and `AuxSrcDR` from the table above) and do not set correction assertions.
-- Otherwise, set `Quality` primarily from `Flags.carrSoln` (carrier phase range solution status):
-  - `carrSoln = fixed` → `FixQualityCarrierFixed`
-  - `carrSoln = float` → `FixQualityCarrierFloat`
+Fix level (`FixLevel`) and correction presence:
+- If `Flags.gnssFixOK` is **not** set, treat the epoch as "no fix": set `FixLevel=FixLevelNone` and leave the rest unset.
+- If `FixType` indicates dead reckoning only (`fixType=1`), set `FixLevel=FixLevelNone` (and `AuxSrcDR` from the table above) and do not set correction assertions.
+- Otherwise, set `FixLevel` primarily from `Flags.carrSoln` (carrier phase range solution status):
+  - `carrSoln = fixed` → `FixLevelCarrierFixed`
+  - `carrSoln = float` → `FixLevelCarrierFloat`
   - `carrSoln = none`:
-    - if `Flags.diffSoln` is set → `FixQualityCodeCorrected` and assert `CorrUsed`
-    - else → `FixQualityCode` with no correction assertions
+    - if `Flags.diffSoln` is set → `FixLevelCodeCorrected` and assert `CorrUsed`
+    - else → `FixLevelCode` with no correction assertions
 
 Correction (`Correction`) disambiguation:
 - **Do not** infer `CorrKind` from `NAV-PVT` alone (it only tells you “differential corrections applied”, not the correction style or delivery).
@@ -415,7 +428,7 @@ This keeps the zero-latency time/position/velocity messages (e.g. `timeNavPVT` i
 
 ### Message enablement
 
-When `PVTMsgMeta` is set, the UBX message configuration (`gps/internal/ubx/ubxcfgmsg.go`) enables `UBX-NAV-DOP` (GDOP/HDOP/VDOP/TDOP) and ensures `UBX-NAV-PVT` is enabled (the primary source for fix quality, carrSoln, diffSoln, numSV). NAV-SIG and NAV-SAT are already controlled by `SatsMsgFlags`.
+When `PVTMsgQuality` is set, the UBX message configuration (`gps/internal/ubx/ubxcfgmsg.go`) enables `UBX-NAV-DOP` (GDOP/HDOP/VDOP/TDOP) and ensures `UBX-NAV-PVT` is enabled (the primary source for fix quality, carrSoln, diffSoln, numSV). NAV-SIG and NAV-SAT are already controlled by `SatsMsgFlags`.
 
 ## Unicore
 
@@ -433,45 +446,45 @@ Recommended additional input for higher fidelity:
 
 ### Mapping: BESTNAV `pos type` -> `NavEpochMsg`
 
-The `pos type` field is a single enum that encodes the solution technique. When `p-sol status` is not `SOL_COMPUTED` (0), treat the epoch as "no fix" regardless of `pos type`: set `Quality=FixQualityNoFix` and leave other fields unset.
+The `pos type` field is a single enum that encodes the solution technique. When `p-sol status` is not `SOL_COMPUTED` (0), treat the epoch as "no fix" regardless of `pos type`: set `FixLevel=FixLevelNone` and leave other fields unset.
 
 When `p-sol status` is `SOL_COMPUTED`, map `pos type` as follows:
 
-| pos type | ASCII | Unicore description | AuxSrc | Quality | Dim | Correction |
+| pos type | ASCII | Unicore description | AuxSrc | FixLevel | FixDim | Correction |
 |----------|-------|---------------------|--------|---------|-----|------------|
-| 0 | NONE | No solution | 0 | FixQualityNoFix | 0 | 0 |
-| 1 | FIXEDPOS | Position fixed by FIX command or averaging | 0 | FixQualityCode | FixDimTimeOnly | 0 |
-| 2 | FIXEDHEIGHT | Not supported | 0 | FixQualityCode | FixDim2D | 0 |
+| 0 | NONE | No solution | 0 | FixLevelNone | 0 | 0 |
+| 1 | FIXEDPOS | Position fixed by FIX command or averaging | 0 | FixLevelCode | FixDimTimeOnly | 0 |
+| 2 | FIXEDHEIGHT | Not supported | 0 | FixLevelCode | FixDim2D | 0 |
 | 8 | DOPPLER_VELOCITY | Velocity computed using instantaneous Doppler | 0 | 0 | FixDimVelocityOnly | 0 |
-| 16 | SINGLE | Single point position | 0 | FixQualityCode | FixDim3D | 0 |
-| 17 | PSRDIFF | Pseudorange differential solution | 0 | FixQualityCodeCorrected | FixDim3D | CorrBaseStation |
-| 18 | SBAS | Solution using corrections from an SBAS | 0 | FixQualityCodeCorrected | FixDim3D | CorrSBAS |
-| 32 | L1_FLOAT | Floating L1 ambiguity solution | 0 | FixQualityCarrierFloat | FixDim3D | CorrBaseStation |
-| 33 | IONOFREE_FLOAT | Floating ionosphere-free ambiguity solution | 0 | FixQualityCarrierFloat | FixDim3D | CorrFullDualFreq |
-| 34 | NARROW_FLOAT | Floating narrow-lane ambiguity solution | 0 | FixQualityCarrierFloat | FixDim3D | CorrFullDualFreq |
-| 48 | L1_INT | Integer L1 ambiguity solution | 0 | FixQualityCarrierFixed | FixDim3D | CorrBaseStation |
-| 49 | WIDE_INT | Integer wide-lane ambiguity solution | 0 | FixQualityCarrierFixed | FixDim3D | CorrPartialDualFreq |
-| 50 | NARROW_INT | Integer narrow-lane ambiguity solution | 0 | FixQualityCarrierFixed | FixDim3D | CorrFullDualFreq |
-| 52 | INS | INS position solution | AuxSrcINS | FixQualityNoFix | FixDim3D | 0 |
-| 53 | INS_PSRSP | INS pseudorange single point solution | AuxSrcINS | FixQualityCode | FixDim3D | 0 |
-| 54 | INS_PSRDIFF | INS pseudorange differential solution | AuxSrcINS | FixQualityCodeCorrected | FixDim3D | CorrBaseStation |
-| 55 | INS_RTKFLOAT | INS RTK floating point ambiguities solution | AuxSrcINS | FixQualityCarrierFloat | FixDim3D | CorrBaseStation |
-| 56 | INS_RTKFIXED | INS RTK fixed ambiguities solution | AuxSrcINS | FixQualityCarrierFixed | FixDim3D | CorrBaseStation |
-| 68 | PPP_CONVERGING | PPP solution converging | 0 | FixQualityCarrierFloat | FixDim3D | CorrPPPConverging |
-| 69 | PPP | PPP positioning | 0 | FixQualityCarrierFloat | FixDim3D | CorrPPPConverged |
-| 70 | PPP_AR | PPP fixed solution (PPP-AR) | 0 | FixQualityCarrierFixed | FixDim3D | CorrPPPConverged |
-| 71 | PPP_RTK | PPP fixed solution (PPP-RTK) | 0 | FixQualityCarrierFixed | FixDim3D | CorrPPPRTK |
+| 16 | SINGLE | Single point position | 0 | FixLevelCode | FixDim3D | 0 |
+| 17 | PSRDIFF | Pseudorange differential solution | 0 | FixLevelCodeCorrected | FixDim3D | CorrBaseStation |
+| 18 | SBAS | Solution using corrections from an SBAS | 0 | FixLevelCodeCorrected | FixDim3D | CorrSBAS |
+| 32 | L1_FLOAT | Floating L1 ambiguity solution | 0 | FixLevelCarrierFloat | FixDim3D | CorrBaseStation |
+| 33 | IONOFREE_FLOAT | Floating ionosphere-free ambiguity solution | 0 | FixLevelCarrierFloat | FixDim3D | CorrFullDualFreq |
+| 34 | NARROW_FLOAT | Floating narrow-lane ambiguity solution | 0 | FixLevelCarrierFloat | FixDim3D | CorrFullDualFreq |
+| 48 | L1_INT | Integer L1 ambiguity solution | 0 | FixLevelCarrierFixed | FixDim3D | CorrBaseStation |
+| 49 | WIDE_INT | Integer wide-lane ambiguity solution | 0 | FixLevelCarrierFixed | FixDim3D | CorrPartialDualFreq |
+| 50 | NARROW_INT | Integer narrow-lane ambiguity solution | 0 | FixLevelCarrierFixed | FixDim3D | CorrFullDualFreq |
+| 52 | INS | INS position solution | AuxSrcINS | FixLevelNone | FixDim3D | 0 |
+| 53 | INS_PSRSP | INS pseudorange single point solution | AuxSrcINS | FixLevelCode | FixDim3D | 0 |
+| 54 | INS_PSRDIFF | INS pseudorange differential solution | AuxSrcINS | FixLevelCodeCorrected | FixDim3D | CorrBaseStation |
+| 55 | INS_RTKFLOAT | INS RTK floating point ambiguities solution | AuxSrcINS | FixLevelCarrierFloat | FixDim3D | CorrBaseStation |
+| 56 | INS_RTKFIXED | INS RTK fixed ambiguities solution | AuxSrcINS | FixLevelCarrierFixed | FixDim3D | CorrBaseStation |
+| 68 | PPP_CONVERGING | PPP solution converging | 0 | FixLevelCarrierFloat | FixDim3D | CorrPPPConverging |
+| 69 | PPP | PPP positioning | 0 | FixLevelCarrierFloat | FixDim3D | CorrPPPConverged |
+| 70 | PPP_AR | PPP fixed solution (PPP-AR) | 0 | FixLevelCarrierFixed | FixDim3D | CorrPPPConverged |
+| 71 | PPP_RTK | PPP fixed solution (PPP-RTK) | 0 | FixLevelCarrierFixed | FixDim3D | CorrPPPRTK |
 
 Notes:
-- **FIXEDPOS (1)**: The position was fixed by a user command or averaging. The receiver still tracks GNSS for timing, so `FixDimTimeOnly` since only time/clock is being solved. Quality/Correction are not meaningful.
+- **FIXEDPOS (1)**: The position was fixed by a user command or averaging. The receiver still tracks GNSS for timing, so `FixDimTimeOnly` since only time/clock is being solved. FixLevel/Correction are not meaningful.
 - **FIXEDHEIGHT (2)**: Height is constrained, only horizontal position is solved. Marked as not supported by Unicore but included for completeness.
-- **DOPPLER_VELOCITY (8)**: Only a velocity solution from Doppler, without a valid position or time. Use `FixDimVelocityOnly` and leave Quality/Correction unset (zero) since this is a velocity-only result.
-- **Float variants (32-34)**: L1_FLOAT, IONOFREE_FLOAT, and NARROW_FLOAT differ in the ambiguity parameterization but all represent carrier-phase float solutions. The distinction is not modeled in `FixQuality` (all map to `FixQualityCarrierFloat`). All are base-station solutions (`CorrBaseStation`).
+- **DOPPLER_VELOCITY (8)**: Only a velocity solution from Doppler, without a valid position or time. Use `FixDimVelocityOnly` and leave FixLevel/Correction unset (zero) since this is a velocity-only result.
+- **Float variants (32-34)**: L1_FLOAT, IONOFREE_FLOAT, and NARROW_FLOAT differ in the ambiguity parameterization but all represent carrier-phase float solutions. The distinction is not modeled in `FixLevel` (all map to `FixLevelCarrierFloat`). All are base-station solutions (`CorrBaseStation`).
 - **Integer variants (48-50)**: L1_INT is a base-station fixed solution (`CorrBaseStation`). WIDE_INT and NARROW_INT represent increasingly full use of dual-frequency ambiguity strategies; map them to `CorrPartialDualFreq` and `CorrFullDualFreq` respectively.
-- **INS (52)**: Pure inertial solution with no GNSS contribution. Quality/Correction are not meaningful since there is no GNSS fix.
+- **INS (52)**: Pure inertial solution with no GNSS contribution. FixLevel/Correction are not meaningful since there is no GNSS fix.
 - **INS fusion variants (53-56)**: These are GNSS+INS sensor fusion solutions. `AuxSrcINS` is set to indicate the additional INS contribution. The GNSS quality component follows the same pattern as the non-INS counterpart (PSRSP->Code, PSRDIFF->CodeCorrected, RTKFLOAT->CarrierFloat, RTKFIXED->CarrierFixed).
-- **PPP_CONVERGING (68)**: PPP solution that has not yet reached steady-state accuracy. Mapped to `FixQualityCarrierFloat` (ambiguities are float during convergence) with `CorrPPPConverging`.
-- **PPP (69)**: Converged PPP solution without ambiguity resolution. This is a carrier-phase float solution (PPP estimates ambiguities as real-valued parameters) that has reached steady-state. Mapped to `FixQualityCarrierFloat` with `CorrPPPConverged`.
+- **PPP_CONVERGING (68)**: PPP solution that has not yet reached steady-state accuracy. Mapped to `FixLevelCarrierFloat` (ambiguities are float during convergence) with `CorrPPPConverging`.
+- **PPP (69)**: Converged PPP solution without ambiguity resolution. This is a carrier-phase float solution (PPP estimates ambiguities as real-valued parameters) that has reached steady-state. Mapped to `FixLevelCarrierFloat` with `CorrPPPConverged`.
 - **PPP_AR (70)** and **PPP_RTK (71)**: PPP with integer ambiguity resolution. Both achieve carrier-phase fixed precision via wide-area PPP corrections. PPP_AR uses traditional PPP-AR and maps to `CorrPPPConverged`. PPP_RTK uses additional information enabling rapid ambiguity resolution and asserts `CorrPPPRTK`.
 
 ### Accuracy
@@ -500,4 +513,4 @@ To implement the Unicore mapping in the existing Unicore pipeline:
 
 ### Message enablement
 
-When `PVTMsgMeta` is set, the Unicore message configuration (`gps/internal/unc/cfgopts.go`) enables `BESTNAVB 1` (if not already enabled by `PVTMsgPos`) and `STADOPB 1` for DOP values. If `PVTMsgPos` already enables BESTNAV, then `PVTMsgMeta` only needs to add STADOP.
+When `PVTMsgQuality` is set, the Unicore message configuration (`gps/internal/unc/cfgopts.go`) enables `BESTNAVB 1` (if not already enabled by `PVTMsgPos`) and `STADOPB 1` for DOP values. If `PVTMsgPos` already enables BESTNAV, then `PVTMsgQuality` only needs to add STADOP.
