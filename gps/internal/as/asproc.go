@@ -108,20 +108,25 @@ func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {
 			h.Survey(sv, tRead)
 		} else if tm != nil {
 			tm.Tag = Tag
+			tm.Priority = gpsprot.PriVendorLow
 			h.Time(tm, tRead)
 		}
 		if posG != nil {
 			posG.Tag = Tag
+			posG.Priority = gpsprot.PriVendorLow
 			h.PosGeo(posG, tRead)
 		} else if posE != nil {
 			posE.Tag = Tag
+			posE.Priority = gpsprot.PriVendorLow
 			h.PosECEF(posE, tRead)
 		}
 		if velG != nil {
 			velG.Tag = Tag
+			velG.Priority = gpsprot.PriVendorLow
 			h.VelGeo(velG, tRead)
 		} else if velE != nil {
 			velE.Tag = Tag
+			velE.Priority = gpsprot.PriVendorLow
 			h.VelECEF(velE, tRead)
 		}
 	}

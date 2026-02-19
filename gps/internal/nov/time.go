@@ -17,6 +17,7 @@ func timeMsgFromTime(hdr *novmsg.MsgHdr, m *novmsg.Time, tag gpsprot.Tag) (*gpsp
 	t := gpsprot.TimeMsg{
 		Tag:         tag,
 		NativeMsgID: "TIME",
+		Priority:    gpsprot.PriVendorLow,
 	}
 	// leave t.GNSS zero; we don't know what the reference GNSS is
 	if hdr.TimeStatus != novmsg.TimeStatusUnknown {

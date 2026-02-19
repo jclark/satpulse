@@ -73,6 +73,7 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		if p.mh != nil {
 			tm.Tag = Tag
+			tm.Priority = gpsprot.PriVendorLow
 			p.mh.Time(tm, tRead)
 		}
 		return true
@@ -83,6 +84,7 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		if p.mh != nil {
 			tm.Tag = Tag
+			tm.Priority = gpsprot.PriVendorLow
 			p.mh.Time(tm, tRead)
 		}
 		return true
@@ -93,6 +95,7 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		if p.mh != nil {
 			tm.Tag = Tag
+			tm.Priority = gpsprot.PriVendorLow
 			p.mh.Time(tm, tRead)
 		}
 		return true

@@ -20,6 +20,7 @@ func PosGeo[S, P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.Pos[S, P], nativeMs
 		Height:      opt.Make(gpsprot.Meters(float64(b.Hgt) + float64(b.Undulation))),
 		HeightMSL:   opt.Make(gpsprot.Meters(b.Hgt)),
 		NativeMsgID: nativeMsgID,
+		Priority:    gpsprot.PriVendorLow,
 	}
 }
 
@@ -33,6 +34,7 @@ func PosECEFXYZ[S, P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.XYZ[S, P], nati
 	return &gpsprot.PosECEFMsg{
 		Pos:         gpsprot.Point3D{gpsprot.Meters(b.PX), gpsprot.Meters(b.PY), gpsprot.Meters(b.PZ)},
 		NativeMsgID: nativeMsgID,
+		Priority:    gpsprot.PriVendorLow,
 	}
 }
 
@@ -46,5 +48,6 @@ func VelECEFXYZ[S, P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.XYZ[S, P], nati
 	return &gpsprot.VelECEFMsg{
 		Vel:         [3]gpsprot.Speed{gpsprot.MetersPerSecondFromFloat(b.VX), gpsprot.MetersPerSecondFromFloat(b.VY), gpsprot.MetersPerSecondFromFloat(b.VZ)},
 		NativeMsgID: nativeMsgID,
+		Priority:    gpsprot.PriVendorLow,
 	}
 }

@@ -40,13 +40,19 @@ func (h *Handler) HandleSentence(
 	switch m := msg.(type) {
 	case *qtmmsg.PVT:
 		epoch = nmea.CheckEpoch(epoch, m.Time)
-		return msgBundlePVT(m), epoch, nil
+		b := msgBundlePVT(m)
+		b.SetPriority(gpsprot.PriVendorLow)
+		return b, epoch, nil
 	case *qtmmsg.NAV:
 		epoch = nmea.CheckEpoch(epoch, m.UTC)
-		return msgBundleNAV(m, epoch), epoch, nil
+		b := msgBundleNAV(m, epoch)
+		b.SetPriority(gpsprot.PriVendorLow)
+		return b, epoch, nil
 	case *qtmmsg.VEL:
 		epoch = nmea.CheckEpoch(epoch, m.Time)
-		return msgBundleVEL(m, epoch), epoch, nil
+		b := msgBundleVEL(m, epoch)
+		b.SetPriority(gpsprot.PriVendorLow)
+		return b, epoch, nil
 	case *qtmmsg.EPE:
 		epoch = nmea.CheckEpoch(epoch, "")
 		accEPE(m, epoch)

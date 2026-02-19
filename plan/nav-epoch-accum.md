@@ -92,13 +92,15 @@ NavEpochAccum at the right time.
 - `VelGeoMsg` from RMC: `PriGenericLow`
 - `VelGeoMsg` from VTG: `PriGenericHigh`
 
-**Allystar, Unicore:** all messages `PriVendorLow` (only one source per message kind).
+**Quectel, Allystar, Unicore:** all messages `PriVendorLow` (only one source per message kind).
 
-## 2. UBX NavEpochMsg accumulation
+## 2. NavEpochMsg field accumulation
 
-When a UBX message handler writes a field into `NavEpochMsg`, the default rule is **first wins**: only write if the field is empty. This is correct for the common case where multiple messages carry the same value from the same navigation solution.
+Within a single navigation epoch, multiple native messages contribute fields to the same `NavEpochMsg`. For example, UBX NAV-PVT and NAV-POSLLH both write horizontal accuracy; NMEA GGA and RMC both write correction status. The protocol-specific message handlers need rules for merging these overlapping contributions.
 
-The following are exceptions where the message unconditionally overwrites (it has genuinely better data):
+The default rule across all protocols is **first wins**: only write a `NavEpochMsg` field if it is currently empty. This is correct for the common case where multiple messages carry the same value from the same navigation solution. The subsections below document per-protocol exceptions where a message unconditionally overwrites because it has genuinely better data.
+
+### UBX
 
 | Message | NavEpochMsg field |
 |---------|-------------------|
@@ -109,9 +111,7 @@ The following are exceptions where the message unconditionally overwrites (it ha
 
 Everything not in this table uses the default first-wins rule.
 
-## 3. NMEA NavEpochMsg accumulation
-
-When a NMEA message handler writes a field into `NavEpochMsg`, the default rule is **first wins**: only write if the field is empty.
+### NMEA
 
 **Dim, DOP, NumSVUsed**: each comes from a single sentence (Dim from GSA, DOPs from GSA, NumSVUsed from GGA, HDOP from GGA as fallback for GSA). No conflicts; first-wins is sufficient.
 
@@ -119,11 +119,9 @@ When a NMEA message handler writes a field into `NavEpochMsg`, the default rule 
 
 Additionally, the NMEA handler buffers the RMC mode indicator. At flush time, if the mode is R, F, or P (NMEA 4.x extended modes), it overwrites Quality and Correction with the extended mode values, overriding even GGA. Mode P identifies wide-area corrections (CorrWideArea), which GGA cannot express. Modes R/F explicitly identify base-station carrier solutions. AuxSrc is not affected.
 
-## 4. PQTM NavEpochMsg accumulation
+### PQTM
 
-PQTM sentences and standard NMEA sentences are interleaved within the same NMEA `PacketProcessor` and accumulate into the same `NavEpoch`. The default rule is **first wins**: only write if the field is empty.
-
-The following are exceptions where a message unconditionally overwrites:
+PQTM sentences and standard NMEA sentences are interleaved within the same NMEA `PacketProcessor` and accumulate into the same `NavEpoch`.
 
 | Message | NavEpochMsg field |
 |---------|-------------------|

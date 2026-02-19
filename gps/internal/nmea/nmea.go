@@ -236,6 +236,7 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 		if err != nil {
 			return false, err
 		}
+		bundle.SetPriority(gpsprot.PriGenericLow)
 		p.handleEpoch(epoch, tRead)
 		if h != nil {
 			bundle.Dispatch(h, tRead)
@@ -248,6 +249,7 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 		}
 		p.handleEpoch(epoch, tRead)
 		if h != nil && pos != nil {
+			pos.Priority = gpsprot.PriGenericHigh
 			h.PosGeo(pos, tRead)
 		}
 		return true, nil
@@ -258,6 +260,7 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 		}
 		p.handleEpoch(epoch, tRead)
 		if h != nil && vel != nil {
+			vel.Priority = gpsprot.PriGenericHigh
 			h.VelGeo(vel, tRead)
 		}
 		return true, nil
@@ -268,7 +271,7 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 		}
 		epoch := CheckEpoch(p.curNavEpoch, sen.Fields[0])
 		p.handleEpoch(epoch, tRead)
-		mt := gpsprot.TimeMsg{Tag: Tag, NativeMsgID: sen.msgID(), UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID)}
+		mt := gpsprot.TimeMsg{Tag: Tag, NativeMsgID: sen.msgID(), UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID), Priority: gpsprot.PriGenericLow}
 		if h != nil {
 			h.Time(&mt, tRead)
 		}
