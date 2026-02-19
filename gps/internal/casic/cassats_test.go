@@ -395,6 +395,111 @@ func TestSatAccumEmptyFlush(t *testing.T) {
 	}
 }
 
+// TestEpochManagerIntegration verifies that the CASIC processor registers
+// with NavEpochManager on the first epoch and that epoch boundaries trigger
+// satellite flushing via FlushNavEpoch.
+func TestEpochManagerIntegration(t *testing.T) {
+	mgr := gpsprot.NewNavEpochManager()
+	pp := NewPacketProcessor(mgr)
+	h := &mockMsgHandler{}
+	pp.SetMsgHandler(h)
+
+	// Helper: build a NAV-GPSINFO packet with the given RunTime and one satellite.
+	makePacket := func(runTime uint32, svid, cno uint8) string {
+		m := &casbin.NavGPSInfo{
+			NavSatInfoFixed: casbin.NavSatInfoFixed{
+				NavRunTime: casbin.NavRunTime{RunTime: runTime},
+				NumViewSV:  1,
+				NumFixSV:   1,
+				System:     casbin.GPS,
+			},
+			SVs: []casbin.NavSVInfo{makeSVInfo(svid, cno, true, 45, 180)},
+		}
+		pkt, err := casbin.Serialize(m)
+		if err != nil {
+			t.Fatalf("serialize: %v", err)
+		}
+		return string(pkt)
+	}
+
+	tRead := time.Unix(1, 0)
+
+	// Epoch 1: first NAV-GPSINFO with RunTime=1000.
+	// Processor should register with manager (enter active set).
+	pp.ProcessPacket(makePacket(1000, 1, 40), tRead)
+	if len(h.msgs) != 0 {
+		t.Fatalf("epoch 1: unexpected satellite flush")
+	}
+
+	// Epoch 2: NAV-GPSINFO with RunTime=2000.
+	// Manager detects processor already in active set, triggers FlushNavEpoch
+	// for epoch 1, which flushes the accumulated satellite data.
+	tRead = time.Unix(2, 0)
+	pp.ProcessPacket(makePacket(2000, 2, 35), tRead)
+	if len(h.msgs) != 1 {
+		t.Fatalf("epoch 2: expected 1 satellite flush, got %d", len(h.msgs))
+	}
+	if len(h.msgs[0].SVs) != 1 || h.msgs[0].SVs[0].ID.Num != 1 {
+		t.Errorf("epoch 2: flushed SV = %v, want GPS:1", h.msgs[0].SVs)
+	}
+
+	// Epoch 3: RunTime=3000. Flushes epoch 2 satellites via FlushNavEpoch,
+	// then the new NAV-GPSINFO triggers an early flush from satAccum
+	// (nEpochs >= 2 and predicted GNSS set matches).
+	h.msgs = nil
+	tRead = time.Unix(3, 0)
+	pp.ProcessPacket(makePacket(3000, 3, 30), tRead)
+	if len(h.msgs) != 2 {
+		t.Fatalf("epoch 3: expected 2 satellite flushes (epoch + early), got %d", len(h.msgs))
+	}
+	if len(h.msgs[0].SVs) != 1 || h.msgs[0].SVs[0].ID.Num != 2 {
+		t.Errorf("epoch 3 flush: SV = %v, want GPS:2", h.msgs[0].SVs)
+	}
+	if len(h.msgs[1].SVs) != 1 || h.msgs[1].SVs[0].ID.Num != 3 {
+		t.Errorf("epoch 3 early flush: SV = %v, want GPS:3", h.msgs[1].SVs)
+	}
+}
+
+// TestEpochManagerRunTimeZero verifies that the first epoch is correctly
+// handled even when RunTime starts at 0 (e.g. immediately after boot).
+func TestEpochManagerRunTimeZero(t *testing.T) {
+	mgr := gpsprot.NewNavEpochManager()
+	pp := NewPacketProcessor(mgr)
+	h := &mockMsgHandler{}
+	pp.SetMsgHandler(h)
+
+	makePacket := func(runTime uint32, svid, cno uint8) string {
+		m := &casbin.NavGPSInfo{
+			NavSatInfoFixed: casbin.NavSatInfoFixed{
+				NavRunTime: casbin.NavRunTime{RunTime: runTime},
+				NumViewSV:  1,
+				NumFixSV:   1,
+				System:     casbin.GPS,
+			},
+			SVs: []casbin.NavSVInfo{makeSVInfo(svid, cno, true, 45, 180)},
+		}
+		pkt, err := casbin.Serialize(m)
+		if err != nil {
+			t.Fatalf("serialize: %v", err)
+		}
+		return string(pkt)
+	}
+
+	// Epoch with RunTime=0: must still register with manager.
+	pp.ProcessPacket(makePacket(0, 1, 40), time.Unix(1, 0))
+	if len(h.msgs) != 0 {
+		t.Fatalf("RunTime=0: unexpected satellite flush")
+	}
+	// Next epoch triggers flush of RunTime=0 epoch.
+	pp.ProcessPacket(makePacket(1000, 2, 35), time.Unix(2, 0))
+	if len(h.msgs) != 1 {
+		t.Fatalf("after RunTime=0: expected 1 satellite flush, got %d", len(h.msgs))
+	}
+	if len(h.msgs[0].SVs) != 1 || h.msgs[0].SVs[0].ID.Num != 1 {
+		t.Errorf("flushed SV = %v, want GPS:1", h.msgs[0].SVs)
+	}
+}
+
 func TestSatAccumNilHandler(t *testing.T) {
 	tRead := time.Now()
 	var a satAccum

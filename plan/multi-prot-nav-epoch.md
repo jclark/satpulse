@@ -152,7 +152,7 @@ This works because:
 
 `NavEpochManager`, `EpochFlusher`, and `Accuracy.Merge` all go in `gps/gpsprot/msg.go` alongside the existing `MsgHandler`, `NavEpochMsg`, `mergeOpt`, and `SetAllMsgHandlers`.
 
-The manager is passed to each `PacketProcessor` constructor, not set after construction. There is no `SetNavEpochManager` method or interface addition. `CreatePacketProcessors` takes the manager as its first argument and forwards it to each protocol's `NewPacketProcessor`. RTCM is the exception -- its constructor is unchanged since it does not participate in epoch coordination.
+The manager is passed to each `PacketProcessor` constructor, not set after construction. There is no `SetNavEpochManager` method or interface addition. `CreatePacketProcessors` creates the manager internally and forwards it to each protocol's `NewPacketProcessor`. RTCM is the exception -- its constructor is unchanged since it does not participate in epoch coordination.
 
 ### Changes to PacketProcessors
 
@@ -201,7 +201,7 @@ Each `PacketProcessor` that currently emits `NavEpochMsg` directly changes to go
 
 ### Test changes
 
-Since the manager is now a constructor parameter, existing tests that verify `NavEpochMsg` emission create a `NavEpochManager` via `gpsprot.NewNavEpochManager()` and pass it to the processor constructor. Affected test files:
+Since the manager is a constructor parameter for individual `PacketProcessor`s, existing tests that verify `NavEpochMsg` emission create a `NavEpochManager` via `gpsprot.NewNavEpochManager()` and pass it to the processor constructor. Affected test files:
 
 - `gps/internal/ubx/ubx_test.go` (`TestNavEpochHandling`, `TestNavEpochMsg`)
 - `gps/internal/as/asproc_test.go` (`TestNavEpochMsg`)
@@ -213,20 +213,20 @@ Each test creates a `NavEpochManager`, passes it to the processor constructor, t
 
 ### Changes to wiring code
 
-The `NavEpochManager` is created before `CreatePacketProcessors` and passed in as the first argument. The callers that create packet processors are:
+`CreatePacketProcessors` creates the `NavEpochManager` internally and passes it to each protocol's constructor. Callers do not need to know about the manager. The callers that create packet processors are:
 
 **`gpsevent.NewDispatcher`** (`time/internal/gpsevent/dispatcher.go`):
-- The manager is created upstream (in `daemon.go` or equivalent) and passed to `CreatePacketProcessors(mgr, nmeaNumbering)`. The dispatcher receives the already-wired processors and sets `MsgHandler` on them as before.
+- Calls `CreatePacketProcessors(nmeaNumbering)`. The dispatcher receives the already-wired processors and sets `MsgHandler` on them as before.
 
 **`gps/app/gpscfg`** (`gps/app/gpscfg/gpscfg.go`):
-- `gpscfg.Configure` never emits `NavEpochMsg` -- it only uses `NativeMsgHandler` during probing. The caller is responsible for creating a `NavEpochManager` and passing it to `CreatePacketProcessors` before calling `Configure`. No changes needed inside `gpscfg`.
+- `gpscfg.Configure` never emits `NavEpochMsg` -- it only uses `NativeMsgHandler` during probing. No changes needed inside `gpscfg`.
 
 **`internal/gpscmd`** (`internal/gpscmd/gpscmd.go`):
-- Creates a `NavEpochManager` and passes it to `CreatePacketProcessors`.
+- Calls `CreatePacketProcessors(nil)`.
 
 **`gps/gpsreg.CreatePacketProcessors`** (`gps/gpsreg/reg.go`):
-- Signature changes to `CreatePacketProcessors(mgr *gpsprot.NavEpochManager, nmeaNumbering []gpsprot.NMEASVNumberingRange)`.
-- Passes `mgr` to each protocol's `NewPacketProcessor` call.
+- Signature: `CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange)`.
+- Creates a `NavEpochManager` internally and passes it to each protocol's `NewPacketProcessor` call.
 
 ### Interaction with existing Idle mechanism
 
@@ -240,7 +240,7 @@ There is a pre-existing inconsistency: NMEA's `flushEpoch` passes `p.curNavEpoch
 
 1. `Accuracy.Merge` + tests (`gps/gpsprot/msg.go`, `gps/gpsprot/msg_test.go`)
 2. `EpochFlusher`, `NavEpochManager` + tests (`gps/gpsprot/msg.go`, `gps/gpsprot/msg_test.go`)
-3. `CreatePacketProcessors` signature change + update all callers (`gps/gpsreg/reg.go`, `time/app/daemon/gps.go`, `internal/gpscmd/gpscmd.go`, `internal/gpscmd/replay_test.go`, `gps/app/gpscfg/gpscfg_test.go`)
+3. `CreatePacketProcessors` creates `NavEpochManager` internally (`gps/gpsreg/reg.go`)
 4. Allystar processor (simplest, good prototype)
 5. CASIC processor (similar to Allystar but returns nil NavEpochMsg)
 6. UBX processor (adds satellite flush in `FlushNavEpoch`)

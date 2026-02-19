@@ -141,15 +141,17 @@ type ExtSentenceHandler interface {
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
 	mh          gpsprot.MsgHandler
+	mgr         *gpsprot.NavEpochManager
 	sb          satellitesBuffer
 	extHandlers []ExtSentenceHandler
 	curNavEpoch *NavEpoch
 }
 
 // NewPacketProcessor creates a new NMEA packet processor
-func NewPacketProcessor() *PacketProcessor {
+func NewPacketProcessor(mgr *gpsprot.NavEpochManager) *PacketProcessor {
 	return &PacketProcessor{
-		sb: *newSatellitesBuffer(),
+		mgr: mgr,
+		sb:  *newSatellitesBuffer(),
 	}
 }
 
@@ -192,22 +194,25 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 
 func (p *PacketProcessor) handleEpoch(epoch *NavEpoch, tRead time.Time) {
 	if epoch == nil {
-		p.flushEpoch()
+		p.mgr.EndOfEpoch(tRead)
 		return
 	}
 	if epoch != p.curNavEpoch {
-		p.flushEpoch()
+		p.mgr.EpochStarted(p, tRead)
 		epoch.StartTime = tRead
 		p.curNavEpoch = epoch
 	}
 }
 
-func (p *PacketProcessor) flushEpoch() {
-	if p.curNavEpoch != nil && p.mh != nil {
-		p.curNavEpoch.Tag = Tag
-		p.mh.NavEpoch(&p.curNavEpoch.NavEpochMsg, p.curNavEpoch.StartTime)
-	}
+// FlushNavEpoch implements gpsprot.EpochFlusher.
+func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
+	epoch := p.curNavEpoch
 	p.curNavEpoch = nil
+	if epoch == nil {
+		return nil, gpsprot.PriGenericHigh, p.mh
+	}
+	epoch.Tag = Tag
+	return &epoch.NavEpochMsg, gpsprot.PriGenericHigh, p.mh
 }
 
 // AddExtHandler registers an extension handler for non-standard sentences.

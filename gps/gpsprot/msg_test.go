@@ -426,3 +426,258 @@ func TestNavEpochAccumAfterClear(t *testing.T) {
 		t.Errorf("Tag = %v, want new (fresh after clear)", a.Bundle.PosGeo.Tag)
 	}
 }
+
+func TestAccuracyMergeHigherOverwrites(t *testing.T) {
+	a := Accuracy{
+		Pos:   opt.Make(10 * Meter),
+		Hor:   opt.Make(5 * Meter),
+		Speed: opt.Make(2 * MeterPerSecond),
+	}
+	b := Accuracy{
+		Pos:         opt.Make(20 * Meter),
+		Vert:        opt.Make(8 * Meter),
+		GroundSpeed: opt.Make(3 * MeterPerSecond),
+	}
+	a.Merge(&b, PriGenericHigh, PriVendorLow)
+	// Higher priority overwrites Pos
+	if a.Pos.Get() != 20*Meter {
+		t.Errorf("Pos = %v, want 20m", a.Pos.Get())
+	}
+	// Hor kept (src didn't set it)
+	if a.Hor.Get() != 5*Meter {
+		t.Errorf("Hor = %v, want 5m", a.Hor.Get())
+	}
+	// Vert filled from src
+	if a.Vert.Get() != 8*Meter {
+		t.Errorf("Vert = %v, want 8m", a.Vert.Get())
+	}
+	// Speed kept (src didn't set it)
+	if a.Speed.Get() != 2*MeterPerSecond {
+		t.Errorf("Speed = %v, want 2m/s", a.Speed.Get())
+	}
+	// GroundSpeed filled from src
+	if a.GroundSpeed.Get() != 3*MeterPerSecond {
+		t.Errorf("GroundSpeed = %v, want 3m/s", a.GroundSpeed.Get())
+	}
+}
+
+func TestAccuracyMergeLowerFillsOnly(t *testing.T) {
+	a := Accuracy{
+		Pos: opt.Make(10 * Meter),
+	}
+	b := Accuracy{
+		Pos:  opt.Make(20 * Meter),
+		Vert: opt.Make(8 * Meter),
+	}
+	a.Merge(&b, PriVendorLow, PriGenericHigh)
+	// Lower priority does not overwrite Pos
+	if a.Pos.Get() != 10*Meter {
+		t.Errorf("Pos = %v, want 10m", a.Pos.Get())
+	}
+	// Vert filled (was unset)
+	if a.Vert.Get() != 8*Meter {
+		t.Errorf("Vert = %v, want 8m", a.Vert.Get())
+	}
+}
+
+func TestMergeNavEpochNils(t *testing.T) {
+	msg := &NavEpochMsg{Tag: "UBX"}
+	m, p := MergeNavEpoch(nil, 0, msg, PriVendorLow)
+	if m != msg || p != PriVendorLow {
+		t.Errorf("MergeNavEpoch(nil, msg) = %v, %v; want msg, PriVendorLow", m, p)
+	}
+	m, p = MergeNavEpoch(msg, PriVendorLow, nil, 0)
+	if m != msg || p != PriVendorLow {
+		t.Errorf("MergeNavEpoch(msg, nil) = %v, %v; want msg, PriVendorLow", m, p)
+	}
+	m, _ = MergeNavEpoch(nil, 0, nil, 0)
+	if m != nil {
+		t.Errorf("MergeNavEpoch(nil, nil) = %v; want nil", m)
+	}
+}
+
+func TestMergeNavEpochTagFromHigherPriority(t *testing.T) {
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Millisecond)
+	a := &NavEpochMsg{Tag: "NMEA", StartTime: t1, Acc: Accuracy{Hor: opt.Make(5 * Meter)}}
+	b := &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
+	m, _ := MergeNavEpoch(a, PriGenericHigh, b, PriVendorLow)
+	if m.Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX (higher priority)", m.Tag)
+	}
+	if m.StartTime != t0 {
+		t.Errorf("StartTime = %v, want %v (earliest)", m.StartTime, t0)
+	}
+	if m.Acc.Hor.Get() != 5*Meter {
+		t.Errorf("Acc.Hor = %v, want 5m (filled from NMEA)", m.Acc.Hor.Get())
+	}
+	if m.Acc.Pos.Get() != 10*Meter {
+		t.Errorf("Acc.Pos = %v, want 10m (from UBX)", m.Acc.Pos.Get())
+	}
+}
+
+// testFlusher is a fake EpochFlusher for testing NavEpochManager.
+type testFlusher struct {
+	msg *NavEpochMsg
+	pri MsgPriority
+	mh  MsgHandler
+}
+
+func (f *testFlusher) FlushNavEpoch(tRead time.Time) (*NavEpochMsg, MsgPriority, MsgHandler) {
+	msg := f.msg
+	f.msg = nil
+	return msg, f.pri, f.mh
+}
+
+// epochRecorder records NavEpoch calls.
+type epochRecorder struct {
+	DefaultHandler
+	epochs []NavEpochMsg
+	tReads []time.Time
+}
+
+func (r *epochRecorder) NavEpoch(msg *NavEpochMsg, tRead time.Time) {
+	r.epochs = append(r.epochs, *msg)
+	r.tReads = append(r.tReads, tRead)
+}
+
+func TestNavEpochManagerSingleProtocol(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	t2 := t1.Add(time.Second)
+	f := &testFlusher{pri: PriVendorLow, mh: rec}
+	// First epoch start: f added to active set, no flush
+	mgr.EpochStarted(f, t0)
+	if len(rec.epochs) != 0 {
+		t.Fatalf("expected no epochs after first EpochStarted, got %d", len(rec.epochs))
+	}
+	// Set up what will be flushed
+	f.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
+	// Second epoch start: triggers flush of first epoch
+	mgr.EpochStarted(f, t1)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after second EpochStarted, got %d", len(rec.epochs))
+	}
+	if rec.epochs[0].Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", rec.epochs[0].Tag)
+	}
+	if rec.tReads[0] != t1 {
+		t.Errorf("tRead = %v, want %v", rec.tReads[0], t1)
+	}
+	// Set up second epoch data
+	f.msg = &NavEpochMsg{Tag: "UBX", StartTime: t1}
+	// Third epoch start: flushes second epoch
+	mgr.EpochStarted(f, t2)
+	if len(rec.epochs) != 2 {
+		t.Fatalf("expected 2 epochs, got %d", len(rec.epochs))
+	}
+}
+
+func TestNavEpochManagerMultiProtocol(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Millisecond)
+	t2 := t0.Add(time.Second)
+	binary := &testFlusher{pri: PriVendorLow, mh: rec}
+	nmeaF := &testFlusher{pri: PriGenericHigh, mh: rec}
+	// Epoch 1: both protocols register
+	mgr.EpochStarted(binary, t0)
+	mgr.EpochStarted(nmeaF, t1)
+	if len(rec.epochs) != 0 {
+		t.Fatalf("no flush expected in first epoch, got %d", len(rec.epochs))
+	}
+	// Set up epoch 1 data for flush
+	binary.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
+	nmeaF.msg = &NavEpochMsg{Tag: "NMEA", StartTime: t1, Acc: Accuracy{Hor: opt.Make(5 * Meter)}}
+	// Epoch 2: binary starts first, triggering flush
+	mgr.EpochStarted(binary, t2)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after binary starts epoch 2, got %d", len(rec.epochs))
+	}
+	m := rec.epochs[0]
+	// Tag should come from binary (higher priority)
+	if m.Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", m.Tag)
+	}
+	// StartTime should be earliest
+	if m.StartTime != t0 {
+		t.Errorf("StartTime = %v, want %v", m.StartTime, t0)
+	}
+	// Accuracy should be merged
+	if m.Acc.Pos.Get() != 10*Meter {
+		t.Errorf("Acc.Pos = %v, want 10m", m.Acc.Pos.Get())
+	}
+	if m.Acc.Hor.Get() != 5*Meter {
+		t.Errorf("Acc.Hor = %v, want 5m", m.Acc.Hor.Get())
+	}
+}
+
+func TestNavEpochManagerEndOfEpochSingle(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	f := &testFlusher{pri: PriVendorLow, mh: rec}
+	mgr.EpochStarted(f, t0)
+	f.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0}
+	// EndOfEpoch with one active processor: flushes immediately
+	mgr.EndOfEpoch(t1)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after EndOfEpoch, got %d", len(rec.epochs))
+	}
+	if rec.epochs[0].Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", rec.epochs[0].Tag)
+	}
+}
+
+func TestNavEpochManagerEndOfEpochMultiple(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	f1 := &testFlusher{pri: PriVendorLow, mh: rec}
+	f2 := &testFlusher{pri: PriGenericHigh, mh: rec}
+	mgr.EpochStarted(f1, t0)
+	mgr.EpochStarted(f2, t0)
+	f1.msg = &NavEpochMsg{Tag: "UBX"}
+	f2.msg = &NavEpochMsg{Tag: "NMEA"}
+	// EndOfEpoch with multiple active: no-op
+	mgr.EndOfEpoch(t0)
+	if len(rec.epochs) != 0 {
+		t.Fatalf("EndOfEpoch with multiple active should be no-op, got %d epochs", len(rec.epochs))
+	}
+}
+
+func TestNavEpochManagerNilContribution(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	t2 := t1.Add(time.Second)
+	binary := &testFlusher{pri: PriVendorLow, mh: rec}
+	casicF := &testFlusher{pri: PriVendorLow, mh: rec}
+	// Epoch 1: both register
+	mgr.EpochStarted(binary, t0)
+	mgr.EpochStarted(casicF, t0)
+	// Only binary has data; CASIC returns nil
+	binary.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0}
+	casicF.msg = nil
+	// Epoch 2: triggers flush
+	mgr.EpochStarted(binary, t1)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch, got %d", len(rec.epochs))
+	}
+	if rec.epochs[0].Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", rec.epochs[0].Tag)
+	}
+	// Now test all-nil: no emission
+	binary.msg = nil
+	casicF.msg = nil
+	mgr.EpochStarted(casicF, t1)
+	mgr.EpochStarted(binary, t2)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected still 1 epoch (all nil), got %d", len(rec.epochs))
+	}
+}

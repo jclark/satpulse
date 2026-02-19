@@ -107,23 +107,25 @@ func ParseVendor(vendor string) Vendor {
 	return VendorUnknown
 }
 
-// CreatePacketProcessors creates packet processors for all registered protocols
+// CreatePacketProcessors creates packet processors for all registered protocols.
+// A shared NavEpochManager coordinates epoch handling across protocols.
 func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gpsprot.Tag]gpsprot.PacketProcessor {
-	nmeaPP := nmea.NewPacketProcessor()
+	mgr := gpsprot.NewNavEpochManager()
+	nmeaPP := nmea.NewPacketProcessor(mgr)
 	if nmeaNumbering != nil {
 		nmeaPP.SetSVNumbering(nmeaNumbering)
 	}
 	nmeaPP.AddExtHandler(quectel.NewHandler())
 	return map[gpsprot.Tag]gpsprot.PacketProcessor{
-		ubx.Tag:       ubx.NewPacketProcessor(),
-		casic.Tag:     casic.NewPacketProcessor(),
-		as.Tag:        as.NewPacketProcessor(),
+		ubx.Tag:       ubx.NewPacketProcessor(mgr),
+		casic.Tag:     casic.NewPacketProcessor(mgr),
+		as.Tag:        as.NewPacketProcessor(mgr),
 		nmea.Tag:      nmeaPP,
 		rtcm.Tag:      rtcm.NewPacketProcessor(),
-		unc.TagBinary: unc.NewBinPacketProcessor(),
-		unc.TagAscii:  unc.NewAsciiPacketProcessor(),
-		nov.TagBinary: nov.NewBinPacketProcessor(),
-		nov.TagAscii:  nov.NewAsciiPacketProcessor(),
+		unc.TagBinary: unc.NewBinPacketProcessor(mgr),
+		unc.TagAscii:  unc.NewAsciiPacketProcessor(mgr),
+		nov.TagBinary: nov.NewBinPacketProcessor(mgr),
+		nov.TagAscii:  nov.NewAsciiPacketProcessor(mgr),
 	}
 }
 

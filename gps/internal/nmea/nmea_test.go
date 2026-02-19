@@ -51,7 +51,7 @@ func testTime(t *testing.T, s string, expectUTC ptime.UTCTime) {
 	sen := parseApprovedSentence(s)
 	var h timeHandler
 	var zt time.Time
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	handled, e := pp.Dispatch(sen, zt, &h)
 	if e != nil || !handled {
 		t.Fatalf("nmea.Dispatch failed: %v: %s", e, s)
@@ -148,7 +148,7 @@ func (r *nativeMsgRecorder) NativeMsg(_ gpsprot.Tag, msgID string, _ interface{}
 
 func TestExtHandlerDispatch(t *testing.T) {
 	wantUTC := ptime.UTC(2024, 1, 1, 12, 0, 0, 0)
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.AddExtHandler(&mockExtHandler{
 		prefix: "PTEST,",
 		bundle: &gpsprot.MsgBundle{
@@ -170,7 +170,7 @@ func TestExtHandlerDispatch(t *testing.T) {
 }
 
 func TestExtHandlerFallthrough(t *testing.T) {
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.AddExtHandler(&mockExtHandler{
 		prefix: "PTEST,",
 		bundle: &gpsprot.MsgBundle{},
@@ -192,7 +192,7 @@ func TestExtHandlerFallthrough(t *testing.T) {
 }
 
 func TestExtHandlerBlocksNativeMsg(t *testing.T) {
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.AddExtHandler(&mockExtHandler{
 		prefix: "PTEST,",
 		bundle: &gpsprot.MsgBundle{},
@@ -533,7 +533,7 @@ func processSentence(pp *PacketProcessor, payload string, tRead time.Time) error
 
 func TestEpochBoundary(t *testing.T) {
 	var rec msgRecorder
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.SetMsgHandler(&rec)
 	t1 := time.Unix(1000, 0)
 	t2 := time.Unix(1001, 0)
@@ -574,7 +574,7 @@ func TestEpochBoundary(t *testing.T) {
 func TestEpochGGAVTGSameEpoch(t *testing.T) {
 	// GGA and VTG within the same epoch should not trigger a flush.
 	var rec msgRecorder
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.SetMsgHandler(&rec)
 	t1 := time.Unix(1000, 0)
 	if err := processSentence(pp, "GPRMC,120000.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V", t1); err != nil {
@@ -623,7 +623,7 @@ func (h *epochMockExtHandler) HandleSentence(_ nmeamsg.SentenceSyntaxFlags, payl
 
 func TestExtHandlerEpochBoundary(t *testing.T) {
 	var rec msgRecorder
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.SetMsgHandler(&rec)
 	pp.AddExtHandler(&epochMockExtHandler{prefix: "PTEST,A", tod: "120000.00"})
 	pp.AddExtHandler(&epochMockExtHandler{prefix: "PTEST,B", tod: "120001.00"})
@@ -649,7 +649,7 @@ func TestExtHandlerEpochBoundary(t *testing.T) {
 
 func TestExtHandlerEOE(t *testing.T) {
 	var rec msgRecorder
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.SetMsgHandler(&rec)
 	pp.AddExtHandler(&epochMockExtHandler{prefix: "PTEST,MSG", tod: "120000.00"})
 	pp.AddExtHandler(&epochMockExtHandler{prefix: "PTEST,EOE", eoe: true})

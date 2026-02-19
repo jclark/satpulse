@@ -13,8 +13,8 @@ type BinPacketProcessor struct {
 }
 
 // NewBinPacketProcessor creates a new NovAtel binary packet processor
-func NewBinPacketProcessor() *BinPacketProcessor {
-	return &BinPacketProcessor{packetProcessor{mh: &gpsprot.DefaultHandler{}}}
+func NewBinPacketProcessor(mgr *gpsprot.NavEpochManager) *BinPacketProcessor {
+	return &BinPacketProcessor{packetProcessor{mh: &gpsprot.DefaultHandler{}, mgr: mgr}}
 }
 
 // ProcessPacket processes a NovAtel binary packet's data and returns the message ID and any error
@@ -31,8 +31,8 @@ type AsciiPacketProcessor struct {
 }
 
 // NewAsciiPacketProcessor creates a new NovAtel ASCII packet processor
-func NewAsciiPacketProcessor() *AsciiPacketProcessor {
-	return &AsciiPacketProcessor{packetProcessor{mh: &gpsprot.DefaultHandler{}}}
+func NewAsciiPacketProcessor(mgr *gpsprot.NavEpochManager) *AsciiPacketProcessor {
+	return &AsciiPacketProcessor{packetProcessor{mh: &gpsprot.DefaultHandler{}, mgr: mgr}}
 }
 
 // ProcessPacket processes a NovAtel ASCII packet's data and returns the message ID and any error
@@ -46,7 +46,8 @@ func (p *AsciiPacketProcessor) ProcessPacket(data string, tRead time.Time) (stri
 // packetProcessor is the common functionality between BinPacketProcessor and AsciiPacketProcessor
 type packetProcessor struct {
 	gpsprot.DefaultPacketProcessor
-	mh gpsprot.MsgHandler // never nil; initialized to &gpsprot.DefaultHandler{}
+	mh  gpsprot.MsgHandler        // never nil; initialized to &gpsprot.DefaultHandler{}
+	mgr *gpsprot.NavEpochManager
 	// Navigation epoch tracking: NovAtel messages carry (Week, MillisecondsOfWeek)
 	// in the header. Messages with the same pair are part of the same epoch.
 	// Invariant: curEpochMsg is non-nil iff curEpoch is non-zero.
@@ -132,17 +133,19 @@ func (p *packetProcessor) handleEpoch(hdr *novmsg.MsgHdr, tag gpsprot.Tag, tRead
 	e := uint64(hdr.Week)<<32 | uint64(hdr.MillisecondsOfWeek)
 	e++ // avoid zero
 	if e != p.curEpoch {
-		p.flushEpoch(tRead)
+		p.mgr.EpochStarted(p, tRead)
 		p.curEpoch = e
 		p.curEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
 		p.curEpochTag = tag
 	}
 }
 
-func (p *packetProcessor) flushEpoch(tRead time.Time) {
-	if p.curEpochMsg != nil {
-		p.curEpochMsg.Tag = p.curEpochTag
-		p.mh.NavEpoch(p.curEpochMsg, tRead)
-	}
+// FlushNavEpoch implements gpsprot.EpochFlusher.
+func (p *packetProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
+	msg := p.curEpochMsg
 	p.curEpochMsg = nil
+	if msg != nil {
+		msg.Tag = p.curEpochTag
+	}
+	return msg, gpsprot.PriVendorLow, p.mh
 }

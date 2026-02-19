@@ -41,7 +41,7 @@ type NativeMsgHandler interface {
 	// msgID: identifies the message type within the protocol (e.g., UBX-NAV-PVT, NMEA-GGA).
 	// msg: the protocol-specific message object.
 	// tRead: timestamp when the message was received.
-	NativeMsg(tag Tag, msgID string, msg interface{}, tRead time.Time) error
+	NativeMsg(tag Tag, msgID string, msg any, tRead time.Time) error
 }
 
 type DefaultHandler struct{}
@@ -443,6 +443,101 @@ type Accuracy struct {
 	Speed       opt.Val[Speed]  `json:"speed,omitzero"`       // 3D speed accuracy
 	GroundSpeed opt.Val[Speed]  `json:"groundSpeed,omitzero"` // 2D ground speed accuracy
 	Course      opt.Val[Angle]  `json:"course,omitzero"`      // course/heading accuracy
+}
+
+// Merge incorporates fields from other into a based on priority.
+func (a *Accuracy) Merge(other *Accuracy, dstPri, srcPri MsgPriority) {
+	mergeOpt(&a.Pos, &other.Pos, dstPri, srcPri)
+	mergeOpt(&a.Hor, &other.Hor, dstPri, srcPri)
+	mergeOpt(&a.Vert, &other.Vert, dstPri, srcPri)
+	mergeOpt(&a.Speed, &other.Speed, dstPri, srcPri)
+	mergeOpt(&a.GroundSpeed, &other.GroundSpeed, dstPri, srcPri)
+	mergeOpt(&a.Course, &other.Course, dstPri, srcPri)
+}
+
+// MergeNavEpoch merges two NavEpochMsg values by priority. The higher-priority
+// message provides Tag; Accuracy fields are merged with mergeOpt semantics;
+// StartTime is the earliest. The returned priority is the higher of the two,
+// for chaining in pairwise merge.
+func MergeNavEpoch(a *NavEpochMsg, aPri MsgPriority, b *NavEpochMsg, bPri MsgPriority) (*NavEpochMsg, MsgPriority) {
+	if a == nil {
+		return b, bPri
+	}
+	if b == nil {
+		return a, aPri
+	}
+	merged := *a
+	merged.Acc.Merge(&b.Acc, aPri, bPri)
+	if bPri >= aPri {
+		merged.Tag = b.Tag
+		aPri = bPri
+	}
+	if b.StartTime.Before(merged.StartTime) {
+		merged.StartTime = b.StartTime
+	}
+	return &merged, aPri
+}
+
+// EpochFlusher is implemented by PacketProcessors that participate in
+// epoch coordination. The manager calls FlushNavEpoch when an epoch
+// boundary is detected. The processor returns its accumulated NavEpochMsg
+// (or nil if it has nothing to contribute), a MsgPriority indicating
+// the protocol band, and its MsgHandler for emission.
+type EpochFlusher interface {
+	FlushNavEpoch(tRead time.Time) (*NavEpochMsg, MsgPriority, MsgHandler)
+}
+
+// NavEpochManager coordinates navigation epoch handling across multiple
+// protocol processors. Each PacketProcessor receives a reference to the
+// shared manager in its constructor instead of directly calling
+// MsgHandler.NavEpoch.
+type NavEpochManager struct {
+	active map[EpochFlusher]struct{}
+}
+
+// NewNavEpochManager creates a new NavEpochManager.
+func NewNavEpochManager() *NavEpochManager {
+	return &NavEpochManager{}
+}
+
+// EpochStarted is called by a processor when it detects the start of a new
+// epoch. If the caller is already in the active set, the manager flushes
+// all active processors and emits the merged NavEpochMsg. The caller is
+// then added to the (possibly cleared) active set.
+func (m *NavEpochManager) EpochStarted(f EpochFlusher, tRead time.Time) {
+	if _, ok := m.active[f]; ok {
+		m.flush(tRead)
+	}
+	if m.active == nil {
+		m.active = make(map[EpochFlusher]struct{})
+	}
+	m.active[f] = struct{}{}
+}
+
+// EndOfEpoch is called by a processor that received an explicit end-of-epoch
+// signal. If exactly one processor is active, it flushes immediately.
+// Otherwise it is a no-op (the flush will happen on the next EpochStarted).
+func (m *NavEpochManager) EndOfEpoch(tRead time.Time) {
+	if len(m.active) == 1 {
+		m.flush(tRead)
+	}
+}
+
+func (m *NavEpochManager) flush(tRead time.Time) {
+	var merged *NavEpochMsg
+	var mergedPri MsgPriority
+	var mh MsgHandler
+	for f := range m.active {
+		msg, pri, h := f.FlushNavEpoch(tRead)
+		if msg != nil && mh == nil {
+			mh = h
+		}
+		merged, mergedPri = MergeNavEpoch(merged, mergedPri, msg, pri)
+	}
+	clear(m.active)
+	if merged != nil && mh != nil {
+		mh.NavEpoch(merged, tRead)
+	}
 }
 
 // mergeOpt merges a single opt.Val field from src into dst based on priority.

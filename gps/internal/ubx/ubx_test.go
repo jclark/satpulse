@@ -9,7 +9,7 @@ import (
 )
 
 func TestProcessPacketWithParseError(t *testing.T) {
-	p := NewPacketProcessor()
+	p := NewPacketProcessor(gpsprot.NewNavEpochManager())
 
 	// Create a valid UBX packet with empty payload for CFG-NAV5 (which requires 36 bytes)
 	// This will pass PacketFormat validation but fail during ParseMsg
@@ -228,7 +228,7 @@ func TestNavEpochHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pp := NewPacketProcessor()
+			pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 			handler := &testMsgHandler{}
 			pp.SetMsgHandler(handler)
 
@@ -306,7 +306,7 @@ func TestNavEpochHandling(t *testing.T) {
 }
 
 func TestNavEpochMsg(t *testing.T) {
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	handler := &testMsgHandler{}
 	pp.SetMsgHandler(handler)
 

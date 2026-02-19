@@ -1055,7 +1055,7 @@ func TestPacketProcessorSatellites(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			processor := NewPacketProcessor()
+			processor := NewPacketProcessor(gpsprot.NewNavEpochManager())
 			if test.numbering != nil {
 				processor.SetSVNumbering(test.numbering)
 			}
