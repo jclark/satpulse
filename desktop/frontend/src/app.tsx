@@ -13,6 +13,7 @@ import {PVTPanel} from './pvt-panel';
 import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeRow} from './pvt-panel';
 import {MapPanel} from './map-panel';
 import {ClockPanel} from './clock-panel';
+import {SkyViewPanel} from './sky-view-panel';
 
 export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
 
@@ -72,6 +73,26 @@ export interface SurveyMsg {
 
 export interface LeapSecondState {
     utcOff: number;
+}
+
+export interface SatellitesMsg {
+    tag?: string;
+    nativeMsgID?: string;
+    info: SVInfo[];
+    usedValidity?: number;
+}
+
+export interface SVInfo {
+    id: string;
+    lookAngles?: {azimuth: number; elevation: number};
+    signals: SignalInfo[];
+    used?: boolean;
+}
+
+export interface SignalInfo {
+    id?: string;
+    cn0: number;
+    used?: boolean;
 }
 
 interface MsgEvent {
@@ -138,6 +159,7 @@ export function App() {
     const [timeRows, setTimeRows] = useState<Map<string, TimeRow>>(new Map());
     const [pvtOpen, setPvtOpen] = useState(false);
     const pvtAutoExpanded = useRef(false);
+    const [satsMsg, setSatsMsg] = useState<SatellitesMsg | null>(null);
     const [mapPos, setMapPos] = useState<{lat: number; lon: number} | null>(null);
     const [mapCourse, setMapCourse] = useState<{course: number; groundSpeed: number} | null>(null);
     const [noFixSecs, setNoFixSecs] = useState(0);
@@ -344,6 +366,9 @@ export function App() {
                     });
                     break;
                 }
+                case 'satellites':
+                    setSatsMsg(evt.msg as SatellitesMsg);
+                    break;
             }
         });
         const offState = EventsOn('gps:state', (state: ConnState) => {
@@ -351,6 +376,7 @@ export function App() {
             if (state === 'disconnected') {
                 setTimeMsg(null);
                 setSurveyMsg(null);
+                setSatsMsg(null);
                 setLeapSecond(null);
                 setPosRows(new Map());
                 setVelRows(new Map());
@@ -547,9 +573,12 @@ export function App() {
             <div class="flex-1 overflow-hidden" style="min-height: 80px;">
                 {/* Monitor tab */}
                 <div class={`h-full overflow-y-auto ${activeTab === 'monitor' ? '' : 'hidden'}`}>
-                    <div class="flex flex-wrap gap-4 p-4">
-                        <ClockPanel msg={timeMsg} leapSecond={leapSecond} />
-                        <MapPanel pos={mapPos} course={mapCourse} noFixSecs={noFixSecs} />
+                    <div class="flex gap-4 p-4">
+                        <div class="flex flex-col gap-4">
+                            <ClockPanel msg={timeMsg} leapSecond={leapSecond} />
+                            <MapPanel pos={mapPos} course={mapCourse} noFixSecs={noFixSecs} />
+                        </div>
+                        {satsMsg && <SkyViewPanel msg={satsMsg} />}
                     </div>
                     <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />
