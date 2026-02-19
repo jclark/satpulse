@@ -1,6 +1,6 @@
 # Cross-protocol navigation epochs
 
-Prerequisite: [nav-epoch.md](nav-epoch.md) (adds `NavEpochMsg` and `MsgHandler.NavEpoch`).
+Prerequisite: [nav-epoch.md](nav-epoch.md) (adds `NavEpochMsg` and `MsgHandler.NavEpoch`), [nav-epoch-accum.md](nav-epoch-accum.md) section 1 (defines `MsgPriority` and priority-based merge).
 
 Related: [solution-metadata.md](solution-metadata.md) (populates `NavEpochMsg` fields), [nmea-extensibility.md](nmea-extensibility.md) (extended NMEA sentence handlers), [nmea-ext-handler-epoch.md](nmea-ext-handler-epoch.md) (epoch lifecycle on NMEA `PacketProcessor`).
 
@@ -31,9 +31,10 @@ A `NavEpochManager` coordinates epoch handling across protocol processors. It is
 // EpochFlusher is implemented by PacketProcessors that participate in
 // epoch coordination. The manager calls FlushNavEpoch when an epoch
 // boundary is detected. The processor returns its accumulated NavEpochMsg
-// (or nil if it has nothing to contribute).
+// (or nil if it has nothing to contribute) and a MsgPriority indicating
+// the protocol band (generic for NMEA, vendor for binary/PQTM).
 type EpochFlusher interface {
-    FlushNavEpoch(tRead time.Time) *NavEpochMsg
+    FlushNavEpoch(tRead time.Time) (*NavEpochMsg, MsgPriority)
 }
 
 // NavEpochManager coordinates navigation epoch handling across multiple
@@ -85,9 +86,15 @@ The active set is transient -- it is built up during an epoch and cleared on flu
 
 ### Merge rules
 
-When multiple protocols contribute to the same epoch, the manager merges their `NavEpochMsg` values field by field. The general rule is: **prefer the non-NMEA (binary) protocol's values when both provide the same field.**
+The `EpochFlusher` interface returns a `MsgPriority` alongside the `NavEpochMsg`:
 
-Rationale: binary protocols typically provide higher-resolution data (mm accuracy vs NMEA's lack of metric accuracy, finer-grained fix quality enums). NMEA's contribution is valuable when the binary protocol lacks a field entirely.
+```go
+type EpochFlusher interface {
+    FlushNavEpoch(tRead time.Time) (*NavEpochMsg, MsgPriority)
+}
+```
+
+NMEA processors return a generic-band priority; vendor-specific protocol processors return a vendor-band priority. When multiple protocols contribute to the same epoch, the manager takes the higher-priority `NavEpochMsg` as the base and fills in empty fields from the lower-priority one.
 
 ### Epoch identity and correlation
 
