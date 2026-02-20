@@ -37,25 +37,6 @@ tag = "nov-bestposa-off"
 description = "Disable BESTPOS ASCII"
 text = "unlog bestposa"
 
-# Combined BESTPOS binary+ASCII
-# Verified OK response for both commands on K902
-[[line]]
-tag = "nov-bestpos"
-description = "Enable BESTPOS binary+ASCII at 1Hz"
-text = "log bestposb ontime 1"
-[[line]]
-tag = "nov-bestpos"
-text = "log bestposa ontime 1"
-
-# Verified OK response for both commands on K902
-[[line]]
-tag = "nov-bestpos-off"
-description = "Disable BESTPOS binary+ASCII"
-text = "unlog bestposb"
-[[line]]
-tag = "nov-bestpos-off"
-text = "unlog bestposa"
-
 # NMEA Output Control
 
 # Verified GPGGA messages appear at 1Hz after enable on K902
@@ -161,24 +142,6 @@ tag = "nov-bestvela-off"
 description = "Disable BESTVEL ASCII"
 text = "unlog bestvela"
 
-# Combined BESTVEL binary+ASCII
-# Verified OK response for both commands on K902
-[[line]]
-tag = "nov-bestvel"
-description = "Enable BESTVEL binary+ASCII at 1Hz"
-text = "log bestvelb ontime 1"
-[[line]]
-tag = "nov-bestvel"
-text = "log bestvela ontime 1"
-# Verified OK response for both commands on K902
-[[line]]
-tag = "nov-bestvel-off"
-description = "Disable BESTVEL binary+ASCII"
-text = "unlog bestvelb"
-[[line]]
-tag = "nov-bestvel-off"
-text = "unlog bestvela"
-
 # BESTXYZ (NovAtel format ECEF position + velocity)
 # Verified BESTXYZB binary (msg 241) appears at 1Hz in capture on K902
 [[line]]
@@ -199,24 +162,6 @@ text = "log bestxyza ontime 1"
 [[line]]
 tag = "nov-bestxyza-off"
 description = "Disable BESTXYZ ASCII"
-text = "unlog bestxyza"
-
-# Combined BESTXYZ binary+ASCII
-# Verified OK response for both commands on K902
-[[line]]
-tag = "nov-bestxyz"
-description = "Enable BESTXYZ binary+ASCII at 1Hz"
-text = "log bestxyzb ontime 1"
-[[line]]
-tag = "nov-bestxyz"
-text = "log bestxyza ontime 1"
-# Verified OK response for both commands on K902
-[[line]]
-tag = "nov-bestxyz-off"
-description = "Disable BESTXYZ binary+ASCII"
-text = "unlog bestxyzb"
-[[line]]
-tag = "nov-bestxyz-off"
 text = "unlog bestxyza"
 
 # TIME (NovAtel format receiver clock and UTC time)
@@ -241,24 +186,6 @@ tag = "nov-timea-off"
 description = "Disable TIME ASCII"
 text = "unlog timea"
 
-# Combined TIME binary+ASCII
-# Verified OK response for both commands on K902
-[[line]]
-tag = "nov-time"
-description = "Enable TIME binary+ASCII at 1Hz"
-text = "log timeb ontime 1"
-[[line]]
-tag = "nov-time"
-text = "log timea ontime 1"
-# Verified OK response for both commands on K902
-[[line]]
-tag = "nov-time-off"
-description = "Disable TIME binary+ASCII"
-text = "unlog timeb"
-[[line]]
-tag = "nov-time-off"
-text = "unlog timea"
-
 # IONUTC (NovAtel format ionospheric and UTC parameters)
 # Verified IONUTCB binary (msg 8) appears in capture on K902
 [[line]]
@@ -279,24 +206,6 @@ text = "log ionutca onchanged"
 [[line]]
 tag = "nov-ionutca-off"
 description = "Disable IONUTC ASCII"
-text = "unlog ionutca"
-
-# Combined IONUTC binary+ASCII
-# Verified OK response for both commands on K902
-[[line]]
-tag = "nov-ionutc"
-description = "Enable IONUTC binary+ASCII on change"
-text = "log ionutcb onchanged"
-[[line]]
-tag = "nov-ionutc"
-text = "log ionutca onchanged"
-# Verified OK response for both commands on K902
-[[line]]
-tag = "nov-ionutc-off"
-description = "Disable IONUTC binary+ASCII"
-text = "unlog ionutcb"
-[[line]]
-tag = "nov-ionutc-off"
 text = "unlog ionutca"
 
 # Fix Rate (PVT solution frequency)
