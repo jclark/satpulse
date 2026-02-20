@@ -424,13 +424,205 @@ type SurveyMsg struct {
 	InProgress bool          `json:"inProgress"`
 }
 
+// FixLevel is the primary ordered axis describing the technique used to compute
+// the GNSS navigation solution, ordered by increasing quality. Higher values
+// represent higher intrinsic precision. The zero value means "not provided"
+// or "not applicable".
+type FixLevel uint8
+
+const (
+	// FixLevelNone indicates that no valid GNSS solution is available.
+	FixLevelNone FixLevel = iota + 1
+
+	// FixLevelNotMeasured indicates that the receiver reports a position that
+	// is not based on any measurement (e.g. manual input or simulated). No
+	// component of the PVT solution is being computed from observations.
+	// CorrKind and FixDim do not apply.
+	FixLevelNotMeasured
+
+	// FixLevelCode indicates an uncorrected code-based GNSS solution
+	// (e.g. standalone SPS or single point positioning).
+	FixLevelCode
+
+	// FixLevelCodeCorrected indicates a code-based GNSS solution with
+	// corrections applied (e.g. DGPS or SBAS). This improves accuracy but
+	// remains limited by code measurement precision.
+	FixLevelCodeCorrected
+
+	// FixLevelCarrierFloat indicates a carrier-phase-based solution with
+	// ambiguities estimated as float (non-integer) values. This includes
+	// RTK float and classical PPP solutions prior to ambiguity fixing.
+	FixLevelCarrierFloat
+
+	// FixLevelCarrierFixed indicates a carrier-phase-based solution with
+	// integer ambiguities resolved and constrained. This includes RTK fixed
+	// and PPP-AR/PPP-RTK solutions.
+	FixLevelCarrierFixed
+)
+
+// FixDim describes the dimensionality of the GNSS navigation solution. This is
+// primarily about position dimensionality (2D/3D), but includes "time-only" and
+// "velocity-only" cases for receivers that report those explicitly.
+// The zero value means "not provided" or "not applicable".
+type FixDim uint8
+
+const (
+	// FixDim2D indicates a two-dimensional solution where height is fixed
+	// or constrained and only horizontal position is solved.
+	FixDim2D FixDim = iota + 1
+
+	// FixDim3D indicates a full three-dimensional solution where
+	// position and clock bias are fully estimated.
+	FixDim3D
+
+	// FixDimTimeOnly indicates a solution where only time (and possibly
+	// clock bias) is solved, without a valid position.
+	FixDimTimeOnly
+
+	// FixDimVelocityOnly indicates a solution where only velocity is solved
+	// (e.g. from Doppler), without a valid position or time.
+	FixDimVelocityOnly
+)
+
+// CorrKind is a bitmask of assertions about corrections applied in the navigation
+// solution. The zero value means "no correction assertions".
+//
+// The Corr* bits are not necessarily orthogonal; they are related by a partial
+// order. When you assert a more specific fact, you must also assert the more
+// general facts it implies.
+//
+// Partial order definition: A <= B means asserting A implies asserting B.
+//
+// Ordering (immediate implications):
+//
+//	CorrBaseStation <= CorrUsed
+//	CorrWideArea <= CorrUsed
+//	CorrRTCM <= CorrUsed
+//	CorrPartialDualFreq <= CorrBaseStation
+//	CorrFullDualFreq <= CorrPartialDualFreq
+//	CorrSBAS <= CorrWideArea
+//	CorrCLAS <= CorrWideArea
+//	CorrSPARTN <= CorrWideArea
+//	CorrPPP <= CorrWideArea
+//	CorrPPPRTK <= CorrPPP
+//	CorrPPPConverging <= CorrPPP
+//	CorrPPPConverged <= CorrPPP
+type CorrKind uint16
+
+const (
+	// CorrUsed asserts that external corrections are applied.
+	CorrUsed CorrKind = 1 << iota
+
+	// CorrBaseStation asserts that corrections are base/network referenced.
+	// This corresponds to OSR (Observation-State Representation / observation-space)
+	// corrections such as RTK/network RTK.
+	// CorrBaseStation <= CorrUsed.
+	CorrBaseStation
+
+	// CorrWideArea asserts that corrections are wide-area/broadcast/service
+	// corrections (not tied to a local base station).
+	// This corresponds to SSR (State-Space Representation / state-space) corrections
+	// such as SBAS/PPP/CLAS/SPARTN and RTCM-SSR streams.
+	// CorrWideArea <= CorrUsed.
+	CorrWideArea
+
+	// CorrRTCM asserts that corrections being applied are delivered/packaged as RTCM.
+	// CorrRTCM <= CorrUsed.
+	CorrRTCM
+
+	// CorrPartialDualFreq asserts that a base-station solution uses a dual-frequency
+	// ambiguity strategy that partially exploits multiple frequencies (e.g. wide-lane
+	// techniques) rather than fully resolving the full dual-frequency ambiguity set.
+	// CorrPartialDualFreq <= CorrBaseStation.
+	CorrPartialDualFreq
+
+	// CorrFullDualFreq asserts that a base-station solution uses a dual-frequency
+	// ambiguity strategy that fully exploits multiple frequencies (e.g. narrow-lane
+	// or ionosphere-free dual-frequency models, as opposed to wide-lane-only strategies).
+	// CorrFullDualFreq <= CorrPartialDualFreq.
+	CorrFullDualFreq
+
+	// CorrSBAS asserts that the wide-area corrections being applied are SBAS.
+	// CorrSBAS <= CorrWideArea.
+	CorrSBAS
+
+	// CorrCLAS asserts that the wide-area corrections being applied are CLAS.
+	// CorrCLAS <= CorrWideArea.
+	CorrCLAS
+
+	// CorrSPARTN asserts that the wide-area corrections being applied are SPARTN.
+	// CorrSPARTN <= CorrWideArea.
+	CorrSPARTN
+
+	// CorrPPP asserts that the wide-area corrections being applied are PPP-class
+	// (standalone absolute solution regime with convergence).
+	// CorrPPP <= CorrWideArea.
+	CorrPPP
+
+	// CorrPPPRTK asserts that the PPP corrections being applied are PPP-RTK/SSR-RTK
+	// class (PPP with additional information enabling rapid ambiguity resolution).
+	// CorrPPPRTK <= CorrPPP.
+	CorrPPPRTK
+
+	// CorrPPPConverging asserts that the PPP solution is converging.
+	// CorrPPPConverging <= CorrPPP.
+	CorrPPPConverging
+
+	// CorrPPPConverged asserts that the PPP solution is converged.
+	// CorrPPPConverged <= CorrPPP.
+	CorrPPPConverged
+)
+
+// AuxSrc is a bitmask of additional data sources that contributed to the
+// navigation solution. GNSS contribution is implicit when FixLevel indicates
+// a GNSS-based fix.
+type AuxSrc uint8
+
+const (
+	AuxSrcDR  AuxSrc = 1 << iota // dead reckoning (e.g. wheel ticks, motion model)
+	AuxSrcINS                    // inertial navigation system
+)
+
+// DOP holds dilution of precision values for the navigation solution. Fields
+// are opt.Val because different protocols provide different subsets. DOP may
+// be synthesized from multiple messages within an epoch (e.g. UBX-NAV-DOP
+// provides all five, while NMEA GSA provides only PDOP/HDOP/VDOP).
+type DOP struct {
+	Geom opt.Val[float64] `json:"geom,omitzero"` // geometric DOP
+	Pos  opt.Val[float64] `json:"pos,omitzero"`  // position (3D) DOP
+	Hor  opt.Val[float64] `json:"hor,omitzero"`  // horizontal DOP
+	Vert opt.Val[float64] `json:"vert,omitzero"` // vertical DOP
+	Time opt.Val[float64] `json:"time,omitzero"` // time DOP
+}
+
+// Merge incorporates fields from other into d based on priority.
+func (d *DOP) Merge(other *DOP, dstPri, srcPri MsgPriority) {
+	mergeOpt(&d.Geom, &other.Geom, dstPri, srcPri)
+	mergeOpt(&d.Pos, &other.Pos, dstPri, srcPri)
+	mergeOpt(&d.Hor, &other.Hor, dstPri, srcPri)
+	mergeOpt(&d.Vert, &other.Vert, dstPri, srcPri)
+	mergeOpt(&d.Time, &other.Time, dstPri, srcPri)
+}
+
 // NavEpochMsg is emitted once at the end of each navigation epoch, after
 // all time/position/velocity messages for that epoch have been dispatched.
-// Future fields will carry solution metadata (fix quality, corrections, DOPs).
+// GNSS is the implicit baseline source when FixLevel indicates a GNSS-based
+// fix. AuxSrc captures additional sources (e.g. DR/INS).
+// The zero value of each field means "not provided" or "not applicable".
+// CorrKind is a bitmask (not an enum) and its bits are related by a partial
+// order (see CorrKind docs).
 type NavEpochMsg struct {
-	Acc       Accuracy  `json:"acc,omitzero"`
-	Tag       Tag       `json:"tag,omitzero"`
-	StartTime time.Time `json:"startTime"` // when the first message in this epoch was read
+	FixLevel     FixLevel        `json:"fixLevel,omitzero"`
+	FixDim       FixDim          `json:"fixDim,omitzero"`
+	Correction   CorrKind        `json:"correction,omitzero"` // meaningful when FixLevel >= FixLevelCodeCorrected
+	AuxSrc       AuxSrc          `json:"auxSrc,omitzero"`
+	Acc          Accuracy        `json:"acc,omitzero"`
+	DOP          DOP             `json:"dop,omitzero"`
+	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
+	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
+	SignalsUsed  SignalSet       `json:"signalsUsed,omitzero"`
+	Tag          Tag             `json:"tag,omitzero"`
+	StartTime    time.Time       `json:"startTime"` // when the first message in this epoch was read
 }
 
 // Accuracy holds estimated accuracy of the navigation solution. Fields are
@@ -456,9 +648,10 @@ func (a *Accuracy) Merge(other *Accuracy, dstPri, srcPri MsgPriority) {
 }
 
 // MergeNavEpoch merges two NavEpochMsg values by priority. The higher-priority
-// message provides Tag; Accuracy fields are merged with mergeOpt semantics;
-// StartTime is the earliest. The returned priority is the higher of the two,
-// for chaining in pairwise merge.
+// message provides Tag and scalar quality fields (FixLevel, FixDim);
+// Accuracy and DOP fields are merged with mergeOpt semantics; bitmask fields
+// (Correction, AuxSrc, SignalsUsed) are unioned; StartTime is the earliest.
+// The returned priority is the higher of the two, for chaining in pairwise merge.
 func MergeNavEpoch(a *NavEpochMsg, aPri MsgPriority, b *NavEpochMsg, bPri MsgPriority) (*NavEpochMsg, MsgPriority) {
 	if a == nil {
 		return b, bPri
@@ -468,9 +661,28 @@ func MergeNavEpoch(a *NavEpochMsg, aPri MsgPriority, b *NavEpochMsg, bPri MsgPri
 	}
 	merged := *a
 	merged.Acc.Merge(&b.Acc, aPri, bPri)
+	merged.DOP.Merge(&b.DOP, aPri, bPri)
+	mergeOpt(&merged.NumSVUsed, &b.NumSVUsed, aPri, bPri)
+	mergeOpt(&merged.NumSVTracked, &b.NumSVTracked, aPri, bPri)
+	merged.Correction |= b.Correction
+	merged.AuxSrc |= b.AuxSrc
+	merged.SignalsUsed |= b.SignalsUsed
 	if bPri >= aPri {
 		merged.Tag = b.Tag
+		if b.FixLevel != 0 {
+			merged.FixLevel = b.FixLevel
+		}
+		if b.FixDim != 0 {
+			merged.FixDim = b.FixDim
+		}
 		aPri = bPri
+	} else {
+		if merged.FixLevel == 0 {
+			merged.FixLevel = b.FixLevel
+		}
+		if merged.FixDim == 0 {
+			merged.FixDim = b.FixDim
+		}
 	}
 	if b.StartTime.Before(merged.StartTime) {
 		merged.StartTime = b.StartTime
