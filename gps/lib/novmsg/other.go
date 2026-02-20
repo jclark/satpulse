@@ -4,8 +4,6 @@ package novmsg
 const (
 	BdsEphemerisID MsgID = 1696 // OEM7, Bynav, RTKLIB
 	BestGNSSPosID  MsgID = 1429 // OEM7, Bynav
-	BestGNSSVelID  MsgID = 1430 // OEM7, Bynav
-	BestVelID      MsgID = 99   // OEM7, SinoGNSS
 	GalEphemerisID MsgID = 1122 // OEM6, Bynav, SinoGNSS, RTKLIB
 	GloEphemerisID MsgID = 723  // OEM7, Bynav, SinoGNSS, RTKLIB
 	HeadingID      MsgID = 971  // OEM6, Bynav, SinoGNSS
@@ -23,8 +21,6 @@ const (
 func init() {
 	idNameMap[BdsEphemerisID] = "BDSEPHEMERIS"
 	idNameMap[BestGNSSPosID] = "BESTGNSSPOS"
-	idNameMap[BestGNSSVelID] = "BESTGNSSVEL"
-	idNameMap[BestVelID] = "BESTVEL"
 	idNameMap[GalEphemerisID] = "GALEPHEMERIS"
 	idNameMap[GloEphemerisID] = "GLOEPHEMERIS"
 	idNameMap[HeadingID] = "HEADING"

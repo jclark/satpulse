@@ -96,6 +96,22 @@ func (p *packetProcessor) dispatch(hdr *novmsg.MsgHdr, body novmsg.MsgBody, tRea
 		posG.Tag = tag
 		h.PosGeo(posG, tRead)
 		return true, nil
+	case *novmsg.BestVel:
+		if m.SolStatus != novmsg.SolComputed {
+			return false, nil
+		}
+		velG := VelGeoVel(p.curEpochMsg, &m.Vel, "BESTVEL")
+		velG.Tag = tag
+		h.VelGeo(velG, tRead)
+		return true, nil
+	case *novmsg.BestGNSSVel:
+		if m.SolStatus != novmsg.SolComputed {
+			return false, nil
+		}
+		velG := VelGeoVel(p.curEpochMsg, &m.Vel, "BESTGNSSVEL")
+		velG.Tag = tag
+		h.VelGeo(velG, tRead)
+		return true, nil
 	case *novmsg.BestXYZ:
 		var posE *gpsprot.PosECEFMsg
 		var velE *gpsprot.VelECEFMsg
