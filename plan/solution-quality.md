@@ -32,17 +32,28 @@ The existing `NavEpochMsg` (which currently contains `Acc`, `Tag`, and `StartTim
 // CorrKind is a bitmask (not an enum) and its bits are related by a partial
 // order (see CorrKind docs).
 type NavEpochMsg struct {
-	FixLevel     FixLevel        `json:"fixLevel,omitzero"`
-	FixDim       FixDim          `json:"fixDim,omitzero"`
-	Correction   CorrKind        `json:"correction,omitzero"` // meaningful when FixLevel >= FixLevelCodeCorrected
-	AuxSrc       AuxSrc          `json:"auxSrc,omitzero"`
-	Acc          Accuracy        `json:"acc,omitzero"`         // already present
-	DOP          DOP             `json:"dop,omitzero"`
-	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
-	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
-	SignalsUsed  SignalSet       `json:"signalsUsed,omitzero"`
-	Tag          Tag             `json:"tag,omitzero"`         // already present
-	StartTime    time.Time       `json:"startTime"`            // already present
+	FixLevel       FixLevel             `json:"fixLevel,omitzero"`
+	FixDim         FixDim               `json:"fixDim,omitzero"`
+	Correction     CorrKind             `json:"correction,omitzero"` // meaningful when FixLevel >= FixLevelCodeCorrected
+	AuxSrc         AuxSrc               `json:"auxSrc,omitzero"`
+	Acc            Accuracy             `json:"acc,omitzero"`         // already present
+	DOP            DOP                  `json:"dop,omitzero"`
+	// DiffAge is the age of the differential corrections applied to the
+	// current solution. Unset when no corrections are in use or the
+	// protocol doesn't report it.
+	DiffAge        opt.Val[time.Duration] `json:"diffAge,omitzero"`
+	// RTCMRefBaseID is the RTCM reference station ID (DF003, 0-4095) of
+	// the base station whose corrections are applied to this solution.
+	// Distinct from the RTCMBaseID config property (this receiver's own
+	// base ID for RTCM output). Values > 4095 and non-numeric vendor-
+	// specific codes (Unicore 9xxx, NovAtel "TSTR") are not stored here;
+	// those are used to enrich the Correction bitmask instead.
+	RTCMRefBaseID  opt.Val[uint16]       `json:"rtcmRefBaseID,omitzero"`
+	NumSVUsed      opt.Val[uint16]      `json:"numSVUsed,omitzero"`
+	NumSVTracked   opt.Val[uint16]      `json:"numSVTracked,omitzero"`
+	SignalsUsed    SignalSet            `json:"signalsUsed,omitzero"`
+	Tag            Tag                  `json:"tag,omitzero"`         // already present
+	StartTime      time.Time            `json:"startTime"`            // already present
 }
 
 // Accuracy already exists in gps/gpsprot/msg.go with Merge method.
@@ -260,6 +271,8 @@ The relevant sentences and their fields are:
 | 5 | GPS quality indicator | AuxSrc, FixLevel, Correction |
 | 6 | Number of satellites in use | NumSVUsed |
 | 7 | HDOP | DOP.Hor |
+| 13 | Age of differential GPS data (seconds) | DiffAge |
+| 14 | Differential reference station ID (0000-4095) | RTCMRefBaseID |
 
 GGA quality indicator mapping:
 
@@ -340,10 +353,12 @@ Merge rules:
 - **FixDim**: from GSA fix type.
 - **DOPs**: PDOP and VDOP from GSA; HDOP from GSA (preferred) or GGA.
 - **NumSVUsed**: from GGA.
+- **DiffAge**: from GGA field 13 (seconds). Null when DGPS is not used.
+- **RTCMRefBaseID**: from GGA field 14. Parse as a number; only set if the value is <= 4095 (valid RTCM 3.x range). Values > 4095 (e.g. Unicore's 9xxx satellite-based service codes) are ignored. Standard NMEA 4.00 defines the range as 0000-1023; RTCM 3.x extends to 0-4095.
 
 The changes needed are:
 
-1. Extend `parseGGA` to extract quality indicator (field 5) and HDOP (field 7) in addition to numSV.
+1. Extend `parseGGA` to extract quality indicator (field 5), HDOP (field 7), differential age (field 13), and reference station ID (field 14) in addition to numSV.
 2. Extend `parseGSA` to extract fix type (field 1) and DOPs (fields 14-16).
 3. Extend `parseRMC` to extract mode indicator (field 11).
 4. Accumulate the extracted metadata fields on the existing `NavEpoch` struct (which is stored in `curNavEpoch` and already tracks epoch identity via time-of-day changes). The epoch detection and flush mechanism is already in place via `handleEpoch`/`NavEpochManager`; no new `navEpochBuffer` is needed. GSA has no time of day but arrives in the same epoch as the preceding GGA/RMC.
@@ -356,7 +371,7 @@ The UBX `PacketProcessor` already emits a `NavEpochMsg` at each epoch boundary v
 ### Inputs (epoch-keyed by `iTOW`)
 
 Minimum useful input:
-- **UBX-NAV-PVT** (`ubxbin.NavPVT`): fix classification (`FixType`), status flags (`Flags`), carrier-solution status (`Flags` bits 6..7), differential flag (`Flags` bit 1), `NumSV`, and `PDOP`.
+- **UBX-NAV-PVT** (`ubxbin.NavPVT`): fix classification (`FixType`), status flags (`Flags`), carrier-solution status (`Flags` bits 6..7), differential flag (`Flags` bit 1), `NumSV`, `PDOP`, and `Flags3` bits 4..1 (`lastCorrectionAge`, bucketed differential correction age).
 
 Recommended additional input for higher fidelity:
 - **UBX-NAV-DOP** (`ubxbin.NavDOP`): GDOP/PDOP/TDOP/HDOP/VDOP (all scaled by 0.01).
@@ -420,6 +435,8 @@ Other fields:
 - `DOP.Pos`: from `NAV-PVT.PDOP` (scale 0.01) or from `NAV-DOP.PDOP` (preferred when present for consistency with the other DOPs).
 - `DOP.Geom/Hor/Vert/Time`: from `NAV-DOP` (scale 0.01) when available.
 - `NumSVTracked`, `SignalsUsed`: derive from the same per-epoch NAV-SAT/NAV-SIG accumulation used to emit `SatellitesMsg` (see `gps/internal/ubx/ubx.go` `satMsg`/`sigMsg` and `gps/internal/ubx/ubxsats.go` `satellitesCombine`), counting unique SVs and the union of signal IDs marked `Used`.
+- `DiffAge`: from `NAV-PVT.Flags3` bits 4..1 (`lastCorrectionAge`). The constants are already defined in `ubxbin` (`NavPVTLastCorrectionAge*`) but not currently extracted. This is a bucketed value (12 ranges: 0-1s, 1-2s, 2-5s, ... 120s+), not a continuous measurement. Convert to `time.Duration` using the lower bound of each bucket (e.g. `NavPVTLastCorrectionAge2to5` → 2s). `NavPVTLastCorrectionAgeNotAvailable` (0) leaves `DiffAge` unset.
+- `RTCMRefBaseID`: not available from NAV-PVT or any other UBX message in the current plan. NAV-RELPOSNED carries a `refStationId` but is a relative-positioning message unrelated to the correction source. `RTCMRefBaseID` remains unset for UBX binary; it can be populated via NMEA GGA (field 14) when NMEA is enabled alongside binary.
 
 ### Where this lives in code
 
@@ -430,7 +447,7 @@ The epoch infrastructure is already in place (multi-prot-nav-epoch.md):
 - Accuracy fields are already populated inline in the conversion functions (`ubxpv.go`).
 
 The existing conversion functions in `ubxpv.go` receive `ne *gpsprot.NavEpochMsg` (the `curNavEpochMsg`) and populate accuracy fields on it inline. Quality metadata follows the same pattern:
-1. In the existing `case *ubxbin.NavPVT:` in `Dispatch`, populate FixLevel, FixDim, AuxSrc, Correction, NumSVUsed, and DOP.Pos on `curNavEpochMsg` inline (like accuracy). A new function in `ubxpv.go` (e.g. `qualityNavPVT`) receives `ne` and the `NavPVT` and sets the fields.
+1. In the existing `case *ubxbin.NavPVT:` in `Dispatch`, populate FixLevel, FixDim, AuxSrc, Correction, NumSVUsed, DOP.Pos, and DiffAge on `curNavEpochMsg` inline (like accuracy). A new function in `ubxpv.go` (e.g. `qualityNavPVT`) receives `ne` and the `NavPVT` and sets the fields. DiffAge is extracted from `Flags3 & NavPVTLastCorrectionAgeMask` and converted to `time.Duration` using the bucket lower bound.
 2. Add a `case *ubxbin.NavDOP:` in `Dispatch` to populate DOP fields on `curNavEpochMsg` inline.
 3. Correction disambiguation from NAV-SIG/NAV-SAT: as these messages are processed (already in `Dispatch`), accumulate a `CorrKind` bitmask on `curNavEpochMsg` from per-signal/per-SV correction source flags. This enriches the base `CorrUsed` set by NAV-PVT with specific correction style bits (CorrBaseStation, CorrSBAS, CorrRTCM, etc.).
 
@@ -503,11 +520,13 @@ Already populated by `gps/internal/unc/nav.go`: BESTNAV sigmas -> `Acc.Hor`, `Ac
 - **NumSVTracked**: from BESTNAV `#SVs`.
 - **SignalsUsed**: derive from the BESTNAV signal mask fields (`GPS, GLONASS and BDS2 sig mask` and `Galileo&BDS3 sig mask`).
 - **DOPs**: GDOP, PDOP, TDOP, HDOP, VDOP from STADOP when available.
+- **DiffAge**: from BESTNAV `DiffAge` (float32, seconds, already parsed in `novmsg.Pos`). Convert to `time.Duration`. BESTNAV also has `VDiffAge` for velocity; use the position `DiffAge` (more relevant for correction staleness).
+- **RTCMRefBaseID**: from BESTNAV `StnID` (`novmsg.StationID` = `[4]byte`, already parsed in `novmsg.Pos`). Parse the bytes as a decimal string. If the resulting number is <= 4095, set `RTCMRefBaseID`. If >= 4096 (Unicore uses 9xxx values for satellite-based correction services), use the value to enrich `Correction` instead: 9901-9905/9959-9961 (BeiDou B2b) → `CorrWideArea`; 9964 (Galileo E6 HAS) → `CorrWideArea`; 9934-9939 (QZSS L6 MDC) / 9974-9979 (QZSS L6 CLAS) → `CorrCLAS`; 999X (L-band) → `CorrWideArea`. If non-numeric, leave `RTCMRefBaseID` unset (defensive; should not happen for Unicore).
 
 ### Where this lives in code
 
 The Unicore processor (`gps/internal/unc/processor.go`) already has epoch detection and `NavEpochMsg` emission via `NavEpochManager`. The existing conversion functions in `gps/internal/unc/nav.go` receive `ne *gpsprot.NavEpochMsg` (the `curEpochMsg`) and populate accuracy fields on it inline. Quality metadata follows the same pattern:
-1. Extend `bestNavPosVel` in `nav.go` to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, SignalsUsed) on `ne` from the BESTNAV `pos type`, satellite count, and signal mask fields.
+1. Extend `bestNavPosVel` in `nav.go` to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, SignalsUsed, DiffAge, RTCMRefBaseID) on `ne` from the BESTNAV `pos type`, satellite count, signal mask, `DiffAge`, and `StnID` fields. For `StnID`, parse as decimal and apply the <= 4095 filter; values >= 4096 enrich `Correction`.
 2. Add a `bestNavDOP` function (or similar) in `nav.go` that receives `ne` and populates DOP fields. Wire it from a new `*uncmsg.StaDOP` case in `dispatch()`.
 
 ### Message enablement
@@ -603,11 +622,13 @@ Already populated by `gps/internal/nov/nav.go`: BESTPOS sigmas -> `Acc.Hor`, `Ac
 - **NumSolnSV**: `#solnSVs` (satellites in solution) from BESTPOS.
 - **SignalsUsed**: derive from the BESTPOS signal mask fields (`GPSGLOBDS2Sig` and `GalBDS3Sig`).
 - **DOPs**: GDOP, PDOP, HDOP, TDOP from PSRDOP when available. VDOP is not provided by PSRDOP; derive as sqrt(PDOP^2 - HDOP^2).
+- **DiffAge**: from BESTPOS `DiffAge` (float32, seconds, already parsed in `novmsg.Pos`). Convert to `time.Duration`.
+- **RTCMRefBaseID**: from BESTPOS `StnID` (`novmsg.StationID` = `[4]byte`, already parsed in `novmsg.Pos`). Parse the bytes as a decimal string. If the resulting number is <= 4095, set `RTCMRefBaseID`. If non-numeric (NovAtel uses alphabetic codes for PPP services: "TSTR" = TerraStar-C PRO, "TSTL" = TerraStar-L, "TSX" = TerraStar-X, "OCXH" = Oceanix), use the value to enrich `Correction` with `CorrPPP`. If numeric but >= 4096, leave `RTCMRefBaseID` unset (defensive; should not happen for NovAtel). The variant mechanism ensures SinoGNSS uses its own `PosType` but the `StnID` handling is identical across all NovAtel-format vendors.
 
 ### Where this lives in code
 
 The NovAtel processor (`gps/internal/nov/processor.go`) already has epoch detection and `NavEpochMsg` emission via `NavEpochManager`. The existing conversion functions in `gps/internal/nov/nav.go` receive `ne *gpsprot.NavEpochMsg` (the `curEpochMsg`) and populate accuracy fields on it inline. Quality metadata follows the same pattern:
-1. Extend the BESTPOS handling path: the `PosGeo` function in `nav.go` already receives `ne`; add a companion function (or extend `PosGeo`) to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, SignalsUsed) on `ne` from the BESTPOS `pos type`, `sol status`, satellite count, and signal mask fields.
+1. Extend the BESTPOS handling path: the `PosGeo` function in `nav.go` already receives `ne`; add a companion function (or extend `PosGeo`) to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, SignalsUsed, DiffAge, RTCMRefBaseID) on `ne` from the BESTPOS `pos type`, `sol status`, satellite count, signal mask, `DiffAge`, and `StnID` fields. For `StnID`, parse as decimal and apply the <= 4095 filter; non-numeric values (PPP service codes) enrich `Correction` with `CorrPPP`.
 2. Add a PSRDOP handling function in `nav.go` that receives `ne` and populates DOP fields. Wire it from a new `*novmsg.PsrDOP` case in `dispatch()`.
 
 ### Message enablement
@@ -659,6 +680,8 @@ The existing separate messages (NAV-POSLLH, NAV-POSECEF, NAV-VELNED, NAV-VELECEF
 - **DOP.Pos**: from `NAV-PVT.pDop` (offset 76, U2, scale 0.01) or from `NAV-DOP.PDOP` (preferred when present for consistency with the other DOPs).
 - **DOP.Geom/Hor/Vert/Time**: from NAV-DOP (scale 0.01) when available.
 - **SignalsUsed**: not available from Allystar binary messages. No signal mask fields exist.
+- **DiffAge**: not available from Allystar binary NAV-PVT. Only available via NMEA GGA (field 13) when NMEA is enabled alongside binary.
+- **RTCMRefBaseID**: not available from Allystar binary NAV-PVT. Only available via NMEA GGA (field 14) when NMEA is enabled alongside binary.
 
 ### Where this lives in code
 
@@ -686,13 +709,13 @@ Allystar's NAV-AUTO message (0x01 0xC0, 32 bytes) provides a richer `fixstate` f
 
 ## Phasing
 
-### Phase 1: type definitions
+### Phase 1: type definitions (done)
 
 Add the new types to `gps/gpsprot/`:
 - `FixLevel`, `FixDim`, `CorrKind`, `AuxSrc` types and constants (in a new file, e.g. `quality.go`)
 - `DOP` struct
 - `PVTMsgQuality` flag in `PVTMsgFlags`
-- Extend `NavEpochMsg` with the new fields (`FixLevel`, `FixDim`, `Correction`, `AuxSrc`, `DOP`, `NumSVUsed`, `NumSVTracked`, `SignalsUsed`)
+- Extend `NavEpochMsg` with the new fields (`FixLevel`, `FixDim`, `Correction`, `AuxSrc`, `DOP`, `DiffAge`, `RTCMRefBaseID`, `NumSVUsed`, `NumSVTracked`, `SignalsUsed`)
 - Extend `MergeNavEpoch` to merge the new fields
 
 No protocol changes; all existing tests continue to pass unchanged.
@@ -703,27 +726,27 @@ Each subphase is independent and can proceed in parallel.
 
 #### Phase 2a: NMEA
 
-- Extend `parseGGA` to extract quality indicator (field 5) and HDOP (field 7).
+- Extend `parseGGA` to extract quality indicator (field 5), HDOP (field 7), differential age (field 13), and reference station ID (field 14).
 - Extend `parseGSA` to extract fix type (field 1) and DOPs (fields 14-16).
 - Extend `parseRMC` to extract mode indicator (field 11).
-- Accumulate metadata on `NavEpoch.NavEpochMsg` using the merge/synthesis rules in the NMEA section.
+- Accumulate metadata on `NavEpoch.NavEpochMsg` using the merge/synthesis rules in the NMEA section. For RTCMRefBaseID, filter to <= 4095.
 
 #### Phase 2b: UBX
 
-- In existing `case *ubxbin.NavPVT:`, populate quality fields on `curNavEpochMsg` inline.
+- In existing `case *ubxbin.NavPVT:`, populate quality fields on `curNavEpochMsg` inline, including DiffAge from `Flags3` `lastCorrectionAge` buckets.
 - Add `case *ubxbin.NavDOP:` to populate DOP fields on `curNavEpochMsg` inline.
 - Accumulate `CorrKind` from NAV-SIG/NAV-SAT correction sources as they are processed.
 - Add `PVTMsgQuality` handling to `ubxcfgmsg.go` (enable NAV-DOP, ensure NAV-PVT).
 
 #### Phase 2c: Unicore
 
-- Extend `bestNavPosVel` to populate quality fields on `ne` from BESTNAV `pos type`.
+- Extend `bestNavPosVel` to populate quality fields on `ne` from BESTNAV `pos type`, including DiffAge and RTCMRefBaseID from the existing `DiffAge`/`StnID` fields in `novmsg.Pos`. For StnID, parse as decimal; <= 4095 sets RTCMRefBaseID, >= 4096 enriches Correction.
 - Add STADOP parsing (`uncmsg.StaDOP`) and DOP population.
 - Add `PVTMsgQuality` handling to `cfgopts.go`.
 
 #### Phase 2d: NovAtel
 
-- Extend BESTPOS handling path to populate quality fields on `ne` from `pos type` and `sol status`.
+- Extend BESTPOS handling path to populate quality fields on `ne` from `pos type` and `sol status`, including DiffAge and RTCMRefBaseID from the existing `DiffAge`/`StnID` fields in `novmsg.Pos`. For StnID, parse as decimal; <= 4095 sets RTCMRefBaseID, non-numeric PPP service codes enrich Correction with CorrPPP.
 - Add PSRDOP parsing (`novmsg.PsrDOP`) and DOP population.
 - Add `nov-psrdopb` tag to message files.
 
@@ -733,3 +756,4 @@ Each subphase is independent and can proceed in parallel.
 - Add `case *asbin.NavPvt:` to `dispatch()` for position, velocity, time, and quality fields.
 - Add `case *asbin.NavDop:` to `dispatch()` for DOP fields.
 - Add `asbin-nav-pvt` tag to `configs/gpsmsg/allystar.toml`.
+- DiffAge and RTCMRefBaseID not available from binary; rely on NMEA GGA when enabled.

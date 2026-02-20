@@ -612,17 +612,42 @@ func (d *DOP) Merge(other *DOP, dstPri, srcPri MsgPriority) {
 // CorrKind is a bitmask (not an enum) and its bits are related by a partial
 // order (see CorrKind docs).
 type NavEpochMsg struct {
-	FixLevel     FixLevel        `json:"fixLevel,omitzero"`
-	FixDim       FixDim          `json:"fixDim,omitzero"`
-	Correction   CorrKind        `json:"correction,omitzero"` // meaningful when FixLevel >= FixLevelCodeCorrected
-	AuxSrc       AuxSrc          `json:"auxSrc,omitzero"`
-	Acc          Accuracy        `json:"acc,omitzero"`
-	DOP          DOP             `json:"dop,omitzero"`
-	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
+	// FixLevel is the primary technique used to compute the GNSS solution,
+	// ordered by increasing quality (None < Code < CodeCorrected <
+	// CarrierFloat < CarrierFixed).
+	FixLevel FixLevel `json:"fixLevel,omitzero"`
+	// FixDim is the dimensionality of the solution (2D, 3D, time-only,
+	// velocity-only).
+	FixDim FixDim `json:"fixDim,omitzero"`
+	// Correction is a bitmask of assertions about corrections applied.
+	// Meaningful when FixLevel >= FixLevelCodeCorrected.
+	Correction CorrKind `json:"correction,omitzero"`
+	// AuxSrc is a bitmask of additional sources (DR, INS) that contributed
+	// to the solution. GNSS is implicit when FixLevel indicates a fix.
+	AuxSrc AuxSrc `json:"auxSrc,omitzero"`
+	// Acc holds estimated position, velocity, and course accuracy.
+	Acc Accuracy `json:"acc,omitzero"`
+	// DOP holds dilution of precision values (GDOP, PDOP, HDOP, VDOP, TDOP).
+	DOP DOP `json:"dop,omitzero"`
+	// DiffAge is the age of the differential corrections applied to the
+	// current solution. Unset when no corrections are in use or the
+	// protocol doesn't report it.
+	DiffAge opt.Val[time.Duration] `json:"diffAge,omitzero"`
+	// RTCMRefBaseID is the RTCM reference station ID (DF003, 0-4095) of
+	// the base station whose corrections are applied to this solution.
+	// Distinct from the RTCMBaseID config property, which is this
+	// receiver's own base ID for RTCM output.
+	RTCMRefBaseID opt.Val[uint16] `json:"rtcmRefBaseID,omitzero"`
+	// NumSVUsed is the number of satellites used in the solution.
+	NumSVUsed opt.Val[uint16] `json:"numSVUsed,omitzero"`
+	// NumSVTracked is the number of satellites tracked by the receiver.
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
-	SignalsUsed  SignalSet       `json:"signalsUsed,omitzero"`
-	Tag          Tag             `json:"tag,omitzero"`
-	StartTime    time.Time       `json:"startTime"` // when the first message in this epoch was read
+	// SignalsUsed is the set of GNSS signals used in the solution.
+	SignalsUsed SignalSet `json:"signalsUsed,omitzero"`
+	// Tag identifies the protocol source (e.g. UBX, NMEA, Unicore).
+	Tag Tag `json:"tag,omitzero"`
+	// StartTime is when the first message in this epoch was read.
+	StartTime time.Time `json:"startTime"`
 }
 
 // Accuracy holds estimated accuracy of the navigation solution. Fields are
@@ -662,6 +687,8 @@ func MergeNavEpoch(a *NavEpochMsg, aPri MsgPriority, b *NavEpochMsg, bPri MsgPri
 	merged := *a
 	merged.Acc.Merge(&b.Acc, aPri, bPri)
 	merged.DOP.Merge(&b.DOP, aPri, bPri)
+	mergeOpt(&merged.DiffAge, &b.DiffAge, aPri, bPri)
+	mergeOpt(&merged.RTCMRefBaseID, &b.RTCMRefBaseID, aPri, bPri)
 	mergeOpt(&merged.NumSVUsed, &b.NumSVUsed, aPri, bPri)
 	mergeOpt(&merged.NumSVTracked, &b.NumSVTracked, aPri, bPri)
 	merged.Correction |= b.Correction
