@@ -431,6 +431,20 @@ type Pos[S, P ~uint32] struct {
 	GPSGLOBDS2Sig HexByte   // GPS/GLONASS/BDS2 signal mask
 }
 
+// Vel contains geodetic velocity fields shared between NovAtel BESTVEL
+// (ID 99) and BESTGNSSVEL (ID 1430). The binary layout is identical across
+// vendors; the VelType (P) enum type varies by vendor.
+type Vel[P ~uint32] struct {
+	SolStatus SolStatus // solution status
+	VelType   P         // velocity type
+	Latency   float32   // velocity latency (seconds)
+	Age       float32   // differential data age (seconds)
+	HorSpd    float64   // horizontal speed (m/s)
+	TrkGnd    float64   // track over ground (degrees, clockwise from north)
+	VertSpd   float64   // vertical speed (m/s), positive = up
+	Reserved  float32   // reserved
+}
+
 // XYZ contains the ECEF position+velocity fields shared between NovAtel
 // BESTXYZ (ID 241) and Unicore BESTNAVXYZ (ID 240). The binary layout is
 // identical across vendors; the SolStatus (S) and PosType/VelType (P) enum

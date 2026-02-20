@@ -7,18 +7,109 @@ Multiple vendors emit identical NovAtel binary packets (AA 44 12 sync bytes) wit
 - **SinoGNSS**: Incompatible PosType enum values (e.g., value 51 = SUPER_WIDE_LANE vs OEM7's RTK_DIRECT_INS). SolStatus is a compatible subset of OEM7.
 - **Unicore**: IONUTC uses message ID 6 instead of OEM7's ID 8 (see `novmsg/time.go:8`). This is about the undocumented/unsupported use of NovAtel OEM7 messages on Unicore receivers -- not the native Unicore protocol (which goes through the `unc` package).
 - **ByNav**: Compatible with OEM7 for now; variant defined for future use.
+- **Port address encoding**: OEM7/ByNav use 0x20=COM1, 0x40=COM2, 0x60=COM3. Unicore uses 1=COM1, 2=COM2, 3=COM3. SinoGNSS uses OEM7 byte values but shows decimal strings in ASCII ("32" not "COM1"). Currently `Port` constants use the Unicore encoding; OEM7/ByNav should be the default.
 
-The structs `Pos[S, P]` and `XYZ[S, P]` are already parameterized on enum types. We need a mechanism to use vendor-specific types and message ID mappings based on the receiver vendor.
+The structs `Pos[S, P]` and `XYZ[S, P]` are already parameterized on enum types. `MsgHdr` and `Msg` should be similarly parameterized on the port type to handle the port address encoding differences cleanly.
 
 ## Approach
 
-1. Add `SinoPosType` enum and `SinoBestPos`/`SinoBestXYZ` types to `novmsg`
-2. Expose novmsg registries and add parse functions that accept a constructor map
-3. `nov` processor holds a complete constructor map, built at construction time: a reference to the global registry for OEM7/ByNav, or a fresh copy with overrides merged in for SinoGNSS/Unicore
-4. `nov` defines all four variants; `gpsreg` maps its Vendor to a Variant once
-5. Enable the disabled IONUTC test case for Unicore variant
+1. Parameterize `MsgHdr` and `Msg` on port type; add `OEM7Port` and `UnicorePort` types
+2. Add `SinoPosType` enum and `SinoBestPos`/`SinoBestXYZ` types to `novmsg`
+3. Expose novmsg registries and add parse functions that accept a constructor map
+4. `nov` processor holds a complete constructor map, built at construction time: a reference to the global registry for OEM7/ByNav, or a fresh copy with overrides merged in for SinoGNSS/Unicore
+5. `nov` defines all four variants; `gpsreg` maps its Vendor to a Variant once
+6. Enable the disabled IONUTC test case for Unicore variant
 
-## Step 1: SinoGNSS PosType and message types in novmsg
+## Step 1: Parameterize MsgHdr and Msg on port type
+
+### Port types in `gps/lib/novmsg/bin.go`
+
+Replace the current `Port` type (iota-based, Unicore encoding) with two variant-specific types. OEM7 is the default:
+
+```go
+// OEM7Port represents the port address encoding used by NovAtel OEM7 and ByNav.
+type OEM7Port uint8
+
+const (
+    OEM7COM1 OEM7Port = 0x20
+    OEM7COM2 OEM7Port = 0x40
+    OEM7COM3 OEM7Port = 0x60
+)
+
+// UnicorePort represents the port address encoding used by Unicore receivers
+// (UM980, etc.) when emitting NovAtel-format packets.
+type UnicorePort uint8
+
+const (
+    UnicoreCOM1 UnicorePort = 1
+    UnicoreCOM2 UnicorePort = 2
+    UnicoreCOM3 UnicorePort = 3
+)
+```
+
+Each type gets `String()`, `MarshalText()`, `UnmarshalText()` methods. Both map to the same canonical names ("COM1", "COM2", "COM3"); the difference is the binary byte value.
+
+SinoGNSS uses OEM7 port bytes but decimal strings in ASCII ("32" not "COM1"). For SinoGNSS, `OEM7Port` is used -- its `String()` returns "COM1" etc., and the existing ASCII output from SinoGNSS receivers ("32") would need a `fixupHeaderForAscii` in tests since the receiver doesn't conform to OEM7 ASCII naming.
+
+### Parameterized MsgHdr and Msg in `gps/lib/novmsg/common.go`
+
+```go
+type MsgHdr[P ~uint8] struct {
+    Port P
+    CommonHdr
+}
+
+type Msg[P ~uint8] struct {
+    Hdr  MsgHdr[P]
+    Body MsgBody
+}
+```
+
+### Parse and serialize functions
+
+`ParseBinMsg` and `ParseAsciiMessage` become generic on port type:
+
+```go
+func ParseBinMsg[P ~uint8](packet []byte) (*Msg[P], error)
+func ParseAsciiMessage[P ~uint8](packet []byte) (*Msg[P], error)
+func SerializeBinMsg[P ~uint8](msg *Msg[P]) ([]byte, error)
+func SerializeAsciiMsg[P ~uint8](msg *Msg[P]) ([]byte, error)
+```
+
+`BinaryHdr` is parameterized on port type:
+
+```go
+type BinaryHdr[P ~uint8] struct {
+    Sync1        byte
+    Sync2        byte
+    Sync3        byte
+    HeaderLength byte
+    MsgID        MsgID
+    MsgType      uint8
+    Port         P
+    // ... rest unchanged
+}
+```
+
+`binary.Read` works with `BinaryHdr[P]` for any `P ~uint8` since the layout is identical (1 byte for Port regardless of type).
+
+### Processor changes in `gps/internal/nov/`
+
+No processor logic uses Port -- `dispatch`, `handleEpoch`, `timeMsgFromTime`, `dispatchIonUTC`, `msgHdrTime` all access only `CommonHdr` fields (Week, MillisecondsOfWeek, TimeStatus). These functions take `*CommonHdr` instead of `*MsgHdr`:
+
+```go
+func (p *packetProcessor) dispatch(common *CommonHdr, body MsgBody, ...) (bool, error)
+func (p *packetProcessor) handleEpoch(common *CommonHdr, ...)
+func timeMsgFromTime(common *CommonHdr, m *Time, ...) (*gpsprot.TimeMsg, error)
+```
+
+The processor's `processPacket` extracts `msg.Hdr.CommonHdr` and passes it through. The port type parameter is confined to the parse/serialize layer and tests.
+
+### Test changes
+
+Remove all `fixupHeaderForAscii` port hacks from Bynav tests (TIME, IONUTC, BESTGNSSVEL) since OEM7Port round-trips correctly. UM980 tests use `UnicorePort`. The bogus K901 BESTVEL test (captured separately, not a matched pair) should be removed.
+
+## Step 2: SinoGNSS PosType and message types in novmsg
 
 ### New file: `gps/lib/novmsg/sinonav.go`
 
@@ -76,7 +167,7 @@ NOT registered via `init()` -- they share IDs with BestPos/BestXYZ and are only 
 - SinoPosType enum round-trip tests (String/Parse)
 - SinoBestPos and SinoBestXYZ binary+ASCII round-trip tests
 
-## Step 2: Registry access and map-based parse functions in novmsg
+## Step 3: Registry access and map-based parse functions in novmsg
 
 ### Modified: `gps/lib/novmsg/common.go`
 
@@ -122,7 +213,7 @@ func ParseAsciiMsgUsing(packet []byte, ctors map[string]func() MsgBody) (*Msg, e
 }
 ```
 
-## Step 3: Variant support in nov processor
+## Step 4: Variant support in nov processor
 
 ### Modified: `gps/internal/nov/processor.go`
 
@@ -245,7 +336,7 @@ case *novmsg.SinoBestXYZ:
     return dispatchBestXYZ(h, p.curEpochMsg, &m.XYZ, tag, tRead)
 ```
 
-## Step 4: SetVendor helper in gpsreg
+## Step 5: SetVendor helper in gpsreg
 
 ### Modified: `gps/gpsreg/reg.go`
 
@@ -294,7 +385,7 @@ func novVariantFor(v Vendor) nov.Variant {
 - `time/app/daemon/gps.go`: After `CreatePacketProcessors(nil)`, call `gpsreg.SetVendor(procs, vendor)` when vendor is known
 - No changes needed to `internal/gpscmd/gpscmd.go`, `replay_test.go`, or `gpscfg_test.go` -- they use default (OEM7) behavior
 
-## Step 5: Enable IONUTC test
+## Step 6: Enable IONUTC test
 
 Remove `disable: true` from the UM980 IONUTC test case in `gps/lib/novmsg/time_test.go:86`. The test needs to be updated to work with the Unicore variant (binary ID 6 instead of 8). Either:
 - Test the binary parse using `ParseBinMsgUsing` with a Unicore constructor map
@@ -306,29 +397,32 @@ Remove the `XXX` comment from `novmsg/time.go:8` and replace with a clear note a
 
 | File | Change |
 |------|--------|
+| `gps/lib/novmsg/bin.go` | OEM7Port, UnicorePort types; parameterize BinaryHdr[P]; ParseBinMsgUsing; refactor ParseBinMsg |
+| `gps/lib/novmsg/common.go` | Parameterize MsgHdr[P], Msg[P]; add BinRegistry, AsciiRegistry |
+| `gps/lib/novmsg/ascii.go` | Parameterize AsciiHdr; ParseAsciiMsgUsing; refactor ParseAsciiMessage |
 | `gps/lib/novmsg/sinonav.go` | New: SinoPosType, SinoBestPos, SinoBestXYZ |
 | `gps/lib/novmsg/sinonav_test.go` | New: round-trip tests |
-| `gps/lib/novmsg/common.go` | Add BinRegistry, AsciiRegistry |
-| `gps/lib/novmsg/bin.go` | Add ParseBinMsgUsing, refactor ParseBinMsg |
-| `gps/lib/novmsg/ascii.go` | Add ParseAsciiMsgUsing, refactor ParseAsciiMessage |
+| `gps/lib/novmsg/nav_test.go` | Remove bogus K901 BESTVEL test; remove port fixup hacks from Bynav tests |
+| `gps/lib/novmsg/time_test.go` | Remove port fixup hacks from Bynav tests; enable IONUTC test |
 | `gps/lib/novmsg/time.go` | Update IONUTC comment |
-| `gps/lib/novmsg/time_test.go` | Enable IONUTC test |
-| `gps/internal/nov/processor.go` | Variant type (4 variants), SetVariant, ctors maps, dispatch |
+| `gps/internal/nov/processor.go` | Use *CommonHdr in dispatch/handleEpoch; variant type (4 variants), SetVariant, ctors maps, dispatch |
 | `gps/internal/nov/nav.go` | Generic dispatch helpers |
+| `gps/internal/nov/time.go` | Use *CommonHdr instead of *MsgHdr |
 | `gps/gpsreg/reg.go` | Add SetVendor helper, novVariantFor |
 | `time/app/daemon/gps.go` | Call SetVendor when vendor is known |
 
 ## Implementation order
 
-1. SinoPosType enum + SinoBestPos/SinoBestXYZ in novmsg (+ tests)
-2. BinRegistry/AsciiRegistry + ParseBinMsgUsing/ParseAsciiMsgUsing in novmsg
-3. Variant (all four) + SetVariant + constructor maps + dispatch in nov processor
-4. SetVendor helper in gpsreg + call from daemon
-5. Enable IONUTC test, update comments
-6. `make test`
+1. OEM7Port/UnicorePort types + parameterize MsgHdr[P]/Msg[P]/BinaryHdr[P] + update all parse/serialize functions + update processor to use *CommonHdr + update tests
+2. SinoPosType enum + SinoBestPos/SinoBestXYZ in novmsg (+ tests)
+3. BinRegistry/AsciiRegistry + ParseBinMsgUsing/ParseAsciiMsgUsing in novmsg
+4. Variant (all four) + SetVariant + constructor maps + dispatch in nov processor
+5. SetVendor helper in gpsreg + call from daemon
+6. Enable IONUTC test, update comments
+7. `make test`
 
 ## Verification
 
-- `go test -v ./gps/lib/novmsg/` -- SinoPosType round-trip, SinoBestPos/SinoBestXYZ parse, IONUTC test
+- `go test -v ./gps/lib/novmsg/` -- Port type round-trip, SinoPosType round-trip, SinoBestPos/SinoBestXYZ parse, IONUTC test
 - `go test -v ./gps/internal/nov/` -- Dispatch tests with VariantSinoGNSS
 - `make test` -- Full test suite
