@@ -460,6 +460,49 @@ const (
 	FixLevelCarrierFixed
 )
 
+var fixLevelName = [...]string{
+	FixLevelNone:          "none",
+	FixLevelNotMeasured:   "notMeasured",
+	FixLevelCode:          "code",
+	FixLevelCodeCorrected: "codeCorrected",
+	FixLevelCarrierFloat:  "carrierFloat",
+	FixLevelCarrierFixed:  "carrierFixed",
+}
+
+var fixLevelFromName = func() map[string]FixLevel {
+	m := make(map[string]FixLevel, len(fixLevelName))
+	for i, name := range fixLevelName {
+		if name != "" {
+			m[name] = FixLevel(i)
+		}
+	}
+	return m
+}()
+
+func (f FixLevel) String() string {
+	if int(f) < len(fixLevelName) && fixLevelName[f] != "" {
+		return fixLevelName[f]
+	}
+	return fmt.Sprintf("FixLevel(%d)", f)
+}
+
+func (f FixLevel) MarshalJSON() ([]byte, error) {
+	return json.Marshal(f.String())
+}
+
+func (f FixLevel) MarshalText() ([]byte, error) {
+	return []byte(f.String()), nil
+}
+
+func (f *FixLevel) UnmarshalText(text []byte) error {
+	v, ok := fixLevelFromName[string(text)]
+	if !ok {
+		return fmt.Errorf("unknown FixLevel %q", text)
+	}
+	*f = v
+	return nil
+}
+
 // FixDim describes the dimensionality of the GNSS navigation solution. This is
 // primarily about position dimensionality (2D/3D), but includes "time-only" and
 // "velocity-only" cases for receivers that report those explicitly.
@@ -483,6 +526,47 @@ const (
 	// (e.g. from Doppler), without a valid position or time.
 	FixDimVelocityOnly
 )
+
+var fixDimName = [...]string{
+	FixDim2D:           "2D",
+	FixDim3D:           "3D",
+	FixDimTimeOnly:     "timeOnly",
+	FixDimVelocityOnly: "velocityOnly",
+}
+
+var fixDimFromName = func() map[string]FixDim {
+	m := make(map[string]FixDim, len(fixDimName))
+	for i, name := range fixDimName {
+		if name != "" {
+			m[name] = FixDim(i)
+		}
+	}
+	return m
+}()
+
+func (d FixDim) String() string {
+	if int(d) < len(fixDimName) && fixDimName[d] != "" {
+		return fixDimName[d]
+	}
+	return fmt.Sprintf("FixDim(%d)", d)
+}
+
+func (d FixDim) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.String())
+}
+
+func (d FixDim) MarshalText() ([]byte, error) {
+	return []byte(d.String()), nil
+}
+
+func (d *FixDim) UnmarshalText(text []byte) error {
+	v, ok := fixDimFromName[string(text)]
+	if !ok {
+		return fmt.Errorf("unknown FixDim %q", text)
+	}
+	*d = v
+	return nil
+}
 
 // CorrKind is a bitmask of assertions about corrections applied in the navigation
 // solution. The zero value means "no correction assertions".
@@ -573,6 +657,121 @@ const (
 	CorrPPPConverged
 )
 
+type corrKindBit struct {
+	mask    CorrKind
+	name    string
+	implies CorrKind // immediate parent in the partial order
+}
+
+// corrKindBits defines the bits in declaration order, with their immediate
+// parent in the partial order. Expand computes the transitive closure.
+var corrKindBits = [...]corrKindBit{
+	{CorrUsed, "used", 0},
+	{CorrBaseStation, "baseStation", CorrUsed},
+	{CorrWideArea, "wideArea", CorrUsed},
+	{CorrRTCM, "RTCM", CorrUsed},
+	{CorrPartialDualFreq, "partialDualFreq", CorrBaseStation},
+	{CorrFullDualFreq, "fullDualFreq", CorrPartialDualFreq},
+	{CorrSBAS, "SBAS", CorrWideArea},
+	{CorrCLAS, "CLAS", CorrWideArea},
+	{CorrSPARTN, "SPARTN", CorrWideArea},
+	{CorrPPP, "PPP", CorrWideArea},
+	{CorrPPPRTK, "PPP-RTK", CorrPPP},
+	{CorrPPPConverging, "PPPConverging", CorrPPP},
+	{CorrPPPConverged, "PPPConverged", CorrPPP},
+}
+
+var corrKindFromName = func() map[string]CorrKind {
+	m := make(map[string]CorrKind, len(corrKindBits))
+	for _, b := range corrKindBits {
+		m[b.name] = b.mask
+	}
+	return m
+}()
+
+// corrKindClosure maps each single bit to the full set of bits it implies
+// (including itself). Computed once at init.
+var corrKindClosure = func() [16]CorrKind {
+	var cl [16]CorrKind
+	for _, b := range corrKindBits {
+		bit := bitIndex(b.mask)
+		cl[bit] = b.mask
+		if b.implies != 0 {
+			// Add the transitive closure of the parent.
+			// This works because corrKindBits is in declaration order
+			// and parents are declared before children.
+			cl[bit] |= cl[bitIndex(b.implies)]
+		}
+	}
+	return cl
+}()
+
+func bitIndex(mask CorrKind) int {
+	for i := 0; i < 16; i++ {
+		if mask == 1<<i {
+			return i
+		}
+	}
+	panic("not a single bit")
+}
+
+// Close returns c with all implied bits set according to the partial order.
+// For example, CorrSBAS.Expand() returns CorrSBAS|CorrWideArea|CorrUsed.
+func (c CorrKind) Expand() CorrKind {
+	result := c
+	for v := c; v != 0; v &= v - 1 {
+		bit := v & -v // lowest set bit
+		result |= corrKindClosure[bitIndex(bit)]
+	}
+	return result
+}
+
+// items returns the names of the set bits that are not implied by any other
+// set bit. This gives the minimal representation.
+func (c CorrKind) items() []string {
+	var items []string
+	for _, b := range corrKindBits {
+		if c&b.mask == 0 {
+			continue
+		}
+		// Omit this bit if it is implied by some other set bit.
+		if c & ^b.mask != 0 && (c & ^b.mask).Expand()&b.mask != 0 {
+			continue
+		}
+		items = append(items, b.name)
+	}
+	return items
+}
+
+func (c CorrKind) String() string {
+	items := c.items()
+	if len(items) == 0 {
+		return "(none)"
+	}
+	return strings.Join(items, ",")
+}
+
+func (c CorrKind) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.items())
+}
+
+func (c *CorrKind) UnmarshalJSON(data []byte) error {
+	var names []string
+	if err := json.Unmarshal(data, &names); err != nil {
+		return err
+	}
+	var result CorrKind
+	for _, name := range names {
+		bit, ok := corrKindFromName[name]
+		if !ok {
+			return fmt.Errorf("unknown CorrKind %q", name)
+		}
+		result |= bit
+	}
+	*c = result.Expand()
+	return nil
+}
+
 // AuxSrc is a bitmask of additional data sources that contributed to the
 // navigation solution. GNSS contribution is implicit when FixLevel indicates
 // a GNSS-based fix.
@@ -582,6 +781,38 @@ const (
 	AuxSrcDR  AuxSrc = 1 << iota // dead reckoning (e.g. wheel ticks, motion model)
 	AuxSrcINS                    // inertial navigation system
 )
+
+type auxSrcBit struct {
+	mask AuxSrc
+	name string
+}
+
+var auxSrcBits = [...]auxSrcBit{
+	{AuxSrcDR, "DR"},
+	{AuxSrcINS, "INS"},
+}
+
+func (a AuxSrc) items() []string {
+	var items []string
+	for _, b := range auxSrcBits {
+		if a&b.mask != 0 {
+			items = append(items, b.name)
+		}
+	}
+	return items
+}
+
+func (a AuxSrc) String() string {
+	items := a.items()
+	if len(items) == 0 {
+		return "(none)"
+	}
+	return strings.Join(items, ",")
+}
+
+func (a AuxSrc) MarshalJSON() ([]byte, error) {
+	return json.Marshal(a.items())
+}
 
 // DOP holds dilution of precision values for the navigation solution. Fields
 // are opt.Val because different protocols provide different subsets. DOP may
