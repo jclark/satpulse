@@ -127,6 +127,7 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	navVelNED := false
 	navPVT := false
 	navTimeLS := flags&gpsprot.PVTMsgLeapSecond != 0
+	navEOE := flags&gpsprot.PVTMsgEpoch != 0
 	if flags&gpsprot.PVTMsgPos != 0 && flags&gpsprot.PVTMsgECEF != 0 {
 		navPosECEF = true
 		flags &^= gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF
@@ -196,6 +197,9 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	mc.pvtMsg(ubxbin.NavVelNEDID, navVelNED, off)
 	if ver.protVerAtLeast(18, 0) {
 		mc.pvtMsg(ubxbin.NavTimeLSID, navTimeLS, off)
+	}
+	if ver.protVerAtLeast(18, 0) {
+		mc.pvtMsg(ubxbin.NavEOEID, navEOE, off)
 	}
 }
 
@@ -390,6 +394,7 @@ var msgIDKey = map[ubxbin.MsgID]ucv.KeyM{
 	ubxbin.NavPosLLHID:  ucv.KUbxNavPosllh,
 	ubxbin.NavVelECEFID: ucv.KUbxNavVelecef,
 	ubxbin.NavVelNEDID:  ucv.KUbxNavVelned,
+	ubxbin.NavEOEID:     ucv.KUbxNavEoe,
 	ubxbin.NavSatID:     ucv.KUbxNavSat,
 	ubxbin.NavSigID:     ucv.KUbxNavSig,
 	ubxbin.RxmRawxID:    ucv.KUbxRxmRawx,

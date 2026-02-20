@@ -185,6 +185,24 @@ func TestMsgChangesPVT(t *testing.T) {
 			version:  testVers.f9p,
 			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavTimeGPSID},
 		},
+		{
+			name:     "Epoch (F9P)",
+			flags:    gpsprot.PVTMsgEpoch,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavEOEID},
+		},
+		{
+			name:     "Epoch (LEA-6T - not supported)",
+			flags:    gpsprot.PVTMsgEpoch,
+			version:  testVers.lea6t,
+			expected: []ubxbin.MsgID{},
+		},
+		{
+			name:     "Epoch,Time,Pos (F9P)",
+			flags:    gpsprot.PVTMsgEpoch | gpsprot.PVTMsgTime | gpsprot.PVTMsgPos,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID, ubxbin.NavEOEID},
+		},
 		// FTS (M8F) specific tests - uses TIM-TOS instead of TIM-TP
 		{
 			name:     "TimePulse (FTS)",

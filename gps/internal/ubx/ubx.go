@@ -154,6 +154,9 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 	var velGPri gpsprot.MsgPriority
 	h := p.mh
 	switch mt := m.(type) {
+	case *ubxbin.NavEOE:
+		p.mgr.EndOfEpoch(tRead)
+		return true
 	case *ubxbin.NavTimeLS:
 		ls := leapSecond(mt)
 		if ls == nil {
