@@ -308,6 +308,18 @@ text = "PQTMCFGMSGRATE,W,GGA,0"
 tag = "nmea-gga-off"
 description = "Disable NMEA GGA message"
 
+# Enable NMEA VTG message at rate 1
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,VTG,1"
+tag = "nmea-vtg"
+description = "Enable NMEA VTG message"
+
+# Disable NMEA VTG message
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,VTG,0"
+tag = "nmea-vtg-off"
+description = "Disable NMEA VTG message"
+
 # Enable NMEA GSV message at rate 1
 # Verified GSV messages appear in capture after enable on LG290P
 [[nmea]]
@@ -465,15 +477,16 @@ tag = "pqtm-dop-off"
 description = "Disable PQTMDOP message"
 
 # Enable PQTMSVINSTATUS message (survey-in status)
+# Does not work on R02 firmware
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1"
-tag = "pqtm-svin"
+tag = "pqtm-svinstatus"
 description = "Enable PQTMSVINSTATUS message (rate of one per fix)"
 
 # Disable PQTMSVINSTATUS message
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,0,1"
-tag = "pqtm-svin-off"
+tag = "pqtm-svinstatus-off"
 description = "Disable PQTMSVINSTATUS message"
 
 # Enable PQTM messages for R01A04S+ firmware (PVT + VEL + EPE + SVINSTATUS + DOP)
