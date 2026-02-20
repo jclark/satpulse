@@ -24,6 +24,17 @@ func PosGeo[S, P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.Pos[S, P], nativeMs
 	}
 }
 
+// VelGeoVel converts a Vel into a VelGeoMsg. BESTVEL does not carry
+// per-component sigmas, so accuracy is not populated.
+func VelGeoVel[P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.Vel[P], nativeMsgID string) *gpsprot.VelGeoMsg {
+	return &gpsprot.VelGeoMsg{
+		GroundSpeed: opt.Make(gpsprot.MetersPerSecondFromFloat(b.HorSpd)),
+		Course:      opt.Make(gpsprot.DegreesFromFloat(b.TrkGnd)),
+		NativeMsgID: nativeMsgID,
+		Priority:    gpsprot.PriVendorLow,
+	}
+}
+
 // PosECEFXYZ converts XYZ position fields into a PosECEFMsg and accumulates
 // accuracy into the NavEpochMsg.
 func PosECEFXYZ[S, P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.XYZ[S, P], nativeMsgID string) *gpsprot.PosECEFMsg {

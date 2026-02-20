@@ -132,7 +132,7 @@ With `String()`, `ParseSolStatus()`, `MarshalText()`, `UnmarshalText()` followin
 
 ### PosVelType
 
-Values from `plan/solution-metadata.md` Unicore section:
+Values from `plan/solution-quality.md` Unicore section:
 
 ```go
 type PosVelType uint32

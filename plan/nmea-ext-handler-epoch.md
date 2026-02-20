@@ -164,9 +164,9 @@ Update `gps/internal/quectel/handler_test.go`: tests pass `*NavEpoch` and check 
 
 Run `make test`.
 
-### Hook for solution-metadata.md
+### Hook for solution-quality.md
 
-Parsers and handlers receive `*NavEpoch` which embeds `NavEpochMsg`. When solution-metadata.md adds fix quality, DOPs, and corrections, those values go into the embedded `NavEpochMsg`.
+Parsers and handlers receive `*NavEpoch` which embeds `NavEpochMsg`. When solution-quality.md adds fix level, DOPs, and corrections, those values go into the embedded `NavEpochMsg`.
 
 ### Hook for multi-prot-nav-epoch.md
 

@@ -115,10 +115,12 @@ const (
 	PVTMsgTAI                                    // want time in TAI not UTC (option)
 	PVTMsgECEF                                   // want position in ECEF coordinates (option)
 	PVTMsgTimePulseAfter                         // ensure there is a time message following the time pulse (option)
+	PVTMsgQuality                                // solution quality messages (fix level, corrections, DOPs)
+	PVTMsgEpoch                                  // end-of-epoch messages (NavEpochMsg)
 	PVTMsgOff                                    // turn off any unneeded PVT messages (option)
 )
 
-const PVTMsgAny PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond | PVTMsgSurvey // any message (not option)
+const PVTMsgAny PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgQuality | PVTMsgEpoch // any message (not option)
 
 // These methods are to make PVTMsgFlags more consistent with Option[*Flags] for the other flags.
 

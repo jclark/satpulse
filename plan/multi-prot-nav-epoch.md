@@ -2,7 +2,7 @@
 
 Prerequisite: [nav-epoch.md](nav-epoch.md) (adds `NavEpochMsg` and `MsgHandler.NavEpoch`), [nav-epoch-accum.md](nav-epoch-accum.md) section 1 (defines `MsgPriority` and priority-based merge).
 
-Related: [solution-metadata.md](solution-metadata.md) (populates `NavEpochMsg` fields), [nmea-extensibility.md](nmea-extensibility.md) (extended NMEA sentence handlers), [nmea-ext-handler-epoch.md](nmea-ext-handler-epoch.md) (epoch lifecycle on NMEA `PacketProcessor`).
+Related: [solution-quality.md](solution-quality.md) (populates `NavEpochMsg` fields), [nmea-extensibility.md](nmea-extensibility.md) (extended NMEA sentence handlers), [nmea-ext-handler-epoch.md](nmea-ext-handler-epoch.md) (epoch lifecycle on NMEA `PacketProcessor`).
 
 ## Problem
 
@@ -76,9 +76,9 @@ Explicit end-of-epoch messages (UBX NAV-EOE, Quectel PQTMEOE) can trigger immedi
 manager.EndOfEpoch(tRead time.Time)
 ```
 
-The manager's behavior depends on the size of the active set:
-- **One active processor**: the manager calls `FlushNavEpoch(tRead)` on that processor, emits the result via the returned `MsgHandler`, and clears the active set. This avoids the one-epoch latency of waiting for the next epoch to start.
-- **Multiple active processors**: `EndOfEpoch` is a no-op. The manager cannot flush because the other protocol may not have finished its contribution yet. The flush will happen when any protocol's next `EpochStarted` call arrives.
+An end-of-epoch message marks the end of the epoch for all protocols on that receiver, not just the protocol that carries it. UBX NAV-EOE is documented as being output after all NAV and NMEA messages for the epoch. PQTMEOE similarly marks the end of all NMEA output (standard and PQTM extended) for the epoch, and the Quectel LG290P has no binary protocol, so it covers everything.
+
+The manager therefore flushes unconditionally: it calls `FlushNavEpoch(tRead)` on every processor in the active set, merges the non-nil results, emits the merged `NavEpochMsg`, and clears the active set. This avoids the one-epoch latency of waiting for the next epoch to start.
 
 ### Active set lifecycle
 
@@ -250,7 +250,7 @@ There is a pre-existing inconsistency: NMEA's `flushEpoch` passes `p.curNavEpoch
 
 ## What this plan does NOT cover
 
-- **Protocol-specific metadata population**: that is covered by solution-metadata.md. This plan only addresses the cross-protocol coordination layer.
+- **Protocol-specific metadata population**: that is covered by solution-quality.md. This plan only addresses the cross-protocol coordination layer.
 - **CASIC NavEpochMsg population**: CASIC participates in epoch coordination but does not yet build a `NavEpochMsg`. Adding metadata population is a separate task.
 - **UBX NAV-EOE parsing**: `ubxbin` has no parser for this message yet. Adding the parser is a separate task; wiring it to `manager.EndOfEpoch` is trivial once the parser exists.
 - **Epoch timeout**: there is no timeout mechanism to flush an epoch that has been accumulating too long (e.g. because the receiver went silent or disconnected after producing one epoch's worth of messages). The last epoch before silence is never emitted. Note that `Idle` is not suitable for this -- it is a heuristic used for satellite flushing, not a reliable epoch mechanism. A proper epoch timeout would need to be added to the manager.

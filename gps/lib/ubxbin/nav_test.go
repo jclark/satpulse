@@ -4,6 +4,12 @@ import (
 	"testing"
 )
 
+func TestNavEOE(t *testing.T) {
+	testMsgType(t, NavEOE{
+		NavITOW: NavITOW{ITOW: 0x12345678},
+	})
+}
+
 func TestNavTimeGPS(t *testing.T) {
 	testMsgType(t, NavTimeGPS{
 		NavITOW: NavITOW{ITOW: 0x12345678},

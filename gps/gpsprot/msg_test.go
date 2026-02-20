@@ -1,6 +1,7 @@
 package gpsprot
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -58,6 +59,216 @@ func TestGNSSSetMarshalJSON(t *testing.T) {
 	expectedJSON := `["GPS","GAL"]`
 	if string(marshaledJSON) != expectedJSON {
 		t.Errorf("Expected marshaled JSON to be %v, got %v", expectedJSON, string(marshaledJSON))
+	}
+}
+
+func TestFixLevelString(t *testing.T) {
+	tests := []struct {
+		f    FixLevel
+		want string
+	}{
+		{0, "FixLevel(0)"},
+		{FixLevelNone, "none"},
+		{FixLevelNotMeasured, "notMeasured"},
+		{FixLevelCode, "code"},
+		{FixLevelCodeCorrected, "codeCorrected"},
+		{FixLevelCarrierFloat, "carrierFloat"},
+		{FixLevelCarrierFixed, "carrierFixed"},
+	}
+	for _, tt := range tests {
+		if got := tt.f.String(); got != tt.want {
+			t.Errorf("FixLevel(%d).String() = %q, want %q", tt.f, got, tt.want)
+		}
+	}
+}
+
+func TestFixLevelJSON(t *testing.T) {
+	b, err := json.Marshal(FixLevelCarrierFixed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); got != `"carrierFixed"` {
+		t.Errorf("MarshalJSON = %s, want %q", got, "carrierFixed")
+	}
+}
+
+func TestFixLevelRoundTrip(t *testing.T) {
+	for f := FixLevelNone; f <= FixLevelCarrierFixed; f++ {
+		text, err := f.MarshalText()
+		if err != nil {
+			t.Fatalf("MarshalText(%d): %v", f, err)
+		}
+		var got FixLevel
+		if err := got.UnmarshalText(text); err != nil {
+			t.Fatalf("UnmarshalText(%q): %v", text, err)
+		}
+		if got != f {
+			t.Errorf("round-trip %d: got %d", f, got)
+		}
+	}
+}
+
+func TestFixDimString(t *testing.T) {
+	tests := []struct {
+		d    FixDim
+		want string
+	}{
+		{0, "FixDim(0)"},
+		{FixDim2D, "2D"},
+		{FixDim3D, "3D"},
+		{FixDimTimeOnly, "timeOnly"},
+		{FixDimVelocityOnly, "velocityOnly"},
+	}
+	for _, tt := range tests {
+		if got := tt.d.String(); got != tt.want {
+			t.Errorf("FixDim(%d).String() = %q, want %q", tt.d, got, tt.want)
+		}
+	}
+}
+
+func TestFixDimJSON(t *testing.T) {
+	b, err := json.Marshal(FixDim3D)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); got != `"3D"` {
+		t.Errorf("MarshalJSON = %s, want %q", got, "3D")
+	}
+}
+
+func TestFixDimRoundTrip(t *testing.T) {
+	for d := FixDim2D; d <= FixDimVelocityOnly; d++ {
+		text, err := d.MarshalText()
+		if err != nil {
+			t.Fatalf("MarshalText(%d): %v", d, err)
+		}
+		var got FixDim
+		if err := got.UnmarshalText(text); err != nil {
+			t.Fatalf("UnmarshalText(%q): %v", text, err)
+		}
+		if got != d {
+			t.Errorf("round-trip %d: got %d", d, got)
+		}
+	}
+}
+
+func TestAuxSrcJSON(t *testing.T) {
+	tests := []struct {
+		a    AuxSrc
+		want string
+	}{
+		{0, "null"},
+		{AuxSrcDR, `["DR"]`},
+		{AuxSrcINS, `["INS"]`},
+		{AuxSrcDR | AuxSrcINS, `["DR","INS"]`},
+	}
+	for _, tt := range tests {
+		b, err := json.Marshal(tt.a)
+		if err != nil {
+			t.Fatalf("Marshal(%v): %v", tt.a, err)
+		}
+		if got := string(b); got != tt.want {
+			t.Errorf("AuxSrc(%d) JSON = %s, want %s", tt.a, got, tt.want)
+		}
+	}
+}
+
+func TestAuxSrcString(t *testing.T) {
+	tests := []struct {
+		a    AuxSrc
+		want string
+	}{
+		{0, "(none)"},
+		{AuxSrcDR, "DR"},
+		{AuxSrcDR | AuxSrcINS, "DR,INS"},
+	}
+	for _, tt := range tests {
+		if got := tt.a.String(); got != tt.want {
+			t.Errorf("AuxSrc(%d).String() = %q, want %q", tt.a, got, tt.want)
+		}
+	}
+}
+
+func TestCorrKindClose(t *testing.T) {
+	tests := []struct {
+		in   CorrKind
+		want CorrKind
+	}{
+		{0, 0},
+		{CorrUsed, CorrUsed},
+		{CorrBaseStation, CorrBaseStation | CorrUsed},
+		{CorrSBAS, CorrSBAS | CorrWideArea | CorrUsed},
+		{CorrFullDualFreq, CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed},
+		{CorrPPPRTK, CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed},
+		{CorrPPPConverging, CorrPPPConverging | CorrPPP | CorrWideArea | CorrUsed},
+		// Multiple bits: union of closures
+		{CorrSBAS | CorrRTCM, CorrSBAS | CorrWideArea | CorrRTCM | CorrUsed},
+	}
+	for _, tt := range tests {
+		if got := tt.in.Expand(); got != tt.want {
+			t.Errorf("CorrKind(%#x).Expand() = %#x, want %#x", uint16(tt.in), uint16(got), uint16(tt.want))
+		}
+	}
+}
+
+func TestCorrKindString(t *testing.T) {
+	tests := []struct {
+		c    CorrKind
+		want string
+	}{
+		{0, "(none)"},
+		{CorrUsed, "used"},
+		// baseStation implies used, so only "baseStation"
+		{CorrBaseStation | CorrUsed, "baseStation"},
+		// SBAS implies wideArea implies used
+		{CorrSBAS | CorrWideArea | CorrUsed, "SBAS"},
+		// fullDualFreq implies partialDualFreq implies baseStation implies used
+		{CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed, "fullDualFreq"},
+		// Two independent leaves: SBAS + RTCM
+		{CorrSBAS | CorrRTCM | CorrWideArea | CorrUsed, "RTCM,SBAS"},
+		// PPP-RTK implies PPP implies wideArea implies used
+		{CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed, "PPP-RTK"},
+		// PPPConverged + RTCM: two independent leaves
+		{CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed, "RTCM,PPPConverged"},
+	}
+	for _, tt := range tests {
+		if got := tt.c.String(); got != tt.want {
+			t.Errorf("CorrKind(%#x).String() = %q, want %q", uint16(tt.c), got, tt.want)
+		}
+	}
+}
+
+func TestCorrKindJSON(t *testing.T) {
+	c := CorrSBAS | CorrWideArea | CorrUsed
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); got != `["SBAS"]` {
+		t.Errorf("MarshalJSON = %s, want %s", got, `["SBAS"]`)
+	}
+}
+
+func TestCorrKindJSONRoundTrip(t *testing.T) {
+	tests := []CorrKind{
+		CorrUsed,
+		CorrSBAS | CorrWideArea | CorrUsed,
+		CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed,
+		CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed,
+		CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed,
+	}
+	for _, orig := range tests {
+		b, err := json.Marshal(orig)
+		if err != nil {
+			t.Fatalf("Marshal(%#x): %v", uint16(orig), err)
+		}
+		var got CorrKind
+		if err := json.Unmarshal(b, &got); err != nil {
+			t.Fatalf("Unmarshal(%s): %v", b, err)
+		}
+		if got != orig {
+			t.Errorf("round-trip %#x: marshal=%s, got=%#x", uint16(orig), b, uint16(got))
+		}
 	}
 }
 
@@ -643,10 +854,14 @@ func TestNavEpochManagerEndOfEpochMultiple(t *testing.T) {
 	mgr.EpochStarted(f2, t0)
 	f1.msg = &NavEpochMsg{Tag: "UBX"}
 	f2.msg = &NavEpochMsg{Tag: "NMEA"}
-	// EndOfEpoch with multiple active: no-op
+	// EndOfEpoch with multiple active: flushes all processors
 	mgr.EndOfEpoch(t0)
-	if len(rec.epochs) != 0 {
-		t.Fatalf("EndOfEpoch with multiple active should be no-op, got %d epochs", len(rec.epochs))
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after EndOfEpoch, got %d", len(rec.epochs))
+	}
+	// UBX (PriVendorLow=3) wins over NMEA (PriGenericHigh=2) for Tag
+	if rec.epochs[0].Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", rec.epochs[0].Tag)
 	}
 }
 

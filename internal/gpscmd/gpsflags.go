@@ -55,7 +55,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
             [--survey] [--survey-time seconds] [--survey-acc meters]
-            [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
+            [--pvt-out pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|off,...]
             [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
             [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...]
             [-m|--msg-file path] [-t|--tag name,...] [--show-tags]`
@@ -625,6 +625,12 @@ func (pvtOut *pvtOutOpt) String() string {
 	if flags&gpsprot.PVTMsgSurvey != 0 {
 		parts = append(parts, "survey")
 	}
+	if flags&gpsprot.PVTMsgQuality != 0 {
+		parts = append(parts, "qual")
+	}
+	if flags&gpsprot.PVTMsgEpoch != 0 {
+		parts = append(parts, "epoch")
+	}
 	if flags&gpsprot.PVTMsgTAI != 0 {
 		parts = append(parts, "tai")
 	}
@@ -663,6 +669,10 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 			flags |= gpsprot.PVTMsgLeapSecond
 		case "survey":
 			flags |= gpsprot.PVTMsgSurvey
+		case "qual":
+			flags |= gpsprot.PVTMsgQuality
+		case "epoch":
+			flags |= gpsprot.PVTMsgEpoch
 		case "tai":
 			flags |= gpsprot.PVTMsgTAI
 		case "ecef":

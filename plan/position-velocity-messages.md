@@ -4,7 +4,7 @@
 
 The current `MsgHandler` interface provides `TimeMsg`, `LeapSecondMsg`, `SurveyMsg`, and `SatellitesMsg`, but has no standard messages for position or velocity. Position and velocity are currently only accessible through protocol-specific `NativeMsgHandler` callbacks. Adding four protocol-neutral message types enables applications to consume position/velocity data without knowing the underlying protocol.
 
-This is a precursor to `SolutionMetaMsg` (see `plan/solution-metadata.md`). The position/velocity messages are emitted with minimal latency (immediately when the protocol message is parsed), while `SolutionMetaMsg` is synthesized at epoch boundaries from metadata that may arrive in different messages. The underlying protocol messages often serve both purposes: for example, UBX `NavPVT` provides position, velocity AND fix quality; NMEA `GGA` provides position AND quality indicator. By defining the position/velocity messages first, the `SolutionMetaMsg` implementation can reuse the same parsed data without re-parsing.
+This is a precursor to solution quality reporting (see `plan/solution-quality.md`). The position/velocity messages are emitted with minimal latency (immediately when the protocol message is parsed), while `NavEpochMsg` quality fields are synthesized at epoch boundaries from metadata that may arrive in different messages. The underlying protocol messages often serve both purposes: for example, UBX `NavPVT` provides position, velocity AND fix quality; NMEA `GGA` provides position AND quality indicator. By defining the position/velocity messages first, the `NavEpochMsg` implementation can reuse the same parsed data without re-parsing.
 
 GNSS protocols consistently separate geodetic (LLH position / NED velocity) from earth-centered (ECEF position / ECEF velocity) coordinate frames. The four message types mirror this natural separation.
 
@@ -39,13 +39,13 @@ Placed in `gps/gpsprot/types.go` alongside `Length` and `Angle`.
 
 ### Accuracy fields
 
-Accuracy estimates are **not** included in the position/velocity messages. They belong in `NavEpochMsg` (see `plan/solution-metadata.md`) alongside DOPs and fix quality, because not all protocols bundle accuracy with the position/velocity data. The Quectel LG290P provides accuracy in a separate PQTMEPE message, and NMEA provides no metric accuracy at all. For protocols that do bundle accuracy (UBX, Allystar), the values are cached and included when `NavEpochMsg` is emitted at the epoch boundary.
+Accuracy estimates are **not** included in the position/velocity messages. They belong in `NavEpochMsg` (see `plan/solution-quality.md`) alongside DOPs and fix level, because not all protocols bundle accuracy with the position/velocity data. The Quectel LG290P provides accuracy in a separate PQTMEPE message, and NMEA provides no metric accuracy at all. For protocols that do bundle accuracy (UBX, Allystar), the values are cached and included when `NavEpochMsg` is emitted at the epoch boundary.
 
 ### `SolutionEngine` (future enhancement)
 
-Receivers like Unicore/NovAtel can output multiple simultaneous solutions per epoch from different processing engines (BESTNAV, PPPNAV, SPPNAV, RTKPOS). These produce genuinely different coordinates in the same epoch. `FixQuality` + `CorrKind` describe *what the solution achieved*, but not *which engine produced it* — when BESTNAV happens to select the PPP engine, it's indistinguishable from PPPNAV by quality alone.
+Receivers like Unicore/NovAtel can output multiple simultaneous solutions per epoch from different processing engines (BESTNAV, PPPNAV, SPPNAV, RTKPOS). These produce genuinely different coordinates in the same epoch. `FixLevel` + `CorrKind` describe *what the solution achieved*, but not *which engine produced it* — when BESTNAV happens to select the PPP engine, it's indistinguishable from PPPNAV by quality alone.
 
-`SolutionEngine` identifies the processing engine. It appears on all four position/velocity message types and on `SolutionMetaMsg`, linking each solution's coordinates to its metadata.
+`SolutionEngine` identifies the processing engine. It appears on all four position/velocity message types and on `NavEpochMsg`, linking each solution's coordinates to its quality metadata.
 
 ```go
 // SolutionEngine identifies which processing engine produced a navigation
@@ -217,7 +217,7 @@ Units verified against u-blox F10 SPG 6.00 interface description.
 | `Lat/Lon int32` | 1e-7 deg | `Angle` | `Angle(v) * 100 * Nanodegrees` |
 | `Height/HMSL int32` | mm | `Length` | `Length(v) * Millimeter` |
 
-Accuracy fields (`PAcc`, `HAcc`, `VAcc`) are cached for `NavEpochMsg.Acc` (see `plan/solution-metadata.md`), not included in the position messages.
+Accuracy fields (`PAcc`, `HAcc`, `VAcc`) are cached for `NavEpochMsg.Acc` (see `plan/solution-quality.md`), not included in the position messages.
 
 **Velocity -- VELECEF, VELNED** (cm/s):
 
@@ -490,5 +490,5 @@ New files: `unc/nav.go`, `unc/nav_test.go`. Each substep includes a unit test fo
 
 ### Step 9 (future): SSE monitoring event
 
-A `PosVelEvent` SSE event would combine all four position/velocity message types into a single event for the web UI / monitoring. It fires once per epoch, triggered by `SolutionMetaMsg` (which marks the epoch boundary). The handler would cache the most recent position/velocity messages and snapshot them when `SolutionMetaMsg` arrives. This naturally includes the solution metadata itself, giving consumers a complete per-epoch view: coordinates + quality.
+A `PosVelEvent` SSE event would combine all four position/velocity message types into a single event for the web UI / monitoring. It fires once per epoch, triggered by `NavEpochMsg` (which marks the epoch boundary). The handler would cache the most recent position/velocity messages and snapshot them when `NavEpochMsg` arrives. This naturally includes the solution metadata itself, giving consumers a complete per-epoch view: coordinates + quality.
 

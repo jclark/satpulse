@@ -100,14 +100,13 @@ Use `-v` for verbose output. The exit code from `timeout` will be 124 on normal 
 
 ### 3. Rename log files
 
-Logs are appended on each run, so rename them to a unique name after each run to keep results separate:
+Logs are appended on each run, so rename them to a unique name after each run to keep results separate. Use the rename script in the skill directory:
 
 ```bash
-STAMP=$(date +%Y%m%d-%H%M%S)
-for f in tmp/satpulsed/log/*.jsonl; do
-  [ -f "$f" ] && mv "$f" "${f%.jsonl}-${STAMP}.jsonl"
-done
+.claude/skills/hardware-test-gps-msgs/rename-logs.sh <suffix>
 ```
+
+For example: `.claude/skills/hardware-test-gps-msgs/rename-logs.sh f9p-ubx-baseline`
 
 ### 4. Inspect results
 
