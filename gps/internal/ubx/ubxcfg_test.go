@@ -99,7 +99,7 @@ func runConfiguration(rcvr *gpsReceiver, target *gpsprot.ConfigTarget) (*Configu
 	cp.ver = rcvr.version
 	var naks []string
 
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.SetNativeMsgHandler(cp)
 
 	c, err := cp.Configure(target)

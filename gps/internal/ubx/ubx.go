@@ -16,7 +16,8 @@ var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 // PacketProcessor implements the gpsprot.PacketProcessor interface for UBX packets
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
-	mh gpsprot.MsgHandler
+	mh  gpsprot.MsgHandler
+	mgr *gpsprot.NavEpochManager
 	// Navigation epoch tracking: UBX navigation messages (NAV-*) contain an iTOW field
 	// that identifies which navigation solution they belong to. Messages with the same
 	// iTOW are part of the same epoch and can be grouped together.
@@ -34,8 +35,8 @@ type PacketProcessor struct {
 }
 
 // NewPacketProcessor creates a new UBX packet processor
-func NewPacketProcessor() *PacketProcessor {
-	return &PacketProcessor{}
+func NewPacketProcessor(mgr *gpsprot.NavEpochManager) *PacketProcessor {
+	return &PacketProcessor{mgr: mgr}
 }
 
 // ProcessPacket processes a UBX packet's data and returns the message ID and any error
@@ -71,7 +72,7 @@ func (p *PacketProcessor) handleNavEpoch(nm ubxbin.NavMsg, tRead time.Time) {
 	e++ // use zero to represent invalid epoch
 	if e != p.curNavEpoch {
 		// New epoch starting - flush any pending messages from previous epoch
-		p.flushNavEpoch(tRead)
+		p.mgr.EpochStarted(p, tRead)
 		p.curNavEpoch = e
 		p.curNavEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
 		p.prevNavMsgs = p.curNavMsgs
@@ -82,13 +83,15 @@ func (p *PacketProcessor) handleNavEpoch(nm ubxbin.NavMsg, tRead time.Time) {
 	p.curNavMsgs.add(id)
 }
 
-func (p *PacketProcessor) flushNavEpoch(tRead time.Time) {
+// FlushNavEpoch implements gpsprot.EpochFlusher.
+func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
 	p.flushSats()
-	if p.curNavEpochMsg != nil && p.mh != nil {
-		p.curNavEpochMsg.Tag = Tag
-		p.mh.NavEpoch(p.curNavEpochMsg, tRead)
-	}
+	msg := p.curNavEpochMsg
 	p.curNavEpochMsg = nil
+	if msg != nil {
+		msg.Tag = Tag
+	}
+	return msg, gpsprot.PriVendorLow, p.mh
 }
 
 // maybeFlushSats decides whether to emit a SatellitesMsg or wait for more data.
@@ -148,6 +151,7 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 	var posE *gpsprot.PosECEFMsg
 	var velG *gpsprot.VelGeoMsg
 	var velE *gpsprot.VelECEFMsg
+	var velGPri gpsprot.MsgPriority
 	h := p.mh
 	switch mt := m.(type) {
 	case *ubxbin.NavTimeLS:
@@ -183,6 +187,7 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		posG = posGeoNavPosLLH(p.curNavEpochMsg, mt)
 	case *ubxbin.NavVelNED:
 		velG = velGeoNavVelNED(p.curNavEpochMsg, mt)
+		velGPri = gpsprot.PriVendorLow
 	case *ubxbin.NavTimeGPS:
 		time = timeNavTimeGPS(mt)
 	case *ubxbin.NavTimeBDS:
@@ -197,6 +202,8 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		time = timeNavPVT(mt)
 		posG = posGeoNavPVT(p.curNavEpochMsg, mt)
 		velG = velGeoNavPVT(p.curNavEpochMsg, mt)
+		// NAV-PVT is preferred because it uses mm/s, whereas NAV-VELNED uses cm/s
+		velGPri = gpsprot.PriVendorHigh
 	case *ubxbin.TimTP:
 		time = timeTimTP(mt)
 	case *ubxbin.TimTos:
@@ -218,20 +225,25 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 			h.Survey(sv, tRead)
 		} else if time != nil {
 			time.Tag = Tag
+			time.Priority = gpsprot.PriVendorLow
 			h.Time(time, tRead)
 		}
 		if posG != nil {
 			posG.Tag = Tag
+			posG.Priority = gpsprot.PriVendorLow
 			h.PosGeo(posG, tRead)
 		} else if posE != nil {
 			posE.Tag = Tag
+			posE.Priority = gpsprot.PriVendorLow
 			h.PosECEF(posE, tRead)
 		}
 		if velG != nil {
 			velG.Tag = Tag
+			velG.Priority = velGPri
 			h.VelGeo(velG, tRead)
 		} else if velE != nil {
 			velE.Tag = Tag
+			velE.Priority = gpsprot.PriVendorLow
 			h.VelECEF(velE, tRead)
 		}
 	}

@@ -112,6 +112,7 @@ func TestTimeMsgFromTime(t *testing.T) {
 			expect: &gpsprot.TimeMsg{
 				Tag:         TagAscii,
 				NativeMsgID: "TIME",
+				Priority:    gpsprot.PriVendorLow,
 				GNSS:        0, // NovAtel doesn't specify reference GNSS
 				TAITime:     ptime.GPS(2381, 207960*time.Second),
 				UTCTime: func() *ptime.UTCTime {

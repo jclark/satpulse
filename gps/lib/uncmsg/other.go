@@ -7,9 +7,9 @@ const (
 	ADRNavHID    MsgID = 2117
 	ADRDOPID     MsgID = 953
 	ADRDOPHID    MsgID = 2121
-	BestNavID    MsgID = 2118
+	// BestNavID    MsgID = 2118 // implemented in nav.go
 	BestNavHID   MsgID = 2119
-	BestNavXYZID MsgID = 240
+	// BestNavXYZID MsgID = 240 // implemented in nav.go
 	BestNavXYZHID MsgID = 242
 	// BestSatID    MsgID = 1041 // implemented in sats.go
 	BSLNEnuHD2ID MsgID = 1316
@@ -116,9 +116,8 @@ func init() {
 	idNameMap[ADRNavHID] = "ADRNAVH"
 	idNameMap[ADRDOPID] = "ADRDOP"
 	idNameMap[ADRDOPHID] = "ADRDOPH"
-	idNameMap[BestNavID] = "BESTNAV"
+	// BestNavID and BestNavXYZID registered via regMsg in nav.go
 	idNameMap[BestNavHID] = "BESTNAVH"
-	idNameMap[BestNavXYZID] = "BESTNAVXYZ"
 	idNameMap[BestNavXYZHID] = "BESTNAVXYZH"
 	idNameMap[BSLNEnuHD2ID] = "BSLNENUHD2"
 	idNameMap[BSLNXyzHD2ID] = "BSLNXYZHD2"

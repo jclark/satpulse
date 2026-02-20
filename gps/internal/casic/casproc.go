@@ -14,13 +14,14 @@ var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
 	mh          gpsprot.MsgHandler
+	mgr         *gpsprot.NavEpochManager
 	curNavEpoch uint32   // current RunTime (0 means no epoch seen yet)
 	satAccum    satAccum // satellite info accumulator
 }
 
 // NewPacketProcessor creates a new CASIC binary packet processor
-func NewPacketProcessor() *PacketProcessor {
-	return &PacketProcessor{}
+func NewPacketProcessor(mgr *gpsprot.NavEpochManager) *PacketProcessor {
+	return &PacketProcessor{mgr: mgr}
 }
 
 // ProcessPacket processes a CASIC binary packet's data and returns the message ID and any error
@@ -47,16 +48,17 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 // When a new epoch is detected, it flushes any accumulated satellite data.
 func (p *PacketProcessor) handleNavEpoch(nm casbin.NavMsg, tRead time.Time) {
 	e := nm.NavEpoch()
+	e++ // use zero to represent "no epoch seen yet"
 	if e != p.curNavEpoch {
-		if p.curNavEpoch != 0 {
-			p.flushNavEpoch(tRead)
-		}
+		p.mgr.EpochStarted(p, tRead)
 		p.curNavEpoch = e
 	}
 }
 
-func (p *PacketProcessor) flushNavEpoch(tRead time.Time) {
+// FlushNavEpoch implements gpsprot.EpochFlusher.
+func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
 	p.satAccum.epochChange(p.mh, tRead)
+	return nil, gpsprot.PriVendorLow, p.mh
 }
 
 // SetMsgHandler sets the handler for protocol-agnostic messages
@@ -73,6 +75,7 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		if p.mh != nil {
 			tm.Tag = Tag
+			tm.Priority = gpsprot.PriVendorLow
 			p.mh.Time(tm, tRead)
 		}
 		return true
@@ -83,6 +86,7 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		if p.mh != nil {
 			tm.Tag = Tag
+			tm.Priority = gpsprot.PriVendorLow
 			p.mh.Time(tm, tRead)
 		}
 		return true
@@ -93,6 +97,7 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		if p.mh != nil {
 			tm.Tag = Tag
+			tm.Priority = gpsprot.PriVendorLow
 			p.mh.Time(tm, tRead)
 		}
 		return true
