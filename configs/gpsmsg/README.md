@@ -36,6 +36,7 @@ This can help with seeing whether your receiver is handling the commands correct
 | [allystar.toml](allystar.toml) | Allystar (e.g. TAU1201, TAU951M) | Allystar binary |
 | [lg290p.toml](lg290p.toml) | Quectel LG290P | NMEA (PQTM) |
 | [atgm332d-v6.toml](atgm332d-v6.toml) | Zhongke Micro ATGM332D/ATGM336H firmware V6.x | CASIC binary |
+| [ubx.toml](ubx.toml) | u-blox (e.g. ZED-F9P) | UBX binary, NMEA (PUBX) |
 
 ## Configuring for satpulsed
 
