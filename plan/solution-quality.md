@@ -1,8 +1,8 @@
 # Solution quality
 
-Prerequisite: [nav-epoch.md](nav-epoch.md) (adds the empty `NavEpochMsg` with `MsgHandler.NavEpoch`, emitted at UBX epoch boundaries).
+Prerequisite: [nav-epoch.md](nav-epoch.md) (adds `NavEpochMsg` with `MsgHandler.NavEpoch`). Implemented: `NavEpochMsg` currently carries `Acc` (accuracy), `Tag`, and `StartTime`.
 
-Related: [multi-prot-nav-epoch.md](multi-prot-nav-epoch.md) (cross-protocol epoch coordination via `NavEpochManager`, which merges per-protocol `NavEpochMsg` contributions when binary + NMEA are both active).
+Related: [multi-prot-nav-epoch.md](multi-prot-nav-epoch.md) (cross-protocol epoch coordination via `NavEpochManager`, which merges per-protocol `NavEpochMsg` contributions when binary + NMEA are both active). Implemented: all `PacketProcessor`s accept `*NavEpochManager` in their constructors and implement `EpochFlusher`.
 
 ## Motivation
 
@@ -20,10 +20,11 @@ Time accuracy, however, stays in `TimeMsg` rather than moving into `NavEpochMsg.
 
 ## Type definitions
 
-The existing `NavEpochMsg` (which currently contains only `Tag`) is extended with metadata fields. New supporting types (`FixLevel`, `FixDim`, `CorrKind`, `AuxSrc`, `Accuracy`, `DOP`) are added to `gps/gpsprot/`.
+The existing `NavEpochMsg` (which currently contains `Acc`, `Tag`, and `StartTime`) is extended with metadata fields. New supporting types (`FixLevel`, `FixDim`, `CorrKind`, `AuxSrc`, `DOP`) are added to `gps/gpsprot/`. The `Accuracy` type and `Accuracy.Merge` method already exist. The `MergeNavEpoch` function also already exists and will need to be extended to merge the new fields.
 
 ```
-// NavEpochMsg fields added to the existing struct (Tag already present from nav-epoch.md):
+// NavEpochMsg: new fields added to the existing struct.
+// Existing fields: Acc (Accuracy), Tag (Tag), StartTime (time.Time).
 //
 // GNSS is the implicit baseline source when FixLevel indicates a GNSS-based
 // fix. AuxSrc captures additional sources (e.g. DR/INS).
@@ -31,22 +32,21 @@ The existing `NavEpochMsg` (which currently contains only `Tag`) is extended wit
 // CorrKind is a bitmask (not an enum) and its bits are related by a partial
 // order (see CorrKind docs).
 type NavEpochMsg struct {
-	FixLevel    FixLevel    `json:"fixLevel,omitzero"`
-	FixDim      FixDim      `json:"fixDim,omitzero"`
-	Correction  CorrKind    `json:"correction,omitzero"` // meaningful when FixLevel >= FixLevelCodeCorrected
-	AuxSrc      AuxSrc      `json:"auxSrc,omitzero"`
-	Acc         Accuracy    `json:"acc,omitzero"`
-	DOP         DOP         `json:"dop,omitzero"`
+	FixLevel     FixLevel        `json:"fixLevel,omitzero"`
+	FixDim       FixDim          `json:"fixDim,omitzero"`
+	Correction   CorrKind        `json:"correction,omitzero"` // meaningful when FixLevel >= FixLevelCodeCorrected
+	AuxSrc       AuxSrc          `json:"auxSrc,omitzero"`
+	Acc          Accuracy        `json:"acc,omitzero"`         // already present
+	DOP          DOP             `json:"dop,omitzero"`
 	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
 	SignalsUsed  SignalSet       `json:"signalsUsed,omitzero"`
-	Tag          Tag             `json:"tag,omitzero"` // already present
+	Tag          Tag             `json:"tag,omitzero"`         // already present
+	StartTime    time.Time       `json:"startTime"`            // already present
 }
 
-// Accuracy holds estimated accuracy of the navigation solution. Fields are
-// opt.Val because different protocols provide different subsets. Accuracy
-// may be synthesized from multiple messages within an epoch (e.g. Quectel
-// PQTMEPE provides position accuracy separately from PQTMPVT).
+// Accuracy already exists in gps/gpsprot/msg.go with Merge method.
+// No changes needed.
 type Accuracy struct {
 	Pos         opt.Val[Length] `json:"pos,omitzero"`         // 3D position accuracy
 	Hor         opt.Val[Length] `json:"hor,omitzero"`         // horizontal position accuracy
@@ -245,11 +245,11 @@ We decided against a separate DOP flag for these reasons:
 
 A single `quality` flag enables all messages needed to populate every field in `NavEpochMsg`: fix level, dimensionality, corrections, accuracy, DOPs, and SV counts.
 
-## Protocol mapping: NMEA
+## NMEA
 
-NMEA does not currently emit `NavEpochMsg` (nav-epoch.md only wired up UBX). This plan adds NMEA epoch detection and metadata population together.
+NMEA already emits `NavEpochMsg` via the `NavEpochManager` (implemented as part of multi-prot-nav-epoch.md). The NMEA `PacketProcessor` detects epoch boundaries via time-of-day changes in RMC/GGA/VTG/ZDA and calls `mgr.EpochStarted`; extension handlers can also signal `EndOfEpoch`. The `FlushNavEpoch` method returns the accumulated `NavEpochMsg` with `PriGenericHigh`. This plan adds solution quality metadata population to the existing epoch handling.
 
-The NMEA sentences currently handled by the `nmea` package are RMC, ZDA, GSV and GSA. Of these, GGA and GSA carry solution metadata. GGA is not currently parsed for metadata (only `numSV` is extracted). GSA currently extracts only used SVIDs and GNSS; it ignores the fix mode and DOP fields.
+The NMEA sentences currently handled by the `nmea` package are RMC, VTG, ZDA, GSV, GSA, and GGA. Of these, GGA and GSA carry solution metadata. GGA is not currently parsed for metadata (only `numSV` is extracted). GSA currently extracts only used SVIDs and GNSS; it ignores the fix mode and DOP fields.
 
 The relevant sentences and their fields are:
 
@@ -346,12 +346,12 @@ The changes needed are:
 1. Extend `parseGGA` to extract quality indicator (field 5) and HDOP (field 7) in addition to numSV.
 2. Extend `parseGSA` to extract fix type (field 1) and DOPs (fields 14-16).
 3. Extend `parseRMC` to extract mode indicator (field 11).
-4. Add a separate `navEpochBuffer` (distinct from `satellitesBuffer`) that collects GGA, RMC and GSA metadata fields within an epoch. Both GGA and RMC carry UTC time of day (field 0). The buffer tracks the current time of day and flushes the previous epoch's metadata when a different time of day arrives. GSA has no time of day but arrives in the same epoch as the preceding GGA/RMC.
-5. On flush, `navEpochBuffer` synthesizes a `NavEpochMsg` from the buffered metadata using the merge rules above and emits it via `MsgHandler.NavEpoch`.
+4. Accumulate the extracted metadata fields on the existing `NavEpoch` struct (which is stored in `curNavEpoch` and already tracks epoch identity via time-of-day changes). The epoch detection and flush mechanism is already in place via `handleEpoch`/`NavEpochManager`; no new `navEpochBuffer` is needed. GSA has no time of day but arrives in the same epoch as the preceding GGA/RMC.
+5. On epoch flush (via `FlushNavEpoch`), the accumulated metadata fields from `curNavEpoch.NavEpochMsg` are returned with `PriGenericHigh`. The merge rules above determine how GGA, RMC, and GSA metadata are combined within the `NavEpoch` as each sentence is parsed.
 
 ## UBX
 
-The UBX `PacketProcessor` already emits an empty `NavEpochMsg` at each epoch boundary in `flushNavEpoch` (from nav-epoch.md). This plan populates its metadata fields.
+The UBX `PacketProcessor` already emits a `NavEpochMsg` at each epoch boundary via the `NavEpochManager` (from multi-prot-nav-epoch.md). The `NavEpochManager` is created in `CreatePacketProcessors` and passed to the `PacketProcessor` constructor. Epoch boundaries are detected by iTOW changes in `handleNavEpoch`, which calls `mgr.EpochStarted`. The `FlushNavEpoch` method (implementing `EpochFlusher`) returns the accumulated `curNavEpochMsg` with `Tag=UBX` and `PriVendorLow`. Accuracy fields (`Acc.Hor`, `Acc.Vert`, `Acc.Speed`, `Acc.Course`, `Acc.Pos`) are already populated inline by the position/velocity conversion functions in `ubxpv.go`. This plan adds the remaining solution quality metadata fields.
 
 ### Inputs (epoch-keyed by `iTOW`)
 
@@ -366,7 +366,7 @@ Recommended additional input for higher fidelity:
 ### Mapping: `UBX-NAV-PVT` → `NavEpochMsg`
 
 Epoch association:
-- The epoch grouping and `NavEpochMsg` emission point already exist (nav-epoch.md). Metadata is populated in `flushNavEpoch` before the existing emission call.
+- The epoch grouping and `NavEpochMsg` emission point already exist (multi-prot-nav-epoch.md). Quality metadata is populated in `Dispatch` (inline, like existing accuracy population) or synthesized in `FlushNavEpoch` before the return.
 
 Dimensionality (`FixDim`) from `FixType`:
 
@@ -404,12 +404,16 @@ Correction (`Correction`) disambiguation:
 - If NAV-SIG is unavailable but NAV-SAT is present, use the per-SV correction-used flags as a weaker fallback. NAV-SAT can identify wide-area sources (`NavSatSbasCorrUsed`, `NavSatSlasCorrUsed`, `NavSatSpartnCorrUsed`, `NavSatClasCorrUsed`), but `NavSatRtcmCorrUsed` does not distinguish base-station vs wide-area; if only RTCM is flagged, assert `CorrRTCM` without a style bit.
 
 Accuracy (`Acc`):
-- From **NAV-PVT**: `HAcc` (mm) → `Acc.Hor`, `VAcc` (mm) → `Acc.Vert`, `SAcc` (mm/s) → `Acc.Speed`, `HeadAcc` (1e-5 deg) → `Acc.Course`.
-- From **NAV-POSECEF**: `PAcc` (cm) → `Acc.Pos`.
-- From **NAV-POSLLH**: `HAcc` (mm) → `Acc.Hor`, `VAcc` (mm) → `Acc.Vert`.
-- From **NAV-VELECEF**: `SAcc` (cm/s) → `Acc.Speed`.
-- From **NAV-VELNED**: `SAcc` (cm/s) → `Acc.Speed`, `GSpeed` (cm/s) → `Acc.GroundSpeed`, `CAcc` (1e-5 deg) → `Acc.Course`.
-- When multiple sources provide the same field within an epoch, prefer NAV-PVT (highest resolution: mm/mm/s) over NAV-POSLLH/NAV-VELNED (cm/cm/s).
+
+Already implemented in `ubxpv.go`. Each position/velocity conversion function populates the corresponding accuracy fields on `curNavEpochMsg` inline:
+- `posGeoNavPVT`: `Acc.Hor` (HAcc mm), `Acc.Vert` (VAcc mm)
+- `velGeoNavPVT`: `Acc.Speed` (SAcc mm/s), `Acc.Course` (HeadAcc 1e-5 deg)
+- `posECEFNavPosECEF`: `Acc.Pos` (PAcc cm)
+- `posGeoNavPosLLH`: `Acc.Hor` (HAcc mm), `Acc.Vert` (VAcc mm)
+- `velECEFNavVelECEF`: `Acc.Speed` (SAcc cm/s)
+- `velGeoNavVelNED`: `Acc.Speed` (SAcc cm/s), `Acc.Course` (CAcc 1e-5 deg)
+
+NAV-PVT is preferred when present because it uses mm/mm/s resolution (vs cm/cm/s for NAV-POSLLH/NAV-VELNED). This is handled by the `MsgPriority` mechanism: `velGeoNavPVT` returns `PriVendorHigh` while `velGeoNavVelNED` returns `PriVendorLow`. No new work needed for accuracy.
 
 Other fields:
 - `NumSVUsed`: from `NAV-PVT.NumSV`.
@@ -419,30 +423,32 @@ Other fields:
 
 ### Where this lives in code
 
-`flushNavEpoch` already emits an empty `NavEpochMsg` (nav-epoch.md). To populate it with metadata:
-1. Extend `PacketProcessor` in `gps/internal/ubx/ubx.go` with per-epoch cached pointers for `*ubxbin.NavPVT` and (optionally) `*ubxbin.NavDOP`.
-2. In `Dispatch`, cache those messages when seen (in addition to the existing `TimeMsg`/satellite handling).
-3. In `flushNavEpoch`, synthesize the metadata fields from the cached messages and any accumulated NAV-SAT/NAV-SIG state, populate the `NavEpochMsg`, then clear the cached pointers for the next epoch.
+The epoch infrastructure is already in place (multi-prot-nav-epoch.md):
+- `PacketProcessor` in `gps/internal/ubx/ubx.go` stores `curNavEpochMsg *gpsprot.NavEpochMsg` for the current epoch.
+- `handleNavEpoch` calls `mgr.EpochStarted(p, tRead)` on iTOW change and allocates a fresh `NavEpochMsg`.
+- `FlushNavEpoch` (implementing `EpochFlusher`) returns `curNavEpochMsg` with `Tag=UBX` and `PriVendorLow`.
+- Accuracy fields are already populated inline in the conversion functions (`ubxpv.go`).
 
-This keeps the zero-latency time/position/velocity messages (e.g. `timeNavPVT` in `gps/internal/ubx/ubxtime.go`) separate from the epoch-end metadata synthesis, matching the design goals above.
+The existing conversion functions in `ubxpv.go` receive `ne *gpsprot.NavEpochMsg` (the `curNavEpochMsg`) and populate accuracy fields on it inline. Quality metadata follows the same pattern:
+1. In the existing `case *ubxbin.NavPVT:` in `Dispatch`, populate FixLevel, FixDim, AuxSrc, Correction, NumSVUsed, and DOP.Pos on `curNavEpochMsg` inline (like accuracy). A new function in `ubxpv.go` (e.g. `qualityNavPVT`) receives `ne` and the `NavPVT` and sets the fields.
+2. Add a `case *ubxbin.NavDOP:` in `Dispatch` to populate DOP fields on `curNavEpochMsg` inline.
+3. Correction disambiguation from NAV-SIG/NAV-SAT: as these messages are processed (already in `Dispatch`), accumulate a `CorrKind` bitmask on `curNavEpochMsg` from per-signal/per-SV correction source flags. This enriches the base `CorrUsed` set by NAV-PVT with specific correction style bits (CorrBaseStation, CorrSBAS, CorrRTCM, etc.).
 
 ### Message enablement
 
-When `PVTMsgQuality` is set, the UBX message configuration (`gps/internal/ubx/ubxcfgmsg.go`) enables `UBX-NAV-DOP` (GDOP/HDOP/VDOP/TDOP) and ensures `UBX-NAV-PVT` is enabled (the primary source for fix quality, carrSoln, diffSoln, numSV). NAV-SIG and NAV-SAT are already controlled by `SatsMsgFlags`.
+When `PVTMsgQuality` is set, the UBX message configuration (`gps/internal/ubx/ubxcfgmsg.go`) enables `UBX-NAV-DOP` (GDOP/HDOP/VDOP/TDOP) and ensures `UBX-NAV-PVT` is enabled (the primary source for fix quality, carrSoln, diffSoln, numSV). NAV-SIG and NAV-SAT are already controlled by `SatsMsgFlags`. The cfgval key `KUbxNavDop` already exists in `ubxcfgval/msgkey.go`; it needs to be added to the `msgIDKey` map in `ubxcfgmsg.go`.
 
 ## Unicore
 
-Unicore does not currently emit `NavEpochMsg` (nav-epoch.md only wired up UBX). This plan adds Unicore epoch detection and metadata population together.
+The Unicore processor already emits `NavEpochMsg` with position/velocity accuracy via the `NavEpochManager` epoch mechanism. This plan adds solution quality metadata (FixLevel, FixDim, Correction, DOPs, satellite counts) to the existing epoch.
 
 Unicore receivers expose solution metadata primarily through the BESTNAV message, which includes both position and velocity solution types as explicit enums. Unlike UBX, where fix quality must be inferred from multiple flag bits, Unicore's `pos type` field directly encodes the solution technique (code, carrier float, carrier fixed, PPP variants, INS fusion). This makes the mapping to `NavEpochMsg` straightforward from a single message. DOP values require a separate STADOP message.
 
 ### Inputs
 
-Minimum useful input:
-- **BESTNAV** (`uncmsg.BestNav`): solution status (`p-sol status`), position type (`pos type`), number of SVs tracked (`#SVs`), number of SVs used in solution (`#solnSVs`), extended solution status flags, and signal masks.
-
-Recommended additional input for higher fidelity:
-- **STADOP** (`uncmsg.StaDOP`): GDOP, PDOP, TDOP, HDOP, VDOP, NDOP, EDOP for the BESTNAV solution.
+Quality metadata comes from:
+- **BESTNAV** (`uncmsg.BestNav`): already handled in `dispatch()` for position, velocity, and accuracy. New work: populate FixLevel, FixDim, Correction, AuxSrc, NumSV, NumSolnSV, SignalsUsed from the `pos type`, satellite count, and signal mask fields.
+- **STADOP** (`uncmsg.StaDOP`): not currently handled. New work: add to `dispatch()` and populate DOPs (GDOP, PDOP, TDOP, HDOP, VDOP, NDOP, EDOP).
 
 ### Mapping: BESTNAV `pos type` -> `NavEpochMsg`
 
@@ -489,9 +495,7 @@ Notes:
 
 ### Accuracy
 
-From **BESTNAV**: `lat sigma` (m) and `lon sigma` (m) can be combined into `Acc.Hor` (horizontal accuracy as sqrt(lat_sigma^2 + lon_sigma^2)), `hgt sigma` (m) → `Acc.Vert`, `Horspd std` (m/s) → `Acc.GroundSpeed`, `Verspd std` (m/s) contributes to `Acc.Speed` (3D speed accuracy as sqrt(horspd_std^2 + verspd_std^2)).
-
-From **BESTNAVXYZ**: `P-X/P-Y/P-Z sigma` (m) can be combined into `Acc.Pos` (3D position accuracy as sqrt(sx^2 + sy^2 + sz^2)), `V-X/V-Y/V-Z sigma` (m/s) can be combined into `Acc.Speed`.
+Already populated by `gps/internal/unc/nav.go`: BESTNAV sigmas -> `Acc.Hor`, `Acc.Vert`, `Acc.GroundSpeed`, `Acc.Speed`; BESTNAVXYZ sigmas -> `Acc.Pos`, `Acc.Speed`. No new work needed.
 
 ### Other fields
 
@@ -500,17 +504,232 @@ From **BESTNAVXYZ**: `P-X/P-Y/P-Z sigma` (m) can be combined into `Acc.Pos` (3D 
 - **SignalsUsed**: derive from the BESTNAV signal mask fields (`GPS, GLONASS and BDS2 sig mask` and `Galileo&BDS3 sig mask`).
 - **DOPs**: GDOP, PDOP, TDOP, HDOP, VDOP from STADOP when available.
 
-### Epoch association
-
-BESTNAV includes a GPS reference time in its header (week number and milliseconds into the week). The `PacketProcessor` can use this to group messages into epochs, similar to UBX's `iTOW`-based epoch detection. STADOP also includes a GPS time header. The metadata is emitted when the epoch changes (i.e. when a new BESTNAV arrives with a different time).
-
 ### Where this lives in code
 
-To implement the Unicore mapping in the existing Unicore pipeline:
-1. Extend `PacketProcessor` in `gps/internal/unc/processor.go` to cache the most recent `BestNav` and (optionally) `StaDOP` messages per epoch.
-2. In `dispatch()`, recognize BESTNAV and STADOP message IDs and cache their parsed content.
-3. Add epoch-flush logic (triggered by a new BESTNAV with a different GPS time) that synthesizes a `NavEpochMsg` from the cached messages and emits it via `MsgHandler.NavEpoch`, then clears the cache.
+The Unicore processor (`gps/internal/unc/processor.go`) already has epoch detection and `NavEpochMsg` emission via `NavEpochManager`. The existing conversion functions in `gps/internal/unc/nav.go` receive `ne *gpsprot.NavEpochMsg` (the `curEpochMsg`) and populate accuracy fields on it inline. Quality metadata follows the same pattern:
+1. Extend `bestNavPosVel` in `nav.go` to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, SignalsUsed) on `ne` from the BESTNAV `pos type`, satellite count, and signal mask fields.
+2. Add a `bestNavDOP` function (or similar) in `nav.go` that receives `ne` and populates DOP fields. Wire it from a new `*uncmsg.StaDOP` case in `dispatch()`.
 
 ### Message enablement
 
 When `PVTMsgQuality` is set, the Unicore message configuration (`gps/internal/unc/cfgopts.go`) enables `BESTNAVB 1` (if not already enabled by `PVTMsgPos`) and `STADOPB 1` for DOP values. If `PVTMsgPos` already enables BESTNAV, then `PVTMsgQuality` only needs to add STADOP.
+
+## NovAtel
+
+The NovAtel binary protocol is shared by NovAtel OEM7, ByNav, and SinoGNSS (K8/K9) receivers. All three vendors use identical binary message layouts; the `SolStatus` and `PosType` enum value sets vary by vendor. The `novmsg` package defines the superset of values across all three vendors. All three are handled by a single `PacketProcessor` in `gps/internal/nov/`.
+
+The NovAtel processor already emits `NavEpochMsg` with position/velocity accuracy via the `NavEpochManager` epoch mechanism. This plan adds solution quality metadata (FixLevel, FixDim, Correction, DOPs, satellite counts) to the existing epoch. The primary structural difference from Unicore is that NovAtel uses separate position and velocity messages (BESTPOS + BESTVEL) instead of a combined BESTNAV.
+
+### Inputs
+
+Quality metadata comes from:
+- **BESTPOS** (`novmsg.BestPos`, ID 42): already handled in `dispatch()` for position and accuracy. New work: populate FixLevel, FixDim, Correction, AuxSrc, NumSV, NumSolnSV, SignalsUsed from the `pos type`, satellite count, and signal mask fields.
+- **PSRDOP** (ID 174): not currently handled. New work: add to `dispatch()` and populate DOPs. Provides GDOP, PDOP, HDOP, TDOP. Does not provide VDOP directly; derive as sqrt(PDOP^2 - HDOP^2).
+
+### Mapping: BESTPOS `pos type` -> `NavEpochMsg`
+
+When `SolStatus` is not `SOL_COMPUTED` (0), treat the epoch as "no fix" regardless of `pos type`: set `FixLevel=FixLevelNone` and leave other fields unset.
+
+When `SolStatus` is `SOL_COMPUTED`, map `pos type` as follows:
+
+| pos type | ASCII | AuxSrc | FixLevel | FixDim | Correction |
+|----------|-------|--------|----------|--------|------------|
+| 0 | NONE | 0 | FixLevelNone | 0 | 0 |
+| 1 | FIXEDPOS | 0 | FixLevelNotMeasured | FixDimTimeOnly | 0 |
+| 2 | FIXEDHEIGHT | 0 | FixLevelCode | FixDim2D | 0 |
+| 4 | FLOATCONV | 0 | FixLevelCarrierFloat | FixDim3D | CorrBaseStation |
+| 5 | WIDELANE | 0 | FixLevelCarrierFixed | FixDim3D | CorrPartialDualFreq |
+| 6 | NARROWLANE | 0 | FixLevelCarrierFixed | FixDim3D | CorrFullDualFreq |
+| 8 | DOPPLER_VELOCITY | 0 | 0 | FixDimVelocityOnly | 0 |
+| 16 | SINGLE | 0 | FixLevelCode | FixDim3D | 0 |
+| 17 | PSRDIFF | 0 | FixLevelCodeCorrected | FixDim3D | CorrBaseStation |
+| 18 | WAAS | 0 | FixLevelCodeCorrected | FixDim3D | CorrSBAS |
+| 19 | PROPAGATED | 0 | FixLevelNone | 0 | 0 |
+| 32 | L1_FLOAT | 0 | FixLevelCarrierFloat | FixDim3D | CorrBaseStation |
+| 33 | IONOFREE_FLOAT | 0 | FixLevelCarrierFloat | FixDim3D | CorrFullDualFreq |
+| 34 | NARROW_FLOAT | 0 | FixLevelCarrierFloat | FixDim3D | CorrFullDualFreq |
+| 48 | L1_INT | 0 | FixLevelCarrierFixed | FixDim3D | CorrBaseStation |
+| 49 | WIDE_INT | 0 | FixLevelCarrierFixed | FixDim3D | CorrPartialDualFreq |
+| 50 | NARROW_INT | 0 | FixLevelCarrierFixed | FixDim3D | CorrFullDualFreq |
+| 51 | RTK_DIRECT_INS | AuxSrcINS | FixLevelCarrierFixed | FixDim3D | CorrBaseStation |
+| 52 | INS_SBAS | AuxSrcINS | FixLevelCodeCorrected | FixDim3D | CorrSBAS |
+| 53 | INS_PSRSP | AuxSrcINS | FixLevelCode | FixDim3D | 0 |
+| 54 | INS_PSRDIFF | AuxSrcINS | FixLevelCodeCorrected | FixDim3D | CorrBaseStation |
+| 55 | INS_RTKFLOAT | AuxSrcINS | FixLevelCarrierFloat | FixDim3D | CorrBaseStation |
+| 56 | INS_RTKFIXED | AuxSrcINS | FixLevelCarrierFixed | FixDim3D | CorrBaseStation |
+| 67 | EXT_CONSTRAINED | AuxSrcINS | FixLevelNotMeasured | 0 | 0 |
+| 68 | PPP_CONVERGING | 0 | FixLevelCarrierFloat | FixDim3D | CorrPPPConverging |
+| 69 | PPP | 0 | FixLevelCarrierFloat | FixDim3D | CorrPPPConverged |
+| 70 | OPERATIONAL | 0 | FixLevelCarrierFloat | FixDim3D | CorrPPPConverged |
+| 71 | WARNING | 0 | FixLevelCarrierFloat | FixDim3D | CorrPPPConverged |
+| 72 | OUT_OF_BOUNDS | 0 | FixLevelCarrierFloat | FixDim3D | CorrPPPConverged |
+| 73 | INS_PPP_CONVERGING | AuxSrcINS | FixLevelCarrierFloat | FixDim3D | CorrPPPConverging |
+| 74 | INS_PPP | AuxSrcINS | FixLevelCarrierFloat | FixDim3D | CorrPPPConverged |
+| 77 | PPP_BASIC_CONVERGING | 0 | FixLevelCarrierFloat | FixDim3D | CorrPPPConverging |
+| 78 | PPP_BASIC | 0 | FixLevelCarrierFloat | FixDim3D | CorrPPPConverged |
+| 79 | INS_PPP_BASIC_CONVERGING | AuxSrcINS | FixLevelCarrierFloat | FixDim3D | CorrPPPConverging |
+| 80 | INS_PPP_BASIC | AuxSrcINS | FixLevelCarrierFloat | FixDim3D | CorrPPPConverged |
+
+Notes:
+
+- **Values shared with Unicore**: Types 0-2, 8, 16-17, 32-34, 48-50, 53-56, 68-69 share the same binary values and semantically equivalent meanings. The mappings match the Unicore table. NovAtel calls value 18 WAAS (Unicore calls it SBAS); both mean SBAS corrections. Value 33 (IONOFREE_FLOAT) is supported by ByNav but reserved in OEM7.
+- **FLOATCONV (4)**: ByNav-specific. Floating carrier-phase ambiguity solution that has not yet converged.
+- **WIDELANE (5), NARROWLANE (6)**: Legacy NovAtel/ByNav types corresponding to WIDE_INT (49) and NARROW_INT (50) respectively. WIDELANE resolves wide-lane ambiguities to integers; NARROWLANE resolves narrow-lane ambiguities.
+- **PROPAGATED (19)**: Position propagated by the Kalman filter without new GNSS observations. No current measurement, so FixLevel is FixLevelNone.
+- **RTK_DIRECT_INS (51)**: NovAtel SPAN product. RTK filter initialized directly from INS filter.
+- **INS_SBAS (52)**: Differs from Unicore's INS (52), which is pure inertial with no GNSS contribution. NovAtel's INS_SBAS indicates an INS solution with the last GNSS update being SBAS-corrected.
+- **EXT_CONSTRAINED (67)**: Position provided by an external source to the INS filter. No GNSS measurement is involved.
+- **OPERATIONAL (70), WARNING (71), OUT_OF_BOUNDS (72)**: NovAtel User Accuracy Limitation (UAL) monitoring states for PPP solutions. These indicate whether the PPP solution's estimated accuracy is within user-configured thresholds. The underlying solution technique is still PPP, so all three map to CorrPPPConverged; accuracy degradation is reflected in the Accuracy fields. Note: these values have completely different meanings from Unicore's PPP_AR (70) and PPP_RTK (71).
+- **PPP_BASIC variants (77-78, 79-80)**: TerraStar-L service. TerraStar-L provides sub-meter PPP with basic SSR corrections. The receiver still uses carrier-phase measurements in the PPP filter but without the corrections needed for integer ambiguity resolution, so FixLevel is FixLevelCarrierFloat.
+- **INS fusion variants** (51-56, 67, 73-74, 79-80): All INS-related types set AuxSrcINS. The GNSS quality component follows the same pattern as the non-INS counterpart.
+
+### SinoGNSS differences
+
+SinoGNSS K8/K9 uses a reduced `PosType` set (no INS types, no PPP_BASIC, no UAL monitoring) and has three values that differ from NovAtel/ByNav. The variant mechanism in `novatel-variants.md` handles this: SinoGNSS uses `SinoPosType` with its own enum values, so the quality mapping operates on the correct vendor-specific types.
+
+The SinoGNSS-specific `pos type` values and their mappings:
+
+- **SINGLE_SMOOTH (9)**: Carrier-smoothed single-point solution. FixLevelCode + FixDim3D (carrier smoothing improves code precision but does not change the fundamental solution technique).
+- **FIX_DERIVATION (35)**: Derived/propagated solution. FixLevelCarrierFloat + FixDim3D + CorrBaseStation (a degraded RTK solution).
+- **SUPER_WIDE_LANE (51)**: Super wide-lane carrier-fixed solution. FixLevelCarrierFixed + FixDim3D + CorrPartialDualFreq. This value is RTK_DIRECT_INS in NovAtel/ByNav; the variant mechanism ensures the correct type is used for each vendor.
+
+### Accuracy
+
+Already populated by `gps/internal/nov/nav.go`: BESTPOS sigmas -> `Acc.Hor`, `Acc.Vert`; BESTXYZ sigmas -> `Acc.Pos`, `Acc.Speed`. No new work needed.
+
+### Other fields
+
+- **NumSV**: `#SVs` (satellites tracked) from BESTPOS.
+- **NumSolnSV**: `#solnSVs` (satellites in solution) from BESTPOS.
+- **SignalsUsed**: derive from the BESTPOS signal mask fields (`GPSGLOBDS2Sig` and `GalBDS3Sig`).
+- **DOPs**: GDOP, PDOP, HDOP, TDOP from PSRDOP when available. VDOP is not provided by PSRDOP; derive as sqrt(PDOP^2 - HDOP^2).
+
+### Where this lives in code
+
+The NovAtel processor (`gps/internal/nov/processor.go`) already has epoch detection and `NavEpochMsg` emission via `NavEpochManager`. The existing conversion functions in `gps/internal/nov/nav.go` receive `ne *gpsprot.NavEpochMsg` (the `curEpochMsg`) and populate accuracy fields on it inline. Quality metadata follows the same pattern:
+1. Extend the BESTPOS handling path: the `PosGeo` function in `nav.go` already receives `ne`; add a companion function (or extend `PosGeo`) to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, SignalsUsed) on `ne` from the BESTPOS `pos type`, `sol status`, satellite count, and signal mask fields.
+2. Add a PSRDOP handling function in `nav.go` that receives `ne` and populates DOP fields. Wire it from a new `*novmsg.PsrDOP` case in `dispatch()`.
+
+### Message enablement
+
+NovAtel-format receivers use `LOG` commands for message enablement, configured via message files (e.g. `configs/gpsmsg/sinognss.toml`). The relevant tags are `nov-bestposb` (already defined for position) and `nov-psrdopb` (to be added for DOPs). No programmatic configuration like UBX or Unicore is needed.
+
+## Allystar
+
+The Allystar processor already emits `NavEpochMsg` with position/velocity accuracy via the `NavEpochManager` epoch mechanism. This plan adds solution quality metadata (FixLevel, FixDim, DOPs, satellite counts) to the existing epoch. Allystar's protocol is simpler than the others: its primary quality source (NAV-PVT) provides fix dimensionality and dead reckoning status but does not distinguish correction levels (DGNSS, RTK float, RTK fixed). The Allystar protocol does not use programmatic configuration; message enablement is handled via message files (`configs/gpsmsg/allystar.toml`).
+
+### Inputs
+
+Quality metadata comes from:
+- **NAV-PVT** (`asbin.NavPvt`, to be added, ID 0x01 0xC1): fix type (`fixType`), `numSV`, `pDop`, position/velocity accuracy estimates, and position/velocity/time data. This is the primary quality source. Not currently parsed.
+- **NAV-DOP** (`asbin.NavDop`, ID 0x01 0x04): GDOP/PDOP/TDOP/VDOP/HDOP/NDOP/EDOP (all scaled by 0.01). Already defined in `asbin` but not currently dispatched.
+
+### Mapping: NAV-PVT `fixType` -> `NavEpochMsg`
+
+NAV-PVT's `fixType` provides dimensionality and dead reckoning status but no correction or carrier-phase information. Unlike UBX NAV-PVT, Allystar NAV-PVT has no `flags` field with `gnssFixOK`, `diffSoln`, or `carrSoln` bits -- the two reserved bytes (offsets 21-22) are undocumented. There is also no per-signal or per-satellite correction source message in the Allystar binary protocol.
+
+| fixType | Meaning | AuxSrc | FixLevel | FixDim |
+|---------|---------|--------|----------|--------|
+| 0 | no fix | 0 | FixLevelNone | 0 |
+| 1 | dead reckoning only | AuxSrcDR | FixLevelNone | 0 |
+| 2 | 2D-fix | 0 | FixLevelCode | FixDim2D |
+| 3 | 3D-fix | 0 | FixLevelCode | FixDim3D |
+| 4 | GNSS + dead reckoning | AuxSrcDR | FixLevelCode | FixDim3D |
+| 5 | time only fix | 0 | FixLevelCode | FixDimTimeOnly |
+
+Notes:
+- **No Correction information**: Allystar NAV-PVT cannot distinguish standalone from corrected solutions. `Correction` is always left unset. NMEA GGA/RMC (when enabled alongside binary) can provide correction-level information via the NMEA synthesis path.
+- **FixLevel is always FixLevelCode** for any GNSS-based fix. Without differential/carrier flags, we cannot claim a higher fix level from this message alone.
+- **fixType 4 (GNSS + DR)**: Assumed 3D since the GNSS component contributes to the position solution.
+
+### Accuracy
+
+NAV-PVT provides accuracy fields with mm/mm/s resolution (same as UBX NAV-PVT):
+- `hAcc` (offset 40, U4 mm) -> `Acc.Hor`
+- `vAcc` (offset 44, U4 mm) -> `Acc.Vert`
+- `sAcc` (offset 68, U4) -> `Acc.Speed` (units undocumented in 2.3.6 spec; assumed mm/s by analogy with NAV-VELNED which uses cm/s -- needs verification)
+- `headAcc` (offset 72, U4 1e-5 deg) -> `Acc.Course`
+
+The existing separate messages (NAV-POSLLH, NAV-POSECEF, NAV-VELNED, NAV-VELECEF) already populate accuracy fields on `curNavEpochMsg`. NAV-PVT provides the same data at the same or better resolution. Since NAV-PVT bundles position, velocity, and quality in a single message, it should use `PriVendorHigh` so its accuracy values take precedence when both NAV-PVT and the separate messages are enabled.
+
+### Other fields
+
+- **NumSVUsed**: from `NAV-PVT.numSV` (offset 23).
+- **NumSVTracked**: not available from NAV-PVT. Could potentially be derived from NAV-SVINFO `numCh` if enabled, but that is already handled via `SatellitesMsg` and would require additional plumbing.
+- **DOP.Pos**: from `NAV-PVT.pDop` (offset 76, U2, scale 0.01) or from `NAV-DOP.PDOP` (preferred when present for consistency with the other DOPs).
+- **DOP.Geom/Hor/Vert/Time**: from NAV-DOP (scale 0.01) when available.
+- **SignalsUsed**: not available from Allystar binary messages. No signal mask fields exist.
+
+### Where this lives in code
+
+The epoch infrastructure is already in place:
+- `PacketProcessor` in `gps/internal/as/asproc.go` stores `curNavEpochMsg *gpsprot.NavEpochMsg` for the current epoch.
+- `handleNavEpoch` calls `mgr.EpochStarted(p, tRead)` on iTOW change and allocates a fresh `NavEpochMsg`.
+- `FlushNavEpoch` (implementing `EpochFlusher`) returns `curNavEpochMsg` with `Tag=ASBIN` and `PriVendorLow`.
+- Accuracy fields are already populated inline in the conversion functions (`aspv.go`).
+
+The changes needed:
+1. Add `NavPvt` struct to `gps/lib/asbin/nav.go` (88-byte payload with iTOW, time, fixType, numSV, position, velocity, accuracy, pDop fields). Register it in `init()` and move its ID from `other.go` to `nav.go`.
+2. Add a `case *asbin.NavPvt:` in `dispatch()` that:
+   - Emits position (`PosGeoMsg`), velocity (`VelGeoMsg`), and time (`TimeMsg`) with `PriVendorHigh`.
+   - Populates quality fields (FixLevel, FixDim, AuxSrc, NumSVUsed, DOP.Pos) on `curNavEpochMsg` inline via a new function (e.g. `qualityNavPvt`) in `aspv.go`.
+   - Populates accuracy fields (Acc.Hor, Acc.Vert, Acc.Speed, Acc.Course) on `curNavEpochMsg`.
+3. Add a `case *asbin.NavDop:` in `dispatch()` to populate DOP fields on `curNavEpochMsg` inline. `NavDop` is already defined in `asbin/nav.go` but not dispatched.
+
+### Message enablement
+
+Allystar does not use programmatic configuration. Message enablement is via message files (`configs/gpsmsg/allystar.toml`). Tags `asbin-nav-dop` (already defined) enable NAV-DOP. A new tag `asbin-nav-pvt` would enable NAV-PVT at 1Hz (class 0x01, id 0xC1, rate 1).
+
+### Future enhancement: NAV-AUTO
+
+Allystar's NAV-AUTO message (0x01 0xC0, 32 bytes) provides a richer `fixstate` field that distinguishes DGNSS (5), RTK float (6), and RTK fixed (7) -- information that NAV-PVT's `fixType` cannot provide. It also includes satInView (tracked satellite count) and inline DOPs (PDOP/HDOP/VDOP). However, NAV-AUTO has no iTOW field, which makes it difficult to associate with the existing epoch mechanism. It is also described as being for "automotive application" and may not be supported on all Allystar receivers. A future enhancement could use NAV-AUTO when available to enrich FixLevel and Correction beyond what NAV-PVT provides, but this requires solving the epoch association problem (e.g. by associating with the most recent epoch based on arrival time).
+
+## Phasing
+
+### Phase 1: type definitions
+
+Add the new types to `gps/gpsprot/`:
+- `FixLevel`, `FixDim`, `CorrKind`, `AuxSrc` types and constants (in a new file, e.g. `quality.go`)
+- `DOP` struct
+- `PVTMsgQuality` flag in `PVTMsgFlags`
+- Extend `NavEpochMsg` with the new fields (`FixLevel`, `FixDim`, `Correction`, `AuxSrc`, `DOP`, `NumSVUsed`, `NumSVTracked`, `SignalsUsed`)
+- Extend `MergeNavEpoch` to merge the new fields
+
+No protocol changes; all existing tests continue to pass unchanged.
+
+### Phase 2: per-protocol implementation
+
+Each subphase is independent and can proceed in parallel.
+
+#### Phase 2a: NMEA
+
+- Extend `parseGGA` to extract quality indicator (field 5) and HDOP (field 7).
+- Extend `parseGSA` to extract fix type (field 1) and DOPs (fields 14-16).
+- Extend `parseRMC` to extract mode indicator (field 11).
+- Accumulate metadata on `NavEpoch.NavEpochMsg` using the merge/synthesis rules in the NMEA section.
+
+#### Phase 2b: UBX
+
+- In existing `case *ubxbin.NavPVT:`, populate quality fields on `curNavEpochMsg` inline.
+- Add `case *ubxbin.NavDOP:` to populate DOP fields on `curNavEpochMsg` inline.
+- Accumulate `CorrKind` from NAV-SIG/NAV-SAT correction sources as they are processed.
+- Add `PVTMsgQuality` handling to `ubxcfgmsg.go` (enable NAV-DOP, ensure NAV-PVT).
+
+#### Phase 2c: Unicore
+
+- Extend `bestNavPosVel` to populate quality fields on `ne` from BESTNAV `pos type`.
+- Add STADOP parsing (`uncmsg.StaDOP`) and DOP population.
+- Add `PVTMsgQuality` handling to `cfgopts.go`.
+
+#### Phase 2d: NovAtel
+
+- Extend BESTPOS handling path to populate quality fields on `ne` from `pos type` and `sol status`.
+- Add PSRDOP parsing (`novmsg.PsrDOP`) and DOP population.
+- Add `nov-psrdopb` tag to message files.
+
+#### Phase 2e: Allystar
+
+- Add `NavPvt` struct to `asbin/nav.go` and register it.
+- Add `case *asbin.NavPvt:` to `dispatch()` for position, velocity, time, and quality fields.
+- Add `case *asbin.NavDop:` to `dispatch()` for DOP fields.
+- Add `asbin-nav-pvt` tag to `configs/gpsmsg/allystar.toml`.
