@@ -534,8 +534,8 @@ description = "Set NMEA version to 4.00"
 text = "SET NMEAV41 OFF"
 
 # PPP (Precise Point Positioning)
-# Commands accepted on K902 fw 8.2.4 but PPP does not appear to work:
-# solution stays SINGLE with no corrections received.
+# Works on K902 fw 8.2.4 but requires gnss-all (not just gnss-bds).
+# Convergence takes about an hour. Achieved ~20cm horizontal, ~1cm vertical.
 
 [[line]]
 tag = "ppp-has"
@@ -574,6 +574,17 @@ text = "SET PPPFREQ 1"
 tag = "ppp-off"
 description = "Disable PPP"
 text = "SET PPP OFF"
+
+# Raw Observations
+
+[[line]]
+tag = "nov-rangecmpb"
+description = "Enable RANGECMP binary every 30s"
+text = "log rangecmpb ontime 30"
+[[line]]
+tag = "nov-rangecmpb-off"
+description = "Disable RANGECMP binary"
+text = "unlog rangecmpb"
 
 # PPS Configuration
 
