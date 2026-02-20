@@ -643,10 +643,14 @@ func TestNavEpochManagerEndOfEpochMultiple(t *testing.T) {
 	mgr.EpochStarted(f2, t0)
 	f1.msg = &NavEpochMsg{Tag: "UBX"}
 	f2.msg = &NavEpochMsg{Tag: "NMEA"}
-	// EndOfEpoch with multiple active: no-op
+	// EndOfEpoch with multiple active: flushes all processors
 	mgr.EndOfEpoch(t0)
-	if len(rec.epochs) != 0 {
-		t.Fatalf("EndOfEpoch with multiple active should be no-op, got %d epochs", len(rec.epochs))
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after EndOfEpoch, got %d", len(rec.epochs))
+	}
+	// UBX (PriVendorLow=3) wins over NMEA (PriGenericHigh=2) for Tag
+	if rec.epochs[0].Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", rec.epochs[0].Tag)
 	}
 }
 

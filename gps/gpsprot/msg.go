@@ -727,12 +727,11 @@ func (m *NavEpochManager) EpochStarted(f EpochFlusher, tRead time.Time) {
 }
 
 // EndOfEpoch is called by a processor that received an explicit end-of-epoch
-// signal. If exactly one processor is active, it flushes immediately.
-// Otherwise it is a no-op (the flush will happen on the next EpochStarted).
+// signal (e.g. UBX NAV-EOE, Quectel PQTMEOE). These messages mark the end
+// of the epoch for all protocols on the receiver, so all active processors
+// are flushed unconditionally.
 func (m *NavEpochManager) EndOfEpoch(tRead time.Time) {
-	if len(m.active) == 1 {
-		m.flush(tRead)
-	}
+	m.flush(tRead)
 }
 
 func (m *NavEpochManager) flush(tRead time.Time) {
