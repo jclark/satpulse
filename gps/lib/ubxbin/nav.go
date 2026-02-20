@@ -16,6 +16,7 @@ const (
 	NavTimeGLOID     MsgID = clsNav | (0x23 << 8)
 	NavTimeGalID     MsgID = clsNav | (0x25 << 8)
 	NavTimeLSID      MsgID = clsNav | (0x26 << 8)
+	NavEOEID         MsgID = clsNav | (0x61 << 8)
 	NavTimeTrustedID MsgID = clsNav | (0x64 << 8)
 	NavVelECEFID     MsgID = clsNav | (0x11 << 8)
 	NavVelNEDID      MsgID = clsNav | (0x12 << 8)
@@ -34,6 +35,13 @@ type NavITOW struct {
 func (m *NavITOW) NavEpoch() uint32 {
 	return m.ITOW
 }
+
+// NavEOE is the end-of-epoch marker output after all NAV and NMEA messages.
+type NavEOE struct {
+	NavITOW
+}
+
+func (m *NavEOE) ID() MsgID { return NavEOEID }
 
 type NavClock struct {
 	NavITOW
@@ -788,6 +796,7 @@ func (m *NavSvin) IsHandled() bool {
 }
 
 func init() {
+	regMsg[NavEOE]("EOE")
 	regMsg[NavClock]("CLOCK")
 	regMsg[NavDOP]("DOP")
 	regMsg[NavPosECEF]("POSECEF")
