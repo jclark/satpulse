@@ -27,7 +27,9 @@ export const PVTMsgSurvey         = 1 << 5
 export const PVTMsgTAI            = 1 << 6
 export const PVTMsgECEF           = 1 << 7
 export const PVTMsgTimePulseAfter = 1 << 8
-export const PVTMsgOff            = 1 << 9
+export const PVTMsgQuality        = 1 << 9
+export const PVTMsgEpoch          = 1 << 10
+export const PVTMsgOff            = 1 << 11
 
 // Sats
 export const SatsMsgSat    = 1 << 0

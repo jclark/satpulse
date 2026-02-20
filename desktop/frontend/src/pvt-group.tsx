@@ -2,7 +2,7 @@ import {h} from 'preact';
 import {
     PVTMsgPos, PVTMsgVel, PVTMsgTime, PVTMsgTimePulse,
     PVTMsgLeapSecond, PVTMsgTAI, PVTMsgECEF,
-    PVTMsgTimePulseAfter, PVTMsgOff,
+    PVTMsgTimePulseAfter, PVTMsgQuality, PVTMsgEpoch, PVTMsgOff,
 } from './msg-flags';
 
 interface Props {
@@ -84,6 +84,12 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
                         onChange={v => toggle(PVTMsgECEF, v)} />
                     <Checkbox label="Velocity" checked={has(PVTMsgVel)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgVel, v)} />
+                    <div />
+                    <Checkbox label="Solution quality" checked={has(PVTMsgQuality)} disabled={childDisabled}
+                        onChange={v => toggle(PVTMsgQuality, v)} />
+                    <div />
+                    <Checkbox label="End of navigation epoch" checked={has(PVTMsgEpoch)} disabled={childDisabled}
+                        onChange={v => toggle(PVTMsgEpoch, v)} />
                     <div />
                 </div>
             </div>
