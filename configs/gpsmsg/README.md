@@ -37,6 +37,9 @@ This can help with seeing whether your receiver is handling the commands correct
 | [lg290p.toml](lg290p.toml) | Quectel LG290P | NMEA (PQTM) |
 | [atgm332d-v6.toml](atgm332d-v6.toml) | Zhongke Micro ATGM332D/ATGM336H firmware V6.x | CASIC binary |
 | [ubx.toml](ubx.toml) | u-blox (e.g. ZED-F9P) | UBX binary, NMEA (PUBX) |
+| [sinognss.toml](sinognss.toml) | SinoGNSS K901/K902 | NovAtel-style commands |
+| [bynav.toml](bynav.toml) | Bynav M2 | NovAtel-style commands |
+| [um980.toml](um980.toml) | Unicore UM980 | Unicore commands |
 
 ## Configuring for satpulsed
 
