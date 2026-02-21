@@ -9,6 +9,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 	"github.com/jclark/satpulse/gps/ptime"
 )
@@ -40,7 +41,7 @@ func (h *Handler) HandleSentence(
 	switch m := msg.(type) {
 	case *qtmmsg.PVT:
 		epoch = nmea.CheckEpoch(epoch, m.Time)
-		b := msgBundlePVT(m)
+		b := msgBundlePVT(m, epoch)
 		b.SetPriority(gpsprot.PriVendorLow)
 		return b, epoch, nil
 	case *qtmmsg.NAV:
@@ -60,6 +61,10 @@ func (h *Handler) HandleSentence(
 	case *qtmmsg.SVINStatus:
 		epoch = nmea.CheckEpoch(epoch, "")
 		return msgBundleSVIN(m), epoch, nil
+	case *qtmmsg.DOP:
+		epoch = nmea.CheckEpoch(epoch, "")
+		dopQuality(m, epoch)
+		return &gpsprot.MsgBundle{}, epoch, nil
 	case *qtmmsg.EOE:
 		return &gpsprot.MsgBundle{}, nil, nil
 	default:
@@ -67,7 +72,7 @@ func (h *Handler) HandleSentence(
 	}
 }
 
-func msgBundlePVT(m *qtmmsg.PVT) *gpsprot.MsgBundle {
+func msgBundlePVT(m *qtmmsg.PVT, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 	b := &gpsprot.MsgBundle{}
 	if m.FixType >= 2 {
 		if utc, ok := parseDateTime(m.Date, m.Time); ok {
@@ -116,6 +121,27 @@ func msgBundlePVT(m *qtmmsg.PVT) *gpsprot.MsgBundle {
 			vel.Course.Set(gpsprot.DegreesFromFloat(m.Heading.Get()))
 		}
 		b.VelGeo = vel
+	}
+	// PVT quality is weaker than NAV (no correction info). Only
+	// populate when NAV hasn't already set quality for this epoch.
+	if epoch.FixLevel == 0 {
+		switch m.FixType {
+		case 0:
+			epoch.FixLevel = gpsprot.FixLevelNone
+		case 2:
+			epoch.FixLevel = gpsprot.FixLevelCode
+			epoch.FixDim = gpsprot.FixDim2D
+		case 3:
+			epoch.FixLevel = gpsprot.FixLevelCode
+			epoch.FixDim = gpsprot.FixDim3D
+		}
+	}
+	epoch.NumSVUsed = opt.Make(uint16(m.NumSV))
+	if m.HDOP.IsSet() {
+		epoch.DOP.Hor = opt.Make(m.HDOP.Get())
+	}
+	if m.PDOP.IsSet() {
+		epoch.DOP.Pos = opt.Make(m.PDOP.Get())
 	}
 	return b
 }
@@ -176,6 +202,21 @@ func msgBundleNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 	if m.HVelStd.IsSet() {
 		epoch.Acc.GroundSpeed.Set(gpsprot.MetersPerSecondFromFloat(m.HVelStd.Get()))
 	}
+	if m.SolType.IsSet() {
+		if fl, fd, corr, ok := navSolQuality(m.SolType.Get()); ok {
+			epoch.FixLevel = fl
+			epoch.FixDim = fd
+			epoch.Correction = corr
+		}
+	}
+	epoch.NumSVUsed = opt.Make(uint16(m.SatUsed))
+	epoch.NumSVTracked = opt.Make(uint16(m.SatView))
+	if m.DiffAge.IsSet() {
+		epoch.DiffAge = opt.Make(ptime.Seconds(m.DiffAge.Get()))
+	}
+	if m.DiffID.IsSet() && m.DiffID.Get() <= 4095 {
+		epoch.RTCMRefBaseID = opt.Make(m.DiffID.Get())
+	}
 	return b
 }
 
@@ -223,6 +264,50 @@ func accEPE(m *qtmmsg.EPE, epoch *nmea.NavEpoch) {
 	}
 	if m.EPEDown.IsSet() {
 		epoch.Acc.Vert.Set(gpsprot.Meters(m.EPEDown.Get()))
+	}
+}
+
+// navSolQuality maps PQTMNAV SolType to NavEpochMsg quality fields.
+// Returns false for unrecognized SolType values so the caller can
+// preserve existing epoch state rather than zeroing it.
+func navSolQuality(solType uint8) (gpsprot.FixLevel, gpsprot.FixDim, gpsprot.CorrKind, bool) {
+	switch solType {
+	case 0:
+		return gpsprot.FixLevelNone, 0, 0, true
+	case 1:
+		return gpsprot.FixLevelCode, gpsprot.FixDim3D, 0, true
+	case 2:
+		return gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D,
+			gpsprot.CorrSBAS | gpsprot.CorrWideArea | gpsprot.CorrUsed, true
+	case 5:
+		return gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D,
+			gpsprot.CorrBaseStation | gpsprot.CorrUsed, true
+	case 8:
+		return gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D,
+			gpsprot.CorrBaseStation | gpsprot.CorrUsed, true
+	case 12:
+		return gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D,
+			gpsprot.CorrBaseStation | gpsprot.CorrUsed, true
+	default:
+		return 0, 0, 0, false
+	}
+}
+
+func dopQuality(m *qtmmsg.DOP, epoch *nmea.NavEpoch) {
+	if m.GDOP.IsSet() {
+		epoch.DOP.Geom = opt.Make(m.GDOP.Get())
+	}
+	if m.PDOP.IsSet() {
+		epoch.DOP.Pos = opt.Make(m.PDOP.Get())
+	}
+	if m.TDOP.IsSet() {
+		epoch.DOP.Time = opt.Make(m.TDOP.Get())
+	}
+	if m.VDOP.IsSet() {
+		epoch.DOP.Vert = opt.Make(m.VDOP.Get())
+	}
+	if m.HDOP.IsSet() {
+		epoch.DOP.Hor = opt.Make(m.HDOP.Get())
 	}
 }
 

@@ -260,7 +260,7 @@ A single `quality` flag enables all messages needed to populate every field in `
 
 NMEA already emits `NavEpochMsg` via the `NavEpochManager` (implemented as part of multi-prot-nav-epoch.md). The NMEA `PacketProcessor` detects epoch boundaries via time-of-day changes in RMC/GGA/VTG/ZDA and calls `mgr.EpochStarted`; extension handlers can also signal `EndOfEpoch`. The `FlushNavEpoch` method returns the accumulated `NavEpochMsg` with `PriGenericHigh`. This plan adds solution quality metadata population to the existing epoch handling.
 
-The NMEA sentences currently handled by the `nmea` package are RMC, VTG, ZDA, GSV, GSA, and GGA. Of these, GGA and GSA carry solution metadata. GGA is not currently parsed for metadata (only `numSV` is extracted). GSA currently extracts only used SVIDs and GNSS; it ignores the fix mode and DOP fields.
+The NMEA sentences currently handled by the `nmea` package are RMC, VTG, ZDA, GSV, GSA, and GGA. Of these, GGA and GSA carry solution metadata. GGA currently extracts the quality indicator only for the "no fix" check (field 5 = "0") and position/height; it does not extract numSV, HDOP, DiffAge, or RefStationID. GSA currently extracts only used SVIDs and GNSS; it ignores the fix mode and DOP fields.
 
 The relevant sentences and their fields are:
 
@@ -358,11 +358,83 @@ Merge rules:
 
 The changes needed are:
 
-1. Extend `parseGGA` to extract quality indicator (field 5), HDOP (field 7), differential age (field 13), and reference station ID (field 14) in addition to numSV.
-2. Extend `parseGSA` to extract fix type (field 1) and DOPs (fields 14-16).
-3. Extend `parseRMC` to extract mode indicator (field 11).
+1. Extend `parseGGA` to extract quality indicator (field 5), HDOP (field 7), differential age (field 13), and reference station ID (field 14) in addition to numSV. `parseGGA` already receives `*NavEpoch`; populate quality fields directly on the epoch.
+2. Extend `parseGSA` to extract fix type (field 1) and DOPs (fields 14-16). Currently `parseGSA` returns a `gsaSentence` (SVIDs only) and does not have access to `NavEpoch`. The `satellitesBuffer.gsaProcess` method needs a `*NavEpoch` parameter so that DOP and FixDim values can be written to the epoch as each GSA sentence arrives. Multiple GSA sentences may arrive per epoch (one per constellation); the DOP and FixDim values are per-solution (not per-constellation) and should be identical, so overwriting is safe.
+3. Extend `parseRMC` to extract mode indicator (field 11). `parseRMC` already receives `*NavEpoch`; populate quality fields on the epoch.
 4. Accumulate the extracted metadata fields on the existing `NavEpoch` struct (which is stored in `curNavEpoch` and already tracks epoch identity via time-of-day changes). The epoch detection and flush mechanism is already in place via `handleEpoch`/`NavEpochManager`; no new `navEpochBuffer` is needed. GSA has no time of day but arrives in the same epoch as the preceding GGA/RMC.
 5. On epoch flush (via `FlushNavEpoch`), the accumulated metadata fields from `curNavEpoch.NavEpochMsg` are returned with `PriGenericHigh`. The merge rules above determine how GGA, RMC, and GSA metadata are combined within the `NavEpoch` as each sentence is parsed.
+
+## Quectel PQTM
+
+The Quectel LG290P uses proprietary PQTM periodic messages that are processed as NMEA extension sentences via the `ExtSentenceHandler` interface (`gps/internal/quectel/handler.go`). The handler already emits position, velocity, time, and accuracy from PQTMNAV, PQTMPVT, PQTMVEL, and PQTMEPE. This plan adds solution quality metadata population from PQTMNAV, PQTMPVT, and PQTMDOP.
+
+Since the Quectel handler writes directly to the NMEA `NavEpoch` (which embeds `NavEpochMsg`), quality fields are populated inline as each message is processed, following the same pattern as the existing accuracy population.
+
+### Inputs
+
+Quality metadata comes from:
+- **PQTMNAV** (`qtmmsg.NAV`): the primary quality source. Provides `SolType`, `SatUsed`, `SatView`, `DiffAge`, `DiffID`, plus position/velocity standard deviations (already used for accuracy). Priority `PriVendorLow`.
+- **PQTMPVT** (`qtmmsg.PVT`): provides `FixType`, `NumSV`, `HDOP`, `PDOP`. Less detailed than NAV (no correction info, no DiffAge). Same priority `PriVendorLow`.
+- **PQTMDOP** (`qtmmsg.DOP`): provides GDOP, PDOP, TDOP, VDOP, HDOP. Already parsed by `qtmmsg` but not dispatched to `NavEpochMsg`.
+
+### Mapping: PQTMNAV `SolType` -> `NavEpochMsg`
+
+| SolType | Description | FixLevel | FixDim | Correction |
+|---------|-------------|----------|--------|------------|
+| 0 | Not fixed | FixLevelNone | 0 | 0 |
+| 1 | Single | FixLevelCode | FixDim3D | 0 |
+| 2 | SBAS | FixLevelCodeCorrected | FixDim3D | CorrSBAS |
+| 5 | Pseudorange differential | FixLevelCodeCorrected | FixDim3D | CorrBaseStation |
+| 8 | RTK float | FixLevelCarrierFloat | FixDim3D | CorrBaseStation |
+| 12 | RTK fixed | FixLevelCarrierFixed | FixDim3D | CorrBaseStation |
+
+Notes:
+- All GNSS-based fix types are 3D; the LG290P does not report 2D fixes via PQTMNAV.
+- SolType 2 (SBAS) asserts `CorrSBAS` (which implies `CorrWideArea | CorrUsed` via the partial order).
+- SolType 5 (pseudorange differential) asserts `CorrBaseStation | CorrUsed`.
+- SolType 8 and 12 (RTK float/fixed) assert `CorrBaseStation | CorrUsed`.
+
+Other fields from PQTMNAV:
+- `SatUsed` -> `NumSVUsed`
+- `SatView` -> `NumSVTracked`
+- `DiffAge` -> `DiffAge` (convert float64 seconds to `time.Duration`)
+- `DiffID` -> `RTCMRefBaseID` (only if <= 4095)
+
+### Mapping: PQTMPVT `FixType` -> `NavEpochMsg`
+
+| FixType | Description | FixLevel | FixDim |
+|---------|-------------|----------|--------|
+| 0 | No fix | FixLevelNone | 0 |
+| 2 | 2D fix | FixLevelCode | FixDim2D |
+| 3 | 3D fix | FixLevelCode | FixDim3D |
+
+PQTMPVT cannot distinguish correction levels (no SolType field), so `Correction` is always left unset. When both PQTMNAV and PQTMPVT are enabled, PQTMNAV provides the authoritative quality information. Since both use `PriVendorLow`, whichever writes to the epoch fields last wins within the epoch; typically PQTMNAV arrives after PQTMPVT, but to be safe, PQTMNAV should only overwrite fields unconditionally (not conditionally on "is set").
+
+Other fields from PQTMPVT:
+- `NumSV` -> `NumSVUsed`
+- `HDOP` -> `DOP.Hor`
+- `PDOP` -> `DOP.Pos`
+
+### Mapping: PQTMDOP -> `NavEpochMsg`
+
+| DOP field | Maps to |
+|-----------|---------|
+| GDOP | DOP.Geom |
+| PDOP | DOP.Pos |
+| TDOP | DOP.Time |
+| VDOP | DOP.Vert |
+| HDOP | DOP.Hor |
+
+### Where this lives in code
+
+All changes are in `gps/internal/quectel/handler.go`:
+1. Extend `msgBundleNAV` to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, DiffAge, RTCMRefBaseID) on the epoch from PQTMNAV `SolType` and related fields. A helper function (e.g. `qualityNAV`) maps `SolType` to the quality fields.
+2. Extend `msgBundlePVT` to populate quality fields (FixLevel, FixDim, NumSVUsed, DOP.Hor, DOP.Pos) on the epoch from PQTMPVT `FixType`, `NumSV`, `HDOP`, `PDOP`. This requires adding the epoch parameter to `msgBundlePVT`.
+3. Add a `case *qtmmsg.DOP:` in `HandleSentence` that populates DOP fields on the epoch.
+
+### Message enablement
+
+PQTM message enablement is via message files (`configs/gpsmsg/lg290p.toml`). The tags `pqtm-dop` (already defined) enable PQTMDOP. PQTMNAV is already used for position/velocity/time and carries quality metadata at no additional cost. No programmatic configuration is needed.
 
 ## UBX
 
@@ -757,3 +829,9 @@ Each subphase is independent and can proceed in parallel.
 - Add `case *asbin.NavDop:` to `dispatch()` for DOP fields.
 - Add `asbin-nav-pvt` tag to `configs/gpsmsg/allystar.toml`.
 - DiffAge and RTCMRefBaseID not available from binary; rely on NMEA GGA when enabled.
+
+#### Phase 2f: Quectel PQTM
+
+- Extend `msgBundleNAV` in `handler.go` to populate quality fields on the epoch from PQTMNAV `SolType`, `SatUsed`, `SatView`, `DiffAge`, `DiffID`.
+- Extend `msgBundlePVT` in `handler.go` to populate quality fields on the epoch from PQTMPVT `FixType`, `NumSV`, `HDOP`, `PDOP`. Add epoch parameter to `msgBundlePVT`.
+- Add `case *qtmmsg.DOP:` in `HandleSentence` to populate DOP fields on the epoch.
