@@ -31,7 +31,9 @@ type PacketProcessor struct {
 	// into a single SatellitesMsg when both are available
 	satMsg      *gpsprot.SatellitesMsg
 	sigMsg      *gpsprot.SatellitesMsg
-	satSigTRead time.Time // Timestamp of first message in the pair
+	satCorr     gpsprot.CorrKind // correction bits from NAV-SAT
+	sigCorr     gpsprot.CorrKind // correction bits from NAV-SIG
+	satSigTRead time.Time        // Timestamp of first message in the pair
 }
 
 // NewPacketProcessor creates a new UBX packet processor
@@ -90,7 +92,16 @@ func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, 
 	p.curNavEpochMsg = nil
 	if msg != nil {
 		msg.Tag = Tag
+		// Prefer NAV-SIG correction info: it has per-signal detail
+		// (e.g. RTCM OSR vs SSR) that NAV-SAT lacks.
+		if p.sigCorr != 0 {
+			msg.Correction |= p.sigCorr
+		} else {
+			msg.Correction |= p.satCorr
+		}
 	}
+	p.satCorr = 0
+	p.sigCorr = 0
 	return msg, gpsprot.PriVendorLow, p.mh
 }
 
@@ -166,8 +177,12 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 			h.LeapSecond(ls, tRead)
 		}
 		return true
+	case *ubxbin.NavDOP:
+		dopNavDOP(p.curNavEpochMsg, mt)
+		return true
 	case *ubxbin.NavSat:
 		p.satMsg = satellitesNavSat(mt)
+		p.satCorr = corrKindNavSat(mt)
 		if p.satSigTRead.IsZero() {
 			p.satSigTRead = tRead
 		}
@@ -175,6 +190,7 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		return true
 	case *ubxbin.NavSig:
 		p.sigMsg = satellitesNavSig(mt)
+		p.sigCorr = corrKindNavSig(mt)
 		if p.satSigTRead.IsZero() {
 			p.satSigTRead = tRead
 		}
@@ -202,6 +218,7 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 	case *ubxbin.NavTimeUTC:
 		time = timeNavTimeUTC(mt)
 	case *ubxbin.NavPVT:
+		qualityNavPVT(p.curNavEpochMsg, mt)
 		time = timeNavPVT(mt)
 		posG = posGeoNavPVT(p.curNavEpochMsg, mt)
 		velG = velGeoNavPVT(p.curNavEpochMsg, mt)
