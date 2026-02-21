@@ -24,7 +24,7 @@ const (
 
 func TestPVTBundle(t *testing.T) {
 	h := NewHandler()
-	b, _, err := h.HandleSentence(propFlags, pvtPayload, nil)
+	b, epoch, err := h.HandleSentence(propFlags, pvtPayload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,12 +93,28 @@ func TestPVTBundle(t *testing.T) {
 	if b.VelGeo.GroundSpeed.IsSet() {
 		t.Error("PVT should not set GroundSpeed")
 	}
+	// Quality fields from PVT (FixType=3)
+	if epoch.FixLevel != gpsprot.FixLevelCode {
+		t.Errorf("FixLevel = %d, want FixLevelCode", epoch.FixLevel)
+	}
+	if epoch.FixDim != gpsprot.FixDim3D {
+		t.Errorf("FixDim = %d, want FixDim3D", epoch.FixDim)
+	}
+	if !epoch.NumSVUsed.IsSet() || epoch.NumSVUsed.Get() != 9 {
+		t.Errorf("NumSVUsed = %v, want 9", epoch.NumSVUsed)
+	}
+	if !epoch.DOP.Hor.IsSet() || epoch.DOP.Hor.Get() != 2.16 {
+		t.Errorf("DOP.Hor = %v, want 2.16", epoch.DOP.Hor)
+	}
+	if !epoch.DOP.Pos.IsSet() || epoch.DOP.Pos.Get() != 4.38 {
+		t.Errorf("DOP.Pos = %v, want 4.38", epoch.DOP.Pos)
+	}
 }
 
 func TestPVTNoFix(t *testing.T) {
 	payload := "PQTMPVT,1,31075000,20221225,083737.000,,0,00,,,,,,,,,,,,"
 	h := NewHandler()
-	b, _, err := h.HandleSentence(propFlags, payload, nil)
+	b, epoch, err := h.HandleSentence(propFlags, payload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +129,12 @@ func TestPVTNoFix(t *testing.T) {
 	}
 	if b.VelGeo != nil {
 		t.Error("expected no VelGeoMsg without velocity")
+	}
+	if epoch.FixLevel != gpsprot.FixLevelNone {
+		t.Errorf("FixLevel = %d, want FixLevelNone", epoch.FixLevel)
+	}
+	if epoch.FixDim != 0 {
+		t.Errorf("FixDim = %d, want 0", epoch.FixDim)
 	}
 }
 
@@ -179,6 +201,29 @@ func TestNAVBundle(t *testing.T) {
 	}
 	if !epoch.Acc.GroundSpeed.IsSet() || epoch.Acc.GroundSpeed.Get() != gpsprot.MetersPerSecondFromFloat(0.4578) {
 		t.Errorf("Acc.GroundSpeed = %v, want %v", epoch.Acc.GroundSpeed.Get(), gpsprot.MetersPerSecondFromFloat(0.4578))
+	}
+	// Quality fields from NAV (SolType=12 -> RTK fixed)
+	if epoch.FixLevel != gpsprot.FixLevelCarrierFixed {
+		t.Errorf("FixLevel = %d, want FixLevelCarrierFixed", epoch.FixLevel)
+	}
+	if epoch.FixDim != gpsprot.FixDim3D {
+		t.Errorf("FixDim = %d, want FixDim3D", epoch.FixDim)
+	}
+	wantCorr := gpsprot.CorrBaseStation | gpsprot.CorrUsed
+	if epoch.Correction != wantCorr {
+		t.Errorf("Correction = %d, want %d", epoch.Correction, wantCorr)
+	}
+	if !epoch.NumSVUsed.IsSet() || epoch.NumSVUsed.Get() != 56 {
+		t.Errorf("NumSVUsed = %v, want 56", epoch.NumSVUsed)
+	}
+	if !epoch.NumSVTracked.IsSet() || epoch.NumSVTracked.Get() != 78 {
+		t.Errorf("NumSVTracked = %v, want 78", epoch.NumSVTracked)
+	}
+	if !epoch.DiffAge.IsSet() || epoch.DiffAge.Get() != time.Second {
+		t.Errorf("DiffAge = %v, want 1s", epoch.DiffAge)
+	}
+	if !epoch.RTCMRefBaseID.IsSet() || epoch.RTCMRefBaseID.Get() != 290 {
+		t.Errorf("RTCMRefBaseID = %v, want 290", epoch.RTCMRefBaseID)
 	}
 }
 
@@ -351,11 +396,104 @@ func TestUnrecognizedPQTM(t *testing.T) {
 	}
 }
 
-func TestDOPNotConverted(t *testing.T) {
-	// DOP is a recognized periodic message but has no gpsprot mapping yet
+func TestDOP(t *testing.T) {
 	h := NewHandler()
 	b, epoch, err := h.HandleSentence(propFlags, "PQTMDOP,1,570643000,1.01,0.88,0.49,0.73,0.50,0.36,0.35", nil)
-	if b != nil || epoch != nil || err != nil {
-		t.Error("expected nil for DOP (no gpsprot mapping)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b == nil {
+		t.Fatal("expected non-nil bundle")
+	}
+	if !epoch.DOP.Geom.IsSet() || epoch.DOP.Geom.Get() != 1.01 {
+		t.Errorf("DOP.Geom = %v, want 1.01", epoch.DOP.Geom)
+	}
+	if !epoch.DOP.Pos.IsSet() || epoch.DOP.Pos.Get() != 0.88 {
+		t.Errorf("DOP.Pos = %v, want 0.88", epoch.DOP.Pos)
+	}
+	if !epoch.DOP.Time.IsSet() || epoch.DOP.Time.Get() != 0.49 {
+		t.Errorf("DOP.Time = %v, want 0.49", epoch.DOP.Time)
+	}
+	if !epoch.DOP.Vert.IsSet() || epoch.DOP.Vert.Get() != 0.73 {
+		t.Errorf("DOP.Vert = %v, want 0.73", epoch.DOP.Vert)
+	}
+	if !epoch.DOP.Hor.IsSet() || epoch.DOP.Hor.Get() != 0.50 {
+		t.Errorf("DOP.Hor = %v, want 0.50", epoch.DOP.Hor)
+	}
+}
+
+func TestNavSolQuality(t *testing.T) {
+	tests := []struct {
+		solType uint8
+		fl      gpsprot.FixLevel
+		fd      gpsprot.FixDim
+		corr    gpsprot.CorrKind
+		ok      bool
+	}{
+		{0, gpsprot.FixLevelNone, 0, 0, true},
+		{1, gpsprot.FixLevelCode, gpsprot.FixDim3D, 0, true},
+		{2, gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D, gpsprot.CorrSBAS | gpsprot.CorrWideArea | gpsprot.CorrUsed, true},
+		{5, gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
+		{8, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
+		{12, gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
+		{99, 0, 0, 0, false},
+	}
+	for _, tt := range tests {
+		fl, fd, corr, ok := navSolQuality(tt.solType)
+		if fl != tt.fl || fd != tt.fd || corr != tt.corr || ok != tt.ok {
+			t.Errorf("navSolQuality(%d) = (%d, %d, %d, %v), want (%d, %d, %d, %v)",
+				tt.solType, fl, fd, corr, ok, tt.fl, tt.fd, tt.corr, tt.ok)
+		}
+	}
+}
+
+func TestNAVThenPVTDoesNotDowngrade(t *testing.T) {
+	h := NewHandler()
+	// NAV with SolType=12 (RTK fixed) sets CarrierFixed.
+	_, epoch, err := h.HandleSentence(propFlags, navPayload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch.FixLevel != gpsprot.FixLevelCarrierFixed {
+		t.Fatalf("after NAV: FixLevel = %d, want CarrierFixed", epoch.FixLevel)
+	}
+	// PVT with FixType=3 (3D) must not downgrade to FixLevelCode.
+	// Use same time-of-day as NAV (190423.000) so CheckEpoch keeps the same epoch.
+	pvtSameTime := "PQTMPVT,1,31075000,20241224,190423.000,,3,09,18,31.12738291,117.26372910,34.212,5.267,3.212,2.928,0.238,4.346,34.12,2.16,4.38"
+	_, epoch, err = h.HandleSentence(propFlags, pvtSameTime, epoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch.FixLevel != gpsprot.FixLevelCarrierFixed {
+		t.Errorf("after PVT: FixLevel = %d, want CarrierFixed (not downgraded)", epoch.FixLevel)
+	}
+	if epoch.FixDim != gpsprot.FixDim3D {
+		t.Errorf("after PVT: FixDim = %d, want FixDim3D", epoch.FixDim)
+	}
+	wantCorr := gpsprot.CorrBaseStation | gpsprot.CorrUsed
+	if epoch.Correction != wantCorr {
+		t.Errorf("after PVT: Correction = %d, want %d", epoch.Correction, wantCorr)
+	}
+}
+
+func TestUnknownNAVSolTypePreservesQuality(t *testing.T) {
+	h := NewHandler()
+	// PVT sets FixLevelCode.
+	_, epoch, err := h.HandleSentence(propFlags, pvtPayload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch.FixLevel != gpsprot.FixLevelCode {
+		t.Fatalf("after PVT: FixLevel = %d, want FixLevelCode", epoch.FixLevel)
+	}
+	// NAV with unknown SolType (99) must not zero out quality.
+	// Use same time-of-day as PVT (083737.000) so CheckEpoch keeps the same epoch.
+	unknownNav := "PQTMNAV,1,1,1,083737.000,20221225,212681000,2346,18,,,99,,31.45874521,117.41532415,45.1254,-6.1245,,,1.2451,2.1254,5.1242,,,290,1.0,,78,56,,,,,,,1.2101,1.2148,0.4578,1.1547,,,45.124,,"
+	_, epoch, err = h.HandleSentence(propFlags, unknownNav, epoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epoch.FixLevel != gpsprot.FixLevelCode {
+		t.Errorf("after unknown NAV: FixLevel = %d, want FixLevelCode (preserved)", epoch.FixLevel)
 	}
 }

@@ -668,3 +668,474 @@ func TestExtHandlerEOE(t *testing.T) {
 		t.Fatalf("expected 1 epoch after EOE, got %d", len(rec.epochs))
 	}
 }
+
+func TestGGAQuality(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  string
+		fixLevel gpsprot.FixLevel
+		corr     gpsprot.CorrKind
+		auxSrc   gpsprot.AuxSrc
+		numSV    uint16
+		hasNumSV bool
+		hdop     float64
+		hasHDOP  bool
+		diffAge  time.Duration
+		hasDiff  bool
+		refBase  uint16
+		hasRef   bool
+	}{
+		{
+			name:     "quality 0 no fix",
+			payload:  "GNGGA,071113.000,,,,,0,00,,,M,,M,,",
+			fixLevel: gpsprot.FixLevelNone,
+		},
+		{
+			name:     "quality 1 code",
+			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,1,08,1.5,100.0,M,-8.0,M,,",
+			fixLevel: gpsprot.FixLevelCode,
+			numSV:    8,
+			hasNumSV: true,
+			hdop:     1.5,
+			hasHDOP:  true,
+		},
+		{
+			name:     "quality 2 DGPS",
+			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,2,10,1.0,100.0,M,-8.0,M,3.0,0001",
+			fixLevel: gpsprot.FixLevelCodeCorrected,
+			corr:     gpsprot.CorrUsed,
+			numSV:    10,
+			hasNumSV: true,
+			hdop:     1.0,
+			hasHDOP:  true,
+			diffAge:  3 * time.Second,
+			hasDiff:  true,
+			refBase:  1,
+			hasRef:   true,
+		},
+		{
+			name:     "quality 4 RTK fixed",
+			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,4,16,0.99,103.965,M,-8.408,M,1.0,4042",
+			fixLevel: gpsprot.FixLevelCarrierFixed,
+			corr:     gpsprot.CorrBaseStation | gpsprot.CorrUsed,
+			numSV:    16,
+			hasNumSV: true,
+			hdop:     0.99,
+			hasHDOP:  true,
+			diffAge:  time.Second,
+			hasDiff:  true,
+			refBase:  4042,
+			hasRef:   true,
+		},
+		{
+			name:     "quality 5 RTK float",
+			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,5,12,1.2,100.0,M,-8.0,M,2.5,1234",
+			fixLevel: gpsprot.FixLevelCarrierFloat,
+			corr:     gpsprot.CorrBaseStation | gpsprot.CorrUsed,
+			numSV:    12,
+			hasNumSV: true,
+			hdop:     1.2,
+			hasHDOP:  true,
+			diffAge:  2500 * time.Millisecond,
+			hasDiff:  true,
+			refBase:  1234,
+			hasRef:   true,
+		},
+		{
+			name:     "quality 6 DR",
+			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,6,00,,,M,,M,,",
+			fixLevel: gpsprot.FixLevelNone,
+			auxSrc:   gpsprot.AuxSrcDR,
+		},
+		{
+			name:     "quality 7 manual",
+			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,7,00,,,M,,M,,",
+			fixLevel: gpsprot.FixLevelNotMeasured,
+		},
+		{
+			name:     "ref station over 4095 ignored",
+			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,4,16,0.99,103.965,M,-8.408,M,1.0,9901",
+			fixLevel: gpsprot.FixLevelCarrierFixed,
+			corr:     gpsprot.CorrBaseStation | gpsprot.CorrUsed,
+			numSV:    16,
+			hasNumSV: true,
+			hdop:     0.99,
+			hasHDOP:  true,
+			diffAge:  time.Second,
+			hasDiff:  true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sen := parseApprovedSentence(makeSentence(tc.payload))
+			_, epoch, err := parseGGA(sen, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if epoch == nil {
+				t.Fatal("expected non-nil epoch")
+			}
+			if epoch.FixLevel != tc.fixLevel {
+				t.Errorf("FixLevel = %d, want %d", epoch.FixLevel, tc.fixLevel)
+			}
+			if epoch.Correction != tc.corr {
+				t.Errorf("Correction = %d, want %d", epoch.Correction, tc.corr)
+			}
+			if epoch.AuxSrc != tc.auxSrc {
+				t.Errorf("AuxSrc = %d, want %d", epoch.AuxSrc, tc.auxSrc)
+			}
+			if tc.hasNumSV {
+				if !epoch.NumSVUsed.IsSet() || epoch.NumSVUsed.Get() != tc.numSV {
+					t.Errorf("NumSVUsed = %v, want %d", epoch.NumSVUsed, tc.numSV)
+				}
+			}
+			if tc.hasHDOP {
+				if !epoch.DOP.Hor.IsSet() || epoch.DOP.Hor.Get() != tc.hdop {
+					t.Errorf("DOP.Hor = %v, want %v", epoch.DOP.Hor, tc.hdop)
+				}
+			}
+			if tc.hasDiff {
+				if !epoch.DiffAge.IsSet() || epoch.DiffAge.Get() != tc.diffAge {
+					t.Errorf("DiffAge = %v, want %v", epoch.DiffAge, tc.diffAge)
+				}
+			}
+			if tc.hasRef {
+				if !epoch.RTCMRefBaseID.IsSet() || epoch.RTCMRefBaseID.Get() != tc.refBase {
+					t.Errorf("RTCMRefBaseID = %v, want %d", epoch.RTCMRefBaseID, tc.refBase)
+				}
+			} else if epoch.RTCMRefBaseID.IsSet() {
+				t.Errorf("RTCMRefBaseID should not be set, got %d", epoch.RTCMRefBaseID.Get())
+			}
+		})
+	}
+}
+
+func TestRMCQuality(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  string
+		fixLevel gpsprot.FixLevel
+		corr     gpsprot.CorrKind
+		auxSrc   gpsprot.AuxSrc
+	}{
+		{
+			name:     "mode N no fix",
+			payload:  "GPRMC,083559.00,V,,,,,,,091202,,,N",
+			fixLevel: gpsprot.FixLevelNone,
+		},
+		{
+			name:     "mode A autonomous",
+			payload:  "GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V",
+			fixLevel: gpsprot.FixLevelCode,
+		},
+		{
+			name:     "mode D differential",
+			payload:  "GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,D",
+			fixLevel: gpsprot.FixLevelCodeCorrected,
+			corr:     gpsprot.CorrUsed,
+		},
+		{
+			name:     "mode R RTK fixed",
+			payload:  "GNRMC,153632.00,A,5550.602949,N,03732.239610,E,000.00000,000.0,310518,,,R,V",
+			fixLevel: gpsprot.FixLevelCarrierFixed,
+			corr:     gpsprot.CorrBaseStation | gpsprot.CorrUsed,
+		},
+		{
+			name:     "mode F RTK float",
+			payload:  "GNRMC,153632.00,A,5550.602949,N,03732.239610,E,000.00000,000.0,310518,,,F",
+			fixLevel: gpsprot.FixLevelCarrierFloat,
+			corr:     gpsprot.CorrBaseStation | gpsprot.CorrUsed,
+		},
+		{
+			name:     "mode P wide area",
+			payload:  "GNRMC,153632.00,A,5550.602949,N,03732.239610,E,000.00000,000.0,310518,,,P",
+			fixLevel: gpsprot.FixLevelCodeCorrected,
+			corr:     gpsprot.CorrWideArea | gpsprot.CorrUsed,
+		},
+		{
+			name:     "mode E dead reckoning",
+			payload:  "GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,E",
+			fixLevel: gpsprot.FixLevelNone,
+			auxSrc:   gpsprot.AuxSrcDR,
+		},
+		{
+			name:     "mode M manual",
+			payload:  "GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,M",
+			fixLevel: gpsprot.FixLevelNotMeasured,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sen := parseApprovedSentence(makeSentence(tc.payload))
+			_, epoch, err := parseRMC(sen, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if epoch == nil {
+				t.Fatal("expected non-nil epoch")
+			}
+			// Extended modes store the letter; finalize applies the override.
+			finalizeNavEpoch(epoch)
+			if epoch.FixLevel != tc.fixLevel {
+				t.Errorf("FixLevel = %d, want %d", epoch.FixLevel, tc.fixLevel)
+			}
+			if epoch.Correction != tc.corr {
+				t.Errorf("Correction = %d, want %d", epoch.Correction, tc.corr)
+			}
+			if epoch.AuxSrc != tc.auxSrc {
+				t.Errorf("AuxSrc = %d, want %d", epoch.AuxSrc, tc.auxSrc)
+			}
+		})
+	}
+}
+
+func TestGSAQuality(t *testing.T) {
+	// GSA with fix type 3 (3D) and DOPs
+	sen := parseApprovedSentence(makeSentence("GNGSA,A,3,01,02,03,04,05,06,07,08,09,10,11,12,1.5,0.9,1.2,1"))
+	sb := newSatellitesBuffer()
+	_, err := sb.gsaProcess(sen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.gsaFixDim != gpsprot.FixDim3D {
+		t.Errorf("gsaFixDim = %d, want %d", sb.gsaFixDim, gpsprot.FixDim3D)
+	}
+	if !sb.gsaDOP.Pos.IsSet() || sb.gsaDOP.Pos.Get() != 1.5 {
+		t.Errorf("gsaDOP.Pos = %v, want 1.5", sb.gsaDOP.Pos)
+	}
+	if !sb.gsaDOP.Hor.IsSet() || sb.gsaDOP.Hor.Get() != 0.9 {
+		t.Errorf("gsaDOP.Hor = %v, want 0.9", sb.gsaDOP.Hor)
+	}
+	if !sb.gsaDOP.Vert.IsSet() || sb.gsaDOP.Vert.Get() != 1.2 {
+		t.Errorf("gsaDOP.Vert = %v, want 1.2", sb.gsaDOP.Vert)
+	}
+	// Verify commit copies to epoch
+	epoch := &NavEpoch{TimeOfDay: "120000.00"}
+	sb.commitGSAQuality(epoch)
+	if epoch.FixDim != gpsprot.FixDim3D {
+		t.Errorf("epoch.FixDim = %d, want %d", epoch.FixDim, gpsprot.FixDim3D)
+	}
+	if !epoch.DOP.Pos.IsSet() || epoch.DOP.Pos.Get() != 1.5 {
+		t.Errorf("epoch.DOP.Pos = %v, want 1.5", epoch.DOP.Pos)
+	}
+
+	// GSA with fix type 2 (2D)
+	sen = parseApprovedSentence(makeSentence("GPGSA,A,2,01,02,03,,,,,,,,,,2.0,1.5,1.3"))
+	_, err = sb.gsaProcess(sen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.gsaFixDim != gpsprot.FixDim2D {
+		t.Errorf("gsaFixDim = %d, want %d", sb.gsaFixDim, gpsprot.FixDim2D)
+	}
+
+	// GSA with fix type 1 (no fix) should not set FixDim
+	sb = newSatellitesBuffer()
+	sen = parseApprovedSentence(makeSentence("GPGSA,A,1,,,,,,,,,,,,,,,"))
+	_, err = sb.gsaProcess(sen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.gsaFixDim != 0 {
+		t.Errorf("gsaFixDim = %d, want 0 for no-fix GSA", sb.gsaFixDim)
+	}
+}
+
+func TestGSAQualityDeferred(t *testing.T) {
+	gsaSen := "GNGSA,A,3,01,02,03,04,05,06,07,08,09,10,11,12,1.5,0.9,1.2,1"
+	checkGSAQuality := func(t *testing.T, e *gpsprot.NavEpochMsg) {
+		t.Helper()
+		if e.FixDim != gpsprot.FixDim3D {
+			t.Errorf("FixDim = %d, want %d (3D)", e.FixDim, gpsprot.FixDim3D)
+		}
+		if !e.DOP.Pos.IsSet() || e.DOP.Pos.Get() != 1.5 {
+			t.Errorf("DOP.Pos = %v, want 1.5", e.DOP.Pos)
+		}
+		if !e.DOP.Hor.IsSet() || e.DOP.Hor.Get() != 0.9 {
+			t.Errorf("DOP.Hor = %v, want 0.9", e.DOP.Hor)
+		}
+		if !e.DOP.Vert.IsSet() || e.DOP.Vert.Get() != 1.2 {
+			t.Errorf("DOP.Vert = %v, want 1.2", e.DOP.Vert)
+		}
+	}
+	checkNoGSAQuality := func(t *testing.T, e *gpsprot.NavEpochMsg) {
+		t.Helper()
+		if e.FixDim != 0 {
+			t.Errorf("FixDim = %d, want 0", e.FixDim)
+		}
+		if e.DOP.Pos.IsSet() {
+			t.Errorf("DOP.Pos = %v, want unset", e.DOP.Pos)
+		}
+	}
+	t.Run("GSA_RMC", func(t *testing.T) {
+		// GSA arrives before epoch-starting sentence (no epoch active).
+		// Quality committed via FlushNavEpoch.
+		var rec msgRecorder
+		pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+		pp.SetMsgHandler(&rec)
+		t1 := time.Unix(1000, 0)
+		t2 := time.Unix(1001, 0)
+		t3 := time.Unix(1002, 0)
+		if err := processSentence(pp, gsaSen, t1); err != nil {
+			t.Fatal(err)
+		}
+		if err := processSentence(pp, "GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V", t1); err != nil {
+			t.Fatal(err)
+		}
+		// Flush with next epoch
+		if err := processSentence(pp, "GPRMC,083600.00,V,,,,,,,091202,,,N", t2); err != nil {
+			t.Fatal(err)
+		}
+		if len(rec.epochs) != 1 {
+			t.Fatalf("expected 1 epoch, got %d", len(rec.epochs))
+		}
+		checkGSAQuality(t, rec.epochs[0])
+		// Second epoch should not carry stale GSA quality
+		if err := processSentence(pp, "GPRMC,083601.00,V,,,,,,,091202,,,N", t3); err != nil {
+			t.Fatal(err)
+		}
+		if len(rec.epochs) != 2 {
+			t.Fatalf("expected 2 epochs, got %d", len(rec.epochs))
+		}
+		checkNoGSAQuality(t, rec.epochs[1])
+	})
+	t.Run("GSA_Idle_RMC", func(t *testing.T) {
+		// GSA arrives before epoch, idle gap follows, then RMC starts epoch.
+		// Idle flushes with nil epoch; quality must survive for later commit.
+		var rec msgRecorder
+		pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+		pp.SetMsgHandler(&rec)
+		t1 := time.Unix(1000, 0)
+		t2 := time.Unix(1001, 0)
+		t3 := time.Unix(1002, 0)
+		if err := processSentence(pp, gsaSen, t1); err != nil {
+			t.Fatal(err)
+		}
+		pp.Idle(t1)
+		if err := processSentence(pp, "GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V", t2); err != nil {
+			t.Fatal(err)
+		}
+		// Flush
+		if err := processSentence(pp, "GPRMC,083600.00,V,,,,,,,091202,,,N", t3); err != nil {
+			t.Fatal(err)
+		}
+		if len(rec.epochs) != 1 {
+			t.Fatalf("expected 1 epoch, got %d", len(rec.epochs))
+		}
+		checkGSAQuality(t, rec.epochs[0])
+	})
+	t.Run("RMC_GSA_RMC", func(t *testing.T) {
+		// GSA arrives after epoch N starts but belongs to the same burst.
+		// Quality attributed to epoch N via FlushNavEpoch.
+		var rec msgRecorder
+		pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+		pp.SetMsgHandler(&rec)
+		t1 := time.Unix(1000, 0)
+		t2 := time.Unix(1001, 0)
+		if err := processSentence(pp, "GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V", t1); err != nil {
+			t.Fatal(err)
+		}
+		if err := processSentence(pp, gsaSen, t1); err != nil {
+			t.Fatal(err)
+		}
+		// Next epoch flushes previous
+		if err := processSentence(pp, "GPRMC,083600.00,V,,,,,,,091202,,,N", t2); err != nil {
+			t.Fatal(err)
+		}
+		if len(rec.epochs) != 1 {
+			t.Fatalf("expected 1 epoch, got %d", len(rec.epochs))
+		}
+		checkGSAQuality(t, rec.epochs[0])
+	})
+}
+
+func TestQualitySynthesis(t *testing.T) {
+	// Test that GGA quality overrides RMC basic mode.
+	// RMC mode A (code) + GGA quality 4 (RTK fixed) -> epoch gets RTK fixed.
+	var rec msgRecorder
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+	pp.SetMsgHandler(&rec)
+	t1 := time.Unix(1000, 0)
+	t2 := time.Unix(1001, 0)
+	// Epoch 1: RMC(A) + GGA(4) + GSA(3D)
+	if err := processSentence(pp, "GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V", t1); err != nil {
+		t.Fatal(err)
+	}
+	if err := processSentence(pp, "GNGGA,083559.00,3957.7995,N,11619.0286,E,4,16,0.99,103.965,M,-8.408,M,1.0,4042", t1); err != nil {
+		t.Fatal(err)
+	}
+	if err := processSentence(pp, "GNGSA,A,3,01,02,03,04,05,06,07,08,09,10,11,12,1.5,0.9,1.2,1", t1); err != nil {
+		t.Fatal(err)
+	}
+	// Trigger flush with next epoch
+	if err := processSentence(pp, "GPRMC,083600.00,V,,,,,,,091202,,,N", t2); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch, got %d", len(rec.epochs))
+	}
+	e := rec.epochs[0]
+	if e.FixLevel != gpsprot.FixLevelCarrierFixed {
+		t.Errorf("FixLevel = %d, want %d (CarrierFixed)", e.FixLevel, gpsprot.FixLevelCarrierFixed)
+	}
+	if e.Correction != gpsprot.CorrBaseStation|gpsprot.CorrUsed {
+		t.Errorf("Correction = %d, want %d", e.Correction, gpsprot.CorrBaseStation|gpsprot.CorrUsed)
+	}
+	if e.FixDim != gpsprot.FixDim3D {
+		t.Errorf("FixDim = %d, want %d (3D)", e.FixDim, gpsprot.FixDim3D)
+	}
+	if !e.NumSVUsed.IsSet() || e.NumSVUsed.Get() != 16 {
+		t.Errorf("NumSVUsed = %v, want 16", e.NumSVUsed)
+	}
+	if !e.DOP.Pos.IsSet() || e.DOP.Pos.Get() != 1.5 {
+		t.Errorf("DOP.Pos = %v, want 1.5", e.DOP.Pos)
+	}
+	// GSA HDOP should overwrite GGA HDOP
+	if !e.DOP.Hor.IsSet() || e.DOP.Hor.Get() != 0.9 {
+		t.Errorf("DOP.Hor = %v, want 0.9 (from GSA)", e.DOP.Hor)
+	}
+	if !e.DOP.Vert.IsSet() || e.DOP.Vert.Get() != 1.2 {
+		t.Errorf("DOP.Vert = %v, want 1.2", e.DOP.Vert)
+	}
+	if !e.DiffAge.IsSet() || e.DiffAge.Get() != time.Second {
+		t.Errorf("DiffAge = %v, want 1s", e.DiffAge)
+	}
+	if !e.RTCMRefBaseID.IsSet() || e.RTCMRefBaseID.Get() != 4042 {
+		t.Errorf("RTCMRefBaseID = %v, want 4042", e.RTCMRefBaseID)
+	}
+}
+
+func TestQualitySynthesisRMCExtendedOverridesGGA(t *testing.T) {
+	// RMC extended mode R (RTK fixed) should override GGA quality 2 (DGPS).
+	var rec msgRecorder
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+	pp.SetMsgHandler(&rec)
+	t1 := time.Unix(1000, 0)
+	t2 := time.Unix(1001, 0)
+	// GGA quality 2 (DGPS) first, then RMC mode R (RTK fixed)
+	if err := processSentence(pp, "GNGGA,083559.00,3957.7995,N,11619.0286,E,2,10,1.0,100.0,M,-8.0,M,3.0,0001", t1); err != nil {
+		t.Fatal(err)
+	}
+	if err := processSentence(pp, "GNRMC,083559.00,A,5550.602949,N,03732.239610,E,000.00000,000.0,310518,,,R,V", t1); err != nil {
+		t.Fatal(err)
+	}
+	// Flush
+	if err := processSentence(pp, "GNRMC,083600.00,V,,,,,,,310518,,,N", t2); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch, got %d", len(rec.epochs))
+	}
+	e := rec.epochs[0]
+	// RMC extended mode R should win over GGA quality 2
+	if e.FixLevel != gpsprot.FixLevelCarrierFixed {
+		t.Errorf("FixLevel = %d, want %d (CarrierFixed from RMC R)", e.FixLevel, gpsprot.FixLevelCarrierFixed)
+	}
+	if e.Correction != gpsprot.CorrBaseStation|gpsprot.CorrUsed {
+		t.Errorf("Correction = %d, want %d (BaseStation from RMC R)", e.Correction, gpsprot.CorrBaseStation|gpsprot.CorrUsed)
+	}
+	// NumSVUsed should still come from GGA
+	if !e.NumSVUsed.IsSet() || e.NumSVUsed.Get() != 10 {
+		t.Errorf("NumSVUsed = %v, want 10 (from GGA)", e.NumSVUsed)
+	}
+}

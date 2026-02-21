@@ -515,9 +515,9 @@ func TestSatellitesBuffer(t *testing.T) {
 				h := testSatellitesBufferMsgHandler{nSV: -1}
 				if j >= 0 {
 					sen := parseApprovedSentence(addTrailer(sens[j]))
-					sb.process(sen, time.Time{}, &h)
+					sb.process(sen, time.Time{}, &h, nil)
 				} else {
-					sb.idle(&h)
+					sb.idle(&h, nil)
 				}
 				if k < len(expect) && i == expect[k].i {
 					if h.nSV != expect[k].nSV {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
 
@@ -38,6 +39,8 @@ type satellitesBuffer struct {
 	tRead               time.Time           // read time of the first buffered GSV sentence
 	lastFormat          string              // format of last sentence received
 	gsas                []gsaSentence
+	gsaFixDim    gpsprot.FixDim // buffered fix dimension from GSA
+	gsaDOP       gpsprot.DOP   // buffered DOPs from GSA (Pos, Hor, Vert)
 	haveBoundary bool // have we established a plausible boundary between bursts
 	mixedSigIDs  bool // true if signal IDs are mixed within a single GSV series
 }
@@ -106,10 +109,10 @@ func gnssConsistent(sen, found gpsprot.GNSS) bool {
 	return false
 }
 
-func (sb *satellitesBuffer) idle(h gpsprot.MsgHandler) {
+func (sb *satellitesBuffer) idle(h gpsprot.MsgHandler, epoch *NavEpoch) {
 	// Do possibleBoundary before flush, so that partial (probably incorrect) set is not used.
 	sb.possibleBoundary()
-	sb.flush(h)
+	sb.flush(h, epoch)
 }
 
 func (sb *satellitesBuffer) possibleBoundary() {
@@ -120,7 +123,8 @@ func (sb *satellitesBuffer) possibleBoundary() {
 	sb.clear()
 }
 
-func (sb *satellitesBuffer) flush(h gpsprot.MsgHandler) {
+func (sb *satellitesBuffer) flush(h gpsprot.MsgHandler, epoch *NavEpoch) {
+	sb.commitGSAQuality(epoch)
 	if h != nil && len(sb.gsvs) > 0 {
 		h.Satellites(sb.createSatellitesMsg(), sb.tRead)
 	}
@@ -193,20 +197,24 @@ func (sb *satellitesBuffer) clear() {
 	// Reset mixedSigIDs detection. Must be re-detected for each batch of GSV
 	// sentences. This prevents bad data from permanently flipping the mode.
 	sb.mixedSigIDs = false
+	// gsaFixDim and gsaDOP are intentionally NOT cleared here.
+	// They are cleared only by commitGSAQuality, which copies them
+	// to the epoch first. This allows GSA quality to survive
+	// possibleBoundary() clears when GSA arrives before the epoch.
 }
 
 func (sb *satellitesBuffer) talkerID() string {
 	return "GN"
 }
 
-func (sb *satellitesBuffer) process(sen *ApprovedSentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
+func (sb *satellitesBuffer) process(sen *ApprovedSentence, tRead time.Time, h gpsprot.MsgHandler, epoch *NavEpoch) (bool, error) {
 	if sb.lastFormat != sen.Format && sb.lastFormat != "" {
 		sb.possibleBoundary()
 	}
 	sb.lastFormat = sen.Format
 	switch sen.Format {
 	case "GSV":
-		return sb.gsvProcess(sen, tRead, h)
+		return sb.gsvProcess(sen, tRead, h, epoch)
 	case "GSA":
 		return sb.gsaProcess(sen)
 	}
@@ -219,10 +227,58 @@ func (sb *satellitesBuffer) gsaProcess(sen *ApprovedSentence) (bool, error) {
 		return false, err
 	}
 	sb.gsas = append(sb.gsas, gsa)
+	sb.gsaQuality(sen.Fields)
 	return true, nil
 }
 
-func (sb *satellitesBuffer) gsvProcess(sen *ApprovedSentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
+// gsaQuality buffers FixDim and DOPs from GSA fields. Multiple GSA
+// sentences per epoch (one per constellation) carry identical DOP and
+// fix type values, so overwriting is safe.
+func (sb *satellitesBuffer) gsaQuality(fields []string) {
+	// Fix type (field 1): 1=no fix, 2=2D, 3=3D
+	switch fields[1] {
+	case "2":
+		sb.gsaFixDim = gpsprot.FixDim2D
+	case "3":
+		sb.gsaFixDim = gpsprot.FixDim3D
+	}
+	// DOPs (fields 14-16): PDOP, HDOP, VDOP
+	if f, ok := parseFloatField(fields[14]); ok {
+		sb.gsaDOP.Pos = opt.Make(f)
+	}
+	if f, ok := parseFloatField(fields[15]); ok {
+		sb.gsaDOP.Hor = opt.Make(f)
+	}
+	if f, ok := parseFloatField(fields[16]); ok {
+		sb.gsaDOP.Vert = opt.Make(f)
+	}
+}
+
+// commitGSAQuality copies buffered FixDim and DOP to the epoch and
+// clears the buffer. If epoch is nil, the buffer is preserved so that
+// quality can be committed to a later epoch (e.g. GSA arriving before
+// the first epoch-starting sentence).
+func (sb *satellitesBuffer) commitGSAQuality(epoch *NavEpoch) {
+	if epoch == nil {
+		return
+	}
+	if sb.gsaFixDim != 0 {
+		epoch.FixDim = sb.gsaFixDim
+	}
+	if sb.gsaDOP.Pos.IsSet() {
+		epoch.DOP.Pos = sb.gsaDOP.Pos
+	}
+	if sb.gsaDOP.Hor.IsSet() {
+		epoch.DOP.Hor = sb.gsaDOP.Hor
+	}
+	if sb.gsaDOP.Vert.IsSet() {
+		epoch.DOP.Vert = sb.gsaDOP.Vert
+	}
+	sb.gsaFixDim = 0
+	sb.gsaDOP = gpsprot.DOP{}
+}
+
+func (sb *satellitesBuffer) gsvProcess(sen *ApprovedSentence, tRead time.Time, h gpsprot.MsgHandler, epoch *NavEpoch) (bool, error) {
 	gsv, err := parseGSV(sen)
 	if err != nil {
 		return false, err
@@ -242,7 +298,7 @@ func (sb *satellitesBuffer) gsvProcess(sen *ApprovedSentence, tRead time.Time, h
 		k.sigID = 0 // ignore signal ID for flush detection
 	}
 	if _, exists := sb.gsvKeys[k]; exists {
-		sb.flush(h)
+		sb.flush(h, epoch)
 	}
 	sb.gsvKeys[k] = struct{}{}
 	return true, err
