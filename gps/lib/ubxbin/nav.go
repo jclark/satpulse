@@ -318,6 +318,9 @@ const (
 	NavSatSVUsed   NavSatFlags = 1 << 3
 	NavSatDiffCorr NavSatFlags = 1 << 6
 	NavSatSmoothed NavSatFlags = 1 << 7
+)
+
+const (
 	NavSatEphAvail NavSatFlags = 1 << (iota + 11)
 	NavSatAlmAvail
 	NavSatAnoAvail
@@ -331,6 +334,8 @@ const (
 	NavSatCrCorrUsed
 	NavSatDoCorrUsed
 	NavSatClasCorrUsed
+	NavSatLppCorrUsed
+	NavSatHasCorrUsed
 )
 
 type NavSig struct {
@@ -400,15 +405,18 @@ const (
 type NavSigCorrSource byte
 
 const (
-	NavSigCorrSourceNone NavSigCorrSource = iota
-	NavSigCorrSourceSBAS
-	NavSigCorrSourceBeiDou
-	NavSigCorrSourceRTCM2
-	NavSigCorrSourceRTCM3OSR
-	NavSigCorrSourceRTCM3SSR
-	NavSigCorrSourceQZSSSLAS
-	NavSigCorrSourceSPARTN
-	NavSigCorrSourceCLAS
+	NavSigCorrSourceNone    NavSigCorrSource = 0
+	NavSigCorrSourceSBAS    NavSigCorrSource = 1
+	NavSigCorrSourceBeiDou  NavSigCorrSource = 2
+	NavSigCorrSourceRTCM2   NavSigCorrSource = 3
+	NavSigCorrSourceRTCM3OSR NavSigCorrSource = 4
+	NavSigCorrSourceRTCM3SSR NavSigCorrSource = 5
+	NavSigCorrSourceQZSSSLAS NavSigCorrSource = 6
+	NavSigCorrSourceSPARTN  NavSigCorrSource = 7
+	NavSigCorrSourceCLAS    NavSigCorrSource = 9
+	NavSigCorrSourceLPPOSR  NavSigCorrSource = 10
+	NavSigCorrSourceLPPSSR  NavSigCorrSource = 11
+	NavSigCorrSourceGALHAS  NavSigCorrSource = 12
 )
 
 type NavSigIonoModel byte
@@ -423,12 +431,16 @@ const (
 
 type NavSigFlags uint16
 
+// Health values (2-bit enum in bits 0-1)
+const (
+	NavSigHealthUnknown NavSigFlags = iota
+	NavSigHealthHealthy
+	NavSigHealthUnhealthy
+)
+
 // Boolean flags
 const (
-	NavSigHealthUnknown NavSigFlags = 0
-	NavSigHealthHealthy NavSigFlags = 1 << iota
-	NavSigHealthUnhealthy
-	NavSigPrSmoothed
+	NavSigPrSmoothed NavSigFlags = 1 << (iota + 2)
 	NavSigPrUsed
 	NavSigCrUsed
 	NavSigDoUsed
