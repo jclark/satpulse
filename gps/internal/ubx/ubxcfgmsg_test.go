@@ -186,6 +186,30 @@ func TestMsgChangesPVT(t *testing.T) {
 			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavTimeGPSID},
 		},
 		{
+			name:     "Quality (F9P)",
+			flags:    gpsprot.PVTMsgQuality,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID, ubxbin.NavDOPID},
+		},
+		{
+			name:     "Quality (LEA-6T, no NAV-PVT)",
+			flags:    gpsprot.PVTMsgQuality,
+			version:  testVers.lea6t,
+			expected: []ubxbin.MsgID{ubxbin.NavDOPID},
+		},
+		{
+			name:     "Quality,Time (F9P)",
+			flags:    gpsprot.PVTMsgQuality | gpsprot.PVTMsgTime,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID, ubxbin.NavDOPID},
+		},
+		{
+			name:     "Quality,Time,Pos (F9P)",
+			flags:    gpsprot.PVTMsgQuality | gpsprot.PVTMsgTime | gpsprot.PVTMsgPos,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID, ubxbin.NavDOPID},
+		},
+		{
 			name:     "Epoch (F9P)",
 			flags:    gpsprot.PVTMsgEpoch,
 			version:  testVers.f9p,

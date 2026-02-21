@@ -126,6 +126,7 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	navVelECEF := false
 	navVelNED := false
 	navPVT := false
+	navDOP := false
 	navTimeLS := flags&gpsprot.PVTMsgLeapSecond != 0
 	navEOE := flags&gpsprot.PVTMsgEpoch != 0
 	if flags&gpsprot.PVTMsgPos != 0 && flags&gpsprot.PVTMsgECEF != 0 {
@@ -164,10 +165,14 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 		if flags&gpsprot.PVTMsgVel != 0 {
 			nPVT++
 		}
-		if nPVT >= 2 {
+		if nPVT >= 2 || flags&gpsprot.PVTMsgQuality != 0 {
 			navPVT = true
 			flags &^= gpsprot.PVTMsgTime | gpsprot.PVTMsgPos | gpsprot.PVTMsgVel
 		}
+	}
+	if flags&gpsprot.PVTMsgQuality != 0 {
+		navDOP = true
+		flags &^= gpsprot.PVTMsgQuality
 	}
 	if flags&gpsprot.PVTMsgTime != 0 {
 		navTimeUTC = true
@@ -201,6 +206,7 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	if ver.protVerAtLeast(18, 0) {
 		mc.pvtMsg(ubxbin.NavEOEID, navEOE, off)
 	}
+	mc.pvtMsg(ubxbin.NavDOPID, navDOP, off)
 }
 
 func (mc *msgChanges) survey(flags gpsprot.PVTMsgFlags, ver *Version, surveyRequested bool) {
@@ -394,6 +400,7 @@ var msgIDKey = map[ubxbin.MsgID]ucv.KeyM{
 	ubxbin.NavPosLLHID:  ucv.KUbxNavPosllh,
 	ubxbin.NavVelECEFID: ucv.KUbxNavVelecef,
 	ubxbin.NavVelNEDID:  ucv.KUbxNavVelned,
+	ubxbin.NavDOPID:     ucv.KUbxNavDop,
 	ubxbin.NavEOEID:     ucv.KUbxNavEoe,
 	ubxbin.NavSatID:     ucv.KUbxNavSat,
 	ubxbin.NavSigID:     ucv.KUbxNavSig,

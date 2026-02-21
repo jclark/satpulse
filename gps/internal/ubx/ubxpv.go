@@ -1,6 +1,8 @@
 package ubx
 
 import (
+	"time"
+
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
@@ -79,6 +81,92 @@ func velGeoNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) *gpsprot.VelGeoMsg 
 	}
 }
 
+// qualityNavPVT extracts solution quality metadata from a NAV-PVT message.
+// Always called, even when the fix is invalid, to report "no fix" states.
+func qualityNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) {
+	switch m.FixType {
+	case ubxbin.NavPVTDeadReckoningOnly:
+		ne.AuxSrc |= gpsprot.AuxSrcDR
+	case ubxbin.NavPVT2DFix:
+		ne.FixDim = gpsprot.FixDim2D
+	case ubxbin.NavPVT3DFix:
+		ne.FixDim = gpsprot.FixDim3D
+	case ubxbin.NavPVTGNSSDeadReckoning:
+		ne.FixDim = gpsprot.FixDim3D
+		ne.AuxSrc |= gpsprot.AuxSrcDR
+	case ubxbin.NavPVTTimeOnlyFix:
+		ne.FixDim = gpsprot.FixDimTimeOnly
+	}
+	if m.Flags&ubxbin.NavPVTHeadVehValid != 0 {
+		ne.AuxSrc |= gpsprot.AuxSrcINS
+	}
+	if m.Flags&ubxbin.NavPVTGNSSFixOK == 0 || m.FixType == ubxbin.NavPVTDeadReckoningOnly {
+		ne.FixLevel = gpsprot.FixLevelNone
+	} else {
+		switch m.Flags & ubxbin.NavPctCarrSoln {
+		case ubxbin.NavPVTCarrSolnFixed:
+			ne.FixLevel = gpsprot.FixLevelCarrierFixed
+			ne.Correction |= gpsprot.CorrUsed
+		case ubxbin.NavPVTCarrSolnFloat:
+			ne.FixLevel = gpsprot.FixLevelCarrierFloat
+			ne.Correction |= gpsprot.CorrUsed
+		default:
+			if m.Flags&ubxbin.NavPVTDiffSoln != 0 {
+				ne.FixLevel = gpsprot.FixLevelCodeCorrected
+				ne.Correction |= gpsprot.CorrUsed
+			} else {
+				ne.FixLevel = gpsprot.FixLevelCode
+			}
+		}
+	}
+	ne.NumSVUsed = opt.Make(uint16(m.NumSV))
+	ne.DOP.Pos = dop01(m.PDOP)
+	if d, ok := corrAgeDuration(m.Flags3 & ubxbin.NavPVTLastCorrectionAgeMask); ok {
+		ne.DiffAge = opt.Make(d)
+	}
+}
+
+func corrAgeDuration(age ubxbin.NavPVTFlags3) (time.Duration, bool) {
+	switch age {
+	case ubxbin.NavPVTLastCorrectionAgeNotAvailable:
+		return 0, false
+	case ubxbin.NavPVTLastCorrectionAge0to1:
+		return 0, true
+	case ubxbin.NavPVTLastCorrectionAge1to2:
+		return 1 * time.Second, true
+	case ubxbin.NavPVTLastCorrectionAge2to5:
+		return 2 * time.Second, true
+	case ubxbin.NavPVTLastCorrectionAge5to10:
+		return 5 * time.Second, true
+	case ubxbin.NavPVTLastCorrectionAge10to15:
+		return 10 * time.Second, true
+	case ubxbin.NavPVTLastCorrectionAge15to20:
+		return 15 * time.Second, true
+	case ubxbin.NavPVTLastCorrectionAge20to30:
+		return 20 * time.Second, true
+	case ubxbin.NavPVTLastCorrectionAge30to45:
+		return 30 * time.Second, true
+	case ubxbin.NavPVTLastCorrectionAge45to60:
+		return 45 * time.Second, true
+	case ubxbin.NavPVTLastCorrectionAge60to90:
+		return 60 * time.Second, true
+	case ubxbin.NavPVTLastCorrectionAge90to120:
+		return 90 * time.Second, true
+	case ubxbin.NavPVTLastCorrectionAge120Plus:
+		return 120 * time.Second, true
+	default:
+		return 0, false
+	}
+}
+
+func dopNavDOP(ne *gpsprot.NavEpochMsg, m *ubxbin.NavDOP) {
+	ne.DOP.Geom = dop01(m.GDOP)
+	ne.DOP.Pos = dop01(m.PDOP)
+	ne.DOP.Hor = dop01(m.HDOP)
+	ne.DOP.Vert = dop01(m.VDOP)
+	ne.DOP.Time = dop01(m.TDOP)
+}
+
 // Unit conversion helpers for UBX binary fields.
 
 type integer interface{ ~int32 | ~uint32 }
@@ -125,4 +213,8 @@ func angle1e5[T integer](v T) gpsprot.Angle {
 
 func angle1e5Opt[T integer](v T) opt.Val[gpsprot.Angle] {
 	return opt.Make(angle1e5(v))
+}
+
+func dop01(v uint16) opt.Val[float64] {
+	return opt.Make(float64(v) * 0.01)
 }
