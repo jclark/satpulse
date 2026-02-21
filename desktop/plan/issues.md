@@ -44,6 +44,26 @@ Two possible approaches:
 
 A hybrid might work best: dim rows that missed the last epoch, remove rows that have been stale for several epochs.
 
+## rtk-tab: RTK corrections tab (base and rover)
+
+An RTK tab for forwarding RTCM correction data between a TCP peer and the connected GPS receiver. The user chooses a mode -- Base or Rover -- which determines the direction of data flow:
+
+- **Rover**: Dials a remote TCP address (host + port), reads the RTCM byte stream, and writes it to the serial connection. The serial connection is already full-duplex, so injecting RTCM data is straightforward. The goroutine should reconnect on network errors and stop when the serial connection is closed.
+
+- **Base**: Listens on a TCP port and serves RTCM packets from the connected receiver to network clients. When a client connects, subscribe to the packet broadcast (`bcast.Subscribe()`), filter for RTCM packets by tag, and forward them to the TCP connection. Multiple clients are supported since each gets its own subscription.
+
+UI:
+
+- Mode selector: Base / Rover
+- Host field (rover only): IP or hostname of the base station
+- Port field (both modes): TCP port to connect to (rover) or listen on (base)
+- Start / Stop button
+- Status panel below showing a count of RTCM packets by message type flowing through the connection. For base mode, also show the number of connected clients.
+
+Write contention (rover mode): `SerialConn.writeLock` panics on concurrent writes. The simplest approach is to disable the Config tab and message file send while RTK corrections are running, avoiding the need for write lock coordination. (In satpulsed, the proxy uses a `writeLockTimeout` mechanism for shared write access, but that complexity is unnecessary here if the operations are mutually exclusive.)
+
+NTRIP caster support (HTTP-based, with authentication and mount points) could be added later as a separate transport option in the same tab.
+
 ## read-error-disconnect: Disconnect on serial read error (related: #172)
 
 If a USB-connected GPS receiver is physically unplugged while connected, the app shows a read error in the log but remains in the connected state. The user has to manually click Disconnect to reset the UI. This is the desktop GUI counterpart of #172 (satpulsed should handle serial device disappearing); the daemon's approach is to exit and let systemd restart it, but the GUI needs to transition cleanly to disconnected state instead.
