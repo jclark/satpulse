@@ -96,7 +96,8 @@ func (s *ApprovedSentence) msgID() string {
 // other packages) receive and return it.
 type NavEpoch struct {
 	gpsprot.NavEpochMsg
-	TimeOfDay string // UTC time-of-day string from the sentence; "" means no time yet
+	TimeOfDay  string // UTC time-of-day string from the sentence; "" means no time yet
+	rmcExtMode byte   // RMC extended mode indicator ('R', 'F', 'P'); 0 if not seen
 }
 
 // CheckEpoch is called by a message handler that participates in the
@@ -211,6 +212,11 @@ func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, 
 	if epoch == nil {
 		return nil, gpsprot.PriGenericHigh, p.mh
 	}
+	// GSA has no time-of-day, so pending quality could reasonably
+	// be attached to either this epoch or the next. We choose to
+	// attach it to the outgoing epoch.
+	p.sb.commitGSAQuality(epoch)
+	finalizeNavEpoch(epoch)
 	epoch.Tag = Tag
 	return &epoch.NavEpochMsg, gpsprot.PriGenericHigh, p.mh
 }
@@ -231,7 +237,7 @@ func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 
 // Dispatch handles standard messages and returns true if handled, along with any error
 func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gpsprot.MsgHandler) (bool, error) {
-	handled, err := p.sb.process(sen, tRead, h)
+	handled, err := p.sb.process(sen, tRead, h, p.curNavEpoch)
 	if err != nil || handled {
 		return handled, err
 	}
@@ -286,7 +292,7 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 }
 
 func (p *PacketProcessor) Idle(_ time.Time) {
-	p.sb.idle(p.mh)
+	p.sb.idle(p.mh, p.curNavEpoch)
 }
 
 // Sentence parsers: each parser sets Tag and NativeMsgID on the
@@ -298,6 +304,7 @@ func parseRMC(sen *ApprovedSentence, epoch *NavEpoch) (*gpsprot.MsgBundle, *NavE
 		return nil, nil, fmt.Errorf("%s: too few fields", k)
 	}
 	epoch = CheckEpoch(epoch, sen.Fields[0])
+	rmcQuality(epoch, sen.Fields)
 	bundle := &gpsprot.MsgBundle{}
 	if sen.Fields[1] != "A" {
 		bundle.Time = &gpsprot.TimeMsg{Tag: Tag, NativeMsgID: k, GNSS: talkerIDToGNSS(sen.TalkerID)}
@@ -324,6 +331,63 @@ func parseRMC(sen *ApprovedSentence, epoch *NavEpoch) (*gpsprot.MsgBundle, *NavE
 		bundle.VelGeo = vel
 	}
 	return bundle, epoch, nil
+}
+
+// rmcQuality populates quality metadata on the epoch from the RMC
+// mode indicator (field 11, NMEA 2.3+). Extended modes R/F/P are
+// stored on the epoch and applied authoritatively by finalizeNavEpoch.
+// Basic modes are a fallback: they only write when GGA hasn't set
+// quality yet.
+func rmcQuality(epoch *NavEpoch, fields []string) {
+	if len(fields) <= 11 || fields[11] == "" {
+		return
+	}
+	switch fields[11] {
+	case "R", "F", "P":
+		epoch.rmcExtMode = fields[11][0]
+	case "N":
+		if epoch.FixLevel == 0 {
+			epoch.FixLevel = gpsprot.FixLevelNone
+		}
+	case "A":
+		if epoch.FixLevel == 0 {
+			epoch.FixLevel = gpsprot.FixLevelCode
+		}
+	case "D":
+		if epoch.FixLevel == 0 {
+			epoch.FixLevel = gpsprot.FixLevelCodeCorrected
+			epoch.Correction = gpsprot.CorrUsed
+		}
+	case "E":
+		if epoch.FixLevel == 0 {
+			epoch.FixLevel = gpsprot.FixLevelNone
+			epoch.AuxSrc = gpsprot.AuxSrcDR
+		}
+	case "M", "S":
+		if epoch.FixLevel == 0 {
+			epoch.FixLevel = gpsprot.FixLevelNotMeasured
+		}
+	}
+}
+
+// finalizeNavEpoch applies deferred quality overrides before the epoch
+// is flushed. RMC extended modes (R/F/P) are authoritative and
+// override GGA-derived quality.
+func finalizeNavEpoch(epoch *NavEpoch) {
+	switch epoch.rmcExtMode {
+	case 'R':
+		epoch.FixLevel = gpsprot.FixLevelCarrierFixed
+		epoch.Correction = gpsprot.CorrBaseStation | gpsprot.CorrUsed
+		epoch.AuxSrc = 0
+	case 'F':
+		epoch.FixLevel = gpsprot.FixLevelCarrierFloat
+		epoch.Correction = gpsprot.CorrBaseStation | gpsprot.CorrUsed
+		epoch.AuxSrc = 0
+	case 'P':
+		epoch.FixLevel = gpsprot.FixLevelCodeCorrected
+		epoch.Correction = gpsprot.CorrWideArea | gpsprot.CorrUsed
+		epoch.AuxSrc = 0
+	}
 }
 
 // parseDateTime parses NMEA time (HHMMSS.sss) and date (DDMMYY)
@@ -355,13 +419,15 @@ func parseDateTime(timeStr, dateStr string) (*ptime.UTCTime, error) {
 	return &utc, nil
 }
 
-// parseGGA parses a GGA sentence into a PosGeoMsg.
+// parseGGA parses a GGA sentence into a PosGeoMsg and populates
+// quality metadata on the epoch.
 func parseGGA(sen *ApprovedSentence, epoch *NavEpoch) (*gpsprot.PosGeoMsg, *NavEpoch, error) {
 	k := sen.TalkerID + "GGA"
 	if len(sen.Fields) < 11 {
 		return nil, nil, fmt.Errorf("%s: too few fields", k)
 	}
 	epoch = CheckEpoch(epoch, sen.Fields[0])
+	ggaQuality(epoch, sen.Fields)
 	qual := sen.Fields[5]
 	if qual == "0" || qual == "" {
 		return nil, epoch, nil
@@ -382,6 +448,58 @@ func parseGGA(sen *ApprovedSentence, epoch *NavEpoch) (*gpsprot.PosGeoMsg, *NavE
 		}
 	}
 	return pos, epoch, nil
+}
+
+// ggaQuality populates quality metadata on the epoch from GGA fields.
+func ggaQuality(epoch *NavEpoch, fields []string) {
+	qual := fields[5]
+	if qual == "" {
+		return
+	}
+	var fl gpsprot.FixLevel
+	var corr gpsprot.CorrKind
+	var aux gpsprot.AuxSrc
+	switch qual {
+	case "0":
+		fl = gpsprot.FixLevelNone
+	case "1":
+		fl = gpsprot.FixLevelCode
+	case "2", "3":
+		fl = gpsprot.FixLevelCodeCorrected
+		corr = gpsprot.CorrUsed
+	case "4":
+		fl = gpsprot.FixLevelCarrierFixed
+		corr = gpsprot.CorrBaseStation | gpsprot.CorrUsed
+	case "5":
+		fl = gpsprot.FixLevelCarrierFloat
+		corr = gpsprot.CorrBaseStation | gpsprot.CorrUsed
+	case "6":
+		fl = gpsprot.FixLevelNone
+		aux = gpsprot.AuxSrcDR
+	case "7", "8":
+		fl = gpsprot.FixLevelNotMeasured
+	default:
+		return
+	}
+	epoch.FixLevel = fl
+	epoch.Correction = corr
+	epoch.AuxSrc = aux
+	if n, ok := parseUintField(fields[6]); ok && n <= 999 {
+		epoch.NumSVUsed = opt.Make(uint16(n))
+	}
+	if f, ok := parseFloatField(fields[7]); ok {
+		epoch.DOP.Hor = opt.Make(f)
+	}
+	if len(fields) > 12 {
+		if f, ok := parseFloatField(fields[12]); ok {
+			epoch.DiffAge = opt.Make(time.Duration(f * float64(time.Second)))
+		}
+	}
+	if len(fields) > 13 {
+		if n, ok := parseUintField(fields[13]); ok && n <= 4095 {
+			epoch.RTCMRefBaseID = opt.Make(uint16(n))
+		}
+	}
 }
 
 // parseVTG parses a VTG sentence into a VelGeoMsg.
@@ -501,6 +619,17 @@ func parseFloatField(s string) (float64, bool) {
 		return 0, false
 	}
 	return f, true
+}
+
+func parseUintField(s string) (uint64, bool) {
+	if s == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 func parseZDA(sen *ApprovedSentence) (*ptime.UTCTime, error) {
