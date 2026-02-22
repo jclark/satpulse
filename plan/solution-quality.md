@@ -598,7 +598,7 @@ Already populated by `gps/internal/unc/nav.go`: BESTNAV sigmas -> `Acc.Hor`, `Ac
 ### Where this lives in code
 
 The Unicore processor (`gps/internal/unc/processor.go`) already has epoch detection and `NavEpochMsg` emission via `NavEpochManager`. The existing conversion functions in `gps/internal/unc/nav.go` receive `ne *gpsprot.NavEpochMsg` (the `curEpochMsg`) and populate accuracy fields on it inline. Quality metadata follows the same pattern:
-1. Extend `bestNavPosVel` in `nav.go` to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, SignalsUsed, DiffAge, RTCMRefBaseID) on `ne` from the BESTNAV `pos type`, satellite count, signal mask, `DiffAge`, and `StnID` fields. For `StnID`, parse as decimal and apply the <= 4095 filter; values >= 4096 enrich `Correction`.
+1. Extend `bestNavPosVel` in `nav.go` to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, SignalsUsed, DiffAge, RTCMRefBaseID) on `ne` from the BESTNAV `pos type`, satellite count, signal mask, `DiffAge`, and `StnID` fields. For quality mapping: handle Unicore-specific values first (52=INS, 70=PPP_AR, 71=PPP_RTK), then delegate to `nov.PosTypeQuality` for shared values (see NovAtel section). For `StnID`, parse as decimal and apply the <= 4095 filter; values >= 4096 enrich `Correction`.
 2. Add a `bestNavDOP` function (or similar) in `nav.go` that receives `ne` and populates DOP fields. Wire it from a new `*uncmsg.StaDOP` case in `dispatch()`.
 
 ### Message enablement
@@ -607,7 +607,7 @@ When `PVTMsgQuality` is set, the Unicore message configuration (`gps/internal/un
 
 ## NovAtel
 
-The NovAtel binary protocol is shared by NovAtel OEM7, ByNav, and SinoGNSS (K8/K9) receivers. All three vendors use identical binary message layouts; the `SolStatus` and `PosType` enum value sets vary by vendor. The `novmsg` package defines the superset of values across all three vendors. All three are handled by a single `PacketProcessor` in `gps/internal/nov/`.
+The NovAtel binary protocol is shared by NovAtel OEM7, ByNav, and SinoGNSS (K8/K9) receivers. All three vendors use identical binary message layouts; the `SolStatus` and `PosType` enum value sets vary by vendor. The `novmsg` package defines the superset of values across all three vendors (as untyped constants; see `novatel-variants.md`). All three are handled by a single `PacketProcessor` in `gps/internal/nov/`.
 
 The NovAtel processor already emits `NavEpochMsg` with position/velocity accuracy via the `NavEpochManager` epoch mechanism. This plan adds solution quality metadata (FixLevel, FixDim, Correction, DOPs, satellite counts) to the existing epoch. The primary structural difference from Unicore is that NovAtel uses separate position and velocity messages (BESTPOS + BESTVEL) instead of a combined BESTNAV.
 
@@ -697,11 +697,30 @@ Already populated by `gps/internal/nov/nav.go`: BESTPOS sigmas -> `Acc.Hor`, `Ac
 - **DiffAge**: from BESTPOS `DiffAge` (float32, seconds, already parsed in `novmsg.Pos`). Convert to `time.Duration`.
 - **RTCMRefBaseID**: from BESTPOS `StnID` (`novmsg.StationID` = `[4]byte`, already parsed in `novmsg.Pos`). Parse the bytes as a decimal string. If the resulting number is <= 4095, set `RTCMRefBaseID`. If non-numeric (NovAtel uses alphabetic codes for PPP services: "TSTR" = TerraStar-C PRO, "TSTL" = TerraStar-L, "TSX" = TerraStar-X, "OCXH" = Oceanix), use the value to enrich `Correction` with `CorrPPP`. If numeric but >= 4096, leave `RTCMRefBaseID` unset (defensive; should not happen for NovAtel). The variant mechanism ensures SinoGNSS uses its own `PosType` but the `StnID` handling is identical across all NovAtel-format vendors.
 
+### Shared PosType quality mapping
+
+NovAtel OEM7, ByNav, Unicore, and SinoGNSS share a large set of PosType numeric values with identical semantics (see `novatel-variants.md` Step 2 for the untyped constants in `novmsg`). Rather than duplicating the PosType-to-quality mapping in both `nov/` and `unc/`, a shared mapping function lives in `gps/internal/nov/` (since `unc/` already imports `nov/`).
+
+**`gps/internal/nov/quality.go`**:
+
+```go
+// PosTypeQuality maps a NovAtel/Unicore PosType numeric value to quality fields.
+// Returns false for vendor-specific values that the caller must handle.
+func PosTypeQuality(pt uint32) (gpsprot.FixLevel, gpsprot.FixDim, gpsprot.CorrKind, gpsprot.AuxSrc, bool)
+```
+
+This function handles values shared across all vendors: 0-2, 8, 16-18, 32-34, 48-50, 53-56, 68-69. It returns `false` for vendor-specific values (OEM7: 4-6, 19, 51-52, 67, 70-80; Unicore: 52, 70-71; SinoGNSS: 9, 35, 51).
+
+**NovAtel** calls `PosTypeQuality(uint32(posType))`; on `false`, handles OEM7-specific values (4=FLOATCONV, 5=WIDELANE, 6=NARROWLANE, 19=PROPAGATED, 51=RTK_DIRECT_INS, 52=INS_SBAS, 67=EXT_CONSTRAINED, 70-72=OPERATIONAL/WARNING/OUT_OF_BOUNDS, 73-74, 77-80). SinoGNSS variant: on `false`, handles SinoGNSS-specific values (9=SINGLE_SMOOTH, 35=FIX_DERIVATION, 51=SUPER_WIDE_LANE).
+
+**Unicore** (`gps/internal/unc/`) handles Unicore-specific values **first** (52=INS, 70=PPP_AR, 71=PPP_RTK), then delegates to `nov.PosTypeQuality(uint32(posVelType))` for everything else.
+
 ### Where this lives in code
 
 The NovAtel processor (`gps/internal/nov/processor.go`) already has epoch detection and `NavEpochMsg` emission via `NavEpochManager`. The existing conversion functions in `gps/internal/nov/nav.go` receive `ne *gpsprot.NavEpochMsg` (the `curEpochMsg`) and populate accuracy fields on it inline. Quality metadata follows the same pattern:
-1. Extend the BESTPOS handling path: the `PosGeo` function in `nav.go` already receives `ne`; add a companion function (or extend `PosGeo`) to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, SignalsUsed, DiffAge, RTCMRefBaseID) on `ne` from the BESTPOS `pos type`, `sol status`, satellite count, signal mask, `DiffAge`, and `StnID` fields. For `StnID`, parse as decimal and apply the <= 4095 filter; non-numeric values (PPP service codes) enrich `Correction` with `CorrPPP`.
-2. Add a PSRDOP handling function in `nav.go` that receives `ne` and populates DOP fields. Wire it from a new `*novmsg.PsrDOP` case in `dispatch()`.
+1. Add `quality.go` with the shared `PosTypeQuality` function (see above).
+2. Extend the BESTPOS handling path: the `PosGeo` function in `nav.go` already receives `ne`; add a companion function (or extend `PosGeo`) to populate quality fields (FixLevel, FixDim, Correction, AuxSrc, NumSVUsed, NumSVTracked, SignalsUsed, DiffAge, RTCMRefBaseID) on `ne`. This calls `PosTypeQuality` first, then handles OEM7/SinoGNSS-specific values on `false`. For `StnID`, parse as decimal and apply the <= 4095 filter; non-numeric values (PPP service codes) enrich `Correction` with `CorrPPP`.
+3. Add a PSRDOP handling function in `nav.go` that receives `ne` and populates DOP fields. Wire it from a new `*novmsg.PsrDOP` case in `dispatch()`.
 
 ### Message enablement
 
@@ -812,13 +831,14 @@ Each subphase is independent and can proceed in parallel.
 
 #### Phase 2c: Unicore
 
-- Extend `bestNavPosVel` to populate quality fields on `ne` from BESTNAV `pos type`, including DiffAge and RTCMRefBaseID from the existing `DiffAge`/`StnID` fields in `novmsg.Pos`. For StnID, parse as decimal; <= 4095 sets RTCMRefBaseID, >= 4096 enriches Correction.
+- Extend `bestNavPosVel` to populate quality fields on `ne` from BESTNAV `pos type`: handle Unicore-specific values first (52=INS, 70=PPP_AR, 71=PPP_RTK), then delegate to `nov.PosTypeQuality` for shared values. DiffAge and RTCMRefBaseID from the existing `DiffAge`/`StnID` fields in `novmsg.Pos`. For StnID, parse as decimal; <= 4095 sets RTCMRefBaseID, >= 4096 enriches Correction.
 - Add STADOP parsing (`uncmsg.StaDOP`) and DOP population.
 - Add `PVTMsgQuality` handling to `cfgopts.go`.
 
 #### Phase 2d: NovAtel
 
-- Extend BESTPOS handling path to populate quality fields on `ne` from `pos type` and `sol status`, including DiffAge and RTCMRefBaseID from the existing `DiffAge`/`StnID` fields in `novmsg.Pos`. For StnID, parse as decimal; <= 4095 sets RTCMRefBaseID, non-numeric PPP service codes enrich Correction with CorrPPP.
+- Add `nov/quality.go` with shared `PosTypeQuality` function (used by both NovAtel and Unicore).
+- Extend BESTPOS handling path to populate quality fields on `ne` from `pos type` and `sol status`, calling `PosTypeQuality` for shared values and handling OEM7/SinoGNSS-specific values locally. DiffAge and RTCMRefBaseID from the existing `DiffAge`/`StnID` fields in `novmsg.Pos`. For StnID, parse as decimal; <= 4095 sets RTCMRefBaseID, non-numeric PPP service codes enrich Correction with CorrPPP.
 - Add PSRDOP parsing (`novmsg.PsrDOP`) and DOP population.
 - Add `nov-psrdopb` tag to message files.
 
