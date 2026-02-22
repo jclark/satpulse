@@ -138,7 +138,7 @@ func TestTimeMsgFromTime(t *testing.T) {
 				t.Fatalf("Parsed message is not Time, got %T", msg.Body)
 			}
 
-			got, err := timeMsgFromTime(&msg.Hdr, timeMsg, TagAscii)
+			got, err := timeMsgFromTime(&msg.Hdr.CommonHdr, timeMsg, TagAscii)
 			
 			if tt.expectErr {
 				if err == nil {
@@ -175,13 +175,13 @@ func TestUTCConversionParamsFromIonUTC(t *testing.T) {
 		t.Fatalf("Parsed message is not IonUTC, got %T", msg.Body)
 	}
 
-	_, now := msgHdrTime(&msg.Hdr)
+	_, now := msgHdrTime(&msg.Hdr.CommonHdr)
 	conversion, err := utcConversionParamsFromIonUTC(ionutc, now)
 	if err != nil {
 		t.Fatalf("utcConversionParamsFromIonUTC failed: %v", err)
 	}
 
-	gnss, headerTime := msgHdrTime(&msg.Hdr)
+	gnss, headerTime := msgHdrTime(&msg.Hdr.CommonHdr)
 	if gnss == 0 {
 		t.Fatal("Expected valid GNSS time from header")
 	}

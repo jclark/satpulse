@@ -10,7 +10,7 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
-func timeMsgFromTime(hdr *novmsg.MsgHdr, m *novmsg.Time, tag gpsprot.Tag) (*gpsprot.TimeMsg, error) {
+func timeMsgFromTime(common *novmsg.CommonHdr, m *novmsg.Time, tag gpsprot.Tag) (*gpsprot.TimeMsg, error) {
 	if m.ClockStatus != novmsg.ClockStatusValid {
 		return nil, nil
 	}
@@ -20,9 +20,9 @@ func timeMsgFromTime(hdr *novmsg.MsgHdr, m *novmsg.Time, tag gpsprot.Tag) (*gpsp
 		Priority:    gpsprot.PriVendorLow,
 	}
 	// leave t.GNSS zero; we don't know what the reference GNSS is
-	if hdr.TimeStatus != novmsg.TimeStatusUnknown {
-		tow := time.Duration(hdr.MillisecondsOfWeek) * time.Millisecond
-		t.TAITime = ptime.GPS(int16(hdr.Week), tow)
+	if common.TimeStatus != novmsg.TimeStatusUnknown {
+		tow := time.Duration(common.MillisecondsOfWeek) * time.Millisecond
+		t.TAITime = ptime.GPS(int16(common.Week), tow)
 	}
 	return TimeMsgSetUTC(&t, m)
 }
@@ -70,9 +70,8 @@ func convertAccuracy(seconds float64) time.Duration {
 	return dur
 }
 
-// dispatchIonUTC handles IONUTC messages by converting them to LeapSecondMsg
-func dispatchIonUTC(hdr *novmsg.MsgHdr, ionutc *novmsg.IonUTC, mh gpsprot.MsgHandler, tRead time.Time) (bool, error) {
-	_, now := msgHdrTime(hdr)
+func leapSecondIonUTC(common *novmsg.CommonHdr, ionutc *novmsg.IonUTC, mh gpsprot.MsgHandler, tRead time.Time) (bool, error) {
+	_, now := msgHdrTime(common)
 	params, err := utcConversionParamsFromIonUTC(ionutc, now)
 	if err != nil {
 		return false, err
@@ -86,9 +85,9 @@ func dispatchIonUTC(hdr *novmsg.MsgHdr, ionutc *novmsg.IonUTC, mh gpsprot.MsgHan
 }
 
 // msgHdrTime extracts GNSS and time from NovAtel message header
-func msgHdrTime(hdr *novmsg.MsgHdr) (gpsprot.GNSS, ptime.Time) {
+func msgHdrTime(common *novmsg.CommonHdr) (gpsprot.GNSS, ptime.Time) {
 	// NovAtel messages are always GPS time reference
-	return gpsprot.GPS, ptime.GPS(int16(hdr.Week), time.Duration(hdr.MillisecondsOfWeek)*time.Millisecond)
+	return gpsprot.GPS, ptime.GPS(int16(common.Week), time.Duration(common.MillisecondsOfWeek)*time.Millisecond)
 }
 
 type utcConversionParams struct {

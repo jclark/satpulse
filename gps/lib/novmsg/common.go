@@ -93,8 +93,10 @@ func (ts TimeStatus) MarshalText() ([]byte, error) {
 	return []byte(ts.String()), nil
 }
 
-type MsgHdr struct {
-	Port string
+// MsgHdr is the parsed message header, parameterized on port type.
+// OEM7/ByNav use Port, Unicore uses UnicorePort, SinoGNSS uses SinoPort.
+type MsgHdr[P ~uint8] struct {
+	Port P
 	CommonHdr
 }
 
@@ -161,9 +163,9 @@ type MsgBody interface {
 }
 
 
-// Msg struct combines header and body
-type Msg struct {
-	Hdr  MsgHdr
+// Msg combines header and body, parameterized on port type.
+type Msg[P ~uint8] struct {
+	Hdr  MsgHdr[P]
 	Body MsgBody
 }
 
@@ -179,6 +181,12 @@ func (mid MsgID) String() string {
 	}
 	return fmt.Sprintf("%d", uint16(mid))
 }
+
+// BinRegistry returns the global binary message constructor map (by MsgID).
+func BinRegistry() map[MsgID]func() MsgBody { return msgIDMap }
+
+// AsciiRegistry returns the global ASCII message constructor map (by wire name).
+func AsciiRegistry() map[string]func() MsgBody { return msgNameMap }
 
 // regMsg registers a message type with its ID and name
 func regMsg[T any, PT interface {

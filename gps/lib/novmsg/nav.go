@@ -56,6 +56,32 @@ func (m *BestXYZ) ID() (MsgID, string) {
 	return BestXYZID, "BESTXYZA"
 }
 
+// SinoBestPos represents geodetic position from a SinoGNSS receiver.
+// Same binary layout as BestPos but with SinoGNSS-specific PosType enum values.
+// NOT registered via init() -- shares message ID 42 with BestPos and is only
+// used when the SinoGNSS variant builds its constructor map.
+type SinoBestPos struct {
+	Pos[SolStatus, SinoPosType]
+}
+
+// ID returns the message ID for BESTPOS.
+func (m *SinoBestPos) ID() (MsgID, string) {
+	return BestPosID, "BESTPOSA"
+}
+
+// SinoBestXYZ represents ECEF position and velocity from a SinoGNSS receiver.
+// Same binary layout as BestXYZ but with SinoGNSS-specific PosType enum values.
+// NOT registered via init() -- shares message ID 241 with BestXYZ and is only
+// used when the SinoGNSS variant builds its constructor map.
+type SinoBestXYZ struct {
+	XYZ[SolStatus, SinoPosType]
+}
+
+// ID returns the message ID for BESTXYZ.
+func (m *SinoBestXYZ) ID() (MsgID, string) {
+	return BestXYZID, "BESTXYZA"
+}
+
 func init() {
 	regMsg[BestPos]("BESTPOS")
 	regMsg[BestVel]("BESTVEL")

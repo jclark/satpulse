@@ -2,6 +2,7 @@ package nov
 
 import (
 	"math"
+	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
@@ -61,4 +62,36 @@ func VelECEFXYZ[S, P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.XYZ[S, P], nati
 		NativeMsgID: nativeMsgID,
 		Priority:    gpsprot.PriVendorLow,
 	}
+}
+
+func posGeoBestPos[S, P ~uint32](h gpsprot.MsgHandler, ne *gpsprot.NavEpochMsg,
+	m *novmsg.Pos[S, P], tag gpsprot.Tag, tRead time.Time) (bool, error) {
+	if novmsg.SolStatus(m.PSolStatus) != novmsg.SolComputed {
+		return false, nil
+	}
+	posG := PosGeo(ne, m, "BESTPOS")
+	posG.Tag = tag
+	h.PosGeo(posG, tRead)
+	return true, nil
+}
+
+func posVelECEFBestXYZ[S, P ~uint32](h gpsprot.MsgHandler, ne *gpsprot.NavEpochMsg,
+	m *novmsg.XYZ[S, P], tag gpsprot.Tag, tRead time.Time) (bool, error) {
+	var posE *gpsprot.PosECEFMsg
+	var velE *gpsprot.VelECEFMsg
+	if novmsg.SolStatus(m.PSolStatus) == novmsg.SolComputed {
+		posE = PosECEFXYZ(ne, m, "BESTXYZ")
+	}
+	if novmsg.SolStatus(m.VSolStatus) == novmsg.SolComputed {
+		velE = VelECEFXYZ(ne, m, "BESTXYZ")
+	}
+	if posE != nil {
+		posE.Tag = tag
+		h.PosECEF(posE, tRead)
+	}
+	if velE != nil {
+		velE.Tag = tag
+		h.VelECEF(velE, tRead)
+	}
+	return posE != nil || velE != nil, nil
 }

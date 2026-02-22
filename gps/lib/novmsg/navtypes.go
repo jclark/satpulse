@@ -195,42 +195,46 @@ func (s SolStatus) MarshalText() ([]byte, error) {
 // PosType represents the position or velocity type in NovAtel OEM7/ByNav messages.
 type PosType uint32
 
+// PosType constants are untyped so they work directly with any vendor's
+// typed position/velocity type enum (PosType, SinoPosType, etc.).
 const (
-	PosNone                  PosType = 0
-	PosFixedPos              PosType = 1
-	PosFixedHeight           PosType = 2
-	PosFloatConv             PosType = 4
-	PosWideLane              PosType = 5
-	PosNarrowLane            PosType = 6
-	PosDopplerVelocity       PosType = 8
-	PosSingle                PosType = 16
-	PosPSRDiff               PosType = 17
-	PosWAAS                  PosType = 18
-	PosPropagated            PosType = 19
-	PosL1Float               PosType = 32
-	PosIonoFreeFloat         PosType = 33
-	PosNarrowFloat           PosType = 34
-	PosL1Int                 PosType = 48
-	PosWideInt               PosType = 49
-	PosNarrowInt             PosType = 50
-	PosRTKDirectINS          PosType = 51
-	PosINSSBAS               PosType = 52
-	PosINSPSRSP              PosType = 53
-	PosINSPSRDiff            PosType = 54
-	PosINSRTKFloat           PosType = 55
-	PosINSRTKFixed           PosType = 56
-	PosExtConstrained        PosType = 67
-	PosPPPConverging         PosType = 68
-	PosPPP                   PosType = 69
-	PosOperational           PosType = 70
-	PosWarning               PosType = 71
-	PosOutOfBounds           PosType = 72
-	PosINSPPPConverging      PosType = 73
-	PosINSPPP                PosType = 74
-	PosPPPBasicConverging    PosType = 77
-	PosPPPBasic              PosType = 78
-	PosINSPPPBasicConverging PosType = 79
-	PosINSPPPBasic           PosType = 80
+	PosNone            = 0
+	PosFixedPos        = 1
+	PosFixedHeight     = 2
+	PosFloatConv       = 4  // OEM7/ByNav only
+	PosWideLane        = 5  // OEM7/ByNav only
+	PosNarrowLane      = 6  // OEM7/ByNav only
+	PosDopplerVelocity = 8
+	PosSingle          = 16
+	PosPSRDiff         = 17
+	PosWAAS            = 18 // OEM7/ByNav name
+	PosSBAS            = 18 // Unicore/SinoGNSS name (same value)
+	PosPropagated      = 19 // OEM7/ByNav only
+	PosL1Float         = 32
+	PosIonoFreeFloat   = 33
+	PosNarrowFloat     = 34
+	PosL1Int           = 48
+	PosWideInt         = 49
+	PosNarrowInt       = 50
+	// 51: vendor-specific (OEM7=RTK_DIRECT_INS, SinoGNSS=SUPER_WIDE_LANE)
+	PosRTKDirectINS          = 51 // OEM7 only
+	PosINSSBAS               = 52 // OEM7 only (Unicore 52 = INS, different meaning)
+	PosINSPSRSP              = 53
+	PosINSPSRDiff            = 54
+	PosINSRTKFloat           = 55
+	PosINSRTKFixed           = 56
+	PosExtConstrained        = 67 // OEM7 only
+	PosPPPConverging         = 68
+	PosPPP                   = 69
+	PosOperational           = 70 // OEM7 only
+	PosWarning               = 71 // OEM7 only
+	PosOutOfBounds           = 72 // OEM7 only
+	PosINSPPPConverging      = 73 // OEM7 only
+	PosINSPPP                = 74 // OEM7 only
+	PosPPPBasicConverging    = 77 // OEM7 only
+	PosPPPBasic              = 78 // OEM7 only
+	PosINSPPPBasicConverging = 79 // OEM7 only
+	PosINSPPPBasic           = 80 // OEM7 only
 )
 
 // String returns the ASCII representation of PosType.
@@ -401,6 +405,104 @@ func (p *PosType) UnmarshalText(text []byte) error {
 
 // MarshalText implements encoding.TextMarshaler for fieldenc support.
 func (p PosType) MarshalText() ([]byte, error) {
+	return []byte(p.String()), nil
+}
+
+// SinoPosType represents the position/velocity type in SinoGNSS receivers.
+// Most values are shared with OEM7 (use the untyped PosXxx constants);
+// only the SinoGNSS-specific values that differ from OEM7 are defined here.
+type SinoPosType uint32
+
+const (
+	SinoPosSingleSmooth  SinoPosType = 9  // carrier-smoothed single point
+	SinoPosFIXDerivation SinoPosType = 35 // derived/propagated RTK
+	SinoPosSuperWideLane SinoPosType = 51 // OEM7 has RTK_DIRECT_INS at 51
+)
+
+// String returns the ASCII representation of SinoPosType.
+func (p SinoPosType) String() string {
+	switch p {
+	case PosNone:
+		return "NONE"
+	case PosFixedPos:
+		return "FIXEDPOS"
+	case PosDopplerVelocity:
+		return "DOPPLER_VELOCITY"
+	case SinoPosSingleSmooth:
+		return "SINGLE_SMOOTH"
+	case PosSingle:
+		return "SINGLE"
+	case PosPSRDiff:
+		return "PSRDIFF"
+	case PosSBAS:
+		return "SBAS"
+	case PosNarrowFloat:
+		return "NARROW_FLOAT"
+	case SinoPosFIXDerivation:
+		return "FIX_DERIVATION"
+	case PosWideInt:
+		return "WIDE_INT"
+	case PosNarrowInt:
+		return "NARROW_INT"
+	case SinoPosSuperWideLane:
+		return "SUPER_WIDE_LANE"
+	case PosPPPConverging:
+		return "PPP_CONVERGING"
+	case PosPPP:
+		return "PPP"
+	default:
+		return fmt.Sprintf("%d", p)
+	}
+}
+
+// ParseSinoPosType converts an ASCII position/velocity type string to SinoPosType.
+func ParseSinoPosType(s string) (SinoPosType, error) {
+	switch s {
+	case "NONE":
+		return PosNone, nil
+	case "FIXEDPOS":
+		return PosFixedPos, nil
+	case "DOPPLER_VELOCITY":
+		return PosDopplerVelocity, nil
+	case "SINGLE_SMOOTH":
+		return SinoPosSingleSmooth, nil
+	case "SINGLE":
+		return PosSingle, nil
+	case "PSRDIFF":
+		return PosPSRDiff, nil
+	case "SBAS":
+		return PosSBAS, nil
+	case "NARROW_FLOAT":
+		return PosNarrowFloat, nil
+	case "FIX_DERIVATION":
+		return SinoPosFIXDerivation, nil
+	case "WIDE_INT":
+		return PosWideInt, nil
+	case "NARROW_INT":
+		return PosNarrowInt, nil
+	case "SUPER_WIDE_LANE":
+		return SinoPosSuperWideLane, nil
+	case "PPP_CONVERGING":
+		return PosPPPConverging, nil
+	case "PPP":
+		return PosPPP, nil
+	default:
+		return 0, fmt.Errorf("unknown SinoGNSS position/velocity type: %s", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler for fieldenc support.
+func (p *SinoPosType) UnmarshalText(text []byte) error {
+	val, err := ParseSinoPosType(string(text))
+	if err != nil {
+		return err
+	}
+	*p = val
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler for fieldenc support.
+func (p SinoPosType) MarshalText() ([]byte, error) {
 	return []byte(p.String()), nil
 }
 
