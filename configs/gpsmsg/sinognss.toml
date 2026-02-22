@@ -37,6 +37,24 @@ tag = "nov-bestposa-off"
 description = "Disable BESTPOS ASCII"
 text = "unlog bestposa"
 
+# PSRPOS (pseudorange position, msg 47)
+[[line]]
+tag = "nov-psrposb"
+description = "Enable PSRPOS binary at 1Hz"
+text = "log psrposb ontime 1"
+[[line]]
+tag = "nov-psrposb-off"
+description = "Disable PSRPOS binary"
+text = "unlog psrposb"
+[[line]]
+tag = "nov-psrposa"
+description = "Enable PSRPOS ASCII at 1Hz"
+text = "log psrposa ontime 1"
+[[line]]
+tag = "nov-psrposa-off"
+description = "Disable PSRPOS ASCII"
+text = "unlog psrposa"
+
 # NMEA Output Control
 
 # Verified GPGGA messages appear at 1Hz after enable on K902
@@ -141,6 +159,24 @@ text = "log bestvela ontime 1"
 tag = "nov-bestvela-off"
 description = "Disable BESTVEL ASCII"
 text = "unlog bestvela"
+
+# PSRVEL (pseudorange velocity, msg 100)
+[[line]]
+tag = "nov-psrvelb"
+description = "Enable PSRVEL binary at 1Hz"
+text = "log psrvelb ontime 1"
+[[line]]
+tag = "nov-psrvelb-off"
+description = "Disable PSRVEL binary"
+text = "unlog psrvelb"
+[[line]]
+tag = "nov-psrvela"
+description = "Enable PSRVEL ASCII at 1Hz"
+text = "log psrvela ontime 1"
+[[line]]
+tag = "nov-psrvela-off"
+description = "Disable PSRVEL ASCII"
+text = "unlog psrvela"
 
 # BESTXYZ (NovAtel format ECEF position + velocity)
 # Verified BESTXYZB binary (msg 241) appears at 1Hz in capture on K902

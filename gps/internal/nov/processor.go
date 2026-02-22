@@ -122,6 +122,8 @@ func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
 	case VariantSinoGNSS:
 		m := copyMap(reg)
 		m[novmsg.BestPosID] = func() novmsg.MsgBody { return &novmsg.SinoBestPos{} }
+		m[novmsg.PsrPosID] = func() novmsg.MsgBody { return &novmsg.SinoPsrPos{} }
+		m[novmsg.PsrVelID] = func() novmsg.MsgBody { return &novmsg.SinoPsrVel{} }
 		m[novmsg.BestXYZID] = func() novmsg.MsgBody { return &novmsg.SinoBestXYZ{} }
 		return m, binParser[novmsg.SinoPort]()
 	case VariantUnicore:
@@ -142,6 +144,8 @@ func asciiVariant(v Variant) (map[string]func() novmsg.MsgBody,
 	case VariantSinoGNSS:
 		m := copyMap(reg)
 		m["BESTPOSA"] = func() novmsg.MsgBody { return &novmsg.SinoBestPos{} }
+		m["PSRPOSA"] = func() novmsg.MsgBody { return &novmsg.SinoPsrPos{} }
+		m["PSRVELA"] = func() novmsg.MsgBody { return &novmsg.SinoPsrVel{} }
 		m["BESTXYZA"] = func() novmsg.MsgBody { return &novmsg.SinoBestXYZ{} }
 		return m, asciiParser[novmsg.SinoPort]()
 	case VariantUnicore:
@@ -203,11 +207,33 @@ func (p *packetProcessor) dispatch(common *novmsg.CommonHdr, body novmsg.MsgBody
 		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
 	case *novmsg.SinoBestPos:
 		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+	case *novmsg.BestGNSSPos:
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+	case *novmsg.PsrPos:
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+	case *novmsg.SinoPsrPos:
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
 	case *novmsg.BestVel:
 		if m.SolStatus != novmsg.SolComputed {
 			return false, nil
 		}
 		velG := VelGeoVel(p.curEpochMsg, &m.Vel, "BESTVEL")
+		velG.Tag = tag
+		h.VelGeo(velG, tRead)
+		return true, nil
+	case *novmsg.PsrVel:
+		if m.SolStatus != novmsg.SolComputed {
+			return false, nil
+		}
+		velG := VelGeoVel(p.curEpochMsg, &m.Vel, "PSRVEL")
+		velG.Tag = tag
+		h.VelGeo(velG, tRead)
+		return true, nil
+	case *novmsg.SinoPsrVel:
+		if m.SolStatus != novmsg.SolComputed {
+			return false, nil
+		}
+		velG := VelGeoVel(p.curEpochMsg, &m.Vel, "PSRVEL")
 		velG.Tag = tag
 		h.VelGeo(velG, tRead)
 		return true, nil

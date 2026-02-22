@@ -2,11 +2,14 @@ package novmsg
 
 // Message IDs for navigation messages
 const (
-	BestPosID     MsgID = 42
-	BestVelID     MsgID = 99
-	PsrDopID      MsgID = 174 // OEM7, Bynav, SinoGNSS
-	BestXYZID     MsgID = 241
-	BestGNSSVelID MsgID = 1430
+	BestGNSSPosID MsgID = 1429 // OEM7, Bynav
+	BestGNSSVelID MsgID = 1430 // OEM7, Bynav
+	BestPosID     MsgID = 42   // OEM7, Bynav, SinoGNSS
+	BestVelID     MsgID = 99   // OEM7, Bynav, SinoGNSS
+	BestXYZID     MsgID = 241  // OEM7, SinoGNSS
+	PsrDopID      MsgID = 174  // OEM7, Bynav, SinoGNSS
+	PsrPosID      MsgID = 47   // OEM7, SinoGNSS
+	PsrVelID      MsgID = 100  // OEM7, Bynav, SinoGNSS
 )
 
 // PsrDopInitChunk is the initial chunk of a PSRDOP message.
@@ -69,6 +72,30 @@ func (m *BestPos) ID() (MsgID, string) {
 	return BestPosID, "BESTPOSA"
 }
 
+// BestGNSSPos represents GNSS-only geodetic position from a NovAtel-format receiver.
+// Message ID: 1429
+// Same binary layout as BestPos.
+type BestGNSSPos struct {
+	Pos[SolStatus, PosType]
+}
+
+// ID returns the message ID for BESTGNSSPOS.
+func (m *BestGNSSPos) ID() (MsgID, string) {
+	return BestGNSSPosID, "BESTGNSSPOSA"
+}
+
+// PsrPos represents pseudorange position from a NovAtel-format receiver.
+// Message ID: 47
+// Same binary layout as BestPos.
+type PsrPos struct {
+	Pos[SolStatus, PosType]
+}
+
+// ID returns the message ID for PSRPOS.
+func (m *PsrPos) ID() (MsgID, string) {
+	return PsrPosID, "PSRPOSA"
+}
+
 // BestVel represents geodetic velocity from a NovAtel-format receiver.
 // Message ID: 99
 type BestVel struct {
@@ -78,6 +105,18 @@ type BestVel struct {
 // ID returns the message ID for BESTVEL
 func (m *BestVel) ID() (MsgID, string) {
 	return BestVelID, "BESTVELA"
+}
+
+// PsrVel represents pseudorange velocity from a NovAtel-format receiver.
+// Message ID: 100
+// Same binary layout as BestVel.
+type PsrVel struct {
+	Vel[PosType]
+}
+
+// ID returns the message ID for PSRVEL.
+func (m *PsrVel) ID() (MsgID, string) {
+	return PsrVelID, "PSRVELA"
 }
 
 // BestGNSSVel represents GNSS-only velocity from a NovAtel OEM7/ByNav receiver.
@@ -117,6 +156,32 @@ func (m *SinoBestPos) ID() (MsgID, string) {
 	return BestPosID, "BESTPOSA"
 }
 
+// SinoPsrPos represents pseudorange position from a SinoGNSS receiver.
+// Same binary layout as PsrPos but with SinoGNSS-specific PosType enum values.
+// NOT registered via init() -- shares message ID 47 with PsrPos and is only
+// used when the SinoGNSS variant builds its constructor map.
+type SinoPsrPos struct {
+	Pos[SolStatus, SinoPosType]
+}
+
+// ID returns the message ID for PSRPOS.
+func (m *SinoPsrPos) ID() (MsgID, string) {
+	return PsrPosID, "PSRPOSA"
+}
+
+// SinoPsrVel represents pseudorange velocity from a SinoGNSS receiver.
+// Same binary layout as PsrVel but with SinoGNSS-specific PosType enum values.
+// NOT registered via init() -- shares message ID 100 with PsrVel and is only
+// used when the SinoGNSS variant builds its constructor map.
+type SinoPsrVel struct {
+	Vel[SinoPosType]
+}
+
+// ID returns the message ID for PSRVEL.
+func (m *SinoPsrVel) ID() (MsgID, string) {
+	return PsrVelID, "PSRVELA"
+}
+
 // SinoBestXYZ represents ECEF position and velocity from a SinoGNSS receiver.
 // Same binary layout as BestXYZ but with SinoGNSS-specific PosType enum values.
 // NOT registered via init() -- shares message ID 241 with BestXYZ and is only
@@ -132,7 +197,10 @@ func (m *SinoBestXYZ) ID() (MsgID, string) {
 
 func init() {
 	regMsg[BestPos]("BESTPOS")
+	regMsg[PsrPos]("PSRPOS")
+	regMsg[BestGNSSPos]("BESTGNSSPOS")
 	regMsg[BestVel]("BESTVEL")
+	regMsg[PsrVel]("PSRVEL")
 	regMsg[BestGNSSVel]("BESTGNSSVEL")
 	regMsg[PsrDop]("PSRDOP")
 	regMsg[BestXYZ]("BESTXYZ")
