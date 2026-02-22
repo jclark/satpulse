@@ -52,20 +52,23 @@ type PosVelSSE struct {
 	Height    opt.Val[float64]    `json:"height,omitzero"`    // meters above WGS-84 ellipsoid
 	HeightMSL opt.Val[float64]    `json:"heightMSL,omitzero"` // meters above mean sea level
 
-	// ECEF position (only if no geodetic position, or if ECEF-only protocol)
-	ECEF opt.Val[[3]float64] `json:"ecef,omitzero"` // [X, Y, Z] meters
+	// ECEF position
+	PosECEF opt.Val[[3]float64] `json:"posECEF,omitzero"` // [X, Y, Z] meters
 
-	// Velocity
+	// Geodetic velocity
 	GroundSpeed opt.Val[float64]    `json:"groundSpeed,omitzero"` // m/s
 	Speed3D     opt.Val[float64]    `json:"speed3D,omitzero"`     // m/s
 	Course      opt.Val[float64]    `json:"course,omitzero"`      // degrees, true north
 	VelNED      opt.Val[[3]float64] `json:"velNED,omitzero"`      // [north, east, down] m/s
+
+	// ECEF velocity
+	VelECEF opt.Val[[3]float64] `json:"velECEF,omitzero"` // [X, Y, Z] m/s
 }
 ```
 
 Notes:
 - All optional fields use `opt.Val` with `omitzero`, so unset fields are omitted from JSON.
-- Geodetic position is preferred over ECEF. If both are available, only geodetic is sent (ECEF is redundant and harder to display). ECEF is included only for protocols that provide it exclusively.
+- Both geodetic and ECEF fields are sent when available; the frontend decides what to display.
 - All units are SI floats: meters, m/s, degrees.
 
 ### `QualitySSE`
@@ -197,8 +200,9 @@ func buildPosVelSSE(b *gpsprot.MsgBundle) *PosVelSSE {
 		})
 		setOptMeters(&pv.Height, &b.PosGeo.Height)
 		setOptMeters(&pv.HeightMSL, &b.PosGeo.HeightMSL)
-	} else if b.PosECEF != nil {
-		pv.ECEF.Set([3]float64{
+	}
+	if b.PosECEF != nil {
+		pv.PosECEF.Set([3]float64{
 			b.PosECEF.Pos[0].Meters(),
 			b.PosECEF.Pos[1].Meters(),
 			b.PosECEF.Pos[2].Meters(),
@@ -216,6 +220,13 @@ func buildPosVelSSE(b *gpsprot.MsgBundle) *PosVelSSE {
 				ned[2].MetersPerSecond(),
 			})
 		}
+	}
+	if b.VelECEF != nil {
+		pv.VelECEF.Set([3]float64{
+			b.VelECEF.Vel[0].MetersPerSecond(),
+			b.VelECEF.Vel[1].MetersPerSecond(),
+			b.VelECEF.Vel[2].MetersPerSecond(),
+		})
 	}
 	return &pv
 }
@@ -320,10 +331,11 @@ const posvelFormat: EventFormat = {
     latLon: formatLL,                                        // reuse from survey card: clickable Maps link
     height: ["Altitude", formatAlt],                         // reuse from survey card
     heightMSL: ["Altitude (MSL)", formatAlt],
-    ecef: formatECEF3,                                       // fallback when no geodetic position
+    posECEF: formatECEF3,
     groundSpeed: ["Ground speed", (arg: number) => `${arg.toFixed(2)} m/s`],
     course: ["Course", (arg: number) => `${arg.toFixed(1)}\u00b0`],
     speed3D: ["3D speed", (arg: number) => `${arg.toFixed(2)} m/s`],
+    velECEF: ["Velocity (ECEF)", formatECEF3],
 };
 ```
 
