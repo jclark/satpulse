@@ -8,7 +8,7 @@ const (
 	GloEphemerisID MsgID = 723  // OEM7, Bynav, SinoGNSS, RTKLIB
 	HeadingID      MsgID = 971  // OEM6, Bynav, SinoGNSS
 	MarkTimeID     MsgID = 231  // OEM6, Bynav, SinoGNSS
-	PsrDopID       MsgID = 174  // OEM7, SinoGNSS
+	// PsrDopID is defined in nav.go (has struct + registration)
 	PsrPosID       MsgID = 47   // OEM7, SinoGNSS
 	PsrVelID       MsgID = 100  // OEM7, Bynav, SinoGNSS
 	RangeCmpID     MsgID = 140  // OEM7, Bynav, SinoGNSS, Unicore, RTKLIB
@@ -25,7 +25,7 @@ func init() {
 	idNameMap[GloEphemerisID] = "GLOEPHEMERIS"
 	idNameMap[HeadingID] = "HEADING"
 	idNameMap[MarkTimeID] = "MARKTIME"
-	idNameMap[PsrDopID] = "PSRDOP"
+	// PsrDopID registered in nav.go init()
 	idNameMap[PsrPosID] = "PSRPOS"
 	idNameMap[PsrVelID] = "PSRVEL"
 	idNameMap[RangeCmpID] = "RANGECMP"

@@ -168,6 +168,67 @@ func TestBestPosAscii(t *testing.T) {
 	testDataAscii(t, bestPosTests, AsciiRegistry())
 }
 
+var psrDopTests = []dataTestCase[Port]{
+	{
+		name:  "Bynav M2 PSRDOP",
+		hex:   "aa44121cae000060cc000000c7b4670970addb0100000000000010038d397c3f1d47593fd6f5e33e40762b3fb517003f0000a0402c00000005000000060000000b0000000e000000110000001500000016000000180000001e000000220000002d0000002e00000031000000470000005000000052000000550000005c0000006100000062000000660000006b0000006c0000006e0000006f0000007000000071000000720000007300000074000000750000007600000077000000790000008100000082000000830000008b0000008f000000900000009100000094000000a4000000a500000002e06f0d",
+		ascii: "#PSRDOPA,COM3,0,99.7,FINESTEERING,2407,31174.000,00000000,0000,784;0.9853,0.8487,0.4452,0.6698,0.5004,5.0,44,5,6,11,14,17,21,22,24,30,34,45,46,49,71,80,82,85,92,97,98,102,107,108,110,111,112,113,114,115,116,117,118,119,121,129,130,131,139,143,144,145,148,164,165*c36464a9\r\n",
+		hdr: MsgHdr[Port]{
+			Port: COM3,
+			CommonHdr: CommonHdr{
+				Sequence:           0,
+				IdleTime:           Percentage(199),
+				TimeStatus:         TimeStatusFineSteering,
+				Week:               2407,
+				MillisecondsOfWeek: GPSec(31174000),
+				RecvStatus:         0,
+				Reserved:           0,
+				Version:            784,
+			},
+		},
+		value: &PsrDop{
+			PsrDopInitChunk: PsrDopInitChunk{
+				GDOP:    0.9852531552314758,
+				PDOP:    0.848741352558136,
+				HDOP:    0.4452349543571472,
+				HTDOP:   0.6697731018066406,
+				TDOP:    0.5003617405891418,
+				Cutoff:  5.0,
+				NumPRNs: 44,
+			},
+			PRNs: []PsrDopPRN{
+				{5}, {6}, {11}, {14}, {17}, {21}, {22}, {24},
+				{30}, {34}, {45}, {46}, {49}, {71}, {80}, {82},
+				{85}, {92}, {97}, {98}, {102}, {107}, {108}, {110},
+				{111}, {112}, {113}, {114}, {115}, {116}, {117}, {118},
+				{119}, {121}, {129}, {130}, {131}, {139}, {143}, {144},
+				{145}, {148}, {164}, {165},
+			},
+		},
+		fixupValueForAscii: fixupPsrDopForAscii,
+	},
+}
+
+func TestPsrDopBinary(t *testing.T) {
+	testDataBin(t, psrDopTests, BinRegistry())
+}
+
+func TestPsrDopAscii(t *testing.T) {
+	testDataAscii(t, psrDopTests, AsciiRegistry())
+}
+
+func fixupPsrDopForAscii(msg MsgBody) MsgBody {
+	m := msg.(*PsrDop)
+	r := *m
+	fixupFloat32(&r.GDOP, "%.4f")
+	fixupFloat32(&r.PDOP, "%.4f")
+	fixupFloat32(&r.HDOP, "%.4f")
+	fixupFloat32(&r.HTDOP, "%.4f")
+	fixupFloat32(&r.TDOP, "%.4f")
+	fixupFloat32(&r.Cutoff, "%.1f")
+	return &r
+}
+
 func fixupBestPosForAscii(msg MsgBody) MsgBody {
 	m := msg.(*BestPos)
 	r := *m
