@@ -13,11 +13,6 @@ interface LLH {
     height: number;
 }
 
-// umToM converts micrometers (int64 JSON number) to meters.
-function umToM(um: number): number {
-    return um / 1e6;
-}
-
 function formatCoord(lat: number, lon: number, digits: number): string {
     return `${lat.toFixed(digits)},${lon.toFixed(digits)}`;
 }
@@ -51,7 +46,7 @@ export function SurveyPanel({msg}: Props) {
             setLLH(null);
             return;
         }
-        ECEFtoLLH(umToM(px), umToM(py), umToM(pz)).then(r => {
+        ECEFtoLLH(px, py, pz).then(r => {
             if (r) setLLH(r);
         }).catch(() => setLLH(null));
     }, [msg?.position?.[0], msg?.position?.[1], msg?.position?.[2]]);
@@ -65,14 +60,14 @@ export function SurveyPanel({msg}: Props) {
         if (msg.valid) status = 'Valid';
         else if (msg.inProgress) status = 'In progress';
 
-        if (msg.accuracy) accuracy = `${umToM(msg.accuracy).toFixed(4)} m`;
+        if (msg.accuracy) accuracy = `${msg.accuracy.toFixed(4)} m`;
 
         if (msg.position) {
             const [px, py, pz] = msg.position;
             if (px !== 0 || py !== 0 || pz !== 0) {
-                ecefX = umToM(px).toFixed(4);
-                ecefY = umToM(py).toFixed(4);
-                ecefZ = umToM(pz).toFixed(4);
+                ecefX = px.toFixed(4);
+                ecefY = py.toFixed(4);
+                ecefZ = pz.toFixed(4);
             }
         }
 

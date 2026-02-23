@@ -4,11 +4,6 @@ import {ECEFtoLLH, LLHtoECEF, VelNEDtoECEF, VelECEFtoNED} from '../wailsjs/go/ma
 import {formatDateTime, formatTAI, formatUTCLocal} from './timefmt';
 import type {LeapSecondState} from './app';
 
-// Unit conversions from JSON wire format
-function ndegToDeg(nd: number): number { return nd / 1e9; }
-function umToM(um: number): number { return um / 1e6; }
-function umsToMs(ums: number): number { return ums / 1e6; }
-
 const blank = '\u2014';
 
 // parseTAITime parses a ptime.Time string ("seconds.nanoseconds") to seconds.
@@ -127,9 +122,9 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
         if (geoRows.length === 0) { setGeoConv(new Map()); return; }
         let cancelled = false;
         Promise.all(geoRows.map(async r => {
-            const lat = ndegToDeg(r.latLon[0]);
-            const lon = ndegToDeg(r.latLon[1]);
-            const h = umToM(r.height!);
+            const lat = r.latLon[0];
+            const lon = r.latLon[1];
+            const h = r.height!;
             const ecef = await LLHtoECEF(lat, lon, h);
             return [r.nativeMsgID, {ecefX: ecef[0], ecefY: ecef[1], ecefZ: ecef[2]}] as const;
         })).then(pairs => {
@@ -147,9 +142,9 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
         if (ecefRows.length === 0) { setEcefConv(new Map()); return; }
         let cancelled = false;
         Promise.all(ecefRows.map(async r => {
-            const x = umToM(r.pos[0]);
-            const y = umToM(r.pos[1]);
-            const z = umToM(r.pos[2]);
+            const x = r.pos[0];
+            const y = r.pos[1];
+            const z = r.pos[2];
             const llh = await ECEFtoLLH(x, y, z);
             if (!llh) return null;
             return [r.nativeMsgID, {lat: llh.lat, lon: llh.lon, height: llh.height}] as const;
@@ -182,7 +177,7 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
                 {sorted.map(row => {
                     if (row.kind === 'posGeo') {
                         const conv = geoConv.get(row.nativeMsgID);
-                        const latLon = <N>{fmtDeg(ndegToDeg(row.latLon[0]), 7)},{fmtDeg(ndegToDeg(row.latLon[1]), 7)}</N>;
+                        const latLon = <N>{fmtDeg(row.latLon[0], 7)},{fmtDeg(row.latLon[1], 7)}</N>;
                         const ecef = conv
                             ? <>{fmtM(conv.ecefX, 4)},{fmtM(conv.ecefY, 4)},{fmtM(conv.ecefZ, 4)}</>
                             : blank;
@@ -191,8 +186,8 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
                                 <td class={td}>{row.tag}</td>
                                 <td class={td}>{row.nativeMsgID}</td>
                                 <td class={td}>{latLon}</td>
-                                <td class={td}>{row.height != null ? <N>{fmtM(umToM(row.height), 4)}</N> : blank}</td>
-                                <td class={td}>{row.heightMSL != null ? <N>{fmtM(umToM(row.heightMSL), 4)}</N> : blank}</td>
+                                <td class={td}>{row.height != null ? <N>{fmtM(row.height, 4)}</N> : blank}</td>
+                                <td class={td}>{row.heightMSL != null ? <N>{fmtM(row.heightMSL, 4)}</N> : blank}</td>
                                 <td class={td}>{ecef}</td>
                             </tr>
                         );
@@ -201,7 +196,7 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
                         const latLon = conv
                             ? <>{fmtDeg(conv.lat, 7)},{fmtDeg(conv.lon, 7)}</>
                             : blank;
-                        const ecef = <N>{fmtM(umToM(row.pos[0]), 4)},{fmtM(umToM(row.pos[1]), 4)},{fmtM(umToM(row.pos[2]), 4)}</N>;
+                        const ecef = <N>{fmtM(row.pos[0], 4)},{fmtM(row.pos[1], 4)},{fmtM(row.pos[2], 4)}</N>;
                         return (
                             <tr key={row.nativeMsgID}>
                                 <td class={td}>{row.tag}</td>
@@ -232,7 +227,7 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
         if (geoRows.length === 0) { setNedToEcef(new Map()); return; }
         let cancelled = false;
         Promise.all(geoRows.map(async r => {
-            const ecef = await VelNEDtoECEF(umsToMs(r.velNED![0]), umsToMs(r.velNED![1]), umsToMs(r.velNED![2]));
+            const ecef = await VelNEDtoECEF(r.velNED![0], r.velNED![1], r.velNED![2]);
             if (!ecef) return null;
             return [r.nativeMsgID, ecef as [number, number, number]] as const;
         })).then(pairs => {
@@ -250,7 +245,7 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
         if (ecefRows.length === 0) { setEcefToNed(new Map()); return; }
         let cancelled = false;
         Promise.all(ecefRows.map(async r => {
-            const ned = await VelECEFtoNED(umsToMs(r.vel[0]), umsToMs(r.vel[1]), umsToMs(r.vel[2]));
+            const ned = await VelECEFtoNED(r.vel[0], r.vel[1], r.vel[2]);
             if (!ned) return null;
             return [r.nativeMsgID, ned as [number, number, number]] as const;
         })).then(pairs => {
@@ -282,7 +277,7 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                 {sorted.map(row => {
                     if (row.kind === 'velGeo') {
                         const ned = row.velNED
-                            ? <N>{fmtMs(umsToMs(row.velNED[0]), 4)},{fmtMs(umsToMs(row.velNED[1]), 4)},{fmtMs(umsToMs(row.velNED[2]), 4)}</N>
+                            ? <N>{fmtMs(row.velNED[0], 4)},{fmtMs(row.velNED[1], 4)},{fmtMs(row.velNED[2], 4)}</N>
                             : blank;
                         const conv = nedToEcef.get(row.nativeMsgID);
                         const ecef = conv
@@ -293,18 +288,18 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
                                 <td class={td}>{row.tag}</td>
                                 <td class={td}>{row.nativeMsgID}</td>
                                 <td class={td}>{row.speed3D != null
-                                    ? <N>{fmtMs(umsToMs(row.speed3D), 4)}</N>
+                                    ? <N>{fmtMs(row.speed3D, 4)}</N>
                                     : row.velNED != null
-                                        ? fmtMs(Math.sqrt(row.velNED[0]**2 + row.velNED[1]**2 + row.velNED[2]**2) / 1e6, 4)
+                                        ? fmtMs(Math.sqrt(row.velNED[0]**2 + row.velNED[1]**2 + row.velNED[2]**2), 4)
                                         : blank}</td>
-                                <td class={td}>{row.groundSpeed != null ? <N>{fmtMs(umsToMs(row.groundSpeed), 4)}</N> : blank}</td>
-                                <td class={td}>{row.course != null ? <N>{fmtDeg(ndegToDeg(row.course), 2)}</N> : blank}</td>
+                                <td class={td}>{row.groundSpeed != null ? <N>{fmtMs(row.groundSpeed, 4)}</N> : blank}</td>
+                                <td class={td}>{row.course != null ? <N>{fmtDeg(row.course, 2)}</N> : blank}</td>
                                 <td class={td}>{ned}</td>
                                 <td class={td}>{ecef}</td>
                             </tr>
                         );
                     } else {
-                        const ecefVel = <N>{fmtMs(umsToMs(row.vel[0]), 4)},{fmtMs(umsToMs(row.vel[1]), 4)},{fmtMs(umsToMs(row.vel[2]), 4)}</N>;
+                        const ecefVel = <N>{fmtMs(row.vel[0], 4)},{fmtMs(row.vel[1], 4)},{fmtMs(row.vel[2], 4)}</N>;
                         const conv = ecefToNed.get(row.nativeMsgID);
                         const ned = conv
                             ? <>{fmtMs(conv[0], 4)},{fmtMs(conv[1], 4)},{fmtMs(conv[2], 4)}</>
