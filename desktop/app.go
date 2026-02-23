@@ -753,16 +753,6 @@ func (a *App) VelECEFtoNED(vx, vy, vz float64) *[3]float64 {
 	return &v
 }
 
-// MsgBundle holds the most recent message of each type within a navigation epoch.
-// Cleared after each NavEpochMsg.
-type MsgBundle struct {
-	PosGeo  *gpsprot.PosGeoMsg
-	PosECEF *gpsprot.PosECEFMsg
-	VelGeo  *gpsprot.VelGeoMsg
-	VelECEF *gpsprot.VelECEFMsg
-	Time    *gpsprot.TimeMsg
-}
-
 // EpochPVT is emitted as "gps:epochPVT" at the end of each navigation epoch.
 type EpochPVT struct {
 	Pos  *EpochPos  `json:"pos,omitempty"`
@@ -799,20 +789,19 @@ type EpochTime struct {
 
 // msgHandler implements gpsprot.MsgHandler and emits "gps:msg" events.
 type msgHandler struct {
-	gpsprot.DefaultHandler
+	gpsprot.NavEpochAccum
 	ctx       context.Context
 	ls        ptime.LeapSecond
-	cur       MsgBundle
 	refLatLon atomic.Pointer[[2]float64]
 }
 
 func (h *msgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
-	h.cur.Time = msg
 	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
 		Kind: "time",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
 	})
+	h.NavEpochAccum.Time(msg, tRead)
 }
 
 func (h *msgHandler) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
@@ -841,7 +830,6 @@ func (h *msgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
-	h.cur.PosGeo = msg
 	ll := [2]float64{msg.LatLon[0].Degrees(), msg.LatLon[1].Degrees()}
 	if h.refLatLon.Swap(&ll) == nil {
 		runtime.EventsEmit(h.ctx, "gps:initialPos", ll)
@@ -851,11 +839,11 @@ func (h *msgHandler) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
 	})
+	h.NavEpochAccum.PosGeo(msg, tRead)
 }
 
 func (h *msgHandler) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
-	h.cur.PosECEF = msg
-	if h.cur.PosGeo == nil {
+	if h.Bundle.PosGeo == nil {
 		ecef := geopos.ECEF{msg.Pos[0].Meters(), msg.Pos[1].Meters(), msg.Pos[2].Meters()}
 		if llh, err := geopos.WGS84.ECEFtoLLH(ecef); err == nil {
 			ll := [2]float64{llh.Lat, llh.Lon}
@@ -869,24 +857,25 @@ func (h *msgHandler) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
 	})
+	h.NavEpochAccum.PosECEF(msg, tRead)
 }
 
 func (h *msgHandler) VelGeo(msg *gpsprot.VelGeoMsg, tRead time.Time) {
-	h.cur.VelGeo = msg
 	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
 		Kind: "velGeo",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
 	})
+	h.NavEpochAccum.VelGeo(msg, tRead)
 }
 
 func (h *msgHandler) VelECEF(msg *gpsprot.VelECEFMsg, tRead time.Time) {
-	h.cur.VelECEF = msg
 	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
 		Kind: "velECEF",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
 	})
+	h.NavEpochAccum.VelECEF(msg, tRead)
 }
 
 func (h *msgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
@@ -896,7 +885,7 @@ func (h *msgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 		Time: tRead.Format(time.TimeOnly),
 	})
 	ev := h.buildEpochPVT()
-	h.cur = MsgBundle{}
+	h.NavEpochAccum.NavEpoch(msg, tRead)
 	if ev.Pos != nil || ev.Vel != nil || ev.Time != nil {
 		runtime.EventsEmit(h.ctx, "gps:epochPVT", ev)
 	}
@@ -905,7 +894,7 @@ func (h *msgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 func (h *msgHandler) buildEpochPVT() EpochPVT {
 	var ev EpochPVT
 	// Position: prefer PosGeo (native lat/lon)
-	if g := h.cur.PosGeo; g != nil {
+	if g := h.Bundle.PosGeo; g != nil {
 		p := &EpochPos{
 			Lat: g.LatLon[0].Degrees(),
 			Lon: g.LatLon[1].Degrees(),
@@ -919,7 +908,7 @@ func (h *msgHandler) buildEpochPVT() EpochPVT {
 			p.HeightMSL = &v
 		}
 		// ECEF from native PosECEF or computed from LLH (requires height)
-		if e := h.cur.PosECEF; e != nil {
+		if e := h.Bundle.PosECEF; e != nil {
 			ecef := [3]float64{e.Pos[0].Meters(), e.Pos[1].Meters(), e.Pos[2].Meters()}
 			p.ECEF = &ecef
 		} else if p.Height != nil {
@@ -929,7 +918,7 @@ func (h *msgHandler) buildEpochPVT() EpochPVT {
 			p.ECEF = &ecef
 		}
 		ev.Pos = p
-	} else if e := h.cur.PosECEF; e != nil {
+	} else if e := h.Bundle.PosECEF; e != nil {
 		ecef := [3]float64{e.Pos[0].Meters(), e.Pos[1].Meters(), e.Pos[2].Meters()}
 		llh, err := geopos.WGS84.ECEFtoLLH(geopos.ECEF(ecef))
 		if err == nil {
@@ -943,7 +932,7 @@ func (h *msgHandler) buildEpochPVT() EpochPVT {
 	}
 	// Velocity: copy native fields, convert units
 	var vel *EpochVel
-	if g := h.cur.VelGeo; g != nil {
+	if g := h.Bundle.VelGeo; g != nil {
 		vel = &EpochVel{}
 		if g.GroundSpeed.IsSet() {
 			v := g.GroundSpeed.Get().MetersPerSecond()
@@ -968,7 +957,7 @@ func (h *msgHandler) buildEpochPVT() EpochPVT {
 			vel.VelNED = &v
 		}
 	}
-	if e := h.cur.VelECEF; e != nil {
+	if e := h.Bundle.VelECEF; e != nil {
 		if vel == nil {
 			vel = &EpochVel{}
 		}
@@ -988,7 +977,7 @@ func (h *msgHandler) buildEpochPVT() EpochPVT {
 	}
 	ev.Vel = vel
 	// Time
-	if t := h.cur.Time; t != nil {
+	if t := h.Bundle.Time; t != nil {
 		et := &EpochTime{}
 		tai, ok := t.ComputeTAITime(h.ls)
 		if ok {
