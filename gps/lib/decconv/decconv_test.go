@@ -18,8 +18,12 @@ func TestParseInt64(t *testing.T) {
 		{"one", "1", 0, 1, nil},
 		{"negative", "-1", 0, -1, nil},
 		{"large int", "123456789", 0, 123456789, nil},
-		// Decimals=0 with fractional input.
-		{"frac with zero decimals", "1.5", 0, 0, ErrTooPrecise},
+		// Rounding: decimals=0 with fractional input.
+		{"round half up", "1.5", 0, 2, nil},
+		{"round down", "1.4", 0, 1, nil},
+		{"round up", "1.6", 0, 2, nil},
+		{"round neg half away", "-1.5", 0, -2, nil},
+		{"round neg down", "-1.4", 0, -1, nil},
 		// Scaling.
 		{"scale 1", "1.5", 1, 15, nil},
 		{"scale 2", "1.23", 2, 123, nil},
@@ -34,9 +38,11 @@ func TestParseInt64(t *testing.T) {
 		{"exponent negative", "1e-3", 3, 1, nil},
 		{"exponent with plus", "5E+2", 0, 500, nil},
 		{"exponent fractional", "1.5e2", 0, 150, nil},
-		// Too precise.
-		{"too precise", "1.111", 2, 0, ErrTooPrecise},
-		{"too precise repeating", "1e-1", 0, 0, ErrTooPrecise},
+		// Excess precision is rounded.
+		{"round excess", "1.111", 2, 111, nil},
+		{"round sub-unit", "1e-1", 0, 0, nil},
+		{"round excess half", "1.115", 2, 112, nil},
+		{"round excess down", "1.114", 2, 111, nil},
 		// Overflow.
 		{"overflow positive", "9223372036854775808", 0, 0, ErrOverflow},
 		{"overflow negative", "-9223372036854775809", 0, 0, ErrOverflow},

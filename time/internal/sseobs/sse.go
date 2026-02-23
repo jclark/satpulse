@@ -28,16 +28,16 @@ type TimeSSE struct {
 
 // SurveySSE is the type of the SSE for survey progress
 type SurveySSE struct {
-	X          float64     `json:"x,omitzero"`
-	Y          float64     `json:"y,omitzero"`
-	Z          float64     `json:"z,omitzero"`
-	Accuracy   float64     `json:"accuracy"`
-	Alt        *float64    `json:"alt,omitempty"`
-	LatLon     *[2]float64 `json:"latLon,omitempty"`
-	ObsTime    uint32      `json:"obsTime"`
-	ObsCount   uint32      `json:"obsCount"`
-	InProgress bool        `json:"inProgress"`
-	Valid      bool        `json:"valid"`
+	X          gpsprot.Length             `json:"x,omitzero"`
+	Y          gpsprot.Length             `json:"y,omitzero"`
+	Z          gpsprot.Length             `json:"z,omitzero"`
+	Accuracy   gpsprot.Length             `json:"accuracy"`
+	Alt        opt.Val[gpsprot.Length]    `json:"alt,omitzero"`
+	LatLon     opt.Val[[2]gpsprot.Angle]  `json:"latLon,omitzero"`
+	ObsTime    uint32                     `json:"obsTime"`
+	ObsCount   uint32                     `json:"obsCount"`
+	InProgress bool                       `json:"inProgress"`
+	Valid      bool                       `json:"valid"`
 }
 
 // SatellitesSSE is the type of the SSE for satellite events
@@ -60,18 +60,16 @@ type SampleSSE struct {
 // no data is available for that category.
 type PosVelSSE struct {
 	// Geodetic position
-	LatLon    opt.Val[[2]float64] `json:"latLon,omitzero"`    // [lat, lon] degrees
-	Height    opt.Val[float64]    `json:"height,omitzero"`    // meters above WGS-84 ellipsoid
-	HeightMSL opt.Val[float64]    `json:"heightMSL,omitzero"` // meters above mean sea level
-	// ECEF position
-	PosECEF opt.Val[[3]float64] `json:"posECEF,omitzero"` // [X, Y, Z] meters
-	// Geodetic velocity
-	GroundSpeed opt.Val[float64]    `json:"groundSpeed,omitzero"` // m/s
-	Speed3D     opt.Val[float64]    `json:"speed3D,omitzero"`     // m/s
-	Course      opt.Val[float64]    `json:"course,omitzero"`      // degrees, true north
-	VelNED      opt.Val[[3]float64] `json:"velNED,omitzero"`      // [north, east, down] m/s
-	// ECEF velocity
-	VelECEF opt.Val[[3]float64] `json:"velECEF,omitzero"` // [X, Y, Z] m/s
+	LatLon    opt.Val[[2]gpsprot.Angle]  `json:"latLon,omitzero"`
+	Height    opt.Val[gpsprot.Length]     `json:"height,omitzero"`
+	HeightMSL opt.Val[gpsprot.Length]     `json:"heightMSL,omitzero"`
+	PosECEF   opt.Val[[3]gpsprot.Length]  `json:"posECEF,omitzero"`
+	// Velocity
+	GroundSpeed opt.Val[gpsprot.Speed]    `json:"groundSpeed,omitzero"`
+	Speed3D     opt.Val[gpsprot.Speed]    `json:"speed3D,omitzero"`
+	Course      opt.Val[gpsprot.Angle]    `json:"course,omitzero"`
+	VelNED      opt.Val[[3]gpsprot.Speed] `json:"velNED,omitzero"`
+	VelECEF     opt.Val[[3]gpsprot.Speed] `json:"velECEF,omitzero"`
 }
 
 // QualitySSE is the SSE event data for solution quality metadata.
@@ -80,12 +78,12 @@ type QualitySSE struct {
 	Fix         []string         `json:"fix"`
 	Corrections gpsprot.CorrKind `json:"corrections,omitzero"`
 	// Accuracy estimates
-	AccHor         opt.Val[float64] `json:"accHor,omitzero"`         // meters
-	AccVert        opt.Val[float64] `json:"accVert,omitzero"`        // meters
-	AccPos         opt.Val[float64] `json:"accPos,omitzero"`         // meters
-	AccSpeed       opt.Val[float64] `json:"accSpeed,omitzero"`       // m/s
-	AccGroundSpeed opt.Val[float64] `json:"accGroundSpeed,omitzero"` // m/s
-	AccCourse      opt.Val[float64] `json:"accCourse,omitzero"`      // degrees
+	AccHor         opt.Val[gpsprot.Length] `json:"accHor,omitzero"`
+	AccVert        opt.Val[gpsprot.Length] `json:"accVert,omitzero"`
+	AccPos         opt.Val[gpsprot.Length] `json:"accPos,omitzero"`
+	AccSpeed       opt.Val[gpsprot.Speed]  `json:"accSpeed,omitzero"`
+	AccGroundSpeed opt.Val[gpsprot.Speed]  `json:"accGroundSpeed,omitzero"`
+	AccCourse      opt.Val[gpsprot.Angle]  `json:"accCourse,omitzero"`
 	// Dilution of precision
 	GDOP opt.Val[float64] `json:"gdop,omitzero"`
 	PDOP opt.Val[float64] `json:"pdop,omitzero"`
@@ -98,7 +96,7 @@ type QualitySSE struct {
 	// Signals used in the solution
 	SignalsUsed gpsprot.SignalSet `json:"signalsUsed,omitzero"`
 	// Correction metadata
-	DiffAge       opt.Val[float64] `json:"diffAge,omitzero"`       // seconds
+	DiffAge       opt.Val[float64] `json:"diffAge,omitzero"`
 	RTCMRefBaseID opt.Val[uint16]  `json:"rtcmRefBaseID,omitzero"`
 }
 
@@ -183,26 +181,28 @@ func (o *SSEObserver) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 // Survey implements gpsprot.MsgHandler - generates survey SSE events (copied exactly from dispatcher.go)
 func (o *SSEObserver) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	event := SurveySSE{
-		Accuracy:   m.Accuracy.Meters(),
+		Accuracy:   m.Accuracy,
 		ObsTime:    uint32(m.ObsTime / time.Second),
 		ObsCount:   m.ObsCount,
 		InProgress: m.InProgress,
 		Valid:      m.Valid,
 	}
 	if !m.Position.IsZero() {
-		ecef := geopos.ECEF{}
-		for i := range ecef {
-			ecef[i] = m.Position[i].Meters()
+		event.X = m.Position[0]
+		event.Y = m.Position[1]
+		event.Z = m.Position[2]
+		ecef := geopos.ECEF{
+			m.Position[0].Meters(),
+			m.Position[1].Meters(),
+			m.Position[2].Meters(),
 		}
-		event.X = ecef[0]
-		event.Y = ecef[1]
-		event.Z = ecef[2]
 		llh, err := geopos.WGS84.ECEFtoLLH(ecef)
 		if err == nil {
-			latLon := [2]float64{llh.Lat, llh.Lon}
-			event.LatLon = &latLon
-			h := llh.Height
-			event.Alt = &h
+			event.LatLon.Set([2]gpsprot.Angle{
+				gpsprot.DegreesFromFloat(llh.Lat),
+				gpsprot.DegreesFromFloat(llh.Lon),
+			})
+			event.Alt.Set(gpsprot.Meters(llh.Height))
 		}
 	}
 	o.sendSSE("survey", event)
@@ -243,39 +243,21 @@ func buildPosVelSSE(b *gpsprot.MsgBundle) *PosVelSSE {
 	}
 	var pv PosVelSSE
 	if b.PosGeo != nil {
-		pv.LatLon.Set([2]float64{
-			b.PosGeo.LatLon[0].Degrees(),
-			b.PosGeo.LatLon[1].Degrees(),
-		})
-		setOptLength(&pv.Height, &b.PosGeo.Height)
-		setOptLength(&pv.HeightMSL, &b.PosGeo.HeightMSL)
+		pv.LatLon.Set(b.PosGeo.LatLon)
+		pv.Height = b.PosGeo.Height
+		pv.HeightMSL = b.PosGeo.HeightMSL
 	}
 	if b.PosECEF != nil {
-		pv.PosECEF.Set([3]float64{
-			b.PosECEF.Pos[0].Meters(),
-			b.PosECEF.Pos[1].Meters(),
-			b.PosECEF.Pos[2].Meters(),
-		})
+		pv.PosECEF.Set(b.PosECEF.Pos)
 	}
 	if b.VelGeo != nil {
-		setOptSpeed(&pv.GroundSpeed, &b.VelGeo.GroundSpeed)
-		setOptSpeed(&pv.Speed3D, &b.VelGeo.Speed3D)
-		setOptAngle(&pv.Course, &b.VelGeo.Course)
-		if b.VelGeo.VelNED.IsSet() {
-			ned := b.VelGeo.VelNED.Get()
-			pv.VelNED.Set([3]float64{
-				ned[0].MetersPerSecond(),
-				ned[1].MetersPerSecond(),
-				ned[2].MetersPerSecond(),
-			})
-		}
+		pv.GroundSpeed = b.VelGeo.GroundSpeed
+		pv.Speed3D = b.VelGeo.Speed3D
+		pv.Course = b.VelGeo.Course
+		pv.VelNED = b.VelGeo.VelNED
 	}
 	if b.VelECEF != nil {
-		pv.VelECEF.Set([3]float64{
-			b.VelECEF.Vel[0].MetersPerSecond(),
-			b.VelECEF.Vel[1].MetersPerSecond(),
-			b.VelECEF.Vel[2].MetersPerSecond(),
-		})
+		pv.VelECEF.Set(b.VelECEF.Vel)
 	}
 	return &pv
 }
@@ -292,12 +274,12 @@ func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
 		NumSVTracked:  msg.NumSVTracked,
 		RTCMRefBaseID: msg.RTCMRefBaseID,
 	}
-	setOptLength(&q.AccHor, &msg.Acc.Hor)
-	setOptLength(&q.AccVert, &msg.Acc.Vert)
-	setOptLength(&q.AccPos, &msg.Acc.Pos)
-	setOptSpeed(&q.AccSpeed, &msg.Acc.Speed)
-	setOptSpeed(&q.AccGroundSpeed, &msg.Acc.GroundSpeed)
-	setOptAngle(&q.AccCourse, &msg.Acc.Course)
+	q.AccHor = msg.Acc.Hor
+	q.AccVert = msg.Acc.Vert
+	q.AccPos = msg.Acc.Pos
+	q.AccSpeed = msg.Acc.Speed
+	q.AccGroundSpeed = msg.Acc.GroundSpeed
+	q.AccCourse = msg.Acc.Course
 	q.GDOP = msg.DOP.Geom
 	q.PDOP = msg.DOP.Pos
 	q.HDOP = msg.DOP.Hor
@@ -323,20 +305,3 @@ func buildFixKeywords(msg *gpsprot.NavEpochMsg) []string {
 	return kw
 }
 
-func setOptLength(dst *opt.Val[float64], src *opt.Val[gpsprot.Length]) {
-	if src.IsSet() {
-		dst.Set(src.Get().Meters())
-	}
-}
-
-func setOptSpeed(dst *opt.Val[float64], src *opt.Val[gpsprot.Speed]) {
-	if src.IsSet() {
-		dst.Set(src.Get().MetersPerSecond())
-	}
-}
-
-func setOptAngle(dst *opt.Val[float64], src *opt.Val[gpsprot.Angle]) {
-	if src.IsSet() {
-		dst.Set(src.Get().Degrees())
-	}
-}
