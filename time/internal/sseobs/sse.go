@@ -4,12 +4,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/time/internal/obs"
-	"github.com/jclark/satpulse/time/internal/phcsync"
+	"github.com/jclark/satpulse/gps/lib/geopos"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/lib/sse"
 )
 
@@ -55,9 +55,56 @@ type SampleSSE struct {
 	SyncState         string  `json:"syncState"`
 }
 
+// PosVelSSE is the SSE event data for position and velocity.
+// Emitted once per navigation epoch. Fields are omitted when
+// no data is available for that category.
+type PosVelSSE struct {
+	// Geodetic position
+	LatLon    opt.Val[[2]float64] `json:"latLon,omitzero"`    // [lat, lon] degrees
+	Height    opt.Val[float64]    `json:"height,omitzero"`    // meters above WGS-84 ellipsoid
+	HeightMSL opt.Val[float64]    `json:"heightMSL,omitzero"` // meters above mean sea level
+	// ECEF position
+	PosECEF opt.Val[[3]float64] `json:"posECEF,omitzero"` // [X, Y, Z] meters
+	// Geodetic velocity
+	GroundSpeed opt.Val[float64]    `json:"groundSpeed,omitzero"` // m/s
+	Speed3D     opt.Val[float64]    `json:"speed3D,omitzero"`     // m/s
+	Course      opt.Val[float64]    `json:"course,omitzero"`      // degrees, true north
+	VelNED      opt.Val[[3]float64] `json:"velNED,omitzero"`      // [north, east, down] m/s
+	// ECEF velocity
+	VelECEF opt.Val[[3]float64] `json:"velECEF,omitzero"` // [X, Y, Z] m/s
+}
+
+// QualitySSE is the SSE event data for solution quality metadata.
+// Emitted once per navigation epoch.
+type QualitySSE struct {
+	Fix         []string         `json:"fix"`
+	Corrections gpsprot.CorrKind `json:"corrections,omitzero"`
+	// Accuracy estimates
+	AccHor         opt.Val[float64] `json:"accHor,omitzero"`         // meters
+	AccVert        opt.Val[float64] `json:"accVert,omitzero"`        // meters
+	AccPos         opt.Val[float64] `json:"accPos,omitzero"`         // meters
+	AccSpeed       opt.Val[float64] `json:"accSpeed,omitzero"`       // m/s
+	AccGroundSpeed opt.Val[float64] `json:"accGroundSpeed,omitzero"` // m/s
+	AccCourse      opt.Val[float64] `json:"accCourse,omitzero"`      // degrees
+	// Dilution of precision
+	GDOP opt.Val[float64] `json:"gdop,omitzero"`
+	PDOP opt.Val[float64] `json:"pdop,omitzero"`
+	HDOP opt.Val[float64] `json:"hdop,omitzero"`
+	VDOP opt.Val[float64] `json:"vdop,omitzero"`
+	TDOP opt.Val[float64] `json:"tdop,omitzero"`
+	// Satellite counts
+	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
+	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
+	// Signals used in the solution
+	SignalsUsed gpsprot.SignalSet `json:"signalsUsed,omitzero"`
+	// Correction metadata
+	DiffAge       opt.Val[float64] `json:"diffAge,omitzero"`       // seconds
+	RTCMRefBaseID opt.Val[uint16]  `json:"rtcmRefBaseID,omitzero"`
+}
+
 // SSEObserver implements obs.Observer for Server-Sent Events
 type SSEObserver struct {
-	obs.DefaultObserver
+	gpsprot.NavEpochAccum
 	sseCh     chan<- sse.Event
 	lg        *slog.Logger
 	lastTime  ptime.Time
@@ -166,6 +213,20 @@ func (o *SSEObserver) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 	o.sendSSE("satellites", SatellitesSSE{SVs: msg.SVs})
 }
 
+// ReopenLog implements Observer as a no-op.
+func (o *SSEObserver) ReopenLog() {}
+
+// NavEpoch emits posvel and quality SSE events, then clears the bundle.
+func (o *SSEObserver) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
+	if pv := buildPosVelSSE(&o.Bundle); pv != nil {
+		o.sendSSE("posvel", pv)
+	}
+	if q := buildQualitySSE(msg); q != nil {
+		o.sendSSE("quality", q)
+	}
+	o.NavEpochAccum.NavEpoch(msg, tRead)
+}
+
 // sendSSE is a helper method to send SSE events
 func (o *SSEObserver) sendSSE(name string, data any) {
 	event, err := sse.Make(name, data)
@@ -173,5 +234,109 @@ func (o *SSEObserver) sendSSE(name string, data any) {
 		o.lg.Error("failed to create SSE event", "name", name, "err", err)
 	} else {
 		o.sseCh <- event
+	}
+}
+
+func buildPosVelSSE(b *gpsprot.MsgBundle) *PosVelSSE {
+	if b.PosGeo == nil && b.PosECEF == nil && b.VelGeo == nil && b.VelECEF == nil {
+		return nil
+	}
+	var pv PosVelSSE
+	if b.PosGeo != nil {
+		pv.LatLon.Set([2]float64{
+			b.PosGeo.LatLon[0].Degrees(),
+			b.PosGeo.LatLon[1].Degrees(),
+		})
+		setOptLength(&pv.Height, &b.PosGeo.Height)
+		setOptLength(&pv.HeightMSL, &b.PosGeo.HeightMSL)
+	}
+	if b.PosECEF != nil {
+		pv.PosECEF.Set([3]float64{
+			b.PosECEF.Pos[0].Meters(),
+			b.PosECEF.Pos[1].Meters(),
+			b.PosECEF.Pos[2].Meters(),
+		})
+	}
+	if b.VelGeo != nil {
+		setOptSpeed(&pv.GroundSpeed, &b.VelGeo.GroundSpeed)
+		setOptSpeed(&pv.Speed3D, &b.VelGeo.Speed3D)
+		setOptAngle(&pv.Course, &b.VelGeo.Course)
+		if b.VelGeo.VelNED.IsSet() {
+			ned := b.VelGeo.VelNED.Get()
+			pv.VelNED.Set([3]float64{
+				ned[0].MetersPerSecond(),
+				ned[1].MetersPerSecond(),
+				ned[2].MetersPerSecond(),
+			})
+		}
+	}
+	if b.VelECEF != nil {
+		pv.VelECEF.Set([3]float64{
+			b.VelECEF.Vel[0].MetersPerSecond(),
+			b.VelECEF.Vel[1].MetersPerSecond(),
+			b.VelECEF.Vel[2].MetersPerSecond(),
+		})
+	}
+	return &pv
+}
+
+func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
+	fix := buildFixKeywords(msg)
+	if fix == nil {
+		return nil
+	}
+	q := &QualitySSE{
+		Fix:           fix,
+		Corrections:   msg.Correction,
+		NumSVUsed:     msg.NumSVUsed,
+		NumSVTracked:  msg.NumSVTracked,
+		RTCMRefBaseID: msg.RTCMRefBaseID,
+	}
+	setOptLength(&q.AccHor, &msg.Acc.Hor)
+	setOptLength(&q.AccVert, &msg.Acc.Vert)
+	setOptLength(&q.AccPos, &msg.Acc.Pos)
+	setOptSpeed(&q.AccSpeed, &msg.Acc.Speed)
+	setOptSpeed(&q.AccGroundSpeed, &msg.Acc.GroundSpeed)
+	setOptAngle(&q.AccCourse, &msg.Acc.Course)
+	q.GDOP = msg.DOP.Geom
+	q.PDOP = msg.DOP.Pos
+	q.HDOP = msg.DOP.Hor
+	q.VDOP = msg.DOP.Vert
+	q.TDOP = msg.DOP.Time
+	if msg.DiffAge.IsSet() {
+		q.DiffAge.Set(msg.DiffAge.Get().Seconds())
+	}
+	q.SignalsUsed = msg.SignalsUsed
+	return q
+}
+
+func buildFixKeywords(msg *gpsprot.NavEpochMsg) []string {
+	if msg.FixLevel == 0 {
+		return nil
+	}
+	var kw []string
+	kw = append(kw, msg.FixLevel.String())
+	if msg.FixDim != 0 {
+		kw = append(kw, msg.FixDim.String())
+	}
+	kw = append(kw, msg.AuxSrc.Items()...)
+	return kw
+}
+
+func setOptLength(dst *opt.Val[float64], src *opt.Val[gpsprot.Length]) {
+	if src.IsSet() {
+		dst.Set(src.Get().Meters())
+	}
+}
+
+func setOptSpeed(dst *opt.Val[float64], src *opt.Val[gpsprot.Speed]) {
+	if src.IsSet() {
+		dst.Set(src.Get().MetersPerSecond())
+	}
+}
+
+func setOptAngle(dst *opt.Val[float64], src *opt.Val[gpsprot.Angle]) {
+	if src.IsSet() {
+		dst.Set(src.Get().Degrees())
 	}
 }

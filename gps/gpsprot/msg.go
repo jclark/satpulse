@@ -792,7 +792,8 @@ var auxSrcBits = [...]auxSrcBit{
 	{AuxSrcINS, "INS"},
 }
 
-func (a AuxSrc) items() []string {
+// Items returns the names of the set bits as a string slice.
+func (a AuxSrc) Items() []string {
 	var items []string
 	for _, b := range auxSrcBits {
 		if a&b.mask != 0 {
@@ -803,7 +804,7 @@ func (a AuxSrc) items() []string {
 }
 
 func (a AuxSrc) String() string {
-	items := a.items()
+	items := a.Items()
 	if len(items) == 0 {
 		return "(none)"
 	}
@@ -811,7 +812,7 @@ func (a AuxSrc) String() string {
 }
 
 func (a AuxSrc) MarshalJSON() ([]byte, error) {
-	return json.Marshal(a.items())
+	return json.Marshal(a.Items())
 }
 
 // DOP holds dilution of precision values for the navigation solution. Fields

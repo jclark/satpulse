@@ -393,6 +393,7 @@ Export `AuxSrc.items()`:
 
 Add JSON marshalling to `SignalSet` in `signal.go`:
 
+- `IsZero()`: returns true when the set is empty, so `omitzero` suppresses the zero value
 - `MarshalJSON()`: marshal via `GNSSSignalMap()` (produces `{"GPS":["L1","L5"],"GAL":["E1","E5b"]}`)
 - `UnmarshalJSON()`: unmarshal via `ParseSignalMap()`
 
