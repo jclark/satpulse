@@ -108,6 +108,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/term` provides access to the Linux terminal interface, which provides access to serial devices. This is similar to [github.com/pkg/term](https://github.com/pkg/term), but provides additional Linux-specific functionality.
 
+`gps/lib/decconv` converts between base-10 decimal strings and int64 scaled integers without floating point. It is used for exact parsing and formatting of physical quantities like angles and lengths.
+
 ### time/
 
 These packages provide the public API for time synchronization. They are in the domain layer.
