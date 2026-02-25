@@ -21,14 +21,8 @@ function mapsURL(lat: number, lon: number): string {
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formatCoord(lat, lon, 7))}`;
 }
 
-function formatDuration(ns: number): string {
-    const secs = Math.floor(ns / 1e9);
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
+function formatDuration(secs: number): string {
+    return `${secs} s`;
 }
 
 const blank = '\u2014';
