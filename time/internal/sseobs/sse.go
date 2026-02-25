@@ -103,11 +103,11 @@ type QualitySSE struct {
 // SSEObserver implements obs.Observer for Server-Sent Events
 type SSEObserver struct {
 	gpsprot.PVMsgAccum
-	sseCh     chan<- sse.Event
-	lg        *slog.Logger
-	lastTime  ptime.Time
-	ls        ptime.LeapSecond
-	initEvent sse.Event
+	sseCh      chan<- sse.Event
+	lg         *slog.Logger
+	ls         ptime.LeapSecond
+	timeTicker gpsprot.TimeTicker
+	initEvent  sse.Event
 }
 
 // New creates a new SSE observer with the provided channel and leap second.
@@ -122,12 +122,14 @@ func New(sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger, cfgResult
 	if err != nil {
 		lg.Error("failed to create SSE event", "name", "init", "err", err)
 	}
-	return &SSEObserver{
+	o := &SSEObserver{
 		sseCh:     sseCh,
 		ls:        ls,
 		lg:        lg,
 		initEvent: initEvent,
 	}
+	o.timeTicker = *gpsprot.NewTimeTicker(&timeHandler{obs: o}, ls)
+	return o
 }
 
 func (o *SSEObserver) InitEvent() sse.Event {
@@ -137,6 +139,7 @@ func (o *SSEObserver) InitEvent() sse.Event {
 // SetLeapSecond updates the leap second used for time formatting
 func (o *SSEObserver) SetLeapSecond(ls ptime.LeapSecond) {
 	o.ls = ls
+	o.timeTicker.SetLeapSecond(ls)
 }
 
 // Release implements Observer - closes the SSE channel
@@ -158,24 +161,32 @@ func (o *SSEObserver) Sample(data phcsync.Sample) {
 	o.sendSSE("phc", event)
 }
 
-// Time implements gpsprot.MsgHandler - generates time SSE events (copied exactly from dispatcher.go)
+// Time routes raw TimeMsgs through the TimeTicker for per-epoch filling.
 func (o *SSEObserver) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
-	if mt.Ref == gpsprot.PrePulse {
+	o.timeTicker.Time(mt, tRead)
+}
+
+// timeHandler is the downstream target for TimeTicker.
+// It receives filled TimeMsgs and generates SSE events.
+type timeHandler struct {
+	gpsprot.DefaultHandler
+	obs *SSEObserver
+}
+
+// Time generates a time SSE event from a filled TimeMsg.
+// Only emits when the time is an integral second.
+func (h *timeHandler) Time(mt *gpsprot.TimeMsg, _ time.Time) {
+	tai := mt.TAITime
+	if tai.IsZero() {
 		return
 	}
-	sec, ok := mt.ComputeTAITime(o.ls)
-	if !ok {
+	if tai.Round(time.Second) != tai {
 		return
 	}
-	secRnd := sec.Round(time.Second)
-	if secRnd <= o.lastTime {
-		return
-	}
-	o.sendSSE("time", TimeSSE{
-		UTC: o.ls.FormatTime(secRnd),
-		TAI: int64(secRnd) / 1e9,
+	h.obs.sendSSE("time", TimeSSE{
+		UTC: h.obs.ls.FormatTime(tai),
+		TAI: int64(tai) / 1e9,
 	})
-	o.lastTime = secRnd
 }
 
 // Survey implements gpsprot.MsgHandler - generates survey SSE events (copied exactly from dispatcher.go)
@@ -216,8 +227,16 @@ func (o *SSEObserver) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 // ReopenLog implements Observer as a no-op.
 func (o *SSEObserver) ReopenLog() {}
 
-// NavEpoch emits posvel and quality SSE events, then clears the bundle.
+// LeapSecond updates both the local leap second and the TimeTicker's.
+func (o *SSEObserver) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
+	msg.UpdateLeapSecond(&o.ls)
+	o.timeTicker.LeapSecond(msg, tRead)
+}
+
+// NavEpoch resets the TimeTicker for the next epoch,
+// then emits posvel and quality SSE events, and clears the bundle.
 func (o *SSEObserver) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
+	o.timeTicker.NavEpoch(msg, tRead)
 	o.PVMsgBundle.FillDerived()
 	if pv := buildPosVelSSE(&o.PVMsgBundle); pv != nil {
 		o.sendSSE("posvel", pv)

@@ -1194,3 +1194,76 @@ func (a *PVMsgAccum) VelECEF(msg *VelECEFMsg, _ time.Time) {
 func (a *PVMsgAccum) NavEpoch(_ *NavEpochMsg, _ time.Time) {
 	a.PVMsgBundle = PVMsgBundle{}
 }
+
+// TimeTicker produces one filled-in TimeMsg per navigation epoch.
+// It stores the first non-PrePulse TimeMsg each epoch, fills in
+// derived fields (TAITime, UTCTime, UTCOffset), and forwards the
+// result immediately to a downstream MsgHandler. NavEpoch resets
+// the state for the next epoch.
+type TimeTicker struct {
+	DefaultHandler
+	h    MsgHandler
+	time opt.Val[TimeMsg]
+	ls   ptime.LeapSecond
+}
+
+// NewTimeTicker creates a TimeTicker that forwards filled TimeMsgs to h.
+func NewTimeTicker(h MsgHandler, ls ptime.LeapSecond) *TimeTicker {
+	return &TimeTicker{h: h, ls: ls}
+}
+
+// SetLeapSecond replaces the stored leap second.
+func (t *TimeTicker) SetLeapSecond(ls ptime.LeapSecond) {
+	t.ls = ls
+}
+
+// LeapSecond updates the stored leap second.
+func (t *TimeTicker) LeapSecond(msg *LeapSecondMsg, _ time.Time) {
+	msg.UpdateLeapSecond(&t.ls)
+}
+
+// Time filters, fills, and forwards one TimeMsg per epoch.
+func (t *TimeTicker) Time(msg *TimeMsg, tRead time.Time) {
+	if msg.Ref == PrePulse {
+		return
+	}
+	if t.time.IsSet() {
+		return
+	}
+	m := *msg
+	if m.UTCTime != nil {
+		ut := *m.UTCTime
+		m.UTCTime = &ut
+	}
+	t.fill(&m)
+	t.time.Set(m)
+	t.h.Time(&m, tRead)
+}
+
+// NavEpoch clears the stored TimeMsg, preparing for the next epoch.
+func (t *TimeTicker) NavEpoch(_ *NavEpochMsg, _ time.Time) {
+	t.time = opt.Val[TimeMsg]{}
+}
+
+func (t *TimeTicker) fill(m *TimeMsg) {
+	if !m.TAITime.IsZero() {
+		m.TAITime = m.TAITime.Round(time.Millisecond)
+	}
+	if m.UTCTime != nil {
+		m.UTCTime.TimeOfDay = m.UTCTime.TimeOfDay.Round(time.Millisecond)
+	}
+	if m.TAITime.IsZero() && m.UTCTime != nil {
+		m.TAITime = t.ls.UTCtoTime(*m.UTCTime)
+	}
+	if m.UTCTime == nil && !m.TAITime.IsZero() {
+		ut := t.ls.TimeToUTC(m.TAITime)
+		m.UTCTime = &ut
+	}
+	if m.UTCOffset == 0 && !m.TAITime.IsZero() {
+		state := t.ls.StateAt(m.TAITime)
+		if state.UTCOffset > 0 {
+			m.UTCOffset = uint8(state.UTCOffset)
+		}
+	}
+}
+
