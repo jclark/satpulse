@@ -685,7 +685,7 @@ func TestGGAQuality(t *testing.T) {
 		hasNumSV bool
 		hdop     float64
 		hasHDOP  bool
-		diffAge  time.Duration
+		diffAge  gpsprot.Duration
 		hasDiff  bool
 		refBase  uint16
 		hasRef   bool
@@ -713,7 +713,7 @@ func TestGGAQuality(t *testing.T) {
 			hasNumSV: true,
 			hdop:     1.0,
 			hasHDOP:  true,
-			diffAge:  3 * time.Second,
+			diffAge:  3 * gpsprot.Second,
 			hasDiff:  true,
 			refBase:  1,
 			hasRef:   true,
@@ -727,7 +727,7 @@ func TestGGAQuality(t *testing.T) {
 			hasNumSV: true,
 			hdop:     0.99,
 			hasHDOP:  true,
-			diffAge:  time.Second,
+			diffAge:  gpsprot.Second,
 			hasDiff:  true,
 			refBase:  4042,
 			hasRef:   true,
@@ -741,7 +741,7 @@ func TestGGAQuality(t *testing.T) {
 			hasNumSV: true,
 			hdop:     1.2,
 			hasHDOP:  true,
-			diffAge:  2500 * time.Millisecond,
+			diffAge:  2500 * gpsprot.Millisecond,
 			hasDiff:  true,
 			refBase:  1234,
 			hasRef:   true,
@@ -766,7 +766,7 @@ func TestGGAQuality(t *testing.T) {
 			hasNumSV: true,
 			hdop:     0.99,
 			hasHDOP:  true,
-			diffAge:  time.Second,
+			diffAge:  gpsprot.Second,
 			hasDiff:  true,
 		},
 	}
@@ -1102,7 +1102,7 @@ func TestQualitySynthesis(t *testing.T) {
 	if !e.DOP.Vert.IsSet() || e.DOP.Vert.Get() != 1.2 {
 		t.Errorf("DOP.Vert = %v, want 1.2", e.DOP.Vert)
 	}
-	if !e.DiffAge.IsSet() || e.DiffAge.Get() != time.Second {
+	if !e.DiffAge.IsSet() || e.DiffAge.Get() != gpsprot.Second {
 		t.Errorf("DiffAge = %v, want 1s", e.DiffAge)
 	}
 	if !e.RTCMRefBaseID.IsSet() || e.RTCMRefBaseID.Get() != 4042 {

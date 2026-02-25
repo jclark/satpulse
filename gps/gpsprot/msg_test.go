@@ -540,7 +540,7 @@ func TestPVMsgAccumAfterClear(t *testing.T) {
 	}
 }
 
-func TestAccuracyMergeHigherOverwrites(t *testing.T) {
+func TestAccuracyFillSetsUnset(t *testing.T) {
 	a := Accuracy{
 		Pos:   opt.Make(10 * Meter),
 		Hor:   opt.Make(5 * Meter),
@@ -551,30 +551,30 @@ func TestAccuracyMergeHigherOverwrites(t *testing.T) {
 		Vert:        opt.Make(8 * Meter),
 		GroundSpeed: opt.Make(3 * MeterPerSecond),
 	}
-	a.Merge(&b, PriGenericHigh, PriVendorLow)
-	// Higher priority overwrites Pos
-	if a.Pos.Get() != 20*Meter {
-		t.Errorf("Pos = %v, want 20m", a.Pos.Get())
+	a.Fill(&b)
+	// Pos already set, not overwritten
+	if a.Pos.Get() != 10*Meter {
+		t.Errorf("Pos = %v, want 10m (already set)", a.Pos.Get())
 	}
-	// Hor kept (src didn't set it)
+	// Hor already set, kept
 	if a.Hor.Get() != 5*Meter {
 		t.Errorf("Hor = %v, want 5m", a.Hor.Get())
 	}
-	// Vert filled from src
+	// Vert filled from b
 	if a.Vert.Get() != 8*Meter {
 		t.Errorf("Vert = %v, want 8m", a.Vert.Get())
 	}
-	// Speed kept (src didn't set it)
+	// Speed already set, kept
 	if a.Speed.Get() != 2*MeterPerSecond {
 		t.Errorf("Speed = %v, want 2m/s", a.Speed.Get())
 	}
-	// GroundSpeed filled from src
+	// GroundSpeed filled from b
 	if a.GroundSpeed.Get() != 3*MeterPerSecond {
 		t.Errorf("GroundSpeed = %v, want 3m/s", a.GroundSpeed.Get())
 	}
 }
 
-func TestAccuracyMergeLowerFillsOnly(t *testing.T) {
+func TestAccuracyFillDoesNotOverwrite(t *testing.T) {
 	a := Accuracy{
 		Pos: opt.Make(10 * Meter),
 	}
@@ -582,8 +582,8 @@ func TestAccuracyMergeLowerFillsOnly(t *testing.T) {
 		Pos:  opt.Make(20 * Meter),
 		Vert: opt.Make(8 * Meter),
 	}
-	a.Merge(&b, PriVendorLow, PriGenericHigh)
-	// Lower priority does not overwrite Pos
+	a.Fill(&b)
+	// Pos already set, not overwritten
 	if a.Pos.Get() != 10*Meter {
 		t.Errorf("Pos = %v, want 10m", a.Pos.Get())
 	}
@@ -595,37 +595,38 @@ func TestAccuracyMergeLowerFillsOnly(t *testing.T) {
 
 func TestMergeNavEpochNils(t *testing.T) {
 	msg := &NavEpochMsg{Tag: "UBX"}
-	m, p := MergeNavEpoch(nil, 0, msg, PriVendorLow)
-	if m != msg || p != PriVendorLow {
-		t.Errorf("MergeNavEpoch(nil, msg) = %v, %v; want msg, PriVendorLow", m, p)
+	m := MergeNavEpoch(nil, msg)
+	if m != msg {
+		t.Errorf("MergeNavEpoch(nil, msg) = %v; want msg", m)
 	}
-	m, p = MergeNavEpoch(msg, PriVendorLow, nil, 0)
-	if m != msg || p != PriVendorLow {
-		t.Errorf("MergeNavEpoch(msg, nil) = %v, %v; want msg, PriVendorLow", m, p)
+	m = MergeNavEpoch(msg, nil)
+	if m != msg {
+		t.Errorf("MergeNavEpoch(msg, nil) = %v; want msg", m)
 	}
-	m, _ = MergeNavEpoch(nil, 0, nil, 0)
+	m = MergeNavEpoch(nil, nil)
 	if m != nil {
 		t.Errorf("MergeNavEpoch(nil, nil) = %v; want nil", m)
 	}
 }
 
-func TestMergeNavEpochTagFromHigherPriority(t *testing.T) {
+func TestMergeNavEpochFirstWins(t *testing.T) {
 	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	t1 := t0.Add(time.Millisecond)
-	a := &NavEpochMsg{Tag: "NMEA", StartTime: t1, Acc: Accuracy{Hor: opt.Make(5 * Meter)}}
-	b := &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
-	m, _ := MergeNavEpoch(a, PriGenericHigh, b, PriVendorLow)
+	// Higher priority (UBX) passed first; lower priority (NMEA) fills gaps.
+	ubx := &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
+	nmea := &NavEpochMsg{Tag: "NMEA", StartTime: t1, Acc: Accuracy{Hor: opt.Make(5 * Meter)}}
+	m := MergeNavEpoch(ubx, nmea)
 	if m.Tag != "UBX" {
-		t.Errorf("Tag = %v, want UBX (higher priority)", m.Tag)
+		t.Errorf("Tag = %v, want UBX (first wins)", m.Tag)
 	}
 	if m.StartTime != t0 {
 		t.Errorf("StartTime = %v, want %v (earliest)", m.StartTime, t0)
 	}
-	if m.Acc.Hor.Get() != 5*Meter {
-		t.Errorf("Acc.Hor = %v, want 5m (filled from NMEA)", m.Acc.Hor.Get())
-	}
 	if m.Acc.Pos.Get() != 10*Meter {
 		t.Errorf("Acc.Pos = %v, want 10m (from UBX)", m.Acc.Pos.Get())
+	}
+	if m.Acc.Hor.Get() != 5*Meter {
+		t.Errorf("Acc.Hor = %v, want 5m (filled from NMEA)", m.Acc.Hor.Get())
 	}
 }
 

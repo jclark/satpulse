@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"math"
 	"testing"
-	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/geopos"
@@ -409,7 +408,7 @@ func TestQualityNavPVT(t *testing.T) {
 		wantAux    gpsprot.AuxSrc
 		wantNumSV  uint16
 		wantPDOP   float64
-		wantAge    time.Duration
+		wantAge    gpsprot.Duration
 		wantAgeSet bool
 	}{
 		{
@@ -555,7 +554,7 @@ func TestQualityNavPVT(t *testing.T) {
 			wantDim:   gpsprot.FixDim3D,
 			wantCorr:  gpsprot.CorrUsed,
 			wantNumSV: 10, wantPDOP: 1.20,
-			wantAge: 1 * time.Second, wantAgeSet: true,
+			wantAge: 1 * gpsprot.Second, wantAgeSet: true,
 		},
 		{
 			name: "correction age 120+",
@@ -569,7 +568,7 @@ func TestQualityNavPVT(t *testing.T) {
 			wantDim:   gpsprot.FixDim3D,
 			wantCorr:  gpsprot.CorrUsed,
 			wantNumSV: 15, wantPDOP: 0.90,
-			wantAge: 120 * time.Second, wantAgeSet: true,
+			wantAge: 120 * gpsprot.Second, wantAgeSet: true,
 		},
 		{
 			name: "correction age not available",

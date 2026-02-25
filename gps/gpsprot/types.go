@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/jclark/satpulse/gps/lib/decconv"
 )
@@ -188,6 +189,69 @@ func (sp *Speed) UnmarshalText(text []byte) error {
 	}
 	*sp = Speed(v)
 	return nil
+}
+
+// Duration represents a duration that serialises as decimal seconds.
+type Duration time.Duration
+
+const (
+	Nanosecond  Duration = Duration(time.Nanosecond)
+	Microsecond Duration = Duration(time.Microsecond)
+	Millisecond Duration = Duration(time.Millisecond)
+	Second      Duration = Duration(time.Second)
+)
+
+// Seconds creates a Duration from a float64 value in seconds.
+func Seconds(f float64) Duration {
+	return Duration(math.Round(f * float64(Second)))
+}
+
+// Seconds returns the duration in seconds as a float64.
+func (d Duration) Seconds() float64 {
+	return time.Duration(d).Seconds()
+}
+
+func (d Duration) String() string {
+	return decconv.FormatInt64(int64(d), 9, 0)
+}
+
+// MarshalJSON implements json.Marshaler.
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return []byte(decconv.FormatInt64(int64(d), 9, 0)), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	v, err := decconv.ParseInt64(string(data), 9)
+	if err != nil {
+		return err
+	}
+	*d = Duration(v)
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (d Duration) MarshalText() ([]byte, error) {
+	return []byte(decconv.FormatInt64(int64(d), 9, 0)), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (d *Duration) UnmarshalText(text []byte) error {
+	v, err := decconv.ParseInt64(string(text), 9)
+	if err != nil {
+		return err
+	}
+	*d = Duration(v)
+	return nil
+}
+
+// ParseDuration parses a string as a duration in seconds.
+func ParseDuration(s string) (Duration, error) {
+	n, err := decconv.ParseInt64(s, 9)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration: %q", s)
+	}
+	return Duration(n), nil
 }
 
 // Point3D represents a 3D point with Length coordinates.

@@ -1,8 +1,6 @@
 package ubx
 
 import (
-	"time"
-
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
@@ -126,34 +124,34 @@ func qualityNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) {
 	}
 }
 
-func corrAgeDuration(age ubxbin.NavPVTFlags3) (time.Duration, bool) {
+func corrAgeDuration(age ubxbin.NavPVTFlags3) (gpsprot.Duration, bool) {
 	switch age {
 	case ubxbin.NavPVTLastCorrectionAgeNotAvailable:
 		return 0, false
 	case ubxbin.NavPVTLastCorrectionAge0to1:
 		return 0, true
 	case ubxbin.NavPVTLastCorrectionAge1to2:
-		return 1 * time.Second, true
+		return 1 * gpsprot.Second, true
 	case ubxbin.NavPVTLastCorrectionAge2to5:
-		return 2 * time.Second, true
+		return 2 * gpsprot.Second, true
 	case ubxbin.NavPVTLastCorrectionAge5to10:
-		return 5 * time.Second, true
+		return 5 * gpsprot.Second, true
 	case ubxbin.NavPVTLastCorrectionAge10to15:
-		return 10 * time.Second, true
+		return 10 * gpsprot.Second, true
 	case ubxbin.NavPVTLastCorrectionAge15to20:
-		return 15 * time.Second, true
+		return 15 * gpsprot.Second, true
 	case ubxbin.NavPVTLastCorrectionAge20to30:
-		return 20 * time.Second, true
+		return 20 * gpsprot.Second, true
 	case ubxbin.NavPVTLastCorrectionAge30to45:
-		return 30 * time.Second, true
+		return 30 * gpsprot.Second, true
 	case ubxbin.NavPVTLastCorrectionAge45to60:
-		return 45 * time.Second, true
+		return 45 * gpsprot.Second, true
 	case ubxbin.NavPVTLastCorrectionAge60to90:
-		return 60 * time.Second, true
+		return 60 * gpsprot.Second, true
 	case ubxbin.NavPVTLastCorrectionAge90to120:
-		return 90 * time.Second, true
+		return 90 * gpsprot.Second, true
 	case ubxbin.NavPVTLastCorrectionAge120Plus:
-		return 120 * time.Second, true
+		return 120 * gpsprot.Second, true
 	default:
 		return 0, false
 	}

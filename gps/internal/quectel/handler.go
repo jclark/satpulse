@@ -212,7 +212,7 @@ func msgsNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) []gpsprot.Msg {
 	epoch.NumSVUsed = opt.Make(uint16(m.SatUsed))
 	epoch.NumSVTracked = opt.Make(uint16(m.SatView))
 	if m.DiffAge.IsSet() {
-		epoch.DiffAge = opt.Make(ptime.Seconds(m.DiffAge.Get()))
+		epoch.DiffAge = opt.Make(gpsprot.Seconds(m.DiffAge.Get()))
 	}
 	if m.DiffID.IsSet() && m.DiffID.Get() <= 4095 {
 		epoch.RTCMRefBaseID = opt.Make(m.DiffID.Get())
