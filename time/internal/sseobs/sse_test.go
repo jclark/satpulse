@@ -81,7 +81,7 @@ func TestSSEObserver_Events(t *testing.T) {
 				obs.Survey(&gpsprot.SurveyMsg{
 					Position:   gpsprot.Point3D{gpsprot.Meters(1000), gpsprot.Meters(2000), gpsprot.Meters(3000)},
 					Accuracy:   gpsprot.Meters(5.5),
-					ObsTime:    30 * time.Second,
+					ObsTime:    30 * gpsprot.Second,
 					ObsCount:   150,
 					InProgress: true,
 					Valid:      true,
@@ -95,7 +95,7 @@ func TestSSEObserver_Events(t *testing.T) {
 			action: func(obs *SSEObserver) {
 				obs.Survey(&gpsprot.SurveyMsg{
 					Accuracy:   gpsprot.Meters(5.5),
-					ObsTime:    60 * time.Second,
+					ObsTime:    60 * gpsprot.Second,
 					ObsCount:   60,
 					InProgress: true,
 					Valid:      false,
@@ -324,7 +324,7 @@ func TestBuildQualitySSE(t *testing.T) {
 			msg: gpsprot.NavEpochMsg{
 				FixLevel: gpsprot.FixLevelCodeCorrected,
 				FixDim:   gpsprot.FixDim3D,
-				DiffAge:  opt.Make(2 * time.Second),
+				DiffAge:  opt.Make(2 * gpsprot.Second),
 			},
 			want: `{"fix":["codeCorrected","3D"],"diffAge":2}`,
 		},

@@ -34,7 +34,7 @@ type SurveySSE struct {
 	Accuracy   gpsprot.Length             `json:"accuracy"`
 	Alt        opt.Val[gpsprot.Length]    `json:"alt,omitzero"`
 	LatLon     opt.Val[[2]gpsprot.Angle]  `json:"latLon,omitzero"`
-	ObsTime    uint32                     `json:"obsTime"`
+	ObsTime    gpsprot.Duration            `json:"obsTime"`
 	ObsCount   uint32                     `json:"obsCount"`
 	InProgress bool                       `json:"inProgress"`
 	Valid      bool                       `json:"valid"`
@@ -193,7 +193,7 @@ func (h *timeHandler) Time(mt *gpsprot.TimeMsg, _ time.Time) {
 func (o *SSEObserver) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 	event := SurveySSE{
 		Accuracy:   m.Accuracy,
-		ObsTime:    uint32(m.ObsTime / time.Second),
+		ObsTime:    m.ObsTime,
 		ObsCount:   m.ObsCount,
 		InProgress: m.InProgress,
 		Valid:      m.Valid,

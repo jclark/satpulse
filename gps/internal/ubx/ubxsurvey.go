@@ -2,7 +2,6 @@ package ubx
 
 import (
 	"math"
-	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
@@ -19,7 +18,7 @@ func surveyNavSvin(m *ubxbin.NavSvin) *gpsprot.SurveyMsg {
 		Valid:      m.Valid != 0,
 		InProgress: m.Active != 0,
 		ObsCount:   m.Obs,
-		ObsTime:    time.Duration(m.Dur) * time.Second,
+		ObsTime:    gpsprot.Duration(m.Dur) * gpsprot.Second,
 	}
 }
 
@@ -34,6 +33,6 @@ func surveyTimSvin(m *ubxbin.TimSvin) *gpsprot.SurveyMsg {
 		Valid:      m.Valid != 0,
 		InProgress: m.Active != 0,
 		ObsCount:   m.Obs,
-		ObsTime:    time.Duration(m.Dur) * time.Second,
+		ObsTime:    gpsprot.Duration(m.Dur) * gpsprot.Second,
 	}
 }

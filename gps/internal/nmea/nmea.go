@@ -489,7 +489,7 @@ func ggaQuality(epoch *NavEpoch, fields []string) {
 	}
 	if len(fields) > 12 {
 		if f, ok := parseFloatField(fields[12]); ok {
-			epoch.DiffAge = opt.Make(time.Duration(f * float64(time.Second)))
+			epoch.DiffAge = opt.Make(gpsprot.Seconds(f))
 		}
 	}
 	if len(fields) > 13 {

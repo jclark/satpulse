@@ -504,7 +504,7 @@ type SurveyMsg struct {
 	Position   Point3D       `json:"position,omitzero"`
 	Accuracy   Length        `json:"accuracy"`
 	ObsCount   uint32        `json:"obsCount"`
-	ObsTime    time.Duration `json:"obsTime"`
+	ObsTime    Duration `json:"obsTime"`
 	Valid      bool          `json:"valid"`
 	InProgress bool          `json:"inProgress"`
 }
@@ -949,7 +949,7 @@ type NavEpochMsg struct {
 	// DiffAge is the age of the differential corrections applied to the
 	// current solution. Unset when no corrections are in use or the
 	// protocol doesn't report it.
-	DiffAge opt.Val[time.Duration] `json:"diffAge,omitzero"`
+	DiffAge opt.Val[Duration] `json:"diffAge,omitzero"`
 	// RTCMRefBaseID is the RTCM reference station ID (DF003, 0-4095) of
 	// the base station whose corrections are applied to this solution.
 	// Distinct from the RTCMBaseID config property, which is this
