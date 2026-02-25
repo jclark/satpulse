@@ -44,6 +44,39 @@ const phcEvent = {
   syncState: "in sync"
 };
 
+const posvelEvent = {
+  latLon: [13.7563, 100.5018],
+  height: 15.432,
+  heightMSL: -10.821,
+  posECEFX: -1139434.7219,
+  posECEFY: 6093677.0461,
+  posECEFZ: 1504580.2941,
+  groundSpeed: 0.03,
+  course: 247.3,
+  velN: -0.012,
+  velE: -0.028,
+  velD: 0.005,
+};
+
+const qualityEvent = {
+  fixLevel: "carrierFixed",
+  fixDim: "3D",
+  corrections: ["baseStation"],
+  accHor: 0.014,
+  accVert: 0.021,
+  accPos: 0.025,
+  gdop: 1.83,
+  pdop: 1.52,
+  hdop: 0.78,
+  vdop: 1.30,
+  tdop: 0.92,
+  numSVUsed: 24,
+  numSVTracked: 32,
+  signalsUsed: { GPS: ["L1", "L5"], GAL: ["E1", "E5a"], BDS: ["B1I", "B2a"] },
+  diffAge: 1.2,
+  rtcmRefBaseID: 4072,
+};
+
 // Add initEvent with receiver data matching ReceiverInfo struct
 const initEvent: { receiver: ReceiverInfo } = {
   receiver: {
@@ -132,6 +165,14 @@ class MockEventSource implements MinimalEventSource {
       setTimeout(() => {
         listener(new MessageEvent('receiver', { data: JSON.stringify(initEvent.receiver) }));
       }, 250);
+    } else if (type === 'posvel') {
+      setTimeout(() => {
+        listener(new MessageEvent('posvel', { data: JSON.stringify(posvelEvent) }));
+      }, 320);
+    } else if (type === 'quality') {
+      setTimeout(() => {
+        listener(new MessageEvent('quality', { data: JSON.stringify(qualityEvent) }));
+      }, 330);
     }
   }
 

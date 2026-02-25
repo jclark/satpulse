@@ -203,7 +203,7 @@ func TestBuildPosVelSSE(t *testing.T) {
 					},
 				}),
 			},
-			want: `{"posECEF":[4000000,500000,4700000]}`,
+			want: `{"posECEFX":4000000,"posECEFY":500000,"posECEFZ":4700000}`,
 		},
 		{
 			name: "geo_velocity",
@@ -215,7 +215,7 @@ func TestBuildPosVelSSE(t *testing.T) {
 					VelNED:      opt.Make([3]gpsprot.Speed{gpsprot.MeterPerSecond, 2 * gpsprot.MeterPerSecond, -gpsprot.MeterPerSecond / 2}),
 				}),
 			},
-			want: `{"groundSpeed":1.5,"speed3D":1.6,"course":180.5,"velNED":[1,2,-0.5]}`,
+			want: `{"groundSpeed":1.5,"speed3D":1.6,"course":180.5,"velN":1,"velE":2,"velD":-0.5}`,
 		},
 		{
 			name: "ecef_velocity",
@@ -224,7 +224,7 @@ func TestBuildPosVelSSE(t *testing.T) {
 					Vel: [3]gpsprot.Speed{gpsprot.MeterPerSecond, 2 * gpsprot.MeterPerSecond, 3 * gpsprot.MeterPerSecond},
 				}),
 			},
-			want: `{"velECEF":[1,2,3]}`,
+			want: `{"velECEFX":1,"velECEFY":2,"velECEFZ":3}`,
 		},
 		{
 			name: "all_fields",
@@ -243,7 +243,7 @@ func TestBuildPosVelSSE(t *testing.T) {
 					Vel: [3]gpsprot.Speed{gpsprot.MeterPerSecond, 0, 0},
 				}),
 			},
-			want: `{"latLon":[47.5,7.6],"height":500,"posECEF":[4000000,500000,4700000],"groundSpeed":0.5,"velECEF":[1,0,0]}`,
+			want: `{"latLon":[47.5,7.6],"height":500,"posECEFX":4000000,"posECEFY":500000,"posECEFZ":4700000,"groundSpeed":0.5,"velECEFX":1,"velECEFY":0,"velECEFZ":0}`,
 		},
 	}
 	for _, tt := range tests {
@@ -281,7 +281,7 @@ func TestBuildQualitySSE(t *testing.T) {
 				FixLevel: gpsprot.FixLevelCode,
 				FixDim:   gpsprot.FixDim3D,
 			},
-			want: `{"fix":["code","3D"]}`,
+			want: `{"fixLevel":"code","fixDim":"3D"}`,
 		},
 		{
 			name: "carrier_fixed_with_dop",
@@ -296,7 +296,7 @@ func TestBuildQualitySSE(t *testing.T) {
 				},
 				NumSVUsed: opt.Make[uint16](12),
 			},
-			want: `{"fix":["carrierFixed","3D"],"corrections":["baseStation"],"pdop":1.2,"hdop":0.8,"vdop":0.9,"numSVUsed":12}`,
+			want: `{"fixLevel":"carrierFixed","fixDim":"3D","corrections":["baseStation"],"pdop":1.2,"hdop":0.8,"vdop":0.9,"numSVUsed":12}`,
 		},
 		{
 			name: "with_accuracy",
@@ -308,7 +308,7 @@ func TestBuildQualitySSE(t *testing.T) {
 					Vert: opt.Make(gpsprot.Meters(4.0)),
 				},
 			},
-			want: `{"fix":["code","3D"],"accHor":2.5,"accVert":4}`,
+			want: `{"fixLevel":"code","fixDim":"3D","accHor":2.5,"accVert":4}`,
 		},
 		{
 			name: "with_signals_used",
@@ -317,7 +317,7 @@ func TestBuildQualitySSE(t *testing.T) {
 				FixDim:      gpsprot.FixDim3D,
 				SignalsUsed: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
 			},
-			want: `{"fix":["code","3D"],"signalsUsed":{"GPS":["L1"],"GAL":["E1"]}}`,
+			want: `{"fixLevel":"code","fixDim":"3D","signalsUsed":{"GPS":["L1"],"GAL":["E1"]}}`,
 		},
 		{
 			name: "with_diffage",
@@ -326,14 +326,14 @@ func TestBuildQualitySSE(t *testing.T) {
 				FixDim:   gpsprot.FixDim3D,
 				DiffAge:  opt.Make(2 * gpsprot.Second),
 			},
-			want: `{"fix":["codeCorrected","3D"],"diffAge":2}`,
+			want: `{"fixLevel":"codeCorrected","fixDim":"3D","diffAge":2}`,
 		},
 		{
 			name: "no_fix",
 			msg: gpsprot.NavEpochMsg{
 				FixLevel: gpsprot.FixLevelNone,
 			},
-			want: `{"fix":["none"]}`,
+			want: `{"fixLevel":"none"}`,
 		},
 		{
 			name: "zero_fixlevel",
@@ -363,42 +363,6 @@ func TestBuildQualitySSE(t *testing.T) {
 	}
 }
 
-func TestBuildFixKeywords(t *testing.T) {
-	tests := []struct {
-		name string
-		msg  gpsprot.NavEpochMsg
-		want []string
-	}{
-		{
-			name: "code_3d",
-			msg:  gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelCode, FixDim: gpsprot.FixDim3D},
-			want: []string{"code", "3D"},
-		},
-		{
-			name: "code_with_dr",
-			msg:  gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelCode, FixDim: gpsprot.FixDim3D, AuxSrc: gpsprot.AuxSrcDR},
-			want: []string{"code", "3D", "DR"},
-		},
-		{
-			name: "level_only",
-			msg:  gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelNone},
-			want: []string{"none"},
-		},
-		{
-			name: "zero",
-			msg:  gpsprot.NavEpochMsg{},
-			want: nil,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := buildFixKeywords(&tt.msg)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
 
 func TestNavEpochSSE(t *testing.T) {
 	ch := make(chan sse.Event, 4)

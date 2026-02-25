@@ -2,11 +2,13 @@
 
 Add position/velocity and solution quality information to the web dashboard. The backend already sends `posvel` and `quality` SSE events on every navigation epoch; the frontend just doesn't subscribe to them yet.
 
-Works against the current `PosVelSSE` and `QualitySSE` shapes. Small backend change needed to flatten array fields.
+This is a timing application -- the most important quality information is what affects timing reliability. Position and velocity are secondary (the antenna rarely moves). The web redesign will replace the quality display with a proper status bar, so keep things simple here.
 
-## Flatten array fields in `PosVelSSE`
+## Backend changes
 
-The current `EventFormat` / `addFields` system maps top-level keys to rows 1:1. It has no mechanism to expand a 3-element array into separate labelled rows. Flatten the array fields in `PosVelSSE` into separate scalar fields, matching the pattern `SurveySSE` already uses for X/Y/Z:
+### Flatten array fields in `PosVelSSE`
+
+The `EventFormat` / `addFields` system maps top-level keys to rows 1:1. Flatten the array fields in `PosVelSSE` into separate scalar fields, matching the pattern `SurveySSE` already uses for X/Y/Z:
 
 - `PosECEF opt.Val[[3]gpsprot.Length]` -> `PosECEFX`, `PosECEFY`, `PosECEFZ opt.Val[gpsprot.Length]`
 - `VelNED opt.Val[[3]gpsprot.Speed]` -> `VelN`, `VelE`, `VelD opt.Val[gpsprot.Speed]`
@@ -14,9 +16,31 @@ The current `EventFormat` / `addFields` system maps top-level keys to rows 1:1. 
 
 Update `buildPosVelSSE` in `sseobs` to populate the new fields.
 
+### Split fix fields in `QualitySSE`
+
+Replace `Fix []string` with separate typed fields so the frontend can display them on separate lines:
+
+- `FixLevel gpsprot.FixLevel` (e.g. `"carrierFixed"`, `"code"`)
+- `FixDim gpsprot.FixDim` (e.g. `"3D"`, `"timeOnly"`)
+
+These types already implement `MarshalJSON` as quoted strings. Remove `buildFixKeywords`; set the fields directly from `NavEpochMsg` in `buildQualitySSE`.
+
 ## Subscribe to events
 
 Add `"posvel"` and `"quality"` to `EVENT_TYPES` in `dashboard.tsx`.
+
+## Status card
+
+A `PropertyCard` titled "Status" for timing-relevant data from the `quality` event. Placed at the top of the dashboard, before the sky view and signal graph.
+
+| Field | Label | Formatting |
+|---|---|---|
+| `fixLevel` | Fix | plain string |
+| `fixDim` | Dimension | plain string |
+| `tdop` | TDOP | `x.xx` |
+| `numSVUsed` | SVs used | plain number |
+| `numSVTracked` | SVs tracked | plain number |
+| `signalsUsed` | *per constellation* | Complex formatter: iterate the `{GNSS: [signal, ...]}` object and emit one row per constellation, e.g. `GPS signals: L1, L5` |
 
 ## Position card
 
@@ -33,59 +57,56 @@ A `PropertyCard` for position data from the `posvel` event.
 
 ## Velocity card
 
-A separate `PropertyCard` for velocity data from the same `posvel` event. Omit the entire card when ground speed is below 0.1 m/s (effectively stationary -- the desktop GUI uses this same threshold in its map component to decide arrow vs dot).
+A `PropertyCard` for velocity data from the same `posvel` event. Omit the entire card when ground speed is below 0.1 m/s (effectively stationary).
 
 | Field | Label | Formatting |
 |---|---|---|
 | `groundSpeed` | Ground speed | `x.xx m/s` |
-| `speed3D` | 3D speed | `x.xx m/s` |
 | `course` | Course | `x.x deg` |
 | `velN` | Vel north | `x.xxx m/s` |
 | `velE` | Vel east | `x.xxx m/s` |
 | `velD` | Vel down | `x.xxx m/s` |
-| `velECEFX` | Vel X | `x.xxx m/s` |
-| `velECEFY` | Vel Y | `x.xxx m/s` |
-| `velECEFZ` | Vel Z | `x.xxx m/s` |
 
-Some of these fields may be omitted from the initial implementation if the card feels too dense. Ground speed, course, and NED components are the most useful; ECEF velocity is rarely interesting.
+ECEF velocity and 3D speed omitted -- rarely interesting.
 
-## Solution quality card
+## Precise positioning card
 
-A `PropertyCard` for data from the `quality` event. Consider splitting across two cards if it gets too long. A natural split: fix status / accuracy in one, DOP / satellite detail in another.
+A `PropertyCard` for correction and accuracy detail from the `quality` event. Relevant when doing RTK or other precise positioning.
 
 | Field | Label | Formatting |
 |---|---|---|
-| `fix` | Fix | Join array with space (e.g. `carrierFixed 3D`) |
 | `corrections` | Corrections | Join array with `, ` |
 | `accHor` | Horizontal accuracy | `x.xxx m` |
 | `accVert` | Vertical accuracy | `x.xxx m` |
 | `accPos` | 3D accuracy | `x.xxx m` |
-| `accSpeed` | Speed accuracy | `x.xxx m/s` |
-| `accGroundSpeed` | Ground speed accuracy | `x.xxx m/s` |
-| `accCourse` | Course accuracy | `x.x deg` |
 | `gdop` | GDOP | `x.xx` |
 | `pdop` | PDOP | `x.xx` |
 | `hdop` | HDOP | `x.xx` |
 | `vdop` | VDOP | `x.xx` |
-| `tdop` | TDOP | `x.xx` |
-| `numSVUsed` | SVs used | plain number |
-| `numSVTracked` | SVs tracked | plain number |
-| `signalsUsed` | Signals used | Iterate `{GNSS: [signal, ...]}`, one line per constellation |
 | `diffAge` | Differential age | `x.x s` |
 | `rtcmRefBaseID` | RTCM base station | plain number |
 
-All fields are optional (`opt.Val` with `omitzero` on the backend) and omitted from the card when absent.
+All fields are optional and omitted from the card when absent. Speed and course accuracy omitted -- they belong more to velocity than positioning.
 
 ## Layout
 
-Add the new cards to the `Dashboard` component before the existing time/PHC/receiver/survey cards -- position and quality are the most important information:
-
 ```tsx
+{events.quality && <PropertyCard title="Status" data={events.quality} format={statusFormat} />}
+{events.satellites && haveLookAngles && <SkyViewCard svs={svs} />}
+{events.satellites && <SignalGraphCard svs={svs} />}
+{events.time && <PropertyCard ... />}
+{events.phc && <PropertyCard ... />}
+{events.receiver && <PropertyCard ... />}
+{events.survey && <PropertyCard ... />}
 {events.posvel && <PropertyCard title="Position" data={events.posvel} format={positionFormat} />}
 {events.posvel && showVelocity(events.posvel) && <PropertyCard title="Velocity" data={events.posvel} format={velocityFormat} />}
-{events.quality && <PropertyCard title="Solution Quality" data={events.quality} format={qualityFormat} />}
+{events.quality && <PropertyCard title="Precise Positioning" data={events.quality} format={precisePositioningFormat} />}
 ```
+
+## Test dashboard
+
+Add mock `posvel` and `quality` events to `test-dashboard.tsx` representing a typical RTK fixed solution with realistic values.
 
 ## Verify
 
-All fields appear when a GPS receiver is connected and producing fixes. Fields are gracefully absent when the receiver or fix type doesn't provide them (e.g. no ECEF velocity, no differential age for standalone fix). Velocity card hidden when stationary.
+All fields appear when a GPS receiver is connected and producing fixes. Fields are gracefully absent when the receiver or fix type doesn't provide them (e.g. no ECEF velocity, no differential age for standalone fix). Velocity card hidden when stationary. Signals used shows one line per constellation.
