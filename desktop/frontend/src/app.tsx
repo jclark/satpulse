@@ -274,7 +274,6 @@ export function App() {
             switch (evt.kind) {
                 case 'time': {
                     const msg = evt.msg;
-                    // Always update PVT time rows
                     if (msg.nativeMsgID) {
                         setTimeRows(prev => {
                             const next = new Map(prev);
@@ -291,8 +290,6 @@ export function App() {
                             return next;
                         });
                     }
-                    if (msg.ref === 1) break; // skip PrePulse
-                    setTimeMsg(msg as TimeMsg);
                     break;
                 }
                 case 'survey':
@@ -391,17 +388,20 @@ export function App() {
             setMapPos({lat: ll[0], lon: ll[1]});
         });
         const offEpochPVT = EventsOn('gps:epochPVT', (nav: any) => {
-            if (nav.pos) {
-                setMapPos({lat: nav.pos.lat, lon: nav.pos.lon});
+            if (nav.posGeo) {
+                setMapPos({lat: nav.posGeo.latLon[0], lon: nav.posGeo.latLon[1]});
                 setNoFixSecs(0);
             } else {
                 setNoFixSecs(prev => prev + 1);
             }
-            if (nav.vel && nav.vel.groundSpeed != null && nav.vel.course != null) {
-                setMapCourse({course: nav.vel.course, groundSpeed: nav.vel.groundSpeed});
+            if (nav.velGeo && nav.velGeo.groundSpeed != null && nav.velGeo.course != null) {
+                setMapCourse({course: nav.velGeo.course, groundSpeed: nav.velGeo.groundSpeed});
             } else {
                 setMapCourse(null);
             }
+        });
+        const offTime = EventsOn('gps:time', (msg: any) => {
+            setTimeMsg(msg as TimeMsg);
         });
         const offMsgSend = EventsOn('gps:msgsend', (evt: MsgSendEvent) => {
             const {status, current, total, error} = evt;
@@ -461,6 +461,7 @@ export function App() {
             if (typeof offState === 'function') offState(); else EventsOff('gps:state');
             if (typeof offInitialPos === 'function') offInitialPos(); else EventsOff('gps:initialPos');
             if (typeof offEpochPVT === 'function') offEpochPVT(); else EventsOff('gps:epochPVT');
+            if (typeof offTime === 'function') offTime(); else EventsOff('gps:time');
             if (typeof offMsgSend === 'function') offMsgSend(); else EventsOff('gps:msgsend');
         };
     }, []);
@@ -575,7 +576,7 @@ export function App() {
                 <div class={`h-full overflow-y-auto ${activeTab === 'monitor' ? '' : 'hidden'}`}>
                     <div class="flex gap-4 p-4">
                         <div class="flex flex-col gap-4">
-                            <ClockPanel msg={timeMsg} leapSecond={leapSecond} />
+                            <ClockPanel msg={timeMsg} />
                             <MapPanel pos={mapPos} course={mapCourse} noFixSecs={noFixSecs} />
                         </div>
                         {satsMsg && <SkyViewPanel msg={satsMsg} />}

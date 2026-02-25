@@ -1,12 +1,16 @@
 import {h} from 'preact';
-import {useMemo} from 'preact/hooks';
-import {parseTAITime, taiToUTC} from './timefmt';
-import type {TimeMsg, LeapSecondState} from './app';
+import {useEffect, useMemo, useState} from 'preact/hooks';
+import type {TimeMsg} from './app';
 import '@fontsource/dseg7-classic/700.css';
 
 interface Props {
     msg: TimeMsg | null;
-    leapSecond: LeapSecondState | null;
+}
+
+interface ClockTime {
+    date: string;
+    hm: string;
+    ss: string;
 }
 
 const W = 320;
@@ -22,30 +26,21 @@ function formatUTCOffset(): string {
     return `${sign}${h}:${m}`;
 }
 
-export function ClockPanel({msg, leapSecond}: Props) {
-    const time = useMemo(() => {
-        if (!msg) return null;
-        let d: Date | null = null;
-        if (msg.taiTime && leapSecond) {
-            const taiSecs = parseTAITime(msg.taiTime);
-            if (taiSecs > 0) {
-                const utcStr = taiToUTC(taiSecs, leapSecond.utcOff);
-                d = new Date(utcStr);
-            }
-        }
-        if (!d && msg.utcTime) {
-            d = new Date(msg.utcTime);
-        }
-        if (!d) return null;
+export function ClockPanel({msg}: Props) {
+    const [time, setTime] = useState<ClockTime | null>(null);
+    useEffect(() => {
+        if (!msg?.utcTime) return;
+        const d = new Date(msg.utcTime);
+        if (d.getMilliseconds() !== 0) return;
         const yyyy = String(d.getFullYear());
         const mm = String(d.getMonth() + 1).padStart(2, '0');
         const dd = String(d.getDate()).padStart(2, '0');
-        return {
+        setTime({
             date: `${yyyy}-${mm}-${dd}`,
             hm: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'),
             ss: String(d.getSeconds()).padStart(2, '0'),
-        };
-    }, [msg?.taiTime, msg?.utcTime, leapSecond?.utcOff]);
+        });
+    }, [msg?.utcTime]);
 
     const utcOffset = useMemo(() => formatUTCOffset(), []);
 
