@@ -245,7 +245,6 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 			h.Survey(sv, tRead)
 		} else if time != nil {
 			time.Tag = Tag
-			time.Priority = gpsprot.PriVendorLow
 			h.Time(time, tRead)
 		}
 		if posG != nil {

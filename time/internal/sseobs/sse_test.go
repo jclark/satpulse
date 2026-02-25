@@ -171,77 +171,77 @@ func TestSSEObserver_Events(t *testing.T) {
 func TestBuildPosVelSSE(t *testing.T) {
 	tests := []struct {
 		name   string
-		bundle gpsprot.MsgBundle
+		bundle gpsprot.PVMsgBundle
 		want   string // empty means nil result
 	}{
 		{
 			name:   "empty_bundle",
-			bundle: gpsprot.MsgBundle{},
+			bundle: gpsprot.PVMsgBundle{},
 		},
 		{
 			name: "geo_position_only",
-			bundle: gpsprot.MsgBundle{
-				PosGeo: &gpsprot.PosGeoMsg{
+			bundle: gpsprot.PVMsgBundle{
+				PosGeo: opt.Make(gpsprot.PosGeoMsg{
 					LatLon: [2]gpsprot.Angle{
 						gpsprot.DegreesFromFloat(47.5),
 						gpsprot.DegreesFromFloat(7.6),
 					},
 					Height:    opt.Make(gpsprot.Meters(540.5)),
 					HeightMSL: opt.Make(gpsprot.Meters(492.3)),
-				},
+				}),
 			},
 			want: `{"latLon":[47.5,7.6],"height":540.5,"heightMSL":492.3}`,
 		},
 		{
 			name: "ecef_position",
-			bundle: gpsprot.MsgBundle{
-				PosECEF: &gpsprot.PosECEFMsg{
+			bundle: gpsprot.PVMsgBundle{
+				PosECEF: opt.Make(gpsprot.PosECEFMsg{
 					Pos: gpsprot.Point3D{
 						gpsprot.Meters(4000000),
 						gpsprot.Meters(500000),
 						gpsprot.Meters(4700000),
 					},
-				},
+				}),
 			},
 			want: `{"posECEF":[4000000,500000,4700000]}`,
 		},
 		{
 			name: "geo_velocity",
-			bundle: gpsprot.MsgBundle{
-				VelGeo: &gpsprot.VelGeoMsg{
+			bundle: gpsprot.PVMsgBundle{
+				VelGeo: opt.Make(gpsprot.VelGeoMsg{
 					GroundSpeed: opt.Make(gpsprot.MetersPerSecondFromFloat(1.5)),
 					Speed3D:     opt.Make(gpsprot.MetersPerSecondFromFloat(1.6)),
 					Course:      opt.Make(gpsprot.DegreesFromFloat(180.5)),
 					VelNED:      opt.Make([3]gpsprot.Speed{gpsprot.MeterPerSecond, 2 * gpsprot.MeterPerSecond, -gpsprot.MeterPerSecond / 2}),
-				},
+				}),
 			},
 			want: `{"groundSpeed":1.5,"speed3D":1.6,"course":180.5,"velNED":[1,2,-0.5]}`,
 		},
 		{
 			name: "ecef_velocity",
-			bundle: gpsprot.MsgBundle{
-				VelECEF: &gpsprot.VelECEFMsg{
+			bundle: gpsprot.PVMsgBundle{
+				VelECEF: opt.Make(gpsprot.VelECEFMsg{
 					Vel: [3]gpsprot.Speed{gpsprot.MeterPerSecond, 2 * gpsprot.MeterPerSecond, 3 * gpsprot.MeterPerSecond},
-				},
+				}),
 			},
 			want: `{"velECEF":[1,2,3]}`,
 		},
 		{
 			name: "all_fields",
-			bundle: gpsprot.MsgBundle{
-				PosGeo: &gpsprot.PosGeoMsg{
+			bundle: gpsprot.PVMsgBundle{
+				PosGeo: opt.Make(gpsprot.PosGeoMsg{
 					LatLon: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(47.5), gpsprot.DegreesFromFloat(7.6)},
 					Height: opt.Make(gpsprot.Meters(500)),
-				},
-				PosECEF: &gpsprot.PosECEFMsg{
+				}),
+				PosECEF: opt.Make(gpsprot.PosECEFMsg{
 					Pos: gpsprot.Point3D{gpsprot.Meters(4000000), gpsprot.Meters(500000), gpsprot.Meters(4700000)},
-				},
-				VelGeo: &gpsprot.VelGeoMsg{
+				}),
+				VelGeo: opt.Make(gpsprot.VelGeoMsg{
 					GroundSpeed: opt.Make(gpsprot.MetersPerSecondFromFloat(0.5)),
-				},
-				VelECEF: &gpsprot.VelECEFMsg{
+				}),
+				VelECEF: opt.Make(gpsprot.VelECEFMsg{
 					Vel: [3]gpsprot.Speed{gpsprot.MeterPerSecond, 0, 0},
-				},
+				}),
 			},
 			want: `{"latLon":[47.5,7.6],"height":500,"posECEF":[4000000,500000,4700000],"groundSpeed":0.5,"velECEF":[1,0,0]}`,
 		},
@@ -425,8 +425,8 @@ func TestNavEpochSSE(t *testing.T) {
 		t.Errorf("expected quality event, got: %s", quality.Format())
 	}
 	// Bundle should be cleared after NavEpoch
-	if obs.Bundle.PosGeo != nil {
-		t.Error("expected Bundle.PosGeo to be nil after NavEpoch")
+	if obs.PVMsgBundle.PosGeo.IsSet() {
+		t.Error("expected PVMsgBundle.PosGeo to be unset after NavEpoch")
 	}
 }
 

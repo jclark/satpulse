@@ -102,7 +102,7 @@ type QualitySSE struct {
 
 // SSEObserver implements obs.Observer for Server-Sent Events
 type SSEObserver struct {
-	gpsprot.NavEpochAccum
+	gpsprot.PVMsgAccum
 	sseCh     chan<- sse.Event
 	lg        *slog.Logger
 	lastTime  ptime.Time
@@ -218,13 +218,14 @@ func (o *SSEObserver) ReopenLog() {}
 
 // NavEpoch emits posvel and quality SSE events, then clears the bundle.
 func (o *SSEObserver) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
-	if pv := buildPosVelSSE(&o.Bundle); pv != nil {
+	o.PVMsgBundle.FillDerived()
+	if pv := buildPosVelSSE(&o.PVMsgBundle); pv != nil {
 		o.sendSSE("posvel", pv)
 	}
 	if q := buildQualitySSE(msg); q != nil {
 		o.sendSSE("quality", q)
 	}
-	o.NavEpochAccum.NavEpoch(msg, tRead)
+	o.PVMsgAccum.NavEpoch(msg, tRead)
 }
 
 // sendSSE is a helper method to send SSE events
@@ -237,27 +238,27 @@ func (o *SSEObserver) sendSSE(name string, data any) {
 	}
 }
 
-func buildPosVelSSE(b *gpsprot.MsgBundle) *PosVelSSE {
-	if b.PosGeo == nil && b.PosECEF == nil && b.VelGeo == nil && b.VelECEF == nil {
+func buildPosVelSSE(b *gpsprot.PVMsgBundle) *PosVelSSE {
+	if !b.PosGeo.IsSet() && !b.PosECEF.IsSet() && !b.VelGeo.IsSet() && !b.VelECEF.IsSet() {
 		return nil
 	}
 	var pv PosVelSSE
-	if b.PosGeo != nil {
-		pv.LatLon.Set(b.PosGeo.LatLon)
-		pv.Height = b.PosGeo.Height
-		pv.HeightMSL = b.PosGeo.HeightMSL
+	if pg := b.PosGeo.Ptr(); pg != nil {
+		pv.LatLon.Set(pg.LatLon)
+		pv.Height = pg.Height
+		pv.HeightMSL = pg.HeightMSL
 	}
-	if b.PosECEF != nil {
-		pv.PosECEF.Set(b.PosECEF.Pos)
+	if pe := b.PosECEF.Ptr(); pe != nil {
+		pv.PosECEF.Set(pe.Pos)
 	}
-	if b.VelGeo != nil {
-		pv.GroundSpeed = b.VelGeo.GroundSpeed
-		pv.Speed3D = b.VelGeo.Speed3D
-		pv.Course = b.VelGeo.Course
-		pv.VelNED = b.VelGeo.VelNED
+	if vg := b.VelGeo.Ptr(); vg != nil {
+		pv.GroundSpeed = vg.GroundSpeed
+		pv.Speed3D = vg.Speed3D
+		pv.Course = vg.Course
+		pv.VelNED = vg.VelNED
 	}
-	if b.VelECEF != nil {
-		pv.VelECEF.Set(b.VelECEF.Vel)
+	if ve := b.VelECEF.Ptr(); ve != nil {
+		pv.VelECEF.Set(ve.Vel)
 	}
 	return &pv
 }
