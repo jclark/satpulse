@@ -1111,14 +1111,15 @@ func mergeOpt[T any](dst, src *opt.Val[T], dstPri, srcPri MsgPriority) {
 // Higher priority overwrites everything. Equal priority fills only
 // missing optional fields (first-wins). Lower priority does nothing.
 func (m *PosGeoMsg) Merge(other *PosGeoMsg) {
-	sp, dp := other.Priority, m.Priority
-	switch {
-	case sp > dp:
-		*m = *other
-	case sp == dp:
-		m.Height.Fill(other.Height)
-		m.HeightMSL.Fill(other.HeightMSL)
+	if other.Priority < m.Priority {
+		return
 	}
+	if other.Priority > m.Priority {
+		*m = *other
+		return
+	}
+	m.Height.Fill(other.Height)
+	m.HeightMSL.Fill(other.HeightMSL)
 }
 
 // Merge incorporates fields from other into m based on priority.
@@ -1130,16 +1131,17 @@ func (m *PosECEFMsg) Merge(other *PosECEFMsg) {
 
 // Merge incorporates fields from other into m based on priority.
 func (m *VelGeoMsg) Merge(other *VelGeoMsg) {
-	sp, dp := other.Priority, m.Priority
-	switch {
-	case sp > dp:
-		*m = *other
-	case sp == dp:
-		m.VelNED.Fill(other.VelNED)
-		m.GroundSpeed.Fill(other.GroundSpeed)
-		m.Speed3D.Fill(other.Speed3D)
-		m.Course.Fill(other.Course)
+	if other.Priority < m.Priority {
+		return
 	}
+	if other.Priority > m.Priority {
+		*m = *other
+		return
+	}
+	m.VelNED.Fill(other.VelNED)
+	m.GroundSpeed.Fill(other.GroundSpeed)
+	m.Speed3D.Fill(other.Speed3D)
+	m.Course.Fill(other.Course)
 }
 
 // Merge incorporates fields from other into m based on priority.
