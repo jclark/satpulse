@@ -205,10 +205,10 @@ func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead 
 // PVMsgBundle holds the accumulated position/velocity messages
 // for a single navigation epoch.
 type PVMsgBundle struct {
-	PosGeo  opt.Val[PosGeoMsg]
-	PosECEF opt.Val[PosECEFMsg]
-	VelGeo  opt.Val[VelGeoMsg]
-	VelECEF opt.Val[VelECEFMsg]
+	PosGeo  opt.Val[PosGeoMsg]  `json:"posGeo,omitzero"`
+	PosECEF opt.Val[PosECEFMsg] `json:"posECEF,omitzero"`
+	VelGeo  opt.Val[VelGeoMsg]  `json:"velGeo,omitzero"`
+	VelECEF opt.Val[VelECEFMsg] `json:"velECEF,omitzero"`
 }
 
 // FillDerived fills in missing fields using cross-frame derivation.
