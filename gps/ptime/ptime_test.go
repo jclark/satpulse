@@ -54,6 +54,120 @@ func TestFormat(t *testing.T) {
 	}
 }
 
+func TestTimeToUTC(t *testing.T) {
+	posLeap := LeapSecondOnDate(time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
+	negLeap := LeapSecondOnDate(time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 36)
+	ls2016 := LeapSecond2016()
+	type testCase struct {
+		name string
+		ls   LeapSecond
+		utc  UTCTime
+	}
+	cases := []testCase{
+		// Positive leap second: consecutive seconds spanning :60
+		{"pos :57", posLeap, UTC(2025, 6, 30, 23, 59, 57, 0)},
+		{"pos :58", posLeap, UTC(2025, 6, 30, 23, 59, 58, 0)},
+		{"pos :59", posLeap, UTC(2025, 6, 30, 23, 59, 59, 0)},
+		{"pos :60", posLeap, UTC(2025, 6, 30, 23, 59, 60, 0)},
+		{"pos next day :00", posLeap, UTC(2025, 7, 1, 0, 0, 0, 0)},
+		{"pos next day :01", posLeap, UTC(2025, 7, 1, 0, 0, 1, 0)},
+		// Negative leap second: :59 is skipped
+		{"neg :57", negLeap, UTC(2025, 6, 30, 23, 59, 57, 0)},
+		{"neg :58", negLeap, UTC(2025, 6, 30, 23, 59, 58, 0)},
+		{"neg next day :00", negLeap, UTC(2025, 7, 1, 0, 0, 0, 0)},
+		{"neg next day :01", negLeap, UTC(2025, 7, 1, 0, 0, 1, 0)},
+		// Boundary nanoseconds around positive leap second
+		{"pos :59.999999999", posLeap, UTC(2025, 6, 30, 23, 59, 59, 999999999)},
+		{"pos :60.000000001", posLeap, UTC(2025, 6, 30, 23, 59, 60, 1)},
+		{"pos :60.5", posLeap, UTC(2025, 6, 30, 23, 59, 60, 500000000)},
+		{"pos :60.999999999", posLeap, UTC(2025, 6, 30, 23, 59, 60, 999999999)},
+		// Sub-second precision at key seconds
+		{"pos :59 +1ns", posLeap, UTC(2025, 6, 30, 23, 59, 59, 1)},
+		{"pos :59 +500ms", posLeap, UTC(2025, 6, 30, 23, 59, 59, 500000000)},
+		{"pos :00 +1ns", posLeap, UTC(2025, 7, 1, 0, 0, 0, 1)},
+		{"pos :00 +999999999ns", posLeap, UTC(2025, 7, 1, 0, 0, 0, 999999999)},
+		// 2016 leap second
+		{"2016 before :58", ls2016, UTC(2016, 12, 31, 23, 59, 58, 0)},
+		{"2016 before :59", ls2016, UTC(2016, 12, 31, 23, 59, 59, 0)},
+		{"2016 :60", ls2016, UTC(2016, 12, 31, 23, 59, 60, 0)},
+		{"2016 :60.5", ls2016, UTC(2016, 12, 31, 23, 59, 60, 500000000)},
+		{"2016 new year", ls2016, UTC(2017, 1, 1, 0, 0, 0, 0)},
+		// Normal times well after 2016 leap second
+		{"normal 2024 midnight", ls2016, UTC(2024, 1, 1, 0, 0, 0, 0)},
+		{"normal 2024 midday", ls2016, UTC(2024, 6, 15, 12, 30, 45, 123456789)},
+		{"normal 2020 nye", ls2016, UTC(2020, 12, 31, 23, 59, 59, 0)},
+		// On the day of 2016 leap second, before it
+		{"2016 day noon", ls2016, UTC(2016, 12, 31, 12, 0, 0, 0)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tai := tc.ls.UTCtoTime(tc.utc)
+			got := tc.ls.TimeToUTC(tai)
+			if got != tc.utc {
+				t.Errorf("got Date=%v ToD=%v, want Date=%v ToD=%v",
+					got.Date, got.TimeOfDay, tc.utc.Date, tc.utc.TimeOfDay)
+			}
+		})
+	}
+	// Verify TAI is continuous across leap second boundary
+	t.Run("TAI continuity at boundary", func(t *testing.T) {
+		leapEnd := posLeap.UTCtoTime(UTC(2025, 6, 30, 23, 59, 60, 999999999))
+		afterLeap := posLeap.UTCtoTime(UTC(2025, 7, 1, 0, 0, 0, 0))
+		if afterLeap != leapEnd+1 {
+			t.Errorf("boundary not 1ns apart: %d, %d", leapEnd, afterLeap)
+		}
+	})
+}
+
+func TestTimeToUTCLeapTimeOfDay(t *testing.T) {
+	ls := LeapSecondOnDate(time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
+	expectDate := time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name      string
+		nanos     int32
+		expectToD time.Duration
+	}{
+		{":60.0", 0, 24 * time.Hour},
+		{":60.5", 500000000, 24*time.Hour + 500*time.Millisecond},
+		{":60.999999999", 999999999, 24*time.Hour + 999999999},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tai := ls.UTCtoTime(UTC(2025, 6, 30, 23, 59, 60, tc.nanos))
+			got := ls.TimeToUTC(tai)
+			if got.TimeOfDay != tc.expectToD {
+				t.Errorf("TimeOfDay = %v, want %v", got.TimeOfDay, tc.expectToD)
+			}
+			if !got.Date.Equal(expectDate) {
+				t.Errorf("Date = %v, want %v", got.Date, expectDate)
+			}
+		})
+	}
+}
+
+func TestTimeToUTCFormatConsistency(t *testing.T) {
+	ls := LeapSecondOnDate(time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
+	cases := []struct {
+		utc    UTCTime
+		format string
+	}{
+		{UTC(2025, 6, 30, 23, 59, 59, 0), "2025-06-30T23:59:59Z"},
+		{UTC(2025, 6, 30, 23, 59, 60, 0), "2025-06-30T23:59:60Z"},
+		{UTC(2025, 7, 1, 0, 0, 0, 0), "2025-07-01T00:00:00Z"},
+		{UTC(2025, 7, 1, 0, 0, 1, 0), "2025-07-01T00:00:01Z"},
+	}
+	for _, tc := range cases {
+		tai := ls.UTCtoTime(tc.utc)
+		got := ls.TimeToUTC(tai)
+		if got != tc.utc {
+			t.Errorf("round-trip %s: got %+v, want %+v", tc.format, got, tc.utc)
+		}
+		if s := ls.FormatTime(tai); s != tc.format {
+			t.Errorf("FormatTime for %s: got %q", tc.format, s)
+		}
+	}
+}
+
 func checkConsecutive(t *testing.T, leaps *LeapSecond, secs []UTCTime, nanos int32) {
 	ts := make([]Time, len(secs))
 	for i, ut := range secs {
