@@ -2,14 +2,64 @@ package gpsprot
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
+	"math"
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
+
+// ErrNotHandled is returned by ExtSentenceHandler.HandleSentence when
+// the handler does not recognize the sentence.
+var ErrNotHandled = errors.New("sentence not handled")
+
+// Msg is implemented by all protocol-agnostic message types.
+type Msg interface {
+	Dispatch(MsgHandler, time.Time)
+}
+
+// PVMsg is implemented by position/velocity message types
+// that participate in per-epoch accumulation with priority-based merging.
+type PVMsg interface {
+	Msg
+	SetPriority(MsgPriority)
+}
+
+func (m *PosGeoMsg) Dispatch(h MsgHandler, t time.Time)     { h.PosGeo(m, t) }
+func (m *PosECEFMsg) Dispatch(h MsgHandler, t time.Time)    { h.PosECEF(m, t) }
+func (m *VelGeoMsg) Dispatch(h MsgHandler, t time.Time)     { h.VelGeo(m, t) }
+func (m *VelECEFMsg) Dispatch(h MsgHandler, t time.Time)    { h.VelECEF(m, t) }
+func (m *TimeMsg) Dispatch(h MsgHandler, t time.Time)       { h.Time(m, t) }
+func (m *LeapSecondMsg) Dispatch(h MsgHandler, t time.Time) { h.LeapSecond(m, t) }
+func (m *SurveyMsg) Dispatch(h MsgHandler, t time.Time)     { h.Survey(m, t) }
+func (m *SatellitesMsg) Dispatch(h MsgHandler, t time.Time) { h.Satellites(m, t) }
+
+// SetPriority implements PVMsg for the four position/velocity types.
+func (m *PosGeoMsg) SetPriority(pri MsgPriority)  { m.Priority = pri }
+func (m *PosECEFMsg) SetPriority(pri MsgPriority) { m.Priority = pri }
+func (m *VelGeoMsg) SetPriority(pri MsgPriority)  { m.Priority = pri }
+func (m *VelECEFMsg) SetPriority(pri MsgPriority) { m.Priority = pri }
+
+// DispatchMsgs dispatches each message to the handler.
+func DispatchMsgs(msgs []Msg, h MsgHandler, tRead time.Time) {
+	for _, m := range msgs {
+		m.Dispatch(h, tRead)
+	}
+}
+
+// SetMsgsPriority sets priority on all PVMsg messages in the slice.
+func SetMsgsPriority(msgs []Msg, pri MsgPriority) {
+	for _, m := range msgs {
+		if pv, ok := m.(PVMsg); ok {
+			pv.SetPriority(pri)
+		}
+	}
+}
 
 // MsgPriority indicates the trustworthiness of a message's fields
 // for priority-based merging within a navigation epoch.
@@ -152,61 +202,96 @@ func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead 
 	return firstErr
 }
 
-// MsgBundle holds a set of protocol-agnostic messages produced from a
-// single packet or sentence. Any combination of fields may be non-nil.
-// NavEpochMsg is excluded: it is accumulated across multiple messages
-// within an epoch and has a different lifecycle.
-type MsgBundle struct {
-	Time       *TimeMsg
-	PosGeo     *PosGeoMsg
-	PosECEF    *PosECEFMsg
-	VelGeo     *VelGeoMsg
-	VelECEF    *VelECEFMsg
-	LeapSecond *LeapSecondMsg
-	Survey     *SurveyMsg
+// PVMsgBundle holds the accumulated position/velocity messages
+// for a single navigation epoch.
+type PVMsgBundle struct {
+	PosGeo  opt.Val[PosGeoMsg]
+	PosECEF opt.Val[PosECEFMsg]
+	VelGeo  opt.Val[VelGeoMsg]
+	VelECEF opt.Val[VelECEFMsg]
 }
 
-// Dispatch calls the corresponding MsgHandler methods for each non-nil field.
-func (b *MsgBundle) Dispatch(h MsgHandler, tRead time.Time) {
-	if b.Time != nil {
-		h.Time(b.Time, tRead)
+// FillDerived fills in missing fields using cross-frame derivation.
+func (b *PVMsgBundle) FillDerived() {
+	var lat, lon float64
+	havePos := false
+	if pg := b.PosGeo.Ptr(); pg != nil {
+		lat = pg.LatLon[0].Degrees()
+		lon = pg.LatLon[1].Degrees()
+		havePos = true
+		if !b.PosECEF.IsSet() && pg.Height.IsSet() {
+			ecef := geopos.WGS84.LLHtoECEF(geopos.LLH{
+				Lat: lat, Lon: lon, Height: pg.Height.Get().Meters(),
+			})
+			b.PosECEF.Set(PosECEFMsg{
+				Pos:         Point3D{Meters(ecef[0]), Meters(ecef[1]), Meters(ecef[2])},
+				Priority:    pg.Priority,
+				Tag:         pg.Tag,
+				NativeMsgID: pg.NativeMsgID,
+			})
+		}
 	}
-	if b.PosGeo != nil {
-		h.PosGeo(b.PosGeo, tRead)
+	if pe := b.PosECEF.Ptr(); pe != nil && !b.PosGeo.IsSet() {
+		ecef := geopos.ECEF{pe.Pos[0].Meters(), pe.Pos[1].Meters(), pe.Pos[2].Meters()}
+		llh, err := geopos.WGS84.ECEFtoLLH(ecef)
+		if err == nil {
+			lat = llh.Lat
+			lon = llh.Lon
+			havePos = true
+			b.PosGeo.Set(PosGeoMsg{
+				LatLon:      [2]Angle{DegreesFromFloat(llh.Lat), DegreesFromFloat(llh.Lon)},
+				Height:      opt.Make(Meters(llh.Height)),
+				Priority:    pe.Priority,
+				Tag:         pe.Tag,
+				NativeMsgID: pe.NativeMsgID,
+			})
+		}
 	}
-	if b.PosECEF != nil {
-		h.PosECEF(b.PosECEF, tRead)
+	if vg := b.VelGeo.Ptr(); vg != nil {
+		if ned := vg.VelNED.Ptr(); ned != nil {
+			if !b.VelECEF.IsSet() && havePos {
+				ve := geopos.WGS84.NEDtoECEF(geopos.VelNED{
+					ned[0].MetersPerSecond(), ned[1].MetersPerSecond(), ned[2].MetersPerSecond(),
+				}, lat, lon)
+				b.VelECEF.Set(VelECEFMsg{
+					Vel:         [3]Speed{MetersPerSecondFromFloat(ve[0]), MetersPerSecondFromFloat(ve[1]), MetersPerSecondFromFloat(ve[2])},
+					Priority:    vg.Priority,
+					Tag:         vg.Tag,
+					NativeMsgID: vg.NativeMsgID,
+				})
+			}
+			if !vg.Speed3D.IsSet() {
+				n, e, d := ned[0].MetersPerSecond(), ned[1].MetersPerSecond(), ned[2].MetersPerSecond()
+				vg.Speed3D.Set(MetersPerSecondFromFloat(math.Sqrt(n*n + e*e + d*d)))
+			}
+		}
 	}
-	if b.VelGeo != nil {
-		h.VelGeo(b.VelGeo, tRead)
-	}
-	if b.VelECEF != nil {
-		h.VelECEF(b.VelECEF, tRead)
-	}
-	if b.LeapSecond != nil {
-		h.LeapSecond(b.LeapSecond, tRead)
-	}
-	if b.Survey != nil {
-		h.Survey(b.Survey, tRead)
-	}
-}
-
-// SetPriority sets Priority on all non-nil Pos/Vel/Time messages in the bundle.
-func (b *MsgBundle) SetPriority(pri MsgPriority) {
-	if b.Time != nil {
-		b.Time.Priority = pri
-	}
-	if b.PosGeo != nil {
-		b.PosGeo.Priority = pri
-	}
-	if b.PosECEF != nil {
-		b.PosECEF.Priority = pri
-	}
-	if b.VelGeo != nil {
-		b.VelGeo.Priority = pri
-	}
-	if b.VelECEF != nil {
-		b.VelECEF.Priority = pri
+	if ve := b.VelECEF.Ptr(); ve != nil && havePos {
+		nedV := geopos.WGS84.ECEFtoNED(geopos.VelECEF{
+			ve.Vel[0].MetersPerSecond(), ve.Vel[1].MetersPerSecond(), ve.Vel[2].MetersPerSecond(),
+		}, lat, lon)
+		nedS := [3]Speed{MetersPerSecondFromFloat(nedV[0]), MetersPerSecondFromFloat(nedV[1]), MetersPerSecondFromFloat(nedV[2])}
+		n, e, d := nedV[0], nedV[1], nedV[2]
+		spd3D := MetersPerSecondFromFloat(math.Sqrt(n*n + e*e + d*d))
+		if vg := b.VelGeo.Ptr(); vg != nil {
+			// VelGeo exists (e.g. GroundSpeed/Course from NAV) but
+			// may be missing VelNED/Speed3D -- fill from VelECEF.
+			if !vg.VelNED.IsSet() {
+				vg.VelNED.Set(nedS)
+			}
+			if !vg.Speed3D.IsSet() {
+				vg.Speed3D.Set(spd3D)
+			}
+		} else {
+			vg := VelGeoMsg{
+				Priority:    ve.Priority,
+				Tag:         ve.Tag,
+				NativeMsgID: ve.NativeMsgID,
+			}
+			vg.VelNED.Set(nedS)
+			vg.Speed3D.Set(spd3D)
+			b.VelGeo.Set(vg)
+		}
 	}
 }
 
@@ -347,7 +432,6 @@ type TimeMsg struct {
 	PulseOffset *float64       `json:"pulseOffset,omitempty"` // the true time of the top of second is the time of the pulse plus the PulseOffset
 	GNSS        GNSS           `json:"gnss,omitempty"`
 	Ref         TimeRef        `json:"ref,omitempty"`
-	Priority    MsgPriority    `json:"-"`
 	Tag         Tag            `json:"tag,omitempty"`
 	NativeMsgID string         `json:"nativeMsgID,omitempty"`
 }
@@ -1024,130 +1108,89 @@ func mergeOpt[T any](dst, src *opt.Val[T], dstPri, srcPri MsgPriority) {
 }
 
 // Merge incorporates fields from other into m based on priority.
-func (m *TimeMsg) Merge(other *TimeMsg) {
-	dp, sp := m.Priority, other.Priority
-	if sp >= dp {
-		m.TAITime = other.TAITime
-		m.Accuracy = other.Accuracy
-		m.UTCOffset = other.UTCOffset
-		m.GNSS = other.GNSS
-		m.Ref = other.Ref
-		m.Priority = sp
-		m.Tag = other.Tag
-		m.NativeMsgID = other.NativeMsgID
-		if other.UTCTime != nil {
-			m.UTCTime = other.UTCTime
-		}
-		if other.PulseOffset != nil {
-			m.PulseOffset = other.PulseOffset
-		}
-	} else {
-		if m.UTCTime == nil {
-			m.UTCTime = other.UTCTime
-		}
-		if m.PulseOffset == nil {
-			m.PulseOffset = other.PulseOffset
-		}
-	}
-}
-
-// Merge incorporates fields from other into m based on priority.
+// Higher priority overwrites everything. Equal priority fills only
+// missing optional fields (first-wins). Lower priority does nothing.
 func (m *PosGeoMsg) Merge(other *PosGeoMsg) {
-	dp, sp := m.Priority, other.Priority
-	if sp >= dp {
-		m.LatLon = other.LatLon
-		m.Priority = sp
-		m.Tag = other.Tag
-		m.NativeMsgID = other.NativeMsgID
+	sp, dp := other.Priority, m.Priority
+	switch {
+	case sp > dp:
+		*m = *other
+	case sp == dp:
+		m.Height.Fill(other.Height)
+		m.HeightMSL.Fill(other.HeightMSL)
 	}
-	mergeOpt(&m.Height, &other.Height, dp, sp)
-	mergeOpt(&m.HeightMSL, &other.HeightMSL, dp, sp)
 }
 
 // Merge incorporates fields from other into m based on priority.
 func (m *PosECEFMsg) Merge(other *PosECEFMsg) {
-	if other.Priority >= m.Priority {
-		m.Pos = other.Pos
-		m.Priority = other.Priority
-		m.Tag = other.Tag
-		m.NativeMsgID = other.NativeMsgID
+	if other.Priority > m.Priority {
+		*m = *other
 	}
 }
 
 // Merge incorporates fields from other into m based on priority.
 func (m *VelGeoMsg) Merge(other *VelGeoMsg) {
-	dp, sp := m.Priority, other.Priority
-	if sp >= dp {
-		m.Priority = sp
-		m.Tag = other.Tag
-		m.NativeMsgID = other.NativeMsgID
+	sp, dp := other.Priority, m.Priority
+	switch {
+	case sp > dp:
+		*m = *other
+	case sp == dp:
+		m.VelNED.Fill(other.VelNED)
+		m.GroundSpeed.Fill(other.GroundSpeed)
+		m.Speed3D.Fill(other.Speed3D)
+		m.Course.Fill(other.Course)
 	}
-	mergeOpt(&m.VelNED, &other.VelNED, dp, sp)
-	mergeOpt(&m.GroundSpeed, &other.GroundSpeed, dp, sp)
-	mergeOpt(&m.Speed3D, &other.Speed3D, dp, sp)
-	mergeOpt(&m.Course, &other.Course, dp, sp)
 }
 
 // Merge incorporates fields from other into m based on priority.
 func (m *VelECEFMsg) Merge(other *VelECEFMsg) {
-	if other.Priority >= m.Priority {
-		m.Vel = other.Vel
-		m.Priority = other.Priority
-		m.Tag = other.Tag
-		m.NativeMsgID = other.NativeMsgID
+	if other.Priority > m.Priority {
+		*m = *other
 	}
 }
 
-// NavEpochAccum accumulates the best message of each kind within a
-// navigation epoch. It implements MsgHandler for the Pos/Vel/Time
-// methods, merging incoming messages into its Bundle by priority.
-// NavEpoch clears the accumulated Bundle.
-type NavEpochAccum struct {
+// PVMsgAccum accumulates the best position/velocity message of each kind
+// within a navigation epoch. It implements MsgHandler for the four PV
+// methods, merging incoming messages by priority. NavEpoch clears the
+// accumulated bundle.
+type PVMsgAccum struct {
 	DefaultHandler
-	Bundle MsgBundle
+	PVMsgBundle
 }
 
-func (a *NavEpochAccum) Time(msg *TimeMsg, tRead time.Time) {
-	if a.Bundle.Time == nil {
-		a.Bundle.Time = msg
-		return
+func (a *PVMsgAccum) PosGeo(msg *PosGeoMsg, _ time.Time) {
+	if p := a.PVMsgBundle.PosGeo.Ptr(); p != nil {
+		p.Merge(msg)
+	} else {
+		a.PVMsgBundle.PosGeo.Set(*msg)
 	}
-	a.Bundle.Time.Merge(msg)
 }
 
-func (a *NavEpochAccum) PosGeo(msg *PosGeoMsg, tRead time.Time) {
-	if a.Bundle.PosGeo == nil {
-		a.Bundle.PosGeo = msg
-		return
+func (a *PVMsgAccum) PosECEF(msg *PosECEFMsg, _ time.Time) {
+	if p := a.PVMsgBundle.PosECEF.Ptr(); p != nil {
+		p.Merge(msg)
+	} else {
+		a.PVMsgBundle.PosECEF.Set(*msg)
 	}
-	a.Bundle.PosGeo.Merge(msg)
 }
 
-func (a *NavEpochAccum) PosECEF(msg *PosECEFMsg, tRead time.Time) {
-	if a.Bundle.PosECEF == nil {
-		a.Bundle.PosECEF = msg
-		return
+func (a *PVMsgAccum) VelGeo(msg *VelGeoMsg, _ time.Time) {
+	if p := a.PVMsgBundle.VelGeo.Ptr(); p != nil {
+		p.Merge(msg)
+	} else {
+		a.PVMsgBundle.VelGeo.Set(*msg)
 	}
-	a.Bundle.PosECEF.Merge(msg)
 }
 
-func (a *NavEpochAccum) VelGeo(msg *VelGeoMsg, tRead time.Time) {
-	if a.Bundle.VelGeo == nil {
-		a.Bundle.VelGeo = msg
-		return
+func (a *PVMsgAccum) VelECEF(msg *VelECEFMsg, _ time.Time) {
+	if p := a.PVMsgBundle.VelECEF.Ptr(); p != nil {
+		p.Merge(msg)
+	} else {
+		a.PVMsgBundle.VelECEF.Set(*msg)
 	}
-	a.Bundle.VelGeo.Merge(msg)
 }
 
-func (a *NavEpochAccum) VelECEF(msg *VelECEFMsg, tRead time.Time) {
-	if a.Bundle.VelECEF == nil {
-		a.Bundle.VelECEF = msg
-		return
-	}
-	a.Bundle.VelECEF.Merge(msg)
-}
-
-// NavEpoch clears the accumulated Bundle, preparing for the next epoch.
-func (a *NavEpochAccum) NavEpoch(msg *NavEpochMsg, tRead time.Time) {
-	a.Bundle = MsgBundle{}
+// NavEpoch clears the accumulated bundle, preparing for the next epoch.
+func (a *PVMsgAccum) NavEpoch(_ *NavEpochMsg, _ time.Time) {
+	a.PVMsgBundle = PVMsgBundle{}
 }
