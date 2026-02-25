@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"iter"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -67,9 +68,9 @@ type MsgPriority uint8
 
 const (
 	PriGenericLow  MsgPriority = iota + 1 // NMEA, basic sentence
-	PriGenericHigh                         // NMEA, richer sentence (e.g. GGA over RMC)
-	PriVendorLow                           // vendor binary, standard message
-	PriVendorHigh                          // vendor binary, high-precision message
+	PriGenericHigh                        // NMEA, richer sentence (e.g. GGA over RMC)
+	PriVendorLow                          // vendor binary, standard message
+	PriVendorHigh                         // vendor binary, high-precision message
 )
 
 type MsgHandler interface {
@@ -911,13 +912,13 @@ type DOP struct {
 	Time opt.Val[float64] `json:"time,omitzero"` // time DOP
 }
 
-// Merge incorporates fields from other into d based on priority.
-func (d *DOP) Merge(other *DOP, dstPri, srcPri MsgPriority) {
-	mergeOpt(&d.Geom, &other.Geom, dstPri, srcPri)
-	mergeOpt(&d.Pos, &other.Pos, dstPri, srcPri)
-	mergeOpt(&d.Hor, &other.Hor, dstPri, srcPri)
-	mergeOpt(&d.Vert, &other.Vert, dstPri, srcPri)
-	mergeOpt(&d.Time, &other.Time, dstPri, srcPri)
+// Fill sets any unset fields in d from the corresponding fields in other.
+func (d *DOP) Fill(other *DOP) {
+	d.Geom.Fill(other.Geom)
+	d.Pos.Fill(other.Pos)
+	d.Hor.Fill(other.Hor)
+	d.Vert.Fill(other.Vert)
+	d.Time.Fill(other.Time)
 }
 
 // NavEpochMsg is emitted once at the end of each navigation epoch, after
@@ -978,59 +979,54 @@ type Accuracy struct {
 	Course      opt.Val[Angle]  `json:"course,omitzero"`      // course/heading accuracy
 }
 
-// Merge incorporates fields from other into a based on priority.
-func (a *Accuracy) Merge(other *Accuracy, dstPri, srcPri MsgPriority) {
-	mergeOpt(&a.Pos, &other.Pos, dstPri, srcPri)
-	mergeOpt(&a.Hor, &other.Hor, dstPri, srcPri)
-	mergeOpt(&a.Vert, &other.Vert, dstPri, srcPri)
-	mergeOpt(&a.Speed, &other.Speed, dstPri, srcPri)
-	mergeOpt(&a.GroundSpeed, &other.GroundSpeed, dstPri, srcPri)
-	mergeOpt(&a.Course, &other.Course, dstPri, srcPri)
+// Fill sets any unset fields in a from the corresponding fields in other.
+func (a *Accuracy) Fill(other *Accuracy) {
+	a.Pos.Fill(other.Pos)
+	a.Hor.Fill(other.Hor)
+	a.Vert.Fill(other.Vert)
+	a.Speed.Fill(other.Speed)
+	a.GroundSpeed.Fill(other.GroundSpeed)
+	a.Course.Fill(other.Course)
 }
 
-// MergeNavEpoch merges two NavEpochMsg values by priority. The higher-priority
-// message provides Tag and scalar quality fields (FixLevel, FixDim);
-// Accuracy and DOP fields are merged with mergeOpt semantics; bitmask fields
-// (Correction, AuxSrc, SignalsUsed) are unioned; StartTime is the earliest.
-// The returned priority is the higher of the two, for chaining in pairwise merge.
-func MergeNavEpoch(a *NavEpochMsg, aPri MsgPriority, b *NavEpochMsg, bPri MsgPriority) (*NavEpochMsg, MsgPriority) {
-	if a == nil {
-		return b, bPri
-	}
-	if b == nil {
-		return a, aPri
-	}
-	merged := *a
-	merged.Acc.Merge(&b.Acc, aPri, bPri)
-	merged.DOP.Merge(&b.DOP, aPri, bPri)
-	mergeOpt(&merged.DiffAge, &b.DiffAge, aPri, bPri)
-	mergeOpt(&merged.RTCMRefBaseID, &b.RTCMRefBaseID, aPri, bPri)
-	mergeOpt(&merged.NumSVUsed, &b.NumSVUsed, aPri, bPri)
-	mergeOpt(&merged.NumSVTracked, &b.NumSVTracked, aPri, bPri)
-	merged.Correction |= b.Correction
-	merged.AuxSrc |= b.AuxSrc
-	merged.SignalsUsed |= b.SignalsUsed
-	if bPri >= aPri {
-		merged.Tag = b.Tag
-		if b.FixLevel != 0 {
-			merged.FixLevel = b.FixLevel
+// MergeNavEpoch merges multiple NavEpochMsg values. Priority is implicit in
+// argument order: the first non-nil message wins for scalar fields (Tag,
+// FixLevel, FixDim); optional fields use fill-if-unset semantics; bitmask
+// fields (Correction, AuxSrc, SignalsUsed) are unioned; StartTime is the
+// earliest. The first non-nil argument is mutated and returned.
+func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
+	var dst *NavEpochMsg
+	for _, m := range msgs {
+		if m == nil {
+			continue
 		}
-		if b.FixDim != 0 {
-			merged.FixDim = b.FixDim
+		if dst == nil {
+			dst = m
+			continue
 		}
-		aPri = bPri
-	} else {
-		if merged.FixLevel == 0 {
-			merged.FixLevel = b.FixLevel
+		if dst.Tag == "" {
+			dst.Tag = m.Tag
 		}
-		if merged.FixDim == 0 {
-			merged.FixDim = b.FixDim
+		if dst.FixLevel == 0 {
+			dst.FixLevel = m.FixLevel
+		}
+		if dst.FixDim == 0 {
+			dst.FixDim = m.FixDim
+		}
+		dst.Acc.Fill(&m.Acc)
+		dst.DOP.Fill(&m.DOP)
+		dst.DiffAge.Fill(m.DiffAge)
+		dst.RTCMRefBaseID.Fill(m.RTCMRefBaseID)
+		dst.NumSVUsed.Fill(m.NumSVUsed)
+		dst.NumSVTracked.Fill(m.NumSVTracked)
+		dst.Correction |= m.Correction
+		dst.AuxSrc |= m.AuxSrc
+		dst.SignalsUsed |= m.SignalsUsed
+		if !m.StartTime.IsZero() && (dst.StartTime.IsZero() || m.StartTime.Before(dst.StartTime)) {
+			dst.StartTime = m.StartTime
 		}
 	}
-	if b.StartTime.Before(merged.StartTime) {
-		merged.StartTime = b.StartTime
-	}
-	return &merged, aPri
+	return dst
 }
 
 // EpochFlusher is implemented by PacketProcessors that participate in
@@ -1078,32 +1074,38 @@ func (m *NavEpochManager) EndOfEpoch(tRead time.Time) {
 }
 
 func (m *NavEpochManager) flush(tRead time.Time) {
-	var merged *NavEpochMsg
-	var mergedPri MsgPriority
-	var mh MsgHandler
+	type flushed struct {
+		msg *NavEpochMsg
+		pri MsgPriority
+		mh  MsgHandler
+	}
+	var items []flushed
 	for f := range m.active {
 		msg, pri, h := f.FlushNavEpoch(tRead)
-		if msg != nil && mh == nil {
-			mh = h
+		if msg != nil {
+			items = append(items, flushed{msg, pri, h})
 		}
-		merged, mergedPri = MergeNavEpoch(merged, mergedPri, msg, pri)
 	}
 	clear(m.active)
-	if merged != nil && mh != nil {
-		mh.NavEpoch(merged, tRead)
-	}
-}
-
-// mergeOpt merges a single opt.Val field from src into dst based on priority.
-// If src is unset, dst is unchanged.
-// If srcPri >= dstPri, dst is overwritten with src.
-// If srcPri < dstPri, dst is filled from src only if dst is unset.
-func mergeOpt[T any](dst, src *opt.Val[T], dstPri, srcPri MsgPriority) {
-	if !src.IsSet() {
+	if len(items) == 0 {
 		return
 	}
-	if srcPri >= dstPri || !dst.IsSet() {
-		*dst = *src
+	slices.SortFunc(items, func(a, b flushed) int {
+		return int(b.pri) - int(a.pri)
+	})
+	msgs := make([]*NavEpochMsg, len(items))
+	for i, it := range items {
+		msgs[i] = it.msg
+	}
+	merged := MergeNavEpoch(msgs...)
+	if merged == nil {
+		return
+	}
+	for _, it := range items {
+		if mh := it.mh; mh != nil {
+			mh.NavEpoch(merged, tRead)
+			return
+		}
 	}
 }
 
@@ -1268,4 +1270,3 @@ func (t *TimeTicker) fill(m *TimeMsg) {
 		}
 	}
 }
-
