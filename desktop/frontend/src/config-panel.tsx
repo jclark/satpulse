@@ -419,7 +419,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                     {/* Time mode subgroup */}
                     <ConfigGroup title="Time mode">
                         {/* Mode radio group */}
-                        <div class="flex flex-wrap gap-x-4 gap-y-1 mb-3">
+                        <div class="flex flex-wrap gap-x-4 gap-y-1">
                             {([['mobile', 'Mobile'], ['survey', 'Survey-in'], ['fixed', 'Fixed position']] as const).map(([val, label]) => (
                                 <label key={val} class={`flex items-center gap-1.5 text-xs ${!connected ? disabledText : enabledText}`}>
                                     <input type="radio" name="timeMode" class="accent-accent" checked={timeMode === val}
@@ -545,7 +545,6 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
 
                 {/* Messages */}
                 <ConfigGroup title="Messages">
-                    <div class="flex flex-col gap-3">
                         <div class="flex gap-2">
                             <Button disabled={!connected} onClick={() => {
                                 setNmeaChange(true); setNmeaDisable(false); setNmeaFlags(NMEAMsgRMC);
@@ -603,12 +602,10 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                             onFlagsChange={setRawFlags}
                             disabled={!connected}
                         />
-                    </div>
                 </ConfigGroup>
 
                 {/* Persistent operations */}
                 <ConfigGroup title="Persistent operations">
-                    <div class="flex flex-col gap-3">
                         <ConfigSubGroup title="Save">
                             <div class="flex flex-wrap gap-x-4 gap-y-1 ml-0.5">
                                 {([
@@ -640,7 +637,6 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                 ))}
                             </div>
                         </ConfigSubGroup>
-                    </div>
                 </ConfigGroup>
 
             </div>

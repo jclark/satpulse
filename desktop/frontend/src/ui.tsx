@@ -150,10 +150,10 @@ export interface ConfigGroupProps {
 export function ConfigGroup({title, defaultOpen = true, children}: ConfigGroupProps) {
     const [open, setOpen] = useState(defaultOpen);
     return (
-        <section class="mb-1">
+        <section class="mt-3 first:mt-0">
             <button
                 type="button"
-                class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-1 py-1.5 text-left text-xs font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary"
+                class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-1 py-1.5 text-left text-sm font-semibold text-text-secondary hover:text-text-primary"
                 onClick={() => setOpen(!open)}
             >
                 <svg
@@ -164,7 +164,7 @@ export function ConfigGroup({title, defaultOpen = true, children}: ConfigGroupPr
                 </svg>
                 {title}
             </button>
-            {open && <div class="pl-1 pb-3">{children}</div>}
+            {open && <div class="space-y-4 pl-5 pb-2">{children}</div>}
         </section>
     );
 }
