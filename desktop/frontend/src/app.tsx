@@ -8,6 +8,8 @@ import {ConfigPanel} from './config-panel';
 import {PacketPanel} from './packet-panel';
 import {LoggingPanel} from './logging-panel';
 import {SurveyPanel} from './survey-panel';
+import {StatusPanel} from './status-panel';
+import type {NavEpochMsg} from './status-panel';
 import {MsgFilePanel} from './msgfile-panel';
 import {PVTPanel} from './pvt-panel';
 import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeRow} from './pvt-panel';
@@ -152,6 +154,7 @@ export function App() {
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [, setOperation] = useState<OperationState>({status: 'idle', label: ''});
     const [timeMsg, setTimeMsg] = useState<TimeMsg | null>(null);
+    const [navEpochMsg, setNavEpochMsg] = useState<NavEpochMsg | null>(null);
     const [surveyMsg, setSurveyMsg] = useState<SurveyMsg | null>(null);
     const [leapSecond, setLeapSecond] = useState<LeapSecondState | null>(null);
     const [posRows, setPosRows] = useState<Map<string, PosRow>>(new Map());
@@ -363,6 +366,9 @@ export function App() {
                     });
                     break;
                 }
+                case 'navEpoch':
+                    setNavEpochMsg(evt.msg as NavEpochMsg);
+                    break;
                 case 'satellites':
                     setSatsMsg(evt.msg as SatellitesMsg);
                     break;
@@ -372,6 +378,7 @@ export function App() {
             setConnState(state);
             if (state === 'disconnected') {
                 setTimeMsg(null);
+                setNavEpochMsg(null);
                 setSurveyMsg(null);
                 setSatsMsg(null);
                 setLeapSecond(null);
@@ -581,6 +588,9 @@ export function App() {
                         </div>
                         {satsMsg && <SkyViewPanel msg={satsMsg} />}
                     </div>
+                    <CollapsibleSection title="Status" variant="panel" defaultOpen>
+                        <StatusPanel msg={navEpochMsg} />
+                    </CollapsibleSection>
                     <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />
                     </CollapsibleSection>
