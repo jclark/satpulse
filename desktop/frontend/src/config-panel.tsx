@@ -170,9 +170,9 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                 setFixedLLH([String(llh[0]), String(llh[1]), String(m.height ?? 0)]);
                 setReadbackStationary(false);
             } else {
-                // static with no position
-                setTimeMode('');
-                setReadbackStationary(true);
+                // static with no fixed position = survey-in
+                setTimeMode('survey');
+                setReadbackStationary(false);
             }
             if (m.fixedPosAcc !== undefined) setFixedPosAcc(String(m.fixedPosAcc));
         }
