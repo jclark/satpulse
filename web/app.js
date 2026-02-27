@@ -888,6 +888,7 @@
     gdop: ["Geometric DOP", (arg) => arg.toFixed(2)],
     numSVUsed: ["Satellites used"],
     numSVTracked: ["Satellites tracked"],
+    numSVInView: ["Satellites in view"],
     signalsUsed: formatSignalsUsed
   };
   function formatSignalsUsed(signals, _obj) {

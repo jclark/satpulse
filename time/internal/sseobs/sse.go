@@ -100,6 +100,7 @@ type QualitySSE struct {
 	// Satellite counts
 	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
+	NumSVInView  opt.Val[uint16] `json:"numSVInView,omitzero"`
 	// Signals used in the solution
 	SignalsUsed gpsprot.SignalSet `json:"signalsUsed,omitzero"`
 	// Correction metadata
@@ -308,6 +309,7 @@ func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
 		Corrections:   msg.Correction,
 		NumSVUsed:     msg.NumSVUsed,
 		NumSVTracked:  msg.NumSVTracked,
+		NumSVInView:   msg.NumSVInView,
 		RTCMRefBaseID: msg.RTCMRefBaseID,
 	}
 	q.AccHor = msg.Acc.Hor

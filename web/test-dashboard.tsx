@@ -72,6 +72,7 @@ const qualityEvent = {
   tdop: 0.92,
   numSVUsed: 24,
   numSVTracked: 32,
+  numSVInView: 38,
   signalsUsed: { GPS: ["L1", "L5"], GAL: ["E1", "E5a"], BDS: ["B1I", "B2a"] },
   diffAge: 1.2,
   rtcmRefBaseID: 4072,

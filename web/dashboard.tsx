@@ -267,6 +267,7 @@ const statusFormat: EventFormat = {
     gdop: ["Geometric DOP", (arg: number) => arg.toFixed(2)],
     numSVUsed: ["Satellites used"],
     numSVTracked: ["Satellites tracked"],
+    numSVInView: ["Satellites in view"],
     signalsUsed: formatSignalsUsed,
 }
 
