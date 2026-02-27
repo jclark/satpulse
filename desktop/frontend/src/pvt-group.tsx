@@ -4,7 +4,7 @@ import {
     PVTMsgLeapSecond, PVTMsgTAI, PVTMsgECEF,
     PVTMsgTimePulseAfter, PVTMsgQuality, PVTMsgEpoch, PVTMsgOff,
 } from './msg-flags';
-import {ConfigSubGroup, labeledControlText} from './ui';
+import {ConfigSubGroup, ConfigSubSubGroup, labeledControlText} from './ui';
 
 interface Props {
     change: boolean;
@@ -55,9 +55,7 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
                     <Checkbox label="Turn off unselected" checked={has(PVTMsgOff)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgOff, v)} />
                 </div>
-                {/* Time subgroup */}
-                <div class="grid grid-cols-[13rem_auto] gap-x-6 gap-y-1 items-start">
-                    <div class={`col-span-2 text-[10px] font-medium uppercase tracking-wide ${childDisabled ? 'text-text-muted' : 'text-text-secondary'}`}>Time</div>
+                <ConfigSubSubGroup title="Time" disabled={childDisabled}>
                     <Checkbox label="Navigation time" checked={has(PVTMsgTime)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgTime, v)} />
                     <Checkbox label="Prefer TAI" checked={has(PVTMsgTAI)}
@@ -73,10 +71,8 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
                     <Checkbox label="Leap second" checked={has(PVTMsgLeapSecond)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgLeapSecond, v)} />
                     <div />
-                </div>
-                {/* Position & velocity subgroup */}
-                <div class="grid grid-cols-[13rem_auto] gap-x-6 gap-y-1 items-start">
-                    <div class={`col-span-2 text-[10px] font-medium uppercase tracking-wide ${childDisabled ? 'text-text-muted' : 'text-text-secondary'}`}>Position & velocity</div>
+                </ConfigSubSubGroup>
+                <ConfigSubSubGroup title="Position and velocity" disabled={childDisabled}>
                     <Checkbox label="Position" checked={has(PVTMsgPos)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgPos, v)} />
                     <Checkbox label="Prefer ECEF" checked={has(PVTMsgECEF)}
@@ -91,7 +87,7 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
                     <Checkbox label="End of navigation epoch" checked={has(PVTMsgEpoch)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgEpoch, v)} />
                     <div />
-                </div>
+                </ConfigSubSubGroup>
             </div>
         </ConfigSubGroup>
     );

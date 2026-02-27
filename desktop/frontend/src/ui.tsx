@@ -141,6 +141,21 @@ export function ConfigSubGroup({title, disabled, children}: ConfigSubGroupProps)
     );
 }
 
+export interface ConfigSubSubGroupProps {
+    title: string;
+    disabled?: boolean;
+    children: ComponentChildren;
+}
+
+export function ConfigSubSubGroup({title, disabled, children}: ConfigSubSubGroupProps) {
+    return (
+        <div class="mt-1 grid grid-cols-[13rem_auto] gap-x-6 gap-y-1 items-start">
+            <div class={`col-span-2 mb-0.5 text-xs font-medium ${disabled ? 'text-text-muted' : 'text-text-secondary'}`}>{title}</div>
+            {children}
+        </div>
+    );
+}
+
 export interface ConfigGroupProps {
     title: string;
     defaultOpen?: boolean;
