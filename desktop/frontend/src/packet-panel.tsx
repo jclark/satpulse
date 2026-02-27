@@ -29,7 +29,7 @@ function matchesFilter(pkt: PacketEntry, q: string): boolean {
     return false;
 }
 
-export function MonitorPanel({packetEntries, setPacketEntries, visible}: Props) {
+export function PacketPanel({packetEntries, setPacketEntries, visible}: Props) {
     const logRef = useRef<HTMLDivElement>(null);
     const [frozen, setFrozen] = useState(false);
     const [filter, setFilter] = useState('');

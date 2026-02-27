@@ -5,7 +5,7 @@ import {Connect, Disconnect, GetAllSignals, GetConnState, GetReceiverState, List
 import {ConnectionPanel, PortInfo} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
-import {MonitorPanel} from './monitor-panel';
+import {PacketPanel} from './packet-panel';
 import {LoggingPanel} from './logging-panel';
 import {SurveyPanel} from './survey-panel';
 import {MsgFilePanel} from './msgfile-panel';
@@ -591,7 +591,7 @@ export function App() {
 
                 {/* Packets tab */}
                 <div class={`h-full ${activeTab === 'packets' ? '' : 'hidden'}`}>
-                    <MonitorPanel
+                    <PacketPanel
                         packetEntries={packetEntries}
                         setPacketEntries={setPacketEntries}
                         visible={activeTab === 'packets'}
