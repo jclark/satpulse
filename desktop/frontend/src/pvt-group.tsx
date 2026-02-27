@@ -4,6 +4,7 @@ import {
     PVTMsgLeapSecond, PVTMsgTAI, PVTMsgECEF,
     PVTMsgTimePulseAfter, PVTMsgQuality, PVTMsgEpoch, PVTMsgOff,
 } from './msg-flags';
+import {labeledControlText} from './ui';
 
 interface Props {
     change: boolean;
@@ -24,10 +25,10 @@ function Checkbox({label, checked, disabled, onChange, indent}: {
     onChange: (v: boolean) => void; indent?: boolean;
 }) {
     return (
-        <label class={`flex items-center gap-1.5 text-xs ${indent ? 'ml-4' : ''} ${disabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
+        <label class={`flex items-center gap-1.5 ${indent ? 'ml-4' : ''} ${labeledControlText(disabled)}`}>
             <input
                 type="checkbox"
-                class="accent-blue-600"
+                class="accent-accent"
                 checked={checked}
                 disabled={disabled}
                 onChange={e => onChange((e.target as HTMLInputElement).checked)}
@@ -47,7 +48,7 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
 
     return (
         <div>
-            <div class="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">PVT</div>
+            <div class="mb-1 text-xs font-semibold text-text-secondary">PVT</div>
             <div class="flex flex-col gap-1.5 ml-0.5">
                 <div class="flex gap-x-4">
                     <Checkbox label="Change" checked={change} disabled={!!disabled}
@@ -57,7 +58,7 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
                 </div>
                 {/* Time subgroup */}
                 <div class="grid grid-cols-[13rem_auto] gap-x-6 gap-y-1 items-start">
-                    <div class={`col-span-2 text-[10px] font-medium uppercase tracking-wide ${childDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500 dark:text-gray-400'}`}>Time</div>
+                    <div class={`col-span-2 text-[10px] font-medium uppercase tracking-wide ${childDisabled ? 'text-text-muted' : 'text-text-secondary'}`}>Time</div>
                     <Checkbox label="Navigation time" checked={has(PVTMsgTime)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgTime, v)} />
                     <Checkbox label="Prefer TAI" checked={has(PVTMsgTAI)}
@@ -76,7 +77,7 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
                 </div>
                 {/* Position & velocity subgroup */}
                 <div class="grid grid-cols-[13rem_auto] gap-x-6 gap-y-1 items-start">
-                    <div class={`col-span-2 text-[10px] font-medium uppercase tracking-wide ${childDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500 dark:text-gray-400'}`}>Position & velocity</div>
+                    <div class={`col-span-2 text-[10px] font-medium uppercase tracking-wide ${childDisabled ? 'text-text-muted' : 'text-text-secondary'}`}>Position & velocity</div>
                     <Checkbox label="Position" checked={has(PVTMsgPos)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgPos, v)} />
                     <Checkbox label="Prefer ECEF" checked={has(PVTMsgECEF)}

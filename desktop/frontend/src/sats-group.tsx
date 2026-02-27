@@ -1,5 +1,6 @@
 import {h} from 'preact';
 import {SatsMsgSat, SatsMsgSignal} from './msg-flags';
+import {labeledControlText} from './ui';
 
 interface Props {
     change: boolean;
@@ -20,10 +21,10 @@ function Checkbox({label, checked, disabled, onChange}: {
     onChange: (v: boolean) => void;
 }) {
     return (
-        <label class={`flex items-center gap-1.5 text-xs ${disabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
+        <label class={`flex items-center gap-1.5 ${labeledControlText(disabled)}`}>
             <input
                 type="checkbox"
-                class="accent-blue-600"
+                class="accent-accent"
                 checked={checked}
                 disabled={disabled}
                 onChange={e => onChange((e.target as HTMLInputElement).checked)}
@@ -40,7 +41,7 @@ export function SatsGroup({change, flags, onChangeChange, onFlagsChange, disable
 
     return (
         <div>
-            <div class="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Satellites</div>
+            <div class="mb-1 text-xs font-semibold text-text-secondary">Satellites</div>
             <div class="flex flex-col gap-1.5 ml-0.5">
                 <Checkbox label="Change" checked={change} disabled={!!disabled}
                     onChange={onChangeChange} />

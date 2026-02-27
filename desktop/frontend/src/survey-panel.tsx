@@ -1,7 +1,8 @@
-import {h, Fragment} from 'preact';
+import {h} from 'preact';
 import {useState, useEffect} from 'preact/hooks';
 import {ECEFtoLLH} from '../wailsjs/go/main/App';
 import type {SurveyMsg} from './app';
+import {DefinitionList} from './ui';
 
 interface Props {
     msg: SurveyMsg | null;
@@ -71,7 +72,7 @@ export function SurveyPanel({msg}: Props) {
 
     if (llh) {
         coords = (
-            <a href={mapsURL(llh.lat, llh.lon)} target="_blank" class="underline hover:text-blue-500">
+            <a href={mapsURL(llh.lat, llh.lon)} target="_blank" class="underline hover:text-accent">
                 {formatCoord(llh.lat, llh.lon, 5)}
             </a>
         );
@@ -90,14 +91,5 @@ export function SurveyPanel({msg}: Props) {
         ['Observation time', obsTime],
     ];
 
-    return (
-        <dl class="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2 max-w-xl">
-            {rows.map(([label, value]) => (
-                <>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs">{label}</dt>
-                    <dd class="text-sm tabular-nums">{value}</dd>
-                </>
-            ))}
-        </dl>
-    );
+    return <DefinitionList rows={rows.map(([label, value]) => ({label, value}))} class="max-w-xl grid-cols-[140px_1fr]" />;
 }

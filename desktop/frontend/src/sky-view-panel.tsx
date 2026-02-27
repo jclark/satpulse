@@ -43,13 +43,13 @@ function opacityClassFor(cn0: number): string {
 
 function colorClassFor(svid: string): string {
     switch (svid[0]) {
-        case 'G': case 'S': return 'fill-blue-600 dark:fill-blue-400';
-        case 'E': return 'fill-green-600 dark:fill-green-400';
-        case 'C': return 'fill-red-600 dark:fill-red-400';
-        case 'R': return 'fill-fuchsia-600 dark:fill-fuchsia-400';
-        case 'J': return 'fill-amber-600 dark:fill-amber-400';
-        case 'I': return 'fill-yellow-600 dark:fill-yellow-300';
-        default: return 'fill-gray-600 dark:fill-gray-400';
+        case 'G': case 'S': return 'fill-gnss-gps';
+        case 'E': return 'fill-gnss-galileo';
+        case 'C': return 'fill-gnss-beidou';
+        case 'R': return 'fill-gnss-glonass';
+        case 'J': return 'fill-gnss-qzss';
+        case 'I': return 'fill-gnss-navic';
+        default: return 'fill-gnss-unknown';
     }
 }
 
@@ -66,7 +66,7 @@ export function SkyViewPanel({msg}: Props) {
     const usedValid = satellites.some(s => s.used === true);
 
     return (
-        <div class="flex-2 min-w-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
+        <div class="flex-2 min-w-0 flex items-center justify-center bg-surface-1">
             <svg
                 viewBox={`${-STROKE_PAD} ${-STROKE_PAD} ${SIZE + 2 * STROKE_PAD} ${SIZE + 2 * STROKE_PAD}`}
                 preserveAspectRatio="xMidYMid meet"
@@ -75,7 +75,7 @@ export function SkyViewPanel({msg}: Props) {
                 xmlns="http://www.w3.org/2000/svg"
             >
                 {/* Horizon circle */}
-                <circle cx={RADIUS} cy={RADIUS} r={RADIUS} class="stroke-gray-400 fill-none stroke-[1]" />
+                <circle cx={RADIUS} cy={RADIUS} r={RADIUS} class="fill-none stroke-border-strong stroke-[1]" />
 
                 {/* Elevation rings */}
                 {[15, 30, 45, 60].map(el => (
@@ -84,7 +84,7 @@ export function SkyViewPanel({msg}: Props) {
                         cx={RADIUS}
                         cy={RADIUS}
                         r={((90 - el) / 90) * RADIUS}
-                        class="stroke-gray-200 fill-none stroke-[0.5]"
+                        class="fill-none stroke-border-subtle stroke-[0.5]"
                     />
                 ))}
 
@@ -101,16 +101,16 @@ export function SkyViewPanel({msg}: Props) {
                             y1={RADIUS + outerR * Math.sin(rad)}
                             x2={RADIUS + innerR * Math.cos(rad)}
                             y2={RADIUS + innerR * Math.sin(rad)}
-                            class="stroke-gray-300 stroke-[0.5]"
+                            class="stroke-border-subtle stroke-[0.5]"
                         />
                     );
                 })}
 
                 {/* Compass markers */}
-                <text x={RADIUS} y={COMPASS_PADDING} text-anchor="middle" dominant-baseline="hanging" class="fill-gray-500 text-[6px]">N</text>
-                <text x={RADIUS} y={SIZE - COMPASS_PADDING} text-anchor="middle" class="fill-gray-500 text-[6px]">S</text>
-                <text x={SIZE - COMPASS_PADDING} y={RADIUS + CAP_X_HEIGHT_DIFF} text-anchor="end" dominant-baseline="middle" class="fill-gray-500 text-[6px]">E</text>
-                <text x={COMPASS_PADDING} y={RADIUS + CAP_X_HEIGHT_DIFF} text-anchor="start" dominant-baseline="middle" class="fill-gray-500 text-[6px]">W</text>
+                <text x={RADIUS} y={COMPASS_PADDING} text-anchor="middle" dominant-baseline="hanging" class="fill-text-secondary text-[6px]">N</text>
+                <text x={RADIUS} y={SIZE - COMPASS_PADDING} text-anchor="middle" class="fill-text-secondary text-[6px]">S</text>
+                <text x={SIZE - COMPASS_PADDING} y={RADIUS + CAP_X_HEIGHT_DIFF} text-anchor="end" dominant-baseline="middle" class="fill-text-secondary text-[6px]">E</text>
+                <text x={COMPASS_PADDING} y={RADIUS + CAP_X_HEIGHT_DIFF} text-anchor="start" dominant-baseline="middle" class="fill-text-secondary text-[6px]">W</text>
 
                 {/* Satellite labels */}
                 {satellites.map(sv => {

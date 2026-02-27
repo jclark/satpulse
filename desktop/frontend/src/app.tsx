@@ -124,9 +124,9 @@ export interface SendLine {
 type TabID = 'monitor' | 'packets' | 'config' | 'messages';
 
 const tabBtnBase = 'px-5 py-2 text-sm font-medium border-b-2 cursor-pointer bg-transparent';
-const tabBtnActive = tabBtnBase + ' border-blue-600 text-blue-600 bg-gray-50 dark:bg-gray-900';
-const tabBtnInactive = tabBtnBase + ' border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900';
-const tabBtnDisabled = tabBtnBase + ' border-transparent text-gray-300 dark:text-gray-600 cursor-not-allowed';
+const tabBtnActive = tabBtnBase + ' border-accent text-accent bg-surface-1';
+const tabBtnInactive = tabBtnBase + ' border-transparent text-text-secondary hover:text-text-primary hover:bg-surface-1';
+const tabBtnDisabled = tabBtnBase + ' border-transparent text-text-muted cursor-not-allowed';
 
 const connStateLabel: Record<ConnState, string> = {
     disconnected: 'Disconnected',
@@ -543,7 +543,7 @@ export function App() {
             />
 
             {/* Tab bar */}
-            <div class="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
+            <div class="flex shrink-0 border-b border-border-subtle bg-surface-2">
                 <button
                     class={activeTab === 'monitor' ? tabBtnActive : tabBtnInactive}
                     onClick={() => setActiveTab('monitor')}
@@ -635,7 +635,7 @@ export function App() {
 
             {/* Drag splitter */}
             <div
-                class="shrink-0 h-1 cursor-row-resize border-y border-gray-200 dark:border-gray-700"
+                class="shrink-0 h-1 cursor-row-resize border-y border-border-subtle"
                 onMouseDown={onSplitterMouseDown}
             />
 
@@ -645,7 +645,7 @@ export function App() {
             </div>
 
             {/* Status bar */}
-            <div class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-5 py-1 text-xs text-gray-500 dark:text-gray-400 shrink-0">
+            <div class="shrink-0 border-t border-border-subtle bg-surface-2 px-5 py-1 text-xs text-text-secondary">
                 {connStateLabel[connState]}
             </div>
 
@@ -654,8 +654,8 @@ export function App() {
                 {toasts.map(t => (
                     <div
                         key={t.id}
-                        class={`px-4 py-2 rounded text-sm text-black animate-[fadeIn_0.2s] ${
-                            t.type === 'success' ? 'bg-green-400' : 'bg-red-400'
+                        class={`animate-[fadeIn_0.2s] rounded px-4 py-2 text-sm text-surface-2 ${
+                            t.type === 'success' ? 'bg-success' : 'bg-danger'
                         }`}
                     >
                         {t.message}

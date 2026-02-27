@@ -3,6 +3,7 @@ import {useState, useEffect} from 'preact/hooks';
 import {ECEFtoLLH, LLHtoECEF, VelNEDtoECEF, VelECEFtoNED} from '../wailsjs/go/main/App';
 import {formatDateTime, formatTAI, formatUTCLocal} from './timefmt';
 import type {LeapSecondState} from './app';
+import type {ComponentChildren} from 'preact';
 
 const blank = '\u2014';
 
@@ -106,8 +107,37 @@ function N({children}: {children: preact.ComponentChildren}) {
     return <span class="font-bold">{children}</span>;
 }
 
-const td = 'pr-3 py-0.5';
-const th = 'pr-3 py-0.5 font-medium font-sans';
+const cellPad = 'pr-3 py-0.5';
+
+function PVTMsgTable({title, columns, empty, children, hasData}: {
+    title: string;
+    columns: string[];
+    empty: string;
+    children: ComponentChildren;
+    hasData: boolean;
+}) {
+    return (
+        <section class="space-y-2">
+            <h3 class="mb-1 text-xs font-semibold uppercase tracking-wider text-text-secondary">{title}</h3>
+            {hasData ? (
+                <div class="overflow-x-auto">
+                    <table class="w-full border-collapse text-xs">
+                        <thead class="text-text-muted">
+                            <tr>
+                                {columns.map(col => <th key={col} class={`${cellPad} text-left`}>{col}</th>)}
+                            </tr>
+                        </thead>
+                        <tbody class="font-mono tabular-nums text-text-primary">
+                            {children}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <p class="text-xs text-text-muted">{empty}</p>
+            )}
+        </section>
+    );
+}
 
 // --- Position table ---
 // Columns: Tag | Message | Latitude,Longitude | Height | Height MSL | ECEF
@@ -157,60 +187,46 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
         return [e.pos[0], e.pos[1], e.pos[2]];
     })]);
 
-    if (rows.size === 0) return <p class="text-xs text-gray-400">No position data</p>;
-
-    const sorted = [...rows.values()].sort((a, b) => a.nativeMsgID.localeCompare(b.nativeMsgID));
+    const sorted = rows.size > 0 ? [...rows.values()].sort((a, b) => a.nativeMsgID.localeCompare(b.nativeMsgID)) : [];
 
     return (
-        <table class="text-xs font-mono tabular-nums w-full border-collapse">
-            <thead>
-                <tr class="text-left text-gray-500 dark:text-gray-400">
-                    <th class={`${th}`}>Tag</th>
-                    <th class={`${th}`}>Message</th>
-                    <th class={`${th}`}>Latitude,Longitude</th>
-                    <th class={`${th}`}>Height</th>
-                    <th class={`${th}`}>Height MSL</th>
-                    <th class={`${th}`}>ECEF</th>
-                </tr>
-            </thead>
-            <tbody>
-                {sorted.map(row => {
-                    if (row.kind === 'posGeo') {
-                        const conv = geoConv.get(row.nativeMsgID);
-                        const latLon = <N>{fmtDeg(row.latLon[0], 7)},{fmtDeg(row.latLon[1], 7)}</N>;
-                        const ecef = conv
-                            ? <>{fmtM(conv.ecefX, 4)},{fmtM(conv.ecefY, 4)},{fmtM(conv.ecefZ, 4)}</>
-                            : blank;
-                        return (
-                            <tr key={row.nativeMsgID}>
-                                <td class={td}>{row.tag}</td>
-                                <td class={td}>{row.nativeMsgID}</td>
-                                <td class={td}>{latLon}</td>
-                                <td class={td}>{row.height != null ? <N>{fmtM(row.height, 4)}</N> : blank}</td>
-                                <td class={td}>{row.heightMSL != null ? <N>{fmtM(row.heightMSL, 4)}</N> : blank}</td>
-                                <td class={td}>{ecef}</td>
-                            </tr>
-                        );
-                    } else {
-                        const conv = ecefConv.get(row.nativeMsgID);
-                        const latLon = conv
-                            ? <>{fmtDeg(conv.lat, 7)},{fmtDeg(conv.lon, 7)}</>
-                            : blank;
-                        const ecef = <N>{fmtM(row.pos[0], 4)},{fmtM(row.pos[1], 4)},{fmtM(row.pos[2], 4)}</N>;
-                        return (
-                            <tr key={row.nativeMsgID}>
-                                <td class={td}>{row.tag}</td>
-                                <td class={td}>{row.nativeMsgID}</td>
-                                <td class={td}>{latLon}</td>
-                                <td class={td}>{conv ? fmtM(conv.height, 4) : blank}</td>
-                                <td class={td}>{blank}</td>
-                                <td class={td}>{ecef}</td>
-                            </tr>
-                        );
-                    }
-                })}
-            </tbody>
-        </table>
+        <PVTMsgTable title="Position" columns={['Tag', 'Message', 'Latitude,Longitude', 'Height', 'Height MSL', 'ECEF']} empty="No position data" hasData={rows.size > 0}>
+            {sorted.map(row => {
+                if (row.kind === 'posGeo') {
+                    const conv = geoConv.get(row.nativeMsgID);
+                    const latLon = <N>{fmtDeg(row.latLon[0], 7)},{fmtDeg(row.latLon[1], 7)}</N>;
+                    const ecef = conv
+                        ? <>{fmtM(conv.ecefX, 4)},{fmtM(conv.ecefY, 4)},{fmtM(conv.ecefZ, 4)}</>
+                        : blank;
+                    return (
+                        <tr key={row.nativeMsgID}>
+                            <td class={cellPad}>{row.tag}</td>
+                            <td class={cellPad}>{row.nativeMsgID}</td>
+                            <td class={cellPad}>{latLon}</td>
+                            <td class={cellPad}>{row.height != null ? <N>{fmtM(row.height, 4)}</N> : blank}</td>
+                            <td class={cellPad}>{row.heightMSL != null ? <N>{fmtM(row.heightMSL, 4)}</N> : blank}</td>
+                            <td class={cellPad}>{ecef}</td>
+                        </tr>
+                    );
+                } else {
+                    const conv = ecefConv.get(row.nativeMsgID);
+                    const latLon = conv
+                        ? <>{fmtDeg(conv.lat, 7)},{fmtDeg(conv.lon, 7)}</>
+                        : blank;
+                    const ecef = <N>{fmtM(row.pos[0], 4)},{fmtM(row.pos[1], 4)},{fmtM(row.pos[2], 4)}</N>;
+                    return (
+                        <tr key={row.nativeMsgID}>
+                            <td class={cellPad}>{row.tag}</td>
+                            <td class={cellPad}>{row.nativeMsgID}</td>
+                            <td class={cellPad}>{latLon}</td>
+                            <td class={cellPad}>{conv ? fmtM(conv.height, 4) : blank}</td>
+                            <td class={cellPad}>{blank}</td>
+                            <td class={cellPad}>{ecef}</td>
+                        </tr>
+                    );
+                }
+            })}
+        </PVTMsgTable>
     );
 }
 
@@ -257,68 +273,54 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
         return e.vel;
     })]);
 
-    if (rows.size === 0) return <p class="text-xs text-gray-400">No velocity data</p>;
-    const sorted = [...rows.values()].sort((a, b) => a.nativeMsgID.localeCompare(b.nativeMsgID));
+    const sorted = rows.size > 0 ? [...rows.values()].sort((a, b) => a.nativeMsgID.localeCompare(b.nativeMsgID)) : [];
 
     return (
-        <table class="text-xs font-mono tabular-nums w-full border-collapse">
-            <thead>
-                <tr class="text-left text-gray-500 dark:text-gray-400">
-                    <th class={`${th}`}>Tag</th>
-                    <th class={`${th}`}>Message</th>
-                    <th class={`${th}`}>Speed (m/s)</th>
-                    <th class={`${th}`}>Ground speed</th>
-                    <th class={`${th}`}>Course (&deg;)</th>
-                    <th class={`${th}`}>North,East,Down</th>
-                    <th class={`${th}`}>ECEF (m/s)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {sorted.map(row => {
-                    if (row.kind === 'velGeo') {
-                        const ned = row.velNED
-                            ? <N>{fmtMs(row.velNED[0], 4)},{fmtMs(row.velNED[1], 4)},{fmtMs(row.velNED[2], 4)}</N>
-                            : blank;
-                        const conv = nedToEcef.get(row.nativeMsgID);
-                        const ecef = conv
-                            ? <>{fmtMs(conv[0], 4)},{fmtMs(conv[1], 4)},{fmtMs(conv[2], 4)}</>
-                            : blank;
-                        return (
-                            <tr key={row.nativeMsgID}>
-                                <td class={td}>{row.tag}</td>
-                                <td class={td}>{row.nativeMsgID}</td>
-                                <td class={td}>{row.speed3D != null
-                                    ? <N>{fmtMs(row.speed3D, 4)}</N>
-                                    : row.velNED != null
-                                        ? fmtMs(Math.sqrt(row.velNED[0]**2 + row.velNED[1]**2 + row.velNED[2]**2), 4)
-                                        : blank}</td>
-                                <td class={td}>{row.groundSpeed != null ? <N>{fmtMs(row.groundSpeed, 4)}</N> : blank}</td>
-                                <td class={td}>{row.course != null ? <N>{fmtDeg(row.course, 2)}</N> : blank}</td>
-                                <td class={td}>{ned}</td>
-                                <td class={td}>{ecef}</td>
-                            </tr>
-                        );
-                    } else {
-                        const ecefVel = <N>{fmtMs(row.vel[0], 4)},{fmtMs(row.vel[1], 4)},{fmtMs(row.vel[2], 4)}</N>;
-                        const conv = ecefToNed.get(row.nativeMsgID);
-                        const ned = conv
-                            ? <>{fmtMs(conv[0], 4)},{fmtMs(conv[1], 4)},{fmtMs(conv[2], 4)}</>
-                            : blank;
-                        return (
-                            <tr key={row.nativeMsgID}>
-                                <td class={td}>{row.tag}</td>
-                                <td class={td}>{row.nativeMsgID}</td>
-                                <td class={td}>{blank}</td>
-                                <td class={td}>{blank}</td>
-                                <td class={td}>{blank}</td>
-                                <td class={td}>{ned}</td>
-                                <td class={td}>{ecefVel}</td>
-                            </tr>
-                        );
-                    }
-                })}
-            </tbody>
-        </table>
+        <PVTMsgTable title="Velocity" columns={['Tag', 'Message', 'Speed (m/s)', 'Ground speed', 'Course (\u00B0)', 'North,East,Down', 'ECEF (m/s)']} empty="No velocity data" hasData={rows.size > 0}>
+            {sorted.map(row => {
+                if (row.kind === 'velGeo') {
+                    const ned = row.velNED
+                        ? <N>{fmtMs(row.velNED[0], 4)},{fmtMs(row.velNED[1], 4)},{fmtMs(row.velNED[2], 4)}</N>
+                        : blank;
+                    const conv = nedToEcef.get(row.nativeMsgID);
+                    const ecef = conv
+                        ? <>{fmtMs(conv[0], 4)},{fmtMs(conv[1], 4)},{fmtMs(conv[2], 4)}</>
+                        : blank;
+                    return (
+                        <tr key={row.nativeMsgID}>
+                            <td class={cellPad}>{row.tag}</td>
+                            <td class={cellPad}>{row.nativeMsgID}</td>
+                            <td class={cellPad}>{row.speed3D != null
+                                ? <N>{fmtMs(row.speed3D, 4)}</N>
+                                : row.velNED != null
+                                    ? fmtMs(Math.sqrt(row.velNED[0]**2 + row.velNED[1]**2 + row.velNED[2]**2), 4)
+                                    : blank}</td>
+                            <td class={cellPad}>{row.groundSpeed != null ? <N>{fmtMs(row.groundSpeed, 4)}</N> : blank}</td>
+                            <td class={cellPad}>{row.course != null ? <N>{fmtDeg(row.course, 2)}</N> : blank}</td>
+                            <td class={cellPad}>{ned}</td>
+                            <td class={cellPad}>{ecef}</td>
+                        </tr>
+                    );
+                } else {
+                    const ecefVel = <N>{fmtMs(row.vel[0], 4)},{fmtMs(row.vel[1], 4)},{fmtMs(row.vel[2], 4)}</N>;
+                    const conv = ecefToNed.get(row.nativeMsgID);
+                    const ned = conv
+                        ? <>{fmtMs(conv[0], 4)},{fmtMs(conv[1], 4)},{fmtMs(conv[2], 4)}</>
+                        : blank;
+                    return (
+                        <tr key={row.nativeMsgID}>
+                            <td class={cellPad}>{row.tag}</td>
+                            <td class={cellPad}>{row.nativeMsgID}</td>
+                            <td class={cellPad}>{blank}</td>
+                            <td class={cellPad}>{blank}</td>
+                            <td class={cellPad}>{blank}</td>
+                            <td class={cellPad}>{ned}</td>
+                            <td class={cellPad}>{ecefVel}</td>
+                        </tr>
+                    );
+                }
+            })}
+        </PVTMsgTable>
     );
 }
 
@@ -326,94 +328,79 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
 // Columns: Tag | Message | Local | UTC | TAI | Leap sec | TAcc | GNSS
 
 function TimeTable({rows, leapSecond}: {rows: Map<string, TimeRow>; leapSecond: LeapSecondState | null}) {
-    if (rows.size === 0) return <p class="text-xs text-gray-400">No time data</p>;
-    const sorted = [...rows.values()].sort((a, b) => a.nativeMsgID.localeCompare(b.nativeMsgID));
+    const sorted = rows.size > 0 ? [...rows.values()].sort((a, b) => a.nativeMsgID.localeCompare(b.nativeMsgID)) : [];
 
     return (
-        <table class="text-xs font-mono tabular-nums w-full border-collapse">
-            <thead>
-                <tr class="text-left text-gray-500 dark:text-gray-400">
-                    <th class={`${th}`}>Tag</th>
-                    <th class={`${th}`}>Message</th>
-                    <th class={`${th}`}>Local</th>
-                    <th class={`${th}`}>UTC</th>
-                    <th class={`${th}`}>TAI</th>
-                    <th class={`${th}`}>Leap sec</th>
-                    <th class={`${th}`}>TAcc</th>
-                    <th class={`${th}`}>GNSS</th>
-                </tr>
-            </thead>
-            <tbody>
-                {sorted.map(row => {
-                    // Determine the UTC ISO string for computing local and display
-                    let utcISO = '';
-                    let utcBold = false;
-                    if (row.utcTime) {
-                        utcISO = row.utcTime;
-                        utcBold = true;
-                    } else if (row.taiTime) {
-                        const ls = row.utcOffset || (leapSecond?.utcOff ?? 0);
-                        if (ls > 0) {
-                            const taiSecs = parseTAITime(row.taiTime);
-                            if (taiSecs > 0) {
-                                utcISO = new Date((taiSecs - ls) * 1000).toISOString();
-                            }
-                        }
-                    }
-                    const utc = utcISO ? formatDateTime(utcISO) : blank;
-
-                    // Local time of day (always computed, not bold)
-                    let local = blank;
-                    if (utcISO) {
-                        const dt = formatUTCLocal(utcISO);
-                        if (dt) local = dt.time;
-                    }
-
-                    // Determine TAI: native if taiTime present, else computed from UTC + leap seconds
-                    let tai = blank;
-                    let taiBold = false;
-                    if (row.taiTime) {
+        <PVTMsgTable title="Time" columns={['Tag', 'Message', 'Local', 'UTC', 'TAI', 'Leap sec', 'TAcc', 'GNSS']} empty="No time data" hasData={rows.size > 0}>
+            {sorted.map(row => {
+                // Determine the UTC ISO string for computing local and display
+                let utcISO = '';
+                let utcBold = false;
+                if (row.utcTime) {
+                    utcISO = row.utcTime;
+                    utcBold = true;
+                } else if (row.taiTime) {
+                    const ls = row.utcOffset || (leapSecond?.utcOff ?? 0);
+                    if (ls > 0) {
                         const taiSecs = parseTAITime(row.taiTime);
                         if (taiSecs > 0) {
-                            tai = formatTAI(taiSecs);
-                            taiBold = true;
-                        }
-                    } else if (row.utcTime) {
-                        const ls = row.utcOffset || (leapSecond?.utcOff ?? 0);
-                        if (ls > 0) {
-                            const utcDate = new Date(row.utcTime);
-                            const utcSecs = Math.floor(utcDate.getTime() / 1000);
-                            if (utcSecs > 0) {
-                                tai = formatTAI(utcSecs + ls);
-                            }
+                            utcISO = new Date((taiSecs - ls) * 1000).toISOString();
                         }
                     }
+                }
+                const utc = utcISO ? formatDateTime(utcISO) : blank;
 
-                    // Leap seconds: native from message if utcOffset non-zero, else from global
-                    let leapStr = blank;
-                    let leapBold = false;
-                    if (row.utcOffset) {
-                        leapStr = String(row.utcOffset);
-                        leapBold = true;
-                    } else if (leapSecond) {
-                        leapStr = String(leapSecond.utcOff);
+                // Local time of day (always computed, not bold)
+                let local = blank;
+                if (utcISO) {
+                    const dt = formatUTCLocal(utcISO);
+                    if (dt) local = dt.time;
+                }
+
+                // Determine TAI: native if taiTime present, else computed from UTC + leap seconds
+                let tai = blank;
+                let taiBold = false;
+                if (row.taiTime) {
+                    const taiSecs = parseTAITime(row.taiTime);
+                    if (taiSecs > 0) {
+                        tai = formatTAI(taiSecs);
+                        taiBold = true;
                     }
+                } else if (row.utcTime) {
+                    const ls = row.utcOffset || (leapSecond?.utcOff ?? 0);
+                    if (ls > 0) {
+                        const utcDate = new Date(row.utcTime);
+                        const utcSecs = Math.floor(utcDate.getTime() / 1000);
+                        if (utcSecs > 0) {
+                            tai = formatTAI(utcSecs + ls);
+                        }
+                    }
+                }
 
-                    return (
-                        <tr key={row.nativeMsgID}>
-                            <td class={td}>{row.tag}</td>
-                            <td class={td}>{row.nativeMsgID}</td>
-                            <td class={td}>{local}</td>
-                            <td class={td}>{utcBold ? <N>{utc}</N> : utc}</td>
-                            <td class={td}>{taiBold ? <N>{tai}</N> : tai}</td>
-                            <td class={td}>{leapBold ? <N>{leapStr}</N> : leapStr}</td>
-                            <td class={td}>{row.accuracy ? <N>{fmtNs(row.accuracy)}</N> : blank}</td>
-                            <td class={td}>{row.gnss ? <N>{row.gnss}</N> : blank}</td>
-                        </tr>
-                    );
-                })}
-            </tbody>
-        </table>
+                // Leap seconds: native from message if utcOffset non-zero, else from global
+                let leapStr = blank;
+                let leapBold = false;
+                if (row.utcOffset) {
+                    leapStr = String(row.utcOffset);
+                    leapBold = true;
+                } else if (leapSecond) {
+                    leapStr = String(leapSecond.utcOff);
+                }
+
+                return (
+                    <tr key={row.nativeMsgID}>
+                        <td class={cellPad}>{row.tag}</td>
+                        <td class={cellPad}>{row.nativeMsgID}</td>
+                        <td class={cellPad}>{local}</td>
+                        <td class={cellPad}>{utcBold ? <N>{utc}</N> : utc}</td>
+                        <td class={cellPad}>{taiBold ? <N>{tai}</N> : tai}</td>
+                        <td class={cellPad}>{leapBold ? <N>{leapStr}</N> : leapStr}</td>
+                        <td class={cellPad}>{row.accuracy ? <N>{fmtNs(row.accuracy)}</N> : blank}</td>
+                        <td class={cellPad}>{row.gnss ? <N>{row.gnss}</N> : blank}</td>
+                    </tr>
+                );
+            })}
+        </PVTMsgTable>
     );
 }
 
@@ -422,24 +409,9 @@ function TimeTable({rows, leapSecond}: {rows: Map<string, TimeRow>; leapSecond: 
 export function PVTPanel({posRows, velRows, timeRows, leapSecond}: Props) {
     return (
         <div class="space-y-4">
-            <div>
-                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Position</h4>
-                <div class="overflow-x-auto">
-                    <PositionTable rows={posRows} />
-                </div>
-            </div>
-            <div>
-                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Velocity</h4>
-                <div class="overflow-x-auto">
-                    <VelocityTable rows={velRows} />
-                </div>
-            </div>
-            <div>
-                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Time</h4>
-                <div class="overflow-x-auto">
-                    <TimeTable rows={timeRows} leapSecond={leapSecond} />
-                </div>
-            </div>
+            <PositionTable rows={posRows} />
+            <VelocityTable rows={velRows} />
+            <TimeTable rows={timeRows} leapSecond={leapSecond} />
         </div>
     );
 }

@@ -1,6 +1,7 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useRef, useMemo, useCallback} from 'preact/hooks';
 import type {PacketEntry} from './app';
+import {Button, Input} from './ui';
 
 interface Props {
     packetEntries: PacketEntry[];
@@ -28,16 +29,12 @@ function matchesFilter(pkt: PacketEntry, q: string): boolean {
     return false;
 }
 
-const btnClass = 'px-2.5 py-0.5 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-blue-600 hover:border-blue-600 hover:text-white';
-const selectClass = 'bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 px-1.5 py-0.5 rounded text-xs';
-
 export function MonitorPanel({packetEntries, setPacketEntries, visible}: Props) {
     const logRef = useRef<HTMLDivElement>(null);
     const [frozen, setFrozen] = useState(false);
     const [filter, setFilter] = useState('');
     const frozenSnapshotRef = useRef<PacketEntry[]>([]);
 
-    // When freezing, snapshot the current entries
     const handleFreeze = useCallback(() => {
         setFrozen(prev => {
             if (!prev) {
@@ -47,15 +44,13 @@ export function MonitorPanel({packetEntries, setPacketEntries, visible}: Props) 
         });
     }, [packetEntries]);
 
-    // Scroll to bottom when tab becomes visible
     useEffect(() => {
         if (visible && !frozen) {
             const el = logRef.current;
             if (el) el.scrollTop = el.scrollHeight;
         }
-    }, [visible]);
+    }, [visible, frozen]);
 
-    // When resuming, scroll to bottom
     useEffect(() => {
         if (!frozen) {
             const el = logRef.current;
@@ -63,7 +58,6 @@ export function MonitorPanel({packetEntries, setPacketEntries, visible}: Props) 
         }
     }, [frozen]);
 
-    // Auto-scroll when not frozen
     useEffect(() => {
         if (frozen) return;
         const el = logRef.current;
@@ -81,41 +75,36 @@ export function MonitorPanel({packetEntries, setPacketEntries, visible}: Props) 
     }, [displayEntries, filter]);
 
     return (
-        <div class="flex flex-col h-full">
-            <div
-                ref={logRef}
-                class="flex-1 font-mono text-xs leading-relaxed bg-gray-900 dark:bg-black px-2.5 py-1.5 overflow-y-auto whitespace-pre-wrap break-all"
-            >
+        <div class="flex h-full flex-col">
+            <div ref={logRef} class="flex-1 overflow-y-auto break-all whitespace-pre-wrap bg-surface-1 px-2.5 py-1.5 font-mono text-xs leading-relaxed">
                 {filtered.map((pkt, i) => (
                     <div key={i}>
-                        <span class="text-gray-500 dark:text-gray-400">{pkt.timestamp}</span>{' '}
-                        <span class="text-blue-600 dark:text-blue-500">[{pkt.tag || (pkt.bin ? 'bin' : 'ascii')}]</span>{' '}
-                        {pkt.msg && <><span class="text-yellow-400">{pkt.msg}</span>{' '}</>}
-                        <span class="text-green-400">{pkt.ascii ? (pkt.tag ? stripTrailingEOL(pkt.ascii) : escapeControl(pkt.ascii)) : pkt.bin}</span>
+                        <span class="text-text-muted">{pkt.timestamp}</span>{' '}
+                        <span class="text-accent">[{pkt.tag || (pkt.bin ? 'bin' : 'ascii')}]</span>{' '}
+                        {pkt.msg && (
+                            <Fragment>
+                                <span class="text-warning">{pkt.msg}</span>{' '}
+                            </Fragment>
+                        )}
+                        <span class="text-text-primary">{pkt.ascii ? (pkt.tag ? stripTrailingEOL(pkt.ascii) : escapeControl(pkt.ascii)) : pkt.bin}</span>
                     </div>
                 ))}
             </div>
-            {/* Bottom toolbar */}
-            <div class="flex items-center gap-2 px-3 py-1.5 shrink-0 border-t border-gray-200 dark:border-gray-700">
-                <button
-                    class={`${btnClass} ${frozen ? 'bg-amber-500! border-amber-500! text-black!' : ''}`}
+            <div class="flex shrink-0 items-center gap-2 border-t border-border-subtle px-3 py-1.5">
+                <Button
+                    class={frozen ? 'border-warning bg-warning text-surface-1 enabled:hover:border-warning enabled:hover:bg-warning' : ''}
                     onClick={handleFreeze}
                 >
                     {frozen ? 'Frozen' : 'Freeze'}
-                </button>
-                <input
+                </Button>
+                <Input
                     type="text"
-                    class={selectClass + ' w-36'}
+                    class="w-36 px-1.5 py-0.5"
                     placeholder="Filter..."
                     value={filter}
                     onInput={e => setFilter((e.target as HTMLInputElement).value)}
                 />
-                <button
-                    class={btnClass}
-                    onClick={() => setPacketEntries(() => [])}
-                >
-                    Clear
-                </button>
+                <Button onClick={() => setPacketEntries(() => [])}>Clear</Button>
             </div>
         </div>
     );

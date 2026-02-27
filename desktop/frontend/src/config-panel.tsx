@@ -14,6 +14,7 @@ import {
     SatsMsgSat, SatsMsgSignal,
 } from './msg-flags';
 import type {ConnState, OperationState} from './app';
+import {Button, Input, Select, fieldLabelText, labeledControlText} from './ui';
 
 interface Props {
     connState: ConnState;
@@ -83,11 +84,6 @@ function validateFields(
     if (minElev !== '') { const v = Number(minElev); if (isNaN(v) || v < 0 || v > 90) bad.add('minElev'); }
     return bad;
 }
-
-const inputClass = 'bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1 rounded text-xs';
-const inputErrorClass = 'bg-red-100 dark:bg-red-950 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1 rounded text-xs';
-const btnClass = 'px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-blue-600 hover:border-blue-600 hover:text-white disabled:opacity-50 disabled:cursor-default disabled:hover:bg-gray-200 dark:disabled:hover:bg-gray-700 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:text-gray-900 dark:disabled:hover:text-gray-100';
-const btnPrimary = 'px-3.5 py-1 rounded text-xs border border-blue-600 bg-blue-600 text-white cursor-pointer hover:bg-blue-700 disabled:opacity-50 disabled:cursor-default';
 
 export function ConfigPanel({connState, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, speed}: Props) {
     const connected = connState === 'connected';
@@ -371,8 +367,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const fixedDisabled = !connected || timeMode !== 'fixed';
     const ecefDisabled = fixedDisabled || coordSystem !== 'ecef';
     const llhDisabled = fixedDisabled || coordSystem !== 'llh';
-    const disabledText = 'text-gray-400 dark:text-gray-500';
-    const enabledText = 'text-gray-700 dark:text-gray-200 cursor-pointer';
+    const disabledText = 'text-xs text-text-muted';
+    const enabledText = 'text-xs text-text-primary cursor-pointer';
 
     return (
         <div class="flex flex-col h-full">
@@ -382,38 +378,38 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                     <CollapsibleSection title="Time pulse" defaultOpen={true}>
                         <div class="flex gap-x-6 items-start">
                             <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center">
-                                <label class="text-xs text-gray-500 dark:text-gray-400">Period (s)</label>
-                                <input type="text" inputMode="decimal" class={(errorSet.has('ppsPeriod') ? inputErrorClass : inputClass) + ' w-20'} value={ppsPeriod} placeholder="e.g. 1.0"
+                                <label class={fieldLabelText()}>Period (s)</label>
+                                <Input type="text" inputMode="decimal" invalid={errorSet.has('ppsPeriod')} class="w-20" value={ppsPeriod} placeholder="e.g. 1.0"
                                     disabled={!connected} onInput={e => { setTimePulseTouched(true); setPpsPeriod((e.target as HTMLInputElement).value); }} />
-                                <label class="text-xs text-gray-500 dark:text-gray-400">Pulse width (s)</label>
-                                <input type="text" inputMode="decimal" class={(errorSet.has('ppsWidth') ? inputErrorClass : inputClass) + ' w-20'} value={ppsWidth} placeholder="e.g. 0.1"
+                                <label class={fieldLabelText()}>Pulse width (s)</label>
+                                <Input type="text" inputMode="decimal" invalid={errorSet.has('ppsWidth')} class="w-20" value={ppsWidth} placeholder="e.g. 0.1"
                                     disabled={!connected} onInput={e => { setTimePulseTouched(true); setPpsWidth((e.target as HTMLInputElement).value); }} />
-                                <label class="text-xs text-gray-500 dark:text-gray-400">Time GNSS</label>
-                                <select class={inputClass + ' w-24'} value={timeGNSS} disabled={!connected}
+                                <label class={fieldLabelText()}>Time GNSS</label>
+                                <Select class="w-24" value={timeGNSS} disabled={!connected}
                                     onChange={e => { setTimePulseTouched(true); setTimeGNSS((e.target as HTMLSelectElement).value); }}>
                                     <option value="">--</option>
                                     <option value="GPS">GPS</option>
                                     <option value="GAL">Galileo</option>
                                     <option value="BDS">BeiDou</option>
                                     <option value="GLO">GLONASS</option>
-                                </select>
-                                <label class="text-xs text-gray-500 dark:text-gray-400">Cable delay (ns)</label>
-                                <input type="text" inputMode="decimal" class={(errorSet.has('cableDelay') ? inputErrorClass : inputClass) + ' w-20'} value={cableDelay} placeholder="e.g. 50"
+                                </Select>
+                                <label class={fieldLabelText()}>Cable delay (ns)</label>
+                                <Input type="text" inputMode="decimal" invalid={errorSet.has('cableDelay')} class="w-20" value={cableDelay} placeholder="e.g. 50"
                                     disabled={!connected} onInput={e => { setTimePulseTouched(true); setCableDelay((e.target as HTMLInputElement).value); }} />
                             </div>
                             <div class="flex flex-col gap-1.5 pt-0.5">
-                                <label class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
-                                    <input type="checkbox" class="accent-blue-600" checked={ppsAlign} disabled={!connected}
+                                <label class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
+                                    <input type="checkbox" class="accent-accent" checked={ppsAlign} disabled={!connected}
                                         onChange={e => { setTimePulseTouched(true); setPpsAlign((e.target as HTMLInputElement).checked); }} />
                                     Align to GNSS
                                 </label>
-                                <label class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
-                                    <input type="checkbox" class="accent-blue-600" checked={ppsLocked} disabled={!connected}
+                                <label class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
+                                    <input type="checkbox" class="accent-accent" checked={ppsLocked} disabled={!connected}
                                         onChange={e => { setTimePulseTouched(true); setPpsLocked((e.target as HTMLInputElement).checked); }} />
                                     Only when locked
                                 </label>
-                                <label class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
-                                    <input type="checkbox" class="accent-blue-600" checked={ppsRising} disabled={!connected}
+                                <label class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
+                                    <input type="checkbox" class="accent-accent" checked={ppsRising} disabled={!connected}
                                         onChange={e => { setTimePulseTouched(true); setPpsRising((e.target as HTMLInputElement).checked); }} />
                                     Rising edge
                                 </label>
@@ -427,38 +423,38 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                         <div class="flex flex-wrap gap-x-4 gap-y-1 mb-3">
                             {([['mobile', 'Mobile'], ['survey', 'Survey-in'], ['fixed', 'Fixed position']] as const).map(([val, label]) => (
                                 <label key={val} class={`flex items-center gap-1.5 text-xs ${!connected ? disabledText : enabledText}`}>
-                                    <input type="radio" name="timeMode" class="accent-blue-600" checked={timeMode === val}
+                                    <input type="radio" name="timeMode" class="accent-accent" checked={timeMode === val}
                                         disabled={!connected} onChange={() => { setTimeModeTouched(true); setTimeMode(val); }} />
                                     {label}
                                 </label>
                             ))}
                         </div>
                         {readbackStationary && timeMode === '' && (
-                            <div class="text-[10px] text-blue-500 mb-2">Receiver is in stationary mode.</div>
+                            <div class="mb-2 text-[10px] text-info">Receiver is in stationary mode.</div>
                         )}
 
                         {/* Survey-in group */}
                         <div class="mb-3">
-                            <div class={`text-xs font-semibold mb-1 ${surveyDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-600 dark:text-gray-300'}`}>Survey-in</div>
+                            <div class={`mb-1 text-xs font-semibold ${surveyDisabled ? 'text-text-muted' : 'text-text-secondary'}`}>Survey-in</div>
                             <div class="flex gap-x-6 items-start">
                                 <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center">
-                                    <label class={`text-xs ${surveyDisabled ? disabledText : 'text-gray-500 dark:text-gray-400'}`}>Survey time (s)</label>
-                                    <input type="text" inputMode="decimal" class={(errorSet.has('surveyTime') ? inputErrorClass : inputClass) + ' w-24'} value={surveyTime} placeholder="2000"
+                                    <label class={surveyDisabled ? disabledText : fieldLabelText()}>Survey time (s)</label>
+                                    <Input type="text" inputMode="decimal" invalid={errorSet.has('surveyTime')} class="w-24" value={surveyTime} placeholder="2000"
                                         disabled={surveyDisabled} onInput={e => { setTimeModeTouched(true); setSurveyTime((e.target as HTMLInputElement).value); }} />
-                                    <label class={`text-xs ${surveyDisabled ? disabledText : 'text-gray-500 dark:text-gray-400'}`}>Survey accuracy (m)</label>
-                                    <input type="text" inputMode="decimal" class={(errorSet.has('surveyAcc') ? inputErrorClass : inputClass) + ' w-24'} value={surveyAcc} placeholder="20"
+                                    <label class={surveyDisabled ? disabledText : fieldLabelText()}>Survey accuracy (m)</label>
+                                    <Input type="text" inputMode="decimal" invalid={errorSet.has('surveyAcc')} class="w-24" value={surveyAcc} placeholder="20"
                                         disabled={surveyDisabled} onInput={e => { setTimeModeTouched(true); setSurveyAcc((e.target as HTMLInputElement).value); }} />
                                 </div>
                                 <div class="flex flex-col gap-1.5 pt-0.5">
                                     <label class={`flex items-center gap-1.5 text-xs ${surveyDisabled ? disabledText : enabledText}`}>
-                                        <input type="checkbox" class="accent-blue-600" checked={surveyAgain}
+                                        <input type="checkbox" class="accent-accent" checked={surveyAgain}
                                             disabled={surveyDisabled} onChange={e => { setTimeModeTouched(true); setSurveyAgain((e.target as HTMLInputElement).checked); }} />
                                         Do a new survey
                                     </label>
                                 </div>
                             </div>
                             <label class={`flex items-center gap-1.5 text-xs mt-1.5 ${surveyDisabled ? disabledText : enabledText}`}>
-                                <input type="checkbox" class="accent-blue-600" checked={surveyReport}
+                                <input type="checkbox" class="accent-accent" checked={surveyReport}
                                     disabled={surveyDisabled} onChange={e => { setTimeModeTouched(true); setSurveyReport((e.target as HTMLInputElement).checked); }} />
                                 Report survey progress
                             </label>
@@ -466,11 +462,11 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
 
                         {/* Fixed position group */}
                         <div>
-                            <div class={`text-xs font-semibold mb-1 ${fixedDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-600 dark:text-gray-300'}`}>Fixed position</div>
+                            <div class={`mb-1 text-xs font-semibold ${fixedDisabled ? 'text-text-muted' : 'text-text-secondary'}`}>Fixed position</div>
                             <div class="flex flex-wrap gap-x-4 gap-y-1 mb-2">
                                 {([['ecef', 'ECEF'], ['llh', 'Lat/Lon/Height']] as const).map(([val, label]) => (
                                     <label key={val} class={`flex items-center gap-1.5 text-xs ${fixedDisabled ? disabledText : enabledText}`}>
-                                        <input type="radio" name="coordSystem" class="accent-blue-600" checked={coordSystem === val}
+                                        <input type="radio" name="coordSystem" class="accent-accent" checked={coordSystem === val}
                                             disabled={fixedDisabled} onChange={() => { setTimeModeTouched(true); setCoordSystem(val); }} />
                                         {label}
                                     </label>
@@ -483,23 +479,23 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                         {(['X (m)', 'Y (m)', 'Z (m)'] as const).map((label, i) => {
                                             const field = (['ecefX', 'ecefY', 'ecefZ'] as const)[i];
                                             return [
-                                                <label key={`l${i}`} class={`text-xs ${ecefDisabled ? disabledText : 'text-gray-500 dark:text-gray-400'}`}>{label}</label>,
-                                                <input key={`v${i}`} type="text" inputMode="decimal" class={(errorSet.has(field) ? inputErrorClass : inputClass) + ' w-28'}
+                                                <label key={`l${i}`} class={ecefDisabled ? disabledText : fieldLabelText()}>{label}</label>,
+                                                <Input key={`v${i}`} type="text" inputMode="decimal" invalid={errorSet.has(field)} class="w-28"
                                                     value={fixedECEF[i]} disabled={ecefDisabled}
                                                     title={ecefBad ? 'ECEF coordinates not on Earth' : undefined}
                                                     onInput={e => { setTimeModeTouched(true); const v = [...fixedECEF] as [string, string, string]; v[i] = (e.target as HTMLInputElement).value; setFixedECEF(v); }} />,
                                             ];
                                         })}
                                     </div>
-                                    {ecefBad && <div class="w-0.5 bg-red-400 rounded-full" title="ECEF coordinates not on Earth" />}
+                                    {ecefBad && <div class="w-0.5 rounded-full bg-danger" title="ECEF coordinates not on Earth" />}
                                 </div>
                                 {/* LLH column */}
                                 <div class="grid grid-cols-[auto_auto] gap-x-3 gap-y-1.5 items-center">
                                     {(['Latitude (deg)', 'Longitude (deg)', 'Height (m)'] as const).map((label, i) => {
                                         const field = (['llhLat', 'llhLon', 'llhHeight'] as const)[i];
                                         return [
-                                            <label key={`l${i}`} class={`text-xs ${llhDisabled ? disabledText : 'text-gray-500 dark:text-gray-400'}`}>{label}</label>,
-                                            <input key={`v${i}`} type="text" inputMode="decimal" class={(errorSet.has(field) ? inputErrorClass : inputClass) + ' w-28'}
+                                            <label key={`l${i}`} class={llhDisabled ? disabledText : fieldLabelText()}>{label}</label>,
+                                            <Input key={`v${i}`} type="text" inputMode="decimal" invalid={errorSet.has(field)} class="w-28"
                                                 value={fixedLLH[i]} disabled={llhDisabled}
                                                 onInput={e => { setTimeModeTouched(true); const v = [...fixedLLH] as [string, string, string]; v[i] = (e.target as HTMLInputElement).value; setFixedLLH(v); }} />,
                                         ];
@@ -507,8 +503,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                 </div>
                             </div>
                             <div class="grid grid-cols-[auto_auto] gap-x-3 gap-y-1.5 items-center mt-2 w-fit">
-                                <label class={`text-xs ${fixedDisabled ? disabledText : 'text-gray-500 dark:text-gray-400'}`}>Position accuracy (m)</label>
-                                <input type="text" inputMode="decimal" class={(errorSet.has('fixedPosAcc') ? inputErrorClass : inputClass) + ' w-24'} value={fixedPosAcc} placeholder="20"
+                                <label class={fixedDisabled ? disabledText : fieldLabelText()}>Position accuracy (m)</label>
+                                <Input type="text" inputMode="decimal" invalid={errorSet.has('fixedPosAcc')} class="w-24" value={fixedPosAcc} placeholder="20"
                                     disabled={fixedDisabled} onInput={e => { setTimeModeTouched(true); setFixedPosAcc((e.target as HTMLInputElement).value); }} />
                             </div>
                         </div>
@@ -521,10 +517,10 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                 const sigs = signalCatalog[gnssName];
                                 const anySelected = sigs.some(sig => selectedSignals.has(`${gnssName}:${sig}`));
                                 return (
-                                    <label key={gnssName} class="flex items-center gap-1.5 text-xs cursor-pointer">
+                                    <label key={gnssName} class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
                                         <input
                                             type="checkbox"
-                                            class="accent-blue-600"
+                                            class="accent-accent"
                                             checked={anySelected}
                                             disabled={!connected}
                                             onChange={e => { setSignalsTouched(true); toggleConstellation(gnssName, sigs, (e.target as HTMLInputElement).checked); }}
@@ -535,17 +531,17 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                             })}
                         </div>
                         {gnssNames.length > 0 && (
-                            <button class={btnClass + ' mt-2'} disabled={!connected} onClick={() => setShowPicker(true)}>
+                            <Button class="mt-2" disabled={!connected} onClick={() => setShowPicker(true)}>
                                 Edit signals...
-                            </button>
+                            </Button>
                         )}
                     </CollapsibleSection>
 
                     {/* Other properties */}
                     <CollapsibleSection title="Other" defaultOpen={true}>
                         <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center w-fit">
-                            <label class="text-xs text-gray-500 dark:text-gray-400">Min elevation (deg)</label>
-                            <input type="text" inputMode="decimal" class={(errorSet.has('minElev') ? inputErrorClass : inputClass) + ' w-20'} value={minElev} placeholder="e.g. 10"
+                            <label class={fieldLabelText()}>Min elevation (deg)</label>
+                            <Input type="text" inputMode="decimal" invalid={errorSet.has('minElev')} class="w-20" value={minElev} placeholder="e.g. 10"
                                 disabled={!connected} onInput={e => { setOtherTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
                         </div>
                     </CollapsibleSection>
@@ -554,18 +550,18 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                 <CollapsibleSection title="Messages" defaultOpen={true}>
                     <div class="flex flex-col gap-3">
                         <div class="flex gap-2">
-                            <button class={btnClass} disabled={!connected} onClick={() => {
+                            <Button disabled={!connected} onClick={() => {
                                 setNmeaChange(true); setNmeaDisable(false); setNmeaFlags(NMEAMsgRMC);
                                 setRtcmChange(true); setRtcmDisable(true);
                                 setPvtChange(true); setPvtFlags(PVTMsgOff);
                                 setSatsChange(true); setSatsFlags(0);
                                 setRawChange(true); setRawFlags(0);
-                            }}>Minimum</button>
-                            <button class={btnClass} disabled={!connected} onClick={() => {
+                            }}>Minimum</Button>
+                            <Button disabled={!connected} onClick={() => {
                                 setNmeaChange(true); setNmeaDisable(true);
                                 setPvtChange(true); setPvtFlags(PVTMsgTimePulse | PVTMsgTimePulseAfter | PVTMsgTAI | PVTMsgLeapSecond | PVTMsgOff);
                                 if (speed >= 19200) { setSatsChange(true); setSatsFlags(SatsMsgSat | SatsMsgSignal); }
-                            }}>Daemon</button>
+                            }}>Daemon</Button>
                         </div>
                         <NMEAGroup
                             change={nmeaChange}
@@ -617,15 +613,15 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                 <CollapsibleSection title="Persistent operations" defaultOpen={true}>
                     <div class="flex flex-col gap-3">
                         <div>
-                            <div class="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Save</div>
+                            <div class="mb-1 text-xs font-semibold text-text-secondary">Save</div>
                             <div class="flex flex-wrap gap-x-4 gap-y-1 ml-0.5">
                                 {([
                                     [0, 'Nothing'],
                                     [1, 'Changes'],
                                     [2, 'All'],
                                 ] as [number, string][]).map(([v, label]) => (
-                                    <label key={v} class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
-                                        <input type="radio" name="saveType" class="accent-blue-600" value={v} checked={saveType === v}
+                                    <label key={v} class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
+                                        <input type="radio" name="saveType" class="accent-accent" value={v} checked={saveType === v}
                                             disabled={!connected} onChange={() => setSaveType(v)} />
                                         {label}
                                     </label>
@@ -633,7 +629,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                             </div>
                         </div>
                         <div>
-                            <div class="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Reset</div>
+                            <div class="mb-1 text-xs font-semibold text-text-secondary">Reset</div>
                             <div class="flex flex-wrap gap-x-4 gap-y-1 ml-0.5">
                                 {([
                                     [0, 'None'],
@@ -641,8 +637,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                     [2, 'Cold start'],
                                     [3, 'Factory reset'],
                                 ] as [number, string][]).map(([v, label]) => (
-                                    <label key={v} class={`flex items-center gap-1.5 text-xs ${!connected ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
-                                        <input type="radio" name="resetType" class="accent-blue-600" value={v} checked={resetType === v}
+                                    <label key={v} class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
+                                        <input type="radio" name="resetType" class="accent-accent" value={v} checked={resetType === v}
                                             disabled={!connected} onChange={() => setResetType(v)} />
                                         {label}
                                     </label>
@@ -655,17 +651,17 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             </div>
 
             {/* Bottom action bar */}
-            <div class="shrink-0 flex items-center gap-2 px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+            <div class="shrink-0 flex items-center gap-2 border-t border-border-subtle bg-surface-2 px-4 py-2">
                 {pendingLabel && (
-                    <span class="text-[10px] text-amber-500 font-medium">{pendingLabel}</span>
+                    <span class="text-[10px] font-medium text-warning">{pendingLabel}</span>
                 )}
                 <span class="ml-auto" />
-                <button class={btnClass} disabled={!connected || !pendingLabel} onClick={handleDiscard}>
+                <Button disabled={!connected || !pendingLabel} onClick={handleDiscard}>
                     Discard
-                </button>
-                <button class={btnPrimary} disabled={!connected || hasErrors || applying || !pendingLabel} onClick={handleApply}>
+                </Button>
+                <Button variant="primary" disabled={!connected || hasErrors || applying || !pendingLabel} onClick={handleApply}>
                     {applying ? 'Applying...' : 'Apply'}
-                </button>
+                </Button>
             </div>
 
             {/* Signal picker dialog */}

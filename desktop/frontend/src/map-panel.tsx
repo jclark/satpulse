@@ -66,7 +66,7 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
     if (!pos) {
         return (
             <div
-                class="relative bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm select-none shrink-0"
+                class="relative flex shrink-0 select-none items-center justify-center bg-surface-1 text-sm text-text-muted"
                 style={{width: SIZE + 'px', height: SIZE + 'px'}}
             >
                 Waiting for position
@@ -120,15 +120,15 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
             >
                 {course && course.groundSpeed >= 0.1 ? (
                     <svg width="24" height="24" viewBox="0 0 24 24" style={{transform: `rotate(${course.course}deg)`}}>
-                        <polygon points="12,2 4,20 12,16 20,20" fill="rgba(59,130,246,0.8)" stroke="white" stroke-width="1.5" stroke-linejoin="round" />
+                        <polygon points="12,2 4,20 12,16 20,20" fill="var(--accent)" fill-opacity="0.8" stroke="var(--surface-2)" stroke-width="1.5" stroke-linejoin="round" />
                     </svg>
                 ) : (
                     <svg width="24" height="24" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="5" fill="rgba(59,130,246,0.8)" stroke="white" stroke-width="2" />
-                        <line x1="12" y1="0" x2="12" y2="8" stroke="white" stroke-width="1.5" opacity="0.8" />
-                        <line x1="12" y1="16" x2="12" y2="24" stroke="white" stroke-width="1.5" opacity="0.8" />
-                        <line x1="0" y1="12" x2="8" y2="12" stroke="white" stroke-width="1.5" opacity="0.8" />
-                        <line x1="16" y1="12" x2="24" y2="12" stroke="white" stroke-width="1.5" opacity="0.8" />
+                        <circle cx="12" cy="12" r="5" fill="var(--accent)" fill-opacity="0.8" stroke="var(--surface-2)" stroke-width="2" />
+                        <line x1="12" y1="0" x2="12" y2="8" stroke="var(--surface-2)" stroke-width="1.5" opacity="0.8" />
+                        <line x1="12" y1="16" x2="12" y2="24" stroke="var(--surface-2)" stroke-width="1.5" opacity="0.8" />
+                        <line x1="0" y1="12" x2="8" y2="12" stroke="var(--surface-2)" stroke-width="1.5" opacity="0.8" />
+                        <line x1="16" y1="12" x2="24" y2="12" stroke="var(--surface-2)" stroke-width="1.5" opacity="0.8" />
                     </svg>
                 )}
             </div>
@@ -136,15 +136,15 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
 
             {/* No fix overlay */}
             {noFixSecs > 0 && (
-                <div class="absolute inset-0 flex items-center justify-center bg-black/40">
-                    <span class="text-white text-sm font-medium px-3 py-1 rounded bg-black/60">
+                <div class="absolute inset-0 flex items-center justify-center bg-surface-1/40">
+                    <span class="rounded bg-surface-1/70 px-3 py-1 text-sm font-medium text-text-primary">
                         No fix for {noFixSecs} s
                     </span>
                 </div>
             )}
 
             {/* OSM attribution */}
-            <div class="absolute bottom-0 right-0 text-[10px] text-gray-600 bg-white/70 px-1">
+            <div class="absolute bottom-0 right-0 bg-surface-2/70 px-1 text-[10px] text-text-secondary">
                 &copy; OpenStreetMap contributors
             </div>
         </div>

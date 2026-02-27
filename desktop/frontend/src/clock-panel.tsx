@@ -47,7 +47,7 @@ export function ClockPanel({msg}: Props) {
     if (!time) {
         return (
             <div
-                class="relative bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm select-none shrink-0"
+                class="relative flex shrink-0 select-none items-center justify-center bg-surface-1 text-sm text-text-muted"
                 style={{width: W + 'px', height: H + 'px'}}
             >
                 Waiting for time
@@ -63,20 +63,20 @@ export function ClockPanel({msg}: Props) {
 
     return (
         <div
-            class="relative shrink-0 bg-gray-100 dark:bg-gray-800 flex items-center justify-center select-none"
+            class="relative flex shrink-0 select-none items-center justify-center bg-surface-1"
             style={{width: W + 'px', height: H + 'px'}}
         >
             <div class="flex flex-col items-end" style={{gap: '10px'}}>
                 {/* Date YYYY-MM-DD — scaled to match HH:MM width */}
                 <div class="relative self-stretch text-center" style={{lineHeight: 1}}>
                     <span
-                        class="text-gray-200 dark:text-gray-700/40"
+                        class="text-clock-ghost"
                         style={{fontFamily: FONT, fontSize: '26px', fontWeight: 700, letterSpacing: '2px'}}
                     >
                         {dateGhost}
                     </span>
                     <span
-                        class="absolute inset-0 text-gray-800 dark:text-green-400"
+                        class="absolute inset-0 text-clock-digit"
                         style={{fontFamily: FONT, fontSize: '26px', fontWeight: 700, letterSpacing: '2px'}}
                     >
                         {time.date}
@@ -85,13 +85,13 @@ export function ClockPanel({msg}: Props) {
                 {/* HH:MM large */}
                 <div class="relative" style={{lineHeight: 1}}>
                     <span
-                        class="text-gray-200 dark:text-gray-700/40"
+                        class="text-clock-ghost"
                         style={{fontFamily: FONT, fontSize: '72px', fontWeight: 700}}
                     >
                         {hmGhost}
                     </span>
                     <span
-                        class="absolute inset-0 text-gray-800 dark:text-green-400"
+                        class="absolute inset-0 text-clock-digit"
                         style={{fontFamily: FONT, fontSize: '72px', fontWeight: 700}}
                     >
                         {time.hm}
@@ -101,13 +101,13 @@ export function ClockPanel({msg}: Props) {
                 <div class="self-stretch flex justify-between items-baseline" style={{lineHeight: 1}}>
                     <div class="relative">
                         <span
-                            class="text-gray-200 dark:text-gray-700/40"
+                            class="text-clock-ghost"
                             style={{fontFamily: FONT, fontSize: '36px', fontWeight: 700}}
                         >
                             {tzGhost}
                         </span>
                         <span
-                            class="absolute inset-0 text-gray-800 dark:text-green-400"
+                            class="absolute inset-0 text-clock-digit"
                             style={{fontFamily: FONT, fontSize: '36px', fontWeight: 700}}
                         >
                             {utcOffset}
@@ -115,13 +115,13 @@ export function ClockPanel({msg}: Props) {
                     </div>
                     <div class="relative">
                         <span
-                            class="text-gray-200 dark:text-gray-700/40"
+                            class="text-clock-ghost"
                             style={{fontFamily: FONT, fontSize: '36px', fontWeight: 700}}
                         >
                             {ssGhost}
                         </span>
                         <span
-                            class="absolute inset-0 text-gray-800 dark:text-green-400"
+                            class="absolute inset-0 text-clock-digit"
                             style={{fontFamily: FONT, fontSize: '36px', fontWeight: 700}}
                         >
                             {time.ss}

@@ -26,8 +26,8 @@ export function CollapsibleSection({title, defaultOpen = true, open: controlledO
             <button
                 type="button"
                 class={panelStyle
-                    ? 'flex items-center gap-2 w-full text-left py-2 px-3 text-sm font-semibold cursor-pointer bg-gray-200/50 dark:bg-gray-700/50 hover:bg-gray-200 dark:hover:bg-gray-700 border-none'
-                    : 'flex items-center gap-1.5 w-full text-left py-1.5 px-1 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer bg-transparent border-none'
+                    ? 'flex w-full cursor-pointer items-center gap-2 border-none bg-surface-2 px-3 py-2 text-left text-sm font-semibold text-text-primary hover:bg-surface-3'
+                    : 'flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-1 py-1.5 text-left text-xs font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary'
                 }
                 onClick={toggle}
             >

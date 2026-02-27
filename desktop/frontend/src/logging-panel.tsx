@@ -1,6 +1,7 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useRef, useMemo, useCallback} from 'preact/hooks';
 import type {LogEntry} from './app';
+import {Badge, Button, Input, Select} from './ui';
 
 interface Props {
     logEntries: LogEntry[];
@@ -8,22 +9,22 @@ interface Props {
 }
 
 const levels = ['DEBUG', 'INFO', 'WARN', 'ERROR'] as const;
-type Level = typeof levels[number];
+type Level = (typeof levels)[number];
 
 const levelOrder: Record<string, number> = {DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3};
 
-const badgeClass: Record<string, string> = {
-    DEBUG: 'bg-gray-500 text-white',
-    INFO: 'bg-blue-500 text-white',
-    WARN: 'bg-amber-500 text-black',
-    ERROR: 'bg-red-500 text-white',
+const badgeTone: Record<string, 'default' | 'info' | 'success' | 'warning' | 'error'> = {
+    DEBUG: 'default',
+    INFO: 'info',
+    WARN: 'warning',
+    ERROR: 'error',
 };
 
 const levelTextClass: Record<string, string> = {
-    DEBUG: 'text-gray-400',
-    INFO: 'text-blue-400',
-    WARN: 'text-amber-400',
-    ERROR: 'text-red-400',
+    DEBUG: 'text-text-muted',
+    INFO: 'text-info',
+    WARN: 'text-warning',
+    ERROR: 'text-danger',
 };
 
 function formatAttrValue(v: any): string {
@@ -33,7 +34,9 @@ function formatAttrValue(v: any): string {
 }
 
 function formatAttrs(attrs: Record<string, any>): string {
-    return Object.entries(attrs).map(([k, v]) => k + '=' + formatAttrValue(v)).join(' ');
+    return Object.entries(attrs)
+        .map(([k, v]) => k + '=' + formatAttrValue(v))
+        .join(' ');
 }
 
 function matchesSearch(entry: LogEntry, q: string): boolean {
@@ -54,7 +57,6 @@ export function LoggingPanel({logEntries, setLogEntries}: Props) {
     const [component, setComponent] = useState('');
     const [search, setSearch] = useState('');
 
-    // Collect unique components from entries
     const components = useMemo(() => {
         const s = new Set<string>();
         for (const e of logEntries) {
@@ -63,7 +65,6 @@ export function LoggingPanel({logEntries, setLogEntries}: Props) {
         return Array.from(s).sort();
     }, [logEntries]);
 
-    // Filter entries
     const filtered = useMemo(() => {
         const minOrd = levelOrder[minLevel] ?? 0;
         const q = search.toLowerCase();
@@ -75,14 +76,12 @@ export function LoggingPanel({logEntries, setLogEntries}: Props) {
         });
     }, [logEntries, minLevel, component, search]);
 
-    // Track scroll position to decide auto-scroll
     const handleScroll = useCallback(() => {
         const el = logRef.current;
         if (!el) return;
         autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     }, []);
 
-    // Auto-scroll when new entries arrive
     useEffect(() => {
         const el = logRef.current;
         if (el && autoScrollRef.current) {
@@ -90,68 +89,64 @@ export function LoggingPanel({logEntries, setLogEntries}: Props) {
         }
     }, [filtered]);
 
-    const btnClass = 'px-2.5 py-0.5 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-blue-600 hover:border-blue-600 hover:text-white';
-    const selectClass = 'bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 px-1.5 py-0.5 rounded text-xs';
-
     return (
-        <div class="flex flex-col h-full">
-            {/* Toolbar */}
-            <div class="flex items-center gap-2 px-3 py-1.5 shrink-0 flex-wrap">
-                <h3 class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider mr-2">Log</h3>
-                <label class="text-xs text-gray-500 dark:text-gray-400">Level</label>
-                <select
-                    class={selectClass}
-                    value={minLevel}
-                    onChange={e => setMinLevel((e.target as HTMLSelectElement).value as Level)}
-                >
-                    {levels.map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
+        <div class="flex h-full flex-col">
+            <div class="flex shrink-0 flex-wrap items-center gap-2 px-3 py-1.5">
+                <h3 class="mr-2 text-xs uppercase tracking-wider text-text-secondary">Log</h3>
+                <label class="text-xs text-text-secondary">Level</label>
+                <Select value={minLevel} class="px-1.5 py-0.5" onChange={e => setMinLevel((e.target as HTMLSelectElement).value as Level)}>
+                    {levels.map(l => (
+                        <option key={l} value={l}>
+                            {l}
+                        </option>
+                    ))}
+                </Select>
                 {components.length > 0 && (
-                    <>
-                        <label class="text-xs text-gray-500 dark:text-gray-400">Component</label>
-                        <select
-                            class={selectClass}
-                            value={component}
-                            onChange={e => setComponent((e.target as HTMLSelectElement).value)}
-                        >
+                    <Fragment>
+                        <label class="text-xs text-text-secondary">Component</label>
+                        <Select value={component} class="px-1.5 py-0.5" onChange={e => setComponent((e.target as HTMLSelectElement).value)}>
                             <option value="">All</option>
-                            {components.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                    </>
+                            {components.map(c => (
+                                <option key={c} value={c}>
+                                    {c}
+                                </option>
+                            ))}
+                        </Select>
+                    </Fragment>
                 )}
-                <input
+                <Input
                     type="text"
-                    class={selectClass + ' w-36'}
+                    class="w-36 px-1.5 py-0.5"
                     placeholder="Search..."
                     value={search}
                     onInput={e => setSearch((e.target as HTMLInputElement).value)}
                 />
-                <button class={btnClass} onClick={() => setLogEntries(() => [])}>
+                <Button size="sm" onClick={() => setLogEntries(() => [])}>
                     Clear
-                </button>
+                </Button>
             </div>
-            {/* Log entries */}
             <div
                 ref={logRef}
                 onScroll={handleScroll}
-                class="flex-1 font-mono text-xs leading-relaxed bg-gray-900 dark:bg-black border-t border-gray-200 dark:border-gray-700 px-2.5 py-1.5 overflow-y-auto overflow-x-auto"
+                class="flex-1 overflow-x-auto overflow-y-auto border-t border-border-subtle bg-surface-1 px-2.5 py-1.5 font-mono text-xs leading-relaxed"
             >
                 {filtered.map((entry, i) => (
                     <div key={i} class="whitespace-nowrap py-px">
-                        <span class="text-gray-500">{entry.time}</span>
-                        {' '}
-                        <span class={`inline-block text-center rounded px-1 w-12 text-[10px] leading-4 font-semibold ${badgeClass[entry.level] || badgeClass.INFO}`}>
+                        <span class="text-text-muted">{entry.time}</span>{' '}
+                        <Badge tone={badgeTone[entry.level] || 'default'} class="w-12 justify-center">
                             {entry.level}
-                        </span>
-                        {' '}
+                        </Badge>{' '}
                         {entry.component && (
-                            <><span class="text-purple-400">[{entry.component}]</span>{' '}</>
+                            <Fragment>
+                                <span class="text-text-secondary">[{entry.component}]</span>{' '}
+                            </Fragment>
                         )}
-                        <span class={levelTextClass[entry.level] || 'text-green-400'}>
-                            {entry.message}
-                        </span>
+                        <span class={levelTextClass[entry.level] || 'text-text-primary'}>{entry.message}</span>
                         {entry.attrs && Object.keys(entry.attrs).length > 0 && (
-                            <>{' '}<span class="text-gray-500">{formatAttrs(entry.attrs)}</span></>
+                            <Fragment>
+                                {' '}
+                                <span class="text-text-muted">{formatAttrs(entry.attrs)}</span>
+                            </Fragment>
                         )}
                     </div>
                 ))}

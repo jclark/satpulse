@@ -1,5 +1,6 @@
 import {h} from 'preact';
 import {NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgGLL, NMEAMsgOther} from './msg-flags';
+import {labeledControlText} from './ui';
 
 const nmeaMsgs: {flag: number; label: string}[] = [
     {flag: NMEAMsgGGA, label: 'GGA'},
@@ -33,26 +34,26 @@ export function NMEAGroup({change, disableProtocol, flags, onChangeChange, onDis
     const disableDisabled = disabled || !change;
     return (
         <div>
-            <div class="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">NMEA</div>
+            <div class="mb-1 text-xs font-semibold text-text-secondary">NMEA</div>
             <div class="flex flex-col gap-1.5 ml-0.5">
                 <div class="flex gap-x-4">
-                    <label class={`flex items-center gap-1.5 text-xs ${disabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
-                        <input type="checkbox" class="accent-blue-600" checked={change} disabled={disabled}
+                    <label class={`flex items-center gap-1.5 ${labeledControlText(!!disabled)}`}>
+                        <input type="checkbox" class="accent-accent" checked={change} disabled={disabled}
                             onChange={e => onChangeChange((e.target as HTMLInputElement).checked)} />
                         Change
                     </label>
-                    <label class={`flex items-center gap-1.5 text-xs ${disableDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
-                        <input type="checkbox" class="accent-blue-600" checked={disableProtocol} disabled={disableDisabled}
+                    <label class={`flex items-center gap-1.5 ${labeledControlText(disableDisabled)}`}>
+                        <input type="checkbox" class="accent-accent" checked={disableProtocol} disabled={disableDisabled}
                             onChange={e => onDisableChange((e.target as HTMLInputElement).checked)} />
                         Disable protocol
                     </label>
                 </div>
                 <div class="flex flex-wrap gap-x-4 gap-y-1">
                     {nmeaMsgs.map(m => (
-                        <label key={m.flag} class={`flex items-center gap-1.5 text-xs ${childDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200 cursor-pointer'}`}>
+                        <label key={m.flag} class={`flex items-center gap-1.5 ${labeledControlText(childDisabled)}`}>
                             <input
                                 type="checkbox"
-                                class="accent-blue-600"
+                                class="accent-accent"
                                 checked={(flags & m.flag) !== 0}
                                 disabled={childDisabled}
                                 onChange={() => onFlagsChange(flags ^ m.flag)}

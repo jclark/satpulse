@@ -1,5 +1,6 @@
 import {h} from 'preact';
 import {useState} from 'preact/hooks';
+import {Button, Card} from './ui';
 
 interface Props {
     signalCatalog: Record<string, string[]>;
@@ -35,55 +36,50 @@ export function SignalPicker({signalCatalog, selectedSignals, onConfirm, onCance
     const gnssNames = Object.keys(signalCatalog);
 
     return (
-        <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={onCancel}>
-            <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg w-[700px] max-w-[90vw] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                {/* Header */}
-                <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-                    <h2 class="text-sm font-semibold">Select GNSS signals</h2>
-                    <button class="bg-transparent border-none text-gray-900 dark:text-gray-100 text-lg cursor-pointer" onClick={onCancel}>
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-surface-1/70" onClick={onCancel}>
+            <Card class="flex max-h-[80vh] w-[700px] max-w-[90vw] flex-col rounded-lg" onClick={e => e.stopPropagation()}>
+                <div class="flex items-center justify-between border-b border-border-subtle px-4 py-3">
+                    <h2 class="text-sm font-semibold text-text-primary">Select GNSS signals</h2>
+                    <button class="cursor-pointer border-none bg-transparent text-lg text-text-primary" onClick={onCancel}>
                         &#x2715;
                     </button>
                 </div>
 
-                {/* Body */}
-                <div class="p-4 overflow-y-auto flex-1">
+                <div class="flex-1 overflow-y-auto p-4">
                     {gnssNames.map(gnssName => {
                         const sigs = signalCatalog[gnssName];
                         const allSelected = sigs.every(sig => working.has(`${gnssName}:${sig}`));
                         const someSelected = sigs.some(sig => working.has(`${gnssName}:${sig}`));
                         return (
                             <div key={gnssName} class="mb-4">
-                                <h4 class="text-sm mb-1.5 flex items-center gap-2">
-                                    <label class="cursor-pointer flex items-center gap-1.5">
+                                <h4 class="mb-1.5 flex items-center gap-2 text-sm text-text-primary">
+                                    <label class="flex cursor-pointer items-center gap-1.5 text-text-primary">
                                         <input
                                             type="checkbox"
-                                            class="accent-blue-600"
+                                            class="accent-accent"
                                             checked={allSelected}
-                                            ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
-                                            onChange={(e) => toggleGNSS(gnssName, sigs, (e.target as HTMLInputElement).checked)}
+                                            ref={el => {
+                                                if (el) el.indeterminate = someSelected && !allSelected;
+                                            }}
+                                            onChange={e => toggleGNSS(gnssName, sigs, (e.target as HTMLInputElement).checked)}
                                         />
                                         {gnssName}
                                     </label>
                                 </h4>
-                                <div class="flex gap-2 flex-wrap pl-6">
+                                <div class="flex flex-wrap gap-2 pl-6">
                                     {sigs.map(sig => {
                                         const key = `${gnssName}:${sig}`;
                                         const checked = working.has(key);
                                         return (
                                             <label
                                                 key={key}
-                                                class={`flex items-center gap-1 text-xs cursor-pointer px-2 py-0.5 rounded border ${
+                                                class={`flex cursor-pointer items-center gap-1 rounded border px-2 py-0.5 text-xs ${
                                                     checked
-                                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-600/15'
-                                                        : 'border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900'
+                                                        ? 'border-accent bg-accent/15 text-text-primary'
+                                                        : 'border-border-subtle bg-surface-1 text-text-secondary'
                                                 }`}
                                             >
-                                                <input
-                                                    type="checkbox"
-                                                    class="accent-blue-600"
-                                                    checked={checked}
-                                                    onChange={() => toggle(key)}
-                                                />
+                                                <input type="checkbox" class="accent-accent" checked={checked} onChange={() => toggle(key)} />
                                                 {sig}
                                             </label>
                                         );
@@ -94,22 +90,13 @@ export function SignalPicker({signalCatalog, selectedSignals, onConfirm, onCance
                     })}
                 </div>
 
-                {/* Footer */}
-                <div class="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-                    <button
-                        class="px-3.5 py-1 rounded text-xs border border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-600"
-                        onClick={onCancel}
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        class="px-3.5 py-1 rounded text-xs border border-blue-600 bg-blue-600 text-white cursor-pointer hover:bg-blue-700"
-                        onClick={() => onConfirm(working)}
-                    >
+                <div class="flex justify-end gap-2 border-t border-border-subtle px-4 py-3">
+                    <Button onClick={onCancel}>Cancel</Button>
+                    <Button variant="primary" onClick={() => onConfirm(working)}>
                         OK
-                    </button>
+                    </Button>
                 </div>
-            </div>
+            </Card>
         </div>
     );
 }

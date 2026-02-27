@@ -19,11 +19,11 @@ export function ThreeWaySelector({name, state, onChange, disabled}: Props) {
     return (
         <div class="flex gap-x-4 gap-y-0.5 flex-wrap">
             {options.map(opt => (
-                <label key={opt.value} class={`flex items-center gap-1.5 text-xs ${disabled ? 'opacity-50' : 'cursor-pointer'}`}>
+                <label key={opt.value} class={`flex items-center gap-1.5 text-xs ${disabled ? 'text-text-muted' : 'cursor-pointer text-text-primary'}`}>
                     <input
                         type="radio"
                         name={name}
-                        class="accent-blue-600"
+                        class="accent-accent"
                         checked={state === opt.value}
                         disabled={disabled}
                         onChange={() => { if (!disabled) onChange(opt.value); }}
