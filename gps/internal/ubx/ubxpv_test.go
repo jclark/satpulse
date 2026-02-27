@@ -304,6 +304,86 @@ func TestVelGeoNavPVT(t *testing.T) {
 	})
 }
 
+// Real packets captured from ZED-F9P (same session, London area).
+var testHPPosECEFHex = "b56201131c0000000000d819331caf73b617cf14f0ff25ad9d1d1d300c00b0370000fdd0"
+var testHPPosLLHHex = "b5620114240000000000d819331cf112e9ffe8e9b21ebc7901007bc70000ef0a0201891f0000e62d00003412"
+
+func TestHPPosECEF(t *testing.T) {
+	m := parseTestMsg(t, testHPPosECEFHex).(*ubxbin.NavHPPosECEF)
+	var ne gpsprot.NavEpochMsg
+	got := posECEFNavHPPosECEF(&ne, m)
+	if got == nil {
+		t.Fatal("expected non-nil PosECEFMsg")
+	}
+	if got.NativeMsgID != "NAV-HPPOSECEF" {
+		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-HPPOSECEF")
+	}
+	if got.Priority != gpsprot.PriVendorHigh {
+		t.Errorf("Priority = %v, want PriVendorHigh", got.Priority)
+	}
+	// ECEF X ~3978 km: plausible for Earth surface
+	xm := float64(got.Pos[0]) / float64(gpsprot.Meter)
+	if xm < 3900000 || xm > 4100000 {
+		t.Errorf("ECEF X = %.1f m, out of plausible range", xm)
+	}
+	if !ne.Acc.Pos.IsSet() {
+		t.Error("Acc.Pos not set")
+	}
+}
+
+func TestHPPosECEFInvalid(t *testing.T) {
+	m := &ubxbin.NavHPPosECEF{Flags: ubxbin.NavHPPosECEFInvalidEcef}
+	var ne gpsprot.NavEpochMsg
+	if got := posECEFNavHPPosECEF(&ne, m); got != nil {
+		t.Errorf("expected nil for invalid ECEF, got %v", got)
+	}
+}
+
+func TestHPPosLLH(t *testing.T) {
+	m := parseTestMsg(t, testHPPosLLHHex).(*ubxbin.NavHPPosLLH)
+	var ne gpsprot.NavEpochMsg
+	got := posGeoNavHPPosLLH(&ne, m)
+	if got == nil {
+		t.Fatal("expected non-nil PosGeoMsg")
+	}
+	if got.NativeMsgID != "NAV-HPPOSLLH" {
+		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-HPPOSLLH")
+	}
+	if got.Priority != gpsprot.PriVendorHigh {
+		t.Errorf("Priority = %v, want PriVendorHigh", got.Priority)
+	}
+	// Lat ~51.5 deg (London area)
+	lat := float64(got.LatLon[0]) / float64(gpsprot.Degrees)
+	if lat < 51.0 || lat > 52.0 {
+		t.Errorf("Lat = %.6f deg, out of plausible range", lat)
+	}
+	// Lon small negative (west of Greenwich)
+	lon := float64(got.LatLon[1]) / float64(gpsprot.Degrees)
+	if lon > 0 || lon < -1.0 {
+		t.Errorf("Lon = %.6f deg, out of plausible range", lon)
+	}
+	if !got.Height.IsSet() {
+		t.Error("Height not set")
+	}
+	if !got.HeightMSL.IsSet() {
+		t.Error("HeightMSL not set")
+	}
+	if !ne.Acc.Hor.IsSet() {
+		t.Error("Acc.Hor not set")
+	}
+	if !ne.Acc.Vert.IsSet() {
+		t.Error("Acc.Vert not set")
+	}
+}
+
+func TestHPPosLLHInvalid(t *testing.T) {
+	m := &ubxbin.NavHPPosLLH{Flags: ubxbin.NavHPPosLLHInvalidLlh}
+	var ne gpsprot.NavEpochMsg
+	if got := posGeoNavHPPosLLH(&ne, m); got != nil {
+		t.Errorf("expected nil for invalid LLH, got %v", got)
+	}
+}
+
 const posConsistencyTolerance = 0.01 // meters
 
 // Captured from a stationary ZED-F9P antenna (one hex-encoded UBX packet per line).
