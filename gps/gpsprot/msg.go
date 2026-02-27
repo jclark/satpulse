@@ -959,6 +959,8 @@ type NavEpochMsg struct {
 	NumSVUsed opt.Val[uint16] `json:"numSVUsed,omitzero"`
 	// NumSVTracked is the number of satellites tracked by the receiver.
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
+	// NumSVInView is the number of satellites in view of the receiver.
+	NumSVInView opt.Val[uint16] `json:"numSVInView,omitzero"`
 	// SignalsUsed is the set of GNSS signals used in the solution.
 	SignalsUsed SignalSet `json:"signalsUsed,omitzero"`
 	// Tag identifies the protocol source (e.g. UBX, NMEA, Unicore).
@@ -1019,6 +1021,7 @@ func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
 		dst.RTCMRefBaseID.Fill(m.RTCMRefBaseID)
 		dst.NumSVUsed.Fill(m.NumSVUsed)
 		dst.NumSVTracked.Fill(m.NumSVTracked)
+		dst.NumSVInView.Fill(m.NumSVInView)
 		dst.Correction |= m.Correction
 		dst.AuxSrc |= m.AuxSrc
 		dst.SignalsUsed |= m.SignalsUsed

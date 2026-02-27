@@ -60,22 +60,29 @@ type SampleSSE struct {
 // no data is available for that category.
 type PosVelSSE struct {
 	// Geodetic position
-	LatLon    opt.Val[[2]gpsprot.Angle]  `json:"latLon,omitzero"`
-	Height    opt.Val[gpsprot.Length]     `json:"height,omitzero"`
-	HeightMSL opt.Val[gpsprot.Length]     `json:"heightMSL,omitzero"`
-	PosECEF   opt.Val[[3]gpsprot.Length]  `json:"posECEF,omitzero"`
+	LatLon    opt.Val[[2]gpsprot.Angle] `json:"latLon,omitzero"`
+	Height    opt.Val[gpsprot.Length]    `json:"height,omitzero"`
+	HeightMSL opt.Val[gpsprot.Length]    `json:"heightMSL,omitzero"`
+	PosECEFX  opt.Val[gpsprot.Length]    `json:"posECEFX,omitzero"`
+	PosECEFY  opt.Val[gpsprot.Length]    `json:"posECEFY,omitzero"`
+	PosECEFZ  opt.Val[gpsprot.Length]    `json:"posECEFZ,omitzero"`
 	// Velocity
-	GroundSpeed opt.Val[gpsprot.Speed]    `json:"groundSpeed,omitzero"`
-	Speed3D     opt.Val[gpsprot.Speed]    `json:"speed3D,omitzero"`
-	Course      opt.Val[gpsprot.Angle]    `json:"course,omitzero"`
-	VelNED      opt.Val[[3]gpsprot.Speed] `json:"velNED,omitzero"`
-	VelECEF     opt.Val[[3]gpsprot.Speed] `json:"velECEF,omitzero"`
+	GroundSpeed opt.Val[gpsprot.Speed] `json:"groundSpeed,omitzero"`
+	Speed3D     opt.Val[gpsprot.Speed] `json:"speed3D,omitzero"`
+	Course      opt.Val[gpsprot.Angle] `json:"course,omitzero"`
+	VelN        opt.Val[gpsprot.Speed] `json:"velN,omitzero"`
+	VelE        opt.Val[gpsprot.Speed] `json:"velE,omitzero"`
+	VelD        opt.Val[gpsprot.Speed] `json:"velD,omitzero"`
+	VelECEFX    opt.Val[gpsprot.Speed] `json:"velECEFX,omitzero"`
+	VelECEFY    opt.Val[gpsprot.Speed] `json:"velECEFY,omitzero"`
+	VelECEFZ    opt.Val[gpsprot.Speed] `json:"velECEFZ,omitzero"`
 }
 
 // QualitySSE is the SSE event data for solution quality metadata.
 // Emitted once per navigation epoch.
 type QualitySSE struct {
-	Fix         []string         `json:"fix"`
+	FixLevel    gpsprot.FixLevel `json:"fixLevel,omitzero"`
+	FixDim      gpsprot.FixDim   `json:"fixDim,omitzero"`
 	Corrections gpsprot.CorrKind `json:"corrections,omitzero"`
 	// Accuracy estimates
 	AccHor         opt.Val[gpsprot.Length] `json:"accHor,omitzero"`
@@ -93,6 +100,7 @@ type QualitySSE struct {
 	// Satellite counts
 	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
+	NumSVInView  opt.Val[uint16] `json:"numSVInView,omitzero"`
 	// Signals used in the solution
 	SignalsUsed gpsprot.SignalSet `json:"signalsUsed,omitzero"`
 	// Correction metadata
@@ -268,30 +276,40 @@ func buildPosVelSSE(b *gpsprot.PVMsgBundle) *PosVelSSE {
 		pv.HeightMSL = pg.HeightMSL
 	}
 	if pe := b.PosECEF.Ptr(); pe != nil {
-		pv.PosECEF.Set(pe.Pos)
+		pv.PosECEFX.Set(pe.Pos[0])
+		pv.PosECEFY.Set(pe.Pos[1])
+		pv.PosECEFZ.Set(pe.Pos[2])
 	}
 	if vg := b.VelGeo.Ptr(); vg != nil {
 		pv.GroundSpeed = vg.GroundSpeed
 		pv.Speed3D = vg.Speed3D
 		pv.Course = vg.Course
-		pv.VelNED = vg.VelNED
+		if v := vg.VelNED; v.IsSet() {
+			ned := v.Get()
+			pv.VelN.Set(ned[0])
+			pv.VelE.Set(ned[1])
+			pv.VelD.Set(ned[2])
+		}
 	}
 	if ve := b.VelECEF.Ptr(); ve != nil {
-		pv.VelECEF.Set(ve.Vel)
+		pv.VelECEFX.Set(ve.Vel[0])
+		pv.VelECEFY.Set(ve.Vel[1])
+		pv.VelECEFZ.Set(ve.Vel[2])
 	}
 	return &pv
 }
 
 func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
-	fix := buildFixKeywords(msg)
-	if fix == nil {
+	if msg.FixLevel == 0 {
 		return nil
 	}
 	q := &QualitySSE{
-		Fix:           fix,
+		FixLevel:      msg.FixLevel,
+		FixDim:        msg.FixDim,
 		Corrections:   msg.Correction,
 		NumSVUsed:     msg.NumSVUsed,
 		NumSVTracked:  msg.NumSVTracked,
+		NumSVInView:   msg.NumSVInView,
 		RTCMRefBaseID: msg.RTCMRefBaseID,
 	}
 	q.AccHor = msg.Acc.Hor
@@ -312,16 +330,4 @@ func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
 	return q
 }
 
-func buildFixKeywords(msg *gpsprot.NavEpochMsg) []string {
-	if msg.FixLevel == 0 {
-		return nil
-	}
-	var kw []string
-	kw = append(kw, msg.FixLevel.String())
-	if msg.FixDim != 0 {
-		kw = append(kw, msg.FixDim.String())
-	}
-	kw = append(kw, msg.AuxSrc.Items()...)
-	return kw
-}
 

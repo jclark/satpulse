@@ -236,8 +236,8 @@ func TestNAVBundle(t *testing.T) {
 	if !epoch.NumSVUsed.IsSet() || epoch.NumSVUsed.Get() != 56 {
 		t.Errorf("NumSVUsed = %v, want 56", epoch.NumSVUsed)
 	}
-	if !epoch.NumSVTracked.IsSet() || epoch.NumSVTracked.Get() != 78 {
-		t.Errorf("NumSVTracked = %v, want 78", epoch.NumSVTracked)
+	if !epoch.NumSVInView.IsSet() || epoch.NumSVInView.Get() != 78 {
+		t.Errorf("NumSVInView = %v, want 78", epoch.NumSVInView)
 	}
 	if !epoch.DiffAge.IsSet() || epoch.DiffAge.Get() != gpsprot.Second {
 		t.Errorf("DiffAge = %v, want 1s", epoch.DiffAge)
