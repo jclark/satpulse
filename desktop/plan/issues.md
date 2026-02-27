@@ -64,6 +64,23 @@ Write contention (rover mode): `SerialConn.writeLock` panics on concurrent write
 
 NTRIP caster support (HTTP-based, with authentication and mount points) could be added later as a separate transport option in the same tab.
 
+## map-tile-retry: Reload failed map tiles when connectivity is restored
+
+If the app starts without internet connectivity (or loses it), map tile `<img>` loads fail silently. When connectivity is restored the tiles remain broken because the browser does not retry failed image loads, and the tile URLs haven't changed so Preact reuses the existing DOM elements.
+
+HTML/CSS have no native retry mechanism for failed `<img>` loads. The cleanest Preact-idiomatic fix is to keep an `epoch` counter in state and include it in each tile's `key`. The `src` stays the clean canonical tile URL. When the browser fires the `online` event, increment the epoch. The key change causes Preact to remount the `<img>` elements, which triggers a fresh fetch. Tiles that loaded successfully before the remount will likely serve from browser cache, so the cost is minimal.
+
+```tsx
+const [epoch, setEpoch] = useState(0);
+useEffect(() => {
+    const h = () => setEpoch(e => e + 1);
+    window.addEventListener('online', h);
+    return () => window.removeEventListener('online', h);
+}, []);
+```
+
+Each tile img uses `key={`${tileX},${tileY}:${epoch}`}`.
+
 ## read-error-disconnect: Disconnect on serial read error (related: #172)
 
 If a USB-connected GPS receiver is physically unplugged while connected, the app shows a read error in the log but remains in the connected state. The user has to manually click Disconnect to reset the UI. This is the desktop GUI counterpart of #172 (satpulsed should handle serial device disappearing); the daemon's approach is to exit and let systemd restart it, but the GUI needs to transition cleanly to disconnected state instead.
