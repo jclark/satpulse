@@ -39,7 +39,7 @@ export function CollapsibleSection({title, defaultOpen = true, open: controlledO
                 </svg>
                 {title}
             </button>
-            {isOpen && <div class={panelStyle ? 'px-4 py-3' : 'pl-1 pb-3'}>{children}</div>}
+            {isOpen && <div class={panelStyle ? 'pl-8 pr-4 py-3' : 'pl-1 pb-3'}>{children}</div>}
         </section>
     );
 }

@@ -47,9 +47,9 @@ export function SurveyPanel({msg}: Props) {
     }, [msg?.position?.[0], msg?.position?.[1], msg?.position?.[2]]);
 
     let status = blank, accuracy = blank;
-    let ecefX = blank, ecefY = blank, ecefZ = blank;
+    let ecef = blank;
     let coords: string | preact.ComponentChildren = blank;
-    let altitude = blank, observations = blank, obsTime = blank;
+    let height = blank, observations = blank, obsTime = blank;
 
     if (msg) {
         if (msg.valid) status = 'Valid';
@@ -60,9 +60,7 @@ export function SurveyPanel({msg}: Props) {
         if (msg.position) {
             const [px, py, pz] = msg.position;
             if (px !== 0 || py !== 0 || pz !== 0) {
-                ecefX = px.toFixed(4);
-                ecefY = py.toFixed(4);
-                ecefZ = pz.toFixed(4);
+                ecef = `${px.toFixed(4)}, ${py.toFixed(4)}, ${pz.toFixed(4)}`;
             }
         }
 
@@ -76,17 +74,15 @@ export function SurveyPanel({msg}: Props) {
                 {formatCoord(llh.lat, llh.lon, 5)}
             </a>
         );
-        altitude = `${llh.height.toFixed(2)} m`;
+        height = `${llh.height.toFixed(2)} m`;
     }
 
     const rows: [string, string | preact.ComponentChildren][] = [
         ['Status', status],
         ['Accuracy', accuracy],
-        ['ECEF X', ecefX],
-        ['ECEF Y', ecefY],
-        ['ECEF Z', ecefZ],
         ['Coordinates', coords],
-        ['Altitude', altitude],
+        ['Height', height],
+        ['ECEF', ecef],
         ['Observations', observations],
         ['Observation time', obsTime],
     ];
