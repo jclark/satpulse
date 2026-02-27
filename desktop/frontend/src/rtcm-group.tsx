@@ -56,7 +56,7 @@ export function RTCMGroup({change, disableProtocol, msm, fallback, arp, onChange
                     </label>
                 </div>
                 <div class="grid grid-cols-[13rem_auto] gap-x-6 items-center">
-                    <div class="flex gap-x-4">
+                    <div class="flex gap-x-4 whitespace-nowrap">
                         {msmOptions.map(opt => (
                             <label key={opt.value} class={`flex items-center gap-1.5 ${labeledControlText(childDisabled)}`}>
                                 <input
