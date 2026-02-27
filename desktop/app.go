@@ -646,7 +646,7 @@ func (a *App) packetEventWorker(sub <-chan scan.Packet) {
 		b := []byte(pkt.Data)
 		ev := PacketEvent{
 			Tag:       string(pkt.Tag()),
-			Timestamp: time.Now().Format(time.TimeOnly),
+			Timestamp: pkt.TRead.Format("15:04:05.000"),
 		}
 		if pkt.Format != nil {
 			ev.Msg = pkt.Format.MsgID(b)
