@@ -81,10 +81,12 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
                     <Checkbox label="Velocity" checked={has(PVTMsgVel)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgVel, v)} />
                     <div />
+                </ConfigSubSubGroup>
+                <ConfigSubSubGroup title="Navigation epoch" disabled={childDisabled}>
                     <Checkbox label="Solution quality" checked={has(PVTMsgQuality)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgQuality, v)} />
                     <div />
-                    <Checkbox label="End of navigation epoch" checked={has(PVTMsgEpoch)} disabled={childDisabled}
+                    <Checkbox label="End of epoch" checked={has(PVTMsgEpoch)} disabled={childDisabled}
                         onChange={v => toggle(PVTMsgEpoch, v)} />
                     <div />
                 </ConfigSubSubGroup>
