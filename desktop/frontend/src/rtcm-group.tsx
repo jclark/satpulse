@@ -42,7 +42,7 @@ export function RTCMGroup({change, disableProtocol, msm, fallback, arp, onChange
     const fallbackDisabled = childDisabled || msm === 'none';
     return (
         <ConfigSubGroup title="RTCM">
-            <div class="flex flex-col gap-1.5 ml-0.5">
+            <div class="flex flex-col gap-1.5">
                 <div class="flex gap-x-4">
                     <label class={`flex items-center gap-1.5 ${labeledControlText(!!disabled)}`}>
                         <input type="checkbox" class="accent-accent" checked={change} disabled={disabled}
@@ -55,9 +55,8 @@ export function RTCMGroup({change, disableProtocol, msm, fallback, arp, onChange
                         Disable protocol
                     </label>
                 </div>
-                {/* MSM type radio + fallback */}
-                <div class="grid grid-cols-[13rem_auto] gap-x-6 gap-y-1 items-center">
-                    <div class="flex gap-x-4 flex-wrap">
+                <div class="grid grid-cols-[13rem_auto] gap-x-6 items-center">
+                    <div class="flex gap-x-4">
                         {msmOptions.map(opt => (
                             <label key={opt.value} class={`flex items-center gap-1.5 ${labeledControlText(childDisabled)}`}>
                                 <input

@@ -607,7 +607,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                 {/* Persistent operations */}
                 <ConfigGroup title="Persistent operations">
                         <ConfigSubGroup title="Save">
-                            <div class="flex flex-wrap gap-x-4 gap-y-1 ml-0.5">
+                            <div class="flex flex-wrap gap-x-4 gap-y-1">
                                 {([
                                     [0, 'Nothing'],
                                     [1, 'Changes'],
@@ -622,7 +622,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                             </div>
                         </ConfigSubGroup>
                         <ConfigSubGroup title="Reset">
-                            <div class="flex flex-wrap gap-x-4 gap-y-1 ml-0.5">
+                            <div class="flex flex-wrap gap-x-4 gap-y-1">
                                 {([
                                     [0, 'None'],
                                     [1, 'Reload'],

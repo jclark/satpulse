@@ -41,7 +41,7 @@ export function SatsGroup({change, flags, onChangeChange, onFlagsChange, disable
 
     return (
         <ConfigSubGroup title="Satellites">
-            <div class="flex flex-col gap-1.5 ml-0.5">
+            <div class="flex flex-col gap-1.5">
                 <Checkbox label="Change" checked={change} disabled={!!disabled}
                     onChange={onChangeChange} />
                 <div class="flex flex-wrap gap-x-4 gap-y-1">

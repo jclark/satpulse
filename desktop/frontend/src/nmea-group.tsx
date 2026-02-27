@@ -34,7 +34,7 @@ export function NMEAGroup({change, disableProtocol, flags, onChangeChange, onDis
     const disableDisabled = disabled || !change;
     return (
         <ConfigSubGroup title="NMEA">
-            <div class="flex flex-col gap-1.5 ml-0.5">
+            <div class="flex flex-col gap-1.5">
                 <div class="flex gap-x-4">
                     <label class={`flex items-center gap-1.5 ${labeledControlText(!!disabled)}`}>
                         <input type="checkbox" class="accent-accent" checked={change} disabled={disabled}

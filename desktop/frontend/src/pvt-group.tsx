@@ -48,7 +48,7 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
 
     return (
         <ConfigSubGroup title="PVT">
-            <div class="flex flex-col gap-1.5 ml-0.5">
+            <div class="flex flex-col gap-1.5">
                 <div class="flex gap-x-4">
                     <Checkbox label="Change" checked={change} disabled={!!disabled}
                         onChange={onChangeChange} />

@@ -136,7 +136,7 @@ export function ConfigSubGroup({title, disabled, children}: ConfigSubGroupProps)
     return (
         <div>
             <div class={`mb-1 text-xs font-semibold ${disabled ? 'text-text-muted' : 'text-text-secondary'}`}>{title}</div>
-            {children}
+            <div class="pl-4">{children}</div>
         </div>
     );
 }
@@ -149,9 +149,11 @@ export interface ConfigSubSubGroupProps {
 
 export function ConfigSubSubGroup({title, disabled, children}: ConfigSubSubGroupProps) {
     return (
-        <div class="mt-1 grid grid-cols-[13rem_auto] gap-x-6 gap-y-1 items-start">
-            <div class={`col-span-2 mb-0.5 text-xs font-medium ${disabled ? 'text-text-muted' : 'text-text-secondary'}`}>{title}</div>
-            {children}
+        <div class="mt-1">
+            <div class={`mb-1 text-xs font-medium ${disabled ? 'text-text-muted' : 'text-text-secondary'}`}>{title}</div>
+            <div class="grid grid-cols-[13rem_auto] gap-x-6 gap-y-1 items-start">
+                {children}
+            </div>
         </div>
     );
 }
@@ -168,7 +170,7 @@ export function ConfigGroup({title, defaultOpen = true, children}: ConfigGroupPr
         <section class="mt-3 first:mt-0">
             <button
                 type="button"
-                class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-1 py-1.5 text-left text-sm font-semibold text-text-secondary hover:text-text-primary"
+                class="flex cursor-pointer items-center gap-2 border-none bg-transparent py-1.5 text-left text-sm font-semibold text-text-secondary hover:text-text-primary"
                 onClick={() => setOpen(!open)}
             >
                 <svg
