@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {SatsMsgSat, SatsMsgSignal} from './msg-flags';
-import {labeledControlText} from './ui';
+import {ConfigSubGroup, labeledControlText} from './ui';
 
 interface Props {
     change: boolean;
@@ -40,8 +40,7 @@ export function SatsGroup({change, flags, onChangeChange, onFlagsChange, disable
     const has = (flag: number) => (flags & flag) !== 0;
 
     return (
-        <div>
-            <div class="mb-1 text-xs font-semibold text-text-secondary">Satellites</div>
+        <ConfigSubGroup title="Satellites">
             <div class="flex flex-col gap-1.5 ml-0.5">
                 <Checkbox label="Change" checked={change} disabled={!!disabled}
                     onChange={onChangeChange} />
@@ -52,6 +51,6 @@ export function SatsGroup({change, flags, onChangeChange, onFlagsChange, disable
                         onChange={v => toggle(SatsMsgSignal, v)} />
                 </div>
             </div>
-        </div>
+        </ConfigSubGroup>
     );
 }

@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgGLL, NMEAMsgOther} from './msg-flags';
-import {labeledControlText} from './ui';
+import {ConfigSubGroup, labeledControlText} from './ui';
 
 const nmeaMsgs: {flag: number; label: string}[] = [
     {flag: NMEAMsgGGA, label: 'GGA'},
@@ -33,8 +33,7 @@ export function NMEAGroup({change, disableProtocol, flags, onChangeChange, onDis
     const childDisabled = disabled || !change || disableProtocol;
     const disableDisabled = disabled || !change;
     return (
-        <div>
-            <div class="mb-1 text-xs font-semibold text-text-secondary">NMEA</div>
+        <ConfigSubGroup title="NMEA">
             <div class="flex flex-col gap-1.5 ml-0.5">
                 <div class="flex gap-x-4">
                     <label class={`flex items-center gap-1.5 ${labeledControlText(!!disabled)}`}>
@@ -63,6 +62,6 @@ export function NMEAGroup({change, disableProtocol, flags, onChangeChange, onDis
                     ))}
                 </div>
             </div>
-        </div>
+        </ConfigSubGroup>
     );
 }

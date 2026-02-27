@@ -4,7 +4,7 @@ import {
     PVTMsgLeapSecond, PVTMsgTAI, PVTMsgECEF,
     PVTMsgTimePulseAfter, PVTMsgQuality, PVTMsgEpoch, PVTMsgOff,
 } from './msg-flags';
-import {labeledControlText} from './ui';
+import {ConfigSubGroup, labeledControlText} from './ui';
 
 interface Props {
     change: boolean;
@@ -47,8 +47,7 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
     const hasPosVel = has(PVTMsgPos) || has(PVTMsgVel);
 
     return (
-        <div>
-            <div class="mb-1 text-xs font-semibold text-text-secondary">PVT</div>
+        <ConfigSubGroup title="PVT">
             <div class="flex flex-col gap-1.5 ml-0.5">
                 <div class="flex gap-x-4">
                     <Checkbox label="Change" checked={change} disabled={!!disabled}
@@ -94,6 +93,6 @@ export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled
                     <div />
                 </div>
             </div>
-        </div>
+        </ConfigSubGroup>
     );
 }

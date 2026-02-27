@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {RTCMMsgMSM4, RTCMMsgMSM7, RTCMMsgARP, RTCMMsgLax, RTCMMsgOther} from './msg-flags';
-import {labeledControlText} from './ui';
+import {ConfigSubGroup, labeledControlText} from './ui';
 
 type MSMType = 'none' | 'msm4' | 'msm7';
 
@@ -41,8 +41,7 @@ export function RTCMGroup({change, disableProtocol, msm, fallback, arp, onChange
     const disableDisabled = disabled || !change;
     const fallbackDisabled = childDisabled || msm === 'none';
     return (
-        <div>
-            <div class="mb-1 text-xs font-semibold text-text-secondary">RTCM</div>
+        <ConfigSubGroup title="RTCM">
             <div class="flex flex-col gap-1.5 ml-0.5">
                 <div class="flex gap-x-4">
                     <label class={`flex items-center gap-1.5 ${labeledControlText(!!disabled)}`}>
@@ -96,6 +95,6 @@ export function RTCMGroup({change, disableProtocol, msm, fallback, arp, onChange
                     Antenna reference point (ARP)
                 </label>
             </div>
-        </div>
+        </ConfigSubGroup>
     );
 }

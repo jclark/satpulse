@@ -2,7 +2,6 @@ import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {ApplyConfig, CheckOnEarth, ReadConfig} from '../wailsjs/go/main/App';
 import {SignalPicker} from './signal-picker';
-import {CollapsibleSection} from './collapsible-section';
 import {NMEAGroup, nmeaWireValue} from './nmea-group';
 import {RTCMGroup, rtcmWireValue} from './rtcm-group';
 import {PVTGroup, pvtWireValue} from './pvt-group';
@@ -14,7 +13,7 @@ import {
     SatsMsgSat, SatsMsgSignal,
 } from './msg-flags';
 import type {ConnState, OperationState} from './app';
-import {Button, Input, Select, fieldLabelText, labeledControlText} from './ui';
+import {Button, Input, Select, ConfigGroup, ConfigSubGroup, fieldLabelText, labeledControlText} from './ui';
 
 interface Props {
     connState: ConnState;
@@ -375,7 +374,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             {/* Scrollable content */}
             <div class="flex-1 overflow-y-auto p-4">
 
-                    <CollapsibleSection title="Time pulse" defaultOpen={true}>
+                    <ConfigGroup title="Time pulse">
                         <div class="flex gap-x-6 items-start">
                             <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center">
                                 <label class={fieldLabelText()}>Period (s)</label>
@@ -415,10 +414,10 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                 </label>
                             </div>
                         </div>
-                    </CollapsibleSection>
+                    </ConfigGroup>
 
                     {/* Time mode subgroup */}
-                    <CollapsibleSection title="Time mode" defaultOpen={true}>
+                    <ConfigGroup title="Time mode">
                         {/* Mode radio group */}
                         <div class="flex flex-wrap gap-x-4 gap-y-1 mb-3">
                             {([['mobile', 'Mobile'], ['survey', 'Survey-in'], ['fixed', 'Fixed position']] as const).map(([val, label]) => (
@@ -434,8 +433,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                         )}
 
                         {/* Survey-in group */}
-                        <div class="mb-3">
-                            <div class={`mb-1 text-xs font-semibold ${surveyDisabled ? 'text-text-muted' : 'text-text-secondary'}`}>Survey-in</div>
+                        <ConfigSubGroup title="Survey-in" disabled={surveyDisabled}>
                             <div class="flex gap-x-6 items-start">
                                 <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center">
                                     <label class={surveyDisabled ? disabledText : fieldLabelText()}>Survey time (s)</label>
@@ -458,11 +456,10 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                     disabled={surveyDisabled} onChange={e => { setTimeModeTouched(true); setSurveyReport((e.target as HTMLInputElement).checked); }} />
                                 Report survey progress
                             </label>
-                        </div>
+                        </ConfigSubGroup>
 
                         {/* Fixed position group */}
-                        <div>
-                            <div class={`mb-1 text-xs font-semibold ${fixedDisabled ? 'text-text-muted' : 'text-text-secondary'}`}>Fixed position</div>
+                        <ConfigSubGroup title="Fixed position" disabled={fixedDisabled}>
                             <div class="flex flex-wrap gap-x-4 gap-y-1 mb-2">
                                 {([['ecef', 'ECEF'], ['llh', 'Lat/Lon/Height']] as const).map(([val, label]) => (
                                     <label key={val} class={`flex items-center gap-1.5 text-xs ${fixedDisabled ? disabledText : enabledText}`}>
@@ -507,11 +504,11 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                 <Input type="text" inputMode="decimal" invalid={errorSet.has('fixedPosAcc')} class="w-24" value={fixedPosAcc} placeholder="20"
                                     disabled={fixedDisabled} onInput={e => { setTimeModeTouched(true); setFixedPosAcc((e.target as HTMLInputElement).value); }} />
                             </div>
-                        </div>
-                    </CollapsibleSection>
+                        </ConfigSubGroup>
+                    </ConfigGroup>
 
                     {/* Signals subgroup */}
-                    <CollapsibleSection title="Signals" defaultOpen={true}>
+                    <ConfigGroup title="Signals">
                         <div class="flex flex-wrap gap-x-4 gap-y-1">
                             {gnssNames.map(gnssName => {
                                 const sigs = signalCatalog[gnssName];
@@ -535,19 +532,19 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                 Edit signals...
                             </Button>
                         )}
-                    </CollapsibleSection>
+                    </ConfigGroup>
 
                     {/* Other properties */}
-                    <CollapsibleSection title="Other" defaultOpen={true}>
+                    <ConfigGroup title="Other">
                         <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center w-fit">
                             <label class={fieldLabelText()}>Min elevation (deg)</label>
                             <Input type="text" inputMode="decimal" invalid={errorSet.has('minElev')} class="w-20" value={minElev} placeholder="e.g. 10"
                                 disabled={!connected} onInput={e => { setOtherTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
                         </div>
-                    </CollapsibleSection>
+                    </ConfigGroup>
 
                 {/* Messages */}
-                <CollapsibleSection title="Messages" defaultOpen={true}>
+                <ConfigGroup title="Messages">
                     <div class="flex flex-col gap-3">
                         <div class="flex gap-2">
                             <Button disabled={!connected} onClick={() => {
@@ -607,13 +604,12 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                             disabled={!connected}
                         />
                     </div>
-                </CollapsibleSection>
+                </ConfigGroup>
 
                 {/* Persistent operations */}
-                <CollapsibleSection title="Persistent operations" defaultOpen={true}>
+                <ConfigGroup title="Persistent operations">
                     <div class="flex flex-col gap-3">
-                        <div>
-                            <div class="mb-1 text-xs font-semibold text-text-secondary">Save</div>
+                        <ConfigSubGroup title="Save">
                             <div class="flex flex-wrap gap-x-4 gap-y-1 ml-0.5">
                                 {([
                                     [0, 'Nothing'],
@@ -627,9 +623,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                     </label>
                                 ))}
                             </div>
-                        </div>
-                        <div>
-                            <div class="mb-1 text-xs font-semibold text-text-secondary">Reset</div>
+                        </ConfigSubGroup>
+                        <ConfigSubGroup title="Reset">
                             <div class="flex flex-wrap gap-x-4 gap-y-1 ml-0.5">
                                 {([
                                     [0, 'None'],
@@ -644,9 +639,9 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                     </label>
                                 ))}
                             </div>
-                        </div>
+                        </ConfigSubGroup>
                     </div>
-                </CollapsibleSection>
+                </ConfigGroup>
 
             </div>
 

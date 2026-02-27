@@ -1,4 +1,5 @@
 import {h, Fragment} from 'preact';
+import {useState} from 'preact/hooks';
 import type {ComponentChildren, JSX} from 'preact';
 
 type ClassValue = unknown;
@@ -124,6 +125,49 @@ export function Badge({tone = 'default', class: className, children, ...props}: 
     );
 }
 
+
+export interface ConfigSubGroupProps {
+    title: string;
+    disabled?: boolean;
+    children: ComponentChildren;
+}
+
+export function ConfigSubGroup({title, disabled, children}: ConfigSubGroupProps) {
+    return (
+        <div>
+            <div class={`mb-1 text-xs font-semibold ${disabled ? 'text-text-muted' : 'text-text-secondary'}`}>{title}</div>
+            {children}
+        </div>
+    );
+}
+
+export interface ConfigGroupProps {
+    title: string;
+    defaultOpen?: boolean;
+    children: ComponentChildren;
+}
+
+export function ConfigGroup({title, defaultOpen = true, children}: ConfigGroupProps) {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <section class="mb-1">
+            <button
+                type="button"
+                class="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-1 py-1.5 text-left text-xs font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary"
+                onClick={() => setOpen(!open)}
+            >
+                <svg
+                    class={`w-3 h-3 shrink-0 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
+                    viewBox="0 0 12 12" fill="currentColor"
+                >
+                    <path d="M4 2l4 4-4 4z" />
+                </svg>
+                {title}
+            </button>
+            {open && <div class="pl-1 pb-3">{children}</div>}
+        </section>
+    );
+}
 
 export function labeledControlText(disabled: boolean): string {
     return disabled ? 'text-xs text-text-muted' : 'text-xs text-text-primary cursor-pointer';
