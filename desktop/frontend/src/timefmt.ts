@@ -3,7 +3,6 @@ const timeOptions: Intl.DateTimeFormatOptions = {
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
-    timeZoneName: 'short',
 };
 
 const dateOptions: Intl.DateTimeFormatOptions = {
@@ -37,7 +36,6 @@ function formatDateLocal(d: Date, second: string, locales?: string | string[]): 
         switch (type) {
             case 'hour':
             case 'minute':
-            case 'timeZoneName':
             case 'literal':
                 time += value;
                 break;

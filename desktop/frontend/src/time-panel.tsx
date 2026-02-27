@@ -1,7 +1,7 @@
 import {h} from 'preact';
 import {formatUTCLocal, formatTAI, formatDateTime, parseTAITime, taiToUTC} from './timefmt';
 import type {TimeMsg, LeapSecondState} from './app';
-import {DefinitionList} from './ui';
+import {MonitorDataView} from './ui';
 
 interface Props {
     msg: TimeMsg | null;
@@ -55,5 +55,5 @@ export function TimePanel({msg, leapSecond}: Props) {
     rows.push(['Leap seconds', leapSecs || blank]);
     rows.push(['Time source', source || blank]);
 
-    return <DefinitionList rows={rows.map(([label, value]) => ({label, value}))} class="max-w-xl grid-cols-[120px_1fr]" />;
+    return <MonitorDataView rows={rows.map(([label, value]) => ({label, value}))} class="max-w-xl grid-cols-[120px_1fr]" />;
 }

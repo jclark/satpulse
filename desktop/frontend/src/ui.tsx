@@ -194,18 +194,19 @@ export function fieldLabelText(disabled = false): string {
     return disabled ? 'text-xs text-text-muted' : 'text-xs text-text-secondary';
 }
 
-export interface DefinitionRowProps {
+export interface MonitorDataRow {
     label: string;
     value: string | ComponentChildren;
 }
 
-export function DefinitionList({rows, class: className}: {rows: DefinitionRowProps[]; class?: string}) {
+/** Field/value display for monitor panels. */
+export function MonitorDataView({rows, class: className}: {rows: MonitorDataRow[]; class?: string}) {
     return (
         <dl class={cx('grid gap-x-4 gap-y-2', className)}>
             {rows.map(({label, value}) => (
                 <Fragment key={label}>
                     <dt class="text-xs text-text-secondary">{label}</dt>
-                    <dd class="text-sm tabular-nums text-text-primary">{value}</dd>
+                    <dd class="text-xs font-mono tabular-nums text-text-primary">{value}</dd>
                 </Fragment>
             ))}
         </dl>

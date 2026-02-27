@@ -2,7 +2,7 @@ import {h} from 'preact';
 import {useState, useEffect} from 'preact/hooks';
 import {ECEFtoLLH} from '../wailsjs/go/main/App';
 import type {SurveyMsg} from './app';
-import {DefinitionList} from './ui';
+import {MonitorDataView} from './ui';
 
 interface Props {
     msg: SurveyMsg | null;
@@ -87,5 +87,5 @@ export function SurveyPanel({msg}: Props) {
         ['Observation time', obsTime],
     ];
 
-    return <DefinitionList rows={rows.map(([label, value]) => ({label, value}))} class="max-w-xl grid-cols-[140px_1fr]" />;
+    return <MonitorDataView rows={rows.map(([label, value]) => ({label, value}))} class="max-w-xl grid-cols-[140px_1fr]" />;
 }
