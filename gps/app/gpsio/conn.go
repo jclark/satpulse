@@ -15,6 +15,17 @@ type OutPort interface {
 	TransmitTime(nBytes int) time.Duration
 }
 
+// OutPortLock coordinates exclusive write access to an OutPort.
+// Acquire the port by receiving from the channel; release by sending it back.
+type OutPortLock chan OutPort
+
+// NewOutPortLock creates a new OutPortLock containing the given port.
+func NewOutPortLock(port OutPort) OutPortLock {
+	ch := make(OutPortLock, 1)
+	ch <- port
+	return ch
+}
+
 type SerialOutPort interface {
 	OutPort
 	WriteThenChangeSpeed(p []byte, speed int) (int, error)

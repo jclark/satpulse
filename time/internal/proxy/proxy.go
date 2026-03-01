@@ -51,7 +51,7 @@ type svcConfig struct {
 	writeLockTimeout time.Duration
 }
 
-func Start(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg Config, b *bcast.Bcast[scan.Packet], port gpsio.OutPort) error {
+func Start(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg Config, b *bcast.Bcast[scan.Packet], portLock gpsio.OutPortLock) error {
 	nSocket := len(cfg.Socket)
 	nSvc := nSocket + len(cfg.TCP)
 	if nSvc == 0 {
@@ -99,10 +99,10 @@ func Start(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg Config,
 		}
 		listeners[i] = listen
 	}
-	var portLock chan gpsio.OutPort
-	if !allReadOnly {
-		portLock = make(chan gpsio.OutPort, 1)
-		portLock <- port
+	if allReadOnly {
+		portLock = nil
+	} else if portLock == nil {
+		panic("proxy.Start: non-nil portLock required when any proxy service is writable")
 	}
 	for i, listen := range listeners {
 		sc := svcConfigs[i]
@@ -179,7 +179,7 @@ func convertWriteLockTimeout(secs float64) (time.Duration, error) {
 	return 0, fmt.Errorf("writeLockTimeout %f out of range", secs)
 }
 
-func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg svcConfig, listen net.Listener, b *bcast.Bcast[scan.Packet], portLock chan gpsio.OutPort) {
+func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg svcConfig, listen net.Listener, b *bcast.Bcast[scan.Packet], portLock gpsio.OutPortLock) {
 	defer lg.Debug("about to exit proxy listening goroutine")
 	defer listen.Close()
 	for {
@@ -192,7 +192,7 @@ func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg 
 	}
 }
 
-func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg svcConfig, conn net.Conn, b *bcast.Bcast[scan.Packet], portLock chan gpsio.OutPort) {
+func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg svcConfig, conn net.Conn, b *bcast.Bcast[scan.Packet], portLock gpsio.OutPortLock) {
 	lg.Info("accepted proxy connection", "remoteAddr", conn.RemoteAddr())
 	// XXX both the read and write workers are closing the connection.
 	// Not sure if it would better for just one of them to do so.
@@ -237,7 +237,7 @@ func connWriteWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn n
 const writeLockTimeoutDefault = 2 * time.Second
 
 // connReadWorker reads from the connection and writes to the serial port.
-func connReadWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn net.Conn, portLock chan gpsio.OutPort) {
+func connReadWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn net.Conn, portLock gpsio.OutPortLock) {
 	defer lg.Debug("about to exit proxy connection reading worker goroutine")
 	defer conn.Close()
 	var port gpsio.OutPort

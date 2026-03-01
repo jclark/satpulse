@@ -209,7 +209,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return nil
 	}
 
-	err = proxy.Start(ctx, lg, &wg, cfg.Proxy, pb, conn)
+	portLock := gpsio.NewOutPortLock(conn)
+	err = proxy.Start(ctx, lg, &wg, cfg.Proxy, pb, portLock)
 	if err != nil {
 		return err
 	}
