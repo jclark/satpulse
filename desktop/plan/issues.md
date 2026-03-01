@@ -62,13 +62,11 @@ UI:
 
 Write contention (rover mode): if `outportlock-desktop` is done first, the rover uses `OutPortLock` to coordinate writes with config and message file send -- no need to disable other tabs while corrections flow. The rover acquires per-packet and releases between packets, allowing config to interleave.
 
-If `packet-log-desktop` is done first, the rover can use `SerialConn.WritePacket` to write RTCM packets to the receiver, and they will automatically appear in the packet monitor with direction and message type. This is desirable but not a hard prerequisite -- the rover can work without it.
+The rover should use `SerialConn.WritePacket` to write RTCM packets to the receiver, so they automatically appear in the packet monitor with direction and message type.
 
 NTRIP caster support (HTTP-based, with authentication and mount points) could be added later as a separate transport option in the same tab.
 
 ## outportlock-desktop: Use OutPortLock for serial write coordination
-
-Prerequisite: `port-lock-refactor` (adds `gpsio.OutPortLock` type).
 
 The desktop backend currently uses `ConnState` to prevent concurrent writes to the serial port: `ReadConfig` and `WriteConfig` set `StateConfiguring`, `SendMsgFile` sets `StateSending`, and each checks `state == StateConnected` before proceeding. This means only one writing operation can run at a time, and the state machine encodes write exclusion rather than just UI status.
 
@@ -103,7 +101,7 @@ Each tile img uses `key={`${tileX},${tileY}:${epoch}`}`.
 
 If a USB-connected GPS receiver is physically unplugged while connected, the app shows a read error in the log but remains in the connected state. The user has to manually click Disconnect to reset the UI. This is the desktop GUI counterpart of #172 (satpulsed should handle serial device disappearing); the daemon's approach is to exit and let systemd restart it, but the GUI needs to transition cleanly to disconnected state instead.
 
-The root cause is a gap between the backend and frontend: when `Scan()` in `gpsio/conn.go` encounters a read error, it logs the error and exits the loop, closing the packet channel. The goroutines in `app.go` (`packetEventWorker`, `packetWorker`) detect the closed channel and exit, but neither calls `setEndState()` to emit a `gps:state` event. The frontend never learns the connection is dead and stays visually connected.
+The root cause is a gap between the backend and frontend: when `Scan()` in `gpsio/conn.go` encounters a read error, it logs the error and exits the loop, closing the packet channel. The goroutines in `app.go` (`packetLogWorker`, `packetWorker`) detect the closed channel and exit, but neither calls `setEndState()` to emit a `gps:state` event. The frontend never learns the connection is dead and stays visually connected.
 
 Fix: after the goroutines spawned by `Connect()` finish (detected via `connWg`), transition to the disconnected state and emit `gps:state` with `StateDisconnected`. This could be done with a cleanup goroutine that waits on `connWg` and calls `closeLocked()` if the connection wasn't already explicitly disconnected. The frontend already handles `gps:state` transitions and clears stale data on disconnect, so no frontend changes should be needed.
 
