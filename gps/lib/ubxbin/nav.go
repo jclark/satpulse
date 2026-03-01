@@ -20,6 +20,8 @@ const (
 	NavTimeTrustedID MsgID = clsNav | (0x64 << 8)
 	NavVelECEFID     MsgID = clsNav | (0x11 << 8)
 	NavVelNEDID      MsgID = clsNav | (0x12 << 8)
+	NavHPPosECEFID   MsgID = clsNav | (0x13 << 8)
+	NavHPPosLLHID    MsgID = clsNav | (0x14 << 8)
 	NavSvinID        MsgID = clsNav | (0x3B << 8)
 )
 
@@ -82,6 +84,25 @@ type NavVelECEF struct {
 
 func (m *NavVelECEF) ID() MsgID { return NavVelECEFID }
 
+type NavHPPosECEF struct {
+	Version byte
+	_       [3]byte
+	NavITOW
+	ECEF   [3]int32
+	ECEFHp [3]int8
+	Flags  NavHPPosECEFFlags
+	PAcc   uint32
+}
+
+type NavHPPosECEFFlags byte
+
+const NavHPPosECEFInvalidEcef NavHPPosECEFFlags = 1 << 0
+
+var _ PartiallyHandledMsg = (*NavHPPosECEF)(nil)
+
+func (m *NavHPPosECEF) ID() MsgID        { return NavHPPosECEFID }
+func (m *NavHPPosECEF) IsHandled() bool   { return m.Version == 0 }
+
 type NavPosLLH struct {
 	NavITOW
 	Lon    int32
@@ -93,6 +114,32 @@ type NavPosLLH struct {
 }
 
 func (m *NavPosLLH) ID() MsgID { return NavPosLLHID }
+
+type NavHPPosLLH struct {
+	Version byte
+	_       [2]byte
+	Flags   NavHPPosLLHFlags
+	NavITOW
+	Lon      int32
+	Lat      int32
+	Height   int32
+	HMSL     int32
+	LonHp    int8
+	LatHp    int8
+	HeightHp int8
+	HMSLHp   int8
+	HAcc     uint32
+	VAcc     uint32
+}
+
+type NavHPPosLLHFlags byte
+
+const NavHPPosLLHInvalidLlh NavHPPosLLHFlags = 1 << 0
+
+var _ PartiallyHandledMsg = (*NavHPPosLLH)(nil)
+
+func (m *NavHPPosLLH) ID() MsgID        { return NavHPPosLLHID }
+func (m *NavHPPosLLH) IsHandled() bool   { return m.Version == 0 }
 
 type NavVelNED struct {
 	NavITOW
@@ -812,7 +859,9 @@ func init() {
 	regMsg[NavClock]("CLOCK")
 	regMsg[NavDOP]("DOP")
 	regMsg[NavPosECEF]("POSECEF")
+	regMsg[NavHPPosECEF]("HPPOSECEF")
 	regMsg[NavPosLLH]("POSLLH")
+	regMsg[NavHPPosLLH]("HPPOSLLH")
 	regMsg[NavPVT]("PVT")
 	regMsg[NavSat]("SAT")
 	regMsg[NavSig]("SIG")

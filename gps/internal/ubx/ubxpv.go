@@ -7,10 +7,27 @@ import (
 )
 
 func posECEFNavPosECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPosECEF) *gpsprot.PosECEFMsg {
-	ne.Acc.Pos.Set(lengthCm(m.PAcc))
+	// Fill so HP accuracy from NAV-HPPOSECEF wins regardless of message order
+	ne.Acc.Pos.Fill(opt.Make(lengthCm(m.PAcc)))
 	return &gpsprot.PosECEFMsg{
 		Pos:         point3DCm(m.ECEF),
 		NativeMsgID: "NAV-POSECEF",
+	}
+}
+
+func posECEFNavHPPosECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavHPPosECEF) *gpsprot.PosECEFMsg {
+	if m.Flags&ubxbin.NavHPPosECEFInvalidEcef != 0 {
+		return nil
+	}
+	ne.Acc.Pos.Set(length01Mm(m.PAcc))
+	return &gpsprot.PosECEFMsg{
+		Priority: gpsprot.PriVendorHigh,
+		Pos: gpsprot.Point3D{
+			lengthHP(m.ECEF[0], m.ECEFHp[0]),
+			lengthHP(m.ECEF[1], m.ECEFHp[1]),
+			lengthHP(m.ECEF[2], m.ECEFHp[2]),
+		},
+		NativeMsgID: "NAV-HPPOSECEF",
 	}
 }
 
@@ -23,13 +40,29 @@ func velECEFNavVelECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavVelECEF) *gpsprot.V
 }
 
 func posGeoNavPosLLH(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPosLLH) *gpsprot.PosGeoMsg {
-	ne.Acc.Hor.Set(lengthMm(m.HAcc))
-	ne.Acc.Vert.Set(lengthMm(m.VAcc))
+	// Fill so HP accuracy from NAV-HPPOSLLH wins regardless of message order
+	ne.Acc.Hor.Fill(opt.Make(lengthMm(m.HAcc)))
+	ne.Acc.Vert.Fill(opt.Make(lengthMm(m.VAcc)))
 	return &gpsprot.PosGeoMsg{
 		LatLon:      [2]gpsprot.Angle{angle1e7(m.Lat), angle1e7(m.Lon)},
 		Height:      lengthMmOpt(m.Height),
 		HeightMSL:   lengthMmOpt(m.HMSL),
 		NativeMsgID: "NAV-POSLLH",
+	}
+}
+
+func posGeoNavHPPosLLH(ne *gpsprot.NavEpochMsg, m *ubxbin.NavHPPosLLH) *gpsprot.PosGeoMsg {
+	if m.Flags&ubxbin.NavHPPosLLHInvalidLlh != 0 {
+		return nil
+	}
+	ne.Acc.Hor.Set(length01Mm(m.HAcc))
+	ne.Acc.Vert.Set(length01Mm(m.VAcc))
+	return &gpsprot.PosGeoMsg{
+		Priority:    gpsprot.PriVendorHigh,
+		LatLon:      [2]gpsprot.Angle{angleHP(m.Lat, m.LatHp), angleHP(m.Lon, m.LonHp)},
+		Height:      opt.Make(lengthHP(m.Height, m.HeightHp)),
+		HeightMSL:   opt.Make(lengthHP(m.HMSL, m.HMSLHp)),
+		NativeMsgID: "NAV-HPPOSLLH",
 	}
 }
 
@@ -70,6 +103,8 @@ func velGeoNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) *gpsprot.VelGeoMsg 
 	ne.Acc.Speed.Set(speedMmS(m.SAcc))
 	ne.Acc.Course.Set(angle1e5(m.HeadAcc))
 	return &gpsprot.VelGeoMsg{
+		// NAV-PVT uses mm/s, whereas NAV-VELNED uses cm/s
+		Priority: gpsprot.PriVendorHigh,
 		VelNED: opt.Make([3]gpsprot.Speed{
 			speedMmS(m.VelN), speedMmS(m.VelE), speedMmS(m.VelD),
 		}),
@@ -175,6 +210,10 @@ func lengthCm[T integer](v T) gpsprot.Length {
 
 func lengthMm[T integer](v T) gpsprot.Length {
 	return gpsprot.Length(v) * gpsprot.Millimeter
+}
+
+func length01Mm[T integer](v T) gpsprot.Length {
+	return gpsprot.Length(v) * (gpsprot.Millimeter / 10)
 }
 
 func point3DCm(v [3]int32) gpsprot.Point3D {

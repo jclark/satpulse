@@ -14,7 +14,7 @@ func surveyNavSvin(m *ubxbin.NavSvin) *gpsprot.SurveyMsg {
 			lengthHP(m.MeanY, m.MeanYHP),
 			lengthHP(m.MeanZ, m.MeanZHP),
 		},
-		Accuracy:   gpsprot.Length(m.MeanAcc) * (gpsprot.Millimeter / 10),
+		Accuracy:   length01Mm(m.MeanAcc),
 		Valid:      m.Valid != 0,
 		InProgress: m.Active != 0,
 		ObsCount:   m.Obs,

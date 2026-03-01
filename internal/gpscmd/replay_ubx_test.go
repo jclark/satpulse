@@ -50,22 +50,27 @@ func HideTestReplayBug(t *testing.T) {
 	testReplayFile(t, "bug", ubxPacketsEqual)
 }
 
-func ubxPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) bool {
+// ubxPacketsEqual returns (equal, updatable).
+// updatable is true when the mismatch is in CFG-VALSET/CFG-VALGET content
+// and is safe to auto-update in golden files.
+func ubxPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
 	actualStr := string(actual)
 	expectedStr := expected.Data()
 
 	// First check if they're exactly equal
 	if actualStr == expectedStr {
-		return true
+		return true, false
 	}
 
 	// If not, check special cases for messages that might have reordered data
 	switch msgID {
 	case "CFG-VALSET":
-		return valsetPacketsEqual(t, actualStr, expectedStr)
+		eq := valsetPacketsEqual(t, actualStr, expectedStr)
+		return eq, !eq
 	case "CFG-VALGET":
 		// For output packets (which these always are), cfgData contains keys
-		return valgetPacketsEqual(t, actualStr, expectedStr)
+		eq := valgetPacketsEqual(t, actualStr, expectedStr)
+		return eq, !eq
 	default:
 		// Try to parse both messages to provide better error details
 		actualMsg, actualErr := ubxbin.ParseMsg(actualStr)
@@ -84,7 +89,7 @@ func ubxPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.P
 			t.Errorf("%s: packet content differs (length actual=%d, expected=%d)", msgID, len(actualStr), len(expectedStr))
 		}
 
-		return false
+		return false, false
 	}
 }
 

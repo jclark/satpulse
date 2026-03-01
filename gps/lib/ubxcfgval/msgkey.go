@@ -92,6 +92,8 @@ const KUbxNavCov KeyM = 0x083
 const KUbxNavDop KeyM = 0x038
 const KUbxNavEoe KeyM = 0x15F
 const KUbxNavGeofence KeyM = 0x0A1
+const KUbxNavHpposecef KeyM = 0x02E
+const KUbxNavHpposllh KeyM = 0x033
 const KUbxNavNmi KeyM = 0x590
 const KUbxNavOdo KeyM = 0x07E
 const KUbxNavOrb KeyM = 0x010
@@ -205,6 +207,8 @@ var msgKeyNames = map[KeyM]string{
 	KUbxNavDop:           "UBX_NAV_DOP",
 	KUbxNavEoe:           "UBX_NAV_EOE",
 	KUbxNavGeofence:      "UBX_NAV_GEOFENCE",
+	KUbxNavHpposecef:     "UBX_NAV_HPPOSECEF",
+	KUbxNavHpposllh:      "UBX_NAV_HPPOSLLH",
 	KUbxNavNmi:           "UBX_NAV_NMI",
 	KUbxNavOdo:           "UBX_NAV_ODO",
 	KUbxNavOrb:           "UBX_NAV_ORB",
