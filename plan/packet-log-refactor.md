@@ -40,93 +40,59 @@ Problems:
 gpsio.Scan ──────────────────────────────────┐
                                              ▼
                                          PacketLog {
-                                           pl *packetLog
+                                           ch chan<- PacketLogEntry
                                            pktFormats []PacketFormat
                                          }
                                              │
-SerialConn.Write ── PacketLog.logWrite ──────┘   <-chan PacketLogEntry
-  (raw []byte)    (format discovery,             │
-                   builds entry)                 ├──> doLogPackets (daemon: JSONL file)
+SerialConn.Write ── logWrite ── LogOutput ───┘   <-chan PacketLogEntry
+  (raw []byte)       (fmt=nil: discovery)        │
+                                                 ├──> doLogPackets (daemon: JSONL file)
                                                  └──> EventsEmit (desktop: gps:packet)
 Rover ── SerialConn.WritePacket ─────────┘
-  (scan.Packet   (writes + logs with known
-   from TCP)      format, no discovery)
+  (scan.Packet   (fmt=known: no discovery)
+   from TCP)
 ```
 
-### `packetLog` (unexported)
+### `PacketLog`
 
-Channel wrapper. Handles the `SemiClose` two-caller protocol for closing the channel.
-
-```go
-type packetLog struct {
-	ch         chan<- PacketLogEntry
-	closeCount atomic.Int32
-}
-
-func newPacketLog() (*packetLog, <-chan PacketLogEntry) {
-	ch := make(chan PacketLogEntry, 2)
-	return &packetLog{ch: ch}, ch
-}
-
-func (pl *packetLog) log(entry PacketLogEntry) {
-	pl.ch <- entry
-}
-
-// semiClose must be called twice: once when input logging is done,
-// once when output logging is done. Closes the channel on the second call.
-func (pl *packetLog) semiClose()
-```
-
-### `PacketLog` (exported)
-
-Handles conversion from `scan.Packet` and raw bytes to `PacketLogEntry`. Holds the packet formats for output format discovery.
+`PacketLog` struct is unchanged. New `NewPacketLog` constructor takes formats and returns the consumer channel, replacing the hardcoded `gpsreg.PacketFormats` reference:
 
 ```go
-type PacketLog struct {
-	pl         *packetLog
-	pktFormats []gpsprot.PacketFormat
-}
-
 // NewPacketLog creates a PacketLog and returns the consumer channel.
 func NewPacketLog(fmts []gpsprot.PacketFormat) (*PacketLog, <-chan PacketLogEntry)
-
-// LogInput logs an incoming packet from the scanner.
-// Builds a PacketLogEntry from the scan.Packet (format already parsed).
-func (pl *PacketLog) LogInput(pkt scan.Packet)
-
-// SemiClose must be called twice: once when input logging is done,
-// once when output logging is done.
-func (pl *PacketLog) SemiClose()
 ```
 
+`LogInput` and `SemiClose` are unchanged.
+
+`LogOutput` gets a new `fmt` parameter. If non-nil, it is used directly. If nil, `pktFormats` is iterated to discover the format. Once the format is resolved, `useBinary` decides binary vs ascii encoding:
+
 ```go
-// LogOutput logs an outgoing write. If fmt is non-nil, it is used directly
-// for the tag and message ID. If fmt is nil, pktFormats is iterated to
-// discover the format from the raw bytes.
 func (pl *PacketLog) LogOutput(tWrite time.Time, bytes []byte, speed int, fmt gpsprot.PacketFormat)
 ```
 
 ### `SerialConn` changes
 
-`SerialConn` holds `*PacketLog` (same field name, but now the new exported type). `SetPacketLog` signature simplifies since `PacketLog` already has formats:
+`SetPacketLog` signature is unchanged:
 
 ```go
 func (c *SerialConn) SetPacketLog(pl *PacketLog)
 ```
 
-The existing `logWrite` method on `SerialConn` calls `pl.LogOutput(tWrite, bytes, speed, nil)`.
-
-New method for writes where the caller already knows the packet format:
+`WriteThenChangeSpeed` becomes a thin wrapper around an unexported `writeThenChangeSpeed` that takes an additional `pktFmt gpsprot.PacketFormat` parameter, threaded through `logWrite` to `LogOutput`:
 
 ```go
-// WritePacket writes bytes to the serial port and logs the write
-// using the provided format instead of doing format discovery.
-// Used by the rover, which has already scanned the packet from TCP
-// and knows its format.
-func (c *SerialConn) WritePacket(p []byte, fmt gpsprot.PacketFormat) (int, error)
-```
+func (c *SerialConn) Write(p []byte) (int, error) {
+	return c.writeThenChangeSpeed(p, 0, nil)
+}
 
-Same as `Write` but calls `pl.LogOutput(tWrite, bytes, 0, fmt)`.
+func (c *SerialConn) WritePacket(p []byte, fmt gpsprot.PacketFormat) (int, error) {
+	return c.writeThenChangeSpeed(p, 0, fmt)
+}
+
+func (c *SerialConn) WriteThenChangeSpeed(p []byte, speed int) (int, error) {
+	return c.writeThenChangeSpeed(p, speed, nil)
+}
+```
 
 ### `gpsio.Scan`
 

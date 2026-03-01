@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
@@ -12,7 +13,7 @@ import (
 func TestFormatPacket(t *testing.T) {
 	// scanPkt uses scan.Scanner to parse bytes into a Packet with correct Format
 	scanPkt := func(data []byte) scan.Packet {
-		s := scan.New(bytes.NewReader(data), 1024)
+		s := scan.New(bytes.NewReader(data), 1024, gpsreg.PacketFormats)
 		pkt, _ := s.Scan()
 		return pkt
 	}
