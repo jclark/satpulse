@@ -162,11 +162,12 @@ func (a *App) Connect(device string, speed int) Result {
 	}
 	connCtx, connCancel := context.WithCancel(a.ctx)
 	pCh := make(chan scan.Packet, 1)
-	a.connWg.Go(func() { gpsio.Scan(connCtx, a.lg, conn, pCh, nil) })
+	pLog, plCh := gpsio.NewPacketLog(gpsreg.PacketFormats)
+	conn.SetPacketLog(pLog)
+	a.connWg.Go(func() { gpsio.Scan(connCtx, a.lg, conn, pCh, pLog, gpsreg.PacketFormats) })
 	pb := bcast.New(pCh)
 	a.connWg.Go(func() { pb.Run(connCtx, a.lg) })
-	sub := pb.Subscribe()
-	a.connWg.Go(func() { a.packetEventWorker(sub) })
+	a.connWg.Go(func() { a.packetLogWorker(plCh) })
 	pktSub := pb.Subscribe()
 	procs := gpsreg.CreatePacketProcessors(nil)
 	configCh := make(chan configRequest)
@@ -629,51 +630,10 @@ func (h *eventHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-// PacketEvent is emitted to the frontend for each received GPS packet.
-type PacketEvent struct {
-	Tag       string `json:"tag"`
-	Msg       string `json:"msg,omitempty"`
-	Bin       string `json:"bin,omitempty"`
-	Ascii     string `json:"ascii,omitempty"`
-	Timestamp string `json:"timestamp"`
-}
-
-func (a *App) packetEventWorker(sub <-chan scan.Packet) {
-	for pkt := range sub {
-		if len(pkt.Data) == 0 {
-			continue
-		}
-		b := []byte(pkt.Data)
-		ev := PacketEvent{
-			Tag:       string(pkt.Tag()),
-			Timestamp: pkt.TRead.Format("15:04:05.000"),
-		}
-		if pkt.Format != nil {
-			ev.Msg = pkt.Format.MsgID(b)
-		}
-		if useBinary(pkt.Format, b) {
-			ev.Bin = fmt.Sprintf("%x", b)
-		} else {
-			ev.Ascii = pkt.Data
-		}
-		runtime.EventsEmit(a.ctx, "gps:packet", ev)
+func (a *App) packetLogWorker(ch <-chan gpsio.PacketLogEntry) {
+	for entry := range ch {
+		runtime.EventsEmit(a.ctx, "gps:packet", entry)
 	}
-}
-
-func useBinary(pf gpsprot.PacketFormat, data []byte) bool {
-	if pf == nil {
-		return containsBinary(data)
-	}
-	return data[0] < 0x20 || data[0] >= 0x7F
-}
-
-func containsBinary(data []byte) bool {
-	for _, b := range data {
-		if (b < 0x20 && b != '\t' && b != '\r' && b != '\n') || b >= 0x7F {
-			return true
-		}
-	}
-	return false
 }
 
 // ListPorts enumerates serial ports available on the system.

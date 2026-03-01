@@ -1,11 +1,11 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useRef, useMemo, useCallback} from 'preact/hooks';
-import type {PacketEntry} from './app';
+import type {PacketLogEntry} from './app';
 import {Button, Input} from './ui';
 
 interface Props {
-    packetEntries: PacketEntry[];
-    setPacketEntries: (fn: (prev: PacketEntry[]) => PacketEntry[]) => void;
+    packetEntries: PacketLogEntry[];
+    setPacketEntries: (fn: (prev: PacketLogEntry[]) => PacketLogEntry[]) => void;
     visible: boolean;
 }
 
@@ -21,7 +21,16 @@ function escapeControl(s: string): string {
     return stripTrailingEOL(s).replace(/[\t\r\n]/g, ch => controlPictures[ch]);
 }
 
-function matchesFilter(pkt: PacketEntry, q: string): boolean {
+function formatTime(iso: string): string {
+    const tIdx = iso.indexOf('T');
+    if (tIdx < 0) return iso;
+    const time = iso.substring(tIdx + 1).replace('Z', '');
+    const dot = time.indexOf('.');
+    if (dot < 0) return time;
+    return time.substring(0, dot + 4); // HH:MM:SS.mmm
+}
+
+function matchesFilter(pkt: PacketLogEntry, q: string): boolean {
     if (pkt.tag && pkt.tag.toLowerCase().includes(q)) return true;
     if (pkt.msg && pkt.msg.toLowerCase().includes(q)) return true;
     if (pkt.ascii && pkt.ascii.toLowerCase().includes(q)) return true;
@@ -33,7 +42,7 @@ export function PacketPanel({packetEntries, setPacketEntries, visible}: Props) {
     const logRef = useRef<HTMLDivElement>(null);
     const [frozen, setFrozen] = useState(false);
     const [filter, setFilter] = useState('');
-    const frozenSnapshotRef = useRef<PacketEntry[]>([]);
+    const frozenSnapshotRef = useRef<PacketLogEntry[]>([]);
 
     const handleFreeze = useCallback(() => {
         setFrozen(prev => {
@@ -79,14 +88,11 @@ export function PacketPanel({packetEntries, setPacketEntries, visible}: Props) {
             <div ref={logRef} class="flex-1 overflow-y-auto break-all whitespace-pre-wrap bg-surface-1 px-2.5 py-1.5 font-mono text-xs leading-relaxed">
                 {filtered.map((pkt, i) => (
                     <div key={i}>
-                        <span class="text-text-muted">{pkt.timestamp}</span>{' '}
-                        <span class="text-accent">[{pkt.tag || (pkt.bin ? 'bin' : 'ascii')}]</span>{' '}
-                        {pkt.msg && (
-                            <Fragment>
-                                <span class="text-warning">{pkt.msg}</span>{' '}
-                            </Fragment>
-                        )}
-                        <span class="text-text-primary">{pkt.ascii ? (pkt.tag ? stripTrailingEOL(pkt.ascii) : escapeControl(pkt.ascii)) : pkt.bin}</span>
+                        <span class="text-text-muted">{formatTime(pkt.t)}</span>{' '}
+                        <span class={pkt.out ? 'text-success' : 'text-text-muted'}>{pkt.out ? '>' : '<'}</span>{' '}
+                        {pkt.tag && <><span class="text-accent">[{pkt.tag}]</span>{' '}</>}
+                        {pkt.msg && <><span class="text-warning">{pkt.msg}</span>{' '}</>}
+                        <span class={pkt.bin ? 'text-text-secondary' : 'text-text-primary'}>{pkt.ascii ? (pkt.tag ? stripTrailingEOL(pkt.ascii) : escapeControl(pkt.ascii)) : pkt.bin}</span>
                     </div>
                 ))}
             </div>

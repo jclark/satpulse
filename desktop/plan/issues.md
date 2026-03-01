@@ -99,29 +99,6 @@ useEffect(() => {
 
 Each tile img uses `key={`${tileX},${tileY}:${epoch}`}`.
 
-## packet-log-desktop: Use gpsio.PacketLog for desktop packet monitor
-
-Prerequisite: `packet-log-refactor` (refactors `PacketLog` in `gps/app/gpsio` to expose `NewPacketLog()` returning `(*PacketLog, <-chan PacketLogEntry)`).
-
-The desktop packet monitor currently has its own `packetEventWorker` that subscribes to the scanner broadcast and manually constructs `PacketEvent` structs. This only shows rx packets -- outgoing packets from configuration and message file sends are invisible.
-
-Replace this with `gpsio.PacketLog`:
-
-1. Call `gpsio.NewPacketLog(gpsreg.PacketFormats)` to get `*PacketLog` and `<-chan PacketLogEntry`.
-2. Call `conn.SetPacketLog(pLog)` to hook tx.
-3. Pass `pLog` to `gpsio.Scan` to hook rx (already does this shape of call).
-4. Run a consumer goroutine that reads `PacketLogEntry` from the channel and emits `gps:packet` events.
-5. Remove `PacketEvent` struct and `packetEventWorker` from `app.go`.
-6. Remove `useBinary` from `app.go` (now in `gpsio`).
-
-Frontend changes:
-
-- Update `PacketEntry` type to match `PacketLogEntry` fields: add `out` (boolean) and `t` (ISO timestamp string), remove `timestamp` (formatted string).
-- Add a direction indicator column in the packet panel. Show a directional arrow or label (e.g. `<` for rx, `>` for tx) to distinguish incoming from outgoing packets.
-- Format the ISO timestamp from `t` for display (extract `HH:MM:SS.mmm`).
-
-This gives the packet monitor visibility into both directions, showing config and message file packets being sent to the receiver alongside the receiver's responses.
-
 ## read-error-disconnect: Disconnect on serial read error (related: #172)
 
 If a USB-connected GPS receiver is physically unplugged while connected, the app shows a read error in the log but remains in the connected state. The user has to manually click Disconnect to reset the UI. This is the desktop GUI counterpart of #172 (satpulsed should handle serial device disappearing); the daemon's approach is to exit and let systemd restart it, but the GUI needs to transition cleanly to disconnected state instead.

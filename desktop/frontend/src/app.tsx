@@ -49,12 +49,14 @@ export interface OperationState {
     startTime?: string;
 }
 
-export interface PacketEntry {
-    tag: string;
+export interface PacketLogEntry {
+    tag?: string;
     msg?: string;
     bin?: string;
     ascii?: string;
-    timestamp: string;
+    t: string;
+    out: boolean;
+    speed?: number;
 }
 
 export interface TimeMsg {
@@ -150,7 +152,7 @@ export function App() {
     const [signalCatalog, setSignalCatalog] = useState<Record<string, string[]>>({});
     const [selectedSignals, setSelectedSignals] = useState<Set<string>>(new Set());
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
-    const [packetEntries, setPacketEntries] = useState<PacketEntry[]>([]);
+    const [packetEntries, setPacketEntries] = useState<PacketLogEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [, setOperation] = useState<OperationState>({status: 'idle', label: ''});
     const [timeMsg, setTimeMsg] = useState<TimeMsg | null>(null);
@@ -240,7 +242,7 @@ export function App() {
         const offLog = EventsOn('gps:log', (evt: LogEntry) => {
             setLogEntries(prev => [...prev.slice(-199), evt]);
         });
-        const offPkt = EventsOn('gps:packet', (pkt: PacketEntry) => {
+        const offPkt = EventsOn('gps:packet', (pkt: PacketLogEntry) => {
             setPacketEntries(prev => [...prev.slice(-199), pkt]);
         });
         const offRcv = EventsOn('gps:receiver', (evt: any) => {
