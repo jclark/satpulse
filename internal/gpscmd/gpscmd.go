@@ -144,7 +144,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msg
 
 	var wg sync.WaitGroup
 
-	pktLog, lf, err := gpsio.LogPackets(lg, &wg, logPath)
+	pktLog, lf, err := gpsio.LogPackets(lg, &wg, logPath, gpsreg.PacketFormats)
 	if err != nil {
 		return fmt.Errorf("failed to initialize packet logging: %w", err)
 	}

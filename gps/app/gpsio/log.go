@@ -10,9 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/app/logfile"
+	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/scan"
 	"golang.org/x/sys/unix"
 )
@@ -27,7 +26,15 @@ type OutPacket struct {
 	Speed  int
 }
 
-func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (*PacketLog, *logfile.LogFile, error) {
+// NewPacketLog creates a PacketLog and returns the consumer channel.
+func NewPacketLog(fmts []gpsprot.PacketFormat) (*PacketLog, <-chan PacketLogEntry) {
+	ch := make(chan PacketLogEntry, 2) // 2 because LogInput and LogOutput can be called from separate goroutines
+	return &PacketLog{ch: ch, pktFormats: fmts}, ch
+}
+
+// LogPackets creates a PacketLog and starts a goroutine that writes entries
+// to a JSONL file. Returns nil PacketLog if logPath is empty.
+func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string, fmts []gpsprot.PacketFormat) (*PacketLog, *logfile.LogFile, error) {
 	if logPath == "" {
 		return nil, nil, nil
 	}
@@ -36,15 +43,11 @@ func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string) (*PacketLog
 	if err != nil {
 		return nil, nil, err
 	}
-	ch := make(chan PacketLogEntry, 2) // 2 because LogInput and LogOutput can be called from separate goroutines
-	pktLogger := &PacketLog{
-		ch:         ch,
-		pktFormats: gpsreg.PacketFormats,
-	}
+	pl, ch := NewPacketLog(fmts)
 	wg.Go(func() {
 		doLogPackets(lg, lf, ch)
 	})
-	return pktLogger, lf, nil
+	return pl, lf, nil
 }
 
 func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, ch <-chan PacketLogEntry) {
@@ -153,10 +156,15 @@ func useBinary(fmt gpsprot.PacketFormat, bytes []byte) bool {
 	return sync1 < 0x20 || sync1 >= 0x7F
 }
 
-// LogOutput logs an outgoing packet to the GPS.
-func (pl *PacketLog) LogOutput(tWrite time.Time, bytes []byte, speed int) {
-	if len(bytes) == 0 && speed == 0 {
-		return
+// LogOutput logs an outgoing write. If fmt is non-nil, it is used directly
+// for the tag and message ID. If fmt is nil, pktFormats is iterated to
+// discover the format from the raw bytes.
+func (pl *PacketLog) LogOutput(tWrite time.Time, bytes []byte, speed int, fmt gpsprot.PacketFormat) {
+	if len(bytes) == 0 {
+		if speed == 0 {
+			return
+		}
+		fmt = nil // should be nil anyway, but let's be defensive here
 	}
 	entry := PacketLogEntry{
 		T:   TimeMicro(tWrite.UTC()),
@@ -165,15 +173,20 @@ func (pl *PacketLog) LogOutput(tWrite time.Time, bytes []byte, speed int) {
 	if speed != 0 {
 		entry.Speed = &speed
 	}
-	if containsBinary(bytes) {
-		entry.Bin = HexString(bytes)
+	if fmt == nil && containsBinary(bytes) {
 		for _, pf := range pl.pktFormats {
 			if gpsprot.IsValidPacket(pf, bytes) {
-				entry.Tag = pf.Tag()
-				entry.Msg = pf.MsgID(bytes)
+				fmt = pf
 				break
 			}
 		}
+	}
+	if fmt != nil {
+		entry.Tag = fmt.Tag()
+		entry.Msg = fmt.MsgID(bytes)
+	}
+	if useBinary(fmt, bytes) {
+		entry.Bin = HexString(bytes)
 	} else {
 		entry.Ascii = string(bytes)
 	}
