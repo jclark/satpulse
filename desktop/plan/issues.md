@@ -60,9 +60,27 @@ UI:
 - Start / Stop button
 - Status panel below showing a count of RTCM packets by message type flowing through the connection. For base mode, also show the number of connected clients.
 
-Write contention (rover mode): `SerialConn.writeLock` panics on concurrent writes. The simplest approach is to disable the Config tab and message file send while RTK corrections are running, avoiding the need for write lock coordination. (In satpulsed, the proxy uses a `writeLockTimeout` mechanism for shared write access, but that complexity is unnecessary here if the operations are mutually exclusive.)
+Write contention (rover mode): if `outportlock-desktop` is done first, the rover uses `OutPortLock` to coordinate writes with config and message file send -- no need to disable other tabs while corrections flow. The rover acquires per-packet and releases between packets, allowing config to interleave.
+
+If `packet-log-desktop` is done first, the rover can use `SerialConn.WritePacket` to write RTCM packets to the receiver, and they will automatically appear in the packet monitor with direction and message type. This is desirable but not a hard prerequisite -- the rover can work without it.
 
 NTRIP caster support (HTTP-based, with authentication and mount points) could be added later as a separate transport option in the same tab.
+
+## outportlock-desktop: Use OutPortLock for serial write coordination
+
+Prerequisite: `port-lock-refactor` (adds `gpsio.OutPortLock` type).
+
+The desktop backend currently uses `ConnState` to prevent concurrent writes to the serial port: `ReadConfig` and `WriteConfig` set `StateConfiguring`, `SendMsgFile` sets `StateSending`, and each checks `state == StateConnected` before proceeding. This means only one writing operation can run at a time, and the state machine encodes write exclusion rather than just UI status.
+
+Replace this with `gpsio.OutPortLock`. The backend creates an `OutPortLock` on connect and each writing operation acquires it for its duration:
+
+- `ReadConfig` / `WriteConfig`: acquire the lock for the entire `gpscfg.Configure` call. The lock is held across the full request-response sequence so that configuration packets and their acknowledgements are not interleaved with other writes.
+- `SendMsgFile`: acquire the lock for the duration of the send loop. Release on completion, cancellation, or error.
+- Rover (future): acquire per-packet, release between packets, allowing config to interleave.
+
+This removes the need for `StateConfiguring` and `StateSending` as write-exclusion gates. These states can either be removed entirely or kept purely for UI feedback (e.g. showing "configuring..." in the status bar) without gating other operations. Operations that previously failed with "not connected" when another write was in progress will instead queue waiting for the lock.
+
+The `ConnState` type simplifies to just `disconnected`, `connecting`, and `connected`. The frontend no longer needs to disable config/send tabs based on state -- the lock handles contention transparently.
 
 ## map-tile-retry: Reload failed map tiles when connectivity is restored
 
@@ -80,6 +98,29 @@ useEffect(() => {
 ```
 
 Each tile img uses `key={`${tileX},${tileY}:${epoch}`}`.
+
+## packet-log-desktop: Use gpsio.PacketLog for desktop packet monitor
+
+Prerequisite: `packet-log-refactor` (refactors `PacketLog` in `gps/app/gpsio` to expose `NewPacketLog()` returning `(*PacketLog, <-chan PacketLogEntry)`).
+
+The desktop packet monitor currently has its own `packetEventWorker` that subscribes to the scanner broadcast and manually constructs `PacketEvent` structs. This only shows rx packets -- outgoing packets from configuration and message file sends are invisible.
+
+Replace this with `gpsio.PacketLog`:
+
+1. Call `gpsio.NewPacketLog(gpsreg.PacketFormats)` to get `*PacketLog` and `<-chan PacketLogEntry`.
+2. Call `conn.SetPacketLog(pLog)` to hook tx.
+3. Pass `pLog` to `gpsio.Scan` to hook rx (already does this shape of call).
+4. Run a consumer goroutine that reads `PacketLogEntry` from the channel and emits `gps:packet` events.
+5. Remove `PacketEvent` struct and `packetEventWorker` from `app.go`.
+6. Remove `useBinary` from `app.go` (now in `gpsio`).
+
+Frontend changes:
+
+- Update `PacketEntry` type to match `PacketLogEntry` fields: add `out` (boolean) and `t` (ISO timestamp string), remove `timestamp` (formatted string).
+- Add a direction indicator column in the packet panel. Show a directional arrow or label (e.g. `<` for rx, `>` for tx) to distinguish incoming from outgoing packets.
+- Format the ISO timestamp from `t` for display (extract `HH:MM:SS.mmm`).
+
+This gives the packet monitor visibility into both directions, showing config and message file packets being sent to the receiver alongside the receiver's responses.
 
 ## read-error-disconnect: Disconnect on serial read error (related: #172)
 
