@@ -1,34 +1,7 @@
 import {h} from 'preact';
 import {MonitorDataView, type MonitorDataRow} from './ui';
-
-export interface NavEpochMsg {
-    fixLevel?: string;
-    fixDim?: string;
-    correction?: string[];
-    auxSrc?: string[];
-    acc?: {
-        pos?: number;
-        hor?: number;
-        vert?: number;
-        speed?: number;
-        groundSpeed?: number;
-        course?: number;
-    };
-    dop?: {
-        geom?: number;
-        pos?: number;
-        hor?: number;
-        vert?: number;
-        time?: number;
-    };
-    diffAge?: number;
-    rtcmRefBaseID?: number;
-    numSVUsed?: number;
-    numSVTracked?: number;
-    numSVInView?: number;
-    signalsUsed?: Record<string, string[]>;
-    tag?: string;
-}
+export type {NavEpochMsg} from '@satpulse/gps/gpsprot';
+import type {NavEpochMsg} from '@satpulse/gps/gpsprot';
 
 interface Props {
     msg: NavEpochMsg | null;

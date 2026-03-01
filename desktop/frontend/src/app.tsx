@@ -2,6 +2,8 @@ import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
 import {Connect, Disconnect, GetAllSignals, GetConnState, GetReceiverState, ListPorts} from '../wailsjs/go/main/App';
+import type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo} from '@satpulse/gps/gpsprot';
+import type {PacketLogEntry} from '@satpulse/gps/gpsio';
 import {ConnectionPanel, PortInfo} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
@@ -16,6 +18,7 @@ import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeR
 import {MapPanel} from './map-panel';
 import {ClockPanel} from './clock-panel';
 import {SkyViewPanel} from './sky-view-panel';
+export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo, PacketLogEntry};
 
 export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
 
@@ -49,54 +52,8 @@ export interface OperationState {
     startTime?: string;
 }
 
-export interface PacketLogEntry {
-    tag?: string;
-    msg?: string;
-    bin?: string;
-    ascii?: string;
-    t: string;
-    out: boolean;
-    speed?: number;
-}
-
-export interface TimeMsg {
-    taiTime?: string;
-    utcTime?: string;
-    accuracy?: number;
-    gnss?: string;
-}
-
-export interface SurveyMsg {
-    position?: [number, number, number];
-    accuracy: number;
-    obsCount: number;
-    obsTime: number;
-    valid: boolean;
-    inProgress: boolean;
-}
-
 export interface LeapSecondState {
     utcOff: number;
-}
-
-export interface SatellitesMsg {
-    tag?: string;
-    nativeMsgID?: string;
-    info: SVInfo[];
-    usedValidity?: number;
-}
-
-export interface SVInfo {
-    id: string;
-    lookAngles?: {azimuth: number; elevation: number};
-    signals: SignalInfo[];
-    used?: boolean;
-}
-
-export interface SignalInfo {
-    id?: string;
-    cn0: number;
-    used?: boolean;
 }
 
 interface MsgEvent {

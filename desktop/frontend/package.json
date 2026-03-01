@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@fontsource/dseg7-classic": "^5.2.5",
+    "@satpulse/gps": "file:../../gps/ts",
     "preact": "^10.25.0"
   },
   "devDependencies": {

@@ -55,12 +55,12 @@ The web dashboard later provides its own `:root` values.
 
 ### Types (`types.ts`)
 
-TypeScript interfaces matching gpsprot JSON serialisation:
+Re-export TypeScript interfaces from `@satpulse/gps/gpsprot`:
 
 - `SVInfo`, `LookAngles`, `SignalInfo` (from `SatellitesMsg`)
 - `SatellitesMsg`, `TimeMsg`, `SurveyMsg`
 
-Source: currently defined manually in `desktop/frontend/src/app.tsx`.
+Source: `@satpulse/gps` package (`gps/ts/`). The desktop frontend already imports these directly.
 
 ### Time formatting (`timefmt.ts`)
 

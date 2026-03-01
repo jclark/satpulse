@@ -97,15 +97,6 @@ useEffect(() => {
 
 Each tile img uses `key={`${tileX},${tileY}:${epoch}`}`.
 
-## use-gps-ts: Import shared TypeScript types from `@satpulse/gps`
-
-After [gps-ts-types.md](../../plan/gps-ts-types.md) lands on master, the desktop frontend should consume the canonical TypeScript interfaces from `gps/ts/` instead of maintaining its own copies.
-
-1. Add `"@satpulse/gps": "file:../../gps/ts"` to `desktop/frontend/package.json`.
-2. Replace the hand-written interfaces in `app.tsx` (`TimeMsg`, `SurveyMsg`, `SatellitesMsg`, `SVInfo`, `SignalInfo`, `LeapSecondState`, `PacketLogEntry`) with imports from `@satpulse/gps/gpsprot` and `@satpulse/gps/gpsio`.
-3. Replace `NavEpochMsg` in `status-panel.tsx` with an import from `@satpulse/gps/gpsprot`.
-4. Update [shared-webui.md](shared-webui.md) to reference `@satpulse/gps` instead of defining types in `webui/src/types.ts`.
-
 ## pvt-row-types: Replace pvt-panel Row types with gpsprot interfaces
 
 The PVT panel defines its own `PosGeoRow`, `PosECEFRow`, `VelGeoRow`, `VelECEFRow`, and `TimeRow` types in `pvt-panel.tsx:38-84`. These duplicate the gpsprot message interfaces (`PosGeoMsg`, `PosECEFMsg`, etc.) but add a `kind` discriminant field that comes from the `MsgEvent` envelope, not the wire type. After `gps/ts/` provides canonical gpsprot interfaces ([gps-ts-types.md](../../plan/gps-ts-types.md)), the panel should import those directly and handle dispatch with a local tagged union (e.g. `{ kind: 'posGeo'; msg: PosGeoMsg }`).
