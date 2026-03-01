@@ -1,4 +1,4 @@
-package scan
+package scan_test
 
 import (
 	"io"
@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/gps/internal/nmea"
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/scan"
 )
 
 // byteByByteReader wraps a reader and returns one byte at a time
@@ -31,7 +33,7 @@ func TestInvalidBytesBatching(t *testing.T) {
 	data := invalidPrefix + validNMEA
 
 	r := &byteByByteReader{r: strings.NewReader(data)}
-	s := New(r, 64)
+	s := scan.New(r, 64, []gpsprot.PacketFormat{nmea.PacketFormat})
 
 	// Count how many invalid packets we get before the valid one
 	invalidPacketCount := 0

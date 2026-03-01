@@ -44,7 +44,7 @@ var cfgSchema = ubxcfgval.NewSchemaWithMsgout(ubxcfgval.GetDfltSchema())
 // It uses the scanner to identify the format and validate the checksum.
 // Returns PacketFormat so caller can get both Tag() and MsgID(data).
 func Decode(pktFormats []gpsprot.PacketFormat, data []byte, out bool) (gpsprot.PacketFormat, *DecodeResult, error) {
-	s := scan.New(bytes.NewReader(data), len(data))
+	s := scan.New(bytes.NewReader(data), len(data), pktFormats)
 	pkt, err := s.Scan()
 	if err != nil {
 		return nil, nil, ErrInvalidPacket

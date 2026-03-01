@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -47,7 +48,7 @@ var _ scan.TemporaryError = TermError{}
 
 const scanBufSize = 16
 
-func Scan(ctx context.Context, lg *slog.Logger, conn Conn, ch chan<- scan.Packet, pLog *PacketLog) {
+func Scan(ctx context.Context, lg *slog.Logger, conn Conn, ch chan<- scan.Packet, pLog *PacketLog, pktFormats []gpsprot.PacketFormat) {
 	lg.Debug("the scan worker goroutine has started")
 	defer func() {
 		close(ch)
@@ -56,7 +57,7 @@ func Scan(ctx context.Context, lg *slog.Logger, conn Conn, ch chan<- scan.Packet
 		}
 		lg.Debug("the scan worker goroutine is about to exit")
 	}()
-	scanner := scan.New(conn, scanBufSize)
+	scanner := scan.New(conn, scanBufSize, pktFormats)
 	go func() {
 		<-ctx.Done()
 		conn.Stop()

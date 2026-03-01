@@ -1,4 +1,4 @@
-package scan
+package scan_test
 
 import (
 	"fmt"
@@ -6,10 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
-	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/internal/scantest"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/scan"
 )
+
+var nmeaFormats = []gpsprot.PacketFormat{nmea.PacketFormat}
 
 type packetType int
 
@@ -55,7 +59,7 @@ func TestNMEA(t *testing.T) {
 		t.Run(fmt.Sprintf("case_%d", i), func(t *testing.T) {
 			r := strings.NewReader(tc.data)
 			trimmed := scantest.TrimNMEA(tc.data)
-			s := New(r, 64)
+			s := scan.New(r, 64, nmeaFormats)
 			pkt, err := s.Scan()
 			if err != nil {
 				t.Fatalf(`error reading packet "%s": %v`, trimmed, err)
@@ -99,7 +103,7 @@ func TestMixedNMEA(t *testing.T) {
 		t.Run(fmt.Sprintf("case_%d", i), func(t *testing.T) {
 			trimmed := scantest.TrimNMEA(tc.data)
 			r := strings.NewReader(tc.data)
-			s := New(r, 64)
+			s := scan.New(r, 64, nmeaFormats)
 			nInvalid := 0
 			for {
 				pkt, err := s.Scan()

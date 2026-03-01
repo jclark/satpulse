@@ -389,7 +389,7 @@ func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObs
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog) })
+	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog, gpsreg.PacketFormats) })
 	return msg
 }
 
