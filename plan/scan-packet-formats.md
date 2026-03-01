@@ -6,6 +6,8 @@
 
 This is a prerequisite for the RTK rover feature, which needs a scanner that recognizes only RTCM packets on a TCP stream.
 
+Related: `plan/packet-log-refactor.md` also ensures packet formats are supplied via the daemon rather than hardcoded.
+
 Target branch: `master`.
 
 ## Change
