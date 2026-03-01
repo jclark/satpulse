@@ -3,6 +3,7 @@ import {useState, useEffect} from 'preact/hooks';
 import {ECEFtoLLH, LLHtoECEF, VelNEDtoECEF, VelECEFtoNED} from '../wailsjs/go/main/App';
 import {formatDateTime, formatTAI, formatUTCLocal} from './timefmt';
 import type {LeapSecondState} from './app';
+import type {PosGeoMsg, PosECEFMsg, VelGeoMsg, VelECEFMsg, TimeMsg} from '@satpulse/gps/gpsprot';
 import type {ComponentChildren} from 'preact';
 
 const blank = '\u2014';
@@ -33,55 +34,17 @@ function fmtNs(ns: number): string {
     return ns + ' ns';
 }
 
-// --- Row types matching what we get from Go ---
+// --- Tagged unions wrapping gpsprot message types ---
 
-export interface PosGeoRow {
-    kind: 'posGeo';
-    tag: string;
-    nativeMsgID: string;
-    latLon: [number, number];
-    height?: number;
-    heightMSL?: number;
-}
-
-export interface PosECEFRow {
-    kind: 'posECEF';
-    tag: string;
-    nativeMsgID: string;
-    pos: [number, number, number];
-}
-
+export type PosGeoRow = {kind: 'posGeo'} & PosGeoMsg;
+export type PosECEFRow = {kind: 'posECEF'} & PosECEFMsg;
 export type PosRow = PosGeoRow | PosECEFRow;
 
-export interface VelGeoRow {
-    kind: 'velGeo';
-    tag: string;
-    nativeMsgID: string;
-    velNED?: [number, number, number];
-    groundSpeed?: number;
-    speed3D?: number;
-    course?: number;
-}
-
-export interface VelECEFRow {
-    kind: 'velECEF';
-    tag: string;
-    nativeMsgID: string;
-    vel: [number, number, number];
-}
-
+export type VelGeoRow = {kind: 'velGeo'} & VelGeoMsg;
+export type VelECEFRow = {kind: 'velECEF'} & VelECEFMsg;
 export type VelRow = VelGeoRow | VelECEFRow;
 
-export interface TimeRow {
-    tag: string;
-    nativeMsgID: string;
-    ref: number;
-    taiTime?: string;
-    utcTime?: string;
-    accuracy?: number;
-    utcOffset?: number;
-    gnss?: string;
-}
+export type TimeRow = TimeMsg & {nativeMsgID: string};
 
 // --- Conversion cache types ---
 

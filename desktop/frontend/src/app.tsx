@@ -239,16 +239,7 @@ export function App() {
                     if (msg.nativeMsgID) {
                         setTimeRows(prev => {
                             const next = new Map(prev);
-                            next.set(msg.nativeMsgID, {
-                                tag: msg.tag || '',
-                                nativeMsgID: msg.nativeMsgID,
-                                ref: msg.ref ?? 0,
-                                taiTime: msg.taiTime,
-                                utcTime: msg.utcTime,
-                                accuracy: msg.accuracy,
-                                utcOffset: msg.utcOffset,
-                                gnss: msg.gnss,
-                            } as TimeRow);
+                            next.set(msg.nativeMsgID, msg as TimeRow);
                             return next;
                         });
                     }
@@ -266,63 +257,26 @@ export function App() {
                 }
                 case 'posGeo': {
                     const msg = evt.msg;
-                    setPosRows(prev => {
-                        const next = new Map(prev);
-                        next.set(msg.nativeMsgID, {
-                            kind: 'posGeo',
-                            tag: msg.tag,
-                            nativeMsgID: msg.nativeMsgID,
-                            latLon: msg.latLon,
-                            height: msg.height,
-                            heightMSL: msg.heightMSL,
-                        } as PosGeoRow);
-                        return next;
-                    });
+                    const row: PosGeoRow = {kind: 'posGeo', ...msg};
+                    setPosRows(prev => new Map(prev).set(msg.nativeMsgID, row));
                     break;
                 }
                 case 'posECEF': {
                     const msg = evt.msg;
-                    setPosRows(prev => {
-                        const next = new Map(prev);
-                        next.set(msg.nativeMsgID, {
-                            kind: 'posECEF',
-                            tag: msg.tag,
-                            nativeMsgID: msg.nativeMsgID,
-                            pos: msg.pos,
-                        } as PosECEFRow);
-                        return next;
-                    });
+                    const row: PosECEFRow = {kind: 'posECEF', ...msg};
+                    setPosRows(prev => new Map(prev).set(msg.nativeMsgID, row));
                     break;
                 }
                 case 'velGeo': {
                     const msg = evt.msg;
-                    setVelRows(prev => {
-                        const next = new Map(prev);
-                        next.set(msg.nativeMsgID, {
-                            kind: 'velGeo',
-                            tag: msg.tag,
-                            nativeMsgID: msg.nativeMsgID,
-                            velNED: msg.velNED,
-                            groundSpeed: msg.groundSpeed,
-                            speed3D: msg.speed3D,
-                            course: msg.course,
-                        } as VelGeoRow);
-                        return next;
-                    });
+                    const row: VelGeoRow = {kind: 'velGeo', ...msg};
+                    setVelRows(prev => new Map(prev).set(msg.nativeMsgID, row));
                     break;
                 }
                 case 'velECEF': {
                     const msg = evt.msg;
-                    setVelRows(prev => {
-                        const next = new Map(prev);
-                        next.set(msg.nativeMsgID, {
-                            kind: 'velECEF',
-                            tag: msg.tag,
-                            nativeMsgID: msg.nativeMsgID,
-                            vel: msg.vel,
-                        } as VelECEFRow);
-                        return next;
-                    });
+                    const row: VelECEFRow = {kind: 'velECEF', ...msg};
+                    setVelRows(prev => new Map(prev).set(msg.nativeMsgID, row));
                     break;
                 }
                 case 'navEpoch':
