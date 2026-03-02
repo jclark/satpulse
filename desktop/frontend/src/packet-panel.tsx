@@ -1,24 +1,36 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useRef, useMemo, useCallback} from 'preact/hooks';
-import type {PacketLogEntry} from './app';
-import {Button, Input} from './ui';
+import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
+import {DecodePacket} from '../wailsjs/go/main/App';
+import type {PacketLogEntry} from '@satpulse/gps/gpsio';
+import {Button, Card} from './ui';
+
+interface MsgTypeState {
+    tag: string;
+    msg: string;
+    count: number;
+    recentEntries: PacketLogEntry[];
+}
+
+interface DecodeTarget {
+    key: string;
+    ascii?: string;
+    bin?: string;
+    out: boolean;
+}
 
 interface Props {
-    packetEntries: PacketLogEntry[];
-    setPacketEntries: (fn: (prev: PacketLogEntry[]) => PacketLogEntry[]) => void;
     visible: boolean;
 }
+
+const ACTIVE_WINDOW_MS = 1500;
+const EPOCH_GAP_MS = 900;
+const TICK_MS = 200;
 
 function stripTrailingEOL(s: string): string {
     if (s.endsWith('\r\n')) return s.slice(0, -2);
     if (s.endsWith('\r') || s.endsWith('\n')) return s.slice(0, -1);
     return s;
-}
-
-const controlPictures: Record<string, string> = {'\t': '\u2409', '\n': '\u240A', '\r': '\u240D'};
-
-function escapeControl(s: string): string {
-    return stripTrailingEOL(s).replace(/[\t\r\n]/g, ch => controlPictures[ch]);
 }
 
 function formatTime(iso: string): string {
@@ -30,88 +42,313 @@ function formatTime(iso: string): string {
     return time.substring(0, dot + 4); // HH:MM:SS.mmm
 }
 
-function matchesFilter(pkt: PacketLogEntry, q: string): boolean {
-    if (pkt.tag && pkt.tag.toLowerCase().includes(q)) return true;
-    if (pkt.msg && pkt.msg.toLowerCase().includes(q)) return true;
-    if (pkt.ascii && pkt.ascii.toLowerCase().includes(q)) return true;
-    if (pkt.bin && pkt.bin.toLowerCase().includes(q)) return true;
-    return false;
+function entryData(pkt: PacketLogEntry): string {
+    if (pkt.ascii) return stripTrailingEOL(pkt.ascii);
+    return pkt.bin || '';
 }
 
-export function PacketPanel({packetEntries, setPacketEntries, visible}: Props) {
-    const logRef = useRef<HTMLDivElement>(null);
-    const [frozen, setFrozen] = useState(false);
-    const [filter, setFilter] = useState('');
-    const frozenSnapshotRef = useRef<PacketLogEntry[]>([]);
+function isActive(pkt: PacketLogEntry): boolean {
+    return Date.now() - new Date(pkt.t).getTime() < ACTIVE_WINDOW_MS;
+}
 
-    const handleFreeze = useCallback(() => {
-        setFrozen(prev => {
-            if (!prev) {
-                frozenSnapshotRef.current = packetEntries;
+function cloneMap(m: Map<string, MsgTypeState>): Map<string, MsgTypeState> {
+    const next = new Map<string, MsgTypeState>();
+    for (const [k, v] of m) {
+        next.set(k, {...v, recentEntries: pruneEntries(v.recentEntries)});
+    }
+    return next;
+}
+
+function pruneEntries(entries: PacketLogEntry[]): PacketLogEntry[] {
+    if (entries.length <= 1) return entries;
+    const now = Date.now();
+    const last = entries[entries.length - 1];
+    const kept = entries.filter(e => now - new Date(e.t).getTime() < ACTIVE_WINDOW_MS);
+    if (kept.length === 0) return [last];
+    // last should already be in kept since it's the most recent
+    return kept;
+}
+
+const chevronSvg = (
+    <svg class="w-3 h-3 shrink-0 transition-transform duration-150" viewBox="0 0 12 12" fill="currentColor">
+        <path d="M4 2l4 4-4 4z" />
+    </svg>
+);
+
+export function PacketPanel({visible}: Props) {
+    const liveRef = useRef<Map<string, MsgTypeState>>(new Map());
+    const [displayed, setDisplayed] = useState<Map<string, MsgTypeState>>(new Map());
+    const frozenRef = useRef(false);
+    const frozenSnapshot = useRef<Map<string, MsgTypeState> | null>(null);
+    const [expanded, setExpanded] = useState<Set<string>>(new Set());
+    const [decodeTarget, setDecodeTarget] = useState<DecodeTarget | null>(null);
+    const [decodeContent, setDecodeContent] = useState<string>('');
+    const [snapshotOpen, setSnapshotOpen] = useState(false);
+    const [snapshotEntries, setSnapshotEntries] = useState<(PacketLogEntry & {key: string})[]>([]);
+
+    // Register gps:packet listener
+    useEffect(() => {
+        const off = EventsOn('gps:packet', (pkt: PacketLogEntry) => {
+            const tag = pkt.tag || '';
+            const msg = pkt.msg || '';
+            const key = `${tag}:${msg}`;
+            const live = liveRef.current;
+            const existing = live.get(key);
+            if (existing) {
+                existing.count++;
+                const pktTime = new Date(pkt.t).getTime();
+                const recent = existing.recentEntries.filter(
+                    e => pktTime - new Date(e.t).getTime() < EPOCH_GAP_MS,
+                );
+                recent.push(pkt);
+                existing.recentEntries = recent;
+            } else {
+                live.set(key, {tag, msg, count: 1, recentEntries: [pkt]});
             }
-            return !prev;
         });
-    }, [packetEntries]);
+        return () => {
+            if (typeof off === 'function') off(); else EventsOff('gps:packet');
+        };
+    }, []);
 
+    // Timer: prune and update displayed
     useEffect(() => {
-        if (visible && !frozen) {
-            const el = logRef.current;
-            if (el) el.scrollTop = el.scrollHeight;
-        }
-    }, [visible, frozen]);
+        const id = setInterval(() => {
+            const live = liveRef.current;
+            for (const [, state] of live) {
+                state.recentEntries = pruneEntries(state.recentEntries);
+            }
+            if (!frozenRef.current) {
+                setDisplayed(cloneMap(live));
+            }
+        }, TICK_MS);
+        return () => clearInterval(id);
+    }, []);
 
+    // Sorted rows
+    const sortedRows = useMemo(() => {
+        const arr = Array.from(displayed.values());
+        arr.sort((a, b) => {
+            const tc = a.tag.localeCompare(b.tag);
+            if (tc !== 0) return tc;
+            return a.msg.localeCompare(b.msg);
+        });
+        return arr;
+    }, [displayed]);
+
+    // Freeze/unfreeze
+    const handleFreeze = useCallback(() => {
+        if (!frozenRef.current) {
+            frozenRef.current = true;
+            frozenSnapshot.current = cloneMap(liveRef.current);
+            setDisplayed(frozenSnapshot.current);
+        } else {
+            frozenRef.current = false;
+            frozenSnapshot.current = null;
+            setDisplayed(cloneMap(liveRef.current));
+        }
+    }, []);
+
+    // Clear
+    const handleClear = useCallback(() => {
+        liveRef.current = new Map();
+        frozenRef.current = false;
+        frozenSnapshot.current = null;
+        setDisplayed(new Map());
+        setExpanded(new Set());
+        setDecodeTarget(null);
+        setDecodeContent('');
+        setSnapshotOpen(false);
+    }, []);
+
+    // Toggle expand
+    const toggleExpand = useCallback((key: string, e: Event) => {
+        e.stopPropagation();
+        setExpanded(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    }, []);
+
+    // Row click -> decode
+    const handleRowClick = useCallback((state: MsgTypeState) => {
+        const last = state.recentEntries[state.recentEntries.length - 1];
+        const key = `${state.tag}:${state.msg}`;
+        const target: DecodeTarget = {
+            key, ascii: last.ascii, bin: last.bin, out: last.out,
+        };
+        setDecodeTarget(target);
+        if (last.ascii) {
+            setDecodeContent(stripTrailingEOL(last.ascii));
+        } else if (last.bin) {
+            setDecodeContent('Decoding...');
+            DecodePacket(last.bin, last.out).then(result => {
+                if (result) {
+                    const keys = Object.keys(result);
+                    const display = keys.length === 1 && keys[0] === 'payload' ? result.payload : result;
+                    setDecodeContent(JSON.stringify(display, null, 2));
+                } else {
+                    setDecodeContent(last.bin!);
+                }
+            }).catch(() => {
+                setDecodeContent(last.bin!);
+            });
+        }
+    }, []);
+
+    // Snapshot
+    const captureSnapshot = useCallback(() => {
+        const live = liveRef.current;
+        const entries: (PacketLogEntry & {key: string})[] = [];
+        for (const [key, state] of live) {
+            for (const e of state.recentEntries) {
+                if (isActive(e)) {
+                    entries.push({...e, key});
+                }
+            }
+        }
+        entries.sort((a, b) => a.t.localeCompare(b.t));
+        setSnapshotEntries(entries);
+    }, []);
+
+    const handleSnapshot = useCallback(() => {
+        captureSnapshot();
+        setSnapshotOpen(true);
+    }, [captureSnapshot]);
+
+    // Close snapshot on Escape
     useEffect(() => {
-        if (!frozen) {
-            const el = logRef.current;
-            if (el) el.scrollTop = el.scrollHeight;
-        }
-    }, [frozen]);
+        if (!snapshotOpen) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setSnapshotOpen(false);
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [snapshotOpen]);
 
-    useEffect(() => {
-        if (frozen) return;
-        const el = logRef.current;
-        if (!el) return;
-        if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
-            el.scrollTop = el.scrollHeight;
-        }
-    }, [packetEntries, frozen]);
-
-    const displayEntries = frozen ? frozenSnapshotRef.current : packetEntries;
-    const filtered = useMemo(() => {
-        if (!filter) return displayEntries;
-        const q = filter.toLowerCase();
-        return displayEntries.filter(pkt => matchesFilter(pkt, q));
-    }, [displayEntries, filter]);
+    const isFrozen = frozenRef.current;
 
     return (
-        <div class="flex h-full flex-col">
-            <div ref={logRef} class="flex-1 overflow-y-auto break-all whitespace-pre-wrap bg-surface-1 px-2.5 py-1.5 font-mono text-xs leading-relaxed">
-                {filtered.map((pkt, i) => (
-                    <div key={i}>
-                        <span class="text-text-muted">{formatTime(pkt.t)}</span>{' '}
-                        <span class={pkt.out ? 'text-success' : 'text-text-muted'}>{pkt.out ? '>' : '<'}</span>{' '}
-                        {pkt.tag && <><span class="text-accent">[{pkt.tag}]</span>{' '}</>}
-                        {pkt.msg && <><span class="text-warning">{pkt.msg}</span>{' '}</>}
-                        <span class={pkt.bin ? 'text-text-secondary' : 'text-text-primary'}>{pkt.ascii ? (pkt.tag ? stripTrailingEOL(pkt.ascii) : escapeControl(pkt.ascii)) : pkt.bin}</span>
-                    </div>
-                ))}
+        <div class="flex h-full flex-col text-xs">
+            {/* Table area */}
+            <div class="mx-3 mt-3 flex-2 overflow-y-auto rounded border border-border-subtle bg-surface-2">
+                <table class="w-full border-collapse">
+                    <thead class="sticky top-0 z-10 bg-surface-2">
+                        <tr class="text-left text-text-secondary">
+                            <th class="w-6 px-1 py-1.5"></th>
+                            <th class="whitespace-nowrap px-2 py-1.5">Protocol</th>
+                            <th class="whitespace-nowrap px-2 py-1.5">Message</th>
+                            <th class="whitespace-nowrap px-2 py-1.5 text-right">Count</th>
+                            <th class="whitespace-nowrap px-2 py-1.5">Last received</th>
+                            <th class="w-full px-2 py-1.5">Last message</th>
+                        </tr>
+                    </thead>
+                    <tbody class="font-mono">
+                        {sortedRows.map(state => {
+                            const key = `${state.tag}:${state.msg}`;
+                            const last = state.recentEntries[state.recentEntries.length - 1];
+                            const active = isActive(last);
+                            const textClass = active ? 'text-text-primary' : 'text-text-muted';
+                            const canExpand = state.recentEntries.length > 1;
+                            const isExpanded = expanded.has(key);
+                            const selected = decodeTarget?.key === key;
+                            return (
+                                <Fragment key={key}>
+                                    <tr
+                                        class={`cursor-pointer hover:bg-surface-3 ${selected ? 'bg-surface-3' : ''}`}
+                                        onClick={() => handleRowClick(state)}
+                                    >
+                                        <td class="w-6 px-1 py-0.5 text-center">
+                                            {canExpand && (
+                                                <button
+                                                    class={`inline-flex cursor-pointer border-none bg-transparent p-0 text-text-secondary ${isExpanded ? '[&>svg]:rotate-90' : ''}`}
+                                                    onClick={e => toggleExpand(key, e)}
+                                                >
+                                                    {chevronSvg}
+                                                </button>
+                                            )}
+                                        </td>
+                                        <td class={`whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.tag}</td>
+                                        <td class={`whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.msg}</td>
+                                        <td class={`whitespace-nowrap px-2 py-0.5 text-right tabular-nums ${textClass}`}>{state.count}</td>
+                                        <td class={`whitespace-nowrap px-2 py-0.5 tabular-nums ${textClass}`}>{formatTime(last.t)}</td>
+                                        <td class={`px-2 py-0.5 break-all ${textClass}`}>{entryData(last)}</td>
+                                    </tr>
+                                    {isExpanded && state.recentEntries.map((e, i) => (
+                                        <tr key={`${key}-${i}`} class="text-text-secondary">
+                                            <td></td>
+                                            <td></td>
+                                            <td></td>
+                                            <td></td>
+                                            <td class="px-2 py-0.5 tabular-nums">{formatTime(e.t)}</td>
+                                            <td class="px-2 py-0.5 break-all">{entryData(e)}</td>
+                                        </tr>
+                                    ))}
+                                </Fragment>
+                            );
+                        })}
+                    </tbody>
+                </table>
             </div>
+
+            {/* Toolbar */}
             <div class="flex shrink-0 items-center gap-2 border-t border-border-subtle px-3 py-1.5">
                 <Button
-                    class={frozen ? 'border-warning bg-warning text-surface-1 enabled:hover:border-warning enabled:hover:bg-warning' : ''}
+                    class="w-20"
+                    variant={isFrozen ? 'primary' : undefined}
                     onClick={handleFreeze}
                 >
-                    {frozen ? 'Frozen' : 'Freeze'}
+                    {isFrozen ? 'Unfreeze' : 'Freeze'}
                 </Button>
-                <Input
-                    type="text"
-                    class="w-36 px-1.5 py-0.5"
-                    placeholder="Filter..."
-                    value={filter}
-                    onInput={e => setFilter((e.target as HTMLInputElement).value)}
-                />
-                <Button onClick={() => setPacketEntries(() => [])}>Clear</Button>
+                <Button class="w-20" onClick={handleSnapshot}>Snapshot</Button>
+                <div class="flex-1" />
+                <Button class="w-20" onClick={handleClear}>Clear</Button>
             </div>
+
+            {/* Decode area */}
+            <Card class="mx-3 mb-3 min-h-[4em] flex-1 overflow-y-auto p-2 font-mono text-text-primary">
+                {decodeContent ? (
+                    <pre class="m-0 whitespace-pre-wrap">{decodeContent}</pre>
+                ) : (
+                    <span class="text-text-muted">Click a row to decode</span>
+                )}
+            </Card>
+
+            {/* Snapshot dialog */}
+            {snapshotOpen && (
+                <div class="fixed inset-0 z-50 flex items-center justify-center bg-surface-1/70" onClick={() => setSnapshotOpen(false)}>
+                    <Card class="flex max-h-[80vh] w-225 max-w-[90vw] flex-col rounded-lg" onClick={e => e.stopPropagation()}>
+                        <div class="flex-1 overflow-y-auto p-2">
+                            <table class="w-full border-collapse text-xs">
+                                <thead class="sticky top-0 bg-surface-2">
+                                    <tr class="text-left text-text-secondary">
+                                        <th class="whitespace-nowrap px-2 py-1.5">Received</th>
+                                        <th class="whitespace-nowrap px-2 py-1.5">Protocol</th>
+                                        <th class="whitespace-nowrap px-2 py-1.5">Message</th>
+                                        <th class="w-full px-2 py-1.5">Data</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="font-mono">
+                                    {snapshotEntries.map((e, i) => (
+                                        <tr key={i} class="text-text-primary">
+                                            <td class="whitespace-nowrap px-2 py-0.5 tabular-nums">{formatTime(e.t)}</td>
+                                            <td class="whitespace-nowrap px-2 py-0.5">{e.tag || ''}</td>
+                                            <td class="whitespace-nowrap px-2 py-0.5">{e.msg || ''}</td>
+                                            <td class="px-2 py-0.5 break-all">{entryData(e)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="flex justify-end gap-2 border-t border-border-subtle px-4 py-3">
+                            <Button onClick={captureSnapshot}>Refresh</Button>
+                            <Button variant="primary" onClick={() => setSnapshotOpen(false)}>Close</Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 }

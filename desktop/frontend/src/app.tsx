@@ -3,7 +3,6 @@ import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
 import {Connect, Disconnect, GetAllSignals, GetConnState, GetReceiverState, ListPorts} from '../wailsjs/go/main/App';
 import type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo} from '@satpulse/gps/gpsprot';
-import type {PacketLogEntry} from '@satpulse/gps/gpsio';
 import {ConnectionPanel, PortInfo} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
@@ -18,7 +17,7 @@ import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeR
 import {MapPanel} from './map-panel';
 import {ClockPanel} from './clock-panel';
 import {SkyViewPanel} from './sky-view-panel';
-export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo, PacketLogEntry};
+export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
 
 export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
 
@@ -109,7 +108,6 @@ export function App() {
     const [signalCatalog, setSignalCatalog] = useState<Record<string, string[]>>({});
     const [selectedSignals, setSelectedSignals] = useState<Set<string>>(new Set());
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
-    const [packetEntries, setPacketEntries] = useState<PacketLogEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [, setOperation] = useState<OperationState>({status: 'idle', label: ''});
     const [timeMsg, setTimeMsg] = useState<TimeMsg | null>(null);
@@ -198,9 +196,6 @@ export function App() {
     useEffect(() => {
         const offLog = EventsOn('gps:log', (evt: LogEntry) => {
             setLogEntries(prev => [...prev.slice(-199), evt]);
-        });
-        const offPkt = EventsOn('gps:packet', (pkt: PacketLogEntry) => {
-            setPacketEntries(prev => [...prev.slice(-199), pkt]);
         });
         const offRcv = EventsOn('gps:receiver', (evt: any) => {
             if (!evt.ok && !evt.error) {
@@ -375,7 +370,6 @@ export function App() {
         });
         return () => {
             if (typeof offLog === 'function') offLog(); else EventsOff('gps:log');
-            if (typeof offPkt === 'function') offPkt(); else EventsOff('gps:packet');
             if (typeof offRcv === 'function') offRcv(); else EventsOff('gps:receiver');
             if (typeof offMsg === 'function') offMsg(); else EventsOff('gps:msg');
             if (typeof offState === 'function') offState(); else EventsOff('gps:state');
@@ -514,11 +508,7 @@ export function App() {
 
                 {/* Packets tab */}
                 <div class={`h-full ${activeTab === 'packets' ? '' : 'hidden'}`}>
-                    <PacketPanel
-                        packetEntries={packetEntries}
-                        setPacketEntries={setPacketEntries}
-                        visible={activeTab === 'packets'}
-                    />
+                    <PacketPanel visible={activeTab === 'packets'} />
                 </div>
 
                 {/* Configuration tab */}

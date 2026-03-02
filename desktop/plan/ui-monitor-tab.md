@@ -76,7 +76,7 @@ Signal graphs, survey, and PVT messages are always full width.
 
 - **Time panel** -- removed. Time information is shown in the PVT messages panel (per-source time table with UTC, TAI, leap seconds, accuracy, GNSS source). The solution status block shows epoch-level timing info if needed.
 
-- **Live messages** (packet statistics tree) -- relocated to the Packets tab, where it is a better fit alongside the raw packet stream. See [live-messages.md](live-messages.md) for the concept.
+- **Live messages** (packet statistics) -- relocated to the Packets tab, which has been redesigned around a message-type table. See [ui-packet-tab.md](archive/ui-packet-tab.md).
 
 ## Data sources
 

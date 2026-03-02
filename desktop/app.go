@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/gpsdecode"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/geopos"
@@ -369,6 +371,19 @@ func (a *App) ApplyConfig(cfg gpsprot.ConfigTarget) Result {
 }
 
 
+
+// DecodePacket decodes a hex-encoded packet and returns the decoded fields.
+func (a *App) DecodePacket(hexStr string, out bool) (*gpsdecode.DecodeResult, error) {
+	b, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hex: %w", err)
+	}
+	_, r, err := gpsdecode.Decode(gpsreg.PacketFormats, b, out)
+	if err != nil {
+		return nil, nil
+	}
+	return r, nil
+}
 
 // MsgFileTag is a tag from a loaded message file.
 type MsgFileTag struct {
