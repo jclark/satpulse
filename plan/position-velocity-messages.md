@@ -476,10 +476,7 @@ func TestPosEcef(t *testing.T) {
 
 ### Step 7: CASIC protocol extraction
 
-New files: `casic/caspv.go`, `casic/caspv_test.go`. Each substep includes a unit test for the new extraction and a `make test` to confirm nothing is broken.
-
-- **7a: NAV-SOL** — emit `PosECEFMsg` (when PosValid >= NavPos2D) and `VelECEFMsg` (when VelValid >= NavVel2D).
-- **7b: NAV-PV** — define `NavPv` struct in `casbin/nav.go`; emit `PosGeoMsg` and `VelGeoMsg`.
+Moved to separate plans: [casic-pos-vel-qual.md](casic-pos-vel-qual.md) (V5) and [casic-nav2.md](casic-nav2.md) (V6 NAV2).
 
 ### Step 8: Unicore protocol extraction
 

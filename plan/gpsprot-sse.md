@@ -2,6 +2,8 @@
 
 Eliminate the intermediary `*SSE` type layer in `sseobs`. The SSE backend serialises gpsprot `*Msg` types directly, and the frontend handles their nested structure. Finishes with a replay dev server that validates the pipeline end-to-end.
 
+An additional advantage: the frontend imports gpsprot types from `@satpulse/gps` (`gps/ts/`), which are validated against actual Go JSON output by a drift detection test (`gps/ts/gen_test.go`). If a Go type's JSON serialisation changes, `make test` fails until the TypeScript interfaces are updated. The `*SSE` intermediary types had no such validation — mismatches between Go and frontend were only caught at runtime.
+
 ## Prerequisite: remaining msg-json.md items
 
 A few gpsprot types still need cleanup before they serialise cleanly:
@@ -55,6 +57,8 @@ Trivial -- `SatellitesSSE` was already just `{ svs: []SVInfo }`. Send `Satellite
 `SampleSSE` is derived from `phcsync.Sample` which is not a gpsprot type. Keep it as-is or inline the conversion.
 
 ## Frontend: path-based field mapping
+
+The gpsprot types are defined in `@satpulse/gps` (`gps/ts/`), which the `webui/` workspace depends on via `file:../gps/ts` (see `web-toolchain.md`). Frontend code imports types from `@satpulse/gps/gpsprot`.
 
 The gpsprot types have nested structures (`Point3D`, `Accuracy`, `DOP`, sub-messages in `PVMsgBundle`) that don't fit the current `EventFormat` model, which assumes top-level keys map 1:1 to presentation rows.
 
