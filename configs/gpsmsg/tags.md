@@ -43,6 +43,8 @@ Protocol-prefixed tags for proprietary binary messages:
 
 | Tag Pattern | Examples |
 |-------------|----------|
+| `unc-*` | `unc-bestnava`, `unc-bestnavb`, `unc-pppnava`, `unc-pppnavb` |
+| `nov-*` | `nov-bestposa`, `nov-bestposb`, `nov-bestxyza`, `nov-bestxyzb` |
 | `asbin-*` | `asbin-nav-time`, `asbin-nav-timeutc`, `asbin-nav-svinfo`, `asbin-nav-svin` |
 | `ubx-*` | `ubx-nav-pvt`, `ubx-tim-tp` |
 | `casbin-*` | `casbin-nav2-sol`, `casbin-nav2-timeutc` |
@@ -176,6 +178,7 @@ set the message rate to 10.
 | `ppp-has` | Enable PPP with Galileo HAS source |
 | `ppp-b2b` | Enable PPP with BeiDou B2b source |
 | `ppp-has-b2b` | Enable PPP with fused HAS+B2b source |
+| `ppp-mdc` | Enable PPP with QZSS MADOCA-PPP source |
 | `ppp-off` | Disable PPP |
 
 ## RTK mode (if applicable)

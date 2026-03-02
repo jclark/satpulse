@@ -47,9 +47,12 @@ func generatePVTMsgCommands(flags gpsprot.PVTMsgFlags, enabledGNSS gpsprot.GNSSS
 	// BESTNAV / BESTNAVXYZ for position and velocity.
 	// Both carry position AND velocity in a single message.
 	// PVTMsgECEF selects BESTNAVXYZ (ECEF) vs BESTNAV (geodetic).
+	// PVTMsgQuality also needs a nav message (for quality fields) plus STADOPB.
 	wantPos := flags&gpsprot.PVTMsgPos != 0
 	wantVel := flags&gpsprot.PVTMsgVel != 0
-	if wantPos || wantVel {
+	wantQual := flags&gpsprot.PVTMsgQuality != 0
+	wantNav := wantPos || wantVel || wantQual
+	if wantNav {
 		if flags&gpsprot.PVTMsgECEF != 0 {
 			cmds = append(cmds, "BESTNAVXYZB 1")
 		} else {
@@ -58,6 +61,12 @@ func generatePVTMsgCommands(flags gpsprot.PVTMsgFlags, enabledGNSS gpsprot.GNSSS
 	} else if off {
 		cmds = append(cmds, "UNLOG BESTNAVB")
 		cmds = append(cmds, "UNLOG BESTNAVXYZB")
+	}
+	// STADOPB for DOP values (only needed by PVTMsgQuality).
+	if wantQual {
+		cmds = append(cmds, "STADOPB 1")
+	} else if off {
+		cmds = append(cmds, "UNLOG STADOPB")
 	}
 	// Enable/disable UTCB messages based on enabled GNSS systems
 	var enable bool

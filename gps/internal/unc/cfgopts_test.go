@@ -47,6 +47,7 @@ func TestPVTMessages(t *testing.T) {
 				"UNLOG RECTIMEB",
 				"UNLOG BESTNAVB",
 				"UNLOG BESTNAVXYZB",
+				"UNLOG STADOPB",
 			},
 		},
 		{
@@ -61,6 +62,7 @@ func TestPVTMessages(t *testing.T) {
 				"RECTIMEB 1",
 				"UNLOG BESTNAVB",
 				"UNLOG BESTNAVXYZB",
+				"UNLOG STADOPB",
 			},
 		},
 		{
@@ -117,6 +119,7 @@ func TestPVTMessages(t *testing.T) {
 				"UNLOG RECTIMEB",
 				"UNLOG BESTNAVB",
 				"UNLOG BESTNAVXYZB",
+				"UNLOG STADOPB",
 			},
 		},
 		{
@@ -187,6 +190,7 @@ func TestPVTMessages(t *testing.T) {
 				"UNLOG RECTIMEB",
 				"UNLOG BESTNAVB",
 				"UNLOG BESTNAVXYZB",
+				"UNLOG STADOPB",
 				"UNLOG GPSUTCB",
 				"UNLOG BD3UTCB",
 				"UNLOG GALUTCB",
@@ -205,6 +209,55 @@ func TestPVTMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				// No UTCB messages
+			},
+		},
+	}
+
+	testNativeConfigProps(t, tests)
+}
+
+func TestQualityMessages(t *testing.T) {
+	tests := []nativeConfigPropsTestCase{
+		{
+			name: "enable quality alone adds BESTNAVB and STADOPB",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgQuality
+			},
+			expectedCmds: []string{
+				"BESTNAVB 1",
+				"STADOPB 1",
+			},
+		},
+		{
+			name: "quality with pos reuses BESTNAVB",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgQuality
+			},
+			expectedCmds: []string{
+				"BESTNAVB 1",
+				"STADOPB 1",
+			},
+		},
+		{
+			name: "quality with pos+ecef uses BESTNAVXYZB",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF | gpsprot.PVTMsgQuality
+			},
+			expectedCmds: []string{
+				"BESTNAVXYZB 1",
+				"STADOPB 1",
+			},
+		},
+		{
+			name: "off unloads STADOPB",
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.PVTMsg = gpsprot.PVTMsgOff
+			},
+			expectedCmds: []string{
+				"UNLOG RECTIMEB",
+				"UNLOG BESTNAVB",
+				"UNLOG BESTNAVXYZB",
+				"UNLOG STADOPB",
 			},
 		},
 	}

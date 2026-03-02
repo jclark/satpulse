@@ -99,6 +99,24 @@ tag = "unc-bestnava-off"
 description = "Disable BESTNAV ASCII"
 text = "UNLOG BESTNAVA"
 
+# PPPNAV (PPP position solution)
+[[line]]
+tag = "unc-pppnavb"
+description = "Enable PPPNAV binary at 1Hz"
+text = "PPPNAVB 1"
+[[line]]
+tag = "unc-pppnavb-off"
+description = "Disable PPPNAV binary"
+text = "UNLOG PPPNAVB"
+[[line]]
+tag = "unc-pppnava"
+description = "Enable PPPNAV ASCII at 1Hz"
+text = "PPPNAVA 1"
+[[line]]
+tag = "unc-pppnava-off"
+description = "Disable PPPNAV ASCII"
+text = "UNLOG PPPNAVA"
+
 # BESTNAVXYZ (ECEF position + velocity)
 [[line]]
 tag = "unc-bestnavxyzb"
@@ -234,6 +252,69 @@ text = "RANGECMPB 30"
 tag = "nov-rangecmpb-off"
 description = "Disable RANGECMP binary"
 text = "UNLOG RANGECMPB"
+
+# SIGNALGROUP (signal combination tracked by receiver)
+# Changing signalgroup causes an automatic reset
+[[line]]
+tag = "signalgroup-1"
+description = "Set SIGNALGROUP 1 (default, causes reset)"
+text = "CONFIG SIGNALGROUP 1"
+[[line]]
+tag = "signalgroup-2"
+description = "Set SIGNALGROUP 2 (needed for B2b-PPP and E6-HAS, causes reset)"
+text = "CONFIG SIGNALGROUP 2"
+[[line]]
+tag = "signalgroup-8"
+description = "Set SIGNALGROUP 8 (needed for 50Hz output, causes reset)"
+text = "CONFIG SIGNALGROUP 8"
+[[line]]
+tag = "signalgroup-10"
+description = "Set SIGNALGROUP 10 (needed for MADOCA-PPP, causes reset)"
+text = "CONFIG SIGNALGROUP 10"
+
+# PPP (Precise Point Positioning)
+# Convergence recommended: horiz >= 10cm, vert >= 15cm
+
+# E6-HAS: UM980 Build11833+, requires SIGNALGROUP 2
+[[line]]
+tag = "ppp-has"
+description = "Enable PPP with Galileo E6 HAS source (requires SIGNALGROUP 2)"
+text = "CONFIG PPP ENABLE E6-HAS"
+[[line]]
+tag = "ppp-has"
+text = "CONFIG PPP TIMEOUT 120"
+[[line]]
+tag = "ppp-has"
+text = "CONFIG PPP CONVERGE 10 20"
+
+# B2b-PPP: UM980 Build7923+, requires SIGNALGROUP 2
+[[line]]
+tag = "ppp-b2b"
+description = "Enable PPP with BeiDou B2b source (requires SIGNALGROUP 2)"
+text = "CONFIG PPP ENABLE B2b-PPP"
+[[line]]
+tag = "ppp-b2b"
+text = "CONFIG PPP TIMEOUT 120"
+[[line]]
+tag = "ppp-b2b"
+text = "CONFIG PPP CONVERGE 10 20"
+
+# L6MDCPPP (QZSS L6E MADOCA): UM980 Build16606+, requires SIGNALGROUP 10 (Build17548+)
+[[line]]
+tag = "ppp-mdc"
+description = "Enable PPP with QZSS MADOCA-PPP source (requires SIGNALGROUP 10)"
+text = "CONFIG PPP ENABLE L6MDCPPP"
+[[line]]
+tag = "ppp-mdc"
+text = "CONFIG PPP TIMEOUT 120"
+[[line]]
+tag = "ppp-mdc"
+text = "CONFIG PPP CONVERGE 10 20"
+
+[[line]]
+tag = "ppp-off"
+description = "Disable PPP"
+text = "CONFIG PPP DISABLE"
 
 # Disable all messages
 [[line]]
