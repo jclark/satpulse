@@ -8,6 +8,7 @@ import {Button, Card} from './ui';
 interface MsgTypeState {
     tag: string;
     msg: string;
+    out: boolean;
     count: number;
     recentEntries: PacketLogEntry[];
 }
@@ -71,7 +72,8 @@ export function PacketPanel({visible}: Props) {
         const off = EventsOn('gps:packet', (pkt: PacketLogEntry) => {
             const tag = pkt.tag || '';
             const msg = pkt.msg || '';
-            const key = `${tag}:${msg}`;
+            const out = !!pkt.out;
+            const key = `${tag}:${msg}:${out ? 'o' : 'i'}`;
             const live = liveRef.current;
             const existing = live.get(key);
             if (existing) {
@@ -82,7 +84,7 @@ export function PacketPanel({visible}: Props) {
                 );
                 existing.recentEntries.push(pkt);
             } else {
-                live.set(key, {tag, msg, count: 1, recentEntries: [pkt]});
+                live.set(key, {tag, msg, out, count: 1, recentEntries: [pkt]});
             }
             if (!frozenRef.current) {
                 setDisplayed(new Map(live));
@@ -97,6 +99,7 @@ export function PacketPanel({visible}: Props) {
     const sortedRows = useMemo(() => {
         const arr = Array.from(displayed.values());
         arr.sort((a, b) => {
+            if (a.out !== b.out) return a.out ? -1 : 1;
             const tc = a.tag.localeCompare(b.tag);
             if (tc !== 0) return tc;
             return a.msg.localeCompare(b.msg);
@@ -135,7 +138,7 @@ export function PacketPanel({visible}: Props) {
     // Row click -> decode
     const handleRowClick = useCallback((state: MsgTypeState) => {
         const last = state.recentEntries[state.recentEntries.length - 1];
-        const key = `${state.tag}:${state.msg}`;
+        const key = `${state.tag}:${state.msg}:${state.out ? 'o' : 'i'}`;
         const target: DecodeTarget = {
             key, ascii: last.ascii, bin: last.bin, out: last.out,
         };
@@ -200,14 +203,15 @@ export function PacketPanel({visible}: Props) {
                             <th class="w-6 px-1 py-1.5"></th>
                             <th class="whitespace-nowrap px-2 py-1.5">Protocol</th>
                             <th class="whitespace-nowrap px-2 py-1.5">Message</th>
+                            <th class="whitespace-nowrap px-2 py-1.5"></th>
                             <th class="whitespace-nowrap px-2 py-1.5 text-right">Count</th>
-                            <th class="whitespace-nowrap px-2 py-1.5">Last received</th>
+                            <th class="whitespace-nowrap px-2 py-1.5">Last timestamp</th>
                             <th class="w-full px-2 py-1.5">Last message</th>
                         </tr>
                     </thead>
                     <tbody class="font-mono">
                         {sortedRows.map(state => {
-                            const key = `${state.tag}:${state.msg}`;
+                            const key = `${state.tag}:${state.msg}:${state.out ? 'o' : 'i'}`;
                             const last = state.recentEntries[state.recentEntries.length - 1];
                             const active = isActive(last);
                             const textClass = active ? 'text-text-primary' : 'text-text-muted';
@@ -232,12 +236,14 @@ export function PacketPanel({visible}: Props) {
                                         </td>
                                         <td class={`whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.tag}</td>
                                         <td class={`whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.msg}</td>
+                                        <td class={`whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.out ? 'Tx' : 'Rx'}</td>
                                         <td class={`whitespace-nowrap px-2 py-0.5 text-right tabular-nums ${textClass}`}>{state.count}</td>
                                         <td class={`whitespace-nowrap px-2 py-0.5 tabular-nums ${textClass}`}>{formatTime(last.t)}</td>
                                         <td class={`px-2 py-0.5 break-all ${textClass}`}>{entryData(last)}</td>
                                     </tr>
                                     {isExpanded && state.recentEntries.map((e, i) => (
                                         <tr key={`${key}-${i}`} class="text-text-secondary">
+                                            <td></td>
                                             <td></td>
                                             <td></td>
                                             <td></td>
@@ -254,7 +260,7 @@ export function PacketPanel({visible}: Props) {
             </div>
 
             {/* Toolbar */}
-            <div class="flex shrink-0 items-center gap-2 border-t border-border-subtle px-3 py-1.5">
+            <div class="mx-3 flex shrink-0 items-center gap-2 py-1.5">
                 <Button
                     class="w-20"
                     variant={isFrozen ? 'primary' : undefined}
@@ -287,6 +293,7 @@ export function PacketPanel({visible}: Props) {
                                         <th class="whitespace-nowrap px-2 py-1.5">Received</th>
                                         <th class="whitespace-nowrap px-2 py-1.5">Protocol</th>
                                         <th class="whitespace-nowrap px-2 py-1.5">Message</th>
+                                        <th class="whitespace-nowrap px-2 py-1.5"></th>
                                         <th class="w-full px-2 py-1.5">Data</th>
                                     </tr>
                                 </thead>
@@ -296,6 +303,7 @@ export function PacketPanel({visible}: Props) {
                                             <td class="whitespace-nowrap px-2 py-0.5 tabular-nums">{formatTime(e.t)}</td>
                                             <td class="whitespace-nowrap px-2 py-0.5">{e.tag || ''}</td>
                                             <td class="whitespace-nowrap px-2 py-0.5">{e.msg || ''}</td>
+                                            <td class="whitespace-nowrap px-2 py-0.5">{e.out ? 'Tx' : 'Rx'}</td>
                                             <td class="px-2 py-0.5 break-all">{entryData(e)}</td>
                                         </tr>
                                     ))}
