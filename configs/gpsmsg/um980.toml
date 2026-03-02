@@ -99,6 +99,24 @@ tag = "unc-bestnava-off"
 description = "Disable BESTNAV ASCII"
 text = "UNLOG BESTNAVA"
 
+# PPPNAV (PPP position solution)
+[[line]]
+tag = "unc-pppnavb"
+description = "Enable PPPNAV binary at 1Hz"
+text = "PPPNAVB 1"
+[[line]]
+tag = "unc-pppnavb-off"
+description = "Disable PPPNAV binary"
+text = "UNLOG PPPNAVB"
+[[line]]
+tag = "unc-pppnava"
+description = "Enable PPPNAV ASCII at 1Hz"
+text = "PPPNAVA 1"
+[[line]]
+tag = "unc-pppnava-off"
+description = "Disable PPPNAV ASCII"
+text = "UNLOG PPPNAVA"
+
 # BESTNAVXYZ (ECEF position + velocity)
 [[line]]
 tag = "unc-bestnavxyzb"
