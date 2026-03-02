@@ -376,6 +376,193 @@ func TestSameEpochNoFlush(t *testing.T) {
 	}
 }
 
+func TestDispatchStaDOP(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+
+	// First send a BESTNAV to start an epoch
+	msg1 := makeMsg(2350, 100000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.SolComputed,
+			PosType:    uncmsg.PosVelSingle,
+			Lat:        47.0,
+			Lon:        8.0,
+			Hgt:        400.0,
+			LatSigma:   1.0,
+			LonSigma:   1.0,
+			HgtSigma:   2.0,
+		},
+	})
+	pp.dispatch(msg1, time.Unix(1, 0), TagBinary)
+
+	// Send STADOP in same epoch
+	msg2 := makeMsg(2350, 100000, &uncmsg.StaDOP{
+		StaDOPFixed: uncmsg.StaDOPFixed{
+			GDOP: 2.5,
+			PDOP: 2.1,
+			TDOP: 1.3,
+			VDOP: 1.8,
+			HDOP: 1.1,
+		},
+	})
+	handled, err := pp.dispatch(msg2, time.Unix(1, 0), TagBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected STADOP to be handled")
+	}
+
+	// Trigger flush with new epoch
+	msg3 := makeMsg(2350, 101000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.InsufficientObs,
+		},
+		VSolStatus: uncmsg.NoConvergence,
+	})
+	pp.dispatch(msg3, time.Unix(2, 0), TagBinary)
+
+	for _, m := range h.msgs {
+		if m.msgType != "navepoch" {
+			continue
+		}
+		ne := m.msg.(*gpsprot.NavEpochMsg)
+		if !ne.DOP.Geom.IsSet() || ne.DOP.Geom.Get() != float64(float32(2.5)) {
+			t.Errorf("DOP.Geom = %v, want 2.5", ne.DOP.Geom)
+		}
+		if !ne.DOP.Pos.IsSet() || ne.DOP.Pos.Get() != float64(float32(2.1)) {
+			t.Errorf("DOP.Pos = %v, want 2.1", ne.DOP.Pos)
+		}
+		if !ne.DOP.Hor.IsSet() || ne.DOP.Hor.Get() != float64(float32(1.1)) {
+			t.Errorf("DOP.Hor = %v, want 1.1", ne.DOP.Hor)
+		}
+		if !ne.DOP.Vert.IsSet() || ne.DOP.Vert.Get() != float64(float32(1.8)) {
+			t.Errorf("DOP.Vert = %v, want 1.8", ne.DOP.Vert)
+		}
+		if !ne.DOP.Time.IsSet() || ne.DOP.Time.Get() != float64(float32(1.3)) {
+			t.Errorf("DOP.Time = %v, want 1.3", ne.DOP.Time)
+		}
+		return
+	}
+	t.Fatal("no NavEpoch emitted")
+}
+
+func TestEpochQualityFields(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+
+	// Epoch 1: BESTNAV with RTK fixed (NARROW_INT=50)
+	msg1 := makeMsg(2350, 100000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus:    uncmsg.SolComputed,
+			PosType:       uncmsg.PosVelNarrowInt,
+			Lat:           47.0,
+			Lon:           8.0,
+			Hgt:           400.0,
+			LatSigma:      0.01,
+			LonSigma:      0.01,
+			HgtSigma:      0.02,
+			DiffAge:       1.5,
+			StnID:         novmsg.StationID{'1', '2', '3', 0},
+			NumSVs:        20,
+			NumSolnSVs:    15,
+			GPSGLOBDS2Sig: 0x01, // GPS L1CA
+			GalBDS3Sig:    0x01, // GAL E1
+		},
+	})
+	pp.dispatch(msg1, time.Unix(1, 0), TagBinary)
+
+	// Flush with new epoch
+	msg2 := makeMsg(2350, 101000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.InsufficientObs,
+		},
+	})
+	pp.dispatch(msg2, time.Unix(2, 0), TagBinary)
+
+	for _, m := range h.msgs {
+		if m.msgType != "navepoch" {
+			continue
+		}
+		ne := m.msg.(*gpsprot.NavEpochMsg)
+		if ne.FixLevel != gpsprot.FixLevelCarrierFixed {
+			t.Errorf("FixLevel = %v, want CarrierFixed", ne.FixLevel)
+		}
+		if ne.FixDim != gpsprot.FixDim3D {
+			t.Errorf("FixDim = %v, want 3D", ne.FixDim)
+		}
+		if ne.Correction != gpsprot.CorrFullDualFreq.Expand() {
+			t.Errorf("Correction = %v, want FullDualFreq expanded", ne.Correction)
+		}
+		if !ne.NumSVUsed.IsSet() || ne.NumSVUsed.Get() != 15 {
+			t.Errorf("NumSVUsed = %v, want 15", ne.NumSVUsed)
+		}
+		if !ne.NumSVTracked.IsSet() || ne.NumSVTracked.Get() != 20 {
+			t.Errorf("NumSVTracked = %v, want 20", ne.NumSVTracked)
+		}
+		if !ne.DiffAge.IsSet() || ne.DiffAge.Get() != gpsprot.Seconds(1.5) {
+			t.Errorf("DiffAge = %v, want 1.5s", ne.DiffAge)
+		}
+		if !ne.RTCMRefBaseID.IsSet() || ne.RTCMRefBaseID.Get() != 123 {
+			t.Errorf("RTCMRefBaseID = %v, want 123", ne.RTCMRefBaseID)
+		}
+		wantSig := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1)
+		if ne.SignalsUsed != wantSig {
+			t.Errorf("SignalsUsed = %v, want %v", ne.SignalsUsed, wantSig)
+		}
+		return
+	}
+	t.Fatal("no NavEpoch emitted")
+}
+
+func TestEpochQualityNotComputed(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+
+	// BESTNAV with InsufficientObs should set FixLevelNone
+	msg1 := makeMsg(2350, 100000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.InsufficientObs,
+			PosType:    uncmsg.PosVelSingle,
+			NumSVs:     5,
+			NumSolnSVs: 0,
+		},
+	})
+	pp.dispatch(msg1, time.Unix(1, 0), TagBinary)
+
+	// Flush
+	msg2 := makeMsg(2350, 101000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.InsufficientObs,
+		},
+	})
+	pp.dispatch(msg2, time.Unix(2, 0), TagBinary)
+
+	for _, m := range h.msgs {
+		if m.msgType != "navepoch" {
+			continue
+		}
+		ne := m.msg.(*gpsprot.NavEpochMsg)
+		if ne.FixLevel != gpsprot.FixLevelNone {
+			t.Errorf("FixLevel = %v, want None", ne.FixLevel)
+		}
+		if ne.FixDim != 0 {
+			t.Errorf("FixDim = %v, want 0", ne.FixDim)
+		}
+		if ne.Correction != 0 {
+			t.Errorf("Correction = %v, want 0", ne.Correction)
+		}
+		return
+	}
+	t.Fatal("no NavEpoch emitted")
+}
+
 func TestDefaultHandlerInvariant(t *testing.T) {
 	mgr := gpsprot.NewNavEpochManager()
 	bp := NewBinPacketProcessor(mgr)
