@@ -144,7 +144,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msg
 
 	var wg sync.WaitGroup
 
-	pktLog, lf, err := gpsio.LogPackets(lg, &wg, logPath)
+	pktLog, lf, err := gpsio.LogPackets(lg, &wg, logPath, gpsreg.PacketFormats)
 	if err != nil {
 		return fmt.Errorf("failed to initialize packet logging: %w", err)
 	}
@@ -422,7 +422,7 @@ func printTimePulse(f *os.File, tp gpsprot.TimePulse) {
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog) })
+	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog, gpsreg.PacketFormats) })
 	return msg
 }
 

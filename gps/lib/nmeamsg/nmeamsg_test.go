@@ -115,8 +115,8 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 		return 0
 	}
 
-	// Constraint 4: Total length ≤ 128 characters (including line terminator)
-	if len(data) > 128 {
+	// Constraint 4: Total length ≤ SentenceMaxLength characters (including line terminator)
+	if len(data) > SentenceMaxLength {
 		return 0
 	}
 

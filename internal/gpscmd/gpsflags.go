@@ -55,14 +55,14 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
             [--survey] [--survey-time seconds] [--survey-acc meters]
-            [--pvt-out pos|vel|time|tp|leap|survey|tai|ecef|off,...]
+            [--pvt-out pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|off,...]
             [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
             [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...]
             [-m|--msg-file path] [-t|--tag name,...] [--show-tags]`
 
 const defaultSurveyTime = 2000
-const defaultSurveyAcc = 20.0
-const defaultFixedPosAcc = 20.0
+const defaultSurveyAcc = 20 * gpsprot.Meter
+const defaultFixedPosAcc = 20 * gpsprot.Meter
 const showProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDMode |
 	gpsprot.PropIDTimePulse |
@@ -87,11 +87,12 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	binary := false
 	survey := false
 	surveyTime := uint32(defaultSurveyTime)
-	surveyAcc := defaultSurveyAcc
+	surveyAcc := length(defaultSurveyAcc)
 	sysTimeTrusted := false
 	osnma := false
 	var fixedPosECEF ecef
-	fixedPosAcc := defaultFixedPosAcc
+	fixedPosAcc := length(defaultFixedPosAcc)
+
 	pps := 0.0
 	antCableDelay := int64(0)
 	mobile := false
@@ -141,9 +142,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
 	flags.BoolVar(&survey, "survey", false, "instruct the GPS receiver to perform a survey")
 	flags.Uint32Var(&surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
-	flags.Float64Var(&surveyAcc, "survey-acc", defaultSurveyAcc, "survey accuracy in meters")
+	flags.Var(&surveyAcc, "survey-acc", "survey accuracy in `meters`")
 	flags.Var(&fixedPosECEF, "fixed-pos-ecef", "fixed ECEF position as `x,y,z` in meters")
-	flags.Float64Var(&fixedPosAcc, "fixed-pos-acc", defaultFixedPosAcc, "accuracy of fixed position in meters")
+	flags.Var(&fixedPosAcc, "fixed-pos-acc", "accuracy of fixed position in `meters`")
 	flags.BoolVar(&vars.configOpts.SetStatic, "static", false, "make the receiver use static positioning mode if it is not already doing so")
 	flags.MarkHidden("static")
 	flags.BoolVar(&sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
@@ -269,10 +270,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if survey || vars.configOpts.SetStatic {
 		configChanged = true
 		vars.configOpts.Survey.MinDur = time.Duration(surveyTime) * time.Second
-		if surveyAcc < 0.001 {
+		if gpsprot.Length(surveyAcc) < gpsprot.Millimeter {
 			return nil, nil, fmt.Errorf("--survey-acc must at least 0.001 (1 mm)")
 		}
-		vars.configOpts.Survey.AccLimit = gpsprot.Meters(surveyAcc)
+		vars.configOpts.Survey.AccLimit = gpsprot.Length(surveyAcc)
 		if survey {
 			vars.configOpts.Survey.Flags |= gpsprot.SurveyAgain
 			vars.mode.Set(gpsprot.Mode{Static: true})
@@ -286,14 +287,14 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if !gpsprot.Point3D(fixedPosECEF).IsZero() {
 		configChanged = true
-		if fixedPosAcc < 0.001 {
+		if gpsprot.Length(fixedPosAcc) < gpsprot.Millimeter {
 			return nil, nil, fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
 		}
 		vars.mode.Set(gpsprot.Mode{
 			Static:       true,
 			PosType:      gpsprot.PosTypeECEF,
 			FixedPosECEF: gpsprot.Point3D(fixedPosECEF),
-			FixedPosAcc:  gpsprot.Meters(fixedPosAcc),
+			FixedPosAcc:  gpsprot.Length(fixedPosAcc),
 		})
 		if mobile {
 			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --fixed-pos-ecef", cmdName)
@@ -625,6 +626,12 @@ func (pvtOut *pvtOutOpt) String() string {
 	if flags&gpsprot.PVTMsgSurvey != 0 {
 		parts = append(parts, "survey")
 	}
+	if flags&gpsprot.PVTMsgQuality != 0 {
+		parts = append(parts, "qual")
+	}
+	if flags&gpsprot.PVTMsgEpoch != 0 {
+		parts = append(parts, "epoch")
+	}
 	if flags&gpsprot.PVTMsgTAI != 0 {
 		parts = append(parts, "tai")
 	}
@@ -663,6 +670,10 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 			flags |= gpsprot.PVTMsgLeapSecond
 		case "survey":
 			flags |= gpsprot.PVTMsgSurvey
+		case "qual":
+			flags |= gpsprot.PVTMsgQuality
+		case "epoch":
+			flags |= gpsprot.PVTMsgEpoch
 		case "tai":
 			flags |= gpsprot.PVTMsgTAI
 		case "ecef":
@@ -919,5 +930,26 @@ func (e *ecef) Set(s string) error {
 		return fmt.Errorf("invalid ECEF coordinates: %w", err)
 	}
 	*e = ecef(pt)
+	return nil
+}
+
+type length gpsprot.Length
+
+var _ pflag.Value = (*length)(nil)
+
+func (l *length) String() string {
+	return gpsprot.Length(*l).String()
+}
+
+func (l *length) Type() string {
+	return "meters"
+}
+
+func (l *length) Set(s string) error {
+	v, err := gpsprot.ParseLength(s)
+	if err != nil {
+		return err
+	}
+	*l = length(v)
 	return nil
 }

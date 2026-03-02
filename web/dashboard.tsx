@@ -11,7 +11,7 @@ type JSONObject = { [key: string]: JSONValue };
 type JSONArray = JSONValue[];
 
 // Use a more specific type for our parsed event data
-const EVENT_TYPES = ["satellites", "time", "phc", "survey", "receiver", "init"] as const;
+const EVENT_TYPES = ["satellites", "time", "phc", "survey", "receiver", "posvel", "quality", "init"] as const;
 type EventType = typeof EVENT_TYPES[number];
 
 type Map = {[key: string]: any};
@@ -51,8 +51,12 @@ export const Dashboard: FunctionComponent = () => {
         {events.satellites && haveLookAngles && <SkyViewCard svs={svs} />}
         {events.satellites && <SignalGraphCard svs={svs} />}
         {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
-        {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}    
+        {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}
         {events.receiver && <PropertyCard title="Receiver" data={events.receiver} format={receiverFormat} />}
+        {events.quality && <PropertyCard title="Status" data={events.quality} format={statusFormat} />}
+        {events.posvel && <PropertyCard title="Position" data={events.posvel} format={positionFormat} />}
+        {events.posvel && showVelocity(events.posvel) && <PropertyCard title="Velocity" data={events.posvel} format={velocityFormat} />}
+        {events.quality && <PropertyCard title="Position Quality" data={events.quality} format={positionQualityFormat} />}
         {events.survey && <PropertyCard title="Survey-in Status" data={events.survey} format={surveyFormat} />}
         </CardsElement>
     );
@@ -248,11 +252,61 @@ const surveyFormat: EventFormat = {
     y: ["ECEF Y", formatECEF],
     z: ["ECEF Z", formatECEF],
     latLon: formatLL,
-    alt: ["Altitude", formatAlt],
+    alt: ["Height", formatAlt],
     obsCount: ["Observations"],
     obsTime: ["Observation time"],
     valid: ["Valid", formatBoolean],
     inProgress: ["In Progress", formatBoolean],
+}
+
+const statusFormat: EventFormat = {
+    fixLevel: ["Fix type"],
+    fixDim: ["Fix dimensionality"],
+    corrections: ["Corrections", (arg: string[]) => arg.join(", ")],
+    tdop: ["Time DOP", (arg: number) => arg.toFixed(2)],
+    gdop: ["Geometric DOP", (arg: number) => arg.toFixed(2)],
+    numSVUsed: ["Satellites used"],
+    numSVTracked: ["Satellites tracked"],
+    numSVInView: ["Satellites in view"],
+    signalsUsed: formatSignalsUsed,
+}
+
+function formatSignalsUsed(signals: {[gnss: string]: string[]}, _obj: Map): FormattedField[] {
+    return Object.entries(signals).map(([gnss, sigs]) =>
+        [`${gnss} signals used`, sigs.join(", ")]
+    );
+}
+
+const positionFormat: EventFormat = {
+    latLon: formatLL,
+    heightMSL: ["Elevation", (arg: number) => `${arg.toFixed(2)} m`],
+    height: ["Height", (arg: number) => `${arg.toFixed(2)} m`],
+    posECEFX: ["ECEF X", formatECEF],
+    posECEFY: ["ECEF Y", formatECEF],
+    posECEFZ: ["ECEF Z", formatECEF],
+}
+
+const velocityFormat: EventFormat = {
+    groundSpeed: ["Ground speed", (arg: number) => `${arg.toFixed(2)} m/s`],
+    course: ["Course", (arg: number) => `${arg.toFixed(1)} deg`],
+    velN: ["Vel north", (arg: number) => `${arg.toFixed(3)} m/s`],
+    velE: ["Vel east", (arg: number) => `${arg.toFixed(3)} m/s`],
+    velD: ["Vel down", (arg: number) => `${arg.toFixed(3)} m/s`],
+}
+
+function showVelocity(posvel: Map): boolean {
+    return typeof posvel.groundSpeed === 'number' && posvel.groundSpeed >= 0.1;
+}
+
+const positionQualityFormat: EventFormat = {
+    accHor: ["Horizontal accuracy", (arg: number) => `${arg.toFixed(3)} m`],
+    accVert: ["Vertical accuracy", (arg: number) => `${arg.toFixed(3)} m`],
+    accPos: ["3D accuracy", (arg: number) => `${arg.toFixed(3)} m`],
+    hdop: ["Horizontal DOP", (arg: number) => arg.toFixed(2)],
+    vdop: ["Vertical DOP", (arg: number) => arg.toFixed(2)],
+    pdop: ["Position DOP", (arg: number) => arg.toFixed(2)],
+    diffAge: ["Differential age", (arg: number) => `${arg.toFixed(1)} s`],
+    rtcmRefBaseID: ["RTCM base station"],
 }
 
 function formatECEF(arg: number): string {

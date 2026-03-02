@@ -130,7 +130,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	var wg sync.WaitGroup
 	// pLog must be closed by both the startScan goroutine and the conn
 	// gpsio.Scan starts a goroutine that calls conn.Stop() when the context is cancelled
-	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension))
+	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), gpsreg.PacketFormats)
 	if err != nil {
 		return err
 	}
@@ -209,7 +209,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return nil
 	}
 
-	err = proxy.Start(ctx, lg, &wg, cfg.Proxy, pb, conn)
+	portLock := gpsio.NewOutPortLock(conn)
+	err = proxy.Start(ctx, lg, &wg, cfg.Proxy, pb, portLock)
 	if err != nil {
 		return err
 	}
@@ -261,8 +262,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if err != nil {
 		return err
 	}
+	gpsObs := logobs.NewGPSLogObserver(lg)
 
-	observer := combineObservers(promObs, sseObs, statsObs, clockObs)
+	observer := combineObservers(promObs, sseObs, statsObs, clockObs, gpsObs)
 
 	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, observer, tStart)
 	if err != nil {
@@ -353,7 +355,8 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 
 // combineObservers combines individual observers into appropriate single observer
 func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver,
-	statsObs *logobs.StatsLogObserver, clockObs *logobs.ClockLogObserver) obs.Observer {
+	statsObs *logobs.StatsLogObserver, clockObs *logobs.ClockLogObserver,
+	gpsObs *logobs.GPSLogObserver) obs.Observer {
 
 	var observers []obs.Observer
 
@@ -363,6 +366,9 @@ func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObs
 	}
 	if clockObs != nil {
 		observers = append(observers, clockObs)
+	}
+	if gpsObs != nil {
+		observers = append(observers, gpsObs)
 	}
 	if promObs != nil {
 		observers = append(observers, promObs)
@@ -383,7 +389,7 @@ func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObs
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog) })
+	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog, gpsreg.PacketFormats) })
 	return msg
 }
 

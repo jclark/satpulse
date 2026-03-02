@@ -20,6 +20,18 @@ func PosGeo[S, P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.Pos[S, P], nativeMs
 		Height:      opt.Make(gpsprot.Meters(float64(b.Hgt) + float64(b.Undulation))),
 		HeightMSL:   opt.Make(gpsprot.Meters(b.Hgt)),
 		NativeMsgID: nativeMsgID,
+		Priority:    gpsprot.PriVendorLow,
+	}
+}
+
+// VelGeoVel converts a Vel into a VelGeoMsg. BESTVEL does not carry
+// per-component sigmas, so accuracy is not populated.
+func VelGeoVel[P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.Vel[P], nativeMsgID string) *gpsprot.VelGeoMsg {
+	return &gpsprot.VelGeoMsg{
+		GroundSpeed: opt.Make(gpsprot.MetersPerSecondFromFloat(b.HorSpd)),
+		Course:      opt.Make(gpsprot.DegreesFromFloat(b.TrkGnd)),
+		NativeMsgID: nativeMsgID,
+		Priority:    gpsprot.PriVendorLow,
 	}
 }
 
@@ -33,6 +45,7 @@ func PosECEFXYZ[S, P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.XYZ[S, P], nati
 	return &gpsprot.PosECEFMsg{
 		Pos:         gpsprot.Point3D{gpsprot.Meters(b.PX), gpsprot.Meters(b.PY), gpsprot.Meters(b.PZ)},
 		NativeMsgID: nativeMsgID,
+		Priority:    gpsprot.PriVendorLow,
 	}
 }
 
@@ -46,5 +59,6 @@ func VelECEFXYZ[S, P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.XYZ[S, P], nati
 	return &gpsprot.VelECEFMsg{
 		Vel:         [3]gpsprot.Speed{gpsprot.MetersPerSecondFromFloat(b.VX), gpsprot.MetersPerSecondFromFloat(b.VY), gpsprot.MetersPerSecondFromFloat(b.VZ)},
 		NativeMsgID: nativeMsgID,
+		Priority:    gpsprot.PriVendorLow,
 	}
 }

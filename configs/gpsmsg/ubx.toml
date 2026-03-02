@@ -1,0 +1,10 @@
+#:schema ./gpsmsg-schema.json
+# u-blox configuration messages
+# For commands not yet supported through high-level configuration
+
+# Poll PUBX,04 (time, clock bias/drift, time pulse granularity)
+# The last field (tpGran) is not available via UBX binary.
+[[nmea]]
+text = "PUBX,04"
+tag = "get-pubx-04"
+description = "Poll time and clock status (includes tpGran)"

@@ -78,9 +78,9 @@ func TestMsgChangesPVT(t *testing.T) {
 			expected: []ubxbin.MsgID{ubxbin.NavTimeUTCID},
 		},
 		{
-			name:     "Pos",
+			name:     "Pos (F10S)",
 			flags:    gpsprot.PVTMsgPos,
-			version:  testVers.f9p,
+			version:  testVers.f10s,
 			expected: []ubxbin.MsgID{ubxbin.NavPosLLHID},
 		},
 		{
@@ -90,9 +90,9 @@ func TestMsgChangesPVT(t *testing.T) {
 			expected: []ubxbin.MsgID{ubxbin.NavVelNEDID},
 		},
 		{
-			name:     "Pos,ECEF",
+			name:     "Pos,ECEF (F10S)",
 			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
-			version:  testVers.f9p,
+			version:  testVers.f10s,
 			expected: []ubxbin.MsgID{ubxbin.NavPosECEFID},
 		},
 		{
@@ -102,10 +102,10 @@ func TestMsgChangesPVT(t *testing.T) {
 			expected: []ubxbin.MsgID{ubxbin.NavVelECEFID},
 		},
 		{
-			name:     "Time,Pos (NAV-PVT supported)",
+			name:     "Time,Pos (HPG F9P)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgPos,
 			version:  testVers.f9p,
-			expected: []ubxbin.MsgID{ubxbin.NavPVTID},
+			expected: []ubxbin.MsgID{ubxbin.NavTimeUTCID, ubxbin.NavHPPosLLHID},
 		},
 		{
 			name:     "Time,Vel (NAV-PVT supported)",
@@ -114,16 +114,16 @@ func TestMsgChangesPVT(t *testing.T) {
 			expected: []ubxbin.MsgID{ubxbin.NavPVTID},
 		},
 		{
-			name:     "Pos,Vel (NAV-PVT supported)",
+			name:     "Pos,Vel (HPG F9P)",
 			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgVel,
 			version:  testVers.f9p,
-			expected: []ubxbin.MsgID{ubxbin.NavPVTID},
+			expected: []ubxbin.MsgID{ubxbin.NavVelNEDID, ubxbin.NavHPPosLLHID},
 		},
 		{
-			name:     "Time,Pos,Vel (NAV-PVT supported)",
+			name:     "Time,Pos,Vel (HPG F9P)",
 			flags:    gpsprot.PVTMsgTime | gpsprot.PVTMsgPos | gpsprot.PVTMsgVel,
 			version:  testVers.f9p,
-			expected: []ubxbin.MsgID{ubxbin.NavPVTID},
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID, ubxbin.NavHPPosLLHID},
 		},
 		{
 			name:     "TimePulse",
@@ -153,7 +153,7 @@ func TestMsgChangesPVT(t *testing.T) {
 			name:     "TimePulse,Pos",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgPos,
 			version:  testVers.f9p,
-			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavPosLLHID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavHPPosLLHID},
 		},
 		{
 			name:     "TimePulse,Vel",
@@ -165,7 +165,7 @@ func TestMsgChangesPVT(t *testing.T) {
 			name:     "TimePulse,TAI,Pos",
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI | gpsprot.PVTMsgPos,
 			version:  testVers.f9p,
-			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavPosLLHID},
+			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavHPPosLLHID},
 		},
 		{
 			name:     "TimePulse,TAI,LeapSecond",
@@ -184,6 +184,48 @@ func TestMsgChangesPVT(t *testing.T) {
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI,
 			version:  testVers.f9p,
 			expected: []ubxbin.MsgID{ubxbin.TimTPID, ubxbin.NavTimeGPSID},
+		},
+		{
+			name:     "Quality (F9P)",
+			flags:    gpsprot.PVTMsgQuality,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID, ubxbin.NavDOPID},
+		},
+		{
+			name:     "Quality (LEA-6T, no NAV-PVT)",
+			flags:    gpsprot.PVTMsgQuality,
+			version:  testVers.lea6t,
+			expected: []ubxbin.MsgID{ubxbin.NavDOPID},
+		},
+		{
+			name:     "Quality,Time (F9P)",
+			flags:    gpsprot.PVTMsgQuality | gpsprot.PVTMsgTime,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID, ubxbin.NavDOPID},
+		},
+		{
+			name:     "Quality,Time,Pos (HPG F9P)",
+			flags:    gpsprot.PVTMsgQuality | gpsprot.PVTMsgTime | gpsprot.PVTMsgPos,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavPVTID, ubxbin.NavDOPID, ubxbin.NavHPPosLLHID},
+		},
+		{
+			name:     "Epoch (F9P)",
+			flags:    gpsprot.PVTMsgEpoch,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavEOEID},
+		},
+		{
+			name:     "Epoch (LEA-6T - not supported)",
+			flags:    gpsprot.PVTMsgEpoch,
+			version:  testVers.lea6t,
+			expected: []ubxbin.MsgID{},
+		},
+		{
+			name:     "Epoch,Time,Pos (HPG F9P)",
+			flags:    gpsprot.PVTMsgEpoch | gpsprot.PVTMsgTime | gpsprot.PVTMsgPos,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavTimeUTCID, ubxbin.NavHPPosLLHID, ubxbin.NavEOEID},
 		},
 		// FTS (M8F) specific tests - uses TIM-TOS instead of TIM-TP
 		{
@@ -264,6 +306,43 @@ func TestMsgChangesPVT(t *testing.T) {
 			flags:    gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTAI,
 			version:  testVers.lea6t,
 			expected: []ubxbin.MsgID{ubxbin.TimTPID},
+		},
+		// HPG specific tests - uses HP position messages
+		{
+			name:     "Pos (HPG F9P)",
+			flags:    gpsprot.PVTMsgPos,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavHPPosLLHID},
+		},
+		{
+			name:     "Pos,ECEF (HPG F9P)",
+			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
+			version:  testVers.f9p,
+			expected: []ubxbin.MsgID{ubxbin.NavHPPosECEFID},
+		},
+		{
+			name:     "Pos (HPG M8P)",
+			flags:    gpsprot.PVTMsgPos,
+			version:  testVers.m8p,
+			expected: []ubxbin.MsgID{ubxbin.NavHPPosLLHID},
+		},
+		{
+			name:     "Pos,ECEF (HPG M8P)",
+			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
+			version:  testVers.m8p,
+			expected: []ubxbin.MsgID{ubxbin.NavHPPosECEFID},
+		},
+		{
+			name:     "Pos (HPG X20P)",
+			flags:    gpsprot.PVTMsgPos,
+			version:  testVers.x20p,
+			expected: []ubxbin.MsgID{ubxbin.NavHPPosLLHID},
+		},
+		{
+			name:     "Pos,ECEF (HPG X20P)",
+			flags:    gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
+			version:  testVers.x20p,
+			expected: []ubxbin.MsgID{ubxbin.NavHPPosECEFID},
 		},
 		{
 			name:     "Pos,ECEF (LEA-6T)",

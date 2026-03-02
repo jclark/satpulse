@@ -19,20 +19,14 @@ func TestReplayUNC(t *testing.T) {
 	}
 }
 
-func uncPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) bool {
+func uncPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
 	actualStr := string(actual)
 	expectedStr := expected.Data()
 
-	// First check if they're exactly equal
 	if actualStr == expectedStr {
-		return true
+		return true, false
 	}
 
-	// UNC packets are simpler than UBX - they're mostly ASCII commands
-	// For ASCII packets, we can compare them as strings directly
-	// For binary packets, we would need more sophisticated comparison, but
-	// the test data appears to be ASCII commands
-
 	t.Errorf("%s: packets differ: actual %q, expected %q", msgID, actualStr, expectedStr)
-	return false
+	return false, false
 }

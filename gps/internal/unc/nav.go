@@ -16,6 +16,7 @@ func bestNavPosVel(ne *gpsprot.NavEpochMsg, m *uncmsg.BestNav) (*gpsprot.PosGeoM
 	var velG *gpsprot.VelGeoMsg
 	if m.PSolStatus == uncmsg.SolComputed {
 		posG = nov.PosGeo(ne, &m.Pos, "BESTNAV")
+		posG.Priority = gpsprot.PriVendorLow
 	}
 	if m.VSolStatus == uncmsg.SolComputed {
 		ne.Acc.GroundSpeed.Set(mpsToSpeed(float64(m.HorSpdSigma)))
@@ -26,6 +27,7 @@ func bestNavPosVel(ne *gpsprot.NavEpochMsg, m *uncmsg.BestNav) (*gpsprot.PosGeoM
 			GroundSpeed: opt.Make(mpsToSpeed(m.HorSpd)),
 			Course:      opt.Make(degreesToAngle(m.TrkGnd)),
 			NativeMsgID: "BESTNAV",
+			Priority:    gpsprot.PriVendorLow,
 		}
 	}
 	return posG, velG
@@ -38,9 +40,11 @@ func bestNavXYZPosVel(ne *gpsprot.NavEpochMsg, m *uncmsg.BestNavXYZ) (*gpsprot.P
 	var velE *gpsprot.VelECEFMsg
 	if m.PSolStatus == uncmsg.SolComputed {
 		posE = nov.PosECEFXYZ(ne, &m.XYZ, "BESTNAVXYZ")
+		posE.Priority = gpsprot.PriVendorLow
 	}
 	if m.VSolStatus == uncmsg.SolComputed {
 		velE = nov.VelECEFXYZ(ne, &m.XYZ, "BESTNAVXYZ")
+		velE.Priority = gpsprot.PriVendorLow
 	}
 	return posE, velE
 }

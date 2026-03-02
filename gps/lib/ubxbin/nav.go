@@ -16,9 +16,12 @@ const (
 	NavTimeGLOID     MsgID = clsNav | (0x23 << 8)
 	NavTimeGalID     MsgID = clsNav | (0x25 << 8)
 	NavTimeLSID      MsgID = clsNav | (0x26 << 8)
+	NavEOEID         MsgID = clsNav | (0x61 << 8)
 	NavTimeTrustedID MsgID = clsNav | (0x64 << 8)
 	NavVelECEFID     MsgID = clsNav | (0x11 << 8)
 	NavVelNEDID      MsgID = clsNav | (0x12 << 8)
+	NavHPPosECEFID   MsgID = clsNav | (0x13 << 8)
+	NavHPPosLLHID    MsgID = clsNav | (0x14 << 8)
 	NavSvinID        MsgID = clsNav | (0x3B << 8)
 )
 
@@ -34,6 +37,13 @@ type NavITOW struct {
 func (m *NavITOW) NavEpoch() uint32 {
 	return m.ITOW
 }
+
+// NavEOE is the end-of-epoch marker output after all NAV and NMEA messages.
+type NavEOE struct {
+	NavITOW
+}
+
+func (m *NavEOE) ID() MsgID { return NavEOEID }
 
 type NavClock struct {
 	NavITOW
@@ -74,6 +84,25 @@ type NavVelECEF struct {
 
 func (m *NavVelECEF) ID() MsgID { return NavVelECEFID }
 
+type NavHPPosECEF struct {
+	Version byte
+	_       [3]byte
+	NavITOW
+	ECEF   [3]int32
+	ECEFHp [3]int8
+	Flags  NavHPPosECEFFlags
+	PAcc   uint32
+}
+
+type NavHPPosECEFFlags byte
+
+const NavHPPosECEFInvalidEcef NavHPPosECEFFlags = 1 << 0
+
+var _ PartiallyHandledMsg = (*NavHPPosECEF)(nil)
+
+func (m *NavHPPosECEF) ID() MsgID        { return NavHPPosECEFID }
+func (m *NavHPPosECEF) IsHandled() bool   { return m.Version == 0 }
+
 type NavPosLLH struct {
 	NavITOW
 	Lon    int32
@@ -85,6 +114,32 @@ type NavPosLLH struct {
 }
 
 func (m *NavPosLLH) ID() MsgID { return NavPosLLHID }
+
+type NavHPPosLLH struct {
+	Version byte
+	_       [2]byte
+	Flags   NavHPPosLLHFlags
+	NavITOW
+	Lon      int32
+	Lat      int32
+	Height   int32
+	HMSL     int32
+	LonHp    int8
+	LatHp    int8
+	HeightHp int8
+	HMSLHp   int8
+	HAcc     uint32
+	VAcc     uint32
+}
+
+type NavHPPosLLHFlags byte
+
+const NavHPPosLLHInvalidLlh NavHPPosLLHFlags = 1 << 0
+
+var _ PartiallyHandledMsg = (*NavHPPosLLH)(nil)
+
+func (m *NavHPPosLLH) ID() MsgID        { return NavHPPosLLHID }
+func (m *NavHPPosLLH) IsHandled() bool   { return m.Version == 0 }
 
 type NavVelNED struct {
 	NavITOW
@@ -310,6 +365,9 @@ const (
 	NavSatSVUsed   NavSatFlags = 1 << 3
 	NavSatDiffCorr NavSatFlags = 1 << 6
 	NavSatSmoothed NavSatFlags = 1 << 7
+)
+
+const (
 	NavSatEphAvail NavSatFlags = 1 << (iota + 11)
 	NavSatAlmAvail
 	NavSatAnoAvail
@@ -323,6 +381,8 @@ const (
 	NavSatCrCorrUsed
 	NavSatDoCorrUsed
 	NavSatClasCorrUsed
+	NavSatLppCorrUsed
+	NavSatHasCorrUsed
 )
 
 type NavSig struct {
@@ -392,15 +452,18 @@ const (
 type NavSigCorrSource byte
 
 const (
-	NavSigCorrSourceNone NavSigCorrSource = iota
-	NavSigCorrSourceSBAS
-	NavSigCorrSourceBeiDou
-	NavSigCorrSourceRTCM2
-	NavSigCorrSourceRTCM3OSR
-	NavSigCorrSourceRTCM3SSR
-	NavSigCorrSourceQZSSSLAS
-	NavSigCorrSourceSPARTN
-	NavSigCorrSourceCLAS
+	NavSigCorrSourceNone    NavSigCorrSource = 0
+	NavSigCorrSourceSBAS    NavSigCorrSource = 1
+	NavSigCorrSourceBeiDou  NavSigCorrSource = 2
+	NavSigCorrSourceRTCM2   NavSigCorrSource = 3
+	NavSigCorrSourceRTCM3OSR NavSigCorrSource = 4
+	NavSigCorrSourceRTCM3SSR NavSigCorrSource = 5
+	NavSigCorrSourceQZSSSLAS NavSigCorrSource = 6
+	NavSigCorrSourceSPARTN  NavSigCorrSource = 7
+	NavSigCorrSourceCLAS    NavSigCorrSource = 9
+	NavSigCorrSourceLPPOSR  NavSigCorrSource = 10
+	NavSigCorrSourceLPPSSR  NavSigCorrSource = 11
+	NavSigCorrSourceGALHAS  NavSigCorrSource = 12
 )
 
 type NavSigIonoModel byte
@@ -415,12 +478,16 @@ const (
 
 type NavSigFlags uint16
 
+// Health values (2-bit enum in bits 0-1)
+const (
+	NavSigHealthUnknown NavSigFlags = iota
+	NavSigHealthHealthy
+	NavSigHealthUnhealthy
+)
+
 // Boolean flags
 const (
-	NavSigHealthUnknown NavSigFlags = 0
-	NavSigHealthHealthy NavSigFlags = 1 << iota
-	NavSigHealthUnhealthy
-	NavSigPrSmoothed
+	NavSigPrSmoothed NavSigFlags = 1 << (iota + 2)
 	NavSigPrUsed
 	NavSigCrUsed
 	NavSigDoUsed
@@ -788,10 +855,13 @@ func (m *NavSvin) IsHandled() bool {
 }
 
 func init() {
+	regMsg[NavEOE]("EOE")
 	regMsg[NavClock]("CLOCK")
 	regMsg[NavDOP]("DOP")
 	regMsg[NavPosECEF]("POSECEF")
+	regMsg[NavHPPosECEF]("HPPOSECEF")
 	regMsg[NavPosLLH]("POSLLH")
+	regMsg[NavHPPosLLH]("HPPOSLLH")
 	regMsg[NavPVT]("PVT")
 	regMsg[NavSat]("SAT")
 	regMsg[NavSig]("SIG")

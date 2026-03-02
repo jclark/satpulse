@@ -207,23 +207,6 @@ tag = "nov-bestposa-off"
 description = "Disable BESTPOS ASCII"
 text = "UNLOG BESTPOSA"
 
-# Combined BESTPOS binary+ASCII
-[[line]]
-tag = "nov-bestpos"
-description = "Enable BESTPOS binary+ASCII at 1Hz"
-text = "BESTPOSB 1"
-[[line]]
-tag = "nov-bestpos"
-text = "BESTPOSA 1"
-
-[[line]]
-tag = "nov-bestpos-off"
-description = "Disable BESTPOS binary+ASCII"
-text = "UNLOG BESTPOSB"
-[[line]]
-tag = "nov-bestpos-off"
-text = "UNLOG BESTPOSA"
-
 # BESTXYZ (NovAtel format ECEF position+velocity)
 [[line]]
 tag = "nov-bestxyzb"
@@ -240,23 +223,6 @@ text = "BESTXYZA 1"
 [[line]]
 tag = "nov-bestxyza-off"
 description = "Disable BESTXYZ ASCII"
-text = "UNLOG BESTXYZA"
-
-# Combined BESTXYZ binary+ASCII
-[[line]]
-tag = "nov-bestxyz"
-description = "Enable BESTXYZ binary+ASCII at 1Hz"
-text = "BESTXYZB 1"
-[[line]]
-tag = "nov-bestxyz"
-text = "BESTXYZA 1"
-
-[[line]]
-tag = "nov-bestxyz-off"
-description = "Disable BESTXYZ binary+ASCII"
-text = "UNLOG BESTXYZB"
-[[line]]
-tag = "nov-bestxyz-off"
 text = "UNLOG BESTXYZA"
 
 # RANGECMP (NovAtel compressed range, ID 140)

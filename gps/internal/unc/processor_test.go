@@ -58,6 +58,7 @@ func makeMsg(week uint16, ms uint32, body uncmsg.MsgBody) *uncmsg.Msg {
 
 func TestDispatchBestNav(t *testing.T) {
 	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
 	pp.mh = &gpsprot.DefaultHandler{}
 	h := &testMsgHandler{}
 	pp.mh = h
@@ -116,6 +117,7 @@ func TestDispatchBestNav(t *testing.T) {
 
 func TestDispatchBestNavXYZ(t *testing.T) {
 	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
 	h := &testMsgHandler{}
 	pp.mh = h
 
@@ -174,6 +176,7 @@ func TestDispatchBestNavXYZ(t *testing.T) {
 
 func TestDispatchBestNavNotComputed(t *testing.T) {
 	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
 	h := &testMsgHandler{}
 	pp.mh = h
 
@@ -199,6 +202,7 @@ func TestDispatchBestNavNotComputed(t *testing.T) {
 
 func TestEpochTracking(t *testing.T) {
 	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
 	h := &testMsgHandler{}
 	pp.mh = h
 
@@ -279,6 +283,7 @@ func TestEpochTracking(t *testing.T) {
 
 func TestEpochTagFromFirstMessage(t *testing.T) {
 	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
 	h := &testMsgHandler{}
 	pp.mh = h
 
@@ -333,6 +338,7 @@ func TestEpochTagFromFirstMessage(t *testing.T) {
 
 func TestSameEpochNoFlush(t *testing.T) {
 	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
 	h := &testMsgHandler{}
 	pp.mh = h
 
@@ -371,11 +377,12 @@ func TestSameEpochNoFlush(t *testing.T) {
 }
 
 func TestDefaultHandlerInvariant(t *testing.T) {
-	bp := NewBinPacketProcessor()
+	mgr := gpsprot.NewNavEpochManager()
+	bp := NewBinPacketProcessor(mgr)
 	if bp.mh == nil {
 		t.Error("BinPacketProcessor.mh should not be nil after construction")
 	}
-	ap := NewAsciiPacketProcessor()
+	ap := NewAsciiPacketProcessor(mgr)
 	if ap.mh == nil {
 		t.Error("AsciiPacketProcessor.mh should not be nil after construction")
 	}

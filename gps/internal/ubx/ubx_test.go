@@ -9,7 +9,7 @@ import (
 )
 
 func TestProcessPacketWithParseError(t *testing.T) {
-	p := NewPacketProcessor()
+	p := NewPacketProcessor(gpsprot.NewNavEpochManager())
 
 	// Create a valid UBX packet with empty payload for CFG-NAV5 (which requires 36 bytes)
 	// This will pass PacketFormat validation but fail during ParseMsg
@@ -198,6 +198,29 @@ func TestNavEpochHandling(t *testing.T) {
 			},
 		},
 		{
+			name: "nav_eoe_flushes_epoch",
+			steps: []testNavEpochStep{
+				// Epoch 1 - NAV-PVT then NAV-EOE flushes immediately
+				{msgID: ubxbin.NavTimeGPSID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: testExpectTime},
+				{msgID: ubxbin.NavEOEID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: testExpectNavEpoch},
+				// Epoch 2 - no flush at epoch start since epoch 1 was already flushed by EOE
+				{msgID: ubxbin.NavTimeGPSID, navEpoch: 200, tRead: time.Unix(3, 0), expectMsgs: testExpectTime},
+				{msgID: ubxbin.NavEOEID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: testExpectNavEpoch},
+			},
+		},
+		{
+			name: "nav_eoe_flushes_sats",
+			steps: []testNavEpochStep{
+				// Epoch 1 - NAV-SAT+NAV-SIG then NAV-EOE flushes sats and epoch
+				{msgID: ubxbin.NavSatID, navEpoch: 100, tRead: time.Unix(1, 0), expectMsgs: 0},
+				{msgID: ubxbin.NavSigID, navEpoch: 100, tRead: time.Unix(2, 0), expectMsgs: testExpectSatellites},
+				{msgID: ubxbin.NavEOEID, navEpoch: 100, tRead: time.Unix(3, 0), expectMsgs: testExpectNavEpoch},
+				// Epoch 2 - pending NAV-SAT is flushed by EOE (via FlushNavEpoch -> flushSats)
+				{msgID: ubxbin.NavSatID, navEpoch: 200, tRead: time.Unix(4, 0), expectMsgs: 0},
+				{msgID: ubxbin.NavEOEID, navEpoch: 200, tRead: time.Unix(5, 0), expectMsgs: testExpectSatellites | testExpectNavEpoch},
+			},
+		},
+		{
 			name: "epoch_logic_after_three_epochs",
 			steps: []testNavEpochStep{
 				// Epoch 1 - complete epoch
@@ -228,7 +251,7 @@ func TestNavEpochHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pp := NewPacketProcessor()
+			pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 			handler := &testMsgHandler{}
 			pp.SetMsgHandler(handler)
 
@@ -306,7 +329,7 @@ func TestNavEpochHandling(t *testing.T) {
 }
 
 func TestNavEpochMsg(t *testing.T) {
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	handler := &testMsgHandler{}
 	pp.SetMsgHandler(handler)
 
@@ -404,6 +427,10 @@ func testCreateMessage(msgID ubxbin.MsgID, navEpoch uint32) ubxbin.Msg {
 		msg.LeapS = 18
 		msg.Valid = 0x07 // Time, week, leap second valid
 		msg.TAcc = 20    // 20ns accuracy
+		return msg
+	case ubxbin.NavEOEID:
+		msg := &ubxbin.NavEOE{}
+		msg.ITOW = navEpoch
 		return msg
 	default:
 		panic("unsupported message ID for test")

@@ -304,6 +304,86 @@ func TestVelGeoNavPVT(t *testing.T) {
 	})
 }
 
+// Real packets captured from ZED-F9P (same session, London area).
+var testHPPosECEFHex = "b56201131c0000000000d819331caf73b617cf14f0ff25ad9d1d1d300c00b0370000fdd0"
+var testHPPosLLHHex = "b5620114240000000000d819331cf112e9ffe8e9b21ebc7901007bc70000ef0a0201891f0000e62d00003412"
+
+func TestHPPosECEF(t *testing.T) {
+	m := parseTestMsg(t, testHPPosECEFHex).(*ubxbin.NavHPPosECEF)
+	var ne gpsprot.NavEpochMsg
+	got := posECEFNavHPPosECEF(&ne, m)
+	if got == nil {
+		t.Fatal("expected non-nil PosECEFMsg")
+	}
+	if got.NativeMsgID != "NAV-HPPOSECEF" {
+		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-HPPOSECEF")
+	}
+	if got.Priority != gpsprot.PriVendorHigh {
+		t.Errorf("Priority = %v, want PriVendorHigh", got.Priority)
+	}
+	// ECEF X ~3978 km: plausible for Earth surface
+	xm := float64(got.Pos[0]) / float64(gpsprot.Meter)
+	if xm < 3900000 || xm > 4100000 {
+		t.Errorf("ECEF X = %.1f m, out of plausible range", xm)
+	}
+	if !ne.Acc.Pos.IsSet() {
+		t.Error("Acc.Pos not set")
+	}
+}
+
+func TestHPPosECEFInvalid(t *testing.T) {
+	m := &ubxbin.NavHPPosECEF{Flags: ubxbin.NavHPPosECEFInvalidEcef}
+	var ne gpsprot.NavEpochMsg
+	if got := posECEFNavHPPosECEF(&ne, m); got != nil {
+		t.Errorf("expected nil for invalid ECEF, got %v", got)
+	}
+}
+
+func TestHPPosLLH(t *testing.T) {
+	m := parseTestMsg(t, testHPPosLLHHex).(*ubxbin.NavHPPosLLH)
+	var ne gpsprot.NavEpochMsg
+	got := posGeoNavHPPosLLH(&ne, m)
+	if got == nil {
+		t.Fatal("expected non-nil PosGeoMsg")
+	}
+	if got.NativeMsgID != "NAV-HPPOSLLH" {
+		t.Errorf("NativeMsgID = %q, want %q", got.NativeMsgID, "NAV-HPPOSLLH")
+	}
+	if got.Priority != gpsprot.PriVendorHigh {
+		t.Errorf("Priority = %v, want PriVendorHigh", got.Priority)
+	}
+	// Lat ~51.5 deg (London area)
+	lat := float64(got.LatLon[0]) / float64(gpsprot.Degrees)
+	if lat < 51.0 || lat > 52.0 {
+		t.Errorf("Lat = %.6f deg, out of plausible range", lat)
+	}
+	// Lon small negative (west of Greenwich)
+	lon := float64(got.LatLon[1]) / float64(gpsprot.Degrees)
+	if lon > 0 || lon < -1.0 {
+		t.Errorf("Lon = %.6f deg, out of plausible range", lon)
+	}
+	if !got.Height.IsSet() {
+		t.Error("Height not set")
+	}
+	if !got.HeightMSL.IsSet() {
+		t.Error("HeightMSL not set")
+	}
+	if !ne.Acc.Hor.IsSet() {
+		t.Error("Acc.Hor not set")
+	}
+	if !ne.Acc.Vert.IsSet() {
+		t.Error("Acc.Vert not set")
+	}
+}
+
+func TestHPPosLLHInvalid(t *testing.T) {
+	m := &ubxbin.NavHPPosLLH{Flags: ubxbin.NavHPPosLLHInvalidLlh}
+	var ne gpsprot.NavEpochMsg
+	if got := posGeoNavHPPosLLH(&ne, m); got != nil {
+		t.Errorf("expected nil for invalid LLH, got %v", got)
+	}
+}
+
 const posConsistencyTolerance = 0.01 // meters
 
 // Captured from a stationary ZED-F9P antenna (one hex-encoded UBX packet per line).
@@ -396,4 +476,272 @@ func parseTestMsg(t *testing.T, h string) ubxbin.Msg {
 		t.Fatalf("ParseMsg: %v", err)
 	}
 	return m
+}
+
+func TestQualityNavPVT(t *testing.T) {
+	tests := []struct {
+		name       string
+		m          ubxbin.NavPVT
+		wantLevel  gpsprot.FixLevel
+		wantDim    gpsprot.FixDim
+		wantCorr   gpsprot.CorrKind
+		wantAux    gpsprot.AuxSrc
+		wantNumSV  uint16
+		wantPDOP   float64
+		wantAge    gpsprot.Duration
+		wantAgeSet bool
+	}{
+		{
+			name:      "no fix",
+			m:         ubxbin.NavPVT{FixType: ubxbin.NavPVTNoFix, NumSV: 0, PDOP: 10000},
+			wantLevel: gpsprot.FixLevelNone,
+			wantPDOP:  100.00,
+		},
+		{
+			name: "3D fix, code only",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT3DFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK,
+				NumSV:   12, PDOP: 150,
+			},
+			wantLevel: gpsprot.FixLevelCode,
+			wantDim:   gpsprot.FixDim3D,
+			wantNumSV: 12, wantPDOP: 1.50,
+		},
+		{
+			name: "3D fix, diff corrections",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT3DFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK | ubxbin.NavPVTDiffSoln,
+				NumSV:   10, PDOP: 120,
+			},
+			wantLevel: gpsprot.FixLevelCodeCorrected,
+			wantDim:   gpsprot.FixDim3D,
+			wantCorr:  gpsprot.CorrUsed,
+			wantNumSV: 10, wantPDOP: 1.20,
+		},
+		{
+			name: "3D fix, carrier float",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT3DFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK | ubxbin.NavPVTCarrSolnFloat,
+				NumSV:   15, PDOP: 100,
+			},
+			wantLevel: gpsprot.FixLevelCarrierFloat,
+			wantDim:   gpsprot.FixDim3D,
+			wantCorr:  gpsprot.CorrUsed,
+			wantNumSV: 15, wantPDOP: 1.00,
+		},
+		{
+			name: "3D fix, carrier fixed",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT3DFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK | ubxbin.NavPVTCarrSolnFixed,
+				NumSV:   20, PDOP: 80,
+			},
+			wantLevel: gpsprot.FixLevelCarrierFixed,
+			wantDim:   gpsprot.FixDim3D,
+			wantCorr:  gpsprot.CorrUsed,
+			wantNumSV: 20, wantPDOP: 0.80,
+		},
+		{
+			name: "2D fix",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT2DFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK,
+				NumSV:   3, PDOP: 500,
+			},
+			wantLevel: gpsprot.FixLevelCode,
+			wantDim:   gpsprot.FixDim2D,
+			wantNumSV: 3, wantPDOP: 5.00,
+		},
+		{
+			name: "dead reckoning only",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVTDeadReckoningOnly,
+				Flags:   ubxbin.NavPVTGNSSFixOK,
+			},
+			wantLevel: gpsprot.FixLevelNone,
+			wantAux:   gpsprot.AuxSrcDR,
+		},
+		{
+			name: "GNSS + dead reckoning",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVTGNSSDeadReckoning,
+				Flags:   ubxbin.NavPVTGNSSFixOK,
+				NumSV:   8, PDOP: 200,
+			},
+			wantLevel: gpsprot.FixLevelCode,
+			wantDim:   gpsprot.FixDim3D,
+			wantAux:   gpsprot.AuxSrcDR,
+			wantNumSV: 8, wantPDOP: 2.00,
+		},
+		{
+			name: "time only fix",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVTTimeOnlyFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK,
+				NumSV:   1, PDOP: 10000,
+			},
+			wantLevel: gpsprot.FixLevelCode,
+			wantDim:   gpsprot.FixDimTimeOnly,
+			wantNumSV: 1, wantPDOP: 100.00,
+		},
+		{
+			name: "HeadVehValid sets AuxSrcINS",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT3DFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK | ubxbin.NavPVTHeadVehValid,
+				NumSV:   10, PDOP: 150,
+			},
+			wantLevel: gpsprot.FixLevelCode,
+			wantDim:   gpsprot.FixDim3D,
+			wantAux:   gpsprot.AuxSrcINS,
+			wantNumSV: 10, wantPDOP: 1.50,
+		},
+		{
+			name: "GNSS+DR with HeadVehValid",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVTGNSSDeadReckoning,
+				Flags:   ubxbin.NavPVTGNSSFixOK | ubxbin.NavPVTHeadVehValid,
+				NumSV:   6, PDOP: 300,
+			},
+			wantLevel: gpsprot.FixLevelCode,
+			wantDim:   gpsprot.FixDim3D,
+			wantAux:   gpsprot.AuxSrcDR | gpsprot.AuxSrcINS,
+			wantNumSV: 6, wantPDOP: 3.00,
+		},
+		{
+			name: "3D gnssFixOK not set",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT3DFix,
+				Flags:   0,
+				NumSV:   10, PDOP: 150,
+			},
+			wantLevel: gpsprot.FixLevelNone,
+			wantDim:   gpsprot.FixDim3D,
+			wantNumSV: 10, wantPDOP: 1.50,
+		},
+		{
+			name: "correction age 1-2s",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT3DFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK | ubxbin.NavPVTDiffSoln,
+				Flags3:  ubxbin.NavPVTLastCorrectionAge1to2,
+				NumSV:   10, PDOP: 120,
+			},
+			wantLevel: gpsprot.FixLevelCodeCorrected,
+			wantDim:   gpsprot.FixDim3D,
+			wantCorr:  gpsprot.CorrUsed,
+			wantNumSV: 10, wantPDOP: 1.20,
+			wantAge: 1 * gpsprot.Second, wantAgeSet: true,
+		},
+		{
+			name: "correction age 120+",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT3DFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK | ubxbin.NavPVTCarrSolnFixed,
+				Flags3:  ubxbin.NavPVTLastCorrectionAge120Plus,
+				NumSV:   15, PDOP: 90,
+			},
+			wantLevel: gpsprot.FixLevelCarrierFixed,
+			wantDim:   gpsprot.FixDim3D,
+			wantCorr:  gpsprot.CorrUsed,
+			wantNumSV: 15, wantPDOP: 0.90,
+			wantAge: 120 * gpsprot.Second, wantAgeSet: true,
+		},
+		{
+			name: "correction age not available",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT3DFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK,
+				Flags3:  ubxbin.NavPVTLastCorrectionAgeNotAvailable,
+				NumSV:   10, PDOP: 150,
+			},
+			wantLevel: gpsprot.FixLevelCode,
+			wantDim:   gpsprot.FixDim3D,
+			wantNumSV: 10, wantPDOP: 1.50,
+		},
+		{
+			name: "correction age 0-1s",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVT3DFix,
+				Flags:   ubxbin.NavPVTGNSSFixOK | ubxbin.NavPVTDiffSoln,
+				Flags3:  ubxbin.NavPVTLastCorrectionAge0to1,
+				NumSV:   10, PDOP: 100,
+			},
+			wantLevel: gpsprot.FixLevelCodeCorrected,
+			wantDim:   gpsprot.FixDim3D,
+			wantCorr:  gpsprot.CorrUsed,
+			wantNumSV: 10, wantPDOP: 1.00,
+			wantAge: 0, wantAgeSet: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ne gpsprot.NavEpochMsg
+			qualityNavPVT(&ne, &tt.m)
+			if ne.FixLevel != tt.wantLevel {
+				t.Errorf("FixLevel = %v, want %v", ne.FixLevel, tt.wantLevel)
+			}
+			if ne.FixDim != tt.wantDim {
+				t.Errorf("FixDim = %v, want %v", ne.FixDim, tt.wantDim)
+			}
+			if ne.Correction != tt.wantCorr {
+				t.Errorf("Correction = %v, want %v", ne.Correction, tt.wantCorr)
+			}
+			if ne.AuxSrc != tt.wantAux {
+				t.Errorf("AuxSrc = %v, want %v", ne.AuxSrc, tt.wantAux)
+			}
+			if !ne.NumSVUsed.IsSet() {
+				t.Error("NumSVUsed not set")
+			} else if ne.NumSVUsed.Get() != tt.wantNumSV {
+				t.Errorf("NumSVUsed = %d, want %d", ne.NumSVUsed.Get(), tt.wantNumSV)
+			}
+			if !ne.DOP.Pos.IsSet() {
+				t.Error("DOP.Pos not set")
+			} else if ne.DOP.Pos.Get() != tt.wantPDOP {
+				t.Errorf("DOP.Pos = %v, want %v", ne.DOP.Pos.Get(), tt.wantPDOP)
+			}
+			if tt.wantAgeSet {
+				if !ne.DiffAge.IsSet() {
+					t.Error("DiffAge not set")
+				} else if ne.DiffAge.Get() != tt.wantAge {
+					t.Errorf("DiffAge = %v, want %v", ne.DiffAge.Get(), tt.wantAge)
+				}
+			} else if ne.DiffAge.IsSet() {
+				t.Errorf("DiffAge set unexpectedly: %v", ne.DiffAge.Get())
+			}
+		})
+	}
+}
+
+func TestDOPNavDOP(t *testing.T) {
+	m := &ubxbin.NavDOP{
+		GDOP: 250,
+		PDOP: 200,
+		HDOP: 120,
+		VDOP: 150,
+		TDOP: 180,
+	}
+	var ne gpsprot.NavEpochMsg
+	dopNavDOP(&ne, m)
+	checks := []struct {
+		name string
+		got  opt.Val[float64]
+		want float64
+	}{
+		{"Geom", ne.DOP.Geom, 2.50},
+		{"Pos", ne.DOP.Pos, 2.00},
+		{"Hor", ne.DOP.Hor, 1.20},
+		{"Vert", ne.DOP.Vert, 1.50},
+		{"Time", ne.DOP.Time, 1.80},
+	}
+	for _, c := range checks {
+		if !c.got.IsSet() {
+			t.Errorf("DOP.%s not set", c.name)
+		} else if c.got.Get() != c.want {
+			t.Errorf("DOP.%s = %v, want %v", c.name, c.got.Get(), c.want)
+		}
+	}
 }

@@ -112,6 +112,89 @@ var bestXYZTests = []dataTestCase{
 	},
 }
 
+var bestVelTests = []dataTestCase{
+	{
+		name:  "K901 BESTVEL DOPPLER_VELOCITY",
+		hex:   "aa44121c630000202c000000b9b4660978233a1b000010000600204e0000000008000000000000000000604110d0304195d97e3fb34e45714d00674030bc2020a62653bf0140902c0b8f8f59",
+		ascii: "#BESTVELA,32,0,92.5,FINESTEERING,2406,456795.000,1048576,6,20000;SOL_COMPUTED,DOPPLER_VELOCITY,0,14,0.0075317220935638,184.0094534257565,-0.0011688825911837612,4.099832e-12*7407cf9f\r\n",
+		hdr: MsgHdr{
+			Port: "32",
+			CommonHdr: CommonHdr{
+				Sequence:           0,
+				IdleTime:           Percentage(185),
+				TimeStatus:         TimeStatusFineSteering,
+				Week:               2406,
+				MillisecondsOfWeek: GPSec(456795000),
+				RecvStatus:         1048576,
+				Reserved:           6,
+				Version:            20000,
+			},
+		},
+		value: &BestVel{Vel: Vel[PosType]{
+			SolStatus: SolComputed,
+			VelType:   PosDopplerVelocity,
+			Latency:   0,
+			Age:       14,
+			HorSpd:    0.0075317220935638,
+			TrkGnd:    184.0094534257565,
+			VertSpd:   -0.0011688825911837612,
+			Reserved:  4.099832e-12,
+		}},
+	},
+}
+
+var bestGNSSVelTests = []dataTestCase{
+	{
+		name:  "Bynav M20 BESTGNSSVEL DOPPLER_VELOCITY",
+		hex:   "aa44121c960500602c000000c7b46609d0f55a1b00000000000010030000000008000000eee024b900000000222d2dc29278a03f6159e9a20e9663c04006c5cadfb33abf00000000b46d21fa",
+		ascii: "#BESTGNSSVELA,COM3,0,99.7,FINESTEERING,2406,458946.000,00000000,0000,784;SOL_COMPUTED,DOPPLER_VELOCITY,-0.000,0.000,0.0322,-156.689287,-0.0004,0.0*caa00864\r\n",
+		hdr: MsgHdr{
+			Port: "96",
+			CommonHdr: CommonHdr{
+				Sequence:           0,
+				IdleTime:           Percentage(199),
+				TimeStatus:         TimeStatusFineSteering,
+				Week:               2406,
+				MillisecondsOfWeek: GPSec(458946000),
+				RecvStatus:         0,
+				Reserved:           0,
+				Version:            784,
+			},
+		},
+		value: &BestGNSSVel{Vel: Vel[PosType]{
+			SolStatus: SolComputed,
+			VelType:   PosDopplerVelocity,
+			Latency:   -0.00015724051627330482,
+			Age:       0,
+			HorSpd:    0.03216990108793484,
+			TrkGnd:    -156.68928666664127,
+			VertSpd:   -0.0004074498526912308,
+			Reserved:  0,
+		}},
+		fixupValueForAscii: fixupBestGNSSVelForAscii,
+		fixupHeaderForAscii: func(hdr MsgHdr) MsgHdr {
+			hdr.Port = "COM3"
+			return hdr
+		},
+	},
+}
+
+func TestBestVelBinary(t *testing.T) {
+	testDataBin(t, bestVelTests)
+}
+
+func TestBestVelAscii(t *testing.T) {
+	testDataAscii(t, bestVelTests)
+}
+
+func TestBestGNSSVelBinary(t *testing.T) {
+	testDataBin(t, bestGNSSVelTests)
+}
+
+func TestBestGNSSVelAscii(t *testing.T) {
+	testDataAscii(t, bestGNSSVelTests)
+}
+
 func TestBestXYZBinary(t *testing.T) {
 	testDataBin(t, bestXYZTests)
 }
@@ -156,6 +239,18 @@ func fixupBestXYZForAscii(msg MsgBody) MsgBody {
 	fixupFloat32(&r.VXSigma, "%.4f")
 	fixupFloat32(&r.VYSigma, "%.4f")
 	fixupFloat32(&r.VZSigma, "%.4f")
+	return &r
+}
+
+func fixupBestGNSSVelForAscii(msg MsgBody) MsgBody {
+	m := msg.(*BestGNSSVel)
+	r := *m
+	fixupFloat32(&r.Latency, "%.3f")
+	fixupFloat32(&r.Age, "%.3f")
+	fixupFloat(&r.HorSpd, "%.4f")
+	fixupFloat(&r.TrkGnd, "%.6f")
+	fixupFloat(&r.VertSpd, "%.4f")
+	fixupFloat32(&r.Reserved, "%.1f")
 	return &r
 }
 

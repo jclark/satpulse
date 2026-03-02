@@ -1,6 +1,7 @@
 package gpsprot
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/bits"
 	"strings"
@@ -218,6 +219,30 @@ func (ss SignalSet) String() string {
 		parts = append(parts, g.String()+"["+strings.Join(sigs, ",")+"]")
 	}
 	return strings.Join(parts, ",")
+}
+
+// IsZero returns true when the signal set is empty.
+func (ss SignalSet) IsZero() bool { return ss == 0 }
+
+// MarshalJSON marshals the signal set as a JSON object mapping GNSS
+// constellation names to signal name arrays.
+func (ss SignalSet) MarshalJSON() ([]byte, error) {
+	return json.Marshal(ss.GNSSSignalMap())
+}
+
+// UnmarshalJSON unmarshals a JSON object mapping GNSS constellation
+// names to signal name arrays into a SignalSet.
+func (ss *SignalSet) UnmarshalJSON(data []byte) error {
+	var m map[string][]string
+	if err := json.Unmarshal(data, &m); err != nil {
+		return err
+	}
+	parsed, err := ParseSignalMap(m)
+	if err != nil {
+		return err
+	}
+	*ss = parsed
+	return nil
 }
 
 // GNSSSignalMap returns the signal set as a map from GNSS constellation name to signal name list.

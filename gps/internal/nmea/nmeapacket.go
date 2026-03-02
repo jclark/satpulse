@@ -27,23 +27,14 @@ const (
 	stateComplete
 )
 
-// maxSentenceLength is max length of NMEA sentence (including checksum and CRLF)
-// NMEA specifies this as 82 characters, but modern receivers exceed this,
-// because they need more precision particularly in the latitude and longitude fields.
-// I am seeing this with the Unicore UM980: there is no option to limit the length of the sentence.
-// U-blox also has a Limit82 flag to limit the length of the sentence to 82 characters,
-// which implies that sentences will exceed this without the flag.
-// The Rust NMEA crate has a limit of 102 characters, so let's follow that.
-// Unicore receivers use something that is not strictly NMEA; and this packet format
-// is designed to accept this, and it is documented as having a maximum length of 128 characters.
-const maxSentenceLength = 128
+const maxSentenceLength = nmeamsg.SentenceMaxLength
 
 // Next implements the gpsprot.PacketFormat interface for NMEA-like packets.
 // Constraints for acceptable NMEA-like packet (not necessarily completely NMEA compliant)
 // 1. First character is `$` and the packet does not contain any other `$` characters.
 // 2. Terminated with a line terminator (CR/LF or LF)
 // 3. All character before the line terminator must be printable ASCII (0x20-0x7E).
-// 4. Total length of packet does not exceed 128 characters (including the line terminator).
+// 4. Total length of packet does not exceed maxSentenceLength characters (including the line terminator).
 // 5. Immediately before the line terminator there is a `*` and two uppercase hex digits;
 //    this `*` is the only one in the packet.
 // 6. The address field is non-empty, where the address is the substring between `$` and the first comma or `*`.

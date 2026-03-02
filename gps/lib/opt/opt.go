@@ -28,6 +28,21 @@ func (v *Val[T]) Clear()       { var zero T; v.set, v.val = false, zero }
 func (v *Val[T]) IsSet() bool  { return v.set }
 func (v *Val[T]) IsZero() bool { return !v.set }
 
+// Ptr returns a pointer to the stored value, or nil if unset.
+func (v *Val[T]) Ptr() *T {
+	if !v.set {
+		return nil
+	}
+	return &v.val
+}
+
+// Fill sets v to src if v is not already set.
+func (v *Val[T]) Fill(src Val[T]) {
+	if !v.set && src.set {
+		*v = src
+	}
+}
+
 // UnmarshalText implements encoding.TextUnmarshaler.
 // An empty string leaves the value unset.
 func (v *Val[T]) UnmarshalText(text []byte) error {

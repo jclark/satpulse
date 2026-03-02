@@ -1,7 +1,13 @@
 package gpsprot
 
 import (
+	"encoding/json"
+	"math"
 	"testing"
+	"time"
+
+	"github.com/jclark/satpulse/gps/lib/geopos"
+	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
 func TestGNSSSet(t *testing.T) {
@@ -54,5 +60,1012 @@ func TestGNSSSetMarshalJSON(t *testing.T) {
 	expectedJSON := `["GPS","GAL"]`
 	if string(marshaledJSON) != expectedJSON {
 		t.Errorf("Expected marshaled JSON to be %v, got %v", expectedJSON, string(marshaledJSON))
+	}
+}
+
+func TestFixLevelString(t *testing.T) {
+	tests := []struct {
+		f    FixLevel
+		want string
+	}{
+		{0, "FixLevel(0)"},
+		{FixLevelNone, "none"},
+		{FixLevelNotMeasured, "notMeasured"},
+		{FixLevelCode, "code"},
+		{FixLevelCodeCorrected, "codeCorrected"},
+		{FixLevelCarrierFloat, "carrierFloat"},
+		{FixLevelCarrierFixed, "carrierFixed"},
+	}
+	for _, tt := range tests {
+		if got := tt.f.String(); got != tt.want {
+			t.Errorf("FixLevel(%d).String() = %q, want %q", tt.f, got, tt.want)
+		}
+	}
+}
+
+func TestFixLevelJSON(t *testing.T) {
+	b, err := json.Marshal(FixLevelCarrierFixed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); got != `"carrierFixed"` {
+		t.Errorf("MarshalJSON = %s, want %q", got, "carrierFixed")
+	}
+}
+
+func TestFixLevelRoundTrip(t *testing.T) {
+	for f := FixLevelNone; f <= FixLevelCarrierFixed; f++ {
+		text, err := f.MarshalText()
+		if err != nil {
+			t.Fatalf("MarshalText(%d): %v", f, err)
+		}
+		var got FixLevel
+		if err := got.UnmarshalText(text); err != nil {
+			t.Fatalf("UnmarshalText(%q): %v", text, err)
+		}
+		if got != f {
+			t.Errorf("round-trip %d: got %d", f, got)
+		}
+	}
+}
+
+func TestFixDimString(t *testing.T) {
+	tests := []struct {
+		d    FixDim
+		want string
+	}{
+		{0, "FixDim(0)"},
+		{FixDim2D, "2D"},
+		{FixDim3D, "3D"},
+		{FixDimTimeOnly, "timeOnly"},
+		{FixDimVelocityOnly, "velocityOnly"},
+	}
+	for _, tt := range tests {
+		if got := tt.d.String(); got != tt.want {
+			t.Errorf("FixDim(%d).String() = %q, want %q", tt.d, got, tt.want)
+		}
+	}
+}
+
+func TestFixDimJSON(t *testing.T) {
+	b, err := json.Marshal(FixDim3D)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); got != `"3D"` {
+		t.Errorf("MarshalJSON = %s, want %q", got, "3D")
+	}
+}
+
+func TestFixDimRoundTrip(t *testing.T) {
+	for d := FixDim2D; d <= FixDimVelocityOnly; d++ {
+		text, err := d.MarshalText()
+		if err != nil {
+			t.Fatalf("MarshalText(%d): %v", d, err)
+		}
+		var got FixDim
+		if err := got.UnmarshalText(text); err != nil {
+			t.Fatalf("UnmarshalText(%q): %v", text, err)
+		}
+		if got != d {
+			t.Errorf("round-trip %d: got %d", d, got)
+		}
+	}
+}
+
+func TestAuxSrcJSON(t *testing.T) {
+	tests := []struct {
+		a    AuxSrc
+		want string
+	}{
+		{0, "null"},
+		{AuxSrcDR, `["DR"]`},
+		{AuxSrcINS, `["INS"]`},
+		{AuxSrcDR | AuxSrcINS, `["DR","INS"]`},
+	}
+	for _, tt := range tests {
+		b, err := json.Marshal(tt.a)
+		if err != nil {
+			t.Fatalf("Marshal(%v): %v", tt.a, err)
+		}
+		if got := string(b); got != tt.want {
+			t.Errorf("AuxSrc(%d) JSON = %s, want %s", tt.a, got, tt.want)
+		}
+	}
+}
+
+func TestAuxSrcString(t *testing.T) {
+	tests := []struct {
+		a    AuxSrc
+		want string
+	}{
+		{0, "(none)"},
+		{AuxSrcDR, "DR"},
+		{AuxSrcDR | AuxSrcINS, "DR,INS"},
+	}
+	for _, tt := range tests {
+		if got := tt.a.String(); got != tt.want {
+			t.Errorf("AuxSrc(%d).String() = %q, want %q", tt.a, got, tt.want)
+		}
+	}
+}
+
+func TestCorrKindClose(t *testing.T) {
+	tests := []struct {
+		in   CorrKind
+		want CorrKind
+	}{
+		{0, 0},
+		{CorrUsed, CorrUsed},
+		{CorrBaseStation, CorrBaseStation | CorrUsed},
+		{CorrSBAS, CorrSBAS | CorrWideArea | CorrUsed},
+		{CorrFullDualFreq, CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed},
+		{CorrPPPRTK, CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed},
+		{CorrPPPConverging, CorrPPPConverging | CorrPPP | CorrWideArea | CorrUsed},
+		// Multiple bits: union of closures
+		{CorrSBAS | CorrRTCM, CorrSBAS | CorrWideArea | CorrRTCM | CorrUsed},
+	}
+	for _, tt := range tests {
+		if got := tt.in.Expand(); got != tt.want {
+			t.Errorf("CorrKind(%#x).Expand() = %#x, want %#x", uint16(tt.in), uint16(got), uint16(tt.want))
+		}
+	}
+}
+
+func TestCorrKindString(t *testing.T) {
+	tests := []struct {
+		c    CorrKind
+		want string
+	}{
+		{0, "(none)"},
+		{CorrUsed, "used"},
+		// baseStation implies used, so only "baseStation"
+		{CorrBaseStation | CorrUsed, "baseStation"},
+		// SBAS implies wideArea implies used
+		{CorrSBAS | CorrWideArea | CorrUsed, "SBAS"},
+		// fullDualFreq implies partialDualFreq implies baseStation implies used
+		{CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed, "fullDualFreq"},
+		// Two independent leaves: SBAS + RTCM
+		{CorrSBAS | CorrRTCM | CorrWideArea | CorrUsed, "RTCM,SBAS"},
+		// PPP-RTK implies PPP implies wideArea implies used
+		{CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed, "PPP-RTK"},
+		// PPPConverged + RTCM: two independent leaves
+		{CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed, "RTCM,PPPConverged"},
+	}
+	for _, tt := range tests {
+		if got := tt.c.String(); got != tt.want {
+			t.Errorf("CorrKind(%#x).String() = %q, want %q", uint16(tt.c), got, tt.want)
+		}
+	}
+}
+
+func TestCorrKindJSON(t *testing.T) {
+	c := CorrSBAS | CorrWideArea | CorrUsed
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); got != `["SBAS"]` {
+		t.Errorf("MarshalJSON = %s, want %s", got, `["SBAS"]`)
+	}
+}
+
+func TestCorrKindJSONRoundTrip(t *testing.T) {
+	tests := []CorrKind{
+		CorrUsed,
+		CorrSBAS | CorrWideArea | CorrUsed,
+		CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed,
+		CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed,
+		CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed,
+	}
+	for _, orig := range tests {
+		b, err := json.Marshal(orig)
+		if err != nil {
+			t.Fatalf("Marshal(%#x): %v", uint16(orig), err)
+		}
+		var got CorrKind
+		if err := json.Unmarshal(b, &got); err != nil {
+			t.Fatalf("Unmarshal(%s): %v", b, err)
+		}
+		if got != orig {
+			t.Errorf("round-trip %#x: marshal=%s, got=%#x", uint16(orig), b, uint16(got))
+		}
+	}
+}
+
+func TestPosGeoMergeHigherOverwrites(t *testing.T) {
+	m := &PosGeoMsg{
+		LatLon:   [2]Angle{10 * Degrees, 20 * Degrees},
+		Height:   opt.Make(100 * Meter),
+		Priority: PriGenericLow,
+		Tag:      "NMEA",
+	}
+	other := &PosGeoMsg{
+		LatLon:    [2]Angle{11 * Degrees, 21 * Degrees},
+		HeightMSL: opt.Make(95 * Meter),
+		Priority:  PriVendorHigh,
+		Tag:       "UBX",
+	}
+	m.Merge(other)
+	if m.LatLon[0] != 11*Degrees {
+		t.Errorf("LatLon[0] = %v, want %v", m.LatLon[0], 11*Degrees)
+	}
+	if m.Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", m.Tag)
+	}
+	if m.Priority != PriVendorHigh {
+		t.Errorf("Priority = %v, want %v", m.Priority, PriVendorHigh)
+	}
+	// Height gone (higher priority copies everything, other has no Height)
+	if m.Height.IsSet() {
+		t.Error("Height should not be set after overwrite")
+	}
+	// HeightMSL from other
+	if !m.HeightMSL.IsSet() || m.HeightMSL.Get() != 95*Meter {
+		t.Errorf("HeightMSL = %v, want 95m set", m.HeightMSL)
+	}
+}
+
+func TestPosGeoMergeLowerDoesNothing(t *testing.T) {
+	m := &PosGeoMsg{
+		LatLon:   [2]Angle{10 * Degrees, 20 * Degrees},
+		Height:   opt.Make(100 * Meter),
+		Priority: PriVendorHigh,
+		Tag:      "UBX",
+	}
+	other := &PosGeoMsg{
+		LatLon:    [2]Angle{11 * Degrees, 21 * Degrees},
+		Height:    opt.Make(200 * Meter),
+		HeightMSL: opt.Make(95 * Meter),
+		Priority:  PriGenericLow,
+		Tag:       "NMEA",
+	}
+	m.Merge(other)
+	if m.LatLon[0] != 10*Degrees {
+		t.Errorf("LatLon[0] = %v, want %v", m.LatLon[0], 10*Degrees)
+	}
+	if m.Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", m.Tag)
+	}
+	if m.Height.Get() != 100*Meter {
+		t.Errorf("Height = %v, want 100m", m.Height.Get())
+	}
+	// HeightMSL NOT filled (lower priority does nothing)
+	if m.HeightMSL.IsSet() {
+		t.Error("HeightMSL should not be set (lower priority does nothing)")
+	}
+}
+
+func TestPosGeoMergeEqualFillsOnly(t *testing.T) {
+	m := &PosGeoMsg{
+		LatLon:   [2]Angle{10 * Degrees, 20 * Degrees},
+		Priority: PriVendorLow,
+		Tag:      "A",
+	}
+	other := &PosGeoMsg{
+		LatLon:    [2]Angle{11 * Degrees, 21 * Degrees},
+		HeightMSL: opt.Make(95 * Meter),
+		Priority:  PriVendorLow,
+		Tag:       "B",
+	}
+	m.Merge(other)
+	// First wins at equal priority: LatLon and Tag unchanged
+	if m.LatLon[0] != 10*Degrees {
+		t.Errorf("LatLon[0] = %v, want %v (first wins)", m.LatLon[0], 10*Degrees)
+	}
+	if m.Tag != "A" {
+		t.Errorf("Tag = %v, want A (first wins)", m.Tag)
+	}
+	// HeightMSL filled (was unset)
+	if !m.HeightMSL.IsSet() || m.HeightMSL.Get() != 95*Meter {
+		t.Errorf("HeightMSL = %v, want 95m set", m.HeightMSL)
+	}
+}
+
+func TestVelGeoMergeHigherOverwrites(t *testing.T) {
+	m := &VelGeoMsg{
+		GroundSpeed: opt.Make(5 * MeterPerSecond),
+		Course:      opt.Make(90 * Degrees),
+		Priority:    PriGenericLow,
+		Tag:         "NMEA",
+	}
+	other := &VelGeoMsg{
+		VelNED:      opt.Make([3]Speed{1, 2, 3}),
+		GroundSpeed: opt.Make(6 * MeterPerSecond),
+		Priority:    PriVendorHigh,
+		Tag:         "UBX",
+	}
+	m.Merge(other)
+	if m.Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", m.Tag)
+	}
+	if m.GroundSpeed.Get() != 6*MeterPerSecond {
+		t.Errorf("GroundSpeed = %v, want 6", m.GroundSpeed.Get())
+	}
+	if !m.VelNED.IsSet() {
+		t.Error("VelNED not set")
+	}
+	// Course from other (higher priority copies everything)
+	if m.Course.IsSet() {
+		t.Error("Course should not be set (other did not set it)")
+	}
+}
+
+func TestVelGeoMergeLowerDoesNothing(t *testing.T) {
+	m := &VelGeoMsg{
+		GroundSpeed: opt.Make(5 * MeterPerSecond),
+		Priority:    PriVendorHigh,
+	}
+	other := &VelGeoMsg{
+		GroundSpeed: opt.Make(6 * MeterPerSecond),
+		Course:      opt.Make(90 * Degrees),
+		Priority:    PriGenericLow,
+	}
+	m.Merge(other)
+	if m.GroundSpeed.Get() != 5*MeterPerSecond {
+		t.Errorf("GroundSpeed = %v, want 5", m.GroundSpeed.Get())
+	}
+	// Course NOT filled (lower priority does nothing)
+	if m.Course.IsSet() {
+		t.Error("Course should not be set (lower priority does nothing)")
+	}
+}
+
+func TestPosECEFMerge(t *testing.T) {
+	m := &PosECEFMsg{
+		Pos:      Point3D{1, 2, 3},
+		Priority: PriVendorLow,
+		Tag:      "A",
+	}
+	other := &PosECEFMsg{
+		Pos:      Point3D{4, 5, 6},
+		Priority: PriVendorHigh,
+		Tag:      "B",
+	}
+	m.Merge(other)
+	if m.Pos != (Point3D{4, 5, 6}) {
+		t.Errorf("Pos = %v, want {4,5,6}", m.Pos)
+	}
+	if m.Tag != "B" {
+		t.Errorf("Tag = %v, want B", m.Tag)
+	}
+	// Lower priority does not overwrite
+	low := &PosECEFMsg{Pos: Point3D{7, 8, 9}, Priority: PriGenericLow, Tag: "C"}
+	m.Merge(low)
+	if m.Pos != (Point3D{4, 5, 6}) {
+		t.Errorf("Pos = %v, want {4,5,6} (lower priority)", m.Pos)
+	}
+	// Equal priority does not overwrite
+	eq := &PosECEFMsg{Pos: Point3D{10, 11, 12}, Priority: PriVendorHigh, Tag: "D"}
+	m.Merge(eq)
+	if m.Pos != (Point3D{4, 5, 6}) {
+		t.Errorf("Pos = %v, want {4,5,6} (equal priority, first wins)", m.Pos)
+	}
+}
+
+func TestVelECEFMerge(t *testing.T) {
+	m := &VelECEFMsg{
+		Vel:      [3]Speed{1, 2, 3},
+		Priority: PriVendorLow,
+	}
+	other := &VelECEFMsg{
+		Vel:      [3]Speed{4, 5, 6},
+		Priority: PriVendorHigh,
+	}
+	m.Merge(other)
+	if m.Vel != [3]Speed{4, 5, 6} {
+		t.Errorf("Vel = %v, want {4,5,6}", m.Vel)
+	}
+	// Lower priority does not overwrite
+	low := &VelECEFMsg{Vel: [3]Speed{7, 8, 9}, Priority: PriGenericLow}
+	m.Merge(low)
+	if m.Vel != [3]Speed{4, 5, 6} {
+		t.Errorf("Vel = %v, want {4,5,6} (lower priority)", m.Vel)
+	}
+}
+
+func TestPVMsgAccumFirstStored(t *testing.T) {
+	var a PVMsgAccum
+	now := time.Now()
+	a.PosGeo(&PosGeoMsg{LatLon: [2]Angle{1, 2}, Priority: PriGenericLow}, now)
+	if !a.PVMsgBundle.PosGeo.IsSet() {
+		t.Fatal("first PosGeo should be stored")
+	}
+	if a.PVMsgBundle.PosGeo.Get().LatLon[0] != 1 {
+		t.Fatal("first PosGeo LatLon[0] wrong")
+	}
+}
+
+func TestPVMsgAccumMerge(t *testing.T) {
+	var a PVMsgAccum
+	now := time.Now()
+	a.PosGeo(&PosGeoMsg{
+		LatLon:   [2]Angle{1 * Degrees, 2 * Degrees},
+		Priority: PriGenericLow,
+		Tag:      "NMEA",
+	}, now)
+	a.PosGeo(&PosGeoMsg{
+		LatLon:   [2]Angle{3 * Degrees, 4 * Degrees},
+		Height:   opt.Make(50 * Meter),
+		Priority: PriVendorHigh,
+		Tag:      "UBX",
+	}, now)
+	pg := a.PVMsgBundle.PosGeo.Get()
+	if pg.LatLon[0] != 3*Degrees {
+		t.Errorf("LatLon[0] = %v, want %v", pg.LatLon[0], 3*Degrees)
+	}
+	if pg.Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", pg.Tag)
+	}
+	if !pg.Height.IsSet() {
+		t.Error("Height not set after merge")
+	}
+}
+
+func TestPVMsgAccumClear(t *testing.T) {
+	var a PVMsgAccum
+	now := time.Now()
+	a.PosGeo(&PosGeoMsg{LatLon: [2]Angle{1, 2}}, now)
+	a.VelGeo(&VelGeoMsg{GroundSpeed: opt.Make(Speed(5))}, now)
+	a.NavEpoch(&NavEpochMsg{}, now)
+	if a.PVMsgBundle.PosGeo.IsSet() {
+		t.Error("PosGeo not cleared")
+	}
+	if a.PVMsgBundle.VelGeo.IsSet() {
+		t.Error("VelGeo not cleared")
+	}
+}
+
+func TestPVMsgAccumIndependent(t *testing.T) {
+	var a PVMsgAccum
+	now := time.Now()
+	a.PosGeo(&PosGeoMsg{LatLon: [2]Angle{1, 2}, Priority: PriGenericLow}, now)
+	a.VelGeo(&VelGeoMsg{GroundSpeed: opt.Make(Speed(5)), Priority: PriVendorLow}, now)
+	a.PosECEF(&PosECEFMsg{Pos: Point3D{10, 20, 30}, Priority: PriVendorHigh}, now)
+	a.VelECEF(&VelECEFMsg{Vel: [3]Speed{1, 2, 3}, Priority: PriGenericHigh}, now)
+	if !a.PVMsgBundle.PosGeo.IsSet() || !a.PVMsgBundle.VelGeo.IsSet() ||
+		!a.PVMsgBundle.PosECEF.IsSet() || !a.PVMsgBundle.VelECEF.IsSet() {
+		t.Error("not all message types accumulated")
+	}
+}
+
+func TestPVMsgAccumAfterClear(t *testing.T) {
+	var a PVMsgAccum
+	now := time.Now()
+	a.PosGeo(&PosGeoMsg{LatLon: [2]Angle{1, 2}, Priority: PriGenericLow, Tag: "old"}, now)
+	a.NavEpoch(&NavEpochMsg{}, now)
+	a.PosGeo(&PosGeoMsg{LatLon: [2]Angle{3, 4}, Priority: PriVendorHigh, Tag: "new"}, now)
+	if a.PVMsgBundle.PosGeo.Get().Tag != "new" {
+		t.Errorf("Tag = %v, want new (fresh after clear)", a.PVMsgBundle.PosGeo.Get().Tag)
+	}
+}
+
+func TestAccuracyFillSetsUnset(t *testing.T) {
+	a := Accuracy{
+		Pos:   opt.Make(10 * Meter),
+		Hor:   opt.Make(5 * Meter),
+		Speed: opt.Make(2 * MeterPerSecond),
+	}
+	b := Accuracy{
+		Pos:         opt.Make(20 * Meter),
+		Vert:        opt.Make(8 * Meter),
+		GroundSpeed: opt.Make(3 * MeterPerSecond),
+	}
+	a.Fill(&b)
+	// Pos already set, not overwritten
+	if a.Pos.Get() != 10*Meter {
+		t.Errorf("Pos = %v, want 10m (already set)", a.Pos.Get())
+	}
+	// Hor already set, kept
+	if a.Hor.Get() != 5*Meter {
+		t.Errorf("Hor = %v, want 5m", a.Hor.Get())
+	}
+	// Vert filled from b
+	if a.Vert.Get() != 8*Meter {
+		t.Errorf("Vert = %v, want 8m", a.Vert.Get())
+	}
+	// Speed already set, kept
+	if a.Speed.Get() != 2*MeterPerSecond {
+		t.Errorf("Speed = %v, want 2m/s", a.Speed.Get())
+	}
+	// GroundSpeed filled from b
+	if a.GroundSpeed.Get() != 3*MeterPerSecond {
+		t.Errorf("GroundSpeed = %v, want 3m/s", a.GroundSpeed.Get())
+	}
+}
+
+func TestAccuracyFillDoesNotOverwrite(t *testing.T) {
+	a := Accuracy{
+		Pos: opt.Make(10 * Meter),
+	}
+	b := Accuracy{
+		Pos:  opt.Make(20 * Meter),
+		Vert: opt.Make(8 * Meter),
+	}
+	a.Fill(&b)
+	// Pos already set, not overwritten
+	if a.Pos.Get() != 10*Meter {
+		t.Errorf("Pos = %v, want 10m", a.Pos.Get())
+	}
+	// Vert filled (was unset)
+	if a.Vert.Get() != 8*Meter {
+		t.Errorf("Vert = %v, want 8m", a.Vert.Get())
+	}
+}
+
+func TestMergeNavEpochNils(t *testing.T) {
+	msg := &NavEpochMsg{Tag: "UBX"}
+	m := MergeNavEpoch(nil, msg)
+	if m != msg {
+		t.Errorf("MergeNavEpoch(nil, msg) = %v; want msg", m)
+	}
+	m = MergeNavEpoch(msg, nil)
+	if m != msg {
+		t.Errorf("MergeNavEpoch(msg, nil) = %v; want msg", m)
+	}
+	m = MergeNavEpoch(nil, nil)
+	if m != nil {
+		t.Errorf("MergeNavEpoch(nil, nil) = %v; want nil", m)
+	}
+}
+
+func TestMergeNavEpochFirstWins(t *testing.T) {
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Millisecond)
+	// Higher priority (UBX) passed first; lower priority (NMEA) fills gaps.
+	ubx := &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
+	nmea := &NavEpochMsg{Tag: "NMEA", StartTime: t1, Acc: Accuracy{Hor: opt.Make(5 * Meter)}}
+	m := MergeNavEpoch(ubx, nmea)
+	if m.Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX (first wins)", m.Tag)
+	}
+	if m.StartTime != t0 {
+		t.Errorf("StartTime = %v, want %v (earliest)", m.StartTime, t0)
+	}
+	if m.Acc.Pos.Get() != 10*Meter {
+		t.Errorf("Acc.Pos = %v, want 10m (from UBX)", m.Acc.Pos.Get())
+	}
+	if m.Acc.Hor.Get() != 5*Meter {
+		t.Errorf("Acc.Hor = %v, want 5m (filled from NMEA)", m.Acc.Hor.Get())
+	}
+}
+
+// testFlusher is a fake EpochFlusher for testing NavEpochManager.
+type testFlusher struct {
+	msg *NavEpochMsg
+	pri MsgPriority
+	mh  MsgHandler
+}
+
+func (f *testFlusher) FlushNavEpoch(tRead time.Time) (*NavEpochMsg, MsgPriority, MsgHandler) {
+	msg := f.msg
+	f.msg = nil
+	return msg, f.pri, f.mh
+}
+
+// epochRecorder records NavEpoch calls.
+type epochRecorder struct {
+	DefaultHandler
+	epochs []NavEpochMsg
+	tReads []time.Time
+}
+
+func (r *epochRecorder) NavEpoch(msg *NavEpochMsg, tRead time.Time) {
+	r.epochs = append(r.epochs, *msg)
+	r.tReads = append(r.tReads, tRead)
+}
+
+func TestNavEpochManagerSingleProtocol(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	t2 := t1.Add(time.Second)
+	f := &testFlusher{pri: PriVendorLow, mh: rec}
+	// First epoch start: f added to active set, no flush
+	mgr.EpochStarted(f, t0)
+	if len(rec.epochs) != 0 {
+		t.Fatalf("expected no epochs after first EpochStarted, got %d", len(rec.epochs))
+	}
+	// Set up what will be flushed
+	f.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
+	// Second epoch start: triggers flush of first epoch
+	mgr.EpochStarted(f, t1)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after second EpochStarted, got %d", len(rec.epochs))
+	}
+	if rec.epochs[0].Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", rec.epochs[0].Tag)
+	}
+	if rec.tReads[0] != t1 {
+		t.Errorf("tRead = %v, want %v", rec.tReads[0], t1)
+	}
+	// Set up second epoch data
+	f.msg = &NavEpochMsg{Tag: "UBX", StartTime: t1}
+	// Third epoch start: flushes second epoch
+	mgr.EpochStarted(f, t2)
+	if len(rec.epochs) != 2 {
+		t.Fatalf("expected 2 epochs, got %d", len(rec.epochs))
+	}
+}
+
+func TestNavEpochManagerMultiProtocol(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Millisecond)
+	t2 := t0.Add(time.Second)
+	binary := &testFlusher{pri: PriVendorLow, mh: rec}
+	nmeaF := &testFlusher{pri: PriGenericHigh, mh: rec}
+	// Epoch 1: both protocols register
+	mgr.EpochStarted(binary, t0)
+	mgr.EpochStarted(nmeaF, t1)
+	if len(rec.epochs) != 0 {
+		t.Fatalf("no flush expected in first epoch, got %d", len(rec.epochs))
+	}
+	// Set up epoch 1 data for flush
+	binary.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
+	nmeaF.msg = &NavEpochMsg{Tag: "NMEA", StartTime: t1, Acc: Accuracy{Hor: opt.Make(5 * Meter)}}
+	// Epoch 2: binary starts first, triggering flush
+	mgr.EpochStarted(binary, t2)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after binary starts epoch 2, got %d", len(rec.epochs))
+	}
+	m := rec.epochs[0]
+	// Tag should come from binary (higher priority)
+	if m.Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", m.Tag)
+	}
+	// StartTime should be earliest
+	if m.StartTime != t0 {
+		t.Errorf("StartTime = %v, want %v", m.StartTime, t0)
+	}
+	// Accuracy should be merged
+	if m.Acc.Pos.Get() != 10*Meter {
+		t.Errorf("Acc.Pos = %v, want 10m", m.Acc.Pos.Get())
+	}
+	if m.Acc.Hor.Get() != 5*Meter {
+		t.Errorf("Acc.Hor = %v, want 5m", m.Acc.Hor.Get())
+	}
+}
+
+func TestNavEpochManagerEndOfEpochSingle(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	f := &testFlusher{pri: PriVendorLow, mh: rec}
+	mgr.EpochStarted(f, t0)
+	f.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0}
+	// EndOfEpoch with one active processor: flushes immediately
+	mgr.EndOfEpoch(t1)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after EndOfEpoch, got %d", len(rec.epochs))
+	}
+	if rec.epochs[0].Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", rec.epochs[0].Tag)
+	}
+}
+
+func TestNavEpochManagerEndOfEpochMultiple(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	f1 := &testFlusher{pri: PriVendorLow, mh: rec}
+	f2 := &testFlusher{pri: PriGenericHigh, mh: rec}
+	mgr.EpochStarted(f1, t0)
+	mgr.EpochStarted(f2, t0)
+	f1.msg = &NavEpochMsg{Tag: "UBX"}
+	f2.msg = &NavEpochMsg{Tag: "NMEA"}
+	// EndOfEpoch with multiple active: flushes all processors
+	mgr.EndOfEpoch(t0)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch after EndOfEpoch, got %d", len(rec.epochs))
+	}
+	// UBX (PriVendorLow=3) wins over NMEA (PriGenericHigh=2) for Tag
+	if rec.epochs[0].Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", rec.epochs[0].Tag)
+	}
+}
+
+func TestNavEpochManagerNilContribution(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	t2 := t1.Add(time.Second)
+	binary := &testFlusher{pri: PriVendorLow, mh: rec}
+	casicF := &testFlusher{pri: PriVendorLow, mh: rec}
+	// Epoch 1: both register
+	mgr.EpochStarted(binary, t0)
+	mgr.EpochStarted(casicF, t0)
+	// Only binary has data; CASIC returns nil
+	binary.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0}
+	casicF.msg = nil
+	// Epoch 2: triggers flush
+	mgr.EpochStarted(binary, t1)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected 1 epoch, got %d", len(rec.epochs))
+	}
+	if rec.epochs[0].Tag != "UBX" {
+		t.Errorf("Tag = %v, want UBX", rec.epochs[0].Tag)
+	}
+	// Now test all-nil: no emission
+	binary.msg = nil
+	casicF.msg = nil
+	mgr.EpochStarted(casicF, t1)
+	mgr.EpochStarted(binary, t2)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("expected still 1 epoch (all nil), got %d", len(rec.epochs))
+	}
+}
+
+// approxSpeed checks whether two Speed values are within tol m/s of each other.
+func approxSpeed(a, b Speed, tol float64) bool {
+	return math.Abs(a.MetersPerSecond()-b.MetersPerSecond()) < tol
+}
+
+// testPos is a geodetic position used across FillDerived tests.
+// 47.5 N, 7.6 E, 500 m height.
+var testPos = PosGeoMsg{
+	LatLon: [2]Angle{DegreesFromFloat(47.5), DegreesFromFloat(7.6)},
+	Height: opt.Make(Meters(500)),
+	Tag:    "T",
+}
+
+func TestFillDerivedPosGeoToECEF(t *testing.T) {
+	b := PVMsgBundle{PosGeo: opt.Make(testPos)}
+	b.FillDerived()
+	if !b.PosECEF.IsSet() {
+		t.Fatal("PosECEF not derived from PosGeo")
+	}
+	pe := b.PosECEF.Get()
+	// Sanity: ECEF should be on-Earth
+	ecef := geopos.ECEF{pe.Pos[0].Meters(), pe.Pos[1].Meters(), pe.Pos[2].Meters()}
+	if err := ecef.CheckOnEarth(); err != nil {
+		t.Fatalf("derived ECEF not on Earth: %v", err)
+	}
+	if pe.Tag != "T" {
+		t.Errorf("Tag = %v, want T", pe.Tag)
+	}
+}
+
+func TestFillDerivedECEFToPosGeo(t *testing.T) {
+	// Compute a known ECEF from the test position, then derive back.
+	llh := geopos.LLH{Lat: 47.5, Lon: 7.6, Height: 500}
+	ecef := geopos.WGS84.LLHtoECEF(llh)
+	b := PVMsgBundle{
+		PosECEF: opt.Make(PosECEFMsg{
+			Pos: Point3D{Meters(ecef[0]), Meters(ecef[1]), Meters(ecef[2])},
+			Tag: "E",
+		}),
+	}
+	b.FillDerived()
+	if !b.PosGeo.IsSet() {
+		t.Fatal("PosGeo not derived from PosECEF")
+	}
+	pg := b.PosGeo.Get()
+	if math.Abs(pg.LatLon[0].Degrees()-47.5) > 1e-6 {
+		t.Errorf("Lat = %v, want ~47.5", pg.LatLon[0].Degrees())
+	}
+	if math.Abs(pg.LatLon[1].Degrees()-7.6) > 1e-6 {
+		t.Errorf("Lon = %v, want ~7.6", pg.LatLon[1].Degrees())
+	}
+	if pg.Tag != "E" {
+		t.Errorf("Tag = %v, want E", pg.Tag)
+	}
+}
+
+func TestFillDerivedVelNEDToECEF(t *testing.T) {
+	b := PVMsgBundle{
+		PosGeo: opt.Make(testPos),
+		VelGeo: opt.Make(VelGeoMsg{
+			VelNED: opt.Make([3]Speed{MeterPerSecond, 2 * MeterPerSecond, 0}),
+			Tag:    "V",
+		}),
+	}
+	b.FillDerived()
+	if !b.VelECEF.IsSet() {
+		t.Fatal("VelECEF not derived from VelNED")
+	}
+	ve := b.VelECEF.Get()
+	// Speed magnitude should be preserved.
+	mag := math.Sqrt(
+		ve.Vel[0].MetersPerSecond()*ve.Vel[0].MetersPerSecond() +
+			ve.Vel[1].MetersPerSecond()*ve.Vel[1].MetersPerSecond() +
+			ve.Vel[2].MetersPerSecond()*ve.Vel[2].MetersPerSecond())
+	wantMag := math.Sqrt(1 + 4) // sqrt(1^2 + 2^2)
+	if math.Abs(mag-wantMag) > 0.01 {
+		t.Errorf("ECEF speed magnitude = %v, want ~%v", mag, wantMag)
+	}
+	if ve.Tag != "V" {
+		t.Errorf("Tag = %v, want V", ve.Tag)
+	}
+}
+
+func TestFillDerivedSpeed3DFromVelNED(t *testing.T) {
+	b := PVMsgBundle{
+		PosGeo: opt.Make(testPos),
+		VelGeo: opt.Make(VelGeoMsg{
+			VelNED: opt.Make([3]Speed{
+				MetersPerSecondFromFloat(3),
+				MetersPerSecondFromFloat(4),
+				MetersPerSecondFromFloat(0),
+			}),
+		}),
+	}
+	b.FillDerived()
+	vg := b.VelGeo.Get()
+	if !vg.Speed3D.IsSet() {
+		t.Fatal("Speed3D not derived from VelNED")
+	}
+	if !approxSpeed(vg.Speed3D.Get(), MetersPerSecondFromFloat(5), 0.001) {
+		t.Errorf("Speed3D = %v, want ~5 m/s", vg.Speed3D.Get().MetersPerSecond())
+	}
+}
+
+func TestFillDerivedVelECEFToNED(t *testing.T) {
+	// Compute reference: start with known NED, convert to ECEF, then
+	// verify FillDerived recovers the NED.
+	lat, lon := 47.5, 7.6
+	origNED := geopos.VelNED{1, 2, -0.5}
+	ecefV := geopos.WGS84.NEDtoECEF(origNED, lat, lon)
+	llh := geopos.LLH{Lat: lat, Lon: lon, Height: 500}
+	ecefP := geopos.WGS84.LLHtoECEF(llh)
+	b := PVMsgBundle{
+		PosECEF: opt.Make(PosECEFMsg{
+			Pos: Point3D{Meters(ecefP[0]), Meters(ecefP[1]), Meters(ecefP[2])},
+		}),
+		VelECEF: opt.Make(VelECEFMsg{
+			Vel: [3]Speed{
+				MetersPerSecondFromFloat(ecefV[0]),
+				MetersPerSecondFromFloat(ecefV[1]),
+				MetersPerSecondFromFloat(ecefV[2]),
+			},
+		}),
+	}
+	b.FillDerived()
+	if !b.VelGeo.IsSet() {
+		t.Fatal("VelGeo not derived from VelECEF")
+	}
+	vg := b.VelGeo.Get()
+	if !vg.VelNED.IsSet() {
+		t.Fatal("VelNED not set")
+	}
+	ned := vg.VelNED.Get()
+	if !approxSpeed(ned[0], MetersPerSecondFromFloat(origNED[0]), 0.001) {
+		t.Errorf("VelN = %v, want ~%v", ned[0].MetersPerSecond(), origNED[0])
+	}
+	if !approxSpeed(ned[1], MetersPerSecondFromFloat(origNED[1]), 0.001) {
+		t.Errorf("VelE = %v, want ~%v", ned[1].MetersPerSecond(), origNED[1])
+	}
+	if !approxSpeed(ned[2], MetersPerSecondFromFloat(origNED[2]), 0.001) {
+		t.Errorf("VelD = %v, want ~%v", ned[2].MetersPerSecond(), origNED[2])
+	}
+	if !vg.Speed3D.IsSet() {
+		t.Fatal("Speed3D not derived")
+	}
+}
+
+// TestFillDerivedPartialVelGeoWithVelECEF tests the mixed-source case:
+// VelGeo exists with GroundSpeed/Course (from e.g. PQTMNAV) but no VelNED,
+// VelECEF exists (from another source), position is known.
+// FillDerived should fill VelNED and Speed3D into the existing VelGeo.
+func TestFillDerivedPartialVelGeoWithVelECEF(t *testing.T) {
+	lat, lon := 47.5, 7.6
+	origNED := geopos.VelNED{1, 2, -0.5}
+	ecefV := geopos.WGS84.NEDtoECEF(origNED, lat, lon)
+	b := PVMsgBundle{
+		PosGeo: opt.Make(testPos),
+		VelGeo: opt.Make(VelGeoMsg{
+			GroundSpeed: opt.Make(MetersPerSecondFromFloat(1.5)),
+			Course:      opt.Make(DegreesFromFloat(45)),
+			Tag:         "NAV",
+		}),
+		VelECEF: opt.Make(VelECEFMsg{
+			Vel: [3]Speed{
+				MetersPerSecondFromFloat(ecefV[0]),
+				MetersPerSecondFromFloat(ecefV[1]),
+				MetersPerSecondFromFloat(ecefV[2]),
+			},
+			Tag: "BIN",
+		}),
+	}
+	b.FillDerived()
+	vg := b.VelGeo.Get()
+	// GroundSpeed and Course should be preserved from the original VelGeo.
+	if !vg.GroundSpeed.IsSet() || vg.GroundSpeed.Get() != MetersPerSecondFromFloat(1.5) {
+		t.Errorf("GroundSpeed = %v, want 1.5 m/s (preserved)", vg.GroundSpeed)
+	}
+	if !vg.Course.IsSet() || vg.Course.Get() != DegreesFromFloat(45) {
+		t.Errorf("Course = %v, want 45 deg (preserved)", vg.Course)
+	}
+	// Tag should be preserved from the original VelGeo.
+	if vg.Tag != "NAV" {
+		t.Errorf("Tag = %v, want NAV (preserved)", vg.Tag)
+	}
+	// VelNED should be filled from VelECEF derivation.
+	if !vg.VelNED.IsSet() {
+		t.Fatal("VelNED not derived into existing VelGeo")
+	}
+	ned := vg.VelNED.Get()
+	if !approxSpeed(ned[0], MetersPerSecondFromFloat(origNED[0]), 0.001) {
+		t.Errorf("VelN = %v, want ~%v", ned[0].MetersPerSecond(), origNED[0])
+	}
+	if !approxSpeed(ned[1], MetersPerSecondFromFloat(origNED[1]), 0.001) {
+		t.Errorf("VelE = %v, want ~%v", ned[1].MetersPerSecond(), origNED[1])
+	}
+	if !approxSpeed(ned[2], MetersPerSecondFromFloat(origNED[2]), 0.001) {
+		t.Errorf("VelD = %v, want ~%v", ned[2].MetersPerSecond(), origNED[2])
+	}
+	// Speed3D should be derived.
+	if !vg.Speed3D.IsSet() {
+		t.Fatal("Speed3D not derived into existing VelGeo")
+	}
+	wantSpd := math.Sqrt(origNED[0]*origNED[0] + origNED[1]*origNED[1] + origNED[2]*origNED[2])
+	if !approxSpeed(vg.Speed3D.Get(), MetersPerSecondFromFloat(wantSpd), 0.001) {
+		t.Errorf("Speed3D = %v, want ~%v", vg.Speed3D.Get().MetersPerSecond(), wantSpd)
+	}
+}
+
+// TestFillDerivedPartialVelGeoVelNEDNotOverwritten verifies that when
+// VelGeo already has VelNED and VelECEF also exists, the existing VelNED
+// is not overwritten.
+func TestFillDerivedPartialVelGeoVelNEDNotOverwritten(t *testing.T) {
+	lat, lon := 47.5, 7.6
+	ecefV := geopos.WGS84.NEDtoECEF(geopos.VelNED{10, 20, 30}, lat, lon)
+	origNED := [3]Speed{MeterPerSecond, 2 * MeterPerSecond, 3 * MeterPerSecond}
+	b := PVMsgBundle{
+		PosGeo: opt.Make(testPos),
+		VelGeo: opt.Make(VelGeoMsg{
+			VelNED: opt.Make(origNED),
+		}),
+		VelECEF: opt.Make(VelECEFMsg{
+			Vel: [3]Speed{
+				MetersPerSecondFromFloat(ecefV[0]),
+				MetersPerSecondFromFloat(ecefV[1]),
+				MetersPerSecondFromFloat(ecefV[2]),
+			},
+		}),
+	}
+	b.FillDerived()
+	vg := b.VelGeo.Get()
+	ned := vg.VelNED.Get()
+	if ned != origNED {
+		t.Errorf("VelNED = %v, want %v (not overwritten)", ned, origNED)
+	}
+}
+
+func TestFillDerivedNoPosition(t *testing.T) {
+	// Without position, velocity frame conversions are impossible.
+	b := PVMsgBundle{
+		VelGeo: opt.Make(VelGeoMsg{
+			VelNED: opt.Make([3]Speed{MeterPerSecond, 0, 0}),
+		}),
+	}
+	b.FillDerived()
+	if b.VelECEF.IsSet() {
+		t.Error("VelECEF should not be derived without position")
+	}
+	// Speed3D should still be derived from VelNED alone.
+	vg := b.VelGeo.Get()
+	if !vg.Speed3D.IsSet() {
+		t.Error("Speed3D should be derived from VelNED even without position")
+	}
+}
+
+func TestFillDerivedNoop(t *testing.T) {
+	// Everything already set: FillDerived should not overwrite.
+	lat, lon := 47.5, 7.6
+	llh := geopos.LLH{Lat: lat, Lon: lon, Height: 500}
+	ecefP := geopos.WGS84.LLHtoECEF(llh)
+	origECEF := PosECEFMsg{Pos: Point3D{Meters(ecefP[0]), Meters(ecefP[1]), Meters(ecefP[2])}, Tag: "orig"}
+	b := PVMsgBundle{
+		PosGeo:  opt.Make(testPos),
+		PosECEF: opt.Make(origECEF),
+	}
+	b.FillDerived()
+	if b.PosECEF.Get().Tag != "orig" {
+		t.Error("PosECEF overwritten when already set")
 	}
 }

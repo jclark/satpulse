@@ -3,7 +3,6 @@ package as
 import (
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/asbin"
@@ -29,7 +28,7 @@ func TestSurveyNavSvin(t *testing.T) {
 				Valid:      false,
 				InProgress: true,
 				ObsCount:   60,
-				ObsTime:    60 * time.Second,
+				ObsTime:    60 * gpsprot.Second,
 			},
 		},
 		{
@@ -46,7 +45,7 @@ func TestSurveyNavSvin(t *testing.T) {
 				Valid:      true,
 				InProgress: false,
 				ObsCount:   300,
-				ObsTime:    300 * time.Second,
+				ObsTime:    300 * gpsprot.Second,
 			},
 		},
 		{
@@ -63,7 +62,7 @@ func TestSurveyNavSvin(t *testing.T) {
 				Valid:      false,
 				InProgress: false,
 				ObsCount:   120,
-				ObsTime:    120 * time.Second,
+				ObsTime:    120 * gpsprot.Second,
 			},
 		},
 		{
@@ -80,7 +79,7 @@ func TestSurveyNavSvin(t *testing.T) {
 				Valid:      true,
 				InProgress: false,
 				ObsCount:   3600,
-				ObsTime:    3600 * time.Second,
+				ObsTime:    3600 * gpsprot.Second,
 			},
 		},
 	}

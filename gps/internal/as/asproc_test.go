@@ -34,7 +34,7 @@ func (h *testMsgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 }
 
 func TestNavEpochMsg(t *testing.T) {
-	pp := NewPacketProcessor()
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	handler := &testMsgHandler{}
 	pp.SetMsgHandler(handler)
 

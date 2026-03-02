@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
-	"strconv"
 	"strings"
+	"time"
+
+	"github.com/jclark/satpulse/gps/lib/decconv"
 )
 
 // Length represents a length in micrometers.
@@ -31,19 +32,44 @@ func (l Length) Meters() float64 {
 }
 
 func (l Length) String() string {
-	return fmt.Sprintf("%v", l.Meters())
+	return decconv.FormatInt64(int64(l), 6, 0)
+}
+
+// MarshalJSON implements json.Marshaler.
+func (l Length) MarshalJSON() ([]byte, error) {
+	return []byte(decconv.FormatInt64(int64(l), 6, 0)), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (l *Length) UnmarshalJSON(data []byte) error {
+	v, err := decconv.ParseInt64(string(data), 6)
+	if err != nil {
+		return err
+	}
+	*l = Length(v)
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (l Length) MarshalText() ([]byte, error) {
+	return []byte(decconv.FormatInt64(int64(l), 6, 0)), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (l *Length) UnmarshalText(text []byte) error {
+	v, err := decconv.ParseInt64(string(text), 6)
+	if err != nil {
+		return err
+	}
+	*l = Length(v)
+	return nil
 }
 
 // ParseLength parses a string as a length in meters.
 func ParseLength(s string) (Length, error) {
-	var f float64
-	var trailing string
-	if n, err := fmt.Sscanf(s, "%f%s", &f, &trailing); n != 1 || err != io.EOF {
-		return 0, fmt.Errorf("invalid length: %q", s)
-	}
-	n, err := float64ToInt64(math.Round(f * float64(Meter)))
+	n, err := decconv.ParseInt64(s, 6)
 	if err != nil {
-		return 0, fmt.Errorf("invalid length %f: %w", f, err)
+		return 0, fmt.Errorf("invalid length: %q", s)
 	}
 	return Length(n), nil
 }
@@ -69,19 +95,44 @@ func (a Angle) Degrees() float64 {
 }
 
 func (a Angle) String() string {
-	return fmt.Sprintf("%v", a.Degrees())
+	return decconv.FormatInt64(int64(a), 9, 0)
+}
+
+// MarshalJSON implements json.Marshaler.
+func (a Angle) MarshalJSON() ([]byte, error) {
+	return []byte(decconv.FormatInt64(int64(a), 9, 0)), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (a *Angle) UnmarshalJSON(data []byte) error {
+	v, err := decconv.ParseInt64(string(data), 9)
+	if err != nil {
+		return err
+	}
+	*a = Angle(v)
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (a Angle) MarshalText() ([]byte, error) {
+	return []byte(decconv.FormatInt64(int64(a), 9, 0)), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (a *Angle) UnmarshalText(text []byte) error {
+	v, err := decconv.ParseInt64(string(text), 9)
+	if err != nil {
+		return err
+	}
+	*a = Angle(v)
+	return nil
 }
 
 // ParseAngle parses a string as an angle in degrees.
 func ParseAngle(s string) (Angle, error) {
-	var f float64
-	var trailing string
-	if n, err := fmt.Sscanf(s, "%f%s", &f, &trailing); n != 1 || err != io.EOF {
-		return 0, fmt.Errorf("invalid angle: %q", s)
-	}
-	n, err := float64ToInt64(math.Round(f * float64(Degrees)))
+	n, err := decconv.ParseInt64(s, 9)
 	if err != nil {
-		return 0, fmt.Errorf("invalid angle %f: %w", f, err)
+		return 0, fmt.Errorf("invalid angle: %q", s)
 	}
 	return Angle(n), nil
 }
@@ -107,18 +158,109 @@ func (s Speed) MetersPerSecond() float64 {
 }
 
 func (s Speed) String() string {
-	return fmt.Sprintf("%v", s.MetersPerSecond())
+	return decconv.FormatInt64(int64(s), 6, 0)
+}
+
+// MarshalJSON implements json.Marshaler.
+func (s Speed) MarshalJSON() ([]byte, error) {
+	return []byte(decconv.FormatInt64(int64(s), 6, 0)), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (sp *Speed) UnmarshalJSON(data []byte) error {
+	v, err := decconv.ParseInt64(string(data), 6)
+	if err != nil {
+		return err
+	}
+	*sp = Speed(v)
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s Speed) MarshalText() ([]byte, error) {
+	return []byte(decconv.FormatInt64(int64(s), 6, 0)), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (sp *Speed) UnmarshalText(text []byte) error {
+	v, err := decconv.ParseInt64(string(text), 6)
+	if err != nil {
+		return err
+	}
+	*sp = Speed(v)
+	return nil
+}
+
+// Duration represents a duration that serialises as decimal seconds.
+type Duration time.Duration
+
+const (
+	Nanosecond  Duration = Duration(time.Nanosecond)
+	Microsecond Duration = Duration(time.Microsecond)
+	Millisecond Duration = Duration(time.Millisecond)
+	Second      Duration = Duration(time.Second)
+)
+
+// Seconds creates a Duration from a float64 value in seconds.
+func Seconds(f float64) Duration {
+	return Duration(math.Round(f * float64(Second)))
+}
+
+// Seconds returns the duration in seconds as a float64.
+func (d Duration) Seconds() float64 {
+	return time.Duration(d).Seconds()
+}
+
+func (d Duration) String() string {
+	return decconv.FormatInt64(int64(d), 9, 0)
+}
+
+// MarshalJSON implements json.Marshaler.
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return []byte(decconv.FormatInt64(int64(d), 9, 0)), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	v, err := decconv.ParseInt64(string(data), 9)
+	if err != nil {
+		return err
+	}
+	*d = Duration(v)
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (d Duration) MarshalText() ([]byte, error) {
+	return []byte(decconv.FormatInt64(int64(d), 9, 0)), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (d *Duration) UnmarshalText(text []byte) error {
+	v, err := decconv.ParseInt64(string(text), 9)
+	if err != nil {
+		return err
+	}
+	*d = Duration(v)
+	return nil
+}
+
+// ParseDuration parses a string as a duration in seconds.
+func ParseDuration(s string) (Duration, error) {
+	n, err := decconv.ParseInt64(s, 9)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration: %q", s)
+	}
+	return Duration(n), nil
 }
 
 // Point3D represents a 3D point with Length coordinates.
 type Point3D [3]Length
 
 func (p Point3D) String() string {
-	var s [3]string
-	for i := 0; i < 3; i++ {
-		s[i] = strconv.FormatFloat(p[i].Meters(), 'f', -1, 64)
-	}
-	return fmt.Sprintf("%s,%s,%s", s[0], s[1], s[2])
+	return decconv.FormatInt64(int64(p[0]), 6, 0) + "," +
+		decconv.FormatInt64(int64(p[1]), 6, 0) + "," +
+		decconv.FormatInt64(int64(p[2]), 6, 0)
 }
 
 func (p Point3D) IsZero() bool {
@@ -127,16 +269,15 @@ func (p Point3D) IsZero() bool {
 
 // ParsePoint3D parses a string as three comma-separated coordinates in meters.
 func ParsePoint3D(s string) (Point3D, error) {
-	var p Point3D
-	var trailing string
-	var f [3]float64
-	if n, err := fmt.Sscanf(s, "%f,%f,%f%s", &f[0], &f[1], &f[2], &trailing); n != 3 || err != io.EOF {
-		return p, fmt.Errorf("invalid 3D coordinates: %q", s)
+	parts := strings.Split(s, ",")
+	if len(parts) != 3 {
+		return Point3D{}, fmt.Errorf("invalid 3D coordinates: %q", s)
 	}
-	for i := 0; i < 3; i++ {
-		n, err := float64ToInt64(math.Round(f[i] * float64(Meter)))
+	var p Point3D
+	for i, part := range parts {
+		n, err := decconv.ParseInt64(part, 6)
 		if err != nil {
-			return Point3D{}, fmt.Errorf("invalid coordinate %f: %w", f[i], err)
+			return Point3D{}, fmt.Errorf("invalid 3D coordinates: %q", s)
 		}
 		p[i] = Length(n)
 	}
