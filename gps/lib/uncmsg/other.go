@@ -17,7 +17,7 @@ const (
 	DOPHD2ID     MsgID = 1333
 	MSPosID      MsgID = 520
 	PPPDOPID     MsgID = 1025
-	PPPNavID     MsgID = 1026
+	// PPPNavID MsgID = 1026 // implemented in nav.go
 	PVTSlnID     MsgID = 1021
 	SPPDOPID     MsgID = 173
 	SPPDOPHID    MsgID = 2120
@@ -124,7 +124,7 @@ func init() {
 	idNameMap[DOPHD2ID] = "DOPHD2"
 	idNameMap[MSPosID] = "MSPOS"
 	idNameMap[PPPDOPID] = "PPPDOP"
-	idNameMap[PPPNavID] = "PPPNAV"
+	// PPPNavID registered via regMsg in nav.go
 	idNameMap[PVTSlnID] = "PVTSLN"
 	idNameMap[SPPDOPID] = "SPPDOP"
 	idNameMap[SPPDOPHID] = "SPPDOPH"

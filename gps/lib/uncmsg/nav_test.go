@@ -128,6 +128,81 @@ var bestNavXYZTests = []dataTestCase{
 	},
 }
 
+var pppNavTests = []dataTestCase{
+	{
+		name:        "PPPNAV with PPP fix",
+		binPacket:   mustHexDecode("aa44b55e0204480000a06809e0e150068c440000001211000000000045000000b5cd4e6cb3762b4027e8115f432959400000e00b334d1340bba5f6c13d000000dd36f13cfb6b123d3245693d3939303100008040000000003722221e010087fb15e107f8"),
+		asciiPacket: "#PPPNAVA,94,GPS,FINE,2408,105964000,17548,0,18,17;SOL_COMPUTED,PPP,13.73183763945,100.64473702191,4.8254,-30.8309,WGS84,0.0294,0.0357,0.0570,\"9901\",4.000,0.000,55,34,34,30,1,00,87,fb*f95d8344\r\n",
+		msg: &Msg{
+			Hdr: MsgHdr{
+				CPUIdlePercent: 94,
+				TimingHdr: TimingHdr{
+					TimeRef:            TimeRefGPS,
+					TimeStatus:         TimeStatusFine,
+					Week:               2408,
+					MillisecondsOfWeek: 105964000,
+					Reserved:           17548,
+					Version:            0,
+					LeapSec:            18,
+					DelayMs:            17,
+				},
+			},
+			Body: &PPPNav{
+				Pos: novmsg.Pos[SolStatus, PosVelType]{
+					PSolStatus:    SolComputed,
+					PosType:       PosVelPPP,
+					Lat:           13.731837639445851,
+					Lon:           100.64473702191081,
+					Hgt:           4.825390039011836,
+					Undulation:    -30.830923,
+					DatumID:       DatumWGS84,
+					LatSigma:      0.029445106,
+					LonSigma:      0.03574751,
+					HgtSigma:      0.056950755,
+					StnID:         StationID{'9', '9', '0', '1'},
+					DiffAge:       4,
+					SolAge:        0,
+					NumSVs:        55,
+					NumSolnSVs:    34,
+					NumSolnL1SVs:  34,
+					NumSolnMulti:  30,
+					Reserved:      1,
+					ExtSolStat:    0x00,
+					GalBDS3Sig:    0x87,
+					GPSGLOBDS2Sig: 0xfb,
+				},
+			},
+		},
+		fixupMsgForAscii: func(msg *Msg) *Msg {
+			newMsg := *msg
+			newMsg.Body = fixupPPPNavForAscii(msg.Body.(*PPPNav))
+			return &newMsg
+		},
+	},
+}
+
+func TestPPPNav(t *testing.T) {
+	t.Run("bin", func(t *testing.T) {
+		testDataBin(t, pppNavTests)
+	})
+	t.Run("ascii", func(t *testing.T) {
+		testDataAscii(t, pppNavTests)
+	})
+}
+
+func fixupPPPNavForAscii(msg MsgBody) MsgBody {
+	m := msg.(*PPPNav)
+	r := *m
+	fixupFloat(&r.Lat, "%.11f")
+	fixupFloat(&r.Lon, "%.11f")
+	fixupFloat(&r.Hgt, "%.4f")
+	fixupFloat32(&r.Undulation, "%.4f")
+	fixupFloat32(&r.LatSigma, "%.4f")
+	fixupFloat32(&r.LonSigma, "%.4f")
+	fixupFloat32(&r.HgtSigma, "%.4f")
+	return &r
+}
+
 func TestBestNav(t *testing.T) {
 	t.Run("bin", func(t *testing.T) {
 		testDataBin(t, bestNavTests)
