@@ -25,7 +25,6 @@ interface Props {
 
 const ACTIVE_WINDOW_MS = 1500;
 const EPOCH_GAP_MS = 900;
-const TICK_MS = 200;
 
 function stripTrailingEOL(s: string): string {
     if (s.endsWith('\r\n')) return s.slice(0, -2);
@@ -51,24 +50,6 @@ function isActive(pkt: PacketLogEntry): boolean {
     return Date.now() - new Date(pkt.t).getTime() < ACTIVE_WINDOW_MS;
 }
 
-function cloneMap(m: Map<string, MsgTypeState>): Map<string, MsgTypeState> {
-    const next = new Map<string, MsgTypeState>();
-    for (const [k, v] of m) {
-        next.set(k, {...v, recentEntries: pruneEntries(v.recentEntries)});
-    }
-    return next;
-}
-
-function pruneEntries(entries: PacketLogEntry[]): PacketLogEntry[] {
-    if (entries.length <= 1) return entries;
-    const now = Date.now();
-    const last = entries[entries.length - 1];
-    const kept = entries.filter(e => now - new Date(e.t).getTime() < ACTIVE_WINDOW_MS);
-    if (kept.length === 0) return [last];
-    // last should already be in kept since it's the most recent
-    return kept;
-}
-
 const chevronSvg = (
     <svg class="w-3 h-3 shrink-0 transition-transform duration-150" viewBox="0 0 12 12" fill="currentColor">
         <path d="M4 2l4 4-4 4z" />
@@ -79,7 +60,6 @@ export function PacketPanel({visible}: Props) {
     const liveRef = useRef<Map<string, MsgTypeState>>(new Map());
     const [displayed, setDisplayed] = useState<Map<string, MsgTypeState>>(new Map());
     const frozenRef = useRef(false);
-    const frozenSnapshot = useRef<Map<string, MsgTypeState> | null>(null);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [decodeTarget, setDecodeTarget] = useState<DecodeTarget | null>(null);
     const [decodeContent, setDecodeContent] = useState<string>('');
@@ -97,32 +77,20 @@ export function PacketPanel({visible}: Props) {
             if (existing) {
                 existing.count++;
                 const pktTime = new Date(pkt.t).getTime();
-                const recent = existing.recentEntries.filter(
+                existing.recentEntries = existing.recentEntries.filter(
                     e => pktTime - new Date(e.t).getTime() < EPOCH_GAP_MS,
                 );
-                recent.push(pkt);
-                existing.recentEntries = recent;
+                existing.recentEntries.push(pkt);
             } else {
                 live.set(key, {tag, msg, count: 1, recentEntries: [pkt]});
+            }
+            if (!frozenRef.current) {
+                setDisplayed(new Map(live));
             }
         });
         return () => {
             if (typeof off === 'function') off(); else EventsOff('gps:packet');
         };
-    }, []);
-
-    // Timer: prune and update displayed
-    useEffect(() => {
-        const id = setInterval(() => {
-            const live = liveRef.current;
-            for (const [, state] of live) {
-                state.recentEntries = pruneEntries(state.recentEntries);
-            }
-            if (!frozenRef.current) {
-                setDisplayed(cloneMap(live));
-            }
-        }, TICK_MS);
-        return () => clearInterval(id);
     }, []);
 
     // Sorted rows
@@ -138,22 +106,14 @@ export function PacketPanel({visible}: Props) {
 
     // Freeze/unfreeze
     const handleFreeze = useCallback(() => {
-        if (!frozenRef.current) {
-            frozenRef.current = true;
-            frozenSnapshot.current = cloneMap(liveRef.current);
-            setDisplayed(frozenSnapshot.current);
-        } else {
-            frozenRef.current = false;
-            frozenSnapshot.current = null;
-            setDisplayed(cloneMap(liveRef.current));
-        }
+        frozenRef.current = !frozenRef.current;
+        setDisplayed(new Map(liveRef.current));
     }, []);
 
     // Clear
     const handleClear = useCallback(() => {
         liveRef.current = new Map();
         frozenRef.current = false;
-        frozenSnapshot.current = null;
         setDisplayed(new Map());
         setExpanded(new Set());
         setDecodeTarget(null);
