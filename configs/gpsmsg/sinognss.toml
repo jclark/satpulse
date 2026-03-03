@@ -178,6 +178,24 @@ tag = "nov-psrvela-off"
 description = "Disable PSRVEL ASCII"
 text = "unlog psrvela"
 
+# PSRDOP (pseudorange DOP, msg 174)
+[[line]]
+tag = "nov-psrdopb"
+description = "Enable PSRDOP binary at 1Hz"
+text = "log psrdopb ontime 1"
+[[line]]
+tag = "nov-psrdopb-off"
+description = "Disable PSRDOP binary"
+text = "unlog psrdopb"
+[[line]]
+tag = "nov-psrdopa"
+description = "Enable PSRDOP ASCII at 1Hz"
+text = "log psrdopa ontime 1"
+[[line]]
+tag = "nov-psrdopa-off"
+description = "Disable PSRDOP ASCII"
+text = "unlog psrdopa"
+
 # BESTXYZ (NovAtel format ECEF position + velocity)
 # Verified BESTXYZB binary (msg 241) appears at 1Hz in capture on K902
 [[line]]

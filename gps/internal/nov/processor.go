@@ -206,13 +206,13 @@ func (p *packetProcessor) dispatch(common *novmsg.CommonHdr, body novmsg.MsgBody
 	case *novmsg.BestPos:
 		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
 	case *novmsg.SinoBestPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
 	case *novmsg.BestGNSSPos:
 		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
 	case *novmsg.PsrPos:
 		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
 	case *novmsg.SinoPsrPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
 	case *novmsg.BestVel:
 		if m.SolStatus != novmsg.SolComputed {
 			return false, nil
@@ -248,7 +248,7 @@ func (p *packetProcessor) dispatch(common *novmsg.CommonHdr, body novmsg.MsgBody
 	case *novmsg.BestXYZ:
 		return posVelECEFBestXYZ(h, p.curEpochMsg, &m.XYZ, tag, tRead)
 	case *novmsg.SinoBestXYZ:
-		return posVelECEFBestXYZ(h, p.curEpochMsg, &m.XYZ, tag, tRead)
+		return sinoPosVelECEFBestXYZ(h, p.curEpochMsg, &m.XYZ, tag, tRead)
 	case *novmsg.Time:
 		tm, err := timeMsgFromTime(common, m, tag)
 		if err != nil {
@@ -258,6 +258,9 @@ func (p *packetProcessor) dispatch(common *novmsg.CommonHdr, body novmsg.MsgBody
 			h.Time(tm, tRead)
 			return true, nil
 		}
+	case *novmsg.PsrDop:
+		psrDOP(p.curEpochMsg, m)
+		return true, nil
 	case *novmsg.IonUTC:
 		return leapSecondIonUTC(common, m, h, tRead)
 	case *novmsg.UnicoreIonUTC:
