@@ -281,6 +281,78 @@ id = 0x01
 payload.types = "U1U1U2"
 payload.values = [0x11, 0x05, 0]
 
+# Enable NAV2-PVH (geodetic position/velocity) at 1Hz
+[[casbin]]
+tag = "casbin-nav2-pvh"
+description = "Enable NAV2-PVH output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x03, 1]
+
+# Disable NAV2-PVH
+[[casbin]]
+tag = "casbin-nav2-pvh-off"
+description = "Disable NAV2-PVH output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x03, 0]
+
+# Enable NAV2-DOP (dilution of precision) at 1Hz
+[[casbin]]
+tag = "casbin-nav2-dop"
+description = "Enable NAV2-DOP output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x01, 1]
+
+# Disable NAV2-DOP
+[[casbin]]
+tag = "casbin-nav2-dop-off"
+description = "Disable NAV2-DOP output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x01, 0]
+
+# Enable NAV2-SAT (satellite info) at 1Hz
+[[casbin]]
+tag = "casbin-nav2-sat"
+description = "Enable NAV2-SAT output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x04, 1]
+
+# Disable NAV2-SAT
+[[casbin]]
+tag = "casbin-nav2-sat-off"
+description = "Disable NAV2-SAT output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x04, 0]
+
+# Enable NAV2-SIG (per-signal tracking) at 1Hz
+[[casbin]]
+tag = "casbin-nav2-sig"
+description = "Enable NAV2-SIG output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x06, 1]
+
+# Disable NAV2-SIG
+[[casbin]]
+tag = "casbin-nav2-sig-off"
+description = "Disable NAV2-SIG output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x06, 0]
+
 # NMEA message class is 0x4E
 # GGA=0x00, GLL=0x01, GSA=0x02, GSV=0x03, RMC=0x04, VTG=0x05, ZDA=0x08
 

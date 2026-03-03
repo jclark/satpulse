@@ -6,43 +6,37 @@ Prerequisite: position/velocity message types (`PosGeoMsg`, `PosECEFMsg`, `VelGe
 
 Prerequisite: `curNavEpochMsg` on the CASIC `PacketProcessor` must already exist (see [casic-pos-vel-qual.md](casic-pos-vel-qual.md) step 2a).
 
-## Phase 0: Empirical verification
+## Phase 0: Empirical verification (completed)
 
-Several V6 field mappings come from untranslated documentation (section 1.4) and must be verified on real hardware before implementation. Use `satpulsetool gps` with the `atgm332d-v6.toml` message file.
+Verified on ATGM332D-6N74 (V6 firmware), 2026-03-03. Full notes in [casic-nav2-notes.md](casic-nav2-notes.md).
 
-### 0a: GNSSID mapping (NAV2-SAT/NAV2-SIG `gnssid` field)
+### NAV2-SAT not supported
 
-The `gnssid` per-SV/signal field uses a numbering scheme from section 1.4 (not translated). Verify by restricting to one constellation at a time and observing NAV2-SAT output.
+NAV2-SAT (0x11 0x04) enable via CFG-MSG is ACK'd but the receiver never outputs NAV2-SAT messages. NAV2-SIG is a superset (per-signal with correction and solution flags) and works. Use NAV2-SIG for both satellite info and correction disambiguation.
 
-**Method**: For each constellation, enable it alone with `gnss-gps`, `gnss-gal`, `gnss-bds`, `gnss-glo`, then enable NAV2-SAT and observe which `GNSSID` values appear. Cross-reference with NMEA GSV (enable `nmea-gsv` alongside) to confirm correct satellites.
+### 0a: GNSSID mapping (verified)
 
-**Expected mapping** (to be confirmed):
+The `gnssid` field in NAV2-SIG uses the **same** numbering as V5 `casbin.GNSSID` and `Nav2TimeSrc`, extended with GAL, QZSS, SBAS, IRNSS:
 
 | gnssid | System |
 |--------|--------|
 | 0 | GPS |
-| 1 | GLONASS |
-| 2 | Galileo |
-| 3 | BDS |
+| 1 | BDS |
+| 2 | GLONASS |
+| 3 | Galileo |
 | 4 | QZSS |
-| 5 | SBAS |
-| 6 | IRNSS |
+| 5 | SBAS (not observed, assumed) |
+| 6 | IRNSS (not observed, assumed) |
 
-### 0b: Signal ID mapping (NAV2-SAT/NAV2-SIG `sigid` field)
+Verified by cross-referencing NAV2-SIG `gnssid` + `sigid` with NMEA GSV talker IDs and CFG-NAVBAND bit positions. Confirmed with Galileo-only test (all entries showed GNSSID=3).
 
-The `sigid` field identifies the signal band. Verify whether it uses the same bit positions as CFG-NAVBAND or a sequential numbering.
+### 0b: Signal ID mapping (verified)
 
-**Method**: Enable NAV2-SAT with `gnss-all`. On the dual-band F8, satellites should have entries with different `SigID` values (e.g. GPS L1 + L5). Record observed SigID values per constellation and map to known signal bands.
+SigID = CFG-NAVBAND bit position (not sequential numbering). Confirmed by observing: GPS SigID=0 (bit 0, L1C/A), GLO SigID=5 (bit 5, L1), GAL SigID=7 (bit 7, E1), BDS SigID=10/11/14 (bits 10/11/14, B1I GEO/MEO/B1C), QZSS SigID=19 (bit 19, L1C/A).
 
-### 0c: SVID offsets for SBAS and QZSS
+### 0c: SVID offsets (verified)
 
-`gpsprot.SVID.Num` expects SBAS PRN-100 and QZSS PRN-192 (RINEX convention). Verify whether V6 sends raw PRNs or already-offset values.
-
-**Method**: Enable `gnss-all` and NAV2-SAT. Observe SVID values for SBAS satellites (known PRNs 120-158) and QZSS satellites (known PRNs 193-202). If SVID shows e.g. 120 for SBAS, subtract 100. If it shows 20, use directly.
-
-### 0d: Record results
-
-Update this plan with verified mappings before proceeding to implementation.
+QZSS SVIDs are PRN-192 (RINEX convention), matching `gpsprot.SVID.Num`. GPS, BDS, GLONASS, Galileo use raw PRNs (no offset). SBAS and IRNSS could not be verified (no satellites in view).
 
 ## Key differences from V5
 
@@ -51,8 +45,8 @@ Update this plan with verified mappings before proceeding to implementation.
 | Epoch key | `RunTime` (U4, ms since boot) | `tow` (I4, GPS TOW in ms) |
 | Accuracy units | Variances (m^2, (m/s)^2, deg^2) -- need `math.Sqrt` | Standard deviations (m, m/s, deg) -- use directly |
 | Time accuracy | TAcc = variance scaled by 1/c^2 -- complex conversion | TAcc = nanoseconds (direct) |
-| GNSS IDs | Single scheme (GPS=0, BDS=1, GLN=2) | Three schemes: TimeSrc, GnssMask, gnssid (see below) |
-| Satellite info | Per-constellation messages (GPSINFO, BDSINFO, GLNINFO) | Single multi-constellation message (NAV2-SAT) |
+| GNSS IDs | Single scheme (GPS=0, BDS=1, GLN=2) | Two schemes: scalar (same as V5, extended) and bitmask (see below) |
+| Satellite info | Per-constellation messages (GPSINFO, BDSINFO, GLNINFO) | Single multi-constellation message (NAV2-SIG) |
 | Constellations | GPS, BDS, GLONASS | Adds Galileo, QZSS, SBAS, IRNSS |
 | Fix quality | 0-8 scale | Extended 0-15 (adds DGPS=8, RTK float=9, RTK fixed=10, timing fixed=15) |
 | Geodetic msg | NAV-PV (80 bytes) | NAV2-PVH (88 bytes, adds per-constellation counts + separate accuracy) |
@@ -140,7 +134,32 @@ const (
 )
 ```
 
-### 1d: Nav2Sol struct (0x11 0x02, 72 bytes)
+### 1d: SigID type
+
+The NAV2-SIG `SigID` field identifies the signal band. Unlike UBX where SigID is relative to the GNSS ID, CASIC SigID values are globally unique. Add to `casbin/nav.go`:
+
+```go
+type SigID uint8
+
+const (
+	SigGPSL1CA   SigID = 0
+	SigGPSL5     SigID = 2
+	SigSBASL1    SigID = 3
+	SigSBASL5    SigID = 4
+	SigGLOL1     SigID = 5
+	SigGALE1     SigID = 7
+	SigGALE5a    SigID = 8
+	SigBDSB1IGEO SigID = 10
+	SigBDSB1IMEO SigID = 11
+	SigBDSB1C    SigID = 14
+	SigBDSB2a    SigID = 15
+	SigQZSSL1CA  SigID = 19
+	SigQZSSL5    SigID = 21
+	SigNAVICL5   SigID = 23
+)
+```
+
+### 1e: Nav2Sol struct (0x11 0x02, 72 bytes)
 
 Add to `casbin/nav.go`. Move `Nav2SolID` from `other.go` to `nav.go`. Register in `init()`.
 
@@ -177,7 +196,7 @@ type Nav2Sol struct {
 func (m *Nav2Sol) ID() MsgID { return Nav2SolID }
 ```
 
-### 1e: Nav2Pvh struct (0x11 0x03, 88 bytes)
+### 1f: Nav2Pvh struct (0x11 0x03, 88 bytes)
 
 Add to `casbin/nav.go`. Move `Nav2PvhID` from `other.go` to `nav.go`. Register in `init()`.
 
@@ -219,7 +238,7 @@ type Nav2Pvh struct {
 func (m *Nav2Pvh) ID() MsgID { return Nav2PvhID }
 ```
 
-### 1f: Nav2Dop struct (0x11 0x01, 24 bytes)
+### 1g: Nav2Dop struct (0x11 0x01, 24 bytes)
 
 Add to `casbin/nav.go`. Move `Nav2DopID` from `other.go` to `nav.go`. Register in `init()`.
 
@@ -239,7 +258,7 @@ type Nav2Dop struct {
 func (m *Nav2Dop) ID() MsgID { return Nav2DopID }
 ```
 
-### 1g: Nav2TimeUTC struct (0x11 0x05, 20 bytes)
+### 1h: Nav2TimeUTC struct (0x11 0x05, 20 bytes)
 
 Add to `casbin/nav.go`. Move `Nav2TimeUTCID` from `other.go` to `nav.go`. Register in `init()`.
 
@@ -285,86 +304,11 @@ const (
 func (m *Nav2TimeUTC) ID() MsgID { return Nav2TimeUTCID }
 ```
 
-### 1h: Nav2Sat struct (0x11 0x04, variable)
-
-Add to `casbin/nav.go`. Move `Nav2SatID` from `other.go` to `nav.go`. Register in `init()`.
-
-```go
-// Nav2SatFixed is the fixed part of NAV2-SAT (12 bytes)
-type Nav2SatFixed struct {
-	TOW       uint32 // GPS TOW in ms
-	NumViewTot uint8
-	NumFixTot  uint8
-	_         uint8  // reserved
-	_         uint8  // reserved
-	_         uint32 // reserved
-}
-
-// Nav2SVInfo is a per-satellite entry in NAV2-SAT (12 bytes each)
-type Nav2SVInfo struct {
-	Chn     uint8
-	SVID    uint8
-	GNSSID  uint8  // see Nav2GNSSID constants (section 1.4)
-	Flags   uint8  // B0=used in solution, B7-B4=ephemeris status (see below)
-	Quality uint8  // signal quality bitmask (see section 3.7.2)
-	CNO     uint8  // dBHz
-	SigID   uint8  // signal band ID (see section 1.4)
-	Elev    uint8  // deg
-	Azim    uint16 // deg
-	PRRes   int16  // dm, pseudorange residual
-}
-
-// Nav2Sat is NAV2-SAT (0x11 0x04) - satellite information
-type Nav2Sat struct {
-	Nav2SatFixed
-	SVs []Nav2SVInfo
-}
-
-func (m *Nav2Sat) ID() MsgID { return Nav2SatID }
-
-func (m *Nav2Sat) InitVaryingPart(payloadLen int) (err error) {
-	n, err := sliceLen(m, payloadLen, 12, 12)
-	if err == nil {
-		m.SVs = make([]Nav2SVInfo, n)
-	}
-	return
-}
-
-func (m *Nav2Sat) FixedPart() any   { return &m.Nav2SatFixed }
-func (m *Nav2Sat) VaryingPart() any { return &m.SVs }
-
-var _ VaryingMsg = (*Nav2Sat)(nil)
-```
-
-**Satellite status flag (`Flags`) bit definitions:**
-
-| Bits | Value | Description |
-|------|-------|-------------|
-| B0 | 1 | Satellite used in solution |
-| B1-B3 | | Reserved |
-| B7-B4 | 0 | Satellite disabled |
-| B7-B4 | 1 | No prediction info |
-| B7-B4 | 2-3 | Low elevation / invisible |
-| B7-B4 | 4 | Visible, almanac prediction |
-| B7-B4 | 5 | Visible, long-term ephemeris prediction |
-| B7-B4 | 6 | Visible, AGNSS prediction |
-| B7-B4 | 7 | Visible, ephemeris available |
-
-**Signal quality (`Quality`) bit definitions** (section 3.7.2):
-
-| Bit | Description |
-|-----|-------------|
-| B0 | Code phase valid (pseudorange positioning) |
-| B1 | Carrier phase valid (RTK/PPP) |
-| B2 | Carrier phase half-cycle ambiguity determined |
-| B3 | Carrier phase half-cycle error subtracted |
-| B4 | Pseudorange has no integer ms ambiguity |
-| B6 | Satellite position valid |
-| B7 | Satellite elevation too low / invisible |
-
 ### 1i: Nav2Sig struct (0x11 0x06, variable)
 
 Add to `casbin/nav.go`. Move `Nav2SigID` from `other.go` to `nav.go`. Register in `init()`.
+
+NAV2-SIG replaces NAV2-SAT (which the ATGM332D-6N74 ACKs but never outputs). NAV2-SIG is a superset: per-signal rather than per-satellite, with additional correction source and solution flag fields. It is used for both satellite info extraction and correction disambiguation.
 
 ```go
 // Nav2SigFixed is the fixed part of NAV2-SIG (8 bytes)
@@ -378,10 +322,10 @@ type Nav2SigFixed struct {
 
 // Nav2SigInfo is a per-signal entry in NAV2-SIG (16 bytes each)
 type Nav2SigInfo struct {
-	GNSSID    uint8  // see Nav2GNSSID constants (section 1.4)
-	SVID      uint8  // satellite ID
-	SigID     uint8  // signal band ID (section 1.4)
-	FreqID    uint8  // GLONASS frequency ID [-7,+6] mapped to [1,14]
+	GNSSID    uint8  // GNSS ID (same numbering as V5: GPS=0, BDS=1, GLN=2, GAL=3, QZSS=4, SBAS=5, IRNSS=6)
+	SVID      uint8  // satellite ID (raw PRN, except QZSS=PRN-192)
+	SigID     SigID  // signal band ID (see SigID constants)
+	FreqID    uint8  // GLONASS frequency ID [-7,+6] mapped to [1,14]; undefined for other constellations
 	PRRes     int16  // dm, pseudorange residual
 	CNO       uint8  // dBHz
 	TrkInd    uint8  // signal quality (section 3.7.2, same as Nav2SVInfo.Quality)
@@ -444,14 +388,13 @@ NAV2-DOP has no epoch key -- it is associated with the current epoch on arrival 
 
 NAV2-TIMEUTC has no standard epoch key. It is dispatched independently without epoch association (same as V5 NavTimeUTC which dispatches TimeMsg directly).
 
-NAV2-SAT and NAV2-SIG have a `TOW` field (U4, ms) in their fixed header. They implement `NavMsg` via a method on their fixed part:
+NAV2-SIG has a `TOW` field (U4, ms) in its fixed header. It implements `NavMsg` via a method on its fixed part:
 
 ```go
-func (m *Nav2SatFixed) NavEpoch() uint32 { return m.TOW }
 func (m *Nav2SigFixed) NavEpoch() uint32 { return m.TOW }
 ```
 
-Since `Nav2Sat` embeds `Nav2SatFixed` and `Nav2Sig` embeds `Nav2SigFixed`, the promoted `NavEpoch()` method satisfies the `NavMsg` interface on the outer struct. Note: `Nav2SatFixed.TOW` is U4 (unsigned), while `Nav2TOW.TOW` is I4 (signed) -- both return `uint32` from `NavEpoch()` so epoch tracking works identically.
+Since `Nav2Sig` embeds `Nav2SigFixed`, the promoted `NavEpoch()` method satisfies the `NavMsg` interface on the outer struct. Note: `Nav2SigFixed.TOW` is U4 (unsigned), while `Nav2TOW.TOW` is I4 (signed) -- both return `uint32` from `NavEpoch()` so epoch tracking works identically.
 
 ### 2a: NAV2-TIMEUTC time extraction
 
@@ -480,27 +423,7 @@ This differs from V5 `timeNavTimeUTC` which uses `MsErr` (a float32 residual in 
 
 **Accuracy**: V6 `TAcc` is in nanoseconds (direct standard deviation, not variance). Convert: `t.Accuracy = time.Duration(m.TAcc)`
 
-**GNSS mapping**: `Nav2TimeSrc` values (section 3.7.4) map directly:
-
-```go
-func nav2TimeSrcToGNSS(src casbin.Nav2TimeSrc) gpsprot.GNSS {
-	switch src {
-	case casbin.Nav2TimeSrcGPS:
-		return gpsprot.GPS
-	case casbin.Nav2TimeSrcBDS:
-		return gpsprot.BDS
-	case casbin.Nav2TimeSrcGLN:
-		return gpsprot.GLO
-	case casbin.Nav2TimeSrcGAL:
-		return gpsprot.GAL
-	case casbin.Nav2TimeSrcIRN:
-		return gpsprot.NAVIC
-	}
-	return 0
-}
-```
-
-Note: the existing `gnssIDToGNSS` maps V5 `casbin.GNSSID` (GPS=0, BDS=1, GLN=2). The V6 `Nav2TimeSrc` uses the *same* numbering but extended (GPS=0, BDS=1, GLN=2, GAL=3, IRN=4), so a new function or extending the existing one is needed.
+**GNSS mapping**: `Nav2TimeSrc` uses the same numbering as the unified `casicGNSSIDToGNSS` function (see section 2e): `casicGNSSIDToGNSS(uint8(m.TimeSrc))`.
 
 #### Dispatch integration
 
@@ -642,53 +565,37 @@ case *casbin.Nav2Dop:
 	return true
 ```
 
-### 2e: NAV2-SAT satellite extraction
+### 2e: NAV2-SIG satellite and correction extraction
 
-Map NAV2-SAT to `SatellitesMsg` following the same pattern as the V5 `NavGPSInfo`/`NavBDSInfo`/`NavGLNInfo` satellite accumulator. The key difference: NAV2-SAT provides all constellations in a single message (via `GNSSID` per SV), whereas V5 has separate per-constellation messages.
+NAV2-SIG replaces NAV2-SAT (which the receiver ACKs but never outputs). NAV2-SIG provides per-signal data with all constellations in a single message, plus correction source and solution flags.
 
-Since NAV2-SAT already contains all constellations, no accumulation across messages is needed. A single extraction function converts `Nav2Sat` directly to `*gpsprot.SatellitesMsg`. The V5 `satAccum` is not used for V6.
+#### GNSS ID mapping (verified)
 
-New function: `satsNav2Sat(m *casbin.Nav2Sat) *gpsprot.SatellitesMsg`
-
-For each SV in `m.SVs` with `CNO > 0` (filter out entries with no signal lock, same as V5):
-- Map `GNSSID` to `gpsprot.GNSS` using `nav2GNSSIDToGNSS` (see GNSS ID mapping below)
-- Convert `SVID` to `gpsprot.SVID`. Note: `gpsprot.SVID.Num` expects SBAS PRN−100 and QZSS PRN−192 (RINEX convention). Whether V6 sends raw PRNs or offset values needs **empirical verification**
-- Map `GNSSID`+`SigID` to `gpsprot.Signal` and add to satellite's `SignalInfo` (signal ID mapping needs **empirical verification**, see below)
-- Set `Used` from `Flags & 0x01 != 0`
-- LookAngles from `Elev`/`Azim`
-- One `SignalInfo` entry per SV with `CN0`, `Used`, and signal ID
-
-Set `UsedValidity = SatelliteUsedSignal` (same as V5). Also set `ne.NumSVInView` from `m.NumViewTot`.
-
-#### GNSS ID mapping (NAV2-SAT/NAV2-SIG `gnssid` field)
-
-The `gnssid` field in NAV2-SAT and NAV2-SIG uses the numbering from section 1.4 (not translated in available docs). This is distinct from both V5 `casbin.GNSSID` and V6 `Nav2TimeSrc`.
-
-**Empirical verification required**: section 1.4 is not in the translated protocol docs. The mapping must be verified using real hardware (enable NAV2-SAT, observe which GNSSID values appear for known constellations). Probable mapping based on ZKW conventions:
+The `gnssid` field uses the same numbering as V5 `casbin.GNSSID` and `Nav2TimeSrc`:
 
 | gnssid | System | gpsprot.GNSS |
 |--------|--------|--------------|
 | 0 | GPS | GPS |
-| 1 | GLONASS | GLO |
-| 2 | Galileo | GAL |
-| 3 | BDS | BDS |
+| 1 | BDS | BDS |
+| 2 | GLONASS | GLO |
+| 3 | Galileo | GAL |
 | 4 | QZSS | QZSS |
 | 5 | SBAS | SBAS |
 | 6 | IRNSS | NAVIC |
 
-Note: this differs from V5's `casbin.GNSSID` where BDS=1, GLN=2. The V6 ordering appears to follow the ZKW signal band ordering (GPS, GLO, GAL, BDS, ...) rather than the V5 ordering.
+Since this is the same numbering as `Nav2TimeSrc` (extended with QZSS/SBAS/IRNSS), a single mapping function suffices. The existing V5 `gnssIDToGNSS` can be extended:
 
 ```go
-func nav2GNSSIDToGNSS(id uint8) gpsprot.GNSS {
+func casicGNSSIDToGNSS(id uint8) gpsprot.GNSS {
 	switch id {
 	case 0:
 		return gpsprot.GPS
 	case 1:
-		return gpsprot.GLO
-	case 2:
-		return gpsprot.GAL
-	case 3:
 		return gpsprot.BDS
+	case 2:
+		return gpsprot.GLO
+	case 3:
+		return gpsprot.GAL
 	case 4:
 		return gpsprot.QZSS
 	case 5:
@@ -700,46 +607,57 @@ func nav2GNSSIDToGNSS(id uint8) gpsprot.GNSS {
 }
 ```
 
-#### Signal ID mapping (NAV2-SAT/NAV2-SIG `sigid` field)
+This replaces both the V5 `gnssIDToGNSS` (which handles 0-2) and the planned `nav2TimeSrcToGNSS` / `nav2GNSSIDToGNSS` functions, since all three use the same numbering.
 
-The `sigid` field identifies the signal band. Section 1.4 (not translated) defines the mapping. Based on the CFG-NAVBAND bit positions documented in `atgm332d-v6.toml`:
+#### Signal ID mapping (verified)
 
-| Bit/ID | Signal | gpsprot SignalID |
-|--------|--------|------------------|
-| 0 | GPS L1C/A | SigIDGPSL1CA |
-| 2 | GPS L5 | SigIDGPSL5 |
-| 3 | SBAS L1 | SigIDSBASL1CA |
-| 4 | SBAS L5 | SigIDSBASL5 |
-| 5 | GLO L1 | SigIDGLOL1 |
-| 7 | GAL E1 | SigIDGALE1 |
-| 8 | GAL E5a | SigIDGALE5a |
-| 10 | BDS B1I GEO | SigIDBDSB1I |
-| 11 | BDS B1I MEO | SigIDBDSB1I |
-| 14 | BDS B1C | SigIDBDSB1C |
-| 15 | BDS B2a | SigIDBDSB2a |
-| 19 | QZSS L1C/A | SigIDQZSSL1CA |
-| 21 | QZSS L5 | SigIDQZSSL5 |
-| 23 | IRNSS L5 | SigIDNAVICL5 |
+The `SigID` field identifies the signal band. Unlike UBX where SigID is relative to the GNSS ID, CASIC SigID values are globally unique (see section 1d), so a flat map suffices. CASIC does not distinguish I/Q components, so for L5 signals use the data component (same convention as UBX).
 
-Whether `sigid` uses these same bit positions or a sequential numbering needs empirical verification. Create a lookup table that can be updated after hardware testing.
-
-#### Dispatch integration
-
-Add `case *casbin.Nav2Sat:` to `dispatch()`. Unlike V5 which accumulates across per-constellation messages, V6 emits directly:
+Map `casbin.SigID` to `gpsprot.SignalID` in `internal/casic`:
 
 ```go
-case *casbin.Nav2Sat:
-	msg := satsNav2Sat(mt)
-	if msg != nil && p.mh != nil {
-		p.mh.Satellites(msg, tRead)
-	}
-	if p.curNavEpochMsg != nil {
-		p.curNavEpochMsg.NumSVInView.Set(uint16(mt.NumViewTot))
-	}
-	return true
+var casicSigIDMap = map[casbin.SigID]gpsprot.SignalID{
+	casbin.SigGPSL1CA:   gpsprot.SigIDGPSL1CA,
+	casbin.SigGPSL5:     gpsprot.SigIDGPSL5I,
+	casbin.SigSBASL1:    gpsprot.SigIDGPSL1CA, // SBAS uses GPS L1 C/A
+	casbin.SigSBASL5:    gpsprot.SigIDGPSL5I,
+	casbin.SigGLOL1:     gpsprot.SigIDGLOL1,
+	casbin.SigGALE1:     gpsprot.SigIDGALE1,
+	casbin.SigGALE5a:    gpsprot.SigIDGALE5a,
+	casbin.SigBDSB1IGEO: gpsprot.SigIDBDSB1I,
+	casbin.SigBDSB1IMEO: gpsprot.SigIDBDSB1I,
+	casbin.SigBDSB1C:    gpsprot.SigIDBDSB1C,
+	casbin.SigBDSB2a:    gpsprot.SigIDBDSB2a,
+	casbin.SigQZSSL1CA:  gpsprot.SigIDQZSSL1CA,
+	casbin.SigQZSSL5:    gpsprot.SigIDQZSSL5I,
+	casbin.SigNAVICL5:   gpsprot.SigIDNAVICL5,
+}
 ```
 
-### 2f: NAV2-SIG correction disambiguation
+#### SVID handling (verified)
+
+GPS, BDS, GLONASS, Galileo, QZSS use raw satellite numbers that match `gpsprot.SVID.Num` directly. SBAS was not observed, but the receiver almost certainly sends raw PRNs (120-158), so subtract 100 to get `SVID.Num` (20-58).
+
+#### Satellite info extraction
+
+New function: `satsNav2Sig(m *casbin.Nav2Sig) *gpsprot.SatellitesMsg`
+
+NAV2-SIG is per-signal, so multiple entries may exist for the same satellite (e.g. BDS B1I + B1C). Group entries by GNSSID+SVID to build per-satellite records with multiple `SignalInfo` entries:
+
+Follow the same pattern as UBX `satellitesNavSig()` in `ubxsats.go`: group per-signal entries by SVID using a `sigIndex` map, building per-satellite records with multiple `SignalInfo` entries.
+
+For each signal in `m.Sigs` with `CNO > 0`:
+- Map `GNSSID` to `gpsprot.GNSS` using `casicGNSSIDToGNSS`
+- Convert `SVID` to `gpsprot.SVID` (direct for GPS/BDS/GLO/GAL/QZSS; subtract 100 for SBAS, same as UBX `gnssSVID`)
+- Map `(GNSSID, SigID)` to `gpsprot.SignalID` using `casicSigIDMap`
+- Set `Used` from `SolFlags & 0x01 != 0` (pseudorange used in solution)
+- LookAngles from `Elev`/`Azim` (from first signal seen for each SV)
+- Each signal becomes a `SignalInfo` entry with `SignalID`, `CN0`, `Used`
+- Set `sv.Used = true` if any signal is used (same loop as UBX)
+
+Set `UsedValidity = SatelliteUsedSignal` (same as V5).
+
+#### Correction disambiguation
 
 NAV2-SIG provides per-signal `CorFlags` (bits 2:0 = correction source) that can enrich the `Correction` bitmask on `curNavEpochMsg`. This is analogous to UBX NAV-SIG's `CorrSource`.
 
@@ -782,7 +700,7 @@ func corrFromNav2Sig(ne *gpsprot.NavEpochMsg, m *casbin.Nav2Sig) {
 }
 ```
 
-Also accumulate `SignalsUsed` from per-signal `SigID` and `SolFlags` (bit 0 = PR used), similar to UBX NAV-SIG. For each used signal, map the GNSSID+SigID pair to `gpsprot.Signal` and set the bit in `ne.SignalsUsed`. The signal ID mapping needs **empirical verification** (same table as NAV2-SAT, see section 2e).
+Also accumulate `SignalsUsed` from per-signal `SigID` and `SolFlags` (bit 0 = PR used), similar to UBX NAV-SIG. For each used signal, map the GNSSID+SigID pair to `gpsprot.Signal` and set the bit in `ne.SignalsUsed`.
 
 #### Dispatch integration
 
@@ -790,6 +708,10 @@ Add `case *casbin.Nav2Sig:` to `dispatch()`:
 
 ```go
 case *casbin.Nav2Sig:
+	msg := satsNav2Sig(mt)
+	if msg != nil && p.mh != nil {
+		p.mh.Satellites(msg, tRead)
+	}
 	corrFromNav2Sig(p.curNavEpochMsg, mt)
 	return true
 ```
@@ -823,9 +745,12 @@ Implementation approach: `qualityFromNav2FixFlags` handles all 0-15 values. For 
 ```go
 func qualityFromNav2FixFlags(ne *gpsprot.NavEpochMsg, ff casbin.Nav2FixFlags, numSV uint8) {
 	switch ff {
+	default: // 0=Invalid, 2=RoughEstimate, 3=Hold
+		ne.FixLevel = gpsprot.FixLevelNone
 	case casbin.Nav2FixExternal:
 		ne.FixLevel = gpsprot.FixLevelNotMeasured
 	case casbin.Nav2FixDeadReckoning:
+		ne.FixLevel = gpsprot.FixLevelNone
 		ne.AuxSrc = gpsprot.AuxSrcDR
 	case casbin.Nav2FixQuickMode, casbin.Nav2Fix3D:
 		ne.FixLevel = gpsprot.FixLevelCode
@@ -855,9 +780,9 @@ func qualityFromNav2FixFlags(ne *gpsprot.NavEpochMsg, ff casbin.Nav2FixFlags, nu
 
 ### GNSS numbering schemes in V6
 
-V6 uses **three distinct** GNSS numbering schemes (vs V5 which has one):
+V6 uses **two** GNSS numbering schemes (vs V5 which has one):
 
-**1. `Nav2TimeSrc`** (scalar, section 3.7.4) -- used in NAV2-TIMEUTC:
+**1. Scalar GNSS ID** (used in `Nav2TimeSrc`, `gnssid` field, and V5 `GNSSID`):
 
 | Value | System | gpsprot.GNSS |
 |-------|--------|--------------|
@@ -865,9 +790,11 @@ V6 uses **three distinct** GNSS numbering schemes (vs V5 which has one):
 | 1 | BDS | BDS |
 | 2 | GLONASS | GLO |
 | 3 | Galileo | GAL |
-| 4 | IRNSS | NAVIC |
+| 4 | QZSS | QZSS |
+| 5 | SBAS | SBAS |
+| 6 | IRNSS | NAVIC |
 
-Same numbering as V5 `casbin.GNSSID` (GPS=0, BDS=1, GLN=2) but extended with GAL=3, IRN=4.
+Empirical verification confirmed this is the same numbering everywhere: V5 `GNSSID` (0-2), V6 `Nav2TimeSrc` (0-4), and V6 NAV2-SIG `gnssid` (0-6). A single mapping function `casicGNSSIDToGNSS` handles all cases, replacing the V5-only `gnssIDToGNSS`.
 
 **2. `Nav2GnssMask`** (bitmask) -- used in NAV2-SOL/PVH `fixGnssMask`:
 
@@ -881,17 +808,13 @@ Same numbering as V5 `casbin.GNSSID` (GPS=0, BDS=1, GLN=2) but extended with GAL
 | 5 | SBAS |
 | 6 | IRNSS |
 
-**3. `gnssid`** (scalar, section 1.4) -- used in NAV2-SAT/SIG per-SV/signal:
-
-See GNSS ID mapping table in section 2e above. This uses a different ordering from `Nav2TimeSrc` (probable: 0=GPS, 1=GLN, 2=GAL, 3=BDS, 4=QZSS, 5=SBAS, 6=IRNSS). **Requires empirical verification** since section 1.4 is not in the translated docs.
-
-The existing `gnssIDToGNSS` helper in `castime.go` maps V5 numbering only. V6 needs separate mapping functions: `nav2TimeSrcToGNSS` and `nav2GNSSIDToGNSS`.
+Same ordering as the scalar GNSS ID, just as a bitmask.
 
 ### FlushNavEpoch considerations
 
 The existing `FlushNavEpoch` returns `PriVendorLow` for the `NavEpochMsg`. With V6 support, this should remain `PriVendorLow` -- the priority on the `NavEpochMsg` itself does not change. The `PriVendorHigh` priority is on individual `PosGeoMsg`/`VelGeoMsg` from NAV2-PVH (which override NAV2-SOL's `PriVendorLow` messages in the downstream merger).
 
-The `FlushNavEpoch` method needs a V6-aware satellite flush. Since V6 doesn't use `satAccum`, the `p.satAccum.epochChange()` call is harmless (it only flushes if V5 satellite data was accumulated). V6 satellite data from NAV2-SAT is emitted immediately in dispatch.
+The `FlushNavEpoch` method needs a V6-aware satellite flush. Since V6 doesn't use `satAccum`, the `p.satAccum.epochChange()` call is harmless (it only flushes if V5 satellite data was accumulated). V6 satellite data from NAV2-SIG is emitted immediately in dispatch.
 
 ### Testing pattern
 
@@ -907,6 +830,7 @@ Tests in `caspv2_test.go` construct casbin structs with known values, call extra
 
 The following NAV2 messages exist but are not implemented in this plan:
 
+- **NAV2-SAT (0x11 0x04, variable)**: per-satellite info. The ATGM332D-6N74 ACKs the CFG-MSG enable but never outputs this message. NAV2-SIG is a superset and is used instead.
 - **NAV2-STATUS (0x11 0x00, 48 bytes)**: ephemeris and UTC/ionosphere validity per constellation. Not needed for position/velocity pipeline. Could be useful for diagnostics (number of valid ephemerides, PRN bitmasks per system).
 - **NAV2-CLK (0x11 0x07, 20 bytes)**: receiver time bias and frequency bias. Not needed unless clock-domain processing is added.
 - **NAV2-RVT (0x11 0x08, 52 bytes)**: raw receiver time information. Not needed for position/velocity.
@@ -916,21 +840,19 @@ The message IDs for these are already defined in `casbin/other.go` and registere
 
 ### Fields not available from V6 CASIC binary
 
-- **SignalsUsed**: derive from NAV2-SIG per-signal `SigID` and `SolFlags` (bit 0 = PR used), analogous to UBX NAV-SIG. Signal ID mapping depends on Phase 0 results.
+- **SignalsUsed**: derive from NAV2-SIG per-signal `SigID` and `SolFlags` (bit 0 = PR used), analogous to UBX NAV-SIG. SigID = CFG-NAVBAND bit position (verified).
 - **NumSVTracked**: NAV2-SIG `NumTrkTot` counts signal tracks, not satellites, so overcounts with multi-frequency. Not populated.
 - **DiffAge, RTCMRefBaseID**: not available from V6 CASIC binary. Only available via NMEA GGA when enabled alongside binary.
 
 ### Message enablement
 
-Message file tags in `configs/gpsmsg/atgm332d-v6.toml` (already exists for NAV2-SOL and NAV2-TIMEUTC):
-- `casbin-nav2-sol`: enable NAV2-SOL (already defined)
-- `casbin-nav2-timeutc`: enable NAV2-TIMEUTC (already defined)
-
-New tags to add:
-- `casbin-nav2-pvh`: enable NAV2-PVH at 1Hz (class 0x11, id 0x03, rate 1)
-- `casbin-nav2-dop`: enable NAV2-DOP at 1Hz (class 0x11, id 0x01, rate 1)
-- `casbin-nav2-sat`: enable NAV2-SAT at 1Hz (class 0x11, id 0x04, rate 1)
-- `casbin-nav2-sig`: enable NAV2-SIG at 1Hz (class 0x11, id 0x06, rate 1)
+Message file tags in `configs/gpsmsg/atgm332d-v6.toml` (all already defined):
+- `casbin-nav2-sol`: enable NAV2-SOL
+- `casbin-nav2-timeutc`: enable NAV2-TIMEUTC
+- `casbin-nav2-pvh`: enable NAV2-PVH
+- `casbin-nav2-dop`: enable NAV2-DOP
+- `casbin-nav2-sat`: enable NAV2-SAT (ACK'd but receiver does not output; kept for future firmware)
+- `casbin-nav2-sig`: enable NAV2-SIG
 
 ### Message registration
 
@@ -944,12 +866,11 @@ func init() {
 	regMsg[Nav2Sol]("SOL")
 	regMsg[Nav2Pvh]("PVH")
 	regMsg[Nav2TimeUTC]("TIMEUTC")
-	regMsg[Nav2Sat]("SAT")
 	regMsg[Nav2Sig]("SIG")
 }
 ```
 
-The ID constants (`Nav2DopID`, `Nav2SolID`, `Nav2PvhID`, `Nav2TimeUTCID`, `Nav2SatID`, `Nav2SigID`) move from `other.go` to `nav.go`. Their `idNameMap` entries in `other.go`'s `init()` are removed (they're now registered by `regMsg`).
+The ID constants (`Nav2DopID`, `Nav2SolID`, `Nav2PvhID`, `Nav2TimeUTCID`, `Nav2SigID`) move from `other.go` to `nav.go`. Their `idNameMap` entries in `other.go`'s `init()` are removed (they're now registered by `regMsg`). `Nav2SatID` stays in `other.go` (not implemented).
 
 ### V5/V6 coexistence
 
@@ -960,15 +881,12 @@ A single `PacketProcessor` handles both V5 NAV and V6 NAV2 messages. There is no
 
 ### Implementation order
 
-0. Phase 0: Empirical verification (0a-0d) -- determine GNSSID, SigID, SVID mappings on real hardware
-1. 1a (Nav2TOW) + 1b (Nav2FixFlags) + 1c (Nav2GnssMask) -- types, `make test`
-2. 1d (Nav2Sol) + 1e (Nav2Pvh) + 1f (Nav2Dop) -- structs, `make test`
-3. 1g (Nav2TimeUTC) -- struct, `make test`
-4. 1h (Nav2Sat) + 1i (Nav2Sig) -- variable-length structs, `make test`
+1. 1a (Nav2TOW) + 1b (Nav2FixFlags) + 1c (Nav2GnssMask) + 1d (SigID) -- types, `make test`
+2. 1e (Nav2Sol) + 1f (Nav2Pvh) + 1g (Nav2Dop) -- structs, `make test`
+3. 1h (Nav2TimeUTC) -- struct, `make test`
+4. 1i (Nav2Sig) -- variable-length struct, `make test`
 5. 2a (NAV2-TIMEUTC time extraction + dispatch) -- `make test`
 6. 2b (NAV2-SOL extraction + dispatch) -- `make test`
 7. 2c (NAV2-PVH extraction + dispatch) -- `make test`
 8. 2d (NAV2-DOP extraction) -- `make test`
-9. 2e (NAV2-SAT satellite extraction) -- uses Phase 0 results for GNSSID/SigID/SVID mappings, `make test`
-10. 2f (NAV2-SIG correction + SignalsUsed) -- uses Phase 0 results for signal mapping, `make test`
-11. Add message file tags to `atgm332d-v6.toml` -- `make test`
+9. 2e (NAV2-SIG satellite + correction extraction + dispatch) -- `make test`
