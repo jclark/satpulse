@@ -39,6 +39,16 @@ func SetMsgOptions(target *gpsprot.ConfigTarget, timePulseEnabled bool) {
 	}
 }
 
+// tickHandler forwards filled TimeMsgs from the TimeTicker to Observer.Tick.
+type tickHandler struct {
+	gpsprot.DefaultHandler
+	obs obs.Observer
+}
+
+func (h *tickHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
+	h.obs.Tick(msg, tRead)
+}
+
 type Dispatcher struct {
 	gpsprot.DefaultHandler
 	pktProcs              map[gpsprot.Tag]gpsprot.PacketProcessor
@@ -46,6 +56,7 @@ type Dispatcher struct {
 	controller            *phcsync.Controller
 	rc                    *refclock.ProxyRefClock
 	timeMsgBuffer         *timemsg.Buffer
+	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
 	ls                    ptime.LeapSecond
 	lg                    *slog.Logger
@@ -69,6 +80,7 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		controller:    controller,
 		rc:            rc,
 		timeMsgBuffer: timeMsgBuffer,
+		timeTicker:    *gpsprot.NewTimeTicker(&tickHandler{obs: obs}, ls),
 		ls:            ls,
 		lg:            lg,
 		obs:           obs,
@@ -270,6 +282,8 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	if d.controller != nil {
 		d.controller.TimeMessage()
 	}
+
+	d.timeTicker.Time(mt, tRead)
 }
 
 func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
@@ -312,6 +326,7 @@ func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 
 func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, NavEpoch: msg})
+	d.timeTicker.NavEpoch(msg, tRead)
 	d.pvAccum.PVMsgBundle.FillDerived()
 	pv := d.pvAccum.PVMsgBundle // copy before clearing
 	d.pvAccum.NavEpoch(msg, tRead)
@@ -320,6 +335,7 @@ func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 
 func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, LeapSecond: msg})
+	d.timeTicker.LeapSecond(msg, tRead)
 	if msg.UpdateLeapSecond(&d.ls) {
 		// Update timemsg.Buffer (always exists)
 		d.timeMsgBuffer.LeapSecond(msg, tRead)

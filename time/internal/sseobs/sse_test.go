@@ -67,7 +67,7 @@ func TestSSEObserver_Events(t *testing.T) {
 		{
 			name: "time",
 			action: func(obs *SSEObserver) {
-				obs.Time(&gpsprot.TimeMsg{
+				obs.Tick(&gpsprot.TimeMsg{
 					Ref:     gpsprot.PostPulse,
 					TAITime: ptime.Time(oneYearSecs * 1e9),
 				}, time.Now())

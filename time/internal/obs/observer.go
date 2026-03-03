@@ -12,6 +12,10 @@ type Observer interface {
 	phcsync.Sampler
 	gpsprot.MsgHandler
 
+	// Tick delivers a filled TimeMsg (TAI+UTC populated, rounded to ms)
+	// once per epoch, as soon as the first valid TimeMsg arrives.
+	Tick(msg *gpsprot.TimeMsg, tRead time.Time)
+
 	// NavEpochPV delivers the accumulated PVMsgBundle at each navigation epoch.
 	// Relative order with respect to NavEpoch is undefined;
 	// observers should use one or the other, not both.
@@ -50,6 +54,15 @@ func (m *MultiObserver) Sample(data phcsync.Sample) {
 	}
 }
 
+// Tick implements Observer by type-asserting handlers to Observer
+func (m *MultiObserver) Tick(msg *gpsprot.TimeMsg, tRead time.Time) {
+	for h := range m.Handlers() {
+		if obs, ok := h.(Observer); ok {
+			obs.Tick(msg, tRead)
+		}
+	}
+}
+
 // NavEpochPV implements Observer by type-asserting handlers to Observer
 func (m *MultiObserver) NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, tRead time.Time) {
 	for h := range m.Handlers() {
@@ -84,6 +97,9 @@ type DefaultObserver struct {
 
 // Sample implements phcsync.Sampler as a no-op
 func (o *DefaultObserver) Sample(data phcsync.Sample) {}
+
+// Tick implements Observer as a no-op
+func (o *DefaultObserver) Tick(_ *gpsprot.TimeMsg, _ time.Time) {}
 
 // NavEpochPV implements Observer as a no-op
 func (o *DefaultObserver) NavEpochPV(_ *gpsprot.NavEpochMsg, _ *gpsprot.PVMsgBundle, _ time.Time) {}

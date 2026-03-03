@@ -14,11 +14,16 @@ type mockObserver struct {
 	releaseCount    int
 	reopenCount     int
 	timeCount       int
+	tickCount       int
 	navEpochPVCount int
 }
 
 func (m *mockObserver) Sample(data phcsync.Sample) {
 	m.sampleCount++
+}
+
+func (m *mockObserver) Tick(_ *gpsprot.TimeMsg, _ time.Time) {
+	m.tickCount++
 }
 
 func (m *mockObserver) NavEpochPV(_ *gpsprot.NavEpochMsg, _ *gpsprot.PVMsgBundle, _ time.Time) {
@@ -94,5 +99,20 @@ func TestMultiObserver_ReopenLog(t *testing.T) {
 	}
 	if mock2.reopenCount != 1 {
 		t.Errorf("Expected ReopenLog count 1 on mock2, got %d", mock2.reopenCount)
+	}
+}
+
+func TestMultiObserver_Tick(t *testing.T) {
+	mock1 := &mockObserver{}
+	mock2 := &mockObserver{}
+	multi := NewMultiObserver(mock1, mock2)
+
+	multi.Tick(&gpsprot.TimeMsg{}, time.Now())
+
+	if mock1.tickCount != 1 {
+		t.Errorf("Expected Tick count 1 on mock1, got %d", mock1.tickCount)
+	}
+	if mock2.tickCount != 1 {
+		t.Errorf("Expected Tick count 1 on mock2, got %d", mock2.tickCount)
 	}
 }
