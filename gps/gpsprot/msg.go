@@ -676,6 +676,9 @@ func (d *FixDim) UnmarshalText(text []byte) error {
 //	CorrPPPRTK <= CorrPPP
 //	CorrPPPConverging <= CorrPPP
 //	CorrPPPConverged <= CorrPPP
+//	CorrPPPHAS <= CorrPPP
+//	CorrPPPMDC <= CorrPPP
+//	CorrPPPB2b <= CorrPPP
 type CorrKind uint16
 
 const (
@@ -740,6 +743,18 @@ const (
 	// CorrPPPConverged asserts that the PPP solution is converged.
 	// CorrPPPConverged <= CorrPPP.
 	CorrPPPConverged
+
+	// CorrPPPHAS asserts that the PPP corrections are Galileo HAS.
+	// CorrPPPHAS <= CorrPPP.
+	CorrPPPHAS
+
+	// CorrPPPMDC asserts that the PPP corrections are QZSS MADOCA.
+	// CorrPPPMDC <= CorrPPP.
+	CorrPPPMDC
+
+	// CorrPPPB2b asserts that the PPP corrections are BeiDou B2b.
+	// CorrPPPB2b <= CorrPPP.
+	CorrPPPB2b
 )
 
 type corrKindBit struct {
@@ -764,6 +779,9 @@ var corrKindBits = [...]corrKindBit{
 	{CorrPPPRTK, "PPP-RTK", CorrPPP},
 	{CorrPPPConverging, "PPPConverging", CorrPPP},
 	{CorrPPPConverged, "PPPConverged", CorrPPP},
+	{CorrPPPHAS, "PPPHAS", CorrPPP},
+	{CorrPPPMDC, "PPPMDC", CorrPPP},
+	{CorrPPPB2b, "PPPB2b", CorrPPP},
 }
 
 var corrKindFromName = func() map[string]CorrKind {

@@ -202,6 +202,9 @@ func TestCorrKindClose(t *testing.T) {
 		{CorrFullDualFreq, CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed},
 		{CorrPPPRTK, CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed},
 		{CorrPPPConverging, CorrPPPConverging | CorrPPP | CorrWideArea | CorrUsed},
+		{CorrPPPHAS, CorrPPPHAS | CorrPPP | CorrWideArea | CorrUsed},
+		{CorrPPPMDC, CorrPPPMDC | CorrPPP | CorrWideArea | CorrUsed},
+		{CorrPPPB2b, CorrPPPB2b | CorrPPP | CorrWideArea | CorrUsed},
 		// Multiple bits: union of closures
 		{CorrSBAS | CorrRTCM, CorrSBAS | CorrWideArea | CorrRTCM | CorrUsed},
 	}
@@ -231,6 +234,12 @@ func TestCorrKindString(t *testing.T) {
 		{CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed, "PPP-RTK"},
 		// PPPConverged + RTCM: two independent leaves
 		{CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed, "RTCM,PPPConverged"},
+		// PPP service-specific leaves
+		{CorrPPPHAS | CorrPPP | CorrWideArea | CorrUsed, "PPPHAS"},
+		{CorrPPPMDC | CorrPPP | CorrWideArea | CorrUsed, "PPPMDC"},
+		{CorrPPPB2b | CorrPPP | CorrWideArea | CorrUsed, "PPPB2b"},
+		// PPP service + convergence state: two independent leaves
+		{CorrPPPHAS | CorrPPPConverging | CorrPPP | CorrWideArea | CorrUsed, "PPPConverging,PPPHAS"},
 	}
 	for _, tt := range tests {
 		if got := tt.c.String(); got != tt.want {
@@ -257,6 +266,10 @@ func TestCorrKindJSONRoundTrip(t *testing.T) {
 		CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed,
 		CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed,
 		CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed,
+		CorrPPPHAS | CorrPPP | CorrWideArea | CorrUsed,
+		CorrPPPMDC | CorrPPP | CorrWideArea | CorrUsed,
+		CorrPPPB2b | CorrPPP | CorrWideArea | CorrUsed,
+		CorrPPPHAS | CorrPPPConverged | CorrPPP | CorrWideArea | CorrUsed,
 	}
 	for _, orig := range tests {
 		b, err := json.Marshal(orig)
