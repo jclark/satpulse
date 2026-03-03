@@ -91,12 +91,12 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus uncmsg.SolStatus, posType uncmsg
 	case uncmsg.PosVelPPPAR:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
 		ne.FixDim = gpsprot.FixDim3D
-		ne.Correction = gpsprot.CorrPPPConverged.Expand()
+		ne.Correction |= gpsprot.CorrPPPConverged.Expand()
 		return
 	case uncmsg.PosVelPPPRTK:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
 		ne.FixDim = gpsprot.FixDim3D
-		ne.Correction = gpsprot.CorrPPPRTK.Expand()
+		ne.Correction |= gpsprot.CorrPPPRTK.Expand()
 		return
 	}
 	// Shared pos type values.
@@ -104,7 +104,7 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus uncmsg.SolStatus, posType uncmsg
 	if ok {
 		ne.FixLevel = fl
 		ne.FixDim = fd
-		ne.Correction = ck
+		ne.Correction |= ck
 		ne.AuxSrc |= aux
 	}
 }
@@ -114,13 +114,13 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus uncmsg.SolStatus, posType uncmsg
 func stnIDCorrection(v uint16) gpsprot.CorrKind {
 	switch {
 	case v >= 9901 && v <= 9905: // BeiDou B2b PPP
-		return gpsprot.CorrWideArea.Expand()
+		return gpsprot.CorrPPPB2b.Expand()
 	case v >= 9959 && v <= 9961: // BeiDou B2b PPP
-		return gpsprot.CorrWideArea.Expand()
+		return gpsprot.CorrPPPB2b.Expand()
 	case v == 9964: // Galileo E6 HAS
-		return gpsprot.CorrWideArea.Expand()
+		return gpsprot.CorrPPPHAS.Expand()
 	case v >= 9934 && v <= 9939: // QZSS L6 MDC
-		return gpsprot.CorrCLAS.Expand()
+		return gpsprot.CorrPPPMDC.Expand()
 	case v >= 9974 && v <= 9979: // QZSS L6 CLAS
 		return gpsprot.CorrCLAS.Expand()
 	case v >= 9990 && v <= 9999: // L-band
