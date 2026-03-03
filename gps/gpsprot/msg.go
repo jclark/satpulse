@@ -779,9 +779,9 @@ var corrKindBits = [...]corrKindBit{
 	{CorrPPPRTK, "PPP-RTK", CorrPPP},
 	{CorrPPPConverging, "PPPConverging", CorrPPP},
 	{CorrPPPConverged, "PPPConverged", CorrPPP},
-	{CorrPPPHAS, "PPPHAS", CorrPPP},
-	{CorrPPPMDC, "PPPMDC", CorrPPP},
-	{CorrPPPB2b, "PPPB2b", CorrPPP},
+	{CorrPPPHAS, "PPP-HAS", CorrPPP},
+	{CorrPPPMDC, "PPP-MDC", CorrPPP},
+	{CorrPPPB2b, "PPP-B2b", CorrPPP},
 }
 
 var corrKindFromName = func() map[string]CorrKind {

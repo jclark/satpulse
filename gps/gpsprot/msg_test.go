@@ -235,11 +235,11 @@ func TestCorrKindString(t *testing.T) {
 		// PPPConverged + RTCM: two independent leaves
 		{CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed, "RTCM,PPPConverged"},
 		// PPP service-specific leaves
-		{CorrPPPHAS | CorrPPP | CorrWideArea | CorrUsed, "PPPHAS"},
-		{CorrPPPMDC | CorrPPP | CorrWideArea | CorrUsed, "PPPMDC"},
-		{CorrPPPB2b | CorrPPP | CorrWideArea | CorrUsed, "PPPB2b"},
+		{CorrPPPHAS | CorrPPP | CorrWideArea | CorrUsed, "PPP-HAS"},
+		{CorrPPPMDC | CorrPPP | CorrWideArea | CorrUsed, "PPP-MDC"},
+		{CorrPPPB2b | CorrPPP | CorrWideArea | CorrUsed, "PPP-B2b"},
 		// PPP service + convergence state: two independent leaves
-		{CorrPPPHAS | CorrPPPConverging | CorrPPP | CorrWideArea | CorrUsed, "PPPConverging,PPPHAS"},
+		{CorrPPPHAS | CorrPPPConverging | CorrPPP | CorrWideArea | CorrUsed, "PPPConverging,PPP-HAS"},
 	}
 	for _, tt := range tests {
 		if got := tt.c.String(); got != tt.want {
