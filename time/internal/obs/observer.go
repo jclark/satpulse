@@ -1,6 +1,8 @@
 package obs
 
 import (
+	"time"
+
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 )
@@ -9,6 +11,11 @@ import (
 type Observer interface {
 	phcsync.Sampler
 	gpsprot.MsgHandler
+
+	// NavEpochPV delivers the accumulated PVMsgBundle at each navigation epoch.
+	// Relative order with respect to NavEpoch is undefined;
+	// observers should use one or the other, not both.
+	NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, tRead time.Time)
 
 	// ReopenLog handles log rotation (e.g., on SIGHUP signal)
 	ReopenLog()
@@ -43,6 +50,15 @@ func (m *MultiObserver) Sample(data phcsync.Sample) {
 	}
 }
 
+// NavEpochPV implements Observer by type-asserting handlers to Observer
+func (m *MultiObserver) NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, tRead time.Time) {
+	for h := range m.Handlers() {
+		if obs, ok := h.(Observer); ok {
+			obs.NavEpochPV(msg, pv, tRead)
+		}
+	}
+}
+
 // ReopenLog implements Observer by type-asserting handlers to Observer
 func (m *MultiObserver) ReopenLog() {
 	for h := range m.Handlers() {
@@ -68,6 +84,9 @@ type DefaultObserver struct {
 
 // Sample implements phcsync.Sampler as a no-op
 func (o *DefaultObserver) Sample(data phcsync.Sample) {}
+
+// NavEpochPV implements Observer as a no-op
+func (o *DefaultObserver) NavEpochPV(_ *gpsprot.NavEpochMsg, _ *gpsprot.PVMsgBundle, _ time.Time) {}
 
 // ReopenLog implements Observer as a no-op
 func (o *DefaultObserver) ReopenLog() {}

@@ -10,14 +10,19 @@ import (
 
 type mockObserver struct {
 	gpsprot.DefaultHandler
-	sampleCount   int
-	releaseCount  int
-	reopenCount   int
-	timeCount     int
+	sampleCount     int
+	releaseCount    int
+	reopenCount     int
+	timeCount       int
+	navEpochPVCount int
 }
 
 func (m *mockObserver) Sample(data phcsync.Sample) {
 	m.sampleCount++
+}
+
+func (m *mockObserver) NavEpochPV(_ *gpsprot.NavEpochMsg, _ *gpsprot.PVMsgBundle, _ time.Time) {
+	m.navEpochPVCount++
 }
 
 func (m *mockObserver) ReopenLog() {

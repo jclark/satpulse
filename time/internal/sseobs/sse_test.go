@@ -364,21 +364,23 @@ func TestBuildQualitySSE(t *testing.T) {
 }
 
 
-func TestNavEpochSSE(t *testing.T) {
+func TestNavEpochPVSSE(t *testing.T) {
 	ch := make(chan sse.Event, 4)
 	cfgResult := &gpscfg.Result{
 		ReceiverInfo: &gpsprot.ReceiverInfo{Vendor: "test"},
 	}
 	obs := New(ch, ptime.LeapSecond{}, slog.Default(), cfgResult)
-	// Simulate accumulated position
-	obs.PosGeo(&gpsprot.PosGeoMsg{
-		LatLon: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(47.5), gpsprot.DegreesFromFloat(7.6)},
-	}, time.Now())
-	// Fire NavEpoch
-	obs.NavEpoch(&gpsprot.NavEpochMsg{
+	// Build a PVMsgBundle as the Dispatcher would
+	pv := &gpsprot.PVMsgBundle{
+		PosGeo: opt.Make(gpsprot.PosGeoMsg{
+			LatLon: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(47.5), gpsprot.DegreesFromFloat(7.6)},
+		}),
+	}
+	// Fire NavEpochPV
+	obs.NavEpochPV(&gpsprot.NavEpochMsg{
 		FixLevel: gpsprot.FixLevelCode,
 		FixDim:   gpsprot.FixDim3D,
-	}, time.Now())
+	}, pv, time.Now())
 	// Should produce posvel then quality
 	posvel := <-ch
 	if !strings.Contains(posvel.Format(), "event: posvel\n") {
@@ -387,10 +389,6 @@ func TestNavEpochSSE(t *testing.T) {
 	quality := <-ch
 	if !strings.Contains(quality.Format(), "event: quality\n") {
 		t.Errorf("expected quality event, got: %s", quality.Format())
-	}
-	// Bundle should be cleared after NavEpoch
-	if obs.PVMsgBundle.PosGeo.IsSet() {
-		t.Error("expected PVMsgBundle.PosGeo to be unset after NavEpoch")
 	}
 }
 

@@ -110,7 +110,7 @@ type QualitySSE struct {
 
 // SSEObserver implements obs.Observer for Server-Sent Events
 type SSEObserver struct {
-	gpsprot.PVMsgAccum
+	gpsprot.DefaultHandler
 	sseCh      chan<- sse.Event
 	lg         *slog.Logger
 	ls         ptime.LeapSecond
@@ -241,18 +241,15 @@ func (o *SSEObserver) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	o.timeTicker.LeapSecond(msg, tRead)
 }
 
-// NavEpoch resets the TimeTicker for the next epoch,
-// then emits posvel and quality SSE events, and clears the bundle.
-func (o *SSEObserver) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
+// NavEpochPV emits posvel and quality SSE events from the accumulated bundle.
+func (o *SSEObserver) NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, tRead time.Time) {
 	o.timeTicker.NavEpoch(msg, tRead)
-	o.PVMsgBundle.FillDerived()
-	if pv := buildPosVelSSE(&o.PVMsgBundle); pv != nil {
+	if pv := buildPosVelSSE(pv); pv != nil {
 		o.sendSSE("posvel", pv)
 	}
 	if q := buildQualitySSE(msg); q != nil {
 		o.sendSSE("quality", q)
 	}
-	o.PVMsgAccum.NavEpoch(msg, tRead)
 }
 
 // sendSSE is a helper method to send SSE events

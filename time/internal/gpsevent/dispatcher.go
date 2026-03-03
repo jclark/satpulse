@@ -46,6 +46,7 @@ type Dispatcher struct {
 	controller            *phcsync.Controller
 	rc                    *refclock.ProxyRefClock
 	timeMsgBuffer         *timemsg.Buffer
+	pvAccum               gpsprot.PVMsgAccum
 	ls                    ptime.LeapSecond
 	lg                    *slog.Logger
 	lf                    logfile.LogFile
@@ -287,18 +288,22 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 
 func (d *Dispatcher) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, PosGeo: msg})
+	d.pvAccum.PosGeo(msg, tRead)
 }
 
 func (d *Dispatcher) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, PosECEF: msg})
+	d.pvAccum.PosECEF(msg, tRead)
 }
 
 func (d *Dispatcher) VelGeo(msg *gpsprot.VelGeoMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, VelGeo: msg})
+	d.pvAccum.VelGeo(msg, tRead)
 }
 
 func (d *Dispatcher) VelECEF(msg *gpsprot.VelECEFMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, VelECEF: msg})
+	d.pvAccum.VelECEF(msg, tRead)
 }
 
 func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
@@ -307,6 +312,10 @@ func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 
 func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	d.logEvent(LogEvent{T: tRead, NavEpoch: msg})
+	d.pvAccum.PVMsgBundle.FillDerived()
+	pv := d.pvAccum.PVMsgBundle // copy before clearing
+	d.pvAccum.NavEpoch(msg, tRead)
+	d.obs.NavEpochPV(msg, &pv, tRead)
 }
 
 func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
