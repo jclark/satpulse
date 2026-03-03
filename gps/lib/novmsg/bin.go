@@ -22,55 +22,133 @@ const headerLengthOffset = 3 // Offset to header length field in packet
 // MsgID represents a NovAtel binary message identifier (uint16)
 type MsgID uint16
 
+// Port represents the port address encoding used by NovAtel OEM7 and ByNav.
 type Port uint8
 
 const (
-	PortCOM1 Port = iota + 1
-	PortCOM2
-	PortCOM3
+	COM1 Port = 0x20
+	COM2 Port = 0x40
+	COM3 Port = 0x60
 )
 
 func (p Port) String() string {
 	switch p {
-	case PortCOM1:
+	case COM1:
 		return "COM1"
-	case PortCOM2:
+	case COM2:
 		return "COM2"
-	case PortCOM3:
+	case COM3:
 		return "COM3"
 	default:
-		return fmt.Sprintf("%d", p)
+		return strconv.Itoa(int(p))
 	}
 }
 
-// ParsePort converts a port string back to Port value
-func ParsePort(s string) (Port, error) {
-	switch s {
+// MarshalText implements encoding.TextMarshaler for fieldenc support.
+func (p Port) MarshalText() ([]byte, error) {
+	return []byte(p.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler for fieldenc support.
+func (p *Port) UnmarshalText(text []byte) error {
+	switch string(text) {
 	case "COM1":
-		return PortCOM1, nil
+		*p = COM1
 	case "COM2":
-		return PortCOM2, nil
+		*p = COM2
 	case "COM3":
-		return PortCOM3, nil
+		*p = COM3
 	default:
-		// Try to parse as decimal number
-		if portNum, err := strconv.ParseUint(s, 10, 8); err == nil {
-			return Port(portNum), nil
+		n, err := strconv.ParseUint(string(text), 10, 8)
+		if err != nil {
+			return fmt.Errorf("invalid port: %s", text)
 		}
-		return 0, fmt.Errorf("invalid port: %s", s)
+		*p = Port(n)
+	}
+	return nil
+}
+
+// UnicorePort represents the port address encoding used by Unicore receivers
+// (UM980, etc.) when emitting NovAtel-format packets.
+type UnicorePort uint8
+
+const (
+	UnicoreCOM1 UnicorePort = 1
+	UnicoreCOM2 UnicorePort = 2
+	UnicoreCOM3 UnicorePort = 3
+)
+
+func (p UnicorePort) String() string {
+	switch p {
+	case UnicoreCOM1:
+		return "COM1"
+	case UnicoreCOM2:
+		return "COM2"
+	case UnicoreCOM3:
+		return "COM3"
+	default:
+		return strconv.Itoa(int(p))
 	}
 }
 
-// BinaryHdr represents the standard 28-byte header of a NovAtel binary packet
-// Note: NovAtel headers can have variable length, but this struct represents the standard format
-type BinaryHdr struct {
+// MarshalText implements encoding.TextMarshaler for fieldenc support.
+func (p UnicorePort) MarshalText() ([]byte, error) {
+	return []byte(p.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler for fieldenc support.
+func (p *UnicorePort) UnmarshalText(text []byte) error {
+	switch string(text) {
+	case "COM1":
+		*p = UnicoreCOM1
+	case "COM2":
+		*p = UnicoreCOM2
+	case "COM3":
+		*p = UnicoreCOM3
+	default:
+		n, err := strconv.ParseUint(string(text), 10, 8)
+		if err != nil {
+			return fmt.Errorf("invalid port: %s", text)
+		}
+		*p = UnicorePort(n)
+	}
+	return nil
+}
+
+// SinoPort represents the port address encoding used by SinoGNSS receivers.
+// Same binary byte values as OEM7 (0x20, 0x40, 0x60) but serialized as
+// decimal strings in ASCII ("32", "64", "96") instead of "COM1", "COM2", "COM3".
+type SinoPort uint8
+
+func (p SinoPort) String() string {
+	return strconv.Itoa(int(p))
+}
+
+// MarshalText implements encoding.TextMarshaler for fieldenc support.
+func (p SinoPort) MarshalText() ([]byte, error) {
+	return []byte(p.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler for fieldenc support.
+func (p *SinoPort) UnmarshalText(text []byte) error {
+	n, err := strconv.ParseUint(string(text), 10, 8)
+	if err != nil {
+		return fmt.Errorf("invalid port: %s", text)
+	}
+	*p = SinoPort(n)
+	return nil
+}
+
+// BinaryHdr represents the standard 28-byte header of a NovAtel binary packet.
+// Parameterized on port type: Port, UnicorePort, or SinoPort.
+type BinaryHdr[P ~uint8] struct {
 	Sync1         byte // 0xAA
 	Sync2         byte // 0x44
 	Sync3         byte // 0x12
 	HeaderLength  byte
 	MessageID     MsgID
 	MessageType   byte // Message type/format
-	Port          Port
+	Port          P
 	MessageLength uint16 // Length of payload (not including header or CRC)
 	CommonHdr
 }
@@ -83,140 +161,101 @@ type UnknownBinMsgBody struct {
 
 func (m *UnknownBinMsgBody) ID() (MsgID, string) { return m.MsgID, "" }
 
-// ParseBinMsg parses a NovAtel binary message from bytes.
-// It assumes the checksums were already verified.
-func ParseBinMsg(packet []byte) (*Msg, error) {
+// ParseBinMsg parses a NovAtel binary message using OEM7 port encoding
+// and the global message registry.
+func ParseBinMsg(packet []byte) (*Msg[Port], error) {
+	return ParseBinMsgUsing[Port](packet, msgIDMap)
+}
+
+// ParseBinMsgUsing parses a NovAtel binary message using a specific port type
+// and constructor map.
+func ParseBinMsgUsing[P ~uint8](packet []byte, ctors map[MsgID]func() MsgBody) (*Msg[P], error) {
 	n := len(packet)
-	// Need at least 4 bytes to read header length
 	if n < 4 {
 		return nil, fmt.Errorf("NOVB message too short (length %d bytes)", n)
 	}
-
-	// Read the actual header length from the packet
 	headerLen := int(packet[headerLengthOffset])
 	minLen := headerLen + crcLength
 	if n < minLen {
 		return nil, fmt.Errorf("NOVB message too short (length %d bytes, need %d)", n, minLen)
 	}
-
-	// Parse binary header
-	var binHdr BinaryHdr
+	var binHdr BinaryHdr[P]
 	headerReader := bytes.NewReader(packet[:headerLen])
 	err := binary.Read(headerReader, binary.LittleEndian, &binHdr)
 	if err != nil {
 		return nil, fmt.Errorf("parsing NOVB header: %v", err)
 	}
-
-	// Extract message header info - create MsgHdr from CommonHdr and Port
-	msgHdr := MsgHdr{
-		Port:      binHdr.Port.String(),
+	msgHdr := MsgHdr[P]{
+		Port:      binHdr.Port,
 		CommonHdr: binHdr.CommonHdr,
 	}
-
-	// Extract message ID and payload length
 	msgID := MsgID(binHdr.MessageID)
 	payloadLen := int(binHdr.MessageLength)
-
-	// Calculate expected total length
 	expectedLen := headerLen + payloadLen + crcLength
 	if n != expectedLen {
 		return nil, fmt.Errorf("NOVB message length mismatch: got %d, expected %d", n, expectedLen)
 	}
-
-	// Extract payload
 	payload := packet[headerLen : headerLen+payloadLen]
-
-	// Look up message constructor
-	ctor := msgIDMap[msgID]
+	ctor := ctors[msgID]
 	if ctor == nil {
-		return &Msg{
+		return &Msg[P]{
 			Hdr:  msgHdr,
 			Body: &UnknownBinMsgBody{MsgID: msgID, Payload: payload},
 		}, nil
 	}
-
-	// Create and populate message
 	body := ctor()
 	r := bytes.NewReader(payload)
-
-	// Read the message (handles both chunked and regular messages)
 	err = ReadBinChunked(r, body, "NOVB-"+msgID.String())
 	if err != nil {
 		return nil, err
 	}
-
-	// Check for trailing bytes
 	_, err = r.ReadByte()
 	if err != io.EOF {
 		return nil, fmt.Errorf("parsing NOVB-%s: trailing bytes", msgID.String())
 	}
-
-	return &Msg{Hdr: msgHdr, Body: body}, nil
+	return &Msg[P]{Hdr: msgHdr, Body: body}, nil
 }
 
-// SerializeBinMsg serializes a NovAtel message with header into binary format
-func SerializeBinMsg(msg *Msg) ([]byte, error) {
-	// Get message ID
+// SerializeBinMsg serializes a NovAtel message with header into binary format.
+func SerializeBinMsg[P ~uint8](msg *Msg[P]) ([]byte, error) {
 	msgID, _ := msg.Body.ID()
 	if msgID == 0 {
 		return nil, fmt.Errorf("unknown ASCII message cannot be serialized as binary")
 	}
-
 	var payload []byte
 	var err error
-
 	if uMsg, ok := msg.Body.(*UnknownBinMsgBody); ok {
 		payload = uMsg.Payload
 	} else {
-		// Serialize the message payload
 		buf := new(bytes.Buffer)
-
-		// Write the message (handles both chunked and regular messages)
 		err = WriteBinChunked(buf, msg.Body, msgID.String())
 		if err != nil {
 			return nil, err
 		}
 		payload = buf.Bytes()
 	}
-
 	if len(payload) > 0xFFFF {
 		return nil, fmt.Errorf("novatel-%s payload too long (%d bytes)", msgID.String(), len(payload))
 	}
-
-	// Parse port from header
-	port, err := ParsePort(msg.Hdr.Port)
-	if err != nil {
-		return nil, fmt.Errorf("invalid port %q: %v", msg.Hdr.Port, err)
-	}
-
-	// Create binary header
-	binHdr := BinaryHdr{
+	binHdr := BinaryHdr[P]{
 		Sync1:         Sync1,
 		Sync2:         Sync2,
 		Sync3:         Sync3,
 		HeaderLength:  standardHeaderLength,
 		MessageID:     msgID,
-		MessageType:   0, // Default message type
-		Port:          port,
+		Port:          msg.Hdr.Port,
 		MessageLength: uint16(len(payload)),
 		CommonHdr:     msg.Hdr.CommonHdr,
 	}
-
-	// Serialize header
 	headerBuf := new(bytes.Buffer)
 	err = binary.Write(headerBuf, binary.LittleEndian, &binHdr)
 	if err != nil {
 		return nil, err
 	}
-
-	// Combine header and payload
 	packet := append(headerBuf.Bytes(), payload...)
-
-	// Calculate and append CRC
 	crc := CRC32(packet)
 	crcBytes := make([]byte, crcLength)
 	binary.LittleEndian.PutUint32(crcBytes, crc)
 	packet = append(packet, crcBytes...)
-
 	return packet, nil
 }

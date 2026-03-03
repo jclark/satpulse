@@ -44,6 +44,24 @@ tag = "nov-bestposa-off"
 description = "Disable BESTPOS ASCII"
 text = "UNLOG BESTPOSA"
 
+# BESTGNSSPOS (GNSS-only geodetic position, msg 1429)
+[[line]]
+tag = "nov-bestgnssposb"
+description = "Enable BESTGNSSPOS binary at 1Hz"
+text = "LOG BESTGNSSPOSB ONTIME 1"
+[[line]]
+tag = "nov-bestgnssposb-off"
+description = "Disable BESTGNSSPOS binary"
+text = "UNLOG BESTGNSSPOSB"
+[[line]]
+tag = "nov-bestgnssposa"
+description = "Enable BESTGNSSPOS ASCII at 1Hz"
+text = "LOG BESTGNSSPOSA ONTIME 1"
+[[line]]
+tag = "nov-bestgnssposa-off"
+description = "Disable BESTGNSSPOS ASCII"
+text = "UNLOG BESTGNSSPOSA"
+
 # BESTVEL (velocity, msg 99)
 # Not documented in Bynav UG017 but works correctly
 # Verified OK received and valid binary frames on Bynav M2 (V7.84_250E94_T)
@@ -63,6 +81,24 @@ text = "LOG BESTVELA ONTIME 1"
 tag = "nov-bestvela-off"
 description = "Disable BESTVEL ASCII"
 text = "UNLOG BESTVELA"
+
+# PSRVEL (pseudorange velocity, msg 100)
+[[line]]
+tag = "nov-psrvelb"
+description = "Enable PSRVEL binary at 1Hz"
+text = "LOG PSRVELB ONTIME 1"
+[[line]]
+tag = "nov-psrvelb-off"
+description = "Disable PSRVEL binary"
+text = "UNLOG PSRVELB"
+[[line]]
+tag = "nov-psrvela"
+description = "Enable PSRVEL ASCII at 1Hz"
+text = "LOG PSRVELA ONTIME 1"
+[[line]]
+tag = "nov-psrvela-off"
+description = "Disable PSRVEL ASCII"
+text = "UNLOG PSRVELA"
 
 # BESTGNSSVEL (velocity, msg 1430)
 # Verified OK received on Bynav M2 (V7.84_250E94_T)
@@ -85,6 +121,24 @@ text = "LOG BESTGNSSVELA ONTIME 1"
 tag = "nov-bestgnssvela-off"
 description = "Disable BESTGNSSVEL ASCII"
 text = "UNLOG BESTGNSSVELA"
+
+# BESTXYZ (ECEF position and velocity, msg 241)
+[[line]]
+tag = "nov-bestxyzb"
+description = "Enable BESTXYZ binary at 1Hz"
+text = "LOG BESTXYZB ONTIME 1"
+[[line]]
+tag = "nov-bestxyzb-off"
+description = "Disable BESTXYZ binary"
+text = "UNLOG BESTXYZB"
+[[line]]
+tag = "nov-bestxyza"
+description = "Enable BESTXYZ ASCII at 1Hz"
+text = "LOG BESTXYZA ONTIME 1"
+[[line]]
+tag = "nov-bestxyza-off"
+description = "Disable BESTXYZ ASCII"
+text = "UNLOG BESTXYZA"
 
 # NMEA Output Control
 
@@ -189,6 +243,24 @@ text = "LOG TIMEA ONTIME 1"
 tag = "nov-timea-off"
 description = "Disable TIME ASCII"
 text = "UNLOG TIMEA"
+
+# PSRDOP (pseudorange DOP, msg 174)
+[[line]]
+tag = "nov-psrdopb"
+description = "Enable PSRDOP binary at 1Hz"
+text = "LOG PSRDOPB ONTIME 1"
+[[line]]
+tag = "nov-psrdopb-off"
+description = "Disable PSRDOP binary"
+text = "UNLOG PSRDOPB"
+[[line]]
+tag = "nov-psrdopa"
+description = "Enable PSRDOP ASCII at 1Hz"
+text = "LOG PSRDOPA ONTIME 1"
+[[line]]
+tag = "nov-psrdopa-off"
+description = "Disable PSRDOP ASCII"
+text = "UNLOG PSRDOPA"
 
 # IONUTC (NovAtel format ionospheric and UTC parameters, msg 8)
 # Note: ONCHANGED is broken on Bynav M2 (spams at ~10Hz); use ONTIME instead

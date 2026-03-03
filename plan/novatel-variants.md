@@ -13,7 +13,7 @@ The structs `Pos[S, P]` and `XYZ[S, P]` are already parameterized on enum types.
 
 ## Approach
 
-1. Parameterize `MsgHdr` and `Msg` on port type; add `OEM7Port`, `UnicorePort`, and `SinoPort` types
+1. Parameterize `MsgHdr` and `Msg` on port type; add `Port`, `UnicorePort`, and `SinoPort` types
 2. Add `SinoPosType` enum and `SinoBestPos`/`SinoBestXYZ` types to `novmsg`
 3. Expose novmsg registries and add parse functions that accept a constructor map
 4. `nov` processor holds a complete constructor map, built at construction time: a reference to the global registry for OEM7/ByNav, or a fresh copy with overrides merged in for SinoGNSS/Unicore
@@ -24,16 +24,16 @@ The structs `Pos[S, P]` and `XYZ[S, P]` are already parameterized on enum types.
 
 ### Port types in `gps/lib/novmsg/bin.go`
 
-Replace the current `Port` type (iota-based, Unicore encoding) with three variant-specific types. OEM7 is the default:
+Replace the current `Port` type (iota-based, Unicore encoding) with three variant-specific types. OEM7 is the default and uses the unadorned `Port` name (consistent with `PosType`):
 
 ```go
-// OEM7Port represents the port address encoding used by NovAtel OEM7 and ByNav.
-type OEM7Port uint8
+// Port represents the port address encoding used by NovAtel OEM7 and ByNav.
+type Port uint8
 
 const (
-    OEM7COM1 OEM7Port = 0x20
-    OEM7COM2 OEM7Port = 0x40
-    OEM7COM3 OEM7Port = 0x60
+    COM1 Port = 0x20
+    COM2 Port = 0x40
+    COM3 Port = 0x60
 )
 
 // UnicorePort represents the port address encoding used by Unicore receivers
@@ -50,10 +50,10 @@ const (
 // Same binary byte values as OEM7 (0x20, 0x40, 0x60) but serialized as
 // decimal strings in ASCII ("32", "64", "96") instead of "COM1", "COM2", "COM3".
 type SinoPort uint8
-// No constants -- same byte values as OEM7Port, no SinoGNSS-specific port values needed.
+// No constants -- same byte values as Port, no SinoGNSS-specific port values needed.
 ```
 
-OEM7Port and UnicorePort get `String()`, `MarshalText()`, `UnmarshalText()` methods that map to canonical names ("COM1", "COM2", "COM3"); the difference is the binary byte value.
+Port and UnicorePort get `String()`, `MarshalText()`, `UnmarshalText()` methods that map to canonical names ("COM1", "COM2", "COM3"); the difference is the binary byte value.
 
 SinoPort gets `String()`/`MarshalText()` that returns the decimal representation of the byte value (e.g., `SinoPort(0x20).String()` returns `"32"`), and `UnmarshalText()` that parses decimal strings back. This matches what SinoGNSS receivers actually emit in ASCII, so binary-to-ASCII round-trips work without any fixup hacks.
 
@@ -113,7 +113,7 @@ The processor's `processPacket` extracts `msg.Hdr.CommonHdr` and passes it throu
 
 ### Test changes
 
-Remove all `fixupHeaderForAscii` port hacks from Bynav tests (TIME, IONUTC, BESTGNSSVEL) since OEM7Port round-trips correctly. UM980 tests use `UnicorePort`. K901 (SinoGNSS) tests use `SinoPort` -- decimal port strings round-trip naturally. The bogus K901 BESTVEL test (captured separately, not a matched pair) should be removed.
+Remove all `fixupHeaderForAscii` port hacks from Bynav tests (TIME, IONUTC, BESTGNSSVEL) since Port round-trips correctly. UM980 tests use `UnicorePort`. K901 (SinoGNSS) tests use `SinoPort` -- decimal port strings round-trip naturally. The bogus K901 BESTVEL test (captured separately, not a matched pair) should be removed.
 
 ## Step 2: Untyped PosType constants and SinoGNSS types in novmsg
 
@@ -323,7 +323,7 @@ func NewBinPacketProcessor(mgr *gpsprot.NavEpochManager) *BinPacketProcessor {
     return &BinPacketProcessor{
         packetProcessor: packetProcessor{mh: &gpsprot.DefaultHandler{}, mgr: mgr},
         ctors:           novmsg.BinRegistry(),
-        parse:           binParser[novmsg.OEM7Port](),
+        parse:           binParser[novmsg.Port](),
     }
 }
 
@@ -355,7 +355,7 @@ func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
         delete(m, novmsg.IonUTCID)
         return m, binParser[novmsg.UnicorePort]()
     default: // OEM7, ByNav
-        return reg, binParser[novmsg.OEM7Port]()
+        return reg, binParser[novmsg.Port]()
     }
 }
 
@@ -434,11 +434,30 @@ case *novmsg.SinoBestXYZ:
     return dispatchBestXYZ(h, p.curEpochMsg, &m.XYZ, tag, tRead)
 ```
 
-## Step 5: SetVendor helper in gpsreg
+## Step 5: SetVendor helper and CreatePacketProcessors change in gpsreg
 
 ### Modified: `gps/gpsreg/reg.go`
 
-`CreatePacketProcessors` signature is **unchanged** -- it keeps taking `nmeaNumbering`. Add a separate `SetVendor` function that configures vendor-specific behavior on existing processors:
+Change `CreatePacketProcessors` to take `Vendor` instead of `nmeaNumbering`. When vendor is not `VendorUnknown`, call `SetVendor` before returning:
+
+```go
+// CreatePacketProcessors creates packet processors for all registered protocols.
+// A shared NavEpochManager coordinates epoch handling across protocols.
+func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcessor {
+    mgr := gpsprot.NewNavEpochManager()
+    nmeaPP := nmea.NewPacketProcessor(mgr)
+    nmeaPP.AddExtHandler(quectel.NewHandler())
+    procs := map[gpsprot.Tag]gpsprot.PacketProcessor{
+        // ... same as now ...
+    }
+    if vendor != VendorUnknown {
+        SetVendor(procs, vendor)
+    }
+    return procs
+}
+```
+
+`SetVendor` is exported separately for the desktop GUI, where vendor is determined after processor construction:
 
 ```go
 type novVariantSetter interface {
@@ -446,8 +465,8 @@ type novVariantSetter interface {
 }
 
 // SetVendor configures vendor-specific behavior on packet processors.
-// This can be called after CreatePacketProcessors when the vendor
-// is determined later (e.g. after auto-detection).
+// Called by CreatePacketProcessors when vendor is known at construction,
+// or separately when the vendor is determined later (e.g. desktop GUI).
 func SetVendor(procs map[gpsprot.Tag]gpsprot.PacketProcessor, vendor Vendor) {
     // NMEA satellite numbering
     if nmeaPP, ok := procs[nmea.Tag].(*nmea.PacketProcessor); ok {
@@ -480,8 +499,8 @@ func novVariantFor(v Vendor) nov.Variant {
 
 ### Modified callers
 
-- `time/app/daemon/gps.go`: After `CreatePacketProcessors(nil)`, call `gpsreg.SetVendor(procs, vendor)` when vendor is known
-- No changes needed to `internal/gpscmd/gpscmd.go`, `replay_test.go`, or `gpscfg_test.go` -- they use default (OEM7) behavior
+- `time/app/daemon/gps.go`: Pass vendor directly to `CreatePacketProcessors(vendor)` instead of looking up NMEA numbering separately
+- `internal/gpscmd/gpscmd.go`, `replay_test.go`, `gpscfg_test.go`: Change `CreatePacketProcessors(nil)` to `CreatePacketProcessors(VendorUnknown)` (or `0`)
 
 ## Step 6: Enable IONUTC test
 
@@ -495,7 +514,7 @@ Remove the `XXX` comment from `novmsg/time.go:8` and replace with a clear note a
 
 | File | Change |
 |------|--------|
-| `gps/lib/novmsg/bin.go` | OEM7Port, UnicorePort, SinoPort types; parameterize BinaryHdr[P]; ParseBinMsgUsing; refactor ParseBinMsg |
+| `gps/lib/novmsg/bin.go` | Port, UnicorePort, SinoPort types; parameterize BinaryHdr[P]; ParseBinMsgUsing; refactor ParseBinMsg |
 | `gps/lib/novmsg/common.go` | Parameterize MsgHdr[P], Msg[P]; add BinRegistry, AsciiRegistry |
 | `gps/lib/novmsg/ascii.go` | Parameterize AsciiHdr; ParseAsciiMsgUsing; refactor ParseAsciiMessage |
 | `gps/lib/novmsg/navtypes.go` | Change PosType constants to untyped; add PosSBAS alias |
@@ -507,16 +526,19 @@ Remove the `XXX` comment from `novmsg/time.go:8` and replace with a clear note a
 | `gps/internal/nov/processor.go` | ParseResult type; use *CommonHdr in dispatch/handleEpoch; variant type (4 variants), SetVariant, ctors maps + parse closures, dispatch |
 | `gps/internal/nov/nav.go` | Generic dispatch helpers |
 | `gps/internal/nov/time.go` | Use *CommonHdr instead of *MsgHdr |
-| `gps/gpsreg/reg.go` | Add SetVendor helper, novVariantFor |
-| `time/app/daemon/gps.go` | Call SetVendor when vendor is known |
+| `gps/gpsreg/reg.go` | Change CreatePacketProcessors to take Vendor; add SetVendor, novVariantFor |
+| `time/app/daemon/gps.go` | Pass vendor to CreatePacketProcessors |
+| `internal/gpscmd/gpscmd.go` | Update CreatePacketProcessors call |
+| `internal/gpscmd/replay_test.go` | Update CreatePacketProcessors call |
+| `gps/app/gpscfg/gpscfg_test.go` | Update CreatePacketProcessors call |
 
 ## Implementation order
 
-1. OEM7Port/UnicorePort/SinoPort types + parameterize MsgHdr[P]/Msg[P]/BinaryHdr[P] + update all parse/serialize functions + ParseResult + update processor to use *CommonHdr + update tests
+1. Port/UnicorePort/SinoPort types + parameterize MsgHdr[P]/Msg[P]/BinaryHdr[P] + update all parse/serialize functions + ParseResult + update processor to use *CommonHdr + update tests
 2. SinoPosType enum + SinoBestPos/SinoBestXYZ in novmsg (+ tests)
 3. BinRegistry/AsciiRegistry + ParseBinMsgUsing/ParseAsciiMsgUsing in novmsg
 4. Variant (all four) + SetVariant + constructor maps + dispatch in nov processor
-5. SetVendor helper in gpsreg + call from daemon
+5. CreatePacketProcessors(Vendor) + SetVendor in gpsreg + update all callers
 6. Enable IONUTC test, update comments
 7. `make test`
 

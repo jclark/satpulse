@@ -109,14 +109,11 @@ func ParseVendor(vendor string) Vendor {
 
 // CreatePacketProcessors creates packet processors for all registered protocols.
 // A shared NavEpochManager coordinates epoch handling across protocols.
-func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gpsprot.Tag]gpsprot.PacketProcessor {
+func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcessor {
 	mgr := gpsprot.NewNavEpochManager()
 	nmeaPP := nmea.NewPacketProcessor(mgr)
-	if nmeaNumbering != nil {
-		nmeaPP.SetSVNumbering(nmeaNumbering)
-	}
 	nmeaPP.AddExtHandler(quectel.NewHandler())
-	return map[gpsprot.Tag]gpsprot.PacketProcessor{
+	procs := map[gpsprot.Tag]gpsprot.PacketProcessor{
 		ubx.Tag:       ubx.NewPacketProcessor(mgr),
 		casic.Tag:     casic.NewPacketProcessor(mgr),
 		as.Tag:        as.NewPacketProcessor(mgr),
@@ -126,6 +123,44 @@ func CreatePacketProcessors(nmeaNumbering []gpsprot.NMEASVNumberingRange) map[gp
 		unc.TagAscii:  unc.NewAsciiPacketProcessor(mgr),
 		nov.TagBinary: nov.NewBinPacketProcessor(mgr),
 		nov.TagAscii:  nov.NewAsciiPacketProcessor(mgr),
+	}
+	if vendor != VendorUnknown {
+		SetVendor(procs, vendor)
+	}
+	return procs
+}
+
+type novVariantSetter interface {
+	SetVariant(nov.Variant)
+}
+
+// SetVendor configures vendor-specific behavior on packet processors.
+// Called by CreatePacketProcessors when vendor is known at construction,
+// or separately when the vendor is determined later (e.g. desktop GUI).
+func SetVendor(procs map[gpsprot.Tag]gpsprot.PacketProcessor, vendor Vendor) {
+	if nmeaPP, ok := procs[nmea.Tag].(*nmea.PacketProcessor); ok {
+		if numbering := FindNMEASVNumbering(vendor); numbering != nil {
+			nmeaPP.SetSVNumbering(numbering)
+		}
+	}
+	v := novVariantFor(vendor)
+	for _, pp := range procs {
+		if vs, ok := pp.(novVariantSetter); ok {
+			vs.SetVariant(v)
+		}
+	}
+}
+
+func novVariantFor(v Vendor) nov.Variant {
+	switch v {
+	case VendorSinoGNSS:
+		return nov.VariantSinoGNSS
+	case VendorUnicore:
+		return nov.VariantUnicore
+	case VendorBynav:
+		return nov.VariantByNav
+	default:
+		return nov.VariantOEM7
 	}
 }
 

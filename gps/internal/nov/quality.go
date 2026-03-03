@@ -10,41 +10,41 @@ import (
 // values that the caller must handle.
 func PosTypeQuality(pt uint32) (gpsprot.FixLevel, gpsprot.FixDim, gpsprot.CorrKind, gpsprot.AuxSrc, bool) {
 	switch pt {
-	case 0: // NONE
+	case novmsg.PosNone:
 		return gpsprot.FixLevelNone, 0, 0, 0, true
-	case 2: // FIXEDHEIGHT
+	case novmsg.PosFixedHeight:
 		return gpsprot.FixLevelCode, gpsprot.FixDim2D, 0, 0, true
-	case 8: // DOPPLER_VELOCITY
+	case novmsg.PosDopplerVelocity:
 		return 0, gpsprot.FixDimVelocityOnly, 0, 0, true
-	case 16: // SINGLE
+	case novmsg.PosSingle:
 		return gpsprot.FixLevelCode, gpsprot.FixDim3D, 0, 0, true
-	case 17: // PSRDIFF
+	case novmsg.PosPSRDiff:
 		return gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D, gpsprot.CorrBaseStation.Expand(), 0, true
-	case 18: // SBAS / WAAS
+	case novmsg.PosSBAS:
 		return gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D, gpsprot.CorrSBAS.Expand(), 0, true
-	case 32: // L1_FLOAT
+	case novmsg.PosL1Float:
 		return gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrBaseStation.Expand(), 0, true
-	case 33: // IONOFREE_FLOAT
+	case novmsg.PosIonoFreeFloat:
 		return gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrFullDualFreq.Expand(), 0, true
-	case 34: // NARROW_FLOAT
+	case novmsg.PosNarrowFloat:
 		return gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrFullDualFreq.Expand(), 0, true
-	case 48: // L1_INT
+	case novmsg.PosL1Int:
 		return gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrBaseStation.Expand(), 0, true
-	case 49: // WIDE_INT
+	case novmsg.PosWideInt:
 		return gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrPartialDualFreq.Expand(), 0, true
-	case 50: // NARROW_INT
+	case novmsg.PosNarrowInt:
 		return gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrFullDualFreq.Expand(), 0, true
-	case 53: // INS_PSRSP
+	case novmsg.PosINSPSRSP:
 		return gpsprot.FixLevelCode, gpsprot.FixDim3D, 0, gpsprot.AuxSrcINS, true
-	case 54: // INS_PSRDIFF
+	case novmsg.PosINSPSRDiff:
 		return gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D, gpsprot.CorrBaseStation.Expand(), gpsprot.AuxSrcINS, true
-	case 55: // INS_RTKFLOAT
+	case novmsg.PosINSRTKFloat:
 		return gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrBaseStation.Expand(), gpsprot.AuxSrcINS, true
-	case 56: // INS_RTKFIXED
+	case novmsg.PosINSRTKFixed:
 		return gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrBaseStation.Expand(), gpsprot.AuxSrcINS, true
-	case 68: // PPP_CONVERGING
+	case novmsg.PosPPPConverging:
 		return gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverging.Expand(), 0, true
-	case 69: // PPP
+	case novmsg.PosPPP:
 		return gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverged.Expand(), 0, true
 	default:
 		return 0, 0, 0, 0, false

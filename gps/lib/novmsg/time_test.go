@@ -4,28 +4,28 @@ import (
 	"testing"
 )
 
-var timeTestCases = []dataTestCase{
+var um980TimeTests = []dataTestCase[UnicorePort]{
 	{
 		name:  "UM980 TIME",
 		hex:   "aa44121c650000012c00c03461a04c09305d621afc4f8c212499120000000000a84d81508f5e10bf9ac298de427d433e00000000000032c0e907000008160239803e000001000000b3265817",
 		ascii: "#TIMEA,COM1,13504,97.0,FINE,2380,442654.000,562843644,14,18;VALID,-6.244420740e-05,9.075413271e-09,-18.00000000000,2025,8,22,2,57,16000,VALID*70144497\r\n",
-		hdr: MsgHdr{
-			Port: "COM1", // Binary port 1 = "COM1"
+		hdr: MsgHdr[UnicorePort]{
+			Port: UnicoreCOM1,
 			CommonHdr: CommonHdr{
 				Sequence:           13504,
 				IdleTime:           Percentage(97),
 				TimeStatus:         TimeStatusFine,
 				Week:               2380,
-				MillisecondsOfWeek: GPSec(442654000), // 442654.000 * 1000
+				MillisecondsOfWeek: GPSec(442654000),
 				RecvStatus:         562843644,
-				Reserved:           39204, // Binary format value (canonical)
+				Reserved:           39204,
 				Version:            18,
 			},
 		},
 		value: &Time{
-			ClockStatus: ClockStatusValid, // VALID = 0
-			Offset:      -6.244420740247078e-05, // Use the precise binary value
-			OffsetStd:   9.075413270795956e-09,  // Use the precise binary value
+			ClockStatus: ClockStatusValid,
+			Offset:      -6.244420740247078e-05,
+			OffsetStd:   9.075413270795956e-09,
 			UTCOffset:   -18.0,
 			UTCYear:     2025,
 			UTCMonth:    8,
@@ -33,27 +33,27 @@ var timeTestCases = []dataTestCase{
 			UTCHour:     2,
 			UTCMin:      57,
 			UTCMs:       16000,
-			UTCStatus:   UTCStatusValid, // VALID = 1
+			UTCStatus:   UTCStatusValid,
 		},
-		// ASCII format has different floating-point precision and header field values
 		fixupValueForAscii: fixupTimeValueForAscii,
-		fixupHeaderForAscii: func(hdr MsgHdr) MsgHdr {
-			// UM980 doesn't follow OEM7 spec here: the byte is exactly the percentage
+		fixupHeaderForAscii: func(hdr MsgHdr[UnicorePort]) MsgHdr[UnicorePort] {
 			hdr.IdleTime *= 2
-			// ASCII format has different Reserved field value
 			hdr.Reserved = 14
 			return hdr
 		},
 	},
+}
+
+var bynavTimeTests = []dataTestCase[Port]{
 	{
-		name: "Bynav M20 TIME",
+		name:  "Bynav M20 TIME",
 		ascii: "#TIMEA,COM3,0,99.7,FINESTEERING,2380,524599.000,00000000,0000,784;VALID,-4.288684441e-04,0.000000000e+00,-18.00000000000,2025,8,23,1,43,1000,VALID*7d8d6d09\r\n",
-		hex: "aa44121c650000602c000000c7b44c09d8be441f000000000000100300000000ca3c17f1371b3cbf000000000000000000000000000032c0e90700000817012be80300000100000032b1ed45",
-		hdr: MsgHdr{
-			Port: "96", // = 0x60 (this seems completely bogus)
+		hex:   "aa44121c650000602c000000c7b44c09d8be441f000000000000100300000000ca3c17f1371b3cbf000000000000000000000000000032c0e90700000817012be80300000100000032b1ed45",
+		hdr: MsgHdr[Port]{
+			Port: COM3,
 			CommonHdr: CommonHdr{
 				Sequence:           0,
-				IdleTime:           Percentage(199), 
+				IdleTime:           Percentage(199),
 				TimeStatus:         TimeStatusFineSteering,
 				Week:               2380,
 				MillisecondsOfWeek: GPSec(524599000),
@@ -64,7 +64,7 @@ var timeTestCases = []dataTestCase{
 		},
 		value: &Time{
 			ClockStatus: ClockStatusValid,
-			Offset:      -0.00042886844411511567, // Use the precise binary value
+			Offset:      -0.00042886844411511567,
 			OffsetStd:   0.0,
 			UTCOffset:   -18.0,
 			UTCYear:     2025,
@@ -76,18 +76,16 @@ var timeTestCases = []dataTestCase{
 			UTCStatus:   UTCStatusValid,
 		},
 		fixupValueForAscii: fixupTimeValueForAscii,
-		fixupHeaderForAscii: func(hdr MsgHdr) MsgHdr {
-			hdr.Port = "COM3"
-			return hdr
-		},
 	},
+}
+
+var um980IonUTCTests = []dataTestCase[UnicorePort]{
 	{
 		name:  "UM980 IONUTC",
-		disable: true, // Disable because of conflicting message ID
 		hex:   "aa44121c060000036c008c4461a04d09a8da88219d16261c21ec12000000000000005b3e000000000000583e00000000000080be00000000000080be0000000000400041000000000000e04000000000000010c10000000000001c414e09000000400200000000000000103e000000000000fc3c8909000007000000120000001200000000000000c9ca08ed",
 		ascii: "#IONUTCA,COM3,17548,97.0,FINE,2381,562617.000,472258205,22,18;2.514570951461792e-08,2.235174179077148e-08,-1.192092895507812e-07,-1.192092895507812e-07,1.331200000000000e+05,3.276800000000000e+04,-2.621440000000000e+05,4.587520000000000e+05,2382,147456,9.313225746154785e-10,6.217248938e-15,2441,7,18,18,0*37734163\r\n",
-		hdr: MsgHdr{
-			Port: "COM3",
+		hdr: MsgHdr[UnicorePort]{
+			Port: UnicoreCOM3,
 			CommonHdr: CommonHdr{
 				Sequence:           17548,
 				IdleTime:           Percentage(97),
@@ -118,19 +116,25 @@ var timeTestCases = []dataTestCase{
 			DeltatLsf: 18,
 			Reserved:  0,
 		},
+		fixupValueForBin: func(msg MsgBody) MsgBody {
+			return &UnicoreIonUTC{*msg.(*IonUTC)}
+		},
 		fixupValueForAscii: fixupUnicoreIonUTCValueForAscii,
-		fixupHeaderForAscii: func(hdr MsgHdr) MsgHdr {
+		fixupHeaderForAscii: func(hdr MsgHdr[UnicorePort]) MsgHdr[UnicorePort] {
 			hdr.IdleTime *= 2
 			hdr.Reserved = 22
 			return hdr
 		},
 	},
+}
+
+var bynavIonUTCTests = []dataTestCase[Port]{
 	{
 		name:  "Bynav M20 IONUTC",
 		hex:   "aa44121c080000606c000000c7b44e0910c8770000000000000010030000000000005b3e000000000000583e00000000000080be00000000000080be0000000000400041000000000000e04000000000000010c10000000000001c414e09000000400200000000000000103e000000000000fc3c89090000070000001200000012000000000000000c30cb0b",
 		ascii: "#IONUTCA,COM3,0,99.7,FINESTEERING,2382,7850.000,00000000,0000,784;2.514570951461792e-08,2.235174179077148e-08,-1.192092895507813e-07,-1.192092895507813e-07,1.331200000000000e+05,3.276800000000000e+04,-2.621440000000000e+05,4.587520000000000e+05,2382,147456,9.3132257461548000e-10,6.217248938e-15,2441,7,18,18,0*73788199\r\n",
-		hdr: MsgHdr{
-			Port: "96", // = 0x60 (binary port value)
+		hdr: MsgHdr[Port]{
+			Port: COM3,
 			CommonHdr: CommonHdr{
 				Sequence:           0,
 				IdleTime:           Percentage(199),
@@ -162,30 +166,45 @@ var timeTestCases = []dataTestCase{
 			Reserved:  0,
 		},
 		fixupValueForAscii: fixupBynavIonUTCValueForAscii,
-		fixupHeaderForAscii: func(hdr MsgHdr) MsgHdr {
-			hdr.Port = "COM3"
-			return hdr
-		},
 	},
 }
 
+func unicoreBinRegistry() map[MsgID]func() MsgBody {
+	m := make(map[MsgID]func() MsgBody)
+	for k, v := range BinRegistry() {
+		m[k] = v
+	}
+	m[UnicoreIonUTCID] = func() MsgBody { return &UnicoreIonUTC{} }
+	delete(m, IonUTCID)
+	return m
+}
+
 func TestTimeBinary(t *testing.T) {
-	testDataBin(t, timeTestCases)
+	testDataBin(t, um980TimeTests, BinRegistry())
+	testDataBin(t, bynavTimeTests, BinRegistry())
 }
 
 func TestTimeAscii(t *testing.T) {
-	testDataAscii(t, timeTestCases)
+	testDataAscii(t, um980TimeTests, AsciiRegistry())
+	testDataAscii(t, bynavTimeTests, AsciiRegistry())
+}
+
+func TestIonUTCBinary(t *testing.T) {
+	testDataBin(t, um980IonUTCTests, unicoreBinRegistry())
+	testDataBin(t, bynavIonUTCTests, BinRegistry())
+}
+
+func TestIonUTCAscii(t *testing.T) {
+	testDataAscii(t, um980IonUTCTests, AsciiRegistry())
+	testDataAscii(t, bynavIonUTCTests, AsciiRegistry())
 }
 
 // fixupTimeValueForAscii converts a Time with full binary precision
 // to match the limited precision values that come from ASCII parsing.
-// This simulates the receiver firmware's float-to-ASCII conversion using %.10g formatting.
 func fixupTimeValueForAscii(msg MsgBody) MsgBody {
 	r := msg.(*Time)
 	result := *r
-
 	const floatFormat = "%.10g"
-	// Simulate receiver's ASCII formatting: binary -> printf("%.10g") -> parse back
 	fixupFloat(&result.Offset, floatFormat)
 	fixupFloat(&result.OffsetStd, floatFormat)
 	return &result
@@ -203,24 +222,17 @@ func fixupUnicoreIonUTCValueForAscii(msg MsgBody) MsgBody {
 func fixupBynavIonUTCValueForAscii(msg MsgBody) MsgBody {
 	r := msg.(*IonUTC)
 	result := *r
-	
 	// ByNav M20 has a rounding quirk where Alpha2/Alpha3 ASCII output shows ...813
-	// but the binary value formats to ...812. Since these are negative values,
-	// we need to subtract to make them more negative (from ...507812 to ...507813).
-	const epsilon = 5e-23  // Small value to bump the last digit from 2 to 3
+	// but the binary value formats to ...812.
+	const epsilon = 5e-23
 	result.Alpha2 -= epsilon
 	result.Alpha3 -= epsilon
-	
-	// ByNav M20 uses "%.16g" for alpha/beta, "%.14g" for A0, "%.10g" for A1
 	return fixupIonUTCValueForAscii(&result, "%.16g", "%.14g", "%.10g")
 }
 
-// fixupIonUTCValueForAscii is a helper that applies format strings to IonUTC fields
-// to match the limited precision values that come from ASCII parsing.
+// fixupIonUTCValueForAscii is a helper that applies format strings to IonUTC fields.
 func fixupIonUTCValueForAscii(msg *IonUTC, alphaBetaFormat, a0Format, a1Format string) *IonUTC {
 	result := *msg
-	
-	// Apply formatting to alpha and beta fields
 	fixupFloat(&result.Alpha0, alphaBetaFormat)
 	fixupFloat(&result.Alpha1, alphaBetaFormat)
 	fixupFloat(&result.Alpha2, alphaBetaFormat)
@@ -229,10 +241,7 @@ func fixupIonUTCValueForAscii(msg *IonUTC, alphaBetaFormat, a0Format, a1Format s
 	fixupFloat(&result.Beta1, alphaBetaFormat)
 	fixupFloat(&result.Beta2, alphaBetaFormat)
 	fixupFloat(&result.Beta3, alphaBetaFormat)
-	
-	// Apply specific formatting to A0 and A1
 	fixupFloat(&result.A0, a0Format)
 	fixupFloat(&result.A1, a1Format)
-	
 	return &result
 }
