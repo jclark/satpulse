@@ -58,7 +58,7 @@ func bestNavXYZPosVel(ne *gpsprot.NavEpochMsg, m *uncmsg.BestNavXYZ) (*gpsprot.P
 
 // quality populates solution quality fields on the NavEpochMsg from BESTNAV/BESTNAVXYZ
 // fields. Called regardless of PSolStatus: sets FixLevelNone when not SolComputed.
-func quality[S, P ~uint32](ne *gpsprot.NavEpochMsg, solStatus S, posType P,
+func quality(ne *gpsprot.NavEpochMsg, solStatus uncmsg.SolStatus, posType uncmsg.PosVelType,
 	diffAge float32, stnID novmsg.StationID, numSVs, numSolnSVs uint8,
 	galBds3, gpsGloBds2 novmsg.HexByte) {
 	ne.NumSVUsed.Set(uint16(numSolnSVs))
@@ -73,35 +73,34 @@ func quality[S, P ~uint32](ne *gpsprot.NavEpochMsg, solStatus S, posType P,
 	} else if v, ok := nov.StationIDUint(stnID); ok && v >= 4096 {
 		ne.Correction |= stnIDCorrection(v)
 	}
-	if uint32(solStatus) != 0 {
+	if solStatus != uncmsg.SolComputed {
 		ne.FixLevel = gpsprot.FixLevelNone
 		return
 	}
 	// Unicore-specific pos type values first.
-	pt := uint32(posType)
-	switch pt {
-	case 1: // FIXEDPOS
+	switch posType {
+	case uncmsg.PosVelFixedPos:
 		ne.FixLevel = gpsprot.FixLevelCode
 		ne.FixDim = gpsprot.FixDimTimeOnly
 		return
-	case 52: // INS (pure inertial, no GNSS)
+	case uncmsg.PosVelINS:
 		ne.FixLevel = gpsprot.FixLevelNone
 		ne.FixDim = gpsprot.FixDim3D
 		ne.AuxSrc |= gpsprot.AuxSrcINS
 		return
-	case 70: // PPP_AR
+	case uncmsg.PosVelPPPAR:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
 		ne.FixDim = gpsprot.FixDim3D
 		ne.Correction = gpsprot.CorrPPPConverged.Expand()
 		return
-	case 71: // PPP_RTK
+	case uncmsg.PosVelPPPRTK:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
 		ne.FixDim = gpsprot.FixDim3D
 		ne.Correction = gpsprot.CorrPPPRTK.Expand()
 		return
 	}
 	// Shared pos type values.
-	fl, fd, ck, aux, ok := nov.PosTypeQuality(pt)
+	fl, fd, ck, aux, ok := nov.PosTypeQuality(uint32(posType))
 	if ok {
 		ne.FixLevel = fl
 		ne.FixDim = fd
