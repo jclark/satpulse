@@ -1,7 +1,9 @@
 package casbin
 
 const (
+	NavDopID     MsgID = clsNav | (0x01 << 8)
 	NavSolID     MsgID = clsNav | (0x02 << 8)
+	NavPvID      MsgID = clsNav | (0x03 << 8)
 	NavTimeUTCID MsgID = clsNav | (0x10 << 8)
 	NavClockID   MsgID = clsNav | (0x11 << 8)
 	NavGPSInfoID MsgID = clsNav | (0x20 << 8)
@@ -50,6 +52,49 @@ type NavSol struct {
 }
 
 func (m *NavSol) ID() MsgID { return NavSolID }
+
+// NavPv is NAV-PV (0x01 0x03) - geodetic position and velocity (80 bytes)
+type NavPv struct {
+	NavRunTime
+	PosValid  NavPosValid
+	VelValid  NavVelValid
+	System    NavSystem
+	NumSV     uint8
+	NumSVGPS  uint8
+	NumSVBDS  uint8
+	NumSVGLN  uint8
+	_         uint8   // reserved
+	PDOP      float32
+	Lon       float64 // deg
+	Lat       float64 // deg
+	Height    float32 // m, ellipsoidal
+	SepGeoid  float32 // m, geoid separation (ellipsoidal minus MSL)
+	HAcc      float32 // m^2, variance of horizontal position accuracy
+	VAcc      float32 // m^2, variance of vertical position accuracy
+	VelN      float32 // m/s
+	VelE      float32 // m/s
+	VelU      float32 // m/s (UP, not down -- negate for NED)
+	Speed3D   float32 // m/s
+	Speed2D   float32 // m/s, ground speed
+	Heading   float32 // deg
+	SAcc      float32 // (m/s)^2, variance of ground speed accuracy
+	CAcc      float32 // deg^2, variance of heading accuracy
+}
+
+func (m *NavPv) ID() MsgID { return NavPvID }
+
+// NavDop is NAV-DOP (0x01 0x01) - dilution of precision (28 bytes)
+type NavDop struct {
+	NavRunTime
+	PDOP float32
+	HDOP float32
+	VDOP float32
+	NDOP float32
+	EDOP float32
+	TDOP float32
+}
+
+func (m *NavDop) ID() MsgID { return NavDopID }
 
 type NavPosValid uint8
 
@@ -263,7 +308,9 @@ func (m *NavGLNInfo) VaryingPart() any { return &m.SVs }
 var _ VaryingMsg = (*NavGLNInfo)(nil)
 
 func init() {
+	regMsg[NavDop]("DOP")
 	regMsg[NavSol]("SOL")
+	regMsg[NavPv]("PV")
 	regMsg[NavTimeUTC]("TIMEUTC")
 	regMsg[NavClock]("CLOCK")
 	regMsg[NavGPSInfo]("GPSINFO")
