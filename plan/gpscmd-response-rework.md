@@ -55,7 +55,8 @@ When `NotifySent` is called, the analyzer type-switches on `rm.source`:
 - `*UBXMsg`: records pending (class, ID) keyed for UBX ACK matching
 - `*CASBINMsg`: records pending (class, ID) keyed for CASBIN ACK matching
 - `*ASBINMsg`: records pending (class, ID) keyed for ASBIN ACK matching
-- `*NMEAMsg`, `*LineMsg`, `*BinaryMsg`: no ACK mechanism, nothing to record for matching
+- `*NMEAMsg`, `*BinaryMsg`: no ACK mechanism, nothing to record for matching
+- `*LineMsg`: records the line text (trimmed of EOL) for Unicore command matching. Unicore command responses echo the command name in `$command,<CMD>,response...` NMEA packets, so the analyzer can match by comparing the echoed command against the text of sent `LineMsg` entries.
 
 In all cases, the `RawMsg` is stored so it can be returned via `ResponseTo`.
 
@@ -70,7 +71,11 @@ Dispatches on packet protocol tag:
 - **UBX**: parses with `ubxbin.ParseMsg`. If ACK-ACK or ACK-NAK, extracts echoed class/ID, looks up in pending sent messages. Returns `Ack`/`Nak` with `ResponseTo` if matched, `UnmatchedAck`/`UnmatchedNak` if not. For CFG-class messages: if class/ID matches a pending sent message, returns `PollResponse` with `ResponseTo`. All other UBX messages return `Background`.
 - **CASBIN**: same pattern with `casbin.ParseMsg`.
 - **ASBIN**: same pattern with `asbin.ParseMsg`.
-- **NMEA**: checks syntax. Standard GNSS talker sentences (except TXT) return `Background`. TXT and proprietary sentences return `PossibleReply`.
+- **NMEA**: checks syntax. Standard GNSS talker sentences (except TXT) return `Background`. For proprietary sentences:
+  - Payload starting with `command,`: this is a Unicore command response (e.g. `$command,CONFIG,response: OK*XX`). Extracts the echoed command name and looks it up in pending sent `LineMsg` entries. Returns `Ack`/`Nak` with `ResponseTo` if matched (OK = `Ack`, error = `Nak`), `UnmatchedAck`/`UnmatchedNak` if not.
+  - Known PQTM periodic messages (recognized by `qtmmsg.ParsePeriodicMsg`): returns `Background`.
+  - TXT and other unrecognized proprietary sentences: returns `PossibleReply`.
+- **UNCA**, **NOVA**: returns `Background`. These are Unicore and NovAtel ASCII log formats (periodic output, not command responses).
 - **Other**: returns `Background`.
 
 ## PacketAnalysis and PacketKind
@@ -111,6 +116,6 @@ The `runMsgs`/`sendMsg` functions pass the analyzer through instead of the `resp
 
 ## What this doesn't cover
 
-- **NMEA response correlation**: NMEA has no ACK mechanism. TXT and proprietary sentences are flagged as `PossibleReply` but not correlated to specific sent messages. Smarter NMEA matching (e.g. recognizing that a PUBX response matches a sent PUBX command) is future work.
+- **NMEA response correlation**: standard NMEA has no ACK mechanism. TXT and unrecognized proprietary sentences are flagged as `PossibleReply` but not correlated to specific sent messages. Smarter NMEA matching (e.g. recognizing that a PUBX response matches a sent PUBX command) is future work. Unicore `$command,...` responses are handled above.
 - **Desktop integration**: the desktop app will use `PacketAnalyzer` the same way, but the specifics of Wails event emission and UI display are out of scope here.
 
