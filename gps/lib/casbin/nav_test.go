@@ -1,6 +1,7 @@
 package casbin
 
 import (
+	"math"
 	"testing"
 )
 
@@ -295,4 +296,118 @@ func TestNavGLNInfoParse(t *testing.T) {
 	if len(info.SVs) != 0 {
 		t.Fatalf("len(SVs) = %d, want 0", len(info.SVs))
 	}
+}
+
+func TestNavPvParse(t *testing.T) {
+	// NAV-PV packet captured from ATGM332D-5N31
+	pkt := parseHex(t, "bace5000010398a451000707031a09110000f5ec953f98b1ff3d43295940521c09dbae762b40418ef7c100000000621ae13eb191973f0000000000000000000000000000000000000000000000000856d6380024744924cc33b9")
+	msg, err := ParseMsg(pkt)
+	if err != nil {
+		t.Fatalf("ParseMsg error: %v", err)
+	}
+	pv, ok := msg.(*NavPv)
+	if !ok {
+		t.Fatalf("expected *NavPv, got %T", msg)
+	}
+	if pv.RunTime != 0x0051a498 {
+		t.Errorf("RunTime = 0x%x, want 0x%x", pv.RunTime, 0x0051a498)
+	}
+	if pv.PosValid != NavPos3D {
+		t.Errorf("PosValid = %d, want %d", pv.PosValid, NavPos3D)
+	}
+	if pv.VelValid != NavVel3D {
+		t.Errorf("VelValid = %d, want %d", pv.VelValid, NavVel3D)
+	}
+	if pv.System != (NavSystemGPS | NavSystemBDS) {
+		t.Errorf("System = 0x%x, want 0x%x", pv.System, NavSystemGPS|NavSystemBDS)
+	}
+	if pv.NumSV != 26 {
+		t.Errorf("NumSV = %d, want 26", pv.NumSV)
+	}
+	if pv.NumSVGPS != 9 {
+		t.Errorf("NumSVGPS = %d, want 9", pv.NumSVGPS)
+	}
+	if pv.NumSVBDS != 17 {
+		t.Errorf("NumSVBDS = %d, want 17", pv.NumSVBDS)
+	}
+	if pv.NumSVGLN != 0 {
+		t.Errorf("NumSVGLN = %d, want 0", pv.NumSVGLN)
+	}
+	// Lon ~100.64, Lat ~13.73 (Thailand)
+	if math.Abs(pv.Lon-100.6447) > 0.001 {
+		t.Errorf("Lon = %f, expected ~100.6447", pv.Lon)
+	}
+	if math.Abs(pv.Lat-13.7318) > 0.001 {
+		t.Errorf("Lat = %f, expected ~13.7318", pv.Lat)
+	}
+	if pv.Height > 0 || pv.Height < -50 {
+		t.Errorf("Height = %f, expected near -31", pv.Height)
+	}
+}
+
+func TestNavPvRoundtrip(t *testing.T) {
+	m := NavPv{
+		NavRunTime: NavRunTime{RunTime: 12345},
+		PosValid:   NavPos3D,
+		VelValid:   NavVel3D,
+		System:     NavSystemGPS | NavSystemBDS,
+		NumSV:      26,
+		NumSVGPS:   9,
+		NumSVBDS:   17,
+		NumSVGLN:   0,
+		PDOP:       1.17,
+		Lon:        100.6447,
+		Lat:        13.7318,
+		Height:     -30.94,
+		SepGeoid:   0.0,
+		HAcc:       0.44,
+		VAcc:       1.18,
+		VelN:       0.01,
+		VelE:       -0.02,
+		VelU:       0.005,
+		Speed3D:    0.02,
+		Speed2D:    0.01,
+		Heading:    123.45,
+		SAcc:       0.001,
+		CAcc:       10.0,
+	}
+	testMsgType(t, m)
+}
+
+func TestNavDopParse(t *testing.T) {
+	// NAV-DOP packet captured from ATGM332D-5N31
+	pkt := parseHex(t, "bace1c00010198a45100f5ec953fa6061c3faa07803f20fbbe3ee1c8f63e11b6363f0b1a717c")
+	msg, err := ParseMsg(pkt)
+	if err != nil {
+		t.Fatalf("ParseMsg error: %v", err)
+	}
+	dop, ok := msg.(*NavDop)
+	if !ok {
+		t.Fatalf("expected *NavDop, got %T", msg)
+	}
+	if dop.RunTime != 0x0051a498 {
+		t.Errorf("RunTime = 0x%x, want 0x%x", dop.RunTime, 0x0051a498)
+	}
+	if math.Abs(float64(dop.PDOP)-1.171) > 0.01 {
+		t.Errorf("PDOP = %f, expected ~1.171", dop.PDOP)
+	}
+	if math.Abs(float64(dop.HDOP)-0.609) > 0.01 {
+		t.Errorf("HDOP = %f, expected ~0.609", dop.HDOP)
+	}
+	if math.Abs(float64(dop.VDOP)-1.000) > 0.01 {
+		t.Errorf("VDOP = %f, expected ~1.000", dop.VDOP)
+	}
+}
+
+func TestNavDopRoundtrip(t *testing.T) {
+	m := NavDop{
+		NavRunTime: NavRunTime{RunTime: 12345},
+		PDOP:       1.5,
+		HDOP:       0.8,
+		VDOP:       1.2,
+		NDOP:       0.5,
+		EDOP:       0.6,
+		TDOP:       0.9,
+	}
+	testMsgType(t, m)
 }

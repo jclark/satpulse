@@ -13,10 +13,11 @@ var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 // PacketProcessor implements the gpsprot.PacketProcessor interface for CASIC binary packets
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
-	mh          gpsprot.MsgHandler
-	mgr         *gpsprot.NavEpochManager
-	curNavEpoch uint32   // current RunTime (0 means no epoch seen yet)
-	satAccum    satAccum // satellite info accumulator
+	mh             gpsprot.MsgHandler
+	mgr            *gpsprot.NavEpochManager
+	curNavEpoch    uint32               // current RunTime (0 means no epoch seen yet)
+	curNavEpochMsg *gpsprot.NavEpochMsg  // accumulated NavEpochMsg for current epoch
+	satAccum       satAccum             // satellite info accumulator
 }
 
 // NewPacketProcessor creates a new CASIC binary packet processor
@@ -52,13 +53,19 @@ func (p *PacketProcessor) handleNavEpoch(nm casbin.NavMsg, tRead time.Time) {
 	if e != p.curNavEpoch {
 		p.mgr.EpochStarted(p, tRead)
 		p.curNavEpoch = e
+		p.curNavEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
 	}
 }
 
 // FlushNavEpoch implements gpsprot.EpochFlusher.
 func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
 	p.satAccum.epochChange(p.mh, tRead)
-	return nil, gpsprot.PriVendorLow, p.mh
+	msg := p.curNavEpochMsg
+	p.curNavEpochMsg = nil
+	if msg != nil {
+		msg.Tag = Tag
+	}
+	return msg, gpsprot.PriVendorLow, p.mh
 }
 
 // SetMsgHandler sets the handler for protocol-agnostic messages
@@ -70,12 +77,23 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 	switch mt := m.(type) {
 	case *casbin.NavSol:
 		tm := timeNavSol(mt)
-		if tm == nil {
-			return false
-		}
+		posE := posECEFNavSol(p.curNavEpochMsg, mt)
+		velE := velECEFNavSol(p.curNavEpochMsg, mt)
 		if p.mh != nil {
-			tm.Tag = Tag
-			p.mh.Time(tm, tRead)
+			if tm != nil {
+				tm.Tag = Tag
+				p.mh.Time(tm, tRead)
+			}
+			if posE != nil {
+				posE.Tag = Tag
+				posE.Priority = gpsprot.PriVendorLow
+				p.mh.PosECEF(posE, tRead)
+			}
+			if velE != nil {
+				velE.Tag = Tag
+				velE.Priority = gpsprot.PriVendorLow
+				p.mh.VelECEF(velE, tRead)
+			}
 		}
 		return true
 	case *casbin.NavTimeUTC:
@@ -106,6 +124,28 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		return true
 	case *casbin.NavGLNInfo:
 		p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
+		return true
+	case *casbin.NavPv:
+		posG := posGeoNavPv(p.curNavEpochMsg, mt)
+		velG := velGeoNavPv(p.curNavEpochMsg, mt)
+		if posG == nil && velG == nil {
+			return false
+		}
+		if p.mh != nil {
+			if posG != nil {
+				posG.Tag = Tag
+				posG.Priority = gpsprot.PriVendorLow
+				p.mh.PosGeo(posG, tRead)
+			}
+			if velG != nil {
+				velG.Tag = Tag
+				velG.Priority = gpsprot.PriVendorLow
+				p.mh.VelGeo(velG, tRead)
+			}
+		}
+		return true
+	case *casbin.NavDop:
+		dopNavDop(p.curNavEpochMsg, mt)
 		return true
 	default:
 		return false

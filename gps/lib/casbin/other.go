@@ -27,8 +27,6 @@ const (
 	CfgSbasID    MsgID = clsCfg | (0x23 << 8)
 	// NAV message IDs (not implemented elsewhere)
 	NavStatusID MsgID = clsNav | (0x00 << 8)
-	NavDopID    MsgID = clsNav | (0x01 << 8)
-	NavPvID     MsgID = clsNav | (0x03 << 8)
 	NavImuAttID MsgID = clsNav | (0x06 << 8)
 	// NAV2 message IDs (ZKW F8)
 	Nav2StatusID  MsgID = clsNav2 | (0x00 << 8)
@@ -124,8 +122,6 @@ func init() {
 	idNameMap[CfgSbasID] = "SBAS"
 	// NAV messages
 	idNameMap[NavStatusID] = "STATUS"
-	idNameMap[NavDopID] = "DOP"
-	idNameMap[NavPvID] = "PV"
 	idNameMap[NavImuAttID] = "IMUATT"
 	// NAV2 messages
 	idNameMap[Nav2StatusID] = "STATUS"
