@@ -123,18 +123,18 @@ func makeSentence(payload string) string {
 // whose payload starts with a given prefix.
 type mockExtHandler struct {
 	prefix string
-	bundle *gpsprot.MsgBundle
+	msgs   []gpsprot.Msg
 	eoe    bool
 }
 
-func (h *mockExtHandler) HandleSentence(_ nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) (*gpsprot.MsgBundle, *NavEpoch, error) {
+func (h *mockExtHandler) HandleSentence(_ nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) ([]gpsprot.Msg, *NavEpoch, error) {
 	if strings.HasPrefix(payload, h.prefix) {
 		if h.eoe {
-			return h.bundle, nil, nil
+			return h.msgs, nil, nil
 		}
-		return h.bundle, epoch, nil
+		return h.msgs, epoch, nil
 	}
-	return nil, nil, nil
+	return nil, nil, gpsprot.ErrNotHandled
 }
 
 type nativeMsgRecorder struct {
@@ -151,9 +151,7 @@ func TestExtHandlerDispatch(t *testing.T) {
 	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.AddExtHandler(&mockExtHandler{
 		prefix: "PTEST,",
-		bundle: &gpsprot.MsgBundle{
-			Time: &gpsprot.TimeMsg{Tag: Tag, NativeMsgID: "PTEST", UTCTime: &wantUTC},
-		},
+		msgs:   []gpsprot.Msg{&gpsprot.TimeMsg{Tag: Tag, NativeMsgID: "PTEST", UTCTime: &wantUTC}},
 	})
 	var th timeHandler
 	pp.SetMsgHandler(&th)
@@ -173,7 +171,6 @@ func TestExtHandlerFallthrough(t *testing.T) {
 	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.AddExtHandler(&mockExtHandler{
 		prefix: "PTEST,",
-		bundle: &gpsprot.MsgBundle{},
 	})
 	var nr nativeMsgRecorder
 	pp.SetNativeMsgHandler(&nr)
@@ -195,7 +192,6 @@ func TestExtHandlerBlocksNativeMsg(t *testing.T) {
 	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.AddExtHandler(&mockExtHandler{
 		prefix: "PTEST,",
-		bundle: &gpsprot.MsgBundle{},
 	})
 	var nr nativeMsgRecorder
 	pp.SetNativeMsgHandler(&nr)
@@ -286,48 +282,52 @@ func TestRMCPosVel(t *testing.T) {
 	// $GPRMC with active status, position and velocity
 	s := "$GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V*2D\r\n"
 	sen := parseApprovedSentence(s)
-	bundle, epoch, err := parseRMC(sen, nil)
+	msgs, epoch, err := parseRMC(sen, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if epoch == nil {
 		t.Fatal("expected non-nil epoch")
 	}
-	if bundle.Time == nil {
-		t.Fatal("expected TimeMsg")
+	var rec msgRecorder
+	gpsprot.DispatchMsgs(msgs, &rec, time.Time{})
+	if len(rec.times) != 1 {
+		t.Fatal("expected 1 TimeMsg")
 	}
-	if bundle.Time.NativeMsgID != "GPRMC" {
-		t.Errorf("NativeMsgID = %q, want GPRMC", bundle.Time.NativeMsgID)
+	if rec.times[0].NativeMsgID != "GPRMC" {
+		t.Errorf("NativeMsgID = %q, want GPRMC", rec.times[0].NativeMsgID)
 	}
-	if bundle.Time.Tag != Tag {
-		t.Errorf("Tag = %q, want %q", bundle.Time.Tag, Tag)
+	if rec.times[0].Tag != Tag {
+		t.Errorf("Tag = %q, want %q", rec.times[0].Tag, Tag)
 	}
-	if bundle.PosGeo == nil {
-		t.Fatal("expected PosGeoMsg")
+	if len(rec.pos) != 1 {
+		t.Fatal("expected 1 PosGeoMsg")
 	}
+	pg := rec.pos[0]
 	wantLat := 47.0 + 17.11437/60.0
 	wantLon := 8.0 + 33.91522/60.0
-	if !approxDeg(bundle.PosGeo.LatLon[0], wantLat) {
-		t.Errorf("lat = %v, want %v", bundle.PosGeo.LatLon[0].Degrees(), wantLat)
+	if !approxDeg(pg.LatLon[0], wantLat) {
+		t.Errorf("lat = %v, want %v", pg.LatLon[0].Degrees(), wantLat)
 	}
-	if !approxDeg(bundle.PosGeo.LatLon[1], wantLon) {
-		t.Errorf("lon = %v, want %v", bundle.PosGeo.LatLon[1].Degrees(), wantLon)
+	if !approxDeg(pg.LatLon[1], wantLon) {
+		t.Errorf("lon = %v, want %v", pg.LatLon[1].Degrees(), wantLon)
 	}
-	if bundle.PosGeo.Height.IsSet() {
+	if pg.Height.IsSet() {
 		t.Error("RMC should not set Height")
 	}
-	if bundle.PosGeo.HeightMSL.IsSet() {
+	if pg.HeightMSL.IsSet() {
 		t.Error("RMC should not set HeightMSL")
 	}
-	if bundle.VelGeo == nil {
-		t.Fatal("expected VelGeoMsg")
+	if len(rec.vel) != 1 {
+		t.Fatal("expected 1 VelGeoMsg")
 	}
+	vg := rec.vel[0]
 	wantSpd := 0.004 * 1852.0 / 3600.0
-	if !approxSpeed(bundle.VelGeo.GroundSpeed.Get(), wantSpd) {
-		t.Errorf("GroundSpeed = %v m/s, want %v", bundle.VelGeo.GroundSpeed.Get().MetersPerSecond(), wantSpd)
+	if !approxSpeed(vg.GroundSpeed.Get(), wantSpd) {
+		t.Errorf("GroundSpeed = %v m/s, want %v", vg.GroundSpeed.Get().MetersPerSecond(), wantSpd)
 	}
-	if !bundle.VelGeo.Course.IsSet() || !approxDeg(bundle.VelGeo.Course.Get(), 77.52) {
-		t.Errorf("Course = %v, want 77.52", bundle.VelGeo.Course.Get().Degrees())
+	if !vg.Course.IsSet() || !approxDeg(vg.Course.Get(), 77.52) {
+		t.Errorf("Course = %v, want 77.52", vg.Course.Get().Degrees())
 	}
 }
 
@@ -335,24 +335,26 @@ func TestRMCVoid(t *testing.T) {
 	// Status "V" = void/warning: only TimeMsg with nil UTCTime, no pos/vel
 	s := "$GPRMC,083559.00,V,,,,,,,091202,,,N*73\r\n"
 	sen := parseApprovedSentence(s)
-	bundle, epoch, err := parseRMC(sen, nil)
+	msgs, epoch, err := parseRMC(sen, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if epoch == nil {
 		t.Fatal("expected non-nil epoch")
 	}
-	if bundle.Time == nil {
-		t.Fatal("expected TimeMsg")
+	var rec msgRecorder
+	gpsprot.DispatchMsgs(msgs, &rec, time.Time{})
+	if len(rec.times) != 1 {
+		t.Fatal("expected 1 TimeMsg")
 	}
-	if bundle.Time.UTCTime != nil {
+	if rec.times[0].UTCTime != nil {
 		t.Error("expected nil UTCTime for void status")
 	}
-	if bundle.PosGeo != nil {
-		t.Error("expected nil PosGeo for void status")
+	if len(rec.pos) != 0 {
+		t.Error("expected no PosGeo for void status")
 	}
-	if bundle.VelGeo != nil {
-		t.Error("expected nil VelGeo for void status")
+	if len(rec.vel) != 0 {
+		t.Error("expected no VelGeo for void status")
 	}
 }
 
@@ -360,18 +362,21 @@ func TestRMCCourseOnly(t *testing.T) {
 	// Speed field empty, course present: should still emit VelGeo
 	s := makeSentence("GPRMC,083559.00,A,4717.11437,N,00833.91522,E,,77.52,091202,,,A,V")
 	sen := parseApprovedSentence(s)
-	bundle, _, err := parseRMC(sen, nil)
+	msgs, _, err := parseRMC(sen, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.VelGeo == nil {
-		t.Fatal("expected VelGeoMsg for course-only RMC")
+	var rec msgRecorder
+	gpsprot.DispatchMsgs(msgs, &rec, time.Time{})
+	if len(rec.vel) != 1 {
+		t.Fatal("expected 1 VelGeoMsg for course-only RMC")
 	}
-	if bundle.VelGeo.GroundSpeed.IsSet() {
+	vg := rec.vel[0]
+	if vg.GroundSpeed.IsSet() {
 		t.Error("GroundSpeed should not be set when speed field is empty")
 	}
-	if !bundle.VelGeo.Course.IsSet() || !approxDeg(bundle.VelGeo.Course.Get(), 77.52) {
-		t.Errorf("Course = %v, want 77.52", bundle.VelGeo.Course.Get().Degrees())
+	if !vg.Course.IsSet() || !approxDeg(vg.Course.Get(), 77.52) {
+		t.Errorf("Course = %v, want 77.52", vg.Course.Get().Degrees())
 	}
 }
 
@@ -610,15 +615,15 @@ type epochMockExtHandler struct {
 	eoe    bool
 }
 
-func (h *epochMockExtHandler) HandleSentence(_ nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) (*gpsprot.MsgBundle, *NavEpoch, error) {
+func (h *epochMockExtHandler) HandleSentence(_ nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) ([]gpsprot.Msg, *NavEpoch, error) {
 	if !strings.HasPrefix(payload, h.prefix) {
-		return nil, nil, nil
+		return nil, nil, gpsprot.ErrNotHandled
 	}
 	if h.eoe {
-		return &gpsprot.MsgBundle{}, nil, nil
+		return nil, nil, nil
 	}
 	epoch = CheckEpoch(epoch, h.tod)
-	return &gpsprot.MsgBundle{}, epoch, nil
+	return nil, epoch, nil
 }
 
 func TestExtHandlerEpochBoundary(t *testing.T) {
@@ -680,7 +685,7 @@ func TestGGAQuality(t *testing.T) {
 		hasNumSV bool
 		hdop     float64
 		hasHDOP  bool
-		diffAge  time.Duration
+		diffAge  gpsprot.Duration
 		hasDiff  bool
 		refBase  uint16
 		hasRef   bool
@@ -708,7 +713,7 @@ func TestGGAQuality(t *testing.T) {
 			hasNumSV: true,
 			hdop:     1.0,
 			hasHDOP:  true,
-			diffAge:  3 * time.Second,
+			diffAge:  3 * gpsprot.Second,
 			hasDiff:  true,
 			refBase:  1,
 			hasRef:   true,
@@ -722,7 +727,7 @@ func TestGGAQuality(t *testing.T) {
 			hasNumSV: true,
 			hdop:     0.99,
 			hasHDOP:  true,
-			diffAge:  time.Second,
+			diffAge:  gpsprot.Second,
 			hasDiff:  true,
 			refBase:  4042,
 			hasRef:   true,
@@ -736,7 +741,7 @@ func TestGGAQuality(t *testing.T) {
 			hasNumSV: true,
 			hdop:     1.2,
 			hasHDOP:  true,
-			diffAge:  2500 * time.Millisecond,
+			diffAge:  2500 * gpsprot.Millisecond,
 			hasDiff:  true,
 			refBase:  1234,
 			hasRef:   true,
@@ -761,7 +766,7 @@ func TestGGAQuality(t *testing.T) {
 			hasNumSV: true,
 			hdop:     0.99,
 			hasHDOP:  true,
-			diffAge:  time.Second,
+			diffAge:  gpsprot.Second,
 			hasDiff:  true,
 		},
 	}
@@ -1097,7 +1102,7 @@ func TestQualitySynthesis(t *testing.T) {
 	if !e.DOP.Vert.IsSet() || e.DOP.Vert.Get() != 1.2 {
 		t.Errorf("DOP.Vert = %v, want 1.2", e.DOP.Vert)
 	}
-	if !e.DiffAge.IsSet() || e.DiffAge.Get() != time.Second {
+	if !e.DiffAge.IsSet() || e.DiffAge.Get() != gpsprot.Second {
 		t.Errorf("DiffAge = %v, want 1s", e.DiffAge)
 	}
 	if !e.RTCMRefBaseID.IsSet() || e.RTCMRefBaseID.Get() != 4042 {

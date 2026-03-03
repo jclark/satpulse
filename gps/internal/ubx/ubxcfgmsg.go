@@ -115,7 +115,13 @@ func (mc *msgChanges) items(port ucv.Port) []ucv.Item {
 func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	off := flags&gpsprot.PVTMsgOff != 0
 	navPVTSupported := ver.protVerAtLeast(15, 0)
-	fts := ver.ProductCategory() == "FTS"
+	var hpg, fts bool
+	switch ver.ProductCategory() {
+	case "HPG":
+		hpg = true
+	case "FTS":
+		fts = true
+	}
 	// these are the messages we might enable
 	timTOS := false
 	timTP := false
@@ -123,12 +129,22 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	navTimeUTC := false
 	navPosECEF := false
 	navPosLLH := false
+	navHPPosECEF := false
+	navHPPosLLH := false
 	navVelECEF := false
 	navVelNED := false
 	navPVT := false
 	navDOP := false
 	navTimeLS := flags&gpsprot.PVTMsgLeapSecond != 0
 	navEOE := flags&gpsprot.PVTMsgEpoch != 0
+	if hpg && flags&gpsprot.PVTMsgPos != 0 {
+		if flags&gpsprot.PVTMsgECEF != 0 {
+			navHPPosECEF = true
+		} else {
+			navHPPosLLH = true
+		}
+		flags &^= gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF
+	}
 	if flags&gpsprot.PVTMsgPos != 0 && flags&gpsprot.PVTMsgECEF != 0 {
 		navPosECEF = true
 		flags &^= gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF
@@ -185,6 +201,10 @@ func (mc *msgChanges) pvt(flags gpsprot.PVTMsgFlags, ver *Version) {
 	if flags&gpsprot.PVTMsgVel != 0 {
 		navVelNED = true
 		flags &^= gpsprot.PVTMsgVel
+	}
+	if hpg {
+		mc.pvtMsg(ubxbin.NavHPPosLLHID, navHPPosLLH, off)
+		mc.pvtMsg(ubxbin.NavHPPosECEFID, navHPPosECEF, off)
 	}
 	if fts {
 		mc.pvtMsg(ubxbin.TimTosID, timTOS, off)
@@ -391,23 +411,25 @@ func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS
 }
 
 var msgIDKey = map[ubxbin.MsgID]ucv.KeyM{
-	ubxbin.NavSvinID:    ucv.KUbxNavSvin,
-	ubxbin.NavTimeGPSID: ucv.KUbxNavTimegps,
-	ubxbin.NavTimeUTCID: ucv.KUbxNavTimeutc,
-	ubxbin.NavTimeLSID:  ucv.KUbxNavTimels,
-	ubxbin.NavPVTID:     ucv.KUbxNavPvt,
-	ubxbin.NavPosECEFID: ucv.KUbxNavPosecef,
-	ubxbin.NavPosLLHID:  ucv.KUbxNavPosllh,
-	ubxbin.NavVelECEFID: ucv.KUbxNavVelecef,
-	ubxbin.NavVelNEDID:  ucv.KUbxNavVelned,
-	ubxbin.NavDOPID:     ucv.KUbxNavDop,
-	ubxbin.NavEOEID:     ucv.KUbxNavEoe,
-	ubxbin.NavSatID:     ucv.KUbxNavSat,
-	ubxbin.NavSigID:     ucv.KUbxNavSig,
-	ubxbin.RxmRawxID:    ucv.KUbxRxmRawx,
-	ubxbin.RxmSfrbxID:   ucv.KUbxRxmSfrbx,
-	ubxbin.TimSvinID:    ucv.KUbxTimSvin,
-	ubxbin.TimTPID:      ucv.KUbxTimTp,
+	ubxbin.NavSvinID:      ucv.KUbxNavSvin,
+	ubxbin.NavTimeGPSID:   ucv.KUbxNavTimegps,
+	ubxbin.NavTimeUTCID:   ucv.KUbxNavTimeutc,
+	ubxbin.NavTimeLSID:    ucv.KUbxNavTimels,
+	ubxbin.NavPVTID:       ucv.KUbxNavPvt,
+	ubxbin.NavHPPosECEFID: ucv.KUbxNavHpposecef,
+	ubxbin.NavHPPosLLHID:  ucv.KUbxNavHpposllh,
+	ubxbin.NavPosECEFID:   ucv.KUbxNavPosecef,
+	ubxbin.NavPosLLHID:    ucv.KUbxNavPosllh,
+	ubxbin.NavVelECEFID:   ucv.KUbxNavVelecef,
+	ubxbin.NavVelNEDID:    ucv.KUbxNavVelned,
+	ubxbin.NavDOPID:       ucv.KUbxNavDop,
+	ubxbin.NavEOEID:       ucv.KUbxNavEoe,
+	ubxbin.NavSatID:       ucv.KUbxNavSat,
+	ubxbin.NavSigID:       ucv.KUbxNavSig,
+	ubxbin.RxmRawxID:      ucv.KUbxRxmRawx,
+	ubxbin.RxmSfrbxID:     ucv.KUbxRxmSfrbx,
+	ubxbin.TimSvinID:      ucv.KUbxTimSvin,
+	ubxbin.TimTPID:        ucv.KUbxTimTp,
 	// NMEA messages
 	ubxbin.NmeaGgaID: ucv.KNmeaIdGga,
 	ubxbin.NmeaGllID: ucv.KNmeaIdGll,

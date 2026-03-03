@@ -137,6 +137,9 @@ func (p *packetProcessor) dispatch(msg *uncmsg.Msg, tRead time.Time, tag gpsprot
 		return dispatchUTC(&msg.Hdr, body, utcConversionParamsFromBD3UTC, gpsprot.BDS, h, tRead)
 	case *uncmsg.BDSUTC:
 		return dispatchBDSUTC(&msg.Hdr, body, h, tRead)
+	case *uncmsg.StaDOP:
+		staDOP(p.curEpochMsg, body)
+		return true, nil
 	}
 	return false, nil
 }

@@ -10,6 +10,26 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
+// msgRec dispatches []gpsprot.Msg and captures individual message types.
+type msgRec struct {
+	gpsprot.DefaultHandler
+	times   []*gpsprot.TimeMsg
+	posGeo  []*gpsprot.PosGeoMsg
+	velGeo  []*gpsprot.VelGeoMsg
+	surveys []*gpsprot.SurveyMsg
+}
+
+func (r *msgRec) Time(m *gpsprot.TimeMsg, _ time.Time)       { r.times = append(r.times, m) }
+func (r *msgRec) PosGeo(m *gpsprot.PosGeoMsg, _ time.Time)   { r.posGeo = append(r.posGeo, m) }
+func (r *msgRec) VelGeo(m *gpsprot.VelGeoMsg, _ time.Time)   { r.velGeo = append(r.velGeo, m) }
+func (r *msgRec) Survey(m *gpsprot.SurveyMsg, _ time.Time)   { r.surveys = append(r.surveys, m) }
+
+func dispatch(msgs []gpsprot.Msg) *msgRec {
+	var r msgRec
+	gpsprot.DispatchMsgs(msgs, &r, time.Time{})
+	return &r
+}
+
 const propFlags = nmeamsg.SentenceProprietaryNMEA
 
 // Payloads reuse the examples from qtmmsg/periodic_test.go.
@@ -24,57 +44,58 @@ const (
 
 func TestPVTBundle(t *testing.T) {
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(propFlags, pvtPayload, nil)
+	msgs, epoch, err := h.HandleSentence(propFlags, pvtPayload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b == nil {
-		t.Fatal("expected non-nil bundle")
-	}
+	r := dispatch(msgs)
 	// TimeMsg
-	if b.Time == nil {
-		t.Fatal("expected TimeMsg")
+	if len(r.times) != 1 {
+		t.Fatal("expected 1 TimeMsg")
 	}
-	if b.Time.UTCTime == nil {
+	tm := r.times[0]
+	if tm.UTCTime == nil {
 		t.Fatal("expected UTCTime")
 	}
 	wantUTC := ptime.UTC(2022, 12, 25, 8, 37, 37, 0)
-	if *b.Time.UTCTime != wantUTC {
-		t.Errorf("UTCTime = %v, want %v", *b.Time.UTCTime, wantUTC)
+	if *tm.UTCTime != wantUTC {
+		t.Errorf("UTCTime = %v, want %v", *tm.UTCTime, wantUTC)
 	}
-	if b.Time.UTCOffset != 37 {
-		t.Errorf("UTCOffset = %d, want 37", b.Time.UTCOffset)
+	if tm.UTCOffset != 37 {
+		t.Errorf("UTCOffset = %d, want 37", tm.UTCOffset)
 	}
-	if !b.Time.TAITime.IsZero() {
+	if !tm.TAITime.IsZero() {
 		t.Error("expected zero TAITime for PVT")
 	}
-	if b.Time.NativeMsgID != "PQTMPVT" {
-		t.Errorf("NativeMsgID = %q, want PQTMPVT", b.Time.NativeMsgID)
+	if tm.NativeMsgID != "PQTMPVT" {
+		t.Errorf("NativeMsgID = %q, want PQTMPVT", tm.NativeMsgID)
 	}
 	// PosGeoMsg
-	if b.PosGeo == nil {
-		t.Fatal("expected PosGeoMsg")
+	if len(r.posGeo) != 1 {
+		t.Fatal("expected 1 PosGeoMsg")
 	}
-	if b.PosGeo.LatLon[0] != gpsprot.DegreesFromFloat(31.12738291) {
-		t.Errorf("Lat = %v, want %v", b.PosGeo.LatLon[0], gpsprot.DegreesFromFloat(31.12738291))
+	pg := r.posGeo[0]
+	if pg.LatLon[0] != gpsprot.DegreesFromFloat(31.12738291) {
+		t.Errorf("Lat = %v, want %v", pg.LatLon[0], gpsprot.DegreesFromFloat(31.12738291))
 	}
-	if b.PosGeo.LatLon[1] != gpsprot.DegreesFromFloat(117.26372910) {
-		t.Errorf("Lon = %v, want %v", b.PosGeo.LatLon[1], gpsprot.DegreesFromFloat(117.26372910))
+	if pg.LatLon[1] != gpsprot.DegreesFromFloat(117.26372910) {
+		t.Errorf("Lon = %v, want %v", pg.LatLon[1], gpsprot.DegreesFromFloat(117.26372910))
 	}
-	if !b.PosGeo.HeightMSL.IsSet() || b.PosGeo.HeightMSL.Get() != gpsprot.Meters(34.212) {
-		t.Errorf("HeightMSL = %v, want %v", b.PosGeo.HeightMSL.Get(), gpsprot.Meters(34.212))
+	if !pg.HeightMSL.IsSet() || pg.HeightMSL.Get() != gpsprot.Meters(34.212) {
+		t.Errorf("HeightMSL = %v, want %v", pg.HeightMSL.Get(), gpsprot.Meters(34.212))
 	}
-	if !b.PosGeo.Height.IsSet() || b.PosGeo.Height.Get() != gpsprot.Meters(34.212+5.267) {
-		t.Errorf("Height = %v, want %v", b.PosGeo.Height.Get(), gpsprot.Meters(34.212+5.267))
+	if !pg.Height.IsSet() || pg.Height.Get() != gpsprot.Meters(34.212+5.267) {
+		t.Errorf("Height = %v, want %v", pg.Height.Get(), gpsprot.Meters(34.212+5.267))
 	}
 	// VelGeoMsg
-	if b.VelGeo == nil {
-		t.Fatal("expected VelGeoMsg")
+	if len(r.velGeo) != 1 {
+		t.Fatal("expected 1 VelGeoMsg")
 	}
-	if !b.VelGeo.VelNED.IsSet() {
+	vg := r.velGeo[0]
+	if !vg.VelNED.IsSet() {
 		t.Fatal("expected VelNED")
 	}
-	ned := b.VelGeo.VelNED.Get()
+	ned := vg.VelNED.Get()
 	if ned[0] != gpsprot.MetersPerSecondFromFloat(3.212) {
 		t.Errorf("VelN = %v, want %v", ned[0], gpsprot.MetersPerSecondFromFloat(3.212))
 	}
@@ -84,13 +105,13 @@ func TestPVTBundle(t *testing.T) {
 	if ned[2] != gpsprot.MetersPerSecondFromFloat(0.238) {
 		t.Errorf("VelD = %v, want %v", ned[2], gpsprot.MetersPerSecondFromFloat(0.238))
 	}
-	if !b.VelGeo.Speed3D.IsSet() || b.VelGeo.Speed3D.Get() != gpsprot.MetersPerSecondFromFloat(4.346) {
-		t.Errorf("Speed3D = %v, want %v", b.VelGeo.Speed3D.Get(), gpsprot.MetersPerSecondFromFloat(4.346))
+	if !vg.Speed3D.IsSet() || vg.Speed3D.Get() != gpsprot.MetersPerSecondFromFloat(4.346) {
+		t.Errorf("Speed3D = %v, want %v", vg.Speed3D.Get(), gpsprot.MetersPerSecondFromFloat(4.346))
 	}
-	if !b.VelGeo.Course.IsSet() || b.VelGeo.Course.Get() != gpsprot.DegreesFromFloat(34.12) {
-		t.Errorf("Course = %v, want %v", b.VelGeo.Course.Get(), gpsprot.DegreesFromFloat(34.12))
+	if !vg.Course.IsSet() || vg.Course.Get() != gpsprot.DegreesFromFloat(34.12) {
+		t.Errorf("Course = %v, want %v", vg.Course.Get(), gpsprot.DegreesFromFloat(34.12))
 	}
-	if b.VelGeo.GroundSpeed.IsSet() {
+	if vg.GroundSpeed.IsSet() {
 		t.Error("PVT should not set GroundSpeed")
 	}
 	// Quality fields from PVT (FixType=3)
@@ -114,20 +135,18 @@ func TestPVTBundle(t *testing.T) {
 func TestPVTNoFix(t *testing.T) {
 	payload := "PQTMPVT,1,31075000,20221225,083737.000,,0,00,,,,,,,,,,,,"
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(propFlags, payload, nil)
+	msgs, epoch, err := h.HandleSentence(propFlags, payload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b == nil {
-		t.Fatal("expected non-nil bundle")
-	}
-	if b.Time != nil {
+	r := dispatch(msgs)
+	if len(r.times) != 0 {
 		t.Error("expected no TimeMsg for FixType 0")
 	}
-	if b.PosGeo != nil {
+	if len(r.posGeo) != 0 {
 		t.Error("expected no PosGeoMsg without lat/lon")
 	}
-	if b.VelGeo != nil {
+	if len(r.velGeo) != 0 {
 		t.Error("expected no VelGeoMsg without velocity")
 	}
 	if epoch.FixLevel != gpsprot.FixLevelNone {
@@ -140,55 +159,56 @@ func TestPVTNoFix(t *testing.T) {
 
 func TestNAVBundle(t *testing.T) {
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(propFlags, navPayload, nil)
+	msgs, epoch, err := h.HandleSentence(propFlags, navPayload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b == nil {
-		t.Fatal("expected non-nil bundle")
-	}
+	r := dispatch(msgs)
 	// TimeMsg
-	if b.Time == nil {
-		t.Fatal("expected TimeMsg")
+	if len(r.times) != 1 {
+		t.Fatal("expected 1 TimeMsg")
 	}
+	tm := r.times[0]
 	wantUTC := ptime.UTC(2024, 12, 24, 19, 4, 23, 0)
-	if *b.Time.UTCTime != wantUTC {
-		t.Errorf("UTCTime = %v, want %v", *b.Time.UTCTime, wantUTC)
+	if *tm.UTCTime != wantUTC {
+		t.Errorf("UTCTime = %v, want %v", *tm.UTCTime, wantUTC)
 	}
 	wantTAI := ptime.GPS(2346, time.Duration(212681000)*time.Millisecond)
-	if b.Time.TAITime != wantTAI {
-		t.Errorf("TAITime = %v, want %v", b.Time.TAITime, wantTAI)
+	if tm.TAITime != wantTAI {
+		t.Errorf("TAITime = %v, want %v", tm.TAITime, wantTAI)
 	}
-	if b.Time.UTCOffset != 37 {
-		t.Errorf("UTCOffset = %d, want 37", b.Time.UTCOffset)
+	if tm.UTCOffset != 37 {
+		t.Errorf("UTCOffset = %d, want 37", tm.UTCOffset)
 	}
-	if b.Time.NativeMsgID != "PQTMNAV" {
-		t.Errorf("NativeMsgID = %q, want PQTMNAV", b.Time.NativeMsgID)
+	if tm.NativeMsgID != "PQTMNAV" {
+		t.Errorf("NativeMsgID = %q, want PQTMNAV", tm.NativeMsgID)
 	}
 	// PosGeoMsg
-	if b.PosGeo == nil {
-		t.Fatal("expected PosGeoMsg")
+	if len(r.posGeo) != 1 {
+		t.Fatal("expected 1 PosGeoMsg")
 	}
-	if b.PosGeo.LatLon[0] != gpsprot.DegreesFromFloat(31.45874521) {
-		t.Errorf("Lat = %v, want %v", b.PosGeo.LatLon[0], gpsprot.DegreesFromFloat(31.45874521))
+	pg := r.posGeo[0]
+	if pg.LatLon[0] != gpsprot.DegreesFromFloat(31.45874521) {
+		t.Errorf("Lat = %v, want %v", pg.LatLon[0], gpsprot.DegreesFromFloat(31.45874521))
 	}
-	if !b.PosGeo.HeightMSL.IsSet() || b.PosGeo.HeightMSL.Get() != gpsprot.Meters(45.1254) {
-		t.Errorf("HeightMSL = %v, want %v", b.PosGeo.HeightMSL.Get(), gpsprot.Meters(45.1254))
+	if !pg.HeightMSL.IsSet() || pg.HeightMSL.Get() != gpsprot.Meters(45.1254) {
+		t.Errorf("HeightMSL = %v, want %v", pg.HeightMSL.Get(), gpsprot.Meters(45.1254))
 	}
-	if !b.PosGeo.Height.IsSet() || b.PosGeo.Height.Get() != gpsprot.Meters(45.1254+(-6.1245)) {
-		t.Errorf("Height = %v, want %v", b.PosGeo.Height.Get(), gpsprot.Meters(45.1254-6.1245))
+	if !pg.Height.IsSet() || pg.Height.Get() != gpsprot.Meters(45.1254+(-6.1245)) {
+		t.Errorf("Height = %v, want %v", pg.Height.Get(), gpsprot.Meters(45.1254-6.1245))
 	}
 	// VelGeoMsg (NAV provides GroundSpeed from HVel, no VelNED)
-	if b.VelGeo == nil {
-		t.Fatal("expected VelGeoMsg")
+	if len(r.velGeo) != 1 {
+		t.Fatal("expected 1 VelGeoMsg")
 	}
-	if !b.VelGeo.GroundSpeed.IsSet() || b.VelGeo.GroundSpeed.Get() != gpsprot.MetersPerSecondFromFloat(1.2101) {
-		t.Errorf("GroundSpeed = %v, want %v", b.VelGeo.GroundSpeed.Get(), gpsprot.MetersPerSecondFromFloat(1.2101))
+	vg := r.velGeo[0]
+	if !vg.GroundSpeed.IsSet() || vg.GroundSpeed.Get() != gpsprot.MetersPerSecondFromFloat(1.2101) {
+		t.Errorf("GroundSpeed = %v, want %v", vg.GroundSpeed.Get(), gpsprot.MetersPerSecondFromFloat(1.2101))
 	}
-	if !b.VelGeo.Course.IsSet() || b.VelGeo.Course.Get() != gpsprot.DegreesFromFloat(45.124) {
-		t.Errorf("Course = %v, want %v", b.VelGeo.Course.Get(), gpsprot.DegreesFromFloat(45.124))
+	if !vg.Course.IsSet() || vg.Course.Get() != gpsprot.DegreesFromFloat(45.124) {
+		t.Errorf("Course = %v, want %v", vg.Course.Get(), gpsprot.DegreesFromFloat(45.124))
 	}
-	if b.VelGeo.VelNED.IsSet() {
+	if vg.VelNED.IsSet() {
 		t.Error("NAV should not set VelNED")
 	}
 	// NavEpochMsg accuracy from NAV
@@ -216,10 +236,10 @@ func TestNAVBundle(t *testing.T) {
 	if !epoch.NumSVUsed.IsSet() || epoch.NumSVUsed.Get() != 56 {
 		t.Errorf("NumSVUsed = %v, want 56", epoch.NumSVUsed)
 	}
-	if !epoch.NumSVTracked.IsSet() || epoch.NumSVTracked.Get() != 78 {
-		t.Errorf("NumSVTracked = %v, want 78", epoch.NumSVTracked)
+	if !epoch.NumSVInView.IsSet() || epoch.NumSVInView.Get() != 78 {
+		t.Errorf("NumSVInView = %v, want 78", epoch.NumSVInView)
 	}
-	if !epoch.DiffAge.IsSet() || epoch.DiffAge.Get() != time.Second {
+	if !epoch.DiffAge.IsSet() || epoch.DiffAge.Get() != gpsprot.Second {
 		t.Errorf("DiffAge = %v, want 1s", epoch.DiffAge)
 	}
 	if !epoch.RTCMRefBaseID.IsSet() || epoch.RTCMRefBaseID.Get() != 290 {
@@ -231,48 +251,45 @@ func TestNAVTimeInvalid(t *testing.T) {
 	// TimeStatus=0 -> no TimeMsg
 	payload := "PQTMNAV,1,0,1,190423.000,20241224,212681000,2346,18,,,12,,31.45874521,117.41532415,45.1254,-6.1245,,,1.2451,2.1254,5.1242,,,290,1.0,,78,56,,,,,,,1.2101,1.2148,0.4578,1.1547,,,45.124,,"
 	h := NewHandler()
-	b, _, err := h.HandleSentence(propFlags, payload, nil)
+	msgs, _, err := h.HandleSentence(propFlags, payload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b == nil {
-		t.Fatal("expected non-nil bundle")
-	}
-	if b.Time != nil {
+	r := dispatch(msgs)
+	if len(r.times) != 0 {
 		t.Error("expected no TimeMsg when TimeStatus=0")
 	}
-	if b.PosGeo == nil {
+	if len(r.posGeo) == 0 {
 		t.Error("expected PosGeoMsg even without valid time")
 	}
 }
 
 func TestVELBundle(t *testing.T) {
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(propFlags, velPayload, nil)
+	msgs, epoch, err := h.HandleSentence(propFlags, velPayload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b == nil {
-		t.Fatal("expected non-nil bundle")
+	r := dispatch(msgs)
+	if len(r.velGeo) != 1 {
+		t.Fatal("expected 1 VelGeoMsg")
 	}
-	if b.VelGeo == nil {
-		t.Fatal("expected VelGeoMsg")
-	}
-	if !b.VelGeo.VelNED.IsSet() {
+	vg := r.velGeo[0]
+	if !vg.VelNED.IsSet() {
 		t.Fatal("expected VelNED")
 	}
-	ned := b.VelGeo.VelNED.Get()
+	ned := vg.VelNED.Get()
 	if ned[0] != gpsprot.MetersPerSecondFromFloat(1.251) {
 		t.Errorf("VelN = %v, want %v", ned[0], gpsprot.MetersPerSecondFromFloat(1.251))
 	}
-	if !b.VelGeo.GroundSpeed.IsSet() || b.VelGeo.GroundSpeed.Get() != gpsprot.MetersPerSecondFromFloat(2.752) {
-		t.Errorf("GroundSpeed = %v, want %v", b.VelGeo.GroundSpeed.Get(), gpsprot.MetersPerSecondFromFloat(2.752))
+	if !vg.GroundSpeed.IsSet() || vg.GroundSpeed.Get() != gpsprot.MetersPerSecondFromFloat(2.752) {
+		t.Errorf("GroundSpeed = %v, want %v", vg.GroundSpeed.Get(), gpsprot.MetersPerSecondFromFloat(2.752))
 	}
-	if !b.VelGeo.Speed3D.IsSet() || b.VelGeo.Speed3D.Get() != gpsprot.MetersPerSecondFromFloat(3.021) {
-		t.Errorf("Speed3D = %v, want %v", b.VelGeo.Speed3D.Get(), gpsprot.MetersPerSecondFromFloat(3.021))
+	if !vg.Speed3D.IsSet() || vg.Speed3D.Get() != gpsprot.MetersPerSecondFromFloat(3.021) {
+		t.Errorf("Speed3D = %v, want %v", vg.Speed3D.Get(), gpsprot.MetersPerSecondFromFloat(3.021))
 	}
-	if !b.VelGeo.Course.IsSet() || b.VelGeo.Course.Get() != gpsprot.DegreesFromFloat(180.512) {
-		t.Errorf("Course = %v, want %v", b.VelGeo.Course.Get(), gpsprot.DegreesFromFloat(180.512))
+	if !vg.Course.IsSet() || vg.Course.Get() != gpsprot.DegreesFromFloat(180.512) {
+		t.Errorf("Course = %v, want %v", vg.Course.Get(), gpsprot.DegreesFromFloat(180.512))
 	}
 	// Epoch accuracy
 	if !epoch.Acc.GroundSpeed.IsSet() || epoch.Acc.GroundSpeed.Get() != gpsprot.MetersPerSecondFromFloat(0.124) {
@@ -284,23 +301,19 @@ func TestVELBundle(t *testing.T) {
 	if !epoch.Acc.Course.IsSet() || epoch.Acc.Course.Get() != gpsprot.DegreesFromFloat(0.250) {
 		t.Errorf("Acc.Course = %v, want %v", epoch.Acc.Course.Get(), gpsprot.DegreesFromFloat(0.250))
 	}
-	if b.Time != nil {
+	if len(r.times) != 0 {
 		t.Error("VEL should not produce TimeMsg")
 	}
 }
 
 func TestEPEAccuracy(t *testing.T) {
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(propFlags, epePayload, nil)
+	msgs, epoch, err := h.HandleSentence(propFlags, epePayload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b == nil {
-		t.Fatal("expected non-nil bundle")
-	}
-	// EPE produces no messages in the bundle
-	if b.Time != nil || b.PosGeo != nil || b.VelGeo != nil || b.Survey != nil {
-		t.Error("EPE should produce empty bundle")
+	if len(msgs) != 0 {
+		t.Error("EPE should produce no messages")
 	}
 	if !epoch.Acc.Hor.IsSet() || epoch.Acc.Hor.Get() != gpsprot.Meters(1.414) {
 		t.Errorf("Acc.Hor = %v, want %v", epoch.Acc.Hor.Get(), gpsprot.Meters(1.414))
@@ -315,17 +328,15 @@ func TestEPEAccuracy(t *testing.T) {
 
 func TestSVINStatusBundle(t *testing.T) {
 	h := NewHandler()
-	b, _, err := h.HandleSentence(propFlags, svinPayload, nil)
+	msgs, _, err := h.HandleSentence(propFlags, svinPayload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b == nil {
-		t.Fatal("expected non-nil bundle")
+	r := dispatch(msgs)
+	if len(r.surveys) != 1 {
+		t.Fatal("expected 1 SurveyMsg")
 	}
-	if b.Survey == nil {
-		t.Fatal("expected SurveyMsg")
-	}
-	sv := b.Survey
+	sv := r.surveys[0]
 	if !sv.InProgress {
 		t.Error("expected InProgress for Valid=1")
 	}
@@ -351,59 +362,59 @@ func TestSVINStatusBundle(t *testing.T) {
 
 func TestEOE(t *testing.T) {
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(propFlags, eoePayload, nil)
+	msgs, epoch, err := h.HandleSentence(propFlags, eoePayload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if epoch != nil {
 		t.Fatal("expected nil epoch for EOE")
 	}
-	if b == nil {
-		t.Fatal("expected non-nil bundle")
+	if msgs != nil {
+		t.Fatal("expected nil msgs for EOE")
 	}
 }
 
 func TestNonProprietaryFlags(t *testing.T) {
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(0, pvtPayload, nil)
-	if b != nil || epoch != nil || err != nil {
-		t.Error("expected nil for non-proprietary flags")
+	_, _, err := h.HandleSentence(0, pvtPayload, nil)
+	if err != gpsprot.ErrNotHandled {
+		t.Errorf("expected ErrNotHandled, got %v", err)
 	}
 }
 
 func TestNonPQTMPayload(t *testing.T) {
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(propFlags, "GPGGA,1,2,3", nil)
-	if b != nil || epoch != nil || err != nil {
-		t.Error("expected nil for non-PQTM payload")
+	_, _, err := h.HandleSentence(propFlags, "GPGGA,1,2,3", nil)
+	if err != gpsprot.ErrNotHandled {
+		t.Errorf("expected ErrNotHandled, got %v", err)
 	}
 }
 
 func TestConfigResponse(t *testing.T) {
-	// PQTMCFGMSGRATE is not a periodic message; should return nil
+	// PQTMCFGMSGRATE is not a periodic message; should return ErrNotHandled
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(propFlags, "PQTMCFGMSGRATE,OK", nil)
-	if b != nil || epoch != nil || err != nil {
-		t.Error("expected nil for config response")
+	_, _, err := h.HandleSentence(propFlags, "PQTMCFGMSGRATE,OK", nil)
+	if err != gpsprot.ErrNotHandled {
+		t.Errorf("expected ErrNotHandled, got %v", err)
 	}
 }
 
 func TestUnrecognizedPQTM(t *testing.T) {
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(propFlags, "PQTMFOO,1,2,3", nil)
-	if b != nil || epoch != nil || err != nil {
-		t.Error("expected nil for unrecognized PQTM message")
+	_, _, err := h.HandleSentence(propFlags, "PQTMFOO,1,2,3", nil)
+	if err != gpsprot.ErrNotHandled {
+		t.Errorf("expected ErrNotHandled, got %v", err)
 	}
 }
 
 func TestDOP(t *testing.T) {
 	h := NewHandler()
-	b, epoch, err := h.HandleSentence(propFlags, "PQTMDOP,1,570643000,1.01,0.88,0.49,0.73,0.50,0.36,0.35", nil)
+	msgs, epoch, err := h.HandleSentence(propFlags, "PQTMDOP,1,570643000,1.01,0.88,0.49,0.73,0.50,0.36,0.35", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b == nil {
-		t.Fatal("expected non-nil bundle")
+	if len(msgs) != 0 {
+		t.Error("DOP should produce no messages")
 	}
 	if !epoch.DOP.Geom.IsSet() || epoch.DOP.Geom.Get() != 1.01 {
 		t.Errorf("DOP.Geom = %v, want 1.01", epoch.DOP.Geom)

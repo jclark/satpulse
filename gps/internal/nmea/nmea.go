@@ -1,6 +1,7 @@
 package nmea
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -130,12 +131,12 @@ type ExtSentenceHandler interface {
 	// epoch is the current *NavEpoch, or nil if no epoch is in progress.
 	//
 	// Return values:
-	//   - (nil, nil, nil): not handled
+	//   - (nil, nil, ErrNotHandled): not handled
 	//   - (nil, nil, err): recognized but parse failed.
-	//   - (bundle, sameEpoch, nil): handled; message belongs to the current epoch.
-	//   - (bundle, newEpoch, nil): handled; message starts a new epoch.
-	//   - (bundle, nil, nil): handled; end of epoch, flush.
-	HandleSentence(flags nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) (*gpsprot.MsgBundle, *NavEpoch, error)
+	//   - (msgs, sameEpoch, nil): handled; messages belong to the current epoch.
+	//   - (msgs, newEpoch, nil): handled; messages start a new epoch.
+	//   - (msgs, nil, nil): handled; end of epoch, flush.
+	HandleSentence(flags nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) ([]gpsprot.Msg, *NavEpoch, error)
 }
 
 // PacketProcessor implements the gpsprot.PacketProcessor interface for NMEA packets
@@ -171,20 +172,16 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 		}
 	}
 	for _, eh := range p.extHandlers {
-		bundle, epoch, err := eh.HandleSentence(sen.SyntaxFlags, sen.Payload, p.curNavEpoch)
-		// Handler returned nothing useful.
-		if bundle == nil && epoch == nil {
-			if err != nil {
-				return msgID, err
+		msgs, epoch, err := eh.HandleSentence(sen.SyntaxFlags, sen.Payload, p.curNavEpoch)
+		if err != nil {
+			if errors.Is(err, gpsprot.ErrNotHandled) {
+				continue
 			}
-			continue
+			return msgID, err
 		}
-		// Handler participated in the epoch.
 		p.handleEpoch(epoch, tRead)
-		if bundle != nil {
-			bundle.Dispatch(p.mh, tRead)
-			return msgID, nil
-		}
+		gpsprot.DispatchMsgs(msgs, p.mh, tRead)
+		return msgID, nil
 	}
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
@@ -243,14 +240,14 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 	}
 	switch sen.Format {
 	case "RMC":
-		bundle, epoch, err := parseRMC(sen, p.curNavEpoch)
+		msgs, epoch, err := parseRMC(sen, p.curNavEpoch)
 		if err != nil {
 			return false, err
 		}
-		bundle.SetPriority(gpsprot.PriGenericLow)
+		gpsprot.SetMsgsPriority(msgs, gpsprot.PriGenericLow)
 		p.handleEpoch(epoch, tRead)
 		if h != nil {
-			bundle.Dispatch(h, tRead)
+			gpsprot.DispatchMsgs(msgs, h, tRead)
 		}
 		return true, nil
 	case "GGA":
@@ -282,7 +279,7 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 		}
 		epoch := CheckEpoch(p.curNavEpoch, sen.Fields[0])
 		p.handleEpoch(epoch, tRead)
-		mt := gpsprot.TimeMsg{Tag: Tag, NativeMsgID: sen.msgID(), UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID), Priority: gpsprot.PriGenericLow}
+		mt := gpsprot.TimeMsg{Tag: Tag, NativeMsgID: sen.msgID(), UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID)}
 		if h != nil {
 			h.Time(&mt, tRead)
 		}
@@ -298,28 +295,28 @@ func (p *PacketProcessor) Idle(_ time.Time) {
 // Sentence parsers: each parser sets Tag and NativeMsgID on the
 // messages it creates.
 
-func parseRMC(sen *ApprovedSentence, epoch *NavEpoch) (*gpsprot.MsgBundle, *NavEpoch, error) {
+func parseRMC(sen *ApprovedSentence, epoch *NavEpoch) ([]gpsprot.Msg, *NavEpoch, error) {
 	k := sen.TalkerID + "RMC"
 	if len(sen.Fields) < 9 {
 		return nil, nil, fmt.Errorf("%s: too few fields", k)
 	}
 	epoch = CheckEpoch(epoch, sen.Fields[0])
 	rmcQuality(epoch, sen.Fields)
-	bundle := &gpsprot.MsgBundle{}
+	var msgs []gpsprot.Msg
 	if sen.Fields[1] != "A" {
-		bundle.Time = &gpsprot.TimeMsg{Tag: Tag, NativeMsgID: k, GNSS: talkerIDToGNSS(sen.TalkerID)}
-		return bundle, epoch, nil
+		msgs = append(msgs, &gpsprot.TimeMsg{Tag: Tag, NativeMsgID: k, GNSS: talkerIDToGNSS(sen.TalkerID)})
+		return msgs, epoch, nil
 	}
 	// Status is "A" -- active/valid
 	utc, err := parseDateTime(sen.Fields[0], sen.Fields[8])
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %v", k, err)
 	}
-	bundle.Time = &gpsprot.TimeMsg{Tag: Tag, NativeMsgID: k, UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID)}
+	msgs = append(msgs, &gpsprot.TimeMsg{Tag: Tag, NativeMsgID: k, UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID)})
 	if ll, ok, err := parseLatLon(sen.Fields[2], sen.Fields[3], sen.Fields[4], sen.Fields[5]); err != nil {
 		return nil, nil, fmt.Errorf("%s: %v", k, err)
 	} else if ok {
-		bundle.PosGeo = &gpsprot.PosGeoMsg{LatLon: ll, Tag: Tag, NativeMsgID: k}
+		msgs = append(msgs, &gpsprot.PosGeoMsg{LatLon: ll, Tag: Tag, NativeMsgID: k})
 	}
 	vel := &gpsprot.VelGeoMsg{Tag: Tag, NativeMsgID: k}
 	vel.GroundSpeed = parseSpeedKnots(sen.Fields[6])
@@ -328,9 +325,9 @@ func parseRMC(sen *ApprovedSentence, epoch *NavEpoch) (*gpsprot.MsgBundle, *NavE
 		return nil, nil, fmt.Errorf("%s: %v", k, err)
 	}
 	if vel.GroundSpeed.IsSet() || vel.Course.IsSet() {
-		bundle.VelGeo = vel
+		msgs = append(msgs, vel)
 	}
-	return bundle, epoch, nil
+	return msgs, epoch, nil
 }
 
 // rmcQuality populates quality metadata on the epoch from the RMC
@@ -492,7 +489,7 @@ func ggaQuality(epoch *NavEpoch, fields []string) {
 	}
 	if len(fields) > 12 {
 		if f, ok := parseFloatField(fields[12]); ok {
-			epoch.DiffAge = opt.Make(time.Duration(f * float64(time.Second)))
+			epoch.DiffAge = opt.Make(gpsprot.Seconds(f))
 		}
 	}
 	if len(fields) > 13 {

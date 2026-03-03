@@ -1,8 +1,6 @@
 package as
 
 import (
-	"time"
-
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 )
@@ -14,6 +12,6 @@ func surveyNavSvin(m *asbin.NavSvin) *gpsprot.SurveyMsg {
 		Valid:      m.Valid != 0,
 		InProgress: m.Status == 0,
 		ObsCount:   m.PosUsed,
-		ObsTime:    time.Duration(m.PosUsed) * time.Second, // approximate; one sample per second
+		ObsTime:    gpsprot.Duration(m.PosUsed) * gpsprot.Second, // approximate; one sample per second
 	}
 }

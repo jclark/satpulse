@@ -798,6 +798,10 @@ Allystar does not use programmatic configuration. Message enablement is via mess
 
 Allystar's NAV-AUTO message (0x01 0xC0, 32 bytes) provides a richer `fixstate` field that distinguishes DGNSS (5), RTK float (6), and RTK fixed (7) -- information that NAV-PVT's `fixType` cannot provide. It also includes satInView (tracked satellite count) and inline DOPs (PDOP/HDOP/VDOP). However, NAV-AUTO has no iTOW field, which makes it difficult to associate with the existing epoch mechanism. It is also described as being for "automotive application" and may not be supported on all Allystar receivers. A future enhancement could use NAV-AUTO when available to enrich FixLevel and Correction beyond what NAV-PVT provides, but this requires solving the epoch association problem (e.g. by associating with the most recent epoch based on arrival time).
 
+## CASIC
+
+Moved to separate plans: [casic-pos-vel-qual.md](casic-pos-vel-qual.md) (V5 position, velocity, nav epoch, and solution quality) and [casic-nav2.md](casic-nav2.md) (V6 NAV2 position, velocity, nav epoch, and solution quality).
+
 ## Phasing
 
 ### Phase 1: type definitions (done)
@@ -855,3 +859,7 @@ Each subphase is independent and can proceed in parallel.
 - Extend `msgBundleNAV` in `handler.go` to populate quality fields on the epoch from PQTMNAV `SolType`, `SatUsed`, `SatView`, `DiffAge`, `DiffID`.
 - Extend `msgBundlePVT` in `handler.go` to populate quality fields on the epoch from PQTMPVT `FixType`, `NumSV`, `HDOP`, `PDOP`. Add epoch parameter to `msgBundlePVT`.
 - Add `case *qtmmsg.DOP:` in `HandleSentence` to populate DOP fields on the epoch.
+
+#### Phase 2g: CASIC
+
+Moved to separate plans: [casic-pos-vel-qual.md](casic-pos-vel-qual.md) (V5) and [casic-nav2.md](casic-nav2.md) (V6 NAV2). These plans cover position, velocity, nav epoch, and solution quality together.

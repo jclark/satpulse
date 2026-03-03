@@ -162,7 +162,6 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 	var posE *gpsprot.PosECEFMsg
 	var velG *gpsprot.VelGeoMsg
 	var velE *gpsprot.VelECEFMsg
-	var velGPri gpsprot.MsgPriority
 	h := p.mh
 	switch mt := m.(type) {
 	case *ubxbin.NavEOE:
@@ -200,13 +199,16 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		sats = satellitesNavSVInfo(mt)
 	case *ubxbin.NavPosECEF:
 		posE = posECEFNavPosECEF(p.curNavEpochMsg, mt)
+	case *ubxbin.NavHPPosECEF:
+		posE = posECEFNavHPPosECEF(p.curNavEpochMsg, mt)
 	case *ubxbin.NavVelECEF:
 		velE = velECEFNavVelECEF(p.curNavEpochMsg, mt)
 	case *ubxbin.NavPosLLH:
 		posG = posGeoNavPosLLH(p.curNavEpochMsg, mt)
+	case *ubxbin.NavHPPosLLH:
+		posG = posGeoNavHPPosLLH(p.curNavEpochMsg, mt)
 	case *ubxbin.NavVelNED:
 		velG = velGeoNavVelNED(p.curNavEpochMsg, mt)
-		velGPri = gpsprot.PriVendorLow
 	case *ubxbin.NavTimeGPS:
 		time = timeNavTimeGPS(mt)
 	case *ubxbin.NavTimeBDS:
@@ -222,8 +224,6 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		time = timeNavPVT(mt)
 		posG = posGeoNavPVT(p.curNavEpochMsg, mt)
 		velG = velGeoNavPVT(p.curNavEpochMsg, mt)
-		// NAV-PVT is preferred because it uses mm/s, whereas NAV-VELNED uses cm/s
-		velGPri = gpsprot.PriVendorHigh
 	case *ubxbin.TimTP:
 		time = timeTimTP(mt)
 	case *ubxbin.TimTos:
@@ -245,25 +245,32 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 			h.Survey(sv, tRead)
 		} else if time != nil {
 			time.Tag = Tag
-			time.Priority = gpsprot.PriVendorLow
 			h.Time(time, tRead)
 		}
 		if posG != nil {
 			posG.Tag = Tag
-			posG.Priority = gpsprot.PriVendorLow
+			if posG.Priority < gpsprot.PriVendorLow {
+				posG.Priority = gpsprot.PriVendorLow
+			}
 			h.PosGeo(posG, tRead)
 		} else if posE != nil {
 			posE.Tag = Tag
-			posE.Priority = gpsprot.PriVendorLow
+			if posE.Priority < gpsprot.PriVendorLow {
+				posE.Priority = gpsprot.PriVendorLow
+			}
 			h.PosECEF(posE, tRead)
 		}
 		if velG != nil {
 			velG.Tag = Tag
-			velG.Priority = velGPri
+			if velG.Priority < gpsprot.PriVendorLow {
+				velG.Priority = gpsprot.PriVendorLow
+			}
 			h.VelGeo(velG, tRead)
 		} else if velE != nil {
 			velE.Tag = Tag
-			velE.Priority = gpsprot.PriVendorLow
+			if velE.Priority < gpsprot.PriVendorLow {
+				velE.Priority = gpsprot.PriVendorLow
+			}
 			h.VelECEF(velE, tRead)
 		}
 	}

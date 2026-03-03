@@ -2,14 +2,65 @@ package gpsprot
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
+	"math"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
+
+// ErrNotHandled is returned by ExtSentenceHandler.HandleSentence when
+// the handler does not recognize the sentence.
+var ErrNotHandled = errors.New("sentence not handled")
+
+// Msg is implemented by all protocol-agnostic message types.
+type Msg interface {
+	Dispatch(MsgHandler, time.Time)
+}
+
+// PVMsg is implemented by position/velocity message types
+// that participate in per-epoch accumulation with priority-based merging.
+type PVMsg interface {
+	Msg
+	SetPriority(MsgPriority)
+}
+
+func (m *PosGeoMsg) Dispatch(h MsgHandler, t time.Time)     { h.PosGeo(m, t) }
+func (m *PosECEFMsg) Dispatch(h MsgHandler, t time.Time)    { h.PosECEF(m, t) }
+func (m *VelGeoMsg) Dispatch(h MsgHandler, t time.Time)     { h.VelGeo(m, t) }
+func (m *VelECEFMsg) Dispatch(h MsgHandler, t time.Time)    { h.VelECEF(m, t) }
+func (m *TimeMsg) Dispatch(h MsgHandler, t time.Time)       { h.Time(m, t) }
+func (m *LeapSecondMsg) Dispatch(h MsgHandler, t time.Time) { h.LeapSecond(m, t) }
+func (m *SurveyMsg) Dispatch(h MsgHandler, t time.Time)     { h.Survey(m, t) }
+func (m *SatellitesMsg) Dispatch(h MsgHandler, t time.Time) { h.Satellites(m, t) }
+
+// SetPriority implements PVMsg for the four position/velocity types.
+func (m *PosGeoMsg) SetPriority(pri MsgPriority)  { m.Priority = pri }
+func (m *PosECEFMsg) SetPriority(pri MsgPriority) { m.Priority = pri }
+func (m *VelGeoMsg) SetPriority(pri MsgPriority)  { m.Priority = pri }
+func (m *VelECEFMsg) SetPriority(pri MsgPriority) { m.Priority = pri }
+
+// DispatchMsgs dispatches each message to the handler.
+func DispatchMsgs(msgs []Msg, h MsgHandler, tRead time.Time) {
+	for _, m := range msgs {
+		m.Dispatch(h, tRead)
+	}
+}
+
+// SetMsgsPriority sets priority on all PVMsg messages in the slice.
+func SetMsgsPriority(msgs []Msg, pri MsgPriority) {
+	for _, m := range msgs {
+		if pv, ok := m.(PVMsg); ok {
+			pv.SetPriority(pri)
+		}
+	}
+}
 
 // MsgPriority indicates the trustworthiness of a message's fields
 // for priority-based merging within a navigation epoch.
@@ -17,9 +68,9 @@ type MsgPriority uint8
 
 const (
 	PriGenericLow  MsgPriority = iota + 1 // NMEA, basic sentence
-	PriGenericHigh                         // NMEA, richer sentence (e.g. GGA over RMC)
-	PriVendorLow                           // vendor binary, standard message
-	PriVendorHigh                          // vendor binary, high-precision message
+	PriGenericHigh                        // NMEA, richer sentence (e.g. GGA over RMC)
+	PriVendorLow                          // vendor binary, standard message
+	PriVendorHigh                         // vendor binary, high-precision message
 )
 
 type MsgHandler interface {
@@ -152,61 +203,96 @@ func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead 
 	return firstErr
 }
 
-// MsgBundle holds a set of protocol-agnostic messages produced from a
-// single packet or sentence. Any combination of fields may be non-nil.
-// NavEpochMsg is excluded: it is accumulated across multiple messages
-// within an epoch and has a different lifecycle.
-type MsgBundle struct {
-	Time       *TimeMsg
-	PosGeo     *PosGeoMsg
-	PosECEF    *PosECEFMsg
-	VelGeo     *VelGeoMsg
-	VelECEF    *VelECEFMsg
-	LeapSecond *LeapSecondMsg
-	Survey     *SurveyMsg
+// PVMsgBundle holds the accumulated position/velocity messages
+// for a single navigation epoch.
+type PVMsgBundle struct {
+	PosGeo  opt.Val[PosGeoMsg]  `json:"posGeo,omitzero"`
+	PosECEF opt.Val[PosECEFMsg] `json:"posECEF,omitzero"`
+	VelGeo  opt.Val[VelGeoMsg]  `json:"velGeo,omitzero"`
+	VelECEF opt.Val[VelECEFMsg] `json:"velECEF,omitzero"`
 }
 
-// Dispatch calls the corresponding MsgHandler methods for each non-nil field.
-func (b *MsgBundle) Dispatch(h MsgHandler, tRead time.Time) {
-	if b.Time != nil {
-		h.Time(b.Time, tRead)
+// FillDerived fills in missing fields using cross-frame derivation.
+func (b *PVMsgBundle) FillDerived() {
+	var lat, lon float64
+	havePos := false
+	if pg := b.PosGeo.Ptr(); pg != nil {
+		lat = pg.LatLon[0].Degrees()
+		lon = pg.LatLon[1].Degrees()
+		havePos = true
+		if !b.PosECEF.IsSet() && pg.Height.IsSet() {
+			ecef := geopos.WGS84.LLHtoECEF(geopos.LLH{
+				Lat: lat, Lon: lon, Height: pg.Height.Get().Meters(),
+			})
+			b.PosECEF.Set(PosECEFMsg{
+				Pos:         Point3D{Meters(ecef[0]), Meters(ecef[1]), Meters(ecef[2])},
+				Priority:    pg.Priority,
+				Tag:         pg.Tag,
+				NativeMsgID: pg.NativeMsgID,
+			})
+		}
 	}
-	if b.PosGeo != nil {
-		h.PosGeo(b.PosGeo, tRead)
+	if pe := b.PosECEF.Ptr(); pe != nil && !b.PosGeo.IsSet() {
+		ecef := geopos.ECEF{pe.Pos[0].Meters(), pe.Pos[1].Meters(), pe.Pos[2].Meters()}
+		llh, err := geopos.WGS84.ECEFtoLLH(ecef)
+		if err == nil {
+			lat = llh.Lat
+			lon = llh.Lon
+			havePos = true
+			b.PosGeo.Set(PosGeoMsg{
+				LatLon:      [2]Angle{DegreesFromFloat(llh.Lat), DegreesFromFloat(llh.Lon)},
+				Height:      opt.Make(Meters(llh.Height)),
+				Priority:    pe.Priority,
+				Tag:         pe.Tag,
+				NativeMsgID: pe.NativeMsgID,
+			})
+		}
 	}
-	if b.PosECEF != nil {
-		h.PosECEF(b.PosECEF, tRead)
+	if vg := b.VelGeo.Ptr(); vg != nil {
+		if ned := vg.VelNED.Ptr(); ned != nil {
+			if !b.VelECEF.IsSet() && havePos {
+				ve := geopos.WGS84.NEDtoECEF(geopos.VelNED{
+					ned[0].MetersPerSecond(), ned[1].MetersPerSecond(), ned[2].MetersPerSecond(),
+				}, lat, lon)
+				b.VelECEF.Set(VelECEFMsg{
+					Vel:         [3]Speed{MetersPerSecondFromFloat(ve[0]), MetersPerSecondFromFloat(ve[1]), MetersPerSecondFromFloat(ve[2])},
+					Priority:    vg.Priority,
+					Tag:         vg.Tag,
+					NativeMsgID: vg.NativeMsgID,
+				})
+			}
+			if !vg.Speed3D.IsSet() {
+				n, e, d := ned[0].MetersPerSecond(), ned[1].MetersPerSecond(), ned[2].MetersPerSecond()
+				vg.Speed3D.Set(MetersPerSecondFromFloat(math.Sqrt(n*n + e*e + d*d)))
+			}
+		}
 	}
-	if b.VelGeo != nil {
-		h.VelGeo(b.VelGeo, tRead)
-	}
-	if b.VelECEF != nil {
-		h.VelECEF(b.VelECEF, tRead)
-	}
-	if b.LeapSecond != nil {
-		h.LeapSecond(b.LeapSecond, tRead)
-	}
-	if b.Survey != nil {
-		h.Survey(b.Survey, tRead)
-	}
-}
-
-// SetPriority sets Priority on all non-nil Pos/Vel/Time messages in the bundle.
-func (b *MsgBundle) SetPriority(pri MsgPriority) {
-	if b.Time != nil {
-		b.Time.Priority = pri
-	}
-	if b.PosGeo != nil {
-		b.PosGeo.Priority = pri
-	}
-	if b.PosECEF != nil {
-		b.PosECEF.Priority = pri
-	}
-	if b.VelGeo != nil {
-		b.VelGeo.Priority = pri
-	}
-	if b.VelECEF != nil {
-		b.VelECEF.Priority = pri
+	if ve := b.VelECEF.Ptr(); ve != nil && havePos {
+		nedV := geopos.WGS84.ECEFtoNED(geopos.VelECEF{
+			ve.Vel[0].MetersPerSecond(), ve.Vel[1].MetersPerSecond(), ve.Vel[2].MetersPerSecond(),
+		}, lat, lon)
+		nedS := [3]Speed{MetersPerSecondFromFloat(nedV[0]), MetersPerSecondFromFloat(nedV[1]), MetersPerSecondFromFloat(nedV[2])}
+		n, e, d := nedV[0], nedV[1], nedV[2]
+		spd3D := MetersPerSecondFromFloat(math.Sqrt(n*n + e*e + d*d))
+		if vg := b.VelGeo.Ptr(); vg != nil {
+			// VelGeo exists (e.g. GroundSpeed/Course from NAV) but
+			// may be missing VelNED/Speed3D -- fill from VelECEF.
+			if !vg.VelNED.IsSet() {
+				vg.VelNED.Set(nedS)
+			}
+			if !vg.Speed3D.IsSet() {
+				vg.Speed3D.Set(spd3D)
+			}
+		} else {
+			vg := VelGeoMsg{
+				Priority:    ve.Priority,
+				Tag:         ve.Tag,
+				NativeMsgID: ve.NativeMsgID,
+			}
+			vg.VelNED.Set(nedS)
+			vg.Speed3D.Set(spd3D)
+			b.VelGeo.Set(vg)
+		}
 	}
 }
 
@@ -347,7 +433,6 @@ type TimeMsg struct {
 	PulseOffset *float64       `json:"pulseOffset,omitempty"` // the true time of the top of second is the time of the pulse plus the PulseOffset
 	GNSS        GNSS           `json:"gnss,omitempty"`
 	Ref         TimeRef        `json:"ref,omitempty"`
-	Priority    MsgPriority    `json:"-"`
 	Tag         Tag            `json:"tag,omitempty"`
 	NativeMsgID string         `json:"nativeMsgID,omitempty"`
 }
@@ -419,7 +504,7 @@ type SurveyMsg struct {
 	Position   Point3D       `json:"position,omitzero"`
 	Accuracy   Length        `json:"accuracy"`
 	ObsCount   uint32        `json:"obsCount"`
-	ObsTime    time.Duration `json:"obsTime"`
+	ObsTime    Duration `json:"obsTime"`
 	Valid      bool          `json:"valid"`
 	InProgress bool          `json:"inProgress"`
 }
@@ -792,7 +877,8 @@ var auxSrcBits = [...]auxSrcBit{
 	{AuxSrcINS, "INS"},
 }
 
-func (a AuxSrc) items() []string {
+// Items returns the names of the set bits as a string slice.
+func (a AuxSrc) Items() []string {
 	var items []string
 	for _, b := range auxSrcBits {
 		if a&b.mask != 0 {
@@ -803,7 +889,7 @@ func (a AuxSrc) items() []string {
 }
 
 func (a AuxSrc) String() string {
-	items := a.items()
+	items := a.Items()
 	if len(items) == 0 {
 		return "(none)"
 	}
@@ -811,7 +897,7 @@ func (a AuxSrc) String() string {
 }
 
 func (a AuxSrc) MarshalJSON() ([]byte, error) {
-	return json.Marshal(a.items())
+	return json.Marshal(a.Items())
 }
 
 // DOP holds dilution of precision values for the navigation solution. Fields
@@ -826,13 +912,13 @@ type DOP struct {
 	Time opt.Val[float64] `json:"time,omitzero"` // time DOP
 }
 
-// Merge incorporates fields from other into d based on priority.
-func (d *DOP) Merge(other *DOP, dstPri, srcPri MsgPriority) {
-	mergeOpt(&d.Geom, &other.Geom, dstPri, srcPri)
-	mergeOpt(&d.Pos, &other.Pos, dstPri, srcPri)
-	mergeOpt(&d.Hor, &other.Hor, dstPri, srcPri)
-	mergeOpt(&d.Vert, &other.Vert, dstPri, srcPri)
-	mergeOpt(&d.Time, &other.Time, dstPri, srcPri)
+// Fill sets any unset fields in d from the corresponding fields in other.
+func (d *DOP) Fill(other *DOP) {
+	d.Geom.Fill(other.Geom)
+	d.Pos.Fill(other.Pos)
+	d.Hor.Fill(other.Hor)
+	d.Vert.Fill(other.Vert)
+	d.Time.Fill(other.Time)
 }
 
 // NavEpochMsg is emitted once at the end of each navigation epoch, after
@@ -863,7 +949,7 @@ type NavEpochMsg struct {
 	// DiffAge is the age of the differential corrections applied to the
 	// current solution. Unset when no corrections are in use or the
 	// protocol doesn't report it.
-	DiffAge opt.Val[time.Duration] `json:"diffAge,omitzero"`
+	DiffAge opt.Val[Duration] `json:"diffAge,omitzero"`
 	// RTCMRefBaseID is the RTCM reference station ID (DF003, 0-4095) of
 	// the base station whose corrections are applied to this solution.
 	// Distinct from the RTCMBaseID config property, which is this
@@ -873,6 +959,8 @@ type NavEpochMsg struct {
 	NumSVUsed opt.Val[uint16] `json:"numSVUsed,omitzero"`
 	// NumSVTracked is the number of satellites tracked by the receiver.
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
+	// NumSVInView is the number of satellites in view of the receiver.
+	NumSVInView opt.Val[uint16] `json:"numSVInView,omitzero"`
 	// SignalsUsed is the set of GNSS signals used in the solution.
 	SignalsUsed SignalSet `json:"signalsUsed,omitzero"`
 	// Tag identifies the protocol source (e.g. UBX, NMEA, Unicore).
@@ -893,59 +981,55 @@ type Accuracy struct {
 	Course      opt.Val[Angle]  `json:"course,omitzero"`      // course/heading accuracy
 }
 
-// Merge incorporates fields from other into a based on priority.
-func (a *Accuracy) Merge(other *Accuracy, dstPri, srcPri MsgPriority) {
-	mergeOpt(&a.Pos, &other.Pos, dstPri, srcPri)
-	mergeOpt(&a.Hor, &other.Hor, dstPri, srcPri)
-	mergeOpt(&a.Vert, &other.Vert, dstPri, srcPri)
-	mergeOpt(&a.Speed, &other.Speed, dstPri, srcPri)
-	mergeOpt(&a.GroundSpeed, &other.GroundSpeed, dstPri, srcPri)
-	mergeOpt(&a.Course, &other.Course, dstPri, srcPri)
+// Fill sets any unset fields in a from the corresponding fields in other.
+func (a *Accuracy) Fill(other *Accuracy) {
+	a.Pos.Fill(other.Pos)
+	a.Hor.Fill(other.Hor)
+	a.Vert.Fill(other.Vert)
+	a.Speed.Fill(other.Speed)
+	a.GroundSpeed.Fill(other.GroundSpeed)
+	a.Course.Fill(other.Course)
 }
 
-// MergeNavEpoch merges two NavEpochMsg values by priority. The higher-priority
-// message provides Tag and scalar quality fields (FixLevel, FixDim);
-// Accuracy and DOP fields are merged with mergeOpt semantics; bitmask fields
-// (Correction, AuxSrc, SignalsUsed) are unioned; StartTime is the earliest.
-// The returned priority is the higher of the two, for chaining in pairwise merge.
-func MergeNavEpoch(a *NavEpochMsg, aPri MsgPriority, b *NavEpochMsg, bPri MsgPriority) (*NavEpochMsg, MsgPriority) {
-	if a == nil {
-		return b, bPri
-	}
-	if b == nil {
-		return a, aPri
-	}
-	merged := *a
-	merged.Acc.Merge(&b.Acc, aPri, bPri)
-	merged.DOP.Merge(&b.DOP, aPri, bPri)
-	mergeOpt(&merged.DiffAge, &b.DiffAge, aPri, bPri)
-	mergeOpt(&merged.RTCMRefBaseID, &b.RTCMRefBaseID, aPri, bPri)
-	mergeOpt(&merged.NumSVUsed, &b.NumSVUsed, aPri, bPri)
-	mergeOpt(&merged.NumSVTracked, &b.NumSVTracked, aPri, bPri)
-	merged.Correction |= b.Correction
-	merged.AuxSrc |= b.AuxSrc
-	merged.SignalsUsed |= b.SignalsUsed
-	if bPri >= aPri {
-		merged.Tag = b.Tag
-		if b.FixLevel != 0 {
-			merged.FixLevel = b.FixLevel
+// MergeNavEpoch merges multiple NavEpochMsg values. Priority is implicit in
+// argument order: the first non-nil message wins for scalar fields (Tag,
+// FixLevel, FixDim); optional fields use fill-if-unset semantics; bitmask
+// fields (Correction, AuxSrc, SignalsUsed) are unioned; StartTime is the
+// earliest. The first non-nil argument is mutated and returned.
+func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
+	var dst *NavEpochMsg
+	for _, m := range msgs {
+		if m == nil {
+			continue
 		}
-		if b.FixDim != 0 {
-			merged.FixDim = b.FixDim
+		if dst == nil {
+			dst = m
+			continue
 		}
-		aPri = bPri
-	} else {
-		if merged.FixLevel == 0 {
-			merged.FixLevel = b.FixLevel
+		if dst.Tag == "" {
+			dst.Tag = m.Tag
 		}
-		if merged.FixDim == 0 {
-			merged.FixDim = b.FixDim
+		if dst.FixLevel == 0 {
+			dst.FixLevel = m.FixLevel
+		}
+		if dst.FixDim == 0 {
+			dst.FixDim = m.FixDim
+		}
+		dst.Acc.Fill(&m.Acc)
+		dst.DOP.Fill(&m.DOP)
+		dst.DiffAge.Fill(m.DiffAge)
+		dst.RTCMRefBaseID.Fill(m.RTCMRefBaseID)
+		dst.NumSVUsed.Fill(m.NumSVUsed)
+		dst.NumSVTracked.Fill(m.NumSVTracked)
+		dst.NumSVInView.Fill(m.NumSVInView)
+		dst.Correction |= m.Correction
+		dst.AuxSrc |= m.AuxSrc
+		dst.SignalsUsed |= m.SignalsUsed
+		if !m.StartTime.IsZero() && (dst.StartTime.IsZero() || m.StartTime.Before(dst.StartTime)) {
+			dst.StartTime = m.StartTime
 		}
 	}
-	if b.StartTime.Before(merged.StartTime) {
-		merged.StartTime = b.StartTime
-	}
-	return &merged, aPri
+	return dst
 }
 
 // EpochFlusher is implemented by PacketProcessors that participate in
@@ -993,160 +1077,199 @@ func (m *NavEpochManager) EndOfEpoch(tRead time.Time) {
 }
 
 func (m *NavEpochManager) flush(tRead time.Time) {
-	var merged *NavEpochMsg
-	var mergedPri MsgPriority
-	var mh MsgHandler
+	type flushed struct {
+		msg *NavEpochMsg
+		pri MsgPriority
+		mh  MsgHandler
+	}
+	var items []flushed
 	for f := range m.active {
 		msg, pri, h := f.FlushNavEpoch(tRead)
-		if msg != nil && mh == nil {
-			mh = h
+		if msg != nil {
+			items = append(items, flushed{msg, pri, h})
 		}
-		merged, mergedPri = MergeNavEpoch(merged, mergedPri, msg, pri)
 	}
 	clear(m.active)
-	if merged != nil && mh != nil {
-		mh.NavEpoch(merged, tRead)
-	}
-}
-
-// mergeOpt merges a single opt.Val field from src into dst based on priority.
-// If src is unset, dst is unchanged.
-// If srcPri >= dstPri, dst is overwritten with src.
-// If srcPri < dstPri, dst is filled from src only if dst is unset.
-func mergeOpt[T any](dst, src *opt.Val[T], dstPri, srcPri MsgPriority) {
-	if !src.IsSet() {
+	if len(items) == 0 {
 		return
 	}
-	if srcPri >= dstPri || !dst.IsSet() {
-		*dst = *src
+	slices.SortFunc(items, func(a, b flushed) int {
+		return int(b.pri) - int(a.pri)
+	})
+	msgs := make([]*NavEpochMsg, len(items))
+	for i, it := range items {
+		msgs[i] = it.msg
 	}
-}
-
-// Merge incorporates fields from other into m based on priority.
-func (m *TimeMsg) Merge(other *TimeMsg) {
-	dp, sp := m.Priority, other.Priority
-	if sp >= dp {
-		m.TAITime = other.TAITime
-		m.Accuracy = other.Accuracy
-		m.UTCOffset = other.UTCOffset
-		m.GNSS = other.GNSS
-		m.Ref = other.Ref
-		m.Priority = sp
-		m.Tag = other.Tag
-		m.NativeMsgID = other.NativeMsgID
-		if other.UTCTime != nil {
-			m.UTCTime = other.UTCTime
-		}
-		if other.PulseOffset != nil {
-			m.PulseOffset = other.PulseOffset
-		}
-	} else {
-		if m.UTCTime == nil {
-			m.UTCTime = other.UTCTime
-		}
-		if m.PulseOffset == nil {
-			m.PulseOffset = other.PulseOffset
+	merged := MergeNavEpoch(msgs...)
+	if merged == nil {
+		return
+	}
+	for _, it := range items {
+		if mh := it.mh; mh != nil {
+			mh.NavEpoch(merged, tRead)
+			return
 		}
 	}
 }
 
 // Merge incorporates fields from other into m based on priority.
+// Higher priority overwrites everything. Equal priority fills only
+// missing optional fields (first-wins). Lower priority does nothing.
 func (m *PosGeoMsg) Merge(other *PosGeoMsg) {
-	dp, sp := m.Priority, other.Priority
-	if sp >= dp {
-		m.LatLon = other.LatLon
-		m.Priority = sp
-		m.Tag = other.Tag
-		m.NativeMsgID = other.NativeMsgID
+	if other.Priority < m.Priority {
+		return
 	}
-	mergeOpt(&m.Height, &other.Height, dp, sp)
-	mergeOpt(&m.HeightMSL, &other.HeightMSL, dp, sp)
+	if other.Priority > m.Priority {
+		*m = *other
+		return
+	}
+	m.Height.Fill(other.Height)
+	m.HeightMSL.Fill(other.HeightMSL)
 }
 
 // Merge incorporates fields from other into m based on priority.
 func (m *PosECEFMsg) Merge(other *PosECEFMsg) {
-	if other.Priority >= m.Priority {
-		m.Pos = other.Pos
-		m.Priority = other.Priority
-		m.Tag = other.Tag
-		m.NativeMsgID = other.NativeMsgID
+	if other.Priority > m.Priority {
+		*m = *other
 	}
 }
 
 // Merge incorporates fields from other into m based on priority.
 func (m *VelGeoMsg) Merge(other *VelGeoMsg) {
-	dp, sp := m.Priority, other.Priority
-	if sp >= dp {
-		m.Priority = sp
-		m.Tag = other.Tag
-		m.NativeMsgID = other.NativeMsgID
+	if other.Priority < m.Priority {
+		return
 	}
-	mergeOpt(&m.VelNED, &other.VelNED, dp, sp)
-	mergeOpt(&m.GroundSpeed, &other.GroundSpeed, dp, sp)
-	mergeOpt(&m.Speed3D, &other.Speed3D, dp, sp)
-	mergeOpt(&m.Course, &other.Course, dp, sp)
+	if other.Priority > m.Priority {
+		*m = *other
+		return
+	}
+	m.VelNED.Fill(other.VelNED)
+	m.GroundSpeed.Fill(other.GroundSpeed)
+	m.Speed3D.Fill(other.Speed3D)
+	m.Course.Fill(other.Course)
 }
 
 // Merge incorporates fields from other into m based on priority.
 func (m *VelECEFMsg) Merge(other *VelECEFMsg) {
-	if other.Priority >= m.Priority {
-		m.Vel = other.Vel
-		m.Priority = other.Priority
-		m.Tag = other.Tag
-		m.NativeMsgID = other.NativeMsgID
+	if other.Priority > m.Priority {
+		*m = *other
 	}
 }
 
-// NavEpochAccum accumulates the best message of each kind within a
-// navigation epoch. It implements MsgHandler for the Pos/Vel/Time
-// methods, merging incoming messages into its Bundle by priority.
-// NavEpoch clears the accumulated Bundle.
-type NavEpochAccum struct {
+// PVMsgAccum accumulates the best position/velocity message of each kind
+// within a navigation epoch. It implements MsgHandler for the four PV
+// methods, merging incoming messages by priority. NavEpoch clears the
+// accumulated bundle.
+type PVMsgAccum struct {
 	DefaultHandler
-	Bundle MsgBundle
+	PVMsgBundle
 }
 
-func (a *NavEpochAccum) Time(msg *TimeMsg, tRead time.Time) {
-	if a.Bundle.Time == nil {
-		a.Bundle.Time = msg
+func (a *PVMsgAccum) PosGeo(msg *PosGeoMsg, _ time.Time) {
+	if p := a.PVMsgBundle.PosGeo.Ptr(); p != nil {
+		p.Merge(msg)
+	} else {
+		a.PVMsgBundle.PosGeo.Set(*msg)
+	}
+}
+
+func (a *PVMsgAccum) PosECEF(msg *PosECEFMsg, _ time.Time) {
+	if p := a.PVMsgBundle.PosECEF.Ptr(); p != nil {
+		p.Merge(msg)
+	} else {
+		a.PVMsgBundle.PosECEF.Set(*msg)
+	}
+}
+
+func (a *PVMsgAccum) VelGeo(msg *VelGeoMsg, _ time.Time) {
+	if p := a.PVMsgBundle.VelGeo.Ptr(); p != nil {
+		p.Merge(msg)
+	} else {
+		a.PVMsgBundle.VelGeo.Set(*msg)
+	}
+}
+
+func (a *PVMsgAccum) VelECEF(msg *VelECEFMsg, _ time.Time) {
+	if p := a.PVMsgBundle.VelECEF.Ptr(); p != nil {
+		p.Merge(msg)
+	} else {
+		a.PVMsgBundle.VelECEF.Set(*msg)
+	}
+}
+
+// NavEpoch clears the accumulated bundle, preparing for the next epoch.
+func (a *PVMsgAccum) NavEpoch(_ *NavEpochMsg, _ time.Time) {
+	a.PVMsgBundle = PVMsgBundle{}
+}
+
+// TimeTicker produces one filled-in TimeMsg per navigation epoch.
+// It stores the first non-PrePulse TimeMsg each epoch, fills in
+// derived fields (TAITime, UTCTime, UTCOffset), and forwards the
+// result immediately to a downstream MsgHandler. NavEpoch resets
+// the state for the next epoch.
+type TimeTicker struct {
+	DefaultHandler
+	h    MsgHandler
+	time opt.Val[TimeMsg]
+	ls   ptime.LeapSecond
+}
+
+// NewTimeTicker creates a TimeTicker that forwards filled TimeMsgs to h.
+func NewTimeTicker(h MsgHandler, ls ptime.LeapSecond) *TimeTicker {
+	return &TimeTicker{h: h, ls: ls}
+}
+
+// SetLeapSecond replaces the stored leap second.
+func (t *TimeTicker) SetLeapSecond(ls ptime.LeapSecond) {
+	t.ls = ls
+}
+
+// LeapSecond updates the stored leap second.
+func (t *TimeTicker) LeapSecond(msg *LeapSecondMsg, _ time.Time) {
+	msg.UpdateLeapSecond(&t.ls)
+}
+
+// Time filters, fills, and forwards one TimeMsg per epoch.
+func (t *TimeTicker) Time(msg *TimeMsg, tRead time.Time) {
+	if msg.Ref == PrePulse {
 		return
 	}
-	a.Bundle.Time.Merge(msg)
-}
-
-func (a *NavEpochAccum) PosGeo(msg *PosGeoMsg, tRead time.Time) {
-	if a.Bundle.PosGeo == nil {
-		a.Bundle.PosGeo = msg
+	if t.time.IsSet() {
 		return
 	}
-	a.Bundle.PosGeo.Merge(msg)
-}
-
-func (a *NavEpochAccum) PosECEF(msg *PosECEFMsg, tRead time.Time) {
-	if a.Bundle.PosECEF == nil {
-		a.Bundle.PosECEF = msg
-		return
+	m := *msg
+	if m.UTCTime != nil {
+		ut := *m.UTCTime
+		m.UTCTime = &ut
 	}
-	a.Bundle.PosECEF.Merge(msg)
+	t.fill(&m)
+	t.time.Set(m)
+	t.h.Time(&m, tRead)
 }
 
-func (a *NavEpochAccum) VelGeo(msg *VelGeoMsg, tRead time.Time) {
-	if a.Bundle.VelGeo == nil {
-		a.Bundle.VelGeo = msg
-		return
+// NavEpoch clears the stored TimeMsg, preparing for the next epoch.
+func (t *TimeTicker) NavEpoch(_ *NavEpochMsg, _ time.Time) {
+	t.time = opt.Val[TimeMsg]{}
+}
+
+func (t *TimeTicker) fill(m *TimeMsg) {
+	if !m.TAITime.IsZero() {
+		m.TAITime = m.TAITime.Round(time.Millisecond)
 	}
-	a.Bundle.VelGeo.Merge(msg)
-}
-
-func (a *NavEpochAccum) VelECEF(msg *VelECEFMsg, tRead time.Time) {
-	if a.Bundle.VelECEF == nil {
-		a.Bundle.VelECEF = msg
-		return
+	if m.UTCTime != nil {
+		m.UTCTime.TimeOfDay = m.UTCTime.TimeOfDay.Round(time.Millisecond)
 	}
-	a.Bundle.VelECEF.Merge(msg)
-}
-
-// NavEpoch clears the accumulated Bundle, preparing for the next epoch.
-func (a *NavEpochAccum) NavEpoch(msg *NavEpochMsg, tRead time.Time) {
-	a.Bundle = MsgBundle{}
+	if m.TAITime.IsZero() && m.UTCTime != nil {
+		m.TAITime = t.ls.UTCtoTime(*m.UTCTime)
+	}
+	if m.UTCTime == nil && !m.TAITime.IsZero() {
+		ut := t.ls.TimeToUTC(m.TAITime)
+		m.UTCTime = &ut
+	}
+	if m.UTCOffset == 0 && !m.TAITime.IsZero() {
+		state := t.ls.StateAt(m.TAITime)
+		if state.UTCOffset > 0 {
+			m.UTCOffset = uint8(state.UTCOffset)
+		}
+	}
 }

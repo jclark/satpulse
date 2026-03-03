@@ -2,11 +2,15 @@ package gpscmd
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"testing"
 	"time"
@@ -17,8 +21,12 @@ import (
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
-// packetCmpFunc compares actual and expected packets for a specific protocol
-type packetCmpFunc func(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) bool
+var update = flag.Bool("update", false, "update golden test data files")
+
+// packetCmpFunc compares actual and expected packets for a specific protocol.
+// Returns (equal, updatable): equal means packets match;
+// updatable means the mismatch is safe to auto-update in golden files.
+type packetCmpFunc func(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) (bool, bool)
 
 func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 	path := filepath.Join("testdata", name+".jsonl")
@@ -30,6 +38,8 @@ func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 
 	scanner := bufio.NewScanner(f)
 	testNum := 0
+	globalOutIdx := 0
+	var replayers []*replayer
 
 	for {
 		test, err := readTest(scanner)
@@ -40,16 +50,39 @@ func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 			break
 		}
 
+		outOffset := globalOutIdx
+		globalOutIdx += len(test.outPackets)
+
 		t.Run(fmt.Sprintf("%s_%d", name, testNum), func(t *testing.T) {
 			r, err := newReplayer(t, test, packetCmp)
 			if err != nil {
 				t.Fatal(err)
 			}
+			r.outOffset = outOffset
 			r.run()
 			r.verify()
+			replayers = append(replayers, r)
 		})
 		testNum++
 	}
+
+	if !*update {
+		return
+	}
+	// Collect updates from non-structural replayers
+	allUpdates := make(map[int][]byte)
+	for _, r := range replayers {
+		if r.structural {
+			continue
+		}
+		for idx, pkt := range r.updates {
+			allUpdates[idx] = pkt
+		}
+	}
+	if len(allUpdates) == 0 {
+		return
+	}
+	applyUpdates(t, path, allUpdates)
 }
 
 type replayTest struct {
@@ -160,6 +193,9 @@ type replayer struct {
 	replayTime  time.Time   // simulated current time for replay
 	timeline    []time.Time // sorted list of all packet timestamps
 	timelineIdx int         // current position in timeline
+	outOffset   int         // offset of this block's output packets in the global file
+	updates     map[int][]byte // global output packet index -> new packet bytes
+	structural  bool           // set on non-updatable failure
 }
 
 func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (*replayer, error) {
@@ -267,6 +303,7 @@ func (r *replayer) run() {
 
 	if probesSent == 0 {
 		r.t.Error("no matching probe packets found")
+		r.structural = true
 		return
 	}
 
@@ -285,6 +322,7 @@ func (r *replayer) run() {
 
 	if r.cp == nil {
 		r.t.Error("probe did not succeed after feeding initial packets")
+		r.structural = true
 		return
 	}
 
@@ -316,8 +354,17 @@ func (r *replayer) run() {
 			if msg, err := ubxbin.ParseMsg(string(action.Packet)); err == nil {
 				msgID = msg.ID().String()
 			}
-			if !r.packetCmp(r.t, msgID, action.Packet, expected) {
+			eq, updatable := r.packetCmp(r.t, msgID, action.Packet, expected)
+			if !eq {
 				r.t.Errorf("packet mismatch")
+				if updatable && *update {
+					if r.updates == nil {
+						r.updates = make(map[int][]byte)
+					}
+					r.updates[r.outOffset+r.outIdx] = slices.Clone(action.Packet)
+				} else if !updatable {
+					r.structural = true
+				}
 			}
 			r.outIdx++
 
@@ -346,6 +393,7 @@ func (r *replayer) run() {
 	}
 
 	if r.outIdx < len(r.test.outPackets) {
+		r.structural = true
 		r.t.Fatalf("failed to generate all output packets, got %d, want %d",
 			r.outIdx, len(r.test.outPackets))
 	}
@@ -569,4 +617,52 @@ func equalSignalMaps(a, b map[string][]string) bool {
 		}
 	}
 	return true
+}
+
+var binFieldRe = regexp.MustCompile(`"bin":"[0-9a-f]*"`)
+
+// applyUpdates rewrites a JSONL file, replacing the bin field of output packets
+// at the specified global indices with new hex-encoded packet data.
+func applyUpdates(t *testing.T, path string, updates map[int][]byte) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s for update: %v", path, err)
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanning %s: %v", path, err)
+	}
+	outIdx := 0
+	updated := 0
+	for i, line := range lines {
+		if !isOutPacketLine(line) {
+			continue
+		}
+		if newPkt, ok := updates[outIdx]; ok {
+			newHex := hex.EncodeToString(newPkt)
+			lines[i] = binFieldRe.ReplaceAllString(line, `"bin":"`+newHex+`"`)
+			updated++
+		}
+		outIdx++
+	}
+	var buf bytes.Buffer
+	for _, line := range lines {
+		buf.WriteString(line)
+		buf.WriteByte('\n')
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+	t.Logf("updated %s: %d packets changed", path, updated)
+}
+
+// isOutPacketLine reports whether a JSONL line is an output packet entry.
+func isOutPacketLine(line string) bool {
+	// Output packets have "out":true and a "bin" field
+	return bytes.Contains([]byte(line), []byte(`"out":true`))
 }

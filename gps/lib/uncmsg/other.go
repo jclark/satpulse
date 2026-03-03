@@ -17,13 +17,13 @@ const (
 	DOPHD2ID     MsgID = 1333
 	MSPosID      MsgID = 520
 	PPPDOPID     MsgID = 1025
-	PPPNavID     MsgID = 1026
+	// PPPNavID MsgID = 1026 // implemented in nav.go
 	PVTSlnID     MsgID = 1021
 	SPPDOPID     MsgID = 173
 	SPPDOPHID    MsgID = 2120
 	SPPNavID     MsgID = 46
 	SPPNavHID    MsgID = 2116
-	StaDOPID     MsgID = 954
+	// StaDOPID   MsgID = 954 // implemented in dop.go
 	StaDOPHID    MsgID = 2122
 	UniHeadingID MsgID = 972
 	UniHeading2ID MsgID = 1331
@@ -124,13 +124,13 @@ func init() {
 	idNameMap[DOPHD2ID] = "DOPHD2"
 	idNameMap[MSPosID] = "MSPOS"
 	idNameMap[PPPDOPID] = "PPPDOP"
-	idNameMap[PPPNavID] = "PPPNAV"
+	// PPPNavID registered via regMsg in nav.go
 	idNameMap[PVTSlnID] = "PVTSLN"
 	idNameMap[SPPDOPID] = "SPPDOP"
 	idNameMap[SPPDOPHID] = "SPPDOPH"
 	idNameMap[SPPNavID] = "SPPNAV"
 	idNameMap[SPPNavHID] = "SPPNAVH"
-	idNameMap[StaDOPID] = "STADOP"
+	// StaDOPID registered via regMsg in dop.go
 	idNameMap[StaDOPHID] = "STADOPH"
 	idNameMap[UniHeadingID] = "UNIHEADING"
 	idNameMap[UniHeading2ID] = "UNIHEADING2"

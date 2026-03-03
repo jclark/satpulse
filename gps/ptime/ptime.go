@@ -251,6 +251,30 @@ func (ls LeapSecond) Date() time.Time {
 	return time.Unix(int64(ls.OffChangeTime)/1e9-int64(ls.UTCOffAfter), 0).AddDate(0, 0, -1)
 }
 
+// TimeToUTC converts a TAI time to a UTCTime.
+// During a positive leap second, the returned TimeOfDay will be >= 24h (representing :60).
+func (ls LeapSecond) TimeToUTC(t Time) UTCTime {
+	cmp := ls.Compare(t)
+	off := ls.UTCOffAfter
+	if cmp <= 0 {
+		off = ls.UTCOffBefore
+	}
+	// During a leap second, subtract 1s so we land on 23:59:59;
+	// we add it back to TimeOfDay below.
+	adjT := t
+	if cmp == 0 {
+		adjT = t.Add(-time.Second)
+	}
+	utc := epochUnix.Add(time.Duration(adjT) - time.Duration(off)*time.Second)
+	y, m, d := utc.Date()
+	date := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	tod := utc.Sub(date)
+	if cmp == 0 {
+		tod += time.Second
+	}
+	return UTCTime{Date: date, TimeOfDay: tod}
+}
+
 func (ls LeapSecond) FormatTime(t Time) string {
 	cmp := ls.Compare(t)
 	off := ls.UTCOffAfter

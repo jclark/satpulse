@@ -6,6 +6,7 @@ import "github.com/jclark/satpulse/gps/lib/novmsg"
 const (
 	BestNavID    MsgID = 2118
 	BestNavXYZID MsgID = 240
+	PPPNavID     MsgID = 1026
 )
 
 // BestNav represents geodetic position and velocity from a Unicore receiver.
@@ -43,7 +44,20 @@ func (m *BestNavXYZ) ID() (MsgID, string) {
 	return BestNavXYZID, "BESTNAVXYZA"
 }
 
+// PPPNav represents geodetic position from the PPP solution.
+// Message ID: 1026
+// Field layout is identical to the position portion of BESTNAV (no velocity fields).
+type PPPNav struct {
+	novmsg.Pos[SolStatus, PosVelType]
+}
+
+// ID returns the message ID for PPPNAV
+func (m *PPPNav) ID() (MsgID, string) {
+	return PPPNavID, "PPPNAVA"
+}
+
 func init() {
 	regMsg[BestNav]("BESTNAV")
 	regMsg[BestNavXYZ]("BESTNAVXYZ")
+	regMsg[PPPNav]("PPPNAV")
 }

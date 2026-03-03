@@ -21,59 +21,59 @@ type Handler struct{}
 func NewHandler() *Handler { return &Handler{} }
 
 // HandleSentence parses a PQTM periodic message and returns gpsprot
-// messages. It returns (nil, nil, nil) for non-PQTM or unrecognized
-// sentences. EOE returns (bundle, nil, nil) to signal end-of-epoch.
+// messages. It returns ErrNotHandled for non-PQTM or unrecognized
+// sentences. EOE returns (nil, nil, nil) to signal end-of-epoch.
 func (h *Handler) HandleSentence(
 	flags nmeamsg.SentenceSyntaxFlags,
 	payload string,
 	epoch *nmea.NavEpoch,
-) (*gpsprot.MsgBundle, *nmea.NavEpoch, error) {
+) ([]gpsprot.Msg, *nmea.NavEpoch, error) {
 	if !flags.IsValidProprietaryNMEA() {
-		return nil, nil, nil
+		return nil, nil, gpsprot.ErrNotHandled
 	}
 	msg, err := qtmmsg.ParsePeriodicMsg(payload)
 	if err != nil {
 		return nil, nil, err
 	}
 	if msg == nil {
-		return nil, nil, nil
+		return nil, nil, gpsprot.ErrNotHandled
 	}
 	switch m := msg.(type) {
 	case *qtmmsg.PVT:
 		epoch = nmea.CheckEpoch(epoch, m.Time)
-		b := msgBundlePVT(m, epoch)
-		b.SetPriority(gpsprot.PriVendorLow)
-		return b, epoch, nil
+		msgs := msgsPVT(m, epoch)
+		gpsprot.SetMsgsPriority(msgs, gpsprot.PriVendorLow)
+		return msgs, epoch, nil
 	case *qtmmsg.NAV:
 		epoch = nmea.CheckEpoch(epoch, m.UTC)
-		b := msgBundleNAV(m, epoch)
-		b.SetPriority(gpsprot.PriVendorLow)
-		return b, epoch, nil
+		msgs := msgsNAV(m, epoch)
+		gpsprot.SetMsgsPriority(msgs, gpsprot.PriVendorLow)
+		return msgs, epoch, nil
 	case *qtmmsg.VEL:
 		epoch = nmea.CheckEpoch(epoch, m.Time)
-		b := msgBundleVEL(m, epoch)
-		b.SetPriority(gpsprot.PriVendorLow)
-		return b, epoch, nil
+		msgs := msgsVEL(m, epoch)
+		gpsprot.SetMsgsPriority(msgs, gpsprot.PriVendorLow)
+		return msgs, epoch, nil
 	case *qtmmsg.EPE:
 		epoch = nmea.CheckEpoch(epoch, "")
 		accEPE(m, epoch)
-		return &gpsprot.MsgBundle{}, epoch, nil
+		return nil, epoch, nil
 	case *qtmmsg.SVINStatus:
 		epoch = nmea.CheckEpoch(epoch, "")
-		return msgBundleSVIN(m), epoch, nil
+		return msgsSVIN(m), epoch, nil
 	case *qtmmsg.DOP:
 		epoch = nmea.CheckEpoch(epoch, "")
 		dopQuality(m, epoch)
-		return &gpsprot.MsgBundle{}, epoch, nil
+		return nil, epoch, nil
 	case *qtmmsg.EOE:
-		return &gpsprot.MsgBundle{}, nil, nil
-	default:
 		return nil, nil, nil
+	default:
+		return nil, nil, gpsprot.ErrNotHandled
 	}
 }
 
-func msgBundlePVT(m *qtmmsg.PVT, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
-	b := &gpsprot.MsgBundle{}
+func msgsPVT(m *qtmmsg.PVT, epoch *nmea.NavEpoch) []gpsprot.Msg {
+	var msgs []gpsprot.Msg
 	if m.FixType >= 2 {
 		if utc, ok := parseDateTime(m.Date, m.Time); ok {
 			tm := &gpsprot.TimeMsg{
@@ -84,7 +84,7 @@ func msgBundlePVT(m *qtmmsg.PVT, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 			if m.LeapS.IsSet() {
 				tm.UTCOffset = m.LeapS.Get() + ptime.TAIMinusGPS
 			}
-			b.Time = tm
+			msgs = append(msgs, tm)
 		}
 	}
 	if m.Lat.IsSet() && m.Lon.IsSet() {
@@ -102,7 +102,7 @@ func msgBundlePVT(m *qtmmsg.PVT, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 				pos.Height.Set(gpsprot.Meters(m.Alt.Get() + m.Sep.Get()))
 			}
 		}
-		b.PosGeo = pos
+		msgs = append(msgs, pos)
 	}
 	if m.VelN.IsSet() && m.VelE.IsSet() && m.VelD.IsSet() {
 		vel := &gpsprot.VelGeoMsg{
@@ -120,7 +120,7 @@ func msgBundlePVT(m *qtmmsg.PVT, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 		if m.Heading.IsSet() {
 			vel.Course.Set(gpsprot.DegreesFromFloat(m.Heading.Get()))
 		}
-		b.VelGeo = vel
+		msgs = append(msgs, vel)
 	}
 	// PVT quality is weaker than NAV (no correction info). Only
 	// populate when NAV hasn't already set quality for this epoch.
@@ -143,11 +143,11 @@ func msgBundlePVT(m *qtmmsg.PVT, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 	if m.PDOP.IsSet() {
 		epoch.DOP.Pos = opt.Make(m.PDOP.Get())
 	}
-	return b
+	return msgs
 }
 
-func msgBundleNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
-	b := &gpsprot.MsgBundle{}
+func msgsNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) []gpsprot.Msg {
+	var msgs []gpsprot.Msg
 	if m.TimeStatus == 1 {
 		if utc, ok := parseDateTime(m.Date, m.UTC); ok {
 			tm := &gpsprot.TimeMsg{
@@ -161,7 +161,7 @@ func msgBundleNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 			if m.LeapSec.IsSet() {
 				tm.UTCOffset = m.LeapSec.Get() + ptime.TAIMinusGPS
 			}
-			b.Time = tm
+			msgs = append(msgs, tm)
 		}
 	}
 	if m.Lat.IsSet() && m.Lon.IsSet() {
@@ -179,7 +179,7 @@ func msgBundleNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 				pos.Height.Set(gpsprot.Meters(m.Alt.Get() + m.Sep.Get()))
 			}
 		}
-		b.PosGeo = pos
+		msgs = append(msgs, pos)
 	}
 	if m.HVel.IsSet() {
 		vel := &gpsprot.VelGeoMsg{
@@ -190,7 +190,7 @@ func msgBundleNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 		if m.COG.IsSet() {
 			vel.Course.Set(gpsprot.DegreesFromFloat(m.COG.Get()))
 		}
-		b.VelGeo = vel
+		msgs = append(msgs, vel)
 	}
 	if m.LatStd.IsSet() && m.LonStd.IsSet() {
 		lat, lon := m.LatStd.Get(), m.LonStd.Get()
@@ -210,18 +210,18 @@ func msgBundleNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 		}
 	}
 	epoch.NumSVUsed = opt.Make(uint16(m.SatUsed))
-	epoch.NumSVTracked = opt.Make(uint16(m.SatView))
+	epoch.NumSVInView = opt.Make(uint16(m.SatView))
 	if m.DiffAge.IsSet() {
-		epoch.DiffAge = opt.Make(ptime.Seconds(m.DiffAge.Get()))
+		epoch.DiffAge = opt.Make(gpsprot.Seconds(m.DiffAge.Get()))
 	}
 	if m.DiffID.IsSet() && m.DiffID.Get() <= 4095 {
 		epoch.RTCMRefBaseID = opt.Make(m.DiffID.Get())
 	}
-	return b
+	return msgs
 }
 
-func msgBundleVEL(m *qtmmsg.VEL, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
-	b := &gpsprot.MsgBundle{}
+func msgsVEL(m *qtmmsg.VEL, epoch *nmea.NavEpoch) []gpsprot.Msg {
+	var msgs []gpsprot.Msg
 	if m.VelN.IsSet() && m.VelE.IsSet() && m.VelD.IsSet() {
 		vel := &gpsprot.VelGeoMsg{
 			Tag:         nmea.Tag,
@@ -241,7 +241,7 @@ func msgBundleVEL(m *qtmmsg.VEL, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 		if m.COG.IsSet() {
 			vel.Course.Set(gpsprot.DegreesFromFloat(m.COG.Get()))
 		}
-		b.VelGeo = vel
+		msgs = append(msgs, vel)
 	}
 	if m.GrdSpdAcc.IsSet() {
 		epoch.Acc.GroundSpeed.Set(gpsprot.MetersPerSecondFromFloat(m.GrdSpdAcc.Get()))
@@ -252,7 +252,7 @@ func msgBundleVEL(m *qtmmsg.VEL, epoch *nmea.NavEpoch) *gpsprot.MsgBundle {
 	if m.HeadingAcc.IsSet() {
 		epoch.Acc.Course.Set(gpsprot.DegreesFromFloat(m.HeadingAcc.Get()))
 	}
-	return b
+	return msgs
 }
 
 func accEPE(m *qtmmsg.EPE, epoch *nmea.NavEpoch) {
@@ -311,7 +311,7 @@ func dopQuality(m *qtmmsg.DOP, epoch *nmea.NavEpoch) {
 	}
 }
 
-func msgBundleSVIN(m *qtmmsg.SVINStatus) *gpsprot.MsgBundle {
+func msgsSVIN(m *qtmmsg.SVINStatus) []gpsprot.Msg {
 	sv := &gpsprot.SurveyMsg{
 		ObsCount:   m.Obs,
 		Valid:      m.Valid == 2,
@@ -327,7 +327,7 @@ func msgBundleSVIN(m *qtmmsg.SVINStatus) *gpsprot.MsgBundle {
 	if m.MeanAcc.IsSet() {
 		sv.Accuracy = gpsprot.Meters(m.MeanAcc.Get())
 	}
-	return &gpsprot.MsgBundle{Survey: sv}
+	return []gpsprot.Msg{sv}
 }
 
 func parseDateTime(date, tod string) (ptime.UTCTime, bool) {

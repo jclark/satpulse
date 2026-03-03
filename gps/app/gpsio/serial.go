@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/term"
 )
 
@@ -72,10 +73,21 @@ func (c *SerialConn) Read(p []byte) (int, error) {
 }
 
 func (c *SerialConn) Write(p []byte) (int, error) {
-	return c.WriteThenChangeSpeed(p, 0)
+	return c.writeThenChangeSpeed(p, 0, nil)
 }
 
+// WritePacket writes bytes to the serial port and logs the write
+// using the provided format instead of doing format discovery.
+func (c *SerialConn) WritePacket(p []byte, fmt gpsprot.PacketFormat) (int, error) {
+	return c.writeThenChangeSpeed(p, 0, fmt)
+}
+
+// WriteThenChangeSpeed writes p then changes the serial speed.
 func (c *SerialConn) WriteThenChangeSpeed(p []byte, speed int) (int, error) {
+	return c.writeThenChangeSpeed(p, speed, nil)
+}
+
+func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.PacketFormat) (int, error) {
 	if c.isStopped() {
 		return 0, net.ErrClosed
 	}
@@ -117,7 +129,7 @@ func (c *SerialConn) WriteThenChangeSpeed(p []byte, speed int) (int, error) {
 			}
 		}
 		// We need to do this while we have the write lock to guarantee that the channel is not closed
-		c.logWrite(p, speed)
+		c.logWrite(p, speed, pktFmt)
 	}
 	return n, err
 }
@@ -158,7 +170,7 @@ func (c *SerialConn) SetPacketLog(pl *PacketLog) {
 	c.pktLog = pl
 }
 
-func (c *SerialConn) logWrite(p []byte, speed int) {
+func (c *SerialConn) logWrite(p []byte, speed int, fmt gpsprot.PacketFormat) {
 	// Stop can be called asynchronously.
 	// We need to ensure we don't use pktLog after it is closed.
 	defer c.mu.Unlock()
@@ -166,7 +178,7 @@ func (c *SerialConn) logWrite(p []byte, speed int) {
 	if c.pktLog == nil {
 		return
 	}
-	c.pktLog.LogOutput(time.Now(), p, speed)
+	c.pktLog.LogOutput(time.Now(), p, speed, fmt)
 }
 
 func (c *SerialConn) Close() error {

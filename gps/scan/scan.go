@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/gpsreg"
 )
 
 type Packet struct {
@@ -71,9 +70,9 @@ type TemporaryError interface {
 }
 
 // New returns a new Scanner to read from r.
-func New(r io.Reader, bufSize int) *Scanner {
+func New(r io.Reader, bufSize int, pktFormats []gpsprot.PacketFormat) *Scanner {
 	s := new(Scanner)
-	s.pktFormats = gpsreg.PacketFormats
+	s.pktFormats = pktFormats
 	s.r = r
 	s.buf = make([]byte, 0, bufSize)
 	return s

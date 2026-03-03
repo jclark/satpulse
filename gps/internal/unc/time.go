@@ -17,7 +17,6 @@ func timeMsgFromRecTime(hdr *uncmsg.MsgHdr, recTime *uncmsg.RecTime, tag gpsprot
 	t := gpsprot.TimeMsg{
 		Tag:         tag,
 		NativeMsgID: "RECTIME",
-		Priority:    gpsprot.PriVendorLow,
 	}
 	if hdr.TimeStatus >= uncmsg.TimeStatusFine {
 		t.GNSS, t.TAITime = msgHdrTime(hdr)

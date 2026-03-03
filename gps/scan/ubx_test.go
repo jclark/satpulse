@@ -1,4 +1,4 @@
-package scan
+package scan_test
 
 import (
 	"io"
@@ -6,13 +6,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/internal/ubx"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	casicbin "github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
-	"github.com/jclark/satpulse/gps/internal/ubx"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
+	"github.com/jclark/satpulse/gps/scan"
 )
 
 // packetSyncBytes contains the first sync byte of each binary packet format.
@@ -68,7 +70,7 @@ func TestGoodUBX(t *testing.T) {
 
 	// Create a reader and scanner
 	r := strings.NewReader(data)
-	s := New(r, bufferSize)
+	s := scan.New(r, bufferSize, gpsreg.PacketFormats)
 
 	// Scan the data and verify the packets
 	for i, expectedPacket := range packets {
@@ -103,7 +105,7 @@ func TestUBXRescan(t *testing.T) {
 
 	// Create a reader and scanner
 	r := strings.NewReader(data)
-	s := New(r, bufferSize)
+	s := scan.New(r, bufferSize, gpsreg.PacketFormats)
 
 	// Scan the first packet
 	pkt, err := s.Scan()
@@ -169,7 +171,7 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 
 	// Create a reader and scanner
 	r := strings.NewReader(data)
-	s := New(r, bufferSize)
+	s := scan.New(r, bufferSize, gpsreg.PacketFormats)
 
 	// Top-level loop to scan packets
 	var concatenatedInvalid string
