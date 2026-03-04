@@ -3,9 +3,8 @@ package asbin
 // Message IDs for messages not implemented elsewhere
 const (
 	// NAV
-	NavPvErrID MsgID = clsNav | (0x26 << 8)
+	NavPvErrID   MsgID = clsNav | (0x26 << 8)
 	NavSvStateID MsgID = clsNav | (0x32 << 8)
-	NavAutoID    MsgID = clsNav | (0xC0 << 8)
 	NavNavPvtID  MsgID = clsNav | (0xC1 << 8)
 	// CFG
 	CfgDopID      MsgID = clsCfg | (0x0A << 8)
@@ -46,7 +45,6 @@ func init() {
 	// NAV messages
 	idNameMap[NavPvErrID] = "PVERR"
 	idNameMap[NavSvStateID] = "SVSTATE"
-	idNameMap[NavAutoID] = "AUTO"
 	idNameMap[NavNavPvtID] = "NAVPVT"
 	// CFG messages
 	idNameMap[CfgDopID] = "DOP"

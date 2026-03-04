@@ -728,51 +728,54 @@ NovAtel-format receivers use `LOG` commands for message enablement, configured v
 
 ## Allystar
 
-The Allystar processor already emits `NavEpochMsg` with position/velocity accuracy via the `NavEpochManager` epoch mechanism. This plan adds solution quality metadata (FixLevel, FixDim, DOPs, satellite counts) to the existing epoch. Allystar's protocol is simpler than the others: its primary quality source (NAV-PVT) provides fix dimensionality and dead reckoning status but does not distinguish correction levels (DGNSS, RTK float, RTK fixed). The Allystar protocol does not use programmatic configuration; message enablement is handled via message files (`configs/gpsmsg/allystar.toml`).
+The Allystar processor already emits `NavEpochMsg` with position/velocity accuracy via the `NavEpochManager` epoch mechanism. This plan adds solution quality metadata (FixLevel, FixDim, DOPs, satellite counts) to the existing epoch. The primary quality source is NAV-AUTO, which provides fix state (including DGNSS, RTK float, RTK fixed), satellite counts, and inline DOPs. NAV-DOP provides the full set of DOP values. The Allystar protocol does not use programmatic configuration; message enablement is handled via message files (`configs/gpsmsg/allystar.toml`).
+
+Note: NAV-PVT (0x01 0xC1, documented in protocol spec V2.3.6) was originally considered as the primary quality source, but it is NAK'd by both the TAU1201 (firmware 3.018) and the TAU951M-P200, indicating it is not implemented in available firmware. NAV-AUTO (0x01 0xC0) is ACK'd and streams at 1Hz on both modules.
 
 ### Inputs
 
 Quality metadata comes from:
-- **NAV-PVT** (`asbin.NavPvt`, to be added, ID 0x01 0xC1): fix type (`fixType`), `numSV`, `pDop`, position/velocity accuracy estimates, and position/velocity/time data. This is the primary quality source. Not currently parsed.
+- **NAV-AUTO** (`asbin.NavAuto`, to be added, ID 0x01 0xC0): fix state (`fixstate`), position, speed, heading, DOPs (PDOP/HDOP/VDOP), `satInUse`, `satInView`, and UTC time. 32-byte payload. Not currently parsed.
 - **NAV-DOP** (`asbin.NavDop`, ID 0x01 0x04): GDOP/PDOP/TDOP/VDOP/HDOP/NDOP/EDOP (all scaled by 0.01). Already defined in `asbin` but not currently dispatched.
 
-### Mapping: NAV-PVT `fixType` -> `NavEpochMsg`
+### Mapping: NAV-AUTO `fixstate` -> `NavEpochMsg`
 
-NAV-PVT's `fixType` provides dimensionality and dead reckoning status but no correction or carrier-phase information. Unlike UBX NAV-PVT, Allystar NAV-PVT has no `flags` field with `gnssFixOK`, `diffSoln`, or `carrSoln` bits -- the two reserved bytes (offsets 21-22) are undocumented. There is also no per-signal or per-satellite correction source message in the Allystar binary protocol.
+NAV-AUTO's `fixstate` is richer than NAV-PVT's `fixType` -- it distinguishes DGNSS, RTK float, and RTK fixed in addition to basic fix dimensionality.
 
-| fixType | Meaning | AuxSrc | FixLevel | FixDim |
-|---------|---------|--------|----------|--------|
-| 0 | no fix | 0 | FixLevelNone | 0 |
-| 1 | dead reckoning only | AuxSrcDR | FixLevelNone | 0 |
-| 2 | 2D-fix | 0 | FixLevelCode | FixDim2D |
-| 3 | 3D-fix | 0 | FixLevelCode | FixDim3D |
-| 4 | GNSS + dead reckoning | AuxSrcDR | FixLevelCode | FixDim3D |
-| 5 | time only fix | 0 | FixLevelCode | FixDimTimeOnly |
+| fixstate | Meaning | FixLevel | FixDim | AuxSrc | Correction |
+|----------|---------|----------|--------|--------|------------|
+| 0 | no fix | FixLevelNone | 0 | 0 | 0 |
+| 1 | aided fix | FixLevelNone | 0 | 0 | 0 |
+| 2 | clock bias fix | FixLevelCode | FixDimTimeOnly | 0 | 0 |
+| 3 | 2D fix | FixLevelCode | FixDim2D | 0 | 0 |
+| 4 | 3D fix | FixLevelCode | FixDim3D | 0 | 0 |
+| 5 | DGNSS fix | FixLevelCodeCorrected | FixDim3D | 0 | CorrUsed |
+| 6 | RTK float | FixLevelCarrierFloat | FixDim3D | 0 | CorrUsed |
+| 7 | RTK fixed | FixLevelCarrierFixed | FixDim3D | 0 | CorrUsed |
 
 Notes:
-- **No Correction information**: Allystar NAV-PVT cannot distinguish standalone from corrected solutions. `Correction` is always left unset. NMEA GGA/RMC (when enabled alongside binary) can provide correction-level information via the NMEA synthesis path.
-- **FixLevel is always FixLevelCode** for any GNSS-based fix. Without differential/carrier flags, we cannot claim a higher fix level from this message alone.
-- **fixType 4 (GNSS + DR)**: Assumed 3D since the GNSS component contributes to the position solution.
+- **fixstate 1 (aided fix)**: unclear what "aided" means here; treated as no valid GNSS fix.
+- **fixstate 2 (clock bias fix)**: has a valid time solution but no position fix; maps to FixDimTimeOnly.
+- **DGNSS/RTK**: unlike NAV-PVT's `fixType`, NAV-AUTO distinguishes correction levels. `CorrUsed` is set for fixstate >= 5 since corrections are known to be applied, but the specific correction kind (SBAS, RTCM, etc.) cannot be determined from this message alone.
+- **No dead reckoning**: NAV-AUTO does not report DR status. AuxSrc is always 0.
 
-### Accuracy
+### Epoch association
 
-NAV-PVT provides accuracy fields with mm/mm/s resolution (same as UBX NAV-PVT):
-- `hAcc` (offset 40, U4 mm) -> `Acc.Hor`
-- `vAcc` (offset 44, U4 mm) -> `Acc.Vert`
-- `sAcc` (offset 68, U4) -> `Acc.Speed` (units undocumented in 2.3.6 spec; assumed mm/s by analogy with NAV-VELNED which uses cm/s -- needs verification)
-- `headAcc` (offset 72, U4 1e-5 deg) -> `Acc.Course`
+NAV-AUTO has no iTOW field, so it cannot be directly associated with a navigation epoch via the existing iTOW-based mechanism. Instead, NAV-AUTO is associated with the current epoch at the time of arrival: its quality fields are written to `curNavEpochMsg` directly, and the epoch flush picks them up. Since NAV-AUTO arrives at 1Hz alongside the other NAV messages, it will naturally fall within the correct epoch boundary. If NAV-AUTO arrives before any iTOW-bearing message in an epoch, the fields are written to the current (possibly previous) epoch's `NavEpochMsg`; this is acceptable because quality metadata changes slowly and the epoch boundary will correct on the next cycle.
 
-The existing separate messages (NAV-POSLLH, NAV-POSECEF, NAV-VELNED, NAV-VELECEF) already populate accuracy fields on `curNavEpochMsg`. NAV-PVT provides the same data at the same or better resolution. Since NAV-PVT bundles position, velocity, and quality in a single message, it should use `PriVendorHigh` so its accuracy values take precedence when both NAV-PVT and the separate messages are enabled.
+### DOP fields
+
+- **DOP.Pos/Hor/Vert**: from NAV-AUTO (PDOP/HDOP/VDOP, offset 24/26/28, U2, scale 0.01).
+- **DOP.Geom/Pos/Hor/Vert/Time**: from NAV-DOP (scale 0.01) when available. NAV-DOP provides GDOP and TDOP which NAV-AUTO does not.
+- When both NAV-AUTO and NAV-DOP are enabled, NAV-DOP values take precedence for DOPs (it provides the full set). NAV-AUTO DOPs serve as a fallback when NAV-DOP is not enabled.
 
 ### Other fields
 
-- **NumSVUsed**: from `NAV-PVT.numSV` (offset 23).
-- **NumSVTracked**: not available from NAV-PVT. Could potentially be derived from NAV-SVINFO `numCh` if enabled, but that is already handled via `SatellitesMsg` and would require additional plumbing.
-- **DOP.Pos**: from `NAV-PVT.pDop` (offset 76, U2, scale 0.01) or from `NAV-DOP.PDOP` (preferred when present for consistency with the other DOPs).
-- **DOP.Geom/Hor/Vert/Time**: from NAV-DOP (scale 0.01) when available.
+- **NumSVUsed**: from `NAV-AUTO.satInUse` (offset 30).
+- **NumSVTracked**: from `NAV-AUTO.satInView` (offset 31).
 - **SignalsUsed**: not available from Allystar binary messages. No signal mask fields exist.
-- **DiffAge**: not available from Allystar binary NAV-PVT. Only available via NMEA GGA (field 13) when NMEA is enabled alongside binary.
-- **RTCMRefBaseID**: not available from Allystar binary NAV-PVT. Only available via NMEA GGA (field 14) when NMEA is enabled alongside binary.
+- **DiffAge**: not available from Allystar binary messages. Only available via NMEA GGA (field 13) when NMEA is enabled alongside binary.
+- **RTCMRefBaseID**: not available from Allystar binary messages. Only available via NMEA GGA (field 14) when NMEA is enabled alongside binary.
 
 ### Where this lives in code
 
@@ -783,20 +786,15 @@ The epoch infrastructure is already in place:
 - Accuracy fields are already populated inline in the conversion functions (`aspv.go`).
 
 The changes needed:
-1. Add `NavPvt` struct to `gps/lib/asbin/nav.go` (88-byte payload with iTOW, time, fixType, numSV, position, velocity, accuracy, pDop fields). Register it in `init()` and move its ID from `other.go` to `nav.go`.
-2. Add a `case *asbin.NavPvt:` in `dispatch()` that:
-   - Emits position (`PosGeoMsg`), velocity (`VelGeoMsg`), and time (`TimeMsg`) with `PriVendorHigh`.
-   - Populates quality fields (FixLevel, FixDim, AuxSrc, NumSVUsed, DOP.Pos) on `curNavEpochMsg` inline via a new function (e.g. `qualityNavPvt`) in `aspv.go`.
-   - Populates accuracy fields (Acc.Hor, Acc.Vert, Acc.Speed, Acc.Course) on `curNavEpochMsg`.
+1. Add `NavAuto` struct to `gps/lib/asbin/nav.go` (32-byte payload). Register it in `init()` and move its ID from `other.go` to `nav.go`.
+2. Add a `case *asbin.NavAuto:` in `dispatch()` that:
+   - Emits position (`PosGeoMsg`) and velocity (`VelGeoMsg`) with `PriVendorLow` (same as existing messages — NAV-AUTO's position fields are the same resolution as NAV-POSLLH).
+   - Populates quality fields (FixLevel, FixDim, Correction, NumSVUsed, NumSVTracked, DOP.Pos/Hor/Vert) on `curNavEpochMsg`.
 3. Add a `case *asbin.NavDop:` in `dispatch()` to populate DOP fields on `curNavEpochMsg` inline. `NavDop` is already defined in `asbin/nav.go` but not dispatched.
 
 ### Message enablement
 
-Allystar does not use programmatic configuration. Message enablement is via message files (`configs/gpsmsg/allystar.toml`). Tags `asbin-nav-dop` (already defined) enable NAV-DOP. A new tag `asbin-nav-pvt` would enable NAV-PVT at 1Hz (class 0x01, id 0xC1, rate 1).
-
-### Future enhancement: NAV-AUTO
-
-Allystar's NAV-AUTO message (0x01 0xC0, 32 bytes) provides a richer `fixstate` field that distinguishes DGNSS (5), RTK float (6), and RTK fixed (7) -- information that NAV-PVT's `fixType` cannot provide. It also includes satInView (tracked satellite count) and inline DOPs (PDOP/HDOP/VDOP). However, NAV-AUTO has no iTOW field, which makes it difficult to associate with the existing epoch mechanism. It is also described as being for "automotive application" and may not be supported on all Allystar receivers. A future enhancement could use NAV-AUTO when available to enrich FixLevel and Correction beyond what NAV-PVT provides, but this requires solving the epoch association problem (e.g. by associating with the most recent epoch based on arrival time).
+Allystar does not use programmatic configuration. Message enablement is via message files (`configs/gpsmsg/allystar.toml`). The tag `asbin-nav-dop` (already defined) enables NAV-DOP. A new tag `asbin-nav-auto` enables NAV-AUTO at 1Hz (CFG-MSG with `[0x01, 0xC0, 1]`).
 
 ## CASIC
 
@@ -848,11 +846,107 @@ Each subphase is independent and can proceed in parallel.
 
 #### Phase 2e: Allystar
 
-- Add `NavPvt` struct to `asbin/nav.go` and register it.
-- Add `case *asbin.NavPvt:` to `dispatch()` for position, velocity, time, and quality fields.
-- Add `case *asbin.NavDop:` to `dispatch()` for DOP fields.
-- Add `asbin-nav-pvt` tag to `configs/gpsmsg/allystar.toml`.
-- DiffAge and RTCMRefBaseID not available from binary; rely on NMEA GGA when enabled.
+##### Phase 2e-1: message enablement and packet capture
+
+Add `asbin-nav-auto` tag to `configs/gpsmsg/allystar.toml` following the existing pattern (CFG-MSG with `[0x01, 0xC0, 1]`). The `asbin-nav-dop` tag already exists.
+
+Capture NAV-AUTO and NAV-DOP packets from the TAU1201 on `/dev/ttyUSB0` at 115200 baud:
+
+```bash
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 \
+  --msg-file configs/gpsmsg/allystar.toml \
+  --tag asbin-nav-auto,asbin-nav-dop \
+  --packet-log /tmp/as-auto-dop.jsonl --capture 5
+```
+
+Extract hex packets for tests:
+
+```bash
+jq -r 'select(.msg == "AUTO" and .out == false) | .bin' /tmp/as-auto-dop.jsonl | head -1
+jq -r 'select(.msg == "DOP" and .out == false) | .bin' /tmp/as-auto-dop.jsonl | head -1
+```
+
+##### Phase 2e-2: asbin -- add `NavAuto` struct
+
+File: `gps/lib/asbin/nav.go`
+
+Add `NavAuto` struct (32-byte payload, ID 0x01 0xC0) with fields per the 2.3.6 spec. Move `NavAutoID` from `other.go` to `nav.go`. Register with `regMsg[NavAuto]("AUTO")` in `init()`. Remove from `other.go` (both the const and the `idNameMap` entry).
+
+Fields:
+
+| Offset | Type | Name | Unit |
+|--------|------|------|------|
+| 0 | U1 | FixState | - |
+| 1 | U2 | Year | - |
+| 3 | U1 | Month | - |
+| 4 | U1 | Day | - |
+| 5 | U1 | Hour | - |
+| 6 | U1 | Min | - |
+| 7 | U1 | Sec | - |
+| 8 | S4 | Lon | 1e-7 deg |
+| 12 | S4 | Lat | 1e-7 deg |
+| 16 | S4 | Alt | mm |
+| 20 | U2 | Speed | cm/s |
+| 22 | S2 | Heading | 1e-2 deg |
+| 24 | U2 | PDOP | 0.01 |
+| 26 | U2 | HDOP | 0.01 |
+| 28 | U2 | VDOP | 0.01 |
+| 30 | U1 | SatInUse | - |
+| 31 | U1 | SatInView | - |
+
+Note: NAV-AUTO has no iTOW field (unlike other NAV structs). Do not embed `NavITOW`.
+
+Add test in `nav_test.go` using captured hex packet from phase 2e-1.
+
+##### Phase 2e-3: `as` package -- dispatch NavDop
+
+File: `gps/internal/as/aspv.go`
+
+Add `dopNavDop(ne *gpsprot.NavEpochMsg, m *asbin.NavDop)` that populates `ne.DOP` fields (Geom, Pos, Hor, Vert, Time) from the NavDop struct, converting with scale 0.01.
+
+File: `gps/internal/as/asproc.go`
+
+Add `case *asbin.NavDop:` in `dispatch()` that calls `dopNavDop(p.curNavEpochMsg, mt)`. Since NavDop produces no handler messages (only epoch metadata), it returns `true` without dispatching to `h`.
+
+Test in `aspv_test.go`: construct NavDop, call `dopNavDop`, verify DOP fields on NavEpochMsg. Also use captured packet from phase 2e-1 in a round-trip test if desired.
+
+##### Phase 2e-4: `as` package -- dispatch NavAuto (PV + quality)
+
+File: `gps/internal/as/aspv.go`
+
+Add extraction functions:
+
+- `posGeoNavAuto(ne *gpsprot.NavEpochMsg, m *asbin.NavAuto) *PosGeoMsg` -- lat/lon (1e-7 deg), alt (mm). No accuracy fields (NAV-AUTO doesn't provide them). Returns nil when `FixState < 3` (no position fix).
+- `velGeoNavAuto(m *asbin.NavAuto) *VelGeoMsg` -- Speed (cm/s, scalar 3D speed as GroundSpeed), Heading (1e-2 deg). No per-axis velocity components. Returns nil when `FixState < 3`.
+- `qualityNavAuto(ne *gpsprot.NavEpochMsg, m *asbin.NavAuto)` that populates quality fields on `ne` per the fixstate mapping table in the plan:
+  - FixLevel, FixDim, Correction from fixstate
+  - NumSVUsed from SatInUse
+  - NumSVTracked from SatInView
+  - DOP.Pos/Hor/Vert from PDOP/HDOP/VDOP (scale 0.01) -- only set if the corresponding `ne.DOP` field is not already set (NAV-DOP takes precedence when present)
+
+File: `gps/internal/as/asproc.go`
+
+Add `case *asbin.NavAuto:` in `dispatch()`. Since NAV-AUTO has no iTOW, it does not call `handleNavEpoch`. It:
+- Calls `posGeoNavAuto`, `velGeoNavAuto`, `qualityNavAuto`
+- Dispatches PosGeo and VelGeo with `PriVendorLow` (same as existing messages)
+
+Tests in `aspv_test.go`: test extraction functions with known values. Test quality mapping for each fixstate value (0-7).
+
+##### Verification
+
+1. `make test` passes after each phase
+2. After all phases, hardware test with TAU1201:
+
+```bash
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 \
+  --msg-file configs/gpsmsg/allystar.toml \
+  --tag asbin-nav-auto,asbin-nav-dop \
+  --event-log /tmp/as-events.jsonl --capture 10
+```
+
+Check event log for `navEpoch` events containing `fixLevel`, `fixDim`, `dop`, `numSVUsed`, `numSVTracked` fields.
+
+DiffAge and RTCMRefBaseID not available from binary; rely on NMEA GGA when enabled.
 
 #### Phase 2f: Quectel PQTM
 
