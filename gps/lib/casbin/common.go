@@ -96,6 +96,13 @@ type VaryingMsg interface {
 	VaryingPart() any
 }
 
+// AllowTrailing is implemented by messages that tolerate trailing bytes
+// beyond the declared structure. ParseMsg skips the trailing-bytes check
+// for these messages.
+type AllowTrailing interface {
+	AllowTrailingBytes()
+}
+
 func sliceLen(m VaryingMsg, payloadLen, minLen, elemLen int) (int, error) {
 	extraLen := payloadLen - minLen
 	if extraLen < 0 || extraLen%elemLen != 0 {
@@ -167,9 +174,11 @@ func ParseMsg(packet string) (Msg, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing CASIC-%s: %v", mid.String(), err)
 	}
-	_, err = r.ReadByte()
-	if err != io.EOF {
-		return nil, fmt.Errorf("parsing CASIC-%s: trailing bytes", mid.String())
+	if _, ok := msg.(AllowTrailing); !ok {
+		_, err = r.ReadByte()
+		if err != io.EOF {
+			return nil, fmt.Errorf("parsing CASIC-%s: trailing bytes", mid.String())
+		}
 	}
 	return msg, nil
 }
