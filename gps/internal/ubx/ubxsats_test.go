@@ -920,56 +920,56 @@ func TestCorrKindNavSig(t *testing.T) {
 			sigs: []ubxbin.NavSigSignal{
 				{CorrSource: ubxbin.NavSigCorrSourceRTCM3OSR, SigFlags: ubxbin.NavSigPrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrBaseStation,
+			want: gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrOSR,
 		},
 		{
 			name: "RTCM2",
 			sigs: []ubxbin.NavSigSignal{
 				{CorrSource: ubxbin.NavSigCorrSourceRTCM2, SigFlags: ubxbin.NavSigPrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrBaseStation,
+			want: gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrOSR,
 		},
 		{
 			name: "RTCM3 SSR",
 			sigs: []ubxbin.NavSigSignal{
 				{CorrSource: ubxbin.NavSigCorrSourceRTCM3SSR, SigFlags: ubxbin.NavSigPrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrWideArea,
+			want: gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrSSR,
 		},
 		{
 			name: "SBAS",
 			sigs: []ubxbin.NavSigSignal{
 				{CorrSource: ubxbin.NavSigCorrSourceSBAS, SigFlags: ubxbin.NavSigPrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrSBAS,
+			want: gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrSBAS,
 		},
 		{
 			name: "SPARTN",
 			sigs: []ubxbin.NavSigSignal{
 				{CorrSource: ubxbin.NavSigCorrSourceSPARTN, SigFlags: ubxbin.NavSigPrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrSPARTN,
+			want: gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrSPARTN,
 		},
 		{
 			name: "CLAS",
 			sigs: []ubxbin.NavSigSignal{
 				{CorrSource: ubxbin.NavSigCorrSourceCLAS, SigFlags: ubxbin.NavSigPrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrCLAS,
+			want: gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrCLAS,
 		},
 		{
 			name: "QZSS SLAS",
 			sigs: []ubxbin.NavSigSignal{
 				{CorrSource: ubxbin.NavSigCorrSourceQZSSSLAS, SigFlags: ubxbin.NavSigPrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrCLAS,
+			want: gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrCLAS,
 		},
 		{
 			name: "BeiDou",
 			sigs: []ubxbin.NavSigSignal{
 				{CorrSource: ubxbin.NavSigCorrSourceBeiDou, SigFlags: ubxbin.NavSigPrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrWideArea,
+			want: gpsprot.CorrUsed | gpsprot.CorrSSR,
 		},
 		{
 			name: "multiple signals same source",
@@ -977,7 +977,7 @@ func TestCorrKindNavSig(t *testing.T) {
 				{CorrSource: ubxbin.NavSigCorrSourceRTCM3OSR, SigFlags: ubxbin.NavSigPrUsed},
 				{CorrSource: ubxbin.NavSigCorrSourceRTCM3OSR, SigFlags: ubxbin.NavSigPrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrBaseStation,
+			want: gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrOSR,
 		},
 		{
 			name: "conflict: base-station and wide-area",
@@ -1024,7 +1024,7 @@ func TestCorrKindNavSat(t *testing.T) {
 			svs: []ubxbin.NavSatSV{
 				{Flags: ubxbin.NavSatSVUsed | ubxbin.NavSatSbasCorrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrSBAS,
+			want: gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrSBAS,
 		},
 		{
 			name: "RTCM correction",
@@ -1038,29 +1038,29 @@ func TestCorrKindNavSat(t *testing.T) {
 			svs: []ubxbin.NavSatSV{
 				{Flags: ubxbin.NavSatSVUsed | ubxbin.NavSatSpartnCorrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrSPARTN,
+			want: gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrSPARTN,
 		},
 		{
 			name: "SLAS correction",
 			svs: []ubxbin.NavSatSV{
 				{Flags: ubxbin.NavSatSVUsed | ubxbin.NavSatSlasCorrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrCLAS,
+			want: gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrCLAS,
 		},
 		{
 			name: "CLAS correction",
 			svs: []ubxbin.NavSatSV{
 				{Flags: ubxbin.NavSatSVUsed | ubxbin.NavSatClasCorrUsed},
 			},
-			want: gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrCLAS,
+			want: gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrCLAS,
 		},
 		{
 			name: "RTCM and SBAS combined",
 			svs: []ubxbin.NavSatSV{
 				{Flags: ubxbin.NavSatSVUsed | ubxbin.NavSatRtcmCorrUsed | ubxbin.NavSatSbasCorrUsed},
 			},
-			// No conflict: NavSat RTCM doesn't set CorrBaseStation (OSR vs SSR unknown)
-			want: gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrWideArea | gpsprot.CorrSBAS,
+			// No conflict: NavSat RTCM doesn't set CorrOSR (OSR vs SSR unknown)
+			want: gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrSSR | gpsprot.CorrSBAS,
 		},
 		{
 			name: "multiple SVs, same correction",

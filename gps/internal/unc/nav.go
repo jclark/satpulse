@@ -123,7 +123,7 @@ func stnIDCorrection(v uint16) gpsprot.CorrKind {
 	case v >= 9974 && v <= 9979: // QZSS L6 CLAS
 		return gpsprot.CorrCLAS.Expand()
 	case v >= 9990 && v <= 9999: // L-band
-		return gpsprot.CorrWideArea.Expand()
+		return gpsprot.CorrSSR.Expand()
 	default:
 		return 0
 	}

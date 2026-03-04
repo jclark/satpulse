@@ -61,7 +61,7 @@ const posvelEvent = {
 const qualityEvent = {
   fixLevel: "carrierFixed",
   solutionDim: "3D",
-  corrections: ["baseStation"],
+  corrections: ["OSR"],
   accHor: 0.014,
   accVert: 0.021,
   accPos: 0.025,

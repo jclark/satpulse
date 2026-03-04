@@ -168,7 +168,7 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg
 	case novmsg.PosFloatConv:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
 		ne.SolutionDim = gpsprot.SolutionDim3D
-		ne.Correction = gpsprot.CorrBaseStation.Expand()
+		ne.Correction = gpsprot.CorrOSR.Expand()
 		return
 	case novmsg.PosWideLane:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
@@ -186,7 +186,7 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg
 	case novmsg.PosRTKDirectINS:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
 		ne.SolutionDim = gpsprot.SolutionDim3D
-		ne.Correction = gpsprot.CorrBaseStation.Expand()
+		ne.Correction = gpsprot.CorrOSR.Expand()
 		ne.AuxSrc |= gpsprot.AuxSrcINS
 		return
 	case novmsg.PosINSSBAS:
@@ -275,7 +275,7 @@ func sinoQuality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType no
 	case novmsg.SinoPosFIXDerivation:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
 		ne.SolutionDim = gpsprot.SolutionDim3D
-		ne.Correction = gpsprot.CorrBaseStation.Expand()
+		ne.Correction = gpsprot.CorrOSR.Expand()
 		return
 	case novmsg.SinoPosSuperWideLane:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed

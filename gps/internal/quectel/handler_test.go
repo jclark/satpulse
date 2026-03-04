@@ -229,7 +229,7 @@ func TestNAVBundle(t *testing.T) {
 	if epoch.SolutionDim != gpsprot.SolutionDim3D {
 		t.Errorf("SolutionDim = %d, want SolutionDim3D", epoch.SolutionDim)
 	}
-	wantCorr := gpsprot.CorrBaseStation | gpsprot.CorrUsed
+	wantCorr := gpsprot.CorrOSR | gpsprot.CorrUsed
 	if epoch.Correction != wantCorr {
 		t.Errorf("Correction = %d, want %d", epoch.Correction, wantCorr)
 	}
@@ -443,10 +443,10 @@ func TestNavSolQuality(t *testing.T) {
 	}{
 		{0, gpsprot.FixLevelNone, 0, 0, true},
 		{1, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, true},
-		{2, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrSBAS | gpsprot.CorrWideArea | gpsprot.CorrUsed, true},
-		{5, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
-		{8, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
-		{12, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
+		{2, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrSBAS | gpsprot.CorrSSR | gpsprot.CorrUsed, true},
+		{5, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, true},
+		{8, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, true},
+		{12, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, true},
 		{99, 0, 0, 0, false},
 	}
 	for _, tt := range tests {
@@ -481,7 +481,7 @@ func TestNAVThenPVTDoesNotDowngrade(t *testing.T) {
 	if epoch.SolutionDim != gpsprot.SolutionDim3D {
 		t.Errorf("after PVT: SolutionDim = %d, want SolutionDim3D", epoch.SolutionDim)
 	}
-	wantCorr := gpsprot.CorrBaseStation | gpsprot.CorrUsed
+	wantCorr := gpsprot.CorrOSR | gpsprot.CorrUsed
 	if epoch.Correction != wantCorr {
 		t.Errorf("after PVT: Correction = %d, want %d", epoch.Correction, wantCorr)
 	}

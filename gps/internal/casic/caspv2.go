@@ -30,11 +30,11 @@ func qualityFromNav2FixFlags(ne *gpsprot.NavEpochMsg, ff casbin.Nav2FixFlags, nu
 	case casbin.Nav2FixRTKFloat:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
 		ne.SolutionDim = gpsprot.SolutionDim3D
-		ne.Correction |= gpsprot.CorrBaseStation | gpsprot.CorrUsed
+		ne.Correction |= gpsprot.CorrOSR | gpsprot.CorrUsed
 	case casbin.Nav2FixRTKFixed:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
 		ne.SolutionDim = gpsprot.SolutionDim3D
-		ne.Correction |= gpsprot.CorrBaseStation | gpsprot.CorrUsed
+		ne.Correction |= gpsprot.CorrOSR | gpsprot.CorrUsed
 	case casbin.Nav2FixTimingFixed:
 		ne.FixLevel = gpsprot.FixLevelCode
 		ne.SolutionDim = gpsprot.SolutionDimTimeOnly

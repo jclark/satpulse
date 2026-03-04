@@ -18,11 +18,11 @@ func TestQualityOEM7(t *testing.T) {
 		wantAux   gpsprot.AuxSrc
 	}{
 		{"FIXEDPOS", 1, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly, 0, 0},
-		{"FLOATCONV", 4, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation.Expand(), 0},
+		{"FLOATCONV", 4, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrOSR.Expand(), 0},
 		{"WIDELANE", 5, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrPartialDualFreq.Expand(), 0},
 		{"NARROWLANE", 6, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrFullDualFreq.Expand(), 0},
 		{"PROPAGATED", 19, gpsprot.FixLevelNone, 0, 0, 0},
-		{"RTK_DIRECT_INS", 51, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation.Expand(), gpsprot.AuxSrcINS},
+		{"RTK_DIRECT_INS", 51, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrOSR.Expand(), gpsprot.AuxSrcINS},
 		{"INS_SBAS", 52, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrSBAS.Expand(), gpsprot.AuxSrcINS},
 		{"EXT_CONSTRAINED", 67, gpsprot.FixLevelNotMeasured, 0, 0, gpsprot.AuxSrcINS},
 		{"OPERATIONAL", 70, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverged.Expand(), 0},
@@ -65,7 +65,7 @@ func TestQualitySinoGNSS(t *testing.T) {
 		wantCorr  gpsprot.CorrKind
 	}{
 		{"SINGLE_SMOOTH", 9, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0},
-		{"FIX_DERIVATION", 35, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation.Expand()},
+		{"FIX_DERIVATION", 35, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrOSR.Expand()},
 		{"SUPER_WIDE_LANE", 51, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrPartialDualFreq.Expand()},
 	}
 	for _, tt := range tests {

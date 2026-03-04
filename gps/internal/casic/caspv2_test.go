@@ -238,8 +238,8 @@ func TestQualityFromNav2FixFlags(t *testing.T) {
 		{"2D", casbin.Nav2Fix2D, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, 0, 0},
 		{"3D", casbin.Nav2Fix3D, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, 0},
 		{"DGPS", casbin.Nav2FixDGPS, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, 0, gpsprot.CorrUsed},
-		{"RTKFloat", casbin.Nav2FixRTKFloat, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, 0, gpsprot.CorrBaseStation | gpsprot.CorrUsed},
-		{"RTKFixed", casbin.Nav2FixRTKFixed, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, 0, gpsprot.CorrBaseStation | gpsprot.CorrUsed},
+		{"RTKFloat", casbin.Nav2FixRTKFloat, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, 0, gpsprot.CorrOSR | gpsprot.CorrUsed},
+		{"RTKFixed", casbin.Nav2FixRTKFixed, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, 0, gpsprot.CorrOSR | gpsprot.CorrUsed},
 		{"TimingFixed", casbin.Nav2FixTimingFixed, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly, 0, 0},
 	}
 	for _, tt := range tests {

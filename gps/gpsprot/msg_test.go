@@ -197,16 +197,16 @@ func TestCorrKindClose(t *testing.T) {
 	}{
 		{0, 0},
 		{CorrUsed, CorrUsed},
-		{CorrBaseStation, CorrBaseStation | CorrUsed},
-		{CorrSBAS, CorrSBAS | CorrWideArea | CorrUsed},
-		{CorrFullDualFreq, CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed},
-		{CorrPPPRTK, CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed},
-		{CorrPPPConverging, CorrPPPConverging | CorrPPP | CorrWideArea | CorrUsed},
-		{CorrPPPHAS, CorrPPPHAS | CorrPPP | CorrWideArea | CorrUsed},
-		{CorrPPPMDC, CorrPPPMDC | CorrPPP | CorrWideArea | CorrUsed},
-		{CorrPPPB2b, CorrPPPB2b | CorrPPP | CorrWideArea | CorrUsed},
+		{CorrOSR, CorrOSR | CorrUsed},
+		{CorrSBAS, CorrSBAS | CorrSSR | CorrUsed},
+		{CorrFullDualFreq, CorrFullDualFreq | CorrPartialDualFreq | CorrOSR | CorrUsed},
+		{CorrPPPRTK, CorrPPPRTK | CorrPPP | CorrSSR | CorrUsed},
+		{CorrPPPConverging, CorrPPPConverging | CorrPPP | CorrSSR | CorrUsed},
+		{CorrPPPHAS, CorrPPPHAS | CorrPPP | CorrSSR | CorrUsed},
+		{CorrPPPMDC, CorrPPPMDC | CorrPPP | CorrSSR | CorrUsed},
+		{CorrPPPB2b, CorrPPPB2b | CorrPPP | CorrSSR | CorrUsed},
 		// Multiple bits: union of closures
-		{CorrSBAS | CorrRTCM, CorrSBAS | CorrWideArea | CorrRTCM | CorrUsed},
+		{CorrSBAS | CorrRTCM, CorrSBAS | CorrSSR | CorrRTCM | CorrUsed},
 	}
 	for _, tt := range tests {
 		if got := tt.in.Expand(); got != tt.want {
@@ -222,24 +222,24 @@ func TestCorrKindString(t *testing.T) {
 	}{
 		{0, "(none)"},
 		{CorrUsed, "used"},
-		// baseStation implies used, so only "baseStation"
-		{CorrBaseStation | CorrUsed, "baseStation"},
-		// SBAS implies wideArea implies used
-		{CorrSBAS | CorrWideArea | CorrUsed, "SBAS"},
-		// fullDualFreq implies partialDualFreq implies baseStation implies used
-		{CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed, "fullDualFreq"},
+		// OSR implies used, so only "OSR"
+		{CorrOSR | CorrUsed, "OSR"},
+		// SBAS implies SSR implies used
+		{CorrSBAS | CorrSSR | CorrUsed, "SBAS"},
+		// fullDualFreq implies partialDualFreq implies OSR implies used
+		{CorrFullDualFreq | CorrPartialDualFreq | CorrOSR | CorrUsed, "fullDualFreq"},
 		// Two independent leaves: SBAS + RTCM
-		{CorrSBAS | CorrRTCM | CorrWideArea | CorrUsed, "RTCM,SBAS"},
-		// PPP-RTK implies PPP implies wideArea implies used
-		{CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed, "PPP-RTK"},
+		{CorrSBAS | CorrRTCM | CorrSSR | CorrUsed, "RTCM,SBAS"},
+		// PPP-RTK implies PPP implies SSR implies used
+		{CorrPPPRTK | CorrPPP | CorrSSR | CorrUsed, "PPP-RTK"},
 		// PPPConverged + RTCM: two independent leaves
-		{CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed, "RTCM,PPPConverged"},
+		{CorrPPPConverged | CorrPPP | CorrSSR | CorrRTCM | CorrUsed, "RTCM,PPPConverged"},
 		// PPP service-specific leaves
-		{CorrPPPHAS | CorrPPP | CorrWideArea | CorrUsed, "PPP-HAS"},
-		{CorrPPPMDC | CorrPPP | CorrWideArea | CorrUsed, "PPP-MDC"},
-		{CorrPPPB2b | CorrPPP | CorrWideArea | CorrUsed, "PPP-B2b"},
+		{CorrPPPHAS | CorrPPP | CorrSSR | CorrUsed, "PPP-HAS"},
+		{CorrPPPMDC | CorrPPP | CorrSSR | CorrUsed, "PPP-MDC"},
+		{CorrPPPB2b | CorrPPP | CorrSSR | CorrUsed, "PPP-B2b"},
 		// PPP service + convergence state: two independent leaves
-		{CorrPPPHAS | CorrPPPConverging | CorrPPP | CorrWideArea | CorrUsed, "PPPConverging,PPP-HAS"},
+		{CorrPPPHAS | CorrPPPConverging | CorrPPP | CorrSSR | CorrUsed, "PPPConverging,PPP-HAS"},
 	}
 	for _, tt := range tests {
 		if got := tt.c.String(); got != tt.want {
@@ -249,7 +249,7 @@ func TestCorrKindString(t *testing.T) {
 }
 
 func TestCorrKindJSON(t *testing.T) {
-	c := CorrSBAS | CorrWideArea | CorrUsed
+	c := CorrSBAS | CorrSSR | CorrUsed
 	b, err := json.Marshal(c)
 	if err != nil {
 		t.Fatal(err)
@@ -262,14 +262,14 @@ func TestCorrKindJSON(t *testing.T) {
 func TestCorrKindJSONRoundTrip(t *testing.T) {
 	tests := []CorrKind{
 		CorrUsed,
-		CorrSBAS | CorrWideArea | CorrUsed,
-		CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed,
-		CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed,
-		CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed,
-		CorrPPPHAS | CorrPPP | CorrWideArea | CorrUsed,
-		CorrPPPMDC | CorrPPP | CorrWideArea | CorrUsed,
-		CorrPPPB2b | CorrPPP | CorrWideArea | CorrUsed,
-		CorrPPPHAS | CorrPPPConverged | CorrPPP | CorrWideArea | CorrUsed,
+		CorrSBAS | CorrSSR | CorrUsed,
+		CorrFullDualFreq | CorrPartialDualFreq | CorrOSR | CorrUsed,
+		CorrPPPConverged | CorrPPP | CorrSSR | CorrRTCM | CorrUsed,
+		CorrPPPRTK | CorrPPP | CorrSSR | CorrUsed,
+		CorrPPPHAS | CorrPPP | CorrSSR | CorrUsed,
+		CorrPPPMDC | CorrPPP | CorrSSR | CorrUsed,
+		CorrPPPB2b | CorrPPP | CorrSSR | CorrUsed,
+		CorrPPPHAS | CorrPPPConverged | CorrPPP | CorrSSR | CorrUsed,
 	}
 	for _, orig := range tests {
 		b, err := json.Marshal(orig)

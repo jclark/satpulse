@@ -3,8 +3,8 @@ package casic
 import (
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 )
 
 // casicSignalID maps CASIC GNSSID to the SignalID for the L1 legacy signal.
@@ -178,13 +178,13 @@ func corrFromNav2Sig(ne *gpsprot.NavEpochMsg, m *casbin.Nav2Sig) {
 		case 1: // SBAS
 			ne.Correction |= gpsprot.CorrSBAS | gpsprot.CorrUsed
 		case 2: // BDS B2b PPP
-			ne.Correction |= gpsprot.CorrWideArea | gpsprot.CorrUsed
+			ne.Correction |= gpsprot.CorrSSR | gpsprot.CorrUsed
 		case 3: // RTCM2
 			ne.Correction |= gpsprot.CorrRTCM | gpsprot.CorrUsed
 		case 4: // OSR
-			ne.Correction |= gpsprot.CorrBaseStation | gpsprot.CorrRTCM | gpsprot.CorrUsed
+			ne.Correction |= gpsprot.CorrOSR | gpsprot.CorrRTCM | gpsprot.CorrUsed
 		case 5: // SSR
-			ne.Correction |= gpsprot.CorrWideArea | gpsprot.CorrRTCM | gpsprot.CorrUsed
+			ne.Correction |= gpsprot.CorrSSR | gpsprot.CorrRTCM | gpsprot.CorrUsed
 		}
 	}
 }

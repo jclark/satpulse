@@ -278,16 +278,16 @@ func navSolQuality(solType uint8) (gpsprot.FixLevel, gpsprot.SolutionDim, gpspro
 		return gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, true
 	case 2:
 		return gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D,
-			gpsprot.CorrSBAS | gpsprot.CorrWideArea | gpsprot.CorrUsed, true
+			gpsprot.CorrSBAS | gpsprot.CorrSSR | gpsprot.CorrUsed, true
 	case 5:
 		return gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D,
-			gpsprot.CorrBaseStation | gpsprot.CorrUsed, true
+			gpsprot.CorrOSR | gpsprot.CorrUsed, true
 	case 8:
 		return gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D,
-			gpsprot.CorrBaseStation | gpsprot.CorrUsed, true
+			gpsprot.CorrOSR | gpsprot.CorrUsed, true
 	case 12:
 		return gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D,
-			gpsprot.CorrBaseStation | gpsprot.CorrUsed, true
+			gpsprot.CorrOSR | gpsprot.CorrUsed, true
 	default:
 		return 0, 0, 0, false
 	}

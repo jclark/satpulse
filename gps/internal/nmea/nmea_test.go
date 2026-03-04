@@ -722,7 +722,7 @@ func TestGGAQuality(t *testing.T) {
 			name:     "quality 4 RTK fixed",
 			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,4,16,0.99,103.965,M,-8.408,M,1.0,4042",
 			fixLevel: gpsprot.FixLevelCarrierFixed,
-			corr:     gpsprot.CorrBaseStation | gpsprot.CorrUsed,
+			corr:     gpsprot.CorrOSR | gpsprot.CorrUsed,
 			numSV:    16,
 			hasNumSV: true,
 			hdop:     0.99,
@@ -736,7 +736,7 @@ func TestGGAQuality(t *testing.T) {
 			name:     "quality 5 RTK float",
 			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,5,12,1.2,100.0,M,-8.0,M,2.5,1234",
 			fixLevel: gpsprot.FixLevelCarrierFloat,
-			corr:     gpsprot.CorrBaseStation | gpsprot.CorrUsed,
+			corr:     gpsprot.CorrOSR | gpsprot.CorrUsed,
 			numSV:    12,
 			hasNumSV: true,
 			hdop:     1.2,
@@ -761,7 +761,7 @@ func TestGGAQuality(t *testing.T) {
 			name:     "ref station over 4095 ignored",
 			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,4,16,0.99,103.965,M,-8.408,M,1.0,9901",
 			fixLevel: gpsprot.FixLevelCarrierFixed,
-			corr:     gpsprot.CorrBaseStation | gpsprot.CorrUsed,
+			corr:     gpsprot.CorrOSR | gpsprot.CorrUsed,
 			numSV:    16,
 			hasNumSV: true,
 			hdop:     0.99,
@@ -843,19 +843,19 @@ func TestRMCQuality(t *testing.T) {
 			name:     "mode R RTK fixed",
 			payload:  "GNRMC,153632.00,A,5550.602949,N,03732.239610,E,000.00000,000.0,310518,,,R,V",
 			fixLevel: gpsprot.FixLevelCarrierFixed,
-			corr:     gpsprot.CorrBaseStation | gpsprot.CorrUsed,
+			corr:     gpsprot.CorrOSR | gpsprot.CorrUsed,
 		},
 		{
 			name:     "mode F RTK float",
 			payload:  "GNRMC,153632.00,A,5550.602949,N,03732.239610,E,000.00000,000.0,310518,,,F",
 			fixLevel: gpsprot.FixLevelCarrierFloat,
-			corr:     gpsprot.CorrBaseStation | gpsprot.CorrUsed,
+			corr:     gpsprot.CorrOSR | gpsprot.CorrUsed,
 		},
 		{
 			name:     "mode P wide area",
 			payload:  "GNRMC,153632.00,A,5550.602949,N,03732.239610,E,000.00000,000.0,310518,,,P",
 			fixLevel: gpsprot.FixLevelCodeCorrected,
-			corr:     gpsprot.CorrWideArea | gpsprot.CorrUsed,
+			corr:     gpsprot.CorrSSR | gpsprot.CorrUsed,
 		},
 		{
 			name:     "mode E dead reckoning",
@@ -1083,8 +1083,8 @@ func TestQualitySynthesis(t *testing.T) {
 	if e.FixLevel != gpsprot.FixLevelCarrierFixed {
 		t.Errorf("FixLevel = %d, want %d (CarrierFixed)", e.FixLevel, gpsprot.FixLevelCarrierFixed)
 	}
-	if e.Correction != gpsprot.CorrBaseStation|gpsprot.CorrUsed {
-		t.Errorf("Correction = %d, want %d", e.Correction, gpsprot.CorrBaseStation|gpsprot.CorrUsed)
+	if e.Correction != gpsprot.CorrOSR|gpsprot.CorrUsed {
+		t.Errorf("Correction = %d, want %d", e.Correction, gpsprot.CorrOSR|gpsprot.CorrUsed)
 	}
 	if e.SolutionDim != gpsprot.SolutionDim3D {
 		t.Errorf("SolutionDim = %d, want %d (3D)", e.SolutionDim, gpsprot.SolutionDim3D)
@@ -1136,8 +1136,8 @@ func TestQualitySynthesisRMCExtendedOverridesGGA(t *testing.T) {
 	if e.FixLevel != gpsprot.FixLevelCarrierFixed {
 		t.Errorf("FixLevel = %d, want %d (CarrierFixed from RMC R)", e.FixLevel, gpsprot.FixLevelCarrierFixed)
 	}
-	if e.Correction != gpsprot.CorrBaseStation|gpsprot.CorrUsed {
-		t.Errorf("Correction = %d, want %d (BaseStation from RMC R)", e.Correction, gpsprot.CorrBaseStation|gpsprot.CorrUsed)
+	if e.Correction != gpsprot.CorrOSR|gpsprot.CorrUsed {
+		t.Errorf("Correction = %d, want %d (BaseStation from RMC R)", e.Correction, gpsprot.CorrOSR|gpsprot.CorrUsed)
 	}
 	// NumSVUsed should still come from GGA
 	if !e.NumSVUsed.IsSet() || e.NumSVUsed.Get() != 10 {

@@ -234,25 +234,25 @@ func corrKindNavSat(u *ubxbin.NavSat) gpsprot.CorrKind {
 			continue
 		}
 		if sv.Flags&ubxbin.NavSatSbasCorrUsed != 0 {
-			corr |= gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrSBAS
+			corr |= gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrSBAS
 		}
 		if sv.Flags&ubxbin.NavSatRtcmCorrUsed != 0 {
 			corr |= gpsprot.CorrUsed | gpsprot.CorrRTCM
 		}
 		if sv.Flags&ubxbin.NavSatSlasCorrUsed != 0 {
-			corr |= gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrCLAS
+			corr |= gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrCLAS
 		}
 		if sv.Flags&ubxbin.NavSatSpartnCorrUsed != 0 {
-			corr |= gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrSPARTN
+			corr |= gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrSPARTN
 		}
 		if sv.Flags&ubxbin.NavSatClasCorrUsed != 0 {
-			corr |= gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrCLAS
+			corr |= gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrCLAS
 		}
 		if sv.Flags&ubxbin.NavSatLppCorrUsed != 0 {
 			corr |= gpsprot.CorrUsed
 		}
 		if sv.Flags&ubxbin.NavSatHasCorrUsed != 0 {
-			corr |= gpsprot.CorrUsed | gpsprot.CorrWideArea
+			corr |= gpsprot.CorrUsed | gpsprot.CorrSSR
 		}
 	}
 	return corrKindResolve(corr)
@@ -261,27 +261,27 @@ func corrKindNavSat(u *ubxbin.NavSat) gpsprot.CorrKind {
 func corrSourceKind(src ubxbin.NavSigCorrSource) gpsprot.CorrKind {
 	switch src {
 	case ubxbin.NavSigCorrSourceSBAS:
-		return gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrSBAS
+		return gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrSBAS
 	case ubxbin.NavSigCorrSourceBeiDou:
-		return gpsprot.CorrUsed | gpsprot.CorrWideArea
+		return gpsprot.CorrUsed | gpsprot.CorrSSR
 	case ubxbin.NavSigCorrSourceRTCM2:
-		return gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrBaseStation
+		return gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrOSR
 	case ubxbin.NavSigCorrSourceRTCM3OSR:
-		return gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrBaseStation
+		return gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrOSR
 	case ubxbin.NavSigCorrSourceRTCM3SSR:
-		return gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrWideArea
+		return gpsprot.CorrUsed | gpsprot.CorrRTCM | gpsprot.CorrSSR
 	case ubxbin.NavSigCorrSourceQZSSSLAS:
-		return gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrCLAS
+		return gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrCLAS
 	case ubxbin.NavSigCorrSourceSPARTN:
-		return gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrSPARTN
+		return gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrSPARTN
 	case ubxbin.NavSigCorrSourceCLAS:
-		return gpsprot.CorrUsed | gpsprot.CorrWideArea | gpsprot.CorrCLAS
+		return gpsprot.CorrUsed | gpsprot.CorrSSR | gpsprot.CorrCLAS
 	case ubxbin.NavSigCorrSourceLPPOSR:
-		return gpsprot.CorrUsed | gpsprot.CorrBaseStation
+		return gpsprot.CorrUsed | gpsprot.CorrOSR
 	case ubxbin.NavSigCorrSourceLPPSSR:
-		return gpsprot.CorrUsed | gpsprot.CorrWideArea
+		return gpsprot.CorrUsed | gpsprot.CorrSSR
 	case ubxbin.NavSigCorrSourceGALHAS:
-		return gpsprot.CorrUsed | gpsprot.CorrWideArea
+		return gpsprot.CorrUsed | gpsprot.CorrSSR
 	default:
 		return 0
 	}
@@ -290,7 +290,7 @@ func corrSourceKind(src ubxbin.NavSigCorrSource) gpsprot.CorrKind {
 // corrKindResolve applies the conflict rule: if both base-station and
 // wide-area correction sources appear, keep only CorrUsed and CorrRTCM.
 func corrKindResolve(corr gpsprot.CorrKind) gpsprot.CorrKind {
-	if corr&gpsprot.CorrBaseStation != 0 && corr&gpsprot.CorrWideArea != 0 {
+	if corr&gpsprot.CorrOSR != 0 && corr&gpsprot.CorrSSR != 0 {
 		corr = (corr & gpsprot.CorrUsed) | (corr & gpsprot.CorrRTCM)
 	}
 	return corr

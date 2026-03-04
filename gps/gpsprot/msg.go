@@ -663,15 +663,15 @@ func (d *SolutionDim) UnmarshalText(text []byte) error {
 //
 // Ordering (immediate implications):
 //
-//	CorrBaseStation <= CorrUsed
-//	CorrWideArea <= CorrUsed
+//	CorrOSR <= CorrUsed
+//	CorrSSR <= CorrUsed
 //	CorrRTCM <= CorrUsed
-//	CorrPartialDualFreq <= CorrBaseStation
+//	CorrPartialDualFreq <= CorrOSR
 //	CorrFullDualFreq <= CorrPartialDualFreq
-//	CorrSBAS <= CorrWideArea
-//	CorrCLAS <= CorrWideArea
-//	CorrSPARTN <= CorrWideArea
-//	CorrPPP <= CorrWideArea
+//	CorrSBAS <= CorrSSR
+//	CorrCLAS <= CorrSSR
+//	CorrSPARTN <= CorrSSR
+//	CorrPPP <= CorrSSR
 //	CorrPPPRTK <= CorrPPP
 //	CorrPPPConverging <= CorrPPP
 //	CorrPPPConverged <= CorrPPP
@@ -684,74 +684,62 @@ const (
 	// CorrUsed asserts that external corrections are applied.
 	CorrUsed CorrKind = 1 << iota
 
-	// CorrBaseStation asserts that corrections are base/network referenced.
-	// This corresponds to OSR (Observation-State Representation / observation-space)
-	// corrections such as RTK/network RTK.
-	// CorrBaseStation <= CorrUsed.
-	CorrBaseStation
+	// CorrOSR asserts observation-space (OSR) corrections: base/network
+	// referenced, such as RTK or network RTK. CorrOSR <= CorrUsed.
+	CorrOSR
 
-	// CorrWideArea asserts that corrections are wide-area/broadcast/service
-	// corrections (not tied to a local base station).
-	// This corresponds to SSR (State-Space Representation / state-space) corrections
-	// such as SBAS/PPP/CLAS/SPARTN and RTCM-SSR streams.
-	// CorrWideArea <= CorrUsed.
-	CorrWideArea
+	// CorrSSR asserts state-space (SSR) corrections: wide-area/broadcast
+	// not tied to a local base station, such as SBAS, PPP, CLAS, SPARTN.
+	// CorrSSR <= CorrUsed.
+	CorrSSR
 
 	// CorrRTCM asserts that corrections being applied are delivered/packaged as RTCM.
 	// CorrRTCM <= CorrUsed.
 	CorrRTCM
 
-	// CorrPartialDualFreq asserts that a base-station solution uses a dual-frequency
-	// ambiguity strategy that partially exploits multiple frequencies (e.g. wide-lane
-	// techniques) rather than fully resolving the full dual-frequency ambiguity set.
-	// CorrPartialDualFreq <= CorrBaseStation.
+	// CorrPartialDualFreq asserts an OSR solution using partial dual-frequency
+	// ambiguity resolution (e.g. wide-lane). CorrPartialDualFreq <= CorrOSR.
 	CorrPartialDualFreq
 
-	// CorrFullDualFreq asserts that a base-station solution uses a dual-frequency
-	// ambiguity strategy that fully exploits multiple frequencies (e.g. narrow-lane
-	// or ionosphere-free dual-frequency models, as opposed to wide-lane-only strategies).
+	// CorrFullDualFreq asserts an OSR solution using full dual-frequency
+	// ambiguity resolution (e.g. narrow-lane, ionosphere-free).
 	// CorrFullDualFreq <= CorrPartialDualFreq.
 	CorrFullDualFreq
 
-	// CorrSBAS asserts that the wide-area corrections being applied are SBAS.
-	// CorrSBAS <= CorrWideArea.
+	// CorrSBAS asserts SSR corrections from SBAS. CorrSBAS <= CorrSSR.
 	CorrSBAS
 
-	// CorrCLAS asserts that the wide-area corrections being applied are CLAS.
-	// CorrCLAS <= CorrWideArea.
+	// CorrCLAS asserts SSR corrections from CLAS. CorrCLAS <= CorrSSR.
 	CorrCLAS
 
-	// CorrSPARTN asserts that the wide-area corrections being applied are SPARTN.
-	// CorrSPARTN <= CorrWideArea.
+	// CorrSPARTN asserts SSR corrections from SPARTN. CorrSPARTN <= CorrSSR.
 	CorrSPARTN
 
-	// CorrPPP asserts that the wide-area corrections being applied are PPP-class
-	// (standalone absolute solution regime with convergence).
-	// CorrPPP <= CorrWideArea.
+	// CorrPPP asserts SSR corrections from a PPP-class service (standalone
+	// absolute solution with convergence). CorrPPP <= CorrSSR.
 	CorrPPP
 
-	// CorrPPPRTK asserts that the PPP corrections being applied are PPP-RTK/SSR-RTK
-	// class (PPP with additional information enabling rapid ambiguity resolution).
-	// CorrPPPRTK <= CorrPPP.
+	// CorrPPPRTK asserts PPP-RTK/SSR-RTK corrections enabling rapid
+	// ambiguity resolution. CorrPPPRTK <= CorrPPP.
 	CorrPPPRTK
 
-	// CorrPPPConverging asserts that the PPP solution is converging.
+	// CorrPPPConverging asserts a PPP solution that is still converging.
 	// CorrPPPConverging <= CorrPPP.
 	CorrPPPConverging
 
-	// CorrPPPConverged asserts that the PPP solution is converged.
+	// CorrPPPConverged asserts a converged PPP solution.
 	// CorrPPPConverged <= CorrPPP.
 	CorrPPPConverged
 
-	// CorrPPPHAS asserts that the PPP corrections are Galileo HAS.
+	// CorrPPPHAS asserts PPP corrections from Galileo HAS.
 	// CorrPPPHAS <= CorrPPP.
 	CorrPPPHAS
 
-	// CorrPPPMDC asserts that the PPP corrections are QZSS MADOCA.
+	// CorrPPPMDC asserts PPP corrections from QZSS MADOCA.
 	// CorrPPPMDC <= CorrPPP.
 	CorrPPPMDC
 
-	// CorrPPPB2b asserts that the PPP corrections are BeiDou B2b.
+	// CorrPPPB2b asserts PPP corrections from BeiDou B2b.
 	// CorrPPPB2b <= CorrPPP.
 	CorrPPPB2b
 )
@@ -766,15 +754,15 @@ type corrKindBit struct {
 // parent in the partial order. Expand computes the transitive closure.
 var corrKindBits = [...]corrKindBit{
 	{CorrUsed, "used", 0},
-	{CorrBaseStation, "baseStation", CorrUsed},
-	{CorrWideArea, "wideArea", CorrUsed},
+	{CorrOSR, "OSR", CorrUsed},
+	{CorrSSR, "SSR", CorrUsed},
 	{CorrRTCM, "RTCM", CorrUsed},
-	{CorrPartialDualFreq, "partialDualFreq", CorrBaseStation},
+	{CorrPartialDualFreq, "partialDualFreq", CorrOSR},
 	{CorrFullDualFreq, "fullDualFreq", CorrPartialDualFreq},
-	{CorrSBAS, "SBAS", CorrWideArea},
-	{CorrCLAS, "CLAS", CorrWideArea},
-	{CorrSPARTN, "SPARTN", CorrWideArea},
-	{CorrPPP, "PPP", CorrWideArea},
+	{CorrSBAS, "SBAS", CorrSSR},
+	{CorrCLAS, "CLAS", CorrSSR},
+	{CorrSPARTN, "SPARTN", CorrSSR},
+	{CorrPPP, "PPP", CorrSSR},
 	{CorrPPPRTK, "PPP-RTK", CorrPPP},
 	{CorrPPPConverging, "PPPConverging", CorrPPP},
 	{CorrPPPConverged, "PPPConverged", CorrPPP},
@@ -818,7 +806,7 @@ func bitIndex(mask CorrKind) int {
 }
 
 // Close returns c with all implied bits set according to the partial order.
-// For example, CorrSBAS.Expand() returns CorrSBAS|CorrWideArea|CorrUsed.
+// For example, CorrSBAS.Expand() returns CorrSBAS|CorrSSR|CorrUsed.
 func (c CorrKind) Expand() CorrKind {
 	result := c
 	for v := c; v != 0; v &= v - 1 {

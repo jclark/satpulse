@@ -288,7 +288,7 @@ func TestBuildQualitySSE(t *testing.T) {
 			msg: gpsprot.NavEpochMsg{
 				FixLevel:    gpsprot.FixLevelCarrierFixed,
 				SolutionDim: gpsprot.SolutionDim3D,
-				Correction:  gpsprot.CorrBaseStation,
+				Correction:  gpsprot.CorrOSR,
 				DOP: gpsprot.DOP{
 					Pos:  opt.Make(1.2),
 					Hor:  opt.Make(0.8),
@@ -296,7 +296,7 @@ func TestBuildQualitySSE(t *testing.T) {
 				},
 				NumSVUsed: opt.Make[uint16](12),
 			},
-			want: `{"fixLevel":"carrierFixed","solutionDim":"3D","corrections":["baseStation"],"pdop":1.2,"hdop":0.8,"vdop":0.9,"numSVUsed":12}`,
+			want: `{"fixLevel":"carrierFixed","solutionDim":"3D","corrections":["OSR"],"pdop":1.2,"hdop":0.8,"vdop":0.9,"numSVUsed":12}`,
 		},
 		{
 			name: "with_accuracy",

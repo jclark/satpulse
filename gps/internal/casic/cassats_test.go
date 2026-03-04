@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 )
 
 // mockMsgHandler captures SatellitesMsg for test verification.
@@ -465,10 +465,10 @@ func TestCorrFromNav2Sig(t *testing.T) {
 	}{
 		{"NULL", 0x00, 0},
 		{"SBAS", 0x01, gpsprot.CorrSBAS | gpsprot.CorrUsed},
-		{"BDS_PPP", 0x02, gpsprot.CorrWideArea | gpsprot.CorrUsed},
+		{"BDS_PPP", 0x02, gpsprot.CorrSSR | gpsprot.CorrUsed},
 		{"RTCM2", 0x03, gpsprot.CorrRTCM | gpsprot.CorrUsed},
-		{"OSR", 0x04, gpsprot.CorrBaseStation | gpsprot.CorrRTCM | gpsprot.CorrUsed},
-		{"SSR", 0x05, gpsprot.CorrWideArea | gpsprot.CorrRTCM | gpsprot.CorrUsed},
+		{"OSR", 0x04, gpsprot.CorrOSR | gpsprot.CorrRTCM | gpsprot.CorrUsed},
+		{"SSR", 0x05, gpsprot.CorrSSR | gpsprot.CorrRTCM | gpsprot.CorrUsed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
