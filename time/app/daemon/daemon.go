@@ -262,9 +262,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if err != nil {
 		return err
 	}
+	trackObs, err := newTrackLogObserver(cfg, lg)
+	if err != nil {
+		return err
+	}
 	gpsObs := logobs.NewGPSLogObserver(lg)
 
-	observer := combineObservers(promObs, sseObs, statsObs, clockObs, gpsObs)
+	observer := combineObservers(promObs, sseObs, statsObs, clockObs, trackObs, gpsObs)
 
 	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, observer, tStart)
 	if err != nil {
@@ -341,6 +345,15 @@ func newStatsLogObserver(cfg *Config, lg *slog.Logger) *logobs.StatsLogObserver 
 	return nil
 }
 
+// newTrackLogObserver creates TrackLogObserver if track log path is configured
+func newTrackLogObserver(cfg *Config, lg *slog.Logger) (*logobs.TrackLogObserver, error) {
+	path := cfg.Log.TrackPath(cfg.Serial.Device, logobs.TrackLogExtension)
+	if path == "" {
+		return nil, nil
+	}
+	return logobs.NewTrackLogObserver(lg, path)
+}
+
 // newClockLogObserver creates ClockLogObserver if clock log path is configured
 func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.LeapSecond) (*logobs.ClockLogObserver, error) {
 	if clk == nil {
@@ -356,7 +369,7 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 // combineObservers combines individual observers into appropriate single observer
 func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver,
 	statsObs *logobs.StatsLogObserver, clockObs *logobs.ClockLogObserver,
-	gpsObs *logobs.GPSLogObserver) obs.Observer {
+	trackObs *logobs.TrackLogObserver, gpsObs *logobs.GPSLogObserver) obs.Observer {
 
 	var observers []obs.Observer
 
@@ -366,6 +379,9 @@ func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObs
 	}
 	if clockObs != nil {
 		observers = append(observers, clockObs)
+	}
+	if trackObs != nil {
+		observers = append(observers, trackObs)
 	}
 	if gpsObs != nil {
 		observers = append(observers, gpsObs)
