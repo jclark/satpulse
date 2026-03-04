@@ -295,19 +295,19 @@ func navSolQuality(solType uint8) (gpsprot.FixLevel, gpsprot.SolutionDim, gpspro
 
 func dopQuality(m *qtmmsg.DOP, epoch *nmea.NavEpoch) {
 	if m.GDOP.IsSet() {
-		epoch.DOP.Geom = opt.Make(m.GDOP.Get())
+		epoch.DOP.Geom = m.GDOP
 	}
 	if m.PDOP.IsSet() {
-		epoch.DOP.Pos = opt.Make(m.PDOP.Get())
+		epoch.DOP.Pos = m.PDOP
 	}
 	if m.TDOP.IsSet() {
-		epoch.DOP.Time = opt.Make(m.TDOP.Get())
+		epoch.DOP.Time = m.TDOP
 	}
 	if m.VDOP.IsSet() {
-		epoch.DOP.Vert = opt.Make(m.VDOP.Get())
+		epoch.DOP.Vert = m.VDOP
 	}
 	if m.HDOP.IsSet() {
-		epoch.DOP.Hor = opt.Make(m.HDOP.Get())
+		epoch.DOP.Hor = m.HDOP
 	}
 }
 
