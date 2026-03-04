@@ -12,6 +12,7 @@ const (
 	NavClock2ID  MsgID = clsNav | (0x23 << 8)
 	NavSvInfoID  MsgID = clsNav | (0x30 << 8)
 	NavSvinID    MsgID = clsNav | (0x31 << 8)
+	NavAutoID    MsgID = clsNav | (0xC0 << 8)
 )
 
 // NavMsg is implemented by NAV messages that have an iTOW field
@@ -250,6 +251,30 @@ func (m *NavSVInfo) Parts() (fixed any, slice any) {
 	return &m.NavSVInfoFixed, m.Sats
 }
 
+// NAV-AUTO (0x01 0xC0) - fix state, position, speed, DOPs, satellite counts
+// Unlike other NAV messages, NAV-AUTO has no iTOW field.
+type NavAuto struct {
+	FixState  uint8  // Fix state (0=none, 3=2D, 4=3D, 5=DGNSS, 6=RTK float, 7=RTK fixed)
+	Year      uint16 // UTC year
+	Month     uint8  // UTC month (1-12)
+	Day       uint8  // UTC day (1-31)
+	Hour      uint8  // UTC hour (0-23)
+	Min       uint8  // UTC minute (0-59)
+	Sec       uint8  // UTC second (0-59)
+	Lon       int32  // 1e-7 deg, Longitude
+	Lat       int32  // 1e-7 deg, Latitude
+	Alt       int32  // mm, Altitude above ellipsoid
+	Speed     uint16 // cm/s, Speed
+	Heading   int16  // 1e-2 deg, Heading
+	PDOP      uint16 // 0.01, Position DOP
+	HDOP      uint16 // 0.01, Horizontal DOP
+	VDOP      uint16 // 0.01, Vertical DOP
+	SatInUse  uint8  // Number of satellites used in solution
+	SatInView uint8  // Number of satellites in view
+}
+
+func (m *NavAuto) ID() MsgID { return NavAutoID }
+
 func init() {
 	regMsg[NavPosEcef]("POSECEF")
 	regMsg[NavPosLlh]("POSLLH")
@@ -261,4 +286,5 @@ func init() {
 	regMsg[NavClock]("CLOCK")
 	regMsg[NavSVInfo]("SVINFO")
 	regMsg[NavSvin]("SVIN")
+	regMsg[NavAuto]("AUTO")
 }

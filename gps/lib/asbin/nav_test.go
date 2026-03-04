@@ -173,6 +173,34 @@ func TestNavVelNed(t *testing.T) {
 	}})
 }
 
+func TestNavAuto(t *testing.T) {
+	// Captured from TAU1201: 2026-03-04 07:55:26 UTC, 3D fix, 25 SVs used
+	runTests(t, []testCase{{
+		name:   "captured",
+		packet: "f1d901c0200004ea07030407371afe2afd3b864e2f08388effff000000004d004d007300191aa438",
+		wantID: NavAutoID,
+		wantMsg: &NavAuto{
+			FixState:  4,          // 3D fix
+			Year:      2026,
+			Month:     3,
+			Day:       4,
+			Hour:      7,
+			Min:       55,
+			Sec:       26,
+			Lon:       1006447358, // 1e-7 deg, 100.6447 E
+			Lat:       137318022,  // 1e-7 deg, 13.7318 N
+			Alt:       -29128,     // mm, -29.1 m (below ellipsoid)
+			Speed:     0,          // cm/s, stationary
+			Heading:   0,          // 1e-2 deg
+			PDOP:      77,         // 0.01, 0.77
+			HDOP:      77,         // 0.01, 0.77
+			VDOP:      115,        // 0.01, 1.15
+			SatInUse:  25,
+			SatInView: 26,
+		},
+	}})
+}
+
 func TestNavSVInfo(t *testing.T) {
 	// Captured from TAU1201: 26 satellites
 	runTests(t, []testCase{{
