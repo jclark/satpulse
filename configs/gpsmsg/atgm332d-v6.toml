@@ -5,6 +5,13 @@
 # Zhongke Microelectronics  (icofchina.com and hzzkw.com) CASIC binary protocol
 # Default baud rate: 115200
 
+# Poll MON-VER to get firmware/hardware version
+[[casbin]]
+tag = "get-version"
+description = "Query firmware and hardware version"
+class = 0x0A
+id = 0x04
+
 # CFG-NAVBAND: Signal band configuration
 # Payload: U1 sigBandAuto, U1 res1, U2 res2, U4 sigidMaskFix, U4 sigidMask
 # sigBandAuto=0 for manual selection, sigidMaskFix sets positioning signals

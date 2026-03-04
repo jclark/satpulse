@@ -87,3 +87,18 @@ For non-GLONASS constellations, FreqID appears to equal SVID (unused/undefined).
 3. **NAV2-SAT**: Remove NAV2-SAT from the implementation plan. Use NAV2-SIG for both satellite info extraction and correction disambiguation.
 
 4. **SVID handling**: No offsets needed for GPS, BDS, GLONASS, Galileo, QZSS. SBAS may need PRN-100 offset but cannot verify without SBAS SVs in view.
+
+## NAV2-SIG trailing bytes
+
+NAV2-SIG packets from the ATGM332D-6N74 consistently contain 4 extra bytes beyond the documented `8+16*N` payload structure (where N=NumTrkTot). The spec (ZKW F8 section 3.9.7) documents `N=0 to numTrkTot-1` with no mention of trailing data.
+
+Observations from 60 seconds of capture (2026-03-04):
+- All 60 packets had exactly 4 trailing bytes
+- The trailing bytes change when NumTrkTot changes:
+  - NumTrkTot=46: `c0c70410` (2 packets)
+  - NumTrkTot=47: `14001105` (47 packets)
+  - NumTrkTot=48: `70000510` (11 packets)
+- Within a given NumTrkTot value, the trailing bytes remain constant
+- The meaning is unknown; 32 bits is insufficient for a per-track bitmask (48 tracks observed)
+
+Design decision: `Nav2Sig` implements `AllowTrailing` so ParseMsg accepts arbitrary trailing bytes. The array size is determined by `NumTrkTot` from the fixed header, not computed from payload length. This is robust against future firmware changes that might alter the trailing data.

@@ -147,6 +147,63 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 	case *casbin.NavDop:
 		dopNavDop(p.curNavEpochMsg, mt)
 		return true
+	case *casbin.Nav2TimeUTC:
+		tm := timeNav2TimeUTC(mt)
+		if tm == nil {
+			return false
+		}
+		if p.mh != nil {
+			tm.Tag = Tag
+			p.mh.Time(tm, tRead)
+		}
+		return true
+	case *casbin.Nav2Sol:
+		posE := posECEFNav2Sol(p.curNavEpochMsg, mt)
+		velE := velECEFNav2Sol(p.curNavEpochMsg, mt)
+		if p.mh != nil {
+			if posE != nil {
+				posE.Tag = Tag
+				posE.Priority = gpsprot.PriVendorLow
+				p.mh.PosECEF(posE, tRead)
+			}
+			if velE != nil {
+				velE.Tag = Tag
+				velE.Priority = gpsprot.PriVendorLow
+				p.mh.VelECEF(velE, tRead)
+			}
+		}
+		return true
+	case *casbin.Nav2Pvh:
+		posG := posGeoNav2Pvh(p.curNavEpochMsg, mt)
+		velG := velGeoNav2Pvh(p.curNavEpochMsg, mt)
+		if posG == nil && velG == nil {
+			return false
+		}
+		if p.mh != nil {
+			if posG != nil {
+				posG.Tag = Tag
+				posG.Priority = gpsprot.PriVendorHigh
+				p.mh.PosGeo(posG, tRead)
+			}
+			if velG != nil {
+				velG.Tag = Tag
+				velG.Priority = gpsprot.PriVendorHigh
+				p.mh.VelGeo(velG, tRead)
+			}
+		}
+		return true
+	case *casbin.Nav2Dop:
+		if p.curNavEpochMsg != nil {
+			dopNav2Dop(p.curNavEpochMsg, mt)
+		}
+		return true
+	case *casbin.Nav2Sig:
+		msg := satsNav2Sig(mt)
+		if msg != nil && p.mh != nil {
+			p.mh.Satellites(msg, tRead)
+		}
+		corrFromNav2Sig(p.curNavEpochMsg, mt)
+		return true
 	default:
 		return false
 	}

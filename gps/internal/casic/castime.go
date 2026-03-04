@@ -26,7 +26,7 @@ func timeNavTimeUTC(m *casbin.NavTimeUTC) *gpsprot.TimeMsg {
 	if m.TAcc > 0 {
 		t.Accuracy = time.Duration(math.Sqrt(float64(m.TAcc)) * c * float64(time.Second))
 	}
-	t.GNSS = gnssIDToGNSS(m.TimeSrc)
+	t.GNSS = casicGNSSIDToGNSS(uint8(m.TimeSrc))
 	return &t
 }
 
@@ -64,14 +64,44 @@ func gnssTime(id casbin.GNSSID, week uint16, towSec float64) (gpsprot.GNSS, ptim
 	return 0, 0
 }
 
-func gnssIDToGNSS(id casbin.GNSSID) gpsprot.GNSS {
+// timeNav2TimeUTC converts Nav2TimeUTC to TimeMsg.
+// Returns nil when the time solution is not usable.
+func timeNav2TimeUTC(m *casbin.Nav2TimeUTC) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{NativeMsgID: "NAV2-TIMEUTC"}
+	if m.TFlags&(casbin.Nav2TimeTOWValid|casbin.Nav2TimeReliable) != casbin.Nav2TimeTOWValid|casbin.Nav2TimeReliable {
+		return &t
+	}
+	// Fractional time: Cs (centiseconds) + Subcs (cs error) + Subms (sub-ms, scale 2^-30)
+	fracMs := float64(m.Cs)*10 + float64(m.Subcs) + float64(m.Subms)*math.Exp2(-30)
+	nanos := int32(math.Round(fracMs * 1e6))
+	u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, nanos)
+	t.UTCTime = &u
+	// V6 TAcc is nanoseconds (direct std dev, not variance)
+	if m.TAcc > 0 {
+		t.Accuracy = time.Duration(m.TAcc)
+	}
+	t.GNSS = casicGNSSIDToGNSS(uint8(m.TimeSrc))
+	return &t
+}
+
+// casicGNSSIDToGNSS maps CASIC GNSS ID to gpsprot.GNSS.
+// The same numbering is used by V5 GNSSID, V6 Nav2TimeSrc, and V6 NAV2-SIG gnssid.
+func casicGNSSIDToGNSS(id uint8) gpsprot.GNSS {
 	switch id {
-	case casbin.GPS:
+	case 0:
 		return gpsprot.GPS
-	case casbin.BDS:
+	case 1:
 		return gpsprot.BDS
-	case casbin.GLN:
+	case 2:
 		return gpsprot.GLO
+	case 3:
+		return gpsprot.GAL
+	case 4:
+		return gpsprot.QZSS
+	case 5:
+		return gpsprot.SBAS
+	case 6:
+		return gpsprot.NAVIC
 	}
 	return 0
 }
