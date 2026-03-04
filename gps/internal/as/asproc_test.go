@@ -152,8 +152,8 @@ func TestNavAutoEpoch(t *testing.T) {
 	if e.FixLevel != gpsprot.FixLevelCode {
 		t.Errorf("epoch 1 FixLevel = %v, want %v", e.FixLevel, gpsprot.FixLevelCode)
 	}
-	if e.FixDim != gpsprot.FixDim3D {
-		t.Errorf("epoch 1 FixDim = %v, want %v", e.FixDim, gpsprot.FixDim3D)
+	if e.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("epoch 1 FixDim = %v, want %v", e.SolutionDim, gpsprot.SolutionDim3D)
 	}
 	if !e.NumSVUsed.IsSet() || e.NumSVUsed.Get() != 12 {
 		t.Errorf("epoch 1 NumSVUsed = %v, want 12", e.NumSVUsed)
@@ -218,8 +218,8 @@ func TestNavAutoWithITOWEpoch(t *testing.T) {
 	if e.FixLevel != gpsprot.FixLevelCode {
 		t.Errorf("FixLevel = %v, want %v", e.FixLevel, gpsprot.FixLevelCode)
 	}
-	if e.FixDim != gpsprot.FixDim3D {
-		t.Errorf("FixDim = %v, want %v", e.FixDim, gpsprot.FixDim3D)
+	if e.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("FixDim = %v, want %v", e.SolutionDim, gpsprot.SolutionDim3D)
 	}
 	if !e.NumSVUsed.IsSet() || e.NumSVUsed.Get() != 12 {
 		t.Errorf("NumSVUsed = %v, want 12", e.NumSVUsed)
@@ -287,8 +287,8 @@ func TestNavTimeUTCITowOffByOne(t *testing.T) {
 	if e.FixLevel != gpsprot.FixLevelCode {
 		t.Errorf("FixLevel = %v, want %v (should come from NAV-AUTO)", e.FixLevel, gpsprot.FixLevelCode)
 	}
-	if e.FixDim != gpsprot.FixDim3D {
-		t.Errorf("FixDim = %v, want %v", e.FixDim, gpsprot.FixDim3D)
+	if e.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("FixDim = %v, want %v", e.SolutionDim, gpsprot.SolutionDim3D)
 	}
 	if !e.NumSVUsed.IsSet() || e.NumSVUsed.Get() != 25 {
 		t.Errorf("NumSVUsed = %v, want 25", e.NumSVUsed)

@@ -97,24 +97,24 @@ func qualityNavAuto(ne *gpsprot.NavEpochMsg, m *asbin.NavAuto) {
 		ne.FixLevel = gpsprot.FixLevelNone
 	case asbin.NavAutoFixClkBias:
 		ne.FixLevel = gpsprot.FixLevelCode
-		ne.FixDim = gpsprot.FixDimTimeOnly
+		ne.SolutionDim = gpsprot.SolutionDimTimeOnly
 	case asbin.NavAutoFix2D:
 		ne.FixLevel = gpsprot.FixLevelCode
-		ne.FixDim = gpsprot.FixDim2D
+		ne.SolutionDim = gpsprot.SolutionDim2D
 	case asbin.NavAutoFix3D:
 		ne.FixLevel = gpsprot.FixLevelCode
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 	case asbin.NavAutoFixDGNSS:
 		ne.FixLevel = gpsprot.FixLevelCodeCorrected
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrUsed
 	case asbin.NavAutoFixRTKFloat:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrUsed
 	case asbin.NavAutoFixRTKFixed:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrUsed
 	}
 	ne.NumSVUsed.Set(uint16(m.SatInUse))

@@ -177,17 +177,17 @@ func TestQualityNavAuto(t *testing.T) {
 	tests := []struct {
 		fixState   uint8
 		fixLevel   gpsprot.FixLevel
-		fixDim     gpsprot.FixDim
+		fixDim     gpsprot.SolutionDim
 		correction gpsprot.CorrKind
 	}{
 		{0, gpsprot.FixLevelNone, 0, 0},
 		{1, gpsprot.FixLevelNone, 0, 0},
-		{2, gpsprot.FixLevelCode, gpsprot.FixDimTimeOnly, 0},
-		{3, gpsprot.FixLevelCode, gpsprot.FixDim2D, 0},
-		{4, gpsprot.FixLevelCode, gpsprot.FixDim3D, 0},
-		{5, gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D, gpsprot.CorrUsed},
-		{6, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrUsed},
-		{7, gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrUsed},
+		{2, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly, 0},
+		{3, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, 0},
+		{4, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0},
+		{5, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrUsed},
+		{6, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrUsed},
+		{7, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrUsed},
 	}
 	for _, tt := range tests {
 		var ne gpsprot.NavEpochMsg
@@ -203,8 +203,8 @@ func TestQualityNavAuto(t *testing.T) {
 		if ne.FixLevel != tt.fixLevel {
 			t.Errorf("fixState=%d: FixLevel=%v, want %v", tt.fixState, ne.FixLevel, tt.fixLevel)
 		}
-		if ne.FixDim != tt.fixDim {
-			t.Errorf("fixState=%d: FixDim=%v, want %v", tt.fixState, ne.FixDim, tt.fixDim)
+		if ne.SolutionDim != tt.fixDim {
+			t.Errorf("fixState=%d: SolutionDim=%v, want %v", tt.fixState, ne.SolutionDim, tt.fixDim)
 		}
 		if ne.Correction != tt.correction {
 			t.Errorf("fixState=%d: Correction=%v, want %v", tt.fixState, ne.Correction, tt.correction)
