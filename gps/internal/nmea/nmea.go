@@ -385,6 +385,9 @@ func finalizeNavEpoch(epoch *NavEpoch) {
 		epoch.Correction = gpsprot.CorrWideArea | gpsprot.CorrUsed
 		epoch.AuxSrc = 0
 	}
+	if epoch.FixLevel < gpsprot.FixLevelCode {
+		epoch.SolutionDim = 0
+	}
 }
 
 // parseDateTime parses NMEA time (HHMMSS.sss) and date (DDMMYY)

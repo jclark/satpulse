@@ -15,17 +15,17 @@ import (
 const TrackLogExtension = ".jsonl"
 
 type trackLogEntry struct {
-	T       string                    `json:"t"`
-	Lat     gpsprot.Angle             `json:"lat"`
-	Lon     gpsprot.Angle             `json:"lon"`
-	Ele     opt.Val[gpsprot.Length]   `json:"ele,omitzero"`
+	T   string                  `json:"t"`
+	Lat gpsprot.Angle           `json:"lat"`
+	Lon gpsprot.Angle           `json:"lon"`
+	Ele opt.Val[gpsprot.Length] `json:"ele,omitzero"`
 	// DOP uses float32 to avoid json.Marshal artifacts from float64
 	// (e.g. 0.82 -> 0.8200000000000001). DOP has only 2 decimal places.
-	HDOP    opt.Val[float32]          `json:"hdop,omitzero"`
-	VDOP    opt.Val[float32]          `json:"vdop,omitzero"`
-	PDOP    opt.Val[float32]          `json:"pdop,omitzero"`
-	NumSat  opt.Val[uint16]           `json:"numsat,omitzero"`
-	FixType string                    `json:"fixType,omitzero"`
+	HDOP    opt.Val[float32] `json:"hdop,omitzero"`
+	VDOP    opt.Val[float32] `json:"vdop,omitzero"`
+	PDOP    opt.Val[float32] `json:"pdop,omitzero"`
+	NumSat  opt.Val[uint16]  `json:"numsat,omitzero"`
+	FixType string           `json:"fixType,omitzero"`
 }
 
 // TrackLogObserver writes one JSONL trackpoint per navigation epoch.
@@ -62,13 +62,13 @@ func (o *TrackLogObserver) NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMs
 		Lon: pg.LatLon[1],
 		Ele: pg.HeightMSL,
 	}
-	if msg.FixDim != gpsprot.FixDimTimeOnly {
+	if msg.SolutionDim != gpsprot.SolutionDimTimeOnly {
 		setDOP(&e.HDOP, msg.DOP.Hor)
 		setDOP(&e.VDOP, msg.DOP.Vert)
 		setDOP(&e.PDOP, msg.DOP.Pos)
 	}
 	e.NumSat = msg.NumSVUsed
-	e.FixType = fixType(msg.FixLevel, msg.FixDim)
+	e.FixType = fixType(msg.FixLevel, msg.SolutionDim)
 	b, err := json.Marshal(&e)
 	if err != nil {
 		o.lf.HandleWriteError(err, o.lg)
@@ -95,14 +95,14 @@ func setDOP(dst *opt.Val[float32], src opt.Val[float64]) {
 	}
 }
 
-func fixType(level gpsprot.FixLevel, dim gpsprot.FixDim) string {
+func fixType(level gpsprot.FixLevel, dim gpsprot.SolutionDim) string {
 	if level == gpsprot.FixLevelNone {
 		return "none"
 	}
-	if dim == gpsprot.FixDim2D {
+	if dim == gpsprot.SolutionDim2D {
 		return "2d"
 	}
-	if dim != gpsprot.FixDim3D {
+	if dim != gpsprot.SolutionDim3D {
 		return ""
 	}
 	if level >= gpsprot.FixLevelCodeCorrected {

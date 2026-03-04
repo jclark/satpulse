@@ -162,22 +162,22 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg
 	// OEM7/ByNav-specific pos type values first.
 	switch posType {
 	case novmsg.PosFixedPos:
-		ne.FixLevel = gpsprot.FixLevelNotMeasured
-		ne.FixDim = gpsprot.FixDimTimeOnly
+		ne.FixLevel = gpsprot.FixLevelCode
+		ne.SolutionDim = gpsprot.SolutionDimTimeOnly
 		return
 	case novmsg.PosFloatConv:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrBaseStation.Expand()
 		return
 	case novmsg.PosWideLane:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrPartialDualFreq.Expand()
 		return
 	case novmsg.PosNarrowLane:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrFullDualFreq.Expand()
 		return
 	case novmsg.PosPropagated:
@@ -185,13 +185,13 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg
 		return
 	case novmsg.PosRTKDirectINS:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrBaseStation.Expand()
 		ne.AuxSrc |= gpsprot.AuxSrcINS
 		return
 	case novmsg.PosINSSBAS:
 		ne.FixLevel = gpsprot.FixLevelCodeCorrected
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrSBAS.Expand()
 		ne.AuxSrc |= gpsprot.AuxSrcINS
 		return
@@ -201,40 +201,40 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg
 		return
 	case novmsg.PosOperational, novmsg.PosWarning, novmsg.PosOutOfBounds:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrPPPConverged.Expand()
 		return
 	case novmsg.PosINSPPPConverging:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrPPPConverging.Expand()
 		ne.AuxSrc |= gpsprot.AuxSrcINS
 		return
 	case novmsg.PosINSPPP:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrPPPConverged.Expand()
 		ne.AuxSrc |= gpsprot.AuxSrcINS
 		return
 	case novmsg.PosPPPBasicConverging:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrPPPConverging.Expand()
 		return
 	case novmsg.PosPPPBasic:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrPPPConverged.Expand()
 		return
 	case novmsg.PosINSPPPBasicConverging:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrPPPConverging.Expand()
 		ne.AuxSrc |= gpsprot.AuxSrcINS
 		return
 	case novmsg.PosINSPPPBasic:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrPPPConverged.Expand()
 		ne.AuxSrc |= gpsprot.AuxSrcINS
 		return
@@ -243,7 +243,7 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg
 	fl, fd, ck, aux, ok := PosTypeQuality(uint32(posType))
 	if ok {
 		ne.FixLevel = fl
-		ne.FixDim = fd
+		ne.SolutionDim = fd
 		ne.Correction = ck
 		ne.AuxSrc |= aux
 	}
@@ -270,23 +270,23 @@ func sinoQuality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType no
 	switch posType {
 	case novmsg.SinoPosSingleSmooth:
 		ne.FixLevel = gpsprot.FixLevelCode
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		return
 	case novmsg.SinoPosFIXDerivation:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrBaseStation.Expand()
 		return
 	case novmsg.SinoPosSuperWideLane:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrPartialDualFreq.Expand()
 		return
 	}
 	fl, fd, ck, aux, ok := PosTypeQuality(uint32(posType))
 	if ok {
 		ne.FixLevel = fl
-		ne.FixDim = fd
+		ne.SolutionDim = fd
 		ne.Correction = ck
 		ne.AuxSrc |= aux
 	}

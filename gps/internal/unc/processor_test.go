@@ -492,8 +492,8 @@ func TestEpochQualityFields(t *testing.T) {
 		if ne.FixLevel != gpsprot.FixLevelCarrierFixed {
 			t.Errorf("FixLevel = %v, want CarrierFixed", ne.FixLevel)
 		}
-		if ne.FixDim != gpsprot.FixDim3D {
-			t.Errorf("FixDim = %v, want 3D", ne.FixDim)
+		if ne.SolutionDim != gpsprot.SolutionDim3D {
+			t.Errorf("SolutionDim = %v, want 3D", ne.SolutionDim)
 		}
 		if ne.Correction != gpsprot.CorrFullDualFreq.Expand() {
 			t.Errorf("Correction = %v, want FullDualFreq expanded", ne.Correction)
@@ -552,8 +552,8 @@ func TestEpochQualityNotComputed(t *testing.T) {
 		if ne.FixLevel != gpsprot.FixLevelNone {
 			t.Errorf("FixLevel = %v, want None", ne.FixLevel)
 		}
-		if ne.FixDim != 0 {
-			t.Errorf("FixDim = %v, want 0", ne.FixDim)
+		if ne.SolutionDim != 0 {
+			t.Errorf("SolutionDim = %v, want 0", ne.SolutionDim)
 		}
 		if ne.Correction != 0 {
 			t.Errorf("Correction = %v, want 0", ne.Correction)

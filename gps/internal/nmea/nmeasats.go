@@ -10,7 +10,6 @@ import (
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
-
 // satellitesBuffer is the state used for combining GSV sentences into a single SatellitesMsg
 // First, there can be a series of GSV sentences with the same talker ID, with the sentence
 // explicitly saying this is M of N sentences.
@@ -33,16 +32,16 @@ import (
 // For approach 2, we try to establish a reasonable boundary between bursts:
 // this is the first idle() call or sentence format change (e.g. RMC to GSV).
 type satellitesBuffer struct {
-	numbering           []gpsprot.NMEASVNumberingRange
-	gsvs                []gsvSentence
-	gsvKeys             map[gsvKey]struct{} // the set of gnss and signal IDs occurring in gsvs
-	tRead               time.Time           // read time of the first buffered GSV sentence
-	lastFormat          string              // format of last sentence received
-	gsas                []gsaSentence
-	gsaFixDim    gpsprot.FixDim // buffered fix dimension from GSA
-	gsaDOP       gpsprot.DOP   // buffered DOPs from GSA (Pos, Hor, Vert)
-	haveBoundary bool // have we established a plausible boundary between bursts
-	mixedSigIDs  bool // true if signal IDs are mixed within a single GSV series
+	numbering    []gpsprot.NMEASVNumberingRange
+	gsvs         []gsvSentence
+	gsvKeys      map[gsvKey]struct{} // the set of gnss and signal IDs occurring in gsvs
+	tRead        time.Time           // read time of the first buffered GSV sentence
+	lastFormat   string              // format of last sentence received
+	gsas         []gsaSentence
+	gsaFixDim    gpsprot.SolutionDim // buffered fix dimension from GSA
+	gsaDOP       gpsprot.DOP         // buffered DOPs from GSA (Pos, Hor, Vert)
+	haveBoundary bool                // have we established a plausible boundary between bursts
+	mixedSigIDs  bool                // true if signal IDs are mixed within a single GSV series
 }
 
 type gsvKey struct {
@@ -231,16 +230,16 @@ func (sb *satellitesBuffer) gsaProcess(sen *ApprovedSentence) (bool, error) {
 	return true, nil
 }
 
-// gsaQuality buffers FixDim and DOPs from GSA fields. Multiple GSA
+// gsaQuality buffers SolutionDim and DOPs from GSA fields. Multiple GSA
 // sentences per epoch (one per constellation) carry identical DOP and
 // fix type values, so overwriting is safe.
 func (sb *satellitesBuffer) gsaQuality(fields []string) {
 	// Fix type (field 1): 1=no fix, 2=2D, 3=3D
 	switch fields[1] {
 	case "2":
-		sb.gsaFixDim = gpsprot.FixDim2D
+		sb.gsaFixDim = gpsprot.SolutionDim2D
 	case "3":
-		sb.gsaFixDim = gpsprot.FixDim3D
+		sb.gsaFixDim = gpsprot.SolutionDim3D
 	}
 	// DOPs (fields 14-16): PDOP, HDOP, VDOP
 	if f, ok := parseFloatField(fields[14]); ok {
@@ -254,7 +253,7 @@ func (sb *satellitesBuffer) gsaQuality(fields []string) {
 	}
 }
 
-// commitGSAQuality copies buffered FixDim and DOP to the epoch and
+// commitGSAQuality copies buffered SolutionDim and DOP to the epoch and
 // clears the buffer. If epoch is nil, the buffer is preserved so that
 // quality can be committed to a later epoch (e.g. GSA arriving before
 // the first epoch-starting sentence).
@@ -263,7 +262,7 @@ func (sb *satellitesBuffer) commitGSAQuality(epoch *NavEpoch) {
 		return
 	}
 	if sb.gsaFixDim != 0 {
-		epoch.FixDim = sb.gsaFixDim
+		epoch.SolutionDim = sb.gsaFixDim
 	}
 	if sb.gsaDOP.Pos.IsSet() {
 		epoch.DOP.Pos = sb.gsaDOP.Pos

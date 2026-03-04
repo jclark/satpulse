@@ -19,10 +19,10 @@ type msgRec struct {
 	surveys []*gpsprot.SurveyMsg
 }
 
-func (r *msgRec) Time(m *gpsprot.TimeMsg, _ time.Time)       { r.times = append(r.times, m) }
-func (r *msgRec) PosGeo(m *gpsprot.PosGeoMsg, _ time.Time)   { r.posGeo = append(r.posGeo, m) }
-func (r *msgRec) VelGeo(m *gpsprot.VelGeoMsg, _ time.Time)   { r.velGeo = append(r.velGeo, m) }
-func (r *msgRec) Survey(m *gpsprot.SurveyMsg, _ time.Time)   { r.surveys = append(r.surveys, m) }
+func (r *msgRec) Time(m *gpsprot.TimeMsg, _ time.Time)     { r.times = append(r.times, m) }
+func (r *msgRec) PosGeo(m *gpsprot.PosGeoMsg, _ time.Time) { r.posGeo = append(r.posGeo, m) }
+func (r *msgRec) VelGeo(m *gpsprot.VelGeoMsg, _ time.Time) { r.velGeo = append(r.velGeo, m) }
+func (r *msgRec) Survey(m *gpsprot.SurveyMsg, _ time.Time) { r.surveys = append(r.surveys, m) }
 
 func dispatch(msgs []gpsprot.Msg) *msgRec {
 	var r msgRec
@@ -118,8 +118,8 @@ func TestPVTBundle(t *testing.T) {
 	if epoch.FixLevel != gpsprot.FixLevelCode {
 		t.Errorf("FixLevel = %d, want FixLevelCode", epoch.FixLevel)
 	}
-	if epoch.FixDim != gpsprot.FixDim3D {
-		t.Errorf("FixDim = %d, want FixDim3D", epoch.FixDim)
+	if epoch.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("SolutionDim = %d, want SolutionDim3D", epoch.SolutionDim)
 	}
 	if !epoch.NumSVUsed.IsSet() || epoch.NumSVUsed.Get() != 9 {
 		t.Errorf("NumSVUsed = %v, want 9", epoch.NumSVUsed)
@@ -152,8 +152,8 @@ func TestPVTNoFix(t *testing.T) {
 	if epoch.FixLevel != gpsprot.FixLevelNone {
 		t.Errorf("FixLevel = %d, want FixLevelNone", epoch.FixLevel)
 	}
-	if epoch.FixDim != 0 {
-		t.Errorf("FixDim = %d, want 0", epoch.FixDim)
+	if epoch.SolutionDim != 0 {
+		t.Errorf("SolutionDim = %d, want 0", epoch.SolutionDim)
 	}
 }
 
@@ -226,8 +226,8 @@ func TestNAVBundle(t *testing.T) {
 	if epoch.FixLevel != gpsprot.FixLevelCarrierFixed {
 		t.Errorf("FixLevel = %d, want FixLevelCarrierFixed", epoch.FixLevel)
 	}
-	if epoch.FixDim != gpsprot.FixDim3D {
-		t.Errorf("FixDim = %d, want FixDim3D", epoch.FixDim)
+	if epoch.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("SolutionDim = %d, want SolutionDim3D", epoch.SolutionDim)
 	}
 	wantCorr := gpsprot.CorrBaseStation | gpsprot.CorrUsed
 	if epoch.Correction != wantCorr {
@@ -437,16 +437,16 @@ func TestNavSolQuality(t *testing.T) {
 	tests := []struct {
 		solType uint8
 		fl      gpsprot.FixLevel
-		fd      gpsprot.FixDim
+		fd      gpsprot.SolutionDim
 		corr    gpsprot.CorrKind
 		ok      bool
 	}{
 		{0, gpsprot.FixLevelNone, 0, 0, true},
-		{1, gpsprot.FixLevelCode, gpsprot.FixDim3D, 0, true},
-		{2, gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D, gpsprot.CorrSBAS | gpsprot.CorrWideArea | gpsprot.CorrUsed, true},
-		{5, gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
-		{8, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
-		{12, gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
+		{1, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, true},
+		{2, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrSBAS | gpsprot.CorrWideArea | gpsprot.CorrUsed, true},
+		{5, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
+		{8, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
+		{12, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation | gpsprot.CorrUsed, true},
 		{99, 0, 0, 0, false},
 	}
 	for _, tt := range tests {
@@ -478,8 +478,8 @@ func TestNAVThenPVTDoesNotDowngrade(t *testing.T) {
 	if epoch.FixLevel != gpsprot.FixLevelCarrierFixed {
 		t.Errorf("after PVT: FixLevel = %d, want CarrierFixed (not downgraded)", epoch.FixLevel)
 	}
-	if epoch.FixDim != gpsprot.FixDim3D {
-		t.Errorf("after PVT: FixDim = %d, want FixDim3D", epoch.FixDim)
+	if epoch.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("after PVT: SolutionDim = %d, want SolutionDim3D", epoch.SolutionDim)
 	}
 	wantCorr := gpsprot.CorrBaseStation | gpsprot.CorrUsed
 	if epoch.Correction != wantCorr {

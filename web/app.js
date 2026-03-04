@@ -882,7 +882,7 @@
   };
   var statusFormat = {
     fixLevel: ["Fix type"],
-    fixDim: ["Fix dimensionality"],
+    solutionDim: ["Solution dimensionality"],
     corrections: ["Corrections", (arg) => arg.join(", ")],
     tdop: ["Time DOP", (arg) => arg.toFixed(2)],
     gdop: ["Geometric DOP", (arg) => arg.toFixed(2)],

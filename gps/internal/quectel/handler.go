@@ -130,10 +130,10 @@ func msgsPVT(m *qtmmsg.PVT, epoch *nmea.NavEpoch) []gpsprot.Msg {
 			epoch.FixLevel = gpsprot.FixLevelNone
 		case 2:
 			epoch.FixLevel = gpsprot.FixLevelCode
-			epoch.FixDim = gpsprot.FixDim2D
+			epoch.SolutionDim = gpsprot.SolutionDim2D
 		case 3:
 			epoch.FixLevel = gpsprot.FixLevelCode
-			epoch.FixDim = gpsprot.FixDim3D
+			epoch.SolutionDim = gpsprot.SolutionDim3D
 		}
 	}
 	epoch.NumSVUsed = opt.Make(uint16(m.NumSV))
@@ -205,7 +205,7 @@ func msgsNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) []gpsprot.Msg {
 	if m.SolType.IsSet() {
 		if fl, fd, corr, ok := navSolQuality(m.SolType.Get()); ok {
 			epoch.FixLevel = fl
-			epoch.FixDim = fd
+			epoch.SolutionDim = fd
 			epoch.Correction = corr
 		}
 	}
@@ -270,23 +270,23 @@ func accEPE(m *qtmmsg.EPE, epoch *nmea.NavEpoch) {
 // navSolQuality maps PQTMNAV SolType to NavEpochMsg quality fields.
 // Returns false for unrecognized SolType values so the caller can
 // preserve existing epoch state rather than zeroing it.
-func navSolQuality(solType uint8) (gpsprot.FixLevel, gpsprot.FixDim, gpsprot.CorrKind, bool) {
+func navSolQuality(solType uint8) (gpsprot.FixLevel, gpsprot.SolutionDim, gpsprot.CorrKind, bool) {
 	switch solType {
 	case 0:
 		return gpsprot.FixLevelNone, 0, 0, true
 	case 1:
-		return gpsprot.FixLevelCode, gpsprot.FixDim3D, 0, true
+		return gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, true
 	case 2:
-		return gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D,
+		return gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D,
 			gpsprot.CorrSBAS | gpsprot.CorrWideArea | gpsprot.CorrUsed, true
 	case 5:
-		return gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D,
+		return gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D,
 			gpsprot.CorrBaseStation | gpsprot.CorrUsed, true
 	case 8:
-		return gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D,
+		return gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D,
 			gpsprot.CorrBaseStation | gpsprot.CorrUsed, true
 	case 12:
-		return gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D,
+		return gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D,
 			gpsprot.CorrBaseStation | gpsprot.CorrUsed, true
 	default:
 		return 0, 0, 0, false

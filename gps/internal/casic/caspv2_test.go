@@ -39,8 +39,8 @@ func TestPosECEFNav2Sol(t *testing.T) {
 	if ne.FixLevel != gpsprot.FixLevelCode {
 		t.Errorf("FixLevel = %v, want %v", ne.FixLevel, gpsprot.FixLevelCode)
 	}
-	if ne.FixDim != gpsprot.FixDim3D {
-		t.Errorf("FixDim = %v, want %v", ne.FixDim, gpsprot.FixDim3D)
+	if ne.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("SolutionDim = %v, want %v", ne.SolutionDim, gpsprot.SolutionDim3D)
 	}
 	if !ne.DOP.Pos.IsSet() || ne.DOP.Pos.Get() != float64(float32(1.5)) {
 		t.Errorf("DOP.Pos = %v, want %v", ne.DOP.Pos.Get(), float64(float32(1.5)))
@@ -225,7 +225,7 @@ func TestQualityFromNav2FixFlags(t *testing.T) {
 		name       string
 		ff         casbin.Nav2FixFlags
 		fixLevel   gpsprot.FixLevel
-		fixDim     gpsprot.FixDim
+		fixDim     gpsprot.SolutionDim
 		auxSrc     gpsprot.AuxSrc
 		correction gpsprot.CorrKind
 	}{
@@ -234,13 +234,13 @@ func TestQualityFromNav2FixFlags(t *testing.T) {
 		{"RoughEstimate", casbin.Nav2FixRoughEstimate, gpsprot.FixLevelNone, 0, 0, 0},
 		{"Hold", casbin.Nav2FixHold, gpsprot.FixLevelNone, 0, 0, 0},
 		{"DeadReckoning", casbin.Nav2FixDeadReckoning, gpsprot.FixLevelNone, 0, gpsprot.AuxSrcDR, 0},
-		{"QuickMode", casbin.Nav2FixQuickMode, gpsprot.FixLevelCode, gpsprot.FixDim3D, 0, 0},
-		{"2D", casbin.Nav2Fix2D, gpsprot.FixLevelCode, gpsprot.FixDim2D, 0, 0},
-		{"3D", casbin.Nav2Fix3D, gpsprot.FixLevelCode, gpsprot.FixDim3D, 0, 0},
-		{"DGPS", casbin.Nav2FixDGPS, gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D, 0, gpsprot.CorrUsed},
-		{"RTKFloat", casbin.Nav2FixRTKFloat, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, 0, gpsprot.CorrBaseStation | gpsprot.CorrUsed},
-		{"RTKFixed", casbin.Nav2FixRTKFixed, gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, 0, gpsprot.CorrBaseStation | gpsprot.CorrUsed},
-		{"TimingFixed", casbin.Nav2FixTimingFixed, gpsprot.FixLevelNotMeasured, gpsprot.FixDimTimeOnly, 0, 0},
+		{"QuickMode", casbin.Nav2FixQuickMode, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, 0},
+		{"2D", casbin.Nav2Fix2D, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, 0, 0},
+		{"3D", casbin.Nav2Fix3D, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, 0},
+		{"DGPS", casbin.Nav2FixDGPS, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, 0, gpsprot.CorrUsed},
+		{"RTKFloat", casbin.Nav2FixRTKFloat, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, 0, gpsprot.CorrBaseStation | gpsprot.CorrUsed},
+		{"RTKFixed", casbin.Nav2FixRTKFixed, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, 0, gpsprot.CorrBaseStation | gpsprot.CorrUsed},
+		{"TimingFixed", casbin.Nav2FixTimingFixed, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly, 0, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -249,8 +249,8 @@ func TestQualityFromNav2FixFlags(t *testing.T) {
 			if ne.FixLevel != tt.fixLevel {
 				t.Errorf("FixLevel = %v, want %v", ne.FixLevel, tt.fixLevel)
 			}
-			if ne.FixDim != tt.fixDim {
-				t.Errorf("FixDim = %v, want %v", ne.FixDim, tt.fixDim)
+			if ne.SolutionDim != tt.fixDim {
+				t.Errorf("SolutionDim = %v, want %v", ne.SolutionDim, tt.fixDim)
 			}
 			if ne.AuxSrc != tt.auxSrc {
 				t.Errorf("AuxSrc = %v, want %v", ne.AuxSrc, tt.auxSrc)

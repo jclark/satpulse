@@ -215,9 +215,9 @@ type msgRecorder struct {
 	epochs []*gpsprot.NavEpochMsg
 }
 
-func (r *msgRecorder) Time(msg *gpsprot.TimeMsg, _ time.Time)       { r.times = append(r.times, msg) }
-func (r *msgRecorder) PosGeo(msg *gpsprot.PosGeoMsg, _ time.Time)   { r.pos = append(r.pos, msg) }
-func (r *msgRecorder) VelGeo(msg *gpsprot.VelGeoMsg, _ time.Time)   { r.vel = append(r.vel, msg) }
+func (r *msgRecorder) Time(msg *gpsprot.TimeMsg, _ time.Time)     { r.times = append(r.times, msg) }
+func (r *msgRecorder) PosGeo(msg *gpsprot.PosGeoMsg, _ time.Time) { r.pos = append(r.pos, msg) }
+func (r *msgRecorder) VelGeo(msg *gpsprot.VelGeoMsg, _ time.Time) { r.vel = append(r.vel, msg) }
 func (r *msgRecorder) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
 	cp := *msg
 	r.epochs = append(r.epochs, &cp)
@@ -902,8 +902,8 @@ func TestGSAQuality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sb.gsaFixDim != gpsprot.FixDim3D {
-		t.Errorf("gsaFixDim = %d, want %d", sb.gsaFixDim, gpsprot.FixDim3D)
+	if sb.gsaFixDim != gpsprot.SolutionDim3D {
+		t.Errorf("gsaFixDim = %d, want %d", sb.gsaFixDim, gpsprot.SolutionDim3D)
 	}
 	if !sb.gsaDOP.Pos.IsSet() || sb.gsaDOP.Pos.Get() != 1.5 {
 		t.Errorf("gsaDOP.Pos = %v, want 1.5", sb.gsaDOP.Pos)
@@ -917,8 +917,8 @@ func TestGSAQuality(t *testing.T) {
 	// Verify commit copies to epoch
 	epoch := &NavEpoch{TimeOfDay: "120000.00"}
 	sb.commitGSAQuality(epoch)
-	if epoch.FixDim != gpsprot.FixDim3D {
-		t.Errorf("epoch.FixDim = %d, want %d", epoch.FixDim, gpsprot.FixDim3D)
+	if epoch.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("epoch.SolutionDim = %d, want %d", epoch.SolutionDim, gpsprot.SolutionDim3D)
 	}
 	if !epoch.DOP.Pos.IsSet() || epoch.DOP.Pos.Get() != 1.5 {
 		t.Errorf("epoch.DOP.Pos = %v, want 1.5", epoch.DOP.Pos)
@@ -930,11 +930,11 @@ func TestGSAQuality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sb.gsaFixDim != gpsprot.FixDim2D {
-		t.Errorf("gsaFixDim = %d, want %d", sb.gsaFixDim, gpsprot.FixDim2D)
+	if sb.gsaFixDim != gpsprot.SolutionDim2D {
+		t.Errorf("gsaFixDim = %d, want %d", sb.gsaFixDim, gpsprot.SolutionDim2D)
 	}
 
-	// GSA with fix type 1 (no fix) should not set FixDim
+	// GSA with fix type 1 (no fix) should not set SolutionDim
 	sb = newSatellitesBuffer()
 	sen = parseApprovedSentence(makeSentence("GPGSA,A,1,,,,,,,,,,,,,,,"))
 	_, err = sb.gsaProcess(sen)
@@ -950,8 +950,8 @@ func TestGSAQualityDeferred(t *testing.T) {
 	gsaSen := "GNGSA,A,3,01,02,03,04,05,06,07,08,09,10,11,12,1.5,0.9,1.2,1"
 	checkGSAQuality := func(t *testing.T, e *gpsprot.NavEpochMsg) {
 		t.Helper()
-		if e.FixDim != gpsprot.FixDim3D {
-			t.Errorf("FixDim = %d, want %d (3D)", e.FixDim, gpsprot.FixDim3D)
+		if e.SolutionDim != gpsprot.SolutionDim3D {
+			t.Errorf("SolutionDim = %d, want %d (3D)", e.SolutionDim, gpsprot.SolutionDim3D)
 		}
 		if !e.DOP.Pos.IsSet() || e.DOP.Pos.Get() != 1.5 {
 			t.Errorf("DOP.Pos = %v, want 1.5", e.DOP.Pos)
@@ -965,8 +965,8 @@ func TestGSAQualityDeferred(t *testing.T) {
 	}
 	checkNoGSAQuality := func(t *testing.T, e *gpsprot.NavEpochMsg) {
 		t.Helper()
-		if e.FixDim != 0 {
-			t.Errorf("FixDim = %d, want 0", e.FixDim)
+		if e.SolutionDim != 0 {
+			t.Errorf("SolutionDim = %d, want 0", e.SolutionDim)
 		}
 		if e.DOP.Pos.IsSet() {
 			t.Errorf("DOP.Pos = %v, want unset", e.DOP.Pos)
@@ -1086,8 +1086,8 @@ func TestQualitySynthesis(t *testing.T) {
 	if e.Correction != gpsprot.CorrBaseStation|gpsprot.CorrUsed {
 		t.Errorf("Correction = %d, want %d", e.Correction, gpsprot.CorrBaseStation|gpsprot.CorrUsed)
 	}
-	if e.FixDim != gpsprot.FixDim3D {
-		t.Errorf("FixDim = %d, want %d (3D)", e.FixDim, gpsprot.FixDim3D)
+	if e.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("SolutionDim = %d, want %d (3D)", e.SolutionDim, gpsprot.SolutionDim3D)
 	}
 	if !e.NumSVUsed.IsSet() || e.NumSVUsed.Get() != 16 {
 		t.Errorf("NumSVUsed = %v, want 16", e.NumSVUsed)

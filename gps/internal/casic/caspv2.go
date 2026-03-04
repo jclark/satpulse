@@ -19,25 +19,25 @@ func qualityFromNav2FixFlags(ne *gpsprot.NavEpochMsg, ff casbin.Nav2FixFlags, nu
 		ne.AuxSrc = gpsprot.AuxSrcDR
 	case casbin.Nav2FixQuickMode, casbin.Nav2Fix3D:
 		ne.FixLevel = gpsprot.FixLevelCode
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 	case casbin.Nav2Fix2D:
 		ne.FixLevel = gpsprot.FixLevelCode
-		ne.FixDim = gpsprot.FixDim2D
+		ne.SolutionDim = gpsprot.SolutionDim2D
 	case casbin.Nav2FixDGPS:
 		ne.FixLevel = gpsprot.FixLevelCodeCorrected
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction |= gpsprot.CorrUsed
 	case casbin.Nav2FixRTKFloat:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction |= gpsprot.CorrBaseStation | gpsprot.CorrUsed
 	case casbin.Nav2FixRTKFixed:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction |= gpsprot.CorrBaseStation | gpsprot.CorrUsed
 	case casbin.Nav2FixTimingFixed:
-		ne.FixLevel = gpsprot.FixLevelNotMeasured
-		ne.FixDim = gpsprot.FixDimTimeOnly
+		ne.FixLevel = gpsprot.FixLevelCode
+		ne.SolutionDim = gpsprot.SolutionDimTimeOnly
 	}
 	ne.NumSVUsed.Set(uint16(numSV))
 }

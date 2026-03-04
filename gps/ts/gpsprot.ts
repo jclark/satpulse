@@ -11,7 +11,7 @@ export type SVID = string;
 export type SignalID = string;
 export type Tag = string;
 export type FixLevel = string;
-export type FixDim = string;
+export type SolutionDim = string;
 export type TimeRef = number;
 export type SatelliteUsedValidity = number;
 export type CorrKind = string[];
@@ -124,7 +124,7 @@ export interface DOP {
 
 export interface NavEpochMsg {
     fixLevel?: FixLevel;
-    fixDim?: FixDim;
+    solutionDim?: SolutionDim;
     correction?: CorrKind;
     auxSrc?: AuxSrc;
     acc?: Accuracy;

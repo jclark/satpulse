@@ -38,8 +38,8 @@ func TestPosECEFNavSol(t *testing.T) {
 	if ne.FixLevel != gpsprot.FixLevelCode {
 		t.Errorf("FixLevel = %v, want %v", ne.FixLevel, gpsprot.FixLevelCode)
 	}
-	if ne.FixDim != gpsprot.FixDim3D {
-		t.Errorf("FixDim = %v, want %v", ne.FixDim, gpsprot.FixDim3D)
+	if ne.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("SolutionDim = %v, want %v", ne.SolutionDim, gpsprot.SolutionDim3D)
 	}
 }
 
@@ -247,7 +247,7 @@ func TestQualityFromPosValid(t *testing.T) {
 		name     string
 		pv       casbin.NavPosValid
 		fixLevel gpsprot.FixLevel
-		fixDim   gpsprot.FixDim
+		fixDim   gpsprot.SolutionDim
 		auxSrc   gpsprot.AuxSrc
 	}{
 		{"Invalid", casbin.NavPosInvalid, gpsprot.FixLevelNone, 0, 0},
@@ -255,10 +255,10 @@ func TestQualityFromPosValid(t *testing.T) {
 		{"RoughEstimate", casbin.NavPosRoughEstimate, gpsprot.FixLevelNone, 0, 0},
 		{"Maintaining", casbin.NavPosMaintaining, gpsprot.FixLevelNone, 0, 0},
 		{"DeadReckoning", casbin.NavPosDeadReckoning, gpsprot.FixLevelNone, 0, gpsprot.AuxSrcDR},
-		{"QuickMode", casbin.NavPosQuickMode, gpsprot.FixLevelCode, gpsprot.FixDim3D, 0},
-		{"2D", casbin.NavPos2D, gpsprot.FixLevelCode, gpsprot.FixDim2D, 0},
-		{"3D", casbin.NavPos3D, gpsprot.FixLevelCode, gpsprot.FixDim3D, 0},
-		{"GNSSDR", casbin.NavPosGNSSDR, gpsprot.FixLevelCode, gpsprot.FixDim3D, gpsprot.AuxSrcDR},
+		{"QuickMode", casbin.NavPosQuickMode, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0},
+		{"2D", casbin.NavPos2D, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, 0},
+		{"3D", casbin.NavPos3D, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0},
+		{"GNSSDR", casbin.NavPosGNSSDR, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.AuxSrcDR},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -267,8 +267,8 @@ func TestQualityFromPosValid(t *testing.T) {
 			if ne.FixLevel != tt.fixLevel {
 				t.Errorf("FixLevel = %v, want %v", ne.FixLevel, tt.fixLevel)
 			}
-			if ne.FixDim != tt.fixDim {
-				t.Errorf("FixDim = %v, want %v", ne.FixDim, tt.fixDim)
+			if ne.SolutionDim != tt.fixDim {
+				t.Errorf("SolutionDim = %v, want %v", ne.SolutionDim, tt.fixDim)
 			}
 			if ne.AuxSrc != tt.auxSrc {
 				t.Errorf("AuxSrc = %v, want %v", ne.AuxSrc, tt.auxSrc)
@@ -282,4 +282,3 @@ func TestQualityFromPosValid(t *testing.T) {
 		})
 	}
 }
-

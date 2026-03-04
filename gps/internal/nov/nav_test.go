@@ -10,30 +10,30 @@ import (
 
 func TestQualityOEM7(t *testing.T) {
 	tests := []struct {
-		name       string
-		posType    uint32
-		wantLevel  gpsprot.FixLevel
-		wantDim    gpsprot.FixDim
-		wantCorr   gpsprot.CorrKind
-		wantAux    gpsprot.AuxSrc
+		name      string
+		posType   uint32
+		wantLevel gpsprot.FixLevel
+		wantDim   gpsprot.SolutionDim
+		wantCorr  gpsprot.CorrKind
+		wantAux   gpsprot.AuxSrc
 	}{
-		{"FIXEDPOS", 1, gpsprot.FixLevelNotMeasured, gpsprot.FixDimTimeOnly, 0, 0},
-		{"FLOATCONV", 4, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrBaseStation.Expand(), 0},
-		{"WIDELANE", 5, gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrPartialDualFreq.Expand(), 0},
-		{"NARROWLANE", 6, gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrFullDualFreq.Expand(), 0},
+		{"FIXEDPOS", 1, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly, 0, 0},
+		{"FLOATCONV", 4, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation.Expand(), 0},
+		{"WIDELANE", 5, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrPartialDualFreq.Expand(), 0},
+		{"NARROWLANE", 6, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrFullDualFreq.Expand(), 0},
 		{"PROPAGATED", 19, gpsprot.FixLevelNone, 0, 0, 0},
-		{"RTK_DIRECT_INS", 51, gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrBaseStation.Expand(), gpsprot.AuxSrcINS},
-		{"INS_SBAS", 52, gpsprot.FixLevelCodeCorrected, gpsprot.FixDim3D, gpsprot.CorrSBAS.Expand(), gpsprot.AuxSrcINS},
+		{"RTK_DIRECT_INS", 51, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation.Expand(), gpsprot.AuxSrcINS},
+		{"INS_SBAS", 52, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrSBAS.Expand(), gpsprot.AuxSrcINS},
 		{"EXT_CONSTRAINED", 67, gpsprot.FixLevelNotMeasured, 0, 0, gpsprot.AuxSrcINS},
-		{"OPERATIONAL", 70, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverged.Expand(), 0},
-		{"WARNING", 71, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverged.Expand(), 0},
-		{"OUT_OF_BOUNDS", 72, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverged.Expand(), 0},
-		{"INS_PPP_CONVERGING", 73, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverging.Expand(), gpsprot.AuxSrcINS},
-		{"INS_PPP", 74, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverged.Expand(), gpsprot.AuxSrcINS},
-		{"PPP_BASIC_CONVERGING", 77, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverging.Expand(), 0},
-		{"PPP_BASIC", 78, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverged.Expand(), 0},
-		{"INS_PPP_BASIC_CONVERGING", 79, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverging.Expand(), gpsprot.AuxSrcINS},
-		{"INS_PPP_BASIC", 80, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrPPPConverged.Expand(), gpsprot.AuxSrcINS},
+		{"OPERATIONAL", 70, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverged.Expand(), 0},
+		{"WARNING", 71, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverged.Expand(), 0},
+		{"OUT_OF_BOUNDS", 72, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverged.Expand(), 0},
+		{"INS_PPP_CONVERGING", 73, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverging.Expand(), gpsprot.AuxSrcINS},
+		{"INS_PPP", 74, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverged.Expand(), gpsprot.AuxSrcINS},
+		{"PPP_BASIC_CONVERGING", 77, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverging.Expand(), 0},
+		{"PPP_BASIC", 78, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverged.Expand(), 0},
+		{"INS_PPP_BASIC_CONVERGING", 79, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverging.Expand(), gpsprot.AuxSrcINS},
+		{"INS_PPP_BASIC", 80, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverged.Expand(), gpsprot.AuxSrcINS},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -43,8 +43,8 @@ func TestQualityOEM7(t *testing.T) {
 			if ne.FixLevel != tt.wantLevel {
 				t.Errorf("FixLevel = %v, want %v", ne.FixLevel, tt.wantLevel)
 			}
-			if ne.FixDim != tt.wantDim {
-				t.Errorf("FixDim = %v, want %v", ne.FixDim, tt.wantDim)
+			if ne.SolutionDim != tt.wantDim {
+				t.Errorf("SolutionDim = %v, want %v", ne.SolutionDim, tt.wantDim)
 			}
 			if ne.Correction != tt.wantCorr {
 				t.Errorf("Correction = %v, want %v", ne.Correction, tt.wantCorr)
@@ -61,12 +61,12 @@ func TestQualitySinoGNSS(t *testing.T) {
 		name      string
 		posType   uint32
 		wantLevel gpsprot.FixLevel
-		wantDim   gpsprot.FixDim
+		wantDim   gpsprot.SolutionDim
 		wantCorr  gpsprot.CorrKind
 	}{
-		{"SINGLE_SMOOTH", 9, gpsprot.FixLevelCode, gpsprot.FixDim3D, 0},
-		{"FIX_DERIVATION", 35, gpsprot.FixLevelCarrierFloat, gpsprot.FixDim3D, gpsprot.CorrBaseStation.Expand()},
-		{"SUPER_WIDE_LANE", 51, gpsprot.FixLevelCarrierFixed, gpsprot.FixDim3D, gpsprot.CorrPartialDualFreq.Expand()},
+		{"SINGLE_SMOOTH", 9, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0},
+		{"FIX_DERIVATION", 35, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrBaseStation.Expand()},
+		{"SUPER_WIDE_LANE", 51, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrPartialDualFreq.Expand()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -76,8 +76,8 @@ func TestQualitySinoGNSS(t *testing.T) {
 			if ne.FixLevel != tt.wantLevel {
 				t.Errorf("FixLevel = %v, want %v", ne.FixLevel, tt.wantLevel)
 			}
-			if ne.FixDim != tt.wantDim {
-				t.Errorf("FixDim = %v, want %v", ne.FixDim, tt.wantDim)
+			if ne.SolutionDim != tt.wantDim {
+				t.Errorf("SolutionDim = %v, want %v", ne.SolutionDim, tt.wantDim)
 			}
 			if ne.Correction != tt.wantCorr {
 				t.Errorf("Correction = %v, want %v", ne.Correction, tt.wantCorr)
@@ -108,8 +108,8 @@ func TestQualityFields(t *testing.T) {
 	if ne.FixLevel != gpsprot.FixLevelCarrierFixed {
 		t.Errorf("FixLevel = %v, want CarrierFixed", ne.FixLevel)
 	}
-	if ne.FixDim != gpsprot.FixDim3D {
-		t.Errorf("FixDim = %v, want 3D", ne.FixDim)
+	if ne.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("SolutionDim = %v, want 3D", ne.SolutionDim)
 	}
 	if ne.Correction != gpsprot.CorrFullDualFreq.Expand() {
 		t.Errorf("Correction = %v, want FullDualFreq expanded", ne.Correction)
@@ -139,8 +139,8 @@ func TestQualityNotComputed(t *testing.T) {
 	if ne.FixLevel != gpsprot.FixLevelNone {
 		t.Errorf("FixLevel = %v, want None", ne.FixLevel)
 	}
-	if ne.FixDim != 0 {
-		t.Errorf("FixDim = %v, want 0", ne.FixDim)
+	if ne.SolutionDim != 0 {
+		t.Errorf("SolutionDim = %v, want 0", ne.SolutionDim)
 	}
 	if ne.Correction != 0 {
 		t.Errorf("Correction = %v, want 0", ne.Correction)

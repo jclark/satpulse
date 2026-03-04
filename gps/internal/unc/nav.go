@@ -81,21 +81,20 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus uncmsg.SolStatus, posType uncmsg
 	switch posType {
 	case uncmsg.PosVelFixedPos:
 		ne.FixLevel = gpsprot.FixLevelCode
-		ne.FixDim = gpsprot.FixDimTimeOnly
+		ne.SolutionDim = gpsprot.SolutionDimTimeOnly
 		return
 	case uncmsg.PosVelINS:
 		ne.FixLevel = gpsprot.FixLevelNone
-		ne.FixDim = gpsprot.FixDim3D
 		ne.AuxSrc |= gpsprot.AuxSrcINS
 		return
 	case uncmsg.PosVelPPPAR:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction |= gpsprot.CorrPPPConverged.Expand()
 		return
 	case uncmsg.PosVelPPPRTK:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction |= gpsprot.CorrPPPRTK.Expand()
 		return
 	}
@@ -103,7 +102,7 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus uncmsg.SolStatus, posType uncmsg
 	fl, fd, ck, aux, ok := nov.PosTypeQuality(uint32(posType))
 	if ok {
 		ne.FixLevel = fl
-		ne.FixDim = fd
+		ne.SolutionDim = fd
 		ne.Correction |= ck
 		ne.AuxSrc |= aux
 	}

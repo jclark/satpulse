@@ -28,16 +28,16 @@ type TimeSSE struct {
 
 // SurveySSE is the type of the SSE for survey progress
 type SurveySSE struct {
-	X          gpsprot.Length             `json:"x,omitzero"`
-	Y          gpsprot.Length             `json:"y,omitzero"`
-	Z          gpsprot.Length             `json:"z,omitzero"`
-	Accuracy   gpsprot.Length             `json:"accuracy"`
-	Alt        opt.Val[gpsprot.Length]    `json:"alt,omitzero"`
-	LatLon     opt.Val[[2]gpsprot.Angle]  `json:"latLon,omitzero"`
-	ObsTime    gpsprot.Duration            `json:"obsTime"`
-	ObsCount   uint32                     `json:"obsCount"`
-	InProgress bool                       `json:"inProgress"`
-	Valid      bool                       `json:"valid"`
+	X          gpsprot.Length            `json:"x,omitzero"`
+	Y          gpsprot.Length            `json:"y,omitzero"`
+	Z          gpsprot.Length            `json:"z,omitzero"`
+	Accuracy   gpsprot.Length            `json:"accuracy"`
+	Alt        opt.Val[gpsprot.Length]   `json:"alt,omitzero"`
+	LatLon     opt.Val[[2]gpsprot.Angle] `json:"latLon,omitzero"`
+	ObsTime    gpsprot.Duration          `json:"obsTime"`
+	ObsCount   uint32                    `json:"obsCount"`
+	InProgress bool                      `json:"inProgress"`
+	Valid      bool                      `json:"valid"`
 }
 
 // SatellitesSSE is the type of the SSE for satellite events
@@ -61,11 +61,11 @@ type SampleSSE struct {
 type PosVelSSE struct {
 	// Geodetic position
 	LatLon    opt.Val[[2]gpsprot.Angle] `json:"latLon,omitzero"`
-	Height    opt.Val[gpsprot.Length]    `json:"height,omitzero"`
-	HeightMSL opt.Val[gpsprot.Length]    `json:"heightMSL,omitzero"`
-	PosECEFX  opt.Val[gpsprot.Length]    `json:"posECEFX,omitzero"`
-	PosECEFY  opt.Val[gpsprot.Length]    `json:"posECEFY,omitzero"`
-	PosECEFZ  opt.Val[gpsprot.Length]    `json:"posECEFZ,omitzero"`
+	Height    opt.Val[gpsprot.Length]   `json:"height,omitzero"`
+	HeightMSL opt.Val[gpsprot.Length]   `json:"heightMSL,omitzero"`
+	PosECEFX  opt.Val[gpsprot.Length]   `json:"posECEFX,omitzero"`
+	PosECEFY  opt.Val[gpsprot.Length]   `json:"posECEFY,omitzero"`
+	PosECEFZ  opt.Val[gpsprot.Length]   `json:"posECEFZ,omitzero"`
 	// Velocity
 	GroundSpeed opt.Val[gpsprot.Speed] `json:"groundSpeed,omitzero"`
 	Speed3D     opt.Val[gpsprot.Speed] `json:"speed3D,omitzero"`
@@ -81,9 +81,9 @@ type PosVelSSE struct {
 // QualitySSE is the SSE event data for solution quality metadata.
 // Emitted once per navigation epoch.
 type QualitySSE struct {
-	FixLevel    gpsprot.FixLevel `json:"fixLevel,omitzero"`
-	FixDim      gpsprot.FixDim   `json:"fixDim,omitzero"`
-	Corrections gpsprot.CorrKind `json:"corrections,omitzero"`
+	FixLevel    gpsprot.FixLevel    `json:"fixLevel,omitzero"`
+	SolutionDim gpsprot.SolutionDim `json:"solutionDim,omitzero"`
+	Corrections gpsprot.CorrKind    `json:"corrections,omitzero"`
 	// Accuracy estimates
 	AccHor         opt.Val[gpsprot.Length] `json:"accHor,omitzero"`
 	AccVert        opt.Val[gpsprot.Length] `json:"accVert,omitzero"`
@@ -279,7 +279,7 @@ func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
 	}
 	q := &QualitySSE{
 		FixLevel:      msg.FixLevel,
-		FixDim:        msg.FixDim,
+		SolutionDim:   msg.SolutionDim,
 		Corrections:   msg.Correction,
 		NumSVUsed:     msg.NumSVUsed,
 		NumSVTracked:  msg.NumSVTracked,
@@ -303,5 +303,3 @@ func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
 	q.SignalsUsed = msg.SignalsUsed
 	return q
 }
-
-

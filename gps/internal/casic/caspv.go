@@ -19,13 +19,13 @@ func qualityFromPosValid(ne *gpsprot.NavEpochMsg, pv casbin.NavPosValid, numSV u
 		ne.AuxSrc = gpsprot.AuxSrcDR
 	case casbin.NavPosQuickMode, casbin.NavPos3D:
 		ne.FixLevel = gpsprot.FixLevelCode
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 	case casbin.NavPos2D:
 		ne.FixLevel = gpsprot.FixLevelCode
-		ne.FixDim = gpsprot.FixDim2D
+		ne.SolutionDim = gpsprot.SolutionDim2D
 	case casbin.NavPosGNSSDR:
 		ne.FixLevel = gpsprot.FixLevelCode
-		ne.FixDim = gpsprot.FixDim3D
+		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.AuxSrc = gpsprot.AuxSrcDR
 	default: // NavPosInvalid, NavPosRoughEstimate, NavPosMaintaining
 		ne.FixLevel = gpsprot.FixLevelNone

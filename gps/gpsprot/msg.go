@@ -501,18 +501,18 @@ func (msg *LeapSecondMsg) UpdateLeapSecond(target *ptime.LeapSecond) bool {
 }
 
 type SurveyMsg struct {
-	Position   Point3D       `json:"position,omitzero"`
-	Accuracy   Length        `json:"accuracy"`
-	ObsCount   uint32        `json:"obsCount"`
+	Position   Point3D  `json:"position,omitzero"`
+	Accuracy   Length   `json:"accuracy"`
+	ObsCount   uint32   `json:"obsCount"`
 	ObsTime    Duration `json:"obsTime"`
-	Valid      bool          `json:"valid"`
-	InProgress bool          `json:"inProgress"`
+	Valid      bool     `json:"valid"`
+	InProgress bool     `json:"inProgress"`
 }
 
-// FixLevel is the primary ordered axis describing the technique used to compute
-// the GNSS navigation solution, ordered by increasing quality. Higher values
-// represent higher intrinsic precision. The zero value means "not provided"
-// or "not applicable".
+// FixLevel is the primary ordered axis describing GNSS contribution to the
+// navigation solution, ordered by increasing quality. FixLevelCode and above
+// describe how the position/time solution is computed. The zero value means
+// "not provided" or "not applicable".
 type FixLevel uint8
 
 const (
@@ -522,8 +522,12 @@ const (
 	// FixLevelNotMeasured indicates that the receiver reports a position that
 	// is not based on any measurement (e.g. manual input or simulated). No
 	// component of the PVT solution is being computed from observations.
-	// CorrKind and FixDim do not apply.
+	// CorrKind and SolutionDim do not apply.
 	FixLevelNotMeasured
+
+	// FixLevelDoppler indicates a velocity-only solution derived from Doppler
+	// measurements, without a valid position/time solution.
+	FixLevelDoppler
 
 	// FixLevelCode indicates an uncorrected code-based GNSS solution
 	// (e.g. standalone SPS or single point positioning).
@@ -548,6 +552,7 @@ const (
 var fixLevelName = [...]string{
 	FixLevelNone:          "none",
 	FixLevelNotMeasured:   "notMeasured",
+	FixLevelDoppler:       "doppler",
 	FixLevelCode:          "code",
 	FixLevelCodeCorrected: "codeCorrected",
 	FixLevelCarrierFloat:  "carrierFloat",
@@ -588,66 +593,60 @@ func (f *FixLevel) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// FixDim describes the dimensionality of the GNSS navigation solution. This is
-// primarily about position dimensionality (2D/3D), but includes "time-only" and
-// "velocity-only" cases for receivers that report those explicitly.
+// SolutionDim describes dimensionality for a GNSS position/time solution.
+// It is only meaningful when FixLevel >= FixLevelCode.
 // The zero value means "not provided" or "not applicable".
-type FixDim uint8
+type SolutionDim uint8
 
 const (
-	// FixDim2D indicates a two-dimensional solution where height is fixed
+	// SolutionDim2D indicates a two-dimensional solution where height is fixed
 	// or constrained and only horizontal position is solved.
-	FixDim2D FixDim = iota + 1
+	SolutionDim2D SolutionDim = iota + 1
 
-	// FixDim3D indicates a full three-dimensional solution where
+	// SolutionDim3D indicates a full three-dimensional solution where
 	// position and clock bias are fully estimated.
-	FixDim3D
+	SolutionDim3D
 
-	// FixDimTimeOnly indicates a solution where only time (and possibly
+	// SolutionDimTimeOnly indicates a solution where only time (and possibly
 	// clock bias) is solved, without a valid position.
-	FixDimTimeOnly
-
-	// FixDimVelocityOnly indicates a solution where only velocity is solved
-	// (e.g. from Doppler), without a valid position or time.
-	FixDimVelocityOnly
+	SolutionDimTimeOnly
 )
 
-var fixDimName = [...]string{
-	FixDim2D:           "2D",
-	FixDim3D:           "3D",
-	FixDimTimeOnly:     "timeOnly",
-	FixDimVelocityOnly: "velocityOnly",
+var solutionDimName = [...]string{
+	SolutionDim2D:       "2D",
+	SolutionDim3D:       "3D",
+	SolutionDimTimeOnly: "timeOnly",
 }
 
-var fixDimFromName = func() map[string]FixDim {
-	m := make(map[string]FixDim, len(fixDimName))
-	for i, name := range fixDimName {
+var solutionDimFromName = func() map[string]SolutionDim {
+	m := make(map[string]SolutionDim, len(solutionDimName))
+	for i, name := range solutionDimName {
 		if name != "" {
-			m[name] = FixDim(i)
+			m[name] = SolutionDim(i)
 		}
 	}
 	return m
 }()
 
-func (d FixDim) String() string {
-	if int(d) < len(fixDimName) && fixDimName[d] != "" {
-		return fixDimName[d]
+func (d SolutionDim) String() string {
+	if int(d) < len(solutionDimName) && solutionDimName[d] != "" {
+		return solutionDimName[d]
 	}
-	return fmt.Sprintf("FixDim(%d)", d)
+	return fmt.Sprintf("SolutionDim(%d)", d)
 }
 
-func (d FixDim) MarshalJSON() ([]byte, error) {
+func (d SolutionDim) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
 
-func (d FixDim) MarshalText() ([]byte, error) {
+func (d SolutionDim) MarshalText() ([]byte, error) {
 	return []byte(d.String()), nil
 }
 
-func (d *FixDim) UnmarshalText(text []byte) error {
-	v, ok := fixDimFromName[string(text)]
+func (d *SolutionDim) UnmarshalText(text []byte) error {
+	v, ok := solutionDimFromName[string(text)]
 	if !ok {
-		return fmt.Errorf("unknown FixDim %q", text)
+		return fmt.Errorf("unknown SolutionDim %q", text)
 	}
 	*d = v
 	return nil
@@ -947,13 +946,13 @@ func (d *DOP) Fill(other *DOP) {
 // CorrKind is a bitmask (not an enum) and its bits are related by a partial
 // order (see CorrKind docs).
 type NavEpochMsg struct {
-	// FixLevel is the primary technique used to compute the GNSS solution,
-	// ordered by increasing quality (None < Code < CodeCorrected <
+	// FixLevel is the primary GNSS solution mode, ordered by increasing
+	// quality (None < Doppler < Code < CodeCorrected <
 	// CarrierFloat < CarrierFixed).
 	FixLevel FixLevel `json:"fixLevel,omitzero"`
-	// FixDim is the dimensionality of the solution (2D, 3D, time-only,
-	// velocity-only).
-	FixDim FixDim `json:"fixDim,omitzero"`
+	// SolutionDim is the dimensionality of the position/time solution
+	// (2D, 3D, time-only). Unset when FixLevel < FixLevelCode.
+	SolutionDim SolutionDim `json:"solutionDim,omitzero"`
 	// Correction is a bitmask of assertions about corrections applied.
 	// Meaningful when FixLevel >= FixLevelCodeCorrected.
 	Correction CorrKind `json:"correction,omitzero"`
@@ -1011,7 +1010,7 @@ func (a *Accuracy) Fill(other *Accuracy) {
 
 // MergeNavEpoch merges multiple NavEpochMsg values. Priority is implicit in
 // argument order: the first non-nil message wins for scalar fields (Tag,
-// FixLevel, FixDim); optional fields use fill-if-unset semantics; bitmask
+// FixLevel, SolutionDim); optional fields use fill-if-unset semantics; bitmask
 // fields (Correction, AuxSrc, SignalsUsed) are unioned; StartTime is the
 // earliest. The first non-nil argument is mutated and returned.
 func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
@@ -1030,8 +1029,8 @@ func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
 		if dst.FixLevel == 0 {
 			dst.FixLevel = m.FixLevel
 		}
-		if dst.FixDim == 0 {
-			dst.FixDim = m.FixDim
+		if dst.SolutionDim == 0 {
+			dst.SolutionDim = m.SolutionDim
 		}
 		dst.Acc.Fill(&m.Acc)
 		dst.DOP.Fill(&m.DOP)
@@ -1046,6 +1045,9 @@ func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
 		if !m.StartTime.IsZero() && (dst.StartTime.IsZero() || m.StartTime.Before(dst.StartTime)) {
 			dst.StartTime = m.StartTime
 		}
+	}
+	if dst != nil && dst.FixLevel < FixLevelCode {
+		dst.SolutionDim = 0
 	}
 	return dst
 }

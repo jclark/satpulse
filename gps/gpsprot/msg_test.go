@@ -71,6 +71,7 @@ func TestFixLevelString(t *testing.T) {
 		{0, "FixLevel(0)"},
 		{FixLevelNone, "none"},
 		{FixLevelNotMeasured, "notMeasured"},
+		{FixLevelDoppler, "doppler"},
 		{FixLevelCode, "code"},
 		{FixLevelCodeCorrected, "codeCorrected"},
 		{FixLevelCarrierFloat, "carrierFloat"},
@@ -109,26 +110,25 @@ func TestFixLevelRoundTrip(t *testing.T) {
 	}
 }
 
-func TestFixDimString(t *testing.T) {
+func TestSolutionDimString(t *testing.T) {
 	tests := []struct {
-		d    FixDim
+		d    SolutionDim
 		want string
 	}{
-		{0, "FixDim(0)"},
-		{FixDim2D, "2D"},
-		{FixDim3D, "3D"},
-		{FixDimTimeOnly, "timeOnly"},
-		{FixDimVelocityOnly, "velocityOnly"},
+		{0, "SolutionDim(0)"},
+		{SolutionDim2D, "2D"},
+		{SolutionDim3D, "3D"},
+		{SolutionDimTimeOnly, "timeOnly"},
 	}
 	for _, tt := range tests {
 		if got := tt.d.String(); got != tt.want {
-			t.Errorf("FixDim(%d).String() = %q, want %q", tt.d, got, tt.want)
+			t.Errorf("SolutionDim(%d).String() = %q, want %q", tt.d, got, tt.want)
 		}
 	}
 }
 
-func TestFixDimJSON(t *testing.T) {
-	b, err := json.Marshal(FixDim3D)
+func TestSolutionDimJSON(t *testing.T) {
+	b, err := json.Marshal(SolutionDim3D)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,13 +137,13 @@ func TestFixDimJSON(t *testing.T) {
 	}
 }
 
-func TestFixDimRoundTrip(t *testing.T) {
-	for d := FixDim2D; d <= FixDimVelocityOnly; d++ {
+func TestSolutionDimRoundTrip(t *testing.T) {
+	for d := SolutionDim2D; d <= SolutionDimTimeOnly; d++ {
 		text, err := d.MarshalText()
 		if err != nil {
 			t.Fatalf("MarshalText(%d): %v", d, err)
 		}
-		var got FixDim
+		var got SolutionDim
 		if err := got.UnmarshalText(text); err != nil {
 			t.Fatalf("UnmarshalText(%q): %v", text, err)
 		}

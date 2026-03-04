@@ -261,7 +261,7 @@ const surveyFormat: EventFormat = {
 
 const statusFormat: EventFormat = {
     fixLevel: ["Fix type"],
-    fixDim: ["Fix dimensionality"],
+    solutionDim: ["Solution dimensionality"],
     corrections: ["Corrections", (arg: string[]) => arg.join(", ")],
     tdop: ["Time DOP", (arg: number) => arg.toFixed(2)],
     gdop: ["Geometric DOP", (arg: number) => arg.toFixed(2)],
