@@ -228,3 +228,76 @@ func TestNavAutoWithITOWEpoch(t *testing.T) {
 		t.Error("Acc.Hor not set (should come from NAV-POSLLH)")
 	}
 }
+
+// TestNavTimeUTCITowOffByOne reproduces the real hardware message ordering
+// where NAV-TIMEUTC has iTOW 1ms less than NAV-POSLLH/DOP/VELNED.
+// This must not split the epoch: the flushed epoch should contain both
+// accuracy (from NAV-POSLLH) and quality (from NAV-AUTO).
+func TestNavTimeUTCITowOffByOne(t *testing.T) {
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+	handler := &testMsgHandler{}
+	pp.SetMsgHandler(handler)
+
+	// Epoch 1: real hardware ordering from TAU1201
+	// NAV-POSLLH, NAV-DOP, NAV-VELNED all have iTOW=100000
+	processMsg(t, pp, &asbin.NavPosLlh{
+		NavITOW: asbin.NavITOW{ITow: 100000},
+		Lat: 473977640, Lon: 85255110, Height: 467890, HMSL: 420000,
+		HAcc: 5000, VAcc: 4000,
+	}, time.Unix(1, 0))
+	processMsg(t, pp, &asbin.NavDop{
+		NavITOW: asbin.NavITOW{ITow: 100000},
+		GDOP: 149, PDOP: 126, TDOP: 80, VDOP: 103, HDOP: 71,
+	}, time.Unix(1, 3000000))
+	processMsg(t, pp, &asbin.NavVelNed{
+		NavITOW: asbin.NavITOW{ITow: 100000},
+		GSpeed: 5, Heading: 5517413, SAcc: 4,
+	}, time.Unix(1, 6000000))
+	// NAV-TIMEUTC has iTOW=99999 (1ms less, as observed on real hardware)
+	utc1 := &asbin.NavTimeUTC{NavITOW: asbin.NavITOW{ITow: 99999}}
+	utc1.ValidFlag = asbin.NavTimeUTCFlagTowValid | asbin.NavTimeUTCFlagWknValid | asbin.NavTimeUTCFlagUtcValid
+	utc1.Year, utc1.Month, utc1.Day = 2026, 3, 4
+	utc1.Hour, utc1.Min, utc1.Sec = 12, 55, 31
+	processMsg(t, pp, utc1, time.Unix(1, 9000000))
+	// NAV-AUTO (no iTOW)
+	processMsg(t, pp, &asbin.NavAuto{
+		FixState: asbin.NavAutoFix3D, SatInUse: 25, SatInView: 26,
+		Lat: 473977640, Lon: 85255110, Alt: 467890,
+		PDOP: 77, HDOP: 77, VDOP: 115,
+	}, time.Unix(1, 12000000))
+
+	// Epoch 2: next second's messages flush epoch 1
+	processMsg(t, pp, &asbin.NavPosLlh{
+		NavITOW: asbin.NavITOW{ITow: 200000},
+		Lat: 473977641, Lon: 85255111, Height: 467891, HMSL: 420001,
+		HAcc: 5001, VAcc: 4001,
+	}, time.Unix(2, 0))
+
+	epochs := handler.navEpochMsgs()
+	// Should be exactly 1 epoch, not 2
+	if len(epochs) != 1 {
+		t.Fatalf("got %d NavEpochMsgs, want 1 (epoch was split by NAV-TIMEUTC iTOW off-by-one)", len(epochs))
+	}
+	e := epochs[0]
+	// Must have accuracy from NAV-POSLLH
+	if !e.Acc.Hor.IsSet() {
+		t.Error("Acc.Hor not set (should come from NAV-POSLLH)")
+	}
+	// Must have quality from NAV-AUTO
+	if e.FixLevel != gpsprot.FixLevelCode {
+		t.Errorf("FixLevel = %v, want %v (should come from NAV-AUTO)", e.FixLevel, gpsprot.FixLevelCode)
+	}
+	if e.FixDim != gpsprot.FixDim3D {
+		t.Errorf("FixDim = %v, want %v", e.FixDim, gpsprot.FixDim3D)
+	}
+	if !e.NumSVUsed.IsSet() || e.NumSVUsed.Get() != 25 {
+		t.Errorf("NumSVUsed = %v, want 25", e.NumSVUsed)
+	}
+	// Must have full DOPs from NAV-DOP
+	if !e.DOP.Geom.IsSet() {
+		t.Error("DOP.Geom not set (should come from NAV-DOP)")
+	}
+	if !e.DOP.Time.IsSet() {
+		t.Error("DOP.Time not set (should come from NAV-DOP)")
+	}
+}
