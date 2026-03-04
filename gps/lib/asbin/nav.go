@@ -251,10 +251,24 @@ func (m *NavSVInfo) Parts() (fixed any, slice any) {
 	return &m.NavSVInfoFixed, m.Sats
 }
 
+// NavAutoFixState defines the fix state values for NavAuto.FixState
+type NavAutoFixState = uint8
+
+const (
+	NavAutoFixNone     NavAutoFixState = 0
+	NavAutoFixAided    NavAutoFixState = 1
+	NavAutoFixClkBias  NavAutoFixState = 2
+	NavAutoFix2D       NavAutoFixState = 3
+	NavAutoFix3D       NavAutoFixState = 4
+	NavAutoFixDGNSS    NavAutoFixState = 5
+	NavAutoFixRTKFloat NavAutoFixState = 6
+	NavAutoFixRTKFixed NavAutoFixState = 7
+)
+
 // NAV-AUTO (0x01 0xC0) - fix state, position, speed, DOPs, satellite counts
 // Unlike other NAV messages, NAV-AUTO has no iTOW field.
 type NavAuto struct {
-	FixState  uint8  // Fix state (0=none, 3=2D, 4=3D, 5=DGNSS, 6=RTK float, 7=RTK fixed)
+	FixState  NavAutoFixState // Fix state
 	Year      uint16 // UTC year
 	Month     uint8  // UTC month (1-12)
 	Day       uint8  // UTC day (1-31)

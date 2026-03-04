@@ -20,6 +20,7 @@ type PacketProcessor struct {
 	// Invariant: curNavEpochMsg is non-nil iff curNavEpoch is non-zero.
 	curNavEpoch    uint32              // current navigation epoch (iTOW + 1 to reserve zero for "no epoch")
 	curNavEpochMsg *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
+	hadNavAuto     bool                 // true if NAV-AUTO has been seen in the current epoch
 }
 
 // NewPacketProcessor creates a new Allystar binary packet processor
@@ -59,6 +60,7 @@ func (p *PacketProcessor) handleNavEpoch(nm asbin.NavMsg, tRead time.Time) {
 		p.mgr.EpochStarted(p, tRead)
 		p.curNavEpoch = e
 		p.curNavEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
+		p.hadNavAuto = false
 	}
 }
 
@@ -98,6 +100,18 @@ func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {
 		sats = satellitesNavSVInfo(mt)
 	case *asbin.NavSvin:
 		sv = surveyNavSvin(mt)
+	case *asbin.NavAuto:
+		if p.hadNavAuto || p.curNavEpochMsg == nil {
+			p.mgr.EpochStarted(p, tRead)
+			p.curNavEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
+		}
+		p.hadNavAuto = true
+		qualityNavAuto(p.curNavEpochMsg, mt)
+		posG = posGeoNavAuto(mt)
+		velG = velGeoNavAuto(mt)
+	case *asbin.NavDop:
+		dopNavDop(p.curNavEpochMsg, mt)
+		return true
 	default:
 		return false
 	}
