@@ -22,7 +22,7 @@ export function StatusPanel({msg}: Props) {
         if (value != null) rows.push({label, value});
     };
     add('Fix level', msg.fixLevel);
-    add('Fix dimensionality', msg.fixDim);
+    add('Solution dimensionality', msg.solutionDim);
     if (msg.correction) add('Corrections', msg.correction.length ? msg.correction.join(', ') : 'None');
     if (msg.auxSrc) add('Aux sources', msg.auxSrc.length ? msg.auxSrc.join(', ') : 'None');
     add('Horizontal accuracy', msg.acc?.hor != null ? `${msg.acc.hor.toFixed(3)} m` : undefined);
