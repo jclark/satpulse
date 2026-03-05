@@ -816,33 +816,42 @@ func (c CorrKind) Expand() CorrKind {
 	return result
 }
 
-// items returns the names of the set bits that are not implied by any other
-// set bit. This gives the minimal representation.
-func (c CorrKind) items() []string {
-	var items []string
-	for _, b := range corrKindBits {
-		if c&b.mask == 0 {
-			continue
+// Leaves returns c with only the leaf bits: bits that are not implied by
+// any other set bit. For example, (CorrSBAS|CorrSSR|CorrUsed).Leaves()
+// returns CorrSBAS.
+func (c CorrKind) Leaves() CorrKind {
+	result := c
+	for v := c; v != 0; v &= v - 1 {
+		bit := v & -v
+		rest := c & ^bit
+		if rest != 0 && rest.Expand()&bit != 0 {
+			result &= ^bit
 		}
-		// Omit this bit if it is implied by some other set bit.
-		if c & ^b.mask != 0 && (c & ^b.mask).Expand()&b.mask != 0 {
-			continue
-		}
-		items = append(items, b.name)
 	}
-	return items
+	return result
+}
+
+// Names returns the name of each set bit in declaration order.
+func (c CorrKind) Names() []string {
+	var names []string
+	for _, b := range corrKindBits {
+		if c&b.mask != 0 {
+			names = append(names, b.name)
+		}
+	}
+	return names
 }
 
 func (c CorrKind) String() string {
-	items := c.items()
-	if len(items) == 0 {
+	names := c.Leaves().Names()
+	if len(names) == 0 {
 		return "(none)"
 	}
-	return strings.Join(items, ",")
+	return strings.Join(names, ",")
 }
 
 func (c CorrKind) MarshalJSON() ([]byte, error) {
-	return json.Marshal(c.items())
+	return json.Marshal(c.Leaves().Names())
 }
 
 func (c *CorrKind) UnmarshalJSON(data []byte) error {
