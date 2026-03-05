@@ -7,6 +7,7 @@ import (
 	"iter"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -371,6 +372,56 @@ func (sv SVID) String() string {
 
 func (sv SVID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(sv.String())
+}
+
+// gnssFromSVIDPrefix maps the single-letter SVID prefix back to a GNSS value.
+var gnssFromSVIDPrefix = func() map[byte]GNSS {
+	m := make(map[byte]GNSS)
+	for g := GNSS(1); g <= GNSSLast; g++ {
+		if p := g.SVIDPrefix(); p != "" {
+			m[p[0]] = g
+		}
+	}
+	return m
+}()
+
+// ParseSVID parses an SVID string like "G01", "E11", "R?" back to an SVID.
+func ParseSVID(s string) (SVID, error) {
+	if len(s) < 2 {
+		return SVID{}, fmt.Errorf("invalid SVID %q: too short", s)
+	}
+	g, ok := gnssFromSVIDPrefix[s[0]]
+	if !ok {
+		return SVID{}, fmt.Errorf("invalid SVID %q: unknown prefix %q", s, s[0])
+	}
+	rest := s[1:]
+	if rest == "?" {
+		if g != GLO {
+			return SVID{}, fmt.Errorf("invalid SVID %q: '?' only valid for GLONASS", s)
+		}
+		return SVID{GNSS: g, Num: GLOUnknown}, nil
+	}
+	n, err := strconv.ParseUint(rest, 10, 8)
+	if err != nil {
+		return SVID{}, fmt.Errorf("invalid SVID %q: %w", s, err)
+	}
+	if n == 0 {
+		return SVID{}, fmt.Errorf("invalid SVID %q: SV number must be non-zero", s)
+	}
+	return SVID{GNSS: g, Num: uint8(n)}, nil
+}
+
+func (sv *SVID) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	v, err := ParseSVID(s)
+	if err != nil {
+		return err
+	}
+	*sv = v
+	return nil
 }
 
 func (sv SVID) IsZero() bool {
@@ -912,6 +963,31 @@ func (a AuxSrc) String() string {
 
 func (a AuxSrc) MarshalJSON() ([]byte, error) {
 	return json.Marshal(a.Items())
+}
+
+var auxSrcFromName = func() map[string]AuxSrc {
+	m := make(map[string]AuxSrc, len(auxSrcBits))
+	for _, b := range auxSrcBits {
+		m[b.name] = b.mask
+	}
+	return m
+}()
+
+func (a *AuxSrc) UnmarshalJSON(data []byte) error {
+	var names []string
+	if err := json.Unmarshal(data, &names); err != nil {
+		return err
+	}
+	var result AuxSrc
+	for _, name := range names {
+		bit, ok := auxSrcFromName[name]
+		if !ok {
+			return fmt.Errorf("unknown AuxSrc %q", name)
+		}
+		result |= bit
+	}
+	*a = result
+	return nil
 }
 
 // DOP holds dilution of precision values for the navigation solution. Fields
