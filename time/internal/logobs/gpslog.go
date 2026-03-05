@@ -11,7 +11,7 @@ import (
 // gpsStatus captures the fields of NavEpochMsg that we track for changes.
 type gpsStatus struct {
 	fixLevel   gpsprot.FixLevel
-	fixDim     gpsprot.FixDim
+	fixDim     gpsprot.SolutionDim
 	correction gpsprot.CorrKind
 	auxSrc     gpsprot.AuxSrc
 }
@@ -19,7 +19,7 @@ type gpsStatus struct {
 func statusFromMsg(msg *gpsprot.NavEpochMsg) gpsStatus {
 	return gpsStatus{
 		fixLevel:   msg.FixLevel,
-		fixDim:     msg.FixDim,
+		fixDim:     msg.SolutionDim,
 		correction: msg.Correction,
 		auxSrc:     msg.AuxSrc,
 	}
@@ -40,7 +40,7 @@ func NewGPSLogObserver(lg *slog.Logger) *GPSLogObserver {
 func (o *GPSLogObserver) logStatus(msg string, s gpsStatus) {
 	args := []any{"fixLevel", s.fixLevel}
 	if s.fixDim != 0 {
-		args = append(args, "fixDim", s.fixDim)
+		args = append(args, "solutionDim", s.fixDim)
 	}
 	if s.correction != 0 {
 		args = append(args, "correction", s.correction)

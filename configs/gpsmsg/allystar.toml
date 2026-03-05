@@ -400,6 +400,24 @@ id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x02, 0]
 
+# Enable NAV-AUTO at 1Hz (fix state, position, speed, DOPs, satellite counts)
+[[asbin]]
+tag = "asbin-nav-auto"
+description = "Enable NAV-AUTO binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0xC0, 1]
+
+# Disable NAV-AUTO
+[[asbin]]
+tag = "asbin-nav-auto-off"
+description = "Disable NAV-AUTO binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0xC0, 0]
+
 # Enable NAV-DOP at 1Hz (dilution of precision)
 [[asbin]]
 tag = "asbin-nav-dop"

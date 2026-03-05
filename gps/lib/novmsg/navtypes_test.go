@@ -130,3 +130,56 @@ func TestPosTypeUnknown(t *testing.T) {
 		t.Error("ParsePosType(BOGUS) should return error")
 	}
 }
+
+func TestSinoPosTypeRoundTrip(t *testing.T) {
+	vals := []struct {
+		v SinoPosType
+		s string
+	}{
+		{PosNone, "NONE"},
+		{PosFixedPos, "FIXEDPOS"},
+		{PosDopplerVelocity, "DOPPLER_VELOCITY"},
+		{SinoPosSingleSmooth, "SINGLE_SMOOTH"},
+		{PosSingle, "SINGLE"},
+		{PosPSRDiff, "PSRDIFF"},
+		{PosSBAS, "SBAS"},
+		{PosNarrowFloat, "NARROW_FLOAT"},
+		{SinoPosFIXDerivation, "FIX_DERIVATION"},
+		{PosWideInt, "WIDE_INT"},
+		{PosNarrowInt, "NARROW_INT"},
+		{SinoPosSuperWideLane, "SUPER_WIDE_LANE"},
+		{PosPPPConverging, "PPP_CONVERGING"},
+		{PosPPP, "PPP"},
+	}
+	for _, tt := range vals {
+		if got := tt.v.String(); got != tt.s {
+			t.Errorf("SinoPosType(%d).String() = %q, want %q", tt.v, got, tt.s)
+		}
+		parsed, err := ParseSinoPosType(tt.s)
+		if err != nil {
+			t.Errorf("ParseSinoPosType(%q) error: %v", tt.s, err)
+		} else if parsed != tt.v {
+			t.Errorf("ParseSinoPosType(%q) = %d, want %d", tt.s, parsed, tt.v)
+		}
+		text, err := tt.v.MarshalText()
+		if err != nil {
+			t.Errorf("SinoPosType(%d).MarshalText() error: %v", tt.v, err)
+			continue
+		}
+		var unmarshaled SinoPosType
+		if err := unmarshaled.UnmarshalText(text); err != nil {
+			t.Errorf("SinoPosType.UnmarshalText(%q) error: %v", text, err)
+		} else if unmarshaled != tt.v {
+			t.Errorf("SinoPosType.UnmarshalText(%q) = %d, want %d", text, unmarshaled, tt.v)
+		}
+	}
+}
+
+func TestSinoPosTypeUnknown(t *testing.T) {
+	if got := SinoPosType(99).String(); got != "99" {
+		t.Errorf("SinoPosType(99).String() = %q, want %q", got, "99")
+	}
+	if _, err := ParseSinoPosType("BOGUS"); err == nil {
+		t.Error("ParseSinoPosType(BOGUS) should return error")
+	}
+}

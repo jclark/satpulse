@@ -82,15 +82,14 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, timePulseEnable
 }
 
 func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProcessor, error) {
-	var nmeaNumbering []gpsprot.NMEASVNumberingRange
+	vendor := gpsreg.VendorUnknown
 	if c.Vendor != "" {
-		vendor := gpsreg.ParseVendor(c.Vendor)
+		vendor = gpsreg.ParseVendor(c.Vendor)
 		if vendor == gpsreg.VendorUnknown {
 			return nil, configErrorf("unknown vendor: %s", c.Vendor)
 		}
-		nmeaNumbering = gpsreg.FindNMEASVNumbering(vendor)
 	}
-	return gpsreg.CreatePacketProcessors(nmeaNumbering), nil
+	return gpsreg.CreatePacketProcessors(vendor), nil
 }
 
 func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {

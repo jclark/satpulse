@@ -483,7 +483,7 @@ func TestQualityNavPVT(t *testing.T) {
 		name       string
 		m          ubxbin.NavPVT
 		wantLevel  gpsprot.FixLevel
-		wantDim    gpsprot.FixDim
+		wantDim    gpsprot.SolutionDim
 		wantCorr   gpsprot.CorrKind
 		wantAux    gpsprot.AuxSrc
 		wantNumSV  uint16
@@ -505,7 +505,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   12, PDOP: 150,
 			},
 			wantLevel: gpsprot.FixLevelCode,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantNumSV: 12, wantPDOP: 1.50,
 		},
 		{
@@ -516,7 +516,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   10, PDOP: 120,
 			},
 			wantLevel: gpsprot.FixLevelCodeCorrected,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantCorr:  gpsprot.CorrUsed,
 			wantNumSV: 10, wantPDOP: 1.20,
 		},
@@ -528,7 +528,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   15, PDOP: 100,
 			},
 			wantLevel: gpsprot.FixLevelCarrierFloat,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantCorr:  gpsprot.CorrUsed,
 			wantNumSV: 15, wantPDOP: 1.00,
 		},
@@ -540,7 +540,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   20, PDOP: 80,
 			},
 			wantLevel: gpsprot.FixLevelCarrierFixed,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantCorr:  gpsprot.CorrUsed,
 			wantNumSV: 20, wantPDOP: 0.80,
 		},
@@ -552,7 +552,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   3, PDOP: 500,
 			},
 			wantLevel: gpsprot.FixLevelCode,
-			wantDim:   gpsprot.FixDim2D,
+			wantDim:   gpsprot.SolutionDim2D,
 			wantNumSV: 3, wantPDOP: 5.00,
 		},
 		{
@@ -572,7 +572,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   8, PDOP: 200,
 			},
 			wantLevel: gpsprot.FixLevelCode,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantAux:   gpsprot.AuxSrcDR,
 			wantNumSV: 8, wantPDOP: 2.00,
 		},
@@ -584,7 +584,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   1, PDOP: 10000,
 			},
 			wantLevel: gpsprot.FixLevelCode,
-			wantDim:   gpsprot.FixDimTimeOnly,
+			wantDim:   gpsprot.SolutionDimTimeOnly,
 			wantNumSV: 1, wantPDOP: 100.00,
 		},
 		{
@@ -595,7 +595,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   10, PDOP: 150,
 			},
 			wantLevel: gpsprot.FixLevelCode,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantAux:   gpsprot.AuxSrcINS,
 			wantNumSV: 10, wantPDOP: 1.50,
 		},
@@ -607,9 +607,18 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   6, PDOP: 300,
 			},
 			wantLevel: gpsprot.FixLevelCode,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantAux:   gpsprot.AuxSrcDR | gpsprot.AuxSrcINS,
 			wantNumSV: 6, wantPDOP: 3.00,
+		},
+		{
+			name: "dead reckoning gnssFixOK not set",
+			m: ubxbin.NavPVT{
+				FixType: ubxbin.NavPVTDeadReckoningOnly,
+				Flags:   0,
+			},
+			wantLevel: gpsprot.FixLevelNone,
+			wantAux:   gpsprot.AuxSrcDR,
 		},
 		{
 			name: "3D gnssFixOK not set",
@@ -619,7 +628,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   10, PDOP: 150,
 			},
 			wantLevel: gpsprot.FixLevelNone,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   0,
 			wantNumSV: 10, wantPDOP: 1.50,
 		},
 		{
@@ -631,7 +640,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   10, PDOP: 120,
 			},
 			wantLevel: gpsprot.FixLevelCodeCorrected,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantCorr:  gpsprot.CorrUsed,
 			wantNumSV: 10, wantPDOP: 1.20,
 			wantAge: 1 * gpsprot.Second, wantAgeSet: true,
@@ -645,7 +654,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   15, PDOP: 90,
 			},
 			wantLevel: gpsprot.FixLevelCarrierFixed,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantCorr:  gpsprot.CorrUsed,
 			wantNumSV: 15, wantPDOP: 0.90,
 			wantAge: 120 * gpsprot.Second, wantAgeSet: true,
@@ -659,7 +668,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   10, PDOP: 150,
 			},
 			wantLevel: gpsprot.FixLevelCode,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantNumSV: 10, wantPDOP: 1.50,
 		},
 		{
@@ -671,7 +680,7 @@ func TestQualityNavPVT(t *testing.T) {
 				NumSV:   10, PDOP: 100,
 			},
 			wantLevel: gpsprot.FixLevelCodeCorrected,
-			wantDim:   gpsprot.FixDim3D,
+			wantDim:   gpsprot.SolutionDim3D,
 			wantCorr:  gpsprot.CorrUsed,
 			wantNumSV: 10, wantPDOP: 1.00,
 			wantAge: 0, wantAgeSet: true,
@@ -684,8 +693,8 @@ func TestQualityNavPVT(t *testing.T) {
 			if ne.FixLevel != tt.wantLevel {
 				t.Errorf("FixLevel = %v, want %v", ne.FixLevel, tt.wantLevel)
 			}
-			if ne.FixDim != tt.wantDim {
-				t.Errorf("FixDim = %v, want %v", ne.FixDim, tt.wantDim)
+			if ne.SolutionDim != tt.wantDim {
+				t.Errorf("SolutionDim = %v, want %v", ne.SolutionDim, tt.wantDim)
 			}
 			if ne.Correction != tt.wantCorr {
 				t.Errorf("Correction = %v, want %v", ne.Correction, tt.wantCorr)

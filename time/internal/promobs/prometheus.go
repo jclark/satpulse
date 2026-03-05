@@ -36,6 +36,12 @@ type PrometheusObserver struct {
 	freqDeltaSumGauge     prometheus.Counter
 	freqDeltaSumSqCounter prometheus.Counter
 
+	// Position metrics
+	latGauge       prometheus.Gauge
+	lonGauge       prometheus.Gauge
+	heightGauge    *prometheus.GaugeVec
+	elevationGauge *prometheus.GaugeVec
+
 	// Satellites metrics
 	lookAngleGauge     *prometheus.GaugeVec
 	satelliteUsedGauge *prometheus.GaugeVec
@@ -225,6 +231,50 @@ func (p *PrometheusObserver) Sample(data phcsync.Sample) {
 		p.freqDeltaSumGauge.Add(data.FreqDelta)
 		p.freqDeltaSumSqCounter.Add(data.FreqDelta * data.FreqDelta)
 	}
+}
+
+// NavEpochPV sets position gauges from the geodetic position.
+// Gauges are registered on first position data, so they never appear if the
+// receiver does not report position.
+func (p *PrometheusObserver) NavEpochPV(_ *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, _ time.Time) {
+	if !pv.PosGeo.IsSet() {
+		return
+	}
+	geo := pv.PosGeo.Get()
+	if p.latGauge == nil {
+		p.latGauge = registerGauge(p.reg, "satpulse_position_latitude_degrees", "Geodetic latitude in degrees (positive north)")
+		p.lonGauge = registerGauge(p.reg, "satpulse_position_longitude_degrees", "Geodetic longitude in degrees (positive east)")
+	}
+	p.latGauge.Set(geo.LatLon[0].Degrees())
+	p.lonGauge.Set(geo.LatLon[1].Degrees())
+	if geo.Height.IsSet() {
+		if p.heightGauge == nil {
+			p.heightGauge = registerGaugeVec(p.reg, "satpulse_position_height_meters", "Height above WGS-84 ellipsoid in meters")
+		}
+		p.heightGauge.WithLabelValues().Set(geo.Height.Get().Meters())
+	} else if p.heightGauge != nil {
+		p.heightGauge.DeleteLabelValues()
+	}
+	if geo.HeightMSL.IsSet() {
+		if p.elevationGauge == nil {
+			p.elevationGauge = registerGaugeVec(p.reg, "satpulse_position_elevation_meters", "Elevation above mean sea level in meters")
+		}
+		p.elevationGauge.WithLabelValues().Set(geo.HeightMSL.Get().Meters())
+	} else if p.elevationGauge != nil {
+		p.elevationGauge.DeleteLabelValues()
+	}
+}
+
+func registerGauge(reg *prometheus.Registry, name, help string) prometheus.Gauge {
+	g := prometheus.NewGauge(prometheus.GaugeOpts{Name: name, Help: help})
+	reg.MustRegister(g)
+	return g
+}
+
+func registerGaugeVec(reg *prometheus.Registry, name, help string) *prometheus.GaugeVec {
+	g := prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: name, Help: help}, nil)
+	reg.MustRegister(g)
+	return g
 }
 
 func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {

@@ -62,12 +62,17 @@ out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 --packet-log capture.jsonl 
 
 ## Verbose/Debug Mode
 
+**CRITICAL: `-v` is a global flag on `satpulsetool` itself, NOT on the `gps` subcommand. It MUST go BEFORE `gps`.**
+
 - `-v` - Verbose output
 - `-v -v` - Debug output (more detail)
 
 ```bash
-out/amd64/satpulsetool gps -v -v -d /dev/ttyUSB0 -s 115200
+out/amd64/satpulsetool -v -v gps -d /dev/ttyUSB0 -s 115200
 ```
+
+WRONG (will fail): `satpulsetool gps -v -d ...`
+RIGHT: `satpulsetool -v gps -d ...`
 
 ## Other Options
 

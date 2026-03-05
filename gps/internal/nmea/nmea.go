@@ -374,16 +374,19 @@ func finalizeNavEpoch(epoch *NavEpoch) {
 	switch epoch.rmcExtMode {
 	case 'R':
 		epoch.FixLevel = gpsprot.FixLevelCarrierFixed
-		epoch.Correction = gpsprot.CorrBaseStation | gpsprot.CorrUsed
+		epoch.Correction = gpsprot.CorrOSR | gpsprot.CorrUsed
 		epoch.AuxSrc = 0
 	case 'F':
 		epoch.FixLevel = gpsprot.FixLevelCarrierFloat
-		epoch.Correction = gpsprot.CorrBaseStation | gpsprot.CorrUsed
+		epoch.Correction = gpsprot.CorrOSR | gpsprot.CorrUsed
 		epoch.AuxSrc = 0
 	case 'P':
 		epoch.FixLevel = gpsprot.FixLevelCodeCorrected
-		epoch.Correction = gpsprot.CorrWideArea | gpsprot.CorrUsed
+		epoch.Correction = gpsprot.CorrSSR | gpsprot.CorrUsed
 		epoch.AuxSrc = 0
+	}
+	if epoch.FixLevel < gpsprot.FixLevelCode {
+		epoch.SolutionDim = 0
 	}
 }
 
@@ -466,10 +469,10 @@ func ggaQuality(epoch *NavEpoch, fields []string) {
 		corr = gpsprot.CorrUsed
 	case "4":
 		fl = gpsprot.FixLevelCarrierFixed
-		corr = gpsprot.CorrBaseStation | gpsprot.CorrUsed
+		corr = gpsprot.CorrOSR | gpsprot.CorrUsed
 	case "5":
 		fl = gpsprot.FixLevelCarrierFloat
-		corr = gpsprot.CorrBaseStation | gpsprot.CorrUsed
+		corr = gpsprot.CorrOSR | gpsprot.CorrUsed
 	case "6":
 		fl = gpsprot.FixLevelNone
 		aux = gpsprot.AuxSrcDR

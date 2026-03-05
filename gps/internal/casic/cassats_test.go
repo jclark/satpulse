@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 )
 
 // mockMsgHandler captures SatellitesMsg for test verification.
@@ -392,6 +392,141 @@ func TestSatAccumEmptyFlush(t *testing.T) {
 	}
 	if a.predicted != 1<<casbin.GPS {
 		t.Errorf("predicted=%d, want %d", a.predicted, 1<<casbin.GPS)
+	}
+}
+
+func TestSatsNav2Sig(t *testing.T) {
+	m := &casbin.Nav2Sig{
+		Nav2SigFixed: casbin.Nav2SigFixed{NumTrkTot: 4, NumFixTot: 3},
+		Sigs: []casbin.Nav2SigInfo{
+			{GNSSID: 0, SVID: 5, SigID: casbin.SigGPSL1CA, CNO: 40, Elev: 45, Azim: 180, SolFlags: 0x01},
+			{GNSSID: 0, SVID: 5, SigID: casbin.SigGPSL5, CNO: 35, Elev: 45, Azim: 180, SolFlags: 0x01},
+			{GNSSID: 3, SVID: 12, SigID: casbin.SigGALE1, CNO: 38, Elev: 60, Azim: 270, SolFlags: 0x01},
+			{GNSSID: 1, SVID: 10, SigID: casbin.SigBDSB1IMEO, CNO: 30, Elev: 30, Azim: 90, SolFlags: 0x00},
+		},
+	}
+	msg := satsNav2Sig(m)
+	if msg == nil {
+		t.Fatal("satsNav2Sig() returned nil")
+	}
+	if msg.Tag != Tag {
+		t.Errorf("Tag = %v, want %v", msg.Tag, Tag)
+	}
+	if msg.NativeMsgID != "NAV2-SIG" {
+		t.Errorf("NativeMsgID = %v, want NAV2-SIG", msg.NativeMsgID)
+	}
+	if msg.UsedValidity != gpsprot.SatelliteUsedSignal {
+		t.Errorf("UsedValidity = %v, want SatelliteUsedSignal", msg.UsedValidity)
+	}
+	// GPS:5 has two signals grouped, GAL:12 has one, BDS:10 has one = 3 SVs
+	if len(msg.SVs) != 3 {
+		t.Fatalf("len(SVs) = %d, want 3", len(msg.SVs))
+	}
+	// Check GPS:5 grouping (2 signals)
+	gps5 := msg.SVs[0]
+	if gps5.ID.GNSS != gpsprot.GPS || gps5.ID.Num != 5 {
+		t.Errorf("SVs[0].ID = %v, want GPS:5", gps5.ID)
+	}
+	if len(gps5.Signals) != 2 {
+		t.Fatalf("SVs[0] signals = %d, want 2", len(gps5.Signals))
+	}
+	if gps5.Signals[0].ID != gpsprot.SigIDGPSL1CA || gps5.Signals[1].ID != gpsprot.SigIDGPSL5I {
+		t.Errorf("GPS:5 signals = %v/%v, want L1CA/L5I", gps5.Signals[0].ID, gps5.Signals[1].ID)
+	}
+	if !gps5.Used {
+		t.Error("GPS:5 Used = false, want true")
+	}
+	// Check BDS:10 not used
+	bds10 := msg.SVs[2]
+	if bds10.ID.GNSS != gpsprot.BDS || bds10.ID.Num != 10 {
+		t.Errorf("SVs[2].ID = %v, want BDS:10", bds10.ID)
+	}
+	if bds10.Used {
+		t.Error("BDS:10 Used = true, want false")
+	}
+}
+
+func TestSatsNav2SigEmpty(t *testing.T) {
+	m := &casbin.Nav2Sig{
+		Nav2SigFixed: casbin.Nav2SigFixed{NumTrkTot: 1},
+		Sigs:         []casbin.Nav2SigInfo{{GNSSID: 0, SVID: 1, CNO: 0}},
+	}
+	msg := satsNav2Sig(m)
+	if msg != nil {
+		t.Errorf("satsNav2Sig() = %+v, want nil (all CNO=0)", msg)
+	}
+}
+
+func TestCorrFromNav2Sig(t *testing.T) {
+	tests := []struct {
+		name     string
+		corFlags uint8
+		want     gpsprot.CorrKind
+	}{
+		{"NULL", 0x00, 0},
+		{"SBAS", 0x01, gpsprot.CorrSBAS | gpsprot.CorrUsed},
+		{"BDS_PPP", 0x02, gpsprot.CorrSSR | gpsprot.CorrUsed},
+		{"RTCM2", 0x03, gpsprot.CorrRTCM | gpsprot.CorrUsed},
+		{"OSR", 0x04, gpsprot.CorrOSR | gpsprot.CorrRTCM | gpsprot.CorrUsed},
+		{"SSR", 0x05, gpsprot.CorrSSR | gpsprot.CorrRTCM | gpsprot.CorrUsed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ne gpsprot.NavEpochMsg
+			m := &casbin.Nav2Sig{
+				Sigs: []casbin.Nav2SigInfo{{
+					SolFlags: 0x01, // used
+					CorFlags: tt.corFlags,
+					SigID:    casbin.SigGPSL1CA,
+				}},
+			}
+			corrFromNav2Sig(&ne, m)
+			if ne.Correction != tt.want {
+				t.Errorf("Correction = %v, want %v", ne.Correction, tt.want)
+			}
+		})
+	}
+}
+
+func TestCorrFromNav2SigNotUsed(t *testing.T) {
+	var ne gpsprot.NavEpochMsg
+	m := &casbin.Nav2Sig{
+		Sigs: []casbin.Nav2SigInfo{{
+			SolFlags: 0x00, // NOT used in solution
+			CorFlags: 0x01, // SBAS
+		}},
+	}
+	corrFromNav2Sig(&ne, m)
+	if ne.Correction != 0 {
+		t.Errorf("Correction = %v, want 0 (signal not used)", ne.Correction)
+	}
+}
+
+func TestCorrFromNav2SigNilNe(t *testing.T) {
+	m := &casbin.Nav2Sig{
+		Sigs: []casbin.Nav2SigInfo{{SolFlags: 0x01, CorFlags: 0x01}},
+	}
+	corrFromNav2Sig(nil, m) // should not panic
+}
+
+func TestCorrFromNav2SigSignalsUsed(t *testing.T) {
+	var ne gpsprot.NavEpochMsg
+	m := &casbin.Nav2Sig{
+		Sigs: []casbin.Nav2SigInfo{
+			{SolFlags: 0x01, SigID: casbin.SigGPSL1CA},
+			{SolFlags: 0x01, SigID: casbin.SigGALE1},
+			{SolFlags: 0x00, SigID: casbin.SigBDSB1IMEO}, // not used
+		},
+	}
+	corrFromNav2Sig(&ne, m)
+	if !ne.SignalsUsed.Contains(gpsprot.SigGPSL1CA) {
+		t.Error("SignalsUsed missing GPS L1 C/A")
+	}
+	if !ne.SignalsUsed.Contains(gpsprot.SigGALE1) {
+		t.Error("SignalsUsed missing GAL E1")
+	}
+	if ne.SignalsUsed.Contains(gpsprot.SigBDSB1I) {
+		t.Error("SignalsUsed should not contain BDS B1I (not used)")
 	}
 }
 

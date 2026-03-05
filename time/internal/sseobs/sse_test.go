@@ -67,7 +67,7 @@ func TestSSEObserver_Events(t *testing.T) {
 		{
 			name: "time",
 			action: func(obs *SSEObserver) {
-				obs.Time(&gpsprot.TimeMsg{
+				obs.Tick(&gpsprot.TimeMsg{
 					Ref:     gpsprot.PostPulse,
 					TAITime: ptime.Time(oneYearSecs * 1e9),
 				}, time.Now())
@@ -278,17 +278,17 @@ func TestBuildQualitySSE(t *testing.T) {
 		{
 			name: "minimal_code_3d",
 			msg: gpsprot.NavEpochMsg{
-				FixLevel: gpsprot.FixLevelCode,
-				FixDim:   gpsprot.FixDim3D,
+				FixLevel:    gpsprot.FixLevelCode,
+				SolutionDim: gpsprot.SolutionDim3D,
 			},
-			want: `{"fixLevel":"code","fixDim":"3D"}`,
+			want: `{"fixLevel":"code","solutionDim":"3D"}`,
 		},
 		{
 			name: "carrier_fixed_with_dop",
 			msg: gpsprot.NavEpochMsg{
-				FixLevel:   gpsprot.FixLevelCarrierFixed,
-				FixDim:     gpsprot.FixDim3D,
-				Correction: gpsprot.CorrBaseStation,
+				FixLevel:    gpsprot.FixLevelCarrierFixed,
+				SolutionDim: gpsprot.SolutionDim3D,
+				Correction:  gpsprot.CorrOSR,
 				DOP: gpsprot.DOP{
 					Pos:  opt.Make(1.2),
 					Hor:  opt.Make(0.8),
@@ -296,37 +296,37 @@ func TestBuildQualitySSE(t *testing.T) {
 				},
 				NumSVUsed: opt.Make[uint16](12),
 			},
-			want: `{"fixLevel":"carrierFixed","fixDim":"3D","corrections":["baseStation"],"pdop":1.2,"hdop":0.8,"vdop":0.9,"numSVUsed":12}`,
+			want: `{"fixLevel":"carrierFixed","solutionDim":"3D","corrections":["OSR"],"pdop":1.2,"hdop":0.8,"vdop":0.9,"numSVUsed":12}`,
 		},
 		{
 			name: "with_accuracy",
 			msg: gpsprot.NavEpochMsg{
-				FixLevel: gpsprot.FixLevelCode,
-				FixDim:   gpsprot.FixDim3D,
+				FixLevel:    gpsprot.FixLevelCode,
+				SolutionDim: gpsprot.SolutionDim3D,
 				Acc: gpsprot.Accuracy{
 					Hor:  opt.Make(gpsprot.Meters(2.5)),
 					Vert: opt.Make(gpsprot.Meters(4.0)),
 				},
 			},
-			want: `{"fixLevel":"code","fixDim":"3D","accHor":2.5,"accVert":4}`,
+			want: `{"fixLevel":"code","solutionDim":"3D","accHor":2.5,"accVert":4}`,
 		},
 		{
 			name: "with_signals_used",
 			msg: gpsprot.NavEpochMsg{
 				FixLevel:    gpsprot.FixLevelCode,
-				FixDim:      gpsprot.FixDim3D,
+				SolutionDim: gpsprot.SolutionDim3D,
 				SignalsUsed: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
 			},
-			want: `{"fixLevel":"code","fixDim":"3D","signalsUsed":{"GPS":["L1"],"GAL":["E1"]}}`,
+			want: `{"fixLevel":"code","solutionDim":"3D","signalsUsed":{"GPS":["L1"],"GAL":["E1"]}}`,
 		},
 		{
 			name: "with_diffage",
 			msg: gpsprot.NavEpochMsg{
-				FixLevel: gpsprot.FixLevelCodeCorrected,
-				FixDim:   gpsprot.FixDim3D,
-				DiffAge:  opt.Make(2 * gpsprot.Second),
+				FixLevel:    gpsprot.FixLevelCodeCorrected,
+				SolutionDim: gpsprot.SolutionDim3D,
+				DiffAge:     opt.Make(2 * gpsprot.Second),
 			},
-			want: `{"fixLevel":"codeCorrected","fixDim":"3D","diffAge":2}`,
+			want: `{"fixLevel":"codeCorrected","solutionDim":"3D","diffAge":2}`,
 		},
 		{
 			name: "no_fix",
@@ -363,22 +363,23 @@ func TestBuildQualitySSE(t *testing.T) {
 	}
 }
 
-
-func TestNavEpochSSE(t *testing.T) {
+func TestNavEpochPVSSE(t *testing.T) {
 	ch := make(chan sse.Event, 4)
 	cfgResult := &gpscfg.Result{
 		ReceiverInfo: &gpsprot.ReceiverInfo{Vendor: "test"},
 	}
 	obs := New(ch, ptime.LeapSecond{}, slog.Default(), cfgResult)
-	// Simulate accumulated position
-	obs.PosGeo(&gpsprot.PosGeoMsg{
-		LatLon: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(47.5), gpsprot.DegreesFromFloat(7.6)},
-	}, time.Now())
-	// Fire NavEpoch
-	obs.NavEpoch(&gpsprot.NavEpochMsg{
-		FixLevel: gpsprot.FixLevelCode,
-		FixDim:   gpsprot.FixDim3D,
-	}, time.Now())
+	// Build a PVMsgBundle as the Dispatcher would
+	pv := &gpsprot.PVMsgBundle{
+		PosGeo: opt.Make(gpsprot.PosGeoMsg{
+			LatLon: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(47.5), gpsprot.DegreesFromFloat(7.6)},
+		}),
+	}
+	// Fire NavEpochPV
+	obs.NavEpochPV(&gpsprot.NavEpochMsg{
+		FixLevel:    gpsprot.FixLevelCode,
+		SolutionDim: gpsprot.SolutionDim3D,
+	}, pv, time.Now())
 	// Should produce posvel then quality
 	posvel := <-ch
 	if !strings.Contains(posvel.Format(), "event: posvel\n") {
@@ -387,10 +388,6 @@ func TestNavEpochSSE(t *testing.T) {
 	quality := <-ch
 	if !strings.Contains(quality.Format(), "event: quality\n") {
 		t.Errorf("expected quality event, got: %s", quality.Format())
-	}
-	// Bundle should be cleared after NavEpoch
-	if obs.PVMsgBundle.PosGeo.IsSet() {
-		t.Error("expected PVMsgBundle.PosGeo to be unset after NavEpoch")
 	}
 }
 

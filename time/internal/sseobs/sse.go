@@ -28,16 +28,16 @@ type TimeSSE struct {
 
 // SurveySSE is the type of the SSE for survey progress
 type SurveySSE struct {
-	X          gpsprot.Length             `json:"x,omitzero"`
-	Y          gpsprot.Length             `json:"y,omitzero"`
-	Z          gpsprot.Length             `json:"z,omitzero"`
-	Accuracy   gpsprot.Length             `json:"accuracy"`
-	Alt        opt.Val[gpsprot.Length]    `json:"alt,omitzero"`
-	LatLon     opt.Val[[2]gpsprot.Angle]  `json:"latLon,omitzero"`
-	ObsTime    gpsprot.Duration            `json:"obsTime"`
-	ObsCount   uint32                     `json:"obsCount"`
-	InProgress bool                       `json:"inProgress"`
-	Valid      bool                       `json:"valid"`
+	X          gpsprot.Length            `json:"x,omitzero"`
+	Y          gpsprot.Length            `json:"y,omitzero"`
+	Z          gpsprot.Length            `json:"z,omitzero"`
+	Accuracy   gpsprot.Length            `json:"accuracy"`
+	Alt        opt.Val[gpsprot.Length]   `json:"alt,omitzero"`
+	LatLon     opt.Val[[2]gpsprot.Angle] `json:"latLon,omitzero"`
+	ObsTime    gpsprot.Duration          `json:"obsTime"`
+	ObsCount   uint32                    `json:"obsCount"`
+	InProgress bool                      `json:"inProgress"`
+	Valid      bool                      `json:"valid"`
 }
 
 // SatellitesSSE is the type of the SSE for satellite events
@@ -61,11 +61,11 @@ type SampleSSE struct {
 type PosVelSSE struct {
 	// Geodetic position
 	LatLon    opt.Val[[2]gpsprot.Angle] `json:"latLon,omitzero"`
-	Height    opt.Val[gpsprot.Length]    `json:"height,omitzero"`
-	HeightMSL opt.Val[gpsprot.Length]    `json:"heightMSL,omitzero"`
-	PosECEFX  opt.Val[gpsprot.Length]    `json:"posECEFX,omitzero"`
-	PosECEFY  opt.Val[gpsprot.Length]    `json:"posECEFY,omitzero"`
-	PosECEFZ  opt.Val[gpsprot.Length]    `json:"posECEFZ,omitzero"`
+	Height    opt.Val[gpsprot.Length]   `json:"height,omitzero"`
+	HeightMSL opt.Val[gpsprot.Length]   `json:"heightMSL,omitzero"`
+	PosECEFX  opt.Val[gpsprot.Length]   `json:"posECEFX,omitzero"`
+	PosECEFY  opt.Val[gpsprot.Length]   `json:"posECEFY,omitzero"`
+	PosECEFZ  opt.Val[gpsprot.Length]   `json:"posECEFZ,omitzero"`
 	// Velocity
 	GroundSpeed opt.Val[gpsprot.Speed] `json:"groundSpeed,omitzero"`
 	Speed3D     opt.Val[gpsprot.Speed] `json:"speed3D,omitzero"`
@@ -81,9 +81,9 @@ type PosVelSSE struct {
 // QualitySSE is the SSE event data for solution quality metadata.
 // Emitted once per navigation epoch.
 type QualitySSE struct {
-	FixLevel    gpsprot.FixLevel `json:"fixLevel,omitzero"`
-	FixDim      gpsprot.FixDim   `json:"fixDim,omitzero"`
-	Corrections gpsprot.CorrKind `json:"corrections,omitzero"`
+	FixLevel    gpsprot.FixLevel    `json:"fixLevel,omitzero"`
+	SolutionDim gpsprot.SolutionDim `json:"solutionDim,omitzero"`
+	Corrections gpsprot.CorrKind    `json:"corrections,omitzero"`
 	// Accuracy estimates
 	AccHor         opt.Val[gpsprot.Length] `json:"accHor,omitzero"`
 	AccVert        opt.Val[gpsprot.Length] `json:"accVert,omitzero"`
@@ -110,12 +110,11 @@ type QualitySSE struct {
 
 // SSEObserver implements obs.Observer for Server-Sent Events
 type SSEObserver struct {
-	gpsprot.PVMsgAccum
-	sseCh      chan<- sse.Event
-	lg         *slog.Logger
-	ls         ptime.LeapSecond
-	timeTicker gpsprot.TimeTicker
-	initEvent  sse.Event
+	gpsprot.DefaultHandler
+	sseCh     chan<- sse.Event
+	lg        *slog.Logger
+	ls        ptime.LeapSecond
+	initEvent sse.Event
 }
 
 // New creates a new SSE observer with the provided channel and leap second.
@@ -130,24 +129,16 @@ func New(sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger, cfgResult
 	if err != nil {
 		lg.Error("failed to create SSE event", "name", "init", "err", err)
 	}
-	o := &SSEObserver{
+	return &SSEObserver{
 		sseCh:     sseCh,
 		ls:        ls,
 		lg:        lg,
 		initEvent: initEvent,
 	}
-	o.timeTicker = *gpsprot.NewTimeTicker(&timeHandler{obs: o}, ls)
-	return o
 }
 
 func (o *SSEObserver) InitEvent() sse.Event {
 	return o.initEvent
-}
-
-// SetLeapSecond updates the leap second used for time formatting
-func (o *SSEObserver) SetLeapSecond(ls ptime.LeapSecond) {
-	o.ls = ls
-	o.timeTicker.SetLeapSecond(ls)
 }
 
 // Release implements Observer - closes the SSE channel
@@ -169,21 +160,9 @@ func (o *SSEObserver) Sample(data phcsync.Sample) {
 	o.sendSSE("phc", event)
 }
 
-// Time routes raw TimeMsgs through the TimeTicker for per-epoch filling.
-func (o *SSEObserver) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
-	o.timeTicker.Time(mt, tRead)
-}
-
-// timeHandler is the downstream target for TimeTicker.
-// It receives filled TimeMsgs and generates SSE events.
-type timeHandler struct {
-	gpsprot.DefaultHandler
-	obs *SSEObserver
-}
-
-// Time generates a time SSE event from a filled TimeMsg.
-// Only emits when the time is an integral second.
-func (h *timeHandler) Time(mt *gpsprot.TimeMsg, _ time.Time) {
+// Tick receives a filled TimeMsg from the Dispatcher's TimeTicker.
+// Only emits an SSE event when the time is an integral second.
+func (o *SSEObserver) Tick(mt *gpsprot.TimeMsg, _ time.Time) {
 	tai := mt.TAITime
 	if tai.IsZero() {
 		return
@@ -191,8 +170,8 @@ func (h *timeHandler) Time(mt *gpsprot.TimeMsg, _ time.Time) {
 	if tai.Round(time.Second) != tai {
 		return
 	}
-	h.obs.sendSSE("time", TimeSSE{
-		UTC: h.obs.ls.FormatTime(tai),
+	o.sendSSE("time", TimeSSE{
+		UTC: o.ls.FormatTime(tai),
 		TAI: int64(tai) / 1e9,
 	})
 }
@@ -235,24 +214,19 @@ func (o *SSEObserver) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 // ReopenLog implements Observer as a no-op.
 func (o *SSEObserver) ReopenLog() {}
 
-// LeapSecond updates both the local leap second and the TimeTicker's.
+// LeapSecond updates the local leap second used for time formatting.
 func (o *SSEObserver) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	msg.UpdateLeapSecond(&o.ls)
-	o.timeTicker.LeapSecond(msg, tRead)
 }
 
-// NavEpoch resets the TimeTicker for the next epoch,
-// then emits posvel and quality SSE events, and clears the bundle.
-func (o *SSEObserver) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
-	o.timeTicker.NavEpoch(msg, tRead)
-	o.PVMsgBundle.FillDerived()
-	if pv := buildPosVelSSE(&o.PVMsgBundle); pv != nil {
+// NavEpochPV emits posvel and quality SSE events from the accumulated bundle.
+func (o *SSEObserver) NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, tRead time.Time) {
+	if pv := buildPosVelSSE(pv); pv != nil {
 		o.sendSSE("posvel", pv)
 	}
 	if q := buildQualitySSE(msg); q != nil {
 		o.sendSSE("quality", q)
 	}
-	o.PVMsgAccum.NavEpoch(msg, tRead)
 }
 
 // sendSSE is a helper method to send SSE events
@@ -305,7 +279,7 @@ func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
 	}
 	q := &QualitySSE{
 		FixLevel:      msg.FixLevel,
-		FixDim:        msg.FixDim,
+		SolutionDim:   msg.SolutionDim,
 		Corrections:   msg.Correction,
 		NumSVUsed:     msg.NumSVUsed,
 		NumSVTracked:  msg.NumSVTracked,
@@ -329,5 +303,3 @@ func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
 	q.SignalsUsed = msg.SignalsUsed
 	return q
 }
-
-

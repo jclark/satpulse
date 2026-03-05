@@ -96,7 +96,7 @@ func samples() []sample {
 		}},
 		{"NavEpochMsg", gpsprot.NavEpochMsg{
 			FixLevel:    gpsprot.FixLevelCarrierFixed,
-			FixDim:      gpsprot.FixDim3D,
+			SolutionDim: gpsprot.SolutionDim3D,
 			Correction:  gpsprot.CorrRTCM,
 			Acc:         gpsprot.Accuracy{Hor: opt.Make(gpsprot.Length(15000)), Vert: opt.Make(gpsprot.Length(25000))},
 			DOP:         gpsprot.DOP{Pos: opt.Make(1.2), Hor: opt.Make(0.8)},

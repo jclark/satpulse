@@ -116,46 +116,56 @@ func velGeoNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) *gpsprot.VelGeoMsg 
 
 // qualityNavPVT extracts solution quality metadata from a NAV-PVT message.
 // Always called, even when the fix is invalid, to report "no fix" states.
+//
+// FixType determines the baseline FixLevel (no higher than Code),
+// SolutionDim, and AuxSrc. Then Flags may upgrade FixLevel above Code
+// (carrier float/fixed, differential).
 func qualityNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) {
-	switch m.FixType {
-	case ubxbin.NavPVTDeadReckoningOnly:
-		ne.AuxSrc |= gpsprot.AuxSrcDR
-	case ubxbin.NavPVT2DFix:
-		ne.FixDim = gpsprot.FixDim2D
-	case ubxbin.NavPVT3DFix:
-		ne.FixDim = gpsprot.FixDim3D
-	case ubxbin.NavPVTGNSSDeadReckoning:
-		ne.FixDim = gpsprot.FixDim3D
-		ne.AuxSrc |= gpsprot.AuxSrcDR
-	case ubxbin.NavPVTTimeOnlyFix:
-		ne.FixDim = gpsprot.FixDimTimeOnly
-	}
-	if m.Flags&ubxbin.NavPVTHeadVehValid != 0 {
-		ne.AuxSrc |= gpsprot.AuxSrcINS
-	}
-	if m.Flags&ubxbin.NavPVTGNSSFixOK == 0 || m.FixType == ubxbin.NavPVTDeadReckoningOnly {
-		ne.FixLevel = gpsprot.FixLevelNone
-	} else {
-		switch m.Flags & ubxbin.NavPctCarrSoln {
-		case ubxbin.NavPVTCarrSolnFixed:
-			ne.FixLevel = gpsprot.FixLevelCarrierFixed
-			ne.Correction |= gpsprot.CorrUsed
-		case ubxbin.NavPVTCarrSolnFloat:
-			ne.FixLevel = gpsprot.FixLevelCarrierFloat
-			ne.Correction |= gpsprot.CorrUsed
-		default:
-			if m.Flags&ubxbin.NavPVTDiffSoln != 0 {
-				ne.FixLevel = gpsprot.FixLevelCodeCorrected
-				ne.Correction |= gpsprot.CorrUsed
-			} else {
-				ne.FixLevel = gpsprot.FixLevelCode
-			}
-		}
-	}
 	ne.NumSVUsed = opt.Make(uint16(m.NumSV))
 	ne.DOP.Pos = dop01(m.PDOP)
 	if d, ok := corrAgeDuration(m.Flags3 & ubxbin.NavPVTLastCorrectionAgeMask); ok {
 		ne.DiffAge = opt.Make(d)
+	}
+	// FixType: set FixLevel, SolutionDim, AuxSrc.
+	ne.FixLevel = gpsprot.FixLevelCode
+	ne.SolutionDim = gpsprot.SolutionDim3D
+	ne.AuxSrc = 0
+	switch m.FixType {
+	case ubxbin.NavPVTDeadReckoningOnly:
+		ne.FixLevel = gpsprot.FixLevelNone
+		ne.SolutionDim = 0
+		ne.AuxSrc = gpsprot.AuxSrcDR
+	case ubxbin.NavPVT2DFix:
+		ne.SolutionDim = gpsprot.SolutionDim2D
+	case ubxbin.NavPVTGNSSDeadReckoning:
+		ne.AuxSrc = gpsprot.AuxSrcDR
+	case ubxbin.NavPVTTimeOnlyFix:
+		ne.SolutionDim = gpsprot.SolutionDimTimeOnly
+	}
+	if m.Flags&ubxbin.NavPVTHeadVehValid != 0 {
+		ne.AuxSrc |= gpsprot.AuxSrcINS
+	}
+	if m.Flags&ubxbin.NavPVTGNSSFixOK == 0 {
+		ne.FixLevel = gpsprot.FixLevelNone
+		ne.SolutionDim = 0
+		return
+	}
+	if ne.FixLevel < gpsprot.FixLevelCode {
+		return
+	}
+	// Flags: upgrade FixLevel when corrections are in use.
+	switch m.Flags & ubxbin.NavPctCarrSoln {
+	case ubxbin.NavPVTCarrSolnFixed:
+		ne.FixLevel = gpsprot.FixLevelCarrierFixed
+		ne.Correction |= gpsprot.CorrUsed
+	case ubxbin.NavPVTCarrSolnFloat:
+		ne.FixLevel = gpsprot.FixLevelCarrierFloat
+		ne.Correction |= gpsprot.CorrUsed
+	default:
+		if m.Flags&ubxbin.NavPVTDiffSoln != 0 {
+			ne.FixLevel = gpsprot.FixLevelCodeCorrected
+			ne.Correction |= gpsprot.CorrUsed
+		}
 	}
 }
 

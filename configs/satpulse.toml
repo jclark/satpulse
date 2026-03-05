@@ -26,6 +26,8 @@ speed = 9600
 # clock = true
 # Uncomment the following line to enable logging of packets from the GPS receiver (in /var/log/satpulse)
 # packet = true
+# Uncomment the following line to enable JSONL track logging (in /var/log/satpulse)
+# track = true
 
 [ptp]
 # Unix domain socket for PTP management

@@ -501,18 +501,18 @@ func (msg *LeapSecondMsg) UpdateLeapSecond(target *ptime.LeapSecond) bool {
 }
 
 type SurveyMsg struct {
-	Position   Point3D       `json:"position,omitzero"`
-	Accuracy   Length        `json:"accuracy"`
-	ObsCount   uint32        `json:"obsCount"`
+	Position   Point3D  `json:"position,omitzero"`
+	Accuracy   Length   `json:"accuracy"`
+	ObsCount   uint32   `json:"obsCount"`
 	ObsTime    Duration `json:"obsTime"`
-	Valid      bool          `json:"valid"`
-	InProgress bool          `json:"inProgress"`
+	Valid      bool     `json:"valid"`
+	InProgress bool     `json:"inProgress"`
 }
 
-// FixLevel is the primary ordered axis describing the technique used to compute
-// the GNSS navigation solution, ordered by increasing quality. Higher values
-// represent higher intrinsic precision. The zero value means "not provided"
-// or "not applicable".
+// FixLevel is the primary ordered axis describing GNSS contribution to the
+// navigation solution, ordered by increasing quality. FixLevelCode and above
+// describe how the position/time solution is computed. The zero value means
+// "not provided" or "not applicable".
 type FixLevel uint8
 
 const (
@@ -522,8 +522,12 @@ const (
 	// FixLevelNotMeasured indicates that the receiver reports a position that
 	// is not based on any measurement (e.g. manual input or simulated). No
 	// component of the PVT solution is being computed from observations.
-	// CorrKind and FixDim do not apply.
+	// CorrKind and SolutionDim do not apply.
 	FixLevelNotMeasured
+
+	// FixLevelDoppler indicates a velocity-only solution derived from Doppler
+	// measurements, without a valid position/time solution.
+	FixLevelDoppler
 
 	// FixLevelCode indicates an uncorrected code-based GNSS solution
 	// (e.g. standalone SPS or single point positioning).
@@ -548,6 +552,7 @@ const (
 var fixLevelName = [...]string{
 	FixLevelNone:          "none",
 	FixLevelNotMeasured:   "notMeasured",
+	FixLevelDoppler:       "doppler",
 	FixLevelCode:          "code",
 	FixLevelCodeCorrected: "codeCorrected",
 	FixLevelCarrierFloat:  "carrierFloat",
@@ -588,66 +593,60 @@ func (f *FixLevel) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// FixDim describes the dimensionality of the GNSS navigation solution. This is
-// primarily about position dimensionality (2D/3D), but includes "time-only" and
-// "velocity-only" cases for receivers that report those explicitly.
+// SolutionDim describes dimensionality for a GNSS position/time solution.
+// It is only meaningful when FixLevel >= FixLevelCode.
 // The zero value means "not provided" or "not applicable".
-type FixDim uint8
+type SolutionDim uint8
 
 const (
-	// FixDim2D indicates a two-dimensional solution where height is fixed
+	// SolutionDim2D indicates a two-dimensional solution where height is fixed
 	// or constrained and only horizontal position is solved.
-	FixDim2D FixDim = iota + 1
+	SolutionDim2D SolutionDim = iota + 1
 
-	// FixDim3D indicates a full three-dimensional solution where
+	// SolutionDim3D indicates a full three-dimensional solution where
 	// position and clock bias are fully estimated.
-	FixDim3D
+	SolutionDim3D
 
-	// FixDimTimeOnly indicates a solution where only time (and possibly
+	// SolutionDimTimeOnly indicates a solution where only time (and possibly
 	// clock bias) is solved, without a valid position.
-	FixDimTimeOnly
-
-	// FixDimVelocityOnly indicates a solution where only velocity is solved
-	// (e.g. from Doppler), without a valid position or time.
-	FixDimVelocityOnly
+	SolutionDimTimeOnly
 )
 
-var fixDimName = [...]string{
-	FixDim2D:           "2D",
-	FixDim3D:           "3D",
-	FixDimTimeOnly:     "timeOnly",
-	FixDimVelocityOnly: "velocityOnly",
+var solutionDimName = [...]string{
+	SolutionDim2D:       "2D",
+	SolutionDim3D:       "3D",
+	SolutionDimTimeOnly: "timeOnly",
 }
 
-var fixDimFromName = func() map[string]FixDim {
-	m := make(map[string]FixDim, len(fixDimName))
-	for i, name := range fixDimName {
+var solutionDimFromName = func() map[string]SolutionDim {
+	m := make(map[string]SolutionDim, len(solutionDimName))
+	for i, name := range solutionDimName {
 		if name != "" {
-			m[name] = FixDim(i)
+			m[name] = SolutionDim(i)
 		}
 	}
 	return m
 }()
 
-func (d FixDim) String() string {
-	if int(d) < len(fixDimName) && fixDimName[d] != "" {
-		return fixDimName[d]
+func (d SolutionDim) String() string {
+	if int(d) < len(solutionDimName) && solutionDimName[d] != "" {
+		return solutionDimName[d]
 	}
-	return fmt.Sprintf("FixDim(%d)", d)
+	return fmt.Sprintf("SolutionDim(%d)", d)
 }
 
-func (d FixDim) MarshalJSON() ([]byte, error) {
+func (d SolutionDim) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
 
-func (d FixDim) MarshalText() ([]byte, error) {
+func (d SolutionDim) MarshalText() ([]byte, error) {
 	return []byte(d.String()), nil
 }
 
-func (d *FixDim) UnmarshalText(text []byte) error {
-	v, ok := fixDimFromName[string(text)]
+func (d *SolutionDim) UnmarshalText(text []byte) error {
+	v, ok := solutionDimFromName[string(text)]
 	if !ok {
-		return fmt.Errorf("unknown FixDim %q", text)
+		return fmt.Errorf("unknown SolutionDim %q", text)
 	}
 	*d = v
 	return nil
@@ -664,82 +663,85 @@ func (d *FixDim) UnmarshalText(text []byte) error {
 //
 // Ordering (immediate implications):
 //
-//	CorrBaseStation <= CorrUsed
-//	CorrWideArea <= CorrUsed
+//	CorrOSR <= CorrUsed
+//	CorrSSR <= CorrUsed
 //	CorrRTCM <= CorrUsed
-//	CorrPartialDualFreq <= CorrBaseStation
+//	CorrPartialDualFreq <= CorrOSR
 //	CorrFullDualFreq <= CorrPartialDualFreq
-//	CorrSBAS <= CorrWideArea
-//	CorrCLAS <= CorrWideArea
-//	CorrSPARTN <= CorrWideArea
-//	CorrPPP <= CorrWideArea
+//	CorrSBAS <= CorrSSR
+//	CorrCLAS <= CorrSSR
+//	CorrSPARTN <= CorrSSR
+//	CorrPPP <= CorrSSR
 //	CorrPPPRTK <= CorrPPP
 //	CorrPPPConverging <= CorrPPP
 //	CorrPPPConverged <= CorrPPP
+//	CorrPPPHAS <= CorrPPP
+//	CorrPPPMDC <= CorrPPP
+//	CorrPPPB2b <= CorrPPP
 type CorrKind uint16
 
 const (
 	// CorrUsed asserts that external corrections are applied.
 	CorrUsed CorrKind = 1 << iota
 
-	// CorrBaseStation asserts that corrections are base/network referenced.
-	// This corresponds to OSR (Observation-State Representation / observation-space)
-	// corrections such as RTK/network RTK.
-	// CorrBaseStation <= CorrUsed.
-	CorrBaseStation
+	// CorrOSR asserts observation-space (OSR) corrections: base/network
+	// referenced, such as RTK or network RTK. CorrOSR <= CorrUsed.
+	CorrOSR
 
-	// CorrWideArea asserts that corrections are wide-area/broadcast/service
-	// corrections (not tied to a local base station).
-	// This corresponds to SSR (State-Space Representation / state-space) corrections
-	// such as SBAS/PPP/CLAS/SPARTN and RTCM-SSR streams.
-	// CorrWideArea <= CorrUsed.
-	CorrWideArea
+	// CorrSSR asserts state-space (SSR) corrections: wide-area/broadcast
+	// not tied to a local base station, such as SBAS, PPP, CLAS, SPARTN.
+	// CorrSSR <= CorrUsed.
+	CorrSSR
 
 	// CorrRTCM asserts that corrections being applied are delivered/packaged as RTCM.
 	// CorrRTCM <= CorrUsed.
 	CorrRTCM
 
-	// CorrPartialDualFreq asserts that a base-station solution uses a dual-frequency
-	// ambiguity strategy that partially exploits multiple frequencies (e.g. wide-lane
-	// techniques) rather than fully resolving the full dual-frequency ambiguity set.
-	// CorrPartialDualFreq <= CorrBaseStation.
+	// CorrPartialDualFreq asserts an OSR solution using partial dual-frequency
+	// ambiguity resolution (e.g. wide-lane). CorrPartialDualFreq <= CorrOSR.
 	CorrPartialDualFreq
 
-	// CorrFullDualFreq asserts that a base-station solution uses a dual-frequency
-	// ambiguity strategy that fully exploits multiple frequencies (e.g. narrow-lane
-	// or ionosphere-free dual-frequency models, as opposed to wide-lane-only strategies).
+	// CorrFullDualFreq asserts an OSR solution using full dual-frequency
+	// ambiguity resolution (e.g. narrow-lane, ionosphere-free).
 	// CorrFullDualFreq <= CorrPartialDualFreq.
 	CorrFullDualFreq
 
-	// CorrSBAS asserts that the wide-area corrections being applied are SBAS.
-	// CorrSBAS <= CorrWideArea.
+	// CorrSBAS asserts SSR corrections from SBAS. CorrSBAS <= CorrSSR.
 	CorrSBAS
 
-	// CorrCLAS asserts that the wide-area corrections being applied are CLAS.
-	// CorrCLAS <= CorrWideArea.
+	// CorrCLAS asserts SSR corrections from CLAS. CorrCLAS <= CorrSSR.
 	CorrCLAS
 
-	// CorrSPARTN asserts that the wide-area corrections being applied are SPARTN.
-	// CorrSPARTN <= CorrWideArea.
+	// CorrSPARTN asserts SSR corrections from SPARTN. CorrSPARTN <= CorrSSR.
 	CorrSPARTN
 
-	// CorrPPP asserts that the wide-area corrections being applied are PPP-class
-	// (standalone absolute solution regime with convergence).
-	// CorrPPP <= CorrWideArea.
+	// CorrPPP asserts SSR corrections from a PPP-class service (standalone
+	// absolute solution with convergence). CorrPPP <= CorrSSR.
 	CorrPPP
 
-	// CorrPPPRTK asserts that the PPP corrections being applied are PPP-RTK/SSR-RTK
-	// class (PPP with additional information enabling rapid ambiguity resolution).
-	// CorrPPPRTK <= CorrPPP.
+	// CorrPPPRTK asserts PPP-RTK/SSR-RTK corrections enabling rapid
+	// ambiguity resolution. CorrPPPRTK <= CorrPPP.
 	CorrPPPRTK
 
-	// CorrPPPConverging asserts that the PPP solution is converging.
+	// CorrPPPConverging asserts a PPP solution that is still converging.
 	// CorrPPPConverging <= CorrPPP.
 	CorrPPPConverging
 
-	// CorrPPPConverged asserts that the PPP solution is converged.
+	// CorrPPPConverged asserts a converged PPP solution.
 	// CorrPPPConverged <= CorrPPP.
 	CorrPPPConverged
+
+	// CorrPPPHAS asserts PPP corrections from Galileo HAS.
+	// CorrPPPHAS <= CorrPPP.
+	CorrPPPHAS
+
+	// CorrPPPMDC asserts PPP corrections from QZSS MADOCA.
+	// CorrPPPMDC <= CorrPPP.
+	CorrPPPMDC
+
+	// CorrPPPB2b asserts PPP corrections from BeiDou B2b.
+	// CorrPPPB2b <= CorrPPP.
+	CorrPPPB2b
 )
 
 type corrKindBit struct {
@@ -752,18 +754,21 @@ type corrKindBit struct {
 // parent in the partial order. Expand computes the transitive closure.
 var corrKindBits = [...]corrKindBit{
 	{CorrUsed, "used", 0},
-	{CorrBaseStation, "baseStation", CorrUsed},
-	{CorrWideArea, "wideArea", CorrUsed},
+	{CorrOSR, "OSR", CorrUsed},
+	{CorrSSR, "SSR", CorrUsed},
 	{CorrRTCM, "RTCM", CorrUsed},
-	{CorrPartialDualFreq, "partialDualFreq", CorrBaseStation},
+	{CorrPartialDualFreq, "partialDualFreq", CorrOSR},
 	{CorrFullDualFreq, "fullDualFreq", CorrPartialDualFreq},
-	{CorrSBAS, "SBAS", CorrWideArea},
-	{CorrCLAS, "CLAS", CorrWideArea},
-	{CorrSPARTN, "SPARTN", CorrWideArea},
-	{CorrPPP, "PPP", CorrWideArea},
+	{CorrSBAS, "SBAS", CorrSSR},
+	{CorrCLAS, "CLAS", CorrSSR},
+	{CorrSPARTN, "SPARTN", CorrSSR},
+	{CorrPPP, "PPP", CorrSSR},
 	{CorrPPPRTK, "PPP-RTK", CorrPPP},
 	{CorrPPPConverging, "PPPConverging", CorrPPP},
 	{CorrPPPConverged, "PPPConverged", CorrPPP},
+	{CorrPPPHAS, "PPP-HAS", CorrPPP},
+	{CorrPPPMDC, "PPP-MDC", CorrPPP},
+	{CorrPPPB2b, "PPP-B2b", CorrPPP},
 }
 
 var corrKindFromName = func() map[string]CorrKind {
@@ -801,7 +806,7 @@ func bitIndex(mask CorrKind) int {
 }
 
 // Close returns c with all implied bits set according to the partial order.
-// For example, CorrSBAS.Expand() returns CorrSBAS|CorrWideArea|CorrUsed.
+// For example, CorrSBAS.Expand() returns CorrSBAS|CorrSSR|CorrUsed.
 func (c CorrKind) Expand() CorrKind {
 	result := c
 	for v := c; v != 0; v &= v - 1 {
@@ -929,13 +934,13 @@ func (d *DOP) Fill(other *DOP) {
 // CorrKind is a bitmask (not an enum) and its bits are related by a partial
 // order (see CorrKind docs).
 type NavEpochMsg struct {
-	// FixLevel is the primary technique used to compute the GNSS solution,
-	// ordered by increasing quality (None < Code < CodeCorrected <
+	// FixLevel is the primary GNSS solution mode, ordered by increasing
+	// quality (None < Doppler < Code < CodeCorrected <
 	// CarrierFloat < CarrierFixed).
 	FixLevel FixLevel `json:"fixLevel,omitzero"`
-	// FixDim is the dimensionality of the solution (2D, 3D, time-only,
-	// velocity-only).
-	FixDim FixDim `json:"fixDim,omitzero"`
+	// SolutionDim is the dimensionality of the position/time solution
+	// (2D, 3D, time-only). Unset when FixLevel < FixLevelCode.
+	SolutionDim SolutionDim `json:"solutionDim,omitzero"`
 	// Correction is a bitmask of assertions about corrections applied.
 	// Meaningful when FixLevel >= FixLevelCodeCorrected.
 	Correction CorrKind `json:"correction,omitzero"`
@@ -993,7 +998,7 @@ func (a *Accuracy) Fill(other *Accuracy) {
 
 // MergeNavEpoch merges multiple NavEpochMsg values. Priority is implicit in
 // argument order: the first non-nil message wins for scalar fields (Tag,
-// FixLevel, FixDim); optional fields use fill-if-unset semantics; bitmask
+// FixLevel, SolutionDim); optional fields use fill-if-unset semantics; bitmask
 // fields (Correction, AuxSrc, SignalsUsed) are unioned; StartTime is the
 // earliest. The first non-nil argument is mutated and returned.
 func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
@@ -1012,8 +1017,8 @@ func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
 		if dst.FixLevel == 0 {
 			dst.FixLevel = m.FixLevel
 		}
-		if dst.FixDim == 0 {
-			dst.FixDim = m.FixDim
+		if dst.SolutionDim == 0 {
+			dst.SolutionDim = m.SolutionDim
 		}
 		dst.Acc.Fill(&m.Acc)
 		dst.DOP.Fill(&m.DOP)
@@ -1028,6 +1033,9 @@ func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
 		if !m.StartTime.IsZero() && (dst.StartTime.IsZero() || m.StartTime.Before(dst.StartTime)) {
 			dst.StartTime = m.StartTime
 		}
+	}
+	if dst != nil && dst.FixLevel < FixLevelCode {
+		dst.SolutionDim = 0
 	}
 	return dst
 }

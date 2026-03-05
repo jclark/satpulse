@@ -71,6 +71,7 @@ func TestFixLevelString(t *testing.T) {
 		{0, "FixLevel(0)"},
 		{FixLevelNone, "none"},
 		{FixLevelNotMeasured, "notMeasured"},
+		{FixLevelDoppler, "doppler"},
 		{FixLevelCode, "code"},
 		{FixLevelCodeCorrected, "codeCorrected"},
 		{FixLevelCarrierFloat, "carrierFloat"},
@@ -109,26 +110,25 @@ func TestFixLevelRoundTrip(t *testing.T) {
 	}
 }
 
-func TestFixDimString(t *testing.T) {
+func TestSolutionDimString(t *testing.T) {
 	tests := []struct {
-		d    FixDim
+		d    SolutionDim
 		want string
 	}{
-		{0, "FixDim(0)"},
-		{FixDim2D, "2D"},
-		{FixDim3D, "3D"},
-		{FixDimTimeOnly, "timeOnly"},
-		{FixDimVelocityOnly, "velocityOnly"},
+		{0, "SolutionDim(0)"},
+		{SolutionDim2D, "2D"},
+		{SolutionDim3D, "3D"},
+		{SolutionDimTimeOnly, "timeOnly"},
 	}
 	for _, tt := range tests {
 		if got := tt.d.String(); got != tt.want {
-			t.Errorf("FixDim(%d).String() = %q, want %q", tt.d, got, tt.want)
+			t.Errorf("SolutionDim(%d).String() = %q, want %q", tt.d, got, tt.want)
 		}
 	}
 }
 
-func TestFixDimJSON(t *testing.T) {
-	b, err := json.Marshal(FixDim3D)
+func TestSolutionDimJSON(t *testing.T) {
+	b, err := json.Marshal(SolutionDim3D)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,13 +137,13 @@ func TestFixDimJSON(t *testing.T) {
 	}
 }
 
-func TestFixDimRoundTrip(t *testing.T) {
-	for d := FixDim2D; d <= FixDimVelocityOnly; d++ {
+func TestSolutionDimRoundTrip(t *testing.T) {
+	for d := SolutionDim2D; d <= SolutionDimTimeOnly; d++ {
 		text, err := d.MarshalText()
 		if err != nil {
 			t.Fatalf("MarshalText(%d): %v", d, err)
 		}
-		var got FixDim
+		var got SolutionDim
 		if err := got.UnmarshalText(text); err != nil {
 			t.Fatalf("UnmarshalText(%q): %v", text, err)
 		}
@@ -197,13 +197,16 @@ func TestCorrKindClose(t *testing.T) {
 	}{
 		{0, 0},
 		{CorrUsed, CorrUsed},
-		{CorrBaseStation, CorrBaseStation | CorrUsed},
-		{CorrSBAS, CorrSBAS | CorrWideArea | CorrUsed},
-		{CorrFullDualFreq, CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed},
-		{CorrPPPRTK, CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed},
-		{CorrPPPConverging, CorrPPPConverging | CorrPPP | CorrWideArea | CorrUsed},
+		{CorrOSR, CorrOSR | CorrUsed},
+		{CorrSBAS, CorrSBAS | CorrSSR | CorrUsed},
+		{CorrFullDualFreq, CorrFullDualFreq | CorrPartialDualFreq | CorrOSR | CorrUsed},
+		{CorrPPPRTK, CorrPPPRTK | CorrPPP | CorrSSR | CorrUsed},
+		{CorrPPPConverging, CorrPPPConverging | CorrPPP | CorrSSR | CorrUsed},
+		{CorrPPPHAS, CorrPPPHAS | CorrPPP | CorrSSR | CorrUsed},
+		{CorrPPPMDC, CorrPPPMDC | CorrPPP | CorrSSR | CorrUsed},
+		{CorrPPPB2b, CorrPPPB2b | CorrPPP | CorrSSR | CorrUsed},
 		// Multiple bits: union of closures
-		{CorrSBAS | CorrRTCM, CorrSBAS | CorrWideArea | CorrRTCM | CorrUsed},
+		{CorrSBAS | CorrRTCM, CorrSBAS | CorrSSR | CorrRTCM | CorrUsed},
 	}
 	for _, tt := range tests {
 		if got := tt.in.Expand(); got != tt.want {
@@ -219,18 +222,24 @@ func TestCorrKindString(t *testing.T) {
 	}{
 		{0, "(none)"},
 		{CorrUsed, "used"},
-		// baseStation implies used, so only "baseStation"
-		{CorrBaseStation | CorrUsed, "baseStation"},
-		// SBAS implies wideArea implies used
-		{CorrSBAS | CorrWideArea | CorrUsed, "SBAS"},
-		// fullDualFreq implies partialDualFreq implies baseStation implies used
-		{CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed, "fullDualFreq"},
+		// OSR implies used, so only "OSR"
+		{CorrOSR | CorrUsed, "OSR"},
+		// SBAS implies SSR implies used
+		{CorrSBAS | CorrSSR | CorrUsed, "SBAS"},
+		// fullDualFreq implies partialDualFreq implies OSR implies used
+		{CorrFullDualFreq | CorrPartialDualFreq | CorrOSR | CorrUsed, "fullDualFreq"},
 		// Two independent leaves: SBAS + RTCM
-		{CorrSBAS | CorrRTCM | CorrWideArea | CorrUsed, "RTCM,SBAS"},
-		// PPP-RTK implies PPP implies wideArea implies used
-		{CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed, "PPP-RTK"},
+		{CorrSBAS | CorrRTCM | CorrSSR | CorrUsed, "RTCM,SBAS"},
+		// PPP-RTK implies PPP implies SSR implies used
+		{CorrPPPRTK | CorrPPP | CorrSSR | CorrUsed, "PPP-RTK"},
 		// PPPConverged + RTCM: two independent leaves
-		{CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed, "RTCM,PPPConverged"},
+		{CorrPPPConverged | CorrPPP | CorrSSR | CorrRTCM | CorrUsed, "RTCM,PPPConverged"},
+		// PPP service-specific leaves
+		{CorrPPPHAS | CorrPPP | CorrSSR | CorrUsed, "PPP-HAS"},
+		{CorrPPPMDC | CorrPPP | CorrSSR | CorrUsed, "PPP-MDC"},
+		{CorrPPPB2b | CorrPPP | CorrSSR | CorrUsed, "PPP-B2b"},
+		// PPP service + convergence state: two independent leaves
+		{CorrPPPHAS | CorrPPPConverging | CorrPPP | CorrSSR | CorrUsed, "PPPConverging,PPP-HAS"},
 	}
 	for _, tt := range tests {
 		if got := tt.c.String(); got != tt.want {
@@ -240,7 +249,7 @@ func TestCorrKindString(t *testing.T) {
 }
 
 func TestCorrKindJSON(t *testing.T) {
-	c := CorrSBAS | CorrWideArea | CorrUsed
+	c := CorrSBAS | CorrSSR | CorrUsed
 	b, err := json.Marshal(c)
 	if err != nil {
 		t.Fatal(err)
@@ -253,10 +262,14 @@ func TestCorrKindJSON(t *testing.T) {
 func TestCorrKindJSONRoundTrip(t *testing.T) {
 	tests := []CorrKind{
 		CorrUsed,
-		CorrSBAS | CorrWideArea | CorrUsed,
-		CorrFullDualFreq | CorrPartialDualFreq | CorrBaseStation | CorrUsed,
-		CorrPPPConverged | CorrPPP | CorrWideArea | CorrRTCM | CorrUsed,
-		CorrPPPRTK | CorrPPP | CorrWideArea | CorrUsed,
+		CorrSBAS | CorrSSR | CorrUsed,
+		CorrFullDualFreq | CorrPartialDualFreq | CorrOSR | CorrUsed,
+		CorrPPPConverged | CorrPPP | CorrSSR | CorrRTCM | CorrUsed,
+		CorrPPPRTK | CorrPPP | CorrSSR | CorrUsed,
+		CorrPPPHAS | CorrPPP | CorrSSR | CorrUsed,
+		CorrPPPMDC | CorrPPP | CorrSSR | CorrUsed,
+		CorrPPPB2b | CorrPPP | CorrSSR | CorrUsed,
+		CorrPPPHAS | CorrPPPConverged | CorrPPP | CorrSSR | CorrUsed,
 	}
 	for _, orig := range tests {
 		b, err := json.Marshal(orig)

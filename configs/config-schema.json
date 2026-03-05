@@ -136,7 +136,8 @@
 		  "dir": { "type": "string" },
 		  "clock": { "type": "boolean" },
 		  "event": { "type": "boolean" },
-		  "packet": { "type": "boolean" }
+		  "packet": { "type": "boolean" },
+		  "track": { "type": "boolean" }
 		}
 	  },
 	  "ptp": {
