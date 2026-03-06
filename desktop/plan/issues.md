@@ -44,41 +44,27 @@ Two possible approaches:
 
 A hybrid might work best: dim rows that missed the last epoch, remove rows that have been stale for several epochs.
 
-## rtk-tab: RTK corrections tab (base and rover)
+## corrections-tab: Corrections tab
 
-An RTK tab for forwarding RTCM correction data between a TCP peer and the connected GPS receiver. The user chooses a mode -- Base or Rover -- which determines the direction of data flow:
+A Corrections tab for forwarding correction data (RTCM, or in future PPP-RTK/PPP-AR streams) between a TCP peer and the connected GPS receiver. The user chooses a mode that determines the direction of data flow:
 
-- **Rover**: Dials a remote TCP address (host + port), reads the RTCM byte stream, and writes it to the serial connection. The serial connection is already full-duplex, so injecting RTCM data is straightforward. The goroutine should reconnect on network errors and stop when the serial connection is closed.
+- **Consume corrections** (rover use case): Dials a remote TCP address (host + port), reads the correction byte stream, and writes it to the serial connection. The serial connection is already full-duplex, so injecting correction data is straightforward. The goroutine should reconnect on network errors and stop when the serial connection is closed.
 
-- **Base**: Listens on a TCP port and serves RTCM packets from the connected receiver to network clients. When a client connects, subscribe to the packet broadcast (`bcast.Subscribe()`), filter for RTCM packets by tag, and forward them to the TCP connection. Multiple clients are supported since each gets its own subscription.
+- **Provide corrections** (base use case): Listens on a TCP port and serves correction packets from the connected receiver to network clients. When a client connects, subscribe to the packet broadcast (`bcast.Subscribe()`), filter for correction packets (e.g. RTCM) by tag, and forward them to the TCP connection. Multiple clients are supported since each gets its own subscription.
 
 UI:
 
-- Mode selector: Base / Rover
-- Host field (rover only): IP or hostname of the base station
-- Port field (both modes): TCP port to connect to (rover) or listen on (base)
+- Mode selector (exact labels TBD)
+- Host field (consume only): IP or hostname of the correction source
+- Port field (both modes): TCP port to connect to (consume) or listen on (provide)
 - Start / Stop button
-- Status panel below showing a count of RTCM packets by message type flowing through the connection. For base mode, also show the number of connected clients.
+- Status panel below showing a count of correction packets by message type flowing through the connection. For provide mode, also show the number of connected clients.
 
-Write contention (rover mode): if `outportlock-desktop` is done first, the rover uses `OutPortLock` to coordinate writes with config and message file send -- no need to disable other tabs while corrections flow. The rover acquires per-packet and releases between packets, allowing config to interleave.
+Write coordination (consume mode): use `gpsio.OutPortLock` to serialize correction writes with config and message file send writes. The corrections goroutine acquires the lock per-packet and releases between packets, so config and send operations can interleave. Config and send already exclude each other via the state machine; `OutPortLock` only needs to coordinate corrections with those existing writers. If the lock is held for longer than a threshold, stale correction packets should be dropped rather than queued.
 
-The rover should use `SerialConn.WritePacket` to write RTCM packets to the receiver, so they automatically appear in the packet monitor with direction and message type.
+Consume mode should use `SerialConn.WritePacket` to write correction packets to the receiver, so they automatically appear in the packet monitor with direction and message type.
 
 NTRIP caster support (HTTP-based, with authentication and mount points) could be added later as a separate transport option in the same tab.
-
-## outportlock-desktop: Use OutPortLock for serial write coordination
-
-The desktop backend currently uses `ConnState` to prevent concurrent writes to the serial port: `ReadConfig` and `WriteConfig` set `StateConfiguring`, `SendMsgFile` sets `StateSending`, and each checks `state == StateConnected` before proceeding. This means only one writing operation can run at a time, and the state machine encodes write exclusion rather than just UI status.
-
-Replace this with `gpsio.OutPortLock`. The backend creates an `OutPortLock` on connect and each writing operation acquires it for its duration:
-
-- `ReadConfig` / `WriteConfig`: acquire the lock for the entire `gpscfg.Configure` call. The lock is held across the full request-response sequence so that configuration packets and their acknowledgements are not interleaved with other writes.
-- `SendMsgFile`: acquire the lock for the duration of the send loop. Release on completion, cancellation, or error.
-- Rover (future): acquire per-packet, release between packets, allowing config to interleave.
-
-This removes the need for `StateConfiguring` and `StateSending` as write-exclusion gates. These states can either be removed entirely or kept purely for UI feedback (e.g. showing "configuring..." in the status bar) without gating other operations. Operations that previously failed with "not connected" when another write was in progress will instead queue waiting for the lock.
-
-The `ConnState` type simplifies to just `disconnected`, `connecting`, and `connected`. The frontend no longer needs to disable config/send tabs based on state -- the lock handles contention transparently.
 
 ## map-tile-retry: Reload failed map tiles when connectivity is restored
 
