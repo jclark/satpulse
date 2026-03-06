@@ -97,6 +97,14 @@ useEffect(() => {
 
 Each tile img uses `key={`${tileX},${tileY}:${epoch}`}`.
 
+## packet-fix-rate: Packet panel assumes 1 Hz fix rate
+
+The packet panel groups messages into epochs using `EPOCH_GAP_MS = 900` (in `packet-panel.tsx`). When a new packet arrives, `recentEntries` is filtered to keep only entries whose timestamps fall within 900ms of the incoming packet. At 1 Hz this cleanly separates consecutive epochs, but at higher fix rates (e.g. 10 Hz, where epochs are 100ms apart) packets from ~9 epochs pile up in a single group. Expanding a row shows entries from multiple epochs rather than just the latest one, and the snapshot feature (which uses `ACTIVE_WINDOW_MS = 1500`) captures multiple epochs too.
+
+The `isActive` check (dimming rows older than 1500ms) is similarly tuned for 1 Hz and would keep rows lit for many epochs at higher rates.
+
+One approach: let the user control the assumed fix rate (expressed in Hz) via a dropdown or input in the packet panel toolbar. The grouping window (`EPOCH_GAP_MS`) and active window (`ACTIVE_WINDOW_MS`) would derive from this value -- e.g. for rate R Hz, `EPOCH_GAP_MS = 0.9 * (1000/R)` and `ACTIVE_WINDOW_MS = 1.5 * (1000/R)`. A sensible default is 1 Hz; common choices would be 1, 2, 5, 10 Hz.
+
 ## read-error-disconnect: Disconnect on serial read error (related: #172)
 
 If a USB-connected GPS receiver is physically unplugged while connected, the app shows a read error in the log but remains in the connected state. The user has to manually click Disconnect to reset the UI. This is the desktop GUI counterpart of #172 (satpulsed should handle serial device disappearing); the daemon's approach is to exit and let systemd restart it, but the GUI needs to transition cleanly to disconnected state instead.
