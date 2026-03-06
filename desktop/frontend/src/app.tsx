@@ -545,7 +545,7 @@ export function App() {
 
                 {/* Packets tab */}
                 <div class={`h-full ${activeTab === 'packets' ? '' : 'hidden'}`}>
-                    <PacketPanel visible={activeTab === 'packets'} />
+                    <PacketPanel visible={activeTab === 'packets'} connState={connState} />
                 </div>
 
                 {/* Configuration tab */}

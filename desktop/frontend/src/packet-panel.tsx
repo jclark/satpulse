@@ -22,6 +22,7 @@ interface DecodeTarget {
 
 interface Props {
     visible: boolean;
+    connState: string;
 }
 
 const ACTIVE_WINDOW_MS = 1500;
@@ -57,7 +58,7 @@ const chevronSvg = (
     </svg>
 );
 
-export function PacketPanel({visible}: Props) {
+export function PacketPanel({visible, connState}: Props) {
     const liveRef = useRef<Map<string, MsgTypeState>>(new Map());
     const [displayed, setDisplayed] = useState<Map<string, MsgTypeState>>(new Map());
     const frozenRef = useRef(false);
@@ -123,6 +124,15 @@ export function PacketPanel({visible}: Props) {
         setDecodeContent('');
         setSnapshotOpen(false);
     }, []);
+
+    // Clear when leaving disconnected (new connection starting)
+    const prevConnState = useRef(connState);
+    useEffect(() => {
+        if (prevConnState.current === 'disconnected' && connState !== 'disconnected') {
+            handleClear();
+        }
+        prevConnState.current = connState;
+    }, [connState, handleClear]);
 
     // Toggle expand
     const toggleExpand = useCallback((key: string, e: Event) => {
