@@ -148,8 +148,9 @@ type NAV struct {
 	DiffID     opt.Val[uint16]  // 0-4095
 	DiffAge    opt.Val[float64] // seconds
 	Res7       skip
-	SatView    decUint8 // satellites in view
-	SatUsed    decUint8 // satellites in use
+	// SatView/SatUsed: docs say non-optional, but receiver sends empty before lock.
+	SatView opt.Val[decUint8] // satellites in view
+	SatUsed opt.Val[decUint8] // satellites in use
 	Res8       skip
 	Res9       skip
 	Res10      skip
