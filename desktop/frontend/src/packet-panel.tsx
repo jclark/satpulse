@@ -135,31 +135,36 @@ export function PacketPanel({visible}: Props) {
         });
     }, []);
 
-    // Row click -> decode
-    const handleRowClick = useCallback((state: MsgTypeState) => {
-        const last = state.recentEntries[state.recentEntries.length - 1];
-        const key = `${state.tag}:${state.msg}:${state.out ? 'o' : 'i'}`;
+    // Decode a single packet entry
+    const decodeEntry = useCallback((key: string, entry: PacketLogEntry) => {
         const target: DecodeTarget = {
-            key, ascii: last.ascii, bin: last.bin, out: last.out,
+            key, ascii: entry.ascii, bin: entry.bin, out: !!entry.out,
         };
         setDecodeTarget(target);
-        if (last.ascii) {
-            setDecodeContent(stripTrailingEOL(last.ascii));
-        } else if (last.bin) {
+        if (entry.ascii) {
+            setDecodeContent(stripTrailingEOL(entry.ascii));
+        } else if (entry.bin) {
             setDecodeContent('Decoding...');
-            DecodePacket(last.bin, last.out).then(result => {
+            DecodePacket(entry.bin, !!entry.out).then(result => {
                 if (result) {
                     const keys = Object.keys(result);
                     const display = keys.length === 1 && keys[0] === 'payload' ? result.payload : result;
                     setDecodeContent(JSON.stringify(display, null, 2));
                 } else {
-                    setDecodeContent(last.bin!);
+                    setDecodeContent(entry.bin!);
                 }
             }).catch(() => {
-                setDecodeContent(last.bin!);
+                setDecodeContent(entry.bin!);
             });
         }
     }, []);
+
+    // Row click -> decode most recent entry
+    const handleRowClick = useCallback((state: MsgTypeState) => {
+        const last = state.recentEntries[state.recentEntries.length - 1];
+        const key = `${state.tag}:${state.msg}:${state.out ? 'o' : 'i'}`;
+        decodeEntry(key, last);
+    }, [decodeEntry]);
 
     // Snapshot
     const captureSnapshot = useCallback(() => {
@@ -242,7 +247,11 @@ export function PacketPanel({visible}: Props) {
                                         <td class={`px-2 py-0.5 break-all ${textClass}`}>{entryData(last)}</td>
                                     </tr>
                                     {isExpanded && state.recentEntries.map((e, i) => (
-                                        <tr key={`${key}-${i}`} class="text-text-secondary">
+                                        <tr
+                                            key={`${key}-${i}`}
+                                            class="cursor-pointer text-text-secondary hover:bg-surface-3"
+                                            onClick={() => decodeEntry(key, e)}
+                                        >
                                             <td></td>
                                             <td></td>
                                             <td></td>
