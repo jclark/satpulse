@@ -1,6 +1,10 @@
 package asbin
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestMonVer(t *testing.T) {
 	// Captured from TAU1201: SW 3.018.aab95e7, HW HD8040D.9529b663
@@ -9,8 +13,28 @@ func TestMonVer(t *testing.T) {
 		packet: "f1d90a042000 332e3031382e61616239356537000000 484438303430442e3935323962363633 2821",
 		wantID: MonVerID,
 		wantMsg: &MonVer{
-			SwVersion: [16]byte{'3', '.', '0', '1', '8', '.', 'a', 'a', 'b', '9', '5', 'e', '7', 0, 0, 0},
-			HwVersion: [16]byte{'H', 'D', '8', '0', '4', '0', 'D', '.', '9', '5', '2', '9', 'b', '6', '6', '3'},
+			SwVersion: Latin1Z16{'3', '.', '0', '1', '8', '.', 'a', 'a', 'b', '9', '5', 'e', '7', 0, 0, 0},
+			HwVersion: Latin1Z16{'H', 'D', '8', '0', '4', '0', 'D', '.', '9', '5', '2', '9', 'b', '6', '6', '3'},
 		},
 	}})
+}
+
+func TestMonVerJSON(t *testing.T) {
+	m := MonVer{
+		SwVersion: Latin1Z16{'3', '.', '0', '1', '8', '.', 'a', 'a', 'b', '9', '5', 'e', '7'},
+		HwVersion: Latin1Z16{'H', 'D', '8', '0', '4', '0', 'D', '.', '9', '5', '2', '9', 'b', '6', '6', '3'},
+	}
+	b, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	s := string(b)
+	for _, want := range []string{
+		`"SwVersion":"3.018.aab95e7"`,
+		`"HwVersion":"HD8040D.9529b663"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("JSON %s\nmissing %s", s, want)
+		}
+	}
 }

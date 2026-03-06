@@ -2,7 +2,9 @@ package ubxbin
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"golang.org/x/exp/slices"
@@ -10,8 +12,8 @@ import (
 
 func TestMonVer(t *testing.T) {
 	m := MonVer{
-		MonVerFixed{[30]byte{1, 2, 3}, [10]byte{4, 5}},
-		[][30]byte{{7, 8}, {9}},
+		MonVerFixed{Latin1Z30{1, 2, 3}, Latin1Z10{4, 5}},
+		[]Latin1Z30{{7, 8}, {9}},
 	}
 	p2 := testMsgType1(t, m)
 	if !EqualMonVer(&m, p2.(*MonVer)) {
@@ -146,6 +148,36 @@ func TestMonCommsPortID(t *testing.T) {
 		if ok != tt.wantOK || got != tt.want {
 			t.Errorf("MonCommsPortID(%#x).PortID() = (%v, %v), want (%v, %v)",
 				uint16(tt.pid), got, ok, tt.want, tt.wantOK)
+		}
+	}
+}
+
+func TestMonVerJSON(t *testing.T) {
+	m := MonVer{
+		MonVerFixed: MonVerFixed{
+			SwVersion: Latin1Z30{'E', 'X', 'T', ' ', 'C', 'O', 'R', 'E', ' ', '1', '.', '0', '0'},
+			HwVersion: Latin1Z10{'0', '0', '1', '9', '0', '0', '0', '0'},
+		},
+		Extension: []Latin1Z30{
+			func() Latin1Z30 {
+				var b Latin1Z30
+				copy(b[:], "FWVER=SPG 1.00")
+				return b
+			}(),
+		},
+	}
+	b, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	s := string(b)
+	for _, want := range []string{
+		`"SwVersion":"EXT CORE 1.00"`,
+		`"HwVersion":"00190000"`,
+		`"FWVER=SPG 1.00"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("JSON %s\nmissing %s", s, want)
 		}
 	}
 }
