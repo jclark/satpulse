@@ -149,11 +149,11 @@ func (v *Version) protVerGreater(major, minor byte) bool {
 func monVer(parsed *ubxbin.MonVer) *Version {
 	x := make([]string, len(parsed.Extension))
 	for i := range parsed.Extension {
-		x[i] = ubxbin.Latin1ZToString(parsed.Extension[i][:])
+		x[i] = parsed.Extension[i].String()
 	}
 	v := &Version{
-		HW:         ubxbin.Latin1ZToString(parsed.HwVersion[:]),
-		SW:         ubxbin.Latin1ZToString(parsed.SwVersion[:]),
+		HW:         parsed.HwVersion.String(),
+		SW:         parsed.SwVersion.String(),
 		Extensions: x,
 		FW:         findFWVer(x),
 		Prot:       findProtVer(x),

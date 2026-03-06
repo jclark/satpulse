@@ -3,6 +3,7 @@ package asbin
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -229,3 +230,18 @@ func Checksum[B Bytes](bytes B) (ckA, ckB byte) {
 	}
 	return
 }
+
+// Latin1Z16 is a [16]byte that JSON-marshals as a Latin-1 nul-terminated string.
+type Latin1Z16 [16]byte
+
+func latin1ZToString(chars []byte) string {
+	for i, ch := range chars {
+		if ch == 0 {
+			return string(chars[:i])
+		}
+	}
+	return string(chars)
+}
+
+func (z Latin1Z16) String() string              { return latin1ZToString(z[:]) }
+func (z Latin1Z16) MarshalJSON() ([]byte, error) { return json.Marshal(z.String()) }

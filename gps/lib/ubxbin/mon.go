@@ -154,13 +154,13 @@ type MonMsgPP struct {
 func (m *MonMsgPP) ID() MsgID { return MonMsgPPID }
 
 type MonVerFixed struct {
-	SwVersion [30]byte
-	HwVersion [10]byte
+	SwVersion Latin1Z30
+	HwVersion Latin1Z10
 }
 
 type MonVer struct {
 	MonVerFixed
-	Extension [][30]byte
+	Extension []Latin1Z30
 }
 
 func (m *MonVer) ID() MsgID { return MonVerID }
@@ -168,7 +168,7 @@ func (m *MonVer) ID() MsgID { return MonVerID }
 func (m *MonVer) InitVaryingPart(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 30+10, 30)
 	if err == nil {
-		m.Extension = make([][30]byte, len)
+		m.Extension = make([]Latin1Z30, len)
 	}
 	return
 }

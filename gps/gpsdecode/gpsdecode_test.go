@@ -3,10 +3,15 @@ package gpsdecode
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
+	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
+	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
 
 func mustHexDecode(s string) []byte {
@@ -179,5 +184,86 @@ func TestDecodeChecksumError(t *testing.T) {
 	}
 	if len(csErr.InPacket) == 0 || len(csErr.Computed) == 0 {
 		t.Error("expected both checksum fields to be populated")
+	}
+}
+
+func TestDecodeUnicoreAscii(t *testing.T) {
+	packet := []byte("#PPSSTATUSA,93,GPS,FINE,2376,540337000,0,0,18,29;3,2376,540336000,-4,-27676000,0x03E80020,0x00000015,0,0x00666669,0x2B000000,0x0110D2BC,0x00000000,0x2CB0ECAC,0x00000000,0x00000000*0bbaac1a\r\n")
+	pf, result, err := Decode(gpsreg.PacketFormats, packet, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pf.Tag() != gpsreg.TagUnicoreAscii {
+		t.Errorf("expected tag %s, got %s", gpsreg.TagUnicoreAscii, pf.Tag())
+	}
+	if result.Header == nil {
+		t.Error("expected header field")
+	}
+	if result.Payload == nil {
+		t.Error("expected payload field")
+	}
+	if _, ok := result.Payload.(*uncmsg.PPSStatus); !ok {
+		t.Errorf("expected *uncmsg.PPSStatus, got %T", result.Payload)
+	}
+}
+
+func TestDecodeUnicoreAsciiUnknown(t *testing.T) {
+	// Build a packet with an unrecognized message name
+	packet := []byte("#XYZUNKNOWNA,93,GPS,FINE,2376,540337000,0,0,18,29;foo*")
+	// Compute CRC32 checksum
+	crc := novmsg.CRC32(packet[1 : len(packet)-1])
+	packet = append(packet, []byte(fmt.Sprintf("%08x\r\n", crc))...)
+	_, _, err := Decode(gpsreg.PacketFormats, packet, false)
+	if err != ErrUnknownMsg {
+		t.Errorf("expected ErrUnknownMsg, got %v", err)
+	}
+}
+
+func TestDecodeNovAtelAscii(t *testing.T) {
+	packet := []byte("#IONUTCA,COM3,0,99.7,FINESTEERING,2382,7850.000,00000000,0000,784;2.514570951461792e-08,2.235174179077148e-08,-1.192092895507813e-07,-1.192092895507813e-07,1.331200000000000e+05,3.276800000000000e+04,-2.621440000000000e+05,4.587520000000000e+05,2382,147456,9.3132257461548000e-10,6.217248938e-15,2441,7,18,18,0*73788199\r\n")
+	pf, result, err := Decode(gpsreg.PacketFormats, packet, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pf.Tag() != gpsreg.TagNovAtelAscii {
+		t.Errorf("expected tag %s, got %s", gpsreg.TagNovAtelAscii, pf.Tag())
+	}
+	if result.Header == nil {
+		t.Error("expected header field")
+	}
+	if result.Payload == nil {
+		t.Error("expected payload field")
+	}
+}
+
+// makeNMEASentence builds a valid NMEA sentence from a payload string.
+func makeNMEASentence(payload string) []byte {
+	cs := nmeamsg.Checksum([]byte(payload))
+	return []byte(fmt.Sprintf("$%s*%02X\r\n", payload, cs))
+}
+
+func TestDecodeNMEAPQTM(t *testing.T) {
+	payload := "PQTMPVT,1,31075000,20221225,083737.000,,3,09,18,31.12738291,117.26372910,34.212,5.267,3.212,2.928,0.238,4.346,34.12,2.16,4.38"
+	packet := makeNMEASentence(payload)
+	pf, result, err := Decode(gpsreg.PacketFormats, packet, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pf.Tag() != gpsreg.TagNMEA {
+		t.Errorf("expected tag %s, got %s", gpsreg.TagNMEA, pf.Tag())
+	}
+	if result.Payload == nil {
+		t.Fatal("expected payload field")
+	}
+	if _, ok := result.Payload.(*qtmmsg.PVT); !ok {
+		t.Errorf("expected *qtmmsg.PVT, got %T", result.Payload)
+	}
+}
+
+func TestDecodeNMEAUnknown(t *testing.T) {
+	packet := makeNMEASentence("GPGGA,123456.00,,,,,0,00,99.99,,,,,,")
+	_, _, err := Decode(gpsreg.PacketFormats, packet, false)
+	if err != ErrUnknownMsg {
+		t.Errorf("expected ErrUnknownMsg, got %v", err)
 	}
 }
