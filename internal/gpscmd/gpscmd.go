@@ -221,30 +221,25 @@ func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 	if err != nil {
 		return err
 	}
-	var rp *responsePrinter
-	if _, ok := msgs.([]msgfile.BinaryMsg); !ok {
-		rp = newResponsePrinter(os.Stdout)
-	}
-	err = runRawMsgs(ctx, lg, conn, pCh, raw, rp)
+	rh := newResponseHandler(os.Stdout)
+	err = runRawMsgs(ctx, lg, conn, pCh, raw, rh)
 	if capture.IsSet() {
-		keepReading(ctx, lg, pCh, capture.Get(), rp)
+		keepReading(ctx, lg, pCh, capture.Get(), rh)
 	}
-	if rp != nil {
-		rp.Flush()
-	}
+	rh.Flush()
 	return err
 }
 
-func runRawMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs []msgfile.RawMsg, rp *responsePrinter) error {
+func runRawMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs []msgfile.RawMsg, rh *responseHandler) error {
 	for _, m := range msgs {
-		if err := sendMsg(ctx, lg, conn, pCh, m, rp); err != nil {
+		if err := sendMsg(ctx, lg, conn, pCh, m, rh); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func sendMsg(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, m msgfile.RawMsg, rp *responsePrinter) error {
+func sendMsg(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, m msgfile.RawMsg, rh *responseHandler) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -252,6 +247,7 @@ func sendMsg(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 	if err != nil {
 		return err
 	}
+	rh.notifySent(m)
 	lg.Info("sent message", "index", m.Index+1, "tag", m.Tag)
 	var timerCh <-chan time.Time
 	if m.Delay > 0 {
@@ -269,9 +265,7 @@ func sendMsg(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 			if !ok {
 				return nil
 			}
-			if rp != nil {
-				rp.handlePacket(pkt)
-			}
+			rh.handlePacket(pkt)
 		}
 	}
 
@@ -284,9 +278,7 @@ func sendMsg(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 			if !ok {
 				return nil
 			}
-			if rp != nil {
-				rp.handlePacket(pkt)
-			}
+			rh.handlePacket(pkt)
 		default:
 			return nil
 		}
@@ -426,7 +418,7 @@ func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gp
 	return msg
 }
 
-func keepReading(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, dur time.Duration, rp *responsePrinter) {
+func keepReading(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, dur time.Duration, rh *responseHandler) {
 	if dur == 0 {
 		lg.Info("capturing packets until interrupted")
 	} else {
@@ -450,8 +442,8 @@ func keepReading(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, d
 			if !ok {
 				return
 			}
-			if rp != nil {
-				rp.handlePacket(pkt)
+			if rh != nil {
+				rh.handlePacket(pkt)
 			}
 		}
 	}

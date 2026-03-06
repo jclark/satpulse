@@ -8,7 +8,7 @@
 
 The current `responsePrinter` in `internal/gpscmd/response.go` is a simple formatter that parses ACK/NAK packets and prints them to stdout. It has two problems:
 
-1. It doesn't correlate responses to sent messages. A UBX ACK-ACK prints as `UBX-ACK-ACK: 06-01` which is meaningless to the user. It should say something like `disable-nmea/3: ACK`.
+1. It doesn't correlate responses to sent messages. A UBX ACK-ACK prints as `UBX-ACK-ACK: 06-01` which is meaningless to the user. It should say something like `disable-nmea/3: OK`.
 
 2. It's embedded in `internal/gpscmd` so the desktop app can't use it.
 
@@ -67,7 +67,7 @@ type PacketAnalysis struct {
 ```
 
 - **NotResponse**: the incoming packet is definitely not a response to anything we sent. Periodic data (standard GNSS talker NMEA, UNCA/NOVA logs, periodic PQTM), and ACK/NAK packets whose correlation ID doesn't match any sent message.
-- **MaybeResponse**: we can't tell whether this is a response. Unrecognized packets (`pkt.Format == nil`), NMEA TXT, unrecognized proprietary sentences, etc. The caller should display these since they might be relevant.
+- **MaybeResponse**: we can't tell whether this is a response. For example, a proprietary NMEA sentence when we sent a line command. The caller should display these since they might be relevant.
 - **OtherResponse**: definitely a response to something we sent, but not an ACK/NAK. For example, a UBX CFG-TP5 data reply to a poll, a Unicore `$CONFIG,...` query result, a non-periodic PQTM reply. No correlation to a specific sent message -- the caller just knows it's relevant.
 - **AckResponse**: definite ACK/NAK of a specific sent message. `RelatedMsg` identifies which. `AckError` empty = success, non-empty = failure. UBX ACK-ACK -> `AckError = ""`; UBX ACK-NAK -> `AckError = AckNak`. Unicore `$command,CMD,response: OK` -> `AckError = ""`; `$command,CMD,response: <error>` -> `AckError = <error>`.
 
@@ -109,10 +109,11 @@ type responsePattern interface {
 
 `*UBXMsg`, `*CASBINMsg`, and `*ASBINMsg` implement `responsePattern`. They create matchers that:
 - Return `NotResponse` for packets with a different protocol tag.
-- Parse the incoming data with the appropriate parser (`ubxbin.ParseMsg`, `casbin.ParseMsg`, `asbin.ParseMsg`).
+- Extract the message class/ID from the raw packet header (this does not require full payload parsing).
+- Attempt full parsing to detect ACK-ACK/ACK-NAK messages. Parse failures do not prevent class/ID matching.
 - Return `AckResponse` when the incoming packet is an ACK-ACK or ACK-NAK whose echoed class/ID matches the sent message's class/ID.
-- Return `OtherResponse` for non-periodic incoming messages whose class/ID matches the sent message (poll responses).
-- Return `NotResponse` for periodic messages (NAV-PVT, etc.) and parse failures.
+- Return `OtherResponse` when the incoming message's class/ID matches the sent message (poll responses, even if the payload format is unrecognized).
+- Return `NotResponse` otherwise (different class/ID, including periodic messages like NAV-PVT which never share class/IDs with config messages).
 
 `*LineMsg` implements `responsePattern` when it has a `ResponsePattern` field. The `ResponsePattern` field selects the matcher behavior:
 
@@ -122,21 +123,11 @@ type responsePattern interface {
   2. **NMEA `$CONFIG,...` data reply**: sentence starts with `$CONFIG,`. Returns `OtherResponse`.
   3. **UNCA `#MODE,...` data reply**: a UNCA packet whose message name is MODE. Returns `OtherResponse`.
 
-`*NMEAMsg` implements `responsePattern`. Its matcher returns `NotResponse` for binary protocol packets (UBX, CASBIN, ASBIN) and standard GNSS talker NMEA (periodic). If the sent sentence text starts with `PQTM`, it uses the PQTM classification helper (see below) for PQTM ack/response detection. For other NMEA packets (proprietary, TXT), it returns `MaybeResponse`.
+`*NMEAMsg` implements `responsePattern`. Its matcher returns `NotResponse` for binary protocol packets (UBX, CASBIN, ASBIN) and standard GNSS talker NMEA (periodic). For proprietary NMEA, it extracts the 3-letter vendor ID (e.g. "QTM" from "PQTM...") and dispatches via a vendor classifier map. Currently only the QTM classifier is registered; see [pqtm-response.md](pqtm-response.md) for details. Unrecognized vendors return `MaybeResponse`.
 
 `*BinaryMsg` implements `responsePattern`. Its matcher returns `NotResponse` for all text-based packets (NMEA, UNCA, NOVA) since text is not a response to raw binary. For binary protocol packets (UBX, CASBIN, ASBIN) and unrecognized data, it returns `MaybeResponse`.
 
 `*LineMsg` without a `ResponsePattern` field implements `responsePattern`. Its matcher returns `NotResponse` for binary protocol packets (UBX, CASBIN, ASBIN) and standard GNSS talker NMEA (periodic). For other text-based packets (proprietary NMEA, TXT, UNCA, NOVA, unrecognized), it returns `MaybeResponse`.
-
-### PQTM classification helper
-
-A shared helper function classifies PQTM NMEA sentences. It is used by the `*NMEAMsg` matcher and could also be called by other matchers that need to classify PQTM traffic. Given a sentence payload:
-
-- If it's not a PQTM sentence, returns `NotResponse`.
-- If `qtmmsg.ParsePeriodicMsg` recognizes it as periodic, returns `NotResponse`.
-- Otherwise it's a non-periodic PQTM sentence (config response). Returns `OtherResponse`.
-
-The `*NMEAMsg` matcher refines this: if the sent sentence was itself PQTM and the response sentence name matches (e.g. sent `PQTMCFGPPS,...` and received `$PQTMCFGPPS,OK*xx`), it returns `AckResponse`. The ack error is determined by the second field: `OK` means success, `ERROR` (with optional error code) means failure.
 
 ### Changes to LineMsg
 
@@ -222,4 +213,3 @@ The `runMsgs`/`sendMsg` functions pass the analyzer through instead of the `resp
 
 - **PUBX ack correlation**: A future PUBX response pattern on `*NMEAMsg` could create matchers for PUBX command responses.
 - **Desktop integration**: the desktop app will use `PacketAnalyzer` the same way, but the specifics of Wails event emission and UI display are out of scope here.
-

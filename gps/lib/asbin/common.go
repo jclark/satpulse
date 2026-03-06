@@ -47,6 +47,12 @@ func (mid MsgID) unpack() (byte, byte) {
 	return byte(mid & 0xFF), byte((mid >> 8) & 0xFF)
 }
 
+// CfgClass reports whether mid is in the CFG class.
+func (mid MsgID) CfgClass() bool {
+	cls, _ := mid.unpack()
+	return cls == clsCfg
+}
+
 type Msg interface {
 	ID() MsgID
 }

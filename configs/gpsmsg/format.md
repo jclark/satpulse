@@ -83,6 +83,27 @@ text = "CONFIG PPP ENABLE E6-HAS"
 
 You can use `eol = ""` to send plain text with no line terminator.
 
+## Response pattern
+
+The `responsePattern` key tells satpulsetool how to match responses from the receiver to sent commands.
+This enables display of per-command ACK/NAK results instead of raw protocol data.
+
+```toml
+[default.line]
+responsePattern = "unicore"
+
+[[line]]
+text = "CONFIG PPP ENABLE E6-HAS"
+```
+
+Supported values:
+
+| Value | Description |
+|-------|-------------|
+| `"unicore"` | Unicore receivers (UM980, etc.). Matches `$command,CMD,response: OK` acks and `$CONFIG,...` data replies. |
+
+If omitted, line messages use generic matching (displays any non-periodic text as potentially relevant).
+
 ## Binary messages
 
 The `binary` message type sends raw bytes specified as a hex string.
@@ -259,7 +280,7 @@ Type specifiers are two characters each:
 
 | Type | Keys | Framing |
 |------|------|---------|
-| `[[line]]` | `text`, `eol`, `delay`, `tag`, `description` | appends eol (default `\r\n`) |
+| `[[line]]` | `text`, `eol`, `responsePattern`, `delay`, `tag`, `description` | appends eol (default `\r\n`) |
 | `[[binary]]` | `hex`, `delay`, `tag`, `description` | none |
 | `[[nmea]]` | `text`, `delay`, `tag`, `description` | prepends `$`, appends `*XX\r\n` checksum |
 | `[[ubx]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | UBX framing with header and checksum |
