@@ -26,73 +26,29 @@ interface Props {
     addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
-interface StatusEntry {
-    type: 'send' | 'response';
-    sendLine?: SendLine;
-    response?: ResponseLine;
-    responseIdx?: number;
+function formatSendStatus(sendLines: SendLine[], connState: ConnState): string {
+    if (sendLines.length === 0) return '';
+    const last = sendLines[sendLines.length - 1];
+    if (last.status === 'error') return last.error || 'Error';
+    // Hide once listening phase is over.
+    if (connState === 'connected' && last.status === 'done' && last.index === last.total) return '';
+    return 'Sending...' + '.'.repeat(Math.max(0, last.index - 1));
 }
 
-function formatSendLine(line: SendLine): string {
-    const prefix = line.total > 1 ? `Sending message ${line.index}` : 'Sending message';
-    switch (line.status) {
-        case 'sending':
-            return `${prefix}...`;
-        case 'delaying':
-            return `${prefix}...pausing...`;
-        case 'done':
-            return `${prefix}...done`;
-        case 'error':
-            return `${prefix}...${line.error || 'error'}`;
-    }
-}
-
-function formatResponseLabel(r: ResponseLine): string {
+function formatResponseLine(r: ResponseLine): string {
     if (r.kind === 'ack') {
         const prefix = (r.msgCount ?? 0) > 1 ? `Message ${r.responseTo + 1}` : 'Message';
         if (!r.ackError) return `${prefix} accepted`;
         return `${prefix} rejected: ${r.ackError}`;
     }
-    if (r.tag && r.msgID) return `Received ${r.tag}-${r.msgID}`;
-    if (r.tag) return `Received ${r.tag}`;
-    if (r.text) {
-        const preview = r.text.length > 40 ? r.text.slice(0, 40) + '...' : r.text;
-        return preview;
-    }
-    return 'Received response';
+    // other/maybe: show the raw content
+    if (r.text) return r.text;
+    const label = r.tag && r.msgID ? `${r.tag}-${r.msgID}` : r.tag || '';
+    return label || (r.bin ? r.bin : 'Response');
 }
 
 function isClickable(r: ResponseLine): boolean {
     return r.kind === 'other' || r.kind === 'maybe';
-}
-
-// Build an interleaved list of send lines and response lines in chronological order.
-// Send lines are ordered by index. Response lines are inserted after the send line
-// they relate to (by responseTo), or at the end if unrelated.
-function buildStatusEntries(sendLines: SendLine[], responseLines: ResponseLine[]): StatusEntry[] {
-    const entries: StatusEntry[] = [];
-    // Track which responses have been placed.
-    const placed = new Set<number>();
-    for (const sl of sendLines) {
-        entries.push({type: 'send', sendLine: sl});
-        // Insert responses related to this send line (0-based index = sl.index - 1).
-        const sentIdx = sl.index - 1;
-        for (let ri = 0; ri < responseLines.length; ri++) {
-            if (placed.has(ri)) continue;
-            const r = responseLines[ri];
-            if (r.responseTo === sentIdx) {
-                entries.push({type: 'response', response: r, responseIdx: ri});
-                placed.add(ri);
-            }
-        }
-    }
-    // Append unplaced responses (other/maybe not tied to a specific send).
-    for (let ri = 0; ri < responseLines.length; ri++) {
-        if (!placed.has(ri)) {
-            entries.push({type: 'response', response: responseLines[ri], responseIdx: ri});
-        }
-    }
-    return entries;
 }
 
 export function MsgFilePanel({
@@ -195,7 +151,10 @@ export function MsgFilePanel({
             let cancelled = false;
             DecodePacket(r.bin, false).then(result => {
                 if (cancelled) return;
-                setDecodeResult(result ? JSON.stringify(result, null, 2) : null);
+                if (!result) { setDecodeResult(null); return; }
+                const keys = Object.keys(result);
+                const display = keys.length === 1 && keys[0] === 'payload' ? result.payload : result;
+                setDecodeResult(JSON.stringify(display, null, 2));
             }).catch(() => { if (!cancelled) setDecodeResult(null); });
             return () => { cancelled = true; };
         }
@@ -211,7 +170,7 @@ export function MsgFilePanel({
     const hasResults = activeTagIndex >= 0;
     const selectedResponse = selectedResponseIndex >= 0 && selectedResponseIndex < responseLines.length
         ? responseLines[selectedResponseIndex] : null;
-    const statusEntries = buildStatusEntries(sendLines, responseLines);
+    const sendStatus = formatSendStatus(sendLines, connState);
 
     return (
         <div class="flex h-full flex-col">
@@ -254,67 +213,59 @@ export function MsgFilePanel({
                 </table>
             </div>
 
-            <div class="flex shrink-0 items-center gap-2 px-4 py-2">
+            <div class="flex shrink-0 items-center gap-3 px-4 py-2">
                 <Button variant="primary" disabled={!sendEnabled} onClick={handleSend}>
                     Send
                 </Button>
+                {sendStatus && (
+                    <span class={`text-xs ${sendLines[sendLines.length - 1]?.status === 'error' ? 'text-danger' : 'text-text-secondary'}`}>
+                        {sendStatus}
+                    </span>
+                )}
             </div>
 
-            {/* Two-pane area: left status, right raw+decode */}
+            {/* Two-pane area: left responses, right decode */}
             <div class="flex min-h-[6em] flex-1 gap-2 px-4 pb-4">
-                {/* Left pane: interleaved send/response status */}
-                <Card class="w-56 shrink-0 overflow-y-auto p-2 text-xs leading-relaxed" ref={leftPaneRef}>
-                    {hasResults && statusEntries.map((entry, i) => {
-                        if (entry.type === 'send' && entry.sendLine) {
-                            return (
-                                <div key={`s${i}`} class={`text-text-muted ${entry.sendLine.status === 'error' ? 'text-danger' : ''}`}>
-                                    {formatSendLine(entry.sendLine)}
-                                </div>
-                            );
-                        }
-                        if (entry.type === 'response' && entry.response) {
-                            const r = entry.response;
-                            const ridx = entry.responseIdx!;
-                            const clickable = isClickable(r);
-                            const selected = ridx === selectedResponseIndex;
-                            let cls = '';
-                            if (r.kind === 'ack' && !r.ackError) cls = 'text-success';
-                            else if (r.kind === 'ack' && r.ackError) cls = 'text-danger';
-                            else if (r.kind === 'maybe') cls = 'text-text-muted';
-                            else cls = 'text-text-primary';
-                            if (clickable) cls += ' cursor-pointer hover:bg-surface-3';
-                            if (selected) cls += ' bg-surface-3';
-                            return (
-                                <div
-                                    key={`r${i}`}
-                                    class={cls}
-                                    onClick={clickable ? () => handleResponseClick(ridx) : undefined}
-                                >
-                                    {formatResponseLabel(r)}
-                                </div>
-                            );
-                        }
-                        return null;
+                {/* Left pane: response lines */}
+                <Card class="flex-1 overflow-y-auto p-2 text-xs leading-relaxed" ref={leftPaneRef}>
+                    {hasResults && responseLines.map((r, i) => {
+                        const clickable = isClickable(r);
+                        const selected = i === selectedResponseIndex;
+                        let cls = '';
+                        if (r.kind === 'ack' && !r.ackError) cls = 'text-success';
+                        else if (r.kind === 'ack' && r.ackError) cls = 'text-danger';
+                        else if (r.kind === 'maybe') cls = 'font-mono text-text-muted';
+                        else cls = 'font-mono text-text-primary';
+                        if (clickable) cls += ' cursor-pointer';
+                        if (selected) cls += ' bg-surface-3 rounded';
+                        const label = formatResponseLine(r);
+                        const showHex = r.bin && (r.tag || r.msgID);
+                        return (
+                            <div
+                                key={i}
+                                class={`${cls}${showHex ? ' flex gap-1.5' : ''}`}
+                                onClick={clickable ? () => handleResponseClick(i) : undefined}
+                            >
+                                {showHex ? (
+                                    <>
+                                        <span class="shrink-0">{label}</span>
+                                        <span class="truncate text-text-muted">{r.bin}</span>
+                                    </>
+                                ) : label}
+                            </div>
+                        );
                     })}
-                    {connState === 'pausing' && (
-                        <div class="text-text-muted italic">Listening...</div>
-                    )}
                     {!hasResults && !tagArmed && (
                         <div class="text-text-muted">Select a tag and click Send</div>
                     )}
                 </Card>
 
-                {/* Right pane: raw content + decode */}
-                <Card class="flex flex-1 flex-col overflow-hidden p-2">
+                {/* Right pane: decode */}
+                <Card class="w-72 shrink-0 flex flex-col overflow-hidden p-2">
                     {selectedResponse ? (
-                        <>
-                            <div class="shrink-0 overflow-x-auto border-b border-border-subtle pb-1 mb-1 font-mono text-xs text-text-primary whitespace-pre break-all">
-                                {selectedResponse.bin || selectedResponse.text || ''}
-                            </div>
-                            <div class="flex-1 overflow-y-auto font-mono text-xs text-text-primary whitespace-pre-wrap">
-                                {decodeResult || ''}
-                            </div>
-                        </>
+                        <div class="flex-1 overflow-y-auto font-mono text-xs text-text-primary whitespace-pre-wrap">
+                            {decodeResult || ''}
+                        </div>
                     ) : hasResults && responseLines.some(isClickable) ? (
                         <div class="flex h-full items-center justify-center text-xs text-text-muted">
                             Click a response to view
