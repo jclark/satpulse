@@ -239,7 +239,7 @@ export function MsgFilePanel({
                         if (clickable) cls += ' cursor-pointer';
                         if (selected) cls += ' bg-surface-3 rounded';
                         const label = formatResponseLine(r);
-                        const showHex = r.bin && (r.tag || r.msgID);
+                        const showHex = r.kind !== 'ack' && r.bin && (r.tag || r.msgID);
                         return (
                             <div
                                 key={i}
