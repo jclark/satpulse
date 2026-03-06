@@ -25,19 +25,28 @@ type output struct {
 	gpsdecode.DecodeResult
 }
 
-const summary = `[-h|--help] [-c|--compact] [--out] [--packet-log path] [hex-packet]`
+const summary = `[-h|--help] [-c|--compact] [--out] [--bin hex | --line text | --packet-log path]`
 
+// Cmd implements the decode subcommand.
+// Default: read one packet from stdin.
+// --bin hex: decode a hex-encoded binary packet.
+// --line text: decode text with \r\n appended (for ASCII packets).
+// --packet-log path: annotate a JSONL packet log.
 func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []string) (usage string, err error) {
 	help := false
 	compact := false
 	out := false
+	binHex := ""
+	line := ""
 	packetLog := ""
 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&compact, "compact", "c", false, "output compact JSON (single line)")
 	flags.BoolVar(&out, "out", false, "treat packet as outgoing (affects CFG-VAL* decoding)")
-	flags.StringVar(&packetLog, "packet-log", "", "annotate JSONL packet log (file path or - for stdin)")
+	flags.StringVar(&binHex, "bin", "", "decode `hex`-encoded binary packet")
+	flags.StringVar(&line, "line", "", "decode ASCII packet `text` (\\r\\n appended automatically)")
+	flags.StringVar(&packetLog, "packet-log", "", "annotate JSONL packet log (`path` or - for stdin)")
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	err = flags.Parse(args)
 	if err != nil {
@@ -46,23 +55,41 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 	if help {
 		return usageFunc(progName), nil
 	}
-	if packetLog != "" {
-		if flags.NArg() != 0 {
-			return usageFunc(progName), fmt.Errorf("--packet-log does not accept positional arguments")
-		}
+	if flags.NArg() != 0 {
+		return usageFunc(progName), fmt.Errorf("unexpected positional arguments")
+	}
+	nSrc := boolToInt(binHex != "") + boolToInt(line != "") + boolToInt(packetLog != "")
+	if nSrc > 1 {
+		return usageFunc(progName), fmt.Errorf("--bin, --line, and --packet-log are mutually exclusive")
+	}
+	switch {
+	case packetLog != "":
 		return "", runPacketLog(packetLog)
+	case binHex != "":
+		data, err := hex.DecodeString(binHex)
+		if err != nil {
+			return "", fmt.Errorf("invalid hex: %w", err)
+		}
+		return "", runDecode(data, out, compact)
+	case line != "":
+		return "", runDecode([]byte(line+"\r\n"), out, compact)
+	default:
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", err
+		}
+		return "", runDecode(data, out, compact)
 	}
-	if flags.NArg() != 1 {
-		return usageFunc(progName), fmt.Errorf("expected exactly one hex packet argument")
-	}
-	return "", runHexPacket(flags.Arg(0), out, compact)
 }
 
-func runHexPacket(hexStr string, out, compact bool) error {
-	data, err := hex.DecodeString(hexStr)
-	if err != nil {
-		return fmt.Errorf("invalid hex: %w", err)
+func boolToInt(b bool) int {
+	if b {
+		return 1
 	}
+	return 0
+}
+
+func runDecode(data []byte, out, compact bool) error {
 	pf, result, err := gpsdecode.Decode(gpsreg.PacketFormats, data, out)
 	if err != nil {
 		return err
@@ -110,11 +137,15 @@ func processLine(line []byte) []byte {
 	if err := json.Unmarshal(line, &entry); err != nil {
 		return line
 	}
-	// Only process binary packets
-	if len(entry.Bin) == 0 {
+	var data []byte
+	if len(entry.Bin) > 0 {
+		data = entry.Bin
+	} else if entry.Ascii != "" {
+		data = []byte(entry.Ascii)
+	} else {
 		return line
 	}
-	_, result, err := gpsdecode.Decode(gpsreg.PacketFormats, entry.Bin, entry.Out)
+	_, result, err := gpsdecode.Decode(gpsreg.PacketFormats, data, entry.Out)
 	if err != nil {
 		var csErr *gpsdecode.ChecksumError
 		if errors.As(err, &csErr) {
