@@ -3,6 +3,7 @@ package ubxbin
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -280,8 +281,7 @@ func Checksum(bytes []byte) (ckA, ckB byte) {
 	return
 }
 
-// Latin1ZString create a string from a ISO Latin-1, nul-terminated byte slice.
-// This can be used for the fields of MonVer
+// Latin1ZToString creates a string from a ISO Latin-1, nul-terminated byte slice.
 func Latin1ZToString(chars []byte) string {
 	r := make([]rune, 0)
 	for _, ch := range chars {
@@ -292,3 +292,15 @@ func Latin1ZToString(chars []byte) string {
 	}
 	return string(r)
 }
+
+// Latin1Z10 is a [10]byte that JSON-marshals as a Latin-1 nul-terminated string.
+type Latin1Z10 [10]byte
+
+func (z Latin1Z10) String() string                { return Latin1ZToString(z[:]) }
+func (z Latin1Z10) MarshalJSON() ([]byte, error)   { return json.Marshal(z.String()) }
+
+// Latin1Z30 is a [30]byte that JSON-marshals as a Latin-1 nul-terminated string.
+type Latin1Z30 [30]byte
+
+func (z Latin1Z30) String() string                { return Latin1ZToString(z[:]) }
+func (z Latin1Z30) MarshalJSON() ([]byte, error)   { return json.Marshal(z.String()) }
