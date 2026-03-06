@@ -147,18 +147,18 @@ export function MsgFilePanel({
             return;
         }
         const r = responseLines[selectedResponseIndex];
-        if (r.bin) {
-            let cancelled = false;
-            DecodePacket(r.bin, false).then(result => {
-                if (cancelled) return;
-                if (!result) { setDecodeResult(null); return; }
-                const keys = Object.keys(result);
-                const display = keys.length === 1 && keys[0] === 'payload' ? result.payload : result;
-                setDecodeResult(JSON.stringify(display, null, 2));
-            }).catch(() => { if (!cancelled) setDecodeResult(null); });
-            return () => { cancelled = true; };
-        }
-        setDecodeResult(null);
+        const raw = r.bin || r.text;
+        if (!raw) { setDecodeResult(null); return; }
+        const hex = !!r.bin;
+        let cancelled = false;
+        DecodePacket(raw, {hex, out: false}).then(result => {
+            if (cancelled) return;
+            if (!result) { setDecodeResult(hex ? null : raw); return; }
+            const keys = Object.keys(result);
+            const display = keys.length === 1 && keys[0] === 'payload' ? result.payload : result;
+            setDecodeResult(JSON.stringify(display, null, 2));
+        }).catch(() => { if (!cancelled) setDecodeResult(hex ? null : raw); });
+        return () => { cancelled = true; };
     }, [selectedResponseIndex, responseLines]);
 
     const handleResponseClick = useCallback((idx: number) => {

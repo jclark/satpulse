@@ -151,22 +151,23 @@ export function PacketPanel({visible, connState}: Props) {
             key, ascii: entry.ascii, bin: entry.bin, out: !!entry.out,
         };
         setDecodeTarget(target);
-        if (entry.ascii) {
-            setDecodeContent(stripTrailingEOL(entry.ascii));
-        } else if (entry.bin) {
-            setDecodeContent('Decoding...');
-            DecodePacket(entry.bin, !!entry.out).then(result => {
-                if (result) {
-                    const keys = Object.keys(result);
-                    const display = keys.length === 1 && keys[0] === 'payload' ? result.payload : result;
-                    setDecodeContent(JSON.stringify(display, null, 2));
-                } else {
-                    setDecodeContent(entry.bin!);
-                }
-            }).catch(() => {
-                setDecodeContent(entry.bin!);
-            });
-        }
+        const out = !!entry.out;
+        const raw = entry.ascii || entry.bin;
+        if (!raw) return;
+        const hex = !entry.ascii;
+        const fallback = hex ? raw : stripTrailingEOL(raw);
+        setDecodeContent('Decoding...');
+        DecodePacket(raw, {hex, out}).then(result => {
+            if (result) {
+                const keys = Object.keys(result);
+                const display = keys.length === 1 && keys[0] === 'payload' ? result.payload : result;
+                setDecodeContent(JSON.stringify(display, null, 2));
+            } else {
+                setDecodeContent(fallback);
+            }
+        }).catch(() => {
+            setDecodeContent(fallback);
+        });
     }, []);
 
     // Row click -> decode most recent entry

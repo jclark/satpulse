@@ -395,13 +395,25 @@ func (a *App) ApplyConfig(cfg gpsprot.ConfigTarget) Result {
 
 
 
-// DecodePacket decodes a hex-encoded packet and returns the decoded fields.
-func (a *App) DecodePacket(hexStr string, out bool) (*gpsdecode.DecodeResult, error) {
-	b, err := hex.DecodeString(hexStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid hex: %w", err)
+// DecodeOptions controls how DecodePacket interprets its input.
+type DecodeOptions struct {
+	Hex bool `json:"hex"` // data is hex-encoded binary
+	Out bool `json:"out"` // packet is outbound (sent to receiver)
+}
+
+// DecodePacket decodes a packet and returns the decoded fields.
+func (a *App) DecodePacket(data string, opts DecodeOptions) (*gpsdecode.DecodeResult, error) {
+	var b []byte
+	if opts.Hex {
+		var err error
+		b, err = hex.DecodeString(data)
+		if err != nil {
+			return nil, fmt.Errorf("invalid hex: %w", err)
+		}
+	} else {
+		b = []byte(data)
 	}
-	_, r, err := gpsdecode.Decode(gpsreg.PacketFormats, b, out)
+	_, r, err := gpsdecode.Decode(gpsreg.PacketFormats, b, opts.Out)
 	if err != nil {
 		return nil, nil
 	}
