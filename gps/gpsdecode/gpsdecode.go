@@ -10,6 +10,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
+	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/ubxcfgval"
@@ -80,6 +81,15 @@ checksumOK:
 		return pf, r, err
 	case gpsreg.TagNovAtelBin:
 		r, err := novbinDecode(data)
+		return pf, r, err
+	case gpsreg.TagNovAtelAscii:
+		r, err := novasciiDecode(data)
+		return pf, r, err
+	case gpsreg.TagUnicoreAscii:
+		r, err := uncasciiDecode(data)
+		return pf, r, err
+	case gpsreg.TagNMEA:
+		r, err := nmeaDecode(data)
 		return pf, r, err
 	default:
 		return pf, nil, ErrInvalidPacket
@@ -176,6 +186,64 @@ func uncbinDecode(data []byte) (*DecodeResult, error) {
 		Payload: msg.Body,
 		Header:  msg.Hdr,
 	}, nil
+}
+
+func novasciiDecode(data []byte) (*DecodeResult, error) {
+	msg, err := novmsg.ParseAsciiMessage(data)
+	if err != nil {
+		return nil, err
+	}
+	if _, isUnknown := msg.Body.(*novmsg.UnknownAsciiMsgBody); isUnknown {
+		return nil, ErrUnknownMsg
+	}
+	return &DecodeResult{
+		Payload: msg.Body,
+		Header:  msg.Hdr,
+	}, nil
+}
+
+func uncasciiDecode(data []byte) (*DecodeResult, error) {
+	msg, err := uncmsg.ParseAsciiMessage(data)
+	if err != nil {
+		return nil, err
+	}
+	if _, isUnknown := msg.Body.(*uncmsg.UnknownAsciiMsgBody); isUnknown {
+		return nil, ErrUnknownMsg
+	}
+	return &DecodeResult{
+		Payload: msg.Body,
+		Header:  msg.Hdr,
+	}, nil
+}
+
+func nmeaDecode(data []byte) (*DecodeResult, error) {
+	// Extract payload between $ and *
+	starIdx := nmeaStarIndex(data)
+	if starIdx < 2 {
+		return nil, ErrInvalidPacket
+	}
+	payload := string(data[1:starIdx])
+	msg, err := qtmmsg.ParsePeriodicMsg(payload)
+	if err != nil {
+		return nil, err
+	}
+	if msg == nil {
+		return nil, ErrUnknownMsg
+	}
+	return &DecodeResult{Payload: msg}, nil
+}
+
+// nmeaStarIndex finds the index of the * before the checksum in an NMEA packet.
+// The packet ends with *XX\r\n or *XX\n.
+func nmeaStarIndex(pkt []byte) int {
+	n := len(pkt)
+	if n >= 5 && pkt[n-5] == '*' {
+		return n - 5
+	}
+	if n >= 4 && pkt[n-4] == '*' {
+		return n - 4
+	}
+	return -1
 }
 
 func novbinDecode(data []byte) (*DecodeResult, error) {
