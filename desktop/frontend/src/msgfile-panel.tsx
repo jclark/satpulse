@@ -1,6 +1,6 @@
 import {h, Fragment} from 'preact';
 import {useCallback, useEffect, useRef} from 'preact/hooks';
-import {LoadMsgFile, SendMsgFile, CancelMsgSend, DecodePacket} from '../wailsjs/go/main/App';
+import {LoadMsgFile, SendMsgFile, DecodePacket} from '../wailsjs/go/main/App';
 import type {ConnState, MsgFileTag, SendLine, ResponseLine} from './app';
 import {Button, Card} from './ui';
 import {useState} from 'preact/hooks';
@@ -23,6 +23,7 @@ interface Props {
     setResponseLines: (lines: ResponseLine[]) => void;
     selectedResponseIndex: number;
     setSelectedResponseIndex: (i: number) => void;
+    clearRespSession: () => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
@@ -69,6 +70,7 @@ export function MsgFilePanel({
     setResponseLines,
     selectedResponseIndex,
     setSelectedResponseIndex,
+    clearRespSession,
     addToast,
 }: Props) {
     const [decodeResult, setDecodeResult] = useState<string | null>(null);
@@ -84,6 +86,7 @@ export function MsgFilePanel({
         try {
             const info = await LoadMsgFile();
             if (!info) return;
+            clearRespSession();
             setMsgFilePath(info.path);
             setMsgFileTags(info.tags || []);
             setSendLines([]);
@@ -105,13 +108,10 @@ export function MsgFilePanel({
         } catch (e: any) {
             addToast(e.message || 'Failed to load file', 'error');
         }
-    }, [setMsgFilePath, setMsgFileTags, setSendLines, setSelectedTagIndex, setResponseLines, setSelectedResponseIndex, setActiveTagIndex, setTagArmed, addToast]);
+    }, [clearRespSession, setMsgFilePath, setMsgFileTags, setSendLines, setSelectedTagIndex, setResponseLines, setSelectedResponseIndex, setActiveTagIndex, setTagArmed, addToast]);
 
     const handleTagClick = useCallback(async (i: number) => {
-        // Cancel pausing if active.
-        if (connState === 'pausing') {
-            CancelMsgSend().catch(() => {});
-        }
+        clearRespSession();
         // Clear previous results.
         setSendLines([]);
         setResponseLines([]);
@@ -121,7 +121,7 @@ export function MsgFilePanel({
         // Select this row (armed for send).
         setSelectedTagIndex(i);
         setTagArmed(true);
-    }, [connState, setSendLines, setResponseLines, setSelectedResponseIndex, setActiveTagIndex, setSelectedTagIndex, setTagArmed]);
+    }, [clearRespSession, setSendLines, setResponseLines, setSelectedResponseIndex, setActiveTagIndex, setSelectedTagIndex, setTagArmed]);
 
     const handleSend = useCallback(async () => {
         if (selectedTagIndex < 0 || selectedTagIndex >= msgFileTags.length) return;

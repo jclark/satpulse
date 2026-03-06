@@ -1,7 +1,7 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
-import {Connect, Disconnect, GetAllSignals, GetConnState, GetReceiverState, ListPorts, CancelMsgSend} from '../wailsjs/go/main/App';
+import {Connect, Disconnect, GetAllSignals, GetConnState, GetReceiverState, ListPorts} from '../wailsjs/go/main/App';
 import type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo} from '@satpulse/gps/gpsprot';
 import {ConnectionPanel, PortInfo} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
@@ -19,7 +19,7 @@ import {ClockPanel} from './clock-panel';
 import {SkyViewPanel} from './sky-view-panel';
 export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
 
-export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending' | 'pausing';
+export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
 
 export type ReceiverState =
     | {status: 'disconnected'}
@@ -68,13 +68,15 @@ export interface MsgFileTag {
 }
 
 export interface MsgSendEvent {
-    status: 'sent' | 'delaying' | 'delayed' | 'done' | 'cancelled' | 'error';
+    session: number;
+    status: 'started' | 'sent' | 'delaying' | 'delayed' | 'done' | 'cancelled' | 'error';
     current?: number;
     total?: number;
     error?: string;
 }
 
 export interface SendLine {
+    session: number;
     status: 'sending' | 'delaying' | 'done' | 'error';
     index: number;
     total: number;
@@ -82,6 +84,7 @@ export interface SendLine {
 }
 
 export interface ResponseLine {
+    session: number;
     kind: 'ack' | 'other' | 'maybe';
     responseTo: number;      // 0-based index of sent message, or -1
     msgCount?: number;       // ack only: total messages sent for this tag
@@ -105,7 +108,6 @@ const connStateLabel: Record<ConnState, string> = {
     connected: 'Connected',
     configuring: 'Configuring...',
     sending: 'Sending...',
-    pausing: 'Connected',
 };
 
 let toastId = 0;
@@ -150,6 +152,7 @@ export function App() {
     const [sendLines, setSendLines] = useState<SendLine[]>([]);
     const [responseLines, setResponseLines] = useState<ResponseLine[]>([]);
     const [selectedResponseIndex, setSelectedResponseIndex] = useState(-1);
+    const respSessionRef = useRef(0);
 
     const onSplitterMouseDown = useCallback((e: MouseEvent) => {
         e.preventDefault();
@@ -299,6 +302,9 @@ export function App() {
         });
         const offState = EventsOn('gps:state', (state: ConnState) => {
             setConnState(state);
+            if (state === 'configuring' || state === 'disconnected') {
+                respSessionRef.current = 0;
+            }
             if (state === 'disconnected') {
                 setTimeMsg(null);
                 setNavEpochMsg(null);
@@ -334,13 +340,16 @@ export function App() {
             setTimeMsg(msg as TimeMsg);
         });
         const offMsgSend = EventsOn('gps:msgsend', (evt: MsgSendEvent) => {
-            const {status, current, total, error} = evt;
+            const {session, status, current, total, error} = evt;
             switch (status) {
+                case 'started':
+                    respSessionRef.current = session;
+                    return;
                 case 'sent':
                     setSendLines(prev => {
                         const lines = [...prev];
                         const idx = (current ?? 1) - 1;
-                        lines[idx] = {status: 'sending', index: current ?? 1, total: total ?? 1};
+                        lines[idx] = {session, status: 'sending', index: current ?? 1, total: total ?? 1};
                         return lines;
                     });
                     break;
@@ -374,16 +383,16 @@ export function App() {
                     setSendLines(prev => {
                         const lines = [...prev];
                         const idx = (current ?? 1) - 1;
-                        lines[idx] = {status: 'error', index: current ?? 1, total: total ?? 1, error: error};
+                        lines[idx] = {session, status: 'error', index: current ?? 1, total: total ?? 1, error: error};
                         return lines;
                     });
                     break;
             }
         });
         const offResponse = EventsOn('gps:response', (evt: ResponseLine) => {
+            if (evt.session !== respSessionRef.current) return;
             setResponseLines(prev => {
                 const next = [...prev, evt];
-                // Auto-select the first 'other' response when it arrives.
                 if (evt.kind === 'other' && !prev.some(r => r.kind === 'other')) {
                     setSelectedResponseIndex(next.length - 1);
                 }
@@ -441,6 +450,7 @@ export function App() {
 
     const handleConnect = useCallback(async () => {
         if (connState !== 'disconnected') {
+            respSessionRef.current = 0;
             await Disconnect();
             return;
         }
@@ -462,11 +472,8 @@ export function App() {
             : receiver.status === 'probing' ? 'Identifying...' : '';
 
     const handleTabChange = useCallback((tab: TabID) => {
-        if (activeTab === 'messages' && tab !== 'messages' && connState === 'pausing') {
-            CancelMsgSend().catch(() => {});
-        }
         setActiveTab(tab);
-    }, [activeTab, connState]);
+    }, []);
 
     const configDisabled = receiver.status !== 'identified';
     const connected = connState !== 'disconnected';
@@ -553,6 +560,7 @@ export function App() {
                         setOperation={setOperation}
                         addToast={addToast}
                         onConfigReadback={handleConfigReadback}
+                        clearRespSession={() => { respSessionRef.current = 0; }}
                         speed={speed}
                     />
                 </div>
@@ -577,6 +585,7 @@ export function App() {
                         setResponseLines={setResponseLines}
                         selectedResponseIndex={selectedResponseIndex}
                         setSelectedResponseIndex={setSelectedResponseIndex}
+                        clearRespSession={() => { respSessionRef.current = 0; }}
                         addToast={addToast}
                     />
                 </div>

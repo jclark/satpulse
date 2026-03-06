@@ -37,7 +37,6 @@ const (
 	StateConnected    ConnState = "connected"
 	StateConfiguring  ConnState = "configuring"
 	StateSending      ConnState = "sending"
-	StatePausing      ConnState = "pausing"
 )
 
 // configRequest is sent to packetWorker to run gpscfg.Configure.
@@ -52,24 +51,32 @@ type configResult struct {
 	err    error
 }
 
+// writeReq is sent from the coordinator to the worker for each message.
+type writeReq struct {
+	rm    msgfile.RawMsg
+	reply chan<- error
+}
+
 // App is the Wails application struct.
 // Its exported methods are bound to the frontend.
 type App struct {
-	ctx        context.Context
-	lg         *slog.Logger
-	mu         sync.Mutex
-	state      ConnState
-	conn       gpsio.Conn
-	connCtx    context.Context
-	connCancel context.CancelFunc
-	connWg     sync.WaitGroup
-	pb         *bcast.Bcast[scan.Packet]
-	configCh   chan configRequest
-	probe      ReceiverEvent
-	mh          *msgHandler
-	msgFile     *msgfile.Parsed
-	msgFilePath string
-	sendCancel  context.CancelFunc
+	ctx          context.Context
+	lg           *slog.Logger
+	mu           sync.Mutex
+	state        ConnState
+	conn         gpsio.Conn
+	connCtx      context.Context
+	connCancel   context.CancelFunc
+	connWg       sync.WaitGroup
+	pb           *bcast.Bcast[scan.Packet]
+	configCh     chan configRequest
+	probe        ReceiverEvent
+	mh           *msgHandler
+	msgFile      *msgfile.Parsed
+	msgFilePath  string
+	sendCancel   context.CancelFunc
+	workerCancel context.CancelFunc
+	respSession  atomic.Int32
 }
 
 // NewApp creates a new App.
@@ -120,11 +127,23 @@ func (a *App) setEndState(target ConnState) ConnState {
 }
 
 
+// cancelWorkerLocked cancels the response worker and invalidates its session
+// so any in-flight gps:response events are dropped by the frontend.
+// Must be called with a.mu held.
+func (a *App) cancelWorkerLocked() {
+	if a.workerCancel != nil {
+		a.workerCancel()
+		a.workerCancel = nil
+		a.respSession.Add(1)
+	}
+}
+
 func (a *App) closeLocked() {
 	if a.sendCancel != nil {
 		a.sendCancel()
 		a.sendCancel = nil
 	}
+	a.cancelWorkerLocked()
 	if a.connCancel != nil {
 		a.connCancel()
 		a.connCancel = nil
@@ -335,13 +354,11 @@ const readProps = gpsprot.PropIDSignalsEnabled |
 // ReadConfig reads back the current configuration from the receiver.
 func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
 	a.mu.Lock()
-	if a.state != StateConnected && a.state != StatePausing {
+	if a.state != StateConnected {
 		a.mu.Unlock()
 		return nil, fmt.Errorf("not connected")
 	}
-	if a.sendCancel != nil {
-		a.sendCancel()
-	}
+	a.cancelWorkerLocked()
 	a.state = StateConfiguring
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:state", StateConfiguring)
@@ -359,13 +376,11 @@ func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
 // The frontend sends JSON matching gpsprot.ConfigTarget's shape.
 func (a *App) ApplyConfig(cfg gpsprot.ConfigTarget) Result {
 	a.mu.Lock()
-	if a.state != StateConnected && a.state != StatePausing {
+	if a.state != StateConnected {
 		a.mu.Unlock()
 		return Result{Error: "not connected"}
 	}
-	if a.sendCancel != nil {
-		a.sendCancel()
-	}
+	a.cancelWorkerLocked()
 	a.state = StateConfiguring
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:state", StateConfiguring)
@@ -444,6 +459,7 @@ func (a *App) LoadMsgFile() (*MsgFileInfo, error) {
 
 // MsgSendEvent is emitted as "gps:msgsend" during SendMsgFile.
 type MsgSendEvent struct {
+	Session int    `json:"session"`
 	Status  string `json:"status"`
 	Current int    `json:"current,omitempty"`
 	Total   int    `json:"total,omitempty"`
@@ -452,18 +468,19 @@ type MsgSendEvent struct {
 
 // ResponseEvent is emitted as "gps:response" during SendMsgFile.
 type ResponseEvent struct {
-	Kind       string `json:"kind"`                // "ack", "other", "maybe"
-	ResponseTo int    `json:"responseTo"`           // 0-based index of sent message, or -1
-	MsgCount   int    `json:"msgCount,omitempty"`    // ack only: total messages sent for this tag
-	AckError   string `json:"ackError,omitempty"`   // ack only: empty = accepted, non-empty = rejected
-	Tag        string `json:"tag,omitempty"`         // protocol tag
-	MsgID      string `json:"msgID,omitempty"`       // message ID
-	Text       string `json:"text,omitempty"`         // full text for text protocols
-	Bin        string `json:"bin,omitempty"`           // hex string for binary protocols
+	Session    int    `json:"session"`
+	Kind       string `json:"kind"`              // "ack", "other", "maybe"
+	ResponseTo int    `json:"responseTo"`         // 0-based index of sent message, or -1
+	MsgCount   int    `json:"msgCount,omitempty"` // ack only: total messages sent for this tag
+	AckError   string `json:"ackError,omitempty"` // ack only: empty = accepted, non-empty = rejected
+	Tag        string `json:"tag,omitempty"`      // protocol tag
+	MsgID      string `json:"msgID,omitempty"`    // message ID
+	Text       string `json:"text,omitempty"`     // full text for text protocols
+	Bin        string `json:"bin,omitempty"`      // hex string for binary protocols
 }
 
 // SendMsgFile sends messages for the given tag from the loaded message file.
-// Returns immediately after starting the send goroutine.
+// Returns immediately after starting the coordinator and worker goroutines.
 func (a *App) SendMsgFile(tag string) error {
 	a.mu.Lock()
 	if a.state != StateConnected {
@@ -477,9 +494,11 @@ func (a *App) SendMsgFile(tag string) error {
 	}
 	conn := a.conn
 	pb := a.pb
+	connCtx := a.connCtx
 	if a.sendCancel != nil {
 		a.sendCancel()
 	}
+	a.cancelWorkerLocked()
 	a.mu.Unlock()
 	msgs, err := mf.TaggedMsgs([]string{tag})
 	if err != nil {
@@ -492,113 +511,158 @@ func (a *App) SendMsgFile(tag string) error {
 	if len(rawMsgs) == 0 {
 		return fmt.Errorf("no messages for tag %q", tag)
 	}
-	ctx, cancel := context.WithCancel(a.ctx)
+	sendCtx, sendCancel := context.WithCancel(a.ctx)
+	workerCtx, workerCancel := context.WithCancel(connCtx)
 	a.mu.Lock()
 	if a.state != StateConnected {
 		a.mu.Unlock()
-		cancel()
+		sendCancel()
+		workerCancel()
 		return fmt.Errorf("not connected")
 	}
 	a.state = StateSending
-	a.sendCancel = cancel
+	a.sendCancel = sendCancel
+	a.workerCancel = workerCancel
+	session := int(a.respSession.Add(1))
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:state", StateSending)
 	total := len(rawMsgs)
-	sub := pb.Subscribe()
+	writeReqCh := make(chan writeReq)
+	// Start the worker goroutine.
+	a.connWg.Go(func() {
+		a.sendWorker(workerCtx, pb, conn, writeReqCh, session)
+	})
+	// Coordinator goroutine.
 	a.connWg.Go(func() {
 		defer func() {
-			pb.Unsubscribe(sub)
-			a.mu.Lock()
-			a.sendCancel = nil
-			a.mu.Unlock()
+			close(writeReqCh)
+			a.finishSend()
 		}()
-		pa := msgfile.NewPacketAnalyzer()
-		var lineBuf []byte
+		runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+			Session: session, Status: "started", Total: total,
+		})
+		replyCh := make(chan error, 1)
 		for i, rm := range rawMsgs {
-			if ctx.Err() != nil {
+			if sendCtx.Err() != nil {
 				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
-					Status: "cancelled", Current: i + 1, Total: total,
+					Session: session, Status: "cancelled", Current: i + 1, Total: total,
 				})
-				a.setEndState(StateConnected)
 				return
 			}
-			_, err := conn.Write(rm.Bytes)
-			if err != nil {
+			select {
+			case writeReqCh <- writeReq{rm: rm, reply: replyCh}:
+			case <-sendCtx.Done():
 				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
-					Status: "error", Current: i + 1, Total: total, Error: err.Error(),
+					Session: session, Status: "cancelled", Current: i + 1, Total: total,
 				})
-				a.setEndState(StateConnected)
 				return
 			}
-			pa.NotifySent(rm)
+			var wErr error
+			select {
+			case wErr = <-replyCh:
+			case <-sendCtx.Done():
+				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+					Session: session, Status: "cancelled", Current: i + 1, Total: total,
+				})
+				return
+			}
+			if wErr != nil {
+				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+					Session: session, Status: "error", Current: i + 1, Total: total, Error: wErr.Error(),
+				})
+				return
+			}
 			a.lg.Info("sent message", "index", i+1, "total", total, "tag", rm.Tag, "bytes", len(rm.Bytes))
 			runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
-				Status: "sent", Current: i + 1, Total: total,
+				Session: session, Status: "sent", Current: i + 1, Total: total,
 			})
 			if rm.Delay > 0 {
 				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
-					Status: "delaying", Current: i + 1, Total: total,
+					Session: session, Status: "delaying", Current: i + 1, Total: total,
 				})
-				lineBuf = a.readResponses(ctx, sub, pa, lineBuf, rm.Delay)
-				if ctx.Err() != nil {
+				select {
+				case <-time.After(rm.Delay):
+				case <-sendCtx.Done():
 					runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
-						Status: "cancelled", Current: i + 1, Total: total,
+						Session: session, Status: "cancelled", Current: i + 1, Total: total,
 					})
-					a.setEndState(StateConnected)
 					return
 				}
 				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
-					Status: "delayed", Current: i + 1, Total: total,
+					Session: session, Status: "delayed", Current: i + 1, Total: total,
 				})
 			}
 		}
 		runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
-			Status: "done", Current: total, Total: total,
+			Session: session, Status: "done", Current: total, Total: total,
 		})
-		// Transition to Pausing for tail response reading.
-		if a.setEndState(StatePausing) != StatePausing {
-			return
-		}
-		a.readResponses(ctx, sub, pa, lineBuf, 3*time.Second)
-		a.setEndState(StateConnected)
 	})
 	return nil
 }
 
-// readResponses reads packets from sub for the given duration, processing them
-// through the PacketAnalyzer and emitting gps:response events.
-func (a *App) readResponses(ctx context.Context, sub <-chan scan.Packet, pa *msgfile.PacketAnalyzer, lineBuf []byte, dur time.Duration) []byte {
-	deadline := time.After(dur)
+// finishSend clears sendCancel and transitions state to Connected (or Disconnected).
+func (a *App) finishSend() {
+	a.mu.Lock()
+	a.sendCancel = nil
+	s := StateConnected
+	if a.state == StateDisconnected || (a.connCtx != nil && a.connCtx.Err() != nil) {
+		s = StateDisconnected
+	}
+	a.state = s
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:state", s)
+}
+
+// sendWorker owns conn.Write, PacketAnalyzer, line buffer, and the broadcast
+// subscriber. It runs until writeReqCh is closed and a tail timer expires,
+// or workerCtx is cancelled.
+func (a *App) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet], conn gpsio.Conn, writeReqCh <-chan writeReq, session int) {
+	sub := pb.Subscribe()
+	defer pb.Unsubscribe(sub)
+	pa := msgfile.NewPacketAnalyzer()
+	var lineBuf []byte
+	var tailCh <-chan time.Time
 	for {
 		select {
+		case req, ok := <-writeReqCh:
+			if !ok {
+				tailCh = time.After(3 * time.Second)
+				writeReqCh = nil
+				continue
+			}
+			_, err := conn.Write(req.rm.Bytes)
+			if err == nil {
+				pa.NotifySent(req.rm)
+			}
+			req.reply <- err
 		case pkt, ok := <-sub:
 			if !ok {
-				return lineBuf
+				return
 			}
 			if pkt.IsInterPacketTimeout() {
 				continue
 			}
 			if pkt.Format == nil {
-				lineBuf = a.bufferResponseLines(pa, lineBuf, []byte(pkt.Data))
+				lineBuf = a.bufferWorkerLines(pa, lineBuf, []byte(pkt.Data), session)
 				continue
 			}
-			lineBuf = a.flushResponseLine(pa, lineBuf)
+			lineBuf = a.flushWorkerLine(pa, lineBuf, session)
 			result := pa.Analyze(pkt.Tag(), pkt.Data)
 			if result.Kind != msgfile.NotResponse {
-				a.emitResponse(result, &pkt)
+				a.emitResponse(result, &pkt, session)
 			}
-		case <-deadline:
-			return lineBuf
-		case <-ctx.Done():
-			return lineBuf
+		case <-tailCh:
+			return
+		case <-workerCtx.Done():
+			return
 		}
 	}
 }
 
-func (a *App) bufferResponseLines(pa *msgfile.PacketAnalyzer, lineBuf, data []byte) []byte {
+func (a *App) bufferWorkerLines(pa *msgfile.PacketAnalyzer, lineBuf, data []byte, session int) []byte {
 	for _, b := range data {
 		if b == '\n' {
-			lineBuf = a.flushResponseLine(pa, lineBuf)
+			lineBuf = a.flushWorkerLine(pa, lineBuf, session)
 		} else if b == '\r' {
 			// skip
 		} else if b >= 0x20 && b <= 0x7E || b == '\t' {
@@ -610,28 +674,36 @@ func (a *App) bufferResponseLines(pa *msgfile.PacketAnalyzer, lineBuf, data []by
 	return lineBuf
 }
 
-func (a *App) flushResponseLine(pa *msgfile.PacketAnalyzer, lineBuf []byte) []byte {
+func (a *App) flushWorkerLine(pa *msgfile.PacketAnalyzer, lineBuf []byte, session int) []byte {
 	if len(lineBuf) == 0 {
 		return lineBuf
 	}
 	line := string(lineBuf)
 	lineBuf = lineBuf[:0]
 	result := pa.Analyze(gpsprot.EmptyTag, line)
-	if result.Kind != msgfile.NotResponse {
-		ev := a.makeResponseEvent(result, nil)
+	if result.Kind != msgfile.NotResponse && a.sessionCurrent(session) {
+		ev := a.makeResponseEvent(result, nil, session)
 		ev.Text = line
 		runtime.EventsEmit(a.ctx, "gps:response", ev)
 	}
 	return lineBuf
 }
 
-func (a *App) emitResponse(r msgfile.PacketAnalysis, pkt *scan.Packet) {
-	ev := a.makeResponseEvent(r, pkt)
+func (a *App) emitResponse(r msgfile.PacketAnalysis, pkt *scan.Packet, session int) {
+	if !a.sessionCurrent(session) {
+		return
+	}
+	ev := a.makeResponseEvent(r, pkt, session)
 	runtime.EventsEmit(a.ctx, "gps:response", ev)
 }
 
-func (a *App) makeResponseEvent(r msgfile.PacketAnalysis, pkt *scan.Packet) ResponseEvent {
-	ev := ResponseEvent{ResponseTo: -1}
+// sessionCurrent returns true if the given session matches the current respSession.
+func (a *App) sessionCurrent(session int) bool {
+	return int(a.respSession.Load()) == session
+}
+
+func (a *App) makeResponseEvent(r msgfile.PacketAnalysis, pkt *scan.Packet, session int) ResponseEvent {
+	ev := ResponseEvent{Session: session, ResponseTo: -1}
 	switch r.Kind {
 	case msgfile.AckResponse:
 		ev.Kind = "ack"
@@ -658,21 +730,17 @@ func (a *App) makeResponseEvent(r msgfile.PacketAnalysis, pkt *scan.Packet) Resp
 	return ev
 }
 
-// CancelMsgSend cancels an in-progress send or tail-read operation.
+// CancelMsgSend cancels an in-progress send operation.
 func (a *App) CancelMsgSend() error {
 	a.mu.Lock()
-	if a.state != StateSending && a.state != StatePausing {
+	if a.state != StateSending {
 		a.mu.Unlock()
 		return fmt.Errorf("not sending")
 	}
-	wasPausing := a.state == StatePausing
 	if a.sendCancel != nil {
 		a.sendCancel()
 	}
 	a.mu.Unlock()
-	if wasPausing {
-		a.setEndState(StateConnected)
-	}
 	return nil
 }
 

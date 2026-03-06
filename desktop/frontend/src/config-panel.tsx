@@ -25,6 +25,7 @@ interface Props {
     setOperation: (op: OperationState) => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
     onConfigReadback: (props: Record<string, any>) => void;
+    clearRespSession: () => void;
     speed: number;
 }
 
@@ -84,7 +85,7 @@ function validateFields(
     return bad;
 }
 
-export function ConfigPanel({connState, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, speed}: Props) {
+export function ConfigPanel({connState, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
     const connected = connState === 'connected';
     const [timeMode, setTimeMode] = useState<'' | 'mobile' | 'survey' | 'fixed'>('');
     const [surveyTime, setSurveyTime] = useState('');
@@ -211,6 +212,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setReading(true);
         setOperation({status: 'running', label: 'Reading configuration'});
         try {
+            clearRespSession();
             const props = await ReadConfig();
             populateFromConfig(props as any);
             onConfigReadback(props as any);
@@ -299,6 +301,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
         setOperation({status: 'running', label: 'Applying configuration'});
+        clearRespSession();
         const r = await ApplyConfig(cfg as any);
         setApplying(false);
         setSaveType(0);
