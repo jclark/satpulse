@@ -32,6 +32,8 @@ Ask the user to confirm whether this is the right plan before proceeding. If the
 
 ## Step 3: Run Codex
 
+**Use a 15-minute timeout** (timeout: 900000) on the Bash tool call, since Codex with xhigh reasoning effort can take several minutes.
+
 Build the prompt and run. The prompt must tell Codex:
 1. Whether changes are staged, modified, or both (so it uses the right git diff command)
 2. Not to run tests and not to modify files
