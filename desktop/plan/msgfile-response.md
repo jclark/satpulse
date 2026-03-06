@@ -1,114 +1,195 @@
 # Message file response handling
 
 ## Goal
-Add response display to the Messages tab when sending messages. After sending, the user sees per-message ACK/NAK results and other receiver responses in the right side of the send/response display, as defined in [ui-panel-message-file.md](ui-panel-message-file.md).
+Add response display to the Messages tab when sending messages. After sending, the user sees per-message ACK/NAK results and other receiver responses alongside the send progress display.
 
 ## Prerequisites
-- msgfile-send.
-- Done on master since they are library changes:
-  - `PacketAnalyzer` in `gps/msgfile` (see [gpscmd-response-rework.md](../../plan/gpscmd-response-rework.md)).
-  - Add `PollResponse` kind to `PacketAnalyzer.Analyze` for UBX data responses that match the class/ID of a sent poll command. Without this, poll responses are classified as `Background` and not shown to the user.
-  - Remove `Text` field from `PacketAnalysis` -- formatting is the caller's responsibility, not the analyzer's.
-  - Remove `Label()` method from `RawMsg` -- the caller formats from structured fields (`Tag`, `Index`, `Count`).
-  - Add `Index` field to `RawMsg` (0-based index within the tag) so callers can identify which sent message a response matches.
+- msgfile-send (done).
+- `PacketAnalyzer` in `gps/msgfile` (done on master).
+- `RawMsg.Index` field (done on master).
 
 ## Reference documents
-- [ui-panel-message-file.md](ui-panel-message-file.md) -- UI design (send/response display, right side)
 - [gpscmd-response-rework.md](../../plan/gpscmd-response-rework.md) -- PacketAnalyzer design
 
 ## Steps
 
 ### 1. Integrate PacketAnalyzer into send flow
 
-Modify the send goroutine from msgfile-send to use `msgfile.PacketAnalyzer`:
+Modify the send goroutine in `app.go` to use `msgfile.PacketAnalyzer`:
 
 - Create a `PacketAnalyzer` before the send loop.
-- Subscribe to the packet broadcast (`a.pb`) so the send goroutine can read incoming packets.
+- Subscribe to the packet broadcast (`a.pb`) so the send goroutine can read incoming packets. Unsubscribe when the goroutine exits.
 - Call `NotifySent(rm)` for each message after writing it.
-- During the delay between messages (and after the last message), read packets from the subscriber:
-  - Recognized packets (`pkt.Format != nil`): call `Analyze`, emit `gps:response` for non-`Background` results.
-  - Unrecognized packets (`pkt.Format == nil`): feed the raw data through a line buffer that accumulates printable ASCII chars and flushes on newline (same logic as `responsePrinter.handleUnrecognized` in `internal/gpscmd/response.go`). Each flushed line is emitted as a `gps:response` event with `kind: "possible-reply"`, `tag: ""`, and `data` set to the buffered line.
+- During the delay between messages (and after the last message), read packets from the subscriber and process them.
 
-msgfile-send's goroutine only writes; this plan adds reading.
+Packet processing follows the same pattern as `responseHandler` in `internal/gpscmd/response.go`:
+- Recognized packets (`pkt.Format != nil`): flush line buffer, call `Analyze(pkt.Tag(), pkt.Data)`.
+- Unrecognized packets (`pkt.Format == nil`): feed raw bytes into a line buffer that accumulates printable ASCII and flushes complete lines through `Analyze(gpsprot.EmptyTag, line)`.
+
+For each `Analyze` result where `Kind != NotResponse`, the backend constructs and emits a `gps:response` event. `NotResponse` packets are silently dropped.
 
 ### 2. gps:response event
 
-The send goroutine emits `gps:response` events. This is a separate event from `gps:packet` -- the send goroutine does not modify the packet event pipeline. The backend packages up structured data from `PacketAnalysis` and `scan.Packet` without making display decisions.
+The send goroutine emits `gps:response` events. This is a separate event from `gps:packet` -- the send goroutine does not modify the packet event pipeline. The backend resolves all packet details (including line buffering) so the frontend receives clean, display-ready data.
 
 ```go
-// ResponsePacket is emitted as "gps:response" during SendMsgFile.
-type ResponsePacket struct {
-    Kind       string `json:"kind"`              // "ack", "nak", "poll-response",
-                                                  // "unmatched-ack", "unmatched-nak",
-                                                  // "possible-reply"
-    Tag        string `json:"tag"`               // protocol tag from scan.Packet (e.g. "UBX", "NMEA")
-    MsgID      string `json:"msgID,omitempty"`   // message ID from scan.Packet
-    ResponseTo int    `json:"responseTo"`         // 0-based index of sent message, or -1
-    Text       string `json:"text,omitempty"`    // raw packet text for text-based protocols
+// ResponseEvent is emitted as "gps:response" during SendMsgFile.
+type ResponseEvent struct {
+    Kind       string `json:"kind"`                 // "ack", "other", "maybe"
+    ResponseTo int    `json:"responseTo"`            // 0-based index of sent message, or -1
+    AckError   string `json:"ackError,omitempty"`    // ack only: empty = accepted, non-empty = rejected
+    MsgCount   int    `json:"msgCount,omitempty"`    // ack only: total messages sent for this tag
+    Tag        string `json:"tag,omitempty"`         // protocol tag (e.g. "UBX", "NMEA")
+    MsgID      string `json:"msgID,omitempty"`       // message ID (e.g. "MON-VER", "PQTMVERNO")
+    Text       string `json:"text,omitempty"`        // full text for text protocols
+    Bin        string `json:"bin,omitempty"`          // hex string for binary protocols
 }
 ```
 
-The backend constructs `ResponsePacket` from `PacketAnalysis` and the original `scan.Packet`:
-- `Kind`: maps directly from `PacketAnalysis.Kind` (using lowercase string equivalents). `Background` packets are not emitted.
-- `Tag`: from `pkt.Tag()`.
-- `MsgID`: from the packet's parsed message ID (protocol-specific).
-- `ResponseTo`: from `PacketAnalysis.AckFor.Index` (0-based) when matched, -1 otherwise.
-- `Text`: the raw packet text for text-based protocols (e.g. NMEA, proprietary ASCII). Not set for binary protocols (e.g. UBX). Present on any kind -- a text protocol can have ACKs, NAKs, poll responses, etc.
+The backend constructs `ResponseEvent` from `PacketAnalysis` and the original `scan.Packet`:
+- `Kind`: maps from `PacketAnalysis.Kind` -- `AckResponse` -> `"ack"`, `OtherResponse` -> `"other"`, `MaybeResponse` -> `"maybe"`.
+- `ResponseTo`: from `PacketAnalysis.RelatedMsg.Index` when matched, -1 otherwise.
+- `AckError`: from `PacketAnalysis.AckError` (only for `"ack"` kind).
+- `MsgCount`: from `PacketAnalysis.RelatedMsg.Count` when matched (only for `"ack"` kind).
+- `Tag`: from `pkt.Format.Tag()` for recognized packets, empty for line-buffered text.
+- `MsgID`: from `pkt.Format.MsgID([]byte(pkt.Data))` for recognized packets.
+- `Text`/`Bin`: text for text-based protocols and line-buffered lines, hex for binary protocols. Uses the same ascii/bin distinction as `PacketLogEntry`.
 
-For unrecognized packets (line-buffered text), the backend emits a `ResponsePacket` with `kind: "possible-reply"`, `tag: ""`, and `text` set to the buffered line.
+### 3. Frontend layout
 
-The frontend knows the total message count from the tag it sent, so it can decide whether to show "Message 3 accepted" or just "Message accepted". All formatting is the frontend's responsibility.
+The Messages tab bottom area has two panes side by side:
 
-### 3. Frontend: response display in Messages tab
+```
++--- narrow ---+------------ wider -------------+
+| Sent 1...done| $GNGGA,123456.00,5106.94,N,... |  <- raw content
+|  1 accepted  |--------------------------------+
+| Sent 2...done| {                              |  <- decode
+|  2 accepted  |   "msgType": "GGA",            |
+|  MON-VER     |   ...                          |
+|  Listening...|                                |
++--------------+--------------------------------+
+```
 
-Subscribe to `gps:response` events and append each `ResponsePacket` to `responseLines` state in the App component.
+**Left pane** (narrow, scrollable): interleaved chronological status display. Lines appear and update as events happen:
+- Send lines: "Sending message 1..." -> updates in place to "Sending message 1...done". For single-message tags, omit the number.
+- Between send lines, response lines appear in the order they arrive:
+  - `ack` accepted: "Message N accepted" in `text-success` (or "Message accepted" for single-message tags).
+  - `ack` rejected: "Message N rejected: reason" in `text-danger`.
+  - `other`: "Received TAG-MSGID" (e.g. "Received UBX-MON-VER"). Clickable.
+  - `maybe`: same format as `other` but in `text-text-muted`. Clickable.
+  - For `other`/`maybe` from line-buffered text (empty `tag`): truncated preview of the text. Clickable.
+- During tail reading (Pausing state): "Listening..." in muted italic at the bottom, removed when Connected arrives.
+- Colour distinguishes line types -- no indentation.
 
-Update `MsgFilePanel` to display the right side of the send/response display. The frontend formats each response line using two rules:
+**Right pane** (wider, always visible): two stacked sections:
+- **Top**: raw content of the selected response. Single line, monospace. Full text for text protocols; hex for binary protocols.
+- **Below**: decode area. For binary protocols, calls `DecodePacket(bin, false)` and displays the JSON result. For text protocols, empty for now (future: wire up novmsg/uncmsg/qtmmsg decoders).
+- When nothing is selected: placeholder text "Click a response to view".
 
-1. If `text` is set (text-based protocol): show `text` in monospace. If `responseTo >= 0`, add an interpretation line below it based on `kind`: "Message N accepted" (`ack`), "Message N rejected" (`nak`, red), or "Response to message N" (`poll-response`). For single-message tags, omit the number (e.g. "Message accepted", "Response to message").
-2. If `text` is absent (binary protocol): show the interpretation directly:
-   - `ack`/`nak`: "Message N accepted" or "Message N rejected" using `responseTo` (0-based, display as 1-based). Omit the number if the tag has only one message. `nak` lines are red.
-   - `poll-response`: "Received " + a formatted name from `tag` and `msgID`. For multi-message tags with `responseTo >= 0`: "Received UBX-CFG-TP5 in response to message N". For single-message tags: "Received UBX-CFG-TP5".
-   - `unmatched-ack`/`unmatched-nak`: formatted protocol detail from `tag` and `msgID` in monospace (e.g. "UBX-ACK-NAK: 06-01").
-   - `possible-reply`: should not occur without `text`.
+Auto-select: the first `other` response is automatically selected when it arrives, so the decode panel is immediately populated. The user can click a different response to switch.
 
-Clear `responseLines` on new send or file load (same as `sendLines`).
+#### Tag row states
 
-### 4. Response reading timing
+The tag table has two visual states for a row:
+- **Selected** (background highlight): ready to send. Send button enabled. No results showing.
+- **Has results** (dot marker, no highlight): results are displayed for this row. Send button disabled.
 
-The send goroutine needs to read responses both during inter-message delays and after the final message. Design:
+Flow:
+- Click a tag row: row gets selected (highlight). Any previous dot/results/send status clear. If in Pausing state, cancel it. Send enables.
+- Click Send: row loses highlight, gains dot. Send disables. Status lines and responses appear in the left pane.
+- Sending finishes: enters Pausing (tail read for late responses). Dot remains.
+- Pausing ends (timeout): dot remains, results stay.
+- Click any tag row (including the dotted one): dot clears, results clear, pausing cancels if active. Row gets selected. Send enables.
+- Switch tabs: cancels pausing if active. Dot and results stay (visible when user returns).
+- No Cancel button. The user cancels by clicking a tag row or switching tabs.
 
-- After writing each message and emitting `"sent"`, enter a read loop that runs for the delay duration.
-- The read loop pulls packets from the broadcast subscriber, filters for recognized packets (`pkt.Format != nil`), and calls `Analyze`.
-- After the read window closes, proceed to the next message.
+#### Send button
 
-After the last message is written, the goroutine emits `"done"` and transitions to `Pausing`. It then continues reading for a few seconds to collect late responses. Some receivers are slow to respond, especially for configuration changes that trigger internal resets. The goroutine emits `gps:response` events during this tail period. When the tail timeout expires, the goroutine transitions to `Connected`.
+Send is enabled only when `connState === "connected"` and a tag row is selected (highlighted). It is not enabled during sending or pausing.
 
-The `Pausing` state is not a write lock. `SendMsgFile`, `ApplyConfig`, and `ReadConfig` accept `Pausing` as a valid starting state -- they cancel the tail reader (via the send context) before proceeding. This avoids two goroutines emitting `gps:response` events simultaneously.
+### 4. Frontend state
 
-Extend `CancelMsgSend` to also accept the `Pausing` state: it cancels the tail reader and transitions to `Connected`.
+In the App component:
 
-Update the frontend Send button logic: enabled when `connState === "connected" || connState === "pausing"` (plus existing file/tag checks). This lets the user start a new send without waiting for the tail timeout. Cancel remains enabled only during `"sending"`.
+```typescript
+export interface ResponseLine {
+    kind: 'ack' | 'other' | 'maybe';
+    responseTo: number;      // 0-based index of sent message, or -1
+    ackError?: string;       // ack only
+    msgCount?: number;       // ack only: total messages sent for this tag
+    tag?: string;            // protocol tag
+    msgID?: string;          // message ID
+    text?: string;           // text protocols
+    bin?: string;            // binary protocols (hex)
+}
+```
 
-The frontend receives `"pausing"` via `gps:state`. The only visible effect is a subtle indicator in the response display that responses may still be arriving (e.g. a faint "listening..." line or blinking dot that disappears when `"connected"` arrives).
+State:
+- `sendLines: SendLine[]` -- send progress lines, appended/updated on each `gps:msgsend` event.
+- `responseLines: ResponseLine[]` -- appended on each `gps:response` event.
+- `selectedResponseIndex: number` -- index into `responseLines` of the selected response, or -1.
+- `selectedTagIndex: number` -- the highlighted tag row (-1 = none selected).
+- `activeTagIndex: number` -- the tag row with the dot (-1 = no results).
+- `tagArmed: boolean` -- true when a tag row is selected and ready to send. Set true on tag row click, false on Send click.
+
+Clear `sendLines`, `responseLines`, `selectedResponseIndex`, and `activeTagIndex` on tag row click. Set `tagArmed = true`.
+
+On Send click: set `activeTagIndex = selectedTagIndex`, `tagArmed = false`.
+
+On file load: clear everything and reset `selectedTagIndex`.
+
+Subscribe to `gps:response` in the event listener block alongside `gps:msgsend`. On the first `other` response, auto-set `selectedResponseIndex` if it is still -1.
+
+### 5. Response reading timing
+
+The send goroutine reads responses both during inter-message delays and after the final message:
+
+- After writing each message and emitting `"sent"`, enter a read loop that runs for the delay duration. The loop pulls packets from the broadcast subscriber and processes them through the analyzer.
+- After the last message, emit `"done"` and transition to `Pausing`. Continue reading for a few seconds to collect late responses. Some receivers respond slowly, especially after configuration changes that trigger internal resets. Emit `gps:response` events during this tail period.
+- When the tail timeout expires, transition to `Connected`.
+
+`SendMsgFile` only accepts `Connected`. The user must cancel pausing first (by clicking a tag row or switching tabs). `ApplyConfig` and `ReadConfig` accept `Pausing` as a valid starting state -- they cancel the tail reader (via the send context) before proceeding.
+
+`CancelMsgSend` accepts both `Sending` and `Pausing`. It cancels the send context. If the state was `Pausing`, it immediately transitions to `Connected`.
+
+The frontend receives `"pausing"` via `gps:state`. The visible effect is "Listening..." in muted italic at the bottom of the left pane. It disappears when `"connected"` arrives.
+
+#### Cancellation from the frontend
+
+There is no Cancel button. Pausing is cancelled by:
+- Clicking a tag row: calls `CancelMsgSend` if in Pausing, then clears results and selects the row.
+- Switching away from the Messages tab: calls `CancelMsgSend` if in Pausing. Dot and results stay.
+
+#### Race condition handling
+
+Since `SendMsgFile` only accepts `Connected`, and the only way to re-enable Send is clicking a tag row (which cancels pausing first), there is never a second send goroutine competing with an existing one. The `sendGen` generation counter is not needed.
 
 ## Testing (Playwright)
 
 ### With hardware
 - Connect to a receiver.
-- Switch to the Messages tab; load a message file with UBX/CASBIN/ASBIN commands.
-- Click Send; verify the right side shows per-message responses (e.g. `Message 1 accepted`, `Message 2 rejected`).
-- For single-message tags, verify the number is omitted (e.g. `Message accepted`).
-- Verify rejected responses are visually distinct (red).
-- Verify poll responses show `Received UBX-...`.
-- Verify unmatched ACK/NAK and possible-reply lines show in monospace.
-- Load a new file; verify `responseLines` are cleared.
-- Send again; verify previous `responseLines` are cleared before new responses appear.
+- Switch to Messages tab; load a message file.
+- Verify Send is disabled (no tag selected).
+- Click a tag row; verify it highlights and Send enables.
+- Click Send; verify the tag row loses highlight and gains a dot. Send disables.
+- Verify the left pane shows interleaved send progress and responses.
+- Verify accepted messages show "Message N accepted" in green.
+- Verify rejected messages show "Message N rejected: reason" in red.
+- For single-message tags, verify the number is omitted.
+- Verify `other` responses show "Received TAG-MSGID" and are clickable.
+- Verify the first `other` response is auto-selected and the right pane shows raw content and decode.
+- Click a different `other` response; verify the right pane updates.
+- Verify `maybe` responses appear in muted text and are clickable.
+- For binary responses, verify the decode section shows JSON from `DecodePacket`.
+- Verify "Listening..." appears during Pausing and disappears when Connected.
+- Click a tag row; verify dot clears, results clear, pausing cancels, row highlights, Send enables.
+- Switch tabs during Pausing; verify pausing cancels but dot and results stay when returning.
+- Load a new file; verify all state is cleared.
 
 ## Result
-Users see per-message response feedback in the Messages tab when sending messages, matching the send/response display design in ui-panel-message-file.md.
+Users see per-message response feedback in the Messages tab when sending messages: an interleaved status display alongside a decode panel for inspecting full responses and their decoded content. The interaction flow is simple: select a tag, send, view results, select again to send more.
 
 ## Files changed
-- `desktop/app.go` (send goroutine with PacketAnalyzer, ResponseEvent, gps:response emission)
-- `desktop/frontend/src/msgfile-panel.tsx` (right side response display)
-- `desktop/frontend/src/app.tsx` (responseLines state, gps:response subscription)
+- `desktop/app.go` (send goroutine with PacketAnalyzer, line buffer, ResponseEvent, gps:response emission, Pausing state, CancelMsgSend)
+- `desktop/frontend/src/msgfile-panel.tsx` (two-pane layout, tag row states, interleaved status, decode panel)
+- `desktop/frontend/src/app.tsx` (ResponseLine type, state management, gps:response subscription, Pausing in ConnState)

@@ -37,6 +37,7 @@ const (
 	StateConnected    ConnState = "connected"
 	StateConfiguring  ConnState = "configuring"
 	StateSending      ConnState = "sending"
+	StatePausing      ConnState = "pausing"
 )
 
 // configRequest is sent to packetWorker to run gpscfg.Configure.
@@ -118,6 +119,7 @@ func (a *App) setEndState(target ConnState) ConnState {
 	return target
 }
 
+
 func (a *App) closeLocked() {
 	if a.sendCancel != nil {
 		a.sendCancel()
@@ -171,7 +173,7 @@ func (a *App) Connect(device string, speed int) Result {
 	a.connWg.Go(func() { pb.Run(connCtx, a.lg) })
 	a.connWg.Go(func() { a.packetLogWorker(plCh) })
 	pktSub := pb.Subscribe()
-	procs := gpsreg.CreatePacketProcessors(nil)
+	procs := gpsreg.CreatePacketProcessors(gpsreg.VendorUnknown)
 	configCh := make(chan configRequest)
 	a.mu.Lock()
 	a.conn = conn
@@ -333,9 +335,12 @@ const readProps = gpsprot.PropIDSignalsEnabled |
 // ReadConfig reads back the current configuration from the receiver.
 func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
 	a.mu.Lock()
-	if a.state != StateConnected {
+	if a.state != StateConnected && a.state != StatePausing {
 		a.mu.Unlock()
 		return nil, fmt.Errorf("not connected")
+	}
+	if a.sendCancel != nil {
+		a.sendCancel()
 	}
 	a.state = StateConfiguring
 	a.mu.Unlock()
@@ -354,9 +359,12 @@ func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
 // The frontend sends JSON matching gpsprot.ConfigTarget's shape.
 func (a *App) ApplyConfig(cfg gpsprot.ConfigTarget) Result {
 	a.mu.Lock()
-	if a.state != StateConnected {
+	if a.state != StateConnected && a.state != StatePausing {
 		a.mu.Unlock()
 		return Result{Error: "not connected"}
+	}
+	if a.sendCancel != nil {
+		a.sendCancel()
 	}
 	a.state = StateConfiguring
 	a.mu.Unlock()
@@ -442,6 +450,18 @@ type MsgSendEvent struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// ResponseEvent is emitted as "gps:response" during SendMsgFile.
+type ResponseEvent struct {
+	Kind       string `json:"kind"`                // "ack", "other", "maybe"
+	ResponseTo int    `json:"responseTo"`           // 0-based index of sent message, or -1
+	MsgCount   int    `json:"msgCount,omitempty"`    // ack only: total messages sent for this tag
+	AckError   string `json:"ackError,omitempty"`   // ack only: empty = accepted, non-empty = rejected
+	Tag        string `json:"tag,omitempty"`         // protocol tag
+	MsgID      string `json:"msgID,omitempty"`       // message ID
+	Text       string `json:"text,omitempty"`         // full text for text protocols
+	Bin        string `json:"bin,omitempty"`           // hex string for binary protocols
+}
+
 // SendMsgFile sends messages for the given tag from the loaded message file.
 // Returns immediately after starting the send goroutine.
 func (a *App) SendMsgFile(tag string) error {
@@ -456,6 +476,10 @@ func (a *App) SendMsgFile(tag string) error {
 		return fmt.Errorf("no message file loaded")
 	}
 	conn := a.conn
+	pb := a.pb
+	if a.sendCancel != nil {
+		a.sendCancel()
+	}
 	a.mu.Unlock()
 	msgs, err := mf.TaggedMsgs([]string{tag})
 	if err != nil {
@@ -480,12 +504,16 @@ func (a *App) SendMsgFile(tag string) error {
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:state", StateSending)
 	total := len(rawMsgs)
+	sub := pb.Subscribe()
 	a.connWg.Go(func() {
 		defer func() {
+			pb.Unsubscribe(sub)
 			a.mu.Lock()
 			a.sendCancel = nil
 			a.mu.Unlock()
 		}()
+		pa := msgfile.NewPacketAnalyzer()
+		var lineBuf []byte
 		for i, rm := range rawMsgs {
 			if ctx.Err() != nil {
 				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
@@ -502,6 +530,7 @@ func (a *App) SendMsgFile(tag string) error {
 				a.setEndState(StateConnected)
 				return
 			}
+			pa.NotifySent(rm)
 			a.lg.Info("sent message", "index", i+1, "total", total, "tag", rm.Tag, "bytes", len(rm.Bytes))
 			runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
 				Status: "sent", Current: i + 1, Total: total,
@@ -510,9 +539,8 @@ func (a *App) SendMsgFile(tag string) error {
 				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
 					Status: "delaying", Current: i + 1, Total: total,
 				})
-				select {
-				case <-time.After(rm.Delay):
-				case <-ctx.Done():
+				lineBuf = a.readResponses(ctx, sub, pa, lineBuf, rm.Delay)
+				if ctx.Err() != nil {
 					runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
 						Status: "cancelled", Current: i + 1, Total: total,
 					})
@@ -527,20 +555,123 @@ func (a *App) SendMsgFile(tag string) error {
 		runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
 			Status: "done", Current: total, Total: total,
 		})
+		// Transition to Pausing for tail response reading.
+		if a.setEndState(StatePausing) != StatePausing {
+			return
+		}
+		a.readResponses(ctx, sub, pa, lineBuf, 3*time.Second)
 		a.setEndState(StateConnected)
 	})
 	return nil
 }
 
-// CancelMsgSend cancels an in-progress send operation.
+// readResponses reads packets from sub for the given duration, processing them
+// through the PacketAnalyzer and emitting gps:response events.
+func (a *App) readResponses(ctx context.Context, sub <-chan scan.Packet, pa *msgfile.PacketAnalyzer, lineBuf []byte, dur time.Duration) []byte {
+	deadline := time.After(dur)
+	for {
+		select {
+		case pkt, ok := <-sub:
+			if !ok {
+				return lineBuf
+			}
+			if pkt.IsInterPacketTimeout() {
+				continue
+			}
+			if pkt.Format == nil {
+				lineBuf = a.bufferResponseLines(pa, lineBuf, []byte(pkt.Data))
+				continue
+			}
+			lineBuf = a.flushResponseLine(pa, lineBuf)
+			result := pa.Analyze(pkt.Tag(), pkt.Data)
+			if result.Kind != msgfile.NotResponse {
+				a.emitResponse(result, &pkt)
+			}
+		case <-deadline:
+			return lineBuf
+		case <-ctx.Done():
+			return lineBuf
+		}
+	}
+}
+
+func (a *App) bufferResponseLines(pa *msgfile.PacketAnalyzer, lineBuf, data []byte) []byte {
+	for _, b := range data {
+		if b == '\n' {
+			lineBuf = a.flushResponseLine(pa, lineBuf)
+		} else if b == '\r' {
+			// skip
+		} else if b >= 0x20 && b <= 0x7E || b == '\t' {
+			lineBuf = append(lineBuf, b)
+		} else {
+			lineBuf = lineBuf[:0]
+		}
+	}
+	return lineBuf
+}
+
+func (a *App) flushResponseLine(pa *msgfile.PacketAnalyzer, lineBuf []byte) []byte {
+	if len(lineBuf) == 0 {
+		return lineBuf
+	}
+	line := string(lineBuf)
+	lineBuf = lineBuf[:0]
+	result := pa.Analyze(gpsprot.EmptyTag, line)
+	if result.Kind != msgfile.NotResponse {
+		ev := a.makeResponseEvent(result, nil)
+		ev.Text = line
+		runtime.EventsEmit(a.ctx, "gps:response", ev)
+	}
+	return lineBuf
+}
+
+func (a *App) emitResponse(r msgfile.PacketAnalysis, pkt *scan.Packet) {
+	ev := a.makeResponseEvent(r, pkt)
+	runtime.EventsEmit(a.ctx, "gps:response", ev)
+}
+
+func (a *App) makeResponseEvent(r msgfile.PacketAnalysis, pkt *scan.Packet) ResponseEvent {
+	ev := ResponseEvent{ResponseTo: -1}
+	switch r.Kind {
+	case msgfile.AckResponse:
+		ev.Kind = "ack"
+		ev.AckError = r.AckError
+		if r.RelatedMsg != nil {
+			ev.ResponseTo = r.RelatedMsg.Index
+			ev.MsgCount = r.RelatedMsg.Count
+		}
+	case msgfile.OtherResponse:
+		ev.Kind = "other"
+	case msgfile.MaybeResponse:
+		ev.Kind = "maybe"
+	}
+	if pkt != nil && pkt.Format != nil {
+		ev.Tag = string(pkt.Format.Tag())
+		ev.MsgID = pkt.Format.MsgID([]byte(pkt.Data))
+		b := []byte(pkt.Data)
+		if b[0] < 0x20 || b[0] >= 0x7F {
+			ev.Bin = hex.EncodeToString(b)
+		} else {
+			ev.Text = pkt.Data
+		}
+	}
+	return ev
+}
+
+// CancelMsgSend cancels an in-progress send or tail-read operation.
 func (a *App) CancelMsgSend() error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.state != StateSending {
+	if a.state != StateSending && a.state != StatePausing {
+		a.mu.Unlock()
 		return fmt.Errorf("not sending")
 	}
+	wasPausing := a.state == StatePausing
 	if a.sendCancel != nil {
 		a.sendCancel()
+	}
+	a.mu.Unlock()
+	if wasPausing {
+		a.setEndState(StateConnected)
 	}
 	return nil
 }

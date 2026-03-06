@@ -1,7 +1,7 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
-import {Connect, Disconnect, GetAllSignals, GetConnState, GetReceiverState, ListPorts} from '../wailsjs/go/main/App';
+import {Connect, Disconnect, GetAllSignals, GetConnState, GetReceiverState, ListPorts, CancelMsgSend} from '../wailsjs/go/main/App';
 import type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo} from '@satpulse/gps/gpsprot';
 import {ConnectionPanel, PortInfo} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
@@ -19,7 +19,7 @@ import {ClockPanel} from './clock-panel';
 import {SkyViewPanel} from './sky-view-panel';
 export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
 
-export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
+export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending' | 'pausing';
 
 export type ReceiverState =
     | {status: 'disconnected'}
@@ -81,6 +81,17 @@ export interface SendLine {
     error?: string;
 }
 
+export interface ResponseLine {
+    kind: 'ack' | 'other' | 'maybe';
+    responseTo: number;      // 0-based index of sent message, or -1
+    msgCount?: number;       // ack only: total messages sent for this tag
+    ackError?: string;       // ack only
+    tag?: string;            // protocol tag
+    msgID?: string;          // message ID
+    text?: string;           // text protocols
+    bin?: string;            // binary protocols (hex)
+}
+
 type TabID = 'monitor' | 'packets' | 'config' | 'messages';
 
 const tabBtnBase = 'px-5 py-2 text-sm font-medium border-b-2 cursor-pointer bg-transparent';
@@ -94,6 +105,7 @@ const connStateLabel: Record<ConnState, string> = {
     connected: 'Connected',
     configuring: 'Configuring...',
     sending: 'Sending...',
+    pausing: 'Connected',
 };
 
 let toastId = 0;
@@ -133,8 +145,11 @@ export function App() {
     const [msgFilePath, setMsgFilePath] = useState('');
     const [msgFileTags, setMsgFileTags] = useState<MsgFileTag[]>([]);
     const [selectedTagIndex, setSelectedTagIndex] = useState(-1);
+    const [activeTagIndex, setActiveTagIndex] = useState(-1);
+    const [tagArmed, setTagArmed] = useState(false);
     const [sendLines, setSendLines] = useState<SendLine[]>([]);
-    const [sendState, setSendState] = useState<'idle' | 'sending' | 'done' | 'error'>('idle');
+    const [responseLines, setResponseLines] = useState<ResponseLine[]>([]);
+    const [selectedResponseIndex, setSelectedResponseIndex] = useState(-1);
 
     const onSplitterMouseDown = useCallback((e: MouseEvent) => {
         e.preventDefault();
@@ -352,10 +367,8 @@ export function App() {
                         if (lines[idx]) lines[idx] = {...lines[idx], status: 'done'};
                         return lines;
                     });
-                    setSendState('done');
                     break;
                 case 'cancelled':
-                    setSendState('done');
                     break;
                 case 'error':
                     setSendLines(prev => {
@@ -364,9 +377,18 @@ export function App() {
                         lines[idx] = {status: 'error', index: current ?? 1, total: total ?? 1, error: error};
                         return lines;
                     });
-                    setSendState('error');
                     break;
             }
+        });
+        const offResponse = EventsOn('gps:response', (evt: ResponseLine) => {
+            setResponseLines(prev => {
+                const next = [...prev, evt];
+                // Auto-select the first 'other' response when it arrives.
+                if (evt.kind === 'other' && !prev.some(r => r.kind === 'other')) {
+                    setSelectedResponseIndex(next.length - 1);
+                }
+                return next;
+            });
         });
         return () => {
             if (typeof offLog === 'function') offLog(); else EventsOff('gps:log');
@@ -377,6 +399,7 @@ export function App() {
             if (typeof offEpochPVT === 'function') offEpochPVT(); else EventsOff('gps:epochPVT');
             if (typeof offTime === 'function') offTime(); else EventsOff('gps:time');
             if (typeof offMsgSend === 'function') offMsgSend(); else EventsOff('gps:msgsend');
+            if (typeof offResponse === 'function') offResponse(); else EventsOff('gps:response');
         };
     }, []);
 
@@ -438,6 +461,13 @@ export function App() {
                 : 'Unknown'
             : receiver.status === 'probing' ? 'Identifying...' : '';
 
+    const handleTabChange = useCallback((tab: TabID) => {
+        if (activeTab === 'messages' && tab !== 'messages' && connState === 'pausing') {
+            CancelMsgSend().catch(() => {});
+        }
+        setActiveTab(tab);
+    }, [activeTab, connState]);
+
     const configDisabled = receiver.status !== 'identified';
     const connected = connState !== 'disconnected';
 
@@ -460,25 +490,25 @@ export function App() {
             <div class="flex shrink-0 border-b border-border-subtle bg-surface-2">
                 <button
                     class={activeTab === 'monitor' ? tabBtnActive : tabBtnInactive}
-                    onClick={() => setActiveTab('monitor')}
+                    onClick={() => handleTabChange('monitor')}
                 >
                     Monitor
                 </button>
                 <button
                     class={activeTab === 'packets' ? tabBtnActive : tabBtnInactive}
-                    onClick={() => setActiveTab('packets')}
+                    onClick={() => handleTabChange('packets')}
                 >
                     Packets
                 </button>
                 <button
                     class={configDisabled ? tabBtnDisabled : (activeTab === 'config' ? tabBtnActive : tabBtnInactive)}
-                    onClick={() => { if (!configDisabled) setActiveTab('config'); }}
+                    onClick={() => { if (!configDisabled) handleTabChange('config'); }}
                 >
                     Configuration
                 </button>
                 <button
                     class={activeTab === 'messages' ? tabBtnActive : tabBtnInactive}
-                    onClick={() => setActiveTab('messages')}
+                    onClick={() => handleTabChange('messages')}
                 >
                     Message file
                 </button>
@@ -537,10 +567,16 @@ export function App() {
                         setMsgFileTags={setMsgFileTags}
                         selectedTagIndex={selectedTagIndex}
                         setSelectedTagIndex={setSelectedTagIndex}
+                        activeTagIndex={activeTagIndex}
+                        setActiveTagIndex={setActiveTagIndex}
+                        tagArmed={tagArmed}
+                        setTagArmed={setTagArmed}
                         sendLines={sendLines}
                         setSendLines={setSendLines}
-                        sendState={sendState}
-                        setSendState={setSendState}
+                        responseLines={responseLines}
+                        setResponseLines={setResponseLines}
+                        selectedResponseIndex={selectedResponseIndex}
+                        setSelectedResponseIndex={setSelectedResponseIndex}
                         addToast={addToast}
                     />
                 </div>
