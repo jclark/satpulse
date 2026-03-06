@@ -209,8 +209,12 @@ func msgsNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) []gpsprot.Msg {
 			epoch.Correction = corr
 		}
 	}
-	epoch.NumSVUsed = opt.Make(uint16(m.SatUsed))
-	epoch.NumSVInView = opt.Make(uint16(m.SatView))
+	if m.SatUsed.IsSet() {
+		epoch.NumSVUsed = opt.Make(uint16(m.SatUsed.Get()))
+	}
+	if m.SatView.IsSet() {
+		epoch.NumSVInView = opt.Make(uint16(m.SatView.Get()))
+	}
 	if m.DiffAge.IsSet() {
 		epoch.DiffAge = opt.Make(gpsprot.Seconds(m.DiffAge.Get()))
 	}
