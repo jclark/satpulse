@@ -9,10 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/asbin"
-	"github.com/jclark/satpulse/gps/lib/casbin"
-	"github.com/jclark/satpulse/gps/lib/nmeamsg"
-	"github.com/jclark/satpulse/gps/lib/ubxbin"
+	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/pelletier/go-toml/v2"
 )
@@ -43,11 +40,50 @@ func (mc *MsgCommon) tagDesc() TagDesc {
 	return TagDesc{Tag: tag, Desc: mc.Description}
 }
 
-// LineMsg represents a [[line]] entry or [default.line].
-type LineMsg struct {
-	Text string  `toml:"text"`
-	EOL  *string `toml:"eol"`
-	MsgCommon
+// ResponsePattern selects the response matching behavior for a LineMsg.
+type ResponsePattern int
+
+const (
+	ResponsePatternNone    ResponsePattern = iota // zero value: no response matching
+	ResponsePatternUnicore                        // "unicore"
+)
+
+var responsePatternStrings = [...]string{
+	ResponsePatternNone:    "none",
+	ResponsePatternUnicore: "unicore",
+}
+
+// String returns the string representation of the ResponsePattern.
+func (rp ResponsePattern) String() string {
+	if rp >= 0 && int(rp) < len(responsePatternStrings) {
+		return responsePatternStrings[rp]
+	}
+	return fmt.Sprintf("ResponsePattern(%d)", int(rp))
+}
+
+// ParseResponsePattern parses a string into a ResponsePattern.
+func ParseResponsePattern(s string) (ResponsePattern, error) {
+	for i, name := range responsePatternStrings {
+		if s == name {
+			return ResponsePattern(i), nil
+		}
+	}
+	return 0, fmt.Errorf("unknown responsePattern: %q", s)
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (rp ResponsePattern) MarshalText() ([]byte, error) {
+	return []byte(rp.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (rp *ResponsePattern) UnmarshalText(data []byte) error {
+	v, err := ParseResponsePattern(string(data))
+	if err != nil {
+		return err
+	}
+	*rp = v
+	return nil
 }
 
 func (mc *MsgCommon) delay() (time.Duration, error) {
@@ -57,174 +93,35 @@ func (mc *MsgCommon) delay() (time.Duration, error) {
 	return ptime.Seconds(*mc.Delay), nil
 }
 
-func (lm *LineMsg) toRaw() (RawMsg, error) {
-	if lm.Text == "" {
-		return RawMsg{}, errors.New("text must not be empty")
-	}
-	delay, err := lm.MsgCommon.delay()
-	if err != nil {
-		return RawMsg{}, err
-	}
-	return RawMsg{
-		Bytes: []byte(lm.Text + *lm.EOL),
-		Delay: delay,
-		Tag:   *lm.Tag,
-	}, nil
+// ResponseKind classifies how an incoming packet relates to sent messages.
+type ResponseKind int
+
+const (
+	NotResponse   ResponseKind = iota // definitely not a response to anything we sent
+	MaybeResponse                     // might be a response, can't tell
+	AckResponse                       // definite ACK/NAK of a specific sent message
+	OtherResponse                     // definitely a response (not ACK/NAK)
+)
+
+// AckNak is the default AckError when no detail is available.
+const AckNak = "NAK"
+
+// PacketAnalysis is the result of analyzing an incoming packet.
+type PacketAnalysis struct {
+	Kind       ResponseKind
+	AckError   string  // AckResponse only: empty = success, non-empty = failure
+	RelatedMsg *RawMsg // AckResponse only: the sent message this responds to
 }
 
-func (lm *LineMsg) getTag() string { return *lm.Tag }
-
-// BinaryMsg represents a [[binary]] entry or [default.binary].
-type BinaryMsg struct {
-	Hex string `toml:"hex"`
-	MsgCommon
+// responsePattern creates a responseMatcher for a specific sent message.
+type responsePattern interface {
+	newMatcher() responseMatcher
 }
 
-func (bm *BinaryMsg) toRaw() (RawMsg, error) {
-	if bm.Hex == "" {
-		return RawMsg{}, errors.New("hex must not be empty")
-	}
-	b, err := decodeHex(bm.Hex)
-	if err != nil {
-		return RawMsg{}, fmt.Errorf("hex: %w", err)
-	}
-	delay, err := bm.MsgCommon.delay()
-	if err != nil {
-		return RawMsg{}, err
-	}
-	return RawMsg{
-		Bytes: b,
-		Delay: delay,
-		Tag:   *bm.Tag,
-	}, nil
-}
-
-func (bm *BinaryMsg) getTag() string { return *bm.Tag }
-
-// NMEAMsg represents a [[nmea]] entry or [default.nmea].
-type NMEAMsg struct {
-	Text string `toml:"text"`
-	MsgCommon
-}
-
-func (nm *NMEAMsg) toRaw() (RawMsg, error) {
-	if nm.Text == "" {
-		return RawMsg{}, errors.New("text must not be empty")
-	}
-	delay, err := nm.MsgCommon.delay()
-	if err != nil {
-		return RawMsg{}, err
-	}
-	built, err := buildNMEA(nm.Text)
-	if err != nil {
-		return RawMsg{}, err
-	}
-	return RawMsg{
-		Bytes: []byte(built),
-		Delay: delay,
-		Tag:   *nm.Tag,
-	}, nil
-}
-
-func (nm *NMEAMsg) getTag() string { return *nm.Tag }
-
-// UBXLikeMsg contains fields shared by UBX and CASBIN message types.
-type UBXLikeMsg struct {
-	Class   uint8   `toml:"class"`
-	ID      uint8   `toml:"id"`
-	Payload Payload `toml:"payload"`
-	MsgCommon
-}
-
-// CASBINMsg represents a [[casbin]] entry.
-type CASBINMsg struct {
-	UBXLikeMsg
-}
-
-func (cm *CASBINMsg) toRaw() (RawMsg, error) {
-	payload, err := cm.Payload.Encode(casbin.Endian)
-	if err != nil {
-		return RawMsg{}, err
-	}
-	mid := casbin.MakeMsgID(cm.Class, cm.ID)
-	pkt, err := casbin.PackMsg(mid, payload)
-	if err != nil {
-		return RawMsg{}, err
-	}
-	delay, err := cm.MsgCommon.delay()
-	if err != nil {
-		return RawMsg{}, err
-	}
-	return RawMsg{Bytes: pkt, Delay: delay, Tag: *cm.Tag}, nil
-}
-
-func (cm *CASBINMsg) getTag() string { return *cm.Tag }
-
-// ASBINMsg represents a [[asbin]] entry.
-type ASBINMsg struct {
-	UBXLikeMsg
-}
-
-func (am *ASBINMsg) toRaw() (RawMsg, error) {
-	payload, err := am.Payload.Encode(asbin.Endian())
-	if err != nil {
-		return RawMsg{}, err
-	}
-	mid := asbin.MakeMsgID(am.Class, am.ID)
-	pkt, err := asbin.PackMsg(mid, payload)
-	if err != nil {
-		return RawMsg{}, err
-	}
-	delay, err := am.MsgCommon.delay()
-	if err != nil {
-		return RawMsg{}, err
-	}
-	return RawMsg{Bytes: pkt, Delay: delay, Tag: *am.Tag}, nil
-}
-
-func (am *ASBINMsg) getTag() string { return *am.Tag }
-
-// UBXMsg represents a [[ubx]] entry.
-type UBXMsg struct {
-	UBXLikeMsg
-}
-
-func (um *UBXMsg) toRaw() (RawMsg, error) {
-	payload, err := um.Payload.Encode(ubxbin.Endian)
-	if err != nil {
-		return RawMsg{}, err
-	}
-	mid := ubxbin.MakeMsgID(um.Class, um.ID)
-	pkt, err := ubxbin.PackMsg(mid, payload)
-	if err != nil {
-		return RawMsg{}, err
-	}
-	delay, err := um.MsgCommon.delay()
-	if err != nil {
-		return RawMsg{}, err
-	}
-	return RawMsg{Bytes: pkt, Delay: delay, Tag: *um.Tag}, nil
-}
-
-func (um *UBXMsg) getTag() string { return *um.Tag }
-
-// buildNMEA builds a complete NMEA sentence from user text.
-// Prepends $ if missing, appends *XX checksum if missing, appends CRLF.
-// Validates the result using nmeamsg.CheckSyntax.
-func buildNMEA(text string) (string, error) {
-	if !strings.HasPrefix(text, "$") {
-		text = "$" + text
-	}
-	if !strings.Contains(text, "*") {
-		checksum := nmeamsg.Checksum([]byte(text[1:]))
-		text = fmt.Sprintf("%s*%02X", text, checksum)
-	}
-	text += "\r\n"
-	flags := nmeamsg.CheckSyntax(text)
-	if flags&nmeamsg.SentenceIsPacket == 0 {
-		return "", errors.New("invalid NMEA packet")
-	}
-	return text, nil
+// responseMatcher examines an incoming packet and returns how it relates
+// to the specific sent message this matcher was created for.
+type responseMatcher interface {
+	match(tag gpsprot.Tag, data string) (ResponseKind, string)
 }
 
 // Parsed represents a parsed message file.
@@ -247,15 +144,94 @@ type Parsed struct {
 
 // RawMsg is a message ready to send: raw bytes with metadata.
 type RawMsg struct {
-	Bytes []byte
-	Delay time.Duration
-	Tag   string // for logging
-	Index int    // 0-based index within tag
+	Bytes  []byte
+	Delay  time.Duration
+	Tag    string // for logging
+	Index  int    // 0-based index within tag
+	Count  int    // total messages with this tag
+	source responsePattern
+}
+
+// MsgID identifies a sent message for display purposes.
+type MsgID struct {
+	Tag   string // tag name
+	Index int    // 0-based index among messages with this tag
+	Count int    // total messages with this tag
+}
+
+// MsgID returns the identity of this sent message.
+func (rm *RawMsg) MsgID() MsgID {
+	return MsgID{Tag: rm.Tag, Index: rm.Index, Count: rm.Count}
 }
 
 type userMsg interface {
 	toRaw() (RawMsg, error)
 	getTag() string
+	responsePattern
+}
+
+// PacketAnalyzer classifies incoming packets and correlates ACK/NAK
+// responses to specific sent messages.
+type PacketAnalyzer struct {
+	msgs     []RawMsg
+	matchers []responseMatcher
+	acked    []bool
+}
+
+// NewPacketAnalyzer creates a new PacketAnalyzer.
+func NewPacketAnalyzer() *PacketAnalyzer {
+	return &PacketAnalyzer{}
+}
+
+// NotifySent records a sent message for future response matching.
+func (pa *PacketAnalyzer) NotifySent(rm RawMsg) {
+	pa.msgs = append(pa.msgs, rm)
+	pa.matchers = append(pa.matchers, rm.source.newMatcher())
+	pa.acked = append(pa.acked, false)
+}
+
+// Analyze classifies an incoming packet and correlates acks to sent messages.
+func (pa *PacketAnalyzer) Analyze(tag gpsprot.Tag, data string) PacketAnalysis {
+	type ackResult struct {
+		idx    int
+		ackErr string
+	}
+	var acks []ackResult
+	hasOther := false
+	hasMaybe := false
+	for i, m := range pa.matchers {
+		kind, ackErr := m.match(tag, data)
+		if kind == AckResponse && pa.acked[i] {
+			continue // ignore acks from already-acked matchers
+		}
+		switch kind {
+		case AckResponse:
+			acks = append(acks, ackResult{i, ackErr})
+		case OtherResponse:
+			hasOther = true
+		case MaybeResponse:
+			hasMaybe = true
+		}
+	}
+	if len(acks) == 1 {
+		idx := acks[0].idx
+		pa.acked[idx] = true
+		return PacketAnalysis{
+			Kind:       AckResponse,
+			AckError:   acks[0].ackErr,
+			RelatedMsg: &pa.msgs[idx],
+		}
+	}
+	if len(acks) > 1 {
+		return PacketAnalysis{Kind: OtherResponse}
+	}
+	if hasOther {
+		return PacketAnalysis{Kind: OtherResponse}
+	}
+	if hasMaybe {
+		return PacketAnalysis{Kind: MaybeResponse}
+	}
+	return PacketAnalysis{Kind: NotResponse}
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -267,6 +243,7 @@ func defaultMsgCommon() MsgCommon {
 func newDefault() *Parsed {
 	mf := new(Parsed)
 	mf.Default.Line.EOL = ptr("\r\n")
+	mf.Default.Line.RespPattern = ptr(ResponsePatternNone)
 	mf.Default.Line.MsgCommon = defaultMsgCommon()
 	mf.Default.Binary.MsgCommon = defaultMsgCommon()
 	mf.Default.NMEA.MsgCommon = defaultMsgCommon()
@@ -310,6 +287,9 @@ func applyCommonDefaults(dst, src *MsgCommon) {
 func (mf *Parsed) applyLineDefaults(lm *LineMsg) {
 	if lm.EOL == nil {
 		lm.EOL = mf.Default.Line.EOL
+	}
+	if lm.RespPattern == nil {
+		lm.RespPattern = mf.Default.Line.RespPattern
 	}
 	applyCommonDefaults(&lm.MsgCommon, &mf.Default.Line.MsgCommon)
 }
@@ -503,7 +483,12 @@ func toRawMsgs[T any, PT interface {
 		}
 		rm.Index = idx
 		rm.Tag = tag
+		rm.source = p
 		result[i] = rm
+	}
+	// Second pass to set Count.
+	for i := range result {
+		result[i].Count = tagCount[result[i].Tag]
 	}
 	return result, nil
 }

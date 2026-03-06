@@ -1,126 +1,52 @@
 package msgfile
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/pelletier/go-toml/v2"
 )
 
-func TestLoadSimple(t *testing.T) {
-	toml := `[[line]]
-text = "CONFIG PPP CONVERGE 10 20"
-
-[[line]]
-text = "CONFIG PPP ENABLE E6-HAS"
-`
-	mf := loadFromString(t, toml)
-	if len(mf.Line) != 2 {
-		t.Fatalf("expected 2 lines, got %d", len(mf.Line))
+func loadFromString(t *testing.T, content string) *Parsed {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.toml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
 	}
-	if mf.Line[0].Text != "CONFIG PPP CONVERGE 10 20" {
-		t.Errorf("expected first line text, got %q", mf.Line[0].Text)
+	mf, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
 	}
-	if mf.Line[1].Text != "CONFIG PPP ENABLE E6-HAS" {
-		t.Errorf("expected second line text, got %q", mf.Line[1].Text)
-	}
+	return mf
 }
 
-func TestLoadDefaults(t *testing.T) {
-	toml := `[default.line]
-delay = 0.1
-eol = "\n"
-
-[[line]]
-text = "LINE1"
-
-[[line]]
-text = "LINE2"
-`
-	mf := loadFromString(t, toml)
-	if mf.Default.Line.Delay == nil || *mf.Default.Line.Delay != 0.1 {
-		t.Errorf("expected default delay 0.1, got %v", mf.Default.Line.Delay)
+// rawMsgsEqual compares two RawMsg slices ignoring the unexported source field.
+func rawMsgsEqual(a, b []RawMsg) bool {
+	if len(a) != len(b) {
+		return false
 	}
-	if mf.Default.Line.EOL == nil || *mf.Default.Line.EOL != "\n" {
-		t.Errorf("expected default eol \\n, got %v", mf.Default.Line.EOL)
+	for i := range a {
+		if !bytes.Equal(a[i].Bytes, b[i].Bytes) ||
+			a[i].Delay != b[i].Delay ||
+			a[i].Tag != b[i].Tag ||
+			a[i].Index != b[i].Index ||
+			a[i].Count != b[i].Count {
+			return false
+		}
 	}
+	return true
 }
 
-func TestLoadDefaultEOL(t *testing.T) {
-	toml := `[[line]]
-text = "TEST"
-`
-	mf := loadFromString(t, toml)
-	if mf.Default.Line.EOL == nil || *mf.Default.Line.EOL != "\r\n" {
-		t.Errorf("expected default eol \\r\\n, got %v", mf.Default.Line.EOL)
-	}
-}
-
-func TestValidateLineMsg(t *testing.T) {
-	tests := []struct {
-		name    string
-		toml    string
-		wantErr bool
-	}{
-		{
-			name: "valid simple",
-			toml: `[[line]]
-text = "TEST"
-`,
-			wantErr: false,
-		},
-		{
-			name: "empty text",
-			toml: `[[line]]
-text = ""
-`,
-			wantErr: true,
-		},
-		{
-			name: "default text not empty",
-			toml: `[default.line]
-text = "BAD"
-
-[[line]]
-text = "TEST"
-`,
-			wantErr: true,
-		},
-		{
-			name: "negative delay in line",
-			toml: `[[line]]
-text = "TEST"
-delay = -1.0
-`,
-			wantErr: true,
-		},
-		{
-			name: "negative delay in default",
-			toml: `[default.line]
-delay = -0.5
-
-[[line]]
-text = "TEST"
-`,
-			wantErr: true,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			err := validateMsgs(mf, []string{""})
-			if tc.wantErr && err == nil {
-				t.Error("expected error, got nil")
-			}
-			if !tc.wantErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
+// makeRawMsg creates a RawMsg from a message type that implements responsePattern.
+func makeRawMsg(rp responsePattern) RawMsg {
+	return RawMsg{source: rp}
 }
 
 func validateMsgs(mf *Parsed, tags []string) error {
@@ -132,342 +58,22 @@ func validateMsgs(mf *Parsed, tags []string) error {
 	return err
 }
 
-func TestLineMsgsToRaw(t *testing.T) {
-	tests := []struct {
-		name     string
-		toml     string
-		tags     []string
-		expected []RawMsg
-	}{
-		{
-			name: "simple two lines",
-			toml: `[[line]]
-text = "LINE1"
-
-[[line]]
-text = "LINE2"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\r\n"), Delay: 0, Tag: "", Index: 0},
-				{Bytes: []byte("LINE2\r\n"), Delay: 0, Tag: "", Index: 1},
-			},
-		},
-		{
-			name: "with delay",
-			toml: `[[line]]
-text = "LINE1"
-delay = 0.1
-
-[[line]]
-text = "LINE2"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\r\n"), Delay: 100 * time.Millisecond, Tag: "", Index: 0},
-				{Bytes: []byte("LINE2\r\n"), Delay: 0, Tag: "", Index: 1},
-			},
-		},
-		{
-			name: "custom eol",
-			toml: `[[line]]
-text = "LINE1"
-eol = "\n"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\n"), Delay: 0, Tag: "", Index: 0},
-			},
-		},
-		{
-			name: "empty eol",
-			toml: `[[line]]
-text = "NOTERM"
-eol = ""
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("NOTERM"), Delay: 0, Tag: "", Index: 0},
-			},
-		},
-		{
-			name: "default delay",
-			toml: `[default.line]
-delay = 0.2
-
-[[line]]
-text = "LINE1"
-
-[[line]]
-text = "LINE2"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\r\n"), Delay: 200 * time.Millisecond, Tag: "", Index: 0},
-				{Bytes: []byte("LINE2\r\n"), Delay: 200 * time.Millisecond, Tag: "", Index: 1},
-			},
-		},
-		{
-			name: "default eol",
-			toml: `[default.line]
-eol = "\n"
-
-[[line]]
-text = "LINE1"
-
-[[line]]
-text = "LINE2"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\n"), Delay: 0, Tag: "", Index: 0},
-				{Bytes: []byte("LINE2\n"), Delay: 0, Tag: "", Index: 1},
-			},
-		},
-		{
-			name: "override default delay",
-			toml: `[default.line]
-delay = 0.2
-
-[[line]]
-text = "LINE1"
-delay = 0.5
-
-[[line]]
-text = "LINE2"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\r\n"), Delay: 500 * time.Millisecond, Tag: "", Index: 0},
-				{Bytes: []byte("LINE2\r\n"), Delay: 200 * time.Millisecond, Tag: "", Index: 1},
-			},
-		},
-		{
-			name: "override default eol",
-			toml: `[default.line]
-eol = "\n"
-
-[[line]]
-text = "LINE1"
-eol = "\r"
-
-[[line]]
-text = "LINE2"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\r"), Delay: 0, Tag: "", Index: 0},
-				{Bytes: []byte("LINE2\n"), Delay: 0, Tag: "", Index: 1},
-			},
-		},
+func loadPayloadFromString(t *testing.T, content string) Payload {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "payload.toml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			msgs, err := mf.TaggedMsgs(tc.tags)
-			if err != nil {
-				t.Fatalf("TaggedMsgs error: %v", err)
-			}
-			raw, err := ToRaw(msgs)
-			if err != nil {
-				t.Fatalf("ToRaw error: %v", err)
-			}
-			if !reflect.DeepEqual(raw, tc.expected) {
-				t.Errorf("got %+v, expected %+v", raw, tc.expected)
-			}
-		})
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read error: %v", err)
 	}
-}
-
-func TestLoadBinaryMsgSimple(t *testing.T) {
-	toml := `[[binary]]
-hex = "B562068A0900"
-
-[[binary]]
-hex = "DEADBEEF"
-`
-	mf := loadFromString(t, toml)
-	if len(mf.Binary) != 2 {
-		t.Fatalf("expected 2 binary messages, got %d", len(mf.Binary))
+	var p Payload
+	if err := toml.Unmarshal(data, &p); err != nil {
+		t.Fatalf("TOML parse error: %v", err)
 	}
-	if mf.Binary[0].Hex != "B562068A0900" {
-		t.Errorf("expected first hex, got %q", mf.Binary[0].Hex)
-	}
-	if mf.Binary[1].Hex != "DEADBEEF" {
-		t.Errorf("expected second hex, got %q", mf.Binary[1].Hex)
-	}
-}
-
-func TestBinaryMsgsToRaw(t *testing.T) {
-	tests := []struct {
-		name     string
-		toml     string
-		tags     []string
-		expected []RawMsg
-	}{
-		{
-			name: "simple binary",
-			toml: `[[binary]]
-hex = "DEADBEEF"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte{0xDE, 0xAD, 0xBE, 0xEF}, Delay: 0, Tag: "", Index: 0},
-			},
-		},
-		{
-			name: "hex with whitespace",
-			toml: `[[binary]]
-hex = "DE AD BE EF"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte{0xDE, 0xAD, 0xBE, 0xEF}, Delay: 0, Tag: "", Index: 0},
-			},
-		},
-		{
-			name: "with delay",
-			toml: `[[binary]]
-hex = "B562"
-delay = 0.5
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte{0xB5, 0x62}, Delay: 500 * time.Millisecond, Tag: "", Index: 0},
-			},
-		},
-		{
-			name: "default delay",
-			toml: `[default.binary]
-delay = 0.1
-
-[[binary]]
-hex = "AA"
-
-[[binary]]
-hex = "BB"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte{0xAA}, Delay: 100 * time.Millisecond, Tag: "", Index: 0},
-				{Bytes: []byte{0xBB}, Delay: 100 * time.Millisecond, Tag: "", Index: 1},
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			msgs, err := mf.TaggedMsgs(tc.tags)
-			if err != nil {
-				t.Fatalf("TaggedMsgs error: %v", err)
-			}
-			raw, err := ToRaw(msgs)
-			if err != nil {
-				t.Fatalf("ToRaw error: %v", err)
-			}
-			if !reflect.DeepEqual(raw, tc.expected) {
-				t.Errorf("got %+v, expected %+v", raw, tc.expected)
-			}
-		})
-	}
-}
-
-func TestValidateBinary(t *testing.T) {
-	tests := []struct {
-		name    string
-		toml    string
-		tags    []string
-		wantErr bool
-	}{
-		{
-			name: "valid binary",
-			toml: `[[binary]]
-hex = "DEADBEEF"
-`,
-			tags:    []string{""},
-			wantErr: false,
-		},
-		{
-			name: "empty hex",
-			toml: `[[binary]]
-hex = ""
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-		{
-			name: "invalid hex chars",
-			toml: `[[binary]]
-hex = "GHIJ"
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-		{
-			name: "odd length hex",
-			toml: `[[binary]]
-hex = "ABC"
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-		{
-			name: "default hex not empty",
-			toml: `[default.binary]
-hex = "AA"
-
-[[binary]]
-hex = "BB"
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-		{
-			name: "negative delay in binary",
-			toml: `[[binary]]
-hex = "AA"
-delay = -1.0
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-		{
-			name: "negative delay in default binary",
-			toml: `[default.binary]
-delay = -0.5
-
-[[binary]]
-hex = "AA"
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-		{
-			name: "mixed line and binary in file",
-			toml: `[[line]]
-text = "TEST"
-tag = "lines"
-
-[[binary]]
-hex = "AA"
-tag = "bins"
-`,
-			tags:    []string{"lines"},
-			wantErr: false,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			err := validateMsgs(mf, tc.tags)
-			if tc.wantErr && err == nil {
-				t.Error("expected error, got nil")
-			}
-			if !tc.wantErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
+	return p
 }
 
 func TestUnknownField(t *testing.T) {
@@ -529,190 +135,6 @@ description = "Send binary command"
 	}
 	if len(raw) != 2 {
 		t.Errorf("expected 2 raw messages, got %d", len(raw))
-	}
-}
-
-func TestTaggedMsgs(t *testing.T) {
-	tests := []struct {
-		name     string
-		toml     string
-		tags     []string
-		expected []RawMsg
-	}{
-		{
-			name: "filter by tag",
-			toml: `[[line]]
-text = "LINE1"
-tag = "setup"
-
-[[line]]
-text = "LINE2"
-tag = "ppp"
-
-[[line]]
-text = "LINE3"
-tag = "setup"
-`,
-			tags: []string{"setup"},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\r\n"), Delay: 0, Tag: "setup", Index: 0},
-				{Bytes: []byte("LINE3\r\n"), Delay: 0, Tag: "setup", Index: 1},
-			},
-		},
-		{
-			name: "multiple tags in order",
-			toml: `[[line]]
-text = "LINE1"
-tag = "setup"
-
-[[line]]
-text = "LINE2"
-tag = "ppp"
-
-[[line]]
-text = "LINE3"
-tag = "setup"
-`,
-			tags: []string{"ppp", "setup"},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE2\r\n"), Delay: 0, Tag: "ppp", Index: 0},
-				{Bytes: []byte("LINE1\r\n"), Delay: 0, Tag: "setup", Index: 0},
-				{Bytes: []byte("LINE3\r\n"), Delay: 0, Tag: "setup", Index: 1},
-			},
-		},
-		{
-			name: "default tag",
-			toml: `[default.line]
-tag = "setup"
-
-[[line]]
-text = "LINE1"
-
-[[line]]
-text = "LINE2"
-
-[[line]]
-text = "LINE3"
-tag = "other"
-`,
-			tags: []string{"setup"},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\r\n"), Delay: 0, Tag: "setup", Index: 0},
-				{Bytes: []byte("LINE2\r\n"), Delay: 0, Tag: "setup", Index: 1},
-			},
-		},
-		{
-			name: "empty tag",
-			toml: `[[line]]
-text = "LINE1"
-
-[[line]]
-text = "LINE2"
-tag = "ppp"
-
-[[line]]
-text = "LINE3"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\r\n"), Delay: 0, Tag: "", Index: 0},
-				{Bytes: []byte("LINE3\r\n"), Delay: 0, Tag: "", Index: 1},
-			},
-		},
-		{
-			name: "empty tag in middle",
-			toml: `[[line]]
-text = "LINE1"
-tag = "foo"
-
-[[line]]
-text = "LINE2"
-
-[[line]]
-text = "LINE3"
-tag = "bar"
-`,
-			tags: []string{"foo", "", "bar"},
-			expected: []RawMsg{
-				{Bytes: []byte("LINE1\r\n"), Delay: 0, Tag: "foo", Index: 0},
-				{Bytes: []byte("LINE2\r\n"), Delay: 0, Tag: "", Index: 0},
-				{Bytes: []byte("LINE3\r\n"), Delay: 0, Tag: "bar", Index: 0},
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			msgs, err := mf.TaggedMsgs(tc.tags)
-			if err != nil {
-				t.Fatalf("TaggedMsgs error: %v", err)
-			}
-			raw, err := ToRaw(msgs)
-			if err != nil {
-				t.Fatalf("ToRaw error: %v", err)
-			}
-			if !reflect.DeepEqual(raw, tc.expected) {
-				t.Errorf("got %+v, expected %+v", raw, tc.expected)
-			}
-		})
-	}
-}
-
-func TestTaggedBinaryMsgs(t *testing.T) {
-	tests := []struct {
-		name     string
-		toml     string
-		tags     []string
-		expected []RawMsg
-	}{
-		{
-			name: "filter by tag",
-			toml: `[[binary]]
-hex = "AA"
-tag = "setup"
-
-[[binary]]
-hex = "BB"
-tag = "other"
-`,
-			tags: []string{"setup"},
-			expected: []RawMsg{
-				{Bytes: []byte{0xAA}, Delay: 0, Tag: "setup", Index: 0},
-			},
-		},
-		{
-			name: "default tag",
-			toml: `[default.binary]
-tag = "init"
-
-[[binary]]
-hex = "AA"
-
-[[binary]]
-hex = "BB"
-tag = "other"
-`,
-			tags: []string{"init"},
-			expected: []RawMsg{
-				{Bytes: []byte{0xAA}, Delay: 0, Tag: "init", Index: 0},
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			msgs, err := mf.TaggedMsgs(tc.tags)
-			if err != nil {
-				t.Fatalf("TaggedMsgs error: %v", err)
-			}
-			raw, err := ToRaw(msgs)
-			if err != nil {
-				t.Fatalf("ToRaw error: %v", err)
-			}
-			if !reflect.DeepEqual(raw, tc.expected) {
-				t.Errorf("got %+v, expected %+v", raw, tc.expected)
-			}
-		})
 	}
 }
 
@@ -794,244 +216,6 @@ tag = "setup"
 			}
 			if !tc.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
-}
-
-func TestLoadNMEAMsgSimple(t *testing.T) {
-	toml := `[[nmea]]
-text = "PCAS04,3"
-
-[[nmea]]
-text = "PUBX,40,GGA,0,0,0,0"
-`
-	mf := loadFromString(t, toml)
-	if len(mf.NMEA) != 2 {
-		t.Fatalf("expected 2 nmea messages, got %d", len(mf.NMEA))
-	}
-	if mf.NMEA[0].Text != "PCAS04,3" {
-		t.Errorf("expected first nmea text, got %q", mf.NMEA[0].Text)
-	}
-	if mf.NMEA[1].Text != "PUBX,40,GGA,0,0,0,0" {
-		t.Errorf("expected second nmea text, got %q", mf.NMEA[1].Text)
-	}
-}
-
-func TestNMEAMsgsToRaw(t *testing.T) {
-	tests := []struct {
-		name     string
-		toml     string
-		tags     []string
-		expected []RawMsg
-	}{
-		{
-			name: "simple text without $ or checksum",
-			toml: `[[nmea]]
-text = "PCAS04,3"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("$PCAS04,3*1A\r\n"), Delay: 0, Tag: "", Index: 0},
-			},
-		},
-		{
-			name: "text with $ prefix",
-			toml: `[[nmea]]
-text = "$PCAS04,3"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("$PCAS04,3*1A\r\n"), Delay: 0, Tag: "", Index: 0},
-			},
-		},
-		{
-			name: "text with $ and checksum",
-			toml: `[[nmea]]
-text = "$PCAS04,3*1A"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("$PCAS04,3*1A\r\n"), Delay: 0, Tag: "", Index: 0},
-			},
-		},
-		{
-			name: "with delay",
-			toml: `[[nmea]]
-text = "PCAS04,3"
-delay = 0.5
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("$PCAS04,3*1A\r\n"), Delay: 500 * time.Millisecond, Tag: "", Index: 0},
-			},
-		},
-		{
-			name: "default delay",
-			toml: `[default.nmea]
-delay = 0.1
-
-[[nmea]]
-text = "PCAS04,3"
-
-[[nmea]]
-text = "PCAS04,7"
-`,
-			tags: []string{""},
-			expected: []RawMsg{
-				{Bytes: []byte("$PCAS04,3*1A\r\n"), Delay: 100 * time.Millisecond, Tag: "", Index: 0},
-				{Bytes: []byte("$PCAS04,7*1E\r\n"), Delay: 100 * time.Millisecond, Tag: "", Index: 1},
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			msgs, err := mf.TaggedMsgs(tc.tags)
-			if err != nil {
-				t.Fatalf("TaggedMsgs error: %v", err)
-			}
-			raw, err := ToRaw(msgs)
-			if err != nil {
-				t.Fatalf("ToRaw error: %v", err)
-			}
-			if !reflect.DeepEqual(raw, tc.expected) {
-				t.Errorf("got %+v, expected %+v", raw, tc.expected)
-			}
-		})
-	}
-}
-
-func TestValidateNMEA(t *testing.T) {
-	tests := []struct {
-		name    string
-		toml    string
-		tags    []string
-		wantErr bool
-	}{
-		{
-			name: "valid nmea",
-			toml: `[[nmea]]
-text = "PCAS04,3"
-`,
-			tags:    []string{""},
-			wantErr: false,
-		},
-		{
-			name: "empty text",
-			toml: `[[nmea]]
-text = ""
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-		{
-			name: "default text not empty",
-			toml: `[default.nmea]
-text = "BAD"
-
-[[nmea]]
-text = "PCAS04,3"
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-		{
-			name: "negative delay",
-			toml: `[[nmea]]
-text = "PCAS04,3"
-delay = -1.0
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-		{
-			name: "negative delay in default",
-			toml: `[default.nmea]
-delay = -0.5
-
-[[nmea]]
-text = "PCAS04,3"
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-		{
-			name: "invalid nmea syntax",
-			toml: `[[nmea]]
-text = "BAD*ZZ"
-`,
-			tags:    []string{""},
-			wantErr: true,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			err := validateMsgs(mf, tc.tags)
-			if tc.wantErr && err == nil {
-				t.Error("expected error, got nil")
-			}
-			if !tc.wantErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
-}
-
-func TestTaggedNMEAMsgs(t *testing.T) {
-	tests := []struct {
-		name     string
-		toml     string
-		tags     []string
-		expected []RawMsg
-	}{
-		{
-			name: "filter by tag",
-			toml: `[[nmea]]
-text = "PCAS04,3"
-tag = "setup"
-
-[[nmea]]
-text = "PCAS04,7"
-tag = "other"
-`,
-			tags: []string{"setup"},
-			expected: []RawMsg{
-				{Bytes: []byte("$PCAS04,3*1A\r\n"), Delay: 0, Tag: "setup", Index: 0},
-			},
-		},
-		{
-			name: "default tag",
-			toml: `[default.nmea]
-tag = "init"
-
-[[nmea]]
-text = "PCAS04,3"
-
-[[nmea]]
-text = "PCAS04,7"
-tag = "other"
-`,
-			tags: []string{"init"},
-			expected: []RawMsg{
-				{Bytes: []byte("$PCAS04,3*1A\r\n"), Delay: 0, Tag: "init", Index: 0},
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			msgs, err := mf.TaggedMsgs(tc.tags)
-			if err != nil {
-				t.Fatalf("TaggedMsgs error: %v", err)
-			}
-			raw, err := ToRaw(msgs)
-			if err != nil {
-				t.Fatalf("ToRaw error: %v", err)
-			}
-			if !reflect.DeepEqual(raw, tc.expected) {
-				t.Errorf("got %+v, expected %+v", raw, tc.expected)
 			}
 		})
 	}
@@ -1225,339 +409,6 @@ values = [255, -1, 0x1234, -1000]
 			}
 		})
 	}
-}
-
-func loadPayloadFromString(t *testing.T, content string) Payload {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "payload.toml")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read error: %v", err)
-	}
-	var p Payload
-	if err := toml.Unmarshal(data, &p); err != nil {
-		t.Fatalf("TOML parse error: %v", err)
-	}
-	return p
-}
-
-func TestCASBINMsgsToRaw(t *testing.T) {
-	tests := []struct {
-		name        string
-		toml        string
-		tags        []string
-		wantPacket  []byte
-		wantDelay   time.Duration
-		wantPayload []byte
-		wantErr     bool
-	}{
-		{
-			name: "simple U1 payload",
-			toml: `[[casbin]]
-class = 0x06
-id = 0x03
-payload.types = "U1"
-payload.values = [42]
-`,
-			tags:        []string{""},
-			wantPayload: []byte{0x2A},
-		},
-		{
-			name: "U1U2U4 payload",
-			toml: `[[casbin]]
-class = 0x06
-id = 0x03
-payload.types = "U1U2U4"
-payload.values = [1, 100, 0x12345678]
-`,
-			tags:        []string{""},
-			wantPayload: []byte{0x01, 0x64, 0x00, 0x78, 0x56, 0x34, 0x12},
-		},
-		{
-			name: "with delay",
-			toml: `[[casbin]]
-class = 0x06
-id = 0x03
-payload.types = "U1"
-payload.values = [1]
-delay = 0.5
-`,
-			tags:        []string{""},
-			wantPayload: []byte{0x01},
-			wantDelay:   500 * time.Millisecond,
-		},
-		{
-			name: "default delay",
-			toml: `[default.casbin]
-delay = 0.2
-
-[[casbin]]
-class = 0x06
-id = 0x03
-payload.types = "U1"
-payload.values = [1]
-`,
-			tags:        []string{""},
-			wantPayload: []byte{0x01},
-			wantDelay:   200 * time.Millisecond,
-		},
-		{
-			name: "override default delay",
-			toml: `[default.casbin]
-delay = 0.2
-
-[[casbin]]
-class = 0x06
-id = 0x03
-payload.types = "U1"
-payload.values = [1]
-delay = 0.5
-`,
-			tags:        []string{""},
-			wantPayload: []byte{0x01},
-			wantDelay:   500 * time.Millisecond,
-		},
-		{
-			name: "tag filtering",
-			toml: `[[casbin]]
-class = 0x06
-id = 0x03
-payload.types = "U1"
-payload.values = [1]
-tag = "cfg"
-
-[[casbin]]
-class = 0x06
-id = 0x04
-payload.types = "U1"
-payload.values = [2]
-tag = "other"
-`,
-			tags:        []string{"cfg"},
-			wantPayload: []byte{0x01},
-		},
-		{
-			name: "empty payload",
-			toml: `[[casbin]]
-class = 0x05
-id = 0x01
-payload.types = ""
-payload.values = []
-`,
-			tags:        []string{""},
-			wantPayload: []byte{},
-		},
-		{
-			name: "signed values",
-			toml: `[[casbin]]
-class = 0x06
-id = 0x03
-payload.types = "I1I2I4"
-payload.values = [-1, -256, -65536]
-`,
-			tags:        []string{""},
-			wantPayload: []byte{0xFF, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0xFF},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			msgs, err := mf.TaggedMsgs(tc.tags)
-			if err != nil {
-				t.Fatalf("TaggedMsgs error: %v", err)
-			}
-			raw, err := ToRaw(msgs)
-			if tc.wantErr {
-				if err == nil {
-					t.Error("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("ToRaw error: %v", err)
-			}
-			if len(raw) != 1 {
-				t.Fatalf("expected 1 raw message, got %d", len(raw))
-			}
-			pkt := raw[0].Bytes
-			expLen := 10 + len(tc.wantPayload)
-			if len(pkt) != expLen {
-				t.Errorf("packet length: got %d, expected %d", len(pkt), expLen)
-			}
-			if pkt[0] != 0xBA || pkt[1] != 0xCE {
-				t.Errorf("sync bytes: got %02X %02X, expected BA CE", pkt[0], pkt[1])
-			}
-			payloadLen := int(pkt[2]) | int(pkt[3])<<8
-			if payloadLen != len(tc.wantPayload) {
-				t.Errorf("payload length field: got %d, expected %d", payloadLen, len(tc.wantPayload))
-			}
-			gotPayload := pkt[6 : 6+payloadLen]
-			if !reflect.DeepEqual(gotPayload, tc.wantPayload) {
-				t.Errorf("payload: got %x, expected %x", gotPayload, tc.wantPayload)
-			}
-			if raw[0].Delay != tc.wantDelay {
-				t.Errorf("delay: got %v, expected %v", raw[0].Delay, tc.wantDelay)
-			}
-		})
-	}
-}
-
-func TestUBXMsgsToRaw(t *testing.T) {
-	tests := []struct {
-		name        string
-		toml        string
-		tags        []string
-		wantPayload []byte
-		wantDelay   time.Duration
-		wantErr     bool
-	}{
-		{
-			name: "simple U1 payload",
-			toml: `[[ubx]]
-class = 0x06
-id = 0x8A
-payload.types = "U1"
-payload.values = [42]
-`,
-			tags:        []string{""},
-			wantPayload: []byte{0x2A},
-		},
-		{
-			name: "CFG-VALSET example",
-			toml: `[[ubx]]
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x10320001, 1]
-`,
-			tags:        []string{""},
-			wantPayload: []byte{0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x32, 0x10, 0x01},
-		},
-		{
-			name: "with delay",
-			toml: `[[ubx]]
-class = 0x06
-id = 0x8A
-payload.types = "U1"
-payload.values = [1]
-delay = 0.5
-`,
-			tags:        []string{""},
-			wantPayload: []byte{0x01},
-			wantDelay:   500 * time.Millisecond,
-		},
-		{
-			name: "tag filtering",
-			toml: `[[ubx]]
-class = 0x06
-id = 0x8A
-payload.types = "U1"
-payload.values = [1]
-tag = "valset"
-
-[[ubx]]
-class = 0x06
-id = 0x8B
-payload.types = "U1"
-payload.values = [2]
-tag = "other"
-`,
-			tags:        []string{"valset"},
-			wantPayload: []byte{0x01},
-		},
-		{
-			name: "empty payload (poll)",
-			toml: `[[ubx]]
-class = 0x06
-id = 0x8A
-payload.types = ""
-payload.values = []
-`,
-			tags:        []string{""},
-			wantPayload: []byte{},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mf := loadFromString(t, tc.toml)
-			msgs, err := mf.TaggedMsgs(tc.tags)
-			if err != nil {
-				t.Fatalf("TaggedMsgs error: %v", err)
-			}
-			raw, err := ToRaw(msgs)
-			if tc.wantErr {
-				if err == nil {
-					t.Error("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("ToRaw error: %v", err)
-			}
-			if len(raw) != 1 {
-				t.Fatalf("expected 1 raw message, got %d", len(raw))
-			}
-			pkt := raw[0].Bytes
-			expLen := 8 + len(tc.wantPayload)
-			if len(pkt) != expLen {
-				t.Errorf("packet length: got %d, expected %d", len(pkt), expLen)
-			}
-			if pkt[0] != 0xB5 || pkt[1] != 0x62 {
-				t.Errorf("sync bytes: got %02X %02X, expected B5 62", pkt[0], pkt[1])
-			}
-			payloadLen := int(pkt[4]) | int(pkt[5])<<8
-			if payloadLen != len(tc.wantPayload) {
-				t.Errorf("payload length field: got %d, expected %d", payloadLen, len(tc.wantPayload))
-			}
-			gotPayload := pkt[6 : 6+payloadLen]
-			if !reflect.DeepEqual(gotPayload, tc.wantPayload) {
-				t.Errorf("payload: got %x, expected %x", gotPayload, tc.wantPayload)
-			}
-			if raw[0].Delay != tc.wantDelay {
-				t.Errorf("delay: got %v, expected %v", raw[0].Delay, tc.wantDelay)
-			}
-		})
-	}
-}
-
-func TestMixedCASBINAndUBXFails(t *testing.T) {
-	toml := `[[casbin]]
-class = 0x06
-id = 0x03
-payload.types = "U1"
-payload.values = [1]
-tag = "mixed"
-
-[[ubx]]
-class = 0x06
-id = 0x8A
-payload.types = "U1"
-payload.values = [1]
-tag = "mixed"
-`
-	mf := loadFromString(t, toml)
-	_, err := mf.TaggedMsgs([]string{"mixed"})
-	if err == nil {
-		t.Error("expected error for mixed CASBIN and UBX types")
-	}
-}
-
-func loadFromString(t *testing.T, content string) *Parsed {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.toml")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-	mf, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load error: %v", err)
-	}
-	return mf
 }
 
 func TestDescriptionInDefaultsNotAllowed(t *testing.T) {
@@ -1778,5 +629,202 @@ tag = "third"
 				t.Errorf("got %+v, expected %+v", tds, tc.expected)
 			}
 		})
+	}
+}
+
+func TestMsgID(t *testing.T) {
+	rm := RawMsg{Tag: "setup", Index: 2, Count: 5}
+	mid := rm.MsgID()
+	if mid.Tag != "setup" || mid.Index != 2 || mid.Count != 5 {
+		t.Errorf("MsgID: got %+v", mid)
+	}
+}
+
+func TestPacketAnalyzerUBXAck(t *testing.T) {
+	pa := NewPacketAnalyzer()
+	um := &UBXMsg{}
+	um.Class = 0x06
+	um.ID = 0x8A
+	rm := makeRawMsg(um)
+	rm.Tag = "cfg"
+	rm.Index = 0
+	rm.Count = 1
+	pa.NotifySent(rm)
+	result := pa.Analyze(gpsreg.TagUBX, makeUBXAckAck(0x06, 0x8A))
+	if result.Kind != AckResponse {
+		t.Fatalf("kind: got %d, want %d", result.Kind, AckResponse)
+	}
+	if result.AckError != "" {
+		t.Errorf("ackErr: got %q, want empty", result.AckError)
+	}
+	if result.RelatedMsg == nil {
+		t.Fatal("RelatedMsg is nil")
+	}
+	if result.RelatedMsg.Tag != "cfg" {
+		t.Errorf("RelatedMsg.Tag: got %q, want %q", result.RelatedMsg.Tag, "cfg")
+	}
+}
+
+func TestPacketAnalyzerUBXNak(t *testing.T) {
+	pa := NewPacketAnalyzer()
+	um := &UBXMsg{}
+	um.Class = 0x06
+	um.ID = 0x8A
+	pa.NotifySent(makeRawMsg(um))
+	result := pa.Analyze(gpsreg.TagUBX, makeUBXAckNak(0x06, 0x8A))
+	if result.Kind != AckResponse {
+		t.Fatalf("kind: got %d, want %d", result.Kind, AckResponse)
+	}
+	if result.AckError != AckNak {
+		t.Errorf("ackErr: got %q, want %q", result.AckError, AckNak)
+	}
+}
+
+func TestPacketAnalyzerAlreadyAcked(t *testing.T) {
+	pa := NewPacketAnalyzer()
+	um := &UBXMsg{}
+	um.Class = 0x06
+	um.ID = 0x8A
+	pa.NotifySent(makeRawMsg(um))
+	r1 := pa.Analyze(gpsreg.TagUBX, makeUBXAckAck(0x06, 0x8A))
+	if r1.Kind != AckResponse {
+		t.Fatalf("first ack kind: got %d, want %d", r1.Kind, AckResponse)
+	}
+	r2 := pa.Analyze(gpsreg.TagUBX, makeUBXAckAck(0x06, 0x8A))
+	if r2.Kind != NotResponse {
+		t.Errorf("second ack kind: got %d, want %d", r2.Kind, NotResponse)
+	}
+}
+
+func TestPacketAnalyzerAmbiguousAck(t *testing.T) {
+	pa := NewPacketAnalyzer()
+	um1 := &UBXMsg{}
+	um1.Class = 0x06
+	um1.ID = 0x8A
+	rm1 := makeRawMsg(um1)
+	rm1.Tag = "cfg"
+	rm1.Index = 0
+	pa.NotifySent(rm1)
+	um2 := &UBXMsg{}
+	um2.Class = 0x06
+	um2.ID = 0x8A
+	rm2 := makeRawMsg(um2)
+	rm2.Tag = "cfg"
+	rm2.Index = 1
+	pa.NotifySent(rm2)
+	result := pa.Analyze(gpsreg.TagUBX, makeUBXAckAck(0x06, 0x8A))
+	if result.Kind != OtherResponse {
+		t.Errorf("kind: got %d, want %d (ambiguous ack -> OtherResponse)", result.Kind, OtherResponse)
+	}
+	if result.RelatedMsg != nil {
+		t.Error("RelatedMsg should be nil for ambiguous ack")
+	}
+}
+
+func TestPacketAnalyzerMultipleMessages(t *testing.T) {
+	pa := NewPacketAnalyzer()
+	um1 := &UBXMsg{}
+	um1.Class = 0x06
+	um1.ID = 0x8A
+	rm1 := makeRawMsg(um1)
+	rm1.Tag = "valset"
+	rm1.Index = 0
+	pa.NotifySent(rm1)
+	um2 := &UBXMsg{}
+	um2.Class = 0x06
+	um2.ID = 0x01
+	rm2 := makeRawMsg(um2)
+	rm2.Tag = "cfg-prt"
+	rm2.Index = 0
+	pa.NotifySent(rm2)
+	r := pa.Analyze(gpsreg.TagUBX, makeUBXAckAck(0x06, 0x01))
+	if r.Kind != AckResponse {
+		t.Fatalf("kind: got %d, want %d", r.Kind, AckResponse)
+	}
+	if r.RelatedMsg.Tag != "cfg-prt" {
+		t.Errorf("RelatedMsg.Tag: got %q, want %q", r.RelatedMsg.Tag, "cfg-prt")
+	}
+	r = pa.Analyze(gpsreg.TagUBX, makeUBXAckAck(0x06, 0x8A))
+	if r.Kind != AckResponse {
+		t.Fatalf("kind: got %d, want %d", r.Kind, AckResponse)
+	}
+	if r.RelatedMsg.Tag != "valset" {
+		t.Errorf("RelatedMsg.Tag: got %q, want %q", r.RelatedMsg.Tag, "valset")
+	}
+}
+
+func TestPacketAnalyzerNotResponse(t *testing.T) {
+	pa := NewPacketAnalyzer()
+	um := &UBXMsg{}
+	um.Class = 0x06
+	um.ID = 0x8A
+	pa.NotifySent(makeRawMsg(um))
+	result := pa.Analyze(gpsreg.TagNMEA, makeNMEA("GPRMC,,,,,,,,,,,"))
+	if result.Kind != NotResponse {
+		t.Errorf("GNSS talker NMEA: got %d, want %d", result.Kind, NotResponse)
+	}
+	result = pa.Analyze(gpsreg.TagUBX, makeUBXPacket(0x01, 0x07, []byte{0}))
+	if result.Kind != NotResponse {
+		t.Errorf("different UBX class/id: got %d, want %d", result.Kind, NotResponse)
+	}
+}
+
+func TestPacketAnalyzerMaybeResponse(t *testing.T) {
+	pa := NewPacketAnalyzer()
+	lm := &LineMsg{Text: "LOG VERSION"}
+	lm.RespPattern = ptr(ResponsePatternNone)
+	pa.NotifySent(makeRawMsg(lm))
+	result := pa.Analyze(gpsprot.EmptyTag, "some random data")
+	if result.Kind != MaybeResponse {
+		t.Errorf("unrecognized: got %d, want %d", result.Kind, MaybeResponse)
+	}
+}
+
+func TestPacketAnalyzerOtherResponse(t *testing.T) {
+	pa := NewPacketAnalyzer()
+	um := &UBXMsg{}
+	um.Class = 0x06
+	um.ID = 0x31 // CFG-TP5
+	pa.NotifySent(makeRawMsg(um))
+	result := pa.Analyze(gpsreg.TagUBX, makeUBXPacket(0x06, 0x31, []byte{0x01, 0x02, 0x03, 0x04}))
+	if result.Kind != OtherResponse {
+		t.Errorf("kind: got %d, want %d", result.Kind, OtherResponse)
+	}
+}
+
+func TestPacketAnalyzerMixedProtocols(t *testing.T) {
+	pa := NewPacketAnalyzer()
+	um := &UBXMsg{}
+	um.Class = 0x06
+	um.ID = 0x8A
+	pa.NotifySent(makeRawMsg(um))
+	lm := &LineMsg{Text: "CONFIG PPP ENABLE"}
+	lm.RespPattern = ptr(ResponsePatternUnicore)
+	pa.NotifySent(makeRawMsg(lm))
+	r := pa.Analyze(gpsreg.TagUBX, makeUBXAckAck(0x06, 0x8A))
+	if r.Kind != AckResponse {
+		t.Fatalf("kind: got %d, want %d", r.Kind, AckResponse)
+	}
+	r = pa.Analyze(gpsreg.TagNMEA, makeNMEA("CONFIG,CMD,response: OK"))
+	if r.Kind != AckResponse {
+		t.Fatalf("kind: got %d, want %d", r.Kind, AckResponse)
+	}
+	if r.AckError != "" {
+		t.Errorf("ackErr: got %q, want empty", r.AckError)
+	}
+}
+
+func TestPacketAnalyzerCASBIN(t *testing.T) {
+	pa := NewPacketAnalyzer()
+	cm := &CASBINMsg{}
+	cm.Class = 0x06
+	cm.ID = 0x03
+	pa.NotifySent(makeRawMsg(cm))
+	r := pa.Analyze(gpsreg.TagCASICBin, makeCASBINAckAck(0x06, 0x03))
+	if r.Kind != AckResponse {
+		t.Fatalf("kind: got %d, want %d", r.Kind, AckResponse)
+	}
+	if r.AckError != "" {
+		t.Errorf("ackErr: got %q, want empty", r.AckError)
 	}
 }

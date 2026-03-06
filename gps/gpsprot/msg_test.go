@@ -3,6 +3,7 @@ package gpsprot
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -244,6 +245,50 @@ func TestCorrKindString(t *testing.T) {
 	for _, tt := range tests {
 		if got := tt.c.String(); got != tt.want {
 			t.Errorf("CorrKind(%#x).String() = %q, want %q", uint16(tt.c), got, tt.want)
+		}
+	}
+}
+
+func TestCorrKindLeaves(t *testing.T) {
+	tests := []struct {
+		in   CorrKind
+		want CorrKind
+	}{
+		{0, 0},
+		{CorrUsed, CorrUsed},
+		// OSR implies used, so used is stripped
+		{CorrOSR | CorrUsed, CorrOSR},
+		// SBAS implies SSR implies used
+		{CorrSBAS | CorrSSR | CorrUsed, CorrSBAS},
+		// fullDualFreq implies partialDualFreq implies OSR implies used
+		{CorrFullDualFreq | CorrPartialDualFreq | CorrOSR | CorrUsed, CorrFullDualFreq},
+		// Two independent leaves preserved
+		{CorrSBAS | CorrRTCM | CorrSSR | CorrUsed, CorrSBAS | CorrRTCM},
+		// PPPConverged + PPP-HAS: two independent leaves under PPP
+		{CorrPPPHAS | CorrPPPConverging | CorrPPP | CorrSSR | CorrUsed, CorrPPPHAS | CorrPPPConverging},
+	}
+	for _, tt := range tests {
+		if got := tt.in.Leaves(); got != tt.want {
+			t.Errorf("CorrKind(%#x).Leaves() = %#x, want %#x", uint16(tt.in), uint16(got), uint16(tt.want))
+		}
+	}
+}
+
+func TestCorrKindNames(t *testing.T) {
+	tests := []struct {
+		c    CorrKind
+		want string
+	}{
+		{0, ""},
+		{CorrUsed, "used"},
+		{CorrSBAS, "SBAS"},
+		{CorrSBAS | CorrSSR | CorrUsed, "used,SSR,SBAS"},
+		{CorrPPPRTK | CorrPPP, "PPP,PPP-RTK"},
+	}
+	for _, tt := range tests {
+		got := strings.Join(tt.c.Names(), ",")
+		if got != tt.want {
+			t.Errorf("CorrKind(%#x).Names() = %q, want %q", uint16(tt.c), got, tt.want)
 		}
 	}
 }

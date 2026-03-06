@@ -38,7 +38,8 @@
 				"line": {
 					"type": "object",
 					"properties": {
-						"eol": { "type": "string" }
+						"eol": { "type": "string" },
+						"responsePattern": { "type": "string", "enum": ["none", "unicore"] }
 					},
 					"allOf": [
 						{ "$ref": "#/definitions/common" }
@@ -60,6 +61,7 @@
 				"properties": {
 					"text": { "type": "string" },
 					"eol": { "type": "string" },
+					"responsePattern": { "type": "string", "enum": ["none", "unicore"] },
 					"description": { "type": "string" }
 				},
 				"required": ["text"],

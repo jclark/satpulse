@@ -66,6 +66,12 @@ func (mid MsgID) Unpack() (cls, id byte) {
 	return byte(mid & 0xFF), byte((mid >> 8) & 0xFF)
 }
 
+// CfgClass reports whether mid is in the CFG class.
+func (mid MsgID) CfgClass() bool {
+	cls, _ := mid.Unpack()
+	return cls == clsCfg
+}
+
 func (mid MsgID) String() string {
 	cls, id := mid.Unpack()
 	s := clsMap[cls]

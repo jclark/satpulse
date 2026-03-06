@@ -2,6 +2,7 @@
 
 [default.line]
 delay = 0.1
+responsePattern = "unicore"
 
 # Version query
 [[line]]
