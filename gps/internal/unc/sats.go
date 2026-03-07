@@ -13,7 +13,12 @@ func satellitesMsgFromSatsInfo(_ *uncmsg.MsgHdr, satsInfo *uncmsg.SatsInfo, tag 
 	for _, sat := range satsInfo.Sats {
 		// SATSINFO guarantees that every satellite has at least one frequency.
 		// Get the satellite GNSS system from the the first frequency (they will all be the same)
-		svid, err := sysPRNToSVID(sat.Freqs[0].SysStatus, sat.PRN)
+		sysID := sat.Freqs[0].SysStatus
+		if sysID == uncmsg.SysNAVIC {
+			// firmware at least up to build 17548 returns nonsense PRNs for NavIC, so skip 
+			continue
+		}
+		svid, err := sysPRNToSVID(sysID, sat.PRN)
 		if err != nil {
 			return nil, err
 		}
