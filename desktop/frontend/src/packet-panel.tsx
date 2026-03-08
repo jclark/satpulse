@@ -240,7 +240,7 @@ export function PacketPanel({visible, connState}: Props) {
                                         class={`cursor-pointer hover:bg-surface-3 ${selected ? 'bg-surface-3' : ''}`}
                                         onClick={() => handleRowClick(state)}
                                     >
-                                        <td class="w-6 px-1 py-0.5 text-center">
+                                        <td class="align-baseline w-6 px-1 py-0.5 text-center">
                                             {canExpand && (
                                                 <button
                                                     class={`inline-flex cursor-pointer border-none bg-transparent p-0 text-text-secondary ${isExpanded ? '[&>svg]:rotate-90' : ''}`}
@@ -250,12 +250,12 @@ export function PacketPanel({visible, connState}: Props) {
                                                 </button>
                                             )}
                                         </td>
-                                        <td class={`whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.tag}</td>
-                                        <td class={`whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.msg}</td>
-                                        <td class={`whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.out ? 'Tx' : 'Rx'}</td>
-                                        <td class={`whitespace-nowrap px-2 py-0.5 text-right tabular-nums ${textClass}`}>{state.count}</td>
-                                        <td class={`whitespace-nowrap px-2 py-0.5 tabular-nums ${textClass}`}>{formatTime(last.t)}</td>
-                                        <td class={`px-2 py-0.5 break-all ${textClass}`}>{entryData(last)}</td>
+                                        <td class={`align-baseline whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.tag}</td>
+                                        <td class={`align-baseline whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.msg}</td>
+                                        <td class={`align-baseline whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.out ? 'Tx' : 'Rx'}</td>
+                                        <td class={`align-baseline whitespace-nowrap px-2 py-0.5 text-right tabular-nums ${textClass}`}>{state.count}</td>
+                                        <td class={`align-baseline whitespace-nowrap px-2 py-0.5 tabular-nums ${textClass}`}>{formatTime(last.t)}</td>
+                                        <td class={`align-baseline px-2 py-0.5 break-all ${textClass}`}>{entryData(last)}</td>
                                     </tr>
                                     {isExpanded && state.recentEntries.map((e, i) => (
                                         <tr
