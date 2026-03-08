@@ -7,14 +7,6 @@ interface Props {
     msg: NavEpochMsg | null;
 }
 
-function fmtSignals(sigs: Record<string, string[]>): string {
-    const parts: string[] = [];
-    for (const [gnss, names] of Object.entries(sigs)) {
-        if (names.length > 0) parts.push(`${gnss}: ${names.join(', ')}`);
-    }
-    return parts.join('; ');
-}
-
 export function StatusPanel({msg}: Props) {
     if (!msg) return null;
     const rows: MonitorDataRow[] = [];
@@ -41,9 +33,7 @@ export function StatusPanel({msg}: Props) {
     add('Satellites in view', msg.numSVInView != null ? String(msg.numSVInView) : undefined);
     add('Diff age', msg.diffAge != null ? `${msg.diffAge.toFixed(1)} s` : undefined);
     add('RTCM base ID', msg.rtcmRefBaseID != null ? String(msg.rtcmRefBaseID) : undefined);
-    if (msg.signalsUsed) {
-        const s = fmtSignals(msg.signalsUsed);
-        if (s) add('Signals used', s);
-    }
+    if (msg.gnssUsed?.length) add('GNSS used', msg.gnssUsed.join(', '));
+    if (msg.bandsUsed?.length) add('Bands used', msg.bandsUsed.join(', '));
     return <MonitorDataView rows={rows} class="max-w-xl grid-cols-[140px_1fr]" />;
 }
