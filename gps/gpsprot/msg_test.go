@@ -64,6 +64,65 @@ func TestGNSSSetMarshalJSON(t *testing.T) {
 	}
 }
 
+func TestBandJSONMarshal(t *testing.T) {
+	tests := []struct {
+		band Band
+		want string
+	}{
+		{0, "null"},
+		{BandL1, `["L1"]`},
+		{BandL1 | BandL5, `["L1","L5"]`},
+		{BandL5 | BandE5b, `["E5"]`},
+		{BandL1 | BandL2 | BandE6, `["L1","L2","E6"]`},
+		{BandL1 | BandL5 | BandE5b | BandE6, `["E5","L1","E6"]`},
+	}
+	for _, tt := range tests {
+		b, err := json.Marshal(tt.band)
+		if err != nil {
+			t.Fatalf("Marshal(%v): %v", tt.band, err)
+		}
+		if got := string(b); got != tt.want {
+			t.Errorf("Marshal(%v) = %s, want %s", tt.band, got, tt.want)
+		}
+	}
+}
+
+func TestBandJSONUnmarshal(t *testing.T) {
+	tests := []struct {
+		json string
+		want Band
+	}{
+		{`["L1"]`, BandL1},
+		{`["L1","L5"]`, BandL1 | BandL5},
+		{`["E5"]`, BandL5 | BandE5b},
+		{`["L6"]`, BandE6},
+		{`["E5","L1","E6"]`, BandL1 | BandL5 | BandE5b | BandE6},
+	}
+	for _, tt := range tests {
+		var got Band
+		if err := json.Unmarshal([]byte(tt.json), &got); err != nil {
+			t.Fatalf("Unmarshal(%s): %v", tt.json, err)
+		}
+		if got != tt.want {
+			t.Errorf("Unmarshal(%s) = %v, want %v", tt.json, got, tt.want)
+		}
+	}
+}
+
+func TestBandJSONUnmarshalError(t *testing.T) {
+	tests := []string{
+		`["BOGUS"]`,
+		`["L1","INVALID"]`,
+		`"L1"`,
+	}
+	for _, input := range tests {
+		var b Band
+		if err := json.Unmarshal([]byte(input), &b); err == nil {
+			t.Errorf("Unmarshal(%s): expected error, got nil", input)
+		}
+	}
+}
+
 func TestFixLevelString(t *testing.T) {
 	tests := []struct {
 		f    FixLevel

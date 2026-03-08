@@ -77,24 +77,6 @@ var casicSigIDMap = map[casbin.SigID]gpsprot.SignalID{
 	casbin.SigNAVICL5:   gpsprot.SigIDNAVICL5,
 }
 
-// casicSigToSignal maps CASIC V6 SigID to gpsprot.Signal for SignalsUsed accumulation.
-var casicSigToSignal = map[casbin.SigID]gpsprot.Signal{
-	casbin.SigGPSL1CA:   gpsprot.SigGPSL1CA,
-	casbin.SigGPSL5:     gpsprot.SigGPSL5,
-	casbin.SigSBASL1:    gpsprot.SigSBASL1CA,
-	casbin.SigSBASL5:    gpsprot.SigSBASL5,
-	casbin.SigGLOL1:     gpsprot.SigGLOL1,
-	casbin.SigGALE1:     gpsprot.SigGALE1,
-	casbin.SigGALE5a:    gpsprot.SigGALE5a,
-	casbin.SigBDSB1IGEO: gpsprot.SigBDSB1I,
-	casbin.SigBDSB1IMEO: gpsprot.SigBDSB1I,
-	casbin.SigBDSB1C:    gpsprot.SigBDSB1C,
-	casbin.SigBDSB2a:    gpsprot.SigBDSB2a,
-	casbin.SigQZSSL1CA:  gpsprot.SigQZSSL1CA,
-	casbin.SigQZSSL5:    gpsprot.SigQZSSL5,
-	casbin.SigNAVICL5:   gpsprot.SigNAVICL5,
-}
-
 // nav2SigSVID converts NAV2-SIG GNSSID and SVID to gpsprot.SVID.
 // Unlike V5 where SBAS/QZSS are embedded in GPS messages by PRN range,
 // V6 NAV2-SIG has explicit GNSS IDs. SBAS PRNs need offset subtraction (PRN-100).
@@ -158,8 +140,7 @@ func satsNav2Sig(m *casbin.Nav2Sig) *gpsprot.SatellitesMsg {
 	}
 }
 
-// corrFromNav2Sig accumulates correction info from NAV2-SIG per-signal CorFlags
-// and SignalsUsed from per-signal SigID on the NavEpochMsg.
+// corrFromNav2Sig accumulates correction info from NAV2-SIG per-signal CorFlags on the NavEpochMsg.
 func corrFromNav2Sig(ne *gpsprot.NavEpochMsg, m *casbin.Nav2Sig) {
 	if ne == nil {
 		return
@@ -169,11 +150,6 @@ func corrFromNav2Sig(ne *gpsprot.NavEpochMsg, m *casbin.Nav2Sig) {
 		if sig.SolFlags&0x01 == 0 { // not used in solution
 			continue
 		}
-		// Accumulate SignalsUsed
-		if s, ok := casicSigToSignal[sig.SigID]; ok {
-			ne.SignalsUsed |= gpsprot.SignalSetOf(s)
-		}
-		// Accumulate correction source
 		switch sig.CorFlags & 0x07 {
 		case 1: // SBAS
 			ne.Correction |= gpsprot.CorrSBAS | gpsprot.CorrUsed

@@ -17,7 +17,7 @@ export type SatelliteUsedValidity = number;
 export type CorrKind = string[];
 export type AuxSrc = string[];
 export type GNSSSet = string[];
-export type SignalSet = Record<string, string[]>;
+export type BandsUsed = string[];
 export type StdDuration = number;
 export type StdTime = string;
 
@@ -134,7 +134,8 @@ export interface NavEpochMsg {
     numSVUsed?: number;
     numSVTracked?: number;
     numSVInView?: number;
-    signalsUsed?: SignalSet;
+    gnssUsed?: GNSSSet;
+    bandsUsed?: BandsUsed;
     tag?: Tag;
     startTime: StdTime;
 }

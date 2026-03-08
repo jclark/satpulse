@@ -51,62 +51,74 @@ func PosTypeQuality(pt uint32) (gpsprot.FixLevel, gpsprot.SolutionDim, gpsprot.C
 	}
 }
 
-// SignalsUsed converts NovAtel/Unicore signal mask bytes to a SignalSet.
-// The bit definitions are shared between Unicore UM980 and NovAtel OEM7.
-func SignalsUsed(gpsGloBds2, galBds3 novmsg.HexByte) gpsprot.SignalSet {
-	var ss gpsprot.SignalSet
-	// GPS/GLO/BDS2 signal mask (gpsGloBds2):
-	// bit 0: GPS L1CA, bit 1: GPS L2P, bit 2: GPS L2C, bit 3: GPS L5
-	// bit 4: GLO L1, bit 5: GLO L2, bit 6: BDS B1I, bit 7: BDS B2I
+// SignalsUsed converts NovAtel OEM7 signal mask bytes (Table 93, Table 94)
+// to GNSS and band sets.
+func SignalsUsed(gpsGloBds2, galBds3 novmsg.HexByte) (gpsprot.GNSSSet, gpsprot.Band) {
+	var gs gpsprot.GNSSSet
+	var b gpsprot.Band
+	// gpsGloBds2 (Table 93):
+	// bit 0: GPS L1, bit 1: GPS L2, bit 2: GPS L5, bit 3: Reserved
+	// bit 4: GLO L1, bit 5: GLO L2, bit 6: GLO L3, bit 7: Reserved
 	if gpsGloBds2&0x01 != 0 {
-		ss |= 1 << gpsprot.SigGPSL1CA
+		gs |= gpsprot.GNSSSetOf(gpsprot.GPS)
+		b |= gpsprot.BandL1
 	}
 	if gpsGloBds2&0x02 != 0 {
-		ss |= 1 << gpsprot.SigGPSL2P
+		gs |= gpsprot.GNSSSetOf(gpsprot.GPS)
+		b |= gpsprot.BandL2
 	}
 	if gpsGloBds2&0x04 != 0 {
-		ss |= 1 << gpsprot.SigGPSL2C
-	}
-	if gpsGloBds2&0x08 != 0 {
-		ss |= 1 << gpsprot.SigGPSL5
+		gs |= gpsprot.GNSSSetOf(gpsprot.GPS)
+		b |= gpsprot.BandL5
 	}
 	if gpsGloBds2&0x10 != 0 {
-		ss |= 1 << gpsprot.SigGLOL1
+		gs |= gpsprot.GNSSSetOf(gpsprot.GLO)
+		b |= gpsprot.BandL1
 	}
 	if gpsGloBds2&0x20 != 0 {
-		ss |= 1 << gpsprot.SigGLOL2
+		gs |= gpsprot.GNSSSetOf(gpsprot.GLO)
+		b |= gpsprot.BandL2
 	}
 	if gpsGloBds2&0x40 != 0 {
-		ss |= 1 << gpsprot.SigBDSB1I
+		gs |= gpsprot.GNSSSetOf(gpsprot.GLO)
+		b |= gpsprot.BandE5b
 	}
-	if gpsGloBds2&0x80 != 0 {
-		ss |= 1 << gpsprot.SigBDSB2I
-	}
-	// GAL/BDS3 signal mask (galBds3):
-	// bit 0: GAL E1, bit 1: GAL E5a, bit 2: GAL E5b
-	// bit 4: BDS B1C, bit 5: BDS B2a, bit 6: BDS B3I, bit 7: BDS B2b
+	// galBds3 (Table 94):
+	// bit 0: GAL E1, bit 1: GAL E5a, bit 2: GAL E5b, bit 3: GAL ALTBOC
+	// bit 4: BDS B1, bit 5: BDS B2, bit 6: BDS B3, bit 7: GAL E6
 	if galBds3&0x01 != 0 {
-		ss |= 1 << gpsprot.SigGALE1
+		gs |= gpsprot.GNSSSetOf(gpsprot.GAL)
+		b |= gpsprot.BandL1
 	}
 	if galBds3&0x02 != 0 {
-		ss |= 1 << gpsprot.SigGALE5a
+		gs |= gpsprot.GNSSSetOf(gpsprot.GAL)
+		b |= gpsprot.BandL5
 	}
 	if galBds3&0x04 != 0 {
-		ss |= 1 << gpsprot.SigGALE5b
+		gs |= gpsprot.GNSSSetOf(gpsprot.GAL)
+		b |= gpsprot.BandE5b
+	}
+	if galBds3&0x08 != 0 {
+		gs |= gpsprot.GNSSSetOf(gpsprot.GAL)
+		b |= gpsprot.BandL5 | gpsprot.BandE5b
 	}
 	if galBds3&0x10 != 0 {
-		ss |= 1 << gpsprot.SigBDSB1C
+		gs |= gpsprot.GNSSSetOf(gpsprot.BDS)
+		b |= gpsprot.BandL1
 	}
 	if galBds3&0x20 != 0 {
-		ss |= 1 << gpsprot.SigBDSB2a
+		gs |= gpsprot.GNSSSetOf(gpsprot.BDS)
+		b |= gpsprot.BandL5 | gpsprot.BandE5b
 	}
 	if galBds3&0x40 != 0 {
-		ss |= 1 << gpsprot.SigBDSB3I
+		gs |= gpsprot.GNSSSetOf(gpsprot.BDS)
+		b |= gpsprot.BandE6
 	}
 	if galBds3&0x80 != 0 {
-		ss |= 1 << gpsprot.SigBDSB2b
+		gs |= gpsprot.GNSSSetOf(gpsprot.GAL)
+		b |= gpsprot.BandE6
 	}
-	return ss
+	return gs, b
 }
 
 // StationIDValue parses a NovAtel/Unicore StationID as a decimal number.

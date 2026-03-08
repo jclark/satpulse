@@ -509,24 +509,31 @@ func TestCorrFromNav2SigNilNe(t *testing.T) {
 	corrFromNav2Sig(nil, m) // should not panic
 }
 
-func TestCorrFromNav2SigSignalsUsed(t *testing.T) {
-	var ne gpsprot.NavEpochMsg
+func TestNav2SigGNSSUsedBandsUsed(t *testing.T) {
 	m := &casbin.Nav2Sig{
 		Sigs: []casbin.Nav2SigInfo{
-			{SolFlags: 0x01, SigID: casbin.SigGPSL1CA},
-			{SolFlags: 0x01, SigID: casbin.SigGALE1},
-			{SolFlags: 0x00, SigID: casbin.SigBDSB1IMEO}, // not used
+			{GNSSID: 0, SVID: 1, SolFlags: 0x01, SigID: casbin.SigGPSL1CA, CNO: 30},
+			{GNSSID: 3, SVID: 1, SolFlags: 0x01, SigID: casbin.SigGALE1, CNO: 30},
+			{GNSSID: 4, SVID: 1, SolFlags: 0x00, SigID: casbin.SigBDSB1IMEO, CNO: 30}, // not used
 		},
 	}
-	corrFromNav2Sig(&ne, m)
-	if !ne.SignalsUsed.Contains(gpsprot.SigGPSL1CA) {
-		t.Error("SignalsUsed missing GPS L1 C/A")
+	msg := satsNav2Sig(m)
+	if msg == nil {
+		t.Fatal("satsNav2Sig returned nil")
 	}
-	if !ne.SignalsUsed.Contains(gpsprot.SigGALE1) {
-		t.Error("SignalsUsed missing GAL E1")
+	gnss := msg.GNSSUsed()
+	if !gnss.Contains(gpsprot.GPS) {
+		t.Error("GNSSUsed missing GPS")
 	}
-	if ne.SignalsUsed.Contains(gpsprot.SigBDSB1I) {
-		t.Error("SignalsUsed should not contain BDS B1I (not used)")
+	if !gnss.Contains(gpsprot.GAL) {
+		t.Error("GNSSUsed missing GAL")
+	}
+	if gnss.Contains(gpsprot.BDS) {
+		t.Error("GNSSUsed should not contain BDS (not used)")
+	}
+	bands := msg.BandsUsed()
+	if bands&gpsprot.BandL1 == 0 {
+		t.Error("BandsUsed missing L1")
 	}
 }
 

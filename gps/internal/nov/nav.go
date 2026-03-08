@@ -81,8 +81,7 @@ func posGeoBestPos(h gpsprot.MsgHandler, ne *gpsprot.NavEpochMsg,
 func sinoPosGeoBestPos(h gpsprot.MsgHandler, ne *gpsprot.NavEpochMsg,
 	m *novmsg.Pos[novmsg.SolStatus, novmsg.SinoPosType], tag gpsprot.Tag, tRead time.Time) (bool, error) {
 	sinoQuality(ne, m.PSolStatus, m.PosType,
-		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs,
-		m.GalBDS3Sig, m.GPSGLOBDS2Sig)
+		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs)
 	if m.PSolStatus != novmsg.SolComputed {
 		return false, nil
 	}
@@ -119,8 +118,7 @@ func posVelECEFBestXYZ(h gpsprot.MsgHandler, ne *gpsprot.NavEpochMsg,
 func sinoPosVelECEFBestXYZ(h gpsprot.MsgHandler, ne *gpsprot.NavEpochMsg,
 	m *novmsg.XYZ[novmsg.SolStatus, novmsg.SinoPosType], tag gpsprot.Tag, tRead time.Time) (bool, error) {
 	sinoQuality(ne, m.PSolStatus, m.PosType,
-		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs,
-		m.GalBDS3Sig, m.GPSGLOBDS2Sig)
+		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs)
 	var posE *gpsprot.PosECEFMsg
 	var velE *gpsprot.VelECEFMsg
 	if m.PSolStatus == novmsg.SolComputed {
@@ -147,7 +145,7 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg
 	galBds3, gpsGloBds2 novmsg.HexByte) {
 	ne.NumSVUsed.Set(uint16(numSolnSVs))
 	ne.NumSVTracked.Set(uint16(numSVs))
-	ne.SignalsUsed = SignalsUsed(gpsGloBds2, galBds3)
+	ne.GNSSUsed, ne.BandsUsed = SignalsUsed(gpsGloBds2, galBds3)
 	if diffAge > 0 {
 		ne.DiffAge.Set(gpsprot.Seconds(float64(diffAge)))
 	}
@@ -252,11 +250,9 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg
 // sinoQuality handles SinoGNSS-specific PosType values, then falls through
 // to the shared PosTypeQuality for values common across vendors.
 func sinoQuality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg.SinoPosType,
-	diffAge float32, stnID novmsg.StationID, numSVs, numSolnSVs uint8,
-	galBds3, gpsGloBds2 novmsg.HexByte) {
+	diffAge float32, stnID novmsg.StationID, numSVs, numSolnSVs uint8) {
 	ne.NumSVUsed.Set(uint16(numSolnSVs))
 	ne.NumSVTracked.Set(uint16(numSVs))
-	ne.SignalsUsed = SignalsUsed(gpsGloBds2, galBds3)
 	if diffAge > 0 {
 		ne.DiffAge.Set(gpsprot.Seconds(float64(diffAge)))
 	}

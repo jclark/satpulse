@@ -146,8 +146,13 @@ func (p *PacketProcessor) flushSats() {
 	}
 	p.satMsg = nil
 	p.sigMsg = nil
+	combined := satellitesCombine(satMsg, sigMsg)
+	if ne := p.curNavEpochMsg; ne != nil {
+		ne.GNSSUsed |= combined.GNSSUsed()
+		ne.BandsUsed |= combined.BandsUsed()
+	}
 	if h := p.mh; h != nil {
-		h.Satellites(satellitesCombine(satMsg, sigMsg), p.satSigTRead)
+		h.Satellites(combined, p.satSigTRead)
 	}
 	p.satSigTRead = time.Time{}
 }
@@ -237,6 +242,12 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 	}
 	if time == nil && sv == nil && sats == nil && posG == nil && posE == nil && velG == nil && velE == nil {
 		return false
+	}
+	if sats != nil {
+		if ne := p.curNavEpochMsg; ne != nil {
+			ne.GNSSUsed |= sats.GNSSUsed()
+			ne.BandsUsed |= sats.BandsUsed()
+		}
 	}
 	if h != nil {
 		if sats != nil {

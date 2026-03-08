@@ -23,7 +23,7 @@ func TestSatellitesCopy(t *testing.T) {
 				Tag:          Tag,
 				NativeMsgID:  "TEST",
 				SVs:          []gpsprot.SVInfo{},
-				UsedValidity: gpsprot.SatelliteUsedSV,
+				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
 		{
@@ -1105,7 +1105,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 				SVs:          []gpsprot.SVInfo{},
 				Tag:          Tag,
 				NativeMsgID:  "NAV-SVINFO",
-				UsedValidity: gpsprot.SatelliteUsedSV,
+				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
 		{
@@ -1134,7 +1134,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 45},
+							{ID: gpsprot.SigIDGPSL1CA, CN0: 45, Used: true},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 30},
 						Used:       true,
@@ -1142,7 +1142,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 				},
 				Tag:          Tag,
 				NativeMsgID:  "NAV-SVINFO",
-				UsedValidity: gpsprot.SatelliteUsedSV,
+				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
 		{
@@ -1170,7 +1170,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 				SVs:          []gpsprot.SVInfo{},
 				Tag:          Tag,
 				NativeMsgID:  "NAV-SVINFO",
-				UsedValidity: gpsprot.SatelliteUsedSV,
+				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
 		{
@@ -1229,7 +1229,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 45},
+							{ID: gpsprot.SigIDGPSL1CA, CN0: 45, Used: true},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 30},
 						Used:       true,
@@ -1237,7 +1237,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 40},
+							{ID: gpsprot.SigIDGPSL1CA, CN0: 40},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 180, Elevation: 45},
 						Used:       false,
@@ -1245,7 +1245,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 30},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 35},
+							{ID: gpsprot.SigIDGPSL1CA, CN0: 35, Used: true},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 270, Elevation: 60},
 						Used:       true,
@@ -1253,7 +1253,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 				},
 				Tag:          Tag,
 				NativeMsgID:  "NAV-SVINFO",
-				UsedValidity: gpsprot.SatelliteUsedSV,
+				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
 		{
@@ -1342,7 +1342,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 32},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 42},
+							{ID: gpsprot.SigIDGPSL1CA, CN0: 42, Used: true},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 45, Elevation: 25},
 						Used:       true,
@@ -1350,7 +1350,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 1},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 38},
+							{ID: gpsprot.SigIDGLOL1, CN0: 38, Used: true},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 135, Elevation: 35},
 						Used:       true,
@@ -1358,7 +1358,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 32},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 33},
+							{ID: gpsprot.SigIDGLOL1, CN0: 33},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 225, Elevation: 55},
 						Used:       false,
@@ -1366,7 +1366,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 20},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 30},
+							{ID: gpsprot.SigIDGPSL1CA, CN0: 30, Used: true},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 315, Elevation: 65},
 						Used:       true,
@@ -1374,7 +1374,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 58},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 28},
+							{ID: gpsprot.SigIDGPSL1CA, CN0: 28},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 0, Elevation: 70},
 						Used:       false,
@@ -1382,7 +1382,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 5},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 40},
+							{ID: gpsprot.SigIDQZSSL1CA, CN0: 40, Used: true},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 180, Elevation: 40},
 						Used:       true,
@@ -1390,7 +1390,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: gpsprot.GLOUnknown},
 						Signals: []gpsprot.SignalInfo{
-							{CN0: 20},
+							{ID: gpsprot.SigIDGLOL1, CN0: 20},
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 10},
 						Used:       false,
@@ -1398,7 +1398,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 				},
 				Tag:          Tag,
 				NativeMsgID:  "NAV-SVINFO",
-				UsedValidity: gpsprot.SatelliteUsedSV,
+				UsedValidity: gpsprot.SatelliteUsedSignal,
 			},
 		},
 	}

@@ -313,12 +313,33 @@ func GNSSSetOf(gs ...GNSS) GNSSSet {
 
 const MajorGNSSSet GNSSSet = 1<<GPS | 1<<GAL | 1<<BDS | 1<<GLO
 
+// IsZero returns true when the set is empty.
+func (s GNSSSet) IsZero() bool { return s == 0 }
+
 func (s GNSSSet) Contains(g GNSS) bool {
 	return s&GNSSSetOf(g) != 0
 }
 
 func (s GNSSSet) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.Items())
+}
+
+// UnmarshalJSON unmarshals a JSON array of GNSS name strings.
+func (s *GNSSSet) UnmarshalJSON(data []byte) error {
+	var names []string
+	if err := json.Unmarshal(data, &names); err != nil {
+		return err
+	}
+	var result GNSSSet
+	for _, name := range names {
+		g, err := ParseGNSS(name)
+		if err != nil {
+			return err
+		}
+		result |= GNSSSetOf(g)
+	}
+	*s = result
+	return nil
 }
 
 func (s GNSSSet) Items() []GNSS {
@@ -465,6 +486,55 @@ type SatellitesMsg struct {
 	NativeMsgID  string                `json:"nativeMsgID,omitempty"`
 	SVs          []SVInfo              `json:"info"`                   // satellites being tracked
 	UsedValidity SatelliteUsedValidity `json:"usedValidity,omitempty"` // says whether Used fields in SVInfo and SignalInfo are valid
+}
+
+// GNSSUsed returns the set of GNSS constellations used in the solution.
+// Returns zero when UsedValidity is SatelliteUsedInvalid.
+func (msg *SatellitesMsg) GNSSUsed() GNSSSet {
+	var gs GNSSSet
+	switch msg.UsedValidity {
+	case SatelliteUsedSignal:
+		for _, sv := range msg.SVs {
+			for _, sig := range sv.Signals {
+				if sig.Used {
+					gs |= GNSSSetOf(sv.ID.GNSS)
+					break
+				}
+			}
+		}
+	case SatelliteUsedSV:
+		for _, sv := range msg.SVs {
+			if sv.Used {
+				gs |= GNSSSetOf(sv.ID.GNSS)
+			}
+		}
+	}
+	return gs
+}
+
+// BandsUsed returns the set of frequency bands used in the solution.
+// Returns zero when UsedValidity is SatelliteUsedInvalid.
+func (msg *SatellitesMsg) BandsUsed() Band {
+	var b Band
+	switch msg.UsedValidity {
+	case SatelliteUsedSignal:
+		for _, sv := range msg.SVs {
+			for _, sig := range sv.Signals {
+				if sig.Used {
+					b |= SignalIDBand(sv.ID.GNSS, sig.ID)
+				}
+			}
+		}
+	case SatelliteUsedSV:
+		for _, sv := range msg.SVs {
+			if sv.Used {
+				for _, sig := range sv.Signals {
+					b |= SignalIDBand(sv.ID.GNSS, sig.ID)
+				}
+			}
+		}
+	}
+	return b
 }
 
 //go:generate stringer -type=TimeRef
@@ -1051,8 +1121,10 @@ type NavEpochMsg struct {
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
 	// NumSVInView is the number of satellites in view of the receiver.
 	NumSVInView opt.Val[uint16] `json:"numSVInView,omitzero"`
-	// SignalsUsed is the set of GNSS signals used in the solution.
-	SignalsUsed SignalSet `json:"signalsUsed,omitzero"`
+	// GNSSUsed is the set of GNSS constellations used in the solution.
+	GNSSUsed GNSSSet `json:"gnssUsed,omitzero"`
+	// BandsUsed is the set of frequency bands used in the solution.
+	BandsUsed Band `json:"bandsUsed,omitzero"`
 	// Tag identifies the protocol source (e.g. UBX, NMEA, Unicore).
 	Tag Tag `json:"tag,omitzero"`
 	// StartTime is when the first message in this epoch was read.
@@ -1084,8 +1156,8 @@ func (a *Accuracy) Fill(other *Accuracy) {
 // MergeNavEpoch merges multiple NavEpochMsg values. Priority is implicit in
 // argument order: the first non-nil message wins for scalar fields (Tag,
 // FixLevel, SolutionDim); optional fields use fill-if-unset semantics; bitmask
-// fields (Correction, AuxSrc, SignalsUsed) are unioned; StartTime is the
-// earliest. The first non-nil argument is mutated and returned.
+// fields (Correction, AuxSrc, GNSSUsed, BandsUsed) are unioned; StartTime is
+// the earliest. The first non-nil argument is mutated and returned.
 func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
 	var dst *NavEpochMsg
 	for _, m := range msgs {
@@ -1114,7 +1186,8 @@ func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
 		dst.NumSVInView.Fill(m.NumSVInView)
 		dst.Correction |= m.Correction
 		dst.AuxSrc |= m.AuxSrc
-		dst.SignalsUsed |= m.SignalsUsed
+		dst.GNSSUsed |= m.GNSSUsed
+		dst.BandsUsed |= m.BandsUsed
 		if !m.StartTime.IsZero() && (dst.StartTime.IsZero() || m.StartTime.Before(dst.StartTime)) {
 			dst.StartTime = m.StartTime
 		}

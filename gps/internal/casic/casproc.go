@@ -199,8 +199,14 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		return true
 	case *casbin.Nav2Sig:
 		msg := satsNav2Sig(mt)
-		if msg != nil && p.mh != nil {
-			p.mh.Satellites(msg, tRead)
+		if msg != nil {
+			if ne := p.curNavEpochMsg; ne != nil {
+				ne.GNSSUsed |= msg.GNSSUsed()
+				ne.BandsUsed |= msg.BandsUsed()
+			}
+			if p.mh != nil {
+				p.mh.Satellites(msg, tRead)
+			}
 		}
 		corrFromNav2Sig(p.curNavEpochMsg, mt)
 		return true

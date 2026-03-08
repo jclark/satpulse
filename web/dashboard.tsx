@@ -268,13 +268,8 @@ const statusFormat: EventFormat = {
     numSVUsed: ["Satellites used"],
     numSVTracked: ["Satellites tracked"],
     numSVInView: ["Satellites in view"],
-    signalsUsed: formatSignalsUsed,
-}
-
-function formatSignalsUsed(signals: {[gnss: string]: string[]}, _obj: Map): FormattedField[] {
-    return Object.entries(signals).map(([gnss, sigs]) =>
-        [`${gnss} signals used`, sigs.join(", ")]
-    );
+    gnssUsed: ["Constellations used", (arg: string[]) => arg.join(", ")],
+    bandsUsed: ["Bands used", (arg: string[]) => arg.join(", ")],
 }
 
 const positionFormat: EventFormat = {

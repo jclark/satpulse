@@ -490,19 +490,6 @@ type bands gpsprot.Band
 
 var _ pflag.Value = (*bands)(nil)
 
-var bandTable = []struct {
-	name string
-	band gpsprot.Band
-}{
-	{"L1", gpsprot.BandL1},
-	{"L2", gpsprot.BandL2},
-	{"E5", gpsprot.BandL5 | gpsprot.BandE5b}, // needs to be before L5 and E5b for String() to work
-	{"L5", gpsprot.BandL5},
-	{"E5b", gpsprot.BandE5b},
-	{"E6", gpsprot.BandE6},
-	{"L6", gpsprot.BandE6},
-}
-
 func (bp *bands) String() string {
 	b := gpsprot.Band(*bp)
 	if b == 0 {
@@ -511,17 +498,7 @@ func (bp *bands) String() string {
 	if b == gpsprot.BandAll {
 		return "all"
 	}
-	s := ""
-	for _, bn := range bandTable {
-		if bn.band&b == bn.band {
-			s += bn.name + ","
-			b &^= bn.band
-		}
-	}
-	if b == 0 {
-		return s[:len(s)-1]
-	}
-	return s + fmt.Sprintf("0x%4X", b)
+	return strings.Join(b.Items(), ",")
 }
 
 func (bp *bands) Type() string {
@@ -529,21 +506,14 @@ func (bp *bands) Type() string {
 }
 
 func (bp *bands) Set(s string) error {
-	b := gpsprot.Band(0)
-	words := strings.Split(s, ",")
-	for _, w := range words {
-		w := strings.Trim(w, " \t")
-		found := false
-		for _, bn := range bandTable {
-			if strings.EqualFold(bn.name, w) {
-				b |= bn.band
-				found = true
-				break
-			}
-		}
-		if !found {
+	var b gpsprot.Band
+	for _, w := range strings.Split(s, ",") {
+		w = strings.Trim(w, " \t")
+		band, ok := gpsprot.ParseBandName(w)
+		if !ok {
 			return fmt.Errorf("unknown band: %s", w)
 		}
+		b |= band
 	}
 	*bp = bands(b)
 	return nil

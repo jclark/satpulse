@@ -510,9 +510,13 @@ func TestEpochQualityFields(t *testing.T) {
 		if !ne.RTCMRefBaseID.IsSet() || ne.RTCMRefBaseID.Get() != 123 {
 			t.Errorf("RTCMRefBaseID = %v, want 123", ne.RTCMRefBaseID)
 		}
-		wantSig := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1)
-		if ne.SignalsUsed != wantSig {
-			t.Errorf("SignalsUsed = %v, want %v", ne.SignalsUsed, wantSig)
+		wantGNSS := gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GAL)
+		if ne.GNSSUsed != wantGNSS {
+			t.Errorf("GNSSUsed = %v, want %v", ne.GNSSUsed, wantGNSS)
+		}
+		wantBand := gpsprot.BandL1
+		if ne.BandsUsed != wantBand {
+			t.Errorf("BandsUsed = %v, want %v", ne.BandsUsed, wantBand)
 		}
 		return
 	}
@@ -557,6 +561,143 @@ func TestEpochQualityNotComputed(t *testing.T) {
 		}
 		if ne.Correction != 0 {
 			t.Errorf("Correction = %v, want 0", ne.Correction)
+		}
+		return
+	}
+	t.Fatal("no NavEpoch emitted")
+}
+
+func TestBestSatGNSSBands(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+	// BESTSAT with GPS L1+L2, GAL E1+E5a, BDS B1+B3
+	msg1 := makeMsg(2350, 100000, &uncmsg.BestSat{
+		BestSatInitChunk: uncmsg.BestSatInitChunk{NumEntries: 4},
+		Sats: []uncmsg.BestSatEntry{
+			{System: uncmsg.SatSysGPS, SatID: uncmsg.MakeSatID(1), SigMask: uncmsg.SigUsedGPSL1 | uncmsg.SigUsedGPSL2},
+			{System: uncmsg.SatSysGPS, SatID: uncmsg.MakeSatID(3), SigMask: uncmsg.SigUsedGPSL1},
+			{System: uncmsg.SatSysGALILEO, SatID: uncmsg.MakeSatID(5), SigMask: uncmsg.SigUsedGALE1 | uncmsg.SigUsedGALE5A},
+			{System: uncmsg.SatSysBEIDOU, SatID: uncmsg.MakeSatID(10), SigMask: uncmsg.SigUsedBDSB1 | uncmsg.SigUsedBDSB3},
+		},
+	})
+	pp.dispatch(msg1, time.Unix(1, 0), TagBinary)
+	// Flush
+	msg2 := makeMsg(2350, 101000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{PSolStatus: uncmsg.InsufficientObs},
+	})
+	pp.dispatch(msg2, time.Unix(2, 0), TagBinary)
+	for _, m := range h.msgs {
+		if m.msgType != "navepoch" {
+			continue
+		}
+		ne := m.msg.(*gpsprot.NavEpochMsg)
+		wantGNSS := gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GAL, gpsprot.BDS)
+		if ne.GNSSUsed != wantGNSS {
+			t.Errorf("GNSSUsed = %v, want %v", ne.GNSSUsed, wantGNSS)
+		}
+		wantBand := gpsprot.BandL1 | gpsprot.BandL2 | gpsprot.BandL5 | gpsprot.BandE6
+		if ne.BandsUsed != wantBand {
+			t.Errorf("BandsUsed = %v, want %v", ne.BandsUsed, wantBand)
+		}
+		return
+	}
+	t.Fatal("no NavEpoch emitted")
+}
+
+func TestBestSatOverridesBestPos(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+	// BESTPOS arrives first with GPS+GAL L1 from signal mask
+	msg1 := makeMsg(2350, 100000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus:    uncmsg.SolComputed,
+			PosType:       uncmsg.PosVelSingle,
+			Lat:           47.0, Lon: 8.0, Hgt: 400.0,
+			LatSigma:      1.0, LonSigma: 1.0, HgtSigma: 2.0,
+			GPSGLOBDS2Sig: 0x01, // GPS L1
+			GalBDS3Sig:    0x01, // GAL E1
+		},
+	})
+	pp.dispatch(msg1, time.Unix(1, 0), TagBinary)
+	// BESTSAT arrives second with GPS+BDS (different from signal mask)
+	msg2 := makeMsg(2350, 100000, &uncmsg.BestSat{
+		BestSatInitChunk: uncmsg.BestSatInitChunk{NumEntries: 2},
+		Sats: []uncmsg.BestSatEntry{
+			{System: uncmsg.SatSysGPS, SatID: uncmsg.MakeSatID(1), SigMask: uncmsg.SigUsedGPSL1 | uncmsg.SigUsedGPSL5},
+			{System: uncmsg.SatSysBEIDOU, SatID: uncmsg.MakeSatID(10), SigMask: uncmsg.SigUsedBDSB1},
+		},
+	})
+	pp.dispatch(msg2, time.Unix(1, 0), TagBinary)
+	// Flush
+	msg3 := makeMsg(2350, 101000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{PSolStatus: uncmsg.InsufficientObs},
+	})
+	pp.dispatch(msg3, time.Unix(2, 0), TagBinary)
+	for _, m := range h.msgs {
+		if m.msgType != "navepoch" {
+			continue
+		}
+		ne := m.msg.(*gpsprot.NavEpochMsg)
+		// BESTSAT should override: GPS+BDS, not GPS+GAL
+		wantGNSS := gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.BDS)
+		if ne.GNSSUsed != wantGNSS {
+			t.Errorf("GNSSUsed = %v, want %v (BESTSAT should override BESTPOS)", ne.GNSSUsed, wantGNSS)
+		}
+		wantBand := gpsprot.BandL1 | gpsprot.BandL5
+		if ne.BandsUsed != wantBand {
+			t.Errorf("BandsUsed = %v, want %v (BESTSAT should override BESTPOS)", ne.BandsUsed, wantBand)
+		}
+		return
+	}
+	t.Fatal("no NavEpoch emitted")
+}
+
+func TestBestSatBeforeBestPos(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+	// BESTSAT arrives first
+	msg1 := makeMsg(2350, 100000, &uncmsg.BestSat{
+		BestSatInitChunk: uncmsg.BestSatInitChunk{NumEntries: 1},
+		Sats: []uncmsg.BestSatEntry{
+			{System: uncmsg.SatSysGALILEO, SatID: uncmsg.MakeSatID(5), SigMask: uncmsg.SigUsedGALE1 | uncmsg.SigUsedGALE5B},
+		},
+	})
+	pp.dispatch(msg1, time.Unix(1, 0), TagBinary)
+	// BESTPOS arrives second with GPS L1 from signal mask -- should be no-op (fill)
+	msg2 := makeMsg(2350, 100000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus:    uncmsg.SolComputed,
+			PosType:       uncmsg.PosVelSingle,
+			Lat:           47.0, Lon: 8.0, Hgt: 400.0,
+			LatSigma:      1.0, LonSigma: 1.0, HgtSigma: 2.0,
+			GPSGLOBDS2Sig: 0x01, // GPS L1
+		},
+	})
+	pp.dispatch(msg2, time.Unix(1, 0), TagBinary)
+	// Flush
+	msg3 := makeMsg(2350, 101000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{PSolStatus: uncmsg.InsufficientObs},
+	})
+	pp.dispatch(msg3, time.Unix(2, 0), TagBinary)
+	for _, m := range h.msgs {
+		if m.msgType != "navepoch" {
+			continue
+		}
+		ne := m.msg.(*gpsprot.NavEpochMsg)
+		// BESTSAT values should be preserved, BESTPOS fill is no-op
+		wantGNSS := gpsprot.GNSSSetOf(gpsprot.GAL)
+		if ne.GNSSUsed != wantGNSS {
+			t.Errorf("GNSSUsed = %v, want %v (BESTPOS fill should be no-op)", ne.GNSSUsed, wantGNSS)
+		}
+		wantBand := gpsprot.BandL1 | gpsprot.BandE5b
+		if ne.BandsUsed != wantBand {
+			t.Errorf("BandsUsed = %v, want %v (BESTPOS fill should be no-op)", ne.BandsUsed, wantBand)
 		}
 		return
 	}

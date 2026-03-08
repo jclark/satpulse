@@ -68,6 +68,23 @@ func navSatSignalId(gnssID ubxbin.GNSSID) gpsprot.SignalID {
 	return gpsprot.SigIDInvalid
 }
 
+// svInfoSignalID returns the L1 SignalID for NAV-SVINFO, which reports one signal per SV.
+func svInfoSignalID(gnss gpsprot.GNSS) gpsprot.SignalID {
+	switch gnss {
+	case gpsprot.GPS, gpsprot.SBAS:
+		return gpsprot.SigIDGPSL1CA
+	case gpsprot.GAL:
+		return gpsprot.SigIDGALE1
+	case gpsprot.BDS:
+		return gpsprot.SigIDBDSB1I
+	case gpsprot.QZSS:
+		return gpsprot.SigIDQZSSL1CA
+	case gpsprot.GLO:
+		return gpsprot.SigIDGLOL1
+	}
+	return gpsprot.SigIDInvalid
+}
+
 func satellitesNavSig(u *ubxbin.NavSig) *gpsprot.SatellitesMsg {
 	sigIndex := make(map[gpsprot.SVID]int)
 	const minQuality = ubxbin.NavSigQualityCodeLocked
@@ -303,23 +320,27 @@ func satellitesNavSVInfo(u *ubxbin.NavSVInfo) *gpsprot.SatellitesMsg {
 		if usv.Quality&ubxbin.NavSVInfoQualityInd < minQuality {
 			continue
 		}
+		svid := svInfoSVID(usv.SVID)
+		used := usv.Flags&ubxbin.NavSVInfoSVUsed != 0
 		svs = append(svs, gpsprot.SVInfo{
-			ID: svInfoSVID(usv.SVID),
-			Signals: []gpsprot.SignalInfo{
-				{CN0: usv.CNO},
-			},
+			ID: svid,
+			Signals: []gpsprot.SignalInfo{{
+				ID:   svInfoSignalID(svid.GNSS),
+				CN0:  usv.CNO,
+				Used: used,
+			}},
 			LookAngles: &gpsprot.LookAngles{
 				Azimuth:   usv.Azim,
 				Elevation: usv.Elev,
 			},
-			Used: usv.Flags&ubxbin.NavSVInfoSVUsed != 0,
+			Used: used,
 		})
 	}
 	return &gpsprot.SatellitesMsg{
 		SVs:          svs,
 		Tag:          Tag,
 		NativeMsgID:  "NAV-SVINFO",
-		UsedValidity: gpsprot.SatelliteUsedSV,
+		UsedValidity: gpsprot.SatelliteUsedSignal,
 	}
 }
 

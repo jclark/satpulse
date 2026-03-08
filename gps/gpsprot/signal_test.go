@@ -1,6 +1,7 @@
 package gpsprot
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 )
@@ -194,5 +195,204 @@ func TestGNSSSignalMapOrder(t *testing.T) {
 	}
 	if !slices.Equal(m["GAL"], wantGAL) {
 		t.Errorf("GAL signals = %v, want %v", m["GAL"], wantGAL)
+	}
+}
+
+func TestBandItems(t *testing.T) {
+	tests := []struct {
+		name string
+		band Band
+		want []string
+	}{
+		{"zero", 0, nil},
+		{"L1", BandL1, []string{"L1"}},
+		{"L1+L5", BandL1 | BandL5, []string{"L1", "L5"}},
+		{"E5 composite", BandL5 | BandE5b, []string{"E5"}},
+		{"all five", BandL1 | BandL2 | BandL5 | BandE5b | BandE6, []string{"E5", "L1", "L2", "E6"}},
+		{"L5 only", BandL5, []string{"L5"}},
+		{"E5b only", BandE5b, []string{"E5b"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.band.Items()
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Band.Items() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBandString(t *testing.T) {
+	tests := []struct {
+		band Band
+		want string
+	}{
+		{0, ""},
+		{BandL1, "L1"},
+		{BandL1 | BandL5, "L1,L5"},
+		{BandL5 | BandE5b, "E5"},
+		{BandL1 | BandE6, "L1,E6"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := tt.band.String(); got != tt.want {
+				t.Errorf("Band.String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBandJSONRoundTrip(t *testing.T) {
+	tests := []Band{
+		0,
+		BandL1,
+		BandL1 | BandL5,
+		BandL5 | BandE5b,
+		BandL1 | BandL2 | BandE6,
+	}
+	for _, b := range tests {
+		data, err := json.Marshal(b)
+		if err != nil {
+			t.Fatalf("Marshal(%s): %v", b, err)
+		}
+		var got Band
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("Unmarshal(%s): %v", data, err)
+		}
+		if got != b {
+			t.Errorf("round-trip: got %s, want %s", got, b)
+		}
+	}
+}
+
+func TestParseBandName(t *testing.T) {
+	tests := []struct {
+		name string
+		want Band
+		ok   bool
+	}{
+		{"L1", BandL1, true},
+		{"L2", BandL2, true},
+		{"L5", BandL5, true},
+		{"E5", BandL5 | BandE5b, true},
+		{"E5b", BandE5b, true},
+		{"E6", BandE6, true},
+		{"L6", BandE6, true},
+		{"l1", BandL1, true},
+		{"BOGUS", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := ParseBandName(tt.name)
+			if ok != tt.ok || got != tt.want {
+				t.Errorf("ParseBandName(%q) = (%s, %v), want (%s, %v)", tt.name, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestSignalIDBand(t *testing.T) {
+	tests := []struct {
+		gnss GNSS
+		id   SignalID
+		want Band
+	}{
+		{GPS, SigIDGPSL1CA, BandL1},
+		{GPS, SigIDGPSL1C, BandL1},
+		{GPS, SigIDGPSL2P, BandL2},
+		{GPS, SigIDGPSL2CM, BandL2},
+		{GPS, SigIDGPSL5I, BandL5},
+		{GLO, SigIDGLOL1, BandL1},
+		{GLO, SigIDGLOL2, BandL2},
+		{GLO, SigIDGLOL3I, BandE5b},
+		{GAL, SigIDGALE1, BandL1},
+		{GAL, SigIDGALE5a, BandL5},
+		{GAL, SigIDGALE5b, BandE5b},
+		{GAL, SigIDGALE5, BandL5 | BandE5b},
+		{GAL, SigIDGALE6, BandE6},
+		{BDS, SigIDBDSB1I, BandL1},
+		{BDS, SigIDBDSB1C, BandL1},
+		{BDS, SigIDBDSB2a, BandL5},
+		{BDS, SigIDBDSB2I, BandE5b},
+		{BDS, SigIDBDSB2b, BandE5b},
+		{BDS, SigIDBDSB2ab, BandL5 | BandE5b},
+		{BDS, SigIDBDSB3I, BandE6},
+		{QZSS, SigIDQZSSL1CA, BandL1},
+		{QZSS, SigIDQZSSL6, BandE6},
+		{NAVIC, SigIDNAVICS, 0},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.id), func(t *testing.T) {
+			got := SignalIDBand(tt.gnss, tt.id)
+			if got != tt.want {
+				t.Errorf("SignalIDBand(%s, %q) = %s, want %s", tt.gnss, tt.id, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSatellitesMsgGNSSUsedSignal(t *testing.T) {
+	msg := SatellitesMsg{
+		UsedValidity: SatelliteUsedSignal,
+		SVs: []SVInfo{
+			{ID: SVID{GNSS: GPS, Num: 1}, Signals: []SignalInfo{
+				{ID: SigIDGPSL1CA, Used: true},
+				{ID: SigIDGPSL5I, Used: false},
+			}},
+			{ID: SVID{GNSS: GAL, Num: 1}, Signals: []SignalInfo{
+				{ID: SigIDGALE1, Used: true},
+			}},
+			{ID: SVID{GNSS: BDS, Num: 1}, Signals: []SignalInfo{
+				{ID: SigIDBDSB1I, Used: false},
+			}},
+		},
+	}
+	wantGNSS := GNSSSetOf(GPS, GAL)
+	if got := msg.GNSSUsed(); got != wantGNSS {
+		t.Errorf("GNSSUsed() = %s, want %s", got, wantGNSS)
+	}
+	wantBands := BandL1
+	if got := msg.BandsUsed(); got != wantBands {
+		t.Errorf("BandsUsed() = %s, want %s", got, wantBands)
+	}
+}
+
+func TestSatellitesMsgGNSSUsedSV(t *testing.T) {
+	msg := SatellitesMsg{
+		UsedValidity: SatelliteUsedSV,
+		SVs: []SVInfo{
+			{ID: SVID{GNSS: GPS, Num: 1}, Used: true, Signals: []SignalInfo{
+				{ID: SigIDGPSL1CA},
+				{ID: SigIDGPSL5I},
+			}},
+			{ID: SVID{GNSS: GLO, Num: 1}, Used: false, Signals: []SignalInfo{
+				{ID: SigIDGLOL1},
+			}},
+		},
+	}
+	wantGNSS := GNSSSetOf(GPS)
+	if got := msg.GNSSUsed(); got != wantGNSS {
+		t.Errorf("GNSSUsed() = %s, want %s", got, wantGNSS)
+	}
+	wantBands := BandL1 | BandL5
+	if got := msg.BandsUsed(); got != wantBands {
+		t.Errorf("BandsUsed() = %s, want %s", got, wantBands)
+	}
+}
+
+func TestSatellitesMsgUsedInvalid(t *testing.T) {
+	msg := SatellitesMsg{
+		UsedValidity: SatelliteUsedInvalid,
+		SVs: []SVInfo{
+			{ID: SVID{GNSS: GPS, Num: 1}, Used: true, Signals: []SignalInfo{
+				{ID: SigIDGPSL1CA, Used: true},
+			}},
+		},
+	}
+	if got := msg.GNSSUsed(); got != 0 {
+		t.Errorf("GNSSUsed() = %s, want 0", got)
+	}
+	if got := msg.BandsUsed(); got != 0 {
+		t.Errorf("BandsUsed() = %s, want 0", got)
 	}
 }

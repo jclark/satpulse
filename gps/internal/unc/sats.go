@@ -92,6 +92,29 @@ func prnToNum(gnss gpsprot.GNSS, prn byte) (byte, bool) {
 	return 0, false
 }
 
+// satSysToGNSS maps Unicore BESTSAT SatSys value to gpsprot.GNSS.
+// Based on Table 7-116 in protocol.md.
+func satSysToGNSS(sys uncmsg.SatSys) gpsprot.GNSS {
+	switch sys {
+	case uncmsg.SatSysGPS:
+		return gpsprot.GPS
+	case uncmsg.SatSysGLONASS:
+		return gpsprot.GLO
+	case uncmsg.SatSysSBAS:
+		return gpsprot.SBAS
+	case uncmsg.SatSysGALILEO:
+		return gpsprot.GAL
+	case uncmsg.SatSysBEIDOU:
+		return gpsprot.BDS
+	case uncmsg.SatSysQZSS:
+		return gpsprot.QZSS
+	case uncmsg.SatSysNAVIC:
+		return gpsprot.NAVIC
+	default:
+		return 0
+	}
+}
+
 // sysIDToGNSS maps Unicore SysID value to gpsprot.GNSS
 // Based on Table 7-112 in protocol.md
 func sysIDToGNSS(sysID uncmsg.SysID) gpsprot.GNSS {

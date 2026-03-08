@@ -56,8 +56,12 @@ type PrometheusObserver struct {
 	seenCorrLeaf       map[string]struct{}
 	correctionAge      *prometheus.GaugeVec
 	correctionBaseID   *prometheus.GaugeVec
-	navAuxSource       *prometheus.GaugeVec
-	seenAuxSrc         map[string]struct{}
+	navAuxSource          *prometheus.GaugeVec
+	seenAuxSrc            map[string]struct{}
+	constellationUsed     *prometheus.GaugeVec
+	seenConstellationUsed map[string]struct{}
+	gnssBandUsed          *prometheus.GaugeVec
+	seenGNSSBandUsed      map[string]struct{}
 
 	// Satellites metrics
 	lookAngleGauge     *prometheus.GaugeVec
@@ -349,6 +353,30 @@ func (p *PrometheusObserver) updateSolutionQuality(msg *gpsprot.NavEpochMsg) {
 			names, p.seenAuxSrc)
 	} else {
 		clearBitmaskGauge(p.navAuxSource, p.seenAuxSrc)
+	}
+	// Constellations used
+	if msg.GNSSUsed != 0 {
+		names := make([]string, 0, 4)
+		for _, g := range msg.GNSSUsed.Items() {
+			names = append(names, strings.ToLower(g.String()))
+		}
+		p.seenConstellationUsed = setBitmaskGauge(p, &p.constellationUsed,
+			"satpulse_constellation_used", "GNSS constellation used in solution", "gnss",
+			names, p.seenConstellationUsed)
+	} else {
+		clearBitmaskGauge(p.constellationUsed, p.seenConstellationUsed)
+	}
+	// Bands used
+	if msg.BandsUsed != 0 {
+		names := make([]string, 0, 4)
+		for _, b := range msg.BandsUsed.Items() {
+			names = append(names, strings.ToLower(b))
+		}
+		p.seenGNSSBandUsed = setBitmaskGauge(p, &p.gnssBandUsed,
+			"satpulse_gnss_band_used", "Frequency band used in solution", "band",
+			names, p.seenGNSSBandUsed)
+	} else {
+		clearBitmaskGauge(p.gnssBandUsed, p.seenGNSSBandUsed)
 	}
 }
 

@@ -311,13 +311,14 @@ func TestBuildQualitySSE(t *testing.T) {
 			want: `{"fixLevel":"code","solutionDim":"3D","accHor":2.5,"accVert":4}`,
 		},
 		{
-			name: "with_signals_used",
+			name: "with_gnss_bands_used",
 			msg: gpsprot.NavEpochMsg{
 				FixLevel:    gpsprot.FixLevelCode,
 				SolutionDim: gpsprot.SolutionDim3D,
-				SignalsUsed: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
+				GNSSUsed:    gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GAL),
+				BandsUsed:   gpsprot.BandL1 | gpsprot.BandL5,
 			},
-			want: `{"fixLevel":"code","solutionDim":"3D","signalsUsed":{"GPS":["L1"],"GAL":["E1"]}}`,
+			want: `{"fixLevel":"code","solutionDim":"3D","gnssUsed":["GPS","GAL"],"bandsUsed":["L1","L5"]}`,
 		},
 		{
 			name: "with_diffage",
