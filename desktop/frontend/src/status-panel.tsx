@@ -15,6 +15,8 @@ export function StatusPanel({msg}: Props) {
     };
     add('Fix level', msg.fixLevel);
     add('Solution dimensionality', msg.solutionDim);
+    if (msg.gnssUsed?.length) add('GNSS used', msg.gnssUsed.join(', '));
+    if (msg.bandsUsed?.length) add('Bands used', msg.bandsUsed.join(', '));
     if (msg.correction) add('Corrections', msg.correction.length ? msg.correction.join(', ') : 'None');
     if (msg.auxSrc) add('Aux sources', msg.auxSrc.length ? msg.auxSrc.join(', ') : 'None');
     add('Horizontal accuracy', msg.acc?.hor != null ? `${msg.acc.hor.toFixed(3)} m` : undefined);
@@ -33,7 +35,5 @@ export function StatusPanel({msg}: Props) {
     add('Satellites in view', msg.numSVInView != null ? String(msg.numSVInView) : undefined);
     add('Diff age', msg.diffAge != null ? `${msg.diffAge.toFixed(1)} s` : undefined);
     add('RTCM base ID', msg.rtcmRefBaseID != null ? String(msg.rtcmRefBaseID) : undefined);
-    if (msg.gnssUsed?.length) add('GNSS used', msg.gnssUsed.join(', '));
-    if (msg.bandsUsed?.length) add('Bands used', msg.bandsUsed.join(', '));
     return <MonitorDataView rows={rows} class="max-w-xl grid-cols-[140px_1fr]" />;
 }
