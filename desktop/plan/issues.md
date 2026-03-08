@@ -99,3 +99,7 @@ The root cause is a gap between the backend and frontend: when `Scan()` in `gpsi
 
 Fix: after the goroutines spawned by `Connect()` finish (detected via `connWg`), transition to the disconnected state and emit `gps:state` with `StateDisconnected`. This could be done with a cleanup goroutine that waits on `connWg` and calls `closeLocked()` if the connection wasn't already explicitly disconnected. The frontend already handles `gps:state` transitions and clears stale data on disconnect, so no frontend changes should be needed.
 
+## stationary-hide-speed-acc: Hide speed accuracies when stationary
+
+When the receiver is stationary (ground speed < 0.1 m/s), the speed accuracy and ground speed accuracy values in the status panel are meaningless noise. Track whether the receiver is stationary somewhere accessible to the status panel rendering, and when it is, hide or omit the speed accuracy and ground speed accuracy rows rather than displaying misleading values.
+
