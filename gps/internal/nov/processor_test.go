@@ -167,9 +167,13 @@ func TestDispatchEpochQuality(t *testing.T) {
 		if !ne.RTCMRefBaseID.IsSet() || ne.RTCMRefBaseID.Get() != 123 {
 			t.Errorf("RTCMRefBaseID = %v, want 123", ne.RTCMRefBaseID)
 		}
-		wantSig := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1)
-		if ne.SignalsUsed != wantSig {
-			t.Errorf("SignalsUsed = %v, want %v", ne.SignalsUsed, wantSig)
+		wantGNSS := gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GAL)
+		if ne.GNSSUsed != wantGNSS {
+			t.Errorf("GNSSUsed = %v, want %v", ne.GNSSUsed, wantGNSS)
+		}
+		wantBand := gpsprot.BandL1
+		if ne.BandsUsed != wantBand {
+			t.Errorf("BandsUsed = %v, want %v", ne.BandsUsed, wantBand)
 		}
 		return
 	}

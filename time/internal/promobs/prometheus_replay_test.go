@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,6 +123,19 @@ func TestReplay(t *testing.T) {
 	if ne.Correction != 0 {
 		for _, name := range corrSnakeNames(ne.Correction.Leaves()) {
 			assertGaugeLabel(t, mf, "satpulse_gnss_correction_leaf", "kind", name, 1)
+		}
+	}
+
+	// Constellations used
+	if ne.GNSSUsed != 0 {
+		for _, g := range ne.GNSSUsed.Items() {
+			assertGaugeLabel(t, mf, "satpulse_constellation_used", "gnss", strings.ToLower(g.String()), 1)
+		}
+	}
+	// Bands used
+	if ne.BandsUsed != 0 {
+		for _, b := range ne.BandsUsed.Items() {
+			assertGaugeLabel(t, mf, "satpulse_gnss_band_used", "band", strings.ToLower(b), 1)
 		}
 	}
 

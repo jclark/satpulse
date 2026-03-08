@@ -57,6 +57,25 @@ func asSVID(svid uint16) gpsprot.SVID {
 	return gpsprot.SVID{}
 }
 
+// asSignalID returns the default SignalID for the single signal reported per SV in NAV-SVINFO.
+func asSignalID(gnss gpsprot.GNSS) gpsprot.SignalID {
+	switch gnss {
+	case gpsprot.GPS, gpsprot.SBAS:
+		return gpsprot.SigIDGPSL1CA
+	case gpsprot.GAL:
+		return gpsprot.SigIDGALE1
+	case gpsprot.BDS:
+		return gpsprot.SigIDBDSB1I
+	case gpsprot.QZSS:
+		return gpsprot.SigIDQZSSL1CA
+	case gpsprot.GLO:
+		return gpsprot.SigIDGLOL1
+	case gpsprot.NAVIC:
+		return gpsprot.SigIDNAVICL5
+	}
+	return gpsprot.SigIDInvalid
+}
+
 // satellitesNavSVInfo converts asbin.NavSVInfo to gpsprot.SatellitesMsg.
 func satellitesNavSVInfo(m *asbin.NavSVInfo) *gpsprot.SatellitesMsg {
 	svs := make([]gpsprot.SVInfo, 0, len(m.Sats))
@@ -68,22 +87,25 @@ func satellitesNavSVInfo(m *asbin.NavSVInfo) *gpsprot.SatellitesMsg {
 		if !svid.IsValid() {
 			continue
 		}
+		used := asv.Flags&asbin.NavSVInfoFlagUsed != 0
 		svs = append(svs, gpsprot.SVInfo{
 			ID: svid,
 			Signals: []gpsprot.SignalInfo{{
-				CN0: asv.Cno,
+				ID:   asSignalID(svid.GNSS),
+				CN0:  asv.Cno,
+				Used: used,
 			}},
 			LookAngles: &gpsprot.LookAngles{
 				Azimuth:   asv.Azim,
 				Elevation: asv.Elev,
 			},
-			Used: asv.Flags&asbin.NavSVInfoFlagUsed != 0,
+			Used: used,
 		})
 	}
 	return &gpsprot.SatellitesMsg{
 		SVs:          svs,
 		Tag:          Tag,
 		NativeMsgID:  "NAV-SVINFO",
-		UsedValidity: gpsprot.SatelliteUsedSV,
+		UsedValidity: gpsprot.SatelliteUsedSignal,
 	}
 }

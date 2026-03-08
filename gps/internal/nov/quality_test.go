@@ -70,35 +70,49 @@ func TestPosTypeQuality(t *testing.T) {
 
 func TestSignalsUsed(t *testing.T) {
 	tests := []struct {
-		name        string
-		gpsGloBds2  novmsg.HexByte
-		galBds3     novmsg.HexByte
-		wantSignals []gpsprot.Signal
+		name     string
+		gpsGlo   novmsg.HexByte
+		galBds3  novmsg.HexByte
+		wantGNSS gpsprot.GNSSSet
+		wantBand gpsprot.Band
 	}{
-		{"GPS_L1CA", 0x01, 0x00, []gpsprot.Signal{gpsprot.SigGPSL1CA}},
-		{"GPS_L2P", 0x02, 0x00, []gpsprot.Signal{gpsprot.SigGPSL2P}},
-		{"GPS_L5", 0x08, 0x00, []gpsprot.Signal{gpsprot.SigGPSL5}},
-		{"GLO_L1_L2", 0x30, 0x00, []gpsprot.Signal{gpsprot.SigGLOL1, gpsprot.SigGLOL2}},
-		{"BDS_B1I_B2I", 0xC0, 0x00, []gpsprot.Signal{gpsprot.SigBDSB1I, gpsprot.SigBDSB2I}},
-		{"GAL_E1", 0x00, 0x01, []gpsprot.Signal{gpsprot.SigGALE1}},
-		{"GAL_E5a_E5b", 0x00, 0x06, []gpsprot.Signal{gpsprot.SigGALE5a, gpsprot.SigGALE5b}},
-		{"BDS3_B1C_B2a", 0x00, 0x30, []gpsprot.Signal{gpsprot.SigBDSB1C, gpsprot.SigBDSB2a}},
-		{"BDS3_B3I_B2b", 0x00, 0xC0, []gpsprot.Signal{gpsprot.SigBDSB3I, gpsprot.SigBDSB2b}},
-		{"all", 0xFF, 0xF7, []gpsprot.Signal{
-			gpsprot.SigGPSL1CA, gpsprot.SigGPSL2P, gpsprot.SigGPSL2C, gpsprot.SigGPSL5,
-			gpsprot.SigGLOL1, gpsprot.SigGLOL2,
-			gpsprot.SigBDSB1I, gpsprot.SigBDSB2I,
-			gpsprot.SigGALE1, gpsprot.SigGALE5a, gpsprot.SigGALE5b,
-			gpsprot.SigBDSB1C, gpsprot.SigBDSB2a, gpsprot.SigBDSB3I, gpsprot.SigBDSB2b,
-		}},
-		{"empty", 0x00, 0x00, nil},
+		{"GPS_L1", 0x01, 0x00,
+			gpsprot.GNSSSetOf(gpsprot.GPS), gpsprot.BandL1},
+		{"GPS_L2", 0x02, 0x00,
+			gpsprot.GNSSSetOf(gpsprot.GPS), gpsprot.BandL2},
+		{"GPS_L5", 0x04, 0x00,
+			gpsprot.GNSSSetOf(gpsprot.GPS), gpsprot.BandL5},
+		{"GLO_L1_L2", 0x30, 0x00,
+			gpsprot.GNSSSetOf(gpsprot.GLO), gpsprot.BandL1 | gpsprot.BandL2},
+		{"GLO_L3", 0x40, 0x00,
+			gpsprot.GNSSSetOf(gpsprot.GLO), gpsprot.BandE5b},
+		{"GAL_E1", 0x00, 0x01,
+			gpsprot.GNSSSetOf(gpsprot.GAL), gpsprot.BandL1},
+		{"GAL_E5a_E5b", 0x00, 0x06,
+			gpsprot.GNSSSetOf(gpsprot.GAL), gpsprot.BandL5 | gpsprot.BandE5b},
+		{"GAL_ALTBOC", 0x00, 0x08,
+			gpsprot.GNSSSetOf(gpsprot.GAL), gpsprot.BandL5 | gpsprot.BandE5b},
+		{"BDS_B1", 0x00, 0x10,
+			gpsprot.GNSSSetOf(gpsprot.BDS), gpsprot.BandL1},
+		{"BDS_B2", 0x00, 0x20,
+			gpsprot.GNSSSetOf(gpsprot.BDS), gpsprot.BandL5 | gpsprot.BandE5b},
+		{"BDS_B3", 0x00, 0x40,
+			gpsprot.GNSSSetOf(gpsprot.BDS), gpsprot.BandE6},
+		{"GAL_E6", 0x00, 0x80,
+			gpsprot.GNSSSetOf(gpsprot.GAL), gpsprot.BandE6},
+		{"all", 0x77, 0xFF,
+			gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GLO, gpsprot.GAL, gpsprot.BDS),
+			gpsprot.BandL1 | gpsprot.BandL2 | gpsprot.BandL5 | gpsprot.BandE5b | gpsprot.BandE6},
+		{"empty", 0x00, 0x00, 0, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ss := SignalsUsed(tt.gpsGloBds2, tt.galBds3)
-			want := gpsprot.SignalSetOf(tt.wantSignals...)
-			if ss != want {
-				t.Errorf("SignalsUsed(%02x, %02x) = %v, want %v", tt.gpsGloBds2, tt.galBds3, ss, want)
+			gs, b := SignalsUsed(tt.gpsGlo, tt.galBds3)
+			if gs != tt.wantGNSS {
+				t.Errorf("GNSS = %v, want %v", gs, tt.wantGNSS)
+			}
+			if b != tt.wantBand {
+				t.Errorf("Band = %v, want %v", b, tt.wantBand)
 			}
 		})
 	}

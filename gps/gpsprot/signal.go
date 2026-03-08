@@ -140,6 +140,77 @@ const (
 	BandAugment Band = Band((1 << sigIndexL1Augment) | (1 << sigIndexL5Augment) | (1 << sigIndexE5bAugment) | (1 << sigIndexE6Augment)) // 1559-1610, 1164-1210, 1260-1300
 )
 
+var bandNames = [...]struct {
+	name string
+	band Band
+}{
+	{"E5", BandL5 | BandE5b}, // composite must come before L5 and E5b
+	{"L1", BandL1},
+	{"L2", BandL2},
+	{"L5", BandL5},
+	{"E5b", BandE5b},
+	{"E6", BandE6},
+}
+
+// Items returns the list of band names present in the set.
+// Composites match before components: if both L5 and E5b bits are set,
+// returns ["E5"] not ["L5","E5b"].
+func (b Band) Items() []string {
+	var items []string
+	for _, bn := range bandNames {
+		if bn.band&b == bn.band {
+			items = append(items, bn.name)
+			b &^= bn.band
+		}
+	}
+	return items
+}
+
+// String returns a comma-separated list of band names.
+func (b Band) String() string {
+	return strings.Join(b.Items(), ",")
+}
+
+// IsZero returns true when no bands are set.
+func (b Band) IsZero() bool { return b == 0 }
+
+// MarshalJSON marshals the band set as a JSON array of band name strings.
+func (b Band) MarshalJSON() ([]byte, error) {
+	return json.Marshal(b.Items())
+}
+
+// UnmarshalJSON unmarshals a JSON array of band name strings.
+func (b *Band) UnmarshalJSON(data []byte) error {
+	var names []string
+	if err := json.Unmarshal(data, &names); err != nil {
+		return err
+	}
+	var result Band
+	for _, name := range names {
+		band, ok := ParseBandName(name)
+		if !ok {
+			return fmt.Errorf("unknown band name: %q", name)
+		}
+		result |= band
+	}
+	*b = result
+	return nil
+}
+
+// ParseBandName parses a single band name and returns the corresponding Band.
+// Accepts aliases: "L6" maps to E6, "E5" maps to L5|E5b.
+func ParseBandName(s string) (Band, bool) {
+	for _, bn := range bandNames {
+		if strings.EqualFold(bn.name, s) {
+			return bn.band, true
+		}
+	}
+	if strings.EqualFold(s, "L6") {
+		return BandE6, true
+	}
+	return 0, false
+}
+
 // SignalSet returns the set of signals for a given GNSS in the Band.
 func (b Band) SignalSet(gs ...GNSS) SignalSet {
 	ss := SignalSet(0)
@@ -438,4 +509,50 @@ func init() {
 		n, _, _ := strings.Cut(sigName[sig], " ")
 		sigNameMap[g][n] = sig
 	}
+}
+
+var signalIDBandTable = [...]struct {
+	s      string
+	prefix bool
+	band   Band
+}{
+	// Exact matches for composite bands
+	{"E5", false, BandL5 | BandE5b},    // Galileo ALTBOC
+	{"B2a+b", false, BandL5 | BandE5b}, // BeiDou B2a+b
+	// L1 band
+	{"L1", true, BandL1},
+	{"E1", true, BandL1},
+	{"B1", true, BandL1},
+	// L2 band
+	{"L2", true, BandL2},
+	// L5 band (B2a before B2, E5b before E5)
+	{"B2a", true, BandL5},
+	{"L5", true, BandL5},
+	{"E5a", true, BandL5},
+	// E5b band
+	{"E5b", true, BandE5b},
+	{"B2", true, BandE5b},  // remaining B2: B2I, B2Q, B2b
+	{"L3", true, BandE5b},  // GLONASS L3
+	// E6 band
+	{"E6", true, BandE6},
+	{"L6", true, BandE6},
+	{"B3", true, BandE6},
+}
+
+// SignalIDBand returns the frequency band for a signal identified by GNSS and SignalID.
+// Returns 0 for unknown or unmapped signals (e.g. NavIC S-band).
+func SignalIDBand(gnss GNSS, id SignalID) Band {
+	s := string(id)
+	for _, entry := range signalIDBandTable {
+		if entry.prefix {
+			if strings.HasPrefix(s, entry.s) {
+				return entry.band
+			}
+		} else {
+			if s == entry.s {
+				return entry.band
+			}
+		}
+	}
+	return 0
 }

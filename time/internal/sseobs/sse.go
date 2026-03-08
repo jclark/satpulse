@@ -101,8 +101,9 @@ type QualitySSE struct {
 	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
 	NumSVInView  opt.Val[uint16] `json:"numSVInView,omitzero"`
-	// Signals used in the solution
-	SignalsUsed gpsprot.SignalSet `json:"signalsUsed,omitzero"`
+	// Constellations and bands used in the solution
+	GNSSUsed  gpsprot.GNSSSet `json:"gnssUsed,omitzero"`
+	BandsUsed gpsprot.Band    `json:"bandsUsed,omitzero"`
 	// Correction metadata
 	DiffAge       opt.Val[float64] `json:"diffAge,omitzero"`
 	RTCMRefBaseID opt.Val[uint16]  `json:"rtcmRefBaseID,omitzero"`
@@ -300,6 +301,7 @@ func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
 	if msg.DiffAge.IsSet() {
 		q.DiffAge.Set(msg.DiffAge.Get().Seconds())
 	}
-	q.SignalsUsed = msg.SignalsUsed
+	q.GNSSUsed = msg.GNSSUsed
+	q.BandsUsed = msg.BandsUsed
 	return q
 }

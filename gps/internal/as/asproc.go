@@ -130,6 +130,12 @@ func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {
 	if tm == nil && sv == nil && sats == nil && posG == nil && posE == nil && velG == nil && velE == nil {
 		return false
 	}
+	if sats != nil {
+		if ne := p.curNavEpochMsg; ne != nil {
+			ne.GNSSUsed |= sats.GNSSUsed()
+			ne.BandsUsed |= sats.BandsUsed()
+		}
+	}
 	if h != nil {
 		if sats != nil {
 			h.Satellites(sats, tRead)
