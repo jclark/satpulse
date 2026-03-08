@@ -211,10 +211,68 @@ func sysFreqToSignalID(sysStatus uncmsg.SysID, freqStatus uncmsg.FreqID) gpsprot
 	if gnss == 0 {
 		return gpsprot.SigIDInvalid
 	}
-
 	key := freqKey{gnss: gnss, freqID: freqStatus}
 	if signalID, ok := freqMap[key]; ok {
 		return signalID
 	}
 	return gpsprot.SigIDInvalid
+}
+
+// satellitesMerge merges SATSINFO per-signal detail with BESTSAT usage information.
+// When bestSat is nil, returns sats unchanged (UsedValidity remains Invalid).
+// When sats is nil, returns nil (BESTSAT alone lacks signal detail).
+// When both are present, annotates each signal's Used flag based on BESTSAT's
+// per-satellite band bitmask.
+func satellitesMerge(sats *gpsprot.SatellitesMsg, bestSat []uncmsg.BestSatEntry) *gpsprot.SatellitesMsg {
+	if bestSat == nil {
+		return sats
+	}
+	if sats == nil {
+		return nil
+	}
+	usedMap := make(map[gpsprot.SVID]gpsprot.Band, len(bestSat))
+	for _, s := range bestSat {
+		gnss := satSysToGNSS(s.System)
+		if gnss == 0 {
+			continue
+		}
+		prn := s.SatID.PRN()
+		if prn > 255 {
+			continue
+		}
+		num, ok := prnToNum(gnss, byte(prn))
+		if !ok {
+			continue
+		}
+		usedMap[gpsprot.SVID{GNSS: gnss, Num: num}] = sigMaskToBand(s.System, s.SigMask)
+	}
+	result := satellitesCopy(sats)
+	for i := range result.SVs {
+		sv := &result.SVs[i]
+		bands, ok := usedMap[sv.ID]
+		if !ok {
+			continue
+		}
+		sv.Used = true
+		for j := range sv.Signals {
+			sig := &sv.Signals[j]
+			sig.Used = gpsprot.SignalIDBand(sv.ID.GNSS, sig.ID)&bands != 0
+		}
+	}
+	result.UsedValidity = gpsprot.SatelliteUsedSignal
+	return result
+}
+
+// satellitesCopy creates a deep copy of the SatellitesMsg.
+// SVs and Signals slices are copied; LookAngles pointers are shared.
+func satellitesCopy(sats *gpsprot.SatellitesMsg) *gpsprot.SatellitesMsg {
+	copied := *sats
+	copied.SVs = make([]gpsprot.SVInfo, len(sats.SVs))
+	copy(copied.SVs, sats.SVs)
+	for i := range sats.SVs {
+		sv := &copied.SVs[i]
+		sv.Signals = make([]gpsprot.SignalInfo, len(sv.Signals))
+		copy(sv.Signals, sats.SVs[i].Signals)
+	}
+	return &copied
 }
