@@ -1,6 +1,7 @@
 package unc
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -42,6 +43,10 @@ func (h *testMsgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 
 func (h *testMsgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	h.msgs = append(h.msgs, testHandledMsg{"time", msg, tRead})
+}
+
+func (h *testMsgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
+	h.msgs = append(h.msgs, testHandledMsg{"satellites", msg, tRead})
 }
 
 func makeMsg(week uint16, ms uint32, body uncmsg.MsgBody) *uncmsg.Msg {
@@ -713,5 +718,264 @@ func TestDefaultHandlerInvariant(t *testing.T) {
 	ap := NewAsciiPacketProcessor(mgr)
 	if ap.mh == nil {
 		t.Error("AsciiPacketProcessor.mh should not be nil after construction")
+	}
+}
+
+func TestSatellitesMerge(t *testing.T) {
+	la := &gpsprot.LookAngles{Azimuth: 100, Elevation: 45}
+	tests := []struct {
+		name     string
+		sats     *gpsprot.SatellitesMsg
+		bestSat  []uncmsg.BestSatEntry
+		expected *gpsprot.SatellitesMsg
+	}{
+		{
+			name:     "bestSat nil returns sats unchanged",
+			sats:     &gpsprot.SatellitesMsg{Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedInvalid},
+			bestSat:  nil,
+			expected: &gpsprot.SatellitesMsg{Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedInvalid},
+		},
+		{
+			name:     "sats nil returns nil",
+			sats:     nil,
+			bestSat:  []uncmsg.BestSatEntry{{System: uncmsg.SatSysGPS, SatID: uncmsg.MakeSatID(1), SigMask: uncmsg.SigUsedGPSL1}},
+			expected: nil,
+		},
+		{
+			name: "GPS L1+L2 used marks correct signals",
+			sats: &gpsprot.SatellitesMsg{
+				Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedInvalid,
+				SVs: []gpsprot.SVInfo{{
+					ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: la,
+					Signals: []gpsprot.SignalInfo{
+						{ID: gpsprot.SigIDGPSL1CA, CN0: 40},
+						{ID: gpsprot.SigIDGPSL2P, CN0: 35},
+					},
+				}},
+			},
+			bestSat: []uncmsg.BestSatEntry{
+				{System: uncmsg.SatSysGPS, SatID: uncmsg.MakeSatID(5), SigMask: uncmsg.SigUsedGPSL1 | uncmsg.SigUsedGPSL2},
+			},
+			expected: &gpsprot.SatellitesMsg{
+				Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedSignal,
+				SVs: []gpsprot.SVInfo{{
+					ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: la, Used: true,
+					Signals: []gpsprot.SignalInfo{
+						{ID: gpsprot.SigIDGPSL1CA, CN0: 40, Used: true},
+						{ID: gpsprot.SigIDGPSL2P, CN0: 35, Used: true},
+					},
+				}},
+			},
+		},
+		{
+			name: "L1 only does not mark L5 used",
+			sats: &gpsprot.SatellitesMsg{
+				Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedInvalid,
+				SVs: []gpsprot.SVInfo{{
+					ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 13}, LookAngles: la,
+					Signals: []gpsprot.SignalInfo{
+						{ID: gpsprot.SigIDGPSL1CA, CN0: 42},
+						{ID: gpsprot.SigIDGPSL5I, CN0: 38},
+					},
+				}},
+			},
+			bestSat: []uncmsg.BestSatEntry{
+				{System: uncmsg.SatSysGPS, SatID: uncmsg.MakeSatID(13), SigMask: uncmsg.SigUsedGPSL1},
+			},
+			expected: &gpsprot.SatellitesMsg{
+				Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedSignal,
+				SVs: []gpsprot.SVInfo{{
+					ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 13}, LookAngles: la, Used: true,
+					Signals: []gpsprot.SignalInfo{
+						{ID: gpsprot.SigIDGPSL1CA, CN0: 42, Used: true},
+						{ID: gpsprot.SigIDGPSL5I, CN0: 38, Used: false},
+					},
+				}},
+			},
+		},
+		{
+			name: "SV not in BESTSAT remains unused",
+			sats: &gpsprot.SatellitesMsg{
+				Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedInvalid,
+				SVs: []gpsprot.SVInfo{
+					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: la,
+						Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 40}}},
+					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: la,
+						Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 30}}},
+				},
+			},
+			bestSat: []uncmsg.BestSatEntry{
+				{System: uncmsg.SatSysGPS, SatID: uncmsg.MakeSatID(5), SigMask: uncmsg.SigUsedGPSL1},
+			},
+			expected: &gpsprot.SatellitesMsg{
+				Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedSignal,
+				SVs: []gpsprot.SVInfo{
+					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: la, Used: true,
+						Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 40, Used: true}}},
+					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: la,
+						Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 30}}},
+				},
+			},
+		},
+		{
+			name: "Galileo E1+E5a",
+			sats: &gpsprot.SatellitesMsg{
+				Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedInvalid,
+				SVs: []gpsprot.SVInfo{{
+					ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 5}, LookAngles: la,
+					Signals: []gpsprot.SignalInfo{
+						{ID: gpsprot.SigIDGALE1C, CN0: 45},
+						{ID: gpsprot.SigIDGALE5aQ, CN0: 40},
+					},
+				}},
+			},
+			bestSat: []uncmsg.BestSatEntry{
+				{System: uncmsg.SatSysGALILEO, SatID: uncmsg.MakeSatID(5), SigMask: uncmsg.SigUsedGALE1 | uncmsg.SigUsedGALE5A},
+			},
+			expected: &gpsprot.SatellitesMsg{
+				Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedSignal,
+				SVs: []gpsprot.SVInfo{{
+					ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 5}, LookAngles: la, Used: true,
+					Signals: []gpsprot.SignalInfo{
+						{ID: gpsprot.SigIDGALE1C, CN0: 45, Used: true},
+						{ID: gpsprot.SigIDGALE5aQ, CN0: 40, Used: true},
+					},
+				}},
+			},
+		},
+		{
+			name: "GLONASS PRN conversion",
+			sats: &gpsprot.SatellitesMsg{
+				Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedInvalid,
+				SVs: []gpsprot.SVInfo{{
+					ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 5}, LookAngles: la,
+					Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGLOL1, CN0: 42}},
+				}},
+			},
+			bestSat: []uncmsg.BestSatEntry{
+				// GLONASS PRN 42 = slot 5 (42-37)
+				{System: uncmsg.SatSysGLONASS, SatID: uncmsg.MakeSatID(42), SigMask: uncmsg.SigUsedGLOL1},
+			},
+			expected: &gpsprot.SatellitesMsg{
+				Tag: TagBinary, NativeMsgID: "SATSINFO", UsedValidity: gpsprot.SatelliteUsedSignal,
+				SVs: []gpsprot.SVInfo{{
+					ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 5}, LookAngles: la, Used: true,
+					Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGLOL1, CN0: 42, Used: true}},
+				}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := satellitesMerge(tt.sats, tt.bestSat)
+			if !reflect.DeepEqual(result, tt.expected) {
+				t.Errorf("satellitesMerge() =\n%+v\nexpected\n%+v", result, tt.expected)
+			}
+		})
+	}
+}
+
+// simpleSatsInfo creates a SATSINFO message with a few satellites for testing.
+func simpleSatsInfo(week uint16, ms uint32) *uncmsg.Msg {
+	return makeMsg(week, ms, &uncmsg.SatsInfo{
+		SatsInfoInitChunk: uncmsg.SatsInfoInitChunk{SatNumber: 2},
+		Sats: []uncmsg.SatsInfoSat{
+			{SatsInfoSatChunk: uncmsg.SatsInfoSatChunk{PRN: 5, Azimuth: 100, Elevation: 45}, Freqs: []uncmsg.SatsInfoFreq{
+				{SysStatus: uncmsg.SysGPS, FreqStatus: uncmsg.FreqGPSL1CA, SNR: 40},
+			}},
+			{SatsInfoSatChunk: uncmsg.SatsInfoSatChunk{PRN: 5, Azimuth: 150, Elevation: 60}, Freqs: []uncmsg.SatsInfoFreq{
+				{SysStatus: uncmsg.SysGAL, FreqStatus: uncmsg.FreqGALE1C, SNR: 45},
+			}},
+		},
+	})
+}
+
+// simpleBestSat creates a BESTSAT message for testing.
+func simpleBestSat(week uint16, ms uint32) *uncmsg.Msg {
+	return makeMsg(week, ms, &uncmsg.BestSat{
+		BestSatInitChunk: uncmsg.BestSatInitChunk{NumEntries: 2},
+		Sats: []uncmsg.BestSatEntry{
+			{System: uncmsg.SatSysGPS, SatID: uncmsg.MakeSatID(5), SigMask: uncmsg.SigUsedGPSL1},
+			{System: uncmsg.SatSysGALILEO, SatID: uncmsg.MakeSatID(5), SigMask: uncmsg.SigUsedGALE1},
+		},
+	})
+}
+
+func getSatsMsg(h *testMsgHandler) *gpsprot.SatellitesMsg {
+	for _, m := range h.msgs {
+		if m.msgType == "satellites" {
+			return m.msg.(*gpsprot.SatellitesMsg)
+		}
+	}
+	return nil
+}
+
+func TestSatsDispatchMerge(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+	// Establish pattern: send both SATSINFO+BESTSAT for 3 epochs
+	for i := range 3 {
+		ms := uint32(100000 + i*1000)
+		pp.dispatch(simpleSatsInfo(2350, ms), time.Unix(int64(i+1), 0), TagBinary)
+		pp.dispatch(simpleBestSat(2350, ms), time.Unix(int64(i+1), 0), TagBinary)
+	}
+	h.msgs = nil
+	// Epoch 4: SATSINFO should wait, then merge when BESTSAT arrives
+	pp.dispatch(simpleSatsInfo(2350, 103000), time.Unix(10, 0), TagBinary)
+	if getSatsMsg(h) != nil {
+		t.Fatal("SATSINFO should wait for BESTSAT")
+	}
+	pp.dispatch(simpleBestSat(2350, 103000), time.Unix(10, 0), TagBinary)
+	sm := getSatsMsg(h)
+	if sm == nil {
+		t.Fatal("expected merged SatellitesMsg")
+	}
+	if sm.UsedValidity != gpsprot.SatelliteUsedSignal {
+		t.Errorf("UsedValidity = %v, want SatelliteUsedSignal", sm.UsedValidity)
+	}
+}
+
+func TestSatsDispatchSatsInfoOnly(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+	// Send SATSINFO in epoch 1 -- during first epochs, maybeFlushSats waits
+	pp.dispatch(simpleSatsInfo(2350, 100000), time.Unix(1, 0), TagBinary)
+	if getSatsMsg(h) != nil {
+		t.Error("expected no SatellitesMsg during first epoch")
+	}
+	// Epoch boundary flushes buffered SATSINFO
+	pp.dispatch(makeMsg(2350, 101000, &uncmsg.StaDOP{StaDOPFixed: uncmsg.StaDOPFixed{GDOP: 2.0}}), time.Unix(2, 0), TagBinary)
+	sm := getSatsMsg(h)
+	if sm == nil {
+		t.Fatal("expected SatellitesMsg from FlushNavEpoch backstop")
+	}
+	if sm.UsedValidity != gpsprot.SatelliteUsedInvalid {
+		t.Errorf("UsedValidity = %v, want SatelliteUsedInvalid", sm.UsedValidity)
+	}
+}
+
+func TestSatsDispatchBestSatOnly(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+	// Advance past 3 epochs with no sat messages
+	ms := uint32(100000)
+	for i := range 3 {
+		pp.dispatch(makeMsg(2350, ms, &uncmsg.StaDOP{StaDOPFixed: uncmsg.StaDOPFixed{GDOP: 2.0}}), time.Unix(int64(i+1), 0), TagBinary)
+		ms += 1000
+	}
+	h.msgs = nil
+	// BESTSAT alone produces no SatellitesMsg (but sets GNSSUsed on NavEpochMsg)
+	pp.dispatch(simpleBestSat(2350, ms), time.Unix(10, 0), TagBinary)
+	if getSatsMsg(h) != nil {
+		t.Error("expected no SatellitesMsg when only BESTSAT (no SATSINFO)")
+	}
+	if pp.curEpochMsg.GNSSUsed == 0 {
+		t.Error("GNSSUsed should be set from BESTSAT")
 	}
 }

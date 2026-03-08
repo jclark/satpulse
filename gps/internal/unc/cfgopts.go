@@ -97,11 +97,14 @@ func addUTCBCmd(cmds *[]string, enabledGNSS gpsprot.GNSSSet, gnss gpsprot.GNSS, 
 // generateSatsMsgCommands maps Sats flags to Unicore message commands
 func generateSatsMsgCommands(flags gpsprot.SatsMsgFlags) []string {
 	var cmds []string
-	// SATSINFOB provides both satellite and signal info
+	// SATSINFOB provides satellite and signal info;
+	// BESTSATB provides which satellites are used in the solution.
 	if flags&gpsprot.SatsMsgAny != 0 {
 		cmds = append(cmds, "SATSINFOB 1")
+		cmds = append(cmds, "BESTSATB 1")
 	} else {
 		cmds = append(cmds, "UNLOG SATSINFOB")
+		cmds = append(cmds, "UNLOG BESTSATB")
 	}
 	return cmds
 }

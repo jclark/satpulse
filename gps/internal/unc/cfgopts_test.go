@@ -268,34 +268,37 @@ func TestQualityMessages(t *testing.T) {
 func TestSatsMessages(t *testing.T) {
 	tests := []nativeConfigPropsTestCase{
 		{
-			name: "enable SATSINFOB for SatsMsgSat",
+			name: "enable SATSINFOB and BESTSATB for SatsMsgSat",
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.SatsMsg.Set(gpsprot.SatsMsgSat)
 			},
 			expectedCmds: []string{
 				"SATSINFOB 1",
+				"BESTSATB 1",
 			},
 		},
 		{
-			name: "enable SATSINFOB for SatsMsgSignal",
+			name: "enable SATSINFOB and BESTSATB for SatsMsgSignal",
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.SatsMsg.Set(gpsprot.SatsMsgSignal)
 			},
 			expectedCmds: []string{
 				"SATSINFOB 1",
+				"BESTSATB 1",
 			},
 		},
 		{
-			name: "enable SATSINFOB for SatsMsgAny",
+			name: "enable SATSINFOB and BESTSATB for SatsMsgAny",
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.SatsMsg.Set(gpsprot.SatsMsgAny)
 			},
 			expectedCmds: []string{
 				"SATSINFOB 1",
+				"BESTSATB 1",
 			},
 		},
 		{
-			name: "disable SATSINFOB",
+			name: "disable SATSINFOB and BESTSATB",
 			currentState: []string{
 				"SATSINFOB 1",
 			},
@@ -304,6 +307,7 @@ func TestSatsMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"UNLOG SATSINFOB",
+				"UNLOG BESTSATB",
 			},
 		},
 	}
@@ -616,6 +620,7 @@ func TestCombinedMessages(t *testing.T) {
 			expectedCmds: []string{
 				"RECTIMEB 1",
 				"SATSINFOB 1",
+				"BESTSATB 1",
 			},
 		},
 		{
@@ -628,6 +633,7 @@ func TestCombinedMessages(t *testing.T) {
 			expectedCmds: []string{
 				"RECTIMEB 1",
 				"SATSINFOB 1",
+				"BESTSATB 1",
 				"GPGGA 1",
 			},
 		},

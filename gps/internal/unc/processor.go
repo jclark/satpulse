@@ -44,6 +44,12 @@ func (p *AsciiPacketProcessor) ProcessPacket(data string, tRead time.Time) (stri
 	return msgID, err
 }
 
+// satsMsgSet tracks which satellite messages have been seen in an epoch.
+type satsMsgSet struct {
+	satsInfo bool
+	bestSat  bool
+}
+
 // packetProcessor is the common functionality between BinPacketProcessor and AsciiPacketProcessor
 type packetProcessor struct {
 	gpsprot.DefaultPacketProcessor
@@ -55,6 +61,14 @@ type packetProcessor struct {
 	curEpoch    uint64              // (week<<32 | ms) + 1; 0 = no epoch
 	curEpochMsg *gpsprot.NavEpochMsg
 	curEpochTag gpsprot.Tag
+	// Satellite message accumulation: SATSINFO and BESTSAT are combined
+	// into a single SatellitesMsg when both are available.
+	satsInfoMsg  *gpsprot.SatellitesMsg
+	bestSatSats  []uncmsg.BestSatEntry // raw BESTSAT entries for merge
+	satsTRead    time.Time             // timestamp of first message in the pair
+	curSatsMsgs  satsMsgSet            // which sat messages seen in current epoch
+	prevSatsMsgs satsMsgSet            // which sat messages seen in previous complete epoch
+	nEpochsSeen  int
 }
 
 // SetMsgHandler sets the handler for protocol-agnostic messages
@@ -126,7 +140,12 @@ func (p *packetProcessor) dispatch(msg *uncmsg.Msg, tRead time.Time, tag gpsprot
 			return false, err
 		}
 		if sm != nil {
-			h.Satellites(sm, tRead)
+			p.satsInfoMsg = sm
+			p.curSatsMsgs.satsInfo = true
+			if p.satsTRead.IsZero() {
+				p.satsTRead = tRead
+			}
+			p.maybeFlushSats()
 			return true, nil
 		}
 	case *uncmsg.GPSUTC:
@@ -141,6 +160,16 @@ func (p *packetProcessor) dispatch(msg *uncmsg.Msg, tRead time.Time, tag gpsprot
 		// Set semantics: unconditionally overwrites any BESTPOS fill values.
 		ne := p.curEpochMsg
 		ne.GNSSUsed, ne.BandsUsed = bestSatGNSSBands(body.Sats)
+		if body.Sats != nil {
+			p.bestSatSats = body.Sats
+		} else {
+			p.bestSatSats = []uncmsg.BestSatEntry{}
+		}
+		p.curSatsMsgs.bestSat = true
+		if p.satsTRead.IsZero() {
+			p.satsTRead = tRead
+		}
+		p.maybeFlushSats()
 		return true, nil
 	case *uncmsg.StaDOP:
 		staDOP(p.curEpochMsg, body)
@@ -157,17 +186,65 @@ func (p *packetProcessor) handleEpoch(hdr *uncmsg.MsgHdr, tag gpsprot.Tag, tRead
 		p.curEpoch = e
 		p.curEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
 		p.curEpochTag = tag
+		p.prevSatsMsgs = p.curSatsMsgs
+		p.curSatsMsgs = satsMsgSet{}
+		p.nEpochsSeen++
 	}
 }
 
 // FlushNavEpoch implements gpsprot.EpochFlusher.
 func (p *packetProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
+	p.flushSats()
 	msg := p.curEpochMsg
 	p.curEpochMsg = nil
 	if msg != nil {
 		msg.Tag = p.curEpochTag
 	}
 	return msg, gpsprot.PriVendorLow, p.mh
+}
+
+// maybeFlushSats decides whether to emit a SatellitesMsg or wait for more data.
+// If we have one but not both of SATSINFO and BESTSAT, we decide whether to wait
+// for the other based on whether the missing message was seen in the previous epoch.
+func (p *packetProcessor) maybeFlushSats() {
+	if p.satsInfoMsg == nil && p.bestSatSats == nil {
+		return
+	}
+	if p.satsInfoMsg != nil && p.bestSatSats != nil {
+		p.flushSats()
+		return
+	}
+	if p.nEpochsSeen < 3 {
+		return
+	}
+	if p.satsInfoMsg == nil && p.prevSatsMsgs.satsInfo {
+		return
+	}
+	if p.bestSatSats == nil && p.prevSatsMsgs.bestSat {
+		return
+	}
+	p.flushSats()
+}
+
+// flushSats merges buffered SATSINFO and BESTSAT into a single SatellitesMsg
+// and dispatches it.
+func (p *packetProcessor) flushSats() {
+	satsInfo := p.satsInfoMsg
+	bestSat := p.bestSatSats
+	if satsInfo == nil && bestSat == nil {
+		return
+	}
+	p.satsInfoMsg = nil
+	p.bestSatSats = nil
+	tRead := p.satsTRead
+	p.satsTRead = time.Time{}
+	combined := satellitesMerge(satsInfo, bestSat)
+	if combined == nil {
+		return
+	}
+	if h := p.mh; h != nil {
+		h.Satellites(combined, tRead)
+	}
 }
 
 // dispatchUTC is a generic function that dispatches *UTC messages (GPS, Galileo, BD3)
