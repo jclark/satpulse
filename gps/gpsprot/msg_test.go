@@ -72,9 +72,9 @@ func TestBandJSONMarshal(t *testing.T) {
 		{0, "null"},
 		{BandL1, `["L1"]`},
 		{BandL1 | BandL5, `["L1","L5"]`},
-		{BandL5 | BandE5b, `["E5"]`},
+		{BandL5 | BandE5b, `["L5","E5b"]`},
 		{BandL1 | BandL2 | BandE6, `["L1","L2","E6"]`},
-		{BandL1 | BandL5 | BandE5b | BandE6, `["E5","L1","E6"]`},
+		{BandL1 | BandL5 | BandE5b | BandE6, `["L1","L5","E5b","E6"]`},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.band)

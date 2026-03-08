@@ -207,8 +207,8 @@ func TestBandItems(t *testing.T) {
 		{"zero", 0, nil},
 		{"L1", BandL1, []string{"L1"}},
 		{"L1+L5", BandL1 | BandL5, []string{"L1", "L5"}},
-		{"E5 composite", BandL5 | BandE5b, []string{"E5"}},
-		{"all five", BandL1 | BandL2 | BandL5 | BandE5b | BandE6, []string{"E5", "L1", "L2", "E6"}},
+		{"L5+E5b", BandL5 | BandE5b, []string{"L5", "E5b"}},
+		{"all five", BandL1 | BandL2 | BandL5 | BandE5b | BandE6, []string{"L1", "L2", "L5", "E5b", "E6"}},
 		{"L5 only", BandL5, []string{"L5"}},
 		{"E5b only", BandE5b, []string{"E5b"}},
 	}
@@ -230,7 +230,7 @@ func TestBandString(t *testing.T) {
 		{0, ""},
 		{BandL1, "L1"},
 		{BandL1 | BandL5, "L1,L5"},
-		{BandL5 | BandE5b, "E5"},
+		{BandL5 | BandE5b, "L5,E5b"},
 		{BandL1 | BandE6, "L1,E6"},
 	}
 	for _, tt := range tests {

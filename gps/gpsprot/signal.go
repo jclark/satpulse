@@ -144,17 +144,16 @@ var bandNames = [...]struct {
 	name string
 	band Band
 }{
-	{"E5", BandL5 | BandE5b}, // composite must come before L5 and E5b
 	{"L1", BandL1},
 	{"L2", BandL2},
 	{"L5", BandL5},
 	{"E5b", BandE5b},
 	{"E6", BandE6},
+	// At end so Items() serializes as L5+E5b, but ParseBandName still accepts E5
+	{"E5", BandL5 | BandE5b},
 }
 
 // Items returns the list of band names present in the set.
-// Composites match before components: if both L5 and E5b bits are set,
-// returns ["E5"] not ["L5","E5b"].
 func (b Band) Items() []string {
 	var items []string
 	for _, bn := range bandNames {
