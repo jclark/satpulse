@@ -318,13 +318,13 @@ func (a *App) GetConnState() ConnState {
 }
 
 // GetAllSignals returns the full signal catalog for the given GNSS constellations.
-func (a *App) GetAllSignals(gnss []string) map[string][]string {
+// If gs is zero, all constellations are returned.
+func (a *App) GetAllSignals(gs gpsprot.GNSSSet) map[string][]string {
+	if gs == 0 {
+		gs = gpsprot.SigSetAll.GNSSSet()
+	}
 	m := make(map[string][]string)
-	for _, name := range gnss {
-		g, err := gpsprot.ParseGNSS(name)
-		if err != nil {
-			continue
-		}
+	for _, g := range gs.Items() {
 		sigs := gpsprot.BandAll.SignalSet(g)
 		if sigs == 0 {
 			continue
@@ -336,7 +336,7 @@ func (a *App) GetAllSignals(gnss []string) map[string][]string {
 			}
 		}
 		if len(names) > 0 {
-			m[name] = names
+			m[g.String()] = names
 		}
 	}
 	return m
