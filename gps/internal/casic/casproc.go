@@ -18,6 +18,7 @@ type PacketProcessor struct {
 	curNavEpoch    uint32               // current RunTime (0 means no epoch seen yet)
 	curNavEpochMsg *gpsprot.NavEpochMsg  // accumulated NavEpochMsg for current epoch
 	pendingNav2Dop *casbin.Nav2Dop       // buffered until FlushNavEpoch (no TOW field)
+	lastTimeGNSS   gpsprot.GNSS         // from most recent Nav2TimeUTC
 	satAccum       satAccum             // satellite info accumulator
 }
 
@@ -157,13 +158,14 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		if tm == nil {
 			return false
 		}
+		p.lastTimeGNSS = tm.GNSS
 		if p.mh != nil {
 			tm.Tag = Tag
 			p.mh.Time(tm, tRead)
 		}
 		return true
 	case *casbin.Nav2Sol:
-		tm := timeNav2Sol(mt)
+		tm := timeNav2Sol(mt, p.lastTimeGNSS)
 		posE := posECEFNav2Sol(p.curNavEpochMsg, mt)
 		velE := velECEFNav2Sol(p.curNavEpochMsg, mt)
 		if p.mh != nil {

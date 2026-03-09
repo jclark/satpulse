@@ -74,3 +74,97 @@ func TestTimeNav2TimeUTCGalileoSrc(t *testing.T) {
 		t.Errorf("GNSS = %v, want GAL", tm.GNSS)
 	}
 }
+
+// timeMsgHandler captures TimeMsg for test verification.
+type timeMsgHandler struct {
+	gpsprot.DefaultHandler
+	times []*gpsprot.TimeMsg
+}
+
+func (h *timeMsgHandler) Time(msg *gpsprot.TimeMsg, _ time.Time) {
+	h.times = append(h.times, msg)
+}
+
+// TestNav2SolGNSSFromNav2TimeUTC verifies that the processor propagates
+// the GNSS source from Nav2TimeUTC to Nav2Sol's TimeMsg.
+func TestNav2SolGNSSFromNav2TimeUTC(t *testing.T) {
+	mgr := gpsprot.NewNavEpochManager()
+	pp := NewPacketProcessor(mgr)
+	h := &timeMsgHandler{}
+	pp.SetMsgHandler(h)
+	tRead := time.Unix(1, 0)
+	serialize := func(m casbin.Msg) string {
+		pkt, err := casbin.Serialize(m)
+		if err != nil {
+			t.Fatalf("serialize %T: %v", m, err)
+		}
+		return string(pkt)
+	}
+	tests := []struct {
+		name    string
+		timeSrc casbin.Nav2TimeSrc
+		want    gpsprot.GNSS
+	}{
+		{"GPS", casbin.Nav2TimeSrcGPS, gpsprot.GPS},
+		{"BDS", casbin.Nav2TimeSrcBDS, gpsprot.BDS},
+		{"GAL", casbin.Nav2TimeSrcGAL, gpsprot.GAL},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h.times = nil
+			// Send Nav2TimeUTC to set the time source
+			pp.ProcessPacket(serialize(&casbin.Nav2TimeUTC{
+				TFlags:  casbin.Nav2TimeTOWValid | casbin.Nav2TimeReliable,
+				TimeSrc: tt.timeSrc,
+				Year:    2026, Month: 3, Day: 5,
+			}), tRead)
+			// Send Nav2Sol with a valid fix in the same epoch
+			pp.ProcessPacket(serialize(&casbin.Nav2Sol{
+				Nav2TOW:  casbin.Nav2TOW{TOW: 259200000},
+				Wn:       2356,
+				FixFlags: casbin.Nav2Fix3D,
+			}), tRead)
+			// Find the NAV2-SOL TimeMsg
+			var solMsg *gpsprot.TimeMsg
+			for _, tm := range h.times {
+				if tm.NativeMsgID == "NAV2-SOL" {
+					solMsg = tm
+				}
+			}
+			if solMsg == nil {
+				t.Fatal("no NAV2-SOL TimeMsg emitted")
+			}
+			if solMsg.GNSS != tt.want {
+				t.Errorf("GNSS = %v, want %v", solMsg.GNSS, tt.want)
+			}
+			if solMsg.TAITime == 0 {
+				t.Error("TAITime is zero")
+			}
+		})
+	}
+}
+
+// TestNav2SolGNSSWithoutNav2TimeUTC verifies that when no Nav2TimeUTC
+// has been received, Nav2Sol's TimeMsg has zero (unknown) GNSS.
+func TestNav2SolGNSSWithoutNav2TimeUTC(t *testing.T) {
+	mgr := gpsprot.NewNavEpochManager()
+	pp := NewPacketProcessor(mgr)
+	h := &timeMsgHandler{}
+	pp.SetMsgHandler(h)
+	pkt, err := casbin.Serialize(&casbin.Nav2Sol{
+		Nav2TOW:  casbin.Nav2TOW{TOW: 259200000},
+		Wn:       2356,
+		FixFlags: casbin.Nav2Fix3D,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp.ProcessPacket(string(pkt), time.Unix(1, 0))
+	if len(h.times) != 1 {
+		t.Fatalf("got %d TimeMsgs, want 1", len(h.times))
+	}
+	if h.times[0].GNSS != 0 {
+		t.Errorf("GNSS = %v, want 0 (unknown)", h.times[0].GNSS)
+	}
+}
+

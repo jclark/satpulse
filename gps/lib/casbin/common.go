@@ -41,9 +41,13 @@ const (
 type GNSSID uint8
 
 const (
-	GPS GNSSID = iota
+	GPS   GNSSID = iota
 	BDS
 	GLN
+	GAL
+	QZSS
+	SBAS
+	NAVIC
 )
 
 var clsMap = map[byte]string{

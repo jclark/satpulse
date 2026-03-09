@@ -26,7 +26,7 @@ func timeNavTimeUTC(m *casbin.NavTimeUTC) *gpsprot.TimeMsg {
 	if m.TAcc > 0 {
 		t.Accuracy = time.Duration(math.Sqrt(float64(m.TAcc)) * c * float64(time.Second))
 	}
-	t.GNSS = casicGNSSIDToGNSS(uint8(m.TimeSrc))
+	t.GNSS = gnssIDToGNSS(m.TimeSrc)
 	return &t
 }
 
@@ -51,12 +51,12 @@ func timeTimTP(m *casbin.TimTP) *gpsprot.TimeMsg {
 
 // timeNav2Sol converts Nav2Sol to TimeMsg.
 // Returns nil when the fix is below 2D.
-func timeNav2Sol(m *casbin.Nav2Sol) *gpsprot.TimeMsg {
+func timeNav2Sol(m *casbin.Nav2Sol, gnss gpsprot.GNSS) *gpsprot.TimeMsg {
 	if m.FixFlags < casbin.Nav2Fix2D {
 		return nil
 	}
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV2-SOL"}
-	t.GNSS = gpsprot.GPS
+	t.GNSS = gnss
 	t.TAITime = ptime.GPS(int16(m.Wn), time.Duration(m.TOW)*time.Millisecond)
 	return &t
 }
@@ -92,28 +92,45 @@ func timeNav2TimeUTC(m *casbin.Nav2TimeUTC) *gpsprot.TimeMsg {
 	if m.TAcc > 0 {
 		t.Accuracy = time.Duration(m.TAcc)
 	}
-	t.GNSS = casicGNSSIDToGNSS(uint8(m.TimeSrc))
+	t.GNSS = nav2TimeSrcToGNSS(m.TimeSrc)
 	return &t
 }
 
-// casicGNSSIDToGNSS maps CASIC GNSS ID to gpsprot.GNSS.
-// The same numbering is used by V5 GNSSID, V6 Nav2TimeSrc, and V6 NAV2-SIG gnssid.
-func casicGNSSIDToGNSS(id uint8) gpsprot.GNSS {
+// gnssIDToGNSS maps CASIC GNSSID to gpsprot.GNSS.
+func gnssIDToGNSS(id casbin.GNSSID) gpsprot.GNSS {
 	switch id {
-	case 0:
+	case casbin.GPS:
 		return gpsprot.GPS
-	case 1:
+	case casbin.BDS:
 		return gpsprot.BDS
-	case 2:
+	case casbin.GLN:
 		return gpsprot.GLO
-	case 3:
+	case casbin.GAL:
 		return gpsprot.GAL
-	case 4:
+	case casbin.QZSS:
 		return gpsprot.QZSS
-	case 5:
+	case casbin.SBAS:
 		return gpsprot.SBAS
-	case 6:
+	case casbin.NAVIC:
 		return gpsprot.NAVIC
 	}
 	return 0
 }
+
+// nav2TimeSrcToGNSS maps V6 Nav2TimeSrc to gpsprot.GNSS.
+func nav2TimeSrcToGNSS(id casbin.Nav2TimeSrc) gpsprot.GNSS {
+	switch id {
+	case casbin.Nav2TimeSrcGPS:
+		return gpsprot.GPS
+	case casbin.Nav2TimeSrcBDS:
+		return gpsprot.BDS
+	case casbin.Nav2TimeSrcGLN:
+		return gpsprot.GLO
+	case casbin.Nav2TimeSrcGAL:
+		return gpsprot.GAL
+	case casbin.Nav2TimeSrcIRN:
+		return gpsprot.NAVIC
+	}
+	return 0
+}
+

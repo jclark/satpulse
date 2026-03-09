@@ -33,7 +33,7 @@ func casicSVID(gnss gpsprot.GNSS, svid uint8) gpsprot.SVID {
 // convertNavSatInfo converts CASIC satellite info to gpsprot format.
 // Filters out satellites with CNO == 0 (no signal lock).
 func convertNavSatInfo(fixed *casbin.NavSatInfoFixed, svs []casbin.NavSVInfo) []gpsprot.SVInfo {
-	gnss := casicGNSSIDToGNSS(uint8(fixed.System))
+	gnss := gnssIDToGNSS(fixed.System)
 	sigID := casicSignalID[fixed.System]
 	result := make([]gpsprot.SVInfo, 0, len(svs))
 	for i := range svs {
@@ -80,8 +80,8 @@ var casicSigIDMap = map[casbin.SigID]gpsprot.SignalID{
 // nav2SigSVID converts NAV2-SIG GNSSID and SVID to gpsprot.SVID.
 // Unlike V5 where SBAS/QZSS are embedded in GPS messages by PRN range,
 // V6 NAV2-SIG has explicit GNSS IDs. SBAS PRNs need offset subtraction (PRN-100).
-func nav2SigSVID(gnssID uint8, svid uint8) gpsprot.SVID {
-	gnss := casicGNSSIDToGNSS(gnssID)
+func nav2SigSVID(gnssID casbin.GNSSID, svid uint8) gpsprot.SVID {
+	gnss := gnssIDToGNSS(gnssID)
 	if gnss == gpsprot.SBAS {
 		return gpsprot.SVID{GNSS: gpsprot.SBAS, Num: svid - 100}
 	}
