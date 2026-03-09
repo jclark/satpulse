@@ -227,12 +227,52 @@ func (um *UBXMsg) newMatcher() responseMatcher {
 
 func (cm *CASBINMsg) newMatcher() responseMatcher {
 	mid := casbin.MakeMsgID(cm.Class, cm.ID)
+	if mid == casbin.CfgMsgID && len(cm.Payload.Values) >= 3 {
+		rate, _ := cm.Payload.Values[2].(int64)
+		if rate == 0xFFFF {
+			cls, _ := cm.Payload.Values[0].(int64)
+			id, _ := cm.Payload.Values[1].(int64)
+			return &casbinPollMatcher{
+				sentMsgID:   mid,
+				polledMsgID: casbin.MakeMsgID(byte(cls), byte(id)),
+			}
+		}
+	}
 	return &ubxLikeMatcher[casbin.MsgID]{
 		expectedTag: gpsreg.TagCASICBin,
 		sentMsgID:   mid,
 		expectAck:   mid.CfgClass(),
 		parse:       parseCASBIN,
 	}
+}
+
+// casbinPollMatcher handles CASIC CFG-MSG polls (rate=0xFFFF).
+// CASIC polls via CFG-MSG; the response is an ACK followed by the polled message.
+type casbinPollMatcher struct {
+	sentMsgID   casbin.MsgID // CFG-MSG, for ACK matching
+	polledMsgID casbin.MsgID // the message being polled
+}
+
+func (m *casbinPollMatcher) match(tag gpsprot.Tag, data string) (ResponseKind, string) {
+	if tag != gpsreg.TagCASICBin {
+		return NotResponse, ""
+	}
+	p, err := parseCASBIN(data)
+	if err != nil {
+		return NotResponse, ""
+	}
+	if p.ackedID == m.sentMsgID {
+		switch p.ack {
+		case isAckAck:
+			return AckResponse, ""
+		case isAckNak:
+			return AckResponse, AckNak
+		}
+	}
+	if p.msgID == m.polledMsgID {
+		return OtherResponse, ""
+	}
+	return NotResponse, ""
 }
 
 func (am *ASBINMsg) newMatcher() responseMatcher {
