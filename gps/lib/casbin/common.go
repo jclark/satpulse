@@ -3,6 +3,7 @@ package casbin
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -246,6 +247,21 @@ func PackMsg(mid MsgID, payload []byte) ([]byte, error) {
 func PacketMsgID[B ~string | ~[]byte](packet B) MsgID {
 	return MakeMsgID(packet[4], packet[5])
 }
+
+// Latin1Z32 is a [32]byte that JSON-marshals as a Latin-1 nul-terminated string.
+type Latin1Z32 [32]byte
+
+func latin1ZToString(chars []byte) string {
+	for i, ch := range chars {
+		if ch == 0 {
+			return string(chars[:i])
+		}
+	}
+	return string(chars)
+}
+
+func (z Latin1Z32) String() string               { return latin1ZToString(z[:]) }
+func (z Latin1Z32) MarshalJSON() ([]byte, error) { return json.Marshal(z.String()) }
 
 // Checksum computes the CASIC checksum for a complete packet (without the checksum field).
 func Checksum(pkt []byte) uint32 {

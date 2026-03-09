@@ -58,7 +58,6 @@ const (
 	MonCwiID  MsgID = clsMon | (0x00 << 8)
 	MonRfeID  MsgID = clsMon | (0x01 << 8)
 	MonHistID MsgID = clsMon | (0x02 << 8)
-	MonVerID  MsgID = clsMon | (0x04 << 8)
 	MonCpuID  MsgID = clsMon | (0x05 << 8)
 	MonIcvID  MsgID = clsMon | (0x06 << 8)
 	MonModID  MsgID = clsMon | (0x07 << 8)
@@ -148,7 +147,6 @@ func init() {
 	idNameMap[MonCwiID] = "CWI"
 	idNameMap[MonRfeID] = "RFE"
 	idNameMap[MonHistID] = "HIST"
-	idNameMap[MonVerID] = "VER"
 	idNameMap[MonCpuID] = "CPU"
 	idNameMap[MonIcvID] = "ICV"
 	idNameMap[MonModID] = "MOD"
