@@ -49,6 +49,8 @@ git_hash=$(git log -1 --format="%h")
 cmd_version="${version}-pre.${git_date}.${git_hash}"
 if ! git diff-index --quiet HEAD 2>/dev/null; then
     cmd_version="${cmd_version}.dirty"
+elif [ "$(git describe --tags --exact-match 2>/dev/null)" = "v${version}" ]; then
+    cmd_version="${version}"
 fi
 
 # Create output directory
