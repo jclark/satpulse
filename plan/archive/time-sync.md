@@ -419,84 +419,34 @@ Done:
   * PostPulse events (may require waiting)
 * support 50% duty cycle with both edges
 
-Still to do:
-* exit tracking when proportion of abnormal samples in a configurable window is greater than configurable value
-* Add phcsync Config parameters to schema based on code plus comments
+Also done:
+* exit tracking when proportion of abnormal samples in a configurable window is greater than configurable value (BadSampleRatioLimit + BadSampleWindow)
+* pulseWidth is now auto-detected; config field deprecated
+
+Remaining issues:
+* Add phcsync Config parameters to JSON schema (#224)
+* Estimate error in system clock when converting between PHC and system clock time domains (#184)
+
+Nits/polish (no issues):
+* Validation of limits in Config parameters relative to each other
+* PulseWidthTolerance won't work well with very short pulses
 * better error messages when timemsg buffered messages are too old
 
-Nits/polish:
-* How should we make use of specified pulseWidth?
-  * Allow pulses > 0.5
-  * Validate expectations
-  * Round
-* Validation of limits in Config parameters relative to each other
-* PulseWidthTolerance won't work well with very short pulses (e.g. 100ns)
-* Estimate error in system clock and also use that when we are estimating monotonic time of messages
+### Phase F - gather better data
 
-Things to consider:
-* Consider whether we still need era concept. Used currently:
-  * at startup, to get rid of stale timestamps
-  * after initial step (in converging mode)
-  * after compensate step
-  * think we still need this
-* more robust transition between converging/tracking mode, by blending Kp/Ki parameters for initial period during tracking
-  * may not be necessary - have already implemented more stringent test for end of convergence
-* Do we need a MAD upper gate?
-
-### Phase F - gather better data (in progress)
-
-Use Rubidium oscillator with TAPR TICC to gather better data for clock model. 
-
-Run some simulations to determine better Kp/Ki values for converging/tracking
-
-Better data about kinds of GNSS anomaly
+In ../clock-model repo. Use Rubidium oscillator with TAPR TICC to gather better data for clock model.
 
 ### Phase G - finish up
 
-#### G.1 Document
-
-* Finalize and document phcsync tuneable parameters in man page
-* Blog on design
-
-#### G.2 Monitor time messages during tracking
-
-* we know is that at monotonic time m1 we received a message telling us the GNSS time solution said it was g1
-* maintain a sequence of (m,g) pairs
-* use this we can then make an estimate of the TAI time corresponding to a monotonic time
-* use delay computed in init stage
-* this can be used as basis for generating samples without PHC
-* have configurable behaviour if our calculated PHC time is different from time messages time
-  * in tracking mode we can more straightforwardly calculate monotonic time of pulse, because we can assume PHC is accurate
-  * this could happen during cold start of old receiver with firmware with out of date leap second when using NMEA
-  * could also happen with buffer overflow
-
-#### G.3 Compare side-by-side
-
-It would be useful to be able to run new program and old program at the same time, seeing the same data
-- Add index property to phc section in config file for it to use a vclock (see issue #26) - implement this on master branch
-- How to distinguish system log entries? One would run under systemd, one would not.
-- How to have different clock path? Specify different logging directory for new one.
-- Both need access to the same serial port. We can do this by testing on a machine where GNSS receiver has two serial ports.
-
-#### G.4 Real-life testing
-
-Run on multiple machines for at least a week.
+* G.2 Monitor time messages during tracking (#182), basis for serial-only chrony samples (#77)
 
 ### Phase H - holdover
 
-TBD
+#199 (PHC-based), #152 (GPSDO-based)
 
 ### Phase I - Upgrade observability to expose full sync mode
 
-After completing the migration to phcsync.Controller, we have follow-up tasks to upgrade from binary sync state (in sync / out of sync) to richer sync mode. This could be done before holdover, while we have modes (reset / converging / tracking), but is probably best postponed to after holdover, when we have complete set of modes (reset / converging / tracking / holdover / recovering).
-
-1. **Upgrade clock log format** - Change the sync field in the clock log from 0/1 to either:
-   - Mode name string ("reset", "converging", "tracking")
-   - Numeric mode value (0, 1, 2)
-   - This requires updating any scripts that parse the clock log format
-
-2. **Upgrade Prometheus metrics** - Add richer mode information:
-   - Consider adding a new `satpulse_phc_mode` gauge with labels for each mode
+#177
    - Or add mode as a label to existing metrics
    - Keep the existing `satpulse_phc_sync_status` gauge for backward compatibility
    - This allows monitoring systems to distinguish between converging and tracking states
