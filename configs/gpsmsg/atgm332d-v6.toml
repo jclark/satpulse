@@ -5,12 +5,14 @@
 # Zhongke Microelectronics  (icofchina.com and hzzkw.com) CASIC binary protocol
 # Default baud rate: 115200
 
-# Poll MON-VER to get firmware/hardware version
+# Poll MON-VER via CFG-MSG with rate=0xFFFF for one-time output
 [[casbin]]
 tag = "get-version"
 description = "Query firmware and hardware version"
-class = 0x0A
-id = 0x04
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x0A, 0x04, 0xFFFF]
 
 # CFG-NAVBAND: Signal band configuration
 # Payload: U1 sigBandAuto, U1 res1, U2 res2, U4 sigidMaskFix, U4 sigidMask
