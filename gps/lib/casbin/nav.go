@@ -516,7 +516,7 @@ func (m *Nav2SigFixed) NavEpoch() uint32 { return m.TOW }
 
 // Nav2SigInfo is a per-signal entry in NAV2-SIG (16 bytes each)
 type Nav2SigInfo struct {
-	GNSSID   uint8  // GNSS ID (GPS=0, BDS=1, GLN=2, GAL=3, QZSS=4, SBAS=5, IRNSS=6)
+	GNSSID   GNSSID
 	SVID     uint8  // satellite ID (raw PRN, except QZSS=PRN-192)
 	SigID    SigID  // signal band ID
 	FreqID   uint8  // GLONASS frequency ID; undefined for other constellations
