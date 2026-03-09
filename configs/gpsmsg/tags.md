@@ -35,6 +35,7 @@ Individual tags for each NMEA sentence type:
 | `nmea-rmc-off` | Disable RMC |
 | `nmea-zda` | Enable ZDA (time and date) |
 | `nmea-zda-off` | Disable ZDA |
+| `nmea-off` | Disable all NMEA messages |
 | `nmea-daemon` | Enable RMC, GGA, GSV, GSA (messages used by satpulse daemon) |
 
 ## Binary message control

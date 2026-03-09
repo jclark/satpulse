@@ -457,6 +457,82 @@ id = 0x01
 payload.types = "U1U1U2"
 payload.values = [0x4E, 0x01, 0]
 
+# Disable VTG
+[[casbin]]
+tag = "nmea-vtg-off"
+description = "Disable NMEA VTG output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x05, 0]
+
+# Disable ZDA
+[[casbin]]
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x08, 0]
+
+# Disable all NMEA messages (GGA, GLL, GSA, GSV, RMC, VTG, ZDA)
+# GGA
+[[casbin]]
+tag = "nmea-off"
+description = "Disable all NMEA messages"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x00, 0]
+
+# GLL
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x01, 0]
+
+# GSA
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x02, 0]
+
+# GSV
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x03, 0]
+
+# RMC
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x04, 0]
+
+# VTG
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x05, 0]
+
+# ZDA
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x08, 0]
+
 # CFG-NMEA: NMEA output configuration
 # Payload: U1 nmeaVer, U1 latLonReso, U1 heightReso, U1 gsaPlus,
 #          U1 nmeaValidOpen, U1 res, U2 res2
