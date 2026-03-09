@@ -100,39 +100,41 @@ payload.types = "U1U1U2U4U4"
 payload.values = [1, 0, 0, 0, 0]
 
 # CFG-TP: Time pulse (PPS) configuration
-# Payload: U4 interval_us, U4 width_us, U1 enable, I1 polarity, U1 time_ref,
-#          U1 time_source, R4 user_delay
-# enable: 0=off, 1=on, 2=maintain, 3=fix only
+# Payload: U4 interval_us, U4 width_us, U1 ppsOutMode, I1 polarity, U1 tBase,
+#          U1 tSrcMode, R4 user_delay
+# ppsOutMode: 0=always off, 1=output when time non-empty, 2=output after sat sync,
+#             3=output when position+time valid, 5=output when position+time reliable,
+#             7=always on
 # polarity: 0=rising edge, 1=falling edge
-# time_ref: 0=UTC, 1=satellite time
-# time_source: 0=GPS, 1=BDS, 2=GLONASS
+# tBase: 0=GNSS, 1=UTC
+# tSrcMode: 0-3=force GPS/BDS/GLN/GAL, 4-8=primary BDS/GPS/GLN/GAL/IRN, 9=auto
 
-# Enable PPS: 100ms pulse, only when locked, rising edge, UTC
+# Enable PPS: 100ms pulse, only when time is reliable, rising edge, UTC
 [[casbin]]
 tag = "pps"
-description = "Enable PPS output (0.1s pulse, only when locked)"
+description = "Enable PPS output (0.1s pulse, only when time is reliable)"
 class = 0x06
 id = 0x03
 payload.types = "U4U4U1I1U1U1R4"
-payload.values = [1000000, 100000, 3, 0, 0, 0, 0.0]
+payload.values = [1000000, 100000, 5, 0, 1, 9, 0.0]
 
 # PPS aligned to GPS time (not UTC)
 [[casbin]]
 tag = "pps-gps"
-description = "Enable PPS aligned to GPS time"
+description = "Enable PPS aligned to GPS time (0.1s pulse, only when time is reliable)"
 class = 0x06
 id = 0x03
 payload.types = "U4U4U1I1U1U1R4"
-payload.values = [1000000, 100000, 3, 0, 1, 0, 0.0]
+payload.values = [1000000, 100000, 5, 0, 0, 0, 0.0]
 
 # PPS aligned to BDS time
 [[casbin]]
 tag = "pps-bds"
-description = "Enable PPS aligned to BDS time"
+description = "Enable PPS aligned to BDS time (0.1s pulse, only when time is reliable)"
 class = 0x06
 id = 0x03
 payload.types = "U4U4U1I1U1U1R4"
-payload.values = [1000000, 100000, 3, 0, 1, 1, 0.0]
+payload.values = [1000000, 100000, 5, 0, 0, 1, 0.0]
 
 # Disable PPS
 [[casbin]]
