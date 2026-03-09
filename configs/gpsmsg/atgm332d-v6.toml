@@ -365,7 +365,7 @@ payload.types = "U1U1U2"
 payload.values = [0x11, 0x06, 0]
 
 # NMEA message class is 0x4E
-# GGA=0x00, GLL=0x01, GSA=0x02, GSV=0x03, RMC=0x04, VTG=0x05, ZDA=0x08
+# GGA=0x00, GLL=0x01, GSA=0x02, GSV=0x03, RMC=0x04, VTG=0x05, ZDA=0x06 (V5 uses 0x08)
 
 # Enable GGA at 1Hz
 [[casbin]]
@@ -457,6 +457,15 @@ id = 0x01
 payload.types = "U1U1U2"
 payload.values = [0x4E, 0x01, 0]
 
+# Enable VTG at 1Hz
+[[casbin]]
+tag = "nmea-vtg"
+description = "Enable NMEA VTG output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x05, 1]
+
 # Disable VTG
 [[casbin]]
 tag = "nmea-vtg-off"
@@ -466,6 +475,15 @@ id = 0x01
 payload.types = "U1U1U2"
 payload.values = [0x4E, 0x05, 0]
 
+# Enable ZDA at 1Hz
+[[casbin]]
+tag = "nmea-zda"
+description = "Enable NMEA ZDA output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x06, 1]
+
 # Disable ZDA
 [[casbin]]
 tag = "nmea-zda-off"
@@ -473,7 +491,7 @@ description = "Disable NMEA ZDA output"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U2"
-payload.values = [0x4E, 0x08, 0]
+payload.values = [0x4E, 0x06, 0]
 
 # Disable all NMEA messages (GGA, GLL, GSA, GSV, RMC, VTG, ZDA)
 # GGA
@@ -531,7 +549,7 @@ tag = "nmea-off"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U2"
-payload.values = [0x4E, 0x08, 0]
+payload.values = [0x4E, 0x06, 0]
 
 # CFG-NMEA: NMEA output configuration
 # Payload: U1 nmeaVer, U1 latLonReso, U1 heightReso, U1 gsaPlus,
