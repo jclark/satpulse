@@ -49,6 +49,18 @@ func timeTimTP(m *casbin.TimTP) *gpsprot.TimeMsg {
 	return &t
 }
 
+// timeNav2Sol converts Nav2Sol to TimeMsg.
+// Returns nil when the fix is below 2D.
+func timeNav2Sol(m *casbin.Nav2Sol) *gpsprot.TimeMsg {
+	if m.FixFlags < casbin.Nav2Fix2D {
+		return nil
+	}
+	t := gpsprot.TimeMsg{NativeMsgID: "NAV2-SOL"}
+	t.GNSS = gpsprot.GPS
+	t.TAITime = ptime.GPS(int16(m.Wn), time.Duration(m.TOW)*time.Millisecond)
+	return &t
+}
+
 // gnssTime converts CASIC GNSS ID, week number, and TOW to gpsprot.GNSS and TAI time.
 // Returns zero GNSS and Time for unsupported GNSS IDs.
 func gnssTime(id casbin.GNSSID, week uint16, towSec float64) (gpsprot.GNSS, ptime.Time) {

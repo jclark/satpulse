@@ -163,9 +163,14 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		return true
 	case *casbin.Nav2Sol:
+		tm := timeNav2Sol(mt)
 		posE := posECEFNav2Sol(p.curNavEpochMsg, mt)
 		velE := velECEFNav2Sol(p.curNavEpochMsg, mt)
 		if p.mh != nil {
+			if tm != nil {
+				tm.Tag = Tag
+				p.mh.Time(tm, tRead)
+			}
 			if posE != nil {
 				posE.Tag = Tag
 				posE.Priority = gpsprot.PriVendorLow
