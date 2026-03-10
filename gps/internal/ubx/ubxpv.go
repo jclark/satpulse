@@ -208,6 +208,8 @@ func dopNavDOP(ne *gpsprot.NavEpochMsg, m *ubxbin.NavDOP) {
 	ne.DOP.Hor = dop01(m.HDOP)
 	ne.DOP.Vert = dop01(m.VDOP)
 	ne.DOP.Time = dop01(m.TDOP)
+	ne.DOP.North = dop01(m.NDOP)
+	ne.DOP.East = dop01(m.EDOP)
 }
 
 // Unit conversion helpers for UBX binary fields.

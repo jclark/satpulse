@@ -141,6 +141,8 @@ func staDOP(ne *gpsprot.NavEpochMsg, m *uncmsg.StaDOP) {
 	ne.DOP.Hor.Set(float64(m.HDOP))
 	ne.DOP.Vert.Set(float64(m.VDOP))
 	ne.DOP.Time.Set(float64(m.TDOP))
+	ne.DOP.North.Set(float64(m.NDOP))
+	ne.DOP.East.Set(float64(m.EDOP))
 }
 
 // signalsUsed converts Unicore UM980 signal mask bytes (Table 7-172, Table 7-173)

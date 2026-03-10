@@ -313,6 +313,12 @@ func dopQuality(m *qtmmsg.DOP, epoch *nmea.NavEpoch) {
 	if m.HDOP.IsSet() {
 		epoch.DOP.Hor = m.HDOP
 	}
+	if m.NDOP.IsSet() {
+		epoch.DOP.North = m.NDOP
+	}
+	if m.EDOP.IsSet() {
+		epoch.DOP.East = m.EDOP
+	}
 }
 
 func msgsSVIN(m *qtmmsg.SVINStatus) []gpsprot.Msg {

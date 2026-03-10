@@ -313,6 +313,10 @@ func (p *PrometheusObserver) updateSolutionQuality(msg *gpsprot.NavEpochMsg) {
 		"vertical", msg.DOP.Vert.IsSet(), func() float64 { return msg.DOP.Vert.Get() })
 	setOrDeleteOpt(p, &p.dop, "satpulse_dop", "Dilution of precision", "type",
 		"time", msg.DOP.Time.IsSet(), func() float64 { return msg.DOP.Time.Get() })
+	setOrDeleteOpt(p, &p.dop, "satpulse_dop", "Dilution of precision", "type",
+		"north", msg.DOP.North.IsSet(), func() float64 { return msg.DOP.North.Get() })
+	setOrDeleteOpt(p, &p.dop, "satpulse_dop", "Dilution of precision", "type",
+		"east", msg.DOP.East.IsSet(), func() float64 { return msg.DOP.East.Get() })
 	// Position accuracy
 	setOrDeleteOpt(p, &p.positionAccuracy, "satpulse_position_accuracy_meters", "Position accuracy in meters", "type",
 		"horizontal", msg.Acc.Hor.IsSet(), func() float64 { return msg.Acc.Hor.Get().Meters() })

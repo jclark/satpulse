@@ -218,6 +218,8 @@ func TestDopNav2Dop(t *testing.T) {
 	check("Hor", ne.DOP.Hor, float64(float32(0.8)))
 	check("Vert", ne.DOP.Vert, float64(float32(1.2)))
 	check("Time", ne.DOP.Time, float64(float32(0.9)))
+	check("North", ne.DOP.North, float64(float32(0.6)))
+	check("East", ne.DOP.East, float64(float32(0.5)))
 }
 
 func TestQualityFromNav2FixFlags(t *testing.T) {
