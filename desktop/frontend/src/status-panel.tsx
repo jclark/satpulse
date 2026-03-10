@@ -27,6 +27,8 @@ export function StatusPanel({msg}: Props) {
     add('Course accuracy', msg.acc?.course != null ? `${msg.acc.course.toFixed(1)}\u00b0` : undefined);
     add('Horizontal DOP', msg.dop?.hor != null ? msg.dop.hor.toFixed(1) : undefined);
     add('Vertical DOP', msg.dop?.vert != null ? msg.dop.vert.toFixed(1) : undefined);
+    add('Northing DOP', msg.dop?.north != null ? msg.dop.north.toFixed(1) : undefined);
+    add('Easting DOP', msg.dop?.east != null ? msg.dop.east.toFixed(1) : undefined);
     add('Position DOP', msg.dop?.pos != null ? msg.dop.pos.toFixed(1) : undefined);
     add('Geometric DOP', msg.dop?.geom != null ? msg.dop.geom.toFixed(1) : undefined);
     add('Time DOP', msg.dop?.time != null ? msg.dop.time.toFixed(1) : undefined);
