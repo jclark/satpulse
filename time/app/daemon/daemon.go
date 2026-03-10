@@ -434,8 +434,17 @@ func (h *leapSecondCapture) logLeapSecond(lg *slog.Logger) {
 }
 
 func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, timePulseEnabled bool) (*gpsprot.ConfigTarget, error) {
-	httpWantsSatellites := cfg.httpWantsSatellites()
-	gct, err := cfg.GPS.target(speed, httpWantsSatellites, timePulseEnabled)
+	var cf cfgFeatures
+	if timePulseEnabled {
+		cf |= cfgTimePulse
+	}
+	if cfg.Log.Track || len(cfg.HTTP) > 0 {
+		cf |= cfgPosition
+	}
+	if cfg.httpWantsSatellites() {
+		cf |= cfgSatellites
+	}
+	gct, err := cfg.GPS.target(speed, cf)
 	lg.Debug("GPS configure input", "target", gct)
 	if err != nil {
 		if errors.Is(err, errSatsOutNotEnabled) {

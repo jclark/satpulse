@@ -18,25 +18,36 @@ func TestGPSConfig(t *testing.T) {
 	baseline.Opts.NMEAMsg = opt.Make(gpsprot.NMEAMsgNone)
 
 	tests := []struct {
-		name                 string
-		config               string
-		speed                int
-		wantSatellitesOutput bool
-		timePulseEnabled     bool
-		modifyTarget         func(*gpsprot.ConfigTarget)
-		expectedError        string
+		name          string
+		config        string
+		speed         int
+		cf            cfgFeatures
+		modifyTarget  func(*gpsprot.ConfigTarget)
+		expectedError string
 	}{
 		{
 			name: "empty gps config with time pulse",
 			config: `[gps]
 config = true`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     true,
+			speed: 9600,
+			cf:    cfgTimePulse,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				// Default behavior: survey mode with SetStatic=true and default survey params
 				target.Opts.Survey.MinDur = 2000 * time.Second   // default surveyTime
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20) // default surveyAcc
+				target.Opts.SetStatic = true
+			},
+		},
+		{
+			name: "time pulse with position",
+			config: `[gps]
+config = true`,
+			speed: 9600,
+			cf:    cfgTimePulse | cfgPosition,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Opts.PVTMsg |= gpsprot.PVTMsgPos
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
 				target.Opts.SetStatic = true
 			},
 		},
@@ -47,9 +58,8 @@ config = true
 mobile = true
 surveyTime = 3000
 surveyAcc = 15`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     true,
+			speed: 9600,
+			cf:    cfgTimePulse,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetMode(gpsprot.Mode{Static: false})
 				target.Opts.Survey.MinDur = 3000 * time.Second
@@ -63,9 +73,8 @@ config = true
 surveyTime = 2500
 surveyAcc = 10
 resurvey = true`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     true,
+			speed: 9600,
+			cf:    cfgTimePulse,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Opts.Survey.MinDur = 2500 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(10)
@@ -81,9 +90,8 @@ surveyTime = 1000
 surveyAcc = 5
 fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
 fixedPosAcc = 3`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     true,
+			speed: 9600,
+			cf:    cfgTimePulse,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetMode(gpsprot.Mode{
 					Static:       true,
@@ -101,9 +109,8 @@ fixedPosAcc = 3`,
 config = true
 mobile = true
 fixedPosECEF = [3978578.17, -8652.15, 4968410.94]`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     true,
+			speed: 9600,
+			cf:    cfgTimePulse,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetMode(gpsprot.Mode{Static: false})
 				target.Opts.Survey.MinDur = 2000 * time.Second   // default
@@ -115,9 +122,8 @@ fixedPosECEF = [3978578.17, -8652.15, 4968410.94]`,
 			config: `[gps]
 config = true
 surveyAcc = 0.0001`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     true,
+			speed: 9600,
+			cf:    cfgTimePulse,
 			expectedError:        "error", // any error
 		},
 		{
@@ -126,9 +132,8 @@ surveyAcc = 0.0001`,
 config = true
 fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
 fixedPosAcc = 0.0001`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     true,
+			speed: 9600,
+			cf:    cfgTimePulse,
 			expectedError:        "error", // any error
 		},
 		{
@@ -141,9 +146,8 @@ surveyTime = 3000
 surveyAcc = 10
 fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
 fixedPosAcc = 5`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     true,
+			speed: 9600,
+			cf:    cfgTimePulse,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetMode(gpsprot.Mode{
 					Static:       true,
@@ -162,9 +166,7 @@ fixedPosAcc = 5`,
 			config: `[gps]
 config = true
 mobile = true`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     false,
+			speed: 9600,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				// Create fresh Props without PPS when time pulse is disabled
 				target.Props = gpsprot.ConfigProps{}
@@ -180,9 +182,7 @@ mobile = true`,
 config = true
 surveyTime = 1800
 surveyAcc = 8`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     false,
+			speed: 9600,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				// Create fresh Props without PPS when time pulse is disabled
 				target.Props = gpsprot.ConfigProps{}
@@ -195,9 +195,7 @@ surveyAcc = 8`,
 		{
 			name:                 "no config without time pulse",
 			config:               `[gps]`,
-			speed:                9600,
-			wantSatellitesOutput: false,
-			timePulseEnabled:     false,
+			speed: 9600,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				// When config=false, target should be empty except for NMEAMsg
 				*target = gpsprot.ConfigTarget{}
@@ -213,7 +211,7 @@ surveyAcc = 8`,
 				t.Fatal(err)
 			}
 
-			target, err := cfg.GPS.target(tt.speed, tt.wantSatellitesOutput, tt.timePulseEnabled)
+			target, err := cfg.GPS.target(tt.speed, tt.cf)
 			if tt.expectedError != "" {
 				if err == nil {
 					t.Errorf("expected error, got nil")

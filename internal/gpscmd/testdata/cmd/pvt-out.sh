@@ -23,9 +23,7 @@ t --pvt-out tp,tai
 t --pvt-out tp,after
 # Turn off non-explicit PVT messages
 #t --pvt-out off
-# Daemon mode (tp,after,tai,leap,survey,off)
-t --pvt-out daemon
-# Daemon but without off (what satpulsed does)
+# Time pulse daemon flags with off
 t --pvt-out tp,after,tai,leap,survey,off
 # Combined position, velocity, time
 t --pvt-out pos,vel,time
