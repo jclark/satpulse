@@ -1,4 +1,4 @@
-# CASIC configurator
+# CASIC configurator ([#229](https://github.com/jclark/satpulse/issues/229))
 
 Implement `gpsprot.ConfigProtocol` and `gpsprot.Configurator` for CASIC receivers (Zhongke Microelectronics), enabling `satpulsetool gps` and `satpulsed` to configure CASIC receivers (probe, enable messages, set time pulse, time mode, signal selection).
 
