@@ -300,6 +300,8 @@ const positionQualityFormat: EventFormat = {
     hdop: ["Horizontal DOP", (arg: number) => arg.toFixed(2)],
     vdop: ["Vertical DOP", (arg: number) => arg.toFixed(2)],
     pdop: ["Position DOP", (arg: number) => arg.toFixed(2)],
+    ndop: ["Northing DOP", (arg: number) => arg.toFixed(2)],
+    edop: ["Easting DOP", (arg: number) => arg.toFixed(2)],
     diffAge: ["Differential age", (arg: number) => `${arg.toFixed(1)} s`],
     rtcmRefBaseID: ["RTCM base station"],
 }

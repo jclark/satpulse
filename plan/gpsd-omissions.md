@@ -16,8 +16,6 @@ Fields from gpsd's TPV and SKY JSON objects that have no equivalent in
 | Accuracy | TPV | `epx` | Estimated longitude error | [lat-lon-acc.md](lat-lon-acc.md) |
 | Accuracy | TPV | `epy` | Estimated latitude error | [lat-lon-acc.md](lat-lon-acc.md) |
 | Accuracy | TPV | `epc` | Estimated vertical velocity error | |
-| DOP | SKY | `xdop` | Longitudinal DOP | [north-east-dop.md](north-east-dop.md) |
-| DOP | SKY | `ydop` | Latitudinal DOP | [north-east-dop.md](north-east-dop.md) |
 | Satellite health | SKY | `health` | Satellite health | [satellite-health.md](satellite-health.md) |
 | Satellite health | SKY | `qual` | Per-satellite quality indicator | |
 | GLONASS | SKY | `freqid` | GLONASS frequency slot | |

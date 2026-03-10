@@ -732,6 +732,8 @@ func TestDOPNavDOP(t *testing.T) {
 		HDOP: 120,
 		VDOP: 150,
 		TDOP: 180,
+		NDOP: 90,
+		EDOP: 80,
 	}
 	var ne gpsprot.NavEpochMsg
 	dopNavDOP(&ne, m)
@@ -745,6 +747,8 @@ func TestDOPNavDOP(t *testing.T) {
 		{"Hor", ne.DOP.Hor, 1.20},
 		{"Vert", ne.DOP.Vert, 1.50},
 		{"Time", ne.DOP.Time, 1.80},
+		{"North", ne.DOP.North, 0.90},
+		{"East", ne.DOP.East, 0.80},
 	}
 	for _, c := range checks {
 		if !c.got.IsSet() {

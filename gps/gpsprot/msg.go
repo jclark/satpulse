@@ -1068,8 +1068,10 @@ type DOP struct {
 	Geom opt.Val[float64] `json:"geom,omitzero"` // geometric DOP
 	Pos  opt.Val[float64] `json:"pos,omitzero"`  // position (3D) DOP
 	Hor  opt.Val[float64] `json:"hor,omitzero"`  // horizontal DOP
-	Vert opt.Val[float64] `json:"vert,omitzero"` // vertical DOP
-	Time opt.Val[float64] `json:"time,omitzero"` // time DOP
+	Vert  opt.Val[float64] `json:"vert,omitzero"`  // vertical DOP
+	Time  opt.Val[float64] `json:"time,omitzero"`  // time DOP
+	North opt.Val[float64] `json:"north,omitzero"` // northing DOP
+	East  opt.Val[float64] `json:"east,omitzero"`  // easting DOP
 }
 
 // Fill sets any unset fields in d from the corresponding fields in other.
@@ -1079,6 +1081,8 @@ func (d *DOP) Fill(other *DOP) {
 	d.Hor.Fill(other.Hor)
 	d.Vert.Fill(other.Vert)
 	d.Time.Fill(other.Time)
+	d.North.Fill(other.North)
+	d.East.Fill(other.East)
 }
 
 // NavEpochMsg is emitted once at the end of each navigation epoch, after

@@ -97,6 +97,8 @@ type QualitySSE struct {
 	HDOP opt.Val[float64] `json:"hdop,omitzero"`
 	VDOP opt.Val[float64] `json:"vdop,omitzero"`
 	TDOP opt.Val[float64] `json:"tdop,omitzero"`
+	NDOP opt.Val[float64] `json:"ndop,omitzero"`
+	EDOP opt.Val[float64] `json:"edop,omitzero"`
 	// Satellite counts
 	NumSVUsed    opt.Val[uint16] `json:"numSVUsed,omitzero"`
 	NumSVTracked opt.Val[uint16] `json:"numSVTracked,omitzero"`
@@ -298,6 +300,8 @@ func buildQualitySSE(msg *gpsprot.NavEpochMsg) *QualitySSE {
 	q.HDOP = msg.DOP.Hor
 	q.VDOP = msg.DOP.Vert
 	q.TDOP = msg.DOP.Time
+	q.NDOP = msg.DOP.North
+	q.EDOP = msg.DOP.East
 	if msg.DiffAge.IsSet() {
 		q.DiffAge.Set(msg.DiffAge.Get().Seconds())
 	}

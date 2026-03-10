@@ -116,4 +116,6 @@ func dopNavDop(ne *gpsprot.NavEpochMsg, m *casbin.NavDop) {
 	ne.DOP.Hor = opt.Make(float64(m.HDOP))
 	ne.DOP.Vert = opt.Make(float64(m.VDOP))
 	ne.DOP.Time = opt.Make(float64(m.TDOP))
+	ne.DOP.North = opt.Make(float64(m.NDOP))
+	ne.DOP.East = opt.Make(float64(m.EDOP))
 }

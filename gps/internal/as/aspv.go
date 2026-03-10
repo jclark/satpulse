@@ -62,6 +62,8 @@ func dopNavDop(ne *gpsprot.NavEpochMsg, m *asbin.NavDop) {
 	ne.DOP.Hor.Set(dop100(m.HDOP))
 	ne.DOP.Vert.Set(dop100(m.VDOP))
 	ne.DOP.Time.Set(dop100(m.TDOP))
+	ne.DOP.North.Set(dop100(m.NDOP))
+	ne.DOP.East.Set(dop100(m.EDOP))
 }
 
 // posGeoNavAuto converts asbin.NavAuto to gpsprot.PosGeoMsg.

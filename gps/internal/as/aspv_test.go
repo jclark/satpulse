@@ -101,6 +101,8 @@ func TestDopNavDop(t *testing.T) {
 		TDOP: 103, // 1.03
 		VDOP: 120, // 1.20
 		HDOP: 125, // 1.25
+		NDOP: 55,  // 0.55
+		EDOP: 45,  // 0.45
 	}
 	var ne gpsprot.NavEpochMsg
 	dopNavDop(&ne, m)
@@ -117,6 +119,8 @@ func TestDopNavDop(t *testing.T) {
 	check("Time", ne.DOP.Time, 1.03)
 	check("Vert", ne.DOP.Vert, 1.20)
 	check("Hor", ne.DOP.Hor, 1.25)
+	check("North", ne.DOP.North, 0.55)
+	check("East", ne.DOP.East, 0.45)
 }
 
 func TestPosGeoNavAuto(t *testing.T) {

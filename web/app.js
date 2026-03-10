@@ -916,6 +916,8 @@
     hdop: ["Horizontal DOP", (arg) => arg.toFixed(2)],
     vdop: ["Vertical DOP", (arg) => arg.toFixed(2)],
     pdop: ["Position DOP", (arg) => arg.toFixed(2)],
+    ndop: ["Northing DOP", (arg) => arg.toFixed(2)],
+    edop: ["Easting DOP", (arg) => arg.toFixed(2)],
     diffAge: ["Differential age", (arg) => `${arg.toFixed(1)} s`],
     rtcmRefBaseID: ["RTCM base station"]
   };
