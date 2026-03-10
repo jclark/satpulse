@@ -90,7 +90,10 @@ func timeNav2TimeUTC(m *casbin.Nav2TimeUTC) *gpsprot.TimeMsg {
 	t.UTCTime = &u
 	// V6 TAcc is nanoseconds (direct std dev, not variance)
 	if m.TAcc > 0 {
-		t.Accuracy = time.Duration(m.TAcc)
+		t.Accuracy = time.Duration(math.Round(float64(m.TAcc)))
+	}
+	if m.LeapSec > 0 {
+		t.UTCOffset = uint8(m.LeapSec) + ptime.TAIMinusGPS
 	}
 	t.GNSS = nav2TimeSrcToGNSS(m.TimeSrc)
 	return &t

@@ -22,6 +22,7 @@ func TestTimeNav2TimeUTC(t *testing.T) {
 		Sec:     45,
 		TFlags:  casbin.Nav2TimeTOWValid | casbin.Nav2TimeReliable,
 		TimeSrc: casbin.Nav2TimeSrcGPS,
+		LeapSec: 18,
 	}
 	tm := timeNav2TimeUTC(m)
 	if tm == nil {
@@ -39,6 +40,10 @@ func TestTimeNav2TimeUTC(t *testing.T) {
 	// TAcc is 50 ns
 	if tm.Accuracy != 50*time.Nanosecond {
 		t.Errorf("Accuracy = %v, want 50ns", tm.Accuracy)
+	}
+	// LeapSec 18 (GPS-UTC) + TAIMinusGPS (19) = 37
+	if tm.UTCOffset != 37 {
+		t.Errorf("UTCOffset = %v, want 37", tm.UTCOffset)
 	}
 }
 
