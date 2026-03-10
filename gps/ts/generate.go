@@ -99,7 +99,7 @@ func samples() []sample {
 			SolutionDim: gpsprot.SolutionDim3D,
 			Correction:  gpsprot.CorrRTCM,
 			Acc:         gpsprot.Accuracy{Hor: opt.Make(gpsprot.Length(15000)), Vert: opt.Make(gpsprot.Length(25000))},
-			DOP:         gpsprot.DOP{Pos: opt.Make(1.2), Hor: opt.Make(0.8)},
+			DOP:         gpsprot.DOP{Pos: opt.Make(1.2), Hor: opt.Make(0.8), North: opt.Make(0.6), East: opt.Make(0.5)},
 			NumSVUsed:   opt.Make[uint16](12),
 			GNSSUsed:  gpsprot.GNSSSetOf(gpsprot.GPS) | gpsprot.GNSSSetOf(gpsprot.GAL),
 			BandsUsed: gpsprot.BandL1 | gpsprot.BandL5,

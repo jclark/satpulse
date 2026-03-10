@@ -120,6 +120,8 @@ export interface DOP {
     hor?: number;
     vert?: number;
     time?: number;
+    north?: number;
+    east?: number;
 }
 
 export interface NavEpochMsg {
