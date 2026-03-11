@@ -34,8 +34,6 @@ func (m *Mode) ID() (MsgID, string) {
 	return 0, "MODE"
 }
 
-func (m *Mode) usesXorChecksum() {}
-
 // Command returns the equivalent MODE command that would establish this mode
 func (m *Mode) Command() string {
 	cmd := m.Mode
