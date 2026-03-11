@@ -22,7 +22,17 @@ const (
 	ProductModelUM960   ProductModel = 19
 	ProductModelUM960L  ProductModel = 24
 	ProductModelUM981   ProductModel = 26
+	ProductModelUM981S  ProductModel = 31
+	ProductModelUMD982  ProductModel = 40
+	ProductModelUMD981  ProductModel = 41
+	ProductModelUMD981S ProductModel = 42
+	ProductModelUM981C  ProductModel = 43
 	ProductModelUB9A0   ProductModel = 52
+	ProductModelUBD9A0  ProductModel = 53
+	ProductModelUMD960  ProductModel = 62
+	ProductModelUMD980  ProductModel = 63
+	ProductModelUM980C  ProductModel = 64
+	ProductModelUM982C  ProductModel = 65
 )
 
 // String returns the ASCII representation of ProductModel
@@ -40,8 +50,28 @@ func (pm ProductModel) String() string {
 		return "UM960L"
 	case ProductModelUM981:
 		return "UM981"
+	case ProductModelUM981S:
+		return "UM981S"
+	case ProductModelUMD982:
+		return "UMD982"
+	case ProductModelUMD981:
+		return "UMD981"
+	case ProductModelUMD981S:
+		return "UMD981S"
+	case ProductModelUM981C:
+		return "UM981C"
 	case ProductModelUB9A0:
 		return "UB9A0"
+	case ProductModelUBD9A0:
+		return "UBD9A0"
+	case ProductModelUMD960:
+		return "UMD960"
+	case ProductModelUMD980:
+		return "UMD980"
+	case ProductModelUM980C:
+		return "UM980C"
+	case ProductModelUM982C:
+		return "UM982C"
 	default:
 		return fmt.Sprintf("%d", uint32(pm))
 	}
@@ -62,8 +92,28 @@ func ParseProductModel(s string) (ProductModel, error) {
 		return ProductModelUM960L, nil
 	case "UM981":
 		return ProductModelUM981, nil
+	case "UM981S":
+		return ProductModelUM981S, nil
+	case "UMD982":
+		return ProductModelUMD982, nil
+	case "UMD981":
+		return ProductModelUMD981, nil
+	case "UMD981S":
+		return ProductModelUMD981S, nil
+	case "UM981C":
+		return ProductModelUM981C, nil
 	case "UB9A0":
 		return ProductModelUB9A0, nil
+	case "UBD9A0":
+		return ProductModelUBD9A0, nil
+	case "UMD960":
+		return ProductModelUMD960, nil
+	case "UMD980":
+		return ProductModelUMD980, nil
+	case "UM980C":
+		return ProductModelUM980C, nil
+	case "UM982C":
+		return ProductModelUM982C, nil
 	default:
 		// Try to parse as number
 		if n, err := strconv.ParseUint(s, 10, 32); err == nil {
