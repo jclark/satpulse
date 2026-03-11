@@ -83,9 +83,8 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus uncmsg.SolStatus, posType uncmsg
 	// Parse station ID for RTCMRefBaseID or correction enrichment.
 	if v, ok := nov.StationIDValue(stnID); ok {
 		ne.RTCMRefBaseID.Set(v)
-	} else if v, ok := nov.StationIDUint(stnID); ok && v >= 4096 {
-		ne.Correction |= stnIDCorrection(v)
 	}
+	ne.Correction |= pppServiceCorrection(uncmsg.StnIDPPPService(stnID)).Expand()
 	if solStatus != uncmsg.SolComputed {
 		ne.FixLevel = gpsprot.FixLevelNone
 		return
@@ -121,22 +120,15 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus uncmsg.SolStatus, posType uncmsg
 	}
 }
 
-// stnIDCorrection maps Unicore station IDs >= 4096 to correction kind.
-// Unicore uses 9xxx values for satellite-based correction services.
-func stnIDCorrection(v uint16) gpsprot.CorrKind {
-	switch {
-	case v >= 9901 && v <= 9905: // BeiDou B2b PPP
-		return gpsprot.CorrPPPB2b.Expand()
-	case v >= 9959 && v <= 9961: // BeiDou B2b PPP
-		return gpsprot.CorrPPPB2b.Expand()
-	case v == 9964: // Galileo E6 HAS
-		return gpsprot.CorrPPPHAS.Expand()
-	case v >= 9934 && v <= 9939: // QZSS L6 MDC
-		return gpsprot.CorrPPPMDC.Expand()
-	case v >= 9974 && v <= 9979: // QZSS L6 CLAS
-		return gpsprot.CorrCLAS.Expand()
-	case v >= 9990 && v <= 9999: // L-band
-		return gpsprot.CorrSSR.Expand()
+// pppServiceCorrection maps a Unicore PPP service to correction kind.
+func pppServiceCorrection(svc uncmsg.PPPService) gpsprot.CorrKind {
+	switch svc {
+	case uncmsg.PPPB2b:
+		return gpsprot.CorrPPPB2b
+	case uncmsg.PPPHAS:
+		return gpsprot.CorrPPPHAS
+	case uncmsg.PPPMDC:
+		return gpsprot.CorrPPPMDC
 	default:
 		return 0
 	}

@@ -230,12 +230,12 @@ func TestPPPNavPos(t *testing.T) {
 }
 
 func TestQualityStnIDCorrection(t *testing.T) {
-	// Station ID 9964 indicates Galileo E6 HAS.
+	// Station ID 9901 indicates Galileo E6 HAS.
 	// With PPP_CONVERGING pos type, Correction should include both
 	// CorrPPPConverging and CorrPPPHAS.
 	var ne gpsprot.NavEpochMsg
 	quality(&ne, uncmsg.SolComputed, uncmsg.PosVelType(novmsg.PosPPPConverging),
-		0, novmsg.StationID{'9', '9', '6', '4'}, 10, 8)
+		0, novmsg.StationID{'9', '9', '0', '1'}, 10, 8)
 	wantHAS := gpsprot.CorrPPPHAS.Expand()
 	if ne.Correction&wantHAS != wantHAS {
 		t.Errorf("Correction = %v, want CorrPPPHAS bits set", ne.Correction)

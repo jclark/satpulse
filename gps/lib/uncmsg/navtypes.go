@@ -2,6 +2,7 @@ package uncmsg
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 )
@@ -213,6 +214,33 @@ func (p *PosVelType) UnmarshalText(text []byte) error {
 // MarshalText implements encoding.TextMarshaler for fieldenc support
 func (p PosVelType) MarshalText() ([]byte, error) {
 	return []byte(p.String()), nil
+}
+
+// PPPService identifies the satellite-based PPP correction service indicated
+// by a Unicore station ID. Unicore encodes these as 99xx (99 concatenated
+// with satellite number) in the stn ID field of BESTNAV/BESTNAVXYZ/PPPNAV.
+type PPPService uint8
+
+const (
+	PPPNone PPPService = iota
+	PPPB2b             // BeiDou B2b PPP (stn ID 9959, 9960, 9961)
+	PPPHAS             // Galileo E6 HAS (stn ID 9901)
+	PPPMDC             // QZSS L6 MDC PPP (stn ID 9934, 9935, 9936, 9939)
+)
+
+// StnIDPPPService returns the PPP correction service for a Unicore station ID,
+// or PPPNone if the station ID does not identify a PPP service.
+func StnIDPPPService(s novmsg.StationID) PPPService {
+	switch strings.TrimRight(string(s[:]), "\x00") {
+	case "9959", "9960", "9961":
+		return PPPB2b
+	case "9901":
+		return PPPHAS
+	case "9934", "9935", "9936", "9939":
+		return PPPMDC
+	default:
+		return PPPNone
+	}
 }
 
 // Shared types aliased from novmsg (used in both NovAtel and Unicore protocols).
