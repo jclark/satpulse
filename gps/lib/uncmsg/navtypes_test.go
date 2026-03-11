@@ -1,6 +1,10 @@
 package uncmsg
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jclark/satpulse/gps/lib/novmsg"
+)
 
 func TestSolStatusRoundTrip(t *testing.T) {
 	tests := []struct {
@@ -114,6 +118,34 @@ func TestPosVelTypeUnknown(t *testing.T) {
 	}
 	if _, err := ParsePosVelType("BOGUS"); err == nil {
 		t.Error("ParsePosVelType(BOGUS) should return error")
+	}
+}
+
+func TestStnIDPPPService(t *testing.T) {
+	tests := []struct {
+		name string
+		s    novmsg.StationID
+		want PPPService
+	}{
+		{"B2b_9959", novmsg.StationID{'9', '9', '5', '9'}, PPPB2b},
+		{"B2b_9960", novmsg.StationID{'9', '9', '6', '0'}, PPPB2b},
+		{"B2b_9961", novmsg.StationID{'9', '9', '6', '1'}, PPPB2b},
+		{"HAS_9901", novmsg.StationID{'9', '9', '0', '1'}, PPPHAS},
+		{"MDC_9934", novmsg.StationID{'9', '9', '3', '4'}, PPPMDC},
+		{"MDC_9935", novmsg.StationID{'9', '9', '3', '5'}, PPPMDC},
+		{"MDC_9936", novmsg.StationID{'9', '9', '3', '6'}, PPPMDC},
+		{"MDC_9939", novmsg.StationID{'9', '9', '3', '9'}, PPPMDC},
+		{"RTCM_123", novmsg.StationID{'1', '2', '3', 0}, PPPNone},
+		{"empty", novmsg.StationID{}, PPPNone},
+		{"non_numeric", novmsg.StationID{'T', 'S', 'T', 'R'}, PPPNone},
+		{"unknown_9964", novmsg.StationID{'9', '9', '6', '4'}, PPPNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := StnIDPPPService(tt.s); got != tt.want {
+				t.Errorf("StnIDPPPService(%q) = %d, want %d", tt.s, got, tt.want)
+			}
+		})
 	}
 }
 
