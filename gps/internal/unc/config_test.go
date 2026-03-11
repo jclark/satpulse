@@ -229,6 +229,15 @@ func (r *testReceiver) generateResponses(cmd string) []testResponse {
 			})
 		}
 
+		// Add MASK RTK response if present (simulates UM960 firmware)
+		if r.nativeProps.mask.elevationMask.IsSet() {
+			responses = append(responses, testResponse{
+				nmea: &nmea.Sentence{
+					Payload: fmt.Sprintf("CONFIG,MASK RTK,MASK RTK %s", maskCmd),
+				},
+			})
+		}
+
 	case "MODE":
 		// First send ACK
 		responses = append(responses, testResponse{

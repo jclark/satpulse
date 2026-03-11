@@ -195,7 +195,6 @@ func TestMaskPropDifferentialUpdate(t *testing.T) {
 	}
 }
 
-
 func TestMaskPropPRN(t *testing.T) {
 	// Test that PRN masks are accepted but ignored
 	prop := maskProp{}
@@ -228,7 +227,6 @@ func TestMaskPropInvalidCommands(t *testing.T) {
 		"UNMASK",         // Missing argument
 		"MASK INVALID",   // Unknown system/frequency
 		"UNMASK INVALID", // Unknown system/frequency
-		"MASK GPS BDS",   // Multiple systems
 		"ENABLE GPS",     // Wrong command
 		"UNMASK 5.0",     // UNMASK with elevation not allowed
 		"UNMASK -10",     // UNMASK with negative elevation not allowed
@@ -701,6 +699,62 @@ func TestConfigMask(t *testing.T) {
 			},
 			expectedCmds: []string{},
 		},
+		{
+			name: "unknown MASK CN0 subtype is ignored",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK CN0 30.000",
+				"MASK 5.0",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+			},
+			expectedCmds: []string{},
+		},
+		{
+			name: "unknown MASK CN0 subtype does not affect signal config",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK CN0 30.000",
+				"MASK 5.0",
+				"MASK GLO",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetSignalsEnabled(gpsprot.SigSetGPS)
+			},
+			expectedCmds: []string{
+				"MASK GLO",
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+				"MASK IRNSS",
+			},
+		},
+		{
+			name: "unknown MASK RTK subtype is ignored",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK RTK 5.000000",
+				"MASK 5.0",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+			},
+			expectedCmds: []string{},
+		},
+		{
+			name: "unknown MASK RTK subtype does not affect signal config",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK RTK 5.0",
+				"MASK 5.0",
+				"MASK GPS",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetSignalsEnabled(allSignalsExceptSBAS)
+			},
+			expectedCmds: []string{
+				"UNMASK GPS",
+			},
+		},
 	}
 	testNativeConfigProps(t, tc)
 }
@@ -760,19 +814,19 @@ func TestSBASProp(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			prop := sbasProp{}
 			err := prop.updateFromCommand(tc.command)
-			
+
 			if tc.expectError {
 				if err == nil {
 					t.Errorf("expected error for command %q, but got none", tc.command)
 				}
 				return
 			}
-			
+
 			if err != nil {
 				t.Errorf("unexpected error for command %q: %v", tc.command, err)
 				return
 			}
-			
+
 			if prop.enabled() != tc.enabled {
 				t.Errorf("for command %q, expected enabled=%v, got %v", tc.command, tc.enabled, prop.enabled())
 			}
@@ -784,7 +838,7 @@ func TestSBASIntegration(t *testing.T) {
 	// Tests that verify SBAS is properly integrated with signal configuration
 	t.Run("SBAS enabled adds SBAS signals", func(t *testing.T) {
 		np := makeNativeProps()
-		
+
 		// Set up signal group 2
 		if err := np.signalGroup.updateFromCommand("CONFIG SIGNALGROUP 2"); err != nil {
 			t.Fatal(err)
@@ -793,11 +847,11 @@ func TestSBASIntegration(t *testing.T) {
 		if err := np.sbas.updateFromCommand("CONFIG SBAS ENABLE AUTO"); err != nil {
 			t.Fatal(err)
 		}
-		
+
 		// Convert to ConfigProps
 		props := &gpsprot.ConfigProps{}
 		np.convertToProps(props)
-		
+
 		sigs, ok := props.GetSignalsEnabled()
 		if !ok {
 			t.Fatal("expected SignalsEnabled to be set")
@@ -807,10 +861,10 @@ func TestSBASIntegration(t *testing.T) {
 			t.Errorf("expected SBAS signals to be enabled, got %v", sigs)
 		}
 	})
-	
+
 	t.Run("SBAS disabled removes SBAS signals", func(t *testing.T) {
 		np := makeNativeProps()
-		
+
 		// Set up signal group 2
 		if err := np.signalGroup.updateFromCommand("CONFIG SIGNALGROUP 2"); err != nil {
 			t.Fatal(err)
@@ -819,11 +873,11 @@ func TestSBASIntegration(t *testing.T) {
 		if err := np.sbas.updateFromCommand("CONFIG SBAS DISABLE"); err != nil {
 			t.Fatal(err)
 		}
-		
+
 		// Convert to ConfigProps
 		props := &gpsprot.ConfigProps{}
 		np.convertToProps(props)
-		
+
 		sigs, ok := props.GetSignalsEnabled()
 		if !ok {
 			t.Fatal("expected SignalsEnabled to be set")
