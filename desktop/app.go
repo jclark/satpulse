@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -818,9 +819,12 @@ func (h *eventHandler) Handle(ctx context.Context, r slog.Record) error {
 	}
 	attrs := make(map[string]any)
 	put := func(a slog.Attr) {
-		v := a.Value.Any()
+		v := a.Value.Resolve().Any()
 		if e, ok := v.(error); ok {
 			v = e.Error()
+		}
+		if _, err := json.Marshal(v); err != nil {
+			v = fmt.Sprint(v)
 		}
 		attrs[a.Key] = v
 	}

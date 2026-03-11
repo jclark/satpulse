@@ -9,7 +9,7 @@ import {SatsGroup, satsWireValue} from './sats-group';
 import {RawGroup, rawWireValue} from './raw-group';
 import {
     NMEAMsgRMC,
-    PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey,
+    PVTMsgPos, PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey, PVTMsgQuality, PVTMsgEpoch,
     SatsMsgSat, SatsMsgSignal,
 } from './msg-flags';
 import type {ConnState, OperationState} from './app';
@@ -558,7 +558,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                             }}>Minimum</Button>
                             <Button disabled={!connected} onClick={() => {
                                 setNmeaChange(true); setNmeaDisable(true);
-                                setPvtChange(true); setPvtFlags(PVTMsgTimePulse | PVTMsgTimePulseAfter | PVTMsgTAI | PVTMsgLeapSecond | PVTMsgOff);
+                                setPvtChange(true); setPvtFlags(PVTMsgTimePulse | PVTMsgTimePulseAfter | PVTMsgTAI | PVTMsgLeapSecond | PVTMsgOff | PVTMsgQuality | PVTMsgEpoch | PVTMsgPos);
                                 if (speed >= 19200) { setSatsChange(true); setSatsFlags(SatsMsgSat | SatsMsgSignal); }
                             }}>Daemon</Button>
                         </div>
