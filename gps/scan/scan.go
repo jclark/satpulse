@@ -36,6 +36,16 @@ func (pkt Packet) HasTag(tag gpsprot.Tag) bool {
 	return pkt.Format != nil && pkt.Format.Tag() == tag
 }
 
+// AltChecksumValid checks whether the packet has a valid alternate checksum,
+// working around firmware bugs like the UM980 including $ in the NMEA checksum.
+func (pkt Packet) AltChecksumValid() bool {
+	if apf, ok := pkt.Format.(gpsprot.AltChecksumPacketFormat); ok {
+		data := []byte(pkt.Data)
+		return bytes.Equal(apf.ComputeAltChecksum(data), apf.ExtractChecksum(data))
+	}
+	return false
+}
+
 func (pkt Packet) ChecksumError() error {
 	if pkt.ChecksumValid {
 		return nil
