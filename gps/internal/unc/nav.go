@@ -16,8 +16,7 @@ func bestNavPosVel(ne *gpsprot.NavEpochMsg, m *uncmsg.BestNav) (*gpsprot.PosGeoM
 	var posG *gpsprot.PosGeoMsg
 	var velG *gpsprot.VelGeoMsg
 	quality(ne, m.PSolStatus, m.PosType,
-		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs,
-		m.GalBDS3Sig, m.GPSGLOBDS2Sig)
+		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs)
 	if m.PSolStatus == uncmsg.SolComputed {
 		posG = nov.PosGeo(ne, &m.Pos, "BESTNAV")
 		posG.Priority = gpsprot.PriVendorLow
@@ -43,8 +42,7 @@ func bestNavXYZPosVel(ne *gpsprot.NavEpochMsg, m *uncmsg.BestNavXYZ) (*gpsprot.P
 	var posE *gpsprot.PosECEFMsg
 	var velE *gpsprot.VelECEFMsg
 	quality(ne, m.PSolStatus, m.PosType,
-		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs,
-		m.GalBDS3Sig, m.GPSGLOBDS2Sig)
+		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs)
 	if m.PSolStatus == uncmsg.SolComputed {
 		posE = nov.PosECEFXYZ(ne, &m.XYZ, "BESTNAVXYZ")
 		posE.Priority = gpsprot.PriVendorLow
@@ -58,17 +56,13 @@ func bestNavXYZPosVel(ne *gpsprot.NavEpochMsg, m *uncmsg.BestNavXYZ) (*gpsprot.P
 
 // quality populates solution quality fields on the NavEpochMsg from BESTNAV/BESTNAVXYZ
 // fields. Called regardless of PSolStatus: sets FixLevelNone when not SolComputed.
+// GNSSUsed and BandsUsed are not set here: the signal mask bytes in BESTNAV/BESTNAVXYZ
+// are unreliable on Unicore firmware (e.g. reporting only L1 when multi-frequency
+// signals are in use). BESTSAT provides accurate data for these fields instead.
 func quality(ne *gpsprot.NavEpochMsg, solStatus uncmsg.SolStatus, posType uncmsg.PosVelType,
-	diffAge float32, stnID novmsg.StationID, numSVs, numSolnSVs uint8,
-	galBds3, gpsGloBds2 novmsg.HexByte) {
+	diffAge float32, stnID novmsg.StationID, numSVs, numSolnSVs uint8) {
 	ne.NumSVUsed.Set(uint16(numSolnSVs))
 	ne.NumSVTracked.Set(uint16(numSVs))
-	// Fill semantics: only set from signal mask bytes if not already set by BESTSAT.
-	if ne.GNSSUsed == 0 {
-		gs, b := signalsUsed(gpsGloBds2, galBds3)
-		ne.GNSSUsed = gs
-		ne.BandsUsed = b
-	}
 	if diffAge > 0 {
 		ne.DiffAge.Set(gpsprot.Seconds(float64(diffAge)))
 	}
@@ -143,80 +137,6 @@ func staDOP(ne *gpsprot.NavEpochMsg, m *uncmsg.StaDOP) {
 	ne.DOP.Time.Set(float64(m.TDOP))
 	ne.DOP.North.Set(float64(m.NDOP))
 	ne.DOP.East.Set(float64(m.EDOP))
-}
-
-// signalsUsed converts Unicore UM980 signal mask bytes (Table 7-172, Table 7-173)
-// to GNSS and band sets.
-func signalsUsed(gpsGloBds2, galBds3 novmsg.HexByte) (gpsprot.GNSSSet, gpsprot.Band) {
-	var gs gpsprot.GNSSSet
-	var b gpsprot.Band
-	// gpsGloBds2 (Table 7-172):
-	// bit 0: GPS L1, bit 1: GPS L2, bit 2: GPS L5, bit 3: BDS B3
-	// bit 4: GLO L1, bit 5: GLO L2, bit 6: BDS B1, bit 7: BDS B2
-	if gpsGloBds2&0x01 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.GPS)
-		b |= gpsprot.BandL1
-	}
-	if gpsGloBds2&0x02 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.GPS)
-		b |= gpsprot.BandL2
-	}
-	if gpsGloBds2&0x04 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.GPS)
-		b |= gpsprot.BandL5
-	}
-	if gpsGloBds2&0x08 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.BDS)
-		b |= gpsprot.BandE6
-	}
-	if gpsGloBds2&0x10 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.GLO)
-		b |= gpsprot.BandL1
-	}
-	if gpsGloBds2&0x20 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.GLO)
-		b |= gpsprot.BandL2
-	}
-	if gpsGloBds2&0x40 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.BDS)
-		b |= gpsprot.BandL1
-	}
-	if gpsGloBds2&0x80 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.BDS)
-		b |= gpsprot.BandL5 | gpsprot.BandE5b
-	}
-	// galBds3 (Table 7-173):
-	// bit 0: GAL E1, bit 1: GAL E5b, bit 2: GAL E5a, bit 3: Reserved
-	// bit 4: BDS3 B1I, bit 5: BDS3 B3I, bit 6: BDS3 B2a, bit 7: BDS3 B1C
-	if galBds3&0x01 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.GAL)
-		b |= gpsprot.BandL1
-	}
-	if galBds3&0x02 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.GAL)
-		b |= gpsprot.BandE5b
-	}
-	if galBds3&0x04 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.GAL)
-		b |= gpsprot.BandL5
-	}
-	if galBds3&0x10 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.BDS)
-		b |= gpsprot.BandL1
-	}
-	if galBds3&0x20 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.BDS)
-		b |= gpsprot.BandE6
-	}
-	if galBds3&0x40 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.BDS)
-		b |= gpsprot.BandL5
-	}
-	if galBds3&0x80 != 0 {
-		gs |= gpsprot.GNSSSetOf(gpsprot.BDS)
-		b |= gpsprot.BandL1
-	}
-	return gs, b
 }
 
 // bestSatGNSSBands extracts GNSSUsed and BandsUsed from BESTSAT per-satellite data.

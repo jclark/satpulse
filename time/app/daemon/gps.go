@@ -14,6 +14,16 @@ import (
 	"github.com/jclark/satpulse/time/internal/gpsevent"
 )
 
+// cfgFeatures describes aspects of the non-GPS daemon configuration
+// that affect GPS configuration.
+type cfgFeatures int
+
+const (
+	cfgTimePulse  cfgFeatures = 1 << iota // time pulse output is enabled
+	cfgPosition                           // position data is used
+	cfgSatellites                         // satellite data is used
+)
+
 // PVTMsgFlags are the PVT message flags required by the daemon.
 const PVTMsgFlags = gpsevent.TimePulsePVTMsgFlags
 
@@ -54,15 +64,14 @@ var gpsDefault = GPSConfig{
 
 // target creates a GPS configuration target based on the current GPSConfig.
 // If the returned error is errSatsOutNotEnabled, the caller should log it as a warning and continue.
-func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, timePulseEnabled bool) (*gpsprot.ConfigTarget, error) {
+func (c *GPSConfig) target(speed int, cf cfgFeatures) (*gpsprot.ConfigTarget, error) {
 	target := gpsprot.NewConfigTarget()
 	if !c.Config {
 		return target, nil
 	}
-	if timePulseEnabled {
+	if cf&cfgTimePulse != 0 {
 		target.Props.SetPPS(defaultPPSWidth)
 	}
-	gpsevent.SetMsgOptions(target, timePulseEnabled)
 	err := c.getMode(target)
 	if err != nil {
 		return nil, err
@@ -76,9 +85,27 @@ func (c *GPSConfig) target(speed int, wantSatellitesOutput bool, timePulseEnable
 	if err != nil {
 		return nil, err
 	}
-	target.Opts.RTCMMsg = c.rtcmMsg()
-	target.Opts.SatsMsg, err = c.satsMsg(speed, wantSatellitesOutput)
+	// setMsgOptions last because its error may be a non-fatal warning
+	err = c.setMsgOptions(&target.Opts, speed, cf)
 	return target, err
+}
+
+// setMsgOptions configures the message options on the ConfigTarget.
+func (c *GPSConfig) setMsgOptions(opts *gpsprot.ConfigOptions, speed int, cf cfgFeatures) error {
+	// Config is very slow on 8th gen if NMEA is enabled
+	opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
+	if cf&cfgTimePulse != 0 {
+		opts.PVTMsg = gpsevent.TimePulsePVTMsgFlags
+	} else {
+		opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
+	}
+	if cf&cfgPosition != 0 {
+		opts.PVTMsg |= gpsprot.PVTMsgPos
+	}
+	opts.RTCMMsg = c.rtcmMsg()
+	var err error
+	opts.SatsMsg, err = c.satsMsg(speed, cf&cfgSatellites != 0)
+	return err
 }
 
 func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProcessor, error) {

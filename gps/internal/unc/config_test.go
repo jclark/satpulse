@@ -37,6 +37,9 @@ type testReceiver struct {
 	nSent       int
 	sentPackets []string // Track all packets sent for verification
 
+	// Extra NMEA payloads to include in MASK query responses
+	extraMaskPayloads []string
+
 	// Error injection
 	nakQuery     *string // Query that gets negative ACK
 	noAckQuery   *string // Query that gets no ACK
@@ -229,6 +232,13 @@ func (r *testReceiver) generateResponses(cmd string) []testResponse {
 			})
 		}
 
+		// Add extra MASK responses (e.g. MASK RTK, BDSMaskPrn)
+		for _, payload := range r.extraMaskPayloads {
+			responses = append(responses, testResponse{
+				nmea: &nmea.Sentence{Payload: payload},
+			})
+		}
+
 	case "MODE":
 		// First send ACK
 		responses = append(responses, testResponse{
@@ -275,6 +285,8 @@ func TestConfigurator(t *testing.T) {
 		initialState []string                     // Commands representing receiver state
 		targetProps  func(*gpsprot.ConfigProps)   // Target properties (optional)
 		targetOpts   func(*gpsprot.ConfigOptions) // Target options (optional)
+
+		extraMaskPayloads []string // Extra NMEA payloads in MASK query response
 
 		// Error injection (single query for each error type)
 		nakQuery     *string // Query that gets negative ACK
@@ -387,6 +399,44 @@ func TestConfigurator(t *testing.T) {
 				"CONFIG SIGNALGROUP 2",
 				"MASK 5",
 				"MODE ROVER",
+			},
+			expectedSent: []string{
+				"CONFIG", "MASK", "MODE",
+			},
+			expectedStates: map[string]configRequestState{
+				"CONFIG": stateSucceeded,
+				"MASK":   stateSucceeded,
+				"MODE":   stateSucceeded,
+			},
+		},
+		{
+			name: "MASK RTK in query response",
+			initialState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK 5",
+				"MODE ROVER",
+			},
+			extraMaskPayloads: []string{
+				"CONFIG,MASK RTK,MASK RTK 5",
+			},
+			expectedSent: []string{
+				"CONFIG", "MASK", "MODE",
+			},
+			expectedStates: map[string]configRequestState{
+				"CONFIG": stateSucceeded,
+				"MASK":   stateSucceeded,
+				"MODE":   stateSucceeded,
+			},
+		},
+		{
+			name: "BDSMaskPrn in query response",
+			initialState: []string{
+				"CONFIG SIGNALGROUP 2",
+				"MASK 5",
+				"MODE ROVER",
+			},
+			extraMaskPayloads: []string{
+				"CONFIG,MASK,BDSMaskPrn:15,17,18,31,47,48,49,50,51,52,53,54,55,56,57,58,62,63,",
 			},
 			expectedSent: []string{
 				"CONFIG", "MASK", "MODE",
@@ -522,13 +572,14 @@ func TestConfigurator(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create test receiver with initial state
 			rcvr := &testReceiver{
-				version:      &uncmsg.Version{},
-				nativeProps:  makeNativeProps(),
-				nakQuery:     tt.nakQuery,
-				noAckQuery:   tt.noAckQuery,
-				noRespQuery:  tt.noRespQuery,
-				lateAckQuery: tt.lateAckQuery,
-				sentPackets:  []string{},
+				version:           &uncmsg.Version{},
+				nativeProps:       makeNativeProps(),
+				extraMaskPayloads: tt.extraMaskPayloads,
+				nakQuery:          tt.nakQuery,
+				noAckQuery:        tt.noAckQuery,
+				noRespQuery:       tt.noRespQuery,
+				lateAckQuery:      tt.lateAckQuery,
+				sentPackets:       []string{},
 			}
 
 			// Set up initial state

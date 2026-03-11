@@ -19,7 +19,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-mobile**] [**\-\-fixed\-pos\-ecef** *X,Y,Z*] [**\-\-fixed\-pos\-acc** *meters*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-survey**] [**\-\-survey\-time** *seconds*] [**\-\-survey\-acc** *meters*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea**] [**\-\-binary**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pvt\-out** **pos**\|**vel**\|**time**\|**tp**\|**leap**\|**survey**\|**tai**\|**ecef**\|**after**\|**daemon**\|**off**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pvt\-out** **pos**\|**vel**\|**time**\|**tp**\|**leap**\|**survey**\|**qual**\|**epoch**\|**tai**\|**ecef**\|**after**\|**daemon**\|**off**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-sats\-out** **sat**\|**sig**\|**none**,...]
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-raw\-out** **obs**\|**nav**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**auto**\|**none**,...]\
@@ -159,7 +159,13 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
 
   **survey**
   : Enable survey-in progress messages
-  
+
+  **qual**
+  : Enable solution quality messages
+
+  **epoch**
+  : Enable messages to mark the end of a navigation epoch
+
   **tai**
   : Prefer time in TAI (or constant offset from TAI) rather than UTC
   
@@ -170,7 +176,7 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
   : If the time pulse message enabled by **tp** is emitted before the time pulse, then emit a time message also
   
   **daemon**
-  : Enable messages needed by satpulsed (equivalent to `tp,after,tai,leap,survey,off`)
+  : Enable messages needed by satpulsed (equivalent to `tp,after,tai,leap,survey,qual,epoch,off`)
   
   **off**
   : Turn off PVT messages that are not explicitly enabled

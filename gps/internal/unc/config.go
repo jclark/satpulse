@@ -411,25 +411,28 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 	return true
 }
 
-// configQueryResponse handles a response to query, where the response has the form
-// `$CONFIG,PPS,CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0*6A`
-// fields here will be {"PPS","CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0"}
-// or `$CONFIG,MASK,MASK 5*XX`
-// fields here will be {"MASK","MASK 5"}
+// configQueryResponse handles a response to a query.
+// The receiver responds to both CONFIG and MASK queries using multiple $CONFIG sentences.
+// A CONFIG query produces one sentence per property, e.g. $CONFIG,PPS,... and $CONFIG,SIGNALGROUP,...
+// A MASK query produces one sentence per mask, e.g. $CONFIG,MASK,... and $CONFIG,MASK RTK,...
+// The fields parameter contains the comma-separated fields after "$CONFIG,":
+// fields[0] is the key (e.g. "PPS", "MASK", "MASK RTK") and fields[1] is the command.
 func (c *Configurator) configQueryResponse(fields []string, tRead time.Time) error {
 	if len(fields) < 2 {
 		return fmt.Errorf("invalid config query response format: %v", fields)
 	}
+	return c.queryResponse(queryResponseKey(fields[0]), fields[0], strings.Join(fields[1:], ","), tRead)
+}
 
-	// Determine which query this response belongs to
-	// CONFIG query gets responses with PPS, SIGNALGROUP keys
-	// MASK query gets responses with MASK key
-	query := "CONFIG"
-	if fields[0] == "MASK" {
-		query = "MASK"
+// queryResponseKey returns the query that a $CONFIG response belongs to,
+// based on the key field. Keys starting with "MASK" belong to the MASK query;
+// everything else belongs to the CONFIG query.
+func queryResponseKey(key string) string {
+	k, _, _ := strings.Cut(key, " ")
+	if k == "MASK" {
+		return "MASK"
 	}
-
-	return c.queryResponse(query, fields[0], fields[1], tRead)
+	return "CONFIG"
 }
 
 func (c *Configurator) modeResponse(mode *uncmsg.Mode, tRead time.Time) error {

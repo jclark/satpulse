@@ -23,21 +23,10 @@ import (
 const LogExtension = ".jsonl"
 
 // TimePulsePVTMsgFlags are the PVT message flags when time pulse is enabled.
-const TimePulsePVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey
+const TimePulsePVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch
 
 // NoTimePulsePVTMsgFlags are the PVT message flags when time pulse is not enabled.
-const NoTimePulsePVTMsgFlags = gpsprot.PVTMsgPos | gpsprot.PVTMsgTime | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey
-
-// SetMsgOptions configures the message options suitably for the gpsevent package.
-// It disables NMEA (which is slow on 8th gen) and enables the required PVT messages.
-func SetMsgOptions(target *gpsprot.ConfigTarget, timePulseEnabled bool) {
-	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone) // Config is very slow on 8-th gen if NMEA is enabled
-	if timePulseEnabled {
-		target.Opts.PVTMsg = TimePulsePVTMsgFlags
-	} else {
-		target.Opts.PVTMsg = NoTimePulsePVTMsgFlags
-	}
-}
+const NoTimePulsePVTMsgFlags = gpsprot.PVTMsgPos | gpsprot.PVTMsgTime | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch
 
 // tickHandler forwards filled TimeMsgs from the TimeTicker to Observer.Tick.
 type tickHandler struct {

@@ -180,6 +180,42 @@ func TestDispatchEpochQuality(t *testing.T) {
 	t.Fatal("no NavEpoch emitted")
 }
 
+func TestDispatchEpochRTCMBaseIDNonOSR(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+	// Epoch 1: BESTPOS with Single fix and a station ID.
+	// Station ID should not appear in output since Single is not OSR.
+	common := makeCommon(2350, 100000)
+	pp.dispatch(&common, &novmsg.BestPos{Pos: novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{
+		PSolStatus: novmsg.SolComputed,
+		PosType:    novmsg.PosSingle,
+		Lat:        47.0,
+		Lon:        8.0,
+		Hgt:        400.0,
+		StnID:      novmsg.StationID{'1', '2', '3', 0},
+		NumSVs:     10,
+		NumSolnSVs: 8,
+	}}, time.Unix(1, 0), TagBinary)
+	// Flush with new epoch.
+	common2 := makeCommon(2350, 101000)
+	pp.dispatch(&common2, &novmsg.BestPos{Pos: novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{
+		PSolStatus: novmsg.InsufficientObs,
+	}}, time.Unix(2, 0), TagBinary)
+	for _, m := range h.msgs {
+		if m.msgType != "navepoch" {
+			continue
+		}
+		ne := m.msg.(*gpsprot.NavEpochMsg)
+		if ne.RTCMRefBaseID.IsSet() {
+			t.Errorf("RTCMRefBaseID = %d, want unset for non-OSR fix", ne.RTCMRefBaseID.Get())
+		}
+		return
+	}
+	t.Fatal("no NavEpoch emitted")
+}
+
 func TestDispatchEpochQualityNotComputed(t *testing.T) {
 	var pp packetProcessor
 	pp.mgr = gpsprot.NewNavEpochManager()
