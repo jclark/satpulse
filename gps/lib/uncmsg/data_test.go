@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
+
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 )
 
 type dataTestCase struct {
@@ -78,6 +81,8 @@ func testDataAscii(t *testing.T, tests []dataTestCase) {
 				t.Fatalf("SerializeAsciiMsg() error = %v", err)
 			}
 
+			validateAsciiChecksum(t, serialized, asciiChecksumHexLen(tt.asciiPacket))
+
 			msg2, err := ParseAsciiMessage(serialized)
 			if err != nil {
 				t.Fatalf("ParseAsciiMessage() on serialized packet error = %v", err)
@@ -105,6 +110,59 @@ func mustHexDecode(s string) []byte {
 		panic(err)
 	}
 	return b
+}
+
+// asciiChecksumHexLen returns the number of hex digits in the checksum of an ASCII packet.
+func asciiChecksumHexLen(packet string) int {
+	s := strings.TrimRight(packet, "\r\n")
+	i := strings.LastIndex(s, "*")
+	if i < 0 {
+		return 0
+	}
+	return len(s) - i - 1
+}
+
+// validateAsciiChecksum checks that serialized has a checksum with wantHexLen hex digits
+// and that the checksum value is correct for the packet data.
+func validateAsciiChecksum(t *testing.T, serialized []byte, wantHexLen int) {
+	t.Helper()
+	s := strings.TrimRight(string(serialized), "\r\n")
+	if len(s) == 0 || s[0] != '#' {
+		t.Errorf("validateAsciiChecksum: packet does not start with '#'")
+		return
+	}
+	data := s[1:]
+	i := strings.LastIndex(data, "*")
+	if i < 0 {
+		t.Errorf("validateAsciiChecksum: no '*' found in packet")
+		return
+	}
+	dataForChecksum := data[:i]
+	checksumHex := data[i+1:]
+	if len(checksumHex) != wantHexLen {
+		t.Errorf("SerializeAsciiMsg() checksum has %d hex digits, want %d (checksum: *%s)", len(checksumHex), wantHexLen, checksumHex)
+		return
+	}
+	val, err := strconv.ParseUint(checksumHex, 16, 32)
+	if err != nil {
+		t.Errorf("validateAsciiChecksum: invalid checksum %q: %v", checksumHex, err)
+		return
+	}
+	switch wantHexLen {
+	case 2:
+		var xor byte
+		for _, b := range []byte(dataForChecksum) {
+			xor ^= b
+		}
+		if byte(val) != xor {
+			t.Errorf("SerializeAsciiMsg() XOR checksum = %02x, want %02x", val, xor)
+		}
+	case 8:
+		want := novmsg.CRC32([]byte(dataForChecksum))
+		if uint32(val) != want {
+			t.Errorf("SerializeAsciiMsg() CRC32 checksum = %08x, want %08x", val, want)
+		}
+	}
 }
 
 // fixupFloat simulates the receiver's float formatting by doing: binary -> sprintf -> parse
