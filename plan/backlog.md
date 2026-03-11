@@ -48,6 +48,9 @@ a GitHub issue or plan file.
 
 ## GPS configuration
 
+* Progressive surveys: series of surveys with progressively longer
+  observation times and tighter deviations
+* Time pulse sync mode for FTS products (e.g. M8F)
 * Option for satpulsetool to get survey result
 * Might need to set CFG-NAVSPG-WKNROLLOVER
 * NMEA TXT message handling
