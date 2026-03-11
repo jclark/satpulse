@@ -1073,11 +1073,11 @@ func (a *App) handleMsgPacket(procs map[gpsprot.Tag]gpsprot.PacketProcessor, pkt
 	if pp == nil {
 		return
 	}
-	err := pkt.ChecksumError()
-	if err != nil {
-		a.lg.Warn(err.Error(), "tag", tag, "len", len(pkt.Data))
+	if !pkt.ChecksumValid && !pkt.AltChecksumValid() {
+		a.lg.Warn(pkt.ChecksumError().Error(), "tag", tag, "len", len(pkt.Data))
+		return
 	}
-	_, err = pp.ProcessPacket(pkt.Data, pkt.TRead)
+	_, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
 		a.lg.Error("error processing packet", "err", err, "tag", tag, "len", len(pkt.Data))
 	}
