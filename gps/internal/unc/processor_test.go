@@ -528,6 +528,46 @@ func TestEpochQualityFields(t *testing.T) {
 	t.Fatal("no NavEpoch emitted")
 }
 
+func TestEpochRTCMBaseIDNonOSR(t *testing.T) {
+	var pp packetProcessor
+	pp.mgr = gpsprot.NewNavEpochManager()
+	h := &testMsgHandler{}
+	pp.mh = h
+	// Epoch 1: BESTNAV with Single fix and a station ID.
+	// Station ID should not appear in output since Single is not OSR.
+	msg1 := makeMsg(2350, 100000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.SolComputed,
+			PosType:    uncmsg.PosVelSingle,
+			Lat:        47.0,
+			Lon:        8.0,
+			Hgt:        400.0,
+			StnID:      novmsg.StationID{'1', '2', '3', 0},
+			NumSVs:     10,
+			NumSolnSVs: 8,
+		},
+	})
+	pp.dispatch(msg1, time.Unix(1, 0), TagBinary)
+	// Flush with new epoch.
+	msg2 := makeMsg(2350, 101000, &uncmsg.BestNav{
+		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+			PSolStatus: uncmsg.InsufficientObs,
+		},
+	})
+	pp.dispatch(msg2, time.Unix(2, 0), TagBinary)
+	for _, m := range h.msgs {
+		if m.msgType != "navepoch" {
+			continue
+		}
+		ne := m.msg.(*gpsprot.NavEpochMsg)
+		if ne.RTCMRefBaseID.IsSet() {
+			t.Errorf("RTCMRefBaseID = %d, want unset for non-OSR fix", ne.RTCMRefBaseID.Get())
+		}
+		return
+	}
+	t.Fatal("no NavEpoch emitted")
+}
+
 func TestEpochQualityNotComputed(t *testing.T) {
 	var pp packetProcessor
 	pp.mgr = gpsprot.NewNavEpochManager()

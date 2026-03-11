@@ -199,6 +199,12 @@ func (p *packetProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, 
 	p.curEpochMsg = nil
 	if msg != nil {
 		msg.Tag = p.curEpochTag
+		// Station ID is only meaningful as an RTCM base station ID
+		// when using OSR corrections (RTK/DGPS). Otherwise, zero
+		// is reported but does not represent a real base station.
+		if msg.Correction&gpsprot.CorrOSR == 0 {
+			msg.RTCMRefBaseID.Clear()
+		}
 	}
 	return msg, gpsprot.PriVendorLow, p.mh
 }
