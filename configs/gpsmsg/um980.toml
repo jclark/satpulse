@@ -10,6 +10,16 @@ tag = "get-version"
 description = "Query firmware version"
 text = "VERSION"
 
+# Configuration queries
+[[line]]
+tag = "get-mask"
+description = "Query mask settings"
+text = "MASK"
+[[line]]
+tag = "get-config"
+description = "Query receiver configuration"
+text = "CONFIG"
+
 # RECTIME (receiver clock and UTC time)
 [[line]]
 tag = "unc-rectimeb"

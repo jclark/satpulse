@@ -421,7 +421,7 @@ func (c *Configurator) configQueryResponse(fields []string, tRead time.Time) err
 	if len(fields) < 2 {
 		return fmt.Errorf("invalid config query response format: %v", fields)
 	}
-	return c.queryResponse(queryResponseKey(fields[0]), fields[0], fields[1], tRead)
+	return c.queryResponse(queryResponseKey(fields[0]), fields[0], strings.Join(fields[1:], ","), tRead)
 }
 
 // queryResponseKey returns the query that a $CONFIG response belongs to,
