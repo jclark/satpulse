@@ -1079,6 +1079,6 @@ func (a *App) handleMsgPacket(procs map[gpsprot.Tag]gpsprot.PacketProcessor, pkt
 	}
 	_, err = pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
-		a.lg.Error("error processing packet", "err", err, "tag", tag, "data", pkt.Data)
+		a.lg.Error("error processing packet", "err", err, "tag", tag, "len", len(pkt.Data))
 	}
 }
