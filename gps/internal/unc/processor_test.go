@@ -515,13 +515,13 @@ func TestEpochQualityFields(t *testing.T) {
 		if !ne.RTCMRefBaseID.IsSet() || ne.RTCMRefBaseID.Get() != 123 {
 			t.Errorf("RTCMRefBaseID = %v, want 123", ne.RTCMRefBaseID)
 		}
-		wantGNSS := gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GAL)
-		if ne.GNSSUsed != wantGNSS {
-			t.Errorf("GNSSUsed = %v, want %v", ne.GNSSUsed, wantGNSS)
+		// GNSSUsed and BandsUsed are not set from BESTNAV signal mask
+		// bytes (unreliable on Unicore firmware); only BESTSAT sets them.
+		if ne.GNSSUsed != 0 {
+			t.Errorf("GNSSUsed = %v, want 0 (BESTNAV should not set it)", ne.GNSSUsed)
 		}
-		wantBand := gpsprot.BandL1
-		if ne.BandsUsed != wantBand {
-			t.Errorf("BandsUsed = %v, want %v", ne.BandsUsed, wantBand)
+		if ne.BandsUsed != 0 {
+			t.Errorf("BandsUsed = %v, want 0 (BESTNAV should not set it)", ne.BandsUsed)
 		}
 		return
 	}
@@ -651,24 +651,22 @@ func TestBestSatGNSSBands(t *testing.T) {
 	t.Fatal("no NavEpoch emitted")
 }
 
-func TestBestSatOverridesBestPos(t *testing.T) {
+func TestBestSatWithBestNav(t *testing.T) {
 	var pp packetProcessor
 	pp.mgr = gpsprot.NewNavEpochManager()
 	h := &testMsgHandler{}
 	pp.mh = h
-	// BESTPOS arrives first with GPS+GAL L1 from signal mask
+	// BESTNAV arrives first (does not set GNSSUsed/BandsUsed)
 	msg1 := makeMsg(2350, 100000, &uncmsg.BestNav{
 		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
-			PSolStatus:    uncmsg.SolComputed,
-			PosType:       uncmsg.PosVelSingle,
-			Lat:           47.0, Lon: 8.0, Hgt: 400.0,
-			LatSigma:      1.0, LonSigma: 1.0, HgtSigma: 2.0,
-			GPSGLOBDS2Sig: 0x01, // GPS L1
-			GalBDS3Sig:    0x01, // GAL E1
+			PSolStatus: uncmsg.SolComputed,
+			PosType:    uncmsg.PosVelSingle,
+			Lat:        47.0, Lon: 8.0, Hgt: 400.0,
+			LatSigma:   1.0, LonSigma: 1.0, HgtSigma: 2.0,
 		},
 	})
 	pp.dispatch(msg1, time.Unix(1, 0), TagBinary)
-	// BESTSAT arrives second with GPS+BDS (different from signal mask)
+	// BESTSAT arrives second with GPS+BDS
 	msg2 := makeMsg(2350, 100000, &uncmsg.BestSat{
 		BestSatInitChunk: uncmsg.BestSatInitChunk{NumEntries: 2},
 		Sats: []uncmsg.BestSatEntry{
@@ -687,21 +685,20 @@ func TestBestSatOverridesBestPos(t *testing.T) {
 			continue
 		}
 		ne := m.msg.(*gpsprot.NavEpochMsg)
-		// BESTSAT should override: GPS+BDS, not GPS+GAL
 		wantGNSS := gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.BDS)
 		if ne.GNSSUsed != wantGNSS {
-			t.Errorf("GNSSUsed = %v, want %v (BESTSAT should override BESTPOS)", ne.GNSSUsed, wantGNSS)
+			t.Errorf("GNSSUsed = %v, want %v", ne.GNSSUsed, wantGNSS)
 		}
 		wantBand := gpsprot.BandL1 | gpsprot.BandL5
 		if ne.BandsUsed != wantBand {
-			t.Errorf("BandsUsed = %v, want %v (BESTSAT should override BESTPOS)", ne.BandsUsed, wantBand)
+			t.Errorf("BandsUsed = %v, want %v", ne.BandsUsed, wantBand)
 		}
 		return
 	}
 	t.Fatal("no NavEpoch emitted")
 }
 
-func TestBestSatBeforeBestPos(t *testing.T) {
+func TestBestSatBeforeBestNav(t *testing.T) {
 	var pp packetProcessor
 	pp.mgr = gpsprot.NewNavEpochManager()
 	h := &testMsgHandler{}
@@ -714,14 +711,13 @@ func TestBestSatBeforeBestPos(t *testing.T) {
 		},
 	})
 	pp.dispatch(msg1, time.Unix(1, 0), TagBinary)
-	// BESTPOS arrives second with GPS L1 from signal mask -- should be no-op (fill)
+	// BESTNAV arrives second (does not set GNSSUsed/BandsUsed)
 	msg2 := makeMsg(2350, 100000, &uncmsg.BestNav{
 		Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
-			PSolStatus:    uncmsg.SolComputed,
-			PosType:       uncmsg.PosVelSingle,
-			Lat:           47.0, Lon: 8.0, Hgt: 400.0,
-			LatSigma:      1.0, LonSigma: 1.0, HgtSigma: 2.0,
-			GPSGLOBDS2Sig: 0x01, // GPS L1
+			PSolStatus: uncmsg.SolComputed,
+			PosType:    uncmsg.PosVelSingle,
+			Lat:        47.0, Lon: 8.0, Hgt: 400.0,
+			LatSigma:   1.0, LonSigma: 1.0, HgtSigma: 2.0,
 		},
 	})
 	pp.dispatch(msg2, time.Unix(1, 0), TagBinary)
@@ -735,14 +731,13 @@ func TestBestSatBeforeBestPos(t *testing.T) {
 			continue
 		}
 		ne := m.msg.(*gpsprot.NavEpochMsg)
-		// BESTSAT values should be preserved, BESTPOS fill is no-op
 		wantGNSS := gpsprot.GNSSSetOf(gpsprot.GAL)
 		if ne.GNSSUsed != wantGNSS {
-			t.Errorf("GNSSUsed = %v, want %v (BESTPOS fill should be no-op)", ne.GNSSUsed, wantGNSS)
+			t.Errorf("GNSSUsed = %v, want %v", ne.GNSSUsed, wantGNSS)
 		}
 		wantBand := gpsprot.BandL1 | gpsprot.BandE5b
 		if ne.BandsUsed != wantBand {
-			t.Errorf("BandsUsed = %v, want %v (BESTPOS fill should be no-op)", ne.BandsUsed, wantBand)
+			t.Errorf("BandsUsed = %v, want %v", ne.BandsUsed, wantBand)
 		}
 		return
 	}
