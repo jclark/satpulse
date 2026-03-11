@@ -521,7 +521,11 @@ func (p *sbasProp) updateFromProps(props *gpsprot.ConfigProps) error {
 	return nil
 }
 
-var maskRegexp = regexp.MustCompile(`^(?:MASK (-?\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Z0-9]*)|[A-Z]+ PRN \d+)))$`)
+// maskRegexp matches MASK/UNMASK commands:
+// - MASK <elevation>: elevation angle (group 1)
+// - MASK/UNMASK <signal>: system or frequency (group 4), or PRN (no capture, ignored)
+// - MASK <subtype> <value>: unknown subtypes like CN0, RTK (no capture, ignored)
+var maskRegexp = regexp.MustCompile(`^(?:MASK (-?\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Z0-9]*)|[A-Z]+ PRN \d+))|MASK [A-Z][A-Z0-9]* [A-Z0-9.]+)$`)
 
 type maskProp struct {
 	elevationMask opt.Val[float64] // elevation angle in degrees
