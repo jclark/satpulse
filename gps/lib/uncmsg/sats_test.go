@@ -17,8 +17,8 @@ var satsTests = []dataTestCase{
 					TimeStatus:         TimeStatusFine,
 					Week:               2377,
 					MillisecondsOfWeek: 14244000,
-					Reserved:           0,
 					Version:            0,
+					Reserved:           0,
 					LeapSec:            18,
 					DelayMs:            28,
 				},
@@ -93,8 +93,8 @@ var satsTests = []dataTestCase{
 					TimeStatus:         TimeStatusFine,
 					Week:               2381,
 					MillisecondsOfWeek: 376645000,
-					Reserved:           17548,
-					Version:            0,
+					Version:            17548,
+					Reserved:           0,
 					LeapSec:            18,
 					DelayMs:            22,
 				},
@@ -141,7 +141,6 @@ var satsTests = []dataTestCase{
 		},
 	},
 }
-
 
 func TestSats(t *testing.T) {
 	t.Run("bin", func(t *testing.T) {

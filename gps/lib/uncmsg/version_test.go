@@ -19,8 +19,8 @@ var versionTests = []dataTestCase{
 					TimeStatus:         TimeStatusFine,
 					Week:               2379,
 					MillisecondsOfWeek: 359862000,
-					Reserved:           0,
 					Version:            0,
+					Reserved:           0,
 					LeapSec:            18,
 					DelayMs:            3,
 				},
@@ -95,13 +95,13 @@ func TestVersion_BuildNumber(t *testing.T) {
 			// Convert string to [33]byte array
 			var swVersionArray [33]byte
 			copy(swVersionArray[:], tt.swVersion)
-			
+
 			v := &Version{
 				SwVersion: swVersionArray,
 			}
-			
+
 			got, err := v.BuildNumber()
-			
+
 			if tt.build == -1 {
 				// Expect error
 				if err == nil {
@@ -109,13 +109,13 @@ func TestVersion_BuildNumber(t *testing.T) {
 				}
 				return
 			}
-			
+
 			// Expect success
 			if err != nil {
 				t.Errorf("BuildNumber() unexpected error = %v", err)
 				return
 			}
-			
+
 			if got != tt.build {
 				t.Errorf("BuildNumber() = %v, want %v", got, tt.build)
 			}
@@ -128,22 +128,22 @@ func TestVersion_BuildNumber(t *testing.T) {
 func fixupVersionMsgForBin(msg *Msg) *Msg {
 	v := msg.Body.(*Version)
 	result := *v // Copy the struct
-	
+
 	// Extract build number from ASCII format
 	buildNum, err := v.BuildNumber()
 	if err != nil {
 		panic(fmt.Sprintf("failed to extract build number: %v", err))
 	}
-	
+
 	// Convert to binary format (just the build number as string)
 	buildStr := strconv.Itoa(buildNum)
-	
+
 	// Clear SwVersion and copy build string
 	result.SwVersion = [33]byte{}
 	copy(result.SwVersion[:], buildStr)
-	
+
 	return &Msg{
-		Hdr:     msg.Hdr,
+		Hdr:  msg.Hdr,
 		Body: &result,
 	}
 }

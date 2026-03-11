@@ -12,7 +12,7 @@ type MsgID uint16
 // Reuse novmsg.TimeStatus
 const (
 	TimeStatusUnknown = novmsg.TimeStatusUnknown
-	TimeStatusCoarse  = novmsg.TimeStatusCoarse 
+	TimeStatusCoarse  = novmsg.TimeStatusCoarse
 	TimeStatusFine    = novmsg.TimeStatusFine
 )
 
@@ -69,8 +69,8 @@ type TimingHdr struct {
 	TimeStatus         novmsg.TimeStatus
 	Week               uint16
 	MillisecondsOfWeek uint32
-	Reserved           uint32
-	Version            byte   // Release version
+	Version            uint32 // Release version
+	Reserved           byte
 	LeapSec            byte   // Leap second
 	DelayMs            uint16 // Output delay
 }
