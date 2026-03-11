@@ -805,7 +805,7 @@ func TestPacketAnalyzerMixedProtocols(t *testing.T) {
 	if r.Kind != AckResponse {
 		t.Fatalf("kind: got %d, want %d", r.Kind, AckResponse)
 	}
-	r = pa.Analyze(gpsreg.TagNMEA, makeNMEA("CONFIG,CMD,response: OK"))
+	r = pa.Analyze(gpsreg.TagNMEA, makeNMEA("command,CONFIG PPP ENABLE,response: OK"))
 	if r.Kind != AckResponse {
 		t.Fatalf("kind: got %d, want %d", r.Kind, AckResponse)
 	}

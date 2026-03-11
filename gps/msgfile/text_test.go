@@ -810,7 +810,7 @@ func TestUnicoreMatcher(t *testing.T) {
 			name:     "ack OK",
 			sentText: "CONFIG HEADING OFFSET 0.0",
 			tag:      gpsreg.TagNMEA,
-			data:     makeNMEA("CONFIG,CMD,response: OK"),
+			data:     makeNMEA("command,CONFIG HEADING OFFSET 0.0,response: OK"),
 			wantKind: AckResponse,
 			wantErr:  "",
 		},
@@ -818,7 +818,7 @@ func TestUnicoreMatcher(t *testing.T) {
 			name:     "ack error",
 			sentText: "CONFIG HEADING OFFSET 0.0",
 			tag:      gpsreg.TagNMEA,
-			data:     makeNMEA("CONFIG,CMD,response: Invalid parameter"),
+			data:     makeNMEA("command,CONFIG HEADING OFFSET 0.0,response: Invalid parameter"),
 			wantKind: AckResponse,
 			wantErr:  "Invalid parameter",
 		},
@@ -826,7 +826,7 @@ func TestUnicoreMatcher(t *testing.T) {
 			name:     "wrong command name",
 			sentText: "CONFIG HEADING OFFSET 0.0",
 			tag:      gpsreg.TagNMEA,
-			data:     makeNMEA("MODE,CMD,response: OK"),
+			data:     makeNMEA("command,MODE ROVER,response: OK"),
 			wantKind: NotResponse,
 		},
 		{
@@ -851,7 +851,14 @@ func TestUnicoreMatcher(t *testing.T) {
 			wantKind: OtherResponse,
 		},
 		{
-			name:     "UNCA non-MODE not response",
+			name:     "UNCA VERSION response",
+			sentText: "VERSION",
+			tag:      gpsreg.TagUnicoreAscii,
+			data:     "#VERSION,0;some data*abcdef12\r\n",
+			wantKind: OtherResponse,
+		},
+		{
+			name:     "UNCA unrelated not response",
 			sentText: "CONFIG HEADING OFFSET 0.0",
 			tag:      gpsreg.TagUnicoreAscii,
 			data:     "#VERSION,0;some data*abcdef12\r\n",
@@ -964,14 +971,31 @@ text = "MODE ROVER"
 	for _, rm := range raw {
 		pa.NotifySent(rm)
 	}
-	// CONFIG ack
-	r := pa.Analyze(gpsreg.TagNMEA, makeNMEA("CONFIG,CMD,response: OK"))
-	if r.Kind != AckResponse {
-		t.Errorf("CONFIG ack: got kind %d, want %d", r.Kind, AckResponse)
+	tests := []struct {
+		name     string
+		tag      gpsprot.Tag
+		data     string
+		wantKind ResponseKind
+	}{
+		{
+			name:     "CONFIG ack",
+			tag:      gpsreg.TagNMEA,
+			data:     makeNMEA("command,CONFIG PPP ENABLE,response: OK"),
+			wantKind: AckResponse,
+		},
+		{
+			name:     "MODE ack",
+			tag:      gpsreg.TagNMEA,
+			data:     makeNMEA("command,MODE ROVER,response: OK"),
+			wantKind: AckResponse,
+		},
 	}
-	// MODE ack
-	r = pa.Analyze(gpsreg.TagNMEA, makeNMEA("MODE,CMD,response: OK"))
-	if r.Kind != AckResponse {
-		t.Errorf("MODE ack: got kind %d, want %d", r.Kind, AckResponse)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := pa.Analyze(tc.tag, tc.data)
+			if r.Kind != tc.wantKind {
+				t.Errorf("kind: got %d, want %d", r.Kind, tc.wantKind)
+			}
+		})
 	}
 }

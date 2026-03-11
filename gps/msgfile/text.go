@@ -38,7 +38,7 @@ func (lm *LineMsg) getTag() string { return *lm.Tag }
 
 // NMEAMsg represents a [[nmea]] entry or [default.nmea].
 type NMEAMsg struct {
-	Text  string `toml:"text"`
+	Text  string                      `toml:"text"`
 	flags nmeamsg.SentenceSyntaxFlags // set by toRaw
 	built string                      // full sentence from buildNMEA, set by toRaw
 	MsgCommon
@@ -173,12 +173,18 @@ func (m *lineMatcher) match(tag gpsprot.Tag, data string) (ResponseKind, string)
 
 // unicoreMatcher handles LineMsg responses with ResponsePatternUnicore.
 type unicoreMatcher struct {
-	command string // first word of sent line text, e.g. "CONFIG"
+	command string // first word of sent text, upper case
+	text    string // full sent text
 }
 
 func (m *unicoreMatcher) match(tag gpsprot.Tag, data string) (ResponseKind, string) {
 	if tag == gpsreg.TagNMEA {
 		payload := nmeaPayload(data)
+		// Unicore command acks use NMEA framing but are not standard NMEA.
+		// Format: $command,FULL_CMD_TEXT,response: OK*XX
+		if strings.HasPrefix(payload, "command,") {
+			return m.matchCommandAck(payload[len("command,"):])
+		}
 		return m.matchNMEA(payload)
 	}
 	if tag == gpsreg.TagUnicoreAscii {
@@ -187,23 +193,24 @@ func (m *unicoreMatcher) match(tag gpsprot.Tag, data string) (ResponseKind, stri
 	return NotResponse, ""
 }
 
-func (m *unicoreMatcher) matchNMEA(payload string) (ResponseKind, string) {
-	// Pattern: $command,CMD,response: ...
-	// The payload starts after $, so it looks like: command,CMD,response: OK
-	if strings.HasPrefix(payload, m.command+",") {
-		rest := payload[len(m.command)+1:]
-		if strings.HasPrefix(rest, "CMD,response") {
-			respIdx := strings.Index(rest, "response: ")
-			if respIdx < 0 {
-				return NotResponse, ""
-			}
-			respText := rest[respIdx+len("response: "):]
-			if respText == "OK" {
-				return AckResponse, ""
-			}
-			return AckResponse, respText
-		}
+func (m *unicoreMatcher) matchCommandAck(rest string) (ResponseKind, string) {
+	// rest is "FULL_CMD_TEXT,response: OK" or "FULL_CMD_TEXT,response: ERROR_TEXT"
+	cmdText, resp, found := strings.Cut(rest, ",")
+	if !found || cmdText != m.text {
+		return NotResponse, ""
 	}
+	const prefix = "response: "
+	if !strings.HasPrefix(resp, prefix) {
+		return NotResponse, ""
+	}
+	r := resp[len(prefix):]
+	if r == "OK" {
+		return AckResponse, ""
+	}
+	return AckResponse, r
+}
+
+func (m *unicoreMatcher) matchNMEA(payload string) (ResponseKind, string) {
 	// $CONFIG,... data reply (regardless of sent command).
 	if strings.HasPrefix(payload, "CONFIG,") {
 		return OtherResponse, ""
@@ -212,14 +219,10 @@ func (m *unicoreMatcher) matchNMEA(payload string) (ResponseKind, string) {
 }
 
 func (m *unicoreMatcher) matchUNCA(data string) (ResponseKind, string) {
-	// UNCA packets start with #, header;data*checksum\r\n
-	// Extract message name from header (first field before comma)
-	s := data
-	if strings.HasPrefix(s, "#") {
-		s = s[1:]
-	}
-	name, _, _ := strings.Cut(s, ",")
-	if strings.EqualFold(name, "MODE") {
+	// UNCA packets: #MSGNAME,header;data*checksum\r\n
+	// Match one-shot query responses (VERSION, MODE).
+	name, _, _ := strings.Cut(strings.TrimPrefix(data, "#"), ",")
+	if strings.ToUpper(name) == m.command {
 		return OtherResponse, ""
 	}
 	return NotResponse, ""
@@ -228,7 +231,10 @@ func (m *unicoreMatcher) matchUNCA(data string) (ResponseKind, string) {
 func (lm *LineMsg) newMatcher() responseMatcher {
 	if lm.RespPattern != nil && *lm.RespPattern == ResponsePatternUnicore {
 		cmd, _, _ := strings.Cut(lm.Text, " ")
-		return &unicoreMatcher{command: strings.ToUpper(cmd)}
+		return &unicoreMatcher{
+			command: strings.ToUpper(cmd),
+			text:    lm.Text,
+		}
 	}
 	return &lineMatcher{}
 }
@@ -244,4 +250,3 @@ func nmeaPayload(data string) string {
 	}
 	return payload
 }
-

@@ -164,6 +164,71 @@ func TestBestNavPosVel(t *testing.T) {
 	})
 }
 
+func TestPPPNavPos(t *testing.T) {
+	t.Run("computed", func(t *testing.T) {
+		m := &uncmsg.PPPNav{
+			Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+				PSolStatus: uncmsg.SolComputed,
+				PosType:    uncmsg.PosVelPPPAR,
+				Lat:        47.49,
+				Lon:        8.56,
+				Hgt:        489.456,
+				Undulation: 50.667,
+				LatSigma:   0.02,
+				LonSigma:   0.015,
+				HgtSigma:   0.04,
+			},
+		}
+		var ne gpsprot.NavEpochMsg
+		posG := pppNavPos(&ne, m)
+		if posG == nil {
+			t.Fatal("expected non-nil PosGeoMsg")
+		}
+		if posG.Priority != gpsprot.PriVendorHigh {
+			t.Errorf("Priority = %v, want PriVendorHigh", posG.Priority)
+		}
+		if posG.NativeMsgID != "PPPNAV" {
+			t.Errorf("NativeMsgID = %q, want %q", posG.NativeMsgID, "PPPNAV")
+		}
+		wantLat := gpsprot.DegreesFromFloat(47.49)
+		wantLon := gpsprot.DegreesFromFloat(8.56)
+		if posG.LatLon[0] != wantLat || posG.LatLon[1] != wantLon {
+			t.Errorf("LatLon = %v, want [%v, %v]", posG.LatLon, wantLat, wantLon)
+		}
+		wantH := opt.Make(gpsprot.Meters(489.456 + 50.667))
+		if posG.Height != wantH {
+			t.Errorf("Height = %v, want %v", posG.Height, wantH)
+		}
+		wantHMSL := opt.Make(gpsprot.Meters(489.456))
+		if posG.HeightMSL != wantHMSL {
+			t.Errorf("HeightMSL = %v, want %v", posG.HeightMSL, wantHMSL)
+		}
+		wantHor := opt.Make(gpsprot.Meters(math.Sqrt(0.02*0.02 + 0.015*0.015)))
+		wantVert := opt.Make(gpsprot.Meters(0.04))
+		if ne.Acc.Hor != wantHor {
+			t.Errorf("Acc.Hor = %v, want %v", ne.Acc.Hor, wantHor)
+		}
+		if ne.Acc.Vert != wantVert {
+			t.Errorf("Acc.Vert = %v, want %v", ne.Acc.Vert, wantVert)
+		}
+	})
+	t.Run("not_computed", func(t *testing.T) {
+		m := &uncmsg.PPPNav{
+			Pos: novmsg.Pos[uncmsg.SolStatus, uncmsg.PosVelType]{
+				PSolStatus: uncmsg.InsufficientObs,
+			},
+		}
+		var ne gpsprot.NavEpochMsg
+		posG := pppNavPos(&ne, m)
+		if posG != nil {
+			t.Errorf("expected nil PosGeoMsg, got %v", posG)
+		}
+		if ne.FixLevel != gpsprot.FixLevelNone {
+			t.Errorf("FixLevel = %v, want FixLevelNone", ne.FixLevel)
+		}
+	})
+}
+
 func TestQualityStnIDCorrection(t *testing.T) {
 	// Station ID 9964 indicates Galileo E6 HAS.
 	// With PPP_CONVERGING pos type, Correction should include both

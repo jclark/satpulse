@@ -114,6 +114,13 @@ func (p *packetProcessor) dispatch(msg *uncmsg.Msg, tRead time.Time, tag gpsprot
 			h.VelGeo(velG, tRead)
 		}
 		return posG != nil || velG != nil, nil
+	case *uncmsg.PPPNav:
+		posG := pppNavPos(p.curEpochMsg, body)
+		if posG != nil {
+			posG.Tag = tag
+			h.PosGeo(posG, tRead)
+			return true, nil
+		}
 	case *uncmsg.BestNavXYZ:
 		posE, velE := bestNavXYZPosVel(p.curEpochMsg, body)
 		if posE != nil {
