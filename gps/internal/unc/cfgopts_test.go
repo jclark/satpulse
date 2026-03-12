@@ -318,13 +318,18 @@ func TestSatsMessages(t *testing.T) {
 func TestNMEAMessages(t *testing.T) {
 	tests := []nativeConfigPropsTestCase{
 		{
-			name: "enable RMC and GGA",
+			name: "enable RMC and GGA disables others",
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)
 			},
 			expectedCmds: []string{
 				"GPRMC 1",
 				"GPGGA 1",
+				"UNLOG GPGSA",
+				"UNLOG GPGSV",
+				"UNLOG GPZDA",
+				"UNLOG GPVTG",
+				"UNLOG GPGLL",
 			},
 		},
 		{
@@ -634,7 +639,13 @@ func TestCombinedMessages(t *testing.T) {
 				"RECTIMEB 1",
 				"SATSINFOB 1",
 				"BESTSATB 1",
+				"UNLOG GPRMC",
 				"GPGGA 1",
+				"UNLOG GPGSA",
+				"UNLOG GPGSV",
+				"UNLOG GPZDA",
+				"UNLOG GPVTG",
+				"UNLOG GPGLL",
 			},
 		},
 		{

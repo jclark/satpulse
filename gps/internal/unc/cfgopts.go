@@ -124,17 +124,11 @@ func generateNMEAMsgCommands(flags gpsprot.NMEAMsgFlags) []string {
 		{gpsprot.NMEAMsgVTG, "GPVTG"},
 		{gpsprot.NMEAMsgGLL, "GPGLL"},
 	}
-	// If flags is 0, we want to disable all NMEA messages
-	if flags == 0 {
-		for _, m := range msgs {
+	for _, m := range msgs {
+		if flags&m.flag != 0 {
+			cmds = append(cmds, m.cmd+" 1")
+		} else {
 			cmds = append(cmds, "UNLOG "+m.cmd)
-		}
-	} else {
-		// Enable specific messages that are set
-		for _, m := range msgs {
-			if flags&m.flag != 0 {
-				cmds = append(cmds, m.cmd+" 1")
-			}
 		}
 	}
 	return cmds
