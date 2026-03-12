@@ -36,15 +36,15 @@ function fmtNs(ns: number): string {
 
 // --- Tagged unions wrapping gpsprot message types ---
 
-export type PosGeoRow = {kind: 'posGeo'} & PosGeoMsg;
-export type PosECEFRow = {kind: 'posECEF'} & PosECEFMsg;
+export type PosGeoRow = {kind: 'posGeo'; epoch: number} & PosGeoMsg;
+export type PosECEFRow = {kind: 'posECEF'; epoch: number} & PosECEFMsg;
 export type PosRow = PosGeoRow | PosECEFRow;
 
-export type VelGeoRow = {kind: 'velGeo'} & VelGeoMsg;
-export type VelECEFRow = {kind: 'velECEF'} & VelECEFMsg;
+export type VelGeoRow = {kind: 'velGeo'; epoch: number} & VelGeoMsg;
+export type VelECEFRow = {kind: 'velECEF'; epoch: number} & VelECEFMsg;
 export type VelRow = VelGeoRow | VelECEFRow;
 
-export type TimeRow = TimeMsg & {nativeMsgID: string};
+export type TimeRow = TimeMsg & {nativeMsgID: string; epoch: number};
 
 // --- Conversion cache types ---
 

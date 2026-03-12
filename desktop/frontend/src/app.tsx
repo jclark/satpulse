@@ -137,6 +137,7 @@ export function App() {
     const [mapPos, setMapPos] = useState<{lat: number; lon: number} | null>(null);
     const [mapCourse, setMapCourse] = useState<{course: number; groundSpeed: number} | null>(null);
     const [noFixSecs, setNoFixSecs] = useState(0);
+    const pvtEpoch = useRef(0);
     const [activeTab, setActiveTab] = useState<TabID>('monitor');
     const [surveyOpen, setSurveyOpen] = useState(false);
     const surveyAutoExpanded = useRef(false);
@@ -250,11 +251,8 @@ export function App() {
                 case 'time': {
                     const msg = evt.msg;
                     if (msg.nativeMsgID) {
-                        setTimeRows(prev => {
-                            const next = new Map(prev);
-                            next.set(msg.nativeMsgID, msg as TimeRow);
-                            return next;
-                        });
+                        const row: TimeRow = {...msg, nativeMsgID: msg.nativeMsgID, epoch: pvtEpoch.current};
+                        setTimeRows(prev => new Map(prev).set(msg.nativeMsgID, row));
                     }
                     break;
                 }
@@ -270,25 +268,25 @@ export function App() {
                 }
                 case 'posGeo': {
                     const msg = evt.msg;
-                    const row: PosGeoRow = {kind: 'posGeo', ...msg};
+                    const row: PosGeoRow = {kind: 'posGeo', epoch: pvtEpoch.current, ...msg};
                     setPosRows(prev => new Map(prev).set(msg.nativeMsgID, row));
                     break;
                 }
                 case 'posECEF': {
                     const msg = evt.msg;
-                    const row: PosECEFRow = {kind: 'posECEF', ...msg};
+                    const row: PosECEFRow = {kind: 'posECEF', epoch: pvtEpoch.current, ...msg};
                     setPosRows(prev => new Map(prev).set(msg.nativeMsgID, row));
                     break;
                 }
                 case 'velGeo': {
                     const msg = evt.msg;
-                    const row: VelGeoRow = {kind: 'velGeo', ...msg};
+                    const row: VelGeoRow = {kind: 'velGeo', epoch: pvtEpoch.current, ...msg};
                     setVelRows(prev => new Map(prev).set(msg.nativeMsgID, row));
                     break;
                 }
                 case 'velECEF': {
                     const msg = evt.msg;
-                    const row: VelECEFRow = {kind: 'velECEF', ...msg};
+                    const row: VelECEFRow = {kind: 'velECEF', epoch: pvtEpoch.current, ...msg};
                     setVelRows(prev => new Map(prev).set(msg.nativeMsgID, row));
                     break;
                 }
@@ -324,6 +322,7 @@ export function App() {
             setMapPos({lat: ll[0], lon: ll[1]});
         });
         const offEpochPVT = EventsOn('gps:epochPVT', (nav: any) => {
+            pvtEpoch.current++;
             if (nav.posGeo) {
                 setMapPos({lat: nav.posGeo.latLon[0], lon: nav.posGeo.latLon[1]});
                 setNoFixSecs(0);
@@ -335,6 +334,25 @@ export function App() {
             } else {
                 setMapCourse(null);
             }
+            // Evict stale PVT rows: in each table, if any row was updated
+            // this epoch, remove rows that weren't.
+            const evict = <T extends {epoch: number}>(prev: Map<string, T>): Map<string, T> => {
+                let maxEpoch = 0;
+                for (const r of prev.values()) {
+                    if (r.epoch > maxEpoch) maxEpoch = r.epoch;
+                }
+                if (maxEpoch === 0) return prev;
+                let changed = false;
+                const next = new Map<string, T>();
+                for (const [k, r] of prev) {
+                    if (r.epoch >= maxEpoch) next.set(k, r);
+                    else changed = true;
+                }
+                return changed ? next : prev;
+            };
+            setPosRows(evict);
+            setVelRows(evict);
+            setTimeRows(evict);
         });
         const offTime = EventsOn('gps:time', (msg: any) => {
             setTimeMsg(msg as TimeMsg);
