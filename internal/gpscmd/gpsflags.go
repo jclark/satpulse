@@ -39,6 +39,7 @@ type flagVars struct {
 	enabledSignals gpsprot.SignalSet
 	pps            opt.Val[time.Duration]
 	antCableDelay  opt.Val[time.Duration]
+	minElev        opt.Val[gpsprot.Angle]
 	mode           opt.Val[gpsprot.Mode]
 	configOpts     gpsprot.ConfigOptions
 	configGet      gpsprot.PropIDs
@@ -55,6 +56,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
             [--survey] [--survey-time seconds] [--survey-acc meters]
+            [--min-elev degrees]
             [--pvt-out pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|off,...]
             [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
             [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...]
@@ -67,7 +69,8 @@ const showProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDMode |
 	gpsprot.PropIDTimePulse |
 	gpsprot.PropIDTimeGNSS |
-	gpsprot.PropIDAntennaCableDelay
+	gpsprot.PropIDAntennaCableDelay |
+	gpsprot.PropIDMinElevation
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
 	help := false
@@ -145,6 +148,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&surveyAcc, "survey-acc", "survey accuracy in `meters`")
 	flags.Var(&fixedPosECEF, "fixed-pos-ecef", "fixed ECEF position as `x,y,z` in meters")
 	flags.Var(&fixedPosAcc, "fixed-pos-acc", "accuracy of fixed position in `meters`")
+	var minElev angle
+	flags.Var(&minElev, "min-elev", "minimum satellite elevation in `degrees`")
 	flags.BoolVar(&vars.configOpts.SetStatic, "static", false, "make the receiver use static positioning mode if it is not already doing so")
 	flags.MarkHidden("static")
 	flags.BoolVar(&sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
@@ -317,6 +322,14 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if flags.Lookup("ant-cable-delay").Changed {
 		vars.antCableDelay.Set(time.Duration(antCableDelay))
+		configChanged = true
+	}
+	if flags.Lookup("min-elev").Changed {
+		elev := gpsprot.Angle(minElev)
+		if elev < -90*gpsprot.Degrees || elev > 90*gpsprot.Degrees {
+			return nil, nil, fmt.Errorf("--min-elev must be between -90 and 90 degrees")
+		}
+		vars.minElev.Set(elev)
 		configChanged = true
 	}
 	if vars.timeGNSS != 0 {
@@ -921,5 +934,26 @@ func (l *length) Set(s string) error {
 		return err
 	}
 	*l = length(v)
+	return nil
+}
+
+type angle gpsprot.Angle
+
+var _ pflag.Value = (*angle)(nil)
+
+func (a *angle) String() string {
+	return gpsprot.Angle(*a).String()
+}
+
+func (a *angle) Type() string {
+	return "degrees"
+}
+
+func (a *angle) Set(s string) error {
+	v, err := gpsprot.ParseAngle(s)
+	if err != nil {
+		return err
+	}
+	*a = angle(v)
 	return nil
 }

@@ -50,6 +50,7 @@ var cfgOldProps = struct {
 	},
 	nav5: []gpsprot.PropIDs{
 		gpsprot.PropIDTimeGNSS,
+		gpsprot.PropIDMinElevation,
 	},
 }
 
@@ -662,6 +663,7 @@ func (raw *CfgOld) cookNav5(cp *gpsprot.ConfigProps, ver *Version) {
 			cp.SetTimeGNSS(gnss)
 		}
 	}
+	cp.SetMinElevation(gpsprot.Angle(nav5.MinElev) * gpsprot.Degrees)
 }
 
 func nav5GNSS(nav5 *ubxbin.CfgNav5) gpsprot.GNSS {
@@ -714,6 +716,14 @@ func (raw *CfgOld) changeNav5(target *gpsprot.ConfigTarget, ver *Version) *ubxbi
 		}
 		if nav5.UtcStandard != raw.nav5.UtcStandard {
 			nav5.Mask |= ubxbin.CfgNav5MaskUtc
+		}
+	}
+	if v, ok := target.Props.GetMinElevation(); ok {
+		if deg, ok := angleToInt8Degrees(v); ok {
+			nav5.MinElev = deg
+			if nav5.MinElev != raw.nav5.MinElev {
+				nav5.Mask |= ubxbin.CfgNav5MaskMinElev
+			}
 		}
 	}
 	if nav5.Mask == 0 {

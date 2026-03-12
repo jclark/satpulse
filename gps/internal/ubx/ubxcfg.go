@@ -3,6 +3,7 @@ package ubx
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -1265,4 +1266,14 @@ func lengthHP(l int32, h int8) gpsprot.Length {
 
 func angleHP(deg int32, hp int8) gpsprot.Angle {
 	return gpsprot.Angle(deg)*(gpsprot.Nanodegrees*100) + gpsprot.Angle(hp)*gpsprot.Nanodegrees
+}
+
+func angleToInt8Degrees(a gpsprot.Angle) (int8, bool) {
+	// Ceil so that e.g. 5.4 degrees becomes 6, not 5 -- rounding down would admit
+	// satellites the user explicitly wanted excluded.
+	v := int64(math.Ceil(a.Degrees()))
+	if v < -90 || v > 90 {
+		return 0, false
+	}
+	return int8(v), true
 }

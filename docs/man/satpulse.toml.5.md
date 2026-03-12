@@ -107,6 +107,7 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
   then it will log the position determined by the survey when the survey finishes
 * `fixedPosAcc` - a number giving the accuracy in meters of the `fixedPosECEF` coordinates; SatPulse will log the accuracy along with the position when
   a survey finishes
+* `minElevation` - a number giving the minimum elevation in degrees for satellites to be used by the GPS receiver;the default is to not change the GPS receiver's configuration
 * `antennaCableLength` - a number giving the length in meters of the antenna cable; this is used to set the antenna cable delay in conjunction with the
   `antennaCableVF` key; the default is to not change the GPS receiver's configuration of the antenna cable delay
 * `antennaCableVF`- a number giving the velocity factor of the antenna cable; the default is 0.66, which is appropriate for RG-58 cable

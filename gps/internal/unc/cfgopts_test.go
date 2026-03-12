@@ -318,13 +318,18 @@ func TestSatsMessages(t *testing.T) {
 func TestNMEAMessages(t *testing.T) {
 	tests := []nativeConfigPropsTestCase{
 		{
-			name: "enable RMC and GGA",
+			name: "enable RMC and GGA disables others",
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)
 			},
 			expectedCmds: []string{
 				"GPRMC 1",
 				"GPGGA 1",
+				"UNLOG GPGSA",
+				"UNLOG GPGSV",
+				"UNLOG GPZDA",
+				"UNLOG GPVTG",
+				"UNLOG GPGLL",
 			},
 		},
 		{
@@ -377,12 +382,18 @@ func TestRTCMMessages(t *testing.T) {
 				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
 			},
 			expectedCmds: []string{
-				"RTCM1074 1", // GPS MSM4
-				"RTCM1084 1", // GLO MSM4
-				"RTCM1094 1", // GAL MSM4
-				"RTCM1114 1", // QZSS MSM4
-				"RTCM1124 1", // BDS MSM4
-				"RTCM1230 1", // GLO bias (added when GLO enabled)
+				"RTCM1074 1",     // GPS MSM4
+				"UNLOG RTCM1077", // GPS MSM7
+				"RTCM1084 1",     // GLO MSM4
+				"UNLOG RTCM1087", // GLO MSM7
+				"RTCM1094 1",     // GAL MSM4
+				"UNLOG RTCM1097", // GAL MSM7
+				"RTCM1114 1",     // QZSS MSM4
+				"UNLOG RTCM1117", // QZSS MSM7
+				"RTCM1124 1",     // BDS MSM4
+				"UNLOG RTCM1127", // BDS MSM7
+				"RTCM1230 1",     // GLO bias
+				"UNLOG RTCM1005", // ARP
 			},
 		},
 		{
@@ -396,7 +407,9 @@ func TestRTCMMessages(t *testing.T) {
 				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
 			},
 			expectedCmds: []string{
-				"RTCM1074 1", // Only GPS MSM4
+				"RTCM1074 1",     // GPS MSM4
+				"UNLOG RTCM1077", // GPS MSM7
+				"UNLOG RTCM1005", // ARP
 			},
 		},
 		{
@@ -411,9 +424,50 @@ func TestRTCMMessages(t *testing.T) {
 				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
 			},
 			expectedCmds: []string{
-				"RTCM1074 1", // GPS MSM4
-				"RTCM1084 1", // GLO MSM4
-				"RTCM1230 1", // GLO bias
+				"RTCM1074 1",     // GPS MSM4
+				"UNLOG RTCM1077", // GPS MSM7
+				"RTCM1084 1",     // GLO MSM4
+				"UNLOG RTCM1087", // GLO MSM7
+				"RTCM1230 1",     // GLO bias
+				"UNLOG RTCM1005", // ARP
+			},
+		},
+		{
+			name: "switching from GPS+GLO to GPS-only MSM4 disables RTCM1230",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1", // Has GPS, GLO, GAL, BDS, QZSS
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+				"MASK GLO",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
+			},
+			expectedCmds: []string{
+				"RTCM1074 1",     // GPS MSM4
+				"UNLOG RTCM1077", // GPS MSM7
+				"UNLOG RTCM1005", // ARP
+			},
+		},
+		{
+			name: "disable MSM disables RTCM1230",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 1", // Has GPS, GLO, GAL, BDS, QZSS
+				"MASK GAL",
+				"MASK BDS",
+				"MASK QZSS",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RTCMMsg.Set(gpsprot.RTCMMsgARP)
+			},
+			expectedCmds: []string{
+				"UNLOG RTCM1074", // GPS MSM4
+				"UNLOG RTCM1077", // GPS MSM7
+				"UNLOG RTCM1084", // GLO MSM4
+				"UNLOG RTCM1087", // GLO MSM7
+				"UNLOG RTCM1230", // GLO bias
+				"RTCM1005 1",     // ARP
 			},
 		},
 		{
@@ -434,13 +488,18 @@ func TestRTCMMessages(t *testing.T) {
 				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)
 			},
 			expectedCmds: []string{
-				"RTCM1074 1", // GPS MSM4
-				"RTCM1084 1", // GLO MSM4
-				"RTCM1094 1", // GAL MSM4
-				"RTCM1114 1", // QZSS MSM4
-				"RTCM1124 1", // BDS MSM4
-				"RTCM1230 1", // GLO bias
-				"RTCM1005 1", // ARP
+				"RTCM1074 1",     // GPS MSM4
+				"UNLOG RTCM1077", // GPS MSM7
+				"RTCM1084 1",     // GLO MSM4
+				"UNLOG RTCM1087", // GLO MSM7
+				"RTCM1094 1",     // GAL MSM4
+				"UNLOG RTCM1097", // GAL MSM7
+				"RTCM1114 1",     // QZSS MSM4
+				"UNLOG RTCM1117", // QZSS MSM7
+				"RTCM1124 1",     // BDS MSM4
+				"UNLOG RTCM1127", // BDS MSM7
+				"RTCM1230 1",     // GLO bias
+				"RTCM1005 1",     // ARP
 			},
 		},
 		{
@@ -453,12 +512,15 @@ func TestRTCMMessages(t *testing.T) {
 				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM7)
 			},
 			expectedCmds: []string{
-				"RTCM1077 1", // GPS MSM7
-				"RTCM1127 1", // BDS MSM7
+				"UNLOG RTCM1074", // GPS MSM4
+				"RTCM1077 1",     // GPS MSM7
+				"UNLOG RTCM1124", // BDS MSM4
+				"RTCM1127 1",     // BDS MSM7
+				"UNLOG RTCM1005", // ARP
 			},
 		},
 		{
-			name: "no RTCM messages when no GNSS enabled",
+			name: "no MSM messages when no GNSS enabled",
 			currentState: []string{
 				"CONFIG SIGNALGROUP 1",
 				"MASK GPS",
@@ -471,7 +533,7 @@ func TestRTCMMessages(t *testing.T) {
 				opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
 			},
 			expectedCmds: []string{
-				// No RTCM messages
+				"UNLOG RTCM1005",
 			},
 		},
 	}
@@ -493,18 +555,18 @@ func TestRawMessages(t *testing.T) {
 		{
 			name: "enable raw navigation data for all GNSS",
 			currentState: []string{
-				"CONFIG SIGNALGROUP 2", // Has GPS, BDS, GLO, GAL, QZSS, NAVIC
+				"CONFIG SIGNALGROUP 2", // Has GPS, BDS, GLO, GAL, QZSS
 			},
 			targetOpts: func(opts *gpsprot.ConfigOptions) {
 				opts.RawMsg.Set(gpsprot.RawMsgNavData)
 			},
 			expectedCmds: []string{
+				"UNLOG OBSVMB",
 				"GPSEPHB 1",
 				"BDSEPHB 1",
 				"GLOEPHB 1",
 				"GALEPHB 1",
 				"QZSSEPHB 1",
-				// Note: No NAVICEPHB as Unicore doesn't support it
 			},
 		},
 		{
@@ -518,7 +580,8 @@ func TestRawMessages(t *testing.T) {
 				opts.RawMsg.Set(gpsprot.RawMsgNavData)
 			},
 			expectedCmds: []string{
-				"GPSEPHB 1", // Only GPS ephemeris
+				"UNLOG OBSVMB",
+				"GPSEPHB 1",
 			},
 		},
 		{
@@ -531,8 +594,43 @@ func TestRawMessages(t *testing.T) {
 				opts.RawMsg.Set(gpsprot.RawMsgNavData)
 			},
 			expectedCmds: []string{
+				"UNLOG OBSVMB",
 				"GPSEPHB 1",
 				"BDSEPHB 1",
+			},
+		},
+		{
+			name: "enable NavData for GPS disables Obs",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2", // Has GPS, BDS, GLO, GAL, QZSS
+				"MASK BDS",
+				"MASK GLO",
+				"MASK GAL",
+				"MASK QZSS",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RawMsg.Set(gpsprot.RawMsgNavData)
+			},
+			expectedCmds: []string{
+				"UNLOG OBSVMB",
+				"GPSEPHB 1",
+			},
+		},
+		{
+			name: "disable Obs disables OBSVMB",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 2",
+			},
+			targetOpts: func(opts *gpsprot.ConfigOptions) {
+				opts.RawMsg.Set(0)
+			},
+			expectedCmds: []string{
+				"UNLOG OBSVMB",
+				"UNLOG GPSEPHB",
+				"UNLOG BDSEPHB",
+				"UNLOG GLOEPHB",
+				"UNLOG GALEPHB",
+				"UNLOG QZSSEPHB",
 			},
 		},
 		{
@@ -549,7 +647,7 @@ func TestRawMessages(t *testing.T) {
 				opts.RawMsg.Set(gpsprot.RawMsgNavData)
 			},
 			expectedCmds: []string{
-				// No ephemeris messages
+				"UNLOG OBSVMB",
 			},
 		},
 	}
@@ -634,7 +732,13 @@ func TestCombinedMessages(t *testing.T) {
 				"RECTIMEB 1",
 				"SATSINFOB 1",
 				"BESTSATB 1",
+				"UNLOG GPRMC",
 				"GPGGA 1",
+				"UNLOG GPGSA",
+				"UNLOG GPGSV",
+				"UNLOG GPZDA",
+				"UNLOG GPVTG",
+				"UNLOG GPGLL",
 			},
 		},
 		{
@@ -649,6 +753,17 @@ func TestCombinedMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"RECTIMEB 1",
+				"UNLOG RTCM1074", // GPS MSM4
+				"UNLOG RTCM1077", // GPS MSM7
+				"UNLOG RTCM1084", // GLO MSM4
+				"UNLOG RTCM1087", // GLO MSM7
+				"UNLOG RTCM1094", // GAL MSM4
+				"UNLOG RTCM1097", // GAL MSM7
+				"UNLOG RTCM1114", // QZSS MSM4
+				"UNLOG RTCM1117", // QZSS MSM7
+				"UNLOG RTCM1124", // BDS MSM4
+				"UNLOG RTCM1127", // BDS MSM7
+				"UNLOG RTCM1230", // GLO bias
 				"RTCM1005 1",
 				"SAVECONFIG",
 			},

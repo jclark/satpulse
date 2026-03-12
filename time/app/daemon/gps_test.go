@@ -162,6 +162,29 @@ fixedPosAcc = 5`,
 			},
 		},
 		{
+			name: "min elevation",
+			config: `[gps]
+config = true
+minElevation = 5.0`,
+			speed: 9600,
+			cf:    cfgTimePulse,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+				target.Opts.SetStatic = true
+				target.Props.SetMinElevation(gpsprot.DegreesFromFloat(5.0))
+			},
+		},
+		{
+			name:          "min elevation out of range",
+			config: `[gps]
+config = true
+minElevation = 100`,
+			speed:         9600,
+			cf:            cfgTimePulse,
+			expectedError: "error",
+		},
+		{
 			name: "mobile=true without time pulse",
 			config: `[gps]
 config = true

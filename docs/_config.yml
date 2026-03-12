@@ -332,7 +332,7 @@ defaults:
       type: pages
     values:
       title: ""
-      layout: single
+      layout: man
       toc: false
       sidebar:
         nav: "docs"

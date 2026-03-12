@@ -39,6 +39,7 @@ type GPSConfig struct {
 	AntennaCableLength float64      `toml:"antennaCableLength"` // in meters
 	AntennaCableVF     float64      `toml:"antennaCableVF"`     // velocity factor
 	TimeGNSS           gpsprot.GNSS `toml:"timeGNSS"`
+	MinElevation       float64      `toml:"minElevation"` // in degrees
 	PulseWidth         float64      `toml:"pulseWidth"`
 	SatellitesOutput   *bool        `toml:"satellitesOutput"`
 	RTCMOutput         *bool        `toml:"rtcmOutput"`
@@ -59,6 +60,7 @@ var gpsDefault = GPSConfig{
 	AntennaCableDelay:  math.NaN(),
 	AntennaCableLength: math.NaN(),
 	AntennaCableVF:     0.66, // typical value for RG-58 cable
+	MinElevation:       math.NaN(),
 	PulseWidth:         math.NaN(),
 }
 
@@ -82,6 +84,10 @@ func (c *GPSConfig) target(speed int, cf cfgFeatures) (*gpsprot.ConfigTarget, er
 		return nil, err
 	}
 	err = c.getDelay(cp)
+	if err != nil {
+		return nil, err
+	}
+	err = c.getMinElevation(cp)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +206,17 @@ func (c *GPSConfig) getDelay(cp *gpsprot.ConfigProps) error {
 		return configErrorf("invalid cable delay %v (cable delay is in nanoseconds)", c.AntennaCableDelay)
 	}
 	cp.SetAntennaCableDelay(time.Duration(delay))
+	return nil
+}
+
+func (c *GPSConfig) getMinElevation(cp *gpsprot.ConfigProps) error {
+	if math.IsNaN(c.MinElevation) {
+		return nil
+	}
+	if c.MinElevation < -90 || c.MinElevation > 90 {
+		return configErrorf("minimum elevation %v out of range [-90, 90]", c.MinElevation)
+	}
+	cp.SetMinElevation(gpsprot.DegreesFromFloat(c.MinElevation))
 	return nil
 }
 
