@@ -85,6 +85,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.antCableDelay.IsSet() {
 		cp.SetAntennaCableDelay(v.antCableDelay.Get())
 	}
+	if v.minElev.IsSet() {
+		cp.SetMinElevation(v.minElev.Get())
+	}
 	if v.timeGNSS != 0 {
 		cp.SetTimeGNSS(v.timeGNSS)
 	}
@@ -340,6 +343,9 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 	if antCableDelay, ok := p.GetAntennaCableDelay(); ok {
 		printAntennaCableDelay(f, antCableDelay)
 	}
+	if minElev, ok := p.GetMinElevation(); ok {
+		printMinElevation(f, minElev)
+	}
 	if timePulse, ok := p.GetTimePulse(); ok {
 		printTimePulse(f, timePulse)
 	}
@@ -391,6 +397,10 @@ func printTimeGNSS(f *os.File, timeGNSS gpsprot.GNSS) {
 
 func printAntennaCableDelay(f *os.File, delay time.Duration) {
 	fmt.Fprintf(f, "Antenna cable delay: %d ns\n", delay.Nanoseconds())
+}
+
+func printMinElevation(f *os.File, elev gpsprot.Angle) {
+	fmt.Fprintf(f, "Minimum elevation: %s\n", elev.String())
 }
 
 func printTimePulse(f *os.File, tp gpsprot.TimePulse) {

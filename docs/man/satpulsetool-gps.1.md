@@ -18,6 +18,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-ant\-cable\-delay** *nanos*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-mobile**] [**\-\-fixed\-pos\-ecef** *X,Y,Z*] [**\-\-fixed\-pos\-acc** *meters*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-survey**] [**\-\-survey\-time** *seconds*] [**\-\-survey\-acc** *meters*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-min\-elev** *degrees*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea**] [**\-\-binary**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pvt\-out** **pos**\|**vel**\|**time**\|**tp**\|**leap**\|**survey**\|**qual**\|**epoch**\|**tai**\|**ecef**\|**after**\|**daemon**\|**off**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-sats\-out** **sat**\|**sig**\|**none**,...]
@@ -267,6 +268,9 @@ This is for use with the `proxy.sock` table array in the TOML config file for **
 
 **\-\-mobile**
 : Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey** or **\-\-fixed-pos-ecef**.
+
+**\-\-min\-elev** *degrees*
+: Set the minimum elevation angle in degrees for satellites to be used. Satellites below this angle above the horizon are ignored.
 
 # EXAMPLES
 
