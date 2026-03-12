@@ -83,14 +83,19 @@ func generatePVTMsgCommands(flags gpsprot.PVTMsgFlags, enabledGNSS gpsprot.GNSSS
 	return cmds
 }
 
+// appendMsgCmd appends either "msgName 1" or "UNLOG msgName" depending on enable.
+func appendMsgCmd(cmds *[]string, msgName string, enable bool) {
+	if enable {
+		*cmds = append(*cmds, msgName+" 1")
+	} else {
+		*cmds = append(*cmds, "UNLOG "+msgName)
+	}
+}
+
 // addUTCBCmd adds a UTCB command if the GNSS is enabled
 func addUTCBCmd(cmds *[]string, enabledGNSS gpsprot.GNSSSet, gnss gpsprot.GNSS, msgName string, enable bool) {
 	if enabledGNSS.Contains(gnss) {
-		if enable {
-			*cmds = append(*cmds, msgName+" 1")
-		} else {
-			*cmds = append(*cmds, "UNLOG "+msgName)
-		}
+		appendMsgCmd(cmds, msgName, enable)
 	}
 }
 
@@ -99,13 +104,9 @@ func generateSatsMsgCommands(flags gpsprot.SatsMsgFlags) []string {
 	var cmds []string
 	// SATSINFOB provides satellite and signal info;
 	// BESTSATB provides which satellites are used in the solution.
-	if flags&gpsprot.SatsMsgAny != 0 {
-		cmds = append(cmds, "SATSINFOB 1")
-		cmds = append(cmds, "BESTSATB 1")
-	} else {
-		cmds = append(cmds, "UNLOG SATSINFOB")
-		cmds = append(cmds, "UNLOG BESTSATB")
-	}
+	enable := flags&gpsprot.SatsMsgAny != 0
+	appendMsgCmd(&cmds, "SATSINFOB", enable)
+	appendMsgCmd(&cmds, "BESTSATB", enable)
 	return cmds
 }
 
@@ -125,11 +126,7 @@ func generateNMEAMsgCommands(flags gpsprot.NMEAMsgFlags) []string {
 		{gpsprot.NMEAMsgGLL, "GPGLL"},
 	}
 	for _, m := range msgs {
-		if flags&m.flag != 0 {
-			cmds = append(cmds, m.cmd+" 1")
-		} else {
-			cmds = append(cmds, "UNLOG "+m.cmd)
-		}
+		appendMsgCmd(&cmds, m.cmd, flags&m.flag != 0)
 	}
 	return cmds
 }
@@ -137,78 +134,53 @@ func generateNMEAMsgCommands(flags gpsprot.NMEAMsgFlags) []string {
 // generateRTCMMsgCommands maps RTCM flags to Unicore RTCM commands
 func generateRTCMMsgCommands(flags gpsprot.RTCMMsgFlags, enabledGNSS gpsprot.GNSSSet) []string {
 	var cmds []string
-	gloEnabled := false
-	
-	if flags&gpsprot.RTCMMsgMSM4 != 0 {
-		if enabledGNSS.Contains(gpsprot.GPS) {
-			cmds = append(cmds, "RTCM1074 1") // GPS MSM4
-		}
-		if enabledGNSS.Contains(gpsprot.GLO) {
-			cmds = append(cmds, "RTCM1084 1") // GLONASS MSM4
-			gloEnabled = true
-		}
-		if enabledGNSS.Contains(gpsprot.GAL) {
-			cmds = append(cmds, "RTCM1094 1") // Galileo MSM4
-		}
-		if enabledGNSS.Contains(gpsprot.QZSS) {
-			cmds = append(cmds, "RTCM1114 1") // QZSS MSM4
-		}
-		if enabledGNSS.Contains(gpsprot.BDS) {
-			cmds = append(cmds, "RTCM1124 1") // BDS MSM4
+	msm4 := flags&gpsprot.RTCMMsgMSM4 != 0
+	msm7 := flags&gpsprot.RTCMMsgMSM7 != 0
+	type gnssMsg struct {
+		gnss   gpsprot.GNSS
+		msm4ID string
+		msm7ID string
+	}
+	gnssMsgs := []gnssMsg{
+		{gpsprot.GPS, "RTCM1074", "RTCM1077"},
+		{gpsprot.GLO, "RTCM1084", "RTCM1087"},
+		{gpsprot.GAL, "RTCM1094", "RTCM1097"},
+		{gpsprot.QZSS, "RTCM1114", "RTCM1117"},
+		{gpsprot.BDS, "RTCM1124", "RTCM1127"},
+	}
+	for _, g := range gnssMsgs {
+		if enabledGNSS.Contains(g.gnss) {
+			appendMsgCmd(&cmds, g.msm4ID, msm4)
+			appendMsgCmd(&cmds, g.msm7ID, msm7)
 		}
 	}
-	if flags&gpsprot.RTCMMsgMSM7 != 0 {
-		if enabledGNSS.Contains(gpsprot.GPS) {
-			cmds = append(cmds, "RTCM1077 1") // GPS MSM7
-		}
-		if enabledGNSS.Contains(gpsprot.GLO) {
-			cmds = append(cmds, "RTCM1087 1") // GLONASS MSM7
-			gloEnabled = true
-		}
-		if enabledGNSS.Contains(gpsprot.GAL) {
-			cmds = append(cmds, "RTCM1097 1") // Galileo MSM7
-		}
-		if enabledGNSS.Contains(gpsprot.QZSS) {
-			cmds = append(cmds, "RTCM1117 1") // QZSS MSM7
-		}
-		if enabledGNSS.Contains(gpsprot.BDS) {
-			cmds = append(cmds, "RTCM1127 1") // BDS MSM7
-		}
+	// GLONASS code-phase biases required when GLONASS MSM messages are enabled
+	if enabledGNSS.Contains(gpsprot.GLO) {
+		appendMsgCmd(&cmds, "RTCM1230", msm4||msm7)
 	}
-	
-	// Add GLONASS bias if GLONASS is enabled
-	if gloEnabled {
-		cmds = append(cmds, "RTCM1230 1") // GLONASS code-phase biases
-	}
-	
-	if flags&gpsprot.RTCMMsgARP != 0 {
-		cmds = append(cmds, "RTCM1005 1")
-	}
+	appendMsgCmd(&cmds, "RTCM1005", flags&gpsprot.RTCMMsgARP != 0)
 	return cmds
 }
 
 // generateRawMsgCommands maps Raw flags to Unicore raw data commands
 func generateRawMsgCommands(flags gpsprot.RawMsgFlags, enabledGNSS gpsprot.GNSSSet) []string {
 	var cmds []string
-	if flags&gpsprot.RawMsgObs != 0 {
-		cmds = append(cmds, "OBSVMB 1")
+	navData := flags&gpsprot.RawMsgNavData != 0
+	appendMsgCmd(&cmds, "OBSVMB", flags&gpsprot.RawMsgObs != 0)
+	type gnssEph struct {
+		gnss   gpsprot.GNSS
+		msgName string
 	}
-	if flags&gpsprot.RawMsgNavData != 0 {
-		// Only enable ephemeris for enabled GNSS
-		if enabledGNSS.Contains(gpsprot.GPS) {
-			cmds = append(cmds, "GPSEPHB 1")
-		}
-		if enabledGNSS.Contains(gpsprot.BDS) {
-			cmds = append(cmds, "BDSEPHB 1")
-		}
-		if enabledGNSS.Contains(gpsprot.GLO) {
-			cmds = append(cmds, "GLOEPHB 1")
-		}
-		if enabledGNSS.Contains(gpsprot.GAL) {
-			cmds = append(cmds, "GALEPHB 1")
-		}
-		if enabledGNSS.Contains(gpsprot.QZSS) {
-			cmds = append(cmds, "QZSSEPHB 1")
+	ephs := []gnssEph{
+		{gpsprot.GPS, "GPSEPHB"},
+		{gpsprot.BDS, "BDSEPHB"},
+		{gpsprot.GLO, "GLOEPHB"},
+		{gpsprot.GAL, "GALEPHB"},
+		{gpsprot.QZSS, "QZSSEPHB"},
+	}
+	for _, e := range ephs {
+		if enabledGNSS.Contains(e.gnss) {
+			appendMsgCmd(&cmds, e.msgName, navData)
 		}
 	}
 	return cmds
