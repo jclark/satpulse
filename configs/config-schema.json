@@ -41,6 +41,7 @@
 			"minItems": 3,
 			"maxItems": 3
 		  },
+		  "minElevation": { "type": "number", "minimum": -90, "maximum": 90 },
 		  "antennaCableDelay": { "type": "number" },
 		  "antennaCableLength": { "type": "number" },
 		  "antennaCableVF": { "type": "number" },
