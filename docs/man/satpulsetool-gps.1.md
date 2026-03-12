@@ -7,7 +7,6 @@ satpulsetool-gps - configure a GPS receiver
 **satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-f**\|**\-\-config\-file** *path*] [**\-\-socket** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-c**\|**\-\-show\-config**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...] [**\-\-min\-elev** *degrees*]\
@@ -22,12 +21,26 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**auto**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **RMC**\|**GGA**\|**GSA**\|**GSV**\|**ZDA**\|**VTG**\|**GLL**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-msg\-file** *path*] [**\-t**\|**\-\-tag** *list*] [**\-\-show\-tags**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]
 
 # DESCRIPTION
 
 The **satpulsetool** **gps** command is used to configure a GPS receiver for use with satpulsed.
 It can also be used to capture packets from the receiver.
+Two kinds of configuration are supported, high-level and low-level;
+they cannot be performed simultaneously.
+
+With high-level configuration, configuration changes are requested with device-independent semantics;
+**satpulsetool** determines the best way to implement the request for the particular GPS receiver.
+High-level configuration is currently supported on two families of GPS receiver:
+u-blox receivers (from the u-blox 6 platform through to the X20 platform);
+Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960).
+
+With low-level configuration, a *message file* is used.
+A message file is a file in TOML format that defines a collection of named messages.
+SatPulse provides a library of message files, which can be used to configure a wide variety of different GPS receivers.
 
 If no options other than connection options and `--packet-log` are specified,
 then it will detect the receiver and show information about it,
@@ -57,17 +70,7 @@ This option cannot be combined with **\-d** or **\-s**.
 : Path to a Unix-domain socket to connect to the GPS receiver instead of a serial device.
 This is for use with the `proxy.sock` table array in the TOML config file for **satpulsed**.
 
-## Packet capture
-
-The following options control packet capture.
-
-**\-\-packet\-log** *path*
-: Log to *path* a description of the packets sent to and received from the GPS receiver. The log is in `.jsonl` (JSON lines) format.
-
-**\-\-capture** *seconds*
-: Continue capturing packets for the specified number of seconds after configuration is complete. Use `0` to capture indefinitely until interrupted. Requires **\-\-packet\-log**.
-
-## Configuration
+## High-level configuration
 
 The following options query the receiver.
 
@@ -299,6 +302,42 @@ The following options control use of the receiver's non-volatile memory.
 **\-\-factory\-reset**
 : Restore the non-volatile memory of the GPS receiver to its default settings, and the perform a reset as with the **\-\-reset** option.
 
+## Low-level configuration
+
+In a TOML message file, messages are identified with tags.
+A single tag may identify a single message or a sequence of messages.
+A message file can also include messages with an empty or missing tag.
+
+While sending messages, **satpulsetool** will attempt to determine which messages output by the receiver
+are in response to the messages that were sent and will display those messages.
+It will continue to listen for those messages for a period of 2 seconds after the last message was sent;
+this duration can be changed with the **\-\-capture** option.
+
+**\-m**, **\-\-msg\-file** *path*
+: Specifies the TOML message file to use. This option is required to perform low-level configuration.
+If neither **\-t** nor **\-\-show\-tags** is specified, then messages with no tag are sent.
+
+**\-t**, **\-\-tag** *list*
+: Comma-separated list of tags selecting which messages to send from the message file.
+Messages are sent in the order the tags are listed.
+
+**\-\-show\-tags**
+: List all tags in the message file with their descriptions, then exit.
+
+## Packet capture
+
+The following options control packet capture.
+
+**\-\-packet\-log** *path*
+: Log to *path* a description of the packets sent to and received from the GPS receiver. The log is in `.jsonl` (JSON lines) format.
+
+**\-\-capture** *seconds*
+: Continue capturing packets for the specified number of seconds after configuration is complete.
+Use `0` to capture indefinitely until interrupted.
+With low-level configuration, this also controls how long to wait for responses after the last
+message was sent.
+Requires **\-\-packet\-log** or **\-\-msg\-file**.
+
 # EXAMPLES
 
 Show receiver information using device and speed from the satpulse configuration file:
@@ -343,6 +382,9 @@ where `serial.toml` contains:
     device = "/dev/ttyUSB0"
     speed = 9600
 
+Send the messages tagged `ppp-has` from `um980.toml` (which enable Galileo HAS on a UM980):
+
+    satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980.toml -t ppp-has
 
 # SEE ALSO
 
