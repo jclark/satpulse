@@ -84,6 +84,22 @@ func ParseAsciiMessage(packet []byte) (*Msg, error) {
 	return &Msg{Hdr: msgHdr, Body: msgBody}, nil
 }
 
+// xorChecksumBody is a marker interface for ASCII messages that use an 8-bit XOR checksum
+// over the full packet (including leading '#') instead of the standard 32-bit CRC32.
+// The MODE message uses this checksum style.
+type xorChecksumBody interface {
+	MsgBody
+	usesXorChecksum()
+}
+
+func xorSum(data []byte) byte {
+	var v byte
+	for _, b := range data {
+		v ^= b
+	}
+	return v
+}
+
 // QuotedAsciiMsgBody is a marker interface for messages that use CSV-like
 // quoted fields in their ASCII representation. Fields may contain commas
 // and other special characters when quoted.
@@ -204,14 +220,16 @@ func SerializeAsciiMsg(msg *Msg) ([]byte, error) {
 
 	dataForChecksum := dataBuilder.String()
 
-	// Calculate CRC32 checksum on data (excluding '#')
-	checksum := novmsg.CRC32([]byte(dataForChecksum))
-
 	// Build final packet with '#' prefix and checksum
 	var packet strings.Builder
 	packet.WriteByte('#')
 	packet.WriteString(dataForChecksum)
-	packet.WriteString(fmt.Sprintf("*%08x", checksum))
+	// XOR checksum covers the full packet including '#'; CRC32 excludes '#'
+	if _, ok := msg.Body.(xorChecksumBody); ok {
+		packet.WriteString(fmt.Sprintf("*%02x", xorSum([]byte(packet.String()))))
+	} else {
+		packet.WriteString(fmt.Sprintf("*%08x", novmsg.CRC32([]byte(dataForChecksum))))
+	}
 	packet.WriteString("\r\n")
 
 	return []byte(packet.String()), nil

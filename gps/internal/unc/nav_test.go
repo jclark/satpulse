@@ -223,8 +223,9 @@ func TestPPPNavPos(t *testing.T) {
 		if posG != nil {
 			t.Errorf("expected nil PosGeoMsg, got %v", posG)
 		}
-		if ne.FixLevel != gpsprot.FixLevelNone {
-			t.Errorf("FixLevel = %v, want FixLevelNone", ne.FixLevel)
+		// ne should be completely unmodified so BESTNAV's contributions are preserved.
+		if ne != (gpsprot.NavEpochMsg{}) {
+			t.Errorf("ne modified by PPPNAV with no fix: %+v", ne)
 		}
 	})
 }
