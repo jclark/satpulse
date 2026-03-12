@@ -36,6 +36,39 @@ func TestTp5(t *testing.T) {
 	}
 }
 
+func TestNav5MinElev(t *testing.T) {
+	raw := &CfgOld{nav5: new(ubxbin.CfgNav5)}
+	ver := &Version{}
+
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetMinElevation(10 * gpsprot.Degrees)
+
+	raw.nav5 = raw.changeNav5(target, ver)
+	if raw.nav5 == nil {
+		t.Fatal("changeNav5 returned nil")
+	}
+
+	ncp := gpsprot.ConfigProps{}
+	raw.cookNav5(&ncp, ver)
+	bad := target.Props.Inconsistent(&ncp)
+	if !bad.IsEmpty() {
+		t.Errorf("nav5 MinElev change failed: %v", bad)
+	}
+
+	rep := raw.changeNav5(target, ver)
+	if rep != nil {
+		t.Errorf("repeated changeNav5 wasn't a no-op: %v", rep)
+	}
+
+	// out-of-range value should be skipped (no change)
+	outOfRange := &gpsprot.ConfigTarget{}
+	outOfRange.Props.SetMinElevation(200 * gpsprot.Degrees)
+	skip := raw.changeNav5(outOfRange, ver)
+	if skip != nil {
+		t.Errorf("out-of-range MinElev should be skipped, got %v", skip)
+	}
+}
+
 func TestChangeTp5GNSS(t *testing.T) {
 	// Create a new RawConfig and ConfigProps
 	raw := CfgOld{tp5: new(ubxbin.CfgTp5)}

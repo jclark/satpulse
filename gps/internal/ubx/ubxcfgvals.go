@@ -15,6 +15,7 @@ type CfgVals struct {
 
 var AllKeys = []ucv.AnyTypedKey{
 	ucv.KNavspgDynmodel,
+	ucv.KNavspgInfilMinelev,
 	ucv.KNavspgUtcstandard,
 	ucv.KRateMeas,
 	ucv.KRateNav,
@@ -69,6 +70,9 @@ var AllMsgKeys = []ucv.KeyM{
 }
 
 var cfgValKeysByProp = map[gpsprot.PropIDs][]ucv.AnyTypedKey{
+	gpsprot.PropIDMinElevation: {
+		ucv.KNavspgInfilMinelev,
+	},
 	gpsprot.PropIDTimeGNSS: {
 		ucv.KTpTimegridTp1,
 	},
@@ -147,6 +151,9 @@ func (raw *CfgVals) Cook(ver *Version, cp *gpsprot.ConfigProps) {
 	}
 	if v, ok := cfgValGet(raw, ucv.KTpAntCabledelay); ok {
 		cp.SetAntennaCableDelay(time.Duration(v))
+	}
+	if v, ok := cfgValGet(raw, ucv.KNavspgInfilMinelev); ok {
+		cp.SetMinElevation(gpsprot.Angle(v) * gpsprot.Degrees)
 	}
 }
 
@@ -254,6 +261,11 @@ func (tb *txnBuilder) build() error {
 
 	if v, ok := cp.GetAntennaCableDelay(); ok {
 		txnAddItem(tb, ucv.KTpAntCabledelay, int64(v))
+	}
+	if v, ok := cp.GetMinElevation(); ok {
+		if deg, ok := angleToInt8Degrees(v); ok {
+			txnAddItem(tb, ucv.KNavspgInfilMinelev, int64(deg))
+		}
 	}
 	if v, ok := cp.GetTimePulsePolarityRising(); ok {
 		txnAddItem(tb, ucv.KTpPolTp1, v)

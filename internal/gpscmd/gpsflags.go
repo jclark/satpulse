@@ -325,7 +325,11 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		configChanged = true
 	}
 	if flags.Lookup("min-elev").Changed {
-		vars.minElev.Set(gpsprot.Angle(minElev))
+		elev := gpsprot.Angle(minElev)
+		if elev < -90*gpsprot.Degrees || elev > 90*gpsprot.Degrees {
+			return nil, nil, fmt.Errorf("--min-elev must be between -90 and 90 degrees")
+		}
+		vars.minElev.Set(elev)
 		configChanged = true
 	}
 	if vars.timeGNSS != 0 {
