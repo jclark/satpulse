@@ -146,7 +146,6 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const [timePulseTouched, setTimePulseTouched] = useState(false);
     const [timeModeTouched, setTimeModeTouched] = useState(false);
     const [signalsTouched, setSignalsTouched] = useState(false);
-    const [otherTouched, setOtherTouched] = useState(false);
 
     // Applying state
     const [applying, setApplying] = useState(false);
@@ -219,7 +218,6 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             setTimePulseTouched(false);
             setTimeModeTouched(false);
             setSignalsTouched(false);
-            setOtherTouched(false);
             setNmeaChange(false);
             setRtcmChange(false);
             setPvtChange(false);
@@ -283,7 +281,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             if (timeGNSS) props.timeGNSS = timeGNSS;
             if (cableDelay !== '') props.antennaCableDelay = (parseFloat(cableDelay) || 0) * 1e-9;
         }
-        if (otherTouched) {
+        if (signalsTouched) {
             if (minElev !== '') props.minElevation = parseFloat(minElev) || 0;
         }
         const nmeaWire = nmeaWireValue(nmeaChange, nmeaDisable, nmeaFlags);
@@ -316,7 +314,6 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             setTimePulseTouched(false);
             setTimeModeTouched(false);
             setSignalsTouched(false);
-            setOtherTouched(false);
         } else {
             addToast(r.error || 'Apply failed', 'error');
             setOperation({status: 'failed', label: 'Applying configuration', error: r.error || 'Apply failed'});
@@ -328,7 +325,6 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setTimePulseTouched(false);
         setTimeModeTouched(false);
         setSignalsTouched(false);
-        setOtherTouched(false);
         setNmeaChange(false);
         setRtcmChange(false);
         setPvtChange(false);
@@ -357,8 +353,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const pendingSections: string[] = [];
     if (timePulseTouched) pendingSections.push('time pulse');
     if (timeModeTouched) pendingSections.push('time mode');
-    if (signalsTouched) pendingSections.push('signals');
-    if (otherTouched) pendingSections.push('other');
+    if (signalsTouched) pendingSections.push('satellites and signals');
     if (nmeaChange || rtcmChange || pvtChange || satsChange || rawChange) pendingSections.push('messages');
     if (saveType) pendingSections.push('save');
     if (resetType) pendingSections.push('reset');
@@ -510,8 +505,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                         </ConfigSubGroup>
                     </ConfigGroup>
 
-                    {/* Signals subgroup */}
-                    <ConfigGroup title="Signals">
+                    {/* Satellites and signals */}
+                    <ConfigGroup title="Satellites and signals">
                         <div class="flex flex-wrap gap-x-4 gap-y-1">
                             {gnssNames.map(gnssName => {
                                 const sigs = signalCatalog[gnssName];
@@ -535,14 +530,10 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                                 Edit signals...
                             </Button>
                         )}
-                    </ConfigGroup>
-
-                    {/* Other properties */}
-                    <ConfigGroup title="Other">
                         <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center w-fit">
                             <label class={fieldLabelText()}>Min elevation (deg)</label>
                             <Input type="text" inputMode="decimal" invalid={errorSet.has('minElev')} class="w-20" value={minElev} placeholder="e.g. 10"
-                                disabled={!connected} onInput={e => { setOtherTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
+                                disabled={!connected} onInput={e => { setSignalsTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
                         </div>
                     </ConfigGroup>
 
