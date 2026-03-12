@@ -167,6 +167,58 @@
 				"required": ["path"]
 			}
 		}
+	  },
+	  "sync": {
+		"type": "object",
+		"properties": {
+		  "reset": {
+			"type": "object",
+			"properties": {
+			  "pulseWindow": { "type": "integer", "minimum": 3, "exclusiveMaximum": 100 },
+			  "stepThreshold": { "type": "integer", "minimum": 0, "exclusiveMaximum": 1000000 },
+			  "pulseVariation": { "type": "number", "minimum": 5, "exclusiveMaximum": 1000000 },
+			  "expectedDelay": { "type": "number", "minimum": 0.0, "exclusiveMaximum": 1.0 },
+			  "delayConfidenceWindow": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 1.0 },
+			  "delayVariation": { "type": "number", "exclusiveMinimum": 0.0, "exclusiveMaximum": 1.0 },
+			  "pulseWidthDetectLimit": { "type": "number", "minimum": 0.1, "exclusiveMaximum": 0.5 },
+			  "driftRateLimit": { "type": "number", "minimum": 0, "exclusiveMaximum": 1000000000 }
+			}
+		  },
+		  "converge": {
+			"type": "object",
+			"properties": {
+			  "kp": { "type": "number", "exclusiveMinimum": 0.0, "exclusiveMaximum": 10.0 },
+			  "ki": { "type": "number", "minimum": 0.0, "exclusiveMaximum": 10.0 },
+			  "medianWindow": { "type": "integer", "minimum": 3, "exclusiveMaximum": 100 },
+			  "offsetLimit": { "type": "integer", "exclusiveMinimum": 0, "maximum": 10000 },
+			  "stableWindow": { "type": "integer", "minimum": 1, "exclusiveMaximum": 100 },
+			  "badSampleLimit": { "type": "integer", "minimum": 1, "exclusiveMaximum": 100 },
+			  "stepCompensate": { "type": "boolean" }
+			}
+		  },
+		  "track": {
+			"type": "object",
+			"properties": {
+			  "kp": { "type": "number", "exclusiveMinimum": 0.0, "exclusiveMaximum": 10.0 },
+			  "ki": { "type": "number", "exclusiveMinimum": 0.0, "exclusiveMaximum": 10.0 },
+			  "madThreshold": { "type": "integer", "exclusiveMinimum": 0, "maximum": 1000000 },
+			  "madWindow": { "type": "integer", "minimum": 3, "exclusiveMaximum": 100 },
+			  "madMultiple": { "type": "number", "exclusiveMinimum": 0.0, "exclusiveMaximum": 1000.0 },
+			  "madMinSamples": { "type": "integer", "minimum": 3, "exclusiveMaximum": 100 },
+			  "outlierThreshold": { "type": "integer", "exclusiveMinimum": 0, "maximum": 1000000 },
+			  "pulseWidthTolerance": { "type": "integer", "exclusiveMinimum": 0, "maximum": 10000 },
+			  "alignTolerance": { "type": "integer", "exclusiveMinimum": 0, "maximum": 10000 },
+			  "badSampleRunLimit": { "type": "integer", "minimum": 1, "exclusiveMaximum": 1000 },
+			  "outlierRatioLimit": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 1.0 },
+			  "badSampleWindow": { "type": "integer", "minimum": 1, "exclusiveMaximum": 1000 },
+			  "badSampleRatioLimit": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 1.0 },
+			  "avgFreqTimeConstant": { "type": "number", "minimum": 0.0, "exclusiveMaximum": 1000.0 },
+			  "ignoreSawtoothCorrection": { "type": "boolean" },
+			  "pulseCorrectionTimeout": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 0.75 },
+			  "persistThreshold": { "type": "number", "minimum": 0, "exclusiveMaximum": 86400 }
+			}
+		  }
+		}
 	  }
 	}
 }
