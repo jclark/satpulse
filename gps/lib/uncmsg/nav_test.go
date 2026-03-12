@@ -10,8 +10,8 @@ import (
 
 var bestNavTests = []dataTestCase{
 	{
-		name:      "BESTNAV with SINGLE fix",
-		binPacket: mustHexDecode("aa44b5614608780000a06609984487058c4400000012160000000000100000002dde9be3b2762b4026ee7829432959400000f8a3039e2040d1a5f6c13d0000001503b63f2b5aa23fdac5114000000000000000000000a040341c1c00011211510000000008000000000000000000000086c53f34760b763f07a482eb9c676c409210d192ce1852bf2925963c1a3c5b3cab147aeb"),
+		name:        "BESTNAV with SINGLE fix",
+		binPacket:   mustHexDecode("aa44b5614608780000a06609984487058c4400000012160000000000100000002dde9be3b2762b4026ee7829432959400000f8a3039e2040d1a5f6c13d0000001503b63f2b5aa23fdac5114000000000000000000000a040341c1c00011211510000000008000000000000000000000086c53f34760b763f07a482eb9c676c409210d192ce1852bf2925963c1a3c5b3cab147aeb"),
 		asciiPacket: "#BESTNAVA,97,GPS,FINE,2406,92751000,17548,0,18,22;SOL_COMPUTED,SINGLE,13.73183356550,100.64472424326,8.3086,-30.8310,WGS84,1.4220,1.2684,2.2777,\"\",0.000,5.000,52,28,28,0,1,12,11,51,SOL_COMPUTED,DOPPLER_VELOCITY,0.000,0.000,0.0054,227.237905,-0.0011,0.0183,0.0134*a10b7a38\r\n",
 		msg: &Msg{
 			Hdr: MsgHdr{
@@ -21,8 +21,8 @@ var bestNavTests = []dataTestCase{
 					TimeStatus:         TimeStatusFine,
 					Week:               2406,
 					MillisecondsOfWeek: 92751000,
-					Reserved:           17548,
-					Version:            0,
+					Version:            17548,
+					Reserved:           0,
 					LeapSec:            18,
 					DelayMs:            22,
 				},
@@ -72,8 +72,8 @@ var bestNavTests = []dataTestCase{
 
 var bestNavXYZTests = []dataTestCase{
 	{
-		name:      "BESTNAVXYZ with SINGLE fix",
-		binPacket: mustHexDecode("aa44b561f000700000a06609c06787058c440000001216000000000010000000a490be42797731c1fce223cc983b57412359faaaabf336412918aa3f71b70e403ddbbe3f000000000800000068a42ea4befc11bf2d9b876e9eba73bfce6c5fe163065fbfc898153c79ffa03cdaab4e3c00000000000000000000000000000000331c1c000002115135185638"),
+		name:        "BESTNAVXYZ with SINGLE fix",
+		binPacket:   mustHexDecode("aa44b561f000700000a06609c06787058c440000001216000000000010000000a490be42797731c1fce223cc983b57412359faaaabf336412918aa3f71b70e403ddbbe3f000000000800000068a42ea4befc11bf2d9b876e9eba73bfce6c5fe163065fbfc898153c79ffa03cdaab4e3c00000000000000000000000000000000331c1c000002115135185638"),
 		asciiPacket: "#BESTNAVXYZA,97,GPS,FINE,2406,92760000,17548,0,18,22;SOL_COMPUTED,SINGLE,-1144697.2607,6090339.1897,1504171.6679,1.3289,2.2299,1.4911,SOL_COMPUTED,DOPPLER_VELOCITY,-0.0001,-0.0048,-0.0019,0.0091,0.0197,0.0126,\"\",0.000,0.000,0.000,51,28,28,0,0,02,11,51*85eccb2a\r\n",
 		msg: &Msg{
 			Hdr: MsgHdr{
@@ -83,8 +83,8 @@ var bestNavXYZTests = []dataTestCase{
 					TimeStatus:         TimeStatusFine,
 					Week:               2406,
 					MillisecondsOfWeek: 92760000,
-					Reserved:           17548,
-					Version:            0,
+					Version:            17548,
+					Reserved:           0,
 					LeapSec:            18,
 					DelayMs:            22,
 				},
@@ -141,8 +141,8 @@ var pppNavTests = []dataTestCase{
 					TimeStatus:         TimeStatusFine,
 					Week:               2408,
 					MillisecondsOfWeek: 105964000,
-					Reserved:           17548,
-					Version:            0,
+					Version:            17548,
+					Reserved:           0,
 					LeapSec:            18,
 					DelayMs:            17,
 				},

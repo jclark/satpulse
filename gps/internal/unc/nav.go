@@ -39,12 +39,14 @@ func bestNavPosVel(ne *gpsprot.NavEpochMsg, m *uncmsg.BestNav) (*gpsprot.PosGeoM
 // pppNavPos extracts geodetic position from a PPPNAV message.
 // PPPNAV is position-only (no velocity). It uses PriVendorHigh so it
 // takes precedence over BESTNAV when both are available in the same epoch.
+// Returns nil without modifying ne if PPPNAV has no fix, so BESTNAV's
+// contributions to ne are preserved.
 func pppNavPos(ne *gpsprot.NavEpochMsg, m *uncmsg.PPPNav) *gpsprot.PosGeoMsg {
-	quality(ne, m.PSolStatus, m.PosType,
-		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs)
 	if m.PSolStatus != uncmsg.SolComputed {
 		return nil
 	}
+	quality(ne, m.PSolStatus, m.PosType,
+		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs)
 	posG := nov.PosGeo(ne, &m.Pos, "PPPNAV")
 	posG.Priority = gpsprot.PriVendorHigh
 	return posG

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -21,6 +22,9 @@ type dataTestCase struct {
 	// fixupMsgForAscii transforms msg from binary message into msg expected by ASCII format
 	// This is used to handle floating point differences, where ASCII has limited precision.
 	fixupMsgForAscii func(*Msg) *Msg // Transform binary baseline to ASCII format
+	// exactAsciiRoundtrip requires the serialized ASCII to be byte-for-byte identical to asciiPacket.
+	// Use this for messages with no float fields where the round-trip should be lossless.
+	exactAsciiRoundtrip bool
 }
 
 func testDataBin(t *testing.T, tests []dataTestCase) {
@@ -76,6 +80,14 @@ func testDataAscii(t *testing.T, tests []dataTestCase) {
 			serialized, err := SerializeAsciiMsg(expectedMsg)
 			if err != nil {
 				t.Fatalf("SerializeAsciiMsg() error = %v", err)
+			}
+
+			if tt.exactAsciiRoundtrip {
+				// Strip \r\n from serialized for comparison since asciiPacket omits it
+				got := strings.TrimRight(string(serialized), "\r\n")
+				if got != tt.asciiPacket {
+					t.Errorf("SerializeAsciiMsg() round-trip mismatch:\nGot:  %q\nWant: %q", got, tt.asciiPacket)
+				}
 			}
 
 			msg2, err := ParseAsciiMessage(serialized)

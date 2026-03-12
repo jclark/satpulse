@@ -5,7 +5,8 @@ import "testing"
 func TestModeData(t *testing.T) {
 	tests := []dataTestCase{
 		{
-			name: "MODE BASE TIME",
+			name:                "MODE BASE TIME",
+			exactAsciiRoundtrip: true,
 			// No binPacket since MODE is ASCII-only
 			asciiPacket: "#MODE,97,GPS,FINE,2379,562467000,0,0,18,271;MODE BASE 1234 TIME 60 2.5 3.5,*53",
 			msg: &Msg{
@@ -16,8 +17,8 @@ func TestModeData(t *testing.T) {
 						TimeStatus:         TimeStatusFine,
 						Week:               2379,
 						MillisecondsOfWeek: 562467000,
-						Reserved:           0,
 						Version:            0,
+						Reserved:           0,
 						LeapSec:            18,
 						DelayMs:            271,
 					},

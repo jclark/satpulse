@@ -42,8 +42,8 @@ func TestBinaryHeader(t *testing.T) {
 				TimeStatus:         TimeStatusFine, // 0xA0 = 160 = FINE, from ASCII: "FINE"
 				Week:               2376,           // From ASCII: "2376"
 				MillisecondsOfWeek: 540337000,      // From ASCII: "540337000"
-				Reserved:           0,              // Reserved field
-				Version:            0,              // Version field
+				Version:            0,              // Reserved field
+				Reserved:           0,              // Version field
 				LeapSec:            18,             // From ASCII: "18"
 				DelayMs:            29,             // From ASCII: "29"
 			},
@@ -71,8 +71,8 @@ func TestBinHeader(t *testing.T) {
 				TimeStatus:         TimeStatusFine,
 				Week:               2376,
 				MillisecondsOfWeek: 540337000,
-				Reserved:           0,
 				Version:            0,
+				Reserved:           0,
 				LeapSec:            18,
 				DelayMs:            29,
 			},
@@ -91,14 +91,14 @@ func TestUnknownBinaryMessage(t *testing.T) {
 			Name:    "TESTMSGA",
 			Payload: "data1,data2,data3",
 		}
-		
+
 		msg := &Msg{
 			Hdr: MsgHdr{
 				CPUIdlePercent: 85,
 			},
 			Body: unknownMsg,
 		}
-		
+
 		// Try to serialize as binary - should fail
 		_, err := SerializeBinMsg(msg)
 		if err == nil {
