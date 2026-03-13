@@ -127,6 +127,26 @@ func TestIsMSM(t *testing.T) {
 	}
 }
 
+func TestReferenceStationID(t *testing.T) {
+	// rtcmEx is a 1005 message; pkt[4]=0xD7, pkt[5]=0xD3
+	// station ID = (0x07 << 8) | 0xD3 = 2003
+	id, ok := ReferenceStationID([]byte(rtcmEx))
+	if !ok {
+		t.Fatal("ReferenceStationID returned false for 1005 packet")
+	}
+	if id != 2003 {
+		t.Errorf("ReferenceStationID = %d, want 2003", id)
+	}
+	// Too-short packet
+	if _, ok := ReferenceStationID([]byte{0xD3, 0x00}); ok {
+		t.Error("ReferenceStationID returned true for short packet")
+	}
+	// Unknown message type
+	if _, ok := ReferenceStationID([]byte{0xD3, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}); ok {
+		t.Error("ReferenceStationID returned true for unknown message type 0")
+	}
+}
+
 func TestHasMore(t *testing.T) {
 	// BeiDou MSM4 with multiple message bit set
 	pkt1, _ := hex.DecodeString("d300e24640006b77b802002037e48000000000002082014171c71c31c71c71c3c3bbf3c3dc1bb3e41bcc816eeeaef290e61db81235f8eba4d75fa8f73c2677ccc783c6c7c98e5208dc0fe81926a27d238248048c08ca2aec5518a620e521c12363cbd7195f322593472a364a7f5dbc3d76aef5e207cf3ebf3cecbcf4f8079ff81e858079d1408cec02302808c86f4ff57d3fcd044c1414f0305432c2b8710ae4642b99806fdd41be0706f3d0313eb0c660831bf3f263bbc98a1f25f8fffffffffffffffffffffffffffffc00000017d9a5d86555755d6dcfbb0473597e30493cd55375f700fbba02")

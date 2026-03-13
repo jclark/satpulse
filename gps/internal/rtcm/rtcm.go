@@ -219,3 +219,21 @@ func extractMsgType[B Bytes](packet B) MsgType {
 	}
 	return (MsgType(packet[3]) << 4) | MsgType(packet[4]>>4)
 }
+
+func (mt MsgType) hasStationID() bool {
+	return isCommonMsgType(mt) || mt.isMSM()
+}
+
+// ReferenceStationID extracts the 12-bit reference station ID (DF003)
+// from an RTCM packet. This field is at the same offset in MSM messages,
+// station ARP (1005/1006), antenna descriptor (1007/1008/1033),
+// and GLONASS bias (1230).
+// Returns false if the message type does not have a station ID at
+// this offset or the packet is too short.
+func ReferenceStationID[B Bytes](pkt B) (uint16, bool) {
+	mt := extractMsgType(pkt)
+	if !mt.hasStationID() || len(pkt) < 6 {
+		return 0, false
+	}
+	return uint16(pkt[4]&0x0F)<<8 | uint16(pkt[5]), true
+}
