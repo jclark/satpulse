@@ -71,6 +71,7 @@ type PacketLogEntry struct {
 	T     TimeMicro   `json:"t"`
 	Tag   gpsprot.Tag `json:"tag,omitempty"`
 	Msg   string      `json:"msg,omitempty"`
+	More  bool        `json:"more,omitzero"` // more packets follow for same logical message
 	Bin   HexString   `json:"bin,omitempty"`
 	Ascii string      `json:"ascii,omitempty"`
 	Speed *int        `json:"speed,omitempty"`
@@ -135,10 +136,15 @@ func (pl *PacketLog) LogInput(pkt scan.Packet) {
 	if pkt.Format != nil {
 		msgID = pkt.Format.MsgID(bytes)
 	}
+	more := false
+	if mpf, ok := pkt.Format.(gpsprot.MultiPacketFormat); ok {
+		more = mpf.HasMore(bytes)
+	}
 	entry := PacketLogEntry{
-		T:   TimeMicro(pkt.TRead.UTC()),
-		Tag: pkt.Tag(),
-		Msg: msgID,
+		T:    TimeMicro(pkt.TRead.UTC()),
+		Tag:  pkt.Tag(),
+		Msg:  msgID,
+		More: more,
 	}
 	if useBinary(pkt.Format, bytes) {
 		entry.Bin = HexString(bytes)
@@ -184,6 +190,9 @@ func (pl *PacketLog) LogOutput(tWrite time.Time, bytes []byte, speed int, fmt gp
 	if fmt != nil {
 		entry.Tag = fmt.Tag()
 		entry.Msg = fmt.MsgID(bytes)
+		if mpf, ok := fmt.(gpsprot.MultiPacketFormat); ok {
+			entry.More = mpf.HasMore(bytes)
+		}
 	}
 	if useBinary(fmt, bytes) {
 		entry.Bin = HexString(bytes)

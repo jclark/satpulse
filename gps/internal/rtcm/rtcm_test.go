@@ -2,6 +2,7 @@ package rtcm
 
 import (
 	"bytes"
+	"encoding/hex"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -101,5 +102,48 @@ func TestMSMMsgType(t *testing.T) {
 				t.Errorf("MSMMsgType(%v, %d) = %d, want %d", tt.gnss, tt.msm, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestIsMSM(t *testing.T) {
+	tests := map[MsgType]bool{
+		1071: true,  // GPS MSM1
+		1077: true,  // GPS MSM7
+		1078: false, // not MSM
+		1079: false, // not MSM
+		1080: false, // not MSM (base, not x1-x7)
+		1084: true,  // GLONASS MSM4
+		1094: true,  // Galileo MSM4
+		1124: true,  // BeiDou MSM4
+		1137: true,  // NavIC MSM7
+		1138: false, // out of range
+		1005: false, // station ARP
+		1230: false, // GLONASS bias
+	}
+	for mt, want := range tests {
+		if mt.isMSM() != want {
+			t.Errorf("MsgType(%d).isMSM() = %v, want %v", mt, !want, want)
+		}
+	}
+}
+
+func TestHasMore(t *testing.T) {
+	// BeiDou MSM4 with multiple message bit set
+	pkt1, _ := hex.DecodeString("d300e24640006b77b802002037e48000000000002082014171c71c31c71c71c3c3bbf3c3dc1bb3e41bcc816eeeaef290e61db81235f8eba4d75fa8f73c2677ccc783c6c7c98e5208dc0fe81926a27d238248048c08ca2aec5518a620e521c12363cbd7195f322593472a364a7f5dbc3d76aef5e207cf3ebf3cecbcf4f8079ff81e858079d1408cec02302808c86f4ff57d3fcd044c1414f0305432c2b8710ae4642b99806fdd41be0706f3d0313eb0c660831bf3f263bbc98a1f25f8fffffffffffffffffffffffffffffc00000017d9a5d86555755d6dcfbb0473597e30493cd55375f700fbba02")
+	// BeiDou MSM4 with multiple message bit clear (last in group)
+	pkt2, _ := hex.DecodeString("d301304640006b77b8000020000001580700001c208201416fbefbefbef96412425a925293fbdbebcbc5a4ca3d53b79797b096fefd37ffb4fd2dfcf3f0cfed5d7abb0cb6246b61d5d876c4f931f913cbc73cb5d76c64d94baef756f82d00b9e1a0829c021c1044231048b07e80ee3ed33d99fb84f4f1eac71dee1fcc2e62e344828886268c00b75803bf6010280040e600b89fae28feb7517ada5beb6ef7ae0fa1e6b707a7201eafd07a9a21e6d97ae8a3eba6c7ae8fdebaa4fae99404af28117080449481118002af90225d608c3682342208c370223c9fafd97ebbe1faf25febd29fb02179020be402ef8fc620ba6a02ead00bb0f84da5bffffffffffffffffffffffdd9ffffffffffff9fffe00000000005f8e395f7e35e16d96d35d18616e16c71c12453dd4d736385b6e304915fae3980599f30")
+	if !hasMore(pkt1) {
+		t.Error("expected HasMore true for packet 1")
+	}
+	if hasMore(pkt2) {
+		t.Error("expected HasMore false for packet 2")
+	}
+	// Non-MSM message should return false
+	if hasMore([]byte(rtcmEx)) {
+		t.Error("expected HasMore false for non-MSM packet")
+	}
+	// Verify MsgID is unchanged (no suffix)
+	if got := PacketFormat.MsgID(pkt1); got != "1124" {
+		t.Errorf("MsgID(pkt1) = %q, want %q", got, "1124")
 	}
 }

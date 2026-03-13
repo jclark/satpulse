@@ -52,6 +52,17 @@ type PacketFormat interface {
 	RescanOnBadChecksum(prevPktValid bool, pkt []byte) bool
 }
 
+// MultiPacketFormat is implemented by packet formats where a single
+// logical observation can be split across multiple packets.
+// For RTCM MSM messages, the "multiple message" bit indicates that more
+// packets follow for the same epoch.
+type MultiPacketFormat interface {
+	PacketFormat
+	// HasMore returns true if the packet indicates that more
+	// packets follow as part of the same logical group.
+	HasMore(pkt []byte) bool
+}
+
 // AltChecksumPacketFormat provides an alternate method for computing the checksum,
 // which can be used to work around firmware quirks.
 // For examplem, on the Unicore UM980, the checksum for NMEA-like
