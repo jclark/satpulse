@@ -323,11 +323,11 @@ func TestBuildQualitySSE(t *testing.T) {
 		{
 			name: "with_diffage",
 			msg: gpsprot.NavEpochMsg{
-				FixLevel:    gpsprot.FixLevelCodeCorrected,
+				FixLevel:    gpsprot.FixLevelCode,
 				SolutionDim: gpsprot.SolutionDim3D,
 				DiffAge:     opt.Make(2 * gpsprot.Second),
 			},
-			want: `{"fixLevel":"codeCorrected","solutionDim":"3D","diffAge":2}`,
+			want: `{"fixLevel":"code","solutionDim":"3D","diffAge":2}`,
 		},
 		{
 			name: "no_fix",

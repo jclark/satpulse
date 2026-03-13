@@ -8,5 +8,5 @@ export interface PacketLogEntry {
     bin?: string;
     ascii?: string;
     speed?: number;
-    out: boolean;
+    out?: boolean;
 }

@@ -19,9 +19,9 @@ func PosTypeQuality(pt uint32) (gpsprot.FixLevel, gpsprot.SolutionDim, gpsprot.C
 	case novmsg.PosSingle:
 		return gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, 0, true
 	case novmsg.PosPSRDiff:
-		return gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrOSR.Expand(), 0, true
+		return gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrOSR.Expand(), 0, true
 	case novmsg.PosSBAS:
-		return gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrSBAS.Expand(), 0, true
+		return gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrSBAS.Expand(), 0, true
 	case novmsg.PosL1Float:
 		return gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrOSR.Expand(), 0, true
 	case novmsg.PosIonoFreeFloat:
@@ -37,7 +37,7 @@ func PosTypeQuality(pt uint32) (gpsprot.FixLevel, gpsprot.SolutionDim, gpsprot.C
 	case novmsg.PosINSPSRSP:
 		return gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, gpsprot.AuxSrcINS, true
 	case novmsg.PosINSPSRDiff:
-		return gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrOSR.Expand(), gpsprot.AuxSrcINS, true
+		return gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrOSR.Expand(), gpsprot.AuxSrcINS, true
 	case novmsg.PosINSRTKFloat:
 		return gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrOSR.Expand(), gpsprot.AuxSrcINS, true
 	case novmsg.PosINSRTKFixed:

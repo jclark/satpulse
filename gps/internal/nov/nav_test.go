@@ -23,7 +23,7 @@ func TestQualityOEM7(t *testing.T) {
 		{"NARROWLANE", 6, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrFullDualFreq.Expand(), 0},
 		{"PROPAGATED", 19, gpsprot.FixLevelNone, 0, 0, 0},
 		{"RTK_DIRECT_INS", 51, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrOSR.Expand(), gpsprot.AuxSrcINS},
-		{"INS_SBAS", 52, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrSBAS.Expand(), gpsprot.AuxSrcINS},
+		{"INS_SBAS", 52, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrSBAS.Expand(), gpsprot.AuxSrcINS},
 		{"EXT_CONSTRAINED", 67, gpsprot.FixLevelNotMeasured, 0, 0, gpsprot.AuxSrcINS},
 		{"OPERATIONAL", 70, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverged.Expand(), 0},
 		{"WARNING", 71, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrPPPConverged.Expand(), 0},

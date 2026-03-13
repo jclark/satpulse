@@ -352,7 +352,7 @@ func rmcQuality(epoch *NavEpoch, fields []string) {
 		}
 	case "D":
 		if epoch.FixLevel == 0 {
-			epoch.FixLevel = gpsprot.FixLevelCodeCorrected
+			epoch.FixLevel = gpsprot.FixLevelCode
 			epoch.Correction = gpsprot.CorrUsed
 		}
 	case "E":
@@ -381,7 +381,7 @@ func finalizeNavEpoch(epoch *NavEpoch) {
 		epoch.Correction = gpsprot.CorrOSR | gpsprot.CorrUsed
 		epoch.AuxSrc = 0
 	case 'P':
-		epoch.FixLevel = gpsprot.FixLevelCodeCorrected
+		epoch.FixLevel = gpsprot.FixLevelCode
 		epoch.Correction = gpsprot.CorrSSR | gpsprot.CorrUsed
 		epoch.AuxSrc = 0
 	}
@@ -465,7 +465,7 @@ func ggaQuality(epoch *NavEpoch, fields []string) {
 	case "1":
 		fl = gpsprot.FixLevelCode
 	case "2", "3":
-		fl = gpsprot.FixLevelCodeCorrected
+		fl = gpsprot.FixLevelCode
 		corr = gpsprot.CorrUsed
 	case "4":
 		fl = gpsprot.FixLevelCarrierFixed

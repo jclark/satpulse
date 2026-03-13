@@ -650,14 +650,10 @@ const (
 	// measurements, without a valid position/time solution.
 	FixLevelDoppler
 
-	// FixLevelCode indicates an uncorrected code-based GNSS solution
+	// FixLevelCode indicates a code-based GNSS solution
 	// (e.g. standalone SPS or single point positioning).
+	// Whether corrections are applied is indicated by CorrKind.
 	FixLevelCode
-
-	// FixLevelCodeCorrected indicates a code-based GNSS solution with
-	// corrections applied (e.g. DGPS or SBAS). This improves accuracy but
-	// remains limited by code measurement precision.
-	FixLevelCodeCorrected
 
 	// FixLevelCarrierFloat indicates a carrier-phase-based solution with
 	// ambiguities estimated as float (non-integer) values. This includes
@@ -671,13 +667,12 @@ const (
 )
 
 var fixLevelName = [...]string{
-	FixLevelNone:          "none",
-	FixLevelNotMeasured:   "notMeasured",
-	FixLevelDoppler:       "doppler",
-	FixLevelCode:          "code",
-	FixLevelCodeCorrected: "codeCorrected",
-	FixLevelCarrierFloat:  "carrierFloat",
-	FixLevelCarrierFixed:  "carrierFixed",
+	FixLevelNone:         "none",
+	FixLevelNotMeasured:  "notMeasured",
+	FixLevelDoppler:      "doppler",
+	FixLevelCode:         "code",
+	FixLevelCarrierFloat: "carrierFloat",
+	FixLevelCarrierFixed: "carrierFixed",
 }
 
 var fixLevelFromName = func() map[string]FixLevel {
@@ -1094,14 +1089,13 @@ func (d *DOP) Fill(other *DOP) {
 // order (see CorrKind docs).
 type NavEpochMsg struct {
 	// FixLevel is the primary GNSS solution mode, ordered by increasing
-	// quality (None < Doppler < Code < CodeCorrected <
-	// CarrierFloat < CarrierFixed).
+	// quality (None < Doppler < Code < CarrierFloat < CarrierFixed).
 	FixLevel FixLevel `json:"fixLevel,omitzero"`
 	// SolutionDim is the dimensionality of the position/time solution
 	// (2D, 3D, time-only). Unset when FixLevel < FixLevelCode.
 	SolutionDim SolutionDim `json:"solutionDim,omitzero"`
 	// Correction is a bitmask of assertions about corrections applied.
-	// Meaningful when FixLevel >= FixLevelCodeCorrected.
+	// Meaningful when FixLevel >= FixLevelCode.
 	Correction CorrKind `json:"correction,omitzero"`
 	// AuxSrc is a bitmask of additional sources (DR, INS) that contributed
 	// to the solution. GNSS is implicit when FixLevel indicates a fix.

@@ -133,7 +133,6 @@ func TestFixLevelString(t *testing.T) {
 		{FixLevelNotMeasured, "notMeasured"},
 		{FixLevelDoppler, "doppler"},
 		{FixLevelCode, "code"},
-		{FixLevelCodeCorrected, "codeCorrected"},
 		{FixLevelCarrierFloat, "carrierFloat"},
 		{FixLevelCarrierFixed, "carrierFixed"},
 	}

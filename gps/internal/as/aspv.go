@@ -107,7 +107,7 @@ func qualityNavAuto(ne *gpsprot.NavEpochMsg, m *asbin.NavAuto) {
 		ne.FixLevel = gpsprot.FixLevelCode
 		ne.SolutionDim = gpsprot.SolutionDim3D
 	case asbin.NavAutoFixDGNSS:
-		ne.FixLevel = gpsprot.FixLevelCodeCorrected
+		ne.FixLevel = gpsprot.FixLevelCode
 		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrUsed
 	case asbin.NavAutoFixRTKFloat:
