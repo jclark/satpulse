@@ -53,20 +53,20 @@ export function CorrectionsPanel({connState}: Props) {
         }
     }, [connected]);
 
-    const handleStart = useCallback(async () => {
-        const p = parseInt(port, 10);
-        if (!host || isNaN(p) || p <= 0 || p > 65535) return;
-        const r = await StartCorrections(host, p);
-        if (!r.ok && r.error) setCorrError(r.error);
-    }, [host, port]);
-
-    const handleStop = useCallback(async () => {
-        await StopCorrections();
-    }, []);
-
     const running = corrState !== 'stopped';
     const portNum = parseInt(port, 10);
-    const startDisabled = !connected || !host || isNaN(portNum) || portNum <= 0 || portNum > 65535;
+    const validAddr = !!host && !isNaN(portNum) && portNum > 0 && portNum <= 65535;
+
+    const handleToggle = useCallback(async () => {
+        if (running) {
+            await StopCorrections();
+        } else {
+            const p = parseInt(port, 10);
+            if (!host || isNaN(p) || p <= 0 || p > 65535) return;
+            const r = await StartCorrections(host, p);
+            if (!r.ok && r.error) setCorrError(r.error);
+        }
+    }, [host, port, running]);
 
     let statusText = '';
     let statusClass = 'text-text-muted';
@@ -84,7 +84,6 @@ export function CorrectionsPanel({connState}: Props) {
             statusClass = 'text-warning';
             break;
         case 'stopped':
-            statusText = 'Stopped';
             break;
     }
 
@@ -103,7 +102,7 @@ export function CorrectionsPanel({connState}: Props) {
                 <span class={fieldLabelText(!connected)}>Port:</span>
                 <Input
                     class="w-20"
-                    type="number"
+                    inputMode="numeric"
                     value={port}
                     onInput={e => setPort((e.target as HTMLInputElement).value)}
                     disabled={!connected}
@@ -112,17 +111,11 @@ export function CorrectionsPanel({connState}: Props) {
             </div>
             <div class="flex shrink-0 items-center gap-3 px-4 pb-2">
                 <Button
-                    variant="primary"
-                    disabled={startDisabled}
-                    onClick={handleStart}
+                    variant={running ? 'secondary' : 'primary'}
+                    disabled={!connected || (!running && !validAddr)}
+                    onClick={handleToggle}
                 >
-                    Start
-                </Button>
-                <Button
-                    disabled={!running}
-                    onClick={handleStop}
-                >
-                    Stop
+                    {running ? 'Disconnect' : 'Connect'}
                 </Button>
                 <span class={`text-xs ${statusClass}`}>{statusText}</span>
             </div>

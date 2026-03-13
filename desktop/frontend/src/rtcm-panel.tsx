@@ -6,8 +6,8 @@ import {Button} from './ui';
 interface MsgRow {
     msgType: string;
     count: number;
+    firstTime: number;
     lastTime: number;
-    prevTime: number;
 }
 
 interface Props {
@@ -43,6 +43,12 @@ function formatAge(ms: number): string {
     return Math.floor(ms / 1000) + 's';
 }
 
+function formatPeriod(ms: number): string {
+    if (ms < 0) return '';
+    const s = Math.round(ms / 10) / 100; // round to 10ms
+    return s + 's';
+}
+
 export function RtcmPanel({connected}: Props) {
     const rowsRef = useRef<Map<string, MsgRow>>(new Map());
     const [displayed, setDisplayed] = useState<Map<string, MsgRow>>(new Map());
@@ -56,10 +62,9 @@ export function RtcmPanel({connected}: Props) {
             const now = Date.now();
             if (existing) {
                 existing.count++;
-                existing.prevTime = existing.lastTime;
                 existing.lastTime = now;
             } else {
-                rows.set(evt.msg, {msgType: evt.msg, count: 1, lastTime: now, prevTime: 0});
+                rows.set(evt.msg, {msgType: evt.msg, count: 1, firstTime: now, lastTime: now});
             }
             setDisplayed(new Map(rows));
         });
@@ -105,13 +110,13 @@ export function RtcmPanel({connected}: Props) {
                             <th class="whitespace-nowrap px-2 py-1.5">Description</th>
                             <th class="whitespace-nowrap px-2 py-1.5 text-right">Count</th>
                             <th class="whitespace-nowrap px-2 py-1.5 text-right">Age</th>
-                            <th class="whitespace-nowrap px-2 py-1.5 text-right">Rate</th>
+                            <th class="whitespace-nowrap px-2 py-1.5 text-right">Period</th>
                         </tr>
                     </thead>
                     <tbody class="font-mono">
                         {sortedRows.map(row => {
                             const age = now - row.lastTime;
-                            const rate = row.prevTime > 0 ? row.lastTime - row.prevTime : -1;
+                            const period = row.count >= 2 ? (row.lastTime - row.firstTime) / (row.count - 1) : -1;
                             const textClass = age < 10000 ? 'text-text-primary' : 'text-text-muted';
                             return (
                                 <tr key={row.msgType} class={`hover:bg-surface-3 ${textClass}`}>
@@ -119,7 +124,7 @@ export function RtcmPanel({connected}: Props) {
                                     <td class="whitespace-nowrap px-2 py-0.5">{rtcmDescription(row.msgType)}</td>
                                     <td class="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{row.count}</td>
                                     <td class="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{formatAge(age)}</td>
-                                    <td class="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{rate >= 0 ? formatAge(rate) : ''}</td>
+                                    <td class="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{period >= 0 ? formatPeriod(period) : ''}</td>
                                 </tr>
                             );
                         })}
