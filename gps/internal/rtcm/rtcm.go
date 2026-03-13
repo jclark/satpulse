@@ -15,6 +15,8 @@ const Tag gpsprot.Tag = "RTCM"
 // PacketFormat returns the RTCM packet format
 var PacketFormat gpsprot.PacketFormat = packetFormat{}
 
+var _ gpsprot.MultiPacketFormat = packetFormat{}
+
 type MsgType uint16
 
 // Message represents an RTCM message
@@ -127,8 +129,30 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 	return state == stateExpectN
 }
 
+func (mt MsgType) isMSM() bool {
+	msm := mt % 10
+	return mt >= 1071 && mt <= 1137 && msm >= 1 && msm <= 7
+}
+
 func (f packetFormat) MsgID(pkt []byte) string {
 	return extractMsgType(pkt).String()
+}
+
+// HasMore implements gpsprot.MultiPacketFormat.
+// For RTCM MSM messages, it returns true when the multiple message bit
+// is set, meaning more MSM messages follow for this epoch.
+func (f packetFormat) HasMore(pkt []byte) bool {
+	return hasMore(pkt)
+}
+
+func hasMore[B Bytes](pkt B) bool {
+	if !extractMsgType(pkt).isMSM() {
+		return false
+	}
+	// Multiple message flag is at bit 54 of the message data (starting at byte 3):
+	// 12 bits msg type + 12 bits station ID + 30 bits epoch = bit 54
+	// That's byte 9 of the packet (3 + 54/8 = 3 + 6), bit 1 (mask 0x02)
+	return len(pkt) > 9 && pkt[9]&0x02 != 0
 }
 
 // ExtractChecksum extracts the checksum from the RTCM packet.
