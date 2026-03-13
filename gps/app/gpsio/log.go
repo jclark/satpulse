@@ -75,7 +75,7 @@ type PacketLogEntry struct {
 	Bin   HexString   `json:"bin,omitempty"`
 	Ascii string      `json:"ascii,omitempty"`
 	Speed *int        `json:"speed,omitempty"`
-	Out   bool        `json:"out"` // use omitzero here when we upgrade to go 1.24
+	Out   bool        `json:"out,omitzero"`
 }
 
 func (ple *PacketLogEntry) Data() string {

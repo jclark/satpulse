@@ -128,7 +128,7 @@ func samples() []sample {
 			Bin:   gpsio.HexString{0xd3, 0x00, 0x0a},
 			Ascii: "$GPGGA",
 			Speed: &speed,
-			Out:   false,
+			Out:   true,
 		}},
 	}
 }
