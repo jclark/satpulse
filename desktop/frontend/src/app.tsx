@@ -12,6 +12,7 @@ import {SurveyPanel} from './survey-panel';
 import {StatusPanel} from './status-panel';
 import type {NavEpochMsg} from './status-panel';
 import {MsgFilePanel} from './msgfile-panel';
+import {CorrectionsPanel} from './corrections-panel';
 import {PVTPanel} from './pvt-panel';
 import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeRow} from './pvt-panel';
 import {MapPanel} from './map-panel';
@@ -95,7 +96,7 @@ export interface ResponseLine {
     bin?: string;            // binary protocols (hex)
 }
 
-type TabID = 'monitor' | 'packets' | 'config' | 'messages';
+type TabID = 'monitor' | 'packets' | 'corrections' | 'config' | 'messages';
 
 const tabBtnBase = 'px-5 py-2 text-sm font-medium border-b-2 cursor-pointer bg-transparent';
 const tabBtnActive = tabBtnBase + ' border-accent text-accent bg-surface-1';
@@ -526,6 +527,12 @@ export function App() {
                     Packets
                 </button>
                 <button
+                    class={activeTab === 'corrections' ? tabBtnActive : tabBtnInactive}
+                    onClick={() => handleTabChange('corrections')}
+                >
+                    Corrections
+                </button>
+                <button
                     class={configDisabled ? tabBtnDisabled : (activeTab === 'config' ? tabBtnActive : tabBtnInactive)}
                     onClick={() => { if (!configDisabled) handleTabChange('config'); }}
                 >
@@ -564,6 +571,11 @@ export function App() {
                 {/* Packets tab */}
                 <div class={`h-full ${activeTab === 'packets' ? '' : 'hidden'}`}>
                     <PacketPanel visible={activeTab === 'packets'} connState={connState} />
+                </div>
+
+                {/* Corrections tab */}
+                <div class={`h-full ${activeTab === 'corrections' ? '' : 'hidden'}`}>
+                    <CorrectionsPanel connState={connState} />
                 </div>
 
                 {/* Configuration tab */}

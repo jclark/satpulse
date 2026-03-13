@@ -17,6 +17,7 @@ import (
 
 	"github.com/jclark/satpulse/desktop/serialenum"
 	"github.com/jclark/satpulse/gps/app/bcast"
+	"github.com/jclark/satpulse/gps/app/corrsink"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsdecode"
@@ -69,6 +70,7 @@ type App struct {
 	connCtx      context.Context
 	connCancel   context.CancelFunc
 	connWg       sync.WaitGroup
+	portLock     gpsio.OutPortLock
 	pb           *bcast.Bcast[scan.Packet]
 	configCh     chan configRequest
 	probe        ReceiverEvent
@@ -78,6 +80,10 @@ type App struct {
 	sendCancel   context.CancelFunc
 	workerCancel context.CancelFunc
 	respSession  atomic.Int32
+	corrCtx      context.Context
+	corrCancel   context.CancelFunc
+	corrWg       *sync.WaitGroup
+	corrStopping bool
 }
 
 // NewApp creates a new App.
@@ -140,6 +146,7 @@ func (a *App) cancelWorkerLocked() {
 }
 
 func (a *App) closeLocked() {
+	a.stopCorrLocked()
 	if a.sendCancel != nil {
 		a.sendCancel()
 		a.sendCancel = nil
@@ -184,6 +191,7 @@ func (a *App) Connect(device string, speed int) Result {
 		a.setState(StateDisconnected)
 		return Result{Error: err.Error()}
 	}
+	portLock := gpsio.NewOutPortLock(conn)
 	connCtx, connCancel := context.WithCancel(a.ctx)
 	pCh := make(chan scan.Packet, 1)
 	pLog, plCh := gpsio.NewPacketLog(gpsreg.PacketFormats)
@@ -199,10 +207,11 @@ func (a *App) Connect(device string, speed int) Result {
 	a.conn = conn
 	a.connCtx = connCtx
 	a.connCancel = connCancel
+	a.portLock = portLock
 	a.pb = pb
 	a.configCh = configCh
 	a.mu.Unlock()
-	a.connWg.Go(func() { a.packetWorker(procs, pktSub, configCh) })
+	a.connWg.Go(func() { a.packetWorker(procs, pktSub, configCh, portLock) })
 	return Result{OK: true}
 }
 
@@ -218,13 +227,14 @@ type ReceiverEvent struct {
 // packetWorker is the single goroutine that owns packet processing.
 // It runs an initial probe, then loops processing packets for message decoding.
 // Configuration requests arrive via configCh and are executed inline.
-func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-chan scan.Packet, configCh <-chan configRequest) {
+func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-chan scan.Packet, configCh <-chan configRequest, portLock gpsio.OutPortLock) {
 	te := &timeEmitter{ctx: a.ctx}
 	tt := gpsprot.NewTimeTicker(te, ptime.LeapSecond2016())
 	mh := &msgHandler{ctx: a.ctx, tt: tt}
 	a.mu.Lock()
 	a.mh = mh
 	a.probe = ReceiverEvent{}
+	connCtx := a.connCtx
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{})
 	gpsprot.SetAllMsgHandlers(procs, mh)
@@ -234,6 +244,13 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 	if conn == nil {
 		return
 	}
+	// Acquire portLock for probe.
+	var port gpsio.OutPort
+	select {
+	case <-connCtx.Done():
+		return
+	case port = <-portLock:
+	}
 	// Run initial probe, matching the daemon's pattern of Configure before dispatch.
 	target := gpsprot.NewConfigTarget()
 	target.Opts.ForceProbe = true
@@ -241,6 +258,7 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 	rslt, err := gpscfg.Configure(ctx, a.lg, procs,
 		gpsreg.CreateConfigProtocols(), target, sub, conn)
 	cancel()
+	portLock <- port
 	if err != nil && !errors.Is(err, gpscfg.ErrNoProbeResponse) && !errors.Is(err, gpscfg.ErrNotDetected) {
 		runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{Error: err.Error()})
 		a.setEndState(StateDisconnected)
@@ -275,6 +293,13 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 			if !ok {
 				return
 			}
+			// Acquire portLock to pause corrections during config.
+			select {
+			case <-connCtx.Done():
+				req.resultCh <- configResult{err: connCtx.Err()}
+				return
+			case port = <-portLock:
+			}
 			a.mu.Lock()
 			conn = a.conn
 			a.mu.Unlock()
@@ -282,6 +307,7 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 			rslt, err := gpscfg.Configure(ctx, a.lg, procs,
 				gpsreg.CreateConfigProtocols(), req.target, sub, conn)
 			cancel()
+			portLock <- port
 			req.resultCh <- configResult{result: rslt, err: err}
 		}
 	}
@@ -297,11 +323,123 @@ func (a *App) GetReceiverState() ReceiverEvent {
 // Disconnect closes the GPS connection.
 func (a *App) Disconnect() Result {
 	a.mu.Lock()
+	hadCorr := a.corrCancel != nil
 	a.closeLocked()
 	a.probe = ReceiverEvent{}
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:state", StateDisconnected)
+	if hadCorr {
+		runtime.EventsEmit(a.ctx, "gps:corrections", CorrEvent{State: "stopped"})
+	}
 	return Result{OK: true}
+}
+
+// CorrEvent is the payload for "gps:corrections" events.
+type CorrEvent struct {
+	State string `json:"state"`           // "connecting", "connected", "reconnecting", "stopped"
+	Host  string `json:"host,omitempty"`
+	Port  int    `json:"port,omitempty"`
+	Error string `json:"error,omitempty"` // last error (set during reconnecting)
+}
+
+// StartCorrections dials the remote address and starts forwarding
+// correction packets to the GPS receiver.
+func (a *App) StartCorrections(host string, port int) Result {
+	if host == "" {
+		return Result{Error: "host is required"}
+	}
+	if port <= 0 || port > 65535 {
+		return Result{Error: "invalid port"}
+	}
+	a.mu.Lock()
+	if a.state != StateConnected {
+		a.mu.Unlock()
+		return Result{Error: "not connected"}
+	}
+	if a.corrStopping {
+		a.mu.Unlock()
+		return Result{Error: "corrections stopping"}
+	}
+	// Stop any existing correction session.
+	a.stopCorrLocked()
+	conn := a.conn.(*gpsio.SerialConn)
+	portLock := a.portLock
+	connCtx := a.connCtx
+	corrCtx, corrCancel := context.WithCancel(connCtx)
+	a.corrCtx = corrCtx
+	a.corrCancel = corrCancel
+	wg := &sync.WaitGroup{}
+	a.corrWg = wg
+	addr := fmt.Sprintf("%s:%d", host, port)
+	sink := corrsink.NewSink()
+	source := &corrsink.TCPSource{Addr: addr}
+	// Find RTCM packet formats for the scanner.
+	var rtcmFormats []gpsprot.PacketFormat
+	for _, pf := range gpsreg.PacketFormats {
+		if pf.Tag() == gpsreg.TagRTCM {
+			rtcmFormats = append(rtcmFormats, pf)
+		}
+	}
+	onState := func(s corrsink.State, err error) {
+		ev := CorrEvent{State: s.String(), Host: host, Port: port}
+		if err != nil {
+			ev.Error = err.Error()
+		}
+		runtime.EventsEmit(a.ctx, "gps:corrections", ev)
+	}
+	// Subscribe before starting goroutines to avoid missing packets.
+	pktSub := sink.Packets.Subscribe()
+	// Register all correction goroutines before releasing the lock,
+	// so a concurrent stop will wait for them.
+	wg.Go(func() {
+		defer sink.Packets.Unsubscribe(pktSub)
+		for pkt := range pktSub {
+			if pkt.Format == nil {
+				continue
+			}
+			msgID := pkt.Format.MsgID([]byte(pkt.Data))
+			runtime.EventsEmit(a.ctx, "gps:corrpacket", map[string]string{"msg": msgID})
+		}
+	})
+	wg.Go(func() {
+		sink.Run(corrCtx, a.lg, source, conn, portLock, rtcmFormats, onState)
+	})
+	// Bridge into connWg using a captured wg, so the connWg goroutine
+	// is independent of a.corrWg and won't conflict with a new session.
+	a.connWg.Go(func() { wg.Wait() })
+	a.mu.Unlock()
+	return Result{OK: true}
+}
+
+// StopCorrections stops the correction forwarding.
+func (a *App) StopCorrections() Result {
+	a.mu.Lock()
+	if a.corrStopping {
+		a.mu.Unlock()
+		return Result{Error: "corrections stopping"}
+	}
+	a.stopCorrLocked()
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:corrections", CorrEvent{State: "stopped"})
+	return Result{OK: true}
+}
+
+// stopCorrLocked cancels the correction context and waits for the
+// correction goroutines to exit. Must be called with a.mu held;
+// temporarily releases a.mu while waiting.
+func (a *App) stopCorrLocked() {
+	if a.corrCancel == nil {
+		return
+	}
+	a.corrCancel()
+	a.corrCancel = nil
+	wg := a.corrWg
+	a.corrWg = nil
+	a.corrStopping = true
+	a.mu.Unlock()
+	wg.Wait()
+	a.mu.Lock()
+	a.corrStopping = false
 }
 
 // IsConnected returns true if a GPS connection is open.
@@ -508,6 +646,7 @@ func (a *App) SendMsgFile(tag string) error {
 	conn := a.conn
 	pb := a.pb
 	connCtx := a.connCtx
+	portLock := a.portLock
 	if a.sendCancel != nil {
 		a.sendCancel()
 	}
@@ -543,7 +682,7 @@ func (a *App) SendMsgFile(tag string) error {
 	writeReqCh := make(chan writeReq)
 	// Start the worker goroutine.
 	a.connWg.Go(func() {
-		a.sendWorker(workerCtx, pb, conn, writeReqCh, session)
+		a.sendWorker(workerCtx, pb, conn, portLock, writeReqCh, session)
 	})
 	// Coordinator goroutine.
 	a.connWg.Go(func() {
@@ -629,9 +768,17 @@ func (a *App) finishSend() {
 // sendWorker owns conn.Write, PacketAnalyzer, line buffer, and the broadcast
 // subscriber. It runs until writeReqCh is closed and a tail timer expires,
 // or workerCtx is cancelled.
-func (a *App) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet], conn gpsio.Conn, writeReqCh <-chan writeReq, session int) {
+func (a *App) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet], conn gpsio.Conn, portLock gpsio.OutPortLock, writeReqCh <-chan writeReq, session int) {
 	sub := pb.Subscribe()
 	defer pb.Unsubscribe(sub)
+	// Acquire portLock for the entire send session to pause corrections.
+	var port gpsio.OutPort
+	select {
+	case <-workerCtx.Done():
+		return
+	case port = <-portLock:
+	}
+	defer func() { portLock <- port }()
 	pa := msgfile.NewPacketAnalyzer()
 	var lineBuf []byte
 	var tailCh <-chan time.Time
