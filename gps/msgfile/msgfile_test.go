@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -56,6 +57,71 @@ func validateMsgs(mf *Parsed, tags []string) error {
 	}
 	_, err = ToRaw(msgs)
 	return err
+}
+
+func TestValidateTags(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		wantErr bool
+	}{
+		{
+			name: "valid tags",
+			toml: `[[line]]
+text = "LINE1"
+tag = "setup"
+
+[[line]]
+text = "LINE2"
+tag = "setup"
+
+[[line]]
+text = "LINE3"
+tag = "other"
+`,
+			wantErr: false,
+		},
+		{
+			name: "non-consecutive tag",
+			toml: `[[line]]
+text = "LINE1"
+tag = "setup"
+
+[[line]]
+text = "LINE2"
+tag = "other"
+
+[[line]]
+text = "LINE3"
+tag = "setup"
+`,
+			wantErr: true,
+		},
+		{
+			name: "same tag across types",
+			toml: `[[line]]
+text = "LINE1"
+tag = "shared"
+
+[[binary]]
+hex = "AA"
+tag = "shared"
+`,
+			wantErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := loadFromString(t, tc.toml)
+			err := mf.ValidateTags()
+			if tc.wantErr && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
 }
 
 func loadPayloadFromString(t *testing.T, content string) Payload {
@@ -185,6 +251,23 @@ tag = "mixed"
 			wantErr: true,
 		},
 		{
+			name: "same tag in multiple types fails even when not selected",
+			toml: `[[line]]
+text = "TEST"
+tag = "lines"
+
+[[line]]
+text = "TEST2"
+tag = "shared"
+
+[[binary]]
+hex = "AA"
+tag = "shared"
+`,
+			tags:    []string{"lines"},
+			wantErr: true,
+		},
+		{
 			name: "selecting multiple tags with mixed types fails",
 			toml: `[[line]]
 text = "TEST"
@@ -307,6 +390,93 @@ tag = "nmeas"
 			}
 			if !tc.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestTaggedMsgsTagValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		toml       string
+		tags       []string
+		errSubstrs []string
+	}{
+		{
+			name: "non-consecutive line tag",
+			toml: `[[line]]
+text = "LINE1"
+tag = "setup"
+
+[[line]]
+text = "LINE2"
+tag = "ppp"
+
+[[line]]
+text = "LINE3"
+tag = "setup"
+`,
+			tags:       []string{"setup"},
+			errSubstrs: []string{`messages with tag "setup" must be consecutive`},
+		},
+		{
+			name: "non-consecutive empty effective tag",
+			toml: `[[line]]
+text = "LINE1"
+
+[[line]]
+text = "LINE2"
+tag = "ppp"
+
+[[line]]
+text = "LINE3"
+`,
+			tags:       []string{"ppp"},
+			errSubstrs: []string{`messages with tag "" must be consecutive`},
+		},
+		{
+			name: "non-consecutive default inherited tag",
+			toml: `[default.line]
+tag = "setup"
+
+[[line]]
+text = "LINE1"
+
+[[line]]
+text = "LINE2"
+tag = "ppp"
+
+[[line]]
+text = "LINE3"
+`,
+			tags:       []string{"ppp"},
+			errSubstrs: []string{`messages with tag "setup" must be consecutive`},
+		},
+		{
+			name: "same tag across message types",
+			toml: `[[line]]
+text = "LINE1"
+tag = "setup"
+
+[[binary]]
+hex = "AA"
+tag = "setup"
+`,
+			tags:       []string{"setup"},
+			errSubstrs: []string{`tag "setup" used for multiple message types`, "line", "binary"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf := loadFromString(t, tc.toml)
+			_, err := mf.TaggedMsgs(tc.tags)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			for _, s := range tc.errSubstrs {
+				if !strings.Contains(err.Error(), s) {
+					t.Fatalf("error %q does not contain %q", err, s)
+				}
 			}
 		})
 	}

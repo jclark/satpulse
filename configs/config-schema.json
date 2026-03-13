@@ -42,6 +42,7 @@
 			"maxItems": 3
 		  },
 		  "minElevation": { "type": "number", "minimum": -90, "maximum": 90 },
+		  "rtcmBaseID": { "type": "integer", "minimum": 0, "maximum": 4095 },
 		  "antennaCableDelay": { "type": "number" },
 		  "antennaCableLength": { "type": "number" },
 		  "antennaCableVF": { "type": "number" },

@@ -322,7 +322,7 @@ If neither **\-t** nor **\-\-show\-tags** is specified, then messages with no ta
 Messages are sent in the order the tags are listed.
 
 **\-\-show\-tags**
-: List all tags in the message file with their descriptions, then exit.
+: Print all tags in the message file with their descriptions to stdout, validate tag constraints, and exit.
 
 ## Packet capture
 

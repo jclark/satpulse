@@ -46,7 +46,10 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 			lg.Warn("tag has inconsistent descriptions", "tag", td.Tag, "desc", td.Desc)
 		}
 		if v.showTags {
-			msgfile.PrintTagDescs(os.Stderr, tds)
+			if err = mf.ValidateTags(); err != nil {
+				return
+			}
+			msgfile.PrintTagDescs(os.Stdout, tds)
 			return
 		}
 		msgs, err = mf.TaggedMsgs(v.msgTags)

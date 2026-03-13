@@ -476,6 +476,18 @@ text = "PQTMCFGMSGRATE,W,PQTMDOP,0,1"
 tag = "pqtm-dop-off"
 description = "Disable PQTMDOP message"
 
+# Enable PQTMPL message (protection level)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPL,1,1"
+tag = "pqtm-pl"
+description = "Enable PQTMPL message (rate of one per fix)"
+
+# Disable PQTMPL message
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPL,0,1"
+tag = "pqtm-pl-off"
+description = "Disable PQTMPL message"
+
 # Enable PQTMSVINSTATUS message (survey-in status)
 # Does not work on R02 firmware
 [[nmea]]
