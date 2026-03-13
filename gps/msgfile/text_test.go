@@ -306,12 +306,12 @@ text = "LINE1"
 tag = "setup"
 
 [[line]]
-text = "LINE2"
-tag = "ppp"
-
-[[line]]
 text = "LINE3"
 tag = "setup"
+
+[[line]]
+text = "LINE2"
+tag = "ppp"
 `,
 			tags: []string{"setup"},
 			expected: []RawMsg{
@@ -326,12 +326,12 @@ text = "LINE1"
 tag = "setup"
 
 [[line]]
-text = "LINE2"
-tag = "ppp"
-
-[[line]]
 text = "LINE3"
 tag = "setup"
+
+[[line]]
+text = "LINE2"
+tag = "ppp"
 `,
 			tags: []string{"ppp", "setup"},
 			expected: []RawMsg{
@@ -367,11 +367,11 @@ tag = "other"
 text = "LINE1"
 
 [[line]]
-text = "LINE2"
-tag = "ppp"
+text = "LINE3"
 
 [[line]]
-text = "LINE3"
+text = "LINE2"
+tag = "ppp"
 `,
 			tags: []string{""},
 			expected: []RawMsg{

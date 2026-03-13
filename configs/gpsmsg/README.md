@@ -16,6 +16,12 @@ satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar.toml -t pps
 ```
 
 The `-m` flag specifies the message file. The `-t` flag selects which tags to send.
+Tags listed with `-t` are sent in the order they are listed.
+
+Tag rules:
+- A tag can only be used with one message type in a file (`line`, `binary`, `nmea`, `casbin`, `asbin`, or `ubx`).
+- Within a message type section, all messages with the same tag must be consecutive.
+- These rules apply to effective tags, including inherited default tags and the empty tag.
 
 List available tags:
 

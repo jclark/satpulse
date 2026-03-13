@@ -372,53 +372,73 @@ func (mf *Parsed) validateDefaults() error {
 	return nil
 }
 
+type tagIndex struct {
+	byTag map[string][]int
+	tags  []string
+}
+
+type msgType string
+
+const (
+	msgTypeLine   msgType = "line"
+	msgTypeBinary msgType = "binary"
+	msgTypeNMEA   msgType = "nmea"
+	msgTypeCASBIN msgType = "casbin"
+	msgTypeASBIN  msgType = "asbin"
+	msgTypeUBX    msgType = "ubx"
+)
+
+type tagIndices map[msgType]tagIndex
+
+// ValidateTags checks tag-related message file constraints without selecting
+// or sending messages.
+func (mf *Parsed) ValidateTags() error {
+	_, err := mf.buildTagIndices()
+	return err
+}
+
 // TaggedMsgs returns messages for the given tags with defaults applied.
 // Returns a typed slice ([]LineMsg, []BinaryMsg, []NMEAMsg, []CASBINMsg, []ASBINMsg, or []UBXMsg).
 // Returns error if tags select messages of mixed types or if there are no messages with the tags.
 func (mf *Parsed) TaggedMsgs(tags []string) (any, error) {
-	if err := mf.validateDefaults(); err != nil {
+	ti, err := mf.buildTagIndices()
+	if err != nil {
 		return nil, err
 	}
-	applyDefaults(mf.Line, mf.applyLineDefaults)
-	applyDefaults(mf.Binary, mf.applyBinaryDefaults)
-	applyDefaults(mf.NMEA, mf.applyNMEADefaults)
-	applyDefaults(mf.CASBIN, mf.applyCASBINDefaults)
-	applyDefaults(mf.ASBIN, mf.applyASBINDefaults)
-	applyDefaults(mf.UBX, mf.applyUBXDefaults)
 	var rslt any
-	lineMsgs := filterMsgs(mf.Line, tags)
+	lineMsgs := filterMsgs(mf.Line, tags, ti[msgTypeLine].byTag)
 	if len(lineMsgs) > 0 {
 		rslt = lineMsgs
 	}
-	binaryMsgs := filterMsgs(mf.Binary, tags)
+	binaryMsgs := filterMsgs(mf.Binary, tags, ti[msgTypeBinary].byTag)
 	if len(binaryMsgs) > 0 {
 		if rslt != nil {
 			return nil, fmt.Errorf("selected tags have mixed message types")
 		}
 		rslt = binaryMsgs
 	}
-	nmeaMsgs := filterMsgs(mf.NMEA, tags)
+	nmeaMsgs := filterMsgs(mf.NMEA, tags, ti[msgTypeNMEA].byTag)
 	if len(nmeaMsgs) > 0 {
 		if rslt != nil {
 			return nil, fmt.Errorf("selected tags have mixed message types")
 		}
 		rslt = nmeaMsgs
 	}
-	casbinMsgs := filterMsgs(mf.CASBIN, tags)
+	casbinMsgs := filterMsgs(mf.CASBIN, tags, ti[msgTypeCASBIN].byTag)
 	if len(casbinMsgs) > 0 {
 		if rslt != nil {
 			return nil, fmt.Errorf("selected tags have mixed message types")
 		}
 		rslt = casbinMsgs
 	}
-	asbinMsgs := filterMsgs(mf.ASBIN, tags)
+	asbinMsgs := filterMsgs(mf.ASBIN, tags, ti[msgTypeASBIN].byTag)
 	if len(asbinMsgs) > 0 {
 		if rslt != nil {
 			return nil, fmt.Errorf("selected tags have mixed message types")
 		}
 		rslt = asbinMsgs
 	}
-	ubxMsgs := filterMsgs(mf.UBX, tags)
+	ubxMsgs := filterMsgs(mf.UBX, tags, ti[msgTypeUBX].byTag)
 	if len(ubxMsgs) > 0 {
 		if rslt != nil {
 			return nil, fmt.Errorf("selected tags have mixed message types")
@@ -441,24 +461,89 @@ func noMessagesError(tags []string) error {
 	return fmt.Errorf("no messages found for tags: %s", strings.Join(tags, ", "))
 }
 
+func (mf *Parsed) buildTagIndices() (tagIndices, error) {
+	if err := mf.validateDefaults(); err != nil {
+		return tagIndices{}, err
+	}
+	tagTypes := make(map[string]msgType)
+	tis := make(tagIndices, 6)
+
+	if err := prepareTagIndex(mf.Line, mf.applyLineDefaults, msgTypeLine, tagTypes, tis); err != nil {
+		return tagIndices{}, err
+	}
+	if err := prepareTagIndex(mf.Binary, mf.applyBinaryDefaults, msgTypeBinary, tagTypes, tis); err != nil {
+		return tagIndices{}, err
+	}
+	if err := prepareTagIndex(mf.NMEA, mf.applyNMEADefaults, msgTypeNMEA, tagTypes, tis); err != nil {
+		return tagIndices{}, err
+	}
+	if err := prepareTagIndex(mf.CASBIN, mf.applyCASBINDefaults, msgTypeCASBIN, tagTypes, tis); err != nil {
+		return tagIndices{}, err
+	}
+	if err := prepareTagIndex(mf.ASBIN, mf.applyASBINDefaults, msgTypeASBIN, tagTypes, tis); err != nil {
+		return tagIndices{}, err
+	}
+	if err := prepareTagIndex(mf.UBX, mf.applyUBXDefaults, msgTypeUBX, tagTypes, tis); err != nil {
+		return tagIndices{}, err
+	}
+
+	return tis, nil
+}
+
+func prepareTagIndex[T any, PT interface {
+	*T
+	userMsg
+}](msgs []T, apply func(PT), mt msgType, tagTypes map[string]msgType, tis tagIndices) error {
+	applyDefaults(msgs, apply)
+	ti, err := buildTagIndex[T, PT](msgs)
+	if err != nil {
+		return err
+	}
+	for _, tag := range ti.tags {
+		if prevType, ok := tagTypes[tag]; ok && prevType != mt {
+			return fmt.Errorf("tag %q used for multiple message types: %s and %s", tag, prevType, mt)
+		}
+		tagTypes[tag] = mt
+	}
+	tis[mt] = ti
+	return nil
+}
+
+func buildTagIndex[T any, PT interface {
+	*T
+	userMsg
+}](msgs []T) (tagIndex, error) {
+	ti := tagIndex{byTag: make(map[string][]int)}
+	var prevTag string
+	hasPrev := false
+	for i := range msgs {
+		tag := PT(&msgs[i]).getTag()
+		// If a seen tag reappears after we moved to another tag block, it is non-consecutive.
+		if hasPrev && tag != prevTag && len(ti.byTag[tag]) > 0 {
+			return tagIndex{}, fmt.Errorf("messages with tag %q must be consecutive", tag)
+		}
+		if !hasPrev || tag != prevTag {
+			prevTag = tag
+			hasPrev = true
+		}
+		if _, ok := ti.byTag[tag]; !ok {
+			ti.tags = append(ti.tags, tag)
+		}
+		ti.byTag[tag] = append(ti.byTag[tag], i)
+	}
+	return ti, nil
+}
+
 func applyDefaults[T any, PT *T](msgs []T, apply func(PT)) {
 	for i := range msgs {
 		apply(&msgs[i])
 	}
 }
 
-func filterMsgs[T any, PT interface {
-	*T
-	userMsg
-}](msgs []T, tags []string) []T {
-	tagIndex := make(map[string][]int)
-	for i := range msgs {
-		tag := PT(&msgs[i]).getTag()
-		tagIndex[tag] = append(tagIndex[tag], i)
-	}
+func filterMsgs[T any](msgs []T, tags []string, byTag map[string][]int) []T {
 	var result []T
 	for _, tag := range tags {
-		for _, i := range tagIndex[tag] {
+		for _, i := range byTag[tag] {
 			result = append(result, msgs[i])
 		}
 	}
