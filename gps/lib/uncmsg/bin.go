@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 )
@@ -86,7 +87,9 @@ func ParseBinMsg(packet []byte) (*Msg, error) {
 
 	err = novmsg.ReadBinChunked(r, msgBody, "UNCB-"+msgID.String())
 	if err != nil {
-		return nil, err
+		if err = fixTruncatedSatsInfo(msgBody, err); err != nil {
+			return nil, err
+		}
 	}
 
 	// Check for trailing bytes
@@ -154,4 +157,26 @@ func SerializeBinMsg(msg *Msg) ([]byte, error) {
 	packet = append(packet, crcBytes...)
 
 	return packet, nil
+}
+
+// fixTruncatedSatsInfo works around a UM980 firmware bug (build 17548)
+// where SATSINFO declares SatNumber=64 but the payload only fits 63 satellites.
+func fixTruncatedSatsInfo(msgBody any, err error) error {
+	si, ok := msgBody.(*SatsInfo)
+	if !ok || !strings.HasSuffix(err.Error(), "EOF") {
+		return err
+	}
+	n := 0
+	for _, s := range si.Sats {
+		if s.Freqs == nil {
+			break
+		}
+		n++
+	}
+	if n == 0 {
+		return err
+	}
+	si.Sats = si.Sats[:n]
+	si.SatNumber = byte(n)
+	return nil
 }
