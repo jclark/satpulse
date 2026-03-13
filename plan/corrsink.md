@@ -56,6 +56,12 @@ const (
     Reconnecting
 )
 
+// PacketWriter writes a packet to the serial port.
+// gpsio.SerialConn satisfies this interface.
+type PacketWriter interface {
+    WritePacket(p []byte, fmt gpsprot.PacketFormat) (int, error)
+}
+
 // Sink reads correction packets from a Source and writes them to a
 // serial port via a pruning queue.  Scanned packets are broadcast
 // to subscribers so that subscriber timing reflects true
@@ -73,15 +79,15 @@ type Sink struct {
 func NewSink() *Sink
 
 // Run connects to the correction source, scans packets, and writes
-// each to serialConn via WritePacket.  On network error, Run
-// reconnects with exponential backoff (1s, 2s, 4s, ... capped at
-// 30s).  It calls onState on each connection state change
-// (Connecting, Connected, Reconnecting).  Run blocks until ctx is
-// cancelled or serialConn errors.  On cancellation, Run waits for
-// all internal goroutines to exit before returning.
+// each to pw via WritePacket.  On network error, Run reconnects
+// with exponential backoff (1s, 2s, 4s, ... capped at 30s).  It
+// calls onState on each connection state change (Connecting,
+// Connected, Reconnecting).  Run blocks until ctx is cancelled or
+// pw errors.  On cancellation, Run waits for all internal
+// goroutines to exit before returning.
 func (s *Sink) Run(ctx context.Context, lg *slog.Logger,
     source Source,
-    serialConn *gpsio.SerialConn,
+    pw PacketWriter,
     portLock gpsio.OutPortLock,
     pktFormats []gpsprot.PacketFormat,
     onState func(State, error)) error
@@ -165,11 +171,10 @@ shutdown is never blocked by a sleep.
 **Pruning queue goroutine:**
 
 Subscribes to the bcast and mediates between the reader and the
-writer.  It maintains a FIFO ordered by insertion time, plus a map
-from message type to queue position for O(1) lookup.  On enqueue, if
-a packet of the same message type is already in the queue, the old
-entry is removed.  On dequeue, the front packet is sent to the
-writer.
+writer.  It maintains a simple slice of entries (packet + message ID).
+On enqueue, if a packet of the same message type is already in the
+slice, the old entry is removed; the new packet is appended.  On
+dequeue, the front entry is removed and sent to the writer.
 
 The queue receives from its bcast subscription channel.  It sends to
 the writer via another channel; the send is conditional on the queue
