@@ -33,22 +33,6 @@ func makeRTCM(msgType uint16, payloadLen int) []byte {
 	return pkt
 }
 
-// makeRTCMMSM builds a valid RTCM MSM packet with the multiple message
-// (hasMore) bit set or clear.
-func makeRTCMMSM(msgType uint16, hasMore bool, payloadLen int) []byte {
-	pkt := makeRTCM(msgType, max(payloadLen, 10))
-	if hasMore {
-		pkt[9] |= 0x02
-	}
-	// recompute CRC
-	totalPayload := len(pkt) - 6
-	crc := crc24q.Checksum(pkt[:3+totalPayload])
-	pkt[3+totalPayload] = byte(crc >> 16)
-	pkt[3+totalPayload+1] = byte(crc >> 8)
-	pkt[3+totalPayload+2] = byte(crc)
-	return pkt
-}
-
 // pipeSource returns a Source backed by net.Pipe.  The caller writes
 // correction data to the returned net.Conn.
 type pipeSource struct {
@@ -246,61 +230,6 @@ func TestPruningQueueDropsStale(t *testing.T) {
 	}
 	if p2.Data != string(pkt1005b) {
 		t.Errorf("expected updated 1005 packet")
-	}
-}
-
-func TestPruningQueueMultiPacket(t *testing.T) {
-	var q pruningQueue
-	pf := rtcm.PacketFormat
-	// Enqueue a multi-packet group: 1124(more), 1124(last)
-	pkt1124a := makeRTCMMSM(1124, true, 20)
-	pkt1124b := makeRTCMMSM(1124, false, 20)
-	// Enqueue a different message type in between
-	pkt1005 := makeRTCM(1005, 10)
-	q.enqueue(scan.Packet{Format: pf, Data: string(pkt1124a)})
-	q.enqueue(scan.Packet{Format: pf, Data: string(pkt1124b)})
-	q.enqueue(scan.Packet{Format: pf, Data: string(pkt1005)})
-	if q.len() != 3 {
-		t.Fatalf("expected 3 entries, got %d", q.len())
-	}
-	// All three should dequeue in order
-	p1 := q.dequeue()
-	if p1.Data != string(pkt1124a) {
-		t.Error("expected first 1124 packet")
-	}
-	p2 := q.dequeue()
-	if p2.Data != string(pkt1124b) {
-		t.Error("expected second 1124 packet")
-	}
-	p3 := q.dequeue()
-	if p3.Data != string(pkt1005) {
-		t.Error("expected 1005 packet")
-	}
-}
-
-func TestPruningQueueReplacesMultiPacketGroup(t *testing.T) {
-	var q pruningQueue
-	pf := rtcm.PacketFormat
-	// First group: 1124(more), 1124(last)
-	old1124a := makeRTCMMSM(1124, true, 20)
-	old1124b := makeRTCMMSM(1124, false, 20)
-	q.enqueue(scan.Packet{Format: pf, Data: string(old1124a)})
-	q.enqueue(scan.Packet{Format: pf, Data: string(old1124b)})
-	// New group replaces the old one
-	new1124a := makeRTCMMSM(1124, true, 22)
-	new1124b := makeRTCMMSM(1124, false, 22)
-	q.enqueue(scan.Packet{Format: pf, Data: string(new1124a)})
-	q.enqueue(scan.Packet{Format: pf, Data: string(new1124b)})
-	if q.len() != 2 {
-		t.Fatalf("expected 2 entries, got %d", q.len())
-	}
-	p1 := q.dequeue()
-	if p1.Data != string(new1124a) {
-		t.Error("expected new first 1124 packet")
-	}
-	p2 := q.dequeue()
-	if p2.Data != string(new1124b) {
-		t.Error("expected new second 1124 packet")
 	}
 }
 

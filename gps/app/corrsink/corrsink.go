@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"slices"
 	"sync"
 	"time"
 
@@ -307,9 +306,8 @@ type pruningQueue struct {
 }
 
 type pqEntry struct {
-	pkt     scan.Packet
-	msgID   string
-	hasMore bool
+	pkt   scan.Packet
+	msgID string
 }
 
 func (q *pruningQueue) len() int {
@@ -318,22 +316,13 @@ func (q *pruningQueue) len() int {
 
 func (q *pruningQueue) enqueue(pkt scan.Packet) {
 	msgID := pkt.Format.MsgID([]byte(pkt.Data))
-	hasMore := false
-	if mpf, ok := pkt.Format.(gpsprot.MultiPacketFormat); ok {
-		hasMore = mpf.HasMore([]byte(pkt.Data))
+	for i, e := range q.entries {
+		if e.msgID == msgID {
+			q.entries = append(q.entries[:i], q.entries[i+1:]...)
+			break
+		}
 	}
-	// If the last entry has more packets coming with the same msgID,
-	// this packet is a continuation of the same group.
-	n := len(q.entries)
-	if n > 0 && q.entries[n-1].hasMore && q.entries[n-1].msgID == msgID {
-		q.entries = append(q.entries, pqEntry{pkt: pkt, msgID: msgID, hasMore: hasMore})
-		return
-	}
-	// Remove all entries with the same msgID.
-	q.entries = slices.DeleteFunc(q.entries, func(e pqEntry) bool {
-		return e.msgID == msgID
-	})
-	q.entries = append(q.entries, pqEntry{pkt: pkt, msgID: msgID, hasMore: hasMore})
+	q.entries = append(q.entries, pqEntry{pkt: pkt, msgID: msgID})
 }
 
 func (q *pruningQueue) dequeue() scan.Packet {
