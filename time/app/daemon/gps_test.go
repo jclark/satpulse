@@ -185,6 +185,69 @@ minElevation = 100`,
 			expectedError: "error",
 		},
 		{
+			name: "rtcm base ID",
+			config: `[gps]
+config = true
+rtcmBaseID = 100`,
+			speed: 9600,
+			cf:    cfgTimePulse,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+				target.Opts.SetStatic = true
+				target.Props.SetRTCMBaseID(100)
+			},
+		},
+		{
+			name: "rtcm base ID zero",
+			config: `[gps]
+config = true
+rtcmBaseID = 0`,
+			speed: 9600,
+			cf:    cfgTimePulse,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+				target.Opts.SetStatic = true
+				target.Props.SetRTCMBaseID(0)
+			},
+		},
+		{
+			name: "rtcm base ID max",
+			config: `[gps]
+config = true
+rtcmBaseID = 4095`,
+			speed: 9600,
+			cf:    cfgTimePulse,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+				target.Opts.SetStatic = true
+				target.Props.SetRTCMBaseID(4095)
+			},
+		},
+		{
+			name: "rtcm base ID out of range",
+			config: `[gps]
+config = true
+rtcmBaseID = 4096`,
+			speed:         9600,
+			cf:            cfgTimePulse,
+			expectedError: "error",
+		},
+		{
+			name: "rtcm base ID not set",
+			config: `[gps]
+config = true`,
+			speed: 9600,
+			cf:    cfgTimePulse,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+				target.Opts.SetStatic = true
+			},
+		},
+		{
 			name: "mobile=true without time pulse",
 			config: `[gps]
 config = true

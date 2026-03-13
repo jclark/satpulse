@@ -40,6 +40,7 @@ type GPSConfig struct {
 	AntennaCableVF     float64      `toml:"antennaCableVF"`     // velocity factor
 	TimeGNSS           gpsprot.GNSS `toml:"timeGNSS"`
 	MinElevation       float64      `toml:"minElevation"` // in degrees
+	RTCMBaseID         uint16       `toml:"rtcmBaseID"`
 	PulseWidth         float64      `toml:"pulseWidth"`
 	SatellitesOutput   *bool        `toml:"satellitesOutput"`
 	RTCMOutput         *bool        `toml:"rtcmOutput"`
@@ -61,6 +62,7 @@ var gpsDefault = GPSConfig{
 	AntennaCableLength: math.NaN(),
 	AntennaCableVF:     0.66, // typical value for RG-58 cable
 	MinElevation:       math.NaN(),
+	RTCMBaseID:         0xFFFF,
 	PulseWidth:         math.NaN(),
 }
 
@@ -88,6 +90,10 @@ func (c *GPSConfig) target(speed int, cf cfgFeatures) (*gpsprot.ConfigTarget, er
 		return nil, err
 	}
 	err = c.getMinElevation(cp)
+	if err != nil {
+		return nil, err
+	}
+	err = c.getRTCMBaseID(cp)
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +223,17 @@ func (c *GPSConfig) getMinElevation(cp *gpsprot.ConfigProps) error {
 		return configErrorf("minimum elevation %v out of range [-90, 90]", c.MinElevation)
 	}
 	cp.SetMinElevation(gpsprot.DegreesFromFloat(c.MinElevation))
+	return nil
+}
+
+func (c *GPSConfig) getRTCMBaseID(cp *gpsprot.ConfigProps) error {
+	if c.RTCMBaseID == 0xFFFF {
+		return nil
+	}
+	if c.RTCMBaseID > 4095 {
+		return configErrorf("RTCM base ID %d out of range [0, 4095]", c.RTCMBaseID)
+	}
+	cp.SetRTCMBaseID(c.RTCMBaseID)
 	return nil
 }
 
