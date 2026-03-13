@@ -13,4 +13,4 @@ const _pVMsgBundle: PVMsgBundle = {"posGeo":{"latLon":[51.477928,-0.001545],"tag
 const _navEpochMsg: NavEpochMsg = {"fixLevel":"carrierFixed","solutionDim":"3D","correction":["RTCM"],"acc":{"hor":0.015,"vert":0.025},"dop":{"pos":1.2,"hor":0.8,"north":0.6,"east":0.5},"numSVUsed":12,"gnssUsed":["GPS","GAL"],"bandsUsed":["L1","L5"],"tag":"UBX","startTime":"2025-03-07T04:00:00Z"};
 const _leapSecondMsg: LeapSecondMsg = {"OffChangeTime":"1735689637.000000000","UTCOffBefore":37,"UTCOffAfter":37,"gnss":"GPS"};
 const _receiverInfo: ReceiverInfo = {"vendor":"u-blox","firmware":"TIM 2.20 PROTVER 18.00","hardware":"ZED-F9T","supportedGNSS":["GPS","GAL","BDS","GLO"]};
-const _packetLogEntry: PacketLogEntry = {"t":"2025-03-07T04:00:00.123456Z","tag":"UBX","msg":"NAV-PVT","bin":"b5620107","speed":9600,"out":false};
+const _packetLogEntry: PacketLogEntry = {"t":"2025-03-07T04:00:00.123456Z","tag":"RTCM","msg":"1124","more":true,"bin":"d3000a","ascii":"$GPGGA","speed":9600,"out":false};
